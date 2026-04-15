@@ -20,7 +20,7 @@ body{background:var(--bg);color:var(--t1);font-family:var(--B);font-size:13px;di
 .sb-sub{font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--t3);margin-top:3px;padding-left:14px;}
 .sb-nav{flex:1;overflow-y:auto;padding:6px 0;}
 .sb-sec{font-family:var(--M);font-size:7.5px;letter-spacing:2px;text-transform:uppercase;color:var(--t3);padding:10px 13px 3px;}
-.sbi{display:flex;align-items:center;gap:7px;padding:7px 13px;cursor:pointer;color:var(--t2);font-size:11.5px;border-left:2px solid transparent;transition:all .1s;white-space:nowrap;}
+.sbi{display:flex;align-items:center;gap:7px;padding:7px 13px;cursor:pointer;color:var(--t1);font-size:11.5px;border-left:2px solid transparent;transition:all .1s;white-space:nowrap;}
 .sbi:hover{color:var(--t1);background:rgba(255,255,255,0.02);}
 .sbi.active{color:var(--blue);border-left-color:var(--blue);background:rgba(79,124,255,0.06);}
 .sbi.s1.active{color:#6b9fff;border-left-color:#6b9fff;background:rgba(26,58,143,0.18);}.sbi.ei.active{color:#00cfc8;border-left-color:#00cfc8;background:rgba(0,207,200,0.1);}.sbi.s2.active{color:var(--or);border-left-color:var(--or);background:var(--or2);}
@@ -898,19 +898,19 @@ function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
 async function api(ep,method='GET',body=null){try{const o={method,headers:{'Content-Type':'application/json'}};if(body)o.body=JSON.stringify(body);const r=await fetch(ep,o);return await r.json();}catch(e){addLog('err','Erro '+ep+': '+e.message);return null;}}
 async function loadPipeline(){addLog('info','[S2-09] Buscando pipeline no HubSpot...');const data=await api('/api/analytics?tipo=pipeline');if(!data||!data.pipeline){addLog('warn','Pipeline: sem dados - configure HUBSPOT_TOKEN no Vercel');renderPipelineMock();return;}const{pipeline}=data;const tv=pipeline.total_valor||0;document.getElementById('p_total').textContent='R$'+(tv/1000000).toFixed(1)+'M';document.getElementById('p_total_s').textContent=(pipeline.total_deals||0)+' deals';document.getElementById('kPipe').textContent='R$'+(tv/1000000).toFixed(1)+'M';document.getElementById('kPipeSub').textContent=(pipeline.total_deals||0)+' oport.';const pct=Math.min(Math.round((tv/5000000)*100),100);document.getElementById('meta_ano').textContent='R$'+(tv/1000000).toFixed(1)+'M';document.getElementById('prog_ano').style.width=pct+'%';document.getElementById('meta_ano_s').textContent=pct+'% / R$5M';renderPipelineEtapas(pipeline.etapas||{});addLog('success','[HubSpot] Pipeline: '+(pipeline.total_deals||0)+' deals R$'+(tv/1000000).toFixed(1)+'M');document.getElementById('dotHS').className='dot on';document.getElementById('statHS').textContent='HubSpot · Conectado';document.getElementById('dealCnt').textContent=pipeline.total_deals||'0';}
-function renderPipelineEtapas(e){const ETAPAS=['Mapeado','Abordado','Respondeu','Reuniao Agendada','Proposta','Fechado'];['s7-pipeline','dash-pipeline'].forEach(id=>{const el=document.getElementById(id);if(!el)return;const isGrid=id==='s7-pipeline';if(isGrid){el.innerHTML=ETAPAS.map(n=>{const k=Object.keys(e).find(k=>k.toLowerCase().includes(n.toLowerCase().split(' ')[0]));const d=k?e[k]:{count:0,valor:0,deals:[]};return`<div class="pc"><div class="pch">${n}<span class="pcnt">${d.count}</span></div>${(d.deals||[]).slice(0,3).map(x=>`<div style="background:var(--bg3);border:1px solid var(--bd);border-radius:5px;padding:7px;margin-bottom:4px;font-size:10.5px;"><div style="font-weight:600;">${x.nome}</div><div style="font-family:var(--M);font-size:8px;color:var(--gold);">R$${(x.valor/1000).toFixed(0)}k</div></div>`).join('')}${d.count===0?'<div style="font-size:9px;color:var(--t3);padding:4px;">—</div>':''}</div>`;}).join('');}else{el.innerHTML=ETAPAS.map(n=>{const k=Object.keys(e).find(k=>k.toLowerCase().includes(n.toLowerCase().split(' ')[0]));const d=k?e[k]:{count:0,valor:0};return`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd);"><span style="font-size:10.5px;flex:1;">${n}</span><span style="font-family:var(--M);font-size:9px;color:var(--t2);">${d.count} deals</span><span style="font-family:var(--M);font-size:9px;color:var(--gold);">R$${((d.valor||0)/1000).toFixed(0)}k</span></div>`;}).join('');}});const meetKey=Object.keys(e).find(k=>k.toLowerCase().includes('reuni'));const propKey=Object.keys(e).find(k=>k.toLowerCase().includes('propost'));document.getElementById('kMeet').textContent=meetKey?e[meetKey].count:0;document.getElementById('p_meet').textContent=meetKey?e[meetKey].count:0;document.getElementById('p_prop').textContent=propKey?e[propKey].count:0;document.getElementById('meetCnt').textContent=meetKey?e[meetKey].count:'—';}
+function renderPipelineEtapas(e){const ETAPAS=['Mapeado','Abordado','Respondeu','Reuniao Agendada','Proposta','Fechado'];['s7-pipeline','dash-pipeline'].forEach(id=>{const el=document.getElementById(id);if(!el)return;const isGrid=id==='s7-pipeline';if(isGrid){el.innerHTML=ETAPAS.map(n=>{const k=Object.keys(e).find(k=>k.toLowerCase().includes(n.toLowerCase().split(' ')[0]));const d=k?e[k]:{count:0,valor:0,deals:[]};return`<div class="pc"><div class="pch">${n}<span class="pcnt">${d.count}</span></div>${(d.deals||[]).slice(0,3).map(x=>`<div style="background:var(--bg3);border:1px solid var(--bd);border-radius:5px;padding:7px;margin-bottom:4px;font-size:10.5px;"><div style="font-weight:600;">${x.nome}</div><div style="font-family:var(--M);font-size:8px;color:var(--gold);">R$${(x.valor/1000).toFixed(0)}k</div></div>`).join('')}${d.count===0?'<div style="font-size:9px;color:var(--t3);padding:4px;">--</div>':''}</div>`;}).join('');}else{el.innerHTML=ETAPAS.map(n=>{const k=Object.keys(e).find(k=>k.toLowerCase().includes(n.toLowerCase().split(' ')[0]));const d=k?e[k]:{count:0,valor:0};return`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd);"><span style="font-size:10.5px;flex:1;">${n}</span><span style="font-family:var(--M);font-size:9px;color:var(--t2);">${d.count} deals</span><span style="font-family:var(--M);font-size:9px;color:var(--gold);">R$${((d.valor||0)/1000).toFixed(0)}k</span></div>`;}).join('');}});const meetKey=Object.keys(e).find(k=>k.toLowerCase().includes('reuni'));const propKey=Object.keys(e).find(k=>k.toLowerCase().includes('propost'));document.getElementById('kMeet').textContent=meetKey?e[meetKey].count:0;document.getElementById('p_meet').textContent=meetKey?e[meetKey].count:0;document.getElementById('p_prop').textContent=propKey?e[propKey].count:0;document.getElementById('meetCnt').textContent=meetKey?e[meetKey].count:'--';}
 function renderPipelineMock(){const mock={'Mapeado':12,'Abordado':8,'Respondeu':4,'Reuniao':3,'Proposta':1,'Fechado':0};const el=document.getElementById('s7-pipeline');if(el)el.innerHTML=Object.entries(mock).map(([n,c])=>`<div class="pc"><div class="pch">${n}<span class="pcnt">${c}</span></div><div style="font-size:9px;color:var(--t3);padding:4px;">Conecte HubSpot</div></div>`).join('');}
-async function loadKPIs(){const data=await api('/api/analytics?tipo=kpis');if(!data||!data.kpis){addLog('warn','KPIs: configure HUBSPOT_TOKEN');return;}const k=data.kpis;document.getElementById('kLeads').textContent=k.leads_30_dias||'—';document.getElementById('kScoreA').textContent=k.score_a||'—';document.getElementById('k_leads30').textContent=k.leads_30_dias||'—';document.getElementById('k_mql').textContent=(k.taxa_qualificacao||0)+'%';document.getElementById('s7_d30').textContent=k.deals_30_dias||'—';document.getElementById('s7_tq').textContent=(k.taxa_qualificacao||0)+'%';document.getElementById('p_fc').textContent=k.pipeline_valor?'R$'+(k.pipeline_valor/1000000).toFixed(1)+'M':'—';addLog('success','[S2-09] KPIs: '+k.leads_30_dias+' leads, '+k.taxa_qualificacao+'% qualificacao');}
-async function loadAnalytics(){addLog('info','[S2-09] Gerando analise Claude...');const data=await api('/api/analytics?tipo=analise');if(!data||!data.analise){addLog('err','Analytics: erro');return;}const a=data.analise;const html=`<div style="margin-bottom:9px;"><div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--green);margin-bottom:5px;">INSIGHTS</div>${(a.insights||[]).map((x,n)=>`<div style="padding:5px 0;border-bottom:1px solid var(--bd);font-size:11.5px;"><strong style="color:var(--blue);">${n+1}.</strong> ${x}</div>`).join('')}</div><div style="margin-bottom:9px;"><div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--red);margin-bottom:5px;">ALERTAS</div>${(a.alertas||[]).map(x=>`<div style="padding:5px 8px;background:var(--r2);border-radius:5px;font-size:11px;margin-bottom:4px;">⚠ ${x}</div>`).join('')}</div><div style="padding:8px;background:var(--b2);border-radius:5px;font-size:11px;color:var(--blue);"><strong>Recomendacao:</strong> ${a.recomendacao_principal||''}</div>`;document.getElementById('dash-insights').innerHTML=html;document.getElementById('s2-insights').innerHTML=html;addLog('success','[S2-09] Analise concluida: '+a.tendencia);}
-async function runProspect(){const btn=document.getElementById('btnProspect');const st=document.getElementById('prospStatus');const res=document.getElementById('prospResult');btn.disabled=true;btn.textContent='Mapeando...';st.textContent='Executando';st.className='tag on';res.innerHTML='<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:10px;">Agente S2-02 buscando empresas...</div>';addLog('info','[S2-02] Iniciando: '+document.getElementById('pSetor').value);const data=await api('/api/prospect-scan','POST',{setor:document.getElementById('pSetor').value,regiao:document.getElementById('pRegiao').value,faturamento_min:document.getElementById('pFat').value,cargo_decisor:document.getElementById('pCargo').value,quantidade:parseInt(document.getElementById('pQtd').value),iniciar_outreach:false});if(!data||!data.empresas){st.textContent='Erro';st.className='tag hot';res.innerHTML='<div style="color:var(--red);font-size:11px;padding:10px;">Erro. Verifique variaveis de ambiente no Vercel.</div>';addLog('err','[S2-02] Erro no mapeamento');}else{st.textContent=data.total_mapeado+' empresas';st.className='tag live';res.innerHTML='<div style="margin-bottom:8px;font-size:11px;color:var(--t2);">'+data.total_mapeado+' empresas · Score A: '+data.score_a+'</div><div class="tw"><table><thead><tr><th>Empresa</th><th>Setor</th><th>Decisor</th><th>Score</th></tr></thead><tbody>'+(data.empresas||[]).map(e=>`<tr><td><strong>${e.empresa}</strong></td><td style="color:var(--t2);font-size:10px;">${e.setor||''}</td><td style="font-size:10px;">${e.decisor||'—'}</td><td><span class="tb ${e.score==='A'?'sa':e.score==='B'?'sb_':'sc'}">${e.score||'B'}</span></td></tr>`).join('')+'</tbody></table></div>';document.getElementById('kLeads').textContent=data.total_mapeado;addLog('success','[S2-02] '+data.total_mapeado+' empresas mapeadas, Score A: '+data.score_a);toast(data.total_mapeado+' empresas no HubSpot!','success');
+async function loadKPIs(){const data=await api('/api/analytics?tipo=kpis');if(!data||!data.kpis){addLog('warn','KPIs: configure HUBSPOT_TOKEN');return;}const k=data.kpis;document.getElementById('kLeads').textContent=k.leads_30_dias||'--';document.getElementById('kScoreA').textContent=k.score_a||'--';document.getElementById('k_leads30').textContent=k.leads_30_dias||'--';document.getElementById('k_mql').textContent=(k.taxa_qualificacao||0)+'%';document.getElementById('s7_d30').textContent=k.deals_30_dias||'--';document.getElementById('s7_tq').textContent=(k.taxa_qualificacao||0)+'%';document.getElementById('p_fc').textContent=k.pipeline_valor?'R$'+(k.pipeline_valor/1000000).toFixed(1)+'M':'--';addLog('success','[S2-09] KPIs: '+k.leads_30_dias+' leads, '+k.taxa_qualificacao+'% qualificacao');}
+async function loadAnalytics(){addLog('info','[S2-09] Gerando analise Claude...');const data=await api('/api/analytics?tipo=analise');if(!data||!data.analise){addLog('err','Analytics: erro');return;}const a=data.analise;const html=`<div style="margin-bottom:9px;"><div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--green);margin-bottom:5px;">INSIGHTS</div>${(a.insights||[]).map((x,n)=>`<div style="padding:5px 0;border-bottom:1px solid var(--bd);font-size:11.5px;"><strong style="color:var(--blue);">${n+1}.</strong> ${x}</div>`).join('')}</div><div style="margin-bottom:9px;"><div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--red);margin-bottom:5px;">ALERTAS</div>${(a.alertas||[]).map(x=>`<div style="padding:5px 8px;background:var(--r2);border-radius:5px;font-size:11px;margin-bottom:4px;">! ${x}</div>`).join('')}</div><div style="padding:8px;background:var(--b2);border-radius:5px;font-size:11px;color:var(--blue);"><strong>Recomendacao:</strong> ${a.recomendacao_principal||''}</div>`;document.getElementById('dash-insights').innerHTML=html;document.getElementById('s2-insights').innerHTML=html;addLog('success','[S2-09] Analise concluida: '+a.tendencia);}
+async function runProspect(){const btn=document.getElementById('btnProspect');const st=document.getElementById('prospStatus');const res=document.getElementById('prospResult');btn.disabled=true;btn.textContent='Mapeando...';st.textContent='Executando';st.className='tag on';res.innerHTML='<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:10px;">Agente S2-02 buscando empresas...</div>';addLog('info','[S2-02] Iniciando: '+document.getElementById('pSetor').value);const data=await api('/api/prospect-scan','POST',{setor:document.getElementById('pSetor').value,regiao:document.getElementById('pRegiao').value,faturamento_min:document.getElementById('pFat').value,cargo_decisor:document.getElementById('pCargo').value,quantidade:parseInt(document.getElementById('pQtd').value),iniciar_outreach:false});if(!data||!data.empresas){st.textContent='Erro';st.className='tag hot';res.innerHTML='<div style="color:var(--red);font-size:11px;padding:10px;">Erro. Verifique variaveis de ambiente no Vercel.</div>';addLog('err','[S2-02] Erro no mapeamento');}else{st.textContent=data.total_mapeado+' empresas';st.className='tag live';res.innerHTML='<div style="margin-bottom:8px;font-size:11px;color:var(--t2);">'+data.total_mapeado+' empresas · Score A: '+data.score_a+'</div><div class="tw"><table><thead><tr><th>Empresa</th><th>Setor</th><th>Decisor</th><th>Score</th></tr></thead><tbody>'+(data.empresas||[]).map(e=>`<tr><td><strong>${e.empresa}</strong></td><td style="color:var(--t2);font-size:10px;">${e.setor||''}</td><td style="font-size:10px;">${e.decisor||'--'}</td><td><span class="tb ${e.score==='A'?'sa':e.score==='B'?'sb_':'sc'}">${e.score||'B'}</span></td></tr>`).join('')+'</tbody></table></div>';document.getElementById('kLeads').textContent=data.total_mapeado;addLog('success','[S2-02] '+data.total_mapeado+' empresas mapeadas, Score A: '+data.score_a);toast(data.total_mapeado+' empresas no HubSpot!','success');
 // AUTO-TRIGGER: gerar mensagens automaticamente apos prospeccao
 setTimeout(()=>{addLog('info','[AUTO] Gerando mensagens automaticamente para os leads mapeados...');autoGerarMensagens(filtro);},1500);}btn.disabled=false;btn.textContent='&#9654; Executar Agente';}
 async function runRfpMonitor(){const btn=document.getElementById('btnRfp');const res=document.getElementById('rfpResult');btn.disabled=true;btn.textContent='Varrendo...';res.innerHTML='<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:10px;">Agente S2-04 varrendo portais...</div>';addLog('info','[S2-04] Varrendo ComprasNet, SAP Ariba, Beehive...');const data=await api('/api/rfp-monitor','GET');if(!data){res.innerHTML='<div style="color:var(--red);font-size:11px;padding:10px;">Erro - configure CRON_SECRET</div>';addLog('err','[S2-04] Erro');}else{const rfps=data.rfps||[];document.getElementById('rfpCnt').textContent=rfps.length||'0';document.getElementById('kRfp').textContent=rfps.length||'0';if(rfps.length===0){res.innerHTML='<div style="color:var(--t2);font-size:11px;padding:10px;">Nenhum RFP novo. Proximo ciclo em 6h.</div>';}else{res.innerHTML='<div class="tw"><table><thead><tr><th>Empresa</th><th>Valor</th><th>Prazo</th></tr></thead><tbody>'+rfps.map(r=>`<tr><td><strong>${r.empresa}</strong></td><td style="font-family:var(--M);font-size:9.5px;color:var(--gold);">${r.valor}</td><td style="font-family:var(--M);font-size:9.5px;">${r.prazo}</td></tr>`).join('')+'</tbody></table></div>';addLog('success','[S2-04] '+rfps.length+' RFPs - notificacao WA enviada');toast(rfps.length+' RFPs identificados!','success');}}btn.disabled=false;btn.textContent='&#9654; Executar Agora';}
 async function genWA(){const btn=document.getElementById('btnWA');const out=document.getElementById('waOut');btn.disabled=true;btn.textContent='Gerando...';out.innerHTML='<span style="color:var(--blue);font-family:var(--M);font-size:11px;">Gerando mensagem...</span>';addLog('info','[S2-02+S7-05] Gerando WA: '+document.getElementById('wE').value);const data=await api('/api/claude','POST',{system:'Agente de WhatsApp da Atlantyx (BI, Dados, IA grandes empresas). Dados atrasados=perda financeira. Quick Wins em semanas. NUNCA emojis. Tom: '+document.getElementById('wT').value,messages:[{role:'user',content:'WA para Nome: '+document.getElementById('wD').value+' Empresa: '+document.getElementById('wE').value+' Cargo: '+document.getElementById('wC').value+' Setor: '+document.getElementById('wS').value+' Contexto: '+(document.getElementById('wX').value||'operacao complexa')+'. Max 5 linhas. Comeca pelo nome. Termina com pergunta. So o texto.'}],max_tokens:400});if(data&&data.content){const msg=data.content[0].text;out.textContent=msg;document.getElementById('wMetaC').textContent=msg.length;document.getElementById('wMetaS').textContent=document.getElementById('wX').value?'A':'B';document.getElementById('wMetaR').textContent='~'+Math.ceil(msg.split(' ').length/4)+'s';document.getElementById('waMeta').style.display='grid';document.getElementById('btnCpWA').disabled=false;addLog('success','[S7-05] Mensagem gerada: '+msg.length+' chars');const fu=await api('/api/claude','POST',{messages:[{role:'user',content:'Follow-up 3 linhas para '+document.getElementById('wD').value+' da '+document.getElementById('wE').value+', 48h sem resposta. Original: "'+msg.substring(0,100)+'...". So o texto.'}],max_tokens:200});if(fu?.content){document.getElementById('fuOut').textContent=fu.content[0].text;document.getElementById('fuPanel').style.display='block';}}else{out.innerHTML='<span style="color:var(--red);">Erro API Claude - verifique ANTHROPIC_API_KEY</span>';addLog('err','[Claude] Erro');}btn.disabled=false;btn.textContent='&#10022; Gerar com IA';}
 function cpWA(){navigator.clipboard.writeText(document.getElementById('waOut').textContent);toast('Copiado!','success');}
 function clearWA(){['wE','wD','wX'].forEach(id=>document.getElementById(id).value='');document.getElementById('waOut').innerHTML='<span class="msg-ph">Preencha os dados e clique em Gerar.</span>';document.getElementById('waMeta').style.display='none';document.getElementById('fuPanel').style.display='none';document.getElementById('btnCpWA').disabled=true;}
-async function runBatch(){const btn=document.getElementById('btnBatch');const st=document.getElementById('batchStatus');const res=document.getElementById('batchResult');const log=document.getElementById('batchLog');let leads;try{leads=JSON.parse(document.getElementById('batchLeads').value);}catch{toast('JSON invalido','error');return;}if(!leads.length){toast('Lista vazia','error');return;}btn.disabled=true;btn.textContent='Enviando...';st.textContent='Enviando';st.className='tag on';res.innerHTML='<div style="color:var(--blue);font-size:11px;">Iniciando outreach '+leads.length+' leads...</div>';log.innerHTML='';addLog('info','[S7-05] Outreach lote: '+leads.length+' leads');const data=await api('/api/outreach-batch','POST',{leads,tom:document.getElementById('batchTom').value,delay_segundos:parseInt(document.getElementById('batchDelay').value)});if(data){st.textContent=data.enviados+'/'+data.total;st.className=data.erros>0?'tag gd':'tag live';res.innerHTML='<div class="kg k3" style="margin-bottom:10px;"><div class="kpi gn"><div class="kl">Enviados</div><div class="kv">'+data.enviados+'</div></div><div class="kpi rd" style=""><div class="kl">Erros</div><div class="kv">'+data.erros+'</div></div><div class="kpi bl"><div class="kl">Total</div><div class="kv">'+data.total+'</div></div></div>';(data.resultados||[]).forEach(r=>{log.insertAdjacentHTML('beforeend','<div class="le '+(r.status==='ENVIADO'?'success':r.status==='SEM_TELEFONE'?'warn':'err')+'">'+r.nome+' — '+r.status+'</div>');});addLog('success','[S7-05] Outreach: '+data.enviados+' enviados');toast(data.enviados+' mensagens enviadas!','success');}btn.disabled=false;btn.textContent='&#9654; Executar Outreach em Lote';}
-async function meetAction(action){const st=document.getElementById('meetStatus');const res=document.getElementById('meetResult');st.textContent='Executando...';st.className='tag on';res.innerHTML='<span style="color:var(--blue);font-family:var(--M);">Processando...</span>';addLog('info','[S7-07/08] '+action+': '+document.getElementById('mComp').value);const data=await api('/api/meeting-schedule','POST',{action,lead_name:document.getElementById('mName').value,lead_company:document.getElementById('mComp').value,lead_cargo:document.getElementById('mCargo').value,lead_phone:document.getElementById('mPhone').value,lead_setor:document.getElementById('mSetor').value,data_hora:document.getElementById('mData').value,deal_id:document.getElementById('mDeal').value||null});if(data){st.textContent='Concluido';st.className='tag live';if(action==='gerar_briefing'&&data.briefing){res.textContent=data.briefing;}else{res.innerHTML='<div style="color:var(--green);font-size:12px;margin-bottom:8px;">✓ '+(action==='propor_horarios'?'Horarios enviados via WA':action==='confirmar'?'Reuniao confirmada!':'Briefing gerado e enviado.')+'</div>'+(data.opcoes?'<div style="font-size:11px;color:var(--t2);">'+data.opcoes.join('<br>')+'</div>':'');}addLog('success','[S7-07] '+action+' - '+document.getElementById('mComp').value);toast('Concluido: '+action,'success');}else{st.textContent='Erro';st.className='tag hot';res.innerHTML='<span style="color:var(--red);">Erro - verifique variaveis de ambiente</span>';}}
+async function runBatch(){const btn=document.getElementById('btnBatch');const st=document.getElementById('batchStatus');const res=document.getElementById('batchResult');const log=document.getElementById('batchLog');let leads;try{leads=JSON.parse(document.getElementById('batchLeads').value);}catch{toast('JSON invalido','error');return;}if(!leads.length){toast('Lista vazia','error');return;}btn.disabled=true;btn.textContent='Enviando...';st.textContent='Enviando';st.className='tag on';res.innerHTML='<div style="color:var(--blue);font-size:11px;">Iniciando outreach '+leads.length+' leads...</div>';log.innerHTML='';addLog('info','[S7-05] Outreach lote: '+leads.length+' leads');const data=await api('/api/outreach-batch','POST',{leads,tom:document.getElementById('batchTom').value,delay_segundos:parseInt(document.getElementById('batchDelay').value)});if(data){st.textContent=data.enviados+'/'+data.total;st.className=data.erros>0?'tag gd':'tag live';res.innerHTML='<div class="kg k3" style="margin-bottom:10px;"><div class="kpi gn"><div class="kl">Enviados</div><div class="kv">'+data.enviados+'</div></div><div class="kpi rd" style=""><div class="kl">Erros</div><div class="kv">'+data.erros+'</div></div><div class="kpi bl"><div class="kl">Total</div><div class="kv">'+data.total+'</div></div></div>';(data.resultados||[]).forEach(r=>{log.insertAdjacentHTML('beforeend','<div class="le '+(r.status==='ENVIADO'?'success':r.status==='SEM_TELEFONE'?'warn':'err')+'">'+r.nome+' -- '+r.status+'</div>');});addLog('success','[S7-05] Outreach: '+data.enviados+' enviados');toast(data.enviados+' mensagens enviadas!','success');}btn.disabled=false;btn.textContent='&#9654; Executar Outreach em Lote';}
+async function meetAction(action){const st=document.getElementById('meetStatus');const res=document.getElementById('meetResult');st.textContent='Executando...';st.className='tag on';res.innerHTML='<span style="color:var(--blue);font-family:var(--M);">Processando...</span>';addLog('info','[S7-07/08] '+action+': '+document.getElementById('mComp').value);const data=await api('/api/meeting-schedule','POST',{action,lead_name:document.getElementById('mName').value,lead_company:document.getElementById('mComp').value,lead_cargo:document.getElementById('mCargo').value,lead_phone:document.getElementById('mPhone').value,lead_setor:document.getElementById('mSetor').value,data_hora:document.getElementById('mData').value,deal_id:document.getElementById('mDeal').value||null});if(data){st.textContent='Concluido';st.className='tag live';if(action==='gerar_briefing'&&data.briefing){res.textContent=data.briefing;}else{res.innerHTML='<div style="color:var(--green);font-size:12px;margin-bottom:8px;">OK '+(action==='propor_horarios'?'Horarios enviados via WA':action==='confirmar'?'Reuniao confirmada!':'Briefing gerado e enviado.')+'</div>'+(data.opcoes?'<div style="font-size:11px;color:var(--t2);">'+data.opcoes.join('<br>')+'</div>':'');}addLog('success','[S7-07] '+action+' - '+document.getElementById('mComp').value);toast('Concluido: '+action,'success');}else{st.textContent='Erro';st.className='tag hot';res.innerHTML='<span style="color:var(--red);">Erro - verifique variaveis de ambiente</span>';}}
 const S2A=[{n:'S2-01',nm:'Inteligencia de Mercado',d:'Varre portais e plataformas identificando RFPs e oportunidades aderentes ao portfolio.',on:true,ep:'/api/rfp-monitor'},{n:'S2-02',nm:'Mapeamento de Contas',d:'Mapeia empresas-alvo pelo ICP com score A/B/C, decisores e sinal de compra. Cria no HubSpot.',on:true,ep:'/api/prospect-scan'},{n:'S2-03',nm:'Cadastro em Portais',d:'Analisa e instrui cadastro da Atlantyx como fornecedora em portais de grandes empresas.',on:false,ep:'/api/portal-cadastro'},{n:'S2-04',nm:'Monitoramento de RFPs',d:'Cron automatico 6h. Varre ComprasNet, SAP Ariba, Beehive e portais proprietarios.',on:true,ep:'/api/rfp-monitor'},{n:'S2-05',nm:'Campanhas Pagas',d:'Cria e otimiza campanhas Google Ads e LinkedIn Ads com gestao autonoma de ROAS.',on:false,ep:null},{n:'S2-06',nm:'Conteudo e Autoridade',d:'Produz artigos, cases e whitepapers posicionando a Atlantyx nos setores do ICP.',on:false,ep:null},{n:'S2-07',nm:'SEO',d:'Audita posicionamento organico. Monitora Core Web Vitals, Domain Authority e backlinks.',on:false,ep:null},{n:'S2-08',nm:'Nutricao de Leads',d:'Executa sequencias de email personalizadas por cargo, setor e momento da jornada.',on:false,ep:null},{n:'S2-09',nm:'Analytics',d:'Monitora KPIs em tempo real e gera analise com insights acionaveis via Claude IA.',on:false,ep:'/api/analytics'}];
 const S7A=[{n:'S7-01',nm:'Prospeccao Ativa',d:'Recebe empresas do S2-02 e monta dossie de abordagem com perfil, dores e historico.',on:true,ep:'/api/prospect-scan'},{n:'S7-02',nm:'Identificacao de RFPs',d:'Analisa compatibilidade de RFPs e estima probabilidade de vitoria.',on:false,ep:null},{n:'S7-03',nm:'Resposta a RFPs',d:'Com aprovacao humana, elabora resposta tecnica e comercial completa ao edital.',on:false,ep:null},{n:'S7-04',nm:'Mapeamento de Decisores',d:'Identifica C-levels com cargo, LinkedIn, canal recomendado e melhor angulo.',on:true,ep:'/api/decisor-map'},{n:'S7-05',nm:'Outreach via WhatsApp',d:'Gera e envia mensagens personalizadas. Monitora resposta. Follow-up automatico 48h.',on:true,ep:'/api/outreach-batch'},{n:'S7-06',nm:'Outreach via Ligacao',d:'Gera scripts personalizados e agenda ligacoes com Voz IA.',on:false,ep:null},{n:'S7-07',nm:'Agendamento de Reunioes',d:'Propoe horarios, confirma reuniao, envia convite e registra no HubSpot.',on:true,ep:'/api/meeting-schedule'},{n:'S7-08',nm:'Preparacao de Reuniao',d:'24h antes gera dossie: perfil, dores, produtos aderentes, perguntas e objecoes.',on:false,ep:'/api/meeting-schedule'},{n:'S7-09',nm:'Pipeline',d:'Monitora deals parados e sugere acoes de desbloqueio.',on:false,ep:null},{n:'S7-10',nm:'Propostas',d:'Gera propostas comerciais com escopo, prazo e precificacao.',on:false,ep:null},{n:'S7-11',nm:'Forecast',d:'Calcula previsao semana/mes/trimestre com cenarios P/R/O.',on:false,ep:null},{n:'S7-12',nm:'Expansao',d:'Identifica upsell e cross-sell na carteira ativa.',on:false,ep:null}];
 function renderAg(ag,id){document.getElementById(id).innerHTML=ag.map((a,i)=>`<div class="ac ${a.on?'on':''}"><div class="ac-n">${a.n}</div><div class="ac-nm">${a.nm}</div><div class="ac-d">${a.d}</div><div class="ac-f"><div class="ac-st" style="color:${a.on?'var(--green)':'var(--gold)'}"><span style="width:5px;height:5px;border-radius:50%;background:${a.on?'var(--green)':'var(--gold)'};display:inline-block;${a.on?'animation:pulse 2s infinite':''}"></span>${a.on?'Ativo':'Standby'}</div><div style="display:flex;gap:4px;align-items:center;">${a.ep?`<button class="btn btn-g" style="font-size:8px;padding:2px 5px;" onclick="testEP('${a.ep}','${a.nm}')">&#9654;</button>`:''}<div class="tgl ${a.on?'on':''}" onclick="togAg('${id}',${i})"></div></div></div></div>`).join('');}
@@ -918,7 +918,7 @@ function togAg(g,i){const ag=g==='s2-grid'?S2A:S7A;ag[i].on=!ag[i].on;renderAg(a
 async function testEP(ep,nome){addLog('info','[Teste] '+ep+'...');const r=await fetch(ep);addLog(r.status<500?'success':'err','[Teste] '+nome+' HTTP '+r.status+(r.status<500?' OK':' ERRO'));toast(nome+' '+(r.status<500?'OK':'ERRO'),r.status<500?'success':'error');}
 async function refreshAll(){addLog('info','[Sistema] Atualizando...');await Promise.all([loadPipeline(),loadKPIs()]);}
 
-// ── WA BATCH GENERATOR — TOTALMENTE AUTONOMO ─────────────────────────────────
+//    WA BATCH GENERATOR -- TOTALMENTE AUTONOMO                                  
 let batchMensagens = [];
 let batchLoading = false;
 
@@ -964,7 +964,7 @@ async function gerarLote(enviar = false, filtroOverride = null) {
   if (data.aviso) {
     if (st) { st.textContent = 'Sem leads'; st.style.background = 'var(--go2)'; st.style.color = 'var(--gold)'; }
     if (title) title.textContent = 'Nenhum lead encontrado';
-    if (desc) desc.textContent = data.aviso + ' — Execute a prospecção S2-02 primeiro.';
+    if (desc) desc.textContent = data.aviso + ' -- Execute a prospecção S2-02 primeiro.';
     addLog('warn', '[S2-02+S7-05] ' + data.aviso);
     document.getElementById('waStats').style.display = 'none';
     document.getElementById('waBatchPanel').style.display = 'none';
@@ -987,13 +987,13 @@ async function gerarLote(enviar = false, filtroOverride = null) {
   // Status
   if (enviar) {
     if (st) { st.textContent = enviados + '/' + total + ' enviados'; st.style.background = 'var(--g2)'; st.style.color = 'var(--green)'; }
-    if (title) title.textContent = 'Outreach concluido — ' + enviados + ' mensagens enviadas';
+    if (title) title.textContent = 'Outreach concluido -- ' + enviados + ' mensagens enviadas';
     if (desc) desc.textContent = 'Follow-ups de 48h programados automaticamente para os enviados.';
     addLog('success', '[S7-05] ' + enviados + ' mensagens enviadas via Z-API');
     toast(enviados + ' mensagens enviadas com sucesso!', 'success');
   } else {
     if (st) { st.textContent = comMsg + ' prontas'; st.style.background = 'var(--g2)'; st.style.color = 'var(--green)'; }
-    if (title) title.textContent = 'Agente gerou ' + comMsg + ' mensagens — aguardando sua aprovacao';
+    if (title) title.textContent = 'Agente gerou ' + comMsg + ' mensagens -- aguardando sua aprovacao';
     if (desc) desc.textContent = 'Revise, edite se quiser, aprove individualmente ou tudo de uma vez.';
     if (btnEnv) { btnEnv.disabled = false; }
     addLog('success', '[S2-02+S7-05] ' + comMsg + ' mensagens geradas automaticamente em lote');
@@ -1035,7 +1035,7 @@ function renderBatchList() {
   list.innerHTML = actionBar + batchMensagens.map((m, i) => {
     const scoreColor = m.score === 'A' ? 'var(--green)' : m.score === 'B' ? 'var(--blue)' : 'var(--t3)';
     const statusColor = m.enviado ? 'var(--green)' : m.erro ? 'var(--red)' : 'var(--gold)';
-    const statusTxt = m.enviado ? '✓ Enviado' : m.erro ? '✗ Erro' : '● Aguardando';
+    const statusTxt = m.enviado ? 'OK Enviado' : m.erro ? 'x Erro' : 'o Aguardando';
     const hasPhone = !!m.phone;
 
     return `
@@ -1055,7 +1055,7 @@ function renderBatchList() {
           ${!m.enviado && !m.recusado ? `<button class="btn btn-rd" style="font-size:8.5px;padding:3px 7px;" onclick="recusarUm(${i},event)">&#10005;</button>` : ''}
           ${!hasPhone ? '<span style="font-family:var(--M);font-size:8px;color:var(--red);">Sem tel.</span>' : ''}
         </div>
-        <span style="color:var(--t3);font-size:10px;" id="chevron-${i}">▼</span>
+        <span style="color:var(--t3);font-size:10px;" id="chevron-${i}"> </span>
       </div>
 
       <!-- CORPO EXPANDIDO -->
@@ -1065,12 +1065,12 @@ function renderBatchList() {
           <!-- MENSAGEM PRINCIPAL -->
           <div>
             <div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--or);margin-bottom:6px;">
-              1º CONTATO — Mensagem Principal
+              1º CONTATO -- Mensagem Principal
             </div>
             <div style="background:var(--bg3);border:1px solid rgba(240,112,48,.2);border-radius:6px;padding:11px;font-size:12px;line-height:1.7;white-space:pre-wrap;min-height:100px;" 
                  contenteditable="true" 
                  id="msg-${i}"
-                 onblur="salvarEdicao(${i}, 'mensagem', this.textContent)">${m.mensagem || '⚠ Erro ao gerar mensagem'}</div>
+                 onblur="salvarEdicao(${i}, 'mensagem', this.textContent)">${m.mensagem || '! Erro ao gerar mensagem'}</div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
               <span style="font-family:var(--M);font-size:8px;color:var(--t3);">${(m.mensagem||'').length} chars</span>
               <button class="btn btn-g" style="font-size:8.5px;padding:2px 7px;" onclick="copiarMsg(${i}, 'mensagem')">Copiar</button>
@@ -1080,19 +1080,19 @@ function renderBatchList() {
           <!-- FOLLOW-UP 48H -->
           <div>
             <div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--blue);margin-bottom:6px;">
-              FOLLOW-UP AUTOMATICO — 48h sem resposta
+              FOLLOW-UP AUTOMATICO -- 48h sem resposta
             </div>
             <div style="background:var(--bg3);border:1px solid rgba(79,124,255,.2);border-radius:6px;padding:11px;font-size:12px;line-height:1.7;white-space:pre-wrap;min-height:100px;" 
                  contenteditable="true"
                  id="fu-${i}"
-                 onblur="salvarEdicao(${i}, 'followup', this.textContent)">${m.followup || '⚠ Follow-up nao gerado'}</div>
+                 onblur="salvarEdicao(${i}, 'followup', this.textContent)">${m.followup || '! Follow-up nao gerado'}</div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
               <span style="font-family:var(--M);font-size:8px;color:var(--t3);">${(m.followup||'').length} chars · envia automatico</span>
               <button class="btn btn-g" style="font-size:8.5px;padding:2px 7px;" onclick="copiarMsg(${i}, 'followup')">Copiar</button>
             </div>
           </div>
         </div>
-        ${m.phone ? `<div style="margin-top:8px;font-family:var(--M);font-size:9px;color:var(--t3);">WhatsApp: +${m.phone} · ${m.canal || 'WHATSAPP'}</div>` : '<div style="margin-top:6px;font-size:10px;color:var(--red);">Sem telefone — nao sera enviado via Z-API</div>'}
+        ${m.phone ? `<div style="margin-top:8px;font-family:var(--M);font-size:9px;color:var(--t3);">WhatsApp: +${m.phone} · ${m.canal || 'WHATSAPP'}</div>` : '<div style="margin-top:6px;font-size:10px;color:var(--red);">Sem telefone -- nao sera enviado via Z-API</div>'}
       </div>
     </div>`;
   }).join('');
@@ -1103,13 +1103,13 @@ function toggleItem(i) {
   const chv = document.getElementById(`chevron-${i}`);
   const aberto = body.style.display !== 'none';
   body.style.display = aberto ? 'none' : 'block';
-  chv.textContent = aberto ? '▼' : '▲';
+  chv.textContent = aberto ? ' ' : ' ';
 }
 
 function expandAll() {
   batchMensagens.forEach((_, i) => {
     document.getElementById(`item-body-${i}`).style.display = 'block';
-    document.getElementById(`chevron-${i}`).textContent = '▲';
+    document.getElementById(`chevron-${i}`).textContent = ' ';
   });
 }
 
@@ -1141,23 +1141,23 @@ async function enviarUm(i, evt) {
   if (data && data.enviados > 0) {
     batchMensagens[i].enviado = true;
     document.getElementById(`ws_enviados`).textContent = batchMensagens.filter(x => x.enviado).length;
-    btn.textContent = '✓ Enviado'; btn.style.color = 'var(--green)';
+    btn.textContent = 'OK Enviado'; btn.style.color = 'var(--green)';
     addLog('success', `[S7-05] Enviado: ${m.name} (${m.company})`);
     toast(`Enviado para ${m.name}!`, 'success');
   } else {
-    btn.disabled = false; btn.textContent = '▶ Enviar';
+    btn.disabled = false; btn.textContent = '> Enviar';
     addLog('err', `[S7-05] Erro ao enviar para ${m.name}`);
     toast('Erro no envio', 'error');
   }
 }
 
 
-// ── APROVACAO / REJEICAO INDIVIDUAL E EM LOTE ────────────────────────────────
+//    APROVACAO / REJEICAO INDIVIDUAL E EM LOTE                                 
 
 async function aprovarUm(i, evt) {
   if (evt) evt.stopPropagation();
   const m = batchMensagens[i];
-  if (!m || !m.phone || !m.mensagem) { toast('Sem telefone — nao e possivel enviar', 'error'); return; }
+  if (!m || !m.phone || !m.mensagem) { toast('Sem telefone -- nao e possivel enviar', 'error'); return; }
 
   const btn = evt?.target;
   if (btn) { btn.disabled = true; btn.textContent = '...'; }
@@ -1185,9 +1185,9 @@ async function aprovarUm(i, evt) {
     // Atualiza visualmente o card
     renderCardStatus(i, 'enviado');
   } else {
-    if (btn) { btn.disabled = false; btn.textContent = '✓ Aprovar'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'OK Aprovar'; }
     addLog('err', '[S7-05] Erro ao enviar para ' + m.name);
-    toast('Erro no envio — tente novamente', 'error');
+    toast('Erro no envio -- tente novamente', 'error');
   }
 }
 
@@ -1229,14 +1229,14 @@ async function aprovarTodos() {
         batchMensagens[i].enviado = true;
         enviados++;
         renderCardStatus(i, 'enviado');
-        addLog('success', '[S7-05] ' + enviados + '/' + total + ' — ' + m.name);
+        addLog('success', '[S7-05] ' + enviados + '/' + total + ' -- ' + m.name);
         document.getElementById('waLoteStatus').textContent = 'Enviando ' + enviados + '/' + total + '...';
         document.getElementById('ws_enviados').textContent = batchMensagens.filter(x => x.enviado).length;
         // Delay entre envios
         if (enviados < total) await new Promise(r => setTimeout(r, 30000));
       }
     } catch(e) {
-      addLog('err', '[S7-05] Erro: ' + m.name + ' — ' + e.message);
+      addLog('err', '[S7-05] Erro: ' + m.name + ' -- ' + e.message);
     }
   }
 
@@ -1270,7 +1270,7 @@ function renderCardStatus(i, status) {
   const statusSpans = header.querySelectorAll('span');
   statusSpans.forEach(s => {
     if (s.textContent.includes('Aguardando') || s.textContent.includes('Enviado') || s.textContent.includes('Recusado') || s.textContent.includes('Erro')) {
-      s.textContent = status === 'enviado' ? '✓ Enviado' : status === 'recusado' ? '✗ Recusado' : s.textContent;
+      s.textContent = status === 'enviado' ? 'OK Enviado' : status === 'recusado' ? 'x Recusado' : s.textContent;
       s.style.color = status === 'enviado' ? 'var(--green)' : status === 'recusado' ? 'var(--red)' : s.style.color;
     }
   });
@@ -1299,7 +1299,7 @@ function fecharModal() {
   document.getElementById('confirmModal').style.display = 'none';
 }
 
-// ── WA INDIVIDUAL (mantida para uso em outros lugares) ───────────────────────
+//    WA INDIVIDUAL (mantida para uso em outros lugares)                        
 async function genWA() {
   const btn = document.getElementById('btnWA');
   if (!btn) return;
@@ -1318,13 +1318,13 @@ async function genWA() {
     document.getElementById('waMeta').style.display = 'grid';
     document.getElementById('btnCpWA').disabled = false;
   }
-  btn.disabled = false; btn.textContent = '✦ Gerar com IA';
+  btn.disabled = false; btn.textContent = '  Gerar com IA';
 }
 function cpWA() { const el = document.getElementById('waOut'); if(el) { navigator.clipboard.writeText(el.textContent); toast('Copiado!', 'success'); } }
 function clearWA() { ['wE','wD','wX'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; }); }
 
 
-// ── S1 · PLANEJAMENTO ESTRATÉGICO ────────────────────────────────────────────
+//    S1 · PLANEJAMENTO ESTRATÉGICO                                             
 const S1_PIPELINE = []; // armazena ideias localmente
 const S1_ETAPAS = ['Recebida','Em Análise','Aprovada Squad','Aguardando Fundador','Aprovada','Em Dev','Lançada'];
 const S1_AGENTS = [
@@ -1361,7 +1361,7 @@ function initS1() {
     fluxo.innerHTML = etapas.map((e, i) => `
       <div style="flex:0 0 auto;display:flex;align-items:center;">
         <div style="background:${i < 2 ? 'rgba(34,211,163,.15)' : 'var(--bg4)'};border:1px solid ${i < 2 ? 'rgba(34,211,163,.3)' : 'var(--bd)'};border-radius:5px;padding:5px 8px;white-space:nowrap;font-family:var(--M);font-size:8px;color:${i < 2 ? 'var(--green)' : 'var(--t2)'};">${e}</div>
-        ${i < etapas.length - 1 ? '<span style="color:var(--t3);font-size:9px;padding:0 2px;">→</span>' : ''}
+        ${i < etapas.length - 1 ? '<span style="color:var(--t3);font-size:9px;padding:0 2px;">-></span>' : ''}
       </div>`).join('');
   }
 
@@ -1386,7 +1386,7 @@ function renderS1Kanban() {
         <div style="font-size:11px;font-weight:600;margin-bottom:2px;">${id.titulo}</div>
         <div style="font-family:var(--M);font-size:8px;color:${id.urgencia==='Alta'?'var(--red)':id.urgencia==='Média'?'var(--gold)':'var(--t3)'};">${id.urgencia || ''}</div>
       </div>`).join('')}
-      ${!ideias.length ? '<div style="font-size:9px;color:var(--t3);padding:4px 0;">—</div>' : ''}
+      ${!ideias.length ? '<div style="font-size:9px;color:var(--t3);padding:4px 0;">--</div>' : ''}
     </div>`;
   }).join('');
 
@@ -1408,7 +1408,7 @@ async function captarIdeia() {
   if (!titulo) { toast('Informe o título da ideia', 'error'); return; }
 
   const btn = document.getElementById('btnCaptarIdeia');
-  btn.disabled = true; btn.textContent = '⏳ Captando...';
+  btn.disabled = true; btn.textContent = '  Captando...';
   addLog('info', '[S1-01] Captando ideia: ' + titulo);
 
   const data = await api('/api/s1-strategy', 'POST', { action: 'captar_ideia', titulo, descricao: desc, origem, categoria: cat });
@@ -1430,7 +1430,7 @@ async function captarIdeia() {
     addLog('err', '[S1-01] Erro ao captar');
   }
 
-  btn.disabled = false; btn.textContent = '✦ Captar e Iniciar Análise Completa com IA';
+  btn.disabled = false; btn.textContent = '  Captar e Iniciar Análise Completa com IA';
 }
 
 async function rodarAnaliseCompleta(ideia) {
@@ -1455,7 +1455,7 @@ async function rodarAnaliseCompleta(ideia) {
 
     // Show loading
     addLog('info', '[' + step.label + '] Analisando...');
-    if (result) result.innerHTML = html + `<div style="display:flex;align-items:center;gap:8px;padding:10px 0;color:var(--blue);font-family:var(--M);font-size:11px;"><span style="animation:spin 1s linear infinite;display:inline-block;">⟳</span> ${step.label}...</div>`;
+    if (result) result.innerHTML = html + `<div style="display:flex;align-items:center;gap:8px;padding:10px 0;color:var(--blue);font-family:var(--M);font-size:11px;"><span style="animation:spin 1s linear infinite;display:inline-block;"> </span> ${step.label}...</div>`;
 
     const payload = { action: step.action, titulo: ideia.titulo, descricao: ideia.desc || '', problema: ideia.raw?.problema_que_resolve || '' };
     if (step.action === 'parecer_comite') {
@@ -1470,7 +1470,7 @@ async function rodarAnaliseCompleta(ideia) {
 
       // Render step result
       const r = data[step.field];
-      const nota = r?.nota_geral ?? r?.nota_final_squad ?? '—';
+      const nota = r?.nota_geral ?? r?.nota_final_squad ?? '--';
       const rec = r?.recomendacao ?? r?.parecer ?? r?.recomendacao_financeira ?? '';
       const cor = rec.includes('Aprovado') || rec.includes('Avançar') ? 'var(--green)' : rec.includes('Ressalvas') ? 'var(--gold)' : rec.includes('Rejeitar') || rec.includes('No-Go') || rec.includes('Arquivar') ? 'var(--red)' : 'var(--blue)';
 
@@ -1479,7 +1479,7 @@ async function rodarAnaliseCompleta(ideia) {
         <span style="font-family:var(--M);font-size:12px;font-weight:700;">${nota}/10</span>
         <span style="font-family:var(--M);font-size:9px;padding:2px 8px;border-radius:4px;color:${cor};background:${cor.replace(')',', 0.1)')};">${rec}</span>
       </div>`;
-      addLog('success', '[' + step.label.split('·')[0].trim() + '] Nota: ' + nota + ' — ' + rec);
+      addLog('success', '[' + step.label.split('·')[0].trim() + '] Nota: ' + nota + ' -- ' + rec);
     }
   }
 
@@ -1492,15 +1492,15 @@ async function rodarAnaliseCompleta(ideia) {
 
     const corFinal = aprovado ? 'var(--green)' : parecer.parecer?.includes('Ressalvas') ? 'var(--gold)' : 'var(--red)';
     html += `<div style="background:${corFinal.replace(')',', 0.08)')};border:1px solid ${corFinal.replace(')',', 0.2)')};border-radius:7px;padding:14px;margin-top:10px;">
-      <div style="font-family:var(--H);font-size:14px;font-weight:700;color:${corFinal};margin-bottom:6px;">Parecer Final: ${parecer.parecer} — ${parecer.nota_final_squad}/10</div>
+      <div style="font-family:var(--H);font-size:14px;font-weight:700;color:${corFinal};margin-bottom:6px;">Parecer Final: ${parecer.parecer} -- ${parecer.nota_final_squad}/10</div>
       <div style="font-size:12px;color:var(--t1);line-height:1.7;margin-bottom:10px;">${parecer.resumo_executivo_fundador || ''}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;">
-        <div><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:4px;">PONTOS FORTES</div>${(parecer.pontos_fortes||[]).map(p=>'• '+p).join('<br>')}</div>
-        <div><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--red);margin-bottom:4px;">RISCOS</div>${(parecer.riscos_criticos||[]).map(r=>'• '+r).join('<br>')}</div>
+        <div><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:4px;">PONTOS FORTES</div>${(parecer.pontos_fortes||[]).map(p=>'- '+p).join('<br>')}</div>
+        <div><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--red);margin-bottom:4px;">RISCOS</div>${(parecer.riscos_criticos||[]).map(r=>'- '+r).join('<br>')}</div>
       </div>
       ${aprovado ? `<div style="margin-top:10px;display:flex;gap:8px;">
-        <button class="btn btn-gn" style="flex:1;" onclick="notificarFundadorS1('${ideia.titulo}')">📱 Notificar Fundador</button>
-        <button class="btn btn-g" style="flex:1;" onclick="fundadorDecide('APROVADO')">→ Ir para Caixa do Fundador</button>
+        <button class="btn btn-gn" style="flex:1;" onclick="notificarFundadorS1('${ideia.titulo}')">  Notificar Fundador</button>
+        <button class="btn btn-g" style="flex:1;" onclick="fundadorDecide('APROVADO')">-> Ir para Caixa do Fundador</button>
       </div>` : `<div style="margin-top:10px;font-size:11px;color:var(--red);">Ideia arquivada com justificativa. Fundador será notificado.</div>`}
     </div>`;
 
@@ -1509,12 +1509,12 @@ async function rodarAnaliseCompleta(ideia) {
     if (aprovado) {
       ideia.stage = 'Aguardando Fundador';
       renderS1Kanban();
-      addLog('success', '[S1-05] Análise concluída — ' + parecer.parecer + ' — Notificando fundador');
+      addLog('success', '[S1-05] Análise concluída -- ' + parecer.parecer + ' -- Notificando fundador');
       toast('Análise completa! Squad aprova. Notificando fundador para decisão final.', 'success');
       // Auto-notificar
       await notificarFundadorS1(ideia.titulo, parecer);
     } else {
-      addLog('warn', '[S1-05] Ideia rejeitada pelo comitê — arquivada');
+      addLog('warn', '[S1-05] Ideia rejeitada pelo comitê -- arquivada');
       toast('Comitê rejeita. Ideia arquivada com justificativa.', 'info');
     }
   }
@@ -1532,7 +1532,7 @@ async function notificarFundadorS1(titulo, parecer) {
 async function fundadorDecide(decisao) {
   const titulo = document.getElementById('s1DecTitulo')?.value || S1_PIPELINE.find(i => i.stage === 'Aguardando Fundador')?.titulo || 'Produto';
   const desc = document.getElementById('s1DecDesc')?.value || '';
-  addLog('info', '[FUNDADOR] Decisão: ' + decisao + ' — ' + titulo);
+  addLog('info', '[FUNDADOR] Decisão: ' + decisao + ' -- ' + titulo);
 
   const data = await api('/api/s1-strategy', 'POST', { action: 'fundador_decide', titulo, decisao, justificativa: '' });
 
@@ -1545,12 +1545,12 @@ async function fundadorDecide(decisao) {
     const ideia = S1_PIPELINE.find(i => i.titulo.includes(titulo.substring(0,15)));
     if (ideia) { ideia.stage = 'Aprovada'; renderS1Kanban(); }
 
-    if (msg) msg.textContent = '✓ APROVADO
+    if (msg) msg.textContent = 'OK APROVADO
 
 ' + titulo + '
 
 Agente S1-07 iniciando Briefing Técnico para o Squad de Dev S6...';
-    addLog('success', '[FUNDADOR] APROVADO: ' + titulo + ' → Iniciando Handoff Dev');
+    addLog('success', '[FUNDADOR] APROVADO: ' + titulo + ' -> Iniciando Handoff Dev');
     toast('Aprovado! Agente S1-07 criando briefing técnico.', 'success');
 
     // Auto-handoff
@@ -1560,7 +1560,7 @@ Agente S1-07 iniciando Briefing Técnico para o Squad de Dev S6...';
         const b = handoffData.briefing;
         const ideia2 = S1_PIPELINE.find(i => i.titulo.includes(titulo.substring(0,15)));
         if (ideia2) { ideia2.stage = 'Em Dev'; renderS1Kanban(); }
-        msg.textContent = '✓ Handoff para Dev Concluído!
+        msg.textContent = 'OK Handoff para Dev Concluído!
 
 Épico: ' + b.epico_nome + '
 Prazo: ' + b.prazo_sugerido + '
@@ -1575,7 +1575,7 @@ Escopo:
     }, 1500);
 
   } else {
-    if (msg) msg.textContent = '✗ REJEITADO
+    if (msg) msg.textContent = 'x REJEITADO
 
 ' + titulo + '
 
@@ -1600,7 +1600,7 @@ async function loadOKR() {
 
     if (id === 's1OkrDash') {
       el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-        <span style="font-family:var(--M);font-size:11px;font-weight:600;color:${corSaude};">● ${okr.saude_geral}</span>
+        <span style="font-family:var(--M);font-size:11px;font-weight:600;color:${corSaude};">o ${okr.saude_geral}</span>
         <span style="font-family:var(--M);font-size:9px;color:var(--t2);">${okr.trimestre}</span>
       </div>` + (okr.objetivos||[]).map(o => `<div style="padding:5px 0;border-bottom:1px solid var(--bd);">
         <div style="display:flex;justify-content:space-between;font-size:11px;">
@@ -1611,7 +1611,7 @@ async function loadOKR() {
       </div>`).join('');
     } else {
       el.innerHTML = `<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
-        <span style="font-family:var(--H);font-size:18px;font-weight:700;color:${corSaude};">● ${okr.saude_geral}</span>
+        <span style="font-family:var(--H);font-size:18px;font-weight:700;color:${corSaude};">o ${okr.saude_geral}</span>
         <span style="font-size:11px;color:var(--t2);">${okr.trimestre}</span>
       </div>` + (okr.objetivos||[]).map(o => `
         <div style="background:var(--bg4);border-radius:7px;padding:12px;margin-bottom:8px;">
@@ -1621,12 +1621,12 @@ async function loadOKR() {
           </div>
           ${(o.krs||[]).map(kr => `<div style="padding:5px 0;border-top:1px solid var(--bd);">
             <div style="display:flex;align-items:center;gap:8px;font-size:11px;">
-              <span style="font-size:12px;">${kr.semaforo==='verde'?'🟢':kr.semaforo==='amarelo'?'🟡':'🔴'}</span>
+              <span style="font-size:12px;">${kr.semaforo==='verde'?' ':kr.semaforo==='amarelo'?' ':' '}</span>
               <span style="flex:1;">${kr.kr}</span>
               <span style="font-family:var(--M);font-size:9px;color:var(--t2);">${kr.atual||0} / ${kr.meta||0}</span>
               <span style="font-family:var(--M);font-size:9px;color:${kr.progresso>60?'var(--green)':kr.progresso>30?'var(--gold)':'var(--red)'};">${kr.progresso||0}%</span>
             </div>
-            ${kr.acao_recomendada?`<div style="font-size:10px;color:var(--blue);margin-left:20px;margin-top:2px;">→ ${kr.acao_recomendada}</div>`:''}
+            ${kr.acao_recomendada?`<div style="font-size:10px;color:var(--blue);margin-left:20px;margin-top:2px;">-> ${kr.acao_recomendada}</div>`:''}
           </div>`).join('')}
         </div>`).join('');
     }
@@ -1634,7 +1634,7 @@ async function loadOKR() {
 
   renderOKR('s1OkrDash');
   renderOKR('s1OkrFull');
-  addLog('success', '[S1-09] OKRs carregados: ' + (data?.okr?.saude_geral || '—'));
+  addLog('success', '[S1-09] OKRs carregados: ' + (data?.okr?.saude_geral || '--'));
 }
 
 async function loadRelatorio(periodo) {
@@ -1652,7 +1652,7 @@ async function loadRelatorio(periodo) {
   if (result) result.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
       <div style="flex:1;"><div style="font-family:var(--H);font-size:16px;font-weight:700;">${r.headline}</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px;">${r.periodo}</div></div>
-      <span style="font-family:var(--M);font-size:10px;padding:4px 10px;border-radius:5px;color:${corS};background:${corS.replace(')',', 0.1)')};">● ${saude}</span>
+      <span style="font-family:var(--M);font-size:10px;padding:4px 10px;border-radius:5px;color:${corS};background:${corS.replace(')',', 0.1)')};">o ${saude}</span>
       <span style="font-family:var(--M);font-size:18px;font-weight:700;color:var(--t1);">${r.nota_semana || 0}/10</span>
     </div>
     <div class="kg k4" style="margin-bottom:12px;">
@@ -1662,8 +1662,8 @@ async function loadRelatorio(periodo) {
       <div class="kpi gd"><div class="kl">Propostas</div><div class="kv">${r.metricas_chave?.propostas||0}</div></div>
     </div>
     <div class="kg k2">
-      <div><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:6px;letter-spacing:1px;">DESTAQUES</div>${(r.destaques||[]).map(d=>`<div style="padding:5px 0;border-bottom:1px solid var(--bd);font-size:11.5px;">✓ ${d}</div>`).join('')}</div>
-      <div><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--red);margin-bottom:6px;letter-spacing:1px;">DESAFIOS</div>${(r.desafios||[]).map(d=>`<div style="padding:5px 0;border-bottom:1px solid var(--bd);font-size:11.5px;">⚠ ${d}</div>`).join('')}</div>
+      <div><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:6px;letter-spacing:1px;">DESTAQUES</div>${(r.destaques||[]).map(d=>`<div style="padding:5px 0;border-bottom:1px solid var(--bd);font-size:11.5px;">OK ${d}</div>`).join('')}</div>
+      <div><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--red);margin-bottom:6px;letter-spacing:1px;">DESAFIOS</div>${(r.desafios||[]).map(d=>`<div style="padding:5px 0;border-bottom:1px solid var(--bd);font-size:11.5px;">! ${d}</div>`).join('')}</div>
     </div>
     <div style="margin-top:12px;">
       <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--blue);margin-bottom:6px;letter-spacing:1px;">AÇÕES DA PRÓXIMA SEMANA</div>
@@ -1671,7 +1671,7 @@ async function loadRelatorio(periodo) {
     </div>
     ${r.decisoes_necessarias?.length ? `<div style="margin-top:12px;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:7px;padding:12px;">
       <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--gold);margin-bottom:6px;letter-spacing:1px;">DECISÕES NECESSÁRIAS DO FUNDADOR</div>
-      ${(r.decisoes_necessarias||[]).map(d=>`<div style="font-size:11.5px;padding:4px 0;">⚡ ${d}</div>`).join('')}
+      ${(r.decisoes_necessarias||[]).map(d=>`<div style="font-size:11.5px;padding:4px 0;">  ${d}</div>`).join('')}
     </div>` : ''}`;
 
   addLog('success', '[S1-10] Relatório ' + periodo + ' gerado: ' + r.headline);
@@ -1679,7 +1679,7 @@ async function loadRelatorio(periodo) {
 
 
 
-// ── S1 INTELIGÊNCIA ESTRATÉGICA ──────────────────────────────────────────────
+//    S1 INTELIGÊNCIA ESTRATÉGICA                                               
 
 // Executor genérico para todos os módulos de inteligência
 async function runIntel(action, resultId, btnId, extraCtx = {}) {
@@ -1688,15 +1688,15 @@ async function runIntel(action, resultId, btnId, extraCtx = {}) {
   const panelId = resultId.replace('Result','Panel');
   const panel = document.getElementById(panelId);
 
-  if (btn) { btn.disabled = true; btn.textContent = '⟳ Analisando...'; }
-  if (result) result.innerHTML = '<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:20px;text-align:center;"><span style="display:inline-block;animation:spin 1s linear infinite;">⟳</span>  Agente de Inteligência Estratégica analisando a Atlantyx...</div>';
+  if (btn) { btn.disabled = true; btn.textContent = '  Analisando...'; }
+  if (result) result.innerHTML = '<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:20px;text-align:center;"><span style="display:inline-block;animation:spin 1s linear infinite;"> </span>  Agente de Inteligência Estratégica analisando a Atlantyx...</div>';
   if (panel) panel.style.display = 'block';
 
   addLog('info', '[S1-Intel] Executando: ' + action);
 
   const data = await api('/api/s1-intel', 'POST', { action, contexto: extraCtx });
 
-  if (btn) { btn.disabled = false; btn.textContent = btn.textContent.replace('⟳ Analisando...', '↻ Atualizar'); }
+  if (btn) { btn.disabled = false; btn.textContent = btn.textContent.replace('  Analisando...', 'refresh Atualizar'); }
 
   if (!data?.success) {
     if (result) result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:20px;">Erro ao executar análise. Verifique ANTHROPIC_API_KEY.</div>';
@@ -1740,7 +1740,7 @@ function renderDiagnostico(d, el) {
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--bd);">
       <div style="flex:1;"><div style="font-family:var(--H);font-size:18px;font-weight:700;">${d.headline||''}</div><div style="font-size:11px;color:var(--t2);margin-top:4px;">${d.momento||''}</div></div>
-      <div style="text-align:center;"><div style="font-family:var(--M);font-size:26px;font-weight:700;color:${sc};">${d.nota_geral||0}<span style="font-size:14px;">/10</span></div><div style="font-family:var(--M);font-size:9px;color:${sc};">● ${d.saude_geral}</div></div>
+      <div style="text-align:center;"><div style="font-family:var(--M);font-size:26px;font-weight:700;color:${sc};">${d.nota_geral||0}<span style="font-size:14px;">/10</span></div><div style="font-family:var(--M);font-size:9px;color:${sc};">o ${d.saude_geral}</div></div>
     </div>
     <div class="kg k2" style="margin-bottom:12px;">
       ${card('MAIOR OPORTUNIDADE AGORA','var(--green)',`<div style="font-size:12px;line-height:1.6;">${d.maior_oportunidade_agora||''}</div>`)}
@@ -1748,13 +1748,13 @@ function renderDiagnostico(d, el) {
     </div>
     <div class="kg k2" style="margin-bottom:12px;">
       ${card('FORÇAS','var(--green)',(d.swot?.forcas||[]).map(f=>`<div style="padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;display:flex;justify-content:space-between;align-items:center;"><span>${f.item||f}</span><span style="font-family:var(--M);font-size:8px;color:${impCor(f.impacto)};">${f.impacto||''}</span></div>`).join(''))}
-      ${card('FRAQUEZAS','var(--red)',(d.swot?.fraquezas||[]).map(f=>`<div style="padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;"><div style="display:flex;justify-content:space-between;"><span>${f.item||f}</span><span style="font-family:var(--M);font-size:8px;color:var(--red);">${f.impacto||''}</span></div>${f.como_mitigar?`<div style="font-size:10px;color:var(--blue);margin-top:2px;">→ ${f.como_mitigar}</div>`:''}</div>`).join(''))}
+      ${card('FRAQUEZAS','var(--red)',(d.swot?.fraquezas||[]).map(f=>`<div style="padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;"><div style="display:flex;justify-content:space-between;"><span>${f.item||f}</span><span style="font-family:var(--M);font-size:8px;color:var(--red);">${f.impacto||''}</span></div>${f.como_mitigar?`<div style="font-size:10px;color:var(--blue);margin-top:2px;">-> ${f.como_mitigar}</div>`:''}</div>`).join(''))}
     </div>
     <div class="kg k2" style="margin-bottom:12px;">
-      ${card('OPORTUNIDADES','var(--blue)',(d.swot?.oportunidades||[]).map(o=>`<div style="padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;"><div>${o.item||o}</div>${o.acao?`<div style="font-size:10px;color:var(--green);margin-top:2px;">→ ${o.acao}</div>`:''}</div>`).join(''))}
-      ${card('AMEAÇAS','var(--gold)',(d.swot?.ameacas||[]).map(a=>`<div style="padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;"><div>${a.item||a}</div>${a.mitigacao?`<div style="font-size:10px;color:var(--gold);margin-top:2px;">⟳ ${a.mitigacao}</div>`:''}</div>`).join(''))}
+      ${card('OPORTUNIDADES','var(--blue)',(d.swot?.oportunidades||[]).map(o=>`<div style="padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;"><div>${o.item||o}</div>${o.acao?`<div style="font-size:10px;color:var(--green);margin-top:2px;">-> ${o.acao}</div>`:''}</div>`).join(''))}
+      ${card('AMEAÇAS','var(--gold)',(d.swot?.ameacas||[]).map(a=>`<div style="padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;"><div>${a.item||a}</div>${a.mitigacao?`<div style="font-size:10px;color:var(--gold);margin-top:2px;">  ${a.mitigacao}</div>`:''}</div>`).join(''))}
     </div>
-    ${card('GARGALOS CRÍTICOS — O QUE ESTÁ TRAVANDO CRESCIMENTO','var(--red)',(d.gargalos_criticos||[]).map(g=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;"><strong style="font-size:11.5px;">${g.gargalo}</strong><span style="font-family:var(--M);font-size:9px;color:var(--red);">${g.impacto_receita||''}</span></div><div style="font-size:11px;color:var(--blue);">↗ ${g.solucao} <span style="color:var(--t3);">· ${g.prazo} · ${g.responsavel}</span></div></div>`).join(''))}
+    ${card('GARGALOS CRÍTICOS -- O QUE ESTÁ TRAVANDO CRESCIMENTO','var(--red)',(d.gargalos_criticos||[]).map(g=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;"><strong style="font-size:11.5px;">${g.gargalo}</strong><span style="font-family:var(--M);font-size:9px;color:var(--red);">${g.impacto_receita||''}</span></div><div style="font-size:11px;color:var(--blue);">  ${g.solucao} <span style="color:var(--t3);">· ${g.prazo} · ${g.responsavel}</span></div></div>`).join(''))}
     ${card('ALAVANCAS DE CRESCIMENTO','var(--green)',(d.alavancas_de_crescimento||[]).map(a=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;align-items:center;"><strong style="font-size:11.5px;">${a.alavanca}</strong><span style="font-family:var(--M);font-size:9px;color:var(--green);">${a.potencial_receita||''}</span></div><div style="font-size:11px;color:var(--t2);margin-top:2px;">Esforço: <span style="color:${impCor(a.esforco)}">${a.esforco}</span> · ${a.prazo} · <span style="color:var(--blue);">${a.acao_imediata||''}</span></div></div>`).join(''))}
     ${card('PRÓXIMOS 90 DIAS CRÍTICOS','var(--blue)',`<div style="font-size:12px;line-height:1.7;">${d.proximos_90_dias_criticos||''}</div>`)}`;
 }
@@ -1764,9 +1764,9 @@ function renderRiscos(d, el) {
   const sc = d.nivel_risco_geral === 'Alto' ? 'var(--red)' : d.nivel_risco_geral === 'Médio' ? 'var(--gold)' : 'var(--green)';
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
-      <div style="flex:1;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">Nível de Risco Geral: <span style="color:${sc};">● ${d.nivel_risco_geral}</span></div><div style="font-size:11px;color:var(--t2);margin-top:3px;">${d.riscos?.length||0} riscos mapeados</div></div>
+      <div style="flex:1;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">Nível de Risco Geral: <span style="color:${sc};">o ${d.nivel_risco_geral}</span></div><div style="font-size:11px;color:var(--t2);margin-top:3px;">${d.riscos?.length||0} riscos mapeados</div></div>
     </div>
-    ${card('RISCOS CRÍTICOS — Alta Probabilidade + Alto Impacto','var(--red)',(d.matriz_risco?.criticos||[]).map(r=>`<div style="padding:4px 0;font-size:11px;border-bottom:1px solid var(--bd);">⚠ ${r}</div>`).join('') || '<div style="font-size:11px;color:var(--t3);">Nenhum risco crítico identificado</div>')}
+    ${card('RISCOS CRÍTICOS -- Alta Probabilidade + Alto Impacto','var(--red)',(d.matriz_risco?.criticos||[]).map(r=>`<div style="padding:4px 0;font-size:11px;border-bottom:1px solid var(--bd);">! ${r}</div>`).join('') || '<div style="font-size:11px;color:var(--t3);">Nenhum risco crítico identificado</div>')}
     <div style="margin-bottom:10px;">
       ${(d.riscos||[]).sort((a,b)=>{const o=['Alta','Média','Baixa'];return o.indexOf(a.probabilidade)-o.indexOf(b.probabilidade);}).map(r => {
         const cor = r.impacto==='Alto'?'var(--red)':r.impacto==='Médio'?'var(--gold)':'var(--t3)';
@@ -1779,12 +1779,12 @@ function renderRiscos(d, el) {
           </div>
           <div style="font-size:12px;font-weight:600;margin-bottom:4px;">${r.risco}</div>
           <div style="font-size:10.5px;color:var(--t2);margin-bottom:5px;">Gatilho: ${r.gatilho||''}</div>
-          <div style="font-size:11px;color:var(--blue);">↗ ${r.mitigacao} <span style="color:var(--t3);">· ${r.prazo_mitigacao} · ${r.responsavel}</span></div>
+          <div style="font-size:11px;color:var(--blue);">  ${r.mitigacao} <span style="color:var(--t3);">· ${r.prazo_mitigacao} · ${r.responsavel}</span></div>
         </div>`;
       }).join('')}
     </div>
-    ${card('PLANO DE CONTINGÊNCIA — Se não atingir 50% da meta em 45 dias','var(--gold)',`<div style="font-size:12px;line-height:1.7;">${d.plano_contingencia_receita||''}</div>`)}
-    ${card('RISCO #1 — Ação imediata esta semana','var(--red)',`<div style="font-size:12px;line-height:1.7;">${d.risco_numero_1||''}</div>`)}`;
+    ${card('PLANO DE CONTINGÊNCIA -- Se não atingir 50% da meta em 45 dias','var(--gold)',`<div style="font-size:12px;line-height:1.7;">${d.plano_contingencia_receita||''}</div>`)}
+    ${card('RISCO #1 -- Ação imediata esta semana','var(--red)',`<div style="font-size:12px;line-height:1.7;">${d.risco_numero_1||''}</div>`)}`;
 }
 
 function renderFinanceiro(d, el) {
@@ -1793,20 +1793,20 @@ function renderFinanceiro(d, el) {
   const ue = d.diagnostico_financeiro?.unit_economics || {};
   el.innerHTML = `
     <div class="kg k4" style="margin-bottom:12px;">
-      <div class="kpi gn"><div class="kl">ARR Projetado</div><div class="kv">${p.arr_projetado||'—'}</div></div>
-      <div class="kpi bl"><div class="kl">LTV/CAC</div><div class="kv">${ue.ltv_cac_ratio||'—'}</div></div>
-      <div class="kpi gd"><div class="kl">Payback</div><div class="kv">${ue.payback_period||'—'}</div></div>
-      <div class="kpi or"><div class="kl">Margem Serviço</div><div class="kv">${ue.margem_contribuicao_servico||'—'}</div></div>
+      <div class="kpi gn"><div class="kl">ARR Projetado</div><div class="kv">${p.arr_projetado||'--'}</div></div>
+      <div class="kpi bl"><div class="kl">LTV/CAC</div><div class="kv">${ue.ltv_cac_ratio||'--'}</div></div>
+      <div class="kpi gd"><div class="kl">Payback</div><div class="kv">${ue.payback_period||'--'}</div></div>
+      <div class="kpi or"><div class="kl">Margem Serviço</div><div class="kv">${ue.margem_contribuicao_servico||'--'}</div></div>
     </div>
-    ${card('PROJEÇÃO DE RECEITA — 3 Meses','var(--green)',`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">${['mes1','mes2','mes3'].map((m,i)=>`<div style="text-align:center;padding:8px;background:var(--bg3);border-radius:6px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">MÊS ${i+1}</div><div style="font-family:var(--M);font-size:16px;font-weight:700;margin:4px 0;">${p[m]?.receita||'—'}</div><div style="font-size:9px;color:var(--t2);">${p[m]?.atingimento_meta||''} da meta</div></div>`).join('')}</div>`)}
+    ${card('PROJEÇÃO DE RECEITA -- 3 Meses','var(--green)',`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">${['mes1','mes2','mes3'].map((m,i)=>`<div style="text-align:center;padding:8px;background:var(--bg3);border-radius:6px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">MÊS ${i+1}</div><div style="font-family:var(--M);font-size:16px;font-weight:700;margin:4px 0;">${p[m]?.receita||'--'}</div><div style="font-size:9px;color:var(--t2);">${p[m]?.atingimento_meta||''} da meta</div></div>`).join('')}</div>`)}
     <div class="kg k3" style="margin-bottom:12px;">
-      ${['pessimista','realista','otimista'].map(c => {const ce = d.cenarios?.[c]||{}; const cor = c==='pessimista'?'var(--red)':c==='realista'?'var(--blue)':'var(--green)'; return `<div style="background:var(--bg4);border:1px solid ${cor.replace(')',', 0.25)')};border-radius:7px;padding:12px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:${cor};margin-bottom:5px;">${c} · ${ce.probabilidade||''}</div><div style="font-family:var(--M);font-size:18px;font-weight:700;color:${cor};margin-bottom:5px;">${ce.receita_90d||'—'}</div><div style="font-size:10px;color:var(--t2);">${ce.descricao||''}</div></div>`;}).join('')}
+      ${['pessimista','realista','otimista'].map(c => {const ce = d.cenarios?.[c]||{}; const cor = c==='pessimista'?'var(--red)':c==='realista'?'var(--blue)':'var(--green)'; return `<div style="background:var(--bg4);border:1px solid ${cor.replace(')',', 0.25)')};border-radius:7px;padding:12px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:${cor};margin-bottom:5px;">${c} · ${ce.probabilidade||''}</div><div style="font-family:var(--M);font-size:18px;font-weight:700;color:${cor};margin-bottom:5px;">${ce.receita_90d||'--'}</div><div style="font-size:10px;color:var(--t2);">${ce.descricao||''}</div></div>`;}).join('')}
     </div>
-    ${card('MAXIMIZAÇÃO DE LUCRO — Estratégias','var(--gold)',`
+    ${card('MAXIMIZAÇÃO DE LUCRO -- Estratégias','var(--gold)',`
       <div style="margin-bottom:8px;"><div style="font-family:var(--M);font-size:8px;color:var(--gold);margin-bottom:3px;">PRICING</div><div style="font-size:11.5px;">${d.maximizacao_lucro?.estrategia_pricing||''}</div></div>
       <div style="margin-bottom:8px;"><div style="font-family:var(--M);font-size:8px;color:var(--gold);margin-bottom:3px;">CANAL MAIS RENTÁVEL</div><div style="font-size:11.5px;">${d.maximizacao_lucro?.canal_mais_rentavel||''}</div></div>
-      <div style="margin-bottom:8px;"><div style="font-family:var(--M);font-size:8px;color:var(--red);margin-bottom:3px;">CORTES POSSÍVEIS</div>${(d.maximizacao_lucro?.cortes_custos_possiveis||[]).map(c=>`<div style="font-size:11px;">• ${c}</div>`).join('')}</div>
-      <div><div style="font-family:var(--M);font-size:8px;color:var(--green);margin-bottom:3px;">ONDE INVESTIR</div>${(d.maximizacao_lucro?.investimentos_prioritarios||[]).map(i=>`<div style="font-size:11px;">→ ${i}</div>`).join('')}</div>`)}
+      <div style="margin-bottom:8px;"><div style="font-family:var(--M);font-size:8px;color:var(--red);margin-bottom:3px;">CORTES POSSÍVEIS</div>${(d.maximizacao_lucro?.cortes_custos_possiveis||[]).map(c=>`<div style="font-size:11px;">- ${c}</div>`).join('')}</div>
+      <div><div style="font-family:var(--M);font-size:8px;color:var(--green);margin-bottom:3px;">ONDE INVESTIR</div>${(d.maximizacao_lucro?.investimentos_prioritarios||[]).map(i=>`<div style="font-size:11px;">-> ${i}</div>`).join('')}</div>`)}
     ${card('ALAVANCAS FINANCEIRAS','var(--blue)',(d.alavancas_financeiras||[]).map(a=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;"><strong style="font-size:11.5px;">${a.alavanca}</strong><span style="font-family:var(--M);font-size:9px;color:var(--green);">${a.impacto_receita}</span></div><div style="font-size:10.5px;color:var(--t2);">ROI: ${a.roi} · Custo: ${a.custo_implementacao} · <span style="color:${impCor(a.prioridade)}">${a.prioridade}</span></div></div>`).join(''))}`;
 }
 
@@ -1815,15 +1815,15 @@ function renderMercado(d, el) {
   const pan = d.panorama_mercado || {};
   el.innerHTML = `
     <div class="kg k4" style="margin-bottom:12px;">
-      <div class="kpi bl"><div class="kl">TAM Brasil</div><div class="kv" style="font-size:14px;">${pan.tam_brasil||'—'}</div></div>
-      <div class="kpi gn"><div class="kl">SAM Atlantyx</div><div class="kv" style="font-size:14px;">${pan.sam_atlantyx||'—'}</div></div>
-      <div class="kpi gd"><div class="kl">SOM 90d</div><div class="kv" style="font-size:14px;">${pan.som_90d||'—'}</div></div>
-      <div class="kpi pu"><div class="kl">Crescimento/Ano</div><div class="kv">${pan.crescimento_anual||'—'}</div></div>
+      <div class="kpi bl"><div class="kl">TAM Brasil</div><div class="kv" style="font-size:14px;">${pan.tam_brasil||'--'}</div></div>
+      <div class="kpi gn"><div class="kl">SAM Atlantyx</div><div class="kv" style="font-size:14px;">${pan.sam_atlantyx||'--'}</div></div>
+      <div class="kpi gd"><div class="kl">SOM 90d</div><div class="kv" style="font-size:14px;">${pan.som_90d||'--'}</div></div>
+      <div class="kpi pu"><div class="kl">Crescimento/Ano</div><div class="kv">${pan.crescimento_anual||'--'}</div></div>
     </div>
-    ${card('CONCORRENTES — Como Vencer Cada Um','var(--red)',(d.concorrentes||[]).map(c=>`<div style="padding:8px 0;border-bottom:1px solid var(--bd);"><div style="font-size:12px;font-weight:600;margin-bottom:3px;">${c.nome}</div><div style="font-size:10.5px;color:var(--t2);margin-bottom:3px;">${c.posicionamento}</div><div style="font-size:11px;color:var(--green);">↗ ${c.como_vencer}</div></div>`).join(''))}
-    ${card('OPORTUNIDADES NÃO EXPLORADAS','var(--green)',(d.oportunidades_nao_exploradas||[]).map(o=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;"><strong style="font-size:11.5px;">${o.oportunidade}</strong><span style="font-family:var(--M);font-size:9px;color:var(--green);">${o.potencial||''}</span></div><div style="font-size:11px;color:var(--blue);">→ ${o.acao}</div></div>`).join(''))}
+    ${card('CONCORRENTES -- Como Vencer Cada Um','var(--red)',(d.concorrentes||[]).map(c=>`<div style="padding:8px 0;border-bottom:1px solid var(--bd);"><div style="font-size:12px;font-weight:600;margin-bottom:3px;">${c.nome}</div><div style="font-size:10.5px;color:var(--t2);margin-bottom:3px;">${c.posicionamento}</div><div style="font-size:11px;color:var(--green);">  ${c.como_vencer}</div></div>`).join(''))}
+    ${card('OPORTUNIDADES NÃO EXPLORADAS','var(--green)',(d.oportunidades_nao_exploradas||[]).map(o=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;"><strong style="font-size:11.5px;">${o.oportunidade}</strong><span style="font-family:var(--M);font-size:9px;color:var(--green);">${o.potencial||''}</span></div><div style="font-size:11px;color:var(--blue);">-> ${o.acao}</div></div>`).join(''))}
     ${card('SEGMENTO MAIS QUENTE AGORA','var(--gold)',`<div style="font-size:12px;line-height:1.7;">${d.segmento_mais_quente_agora||''}</div>`)}
-    ${card('TENDÊNCIAS FAVORÁVEIS','var(--blue)',(d.tendencias_favoraveis||[]).map(t=>`<div style="padding:5px 0;border-bottom:1px solid var(--bd);"><div style="font-size:11.5px;font-weight:600;">${t.tendencia}</div><div style="font-size:11px;color:var(--green);">→ ${t.como_aproveitar} <span style="color:var(--t3);">[${t.janela}]</span></div></div>`).join(''))}`;
+    ${card('TENDÊNCIAS FAVORÁVEIS','var(--blue)',(d.tendencias_favoraveis||[]).map(t=>`<div style="padding:5px 0;border-bottom:1px solid var(--bd);"><div style="font-size:11.5px;font-weight:600;">${t.tendencia}</div><div style="font-size:11px;color:var(--green);">-> ${t.como_aproveitar} <span style="color:var(--t3);">[${t.janela}]</span></div></div>`).join(''))}`;
 }
 
 function renderPlano(d, el) {
@@ -1832,15 +1832,15 @@ function renderPlano(d, el) {
     <div class="kg k3" style="margin-bottom:12px;">
       ${[['90 dias',d.visao_90_dias,'var(--green)'],['1 Ano',d.visao_1_ano,'var(--blue)'],['3 Anos',d.visao_3_anos,'var(--pu)']].map(([h,v,c])=>`<div style="background:var(--bg4);border:1px solid ${c.replace(')',', 0.25)')};border-radius:7px;padding:12px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:${c};margin-bottom:5px;">VISÃO ${h}</div><div style="font-size:11.5px;line-height:1.6;">${v||''}</div></div>`).join('')}
     </div>
-    ${card('PRIORIDADES ESTRATÉGICAS','var(--blue)',(d.prioridades_estrategicas||[]).map((p,i)=>`<div style="padding:8px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><span style="font-family:var(--M);font-size:10px;color:var(--blue);font-weight:700;">${i+1}.</span><strong style="font-size:12px;">${p.prioridade}</strong><span style="font-family:var(--M);font-size:8px;padding:1px 6px;border-radius:3px;background:var(--b2);color:var(--blue);">${p.horizonte}</span><span style="font-family:var(--M);font-size:8px;padding:1px 6px;border-radius:3px;background:${impCor(p.esforco).replace(')',', 0.1)')};color:${impCor(p.esforco)};margin-left:auto;">Esforço ${p.esforco}</span></div><div style="font-size:11px;color:var(--t2);">${p.descricao}</div>${p.impacto_receita?`<div style="font-size:11px;color:var(--green);margin-top:3px;">↑ ${p.impacto_receita}</div>`:''}</div>`).join(''))}
-    ${card('GO-TO-MARKET — 90 dias','var(--gold)',`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:11px;">
+    ${card('PRIORIDADES ESTRATÉGICAS','var(--blue)',(d.prioridades_estrategicas||[]).map((p,i)=>`<div style="padding:8px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><span style="font-family:var(--M);font-size:10px;color:var(--blue);font-weight:700;">${i+1}.</span><strong style="font-size:12px;">${p.prioridade}</strong><span style="font-family:var(--M);font-size:8px;padding:1px 6px;border-radius:3px;background:var(--b2);color:var(--blue);">${p.horizonte}</span><span style="font-family:var(--M);font-size:8px;padding:1px 6px;border-radius:3px;background:${impCor(p.esforco).replace(')',', 0.1)')};color:${impCor(p.esforco)};margin-left:auto;">Esforço ${p.esforco}</span></div><div style="font-size:11px;color:var(--t2);">${p.descricao}</div>${p.impacto_receita?`<div style="font-size:11px;color:var(--green);margin-top:3px;">^ ${p.impacto_receita}</div>`:''}</div>`).join(''))}
+    ${card('GO-TO-MARKET -- 90 dias','var(--gold)',`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:11px;">
       <div><div style="font-family:var(--M);font-size:7.5px;color:var(--gold);margin-bottom:3px;">FOCO DE SETOR</div>${d.go_to_market_90d?.foco_setor||''}</div>
       <div><div style="font-family:var(--M);font-size:7.5px;color:var(--gold);margin-bottom:3px;">CANAL PRIMÁRIO</div>${d.go_to_market_90d?.canal_primario||''}</div>
       <div style="grid-column:1/-1;"><div style="font-family:var(--M);font-size:7.5px;color:var(--gold);margin-bottom:3px;">MENSAGEM CENTRAL</div>${d.go_to_market_90d?.mensagem_central||''}</div>
       <div><div style="font-family:var(--M);font-size:7.5px;color:var(--t2);margin-bottom:3px;">Meta Semana 1</div>${d.go_to_market_90d?.meta_semana_1||''}</div>
       <div><div style="font-family:var(--M);font-size:7.5px;color:var(--t2);margin-bottom:3px;">Meta Dia 90</div>${d.go_to_market_90d?.meta_dia_90||''}</div>
     </div>`)}
-    ${card('INICIATIVAS ESTRATÉGICAS','var(--green)',(d.iniciativas_estrategicas||[]).map(init=>`<div style="padding:8px 0;border-bottom:1px solid var(--bd);"><div style="font-size:12px;font-weight:600;margin-bottom:3px;">${init.iniciativa}</div><div style="font-size:11px;color:var(--t2);margin-bottom:4px;">${init.objetivo}</div>${(init.acoes||[]).slice(0,2).map(a=>`<div style="font-size:10.5px;padding:3px 0;color:var(--blue);">→ ${a.acao} <span style="color:var(--t3);">[${a.responsavel} · ${a.prazo}]</span></div>`).join('')}</div>`).join(''))}`;
+    ${card('INICIATIVAS ESTRATÉGICAS','var(--green)',(d.iniciativas_estrategicas||[]).map(init=>`<div style="padding:8px 0;border-bottom:1px solid var(--bd);"><div style="font-size:12px;font-weight:600;margin-bottom:3px;">${init.iniciativa}</div><div style="font-size:11px;color:var(--t2);margin-bottom:4px;">${init.objetivo}</div>${(init.acoes||[]).slice(0,2).map(a=>`<div style="font-size:10.5px;padding:3px 0;color:var(--blue);">-> ${a.acao} <span style="color:var(--t3);">[${a.responsavel} · ${a.prazo}]</span></div>`).join('')}</div>`).join(''))}`;
 }
 
 function renderPlanoAcao(d, el) {
@@ -1866,8 +1866,8 @@ function renderPlanoAcao(d, el) {
           </div>
           <span style="font-family:var(--M);font-size:9px;color:var(--blue);flex-shrink:0;">${a.responsavel||''}</span>
         </div>`).join('')}
-        ${s.entregaveis?.length?`<div style="margin-top:8px;"><div style="font-family:var(--M);font-size:8px;color:var(--green);margin-bottom:4px;">ENTREGÁVEIS</div>${s.entregaveis.map(e=>`<div style="font-size:11px;">✓ ${e}</div>`).join('')}</div>`:''}
-        ${s.alertas?.length?`<div style="margin-top:8px;"><div style="font-family:var(--M);font-size:8px;color:var(--red);margin-bottom:4px;">ALERTAS</div>${s.alertas.map(a=>`<div style="font-size:11px;color:var(--gold);">⚠ ${a}</div>`).join('')}</div>`:''}
+        ${s.entregaveis?.length?`<div style="margin-top:8px;"><div style="font-family:var(--M);font-size:8px;color:var(--green);margin-bottom:4px;">ENTREGÁVEIS</div>${s.entregaveis.map(e=>`<div style="font-size:11px;">OK ${e}</div>`).join('')}</div>`:''}
+        ${s.alertas?.length?`<div style="margin-top:8px;"><div style="font-family:var(--M);font-size:8px;color:var(--red);margin-bottom:4px;">ALERTAS</div>${s.alertas.map(a=>`<div style="font-size:11px;color:var(--gold);">! ${a}</div>`).join('')}</div>`:''}
       </div>
     </div>`).join('')}
     ${d.marcos_90_dias?.length?card('MARCOS DOS 90 DIAS','var(--blue)',(d.marcos_90_dias||[]).map(m=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--bd);"><span style="font-family:var(--M);font-size:10px;color:var(--blue);width:40px;">Dia ${m.dia}</span><span style="font-size:11.5px;flex:1;">${m.marco}</span><span style="font-size:10px;color:var(--t3);">${m.kpi}</span></div>`).join('')):''}`;
@@ -1891,17 +1891,17 @@ function renderOkrGen(d, el) {
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
             <span style="font-family:var(--M);font-size:8.5px;color:var(--t3);">${kr.id}</span>
             <span style="font-size:11.5px;font-weight:500;flex:1;">${kr.kr}</span>
-            <span style="font-family:var(--M);font-size:9px;color:var(--t2);">${kr.baseline||''} → ${kr.meta||''}</span>
+            <span style="font-family:var(--M);font-size:9px;color:var(--t2);">${kr.baseline||''} -> ${kr.meta||''}</span>
           </div>
           <div style="display:flex;gap:10px;font-family:var(--M);font-size:8.5px;color:var(--t3);margin-bottom:6px;">
             <span>${kr.responsavel}</span><span>·</span><span>${kr.frequencia_checkin}</span><span>·</span><span>Prazo: ${kr.prazo}</span>
           </div>
           <div class="prog" style="margin-bottom:6px;"><div class="prog-fill" style="background:${cor};width:${kr.progresso_atual||0}%;"></div></div>
-          ${(kr.acoes_chave||[]).slice(0,2).map(a=>`<div style="font-size:10px;color:var(--blue);padding:2px 0;">→ ${a.acao} <span style="color:var(--t3);">[${a.responsavel} · ${a.prazo}]</span></div>`).join('')}
+          ${(kr.acoes_chave||[]).slice(0,2).map(a=>`<div style="font-size:10px;color:var(--blue);padding:2px 0;">-> ${a.acao} <span style="color:var(--t3);">[${a.responsavel} · ${a.prazo}]</span></div>`).join('')}
         </div>`).join('')}
       </div>`;
     }).join('')}
-    ${d.anti_objetivos?.length?card('NÃO VAMOS FAZER NESTE TRIMESTRE','var(--red)',(d.anti_objetivos||[]).map(a=>`<div style="font-size:11px;padding:3px 0;">✗ ${a}</div>`).join('')):''}`;
+    ${d.anti_objetivos?.length?card('NÃO VAMOS FAZER NESTE TRIMESTRE','var(--red)',(d.anti_objetivos||[]).map(a=>`<div style="font-size:11px;padding:3px 0;">x ${a}</div>`).join('')):''}`;
 }
 
 function renderReplano(d, el) {
@@ -1909,14 +1909,14 @@ function renderReplano(d, el) {
   const sc = semCor(d.semaforo_geral);
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--bd);">
-      <div style="font-family:var(--M);font-size:22px;font-weight:700;color:${sc};">● ${d.semaforo_geral}</div>
+      <div style="font-family:var(--M);font-size:22px;font-weight:700;color:${sc};">o ${d.semaforo_geral}</div>
       <div style="flex:1;"><div style="font-family:var(--H);font-size:14px;font-weight:600;">Replanejamento Estratégico</div><div style="font-size:11px;color:var(--t2);">Novo foco: ${d.novo_foco_semana||''}</div></div>
     </div>
-    ${d.acoes_de_emergencia?.length?card('AÇÕES DE EMERGÊNCIA — Próximas 48h','var(--red)',(d.acoes_de_emergencia||[]).map(a=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="font-size:12px;font-weight:600;">${a.acao}</div><div style="font-size:11px;color:var(--t2);">${a.responsavel} · ${a.prazo} → ${a.resultado_esperado}</div></div>`).join('')):''}
-    ${card('DESVIOS CRÍTICOS','var(--gold)',(d.desvios_criticos||[]).map(d2=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;margin-bottom:3px;"><strong style="font-size:11.5px;">${d2.metrica}</strong><span style="font-family:var(--M);font-size:9px;color:var(--red);">${d2.desvio||''}</span></div><div style="font-size:10.5px;color:var(--t2);">Planejado: ${d2.planejado} | Realizado: ${d2.realizado}</div><div style="font-size:11px;color:var(--blue);margin-top:2px;">→ ${d2.acao_corretiva}</div></div>`).join(''))}
-    ${card('AJUSTES ESTRATÉGICOS','var(--blue)',(d.ajustes_estrategicos||[]).map(a=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="font-size:12px;font-weight:600;margin-bottom:2px;">${a.ajuste}</div><div style="font-size:11px;color:var(--t2);">${a.motivo}</div><div style="font-size:11px;color:var(--green);margin-top:2px;">↑ ${a.impacto_esperado} <span style="color:var(--t3);">[${a.implementar_em}]</span></div></div>`).join(''))}
+    ${d.acoes_de_emergencia?.length?card('AÇÕES DE EMERGÊNCIA -- Próximas 48h','var(--red)',(d.acoes_de_emergencia||[]).map(a=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="font-size:12px;font-weight:600;">${a.acao}</div><div style="font-size:11px;color:var(--t2);">${a.responsavel} · ${a.prazo} -> ${a.resultado_esperado}</div></div>`).join('')):''}
+    ${card('DESVIOS CRÍTICOS','var(--gold)',(d.desvios_criticos||[]).map(d2=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;margin-bottom:3px;"><strong style="font-size:11.5px;">${d2.metrica}</strong><span style="font-family:var(--M);font-size:9px;color:var(--red);">${d2.desvio||''}</span></div><div style="font-size:10.5px;color:var(--t2);">Planejado: ${d2.planejado} | Realizado: ${d2.realizado}</div><div style="font-size:11px;color:var(--blue);margin-top:2px;">-> ${d2.acao_corretiva}</div></div>`).join(''))}
+    ${card('AJUSTES ESTRATÉGICOS','var(--blue)',(d.ajustes_estrategicos||[]).map(a=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="font-size:12px;font-weight:600;margin-bottom:2px;">${a.ajuste}</div><div style="font-size:11px;color:var(--t2);">${a.motivo}</div><div style="font-size:11px;color:var(--green);margin-top:2px;">^ ${a.impacto_esperado} <span style="color:var(--t3);">[${a.implementar_em}]</span></div></div>`).join(''))}
     <div class="kg k3">
-      ${['30d','60d','90d'].map(h=>`<div style="background:var(--bg4);border-radius:7px;padding:11px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:5px;">RECEITA ${h}</div><div style="font-family:var(--M);font-size:18px;font-weight:700;">${d.previsao_revisada?.['receita_'+h]||'—'}</div></div>`).join('')}
+      ${['30d','60d','90d'].map(h=>`<div style="background:var(--bg4);border-radius:7px;padding:11px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:5px;">RECEITA ${h}</div><div style="font-family:var(--M);font-size:18px;font-weight:700;">${d.previsao_revisada?.['receita_'+h]||'--'}</div></div>`).join('')}
     </div>`;
 }
 
@@ -1932,20 +1932,20 @@ function renderCenarios(d, el) {
         return `<div style="background:var(--bg4);border:1px solid ${cor.replace(')',', 0.25)')};border-radius:8px;padding:13px;">
           <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:${cor};margin-bottom:3px;">${nome.toUpperCase()} · ${c.probabilidade||''}</div>
           <div style="font-family:var(--H);font-size:14px;font-weight:700;margin-bottom:6px;">${c.nome||nome}</div>
-          <div style="font-family:var(--M);font-size:18px;font-weight:700;color:${cor};margin-bottom:8px;">${emp.receita_anual||'—'}</div>
+          <div style="font-family:var(--M);font-size:18px;font-weight:700;color:${cor};margin-bottom:8px;">${emp.receita_anual||'--'}</div>
           <div style="font-size:10.5px;color:var(--t2);margin-bottom:8px;">${c.descricao||''}</div>
           <div style="font-size:10px;color:var(--t3);margin-bottom:4px;">${emp.clientes||0} clientes · ${emp.time||''}</div>
           <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:${cor};margin-top:8px;margin-bottom:4px;">COMO ${nome==='pessimista'?'EVITAR':'CHEGAR AQUI'}</div>
-          ${(nome==='pessimista'?c.como_evitar:c.como_chegar_aqui||c.acelerador&&[c.acelerador]||[]).map?.(a=>`<div style="font-size:10.5px;margin-bottom:3px;">→ ${a}</div>`).join('')||''}
+          ${(nome==='pessimista'?c.como_evitar:c.como_chegar_aqui||c.acelerador&&[c.acelerador]||[]).map?.(a=>`<div style="font-size:10.5px;margin-bottom:3px;">-> ${a}</div>`).join('')||''}
         </div>`;
       }).join('')}
     </div>
     ${card('SINAIS PARA MONITORAR','var(--gold)',`
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-        <div><div style="font-family:var(--M);font-size:8px;color:var(--red);margin-bottom:5px;">SINAIS DE ALERTA (pessimista)</div>${(d.sinais_de_alerta||[]).map(s=>`<div style="font-size:11px;color:var(--red);padding:2px 0;">⚠ ${s}</div>`).join('')}</div>
-        <div><div style="font-family:var(--M);font-size:8px;color:var(--green);margin-bottom:5px;">SINAIS POSITIVOS (otimista)</div>${(d.sinais_positivos||[]).map(s=>`<div style="font-size:11px;color:var(--green);padding:2px 0;">↑ ${s}</div>`).join('')}</div>
+        <div><div style="font-family:var(--M);font-size:8px;color:var(--red);margin-bottom:5px;">SINAIS DE ALERTA (pessimista)</div>${(d.sinais_de_alerta||[]).map(s=>`<div style="font-size:11px;color:var(--red);padding:2px 0;">! ${s}</div>`).join('')}</div>
+        <div><div style="font-family:var(--M);font-size:8px;color:var(--green);margin-bottom:5px;">SINAIS POSITIVOS (otimista)</div>${(d.sinais_positivos||[]).map(s=>`<div style="font-size:11px;color:var(--green);padding:2px 0;">^ ${s}</div>`).join('')}</div>
       </div>`)}
-    ${card('DECISÃO CRÍTICA DO FUNDADOR — AGORA','var(--red)',`<div style="font-size:13px;line-height:1.7;font-weight:500;">${d.decisao_critica_hoje||''}</div>`)}`;
+    ${card('DECISÃO CRÍTICA DO FUNDADOR -- AGORA','var(--red)',`<div style="font-size:13px;line-height:1.7;font-weight:500;">${d.decisao_critica_hoje||''}</div>`)}`;
 }
 
 async function runAllIntel() {
@@ -1959,18 +1959,18 @@ async function runAllIntel() {
 
 
 
-// ── EMAIL INTELLIGENCE ────────────────────────────────────────────────────────
+//    EMAIL INTELLIGENCE                                                         
 let emailsCache = [];
 
 async function scanEmails(limite = 50) {
   const btn = document.getElementById('btnScanEmail');
   const empty = document.getElementById('emailEmpty');
-  btn.disabled = true; btn.textContent = '⟳ Lendo e-mails...';
-  addLog('info', '[Email-Intel] Escaneando Gmail — últimos ' + limite + ' e-mails...');
+  btn.disabled = true; btn.textContent = '  Lendo e-mails...';
+  addLog('info', '[Email-Intel] Escaneando Gmail -- últimos ' + limite + ' e-mails...');
 
   const data = await api('/api/email-intel', 'POST', { action: 'scan', limite });
 
-  btn.disabled = false; btn.textContent = '✉ Escanear E-mails';
+  btn.disabled = false; btn.textContent = '  Escanear E-mails';
 
   if (!data?.success) {
     toast('Erro ao ler Gmail. Configure GMAIL_ACCESS_TOKEN no Vercel.', 'error');
@@ -1998,7 +1998,7 @@ async function scanEmails(limite = 50) {
   renderEmailList(emailsCache);
   renderEmailCategories(emailsCache);
 
-  addLog('success', '[Email-Intel] ' + data.total + ' e-mails classificados — ' + data.urgentes + ' urgentes — ' + (data.acoes_tomadas?.length || 0) + ' ações automáticas');
+  addLog('success', '[Email-Intel] ' + data.total + ' e-mails classificados -- ' + data.urgentes + ' urgentes -- ' + (data.acoes_tomadas?.length || 0) + ' ações automáticas');
   if (data.urgentes > 0) toast(data.urgentes + ' e-mail(s) urgente(s)! Notificação enviada.', 'error');
   else toast(data.total + ' e-mails classificados com sucesso!', 'success');
 }
@@ -2025,20 +2025,20 @@ function renderEmailList(emails) {
         </div>
         <span style="font-family:var(--M);font-size:8px;color:${urgCor};white-space:nowrap;">${e.urgencia || ''}</span>
         <span style="font-family:var(--M);font-size:8px;color:var(--blue);white-space:nowrap;">${e.agente_responsavel || ''}</span>
-        <span style="color:var(--t3);font-size:10px;" id="ec-${i}">▼</span>
+        <span style="color:var(--t3);font-size:10px;" id="ec-${i}"> </span>
       </div>
       <div id="eb-${i}" style="display:none;padding:12px 14px;background:var(--bg4);">
         <div style="font-size:11.5px;color:var(--t2);line-height:1.6;margin-bottom:10px;">${e.resumo || e.snippet || ''}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-          <span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);">Agente: ${e.agente_responsavel || '—'}</span>
+          <span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:4px;background:var(--bg3);color:var(--t2);">Agente: ${e.agente_responsavel || '--'}</span>
           ${e.valor_estimado ? `<span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:4px;background:var(--go2);color:var(--gold);">Valor: ${e.valor_estimado}</span>` : ''}
           ${e.prazo ? `<span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:4px;background:var(--r2);color:var(--red);">Prazo: ${e.prazo}</span>` : ''}
         </div>
-        <div style="font-size:11px;color:var(--blue);margin-bottom:10px;">→ ${e.acao_recomendada || ''}</div>
+        <div style="font-size:11px;color:var(--blue);margin-bottom:10px;">-> ${e.acao_recomendada || ''}</div>
         <div style="display:flex;gap:7px;flex-wrap:wrap;">
-          ${cat === 'VENDA' || cat === 'RFP' ? `<button class="btn btn-gn" style="font-size:9px;padding:3px 8px;" onclick="gerarResposta(${i}, event)">✦ Gerar Rascunho de Resposta</button>` : ''}
-          ${cat === 'VENDA' ? `<button class="btn btn-s7" style="font-size:9px;padding:3px 8px;" onclick="abrirNoFunil(${i}, event)">→ Abrir no Funil S7</button>` : ''}
-          ${cat === 'RFP' ? `<button class="btn btn-or" style="font-size:9px;padding:3px 8px;" onclick="encaminharRFP(${i}, event)">↗ Enviar para S2-04</button>` : ''}
+          ${cat === 'VENDA' || cat === 'RFP' ? `<button class="btn btn-gn" style="font-size:9px;padding:3px 8px;" onclick="gerarResposta(${i}, event)">  Gerar Rascunho de Resposta</button>` : ''}
+          ${cat === 'VENDA' ? `<button class="btn btn-s7" style="font-size:9px;padding:3px 8px;" onclick="abrirNoFunil(${i}, event)">-> Abrir no Funil S7</button>` : ''}
+          ${cat === 'RFP' ? `<button class="btn btn-or" style="font-size:9px;padding:3px 8px;" onclick="encaminharRFP(${i}, event)">  Enviar para S2-04</button>` : ''}
         </div>
         <div id="er-${i}" style="display:none;margin-top:10px;"></div>
       </div>
@@ -2051,7 +2051,7 @@ function toggleEmail(i) {
   const chv = document.getElementById(`ec-${i}`);
   const aberto = body.style.display !== 'none';
   body.style.display = aberto ? 'none' : 'block';
-  chv.textContent = aberto ? '▼' : '▲';
+  chv.textContent = aberto ? ' ' : ' ';
 }
 
 let emailFiltro = 'todos';
@@ -2076,7 +2076,7 @@ async function gerarResposta(i, evt) {
   const data = await api('/api/email-intel', 'POST', { action: 'resposta_venda', email_original: email });
   if (data?.rascunho) {
     res.innerHTML = `<div style="background:var(--bg3);border:1px solid rgba(34,211,163,.2);border-radius:7px;padding:12px;margin-top:8px;">
-      <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:6px;">RASCUNHO DE RESPOSTA — AGENTE EMAIL-INTEL</div>
+      <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:6px;">RASCUNHO DE RESPOSTA -- AGENTE EMAIL-INTEL</div>
       <div style="font-family:var(--M);font-size:9.5px;color:var(--t2);margin-bottom:4px;">Assunto: ${data.rascunho.assunto || ''}</div>
       <div style="font-size:12px;line-height:1.7;white-space:pre-wrap;margin-bottom:10px;">${data.rascunho.corpo || ''}</div>
       <button class="btn btn-gn" style="font-size:9px;padding:3px 8px;" onclick="navigator.clipboard.writeText('${(data.rascunho.corpo||'').replace(/'/g,'&#39;')}');toast('Copiado!','success')">Copiar Resposta</button>
@@ -2090,7 +2090,7 @@ function abrirNoFunil(i, evt) {
   const e = emailsCache[i];
   toast('Lead de ' + (e.remetente_empresa || e.de) + ' aberto no painel S7', 'success');
   nav('s7pipe', null);
-  addLog('info', '[Email-Intel→S7] Lead de ' + e.de + ' direcionado ao pipeline');
+  addLog('info', '[Email-Intel->S7] Lead de ' + e.de + ' direcionado ao pipeline');
 }
 
 function encaminharRFP(i, evt) {
@@ -2098,7 +2098,7 @@ function encaminharRFP(i, evt) {
   const e = emailsCache[i];
   toast('RFP de ' + (e.remetente_empresa || e.de) + ' enviado ao S2-04', 'success');
   nav('s2rfps', null);
-  addLog('info', '[Email-Intel→S2] RFP de ' + e.de + ' encaminhado ao monitor');
+  addLog('info', '[Email-Intel->S2] RFP de ' + e.de + ' encaminhado ao monitor');
 }
 
 function renderEmailCategories(emails) {
@@ -2115,7 +2115,7 @@ function renderEmailCategories(emails) {
           ${e.urgencia === 'ALTA' ? '<span style="font-family:var(--M);font-size:8px;padding:2px 6px;border-radius:3px;background:var(--r2);color:var(--red);">URGENTE</span>' : ''}
         </div>
         <div style="font-size:11px;color:var(--t2);">De: ${e.de} | Prazo: ${e.prazo || 'verificar'} | Valor: ${e.valor_estimado || 'não informado'}</div>
-        <div style="font-size:11px;color:var(--blue);margin-top:4px;">→ ${e.acao_recomendada || ''}</div>
+        <div style="font-size:11px;color:var(--blue);margin-top:4px;">-> ${e.acao_recomendada || ''}</div>
       </div>`).join('') : '<div style="color:var(--t3);font-size:11px;padding:20px;text-align:center;">Nenhum RFP identificado</div>';
   }
 
@@ -2126,7 +2126,7 @@ function renderEmailCategories(emails) {
         <div style="font-size:12px;font-weight:600;margin-bottom:3px;">${e.assunto}</div>
         <div style="font-size:11px;color:var(--t2);">${e.de} | ${e.remetente_empresa || ''}</div>
         <div style="font-size:11px;margin-top:4px;">${e.resumo || ''}</div>
-        <div style="font-size:11px;color:var(--green);margin-top:4px;">→ ${e.acao_recomendada || ''}</div>
+        <div style="font-size:11px;color:var(--green);margin-top:4px;">-> ${e.acao_recomendada || ''}</div>
       </div>`).join('') : '<div style="color:var(--t3);font-size:11px;padding:20px;text-align:center;">Nenhuma resposta de lead identificada</div>';
   }
 
@@ -2142,7 +2142,7 @@ function renderEmailCategories(emails) {
 }
 
 
-// ── S2 MARKETING DIGITAL CRIATIVO ────────────────────────────────────────────
+//    S2 MARKETING DIGITAL CRIATIVO                                             
 
 // KANBAN STATE
 const KANBAN_COLS = ['Gerado','Revisão','Aprovado','Agendado','Publicado'];
@@ -2168,9 +2168,9 @@ function renderKanban() {
           <div style="font-size:10px;font-weight:600;margin-bottom:2px;">${p.titulo}</div>
           <div style="font-family:var(--M);font-size:8px;padding:1px 6px;border-radius:3px;display:inline-block;background:${p.canal==='LinkedIn'?'var(--b2)':p.canal==='Instagram'?'rgba(240,48,112,.12)':'var(--bg4)'};color:${p.canal==='LinkedIn'?'var(--blue)':p.canal==='Instagram'?'var(--s7c)':'var(--t2)'};">${p.canal}</div>
           <div style="font-size:10px;color:var(--t2);margin-top:4px;">${p.agente}</div>
-          ${col==='Revisão'?`<div style="display:flex;gap:4px;margin-top:6px;"><button class="btn btn-gn" style="flex:1;font-size:8.5px;padding:2px 5px;" onclick="aprovarPeca('${p.id}',event)">✓</button><button class="btn btn-rd" style="flex:1;font-size:8.5px;padding:2px 5px;" onclick="recusarPeca('${p.id}',event)">✗</button></div>`:''}
+          ${col==='Revisão'?`<div style="display:flex;gap:4px;margin-top:6px;"><button class="btn btn-gn" style="flex:1;font-size:8.5px;padding:2px 5px;" onclick="aprovarPeca('${p.id}',event)">OK</button><button class="btn btn-rd" style="flex:1;font-size:8.5px;padding:2px 5px;" onclick="recusarPeca('${p.id}',event)">x</button></div>`:''}
         </div>`).join('')}
-      ${!pecas.length?`<div style="font-size:9px;color:var(--t3);padding:8px 0;text-align:center">—</div>`:''}
+      ${!pecas.length?`<div style="font-size:9px;color:var(--t3);padding:8px 0;text-align:center">--</div>`:''}
     </div>`;
   }).join('');
 }
@@ -2184,20 +2184,20 @@ function selecionarPeca(id) {
   const body = document.getElementById('kanbanDetBody');
   if (!det) return;
   det.style.display = 'block';
-  tit.textContent = p.titulo + ' — ' + p.canal + ' — ' + p.status;
+  tit.textContent = p.titulo + ' -- ' + p.canal + ' -- ' + p.status;
   body.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
       <div>
         <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--or);margin-bottom:5px">NARRATIVA (Storyteller)</div>
-        <div style="font-size:11.5px;line-height:1.7;background:var(--bg4);padding:10px;border-radius:6px;">${p.narrativa || '—'}</div>
+        <div style="font-size:11.5px;line-height:1.7;background:var(--bg4);padding:10px;border-radius:6px;">${p.narrativa || '--'}</div>
       </div>
       <div>
         <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--blue);margin-bottom:5px">COPY PRINCIPAL (Copywriter)</div>
-        <div style="font-size:11.5px;line-height:1.7;background:var(--bg4);padding:10px;border-radius:6px;white-space:pre-wrap;">${p.copy || '—'}</div>
+        <div style="font-size:11.5px;line-height:1.7;background:var(--bg4);padding:10px;border-radius:6px;white-space:pre-wrap;">${p.copy || '--'}</div>
       </div>
       <div>
         <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:5px">BRIEF VISUAL (Designer)</div>
-        <div style="font-size:11.5px;line-height:1.7;background:var(--bg4);padding:10px;border-radius:6px;">${p.design || '—'}</div>
+        <div style="font-size:11.5px;line-height:1.7;background:var(--bg4);padding:10px;border-radius:6px;">${p.design || '--'}</div>
       </div>
       <div>
         <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--gold);margin-bottom:5px">AGENDAMENTO</div>
@@ -2234,7 +2234,7 @@ function recusarPeca(id, evt) {
   if (!p) return;
   p.status = 'Gerado';
   addLog('warn', '[Kanban] Recusado: ' + p.titulo);
-  toast('Recusado — voltou para Gerado', 'info');
+  toast('Recusado -- voltou para Gerado', 'info');
   renderKanban();
 }
 
@@ -2243,7 +2243,7 @@ function solicitarAjuste(id) {
   if (!p) return;
   p.status = 'Gerado';
   addLog('info', '[Kanban] Ajuste solicitado: ' + p.titulo);
-  toast('Solicitado ajuste — voltou para Gerado', 'info');
+  toast('Solicitado ajuste -- voltou para Gerado', 'info');
   renderKanban();
 }
 
@@ -2279,7 +2279,7 @@ async function criarCampanhaCompleta() {
   const tag = document.getElementById('campTag');
   const res = document.getElementById('campResult');
 
-  btn.disabled = true; btn.textContent = '⟳ Criando campanha...';
+  btn.disabled = true; btn.textContent = '  Criando campanha...';
   tag.textContent = 'Executando'; tag.className = 'tag on';
 
   const etapas = [
@@ -2292,7 +2292,7 @@ async function criarCampanhaCompleta() {
   const renderEtapas = () => {
     res.innerHTML = etapas.map(e => `
       <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--bd);">
-        <span style="font-size:14px;">${e.done ? '✓' : '⟳'}</span>
+        <span style="font-size:14px;">${e.done ? 'OK' : ' '}</span>
         <span style="font-size:12px;color:${e.done?'var(--green)':'var(--blue)'};">${e.label}</span>
       </div>`).join('');
   };
@@ -2316,8 +2316,8 @@ async function criarCampanhaCompleta() {
       const designBrief = data.design?.conceito_visual || '';
       adicionarAoKanban(nome, canal, 'Campanha Completa', narrativaTema, copyTexto, designBrief);
       tag.textContent = 'Concluído'; tag.className = 'tag live';
-      res.innerHTML += `<div style="margin-top:12px;background:var(--g2);border:1px solid rgba(34,211,163,.2);border-radius:7px;padding:12px;font-size:12px;color:var(--green);">✓ Campanha criada e adicionada ao Kanban para aprovação!</div>`;
-      addLog('ok', '[S2-Campanha] Concluído: ' + nome + ' → Kanban');
+      res.innerHTML += `<div style="margin-top:12px;background:var(--g2);border:1px solid rgba(34,211,163,.2);border-radius:7px;padding:12px;font-size:12px;color:var(--green);">OK Campanha criada e adicionada ao Kanban para aprovação!</div>`;
+      addLog('ok', '[S2-Campanha] Concluído: ' + nome + ' -> Kanban');
       toast('Campanha criada! Revise no Kanban.', 'success');
     } else {
       tag.textContent = 'Erro'; tag.className = 'tag hot';
@@ -2327,7 +2327,7 @@ async function criarCampanhaCompleta() {
     tag.textContent = 'Erro'; tag.className = 'tag hot';
     addLog('err', '[S2-Campanha] Erro: ' + e.message);
   }
-  btn.disabled = false; btn.textContent = '◆ Criar Campanha Completa com IA';
+  btn.disabled = false; btn.textContent = '* Criar Campanha Completa com IA';
 }
 
 async function runAgente(action) {
@@ -2357,7 +2357,7 @@ async function runAds() {
   const btn = document.getElementById('btnAds');
   const tag = document.getElementById('adsTag');
   const res = document.getElementById('adsResult');
-  btn.disabled = true; btn.textContent = '⟳ Gerando...';
+  btn.disabled = true; btn.textContent = '  Gerando...';
   tag.textContent = 'Executando'; tag.className = 'tag on';
   res.innerHTML = '<span class="msg-ph">Agente trabalhando...</span>';
   addLog('info', '[S2-Ads] ' + tipo + ': ' + camp);
@@ -2371,7 +2371,7 @@ async function runAds() {
     tag.textContent = 'Concluído'; tag.className = 'tag live';
     addLog('ok', '[S2-Ads] Estrutura gerada: ' + camp);
   } catch(e) { res.innerHTML = '<span style="color:var(--red)">Erro: '+e.message+'</span>'; addLog('err','[S2-Ads] Erro'); }
-  btn.disabled = false; btn.textContent = '◆ Gerar Estrutura com IA';
+  btn.disabled = false; btn.textContent = '* Gerar Estrutura com IA';
 }
 
 // INBOUND EMAIL
@@ -2384,7 +2384,7 @@ async function runEmail() {
   const btn = document.getElementById('btnEmail');
   const tag = document.getElementById('emailTag');
   const res = document.getElementById('emailResult');
-  btn.disabled = true; btn.textContent = '⟳ Criando...';
+  btn.disabled = true; btn.textContent = '  Criando...';
   tag.textContent = 'Executando'; tag.className = 'tag on';
   res.innerHTML = '<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:16px;text-align:center;">Agente criando...</div>';
   addLog('info', '[S2-Email] ' + tipo + ': ' + assunto);
@@ -2403,7 +2403,7 @@ async function runEmail() {
             <span style="font-size:11px;font-weight:600;flex:1;">${e.assunto}</span>
           </div>
           <div style="font-size:11.5px;line-height:1.7;white-space:pre-wrap;">${e.texto_completo}</div>
-          <div style="font-size:11px;color:var(--blue);margin-top:5px;">→ ${e.cta}</div>
+          <div style="font-size:11px;color:var(--blue);margin-top:5px;">-> ${e.cta}</div>
         </div>`).join('');
     } else {
       const struct = out.estrutura || {};
@@ -2420,7 +2420,7 @@ async function runEmail() {
     // Adicionar ao Kanban
     adicionarAoKanban('E-mail: ' + (out.assunto_principal||assunto), 'E-mail', 'S2-EmailMarketing', '', (out.estrutura?.corpo||out.cadencia?.[0]?.texto_completo||''), '');
   } catch(e) { res.innerHTML = '<div style="color:var(--red)">Erro: '+e.message+'</div>'; addLog('err','[S2-Email] Erro'); }
-  btn.disabled = false; btn.textContent = '◆ Criar com IA';
+  btn.disabled = false; btn.textContent = '* Criar com IA';
 }
 
 // SOCIAL DM
@@ -2430,7 +2430,7 @@ async function runDM() {
   const msg = document.getElementById('dmMsg')?.value || '';
   if (!msg) { toast('Cole a mensagem recebida', 'error'); return; }
   const btn = document.getElementById('btnDM');
-  btn.disabled = true; btn.textContent = '⟳ Analisando...';
+  btn.disabled = true; btn.textContent = '  Analisando...';
   addLog('info', '[S2-DM] Analisando DM de ' + perfil + ' no ' + rede);
   try {
     const r = await fetch('/api/s2-creative', {method:'POST',headers:{'Content-Type':'application/json'},
@@ -2447,10 +2447,10 @@ async function runDM() {
       <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:5px;">RESPOSTA SUGERIDA</div>
       <div style="background:var(--bg4);border:1px solid rgba(34,211,163,.2);border-radius:7px;padding:12px;font-size:12px;line-height:1.75;">${dm.resposta_sugerida||''}</div>
       <button class="btn btn-gn" style="margin-top:8px;font-size:10px;" onclick="navigator.clipboard.writeText('${(dm.resposta_sugerida||'').replace(/'/g,"\'")}');toast('Copiado!','success')">Copiar Resposta</button>`;
-    addLog('ok', '[S2-DM] Resposta gerada — Oportunidade: ' + dm.oportunidade_comercial);
+    addLog('ok', '[S2-DM] Resposta gerada -- Oportunidade: ' + dm.oportunidade_comercial);
     if (dm.oportunidade_comercial === 'Alta') toast('DM de alto potencial! Resposta pronta.', 'success');
   } catch(e) { addLog('err', '[S2-DM] Erro: ' + e.message); }
-  btn.disabled = false; btn.textContent = '◆ Analisar e Gerar Resposta';
+  btn.disabled = false; btn.textContent = '* Analisar e Gerar Resposta';
 }
 
 async function runSocialMonitor() {
@@ -2462,8 +2462,8 @@ async function runSocialMonitor() {
   const sr = document.getElementById('socialResult');
   if (sr && m.insights) sr.innerHTML = `
     <div style="font-size:12px;font-weight:600;margin-bottom:8px;">${m.resumo||''}</div>
-    <div style="margin-bottom:8px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:4px;">INSIGHTS</div>${(m.insights||[]).map(i=>`<div style="font-size:11px;padding:3px 0;">→ ${i}</div>`).join('')}</div>
-    <div><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--blue);margin-bottom:4px;">PRÓXIMOS POSTS</div>${(m.proximos_posts_sugeridos||[]).map(p=>`<div style="font-size:11px;padding:3px 0;">• ${p.tema} [${p.formato}] — ${p.melhor_horario}</div>`).join('')}</div>`;
+    <div style="margin-bottom:8px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:4px;">INSIGHTS</div>${(m.insights||[]).map(i=>`<div style="font-size:11px;padding:3px 0;">-> ${i}</div>`).join('')}</div>
+    <div><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--blue);margin-bottom:4px;">PRÓXIMOS POSTS</div>${(m.proximos_posts_sugeridos||[]).map(p=>`<div style="font-size:11px;padding:3px 0;">- ${p.tema} [${p.formato}] -- ${p.melhor_horario}</div>`).join('')}</div>`;
   addLog('ok', '[S2-Social] Relatório gerado');
 }
 
@@ -2479,7 +2479,7 @@ async function runFinOps() {
   const co = parseFloat(document.getElementById('fp_co')?.value||2000);
   const fe = parseFloat(document.getElementById('fp_fe')?.value||1000);
   const btn = document.getElementById('btnFinops');
-  btn.disabled = true; btn.textContent = '⟳ Analisando...';
+  btn.disabled = true; btn.textContent = '  Analisando...';
   addLog('info', '[S2-FinOps] Analisando investimentos...');
   const r = await fetch('/api/s2-creative', {method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({action:'finops',payload:{investimentos:{linkedin_ads:li,google_ads:ga,producao_conteudo:co,ferramentas:fe,total:li+ga+co+fe},periodo:'mês atual'}})});
@@ -2488,10 +2488,10 @@ async function runFinOps() {
   const res = document.getElementById('finopsResult');
   if (res) res.innerHTML = `
     <div class="kg k4" style="margin-bottom:12px;">
-      <div class="kpi gn"><div class="kl">Total Investido</div><div class="kv">${f.total_investido||'—'}</div></div>
-      <div class="kpi bl"><div class="kl">Receita Influenciada</div><div class="kv">${f.total_receita_influenciada||'—'}</div></div>
-      <div class="kpi pk"><div class="kl">ROI Marketing</div><div class="kv">${f.roi_marketing||'—'}</div></div>
-      <div class="kpi gd"><div class="kl">Economia Potencial</div><div class="kv">${f.economia_potencial||'—'}</div></div>
+      <div class="kpi gn"><div class="kl">Total Investido</div><div class="kv">${f.total_investido||'--'}</div></div>
+      <div class="kpi bl"><div class="kl">Receita Influenciada</div><div class="kv">${f.total_receita_influenciada||'--'}</div></div>
+      <div class="kpi pk"><div class="kl">ROI Marketing</div><div class="kv">${f.roi_marketing||'--'}</div></div>
+      <div class="kpi gd"><div class="kl">Economia Potencial</div><div class="kv">${f.economia_potencial||'--'}</div></div>
     </div>
     <div style="margin-bottom:10px;">
       ${(f.por_canal||[]).map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);">
@@ -2501,9 +2501,9 @@ async function runFinOps() {
         <span style="font-family:var(--M);font-size:8.5px;padding:2px 7px;border-radius:4px;background:${c.avaliacao==='Escalar'?'var(--g2)':c.avaliacao==='Pausar'?'var(--r2)':'var(--go2)'};color:${c.avaliacao==='Escalar'?'var(--green)':c.avaliacao==='Pausar'?'var(--red)':'var(--gold)'};">${c.avaliacao}</span>
       </div>`).join('')}
     </div>
-    ${(f.alertas||[]).length?`<div style="background:var(--r2);border-radius:7px;padding:10px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--red);margin-bottom:4px;">ALERTAS</div>${(f.alertas||[]).map(a=>`<div style="font-size:11px;color:var(--red);">⚠ ${a}</div>`).join('')}</div>`:''}`;
+    ${(f.alertas||[]).length?`<div style="background:var(--r2);border-radius:7px;padding:10px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--red);margin-bottom:4px;">ALERTAS</div>${(f.alertas||[]).map(a=>`<div style="font-size:11px;color:var(--red);">! ${a}</div>`).join('')}</div>`:''}`;
   addLog('ok', '[S2-FinOps] ROI: ' + f.roi_marketing);
-  btn.disabled = false; btn.textContent = '◆ Analisar';
+  btn.disabled = false; btn.textContent = '* Analisar';
 }
 
 // Init kanban com exemplo
