@@ -19,7 +19,7 @@ body{background:var(--bg);color:var(--t1);font-family:var(--B);font-size:13px;di
 .sb-dot{width:7px;height:7px;border-radius:50%;background:var(--blue);animation:pulse 2s infinite;}
 .sb-sub{font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--t3);margin-top:3px;padding-left:14px;}
 .sb-nav{flex:1;overflow-y:auto;padding:6px 0;}
-.sb-sec{font-family:var(--M);font-size:7.5px;letter-spacing:2px;text-transform:uppercase;color:var(--t3);padding:10px 13px 3px;}
+.sb-sec{font-family:var(--M);font-size:8px;letter-spacing:1.5px;text-transform:uppercase;color:#fff;background:#2a52cc;padding:5px 13px;margin:6px 8px 2px;border-radius:5px;}
 .sbi{display:flex;align-items:center;gap:7px;padding:7px 13px;cursor:pointer;color:var(--t1);font-size:11.5px;border-left:2px solid transparent;transition:all .1s;white-space:nowrap;}
 .sbi:hover{color:var(--t1);background:rgba(255,255,255,0.02);}
 .sbi.active{color:var(--blue);border-left-color:var(--blue);background:rgba(79,124,255,0.06);}
@@ -1545,11 +1545,7 @@ async function fundadorDecide(decisao) {
     const ideia = S1_PIPELINE.find(i => i.titulo.includes(titulo.substring(0,15)));
     if (ideia) { ideia.stage = 'Aprovada'; renderS1Kanban(); }
 
-    if (msg) msg.textContent = 'OK APROVADO
-
-' + titulo + '
-
-Agente S1-07 iniciando Briefing Técnico para o Squad de Dev S6...';
+    if (msg) msg.textContent = 'OK APROVADO\n' + titulo + '\nAgente S1-07 iniciando Briefing Técnico para o Squad de Dev S6...';
     addLog('success', '[FUNDADOR] APROVADO: ' + titulo + ' -> Iniciando Handoff Dev');
     toast('Aprovado! Agente S1-07 criando briefing técnico.', 'success');
 
@@ -1560,26 +1556,14 @@ Agente S1-07 iniciando Briefing Técnico para o Squad de Dev S6...';
         const b = handoffData.briefing;
         const ideia2 = S1_PIPELINE.find(i => i.titulo.includes(titulo.substring(0,15)));
         if (ideia2) { ideia2.stage = 'Em Dev'; renderS1Kanban(); }
-        msg.textContent = 'OK Handoff para Dev Concluído!
-
-Épico: ' + b.epico_nome + '
-Prazo: ' + b.prazo_sugerido + '
-Prioridade: ' + b.prioridade + '
-
-Escopo:
-' + (b.escopo||[]).map((e,i) => (i+1)+'. '+e).join('
-');
+        msg.textContent = 'OK Handoff para Dev Concluído!\nÉpico: ' + b.epico_nome + '\nPrazo: ' + b.prazo_sugerido + '\nPrioridade: ' + b.prioridade + '\nEscopo:\n' + (b.escopo||[]).map((e,i) => (i+1)+'. '+e).join('\n');
         addLog('success', '[S1-07] Handoff Dev: ' + b.epico_nome + ' | ' + b.prazo_sugerido);
         toast('Briefing técnico criado e enviado ao Squad Dev!', 'success');
       }
     }, 1500);
 
   } else {
-    if (msg) msg.textContent = 'x REJEITADO
-
-' + titulo + '
-
-Ideia arquivada com justificativa para aprendizado futuro.';
+    if (msg) msg.textContent = 'x REJEITADO\n' + titulo + '\nIdeia arquivada com justificativa para aprendizado futuro.';
     const ideia = S1_PIPELINE.find(i => i.titulo.includes(titulo.substring(0,15)));
     if (ideia) { ideia.stage = 'Recebida'; renderS1Kanban(); }
     addLog('warn', '[FUNDADOR] REJEITADO: ' + titulo);
