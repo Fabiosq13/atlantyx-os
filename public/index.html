@@ -755,14 +755,57 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;" id="kanbanBoard">
       <!-- Gerado pelo JS -->
     </div>
-    <!-- DETALHE DA PEÇA SELECIONADA -->
+    <!-- DETALHE DA PEÇA + LOOP DE REVISÃO -->
     <div class="panel" id="kanbanDetalhe" style="margin-top:12px;display:none;">
-      <div class="ph"><div class="pt" id="kanbanDetTit">Detalhe da Peça</div>
+      <div class="ph">
+        <div class="pt" id="kanbanDetTit">Detalhe da Peça</div>
         <button class="btn btn-gn" style="font-size:9px;padding:3px 9px;" onclick="aprovarPeca(kanbanPecaSelecionada)">&#10003; Aprovar e Agendar</button>
         <button class="btn btn-rd" style="font-size:9px;padding:3px 9px;" onclick="recusarPeca(kanbanPecaSelecionada)">&#10005; Recusar</button>
-        <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="solicitarAjuste(kanbanPecaSelecionada)">&#8594; Solicitar Ajuste</button>
       </div>
       <div class="pb" id="kanbanDetBody"></div>
+
+      <!-- ÁREA DE REVISÃO ITERATIVA -->
+      <div style="border-top:1px solid var(--bd);padding:14px;">
+        <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--or);margin-bottom:8px;letter-spacing:1px;">LOOP DE REVISÃO — Ajuste e Regenere</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+          <div>
+            <div style="font-size:10px;color:var(--t2);margin-bottom:4px;">Imagem gerada no Ideogram — cole a URL aqui:</div>
+            <input class="fi" id="imgUrl" placeholder="https://ideogram.ai/assets/..." style="margin-bottom:6px;"/>
+            <div id="imgPreview" style="display:none;border-radius:7px;overflow:hidden;max-height:220px;"><img id="imgPreviewEl" src="" style="width:100%;object-fit:cover;" alt="Preview"/></div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--t2);margin-bottom:4px;">Seu comentario de ajuste:</div>
+            <textarea class="fta" id="ajusteComentario" style="min-height:80px;" placeholder="Ex: A imagem ficou muito escura. Quero mais contraste no titulo. O grafico do lado direito nao ficou claro. Mudar a cor de fundo para azul mais vivo..."></textarea>
+            <div style="font-size:10px;color:var(--t3);margin-top:4px;">O agente lê seu comentário e ajusta o prompt automaticamente para a próxima geração.</div>
+          </div>
+        </div>
+
+        <!-- HISTÓRICO DE VERSÕES -->
+        <div id="versaoHistorico" style="display:none;margin-bottom:10px;">
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:6px;">HISTÓRICO DE VERSÕES</div>
+          <div id="versaoList" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+        </div>
+
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-or" id="btnAjustar" onclick="ajustarComIA()" style="flex:1;">&#9670; Ajustar Prompt com IA</button>
+          <button class="btn btn-g" id="btnVerPrompt" onclick="togglePrompt()" style="font-size:11px;">Ver Prompt Atual</button>
+          <button class="btn btn-g" onclick="copiarPrompt()" style="font-size:11px;">Copiar Prompt</button>
+        </div>
+
+        <!-- PROMPT ATUAL -->
+        <div id="promptAtual" style="display:none;margin-top:10px;">
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--blue);margin-bottom:5px;">PROMPT ATUAL — Cole no Ideogram:</div>
+          <div id="promptTexto" style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:11px;font-size:11.5px;line-height:1.7;white-space:pre-wrap;font-family:var(--font-mono,monospace);"></div>
+        </div>
+
+        <!-- RESULTADO DO AJUSTE -->
+        <div id="ajusteResultado" style="display:none;margin-top:10px;">
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:5px;">PROMPT AJUSTADO — Pronto para usar no Ideogram:</div>
+          <div id="ajustePromptNovo" style="background:var(--bg4);border:1px solid rgba(34,211,163,.25);border-radius:6px;padding:11px;font-size:11.5px;line-height:1.7;white-space:pre-wrap;font-family:var(--font-mono,monospace);"></div>
+          <div style="margin-top:8px;font-size:11px;color:var(--t2);" id="ajusteExplicacao"></div>
+          <button class="btn btn-gn" style="margin-top:8px;font-size:10px;" onclick="aplicarPromptAjustado()">Usar este prompt — substituir atual</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -2494,6 +2537,177 @@ async function runFinOps() {
 setTimeout(() => {
   renderKanban();
 }, 500);
+
+
+// ── LOOP DE REVISAO ITERATIVA DE IMAGENS ─────────────────────────────────────
+let promptAtualVersao = '';
+let versaoHistoricoData = [];
+
+// Monitora URL da imagem colada e mostra preview
+document.addEventListener('input', function(e) {
+  if (e.target.id === 'imgUrl') {
+    const url = e.target.value.trim();
+    const preview = document.getElementById('imgPreview');
+    const img = document.getElementById('imgPreviewEl');
+    if (url && (url.startsWith('http') || url.startsWith('data:'))) {
+      img.src = url;
+      img.onload = () => { preview.style.display = 'block'; };
+      img.onerror = () => { preview.style.display = 'none'; };
+    } else {
+      preview.style.display = 'none';
+    }
+  }
+});
+
+function togglePrompt() {
+  const el = document.getElementById('promptAtual');
+  const pt = document.getElementById('promptTexto');
+  if (!el) return;
+  const showing = el.style.display !== 'none';
+  el.style.display = showing ? 'none' : 'block';
+  if (!showing && kanbanPecaSelecionada) {
+    const peca = kanbanPecas.find(p => p.id === kanbanPecaSelecionada);
+    if (peca) {
+      pt.textContent = promptAtualVersao || peca.prompt_ideogram || peca.design || 'Prompt nao disponivel - gere uma campanha primeiro.';
+    }
+  }
+}
+
+function copiarPrompt() {
+  const peca = kanbanPecas.find(p => p.id === kanbanPecaSelecionada);
+  const prompt = promptAtualVersao || peca?.prompt_ideogram || peca?.design || '';
+  if (!prompt) { toast('Nenhum prompt disponivel', 'error'); return; }
+  navigator.clipboard.writeText(prompt);
+  toast('Prompt copiado! Cole no Ideogram.', 'success');
+}
+
+async function ajustarComIA() {
+  const comentario = document.getElementById('ajusteComentario')?.value?.trim();
+  const imgUrl = document.getElementById('imgUrl')?.value?.trim();
+  if (!comentario) { toast('Descreva o que ajustar na imagem', 'error'); return; }
+
+  const peca = kanbanPecas.find(p => p.id === kanbanPecaSelecionada);
+  if (!peca) { toast('Selecione uma peca primeiro', 'error'); return; }
+
+  const btn = document.getElementById('btnAjustar');
+  btn.disabled = true; btn.textContent = 'Ajustando...';
+
+  const promptOriginal = promptAtualVersao || peca.prompt_ideogram || peca.design || '';
+  addLog('info', '[S2-Designer] Ajustando prompt com base no comentario...');
+
+  try {
+    const r = await fetch('/api/s2-creative', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        action: 'designer',
+        payload: {
+          canal: peca.canal || 'LinkedIn',
+          formato: 'post 1080x1080',
+          ajuste_comentario: comentario,
+          prompt_anterior: promptOriginal,
+          imagem_url: imgUrl || '',
+          copy: { versoes: [{ headline: peca.titulo, corpo: peca.copy }] }
+        }
+      })
+    });
+    const data = await r.json();
+    const design = data.design || {};
+    const novoPrompt = design.prompt_ia_imagem || design.brief_visual || '';
+
+    if (novoPrompt) {
+      // Salvar no historico
+      versaoHistoricoData.push({
+        versao: versaoHistoricoData.length + 1,
+        prompt: promptOriginal,
+        comentario,
+        timestamp: new Date().toLocaleTimeString('pt-BR')
+      });
+      promptAtualVersao = novoPrompt;
+
+      // Mostrar resultado
+      const resEl = document.getElementById('ajusteResultado');
+      const novoEl = document.getElementById('ajustePromptNovo');
+      const expEl = document.getElementById('ajusteExplicacao');
+      if (resEl) resEl.style.display = 'block';
+      if (novoEl) novoEl.textContent = novoPrompt;
+      if (expEl) expEl.textContent = design.conceito_visual || '';
+
+      // Atualizar historico visual
+      renderVersaoHistorico();
+
+      addLog('ok', '[S2-Designer] Prompt ajustado - versao ' + versaoHistoricoData.length);
+      toast('Prompt ajustado! Copie e cole no Ideogram para regenerar.', 'success');
+
+      // Limpar comentario
+      document.getElementById('ajusteComentario').value = '';
+    } else {
+      toast('Erro ao ajustar - tente novamente', 'error');
+    }
+  } catch(e) {
+    addLog('err', '[S2-Designer] Erro no ajuste: ' + e.message);
+    toast('Erro: ' + e.message, 'error');
+  }
+  btn.disabled = false; btn.textContent = 'Ajustar Prompt com IA';
+}
+
+function aplicarPromptAjustado() {
+  const novoEl = document.getElementById('ajustePromptNovo');
+  if (!novoEl || !kanbanPecaSelecionada) return;
+  const peca = kanbanPecas.find(p => p.id === kanbanPecaSelecionada);
+  if (peca) {
+    peca.prompt_ideogram = novoEl.textContent;
+    promptAtualVersao = novoEl.textContent;
+    document.getElementById('promptTexto').textContent = novoEl.textContent;
+    document.getElementById('ajusteResultado').style.display = 'none';
+    toast('Prompt atualizado como versao atual', 'success');
+    addLog('ok', '[S2-Designer] Prompt v' + versaoHistoricoData.length + ' aplicado como atual');
+  }
+}
+
+function renderVersaoHistorico() {
+  const hist = document.getElementById('versaoHistorico');
+  const list = document.getElementById('versaoList');
+  if (!hist || !list || !versaoHistoricoData.length) return;
+  hist.style.display = 'block';
+  list.innerHTML = versaoHistoricoData.map((v, i) => `
+    <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:5px;padding:7px 10px;cursor:pointer;min-width:100px;"
+         onclick="voltarVersao(${i})" title="${v.comentario}">
+      <div style="font-family:var(--M);font-size:8px;color:var(--t2);">Versao ${v.versao}</div>
+      <div style="font-size:10px;margin-top:2px;">${v.timestamp}</div>
+      <div style="font-size:9px;color:var(--t3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;">${v.comentario.substring(0,30)}...</div>
+    </div>`).join('') + `
+    <div style="background:rgba(34,211,163,.08);border:1px solid rgba(34,211,163,.2);border-radius:5px;padding:7px 10px;min-width:100px;">
+      <div style="font-family:var(--M);font-size:8px;color:var(--green);">Atual</div>
+      <div style="font-size:10px;margin-top:2px;">${new Date().toLocaleTimeString('pt-BR')}</div>
+      <div style="font-size:9px;color:var(--green);margin-top:2px;">Prompt mais recente</div>
+    </div>`;
+}
+
+function voltarVersao(i) {
+  const v = versaoHistoricoData[i];
+  if (!v || !kanbanPecaSelecionada) return;
+  const peca = kanbanPecas.find(p => p.id === kanbanPecaSelecionada);
+  if (peca) {
+    peca.prompt_ideogram = v.prompt;
+    promptAtualVersao = v.prompt;
+    document.getElementById('promptTexto').textContent = v.prompt;
+    toast('Voltou para versao ' + v.versao, 'info');
+    addLog('info', '[S2-Designer] Voltou para versao ' + v.versao);
+  }
+}
+
+// Resetar ao selecionar nova peca
+const _origSelecionarPeca = selecionarPeca;
+selecionarPeca = function(id) {
+  _origSelecionarPeca(id);
+  promptAtualVersao = '';
+  versaoHistoricoData = [];
+  const els = ['ajusteResultado','promptAtual','versaoHistorico','imgPreview'];
+  els.forEach(el => { const e = document.getElementById(el); if(e) e.style.display = 'none'; });
+  const img = document.getElementById('imgUrl'); if(img) img.value = '';
+  const com = document.getElementById('ajusteComentario'); if(com) com.value = '';
+};
 
 renderAg(S2A,'s2-grid');renderAg(S7A,'s7-grid');
 addLog('success','Atlantyx OS iniciado - Monitor de Agentes ativo');
