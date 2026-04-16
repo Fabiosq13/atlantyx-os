@@ -201,6 +201,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sg-sub">REPLANEJAMENTO</div>
       <div class="sbi s1" onclick="nav('s1dash',this)">&#8635; Replanejamento</div>
       <div class="sbi s1" onclick="nav('s1relatorio',this)">&#9776; Relatorio Executivo</div>
+    <div class="sbi s1" onclick="nav('s1dados',this)">&#128200; Dados Reais da Empresa <span class="nbx gn">QB+Drive</span></div>
       <div class="sg-sub">PRODUTOS</div>
       <div class="sbi s1" onclick="nav('s1pipeline',this)">&#9654; Pipeline Produtos <span class="nbx bl" id="s1PipeCnt">—</span></div>
     </div>
@@ -928,6 +929,12 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <div style="margin-top:8px;font-family:var(--M);font-size:8px;color:var(--green)">● Ativo</div>
       </div>
       <!-- ROW 3 -->
+      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;cursor:pointer;border-top:2px solid var(--green);" onclick="abrirGerarImagem()">
+        <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:5px">IMAGEM IA</div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:3px">Gerar Imagem</div>
+        <div style="font-size:11px;color:var(--t2)">Ideogram API — imagens premium para campanhas B2B</div>
+        <div style="margin-top:8px;font-family:var(--M);font-size:8px;color:var(--green)">● Ideogram Conectado</div>
+      </div>
       <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;cursor:pointer" onclick="nav('s2inbound',null)">
         <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--gold);margin-bottom:5px">INBOUND</div>
         <div style="font-size:13px;font-weight:600;margin-bottom:3px">Email Marketing</div>
@@ -995,10 +1002,16 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <div id="versaoList" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
         </div>
 
-        <div style="display:flex;gap:8px;">
-          <button class="btn btn-or" id="btnAjustar" onclick="ajustarComIA()" style="flex:1;">&#9670; Ajustar Prompt com IA</button>
-          <button class="btn btn-g" id="btnVerPrompt" onclick="togglePrompt()" style="font-size:11px;">Ver Prompt Atual</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-p" id="btnGerarImg" onclick="gerarImagemIdeogram()" style="flex:1;">&#9670; Gerar Imagem no Ideogram</button>
+          <button class="btn btn-or" id="btnAjustar" onclick="ajustarComIA()">Ajustar Prompt</button>
           <button class="btn btn-g" onclick="copiarPrompt()" style="font-size:11px;">Copiar Prompt</button>
+        </div>
+        <!-- GALERIA DE IMAGENS GERADAS -->
+        <div id="imgGaleria" style="display:none;margin-top:10px;">
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:8px;letter-spacing:1px;">IMAGENS GERADAS — Ideogram</div>
+          <div id="imgGaleriaGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;"></div>
+          <div style="margin-top:8px;font-size:10px;color:var(--t3);">Clique na imagem para abrir em tamanho completo. Selecione a melhor para aprovar no Kanban.</div>
         </div>
 
         <!-- PROMPT ATUAL -->
@@ -1371,12 +1384,160 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </div>
 
 
+
+  <!-- S1 DADOS REAIS — QuickBooks + Google Drive -->
+  <div class="page" id="page-s1dados">
+    <div style="background:linear-gradient(135deg,rgba(34,211,163,.15),rgba(79,124,255,.08));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;">
+      <div style="font-family:var(--H);font-size:15px;font-weight:700;margin-bottom:4px;">Dados Reais da Empresa — QuickBooks + Google Drive</div>
+      <div style="font-size:11px;color:var(--t2);">Os agentes S1 leem os dados financeiros reais do QuickBooks e documentos estratégicos do Drive para alimentar o planejamento com informacao real, nao estimativa.</div>
+    </div>
+
+    <!-- STATUS DAS INTEGRACOES -->
+    <div class="kg k4" style="margin-bottom:13px;">
+      <div class="kpi gn"><div class="kl">QuickBooks</div><div class="kv" id="qbStatus" style="font-size:13px;">Verificando...</div><div class="ks" id="qbSub">DRE, Caixa, Clientes</div></div>
+      <div class="kpi bl"><div class="kl">Google Drive</div><div class="kv" id="driveStatus" style="font-size:13px;">Verificando...</div><div class="ks" id="driveSub">Documentos estrategicos</div></div>
+      <div class="kpi or"><div class="kl">Ultima Leitura</div><div class="kv" id="dadosUltimaLeitura" style="font-size:13px;">--</div><div class="ks">dados sincronizados</div></div>
+      <div class="kpi pu"><div class="kl">Semaforo S1</div><div class="kv" id="dadosSemaforo" style="font-size:13px;">--</div><div class="ks">saude financeira</div></div>
+    </div>
+
+    <!-- ACOES RAPIDAS -->
+    <div class="panel" style="margin-bottom:12px;">
+      <div class="ph"><div class="pt">Carregar Dados para os Agentes S1</div></div>
+      <div class="pb" style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-gn" id="btnContexto" onclick="loadContextoEstrategico()" style="flex:1;">&#9670; Contexto Estrategico Completo (QB + Drive)</button>
+        <button class="btn btn-g" id="btnQBFin" onclick="loadQBFinanceiro()">&#128200; Financeiro QuickBooks</button>
+        <button class="btn btn-g" id="btnDrive" onclick="loadDrivePasta()">&#128193; Ler Pasta do Drive</button>
+        <button class="btn btn-g" id="btnDiagReal" onclick="runDiagComDados()">&#9670; Diagnostico com Dados Reais</button>
+      </div>
+    </div>
+
+    <!-- RESULTADO CONTEXTO -->
+    <div class="kg k2">
+      <div class="panel">
+        <div class="ph"><div class="pt">QuickBooks — Dados Financeiros</div><span class="tag on">Tempo Real</span></div>
+        <div class="pb" id="qbResult">
+          <div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Clique em "Financeiro QuickBooks" para carregar os dados reais</div>
+          <div style="margin-top:10px;background:var(--go2);border:1px solid rgba(245,166,35,.2);border-radius:7px;padding:11px;font-size:11px;color:var(--gold);">
+            <strong>Configurar QuickBooks:</strong><br>
+            Vercel → Environment Variables:<br>
+            QB_CLIENT_ID · QB_CLIENT_SECRET · QB_REFRESH_TOKEN · QB_REALM_ID
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="ph"><div class="pt">Google Drive — Documentos Estrategicos</div><span class="tag on">Tempo Real</span></div>
+        <div class="pb" id="driveResult">
+          <div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Clique em "Ler Pasta do Drive" para analisar os documentos</div>
+          <div style="margin-top:10px;background:var(--go2);border:1px solid rgba(245,166,35,.2);border-radius:7px;padding:11px;font-size:11px;color:var(--gold);">
+            <strong>Configurar Google Drive:</strong><br>
+            Vercel → Environment Variables:<br>
+            DRIVE_ACCESS_TOKEN · DRIVE_FOLDER_ID<br><br>
+            <strong>DRIVE_FOLDER_ID:</strong> ID da pasta no Drive<br>
+            (na URL: drive.google.com/drive/folders/<strong>ID_AQUI</strong>)
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONTEXTO ESTRATEGICO COMPLETO -->
+    <div class="panel" id="contextoPanel" style="display:none;">
+      <div class="ph"><div class="pt">Contexto Estrategico — Alimentando os Agentes S1</div><span class="tag live">QB + Drive + Claude</span></div>
+      <div class="pb" id="contextoResult"></div>
+    </div>
+  </div>
+
+
+
+  <!-- GERADOR DE IMAGENS — IDEOGRAM -->
+  <div class="page" id="page-s2img">
+    <div style="background:linear-gradient(135deg,rgba(34,211,163,.18),rgba(79,124,255,.08));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
+      <div style="font-size:20px;">&#127912;</div>
+      <div style="flex:1;">
+        <div style="font-family:var(--H);font-size:15px;font-weight:700;">Gerador de Imagens — Ideogram IA</div>
+        <div style="font-size:10.5px;color:var(--t2);margin-top:2px;">Gera imagens premium no estilo Atlantyx — dark navy, azul elétrico, tipografia bold, estética EY/McKinsey.</div>
+      </div>
+      <span style="font-family:var(--M);font-size:9px;padding:3px 10px;border-radius:4px;background:var(--g2);color:var(--green);">● Ideogram Conectado</span>
+    </div>
+
+    <div class="kg k2">
+      <!-- CONFIGURAÇÃO -->
+      <div class="panel">
+        <div class="ph"><div class="pt">Configurar e Gerar</div></div>
+        <div class="pb">
+          <div class="fg"><label class="fl">Descrição da Imagem (o que você quer)</label>
+            <textarea class="fta" id="imgPromptUser" style="min-height:80px;" placeholder="Ex: CIO de grande empresa olhando para dashboard de dados em tela grande, ambiente corporativo premium, expressão de satisfação..."></textarea>
+          </div>
+          <div class="fg"><label class="fl">Texto na Imagem (headline da campanha)</label>
+            <input class="fi" id="imgTexto" placeholder="Ex: Dados que chegam 3 dias atrasados custam caro."/>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
+            <div class="fg" style="margin:0;"><label class="fl">Formato</label>
+              <select class="fsel" id="imgFormato">
+                <option value="ASPECT_1_1">1:1 — Feed quadrado</option>
+                <option value="ASPECT_4_5">4:5 — Feed vertical</option>
+                <option value="ASPECT_9_16">9:16 — Stories/Reels</option>
+                <option value="ASPECT_16_9">16:9 — LinkedIn/YouTube</option>
+                <option value="ASPECT_3_1">3:1 — Banner LinkedIn</option>
+              </select>
+            </div>
+            <div class="fg" style="margin:0;"><label class="fl">Estilo</label>
+              <select class="fsel" id="imgEstilo">
+                <option value="DESIGN">Design (corporativo)</option>
+                <option value="REALISTIC">Fotorrealista</option>
+                <option value="RENDER_3D">3D Render</option>
+                <option value="ILLUSTRATION">Ilustração</option>
+              </select>
+            </div>
+            <div class="fg" style="margin:0;"><label class="fl">Qtd de variações</label>
+              <select class="fsel" id="imgQtd">
+                <option value="1">1 imagem</option>
+                <option value="2" selected>2 variações</option>
+                <option value="4">4 variações</option>
+              </select>
+            </div>
+          </div>
+          <div class="fg"><label class="fl">Tema da Campanha (opcional — para prompt automático)</label>
+            <select class="fsel" id="imgTema">
+              <option value="">Usar minha descrição acima</option>
+              <option value="dor_dados">Dor: Dados desconectados / decisões erradas</option>
+              <option value="transformacao">Transformação digital com BI/IA</option>
+              <option value="roi">ROI e resultado mensurável</option>
+              <option value="velocidade">Quick Wins em semanas</option>
+              <option value="energia">Setor Energia — operação complexa</option>
+              <option value="industria">Setor Indústria — manufatura e dados</option>
+              <option value="varejo">Setor Varejo — decisões em tempo real</option>
+            </select>
+          </div>
+          <button class="btn btn-p" style="width:100%;" id="btnGerarImgMain" onclick="gerarImagemDireta()">&#9670; Gerar Imagem no Ideogram</button>
+          <div style="margin-top:6px;font-size:10px;color:var(--t3);text-align:center;">O agente Designer gera o prompt otimizado + Ideogram cria a imagem em ~15 segundos</div>
+        </div>
+      </div>
+
+      <!-- RESULTADO -->
+      <div class="panel">
+        <div class="ph"><div class="pt">Imagens Geradas</div><span class="tag off" id="imgTag">Aguardando</span></div>
+        <div class="pb" id="imgResultMain">
+          <div style="color:var(--t3);font-size:11px;text-align:center;padding:30px;">Configure e clique em Gerar para criar imagens com IA</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HISTÓRICO DE IMAGENS GERADAS NESTA SESSÃO -->
+    <div class="panel" id="imgHistorico" style="display:none;">
+      <div class="ph"><div class="pt">Histórico da Sessão</div><span class="tag off" id="imgHistTag">0 imagens</span>
+        <button class="btn btn-gn" style="font-size:9px;padding:3px 8px;" onclick="aprovarTodasImagens()">Aprovar Selecionadas no Kanban</button>
+      </div>
+      <div class="pb" id="imgHistGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;"></div>
+    </div>
+  </div>
+
+
   </div>
 </main>
 <div class="toast" id="toastEl"></div>
 <script>
 const LOGS=[];let logCount=0;
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo de Caixa',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Produtos',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo de Caixa',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Produtos',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -4058,6 +4219,330 @@ function initS3() {
   if (metas.realAnual !== undefined) {
     atualizarPainelFinanceiro(metas.realAnual || 0, metas.realMensal || 0, 0, 0);
   }
+}
+
+
+// ── S1 DADOS REAIS — QuickBooks + Google Drive ────────────────────────────────
+let dadosEmpresaCache = null;
+
+async function loadContextoEstrategico() {
+  const btn = document.getElementById('btnContexto');
+  const panel = document.getElementById('contextoPanel');
+  const result = document.getElementById('contextoResult');
+  btn.disabled = true; btn.textContent = 'Carregando QB + Drive...';
+  if (panel) panel.style.display = 'block';
+  if (result) result.innerHTML = '<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:16px;text-align:center;">Lendo QuickBooks e Google Drive...</div>';
+  addLog('info', '[S1-Data] Carregando contexto estrategico completo...');
+
+  const data = await api('/api/s1-data', 'POST', { action: 'contexto_estrategico' });
+  btn.disabled = false; btn.textContent = 'Contexto Estrategico Completo (QB + Drive)';
+
+  if (!data?.success) {
+    if (result) result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:16px;">Erro ao carregar. Verifique QB_CLIENT_ID e DRIVE_ACCESS_TOKEN no Vercel.</div>';
+    return;
+  }
+
+  dadosEmpresaCache = data;
+  const ctx = data.contexto_estrategico || {};
+  const semCor = ctx.semaforo === 'Verde' ? 'var(--green)' : ctx.semaforo === 'Amarelo' ? 'var(--gold)' : 'var(--red)';
+
+  document.getElementById('dadosSemaforo').textContent = ctx.semaforo || '--';
+  document.getElementById('dadosSemaforo').style.color = semCor;
+  document.getElementById('dadosUltimaLeitura').textContent = new Date().toLocaleTimeString('pt-BR');
+
+  if (result) result.innerHTML = `
+    <div style="background:${semCor.replace(')',', 0.08)')};border:1px solid ${semCor.replace(')',', 0.2)')};border-radius:7px;padding:13px;margin-bottom:12px;">
+      <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:${semCor};margin-bottom:5px;">CONTEXTO EXECUTIVO</div>
+      <div style="font-size:12px;line-height:1.7;">${ctx.contexto_executivo || ''}</div>
+    </div>
+    <div class="kg k3" style="margin-bottom:10px;">
+      <div style="background:var(--bg4);border-radius:7px;padding:11px;">
+        <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--blue);margin-bottom:5px;">PRIORIDADES DA SEMANA</div>
+        ${(ctx.prioridades_semana||[]).map((p,i)=>`<div style="font-size:11px;padding:3px 0;">&#9654; ${p}</div>`).join('')}
+      </div>
+      <div style="background:var(--bg4);border-radius:7px;padding:11px;">
+        <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--gold);margin-bottom:5px;">DECISOES URGENTES</div>
+        ${(ctx.decisoes_urgentes||[]).map(d=>`<div style="font-size:11px;padding:3px 0;">&#9888; ${d}</div>`).join('')}
+      </div>
+      <div style="background:var(--bg4);border-radius:7px;padding:11px;">
+        <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:5px;">OPORTUNIDADES IMEDIATAS</div>
+        ${(ctx.oportunidades_imediatas||[]).map(o=>`<div style="font-size:11px;padding:3px 0;">&#8593; ${o}</div>`).join('')}
+      </div>
+    </div>`;
+
+  // Renderizar QB e Drive separadamente
+  if (data.dados?.financeiro) renderQBResult(data.dados.financeiro);
+  if (data.dados?.documentos_drive) renderDriveResult(data.dados.documentos_drive);
+
+  addLog('ok', '[S1-Data] Contexto carregado: ' + (ctx.semaforo || '--'));
+  toast('Contexto estrategico atualizado com dados reais!', 'success');
+}
+
+async function loadQBFinanceiro() {
+  const btn = document.getElementById('btnQBFin');
+  const result = document.getElementById('qbResult');
+  btn.disabled = true; btn.textContent = 'Lendo QuickBooks...';
+  addLog('info', '[QuickBooks] Carregando dados financeiros reais...');
+
+  const data = await api('/api/s1-data', 'POST', { action: 'analisar_financeiro' });
+  btn.disabled = false; btn.textContent = 'Financeiro QuickBooks';
+
+  if (!data?.success) {
+    if (result) result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Erro. Configure QB_CLIENT_ID, QB_CLIENT_SECRET, QB_REFRESH_TOKEN e QB_REALM_ID no Vercel.</div>';
+    addLog('err', '[QuickBooks] Erro ao conectar');
+    return;
+  }
+
+  renderQBResult(data.analise_financeira);
+  document.getElementById('qbStatus').textContent = data.analise_financeira?.saude_financeira || 'OK';
+  addLog('ok', '[QuickBooks] Dados financeiros carregados: ' + (data.analise_financeira?.saude_financeira || '--'));
+}
+
+function renderQBResult(fin) {
+  const result = document.getElementById('qbResult');
+  if (!result || !fin) return;
+  const sc = fin.saude_financeira === 'Verde' ? 'var(--green)' : fin.saude_financeira === 'Amarelo' ? 'var(--gold)' : 'var(--red)';
+  result.innerHTML = `
+    <div class="kg k2" style="margin-bottom:10px;">
+      <div style="background:var(--bg4);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">RECEITA</div><div style="font-size:16px;font-weight:600;color:var(--green);">${fin.receita_atual || '--'}</div></div>
+      <div style="background:var(--bg4);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">MARGEM</div><div style="font-size:16px;font-weight:600;">${fin.margem_liquida || '--'}</div></div>
+    </div>
+    <div style="margin-bottom:8px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--red);margin-bottom:4px;">ALERTAS</div>${(fin.alertas||['Nenhum alerta']).map(a=>`<div style="font-size:11px;color:var(--gold);">&#9888; ${a}</div>`).join('')}</div>
+    <div style="margin-bottom:8px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:4px;">ALAVANCAS DE LUCRO</div>${(fin.alavancas_lucro||[]).map(a=>`<div style="font-size:11px;">&#8593; ${a}</div>`).join('')}</div>
+    <div><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--blue);margin-bottom:4px;">RECOMENDACOES CFO</div>${(fin.recomendacoes_cfo||[]).map(r=>`<div style="font-size:11px;">-> ${r}</div>`).join('')}</div>`;
+}
+
+async function loadDrivePasta() {
+  const btn = document.getElementById('btnDrive');
+  const result = document.getElementById('driveResult');
+  btn.disabled = true; btn.textContent = 'Lendo Drive...';
+  addLog('info', '[Drive] Lendo pasta estrategica...');
+
+  const data = await api('/api/s1-data', 'POST', { action: 'drive_resumir_pasta', params: { pergunta: 'Quais dados sao mais relevantes para o planejamento estrategico?' } });
+  btn.disabled = false; btn.textContent = 'Ler Pasta do Drive';
+
+  if (!data?.success) {
+    if (result) result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Erro. Configure DRIVE_ACCESS_TOKEN e DRIVE_FOLDER_ID no Vercel.</div>';
+    addLog('err', '[Drive] Erro ao conectar');
+    return;
+  }
+
+  renderDriveResult(data);
+  document.getElementById('driveStatus').textContent = data.total_arquivos + ' docs';
+  addLog('ok', '[Drive] ' + data.documentos_analisados + ' documentos analisados');
+}
+
+function renderDriveResult(data) {
+  const result = document.getElementById('driveResult');
+  if (!result || !data) return;
+  const analise = data.analise || {};
+  result.innerHTML = `
+    <div style="background:var(--b2);border-radius:6px;padding:10px;margin-bottom:10px;font-size:11.5px;line-height:1.7;">${analise.resumo_executivo || data.resumo || 'Sem resumo'}</div>
+    ${(analise.insights_chave||[]).length ? `<div style="margin-bottom:8px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--blue);margin-bottom:4px;">INSIGHTS CHAVE</div>${analise.insights_chave.map(i=>`<div style="font-size:11px;padding:2px 0;">-> ${i}</div>`).join('')}</div>` : ''}
+    ${(analise.riscos_identificados||[]).length ? `<div style="margin-bottom:8px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--red);margin-bottom:4px;">RISCOS</div>${analise.riscos_identificados.map(r=>`<div style="font-size:11px;color:var(--gold);">&#9888; ${r}</div>`).join('')}</div>` : ''}
+    ${(analise.acoes_sugeridas||[]).length ? `<div><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:4px;">ACOES</div>${analise.acoes_sugeridas.map(a=>`<div style="font-size:11px;">&#10003; ${a}</div>`).join('')}</div>` : ''}
+    <div style="font-family:var(--M);font-size:9px;color:var(--t3);margin-top:8px;">${data.total_arquivos||0} arquivos | ${data.documentos_analisados||0} analisados</div>`;
+}
+
+async function runDiagComDados() {
+  addLog('info', '[S1-Intel] Diagnostico com dados reais QB + Drive...');
+  // Primeiro carregar contexto, depois rodar diagnostico
+  await loadContextoEstrategico();
+  await runDiag();
+  toast('Diagnostico com dados reais concluido!', 'success');
+}
+
+
+// ── GERADOR DE IMAGENS — IDEOGRAM ────────────────────────────────────────────
+let imgHistoricoData = [];
+
+// Temas pré-definidos para prompt automático
+const IMG_TEMAS = {
+  dor_dados: 'Corporate executive looking frustrated at disconnected data screens, multiple monitors showing inconsistent reports, dark boardroom, tension visible, B2B technology context',
+  transformacao: 'Digital transformation moment, CIO standing confidently in front of large data dashboard showing real-time analytics, modern corporate environment, success and clarity',
+  roi: 'Business ROI chart showing dramatic upward growth, clean corporate design, financial metrics dashboard, green positive indicators, executive reviewing results',
+  velocidade: 'Fast implementation visualization, timeline showing weeks not months, sprint delivery concept, agile corporate environment, momentum and speed',
+  energia: 'Energy sector control room, operator monitoring power grid data dashboard, industrial technology, real-time operational analytics',
+  industria: 'Manufacturing plant floor with digital overlay showing production data, Industry 4.0 concept, connected machines and analytics dashboard',
+  varejo: 'Retail chain executive reviewing sales data across multiple store locations on unified dashboard, real-time inventory and customer analytics',
+};
+
+async function gerarImagemIdeogram() {
+  // Chamado do Kanban — usa o prompt da peça selecionada
+  const peca = kanbanPecas.find(p => p.id === kanbanPecaSelecionada);
+  if (!peca) { toast('Selecione uma peca no Kanban primeiro', 'error'); return; }
+
+  const prompt = promptAtualVersao || peca.prompt_ideogram || peca.design || '';
+  if (!prompt) { toast('Sem prompt disponivel. Gere uma campanha primeiro.', 'error'); return; }
+
+  await _gerarImagem(prompt, 'ASPECT_1_1', 'DESIGN', 2, 'kanban');
+}
+
+async function gerarImagemDireta() {
+  // Chamado da página de Geração de Imagem
+  const tema = document.getElementById('imgTema')?.value;
+  const descricao = document.getElementById('imgPromptUser')?.value?.trim();
+  const texto = document.getElementById('imgTexto')?.value?.trim();
+  const formato = document.getElementById('imgFormato')?.value || 'ASPECT_1_1';
+  const estilo = document.getElementById('imgEstilo')?.value || 'DESIGN';
+  const qtd = parseInt(document.getElementById('imgQtd')?.value || '2');
+
+  // Montar prompt
+  let prompt = '';
+  if (tema && IMG_TEMAS[tema]) {
+    prompt = IMG_TEMAS[tema];
+  } else if (descricao) {
+    prompt = descricao;
+  } else {
+    toast('Descreva a imagem ou selecione um tema', 'error');
+    return;
+  }
+
+  // Adicionar texto da headline se informado
+  if (texto) {
+    prompt += `. Include bold white text overlay: "${texto}"`;
+  }
+
+  await _gerarImagem(prompt, formato, estilo, qtd, 'direto');
+}
+
+async function _gerarImagem(prompt, formato, estilo, qtd, origem) {
+  const btn = origem === 'kanban'
+    ? document.getElementById('btnGerarImg')
+    : document.getElementById('btnGerarImgMain');
+  const tag = origem === 'kanban'
+    ? null
+    : document.getElementById('imgTag');
+  const result = origem === 'kanban'
+    ? document.getElementById('imgGaleria')
+    : document.getElementById('imgResultMain');
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Gerando no Ideogram...'; }
+  if (tag) { tag.textContent = 'Gerando...'; tag.className = 'tag on'; }
+  if (origem === 'kanban' && result) result.style.display = 'block';
+
+  addLog('info', '[Ideogram] Gerando ' + qtd + ' imagem(ns)... formato: ' + formato);
+
+  try {
+    const data = await api('/api/image-gen', 'POST', {
+      prompt,
+      formato,
+      estilo,
+      quantidade: qtd,
+    });
+
+    if (!data?.success) {
+      const msg = data?.error || 'Erro ao gerar. Verifique IDEOGRAM_API_KEY no Vercel.';
+      if (btn) { btn.disabled = false; btn.textContent = origem === 'kanban' ? 'Gerar Imagem no Ideogram' : 'Gerar Imagem no Ideogram'; }
+      if (tag) { tag.textContent = 'Erro'; tag.className = 'tag hot'; }
+      toast('Ideogram: ' + msg, 'error');
+      addLog('err', '[Ideogram] Erro: ' + msg);
+      return;
+    }
+
+    const imagens = data.imagens || [];
+    if (tag) { tag.textContent = imagens.length + ' geradas'; tag.className = 'tag live'; }
+
+    // Adicionar ao histórico
+    imagens.forEach(img => {
+      imgHistoricoData.push({ ...img, prompt_curto: prompt.substring(0, 60), timestamp: new Date().toLocaleTimeString('pt-BR'), selecionada: false });
+    });
+
+    // Renderizar
+    if (origem === 'kanban') {
+      renderImgGaleria(imagens, 'imgGaleriaGrid');
+    } else {
+      renderImgGaleria(imagens, 'imgResultMain');
+      renderImgHistorico();
+    }
+
+    addLog('ok', '[Ideogram] ' + imagens.length + ' imagem(ns) gerada(s) com sucesso!');
+    toast(imagens.length + ' imagem(ns) gerada(s)!', 'success');
+
+  } catch (e) {
+    addLog('err', '[Ideogram] Erro: ' + e.message);
+    toast('Erro: ' + e.message, 'error');
+  }
+
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = origem === 'kanban' ? 'Gerar Imagem no Ideogram' : 'Gerar Imagem no Ideogram';
+  }
+}
+
+function renderImgGaleria(imagens, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  container.innerHTML = imagens.map((img, i) => `
+    <div style="position:relative;border-radius:8px;overflow:hidden;border:2px solid var(--bd);cursor:pointer;transition:border-color .15s;"
+         id="img-card-${i}" onclick="selecionarImagem(${i}, '${img.url}')">
+      <img src="${img.url}" style="width:100%;display:block;border-radius:6px;" alt="Imagem gerada" loading="lazy"/>
+      <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);padding:6px 8px;display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-family:var(--M);font-size:8px;color:rgba(255,255,255,.7);">Variacão ${i+1}</span>
+        <div style="display:flex;gap:5px;">
+          <button class="btn btn-gn" style="font-size:8px;padding:2px 6px;" onclick="aprovarImagem('${img.url}', event)">Aprovar</button>
+          <a href="${img.url}" target="_blank" class="btn" style="font-size:8px;padding:2px 6px;color:#fff;border-color:rgba(255,255,255,.3);">Abrir</a>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function selecionarImagem(i, url) {
+  // Highlight selecionada
+  document.querySelectorAll('[id^="img-card-"]').forEach(el => {
+    el.style.borderColor = 'var(--bd)';
+  });
+  const card = document.getElementById('img-card-' + i);
+  if (card) card.style.borderColor = 'var(--green)';
+
+  // Marcar no histórico
+  if (imgHistoricoData[i]) imgHistoricoData[i].selecionada = true;
+}
+
+function aprovarImagem(url, evt) {
+  if (evt) evt.stopPropagation();
+  // Adicionar ao kanban como peça aprovada
+  adicionarAoKanban('Imagem Ideogram', 'LinkedIn', 'S2-Designer', '', url, url);
+  toast('Imagem aprovada e adicionada ao Kanban!', 'success');
+  addLog('ok', '[Ideogram] Imagem aprovada no Kanban');
+}
+
+function aprovarTodasImagens() {
+  const selecionadas = imgHistoricoData.filter(i => i.selecionada);
+  if (!selecionadas.length) {
+    toast('Clique nas imagens para selecionar antes de aprovar', 'info');
+    return;
+  }
+  selecionadas.forEach(img => aprovarImagem(img.url));
+  toast(selecionadas.length + ' imagens aprovadas no Kanban!', 'success');
+}
+
+function renderImgHistorico() {
+  const hist = document.getElementById('imgHistorico');
+  const grid = document.getElementById('imgHistGrid');
+  const tag = document.getElementById('imgHistTag');
+  if (!hist || !grid) return;
+
+  if (!imgHistoricoData.length) return;
+  hist.style.display = 'block';
+  if (tag) tag.textContent = imgHistoricoData.length + ' imagens';
+
+  grid.innerHTML = imgHistoricoData.map((img, i) => `
+    <div style="position:relative;border-radius:6px;overflow:hidden;border:1.5px solid ${img.selecionada ? 'var(--green)' : 'var(--bd)'};cursor:pointer;"
+         onclick="selecionarHistorico(${i})">
+      <img src="${img.url}" style="width:100%;display:block;" loading="lazy"/>
+      <div style="padding:4px 6px;background:var(--bg4);font-size:9px;color:var(--t2);">${img.timestamp}</div>
+    </div>`).join('');
+}
+
+function selecionarHistorico(i) {
+  imgHistoricoData[i].selecionada = !imgHistoricoData[i].selecionada;
+  renderImgHistorico();
+}
+
+function abrirGerarImagem() {
+  nav('s2img', document.querySelector('.sbi[onclick*="s2img"]'));
 }
 
 renderAg(S2A,'s2-grid');renderAg(S7A,'s7-grid');
