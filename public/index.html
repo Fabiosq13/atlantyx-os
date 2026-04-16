@@ -125,6 +125,37 @@ tr:hover td{background:rgba(79,124,255,.03);}
 ::-webkit-scrollbar{width:3px;}
 ::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:2px;}
 .toast{position:fixed;bottom:18px;right:18px;background:var(--bg3);border:1px solid var(--bd2);border-radius:7px;padding:8px 13px;font-size:11px;z-index:999;opacity:0;transform:translateY(5px);transition:all .2s;pointer-events:none;}
+
+/* ── MENU RETRATIL POR SQUADS ────────────────────── */
+.sb-nav{flex:1;overflow-y:auto;padding:6px 0 8px;}
+.sg-hd{display:flex;align-items:center;gap:6px;padding:7px 12px;cursor:pointer;margin:4px 6px 0;border-radius:6px;transition:background .1s;user-select:none;}
+.sg-hd:hover{background:var(--bg4);}
+.sg-badge{font-family:var(--M);font-size:7px;letter-spacing:.8px;padding:2px 5px;border-radius:3px;flex-shrink:0;}
+.sg-front .sg-badge{background:rgba(240,112,48,.15);color:var(--or);}
+.sg-middle .sg-badge{background:rgba(0,207,200,.12);color:#00cfc8;}
+.sg-backoffice .sg-badge{background:rgba(79,124,255,.12);color:var(--blue);}
+.sg-lbl{font-size:11px;font-weight:500;color:var(--t1);flex:1;}
+.sg-arr{font-size:9px;color:var(--t2);transition:transform .2s;flex-shrink:0;}
+.sg-arr.open{transform:rotate(180deg);}
+.sg-body{overflow:hidden;transition:max-height .25s ease;max-height:600px;}
+.sg-body.closed{max-height:0;}
+.sg-body .sbi{padding:6px 10px 6px 22px;font-size:11px;margin:1px 6px;border-radius:5px;}
+.sbi.s3.active{color:#22d3a3;border-left-color:#22d3a3;background:rgba(34,211,163,.08);}
+.sbi.s3{color:var(--t1);}
+::-webkit-scrollbar{width:2px;}
+::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:2px;}
+
+
+/* ── DIVISORES E SUB-LABELS DO MENU ─────────────────────── */
+.sg-divisor{font-family:var(--M);font-size:9px;letter-spacing:2px;text-transform:uppercase;
+  padding:10px 12px 4px;color:var(--t2);margin-top:4px;position:relative;}
+.sg-divisor::before{content:'';display:block;height:1px;background:var(--bd);margin-bottom:8px;}
+.sg-sub{font-family:var(--M);font-size:7.5px;letter-spacing:1.2px;text-transform:uppercase;
+  color:var(--t3);padding:7px 22px 2px;margin-top:2px;}
+.sg-fundador .sg-lbl{color:#9c6dff;}
+.sg-hd{padding:6px 10px;}
+.sg-body .sbi{padding:6px 10px 6px 28px;font-size:11px;margin:1px 5px;}
+
 </style>
 </head>
 <body>
@@ -134,46 +165,122 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div class="sb-sub">Monitor de Agentes · LIVE</div>
   </div>
   <nav class="sb-nav">
-    <div class="sb-sec">Geral</div>
-    <div class="sbi active" onclick="nav('dash',this)">&#9632; Dashboard ao Vivo <span class="nbx gn">LIVE</span></div>
-    <div class="sbi" onclick="nav('log',this)">&#9776; Log de Atividade <span class="nbx rd" id="logCnt">0</span></div>
-    <div class="sb-sec">S1 · Estratégico — 10 Agentes</div>
-    <div class="sbi s1" onclick="nav('s1dash',this)">&#9632; Painel Estratégico</div>
-    <div class="sbi s1" onclick="nav('s1pipeline',this)">&#9654; Pipeline de Produtos <span class="nbx bl" id="s1PipeCnt">—</span></div>
-    <div class="sbi s1" onclick="nav('s1fundador',this)">&#9888; Inbox do Fundador <span class="nbx rd" id="s1DecCnt">0</span></div>
-    <div class="sbi s1" onclick="nav('s1okr',this)">&#9711; OKRs + Metas</div>
-    <div class="sbi s1" onclick="nav('s1relatorio',this)">&#9776; Relatório Executivo</div>
-    <div class="sbi s1" onclick="nav('s1intel',this)">&#9670; Inteligência Estratégica <span class="nbx gn">IA</span></div>
-    <div class="sbi s1" onclick="nav('s1riscos',this)">&#9888; Riscos da Empresa</div>
-    <div class="sbi s1" onclick="nav('s1financeiro',this)">&#8593; Análise Financeira</div>
-    <div class="sbi s1" onclick="nav('s1mercado',this)">&#9733; Análise de Mercado</div>
-    <div class="sbi s1" onclick="nav('s1plano',this)">&#9654; Plano Estratégico</div>
-    <div class="sbi s1" onclick="nav('s1acoes',this)">&#9776; Plano de Ação 90d</div>
-    <div class="sbi s1" onclick="nav('s1cenarios',this)">&#9671; Cenários de Futuro</div>
-    <div class="sb-sec">Email Intelligence</div>
-    <div class="sbi ei" onclick="nav('email',this)">&#9993; Caixa de E-mails <span class="nbx gd" id="emailUrgCnt">—</span></div>
-    <div class="sbi ei" onclick="nav('emailrfp',this)">&#9634; RFPs por E-mail</div>
-    <div class="sbi ei" onclick="nav('emailvendas',this)">&#9654; Respostas de Vendas</div>
-    <div class="sbi ei" onclick="nav('emailprojetos',this)">&#9776; Atualizações de Projetos</div>
-    <div class="sb-sec">S2 · Marketing Digital</div>
-    <div class="sbi s2" onclick="nav('s2ag',this)">&#9675; Agentes S2</div>
-    <div class="sbi s2" onclick="nav('s2studio',this)">&#9670; Studio Criativo <span class="nbx gn">IA</span></div>
-    <div class="sbi s2" onclick="nav('s2kanban',this)">&#9632; Kanban Aprovação <span class="nbx gd" id="kanbanCnt">0</span></div>
-    <div class="sbi s2" onclick="nav('s2campanha',this)">&#9654; Nova Campanha</div>
-    <div class="sbi s2" onclick="nav('s2outbound',this)">&#8593; Outbound · Ads + SEO</div>
-    <div class="sbi s2" onclick="nav('s2inbound',this)">&#9993; Inbound · E-mail</div>
-    <div class="sbi s2" onclick="nav('s2social',this)">&#9734; Social Media</div>
-    <div class="sbi s2" onclick="nav('s2finops',this)">&#128200; Marketing FinOps</div>
-    <div class="sbi s2" onclick="nav('s2prospect',this)">&#9733; Executar Prospecção</div>
-    <div class="sbi s2" onclick="nav('s2rfps',this)">&#9634; Monitor de RFPs <span class="nbx gd" id="rfpCnt">—</span></div>
-    <div class="sbi s2" onclick="nav('s2wa',this)">&#9679; Gerar Mensagem WA <span class="nbx gn">IA</span></div>
-    <div class="sbi s2" onclick="nav('s2kpi',this)">&#8593; KPIs Marketing</div>
-    <div class="sb-sec">S7 · Vendas — 12 Agentes</div>
-    <div class="sbi s7" onclick="nav('s7ag',this)">&#9675; Agentes S7</div>
-    <div class="sbi s7" onclick="nav('s7pipe',this)">&#9647; Pipeline HubSpot <span class="nbx bl" id="dealCnt">—</span></div>
-    <div class="sbi s7" onclick="nav('s7outreach',this)">&#8594; Outreach em Lote</div>
-    <div class="sbi s7" onclick="nav('s7meet',this)">&#9633; Reunioes + Briefings <span class="nbx gd" id="meetCnt">—</span></div>
-    <div class="sbi s7" onclick="nav('s7kpi',this)">&#9711; Metas + KPIs</div>
+
+    <!-- GERAL -->
+    <div class="sbi active" onclick="nav('dash',this)">&#9632; Dashboard <span class="nbx gn">LIVE</span></div>
+    <div class="sbi" onclick="nav('log',this)">&#9776; Log <span class="nbx rd" id="logCnt">0</span></div>
+
+    <!-- FUNDADOR -->
+    <div class="sg-hd sg-fundador" onclick="toggleGrupo('gFundador')" data-g="gFundador">
+      <span class="sg-lbl">Fundador</span>
+      <span class="sg-arr open" id="arr-gFundador">&#9660;</span>
+    </div>
+    <div class="sg-body" id="gFundador">
+      <div class="sbi s1" onclick="nav('s1proposito',this)">&#9670; Proposito + Metas <span class="nbx" style="background:rgba(156,109,255,.15);color:#9c6dff">Eu</span></div>
+      <div class="sbi s1" onclick="nav('s1fundador',this)">&#9888; Inbox Aprovacoes <span class="nbx rd" id="s1DecCnt">0</span></div>
+    </div>
+
+    <!-- ═══ BACK OFFICE ═══ -->
+    <div class="sg-divisor">BACK OFFICE</div>
+
+    <!-- Inteligencia e Estrategia -->
+    <div class="sg-hd sg-backoffice" onclick="toggleGrupo('gEstrategia')" data-g="gEstrategia">
+      <span class="sg-lbl">Inteligencia + Estrategia</span>
+      <span class="sg-arr open" id="arr-gEstrategia">&#9660;</span>
+    </div>
+    <div class="sg-body" id="gEstrategia">
+      <div class="sg-sub">DIAGNOSTICO</div>
+      <div class="sbi s1" onclick="nav('s1intel',this)">&#9670; Diagnostico Completo <span class="nbx gn">IA</span></div>
+      <div class="sbi s1" onclick="nav('s1riscos',this)">&#9888; Gestao de Riscos</div>
+      <div class="sbi s1" onclick="nav('s1mercado',this)">&#9733; Inteligencia Mercado</div>
+      <div class="sg-sub">PLANEJAMENTO</div>
+      <div class="sbi s1" onclick="nav('s1plano',this)">&#9654; Plano Estrategico</div>
+      <div class="sbi s1" onclick="nav('s1acoes',this)">&#9776; Plano Acao 90d</div>
+      <div class="sbi s1" onclick="nav('s1cenarios',this)">&#9671; Cenarios de Futuro</div>
+      <div class="sbi s1" onclick="nav('s1okr',this)">&#9711; OKRs + Metas</div>
+      <div class="sg-sub">REPLANEJAMENTO</div>
+      <div class="sbi s1" onclick="nav('s1dash',this)">&#8635; Replanejamento</div>
+      <div class="sbi s1" onclick="nav('s1relatorio',this)">&#9776; Relatorio Executivo</div>
+      <div class="sg-sub">PRODUTOS</div>
+      <div class="sbi s1" onclick="nav('s1pipeline',this)">&#9654; Pipeline Produtos <span class="nbx bl" id="s1PipeCnt">—</span></div>
+    </div>
+
+    <!-- Planejamento Financeiro -->
+    <div class="sg-hd sg-backoffice" onclick="toggleGrupo('gFinanceiro')" data-g="gFinanceiro">
+      <span class="sg-lbl">Planejamento Financeiro</span>
+      <span class="sg-arr" id="arr-gFinanceiro">&#9660;</span>
+    </div>
+    <div class="sg-body closed" id="gFinanceiro">
+      <div class="sg-sub">REALIZADO</div>
+      <div class="sbi s3" onclick="nav('s3dash',this)">&#128200; Painel Financeiro</div>
+      <div class="sbi s3" onclick="nav('s3realizado',this)">&#9632; Realizado — QuickBooks</div>
+      <div class="sbi s3" onclick="nav('s3receber',this)">&#9888; A Receber <span class="nbx gd" id="s3ReceberCnt">—</span></div>
+      <div class="sg-sub">PROJETADO</div>
+      <div class="sbi s3" onclick="nav('s3projetado',this)">&#9654; Projetado + Contratos</div>
+      <div class="sbi s3" onclick="nav('s3fluxo',this)">&#9776; Fluxo de Caixa</div>
+      <div class="sg-sub">ANALISE</div>
+      <div class="sbi s1" onclick="nav('s1financeiro',this)">&#8593; Analise Financeira IA</div>
+    </div>
+
+    <!-- ═══ MIDDLE OFFICE ═══ -->
+    <div class="sg-divisor">MIDDLE OFFICE</div>
+
+    <!-- Email Intelligence -->
+    <div class="sg-hd sg-middle" onclick="toggleGrupo('gEmail')" data-g="gEmail">
+      <span class="sg-lbl">Email Intelligence</span>
+      <span class="sg-arr" id="arr-gEmail">&#9660;</span>
+    </div>
+    <div class="sg-body closed" id="gEmail">
+      <div class="sbi ei" onclick="nav('email',this)">&#9993; Caixa de E-mails <span class="nbx rd" id="emailUrgCnt">—</span></div>
+      <div class="sbi ei" onclick="nav('emailrfp',this)">&#9634; RFPs por E-mail</div>
+      <div class="sbi ei" onclick="nav('emailvendas',this)">&#9654; Respostas de Vendas</div>
+      <div class="sbi ei" onclick="nav('emailprojetos',this)">&#9776; Projetos</div>
+    </div>
+
+    <!-- ═══ FRONT OFFICE ═══ -->
+    <div class="sg-divisor">FRONT OFFICE</div>
+
+    <!-- Marketing -->
+    <div class="sg-hd sg-front" onclick="toggleGrupo('gMarketing')" data-g="gMarketing">
+      <span class="sg-lbl">S2 · Marketing Digital</span>
+      <span class="sg-arr open" id="arr-gMarketing">&#9660;</span>
+    </div>
+    <div class="sg-body" id="gMarketing">
+      <div class="sg-sub">INTELIGENCIA</div>
+      <div class="sbi s2" onclick="nav('s2prospect',this)">&#9733; Prospeccao de Contas</div>
+      <div class="sbi s2" onclick="nav('s2rfps',this)">&#9634; Monitor RFPs <span class="nbx gd" id="rfpCnt">—</span></div>
+      <div class="sg-sub">CRIACAO</div>
+      <div class="sbi s2" onclick="nav('s2studio',this)">&#9670; Studio Criativo</div>
+      <div class="sbi s2" onclick="nav('s2campanha',this)">&#9654; Nova Campanha</div>
+      <div class="sbi s2" onclick="nav('s2kanban',this)">&#9632; Kanban Aprovacao <span class="nbx gd" id="kanbanCnt">0</span></div>
+      <div class="sg-sub">OUTBOUND</div>
+      <div class="sbi s2" onclick="nav('s2wa',this)">&#9679; Mensagens WhatsApp <span class="nbx gn">IA</span></div>
+      <div class="sbi s2" onclick="nav('s2outbound',this)">&#8593; Ads + SEO</div>
+      <div class="sg-sub">INBOUND</div>
+      <div class="sbi s2" onclick="nav('s2inbound',this)">&#9993; E-mail Marketing</div>
+      <div class="sbi s2" onclick="nav('s2social',this)">&#9734; Social Media + DM</div>
+      <div class="sg-sub">GESTAO</div>
+      <div class="sbi s2" onclick="nav('s2finops',this)">&#128200; Marketing FinOps</div>
+      <div class="sbi s2" onclick="nav('s2kpi',this)">&#8593; KPIs Marketing</div>
+      <div class="sbi s2" onclick="nav('s2ag',this)">&#9675; Todos Agentes S2</div>
+    </div>
+
+    <!-- Vendas -->
+    <div class="sg-hd sg-front" onclick="toggleGrupo('gVendas')" data-g="gVendas">
+      <span class="sg-lbl">S7 · Vendas</span>
+      <span class="sg-arr open" id="arr-gVendas">&#9660;</span>
+    </div>
+    <div class="sg-body" id="gVendas">
+      <div class="sg-sub">PIPELINE</div>
+      <div class="sbi s7" onclick="nav('s7pipe',this)">&#9647; Pipeline HubSpot <span class="nbx bl" id="dealCnt">—</span></div>
+      <div class="sbi s7" onclick="nav('s7kpi',this)">&#9711; Metas + KPIs</div>
+      <div class="sg-sub">OUTREACH</div>
+      <div class="sbi s7" onclick="nav('s7outreach',this)">&#8594; Outreach em Lote</div>
+      <div class="sbi s7" onclick="nav('s7meet',this)">&#9633; Reunioes + Briefings <span class="nbx gd" id="meetCnt">—</span></div>
+      <div class="sg-sub">AGENTES</div>
+      <div class="sbi s7" onclick="nav('s7ag',this)">&#9675; Todos Agentes S7</div>
+    </div>
+
   </nav>
   <div class="sb-foot">
     <div class="sf"><span class="dot on"></span>Claude API · Ativo</div>
@@ -194,7 +301,70 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div class="cnt">
 
   <div class="page active" id="page-dash">
-    <div class="kg k5">
+
+    <!-- BANNER PROPOSITO (inserido pelo JS ao carregar) -->
+    <div id="propDashWidget"></div>
+
+    <!-- META FINANCEIRA UNICA DA EMPRESA -->
+    <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(79,124,255,.08));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;">
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+
+        <!-- META ANUAL -->
+        <div style="flex:1;min-width:200px;">
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;letter-spacing:1px;color:var(--green);margin-bottom:4px;">META ANUAL 2026</div>
+          <div style="display:flex;align-items:baseline;gap:8px;">
+            <span style="font-family:var(--H);font-size:28px;font-weight:700;" id="metaAnualVal">R$18M</span>
+            <span style="font-size:11px;color:var(--t2);">ARR</span>
+          </div>
+          <div style="background:var(--bg4);border-radius:4px;height:6px;margin-top:8px;overflow:hidden;">
+            <div id="metaAnualBarra" style="height:100%;background:var(--green);border-radius:4px;transition:width .5s;" style="width:0%"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:4px;">
+            <span style="font-family:var(--M);font-size:9px;color:var(--green);" id="metaAnualReal">R$0 realizado</span>
+            <span style="font-family:var(--M);font-size:9px;color:var(--t2);" id="metaAnualPct">0%</span>
+          </div>
+        </div>
+
+        <!-- DIVISOR -->
+        <div style="width:1px;height:60px;background:var(--bd);flex-shrink:0;"></div>
+
+        <!-- META MENSAL -->
+        <div style="flex:1;min-width:180px;">
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;letter-spacing:1px;color:var(--blue);margin-bottom:4px;">META MENSAL — <span id="mesAtual">ABR</span></div>
+          <div style="display:flex;align-items:baseline;gap:8px;">
+            <span style="font-family:var(--H);font-size:28px;font-weight:700;" id="metaMensalVal">R$1.5M</span>
+            <span style="font-size:11px;color:var(--t2);">MRR</span>
+          </div>
+          <div style="background:var(--bg4);border-radius:4px;height:6px;margin-top:8px;overflow:hidden;">
+            <div id="metaMensalBarra" style="height:100%;background:var(--blue);border-radius:4px;transition:width .5s;"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:4px;">
+            <span style="font-family:var(--M);font-size:9px;color:var(--blue);" id="metaMensalReal">R$0 realizado</span>
+            <span style="font-family:var(--M);font-size:9px;color:var(--t2);" id="metaMensalPct">0%</span>
+          </div>
+        </div>
+
+        <!-- DIVISOR -->
+        <div style="width:1px;height:60px;background:var(--bd);flex-shrink:0;"></div>
+
+        <!-- EDICAO RAPIDA DAS METAS -->
+        <div style="flex-shrink:0;">
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;letter-spacing:1px;color:var(--t2);margin-bottom:6px;">Atualizar Realizacao</div>
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+            <input class="fi" id="inputRealAnual" placeholder="R$ anual realizado" style="width:160px;font-size:11px;padding:5px 8px;"/>
+            <button class="btn btn-gn" style="font-size:10px;padding:4px 9px;white-space:nowrap;" onclick="atualizarMetas()">OK</button>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <input class="fi" id="inputRealMensal" placeholder="R$ mensal realizado" style="width:160px;font-size:11px;padding:5px 8px;"/>
+            <button class="btn btn-g" style="font-size:10px;padding:4px 9px;white-space:nowrap;" onclick="editarMetas()">Metas</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- KPIS OPERACIONAIS -->
+    <div class="kg k5" style="margin-bottom:12px;">
       <div class="kpi or"><div class="kl">Leads Mapeados</div><div class="kv" id="kLeads">—</div><div class="ks" id="kLeadsSub">carregando...</div></div>
       <div class="kpi bl"><div class="kl">Score A</div><div class="kv" id="kScoreA">—</div><div class="ks up">quentes</div></div>
       <div class="kpi gn"><div class="kl">Reunioes</div><div class="kv" id="kMeet">—</div><div class="ks" id="kMeetSub">agendadas</div></div>
@@ -221,23 +391,62 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </div>
 
   <div class="page" id="page-s2prospect">
+    <!-- MODOS DE PROSPECÇÃO -->
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <button class="btn" id="modoUnico" onclick="setModoProspect('unico')" style="flex:1;border-color:#4f7cff;color:#4f7cff;">Empresa + Decisor Especifico</button>
+      <button class="btn btn-or" id="modoCadeia" onclick="setModoProspect('cadeia')" style="flex:1;">&#9670; Prospectar Cadeia C-Level Completa</button>
+    </div>
     <div class="kg k2">
-      <div class="panel"><div class="ph"><div class="pt">S2-02 + S7-01 · Executar Prospeccao</div><span class="tag on">Claude IA</span></div>
-        <div class="pb">
-          <div class="fg"><label class="fl">Setor Alvo</label><select class="fsel" id="pSetor"><option>Energia (geracao/distribuicao)</option><option>Automotivo (concessionarias)</option><option>Varejo (redes estruturadas)</option><option>Industria / Manufatura</option><option>Logistica e Transporte</option></select></div>
-          <div class="fg"><label class="fl">Regiao</label><select class="fsel" id="pRegiao"><option>Sudeste (SP, RJ, MG)</option><option>Sul (PR, SC, RS)</option><option>Brasil inteiro</option></select></div>
-          <div class="fg"><label class="fl">Faturamento Minimo</label><select class="fsel" id="pFat"><option>R$100M</option><option>R$500M</option><option>R$1B</option></select></div>
-          <div class="fg"><label class="fl">Cargo Decisor</label><select class="fsel" id="pCargo"><option>CIO / Diretor de TI</option><option>CTO / Dir. Tecnologia</option><option>Dir. Transformacao Digital</option><option>CFO</option><option>CEO</option></select></div>
-          <div class="fg"><label class="fl">Quantidade</label><select class="fsel" id="pQtd"><option value="5">5 empresas</option><option value="10" selected>10 empresas</option><option value="20">20 empresas</option></select></div>
-          <button class="btn btn-or" style="width:100%;" id="btnProspect" onclick="runProspect()">&#9654; Executar Agente</button>
+      <div class="panel">
+        <!-- MODO ÚNICO -->
+        <div id="formUnico">
+          <div class="ph"><div class="pt">S2-02 + S7-01 · Prospecção por Decisor</div><span class="tag on">Claude IA</span></div>
+          <div class="pb">
+            <div class="fg"><label class="fl">Setor Alvo</label><select class="fsel" id="pSetor"><option>Energia (geracao/distribuicao)</option><option>Automotivo (concessionarias)</option><option>Varejo (redes estruturadas)</option><option>Industria / Manufatura</option><option>Logistica e Transporte</option></select></div>
+            <div class="fg"><label class="fl">Regiao</label><select class="fsel" id="pRegiao"><option>Sudeste (SP, RJ, MG)</option><option>Sul (PR, SC, RS)</option><option>Brasil inteiro</option></select></div>
+            <div class="fg"><label class="fl">Faturamento Minimo</label><select class="fsel" id="pFat"><option>R$100M</option><option>R$500M</option><option>R$1B</option></select></div>
+            <div class="fg"><label class="fl">Cargo Decisor</label><select class="fsel" id="pCargo"><option>CIO / Diretor de TI</option><option>CTO / Dir. Tecnologia</option><option>Dir. Transformacao Digital</option><option>CFO</option><option>CEO</option></select></div>
+            <div class="fg"><label class="fl">Quantidade</label><select class="fsel" id="pQtd"><option value="5">5 empresas</option><option value="10" selected>10 empresas</option><option value="20">20 empresas</option></select></div>
+            <button class="btn btn-or" style="width:100%;" id="btnProspect" onclick="runProspect()">&#9654; Executar Prospecção</button>
+          </div>
+        </div>
+
+        <!-- MODO CADEIA C-LEVEL -->
+        <div id="formCadeia" style="display:none;">
+          <div class="ph"><div class="pt">Prospectar Cadeia C-Level Completa</div><span class="tag on">S2-02 + S7-04</span></div>
+          <div class="pb">
+            <div style="background:rgba(240,112,48,.08);border:1px solid rgba(240,112,48,.2);border-radius:7px;padding:10px;margin-bottom:12px;font-size:11px;color:var(--t2);">
+              Mapeia TODOS os decisores C-level de uma empresa: CIO, CTO, CFO, CEO, Dir. TI, Dir. Digital, Dir. Operacoes — cada um com perfil, dores e mensagem personalizada.
+            </div>
+            <div class="fg"><label class="fl">Empresa Alvo</label><input class="fi" id="cNomeEmp" placeholder="Ex: Grupo Energisa, Usiminas, GPA..."/></div>
+            <div class="fg"><label class="fl">Setor</label><select class="fsel" id="cSetor"><option>Energia</option><option>Automotivo</option><option>Varejo</option><option>Industria / Manufatura</option><option>Logistica</option></select></div>
+            <div class="fg"><label class="fl">Cargos a Mapear</label>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px;">
+                <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;"><input type="checkbox" id="cCIO" checked> CIO / Dir. de TI</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;"><input type="checkbox" id="cCTO" checked> CTO / Dir. Tecnologia</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;"><input type="checkbox" id="cDTD" checked> Dir. Transformacao Digital</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;"><input type="checkbox" id="cCFO"> CFO / Dir. Financeiro</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;"><input type="checkbox" id="cCEO"> CEO / Presidente</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;"><input type="checkbox" id="cCOO"> COO / Dir. Operacoes</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;"><input type="checkbox" id="cVP"> VP / Gerente Sr. TI</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;"><input type="checkbox" id="cDAD"> Dir. Analytics / Dados</label>
+              </div>
+            </div>
+            <div class="fg"><label class="fl">Contexto Adicional (opcional)</label><textarea class="fta" id="cCtxEmp" style="min-height:50px;" placeholder="Ex: empresa anunciou expansao, resultado recente, noticia relevante..."></textarea></div>
+            <button class="btn btn-or" style="width:100%;margin-bottom:6px;" id="btnCadeia" onclick="runCadeiaCLevel()">&#9670; Mapear Cadeia C-Level Completa</button>
+            <div style="font-size:10px;color:var(--t3);text-align:center;">Gera perfil + dores + mensagem WA personalizada para cada decisor. Todos entram no HubSpot.</div>
+          </div>
         </div>
       </div>
-      <div class="panel"><div class="ph"><div class="pt">Empresas Mapeadas</div><span class="tag off" id="prospStatus">Aguardando</span></div><div class="pb" id="prospResult" style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Configure e execute o agente</div></div>
+      <div class="panel">
+        <div class="ph"><div class="pt">Resultado da Prospecção</div><span class="tag off" id="prospStatus">Aguardando</span></div>
+        <div class="pb" id="prospResult" style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Configure e execute o agente</div>
+      </div>
     </div>
   </div>
 
   <div class="page" id="page-s2rfps">
-    <div class="panel"><div class="ph"><div class="pt">S2-04 · Monitor de RFPs — Cron 6h</div><span class="tag live">Auto</span><button class="btn btn-or" style="font-size:9px;padding:4px 9px;" id="btnRfp" onclick="runRfpMonitor()">&#9654; Executar Agora</button></div><div class="pb" id="rfpResult" style="color:var(--t3);font-size:11px;padding:20px;text-align:center;">Clique em "Executar Agora" ou aguarde o cron automatico (6h)</div></div>
+    <div class="panel"><div class="ph"><div class="pt">S2-04 · Monitor de RFPs — Cron 6h</div><span class="tag live">Auto</span><button class="btn btn-or" style="font-size:9px;padding:4px 9px;" id="btnRfp" onclick="runRfpMonitorAtualizado()">&#9654; Executar Agora</button></div><div class="pb" id="rfpResult" style="color:var(--t3);font-size:11px;padding:20px;text-align:center;">Clique em "Executar Agora" ou aguarde o cron automatico (6h)</div></div>
   </div>
 
   <div class="page" id="page-s2wa">
@@ -930,12 +1139,244 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </div>
 
 
+
+  <!-- ═══════════════════ PROPOSITO + METAS PESSOAIS ════════════════════ -->
+  <div class="page" id="page-s1proposito">
+
+    <!-- HEADER -->
+    <div style="background:linear-gradient(135deg,rgba(156,109,255,.2),rgba(79,124,255,.08));border:1px solid rgba(156,109,255,.25);border-radius:10px;padding:16px 20px;margin-bottom:14px;">
+      <div style="font-family:var(--H);font-size:16px;font-weight:700;margin-bottom:4px;">Proposito Pessoal + Metas da Empresa</div>
+      <div style="font-size:11px;color:var(--t2);">Seus anseios pessoais, materiais e espirituais alimentam a missao da Atlantyx. O que voce quer construir para si e para o mundo se torna parte do planejamento estrategico e das metas mensuraveis da empresa.</div>
+    </div>
+
+    <!-- FORMULARIO DE PROPOSITO -->
+    <div class="panel" id="propFormPanel">
+      <div class="ph"><div class="pt">Definir seu Proposito e Anseios</div><span class="tag on">Fundador</span><button class="btn btn-g" style="font-size:9px;padding:3px 8px;" onclick="togglePropForm()">Editar</button></div>
+      <div class="pb" id="propFormBody">
+
+        <!-- DIMENSAO ESPIRITUAL -->
+        <div style="margin-bottom:16px;">
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;letter-spacing:1px;color:#9c6dff;margin-bottom:8px;">DIMENSAO ESPIRITUAL E DE PROPOSITO</div>
+          <div class="fg"><label class="fl">Qual e o seu proposito de vida? O que voce veio fazer no mundo?</label>
+            <textarea class="fta" id="pPropVida" style="min-height:65px;" placeholder="Ex: Ser instrumento de transformacao, ajudar empresas a tomarem decisoes melhores e assim gerar empregos, renda e dignidade para mais pessoas..."></textarea></div>
+          <div class="fg"><label class="fl">Qual bem voce quer praticar atraves da Atlantyx?</label>
+            <textarea class="fta" id="pBem" style="min-height:55px;" placeholder="Ex: Democratizar o acesso a dados de qualidade, capacitar times, gerar impacto real nas comunidades onde nossos clientes operam..."></textarea></div>
+          <div class="fg"><label class="fl">Qual legado voce quer deixar?</label>
+            <textarea class="fta" id="pLegado" style="min-height:55px;" placeholder="Ex: Uma empresa referencia em integridade e resultado, que forme lideres e seja lembrada por ter mudado a forma como o Brasil usa dados..."></textarea></div>
+        </div>
+
+        <!-- DIMENSAO MATERIAL -->
+        <div style="margin-bottom:16px;">
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;letter-spacing:1px;color:var(--gold);margin-bottom:8px;">DIMENSAO MATERIAL E FINANCEIRA</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+            <div class="fg" style="margin:0;"><label class="fl">Renda pessoal mensal desejada</label><input class="fi" id="pRendaMes" type="text" placeholder="Ex: R$50.000/mes"/></div>
+            <div class="fg" style="margin:0;"><label class="fl">Patrimonio em 5 anos</label><input class="fi" id="pPatrim5" type="text" placeholder="Ex: R$5M"/></div>
+            <div class="fg" style="margin:0;"><label class="fl">Valuation da Atlantyx desejado</label><input class="fi" id="pValuation" type="text" placeholder="Ex: R$50M em 5 anos"/></div>
+            <div class="fg" style="margin:0;"><label class="fl">Estilo de vida desejado</label><input class="fi" id="pEstilo" type="text" placeholder="Ex: Liberdade geografica, 4 semanas ferias/ano..."/></div>
+            <div class="fg" style="margin:0;"><label class="fl">Causa social que quer apoiar financeiramente</label><input class="fi" id="pCausa" type="text" placeholder="Ex: Educacao de jovens em vulnerabilidade"/></div>
+            <div class="fg" style="margin:0;"><label class="fl">% da receita para impacto social</label><input class="fi" id="pPctSocial" type="text" placeholder="Ex: 2% da receita liquida"/></div>
+          </div>
+        </div>
+
+        <!-- VALORES E PRINCIPIOS -->
+        <div style="margin-bottom:16px;">
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;letter-spacing:1px;color:var(--green);margin-bottom:8px;">VALORES E PRINCIPIOS INEGOCIAVEIS</div>
+          <div class="fg"><label class="fl">Quais valores NUNCA podem ser comprometidos na Atlantyx?</label>
+            <textarea class="fta" id="pValores" style="min-height:55px;" placeholder="Ex: Integridade absoluta, transparencia com clientes, cuidado com o time, nao aceitar contratos que causem dano social..."></textarea></div>
+          <div class="fg"><label class="fl">Que tipo de cliente/projeto a Atlantyx NUNCA vai aceitar?</label>
+            <textarea class="fta" id="pNaoAceita" style="min-height:45px;" placeholder="Ex: Empresas com praticas ambientais ou trabalhistas condenadas, projetos de vigilancia abusiva..."></textarea></div>
+        </div>
+
+        <!-- METAS PESSOAIS COM PRAZO -->
+        <div style="margin-bottom:16px;">
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;letter-spacing:1px;color:var(--blue);margin-bottom:8px;">METAS PESSOAIS COM PRAZO</div>
+          <div id="metasPessoaisForm">
+            <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px;margin-bottom:6px;" id="mpRow0">
+              <input class="fi" placeholder="Ex: Comprar minha casa propria" id="mp0_desc"/>
+              <input class="fi" placeholder="R$X" id="mp0_val" type="text"/>
+              <input class="fi" placeholder="Prazo ex: Dez 2027" id="mp0_prazo"/>
+            </div>
+            <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px;margin-bottom:6px;" id="mpRow1">
+              <input class="fi" placeholder="Ex: Fazer minha pos-graduacao" id="mp1_desc"/>
+              <input class="fi" placeholder="R$X" id="mp1_val" type="text"/>
+              <input class="fi" placeholder="Prazo" id="mp1_prazo"/>
+            </div>
+            <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px;margin-bottom:6px;" id="mpRow2">
+              <input class="fi" placeholder="Ex: Viajar com a familia" id="mp2_desc"/>
+              <input class="fi" placeholder="R$X" id="mp2_val" type="text"/>
+              <input class="fi" placeholder="Prazo" id="mp2_prazo"/>
+            </div>
+          </div>
+          <button class="btn btn-g" style="font-size:10px;" onclick="addMetaPessoal()">+ Adicionar meta</button>
+        </div>
+
+        <button class="btn btn-p" style="width:100%;" id="btnSalvarProposito" onclick="salvarEGerarPlano()">&#9670; Salvar e Gerar Plano Estrategico Integrado com IA</button>
+      </div>
+    </div>
+
+    <!-- RESULTADO: PLANO INTEGRADO -->
+    <div class="panel" id="propResultPanel" style="display:none;">
+      <div class="ph"><div class="pt">Plano Integrado — Proposito + Empresa</div><span class="tag live">Claude IA</span></div>
+      <div class="pb" id="propResult"></div>
+    </div>
+
+    <!-- DASHBOARD DE METAS INTEGRADAS -->
+    <div id="propDashPanel" style="display:none;">
+      <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;letter-spacing:1px;color:#9c6dff;margin-bottom:10px;">DASHBOARD DE METAS — PESSOAL + EMPRESA</div>
+      <div class="kg k3" id="propKPIs" style="margin-bottom:12px;"></div>
+      <div class="kg k2" id="propMetas"></div>
+    </div>
+
+  </div>
+
+
+
+  <!-- ═══════════════════ S3 · FINANCEIRO ════════════════════════════ -->
+
+  <!-- S3 DASHBOARD FINANCEIRO -->
+  <div class="page" id="page-s3dash">
+    <div style="background:linear-gradient(135deg,rgba(34,211,163,.15),rgba(34,211,163,.04));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
+      <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">S3 · Painel Financeiro</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Realizado (QuickBooks) · Projetado (contratos + projetos) · A Receber · Fluxo de Caixa</div></div>
+      <button class="btn btn-gn" id="btnSyncQB" onclick="syncQuickBooks()">&#8635; Sync QuickBooks</button>
+    </div>
+
+    <!-- KPIs FINANCEIROS PRINCIPAIS -->
+    <div class="kg k4" style="margin-bottom:12px;">
+      <div class="kpi gn"><div class="kl">Receita Realizada (Ano)</div><div class="kv" id="f_realAnual">R$0</div><div class="ks" id="f_realAnualSub">QuickBooks</div></div>
+      <div class="kpi bl"><div class="kl">Receita Realizada (Mes)</div><div class="kv" id="f_realMes">R$0</div><div class="ks" id="f_realMesSub">mês atual</div></div>
+      <div class="kpi gd"><div class="kl">A Receber</div><div class="kv" id="f_aReceber">R$0</div><div class="ks up">vendas nao pagas</div></div>
+      <div class="kpi pu"><div class="kl">Projetado Total</div><div class="kv" id="f_projetado">R$0</div><div class="ks">contratos + projetos</div></div>
+    </div>
+
+    <!-- BARRA DE METAS INTEGRADA -->
+    <div class="panel" style="margin-bottom:12px;">
+      <div class="ph"><div class="pt">Progresso vs Meta</div><span class="tag live">Consolidado</span></div>
+      <div class="pb">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
+              <span style="font-family:var(--M);font-size:9px;color:var(--t2)">META ANUAL</span>
+              <span style="font-family:var(--M);font-size:9px;color:var(--green);" id="f_pctAnual">0%</span>
+            </div>
+            <div style="background:var(--bg4);border-radius:4px;height:8px;overflow:hidden;margin-bottom:4px;">
+              <div id="f_barraAnual" style="height:100%;background:var(--green);border-radius:4px;width:0%;transition:width .5s;"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t2);">
+              <span id="f_realAnualLabel">R$0 realizado</span>
+              <span id="f_metaAnualLabel">meta R$18M</span>
+            </div>
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
+              <span style="font-family:var(--M);font-size:9px;color:var(--t2)">META MENSAL</span>
+              <span style="font-family:var(--M);font-size:9px;color:var(--blue);" id="f_pctMensal">0%</span>
+            </div>
+            <div style="background:var(--bg4);border-radius:4px;height:8px;overflow:hidden;margin-bottom:4px;">
+              <div id="f_barraMensal" style="height:100%;background:var(--blue);border-radius:4px;width:0%;transition:width .5s;"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t2);">
+              <span id="f_realMensalLabel">R$0 realizado</span>
+              <span id="f_metaMensalLabel">meta R$1.5M</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="kg k2">
+      <!-- ULTIMOS LANCAMENTOS QB -->
+      <div class="panel">
+        <div class="ph"><div class="pt">Ultimos Lancamentos — QuickBooks</div><span class="tag off" id="qbTag">Aguardando sync</span></div>
+        <div class="pb" id="f_lancamentos"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Clique em Sync QuickBooks para carregar os lancamentos realizados</div></div>
+      </div>
+      <!-- FLUXO RESUMIDO -->
+      <div class="panel">
+        <div class="ph"><div class="pt">Fluxo de Caixa — Proximo Trimestre</div><span class="tag on">Projetado</span></div>
+        <div class="pb" id="f_fluxoResumo"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Gere o plano financeiro para ver o fluxo projetado</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- S3 REALIZADO -->
+  <div class="page" id="page-s3realizado">
+    <div class="panel">
+      <div class="ph"><div class="pt">Receita Realizada — QuickBooks</div><span class="tag off" id="qbRealTag">Aguardando</span>
+        <button class="btn btn-gn" id="btnQBReal" onclick="syncQuickBooks()" style="font-size:9px;padding:3px 8px;">&#8635; Sync QB</button>
+        <button class="btn btn-g" onclick="gerarAnaliseFin()" style="font-size:9px;padding:3px 8px;">&#9670; Analisar com IA</button>
+      </div>
+      <div class="pb">
+        <div style="background:var(--go2);border:1px solid rgba(245,166,35,.2);border-radius:7px;padding:11px;margin-bottom:12px;font-size:11px;color:var(--gold);">
+          &#9888; Para ativar: adicione <strong>QB_CLIENT_ID</strong>, <strong>QB_CLIENT_SECRET</strong> e <strong>QB_REFRESH_TOKEN</strong> no Vercel. Obtenha em developer.intuit.com
+        </div>
+        <div id="f_realTable"><div style="color:var(--t3);font-size:11px;text-align:center;padding:24px;">Sincronize o QuickBooks para ver os lancamentos realizados</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- S3 PROJETADO -->
+  <div class="page" id="page-s3projetado">
+    <div class="panel">
+      <div class="ph"><div class="pt">Receita Projetada — Contratos + Projetos em Andamento</div><span class="tag on">Claude IA</span>
+        <button class="btn btn-gn" id="btnProj" onclick="gerarProjetado()" style="font-size:9px;padding:3px 8px;">&#9670; Gerar Projecao</button>
+      </div>
+      <div class="pb">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
+          <div class="fg" style="margin:0;"><label class="fl">Contratos Assinados (valor total)</label><input class="fi" id="f_contratos" type="text" placeholder="Ex: R$500k"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Projetos em Andamento (valor)</label><input class="fi" id="f_projetos" type="text" placeholder="Ex: R$300k"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Propostas Enviadas (valor)</label><input class="fi" id="f_propostas" type="text" placeholder="Ex: R$1.2M"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Probabilidade Fechamento (%)</label><input class="fi" id="f_probFech" type="text" placeholder="Ex: 28%"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Receita Recorrente Mensal (MRR)</label><input class="fi" id="f_mrr" type="text" placeholder="Ex: R$0"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Churn mensal estimado (%)</label><input class="fi" id="f_churn" type="text" placeholder="Ex: 3%"/></div>
+        </div>
+        <div id="f_projetadoResult"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Preencha os dados e clique em Gerar Projecao</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- S3 FLUXO DE CAIXA -->
+  <div class="page" id="page-s3fluxo">
+    <div class="panel">
+      <div class="ph"><div class="pt">Fluxo de Caixa — 6 Meses</div><span class="tag on">Claude IA</span>
+        <button class="btn btn-gn" id="btnFluxo" onclick="gerarFluxo()" style="font-size:9px;padding:3px 8px;">&#9670; Gerar Fluxo</button>
+      </div>
+      <div class="pb" id="f_fluxoResult"><div style="color:var(--t3);font-size:11px;text-align:center;padding:24px;">Gere o fluxo de caixa projetado para os proximos 6 meses</div></div>
+    </div>
+  </div>
+
+  <!-- S3 A RECEBER -->
+  <div class="page" id="page-s3receber">
+    <div class="panel">
+      <div class="ph"><div class="pt">Contas a Receber — Vendas Realizadas Nao Pagas</div><span class="tag gd">Pendente</span>
+        <button class="btn btn-g" onclick="syncReceberQB()" style="font-size:9px;padding:3px 8px;">&#8635; Sync QB</button>
+      </div>
+      <div class="pb">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
+          <div class="kpi gd"><div class="kl">Total a Receber</div><div class="kv" id="f_totalReceber">R$0</div></div>
+          <div class="kpi rd"><div class="kl">Vencido</div><div class="kv" id="f_vencido">R$0</div></div>
+          <div class="kpi bl"><div class="kl">A Vencer (30d)</div><div class="kv" id="f_aVencer">R$0</div></div>
+        </div>
+        <div id="f_receberTable"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Sincronize o QuickBooks para ver contas a receber</div></div>
+        <!-- Lancamento manual enquanto QB nao configurado -->
+        <div style="border-top:1px solid var(--bd);padding-top:12px;margin-top:8px;">
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:8px;">Lancamento Manual</div>
+          <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:8px;align-items:end;">
+            <div class="fg" style="margin:0;"><label class="fl">Cliente</label><input class="fi" id="f_recCliente" placeholder="Nome do cliente"/></div>
+            <div class="fg" style="margin:0;"><label class="fl">Valor</label><input class="fi" id="f_recValor" placeholder="R$X"/></div>
+            <div class="fg" style="margin:0;"><label class="fl">Vencimento</label><input class="fi" id="f_recVenc" placeholder="DD/MM/AAAA"/></div>
+            <button class="btn btn-gn" style="margin-bottom:10px;" onclick="addReceber()">+ Adicionar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
   </div>
 </main>
 <div class="toast" id="toastEl"></div>
 <script>
 const LOGS=[];let logCount=0;
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Produtos',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo de Caixa',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Produtos',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -947,7 +1388,7 @@ async function loadKPIs(){const data=await api('/api/analytics?tipo=kpis');if(!d
 async function loadAnalytics(){addLog('info','[S2-09] Gerando analise Claude...');const data=await api('/api/analytics?tipo=analise');if(!data||!data.analise){addLog('err','Analytics: erro');return;}const a=data.analise;const html=`<div style="margin-bottom:9px;"><div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--green);margin-bottom:5px;">INSIGHTS</div>${(a.insights||[]).map((x,n)=>`<div style="padding:5px 0;border-bottom:1px solid var(--bd);font-size:11.5px;"><strong style="color:var(--blue);">${n+1}.</strong> ${x}</div>`).join('')}</div><div style="margin-bottom:9px;"><div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--red);margin-bottom:5px;">ALERTAS</div>${(a.alertas||[]).map(x=>`<div style="padding:5px 8px;background:var(--r2);border-radius:5px;font-size:11px;margin-bottom:4px;">! ${x}</div>`).join('')}</div><div style="padding:8px;background:var(--b2);border-radius:5px;font-size:11px;color:var(--blue);"><strong>Recomendacao:</strong> ${a.recomendacao_principal||''}</div>`;document.getElementById('dash-insights').innerHTML=html;document.getElementById('s2-insights').innerHTML=html;addLog('success','[S2-09] Analise concluida: '+a.tendencia);}
 async function runProspect(){const btn=document.getElementById('btnProspect');const st=document.getElementById('prospStatus');const res=document.getElementById('prospResult');btn.disabled=true;btn.textContent='Mapeando...';st.textContent='Executando';st.className='tag on';res.innerHTML='<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:10px;">Agente S2-02 buscando empresas...</div>';addLog('info','[S2-02] Iniciando: '+document.getElementById('pSetor').value);const data=await api('/api/prospect-scan','POST',{setor:document.getElementById('pSetor').value,regiao:document.getElementById('pRegiao').value,faturamento_min:document.getElementById('pFat').value,cargo_decisor:document.getElementById('pCargo').value,quantidade:parseInt(document.getElementById('pQtd').value),iniciar_outreach:false});if(!data||!data.empresas){st.textContent='Erro';st.className='tag hot';res.innerHTML='<div style="color:var(--red);font-size:11px;padding:10px;">Erro. Verifique variaveis de ambiente no Vercel.</div>';addLog('err','[S2-02] Erro no mapeamento');}else{st.textContent=data.total_mapeado+' empresas';st.className='tag live';res.innerHTML='<div style="margin-bottom:8px;font-size:11px;color:var(--t2);">'+data.total_mapeado+' empresas · Score A: '+data.score_a+'</div><div class="tw"><table><thead><tr><th>Empresa</th><th>Setor</th><th>Decisor</th><th>Score</th></tr></thead><tbody>'+(data.empresas||[]).map(e=>`<tr><td><strong>${e.empresa}</strong></td><td style="color:var(--t2);font-size:10px;">${e.setor||''}</td><td style="font-size:10px;">${e.decisor||'--'}</td><td><span class="tb ${e.score==='A'?'sa':e.score==='B'?'sb_':'sc'}">${e.score||'B'}</span></td></tr>`).join('')+'</tbody></table></div>';document.getElementById('kLeads').textContent=data.total_mapeado;addLog('success','[S2-02] '+data.total_mapeado+' empresas mapeadas, Score A: '+data.score_a);toast(data.total_mapeado+' empresas no HubSpot!','success');
 // AUTO-TRIGGER: gerar mensagens automaticamente apos prospeccao
-setTimeout(()=>{addLog('info','[AUTO] Gerando mensagens automaticamente para os leads mapeados...');autoGerarMensagens(filtro);},1500);}btn.disabled=false;btn.textContent='&#9654; Executar Agente';}
+setTimeout(()=>{addLog('info','[AUTO] Gerando mensagens automaticamente para os leads mapeados...');autoGerarMensagens('novos');},1500);}btn.disabled=false;btn.textContent='&#9654; Executar Agente';}
 async function runRfpMonitor(){const btn=document.getElementById('btnRfp');const res=document.getElementById('rfpResult');btn.disabled=true;btn.textContent='Varrendo...';res.innerHTML='<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:10px;">Agente S2-04 varrendo portais...</div>';addLog('info','[S2-04] Varrendo ComprasNet, SAP Ariba, Beehive...');const data=await api('/api/rfp-monitor','GET');if(!data){res.innerHTML='<div style="color:var(--red);font-size:11px;padding:10px;">Erro - configure CRON_SECRET</div>';addLog('err','[S2-04] Erro');}else{const rfps=data.rfps||[];document.getElementById('rfpCnt').textContent=rfps.length||'0';document.getElementById('kRfp').textContent=rfps.length||'0';if(rfps.length===0){res.innerHTML='<div style="color:var(--t2);font-size:11px;padding:10px;">Nenhum RFP novo. Proximo ciclo em 6h.</div>';}else{res.innerHTML='<div class="tw"><table><thead><tr><th>Empresa</th><th>Valor</th><th>Prazo</th></tr></thead><tbody>'+rfps.map(r=>`<tr><td><strong>${r.empresa}</strong></td><td style="font-family:var(--M);font-size:9.5px;color:var(--gold);">${r.valor}</td><td style="font-family:var(--M);font-size:9.5px;">${r.prazo}</td></tr>`).join('')+'</tbody></table></div>';addLog('success','[S2-04] '+rfps.length+' RFPs - notificacao WA enviada');toast(rfps.length+' RFPs identificados!','success');}}btn.disabled=false;btn.textContent='&#9654; Executar Agora';}
 async function genWA(){const btn=document.getElementById('btnWA');const out=document.getElementById('waOut');btn.disabled=true;btn.textContent='Gerando...';out.innerHTML='<span style="color:var(--blue);font-family:var(--M);font-size:11px;">Gerando mensagem...</span>';addLog('info','[S2-02+S7-05] Gerando WA: '+document.getElementById('wE').value);const data=await api('/api/claude','POST',{system:'Agente de WhatsApp da Atlantyx (BI, Dados, IA grandes empresas). Dados atrasados=perda financeira. Quick Wins em semanas. NUNCA emojis. Tom: '+document.getElementById('wT').value,messages:[{role:'user',content:'WA para Nome: '+document.getElementById('wD').value+' Empresa: '+document.getElementById('wE').value+' Cargo: '+document.getElementById('wC').value+' Setor: '+document.getElementById('wS').value+' Contexto: '+(document.getElementById('wX').value||'operacao complexa')+'. Max 5 linhas. Comeca pelo nome. Termina com pergunta. So o texto.'}],max_tokens:400});if(data&&data.content){const msg=data.content[0].text;out.textContent=msg;document.getElementById('wMetaC').textContent=msg.length;document.getElementById('wMetaS').textContent=document.getElementById('wX').value?'A':'B';document.getElementById('wMetaR').textContent='~'+Math.ceil(msg.split(' ').length/4)+'s';document.getElementById('waMeta').style.display='grid';document.getElementById('btnCpWA').disabled=false;addLog('success','[S7-05] Mensagem gerada: '+msg.length+' chars');const fu=await api('/api/claude','POST',{messages:[{role:'user',content:'Follow-up 3 linhas para '+document.getElementById('wD').value+' da '+document.getElementById('wE').value+', 48h sem resposta. Original: "'+msg.substring(0,100)+'...". So o texto.'}],max_tokens:200});if(fu?.content){document.getElementById('fuOut').textContent=fu.content[0].text;document.getElementById('fuPanel').style.display='block';}}else{out.innerHTML='<span style="color:var(--red);">Erro API Claude - verifique ANTHROPIC_API_KEY</span>';addLog('err','[Claude] Erro');}btn.disabled=false;btn.textContent='&#10022; Gerar com IA';}
 function cpWA(){navigator.clipboard.writeText(document.getElementById('waOut').textContent);toast('Copiado!','success');}
@@ -958,7 +1399,7 @@ const S2A=[{n:'S2-01',nm:'Inteligencia de Mercado',d:'Varre portais e plataforma
 const S7A=[{n:'S7-01',nm:'Prospeccao Ativa',d:'Recebe empresas do S2-02 e monta dossie de abordagem com perfil, dores e historico.',on:true,ep:'/api/prospect-scan'},{n:'S7-02',nm:'Identificacao de RFPs',d:'Analisa compatibilidade de RFPs e estima probabilidade de vitoria.',on:false,ep:null},{n:'S7-03',nm:'Resposta a RFPs',d:'Com aprovacao humana, elabora resposta tecnica e comercial completa ao edital.',on:false,ep:null},{n:'S7-04',nm:'Mapeamento de Decisores',d:'Identifica C-levels com cargo, LinkedIn, canal recomendado e melhor angulo.',on:true,ep:'/api/decisor-map'},{n:'S7-05',nm:'Outreach via WhatsApp',d:'Gera e envia mensagens personalizadas. Monitora resposta. Follow-up automatico 48h.',on:true,ep:'/api/outreach-batch'},{n:'S7-06',nm:'Outreach via Ligacao',d:'Gera scripts personalizados e agenda ligacoes com Voz IA.',on:false,ep:null},{n:'S7-07',nm:'Agendamento de Reunioes',d:'Propoe horarios, confirma reuniao, envia convite e registra no HubSpot.',on:true,ep:'/api/meeting-schedule'},{n:'S7-08',nm:'Preparacao de Reuniao',d:'24h antes gera dossie: perfil, dores, produtos aderentes, perguntas e objecoes.',on:false,ep:'/api/meeting-schedule'},{n:'S7-09',nm:'Pipeline',d:'Monitora deals parados e sugere acoes de desbloqueio.',on:false,ep:null},{n:'S7-10',nm:'Propostas',d:'Gera propostas comerciais com escopo, prazo e precificacao.',on:false,ep:null},{n:'S7-11',nm:'Forecast',d:'Calcula previsao semana/mes/trimestre com cenarios P/R/O.',on:false,ep:null},{n:'S7-12',nm:'Expansao',d:'Identifica upsell e cross-sell na carteira ativa.',on:false,ep:null}];
 function renderAg(ag,id){document.getElementById(id).innerHTML=ag.map((a,i)=>`<div class="ac ${a.on?'on':''}"><div class="ac-n">${a.n}</div><div class="ac-nm">${a.nm}</div><div class="ac-d">${a.d}</div><div class="ac-f"><div class="ac-st" style="color:${a.on?'var(--green)':'var(--gold)'}"><span style="width:5px;height:5px;border-radius:50%;background:${a.on?'var(--green)':'var(--gold)'};display:inline-block;${a.on?'animation:pulse 2s infinite':''}"></span>${a.on?'Ativo':'Standby'}</div><div style="display:flex;gap:4px;align-items:center;">${a.ep?`<button class="btn btn-g" style="font-size:8px;padding:2px 5px;" onclick="testEP('${a.ep}','${a.nm}')">&#9654;</button>`:''}<div class="tgl ${a.on?'on':''}" onclick="togAg('${id}',${i})"></div></div></div></div>`).join('');}
 function togAg(g,i){const ag=g==='s2-grid'?S2A:S7A;ag[i].on=!ag[i].on;renderAg(ag,g);addLog(ag[i].on?'success':'warn',(ag[i].on?'Ativado':'Pausado')+': '+ag[i].nm);toast((ag[i].on?'Ativado':'Pausado')+': '+ag[i].nm,ag[i].on?'success':'info');}
-async function testEP(ep,nome){addLog('info','[Teste] '+ep+'...');const r=await fetch(ep);addLog(r.status<500?'success':'err','[Teste] '+nome+' HTTP '+r.status+(r.status<500?' OK':' ERRO'));toast(nome+' '+(r.status<500?'OK':'ERRO'),r.status<500?'success':'error');}
+async function testEP(ep,nome){addLog('info','[Teste] '+ep+'...');const r=await fetch(ep,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({test:true})});addLog(r.status===405||r.status<500?'success':'err','[Teste] '+nome+' HTTP '+r.status+(r.status!==500?' OK':' ERRO'));toast(nome+' '+(r.status!==500?'OK':'ERRO'),r.status!==500?'success':'error');}
 async function refreshAll(){addLog('info','[Sistema] Atualizando...');await Promise.all([loadPipeline(),loadKPIs()]);}
 
 //    WA BATCH GENERATOR -- TOTALMENTE AUTONOMO                                  
@@ -2709,11 +3150,925 @@ selecionarPeca = function(id) {
   const com = document.getElementById('ajusteComentario'); if(com) com.value = '';
 };
 
+
+// ── PROSPECÇÃO CADEIA C-LEVEL ─────────────────────────────────────────────────
+let modoProspect = 'unico';
+
+function setModoProspect(modo) {
+  modoProspect = modo;
+  document.getElementById('formUnico').style.display = modo === 'unico' ? 'block' : 'none';
+  document.getElementById('formCadeia').style.display = modo === 'cadeia' ? 'block' : 'none';
+  document.getElementById('modoUnico').className = 'btn' + (modo === 'unico' ? '' : ' btn-g');
+  document.getElementById('modoCadeia').className = 'btn' + (modo === 'cadeia' ? ' btn-or' : ' btn-g');
+  if (modo === 'unico') {
+    document.getElementById('modoUnico').style.borderColor = '#4f7cff';
+    document.getElementById('modoUnico').style.color = '#4f7cff';
+  }
+}
+
+async function runCadeiaCLevel() {
+  const empresa = document.getElementById('cNomeEmp')?.value?.trim();
+  if (!empresa) { toast('Informe o nome da empresa', 'error'); return; }
+
+  const setor = document.getElementById('cSetor')?.value || 'Energia';
+  const ctx = document.getElementById('cCtxEmp')?.value || '';
+  const btn = document.getElementById('btnCadeia');
+  const st = document.getElementById('prospStatus');
+  const res = document.getElementById('prospResult');
+
+  // Coletar cargos selecionados
+  const cargosMap = {
+    cCIO: 'CIO / Diretor de TI',
+    cCTO: 'CTO / Diretor de Tecnologia',
+    cDTD: 'Diretor de Transformacao Digital',
+    cCFO: 'CFO / Diretor Financeiro',
+    cCEO: 'CEO / Presidente',
+    cCOO: 'COO / Diretor de Operacoes',
+    cVP:  'VP / Gerente Senior de TI',
+    cDAD: 'Diretor de Analytics / Dados',
+  };
+  const cargosSelecionados = Object.entries(cargosMap)
+    .filter(([id]) => document.getElementById(id)?.checked)
+    .map(([, cargo]) => cargo);
+
+  if (!cargosSelecionados.length) { toast('Selecione ao menos 1 cargo', 'error'); return; }
+
+  btn.disabled = true; btn.textContent = 'Mapeando cadeia C-Level...';
+  st.textContent = 'Executando'; st.className = 'tag on';
+  res.innerHTML = '<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:12px;text-align:center;">Agentes S2-02 + S7-04 mapeando ' + cargosSelecionados.length + ' decisores de ' + empresa + '...</div>';
+  addLog('info', '[S2-02+S7-04] Mapeando cadeia C-Level: ' + empresa + ' (' + cargosSelecionados.length + ' cargos)');
+
+  try {
+    const data = await api('/api/prospect-scan', 'POST', {
+      modo: 'cadeia_clevel',
+      empresa_alvo: empresa,
+      setor,
+      cargos: cargosSelecionados,
+      contexto: ctx,
+      iniciar_outreach: false
+    });
+
+    if (!data || !data.decisores) {
+      st.textContent = 'Erro'; st.className = 'tag hot';
+      res.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Erro no mapeamento. Verifique as variaveis de ambiente.</div>';
+      addLog('err', '[S2-02+S7-04] Erro no mapeamento de cadeia');
+      return;
+    }
+
+    st.textContent = data.decisores.length + ' decisores';
+    st.className = 'tag live';
+
+    // Render resultado
+    res.innerHTML = `
+      <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:13px;font-weight:600;">${empresa}</span>
+        <span style="font-family:var(--M);font-size:8.5px;padding:2px 8px;border-radius:4px;background:var(--go2);color:var(--gold);">${setor}</span>
+        <span style="font-family:var(--M);font-size:8.5px;padding:2px 8px;border-radius:4px;background:var(--g2);color:var(--green);">${data.decisores.length} decisores</span>
+      </div>
+      ${(data.decisores || []).map((d, i) => `
+        <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:7px;padding:11px;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;">
+            <div style="width:32px;height:32px;border-radius:50%;background:rgba(240,112,48,.15);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;color:var(--or);">${(d.nome||d.cargo||'?')[0]}</div>
+            <div style="flex:1;">
+              <div style="font-size:12px;font-weight:600;">${d.nome || 'A identificar'}</div>
+              <div style="font-size:10px;color:var(--t2);">${d.cargo} — ${empresa}</div>
+            </div>
+            <span style="font-family:var(--M);font-size:8px;padding:2px 7px;border-radius:3px;background:${d.prioridade==='Alta'?'var(--r2)':d.prioridade==='Media'?'var(--go2)':'var(--bg)'};color:${d.prioridade==='Alta'?'var(--red)':d.prioridade==='Media'?'var(--gold)':'var(--t3)'};">${d.prioridade||'Media'}</span>
+          </div>
+          <div style="font-size:11px;color:var(--t2);margin-bottom:6px;">${d.perfil || d.descricao || ''}</div>
+          <div style="font-size:11px;margin-bottom:6px;"><span style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--red);">Dores: </span>${(d.dores||[]).join(' · ')}</div>
+          ${d.mensagem_wa ? `<div style="background:var(--bg3);border:1px solid rgba(34,211,163,.2);border-radius:5px;padding:9px;font-size:11px;line-height:1.6;margin-bottom:6px;white-space:pre-wrap;">${d.mensagem_wa}</div>` : ''}
+          <div style="display:flex;gap:6px;">
+            ${d.linkedin ? `<a href="${d.linkedin}" target="_blank" class="btn" style="font-size:9px;padding:2px 8px;color:var(--blue);">LinkedIn</a>` : ''}
+            <button class="btn btn-gn" style="font-size:9px;padding:2px 8px;" onclick="adicionarAoKanbanWA('${d.nome||d.cargo}','${empresa}','${d.cargo}')">+ WA Batch</button>
+          </div>
+        </div>`).join('')}`;
+
+    // Atualizar KPI
+    const kLeads = document.getElementById('kLeads');
+    if (kLeads) kLeads.textContent = parseInt(kLeads.textContent || 0) + data.decisores.length;
+
+    addLog('success', '[S2-02+S7-04] ' + data.decisores.length + ' decisores mapeados: ' + empresa);
+    toast(data.decisores.length + ' decisores de ' + empresa + ' mapeados!', 'success');
+
+  } catch(e) {
+    st.textContent = 'Erro'; st.className = 'tag hot';
+    addLog('err', '[S2-02+S7-04] Erro: ' + e.message);
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Mapear Cadeia C-Level Completa';
+}
+
+function adicionarAoKanbanWA(nome, empresa, cargo) {
+  // Adiciona ao batch de mensagens WA para aprovacao
+  if (!batchMensagens) return;
+  batchMensagens.push({
+    id: 'wa_' + Date.now(),
+    name: nome,
+    company: empresa,
+    job_title: cargo,
+    phone: '',
+    mensagem: '',
+    followup: '',
+    score: 'A',
+    status: 'pendente',
+    enviado: false
+  });
+  toast(nome + ' adicionado ao batch WA', 'success');
+  addLog('info', '[WA Batch] ' + nome + ' de ' + empresa + ' adicionado');
+}
+
+// RFP Monitor atualizado - mostrar resultados em cards
+async function runRfpMonitorAtualizado() {
+  const btn = document.getElementById('btnRfp');
+  const res = document.getElementById('rfpResult');
+  const st = document.getElementById('rfpStatus');
+  if (!btn || !res) return;
+  btn.disabled = true; btn.textContent = 'Varrendo...';
+  if (st) { st.textContent = 'Executando'; st.className = 'tag on'; }
+  res.innerHTML = '<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:12px;text-align:center;">Agente S2-04 varrendo portais...</div>';
+  addLog('info', '[S2-04] Varrendo RFPs...');
+  try {
+    const data = await api('/api/rfp-monitor', 'POST', { setor: 'Energia, Automotivo, Varejo, Industria' });
+    if (!data?.success) {
+      res.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Erro ao varrer RFPs</div>';
+      addLog('err', '[S2-04] Erro');
+      return;
+    }
+    const rfps = data.rfps || [];
+    if (!rfps.length) {
+      res.innerHTML = '<div style="color:var(--t3);font-size:11px;padding:16px;text-align:center;">Nenhum RFP identificado. Tente novamente em instantes.</div>';
+      if (st) { st.textContent = 'Sem resultados'; st.className = 'tag off'; }
+      return;
+    }
+    if (st) { st.textContent = rfps.length + ' RFPs'; st.className = 'tag live'; }
+    res.innerHTML = rfps.map(r => `
+      <div style="background:var(--bg4);border:1px solid var(--bd);border-left:3px solid ${r.urgencia==='Alta'?'var(--red)':r.urgencia==='Media'?'var(--gold)':'var(--blue)'};border-radius:7px;padding:12px;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <strong style="font-size:12px;flex:1;">${r.empresa}</strong>
+          <span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:var(--go2);color:var(--gold);">${r.compatibilidade}% compat.</span>
+          <span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:${r.urgencia==='Alta'?'var(--r2)':'var(--bg)'};color:${r.urgencia==='Alta'?'var(--red)':'var(--t3)'};">${r.urgencia||'Media'}</span>
+        </div>
+        <div style="font-size:11.5px;font-weight:600;margin-bottom:4px;">${r.titulo}</div>
+        <div style="font-size:11px;color:var(--t2);margin-bottom:6px;">${r.descricao||''}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;font-family:var(--M);font-size:9px;color:var(--t2);">
+          <span>Valor: <strong style="color:var(--green);">${r.valor}</strong></span>
+          <span>Prazo: <strong style="color:var(--gold);">${r.prazo_submissao}</strong></span>
+          <span>Portal: ${r.portal}</span>
+          <span>Decisor: ${r.decisor_provavel||'—'}</span>
+        </div>
+        ${r.justificativa ? `<div style="font-size:11px;color:var(--blue);margin-top:6px;">-> ${r.justificativa}</div>` : ''}
+        ${(r.acoes_sugeridas||[]).length ? `<div style="margin-top:6px;">${r.acoes_sugeridas.map(a=>`<div style="font-size:10px;color:var(--t2);">• ${a}</div>`).join('')}</div>` : ''}
+      </div>`).join('');
+    addLog('success', '[S2-04] ' + rfps.length + ' RFPs identificados');
+    toast(rfps.length + ' RFPs encontrados!', 'success');
+  } catch(e) {
+    res.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Erro: ' + e.message + '</div>';
+    addLog('err', '[S2-04] Erro: ' + e.message);
+  }
+  btn.disabled = false; btn.textContent = 'Varrer RFPs Agora';
+}
+
+
+
+// ── PROPOSITO PESSOAL + METAS INTEGRADAS ─────────────────────────────────────
+let propData = {};
+let metasPessoaisCount = 3;
+
+function togglePropForm() {
+  const body = document.getElementById('propFormBody');
+  if (body) body.style.display = body.style.display === 'none' ? 'block' : 'none';
+}
+
+function addMetaPessoal() {
+  const i = metasPessoaisCount++;
+  const form = document.getElementById('metasPessoaisForm');
+  if (!form) return;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px;margin-bottom:6px;';
+  div.id = 'mpRow' + i;
+  div.innerHTML = `<input class="fi" placeholder="Meta pessoal..." id="mp${i}_desc"/>
+    <input class="fi" placeholder="R$X" id="mp${i}_val" type="text"/>
+    <input class="fi" placeholder="Prazo" id="mp${i}_prazo"/>`;
+  form.appendChild(div);
+}
+
+function coletarDadosProposito() {
+  const metas = [];
+  for (let i = 0; i < metasPessoaisCount; i++) {
+    const desc = document.getElementById('mp' + i + '_desc')?.value?.trim();
+    const val = document.getElementById('mp' + i + '_val')?.value?.trim();
+    const prazo = document.getElementById('mp' + i + '_prazo')?.value?.trim();
+    if (desc) metas.push({ descricao: desc, valor: val, prazo });
+  }
+  return {
+    proposito_vida: document.getElementById('pPropVida')?.value?.trim(),
+    bem_que_pratica: document.getElementById('pBem')?.value?.trim(),
+    legado: document.getElementById('pLegado')?.value?.trim(),
+    renda_pessoal_desejada: document.getElementById('pRendaMes')?.value?.trim(),
+    patrimonio_5anos: document.getElementById('pPatrim5')?.value?.trim(),
+    valuation_atlantyx: document.getElementById('pValuation')?.value?.trim(),
+    estilo_vida: document.getElementById('pEstilo')?.value?.trim(),
+    causa_social: document.getElementById('pCausa')?.value?.trim(),
+    pct_impacto_social: document.getElementById('pPctSocial')?.value?.trim(),
+    valores_inegociaveis: document.getElementById('pValores')?.value?.trim(),
+    nao_aceita: document.getElementById('pNaoAceita')?.value?.trim(),
+    metas_pessoais: metas,
+  };
+}
+
+async function salvarEGerarPlano() {
+  const dados = coletarDadosProposito();
+
+  if (!dados.proposito_vida && !dados.renda_pessoal_desejada) {
+    toast('Preencha ao menos o proposito de vida ou a meta financeira', 'error');
+    return;
+  }
+
+  propData = dados;
+  localStorage.setItem('atlantyx_proposito', JSON.stringify(dados));
+
+  const btn = document.getElementById('btnSalvarProposito');
+  const panel = document.getElementById('propResultPanel');
+  const result = document.getElementById('propResult');
+  btn.disabled = true; btn.textContent = 'Gerando plano integrado...';
+  panel.style.display = 'block';
+  result.innerHTML = '<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:20px;text-align:center;">Claude integrando seu proposito pessoal com a estrategia da Atlantyx...</div>';
+  addLog('info', '[S1] Gerando plano integrado proposito + empresa...');
+
+  try {
+    const r = await fetch('/api/s1-intel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'plano_integrado_proposito',
+        contexto: {
+          fundador: dados,
+          empresa: {
+            nome: 'Atlantyx',
+            segmento: 'BI, Dados e IA para grandes empresas',
+            meta_receita_90d: 'R$5M',
+            estagio: 'Early-stage, semana 1 de operacao'
+          }
+        }
+      })
+    });
+    const data = await r.json();
+
+    if (data?.plano) {
+      renderPlanoIntegrado(data.plano, dados);
+      addLog('ok', '[S1] Plano integrado gerado — proposito + empresa unificados');
+      toast('Plano integrado criado! Metas pessoais e empresa agora alinhadas.', 'success');
+    } else if (data?.error) {
+      // Gerar localmente se endpoint nao tiver a acao
+      await gerarPlanoLocal(dados);
+    }
+  } catch(e) {
+    await gerarPlanoLocal(dados);
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Salvar e Gerar Plano Estrategico Integrado com IA';
+}
+
+async function gerarPlanoLocal(dados) {
+  const result = document.getElementById('propResult');
+  addLog('info', '[S1] Gerando via Claude direto...');
+
+  const r = await fetch('/api/claude', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      system: `Voce e o Consultor Estrategico Pessoal e Empresarial da Atlantyx.
+Sua missao: integrar os anseios pessoais do fundador com a estrategia da empresa,
+tornando o proposito pessoal o combustivel do crescimento empresarial.
+Seja profundo, humano e estrategico ao mesmo tempo.
+O plano deve mostrar como CADA META PESSOAL se conecta a uma acao empresarial especifica.`,
+      messages: [{
+        role: 'user',
+        content: `Integre os dados abaixo em um plano estrategico unificado.
+
+DADOS DO FUNDADOR:
+Proposito de vida: ${dados.proposito_vida || 'nao informado'}
+Bem que quer praticar: ${dados.bem_que_pratica || 'nao informado'}
+Legado: ${dados.legado || 'nao informado'}
+Valores inegociaveis: ${dados.valores_inegociaveis || 'nao informado'}
+
+METAS FINANCEIRAS PESSOAIS:
+Renda mensal desejada: ${dados.renda_pessoal_desejada || 'nao informado'}
+Patrimonio em 5 anos: ${dados.patrimonio_5anos || 'nao informado'}
+Valuation Atlantyx desejado: ${dados.valuation_atlantyx || 'nao informado'}
+Estilo de vida: ${dados.estilo_vida || 'nao informado'}
+Causa social: ${dados.causa_social || 'nao informado'} (${dados.pct_impacto_social || '?'} da receita)
+
+METAS PESSOAIS:
+${(dados.metas_pessoais || []).map(m => m.descricao + (m.valor ? ' — ' + m.valor : '') + (m.prazo ? ' — ' + m.prazo : '')).join('\n') || 'nenhuma'}
+
+EMPRESA: Atlantyx — BI, Dados e IA para grandes empresas
+Meta: R$5M em 90 dias. Estagio: early-stage, semana 1.
+
+Gere o plano em 5 secoes:
+
+1. DECLARACAO DE PROPOSITO UNIFICADO
+Como o proposito pessoal e a missao da Atlantyx se tornam uma coisa so — 1 paragrafo poderoso.
+
+2. CONEXAO PROPOSITO — ESTRATEGIA
+Para cada anseio pessoal, mostre a acao empresarial concreta que o realiza.
+Formato: Anseio -> Como a Atlantyx o realiza -> Meta mensuravel
+
+3. METAS FINANCEIRAS INTEGRADAS
+Calcule: quanto a Atlantyx precisa gerar para que o fundador atinja cada meta pessoal.
+Mostre o caminho: receita empresa -> distribuicao -> meta pessoal
+
+4. CALENDARIO DO PROPOSITO
+Trimestre a trimestre nos proximos 2 anos: o que a empresa entrega E o que o fundador conquista pessoalmente.
+
+5. MANIFESTO DA EMPRESA
+3 paragrafos que capturam a essencia do que a Atlantyx e e por que existe — baseado no proposito real do fundador. Este manifesto deve entrar na homepage, no pitch e na cultura.`
+      }],
+      max_tokens: 2000
+    })
+  });
+
+  const data = await r.json();
+  const texto = data?.content?.[0]?.text || 'Erro ao gerar plano.';
+
+  document.getElementById('propResult').innerHTML = `
+    <div style="font-size:12px;line-height:1.9;white-space:pre-wrap;color:var(--t1);">${texto}</div>
+    <div style="margin-top:16px;display:flex;gap:8px;">
+      <button class="btn btn-p" style="font-size:10px;" onclick="navigator.clipboard.writeText(document.getElementById('propResult').textContent);toast('Copiado!','success')">Copiar Plano</button>
+      <button class="btn btn-g" style="font-size:10px;" onclick="renderDashMetas()">Ver Dashboard de Metas</button>
+    </div>`;
+
+  addLog('ok', '[S1] Plano integrado proposito gerado');
+  renderDashMetas();
+}
+
+function renderDashMetas() {
+  const dados = propData;
+  if (!dados || (!dados.proposito_vida && !dados.renda_pessoal_desejada)) return;
+
+  const panel = document.getElementById('propDashPanel');
+  if (panel) panel.style.display = 'block';
+
+  // KPIs pessoais no topo do dashboard
+  const kpis = document.getElementById('propKPIs');
+  if (kpis) {
+    kpis.innerHTML = [
+      { label: 'Renda Pessoal Meta', val: dados.renda_pessoal_desejada || '—', cor: 'gn' },
+      { label: 'Patrimonio 5 Anos', val: dados.patrimonio_5anos || '—', cor: 'bl' },
+      { label: 'Valuation Atlantyx', val: dados.valuation_atlantyx || '—', cor: 'pu' },
+      { label: 'Impacto Social', val: dados.pct_impacto_social || '—', cor: 'gd' },
+    ].map(k => `<div class="kpi ${k.cor}"><div class="kl">${k.label}</div><div class="kv" style="font-size:14px;">${k.val}</div></div>`).join('');
+  }
+
+  // Metas pessoais com progresso
+  const metas = document.getElementById('propMetas');
+  if (metas) {
+    const mp = dados.metas_pessoais || [];
+    const valores = ['Proposito: ' + (dados.proposito_vida ? dados.proposito_vida.substring(0,80) + '...' : '—'),
+                     'Legado: ' + (dados.legado ? dados.legado.substring(0,80) + '...' : '—')];
+
+    metas.innerHTML = `
+      <div class="panel">
+        <div class="ph"><div class="pt">Metas Pessoais com Prazo</div></div>
+        <div class="pb">
+          ${mp.length ? mp.map((m, i) => `
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--bd);">
+              <span style="font-family:var(--M);font-size:10px;color:#9c6dff;width:20px;">${i+1}.</span>
+              <span style="font-size:12px;flex:1;">${m.descricao}</span>
+              ${m.valor ? `<span style="font-family:var(--M);font-size:10px;color:var(--green);">${m.valor}</span>` : ''}
+              ${m.prazo ? `<span style="font-family:var(--M);font-size:9px;color:var(--gold);">${m.prazo}</span>` : ''}
+            </div>`).join('') : '<div style="color:var(--t3);font-size:11px;">Nenhuma meta pessoal adicionada.</div>'}
+        </div>
+      </div>
+      <div class="panel">
+        <div class="ph"><div class="pt">Proposito e Legado</div><span class="tag" style="background:rgba(156,109,255,.15);color:#9c6dff;">Fundador</span></div>
+        <div class="pb">
+          ${valores.map(v => `<div style="font-size:11.5px;line-height:1.7;padding:8px 0;border-bottom:1px solid var(--bd);">${v}</div>`).join('')}
+          ${dados.valores_inegociaveis ? `<div style="margin-top:8px;font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:4px;">VALORES INEGOCIAVEIS</div><div style="font-size:11.5px;line-height:1.7;">${dados.valores_inegociaveis}</div>` : ''}
+          ${dados.causa_social ? `<div style="margin-top:8px;font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">CAUSA SOCIAL</div><div style="font-size:11.5px;">${dados.causa_social} — ${dados.pct_impacto_social || ''} da receita</div>` : ''}
+        </div>
+      </div>`;
+  }
+
+  // Atualizar dashboard principal com metas integradas
+  atualizarDashComProposito(dados);
+}
+
+function atualizarDashComProposito(dados) {
+  // Adiciona widget de proposito no dashboard principal
+  const dash = document.getElementById('pg-dash');
+  if (!dash) return;
+
+  let propWidget = document.getElementById('propDashWidget');
+  if (!propWidget) {
+    propWidget = document.createElement('div');
+    propWidget.id = 'propDashWidget';
+    propWidget.className = 'panel';
+    propWidget.style.marginBottom = '12px';
+    dash.insertBefore(propWidget, dash.firstChild);
+  }
+
+  propWidget.innerHTML = `
+    <div style="background:linear-gradient(135deg,rgba(156,109,255,.15),rgba(79,124,255,.08));border-radius:8px;padding:13px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+      <div style="width:3px;height:50px;background:linear-gradient(to bottom,#9c6dff,#4f7cff);border-radius:2px;flex-shrink:0;"></div>
+      <div style="flex:1;min-width:200px;">
+        <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;letter-spacing:1px;color:#9c6dff;margin-bottom:4px;">PROPOSITO — FUNDADOR</div>
+        <div style="font-size:12px;line-height:1.6;color:var(--t1);">${(dados.proposito_vida || 'Definir proposito em S1 > Proposito').substring(0, 120)}${dados.proposito_vida?.length > 120 ? '...' : ''}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">
+        <div style="text-align:center;background:rgba(156,109,255,.1);border-radius:6px;padding:6px 12px;">
+          <div style="font-family:var(--M);font-size:8px;color:#9c6dff;">META PESSOAL</div>
+          <div style="font-family:var(--M);font-size:13px;font-weight:600;color:#9c6dff;">${dados.renda_pessoal_desejada || '—'}</div>
+          <div style="font-size:9px;color:var(--t2);">renda/mes</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">
+        <div style="text-align:center;background:rgba(245,166,35,.1);border-radius:6px;padding:6px 12px;">
+          <div style="font-family:var(--M);font-size:8px;color:var(--gold);">CAUSA SOCIAL</div>
+          <div style="font-size:11px;color:var(--gold);font-weight:500;">${dados.causa_social ? dados.causa_social.substring(0,30) : '—'}</div>
+          <div style="font-size:9px;color:var(--t2);">${dados.pct_impacto_social || ''}</div>
+        </div>
+      </div>
+      <button class="btn" style="font-size:9px;padding:4px 9px;color:#9c6dff;border-color:#9c6dff;" onclick="nav('s1proposito',null)">Editar</button>
+    </div>`;
+}
+
+// Carregar proposito salvo ao iniciar
+function carregarProposito() {
+  try {
+    const saved = localStorage.getItem('atlantyx_proposito');
+    if (saved) {
+      propData = JSON.parse(saved);
+      // Preencher campos
+      const fields = {
+        pPropVida: propData.proposito_vida, pBem: propData.bem_que_pratica,
+        pLegado: propData.legado, pRendaMes: propData.renda_pessoal_desejada,
+        pPatrim5: propData.patrimonio_5anos, pValuation: propData.valuation_atlantyx,
+        pEstilo: propData.estilo_vida, pCausa: propData.causa_social,
+        pPctSocial: propData.pct_impacto_social, pValores: propData.valores_inegociaveis,
+        pNaoAceita: propData.nao_aceita,
+      };
+      Object.entries(fields).forEach(([id, val]) => {
+        const el = document.getElementById(id);
+        if (el && val) el.value = val;
+      });
+      // Preencher metas pessoais
+      (propData.metas_pessoais || []).forEach((m, i) => {
+        if (i >= 3) addMetaPessoal();
+        const d = document.getElementById('mp' + i + '_desc');
+        const v = document.getElementById('mp' + i + '_val');
+        const p = document.getElementById('mp' + i + '_prazo');
+        if (d) d.value = m.descricao || '';
+        if (v) v.value = m.valor || '';
+        if (p) p.value = m.prazo || '';
+      });
+      // Atualizar dashboard
+      atualizarDashComProposito(propData);
+      addLog('ok', '[S1] Proposito carregado — fundador identificado');
+    }
+  } catch(e) { console.log('Proposito:', e.message); }
+}
+
+
+// ── METAS FINANCEIRAS DASHBOARD ───────────────────────────────────────────────
+const METAS_DEFAULT = {
+  anual: 18000000,
+  mensal: 1500000,
+  realAnual: 0,
+  realMensal: 0,
+};
+
+function carregarMetas() {
+  try {
+    const saved = localStorage.getItem('atlantyx_metas');
+    const metas = saved ? JSON.parse(saved) : METAS_DEFAULT;
+
+    // Mes atual
+    const meses = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+    const mesEl = document.getElementById('mesAtual');
+    if (mesEl) mesEl.textContent = meses[new Date().getMonth()];
+
+    // Metas
+    const ma = document.getElementById('metaAnualVal');
+    const mm = document.getElementById('metaMensalVal');
+    if (ma) ma.textContent = formatarMoeda(metas.anual || METAS_DEFAULT.anual);
+    if (mm) mm.textContent = formatarMoeda(metas.mensal || METAS_DEFAULT.mensal);
+
+    // Realizacoes
+    atualizarBarras(metas);
+
+    return metas;
+  } catch(e) { return METAS_DEFAULT; }
+}
+
+function formatarMoeda(valor) {
+  if (!valor || valor === 0) return 'R$0';
+  if (valor >= 1000000) return 'R$' + (valor / 1000000).toFixed(1).replace('.0','') + 'M';
+  if (valor >= 1000) return 'R$' + (valor / 1000).toFixed(0) + 'k';
+  return 'R$' + valor.toLocaleString('pt-BR');
+}
+
+function parseMoeda(str) {
+  if (!str) return 0;
+  const clean = str.replace(/R\\$|\s|\./g, '').replace(',','.');
+  const num = parseFloat(clean);
+  if (isNaN(num)) return 0;
+  if (str.toLowerCase().includes('m')) return num * 1000000;
+  if (str.toLowerCase().includes('k')) return num * 1000;
+  return num;
+}
+
+function atualizarBarras(metas) {
+  const pctAnual = metas.anual > 0 ? Math.min(100, (metas.realAnual / metas.anual) * 100) : 0;
+  const pctMensal = metas.mensal > 0 ? Math.min(100, (metas.realMensal / metas.mensal) * 100) : 0;
+
+  const baAnual = document.getElementById('metaAnualBarra');
+  const baMensal = document.getElementById('metaMensalBarra');
+  const rAnual = document.getElementById('metaAnualReal');
+  const rMensal = document.getElementById('metaMensalReal');
+  const pAnual = document.getElementById('metaAnualPct');
+  const pMensal = document.getElementById('metaMensalPct');
+
+  if (baAnual) {
+    baAnual.style.width = pctAnual + '%';
+    baAnual.style.background = pctAnual >= 80 ? 'var(--green)' : pctAnual >= 50 ? 'var(--blue)' : pctAnual >= 25 ? 'var(--gold)' : 'var(--red)';
+  }
+  if (baMensal) {
+    baMensal.style.width = pctMensal + '%';
+    baMensal.style.background = pctMensal >= 80 ? 'var(--green)' : pctMensal >= 50 ? 'var(--blue)' : pctMensal >= 25 ? 'var(--gold)' : 'var(--red)';
+  }
+  if (rAnual) rAnual.textContent = formatarMoeda(metas.realAnual || 0) + ' realizado';
+  if (rMensal) rMensal.textContent = formatarMoeda(metas.realMensal || 0) + ' realizado';
+  if (pAnual) pAnual.textContent = pctAnual.toFixed(1) + '%';
+  if (pMensal) pMensal.textContent = pctMensal.toFixed(1) + '%';
+}
+
+function atualizarMetas() {
+  const rAnualStr = document.getElementById('inputRealAnual')?.value?.trim();
+  const rMensalStr = document.getElementById('inputRealMensal')?.value?.trim();
+
+  try {
+    const saved = localStorage.getItem('atlantyx_metas');
+    const metas = saved ? JSON.parse(saved) : { ...METAS_DEFAULT };
+
+    if (rAnualStr) metas.realAnual = parseMoeda(rAnualStr);
+    if (rMensalStr) metas.realMensal = parseMoeda(rMensalStr);
+
+    localStorage.setItem('atlantyx_metas', JSON.stringify(metas));
+    atualizarBarras(metas);
+
+    // Limpar inputs
+    if (document.getElementById('inputRealAnual')) document.getElementById('inputRealAnual').value = '';
+    if (document.getElementById('inputRealMensal')) document.getElementById('inputRealMensal').value = '';
+
+    toast('Realizacao atualizada!', 'success');
+    addLog('ok', '[Dashboard] Metas atualizadas — Anual: ' + formatarMoeda(metas.realAnual) + ' | Mensal: ' + formatarMoeda(metas.realMensal));
+  } catch(e) { toast('Erro ao salvar', 'error'); }
+}
+
+function editarMetas() {
+  // Modal simples para editar as metas alvo
+  const saved = localStorage.getItem('atlantyx_metas');
+  const metas = saved ? JSON.parse(saved) : { ...METAS_DEFAULT };
+
+  const metaAnual = prompt('Meta Anual 2026 (ex: 18M ou 18000000):', formatarMoeda(metas.anual));
+  if (metaAnual === null) return;
+  const metaMensal = prompt('Meta Mensal (ex: 1.5M ou 1500000):', formatarMoeda(metas.mensal));
+  if (metaMensal === null) return;
+
+  metas.anual = parseMoeda(metaAnual) || metas.anual;
+  metas.mensal = parseMoeda(metaMensal) || metas.mensal;
+
+  const maEl = document.getElementById('metaAnualVal');
+  const mmEl = document.getElementById('metaMensalVal');
+  if (maEl) maEl.textContent = formatarMoeda(metas.anual);
+  if (mmEl) mmEl.textContent = formatarMoeda(metas.mensal);
+
+  localStorage.setItem('atlantyx_metas', JSON.stringify(metas));
+  atualizarBarras(metas);
+  toast('Metas atualizadas!', 'success');
+  addLog('ok', '[Dashboard] Novas metas — Anual: ' + formatarMoeda(metas.anual) + ' | Mensal: ' + formatarMoeda(metas.mensal));
+}
+
+
+// ── MENU RETRATIL ─────────────────────────────────────────────────────────────
+const gruposAbertos = new Set(['gFundador','gMarketing','gVendas']); // abertos por default
+
+function toggleGrupo(id) {
+  const body = document.getElementById(id);
+  const arr = document.getElementById('arr-' + id);
+  if (!body) return;
+  const fechando = !body.classList.contains('closed');
+  if (fechando) {
+    body.classList.add('closed');
+    if (arr) arr.classList.remove('open');
+    gruposAbertos.delete(id);
+  } else {
+    body.classList.remove('closed');
+    if (arr) arr.classList.add('open');
+    gruposAbertos.add(id);
+  }
+}
+
+function initMenu() {
+  // Fechar todos por default exceto os marcados
+  const todos = ['gFundador','gEstrategia','gFinanceiro','gEmail','gMarketing','gVendas'];
+  todos.forEach(id => {
+    const body = document.getElementById(id);
+    const arr = document.getElementById('arr-' + id);
+    if (!body) return;
+    if (gruposAbertos.has(id)) {
+      body.classList.remove('closed');
+      if (arr) arr.classList.add('open');
+    } else {
+      body.classList.add('closed');
+      if (arr) arr.classList.remove('open');
+    }
+  });
+}
+
+// ── S3 FINANCEIRO ─────────────────────────────────────────────────────────────
+let receberItems = [];
+
+async function syncQuickBooks() {
+  const btn = document.getElementById('btnSyncQB') || document.getElementById('btnQBReal');
+  const tag = document.getElementById('qbTag') || document.getElementById('qbRealTag');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sincronizando...'; }
+  addLog('info', '[S3] Sincronizando QuickBooks...');
+
+  // Verificar se QB esta configurado
+  const qbConfigured = false; // Sera true quando QB_CLIENT_ID estiver no Vercel
+
+  if (!qbConfigured) {
+    // Mostrar estado sem QB configurado + analise simulada com Claude
+    if (tag) { tag.textContent = 'QB nao configurado'; tag.className = 'tag off'; }
+    addLog('warn', '[S3] QuickBooks: configure QB_CLIENT_ID, QB_CLIENT_SECRET e QB_REFRESH_TOKEN no Vercel');
+
+    // Usar dados das metas salvas para montar o painel
+    const metas = JSON.parse(localStorage.getItem('atlantyx_metas') || '{}');
+    const realAnual = metas.realAnual || 0;
+    const realMensal = metas.realMensal || 0;
+
+    atualizarPainelFinanceiro(realAnual, realMensal, 0, 0);
+
+    document.getElementById('f_lancamentos').innerHTML = `
+      <div style="background:var(--go2);border:1px solid rgba(245,166,35,.2);border-radius:7px;padding:12px;font-size:11px;color:var(--gold);margin-bottom:10px;">
+        QuickBooks nao conectado. Configure as variaveis de ambiente no Vercel para sincronizar lancamentos reais.
+      </div>
+      <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:8px;">CONFIGURAR QUICKBOOKS — 3 PASSOS</div>
+      <div style="font-size:11px;line-height:2;color:var(--t1);">
+        1. Acesse <strong>developer.intuit.com</strong> → My Apps → Create App<br>
+        2. Obtenha: Client ID, Client Secret<br>
+        3. Gere o Refresh Token via OAuth 2.0<br>
+        4. Adicione no Vercel: <strong>QB_CLIENT_ID</strong> · <strong>QB_CLIENT_SECRET</strong> · <strong>QB_REFRESH_TOKEN</strong> · <strong>QB_REALM_ID</strong>
+      </div>`;
+  } else {
+    // QB configurado — buscar dados reais
+    await buscarDadosQB();
+  }
+
+  if (btn) { btn.disabled = false; btn.textContent = '↻ Sync QuickBooks'; }
+}
+
+async function buscarDadosQB() {
+  try {
+    const r = await fetch('/api/quickbooks', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({action:'relatorio'}) });
+    const data = await r.json();
+    if (data.success) {
+      atualizarPainelFinanceiro(data.realAnual, data.realMes, data.aReceber, data.projetado);
+      renderLancamentos(data.lancamentos || []);
+      addLog('ok', '[S3] QuickBooks sincronizado — ' + data.lancamentos?.length + ' lancamentos');
+    }
+  } catch(e) { addLog('err', '[S3] QB erro: ' + e.message); }
+}
+
+function atualizarPainelFinanceiro(realAnual, realMes, aReceber, projetado) {
+  const fmt = (v) => {
+    if (v >= 1000000) return 'R$' + (v/1000000).toFixed(1).replace('.0','') + 'M';
+    if (v >= 1000) return 'R$' + (v/1000).toFixed(0) + 'k';
+    return 'R$' + (v||0).toLocaleString('pt-BR');
+  };
+
+  const els = {
+    f_realAnual: fmt(realAnual), f_realMes: fmt(realMes),
+    f_aReceber: fmt(aReceber), f_projetado: fmt(projetado || 0),
+  };
+  Object.entries(els).forEach(([id, val]) => {
+    const el = document.getElementById(id); if (el) el.textContent = val;
+  });
+
+  // Atualizar barras de progresso S3
+  const metas = JSON.parse(localStorage.getItem('atlantyx_metas') || '{}');
+  const metaAnual = metas.anual || 18000000;
+  const metaMensal = metas.mensal || 1500000;
+  const pctA = Math.min(100, (realAnual / metaAnual) * 100);
+  const pctM = Math.min(100, (realMes / metaMensal) * 100);
+  const corA = pctA >= 80 ? 'var(--green)' : pctA >= 50 ? 'var(--blue)' : pctA >= 25 ? 'var(--gold)' : 'var(--red)';
+  const corM = pctM >= 80 ? 'var(--green)' : pctM >= 50 ? 'var(--blue)' : pctM >= 25 ? 'var(--gold)' : 'var(--red)';
+
+  const barA = document.getElementById('f_barraAnual');
+  const barM = document.getElementById('f_barraMensal');
+  if (barA) { barA.style.width = pctA + '%'; barA.style.background = corA; }
+  if (barM) { barM.style.width = pctM + '%'; barM.style.background = corM; }
+
+  const pA = document.getElementById('f_pctAnual'); if (pA) { pA.textContent = pctA.toFixed(1) + '%'; pA.style.color = corA; }
+  const pM = document.getElementById('f_pctMensal'); if (pM) { pM.textContent = pctM.toFixed(1) + '%'; pM.style.color = corM; }
+  const rAL = document.getElementById('f_realAnualLabel'); if (rAL) rAL.textContent = fmt(realAnual) + ' realizado';
+  const rML = document.getElementById('f_realMensalLabel'); if (rML) rML.textContent = fmt(realMes) + ' realizado';
+  const mAL = document.getElementById('f_metaAnualLabel'); if (mAL) mAL.textContent = 'meta ' + fmt(metaAnual);
+  const mML = document.getElementById('f_metaMensalLabel'); if (mML) mML.textContent = 'meta ' + fmt(metaMensal);
+
+  // Sincronizar com dashboard principal
+  const mDash = JSON.parse(localStorage.getItem('atlantyx_metas') || '{}');
+  mDash.realAnual = realAnual;
+  mDash.realMensal = realMes;
+  localStorage.setItem('atlantyx_metas', JSON.stringify(mDash));
+  if (typeof atualizarBarras === 'function') atualizarBarras(mDash);
+}
+
+function renderLancamentos(lancamentos) {
+  const el = document.getElementById('f_lancamentos');
+  if (!el || !lancamentos.length) return;
+  el.innerHTML = lancamentos.map(l => `
+    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:11px;">
+      <span style="color:var(--t2);width:80px;flex-shrink:0;">${l.data || ''}</span>
+      <span style="flex:1;">${l.descricao || ''}</span>
+      <span style="font-weight:600;color:${l.tipo==='receita'?'var(--green)':l.tipo==='despesa'?'var(--red)':'var(--t2)'};">${l.tipo==='despesa'?'-':'+'} R$${(l.valor||0).toLocaleString('pt-BR')}</span>
+    </div>`).join('');
+}
+
+async function gerarAnaliseFin() {
+  addLog('info', '[S3] Gerando analise financeira com IA...');
+  const metas = JSON.parse(localStorage.getItem('atlantyx_metas') || '{}');
+  const r = await fetch('/api/s1-intel', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ action: 'analise_financeira', contexto: { realAnual: metas.realAnual, realMensal: metas.realMensal } })
+  });
+  const data = await r.json();
+  if (data.financeiro) {
+    addLog('ok', '[S3] Analise financeira gerada');
+    nav('s1financeiro', null);
+    setTimeout(() => document.getElementById('s1FinResult').innerHTML =
+      '<div style="font-size:11.5px;line-height:1.8;white-space:pre-wrap;">' + JSON.stringify(data.financeiro, null, 2) + '</div>', 200);
+  }
+}
+
+async function gerarProjetado() {
+  const btn = document.getElementById('btnProj');
+  btn.disabled = true; btn.textContent = 'Gerando...';
+  const contratos = document.getElementById('f_contratos')?.value || '0';
+  const projetos = document.getElementById('f_projetos')?.value || '0';
+  const propostas = document.getElementById('f_propostas')?.value || '0';
+  const prob = document.getElementById('f_probFech')?.value || '28%';
+  const mrr = document.getElementById('f_mrr')?.value || '0';
+  addLog('info', '[S3] Gerando projecao financeira...');
+
+  const r = await fetch('/api/claude', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      system: 'Voce e o CFO-Agente da Atlantyx. Gere projecao de receita realista e conservadora. Retorne em texto formatado, nao JSON.',
+      messages: [{ role: 'user', content: `Projecao financeira da Atlantyx:
+Contratos assinados: ${contratos}
+Projetos em andamento: ${projetos}
+Propostas enviadas: ${propostas} (prob. fechamento: ${prob})
+MRR atual: ${mrr}
+
+Gere:
+1. RECEITA PROJETADA — 3 meses (receita contratada + estimada por probabilidade)
+2. CENARIO PESSIMISTA / REALISTA / OTIMISTA
+3. QUANDO ATINGIR A META MENSAL DE R$1.5M neste ritmo
+4. 3 ACOES PRIORITARIAS para acelerar a receita` }],
+      max_tokens: 1000
+    })
+  });
+  const d = await r.json();
+  const txt = d?.content?.[0]?.text || 'Erro';
+  document.getElementById('f_projetadoResult').innerHTML = `<div style="font-size:12px;line-height:1.8;white-space:pre-wrap;">${txt}</div>`;
+  addLog('ok', '[S3] Projecao gerada');
+  btn.disabled = false; btn.textContent = 'Gerar Projecao';
+}
+
+async function gerarFluxo() {
+  const btn = document.getElementById('btnFluxo');
+  btn.disabled = true; btn.textContent = 'Gerando...';
+  addLog('info', '[S3] Gerando fluxo de caixa...');
+  const metas = JSON.parse(localStorage.getItem('atlantyx_metas') || '{}');
+
+  const r = await fetch('/api/claude', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      system: 'Voce e o CFO-Agente da Atlantyx. Gere fluxo de caixa projetado mes a mes.',
+      messages: [{ role: 'user', content: `Fluxo de caixa da Atlantyx — proximos 6 meses:
+Receita atual realizada: R$${(metas.realAnual||0).toLocaleString('pt-BR')}
+Meta anual: R$18M
+Time: fundador + marketing + closer + dev part-time
+
+Para cada mes (Mai a Out 2026) projete:
+- Entradas previstas (contratos + novos negocios estimados)
+- Saidas estimadas (custos operacionais)
+- Saldo do mes
+- Saldo acumulado
+- Semaforo: Verde / Amarelo / Vermelho
+
+Formato tabela texto. Seja realista e conservador.` }],
+      max_tokens: 1200
+    })
+  });
+  const d = await r.json();
+  const txt = d?.content?.[0]?.text || 'Erro';
+  document.getElementById('f_fluxoResult').innerHTML = `<div style="font-size:12px;line-height:1.8;white-space:pre-wrap;">${txt}</div>`;
+
+  // Atualizar resumo no dashboard
+  const resumo = document.getElementById('f_fluxoResumo');
+  if (resumo) resumo.innerHTML = `<div style="font-size:11px;color:var(--t2);">Fluxo gerado — acesse S3 > Fluxo de Caixa para detalhes.</div>`;
+
+  addLog('ok', '[S3] Fluxo de caixa gerado');
+  btn.disabled = false; btn.textContent = 'Gerar Fluxo';
+}
+
+function addReceber() {
+  const cliente = document.getElementById('f_recCliente')?.value?.trim();
+  const valor = document.getElementById('f_recValor')?.value?.trim();
+  const venc = document.getElementById('f_recVenc')?.value?.trim();
+  if (!cliente || !valor) { toast('Informe cliente e valor', 'error'); return; }
+
+  receberItems.push({ cliente, valor, vencimento: venc, status: 'pendente', id: Date.now() });
+  localStorage.setItem('atlantyx_receber', JSON.stringify(receberItems));
+  renderReceberTable();
+
+  document.getElementById('f_recCliente').value = '';
+  document.getElementById('f_recValor').value = '';
+  document.getElementById('f_recVenc').value = '';
+  toast('Adicionado a receber: ' + cliente, 'success');
+}
+
+function renderReceberTable() {
+  const el = document.getElementById('f_receberTable');
+  if (!el || !receberItems.length) {
+    if (el) el.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Nenhuma conta a receber lancada.</div>';
+    return;
+  }
+  const total = receberItems.reduce((s, i) => s + parseMoeda(i.valor), 0);
+  document.getElementById('f_totalReceber').textContent = formatarMoeda(total);
+
+  el.innerHTML = `<div style="display:grid;grid-template-columns:2fr 1fr 1fr 80px;gap:8px;font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);padding:6px 0;border-bottom:1px solid var(--bd);margin-bottom:4px;">
+    <span>Cliente</span><span>Valor</span><span>Vencimento</span><span>Acao</span>
+  </div>` + receberItems.map((it, i) => `
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);">
+      <span style="font-size:12px;">${it.cliente}</span>
+      <span style="font-size:12px;font-weight:600;color:var(--green);">${it.valor}</span>
+      <span style="font-size:11px;color:var(--gold);">${it.vencimento || '—'}</span>
+      <button class="btn btn-gn" style="font-size:9px;padding:2px 7px;" onclick="marcarRecebido(${i})">Recebido</button>
+    </div>`).join('');
+}
+
+function marcarRecebido(i) {
+  const item = receberItems[i];
+  if (!item) return;
+  // Atualizar metas com valor recebido
+  const metas = JSON.parse(localStorage.getItem('atlantyx_metas') || '{}');
+  const val = parseMoeda(item.valor);
+  metas.realAnual = (metas.realAnual || 0) + val;
+  metas.realMensal = (metas.realMensal || 0) + val;
+  localStorage.setItem('atlantyx_metas', JSON.stringify(metas));
+  receberItems.splice(i, 1);
+  localStorage.setItem('atlantyx_receber', JSON.stringify(receberItems));
+  renderReceberTable();
+  if (typeof atualizarBarras === 'function') atualizarBarras(metas);
+  if (typeof carregarMetas === 'function') carregarMetas();
+  atualizarPainelFinanceiro(metas.realAnual, metas.realMensal, 0, 0);
+  addLog('ok', '[S3] Recebido: ' + item.cliente + ' — ' + item.valor);
+  toast('Marcado como recebido! Metas atualizadas.', 'success');
+}
+
+async function syncReceberQB() { syncQuickBooks(); }
+
+function initS3() {
+  // Carregar contas a receber salvas
+  try {
+    const saved = localStorage.getItem('atlantyx_receber');
+    if (saved) { receberItems = JSON.parse(saved); renderReceberTable(); }
+  } catch(e) {}
+
+  // Carregar metas no painel financeiro
+  const metas = JSON.parse(localStorage.getItem('atlantyx_metas') || '{}');
+  if (metas.realAnual !== undefined) {
+    atualizarPainelFinanceiro(metas.realAnual || 0, metas.realMensal || 0, 0, 0);
+  }
+}
+
 renderAg(S2A,'s2-grid');renderAg(S7A,'s7-grid');
 addLog('success','Atlantyx OS iniciado - Monitor de Agentes ativo');
 addLog('info','ICP: Energia · Automotivo · Varejo · Industria · R$100M+');
 addLog('info','Endpoints ativos: '+[...S2A,...S7A].filter(a=>a.on&&a.ep).length+' agentes com API');
 initS1();
+initMenu();
+carregarProposito();
+initS3();
+carregarMetas();
 setTimeout(refreshAll,1000);
 setInterval(refreshAll,30000);
 // Auto-gerar mensagens na primeira visita a pagina WA
