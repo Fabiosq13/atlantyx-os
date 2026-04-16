@@ -11,6 +11,10 @@ export default async function handler(req, res) {
 
   try {
     const {
+      modo = 'padrao',
+      empresa_alvo,
+      cargos,
+      modo: _m,
       setor = 'Energia',
       regiao = 'Sudeste',
       faturamento_min = '100M',
@@ -18,6 +22,15 @@ export default async function handler(req, res) {
       quantidade = 10,
       iniciar_outreach = false,
     } = req.body;
+
+    // ── MODO CADEIA C-LEVEL ──────────────────────────────────────────
+    if (modo === 'cadeia_clevel') {
+      const empresa = empresa_alvo || 'Empresa não informada';
+      const cargosAlvo = cargos || ['CIO / Diretor de TI', 'CTO', 'Dir. Transformacao Digital'];
+      console.log(`[S2-02+S7-04] Mapeando cadeia C-Level: ${empresa} | ${cargosAlvo.length} cargos`);
+      const decisores = await mapearCadeiaCLevel(empresa, setor, cargosAlvo, '');
+      return res.status(200).json({ success: true, modo: 'cadeia_clevel', empresa, decisores, total: decisores.length });
+    }
 
     console.log(`[S2-02] Iniciando mapeamento: ${setor} | ${regiao} | Meta: ${quantidade} empresas`);
 
@@ -175,4 +188,58 @@ async function notificarWhatsApp(message) {
     headers: { 'Content-Type': 'application/json', 'Client-Token': process.env.ZAPI_CLIENT_TOKEN },
     body: JSON.stringify({ phone, message }),
   });
+}
+
+// ── MODO CADEIA C-LEVEL ────────────────────────────────────────────────────────
+export async function mapearCadeiaCLevel(empresa, setor, cargos, contexto) {
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      system: `Você é o Agente S2-02 + S7-04 da Atlantyx — especialista em mapeamento de decisores C-level.
+A Atlantyx vende: BI, Dados e IA para grandes empresas (R$100M+).
+Problema que resolve: dados desconectados = decisões erradas = perda financeira.
+Retorne APENAS JSON array válido.`,
+      messages: [{
+        role: 'user',
+        content: `Mapeie a cadeia completa de decisores C-level de:
+Empresa: ${empresa}
+Setor: ${setor}
+Cargos a mapear: ${cargos.join(', ')}
+Contexto: ${contexto || 'grande empresa brasileira do setor'}
+
+Para cada cargo retorne:
+{
+  "cargo": "cargo exato",
+  "nome": "nome provável (se empresa conhecida) ou 'A identificar via LinkedIn'",
+  "prioridade": "Alta | Media | Baixa",
+  "perfil": "descrição do perfil típico deste cargo nesta empresa",
+  "dores": ["dor principal relacionada a dados/BI", "dor secundária"],
+  "angulo_abordagem": "como abordar este decisor especificamente",
+  "mensagem_wa": "mensagem WhatsApp personalizada de 4-5 linhas para este cargo especificamente na ${empresa}",
+  "canal_preferido": "LinkedIn | WhatsApp | E-mail | Ligação",
+  "linkedin": "URL do perfil LinkedIn se empresa conhecida, senão null",
+  "objecao_provavel": "principal objeção deste cargo",
+  "resposta_objecao": "como responder a objeção"
+}`
+      }]
+    })
+  });
+
+  const d = await r.json();
+  const text = d.content[0].text.replace(/```json|```/g, '').trim();
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    const match = text.match(/\[[\s\S]*\]/);
+    if (match) { try { return JSON.parse(match[0]); } catch {} }
+    return [];
+  }
 }

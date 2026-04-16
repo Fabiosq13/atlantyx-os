@@ -99,7 +99,27 @@ async function fetchGmailEmails(limite = 50) {
   const token = process.env.GMAIL_ACCESS_TOKEN;
 
   // Buscar IDs dos e-mails recentes (últimos 7 dias, não lidos ou importantes)
+  // Buscar e-mails dos últimos 7 dias — inclui encaminhados de contato@atlanteam.com.br
   const query = 'newer_than:7d';
+  // Query específica para Petrobras (alta prioridade — busca mais ampla)
+  const queryPetrobras = 'from:petrobras.com.br OR from:br.ngw.petrobras.com newer_than:30d';
+  // Primeiro buscar e-mails da Petrobras (prioridade máxima)
+  let petrobrasIds = [];
+  try {
+    const petrobrasRes = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(queryPetrobras)}&maxResults=20`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (petrobrasRes.ok) {
+      const petrobrasData = await petrobrasRes.json();
+      petrobrasIds = (petrobrasData.messages || []).map(m => m.id);
+      if (petrobrasIds.length > 0) {
+        console.log(`[Email-Intel] ${petrobrasIds.length} e-mails Petrobras encontrados!`);
+      }
+    }
+  } catch(e) { console.log('[Petrobras]', e.message); }
+
+  // Busca geral
   const listRes = await fetch(
     `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${limite}`,
     { headers: { Authorization: `Bearer ${token}` } }
@@ -111,7 +131,10 @@ async function fetchGmailEmails(limite = 50) {
   }
 
   const list = await listRes.json();
-  const messageIds = (list.messages || []).map(m => m.id);
+  // Combinar IDs — Petrobras primeiro
+  const generalIds = (list.messages || []).map(m => m.id);
+  const allIds = [...new Set([...petrobrasIds, ...generalIds])];
+  const messageIds = allIds;
 
   // Buscar detalhes de cada e-mail em paralelo (lotes de 10)
   const emails = [];
@@ -170,6 +193,19 @@ async function fetchEmailDetail(id, token) {
 async function classificarEmailsEmLote(emails) {
   const system = `Você é o Agente de Inteligência de E-mail da Atlantyx.
 Classifique cada e-mail e extraia informações relevantes para os agentes da empresa.
+
+REGRA ESPECIAL — PETROBRAS (MAXIMA PRIORIDADE):
+E-mails de *@petrobras.com.br, *@br.ngw.petrobras.com ou com "Petrobras" no remetente/assunto
+sobre oportunidades, editais, RFIs, RFPs, processos seletivos de fornecedores:
+- SEMPRE categoria: RFP
+- SEMPRE urgencia: ALTA
+- SEMPRE agente_responsavel: S2-04
+- Extraia: numero do processo, valor estimado, prazo de submissao, escopo tecnico
+
+CONTAS MONITORADAS:
+- atlanteambr@gmail.com (Gmail principal)
+- contato@atlanteam.com.br (Hostgator — encaminhado para Gmail)
+E-mails encaminhados dessas contas ja chegam processados — classificar pelo conteudo original.
 
 CATEGORIAS DISPONÍVEIS:
 - RFP: e-mail sobre edital, licitação, processo seletivo de fornecedor, solicitação de proposta
@@ -294,6 +330,15 @@ async function rotearParaAgentes(emails) {
 
 // ── PROCESSAR RFP VIA E-MAIL ──────────────────────────────────────────────────
 async function processarRFPEmail(email) {
+  // Detectar se é Petrobras
+  const isPetrobras = (email.de || '').toLowerCase().includes('petrobras') ||
+                      (email.de || '').includes('@br.ngw.petrobras') ||
+                      (email.assunto || '').toLowerCase().includes('petrobras') ||
+                      (email.de_original || '').toLowerCase().includes('petrobras');
+
+  if (isPetrobras) {
+    console.log('[Email-Intel] E-mail Petrobras detectado — PRIORIDADE MAXIMA');
+  }
   // Extrair detalhes do RFP com Claude
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
