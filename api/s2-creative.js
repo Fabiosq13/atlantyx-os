@@ -73,7 +73,7 @@ Campanha: ${campanha || 'Prospecção de grandes contas'}
 Objetivo: ${objetivo || 'Gerar interesse e reuniões com C-levels'}
 Canal: ${canal || 'LinkedIn + Instagram'}
 Público: ${publico || BRAND.icp}
-Contexto adicional: ${contexto || ''}
+${contexto ? 'INSTRUCAO PRIORITARIA - siga exatamente: ' + contexto + '. Esta instrucao deve guiar TODA a narrativa.' : 'Contexto: prospeccao ativa B2B no ICP da Atlantyx.'}
 
 Retorne:
 {
@@ -122,8 +122,8 @@ Retorne APENAS JSON válido.`;
 Formato: ${formato || 'post LinkedIn'}
 Canal: ${canal || 'LinkedIn'}
 Narrativa base: ${JSON.stringify(narrativa || { tema_central: 'Dados inconsistentes custam caro', gancho_principal: 'Quantas decisões ruins sua empresa tomou este mês por causa de dados atrasados?' })}
-${payload.copy_anterior ? 'Copy anterior para melhorar: ' + payload.copy_anterior : ''}
-${payload.ajuste_comentario ? 'INSTRUÇÃO DE AJUSTE (siga exatamente): ' + payload.ajuste_comentario : ''}
+${copy_anterior ? 'Copy anterior (melhore este): ' + copy_anterior : ''}
+${ajuste_comentario ? 'INSTRUCAO DE AJUSTE — siga exatamente: ' + ajuste_comentario : ''}
 Versões: ${versoes}
 
 Retorne:
