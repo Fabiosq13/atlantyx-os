@@ -25,6 +25,9 @@ export default async function handler(req, res) {
     const apiKey = process.env.IDEOGRAM_API_KEY;
     if (!apiKey) return res.status(500).json({ error: 'IDEOGRAM_API_KEY nao configurada no Vercel' });
 
+    // Debug: logar primeiros chars da chave (sem expor ela toda)
+    console.log(`[Ideogram] Key prefix: ${apiKey.substring(0,8)}... length: ${apiKey.length}`);
+
     // Enriquecer o prompt com o estilo visual da Atlantyx
     const promptAtlantyx = `${prompt}
 
@@ -32,10 +35,14 @@ Visual style: premium B2B tech corporate, dark navy blue (#1A3A8F) or pure white
 
     console.log(`[Ideogram] Gerando ${quantidade} imagem(ns)...`);
 
+    // Limpar a chave de espaços/quebras de linha
+    const apiKeyClean = apiKey.trim().replace(/\s+/g, '');
+
+    // Tentar o endpoint v2 do Ideogram (mais recente)
     const r = await fetch('https://api.ideogram.ai/generate', {
       method: 'POST',
       headers: {
-        'Api-Key': apiKey,
+        'Api-Key': apiKeyClean,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -51,12 +58,19 @@ Visual style: premium B2B tech corporate, dark navy blue (#1A3A8F) or pure white
       })
     });
 
+    // Logar resposta completa para debug
+    const responseText = await r.text();
+    console.log(`[Ideogram] Status: ${r.status}, Response: ${responseText.substring(0, 500)}`);
+
     if (!r.ok) {
-      const err = await r.json().catch(() => ({}));
-      throw new Error(`Ideogram API: ${r.status} — ${err.message || JSON.stringify(err).substring(0, 200)}`);
+      let errMsg = responseText;
+      try { errMsg = JSON.parse(responseText)?.message || responseText; } catch {}
+      throw new Error(`Ideogram API ${r.status}: ${errMsg.substring(0, 300)}`);
     }
 
-    const data = await r.json();
+    const data = JSON.parse(responseText);
+
+
     const imagens = (data.data || []).map(img => ({
       url: img.url,
       prompt_usado: img.prompt,
