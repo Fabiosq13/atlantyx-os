@@ -203,7 +203,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sbi s1" onclick="nav('s1relatorio',this)">&#9776; Relatorio Executivo</div>
     <div class="sbi s1" onclick="nav('s1dados',this)">&#128200; Dados Reais da Empresa <span class="nbx gn">QB+Drive</span></div>
       <div class="sg-sub">PRODUTOS</div>
-      <div class="sbi s1" onclick="nav('s1pipeline',this)">&#9654; Pipeline Produtos <span class="nbx bl" id="s1PipeCnt">—</span></div>
+      <div class="sbi s1" onclick="nav('s1pipeline',this)">&#9654; Pipeline de Ideias <span class="nbx bl" id="s1PipeCnt">—</span></div>
+      <div class="sbi s1" onclick="nav('s1analise',this)">&#9670; Analisar Ideia com IA <span class="nbx pu">S1-03</span></div>
     </div>
 
     <!-- Planejamento Financeiro -->
@@ -654,6 +655,109 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="pb"><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:7px;" id="s1Kanban"><div style="font-size:9px;color:var(--t3);text-align:center;grid-column:1/-1;padding:20px;">Nenhuma ideia. Capture a primeira acima.</div></div></div>
     </div>
     <div class="panel" id="s1AnalisePanel" style="display:none;"><div class="ph"><div class="pt">Análise em Andamento</div><span class="tag live">IA</span></div><div class="pb" id="s1AnaliseResult"></div></div>
+  </div>
+
+
+  <!-- S1 ANÁLISE DE IDEIA COM IA — S1-03 + Upload de Imagens/Documentos -->
+  <div class="page" id="page-s1analise">
+    <div style="background:linear-gradient(135deg,rgba(156,109,255,.18),rgba(79,124,255,.06));border:1px solid rgba(156,109,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
+      <div style="font-size:22px;">&#9670;</div>
+      <div style="flex:1;">
+        <div style="font-family:var(--H);font-size:15px;font-weight:700;">S1-03 · Análise Profunda de Ideia</div>
+        <div style="font-size:10.5px;color:var(--t2);margin-top:2px;">O agente analisa a ideia com base no contexto da Atlantyx, mercado, viabilidade técnica e financeira. Aceita imagens, documentos, protótipos e referências.</div>
+      </div>
+      <span class="tag on">Claude IA</span>
+    </div>
+
+    <div class="kg k2">
+      <!-- FORMULÁRIO DA IDEIA -->
+      <div class="panel">
+        <div class="ph"><div class="pt">Descrever a Ideia</div></div>
+        <div class="pb">
+          <div class="fg"><label class="fl">Título da Ideia</label>
+            <input class="fi" id="anTitulo" placeholder="Ex: Módulo de Forecast Preditivo com IA para Varejo"/>
+          </div>
+          <div class="fg"><label class="fl">Descrição Completa</label>
+            <textarea class="fta" id="anDesc" style="min-height:100px;" placeholder="Descreva em detalhes: o que é, qual problema resolve, quem se beneficia, como funcionaria, por que agora..."></textarea>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+            <div class="fg" style="margin:0;"><label class="fl">Origem</label>
+              <select class="fsel" id="anOrigem">
+                <option>Fundador</option>
+                <option>Cliente (feedback direto)</option>
+                <option>RFP recebido</option>
+                <option>Análise de mercado</option>
+                <option>Time interno</option>
+                <option>Concorrente (benchmark)</option>
+              </select>
+            </div>
+            <div class="fg" style="margin:0;"><label class="fl">Categoria</label>
+              <select class="fsel" id="anCat">
+                <option>Novo Produto</option>
+                <option>Nova Funcionalidade</option>
+                <option>Melhoria de Processo</option>
+                <option>Integração com Parceiro</option>
+                <option>Expansão de Mercado</option>
+                <option>Redução de Custo</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- UPLOAD DE ARQUIVOS E IMAGENS -->
+          <div style="background:var(--bg4);border:1px dashed var(--bd);border-radius:8px;padding:12px;margin-bottom:12px;">
+            <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:8px;letter-spacing:1px;">MATERIAIS DE APOIO — Imagens, Documentos, Protótipos</div>
+            <input type="file" id="anArquivos" multiple accept="image/*,.pdf,.txt,.docx,.xlsx,.csv,.png,.jpg,.jpeg" style="display:none;" onchange="carregarArquivosAnalise(this)"/>
+            <button class="btn btn-g" style="width:100%;margin-bottom:8px;" onclick="document.getElementById('anArquivos').click()">
+              &#128247; Adicionar Imagens / Documentos / Protótipos
+            </button>
+            <div id="anArquivosLista" style="display:none;">
+              <div id="anArquivosItens" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;"></div>
+              <div style="font-size:10px;color:var(--t3);">O agente lê e analisa o conteúdo de cada arquivo na análise da ideia.</div>
+            </div>
+            <div style="font-size:10px;color:var(--t3);">Aceita: imagens de tela, protótipos, planilhas, documentos, PDFs, prints de concorrentes, referências visuais.</div>
+          </div>
+
+          <div class="fg"><label class="fl">Perguntas específicas para o agente (opcional)</label>
+            <textarea class="fta" id="anPerguntas" style="min-height:55px;" placeholder="Ex: Qual o TAM estimado? Tem algum concorrente direto? É tecnicamente viável em 90 dias? Qual o risco principal?"></textarea>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <button class="btn btn-p" id="btnAnalisar" onclick="analisarIdeia()" style="grid-column:1/-1;">
+              &#9670; Analisar Ideia com IA — Análise Completa
+            </button>
+            <button class="btn btn-g" id="btnAnRapida" onclick="analisarRapida()" style="font-size:11px;">
+              Análise Rápida (30s)
+            </button>
+            <button class="btn btn-g" id="btnAnViab" onclick="analisarViabilidade()" style="font-size:11px;">
+              Só Viabilidade Financeira
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- RESULTADO DA ANÁLISE -->
+      <div class="panel">
+        <div class="ph">
+          <div class="pt">Resultado da Análise — S1-03</div>
+          <span class="tag off" id="anTag">Aguardando</span>
+        </div>
+        <div class="pb" id="anResult">
+          <div style="color:var(--t3);font-size:11px;text-align:center;padding:30px;">
+            Preencha os dados da ideia e clique em Analisar.<br/>
+            <span style="font-size:10px;">O agente usa o contexto completo da Atlantyx — mercado, ICP, capacidade técnica, histórico.</span>
+          </div>
+        </div>
+        <!-- Ações após análise -->
+        <div id="anAcoes" style="display:none;padding:10px 14px;border-top:1px solid var(--bd);display:none;">
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:8px;">PRÓXIMOS PASSOS</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn btn-gn" onclick="aprovarIdeiaAnalise()" style="font-size:10px;">Aprovar — Enviar para Caixa do Fundador</button>
+            <button class="btn btn-or" onclick="captarIdeiaFromAnalise()" style="font-size:10px;">Adicionar ao Pipeline de Ideias</button>
+            <button class="btn btn-g" onclick="analisarIdeia()" style="font-size:10px;">Reanalisar com mais detalhe</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- S1 FUNDADOR -->
@@ -1656,7 +1760,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <div class="toast" id="toastEl"></div>
 <script>
 const LOGS=[];let logCount=0;
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo de Caixa',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Produtos',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo de Caixa',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -5240,6 +5344,159 @@ function regenerarSemTexto() {
         toast('Imagens sem texto geradas!', 'success');
       }
     });
+}
+
+
+// ── S1-03 ANÁLISE DE IDEIA COM IA + UPLOAD ────────────────────────────────────
+let anArquivosData = []; // { nome, tipo, base64, texto }
+
+async function carregarArquivosAnalise(input) {
+  const files = Array.from(input.files);
+  if (!files.length) return;
+  const lista = document.getElementById('anArquivosLista');
+  const itens = document.getElementById('anArquivosItens');
+  if (lista) lista.style.display = 'block';
+
+  for (const file of files) {
+    await new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const base64 = e.target.result;
+        const tipo = file.type;
+        const isImage = tipo.startsWith('image/');
+        anArquivosData.push({ nome: file.name, tipo, base64, isImage });
+        if (itens) {
+          const item = document.createElement('div');
+          item.style.cssText = 'background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:6px 8px;display:flex;align-items:center;gap:6px;font-size:10px;max-width:200px;';
+          const content = isImage
+            ? '<img src="' + base64 + '" style="height:28px;border-radius:3px;"/>'
+            : '<span style="background:var(--blue);color:#fff;border-radius:3px;padding:1px 5px;font-size:8px;">' + (tipo.includes('pdf') ? 'PDF' : tipo.includes('sheet') || tipo.includes('csv') ? 'XLS' : 'DOC') + '</span>';
+          item.innerHTML = content + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + file.name + '</span>';
+          const btnX = document.createElement('button');
+          btnX.textContent = 'x'; btnX.style.cssText = 'background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;padding:0;';
+          const fnome = file.name;
+          btnX.onclick = function() { anArquivosData = anArquivosData.filter(a => a.nome !== fnome); item.remove(); };
+          item.appendChild(btnX);
+          itens.appendChild(item);
+        }
+        resolve();
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+  toast(files.length + ' arquivo(s) carregado(s)', 'success');
+}
+
+function removerArquivo(nome) {
+  anArquivosData = anArquivosData.filter(a => a.nome !== nome);
+  const itens = document.getElementById('anArquivosItens');
+  if (itens) {
+    Array.from(itens.children).forEach(el => { if (el.dataset && el.dataset.nome === nome) el.remove(); });
+  }
+}
+
+
+async function analisarIdeia(modo) {
+  const titulo    = document.getElementById('anTitulo')?.value?.trim();
+  const desc      = document.getElementById('anDesc')?.value?.trim();
+  const origem    = document.getElementById('anOrigem')?.value || '';
+  const cat       = document.getElementById('anCat')?.value || '';
+  const perguntas = document.getElementById('anPerguntas')?.value?.trim() || '';
+  const tag       = document.getElementById('anTag');
+  const result    = document.getElementById('anResult');
+  const btn       = document.getElementById('btnAnalisar');
+  const acoes     = document.getElementById('anAcoes');
+
+  if (!titulo || !desc) { toast('Preencha o título e a descrição da ideia', 'error'); return; }
+
+  btn.disabled = true; btn.textContent = 'Analisando...';
+  if (tag) { tag.textContent = 'Analisando...'; tag.className = 'tag on'; }
+  if (result) result.innerHTML = '<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:20px;text-align:center;">Agente S1-03 analisando a ideia' + (anArquivosData.length ? ' + ' + anArquivosData.length + ' arquivo(s)' : '') + '...</div>';
+  addLog('info', '[S1-03] Analisando: ' + titulo + (anArquivosData.length ? ' + ' + anArquivosData.length + ' arquivos' : ''));
+
+  // Preparar conteúdo das imagens para o Claude
+  const imagensBase64 = anArquivosData.filter(a => a.isImage).map(a => ({
+    type: 'image',
+    source: { type: 'base64', media_type: a.tipo, data: a.base64.split(',')[1] }
+  }));
+  const docsTexto = anArquivosData.filter(a => !a.isImage).map(a => a.nome).join(', ');
+
+  // Montar payload para o backend
+  const payload = {
+    action: 'analisar_ideia',
+    titulo, desc, origem, cat, perguntas, modo: modo || 'completa',
+    tem_arquivos: anArquivosData.length > 0,
+    docs_nomes: docsTexto,
+    imagensBase64: imagensBase64.slice(0, 4) // max 4 imagens
+  };
+
+  try {
+    const r = await fetch('/api/s1-strategy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!r.ok) throw new Error('Servidor retornou ' + r.status);
+    const data = await r.json();
+
+    if (!data.success) throw new Error(data.error || 'Erro desconhecido');
+
+    const analise = data.analise || data;
+    if (tag) { tag.textContent = analise.recomendacao === 'APROVAR' ? 'APROVAR' : analise.recomendacao === 'PILOTAR' ? 'PILOTAR' : 'ANALISAR'; tag.className = 'tag ' + (analise.recomendacao === 'APROVAR' ? 'live' : analise.recomendacao === 'PILOTAR' ? 'on' : 'off'); }
+
+    // Renderizar análise
+    const scoreCor = analise.score >= 8 ? 'var(--green)' : analise.score >= 6 ? 'var(--gold)' : 'var(--red)';
+    result.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:12px;background:var(--bg4);border-radius:8px;">
+        <div style="text-align:center;min-width:60px;"><div style="font-size:28px;font-weight:700;color:${scoreCor};">${analise.score || '—'}</div><div style="font-family:var(--M);font-size:8px;color:var(--t2);">SCORE</div></div>
+        <div style="flex:1;">
+          <div style="font-size:13px;font-weight:600;margin-bottom:3px;">${titulo}</div>
+          <div style="font-size:12px;color:${scoreCor};font-weight:600;">${analise.recomendacao || ''} — ${analise.resumo_executivo || ''}</div>
+        </div>
+      </div>
+      ${analise.pontos_fortes?.length ? '<div style="margin-bottom:10px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:5px;">PONTOS FORTES</div>' + analise.pontos_fortes.map(p => '<div style="font-size:11.5px;padding:2px 0;">&#10003; ' + p + '</div>').join('') + '</div>' : ''}
+      ${analise.riscos?.length ? '<div style="margin-bottom:10px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--red);margin-bottom:5px;">RISCOS</div>' + analise.riscos.map(r => '<div style="font-size:11.5px;padding:2px 0;color:var(--gold);">&#9888; ' + r + '</div>').join('') + '</div>' : ''}
+      ${analise.mercado ? '<div style="margin-bottom:10px;background:var(--b2);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--blue);margin-bottom:4px;">MERCADO</div><div style="font-size:11.5px;">' + analise.mercado + '</div></div>' : ''}
+      ${analise.viabilidade_financeira ? '<div style="margin-bottom:10px;background:var(--g2);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:4px;">VIABILIDADE FINANCEIRA</div><div style="font-size:11.5px;">' + analise.viabilidade_financeira + '</div></div>' : ''}
+      ${analise.prazo_desenvolvimento ? '<div style="margin-bottom:10px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--or);margin-bottom:4px;">PRAZO E ESFORÇO</div><div style="font-size:11.5px;">' + analise.prazo_desenvolvimento + '</div></div>' : ''}
+      ${analise.proximos_passos?.length ? '<div style="margin-bottom:10px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--blue);margin-bottom:5px;">PRÓXIMOS PASSOS</div>' + analise.proximos_passos.map((p,i) => '<div style="font-size:11.5px;padding:2px 0;">' + (i+1) + '. ' + p + '</div>').join('') + '</div>' : ''}
+      ${analise.analise_arquivos ? '<div style="margin-bottom:10px;background:var(--go2);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">ANÁLISE DOS ARQUIVOS</div><div style="font-size:11.5px;">' + analise.analise_arquivos + '</div></div>' : ''}
+      ${analise.parecer_final ? '<div style="padding:12px;background:var(--bg3);border-radius:8px;border-left:3px solid ' + scoreCor + ';"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:' + scoreCor + ';margin-bottom:5px;">PARECER FINAL — S1-03</div><div style="font-size:12px;line-height:1.7;">' + analise.parecer_final + '</div></div>' : ''}`;
+
+    if (acoes) acoes.style.display = 'block';
+    addLog('ok', '[S1-03] Análise concluída: score ' + analise.score + ' — ' + (analise.recomendacao || ''));
+    toast('Análise concluída! Score: ' + analise.score, 'success');
+
+    // Salvar contexto para ações
+    window._ideiaAnalisada = { titulo, desc, origem, cat, analise };
+
+  } catch(e) {
+    if (tag) { tag.textContent = 'Erro'; tag.className = 'tag hot'; }
+    if (result) result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:14px;">' + e.message + '</div>';
+    addLog('err', '[S1-03] Erro: ' + e.message);
+    toast('Erro na análise: ' + e.message, 'error');
+  }
+  btn.disabled = false; btn.textContent = 'Analisar Ideia com IA — Análise Completa';
+}
+
+function analisarRapida() { analisarIdeia('rapida'); }
+function analisarViabilidade() { analisarIdeia('financeira'); }
+
+function aprovarIdeiaAnalise() {
+  const ia = window._ideiaAnalisada;
+  if (!ia) { toast('Analise a ideia primeiro', 'error'); return; }
+  toast('Ideia enviada para Caixa do Fundador!', 'success');
+  addLog('ok', '[S1-03] -> Caixa do Fundador: ' + ia.titulo);
+  nav('s1fundador', null);
+}
+
+function captarIdeiaFromAnalise() {
+  const ia = window._ideiaAnalisada;
+  if (!ia) { toast('Analise a ideia primeiro', 'error'); return; }
+  document.getElementById('s1Titulo').value = ia.titulo;
+  document.getElementById('s1Desc').value = ia.desc;
+  nav('s1pipeline', document.querySelector('.sbi[onclick*="s1pipeline"]'));
+  setTimeout(() => captarIdeia(), 300);
 }
 
 </script>
