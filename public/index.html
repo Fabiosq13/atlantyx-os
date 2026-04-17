@@ -4666,6 +4666,87 @@ setTimeout(()=>{
 // ── REVISAO DE COPY E IMAGEM ─────────────────────────────────────────────────
 let copyVersoesList = [];
 
+async function gerarImagemCampanha() {
+  const btn = document.getElementById('btnGerarImgCamp');
+  const result = document.getElementById('campImgResult');
+  if (!result) { toast('Gere uma campanha primeiro', 'error'); return; }
+
+  const formato = document.getElementById('campImgFormato')?.value || 'ASPECT_1_1';
+  const estilo  = document.getElementById('campImgEstilo')?.value  || 'DESIGN';
+  const qtd     = parseInt(document.getElementById('campImgQtd')?.value || '2');
+
+  const ctx      = window._campanhaAtual || {};
+  const dadosCamp= ctx.data || {};
+  const design   = dadosCamp.design || {};
+  const copy     = dadosCamp.copy   || {};
+  const narrativa= dadosCamp.narrativa || {};
+
+  const headline    = copy.versoes?.[0]?.headline || narrativa.gancho_principal || ctx.nome || 'B2B Data Intelligence';
+  const briefVisual = design.prompt_ia_imagem || design.conceito_visual || design.brief_visual || '';
+  const canal       = ctx.canal || 'LinkedIn';
+
+  if (!briefVisual && !headline) {
+    toast('Gere uma campanha primeiro para ter o brief visual', 'error');
+    return;
+  }
+
+  const formatoLabel = {
+    'ASPECT_1_1':'square 1:1', 'ASPECT_4_5':'vertical 4:5',
+    'ASPECT_9_16':'story 9:16', 'ASPECT_16_9':'horizontal 16:9', 'ASPECT_3_1':'banner 3:1'
+  }[formato] || '1:1';
+
+  // Prompt rico: brief do Designer + headline + identidade Atlantyx
+  const partes = [
+    briefVisual || 'Corporate executive in modern boardroom looking at real-time data analytics dashboard',
+    'Text overlay saying: ' + headline.substring(0,70),
+    'Visual style: dark navy blue background #1A3A8F with electric blue accents #4F7CFF, bold white typography, geometric data visualization elements, lines graphs dashboards, EY McKinsey premium consulting aesthetic, B2B technology feeling, high contrast, photorealistic or design style',
+    'Small Atlantyx brand logo space at bottom right corner',
+    'Optimized composition for ' + canal + ' ' + formatoLabel
+  ];
+  const prompt = partes.join('. ');
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Gerando no Ideogram...'; }
+  result.style.display = 'block';
+  result.innerHTML = '<div style="padding:14px;text-align:center;color:var(--blue);font-family:var(--M);font-size:11px;">Gerando ' + qtd + ' imagem(ns) baseadas no brief da campanha...</div>';
+  addLog('info', '[Ideogram] Gerando imagem campanha: ' + (ctx.nome || ''));
+
+  const imgData = await api('/api/image-gen', 'POST', { prompt, formato, estilo, quantidade: qtd });
+
+  if (btn) { btn.disabled = false; btn.textContent = 'Gerar Imagem no Ideogram'; }
+
+  if (!imgData || !imgData.success || !imgData.imagens || !imgData.imagens.length) {
+    const err = (imgData && imgData.error) || 'Verifique IDEOGRAM_API_KEY no Vercel';
+    result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;background:var(--r2);border-radius:6px;">Erro Ideogram: ' + err + '</div>';
+    addLog('err', '[Ideogram] ' + err);
+    toast('Erro: ' + err, 'error');
+    return;
+  }
+
+  const imagens = imgData.imagens;
+  let grid = '';
+  for (let i = 0; i < imagens.length; i++) {
+    const url = imagens[i].url;
+    grid += '<div style="position:relative;border-radius:8px;overflow:hidden;border:2px solid var(--bd);">'
+      + '<img src="' + url + '" style="width:100%;display:block;" loading="lazy"/>'
+      + '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.8);padding:7px;display:flex;gap:5px;">'
+      + '<button class="btn btn-gn" style="flex:1;font-size:9px;padding:3px;" onclick="aprovarImagem(this.dataset.url, event)" data-url="' + url + '">Aprovar no Kanban</button>'
+      + '<a href="' + url + '" target="_blank" class="btn" style="font-size:9px;padding:3px 7px;color:#fff;border-color:rgba(255,255,255,.3);">Abrir</a>'
+      + '</div></div>';
+  }
+
+  const cols = Math.min(imagens.length, 2);
+  result.innerHTML = '<div style="background:var(--bg4);border:1px solid rgba(156,109,255,.3);border-radius:8px;padding:13px;">'
+    + '<div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:#9C6DFF;margin-bottom:10px;letter-spacing:1px;">' + imagens.length + ' IMAGEM(NS) GERADA(S) — Ideogram</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(' + cols + ',1fr);gap:10px;margin-bottom:10px;">' + grid + '</div>'
+    + '<div style="font-size:10px;color:var(--t3);margin-bottom:8px;line-height:1.5;">Brief: ' + (briefVisual || headline).substring(0,150) + '...</div>'
+    + '<button class="btn btn-p" style="width:100%;font-size:11px;" onclick="gerarImagemCampanha()">Gerar Novas Variações</button>'
+    + '</div>';
+
+  addLog('ok', '[Ideogram] ' + imagens.length + ' imagens geradas para campanha: ' + (ctx.nome || ''));
+  toast(imagens.length + ' imagens geradas!', 'success');
+}
+
+
 async function ajustarCopyComIA() {
   const comentario = document.getElementById('copyAjusteComentario')?.value?.trim();
   const copyAtual = document.getElementById('copyAtualTexto')?.textContent?.trim();
@@ -4688,7 +4769,7 @@ async function ajustarCopyComIA() {
       objetivo: ctx.obj || 'Gerar leads',
       ajuste_comentario: comentario,
       copy_anterior: copyAtual,
-      narrativa: { tema_central: ctx.narrativaTema || '', gancho_principal: copyAtual?.split('\n')[0] || '' },
+      narrativa: ctx.data?.narrativa || { tema_central: ctx.narrativaTema || '', gancho_principal: copyAtual?.split('\n')[0] || '' },
       versoes: 1
     }})
   });
@@ -4698,10 +4779,11 @@ async function ajustarCopyComIA() {
     document.getElementById('copyAtualTexto').textContent = novoTexto;
     document.getElementById('copyAjusteComentario').value = '';
     addLog('ok', '[S2-Copywriter] Copy ajustado — versao ' + (copyVersoesList.length + 1));
-    toast('Copy ajustado! Versao anterior salva.', 'success');
+    toast('Copy ajustado com sucesso!', 'success');
   } else {
-    addLog('err', '[S2-Copywriter] Erro ao ajustar');
-    toast('Erro ao ajustar copy', 'error');
+    const errMsg = data?.error || 'Tente novamente';
+    addLog('err', '[S2-Copywriter] Erro: ' + errMsg);
+    toast('Erro: ' + errMsg, 'error');
   }
   btn.disabled = false; btn.textContent = 'Ajustar Copy';
 }
