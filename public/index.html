@@ -1056,11 +1056,40 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <div class="fg"><label class="fl">Nome da Campanha</label><input class="fi" id="cNome" placeholder="Ex: Prospecção Energia Q2 2026"/></div>
           <div class="fg"><label class="fl">Objetivo</label><select class="fsel" id="cObj"><option>Gerar leads qualificados (reuniões)</option><option>Awareness — posicionamento de marca</option><option>Nutrição de leads no funil</option><option>Retenção e expansão de clientes</option><option>Lançamento de produto</option></select></div>
           <div class="fg"><label class="fl">Canal Principal</label><select class="fsel" id="cCanal"><option>LinkedIn</option><option>Instagram</option><option>LinkedIn + Instagram</option><option>YouTube</option><option>Todos os canais</option></select></div>
-          <div class="fg"><label class="fl">Setor / Público Alvo</label><select class="fsel" id="cPublico"><option>CIO/CTO — Energia e Utilities</option><option>CIO/CTO — Automotivo</option><option>CIO/CTO — Varejo</option><option>CIO/CTO — Indústria</option><option>CFO — Grandes Empresas</option><option>Dir. Transformação Digital</option></select></div>
+          <div class="fg"><label class="fl">Setor / Público Alvo</label><select class="fsel" id="cPublico">
+  <option value="todos_clevel">★ Todos os C-Levels (CIO, CTO, CFO, CEO, COO)</option>
+  <option value="todos">★★ Todos — C-Level + Gerentes Sênior</option>
+  <option value="CIO/CTO — Energia e Utilities">CIO/CTO — Energia e Utilities</option>
+  <option value="CIO/CTO — Automotivo">CIO/CTO — Automotivo</option>
+  <option value="CIO/CTO — Varejo">CIO/CTO — Varejo</option>
+  <option value="CIO/CTO — Industria">CIO/CTO — Industria</option>
+  <option value="CFO — Grandes Empresas">CFO — Grandes Empresas</option>
+  <option value="CEO — Empresas R$100M+">CEO — Empresas R$100M+</option>
+  <option value="COO — Diretor de Operacoes">COO — Diretor de Operacoes</option>
+  <option value="Dir. Transformacao Digital">Dir. Transformacao Digital</option>
+  <option value="Dir. Analytics e Dados">Dir. Analytics e Dados</option>
+  <option value="VP de Tecnologia">VP de Tecnologia</option>
+  <option value="Head de Dados / BI">Head de Dados / BI</option>
+  <option value="Gerente Senior de TI">Gerente Senior de TI</option>
+</select></div>
           <div class="fg"><label class="fl">Orçamento</label><select class="fsel" id="cOrc"><option>R$5.000/mês</option><option>R$10.000/mês</option><option>R$20.000/mês</option><option>Definir depois</option></select></div>
           <div class="fg"><label class="fl">Contexto Adicional</label><textarea class="fta" id="cCtx" placeholder="Evento próximo, lançamento de produto, sazonalidade, insight de mercado..."></textarea></div>
+          <!-- LOGO DA ATLANTYX -->
+          <div class="fg" style="margin-bottom:4px;">
+            <label class="fl">Logo Atlantyx (opcional — usada nas artes)</label>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input type="file" id="logoAtlantyx" accept="image/*" style="display:none;" onchange="carregarLogo(this)"/>
+              <button class="btn btn-g" style="font-size:11px;white-space:nowrap;" onclick="document.getElementById('logoAtlantyx').click()">&#128247; Upload Logo</button>
+              <div id="logoPreviewWrap" style="display:none;align-items:center;gap:6px;">
+                <img id="logoPreview" src="" style="height:28px;border-radius:4px;border:1px solid var(--bd);"/>
+                <button class="btn" style="font-size:9px;padding:2px 6px;color:var(--red);" onclick="removerLogo()">&#10005;</button>
+              </div>
+              <span id="logoNome" style="font-size:10px;color:var(--t3);"></span>
+            </div>
+          </div>
           <div style="display:flex;gap:8px;">
-            <button class="btn btn-or" style="flex:1;" id="btnCampanha" onclick="criarCampanhaCompleta()">&#9670; Criar Campanha Completa com IA</button>
+            <button class="btn btn-or" style="flex:1;" id="btnCampanha" onclick="criarCampanhaCompleta()">&#9670; Criar Campanha com IA</button>
+            <button class="btn btn-p" id="btnMotion" onclick="criarVideoMotion()" style="white-space:nowrap;">&#9654; Motion Video</button>
           </div>
           <div style="margin-top:8px;font-size:10px;color:var(--t3);">Aciona em sequência: Storyteller → Copywriter → Designer → Motion → Social → Kanban</div>
         </div>
@@ -1125,6 +1154,11 @@ tr:hover td{background:rgba(79,124,255,.03);}
             <div>
               <div style="font-size:10px;color:var(--t2);margin-bottom:4px;">Imagem atual (cole a URL se já gerou):</div>
               <input class="fi" id="imgAtualUrl" placeholder="https://ideogram.ai/..."/>
+              <div style="margin-top:6px;display:flex;align-items:center;gap:6px;">
+                <input type="file" id="logoAjuste" accept="image/*" style="display:none;" onchange="carregarLogoAjuste(this)"/>
+                <button class="btn btn-g" style="font-size:9px;padding:2px 8px;" onclick="document.getElementById('logoAjuste').click()">&#128247; Logo para arte</button>
+                <span id="logoAjusteNome" style="font-size:9px;color:var(--t3);"></span>
+              </div>
               <div id="imgAtualPreview" style="display:none;margin-top:6px;border-radius:6px;overflow:hidden;max-height:100px;">
                 <img id="imgAtualPreviewEl" src="" style="width:100%;object-fit:cover;" alt=""/>
               </div>
@@ -4696,14 +4730,25 @@ async function gerarImagemCampanha() {
   }[formato] || '1:1';
 
   // Prompt rico: brief do Designer + headline + identidade Atlantyx
+  // Remove acentos do texto para o Ideogram (evita erros de renderização)
+  const headlineSemAcento = headline
+    .replace(/[áàãâä]/g,'a').replace(/[éèêë]/g,'e')
+    .replace(/[íìîï]/g,'i').replace(/[óòõôö]/g,'o')
+    .replace(/[úùûü]/g,'u').replace(/[ç]/g,'c')
+    .replace(/[ÁÀÃÂÄ]/g,'A').replace(/[ÉÈÊË]/g,'E')
+    .replace(/[ÍÌÎÏ]/g,'I').replace(/[ÓÒÕÔÖ]/g,'O')
+    .replace(/[ÚÙÛÜ]/g,'U').replace(/[Ç]/g,'C')
+    .substring(0, 50);
+
   const partes = [
-    briefVisual || 'Corporate executive in modern boardroom looking at real-time data analytics dashboard',
-    'Text overlay saying: ' + headline.substring(0,70),
-    'Visual style: dark navy blue background #1A3A8F with electric blue accents #4F7CFF, bold white typography, geometric data visualization elements, lines graphs dashboards, EY McKinsey premium consulting aesthetic, B2B technology feeling, high contrast, photorealistic or design style',
-    'Small Atlantyx brand logo space at bottom right corner',
-    'Optimized composition for ' + canal + ' ' + formatoLabel
+    briefVisual || 'Corporate executive in modern boardroom looking at real-time data analytics dashboard with confidence',
+    'Bold white text overlay (short, max 5 words, NO ACCENTS): "' + headlineSemAcento + '"',
+    'Visual style: dark navy blue background #1A3A8F, electric blue #4F7CFF accent on data elements and graphs, bold clean white typography, geometric data visualization, lines and graphs, EY McKinsey premium B2B consulting aesthetic, high contrast, photorealistic or clean design style',
+    'Premium corporate feeling — NOT generic stock photo',
+    logoAtlantyxBase64 ? 'Reserve dark navy rectangle 20% width at bottom right corner for company logo placement' : 'Space at bottom right for Atlantyx logo text in white bold',
+    'Optimized for ' + canal + ' ' + formatoLabel,
   ];
-  const prompt = partes.join('. ');
+  const prompt = promptComLogo(partes.join('. '));
 
   if (btn) { btn.disabled = true; btn.textContent = 'Gerando no Ideogram...'; }
   result.style.display = 'block';
@@ -4739,7 +4784,11 @@ async function gerarImagemCampanha() {
     + '<div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:#9C6DFF;margin-bottom:10px;letter-spacing:1px;">' + imagens.length + ' IMAGEM(NS) GERADA(S) — Ideogram</div>'
     + '<div style="display:grid;grid-template-columns:repeat(' + cols + ',1fr);gap:10px;margin-bottom:10px;">' + grid + '</div>'
     + '<div style="font-size:10px;color:var(--t3);margin-bottom:8px;line-height:1.5;">Brief: ' + (briefVisual || headline).substring(0,150) + '...</div>'
-    + '<button class="btn btn-p" style="width:100%;font-size:11px;" onclick="gerarImagemCampanha()">Gerar Novas Variações</button>'
+    + '<div style="display:flex;gap:8px;margin-top:8px;">'
+    + '<button class="btn btn-p" style="flex:1;font-size:11px;" onclick="gerarImagemCampanha()">Gerar Novas Variações</button>'
+    + '<button class="btn btn-g" style="font-size:11px;white-space:nowrap;" onclick="regenerarSemTexto()" title="Use quando o texto na imagem vier errado">Gerar Sem Texto</button>'
+    + '</div>'
+    + '<div style="font-size:10px;color:var(--t3);margin-top:6px;">Se o texto aparecer errado: use Gerar Sem Texto e adicione o texto no Canva/Figma para resultado perfeito.</div>'
     + '</div>';
 
   addLog('ok', '[Ideogram] ' + imagens.length + ' imagens geradas para campanha: ' + (ctx.nome || ''));
@@ -4749,124 +4798,174 @@ async function gerarImagemCampanha() {
 
 async function ajustarCopyComIA() {
   const comentario = document.getElementById('copyAjusteComentario')?.value?.trim();
-  const copyAtual = document.getElementById('copyAtualTexto')?.textContent?.trim();
-  if (!comentario) { toast('Descreva o que ajustar no copy', 'error'); return; }
-  const btn = document.getElementById('btnAjustarCopy');
-  btn.disabled = true; btn.textContent = 'Ajustando...';
-  addLog('info', '[S2-Copywriter] Ajustando copy com IA...');
+  const copyAtual  = document.getElementById('copyAtualTexto')?.textContent?.trim();
+  const copyEl     = document.getElementById('copyAtualTexto');
+  const planEl     = document.getElementById('copyPlanejamento');
+  const btn        = document.getElementById('btnAjustarCopy');
 
-  // Salvar versão atual antes de ajustar
+  if (!comentario) { toast('Descreva o que quer ajustar no copy', 'error'); return; }
+
+  // Salvar versao atual antes de ajustar
   if (copyAtual && copyAtual !== 'Gere uma campanha para ver o copy aqui.') {
     copyVersoesList.push({ versao: copyVersoesList.length + 1, texto: copyAtual, timestamp: new Date().toLocaleTimeString('pt-BR') });
     renderCopyVersoes();
   }
 
+  btn.disabled = true; btn.textContent = 'Ajustando...';
+  if (copyEl) { copyEl.style.opacity = '0.4'; copyEl.textContent = 'Agente S2-Copywriter reescrevendo com base no seu comentario...'; }
+  addLog('info', '[S2-Copywriter] Ajustando: "' + comentario + '"');
+
   const ctx = window._campanhaAtual || {};
-  const r = await fetch('/api/s2-creative', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ action: 'copywriter', payload: {
-      canal: ctx.canal || 'LinkedIn',
-      objetivo: ctx.obj || 'Gerar leads',
-      ajuste_comentario: comentario,
-      copy_anterior: copyAtual,
-      narrativa: ctx.data?.narrativa || { tema_central: ctx.narrativaTema || '', gancho_principal: copyAtual?.split('\n')[0] || '' },
-      versoes: 1
-    }})
-  });
-  const data = await r.json();
-  const novoTexto = data.copy?.versoes?.[0]?.corpo || '';
-  if (novoTexto) {
-    document.getElementById('copyAtualTexto').textContent = novoTexto;
-    document.getElementById('copyAjusteComentario').value = '';
-    addLog('ok', '[S2-Copywriter] Copy ajustado — versao ' + (copyVersoesList.length + 1));
-    toast('Copy ajustado com sucesso!', 'success');
-  } else {
-    const errMsg = data?.error || 'Tente novamente';
-    addLog('err', '[S2-Copywriter] Erro: ' + errMsg);
-    toast('Erro: ' + errMsg, 'error');
+  try {
+    const r = await fetch('/api/s2-creative', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'copywriter',
+        payload: {
+          canal: ctx.canal || 'LinkedIn',
+          objetivo: ctx.obj || 'Gerar leads',
+          ajuste_comentario: comentario,
+          copy_anterior: copyAtual,
+          narrativa: ctx.data?.narrativa || { tema_central: ctx.narrativaTema || '', gancho_principal: '' },
+          versoes: 1
+        }
+      })
+    });
+
+    if (!r.ok) throw new Error('Servidor retornou ' + r.status);
+    const data = await r.json();
+
+    const novoTexto = data.copy?.versoes?.[0]?.corpo
+                   || data.copy?.versoes?.[0]?.texto
+                   || data.versoes?.[0]?.corpo
+                   || '';
+
+    if (novoTexto) {
+      if (copyEl) { copyEl.style.opacity = '1'; copyEl.textContent = novoTexto; }
+      document.getElementById('copyAjusteComentario').value = '';
+      addLog('ok', '[S2-Copywriter] Copy ajustado (v' + (copyVersoesList.length) + '): "' + novoTexto.substring(0,60) + '..."');
+      toast('Copy ajustado com sucesso!', 'success');
+    } else {
+      // Mostrar o que veio para debug
+      const debug = JSON.stringify(data).substring(0, 300);
+      if (copyEl) { copyEl.style.opacity = '1'; copyEl.textContent = copyAtual; }
+      addLog('err', '[S2-Copywriter] Resposta sem corpo: ' + debug);
+      toast('Agente nao retornou novo copy — tente novamente', 'error');
+    }
+  } catch(e) {
+    if (copyEl) { copyEl.style.opacity = '1'; copyEl.textContent = copyAtual; }
+    addLog('err', '[S2-Copywriter] Erro: ' + e.message);
+    toast('Erro ao ajustar: ' + e.message, 'error');
   }
   btn.disabled = false; btn.textContent = 'Ajustar Copy';
 }
 
 async function refazerCopyCompleto() {
-  const ctx = window._campanhaAtual || {};
+  const ctx       = window._campanhaAtual || {};
   const copyAtual = document.getElementById('copyAtualTexto')?.textContent?.trim();
-  const comentario = document.getElementById('copyAjusteComentario')?.value?.trim() || 'Refazer com abordagem diferente';
-  const btn = document.getElementById('btnRefazerCopy');
-  btn.disabled = true; btn.textContent = 'Refazendo...';
-  addLog('info', '[S2-Storyteller+Copywriter] Refazendo campanha completa...');
+  const comentario= document.getElementById('copyAjusteComentario')?.value?.trim();
+  const copyEl    = document.getElementById('copyAtualTexto');
+  const planEl    = document.getElementById('copyPlanejamento');
+  const btn       = document.getElementById('btnRefazerCopy');
 
+  // Salvar versao atual
   if (copyAtual && copyAtual !== 'Gere uma campanha para ver o copy aqui.') {
     copyVersoesList.push({ versao: copyVersoesList.length + 1, texto: copyAtual, timestamp: new Date().toLocaleTimeString('pt-BR') });
-  }
-
-  // 1. Novo Storyteller
-  const stR = await fetch('/api/s2-creative', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ action: 'storyteller', payload: {
-      campanha: ctx.nome || 'Campanha Atlantyx',
-      canal: ctx.canal || 'LinkedIn',
-      objetivo: ctx.obj || 'Gerar leads',
-      contexto: comentario
-    }})
-  });
-  const stData = await stR.json();
-  const novaNarrativa = stData.narrativa || {};
-
-  // 2. Novo Copywriter
-  const cpR = await fetch('/api/s2-creative', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ action: 'copywriter', payload: { canal: ctx.canal || 'LinkedIn', narrativa: novaNarrativa, versoes: 1 }})
-  });
-  const cpData = await cpR.json();
-  const novoTexto = cpData.copy?.versoes?.[0]?.corpo || '';
-
-  if (novoTexto) {
-    document.getElementById('copyAtualTexto').textContent = novoTexto;
-    const planEl = document.getElementById('copyPlanejamento');
-    if (planEl) planEl.textContent = 'Tema central: ' + (novaNarrativa.tema_central || '') + '\n\nGancho: ' + (novaNarrativa.gancho_principal || '');
-    document.getElementById('copyAjusteComentario').value = '';
-    if (window._campanhaAtual) window._campanhaAtual.narrativaTema = novaNarrativa.tema_central || '';
     renderCopyVersoes();
-    addLog('ok', '[S2] Copy refeito — versao ' + (copyVersoesList.length));
-    toast('Copy refeito com nova abordagem!', 'success');
   }
+
+  btn.disabled = true; btn.textContent = 'Refazendo...';
+  if (copyEl) { copyEl.style.opacity = '0.4'; copyEl.textContent = 'Storyteller criando nova narrativa...'; }
+  if (planEl) { planEl.style.opacity = '0.4'; planEl.textContent = 'Aguardando nova narrativa...'; }
+  addLog('info', '[S2-Storyteller+Copywriter] Refazendo tudo' + (comentario ? ': "' + comentario + '"' : ''));
+
+  try {
+    // ── PASSO 1: Novo Storyteller com contexto de ajuste ─────────────────────
+    const stR = await fetch('/api/s2-creative', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'storyteller',
+        payload: {
+          campanha: ctx.nome || 'Campanha Atlantyx',
+          canal:    ctx.canal || 'LinkedIn',
+          objetivo: ctx.obj  || 'Gerar leads',
+          publico:  ctx.pub  || 'CIO/CTO em empresas R$100M+',
+          contexto: comentario
+            ? 'INSTRUCAO DE AJUSTE: ' + comentario + '. Criar narrativa completamente nova com este direcionamento.'
+            : 'Criar narrativa diferente da anterior — novo angulo, novo gancho, nova abordagem para o mesmo ICP.'
+        }
+      })
+    });
+
+    if (!stR.ok) throw new Error('Storyteller retornou ' + stR.status);
+    const stData = await stR.json();
+    const novaNarrativa = stData.narrativa || {};
+
+    // Atualizar planejamento na tela
+    if (planEl) {
+      planEl.style.opacity = '1';
+      planEl.textContent = [
+        'Tema central: ' + (novaNarrativa.tema_central || ''),
+        'Gancho: ' + (novaNarrativa.gancho_principal || ''),
+        'Angulo: ' + (novaNarrativa.angulo_narrativo || ''),
+        'Promessa: ' + (novaNarrativa.promessa_central || ''),
+      ].join('\n');
+    }
+    if (copyEl) copyEl.textContent = 'Copywriter reescrevendo com a nova narrativa...';
+    addLog('ok', '[S2-Storyteller] Nova narrativa: "' + (novaNarrativa.tema_central || '') + '"');
+
+    // ── PASSO 2: Novo Copywriter baseado na narrativa nova ────────────────────
+    const cpR = await fetch('/api/s2-creative', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'copywriter',
+        payload: {
+          canal:     ctx.canal || 'LinkedIn',
+          objetivo:  ctx.obj   || 'Gerar leads',
+          narrativa: novaNarrativa,
+          ajuste_comentario: comentario || '',
+          versoes: 1
+        }
+      })
+    });
+
+    if (!cpR.ok) throw new Error('Copywriter retornou ' + cpR.status);
+    const cpData = await cpR.json();
+    const novoTexto = cpData.copy?.versoes?.[0]?.corpo
+                   || cpData.copy?.versoes?.[0]?.texto
+                   || cpData.versoes?.[0]?.corpo
+                   || '';
+
+    if (novoTexto) {
+      if (copyEl) { copyEl.style.opacity = '1'; copyEl.textContent = novoTexto; }
+      // Atualizar contexto global com nova narrativa
+      if (window._campanhaAtual) {
+        if (!window._campanhaAtual.data) window._campanhaAtual.data = {};
+        window._campanhaAtual.data.narrativa = novaNarrativa;
+        window._campanhaAtual.narrativaTema = novaNarrativa.tema_central || '';
+      }
+      if (document.getElementById('copyAjusteComentario')) document.getElementById('copyAjusteComentario').value = '';
+      addLog('ok', '[S2-Copywriter] Refazimento concluido: "' + novoTexto.substring(0,60) + '..."');
+      toast('Narrativa e copy refeitos com sucesso!', 'success');
+    } else {
+      if (copyEl) { copyEl.style.opacity = '1'; copyEl.textContent = copyAtual; }
+      addLog('err', '[S2-Copywriter] Sem novo corpo: ' + JSON.stringify(cpData).substring(0,200));
+      toast('Copywriter nao retornou texto — tente novamente', 'error');
+    }
+
+  } catch(e) {
+    if (copyEl) { copyEl.style.opacity = '1'; copyEl.textContent = copyAtual; }
+    if (planEl) planEl.style.opacity = '1';
+    addLog('err', '[S2-Refazer] Erro: ' + e.message);
+    toast('Erro ao refazer: ' + e.message, 'error');
+  }
+
   btn.disabled = false; btn.textContent = 'Refazer Tudo';
 }
 
-function renderCopyVersoes() {
-  const list = document.getElementById('copyVersoesLista');
-  const container = document.getElementById('copyVersoes');
-  if (!list || !copyVersoesList.length) return;
-  container.style.display = 'block';
-  list.innerHTML = copyVersoesList.map((v, i) => `
-    <div style="background:var(--bg3);border:1px solid var(--bd);border-radius:5px;padding:6px 10px;cursor:pointer;font-size:10px;" onclick="voltarCopyVersao(${i})">
-      <div style="font-family:var(--M);font-size:8px;color:var(--t2);">v${v.versao} — ${v.timestamp}</div>
-      <div style="color:var(--t1);margin-top:2px;">${v.texto.substring(0,40)}...</div>
-    </div>`).join('');
-}
-
-function voltarCopyVersao(i) {
-  const v = copyVersoesList[i];
-  if (!v) return;
-  const el = document.getElementById('copyAtualTexto');
-  if (el) el.textContent = v.texto;
-  toast('Voltou para versao ' + v.versao, 'info');
-}
-
-function copiarCopyAtual() {
-  const txt = document.getElementById('copyAtualTexto')?.textContent || '';
-  navigator.clipboard.writeText(txt);
-  toast('Copy copiado!', 'success');
-}
-
-function aprovarCopyAtual() {
-  const txt = document.getElementById('copyAtualTexto')?.textContent || '';
-  const ctx = window._campanhaAtual || {};
-  adicionarAoKanban(ctx.nome || 'Copy Aprovado', ctx.canal || 'LinkedIn', 'S2-Copywriter', ctx.narrativaTema || '', txt, '');
-  toast('Copy aprovado e enviado ao Kanban!', 'success');
-  addLog('ok', '[S2-Copywriter] Copy aprovado no Kanban');
-}
 
 async function gerarNovaImagem() {
   const comentario = document.getElementById('imgAjusteComentario')?.value?.trim();
@@ -4975,6 +5074,172 @@ function renderProspectResult(data) {
         </div>
       </div>`;
     }).join('')}`;
+}
+
+
+// ── LOGO DA ATLANTYX ─────────────────────────────────────────────────────────
+let logoAtlantyxBase64 = null;
+let logoAtlantyxNome = null;
+
+function carregarLogo(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    logoAtlantyxBase64 = e.target.result; // base64 data URL
+    logoAtlantyxNome = file.name;
+    const preview = document.getElementById('logoPreview');
+    const wrap = document.getElementById('logoPreviewWrap');
+    const nome = document.getElementById('logoNome');
+    if (preview) { preview.src = logoAtlantyxBase64; }
+    if (wrap) wrap.style.display = 'flex';
+    if (nome) nome.textContent = '';
+    toast('Logo carregada: ' + file.name, 'success');
+    addLog('info', '[Logo] Atlantyx logo carregada: ' + file.name);
+  };
+  reader.readAsDataURL(file);
+}
+
+function carregarLogoAjuste(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    logoAtlantyxBase64 = e.target.result;
+    logoAtlantyxNome = file.name;
+    const nome = document.getElementById('logoAjusteNome');
+    if (nome) nome.textContent = file.name + ' carregada';
+    toast('Logo carregada para a arte', 'success');
+  };
+  reader.readAsDataURL(file);
+}
+
+function removerLogo() {
+  logoAtlantyxBase64 = null;
+  logoAtlantyxNome = null;
+  const preview = document.getElementById('logoPreview');
+  const wrap = document.getElementById('logoPreviewWrap');
+  if (preview) preview.src = '';
+  if (wrap) wrap.style.display = 'none';
+  toast('Logo removida', 'info');
+}
+
+// Quando logo existe, adiciona instrução no prompt do Ideogram
+function promptComLogo(promptBase) {
+  if (!logoAtlantyxBase64) return promptBase;
+  return promptBase + '. IMPORTANT: Reserve clean space at bottom right corner for the Atlantyx company logo overlay (navy blue rectangular area 15% of image width). The logo area should be: dark navy #1A3A8F rectangle at bottom right, text "Atlantyx" in white bold Syne font, subtitle "BI + Dados + IA" in smaller white text below.';
+}
+
+// ── MOTION VIDEO ─────────────────────────────────────────────────────────────
+async function criarVideoMotion() {
+  const ctx = window._campanhaAtual || {};
+  const data = ctx.data || {};
+  const copy = data.copy || {};
+  const narrativa = data.narrativa || {};
+  const btn = document.getElementById('btnMotion');
+
+  if (!copy.versoes && !narrativa.tema_central) {
+    toast('Gere uma campanha primeiro para criar o vídeo', 'error');
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Criando roteiro...';
+  addLog('info', '[S2-Motion] Criando roteiro de video para: ' + (ctx.nome||'campanha'));
+
+  const r = await fetch('/api/s2-creative', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ action: 'motion', payload: {
+      campanha: ctx.nome || 'Campanha Atlantyx',
+      canal: ctx.canal || 'LinkedIn',
+      duracao: '60 segundos',
+      tipo: 'post_linkedin',
+      copy: copy,
+      narrativa: narrativa
+    }})
+  });
+  const motionData = await r.json();
+  btn.disabled = false; btn.textContent = 'Motion Video';
+
+  if (!motionData?.success) {
+    toast('Erro ao criar roteiro de video', 'error');
+    return;
+  }
+
+  const motion = motionData.motion || {};
+  const panel = document.getElementById('copyReviewPanel');
+  if (panel) panel.style.display = 'block';
+
+  // Mostrar roteiro no painel
+  const copyAtualEl = document.getElementById('copyAtualTexto');
+  const planEl = document.getElementById('copyPlanejamento');
+
+  const roteiro = [
+    'VIDEO MOTION — ' + (ctx.canal||'LinkedIn'),
+    'Duracao: ' + (motion.duracao||'60s'),
+    '',
+    'ROTEIRO:',
+    (motion.cenas||[]).map((cena,i) => (i+1)+'. [' + cena.duracao + '] ' + cena.narracao + ' | Visual: ' + cena.visual).join('\n'),
+    '',
+    'MUSICA: ' + (motion.musica_sugerida||'Instrumental corporativo'),
+    'HOOK: ' + (motion.hook_abertura||''),
+    'CTA FINAL: ' + (motion.cta_final||''),
+  ].join('\n');
+
+  if (copyAtualEl) copyAtualEl.textContent = roteiro;
+  if (planEl) planEl.textContent = 'Conceito visual: ' + (motion.conceito_visual||'') + '\n\nEstilo: ' + (motion.estilo_edicao||'');
+
+  addLog('ok', '[S2-Motion] Roteiro de video criado: ' + (ctx.nome||''));
+  toast('Roteiro de video criado! Veja abaixo.', 'success');
+}
+
+// ── CORREÇÃO DE TEXTO NAS IMAGENS IDEOGRAM ───────────────────────────────────
+// O Ideogram tem limitações com texto em português — estratégias:
+// 1. Usar texto curto (max 5-6 palavras) — mais confiável
+// 2. Usar apenas inglês no texto da imagem
+// 3. Usar "no text" e adicionar texto por cima no Canva/Figma
+// 4. Solicitar regeneração com texto mais simples
+
+function gerarPromptSemTexto(promptBase) {
+  // Remove text overlay instructions para imagem sem texto
+  return promptBase.replace(/[Tt]ext overlay[^.]*\./g, 'NO TEXT in the image — pure visual only.').replace(/[Ii]nclude.*?text[^.]*\./g, 'NO TEXT — pure visual composition.');
+}
+
+function gerarPromptTextoSimples(promptBase, texto) {
+  // Simplifica o texto para o Ideogram — max 4 palavras, sem acentos
+  const textoSimples = texto
+    .normalize('NFD').replace(/[̀-ͯ]/g, '') // remove acentos
+    .replace(/[^a-zA-Z0-9 ]/g, '') // apenas alfanumérico
+    .split(' ').slice(0, 4).join(' '); // max 4 palavras
+  return promptBase.replace(/[Tt]ext overlay[^.]*\./g, 'Large bold white text: "' + textoSimples + '"');
+}
+
+// Botão de regenerar sem texto — para usar quando texto vem errado
+function regenerarSemTexto() {
+  const ctx = window._campanhaAtual || {};
+  const data = ctx.data || {};
+  const design = data.design || {};
+  const promptBase = design.prompt_ia_imagem || design.conceito_visual || '';
+  const promptLimpo = gerarPromptSemTexto(promptBase + ' Style: dark navy blue #1A3A8F background, electric blue #4F7CFF accents, premium corporate B2B');
+  const formato = document.getElementById('campImgFormato')?.value || 'ASPECT_1_1';
+
+  addLog('info', '[Ideogram] Regenerando SEM texto na imagem...');
+  api('/api/image-gen', 'POST', { prompt: promptLimpo, formato, estilo: 'DESIGN', quantidade: 2 })
+    .then(imgData => {
+      if (imgData?.success && imgData.imagens?.length) {
+        const result = document.getElementById('campImgResult');
+        let grid = '';
+        imgData.imagens.forEach(function(img) {
+          grid += '<div style="border-radius:8px;overflow:hidden;border:2px solid var(--bd);">'
+            + '<img src="' + img.url + '" style="width:100%;display:block;" loading="lazy"/>'
+            + '<div style="padding:6px;display:flex;gap:5px;background:var(--bg4);">'
+            + '<button class="btn btn-gn" style="flex:1;font-size:9px;" data-url="' + img.url + '" onclick="aprovarImagem(this.dataset.url,event)">Aprovar</button>'
+            + '<a href="' + img.url + '" target="_blank" class="btn" style="font-size:9px;color:#fff;border-color:rgba(255,255,255,.3);">Abrir</a>'
+            + '</div></div>';
+        });
+        if (result) result.innerHTML = '<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;"><div style="font-family:var(--M);font-size:8px;color:var(--green);margin-bottom:8px;">IMAGENS SEM TEXTO (adicione texto no Canva)</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' + grid + '</div><div style="font-size:10px;color:var(--t3);margin-top:8px;">Dica: Imagens sem texto + Canva/Figma para adicionar texto = resultado profissional garantido</div></div>';
+        toast('Imagens sem texto geradas!', 'success');
+      }
+    });
 }
 
 </script>
