@@ -103,11 +103,18 @@ Retorne:
 }
 
 // ── S2 COPYWRITER — Textos das Campanhas ─────────────────────────────────────
-async function agCopywriter({ narrativa, formato, canal, versoes = 3 }) {
+async function agCopywriter({ narrativa, formato, canal, versoes = 3, copy_anterior, ajuste_comentario } = {}, payload = {}) {
   const system = `Você é o Agente Copywriter da Atlantyx — especialista em copy B2B para grandes empresas.
 Tom: ${BRAND.tom_de_voz}
 ICP: ${BRAND.icp}
 Proposta de valor: ${BRAND.proposta_valor}
+
+REGRAS ABSOLUTAS DO COPY:
+1. SEMPRE mencione "Atlantyx" no corpo do texto ou no CTA — o leitor precisa saber quem fala
+2. NUNCA escreva copy genérico que poderia ser de qualquer empresa — seja específico da Atlantyx
+3. O copy deve RESOLVER uma dor real do ICP, não apenas apresentar a empresa
+4. Inclua sempre um dado concreto ou resultado mensurável
+5. CTA deve ser específico: "Fale com a Atlantyx", "Agende com a Atlantyx", etc.
 NUNCA use: "revolucionar", "disruptivo", "game-changer", "solução inovadora", emojis em excesso.
 Retorne APENAS JSON válido.`;
 
@@ -115,6 +122,8 @@ Retorne APENAS JSON válido.`;
 Formato: ${formato || 'post LinkedIn'}
 Canal: ${canal || 'LinkedIn'}
 Narrativa base: ${JSON.stringify(narrativa || { tema_central: 'Dados inconsistentes custam caro', gancho_principal: 'Quantas decisões ruins sua empresa tomou este mês por causa de dados atrasados?' })}
+${payload.copy_anterior ? 'Copy anterior para melhorar: ' + payload.copy_anterior : ''}
+${payload.ajuste_comentario ? 'INSTRUÇÃO DE AJUSTE (siga exatamente): ' + payload.ajuste_comentario : ''}
 Versões: ${versoes}
 
 Retorne:
@@ -147,10 +156,15 @@ Retorne:
 // ── S2 DESIGNER — Especificação Visual das Peças ─────────────────────────────
 async function agDesigner({ copy, canal, formato, dimensoes }) {
   const system = `Você é o Agente Designer da Atlantyx — especialista em design B2B premium.
-Estilo visual da Atlantyx: ${BRAND.estilo_visual}
-Cores: ${BRAND.cores}
+Estilo visual: ${BRAND.estilo_visual}
+Cores OBRIGATÓRIAS: ${BRAND.cores} — use sempre azul navy #1A3A8F e azul elétrico #4F7CFF.
 Fontes: ${BRAND.fontes}
-Referência de estilo: padrão EY — clean, data-driven, premium, fundo escuro ou branco puro.
+Referência: padrão EY/McKinsey — clean, data-driven, premium, fundo escuro ou branco.
+
+REGRAS DO PROMPT IDEOGRAM:
+1. O prompt_ia_imagem deve ser em inglês, detalhado e incluir: (a) cenário específico, (b) paleta de cores exata, (c) elementos de dados/gráficos, (d) estilo visual corporativo.
+2. NUNCA gere prompt genérico — seja específico ao contexto do copy aprovado.
+3. Inclua sempre: dark navy blue #1A3A8F, electric blue #4F7CFF, bold white typography.
 Retorne APENAS JSON válido.`;
 
   const user = `Crie a especificação completa de design para:
@@ -158,6 +172,13 @@ Canal: ${canal || 'LinkedIn'}
 Formato: ${formato || 'post carrossel'}
 Dimensões: ${dimensoes || '1080x1080px'}
 Copy aprovado: ${JSON.stringify(copy?.versoes?.[0] || { headline: 'Dados inconsistentes custam caro', corpo: 'Sua empresa toma decisões críticas com dados que chegam 3 dias atrasados.' })}
+
+IDENTIDADE VISUAL OBRIGATÓRIA:
+- Fundo: azul navy profundo (#1A3A8F) ou branco puro
+- Destaque: azul elétrico (#4F7CFF) para dados e gráficos
+- Logo: "Atlantyx" em destaque — fonte Syne bold branca
+- Estética: EY/McKinsey — limpo, premium, data-driven
+- SEMPRE incluir elemento visual de dados: gráfico, linha, número em destaque, dashboard
 
 Retorne:
 {
@@ -174,7 +195,7 @@ Retorne:
   "paleta_esta_peca": ["#cor1", "#cor2", "#cor3"],
   "elementos_graficos": ["elemento 1", "elemento 2"],
   "imagem_ou_ilustracao": "descrição detalhada de imagem/ilustração para esta peça ou 'não usar'",
-  "prompt_ia_imagem": "prompt completo em inglês para gerar a imagem via DALL-E/Midjourney se necessário",
+  "prompt_ia_imagem": "prompt detalhado em inglês para Ideogram — baseie no copy e cenário desta campanha. OBRIGATÓRIO incluir: (1) CENÁRIO concreto baseado no copy: ex se copy fala de CIO descobrindo dados errados, visualize isso; (2) CORES: dark navy blue #1A3A8F background, electric blue #4F7CFF accents on graphs and lines; (3) ELEMENTOS: bold white headline text overlay matching the campaign headline, geometric data visualization graphs dashboards, clean minimalist layout; (4) ESTILO: EY McKinsey premium B2B consulting aesthetic, photorealistic or graphic design style, high contrast, sophisticated corporate feeling, NOT generic stock photo; (5) COMPOSIÇÃO: espaço para logo Atlantyx bottom right",
   "animacao_sugerida": "se tiver versão animada — descrição da animação",
   "adaptacoes_formato": {
     "stories": "adaptação para Stories 1080x1920",
@@ -628,11 +649,11 @@ Retorne:
 }
 
 // ── CAMPANHA COMPLETA — todos os agentes em sequência ─────────────────────────
-async function campanhaCompleta({ campanha, objetivo, canal, orcamento }) {
+async function campanhaCompleta({ campanha, objetivo, canal, orcamento, publico, contexto }) {
   const etapas = [];
 
   // 1. Storyteller
-  const { narrativa } = await agStoryteller({ campanha, objetivo, canal });
+  const { narrativa } = await agStoryteller({ campanha, objetivo, canal, publico, contexto });
   etapas.push({ agente: 'Storyteller', status: 'CONCLUÍDO', output: narrativa.tema_central });
 
   // 2. Copywriter
