@@ -75,34 +75,76 @@ Retorne:
 }
 
 // ── S1-02: ANÁLISE DE VIABILIDADE ───────────────────────────────────────────
-async function analisarIdeia({ ideia_id, titulo, descricao, problema }) {
-  const system = `Você é o Agente S1-02 de Análise de Viabilidade da Atlantyx.
-Avalie a ideia em 4 dimensões objetivas. Seja direto e honesto.
-A Atlantyx tem: 1 dev (1h/dia), 1 fundador, 1 closer, 1 marketing. Receita atual: iniciando.
+async function analisarIdeia({ titulo, desc, descricao, origem, cat, perguntas, modo, tem_arquivos, docs_nomes, imagensBase64, ideia_id, problema }) {
+  const tituloFinal = titulo || 'Ideia sem título';
+  const descFinal   = desc || descricao || problema || '';
+  const modoFinal   = modo || 'completa';
+
+  const system = `Você é o Agente S1-03 de Análise Profunda de Produto da Atlantyx.
+Analise a ideia com profundidade real — não seja genérico.
+Contexto da Atlantyx: empresa de BI/Dados/IA, 1 dev senior, 1 fundador, ICP = empresas R$100M+ com dados complexos.
+Seja honesto e direto — inclua pontos negativos reais se existirem.
 Retorne APENAS JSON válido.`;
 
-  const user = `Analise a viabilidade desta ideia:
-Título: ${titulo}
-Descrição: ${descricao}
-Problema: ${problema || ''}
+  const modoPrompt = modoFinal === 'rapida'
+    ? 'Análise rápida e objetiva em 5 pontos principais.'
+    : modoFinal === 'financeira'
+    ? 'Foque apenas na viabilidade financeira: custos, receita potencial, prazo de retorno, riscos financeiros.'
+    : 'Análise completa e profunda em todas as dimensões.';
 
-Retorne:
+  const user = `${modoPrompt}
+
+Ideia para análise:
+Título: ${tituloFinal}
+Descrição: ${descFinal}
+Origem: ${origem || 'Não informada'}
+Categoria: ${cat || 'Não informada'}
+${tem_arquivos ? 'ARQUIVOS ANEXADOS para análise: ' + (docs_nomes || '') + (imagensBase64?.length ? ' + ' + imagensBase64.length + ' imagem(ns)' : '') : ''}
+${perguntas ? 'PERGUNTAS ESPECÍFICAS DO SOLICITANTE: ' + perguntas : ''}
+
+Retorne JSON completo:
 {
-  "viabilidade_tecnica": { "nota": 0-10, "justificativa": "...", "obstaculos": ["..."], "tempo_estimado": "ex: 3 semanas" },
-  "viabilidade_mercado": { "nota": 0-10, "justificativa": "...", "concorrentes_conhecidos": ["..."], "diferencial": "..." },
-  "viabilidade_financeira": { "nota": 0-10, "justificativa": "...", "custo_estimado_dev": "R$X", "receita_potencial_ano1": "R$X" },
-  "alinhamento_estrategico": { "nota": 0-10, "justificativa": "...", "fit_icp": "Alto | Médio | Baixo" },
-  "nota_geral": 0-10,
-  "recomendacao": "Avançar | Avançar com ressalvas | Arquivar",
-  "principais_riscos": ["risco 1", "risco 2"],
-  "proxima_etapa": "Pesquisa de Mercado | Arquivar"
+  "score": 0-10,
+  "recomendacao": "APROVAR | PILOTAR | REANALISAR | ARQUIVAR",
+  "resumo_executivo": "2 linhas — o que é e por que importa (ou não)",
+  "pontos_fortes": ["ponto forte 1 específico", "ponto forte 2"],
+  "riscos": ["risco real 1", "risco real 2"],
+  "mercado": "TAM estimado, concorrentes principais, janela de oportunidade",
+  "viabilidade_financeira": "custo de dev, receita potencial ano 1, tempo de payback",
+  "prazo_desenvolvimento": "prazo realista para MVP com 1 dev senior",
+  "fit_icp": "Alto | Médio | Baixo — justificativa de 1 linha",
+  "proximos_passos": ["ação 1 com responsável e prazo", "ação 2"],
+  "analise_arquivos": "${tem_arquivos ? 'Análise do conteúdo dos arquivos anexados — o que revelam sobre a ideia' : 'Nenhum arquivo anexado'}",
+  "perguntas_respondidas": "${perguntas ? 'Respostas específicas para: ' + perguntas : 'Nenhuma pergunta específica'}",
+  "parecer_final": "Parecer detalhado do agente S1-03 — 3-4 linhas com posição clara e fundamentada"
 }`;
 
-  const r = await claude(system, user, 1200);
-  const analise = parseJSON(r);
+  // Montar mensagem — incluir imagens se houver
+  let messages;
+  if (imagensBase64 && imagensBase64.length > 0) {
+    const content = [
+      ...imagensBase64.slice(0, 4).map(img => ({
+        type: 'image',
+        source: img.source || { type: 'base64', media_type: img.type || 'image/jpeg', data: img.data || (img.base64 || '').split(',')[1] || '' }
+      })),
+      { type: 'text', text: user }
+    ];
+    messages = [{ role: 'user', content }];
+  } else {
+    messages = [{ role: 'user', content: user }];
+  }
 
-  console.log(`[S1-02] Análise de viabilidade: ${titulo} — nota ${analise.nota_geral}/10 — ${analise.recomendacao}`);
-  return { analise, pipeline_stage: 'Em Análise' };
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2500, system, messages })
+  });
+  const d = await resp.json();
+  if (!resp.ok) throw new Error(d.error?.message || 'Erro Claude');
+
+  const analise = parseJSON(d.content[0].text);
+  console.log(`[S1-03] Análise: ${tituloFinal} — score ${analise.score}/10 — ${analise.recomendacao}`);
+  return { success: true, analise, pipeline_stage: 'Em Análise' };
 }
 
 // ── S1-03: PESQUISA DE MERCADO ───────────────────────────────────────────────
