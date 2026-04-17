@@ -407,8 +407,23 @@ tr:hover td{background:rgba(79,124,255,.03);}
             <div class="fg"><label class="fl">Setor Alvo</label><select class="fsel" id="pSetor"><option>Energia (geracao/distribuicao)</option><option>Automotivo (concessionarias)</option><option>Varejo (redes estruturadas)</option><option>Industria / Manufatura</option><option>Logistica e Transporte</option></select></div>
             <div class="fg"><label class="fl">Regiao</label><select class="fsel" id="pRegiao"><option>Sudeste (SP, RJ, MG)</option><option>Sul (PR, SC, RS)</option><option>Brasil inteiro</option></select></div>
             <div class="fg"><label class="fl">Faturamento Minimo</label><select class="fsel" id="pFat"><option>R$100M</option><option>R$500M</option><option>R$1B</option></select></div>
-            <div class="fg"><label class="fl">Cargo Decisor</label><select class="fsel" id="pCargo"><option>CIO / Diretor de TI</option><option>CTO / Dir. Tecnologia</option><option>Dir. Transformacao Digital</option><option>CFO</option><option>CEO</option></select></div>
-            <div class="fg"><label class="fl">Quantidade</label><select class="fsel" id="pQtd"><option value="5">5 empresas</option><option value="10" selected>10 empresas</option><option value="20">20 empresas</option></select></div>
+            <div class="fg"><label class="fl">Cargo Decisor</label><select class="fsel" id="pCargo">
+  <option value="todos_clevel">★ Todos os C-Levels (CIO, CTO, CFO, CEO, COO, Dir. Digital)</option>
+  <option value="todos">★★ Todos — C-Level + Gerentes + Coordenadores</option>
+  <option value="CIO / Diretor de TI">CIO / Diretor de TI</option>
+  <option value="CTO / Dir. Tecnologia">CTO / Dir. Tecnologia</option>
+  <option value="Dir. Transformacao Digital">Dir. Transformacao Digital</option>
+  <option value="CFO">CFO / Dir. Financeiro</option>
+  <option value="CEO">CEO / Presidente</option>
+  <option value="COO">COO / Dir. Operacoes</option>
+  <option value="Dir. Analytics / Dados">Dir. Analytics / Dados</option>
+  <option value="VP TI">VP / Gerente Senior de TI</option>
+</select></div>
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;padding:8px 11px;background:var(--g2);border-radius:6px;border-left:3px solid var(--green);">
+              <span style="font-size:11px;color:var(--green);">&#10003;</span>
+              <span style="font-size:11px;color:var(--t2);">Leads <strong style="color:var(--t1);">100% novos</strong> — prospectados de fontes externas: LinkedIn, sites, notícias, relatórios setoriais</span>
+            </div>
+            <div class="fg"><label class="fl">Quantidade de novas contas</label><select class="fsel" id="pQtd"><option value="5">5 empresas</option><option value="10" selected>10 empresas</option><option value="20">20 empresas</option></select></div>
             <button class="btn btn-or" style="width:100%;" id="btnProspect" onclick="runProspect()">&#9654; Executar Prospecção</button>
           </div>
         </div>
@@ -1055,6 +1070,75 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <div class="pb" id="campResult"><div style="color:var(--t3);font-size:11px;text-align:center;padding:30px;">Configure a campanha e clique em "Criar". Os agentes trabalham em sequência e as peças vão direto para o Kanban de Aprovação.</div></div>
       </div>
     </div>
+
+    <!-- AREA DE REVISÃO DE COPY E IMAGEM -->
+    <div class="panel" id="copyReviewPanel" style="display:none;margin-top:12px;">
+      <div class="ph">
+        <div class="pt">Revisão de Copy e Imagem — Solicitar Ajustes</div>
+        <span class="tag on">Agentes S2</span>
+      </div>
+      <div class="pb">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+
+          <!-- COPY ATUAL -->
+          <div>
+            <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--or);margin-bottom:6px;letter-spacing:1px;">COPY ATUAL — Clique para editar</div>
+            <div id="copyAtualTexto" contenteditable="true" style="background:var(--bg4);border:1px solid rgba(240,112,48,.25);border-radius:7px;padding:12px;font-size:12px;line-height:1.75;min-height:120px;white-space:pre-wrap;">Gere uma campanha para ver o copy aqui.</div>
+            <div style="display:flex;gap:6px;margin-top:6px;">
+              <button class="btn btn-g" style="font-size:10px;" onclick="copiarCopyAtual()">Copiar</button>
+              <button class="btn btn-gn" style="font-size:10px;" onclick="aprovarCopyAtual()">Aprovar Copy</button>
+            </div>
+          </div>
+
+          <!-- PLANEJAMENTO DO COPY -->
+          <div>
+            <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--blue);margin-bottom:6px;letter-spacing:1px;">PLANEJAMENTO DO COPY (Storyteller)</div>
+            <div id="copyPlanejamento" style="background:var(--bg4);border:1px solid rgba(79,124,255,.25);border-radius:7px;padding:12px;font-size:11.5px;line-height:1.75;min-height:120px;color:var(--t2);">Narrativa e estratégia do copy aparece aqui após geração.</div>
+          </div>
+        </div>
+
+        <!-- SOLICITAR AJUSTE DE COPY -->
+        <div style="background:var(--bg4);border-radius:8px;padding:13px;margin-bottom:12px;">
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--or);margin-bottom:8px;letter-spacing:1px;">SOLICITAR AJUSTE DE COPY</div>
+          <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start;">
+            <textarea class="fta" id="copyAjusteComentario" style="min-height:70px;" placeholder="Descreva o que ajustar no copy...&#10;Ex: Tom muito formal, quero mais direto. Mencionar ROI em semanas. Remover o segundo parágrafo. Focar mais na dor de dados desconectados..."></textarea>
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              <button class="btn btn-or" id="btnAjustarCopy" onclick="ajustarCopyComIA()" style="white-space:nowrap;">Ajustar Copy</button>
+              <button class="btn btn-p" id="btnRefazerCopy" onclick="refazerCopyCompleto()" style="font-size:10px;white-space:nowrap;">Refazer Tudo</button>
+            </div>
+          </div>
+          <!-- Versões anteriores do copy -->
+          <div id="copyVersoes" style="display:none;margin-top:10px;">
+            <div style="font-family:var(--M);font-size:8px;color:var(--t3);margin-bottom:5px;">VERSOES ANTERIORES</div>
+            <div id="copyVersoesLista" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+          </div>
+        </div>
+
+        <!-- SOLICITAR NOVA IMAGEM -->
+        <div style="background:var(--bg4);border-radius:8px;padding:13px;">
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:8px;letter-spacing:1px;">SOLICITAR NOVA IMAGEM — Ideogram</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+            <div>
+              <div style="font-size:10px;color:var(--t2);margin-bottom:4px;">Comentário sobre a imagem atual:</div>
+              <textarea class="fta" id="imgAjusteComentario" style="min-height:65px;" placeholder="Ex: Muito escura. Texto ilegível. Mudar para fundo branco. Adicionar elemento de gráfico de dados. Pessoa mais jovem e moderna..."></textarea>
+            </div>
+            <div>
+              <div style="font-size:10px;color:var(--t2);margin-bottom:4px;">Imagem atual (cole a URL se já gerou):</div>
+              <input class="fi" id="imgAtualUrl" placeholder="https://ideogram.ai/..."/>
+              <div id="imgAtualPreview" style="display:none;margin-top:6px;border-radius:6px;overflow:hidden;max-height:100px;">
+                <img id="imgAtualPreviewEl" src="" style="width:100%;object-fit:cover;" alt=""/>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-p" id="btnGerarNovaImg" onclick="gerarNovaImagem()" style="flex:1;">Gerar Nova Imagem — Ideogram</button>
+            <button class="btn btn-g" onclick="abrirGerarImagem()" style="font-size:11px;">Ir para Gerador</button>
+          </div>
+          <div id="novaImgResult" style="display:none;margin-top:10px;"></div>
+        </div>
+      </div>
+      </div>
+    </div>
     <!-- Agentes individuais -->
     <div class="panel">
       <div class="ph"><div class="pt">Agentes Individuais — Use separadamente se precisar</div></div>
@@ -1548,7 +1632,7 @@ function renderPipelineEtapas(e){const ETAPAS=['Mapeado','Abordado','Respondeu',
 function renderPipelineMock(){const mock={'Mapeado':12,'Abordado':8,'Respondeu':4,'Reuniao':3,'Proposta':1,'Fechado':0};const el=document.getElementById('s7-pipeline');if(el)el.innerHTML=Object.entries(mock).map(([n,c])=>`<div class="pc"><div class="pch">${n}<span class="pcnt">${c}</span></div><div style="font-size:9px;color:var(--t3);padding:4px;">Conecte HubSpot</div></div>`).join('');}
 async function loadKPIs(){const data=await api('/api/analytics?tipo=kpis');if(!data||!data.kpis){addLog('warn','KPIs: configure HUBSPOT_TOKEN');return;}const k=data.kpis;document.getElementById('kLeads').textContent=k.leads_30_dias||'--';document.getElementById('kScoreA').textContent=k.score_a||'--';document.getElementById('k_leads30').textContent=k.leads_30_dias||'--';document.getElementById('k_mql').textContent=(k.taxa_qualificacao||0)+'%';document.getElementById('s7_d30').textContent=k.deals_30_dias||'--';document.getElementById('s7_tq').textContent=(k.taxa_qualificacao||0)+'%';document.getElementById('p_fc').textContent=k.pipeline_valor?'R$'+(k.pipeline_valor/1000000).toFixed(1)+'M':'--';addLog('success','[S2-09] KPIs: '+k.leads_30_dias+' leads, '+k.taxa_qualificacao+'% qualificacao');}
 async function loadAnalytics(){addLog('info','[S2-09] Gerando analise Claude...');const data=await api('/api/analytics?tipo=analise');if(!data||!data.analise){addLog('err','Analytics: erro');return;}const a=data.analise;const html=`<div style="margin-bottom:9px;"><div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--green);margin-bottom:5px;">INSIGHTS</div>${(a.insights||[]).map((x,n)=>`<div style="padding:5px 0;border-bottom:1px solid var(--bd);font-size:11.5px;"><strong style="color:var(--blue);">${n+1}.</strong> ${x}</div>`).join('')}</div><div style="margin-bottom:9px;"><div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--red);margin-bottom:5px;">ALERTAS</div>${(a.alertas||[]).map(x=>`<div style="padding:5px 8px;background:var(--r2);border-radius:5px;font-size:11px;margin-bottom:4px;">! ${x}</div>`).join('')}</div><div style="padding:8px;background:var(--b2);border-radius:5px;font-size:11px;color:var(--blue);"><strong>Recomendacao:</strong> ${a.recomendacao_principal||''}</div>`;document.getElementById('dash-insights').innerHTML=html;document.getElementById('s2-insights').innerHTML=html;addLog('success','[S2-09] Analise concluida: '+a.tendencia);}
-async function runProspect(){const btn=document.getElementById('btnProspect');const st=document.getElementById('prospStatus');const res=document.getElementById('prospResult');btn.disabled=true;btn.textContent='Mapeando...';st.textContent='Executando';st.className='tag on';res.innerHTML='<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:10px;">Agente S2-02 buscando empresas...</div>';addLog('info','[S2-02] Iniciando: '+document.getElementById('pSetor').value);const data=await api('/api/prospect-scan','POST',{setor:document.getElementById('pSetor').value,regiao:document.getElementById('pRegiao').value,faturamento_min:document.getElementById('pFat').value,cargo_decisor:document.getElementById('pCargo').value,quantidade:parseInt(document.getElementById('pQtd').value),iniciar_outreach:false});if(!data||!data.empresas){st.textContent='Erro';st.className='tag hot';res.innerHTML='<div style="color:var(--red);font-size:11px;padding:10px;">Erro. Verifique variaveis de ambiente no Vercel.</div>';addLog('err','[S2-02] Erro no mapeamento');}else{st.textContent=data.total_mapeado+' empresas';st.className='tag live';res.innerHTML='<div style="margin-bottom:8px;font-size:11px;color:var(--t2);">'+data.total_mapeado+' empresas · Score A: '+data.score_a+'</div><div class="tw"><table><thead><tr><th>Empresa</th><th>Setor</th><th>Decisor</th><th>Score</th></tr></thead><tbody>'+(data.empresas||[]).map(e=>`<tr><td><strong>${e.empresa}</strong></td><td style="color:var(--t2);font-size:10px;">${e.setor||''}</td><td style="font-size:10px;">${e.decisor||'--'}</td><td><span class="tb ${e.score==='A'?'sa':e.score==='B'?'sb_':'sc'}">${e.score||'B'}</span></td></tr>`).join('')+'</tbody></table></div>';document.getElementById('kLeads').textContent=data.total_mapeado;addLog('success','[S2-02] '+data.total_mapeado+' empresas mapeadas, Score A: '+data.score_a);toast(data.total_mapeado+' empresas no HubSpot!','success');
+async function runProspect(){const btn=document.getElementById('btnProspect');const st=document.getElementById('prospStatus');const res=document.getElementById('prospResult');btn.disabled=true;btn.textContent='Mapeando...';st.textContent='Executando';st.className='tag on';res.innerHTML='<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:10px;">Agente S2-02 buscando empresas...</div>';addLog('info','[S2-02] Iniciando: '+document.getElementById('pSetor').value);const data=await api('/api/prospect-scan','POST',{setor:document.getElementById('pSetor').value,regiao:document.getElementById('pRegiao').value,faturamento_min:document.getElementById('pFat').value,cargo_decisor:document.getElementById('pCargo').value,quantidade:parseInt(document.getElementById('pQtd').value),iniciar_outreach:false,incluir_crm:document.getElementById('pCRM')?.checked!==false});if(!data||!data.empresas){st.textContent='Erro';st.className='tag hot';res.innerHTML='<div style="color:var(--red);font-size:11px;padding:10px;">Erro. Verifique variaveis de ambiente no Vercel.</div>';addLog('err','[S2-02] Erro no mapeamento');}else{st.textContent=data.total_mapeado+' empresas';st.className='tag live';res.innerHTML=renderProspectResult(data);document.getElementById('kLeads').textContent=data.total_mapeado;addLog('success','[S2-02] '+data.total_mapeado+' empresas mapeadas, Score A: '+data.score_a);toast(data.total_mapeado+' empresas no HubSpot!','success');
 // AUTO-TRIGGER: gerar mensagens automaticamente apos prospeccao
 setTimeout(()=>{addLog('info','[AUTO] Gerando mensagens automaticamente para os leads mapeados...');autoGerarMensagens('novos');},1500);}btn.disabled=false;btn.textContent='&#9654; Executar Agente';}
 async function runRfpMonitor(){const btn=document.getElementById('btnRfp');const res=document.getElementById('rfpResult');btn.disabled=true;btn.textContent='Varrendo...';res.innerHTML='<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:10px;">Agente S2-04 varrendo portais...</div>';addLog('info','[S2-04] Varrendo ComprasNet, SAP Ariba, Beehive...');const data=await api('/api/rfp-monitor','GET');if(!data){res.innerHTML='<div style="color:var(--red);font-size:11px;padding:10px;">Erro - configure CRON_SECRET</div>';addLog('err','[S2-04] Erro');}else{const rfps=data.rfps||[];document.getElementById('rfpCnt').textContent=rfps.length||'0';document.getElementById('kRfp').textContent=rfps.length||'0';if(rfps.length===0){res.innerHTML='<div style="color:var(--t2);font-size:11px;padding:10px;">Nenhum RFP novo. Proximo ciclo em 6h.</div>';}else{res.innerHTML='<div class="tw"><table><thead><tr><th>Empresa</th><th>Valor</th><th>Prazo</th></tr></thead><tbody>'+rfps.map(r=>`<tr><td><strong>${r.empresa}</strong></td><td style="font-family:var(--M);font-size:9.5px;color:var(--gold);">${r.valor}</td><td style="font-family:var(--M);font-size:9.5px;">${r.prazo}</td></tr>`).join('')+'</tbody></table></div>';addLog('success','[S2-04] '+rfps.length+' RFPs - notificacao WA enviada');toast(rfps.length+' RFPs identificados!','success');}}btn.disabled=false;btn.textContent='&#9654; Executar Agora';}
@@ -2946,9 +3030,22 @@ async function criarCampanhaCompleta() {
       const designBrief = data.design?.conceito_visual || '';
       adicionarAoKanban(nome, canal, 'Campanha Completa', narrativaTema, copyTexto, designBrief);
       tag.textContent = 'Concluído'; tag.className = 'tag live';
-      res.innerHTML += `<div style="margin-top:12px;background:var(--g2);border:1px solid rgba(34,211,163,.2);border-radius:7px;padding:12px;font-size:12px;color:var(--green);">OK Campanha criada e adicionada ao Kanban para aprovação!</div>`;
-      addLog('ok', '[S2-Campanha] Concluído: ' + nome + ' -> Kanban');
-      toast('Campanha criada! Revise no Kanban.', 'success');
+      res.innerHTML += `<div style="margin-top:12px;background:var(--g2);border:1px solid rgba(34,211,163,.2);border-radius:7px;padding:12px;font-size:12px;color:var(--green);">Campanha criada e adicionada ao Kanban! Role abaixo para revisar e ajustar o copy.</div>`;
+
+      // Alimentar painel de revisão de copy
+      const copyPanel = document.getElementById('copyReviewPanel');
+      const copyTextoEl = document.getElementById('copyAtualTexto');
+      const copyPlanEl = document.getElementById('copyPlanejamento');
+      const imgComentEl = document.getElementById('imgAjusteComentario');
+      if (copyPanel) copyPanel.style.display = 'block';
+      if (copyTextoEl && copyTexto) copyTextoEl.textContent = copyTexto;
+      if (copyPlanEl && narrativaTema) copyPlanEl.textContent = 'Tema central: ' + narrativaTema + '\n\nBrief visual: ' + (designBrief || '—');
+      // Guardar contexto para ajustes
+      window._campanhaAtual = { nome, canal, obj, pub, copyTexto, narrativaTema, designBrief, data };
+      setTimeout(() => copyPanel?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 500);
+
+      addLog('ok', '[S2-Campanha] Concluído: ' + nome + ' -> Kanban + Painel de Revisão');
+      toast('Campanha criada! Role abaixo para revisar o copy.', 'success');
     } else {
       tag.textContent = 'Erro'; tag.className = 'tag hot';
       addLog('err', '[S2-Campanha] Erro: ' + data.error);
@@ -4565,6 +4662,239 @@ setTimeout(()=>{
     gerarLote(false);
   }
 },2000);
+
+// ── REVISAO DE COPY E IMAGEM ─────────────────────────────────────────────────
+let copyVersoesList = [];
+
+async function ajustarCopyComIA() {
+  const comentario = document.getElementById('copyAjusteComentario')?.value?.trim();
+  const copyAtual = document.getElementById('copyAtualTexto')?.textContent?.trim();
+  if (!comentario) { toast('Descreva o que ajustar no copy', 'error'); return; }
+  const btn = document.getElementById('btnAjustarCopy');
+  btn.disabled = true; btn.textContent = 'Ajustando...';
+  addLog('info', '[S2-Copywriter] Ajustando copy com IA...');
+
+  // Salvar versão atual antes de ajustar
+  if (copyAtual && copyAtual !== 'Gere uma campanha para ver o copy aqui.') {
+    copyVersoesList.push({ versao: copyVersoesList.length + 1, texto: copyAtual, timestamp: new Date().toLocaleTimeString('pt-BR') });
+    renderCopyVersoes();
+  }
+
+  const ctx = window._campanhaAtual || {};
+  const r = await fetch('/api/s2-creative', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ action: 'copywriter', payload: {
+      canal: ctx.canal || 'LinkedIn',
+      objetivo: ctx.obj || 'Gerar leads',
+      ajuste_comentario: comentario,
+      copy_anterior: copyAtual,
+      narrativa: { tema_central: ctx.narrativaTema || '', gancho_principal: copyAtual?.split('\n')[0] || '' },
+      versoes: 1
+    }})
+  });
+  const data = await r.json();
+  const novoTexto = data.copy?.versoes?.[0]?.corpo || '';
+  if (novoTexto) {
+    document.getElementById('copyAtualTexto').textContent = novoTexto;
+    document.getElementById('copyAjusteComentario').value = '';
+    addLog('ok', '[S2-Copywriter] Copy ajustado — versao ' + (copyVersoesList.length + 1));
+    toast('Copy ajustado! Versao anterior salva.', 'success');
+  } else {
+    addLog('err', '[S2-Copywriter] Erro ao ajustar');
+    toast('Erro ao ajustar copy', 'error');
+  }
+  btn.disabled = false; btn.textContent = 'Ajustar Copy';
+}
+
+async function refazerCopyCompleto() {
+  const ctx = window._campanhaAtual || {};
+  const copyAtual = document.getElementById('copyAtualTexto')?.textContent?.trim();
+  const comentario = document.getElementById('copyAjusteComentario')?.value?.trim() || 'Refazer com abordagem diferente';
+  const btn = document.getElementById('btnRefazerCopy');
+  btn.disabled = true; btn.textContent = 'Refazendo...';
+  addLog('info', '[S2-Storyteller+Copywriter] Refazendo campanha completa...');
+
+  if (copyAtual && copyAtual !== 'Gere uma campanha para ver o copy aqui.') {
+    copyVersoesList.push({ versao: copyVersoesList.length + 1, texto: copyAtual, timestamp: new Date().toLocaleTimeString('pt-BR') });
+  }
+
+  // 1. Novo Storyteller
+  const stR = await fetch('/api/s2-creative', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ action: 'storyteller', payload: {
+      campanha: ctx.nome || 'Campanha Atlantyx',
+      canal: ctx.canal || 'LinkedIn',
+      objetivo: ctx.obj || 'Gerar leads',
+      contexto: comentario
+    }})
+  });
+  const stData = await stR.json();
+  const novaNarrativa = stData.narrativa || {};
+
+  // 2. Novo Copywriter
+  const cpR = await fetch('/api/s2-creative', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ action: 'copywriter', payload: { canal: ctx.canal || 'LinkedIn', narrativa: novaNarrativa, versoes: 1 }})
+  });
+  const cpData = await cpR.json();
+  const novoTexto = cpData.copy?.versoes?.[0]?.corpo || '';
+
+  if (novoTexto) {
+    document.getElementById('copyAtualTexto').textContent = novoTexto;
+    const planEl = document.getElementById('copyPlanejamento');
+    if (planEl) planEl.textContent = 'Tema central: ' + (novaNarrativa.tema_central || '') + '\n\nGancho: ' + (novaNarrativa.gancho_principal || '');
+    document.getElementById('copyAjusteComentario').value = '';
+    if (window._campanhaAtual) window._campanhaAtual.narrativaTema = novaNarrativa.tema_central || '';
+    renderCopyVersoes();
+    addLog('ok', '[S2] Copy refeito — versao ' + (copyVersoesList.length));
+    toast('Copy refeito com nova abordagem!', 'success');
+  }
+  btn.disabled = false; btn.textContent = 'Refazer Tudo';
+}
+
+function renderCopyVersoes() {
+  const list = document.getElementById('copyVersoesLista');
+  const container = document.getElementById('copyVersoes');
+  if (!list || !copyVersoesList.length) return;
+  container.style.display = 'block';
+  list.innerHTML = copyVersoesList.map((v, i) => `
+    <div style="background:var(--bg3);border:1px solid var(--bd);border-radius:5px;padding:6px 10px;cursor:pointer;font-size:10px;" onclick="voltarCopyVersao(${i})">
+      <div style="font-family:var(--M);font-size:8px;color:var(--t2);">v${v.versao} — ${v.timestamp}</div>
+      <div style="color:var(--t1);margin-top:2px;">${v.texto.substring(0,40)}...</div>
+    </div>`).join('');
+}
+
+function voltarCopyVersao(i) {
+  const v = copyVersoesList[i];
+  if (!v) return;
+  const el = document.getElementById('copyAtualTexto');
+  if (el) el.textContent = v.texto;
+  toast('Voltou para versao ' + v.versao, 'info');
+}
+
+function copiarCopyAtual() {
+  const txt = document.getElementById('copyAtualTexto')?.textContent || '';
+  navigator.clipboard.writeText(txt);
+  toast('Copy copiado!', 'success');
+}
+
+function aprovarCopyAtual() {
+  const txt = document.getElementById('copyAtualTexto')?.textContent || '';
+  const ctx = window._campanhaAtual || {};
+  adicionarAoKanban(ctx.nome || 'Copy Aprovado', ctx.canal || 'LinkedIn', 'S2-Copywriter', ctx.narrativaTema || '', txt, '');
+  toast('Copy aprovado e enviado ao Kanban!', 'success');
+  addLog('ok', '[S2-Copywriter] Copy aprovado no Kanban');
+}
+
+async function gerarNovaImagem() {
+  const comentario = document.getElementById('imgAjusteComentario')?.value?.trim();
+  const ctx = window._campanhaAtual || {};
+  const btn = document.getElementById('btnGerarNovaImg');
+  const result = document.getElementById('novaImgResult');
+  btn.disabled = true; btn.textContent = 'Gerando...';
+  if (result) result.style.display = 'block';
+  addLog('info', '[Ideogram] Gerando nova imagem com ajuste...');
+
+  // Construir prompt baseado no contexto da campanha + comentário de ajuste
+  const promptBase = ctx.designBrief || ctx.narrativaTema || 'Corporate B2B data analytics campaign';
+  const promptFinal = comentario ? promptBase + '. Adjustment: ' + comentario : promptBase;
+  const canal = ctx.canal || 'LinkedIn';
+  const formato = canal.includes('Instagram') ? 'ASPECT_4_5' : canal.includes('YouTube') ? 'ASPECT_16_9' : 'ASPECT_1_1';
+
+  const data = await api('/api/image-gen', 'POST', { prompt: promptFinal, formato, estilo: 'DESIGN', quantidade: 2 });
+
+  if (data?.success && data.imagens?.length) {
+    result.innerHTML = `
+      <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:8px;">${data.imagens.length} IMAGENS GERADAS</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;">
+        ${data.imagens.map((img,i) => `<div style="position:relative;border-radius:7px;overflow:hidden;">
+          <img src="${img.url}" style="width:100%;display:block;" loading="lazy"/>
+          <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);padding:5px;display:flex;gap:5px;">
+            <button class="btn btn-gn" style="flex:1;font-size:8px;padding:2px;" onclick="aprovarImagem('${img.url}',event)">Aprovar</button>
+            <a href="${img.url}" target="_blank" class="btn" style="font-size:8px;padding:2px 5px;color:#fff;border-color:rgba(255,255,255,.3);">Abrir</a>
+          </div>
+        </div>`).join('')}
+      </div>`;
+    addLog('ok', '[Ideogram] ' + data.imagens.length + ' imagens geradas');
+    toast(data.imagens.length + ' imagens prontas!', 'success');
+  } else {
+    result.innerHTML = '<div style="color:var(--red);font-size:11px;">Erro: ' + (data?.error || 'Verifique IDEOGRAM_API_KEY') + '</div>';
+    addLog('err', '[Ideogram] Erro: ' + (data?.error || 'API key'));
+  }
+  btn.disabled = false; btn.textContent = 'Gerar Nova Imagem — Ideogram';
+}
+
+// Preview de imagem ao colar URL
+document.addEventListener('input', e => {
+  if (e.target.id === 'imgAtualUrl') {
+    const url = e.target.value.trim();
+    const prev = document.getElementById('imgAtualPreview');
+    const img = document.getElementById('imgAtualPreviewEl');
+    if (url.startsWith('http')) { img.src = url; img.onload = () => prev.style.display = 'block'; img.onerror = () => prev.style.display = 'none'; }
+    else prev.style.display = 'none';
+  }
+});
+
+
+function renderProspectResult(data) {
+  const res = document.getElementById('prospResult');
+  const st = document.getElementById('prospStatus');
+  if (!res) return;
+
+  const total = data.total_mapeado || 0;
+  const scoreA = data.score_a || 0;
+  const scoreB = (data.empresas||[]).filter(e=>e.score==='B').length;
+
+  if (st) { st.textContent = total + ' leads novos'; st.className = 'tag live'; }
+
+  res.innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+      <div style="background:rgba(34,211,163,.1);border:1px solid rgba(34,211,163,.2);border-radius:6px;padding:8px 12px;flex:1;text-align:center;">
+        <div style="font-family:var(--M);font-size:8px;color:var(--green);">TOTAL NOVOS</div>
+        <div style="font-size:20px;font-weight:700;color:var(--green);">${total}</div>
+      </div>
+      <div style="background:var(--r2);border:1px solid rgba(240,80,112,.2);border-radius:6px;padding:8px 12px;flex:1;text-align:center;">
+        <div style="font-family:var(--M);font-size:8px;color:var(--red);">SCORE A (quentes)</div>
+        <div style="font-size:20px;font-weight:700;color:var(--red);">${scoreA}</div>
+      </div>
+      <div style="background:var(--go2);border:1px solid rgba(245,166,35,.2);border-radius:6px;padding:8px 12px;flex:1;text-align:center;">
+        <div style="font-family:var(--M);font-size:8px;color:var(--gold);">SCORE B (mornos)</div>
+        <div style="font-size:20px;font-weight:700;color:var(--gold);">${scoreB}</div>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--t3);margin-bottom:10px;padding:6px 10px;background:var(--bg4);border-radius:5px;">Fonte: LinkedIn · sites corporativos · notícias setoriais · relatórios públicos · rankings EXAME/Forbes</div>
+    ${(data.empresas||[]).map((e,i) => {
+      const scoreCor = e.score==='A'?'var(--green)':e.score==='B'?'var(--blue)':'var(--t3)';
+      const scoreBg = e.score==='A'?'var(--g2)':e.score==='B'?'var(--b2)':'var(--bg4)';
+      const isNew = e.origem !== 'CRM';
+      return `<div style="background:var(--bg4);border:1px solid ${e.score==='A'?'rgba(34,211,163,.25)':'var(--bd)'};border-left:3px solid ${scoreCor};border-radius:7px;padding:12px;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <span style="font-family:var(--M);font-size:8px;font-weight:700;padding:2px 8px;border-radius:4px;background:${scoreBg};color:${scoreCor};">Score ${e.score||'B'}</span>
+          <strong style="font-size:13px;flex:1;">${e.empresa}</strong>
+          <span style="font-family:var(--M);font-size:8px;padding:2px 7px;border-radius:3px;background:var(--go2);color:var(--gold);">Novo Lead</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;font-size:11px;">
+          <div><span style="color:var(--t2);">Decisor: </span><strong>${e.decisor_nome||'A identificar'}</strong></div>
+          <div><span style="color:var(--t2);">Cargo: </span>${e.decisor_cargo||'—'}</div>
+          <div><span style="color:var(--t2);">Faturamento: </span><strong>${e.faturamento_estimado||'—'}</strong></div>
+          <div><span style="color:var(--t2);">Funcionários: </span>${e.funcionarios||'—'} · ${e.regiao||'—'}</div>
+          ${e.tecnologias_atuais ? `<div style="grid-column:1/-1;color:var(--t2);">Tech atual: <span style="color:var(--t1);">${e.tecnologias_atuais}</span></div>` : ''}
+          ${e.sinal_compra ? `<div style="grid-column:1/-1;background:var(--r2);border-radius:4px;padding:4px 8px;color:var(--red);"><strong>Sinal:</strong> ${e.sinal_compra}</div>` : ''}
+          ${e.dores_provaveis ? `<div style="grid-column:1/-1;color:var(--t2);">Dores: ${e.dores_provaveis}</div>` : ''}
+          ${e.melhor_angulo ? `<div style="grid-column:1/-1;color:var(--blue);">-> ${e.melhor_angulo}</div>` : ''}
+          ${e.contexto_recente ? `<div style="grid-column:1/-1;color:var(--t3);font-size:10px;">${e.contexto_recente}</div>` : ''}
+          ${e.budget_ti_estimado ? `<div style="grid-column:1/-1;color:var(--t3);font-size:10px;">Budget TI estimado: ${e.budget_ti_estimado}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${e.decisor_linkedin ? `<a href="${e.decisor_linkedin}" target="_blank" class="btn" style="font-size:9px;padding:2px 8px;color:var(--blue);">LinkedIn</a>` : ''}
+          ${e.decisor_email ? `<button class="btn" style="font-size:9px;padding:2px 8px;" onclick="navigator.clipboard.writeText('${e.decisor_email}');toast('E-mail copiado!','success')">E-mail</button>` : ''}
+          ${e.decisor_phone ? `<button class="btn" style="font-size:9px;padding:2px 8px;" onclick="navigator.clipboard.writeText('${e.decisor_phone}');toast('Telefone copiado!','success')">${e.decisor_phone}</button>` : ''}
+          <button class="btn btn-gn" style="font-size:9px;padding:2px 8px;" onclick="adicionarAoKanbanWA('${(e.decisor_nome||'').replace(/'/g,'')}','${(e.empresa||'').replace(/'/g,'')}','${(e.decisor_cargo||'').replace(/'/g,'')}')">+ WA Batch</button>
+        </div>
+      </div>`;
+    }).join('')}`;
+}
+
 </script>
 </body>
 </html>
