@@ -6274,30 +6274,30 @@ async function salvarCampanhaDB() {
   campAtiva.atualizado_em = new Date().toISOString();
   campAtiva.status = campAtiva.status || 'rascunho';
 
+  // Salvar no cache local imediatamente
+  salvarCampanhaLocal(campAtiva);
+
   try {
+    const body = JSON.stringify({ action: 'save_campanha', value: campAtiva });
     const r = await fetch('/api/db', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ action: 'save_campanha', value: campAtiva })
+      headers: { 'Content-Type': 'application/json' },
+      body
     });
     const d = await r.json();
     if (d.success) {
-      // Cache local também
-      const camps = getCampanhasLocal();
-      const idx = camps.findIndex(c => c.id === campAtiva.id);
-      if (idx >= 0) camps[idx] = campAtiva; else camps.unshift(campAtiva);
-      try { localStorage.setItem('atx:campanhas', JSON.stringify(camps)); } catch(e) {}
       atualizarContadorCampanhas();
-      toast('Campanha salva no banco de dados!', 'success');
       addLog('ok', '[Campanha] Salva no Neon: ' + campAtiva.nome);
+      return true;
     } else {
-      // Fallback localStorage
-      salvarCampanhaLocal(campAtiva);
-      toast('Salvo localmente (banco offline)', 'info');
+      addLog('warn', '[Campanha] Banco retornou erro: ' + (d.error||'?'));
+      toast('Salvo localmente (erro no banco: ' + (d.error||'?') + ')', 'info');
+      return false;
     }
   } catch(e) {
-    salvarCampanhaLocal(campAtiva);
+    addLog('warn', '[Campanha] Banco offline: ' + e.message);
     toast('Salvo localmente (banco offline)', 'info');
+    return false;
   }
 }
 
@@ -6336,8 +6336,19 @@ async function carregarCampanhasDB() {
     campanhas = getCampanhasLocal();
   }
 
+  // Se banco vazio mas local tem dados, mostrar local
+  if (!campanhas.length) {
+    campanhas = getCampanhasLocal();
+    if (campanhas.length) {
+      addLog('info', '[Campanhas] Banco vazio — mostrando ' + campanhas.length + ' do cache local');
+    }
+  }
   renderizarListaCampanhas(campanhas);
   atualizarContadorCampanhas(campanhas.length);
+  if (!campanhas.length) {
+    const grid = document.getElementById('campListaGrid');
+    if (grid) grid.innerHTML = '<div style="color:var(--t3);font-size:12px;text-align:center;padding:40px;grid-column:1/-1;">Nenhuma campanha salva ainda.<br/><br/><span style="color:var(--blue);">Crie sua primeira campanha na aba + Nova Campanha</span></div>';
+  }
 }
 
 function atualizarContadorCampanhas(n) {
