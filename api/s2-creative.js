@@ -56,7 +56,7 @@ const BRAND = {
   problema_central: 'Empresas tomam decisões com dados atrasados ou inconsistentes, gerando perda financeira real',
   cores: 'Azul profundo (#1A3A8F), azul elétrico (#4F7CFF), branco, cinza escuro. Sem cores berrantes.',
   fontes: 'Syne (títulos, bold, moderna), DM Sans (corpo, clean)',
-  estilo_visual: 'Clean, data-driven, premium. Similar ao padrão EY: fundo escuro ou branco, dados em destaque, sem poluição visual. Formas geométricas simples.',
+  estilo_visual: 'Clean, data-driven, premium. Fundo escuro, dados em destaque, sem poluição visual. Formas geométricas simples. Paleta: azul navy #1A3A8F + azul elétrico #4F7CFF.',
   redes: ['LinkedIn', 'Instagram', 'YouTube', 'Facebook'],
 };
 
@@ -159,10 +159,10 @@ async function agDesigner({ copy, canal, formato, dimensoes }) {
 Estilo visual: ${BRAND.estilo_visual}
 Cores OBRIGATÓRIAS: ${BRAND.cores} — use sempre azul navy #1A3A8F e azul elétrico #4F7CFF.
 Fontes: ${BRAND.fontes}
-Referência: padrão EY/McKinsey — clean, data-driven, premium, fundo escuro ou branco.
+Referência visual: clean, data-driven, premium, fundo escuro, dados em destaque — SEM mencionar marcas ou nomes de empresas.
 
 REGRAS DO PROMPT IDEOGRAM:
-1. O prompt_ia_imagem deve ser em inglês, detalhado e incluir: (a) cenário específico, (b) paleta de cores exata, (c) elementos de dados/gráficos, (d) estilo visual corporativo.
+1. O prompt_ia_imagem deve ser em inglês, descrevendo APENAS a cena visual: (a) ambiente e pessoas, (b) paleta de cores: dark navy #1A3A8F + electric blue #4F7CFF, (c) elementos de dados/gráficos animados nas telas, (d) composição e iluminação. PROIBIDO: mencionar EY, McKinsey, Accenture ou qualquer marca. PROIBIDO: incluir texto, tipografia, palavras ou letras na imagem.
 2. NUNCA gere prompt genérico — seja específico ao contexto do copy aprovado.
 3. Inclua sempre: dark navy blue #1A3A8F, electric blue #4F7CFF, bold white typography.
 Retorne APENAS JSON válido.`;
@@ -177,7 +177,7 @@ IDENTIDADE VISUAL OBRIGATÓRIA:
 - Fundo: azul navy profundo (#1A3A8F) ou branco puro
 - Destaque: azul elétrico (#4F7CFF) para dados e gráficos
 - Logo: "Atlantyx" em destaque — fonte Syne bold branca
-- Estética: EY/McKinsey — limpo, premium, data-driven
+- Estética: premium B2B, limpo, data-driven, sem logos ou marcas de terceiros
 - SEMPRE incluir elemento visual de dados: gráfico, linha, número em destaque, dashboard
 
 Retorne:
@@ -216,7 +216,7 @@ Retorne:
 // ── S2 MOTION DESIGNER — Vídeos ───────────────────────────────────────────────
 async function agMotion({ copy, narrativa, duracao, tipo }) {
   const system = `Você é o Agente Motion Designer da Atlantyx.
-Referência de estilo: EY Consulting — vídeos clean, dados animados, tipografia forte, fundo escuro, cortes rápidos.
+Referência de estilo: Premium B2B corporate — vídeos clean, dados animados, tipografia forte, fundo escuro, cortes rápidos.
 Padrão: https://www.youtube.com/watch?v=0r5YDowCCQ0
 Estilo Atlantyx: ${BRAND.estilo_visual}
 Retorne APENAS JSON válido.`;
@@ -246,7 +246,7 @@ Retorne:
   "tipografia_animada": "como o texto entra/sai",
   "paleta_video": ["#cor1", "#cor2"],
   "musica_referencia": "estilo musical sugerido (sem citar artistas específicos)",
-  "benchmark_estilo": "referência de estilo visual similar ao padrão EY",
+  "benchmark_estilo": "premium B2B corporate — dark navy, electric blue, clean data visualization",
   "ferramentas_producao": ["After Effects", "Premiere Pro", "CapCut Pro"],
   "prompt_ia_video": "prompt para geração via RunwayML/Pika se necessário",
   "formatos_exportar": ["9:16 (Reels/Stories)", "1:1 (Feed)", "16:9 (YouTube/LinkedIn)"],
