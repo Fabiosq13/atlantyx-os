@@ -5220,15 +5220,17 @@ function aprovarImagem(url, idx, evt) {
     campAtiva.imagens = [{ ...aprovada, aprovada: true }, ...outras];
     window._campanhaAtual = campAtiva;
 
-    // Destacar borda verde na selecionada, cinza nas outras
+    // Destacar borda verde na selecionada
     document.querySelectorAll('[id^="imgCard_"]').forEach(card => {
       card.style.border = '2px solid var(--bd)';
     });
     const selectedCard = document.getElementById('imgCard_' + idxNum);
     if (selectedCard) selectedCard.style.border = '2px solid var(--green)';
 
-    toast('✓ Imagem aprovada! Abra "Preview por Canal" para ver.', 'success');
-    addLog('ok', '[Ideogram] Imagem ' + idxNum + ' aprovada como principal');
+    addLog('ok', '[Imagem] Imagem ' + idxNum + ' aprovada como principal da campanha');
+    addLog('info', '[Imagem] URL: ' + url.substring(0,60));
+    addLog('info', '[Imagem] Total imagens na campanha: ' + campAtiva.imagens.length);
+    toast('✓ Imagem aprovada! Vá para "Preview por Canal" para ver.', 'success');
   }
   adicionarAoKanban('Imagem Ideogram', campAtiva?.canal || 'LinkedIn', 'S2-Designer', '', url, url);
 }
@@ -6307,7 +6309,7 @@ async function salvarCampanhaDB() {
     const d = await r.json();
     if (d.success) {
       atualizarContadorCampanhas();
-      addLog('ok', '[Campanha] Salva no Neon: ' + campAtiva.nome);
+      addLog('ok', '[Campanha] Salva no Neon: "' + campAtiva.nome + '" (ID: ' + campAtiva.id + ')');
       return true;
     } else {
       addLog('warn', '[Campanha] Banco retornou erro: ' + (d.error||'?'));
@@ -6420,7 +6422,11 @@ async function criarCampanhaCompleta() {
   ];
   const renderEt = () => { res.innerHTML = etapas.map(e => '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--bd);"><span style="font-size:14px;">' + (e.done ? '&#10003;' : '&#9702;') + '</span><span style="font-size:12px;color:' + (e.done?'var(--green)':'var(--blue)') + ';">' + e.label + '</span></div>').join(''); };
   renderEt();
-  addLog('info', '[S2-Campanha] Iniciando: ' + nome);
+  addLog('info', '[S2-Campanha] ══════════════════════════════════');
+  addLog('info', '[S2-Campanha] INICIANDO: ' + nome);
+  addLog('info', '[S2-Campanha] Canal: ' + canal + ' | Público: ' + pub);
+  addLog('info', '[S2-Campanha] Objetivo: ' + obj);
+  addLog('info', '[S2-Campanha] Chamando /api/s2-creative...');
 
   try {
     const r = await fetch('/api/s2-creative', {
@@ -6432,6 +6438,11 @@ async function criarCampanhaCompleta() {
     const data = await r.json();
     if (!data.success) throw new Error(data.error || 'Erro desconhecido');
 
+    addLog('ok', '[S2-Campanha] API retornou com sucesso');
+    addLog('info', '[S2-Campanha] Narrativa: tema="' + (data.narrativa?.tema_central||'').substring(0,50) + '"');
+    addLog('info', '[S2-Campanha] Copy: headline="' + (data.copy?.versoes?.[0]?.headline||'').substring(0,50) + '"');
+    addLog('info', '[S2-Campanha] Copy: corpo=' + (data.copy?.versoes?.[0]?.corpo||'').length + ' chars');
+    addLog('info', '[S2-Campanha] Design: brief=' + (data.design?.prompt_ia_imagem||data.design?.conceito_visual||'').length + ' chars');
     etapas[0].done = true; etapas[1].done = true; etapas[2].done = true;
     renderEt();
 
@@ -6451,9 +6462,13 @@ async function criarCampanhaCompleta() {
     await salvarCampanhaDB();
     etapas[3].done = true; renderEt();
 
+    addLog('ok', '[S2-Campanha] Campanha ID: ' + campAtiva.id + ' | status: ' + campAtiva.status);
+    etapas[3].done = true; renderEt();
+
     // Preencher editor
     const edPanel = document.getElementById('campEditorPanel');
     if (edPanel) edPanel.style.display = 'block';
+    addLog('info', '[S2-Campanha] Editor aberto — preenchendo campos...');
     if (savBtn) savBtn.style.display = 'inline-block';
     preencherEditorCampanha(data);
     mostrarEdAba('copy');
@@ -6559,8 +6574,14 @@ async function aplicarCopyEditado() {
   campAtiva.atualizado_em = new Date().toISOString();
   window._campanhaAtual = campAtiva;
 
+  addLog('info', '[Copy] Aplicando edição manual...');
+  addLog('info', '[Copy] Headline: "' + novoHeadline.substring(0,50) + '"');
+  addLog('info', '[Copy] Corpo: ' + novoCorpo.length + ' chars');
+  addLog('info', '[Copy] CTA: "' + novoCta.substring(0,40) + '"');
+
   // Salvar localmente primeiro (imediato)
   salvarCampanhaLocal(campAtiva);
+  addLog('ok', '[Copy] Salvo localmente (cache)');
 
   // Salvar no banco
   try {
@@ -6572,12 +6593,14 @@ async function aplicarCopyEditado() {
     const d = await r.json();
     if (d.success) {
       toast('✓ Copy salvo!', 'success');
-      addLog('ok', '[Copy] Salvo: "' + novoHeadline.substring(0,40) + '"');
+      addLog('ok', '[Copy] Salvo no Neon com sucesso');
     } else {
       toast('Copy salvo localmente', 'info');
+      addLog('warn', '[Copy] Banco retornou erro: ' + (d.error||'?'));
     }
   } catch(e) {
     toast('Copy salvo localmente', 'info');
+    addLog('warn', '[Copy] Banco offline: ' + e.message);
   }
 }
 
@@ -6592,7 +6615,18 @@ function mostrarPreviewCanal(canal) {
 }
 
 function gerarPreviewTodosCanais() {
-  // Dados do editor (prioridade) ou campAtiva
+  addLog('info', '[Preview] Iniciando geração de previews por canal...');
+
+  // Garantir que edPreview está visível
+  const edPrev = document.getElementById('edPreview');
+  if (edPrev && edPrev.style.display === 'none') {
+    addLog('warn', '[Preview] edPreview estava oculto — forçando visível');
+    mostrarEdAba('preview');
+    setTimeout(gerarPreviewTodosCanais, 120);
+    return;
+  }
+
+  // Coletar dados
   const v        = campAtiva?.data?.copy?.versoes?.[0] || {};
   const headline = document.getElementById('edHeadline')?.value?.trim()    || v.headline    || '';
   const subhl    = document.getElementById('edSubheadline')?.value?.trim() || v.subheadline || '';
@@ -6600,39 +6634,55 @@ function gerarPreviewTodosCanais() {
   const cta      = document.getElementById('edCtaCopy')?.value?.trim()     || v.cta         || '';
   const imgUrl   = campAtiva?.imagens?.[0]?.url || '';
 
+  addLog('info', '[Preview] headline: "' + headline.substring(0,40) + '" | corpo: ' + corpo.length + ' chars | img: ' + (imgUrl?'SIM':'NÃO'));
+
   if (!headline && !corpo) {
-    toast('Gere ou preencha o copy antes do preview', 'error');
+    toast('Preencha o copy antes do preview', 'error');
+    addLog('warn', '[Preview] Abortado — headline e corpo vazios');
     return;
   }
 
-  const br = t => (t || '').split('\n').map(l => l.trim()).filter(Boolean).join('<br/>');
+  const br = t => (t||'').split('\n').map(l=>l.trim()).filter(Boolean).join('<br/>');
 
   // LINKEDIN
   const liEl = document.getElementById('prevLITexto');
-  if (liEl) liEl.innerHTML =
-    (headline ? '<strong style="font-size:15px;display:block;margin-bottom:6px;color:#000;">' + headline + '</strong>' : '') +
-    (subhl    ? '<em style="font-size:13px;display:block;margin-bottom:8px;color:#555;">'     + subhl   + '</em>' : '') +
-    (corpo    ? '<p style="font-size:14px;color:#1d1d1d;line-height:1.65;margin:0 0 8px;">'  + br(corpo) + '</p>' : '') +
-    (cta      ? '<span style="color:#0a66c2;font-weight:700;">👉 ' + cta + '</span>' : '');
+  if (liEl) {
+    liEl.innerHTML =
+      (headline ? '<strong style="font-size:15px;display:block;margin-bottom:6px;color:#000;">' + headline + '</strong>' : '') +
+      (subhl    ? '<em style="font-size:13px;display:block;margin-bottom:8px;color:#555;">' + subhl + '</em>' : '') +
+      (corpo    ? '<p style="font-size:14px;color:#1d1d1d;line-height:1.65;margin:0 0 8px;">' + br(corpo) + '</p>' : '') +
+      (cta      ? '<span style="color:#0a66c2;font-weight:700;">👉 ' + cta + '</span>' : '');
+    addLog('ok', '[Preview] LinkedIn texto preenchido (' + liEl.innerHTML.length + ' chars)');
+  } else {
+    addLog('err', '[Preview] ERRO: prevLITexto não encontrado no DOM');
+  }
 
   const liImg  = document.getElementById('prevLIImg');
   const liWrap = document.getElementById('prevLIImagem');
   const liPH   = document.getElementById('prevLIImagemPlaceholder');
   if (imgUrl) {
-    if (liImg)  { liImg.src = imgUrl; }
+    if (liImg)  { liImg.src = imgUrl; liImg.style.display = 'block'; }
     if (liWrap) liWrap.style.display = 'block';
     if (liPH)   liPH.style.display   = 'none';
+    addLog('ok', '[Preview] LinkedIn imagem: ' + imgUrl.substring(0,50));
   } else {
     if (liWrap) liWrap.style.display = 'none';
     if (liPH)   liPH.style.display   = 'flex';
+    addLog('info', '[Preview] LinkedIn sem imagem aprovada');
   }
 
-  // INSTAGRAM
+  // INSTAGRAM — mostrar headline + corpo completo (sem corte)
   const igEl = document.getElementById('prevIGTexto');
-  if (igEl) igEl.innerHTML =
-    '<strong style="color:#000;">atlantyx_bi</strong>&nbsp;' +
-    (headline ? '<strong style="color:#000;">' + headline + '</strong> ' : '') +
-    '<span style="color:#262626;">' + corpo.replace(/\n/g,' ').substring(0,300) + '</span>';
+  if (igEl) {
+    const igCorpo = corpo.replace(/\n/g, ' ');
+    igEl.innerHTML =
+      '<strong style="color:#000;">atlantyx_bi</strong> ' +
+      (headline ? '<strong style="color:#000;">' + headline + '</strong><br/>' : '') +
+      '<span style="color:#262626;">' + igCorpo + '</span>';
+    addLog('ok', '[Preview] Instagram texto preenchido');
+  } else {
+    addLog('err', '[Preview] ERRO: prevIGTexto não encontrado no DOM');
+  }
 
   const igImg = document.getElementById('prevIGImg');
   const igPH  = document.getElementById('prevIGPlaceholder');
@@ -6646,10 +6696,15 @@ function gerarPreviewTodosCanais() {
 
   // FACEBOOK
   const fbEl = document.getElementById('prevFBTexto');
-  if (fbEl) fbEl.innerHTML =
-    (headline ? '<strong style="font-size:15px;display:block;margin-bottom:8px;color:#050505;">' + headline + '</strong>' : '') +
-    '<div style="font-size:14px;color:#050505;line-height:1.65;">' + br(corpo.substring(0,300)) + '</div>' +
-    (cta ? '<br/><span style="color:#1877f2;font-weight:700;">👉 ' + cta + '</span>' : '');
+  if (fbEl) {
+    fbEl.innerHTML =
+      (headline ? '<strong style="font-size:15px;display:block;margin-bottom:8px;color:#050505;">' + headline + '</strong>' : '') +
+      '<div style="font-size:14px;color:#050505;line-height:1.65;">' + br(corpo) + '</div>' +
+      (cta ? '<br/><span style="color:#1877f2;font-weight:700;">👉 ' + cta + '</span>' : '');
+    addLog('ok', '[Preview] Facebook texto preenchido');
+  } else {
+    addLog('err', '[Preview] ERRO: prevFBTexto não encontrado no DOM');
+  }
 
   const fbImg = document.getElementById('prevFBImg');
   const fbPH  = document.getElementById('prevFBPlaceholder');
@@ -6662,7 +6717,7 @@ function gerarPreviewTodosCanais() {
   }
 
   mostrarPreviewCanal('linkedin');
-  addLog('ok', '[Preview] ' + (imgUrl?'com imagem':'sem imagem') + ' | ' + headline.substring(0,30));
+  addLog('ok', '[Preview] Concluído — exibindo LinkedIn por padrão');
 }
 
 async function aprovarCampanhaFinal() {
