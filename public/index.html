@@ -5346,15 +5346,29 @@ async function gerarImagemCampanha() {
     .replace(/[ÚÙÛÜ]/g,'U').replace(/[Ç]/g,'C')
     .substring(0, 50);
 
+  // Remove instrução de texto em inglês do brief — será substituída pela headline em PT sem acentos
+  const briefSemTexto = (briefVisual || '').replace(/[Tt]ext overlay[^.]*\.?/g, '').replace(/reading '[^']*'/g, '').replace(/saying "[^"]*"/g, '').trim();
+  const cenaVisual = briefSemTexto || 'Corporate executive in modern boardroom looking at real-time data analytics dashboard with confidence';
+
+  // Ideogram NÃO renderiza texto em português corretamente
+  // Estratégia: gerar imagem SEM texto — adicionar texto no Canva/Figma
   const partes = [
-    briefVisual || 'Corporate executive in modern boardroom looking at real-time data analytics dashboard with confidence',
-    'Bold white text overlay (short, max 5 words, NO ACCENTS): "' + headlineSemAcento + '"',
-    'Visual style: dark navy blue background #1A3A8F, electric blue #4F7CFF accent on data elements and graphs, bold clean white typography, geometric data visualization, lines and graphs, EY McKinsey premium B2B consulting aesthetic, high contrast, photorealistic or clean design style',
-    'Premium corporate feeling — NOT generic stock photo',
-    logoAtlantyxBase64 ? 'Reserve dark navy rectangle 20% width at bottom right corner for company logo placement' : 'Space at bottom right for Atlantyx logo text in white bold',
+    cenaVisual,
+    'NO TEXT in the image — pure visual composition only, no words, no letters, no typography',
+    'Visual style: dark navy blue background #1A3A8F, electric blue #4F7CFF glowing accents on data elements, charts and graphs, geometric data visualization lines, EY McKinsey premium B2B consulting aesthetic, high contrast, photorealistic corporate environment',
+    'Premium B2B technology concept — NOT generic stock photo',
+    'Reserve clean dark area bottom right 20% for logo placement',
     'Optimized for ' + canal + ' ' + formatoLabel,
   ];
   const prompt = promptComLogo(partes.join('. '));
+
+  // Mostrar instrução para adicionar texto manualmente
+  addLog('info', '[Ideogram] Imagens sem texto — headline para Canva: "' + headline.substring(0,60) + '"');
+  // Wire copy button after render
+  setTimeout(() => {
+    const btnC = document.getElementById('btnCopiarHeadline');
+    if (btnC) { const hl = headline; btnC.onclick = function() { navigator.clipboard.writeText(hl); toast('Copiado!', 'success'); }; }
+  }, 300);
 
   if (btn) { btn.disabled = true; btn.textContent = 'Gerando no Ideogram...'; }
   result.style.display = 'block';
@@ -5394,7 +5408,11 @@ async function gerarImagemCampanha() {
     + '<button class="btn btn-p" style="flex:1;font-size:11px;" onclick="gerarImagemCampanha()">Gerar Novas Variações</button>'
     + '<button class="btn btn-g" style="font-size:11px;white-space:nowrap;" onclick="regenerarSemTexto()" title="Use quando o texto na imagem vier errado">Gerar Sem Texto</button>'
     + '</div>'
-    + '<div style="font-size:10px;color:var(--t3);margin-top:6px;">Se o texto aparecer errado: use Gerar Sem Texto e adicione o texto no Canva/Figma para resultado perfeito.</div>'
+    + '<div style="background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.2);border-radius:6px;padding:10px;margin-top:8px;">'
+    + '<div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">ADICIONE ESTE TEXTO NO CANVA / FIGMA</div>'
+    + '<div style="font-size:13px;font-weight:700;color:var(--t1);">' + headline + '</div>'
+    + '<button class="btn btn-g" style="font-size:9px;padding:3px 8px;margin-top:6px;" id="btnCopiarHeadline">Copiar texto</button>'
+    + '</div>'
     + '</div>';
 
   addLog('ok', '[Ideogram] ' + imagens.length + ' imagens geradas para campanha: ' + (ctx.nome || ''));
