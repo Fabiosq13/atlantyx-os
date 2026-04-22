@@ -195,7 +195,7 @@ Retorne:
   "paleta_esta_peca": ["#cor1", "#cor2", "#cor3"],
   "elementos_graficos": ["elemento 1", "elemento 2"],
   "imagem_ou_ilustracao": "descrição detalhada de imagem/ilustração para esta peça ou 'não usar'",
-  "prompt_ia_imagem": "prompt detalhado em inglês para Ideogram — baseie no copy e cenário desta campanha. OBRIGATÓRIO incluir: (1) CENÁRIO concreto baseado no copy: ex se copy fala de CIO descobrindo dados errados, visualize isso; (2) CORES: dark navy blue #1A3A8F background, electric blue #4F7CFF accents on graphs and lines; (3) ELEMENTOS: bold white headline text overlay matching the campaign headline, geometric data visualization graphs dashboards, clean minimalist layout; (4) ESTILO: EY McKinsey premium B2B consulting aesthetic, photorealistic or graphic design style, high contrast, sophisticated corporate feeling, NOT generic stock photo; (5) COMPOSIÇÃO: espaço para logo Atlantyx bottom right",
+  "prompt_ia_imagem": "Descreva APENAS a cena visual em inglês — SEM nenhum texto na imagem. NÃO inclua palavras como 'text overlay', 'typography', 'reading', 'bold text'. Descreva: (1) CENA: ambiente corporativo concreto baseado no copy, ex: 'C-level executive in dark modern office analyzing live data dashboards'; (2) COMPOSICAO: posicoes, iluminacao, enquadramento; (3) ELEMENTOS VISUAIS: telas, graficos, interface digital, dados em movimento. Apenas descricao visual pura — o texto sera adicionado pelo usuario no Canva",
   "animacao_sugerida": "se tiver versão animada — descrição da animação",
   "adaptacoes_formato": {
     "stories": "adaptação para Stories 1080x1920",
