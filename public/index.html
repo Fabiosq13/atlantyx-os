@@ -6343,12 +6343,9 @@ async function carregarCampanhasDB() {
       addLog('info', '[Campanhas] Banco vazio — mostrando ' + campanhas.length + ' do cache local');
     }
   }
+  addLog('info', '[Campanhas] Total carregado: ' + campanhas.length + ' campanhas');
   renderizarListaCampanhas(campanhas);
   atualizarContadorCampanhas(campanhas.length);
-  if (!campanhas.length) {
-    const grid = document.getElementById('campListaGrid');
-    if (grid) grid.innerHTML = '<div style="color:var(--t3);font-size:12px;text-align:center;padding:40px;grid-column:1/-1;">Nenhuma campanha salva ainda.<br/><br/><span style="color:var(--blue);">Crie sua primeira campanha na aba + Nova Campanha</span></div>';
-  }
 }
 
 function atualizarContadorCampanhas(n) {
@@ -6666,56 +6663,72 @@ function filtrarCampanhas() {
   const busca  = (document.getElementById('campBusca')?.value || '').toLowerCase();
   const status = document.getElementById('campFiltroStatus')?.value || '';
   let camps    = _todasCampanhas;
-  if (busca)  camps = camps.filter(c => (c.nome||'').toLowerCase().includes(busca));
-  if (status) camps = camps.filter(c => c.status === status);
+  if (busca)  camps = camps.filter(camp => (camp.nome||'').toLowerCase().includes(busca));
+  if (status) camps = camps.filter(camp => camp.status === status);
 
   const grid = document.getElementById('campListaGrid');
   if (!grid) return;
 
   if (!camps.length) {
-    grid.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:40px;grid-column:1/-1;">Nenhuma campanha encontrada.</div>';
+    grid.innerHTML = '<div style="color:var(--t3);font-size:12px;text-align:center;padding:40px;grid-column:1/-1;">Nenhuma campanha encontrada.<br/><br/><span style="color:var(--blue);">Crie sua primeira campanha na aba + Nova Campanha</span></div>';
     return;
   }
 
   grid.innerHTML = '';
   camps.forEach(camp => {
-    const card = document.createElement('div');
-    card.style.cssText = 'background:var(--bg4);border:1px solid var(--bd);border-radius:9px;overflow:hidden;cursor:pointer;transition:border-color .15s;';
-    card.onmouseenter = () => card.style.borderColor = 'var(--blue)';
-    card.onmouseleave = () => card.style.borderColor = 'var(--bd)';
+    try {
+      const card = document.createElement('div');
+      card.style.cssText = 'background:var(--bg4);border:1px solid var(--bd);border-radius:9px;overflow:hidden;cursor:pointer;transition:border-color .15s;';
+      card.onmouseenter = () => card.style.borderColor = 'var(--blue)';
+      card.onmouseleave = () => card.style.borderColor = 'var(--bd)';
 
-    const statusCor = camp.status === 'aprovada' ? 'var(--green)' : camp.status === 'publicada' ? 'var(--blue)' : 'var(--gold)';
-    const dt        = new Date(camp.atualizado_em || camp.criado_em).toLocaleDateString('pt-BR', {day:'2-digit',month:'2-digit',year:'2-digit'});
-    const imgUrl    = camp.imagens?.[0]?.url || '';
-    const headline  = camp.data?.copy?.versoes?.[0]?.headline || '';
-    const corpo     = (camp.data?.copy?.versoes?.[0]?.corpo || '').substring(0,80);
+      const statusCor = camp.status === 'aprovada' ? 'var(--green)' : camp.status === 'publicada' ? 'var(--blue)' : 'var(--gold)';
+      // Data segura
+      let dt = '—';
+      try { dt = new Date(camp.atualizado_em || camp.criado_em || Date.now()).toLocaleDateString('pt-BR', {day:'2-digit',month:'2-digit',year:'2-digit'}); } catch(e) {}
+      const imgUrl   = camp.imagens?.[0]?.url || '';
+      const headline = camp.data?.copy?.versoes?.[0]?.headline || camp.nome || '';
+      const corpo    = (camp.data?.copy?.versoes?.[0]?.corpo || '').substring(0, 80);
+      const canal    = camp.canal || '';
+      const nome     = camp.nome || 'Sem nome';
 
-    card.innerHTML = (imgUrl
-      ? '<div style="height:120px;overflow:hidden;"><img src="' + imgUrl + '" style="width:100%;height:100%;object-fit:cover;"/></div>'
-      : '<div style="height:70px;background:linear-gradient(135deg,#1a3a8f,#4f7cff);display:flex;align-items:center;justify-content:center;"><span style="font-size:20px;opacity:.4;">&#127912;</span></div>')
-      + '<div style="padding:11px;">'
-      + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">'
-      + '<span style="font-size:12px;font-weight:600;flex:1;">' + camp.nome + '</span>'
-      + '<span style="font-family:var(--M);font-size:8px;padding:2px 6px;border-radius:3px;color:' + statusCor + ';background:rgba(0,0,0,.2);">' + (camp.status||'rascunho') + '</span>'
-      + '</div>'
-      + '<div style="font-size:10px;color:var(--t2);margin-bottom:4px;">' + (camp.canal||'') + ' · ' + dt + '</div>'
-      + (headline ? '<div style="font-size:11px;font-weight:600;margin-bottom:3px;">' + headline + '</div>' : '')
-      + (corpo ? '<div style="font-size:10.5px;color:var(--t2);">' + corpo + '...</div>' : '')
-      + '</div>';
+      card.innerHTML =
+        (imgUrl
+          ? '<div style="height:120px;overflow:hidden;"><img src="' + imgUrl + '" style="width:100%;height:100%;object-fit:cover;"/></div>'
+          : '<div style="height:60px;background:linear-gradient(135deg,#1a3a8f,#4f7cff);display:flex;align-items:center;justify-content:center;"><span style="font-size:18px;opacity:.5;">&#127912;</span></div>')
+        + '<div style="padding:10px;">'
+        + '<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:4px;">'
+        + '<span style="font-size:12px;font-weight:600;flex:1;color:var(--t1);">' + nome + '</span>'
+        + '<span style="font-family:var(--M);font-size:7px;padding:2px 5px;border-radius:3px;white-space:nowrap;color:' + statusCor + ';border:1px solid ' + statusCor + ';">' + (camp.status||'rascunho') + '</span>'
+        + '</div>'
+        + '<div style="font-size:10px;color:var(--t2);margin-bottom:4px;">' + canal + (canal && dt !== '—' ? ' · ' : '') + dt + '</div>'
+        + (headline && headline !== nome ? '<div style="font-size:11px;font-weight:600;color:var(--blue);margin-bottom:3px;">' + headline + '</div>' : '')
+        + (corpo ? '<div style="font-size:10px;color:var(--t2);line-height:1.4;">' + corpo + '...</div>' : '')
+        + '</div>';
 
-    const btnDiv = document.createElement('div');
-    btnDiv.style.cssText = 'display:flex;gap:6px;padding:0 11px 11px;';
-    const btnAbrir = document.createElement('button');
-    btnAbrir.className = 'btn btn-p'; btnAbrir.style.cssText = 'flex:1;font-size:9px;padding:4px;';
-    btnAbrir.textContent = 'Abrir e Editar';
-    btnAbrir.onclick = (e) => { e.stopPropagation(); abrirCampanhaDB(camp.id); };
-    const btnExc = document.createElement('button');
-    btnExc.className = 'btn'; btnExc.style.cssText = 'font-size:9px;padding:4px;';
-    btnExc.textContent = 'Excluir';
-    btnExc.onclick = (e) => { e.stopPropagation(); excluirCampanha(camp.id); };
-    btnDiv.appendChild(btnAbrir); btnDiv.appendChild(btnExc);
-    card.appendChild(btnDiv);
-    grid.appendChild(card);
+      const btnDiv   = document.createElement('div');
+      btnDiv.style.cssText = 'display:flex;gap:6px;padding:0 10px 10px;';
+
+      const btnAbrir = document.createElement('button');
+      btnAbrir.className = 'btn btn-p';
+      btnAbrir.style.cssText = 'flex:1;font-size:9px;padding:5px;';
+      btnAbrir.textContent = 'Abrir e Editar';
+      const campId = camp.id;
+      btnAbrir.onclick = (e) => { e.stopPropagation(); abrirCampanhaDB(campId); };
+
+      const btnExc = document.createElement('button');
+      btnExc.className = 'btn';
+      btnExc.style.cssText = 'font-size:9px;padding:5px;color:var(--red);';
+      btnExc.textContent = 'Excluir';
+      btnExc.onclick = (e) => { e.stopPropagation(); excluirCampanha(campId); };
+
+      btnDiv.appendChild(btnAbrir);
+      btnDiv.appendChild(btnExc);
+      card.appendChild(btnDiv);
+      grid.appendChild(card);
+    } catch(err) {
+      addLog('err', '[Campanhas] Erro ao renderizar card: ' + err.message + ' — camp: ' + JSON.stringify(camp).substring(0,80));
+    }
   });
 }
 
