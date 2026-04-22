@@ -4317,6 +4317,14 @@ async function carregarProposito() {
 }
 
 
+// Helper para headers (auth futuro)
+function authHeaders() {
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('atlantyx_token') : null;
+  return token
+    ? { 'Authorization': 'Bearer ' + token }
+    : {};
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // ATLANTYX DB — Camada de Persistência Central (KV + localStorage fallback)
 // Tudo que antes ia para localStorage agora vai para o Vercel KV via /api/db
@@ -5279,7 +5287,6 @@ initS1();
 initMenu();
 // Inicializar na sequência correta — DB primeiro, depois dados
 (async function() {
-  await initAuth();
   await initDB();
   await carregarProposito();
   await initS3();
