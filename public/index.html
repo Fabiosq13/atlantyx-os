@@ -1277,18 +1277,17 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- NOVA CAMPANHA -->
   <div class="page" id="page-s2campanha">
 
-    <!-- ABAS: NOVA / MINHAS CAMPANHAS -->
-    <div style="display:flex;gap:6px;margin-bottom:13px;border-bottom:1px solid rgba(79,124,255,.15);padding-bottom:10px;">
+    <!-- HEADER COM ABAS -->
+    <div style="display:flex;gap:6px;margin-bottom:13px;border-bottom:1px solid rgba(79,124,255,.15);padding-bottom:10px;align-items:center;">
       <button class="btn btn-p" id="abaNovaBtn" onclick="mostrarAbaCampanha('nova')" style="font-size:11px;padding:5px 14px;">+ Nova Campanha</button>
       <button class="btn btn-g" id="abaListaBtn" onclick="mostrarAbaCampanha('lista')" style="font-size:11px;padding:5px 14px;">&#128193; Minhas Campanhas</button>
       <div style="flex:1;"></div>
-      <span style="font-size:10px;color:var(--t2);align-self:center;" id="campSalvoCnt"></span>
+      <span style="font-size:10px;color:var(--t2);" id="campSalvoCnt"></span>
     </div>
 
-    <!-- ABA: NOVA CAMPANHA -->
+    <!-- ABA NOVA CAMPANHA -->
     <div id="abaNova">
       <div class="kg k2">
-        <!-- CONFIGURAÇÃO -->
         <div class="panel">
           <div class="ph"><div class="pt">Configurar Campanha</div><span class="tag on">Todos os Agentes</span></div>
           <div class="pb">
@@ -1316,16 +1315,12 @@ tr:hover td{background:rgba(79,124,255,.03);}
             <div class="fg"><label class="fl">Setor / Público Alvo</label>
               <select class="fsel" id="cPublico">
                 <option value="todos_clevel">★ Todos os C-Levels (CIO, CTO, CFO, CEO, COO)</option>
-                <option value="todos">★★ Todos — C-Level + Gerentes Sênior</option>
-                <option value="CIO/CTO — Energia e Utilities">CIO/CTO — Energia e Utilities</option>
+                <option value="CIO/CTO — Energia">CIO/CTO — Energia e Utilities</option>
                 <option value="CIO/CTO — Automotivo">CIO/CTO — Automotivo</option>
                 <option value="CIO/CTO — Varejo">CIO/CTO — Varejo</option>
                 <option value="CIO/CTO — Industria">CIO/CTO — Industria</option>
                 <option value="CFO — Grandes Empresas">CFO — Grandes Empresas</option>
                 <option value="CEO — Empresas R$100M+">CEO — Empresas R$100M+</option>
-                <option value="Dir. Transformacao Digital">Dir. Transformacao Digital</option>
-                <option value="Dir. Analytics e Dados">Dir. Analytics e Dados</option>
-                <option value="Head de Dados / BI">Head de Dados / BI</option>
               </select>
             </div>
             <div class="fg"><label class="fl">Orçamento</label>
@@ -1334,27 +1329,15 @@ tr:hover td{background:rgba(79,124,255,.03);}
                 <option>R$20.000/mês</option><option>Definir depois</option>
               </select>
             </div>
-            <div class="fg"><label class="fl">Contexto adicional (opcional)</label>
-              <textarea class="fta" id="cCtx" style="min-height:55px;" placeholder="Ex: Focar em empresas que anunciaram novo ERP. Tom mais urgente..."></textarea>
-            </div>
-            <!-- LOGO -->
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px;background:var(--bg4);border-radius:6px;">
-              <input type="file" id="logoAtlantyx" accept="image/*" style="display:none;" onchange="carregarLogo(this)"/>
-              <button class="btn btn-g" style="font-size:10px;white-space:nowrap;" onclick="document.getElementById('logoAtlantyx').click()">&#128247; Logo Atlantyx</button>
-              <div id="logoPreviewWrap" style="display:none;align-items:center;gap:6px;">
-                <img id="logoPreview" src="" style="height:24px;border-radius:3px;"/>
-                <button onclick="removerLogo()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:12px;">&#10005;</button>
-              </div>
-              <span id="logoNome" style="font-size:10px;color:var(--t3);">Será incluída nas artes</span>
+            <div class="fg"><label class="fl">Contexto adicional</label>
+              <textarea class="fta" id="cCtx" style="min-height:55px;" placeholder="Ex: Focar em empresas que anunciaram novo ERP..."></textarea>
             </div>
             <div style="display:flex;gap:8px;">
               <button class="btn btn-or" style="flex:1;" id="btnCampanha" onclick="criarCampanhaCompleta()">&#9670; Criar Campanha com IA</button>
-              <button class="btn btn-p" id="btnMotion" onclick="criarVideoMotion()" style="white-space:nowrap;font-size:11px;">&#9654; Motion</button>
+              <button class="btn btn-p" onclick="criarVideoMotion()" style="font-size:11px;">&#9654; Motion</button>
             </div>
           </div>
         </div>
-
-        <!-- RESULTADO -->
         <div class="panel">
           <div class="ph">
             <div class="pt">Pipeline da Campanha</div>
@@ -1362,22 +1345,19 @@ tr:hover td{background:rgba(79,124,255,.03);}
             <button class="btn btn-gn" id="btnSalvarCamp" style="display:none;font-size:9px;padding:3px 9px;" onclick="salvarCampanhaDB()">&#128190; Salvar</button>
           </div>
           <div class="pb" id="campResult">
-            <div style="color:var(--t3);font-size:11px;text-align:center;padding:30px;">Configure e clique em Criar. Os agentes trabalham em sequência.</div>
+            <div style="color:var(--t3);font-size:11px;text-align:center;padding:30px;">Configure e clique em Criar.</div>
           </div>
         </div>
       </div>
 
-      <!-- EDITOR COMPLETO DA CAMPANHA -->
+      <!-- EDITOR -->
       <div id="campEditorPanel" style="display:none;margin-top:12px;">
-
-        <!-- ABAS DO EDITOR -->
         <div style="display:flex;gap:6px;margin-bottom:12px;border-bottom:1px solid rgba(79,124,255,.15);padding-bottom:8px;">
-          <button class="btn" id="edAbaStory" onclick="mostrarEdAba('story')" style="font-size:10px;padding:4px 10px;">&#128221; Narrativa</button>
-          <button class="btn" id="edAbaCopy" onclick="mostrarEdAba('copy')" style="font-size:10px;padding:4px 10px;">&#9997; Copy</button>
-          <button class="btn" id="edAbaImg" onclick="mostrarEdAba('img')" style="font-size:10px;padding:4px 10px;">&#127912; Imagem</button>
+          <button class="btn" id="edAbaStory"   onclick="mostrarEdAba('story')"   style="font-size:10px;padding:4px 10px;">&#128221; Narrativa</button>
+          <button class="btn" id="edAbaCopy"    onclick="mostrarEdAba('copy')"    style="font-size:10px;padding:4px 10px;">&#9997; Copy</button>
+          <button class="btn" id="edAbaImg"     onclick="mostrarEdAba('img')"     style="font-size:10px;padding:4px 10px;">&#127912; Imagem</button>
           <button class="btn btn-p" id="edAbaPreview" onclick="mostrarEdAba('preview')" style="font-size:10px;padding:4px 10px;">&#128247; Preview por Canal</button>
         </div>
-
         <!-- ABA NARRATIVA -->
         <div id="edStory" style="display:none;">
           <div class="kg k2">
@@ -1387,31 +1367,30 @@ tr:hover td{background:rgba(79,124,255,.03);}
                 <div class="fg"><label class="fl">Tema Central</label><textarea class="fta" id="edTemaCentral" style="min-height:55px;"></textarea></div>
                 <div class="fg"><label class="fl">Gancho Principal</label><input class="fi" id="edGancho"/></div>
                 <div class="fg"><label class="fl">Promessa Central</label><input class="fi" id="edPromessa"/></div>
-                <div class="fg"><label class="fl">Call to Action</label><input class="fi" id="edCTA"/></div>
+                <div class="fg"><label class="fl">CTA</label><input class="fi" id="edCTA"/></div>
               </div>
             </div>
             <div class="panel">
               <div class="ph"><div class="pt">Ajuste de Narrativa</div></div>
               <div class="pb">
                 <div class="fg"><label class="fl">Instrução de ajuste</label>
-                  <textarea class="fta" id="edStoryAjuste" style="min-height:80px;" placeholder="Ex: Tom mais urgente. Focar no custo de não agir. Mencionar case de energia..."></textarea>
+                  <textarea class="fta" id="edStoryAjuste" style="min-height:80px;" placeholder="Ex: Tom mais urgente..."></textarea>
                 </div>
                 <button class="btn btn-or" style="width:100%;" id="btnRegerarStory" onclick="regerarNarrativa()">&#9670; Regerar Narrativa</button>
               </div>
             </div>
           </div>
         </div>
-
         <!-- ABA COPY -->
         <div id="edCopy" style="display:none;">
           <div class="kg k2">
             <div class="panel">
               <div class="ph"><div class="pt">Copy — Edição Direta</div><span class="tag on">Editável</span></div>
               <div class="pb">
-                <div class="fg"><label class="fl">Headline</label><input class="fi" id="edHeadline" placeholder="Headline principal"/></div>
-                <div class="fg"><label class="fl">Subheadline</label><input class="fi" id="edSubheadline" placeholder="Subtítulo"/></div>
-                <div class="fg"><label class="fl">Corpo do Texto</label><textarea class="fta" id="edCorpo" style="min-height:140px;font-size:12px;line-height:1.75;"></textarea></div>
-                <div class="fg"><label class="fl">CTA</label><input class="fi" id="edCtaCopy" placeholder="Call to action"/></div>
+                <div class="fg"><label class="fl">Headline</label><input class="fi" id="edHeadline"/></div>
+                <div class="fg"><label class="fl">Subheadline</label><input class="fi" id="edSubheadline"/></div>
+                <div class="fg"><label class="fl">Corpo</label><textarea class="fta" id="edCorpo" style="min-height:140px;font-size:12px;line-height:1.75;"></textarea></div>
+                <div class="fg"><label class="fl">CTA</label><input class="fi" id="edCtaCopy"/></div>
                 <div style="display:flex;gap:8px;margin-top:4px;">
                   <button class="btn btn-gn" onclick="aplicarCopyEditado()" style="flex:1;">&#10003; Aplicar Edição</button>
                   <button class="btn btn-g" onclick="copiarCopyAtual()" style="font-size:10px;">Copiar</button>
@@ -1421,29 +1400,26 @@ tr:hover td{background:rgba(79,124,255,.03);}
             <div class="panel">
               <div class="ph"><div class="pt">Ajuste com IA</div></div>
               <div class="pb">
-                <div class="fg"><label class="fl">Comentário de ajuste</label>
-                  <textarea class="fta" id="copyAjusteComentario" style="min-height:80px;" placeholder="Ex: Mais direto. Mencionar ROI em semanas. Tom menos formal..."></textarea>
-                </div>
-                <div style="display:flex;gap:6px;">
+                <textarea class="fta" id="copyAjusteComentario" style="min-height:80px;" placeholder="Ex: Mais direto, mencionar ROI..."></textarea>
+                <div style="display:flex;gap:6px;margin-top:8px;">
                   <button class="btn btn-or" id="btnAjustarCopy" onclick="ajustarCopyComIA()" style="flex:1;">Ajustar Copy</button>
                   <button class="btn btn-p" id="btnRefazerCopy" onclick="refazerCopyCompleto()" style="font-size:10px;">Refazer Tudo</button>
                 </div>
                 <div id="copyVersoes" style="display:none;margin-top:10px;">
-                  <div style="font-family:var(--M);font-size:8px;color:var(--t2);margin-bottom:5px;">VERSÕES ANTERIORES</div>
+                  <div style="font-family:var(--M);font-size:8px;color:var(--t2);margin-bottom:5px;">VERSÕES</div>
                   <div id="copyVersoesLista" style="display:flex;gap:5px;flex-wrap:wrap;"></div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-
         <!-- ABA IMAGEM -->
         <div id="edImg" style="display:none;">
           <div class="kg k2">
             <div class="panel">
               <div class="ph"><div class="pt">Gerar Imagem — Ideogram</div></div>
               <div class="pb">
-                <div class="fg"><label class="fl">Brief Visual (editável)</label>
+                <div class="fg"><label class="fl">Brief Visual</label>
                   <textarea class="fta" id="edBriefVisual" style="min-height:80px;font-size:11px;"></textarea>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
@@ -1453,7 +1429,6 @@ tr:hover td{background:rgba(79,124,255,.03);}
                       <option value="ASPECT_4_5">4:5 — Vertical</option>
                       <option value="ASPECT_9_16">9:16 — Stories</option>
                       <option value="ASPECT_16_9">16:9 — LinkedIn</option>
-                      <option value="ASPECT_3_1">3:1 — Banner</option>
                     </select>
                   </div>
                   <div class="fg" style="margin:0;"><label class="fl">Estilo</label>
@@ -1473,61 +1448,45 @@ tr:hover td{background:rgba(79,124,255,.03);}
                 </div>
                 <div style="display:flex;gap:8px;">
                   <button class="btn btn-p" id="btnGerarImgCamp" style="flex:1;" onclick="gerarImagemCampanha()">&#9670; Gerar no Ideogram</button>
-                  <button class="btn btn-g" onclick="regenerarSemTexto()" style="font-size:10px;white-space:nowrap;">Sem Texto</button>
+                  <button class="btn btn-g" onclick="regenerarSemTexto()" style="font-size:10px;">Sem Texto</button>
                 </div>
               </div>
             </div>
             <div class="panel">
               <div class="ph"><div class="pt">Imagens Geradas</div><span class="tag off" id="imgTagCamp">Aguardando</span></div>
               <div class="pb" id="campImgResult">
-                <div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Clique em Gerar para criar as imagens</div>
+                <div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Clique em Gerar</div>
               </div>
             </div>
           </div>
         </div>
-
-        <!-- ABA PREVIEW POR CANAL -->
+        <!-- ABA PREVIEW -->
         <div id="edPreview" style="display:none;">
           <div style="background:linear-gradient(135deg,rgba(79,124,255,.12),rgba(156,109,255,.06));border:1px solid rgba(79,124,255,.2);border-radius:9px;padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">
-            <div style="font-size:13px;font-weight:600;flex:1;">Preview por Canal — Como vai aparecer</div>
+            <div style="font-size:13px;font-weight:600;flex:1;">Preview por Canal</div>
             <button class="btn btn-or" style="font-size:10px;" onclick="gerarPreviewTodosCanais()">&#9670; Gerar Previews</button>
             <button class="btn btn-gn" style="font-size:10px;" onclick="aprovarCampanhaFinal()">&#10003; Aprovar</button>
           </div>
-          <!-- SELETOR -->
           <div style="display:flex;gap:8px;margin-bottom:12px;">
             <button class="btn" id="prevBtnLI" onclick="mostrarPreviewCanal('linkedin')" style="font-size:11px;padding:5px 12px;">&#128101; LinkedIn</button>
             <button class="btn" id="prevBtnIG" onclick="mostrarPreviewCanal('instagram')" style="font-size:11px;padding:5px 12px;">&#128247; Instagram</button>
             <button class="btn" id="prevBtnFB" onclick="mostrarPreviewCanal('facebook')" style="font-size:11px;padding:5px 12px;">&#128279; Facebook</button>
           </div>
-
-          <!-- LINKEDIN PREVIEW -->
+          <!-- LINKEDIN -->
           <div id="previewLinkedIn" style="display:none;max-width:560px;margin:0 auto;">
             <div style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 20px rgba(0,0,0,.18);font-family:Arial,sans-serif;">
               <div style="padding:12px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #e0e0e0;">
                 <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#1a3a8f,#4f7cff);display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:18px;flex-shrink:0;">A</div>
-                <div style="flex:1;">
-                  <div style="font-weight:700;font-size:14px;color:#000;">Atlantyx</div>
-                  <div style="font-size:12px;color:#666;">Inteligencia em Dados e IA</div>
-                  <div style="font-size:11px;color:#888;">Agora · 🌐</div>
-                </div>
+                <div style="flex:1;"><div style="font-weight:700;font-size:14px;color:#000;">Atlantyx</div><div style="font-size:12px;color:#666;">Inteligencia em Dados e IA</div><div style="font-size:11px;color:#888;">Agora · 🌐</div></div>
                 <button style="background:#0a66c2;color:#fff;border:none;padding:6px 16px;border-radius:16px;font-size:13px;font-weight:600;cursor:pointer;">+ Seguir</button>
               </div>
-              <div id="prevLITexto" style="padding:14px 16px;font-size:14px;line-height:1.65;color:#000;min-height:50px;">
-                <span style="color:#aaa;font-style:italic;">Clique em Gerar Previews</span>
-              </div>
-              <div id="prevLIImagemPlaceholder" style="height:290px;background:linear-gradient(135deg,#1a3a8f,#4f7cff);display:flex;align-items:center;justify-content:center;">
-                <div style="text-align:center;color:#fff;opacity:.5;"><div style="font-size:40px;">🎨</div><div style="font-size:12px;margin-top:6px;">Gere uma imagem na aba Imagem</div></div>
-              </div>
-              <div id="prevLIImagem" style="display:none;">
-                <img id="prevLIImg" src="" style="width:100%;display:block;max-height:420px;object-fit:cover;"/>
-              </div>
-              <div style="padding:8px 16px;border-top:1px solid #e0e0e0;display:flex;gap:20px;font-size:13px;color:#666;">
-                <span>👍 Gostei</span><span>💬 Comentar</span><span>↗️ Compartilhar</span>
-              </div>
+              <div id="prevLITexto" style="padding:14px 16px;font-size:14px;line-height:1.65;color:#000;min-height:50px;"><span style="color:#aaa;font-style:italic;">Clique em Gerar Previews</span></div>
+              <div id="prevLIImagemPlaceholder" style="height:290px;background:linear-gradient(135deg,#1a3a8f,#4f7cff);display:flex;align-items:center;justify-content:center;"><div style="text-align:center;color:#fff;opacity:.5;"><div style="font-size:40px;">🎨</div><div style="font-size:12px;margin-top:6px;">Gere uma imagem na aba Imagem</div></div></div>
+              <div id="prevLIImagem" style="display:none;"><img id="prevLIImg" src="" style="width:100%;display:block;max-height:420px;object-fit:cover;"/></div>
+              <div style="padding:8px 16px;border-top:1px solid #e0e0e0;display:flex;gap:20px;font-size:13px;color:#666;"><span>👍 Gostei</span><span>💬 Comentar</span><span>↗️ Compartilhar</span></div>
             </div>
           </div>
-
-          <!-- INSTAGRAM PREVIEW -->
+          <!-- INSTAGRAM -->
           <div id="previewInstagram" style="display:none;max-width:400px;margin:0 auto;">
             <div style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 20px rgba(0,0,0,.18);font-family:-apple-system,sans-serif;">
               <div style="padding:10px 12px;display:flex;align-items:center;gap:10px;">
@@ -1536,34 +1495,23 @@ tr:hover td{background:rgba(79,124,255,.03);}
                 <div style="font-size:20px;color:#000;cursor:pointer;">···</div>
               </div>
               <div id="prevIGImagemWrap" style="background:linear-gradient(135deg,#1a3a8f,#4f7cff);aspect-ratio:1/1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;">
-                <div id="prevIGPlaceholder" style="text-align:center;color:#fff;opacity:.5;z-index:1;"><div style="font-size:40px;">🎨</div><div style="font-size:12px;margin-top:4px;">Sem imagem</div></div>
+                <div id="prevIGPlaceholder" style="text-align:center;color:#fff;opacity:.5;z-index:1;"><div style="font-size:40px;">🎨</div></div>
                 <img id="prevIGImg" src="" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:none;"/>
               </div>
-              <div style="padding:10px 12px;display:flex;gap:14px;align-items:center;">
-                <span style="font-size:24px;">🤍</span><span style="font-size:24px;">💬</span><span style="font-size:24px;">↗️</span><span style="font-size:24px;margin-left:auto;">🔖</span>
-              </div>
-              <div id="prevIGTexto" style="padding:2px 12px 14px;font-size:13px;color:#000;line-height:1.5;">
-                <strong>atlantyx_bi</strong> <span style="color:#555;">Clique em Gerar Previews</span>
-              </div>
+              <div style="padding:10px 12px;display:flex;gap:14px;align-items:center;"><span style="font-size:24px;">🤍</span><span style="font-size:24px;">💬</span><span style="font-size:24px;">↗️</span><span style="font-size:24px;margin-left:auto;">🔖</span></div>
+              <div id="prevIGTexto" style="padding:2px 12px 14px;font-size:13px;color:#000;line-height:1.5;"><strong>atlantyx_bi</strong> <span style="color:#555;">Clique em Gerar Previews</span></div>
             </div>
           </div>
-
-          <!-- FACEBOOK PREVIEW -->
+          <!-- FACEBOOK -->
           <div id="previewFacebook" style="display:none;max-width:500px;margin:0 auto;">
             <div style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 20px rgba(0,0,0,.18);font-family:Helvetica,Arial,sans-serif;">
               <div style="padding:12px 16px;display:flex;align-items:center;gap:10px;">
                 <div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#1a3a8f,#4f7cff);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:16px;flex-shrink:0;">A</div>
-                <div style="flex:1;">
-                  <div style="font-weight:700;font-size:14px;color:#000;">Atlantyx</div>
-                  <div style="font-size:12px;color:#65676b;">Agora · 🌐</div>
-                </div>
-                <div style="font-size:20px;color:#65676b;cursor:pointer;">···</div>
+                <div style="flex:1;"><div style="font-weight:700;font-size:14px;color:#000;">Atlantyx</div><div style="font-size:12px;color:#65676b;">Agora · 🌐</div></div>
               </div>
-              <div id="prevFBTexto" style="padding:0 16px 12px;font-size:14px;color:#050505;line-height:1.65;min-height:40px;">
-                <span style="color:#aaa;font-style:italic;">Clique em Gerar Previews</span>
-              </div>
+              <div id="prevFBTexto" style="padding:0 16px 12px;font-size:14px;color:#050505;line-height:1.65;min-height:40px;"><span style="color:#aaa;font-style:italic;">Clique em Gerar Previews</span></div>
               <div id="prevFBImagemWrap" style="background:linear-gradient(135deg,#1a3a8f,#4f7cff);min-height:260px;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;">
-                <div id="prevFBPlaceholder" style="text-align:center;color:#fff;opacity:.5;z-index:1;"><div style="font-size:40px;">🎨</div><div style="font-size:12px;margin-top:4px;">Sem imagem</div></div>
+                <div id="prevFBPlaceholder" style="text-align:center;color:#fff;opacity:.5;z-index:1;"><div style="font-size:40px;">🎨</div></div>
                 <img id="prevFBImg" src="" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:none;"/>
               </div>
               <div style="padding:4px 16px;border-top:1px solid #e4e6eb;display:flex;">
@@ -1573,7 +1521,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
               </div>
             </div>
           </div>
-
+        </div>
         <!-- AÇÕES FINAIS -->
         <div style="display:flex;gap:8px;margin-top:12px;padding:12px;background:var(--bg4);border-radius:8px;">
           <button class="btn btn-gn" onclick="aprovarCampanhaFinal()" style="flex:1;">&#10003; Aprovar e Enviar ao Kanban</button>
@@ -1584,7 +1532,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       </div>
     </div>
 
-    <!-- ABA: MINHAS CAMPANHAS -->
+    <!-- ABA MINHAS CAMPANHAS -->
     <div id="abaLista" style="display:none;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
         <input class="fi" id="campBusca" placeholder="Buscar campanha..." style="flex:1;" oninput="filtrarCampanhas()"/>
@@ -1596,8 +1544,9 @@ tr:hover td{background:rgba(79,124,255,.03);}
         </select>
         <button class="btn btn-g" onclick="carregarCampanhasDB()" style="font-size:10px;">&#8635; Atualizar</button>
       </div>
-      <div id="campListaGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;">
-        <div style="color:var(--t3);font-size:11px;text-align:center;padding:40px;grid-column:1/-1;">Carregando campanhas...</div>
+      <!-- GRID DE CAMPANHAS — renderizado via JS -->
+      <div id="campListaGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px;min-height:100px;">
+        <div style="grid-column:1/-1;color:var(--t3);font-size:12px;text-align:center;padding:40px;">Carregando campanhas...</div>
       </div>
     </div>
 
@@ -6254,7 +6203,13 @@ function mostrarAbaCampanha(aba) {
   document.getElementById('abaLista').style.display  = aba === 'lista' ? 'block' : 'none';
   document.getElementById('abaNovaBtn').style.borderColor  = aba === 'nova'  ? 'var(--blue)' : '';
   document.getElementById('abaListaBtn').style.borderColor = aba === 'lista' ? 'var(--blue)' : '';
-  if (aba === 'lista') carregarCampanhasDB();
+  if (aba === 'lista') {
+    setTimeout(() => {
+      _todasCampanhas = getCampanhasLocal();
+      filtrarCampanhas();
+      carregarCampanhasDB();
+    }, 50);
+  }
 }
 
 function mostrarEdAba(aba) {
