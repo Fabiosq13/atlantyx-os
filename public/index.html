@@ -289,6 +289,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div class="sf"><span class="dot on"></span>Claude API · Ativo</div>
     <div class="sf"><span class="dot" id="dotHS"></span><span id="statHS">HubSpot · Verificando</span></div>
     <div class="sf"><span class="dot off" id="dotWA"></span><span id="statWA">Z-API · Configurar</span></div>
+    <div class="sf"><span class="dot" id="dotDB"></span><span id="statDB">DB · Conectando...</span></div>
     <div class="sf"><span class="dot on"></span>Auto-refresh 30s</div>
   </div>
 </aside>
@@ -600,21 +601,137 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </div>
 
   <div class="page" id="page-s7kpi">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--s7);margin-bottom:7px;">METAS DE RECEITA</div>
-    <div class="kg k3" style="margin-bottom:12px;">
+
+    <!-- META REAL ATLANTYX -->
+    <div style="background:linear-gradient(135deg,rgba(240,112,48,.12),rgba(240,112,48,.04));border:1px solid rgba(240,112,48,.25);border-radius:10px;padding:14px 18px;margin-bottom:14px;">
+      <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--or);letter-spacing:1px;margin-bottom:10px;">META REAL ATLANTYX</div>
+      <div class="kg k2">
+        <div>
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:6px;">SDR</div>
+          <div style="font-size:12px;line-height:2;"><span style="color:var(--or);font-weight:600;">50–100</span> contatos/dia &nbsp;·&nbsp; <span style="color:var(--or);font-weight:600;">3–5</span> reuniões/dia</div>
+        </div>
+        <div>
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:6px;">Closer (Você)</div>
+          <div style="font-size:12px;line-height:2;"><span style="color:var(--green);font-weight:600;">3–5</span> reuniões/dia &nbsp;·&nbsp; <span style="color:var(--green);font-weight:600;">1</span> fechamento a cada 3–5 dias</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- REGISTRO DIÁRIO -->
+    <div class="panel" style="margin-bottom:13px;">
+      <div class="ph">
+        <div class="pt">Registrar Atividade do Dia</div>
+        <span style="font-size:10px;color:var(--t2);" id="dataHojeSdr"></span>
+        <button class="btn btn-g" style="font-size:9px;padding:3px 8px;" onclick="carregarKpiHistorico()">Histórico</button>
+      </div>
+      <div class="pb">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;">
+          <div class="fg" style="margin:0;"><label class="fl">Contatos hoje</label><input class="fi" type="number" id="kpiContatos" min="0" placeholder="0" style="text-align:center;font-size:16px;font-weight:600;"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Respostas</label><input class="fi" type="number" id="kpiRespostas" min="0" placeholder="0" style="text-align:center;font-size:16px;font-weight:600;"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Reuniões marcadas</label><input class="fi" type="number" id="kpiReunioesMarcadas" min="0" placeholder="0" style="text-align:center;font-size:16px;font-weight:600;"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Reuniões realizadas</label><input class="fi" type="number" id="kpiReunioesFeitas" min="0" placeholder="0" style="text-align:center;font-size:16px;font-weight:600;"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Propostas</label><input class="fi" type="number" id="kpiPropostas" min="0" placeholder="0" style="text-align:center;font-size:16px;font-weight:600;"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Fechamentos</label><input class="fi" type="number" id="kpiFechamentos" min="0" placeholder="0" style="text-align:center;font-size:20px;font-weight:700;color:var(--green);"/></div>
+        </div>
+        <div class="fg"><label class="fl">Observação do dia</label><input class="fi" id="kpiObs" placeholder="Ex: 3 leads quentes de energia, proposta enviada para Usiminas..."/></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-or" style="flex:1;" onclick="salvarKpiDia()">&#9654; Salvar Registro do Dia</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEMÁFOROS -->
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--s7);margin-bottom:8px;">KPIs DO DIA — META vs REALIZADO</div>
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:14px;">
+      <div id="kpiCard_contatos" style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:11px;text-align:center;border-top:3px solid var(--t3);">
+        <div style="font-family:var(--M);font-size:7.5px;text-transform:uppercase;color:var(--t2);margin-bottom:4px;">Contatos/dia</div>
+        <div style="font-size:22px;font-weight:700;" id="kpiVal_contatos">—</div>
+        <div style="font-size:9px;color:var(--t3);">meta: 50–100</div>
+        <div style="font-family:var(--M);font-size:8px;margin-top:4px;" id="kpiSem_contatos">—</div>
+      </div>
+      <div id="kpiCard_resposta" style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:11px;text-align:center;border-top:3px solid var(--t3);">
+        <div style="font-family:var(--M);font-size:7.5px;text-transform:uppercase;color:var(--t2);margin-bottom:4px;">Taxa Resposta</div>
+        <div style="font-size:22px;font-weight:700;" id="kpiVal_resposta">—</div>
+        <div style="font-size:9px;color:var(--t3);">meta: &gt;10%</div>
+        <div style="font-family:var(--M);font-size:8px;margin-top:4px;" id="kpiSem_resposta">—</div>
+      </div>
+      <div id="kpiCard_marcadas" style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:11px;text-align:center;border-top:3px solid var(--t3);">
+        <div style="font-family:var(--M);font-size:7.5px;text-transform:uppercase;color:var(--t2);margin-bottom:4px;">Reun. Marcadas</div>
+        <div style="font-size:22px;font-weight:700;" id="kpiVal_marcadas">—</div>
+        <div style="font-size:9px;color:var(--t3);">meta: 3–5/dia</div>
+        <div style="font-family:var(--M);font-size:8px;margin-top:4px;" id="kpiSem_marcadas">—</div>
+      </div>
+      <div id="kpiCard_feitas" style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:11px;text-align:center;border-top:3px solid var(--t3);">
+        <div style="font-family:var(--M);font-size:7.5px;text-transform:uppercase;color:var(--t2);margin-bottom:4px;">Reun. Realizadas</div>
+        <div style="font-size:22px;font-weight:700;" id="kpiVal_feitas">—</div>
+        <div style="font-size:9px;color:var(--t3);">meta: 3–5/dia</div>
+        <div style="font-family:var(--M);font-size:8px;margin-top:4px;" id="kpiSem_feitas">—</div>
+      </div>
+      <div id="kpiCard_propostas" style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:11px;text-align:center;border-top:3px solid var(--t3);">
+        <div style="font-family:var(--M);font-size:7.5px;text-transform:uppercase;color:var(--t2);margin-bottom:4px;">Propostas</div>
+        <div style="font-size:22px;font-weight:700;" id="kpiVal_propostas">—</div>
+        <div style="font-size:9px;color:var(--t3);">acumulado</div>
+        <div style="font-family:var(--M);font-size:8px;margin-top:4px;" id="kpiSem_propostas">—</div>
+      </div>
+      <div id="kpiCard_fechamentos" style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:11px;text-align:center;border-top:3px solid var(--t3);">
+        <div style="font-family:var(--M);font-size:7.5px;text-transform:uppercase;color:var(--t2);margin-bottom:4px;">Fechamentos</div>
+        <div style="font-size:22px;font-weight:700;" id="kpiVal_fechamentos">—</div>
+        <div style="font-size:9px;color:var(--t3);">meta: 1/3–5 dias</div>
+        <div style="font-family:var(--M);font-size:8px;margin-top:4px;" id="kpiSem_fechamentos">—</div>
+      </div>
+    </div>
+
+    <!-- ACUMULADO DA SEMANA -->
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--s7);margin-bottom:8px;">ACUMULADO DA SEMANA</div>
+    <div class="kg k3" style="margin-bottom:14px;">
+      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:13px;">
+        <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:7px;">Contatos semana</div>
+        <div style="font-size:22px;font-weight:700;color:var(--or);" id="semContatos">—</div>
+        <div class="prog" style="margin:6px 0;"><div class="prog-fill" id="semContatosProg" style="background:var(--or);width:0%;"></div></div>
+        <div style="font-size:9px;color:var(--t2);" id="semContatosMeta">meta: 250–500/semana</div>
+      </div>
+      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:13px;">
+        <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:7px;">Reuniões semana</div>
+        <div style="font-size:22px;font-weight:700;color:var(--blue);" id="semReunioes">—</div>
+        <div class="prog" style="margin:6px 0;"><div class="prog-fill" id="semReunioesProg" style="background:var(--blue);width:0%;"></div></div>
+        <div style="font-size:9px;color:var(--t2);" id="semReunioesMeta">meta: 15–25/semana</div>
+      </div>
+      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:13px;">
+        <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:7px;">Fechamentos semana</div>
+        <div style="font-size:22px;font-weight:700;color:var(--green);" id="semFechamentos">—</div>
+        <div class="prog" style="margin:6px 0;"><div class="prog-fill" id="semFechamentosProg" style="background:var(--green);width:0%;"></div></div>
+        <div style="font-size:9px;color:var(--t2);" id="semFechamentosMeta">meta: 1–2/semana</div>
+      </div>
+    </div>
+
+    <!-- METAS DE RECEITA -->
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--s7);margin-bottom:8px;">METAS DE RECEITA</div>
+    <div class="kg k3" style="margin-bottom:14px;">
       <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:13px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:7px;">Semana Atual</div><div style="font-family:var(--M);font-size:22px;font-weight:700;color:var(--s7);" id="meta_sem">R$0</div><div class="prog"><div class="prog-fill" id="prog_sem" style="background:var(--s7);width:0%"></div></div><div style="font-family:var(--M);font-size:8.5px;color:var(--t2);margin-top:4px;" id="meta_sem_s">0% / R$500k</div></div>
       <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:13px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:7px;">Mes Atual</div><div style="font-family:var(--M);font-size:22px;font-weight:700;color:var(--s7);" id="meta_mes">R$0</div><div class="prog"><div class="prog-fill" id="prog_mes" style="background:var(--s7);width:0%"></div></div><div style="font-family:var(--M);font-size:8.5px;color:var(--t2);margin-top:4px;" id="meta_mes_s">0% / R$1.5M</div></div>
       <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:13px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:7px;">Meta 3 Meses</div><div style="font-family:var(--M);font-size:22px;font-weight:700;color:var(--s7);" id="meta_ano">R$0</div><div class="prog"><div class="prog-fill" id="prog_ano" style="background:var(--s7);width:0%"></div></div><div style="font-family:var(--M);font-size:8.5px;color:var(--green);margin-top:4px;" id="meta_ano_s">Pipeline carregando...</div></div>
     </div>
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--s7);margin-bottom:7px;">QUALIDADE COMERCIAL</div>
-    <div class="kg k5">
+
+    <!-- QUALIDADE COMERCIAL -->
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--s7);margin-bottom:8px;">QUALIDADE COMERCIAL</div>
+    <div class="kg k5" style="margin-bottom:14px;">
       <div class="kpi pk"><div class="kl">Win Rate</div><div class="kv" id="s7_wr">28%</div><div class="ks">historico</div></div>
       <div class="kpi pk"><div class="kl">Ticket Medio</div><div class="kv" id="s7_tk">R$635k</div><div class="ks">por deal</div></div>
       <div class="kpi pk"><div class="kl">Deals 30d</div><div class="kv" id="s7_d30">—</div><div class="ks">criados</div></div>
       <div class="kpi pk"><div class="kl">Taxa Qualif.</div><div class="kv" id="s7_tq">—</div><div class="ks">lead→SQL</div></div>
       <div class="kpi gd"><div class="kl">ARR Projetado</div><div class="kv">R$18M</div><div class="ks">com meta</div></div>
     </div>
+
+    <!-- HISTÓRICO -->
+    <div class="panel" id="kpiHistoricoPanel" style="display:none;">
+      <div class="ph"><div class="pt">Histórico de Atividades — KV</div>
+        <span class="tag live">Banco de Dados</span>
+        <button class="btn btn-g" style="font-size:9px;" onclick="document.getElementById('kpiHistoricoPanel').style.display='none'">Fechar</button>
+      </div>
+      <div class="pb" id="kpiHistoricoLista"></div>
+    </div>
   </div>
+
 
 
   <!-- S1 DASHBOARD -->
@@ -3784,7 +3901,7 @@ async function salvarEGerarPlano() {
   }
 
   propData = dados;
-  localStorage.setItem('atlantyx_proposito', JSON.stringify(dados));
+  await DB.set('proposito', dados);
 
   const btn = document.getElementById('btnSalvarProposito');
   const panel = document.getElementById('propResultPanel');
@@ -3994,11 +4111,11 @@ function atualizarDashComProposito(dados) {
 }
 
 // Carregar proposito salvo ao iniciar
-function carregarProposito() {
+async function carregarProposito() {
   try {
-    const saved = localStorage.getItem('atlantyx_proposito');
+    const saved = await DB.get('proposito', null);
     if (saved) {
-      propData = JSON.parse(saved);
+      propData = saved;
       // Preencher campos
       const fields = {
         pPropVida: propData.proposito_vida, pBem: propData.bem_que_pratica,
@@ -4030,6 +4147,212 @@ function carregarProposito() {
 }
 
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ATLANTYX DB — Camada de Persistência Central (KV + localStorage fallback)
+// Tudo que antes ia para localStorage agora vai para o Vercel KV via /api/db
+// ══════════════════════════════════════════════════════════════════════════════
+const DB = {
+  // ── WRITE — salva no KV e no localStorage como cache ────────────────────────
+  async set(key, value) {
+    const serialized = JSON.stringify(value);
+    // Sempre salva no localStorage como cache/fallback
+    try { localStorage.setItem('atx:' + key, serialized); } catch(e) {}
+    // Tenta salvar no KV
+    try {
+      const r = await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ action: 'set', key: 'atx:' + key, value })
+      });
+      const d = await r.json();
+      return d.success;
+    } catch(e) {
+      console.warn('[DB] KV indisponível, usando localStorage:', e.message);
+      return false;
+    }
+  },
+
+  // ── READ — tenta KV primeiro, cai para localStorage ─────────────────────────
+  async get(key, defaultValue = null) {
+    try {
+      const r = await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ action: 'get', key: 'atx:' + key })
+      });
+      const d = await r.json();
+      if (d.success && d.value !== null && d.value !== undefined) {
+        // Atualiza cache local
+        try { localStorage.setItem('atx:' + key, JSON.stringify(d.value)); } catch(e) {}
+        return d.value;
+      }
+    } catch(e) {
+      console.warn('[DB] KV read falhou, usando localStorage:', e.message);
+    }
+    // Fallback: localStorage
+    try {
+      const local = localStorage.getItem('atx:' + key);
+      if (local) return JSON.parse(local);
+      // Tentar chaves antigas (migração)
+      const oldKeys = { 'metas': 'atlantyx_metas', 'proposito': 'atlantyx_proposito', 'receber': 'atlantyx_receber' };
+      if (oldKeys[key]) {
+        const old = localStorage.getItem(oldKeys[key]);
+        if (old) {
+          const parsed = JSON.parse(old);
+          // Migrar para nova chave
+          this.set(key, parsed);
+          localStorage.removeItem(oldKeys[key]);
+          return parsed;
+        }
+      }
+    } catch(e) {}
+    return defaultValue;
+  },
+
+  // ── DELETE ───────────────────────────────────────────────────────────────────
+  async del(key) {
+    try { localStorage.removeItem('atx:' + key); } catch(e) {}
+    try {
+      await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ action: 'delete', key: 'atx:' + key })
+      });
+    } catch(e) {}
+  },
+
+  // ── OPERAÇÕES ESPECÍFICAS ────────────────────────────────────────────────────
+
+  // Campanhas
+  async saveCampanha(camp) {
+    camp.atualizado_em = new Date().toISOString();
+    // Cache local: lista de campanhas
+    const local = await this.getCampanhasLocal();
+    const idx = local.findIndex(c => c.id === camp.id);
+    if (idx >= 0) local[idx] = camp; else local.unshift(camp);
+    try { localStorage.setItem('atx:campanhas', JSON.stringify(local)); } catch(e) {}
+    // KV
+    try {
+      await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ action: 'save_campanha', value: camp })
+      });
+    } catch(e) {}
+  },
+
+  async getCampanhas() {
+    try {
+      const r = await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ action: 'list_campanhas' })
+      });
+      const d = await r.json();
+      if (d.success && d.campanhas?.length) {
+        try { localStorage.setItem('atx:campanhas', JSON.stringify(d.campanhas)); } catch(e) {}
+        return d.campanhas;
+      }
+    } catch(e) {}
+    return this.getCampanhasLocal();
+  },
+
+  getCampanhasLocal() {
+    try {
+      const l = localStorage.getItem('atx:campanhas') || localStorage.getItem('atx:campanhas');
+      return l ? JSON.parse(l) : [];
+    } catch(e) { return []; }
+  },
+
+  async deleteCampanha(id) {
+    const local = this.getCampanhasLocal().filter(c => c.id !== id);
+    try { localStorage.setItem('atx:campanhas', JSON.stringify(local)); } catch(e) {}
+    try {
+      await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ action: 'delete_campanha', key: id })
+      });
+    } catch(e) {}
+  },
+
+  // KPIs
+  async saveKpi(registro) {
+    // Cache local: lista de kpis
+    const local = this.getKpisLocal();
+    const idx = local.findIndex(r => r.data === registro.data);
+    if (idx >= 0) local[idx] = registro; else local.unshift(registro);
+    try { localStorage.setItem('atx:kpis', JSON.stringify(local)); } catch(e) {}
+    // Neon Postgres
+    try {
+      const r = await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ action: 'save_kpi', value: registro })
+      });
+      const d = await r.json();
+      if (!d.success) console.warn('[DB] saveKpi:', d.error);
+    } catch(e) { console.warn('[DB] saveKpi offline:', e.message); }
+  },
+
+  async getKpis() {
+    try {
+      const r = await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ action: 'list_kpis' })
+      });
+      const d = await r.json();
+      if (d.success && d.registros?.length) {
+        try { localStorage.setItem('atx:kpis', JSON.stringify(d.registros)); } catch(e) {}
+        return d.registros;
+      }
+    } catch(e) {}
+    // Fallback: localStorage legado
+    const old = localStorage.getItem('atx:kpis');
+    if (old) {
+      const parsed = JSON.parse(old);
+      // Migrar
+      parsed.forEach(r => this.saveKpi(r));
+      localStorage.removeItem('atx:kpis');
+      return parsed;
+    }
+    return this.getKpisLocal();
+  },
+
+  getKpisLocal() {
+    try { return JSON.parse(localStorage.getItem('atx:kpis') || '[]'); } catch(e) { return []; }
+  },
+};
+
+// Inicializar DB ao carregar
+window._dbReady = false;
+async function initDB() {
+  try {
+    // Testar conexão KV
+    const r = await fetch('/api/db', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'get', key: 'atx:sistema:versao' })
+    });
+    const d = await r.json();
+    window._dbReady = true;
+    await DB.set('sistema:versao', { versao: '1.0', inicializado_em: new Date().toISOString() });
+    addLog('ok', '[DB] Vercel KV conectado — dados persistindo na nuvem');
+    const dotDB = document.getElementById('dotDB');
+    const statDB = document.getElementById('statDB');
+    if (dotDB) dotDB.className = 'dot on';
+    if (statDB) statDB.textContent = 'KV · Conectado';
+  } catch(e) {
+    window._dbReady = false;
+    addLog('warn', '[DB] KV indisponível — usando localStorage como fallback');
+    const dotDBf = document.getElementById('dotDB');
+    const statDBf = document.getElementById('statDB');
+    if (dotDBf) dotDBf.className = 'dot w';
+    if (statDBf) statDBf.textContent = 'Neon · Offline (cache local)';
+  }
+}
+
 // ── METAS FINANCEIRAS DASHBOARD ───────────────────────────────────────────────
 const METAS_DEFAULT = {
   anual: 18000000,
@@ -4038,10 +4361,9 @@ const METAS_DEFAULT = {
   realMensal: 0,
 };
 
-function carregarMetas() {
+async function carregarMetas() {
   try {
-    const saved = localStorage.getItem('atlantyx_metas');
-    const metas = saved ? JSON.parse(saved) : METAS_DEFAULT;
+    const metas = await DB.get('metas', METAS_DEFAULT);
 
     // Mes atual
     const meses = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
@@ -4103,18 +4425,17 @@ function atualizarBarras(metas) {
   if (pMensal) pMensal.textContent = pctMensal.toFixed(1) + '%';
 }
 
-function atualizarMetas() {
+async function atualizarMetas() {
   const rAnualStr = document.getElementById('inputRealAnual')?.value?.trim();
   const rMensalStr = document.getElementById('inputRealMensal')?.value?.trim();
 
   try {
-    const saved = localStorage.getItem('atlantyx_metas');
-    const metas = saved ? JSON.parse(saved) : { ...METAS_DEFAULT };
+    const metas = await DB.get('metas', { ...METAS_DEFAULT });
 
     if (rAnualStr) metas.realAnual = parseMoeda(rAnualStr);
     if (rMensalStr) metas.realMensal = parseMoeda(rMensalStr);
 
-    localStorage.setItem('atlantyx_metas', JSON.stringify(metas));
+    await DB.set('metas', metas);
     atualizarBarras(metas);
 
     // Limpar inputs
@@ -4126,10 +4447,9 @@ function atualizarMetas() {
   } catch(e) { toast('Erro ao salvar', 'error'); }
 }
 
-function editarMetas() {
+async function editarMetas() {
   // Modal simples para editar as metas alvo
-  const saved = localStorage.getItem('atlantyx_metas');
-  const metas = saved ? JSON.parse(saved) : { ...METAS_DEFAULT };
+  const metas = await DB.get('metas', { ...METAS_DEFAULT });
 
   const metaAnual = prompt('Meta Anual 2026 (ex: 18M ou 18000000):', formatarMoeda(metas.anual));
   if (metaAnual === null) return;
@@ -4144,7 +4464,7 @@ function editarMetas() {
   if (maEl) maEl.textContent = formatarMoeda(metas.anual);
   if (mmEl) mmEl.textContent = formatarMoeda(metas.mensal);
 
-  localStorage.setItem('atlantyx_metas', JSON.stringify(metas));
+  await DB.set('metas', metas);
   atualizarBarras(metas);
   toast('Metas atualizadas!', 'success');
   addLog('ok', '[Dashboard] Novas metas — Anual: ' + formatarMoeda(metas.anual) + ' | Mensal: ' + formatarMoeda(metas.mensal));
@@ -4205,7 +4525,7 @@ async function syncQuickBooks() {
     addLog('warn', '[S3] QuickBooks: configure QB_CLIENT_ID, QB_CLIENT_SECRET e QB_REFRESH_TOKEN no Vercel');
 
     // Usar dados das metas salvas para montar o painel
-    const metas = JSON.parse(localStorage.getItem('atlantyx_metas') || '{}');
+    const metas = await DB.get('metas', {});
     const realAnual = metas.realAnual || 0;
     const realMensal = metas.realMensal || 0;
 
@@ -4242,7 +4562,7 @@ async function buscarDadosQB() {
   } catch(e) { addLog('err', '[S3] QB erro: ' + e.message); }
 }
 
-function atualizarPainelFinanceiro(realAnual, realMes, aReceber, projetado) {
+async function atualizarPainelFinanceiro(realAnual, realMes, aReceber, projetado) {
   const fmt = (v) => {
     if (v >= 1000000) return 'R$' + (v/1000000).toFixed(1).replace('.0','') + 'M';
     if (v >= 1000) return 'R$' + (v/1000).toFixed(0) + 'k';
@@ -4258,7 +4578,7 @@ function atualizarPainelFinanceiro(realAnual, realMes, aReceber, projetado) {
   });
 
   // Atualizar barras de progresso S3
-  const metas = JSON.parse(localStorage.getItem('atlantyx_metas') || '{}');
+  const metas = JSON.parse(localStorage.getItem('atx:metas') || '{}');
   const metaAnual = metas.anual || 18000000;
   const metaMensal = metas.mensal || 1500000;
   const pctA = Math.min(100, (realAnual / metaAnual) * 100);
@@ -4279,10 +4599,10 @@ function atualizarPainelFinanceiro(realAnual, realMes, aReceber, projetado) {
   const mML = document.getElementById('f_metaMensalLabel'); if (mML) mML.textContent = 'meta ' + fmt(metaMensal);
 
   // Sincronizar com dashboard principal
-  const mDash = JSON.parse(localStorage.getItem('atlantyx_metas') || '{}');
+  const mDash = await DB.get('metas', {});
   mDash.realAnual = realAnual;
   mDash.realMensal = realMes;
-  localStorage.setItem('atlantyx_metas', JSON.stringify(mDash));
+  DB.set('metas', mDash);
   if (typeof atualizarBarras === 'function') atualizarBarras(mDash);
 }
 
@@ -4299,7 +4619,7 @@ function renderLancamentos(lancamentos) {
 
 async function gerarAnaliseFin() {
   addLog('info', '[S3] Gerando analise financeira com IA...');
-  const metas = JSON.parse(localStorage.getItem('atlantyx_metas') || '{}');
+  const metas = await DB.get('metas', {});
   const r = await fetch('/api/s1-intel', {
     method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ action: 'analise_financeira', contexto: { realAnual: metas.realAnual, realMensal: metas.realMensal } })
@@ -4352,7 +4672,7 @@ async function gerarFluxo() {
   const btn = document.getElementById('btnFluxo');
   btn.disabled = true; btn.textContent = 'Gerando...';
   addLog('info', '[S3] Gerando fluxo de caixa...');
-  const metas = JSON.parse(localStorage.getItem('atlantyx_metas') || '{}');
+  const metas = await DB.get('metas', {});
 
   const r = await fetch('/api/claude', {
     method: 'POST', headers: {'Content-Type':'application/json'},
@@ -4393,7 +4713,7 @@ function addReceber() {
   if (!cliente || !valor) { toast('Informe cliente e valor', 'error'); return; }
 
   receberItems.push({ cliente, valor, vencimento: venc, status: 'pendente', id: Date.now() });
-  localStorage.setItem('atlantyx_receber', JSON.stringify(receberItems));
+  DB.set('receber', receberItems);
   renderReceberTable();
 
   document.getElementById('f_recCliente').value = '';
@@ -4422,17 +4742,17 @@ function renderReceberTable() {
     </div>`).join('');
 }
 
-function marcarRecebido(i) {
+async function marcarRecebido(i) {
   const item = receberItems[i];
   if (!item) return;
   // Atualizar metas com valor recebido
-  const metas = JSON.parse(localStorage.getItem('atlantyx_metas') || '{}');
+  const metas = await DB.get('metas', {});
   const val = parseMoeda(item.valor);
   metas.realAnual = (metas.realAnual || 0) + val;
   metas.realMensal = (metas.realMensal || 0) + val;
-  localStorage.setItem('atlantyx_metas', JSON.stringify(metas));
+  await DB.set('metas', metas);
   receberItems.splice(i, 1);
-  localStorage.setItem('atlantyx_receber', JSON.stringify(receberItems));
+  DB.set('receber', receberItems);
   renderReceberTable();
   if (typeof atualizarBarras === 'function') atualizarBarras(metas);
   if (typeof carregarMetas === 'function') carregarMetas();
@@ -4443,15 +4763,15 @@ function marcarRecebido(i) {
 
 async function syncReceberQB() { syncQuickBooks(); }
 
-function initS3() {
+async function initS3() {
   // Carregar contas a receber salvas
   try {
-    const saved = localStorage.getItem('atlantyx_receber');
+    const saved = localStorage.getItem('atx:receber');
     if (saved) { receberItems = JSON.parse(saved); renderReceberTable(); }
   } catch(e) {}
 
   // Carregar metas no painel financeiro
-  const metas = JSON.parse(localStorage.getItem('atlantyx_metas') || '{}');
+  const metas = await DB.get('metas', {});
   if (metas.realAnual !== undefined) {
     atualizarPainelFinanceiro(metas.realAnual || 0, metas.realMensal || 0, 0, 0);
   }
@@ -4787,11 +5107,16 @@ addLog('info','ICP: Energia · Automotivo · Varejo · Industria · R$100M+');
 addLog('info','Endpoints ativos: '+[...S2A,...S7A].filter(a=>a.on&&a.ep).length+' agentes com API');
 initS1();
 initMenu();
-carregarProposito();
-initS3();
-carregarMetas();
-setTimeout(refreshAll,1000);
-setInterval(refreshAll,30000);
+// Inicializar na sequência correta — DB primeiro, depois dados
+(async function() {
+  await initAuth();
+  await initDB();
+  await carregarProposito();
+  await initS3();
+  await carregarMetas();
+  setTimeout(refreshAll, 1000);
+  setInterval(refreshAll, 30000);
+})();
 // Auto-gerar mensagens na primeira visita a pagina WA
 setTimeout(()=>{
   // Se o usuario esta na pagina WA, gerar automaticamente
@@ -5498,6 +5823,195 @@ function captarIdeiaFromAnalise() {
   nav('s1pipeline', document.querySelector('.sbi[onclick*="s1pipeline"]'));
   setTimeout(() => captarIdeia(), 300);
 }
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// KPI DASHBOARD S7 — Registros diários persistidos no Vercel KV
+// ══════════════════════════════════════════════════════════════════════════════
+const KPI_METAS = {
+  contatos:   { min: 50,  max: 100 },
+  respostas:  { taxa: 10 },
+  marcadas:   { min: 3,   max: 5   },
+  feitas:     { min: 3,   max: 5   },
+  propostas:  { min: 1             },
+  fechamentos:{ diasMin: 3, diasMax: 5 },
+};
+
+function semaforoCor(valor, min, max) {
+  if (valor === null || valor === undefined) return { cor: 'var(--t3)', label: '—', emoji: '⚪' };
+  if (valor >= max) return { cor: 'var(--green)', label: 'ACIMA', emoji: '🟢' };
+  if (valor >= min) return { cor: 'var(--green)', label: 'NA META', emoji: '🟢' };
+  if (valor >= min * 0.7) return { cor: 'var(--gold)', label: 'ABAIXO', emoji: '🟡' };
+  return { cor: 'var(--red)', label: 'CRITICO', emoji: '🔴' };
+}
+
+async function initKpiDashboard() {
+  const hoje = new Date();
+  const dataEl = document.getElementById('dataHojeSdr');
+  if (dataEl) dataEl.textContent = hoje.toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long' });
+
+  // Carregar do KV (DB layer)
+  const registros = await getKpiRegistrosAsync();
+  const hojeStr = hoje.toISOString().split('T')[0];
+  const regHoje = registros.find(r => r.data === hojeStr);
+
+  if (regHoje) {
+    const campos = ['contatos','respostas','reunioesMarcadas','reunioesFeitas','propostas','fechamentos'];
+    campos.forEach(campo => {
+      const id = 'kpi' + campo.charAt(0).toUpperCase() + campo.slice(1);
+      const el = document.getElementById(id);
+      if (el && regHoje[campo] !== undefined) el.value = regHoje[campo];
+    });
+    const obsEl = document.getElementById('kpiObs');
+    if (obsEl && regHoje.obs) obsEl.value = regHoje.obs;
+  }
+
+  renderizarKpiCards(regHoje);
+  renderizarAcumuladoSemana(registros);
+}
+
+function renderizarKpiCards(reg) {
+  const v = reg || {};
+  const taxa = v.contatos > 0 ? Math.round((v.respostas||0) / v.contatos * 100) : null;
+  const cards = [
+    { id: 'contatos',    valor: v.contatos,           sem: semaforoCor(v.contatos, 50, 100), display: v.contatos ?? '—' },
+    { id: 'resposta',    valor: taxa,                  sem: semaforoCor(taxa, 10, 20),        display: taxa !== null ? taxa + '%' : '—' },
+    { id: 'marcadas',    valor: v.reunioesMarcadas,    sem: semaforoCor(v.reunioesMarcadas, 3, 5),  display: v.reunioesMarcadas ?? '—' },
+    { id: 'feitas',      valor: v.reunioesFeitas,      sem: semaforoCor(v.reunioesFeitas, 3, 5),    display: v.reunioesFeitas ?? '—' },
+    { id: 'propostas',   valor: v.propostas,           sem: semaforoCor(v.propostas, 1, 3),         display: v.propostas ?? '—' },
+    { id: 'fechamentos', valor: v.fechamentos,         sem: semaforoCor(v.fechamentos, 0.5, 1),     display: v.fechamentos ?? '—' },
+  ];
+  cards.forEach(card => {
+    const cardEl = document.getElementById('kpiCard_' + card.id);
+    const valEl  = document.getElementById('kpiVal_' + card.id);
+    const semEl  = document.getElementById('kpiSem_' + card.id);
+    if (valEl) { valEl.textContent = card.display; valEl.style.color = card.sem.cor; }
+    if (semEl) { semEl.textContent = card.sem.emoji + ' ' + card.sem.label; semEl.style.color = card.sem.cor; }
+    if (cardEl) cardEl.style.borderTopColor = card.sem.cor;
+  });
+}
+
+function renderizarAcumuladoSemana(registros) {
+  const hoje = new Date();
+  const inicioSemana = new Date(hoje);
+  inicioSemana.setDate(hoje.getDate() - hoje.getDay() + (hoje.getDay() === 0 ? -6 : 1));
+  const semStr = inicioSemana.toISOString().split('T')[0];
+  const regSem = registros.filter(r => r.data >= semStr);
+
+  const totContatos    = regSem.reduce((s,r) => s + (parseInt(r.contatos)||0), 0);
+  const totMarcadas    = regSem.reduce((s,r) => s + (parseInt(r.reunioesMarcadas)||0), 0);
+  const totFeitas      = regSem.reduce((s,r) => s + (parseInt(r.reunioesFeitas)||0), 0);
+  const totFechamentos = regSem.reduce((s,r) => s + (parseInt(r.fechamentos)||0), 0);
+
+  const setBar = (id, valor, meta) => {
+    const el = document.getElementById(id);
+    const prog = document.getElementById(id + 'Prog');
+    if (el) el.textContent = valor;
+    if (prog) prog.style.width = Math.min(100, Math.round(valor/meta*100)) + '%';
+  };
+  setBar('semContatos',    totContatos,    250);
+  setBar('semReunioes',    totMarcadas + totFeitas, 15);
+  setBar('semFechamentos', totFechamentos, 1);
+
+  const mc = document.getElementById('semContatosMeta');
+  if (mc) mc.textContent = 'meta: 250–500/sem · realizado: ' + totContatos;
+  const mr = document.getElementById('semReunioesMeta');
+  if (mr) mr.textContent = 'marcadas: ' + totMarcadas + ' · realizadas: ' + totFeitas;
+  const mf = document.getElementById('semFechamentosMeta');
+  if (mf) mf.textContent = 'meta: 1–2/sem · realizado: ' + totFechamentos;
+}
+
+async function salvarKpiDia() {
+  const hoje = new Date().toISOString().split('T')[0];
+  const registro = {
+    data:               hoje,
+    contatos:           parseInt(document.getElementById('kpiContatos')?.value) || 0,
+    respostas:          parseInt(document.getElementById('kpiRespostas')?.value) || 0,
+    reunioesMarcadas:   parseInt(document.getElementById('kpiReunioesMarcadas')?.value) || 0,
+    reunioesFeitas:     parseInt(document.getElementById('kpiReunioesFeitas')?.value) || 0,
+    propostas:          parseInt(document.getElementById('kpiPropostas')?.value) || 0,
+    fechamentos:        parseInt(document.getElementById('kpiFechamentos')?.value) || 0,
+    obs:                document.getElementById('kpiObs')?.value?.trim() || '',
+    salvo_em:           new Date().toISOString(),
+  };
+
+  // Salvar no KV via DB layer
+  await DB.saveKpi(registro);
+
+  // Atualizar cache local
+  const registros = DB.getKpisLocal();
+  const idx = registros.findIndex(r => r.data === hoje);
+  if (idx >= 0) registros[idx] = registro; else registros.unshift(registro);
+  try { localStorage.setItem('atx:kpis', JSON.stringify(registros)); } catch(e) {}
+
+  renderizarKpiCards(registro);
+  renderizarAcumuladoSemana(registros);
+  addLog('ok', '[S7-KPI] ' + hoje + ' salvo no KV — Contatos: ' + registro.contatos + ' | Reuniões: ' + registro.reunioesMarcadas + ' marcadas, ' + registro.reunioesFeitas + ' realizadas');
+  toast('Registro salvo no banco de dados!', 'success');
+
+  if (registro.contatos < 50) addLog('warn', '[S7-KPI] Contatos abaixo da meta! ' + registro.contatos + ' de 50 mínimos');
+  if (registro.reunioesMarcadas < 3) addLog('warn', '[S7-KPI] Reuniões marcadas abaixo da meta!');
+}
+
+async function carregarKpiHistorico() {
+  const panel = document.getElementById('kpiHistoricoPanel');
+  const lista  = document.getElementById('kpiHistoricoLista');
+  if (!panel || !lista) return;
+  panel.style.display = 'block';
+  lista.innerHTML = '<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:12px;">Carregando do banco de dados...</div>';
+
+  const registros = await getKpiRegistrosAsync();
+  if (!registros.length) {
+    lista.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Nenhum registro ainda.</div>';
+    return;
+  }
+
+  lista.innerHTML = '<table style="width:100%;font-size:11px;border-collapse:collapse;">'
+    + '<thead><tr style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);">'
+    + '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--bd);">Data</th>'
+    + '<th style="text-align:center;padding:6px 4px;border-bottom:1px solid var(--bd);">Contatos</th>'
+    + '<th style="text-align:center;padding:6px 4px;border-bottom:1px solid var(--bd);">Resp%</th>'
+    + '<th style="text-align:center;padding:6px 4px;border-bottom:1px solid var(--bd);">Marcadas</th>'
+    + '<th style="text-align:center;padding:6px 4px;border-bottom:1px solid var(--bd);">Realizadas</th>'
+    + '<th style="text-align:center;padding:6px 4px;border-bottom:1px solid var(--bd);">Propostas</th>'
+    + '<th style="text-align:center;padding:6px 4px;border-bottom:1px solid var(--bd);">Fechamentos</th>'
+    + '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--bd);">Obs</th>'
+    + '</tr></thead><tbody>'
+    + registros.slice(0,30).map((r, i) => {
+        const taxa = r.contatos > 0 ? Math.round((r.respostas||0)/r.contatos*100) : 0;
+        const dtFmt = new Date(r.data + 'T12:00:00').toLocaleDateString('pt-BR', { weekday:'short', day:'2-digit', month:'2-digit' });
+        const bgRow = i % 2 === 0 ? 'background:var(--bg4);' : '';
+        const corC = r.contatos >= 100 ? 'var(--green)' : r.contatos >= 50 ? 'var(--gold)' : 'var(--red)';
+        const corM = r.reunioesMarcadas >= 5 ? 'var(--green)' : r.reunioesMarcadas >= 3 ? 'var(--gold)' : 'var(--red)';
+        const corF = r.fechamentos > 0 ? 'var(--green)' : 'var(--t3)';
+        return '<tr style="' + bgRow + '">'
+          + '<td style="padding:7px 8px;font-weight:600;">' + dtFmt + '</td>'
+          + '<td style="text-align:center;padding:7px 4px;color:' + corC + ';font-weight:600;">' + (r.contatos||0) + '</td>'
+          + '<td style="text-align:center;padding:7px 4px;">' + taxa + '%</td>'
+          + '<td style="text-align:center;padding:7px 4px;color:' + corM + ';font-weight:600;">' + (r.reunioesMarcadas||0) + '</td>'
+          + '<td style="text-align:center;padding:7px 4px;">' + (r.reunioesFeitas||0) + '</td>'
+          + '<td style="text-align:center;padding:7px 4px;">' + (r.propostas||0) + '</td>'
+          + '<td style="text-align:center;padding:7px 4px;font-weight:700;color:' + corF + ';font-size:14px;">' + (r.fechamentos||0) + '</td>'
+          + '<td style="padding:7px 8px;color:var(--t2);font-size:10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.obs||'') + '</td>'
+          + '</tr>';
+      }).join('')
+    + '</tbody></table>';
+}
+
+function getKpiRegistros() {
+  try { return JSON.parse(localStorage.getItem('atx:kpis') || '[]'); } catch { return []; }
+}
+
+async function getKpiRegistrosAsync() {
+  return await DB.getKpis();
+}
+
+// Hook nav para inicializar KPI ao entrar na página
+const _origNavKpi = nav;
+nav = function(p, el) {
+  _origNavKpi(p, el);
+  if (p === 's7kpi') setTimeout(initKpiDashboard, 100);
+};
 
 </script>
 </body>
