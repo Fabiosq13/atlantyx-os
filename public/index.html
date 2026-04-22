@@ -170,21 +170,21 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div class="sbi active" onclick="nav('dash',this)">&#9632; Dashboard <span class="nbx gn">LIVE</span></div>
     <div class="sbi" onclick="nav('log',this)">&#9776; Log <span class="nbx rd" id="logCnt">0</span></div>
 
-    <!-- FUNDADOR -->
-    <div class="sg-hd sg-fundador" onclick="toggleGrupo('gFundador')" data-g="gFundador">
-      <span class="sg-lbl">Fundador</span>
-      <span class="sg-arr open" id="arr-gFundador">&#9660;</span>
+    <!-- ═══ S0 · ESTRATEGIA ═══ -->
+    <div class="sg-divisor">S0 · ESTRATEGIA</div>
+
+    <!-- Proposito + Metas -->
+    <div class="sg-hd sg-fundador" onclick="toggleGrupo('gProposito')" data-g="gProposito">
+      <span class="sg-lbl">Proposito + Metas</span>
+      <span class="sg-arr open" id="arr-gProposito">&#9660;</span>
     </div>
-    <div class="sg-body" id="gFundador">
+    <div class="sg-body" id="gProposito">
       <div class="sbi s1" onclick="nav('s1proposito',this)">&#9670; Proposito + Metas <span class="nbx" style="background:rgba(156,109,255,.15);color:#9c6dff">Eu</span></div>
       <div class="sbi s1" onclick="nav('s1fundador',this)">&#9888; Inbox Aprovacoes <span class="nbx rd" id="s1DecCnt">0</span></div>
     </div>
 
-    <!-- ═══ BACK OFFICE ═══ -->
-    <div class="sg-divisor">BACK OFFICE</div>
-
     <!-- Inteligencia e Estrategia -->
-    <div class="sg-hd sg-backoffice" onclick="toggleGrupo('gEstrategia')" data-g="gEstrategia">
+    <div class="sg-hd sg-fundador" onclick="toggleGrupo('gEstrategia')" data-g="gEstrategia">
       <span class="sg-lbl">Inteligencia + Estrategia</span>
       <span class="sg-arr open" id="arr-gEstrategia">&#9660;</span>
     </div>
@@ -193,22 +193,35 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sbi s1" onclick="nav('s1intel',this)">&#9670; Diagnostico Completo <span class="nbx gn">IA</span></div>
       <div class="sbi s1" onclick="nav('s1riscos',this)">&#9888; Gestao de Riscos</div>
       <div class="sbi s1" onclick="nav('s1mercado',this)">&#9733; Inteligencia Mercado</div>
-      <div class="sg-sub">PLANEJAMENTO</div>
+    </div>
+
+    <!-- Planejamento -->
+    <div class="sg-hd sg-fundador" onclick="toggleGrupo('gPlanejamento')" data-g="gPlanejamento">
+      <span class="sg-lbl">Planejamento</span>
+      <span class="sg-arr" id="arr-gPlanejamento">&#9660;</span>
+    </div>
+    <div class="sg-body closed" id="gPlanejamento">
       <div class="sbi s1" onclick="nav('s1plano',this)">&#9654; Plano Estrategico</div>
       <div class="sbi s1" onclick="nav('s1acoes',this)">&#9776; Plano Acao 90d</div>
       <div class="sbi s1" onclick="nav('s1cenarios',this)">&#9671; Cenarios de Futuro</div>
       <div class="sbi s1" onclick="nav('s1okr',this)">&#9711; OKRs + Metas</div>
-      <div class="sg-sub">REPLANEJAMENTO</div>
       <div class="sbi s1" onclick="nav('s1dash',this)">&#8635; Replanejamento</div>
       <div class="sbi s1" onclick="nav('s1relatorio',this)">&#9776; Relatorio Executivo</div>
-    <div class="sbi s1" onclick="nav('s1dados',this)">&#128200; Dados Reais da Empresa <span class="nbx gn">QB+Drive</span></div>
-      <div class="sg-sub">PRODUTOS</div>
+      <div class="sbi s1" onclick="nav('s1dados',this)">&#128200; Dados Reais <span class="nbx gn">QB+Drive</span></div>
+    </div>
+
+    <!-- Pipeline de Ideias -->
+    <div class="sg-hd sg-fundador" onclick="toggleGrupo('gIdeias')" data-g="gIdeias">
+      <span class="sg-lbl">Ideias + Produtos</span>
+      <span class="sg-arr" id="arr-gIdeias">&#9660;</span>
+    </div>
+    <div class="sg-body closed" id="gIdeias">
       <div class="sbi s1" onclick="nav('s1pipeline',this)">&#9654; Pipeline de Ideias <span class="nbx bl" id="s1PipeCnt">—</span></div>
       <div class="sbi s1" onclick="nav('s1analise',this)">&#9670; Analisar Ideia com IA <span class="nbx pu">S1-03</span></div>
     </div>
 
     <!-- Planejamento Financeiro -->
-    <div class="sg-hd sg-backoffice" onclick="toggleGrupo('gFinanceiro')" data-g="gFinanceiro">
+    <div class="sg-hd sg-fundador" onclick="toggleGrupo('gFinanceiro')" data-g="gFinanceiro">
       <span class="sg-lbl">Planejamento Financeiro</span>
       <span class="sg-arr" id="arr-gFinanceiro">&#9660;</span>
     </div>
@@ -224,27 +237,12 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sbi s1" onclick="nav('s1financeiro',this)">&#8593; Analise Financeira IA</div>
     </div>
 
-    <!-- ═══ MIDDLE OFFICE ═══ -->
-    <div class="sg-divisor">MIDDLE OFFICE</div>
-
-    <!-- Email Intelligence -->
-    <div class="sg-hd sg-middle" onclick="toggleGrupo('gEmail')" data-g="gEmail">
-      <span class="sg-lbl">Email Intelligence</span>
-      <span class="sg-arr" id="arr-gEmail">&#9660;</span>
-    </div>
-    <div class="sg-body closed" id="gEmail">
-      <div class="sbi ei" onclick="nav('email',this)">&#9993; Caixa de E-mails <span class="nbx rd" id="emailUrgCnt">—</span></div>
-      <div class="sbi ei" onclick="nav('emailrfp',this)">&#9634; RFPs por E-mail</div>
-      <div class="sbi ei" onclick="nav('emailvendas',this)">&#9654; Respostas de Vendas</div>
-      <div class="sbi ei" onclick="nav('emailprojetos',this)">&#9776; Projetos</div>
-    </div>
-
-    <!-- ═══ FRONT OFFICE ═══ -->
-    <div class="sg-divisor">FRONT OFFICE</div>
+    <!-- ═══ S2 · MARKETING DIGITAL ═══ -->
+    <div class="sg-divisor">S2 · MARKETING DIGITAL</div>
 
     <!-- Marketing -->
     <div class="sg-hd sg-front" onclick="toggleGrupo('gMarketing')" data-g="gMarketing">
-      <span class="sg-lbl">S2 · Marketing Digital</span>
+      <span class="sg-lbl">Marketing Digital</span>
       <span class="sg-arr open" id="arr-gMarketing">&#9660;</span>
     </div>
     <div class="sg-body" id="gMarketing">
@@ -257,7 +255,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sbi s2" onclick="nav('s2campanha',this)">&#9654; Nova Campanha</div>
       <div class="sbi s2" onclick="nav('s2kanban',this)">&#9632; Kanban Aprovacao <span class="nbx gd" id="kanbanCnt">0</span></div>
       <div class="sg-sub">OUTBOUND</div>
-      <div class="sbi s2" onclick="nav('s2wa',this)">&#9679; Mensagens WhatsApp <span class="nbx gn">IA</span></div>
+      <div class="sbi s2" onclick="nav('s2wa',this)">&#9679; WhatsApp IA <span class="nbx gn">IA</span></div>
       <div class="sbi s2" onclick="nav('s2outbound',this)">&#8593; Ads + SEO</div>
       <div class="sg-sub">INBOUND</div>
       <div class="sbi s2" onclick="nav('s2inbound',this)">&#9993; E-mail Marketing</div>
@@ -268,9 +266,12 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sbi s2" onclick="nav('s2ag',this)">&#9675; Todos Agentes S2</div>
     </div>
 
+    <!-- ═══ S7 · VENDAS ═══ -->
+    <div class="sg-divisor">S7 · VENDAS</div>
+
     <!-- Vendas -->
     <div class="sg-hd sg-front" onclick="toggleGrupo('gVendas')" data-g="gVendas">
-      <span class="sg-lbl">S7 · Vendas</span>
+      <span class="sg-lbl">Vendas + CRM</span>
       <span class="sg-arr open" id="arr-gVendas">&#9660;</span>
     </div>
     <div class="sg-body" id="gVendas">
@@ -280,6 +281,11 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sg-sub">OUTREACH</div>
       <div class="sbi s7" onclick="nav('s7outreach',this)">&#8594; Outreach em Lote</div>
       <div class="sbi s7" onclick="nav('s7meet',this)">&#9633; Reunioes + Briefings <span class="nbx gd" id="meetCnt">—</span></div>
+      <div class="sg-sub">EMAIL INTELLIGENCE</div>
+      <div class="sbi ei" onclick="nav('email',this)">&#9993; Caixa de E-mails <span class="nbx rd" id="emailUrgCnt">—</span></div>
+      <div class="sbi ei" onclick="nav('emailrfp',this)">&#9634; RFPs por E-mail</div>
+      <div class="sbi ei" onclick="nav('emailvendas',this)">&#9654; Respostas de Vendas</div>
+      <div class="sbi ei" onclick="nav('emailprojetos',this)">&#9776; Projetos</div>
       <div class="sg-sub">AGENTES</div>
       <div class="sbi s7" onclick="nav('s7ag',this)">&#9675; Todos Agentes S7</div>
     </div>
