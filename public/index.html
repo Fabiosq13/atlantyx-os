@@ -5210,10 +5210,22 @@ function selecionarImagem(i, url) {
 
 function aprovarImagem(url, evt) {
   if (evt) evt.stopPropagation();
-  // Adicionar ao kanban como peça aprovada
+  // Salvar como imagem principal da campanha (para Preview por Canal)
+  if (campAtiva) {
+    // Colocar imagem aprovada PRIMEIRO na lista (preview usa imagens[0])
+    const outras = (campAtiva.imagens || []).filter(img => img.url !== url);
+    campAtiva.imagens = [{ url, aprovada: true, ts: new Date().toISOString() }, ...outras];
+    window._campanhaAtual = campAtiva;
+    // Destacar visualmente qual foi selecionada
+    document.querySelectorAll('[data-url]').forEach(btn => {
+      const card = btn.closest('div[style*="border-radius"]');
+      if (card) card.style.boxShadow = btn.dataset.url === url ? '0 0 0 3px var(--green)' : 'none';
+    });
+    toast('Imagem aprovada! Vai para o Preview por Canal automaticamente.', 'success');
+    addLog('ok', '[Ideogram] Imagem aprovada e definida como principal da campanha');
+  }
+  // Adicionar ao kanban
   adicionarAoKanban('Imagem Ideogram', 'LinkedIn', 'S2-Designer', '', url, url);
-  toast('Imagem aprovada e adicionada ao Kanban!', 'success');
-  addLog('ok', '[Ideogram] Imagem aprovada no Kanban');
 }
 
 function aprovarTodasImagens() {
@@ -5320,18 +5332,25 @@ async function gerarImagemCampanha() {
     .replace(/[ÚÙÛÜ]/g,'U').replace(/[Ç]/g,'C')
     .substring(0, 50);
 
-  // Remove instrução de texto em inglês do brief — será substituída pela headline em PT sem acentos
-  const briefSemTexto = (briefVisual || '').replace(/[Tt]ext overlay[^.]*\.?/g, '').replace(/reading '[^']*'/g, '').replace(/saying "[^"]*"/g, '').trim();
-  const cenaVisual = briefSemTexto || 'Corporate executive in modern boardroom looking at real-time data analytics dashboard with confidence';
+  // Limpar o brief — remover qualquer instrução de texto que o Designer colocou
+  const briefLimpo = (briefVisual || '')
+    .replace(/bold white text[^.]*\./gi, '')
+    .replace(/text overlay[^.]*\./gi, '')
+    .replace(/typography[^.]*reading[^.]*\./gi, '')
+    .replace(/words?[^.]*\./gi, '')
+    .replace(/saying "[^"]*"/gi, '')
+    .replace(/reading '[^']*'/gi, '')
+    .trim();
+  const cenaVisual = briefLimpo || 'Corporate executive in dark modern office with multiple screens showing real-time data dashboards and analytics';
 
-  // Ideogram NÃO renderiza texto em português corretamente
-  // Estratégia: gerar imagem SEM texto — adicionar texto no Canva/Figma
+  // ESTRATÉGIA DEFINITIVA: imagem 100% sem texto — usuário adiciona no Canva
   const partes = [
     cenaVisual,
-    'NO TEXT in the image — pure visual composition only, no words, no letters, no typography',
-    'Visual style: dark navy blue background #1A3A8F, electric blue #4F7CFF glowing accents on data elements, charts and graphs, geometric data visualization lines, EY McKinsey premium B2B consulting aesthetic, high contrast, photorealistic corporate environment',
-    'Premium B2B technology concept — NOT generic stock photo',
-    'Reserve clean dark area bottom right 20% for logo placement',
+    'ABSOLUTELY NO TEXT, NO WORDS, NO LETTERS, NO NUMBERS, NO TYPOGRAPHY anywhere in the image',
+    'Pure visual scene only — no overlays, no captions, no watermarks, no labels',
+    'Dark navy blue background #1A3A8F, electric blue #4F7CFF glowing accents on data screens and charts',
+    'EY McKinsey premium B2B consulting aesthetic, photorealistic, high contrast, sophisticated',
+    'Clean space at bottom right corner for logo',
     'Optimized for ' + canal + ' ' + formatoLabel,
   ];
   const prompt = promptComLogo(partes.join('. '));
@@ -5391,7 +5410,7 @@ async function gerarImagemCampanha() {
 
   // Salvar imagens na campanha ativa
   if (campAtiva && imagens.length) {
-    campAtiva.imagens = imagens;
+    campAtiva.imagens = imagens.map((img, i) => ({ ...img, aprovada: i===0 }));
     window._campanhaAtual = campAtiva;
     // Atualizar preview se estiver visivel
     const prevPane = document.getElementById('edPreview');
@@ -6473,15 +6492,40 @@ async function aplicarCopyEditado() {
   }
   if (!campAtiva.data) campAtiva.data = {};
   if (!campAtiva.data.copy) campAtiva.data.copy = { versoes: [{}] };
+  // Coletar TODOS os campos do editor agora
+  const novoHeadline    = document.getElementById('edHeadline')?.value?.trim()    || v.headline    || '';
+  const novoSubheadline = document.getElementById('edSubheadline')?.value?.trim() || v.subheadline || '';
+  const novoCorpo       = document.getElementById('edCorpo')?.value               || v.corpo       || '';  // NÃO trim — preservar quebras de linha
+  const novoCta         = document.getElementById('edCtaCopy')?.value?.trim()     || v.cta         || '';
+
   campAtiva.data.copy.versoes[0] = {
-    headline: headline || v.headline,
-    subheadline: document.getElementById('edSubheadline')?.value?.trim() || v.subheadline,
-    corpo: corpo || v.corpo,
-    cta: document.getElementById('edCtaCopy')?.value?.trim() || v.cta,
+    headline:    novoHeadline,
+    subheadline: novoSubheadline,
+    corpo:       novoCorpo,
+    cta:         novoCta,
   };
   window._campanhaAtual = campAtiva;
-  await salvarCampanhaDB();
-  toast('Copy atualizado e salvo no banco!', 'success');
+
+  // Salvar direto — sem chamar coletarEdicoesAtuais (que poderia sobrescrever)
+  campAtiva.atualizado_em = new Date().toISOString();
+  campAtiva.status = campAtiva.status || 'rascunho';
+  salvarCampanhaLocal(campAtiva);
+  try {
+    const r = await fetch('/api/db', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save_campanha', value: campAtiva })
+    });
+    const d = await r.json();
+    if (d.success) {
+      addLog('ok', '[Copy] Salvo no Neon: ' + (novoHeadline.substring(0,40)||campAtiva.nome));
+      toast('Copy salvo no banco!', 'success');
+    } else {
+      toast('Copy salvo localmente (banco offline)', 'info');
+    }
+  } catch(e) {
+    toast('Copy salvo localmente', 'info');
+  }
 }
 
 // ── PREVIEW POR CANAL ─────────────────────────────────────────────────────────
@@ -6495,23 +6539,22 @@ function mostrarPreviewCanal(canal) {
 }
 
 function gerarPreviewTodosCanais() {
-  // Coletar textos do editor ou campanha ativa
   const v        = campAtiva?.data?.copy?.versoes?.[0] || {};
   const headline = (document.getElementById('edHeadline')?.value?.trim()    || v.headline    || '');
   const subhl    = (document.getElementById('edSubheadline')?.value?.trim() || v.subheadline || '');
-  const corpo    = (document.getElementById('edCorpo')?.value?.trim()       || v.corpo       || '');
+  const corpo    = (document.getElementById('edCorpo')?.value               || v.corpo       || '');
   const cta      = (document.getElementById('edCtaCopy')?.value?.trim()     || v.cta         || '');
+  // Pegar imagem aprovada ou primeira disponível
   const imgUrl   = campAtiva?.imagens?.[0]?.url || '';
 
   if (!headline && !corpo) {
-    toast('Gere ou preencha o copy antes de ver o preview', 'error');
+    toast('Preencha o copy antes de gerar o preview', 'error');
     return;
   }
 
-  // Helper: quebra linhas para HTML
-  const nl2br = t => t.split('\n').map(l => l.trim()).filter(Boolean).join('<br/>');
+  const nl2br = t => (t || '').split('\n').map(l => l.trim()).filter(Boolean).join('<br/>');
 
-  // ── LINKEDIN ────────────────────────────────────────────────────────────────
+  // ── LINKEDIN ──────────────────────────────────────────────────────────────
   const liEl = document.getElementById('prevLITexto');
   if (liEl) {
     liEl.innerHTML =
@@ -6520,7 +6563,6 @@ function gerarPreviewTodosCanais() {
       (corpo    ? '<div style="font-size:14px;color:#1d1d1d;line-height:1.65;margin-bottom:8px;">' + nl2br(corpo) + '</div>' : '') +
       (cta      ? '<span style="color:#0a66c2;font-weight:700;">👉 ' + cta + '</span>' : '');
   }
-  // LI imagem
   const liImg  = document.getElementById('prevLIImg');
   const liWrap = document.getElementById('prevLIImagem');
   const liPH   = document.getElementById('prevLIImagemPlaceholder');
@@ -6533,24 +6575,24 @@ function gerarPreviewTodosCanais() {
     if (liPH)   liPH.style.display   = 'flex';
   }
 
-  // ── INSTAGRAM ───────────────────────────────────────────────────────────────
+  // ── INSTAGRAM ─────────────────────────────────────────────────────────────
   const igEl = document.getElementById('prevIGTexto');
   if (igEl) {
-    const igBody = (headline || corpo).replace(/\n/g,' ').substring(0, 220);
-    igEl.innerHTML = '<strong style="color:#000;">atlantyx_bi</strong>&nbsp;<span style="color:#262626;">' + igBody + '</span>';
+    const igPrimeiro = headline ? '<strong style="font-size:14px;color:#000;">' + headline + '</strong><br/>' : '';
+    const igResto    = corpo.replace(/\n/g,' ').substring(0, 300);
+    igEl.innerHTML = '<strong style="color:#000;">atlantyx_bi</strong>&nbsp;' + igPrimeiro + '<span style="color:#262626;">' + igResto + '</span>';
   }
   const igImg = document.getElementById('prevIGImg');
   const igPH  = document.getElementById('prevIGPlaceholder');
   if (imgUrl && igImg) {
-    igImg.src = imgUrl;
-    igImg.style.display = 'block';
+    igImg.src = imgUrl; igImg.style.display = 'block';
     if (igPH) igPH.style.display = 'none';
   } else {
     if (igImg) igImg.style.display = 'none';
     if (igPH)  igPH.style.display  = 'flex';
   }
 
-  // ── FACEBOOK ────────────────────────────────────────────────────────────────
+  // ── FACEBOOK ──────────────────────────────────────────────────────────────
   const fbEl = document.getElementById('prevFBTexto');
   if (fbEl) {
     fbEl.innerHTML =
@@ -6561,8 +6603,7 @@ function gerarPreviewTodosCanais() {
   const fbImg = document.getElementById('prevFBImg');
   const fbPH  = document.getElementById('prevFBPlaceholder');
   if (imgUrl && fbImg) {
-    fbImg.src = imgUrl;
-    fbImg.style.display = 'block';
+    fbImg.src = imgUrl; fbImg.style.display = 'block';
     if (fbPH) fbPH.style.display = 'none';
   } else {
     if (fbImg) fbImg.style.display = 'none';
@@ -6571,7 +6612,7 @@ function gerarPreviewTodosCanais() {
 
   // Mostrar LinkedIn por padrão
   mostrarPreviewCanal('linkedin');
-  addLog('ok', '[Preview] Canais gerados — imagem: ' + (imgUrl ? 'sim' : 'nao'));
+  addLog('ok', '[Preview] Gerado — img: ' + (imgUrl ? 'sim' : 'nao') + ' | headline: ' + headline.substring(0,30));
 }
 
 async function aprovarCampanhaFinal() {
