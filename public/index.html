@@ -1467,11 +1467,14 @@ tr:hover td{background:rgba(79,124,255,.03);}
             <button class="btn btn-or" style="font-size:10px;" onclick="gerarPreviewTodosCanais()">&#9670; Gerar Previews</button>
             <button class="btn btn-gn" style="font-size:10px;" onclick="aprovarCampanhaFinal()">&#10003; Aprovar</button>
           </div>
-          <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
             <button class="btn" id="prevBtnLI" onclick="mostrarPreviewCanal('linkedin')" style="font-size:11px;padding:5px 12px;">&#128101; LinkedIn</button>
             <button class="btn" id="prevBtnIG" onclick="mostrarPreviewCanal('instagram')" style="font-size:11px;padding:5px 12px;">&#128247; Instagram</button>
             <button class="btn" id="prevBtnFB" onclick="mostrarPreviewCanal('facebook')" style="font-size:11px;padding:5px 12px;">&#128279; Facebook</button>
+            <span style="font-size:10px;color:var(--t2);margin-left:8px;">← clique para trocar de canal</span>
           </div>
+          <!-- PREVIEW CARDS — scrollável -->
+          <div id="previewCardsWrap" style="min-height:300px;padding-bottom:10px;">
           <!-- LINKEDIN -->
           <div id="previewLinkedIn" style="display:none;max-width:560px;margin:0 auto;">
             <div style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 20px rgba(0,0,0,.18);font-family:Arial,sans-serif;">
@@ -1522,6 +1525,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
             </div>
           </div>
         </div>
+          </div><!-- /previewCardsWrap -->
         <!-- AÇÕES FINAIS -->
         <div style="display:flex;gap:8px;margin-top:12px;padding:12px;background:var(--bg4);border-radius:8px;">
           <button class="btn btn-gn" onclick="aprovarCampanhaFinal()" style="flex:1;">&#10003; Aprovar e Enviar ao Kanban</button>
@@ -6677,9 +6681,10 @@ function gerarPreviewTodosCanais() {
     const igCorpo = corpo.replace(/\n/g, ' ');
     igEl.innerHTML =
       '<strong style="color:#000;">atlantyx_bi</strong> ' +
-      (headline ? '<strong style="color:#000;">' + headline + '</strong><br/>' : '') +
-      '<span style="color:#262626;">' + igCorpo + '</span>';
-    addLog('ok', '[Preview] Instagram texto preenchido');
+      (headline ? '<strong style="color:#000;font-size:14px;">' + headline + '</strong><br/>' : '') +
+      '<span style="color:#262626;">' + igCorpo + '</span>' +
+      (cta ? '<br/><br/><span style="color:#1877f2;font-weight:700;">👉 ' + cta + '</span>' : '');
+    addLog('ok', '[Preview] Instagram texto preenchido' + (cta ? ' com CTA' : ' (sem CTA)'));
   } else {
     addLog('err', '[Preview] ERRO: prevIGTexto não encontrado no DOM');
   }
@@ -6718,6 +6723,11 @@ function gerarPreviewTodosCanais() {
 
   mostrarPreviewCanal('linkedin');
   addLog('ok', '[Preview] Concluído — exibindo LinkedIn por padrão');
+  // Scroll para o preview ser visível
+  setTimeout(() => {
+    const liPrev = document.getElementById('previewLinkedIn');
+    if (liPrev) liPrev.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 150);
 }
 
 async function aprovarCampanhaFinal() {
