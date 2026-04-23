@@ -1473,59 +1473,10 @@ tr:hover td{background:rgba(79,124,255,.03);}
             <button class="btn" id="prevBtnFB" onclick="mostrarPreviewCanal('facebook')" style="font-size:11px;padding:5px 12px;">&#128279; Facebook</button>
             <span style="font-size:10px;color:var(--t2);margin-left:8px;">← clique para trocar de canal</span>
           </div>
-          <!-- PREVIEW CARDS — scrollável -->
-          <div id="previewCardsWrap" style="min-height:300px;padding-bottom:10px;">
-          <!-- LINKEDIN -->
-          <div id="previewLinkedIn" style="display:none;max-width:560px;margin:0 auto;">
-            <div style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 20px rgba(0,0,0,.18);font-family:Arial,sans-serif;">
-              <div style="padding:12px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #e0e0e0;">
-                <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#1a3a8f,#4f7cff);display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:18px;flex-shrink:0;">A</div>
-                <div style="flex:1;"><div style="font-weight:700;font-size:14px;color:#000;">Atlantyx</div><div style="font-size:12px;color:#666;">Inteligencia em Dados e IA</div><div style="font-size:11px;color:#888;">Agora · 🌐</div></div>
-                <button style="background:#0a66c2;color:#fff;border:none;padding:6px 16px;border-radius:16px;font-size:13px;font-weight:600;cursor:pointer;">+ Seguir</button>
-              </div>
-              <div id="prevLITexto" style="padding:14px 16px;font-size:14px;line-height:1.65;color:#000;min-height:50px;"><span style="color:#aaa;font-style:italic;">Clique em Gerar Previews</span></div>
-              <div id="prevLIImagemPlaceholder" style="height:290px;background:linear-gradient(135deg,#1a3a8f,#4f7cff);display:flex;align-items:center;justify-content:center;"><div style="text-align:center;color:#fff;opacity:.5;"><div style="font-size:40px;">🎨</div><div style="font-size:12px;margin-top:6px;">Gere uma imagem na aba Imagem</div></div></div>
-              <div id="prevLIImagem" style="display:none;"><img id="prevLIImg" src="" style="width:100%;display:block;max-height:420px;object-fit:cover;"/></div>
-              <div style="padding:8px 16px;border-top:1px solid #e0e0e0;display:flex;gap:20px;font-size:13px;color:#666;"><span>👍 Gostei</span><span>💬 Comentar</span><span>↗️ Compartilhar</span></div>
-            </div>
+          <!-- PREVIEW CARDS — canal único renderizado inline -->
+          <div id="previewOutput" style="margin-top:8px;min-height:200px;">
+            <div style="color:var(--t3);font-size:12px;text-align:center;padding:30px;">Clique em Gerar Previews para ver o preview do canal selecionado.</div>
           </div>
-          <!-- INSTAGRAM -->
-          <div id="previewInstagram" style="display:none;max-width:400px;margin:0 auto;">
-            <div style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 20px rgba(0,0,0,.18);font-family:-apple-system,sans-serif;">
-              <div style="padding:10px 12px;display:flex;align-items:center;gap:10px;">
-                <div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;flex-shrink:0;">A</div>
-                <div style="font-weight:700;font-size:13px;color:#000;flex:1;">atlantyx_bi</div>
-                <div style="font-size:20px;color:#000;cursor:pointer;">···</div>
-              </div>
-              <div id="prevIGImagemWrap" style="background:linear-gradient(135deg,#1a3a8f,#4f7cff);aspect-ratio:1/1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;">
-                <div id="prevIGPlaceholder" style="text-align:center;color:#fff;opacity:.5;z-index:1;"><div style="font-size:40px;">🎨</div></div>
-                <img id="prevIGImg" src="" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:none;"/>
-              </div>
-              <div style="padding:10px 12px;display:flex;gap:14px;align-items:center;"><span style="font-size:24px;">🤍</span><span style="font-size:24px;">💬</span><span style="font-size:24px;">↗️</span><span style="font-size:24px;margin-left:auto;">🔖</span></div>
-              <div id="prevIGTexto" style="padding:2px 12px 14px;font-size:13px;color:#000;line-height:1.5;"><strong>atlantyx_bi</strong> <span style="color:#555;">Clique em Gerar Previews</span></div>
-            </div>
-          </div>
-          <!-- FACEBOOK -->
-          <div id="previewFacebook" style="display:none;max-width:500px;margin:0 auto;">
-            <div style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 20px rgba(0,0,0,.18);font-family:Helvetica,Arial,sans-serif;">
-              <div style="padding:12px 16px;display:flex;align-items:center;gap:10px;">
-                <div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#1a3a8f,#4f7cff);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:16px;flex-shrink:0;">A</div>
-                <div style="flex:1;"><div style="font-weight:700;font-size:14px;color:#000;">Atlantyx</div><div style="font-size:12px;color:#65676b;">Agora · 🌐</div></div>
-              </div>
-              <div id="prevFBTexto" style="padding:0 16px 12px;font-size:14px;color:#050505;line-height:1.65;min-height:40px;"><span style="color:#aaa;font-style:italic;">Clique em Gerar Previews</span></div>
-              <div id="prevFBImagemWrap" style="background:linear-gradient(135deg,#1a3a8f,#4f7cff);min-height:260px;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;">
-                <div id="prevFBPlaceholder" style="text-align:center;color:#fff;opacity:.5;z-index:1;"><div style="font-size:40px;">🎨</div></div>
-                <img id="prevFBImg" src="" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:none;"/>
-              </div>
-              <div style="padding:4px 16px;border-top:1px solid #e4e6eb;display:flex;">
-                <button style="flex:1;background:none;border:none;padding:10px;cursor:pointer;font-size:14px;color:#65676b;font-weight:600;">👍 Curtir</button>
-                <button style="flex:1;background:none;border:none;padding:10px;cursor:pointer;font-size:14px;color:#65676b;font-weight:600;">💬 Comentar</button>
-                <button style="flex:1;background:none;border:none;padding:10px;cursor:pointer;font-size:14px;color:#65676b;font-weight:600;">↗️ Compartilhar</button>
-              </div>
-            </div>
-          </div>
-        </div>
-          </div><!-- /previewCardsWrap -->
         <!-- AÇÕES FINAIS -->
         <div style="display:flex;gap:8px;margin-top:12px;padding:12px;background:var(--bg4);border-radius:8px;">
           <button class="btn btn-gn" onclick="aprovarCampanhaFinal()" style="flex:1;">&#10003; Aprovar e Enviar ao Kanban</button>
@@ -3385,80 +3336,6 @@ function adicionarAoKanban(titulo, canal, agente, narrativa, copy, design) {
 }
 
 // CAMPANHA COMPLETA
-async function criarCampanhaCompleta() {
-  const nome = document.getElementById('cNome')?.value || 'Campanha Atlantyx';
-  const obj = document.getElementById('cObj')?.value || 'Gerar leads';
-  const canal = document.getElementById('cCanal')?.value || 'LinkedIn';
-  const pub = document.getElementById('cPublico')?.value || 'CIO/CTO';
-  const orcamento = document.getElementById('cOrc')?.value || 'R$5.000';
-  const ctx = document.getElementById('cCtx')?.value || '';
-  const btn = document.getElementById('btnCampanha');
-  const tag = document.getElementById('campTag');
-  const res = document.getElementById('campResult');
-
-  btn.disabled = true; btn.textContent = '  Criando campanha...';
-  tag.textContent = 'Executando'; tag.className = 'tag on';
-
-  const etapas = [
-    { label: 'S2-Storyteller · Narrativa estratégica', done: false },
-    { label: 'S2-Copywriter · Textos da campanha', done: false },
-    { label: 'S2-Designer · Especificação visual', done: false },
-    { label: 'S2-Kanban · Adicionando para aprovação', done: false },
-  ];
-
-  const renderEtapas = () => {
-    res.innerHTML = etapas.map(e => `
-      <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--bd);">
-        <span style="font-size:14px;">${e.done ? 'OK' : ' '}</span>
-        <span style="font-size:12px;color:${e.done?'var(--green)':'var(--blue)'};">${e.label}</span>
-      </div>`).join('');
-  };
-  renderEtapas();
-  addLog('info', '[S2-Campanha] Iniciando: ' + nome);
-
-  try {
-    const r = await fetch('/api/s2-creative', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'campanha_completa', payload: { campanha: nome, objetivo: obj, canal, publico: pub, orcamento, contexto: ctx } })
-    });
-    const data = await r.json();
-
-    if (data.success) {
-      etapas.forEach(e => e.done = true);
-      renderEtapas();
-      // Adicionar ao Kanban
-      const copyTexto = data.copy?.versoes?.[0]?.corpo || '';
-      const narrativaTema = data.narrativa?.tema_central || '';
-      const designBrief = data.design?.conceito_visual || '';
-      adicionarAoKanban(nome, canal, 'Campanha Completa', narrativaTema, copyTexto, designBrief);
-      tag.textContent = 'Concluído'; tag.className = 'tag live';
-      res.innerHTML += `<div style="margin-top:12px;background:var(--g2);border:1px solid rgba(34,211,163,.2);border-radius:7px;padding:12px;font-size:12px;color:var(--green);">Campanha criada e adicionada ao Kanban! Role abaixo para revisar e ajustar o copy.</div>`;
-
-      // Alimentar painel de revisão de copy
-      const copyPanel = document.getElementById('copyReviewPanel');
-      const copyTextoEl = document.getElementById('copyAtualTexto');
-      const copyPlanEl = document.getElementById('copyPlanejamento');
-      const imgComentEl = document.getElementById('imgAjusteComentario');
-      if (copyPanel) copyPanel.style.display = 'block';
-      if (copyTextoEl && copyTexto) copyTextoEl.textContent = copyTexto;
-      if (copyPlanEl && narrativaTema) copyPlanEl.textContent = 'Tema central: ' + narrativaTema + '\n\nBrief visual: ' + (designBrief || '—');
-      // Guardar contexto para ajustes
-      window._campanhaAtual = { nome, canal, obj, pub, copyTexto, narrativaTema, designBrief, data };
-      setTimeout(() => copyPanel?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 500);
-
-      addLog('ok', '[S2-Campanha] Concluído: ' + nome + ' -> Kanban + Painel de Revisão');
-      toast('Campanha criada! Role abaixo para revisar o copy.', 'success');
-    } else {
-      tag.textContent = 'Erro'; tag.className = 'tag hot';
-      addLog('err', '[S2-Campanha] Erro: ' + data.error);
-    }
-  } catch(e) {
-    tag.textContent = 'Erro'; tag.className = 'tag hot';
-    addLog('err', '[S2-Campanha] Erro: ' + e.message);
-  }
-  btn.disabled = false; btn.textContent = '* Criar Campanha Completa com IA';
-}
 
 async function runAgente(action) {
   const canal = document.getElementById('cCanal')?.value || 'LinkedIn';
@@ -6290,7 +6167,14 @@ function mostrarEdAba(aba) {
     if (el)  el.style.display = a === aba ? 'block' : 'none';
     if (btn) { btn.style.borderColor = a === aba ? 'var(--blue)' : ''; btn.style.color = a === aba ? 'var(--blue)' : ''; }
   });
-  if (aba === 'preview') setTimeout(gerarPreviewTodosCanais, 80);
+  if (aba === 'preview') {
+    setTimeout(gerarPreviewTodosCanais, 80);
+    // Scroll the preview section into view
+    setTimeout(() => {
+      const edPrev = document.getElementById('edPreview');
+      if (edPrev) edPrev.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  }
 }
 
 // ── BANCO DE DADOS — Neon via /api/db ─────────────────────────────────────────
@@ -6467,6 +6351,11 @@ async function criarCampanhaCompleta() {
     etapas[3].done = true; renderEt();
 
     addLog('ok', '[S2-Campanha] Campanha ID: ' + campAtiva.id + ' | status: ' + campAtiva.status);
+    // KANBAN
+    const _cp0 = campAtiva.data?.copy?.versoes?.[0] || {};
+    adicionarAoKanban(campAtiva.nome, campAtiva.canal, 'Campanha Completa', campAtiva.data?.narrativa?.tema_central || '', (_cp0.headline?_cp0.headline+'\n\n':'') + (_cp0.corpo||''), campAtiva.data?.design?.conceito_visual || '');
+    addLog('ok', '[Kanban] "' + campAtiva.nome + '" adicionada');
+
     etapas[3].done = true; renderEt();
 
     // Preencher editor
@@ -6610,135 +6499,135 @@ async function aplicarCopyEditado() {
 
 // ── PREVIEW POR CANAL ─────────────────────────────────────────────────────────
 function mostrarPreviewCanal(canal) {
-  ['linkedin','instagram','facebook'].forEach(c => {
-    const el  = document.getElementById('preview' + c.charAt(0).toUpperCase() + c.slice(1));
-    const btn = document.getElementById('prevBtn' + (c==='linkedin'?'LI':c==='instagram'?'IG':'FB'));
-    if (el)  el.style.display = c === canal ? 'block' : 'none';
-    if (btn) { btn.style.borderColor = c === canal ? 'var(--blue)' : ''; btn.style.color = c === canal ? 'var(--blue)' : ''; }
+  // Atualizar botões
+  ['linkedin','instagram','facebook'].forEach(ch => {
+    const btn = document.getElementById('prevBtn' + (ch==='linkedin'?'LI':ch==='instagram'?'IG':'FB'));
+    if (btn) { btn.style.borderColor = ch === canal ? 'var(--blue)' : ''; btn.style.color = ch === canal ? 'var(--blue)' : ''; }
   });
+  // Renderizar preview do canal selecionado
+  window._previewCanalAtual = canal;
+  renderPreviewCanal(canal);
 }
 
-function gerarPreviewTodosCanais() {
-  addLog('info', '[Preview] Iniciando geração de previews por canal...');
-
-  // Garantir que edPreview está visível
-  const edPrev = document.getElementById('edPreview');
-  if (edPrev && edPrev.style.display === 'none') {
-    addLog('warn', '[Preview] edPreview estava oculto — forçando visível');
-    mostrarEdAba('preview');
-    setTimeout(gerarPreviewTodosCanais, 120);
-    return;
-  }
-
-  // Coletar dados
+function renderPreviewCanal(canal) {
+  const out = document.getElementById('previewOutput');
+  if (!out) return;
   const v        = campAtiva?.data?.copy?.versoes?.[0] || {};
   const headline = document.getElementById('edHeadline')?.value?.trim()    || v.headline    || '';
   const subhl    = document.getElementById('edSubheadline')?.value?.trim() || v.subheadline || '';
   const corpo    = document.getElementById('edCorpo')?.value               || v.corpo       || '';
   const cta      = document.getElementById('edCtaCopy')?.value?.trim()     || v.cta         || '';
   const imgUrl   = campAtiva?.imagens?.[0]?.url || '';
+  const br = t => (t||'').split('\n').map(l=>l.trim()).filter(Boolean).join('<br/>');
+  const imgHTML = imgUrl
+    ? '<img src="' + imgUrl + '" style="width:100%;display:block;max-height:420px;object-fit:cover;"/>'
+    : '<div style="height:220px;background:linear-gradient(135deg,#1a3a8f,#4f7cff);display:flex;align-items:center;justify-content:center;"><div style="text-align:center;color:#fff;opacity:.5;"><div style="font-size:36px;">&#127912;</div><div style="font-size:12px;margin-top:6px;">Gere uma imagem na aba Imagem</div></div></div>';
 
-  addLog('info', '[Preview] headline: "' + headline.substring(0,40) + '" | corpo: ' + corpo.length + ' chars | img: ' + (imgUrl?'SIM':'NÃO'));
+  if (canal === 'linkedin') {
+    out.innerHTML = '<div style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 20px rgba(0,0,0,.18);font-family:Arial,sans-serif;max-width:560px;">'
+      + '<div style="padding:12px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #e0e0e0;">'
+      + '<div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#1a3a8f,#4f7cff);display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:18px;flex-shrink:0;">A</div>'
+      + '<div style="flex:1;"><div style="font-weight:700;font-size:14px;color:#000;">Atlantyx</div><div style="font-size:12px;color:#666;">Inteligencia em Dados e IA</div><div style="font-size:11px;color:#888;">Agora · &#127760;</div></div>'
+      + '<button style="background:#0a66c2;color:#fff;border:none;padding:6px 16px;border-radius:16px;font-size:13px;font-weight:600;">+ Seguir</button>'
+      + '</div>'
+      + '<div style="padding:14px 16px;font-size:14px;line-height:1.65;color:#000;">'
+      + (headline ? '<strong style="font-size:15px;display:block;margin-bottom:6px;">' + headline + '</strong>' : '')
+      + (subhl    ? '<em style="font-size:13px;display:block;margin-bottom:10px;color:#555;">' + subhl + '</em>' : '')
+      + (corpo    ? '<p style="margin:0 0 8px;">' + br(corpo) + '</p>' : '')
+      + (cta      ? '<span style="color:#0a66c2;font-weight:700;">&#128073; ' + cta + '</span>' : '')
+      + '</div>'
+      + imgHTML
+      + '<div style="padding:8px 16px;border-top:1px solid #e0e0e0;display:flex;gap:20px;font-size:13px;color:#666;"><span>&#128077; Gostei</span><span>&#128172; Comentar</span><span>&#8617;&#65038; Compartilhar</span></div>'
+      + '</div>';
+  } else if (canal === 'instagram') {
+    out.innerHTML = '<div style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 20px rgba(0,0,0,.18);font-family:-apple-system,sans-serif;max-width:400px;">'
+      + '<div style="padding:10px 12px;display:flex;align-items:center;gap:10px;">'
+      + '<div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;flex-shrink:0;">A</div>'
+      + '<div style="font-weight:700;font-size:13px;color:#000;flex:1;">atlantyx_bi</div>'
+      + '<div style="font-size:20px;color:#000;">&#8230;</div>'
+      + '</div>'
+      + '<div style="background:linear-gradient(135deg,#1a3a8f,#4f7cff);aspect-ratio:1/1;overflow:hidden;">' + imgHTML + '</div>'
+      + '<div style="padding:10px 12px;display:flex;gap:14px;align-items:center;"><span style="font-size:24px;">&#10084;</span><span style="font-size:24px;">&#128172;</span><span style="font-size:24px;">&#8617;&#65038;</span><span style="font-size:24px;margin-left:auto;">&#128278;</span></div>'
+      + '<div style="padding:2px 12px 14px;font-size:13px;color:#000;line-height:1.5;">'
+      + '<strong>atlantyx_bi</strong> '
+      + (headline ? '<strong>' + headline + '</strong> ' : '')
+      + '<span style="color:#262626;">' + corpo.replace(/\n/g,' ') + '</span>'
+      + (cta ? '<br/><span style="color:#1877f2;font-weight:700;">&#128073; ' + cta + '</span>' : '')
+      + '</div>'
+      + '</div>';
+  } else if (canal === 'facebook') {
+    out.innerHTML = '<div style="background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 20px rgba(0,0,0,.18);font-family:Helvetica,Arial,sans-serif;max-width:500px;">'
+      + '<div style="padding:12px 16px;display:flex;align-items:center;gap:10px;">'
+      + '<div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#1a3a8f,#4f7cff);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:16px;flex-shrink:0;">A</div>'
+      + '<div style="flex:1;"><div style="font-weight:700;font-size:14px;color:#000;">Atlantyx</div><div style="font-size:12px;color:#65676b;">Agora · &#127760;</div></div>'
+      + '</div>'
+      + '<div style="padding:0 16px 12px;font-size:14px;color:#050505;line-height:1.65;">'
+      + (headline ? '<strong style="font-size:15px;display:block;margin-bottom:8px;">' + headline + '</strong>' : '')
+      + '<div>' + br(corpo) + '</div>'
+      + (cta ? '<br/><span style="color:#1877f2;font-weight:700;">&#128073; ' + cta + '</span>' : '')
+      + '</div>'
+      + imgHTML
+      + '<div style="padding:4px 16px;border-top:1px solid #e4e6eb;display:flex;">'
+      + '<button style="flex:1;background:none;border:none;padding:10px;cursor:pointer;font-size:14px;color:#65676b;font-weight:600;">&#128077; Curtir</button>'
+      + '<button style="flex:1;background:none;border:none;padding:10px;cursor:pointer;font-size:14px;color:#65676b;font-weight:600;">&#128172; Comentar</button>'
+      + '<button style="flex:1;background:none;border:none;padding:10px;cursor:pointer;font-size:14px;color:#65676b;font-weight:600;">&#8617;&#65038; Compartilhar</button>'
+      + '</div>'
+      + '</div>';
+  }
+}
+
+function gerarPreviewTodosCanais() {
+  const v = campAtiva?.data?.copy?.versoes?.[0] || {};
+  const headline = document.getElementById('edHeadline')?.value?.trim() || v.headline || '';
+  const corpo    = document.getElementById('edCorpo')?.value            || v.corpo    || '';
+
+  addLog('info', '[Preview] headline: "' + headline.substring(0,40) + '" | corpo: ' + corpo.length + ' chars');
 
   if (!headline && !corpo) {
     toast('Preencha o copy antes do preview', 'error');
-    addLog('warn', '[Preview] Abortado — headline e corpo vazios');
     return;
   }
 
-  const br = t => (t||'').split('\n').map(l=>l.trim()).filter(Boolean).join('<br/>');
+  // Renderizar no div único
+  window._previewCanalAtual = window._previewCanalAtual || 'linkedin';
+  renderPreviewCanal(window._previewCanalAtual);
 
-  // LINKEDIN
-  const liEl = document.getElementById('prevLITexto');
-  if (liEl) {
-    liEl.innerHTML =
-      (headline ? '<strong style="font-size:15px;display:block;margin-bottom:6px;color:#000;">' + headline + '</strong>' : '') +
-      (subhl    ? '<em style="font-size:13px;display:block;margin-bottom:8px;color:#555;">' + subhl + '</em>' : '') +
-      (corpo    ? '<p style="font-size:14px;color:#1d1d1d;line-height:1.65;margin:0 0 8px;">' + br(corpo) + '</p>' : '') +
-      (cta      ? '<span style="color:#0a66c2;font-weight:700;">👉 ' + cta + '</span>' : '');
-    addLog('ok', '[Preview] LinkedIn texto preenchido (' + liEl.innerHTML.length + ' chars)');
-  } else {
-    addLog('err', '[Preview] ERRO: prevLITexto não encontrado no DOM');
-  }
+  // Marcar botão ativo
+  ['linkedin','instagram','facebook'].forEach(ch => {
+    const btn = document.getElementById('prevBtn' + (ch==='linkedin'?'LI':ch==='instagram'?'IG':'FB'));
+    if (btn) { btn.style.borderColor = ch === window._previewCanalAtual ? 'var(--blue)' : ''; btn.style.color = ch === window._previewCanalAtual ? 'var(--blue)' : ''; }
+  });
 
-  const liImg  = document.getElementById('prevLIImg');
-  const liWrap = document.getElementById('prevLIImagem');
-  const liPH   = document.getElementById('prevLIImagemPlaceholder');
-  if (imgUrl) {
-    if (liImg)  { liImg.src = imgUrl; liImg.style.display = 'block'; }
-    if (liWrap) liWrap.style.display = 'block';
-    if (liPH)   liPH.style.display   = 'none';
-    addLog('ok', '[Preview] LinkedIn imagem: ' + imgUrl.substring(0,50));
-  } else {
-    if (liWrap) liWrap.style.display = 'none';
-    if (liPH)   liPH.style.display   = 'flex';
-    addLog('info', '[Preview] LinkedIn sem imagem aprovada');
-  }
-
-  // INSTAGRAM — mostrar headline + corpo completo (sem corte)
-  const igEl = document.getElementById('prevIGTexto');
-  if (igEl) {
-    const igCorpo = corpo.replace(/\n/g, ' ');
-    igEl.innerHTML =
-      '<strong style="color:#000;">atlantyx_bi</strong> ' +
-      (headline ? '<strong style="color:#000;font-size:14px;">' + headline + '</strong><br/>' : '') +
-      '<span style="color:#262626;">' + igCorpo + '</span>' +
-      (cta ? '<br/><br/><span style="color:#1877f2;font-weight:700;">👉 ' + cta + '</span>' : '');
-    addLog('ok', '[Preview] Instagram texto preenchido' + (cta ? ' com CTA' : ' (sem CTA)'));
-  } else {
-    addLog('err', '[Preview] ERRO: prevIGTexto não encontrado no DOM');
-  }
-
-  const igImg = document.getElementById('prevIGImg');
-  const igPH  = document.getElementById('prevIGPlaceholder');
-  if (imgUrl) {
-    if (igImg) { igImg.src = imgUrl; igImg.style.display = 'block'; }
-    if (igPH)  igPH.style.display = 'none';
-  } else {
-    if (igImg) igImg.style.display = 'none';
-    if (igPH)  igPH.style.display  = 'flex';
-  }
-
-  // FACEBOOK
-  const fbEl = document.getElementById('prevFBTexto');
-  if (fbEl) {
-    fbEl.innerHTML =
-      (headline ? '<strong style="font-size:15px;display:block;margin-bottom:8px;color:#050505;">' + headline + '</strong>' : '') +
-      '<div style="font-size:14px;color:#050505;line-height:1.65;">' + br(corpo) + '</div>' +
-      (cta ? '<br/><span style="color:#1877f2;font-weight:700;">👉 ' + cta + '</span>' : '');
-    addLog('ok', '[Preview] Facebook texto preenchido');
-  } else {
-    addLog('err', '[Preview] ERRO: prevFBTexto não encontrado no DOM');
-  }
-
-  const fbImg = document.getElementById('prevFBImg');
-  const fbPH  = document.getElementById('prevFBPlaceholder');
-  if (imgUrl) {
-    if (fbImg) { fbImg.src = imgUrl; fbImg.style.display = 'block'; }
-    if (fbPH)  fbPH.style.display = 'none';
-  } else {
-    if (fbImg) fbImg.style.display = 'none';
-    if (fbPH)  fbPH.style.display  = 'flex';
-  }
-
-  mostrarPreviewCanal('linkedin');
-  addLog('ok', '[Preview] Concluído — exibindo LinkedIn por padrão');
-  // Scroll para o preview ser visível
-  setTimeout(() => {
-    const liPrev = document.getElementById('previewLinkedIn');
-    if (liPrev) liPrev.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, 150);
+  addLog('ok', '[Preview] Renderizado: ' + window._previewCanalAtual);
 }
 
 async function aprovarCampanhaFinal() {
   if (!campAtiva) { toast('Crie uma campanha primeiro', 'error'); return; }
   campAtiva = coletarEdicoesAtuais(campAtiva);
   campAtiva.status = 'aprovada';
+  campAtiva.aprovada_em = new Date().toISOString();
+
   const cp = campAtiva.data?.copy?.versoes?.[0] || {};
-  adicionarAoKanban(campAtiva.nome, campAtiva.canal, 'Aprovada', campAtiva.data?.narrativa?.tema_central||'', cp.corpo||'', campAtiva.data?.design?.conceito_visual||'');
+  const conteudo = (cp.headline ? cp.headline + '\n\n' : '') + (cp.corpo || '');
+  const imgUrl = campAtiva.imagens?.[0]?.url || '';
+
+  // Adicionar ao Kanban com imagem se houver
+  adicionarAoKanban(
+    campAtiva.nome,
+    campAtiva.canal,
+    'Aprovada',
+    campAtiva.data?.narrativa?.tema_central || '',
+    conteudo,
+    imgUrl || campAtiva.data?.design?.conceito_visual || ''
+  );
+
   await salvarCampanhaDB();
-  toast('Campanha aprovada e enviada ao Kanban!', 'success');
-  addLog('ok', '[Campanha] APROVADA: ' + campAtiva.nome);
+
+  addLog('ok', '[Campanha] APROVADA: "' + campAtiva.nome + '" → Kanban');
+  toast('✓ Campanha aprovada e no Kanban!', 'success');
+
+  // Ir para o Kanban
+  setTimeout(() => nav('s2kanban', document.querySelector('.sbi[onclick*="s2kanban"]')), 500);
 }
 
 async function duplicarCampanha() {
@@ -6841,6 +6730,9 @@ async function abrirCampanhaDB(id) {
   campVersoesCopy = [];
   window._campanhaAtual = camp;
 
+  addLog('info', '[Campanha] Abrindo: "' + camp.nome + '" | status: ' + camp.status);
+  addLog('info', '[Campanha] Imagens: ' + (camp.imagens?.length || 0) + ' | Copy: ' + (camp.data?.copy?.versoes?.[0]?.corpo?.length || 0) + ' chars');
+
   // Preencher formulário
   const campos = { cNome: camp.nome, cCanal: camp.canal, cPublico: camp.pub, cObj: camp.obj, cOrc: camp.orc, cCtx: camp.ctx };
   Object.entries(campos).forEach(([id, val]) => { const el=document.getElementById(id); if (el && val) el.value = val; });
@@ -6851,6 +6743,29 @@ async function abrirCampanhaDB(id) {
   const savBtn = document.getElementById('btnSalvarCamp');
   if (savBtn) savBtn.style.display = 'inline-block';
   if (camp.data) preencherEditorCampanha(camp.data);
+
+  // Restaurar imagens geradas se houver
+  if (camp.imagens?.length) {
+    const imgResult = document.getElementById('campImgResult');
+    const imgTag    = document.getElementById('imgTagCamp');
+    if (imgResult) {
+      imgResult.innerHTML = '<div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:10px;">'
+        + camp.imagens.length + ' IMAGEM(NS) DA CAMPANHA</div>'
+        + '<div style="display:grid;grid-template-columns:repeat(' + Math.min(camp.imagens.length,2) + ',1fr);gap:8px;">'
+        + camp.imagens.map((img, i) => {
+            const url = img.url || img;
+            return '<div id="imgCard_' + i + '" style="position:relative;border-radius:8px;overflow:hidden;border:2px solid ' + (img.aprovada?'var(--green)':'var(--bd)') + ';">'
+              + '<img src="' + url + '" style="width:100%;display:block;"/>'
+              + '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);padding:7px;display:flex;gap:5px;">'
+              + '<button class="btn btn-gn" style="flex:1;font-size:9px;padding:3px;" data-url="' + url + '" data-idx="' + i + '" onclick="aprovarImagem(this.dataset.url,this.dataset.idx,event)">Aprovar</button>'
+              + '<a href="' + url + '" target="_blank" class="btn" style="font-size:9px;padding:3px 7px;color:#fff;border-color:rgba(255,255,255,.3);">Abrir</a>'
+              + '</div></div>';
+          }).join('')
+        + '</div>';
+      if (imgTag) { imgTag.textContent = camp.imagens.length + ' imagem(ns)'; imgTag.className = 'tag live'; }
+      addLog('ok', '[Campanha] ' + camp.imagens.length + ' imagem(ns) restaurada(s) no editor');
+    }
+  }
 
   mostrarAbaCampanha('nova');
   mostrarEdAba('copy');
