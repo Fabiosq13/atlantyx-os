@@ -1498,6 +1498,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <option value="publicada">Publicada</option>
         </select>
         <button class="btn btn-g" onclick="carregarCampanhasDB()" style="font-size:10px;">&#8635; Atualizar</button>
+        <button class="btn btn-g" onclick="debugCampanhas()" style="font-size:9px;color:var(--gold);">&#9679; Debug</button>
       </div>
       <!-- GRID DE CAMPANHAS — renderizado via JS -->
       <div id="campListaGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px;min-height:100px;">
@@ -6178,9 +6179,9 @@ function mostrarEdAba(aba) {
 }
 
 // ── BANCO DE DADOS — Neon via /api/db ─────────────────────────────────────────
-async function salvarCampanhaDB() {
+async function salvarCampanhaDB(skipColeta = false) {
   if (!campAtiva) { toast('Gere uma campanha primeiro', 'error'); return; }
-  campAtiva = coletarEdicoesAtuais(campAtiva);
+  if (!skipColeta) campAtiva = coletarEdicoesAtuais(campAtiva);
   campAtiva.atualizado_em = new Date().toISOString();
   campAtiva.status = campAtiva.status || 'rascunho';
 
@@ -6346,8 +6347,8 @@ async function criarCampanhaCompleta() {
     campVersoesCopy = [];
     window._campanhaAtual = campAtiva;
 
-    // Salvar no banco
-    await salvarCampanhaDB();
+    // Salvar no banco (skipColeta=true: editor ainda não preenchido)
+    await salvarCampanhaDB(true);
     etapas[3].done = true; renderEt();
 
     addLog('ok', '[S2-Campanha] Campanha ID: ' + campAtiva.id + ' | status: ' + campAtiva.status);
@@ -6817,6 +6818,27 @@ document.addEventListener('DOMContentLoaded', function() {
   atualizarContadorCampanhas();
 });
 
+
+function debugCampanhas() {
+  const local = getCampanhasLocal();
+  addLog('info', '[Debug] localStorage atx:campanhas: ' + local.length + ' campanhas');
+  local.forEach((camp, i) => {
+    addLog('info', '[Debug] [' + i + '] id: ' + camp.id + ' | nome: ' + (camp.nome||'?') + ' | status: ' + (camp.status||'?'));
+  });
+  addLog('info', '[Debug] _todasCampanhas: ' + (_todasCampanhas||[]).length);
+  const grid = document.getElementById('campListaGrid');
+  addLog('info', '[Debug] campListaGrid found: ' + (grid ? 'SIM' : 'NAO'));
+  const lista = document.getElementById('abaLista');
+  addLog('info', '[Debug] abaLista display: ' + (lista?.style.display || '?'));
+  if (local.length) {
+    _todasCampanhas = local;
+    filtrarCampanhas();
+    toast(local.length + ' campanhas forçadas do localStorage', 'success');
+  } else {
+    toast('localStorage vazio - banco vai carregar', 'info');
+    carregarCampanhasDB();
+  }
+}
 </script>
 </body>
 </html>
