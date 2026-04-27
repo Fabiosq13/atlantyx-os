@@ -55,6 +55,16 @@ export default async function handler(req, res) {
       criado_em TIMESTAMPTZ DEFAULT NOW(),
       atualizado_em TIMESTAMPTZ DEFAULT NOW()
     )`;
+  await sql`CREATE TABLE IF NOT EXISTS squad_registros (
+    id TEXT PRIMARY KEY,
+    squad TEXT NOT NULL,
+    tipo TEXT,
+    titulo TEXT,
+    cliente TEXT,
+    data JSONB,
+    criado_em TIMESTAMPTZ DEFAULT NOW(),
+    atualizado_em TIMESTAMPTZ DEFAULT NOW()
+  )`;
 
     const { action, key, value } = req.body || {};
 
@@ -147,7 +157,49 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, ideias: r.map(x => x.data) });
     }
 
-    return res.status(400).json({ error: 'Ação inválida: ' + action });
+    // ── S13 DASHBOARD PROJETOS ──────────────────────────────────────────────────
+    if (action === 'save_s13projeto') {
+      const proj = value;
+      if (!proj?.id) return res.status(400).json({ error: 'id obrigatório' });
+      await sql\`INSERT INTO s13_projetos (id, cliente, nome, tecnologia, banco, status, data, salvo_em, atualizado_em)
+        VALUES (\${proj.id}, \${proj.cliente||''}, \${proj.nome||''}, \${proj.tecnologia||''}, \${proj.banco||''}, \${proj.status||'rascunho'}, \${JSON.stringify(proj)}, NOW(), NOW())
+        ON CONFLICT (id) DO UPDATE SET cliente=EXCLUDED.cliente, nome=EXCLUDED.nome, tecnologia=EXCLUDED.tecnologia,
+          banco=EXCLUDED.banco, status=EXCLUDED.status, data=EXCLUDED.data, atualizado_em=NOW()\`;
+      return res.status(200).json({ success: true, id: proj.id });
+    }
+    if (action === 'list_s13projetos') {
+      const rows = await sql\`SELECT data FROM s13_projetos ORDER BY atualizado_em DESC\`;
+      return res.status(200).json({ success: true, projetos: rows.map(r => r.data) });
+    }
+    if (action === 'get_s13projeto') {
+      const rows = await sql\`SELECT data FROM s13_projetos WHERE id = \${key}\`;
+      return res.status(200).json({ success: true, value: rows[0]?.data ?? null });
+    }
+    if (action === 'delete_s13projeto') {
+      await sql\`DELETE FROM s13_projetos WHERE id = \${key}\`;
+      return res.status(200).json({ success: true });
+    }
+
+        // ── SQUAD REGISTROS GENÉRICOS (S4-S12) ──────────────────────────────────
+    if (action === 'save_squad_registro') {
+      const reg = value;
+      if (!reg.id) reg.id = 'reg_' + Date.now();
+      await sql\`INSERT INTO squad_registros (id, squad, tipo, titulo, cliente, data, atualizado_em)
+        VALUES (\${reg.id}, \${reg.squad||'geral'}, \${reg.tipo||''}, \${reg.titulo||''}, \${reg.cliente||''}, \${JSON.stringify(reg)}, NOW())
+        ON CONFLICT (id) DO UPDATE SET tipo=EXCLUDED.tipo, titulo=EXCLUDED.titulo,
+          cliente=EXCLUDED.cliente, data=EXCLUDED.data, atualizado_em=NOW()\`;
+      return res.status(200).json({ success: true, id: reg.id });
+    }
+    if (action === 'list_squad_registros') {
+      const rows = await sql\`SELECT data FROM squad_registros WHERE squad = \${key} ORDER BY atualizado_em DESC LIMIT 100\`;
+      return res.status(200).json({ success: true, registros: rows.map(r => r.data) });
+    }
+    if (action === 'delete_squad_registro') {
+      await sql\`DELETE FROM squad_registros WHERE id = \${key}\`;
+      return res.status(200).json({ success: true });
+    }
+
+        return res.status(400).json({ error: 'Ação inválida: ' + action });
 
   } catch (error) {
     console.error('[ERRO db]', error.message);
