@@ -2157,7 +2157,8 @@ function renderPipelineMock(){const mock={'Mapeado':12,'Abordado':8,'Respondeu':
 async function loadKPIs(){const data=await api('/api/analytics?tipo=kpis');if(!data||!data.kpis){addLog('warn','KPIs: configure HUBSPOT_TOKEN');return;}const k=data.kpis;document.getElementById('kLeads').textContent=k.leads_30_dias||'--';document.getElementById('kScoreA').textContent=k.score_a||'--';document.getElementById('k_leads30').textContent=k.leads_30_dias||'--';document.getElementById('k_mql').textContent=(k.taxa_qualificacao||0)+'%';document.getElementById('s7_d30').textContent=k.deals_30_dias||'--';document.getElementById('s7_tq').textContent=(k.taxa_qualificacao||0)+'%';document.getElementById('p_fc').textContent=k.pipeline_valor?'R$'+(k.pipeline_valor/1000000).toFixed(1)+'M':'--';addLog('success','[S2-09] KPIs: '+k.leads_30_dias+' leads, '+k.taxa_qualificacao+'% qualificacao');}
 async function loadAnalytics(){addLog('info','[S2-09] Gerando analise Claude...');const data=await api('/api/analytics?tipo=analise');if(!data||!data.analise){addLog('err','Analytics: erro');return;}const a=data.analise;const html=`<div style="margin-bottom:9px;"><div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--green);margin-bottom:5px;">INSIGHTS</div>${(a.insights||[]).map((x,n)=>`<div style="padding:5px 0;border-bottom:1px solid var(--bd);font-size:11.5px;"><strong style="color:var(--blue);">${n+1}.</strong> ${x}</div>`).join('')}</div><div style="margin-bottom:9px;"><div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--red);margin-bottom:5px;">ALERTAS</div>${(a.alertas||[]).map(x=>`<div style="padding:5px 8px;background:var(--r2);border-radius:5px;font-size:11px;margin-bottom:4px;">! ${x}</div>`).join('')}</div><div style="padding:8px;background:var(--b2);border-radius:5px;font-size:11px;color:var(--blue);"><strong>Recomendacao:</strong> ${a.recomendacao_principal||''}</div>`;document.getElementById('dash-insights').innerHTML=html;document.getElementById('s2-insights').innerHTML=html;addLog('success','[S2-09] Analise concluida: '+a.tendencia);}
 async function runProspect(){const btn=document.getElementById('btnProspect');const st=document.getElementById('prospStatus');const res=document.getElementById('prospResult');btn.disabled=true;btn.textContent='Mapeando...';st.textContent='Executando';st.className='tag on';res.innerHTML='<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:10px;">Agente S2-02 buscando empresas...</div>';addLog('info','[S2-02] Iniciando: '+document.getElementById('pSetor').value);const data=await api('/api/prospect-scan','POST',{setor:document.getElementById('pSetor').value,regiao:document.getElementById('pRegiao').value,faturamento_min:document.getElementById('pFat').value,cargo_decisor:document.getElementById('pCargo').value,quantidade:parseInt(document.getElementById('pQtd').value),iniciar_outreach:false,incluir_crm:false});if(!data||!data.empresas){st.textContent='Erro';st.className='tag hot';res.innerHTML='<div style="color:var(--red);font-size:11px;padding:10px;">Erro. Verifique variaveis de ambiente no Vercel.</div>';addLog('err','[S2-02] Erro no mapeamento');}else{st.textContent=data.total_mapeado+' empresas';st.className='tag live';res.innerHTML=renderProspectResult(data);document.getElementById('kLeads').textContent=data.total_mapeado;addLog('success','[S2-02] '+data.total_mapeado+' empresas mapeadas, Score A: '+data.score_a);toast(data.total_mapeado+' empresas mapeadas! Clique Carregar no CRM se quiser adicionar.','success');
-// Leads mapeados — use 'Carregar no HubSpot' para adicionar ao CRM}btn.disabled=false;btn.textContent='&#9654; Executar Agente';}
+}
+btn.disabled=false;btn.textContent='&#9654; Executar Agente';}
 async function runRfpMonitor(){const btn=document.getElementById('btnRfp');const res=document.getElementById('rfpResult');btn.disabled=true;btn.textContent='Varrendo...';res.innerHTML='<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:10px;">Agente S2-04 varrendo portais...</div>';addLog('info','[S2-04] Varrendo ComprasNet, SAP Ariba, Beehive...');const data=await api('/api/rfp-monitor','GET');if(!data){res.innerHTML='<div style="color:var(--red);font-size:11px;padding:10px;">Erro - configure CRON_SECRET</div>';addLog('err','[S2-04] Erro');}else{const rfps=data.rfps||[];document.getElementById('rfpCnt').textContent=rfps.length||'0';document.getElementById('kRfp').textContent=rfps.length||'0';if(rfps.length===0){res.innerHTML='<div style="color:var(--t2);font-size:11px;padding:10px;">Nenhum RFP novo. Proximo ciclo em 6h.</div>';}else{res.innerHTML='<div class="tw"><table><thead><tr><th>Empresa</th><th>Valor</th><th>Prazo</th></tr></thead><tbody>'+rfps.map(r=>`<tr><td><strong>${r.empresa}</strong></td><td style="font-family:var(--M);font-size:9.5px;color:var(--gold);">${r.valor}</td><td style="font-family:var(--M);font-size:9.5px;">${r.prazo}</td></tr>`).join('')+'</tbody></table></div>';addLog('success','[S2-04] '+rfps.length+' RFPs - notificacao WA enviada');toast(rfps.length+' RFPs identificados!','success');}}btn.disabled=false;btn.textContent='&#9654; Executar Agora';}
 async function genWA(){const btn=document.getElementById('btnWA');const out=document.getElementById('waOut');btn.disabled=true;btn.textContent='Gerando...';out.innerHTML='<span style="color:var(--blue);font-family:var(--M);font-size:11px;">Gerando mensagem...</span>';addLog('info','[S2-02+S7-05] Gerando WA: '+document.getElementById('wE').value);const data=await api('/api/claude','POST',{system:'Agente de WhatsApp da Atlantyx (BI, Dados, IA grandes empresas). Dados atrasados=perda financeira. Quick Wins em semanas. NUNCA emojis. Tom: '+document.getElementById('wT').value,messages:[{role:'user',content:'WA para Nome: '+document.getElementById('wD').value+' Empresa: '+document.getElementById('wE').value+' Cargo: '+document.getElementById('wC').value+' Setor: '+document.getElementById('wS').value+' Contexto: '+(document.getElementById('wX').value||'operacao complexa')+'. Max 5 linhas. Comeca pelo nome. Termina com pergunta. So o texto.'}],max_tokens:400});if(data&&data.content){const msg=data.content[0].text;out.textContent=msg;document.getElementById('wMetaC').textContent=msg.length;document.getElementById('wMetaS').textContent=document.getElementById('wX').value?'A':'B';document.getElementById('wMetaR').textContent='~'+Math.ceil(msg.split(' ').length/4)+'s';document.getElementById('waMeta').style.display='grid';document.getElementById('btnCpWA').disabled=false;addLog('success','[S7-05] Mensagem gerada: '+msg.length+' chars');const fu=await api('/api/claude','POST',{messages:[{role:'user',content:'Follow-up 3 linhas para '+document.getElementById('wD').value+' da '+document.getElementById('wE').value+', 48h sem resposta. Original: "'+msg.substring(0,100)+'...". So o texto.'}],max_tokens:200});if(fu?.content){document.getElementById('fuOut').textContent=fu.content[0].text;document.getElementById('fuPanel').style.display='block';}}else{out.innerHTML='<span style="color:var(--red);">Erro API Claude - verifique ANTHROPIC_API_KEY</span>';addLog('err','[Claude] Erro');}btn.disabled=false;btn.textContent='&#10022; Gerar com IA';}
 function cpWA(){navigator.clipboard.writeText(document.getElementById('waOut').textContent);toast('Copiado!','success');}
@@ -4604,76 +4605,60 @@ async function gerarAnaliseFin() {
 
 async function gerarProjetado() {
   const btn = document.getElementById('btnProj');
-  btn.disabled = true; btn.textContent = 'Gerando...';
+  if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
   const contratos = document.getElementById('f_contratos')?.value || '0';
-  const projetos = document.getElementById('f_projetos')?.value || '0';
   const propostas = document.getElementById('f_propostas')?.value || '0';
-  const prob = document.getElementById('f_probFech')?.value || '28%';
   const mrr = document.getElementById('f_mrr')?.value || '0';
+  const metaMensal = 1500000;
   addLog('info', '[S3] Gerando projecao financeira...');
-
-  const r = await fetch('/api/s1-strategy', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({
-      system: 'Voce e o CFO-Agente da Atlantyx. Gere projecao de receita realista e conservadora. Retorne em texto formatado, nao JSON.',
-      messages: [{ role: 'user', content: `Projecao financeira da Atlantyx:
-Contratos assinados: ${contratos}
-Projetos em andamento: ${projetos}
-Propostas enviadas: ${propostas} (prob. fechamento: ${prob})
-MRR atual: ${mrr}
-
-Gere:
-1. RECEITA PROJETADA — 3 meses (receita contratada + estimada por probabilidade)
-2. CENARIO PESSIMISTA / REALISTA / OTIMISTA
-3. QUANDO ATINGIR A META MENSAL DE R$1.5M neste ritmo
-4. 3 ACOES PRIORITARIAS para acelerar a receita` }],
-      max_tokens: 1000
-    })
-  });
-  const d = await r.json();
-  const txt = d?.content?.[0]?.text || 'Erro';
-  document.getElementById('f_projetadoResult').innerHTML = `<div style="font-size:12px;line-height:1.8;white-space:pre-wrap;">${txt}</div>`;
-  addLog('ok', '[S3] Projecao gerada');
-  btn.disabled = false; btn.textContent = 'Gerar Projecao';
+  try {
+    const r = await fetch('/api/s1-strategy', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ action: 'analise_financeira', payload: {
+        acao: 'projecao_receita',
+        dados: { contratos, propostas, mrr, meta_mensal: metaMensal, empresa: 'Atlantyx' }
+      }})
+    });
+    const d = await r.json();
+    const txt = d.content || d.resultado || 'Projecao gerada.';
+    const el = document.getElementById('f_projetadoResult');
+    if (el) el.innerHTML = '<div style="font-size:12px;line-height:1.8;white-space:pre-wrap;">' + txt + '</div>';
+    addLog('ok', '[S3] Projecao gerada');
+  } catch(e) {
+    addLog('err', '[S3] Erro projecao: ' + e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Gerar Projecao'; }
 }
+
 
 async function gerarFluxo() {
   const btn = document.getElementById('btnFluxo');
-  btn.disabled = true; btn.textContent = 'Gerando...';
+  if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
   addLog('info', '[S3] Gerando fluxo de caixa...');
   const metas = await DB.get('metas', {});
-
-  const r = await fetch('/api/s1-strategy', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({
-      system: 'Voce e o CFO-Agente da Atlantyx. Gere fluxo de caixa projetado mes a mes.',
-      messages: [{ role: 'user', content: `Fluxo de caixa da Atlantyx — proximos 6 meses:
-Receita atual realizada: R$${(metas.realAnual||0).toLocaleString('pt-BR')}
-Meta anual: R$18M
-Time: fundador + marketing + closer + dev part-time
-
-Para cada mes (Mai a Out 2026) projete:
-- Entradas previstas (contratos + novos negocios estimados)
-- Saidas estimadas (custos operacionais)
-- Saldo do mes
-- Saldo acumulado
-- Semaforo: Verde / Amarelo / Vermelho
-
-Formato tabela texto. Seja realista e conservador.` }],
-      max_tokens: 1200
-    })
-  });
-  const d = await r.json();
-  const txt = d?.content?.[0]?.text || 'Erro';
-  document.getElementById('f_fluxoResult').innerHTML = `<div style="font-size:12px;line-height:1.8;white-space:pre-wrap;">${txt}</div>`;
-
-  // Atualizar resumo no dashboard
-  const resumo = document.getElementById('f_fluxoResumo');
-  if (resumo) resumo.innerHTML = `<div style="font-size:11px;color:var(--t2);">Fluxo gerado — acesse S3 > Fluxo de Caixa para detalhes.</div>`;
-
-  addLog('ok', '[S3] Fluxo de caixa gerado');
-  btn.disabled = false; btn.textContent = 'Gerar Fluxo';
+  const metaAnual = metas.anual || 18000000;
+  const saldo = metas.realAnual || 0;
+  try {
+    const r = await fetch('/api/s1-strategy', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ action: 's1_financial', payload: {
+        acao: 'fluxo_caixa',
+        dados: { meta_anual: metaAnual, saldo_atual: saldo, empresa: 'Atlantyx', meses: 6 }
+      }})
+    });
+    const d = await r.json();
+    const txt = d.content || d.resultado || 'Fluxo gerado.';
+    const el = document.getElementById('f_fluxoResult');
+    if (el) el.innerHTML = '<div style="font-size:12px;line-height:1.8;white-space:pre-wrap;">' + txt + '</div>';
+    const resumo = document.getElementById('f_fluxoResumo');
+    if (resumo) resumo.innerHTML = '<div style="font-size:11px;color:var(--t2);">Fluxo gerado — acesse S3 > Fluxo de Caixa para detalhes.</div>';
+    addLog('ok', '[S3] Fluxo de caixa gerado');
+  } catch(e) {
+    addLog('err', '[S3] Erro fluxo: ' + e.message);
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Gerar Fluxo'; }
 }
+
 
 function addReceber() {
   const cliente = document.getElementById('f_recCliente')?.value?.trim();
