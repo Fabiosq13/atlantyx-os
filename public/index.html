@@ -472,10 +472,80 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </div>
 
   <div class="page" id="page-s2prospect">
+    <!-- BANNER: Prospecção Externa -->
+    <div style="background:linear-gradient(135deg,rgba(240,112,48,.12),rgba(79,124,255,.08));border:1px solid rgba(240,112,48,.3);border-radius:8px;padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px;">
+      <div style="font-size:20px;">&#127911;</div>
+      <div>
+        <div style="font-family:var(--M);font-size:9px;color:var(--or);text-transform:uppercase;letter-spacing:1px;">Prospecção de Novos Leads — Externos ao CRM</div>
+        <div style="font-size:10px;color:var(--t2);margin-top:2px;">Busca e qualifica leads novos fora do HubSpot. Após qualificar, carrega automaticamente no CRM como novos contatos.</div>
+      </div>
+    </div>
     <!-- MODOS DE PROSPECÇÃO -->
-    <div style="display:flex;gap:8px;margin-bottom:12px;">
-      <button class="btn" id="modoUnico" onclick="setModoProspect('unico')" style="flex:1;border-color:#4f7cff;color:#4f7cff;">Empresa + Decisor Especifico</button>
-      <button class="btn btn-or" id="modoCadeia" onclick="setModoProspect('cadeia')" style="flex:1;">&#9670; Prospectar Cadeia C-Level Completa</button>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <button class="btn" id="modoUnico" onclick="setModoProspect('unico')" style="flex:1;border-color:#4f7cff;color:#4f7cff;">&#9670; Empresa + Decisor</button>
+      <button class="btn btn-or" id="modoCadeia" onclick="setModoProspect('cadeia')" style="flex:1;">&#9670; Cadeia C-Level Completa</button>
+      <button class="btn" id="modoEvento" onclick="setModoProspect('evento')" style="flex:1;border-color:#22d3a3;color:#22d3a3;">&#127881; Prospecção por Evento</button>
+    </div>
+
+    <!-- MODO EVENTO -->
+    <div id="formEvento" style="display:none;margin-bottom:12px;">
+      <div class="panel">
+        <div class="ph"><div class="pt">Prospecção por Evento — Identificar e Qualificar Participantes</div><span class="tag on">IA + Web</span></div>
+        <div class="pb">
+          <div class="fg"><label class="fl">Nome do Evento</label>
+            <input class="fi" id="evNome" placeholder="Ex: Forum de Energia 2026, Febraban Tech, Automacao Summit..."/>
+          </div>
+          <div class="fg"><label class="fl">URL do site do evento (lista de participantes)</label>
+            <input class="fi" id="evUrl" placeholder="Ex: https://forumenergia.com.br/participantes" type="url"/>
+          </div>
+          <div class="fg"><label class="fl">Perfil de participante que nos interessa</label>
+            <select class="fsel" id="evTipoPart">
+              <option value="todos_clevel">C-Level — todos os setores (CIO, CTO, CFO, CEO, COO)</option>
+              <option value="energia">C-Level — Energia e Utilities</option>
+              <option value="automotivo">C-Level — Automotivo / Mobilidade</option>
+              <option value="varejo">C-Level — Varejo e Consumer</option>
+              <option value="industria">C-Level — Industria / Manufatura</option>
+              <option value="financeiro">C-Level — Financeiro / Bancario</option>
+              <option value="tecnologia">C-Level — Tecnologia</option>
+              <option value="todos">Gerentes Senior e acima</option>
+            </select>
+          </div>
+          <div class="kg k2" style="gap:8px;">
+            <div class="fg" style="margin:0;"><label class="fl">Faturamento minimo</label>
+              <select class="fsel" id="evFat">
+                <option value="5000000">R$5M+</option><option value="10000000">R$10M+</option>
+                <option value="20000000">R$20M+</option><option value="50000000">R$50M+</option>
+                <option value="100000000">R$100M+</option><option value="500000000">R$500M+</option>
+                <option value="1000000000">R$1B+</option>
+              </select>
+            </div>
+            <div class="fg" style="margin:0;"><label class="fl">Melhor oferta Atlantyx para este publico</label>
+              <select class="fsel" id="evOferta">
+                <option>Data Warehouse + BI (dashboards executivos)</option>
+                <option>Engenharia de Dados (pipelines + Medallion)</option>
+                <option>IA Generativa aplicada ao negocio</option>
+                <option>Analytics as a Service (managed)</option>
+                <option>Modernizacao de dados (legado para cloud)</option>
+                <option>Dashboard Studio (Power BI / Looker / Python)</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <button class="btn btn-gn" style="flex:2;padding:10px;" onclick="prospectarEvento()">&#9670; Carregar Participantes e Qualificar</button>
+            <button class="btn btn-or" style="flex:1;font-size:10px;" onclick="carregarLeadsEventoHubSpot()">&#128640; Enviar ao CRM</button>
+          </div>
+        </div>
+      </div>
+      <!-- RESULTADO LEADS DO EVENTO -->
+      <div id="eventoResultado" style="display:none;margin-top:10px;">
+        <div class="panel">
+          <div class="ph">
+            <div class="pt" id="eventoResultTitulo">Leads Identificados</div>
+            <span class="tag live" id="eventoResultTag">0 leads</span>
+          </div>
+          <div class="pb" id="eventoLeadsLista" style="max-height:500px;overflow-y:auto;"></div>
+        </div>
+      </div>
     </div>
     <div class="kg k2">
       <div class="panel">
@@ -485,7 +555,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <div class="pb">
             <div class="fg"><label class="fl">Setor Alvo</label><select class="fsel" id="pSetor"><option>Energia (geracao/distribuicao)</option><option>Automotivo (concessionarias)</option><option>Varejo (redes estruturadas)</option><option>Industria / Manufatura</option><option>Logistica e Transporte</option></select></div>
             <div class="fg"><label class="fl">Regiao</label><select class="fsel" id="pRegiao"><option>Sudeste (SP, RJ, MG)</option><option>Sul (PR, SC, RS)</option><option>Brasil inteiro</option></select></div>
-            <div class="fg"><label class="fl">Faturamento Minimo</label><select class="fsel" id="pFat"><option>R$100M</option><option>R$500M</option><option>R$1B</option></select></div>
+            <div class="fg"><label class="fl">Faturamento Minimo</label><select class="fsel" id="pFat"><option value="5000000">R$5M+</option><option value="10000000">R$10M+</option><option value="20000000">R$20M+</option><option value="30000000">R$30M+</option><option value="40000000">R$40M+</option><option value="50000000">R$50M+</option><option value="60000000">R$60M+</option><option value="70000000">R$70M+</option><option value="80000000">R$80M+</option><option value="90000000">R$90M+</option><option value="100000000">R$100M+</option><option value="120000000">R$120M+</option><option value="150000000">R$150M+</option><option value="200000000">R$200M+</option><option value="250000000">R$250M+</option><option value="300000000">R$300M+</option><option value="400000000">R$400M+</option><option value="500000000">R$500M+</option><option value="700000000">R$700M+</option><option value="1000000000">R$1B+</option><option value="2000000000">R$2B+</option><option value="5000000000">R$5B+</option></select></div>
             <div class="fg"><label class="fl">Cargo Decisor</label><select class="fsel" id="pCargo">
   <option value="todos_clevel">★ Todos os C-Levels (CIO, CTO, CFO, CEO, COO, Dir. Digital)</option>
   <option value="todos">★★ Todos — C-Level + Gerentes + Coordenadores</option>
@@ -2086,9 +2156,8 @@ function renderPipelineEtapas(e){const ETAPAS=['Mapeado','Abordado','Respondeu',
 function renderPipelineMock(){const mock={'Mapeado':12,'Abordado':8,'Respondeu':4,'Reuniao':3,'Proposta':1,'Fechado':0};const el=document.getElementById('s7-pipeline');if(el)el.innerHTML=Object.entries(mock).map(([n,c])=>`<div class="pc"><div class="pch">${n}<span class="pcnt">${c}</span></div><div style="font-size:9px;color:var(--t3);padding:4px;">Conecte HubSpot</div></div>`).join('');}
 async function loadKPIs(){const data=await api('/api/analytics?tipo=kpis');if(!data||!data.kpis){addLog('warn','KPIs: configure HUBSPOT_TOKEN');return;}const k=data.kpis;document.getElementById('kLeads').textContent=k.leads_30_dias||'--';document.getElementById('kScoreA').textContent=k.score_a||'--';document.getElementById('k_leads30').textContent=k.leads_30_dias||'--';document.getElementById('k_mql').textContent=(k.taxa_qualificacao||0)+'%';document.getElementById('s7_d30').textContent=k.deals_30_dias||'--';document.getElementById('s7_tq').textContent=(k.taxa_qualificacao||0)+'%';document.getElementById('p_fc').textContent=k.pipeline_valor?'R$'+(k.pipeline_valor/1000000).toFixed(1)+'M':'--';addLog('success','[S2-09] KPIs: '+k.leads_30_dias+' leads, '+k.taxa_qualificacao+'% qualificacao');}
 async function loadAnalytics(){addLog('info','[S2-09] Gerando analise Claude...');const data=await api('/api/analytics?tipo=analise');if(!data||!data.analise){addLog('err','Analytics: erro');return;}const a=data.analise;const html=`<div style="margin-bottom:9px;"><div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--green);margin-bottom:5px;">INSIGHTS</div>${(a.insights||[]).map((x,n)=>`<div style="padding:5px 0;border-bottom:1px solid var(--bd);font-size:11.5px;"><strong style="color:var(--blue);">${n+1}.</strong> ${x}</div>`).join('')}</div><div style="margin-bottom:9px;"><div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--red);margin-bottom:5px;">ALERTAS</div>${(a.alertas||[]).map(x=>`<div style="padding:5px 8px;background:var(--r2);border-radius:5px;font-size:11px;margin-bottom:4px;">! ${x}</div>`).join('')}</div><div style="padding:8px;background:var(--b2);border-radius:5px;font-size:11px;color:var(--blue);"><strong>Recomendacao:</strong> ${a.recomendacao_principal||''}</div>`;document.getElementById('dash-insights').innerHTML=html;document.getElementById('s2-insights').innerHTML=html;addLog('success','[S2-09] Analise concluida: '+a.tendencia);}
-async function runProspect(){const btn=document.getElementById('btnProspect');const st=document.getElementById('prospStatus');const res=document.getElementById('prospResult');btn.disabled=true;btn.textContent='Mapeando...';st.textContent='Executando';st.className='tag on';res.innerHTML='<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:10px;">Agente S2-02 buscando empresas...</div>';addLog('info','[S2-02] Iniciando: '+document.getElementById('pSetor').value);const data=await api('/api/prospect-scan','POST',{setor:document.getElementById('pSetor').value,regiao:document.getElementById('pRegiao').value,faturamento_min:document.getElementById('pFat').value,cargo_decisor:document.getElementById('pCargo').value,quantidade:parseInt(document.getElementById('pQtd').value),iniciar_outreach:false,incluir_crm:document.getElementById('pCRM')?.checked!==false});if(!data||!data.empresas){st.textContent='Erro';st.className='tag hot';res.innerHTML='<div style="color:var(--red);font-size:11px;padding:10px;">Erro. Verifique variaveis de ambiente no Vercel.</div>';addLog('err','[S2-02] Erro no mapeamento');}else{st.textContent=data.total_mapeado+' empresas';st.className='tag live';res.innerHTML=renderProspectResult(data);document.getElementById('kLeads').textContent=data.total_mapeado;addLog('success','[S2-02] '+data.total_mapeado+' empresas mapeadas, Score A: '+data.score_a);toast(data.total_mapeado+' empresas no HubSpot!','success');
-// AUTO-TRIGGER: gerar mensagens automaticamente apos prospeccao
-setTimeout(()=>{addLog('info','[AUTO] Gerando mensagens automaticamente para os leads mapeados...');autoGerarMensagens('novos');},1500);}btn.disabled=false;btn.textContent='&#9654; Executar Agente';}
+async function runProspect(){const btn=document.getElementById('btnProspect');const st=document.getElementById('prospStatus');const res=document.getElementById('prospResult');btn.disabled=true;btn.textContent='Mapeando...';st.textContent='Executando';st.className='tag on';res.innerHTML='<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:10px;">Agente S2-02 buscando empresas...</div>';addLog('info','[S2-02] Iniciando: '+document.getElementById('pSetor').value);const data=await api('/api/prospect-scan','POST',{setor:document.getElementById('pSetor').value,regiao:document.getElementById('pRegiao').value,faturamento_min:document.getElementById('pFat').value,cargo_decisor:document.getElementById('pCargo').value,quantidade:parseInt(document.getElementById('pQtd').value),iniciar_outreach:false,incluir_crm:false});if(!data||!data.empresas){st.textContent='Erro';st.className='tag hot';res.innerHTML='<div style="color:var(--red);font-size:11px;padding:10px;">Erro. Verifique variaveis de ambiente no Vercel.</div>';addLog('err','[S2-02] Erro no mapeamento');}else{st.textContent=data.total_mapeado+' empresas';st.className='tag live';res.innerHTML=renderProspectResult(data);document.getElementById('kLeads').textContent=data.total_mapeado;addLog('success','[S2-02] '+data.total_mapeado+' empresas mapeadas, Score A: '+data.score_a);toast(data.total_mapeado+' empresas mapeadas! Clique Carregar no CRM se quiser adicionar.','success');
+// Leads mapeados — use 'Carregar no HubSpot' para adicionar ao CRM}btn.disabled=false;btn.textContent='&#9654; Executar Agente';}
 async function runRfpMonitor(){const btn=document.getElementById('btnRfp');const res=document.getElementById('rfpResult');btn.disabled=true;btn.textContent='Varrendo...';res.innerHTML='<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:10px;">Agente S2-04 varrendo portais...</div>';addLog('info','[S2-04] Varrendo ComprasNet, SAP Ariba, Beehive...');const data=await api('/api/rfp-monitor','GET');if(!data){res.innerHTML='<div style="color:var(--red);font-size:11px;padding:10px;">Erro - configure CRON_SECRET</div>';addLog('err','[S2-04] Erro');}else{const rfps=data.rfps||[];document.getElementById('rfpCnt').textContent=rfps.length||'0';document.getElementById('kRfp').textContent=rfps.length||'0';if(rfps.length===0){res.innerHTML='<div style="color:var(--t2);font-size:11px;padding:10px;">Nenhum RFP novo. Proximo ciclo em 6h.</div>';}else{res.innerHTML='<div class="tw"><table><thead><tr><th>Empresa</th><th>Valor</th><th>Prazo</th></tr></thead><tbody>'+rfps.map(r=>`<tr><td><strong>${r.empresa}</strong></td><td style="font-family:var(--M);font-size:9.5px;color:var(--gold);">${r.valor}</td><td style="font-family:var(--M);font-size:9.5px;">${r.prazo}</td></tr>`).join('')+'</tbody></table></div>';addLog('success','[S2-04] '+rfps.length+' RFPs - notificacao WA enviada');toast(rfps.length+' RFPs identificados!','success');}}btn.disabled=false;btn.textContent='&#9654; Executar Agora';}
 async function genWA(){const btn=document.getElementById('btnWA');const out=document.getElementById('waOut');btn.disabled=true;btn.textContent='Gerando...';out.innerHTML='<span style="color:var(--blue);font-family:var(--M);font-size:11px;">Gerando mensagem...</span>';addLog('info','[S2-02+S7-05] Gerando WA: '+document.getElementById('wE').value);const data=await api('/api/claude','POST',{system:'Agente de WhatsApp da Atlantyx (BI, Dados, IA grandes empresas). Dados atrasados=perda financeira. Quick Wins em semanas. NUNCA emojis. Tom: '+document.getElementById('wT').value,messages:[{role:'user',content:'WA para Nome: '+document.getElementById('wD').value+' Empresa: '+document.getElementById('wE').value+' Cargo: '+document.getElementById('wC').value+' Setor: '+document.getElementById('wS').value+' Contexto: '+(document.getElementById('wX').value||'operacao complexa')+'. Max 5 linhas. Comeca pelo nome. Termina com pergunta. So o texto.'}],max_tokens:400});if(data&&data.content){const msg=data.content[0].text;out.textContent=msg;document.getElementById('wMetaC').textContent=msg.length;document.getElementById('wMetaS').textContent=document.getElementById('wX').value?'A':'B';document.getElementById('wMetaR').textContent='~'+Math.ceil(msg.split(' ').length/4)+'s';document.getElementById('waMeta').style.display='grid';document.getElementById('btnCpWA').disabled=false;addLog('success','[S7-05] Mensagem gerada: '+msg.length+' chars');const fu=await api('/api/claude','POST',{messages:[{role:'user',content:'Follow-up 3 linhas para '+document.getElementById('wD').value+' da '+document.getElementById('wE').value+', 48h sem resposta. Original: "'+msg.substring(0,100)+'...". So o texto.'}],max_tokens:200});if(fu?.content){document.getElementById('fuOut').textContent=fu.content[0].text;document.getElementById('fuPanel').style.display='block';}}else{out.innerHTML='<span style="color:var(--red);">Erro API Claude - verifique ANTHROPIC_API_KEY</span>';addLog('err','[Claude] Erro');}btn.disabled=false;btn.textContent='&#10022; Gerar com IA';}
 function cpWA(){navigator.clipboard.writeText(document.getElementById('waOut').textContent);toast('Copiado!','success');}
@@ -2484,105 +2553,6 @@ function fecharModal() {
 }
 
 //    WA INDIVIDUAL (mantida para uso em outros lugares)                        
-async function genWA() {
-  const btn = document.getElementById('btnWA');
-  if (!btn) return;
-  const out = document.getElementById('waOut');
-  btn.disabled = true; btn.textContent = 'Gerando...';
-  out.innerHTML = '<span style="color:var(--blue);font-family:var(--M);font-size:11px;">Gerando...</span>';
-  const data = await api('/api/claude', 'POST', {
-    system: 'Agente de WhatsApp da Atlantyx. Tom: ' + (document.getElementById('wT')?.value || 'direto'),
-    messages: [{ role: 'user', content: 'WA para ' + (document.getElementById('wD')?.value || '') + ' da ' + (document.getElementById('wE')?.value || '') + '. Max 5 linhas. So o texto.' }],
-    max_tokens: 400,
-  });
-  if (data?.content) {
-    const msg = data.content[0].text;
-    out.textContent = msg;
-    document.getElementById('wMetaC').textContent = msg.length;
-    document.getElementById('waMeta').style.display = 'grid';
-    document.getElementById('btnCpWA').disabled = false;
-  }
-  btn.disabled = false; btn.textContent = '  Gerar com IA';
-}
-function cpWA() { const el = document.getElementById('waOut'); if(el) { navigator.clipboard.writeText(el.textContent); toast('Copiado!', 'success'); } }
-function clearWA() { ['wE','wD','wX'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; }); }
-
-
-//    S1 · PLANEJAMENTO ESTRATÉGICO                                             
-const S1_PIPELINE = []; // armazena ideias localmente
-const S1_ETAPAS = ['Recebida','Em Análise','Aprovada Squad','Aguardando Fundador','Aprovada','Em Dev','Lançada'];
-const S1_AGENTS = [
-  {n:'S1-01',nm:'Captação de Ideias',d:'Recebe ideias de qualquer origem e as estrutura no pipeline com contexto e categoria.',on:true},
-  {n:'S1-02',nm:'Análise de Viabilidade',d:'Avalia viabilidade técnica, mercado, financeira e alinhamento estratégico com nota 0-10.',on:true},
-  {n:'S1-03',nm:'Pesquisa de Mercado',d:'TAM/SAM/SOM, concorrentes, benchmarks de preço e expectativas do público-alvo.',on:true},
-  {n:'S1-04',nm:'Modelagem Financeira',d:'Projeta receita, custo de dev, break-even e payback com cenários P/R/O.',on:true},
-  {n:'S1-05',nm:'Comitê Interno',d:'Consolida análises e emite parecer do squad com dossiê executivo para o fundador.',on:true},
-  {n:'S1-06',nm:'Notificação ao Fundador',d:'Envia dossiê completo via WhatsApp e e-mail para decisão final. Aguarda resposta.',on:true},
-  {n:'S1-07',nm:'Handoff para Dev',d:'Após aprovação, formaliza briefing técnico e abre épico no Squad de Dev S6.',on:true},
-  {n:'S1-08',nm:'Gestão de Projetos',d:'Monitora cronogramas, aloca recursos e emite alertas de risco proativamente.',on:true},
-  {n:'S1-09',nm:'OKR',d:'Define, monitora e relata OKRs por trimestre com semáforo de atingimento.',on:true},
-  {n:'S1-10',nm:'Relatórios',d:'Gera relatórios executivos automatizados de desempenho e pipeline de produtos.',on:true},
-];
-
-function initS1() {
-  // Render agent list no dashboard
-  const list = document.getElementById('s1AgentList');
-  if (list) {
-    list.innerHTML = S1_AGENTS.map(a => `
-      <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd);">
-        <span style="font-family:var(--M);font-size:7.5px;color:var(--t3);width:38px;">${a.n}</span>
-        <span style="font-size:11px;flex:1;">${a.nm}</span>
-        <span style="display:flex;align-items:center;gap:3px;font-family:var(--M);font-size:8px;color:var(--green);">
-          <span style="width:5px;height:5px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 2s infinite"></span>Ativo
-        </span>
-      </div>`).join('');
-  }
-
-  // Render fluxo bar
-  const fluxo = document.getElementById('s1FluxoBar');
-  if (fluxo) {
-    const etapas = ['1.Captação','2.Triagem','3.Viab.Técnica','4.Pesquisa','5.Financeiro','6.Parecer','7.Dossiê','8.Notif.Fundador','9.Decisão','10.Briefing','11.Dev Sprint','12.Demo','13.Launch'];
-    fluxo.innerHTML = etapas.map((e, i) => `
-      <div style="flex:0 0 auto;display:flex;align-items:center;">
-        <div style="background:${i < 2 ? 'rgba(34,211,163,.15)' : 'var(--bg4)'};border:1px solid ${i < 2 ? 'rgba(34,211,163,.3)' : 'var(--bd)'};border-radius:5px;padding:5px 8px;white-space:nowrap;font-family:var(--M);font-size:8px;color:${i < 2 ? 'var(--green)' : 'var(--t2)'};">${e}</div>
-        ${i < etapas.length - 1 ? '<span style="color:var(--t3);font-size:9px;padding:0 2px;">-></span>' : ''}
-      </div>`).join('');
-  }
-
-  // Render kanban vazio
-  renderS1Kanban();
-}
-
-function renderS1Kanban() {
-  const kanban = document.getElementById('s1Kanban');
-  if (!kanban) return;
-  if (!S1_PIPELINE.length) {
-    kanban.innerHTML = '<div style="font-size:9px;color:var(--t3);text-align:center;grid-column:1/-1;padding:20px;">Nenhuma ideia. Capture a primeira acima.</div>';
-    return;
-  }
-  kanban.innerHTML = S1_ETAPAS.map(etapa => {
-    const ideias = S1_PIPELINE.filter(i => i.stage === etapa);
-    return `<div style="background:var(--bg4);border-radius:7px;padding:8px;">
-      <div style="font-family:var(--M);font-size:7.5px;letter-spacing:1px;text-transform:uppercase;color:var(--t2);margin-bottom:6px;display:flex;justify-content:space-between;">
-        ${etapa}<span style="background:var(--bg);border-radius:3px;padding:1px 5px;">${ideias.length}</span>
-      </div>
-      ${ideias.map(id => `<div style="background:var(--bg3);border:1px solid var(--bd);border-radius:5px;padding:7px;margin-bottom:5px;">
-        <div style="font-size:11px;font-weight:600;margin-bottom:2px;">${id.titulo}</div>
-        <div style="font-family:var(--M);font-size:8px;color:${id.urgencia==='Alta'?'var(--red)':id.urgencia==='Média'?'var(--gold)':'var(--t3)'};">${id.urgencia || ''}</div>
-      </div>`).join('')}
-      ${!ideias.length ? '<div style="font-size:9px;color:var(--t3);padding:4px 0;">--</div>' : ''}
-    </div>`;
-  }).join('');
-
-  // Update stats
-  document.getElementById('s1_ideias').textContent = S1_PIPELINE.length;
-  document.getElementById('s1_analise').textContent = S1_PIPELINE.filter(i => i.stage === 'Em Análise').length;
-  document.getElementById('s1_fundador').textContent = S1_PIPELINE.filter(i => i.stage === 'Aguardando Fundador').length;
-  document.getElementById('s1_dev').textContent = S1_PIPELINE.filter(i => i.stage === 'Em Dev' || i.stage === 'Lançada').length;
-  const dec = S1_PIPELINE.filter(i => i.stage === 'Aguardando Fundador').length;
-  const decEl = document.getElementById('s1DecCnt');
-  if (decEl) { decEl.textContent = dec || '0'; decEl.className = dec > 0 ? 'nbx rd' : 'nbx of'; }
-}
 
 async function captarIdeia() {
   const titulo = document.getElementById('s1Titulo')?.value;
@@ -3795,14 +3765,15 @@ let modoProspect = 'unico';
 
 function setModoProspect(modo) {
   modoProspect = modo;
-  document.getElementById('formUnico').style.display = modo === 'unico' ? 'block' : 'none';
+  document.getElementById('formUnico').style.display  = modo === 'unico'  ? 'block' : 'none';
   document.getElementById('formCadeia').style.display = modo === 'cadeia' ? 'block' : 'none';
-  document.getElementById('modoUnico').className = 'btn' + (modo === 'unico' ? '' : ' btn-g');
-  document.getElementById('modoCadeia').className = 'btn' + (modo === 'cadeia' ? ' btn-or' : ' btn-g');
-  if (modo === 'unico') {
-    document.getElementById('modoUnico').style.borderColor = '#4f7cff';
-    document.getElementById('modoUnico').style.color = '#4f7cff';
-  }
+  const fe = document.getElementById('formEvento');
+  if (fe) fe.style.display = modo === 'evento' ? 'block' : 'none';
+  const colors = { unico:'var(--blue)', cadeia:'var(--or)', evento:'#22d3a3' };
+  ['unico','cadeia','evento'].forEach(function(m) {
+    var btn = document.getElementById('modo' + m.charAt(0).toUpperCase() + m.slice(1));
+    if (btn) { btn.style.borderColor = m===modo ? colors[m] : ''; btn.style.color = m===modo ? colors[m] : ''; }
+  });
 }
 
 async function runCadeiaCLevel() {
@@ -4073,169 +4044,25 @@ async function salvarEGerarPlano() {
 
 async function gerarPlanoLocal(dados) {
   const result = document.getElementById('propResult');
-  addLog('info', '[S1] Gerando via Claude direto...');
-
-  const r = await fetch('/api/claude', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      system: `Voce e o Consultor Estrategico Pessoal e Empresarial da Atlantyx.
-Sua missao: integrar os anseios pessoais do fundador com a estrategia da empresa,
-tornando o proposito pessoal o combustivel do crescimento empresarial.
-Seja profundo, humano e estrategico ao mesmo tempo.
-O plano deve mostrar como CADA META PESSOAL se conecta a uma acao empresarial especifica.`,
-      messages: [{
-        role: 'user',
-        content: `Integre os dados abaixo em um plano estrategico unificado.
-
-DADOS DO FUNDADOR:
-Proposito de vida: ${dados.proposito_vida || 'nao informado'}
-Bem que quer praticar: ${dados.bem_que_pratica || 'nao informado'}
-Legado: ${dados.legado || 'nao informado'}
-Valores inegociaveis: ${dados.valores_inegociaveis || 'nao informado'}
-
-METAS FINANCEIRAS PESSOAIS:
-Renda mensal desejada: ${dados.renda_pessoal_desejada || 'nao informado'}
-Patrimonio em 5 anos: ${dados.patrimonio_5anos || 'nao informado'}
-Valuation Atlantyx desejado: ${dados.valuation_atlantyx || 'nao informado'}
-Estilo de vida: ${dados.estilo_vida || 'nao informado'}
-Causa social: ${dados.causa_social || 'nao informado'} (${dados.pct_impacto_social || '?'} da receita)
-
-METAS PESSOAIS:
-${(dados.metas_pessoais || []).map(m => m.descricao + (m.valor ? ' — ' + m.valor : '') + (m.prazo ? ' — ' + m.prazo : '')).join('\n') || 'nenhuma'}
-
-EMPRESA: Atlantyx — BI, Dados e IA para grandes empresas
-Meta: R$5M em 90 dias. Estagio: early-stage, semana 1.
-
-Gere o plano em 5 secoes:
-
-1. DECLARACAO DE PROPOSITO UNIFICADO
-Como o proposito pessoal e a missao da Atlantyx se tornam uma coisa so — 1 paragrafo poderoso.
-
-2. CONEXAO PROPOSITO — ESTRATEGIA
-Para cada anseio pessoal, mostre a acao empresarial concreta que o realiza.
-Formato: Anseio -> Como a Atlantyx o realiza -> Meta mensuravel
-
-3. METAS FINANCEIRAS INTEGRADAS
-Calcule: quanto a Atlantyx precisa gerar para que o fundador atinja cada meta pessoal.
-Mostre o caminho: receita empresa -> distribuicao -> meta pessoal
-
-4. CALENDARIO DO PROPOSITO
-Trimestre a trimestre nos proximos 2 anos: o que a empresa entrega E o que o fundador conquista pessoalmente.
-
-5. MANIFESTO DA EMPRESA
-3 paragrafos que capturam a essencia do que a Atlantyx e e por que existe — baseado no proposito real do fundador. Este manifesto deve entrar na homepage, no pitch e na cultura.`
-      }],
-      max_tokens: 2000
-    })
-  });
-
-  const data = await r.json();
-  const texto = data?.content?.[0]?.text || 'Erro ao gerar plano.';
-
-  document.getElementById('propResult').innerHTML = `
-    <div style="font-size:12px;line-height:1.9;white-space:pre-wrap;color:var(--t1);">${texto}</div>
-    <div style="margin-top:16px;display:flex;gap:8px;">
-      <button class="btn btn-p" style="font-size:10px;" onclick="navigator.clipboard.writeText(document.getElementById('propResult').textContent);toast('Copiado!','success')">Copiar Plano</button>
-      <button class="btn btn-g" style="font-size:10px;" onclick="renderDashMetas()">Ver Dashboard de Metas</button>
-    </div>`;
-
-  addLog('ok', '[S1] Plano integrado proposito gerado');
-  renderDashMetas();
+  addLog('info', '[S1] Gerando plano integrado com IA...');
+  if (result) result.innerHTML = '<div style="color:var(--blue);font-size:11px;padding:10px;">Gerando plano estrategico integrado...</div>';
+  try {
+    const r = await fetch('/api/s1-strategy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'plano_integrado_proposito', payload: { dados: dados } })
+    });
+    const d = await r.json();
+    const txt = d.content || d.resultado || 'Plano gerado.';
+    if (result) result.innerHTML = '<div style="font-size:11.5px;line-height:1.8;white-space:pre-wrap;">' + txt + '</div>';
+    addLog('ok', '[S1] Plano integrado gerado');
+  } catch(e) {
+    if (result) result.innerHTML = '<div style="color:var(--red);font-size:11px;">Erro: ' + e.message + '</div>';
+    addLog('err', '[S1] Erro plano: ' + e.message);
+  }
 }
 
-function renderDashMetas() {
-  const dados = propData;
-  if (!dados || (!dados.proposito_vida && !dados.renda_pessoal_desejada)) return;
 
-  const panel = document.getElementById('propDashPanel');
-  if (panel) panel.style.display = 'block';
-
-  // KPIs pessoais no topo do dashboard
-  const kpis = document.getElementById('propKPIs');
-  if (kpis) {
-    kpis.innerHTML = [
-      { label: 'Renda Pessoal Meta', val: dados.renda_pessoal_desejada || '—', cor: 'gn' },
-      { label: 'Patrimonio 5 Anos', val: dados.patrimonio_5anos || '—', cor: 'bl' },
-      { label: 'Valuation Atlantyx', val: dados.valuation_atlantyx || '—', cor: 'pu' },
-      { label: 'Impacto Social', val: dados.pct_impacto_social || '—', cor: 'gd' },
-    ].map(k => `<div class="kpi ${k.cor}"><div class="kl">${k.label}</div><div class="kv" style="font-size:14px;">${k.val}</div></div>`).join('');
-  }
-
-  // Metas pessoais com progresso
-  const metas = document.getElementById('propMetas');
-  if (metas) {
-    const mp = dados.metas_pessoais || [];
-    const valores = ['Proposito: ' + (dados.proposito_vida ? dados.proposito_vida.substring(0,80) + '...' : '—'),
-                     'Legado: ' + (dados.legado ? dados.legado.substring(0,80) + '...' : '—')];
-
-    metas.innerHTML = `
-      <div class="panel">
-        <div class="ph"><div class="pt">Metas Pessoais com Prazo</div></div>
-        <div class="pb">
-          ${mp.length ? mp.map((m, i) => `
-            <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--bd);">
-              <span style="font-family:var(--M);font-size:10px;color:#9c6dff;width:20px;">${i+1}.</span>
-              <span style="font-size:12px;flex:1;">${m.descricao}</span>
-              ${m.valor ? `<span style="font-family:var(--M);font-size:10px;color:var(--green);">${m.valor}</span>` : ''}
-              ${m.prazo ? `<span style="font-family:var(--M);font-size:9px;color:var(--gold);">${m.prazo}</span>` : ''}
-            </div>`).join('') : '<div style="color:var(--t3);font-size:11px;">Nenhuma meta pessoal adicionada.</div>'}
-        </div>
-      </div>
-      <div class="panel">
-        <div class="ph"><div class="pt">Proposito e Legado</div><span class="tag" style="background:rgba(156,109,255,.15);color:#9c6dff;">Fundador</span></div>
-        <div class="pb">
-          ${valores.map(v => `<div style="font-size:11.5px;line-height:1.7;padding:8px 0;border-bottom:1px solid var(--bd);">${v}</div>`).join('')}
-          ${dados.valores_inegociaveis ? `<div style="margin-top:8px;font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:4px;">VALORES INEGOCIAVEIS</div><div style="font-size:11.5px;line-height:1.7;">${dados.valores_inegociaveis}</div>` : ''}
-          ${dados.causa_social ? `<div style="margin-top:8px;font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">CAUSA SOCIAL</div><div style="font-size:11.5px;">${dados.causa_social} — ${dados.pct_impacto_social || ''} da receita</div>` : ''}
-        </div>
-      </div>`;
-  }
-
-  // Atualizar dashboard principal com metas integradas
-  atualizarDashComProposito(dados);
-}
-
-function atualizarDashComProposito(dados) {
-  // Adiciona widget de proposito no dashboard principal
-  const dash = document.getElementById('pg-dash');
-  if (!dash) return;
-
-  let propWidget = document.getElementById('propDashWidget');
-  if (!propWidget) {
-    propWidget = document.createElement('div');
-    propWidget.id = 'propDashWidget';
-    propWidget.className = 'panel';
-    propWidget.style.marginBottom = '12px';
-    dash.insertBefore(propWidget, dash.firstChild);
-  }
-
-  propWidget.innerHTML = `
-    <div style="background:linear-gradient(135deg,rgba(156,109,255,.15),rgba(79,124,255,.08));border-radius:8px;padding:13px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
-      <div style="width:3px;height:50px;background:linear-gradient(to bottom,#9c6dff,#4f7cff);border-radius:2px;flex-shrink:0;"></div>
-      <div style="flex:1;min-width:200px;">
-        <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;letter-spacing:1px;color:#9c6dff;margin-bottom:4px;">PROPOSITO — FUNDADOR</div>
-        <div style="font-size:12px;line-height:1.6;color:var(--t1);">${(dados.proposito_vida || 'Definir proposito em S1 > Proposito').substring(0, 120)}${dados.proposito_vida?.length > 120 ? '...' : ''}</div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">
-        <div style="text-align:center;background:rgba(156,109,255,.1);border-radius:6px;padding:6px 12px;">
-          <div style="font-family:var(--M);font-size:8px;color:#9c6dff;">META PESSOAL</div>
-          <div style="font-family:var(--M);font-size:13px;font-weight:600;color:#9c6dff;">${dados.renda_pessoal_desejada || '—'}</div>
-          <div style="font-size:9px;color:var(--t2);">renda/mes</div>
-        </div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">
-        <div style="text-align:center;background:rgba(245,166,35,.1);border-radius:6px;padding:6px 12px;">
-          <div style="font-family:var(--M);font-size:8px;color:var(--gold);">CAUSA SOCIAL</div>
-          <div style="font-size:11px;color:var(--gold);font-weight:500;">${dados.causa_social ? dados.causa_social.substring(0,30) : '—'}</div>
-          <div style="font-size:9px;color:var(--t2);">${dados.pct_impacto_social || ''}</div>
-        </div>
-      </div>
-      <button class="btn" style="font-size:9px;padding:4px 9px;color:#9c6dff;border-color:#9c6dff;" onclick="nav('s1proposito',null)">Editar</button>
-    </div>`;
-}
-
-// Carregar proposito salvo ao iniciar
 async function carregarProposito() {
   try {
     const saved = await DB.get('proposito', null);
@@ -4681,8 +4508,9 @@ async function syncQuickBooks() {
   }
 
   if (btn) { btn.disabled = false; btn.textContent = '↻ Sync QuickBooks'; }
-}
 
+  if (btn) { btn.disabled = false; btn.textContent = 'Sincronizar QB'; }
+}
 async function buscarDadosQB() {
   try {
     const r = await fetch('/api/quickbooks', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({action:'relatorio'}) });
@@ -4751,18 +4579,26 @@ function renderLancamentos(lancamentos) {
 }
 
 async function gerarAnaliseFin() {
+  const saida = document.getElementById('s3AnaliseSaida') || document.getElementById('s1FinResult');
+  if (saida) saida.innerHTML = '<div style="color:var(--blue);font-size:11px;padding:10px;">Gerando analise financeira com IA...</div>';
   addLog('info', '[S3] Gerando analise financeira com IA...');
   const metas = await DB.get('metas', {});
-  const r = await fetch('/api/s1-intel', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ action: 'analise_financeira', contexto: { realAnual: metas.realAnual, realMensal: metas.realMensal } })
-  });
-  const data = await r.json();
-  if (data.financeiro) {
+  try {
+    const r = await fetch('/api/s1-strategy', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'analise_financeira', payload:{ acao:'analise_financeira', dados:{
+        receita_anual: metas.realAnual||0, receita_mensal: metas.realMensal||0,
+        meta_anual: metas.anual||18000000, meta_mensal: metas.mensal||1500000,
+        empresa:'Atlantyx — B2B BI, Dados e IA'
+      }}})
+    });
+    const d = await r.json();
+    const txt = d.content || d.resultado || 'Analise concluida.';
+    if (saida) saida.innerHTML = '<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:14px;font-size:11px;line-height:1.7;">' + txt.replace(/\n/g,'<br/>') + '</div>';
     addLog('ok', '[S3] Analise financeira gerada');
-    nav('s1financeiro', null);
-    setTimeout(() => document.getElementById('s1FinResult').innerHTML =
-      '<div style="font-size:11.5px;line-height:1.8;white-space:pre-wrap;">' + JSON.stringify(data.financeiro, null, 2) + '</div>', 200);
+  } catch(e) {
+    if (saida) saida.innerHTML = '<div style="color:var(--red);font-size:11px;padding:10px;">Erro: ' + e.message + '</div>';
+    addLog('err', '[S3] Erro: ' + e.message);
   }
 }
 
@@ -4776,7 +4612,7 @@ async function gerarProjetado() {
   const mrr = document.getElementById('f_mrr')?.value || '0';
   addLog('info', '[S3] Gerando projecao financeira...');
 
-  const r = await fetch('/api/claude', {
+  const r = await fetch('/api/s1-strategy', {
     method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({
       system: 'Voce e o CFO-Agente da Atlantyx. Gere projecao de receita realista e conservadora. Retorne em texto formatado, nao JSON.',
@@ -4807,7 +4643,7 @@ async function gerarFluxo() {
   addLog('info', '[S3] Gerando fluxo de caixa...');
   const metas = await DB.get('metas', {});
 
-  const r = await fetch('/api/claude', {
+  const r = await fetch('/api/s1-strategy', {
     method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({
       system: 'Voce e o CFO-Agente da Atlantyx. Gere fluxo de caixa projetado mes a mes.',
@@ -6288,25 +6124,42 @@ async function salvarCampanhaDB(skipColeta = false) {
   salvarCampanhaLocal(campAtiva);
 
   try {
-    const body = JSON.stringify({ action: 'save_campanha', value: campAtiva });
+    // Limitar tamanho: corpo > 5000 chars fica truncado no cache, URL imagens preservadas
+    const campSave = Object.assign({}, campAtiva);
+    if (campSave.data?.copy?.versoes?.[0]?.corpo?.length > 5000) {
+      campSave.data = Object.assign({}, campSave.data);
+      campSave.data.copy = Object.assign({}, campSave.data.copy);
+      campSave.data.copy.versoes = campSave.data.copy.versoes.map(function(v) {
+        return Object.assign({}, v, { corpo: v.corpo?.substring(0, 5000) });
+      });
+    }
+    const bodyStr = JSON.stringify({ action: 'save_campanha', value: campSave });
+    addLog('info', '[Campanha] Enviando para banco (' + Math.round(bodyStr.length/1024) + 'KB)...');
     const r = await fetch('/api/db', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body
+      body: bodyStr
     });
+    if (!r.ok) {
+      const errText = await r.text();
+      addLog('err', '[Campanha] HTTP ' + r.status + ': ' + errText.substring(0,200));
+      toast('Erro HTTP ' + r.status + ' ao salvar', 'error');
+      return false;
+    }
     const d = await r.json();
     if (d.success) {
       atualizarContadorCampanhas();
       addLog('ok', '[Campanha] Salva no Neon: "' + campAtiva.nome + '" (ID: ' + campAtiva.id + ')');
+      toast('Campanha salva!', 'success');
       return true;
     } else {
-      addLog('warn', '[Campanha] Banco retornou erro: ' + (d.error||'?'));
-      toast('Salvo localmente (erro no banco: ' + (d.error||'?') + ')', 'info');
+      addLog('warn', '[Campanha] Banco erro: ' + JSON.stringify(d).substring(0,200));
+      toast('Erro ao salvar: ' + (d.error||'resposta inesperada'), 'error');
       return false;
     }
   } catch(e) {
-    addLog('warn', '[Campanha] Banco offline: ' + e.message);
-    toast('Salvo localmente (banco offline)', 'info');
+    addLog('err', '[Campanha] Excecao ao salvar: ' + e.message);
+    toast('Erro de rede ao salvar campanha', 'error');
     return false;
   }
 }
@@ -8310,6 +8163,236 @@ function defaultSquadCard(r) {
   row.appendChild(delBtn);
   card.appendChild(row);
   return card.outerHTML;
+}
+
+// ═══ PROSPECÇÃO POR EVENTO ════════════════════════════════════════════════════
+var eventLeads = [];
+
+async function prospectarEvento() {
+  var nomeEvento = document.getElementById('evNome')?.value?.trim() || '';
+  var urlEvento  = document.getElementById('evUrl')?.value?.trim()  || '';
+  var tipoPart   = document.getElementById('evTipoPart')?.value     || 'todos_clevel';
+  var fatMin     = document.getElementById('evFat')?.value          || '100000000';
+  var oferta     = document.getElementById('evOferta')?.value       || '';
+  if (!nomeEvento || !urlEvento) { toast('Informe o nome e URL do evento', 'error'); return; }
+
+  var lista = document.getElementById('eventoLeadsLista');
+  var tag   = document.getElementById('eventoResultTag');
+  var res   = document.getElementById('eventoResultado');
+  var titulo = document.getElementById('eventoResultTitulo');
+  if (res)   res.style.display = 'block';
+  if (lista) lista.innerHTML   = '<div style="color:var(--blue);font-size:11px;padding:20px;text-align:center;">Identificando participantes do evento (20-40s)...</div>';
+  if (tag)   { tag.textContent = 'Carregando...'; tag.className = 'tag on'; }
+  addLog('info', '[Evento] Prospectando: ' + nomeEvento);
+
+  var prompt = 'Voce e agente de prospeccao B2B da Atlantyx (BI, Dados e IA).\n\n'
+    + 'EVENTO: ' + nomeEvento + '\nSITE: ' + urlEvento + '\n'
+    + 'PERFIL ALVO: ' + tipoPart + '\nFATURAMENTO MINIMO: R$' + (parseInt(fatMin)/1000000) + 'M\n'
+    + 'OFERTA ATLANTYX: ' + oferta + '\n\n'
+    + 'Gere uma lista de 8-12 empresas participantes prováveis deste evento que se encaixam no ICP da Atlantyx.\n'
+    + 'Para cada empresa forneça:\n'
+    + '- empresa: nome da empresa\n'
+    + '- setor: setor de atuação\n'
+    + '- faturamento_estimado: estimativa (ex: R$500M)\n'
+    + '- decisor_nome: nome do C-level mais provável (ou "A identificar")\n'
+    + '- decisor_cargo: cargo (CIO, CTO, CFO, CEO, COO)\n'
+    + '- decisor_linkedin: URL LinkedIn estimado (ou vazio)\n'
+    + '- score: A (>R$500M), B (R$100-500M), C (R$50-100M)\n'
+    + '- oferta_atlantyx: melhor oferta para esta empresa\n'
+    + '- pitch_personalizado: 2 linhas específicas para este cliente\n'
+    + '- motivo_fit: por que é ICP da Atlantyx\n\n'
+    + 'Responda APENAS com JSON válido: array de objetos com os campos acima. SEM texto fora do JSON.';
+
+  try {
+    var r = await fetch('/api/s1-strategy', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'inside_sales_bant', payload:{ prompt_override: prompt, lead: nomeEvento, informacoes: urlEvento, canal_origem:'Evento' } })
+    });
+    var d = await r.json();
+    var txt = d.content || d.resultado || '';
+
+    var leads = [];
+    try {
+      var match = txt.match(/\[[\s\S]*\]/);
+      if (match) leads = JSON.parse(match[0]);
+    } catch(e2) {
+      if (lista) lista.innerHTML = '<div style="white-space:pre-wrap;font-size:11px;line-height:1.7;padding:10px;">' + txt + '</div>';
+      addLog('warn', '[Evento] Resposta em texto livre');
+      return;
+    }
+
+    eventLeads = leads;
+    if (titulo) titulo.textContent = 'Leads — ' + nomeEvento + ' (' + leads.length + ')';
+    if (tag)    { tag.textContent = leads.length + ' leads'; tag.className = 'tag live'; }
+    renderEventLeads(lista, leads, oferta, nomeEvento);
+    addLog('ok', '[Evento] ' + leads.length + ' leads identificados: ' + nomeEvento);
+    toast(leads.length + ' leads! Clique em "Script Reuniao" em cada um.', 'success');
+  } catch(e) {
+    if (lista) lista.innerHTML = '<div style="color:var(--red);font-size:11px;padding:10px;">Erro: ' + e.message + '</div>';
+    addLog('err', '[Evento] ' + e.message);
+  }
+}
+
+function renderEventLeads(container, leads, oferta, nomeEvento) {
+  if (!container) return;
+  container.innerHTML = '';
+  leads.forEach(function(lead, i) {
+    var scoreCor = lead.score==='A' ? 'var(--green)' : lead.score==='B' ? 'var(--blue)' : 'var(--gold)';
+    var card = document.createElement('div');
+    card.style.cssText = 'background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;margin-bottom:8px;';
+
+    // Header
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;';
+    var info = document.createElement('div');
+    info.style.flex = '1';
+    info.innerHTML = '<div style="font-size:13px;font-weight:700;color:var(--t1);">' + (lead.empresa||'Empresa') + '</div>'
+      + '<div style="font-size:10px;color:var(--t2);">' + (lead.setor||'') + ' | ' + (lead.faturamento_estimado||'') + '</div>';
+    var badge = document.createElement('span');
+    badge.style.cssText = 'font-family:var(--M);font-size:10px;font-weight:700;color:' + scoreCor + ';background:rgba(0,0,0,.25);padding:2px 10px;border-radius:4px;white-space:nowrap;';
+    badge.textContent = 'Score ' + (lead.score||'B');
+    hdr.appendChild(info); hdr.appendChild(badge); card.appendChild(hdr);
+
+    // Decisor row
+    var dec = document.createElement('div');
+    dec.style.cssText = 'display:flex;align-items:center;gap:8px;background:rgba(79,124,255,.08);border-radius:6px;padding:8px;margin-bottom:8px;';
+    var decInfo = document.createElement('div');
+    decInfo.style.flex = '1';
+    decInfo.innerHTML = '<div style="font-size:11px;font-weight:600;color:var(--t1);">'
+      + (lead.decisor_nome||'A identificar') + ' — ' + (lead.decisor_cargo||'C-Level') + '</div>'
+      + (lead.decisor_linkedin ? '<a href="' + lead.decisor_linkedin + '" target="_blank" style="font-size:9px;color:var(--blue);">LinkedIn</a>' : '');
+    var btnScript = document.createElement('button');
+    btnScript.className = 'btn btn-g';
+    btnScript.style.cssText = 'font-size:8px;padding:3px 8px;white-space:nowrap;';
+    btnScript.textContent = 'Script Reuniao';
+    btnScript.onclick = (function(idx) { return function() { gerarScriptAbordagemLead(idx); }; })(i);
+    dec.appendChild(decInfo); dec.appendChild(btnScript); card.appendChild(dec);
+
+    // Pitch
+    var pitch = document.createElement('div');
+    pitch.style.cssText = 'font-size:10px;color:var(--t2);line-height:1.6;';
+    pitch.innerHTML = '<strong style="color:var(--blue);">Oferta:</strong> ' + (lead.oferta_atlantyx||oferta)
+      + '<br/>' + (lead.pitch_personalizado||'');
+    card.appendChild(pitch);
+    container.appendChild(card);
+  });
+}
+
+async function gerarScriptAbordagemLead(idx) {
+  var lead = eventLeads[idx];
+  if (!lead) { toast('Lead nao encontrado', 'error'); return; }
+  var nomeEvento = document.getElementById('evNome')?.value?.trim() || 'evento';
+  var oferta     = document.getElementById('evOferta')?.value || '';
+  addLog('info', '[Evento] Gerando script: ' + lead.empresa);
+
+  try {
+    var r = await fetch('/api/s1-strategy', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'inside_sales_script', payload:{
+        decisor: lead.decisor_nome || 'Decisor',
+        empresa: lead.empresa,
+        objetivo_ligacao: 'Qualificacao inicial — agendar reuniao 1:1',
+        contexto: 'Participou do evento ' + nomeEvento + '. Setor: ' + (lead.setor||'') + '. Oferta: ' + (lead.oferta_atlantyx||oferta) + '. ' + (lead.pitch_personalizado||''),
+        empresa_vendedora: 'Atlantyx — BI, Dados e IA B2B para grandes empresas'
+      }})
+    });
+    var d = await r.json();
+    var script = d.content || d.resultado || 'Script nao gerado';
+    mostrarScriptModal(lead, script, nomeEvento);
+    squadSalvar('s2','script_evento', lead.empresa + ' — ' + nomeEvento, lead.empresa, { lead, script, evento: nomeEvento });
+    addLog('ok', '[Evento] Script gerado: ' + lead.empresa);
+  } catch(e) {
+    toast('Erro ao gerar script: ' + e.message, 'error');
+    addLog('err', '[Evento] Erro script: ' + e.message);
+  }
+}
+
+function mostrarScriptModal(lead, script, nomeEvento) {
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+
+  var box = document.createElement('div');
+  box.style.cssText = 'background:var(--bg2);border:1px solid rgba(79,124,255,.3);border-radius:12px;max-width:680px;width:100%;max-height:85vh;display:flex;flex-direction:column;';
+
+  // Header
+  var hdr = document.createElement('div');
+  hdr.style.cssText = 'padding:14px 18px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px;flex-shrink:0;';
+  var hdrTitle = document.createElement('div');
+  hdrTitle.style.cssText = 'flex:1;font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--or);';
+  hdrTitle.textContent = 'Script de Abordagem — ' + (lead.empresa||'');
+  var closeBtn = document.createElement('button');
+  closeBtn.style.cssText = 'background:none;border:none;color:var(--t3);cursor:pointer;font-size:20px;line-height:1;';
+  closeBtn.innerHTML = '&#10005;';
+  closeBtn.onclick = function() { document.body.removeChild(overlay); };
+  hdr.appendChild(hdrTitle); hdr.appendChild(closeBtn); box.appendChild(hdr);
+
+  // Info bar
+  var infoBar = document.createElement('div');
+  infoBar.style.cssText = 'padding:10px 18px;background:rgba(240,112,48,.08);border-bottom:1px solid var(--bd);font-size:10px;color:var(--t2);flex-shrink:0;';
+  infoBar.innerHTML = '<strong style="color:var(--or);">Decisor:</strong> ' + (lead.decisor_nome||'A identificar') + ' — ' + (lead.decisor_cargo||'C-Level')
+    + ' &nbsp;|&nbsp; <strong style="color:var(--or);">Empresa:</strong> ' + (lead.empresa||'')
+    + ' &nbsp;|&nbsp; <strong style="color:var(--or);">Evento:</strong> ' + nomeEvento;
+  box.appendChild(infoBar);
+
+  // Script content
+  var content = document.createElement('div');
+  content.style.cssText = 'padding:16px 18px;overflow-y:auto;flex:1;';
+  var scriptDiv = document.createElement('div');
+  scriptDiv.style.cssText = 'white-space:pre-wrap;font-size:11px;line-height:1.75;color:var(--t1);';
+  scriptDiv.textContent = script;
+  content.appendChild(scriptDiv); box.appendChild(content);
+
+  // Action buttons
+  var actions = document.createElement('div');
+  actions.style.cssText = 'padding:12px 18px;border-top:1px solid var(--bd);display:flex;gap:8px;flex-shrink:0;';
+  var btnCopiar = document.createElement('button');
+  btnCopiar.className = 'btn btn-or';
+  btnCopiar.style.flex = '1';
+  btnCopiar.textContent = 'Copiar Script';
+  btnCopiar.onclick = function() { navigator.clipboard.writeText(script); toast('Script copiado!', 'success'); };
+  var btnAgendar = document.createElement('button');
+  btnAgendar.className = 'btn btn-p';
+  btnAgendar.style.flex = '1';
+  btnAgendar.textContent = 'Agendar Reuniao 1:1';
+  btnAgendar.onclick = function() { agendarReuniao1a1(lead.empresa||'', lead.decisor_nome||'', overlay); };
+  actions.appendChild(btnCopiar); actions.appendChild(btnAgendar); box.appendChild(actions);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+}
+
+async function agendarReuniao1a1(empresa, decisor, overlay) {
+  var data = prompt('Data e hora da reuniao 1:1 com ' + decisor + ' (' + empresa + ')?\nFormato: DD/MM/AAAA HH:MM');
+  if (!data) return;
+  addLog('ok', '[Evento] Reuniao 1:1 agendada: ' + empresa + ' — ' + decisor + ' — ' + data);
+  squadSalvar('s7','reuniao_evento', empresa + ' — ' + decisor, empresa, { empresa, decisor, data_hora: data });
+  toast('Reuniao agendada: ' + empresa + ' — ' + data, 'success');
+  if (overlay) document.body.removeChild(overlay);
+}
+
+async function carregarLeadsEventoHubSpot() {
+  if (!eventLeads.length) { toast('Prospecte o evento primeiro', 'error'); return; }
+  var tag = document.getElementById('eventoResultTag');
+  if (tag) { tag.textContent = 'Enviando ao CRM...'; tag.className = 'tag on'; }
+  addLog('info', '[Evento] Carregando ' + eventLeads.length + ' leads no HubSpot...');
+  var ok = 0;
+  for (var i = 0; i < eventLeads.length; i++) {
+    try {
+      await fetch('/api/s1-strategy', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ action:'hubspot_agendar', payload:{
+          acao:'criar_contato', empresa: eventLeads[i].empresa,
+          decisor_nome: eventLeads[i].decisor_nome||'A Identificar',
+          decisor_cargo: eventLeads[i].decisor_cargo||'C-Level',
+          setor: eventLeads[i].setor,
+          origem: 'Evento: ' + (document.getElementById('evNome')?.value||''),
+          score: eventLeads[i].score, oferta_sugerida: eventLeads[i].oferta_atlantyx
+        }})
+      });
+      ok++;
+    } catch(e) {}
+  }
+  if (tag) { tag.textContent = ok + ' no CRM'; tag.className = 'tag live'; }
+  addLog('ok', '[Evento] ' + ok + ' leads carregados no HubSpot');
+  toast(ok + ' leads carregados no CRM!', 'success');
 }
 </script>
 
