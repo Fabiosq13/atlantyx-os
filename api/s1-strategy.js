@@ -2,6 +2,67 @@
 // S1 — Planejamento Estratégico + Linha de Produtos
 // 10 agentes: Captação → Viabilidade → Pesquisa → Financeiro → Comitê → Fundador → Handoff → GP → OKR → Relatórios
 
+
+// ── AGENTE GENÉRICO — todos os novos squads ────────────────────────────────
+async function genericAgentCall({ action, payload = {} }, squad) {
+  const prompts = {
+    financeiro:    `Voce e o Agente Financeiro da Atlantyx, empresa B2B de BI, Dados e IA. Acao: ${action}. Dados: ${JSON.stringify(payload)}. Responda em portugues com analise detalhada, KPIs, insights e recomendacoes praticas.`,
+    juridico:      `Voce e o Agente Juridico da Atlantyx. Analise documentos e gere documentos juridicos profissionais. Acao: ${action}. Dados: ${JSON.stringify(payload)}. Identifique riscos e gere o documento solicitado em portugues.`,
+    rh:            `Voce e o Agente de RH da Atlantyx. Crie descricoes de vaga, avaliacoes 360 e PDIs estruturados. Acao: ${action}. Dados: ${JSON.stringify(payload)}.`,
+    dp:            `Voce e o Agente de DP da Atlantyx. Analise obrigacoes trabalhistas e gere calendario de DP. Acao: ${action}. Dados: ${JSON.stringify(payload)}.`,
+    projetos:      `Voce e o Agente de Gestao de Projetos S9 da Atlantyx. Crie planos com marcos e gere Status Reports executivos. Acao: ${action}. Dados: ${JSON.stringify(payload)}.`,
+    atendimento:   `Voce e o Agente de Atendimento S10 da Atlantyx. Classifique tickets e elabore orcamentos de manutencao. Acao: ${action}. Dados: ${JSON.stringify(payload)}.`,
+    inside_sales:  `Voce e o Agente de Inside Sales S11 da Atlantyx, especialista em B2B enterprise. Qualifique leads com BANT e crie scripts de abordagem personalizados para decisores C-level de grandes empresas brasileiras. Acao: ${action}. Dados: ${JSON.stringify(payload)}. Seja direto, especifico e focado em resultado. Para scripts de LinkedIn: maximo 300 caracteres, pessoal, nao pareca spam.`,
+    dev:           `Voce e o Agente de Dev+QA S6 da Atlantyx. Gere Release Notes profissionais e checklists de QA completos. Acao: ${action}. Dados: ${JSON.stringify(payload)}.`,
+  };
+
+  const systemPrompt = prompts[squad] || `Agente Atlantyx OS — ${squad}. Acao: ${action}. Dados: ${JSON.stringify(payload)}.`;
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-opus-4-5',
+      max_tokens: 2000,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: `Execute a acao "${action}" com os dados fornecidos. Seja direto, estruturado e profissional. Responda em portugues.` }],
+    }),
+  });
+
+  const data = await response.json();
+  const content = data.content?.[0]?.text || 'Sem resposta do agente.';
+  return { success: true, content, squad, action };
+}
+
+// ── AGENTE DE ENGENHARIA DE DADOS — codigo completo ───────────────────────
+async function deAgentCall({ payload = {} }, tipoAgente) {
+  const { prompt_override, config = {} } = payload;
+  const systemPrompt = prompt_override || `Voce e arquiteto senior de Data Engineering especializado em ${tipoAgente}. Gere codigo tecnico completo e executavel. Nunca use pseudocodigo.`;
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-opus-4-5',
+      max_tokens: 4000,
+      system: 'Voce e arquiteto senior de Data Engineering e DBA. Gere codigo tecnico completo, detalhado e pronto para executar. Inclua comentarios, tratamento de erros e boas praticas. NUNCA use pseudocodigo — gere codigo real.',
+      messages: [{ role: 'user', content: systemPrompt }],
+    }),
+  });
+
+  const data = await response.json();
+  const content = data.content?.[0]?.text || 'Sem resposta do agente.';
+  return { success: true, content, agente: tipoAgente };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -23,6 +84,48 @@ export default async function handler(req, res) {
       status_okr:         () => statusOKR(req.body),
       relatorio_executivo: () => relatorioExecutivo(req.body),
       fundador_decide:    () => fundadorDecide(req.body),
+
+      // ── NOVOS SQUADS — genericAgentCall ─────────────────────────────────────
+      analise_financeira:      () => genericAgentCall(req.body, 'financeiro'),
+      s1_financial:            () => genericAgentCall(req.body, 'financeiro'),
+      projecao_receita:        () => genericAgentCall(req.body, 'financeiro'),
+      fluxo_caixa:             () => genericAgentCall(req.body, 'financeiro'),
+      plano_integrado_proposito: () => genericAgentCall(req.body, 'financeiro'),
+
+      juridico_analise:        () => genericAgentCall(req.body, 'juridico'),
+      juridico_gerar:          () => genericAgentCall(req.body, 'juridico'),
+      juridico_compliance:     () => genericAgentCall(req.body, 'juridico'),
+
+      rh_vaga:                 () => genericAgentCall(req.body, 'rh'),
+      rh_avaliacao:            () => genericAgentCall(req.body, 'rh'),
+      dp_obrigacoes:           () => genericAgentCall(req.body, 'dp'),
+
+      projeto_criar:           () => genericAgentCall(req.body, 'projetos'),
+      projeto_status_report:   () => genericAgentCall(req.body, 'projetos'),
+
+      atendimento_ticket:      () => genericAgentCall(req.body, 'atendimento'),
+      atendimento_orcamento:   () => genericAgentCall(req.body, 'atendimento'),
+
+      inside_sales_bant:       () => genericAgentCall(req.body, 'inside_sales'),
+      inside_sales_script:     () => genericAgentCall(req.body, 'inside_sales'),
+
+      dev_release_notes:       () => genericAgentCall(req.body, 'dev'),
+      dev_qa_checklist:        () => genericAgentCall(req.body, 'dev'),
+
+      // ── S12 DATA ENGINEERING ────────────────────────────────────────────────
+      de_modelagem_dw:         () => deAgentCall(req.body, 'modelagem_dw'),
+      de_ddl:                  () => deAgentCall(req.body, 'ddl'),
+      de_pipeline_bronze:      () => deAgentCall(req.body, 'pipeline_bronze'),
+      de_pipeline_silver:      () => deAgentCall(req.body, 'pipeline_silver'),
+      de_pipeline_gold:        () => deAgentCall(req.body, 'pipeline_gold'),
+      de_documentacao:         () => deAgentCall(req.body, 'documentacao'),
+
+      // ── S13 DASHBOARD STUDIO ────────────────────────────────────────────────
+      dashboard_mockup:        () => deAgentCall(req.body, 'dashboard'),
+      dashboard_query:         () => deAgentCall(req.body, 'dashboard'),
+      dashboard_calc:          () => deAgentCall(req.body, 'dashboard'),
+      dashboard_app:           () => deAgentCall(req.body, 'dashboard'),
+      dashboard_deploy:        () => deAgentCall(req.body, 'dashboard'),
     };
 
     if (!acoes[action]) return res.status(400).json({ error: `Ação inválida. Disponíveis: ${Object.keys(acoes).join(', ')}` });
