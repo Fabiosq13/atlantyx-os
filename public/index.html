@@ -9284,28 +9284,42 @@ async function enviarEmailLead(lead, msg) {
 // ── HUBSPOT — Carregar leads ──────────────────────────────────────────────────
 async function carregarLeadHubSpot(lead) {
   try {
-    var r = await fetch('/api/s1-strategy', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'hubspot_agendar', payload: {
-        acao: 'criar_contato_pipeline',
-        empresa: lead.empresa,
-        decisor_nome: lead.nome,
-        decisor_cargo: lead.cargo,
-        email: lead.email,
-        telefone: lead.telefone,
-        linkedin_url: lead.linkedin_url,
-        setor: lead.setor,
-        score: lead.score,
-        origem: 'Apollo.io + LinkedIn',
-        pipeline_id: '890074401',
-        stage: 'prospecting',
-      }})
+    // Criar contato no HubSpot via /api/hubspot proxy
+    var nomePartes = (lead.nome || '').split(' ');
+    var props = {
+      firstname:    nomePartes[0] || '',
+      lastname:     nomePartes.slice(1).join(' ') || '',
+      jobtitle:     lead.cargo || '',
+      company:      lead.empresa || '',
+      email:        lead.email || '',
+      phone:        lead.telefone || '',
+      linkedinbio:  lead.linkedin_url || '',
+      industry:     lead.setor || '',
+      leadsource:   'Apollo.io + LinkedIn',
+      hs_lead_status: 'NEW',
+      // Campos customizados Atlantyx
+      score_atlantyx: lead.score || 'C',
+    };
+    // Remover campos vazios
+    Object.keys(props).forEach(function(k) { if (!props[k]) delete props[k]; });
+
+    var r = await fetch('/api/hubspot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create_contact', properties: props })
     });
-    lead.status_crm = 'no_crm';
-    atualizarStatusLead(lead.id, 'No CRM', 'var(--green)');
-    addLog('ok', '[HubSpot] Lead adicionado: ' + lead.nome);
+    var d = await r.json();
+    if (d.success || d.id) {
+      lead.status_crm = 'no_crm';
+      lead.hubspot_id = d.id;
+      atualizarStatusLead(lead.id, 'No CRM ✓', 'var(--green)');
+      addLog('ok', '[HubSpot] Contato criado: ' + lead.nome + ' (id:' + (d.id||'?') + ')');
+    } else {
+      atualizarStatusLead(lead.id, 'Erro CRM: ' + (d.error||'?').substring(0,40), 'var(--gold)');
+      addLog('warn', '[HubSpot] Erro criar contato ' + lead.nome + ': ' + (d.error||'?'));
+    }
   } catch(e) {
-    addLog('warn', '[HubSpot] Erro: ' + e.message);
+    addLog('warn', '[HubSpot] Excecao: ' + e.message);
   }
 }
 
