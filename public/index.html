@@ -4646,7 +4646,7 @@ async function editarMetas() {
 
 
 // ── MENU RETRATIL ─────────────────────────────────────────────────────────────
-const gruposAbertos = new Set(['gFundador','gMarketing','gVendas']); // abertos por default
+const gruposAbertos = new Set(['gFundador']); // Apenas Proposito aberto por default // abertos por default
 
 function toggleGrupo(id) {
   const body = document.getElementById(id);
@@ -4665,8 +4665,9 @@ function toggleGrupo(id) {
 }
 
 function initMenu() {
-  // Fechar todos por default exceto os marcados
-  const todos = ['gFundador','gEstrategia','gFinanceiro','gEmail','gMarketing','gVendas'];
+  // Fechar todos os grupos, abrir apenas gFundador por default
+  const todos = ['gProposito','gFundador','gEstrategia','gPlanejamento','gIdeias','gFinanceiro',
+    'gMarketing','gCRM','gJuridico','gDev','gVendas','gRH','gProjetos','gAtend','gInsideSales','gDE','gDash'];
   todos.forEach(id => {
     const body = document.getElementById(id);
     const arr = document.getElementById('arr-' + id);
@@ -8703,7 +8704,7 @@ function getLICredenciais() {
 // ── BUSCA APOLLO ──────────────────────────────────────────────────────────────
 async function buscarLeadsApollo() {
   var creds = getLICredenciais();
-  if (!creds.apolloKey) { toast('Configure a API Key do Apollo primeiro', 'error'); return; }
+  // API Key vem do campo ou de APOLLO_API_KEY no Vercel
 
   var cargoSel = document.getElementById('liCargo')?.value || 'CIO';
   var cargo = cargoSel === 'custom'
@@ -8798,7 +8799,7 @@ async function buscarLeadsApollo() {
 
 async function buscarPorNomeApollo() {
   var creds = getLICredenciais();
-  if (!creds.apolloKey) { toast('Configure a API Key do Apollo primeiro', 'error'); return; }
+  // API Key via campo ou APOLLO_API_KEY no Vercel
   var nome = document.getElementById('liNomeDirecto')?.value?.trim();
   if (!nome) { toast('Digite um nome ou URL LinkedIn', 'error'); return; }
 
