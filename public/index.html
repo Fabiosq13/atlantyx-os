@@ -565,7 +565,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
               <div class="fg" style="margin-bottom:8px;"><label class="fl">API Key do Apollo</label>
                 <input class="fi" id="liApolloKey" type="password" placeholder="Sua API Key do Apollo.io"/>
               </div>
-              <div style="font-size:9px;color:var(--t2);">Obtenha em: apollo.io → Settings → Integrations → API Keys</div>
+              <div style="font-size:9px;color:var(--t2);">Obtenha em: apollo.io → Settings → Integrations → API Keys<br/><span style="color:var(--green);">&#10003; Deixe em branco se configurou APOLLO_API_KEY no Vercel</span></div>
             </div>
             <div>
               <div style="font-family:var(--M);font-size:8px;color:#f59e0b;text-transform:uppercase;margin-bottom:8px;">PhantomBuster</div>
@@ -575,7 +575,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
               <div class="fg" style="margin-bottom:4px;"><label class="fl">Agent ID (LinkedIn Sender)</label>
                 <input class="fi" id="liPhantomAgentId" placeholder="ID do seu PhantomBuster Agent"/>
               </div>
-              <div style="font-size:9px;color:var(--t2);">Crie o Phantom: "LinkedIn Message Sender" em phantombuster.com</div>
+              <div style="font-size:9px;color:var(--t2);">Crie o Phantom: "LinkedIn Message Sender" em phantombuster.com<br/><span style="color:var(--green);">&#10003; Deixe em branco se configurou PHANTOM_API_KEY e PHANTOM_AGENT_ID no Vercel</span></div>
             </div>
           </div>
           <button class="btn btn-g" style="width:100%;margin-top:8px;font-size:10px;" onclick="salvarCredenciaisLI()">&#128190; Salvar Credenciais</button>
@@ -8660,7 +8660,7 @@ function salvarCredenciaisLI() {
   var apolloKey  = document.getElementById('liApolloKey')?.value?.trim();
   var phantomKey = document.getElementById('liPhantomKey')?.value?.trim();
   var phantomAgt = document.getElementById('liPhantomAgentId')?.value?.trim();
-  if (!apolloKey) { toast('Informe a API Key do Apollo', 'error'); return; }
+  // apolloKey pode ser vazio — o Vercel usa APOLLO_API_KEY automaticamente
   try {
     localStorage.setItem('atx:li_apollo_key',  apolloKey);
     localStorage.setItem('atx:li_phantom_key', phantomKey || '');
@@ -8703,7 +8703,7 @@ function getLICredenciais() {
 // ── BUSCA APOLLO ──────────────────────────────────────────────────────────────
 async function buscarLeadsApollo() {
   var creds = getLICredenciais();
-  if (!creds.apolloKey) { toast('Configure a API Key do Apollo primeiro', 'error'); return; }
+  // API Key pode vir do campo ou da variável de ambiente APOLLO_API_KEY no Vercel
 
   var cargoSel = document.getElementById('liCargo')?.value || 'CIO';
   var cargo = cargoSel === 'custom'
