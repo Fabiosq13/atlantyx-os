@@ -13,12 +13,12 @@ body{background:var(--bg);color:var(--t1);font-family:var(--B);font-size:13px;di
 @keyframes spin{to{transform:rotate(360deg);}}
 @keyframes fi{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
 @keyframes blink{0%,100%{opacity:1;}50%{opacity:0;}}
-.sb{width:var(--SB);background:var(--bg2);border-right:1px solid var(--bd);position:fixed;top:0;left:0;bottom:0;z-index:100;display:flex;flex-direction:column;overflow:hidden;}
+.sb{width:var(--SB);background:var(--bg2);border-right:1px solid var(--bd);position:fixed;top:0;left:0;bottom:0;z-index:100;display:flex;flex-direction:column;}
 .sb-logo{padding:16px 14px 13px;border-bottom:1px solid var(--bd);}
 .sb-name{font-family:var(--H);font-size:16px;font-weight:800;display:flex;align-items:center;gap:7px;letter-spacing:-.4px;}
 .sb-dot{width:7px;height:7px;border-radius:50%;background:var(--blue);animation:pulse 2s infinite;}
 .sb-sub{font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--t3);margin-top:3px;padding-left:14px;}
-.sb-nav{flex:1;overflow-y:auto;padding:6px 0;min-height:0;}
+.sb-nav{flex:1;overflow-y:auto;padding:6px 0;}
 .sb-sec{font-family:var(--M);font-size:8px;letter-spacing:1.5px;text-transform:uppercase;color:#fff;background:#2a52cc;padding:5px 13px;margin:6px 8px 2px;border-radius:5px;}
 .sbi{display:flex;align-items:center;gap:7px;padding:7px 13px;cursor:pointer;color:var(--t1);font-size:11.5px;border-left:2px solid transparent;transition:all .1s;white-space:nowrap;}
 .sbi:hover{color:var(--t1);background:rgba(255,255,255,0.02);}
@@ -4646,7 +4646,7 @@ async function editarMetas() {
 
 
 // ── MENU RETRATIL ─────────────────────────────────────────────────────────────
-const gruposAbertos = new Set(['gFundador']); // só Propósito aberto por default por default
+const gruposAbertos = new Set(['gFundador','gMarketing','gVendas']); // abertos por default
 
 function toggleGrupo(id) {
   const body = document.getElementById(id);
@@ -4665,10 +4665,9 @@ function toggleGrupo(id) {
 }
 
 function initMenu() {
-  // Fechar todos os grupos, abrir apenas os em gruposAbertos
-  const allGroups = ['gProposito','gFundador','gEstrategia','gPlanejamento','gIdeias','gFinanceiro',
-    'gMarketing','gCRM','gJuridico','gDev','gVendas','gRH','gProjetos','gAtend','gInsideSales','gDE','gDash'];
-  allGroups.forEach(id => {
+  // Fechar todos por default exceto os marcados
+  const todos = ['gFundador','gEstrategia','gFinanceiro','gEmail','gMarketing','gVendas'];
+  todos.forEach(id => {
     const body = document.getElementById(id);
     const arr = document.getElementById('arr-' + id);
     if (!body) return;
@@ -8736,10 +8735,11 @@ async function buscarLeadsApollo() {
     if (setor) body.organization_industry_tag_ids_not_included = [];
     if (setor) body.q_organization_industries = [setor];
 
-    var r = await fetch('https://api.apollo.io/v1/mixed_people/search', {
+    // Chamar via proxy /api/apollo (evita CORS do browser)
+    var r = await fetch('/api/apollo', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
-      body: JSON.stringify(body)
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'people_search', api_key: creds.apolloKey, ...body })
     });
 
     if (!r.ok) {
@@ -8816,10 +8816,12 @@ async function buscarPorNomeApollo() {
 
     if (!isUrl) body.q_keywords = nome;
 
-    var r = await fetch(endpoint, {
+    // Chamar via proxy
+    var proxyAction = isUrl ? 'person_match' : 'people_search';
+    var r = await fetch('/api/apollo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify({ action: proxyAction, api_key: creds.apolloKey, ...body })
     });
     var d = await r.json();
     var person = d.person || (d.people||[])[0];
@@ -9147,31 +9149,25 @@ async function enviarEmLoteLI() {
 
 // ── PHANTOMBUSTER — LinkedIn Sender ───────────────────────────────────────────
 async function enviarLIPhantom(lead, msg, creds) {
-  // PhantomBuster LinkedIn Message Sender Agent
-  // Documentação: https://phantombuster.com/automations/linkedin/linkedin-message-sender
-  var r = await fetch('https://api.phantombuster.com/api/v2/agents/launch', {
+  // Proxy /api/phantom resolve o CORS do browser para PhantomBuster
+  var r = await fetch('/api/phantom', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Phantombuster-Key': creds.phantomKey,
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      id: creds.phantomAgt,
-      output: 'result-object',
-      argument: JSON.stringify({
-        spreadsheetUrl: lead.linkedin_url,
-        message: msg,
-        sendInvitation: lead.status_li === 'pendente',  // solicitar conexão se não conectado
-        waitDuration: 10,
-      }),
+      phantom_key: creds.phantomKey,
+      agent_id: creds.phantomAgt,
+      linkedin_url: lead.linkedin_url,
+      message: msg,
+      send_invitation: lead.status_li !== 'conectado',
     })
   });
   if (!r.ok) {
     var err = await r.text();
-    throw new Error('PhantomBuster ' + r.status + ': ' + err.substring(0,100));
+    throw new Error('PhantomBuster ' + r.status + ': ' + err.substring(0, 100));
   }
   return await r.json();
 }
+
 
 // ── WHATSAPP ──────────────────────────────────────────────────────────────────
 async function enviarWALead(lead, msg) {
