@@ -5074,10 +5074,67 @@ function abrirGerarImagem() {
   nav('s2img', document.querySelector('.sbi[onclick*="s2img"]'));
 }
 
+
+// ── ESTADO GLOBAL DA CAMPANHA ────────────────────────────────────────────────
+let campAtiva = null;
+let campVersoesCopy = [];
+
 renderAg(S2A,'s2-grid');renderAg(S7A,'s7-grid');
 addLog('success','Atlantyx OS iniciado - Monitor de Agentes ativo');
 addLog('info','ICP: Energia · Automotivo · Varejo · Industria · R$100M+');
 addLog('info','Endpoints ativos: '+[...S2A,...S7A].filter(a=>a.on&&a.ep).length+' agentes com API');
+
+// ── S1 INICIALIZAÇÃO ─────────────────────────────────────────────────────────
+async function initS1() {
+  try {
+    // Carregar pipeline de ideias do banco
+    const r = await fetch('/api/db', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'list_ideias' })
+    });
+    const d = await r.json();
+    if (d.success && d.ideias?.length) {
+      // Atualizar contadores do S1 dashboard
+      const el1 = document.getElementById('s1_ideias');
+      const el2 = document.getElementById('s1_analise');
+      const el3 = document.getElementById('s1_fundador');
+      const el4 = document.getElementById('s1_dev');
+      if (el1) el1.textContent = d.ideias.length;
+      const emAnalise = d.ideias.filter(i => i.stage === 'Em Análise' || i.stage === 'Análise').length;
+      const emFundador = d.ideias.filter(i => i.stage === 'Aguardando Fundador' || i.stage === 'Fundador').length;
+      const emDev = d.ideias.filter(i => i.stage === 'Em Desenvolvimento' || i.stage === 'Aprovado').length;
+      if (el2) el2.textContent = emAnalise;
+      if (el3) { el3.textContent = emFundador; document.getElementById('s1DecCnt').textContent = emFundador; }
+      if (el4) el4.textContent = emDev;
+      // Renderizar kanban S1
+      renderKanbanS1(d.ideias);
+      addLog('ok', '[S1] Pipeline carregado: ' + d.ideias.length + ' ideias');
+    }
+  } catch(e) {
+    addLog('warn', '[S1] Sem dados de ideias: ' + e.message);
+  }
+}
+
+function renderKanbanS1(ideias) {
+  const kanban = document.getElementById('s1Kanban');
+  if (!kanban || !ideias.length) return;
+  const stages = ['Recebida','Em Análise','Pesquisa','Viabilidade','Comitê','Aguardando Fundador','Em Desenvolvimento'];
+  const byStage = {};
+  stages.forEach(s => byStage[s] = []);
+  ideias.forEach(i => {
+    const s = i.stage || i.status || 'Recebida';
+    if (byStage[s]) byStage[s].push(i);
+    else byStage['Recebida'].push(i);
+  });
+  kanban.innerHTML = stages.map(s => {
+    const items = byStage[s] || [];
+    return '<div style="min-width:120px;">'
+      + '<div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:6px;padding:0 2px;">' + s + ' <span style="color:var(--blue);">(' + items.length + ')</span></div>'
+      + items.map(i => '<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:5px;padding:7px;margin-bottom:4px;font-size:10px;">' + (i.titulo || 'Sem título') + '</div>').join('')
+      + '</div>';
+  }).join('');
+}
+
 initS1();
 initMenu();
 // Inicializar na sequência correta — DB primeiro, depois dados
@@ -6003,8 +6060,6 @@ nav = function(p, el) {
 // ══════════════════════════════════════════════════════════════════════════════
 // SISTEMA COMPLETO DE CAMPANHAS — Neon Postgres + Editor + Preview por Canal
 // ══════════════════════════════════════════════════════════════════════════════
-let campAtiva = null;
-let campVersoesCopy = [];
 
 // ── RESET ESTADO DA CAMPANHA ─────────────────────────────────────────────────
 function resetCampanhaState() {
