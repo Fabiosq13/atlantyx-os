@@ -224,6 +224,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div class="sg-body" id="gMarketing">
       <div class="sg-sub">INTELIGENCIA</div>
       <div class="sbi s2" onclick="nav('s2prospect',this)">&#9733; Prospeccao de Contas</div>
+      <div class="sbi s2" onclick="nav('s2prospect',this);setTimeout(function(){setModoProspect('linkedin');},300);" style="font-size:9px;padding-left:20px;color:#0a66c2;">&#128101; LinkedIn + Apollo</div>
       <div class="sbi s2" onclick="nav('s2rfps',this)">&#9634; Monitor RFPs <span class="nbx gd" id="rfpCnt">—</span></div>
       <div class="sg-sub">CRIACAO</div>
       <div class="sbi s2" onclick="nav('s2studio',this)">&#9670; Studio Criativo</div>
@@ -484,7 +485,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
       <button class="btn" id="modoUnico" onclick="setModoProspect('unico')" style="flex:1;border-color:#4f7cff;color:#4f7cff;">&#9670; Empresa + Decisor</button>
       <button class="btn btn-or" id="modoCadeia" onclick="setModoProspect('cadeia')" style="flex:1;">&#9670; Cadeia C-Level Completa</button>
-      <button class="btn" id="modoEvento" onclick="setModoProspect('evento')" style="flex:1;border-color:#22d3a3;color:#22d3a3;">&#127881; Prospecção por Evento</button>
+      <button class="btn" id="modoEvento" onclick="setModoProspect('evento')" style="flex:1;border-color:#22d3a3;color:#22d3a3;">&#127881; Por Evento</button>
+      <button class="btn" id="modoLinkedin" onclick="setModoProspect('linkedin')" style="flex:1;border-color:#0a66c2;color:#0a66c2;">&#128101; LinkedIn + Apollo</button>
     </div>
 
     <!-- MODO EVENTO -->
@@ -544,6 +546,211 @@ tr:hover td{background:rgba(79,124,255,.03);}
             <span class="tag live" id="eventoResultTag">0 leads</span>
           </div>
           <div class="pb" id="eventoLeadsLista" style="max-height:500px;overflow-y:auto;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODO LINKEDIN + APOLLO -->
+    <div id="formLinkedin" style="display:none;margin-bottom:12px;">
+      <!-- CONFIGURAÇÃO DE CREDENCIAIS -->
+      <div class="panel" style="margin-bottom:10px;">
+        <div class="ph">
+          <div class="pt">&#128273; Credenciais — Apollo.io + PhantomBuster</div>
+          <span class="tag on">Configurar uma vez</span>
+        </div>
+        <div class="pb">
+          <div class="kg k2" style="gap:8px;">
+            <div>
+              <div style="font-family:var(--M);font-size:8px;color:#0a66c2;text-transform:uppercase;margin-bottom:8px;">Apollo.io</div>
+              <div class="fg" style="margin-bottom:8px;"><label class="fl">API Key do Apollo</label>
+                <input class="fi" id="liApolloKey" type="password" placeholder="Sua API Key do Apollo.io"/>
+              </div>
+              <div style="font-size:9px;color:var(--t2);">Obtenha em: apollo.io → Settings → Integrations → API Keys</div>
+            </div>
+            <div>
+              <div style="font-family:var(--M);font-size:8px;color:#f59e0b;text-transform:uppercase;margin-bottom:8px;">PhantomBuster</div>
+              <div class="fg" style="margin-bottom:8px;"><label class="fl">API Key do PhantomBuster</label>
+                <input class="fi" id="liPhantomKey" type="password" placeholder="Sua API Key do PhantomBuster"/>
+              </div>
+              <div class="fg" style="margin-bottom:4px;"><label class="fl">Agent ID (LinkedIn Sender)</label>
+                <input class="fi" id="liPhantomAgentId" placeholder="ID do seu PhantomBuster Agent"/>
+              </div>
+              <div style="font-size:9px;color:var(--t2);">Crie o Phantom: "LinkedIn Message Sender" em phantombuster.com</div>
+            </div>
+          </div>
+          <button class="btn btn-g" style="width:100%;margin-top:8px;font-size:10px;" onclick="salvarCredenciaisLI()">&#128190; Salvar Credenciais</button>
+          <div id="liCredStatus" style="margin-top:6px;font-size:10px;color:var(--t2);"></div>
+        </div>
+      </div>
+
+      <!-- BUSCA DE LEADS NO APOLLO -->
+      <div class="panel" style="margin-bottom:10px;">
+        <div class="ph">
+          <div class="pt">&#128269; Buscar C-Levels no Apollo.io</div>
+          <span class="tag on">Apollo API</span>
+        </div>
+        <div class="pb">
+          <div class="kg k2" style="gap:8px;">
+            <div>
+              <div class="fg" style="margin-bottom:8px;"><label class="fl">Cargo / Título</label>
+                <select class="fsel" id="liCargo">
+                  <option value="CEO">CEO — Chief Executive Officer</option>
+                  <option value="CIO">CIO — Chief Information Officer</option>
+                  <option value="CTO">CTO — Chief Technology Officer</option>
+                  <option value="CFO">CFO — Chief Financial Officer</option>
+                  <option value="COO">COO — Chief Operations Officer</option>
+                  <option value="CDO">CDO — Chief Data Officer</option>
+                  <option value="VP Technology">VP de Tecnologia</option>
+                  <option value="VP Data">VP de Dados / Analytics</option>
+                  <option value="Diretor TI">Diretor de TI</option>
+                  <option value="Gerente TI">Gerente de TI Sênior</option>
+                  <option value="custom">Cargo personalizado...</option>
+                </select>
+              </div>
+              <div class="fg" style="margin-bottom:8px;" id="liCargoCustomDiv" style="display:none;">
+                <label class="fl">Cargo personalizado</label>
+                <input class="fi" id="liCargoCustom" placeholder="Ex: Head of Data, Analytics Manager..."/>
+              </div>
+              <div class="fg" style="margin-bottom:8px;"><label class="fl">Setor</label>
+                <select class="fsel" id="liSetor">
+                  <option value="">Todos os setores</option>
+                  <option value="Energy">Energia e Utilities</option>
+                  <option value="Automotive">Automotivo</option>
+                  <option value="Retail">Varejo</option>
+                  <option value="Manufacturing">Indústria / Manufatura</option>
+                  <option value="Financial Services">Financeiro / Bancário</option>
+                  <option value="Healthcare">Saúde</option>
+                  <option value="Logistics">Logística</option>
+                  <option value="Telecommunications">Telecomunicações</option>
+                  <option value="Technology">Tecnologia</option>
+                  <option value="Agribusiness">Agronegócio</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <div class="fg" style="margin-bottom:8px;"><label class="fl">País</label>
+                <select class="fsel" id="liPais">
+                  <option value="Brazil">Brasil</option>
+                  <option value="United States">Estados Unidos</option>
+                  <option value="Portugal">Portugal</option>
+                  <option value="Argentina">Argentina</option>
+                  <option value="Colombia">Colômbia</option>
+                </select>
+              </div>
+              <div class="fg" style="margin-bottom:8px;"><label class="fl">Faturamento mínimo da empresa</label>
+                <select class="fsel" id="liFatMin">
+                  <option value="5000000">R$5M+</option>
+                  <option value="10000000">R$10M+</option>
+                  <option value="50000000">R$50M+</option>
+                  <option value="100000000">R$100M+</option>
+                  <option value="500000000">R$500M+</option>
+                  <option value="1000000000">R$1B+</option>
+                </select>
+              </div>
+              <div class="fg" style="margin-bottom:8px;"><label class="fl">Quantidade de leads</label>
+                <select class="fsel" id="liQtd">
+                  <option value="10">10 leads</option>
+                  <option value="25">25 leads</option>
+                  <option value="50">50 leads</option>
+                  <option value="100">100 leads</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Busca por nome específico -->
+          <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;margin-bottom:10px;">
+            <div style="font-family:var(--M);font-size:8px;color:var(--t2);margin-bottom:6px;">OU BUSCA POR NOME / URL LINKEDIN</div>
+            <div style="display:flex;gap:8px;">
+              <input class="fi" id="liNomeDirecto" placeholder="Ex: Carlos Mendes, linkedin.com/in/carlos-mendes..." style="flex:1;font-size:11px;"/>
+              <button class="btn btn-g" style="font-size:10px;white-space:nowrap;" onclick="buscarPorNomeApollo()">Buscar</button>
+            </div>
+          </div>
+
+          <button class="btn" style="width:100%;border-color:#0a66c2;color:#0a66c2;padding:10px;font-size:12px;font-weight:600;" onclick="buscarLeadsApollo()">
+            &#128269; Buscar no Apollo.io
+          </button>
+        </div>
+      </div>
+
+      <!-- RESULTADO DOS LEADS -->
+      <div id="liLeadsResultado" style="display:none;margin-bottom:10px;">
+        <div class="panel">
+          <div class="ph">
+            <div class="pt" id="liLeadsTitulo">Leads encontrados</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <span class="tag live" id="liLeadsTag">0 leads</span>
+              <button class="btn btn-p" style="font-size:8px;padding:3px 8px;" onclick="selecionarTodosLI()">Sel. Todos</button>
+              <button class="btn btn-g" style="font-size:8px;padding:3px 8px;" onclick="carregarLeadsLIHubSpot()">&#128640; CRM</button>
+            </div>
+          </div>
+          <div class="pb" id="liLeadsLista" style="max-height:400px;overflow-y:auto;"></div>
+        </div>
+      </div>
+
+      <!-- PERSONALIZAÇÃO DE MENSAGEM + ENVIO -->
+      <div class="panel">
+        <div class="ph">
+          <div class="pt">&#9993; Mensagem Personalizada + Envio em Lote</div>
+          <span class="tag on">IA + PhantomBuster + Z-API</span>
+        </div>
+        <div class="pb">
+          <!-- Oferta e contexto -->
+          <div class="fg"><label class="fl">Serviço / Oferta Atlantyx para esta campanha</label>
+            <select class="fsel" id="liOferta">
+              <option>Data Warehouse + BI — dashboards executivos em tempo real</option>
+              <option>Engenharia de Dados — pipelines Medallion prontos para implantar</option>
+              <option>IA Generativa aplicada ao negócio — automação de processos</option>
+              <option>Analytics as a Service — BI gerenciado mensal</option>
+              <option>Modernização de dados — migração de legado para cloud</option>
+              <option>Dashboard Studio — Power BI / Looker / Python personalizados</option>
+            </select>
+          </div>
+          <div class="fg"><label class="fl">Tom da mensagem</label>
+            <select class="fsel" id="liTom">
+              <option value="consultivo">Consultivo — foco em problema do cliente</option>
+              <option value="direto">Direto — proposta de valor clara</option>
+              <option value="referencia">Por referência — mencionar evento/setor em comum</option>
+              <option value="provocativo">Provocativo — dado/insight que chama atenção</option>
+            </select>
+          </div>
+          <div class="fg"><label class="fl">Pré-visualização da mensagem (edite aqui)</label>
+            <textarea class="fta" id="liMsgPreview" style="min-height:100px;" placeholder="Clique em Gerar Mensagem com IA para criar a mensagem personalizada..."></textarea>
+          </div>
+
+          <!-- Canais de envio -->
+          <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:12px;margin-bottom:10px;">
+            <div style="font-family:var(--M);font-size:8px;color:var(--t2);margin-bottom:8px;">CANAIS DE ENVIO</div>
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;">
+                <input type="checkbox" id="canalLinkedIn" checked style="width:14px;height:14px;"/>
+                <span style="color:#0a66c2;font-weight:600;">&#128101; LinkedIn</span>
+                <span style="font-size:9px;color:var(--t2);">(convite + msg via PhantomBuster)</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;">
+                <input type="checkbox" id="canalWhatsApp" style="width:14px;height:14px;"/>
+                <span style="color:#22c55e;font-weight:600;">&#128232; WhatsApp</span>
+                <span style="font-size:9px;color:var(--t2);">(se Apollo retornar telefone)</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;">
+                <input type="checkbox" id="canalEmail" style="width:14px;height:14px;"/>
+                <span style="color:var(--blue);font-weight:600;">&#9993; E-mail</span>
+                <span style="font-size:9px;color:var(--t2);">(via Gmail — e-mail Apollo verificado)</span>
+              </label>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <button class="btn btn-g" onclick="gerarMensagemLIComIA()" style="padding:10px;">
+              &#9670; Gerar Mensagem com IA
+            </button>
+            <button class="btn" style="padding:10px;border-color:#0a66c2;color:#0a66c2;font-weight:600;" onclick="enviarEmLoteLI()">
+              &#128640; Enviar em Lote
+            </button>
+          </div>
+
+          <!-- Status do envio -->
+          <div id="liEnvioStatus" style="display:none;margin-top:10px;"></div>
         </div>
       </div>
     </div>
@@ -3766,15 +3973,21 @@ let modoProspect = 'unico';
 
 function setModoProspect(modo) {
   modoProspect = modo;
-  document.getElementById('formUnico').style.display  = modo === 'unico'  ? 'block' : 'none';
-  document.getElementById('formCadeia').style.display = modo === 'cadeia' ? 'block' : 'none';
+  document.getElementById('formUnico').style.display   = modo === 'unico'    ? 'block' : 'none';
+  document.getElementById('formCadeia').style.display  = modo === 'cadeia'   ? 'block' : 'none';
   const fe = document.getElementById('formEvento');
-  if (fe) fe.style.display = modo === 'evento' ? 'block' : 'none';
-  const colors = { unico:'var(--blue)', cadeia:'var(--or)', evento:'#22d3a3' };
-  ['unico','cadeia','evento'].forEach(function(m) {
+  if (fe) fe.style.display   = modo === 'evento'   ? 'block' : 'none';
+  const fli = document.getElementById('formLinkedin');
+  if (fli) fli.style.display = modo === 'linkedin' ? 'block' : 'none';
+
+  const colors = { unico:'var(--blue)', cadeia:'var(--or)', evento:'#22d3a3', linkedin:'#0a66c2' };
+  ['unico','cadeia','evento','linkedin'].forEach(function(m) {
     var btn = document.getElementById('modo' + m.charAt(0).toUpperCase() + m.slice(1));
     if (btn) { btn.style.borderColor = m===modo ? colors[m] : ''; btn.style.color = m===modo ? colors[m] : ''; }
   });
+
+  // Se entrou no modo LinkedIn, carregar credenciais salvas
+  if (modo === 'linkedin') carregarCredenciaisLI();
 }
 
 async function runCadeiaCLevel() {
@@ -8434,6 +8647,618 @@ async function carregarLeadsEventoHubSpot() {
   addLog('ok', '[Evento] ' + ok + ' leads carregados no HubSpot');
   toast(ok + ' leads carregados no CRM!', 'success');
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// LINKEDIN + APOLLO.IO + PHANTOMBUSTER — Prospecção e Envio em Lote
+// ══════════════════════════════════════════════════════════════════════════════
+
+var liLeadsCache = [];   // Leads encontrados no Apollo
+var liSelecionados = []; // Leads selecionados para envio
+
+// ── CREDENCIAIS ───────────────────────────────────────────────────────────────
+function salvarCredenciaisLI() {
+  var apolloKey  = document.getElementById('liApolloKey')?.value?.trim();
+  var phantomKey = document.getElementById('liPhantomKey')?.value?.trim();
+  var phantomAgt = document.getElementById('liPhantomAgentId')?.value?.trim();
+  if (!apolloKey) { toast('Informe a API Key do Apollo', 'error'); return; }
+  try {
+    localStorage.setItem('atx:li_apollo_key',  apolloKey);
+    localStorage.setItem('atx:li_phantom_key', phantomKey || '');
+    localStorage.setItem('atx:li_phantom_agt', phantomAgt || '');
+    var el = document.getElementById('liCredStatus');
+    if (el) el.innerHTML = '<span style="color:var(--green);">Credenciais salvas!</span>';
+    addLog('ok', '[LinkedIn] Credenciais Apollo+PhantomBuster salvas');
+    toast('Credenciais salvas!', 'success');
+  } catch(e) {
+    toast('Erro ao salvar credenciais', 'error');
+  }
+}
+
+function carregarCredenciaisLI() {
+  try {
+    var apolloKey  = localStorage.getItem('atx:li_apollo_key')  || '';
+    var phantomKey = localStorage.getItem('atx:li_phantom_key') || '';
+    var phantomAgt = localStorage.getItem('atx:li_phantom_agt') || '';
+    if (apolloKey) {
+      var el = document.getElementById('liApolloKey');
+      if (el) el.value = apolloKey;
+      var el2 = document.getElementById('liPhantomKey');
+      if (el2 && phantomKey) el2.value = phantomKey;
+      var el3 = document.getElementById('liPhantomAgentId');
+      if (el3 && phantomAgt) el3.value = phantomAgt;
+      var st = document.getElementById('liCredStatus');
+      if (st) st.innerHTML = '<span style="color:var(--green);">Credenciais carregadas</span>';
+    }
+  } catch(e) {}
+}
+
+function getLICredenciais() {
+  return {
+    apolloKey:  (document.getElementById('liApolloKey')?.value?.trim()  || localStorage.getItem('atx:li_apollo_key')  || ''),
+    phantomKey: (document.getElementById('liPhantomKey')?.value?.trim() || localStorage.getItem('atx:li_phantom_key') || ''),
+    phantomAgt: (document.getElementById('liPhantomAgentId')?.value?.trim() || localStorage.getItem('atx:li_phantom_agt') || ''),
+  };
+}
+
+// ── BUSCA APOLLO ──────────────────────────────────────────────────────────────
+async function buscarLeadsApollo() {
+  var creds = getLICredenciais();
+  if (!creds.apolloKey) { toast('Configure a API Key do Apollo primeiro', 'error'); return; }
+
+  var cargoSel = document.getElementById('liCargo')?.value || 'CIO';
+  var cargo = cargoSel === 'custom'
+    ? (document.getElementById('liCargoCustom')?.value?.trim() || 'CIO')
+    : cargoSel;
+  var setor = document.getElementById('liSetor')?.value || '';
+  var pais  = document.getElementById('liPais')?.value  || 'Brazil';
+  var qtd   = parseInt(document.getElementById('liQtd')?.value || '25');
+
+  var lista  = document.getElementById('liLeadsLista');
+  var result = document.getElementById('liLeadsResultado');
+  var tag    = document.getElementById('liLeadsTag');
+  var titulo = document.getElementById('liLeadsTitulo');
+
+  if (result) result.style.display = 'block';
+  if (lista)  lista.innerHTML = '<div style="color:var(--blue);font-size:11px;padding:20px;text-align:center;">Buscando no Apollo.io...</div>';
+  addLog('info', '[Apollo] Buscando: ' + cargo + ' | ' + (setor||'todos setores') + ' | ' + pais);
+
+  try {
+    // Apollo.io People Search API
+    var body = {
+      api_key: creds.apolloKey,
+      page: 1,
+      per_page: qtd,
+      person_titles: [cargo],
+      contact_email_status: ['verified', 'unverified'],
+      organization_locations: [pais],
+    };
+    if (setor) body.organization_industry_tag_ids_not_included = [];
+    if (setor) body.q_organization_industries = [setor];
+
+    var r = await fetch('https://api.apollo.io/v1/mixed_people/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
+      body: JSON.stringify(body)
+    });
+
+    if (!r.ok) {
+      var errText = await r.text();
+      throw new Error('Apollo HTTP ' + r.status + ': ' + errText.substring(0,200));
+    }
+
+    var d = await r.json();
+    var people = d.people || d.contacts || [];
+
+    if (!people.length) {
+      if (lista) lista.innerHTML = '<div style="color:var(--gold);font-size:11px;padding:12px;">Nenhum lead encontrado. Tente ajustar os filtros.</div>';
+      addLog('warn', '[Apollo] Sem resultados para: ' + cargo);
+      return;
+    }
+
+    // Normalizar leads
+    liLeadsCache = people.map(function(p, i) {
+      return {
+        id:             'li_' + Date.now() + '_' + i,
+        nome:           (p.first_name || '') + ' ' + (p.last_name || ''),
+        cargo:          p.title || cargo,
+        empresa:        p.organization?.name || p.company_name || '',
+        setor:          p.organization?.industry || setor || '',
+        email:          p.email || '',
+        telefone:       p.phone_numbers?.[0]?.sanitized_number || p.mobile_phone || '',
+        linkedin_url:   p.linkedin_url || '',
+        linkedin_id:    p.linkedin_uid || '',
+        faturamento:    p.organization?.annual_revenue_printed || '',
+        funcionarios:   p.organization?.estimated_num_employees || '',
+        cidade:         p.city || '',
+        pais:           p.country || pais,
+        score:          calcScoreApollo(p),
+        selecionado:    true,
+        status_li:      'pendente',  // pendente / enviado / conectado / erro
+        status_wa:      p.mobile_phone ? 'disponivel' : 'sem_tel',
+        status_email:   p.email ? 'disponivel' : 'sem_email',
+        status_crm:     'novo',
+      };
+    });
+
+    liSelecionados = liLeadsCache.filter(function(l) { return l.selecionado; });
+
+    if (titulo) titulo.textContent = 'Leads Apollo — ' + cargo + (setor?' | '+setor:'') + ' (' + liLeadsCache.length + ')';
+    if (tag) { tag.textContent = liLeadsCache.length + ' leads'; tag.className = 'tag live'; }
+    renderLeadsLI(lista, liLeadsCache);
+
+    addLog('ok', '[Apollo] ' + liLeadsCache.length + ' leads: ' + cargo + ' | ' + pais);
+    toast(liLeadsCache.length + ' leads encontrados no Apollo!', 'success');
+
+  } catch(e) {
+    if (lista) lista.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Erro Apollo: ' + e.message + '</div>';
+    addLog('err', '[Apollo] ' + e.message);
+  }
+}
+
+async function buscarPorNomeApollo() {
+  var creds = getLICredenciais();
+  if (!creds.apolloKey) { toast('Configure a API Key do Apollo primeiro', 'error'); return; }
+  var nome = document.getElementById('liNomeDirecto')?.value?.trim();
+  if (!nome) { toast('Digite um nome ou URL LinkedIn', 'error'); return; }
+
+  addLog('info', '[Apollo] Buscando por nome: ' + nome);
+
+  try {
+    var isUrl = nome.includes('linkedin.com');
+    var body = isUrl
+      ? { api_key: creds.apolloKey, linkedin_url: nome }
+      : { api_key: creds.apolloKey, name: nome };
+
+    var endpoint = isUrl
+      ? 'https://api.apollo.io/v1/people/match'
+      : 'https://api.apollo.io/v1/mixed_people/search';
+
+    if (!isUrl) body.q_keywords = nome;
+
+    var r = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    var d = await r.json();
+    var person = d.person || (d.people||[])[0];
+
+    if (!person) { toast('Pessoa não encontrada no Apollo', 'error'); return; }
+
+    var lead = {
+      id: 'li_direct_' + Date.now(),
+      nome: (person.first_name||'') + ' ' + (person.last_name||''),
+      cargo: person.title || '',
+      empresa: person.organization?.name || '',
+      email: person.email || '',
+      telefone: person.phone_numbers?.[0]?.sanitized_number || '',
+      linkedin_url: person.linkedin_url || nome,
+      score: 'A',
+      selecionado: true,
+      status_li: 'pendente',
+      status_wa: person.mobile_phone ? 'disponivel' : 'sem_tel',
+    };
+
+    liLeadsCache.unshift(lead);
+    liSelecionados.unshift(lead);
+
+    var lista = document.getElementById('liLeadsLista');
+    var result = document.getElementById('liLeadsResultado');
+    if (result) result.style.display = 'block';
+    renderLeadsLI(lista, liLeadsCache);
+    toast('Lead encontrado: ' + lead.nome, 'success');
+    addLog('ok', '[Apollo] Lead direto: ' + lead.nome + ' | ' + lead.empresa);
+  } catch(e) {
+    toast('Erro: ' + e.message, 'error');
+    addLog('err', '[Apollo] Busca direta: ' + e.message);
+  }
+}
+
+function calcScoreApollo(p) {
+  var rev = p.organization?.annual_revenue || 0;
+  if (rev >= 500000000) return 'A';
+  if (rev >= 100000000) return 'B';
+  return 'C';
+}
+
+// ── RENDER LEADS ──────────────────────────────────────────────────────────────
+function renderLeadsLI(container, leads) {
+  if (!container) return;
+  container.innerHTML = '';
+
+  leads.forEach(function(lead, i) {
+    var scoreCor = lead.score==='A' ? 'var(--green)' : lead.score==='B' ? 'var(--blue)' : 'var(--gold)';
+    var card = document.createElement('div');
+    card.style.cssText = 'background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:10px;margin-bottom:6px;';
+    card.id = 'liCard_' + lead.id;
+
+    // Header row: checkbox + nome + score
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = lead.selecionado;
+    cb.style.cssText = 'width:14px;height:14px;cursor:pointer;flex-shrink:0;';
+    cb.onchange = (function(id) { return function() {
+      var l = liLeadsCache.find(function(x) { return x.id === id; });
+      if (l) {
+        l.selecionado = this.checked;
+        liSelecionados = liLeadsCache.filter(function(x) { return x.selecionado; });
+        var tag = document.getElementById('liLeadsTag');
+        if (tag) tag.textContent = liSelecionados.length + ' selecionados';
+      }
+    }; })(lead.id);
+    var info = document.createElement('div');
+    info.style.flex = '1';
+    info.innerHTML = '<div style="font-size:12px;font-weight:700;color:var(--t1);">' + (lead.nome||'—') + '</div>'
+      + '<div style="font-size:10px;color:var(--t2);">' + (lead.cargo||'') + ' · ' + (lead.empresa||'') + (lead.cidade?' · '+lead.cidade:'') + '</div>';
+    var badge = document.createElement('span');
+    badge.style.cssText = 'font-family:var(--M);font-size:10px;font-weight:700;color:'+scoreCor+';background:rgba(0,0,0,.25);padding:2px 8px;border-radius:4px;white-space:nowrap;';
+    badge.textContent = 'Score ' + lead.score;
+    hdr.appendChild(cb); hdr.appendChild(info); hdr.appendChild(badge); card.appendChild(hdr);
+
+    // Canais disponíveis
+    var canais = document.createElement('div');
+    canais.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;';
+    if (lead.linkedin_url) {
+      var tagLI = document.createElement('span');
+      tagLI.style.cssText = 'font-size:8px;padding:2px 7px;border-radius:3px;background:rgba(10,102,194,.15);color:#0a66c2;';
+      tagLI.innerHTML = '&#128101; LinkedIn';
+      canais.appendChild(tagLI);
+    }
+    if (lead.email) {
+      var tagEM = document.createElement('span');
+      tagEM.style.cssText = 'font-size:8px;padding:2px 7px;border-radius:3px;background:rgba(79,124,255,.15);color:var(--blue);';
+      tagEM.innerHTML = '&#9993; ' + lead.email;
+      canais.appendChild(tagEM);
+    }
+    if (lead.telefone) {
+      var tagWA = document.createElement('span');
+      tagWA.style.cssText = 'font-size:8px;padding:2px 7px;border-radius:3px;background:rgba(34,197,94,.15);color:#22c55e;';
+      tagWA.innerHTML = '&#128232; ' + lead.telefone;
+      canais.appendChild(tagWA);
+    }
+    card.appendChild(canais);
+
+    // Status row + script button
+    var statusRow = document.createElement('div');
+    statusRow.style.cssText = 'display:flex;align-items:center;gap:6px;';
+    var statusEl = document.createElement('span');
+    statusEl.id = 'liStatus_' + lead.id;
+    statusEl.style.cssText = 'font-size:9px;color:var(--t3);flex:1;';
+    statusEl.textContent = 'Aguardando envio';
+    var btnScript = document.createElement('button');
+    btnScript.className = 'btn btn-g';
+    btnScript.style.cssText = 'font-size:8px;padding:2px 8px;';
+    btnScript.textContent = 'Ver Script';
+    btnScript.onclick = (function(leadId) { return function() {
+      var l = liLeadsCache.find(function(x) { return x.id === leadId; });
+      if (l) gerarMensagemParaLead(l);
+    }; })(lead.id);
+    if (lead.linkedin_url) {
+      var btnLI = document.createElement('a');
+      btnLI.href = lead.linkedin_url;
+      btnLI.target = '_blank';
+      btnLI.className = 'btn';
+      btnLI.style.cssText = 'font-size:8px;padding:2px 8px;color:#0a66c2;border-color:#0a66c2;';
+      btnLI.textContent = 'LinkedIn';
+      statusRow.appendChild(btnLI);
+    }
+    statusRow.appendChild(statusEl);
+    statusRow.appendChild(btnScript);
+    card.appendChild(statusRow);
+    container.appendChild(card);
+  });
+}
+
+function selecionarTodosLI() {
+  var allChecked = liLeadsCache.every(function(l) { return l.selecionado; });
+  liLeadsCache.forEach(function(l) { l.selecionado = !allChecked; });
+  liSelecionados = allChecked ? [] : liLeadsCache.slice();
+  var tag = document.getElementById('liLeadsTag');
+  if (tag) tag.textContent = liSelecionados.length + ' selecionados';
+  var lista = document.getElementById('liLeadsLista');
+  renderLeadsLI(lista, liLeadsCache);
+}
+
+// ── GERAÇÃO DE MENSAGEM COM IA ────────────────────────────────────────────────
+async function gerarMensagemLIComIA() {
+  var oferta = document.getElementById('liOferta')?.value || '';
+  var tom    = document.getElementById('liTom')?.value    || 'consultivo';
+  var lead   = liSelecionados[0] || liLeadsCache[0];
+
+  if (!lead) { toast('Busque leads primeiro', 'error'); return; }
+
+  var preview = document.getElementById('liMsgPreview');
+  if (preview) preview.value = 'Gerando mensagem personalizada...';
+  addLog('info', '[LinkedIn] Gerando mensagem IA: ' + tom + ' | ' + oferta.substring(0,40));
+
+  try {
+    var r = await fetch('/api/s1-strategy', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'inside_sales_script', payload: {
+        decisor: lead.nome || 'C-Level',
+        empresa: lead.empresa || '',
+        objetivo_ligacao: 'Primeiro contato via LinkedIn — solicitar conexão e apresentar Atlantyx',
+        contexto: 'Tom: ' + tom + '. Oferta: ' + oferta + '. Empresa: ' + (lead.empresa||'') + '. Setor: ' + (lead.setor||'') + '. Cargo: ' + (lead.cargo||'') + '. IMPORTANTE: mensagem curta para LinkedIn (máx 300 chars), pessoal, sem parecer spam. Incluir convite de conexão inicial se não conectado.',
+        empresa_vendedora: 'Atlantyx — BI, Dados e IA B2B para grandes empresas'
+      }})
+    });
+    var d = await r.json();
+    var msg = d.content || d.resultado || '';
+
+    // Extrair apenas a mensagem inicial (primeira parte, até 300 chars para LinkedIn)
+    var lines = msg.split('\n').filter(function(l) { return l.trim(); });
+    var shortMsg = '';
+    for (var i = 0; i < lines.length; i++) {
+      if (shortMsg.length + lines[i].length > 280) break;
+      shortMsg += (shortMsg ? '\n' : '') + lines[i];
+    }
+
+    if (preview) preview.value = shortMsg || msg.substring(0, 300);
+    addLog('ok', '[LinkedIn] Mensagem IA gerada (' + (preview?.value?.length||0) + ' chars)');
+    toast('Mensagem gerada! Revise antes de enviar.', 'success');
+  } catch(e) {
+    if (preview) preview.value = 'Erro ao gerar mensagem: ' + e.message;
+    addLog('err', '[LinkedIn] Erro IA: ' + e.message);
+  }
+}
+
+async function gerarMensagemParaLead(lead) {
+  var oferta = document.getElementById('liOferta')?.value || '';
+  var tom    = document.getElementById('liTom')?.value    || 'consultivo';
+
+  try {
+    var r = await fetch('/api/s1-strategy', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'inside_sales_script', payload: {
+        decisor: lead.nome, empresa: lead.empresa,
+        objetivo_ligacao: 'Primeiro contato LinkedIn',
+        contexto: 'Tom: ' + tom + '. Oferta: ' + oferta + '. Setor: ' + lead.setor + '. Cargo: ' + lead.cargo,
+        empresa_vendedora: 'Atlantyx'
+      }})
+    });
+    var d = await r.json();
+    var msg = (d.content || d.resultado || '').substring(0, 300);
+
+    // Show in modal
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:var(--bg2);border:1px solid rgba(10,102,194,.3);border-radius:12px;max-width:560px;width:100%;padding:20px;';
+    box.innerHTML = '<div style="font-family:var(--M);font-size:9px;color:#0a66c2;margin-bottom:12px;">SCRIPT LINKEDIN — ' + (lead.nome||'').toUpperCase() + ' · ' + (lead.empresa||'') + '</div>'
+      + '<div style="white-space:pre-wrap;font-size:12px;line-height:1.75;color:var(--t1);margin-bottom:14px;">' + msg + '</div>';
+    var btns = document.createElement('div');
+    btns.style.cssText = 'display:flex;gap:8px;';
+    var b1 = document.createElement('button');
+    b1.className = 'btn btn-g'; b1.style.flex = '1'; b1.textContent = 'Copiar';
+    b1.onclick = function() { navigator.clipboard.writeText(msg); toast('Copiado!', 'success'); };
+    var b2 = document.createElement('button');
+    b2.className = 'btn'; b2.style.cssText = 'flex:1;color:var(--red);';  b2.textContent = 'Fechar';
+    b2.onclick = function() { document.body.removeChild(overlay); };
+    btns.appendChild(b1); btns.appendChild(b2); box.appendChild(btns);
+    overlay.appendChild(box); document.body.appendChild(overlay);
+  } catch(e) {
+    toast('Erro: ' + e.message, 'error');
+  }
+}
+
+// ── ENVIO EM LOTE ─────────────────────────────────────────────────────────────
+async function enviarEmLoteLI() {
+  var sel = liSelecionados.filter(function(l) { return l.selecionado; });
+  if (!sel.length) { toast('Selecione ao menos 1 lead', 'error'); return; }
+
+  var msg       = document.getElementById('liMsgPreview')?.value?.trim();
+  if (!msg) { toast('Gere ou escreva a mensagem primeiro', 'error'); return; }
+
+  var usaLI  = document.getElementById('canalLinkedIn')?.checked;
+  var usaWA  = document.getElementById('canalWhatsApp')?.checked;
+  var usaEM  = document.getElementById('canalEmail')?.checked;
+  var creds  = getLICredenciais();
+
+  var statusDiv = document.getElementById('liEnvioStatus');
+  if (statusDiv) statusDiv.style.display = 'block';
+
+  addLog('info', '[LinkedIn Lote] Iniciando: ' + sel.length + ' leads | LI:' + usaLI + ' WA:' + usaWA + ' Email:' + usaEM);
+
+  var ok = 0, erros = 0;
+
+  for (var i = 0; i < sel.length; i++) {
+    var lead = sel[i];
+    if (statusDiv) {
+      statusDiv.innerHTML = '<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;">'
+        + '<div style="font-family:var(--M);font-size:8px;color:var(--blue);margin-bottom:6px;">ENVIANDO ' + (i+1) + '/' + sel.length + '</div>'
+        + '<div style="font-size:11px;">Lead: ' + lead.nome + ' · ' + lead.empresa + '</div>'
+        + '<div style="font-size:10px;color:var(--t2);margin-top:4px;">Enviados: ' + ok + ' | Erros: ' + erros + '</div>'
+        + '</div>';
+    }
+
+    // Personalizar mensagem para este lead
+    var msgPersonalizada = msg
+      .replace(/\{nome\}/gi, lead.nome.split(' ')[0] || lead.nome)
+      .replace(/\{empresa\}/gi, lead.empresa || '')
+      .replace(/\{cargo\}/gi, lead.cargo || '');
+
+    // 1. LinkedIn via PhantomBuster
+    if (usaLI && lead.linkedin_url && creds.phantomKey && creds.phantomAgt) {
+      try {
+        await enviarLIPhantom(lead, msgPersonalizada, creds);
+        lead.status_li = 'enviado';
+        atualizarStatusLead(lead.id, 'LinkedIn enviado', 'var(--green)');
+        ok++;
+        addLog('ok', '[PhantomBuster] LinkedIn enviado: ' + lead.nome);
+      } catch(e) {
+        lead.status_li = 'erro';
+        atualizarStatusLead(lead.id, 'Erro LinkedIn: ' + e.message, 'var(--red)');
+        erros++;
+        addLog('err', '[PhantomBuster] Erro ' + lead.nome + ': ' + e.message);
+      }
+    }
+
+    // 2. WhatsApp via Z-API
+    if (usaWA && lead.telefone) {
+      try {
+        await enviarWALead(lead, msgPersonalizada);
+        lead.status_wa = 'enviado';
+        addLog('ok', '[WhatsApp] Enviado: ' + lead.nome);
+      } catch(e) {
+        addLog('warn', '[WhatsApp] Erro ' + lead.nome + ': ' + e.message);
+      }
+    }
+
+    // 3. Email via s1-strategy (Gmail)
+    if (usaEM && lead.email) {
+      try {
+        await enviarEmailLead(lead, msgPersonalizada);
+        lead.status_email = 'enviado';
+        addLog('ok', '[Email] Enviado: ' + lead.nome + ' <' + lead.email + '>');
+      } catch(e) {
+        addLog('warn', '[Email] Erro ' + lead.nome + ': ' + e.message);
+      }
+    }
+
+    // Salvar como lead no banco
+    try {
+      await fetch('/api/db', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save_lead', value: lead })
+      });
+    } catch(e) {}
+
+    // Carregar no HubSpot
+    await carregarLeadHubSpot(lead);
+
+    // Delay entre envios (respeitar limites)
+    if (i < sel.length - 1) await new Promise(function(res) { setTimeout(res, 1500); });
+  }
+
+  // Resultado final
+  if (statusDiv) {
+    statusDiv.innerHTML = '<div style="background:rgba(34,211,163,.08);border:1px solid rgba(34,211,163,.2);border-radius:6px;padding:12px;">'
+      + '<div style="font-family:var(--M);font-size:9px;color:var(--green);margin-bottom:6px;">ENVIO CONCLUIDO</div>'
+      + '<div style="font-size:11px;">Enviados: <strong>' + ok + '</strong> | Erros: ' + erros + ' | Total: ' + sel.length + '</div>'
+      + '</div>';
+  }
+
+  addLog('ok', '[LinkedIn Lote] Concluido: ' + ok + ' enviados, ' + erros + ' erros');
+  toast(ok + ' mensagens enviadas!', 'success');
+}
+
+// ── PHANTOMBUSTER — LinkedIn Sender ───────────────────────────────────────────
+async function enviarLIPhantom(lead, msg, creds) {
+  // PhantomBuster LinkedIn Message Sender Agent
+  // Documentação: https://phantombuster.com/automations/linkedin/linkedin-message-sender
+  var r = await fetch('https://api.phantombuster.com/api/v2/agents/launch', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Phantombuster-Key': creds.phantomKey,
+    },
+    body: JSON.stringify({
+      id: creds.phantomAgt,
+      output: 'result-object',
+      argument: JSON.stringify({
+        spreadsheetUrl: lead.linkedin_url,
+        message: msg,
+        sendInvitation: lead.status_li === 'pendente',  // solicitar conexão se não conectado
+        waitDuration: 10,
+      }),
+    })
+  });
+  if (!r.ok) {
+    var err = await r.text();
+    throw new Error('PhantomBuster ' + r.status + ': ' + err.substring(0,100));
+  }
+  return await r.json();
+}
+
+// ── WHATSAPP ──────────────────────────────────────────────────────────────────
+async function enviarWALead(lead, msg) {
+  var phone = lead.telefone.replace(/\D/g, '');
+  if (phone.length < 10) throw new Error('Telefone inválido');
+
+  var zapiUrl = localStorage.getItem('atx:zapi_url') || '';
+  var zapiToken = localStorage.getItem('atx:zapi_token') || '';
+  if (!zapiUrl) throw new Error('Z-API não configurado');
+
+  var r = await fetch(zapiUrl + '/send-text', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Client-Token': zapiToken },
+    body: JSON.stringify({ phone: phone, message: msg })
+  });
+  if (!r.ok) throw new Error('Z-API erro: ' + r.status);
+}
+
+// ── EMAIL ─────────────────────────────────────────────────────────────────────
+async function enviarEmailLead(lead, msg) {
+  // Usar Gmail MCP (já integrado no sistema)
+  var assunto = 'Atlantyx — ' + (document.getElementById('liOferta')?.value?.split(' — ')[0] || 'Dados e IA');
+  var r = await fetch('/api/s1-strategy', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'hubspot_agendar', payload: {
+      acao: 'enviar_email',
+      para: lead.email,
+      assunto: assunto,
+      corpo: msg,
+      nome_contato: lead.nome,
+    }})
+  });
+  if (!r.ok) throw new Error('Email erro: ' + r.status);
+}
+
+// ── HUBSPOT — Carregar leads ──────────────────────────────────────────────────
+async function carregarLeadHubSpot(lead) {
+  try {
+    var r = await fetch('/api/s1-strategy', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'hubspot_agendar', payload: {
+        acao: 'criar_contato_pipeline',
+        empresa: lead.empresa,
+        decisor_nome: lead.nome,
+        decisor_cargo: lead.cargo,
+        email: lead.email,
+        telefone: lead.telefone,
+        linkedin_url: lead.linkedin_url,
+        setor: lead.setor,
+        score: lead.score,
+        origem: 'Apollo.io + LinkedIn',
+        pipeline_id: '890074401',
+        stage: 'prospecting',
+      }})
+    });
+    lead.status_crm = 'no_crm';
+    atualizarStatusLead(lead.id, 'No CRM', 'var(--green)');
+    addLog('ok', '[HubSpot] Lead adicionado: ' + lead.nome);
+  } catch(e) {
+    addLog('warn', '[HubSpot] Erro: ' + e.message);
+  }
+}
+
+async function carregarLeadsLIHubSpot() {
+  var sel = liSelecionados.length ? liSelecionados : liLeadsCache;
+  if (!sel.length) { toast('Nenhum lead selecionado', 'error'); return; }
+  toast('Carregando ' + sel.length + ' leads no HubSpot...', 'info');
+  for (var i = 0; i < sel.length; i++) {
+    await carregarLeadHubSpot(sel[i]);
+    await new Promise(function(res) { setTimeout(res, 300); });
+  }
+  toast(sel.length + ' leads no HubSpot!', 'success');
+}
+
+function atualizarStatusLead(id, msg, cor) {
+  var el = document.getElementById('liStatus_' + id);
+  if (el) { el.textContent = msg; el.style.color = cor || 'var(--t2)'; }
+}
+
+// Select cargo personalizado
+document.addEventListener('DOMContentLoaded', function() {
+  var sel = document.getElementById('liCargo');
+  if (sel) sel.onchange = function() {
+    var div = document.getElementById('liCargoCustomDiv');
+    if (div) div.style.display = this.value === 'custom' ? 'block' : 'none';
+  };
+  carregarCredenciaisLI();
+});
 </script>
 
   <!-- ═══ S3 · FINANCEIRO COMPLETO ═══ -->
