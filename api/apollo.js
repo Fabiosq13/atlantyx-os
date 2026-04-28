@@ -1,6 +1,6 @@
 // api/apollo.js
-// Proxy para Apollo.io API — resolve CORS do browser
-// Apollo v1 agora exige API Key no header X-Api-Key
+// Proxy Apollo.io API v1 — autenticação via X-Api-Key header
+// Endpoint atualizado: mixed_people/api_search
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -11,20 +11,18 @@ export default async function handler(req, res) {
 
   const { action, api_key, ...params } = req.body || {};
 
-  // API Key: campo do usuário OU variável de ambiente do Vercel
   const apolloKey = api_key || process.env.APOLLO_API_KEY;
   if (!apolloKey) {
     return res.status(400).json({
       success: false,
-      error: 'Apollo API Key não configurada. Configure APOLLO_API_KEY no Vercel ou passe api_key no body.'
+      error: 'Configure APOLLO_API_KEY no Vercel ou passe api_key no body.'
     });
   }
 
-  // Headers com autenticação correta (Apollo exige X-Api-Key no header)
-  const apolloHeaders = {
+  const headers = {
     'Content-Type': 'application/json',
     'Cache-Control': 'no-cache',
-    'X-Api-Key': apolloKey,          // ← autenticação obrigatória no header
+    'X-Api-Key': apolloKey,
   };
 
   try {
@@ -32,7 +30,8 @@ export default async function handler(req, res) {
     let body = {};
 
     if (action === 'people_search') {
-      endpoint = 'https://api.apollo.io/v1/mixed_people/search';
+      // Endpoint novo obrigatório para API callers
+      endpoint = 'https://api.apollo.io/v1/mixed_people/api_search';
       body = {
         page: params.page || 1,
         per_page: Math.min(params.per_page || 25, 100),
@@ -43,8 +42,6 @@ export default async function handler(req, res) {
         body.organization_locations = params.organization_locations;
       if (params.q_organization_industries?.length)
         body.q_organization_industries = params.q_organization_industries;
-      if (params.organization_num_employees_ranges)
-        body.organization_num_employees_ranges = params.organization_num_employees_ranges;
 
     } else if (action === 'person_match') {
       endpoint = 'https://api.apollo.io/v1/people/match';
@@ -52,7 +49,6 @@ export default async function handler(req, res) {
       if (params.linkedin_url) body.linkedin_url = params.linkedin_url;
       if (params.name)         body.name         = params.name;
       if (params.q_keywords)   body.q_keywords   = params.q_keywords;
-      body.reveal_personal_emails = false;
 
     } else if (action === 'enrich') {
       endpoint = 'https://api.apollo.io/v1/people/enrich';
@@ -64,7 +60,7 @@ export default async function handler(req, res) {
 
     const r = await fetch(endpoint, {
       method: 'POST',
-      headers: apolloHeaders,
+      headers,
       body: JSON.stringify(body),
     });
 
