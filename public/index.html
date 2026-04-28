@@ -565,7 +565,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
               <div class="fg" style="margin-bottom:8px;"><label class="fl">API Key do Apollo</label>
                 <input class="fi" id="liApolloKey" type="password" placeholder="Sua API Key do Apollo.io"/>
               </div>
-              <div style="font-size:9px;color:var(--t2);">Obtenha em: apollo.io → Settings → Integrations → API Keys<br/><span style="color:var(--green);">&#10003; Deixe em branco se configurou APOLLO_API_KEY no Vercel</span></div>
+              <div style="font-size:9px;color:var(--t2);">Obtenha em: apollo.io → Settings → Integrations → API Keys</div>
             </div>
             <div>
               <div style="font-family:var(--M);font-size:8px;color:#f59e0b;text-transform:uppercase;margin-bottom:8px;">PhantomBuster</div>
@@ -575,7 +575,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
               <div class="fg" style="margin-bottom:4px;"><label class="fl">Agent ID (LinkedIn Sender)</label>
                 <input class="fi" id="liPhantomAgentId" placeholder="ID do seu PhantomBuster Agent"/>
               </div>
-              <div style="font-size:9px;color:var(--t2);">Crie o Phantom: "LinkedIn Message Sender" em phantombuster.com<br/><span style="color:var(--green);">&#10003; Deixe em branco se configurou PHANTOM_API_KEY e PHANTOM_AGENT_ID no Vercel</span></div>
+              <div style="font-size:9px;color:var(--t2);">Crie o Phantom: "LinkedIn Message Sender" em phantombuster.com</div>
             </div>
           </div>
           <button class="btn btn-g" style="width:100%;margin-top:8px;font-size:10px;" onclick="salvarCredenciaisLI()">&#128190; Salvar Credenciais</button>
@@ -8660,7 +8660,7 @@ function salvarCredenciaisLI() {
   var apolloKey  = document.getElementById('liApolloKey')?.value?.trim();
   var phantomKey = document.getElementById('liPhantomKey')?.value?.trim();
   var phantomAgt = document.getElementById('liPhantomAgentId')?.value?.trim();
-  // apolloKey pode ser vazio — o Vercel usa APOLLO_API_KEY automaticamente
+  if (!apolloKey) { toast('Informe a API Key do Apollo', 'error'); return; }
   try {
     localStorage.setItem('atx:li_apollo_key',  apolloKey);
     localStorage.setItem('atx:li_phantom_key', phantomKey || '');
@@ -8703,7 +8703,7 @@ function getLICredenciais() {
 // ── BUSCA APOLLO ──────────────────────────────────────────────────────────────
 async function buscarLeadsApollo() {
   var creds = getLICredenciais();
-  // API Key pode vir do campo ou da variável de ambiente APOLLO_API_KEY no Vercel
+  if (!creds.apolloKey) { toast('Configure a API Key do Apollo primeiro', 'error'); return; }
 
   var cargoSel = document.getElementById('liCargo')?.value || 'CIO';
   var cargo = cargoSel === 'custom'
@@ -8968,12 +8968,13 @@ function selecionarTodosLI() {
 async function gerarMensagemLIComIA() {
   var oferta = document.getElementById('liOferta')?.value || '';
   var tom    = document.getElementById('liTom')?.value    || 'consultivo';
-  var lead   = liSelecionados[0] || liLeadsCache[0];
+  var selecionados = liSelecionados.length ? liSelecionados : liLeadsCache;
+  var lead   = selecionados[0];
 
   if (!lead) { toast('Busque leads primeiro', 'error'); return; }
 
   var preview = document.getElementById('liMsgPreview');
-  if (preview) preview.value = 'Gerando mensagem personalizada...';
+  if (preview) preview.value = 'Gerando mensagem personalizada para ' + (lead.nome||'lead') + '...';
   addLog('info', '[LinkedIn] Gerando mensagem IA: ' + tom + ' | ' + oferta.substring(0,40));
 
   try {
@@ -8998,9 +8999,14 @@ async function gerarMensagemLIComIA() {
       shortMsg += (shortMsg ? '\n' : '') + lines[i];
     }
 
-    if (preview) preview.value = shortMsg || msg.substring(0, 300);
-    addLog('ok', '[LinkedIn] Mensagem IA gerada (' + (preview?.value?.length||0) + ' chars)');
-    toast('Mensagem gerada! Revise antes de enviar.', 'success');
+    var finalMsg = shortMsg || msg.substring(0, 300);
+    if (preview) preview.value = finalMsg;
+
+    // Mostrar preview por lead (todos os selecionados)
+    mostrarPreviewMensagensLote(oferta, tom, finalMsg);
+
+    addLog('ok', '[LinkedIn] Mensagem IA gerada (' + finalMsg.length + ' chars)');
+    toast('Mensagem gerada! Revise e clique Enviar em Lote.', 'success');
   } catch(e) {
     if (preview) preview.value = 'Erro ao gerar mensagem: ' + e.message;
     addLog('err', '[LinkedIn] Erro IA: ' + e.message);
@@ -9047,6 +9053,75 @@ async function gerarMensagemParaLead(lead) {
 }
 
 // ── ENVIO EM LOTE ─────────────────────────────────────────────────────────────
+
+// ── PREVIEW DE MENSAGENS POR LEAD ────────────────────────────────────────────
+function mostrarPreviewMensagensLote(oferta, tom, msgTemplate) {
+  var selecionados = liSelecionados.length ? liSelecionados : liLeadsCache;
+  if (!selecionados.length) return;
+
+  // Criar ou encontrar painel de preview
+  var existingPanel = document.getElementById('liMsgPreviewLote');
+  if (existingPanel) existingPanel.remove();
+
+  var panel = document.createElement('div');
+  panel.id = 'liMsgPreviewLote';
+  panel.style.cssText = 'margin-top:12px;background:var(--bg4);border:1px solid rgba(79,124,255,.3);border-radius:8px;overflow:hidden;';
+
+  var hdr = document.createElement('div');
+  hdr.style.cssText = 'background:var(--bg3);padding:10px 14px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px;';
+  hdr.innerHTML = '<span style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--blue);flex:1;">Preview das Mensagens por Lead (' + selecionados.length + ')</span>'
+    + '<button id="liPreviewCloseBtn" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:16px;">&#10005;</button>';
+  panel.appendChild(hdr);
+  var closeBtn = document.getElementById('liPreviewCloseBtn');
+  if (!closeBtn) { closeBtn = hdr.querySelector('button'); }
+  if (closeBtn) { closeBtn.onclick = function() { var p = document.getElementById('liMsgPreviewLote'); if(p) p.remove(); }; }
+
+  var list = document.createElement('div');
+  list.style.cssText = 'max-height:360px;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px;';
+
+  selecionados.forEach(function(lead, i) {
+    // Personalizar mensagem para este lead
+    var msg = msgTemplate
+      .replace(/\{nome\}/gi, (lead.nome||'').split(' ')[0] || lead.nome || '')
+      .replace(/\{empresa\}/gi, lead.empresa || '')
+      .replace(/\{cargo\}/gi, lead.cargo || '');
+
+    var card = document.createElement('div');
+    card.style.cssText = 'background:var(--bg3);border:1px solid var(--bd);border-radius:7px;padding:10px;';
+
+    var leadInfo = document.createElement('div');
+    leadInfo.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;';
+    leadInfo.innerHTML = '<div style="flex:1;">'
+      + '<div style="font-size:11px;font-weight:600;color:var(--t1);">' + (lead.nome||'—') + '</div>'
+      + '<div style="font-size:9px;color:var(--t2);">' + (lead.cargo||'') + ' · ' + (lead.empresa||'') + '</div>'
+      + '</div>'
+      + '<div style="display:flex;gap:4px;">'
+      + (lead.linkedin_url ? '<span style="font-size:8px;padding:2px 6px;border-radius:3px;background:rgba(10,102,194,.15);color:#0a66c2;">LI</span>' : '')
+      + (lead.email       ? '<span style="font-size:8px;padding:2px 6px;border-radius:3px;background:rgba(79,124,255,.15);color:var(--blue);">Email</span>' : '')
+      + (lead.telefone    ? '<span style="font-size:8px;padding:2px 6px;border-radius:3px;background:rgba(34,197,94,.15);color:#22c55e;">WA</span>' : '')
+      + '</div>';
+    card.appendChild(leadInfo);
+
+    // Textarea editável para este lead
+    var ta = document.createElement('textarea');
+    ta.style.cssText = 'width:100%;background:var(--bg4);border:1px solid var(--bd);border-radius:5px;padding:8px;font-size:11px;line-height:1.6;color:var(--t1);resize:vertical;min-height:70px;box-sizing:border-box;';
+    ta.value = msg;
+    ta.id = 'liMsg_' + lead.id;
+    ta.placeholder = 'Mensagem para ' + (lead.nome||'este lead');
+    card.appendChild(ta);
+
+    list.appendChild(card);
+  });
+
+  panel.appendChild(list);
+
+  // Inserir depois da área de preview
+  var previewDiv = document.getElementById('liMsgPreview');
+  if (previewDiv && previewDiv.parentNode) {
+    previewDiv.parentNode.insertBefore(panel, previewDiv.nextSibling);
+  }
+}
+
 async function enviarEmLoteLI() {
   var sel = liSelecionados.filter(function(l) { return l.selecionado; });
   if (!sel.length) { toast('Selecione ao menos 1 lead', 'error'); return; }
@@ -9077,8 +9152,10 @@ async function enviarEmLoteLI() {
     }
 
     // Personalizar mensagem para este lead
-    var msgPersonalizada = msg
-      .replace(/\{nome\}/gi, lead.nome.split(' ')[0] || lead.nome)
+    // Usar mensagem editada individualmente se existir
+    var msgEditada = document.getElementById('liMsg_' + lead.id)?.value?.trim();
+    var msgPersonalizada = msgEditada || msg
+      .replace(/\{nome\}/gi, (lead.nome||'').split(' ')[0] || lead.nome || '')
       .replace(/\{empresa\}/gi, lead.empresa || '')
       .replace(/\{cargo\}/gi, lead.cargo || '');
 
