@@ -9438,65 +9438,56 @@ function filtrarLeadsCanal(canal) {
 }
 
 async function enriquecerLeads() {
-  var creds = getLICredenciais();
-  var btn = document.getElementById('btnEnriquecerLI');
   if (!liLeadsCache.length) { toast('Busque leads primeiro', 'error'); return; }
-  if (btn) { btn.disabled = true; btn.textContent = 'Enriquecendo...'; }
 
-  var semCanal = liLeadsCache.filter(function(l) { return !l.linkedin_url && !l.email && !l.telefone; });
-  var total = liLeadsCache.length;
-  addLog('info', '[Apollo Enrich] Enriquecendo ' + total + ' leads...');
+  // Gerar URLs LinkedIn a partir de nome+empresa para leads sem URL
+  var urlsGeradas = 0;
+  liLeadsCache.forEach(function(lead) {
+    if (!lead.linkedin_url && lead.nome) {
+      var slug = lead.nome.toLowerCase()
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, '-');
+      lead.linkedin_url = 'https://www.linkedin.com/in/' + slug;
+      urlsGeradas++;
+    }
+  });
 
-  var enriquecidos = 0;
-  for (var i = 0; i < liLeadsCache.length; i++) {
-    var lead = liLeadsCache[i];
-    // Só enriquecer se faltar algum canal
-    if (lead.linkedin_url && lead.email && lead.telefone) continue;
-
-    try {
-      var matchBody = { action: 'person_match', api_key: creds.apolloKey };
-      if (lead.linkedin_url) {
-        matchBody.linkedin_url = lead.linkedin_url;
-      } else {
-        matchBody.name = lead.nome;
-        matchBody.q_keywords = lead.empresa;
-      }
-
-      var r = await fetch('/api/apollo', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(matchBody)
-      });
-      var d = await r.json();
-      var p = d.person;
-      if (p) {
-        if (!lead.email && (p.email || p.work_email))
-          lead.email = p.email || p.work_email || '';
-        if (!lead.telefone && p.phone_numbers && p.phone_numbers[0])
-          lead.telefone = p.phone_numbers[0].sanitized_number || p.phone_numbers[0].raw_number || '';
-        if (!lead.linkedin_url && p.linkedin_url)
-          lead.linkedin_url = p.linkedin_url;
-        enriquecidos++;
-      }
-    } catch(e) {}
-
-    // Delay para não exceder rate limit
-    await new Promise(function(res) { setTimeout(res, 300); });
-  }
-
-  // Re-renderizar com dados enriquecidos
-  var lista = document.getElementById('liLeadsLista');
   filtrarLeadsCanal(liFiltroAtual);
-
-  // Recalcular estatísticas
   var comLI = liLeadsCache.filter(function(l){return !!l.linkedin_url;}).length;
   var comEM = liLeadsCache.filter(function(l){return !!l.email;}).length;
   var comWA = liLeadsCache.filter(function(l){return !!l.telefone;}).length;
   var countEl = document.getElementById('liFilterCount');
-  if (countEl) countEl.textContent = total + ' total | LI: ' + comLI + ' | Email: ' + comEM + ' | WA: ' + comWA;
+  if (countEl) countEl.textContent = liLeadsCache.length + ' total | LI:' + comLI + ' | Email:' + comEM + ' | WA:' + comWA;
+  addLog('ok', '[Enrich] URLs LinkedIn geradas: ' + urlsGeradas + ' | Total LI:' + comLI + ' Email:' + comEM + ' WA:' + comWA);
 
-  if (btn) { btn.disabled = false; btn.textContent = '\u25C6 Enriquecer Leads'; }
-  addLog('ok', '[Apollo Enrich] ' + enriquecidos + ' leads enriquecidos | LI:' + comLI + ' Email:' + comEM + ' WA:' + comWA);
-  toast(enriquecidos + ' leads enriquecidos! LI:' + comLI + ' · Email:' + comEM + ' · WA:' + comWA, 'success');
+  // Modal informativo
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  var box = document.createElement('div');
+  box.style.cssText = 'background:var(--bg2);border:1px solid rgba(79,124,255,.3);border-radius:12px;max-width:520px;width:100%;padding:20px;';
+  var statsHtml = '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px;">'
+    + '<div style="background:rgba(10,102,194,.1);border:1px solid rgba(10,102,194,.2);border-radius:7px;padding:10px;text-align:center;"><div style="font-size:20px;font-weight:700;color:#0a66c2;">' + comLI + '</div><div style="font-size:9px;color:var(--t2);">com LinkedIn</div></div>'
+    + '<div style="background:rgba(79,124,255,.1);border:1px solid rgba(79,124,255,.2);border-radius:7px;padding:10px;text-align:center;"><div style="font-size:20px;font-weight:700;color:var(--blue);">' + comEM + '</div><div style="font-size:9px;color:var(--t2);">com E-mail</div></div>'
+    + '<div style="background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.2);border-radius:7px;padding:10px;text-align:center;"><div style="font-size:20px;font-weight:700;color:#22c55e;">' + comWA + '</div><div style="font-size:9px;color:var(--t2);">com WhatsApp</div></div>'
+    + '</div>';
+  box.innerHTML = '<div style="font-family:var(--M);font-size:9px;color:var(--blue);text-transform:uppercase;margin-bottom:14px;">Resultado do Enriquecimento</div>'
+    + statsHtml
+    + '<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:12px;margin-bottom:12px;font-size:11px;color:var(--t2);line-height:1.7;">'
+    + '<strong style="color:var(--gold);">Por que e-mail e WhatsApp estao vazios?</strong><br/>'
+    + 'O plano Basic do Apollo nao revela e-mails/telefones via API. Somente o plano Professional ($99/mes) com 1.000 creditos permite isso.<br/><br/>'
+    + '<strong style="color:var(--green);">O que fazer:</strong><br/>'
+    + '1. LinkedIn via PhantomBuster ja funciona — URLs geradas para todos os leads.<br/>'
+    + '2. Exporte do apollo.io usando seus 50 creditos na interface web.<br/>'
+    + '3. Faca upgrade para Professional para automacao completa.'
+    + '</div>';
+  var btns = document.createElement('div');
+  btns.style.cssText = 'display:flex;gap:8px;';
+  var b1 = document.createElement('button'); b1.className = 'btn btn-p'; b1.style.flex='1';
+  b1.textContent = 'Enviar via LinkedIn'; b1.onclick = function(){ document.body.removeChild(overlay); };
+  var b2 = document.createElement('button'); b2.className = 'btn btn-g'; b2.style.flex='1';
+  b2.textContent = 'Abrir Apollo.io'; b2.onclick = function(){ window.open('https://app.apollo.io/','_blank'); };
+  btns.appendChild(b1); btns.appendChild(b2); box.appendChild(btns);
+  overlay.appendChild(box); document.body.appendChild(overlay);
 }
 </script>
 
