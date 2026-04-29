@@ -8805,8 +8805,18 @@ async function buscarLeadsApollo() {
     liFiltroAtual = 'todos';
     var btnT = document.getElementById('filtLI_todos');
     if (btnT) { btnT.style.borderColor='var(--blue)'; btnT.style.color='var(--blue)'; btnT.style.background='rgba(79,124,255,.12)'; }
+
+    // Mostrar debug info do Apollo
+    if (d._debug) {
+      addLog('info', '[Apollo DEBUG] Campos disponíveis: ' + (d._debug.campos_disponiveis||'').substring(0,200));
+    }
     addLog('ok', '[Apollo] ' + liLeadsCache.length + ' leads | LI:' + comLI + ' Email:' + comEM + ' WA:' + comWA);
-    toast(liLeadsCache.length + ' leads | ' + comLI + ' com LinkedIn · ' + comEM + ' com e-mail · ' + comWA + ' WhatsApp', 'success');
+
+    if (comLI === 0) {
+      toast('Apollo retornou ' + liLeadsCache.length + ' leads mas SEM URLs LinkedIn. Plano Basic nao retorna linkedin_url via API. Veja o Log para campos disponíveis.', 'error');
+    } else {
+      toast(liLeadsCache.length + ' leads | ' + comLI + ' com LinkedIn · ' + comEM + ' com e-mail · ' + comWA + ' WhatsApp', 'success');
+    }
 
   } catch(e) {
     if (lista) lista.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Erro Apollo: ' + e.message + '</div>';
