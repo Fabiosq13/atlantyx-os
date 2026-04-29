@@ -9409,6 +9409,95 @@ document.addEventListener('DOMContentLoaded', function() {
   };
   carregarCredenciaisLI();
 });
+
+// ── FILTRO DE CANAL DOS LEADS ─────────────────────────────────────────────────
+var liFiltroAtual = 'todos';
+
+function filtrarLeadsCanal(canal) {
+  liFiltroAtual = canal;
+  ['todos','linkedin','email','whatsapp'].forEach(function(f) {
+    var btn = document.getElementById('filtLI_' + f);
+    if (!btn) return;
+    var ativo = f === canal;
+    btn.style.borderColor = ativo ? 'var(--blue)' : '';
+    btn.style.color       = ativo ? 'var(--blue)' : '';
+    btn.style.background  = ativo ? 'rgba(79,124,255,.12)' : '';
+  });
+  var filtrados = canal === 'todos' ? liLeadsCache
+    : canal === 'linkedin' ? liLeadsCache.filter(function(l){return !!l.linkedin_url;})
+    : canal === 'email'    ? liLeadsCache.filter(function(l){return !!l.email;})
+    : canal === 'whatsapp' ? liLeadsCache.filter(function(l){return !!l.telefone;})
+    : liLeadsCache;
+  var countEl = document.getElementById('liFilterCount');
+  if (countEl) countEl.textContent = filtrados.length + ' de ' + liLeadsCache.length;
+  var lista = document.getElementById('liLeadsLista');
+  renderLeadsLI(lista, filtrados);
+  liSelecionados = filtrados.filter(function(l){return l.selecionado;});
+  var tag = document.getElementById('liLeadsTag');
+  if (tag) tag.textContent = filtrados.length + ' leads';
+}
+
+async function enriquecerLeads() {
+  var creds = getLICredenciais();
+  var btn = document.getElementById('btnEnriquecerLI');
+  if (!liLeadsCache.length) { toast('Busque leads primeiro', 'error'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Enriquecendo...'; }
+
+  var semCanal = liLeadsCache.filter(function(l) { return !l.linkedin_url && !l.email && !l.telefone; });
+  var total = liLeadsCache.length;
+  addLog('info', '[Apollo Enrich] Enriquecendo ' + total + ' leads...');
+
+  var enriquecidos = 0;
+  for (var i = 0; i < liLeadsCache.length; i++) {
+    var lead = liLeadsCache[i];
+    // Só enriquecer se faltar algum canal
+    if (lead.linkedin_url && lead.email && lead.telefone) continue;
+
+    try {
+      var matchBody = { action: 'person_match', api_key: creds.apolloKey };
+      if (lead.linkedin_url) {
+        matchBody.linkedin_url = lead.linkedin_url;
+      } else {
+        matchBody.name = lead.nome;
+        matchBody.q_keywords = lead.empresa;
+      }
+
+      var r = await fetch('/api/apollo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(matchBody)
+      });
+      var d = await r.json();
+      var p = d.person;
+      if (p) {
+        if (!lead.email && (p.email || p.work_email))
+          lead.email = p.email || p.work_email || '';
+        if (!lead.telefone && p.phone_numbers && p.phone_numbers[0])
+          lead.telefone = p.phone_numbers[0].sanitized_number || p.phone_numbers[0].raw_number || '';
+        if (!lead.linkedin_url && p.linkedin_url)
+          lead.linkedin_url = p.linkedin_url;
+        enriquecidos++;
+      }
+    } catch(e) {}
+
+    // Delay para não exceder rate limit
+    await new Promise(function(res) { setTimeout(res, 300); });
+  }
+
+  // Re-renderizar com dados enriquecidos
+  var lista = document.getElementById('liLeadsLista');
+  filtrarLeadsCanal(liFiltroAtual);
+
+  // Recalcular estatísticas
+  var comLI = liLeadsCache.filter(function(l){return !!l.linkedin_url;}).length;
+  var comEM = liLeadsCache.filter(function(l){return !!l.email;}).length;
+  var comWA = liLeadsCache.filter(function(l){return !!l.telefone;}).length;
+  var countEl = document.getElementById('liFilterCount');
+  if (countEl) countEl.textContent = total + ' total | LI: ' + comLI + ' | Email: ' + comEM + ' | WA: ' + comWA;
+
+  if (btn) { btn.disabled = false; btn.textContent = '\u25C6 Enriquecer Leads'; }
+  addLog('ok', '[Apollo Enrich] ' + enriquecidos + ' leads enriquecidos | LI:' + comLI + ' Email:' + comEM + ' WA:' + comWA);
+  toast(enriquecidos + ' leads enriquecidos! LI:' + comLI + ' · Email:' + comEM + ' · WA:' + comWA, 'success');
+}
 </script>
 
   <!-- ═══ S3 · FINANCEIRO COMPLETO ═══ -->
@@ -10294,93 +10383,6 @@ document.addEventListener('DOMContentLoaded', function() {
 </html
 // ── ENRIQUECIMENTO DE LEADS — busca email/telefone via Apollo ────────────────
 
-// ── FILTRO DE CANAL DOS LEADS ─────────────────────────────────────────────────
-var liFiltroAtual = 'todos';
 
-function filtrarLeadsCanal(canal) {
-  liFiltroAtual = canal;
-  ['todos','linkedin','email','whatsapp'].forEach(function(f) {
-    var btn = document.getElementById('filtLI_' + f);
-    if (!btn) return;
-    var ativo = f === canal;
-    btn.style.borderColor = ativo ? 'var(--blue)' : '';
-    btn.style.color       = ativo ? 'var(--blue)' : '';
-    btn.style.background  = ativo ? 'rgba(79,124,255,.12)' : '';
-  });
-  var filtrados = canal === 'todos' ? liLeadsCache
-    : canal === 'linkedin' ? liLeadsCache.filter(function(l){return !!l.linkedin_url;})
-    : canal === 'email'    ? liLeadsCache.filter(function(l){return !!l.email;})
-    : canal === 'whatsapp' ? liLeadsCache.filter(function(l){return !!l.telefone;})
-    : liLeadsCache;
-  var countEl = document.getElementById('liFilterCount');
-  if (countEl) countEl.textContent = filtrados.length + ' de ' + liLeadsCache.length;
-  var lista = document.getElementById('liLeadsLista');
-  renderLeadsLI(lista, filtrados);
-  liSelecionados = filtrados.filter(function(l){return l.selecionado;});
-  var tag = document.getElementById('liLeadsTag');
-  if (tag) tag.textContent = filtrados.length + ' leads';
-}
-
-async function enriquecerLeads() {
-  var creds = getLICredenciais();
-  var btn = document.getElementById('btnEnriquecerLI');
-  if (!liLeadsCache.length) { toast('Busque leads primeiro', 'error'); return; }
-  if (btn) { btn.disabled = true; btn.textContent = 'Enriquecendo...'; }
-
-  var semCanal = liLeadsCache.filter(function(l) { return !l.linkedin_url && !l.email && !l.telefone; });
-  var total = liLeadsCache.length;
-  addLog('info', '[Apollo Enrich] Enriquecendo ' + total + ' leads...');
-
-  var enriquecidos = 0;
-  for (var i = 0; i < liLeadsCache.length; i++) {
-    var lead = liLeadsCache[i];
-    // Só enriquecer se faltar algum canal
-    if (lead.linkedin_url && lead.email && lead.telefone) continue;
-
-    try {
-      var matchBody = { action: 'person_match', api_key: creds.apolloKey };
-      if (lead.linkedin_url) {
-        matchBody.linkedin_url = lead.linkedin_url;
-      } else {
-        matchBody.name = lead.nome;
-        matchBody.q_keywords = lead.empresa;
-      }
-
-      var r = await fetch('/api/apollo', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(matchBody)
-      });
-      var d = await r.json();
-      var p = d.person;
-      if (p) {
-        if (!lead.email && (p.email || p.work_email))
-          lead.email = p.email || p.work_email || '';
-        if (!lead.telefone && p.phone_numbers && p.phone_numbers[0])
-          lead.telefone = p.phone_numbers[0].sanitized_number || p.phone_numbers[0].raw_number || '';
-        if (!lead.linkedin_url && p.linkedin_url)
-          lead.linkedin_url = p.linkedin_url;
-        enriquecidos++;
-      }
-    } catch(e) {}
-
-    // Delay para não exceder rate limit
-    await new Promise(function(res) { setTimeout(res, 300); });
-  }
-
-  // Re-renderizar com dados enriquecidos
-  var lista = document.getElementById('liLeadsLista');
-  filtrarLeadsCanal(liFiltroAtual);
-
-  // Recalcular estatísticas
-  var comLI = liLeadsCache.filter(function(l){return !!l.linkedin_url;}).length;
-  var comEM = liLeadsCache.filter(function(l){return !!l.email;}).length;
-  var comWA = liLeadsCache.filter(function(l){return !!l.telefone;}).length;
-  var countEl = document.getElementById('liFilterCount');
-  if (countEl) countEl.textContent = total + ' total | LI: ' + comLI + ' | Email: ' + comEM + ' | WA: ' + comWA;
-
-  if (btn) { btn.disabled = false; btn.textContent = '\u25C6 Enriquecer Leads'; }
-  addLog('ok', '[Apollo Enrich] ' + enriquecidos + ' leads enriquecidos | LI:' + comLI + ' Email:' + comEM + ' WA:' + comWA);
-  toast(enriquecidos + ' leads enriquecidos! LI:' + comLI + ' · Email:' + comEM + ' · WA:' + comWA, 'success');
-}
 
 >
