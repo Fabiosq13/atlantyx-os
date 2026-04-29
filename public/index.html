@@ -613,8 +613,9 @@ tr:hover td{background:rgba(79,124,255,.03);}
               </div>
               <div class="fg" style="margin-bottom:8px;"><label class="fl">Setor</label>
                 <select class="fsel" id="liSetor">
-                  <option value="">Todos os setores</option>
+                  <option value="Oil &amp; Gas">Oil &amp; Gas (Petróleo e Gás)</option>
                   <option value="Energy">Energia e Utilities</option>
+                  <option value="">Todos os setores</option>
                   <option value="Automotive">Automotivo</option>
                   <option value="Retail">Varejo</option>
                   <option value="Manufacturing">Indústria / Manufatura</option>
@@ -624,14 +625,16 @@ tr:hover td{background:rgba(79,124,255,.03);}
                   <option value="Telecommunications">Telecomunicações</option>
                   <option value="Technology">Tecnologia</option>
                   <option value="Agribusiness">Agronegócio</option>
+                  <option value="Mining &amp; Metals">Mineração e Metais</option>
+                  <option value="Chemicals">Química e Petroquímica</option>
                 </select>
               </div>
             </div>
             <div>
               <div class="fg" style="margin-bottom:8px;"><label class="fl">País</label>
                 <select class="fsel" id="liPais">
-                  <option value="Brazil">Brasil</option>
                   <option value="United States">Estados Unidos</option>
+                  <option value="Brazil">Brasil</option>
                   <option value="Portugal">Portugal</option>
                   <option value="Argentina">Argentina</option>
                   <option value="Colombia">Colômbia</option>
@@ -667,6 +670,12 @@ tr:hover td{background:rgba(79,124,255,.03);}
             </div>
           </div>
 
+          <div class="fg" style="margin-bottom:8px;"><label class="fl">Cidade (opcional)</label>
+            <input class="fi" id="liCidade" placeholder="Ex: Houston, São Paulo, Rio de Janeiro..." value="Houston"/>
+          </div>
+          <div style="background:rgba(10,102,194,.06);border:1px solid rgba(10,102,194,.15);border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:10px;color:var(--t2);">
+            &#128269; Busca filtra <strong>automaticamente</strong> apenas leads com LinkedIn URL · Prioriza C-levels e directors
+          </div>
           <button class="btn" style="width:100%;border-color:#0a66c2;color:#0a66c2;padding:10px;font-size:12px;font-weight:600;" onclick="buscarLeadsApollo()">
             &#128269; Buscar no Apollo.io
           </button>
@@ -8749,7 +8758,10 @@ async function buscarLeadsApollo() {
     var r = await fetch('/api/apollo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'people_search', api_key: creds.apolloKey, ...body })
+      body: JSON.stringify({ action: 'people_search', api_key: creds.apolloKey,
+        // Backend aplica: Houston + Oil&Gas + C-levels + pós-filtro linkedin_url
+        ...body,
+        organization_num_employees_ranges: ['201,5000'] })
     });
 
     if (!r.ok) {
@@ -8766,8 +8778,22 @@ async function buscarLeadsApollo() {
       return;
     }
 
-    // Normalizar leads
-    liLeadsCache = people.map(function(p, i) {
+    // Filtrar SOMENTE leads com linkedin_url real
+    var peopleComLI = people.filter(function(p) {
+      return !!(p.linkedin_url || p.linkedin_profile_url);
+    });
+    var stats = d._stats || {};
+    addLog('ok', '[Apollo] Buscados: ' + (stats.total_buscados||people.length) + ' | Com LinkedIn: ' + (stats.com_linkedin||peopleComLI.length) + ' | Taxa: ' + (stats.taxa_linkedin||'?') + ' | Backend já filtrou sem LinkedIn');
+
+    if (!peopleComLI.length) {
+      if (lista) lista.innerHTML = '<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:6px;padding:16px;font-size:11px;color:var(--gold);">Nenhum lead retornou com LinkedIn URL. O Apollo retornou ' + people.length + ' leads mas sem URL. Tente filtrar por seniority C-level ou setor diferente.</div>';
+      if (tag) { tag.textContent = '0 com LinkedIn'; tag.className = 'tag hot'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Buscar no Apollo.io'; }
+      return;
+    }
+
+    // Normalizar leads (somente os que têm linkedin_url)
+    liLeadsCache = peopleComLI.map(function(p, i) {
       return {
         id:             'li_' + Date.now() + '_' + i,
         nome:           (p.first_name || '') + ' ' + (p.last_name || p.last_name_obfuscated || ''),
@@ -8776,7 +8802,9 @@ async function buscarLeadsApollo() {
         setor:          p.organization?.industry || setor || '',
         email:          p.email || p.work_email || p.personal_email || '',
         telefone:       p.phone_numbers?.[0]?.sanitized_number || p.phone_numbers?.[0]?.raw_number || p.mobile_phone || p.work_direct_phone || p.sanitized_phone || '',
-        linkedin_url:   p.linkedin_url || '',  // Apollo retorna este campo diretamente
+        linkedin_url:   p.linkedin_url || p.linkedin_profile_url || '',  // LinkedIn da PESSOA
+        linkedin_empresa: (p.organization && p.organization.linkedin_url) || '',  // LinkedIn da EMPRESA
+        website_empresa:  (p.organization && p.organization.website_url) || '',
         linkedin_id:    p.linkedin_uid || '',
         faturamento:    p.organization?.annual_revenue_printed || '',
         funcionarios:   p.organization?.estimated_num_employees || '',
@@ -8936,13 +8964,21 @@ function renderLeadsLI(container, leads) {
       var tagLI = document.createElement('a');
       tagLI.href = lead.linkedin_url; tagLI.target = '_blank';
       tagLI.style.cssText = 'font-size:8px;padding:3px 8px;border-radius:4px;background:rgba(10,102,194,.2);color:#0a66c2;font-weight:600;text-decoration:none;border:1px solid rgba(10,102,194,.3);';
-      tagLI.innerHTML = '&#128101; LinkedIn &#8599;';
+      tagLI.innerHTML = '&#128100; Perfil LinkedIn &#8599;';
       canais.appendChild(tagLI);
     } else {
       var noLI = document.createElement('span');
       noLI.style.cssText = 'font-size:8px;padding:3px 8px;border-radius:4px;background:rgba(255,77,109,.08);color:rgba(255,77,109,.6);border:1px solid rgba(255,77,109,.2);';
-      noLI.textContent = 'Sem LinkedIn';
+      noLI.textContent = 'Sem LinkedIn pessoal';
       canais.appendChild(noLI);
+    }
+    // LinkedIn da empresa (sempre disponível no Apollo)
+    if (lead.linkedin_empresa) {
+      var tagLIEmp = document.createElement('a');
+      tagLIEmp.href = lead.linkedin_empresa; tagLIEmp.target = '_blank';
+      tagLIEmp.style.cssText = 'font-size:8px;padding:3px 8px;border-radius:4px;background:rgba(10,102,194,.08);color:#0a66c2;text-decoration:none;border:1px solid rgba(10,102,194,.15);';
+      tagLIEmp.innerHTML = '&#127963; Empresa LI &#8599;';
+      canais.appendChild(tagLIEmp);
     }
     if (hasEM) {
       var tagEM2 = document.createElement('span');
@@ -8976,18 +9012,17 @@ function renderLeadsLI(container, leads) {
     }
     card.appendChild(canais);
 
-    // URL LinkedIn explícita
-    if (lead.linkedin_url) {
-      var urlDiv = document.createElement('div');
-      urlDiv.style.cssText = 'font-size:9px;color:var(--t3);margin-bottom:5px;word-break:break-all;background:var(--bg3);padding:4px 6px;border-radius:4px;border:1px solid var(--bd);';
-      urlDiv.innerHTML = '<span style="color:var(--t2);">LinkedIn URL: </span><a href="' + lead.linkedin_url + '" target="_blank" style="color:#0a66c2;">' + lead.linkedin_url + '</a>';
-      card.appendChild(urlDiv);
-    } else {
-      var noUrlDiv = document.createElement('div');
-      noUrlDiv.style.cssText = 'font-size:9px;color:rgba(255,77,109,.7);margin-bottom:5px;padding:4px 6px;background:rgba(255,77,109,.06);border-radius:4px;border:1px solid rgba(255,77,109,.15);';
-      noUrlDiv.textContent = 'LinkedIn URL: nao retornada pelo Apollo (plano Basic)';
-      card.appendChild(noUrlDiv);
-    }
+    // URLs LinkedIn explícitas
+    var urlBox = document.createElement('div');
+    urlBox.style.cssText = 'font-size:9px;margin-bottom:6px;background:var(--bg3);padding:6px 8px;border-radius:5px;border:1px solid var(--bd);display:flex;flex-direction:column;gap:3px;';
+    urlBox.innerHTML = '<div><span style="color:var(--t2);">Perfil pessoal: </span>'
+      + (lead.linkedin_url
+        ? '<a href="' + lead.linkedin_url + '" target="_blank" style="color:#0a66c2;">' + lead.linkedin_url + '</a>'
+        : '<span style="color:rgba(255,77,109,.7);">não retornado pelo Apollo</span>')
+      + '</div>'
+      + (lead.linkedin_empresa ? '<div><span style="color:var(--t2);">Empresa: </span><a href="' + lead.linkedin_empresa + '" target="_blank" style="color:#0a66c2;">' + lead.linkedin_empresa + '</a></div>' : '')
+      + (lead.website_empresa  ? '<div><span style="color:var(--t2);">Site: </span><a href="' + lead.website_empresa  + '" target="_blank" style="color:var(--blue);">' + lead.website_empresa  + '</a></div>' : '');
+    card.appendChild(urlBox);
 
     // Status row + script button
     var statusRow = document.createElement('div');
