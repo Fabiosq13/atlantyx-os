@@ -9046,7 +9046,7 @@ async function gerarMensagemLIComIA() {
     var cleanMsg = msg
       .replace(/^#+\s*.+$/gm, '')           // remove headers ##
       .replace(/\*\*[^*]+\*\*/g, '$1')     // remove bold **texto**
-      .replace(/```[^`]*```/gs, '')           // remove code blocks
+                 // remove code blocks
       .replace(/^[\s-:]+/gm, '')             // remove leading dashes/colons
       .replace(/\n{3,}/g, '\n')              // max 2 newlines
       .trim();
@@ -9062,8 +9062,11 @@ async function gerarMensagemLIComIA() {
     // Mostrar preview por lead (todos os selecionados)
     mostrarPreviewMensagensLote(oferta, tom, finalMsg);
 
-    addLog('ok', '[LinkedIn] Mensagem IA gerada (' + finalMsg.length + ' chars)');
-    toast('Mensagem gerada! Revise e clique Enviar em Lote.', 'success');
+    // Auto-gerar mensagens individuais para cada lead
+    setTimeout(function() { gerarMensagensIndividuais(oferta, tom); }, 300);
+
+    addLog('ok', '[LinkedIn] Gerando mensagens individualizadas para cada lead...');
+    toast('Gerando mensagem personalizada para cada lead...', 'info');
   } catch(e) {
     if (preview) preview.value = 'Erro ao gerar mensagem: ' + e.message;
     addLog('err', '[LinkedIn] Erro IA: ' + e.message);
@@ -9091,8 +9094,8 @@ async function gerarMensagemParaLead(lead) {
     var msg = rawMsg
       .replace(/^#+\s*.+$/gm, '')
       .replace(/\*\*([^*]+)\*\*/g, '$1')
-      .replace(/```[^`]*```/gs, '')
-      .replace(/^[\s-:*`#]+/gm, '')
+      
+      .replace(/^[\s\-:]+/gm, '')
       .replace(/\n{3,}/g, '\n')
       .trim()
       .substring(0, 280);
@@ -9126,7 +9129,6 @@ function mostrarPreviewMensagensLote(oferta, tom, msgTemplate) {
   var selecionados = liSelecionados.length ? liSelecionados : liLeadsCache;
   if (!selecionados.length) return;
 
-  // Criar ou encontrar painel de preview
   var existingPanel = document.getElementById('liMsgPreviewLote');
   if (existingPanel) existingPanel.remove();
 
@@ -9136,45 +9138,42 @@ function mostrarPreviewMensagensLote(oferta, tom, msgTemplate) {
 
   var hdr = document.createElement('div');
   hdr.style.cssText = 'background:var(--bg3);padding:10px 14px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px;';
-  hdr.innerHTML = '<span style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--blue);flex:1;">Preview das Mensagens por Lead (' + selecionados.length + ')</span>'
-    + '<button id="liPreviewCloseBtn" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:16px;">&#10005;</button>';
+  var hdrTitle = document.createElement('span');
+  hdrTitle.style.cssText = 'font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--blue);flex:1;';
+  hdrTitle.textContent = 'Mensagens por Lead (' + selecionados.length + ') — Editaveis individualmente';
+  var gerarBtn = document.createElement('button');
+  gerarBtn.className = 'btn btn-p';
+  gerarBtn.style.cssText = 'font-size:8px;padding:3px 10px;';
+  gerarBtn.textContent = 'Gerar todas com IA';
+  gerarBtn.onclick = function() { gerarMensagensIndividuais(oferta, tom); };
+  var closeBtn = document.createElement('button');
+  closeBtn.style.cssText = 'background:none;border:none;color:var(--t3);cursor:pointer;font-size:18px;padding:0 4px;';
+  closeBtn.innerHTML = '&#10005;';
+  closeBtn.onclick = function() { panel.remove(); };
+  hdr.appendChild(hdrTitle); hdr.appendChild(gerarBtn); hdr.appendChild(closeBtn);
   panel.appendChild(hdr);
-  var closeBtn = document.getElementById('liPreviewCloseBtn');
-  if (!closeBtn) { closeBtn = hdr.querySelector('button'); }
-  if (closeBtn) { closeBtn.onclick = function() { var p = document.getElementById('liMsgPreviewLote'); if(p) p.remove(); }; }
 
   var list = document.createElement('div');
-  list.style.cssText = 'max-height:360px;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px;';
+  list.style.cssText = 'max-height:400px;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px;';
 
   selecionados.forEach(function(lead, i) {
-    // Personalizar mensagem para este lead
-    var msg = msgTemplate
-      .replace(/\{nome\}/gi, (lead.nome||'').split(' ')[0] || lead.nome || '')
-      .replace(/\{empresa\}/gi, lead.empresa || '')
-      .replace(/\{cargo\}/gi, lead.cargo || '');
-
     var card = document.createElement('div');
     card.style.cssText = 'background:var(--bg3);border:1px solid var(--bd);border-radius:7px;padding:10px;';
 
-    var leadInfo = document.createElement('div');
-    leadInfo.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;';
-    leadInfo.innerHTML = '<div style="flex:1;">'
+    var info = document.createElement('div');
+    info.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;';
+    info.innerHTML = '<div style="flex:1;">'
       + '<div style="font-size:11px;font-weight:600;color:var(--t1);">' + (lead.nome||'—') + '</div>'
       + '<div style="font-size:9px;color:var(--t2);">' + (lead.cargo||'') + ' · ' + (lead.empresa||'') + '</div>'
       + '</div>'
-      + '<div style="display:flex;gap:4px;">'
-      + (lead.linkedin_url ? '<span style="font-size:8px;padding:2px 6px;border-radius:3px;background:rgba(10,102,194,.15);color:#0a66c2;">LI</span>' : '')
-      + (lead.email       ? '<span style="font-size:8px;padding:2px 6px;border-radius:3px;background:rgba(79,124,255,.15);color:var(--blue);">Email</span>' : '')
-      + (lead.telefone    ? '<span style="font-size:8px;padding:2px 6px;border-radius:3px;background:rgba(34,197,94,.15);color:#22c55e;">WA</span>' : '')
-      + '</div>';
-    card.appendChild(leadInfo);
+      + '<button class="btn btn-g" style="font-size:8px;padding:2px 8px;" id="btnGenLead_' + i + '">Gerar IA</button>';
+    card.appendChild(info);
 
-    // Textarea editável para este lead
     var ta = document.createElement('textarea');
     ta.style.cssText = 'width:100%;background:var(--bg4);border:1px solid var(--bd);border-radius:5px;padding:8px;font-size:11px;line-height:1.6;color:var(--t1);resize:vertical;min-height:70px;box-sizing:border-box;';
-    ta.value = msg;
     ta.id = 'liMsg_' + lead.id;
-    ta.placeholder = 'Mensagem para ' + (lead.nome||'este lead');
+    ta.placeholder = 'Clique em "Gerar IA" para criar mensagem personalizada para ' + (lead.nome||'este lead');
+    ta.value = '';  // Começa vazio — força geração individual
     card.appendChild(ta);
 
     list.appendChild(card);
@@ -9182,12 +9181,69 @@ function mostrarPreviewMensagensLote(oferta, tom, msgTemplate) {
 
   panel.appendChild(list);
 
-  // Inserir depois da área de preview
   var previewDiv = document.getElementById('liMsgPreview');
   if (previewDiv && previewDiv.parentNode) {
     previewDiv.parentNode.insertBefore(panel, previewDiv.nextSibling);
   }
+
+  // Bind botões de gerar individual
+  setTimeout(function() {
+    selecionados.forEach(function(lead, i) {
+      var btn = document.getElementById('btnGenLead_' + i);
+      if (btn) btn.onclick = function() { gerarMensagemIndividual(lead, oferta, tom, i); };
+    });
+  }, 100);
 }
+
+async function gerarMensagemIndividual(lead, oferta, tom, idx) {
+  var btn = document.getElementById('btnGenLead_' + idx);
+  var ta  = document.getElementById('liMsg_' + lead.id);
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  if (ta)  ta.value = 'Gerando...';
+
+  try {
+    var r = await fetch('/api/s1-strategy', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'inside_sales_script', payload: {
+        decisor: (lead.nome||'').split(' ')[0] || lead.nome,
+        empresa: lead.empresa || '',
+        objetivo_ligacao: 'Mensagem LinkedIn de conexão — texto direto sem markdown',
+        contexto: 'GERE SOMENTE o texto da mensagem. SEM markdown, SEM ##, SEM ```, SEM titulos. Max 280 chars. Dados: primeiro nome=' + ((lead.nome||'').split(' ')[0]||'') + ', empresa=' + (lead.empresa||'') + ', setor=' + (lead.setor||'') + ', cargo=' + (lead.cargo||'') + ', cidade=' + (lead.cidade||'') + ', tom=' + tom + ', oferta=' + oferta + '. Personalize mencionando algo especifico da empresa ou setor dele. Formato: "Ola [Nome], [algo especifico da empresa/setor]. Na Atlantyx [valor especifico para o setor dele]. [CTA]?"',
+        empresa_vendedora: 'Atlantyx — BI, Dados e IA B2B'
+      }})
+    });
+    var d = await r.json();
+    var raw = d.content || d.resultado || '';
+    // Strip markdown
+    var msg = raw
+      .replace(/^#+\s*.+$/gm, '')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      
+      .replace(/^[\s\-:]+/gm, '')
+      .replace(/\n{3,}/g, '\n')
+      .trim()
+      .substring(0, 280);
+
+    if (ta) ta.value = msg;
+    if (btn) { btn.disabled = false; btn.textContent = 'Gerar IA'; }
+    addLog('ok', '[LI] Msg gerada: ' + lead.nome + ' (' + msg.length + ' chars)');
+  } catch(e) {
+    if (ta) ta.value = 'Erro: ' + e.message;
+    if (btn) { btn.disabled = false; btn.textContent = 'Gerar IA'; }
+  }
+}
+
+async function gerarMensagensIndividuais(oferta, tom) {
+  var selecionados = liSelecionados.length ? liSelecionados : liLeadsCache;
+  addLog('info', '[LI] Gerando mensagens para ' + selecionados.length + ' leads...');
+  for (var i = 0; i < selecionados.length; i++) {
+    await gerarMensagemIndividual(selecionados[i], oferta, tom, i);
+    await new Promise(function(r) { setTimeout(r, 800); });
+  }
+  toast('Mensagens individuais geradas!', 'success');
+}
+
+
 
 async function enviarEmLoteLI() {
   var sel = liSelecionados.filter(function(l) { return l.selecionado; });
