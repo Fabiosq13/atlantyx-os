@@ -678,11 +678,20 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <div class="panel">
           <div class="ph">
             <div class="pt" id="liLeadsTitulo">Leads encontrados</div>
-            <div style="display:flex;gap:6px;align-items:center;">
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
               <span class="tag live" id="liLeadsTag">0 leads</span>
               <button class="btn btn-p" style="font-size:8px;padding:3px 8px;" onclick="selecionarTodosLI()">Sel. Todos</button>
               <button class="btn btn-g" style="font-size:8px;padding:3px 8px;" onclick="carregarLeadsLIHubSpot()">&#128640; CRM</button>
             </div>
+          </div>
+          <!-- FILTROS DE CANAL -->
+          <div style="background:var(--bg3);border-bottom:1px solid var(--bd);padding:8px 12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <span style="font-family:var(--M);font-size:8px;color:var(--t2);text-transform:uppercase;white-space:nowrap;">Filtrar por canal:</span>
+            <button class="btn" id="filtLI_todos" onclick="filtrarLeadsCanal('todos')" style="font-size:9px;padding:3px 10px;border-color:var(--blue);color:var(--blue);">Todos</button>
+            <button class="btn" id="filtLI_linkedin" onclick="filtrarLeadsCanal('linkedin')" style="font-size:9px;padding:3px 10px;">&#128101; Tem LinkedIn</button>
+            <button class="btn" id="filtLI_email" onclick="filtrarLeadsCanal('email')" style="font-size:9px;padding:3px 10px;">&#9993; Tem E-mail</button>
+            <button class="btn" id="filtLI_whatsapp" onclick="filtrarLeadsCanal('whatsapp')" style="font-size:9px;padding:3px 10px;">&#128232; Tem WhatsApp</button>
+            <span id="liFilterCount" style="font-size:9px;color:var(--t2);margin-left:4px;"></span>
           </div>
           <div class="pb" id="liLeadsLista" style="max-height:400px;overflow-y:auto;"></div>
         </div>
@@ -8788,8 +8797,26 @@ async function buscarLeadsApollo() {
     if (tag) { tag.textContent = liLeadsCache.length + ' leads'; tag.className = 'tag live'; }
     renderLeadsLI(lista, liLeadsCache);
 
-    addLog('ok', '[Apollo] ' + liLeadsCache.length + ' leads: ' + cargo + ' | ' + pais);
-    toast(liLeadsCache.length + ' leads encontrados no Apollo!', 'success');
+    // Calcular e mostrar estatísticas de canais
+    var comLI = liLeadsCache.filter(function(l){return !!l.linkedin_url;}).length;
+    var comEM = liLeadsCache.filter(function(l){return !!l.email;}).length;
+    var comWA = liLeadsCache.filter(function(l){return !!l.telefone;}).length;
+    var semNenhum = liLeadsCache.filter(function(l){return !l.linkedin_url && !l.email && !l.telefone;}).length;
+
+    var countEl = document.getElementById('liFilterCount');
+    if (countEl) countEl.textContent = liLeadsCache.length + ' total | LI: ' + comLI + ' | Email: ' + comEM + ' | WA: ' + comWA + (semNenhum?' | Sem canal: '+semNenhum:'');
+
+    // Resetar filtro para "todos"
+    liFiltroAtual = 'todos';
+    ['todos','linkedin','email','whatsapp'].forEach(function(f) {
+      var btn = document.getElementById('filtLI_' + f);
+      if (btn) { btn.style.borderColor=''; btn.style.color=''; btn.style.background=''; }
+    });
+    var btnTodos = document.getElementById('filtLI_todos');
+    if (btnTodos) { btnTodos.style.borderColor='var(--blue)'; btnTodos.style.color='var(--blue)'; btnTodos.style.background='rgba(79,124,255,.12)'; }
+
+    addLog('ok', '[Apollo] ' + liLeadsCache.length + ' leads | LinkedIn:' + comLI + ' Email:' + comEM + ' WhatsApp:' + comWA);
+    toast(liLeadsCache.length + ' leads | ' + comLI + ' com LinkedIn · ' + comEM + ' com e-mail · ' + comWA + ' com WhatsApp', 'success');
 
   } catch(e) {
     if (lista) lista.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Erro Apollo: ' + e.message + '</div>';
@@ -8850,7 +8877,13 @@ async function buscarPorNomeApollo() {
     var result = document.getElementById('liLeadsResultado');
     if (result) result.style.display = 'block';
     renderLeadsLI(lista, liLeadsCache);
-    toast('Lead encontrado: ' + lead.nome, 'success');
+
+    var canaisInfo = [];
+    if (lead.linkedin_url) canaisInfo.push('LinkedIn ✓');
+    if (lead.email) canaisInfo.push('E-mail ✓');
+    if (lead.telefone) canaisInfo.push('WhatsApp ✓');
+    if (!canaisInfo.length) canaisInfo.push('⚠️ Sem canais de contato');
+    toast('Lead: ' + lead.nome + ' | ' + canaisInfo.join(' · '), 'success');
     addLog('ok', '[Apollo] Lead direto: ' + lead.nome + ' | ' + lead.empresa);
   } catch(e) {
     toast('Erro: ' + e.message, 'error');
@@ -8901,26 +8934,60 @@ function renderLeadsLI(container, leads) {
     badge.textContent = 'Score ' + lead.score;
     hdr.appendChild(cb); hdr.appendChild(info); hdr.appendChild(badge); card.appendChild(hdr);
 
-    // Canais disponíveis
+    // Canais disponíveis — destaque visual claro
     var canais = document.createElement('div');
-    canais.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;';
-    if (lead.linkedin_url) {
-      var tagLI = document.createElement('span');
-      tagLI.style.cssText = 'font-size:8px;padding:2px 7px;border-radius:3px;background:rgba(10,102,194,.15);color:#0a66c2;';
-      tagLI.innerHTML = '&#128101; LinkedIn';
+    canais.style.cssText = 'display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px;align-items:center;';
+
+    var hasLI = !!lead.linkedin_url;
+    var hasEM = !!lead.email;
+    var hasWA = !!lead.telefone;
+    var hasAny = hasLI || hasEM || hasWA;
+
+    if (hasLI) {
+      var tagLI = document.createElement('a');
+      tagLI.href = lead.linkedin_url; tagLI.target = '_blank';
+      tagLI.style.cssText = 'font-size:8px;padding:3px 8px;border-radius:4px;background:rgba(10,102,194,.2);color:#0a66c2;font-weight:600;text-decoration:none;border:1px solid rgba(10,102,194,.3);';
+      tagLI.innerHTML = '&#128101; LinkedIn &#8599;';
       canais.appendChild(tagLI);
+    } else {
+      var tagLINo = document.createElement('span');
+      tagLINo.style.cssText = 'font-size:8px;padding:3px 8px;border-radius:4px;background:rgba(255,77,109,.08);color:rgba(255,77,109,.5);border:1px solid rgba(255,77,109,.15);';
+      tagLINo.textContent = 'Sem LinkedIn';
+      canais.appendChild(tagLINo);
     }
-    if (lead.email) {
+
+    if (hasEM) {
       var tagEM = document.createElement('span');
-      tagEM.style.cssText = 'font-size:8px;padding:2px 7px;border-radius:3px;background:rgba(79,124,255,.15);color:var(--blue);';
-      tagEM.innerHTML = '&#9993; ' + lead.email;
+      tagEM.style.cssText = 'font-size:8px;padding:3px 8px;border-radius:4px;background:rgba(79,124,255,.15);color:var(--blue);font-weight:600;border:1px solid rgba(79,124,255,.25);';
+      tagEM.innerHTML = '&#9993; ' + lead.email.split('@')[0] + '@...';
+      tagEM.title = lead.email;
       canais.appendChild(tagEM);
+    } else {
+      var tagEMNo = document.createElement('span');
+      tagEMNo.style.cssText = 'font-size:8px;padding:3px 8px;border-radius:4px;background:rgba(255,77,109,.08);color:rgba(255,77,109,.5);border:1px solid rgba(255,77,109,.15);';
+      tagEMNo.textContent = 'Sem e-mail';
+      canais.appendChild(tagEMNo);
     }
-    if (lead.telefone) {
+
+    if (hasWA) {
       var tagWA = document.createElement('span');
-      tagWA.style.cssText = 'font-size:8px;padding:2px 7px;border-radius:3px;background:rgba(34,197,94,.15);color:#22c55e;';
+      tagWA.style.cssText = 'font-size:8px;padding:3px 8px;border-radius:4px;background:rgba(34,197,94,.15);color:#22c55e;font-weight:600;border:1px solid rgba(34,197,94,.25);';
       tagWA.innerHTML = '&#128232; ' + lead.telefone;
       canais.appendChild(tagWA);
+    } else {
+      var tagWANo = document.createElement('span');
+      tagWANo.style.cssText = 'font-size:8px;padding:3px 8px;border-radius:4px;background:rgba(255,77,109,.08);color:rgba(255,77,109,.5);border:1px solid rgba(255,77,109,.15);';
+      tagWANo.textContent = 'Sem WhatsApp';
+      canais.appendChild(tagWANo);
+    }
+
+    // Aviso sem nenhum canal
+    if (!hasAny) {
+      var alertNoChannel = document.createElement('div');
+      alertNoChannel.style.cssText = 'width:100%;font-size:9px;color:var(--red);padding:3px 0;';
+      alertNoChannel.innerHTML = '&#9888; Sem canais de contato — não será possível enviar mensagem';
+      canais.appendChild(alertNoChannel);
+      card.style.opacity = '0.6';
     }
     card.appendChild(canais);
 
@@ -9121,6 +9188,51 @@ function mostrarPreviewMensagensLote(oferta, tom, msgTemplate) {
   if (previewDiv && previewDiv.parentNode) {
     previewDiv.parentNode.insertBefore(panel, previewDiv.nextSibling);
   }
+}
+
+
+// ── FILTRO DE CANAL DOS LEADS ─────────────────────────────────────────────────
+var liFiltroAtual = 'todos';
+
+function filtrarLeadsCanal(canal) {
+  liFiltroAtual = canal;
+
+  // Atualizar botões ativos
+  ['todos','linkedin','email','whatsapp'].forEach(function(f) {
+    var btn = document.getElementById('filtLI_' + f);
+    if (!btn) return;
+    var ativo = f === canal;
+    btn.style.borderColor = ativo ? 'var(--blue)' : '';
+    btn.style.color       = ativo ? 'var(--blue)' : '';
+    btn.style.background  = ativo ? 'rgba(79,124,255,.12)' : '';
+  });
+
+  // Filtrar leads
+  var filtrados;
+  if (canal === 'todos') {
+    filtrados = liLeadsCache;
+  } else if (canal === 'linkedin') {
+    filtrados = liLeadsCache.filter(function(l) { return !!l.linkedin_url; });
+  } else if (canal === 'email') {
+    filtrados = liLeadsCache.filter(function(l) { return !!l.email; });
+  } else if (canal === 'whatsapp') {
+    filtrados = liLeadsCache.filter(function(l) { return !!l.telefone; });
+  } else {
+    filtrados = liLeadsCache;
+  }
+
+  var countEl = document.getElementById('liFilterCount');
+  if (countEl) countEl.textContent = filtrados.length + ' de ' + liLeadsCache.length + ' leads';
+
+  var lista = document.getElementById('liLeadsLista');
+  renderLeadsLI(lista, filtrados);
+
+  // Atualizar selecionados
+  liSelecionados = filtrados.filter(function(l) { return l.selecionado; });
+  var tag = document.getElementById('liLeadsTag');
+  if (tag) tag.textContent = filtrados.length + ' leads';
+
+  addLog('info', '[LinkedIn] Filtro: ' + canal + ' → ' + filtrados.length + ' leads');
 }
 
 async function enviarEmLoteLI() {
