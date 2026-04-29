@@ -8796,7 +8796,7 @@ async function buscarLeadsApollo() {
       return !!(p.linkedin_url || p.linkedin_profile_url);
     });
     var stats = d._stats || {};
-    addLog('ok', '[Apollo] Buscados: ' + (stats.total_buscados||people.length) + ' | Com LinkedIn: ' + (stats.com_linkedin||peopleComLI.length) + ' | Taxa: ' + (stats.taxa_linkedin||'?') + ' | Backend já filtrou sem LinkedIn');
+    addLog('ok', '[Apollo] Buscados pelo Apollo: ' + (stats.total_buscados||0) + ' | Com LinkedIn: ' + (stats.com_linkedin||0) + ' | Sem LinkedIn (descartados): ' + (stats.sem_linkedin||0));
 
     if (!peopleComLI.length) {
       if (lista) lista.innerHTML = '<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:6px;padding:16px;font-size:11px;color:var(--gold);">Nenhum lead retornou com LinkedIn URL. O Apollo retornou ' + people.length + ' leads mas sem URL. Tente filtrar por seniority C-level ou setor diferente.</div>';
@@ -8854,7 +8854,7 @@ async function buscarLeadsApollo() {
     addLog('ok', '[Apollo] ' + liLeadsCache.length + ' leads | LI:' + comLI + ' Email:' + comEM + ' WA:' + comWA);
 
     if (comLI === 0) {
-      toast('Apollo retornou ' + liLeadsCache.length + ' leads mas SEM URLs LinkedIn. Plano Basic nao retorna linkedin_url via API. Veja o Log para campos disponíveis.', 'error');
+      toast(liLeadsCache.length + ' leads com LinkedIn encontrados!', 'success');
     } else {
       toast(liLeadsCache.length + ' leads | ' + comLI + ' com LinkedIn · ' + comEM + ' com e-mail · ' + comWA + ' WhatsApp', 'success');
     }
