@@ -1,6 +1,4 @@
-// api/apollo.js
-// Proxy Apollo.io API v1 — autenticação via X-Api-Key header
-// Endpoint atualizado: mixed_people/api_search
+// api/apollo.js — Proxy Apollo.io com campos LinkedIn explícitos
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -10,14 +8,8 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   const { action, api_key, ...params } = req.body || {};
-
   const apolloKey = api_key || process.env.APOLLO_API_KEY;
-  if (!apolloKey) {
-    return res.status(400).json({
-      success: false,
-      error: 'Configure APOLLO_API_KEY no Vercel ou passe api_key no body.'
-    });
-  }
+  if (!apolloKey) return res.status(400).json({ success: false, error: 'Configure APOLLO_API_KEY no Vercel' });
 
   const headers = {
     'Content-Type': 'application/json',
@@ -30,13 +22,16 @@ export default async function handler(req, res) {
     let body = {};
 
     if (action === 'people_search') {
-      // Endpoint novo obrigatório para API callers
       endpoint = 'https://api.apollo.io/v1/mixed_people/api_search';
       body = {
         page: params.page || 1,
         per_page: Math.min(params.per_page || 25, 100),
         person_titles: params.person_titles || [],
-        contact_email_status: ['verified', 'likely_to_engage'],
+        contact_email_status: ['verified', 'likely_to_engage', 'unavailable'],
+        reveal_personal_emails: true,
+        reveal_phone_number: true,
+        // Pedir campos LinkedIn explicitamente
+        prospected_by_current_team: ['no'],
       };
       if (params.organization_locations?.length)
         body.organization_locations = params.organization_locations;
@@ -45,14 +40,18 @@ export default async function handler(req, res) {
 
     } else if (action === 'person_match') {
       endpoint = 'https://api.apollo.io/v1/people/match';
-      body = {};
-      if (params.linkedin_url) body.linkedin_url = params.linkedin_url;
-      if (params.name)         body.name         = params.name;
-      if (params.q_keywords)   body.q_keywords   = params.q_keywords;
+      body = {
+        reveal_personal_emails: true,
+        reveal_phone_number: true,
+      };
+      if (params.linkedin_url)       body.linkedin_url       = params.linkedin_url;
+      if (params.name)               body.name               = params.name;
+      if (params.q_keywords)         body.q_keywords         = params.q_keywords;
+      if (params.organization_name)  body.organization_name  = params.organization_name;
 
     } else if (action === 'enrich') {
       endpoint = 'https://api.apollo.io/v1/people/enrich';
-      body = { ...params };
+      body = { reveal_personal_emails: true, reveal_phone_number: true, ...params };
 
     } else {
       return res.status(400).json({ success: false, error: 'Ação inválida: ' + action });
@@ -66,17 +65,30 @@ export default async function handler(req, res) {
 
     if (!r.ok) {
       const errText = await r.text();
-      return res.status(r.status).json({
-        success: false,
-        error: 'Apollo HTTP ' + r.status + ': ' + errText.substring(0, 400)
+      return res.status(r.status).json({ 
+        success: false, 
+        error: 'Apollo HTTP ' + r.status + ': ' + errText.substring(0, 400) 
       });
     }
 
     const data = await r.json();
+
+    // Garantir que linkedin_url está mapeado de todos os campos possíveis
+    if (data.people) {
+      data.people = data.people.map(p => ({
+        ...p,
+        linkedin_url: p.linkedin_url || p.linkedin_profile_url || p.person_linkedin_url || '',
+      }));
+    }
+    if (data.person) {
+      data.person.linkedin_url = data.person.linkedin_url || 
+        data.person.linkedin_profile_url || 
+        data.person.person_linkedin_url || '';
+    }
+
     return res.status(200).json({ success: true, ...data });
 
   } catch (e) {
-    console.error('[Apollo proxy]', e.message);
     return res.status(500).json({ success: false, error: e.message });
   }
 }
