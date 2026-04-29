@@ -9024,11 +9024,11 @@ async function gerarMensagemLIComIA() {
     var r = await fetch('/api/s1-strategy', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'inside_sales_script', payload: {
-        decisor: lead.nome || 'C-Level',
+        decisor: (lead.nome||'').split(' ')[0] || 'Decisor',
         empresa: lead.empresa || '',
-        objetivo_ligacao: 'Primeiro contato via LinkedIn — solicitar conexão e apresentar Atlantyx',
-        contexto: 'Tom: ' + tom + '. Oferta: ' + oferta + '. Empresa: ' + (lead.empresa||'') + '. Setor: ' + (lead.setor||'') + '. Cargo: ' + (lead.cargo||'') + '. IMPORTANTE: mensagem curta para LinkedIn (máx 300 chars), pessoal, sem parecer spam. Incluir convite de conexão inicial se não conectado.',
-        empresa_vendedora: 'Atlantyx — BI, Dados e IA B2B para grandes empresas'
+        objetivo_ligacao: 'Mensagem LinkedIn curta e personalizada — SOMENTE o texto final sem formatacao',
+        contexto: 'REGRAS: (1) Max 280 chars (2) Usar primeiro nome: ' + ((lead.nome||'').split(' ')[0]||'') + ' (3) Citar empresa dele: ' + (lead.empresa||'') + ' (4) Setor: ' + (lead.setor||'') + ' (5) Cargo: ' + (lead.cargo||'') + ' (6) Tom: ' + tom + ' (7) Oferta: ' + oferta + ' (8) SEM markdown SEM ## SEM ``` SEM titulos. Apenas o texto direto da mensagem. Formato: "Ola [Nome], [algo especifico sobre empresa/setor]. Na Atlantyx [valor especifico]. [CTA curto]?"',
+        empresa_vendedora: 'Atlantyx — BI, Dados e IA B2B'
       }})
     });
     var d = await r.json();
@@ -9042,7 +9042,21 @@ async function gerarMensagemLIComIA() {
       shortMsg += (shortMsg ? '\n' : '') + lines[i];
     }
 
-    var finalMsg = shortMsg || msg.substring(0, 300);
+    // Limpar markdown da resposta — remover ##, **, ```, títulos
+    var cleanMsg = msg
+      .replace(/^#+\s*.+$/gm, '')           // remove headers ##
+      .replace(/\*\*[^*]+\*\*/g, '$1')     // remove bold **texto**
+      .replace(/```[^`]*```/gs, '')           // remove code blocks
+      .replace(/^[\s-:]+/gm, '')             // remove leading dashes/colons
+      .replace(/\n{3,}/g, '\n')              // max 2 newlines
+      .trim();
+
+    // Pegar só a parte mais curta (mensagem de conexão)
+    var msgParts = cleanMsg.split('\n\n');
+    var shortestPart = msgParts.reduce(function(a, b) {
+      return (b.trim().length > 50 && b.trim().length < a.trim().length) ? b : a;
+    }, cleanMsg);
+    var finalMsg = (shortestPart.trim().length > 50 ? shortestPart.trim() : cleanMsg).substring(0, 280);
     if (preview) preview.value = finalMsg;
 
     // Mostrar preview por lead (todos os selecionados)
@@ -9064,14 +9078,24 @@ async function gerarMensagemParaLead(lead) {
     var r = await fetch('/api/s1-strategy', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'inside_sales_script', payload: {
-        decisor: lead.nome, empresa: lead.empresa,
-        objetivo_ligacao: 'Primeiro contato LinkedIn',
-        contexto: 'Tom: ' + tom + '. Oferta: ' + oferta + '. Setor: ' + lead.setor + '. Cargo: ' + lead.cargo,
-        empresa_vendedora: 'Atlantyx'
+        decisor: (lead.nome||'').split(' ')[0] || lead.nome,
+        empresa: lead.empresa || '',
+        objetivo_ligacao: 'Mensagem LinkedIn de conexão — APENAS o texto final da mensagem, sem formatação markdown',
+        contexto: 'CRÍTICO: Gere SOMENTE o texto da mensagem, SEM títulos, SEM ##, SEM ```, SEM "Script de Abordagem". Apenas a mensagem direta. Máx 280 chars. Primeiro nome: ' + ((lead.nome||'').split(' ')[0]||'') + '. Empresa dele: ' + (lead.empresa||'') + '. Setor: ' + (lead.setor||'') + '. Cargo: ' + (lead.cargo||'') + '. Tom: ' + tom + '. Oferta: ' + oferta + '. Exemplo: "Olá Carlos, vi que você é CTO na Energisa. Na Atlantyx ajudamos empresas de energia com dashboards executivos em tempo real. Posso mostrar um caso do setor?"',
+        empresa_vendedora: 'Atlantyx — BI, Dados e IA'
       }})
     });
     var d = await r.json();
-    var msg = (d.content || d.resultado || '').substring(0, 300);
+    var rawMsg = d.content || d.resultado || '';
+    // Limpar markdown
+    var msg = rawMsg
+      .replace(/^#+\s*.+$/gm, '')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/```[^`]*```/gs, '')
+      .replace(/^[\s-:*`#]+/gm, '')
+      .replace(/\n{3,}/g, '\n')
+      .trim()
+      .substring(0, 280);
 
     // Show in modal
     var overlay = document.createElement('div');
