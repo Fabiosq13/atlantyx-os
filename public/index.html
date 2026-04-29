@@ -8738,11 +8738,11 @@ async function buscarLeadsApollo() {
   var creds = getLICredenciais();
   // API Key vem do campo ou de APOLLO_API_KEY no Vercel
 
-  var cargoSel = document.getElementById('liCargo')?.value || 'CIO';
+    var cargoSel = document.getElementById('liCargo')?.value || '';
   var cargo = cargoSel === 'custom'
-    ? (document.getElementById('liCargoCustom')?.value?.trim() || 'CIO')
-    : cargoSel;
-  var setor = document.getElementById('liSetor')?.value || '';
+    ? (document.getElementById('liCargoCustom')?.value?.trim() || '')
+    : (cargoSel === 'todos' || cargoSel === '' ? '' : cargoSel);
+    var setor = document.getElementById('liSetor')?.value || '';
   var pais  = document.getElementById('liPais')?.value  || 'Brazil';
   var qtd   = parseInt(document.getElementById('liQtd')?.value || '25');
 
