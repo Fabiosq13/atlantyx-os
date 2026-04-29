@@ -8770,13 +8770,13 @@ async function buscarLeadsApollo() {
     liLeadsCache = people.map(function(p, i) {
       return {
         id:             'li_' + Date.now() + '_' + i,
-        nome:           (p.first_name || '') + ' ' + (p.last_name || ''),
+        nome:           (p.first_name || '') + ' ' + (p.last_name || p.last_name_obfuscated || ''),
         cargo:          p.title || cargo,
         empresa:        p.organization?.name || p.company_name || '',
         setor:          p.organization?.industry || setor || '',
         email:          p.email || p.work_email || p.personal_email || '',
         telefone:       p.phone_numbers?.[0]?.sanitized_number || p.phone_numbers?.[0]?.raw_number || p.mobile_phone || p.work_direct_phone || p.sanitized_phone || '',
-        linkedin_url:   p.linkedin_url || p.linkedin_profile_url || p.person_linkedin_url || '',
+        linkedin_url:   p.linkedin_url || '',  // Apollo retorna este campo diretamente
         linkedin_id:    p.linkedin_uid || '',
         faturamento:    p.organization?.annual_revenue_printed || '',
         funcionarios:   p.organization?.estimated_num_employees || '',
@@ -8975,6 +8975,19 @@ function renderLeadsLI(container, leads) {
       canais.appendChild(noCanal2);
     }
     card.appendChild(canais);
+
+    // URL LinkedIn explícita
+    if (lead.linkedin_url) {
+      var urlDiv = document.createElement('div');
+      urlDiv.style.cssText = 'font-size:9px;color:var(--t3);margin-bottom:5px;word-break:break-all;background:var(--bg3);padding:4px 6px;border-radius:4px;border:1px solid var(--bd);';
+      urlDiv.innerHTML = '<span style="color:var(--t2);">LinkedIn URL: </span><a href="' + lead.linkedin_url + '" target="_blank" style="color:#0a66c2;">' + lead.linkedin_url + '</a>';
+      card.appendChild(urlDiv);
+    } else {
+      var noUrlDiv = document.createElement('div');
+      noUrlDiv.style.cssText = 'font-size:9px;color:rgba(255,77,109,.7);margin-bottom:5px;padding:4px 6px;background:rgba(255,77,109,.06);border-radius:4px;border:1px solid rgba(255,77,109,.15);';
+      noUrlDiv.textContent = 'LinkedIn URL: nao retornada pelo Apollo (plano Basic)';
+      card.appendChild(noUrlDiv);
+    }
 
     // Status row + script button
     var statusRow = document.createElement('div');
