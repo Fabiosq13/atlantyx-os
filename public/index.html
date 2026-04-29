@@ -9209,15 +9209,34 @@ async function enviarEmLoteLI() {
     // Carregar no HubSpot
     await carregarLeadHubSpot(lead);
 
+    // Contar como processado (independente do Phantom)
+    if (lead.status_crm === 'no_crm') {
+      ok++;
+    } else if (lead.status_li !== 'erro') {
+      ok++;
+    }
+
     // Delay entre envios (respeitar limites)
-    if (i < sel.length - 1) await new Promise(function(res) { setTimeout(res, 1500); });
+    if (i < sel.length - 1) await new Promise(function(res2) { setTimeout(res2, 1500); });
   }
 
   // Resultado final
+  // Contar leads no CRM e leads com LinkedIn
+  var noCRM   = sel.filter(function(l){ return l.status_crm === 'no_crm'; }).length;
+  var liEnvio = sel.filter(function(l){ return l.status_li === 'enviado'; }).length;
+  var semLI   = sel.filter(function(l){ return !l.linkedin_url; }).length;
+
   if (statusDiv) {
     statusDiv.innerHTML = '<div style="background:rgba(34,211,163,.08);border:1px solid rgba(34,211,163,.2);border-radius:6px;padding:12px;">'
-      + '<div style="font-family:var(--M);font-size:9px;color:var(--green);margin-bottom:6px;">ENVIO CONCLUIDO</div>'
-      + '<div style="font-size:11px;">Enviados: <strong>' + ok + '</strong> | Erros: ' + erros + ' | Total: ' + sel.length + '</div>'
+      + '<div style="font-family:var(--M);font-size:9px;color:var(--green);margin-bottom:8px;">PROCESSAMENTO CONCLUIDO</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;">'
+      + '<div>&#128101; LinkedIn enviados: <strong>' + liEnvio + '</strong></div>'
+      + '<div>&#128640; No HubSpot CRM: <strong>' + noCRM + '</strong></div>'
+      + '<div>&#9888; Sem URL LinkedIn: <strong>' + semLI + '</strong></div>'
+      + '<div>&#10060; Erros: <strong>' + erros + '</strong></div>'
+      + '</div>'
+      + (liEnvio === 0 && creds.phantomKey ? '<div style="font-size:10px;color:var(--gold);margin-top:8px;">&#9888; PhantomBuster pode precisar de upgrade para enviar mensagens. Verifique sua conta em phantombuster.com</div>' : '')
+      + (noCRM > 0 ? '<div style="font-size:10px;color:var(--green);margin-top:6px;">&#10003; ' + noCRM + ' leads adicionados ao pipeline HubSpot</div>' : '')
       + '</div>';
   }
 
