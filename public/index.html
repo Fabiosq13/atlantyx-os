@@ -594,6 +594,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
             <div>
               <div class="fg" style="margin-bottom:8px;"><label class="fl">Cargo / Título</label>
                 <select class="fsel" id="liCargo">
+                  <option value="todos">Todos os cargos</option>
                   <option value="CEO">CEO — Chief Executive Officer</option>
                   <option value="CIO">CIO — Chief Information Officer</option>
                   <option value="CTO">CTO — Chief Technology Officer</option>
@@ -604,6 +605,9 @@ tr:hover td{background:rgba(79,124,255,.03);}
                   <option value="VP Data">VP de Dados / Analytics</option>
                   <option value="Diretor TI">Diretor de TI</option>
                   <option value="Gerente TI">Gerente de TI Sênior</option>
+                  <option value="Director">Director</option>
+                  <option value="Head">Head of</option>
+                  <option value="President">President</option>
                   <option value="custom">Cargo personalizado...</option>
                 </select>
               </div>
@@ -613,9 +617,9 @@ tr:hover td{background:rgba(79,124,255,.03);}
               </div>
               <div class="fg" style="margin-bottom:8px;"><label class="fl">Setor</label>
                 <select class="fsel" id="liSetor">
+                  <option value="">Todos os setores</option>
                   <option value="Oil &amp; Gas">Oil &amp; Gas (Petróleo e Gás)</option>
                   <option value="Energy">Energia e Utilities</option>
-                  <option value="">Todos os setores</option>
                   <option value="Automotive">Automotivo</option>
                   <option value="Retail">Varejo</option>
                   <option value="Manufacturing">Indústria / Manufatura</option>
@@ -627,17 +631,27 @@ tr:hover td{background:rgba(79,124,255,.03);}
                   <option value="Agribusiness">Agronegócio</option>
                   <option value="Mining &amp; Metals">Mineração e Metais</option>
                   <option value="Chemicals">Química e Petroquímica</option>
+                  <option value="Construction">Construção Civil</option>
+                  <option value="Real Estate">Imobiliário</option>
+                  <option value="Education">Educação</option>
+                  <option value="Government">Governo / Setor Público</option>
                 </select>
               </div>
             </div>
             <div>
               <div class="fg" style="margin-bottom:8px;"><label class="fl">País</label>
                 <select class="fsel" id="liPais">
+                  <option value="">Todos os países</option>
                   <option value="United States">Estados Unidos</option>
                   <option value="Brazil">Brasil</option>
                   <option value="Portugal">Portugal</option>
                   <option value="Argentina">Argentina</option>
                   <option value="Colombia">Colômbia</option>
+                  <option value="Mexico">México</option>
+                  <option value="Chile">Chile</option>
+                  <option value="Canada">Canadá</option>
+                  <option value="United Kingdom">Reino Unido</option>
+                  <option value="Spain">Espanha</option>
                 </select>
               </div>
               <div class="fg" style="margin-bottom:8px;"><label class="fl">Faturamento mínimo da empresa</label>
@@ -655,7 +669,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
                   <option value="10">10 leads</option>
                   <option value="25">25 leads</option>
                   <option value="50">50 leads</option>
-                  <option value="100">100 leads</option>
+                  <option value="100">100 leads (máx)</option>
                 </select>
               </div>
             </div>
@@ -671,7 +685,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
           </div>
 
           <div class="fg" style="margin-bottom:8px;"><label class="fl">Cidade (opcional)</label>
-            <input class="fi" id="liCidade" placeholder="Ex: Houston, São Paulo, Rio de Janeiro..." value="Houston"/>
+            <input class="fi" id="liCidade" placeholder="Deixe vazio para todas as cidades" value=""/>
           </div>
           <div style="background:rgba(10,102,194,.06);border:1px solid rgba(10,102,194,.15);border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:10px;color:var(--t2);">
             &#128269; Busca filtra <strong>automaticamente</strong> apenas leads com LinkedIn URL · Prioriza C-levels e directors
@@ -8759,9 +8773,8 @@ async function buscarLeadsApollo() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'people_search', api_key: creds.apolloKey,
-        // Backend aplica: Houston + Oil&Gas + C-levels + pós-filtro linkedin_url
-        ...body,
-        organization_num_employees_ranges: ['201,5000'] })
+        // Backend filtra somente linkedin_url != null
+        ...body })
     });
 
     if (!r.ok) {
