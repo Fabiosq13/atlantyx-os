@@ -8776,7 +8776,7 @@ async function buscarLeadsApollo() {
         setor:          p.organization?.industry || setor || '',
         email:          p.email || p.work_email || p.personal_email || '',
         telefone:       p.phone_numbers?.[0]?.sanitized_number || p.phone_numbers?.[0]?.raw_number || p.mobile_phone || p.work_direct_phone || p.sanitized_phone || '',
-        linkedin_url:   p.linkedin_url || (p.first_name && p.last_name ? 'https://www.linkedin.com/in/' + (p.first_name+'-'+p.last_name).toLowerCase().replace(/[^a-z-]/g,'') : ''),
+        linkedin_url:   p.linkedin_url || p.linkedin_profile_url || p.person_linkedin_url || '',
         linkedin_id:    p.linkedin_uid || '',
         faturamento:    p.organization?.annual_revenue_printed || '',
         funcionarios:   p.organization?.estimated_num_employees || '',
@@ -9520,17 +9520,9 @@ function filtrarLeadsCanal(canal) {
 async function enriquecerLeads() {
   if (!liLeadsCache.length) { toast('Busque leads primeiro', 'error'); return; }
 
-  // Gerar URLs LinkedIn a partir de nome+empresa para leads sem URL
+  // NÃO gerar URLs falsas — só usar URLs reais do Apollo
   var urlsGeradas = 0;
-  liLeadsCache.forEach(function(lead) {
-    if (!lead.linkedin_url && lead.nome) {
-      var slug = lead.nome.toLowerCase()
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, '-');
-      lead.linkedin_url = 'https://www.linkedin.com/in/' + slug;
-      urlsGeradas++;
-    }
-  });
+  // URLs sem LinkedIn real ficam vazias — serão filtradas
 
   filtrarLeadsCanal(liFiltroAtual);
   var comLI = liLeadsCache.filter(function(l){return !!l.linkedin_url;}).length;
@@ -9538,7 +9530,7 @@ async function enriquecerLeads() {
   var comWA = liLeadsCache.filter(function(l){return !!l.telefone;}).length;
   var countEl = document.getElementById('liFilterCount');
   if (countEl) countEl.textContent = liLeadsCache.length + ' total | LI:' + comLI + ' | Email:' + comEM + ' | WA:' + comWA;
-  addLog('ok', '[Enrich] URLs LinkedIn geradas: ' + urlsGeradas + ' | Total LI:' + comLI + ' Email:' + comEM + ' WA:' + comWA);
+  addLog('ok', '[Enrich] Leads com LinkedIn real: ' + comLI + ' | Email: ' + comEM + ' | WA: ' + comWA + ' | Sem LinkedIn: ' + (liLeadsCache.length - comLI));
 
   // Modal informativo
   var overlay = document.createElement('div');
