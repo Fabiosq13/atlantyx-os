@@ -1,4 +1,4 @@
-// api/apollo.js — Proxy Apollo.io — sem person_locations
+// api/apollo.js — Enriquecimento via person_ids[] (batch)
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -9,7 +9,6 @@ export default async function handler(req, res) {
 
   const { action, api_key, ...params } = req.body || {};
   const apolloKey = api_key || process.env.APOLLO_API_KEY;
-
   if (!apolloKey) return res.status(400).json({ success: false, error: 'APOLLO_API_KEY não configurada' });
 
   const headers = {
@@ -19,6 +18,8 @@ export default async function handler(req, res) {
   };
 
   try {
+
+    // ── BUSCA PRINCIPAL ───────────────────────────────────────────────────────
     if (action === 'people_search') {
       const body = {
         page:     params.page     || 1,
@@ -27,51 +28,71 @@ export default async function handler(req, res) {
         reveal_personal_emails: true,
         reveal_phone_number:    true,
       };
-
       if (params.person_titles?.length)             body.person_titles             = params.person_titles;
       if (params.q_organization_industries?.length) body.q_organization_industries = params.q_organization_industries;
-      // person_locations REMOVIDO — causava 0 resultados
-
-      console.log('[Apollo] Query:', JSON.stringify(body));
 
       const r = await fetch('https://api.apollo.io/v1/mixed_people/api_search', {
         method: 'POST', headers, body: JSON.stringify(body)
       });
-
       const text = await r.text();
-      console.log('[Apollo] Status:', r.status, '| Preview:', text.substring(0, 300));
-
-      if (!r.ok) return res.status(r.status).json({ success: false, error: 'Apollo ' + r.status + ': ' + text.substring(0, 300) });
+      if (!r.ok) return res.status(r.status).json({ success: false, error: 'Apollo ' + r.status + ': ' + text.substring(0,300) });
 
       const data = JSON.parse(text);
       const total = data.people?.length || 0;
-
-      // Pós-filtro: somente com linkedin_url
-      if (data.people) data.people = data.people.filter(p => !!p.linkedin_url);
-
-      data._stats = {
-        total_buscados: total,
-        com_linkedin:   data.people?.length || 0,
-        sem_linkedin:   total - (data.people?.length || 0),
-      };
-
-      console.log('[Apollo] Total:', total, '| Com LinkedIn:', data._stats.com_linkedin);
+      const comLI = data.people?.filter(p => !!p.linkedin_url).length || 0;
+      data._stats = { total_buscados: total, com_li_pessoa: comLI };
+      console.log('[Apollo] Busca:', total, 'leads | LI:', comLI);
       return res.status(200).json({ success: true, ...data });
+    }
 
-    } else if (action === 'person_match') {
+    // ── ENRIQUECIMENTO EM LOTE via person_ids[] ───────────────────────────────
+    // Envia IDs do people_search → Apollo retorna perfis completos com linkedin_url
+    if (action === 'enrich_batch') {
+      const ids = params.person_ids; // array de IDs Apollo
+      if (!ids?.length) return res.status(400).json({ success: false, error: 'person_ids[] obrigatório' });
+
+      console.log('[Apollo Enrich Batch] IDs:', ids.length, ids.slice(0,3));
+
+      const r = await fetch('https://api.apollo.io/v1/people/match', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          person_ids:            ids,
+          reveal_personal_emails: true,
+          reveal_phone_number:    true,
+        }),
+      });
+
+      const text = await r.text();
+      console.log('[Apollo Enrich Batch] Status:', r.status, '| Preview:', text.substring(0, 300));
+
+      if (!r.ok) return res.status(r.status).json({ success: false, error: 'Apollo enrich ' + r.status + ': ' + text.substring(0,300) });
+
+      const data = JSON.parse(text);
+
+      // Normalizar resposta — pode vir como person ou people
+      const people = data.people || (data.person ? [data.person] : []);
+      const comLI  = people.filter(p => !!p.linkedin_url).length;
+
+      console.log('[Apollo Enrich Batch] Retornados:', people.length, '| Com LinkedIn:', comLI);
+      return res.status(200).json({ success: true, people, com_linkedin: comLI });
+    }
+
+    // ── MATCH INDIVIDUAL ──────────────────────────────────────────────────────
+    if (action === 'person_match') {
       const body = { reveal_personal_emails: true, reveal_phone_number: true };
+      if (params.apollo_id)         body.person_ids        = [params.apollo_id];
       if (params.linkedin_url)      body.linkedin_url      = params.linkedin_url;
       if (params.name)              body.name              = params.name;
-      if (params.q_keywords)        body.q_keywords        = params.q_keywords;
       if (params.organization_name) body.organization_name = params.organization_name;
 
       const r = await fetch('https://api.apollo.io/v1/people/match', { method: 'POST', headers, body: JSON.stringify(body) });
       const data = await r.json();
+      console.log('[Apollo Match] linkedin_url:', data.person?.linkedin_url || 'null');
       return res.status(200).json({ success: true, ...data });
-
-    } else {
-      return res.status(400).json({ success: false, error: 'Ação inválida: ' + action });
     }
+
+    return res.status(400).json({ success: false, error: 'Ação inválida: ' + action });
 
   } catch (e) {
     console.error('[Apollo]', e.message);
