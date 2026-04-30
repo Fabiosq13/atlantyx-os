@@ -8796,7 +8796,9 @@ async function buscarLeadsApollo() {
       return !!(p.linkedin_url || p.linkedin_profile_url);
     });
     var stats = d._stats || {};
-    addLog('ok', '[Apollo] Buscados pelo Apollo: ' + (stats.total_buscados||0) + ' | Com LinkedIn: ' + (stats.com_linkedin||0) + ' | Sem LinkedIn (descartados): ' + (stats.sem_linkedin||0));
+    addLog('info', '[Apollo DEBUG] Total disponível no Apollo: ' + (stats.total_disponivel||'?'));
+    addLog('info', '[Apollo DEBUG] Buscados: ' + (stats.total_buscados||0) + ' | Com LinkedIn: ' + (stats.com_linkedin||0) + ' | Sem LinkedIn: ' + (stats.sem_linkedin||0));
+    if (stats.query_enviada) addLog('info', '[Apollo DEBUG] Query: ' + JSON.stringify(stats.query_enviada));
 
     if (!peopleComLI.length) {
       if (lista) lista.innerHTML = '<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:6px;padding:16px;font-size:11px;color:var(--gold);">Nenhum lead retornou com LinkedIn URL. O Apollo retornou ' + people.length + ' leads mas sem URL. Tente filtrar por seniority C-level ou setor diferente.</div>';
