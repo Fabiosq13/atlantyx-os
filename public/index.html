@@ -9625,7 +9625,7 @@ async function enriquecerLeads() {
         return {
           apollo_id:         l.apollo_id,
           nome:              l.nome,
-          first_name:        l.first_name || nomeParts[0] || '',
+          first_name:        (l.first_name || nomeParts[0] || '').trim(),
           last_name:         l.last_name_full || nomeParts.slice(1).join(' ') || '',
           domain:            domain,
           organization_name: l.empresa || '',
@@ -9683,10 +9683,12 @@ async function enriquecerLeads() {
 
   filtrarLeadsCanal(liFiltroAtual);
   if (btn) { btn.disabled = false; btn.textContent = '◆ Enriquecer'; }
-  comLI = liLeadsCache.filter(function(l){return !!l.linkedin_url;}).length;
-  addLog('ok', '[Enrich] Concluído: ' + enriquecidos + ' novos LinkedIn | Total com LI: ' + comLI + '/' + liLeadsCache.length);
-  toast(enriquecidos + ' leads com LinkedIn desbloqueados!', enriquecidos > 0 ? 'success' : 'info');
-  mostrarModalEnrichInfo(comLI, liLeadsCache.filter(function(l){return !!l.email;}).length, 0);
+  // Recalcular após atualizar os leads
+  var comLIFinal = liLeadsCache.filter(function(l){return !!l.linkedin_url;}).length;
+  var comEMFinal = liLeadsCache.filter(function(l){return !!l.email;}).length;
+  addLog('ok', '[Enrich] Concluído: ' + enriquecidos + ' novos LinkedIn | LI total: ' + comLIFinal + ' | Email total: ' + comEMFinal + ' | Leads: ' + liLeadsCache.length);
+  toast(enriquecidos + ' leads com LinkedIn + Email desbloqueados!', enriquecidos > 0 ? 'success' : 'info');
+  mostrarModalEnrichInfo(comLIFinal, comEMFinal, 0);
   var urlsGeradas = 0;
 
   filtrarLeadsCanal(liFiltroAtual);
