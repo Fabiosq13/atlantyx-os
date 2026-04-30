@@ -9592,10 +9592,67 @@ function filtrarLeadsCanal(canal) {
 
 async function enriquecerLeads() {
   if (!liLeadsCache.length) { toast('Busque leads primeiro', 'error'); return; }
+  var btn = document.getElementById('btnEnriquecerLI');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enriquecendo...'; }
 
-  // NÃO gerar URLs falsas — só usar URLs reais do Apollo
+  var creds = getLICredenciais();
+  var enriquecidos = 0;
+  var comLI = 0;
+
+  addLog('info', '[Enrich] Buscando linkedin_url por Apollo ID para ' + liLeadsCache.length + ' leads...');
+
+  // Coletar todos os Apollo IDs de leads sem linkedin_url
+  var idsParaEnriquecer = liLeadsCache
+    .filter(function(l) { return !l.linkedin_url && !!l.apollo_id; })
+    .map(function(l) { return l.apollo_id; });
+
+  addLog('info', '[Enrich] Enviando ' + idsParaEnriquecer.length + ' IDs Apollo em lote para obter linkedin_url...');
+
+  if (!idsParaEnriquecer.length) {
+    addLog('warn', '[Enrich] Nenhum lead com Apollo ID para enriquecer');
+    if (btn) { btn.disabled = false; btn.textContent = '◆ Enriquecer'; }
+    mostrarModalEnrichInfo(0, 0, 0);
+    return;
+  }
+
+  try {
+    var r = await fetch('/api/apollo', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'enrich_batch',
+        api_key: creds.apolloKey,
+        person_ids: idsParaEnriquecer
+      })
+    });
+    var d = await r.json();
+    var enrichedPeople = d.people || [];
+    addLog('ok', '[Enrich Batch] Retornou ' + enrichedPeople.length + ' perfis | Com LinkedIn: ' + (d.com_linkedin||0));
+
+    // Mapear resultado de volta para os leads pelo apollo_id
+    enrichedPeople.forEach(function(p) {
+      var lead = liLeadsCache.find(function(l) { return l.apollo_id === p.id; });
+      if (!lead) return;
+      if (p.linkedin_url) {
+        lead.linkedin_url = p.linkedin_url;
+        enriquecidos++;
+        addLog('ok', '[Enrich] ' + (lead.nome||'Lead') + ' → ' + p.linkedin_url);
+      }
+      if (!lead.email && p.email) lead.email = p.email;
+      if (!lead.telefone && p.phone_numbers && p.phone_numbers[0])
+        lead.telefone = p.phone_numbers[0].sanitized_number || '';
+    });
+
+  } catch(e) {
+    addLog('err', '[Enrich] Erro batch: ' + e.message);
+  }
+
+  filtrarLeadsCanal(liFiltroAtual);
+  if (btn) { btn.disabled = false; btn.textContent = '◆ Enriquecer'; }
+  comLI = liLeadsCache.filter(function(l){return !!l.linkedin_url;}).length;
+  addLog('ok', '[Enrich] Concluído: ' + enriquecidos + ' novos LinkedIn | Total com LI: ' + comLI + '/' + liLeadsCache.length);
+  toast(enriquecidos + ' leads com LinkedIn desbloqueados!', enriquecidos > 0 ? 'success' : 'info');
+  mostrarModalEnrichInfo(comLI, liLeadsCache.filter(function(l){return !!l.email;}).length, 0);
   var urlsGeradas = 0;
-  // URLs sem LinkedIn real ficam vazias — serão filtradas
 
   filtrarLeadsCanal(liFiltroAtual);
   var comLI = liLeadsCache.filter(function(l){return !!l.linkedin_url;}).length;
