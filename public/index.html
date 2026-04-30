@@ -9621,63 +9621,64 @@ async function enriquecerLeads() {
       .map(function(l) {
         var rawSite = l.website_empresa || '';
         var domain = rawSite.replace(/https?:\/\//,'').split('/')[0].replace(/^www\./, '') || '';
+        var nomeParts = (l.nome||'').trim().split(' ');
         return {
           apollo_id:         l.apollo_id,
           nome:              l.nome,
-          first_name:        l.first_name || (l.nome||'').split(' ')[0] || '',
-          // Extrai prefixo do sobrenome obfuscado: "Br***m" → "Br"
-          last_name: (function() {
-            var ln = l.last_name_full || (l.nome||'').split(' ').slice(1).join(' ');
-            if (!ln) return '';
-            if (!ln.includes('*')) return ln;
-            var prefix = ln.split('*')[0];
-            return (prefix && prefix.length >= 2) ? prefix : '';
-          })(),
+          first_name:        l.first_name || nomeParts[0] || '',
+          last_name:         l.last_name_full || nomeParts.slice(1).join(' ') || '',
           domain:            domain,
           organization_name: l.empresa || '',
           website_empresa:   l.website_empresa || '',
         };
       });
 
+    var comDomain = leadsParaEnriquecer.filter(function(l){return !!l.domain;}).length;
     addLog('info', '[Enrich] Enviando ' + leadsParaEnriquecer.length + ' leads via nome+empresa...');
-    var comDomain = leadsParaEnriquecer.filter(function(l){ return !!l.domain; }).length;
     addLog('info', '[Enrich] Com domínio: ' + comDomain + ' | Sem domínio: ' + (leadsParaEnriquecer.length - comDomain));
-    if (leadsParaEnriquecer[0]) addLog('info', '[Enrich] Exemplo 1º lead: nome=' + leadsParaEnriquecer[0].first_name + ' ' + leadsParaEnriquecer[0].last_name + ' | domain=' + (leadsParaEnriquecer[0].domain||'VAZIO') + ' | org=' + leadsParaEnriquecer[0].organization_name);
+    if (leadsParaEnriquecer[0]) {
+      var ex = leadsParaEnriquecer[0];
+      addLog('info', '[Enrich] Exemplo 1º lead: nome=' + ex.nome + ' | domain=' + (ex.domain||'VAZIO') + ' | org=' + (ex.organization_name||'VAZIO'));
+    }
 
-    var r = await fetch('/api/apollo', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'enrich_batch',
-        api_key: creds.apolloKey,
-        leads: leadsParaEnriquecer
-      })
-    });
-    var d = await r.json();
-    var enrichedPeople = d.results || [];
-    addLog('ok', '[Enrich Batch] Processados: ' + enrichedPeople.length + ' | Com LinkedIn: ' + (d.com_linkedin||0) + ' | Com Email: ' + (d.com_email||0));
+    // Processar em lotes de 10 (timeout Vercel = 10s, 10 leads × ~0.5s = ~5s)
+    var BATCH_SIZE = 10;
+    var enrichedPeople = [];
+    var totalBatches = Math.ceil(leadsParaEnriquecer.length / BATCH_SIZE);
+    addLog('info', '[Enrich] Lotes: ' + totalBatches + ' × ' + BATCH_SIZE + ' leads');
 
-    // Mapear resultado de volta para os leads
-    addLog('info', '── Resultado do Enriquecimento ──');
-    enrichedPeople.forEach(function(p) {
-      addLog('info', '[' + (p.nome||'?') + '] LI: ' + (p.linkedin_url||'NULL') + ' | Email: ' + (p.email||'NULL'));
+    for (var bIdx = 0; bIdx < totalBatches; bIdx++) {
+      var batchLeads = leadsParaEnriquecer.slice(bIdx * BATCH_SIZE, (bIdx + 1) * BATCH_SIZE);
+      addLog('info', '[Enrich] Lote ' + (bIdx+1) + '/' + totalBatches + ' → enviando ' + batchLeads.length + ' leads');
 
-      var lead = liLeadsCache.find(function(l) { return l.apollo_id === p.apollo_id || l.nome === p.nome; });
-      if (!lead) return;
+      try {
+        var rb = await fetch('/api/apollo', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'enrich_batch', api_key: creds.apolloKey, leads: batchLeads })
+        });
+        var db = await rb.json();
+        var batchResults = db.results || [];
+        enrichedPeople = enrichedPeople.concat(batchResults);
+        addLog('ok', '[Enrich Lote ' + (bIdx+1) + '] Retornados: ' + batchResults.length + ' | LI: ' + (db.com_linkedin||0) + ' | Email: ' + (db.com_email||0));
 
-      if (p.linkedin_url) {
-        lead.linkedin_url = p.linkedin_url;
-        enriquecidos++;
-        addLog('ok', '[LINKEDIN OK] ' + lead.nome + ' → ' + p.linkedin_url);
+        // Log cada lead do lote com body enviado
+        batchResults.forEach(function(p) {
+          var sent = p.body_sent ? JSON.stringify(p.body_sent) : '{}';
+          addLog('info', '  [' + (p.nome||'?') + '] LI=' + (p.linkedin_url||'NULL') + ' | Email=' + (p.email||'NULL') + ' | POST=' + sent);
+        });
+
+      } catch(errB) {
+        addLog('err', '[Enrich Lote ' + (bIdx+1) + '] Erro: ' + errB.message);
       }
-      if (!lead.email && p.email) {
-        lead.email = p.email;
-        addLog('ok', '[EMAIL OK] ' + lead.nome + ' → ' + p.email);
-      }
-    });
-    addLog('info', '── Fim do Enriquecimento ──');
 
-  } catch(e) {
-    addLog('err', '[Enrich] Erro batch: ' + e.message);
+      // 500ms entre lotes
+      if (bIdx < totalBatches - 1) await new Promise(function(res2){ setTimeout(res2, 500); });
+    }
+
+    addLog('ok', '[Enrich] Total processados: ' + enrichedPeople.length + '/' + leadsParaEnriquecer.length);
+
+  } catch(errMain) {
+    addLog('err', '[Enrich] Erro geral: ' + errMain.message);
   }
 
   filtrarLeadsCanal(liFiltroAtual);
