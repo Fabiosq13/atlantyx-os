@@ -8770,13 +8770,15 @@ async function buscarLeadsApollo() {
     if (setor) body.q_organization_industries = [setor];
 
     // Chamar via proxy /api/apollo (evita CORS do browser)
+    addLog('info', '[STEP 3] Body da query Apollo: ' + JSON.stringify(body));
+    addLog('info', '[STEP 4] Chamando /api/apollo → api.apollo.io/v1/mixed_people/api_search ...');
     var r = await fetch('/api/apollo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'people_search', api_key: creds.apolloKey,
-        // Backend filtra somente linkedin_url != null
         ...body })
     });
+    addLog('info', '[STEP 5] Resposta HTTP: ' + r.status + ' ' + (r.ok ? 'OK' : 'ERRO'));
 
     if (!r.ok) {
       var errText = await r.text();
@@ -8836,6 +8838,7 @@ async function buscarLeadsApollo() {
     });
 
     liSelecionados = liLeadsCache.filter(function(l) { return l.selecionado; });
+    addLog('info', '[STEP 9] Leads normalizados: ' + liLeadsCache.length + ' | Exemplo apollo_id: ' + (liLeadsCache[0]?.apollo_id||'N/A') + ' | linkedin_url: ' + (liLeadsCache[0]?.linkedin_url||'NULL') + ' | linkedin_empresa: ' + (liLeadsCache[0]?.linkedin_empresa||'NULL'));
 
     if (titulo) titulo.textContent = 'Leads Apollo — ' + cargo + (setor?' | '+setor:'') + ' (' + liLeadsCache.length + ')';
     if (tag) { tag.textContent = liLeadsCache.length + ' leads'; tag.className = 'tag live'; }
