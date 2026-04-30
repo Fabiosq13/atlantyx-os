@@ -8808,6 +8808,8 @@ async function buscarLeadsApollo() {
         id:               'li_' + Date.now() + '_' + i,
         apollo_id:        p.id || '',
         nome:             (p.first_name || '') + ' ' + (p.last_name || p.last_name_obfuscated || ''),
+        first_name:       p.first_name || '',
+        last_name_full:   p.last_name || '',  // vazio no plano Basic
         cargo:            p.title || cargo,
         empresa:          p.organization?.name || p.company_name || '',
         setor:            p.organization?.industry || setor || '',
@@ -8815,7 +8817,7 @@ async function buscarLeadsApollo() {
         telefone:         p.phone_numbers?.[0]?.sanitized_number || p.mobile_phone || '',
         linkedin_url:     p.linkedin_url || '',
         linkedin_empresa: p.organization?.linkedin_url || '',
-        website_empresa:  p.organization?.website_url || '',
+        website_empresa:  p.organization?.website_url || p.organization?.primary_domain || '',
         faturamento:      p.organization?.annual_revenue_printed || '',
         funcionarios:     p.organization?.estimated_num_employees || '',
         cidade:           p.city || '',
@@ -9617,22 +9619,30 @@ async function enriquecerLeads() {
     var leadsParaEnriquecer = liLeadsCache
       .filter(function(l) { return !l.linkedin_url && l.nome; })
       .map(function(l) {
-        var nomeParts = (l.nome||'').trim().split(' ');
-        // Extrair domínio do website da empresa
-        var domain = (l.website_empresa||'').replace(/https?:\/\//,'').split('/')[0] || '';
+        var rawSite = l.website_empresa || '';
+        var domain = rawSite.replace(/https?:\/\//,'').split('/')[0].replace(/^www\./, '') || '';
         return {
           apollo_id:         l.apollo_id,
           nome:              l.nome,
-          first_name:        nomeParts[0] || '',
-          last_name:         nomeParts.slice(1).join(' ') || '',
+          first_name:        l.first_name || (l.nome||'').split(' ')[0] || '',
+          // Extrai prefixo do sobrenome obfuscado: "Br***m" → "Br"
+          last_name: (function() {
+            var ln = l.last_name_full || (l.nome||'').split(' ').slice(1).join(' ');
+            if (!ln) return '';
+            if (!ln.includes('*')) return ln;
+            var prefix = ln.split('*')[0];
+            return (prefix && prefix.length >= 2) ? prefix : '';
+          })(),
           domain:            domain,
           organization_name: l.empresa || '',
           website_empresa:   l.website_empresa || '',
         };
       });
 
-    addLog('info', '[Enrich] Enviando ' + leadsParaEnriquecer.length + ' leads via nome+domínio...');
-    addLog('info', '[Enrich] Exemplo: ' + JSON.stringify(leadsParaEnriquecer[0]||{}));
+    addLog('info', '[Enrich] Enviando ' + leadsParaEnriquecer.length + ' leads via nome+empresa...');
+    var comDomain = leadsParaEnriquecer.filter(function(l){ return !!l.domain; }).length;
+    addLog('info', '[Enrich] Com domínio: ' + comDomain + ' | Sem domínio: ' + (leadsParaEnriquecer.length - comDomain));
+    if (leadsParaEnriquecer[0]) addLog('info', '[Enrich] Exemplo 1º lead: nome=' + leadsParaEnriquecer[0].first_name + ' ' + leadsParaEnriquecer[0].last_name + ' | domain=' + (leadsParaEnriquecer[0].domain||'VAZIO') + ' | org=' + leadsParaEnriquecer[0].organization_name);
 
     var r = await fetch('/api/apollo', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
