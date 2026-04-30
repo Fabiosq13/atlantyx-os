@@ -1,4 +1,4 @@
-// api/apollo.js — Fix reveal_phone_number webhook error
+// api/apollo.js — Enriquecimento via first_name + last_name + domain + reveal_results
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -26,7 +26,6 @@ export default async function handler(req, res) {
         per_page: Math.min(params.per_page || 25, 100),
         contact_email_status: ['verified', 'likely_to_engage', 'unavailable'],
         reveal_personal_emails: true,
-        // reveal_phone_number REMOVIDO — requer webhook_url
       };
       if (params.person_titles?.length)             body.person_titles             = params.person_titles;
       if (params.q_organization_industries?.length) body.q_organization_industries = params.q_organization_industries;
@@ -45,61 +44,61 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, ...data });
     }
 
-    // ── ENRIQUECIMENTO EM LOTE via person_ids[] ───────────────────────────────
+    // ── ENRIQUECIMENTO EM LOTE — first_name + last_name + domain + reveal_results ──
     if (action === 'enrich_batch') {
-      const ids = params.person_ids;
-      if (!ids?.length) return res.status(400).json({ success: false, error: 'person_ids[] obrigatório' });
+      const leads = params.leads; // array de { first_name, last_name, domain, nome }
+      if (!leads?.length) return res.status(400).json({ success: false, error: 'leads[] obrigatório' });
 
-      console.log('[Apollo Enrich] IDs enviados:', ids.length, '| Primeiros:', ids.slice(0,3));
+      console.log('[Apollo Enrich] Enriquecendo', leads.length, 'leads via nome+domínio...');
 
-      const r = await fetch('https://api.apollo.io/v1/people/match', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          person_ids: ids,
-          reveal_personal_emails: true,
-          // reveal_phone_number REMOVIDO — requer webhook_url
-        }),
-      });
+      const results = [];
 
-      const text = await r.text();
-      console.log('[Apollo Enrich] Status:', r.status, '| Preview:', text.substring(0, 500));
+      for (const lead of leads) {
+        try {
+          // Extrair domínio do website se não vier explícito
+          const domain = lead.domain || lead.website_empresa?.replace(/https?:\/\//,'').split('/')[0] || '';
+          
+          const body = {
+            first_name:     lead.first_name || (lead.nome||'').split(' ')[0],
+            last_name:      lead.last_name  || (lead.nome||'').split(' ').slice(1).join(' '),
+            reveal_results: true,
+          };
+          if (domain) body.domain = domain;
+          if (lead.organization_name) body.organization_name = lead.organization_name;
 
-      if (!r.ok) return res.status(r.status).json({ success: false, error: 'Apollo enrich ' + r.status + ': ' + text.substring(0,300) });
+          console.log('[Apollo Enrich]', body.first_name, body.last_name, '| domain:', domain);
 
-      const data = JSON.parse(text);
+          const r = await fetch('https://api.apollo.io/v1/people/match', {
+            method: 'POST', headers,
+            body: JSON.stringify(body),
+          });
+          const data = await r.json();
+          const person = data.person;
 
-      // Resposta pode ser person (singular) ou people (plural)
-      const people = data.people || (data.person ? [data.person] : []);
-      const comLI  = people.filter(p => !!p.linkedin_url).length;
-      const comEM  = people.filter(p => !!p.email).length;
+          results.push({
+            apollo_id:    lead.apollo_id,
+            nome:         lead.nome,
+            linkedin_url: person?.linkedin_url || null,
+            email:        person?.email || null,
+            found:        !!person?.linkedin_url || !!person?.email,
+          });
 
-      console.log('[Apollo Enrich] Retornados:', people.length, '| LinkedIn:', comLI, '| Email:', comEM);
+          console.log('[Apollo Enrich]', lead.nome, '→ LI:', person?.linkedin_url||'NULL', '| Email:', person?.email||'NULL');
 
-      // Log primeiro resultado para debug
-      if (people[0]) {
-        console.log('[Apollo Enrich] 1º perfil:', JSON.stringify({
-          id: people[0].id,
-          linkedin_url: people[0].linkedin_url,
-          email: people[0].email,
-          revealed: people[0].revealed_for_current_team,
-        }));
+        } catch(e) {
+          console.error('[Apollo Enrich] Erro', lead.nome, ':', e.message);
+          results.push({ apollo_id: lead.apollo_id, nome: lead.nome, linkedin_url: null, email: null, error: e.message });
+        }
+
+        // Delay 300ms entre chamadas para respeitar rate limit
+        await new Promise(r => setTimeout(r, 300));
       }
 
-      return res.status(200).json({ success: true, people, com_linkedin: comLI, com_email: comEM });
-    }
+      const comLI = results.filter(r => !!r.linkedin_url).length;
+      const comEM = results.filter(r => !!r.email).length;
+      console.log('[Apollo Enrich] Concluído:', results.length, '| LI:', comLI, '| Email:', comEM);
 
-    // ── MATCH INDIVIDUAL ──────────────────────────────────────────────────────
-    if (action === 'person_match') {
-      const body = { reveal_personal_emails: true };
-      if (params.apollo_id)         body.person_ids        = [params.apollo_id];
-      if (params.linkedin_url)      body.linkedin_url      = params.linkedin_url;
-      if (params.name)              body.name              = params.name;
-      if (params.organization_name) body.organization_name = params.organization_name;
-
-      const r = await fetch('https://api.apollo.io/v1/people/match', { method: 'POST', headers, body: JSON.stringify(body) });
-      const data = await r.json();
-      return res.status(200).json({ success: true, ...data });
+      return res.status(200).json({ success: true, results, com_linkedin: comLI, com_email: comEM });
     }
 
     return res.status(400).json({ success: false, error: 'Ação inválida: ' + action });
