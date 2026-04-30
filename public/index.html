@@ -8735,139 +8735,127 @@ function getLICredenciais() {
 
 // ── BUSCA APOLLO ──────────────────────────────────────────────────────────────
 async function buscarLeadsApollo() {
-  var creds = getLICredenciais();
-  // API Key vem do campo ou de APOLLO_API_KEY no Vercel
-
-    var cargoSel = document.getElementById('liCargo')?.value || '';
-  var cargo = cargoSel === 'custom'
-    ? (document.getElementById('liCargoCustom')?.value?.trim() || '')
-    : (cargoSel === 'todos' || cargoSel === '' ? '' : cargoSel);
-    var setor = document.getElementById('liSetor')?.value || '';
-  var pais  = document.getElementById('liPais')?.value  || 'Brazil';
-  var qtd   = parseInt(document.getElementById('liQtd')?.value || '25');
-
+  var btn    = document.querySelector('button[onclick*="buscarLeadsApollo"]');
+  var creds  = getLICredenciais();
   var lista  = document.getElementById('liLeadsLista');
   var result = document.getElementById('liLeadsResultado');
   var tag    = document.getElementById('liLeadsTag');
   var titulo = document.getElementById('liLeadsTitulo');
-  var btn    = document.querySelector('#formLinkedin button[onclick*="buscarLeadsApollo"]');
+
+  // Ler filtros da tela
+  var cargoSel = document.getElementById('liCargo')?.value || '';
+  var cargo = (cargoSel === 'custom')
+    ? (document.getElementById('liCargoCustom')?.value?.trim() || '')
+    : (cargoSel === 'todos' || cargoSel === '' ? '' : cargoSel);
+  var setor = document.getElementById('liSetor')?.value || '';
+  var qtd   = parseInt(document.getElementById('liQtd')?.value || '25');
 
   if (result) result.style.display = 'block';
   if (lista)  lista.innerHTML = '<div style="color:var(--blue);font-size:11px;padding:20px;text-align:center;">Buscando no Apollo.io...</div>';
-  addLog('info', '[Apollo] Buscando: ' + cargo + ' | ' + (setor||'todos setores') + ' | ' + pais);
+
+  // LOG PASSO A PASSO
+  addLog('info', '━━━ APOLLO BUSCA INICIADA ━━━');
+  addLog('info', '[STEP 1] Filtros: cargo="' + (cargo||'(todos)') + '" | setor="' + (setor||'(todos)') + '" | qtd=' + qtd);
+  addLog('info', '[STEP 2] API Key campo: ' + (creds.apolloKey ? creds.apolloKey.substring(0,8)+'...' : 'VAZIA — usa Vercel env var'));
+
+  // Montar body SEM organization_locations, SEM api_key no body
+  var body = { page: 1, per_page: qtd };
+  if (cargo) body.person_titles = [cargo];
+  if (setor) body.q_organization_industries = [setor];
+
+  addLog('info', '[STEP 3] Body enviado ao proxy: ' + JSON.stringify(body));
+  addLog('info', '[STEP 4] POST /api/apollo → mixed_people/api_search ...');
 
   try {
-    // Apollo.io People Search API
-    var body = {
-      api_key: creds.apolloKey,
-      page: 1,
-      per_page: qtd,
-      person_titles: [cargo],
-      contact_email_status: ['verified', 'unverified'],
-      organization_locations: [pais],
-    };
-    if (setor) body.organization_industry_tag_ids_not_included = [];
-    if (setor) body.q_organization_industries = [setor];
-
-    // Chamar via proxy /api/apollo (evita CORS do browser)
-    addLog('info', '[STEP 3] Body da query Apollo: ' + JSON.stringify(body));
-    addLog('info', '[STEP 4] Chamando /api/apollo → api.apollo.io/v1/mixed_people/api_search ...');
     var r = await fetch('/api/apollo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'people_search', api_key: creds.apolloKey,
-        ...body })
+      body: JSON.stringify({ action: 'people_search', api_key: creds.apolloKey, ...body })
     });
-    addLog('info', '[STEP 5] Resposta HTTP: ' + r.status + ' ' + (r.ok ? 'OK' : 'ERRO'));
+
+    addLog('info', '[STEP 5] HTTP Status: ' + r.status + ' ' + (r.ok ? 'OK' : 'ERRO'));
 
     if (!r.ok) {
       var errText = await r.text();
-      throw new Error('Apollo HTTP ' + r.status + ': ' + errText.substring(0,200));
+      addLog('err', '[STEP 5 ERRO] ' + errText.substring(0, 200));
+      if (lista) lista.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Erro Apollo: ' + errText.substring(0,200) + '</div>';
+      return;
     }
 
     var d = await r.json();
-    var people = d.people || d.contacts || [];
+    var people = d.people || [];
+
+    addLog('info', '[STEP 6] total_entries Apollo: ' + (d.pagination?.total_entries || d.total_entries || '?') + ' | retornados: ' + people.length);
+    addLog('info', '[STEP 7] _stats: ' + JSON.stringify(d._stats || {}));
+
+    if (people.length > 0) {
+      var p0 = people[0];
+      addLog('info', '[STEP 8] Campos 1º lead: ' + Object.keys(p0).join(', '));
+      addLog('info', '[STEP 8b] 1º lead → nome: ' + (p0.first_name||'?') + ' ' + (p0.last_name_obfuscated||p0.last_name||'?') + ' | linkedin_url: ' + (p0.linkedin_url||'NULL') + ' | email: ' + (p0.email||'NULL') + ' | id: ' + (p0.id||'NULL'));
+      addLog('info', '[STEP 8c] org.linkedin_url: ' + (p0.organization?.linkedin_url||'NULL') + ' | org.name: ' + (p0.organization?.name||'NULL'));
+    }
 
     if (!people.length) {
-      if (lista) lista.innerHTML = '<div style="color:var(--gold);font-size:11px;padding:12px;">Nenhum lead encontrado. Tente ajustar os filtros.</div>';
-      addLog('warn', '[Apollo] Sem resultados para: ' + cargo);
+      addLog('warn', '[STEP 9] Apollo retornou 0 leads. Tente outros filtros.');
+      if (lista) lista.innerHTML = '<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:6px;padding:16px;font-size:11px;color:var(--gold);">Nenhum lead encontrado. Tente ajustar cargo ou setor.</div>';
+      if (tag) tag.textContent = '0 leads';
       return;
     }
 
-    // Filtrar SOMENTE leads com linkedin_url real
-    var peopleComLI = people.filter(function(p) {
-      return !!(p.linkedin_url || p.linkedin_profile_url);
-    });
-    var stats = d._stats || {};
-    addLog('info', '[Apollo DEBUG] Total disponível no Apollo: ' + (stats.total_disponivel||'?'));
-    addLog('info', '[Apollo DEBUG] Buscados: ' + (stats.total_buscados||0) + ' | Com LinkedIn: ' + (stats.com_linkedin||0) + ' | Sem LinkedIn: ' + (stats.sem_linkedin||0));
-    if (stats.query_enviada) addLog('info', '[Apollo DEBUG] Query: ' + JSON.stringify(stats.query_enviada));
-
-    if (!peopleComLI.length) {
-      if (lista) lista.innerHTML = '<div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:6px;padding:16px;font-size:11px;color:var(--gold);">Nenhum lead retornou com LinkedIn URL. O Apollo retornou ' + people.length + ' leads mas sem URL. Tente filtrar por seniority C-level ou setor diferente.</div>';
-      if (tag) { tag.textContent = '0 com LinkedIn'; tag.className = 'tag hot'; }
-      if (btn) { btn.disabled = false; btn.textContent = 'Buscar no Apollo.io'; }
-      return;
-    }
-
-    // Normalizar leads (somente os que têm linkedin_url)
-    liLeadsCache = peopleComLI.map(function(p, i) {
+    // Normalizar leads
+    liLeadsCache = people.map(function(p, i) {
       return {
-        id:             'li_' + Date.now() + '_' + i,
-        nome:           (p.first_name || '') + ' ' + (p.last_name || p.last_name_obfuscated || ''),
-        cargo:          p.title || cargo,
-        empresa:        p.organization?.name || p.company_name || '',
-        setor:          p.organization?.industry || setor || '',
-        email:          p.email || p.work_email || p.personal_email || '',
-        telefone:       p.phone_numbers?.[0]?.sanitized_number || p.phone_numbers?.[0]?.raw_number || p.mobile_phone || p.work_direct_phone || p.sanitized_phone || '',
-        linkedin_url:   p.linkedin_url || p.linkedin_profile_url || '',  // LinkedIn da PESSOA
-        linkedin_empresa: (p.organization && p.organization.linkedin_url) || '',  // LinkedIn da EMPRESA
-        website_empresa:  (p.organization && p.organization.website_url) || '',
-        linkedin_id:    p.linkedin_uid || '',
-        faturamento:    p.organization?.annual_revenue_printed || '',
-        funcionarios:   p.organization?.estimated_num_employees || '',
-        cidade:         p.city || '',
-        pais:           p.country || pais,
-        score:          calcScoreApollo(p),
-        selecionado:    true,
-        status_li:      'pendente',  // pendente / enviado / conectado / erro
-        status_wa:      p.mobile_phone ? 'disponivel' : 'sem_tel',
-        status_email:   p.email ? 'disponivel' : 'sem_email',
-        status_crm:     'novo',
+        id:               'li_' + Date.now() + '_' + i,
+        apollo_id:        p.id || '',
+        nome:             (p.first_name || '') + ' ' + (p.last_name || p.last_name_obfuscated || ''),
+        cargo:            p.title || cargo,
+        empresa:          p.organization?.name || p.company_name || '',
+        setor:            p.organization?.industry || setor || '',
+        email:            p.email || p.work_email || p.personal_email || '',
+        telefone:         p.phone_numbers?.[0]?.sanitized_number || p.mobile_phone || '',
+        linkedin_url:     p.linkedin_url || '',
+        linkedin_empresa: p.organization?.linkedin_url || '',
+        website_empresa:  p.organization?.website_url || '',
+        faturamento:      p.organization?.annual_revenue_printed || '',
+        funcionarios:     p.organization?.estimated_num_employees || '',
+        cidade:           p.city || '',
+        pais:             p.country || '',
+        score:            calcScoreApollo(p),
+        selecionado:      true,
+        status_li:        'pendente',
+        status_wa:        p.mobile_phone ? 'disponivel' : 'sem_tel',
+        status_email:     p.email ? 'disponivel' : 'sem_email',
+        status_crm:       'novo',
       };
     });
 
     liSelecionados = liLeadsCache.filter(function(l) { return l.selecionado; });
-    addLog('info', '[STEP 9] Leads normalizados: ' + liLeadsCache.length + ' | Exemplo apollo_id: ' + (liLeadsCache[0]?.apollo_id||'N/A') + ' | linkedin_url: ' + (liLeadsCache[0]?.linkedin_url||'NULL') + ' | linkedin_empresa: ' + (liLeadsCache[0]?.linkedin_empresa||'NULL'));
 
-    if (titulo) titulo.textContent = 'Leads Apollo — ' + cargo + (setor?' | '+setor:'') + ' (' + liLeadsCache.length + ')';
+    var comEM    = liLeadsCache.filter(function(l){return !!l.email;}).length;
+    var comWA    = liLeadsCache.filter(function(l){return !!l.telefone;}).length;
+    var comLIemp = liLeadsCache.filter(function(l){return !!l.linkedin_empresa;}).length;
+    var comLI    = liLeadsCache.filter(function(l){return !!l.linkedin_url;}).length;
+
+    addLog('ok', '[STEP 9] Normalizados: ' + liLeadsCache.length + ' leads | LI pessoal: ' + comLI + ' | LI empresa: ' + comLIemp + ' | Email: ' + comEM + ' | WA: ' + comWA);
+    addLog('info', '[STEP 10] apollo_id[0]: ' + (liLeadsCache[0]?.apollo_id||'N/A'));
+
+    if (titulo) titulo.textContent = 'Leads Apollo (' + liLeadsCache.length + ')';
     if (tag) { tag.textContent = liLeadsCache.length + ' leads'; tag.className = 'tag live'; }
-    renderLeadsLI(lista, liLeadsCache);
 
-    var comLI = liLeadsCache.filter(function(l){return !!l.linkedin_url;}).length;
-    var comEM = liLeadsCache.filter(function(l){return !!l.email;}).length;
-    var comWA = liLeadsCache.filter(function(l){return !!l.telefone;}).length;
     var countEl = document.getElementById('liFilterCount');
-    if (countEl) countEl.textContent = liLeadsCache.length + ' total | LI:' + comLI + ' | Email:' + comEM + ' | WA:' + comWA;
+    if (countEl) countEl.textContent = liLeadsCache.length + ' leads | Email: ' + comEM + ' | LI Empresa: ' + comLIemp + ' | WA: ' + comWA;
+
     liFiltroAtual = 'todos';
     var btnT = document.getElementById('filtLI_todos');
     if (btnT) { btnT.style.borderColor='var(--blue)'; btnT.style.color='var(--blue)'; btnT.style.background='rgba(79,124,255,.12)'; }
 
-    // Mostrar debug info do Apollo
-    if (d._debug) {
-      addLog('info', '[Apollo DEBUG] Campos disponíveis: ' + (d._debug.campos_disponiveis||'').substring(0,200));
-    }
-    addLog('ok', '[Apollo] ' + liLeadsCache.length + ' leads | LI:' + comLI + ' Email:' + comEM + ' WA:' + comWA);
-
-    if (comLI === 0) {
-      toast(liLeadsCache.length + ' leads com LinkedIn encontrados!', 'success');
-    } else {
-      toast(liLeadsCache.length + ' leads | ' + comLI + ' com LinkedIn · ' + comEM + ' com e-mail · ' + comWA + ' WhatsApp', 'success');
-    }
+    renderLeadsLI(lista, liLeadsCache);
+    addLog('ok', '━━━ BUSCA CONCLUÍDA: ' + liLeadsCache.length + ' leads ━━━');
+    toast(liLeadsCache.length + ' leads encontrados!', 'success');
 
   } catch(e) {
-    if (lista) lista.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Erro Apollo: ' + e.message + '</div>';
-    addLog('err', '[Apollo] ' + e.message);
+    addLog('err', '[ERRO EXCEÇÃO] ' + e.message);
+    if (lista) lista.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Erro: ' + e.message + '</div>';
   }
 }
 
