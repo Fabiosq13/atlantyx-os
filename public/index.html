@@ -8750,6 +8750,7 @@ async function buscarLeadsApollo() {
   var result = document.getElementById('liLeadsResultado');
   var tag    = document.getElementById('liLeadsTag');
   var titulo = document.getElementById('liLeadsTitulo');
+  var btn    = document.querySelector('#formLinkedin button[onclick*="buscarLeadsApollo"]');
 
   if (result) result.style.display = 'block';
   if (lista)  lista.innerHTML = '<div style="color:var(--blue);font-size:11px;padding:20px;text-align:center;">Buscando no Apollo.io...</div>';
@@ -9591,8 +9592,8 @@ function filtrarLeadsCanal(canal) {
 }
 
 async function enriquecerLeads() {
-  if (!liLeadsCache.length) { toast('Busque leads primeiro', 'error'); return; }
   var btn = document.getElementById('btnEnriquecerLI');
+  if (!liLeadsCache.length) { toast('Busque leads primeiro', 'error'); return; }
   if (btn) { btn.disabled = true; btn.textContent = 'Enriquecendo...'; }
 
   var creds = getLICredenciais();
