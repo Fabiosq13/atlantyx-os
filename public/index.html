@@ -9657,11 +9657,18 @@ async function enriquecerLeads() {
           body: JSON.stringify({ action: 'enrich_batch', api_key: creds.apolloKey, leads: batchLeads })
         });
         var db = await rb.json();
+
+        // DEBUG: ver estrutura exata da resposta
+        addLog('info', '[DEBUG RESPONSE] keys: ' + Object.keys(db).join(', '));
+        addLog('info', '[DEBUG RESPONSE] results.length=' + (db.results?.length||0) + ' | com_linkedin=' + (db.com_linkedin||0));
+        if (db.results && db.results[0]) {
+          addLog('info', '[DEBUG RESULT[0]] ' + JSON.stringify(db.results[0]));
+        }
+
         var batchResults = db.results || [];
         enrichedPeople = enrichedPeople.concat(batchResults);
         addLog('ok', '[Enrich Lote ' + (bIdx+1) + '] Retornados: ' + batchResults.length + ' | LI: ' + (db.com_linkedin||0) + ' | Email: ' + (db.com_email||0));
 
-        // Log cada lead do lote com body enviado
         batchResults.forEach(function(p) {
           var sent = p.body_sent ? JSON.stringify(p.body_sent) : '{}';
           addLog('info', '  [' + (p.nome||'?') + '] LI=' + (p.linkedin_url||'NULL') + ' | Email=' + (p.email||'NULL') + ' | POST=' + sent);
