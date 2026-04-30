@@ -9684,6 +9684,34 @@ async function enriquecerLeads() {
 
     addLog('ok', '[Enrich] Total processados: ' + enrichedPeople.length + '/' + leadsParaEnriquecer.length);
 
+    // ── MAPEAR DADOS DE VOLTA PARA liLeadsCache ──────────────────────────────
+    addLog('info', '[MAP] Mapeando ' + enrichedPeople.length + ' resultados para ' + liLeadsCache.length + ' leads do cache...');
+    enrichedPeople.forEach(function(p) {
+      if (!p.linkedin_url && !p.email) return; // nada para atualizar
+
+      // Buscar pelo apollo_id (mais preciso)
+      var lead = liLeadsCache.find(function(l) { return l.apollo_id === p.apollo_id; });
+
+      // Fallback: buscar pelo nome
+      if (!lead) lead = liLeadsCache.find(function(l) { return l.nome === p.nome; });
+
+      if (!lead) {
+        addLog('warn', '[MAP] Não encontrou: ' + p.nome + ' | apollo_id: ' + p.apollo_id);
+        return;
+      }
+
+      if (p.linkedin_url && !lead.linkedin_url) {
+        lead.linkedin_url = p.linkedin_url;
+        enriquecidos++;
+        addLog('ok', '[LINKEDIN] ' + lead.nome + ' → ' + p.linkedin_url);
+      }
+      if (p.email && !lead.email) {
+        lead.email = p.email;
+        addLog('ok', '[EMAIL] ' + lead.nome + ' → ' + p.email);
+      }
+    });
+    addLog('info', '[MAP] Concluído: ' + enriquecidos + ' leads atualizados');
+
   } catch(errMain) {
     addLog('err', '[Enrich] Erro geral: ' + errMain.message);
   }
