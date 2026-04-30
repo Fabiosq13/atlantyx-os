@@ -9022,12 +9022,17 @@ function renderLeadsLI(container, leads) {
     // URLs LinkedIn explícitas
     var urlBox = document.createElement('div');
     urlBox.style.cssText = 'font-size:9px;margin-bottom:6px;background:var(--bg3);padding:6px 8px;border-radius:5px;border:1px solid var(--bd);display:flex;flex-direction:column;gap:3px;';
-    urlBox.innerHTML = '<div><span style="color:var(--t2);">Perfil pessoal: </span>'
+    urlBox.innerHTML = '<div><span style="color:var(--t2);">LinkedIn: </span>'
       + (lead.linkedin_url
         ? '<a href="' + lead.linkedin_url + '" target="_blank" style="color:#0a66c2;">' + lead.linkedin_url + '</a>'
         : '<span style="color:rgba(255,77,109,.7);">não retornado pelo Apollo</span>')
       + '</div>'
-      + (lead.linkedin_empresa ? '<div><span style="color:var(--t2);">Empresa: </span><a href="' + lead.linkedin_empresa + '" target="_blank" style="color:#0a66c2;">' + lead.linkedin_empresa + '</a></div>' : '')
+      + '<div><span style="color:var(--t2);">E-mail: </span>'
+      + (lead.email
+        ? '<span style="color:var(--blue);">' + lead.email + '</span>'
+        : '<span style="color:rgba(255,77,109,.7);">não retornado pelo Apollo</span>')
+      + '</div>'
+      + (lead.linkedin_empresa ? '<div><span style="color:var(--t2);">LI Empresa: </span><a href="' + lead.linkedin_empresa + '" target="_blank" style="color:#0a66c2;">' + lead.linkedin_empresa + '</a></div>' : '')
       + (lead.website_empresa  ? '<div><span style="color:var(--t2);">Site: </span><a href="' + lead.website_empresa  + '" target="_blank" style="color:var(--blue);">' + lead.website_empresa  + '</a></div>' : '');
     card.appendChild(urlBox);
 
@@ -9621,18 +9626,38 @@ async function enriquecerLeads() {
     addLog('ok', '[Enrich Batch] Retornou ' + enrichedPeople.length + ' perfis | Com LinkedIn: ' + (d.com_linkedin||0));
 
     // Mapear resultado de volta para os leads pelo apollo_id
+    addLog('info', '── Resultado do Enriquecimento por ID ──');
     enrichedPeople.forEach(function(p) {
+      // Log detalhado de cada perfil retornado
+      addLog('info', '[ID: ' + (p.id||'?') + '] linkedin_url: ' + (p.linkedin_url||'NULL') + ' | email: ' + (p.email||'NULL') + ' | revealed: ' + (p.revealed_for_current_team||false));
+
       var lead = liLeadsCache.find(function(l) { return l.apollo_id === p.id; });
-      if (!lead) return;
+      if (!lead) {
+        addLog('warn', '[ID: ' + (p.id||'?') + '] Não encontrado nos leads locais');
+        return;
+      }
+      addLog('info', '[ID: ' + p.id + '] Lead: ' + lead.nome + ' | ' + lead.empresa);
       if (p.linkedin_url) {
         lead.linkedin_url = p.linkedin_url;
         enriquecidos++;
-        addLog('ok', '[Enrich] ' + (lead.nome||'Lead') + ' → ' + p.linkedin_url);
+        addLog('ok', '[LINKEDIN] ' + lead.nome + ' → ' + p.linkedin_url);
+      } else {
+        addLog('warn', '[LINKEDIN] ' + lead.nome + ' (ID:' + p.id + ') → NULL — Apollo não tem este dado');
       }
-      if (!lead.email && p.email) lead.email = p.email;
-      if (!lead.telefone && p.phone_numbers && p.phone_numbers[0])
-        lead.telefone = p.phone_numbers[0].sanitized_number || '';
+      if (!lead.email && p.email) {
+        lead.email = p.email;
+        addLog('ok', '[EMAIL] ' + lead.nome + ' → ' + p.email);
+      }
     });
+
+    // Log IDs que NÃO vieram na resposta
+    var idsRetornados = enrichedPeople.map(function(p) { return p.id; });
+    liLeadsCache.forEach(function(l) {
+      if (l.apollo_id && idsRetornados.indexOf(l.apollo_id) === -1) {
+        addLog('warn', '[AUSENTE] ' + l.nome + ' (ID:' + l.apollo_id + ') não retornou na resposta do Apollo');
+      }
+    });
+    addLog('info', '── Fim do Enriquecimento ──');
 
   } catch(e) {
     addLog('err', '[Enrich] Erro batch: ' + e.message);
