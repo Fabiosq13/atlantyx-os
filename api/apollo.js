@@ -1,4 +1,4 @@
-// api/apollo.js — Enriquecimento via person_ids[] (batch)
+// api/apollo.js — Defensivo contra campos inválidos
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -18,9 +18,8 @@ export default async function handler(req, res) {
   };
 
   try {
-
-    // ── BUSCA PRINCIPAL ───────────────────────────────────────────────────────
     if (action === 'people_search') {
+
       const body = {
         page:     params.page     || 1,
         per_page: Math.min(params.per_page || 25, 100),
@@ -28,58 +27,64 @@ export default async function handler(req, res) {
         reveal_personal_emails: true,
         reveal_phone_number:    true,
       };
-      if (params.person_titles?.length)             body.person_titles             = params.person_titles;
-      if (params.q_organization_industries?.length) body.q_organization_industries = params.q_organization_industries;
+
+      // person_titles — só adiciona se tiver valor real (não vazio, não [""])
+      const titles = (params.person_titles || []).filter(t => t && t.trim());
+      if (titles.length) body.person_titles = titles;
+
+      // setor — só adiciona se tiver valor real
+      const industries = (params.q_organization_industries || []).filter(i => i && i.trim());
+      if (industries.length) body.q_organization_industries = industries;
+
+      // NÃO usar organization_locations nem person_locations — causam 0 resultados no api_search
+
+      console.log('[Apollo] Query limpa:', JSON.stringify(body));
 
       const r = await fetch('https://api.apollo.io/v1/mixed_people/api_search', {
         method: 'POST', headers, body: JSON.stringify(body)
       });
+
       const text = await r.text();
-      if (!r.ok) return res.status(r.status).json({ success: false, error: 'Apollo ' + r.status + ': ' + text.substring(0,300) });
+      console.log('[Apollo] HTTP:', r.status, '| Preview:', text.substring(0, 400));
+
+      if (!r.ok) return res.status(r.status).json({ success: false, error: 'Apollo ' + r.status + ': ' + text.substring(0, 300) });
 
       const data = JSON.parse(text);
       const total = data.people?.length || 0;
       const comLI = data.people?.filter(p => !!p.linkedin_url).length || 0;
-      data._stats = { total_buscados: total, com_li_pessoa: comLI };
-      console.log('[Apollo] Busca:', total, 'leads | LI:', comLI);
+      const comLIemp = data.people?.filter(p => !!p.organization?.linkedin_url).length || 0;
+
+      data._stats = {
+        total_buscados:  total,
+        com_li_pessoa:   comLI,
+        com_li_empresa:  comLIemp,
+        total_disponivel: data.pagination?.total_entries || '?',
+        query_enviada:   body,
+      };
+
+      console.log('[Apollo] Total:', total, '| LI pessoal:', comLI, '| LI empresa:', comLIemp);
       return res.status(200).json({ success: true, ...data });
-    }
 
-    // ── ENRIQUECIMENTO EM LOTE via person_ids[] ───────────────────────────────
-    // Envia IDs do people_search → Apollo retorna perfis completos com linkedin_url
-    if (action === 'enrich_batch') {
-      const ids = params.person_ids; // array de IDs Apollo
+    } else if (action === 'enrich_batch') {
+      const ids = params.person_ids;
       if (!ids?.length) return res.status(400).json({ success: false, error: 'person_ids[] obrigatório' });
-
-      console.log('[Apollo Enrich Batch] IDs:', ids.length, ids.slice(0,3));
+      console.log('[Apollo Enrich Batch] IDs:', ids.length);
 
       const r = await fetch('https://api.apollo.io/v1/people/match', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          person_ids:            ids,
-          reveal_personal_emails: true,
-          reveal_phone_number:    true,
-        }),
+        method: 'POST', headers,
+        body: JSON.stringify({ person_ids: ids, reveal_personal_emails: true, reveal_phone_number: true }),
       });
-
       const text = await r.text();
-      console.log('[Apollo Enrich Batch] Status:', r.status, '| Preview:', text.substring(0, 300));
-
-      if (!r.ok) return res.status(r.status).json({ success: false, error: 'Apollo enrich ' + r.status + ': ' + text.substring(0,300) });
+      console.log('[Apollo Enrich] Status:', r.status, '| Preview:', text.substring(0, 300));
+      if (!r.ok) return res.status(r.status).json({ success: false, error: 'Enrich ' + r.status + ': ' + text.substring(0,200) });
 
       const data = JSON.parse(text);
-
-      // Normalizar resposta — pode vir como person ou people
       const people = data.people || (data.person ? [data.person] : []);
-      const comLI  = people.filter(p => !!p.linkedin_url).length;
-
-      console.log('[Apollo Enrich Batch] Retornados:', people.length, '| Com LinkedIn:', comLI);
+      const comLI = people.filter(p => !!p.linkedin_url).length;
+      console.log('[Apollo Enrich] Retornados:', people.length, '| Com LI:', comLI);
       return res.status(200).json({ success: true, people, com_linkedin: comLI });
-    }
 
-    // ── MATCH INDIVIDUAL ──────────────────────────────────────────────────────
-    if (action === 'person_match') {
+    } else if (action === 'person_match') {
       const body = { reveal_personal_emails: true, reveal_phone_number: true };
       if (params.apollo_id)         body.person_ids        = [params.apollo_id];
       if (params.linkedin_url)      body.linkedin_url      = params.linkedin_url;
@@ -88,12 +93,11 @@ export default async function handler(req, res) {
 
       const r = await fetch('https://api.apollo.io/v1/people/match', { method: 'POST', headers, body: JSON.stringify(body) });
       const data = await r.json();
-      console.log('[Apollo Match] linkedin_url:', data.person?.linkedin_url || 'null');
       return res.status(200).json({ success: true, ...data });
+
+    } else {
+      return res.status(400).json({ success: false, error: 'Ação inválida: ' + action });
     }
-
-    return res.status(400).json({ success: false, error: 'Ação inválida: ' + action });
-
   } catch (e) {
     console.error('[Apollo]', e.message);
     return res.status(500).json({ success: false, error: e.message });
