@@ -1,4 +1,4 @@
-// api/apollo.js — Enriquecimento via nome + domain/org_name + reveal_results
+// api/apollo.js — Fix timeout: processa em lotes de 10 sem delay
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -40,77 +40,83 @@ export default async function handler(req, res) {
       const total = data.people?.length || 0;
       const comLI = data.people?.filter(p => !!p.linkedin_url).length || 0;
       data._stats = { total_buscados: total, com_li_pessoa: comLI };
-      console.log('[Apollo] Busca:', total, 'leads | LI:', comLI);
+      console.log('[Apollo] Busca:', total, '| LI:', comLI);
       return res.status(200).json({ success: true, ...data });
     }
 
-    // ── ENRIQUECIMENTO EM LOTE ────────────────────────────────────────────────
+    // ── ENRIQUECIMENTO — máx 10 leads por chamada (evita timeout Vercel 10s) ──
     if (action === 'enrich_batch') {
       const leads = params.leads;
       if (!leads?.length) return res.status(400).json({ success: false, error: 'leads[] obrigatório' });
 
-      console.log('[Apollo Enrich] Processando', leads.length, 'leads...');
+      // Limitar a 10 por chamada — frontend chama em múltiplos batches
+      const batch = leads.slice(0, 10);
+      console.log('[Apollo Enrich] Batch:', batch.length, 'de', leads.length, 'leads');
+
       const results = [];
 
-      for (const lead of leads) {
+      for (const lead of batch) {
+        const firstName = lead.first_name || (lead.nome||'').split(' ')[0] || '';
+        const lastName  = lead.last_name  || '';
+        const domain    = lead.domain || '';
+        const orgName   = lead.organization_name || '';
+
+        const body = {
+          first_name:     firstName,
+          reveal_results: true,
+        };
+
+        // Sobrenome — usa prefixo se obfuscado
+        if (lastName && !lastName.includes('*')) {
+          body.last_name = lastName;
+        } else if (lastName && lastName.includes('*')) {
+          const prefix = lastName.split('*')[0];
+          if (prefix && prefix.length >= 2) body.last_name = prefix;
+        }
+
+        // Domínio > organization_name
+        if (domain)   body.domain            = domain;
+        else if (orgName) body.organization_name = orgName;
+
+        console.log('[Apollo Enrich] POST →', JSON.stringify(body));
+
         try {
-          const firstName = lead.first_name || (lead.nome||'').split(' ')[0] || '';
-          const lastName  = lead.last_name  || (lead.nome||'').split(' ').slice(1).join(' ') || '';
-          const domain    = lead.domain || '';
-          const orgName   = lead.organization_name || '';
-
-          // Montar body com o que temos
-          const body = {
-            first_name:     firstName,
-            reveal_results: true,
-          };
-          // Usa prefixo do sobrenome antes dos *** (ex: "Br***m" → "Br")
-          // Apollo aceita prefixo parcial para matching
-          if (lastName) {
-            if (!lastName.includes('*')) {
-              body.last_name = lastName; // sobrenome completo
-            } else {
-              const prefix = lastName.split('*')[0]; // "Br" de "Br***m"
-              if (prefix && prefix.length >= 2) body.last_name = prefix;
-            }
-          }
-
-          // Prioridade: domain > organization_name
-          if (domain)  body.domain            = domain;
-          if (orgName) body.organization_name  = orgName;
-
-          console.log('[Apollo Enrich]', firstName, lastName, '| domain:', domain||'—', '| org:', orgName||'—');
-
           const r = await fetch('https://api.apollo.io/v1/people/match', {
             method: 'POST', headers, body: JSON.stringify(body),
           });
           const data = await r.json();
           const person = data.person;
 
-          const result = {
+          console.log('[Apollo Enrich] ←', lead.nome, '| HTTP:', r.status, '| LI:', person?.linkedin_url||'NULL', '| Email:', person?.email||'NULL', '| revealed:', person?.revealed_for_current_team);
+
+          results.push({
             apollo_id:    lead.apollo_id,
             nome:         lead.nome,
             linkedin_url: person?.linkedin_url || null,
             email:        person?.email || null,
-            found:        !!(person?.linkedin_url || person?.email),
-          };
-          results.push(result);
-
-          console.log('[Apollo Enrich]', lead.nome, '→ LI:', person?.linkedin_url||'NULL', '| Email:', person?.email||'NULL');
+            revealed:     person?.revealed_for_current_team || false,
+            body_sent:    body,  // para debug — ver exatamente o que foi enviado
+          });
 
         } catch(e) {
-          console.error('[Apollo Enrich] Erro', lead.nome, ':', e.message);
-          results.push({ apollo_id: lead.apollo_id, nome: lead.nome, linkedin_url: null, email: null, error: e.message });
+          console.error('[Apollo Enrich] ERRO', lead.nome, ':', e.message);
+          results.push({ apollo_id: lead.apollo_id, nome: lead.nome, error: e.message });
         }
-
-        await new Promise(r => setTimeout(r, 300));
+        // SEM delay — Vercel timeout é 10s, não podemos gastar tempo
       }
 
       const comLI = results.filter(r => !!r.linkedin_url).length;
       const comEM = results.filter(r => !!r.email).length;
-      console.log('[Apollo Enrich] Concluído:', results.length, '| LI:', comLI, '| Email:', comEM);
+      console.log('[Apollo Enrich] Fim batch:', results.length, '| LI:', comLI, '| Email:', comEM);
 
-      return res.status(200).json({ success: true, results, com_linkedin: comLI, com_email: comEM });
+      return res.status(200).json({
+        success: true,
+        results,
+        com_linkedin: comLI,
+        com_email: comEM,
+        batch_size: batch.length,
+        total_leads: leads.length,
+      });
     }
 
     return res.status(400).json({ success: false, error: 'Ação inválida: ' + action });
