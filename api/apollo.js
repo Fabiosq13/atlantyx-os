@@ -1,4 +1,4 @@
-// api/apollo.js — Enriquecimento via first_name + last_name + domain + reveal_results
+// api/apollo.js — Enriquecimento via nome + domain/org_name + reveal_results
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -44,44 +44,57 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, ...data });
     }
 
-    // ── ENRIQUECIMENTO EM LOTE — first_name + last_name + domain + reveal_results ──
+    // ── ENRIQUECIMENTO EM LOTE ────────────────────────────────────────────────
     if (action === 'enrich_batch') {
-      const leads = params.leads; // array de { first_name, last_name, domain, nome }
+      const leads = params.leads;
       if (!leads?.length) return res.status(400).json({ success: false, error: 'leads[] obrigatório' });
 
-      console.log('[Apollo Enrich] Enriquecendo', leads.length, 'leads via nome+domínio...');
-
+      console.log('[Apollo Enrich] Processando', leads.length, 'leads...');
       const results = [];
 
       for (const lead of leads) {
         try {
-          // Extrair domínio do website se não vier explícito
-          const domain = lead.domain || lead.website_empresa?.replace(/https?:\/\//,'').split('/')[0] || '';
-          
+          const firstName = lead.first_name || (lead.nome||'').split(' ')[0] || '';
+          const lastName  = lead.last_name  || (lead.nome||'').split(' ').slice(1).join(' ') || '';
+          const domain    = lead.domain || '';
+          const orgName   = lead.organization_name || '';
+
+          // Montar body com o que temos
           const body = {
-            first_name:     lead.first_name || (lead.nome||'').split(' ')[0],
-            last_name:      lead.last_name  || (lead.nome||'').split(' ').slice(1).join(' '),
+            first_name:     firstName,
             reveal_results: true,
           };
-          if (domain) body.domain = domain;
-          if (lead.organization_name) body.organization_name = lead.organization_name;
+          // Usa prefixo do sobrenome antes dos *** (ex: "Br***m" → "Br")
+          // Apollo aceita prefixo parcial para matching
+          if (lastName) {
+            if (!lastName.includes('*')) {
+              body.last_name = lastName; // sobrenome completo
+            } else {
+              const prefix = lastName.split('*')[0]; // "Br" de "Br***m"
+              if (prefix && prefix.length >= 2) body.last_name = prefix;
+            }
+          }
 
-          console.log('[Apollo Enrich]', body.first_name, body.last_name, '| domain:', domain);
+          // Prioridade: domain > organization_name
+          if (domain)  body.domain            = domain;
+          if (orgName) body.organization_name  = orgName;
+
+          console.log('[Apollo Enrich]', firstName, lastName, '| domain:', domain||'—', '| org:', orgName||'—');
 
           const r = await fetch('https://api.apollo.io/v1/people/match', {
-            method: 'POST', headers,
-            body: JSON.stringify(body),
+            method: 'POST', headers, body: JSON.stringify(body),
           });
           const data = await r.json();
           const person = data.person;
 
-          results.push({
+          const result = {
             apollo_id:    lead.apollo_id,
             nome:         lead.nome,
             linkedin_url: person?.linkedin_url || null,
             email:        person?.email || null,
-            found:        !!person?.linkedin_url || !!person?.email,
-          });
+            found:        !!(person?.linkedin_url || person?.email),
+          };
+          results.push(result);
 
           console.log('[Apollo Enrich]', lead.nome, '→ LI:', person?.linkedin_url||'NULL', '| Email:', person?.email||'NULL');
 
@@ -90,7 +103,6 @@ export default async function handler(req, res) {
           results.push({ apollo_id: lead.apollo_id, nome: lead.nome, linkedin_url: null, email: null, error: e.message });
         }
 
-        // Delay 300ms entre chamadas para respeitar rate limit
         await new Promise(r => setTimeout(r, 300));
       }
 
