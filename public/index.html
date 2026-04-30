@@ -9613,48 +9613,55 @@ async function enriquecerLeads() {
   }
 
   try {
+    // Montar array de leads com nome + domínio para o enriquecimento
+    var leadsParaEnriquecer = liLeadsCache
+      .filter(function(l) { return !l.linkedin_url && l.nome; })
+      .map(function(l) {
+        var nomeParts = (l.nome||'').trim().split(' ');
+        // Extrair domínio do website da empresa
+        var domain = (l.website_empresa||'').replace(/https?:\/\//,'').split('/')[0] || '';
+        return {
+          apollo_id:         l.apollo_id,
+          nome:              l.nome,
+          first_name:        nomeParts[0] || '',
+          last_name:         nomeParts.slice(1).join(' ') || '',
+          domain:            domain,
+          organization_name: l.empresa || '',
+          website_empresa:   l.website_empresa || '',
+        };
+      });
+
+    addLog('info', '[Enrich] Enviando ' + leadsParaEnriquecer.length + ' leads via nome+domínio...');
+    addLog('info', '[Enrich] Exemplo: ' + JSON.stringify(leadsParaEnriquecer[0]||{}));
+
     var r = await fetch('/api/apollo', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'enrich_batch',
         api_key: creds.apolloKey,
-        person_ids: idsParaEnriquecer
+        leads: leadsParaEnriquecer
       })
     });
     var d = await r.json();
-    var enrichedPeople = d.people || [];
-    addLog('ok', '[Enrich Batch] Retornou ' + enrichedPeople.length + ' perfis | Com LinkedIn: ' + (d.com_linkedin||0));
+    var enrichedPeople = d.results || [];
+    addLog('ok', '[Enrich Batch] Processados: ' + enrichedPeople.length + ' | Com LinkedIn: ' + (d.com_linkedin||0) + ' | Com Email: ' + (d.com_email||0));
 
-    // Mapear resultado de volta para os leads pelo apollo_id
-    addLog('info', '── Resultado do Enriquecimento por ID ──');
+    // Mapear resultado de volta para os leads
+    addLog('info', '── Resultado do Enriquecimento ──');
     enrichedPeople.forEach(function(p) {
-      // Log detalhado de cada perfil retornado
-      addLog('info', '[ID: ' + (p.id||'?') + '] linkedin_url: ' + (p.linkedin_url||'NULL') + ' | email: ' + (p.email||'NULL') + ' | revealed: ' + (p.revealed_for_current_team||false));
+      addLog('info', '[' + (p.nome||'?') + '] LI: ' + (p.linkedin_url||'NULL') + ' | Email: ' + (p.email||'NULL'));
 
-      var lead = liLeadsCache.find(function(l) { return l.apollo_id === p.id; });
-      if (!lead) {
-        addLog('warn', '[ID: ' + (p.id||'?') + '] Não encontrado nos leads locais');
-        return;
-      }
-      addLog('info', '[ID: ' + p.id + '] Lead: ' + lead.nome + ' | ' + lead.empresa);
+      var lead = liLeadsCache.find(function(l) { return l.apollo_id === p.apollo_id || l.nome === p.nome; });
+      if (!lead) return;
+
       if (p.linkedin_url) {
         lead.linkedin_url = p.linkedin_url;
         enriquecidos++;
-        addLog('ok', '[LINKEDIN] ' + lead.nome + ' → ' + p.linkedin_url);
-      } else {
-        addLog('warn', '[LINKEDIN] ' + lead.nome + ' (ID:' + p.id + ') → NULL — Apollo não tem este dado');
+        addLog('ok', '[LINKEDIN OK] ' + lead.nome + ' → ' + p.linkedin_url);
       }
       if (!lead.email && p.email) {
         lead.email = p.email;
-        addLog('ok', '[EMAIL] ' + lead.nome + ' → ' + p.email);
-      }
-    });
-
-    // Log IDs que NÃO vieram na resposta
-    var idsRetornados = enrichedPeople.map(function(p) { return p.id; });
-    liLeadsCache.forEach(function(l) {
-      if (l.apollo_id && idsRetornados.indexOf(l.apollo_id) === -1) {
-        addLog('warn', '[AUSENTE] ' + l.nome + ' (ID:' + l.apollo_id + ') não retornou na resposta do Apollo');
+        addLog('ok', '[EMAIL OK] ' + lead.nome + ' → ' + p.email);
       }
     });
     addLog('info', '── Fim do Enriquecimento ──');
