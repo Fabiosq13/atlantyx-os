@@ -9208,10 +9208,11 @@ function setSeqStep(step) {
 }
 
 function buildSeqPrompt(lead, oferta, tom) {
-  // Detectar idioma pelo país do lead
   var pais = lead.pais || lead.country || '';
-  var isPortugues = !pais || paisesPortugues.some(function(p){ return pais.toLowerCase().includes(p.toLowerCase()); });
+  // Sem país = default inglês (maioria dos leads são internacionais)
+  var isPortugues = pais && paisesPortugues.some(function(p){ return pais.toLowerCase().includes(p.toLowerCase()); });
   var prompts = isPortugues ? seqPromptsPT : seqPromptsEN;
+  addLog('info', '[Lang] ' + lead.nome + ' | pais="' + pais + '" | idioma=' + (isPortugues?'PT':'EN'));
   var template = prompts[liSeqStep] || prompts[2];
 
   var nome = (lead.nome||'').split(' ')[0] || lead.nome || (isPortugues ? 'Decisor' : 'Executive');
