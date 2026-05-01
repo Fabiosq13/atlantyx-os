@@ -720,6 +720,51 @@ tr:hover td{background:rgba(79,124,255,.03);}
         </div>
       </div>
 
+      <!-- GERENCIADOR DE SEQUÊNCIA -->
+      <div class="panel" style="margin-bottom:10px;">
+        <div class="ph">
+          <div class="pt">&#128197; Gerenciador de Sequência C-Level</div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <span class="tag live" id="seqMgrTag">0 leads em sequência</span>
+            <button class="btn btn-g" style="font-size:8px;padding:3px 8px;" onclick="verificarSequencias()">&#128260; Verificar Agora</button>
+          </div>
+        </div>
+        <div class="pb">
+          <!-- Kanban de etapas -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-bottom:10px;">
+            <div style="background:rgba(10,102,194,.08);border:1px solid rgba(10,102,194,.2);border-radius:7px;padding:8px;">
+              <div style="font-family:var(--M);font-size:8px;color:#0a66c2;margin-bottom:6px;">&#128279; CONVITE ENVIADO</div>
+              <div id="seqCol1" style="min-height:40px;font-size:10px;"></div>
+              <div id="seqCount1" style="font-family:var(--M);font-size:9px;color:var(--t2);margin-top:4px;">0 leads</div>
+            </div>
+            <div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:7px;padding:8px;">
+              <div style="font-family:var(--M);font-size:8px;color:var(--green);margin-bottom:6px;">&#128172; 1ª MENSAGEM</div>
+              <div id="seqCol2" style="min-height:40px;font-size:10px;"></div>
+              <div id="seqCount2" style="font-family:var(--M);font-size:9px;color:var(--t2);margin-top:4px;">0 leads</div>
+            </div>
+            <div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:7px;padding:8px;">
+              <div style="font-family:var(--M);font-size:8px;color:var(--gold);margin-bottom:6px;">&#128337; FOLLOW-UP 1</div>
+              <div id="seqCol3" style="min-height:40px;font-size:10px;"></div>
+              <div id="seqCount3" style="font-family:var(--M);font-size:9px;color:var(--t2);margin-top:4px;">0 leads</div>
+            </div>
+            <div style="background:rgba(255,77,109,.08);border:1px solid rgba(255,77,109,.2);border-radius:7px;padding:8px;">
+              <div style="font-family:var(--M);font-size:8px;color:var(--red);margin-bottom:6px;">&#9989; RESPONDEU</div>
+              <div id="seqCol4" style="min-height:40px;font-size:10px;"></div>
+              <div id="seqCount4" style="font-family:var(--M);font-size:9px;color:var(--t2);margin-top:4px;">0 leads</div>
+            </div>
+          </div>
+
+          <!-- Leads prontos para próxima ação -->
+          <div id="seqProntos" style="display:none;">
+            <div style="font-family:var(--M);font-size:8px;color:var(--gold);text-transform:uppercase;margin-bottom:8px;">&#9888; Leads prontos para próxima ação</div>
+            <div id="seqProntosLista"></div>
+            <button class="btn btn-p" style="width:100%;margin-top:8px;font-size:11px;" onclick="dispararProximaEtapa()">
+              &#9889; Disparar próxima etapa para todos
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- PERSONALIZAÇÃO DE MENSAGEM + ENVIO -->
       <div class="panel">
         <div class="ph">
@@ -727,6 +772,41 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <span class="tag on">IA + PhantomBuster + Z-API</span>
         </div>
         <div class="pb">
+          <!-- SEQUÊNCIA 4 TOUCHPOINTS -->
+          <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:10px;margin-bottom:12px;">
+            <div style="font-family:var(--M);font-size:8px;color:var(--blue);text-transform:uppercase;margin-bottom:10px;letter-spacing:1px;">Fluxo de Sequência C-Level</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-bottom:10px;">
+              <div id="seqStep1" onclick="setSeqStep(1)" style="background:rgba(10,102,194,.2);border:1px solid #0a66c2;border-radius:6px;padding:8px;text-align:center;cursor:pointer;">
+                <div style="font-size:16px;margin-bottom:4px;">&#128279;</div>
+                <div style="font-family:var(--M);font-size:8px;color:#0a66c2;">DIA 0</div>
+                <div style="font-size:9px;color:var(--t1);margin-top:2px;">Convite</div>
+                <div style="font-size:8px;color:var(--t2);">Conexão LI</div>
+              </div>
+              <div id="seqStep2" onclick="setSeqStep(2)" style="background:var(--bg3);border:1px solid var(--bd);border-radius:6px;padding:8px;text-align:center;cursor:pointer;">
+                <div style="font-size:16px;margin-bottom:4px;">&#128172;</div>
+                <div style="font-family:var(--M);font-size:8px;color:var(--green);">DIA 1</div>
+                <div style="font-size:9px;color:var(--t1);margin-top:2px;">1ª Msg</div>
+                <div style="font-size:8px;color:var(--t2);">Após aceitar</div>
+              </div>
+              <div id="seqStep3" onclick="setSeqStep(3)" style="background:var(--bg3);border:1px solid var(--bd);border-radius:6px;padding:8px;text-align:center;cursor:pointer;">
+                <div style="font-size:16px;margin-bottom:4px;">&#128337;</div>
+                <div style="font-family:var(--M);font-size:8px;color:var(--gold);">DIA 3+</div>
+                <div style="font-size:9px;color:var(--t1);margin-top:2px;">Follow-up 1</div>
+                <div style="font-size:8px;color:var(--t2);">Sem resposta</div>
+              </div>
+              <div id="seqStep4" onclick="setSeqStep(4)" style="background:var(--bg3);border:1px solid var(--bd);border-radius:6px;padding:8px;text-align:center;cursor:pointer;">
+                <div style="font-size:16px;margin-bottom:4px;">&#128197;</div>
+                <div style="font-family:var(--M);font-size:8px;color:var(--red);">DIA 5+</div>
+                <div style="font-size:9px;color:var(--t1);margin-top:2px;">Follow-up 2</div>
+                <div style="font-size:8px;color:var(--t2);">Última chance</div>
+              </div>
+            </div>
+            <div id="seqDesc" style="font-size:10px;color:var(--t2);padding:6px 8px;background:var(--bg3);border-radius:5px;">
+              <strong style="color:#0a66c2;">Etapa atual: Dia 0 — Convite de Conexão</strong><br/>
+              Envia convite personalizado ao C-Level. Sem mensagem — apenas conexão com nota de contexto B2B.
+            </div>
+          </div>
+
           <!-- Oferta e contexto -->
           <div class="fg"><label class="fl">Serviço / Oferta Atlantyx para esta campanha</label>
             <select class="fsel" id="liOferta">
@@ -9080,6 +9160,56 @@ function selecionarTodosLI() {
 }
 
 // ── GERAÇÃO DE MENSAGEM COM IA ────────────────────────────────────────────────
+
+// ── SEQUÊNCIA DE ABORDAGEM C-LEVEL — 4 TOUCHPOINTS ────────────────────────
+var liSeqStep = 1; // 1=convite, 2=1aMsg, 3=followup1, 4=followup2
+
+var seqDescriptions = {
+  1: '<strong style="color:#0a66c2;">Etapa 1 — Dia 0: Convite de Conexão</strong><br/>Envia convite personalizado ao C-Level. Curto, direto, contexto B2B. Sem pitch ainda — apenas conexão.',
+  2: '<strong style="color:var(--green);">Etapa 2 — Dia 1: Primeira Mensagem (após aceitar)</strong><br/>Primeira abordagem após conexão aceita. Personalizada com empresa, setor e dor específica. Tom consultivo, sem vender diretamente.',
+  3: '<strong style="color:var(--gold);">Etapa 3 — Dia 3+: Follow-up 1 (sem resposta)</strong><br/>Seguimento gentil com novo ângulo — dado ou insight do setor do lead. Demonstra conhecimento do negócio dele.',
+  4: '<strong style="color:var(--red);">Etapa 4 — Dia 5+: Follow-up 2 (última chance)</strong><br/>Mensagem final com proposta de valor clara e CTA direto. Oferta de 15min de conversa ou caso de sucesso relevante.',
+};
+
+var seqPrompts = {
+  1: 'Escreva um CONVITE DE CONEXÃO no LinkedIn para um C-Level. REGRAS: máximo 200 chars, sem pitch de vendas, apenas contexto profissional relevante. Mencione: cargo dele={cargo}, empresa={empresa}, setor={setor}. Tom: profissional, sucinto, curioso. Exemplo: "Olá {nome}, acompanho o trabalho da {empresa} no setor de {setor}. Gostaria de conectar e trocar experiências sobre {tema}."',
+  2: 'Escreva a PRIMEIRA MENSAGEM após conexão aceita para um C-Level. REGRAS: máximo 300 chars, sem markdown, personalizada. Mencione empresa e setor específico do lead. Apresente a Atlantyx de forma consultiva. Tom: {tom}. Oferta: {oferta}. Lead: {cargo} na {empresa} ({setor}).',
+  3: 'Escreva um FOLLOW-UP após 3 dias sem resposta para um C-Level. REGRAS: máximo 280 chars, novo ângulo, use dado ou tendência do setor {setor}. Não repita a primeira mensagem. Mostre que conhece o desafio de um {cargo}. Tom direto mas respeitoso. Oferta: {oferta}.',
+  4: 'Escreva o ÚLTIMO FOLLOW-UP (dia 5) para um C-Level que não respondeu. REGRAS: máximo 260 chars, CTA claro (15min de call ou enviar case), última tentativa. Mencione resultado concreto que a Atlantyx gerou para empresa similar no setor {setor}. Tom: objetivo e respeitoso. Cargo: {cargo}, Empresa: {empresa}.',
+};
+
+function setSeqStep(step) {
+  liSeqStep = step;
+  [1,2,3,4].forEach(function(s) {
+    var el = document.getElementById('seqStep' + s);
+    if (!el) return;
+    var colors = {1:'#0a66c2', 2:'var(--green)', 3:'var(--gold)', 4:'var(--red)'};
+    if (s === step) {
+      el.style.background = s===1?'rgba(10,102,194,.2)':s===2?'rgba(34,197,94,.15)':s===3?'rgba(245,166,35,.15)':'rgba(255,77,109,.15)';
+      el.style.borderColor = colors[s];
+    } else {
+      el.style.background = 'var(--bg3)';
+      el.style.borderColor = 'var(--bd)';
+    }
+  });
+  var desc = document.getElementById('seqDesc');
+  if (desc) desc.innerHTML = seqDescriptions[step] || '';
+}
+
+function buildSeqPrompt(lead, oferta, tom) {
+  var template = seqPrompts[liSeqStep] || seqPrompts[2];
+  var nome = (lead.nome||'').split(' ')[0] || lead.nome || 'Decisor';
+  var tema = oferta ? oferta.split('—')[0].trim() : 'dados e IA';
+  return template
+    .replace(/{nome}/g, nome)
+    .replace(/{cargo}/g, lead.cargo||'C-Level')
+    .replace(/{empresa}/g, lead.empresa||'sua empresa')
+    .replace(/{setor}/g, lead.setor||'seu setor')
+    .replace(/{tom}/g, tom||'consultivo')
+    .replace(/{oferta}/g, oferta||'BI e IA B2B')
+    .replace(/{tema}/g, tema);
+}
+
 async function gerarMensagemLIComIA() {
   var oferta = document.getElementById('liOferta')?.value || '';
   var tom    = document.getElementById('liTom')?.value    || 'consultivo';
@@ -9156,7 +9286,7 @@ async function gerarMensagemParaLead(lead) {
         decisor: (lead.nome||'').split(' ')[0] || lead.nome,
         empresa: lead.empresa || '',
         objetivo_ligacao: 'Mensagem LinkedIn de conexão — APENAS o texto final da mensagem, sem formatação markdown',
-        contexto: 'CRÍTICO: Gere SOMENTE o texto da mensagem, SEM títulos, SEM ##, SEM ```, SEM "Script de Abordagem". Apenas a mensagem direta. Máx 280 chars. Primeiro nome: ' + ((lead.nome||'').split(' ')[0]||'') + '. Empresa dele: ' + (lead.empresa||'') + '. Setor: ' + (lead.setor||'') + '. Cargo: ' + (lead.cargo||'') + '. Tom: ' + tom + '. Oferta: ' + oferta + '. Exemplo: "Olá Carlos, vi que você é CTO na Energisa. Na Atlantyx ajudamos empresas de energia com dashboards executivos em tempo real. Posso mostrar um caso do setor?"',
+        contexto: buildSeqPrompt(lead, oferta, tom),
         empresa_vendedora: 'Atlantyx — BI, Dados e IA'
       }})
     });
@@ -9402,6 +9532,8 @@ async function enviarEmLoteLI() {
 
     // Carregar no HubSpot
     await carregarLeadHubSpot(lead);
+    // Adicionar automaticamente à sequência de acompanhamento
+    adicionarLeadSequencia(lead);
 
     // Contar como processado (independente do Phantom)
     if (lead.status_crm === 'no_crm') {
@@ -9440,23 +9572,33 @@ async function enviarEmLoteLI() {
 
 // ── PHANTOMBUSTER — LinkedIn Sender ───────────────────────────────────────────
 async function enviarLIPhantom(lead, msg, creds) {
-  // Proxy /api/phantom resolve o CORS do browser para PhantomBuster
+  var payload = {
+    phantom_key: creds.phantomKey,
+    agent_id: creds.phantomAgt,
+    linkedin_url: lead.linkedin_url,
+    message: msg,
+    send_invitation: lead.status_li !== 'conectado',
+  };
+
+  addLog('info', '[Phantom POST] Lead: ' + lead.nome + ' | URL: ' + (lead.linkedin_url||'NULL') + ' | agent_id: ' + (creds.phantomAgt||'VAZIO') + ' | key: ' + (creds.phantomKey ? creds.phantomKey.substring(0,8)+'...' : 'VAZIA→usa Vercel env'));
+  addLog('info', '[Phantom POST] msg (' + msg.length + ' chars): ' + msg.substring(0,80) + '...');
+
   var r = await fetch('/api/phantom', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      phantom_key: creds.phantomKey,
-      agent_id: creds.phantomAgt,
-      linkedin_url: lead.linkedin_url,
-      message: msg,
-      send_invitation: lead.status_li !== 'conectado',
-    })
+    body: JSON.stringify(payload)
   });
+
+  var responseText = await r.text();
+  addLog('info', '[Phantom RESPONSE] HTTP: ' + r.status + ' | Body: ' + responseText.substring(0,200));
+
   if (!r.ok) {
-    var err = await r.text();
-    throw new Error('PhantomBuster ' + r.status + ': ' + err.substring(0, 100));
+    throw new Error('PhantomBuster HTTP ' + r.status + ': ' + responseText.substring(0, 150));
   }
-  return await r.json();
+
+  var result = JSON.parse(responseText);
+  addLog('ok', '[Phantom OK] ' + lead.nome + ' | success: ' + result.success + ' | containerId: ' + (result.containerId||result.id||'?'));
+  return result;
 }
 
 
@@ -9563,6 +9705,225 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // ── FILTRO DE CANAL DOS LEADS ─────────────────────────────────────────────────
+
+// ── GERENCIADOR DE SEQUÊNCIA C-LEVEL ─────────────────────────────────────────
+// Estrutura de cada lead em sequência:
+// { id, nome, empresa, cargo, linkedin_url, email, apollo_id,
+//   seq_step: 1|2|3|4,        -- etapa atual
+//   seq_step_date: timestamp, -- data do último envio
+//   seq_status: 'aguardando'|'pronto'|'respondeu'|'concluido' }
+
+var liSequencias = []; // leads em sequência — persistido no localStorage
+
+function carregarSequencias() {
+  try {
+    var raw = localStorage.getItem('atx:li_sequencias');
+    liSequencias = raw ? JSON.parse(raw) : [];
+    renderizarKanban();
+  } catch(e) { liSequencias = []; }
+}
+
+function salvarSequencias() {
+  try {
+    localStorage.setItem('atx:li_sequencias', JSON.stringify(liSequencias));
+  } catch(e) {}
+}
+
+function adicionarLeadSequencia(lead) {
+  // Verificar se já está na sequência
+  var existe = liSequencias.find(function(s) { return s.apollo_id === lead.apollo_id || s.id === lead.id; });
+  if (existe) return;
+
+  var entrada = {
+    id:             lead.id,
+    apollo_id:      lead.apollo_id,
+    nome:           lead.nome,
+    empresa:        lead.empresa,
+    cargo:          lead.cargo,
+    setor:          lead.setor,
+    linkedin_url:   lead.linkedin_url,
+    email:          lead.email,
+    score:          lead.score,
+    seq_step:       1,           // começa no convite
+    seq_step_date:  Date.now(),  // data do convite
+    seq_status:     'aguardando',
+    historico:      [{ step:1, data: new Date().toISOString(), acao: 'Convite enviado' }],
+  };
+  liSequencias.push(entrada);
+  salvarSequencias();
+  addLog('ok', '[Seq] ' + lead.nome + ' adicionado à sequência — Etapa 1 (Convite)');
+}
+
+function verificarSequencias() {
+  carregarSequencias();
+  var agora = Date.now();
+  var prontos = [];
+
+  liSequencias.forEach(function(seq) {
+    if (seq.seq_status === 'respondeu' || seq.seq_status === 'concluido') return;
+
+    var diasDesdeUltimo = (agora - seq.seq_step_date) / (1000 * 60 * 60 * 24);
+
+    // Regras de progressão:
+    // Step 1 (convite) → Step 2 (1ª msg): após aceitar conexão (sem timer — manual)
+    // Step 2 (1ª msg) → Step 3 (followup1): 3 dias sem resposta
+    // Step 3 (followup1) → Step 4 (followup2): 5 dias sem resposta
+    // Step 4 (followup2) → concluido: 7 dias sem resposta
+
+    var proximoPasso = false;
+    var motivo = '';
+
+    if (seq.seq_step === 2 && diasDesdeUltimo >= 3) {
+      proximoPasso = true; motivo = '3 dias sem resposta → Follow-up 1';
+    } else if (seq.seq_step === 3 && diasDesdeUltimo >= 2) {
+      proximoPasso = true; motivo = '5 dias acumulados → Follow-up 2';
+    } else if (seq.seq_step === 4 && diasDesdeUltimo >= 2) {
+      seq.seq_status = 'concluido';
+      motivo = 'Sequência concluída (7 dias sem resposta)';
+      addLog('info', '[Seq] ' + seq.nome + ' — ' + motivo);
+    }
+
+    if (proximoPasso) {
+      seq.seq_status = 'pronto';
+      prontos.push({ seq, motivo });
+    }
+  });
+
+  salvarSequencias();
+  renderizarKanban();
+
+  var seqProntos = document.getElementById('seqProntos');
+  var seqLista = document.getElementById('seqProntosLista');
+  if (!seqProntos || !seqLista) return;
+
+  if (prontos.length) {
+    seqProntos.style.display = 'block';
+    seqLista.innerHTML = '';
+    prontos.forEach(function(item) {
+      var row = document.createElement('div');
+      row.style.cssText = 'background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:8px;margin-bottom:6px;display:flex;align-items:center;gap:8px;';
+      row.innerHTML = '<div style="flex:1;">'
+        + '<div style="font-size:11px;font-weight:600;color:var(--t1);">' + item.seq.nome + ' · ' + item.seq.empresa + '</div>'
+        + '<div style="font-size:9px;color:var(--gold);">' + item.motivo + '</div>'
+        + '</div>'
+        + '<span style="font-family:var(--M);font-size:9px;color:var(--blue);">Step ' + (item.seq.seq_step+1) + '</span>';
+      seqLista.appendChild(row);
+    });
+    addLog('warn', '[Seq] ' + prontos.length + ' leads prontos para próxima etapa!');
+    toast(prontos.length + ' leads precisam de follow-up!', 'warning');
+  } else {
+    seqProntos.style.display = 'none';
+    addLog('ok', '[Seq] Nenhum lead pendente de ação agora.');
+    toast('Sequências verificadas — nenhuma ação pendente', 'success');
+  }
+}
+
+function renderizarKanban() {
+  var cols = { 1:[], 2:[], 3:[], 4:[] };
+  var responderam = [];
+
+  liSequencias.forEach(function(seq) {
+    if (seq.seq_status === 'respondeu') responderam.push(seq);
+    else if (cols[seq.seq_step]) cols[seq.seq_step].push(seq);
+  });
+
+  [1,2,3].forEach(function(step) {
+    var col = document.getElementById('seqCol' + step);
+    var cnt = document.getElementById('seqCount' + step);
+    if (!col) return;
+    col.innerHTML = cols[step].slice(0,3).map(function(s) {
+      var cor = s.seq_status==='pronto' ? 'var(--gold)' : 'var(--t2)';
+      return '<div style="font-size:9px;color:'+cor+';padding:2px 0;border-bottom:1px solid var(--bd);">'
+        + (s.seq_status==='pronto' ? '&#9888; ' : '') + (s.nome||'').split(' ')[0] + ' · ' + (s.empresa||'').substring(0,15)
+        + '</div>';
+    }).join('') + (cols[step].length > 3 ? '<div style="font-size:9px;color:var(--t3);">+' + (cols[step].length-3) + ' mais</div>' : '');
+    if (cnt) cnt.textContent = cols[step].length + ' lead' + (cols[step].length !== 1 ? 's':'');
+  });
+
+  var col4 = document.getElementById('seqCol4');
+  var cnt4 = document.getElementById('seqCount4');
+  if (col4) col4.innerHTML = responderam.slice(0,3).map(function(s) {
+    return '<div style="font-size:9px;color:var(--green);padding:2px 0;">&#10003; ' + (s.nome||'').split(' ')[0] + '</div>';
+  }).join('');
+  if (cnt4) cnt4.textContent = responderam.length + ' lead' + (responderam.length !== 1 ? 's':'');
+
+  var total = liSequencias.filter(function(s){ return s.seq_status !== 'concluido'; }).length;
+  var tag = document.getElementById('seqMgrTag');
+  if (tag) tag.textContent = total + ' lead' + (total !== 1 ? 's':'') + ' em sequência';
+}
+
+function marcarRespondeu(apolloId) {
+  var seq = liSequencias.find(function(s){ return s.apollo_id === apolloId; });
+  if (!seq) return;
+  seq.seq_status = 'respondeu';
+  seq.historico.push({ step: seq.seq_step, data: new Date().toISOString(), acao: 'Lead respondeu' });
+  salvarSequencias();
+  renderizarKanban();
+  toast('Lead marcado como respondeu!', 'success');
+}
+
+async function dispararProximaEtapa() {
+  var prontos = liSequencias.filter(function(s){ return s.seq_status === 'pronto'; });
+  if (!prontos.length) { toast('Nenhum lead pronto para disparar', 'error'); return; }
+
+  addLog('info', '[Seq] Disparando próxima etapa para ' + prontos.length + ' leads...');
+
+  for (var i = 0; i < prontos.length; i++) {
+    var seq = prontos[i];
+    var proximoStep = seq.seq_step + 1;
+    if (proximoStep > 4) { seq.seq_status = 'concluido'; continue; }
+
+    // Gerar mensagem para este step
+    liSeqStep = proximoStep;
+    var oferta = document.getElementById('liOferta')?.value || '';
+    var tom    = document.getElementById('liTom')?.value    || 'consultivo';
+
+    try {
+      var r = await fetch('/api/s1-strategy', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'inside_sales_script', payload: {
+          decisor: seq.nome.split(' ')[0],
+          empresa: seq.empresa,
+          objetivo_ligacao: 'Sequência LinkedIn Step ' + proximoStep,
+          contexto: buildSeqPrompt(seq, oferta, tom),
+          empresa_vendedora: 'Atlantyx — BI, Dados e IA B2B'
+        }})
+      });
+      var d = await r.json();
+      var msg = (d.content || '').replace(/^#+\s*.+$/gm,'').replace(/\*\*/g,'').trim().substring(0,280);
+
+      // Enviar via PhantomBuster se tem LinkedIn
+      if (seq.linkedin_url) {
+        var creds = getLICredenciais();
+        await enviarLIPhantom(seq, msg, creds);
+      }
+
+      // Atualizar sequência
+      seq.seq_step = proximoStep;
+      seq.seq_step_date = Date.now();
+      seq.seq_status = 'aguardando';
+      seq.historico.push({ step: proximoStep, data: new Date().toISOString(), acao: 'Step ' + proximoStep + ' enviado', msg: msg });
+
+      addLog('ok', '[Seq] ' + seq.nome + ' → Step ' + proximoStep + ' enviado');
+
+    } catch(e) {
+      addLog('err', '[Seq] Erro ' + seq.nome + ': ' + e.message);
+    }
+
+    await new Promise(function(res2){ setTimeout(res2, 1000); });
+  }
+
+  salvarSequencias();
+  renderizarKanban();
+  document.getElementById('seqProntos').style.display = 'none';
+  toast('Próxima etapa disparada para ' + prontos.length + ' leads!', 'success');
+}
+
+// Carregar sequências ao iniciar o modo LinkedIn
+document.addEventListener('DOMContentLoaded', function() {
+  carregarSequencias();
+});
+
 var liFiltroAtual = 'todos';
 
 function filtrarLeadsCanal(canal) {
