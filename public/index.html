@@ -163,6 +163,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div class="sb-logo">
     <div class="sb-name"><span class="sb-dot"></span>Atlantyx OS</div>
     <div class="sb-sub">Monitor de Agentes · LIVE</div>
+    <div style="font-family:var(--M);font-size:7px;color:var(--t3);margin-top:2px;">ATX-20260501-2301-E8D452E2</div>
   </div>
   <nav class="sb-nav">
     <div class="sbi active" onclick="nav('dash',this)">&#9632; Dashboard <span class="nbx gn">LIVE</span></div>
@@ -364,6 +365,9 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
   </nav>
   <div class="sb-foot">
+    <div style="font-family:var(--M);font-size:7px;color:var(--t3);padding:4px 0;letter-spacing:0.5px;border-bottom:1px solid var(--bd);margin-bottom:6px;">
+      BUILD: <span id="buildCode" style="color:var(--blue);">ATX-20260501-2301-E8D452E2</span>
+    </div>
     <div class="sf"><span class="dot on"></span>Claude API · Ativo</div>
     <div class="sf"><span class="dot" id="dotHS"></span><span id="statHS">HubSpot · Verificando</span></div>
     <div class="sf"><span class="dot off" id="dotWA"></span><span id="statWA">Z-API · Configurar</span></div>
@@ -9459,12 +9463,20 @@ async function gerarMensagemIndividual(lead, oferta, tom, idx) {
 
 async function gerarMensagensIndividuais(oferta, tom) {
   var selecionados = liSelecionados.length ? liSelecionados : liLeadsCache;
-  addLog('info', '[LI] Gerando mensagens para ' + selecionados.length + ' leads...');
+  var etapaLabel = {1:'Convite', 2:'1ª Mensagem', 3:'Follow-up 1', 4:'Follow-up 2'};
+  addLog('info', '━━━ INICIANDO GERAÇÃO EM LOTE ━━━');
+  addLog('info', '  Etapa   : ' + liSeqStep + ' — ' + (etapaLabel[liSeqStep]||'?'));
+  addLog('info', '  Leads   : ' + selecionados.length);
+  addLog('info', '  Oferta  : ' + oferta.substring(0,50));
+  addLog('info', '  Tom     : ' + tom);
+
   for (var i = 0; i < selecionados.length; i++) {
     await gerarMensagemIndividual(selecionados[i], oferta, tom, i);
-    await new Promise(function(r) { setTimeout(r, 800); });
+    if (liSeqStep !== 1) await new Promise(function(r) { setTimeout(r, 800); });
   }
-  toast('Mensagens individuais geradas!', 'success');
+
+  addLog('ok', '━━━ GERAÇÃO CONCLUÍDA: ' + selecionados.length + ' mensagens ━━━');
+  toast('Mensagens geradas!', 'success');
 }
 
 
