@@ -86,6 +86,34 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, deals: d.results || [] });
     }
 
+    // ── CRIAR NOTA NO CONTATO ──────────────────────────────────────────────
+    if (action === 'create_note') {
+      const { contact_id, deal_id, note } = body;
+      if (!contact_id || !note) return res.status(400).json({ success: false, error: 'contact_id e note obrigatórios' });
+
+      const noteBody = {
+        properties: {
+          hs_note_body: note,
+          hs_timestamp: Date.now().toString(),
+        },
+        associations: [
+          { to: { id: contact_id }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 202 }] },
+        ],
+      };
+      if (deal_id) {
+        noteBody.associations.push({
+          to: { id: deal_id }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 214 }]
+        });
+      }
+
+      const r = await fetch(HS_BASE + '/crm/v3/objects/notes', {
+        method: 'POST', headers: H, body: JSON.stringify(noteBody)
+      });
+      const d = await r.json();
+      if (!r.ok) return res.status(200).json({ success: false, error: d.message||'Note error' });
+      return res.status(200).json({ success: true, note_id: d.id });
+    }
+
     return res.status(400).json({ success: false, error: 'Acao invalida: ' + action });
   } catch(e) {
     return res.status(500).json({ success: false, error: e.message });
