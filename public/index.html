@@ -9165,18 +9165,29 @@ function selecionarTodosLI() {
 var liSeqStep = 1; // 1=convite, 2=1aMsg, 3=followup1, 4=followup2
 
 var seqDescriptions = {
-  1: '<strong style="color:#0a66c2;">Etapa 1 — Dia 0: Convite de Conexão</strong><br/>Envia convite personalizado ao C-Level. Curto, direto, contexto B2B. Sem pitch ainda — apenas conexão.',
+  1: '<strong style="color:#0a66c2;">Etapa 1 — Dia 0: Convite de Conexão</strong><br/>Nota curta (máx 150 chars) SEM pitch e SEM mencionar Atlantyx. Apenas motivo genuíno para conectar. O C-Level aceita o convite → aí vem a abordagem na Etapa 2.',
   2: '<strong style="color:var(--green);">Etapa 2 — Dia 1: Primeira Mensagem (após aceitar)</strong><br/>Primeira abordagem após conexão aceita. Personalizada com empresa, setor e dor específica. Tom consultivo, sem vender diretamente.',
   3: '<strong style="color:var(--gold);">Etapa 3 — Dia 3+: Follow-up 1 (sem resposta)</strong><br/>Seguimento gentil com novo ângulo — dado ou insight do setor do lead. Demonstra conhecimento do negócio dele.',
   4: '<strong style="color:var(--red);">Etapa 4 — Dia 5+: Follow-up 2 (última chance)</strong><br/>Mensagem final com proposta de valor clara e CTA direto. Oferta de 15min de conversa ou caso de sucesso relevante.',
 };
 
-var seqPrompts = {
-  1: 'Escreva um CONVITE DE CONEXÃO no LinkedIn para um C-Level. REGRAS: máximo 200 chars, sem pitch de vendas, apenas contexto profissional relevante. Mencione: cargo dele={cargo}, empresa={empresa}, setor={setor}. Tom: profissional, sucinto, curioso. Exemplo: "Olá {nome}, acompanho o trabalho da {empresa} no setor de {setor}. Gostaria de conectar e trocar experiências sobre {tema}."',
-  2: 'Escreva a PRIMEIRA MENSAGEM após conexão aceita para um C-Level. REGRAS: máximo 300 chars, sem markdown, personalizada. Mencione empresa e setor específico do lead. Apresente a Atlantyx de forma consultiva. Tom: {tom}. Oferta: {oferta}. Lead: {cargo} na {empresa} ({setor}).',
-  3: 'Escreva um FOLLOW-UP após 3 dias sem resposta para um C-Level. REGRAS: máximo 280 chars, novo ângulo, use dado ou tendência do setor {setor}. Não repita a primeira mensagem. Mostre que conhece o desafio de um {cargo}. Tom direto mas respeitoso. Oferta: {oferta}.',
-  4: 'Escreva o ÚLTIMO FOLLOW-UP (dia 5) para um C-Level que não respondeu. REGRAS: máximo 260 chars, CTA claro (15min de call ou enviar case), última tentativa. Mencione resultado concreto que a Atlantyx gerou para empresa similar no setor {setor}. Tom: objetivo e respeitoso. Cargo: {cargo}, Empresa: {empresa}.',
+var seqPromptsPT = {
+  1: 'Escreva SOMENTE a nota de convite de conexão no LinkedIn. REGRAS CRÍTICAS: (1) Máximo 150 chars. (2) SEM pitch de vendas, SEM mencionar Atlantyx, SEM CTA comercial. (3) Apenas motivo profissional para conectar. (4) Tom: curioso e genuíno. (5) Formato: "Olá {nome}, [observação sobre {empresa} ou {setor}]. Gostaria de conectar." Exemplos corretos: "Olá Carlos, acompanho o crescimento da Energisa no setor elétrico. Gostaria de conectar." | "Olá Mike, vi sua trajetória no setor de saúde digital. Conectar?" Gere SOMENTE o texto do convite.',
+  2: 'Escreva a PRIMEIRA MENSAGEM após conexão aceita para um C-Level. REGRAS: máximo 300 chars, sem markdown, personalizada. Mencione empresa e setor específico do lead. Apresente a Atlantyx de forma consultiva. Tom: {tom}. Oferta: {oferta}. Lead: {cargo} na {empresa} ({setor}). Gere SOMENTE o texto.',
+  3: 'Escreva um FOLLOW-UP após 3 dias sem resposta para um C-Level. REGRAS: máximo 280 chars, novo ângulo com dado ou tendência do setor {setor}. Não repita a primeira mensagem. Tom direto mas respeitoso. Oferta: {oferta}. Gere SOMENTE o texto.',
+  4: 'Escreva o ÚLTIMO FOLLOW-UP (dia 5) para um C-Level sem resposta. REGRAS: máximo 260 chars, CTA claro (15min de call ou case de sucesso), última tentativa. Setor: {setor}. Cargo: {cargo}. Empresa: {empresa}. Gere SOMENTE o texto.',
 };
+
+var seqPromptsEN = {
+  1: 'Write ONLY the LinkedIn connection request note. RULES: (1) Max 150 chars. (2) NO sales pitch, NO Atlantyx mention, NO CTA. (3) Genuine professional reason to connect. (4) Format: Hi {nome}, [observation about {empresa} or {setor}]. Would love to connect. Generate ONLY the note text.',
+  2: 'Write the FIRST MESSAGE after connection accepted for a C-Level. RULES: max 300 chars, no markdown, personalized. Mention company and specific industry. Introduce Atlantyx consultatively. Tone: {tom}. Offer: {oferta}. Lead: {cargo} at {empresa} ({setor}). Generate ONLY the text.',
+  3: 'Write a FOLLOW-UP after 3 days no response for a C-Level. RULES: max 280 chars, new angle with industry insight or trend for {setor}. Do not repeat first message. Respectful but direct. Offer: {oferta}. Generate ONLY the text.',
+  4: 'Write the FINAL FOLLOW-UP (day 5) for a C-Level who has not responded. RULES: max 260 chars, clear CTA (15min call or relevant case study), last attempt. Industry: {setor}. Role: {cargo}. Company: {empresa}. Generate ONLY the text.',
+};
+
+var paisesPortugues = ['Brazil', 'Brasil', 'Portugal', 'Angola', 'Mozambique', 'Cape Verde'];
+
+var seqPrompts = seqPromptsPT; // default
 
 function setSeqStep(step) {
   liSeqStep = step;
@@ -9197,16 +9208,26 @@ function setSeqStep(step) {
 }
 
 function buildSeqPrompt(lead, oferta, tom) {
-  var template = seqPrompts[liSeqStep] || seqPrompts[2];
-  var nome = (lead.nome||'').split(' ')[0] || lead.nome || 'Decisor';
-  var tema = oferta ? oferta.split('—')[0].trim() : 'dados e IA';
-  return template
+  // Detectar idioma pelo país do lead
+  var pais = lead.pais || lead.country || '';
+  var isPortugues = !pais || paisesPortugues.some(function(p){ return pais.toLowerCase().includes(p.toLowerCase()); });
+  var prompts = isPortugues ? seqPromptsPT : seqPromptsEN;
+  var template = prompts[liSeqStep] || prompts[2];
+
+  var nome = (lead.nome||'').split(' ')[0] || lead.nome || (isPortugues ? 'Decisor' : 'Executive');
+  var tema = oferta ? oferta.split('—')[0].trim() : (isPortugues ? 'dados e IA' : 'data and AI');
+
+  var langInstruction = isPortugues
+    ? 'Responda em português brasileiro.'
+    : 'Respond in English. Write naturally for a US/international C-Level executive.';
+
+  return langInstruction + ' ' + template
     .replace(/{nome}/g, nome)
     .replace(/{cargo}/g, lead.cargo||'C-Level')
-    .replace(/{empresa}/g, lead.empresa||'sua empresa')
-    .replace(/{setor}/g, lead.setor||'seu setor')
-    .replace(/{tom}/g, tom||'consultivo')
-    .replace(/{oferta}/g, oferta||'BI e IA B2B')
+    .replace(/{empresa}/g, lead.empresa||(isPortugues?'sua empresa':'the company'))
+    .replace(/{setor}/g, lead.setor||(isPortugues?'seu setor':'your industry'))
+    .replace(/{tom}/g, tom||(isPortugues?'consultivo':'consultative'))
+    .replace(/{oferta}/g, oferta||(isPortugues?'BI e IA B2B':'BI & AI for enterprise'))
     .replace(/{tema}/g, tema);
 }
 
