@@ -163,7 +163,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div class="sb-logo">
     <div class="sb-name"><span class="sb-dot"></span>Atlantyx OS</div>
     <div class="sb-sub">Monitor de Agentes · LIVE</div>
-    <div style="font-family:var(--M);font-size:7px;color:var(--t3);margin-top:2px;">ATX-20260501-2317-E0741A7D</div>
+    <div style="font-family:var(--M);font-size:7px;color:var(--t3);margin-top:2px;">ATX-20260501-2323-412E6134</div>
   </div>
   <nav class="sb-nav">
     <div class="sbi active" onclick="nav('dash',this)">&#9632; Dashboard <span class="nbx gn">LIVE</span></div>
@@ -366,7 +366,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </nav>
   <div class="sb-foot">
     <div style="font-family:var(--M);font-size:7px;color:var(--t3);padding:4px 0;letter-spacing:0.5px;border-bottom:1px solid var(--bd);margin-bottom:6px;">
-      BUILD: <span id="buildCode" style="color:var(--blue);">ATX-20260501-2317-E0741A7D</span>
+      BUILD: <span id="buildCode" style="color:var(--blue);">ATX-20260501-2323-412E6134</span>
     </div>
     <div class="sf"><span class="dot on"></span>Claude API · Ativo</div>
     <div class="sf"><span class="dot" id="dotHS"></span><span id="statHS">HubSpot · Verificando</span></div>
@@ -9247,6 +9247,25 @@ async function gerarMensagemLIComIA() {
   var preview = document.getElementById('liMsgPreview');
   if (preview) preview.value = 'Gerando mensagem personalizada para ' + (lead.nome||'lead') + '...';
   addLog('info', '[LinkedIn] Gerando mensagem IA: ' + tom + ' | ' + oferta.substring(0,40));
+
+  // ETAPA 1: Convite — template fixo sem IA, idioma por país
+  if (liSeqStep === 1) {
+    var pais0 = (lead && lead.pais) ? lead.pais : ((liSelecionados[0]||liLeadsCache[0]||{}).pais || '');
+    var isEN0 = !pais0 || !paisesPortugues.some(function(p){ return pais0.toLowerCase().includes(p.toLowerCase()); });
+    var tpl0  = isEN0
+      ? 'Hi {nome}, I follow {empresa} in the {setor} space. Would love to connect and exchange insights.'
+      : 'Ola {nome}, acompanho o trabalho da {empresa} no setor de {setor}. Gostaria de conectar.';
+    var preview0 = document.getElementById('liMsgPreview');
+    if (preview0) preview0.value = tpl0;
+    addLog('info', '====== CONVITE STEP 1 ======');
+    addLog('info', '[Idioma] ' + (isEN0 ? 'INGLES (pais: ' + (pais0||'N/A') + ')' : 'PORTUGUES (pais: ' + (pais0||'N/A') + ')'));
+    addLog('info', '[Template] ' + tpl0);
+    mostrarPreviewMensagensLote(oferta, tom, tpl0);
+    setTimeout(function(){ gerarMensagensIndividuais(oferta, tom); }, 200);
+    toast('Convites gerados!', 'success');
+    return;
+  }
+
 
   try {
     var r = await fetch('/api/s1-strategy', {
