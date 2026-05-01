@@ -1,4 +1,4 @@
-// api/phantom.js — usa input direto para sobrescrever Settings
+// api/phantom.js — Renomeia results file a cada launch (resolve "Input already processed")
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -22,48 +22,53 @@ export default async function handler(req, res) {
     'X-Phantombuster-Key': key,
   };
 
+  // Nome de arquivo único por execução — reseta o cache de "already processed"
+  const uniqueFileName = 'atlantyx_li_' + Date.now();
+
   try {
-    // PASSO 1: Atualizar as Settings do Phantom com a URL e mensagem do lead
-    // Isso garante que o Phantom use os dados corretos independente do plano
-    console.log('[Phantom] Updating Settings — URL:', linkedin_url);
-    const updateResp = await fetch(\`https://api.phantombuster.com/api/v2/agents/\${agentId}\`, {
+    // PASSO 1: Atualizar Settings do Phantom com URL do lead + nome de arquivo único
+    console.log('[Phantom] PATCH Settings — URL:', linkedin_url, '| file:', uniqueFileName);
+    const patchResp = await fetch('https://api.phantombuster.com/api/v2/agents/' + agentId, {
       method: 'PATCH',
       headers: pbHeaders,
       body: JSON.stringify({
         argument: JSON.stringify({
-          spreadsheetUrl: linkedin_url,
-          message: message,
-          sendInvitation: send_invitation !== false,
+          spreadsheetUrl:         linkedin_url,
+          message:                message,
+          sendInvitation:         send_invitation !== false,
           numberOfLinesPerLaunch: 1,
+          // Opção 4: nome único = reseta o processamento a cada execução
+          outputFileName:         uniqueFileName,
         }),
       }),
     });
-    console.log('[Phantom] PATCH status:', updateResp.status);
+    console.log('[Phantom] PATCH status:', patchResp.status);
+    const patchData = await patchResp.text();
+    console.log('[Phantom] PATCH body:', patchData.substring(0, 200));
 
-    // PASSO 2: Deletar output anterior
-    try {
-      await fetch(\`https://api.phantombuster.com/api/v2/agents/\${agentId}/output\`, {
-        method: 'DELETE', headers: pbHeaders,
-      });
-      console.log('[Phantom] Output deleted');
-    } catch(e) {
-      console.log('[Phantom] Delete output failed:', e.message);
-    }
-
-    // PASSO 3: Lançar
+    // PASSO 2: Lançar o Phantom
     console.log('[Phantom] Launching agent:', agentId);
     const r = await fetch('https://api.phantombuster.com/api/v2/agents/launch', {
       method: 'POST',
       headers: pbHeaders,
-      body: JSON.stringify({ id: agentId, output: 'result-object' }),
+      body: JSON.stringify({
+        id:     agentId,
+        output: 'result-object',
+      }),
     });
 
     const text = await r.text();
     console.log('[Phantom] Launch status:', r.status, '| body:', text.substring(0, 300));
 
-    if (!r.ok) return res.status(r.status).json({ success: false, error: 'PhantomBuster ' + r.status + ': ' + text.substring(0, 300) });
+    if (!r.ok) {
+      return res.status(r.status).json({
+        success: false,
+        error: 'PhantomBuster ' + r.status + ': ' + text.substring(0, 300)
+      });
+    }
 
     const data = JSON.parse(text);
+    console.log('[Phantom] Success — containerId:', data.containerId || data.id);
     return res.status(200).json({ success: true, ...data });
 
   } catch (e) {
