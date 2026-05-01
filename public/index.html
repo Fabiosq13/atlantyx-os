@@ -163,7 +163,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div class="sb-logo">
     <div class="sb-name"><span class="sb-dot"></span>Atlantyx OS</div>
     <div class="sb-sub">Monitor de Agentes · LIVE</div>
-    <div style="font-family:var(--M);font-size:7px;color:var(--t3);margin-top:2px;">ATX-20260501-2309-E3ACB7C3</div>
+    <div style="font-family:var(--M);font-size:7px;color:var(--t3);margin-top:2px;">ATX-20260501-2317-E0741A7D</div>
   </div>
   <nav class="sb-nav">
     <div class="sbi active" onclick="nav('dash',this)">&#9632; Dashboard <span class="nbx gn">LIVE</span></div>
@@ -366,7 +366,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </nav>
   <div class="sb-foot">
     <div style="font-family:var(--M);font-size:7px;color:var(--t3);padding:4px 0;letter-spacing:0.5px;border-bottom:1px solid var(--bd);margin-bottom:6px;">
-      BUILD: <span id="buildCode" style="color:var(--blue);">ATX-20260501-2309-E3ACB7C3</span>
+      BUILD: <span id="buildCode" style="color:var(--blue);">ATX-20260501-2317-E0741A7D</span>
     </div>
     <div class="sf"><span class="dot on"></span>Claude API · Ativo</div>
     <div class="sf"><span class="dot" id="dotHS"></span><span id="statHS">HubSpot · Verificando</span></div>
@@ -8904,8 +8904,8 @@ async function buscarLeadsApollo() {
         website_empresa:  p.organization?.website_url || p.organization?.primary_domain || '',
         faturamento:      p.organization?.annual_revenue_printed || '',
         funcionarios:     p.organization?.estimated_num_employees || '',
-        cidade:           p.city || '',
-        pais:             p.country || '',
+        cidade:           p.city || p.location_city || '',
+        pais:             p.country || p.location_country || p.country_code || '',
         score:            calcScoreApollo(p),
         selecionado:      true,
         status_li:        'pendente',
