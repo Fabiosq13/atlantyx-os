@@ -163,7 +163,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div class="sb-logo">
     <div class="sb-name"><span class="sb-dot"></span>Atlantyx OS</div>
     <div class="sb-sub">Monitor de Agentes · LIVE</div>
-    <div style="font-family:var(--M);font-size:7px;color:var(--t3);margin-top:2px;">ATX-20260502-1205-EFBB0075</div>
+    <div style="font-family:var(--M);font-size:7px;color:var(--t3);margin-top:2px;">ATX-20260502-1232-03EC6079</div>
   </div>
   <nav class="sb-nav">
     <div class="sbi active" onclick="nav('dash',this)">&#9632; Dashboard <span class="nbx gn">LIVE</span></div>
@@ -366,7 +366,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </nav>
   <div class="sb-foot">
     <div style="font-family:var(--M);font-size:7px;color:var(--t3);padding:4px 0;letter-spacing:0.5px;border-bottom:1px solid var(--bd);margin-bottom:6px;">
-      BUILD: <span id="buildCode" style="color:var(--blue);">ATX-20260502-1205-EFBB0075</span>
+      BUILD: <span id="buildCode" style="color:var(--blue);">ATX-20260502-1232-03EC6079</span>
     </div>
     <div class="sf"><span class="dot on"></span>Claude API · Ativo</div>
     <div class="sf"><span class="dot" id="dotHS"></span><span id="statHS">HubSpot · Verificando</span></div>
@@ -9545,95 +9545,103 @@ async function enviarEmLoteLI() {
 
   for (var i = 0; i < sel.length; i++) {
     var lead = sel[i];
-    if (statusDiv) {
-      statusDiv.innerHTML = '<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;">'
-        + '<div style="font-family:var(--M);font-size:8px;color:var(--blue);margin-bottom:6px;">ENVIANDO ' + (i+1) + '/' + sel.length + '</div>'
-        + '<div style="font-size:11px;">Lead: ' + lead.nome + ' · ' + lead.empresa + '</div>'
-        + '<div style="font-size:10px;color:var(--t2);margin-top:4px;">Enviados: ' + ok + ' | Erros: ' + erros + '</div>'
-        + '</div>';
-    }
-
-    // Personalizar mensagem para este lead
-    // Usar mensagem editada individualmente se existir
-    addLog('info', '[ENVIO ' + (i+1) + '/' + sel.length + '] ' + lead.nome + ' | canalLI=' + usaLI + ' | li_url=' + (lead.linkedin_url||'VAZIO').substring(0,40));
-    var msgEditada = document.getElementById('liMsg_' + lead.id)?.value?.trim();
-    var msgPersonalizada = msgEditada || msg
-      .replace(/\{nome\}/gi, (lead.nome||'').split(' ')[0] || lead.nome || '')
-      .replace(/\{empresa\}/gi, lead.empresa || '')
-      .replace(/\{cargo\}/gi, lead.cargo || '');
-
-    // 1. LinkedIn via PhantomBuster (keys podem vir do Vercel env vars)
-    addLog('info', '[LI CHECK] ' + lead.nome + ' | usaLI=' + usaLI + ' | li_url=' + (lead.linkedin_url||'VAZIO').substring(0,50) + ' | key=' + (creds.phantomKey ? 'CAMPO' : 'VERCEL_ENV') + ' | agt=' + (creds.phantomAgt || process.env?.PHANTOM_AGENT_ID || 'VERCEL_ENV'));
-    if (usaLI && lead.linkedin_url) {
-      // Fire-and-forget — nao bloqueia o loop
-      (function(l, m, c2) {
-        fetch('/api/phantom', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phantom_key: c2.phantomKey,
-            agent_id:    c2.phantomAgt,
-            linkedin_url: l.linkedin_url,
-            message:      m,
-            send_invitation: l.status_li !== 'conectado',
-          })
-        }).then(function(r){ return r.json(); })
-          .then(function(d){
-            addLog(d.success?'ok':'err', '[Phantom ' + (d.success?'OK':'ERRO') + '] ' + l.nome + ' | ' + JSON.stringify(d).substring(0,100));
-          })
-          .catch(function(e){ addLog('err','[Phantom ERRO] ' + l.nome + ': ' + e.message); });
-      })(lead, msgPersonalizada, creds);
-      lead.status_li = 'disparado';
-      atualizarStatusLead(lead.id, 'Phantom disparado', 'var(--blue)');
-      ok++;
-      addLog('ok', '[Phantom] Disparado: ' + lead.nome + ' → ' + lead.linkedin_url.substring(0,50));
-    } else if (usaLI && !lead.linkedin_url) {
-      addLog('warn', '[Phantom SKIP] ' + lead.nome + ' — sem linkedin_url');
-    }
-
-    // 2. WhatsApp via Z-API
-    if (usaWA && lead.telefone) {
-      try {
-        await enviarWALead(lead, msgPersonalizada);
-        lead.status_wa = 'enviado';
-        addLog('ok', '[WhatsApp] Enviado: ' + lead.nome);
-      } catch(e) {
-        addLog('warn', '[WhatsApp] Erro ' + lead.nome + ': ' + e.message);
-      }
-    }
-
-    // 3. Email via s1-strategy (Gmail)
-    if (usaEM && lead.email) {
-      try {
-        await enviarEmailLead(lead, msgPersonalizada);
-        lead.status_email = 'enviado';
-        addLog('ok', '[Email] Enviado: ' + lead.nome + ' <' + lead.email + '>');
-      } catch(e) {
-        addLog('warn', '[Email] Erro ' + lead.nome + ': ' + e.message);
-      }
-    }
-
-    // Salvar como lead no banco
+    addLog('info', '[LOOP ' + (i+1) + '] Processando: ' + lead.nome);
     try {
-      await fetch('/api/db', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'save_lead', value: lead })
-      });
-    } catch(e) {}
 
-    // Carregar no HubSpot
-    await carregarLeadHubSpot(lead);
-    // Adicionar automaticamente à sequência de acompanhamento
-    adicionarLeadSequencia(lead);
+      var lead = sel[i];
+      if (statusDiv) {
+        statusDiv.innerHTML = '<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;">'
+          + '<div style="font-family:var(--M);font-size:8px;color:var(--blue);margin-bottom:6px;">ENVIANDO ' + (i+1) + '/' + sel.length + '</div>'
+          + '<div style="font-size:11px;">Lead: ' + lead.nome + ' · ' + lead.empresa + '</div>'
+          + '<div style="font-size:10px;color:var(--t2);margin-top:4px;">Enviados: ' + ok + ' | Erros: ' + erros + '</div>'
+          + '</div>';
+      }
 
-    // Contar como processado (independente do Phantom)
-    if (lead.status_crm === 'no_crm') {
-      ok++;
-    } else if (lead.status_li !== 'erro') {
-      ok++;
+      // Personalizar mensagem para este lead
+      // Usar mensagem editada individualmente se existir
+      addLog('info', '[ENVIO ' + (i+1) + '/' + sel.length + '] ' + lead.nome + ' | canalLI=' + usaLI + ' | li_url=' + (lead.linkedin_url||'VAZIO').substring(0,40));
+      var msgEditada = document.getElementById('liMsg_' + lead.id)?.value?.trim();
+      var msgPersonalizada = msgEditada || msg
+        .replace(/\{nome\}/gi, (lead.nome||'').split(' ')[0] || lead.nome || '')
+        .replace(/\{empresa\}/gi, lead.empresa || '')
+        .replace(/\{cargo\}/gi, lead.cargo || '');
+
+      // 1. LinkedIn via PhantomBuster (keys podem vir do Vercel env vars)
+      addLog('info', '[LI CHECK] ' + lead.nome + ' | usaLI=' + usaLI + ' | li_url=' + (lead.linkedin_url||'VAZIO').substring(0,50) + ' | key=' + (creds.phantomKey ? 'CAMPO' : 'VERCEL_ENV') + ' | agt=' + (creds.phantomAgt || process.env?.PHANTOM_AGENT_ID || 'VERCEL_ENV'));
+      if (usaLI && lead.linkedin_url) {
+        // Fire-and-forget — nao bloqueia o loop
+        (function(l, m, c2) {
+          fetch('/api/phantom', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              phantom_key: c2.phantomKey,
+              agent_id:    c2.phantomAgt,
+              linkedin_url: l.linkedin_url,
+              message:      m,
+              send_invitation: l.status_li !== 'conectado',
+            })
+          }).then(function(r){ return r.json(); })
+            .then(function(d){
+              addLog(d.success?'ok':'err', '[Phantom ' + (d.success?'OK':'ERRO') + '] ' + l.nome + ' | ' + JSON.stringify(d).substring(0,100));
+            })
+            .catch(function(e){ addLog('err','[Phantom ERRO] ' + l.nome + ': ' + e.message); });
+        })(lead, msgPersonalizada, creds);
+        lead.status_li = 'disparado';
+        atualizarStatusLead(lead.id, 'Phantom disparado', 'var(--blue)');
+        ok++;
+        addLog('ok', '[Phantom] Disparado: ' + lead.nome + ' → ' + lead.linkedin_url.substring(0,50));
+      } else if (usaLI && !lead.linkedin_url) {
+        addLog('warn', '[Phantom SKIP] ' + lead.nome + ' — sem linkedin_url');
+      }
+
+      // 2. WhatsApp via Z-API
+      if (usaWA && lead.telefone) {
+        try {
+          await enviarWALead(lead, msgPersonalizada);
+          lead.status_wa = 'enviado';
+          addLog('ok', '[WhatsApp] Enviado: ' + lead.nome);
+        } catch(e) {
+          addLog('warn', '[WhatsApp] Erro ' + lead.nome + ': ' + e.message);
+        }
+      }
+
+      // 3. Email via s1-strategy (Gmail)
+      if (usaEM && lead.email) {
+        try {
+          await enviarEmailLead(lead, msgPersonalizada);
+          lead.status_email = 'enviado';
+          addLog('ok', '[Email] Enviado: ' + lead.nome + ' <' + lead.email + '>');
+        } catch(e) {
+          addLog('warn', '[Email] Erro ' + lead.nome + ': ' + e.message);
+        }
+      }
+
+      // Salvar como lead no banco
+      try {
+        await fetch('/api/db', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'save_lead', value: lead })
+        });
+      } catch(e) {}
+
+      // Carregar no HubSpot
+      await carregarLeadHubSpot(lead);
+      // Adicionar automaticamente à sequência de acompanhamento
+      adicionarLeadSequencia(lead);
+
+      // Contar como processado (independente do Phantom)
+      if (lead.status_crm === 'no_crm') {
+        ok++;
+      } else if (lead.status_li !== 'erro') {
+        ok++;
+      }
+
+      // Delay entre envios (respeitar limites)
+
+    } catch(loopErr) {
+      addLog('err', '[LOOP ERRO ' + (i+1) + '] ' + lead.nome + ': ' + loopErr.message);
     }
-
-    // Delay entre envios (respeitar limites)
     if (i < sel.length - 1) await new Promise(function(res2) { setTimeout(res2, 1500); });
   }
 
