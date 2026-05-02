@@ -163,7 +163,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div class="sb-logo">
     <div class="sb-name"><span class="sb-dot"></span>Atlantyx OS</div>
     <div class="sb-sub">Monitor de Agentes · LIVE</div>
-    <div style="font-family:var(--M);font-size:7px;color:var(--t3);margin-top:2px;">ATX-20260501-2352-E3F22D38</div>
+    <div style="font-family:var(--M);font-size:7px;color:var(--t3);margin-top:2px;">ATX-20260502-0041-CB0AFAFE</div>
   </div>
   <nav class="sb-nav">
     <div class="sbi active" onclick="nav('dash',this)">&#9632; Dashboard <span class="nbx gn">LIVE</span></div>
@@ -366,7 +366,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </nav>
   <div class="sb-foot">
     <div style="font-family:var(--M);font-size:7px;color:var(--t3);padding:4px 0;letter-spacing:0.5px;border-bottom:1px solid var(--bd);margin-bottom:6px;">
-      BUILD: <span id="buildCode" style="color:var(--blue);">ATX-20260501-2352-E3F22D38</span>
+      BUILD: <span id="buildCode" style="color:var(--blue);">ATX-20260502-0041-CB0AFAFE</span>
     </div>
     <div class="sf"><span class="dot on"></span>Claude API · Ativo</div>
     <div class="sf"><span class="dot" id="dotHS"></span><span id="statHS">HubSpot · Verificando</span></div>
@@ -9566,7 +9566,12 @@ async function enviarEmLoteLI() {
     addLog('info', '[LI CHECK] ' + lead.nome + ' | usaLI=' + usaLI + ' | li_url=' + (lead.linkedin_url||'VAZIO').substring(0,50) + ' | key=' + (creds.phantomKey ? 'CAMPO' : 'VERCEL_ENV') + ' | agt=' + (creds.phantomAgt || process.env?.PHANTOM_AGENT_ID || 'VERCEL_ENV'));
     if (usaLI && lead.linkedin_url) {
       try {
-        var phantomRes = await enviarLIPhantom(lead, msgPersonalizada, creds);
+        // Timeout de 15s para não travar o loop
+        var phantomPromise = enviarLIPhantom(lead, msgPersonalizada, creds);
+        var timeoutPromise = new Promise(function(_, reject) {
+          setTimeout(function() { reject(new Error('Timeout 15s')); }, 15000);
+        });
+        var phantomRes = await Promise.race([phantomPromise, timeoutPromise]);
         lead.status_li = 'enviado';
         atualizarStatusLead(lead.id, 'LinkedIn enviado ✓', 'var(--green)');
         ok++;
