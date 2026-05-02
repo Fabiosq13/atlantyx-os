@@ -1,4 +1,4 @@
-// api/phantom.js — Renomeia results file a cada launch (resolve "Input already processed")
+// api/phantom.js — PATCH Settings antes do launch com timeout estendido
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -22,53 +22,40 @@ export default async function handler(req, res) {
     'X-Phantombuster-Key': key,
   };
 
-  // Nome de arquivo único por execução — reseta o cache de "already processed"
-  const uniqueFileName = 'atlantyx_li_' + Date.now();
-
   try {
-    // PASSO 1: Atualizar Settings do Phantom com URL do lead + nome de arquivo único
-    console.log('[Phantom] PATCH Settings — URL:', linkedin_url, '| file:', uniqueFileName);
-    const patchResp = await fetch('https://api.phantombuster.com/api/v2/agents/' + agentId, {
+    // PATCH: atualizar spreadsheetUrl nas Settings com a URL do lead
+    const newSettings = {
+      sessionCookie:              process.env.PHANTOM_SESSION || '',
+      spreadsheetUrl:             linkedin_url,
+      message:                    message,
+      sendInvitation:             send_invitation !== false,
+      profilesPerLaunch:          1,
+      spreadsheetUrlExclusionList: [],
+    };
+
+    console.log('[Phantom] PATCH Settings — URL:', linkedin_url);
+    const patchR = await fetch('https://api.phantombuster.com/api/v2/agents/' + agentId, {
       method: 'PATCH',
       headers: pbHeaders,
-      body: JSON.stringify({
-        argument: JSON.stringify({
-          spreadsheetUrl:         linkedin_url,
-          message:                message,
-          sendInvitation:         send_invitation !== false,
-          numberOfLinesPerLaunch: 1,
-          // Opção 4: nome único = reseta o processamento a cada execução
-          outputFileName:         uniqueFileName,
-        }),
-      }),
+      body: JSON.stringify({ argument: JSON.stringify(newSettings) }),
     });
-    console.log('[Phantom] PATCH status:', patchResp.status);
-    const patchData = await patchResp.text();
-    console.log('[Phantom] PATCH body:', patchData.substring(0, 200));
+    const patchText = await patchR.text();
+    console.log('[Phantom] PATCH status:', patchR.status, '| body:', patchText.substring(0, 200));
 
-    // PASSO 2: Lançar o Phantom
-    console.log('[Phantom] Launching agent:', agentId);
+    // Launch
+    console.log('[Phantom] Launching...');
     const r = await fetch('https://api.phantombuster.com/api/v2/agents/launch', {
       method: 'POST',
       headers: pbHeaders,
-      body: JSON.stringify({
-        id:     agentId,
-        output: 'result-object',
-      }),
+      body: JSON.stringify({ id: agentId, output: 'result-object' }),
     });
 
     const text = await r.text();
     console.log('[Phantom] Launch status:', r.status, '| body:', text.substring(0, 300));
 
-    if (!r.ok) {
-      return res.status(r.status).json({
-        success: false,
-        error: 'PhantomBuster ' + r.status + ': ' + text.substring(0, 300)
-      });
-    }
+    if (!r.ok) return res.status(r.status).json({ success: false, error: 'PhantomBuster ' + r.status + ': ' + text.substring(0, 300) });
 
     const data = JSON.parse(text);
-    console.log('[Phantom] Success — containerId:', data.containerId || data.id);
     return res.status(200).json({ success: true, ...data });
 
   } catch (e) {
