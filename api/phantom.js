@@ -15,8 +15,6 @@ export default async function handler(req, res) {
   const key     = phantom_key || process.env.PHANTOM_API_KEY;
   const isStep1 = !step || step === 1;
 
-  // Etapa 1 → agente de conexão (novo)
-  // Etapas 2/3/4 → PHANTOM_AGENT_ID existente (Message Sender)
   const agentId = isStep1
     ? (connect_agent_id || process.env.PHANTOM_CONNECT_AGENT_ID)
     : process.env.PHANTOM_AGENT_ID;
@@ -65,27 +63,15 @@ export default async function handler(req, res) {
   console.log('[Phantom] Step:', step || 1, '| Servico:', isStep1 ? 'Connect+FollowUp' : 'MessageSender', '| Agent:', agentId);
 
   try {
-    // ✅ Endpoint correto: POST /agents/save (não PATCH /agents/{id})
-    const saveR = await fetch('https://api.phantombuster.com/api/v2/agents/save', {
+    // Passa o argument como OBJETO direto no launch (não como string)
+    const r = await fetch('https://api.phantombuster.com/api/v2/agents/launch', {
       method: 'POST',
       headers: pbHeaders,
       body: JSON.stringify({
         id:       agentId,
-        argument: JSON.stringify(newSettings),
+        argument: newSettings,   // ← objeto direto, sem JSON.stringify
+        output:   'result-object',
       }),
-    });
-    const saveText = await saveR.text();
-    console.log('[Phantom] SAVE status:', saveR.status, '| body:', saveText.substring(0, 200));
-
-    if (!saveR.ok) {
-      return res.status(saveR.status).json({ success: false, error: 'SAVE falhou: ' + saveText.substring(0, 300) });
-    }
-
-    // Launch
-    const r = await fetch('https://api.phantombuster.com/api/v2/agents/launch', {
-      method: 'POST',
-      headers: pbHeaders,
-      body: JSON.stringify({ id: agentId, output: 'result-object' }),
     });
 
     const text = await r.text();
