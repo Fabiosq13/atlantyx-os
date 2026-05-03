@@ -9577,7 +9577,7 @@ async function enviarEmLoteLI() {
         .replace(/\{cargo\}/gi, lead.cargo || '');
 
       // 1. LinkedIn via PhantomBuster (keys podem vir do Vercel env vars)
-      addLog('info', '[LI CHECK] ' + lead.nome + ' | usaLI=' + usaLI + ' | li_url=' + (lead.linkedin_url||'VAZIO').substring(0,50) + ' | key=' + (creds.phantomKey ? 'CAMPO' : 'VERCEL_ENV') + ' | agt=' + (creds.phantomAgt || process.env?.PHANTOM_AGENT_ID || 'VERCEL_ENV'));
+      addLog('info', '[LI CHECK] ' + lead.nome + ' | usaLI=' + usaLI + ' | li_url=' + (lead.linkedin_url||'VAZIO').substring(0,50) + ' | key=' + (creds.phantomKey ? 'CAMPO' : 'VERCEL_ENV') + ' | agt=' + (creds.phantomAgt || 'VERCEL_ENV'));
       if (usaLI && lead.linkedin_url) {
         // Fire-and-forget — nao bloqueia o loop
         (function(l, m, c2) {
