@@ -576,10 +576,14 @@ tr:hover td{background:rgba(79,124,255,.03);}
               <div class="fg" style="margin-bottom:8px;"><label class="fl">API Key do PhantomBuster</label>
                 <input class="fi" id="liPhantomKey" type="password" placeholder="Sua API Key do PhantomBuster"/>
               </div>
-              <div class="fg" style="margin-bottom:4px;"><label class="fl">Agent ID (LinkedIn Sender)</label>
-                <input class="fi" id="liPhantomAgentId" placeholder="ID do seu PhantomBuster Agent"/>
+              <div class="fg" style="margin-bottom:4px;"><label class="fl">Agent ID — Etapa 1: Conexão</label>
+                <input class="fi" id="liPhantomConnectAgentId" placeholder="ID do agente: Connect and send follow-up messages"/>
               </div>
-              <div style="font-size:9px;color:var(--t2);">Crie o Phantom: "LinkedIn Message Sender" em phantombuster.com</div>
+              <div style="font-size:9px;color:var(--t2);margin-bottom:8px;">Serviço: "LinkedIn - Connect and send follow-up messages"</div>
+              <div class="fg" style="margin-bottom:4px;"><label class="fl">Agent ID — Etapas 2/3/4: Mensagens</label>
+                <input class="fi" id="liPhantomAgentId" placeholder="Já configurado via PHANTOM_AGENT_ID no Vercel" disabled style="opacity:0.5;cursor:not-allowed;"/>
+              </div>
+              <div style="font-size:9px;color:var(--green);">✓ Usa PHANTOM_AGENT_ID do Vercel — "LinkedIn Message Sender" já configurado</div>
             </div>
           </div>
           <button class="btn btn-g" style="width:100%;margin-top:8px;font-size:10px;" onclick="salvarCredenciaisLI()">&#128190; Salvar Credenciais</button>
@@ -8781,6 +8785,8 @@ function salvarCredenciaisLI() {
   try {
     localStorage.setItem('atx:li_apollo_key',  apolloKey);
     localStorage.setItem('atx:li_phantom_key', phantomKey || '');
+    var phantomConnectAgt = document.getElementById('liPhantomConnectAgentId')?.value?.trim();
+    localStorage.setItem('atx:li_phantom_connect_agt', phantomConnectAgt || '');
     localStorage.setItem('atx:li_phantom_agt', phantomAgt || '');
     var el = document.getElementById('liCredStatus');
     if (el) el.innerHTML = '<span style="color:var(--green);">Credenciais salvas!</span>';
@@ -8803,6 +8809,9 @@ function carregarCredenciaisLI() {
       if (el2 && phantomKey) el2.value = phantomKey;
       var el3 = document.getElementById('liPhantomAgentId');
       if (el3 && phantomAgt) el3.value = phantomAgt;
+      var phantomConnectAgt2 = localStorage.getItem('atx:li_phantom_connect_agt') || '';
+      var el4 = document.getElementById('liPhantomConnectAgentId');
+      if (el4 && phantomConnectAgt2) el4.value = phantomConnectAgt2;
       var st = document.getElementById('liCredStatus');
       if (st) st.innerHTML = '<span style="color:var(--green);">Credenciais carregadas</span>';
     }
@@ -8812,8 +8821,9 @@ function carregarCredenciaisLI() {
 function getLICredenciais() {
   return {
     apolloKey:  (document.getElementById('liApolloKey')?.value?.trim()  || localStorage.getItem('atx:li_apollo_key')  || ''),
-    phantomKey: (document.getElementById('liPhantomKey')?.value?.trim() || localStorage.getItem('atx:li_phantom_key') || ''),
-    phantomAgt: (document.getElementById('liPhantomAgentId')?.value?.trim() || localStorage.getItem('atx:li_phantom_agt') || ''),
+    phantomKey:       (document.getElementById('liPhantomKey')?.value?.trim()          || localStorage.getItem('atx:li_phantom_key')         || ''),
+    phantomAgt:       (localStorage.getItem('atx:li_phantom_agt') || ''),
+    phantomConnectAgt:(document.getElementById('liPhantomConnectAgentId')?.value?.trim() || localStorage.getItem('atx:li_phantom_connect_agt') || ''),
   };
 }
 
@@ -9575,11 +9585,12 @@ async function enviarEmLoteLI() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              phantom_key: c2.phantomKey,
-              agent_id:    c2.phantomAgt,
-              linkedin_url: l.linkedin_url,
-              message:      m,
-              send_invitation: l.status_li !== 'conectado',
+              phantom_key:       c2.phantomKey,
+              connect_agent_id:  c2.phantomConnectAgt,
+              linkedin_url:      l.linkedin_url,
+              message:           m,
+              followup_message:  l.followup || '',
+              step:              liSeqStep,
             })
           }).then(function(r){ return r.json(); })
             .then(function(d){
@@ -9672,11 +9683,12 @@ async function enviarEmLoteLI() {
 // ── PHANTOMBUSTER — LinkedIn Sender ───────────────────────────────────────────
 async function enviarLIPhantom(lead, msg, creds) {
   var payload = {
-    phantom_key: creds.phantomKey,
-    agent_id: creds.phantomAgt,
-    linkedin_url: lead.linkedin_url,
-    message: msg,
-    send_invitation: lead.status_li !== 'conectado',
+    phantom_key:       creds.phantomKey,
+    connect_agent_id:  creds.phantomConnectAgt,
+    linkedin_url:      lead.linkedin_url,
+    message:           msg,
+    followup_message:  lead.followup || '',
+    step:              liSeqStep,
   };
 
   addLog('info', '[Phantom POST] Lead: ' + lead.nome + ' | URL: ' + (lead.linkedin_url||'NULL') + ' | agent_id: ' + (creds.phantomAgt||'VAZIO') + ' | key: ' + (creds.phantomKey ? creds.phantomKey.substring(0,8)+'...' : 'VAZIA→usa Vercel env'));
