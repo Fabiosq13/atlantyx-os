@@ -7543,7 +7543,7 @@ async function renderCalCampanhas() {
       const redes = c.redes_ativas || {};
       const redesStr = ['linkedin','instagram','facebook','whatsapp','email']
         .filter(k => redes[k]).map(k => k[0].toUpperCase()).join('');
-      chips += '<div onclick="event.stopPropagation(); abrirCampanhaDB(\\'' + c.id + '\\')" style="background:' + cor + '22;border-left:3px solid ' + cor + ';color:#fff;padding:2px 4px;border-radius:3px;margin-bottom:2px;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;" title="' + (c.nome||'') + ' · ' + redesStr + '">' + (c.nome||'').substring(0,18) + (redesStr ? ' [' + redesStr + ']' : '') + '</div>';
+      chips += '<div onclick="event.stopPropagation(); abrirCampanhaDB(\'' + c.id + '\')" style="background:' + cor + '22;border-left:3px solid ' + cor + ';color:#fff;padding:2px 4px;border-radius:3px;margin-bottom:2px;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;" title="' + (c.nome||'') + ' · ' + redesStr + '">' + (c.nome||'').substring(0,18) + (redesStr ? ' [' + redesStr + ']' : '') + '</div>';
     });
     if (ativasNoDia.length > 3) {
       chips += '<div style="font-size:8px;color:var(--t3);">+' + (ativasNoDia.length - 3) + ' mais</div>';
