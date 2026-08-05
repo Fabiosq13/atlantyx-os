@@ -88,7 +88,7 @@ export default async function handler(req, res) {
 
     // ── CRIAR NOTA NO CONTATO ──────────────────────────────────────────────
     if (action === 'create_note') {
-      const { contact_id, deal_id, note } = body;
+      const { contact_id, deal_id, note } = req.body || {};
       if (!contact_id || !note) return res.status(400).json({ success: false, error: 'contact_id e note obrigatórios' });
 
       const noteBody = {
@@ -106,7 +106,7 @@ export default async function handler(req, res) {
         });
       }
 
-      const r = await fetch(HS_BASE + '/crm/v3/objects/notes', {
+      const r = await fetch(BASE + '/crm/v3/objects/notes', {
         method: 'POST', headers: H, body: JSON.stringify(noteBody)
       });
       const d = await r.json();

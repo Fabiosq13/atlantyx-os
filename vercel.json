@@ -6,6 +6,7 @@
   "crons": [
     { "path": "/api/rfp-monitor", "schedule": "0 */6 * * *" },
     { "path": "/api/followup-cron", "schedule": "0 * * * *" },
-    { "path": "/api/briefing-cron", "schedule": "0 * * * *" }
+    { "path": "/api/briefing-cron", "schedule": "0 * * * *" },
+    { "path": "/api/financeiro?action=marcos_processar_alertas", "schedule": "0 9 * * *" }
   ]
 }

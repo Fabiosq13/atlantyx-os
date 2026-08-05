@@ -36,6 +36,13 @@ export default async function handler(req, res) {
       criado_em TIMESTAMPTZ DEFAULT NOW(),
       atualizado_em TIMESTAMPTZ DEFAULT NOW()
     )`;
+    // Migração: adiciona colunas novas se não existirem (idempotente)
+    await sql`ALTER TABLE campanhas ADD COLUMN IF NOT EXISTS data_inicio DATE`;
+    await sql`ALTER TABLE campanhas ADD COLUMN IF NOT EXISTS data_fim DATE`;
+    await sql`ALTER TABLE campanhas ADD COLUMN IF NOT EXISTS ativa BOOLEAN DEFAULT false`;
+    await sql`ALTER TABLE campanhas ADD COLUMN IF NOT EXISTS redes_ativas JSONB DEFAULT '{}'::jsonb`;
+    await sql`ALTER TABLE campanhas ADD COLUMN IF NOT EXISTS historico_status JSONB DEFAULT '[]'::jsonb`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_camp_periodo ON campanhas(data_inicio, data_fim) WHERE ativa = true`;
     await sql`CREATE TABLE IF NOT EXISTS kpis_diarios (
       data DATE PRIMARY KEY,
       contatos INT DEFAULT 0, respostas INT DEFAULT 0,
@@ -104,19 +111,83 @@ export default async function handler(req, res) {
     if (action === 'save_campanha') {
       const camp = value;
       if (!camp?.id) return res.status(400).json({ error: 'id obrigatório' });
-      await sql`INSERT INTO campanhas (id, nome, canal, status, data, atualizado_em)
-        VALUES (${camp.id}, ${camp.nome||''}, ${camp.canal||''}, ${camp.status||'rascunho'}, ${JSON.stringify(camp)}, NOW())
+      const dataInicio = camp.data_inicio || null;
+      const dataFim    = camp.data_fim    || null;
+      const ativa      = !!camp.ativa;
+      const redesAtivas = camp.redes_ativas || {};
+      await sql`INSERT INTO campanhas (id, nome, canal, status, data, data_inicio, data_fim, ativa, redes_ativas, atualizado_em)
+        VALUES (${camp.id}, ${camp.nome||''}, ${camp.canal||''}, ${camp.status||'rascunho'},
+                ${JSON.stringify(camp)}, ${dataInicio}, ${dataFim}, ${ativa},
+                ${JSON.stringify(redesAtivas)}::jsonb, NOW())
         ON CONFLICT (id) DO UPDATE SET nome=EXCLUDED.nome, canal=EXCLUDED.canal,
-          status=EXCLUDED.status, data=EXCLUDED.data, atualizado_em=NOW()`;
+          status=EXCLUDED.status, data=EXCLUDED.data,
+          data_inicio=EXCLUDED.data_inicio, data_fim=EXCLUDED.data_fim,
+          ativa=EXCLUDED.ativa, redes_ativas=EXCLUDED.redes_ativas,
+          atualizado_em=NOW()`;
       return res.status(200).json({ success: true, id: camp.id });
     }
     if (action === 'list_campanhas') {
-      const r = await sql`SELECT data FROM campanhas ORDER BY atualizado_em DESC`;
-      return res.status(200).json({ success: true, campanhas: r.map(x => x.data) });
+      const r = await sql`SELECT data, data_inicio, data_fim, ativa, redes_ativas, atualizado_em
+        FROM campanhas ORDER BY atualizado_em DESC`;
+      return res.status(200).json({ success: true, campanhas: r.map(x => Object.assign({}, x.data || {}, {
+        data_inicio: x.data_inicio ? String(x.data_inicio).split('T')[0] : null,
+        data_fim: x.data_fim ? String(x.data_fim).split('T')[0] : null,
+        ativa: x.ativa,
+        redes_ativas: x.redes_ativas || {},
+        atualizado_em: x.atualizado_em,
+      })) });
     }
     if (action === 'delete_campanha') {
       await sql`DELETE FROM campanhas WHERE id = ${key}`;
       return res.status(200).json({ success: true });
+    }
+    // Liga/desliga campanha mantendo histórico
+    if (action === 'toggle_campanha') {
+      if (!key) return res.status(400).json({ error: 'id (key) obrigatório' });
+      const novoAtiva = !!(value?.ativa);
+      const motivo = value?.motivo || (novoAtiva ? 'ativada' : 'pausada');
+      const ts = new Date().toISOString();
+      await sql`UPDATE campanhas
+        SET ativa = ${novoAtiva},
+            status = ${novoAtiva ? 'ativa' : 'pausada'},
+            historico_status = COALESCE(historico_status, '[]'::jsonb) ||
+              ${JSON.stringify([{ data: ts, ativa: novoAtiva, motivo }])}::jsonb,
+            atualizado_em = NOW()
+        WHERE id = ${key}`;
+      return res.status(200).json({ success: true, id: key, ativa: novoAtiva });
+    }
+    // Atualiza apenas período de uma campanha (sem reprocessar tudo)
+    if (action === 'update_periodo_campanha') {
+      if (!key) return res.status(400).json({ error: 'id (key) obrigatório' });
+      const di = value?.data_inicio || null;
+      const df = value?.data_fim    || null;
+      await sql`UPDATE campanhas SET data_inicio=${di}, data_fim=${df}, atualizado_em=NOW() WHERE id=${key}`;
+      return res.status(200).json({ success: true, id: key, data_inicio: di, data_fim: df });
+    }
+    // Atualiza apenas redes ativas
+    if (action === 'update_redes_campanha') {
+      if (!key) return res.status(400).json({ error: 'id (key) obrigatório' });
+      const redes = value?.redes_ativas || {};
+      await sql`UPDATE campanhas SET redes_ativas=${JSON.stringify(redes)}::jsonb, atualizado_em=NOW() WHERE id=${key}`;
+      return res.status(200).json({ success: true, id: key, redes_ativas: redes });
+    }
+    // Listar campanhas que estão ativas em uma data (para calendário)
+    if (action === 'list_campanhas_calendario') {
+      const di = value?.data_inicio || new Date().toISOString().split('T')[0];
+      const df = value?.data_fim    || new Date(Date.now() + 90*86400*1000).toISOString().split('T')[0];
+      const r = await sql`SELECT id, nome, canal, status, data_inicio, data_fim, ativa, redes_ativas, data
+        FROM campanhas
+        WHERE (data_inicio IS NULL OR data_inicio <= ${df})
+          AND (data_fim IS NULL OR data_fim >= ${di})
+        ORDER BY data_inicio ASC NULLS LAST`;
+      return res.status(200).json({ success: true, campanhas: r.map(x => ({
+        id: x.id, nome: x.nome, canal: x.canal, status: x.status,
+        data_inicio: x.data_inicio ? String(x.data_inicio).split('T')[0] : null,
+        data_fim: x.data_fim ? String(x.data_fim).split('T')[0] : null,
+        ativa: x.ativa,
+        redes_ativas: x.redes_ativas || {},
+        meta: x.data || {},
+      })) });
     }
 
     // KPIs
@@ -173,7 +244,7 @@ export default async function handler(req, res) {
       const proj = value;
       if (!proj?.id) return res.status(400).json({ error: 'id obrigatório' });
       await sql`INSERT INTO s13_projetos (id, cliente, nome, tecnologia, banco, status, data, salvo_em, atualizado_em)
-        VALUES (\${proj.id}, \${proj.cliente||''}, \${proj.nome||''}, \${proj.tecnologia||''}, \${proj.banco||''}, \${proj.status||'rascunho'}, \${JSON.stringify(proj)}, NOW(), NOW())
+        VALUES (${proj.id}, ${proj.cliente||''}, ${proj.nome||''}, ${proj.tecnologia||''}, ${proj.banco||''}, ${proj.status||'rascunho'}, ${JSON.stringify(proj)}, NOW(), NOW())
         ON CONFLICT (id) DO UPDATE SET cliente=EXCLUDED.cliente, nome=EXCLUDED.nome, tecnologia=EXCLUDED.tecnologia,
           banco=EXCLUDED.banco, status=EXCLUDED.status, data=EXCLUDED.data, atualizado_em=NOW()`;
       return res.status(200).json({ success: true, id: proj.id });
@@ -183,11 +254,11 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, projetos: rows.map(r => r.data) });
     }
     if (action === 'get_s13projeto') {
-      const rows = await sql`SELECT data FROM s13_projetos WHERE id = \${key}`;
+      const rows = await sql`SELECT data FROM s13_projetos WHERE id = ${key}`;
       return res.status(200).json({ success: true, value: rows[0]?.data ?? null });
     }
     if (action === 'delete_s13projeto') {
-      await sql`DELETE FROM s13_projetos WHERE id = \${key}`;
+      await sql`DELETE FROM s13_projetos WHERE id = ${key}`;
       return res.status(200).json({ success: true });
     }
 
@@ -196,17 +267,17 @@ export default async function handler(req, res) {
       const reg = value;
       if (!reg.id) reg.id = 'reg_' + Date.now();
       await sql`INSERT INTO squad_registros (id, squad, tipo, titulo, cliente, data, atualizado_em)
-        VALUES (\${reg.id}, \${reg.squad||'geral'}, \${reg.tipo||''}, \${reg.titulo||''}, \${reg.cliente||''}, \${JSON.stringify(reg)}, NOW())
+        VALUES (${reg.id}, ${reg.squad||'geral'}, ${reg.tipo||''}, ${reg.titulo||''}, ${reg.cliente||''}, ${JSON.stringify(reg)}, NOW())
         ON CONFLICT (id) DO UPDATE SET tipo=EXCLUDED.tipo, titulo=EXCLUDED.titulo,
           cliente=EXCLUDED.cliente, data=EXCLUDED.data, atualizado_em=NOW()`;
       return res.status(200).json({ success: true, id: reg.id });
     }
     if (action === 'list_squad_registros') {
-      const rows = await sql`SELECT data FROM squad_registros WHERE squad = \${key} ORDER BY atualizado_em DESC LIMIT 100`;
+      const rows = await sql`SELECT data FROM squad_registros WHERE squad = ${key} ORDER BY atualizado_em DESC LIMIT 100`;
       return res.status(200).json({ success: true, registros: rows.map(r => r.data) });
     }
     if (action === 'delete_squad_registro') {
-      await sql`DELETE FROM squad_registros WHERE id = \${key}`;
+      await sql`DELETE FROM squad_registros WHERE id = ${key}`;
       return res.status(200).json({ success: true });
     }
 
