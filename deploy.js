@@ -21,6 +21,7 @@ const CONFIG = {
 const ARQUIVOS = [
   { local: 'public/index.html',         remoto: 'public/index.html' },
   { local: 'api/claude.js',             remoto: 'api/claude.js' },
+  { local: 'api/qb-oauth.js',           remoto: 'api/qb-oauth.js' },
   { local: 'api/lead-capture.js',       remoto: 'api/lead-capture.js' },
   { local: 'api/wa-response.js',        remoto: 'api/wa-response.js' },
   { local: 'api/wa-batch-generate.js',  remoto: 'api/wa-batch-generate.js' },
