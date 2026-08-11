@@ -2627,7 +2627,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <button class="btn btn-g" onclick="gerarAnaliseFin()" style="font-size:9px;padding:3px 8px;">&#9670; Analisar com IA</button>
       </div>
       <div class="pb">
-        <div style="background:var(--go2);border:1px solid rgba(245,166,35,.2);border-radius:7px;padding:11px;margin-bottom:12px;font-size:11px;color:var(--gold);">
+        <div id="qbBanner" style="background:var(--go2);border:1px solid rgba(245,166,35,.2);border-radius:7px;padding:11px;margin-bottom:12px;font-size:11px;color:var(--gold);">
           &#9888; Para ativar: adicione <strong>QB_CLIENT_ID</strong>, <strong>QB_CLIENT_SECRET</strong>, <strong>QB_REFRESH_TOKEN</strong> e <strong>QB_REALM_ID</strong> no Vercel. Obtenha em developer.intuit.com
         </div>
         <div id="f_realTable"><div style="color:var(--t3);font-size:11px;text-align:center;padding:24px;">Sincronize o QuickBooks para ver os lancamentos realizados</div></div>
@@ -11664,8 +11664,25 @@ function fmtBRLcompleto(v) {
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. SYNC QUICKBOOKS — agora chama /api/financeiro corretamente
 // ═══════════════════════════════════════════════════════════════════════════
+// Resolve os elementos conforme a tela ativa: o Painel Financeiro (s3dash) e a
+// Receita Realizada (s3realizado) tem o mesmo botao com ids diferentes.
+function qbEls() {
+  const naTela = id => {
+    const el = document.getElementById(id);
+    return el && el.closest('.page') && el.closest('.page').classList.contains('active') ? el : null;
+  };
+  if (naTela('f_realTable') || naTela('btnQBReal')) {
+    return { btn: document.getElementById('btnQBReal'),
+             alvo: document.getElementById('f_realTable'),
+             tag: document.getElementById('qbRealTag'), realizado: true };
+  }
+  return { btn: document.getElementById('btnSyncQB'),
+           alvo: document.getElementById('f_lancamentos'),
+           tag: document.getElementById('qbTag'), realizado: false };
+}
+
 async function syncQuickBooks() {
-  const btn = document.getElementById('btnSyncQB');
+  const { btn, alvo, tag: tagEl, realizado } = qbEls();
   if (btn) { btn.disabled = true; btn.textContent = '⟳ Sincronizando...'; }
   if (typeof addLog === 'function') addLog('info', '[S3] Sincronizando QuickBooks...');
 
@@ -11673,7 +11690,7 @@ async function syncQuickBooks() {
     const d = await finApi('painel_resumo');
 
     if (!d.qb_configurado) {
-      document.getElementById('f_lancamentos').innerHTML = `
+      if (alvo) alvo.innerHTML = `
         <div style="background:var(--go2);border:1px solid rgba(245,166,35,.2);border-radius:7px;padding:12px;font-size:11px;color:var(--gold);margin-bottom:10px;">
           QuickBooks não conectado. Configure as variáveis de ambiente no Vercel.
         </div>
@@ -11683,13 +11700,12 @@ async function syncQuickBooks() {
           3. Gere o Refresh Token via OAuth 2.0 Playground<br>
           4. Adicione no Vercel: QB_CLIENT_ID · QB_CLIENT_SECRET · QB_REFRESH_TOKEN · QB_REALM_ID
         </div>`;
-      const tag = document.getElementById('qbTag');
-      if (tag) { tag.className = 'tag off'; tag.textContent = 'Não configurado'; }
+      if (tagEl) { tagEl.className = 'tag off'; tagEl.textContent = 'Não configurado'; }
     } else {
       atualizarPainelFinanceiro(d.realAnual, d.realMes, d.aReceber, d.projetado, d.saldoCaixa);
-      renderLancamentos(d.lancamentos || []);
-      const tag = document.getElementById('qbTag');
-      if (tag) { tag.className = 'tag on'; tag.textContent = 'Sincronizado ' + new Date().toLocaleTimeString('pt-BR'); }
+      renderLancamentos(d.lancamentos || [], realizado ? 'f_realTable' : 'f_lancamentos');
+      document.querySelectorAll('#qbBanner').forEach(b => b.style.display = 'none');
+      if (tagEl) { tagEl.className = 'tag on'; tagEl.textContent = 'Sincronizado ' + new Date().toLocaleTimeString('pt-BR'); }
       if (typeof addLog === 'function') addLog('ok', `[S3] QB OK — ${d.lancamentos?.length || 0} lançamentos · saldo ${fmtBRL(d.saldoCaixa)}`);
     }
 
@@ -11755,8 +11771,8 @@ async function atualizarPainelFinanceiro(realAnual, realMes, aReceber, projetado
   }
 }
 
-function renderLancamentos(lancamentos) {
-  const el = document.getElementById('f_lancamentos');
+function renderLancamentos(lancamentos, alvoId) {
+  const el = document.getElementById(alvoId || 'f_lancamentos');
   if (!el) return;
   if (!lancamentos.length) {
     el.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:18px;">Nenhum lançamento no período</div>';
