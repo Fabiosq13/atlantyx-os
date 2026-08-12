@@ -3,6 +3,7 @@
 // Conecta com: S1 (estratégico), S2 (marketing/RFPs), S7 (vendas), S9 (projetos), S3 (financeiro)
 // Usa Gmail API via OAuth configurado no Google Cloud
 
+const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
@@ -254,7 +255,7 @@ Para cada um retorne:
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 4000, system, messages: [{ role: 'user', content: user }] })
+    body: JSON.stringify({ model: MODEL, max_tokens: 4000, system, messages: [{ role: 'user', content: user }] })
   });
 
   const d = await r.json();
@@ -344,7 +345,7 @@ async function processarRFPEmail(email) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 800,
       messages: [{ role: 'user', content: `Extraia os dados do RFP deste e-mail da Atlantyx:
 Assunto: ${email.assunto}
@@ -386,7 +387,7 @@ async function processarVendaEmail(email) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 600,
       messages: [{ role: 'user', content: `Analise este e-mail de potencial cliente da Atlantyx:
 Assunto: ${email.assunto}
@@ -430,7 +431,7 @@ async function processarProjetoEmail(email) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 600,
       messages: [{ role: 'user', content: `Extraia dados de atualização de projeto deste e-mail:
 Assunto: ${email.assunto}
@@ -467,7 +468,7 @@ async function processarRespostaVenda({ email_id, email_original, contexto }) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 800,
       system: 'Você é o Agente de E-mail da Atlantyx. Escreva respostas profissionais, diretas e consultivas. A Atlantyx resolve: decisões com dados atrasados = perda financeira. Quick Wins em semanas, ROI mensurável.',
       messages: [{ role: 'user', content: `Escreva UMA resposta de e-mail profissional para:
@@ -495,7 +496,7 @@ async function gerarRelatorio({ periodo = '7 dias', emails_classificados }) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 1000,
       messages: [{ role: 'user', content: `Gere um relatório estratégico dos e-mails da Atlantyx dos últimos ${periodo}:
 ${JSON.stringify(emails_classificados || [])}

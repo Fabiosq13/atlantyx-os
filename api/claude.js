@@ -1,6 +1,7 @@
 // api/claude.js
 // Endpoint seguro — chave da API fica no servidor, nunca exposta no frontend
 
+const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 export default async function handler(req, res) {
   // CORS — permite apenas seu domínio em produção
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -30,7 +31,7 @@ export default async function handler(req, res) {
     }
 
     const body = {
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens,
       messages,
     };

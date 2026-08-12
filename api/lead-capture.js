@@ -2,6 +2,7 @@
 // Agente S2-02 + S7-05
 // Recebe lead do Meta Ads / LinkedIn → Claude gera mensagem → HubSpot → WhatsApp
 
+const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -118,7 +119,7 @@ Retorne APENAS a mensagem, sem aspas ou explicações.`;
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 400,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],

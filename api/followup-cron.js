@@ -4,6 +4,7 @@
 
 // Lista em memória dos follow-ups pendentes (em produção usar Vercel KV)
 // Para habilitar Vercel KV: vercel.com/docs/storage/vercel-kv
+const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 const pendingFollowUps = new Map();
 
 export default async function handler(req, res) {
@@ -49,7 +50,7 @@ async function enviarFollowUp(followup) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 250,
       messages: [{
         role: 'user',

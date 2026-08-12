@@ -2,6 +2,7 @@
 // S2-09 Agente de Analytics + Dashboard de métricas consolidadas S2 e S7
 // Retorna KPIs em tempo real do HubSpot para o painel
 
+const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -150,7 +151,7 @@ async function analisarMetricasClaude(pipeline, kpis) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 800,
       messages: [{
         role: 'user',

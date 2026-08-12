@@ -2,6 +2,7 @@
 // Agente S7-05 (Outreach WhatsApp) + S7-07 (Agendamento de Reuniões)
 // Recebe resposta do lead via Z-API → Claude analisa → HubSpot atualiza → agenda reunião
 
+const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -114,7 +115,7 @@ Retorne APENAS o JSON válido, sem markdown.`;
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 600,
       system: systemPrompt,
       messages: [{ role: 'user', content: `Mensagem do lead: "${mensagem}"` }],
@@ -228,7 +229,7 @@ async function gerarPitchConsultivo(contato) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 300,
       messages: [{
         role: 'user',

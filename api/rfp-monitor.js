@@ -3,6 +3,7 @@
 // Fontes: PNCP (API pública oficial) + análise Claude para filtragem e scoring
 // PNCP = Portal Nacional de Contratações Públicas — sem autenticação, dados reais
 
+const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -135,7 +136,7 @@ async function filtrarComClaude(licitacoes, setor) {
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 3000,
       system: `Você é o Agente S2-04 da Atlantyx — analista de oportunidades de licitação.
 A Atlantyx fornece: BI, Engenharia de Dados, Analytics, IA, Dashboards, Integração de Sistemas.
@@ -199,7 +200,7 @@ async function gerarRFPsInteligentesFallback(setor) {
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 2500,
       system: `Você é o Agente S2-04 da Atlantyx. Gere RFPs/licitações REALISTAS e PLAUSÍVEIS.
 Base: licitações reais que órgãos públicos brasileiros e estatais publicam para BI/Dados/IA.

@@ -2,6 +2,7 @@
 // Leitor de Dados para os Agentes S1 — QuickBooks + Google Drive
 // Alimenta o planejamento estratégico com dados reais da empresa
 
+const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -334,7 +335,7 @@ async function driveResumirPasta({ folder_id, folder_name, pergunta } = {}) {
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 2000,
       system: 'Você é o assistente estratégico da Atlantyx. Analise documentos internos e extraia insights relevantes para o planejamento estratégico. Seja objetivo e direto.',
       messages: [{
@@ -398,7 +399,7 @@ async function analisarFinanceiro() {
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 3000,
       system: `Você é o Agente S1-04 (CFO-Agente) da Atlantyx.
 Analise os dados financeiros reais e gere insights estratégicos.
@@ -482,7 +483,7 @@ async function contextoEstrategico() {
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: MODEL,
       max_tokens: 2000,
       system: 'Você é o sistema de Inteligência Estratégica da Atlantyx. Consolide os dados em um contexto executivo claro.',
       messages: [{

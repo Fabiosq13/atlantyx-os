@@ -2,6 +2,7 @@
 // S2-03 Agente de Cadastro em Portais de Fornecedores
 // Gera instruções e prepara documentação para cadastro da Atlantyx como fornecedora
 
+const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -61,7 +62,7 @@ Retorne:
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1500, system, messages: [{ role: 'user', content: user }] })
+    body: JSON.stringify({ model: MODEL, max_tokens: 1500, system, messages: [{ role: 'user', content: user }] })
   });
   const d = await r.json();
   try {

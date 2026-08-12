@@ -2,6 +2,7 @@
 // S7-05 Agente de Outreach via WhatsApp — Envio em Lote
 // Recebe lista de leads aprovados → Claude gera mensagem individual → Z-API envia → HubSpot atualiza
 
+const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -99,7 +100,7 @@ Regras:
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 300, system, messages: [{ role: 'user', content: user }] })
+    body: JSON.stringify({ model: MODEL, max_tokens: 300, system, messages: [{ role: 'user', content: user }] })
   });
   const d = await r.json();
   return d.content[0].text;

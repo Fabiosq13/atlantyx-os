@@ -4,6 +4,7 @@
 
 
 // ── AGENTE GENÉRICO — todos os novos squads ────────────────────────────────
+const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 async function genericAgentCall({ action, payload = {} }, squad) {
   const prompts = {
     financeiro:    `Voce e o Agente Financeiro da Atlantyx, empresa B2B de BI, Dados e IA. Acao: ${action}. Dados: ${JSON.stringify(payload)}. Responda em portugues com analise detalhada, KPIs, insights e recomendacoes praticas.`,
@@ -240,7 +241,7 @@ Retorne JSON completo:
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 2500, system, messages })
+    body: JSON.stringify({ model: MODEL, max_tokens: 2500, system, messages })
   });
   const d = await resp.json();
   if (!resp.ok) throw new Error(d.error?.message || 'Erro Claude');
@@ -516,7 +517,7 @@ async function claude(system, user, maxTokens = 1000) {
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] })
+    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] })
   });
   const d = await r.json();
   if (!r.ok) throw new Error(d.error?.message || 'Erro Claude API');

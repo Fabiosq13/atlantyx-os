@@ -3,6 +3,7 @@
 // Os agentes analisam a própria empresa — riscos, finanças, mercado, posicionamento
 // e replanejam ações continuamente para maximizar lucro e crescimento
 
+const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -596,7 +597,7 @@ async function claude(system, user, maxTokens = 2000) {
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] })
+    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] })
   });
   const d = await r.json();
   if (!r.ok) throw new Error(d.error?.message || 'Erro Claude API');

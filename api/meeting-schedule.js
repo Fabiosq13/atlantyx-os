@@ -2,6 +2,7 @@
 // S7-07 Agente de Agendamento de Reuniões + S7-08 Agente de Preparação de Reunião
 // Confirma reunião → cria no Google Calendar → gera dossiê 24h antes → notifica todos
 
+const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -156,7 +157,7 @@ STRUCTURE O BRIEFING COM:
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 2000, system, messages: [{ role: 'user', content: user }] })
+    body: JSON.stringify({ model: MODEL, max_tokens: 2000, system, messages: [{ role: 'user', content: user }] })
   });
   const d = await r.json();
   const briefing = d.content[0].text;
