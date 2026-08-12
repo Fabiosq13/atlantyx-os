@@ -7543,7 +7543,7 @@ async function renderCalCampanhas() {
       const redes = c.redes_ativas || {};
       const redesStr = ['linkedin','instagram','facebook','whatsapp','email']
         .filter(k => redes[k]).map(k => k[0].toUpperCase()).join('');
-      chips += '<div onclick="event.stopPropagation(); abrirCampanhaDB(\\'' + c.id + '\\')" style="background:' + cor + '22;border-left:3px solid ' + cor + ';color:#fff;padding:2px 4px;border-radius:3px;margin-bottom:2px;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;" title="' + (c.nome||'') + ' · ' + redesStr + '">' + (c.nome||'').substring(0,18) + (redesStr ? ' [' + redesStr + ']' : '') + '</div>';
+      chips += `<div onclick="event.stopPropagation(); abrirCampanhaDB('${c.id}')" style="background:${cor}22;border-left:3px solid ${cor};color:#fff;padding:2px 4px;border-radius:3px;margin-bottom:2px;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;" title="${c.nome||''} · ${redesStr}">${(c.nome||'').substring(0,18)}${redesStr ? ' [' + redesStr + ']' : ''}</div>`;
     });
     if (ativasNoDia.length > 3) {
       chips += '<div style="font-size:8px;color:var(--t3);">+' + (ativasNoDia.length - 3) + ' mais</div>';
@@ -13123,13 +13123,15 @@ async function enviarTermo(id) {
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// HEALTHCHECK & BUILD INFO (v1.4)
+// HEALTHCHECK & BUILD INFO (v1.4.2)
 // Estratégia DEFENSIVA: só chama a API quando o usuário clicar.
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
+console.log('%c[ATLANTYX v1.4.2-FIX] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.4';
+window.__ATX_BUILD_ID__ = 'ATX-v1.4.2-FIX';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
