@@ -10,8 +10,19 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).end();
 
+  // Preflight: checar envvars críticas ANTES de tentar chamar IA
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.error('[s2-creative] ANTHROPIC_API_KEY ausente no Vercel');
+    return res.status(500).json({
+      error: 'ANTHROPIC_API_KEY não configurada no Vercel',
+      hint: 'Vá em Vercel Settings → Environment Variables → adicione ANTHROPIC_API_KEY',
+      module: 's2-creative',
+    });
+  }
+
   try {
-    const { action, payload = {} } = req.body;
+    const { action, payload = {} } = req.body || {};
+    if (!action) return res.status(400).json({ error: 'Campo "action" obrigatório no body' });
 
     const acoes = {
       // CRIAÇÃO
@@ -38,12 +49,30 @@ export default async function handler(req, res) {
     };
 
     if (!acoes[action]) return res.status(400).json({ error: `Ação inválida. Disponíveis: ${Object.keys(acoes).join(', ')}` });
+
+    const t0 = Date.now();
     const resultado = await acoes[action]();
+    console.log(`[s2-creative] ${action} OK em ${Date.now()-t0}ms`);
     return res.status(200).json({ success: true, action, timestamp: new Date().toISOString(), ...resultado });
 
   } catch (error) {
-    console.error('[ERRO s2-creative]', error.message);
-    return res.status(500).json({ error: error.message });
+    // Log completo (Vercel Runtime Logs)
+    console.error('[ERRO s2-creative]', {
+      message: error.message,
+      stack: error.stack?.split('\n').slice(0, 5).join(' | '),
+      cause: error.cause,
+    });
+    // Resposta detalhada para o frontend/debug
+    return res.status(500).json({
+      error: error.message,
+      module: 's2-creative',
+      hint: error.message?.includes('Claude API')
+        ? 'Erro da API Anthropic. Verifique se ANTHROPIC_API_KEY é válida e se o modelo CLAUDE_MODEL existe (atual: ' + MODEL + ')'
+        : error.message?.includes('parseJSON') || error.message?.includes('JSON')
+        ? 'A resposta da IA não veio em JSON válido. Verifique nos logs do Vercel a resposta bruta.'
+        : 'Verifique os logs do Vercel para stack completo',
+      stack_preview: error.stack?.split('\n').slice(0, 3),
+    });
   }
 }
 
@@ -720,19 +749,47 @@ async function agendarHubSpot({ tipo, titulo, data, responsavel, descricao }) {
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 async function claude(system, user, maxTokens = 1000) {
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] })
-  });
-  const d = await r.json();
+  const t0 = Date.now();
+  let r, d;
+  try {
+    r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] })
+    });
+  } catch (fetchErr) {
+    console.error('[claude fetch fail]', fetchErr.message);
+    throw new Error('Falha ao conectar à API Anthropic: ' + fetchErr.message);
+  }
+
+  const ms = Date.now() - t0;
+  const rawText = await r.text();
+  try {
+    d = JSON.parse(rawText);
+  } catch {
+    console.error('[claude non-JSON response]', { status: r.status, body: rawText.substring(0, 500) });
+    throw new Error(`Claude API HTTP ${r.status} — resposta não é JSON: ${rawText.substring(0, 200)}`);
+  }
+
   if (!r.ok) {
     const msg = d?.error?.message || d?.error?.type || `HTTP ${r.status}`;
-    console.error('[claude API]', msg, JSON.stringify(d).substring(0, 300));
-    throw new Error('Claude API: ' + msg);
+    console.error('[claude API error]', {
+      http_status: r.status,
+      error_type: d?.error?.type,
+      error_msg: d?.error?.message,
+      model_used: MODEL,
+      response_ms: ms,
+    });
+    throw new Error(`Claude API [${r.status}]: ${msg} (modelo: ${MODEL})`);
   }
+
   const text = d?.content?.[0]?.text;
-  if (!text) throw new Error('Claude retornou resposta vazia');
+  if (!text) {
+    console.error('[claude empty response]', { status: r.status, data: JSON.stringify(d).substring(0, 300) });
+    throw new Error('Claude retornou resposta vazia (content[0].text não existe)');
+  }
+
+  console.log(`[claude OK] ${MODEL} em ${ms}ms, ${text.length} chars`);
   return text;
 }
 
