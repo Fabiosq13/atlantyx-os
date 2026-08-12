@@ -165,7 +165,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div class="sb-logo">
     <div class="sb-name"><span class="sb-dot"></span>Atlantyx OS</div>
     <div class="sb-sub">Monitor de Agentes · LIVE</div>
-    <div style="font-family:var(--M);font-size:7px;color:var(--t3);margin-top:2px;">ATX-20260502-1232-03EC6079</div>
+    <div style="font-family:var(--M);font-size:7px;color:var(--t3);margin-top:2px;" id="sidebarBuildId" title="Build atual — click para checar saúde">ATX-carregando...</div>
   </div>
   <nav class="sb-nav">
     <div class="sbi active" onclick="nav('dash',this)">&#9632; Dashboard <span class="nbx gn">LIVE</span></div>
@@ -376,7 +376,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </nav>
   <div class="sb-foot">
     <div style="font-family:var(--M);font-size:7px;color:var(--t3);padding:4px 0;letter-spacing:0.5px;border-bottom:1px solid var(--bd);margin-bottom:6px;">
-      BUILD: <span id="buildCode" style="color:var(--blue);">ATX-20260502-1232-03EC6079</span>
+      BUILD: <span id="buildCode" style="color:var(--blue);cursor:pointer;" onclick="verificarSaude()" title="Clique pra rodar healthcheck completo">ATX-carregando...</span>
     </div>
     <div class="sf"><span class="dot on"></span>Claude API · Ativo</div>
     <div class="sf"><span class="dot" id="dotHS"></span><span id="statHS">HubSpot · Verificando</span></div>
@@ -2065,7 +2065,6 @@ tr:hover td{background:rgba(79,124,255,.03);}
     </div>
 
   </div>
-  </div>  <!-- /#page-s2campanha -->
 
 
   <!-- OUTBOUND ADS + SEO -->
@@ -2627,8 +2626,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <button class="btn btn-g" onclick="gerarAnaliseFin()" style="font-size:9px;padding:3px 8px;">&#9670; Analisar com IA</button>
       </div>
       <div class="pb">
-        <div id="qbBanner" style="background:var(--go2);border:1px solid rgba(245,166,35,.2);border-radius:7px;padding:11px;margin-bottom:12px;font-size:11px;color:var(--gold);">
-          &#9888; Para ativar: adicione <strong>QB_CLIENT_ID</strong>, <strong>QB_CLIENT_SECRET</strong>, <strong>QB_REFRESH_TOKEN</strong> e <strong>QB_REALM_ID</strong> no Vercel. Obtenha em developer.intuit.com
+        <div style="background:var(--go2);border:1px solid rgba(245,166,35,.2);border-radius:7px;padding:11px;margin-bottom:12px;font-size:11px;color:var(--gold);">
+          &#9888; Para ativar: adicione <strong>QB_CLIENT_ID</strong>, <strong>QB_CLIENT_SECRET</strong> e <strong>QB_REFRESH_TOKEN</strong> no Vercel. Obtenha em developer.intuit.com
         </div>
         <div id="f_realTable"><div style="color:var(--t3);font-size:11px;text-align:center;padding:24px;">Sincronize o QuickBooks para ver os lancamentos realizados</div></div>
       </div>
@@ -2844,875 +2843,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </div>
 
 
-
-    <!-- S3 · KPIs DE SAUDE FINANCEIRA -->
-  <div class="page" id="page-s3kpis">
-    <div style="background:linear-gradient(135deg,rgba(0,207,200,.10),rgba(0,207,200,.02));border:1px solid rgba(0,207,200,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
-      <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">KPIs de Saude Financeira</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Calculo deterministico sobre dados QuickBooks &middot; Semaforo automatico</div></div>
-      <button class="btn btn-gn" onclick="calcularKpisFinanceiros()">&#9670; Calcular KPIs de Saude</button>
-    </div>
-
-    <div class="kg k3" style="margin-bottom:12px;">
-      <div class="kpi pk"><div class="kl">EBITDA</div><div class="kv" id="s3_ebitda">&mdash;</div><div class="ks">mes atual</div></div>
-      <div class="kpi pk"><div class="kl">Margem Liquida</div><div class="kv" id="s3_margem">&mdash;</div><div class="ks">% lucro/receita</div></div>
-      <div class="kpi pk"><div class="kl">ROI Total</div><div class="kv" id="s3_roi">&mdash;</div><div class="ks">retorno mes</div></div>
-      <div class="kpi pk"><div class="kl">Liquidez Corrente</div><div class="kv" id="s3_liq">&mdash;</div><div class="ks">ideal &gt; 1.5</div></div>
-      <div class="kpi pk"><div class="kl">Runway</div><div class="kv" id="s3_runway">&mdash;</div><div class="ks">meses de caixa</div></div>
-      <div class="kpi gd"><div class="kl">Contas a Receber</div><div class="kv" id="s3_backlog">&mdash;</div><div class="ks">em aberto</div></div>
-    </div>
-
-    <div class="kg k2">
-      <div class="panel">
-        <div class="ph"><div class="pt">Indicadores de Saude Detalhados</div><span class="tag on">Deterministico</span></div>
-        <div class="pb" id="s3RentPanel"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Clique em Calcular KPIs de Saude</div></div>
-      </div>
-      <div class="panel">
-        <div class="ph"><div class="pt">Tributario + Compliance</div></div>
-        <div class="pb" id="s3TribPanel">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">DAS Simples</div><div style="font-size:14px;font-weight:600;" id="s3_das">&mdash;</div></div>
-            <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">FGTS</div><div style="font-size:14px;font-weight:600;" id="s3_fgts">&mdash;</div></div>
-            <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">IRPJ/CSLL</div><div style="font-size:14px;font-weight:600;" id="s3_irpj">&mdash;</div></div>
-            <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">ISS</div><div style="font-size:14px;font-weight:600;" id="s3_iss">&mdash;</div></div>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
-
-<div class="page" id="page-s4crm">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#f09433;margin-bottom:14px;">S4 · VENDAS CRM — METAS + QUALIDADE + PIPELINE</div>
-    <div class="kg k3" style="margin-bottom:12px;">
-      <div class="kpi pk"><div class="kl">Meta Mês</div><div class="kv" id="s4_metaMes">R$0</div><div class="ks">% atingido</div></div>
-      <div class="kpi pk"><div class="kl">Win Rate</div><div class="kv" id="s4_wr">—</div><div class="ks">proposta→fechado</div></div>
-      <div class="kpi pk"><div class="kl">Ticket Médio</div><div class="kv" id="s4_ticket">—</div><div class="ks">por deal</div></div>
-      <div class="kpi pk"><div class="kl">Ciclo Médio</div><div class="kv" id="s4_ciclo">—</div><div class="ks">dias 1°contato→fecha</div></div>
-      <div class="kpi pk"><div class="kl">Pipeline Total</div><div class="kv" id="s4_pipeline">—</div><div class="ks">em aberto</div></div>
-      <div class="kpi gd"><div class="kl">ARR</div><div class="kv" id="s4_arr">—</div><div class="ks">receita recorrente anual</div></div>
-    </div>
-    <div class="kg k2">
-      <div class="panel"><div class="ph"><div class="pt">Forecast Receita</div><span class="tag live">IA</span></div>
-        <div class="pb">
-          <div style="margin-bottom:10px;">
-            <div style="font-family:var(--M);font-size:8px;color:var(--t2);margin-bottom:6px;">CENÁRIOS DE FORECAST</div>
-            <div class="kg k3" style="gap:6px;">
-              <div style="background:rgba(34,211,163,.08);border:1px solid rgba(34,211,163,.2);border-radius:6px;padding:10px;text-align:center;">
-                <div style="font-size:10px;color:var(--green);">Otimista</div><div style="font-size:16px;font-weight:700;color:var(--green);" id="s4_fOtimista">—</div>
-              </div>
-              <div style="background:rgba(79,124,255,.08);border:1px solid rgba(79,124,255,.2);border-radius:6px;padding:10px;text-align:center;">
-                <div style="font-size:10px;color:var(--blue);">Realista</div><div style="font-size:16px;font-weight:700;color:var(--blue);" id="s4_fRealista">—</div>
-              </div>
-              <div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:6px;padding:10px;text-align:center;">
-                <div style="font-size:10px;color:var(--gold);">Pessimista</div><div style="font-size:16px;font-weight:700;color:var(--gold);" id="s4_fPessimista">—</div>
-              </div>
-            </div>
-          </div>
-          <button class="btn btn-p" style="width:100%;" onclick="calcularForecastCRM()">&#9670; Calcular Forecast</button>
-        </div>
-      </div>
-      <div class="panel"><div class="ph"><div class="pt">Indicadores de Qualidade</div></div>
-        <div class="pb" id="s4QualPanel">
-          <div style="display:flex;flex-direction:column;gap:8px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px;background:var(--bg4);border-radius:5px;"><span style="font-size:11px;">Lead Response Time</span><span class="tag off" id="s4_lrt">—</span></div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px;background:var(--bg4);border-radius:5px;"><span style="font-size:11px;">Pipeline Coverage</span><span class="tag off" id="s4_coverage">—</span></div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px;background:var(--bg4);border-radius:5px;"><span style="font-size:11px;">NRR (Net Revenue Retention)</span><span class="tag off" id="s4_nrr">—</span></div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px;background:var(--bg4);border-radius:5px;"><span style="font-size:11px;">LTV/CAC Ratio</span><span class="tag off" id="s4_ltvcac">—</span></div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px;background:var(--bg4);border-radius:5px;"><span style="font-size:11px;">Deals em Risco (+14d)</span><span class="tag hot" id="s4_risco">—</span></div>
-          </div>
-          <button class="btn btn-g" style="width:100%;margin-top:10px;" onclick="loadCRMKPIs()">&#8635; Carregar do HubSpot</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══ S5 · JURÍDICO ═══ -->
-  <div class="page" id="page-s5juridico">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#9c6dff;margin-bottom:14px;">S5 · JURÍDICO + COMPLIANCE</div>
-    <div class="kg k2">
-      <div class="panel"><div class="ph"><div class="pt">Análise de Contrato</div><span class="tag on">IA</span></div>
-        <div class="pb">
-          <div class="fg"><label class="fl">Cole o contrato ou cláusula para análise</label>
-            <textarea class="fta" id="s5contratoTexto" style="min-height:120px;" placeholder="Cole o texto do contrato, cláusula ou proposta comercial aqui..."></textarea>
-          </div>
-          <div class="fg"><label class="fl">Tipo de documento</label>
-            <select class="fsel" id="s5tipoDoc">
-              <option>Contrato de Prestação de Serviços</option>
-              <option>NDA — Acordo de Confidencialidade</option>
-              <option>Proposta Comercial</option>
-              <option>Contrato de Trabalho CLT</option>
-              <option>Contrato PJ / Fornecedor</option>
-              <option>Aditivo Contratual</option>
-              <option>SLA — Service Level Agreement</option>
-            </select>
-          </div>
-          <button class="btn btn-or" style="width:100%;" onclick="analisarContratoIA()">&#9670; Analisar Riscos com IA</button>
-          <div id="s5AnaliseSaida" style="margin-top:10px;"></div>
-        </div>
-      </div>
-      <div class="panel"><div class="ph"><div class="pt">Gerar Documento Jurídico</div><span class="tag on">IA</span></div>
-        <div class="pb">
-          <div class="fg"><label class="fl">Tipo de documento</label>
-            <select class="fsel" id="s5tipoGerar">
-              <option>NDA — Acordo de Confidencialidade</option>
-              <option>Proposta Comercial Formal</option>
-              <option>Carta de Intenção (LOI)</option>
-              <option>Aviso de Rescisão</option>
-              <option>Aditivo de Prazo</option>
-              <option>Declaração de Encerramento de Projeto</option>
-            </select>
-          </div>
-          <div class="fg"><label class="fl">Partes envolvidas</label><input class="fi" id="s5partes" placeholder="Ex: Atlantyx Tecnologia LTDA e ACME S.A."/></div>
-          <div class="fg"><label class="fl">Contexto adicional</label>
-            <textarea class="fta" id="s5contextoDoc" style="min-height:60px;" placeholder="Detalhes relevantes para o documento..."></textarea>
-          </div>
-          <button class="btn btn-p" style="width:100%;" onclick="gerarDocumentoJuridico()">&#9670; Gerar Documento com IA</button>
-          <div id="s5DocSaida" style="margin-top:10px;"></div>
-        </div>
-      </div>
-    </div>
-    <div class="panel" style="margin-top:12px;">
-      <div class="ph"><div class="pt">Calendário de Obrigações Legais</div><span class="tag live">Compliance</span></div>
-      <div class="pb">
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
-          <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">Simples Nacional</div><div style="font-size:11px;margin-top:4px;">Vencimento: todo dia <strong>20</strong></div><div class="tag on" style="margin-top:4px;font-size:8px;">No prazo</div></div>
-          <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">eSocial</div><div style="font-size:11px;margin-top:4px;">Transmissão mensal</div><div class="tag on" style="margin-top:4px;font-size:8px;">Configurar</div></div>
-          <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">FGTS Digital</div><div style="font-size:11px;margin-top:4px;">Vencimento: dia <strong>7</strong></div><div class="tag on" style="margin-top:4px;font-size:8px;">Configurar</div></div>
-        </div>
-        <button class="btn btn-g" style="width:100%;margin-top:10px;" onclick="verificarComplianceIA()">&#9670; Verificar Compliance com IA</button>
-        <div id="s5ComplianceSaida" style="margin-top:10px;"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══ S8 · RH ═══ -->
-  <div class="page" id="page-s8rh">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#4f7cff;margin-bottom:14px;">S8 · RH + DEPARTAMENTO PESSOAL</div>
-    <div class="kg k3" style="margin-bottom:12px;">
-      <div class="kpi pk"><div class="kl">Headcount</div><div class="kv" id="s8_head">—</div><div class="ks">colaboradores ativos</div></div>
-      <div class="kpi pk"><div class="kl">Turnover</div><div class="kv" id="s8_turn">—</div><div class="ks">mês atual</div></div>
-      <div class="kpi pk"><div class="kl">Vagas Abertas</div><div class="kv" id="s8_vagas">—</div><div class="ks">em recrutamento</div></div>
-      <div class="kpi pk"><div class="kl">NPS x Desempenho</div><div class="kv" id="s8_nps">—</div><div class="ks">média colaboradores</div></div>
-      <div class="kpi pk"><div class="kl">Contratos vencendo</div><div class="kv" id="s8_contratos">—</div><div class="ks">próx 30 dias</div></div>
-      <div class="kpi hot"><div class="kl">Obrigações DP</div><div class="kv" id="s8_dp">—</div><div class="ks">pendentes</div></div>
-    </div>
-    <div class="kg k2">
-      <div class="panel"><div class="ph"><div class="pt">Recrutamento</div><span class="tag on">IA</span></div>
-        <div class="pb">
-          <div class="fg"><label class="fl">Cargo</label><input class="fi" id="s8cargo" placeholder="Ex: Analista de Dados Sênior"/></div>
-          <div class="fg"><label class="fl">Departamento</label><input class="fi" id="s8depto" placeholder="Ex: BI & Analytics"/></div>
-          <div class="fg"><label class="fl">Requisitos principais</label><textarea class="fta" id="s8req" style="min-height:60px;" placeholder="Ex: Python, SQL, 3+ anos BI, experiência em Energia ou Varejo..."></textarea></div>
-          <div style="display:flex;gap:8px;">
-            <button class="btn btn-p" style="flex:1;" onclick="gerarDescricaoVaga()">&#9670; Gerar Descrição da Vaga</button>
-            <button class="btn btn-g" style="font-size:10px;" onclick="criarTriagemCV()">Criar Triagem IA</button>
-          </div>
-          <div id="s8VagaSaida" style="margin-top:10px;"></div>
-        </div>
-      </div>
-      <div class="panel"><div class="ph"><div class="pt">Calendário DP — Obrigações</div><span class="tag hot">Alertas</span></div>
-        <div class="pb">
-          <div id="s8CalDP" style="display:flex;flex-direction:column;gap:6px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:rgba(240,112,48,.08);border:1px solid rgba(240,112,48,.2);border-radius:5px;"><span style="font-size:11px;">FGTS Digital (dia 7)</span><span class="tag hot">Configurar</span></div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:rgba(240,112,48,.08);border:1px solid rgba(240,112,48,.2);border-radius:5px;"><span style="font-size:11px;">eSocial — Remuneração</span><span class="tag hot">Configurar</span></div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:5px;"><span style="font-size:11px;">DARF — IRRF (dia 20)</span><span class="tag gd">Monitorar</span></div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:5px;"><span style="font-size:11px;">Holerites + Ponto</span><span class="tag gd">Mensal</span></div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--bg4);border:1px solid var(--bd);border-radius:5px;"><span style="font-size:11px;">RAIS (jan) / DIRF (mar)</span><span class="tag off">Anual</span></div>
-          </div>
-          <button class="btn btn-g" style="width:100%;margin-top:10px;" onclick="analisarObrigacoesDP()">&#9670; Analisar Obrigações com IA</button>
-          <div id="s8DPSaida" style="margin-top:8px;"></div>
-        </div>
-      </div>
-    </div>
-    <div class="panel" style="margin-top:12px;">
-      <div class="ph"><div class="pt">Avaliação de Desempenho 360°</div><span class="tag on">IA</span></div>
-      <div class="pb">
-        <div class="fg"><label class="fl">Colaborador</label><input class="fi" id="s8colab" placeholder="Nome do colaborador"/></div>
-        <div class="fg"><label class="fl">Cargo e área</label><input class="fi" id="s8colab_cargo" placeholder="Ex: Analista de Dados — BI"/></div>
-        <div class="fg"><label class="fl">Pontos positivos observados</label><textarea class="fta" id="s8positivos" style="min-height:50px;" placeholder="Ex: Excelente nas entregas, proativo com cliente..."></textarea></div>
-        <div class="fg"><label class="fl">Pontos de desenvolvimento</label><textarea class="fta" id="s8desenvolver" style="min-height:50px;" placeholder="Ex: Comunicação com stakeholders, gestão de tempo..."></textarea></div>
-        <div class="fg"><label class="fl">NPS dos projetos que participou</label><input class="fi" id="s8npsProj" placeholder="Ex: 8.5, 9.2, 7.8"/></div>
-        <button class="btn btn-or" style="width:100%;" onclick="gerarAvaliacaoDesempenho()">&#9670; Gerar Avaliação + PDI com IA</button>
-        <div id="s8AvalSaida" style="margin-top:10px;"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══ S9 · GESTÃO DE PROJETOS ═══ -->
-  <div class="page" id="page-s9projetos">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#22d3a3;margin-bottom:14px;">S9 · GESTÃO DE PROJETOS</div>
-    <div class="kg k3" style="margin-bottom:12px;">
-      <div class="kpi pk"><div class="kl">Projetos Ativos</div><div class="kv" id="s9_ativos">—</div><div class="ks">em andamento</div></div>
-      <div class="kpi pk"><div class="kl">No prazo</div><div class="kv" id="s9_prazo">—</div><div class="ks">verde</div></div>
-      <div class="kpi hot"><div class="kl">Em risco</div><div class="kv" id="s9_risco">—</div><div class="ks">amarelo/vermelho</div></div>
-      <div class="kpi pk"><div class="kl">Marcos este mês</div><div class="kv" id="s9_marcos">—</div><div class="ks">entregas</div></div>
-      <div class="kpi pk"><div class="kl">NPS médio</div><div class="kv" id="s9_nps">—</div><div class="ks">satisfação</div></div>
-      <div class="kpi gd"><div class="kl">% conclusão avg</div><div class="kv" id="s9_conclusao">—</div><div class="ks">média carteira</div></div>
-    </div>
-    <div class="kg k2">
-      <div class="panel"><div class="ph"><div class="pt">Novo Projeto</div><span class="tag on">IA</span></div>
-        <div class="pb">
-          <div class="fg"><label class="fl">Nome do projeto</label><input class="fi" id="s9nome" placeholder="Ex: Implantação BI — Usiminas"/></div>
-          <div class="fg"><label class="fl">Cliente</label><input class="fi" id="s9cliente" placeholder="Nome da empresa cliente"/></div>
-          <div class="fg"><label class="fl">Escopo resumido</label><textarea class="fta" id="s9escopo" style="min-height:70px;" placeholder="Ex: Implantação de dashboards de vendas e produção. 4 fases, 6 meses..."></textarea></div>
-          <div class="kg k2" style="gap:8px;">
-            <div class="fg" style="margin:0;"><label class="fl">Data início</label><input class="fi" type="date" id="s9inicio"/></div>
-            <div class="fg" style="margin:0;"><label class="fl">Prazo final</label><input class="fi" type="date" id="s9prazo"/></div>
-          </div>
-          <div class="fg"><label class="fl">Valor do contrato</label><input class="fi" id="s9valor" placeholder="R$ 0,00"/></div>
-          <button class="btn btn-p" style="width:100%;margin-top:8px;" onclick="criarProjetoIA()">&#9670; Criar Plano com IA</button>
-          <div id="s9ProjSaida" style="margin-top:10px;"></div>
-        </div>
-      </div>
-      <div class="panel"><div class="ph"><div class="pt">Gerar Status Report PDF</div><span class="tag on">IA</span></div>
-        <div class="pb">
-          <div class="fg"><label class="fl">Projeto</label><input class="fi" id="s9srProjeto" placeholder="Nome do projeto"/></div>
-          <div class="fg"><label class="fl">% Conclusão atual</label><input class="fi" id="s9srPct" placeholder="Ex: 65"/></div>
-          <div class="fg"><label class="fl">Status geral</label>
-            <select class="fsel" id="s9srStatus">
-              <option>🟢 No prazo</option>
-              <option>🟡 Em risco — atraso potencial</option>
-              <option>🔴 Atrasado</option>
-            </select>
-          </div>
-          <div class="fg"><label class="fl">Tarefas em andamento</label><textarea class="fta" id="s9srTarefas" style="min-height:60px;" placeholder="Liste as tarefas em andamento..."></textarea></div>
-          <div class="fg"><label class="fl">Pendências / Riscos</label><textarea class="fta" id="s9srRiscos" style="min-height:50px;" placeholder="Liste riscos e dependências externas..."></textarea></div>
-          <div style="display:flex;gap:8px;">
-            <button class="btn btn-or" style="flex:1;" onclick="gerarStatusReport()">&#9670; Gerar Status Report</button>
-          </div>
-          <div id="s9SRSaida" style="margin-top:10px;"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══ S10 · ATENDIMENTO ═══ -->
-  <div class="page" id="page-s10atend">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#4f7cff;margin-bottom:14px;">S10 · ATENDIMENTO OMNICHANNEL + TICKETS</div>
-    <div class="kg k4" style="margin-bottom:12px;">
-      <div class="kpi pk"><div class="kl">Tickets abertos</div><div class="kv" id="s10_abertos">—</div><div class="ks">aguardando</div></div>
-      <div class="kpi pk"><div class="kl">Em SLA</div><div class="kv" id="s10_sla">—</div><div class="ks">no prazo</div></div>
-      <div class="kpi hot"><div class="kl">SLA violado</div><div class="kv" id="s10_violated">—</div><div class="ks">crítico</div></div>
-      <div class="kpi pk"><div class="kl">CSAT</div><div class="kv" id="s10_csat">—</div><div class="ks">satisfação</div></div>
-      <div class="kpi pk"><div class="kl">FCR</div><div class="kv" id="s10_fcr">—</div><div class="ks">1ª resolução</div></div>
-      <div class="kpi pk"><div class="kl">Orçamentos</div><div class="kv" id="s10_orcamentos">—</div><div class="ks">aguard. aprovação</div></div>
-      <div class="kpi pk"><div class="kl">Manut. Corretivas</div><div class="kv" id="s10_corret">—</div><div class="ks">em análise</div></div>
-      <div class="kpi gd"><div class="kl">TMA (min)</div><div class="kv" id="s10_tma">—</div><div class="ks">tempo médio atend.</div></div>
-    </div>
-    <div class="kg k2">
-      <div class="panel"><div class="ph"><div class="pt">Abrir Ticket</div><span class="tag on">IA Classifica</span></div>
-        <div class="pb">
-          <div class="fg"><label class="fl">Cliente</label><input class="fi" id="s10cliente" placeholder="Nome da empresa"/></div>
-          <div class="fg"><label class="fl">Canal de origem</label>
-            <select class="fsel" id="s10canal">
-              <option>WhatsApp</option><option>E-mail</option><option>Telefone</option><option>Chat</option>
-            </select>
-          </div>
-          <div class="fg"><label class="fl">Descrição da demanda</label>
-            <textarea class="fta" id="s10demanda" style="min-height:80px;" placeholder="Descreva a solicitação do cliente em detalhes..."></textarea>
-          </div>
-          <button class="btn btn-or" style="width:100%;" onclick="abrirTicketIA()">&#9670; Abrir Ticket e Classificar com IA</button>
-          <div id="s10TicketSaida" style="margin-top:10px;"></div>
-        </div>
-      </div>
-      <div class="panel"><div class="ph"><div class="pt">Gerar Orçamento de Manutenção</div><span class="tag on">IA</span></div>
-        <div class="pb">
-          <div class="fg"><label class="fl">Cliente</label><input class="fi" id="s10orcCliente" placeholder="Nome da empresa"/></div>
-          <div class="fg"><label class="fl">Tipo de manutenção</label>
-            <select class="fsel" id="s10orcTipo">
-              <option>Corretiva — dentro do contrato</option>
-              <option>Corretiva — fora do escopo</option>
-              <option>Evolutiva — nova funcionalidade</option>
-              <option>Evolutiva — melhoria existente</option>
-            </select>
-          </div>
-          <div class="fg"><label class="fl">Descrição técnica</label>
-            <textarea class="fta" id="s10orcDesc" style="min-height:70px;" placeholder="Descreva o que precisa ser feito tecnicamente..."></textarea>
-          </div>
-          <button class="btn btn-p" style="width:100%;" onclick="gerarOrcamentoManutencao()">&#9670; Gerar Orçamento com IA</button>
-          <div id="s10OrcSaida" style="margin-top:10px;"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══ S11 · INSIDE SALES ═══ -->
-  <div class="page" id="page-s11sales">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#f09433;margin-bottom:14px;">S11 · INSIDE SALES + VOZ IA</div>
-    <div class="kg k4" style="margin-bottom:12px;">
-      <div class="kpi pk"><div class="kl">Ligações hoje</div><div class="kv" id="s11_lig">—</div><div class="ks">IA + humano</div></div>
-      <div class="kpi pk"><div class="kl">Taxa contato</div><div class="kv" id="s11_tc">—</div><div class="ks">atendidas/discadas</div></div>
-      <div class="kpi pk"><div class="kl">SQLs gerados</div><div class="kv" id="s11_sql">—</div><div class="ks">qualificados</div></div>
-      <div class="kpi gd"><div class="kl">Resp. ao lead</div><div class="kv" id="s11_resp">—</div><div class="ks">meta < 5min</div></div>
-    </div>
-    <div class="kg k2">
-      <div class="panel"><div class="ph"><div class="pt">Qualificação de Lead (BANT)</div><span class="tag on">IA</span></div>
-        <div class="pb">
-          <div class="fg"><label class="fl">Nome do lead</label><input class="fi" id="s11lead" placeholder="Nome e empresa"/></div>
-          <div class="fg"><label class="fl">Informações disponíveis</label>
-            <textarea class="fta" id="s11leadInfo" style="min-height:70px;" placeholder="Ex: CEO de empresa de energia R$500M, preencheu formulário sobre BI, clicou em caso de sucesso do setor elétrico..."></textarea>
-          </div>
-          <div class="fg"><label class="fl">Canal de origem</label>
-            <select class="fsel" id="s11canal">
-              <option>Formulário site</option><option>LinkedIn</option><option>Indicação</option>
-              <option>RFP</option><option>WhatsApp inbound</option>
-            </select>
-          </div>
-          <button class="btn btn-or" style="width:100%;" onclick="qualificarLeadBANT()">&#9670; Qualificar com BANT + IA</button>
-          <div id="s11BANTSaida" style="margin-top:10px;"></div>
-        </div>
-      </div>
-      <div class="panel"><div class="ph"><div class="pt">Gerar Script de Ligação</div><span class="tag on">IA</span></div>
-        <div class="pb">
-          <div class="fg"><label class="fl">Nome do decisor</label><input class="fi" id="s11decisor" placeholder="Ex: Carlos Mendes — CTO"/></div>
-          <div class="fg"><label class="fl">Empresa e setor</label><input class="fi" id="s11empresa" placeholder="Ex: Usiminas — Siderurgia"/></div>
-          <div class="fg"><label class="fl">Objetivo da ligação</label>
-            <select class="fsel" id="s11objetivo">
-              <option>Qualificação inicial (BANT)</option>
-              <option>Follow-up após proposta enviada</option>
-              <option>Reativação de lead frio</option>
-              <option>Fechamento</option>
-              <option>Upsell em cliente ativo</option>
-            </select>
-          </div>
-          <div class="fg"><label class="fl">Contexto adicional</label>
-            <input class="fi" id="s11ctx" placeholder="Ex: Anunciou projeto de automação no LinkedIn..."/>
-          </div>
-          <button class="btn btn-p" style="width:100%;" onclick="gerarScriptLigacao()">&#9670; Gerar Script com IA</button>
-          <div id="s11ScriptSaida" style="margin-top:10px;"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══ S6 · DEV + QA ═══ -->
-  <div class="page" id="page-s6dev">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#22d3a3;margin-bottom:14px;">S6 · DESENVOLVIMENTO + QA + VERSÕES</div>
-    <div class="kg k3" style="margin-bottom:12px;">
-      <div class="kpi pk"><div class="kl">Versão atual</div><div class="kv" id="s6_versao">1.0.0</div><div class="ks">em produção</div></div>
-      <div class="kpi pk"><div class="kl">Próxima versão</div><div class="kv" id="s6_proxima">—</div><div class="ks">em desenvolvimento</div></div>
-      <div class="kpi pk"><div class="kl">QA status</div><div class="kv" id="s6_qa">—</div><div class="ks">aprovado/bloqueado</div></div>
-      <div class="kpi pk"><div class="kl">Tickets na versão</div><div class="kv" id="s6_tickets">—</div><div class="ks">incluídos</div></div>
-      <div class="kpi pk"><div class="kl">Cobertura testes</div><div class="kv" id="s6_cob">—</div><div class="ks">% cobertura</div></div>
-      <div class="kpi gd"><div class="kl">Bugs em prod</div><div class="kv" id="s6_bugs">—</div><div class="ks">abertos</div></div>
-    </div>
-    <div class="kg k2">
-      <div class="panel"><div class="ph"><div class="pt">Gerar Release Notes</div><span class="tag on">IA</span></div>
-        <div class="pb">
-          <div class="kg k2" style="gap:8px;">
-            <div class="fg" style="margin:0;"><label class="fl">Versão</label><input class="fi" id="s6versao" placeholder="Ex: 1.4.2"/></div>
-            <div class="fg" style="margin:0;"><label class="fl">Tipo</label>
-              <select class="fsel" id="s6tipo"><option>Minor</option><option>Patch/Hotfix</option><option>Major</option></select>
-            </div>
-          </div>
-          <div class="fg"><label class="fl">Correções incluídas</label>
-            <textarea class="fta" id="s6correcoes" style="min-height:70px;" placeholder="Ex: TKT-001: Corrigido erro no cálculo de margem&#10;TKT-002: Fix no carregamento do dashboard..."></textarea>
-          </div>
-          <div class="fg"><label class="fl">Melhorias/novas funcionalidades</label>
-            <textarea class="fta" id="s6melhorias" style="min-height:50px;" placeholder="Ex: Novo filtro por período no extrato bancário..."></textarea>
-          </div>
-          <button class="btn btn-p" style="width:100%;" onclick="gerarReleaseNotes()">&#9670; Gerar Release Notes com IA</button>
-          <div id="s6RNSaida" style="margin-top:10px;"></div>
-        </div>
-      </div>
-      <div class="panel"><div class="ph"><div class="pt">Checklist de QA de Versão</div><span class="tag on">IA</span></div>
-        <div class="pb">
-          <div class="fg"><label class="fl">Versão para QA</label><input class="fi" id="s6qaVersao" placeholder="Ex: 1.4.2-RC1"/></div>
-          <div class="fg"><label class="fl">Funcionalidades testadas</label>
-            <textarea class="fta" id="s6qaFuncs" style="min-height:60px;" placeholder="Liste as funcionalidades que precisam de QA nesta versão..."></textarea>
-          </div>
-          <div class="fg"><label class="fl">Riscos de regressão</label>
-            <input class="fi" id="s6qaRiscos" placeholder="Ex: Módulo financeiro, geração de PDF..."/>
-          </div>
-          <button class="btn btn-or" style="width:100%;" onclick="gerarChecklistQA()">&#9670; Gerar Checklist QA com IA</button>
-          <div id="s6QASaida" style="margin-top:10px;"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══ S12 · DATA ENGINEERING SQUAD ═══ -->
-
-  <!-- PÁGINA PRINCIPAL: HUB DO PROJETO -->
-  <div class="page" id="page-s12hub">
-    <div style="background:linear-gradient(135deg,rgba(79,124,255,.15),rgba(34,211,163,.08));border:1px solid rgba(79,124,255,.25);border-radius:10px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:14px;">
-      <div style="font-size:28px;">&#128202;</div>
-      <div style="flex:1;">
-        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--blue);letter-spacing:2px;">S12 · DATA ENGINEERING SQUAD</div>
-        <div style="font-size:15px;font-weight:700;color:var(--t1);margin-top:2px;">Engenharia de Dados — DW + DataMart + Pipelines Medallion</div>
-        <div style="font-size:11px;color:var(--t2);margin-top:3px;">Gera Data Warehouse físico, Data Marts por área e pipelines completos prontos para implantar no ambiente do cliente</div>
-      </div>
-      <button class="btn btn-or" style="font-size:11px;padding:8px 16px;white-space:nowrap;" onclick="novoProjetoDE()">+ Novo Projeto</button>
-    </div>
-
-    <!-- PROJETOS SALVOS -->
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--blue);margin-bottom:10px;">PROJETOS DE DADOS ATIVOS</div>
-    <div id="s12ProjetosGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-bottom:16px;">
-      <!-- Exemplo CPFL -->
-      <div style="background:var(--bg4);border:1px solid rgba(79,124,255,.3);border-radius:9px;padding:14px;cursor:pointer;" onclick="abrirProjetoDE('cpfl_demo')">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-          <div style="width:32px;height:32px;background:linear-gradient(135deg,#1a3a8f,#4f7cff);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;">&#9889;</div>
-          <div><div style="font-size:12px;font-weight:600;color:var(--t1);">CPFL Energia</div><div style="font-size:10px;color:var(--t2);">Databricks · Delta Table · Python</div></div>
-          <span class="tag on" style="margin-left:auto;font-size:8px;">Demo</span>
-        </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          <span style="font-size:9px;background:rgba(79,124,255,.12);color:var(--blue);padding:2px 7px;border-radius:3px;">Medallion</span>
-          <span style="font-size:9px;background:rgba(34,211,163,.12);color:var(--green);padding:2px 7px;border-radius:3px;">DW + 4 DataMarts</span>
-          <span style="font-size:9px;background:rgba(245,166,35,.12);color:var(--gold);padding:2px 7px;border-radius:3px;">Pipelines Python</span>
-        </div>
-      </div>
-      <!-- Exemplo Motriz -->
-      <div style="background:var(--bg4);border:1px solid rgba(34,211,163,.3);border-radius:9px;padding:14px;cursor:pointer;" onclick="abrirProjetoDE('motriz_demo')">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-          <div style="width:32px;height:32px;background:linear-gradient(135deg,#22d3a3,#1a3a8f);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;">&#128663;</div>
-          <div><div style="font-size:12px;font-weight:600;color:var(--t1);">Motriz</div><div style="font-size:10px;color:var(--t2);">GCP · BigQuery · Python</div></div>
-          <span class="tag on" style="margin-left:auto;font-size:8px;">Demo</span>
-        </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          <span style="font-size:9px;background:rgba(79,124,255,.12);color:var(--blue);padding:2px 7px;border-radius:3px;">Medallion</span>
-          <span style="font-size:9px;background:rgba(34,211,163,.12);color:var(--green);padding:2px 7px;border-radius:3px;">DW + 3 DataMarts</span>
-          <span style="font-size:9px;background:rgba(245,166,35,.12);color:var(--gold);padding:2px 7px;border-radius:3px;">Pipelines Python</span>
-        </div>
-      </div>
-      <!-- Novo projeto CTA -->
-      <div style="background:var(--bg3);border:2px dashed rgba(79,124,255,.3);border-radius:9px;padding:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;min-height:90px;" onclick="nav('s12novo',this)">
-        <div style="font-size:24px;color:var(--blue);opacity:.5;">+</div>
-        <div style="font-size:11px;color:var(--t3);">Novo Projeto de Dados</div>
-      </div>
-    </div>
-
-    <!-- CAPACIDADES DO SQUAD -->
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--blue);margin-bottom:10px;">CAPACIDADES DO SQUAD S12</div>
-    <div class="kg k3">
-      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:13px;">
-        <div style="font-size:16px;margin-bottom:6px;">&#127963;</div>
-        <div style="font-family:var(--M);font-size:9px;color:var(--blue);margin-bottom:5px;">MODELAGEM DE DADOS</div>
-        <div style="font-size:11px;color:var(--t2);line-height:1.6;">Gera Data Warehouse físico completo com tabelas Fato e Dimensão, Data Marts por área de negócio e dicionário de dados completo a partir das especificações do cliente.</div>
-      </div>
-      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:13px;">
-        <div style="font-size:16px;margin-bottom:6px;">&#9881;</div>
-        <div style="font-family:var(--M);font-size:9px;color:var(--green);margin-bottom:5px;">ARQUITETURA MEDALLION</div>
-        <div style="font-size:11px;color:var(--t2);line-height:1.6;">Bronze (dados brutos), Silver (tratados e validados) e Gold (agregados para consumo). Pipelines completos para cada camada no ambiente e linguagem escolhidos pelo cliente.</div>
-      </div>
-      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:13px;">
-        <div style="font-size:16px;margin-bottom:6px;">&#128196;</div>
-        <div style="font-family:var(--M);font-size:9px;color:var(--gold);margin-bottom:5px;">SCRIPTS PRONTOS PARA IMPLANTAR</div>
-        <div style="font-size:11px;color:var(--t2);line-height:1.6;">DDL completo para criar o banco, scripts de pipeline Bronze→Silver→Gold, documentação técnica e guia de implantação — tudo pronto para rodar no ambiente do cliente.</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- PÁGINA: NOVO PROJETO DE DADOS -->
-  <div class="page" id="page-s12novo">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--blue);margin-bottom:14px;">S12 · NOVO PROJETO DE ENGENHARIA DE DADOS</div>
-
-    <!-- STEP 1: AMBIENTE E TECNOLOGIA -->
-    <div class="panel" style="margin-bottom:12px;">
-      <div class="ph"><div class="pt">Step 1 — Cliente + Ambiente + Tecnologia</div><span class="tag on">Configurar</span></div>
-      <div class="pb">
-        <div class="kg k2">
-          <div>
-            <div class="fg"><label class="fl">Cliente</label><input class="fi" id="deCliente" placeholder="Ex: CPFL Energia"/></div>
-            <div class="fg"><label class="fl">Setor / Negócio</label>
-              <select class="fsel" id="deSetor">
-                <option>Energia e Utilities</option><option>Automotivo</option><option>Varejo</option>
-                <option>Industria / Manufatura</option><option>Financeiro / Bancário</option>
-                <option>Saúde</option><option>Logística</option><option>Telecomunicações</option>
-                <option>Agronegócio</option><option>Outro</option>
-              </select>
-            </div>
-            <div class="fg"><label class="fl">Ambente de Processamento (Pipeline)</label>
-              <select class="fsel" id="deAmbiente">
-                <option value="databricks">Databricks</option>
-                <option value="gcp_dataflow">GCP — Cloud Dataflow</option>
-                <option value="aws_glue">AWS Glue</option>
-                <option value="azure_adf">Azure Data Factory</option>
-                <option value="apache_spark">Apache Spark (on-premise)</option>
-                <option value="airflow">Apache Airflow</option>
-                <option value="dbt">dbt (Data Build Tool)</option>
-                <option value="python_raw">Python puro (scripts)</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <div class="fg"><label class="fl">Banco de Dados / Storage</label>
-              <select class="fsel" id="deBanco">
-                <option value="delta_databricks">Delta Table (Databricks)</option>
-                <option value="bigquery">BigQuery (GCP)</option>
-                <option value="redshift">Amazon Redshift</option>
-                <option value="snowflake">Snowflake</option>
-                <option value="synapse">Azure Synapse Analytics</option>
-                <option value="postgresql">PostgreSQL</option>
-                <option value="sqlserver">SQL Server</option>
-                <option value="oracle">Oracle Database</option>
-                <option value="mysql">MySQL</option>
-                <option value="duckdb">DuckDB</option>
-              </select>
-            </div>
-            <div class="fg"><label class="fl">Linguagem dos Pipelines</label>
-              <select class="fsel" id="deLinguagem">
-                <option value="python">Python</option>
-                <option value="scala">Scala (Spark)</option>
-                <option value="sql">SQL puro</option>
-                <option value="dbt_sql">dbt + SQL</option>
-                <option value="java">Java (Spark)</option>
-                <option value="pyspark">PySpark</option>
-              </select>
-            </div>
-            <div class="fg"><label class="fl">Arquitetura</label>
-              <select class="fsel" id="deArquitetura">
-                <option value="medallion">Medallion (Bronze → Silver → Gold)</option>
-                <option value="lambda">Lambda Architecture</option>
-                <option value="kappa">Kappa Architecture</option>
-                <option value="dw_classico">Data Warehouse Clássico (Kimball)</option>
-                <option value="data_lake">Data Lake simples</option>
-              </select>
-            </div>
-          </div>
-        </div>
-        <div class="fg"><label class="fl">Fontes de dados do cliente</label>
-          <input class="fi" id="deFontes" placeholder="Ex: ERP SAP, Oracle Financeiro, CRM Salesforce, planilhas Excel, APIs externas, banco MySQL legado..."/>
-        </div>
-      </div>
-    </div>
-
-    <!-- STEP 2: ESPECIFICAÇÃO DO NEGÓCIO -->
-    <div class="panel" style="margin-bottom:12px;">
-      <div class="ph"><div class="pt">Step 2 — Especificação do Negócio e Áreas</div><span class="tag on">Essencial para a modelagem</span></div>
-      <div class="pb">
-        <div class="fg"><label class="fl">Descrição geral do negócio e processos principais</label>
-          <textarea class="fta" id="deNegocio" style="min-height:80px;" placeholder="Ex: Empresa de distribuição de energia elétrica. Processos principais: medição de consumo, faturamento de clientes, manutenção de rede, atendimento de ocorrências, compra de energia no mercado livre..."></textarea>
-        </div>
-        <div style="font-family:var(--M);font-size:8px;color:var(--t2);margin-bottom:8px;margin-top:4px;">ÁREAS DE NEGÓCIO — defina cada área que terá Data Mart:</div>
-        <div id="deAreasContainer">
-          <div class="de-area-card" id="deArea0" style="background:var(--bg4);border:1px solid var(--bd);border-radius:7px;padding:12px;margin-bottom:8px;">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-              <span style="font-family:var(--M);font-size:8px;color:var(--blue);">ÁREA 1</span>
-              <button onclick="removerArea(0)" style="margin-left:auto;background:none;border:none;color:var(--red);cursor:pointer;font-size:12px;">&#10005;</button>
-            </div>
-            <div class="kg k2" style="gap:8px;">
-              <div class="fg" style="margin:0;"><label class="fl">Nome da área</label><input class="fi" id="deAreaNome0" placeholder="Ex: Comercial / Vendas"/></div>
-              <div class="fg" style="margin:0;"><label class="fl">Responsável / sistema de origem</label><input class="fi" id="deAreaSistema0" placeholder="Ex: Salesforce CRM"/></div>
-            </div>
-            <div class="fg" style="margin-top:8px;margin-bottom:0;"><label class="fl">Métricas e KPIs desta área</label>
-              <textarea class="fta" id="deAreaMetricas0" style="min-height:55px;" placeholder="Ex: Volume de vendas por mês/produto/região, taxa de churn, receita por cliente, ticket médio, crescimento YoY..."></textarea>
-            </div>
-            <div class="fg" style="margin-bottom:0;"><label class="fl">Principais tabelas / entidades do sistema de origem</label>
-              <input class="fi" id="deAreaTabelas0" placeholder="Ex: tb_pedidos, tb_clientes, tb_produtos, tb_vendedores..."/>
-            </div>
-          </div>
-        </div>
-        <button class="btn btn-g" style="width:100%;font-size:10px;" onclick="adicionarArea()">+ Adicionar Área de Negócio</button>
-      </div>
-    </div>
-
-    <!-- STEP 3: GERAR -->
-    <div class="panel">
-      <div class="ph"><div class="pt">Step 3 — Gerar com IA</div><span class="tag on">Agentes S12</span></div>
-      <div class="pb">
-        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px;">
-          <button class="btn btn-p" style="padding:10px;" onclick="gerarModelagemDW()">&#127963; Modelagem DW + DataMarts</button>
-          <button class="btn btn-gn" style="padding:10px;" onclick="gerarDDL()">&#128196; Gerar DDL (CREATE TABLE)</button>
-          <button class="btn btn-or" style="padding:10px;" onclick="gerarPipelinesMedallion()">&#9881; Pipelines Medallion Completos</button>
-          <button class="btn" style="padding:10px;color:var(--blue);border-color:var(--blue);" onclick="gerarDocumentacaoDE()">&#128214; Documentação Técnica</button>
-        </div>
-        <button class="btn btn-p" style="width:100%;padding:12px;font-size:13px;font-weight:600;" onclick="gerarTudoDE()">&#9670; Gerar TUDO — DW + DataMarts + DDL + Pipelines + Docs</button>
-        <div id="s12GerarSaida" style="margin-top:12px;"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- PÁGINA: MODELAGEM DW -->
-  <div class="page" id="page-s12modelagem">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--blue);margin-bottom:14px;">S12 · MODELAGEM — DATA WAREHOUSE + DATA MARTS</div>
-    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-      <button class="btn btn-p" id="s12btnDW" onclick="mostrarAbaDE('dw')" style="font-size:10px;">&#127963; Data Warehouse</button>
-      <button class="btn" id="s12btnMarts" onclick="mostrarAbaDE('marts')" style="font-size:10px;">&#128200; Data Marts</button>
-      <button class="btn" id="s12btnDDL" onclick="mostrarAbaDE('ddl')" style="font-size:10px;">&#128196; DDL Scripts</button>
-      <button class="btn" id="s12btnPipes" onclick="mostrarAbaDE('pipes')" style="font-size:10px;">&#9881; Pipelines</button>
-      <button class="btn" id="s12btnDocs" onclick="mostrarAbaDE('docs')" style="font-size:10px;">&#128214; Documentação</button>
-      <div style="flex:1;"></div>
-      <button class="btn btn-g" style="font-size:9px;" onclick="copiarConteudoDE()">&#128203; Copiar</button>
-      <span id="s12ProjetoLabel" style="font-size:10px;color:var(--t2);align-self:center;"></span>
-    </div>
-
-    <!-- Indicadores do projeto -->
-    <div class="kg k4" style="margin-bottom:12px;" id="s12IndPanel">
-      <div class="kpi pk"><div class="kl">Tabelas Fato</div><div class="kv" id="s12_fatos">—</div><div class="ks">no DW</div></div>
-      <div class="kpi pk"><div class="kl">Dimensões</div><div class="kv" id="s12_dims">—</div><div class="ks">no DW</div></div>
-      <div class="kpi pk"><div class="kl">Data Marts</div><div class="kv" id="s12_marts">—</div><div class="ks">por área</div></div>
-      <div class="kpi gd"><div class="kl">Pipelines</div><div class="kv" id="s12_pipes">—</div><div class="ks">gerados</div></div>
-    </div>
-
-    <!-- OUTPUT PRINCIPAL -->
-    <div id="s12AbaOutput" style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:0;min-height:300px;overflow:hidden;">
-      <div style="background:var(--bg3);border-bottom:1px solid var(--bd);padding:8px 14px;display:flex;align-items:center;gap:8px;">
-        <span id="s12AbaTitle" style="font-family:var(--M);font-size:9px;color:var(--blue);text-transform:uppercase;">DATA WAREHOUSE — Modelo Físico</span>
-        <span id="s12AbaEnv" style="font-size:9px;color:var(--t3);"></span>
-      </div>
-      <div id="s12AbaConteudo" style="padding:14px;font-family:monospace;font-size:11px;line-height:1.7;color:#e0e0e0;white-space:pre-wrap;max-height:600px;overflow-y:auto;">
-        Configure o projeto na aba "Novo Projeto" e clique em Gerar.
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══ S13 · DASHBOARD STUDIO ═══ -->
-
-  <!-- HUB -->
-  <div class="page" id="page-s13hub">
-    <div style="background:linear-gradient(135deg,rgba(156,109,255,.18),rgba(79,124,255,.08));border:1px solid rgba(156,109,255,.3);border-radius:10px;padding:18px 22px;margin-bottom:16px;display:flex;align-items:center;gap:14px;">
-      <div style="font-size:30px;">&#128202;</div>
-      <div style="flex:1;">
-        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:#9c6dff;letter-spacing:2px;">S13 · DASHBOARD STUDIO</div>
-        <div style="font-size:15px;font-weight:700;color:var(--t1);margin-top:3px;">Power BI · Looker Studio · Python (Plotly/Streamlit)</div>
-        <div style="font-size:11px;color:var(--t2);margin-top:4px;">Especifique o dashboard, o cliente escolhe a tecnologia e o banco. A IA gera mockup interativo, refina por conversa e entrega o código final.</div>
-      </div>
-      <button class="btn btn-p" style="font-size:11px;padding:8px 16px;white-space:nowrap;" onclick="nav('s13novo',null)">+ Novo Dashboard</button>
-    </div>
-
-    <!-- KPIs -->
-    <div class="kg k4" style="margin-bottom:14px;">
-      <div class="kpi pk"><div class="kl">Dashboards criados</div><div class="kv" id="s13_total">—</div><div class="ks">todos os clientes</div></div>
-      <div class="kpi pk"><div class="kl">Em refinamento</div><div class="kv" id="s13_refinando">—</div><div class="ks">mockup ativo</div></div>
-      <div class="kpi pk"><div class="kl">Aprovados</div><div class="kv" id="s13_aprovados">—</div><div class="ks">código gerado</div></div>
-      <div class="kpi gd"><div class="kl">Tecnologias</div><div class="kv">3</div><div class="ks">Power BI · Looker · Python</div></div>
-    </div>
-
-    <!-- PROJETOS -->
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#9c6dff;margin-bottom:10px;">DASHBOARDS SALVOS</div>
-    <div id="s13ProjetosGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:16px;">
-      <div style="background:var(--bg3);border:2px dashed rgba(156,109,255,.3);border-radius:9px;padding:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;" onclick="nav('s13novo',null)">
-        <div style="font-size:28px;color:#9c6dff;opacity:.5;">+</div>
-        <div style="font-size:11px;color:var(--t3);">Novo Dashboard</div>
-      </div>
-    </div>
-
-    <!-- CAPACIDADES -->
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#9c6dff;margin-bottom:10px;">CAPACIDADES DO SQUAD S13</div>
-    <div class="kg k4">
-      <div style="background:var(--bg4);border:1px solid rgba(156,109,255,.2);border-radius:8px;padding:13px;">
-        <div style="font-size:20px;margin-bottom:6px;">&#128101;</div>
-        <div style="font-family:var(--M);font-size:9px;color:#9c6dff;margin-bottom:5px;">POWER BI</div>
-        <div style="font-size:10px;color:var(--t2);line-height:1.6;">Gera modelo de dados DAX, medidas calculadas, relacionamentos e código M de transformação. Exporta .pbit template.</div>
-      </div>
-      <div style="background:var(--bg4);border:1px solid rgba(79,124,255,.2);border-radius:8px;padding:13px;">
-        <div style="font-size:20px;margin-bottom:6px;">&#128200;</div>
-        <div style="font-family:var(--M);font-size:9px;color:var(--blue);margin-bottom:5px;">LOOKER STUDIO (GCP)</div>
-        <div style="font-size:10px;color:var(--t2);line-height:1.6;">Configura conexão BigQuery/Sheets, cria campos calculados, gera JSON de configuração do relatório e queries LookML.</div>
-      </div>
-      <div style="background:var(--bg4);border:1px solid rgba(34,211,163,.2);border-radius:8px;padding:13px;">
-        <div style="font-size:20px;margin-bottom:6px;">&#128013;</div>
-        <div style="font-family:var(--M);font-size:9px;color:var(--green);margin-bottom:5px;">PYTHON (Plotly / Streamlit)</div>
-        <div style="font-size:10px;color:var(--t2);line-height:1.6;">Gera app Streamlit completo ou script Plotly Dash com conexão ao banco, gráficos interativos e filtros dinâmicos.</div>
-      </div>
-      <div style="background:var(--bg4);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:13px;">
-        <div style="font-size:20px;margin-bottom:6px;">&#128172;</div>
-        <div style="font-family:var(--M);font-size:9px;color:var(--gold);margin-bottom:5px;">MOCKUP CONVERSACIONAL</div>
-        <div style="font-size:10px;color:var(--t2);line-height:1.6;">Visualização interativa do layout no browser. Cliente refina por chat com IA antes de gerar o código final.</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- NOVO DASHBOARD -->
-  <div class="page" id="page-s13novo">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#9c6dff;margin-bottom:14px;">S13 · ESPECIFICAÇÃO DO DASHBOARD</div>
-
-    <div class="kg k2">
-      <!-- COLUNA ESQUERDA: CONFIG -->
-      <div>
-        <div class="panel" style="margin-bottom:10px;">
-          <div class="ph"><div class="pt">Cliente + Tecnologia</div><span class="tag on">Step 1</span></div>
-          <div class="pb">
-            <div class="fg"><label class="fl">Cliente</label><input class="fi" id="s13Cliente" placeholder="Ex: CPFL Energia"/></div>
-            <div class="fg"><label class="fl">Nome do Dashboard</label><input class="fi" id="s13Nome" placeholder="Ex: Dashboard Comercial — Vendas e Churn"/></div>
-            <div class="fg"><label class="fl">Tecnologia de Visualização</label>
-              <select class="fsel" id="s13Tecnologia" onchange="s13UpdateTechInfo()">
-                <option value="powerbi">Power BI (Desktop + Service)</option>
-                <option value="looker">Looker Studio (GCP)</option>
-                <option value="streamlit">Python — Streamlit</option>
-                <option value="plotly">Python — Plotly Dash</option>
-                <option value="superset">Apache Superset</option>
-                <option value="metabase">Metabase</option>
-              </select>
-            </div>
-            <div id="s13TechInfo" style="background:rgba(156,109,255,.08);border:1px solid rgba(156,109,255,.2);border-radius:6px;padding:10px;font-size:10px;color:var(--t2);margin-bottom:8px;line-height:1.6;">
-              Power BI: gera modelo DAX, medidas calculadas, Power Query M e template .pbit pronto para importar.
-            </div>
-          </div>
-        </div>
-
-        <div class="panel" style="margin-bottom:10px;">
-          <div class="ph"><div class="pt">Banco de Dados / Fonte</div><span class="tag on">Step 2</span></div>
-          <div class="pb">
-            <div class="fg"><label class="fl">Fonte de dados</label>
-              <select class="fsel" id="s13Banco">
-                <option value="sqlserver">SQL Server</option>
-                <option value="postgresql">PostgreSQL</option>
-                <option value="bigquery">BigQuery (GCP)</option>
-                <option value="delta_databricks">Delta Lake (Databricks)</option>
-                <option value="snowflake">Snowflake</option>
-                <option value="redshift">Amazon Redshift</option>
-                <option value="mysql">MySQL / MariaDB</option>
-                <option value="oracle">Oracle Database</option>
-                <option value="excel_sheets">Excel / Google Sheets</option>
-                <option value="api_rest">API REST</option>
-              </select>
-            </div>
-            <div class="fg"><label class="fl">Schema / Database / Dataset</label>
-              <input class="fi" id="s13Schema" placeholder="Ex: dw_comercial, gold_schema, atlantyx_dw"/>
-            </div>
-            <div class="fg"><label class="fl">Tabelas / Views principais</label>
-              <input class="fi" id="s13Tabelas" placeholder="Ex: fato_vendas, dim_cliente, dim_produto, vw_kpis_mensais"/>
-            </div>
-            <div class="fg"><label class="fl">Credenciais / Acesso</label>
-              <select class="fsel" id="s13Auth">
-                <option>Service Account / Connection String (variável de ambiente)</option>
-                <option>OAuth 2.0 (Google)</option>
-                <option>Azure AD (Power BI Service)</option>
-                <option>API Key</option>
-                <option>Username + Password</option>
-              </select>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- COLUNA DIREITA: ESPECIFICAÇÃO -->
-      <div>
-        <div class="panel" style="margin-bottom:10px;">
-          <div class="ph"><div class="pt">Especificação do Dashboard</div><span class="tag on">Step 3</span></div>
-          <div class="pb">
-            <div class="fg"><label class="fl">Objetivo do dashboard</label>
-              <textarea class="fta" id="s13Objetivo" style="min-height:65px;" placeholder="Ex: Monitorar performance comercial em tempo real: volume de vendas, churn de clientes, receita por região e produto, comparativo com metas mensais..."></textarea>
-            </div>
-            <div class="fg"><label class="fl">Público / usuários</label>
-              <select class="fsel" id="s13Publico">
-                <option>Diretoria / C-Level (visão executiva, alto nível)</option>
-                <option>Gerência (visão operacional + tendências)</option>
-                <option>Analistas (visão detalhada + drill-down)</option>
-                <option>Vendedores / Campo (visão individual)</option>
-                <option>Múltiplos perfis (com row-level security)</option>
-              </select>
-            </div>
-            <div class="fg"><label class="fl">KPIs e métricas a exibir</label>
-              <textarea class="fta" id="s13KPIs" style="min-height:65px;" placeholder="Ex: Receita MoM e YoY, Ticket médio, Churn Rate %, Win Rate, Leads × Conversões, Top 10 clientes, Mapa de vendas por estado..."></textarea>
-            </div>
-            <div class="fg"><label class="fl">Filtros e dimensões de análise</label>
-              <input class="fi" id="s13Filtros" placeholder="Ex: Período, Região, Produto, Vendedor, Segmento de cliente"/>
-            </div>
-          </div>
-        </div>
-
-        <div class="panel">
-          <div class="ph"><div class="pt">Regras de Negócio</div><span class="tag on">Step 4 — Essencial</span></div>
-          <div class="pb">
-            <div class="fg"><label class="fl">Regras de cálculo e lógica de negócio</label>
-              <textarea class="fta" id="s13Regras" style="min-height:90px;" placeholder="Ex:&#10;• Receita = SUM(fato_vendas.valor_liquido) WHERE status = 'CONFIRMADO'&#10;• Churn Rate = clientes_perdidos_mes / base_clientes_inicio_mes * 100&#10;• Meta: R$1.5M/mês — semáforo verde >100%, amarelo >80%, vermelho <80%&#10;• Ticket médio = Receita / COUNT(pedidos) excluindo devoluções&#10;• YoY = comparar com mesmo período ano anterior (ajustado sazonalidade)"></textarea>
-            </div>
-            <div class="fg"><label class="fl">Alertas e thresholds</label>
-              <input class="fi" id="s13Alertas" placeholder="Ex: Alertar quando churn > 5%, receita abaixo de 80% da meta, lead time > 30 dias"/>
-            </div>
-            <div class="fg"><label class="fl">Periodicidade de atualização</label>
-              <select class="fsel" id="s13Refresh">
-                <option>Tempo real (streaming)</option>
-                <option>A cada 15 minutos</option>
-                <option>De hora em hora</option>
-                <option>Diário (scheduled refresh)</option>
-                <option>Semanal</option>
-                <option>Sob demanda (manual)</option>
-              </select>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- AÇÕES -->
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px;">
-      <button class="btn btn-p" style="padding:12px;" onclick="gerarMockupDashboard()">&#9670; Gerar Mockup Interativo</button>
-      <button class="btn btn-or" style="padding:12px;" onclick="gerarCodigoFinal()">&#128196; Gerar Código Final</button>
-      <button class="btn btn-gn" style="padding:12px;" onclick="gerarTudoDashboard()">&#9733; Gerar Tudo (Mockup + Código)</button>
-    </div>
-    <div id="s13GerarSaida" style="margin-top:12px;"></div>
-  </div>
-
-  <!-- MOCKUP + REFINAMENTO -->
-  <div class="page" id="page-s13mockup">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#9c6dff;margin-bottom:12px;">S13 · MOCKUP INTERATIVO — REFINAR COM IA</div>
-
-    <div class="kg k2" style="gap:12px;">
-      <!-- MOCKUP VISUAL -->
-      <div style="flex:2;">
-        <div style="background:var(--bg4);border:1px solid rgba(156,109,255,.3);border-radius:9px;overflow:hidden;">
-          <div style="background:var(--bg3);border-bottom:1px solid var(--bd);padding:10px 14px;display:flex;align-items:center;gap:8px;">
-            <span id="s13MockupTitle" style="font-family:var(--M);font-size:9px;color:#9c6dff;text-transform:uppercase;">MOCKUP — Dashboard</span>
-            <span id="s13MockupTech" style="font-size:9px;color:var(--t3);"></span>
-            <div style="flex:1;"></div>
-            <button class="btn btn-gn" style="font-size:9px;padding:3px 10px;" onclick="aprovarMockup()">&#10003; Aprovar Mockup</button>
-            <button class="btn" style="font-size:9px;padding:3px 10px;" onclick="gerarCodigoFinal()">&#128196; Gerar Código</button>
-          </div>
-          <div id="s13MockupOutput" style="padding:16px;min-height:500px;font-family:monospace;font-size:11px;overflow-y:auto;">
-            <div style="color:var(--t3);text-align:center;padding:60px;">Configure e gere o mockup na aba Novo Dashboard</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- CHAT DE REFINAMENTO -->
-      <div style="min-width:280px;">
-        <div class="panel" style="height:100%;">
-          <div class="ph"><div class="pt">Refinar com IA</div><span class="tag live">Chat</span></div>
-          <div class="pb" style="display:flex;flex-direction:column;height:calc(100% - 44px);">
-            <div id="s13ChatMsgs" style="flex:1;overflow-y:auto;min-height:300px;max-height:400px;display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
-              <div style="background:rgba(156,109,255,.1);border-radius:6px;padding:10px;font-size:11px;color:var(--t1);">
-                Olá! Seu mockup está pronto. Me diga o que deseja ajustar:<br/><br/>
-                <span style="color:var(--t2);">• Adicionar/remover gráficos<br/>• Mudar cores ou layout<br/>• Ajustar métricas<br/>• Adicionar filtros<br/>• Mudar tipo de visualização</span>
-              </div>
-            </div>
-            <div style="display:flex;gap:6px;">
-              <input class="fi" id="s13ChatInput" placeholder="Ex: Adicione um gráfico de linha para tendência mensal..." style="flex:1;font-size:11px;" onkeydown="if(event.key==='Enter')enviarMsgRefinamento()"/>
-              <button class="btn btn-p" style="font-size:12px;padding:6px 10px;" onclick="enviarMsgRefinamento()">&#9658;</button>
-            </div>
-            <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">
-              <button class="btn btn-g" style="font-size:8px;padding:2px 7px;" onclick="s13QuickMsg('Mude as cores para azul corporativo e gold')">Cores corp.</button>
-              <button class="btn btn-g" style="font-size:8px;padding:2px 7px;" onclick="s13QuickMsg('Adicione drill-down por região')">+ Drill-down</button>
-              <button class="btn btn-g" style="font-size:8px;padding:2px 7px;" onclick="s13QuickMsg('Adicione alertas visuais de meta')">+ Alertas</button>
-              <button class="btn btn-g" style="font-size:8px;padding:2px 7px;" onclick="s13QuickMsg('Separe em 2 abas: Executivo e Operacional')">+ Abas</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- CÓDIGO FINAL -->
-  <div class="page" id="page-s13codigo">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#9c6dff;margin-bottom:12px;">S13 · CÓDIGO FINAL DO DASHBOARD</div>
-
-    <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
-      <button class="btn btn-p" id="s13codeBtnQuery"   onclick="mostrarAbaS13('query')"  style="font-size:10px;">&#128202; Queries SQL</button>
-      <button class="btn" id="s13codeBtnCalc"    onclick="mostrarAbaS13('calc')"   style="font-size:10px;">&#9881; Métricas/DAX</button>
-      <button class="btn" id="s13codeBtnApp"     onclick="mostrarAbaS13('app')"    style="font-size:10px;">&#128013; Código App</button>
-      <button class="btn" id="s13codeBtnDeploy"  onclick="mostrarAbaS13('deploy')" style="font-size:10px;">&#128640; Deploy Guide</button>
-      <div style="flex:1;"></div>
-      <button class="btn btn-g" style="font-size:9px;" onclick="copiarCodigoS13()">&#128203; Copiar</button>
-      <span id="s13CodigoLabel" style="font-size:10px;color:var(--t2);align-self:center;"></span>
-    </div>
-
-    <div style="background:var(--bg4);border:1px solid rgba(156,109,255,.2);border-radius:8px;overflow:hidden;">
-      <div style="background:var(--bg3);border-bottom:1px solid var(--bd);padding:8px 14px;display:flex;align-items:center;gap:8px;">
-        <span id="s13CodeAbaTitle" style="font-family:var(--M);font-size:9px;color:#9c6dff;text-transform:uppercase;">QUERIES SQL — Fonte de Dados</span>
-        <span id="s13CodeInfo" style="font-size:9px;color:var(--t3);"></span>
-      </div>
-      <div id="s13CodeOutput" style="padding:16px;font-family:monospace;font-size:11px;line-height:1.7;color:#e0e0e0;white-space:pre-wrap;max-height:600px;overflow-y:auto;background:#0d0e1a;">
-        Gere o código na aba Novo Dashboard ou aprove o mockup.
-      </div>
-    </div>
-
-    <div style="margin-top:10px;background:rgba(34,211,163,.06);border:1px solid rgba(34,211,163,.2);border-radius:8px;padding:12px;">
-      <div style="font-family:var(--M);font-size:8px;color:var(--green);margin-bottom:6px;">CHECKLIST DE IMPLANTAÇÃO</div>
-      <div id="s13Checklist" style="font-size:11px;color:var(--t2);line-height:1.9;">Configure o dashboard para gerar o checklist de implantação.</div>
-    </div>
-  </div>
-
-  </div>  <!-- /.cnt -->
 </main>
 <div class="toast" id="toastEl"></div>
 <script>
@@ -5155,7 +4286,7 @@ async function runFinOps() {
   btn.disabled = false; btn.textContent = '* Analisar';
 }
 
-// Init kanban criativo S2 (usa kanbanPecas; guarda contra board ausente)
+// Init kanban com exemplo
 setTimeout(() => {
   renderKanban();
 }, 500);
@@ -8412,7 +7543,7 @@ async function renderCalCampanhas() {
       const redes = c.redes_ativas || {};
       const redesStr = ['linkedin','instagram','facebook','whatsapp','email']
         .filter(k => redes[k]).map(k => k[0].toUpperCase()).join('');
-      chips += '<div onclick="event.stopPropagation(); abrirCampanhaDB(\'' + c.id + '\')" style="background:' + cor + '22;border-left:3px solid ' + cor + ';color:#fff;padding:2px 4px;border-radius:3px;margin-bottom:2px;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;" title="' + (c.nome||'') + ' · ' + redesStr + '">' + (c.nome||'').substring(0,18) + (redesStr ? ' [' + redesStr + ']' : '') + '</div>';
+      chips += '<div onclick="event.stopPropagation(); abrirCampanhaDB(\\'' + c.id + '\\')" style="background:' + cor + '22;border-left:3px solid ' + cor + ';color:#fff;padding:2px 4px;border-radius:3px;margin-bottom:2px;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;" title="' + (c.nome||'') + ' · ' + redesStr + '">' + (c.nome||'').substring(0,18) + (redesStr ? ' [' + redesStr + ']' : '') + '</div>';
     });
     if (ativasNoDia.length > 3) {
       chips += '<div style="font-size:8px;color:var(--t3);">+' + (ativasNoDia.length - 3) + ' mais</div>';
@@ -11627,6 +10758,874 @@ async function enriquecerLeads() {
   overlay.appendChild(box); document.body.appendChild(overlay);
 }
 </script>
+
+    <!-- S3 · KPIs DE SAUDE FINANCEIRA -->
+  <div class="page" id="page-s3kpis">
+    <div style="background:linear-gradient(135deg,rgba(0,207,200,.10),rgba(0,207,200,.02));border:1px solid rgba(0,207,200,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
+      <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">KPIs de Saude Financeira</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Calculo deterministico sobre dados QuickBooks &middot; Semaforo automatico</div></div>
+      <button class="btn btn-gn" onclick="calcularKpisFinanceiros()">&#9670; Calcular KPIs de Saude</button>
+    </div>
+
+    <div class="kg k3" style="margin-bottom:12px;">
+      <div class="kpi pk"><div class="kl">EBITDA</div><div class="kv" id="s3_ebitda">&mdash;</div><div class="ks">mes atual</div></div>
+      <div class="kpi pk"><div class="kl">Margem Liquida</div><div class="kv" id="s3_margem">&mdash;</div><div class="ks">% lucro/receita</div></div>
+      <div class="kpi pk"><div class="kl">ROI Total</div><div class="kv" id="s3_roi">&mdash;</div><div class="ks">retorno mes</div></div>
+      <div class="kpi pk"><div class="kl">Liquidez Corrente</div><div class="kv" id="s3_liq">&mdash;</div><div class="ks">ideal &gt; 1.5</div></div>
+      <div class="kpi pk"><div class="kl">Runway</div><div class="kv" id="s3_runway">&mdash;</div><div class="ks">meses de caixa</div></div>
+      <div class="kpi gd"><div class="kl">Contas a Receber</div><div class="kv" id="s3_backlog">&mdash;</div><div class="ks">em aberto</div></div>
+    </div>
+
+    <div class="kg k2">
+      <div class="panel">
+        <div class="ph"><div class="pt">Indicadores de Saude Detalhados</div><span class="tag on">Deterministico</span></div>
+        <div class="pb" id="s3RentPanel"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Clique em Calcular KPIs de Saude</div></div>
+      </div>
+      <div class="panel">
+        <div class="ph"><div class="pt">Tributario + Compliance</div></div>
+        <div class="pb" id="s3TribPanel">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">DAS Simples</div><div style="font-size:14px;font-weight:600;" id="s3_das">&mdash;</div></div>
+            <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">FGTS</div><div style="font-size:14px;font-weight:600;" id="s3_fgts">&mdash;</div></div>
+            <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">IRPJ/CSLL</div><div style="font-size:14px;font-weight:600;" id="s3_irpj">&mdash;</div></div>
+            <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">ISS</div><div style="font-size:14px;font-weight:600;" id="s3_iss">&mdash;</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<div class="page" id="page-s4crm">
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#f09433;margin-bottom:14px;">S4 · VENDAS CRM — METAS + QUALIDADE + PIPELINE</div>
+    <div class="kg k3" style="margin-bottom:12px;">
+      <div class="kpi pk"><div class="kl">Meta Mês</div><div class="kv" id="s4_metaMes">R$0</div><div class="ks">% atingido</div></div>
+      <div class="kpi pk"><div class="kl">Win Rate</div><div class="kv" id="s4_wr">—</div><div class="ks">proposta→fechado</div></div>
+      <div class="kpi pk"><div class="kl">Ticket Médio</div><div class="kv" id="s4_ticket">—</div><div class="ks">por deal</div></div>
+      <div class="kpi pk"><div class="kl">Ciclo Médio</div><div class="kv" id="s4_ciclo">—</div><div class="ks">dias 1°contato→fecha</div></div>
+      <div class="kpi pk"><div class="kl">Pipeline Total</div><div class="kv" id="s4_pipeline">—</div><div class="ks">em aberto</div></div>
+      <div class="kpi gd"><div class="kl">ARR</div><div class="kv" id="s4_arr">—</div><div class="ks">receita recorrente anual</div></div>
+    </div>
+    <div class="kg k2">
+      <div class="panel"><div class="ph"><div class="pt">Forecast Receita</div><span class="tag live">IA</span></div>
+        <div class="pb">
+          <div style="margin-bottom:10px;">
+            <div style="font-family:var(--M);font-size:8px;color:var(--t2);margin-bottom:6px;">CENÁRIOS DE FORECAST</div>
+            <div class="kg k3" style="gap:6px;">
+              <div style="background:rgba(34,211,163,.08);border:1px solid rgba(34,211,163,.2);border-radius:6px;padding:10px;text-align:center;">
+                <div style="font-size:10px;color:var(--green);">Otimista</div><div style="font-size:16px;font-weight:700;color:var(--green);" id="s4_fOtimista">—</div>
+              </div>
+              <div style="background:rgba(79,124,255,.08);border:1px solid rgba(79,124,255,.2);border-radius:6px;padding:10px;text-align:center;">
+                <div style="font-size:10px;color:var(--blue);">Realista</div><div style="font-size:16px;font-weight:700;color:var(--blue);" id="s4_fRealista">—</div>
+              </div>
+              <div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:6px;padding:10px;text-align:center;">
+                <div style="font-size:10px;color:var(--gold);">Pessimista</div><div style="font-size:16px;font-weight:700;color:var(--gold);" id="s4_fPessimista">—</div>
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-p" style="width:100%;" onclick="calcularForecastCRM()">&#9670; Calcular Forecast</button>
+        </div>
+      </div>
+      <div class="panel"><div class="ph"><div class="pt">Indicadores de Qualidade</div></div>
+        <div class="pb" id="s4QualPanel">
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px;background:var(--bg4);border-radius:5px;"><span style="font-size:11px;">Lead Response Time</span><span class="tag off" id="s4_lrt">—</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px;background:var(--bg4);border-radius:5px;"><span style="font-size:11px;">Pipeline Coverage</span><span class="tag off" id="s4_coverage">—</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px;background:var(--bg4);border-radius:5px;"><span style="font-size:11px;">NRR (Net Revenue Retention)</span><span class="tag off" id="s4_nrr">—</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px;background:var(--bg4);border-radius:5px;"><span style="font-size:11px;">LTV/CAC Ratio</span><span class="tag off" id="s4_ltvcac">—</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px;background:var(--bg4);border-radius:5px;"><span style="font-size:11px;">Deals em Risco (+14d)</span><span class="tag hot" id="s4_risco">—</span></div>
+          </div>
+          <button class="btn btn-g" style="width:100%;margin-top:10px;" onclick="loadCRMKPIs()">&#8635; Carregar do HubSpot</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ S5 · JURÍDICO ═══ -->
+  <div class="page" id="page-s5juridico">
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#9c6dff;margin-bottom:14px;">S5 · JURÍDICO + COMPLIANCE</div>
+    <div class="kg k2">
+      <div class="panel"><div class="ph"><div class="pt">Análise de Contrato</div><span class="tag on">IA</span></div>
+        <div class="pb">
+          <div class="fg"><label class="fl">Cole o contrato ou cláusula para análise</label>
+            <textarea class="fta" id="s5contratoTexto" style="min-height:120px;" placeholder="Cole o texto do contrato, cláusula ou proposta comercial aqui..."></textarea>
+          </div>
+          <div class="fg"><label class="fl">Tipo de documento</label>
+            <select class="fsel" id="s5tipoDoc">
+              <option>Contrato de Prestação de Serviços</option>
+              <option>NDA — Acordo de Confidencialidade</option>
+              <option>Proposta Comercial</option>
+              <option>Contrato de Trabalho CLT</option>
+              <option>Contrato PJ / Fornecedor</option>
+              <option>Aditivo Contratual</option>
+              <option>SLA — Service Level Agreement</option>
+            </select>
+          </div>
+          <button class="btn btn-or" style="width:100%;" onclick="analisarContratoIA()">&#9670; Analisar Riscos com IA</button>
+          <div id="s5AnaliseSaida" style="margin-top:10px;"></div>
+        </div>
+      </div>
+      <div class="panel"><div class="ph"><div class="pt">Gerar Documento Jurídico</div><span class="tag on">IA</span></div>
+        <div class="pb">
+          <div class="fg"><label class="fl">Tipo de documento</label>
+            <select class="fsel" id="s5tipoGerar">
+              <option>NDA — Acordo de Confidencialidade</option>
+              <option>Proposta Comercial Formal</option>
+              <option>Carta de Intenção (LOI)</option>
+              <option>Aviso de Rescisão</option>
+              <option>Aditivo de Prazo</option>
+              <option>Declaração de Encerramento de Projeto</option>
+            </select>
+          </div>
+          <div class="fg"><label class="fl">Partes envolvidas</label><input class="fi" id="s5partes" placeholder="Ex: Atlantyx Tecnologia LTDA e ACME S.A."/></div>
+          <div class="fg"><label class="fl">Contexto adicional</label>
+            <textarea class="fta" id="s5contextoDoc" style="min-height:60px;" placeholder="Detalhes relevantes para o documento..."></textarea>
+          </div>
+          <button class="btn btn-p" style="width:100%;" onclick="gerarDocumentoJuridico()">&#9670; Gerar Documento com IA</button>
+          <div id="s5DocSaida" style="margin-top:10px;"></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:12px;">
+      <div class="ph"><div class="pt">Calendário de Obrigações Legais</div><span class="tag live">Compliance</span></div>
+      <div class="pb">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+          <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">Simples Nacional</div><div style="font-size:11px;margin-top:4px;">Vencimento: todo dia <strong>20</strong></div><div class="tag on" style="margin-top:4px;font-size:8px;">No prazo</div></div>
+          <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">eSocial</div><div style="font-size:11px;margin-top:4px;">Transmissão mensal</div><div class="tag on" style="margin-top:4px;font-size:8px;">Configurar</div></div>
+          <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">FGTS Digital</div><div style="font-size:11px;margin-top:4px;">Vencimento: dia <strong>7</strong></div><div class="tag on" style="margin-top:4px;font-size:8px;">Configurar</div></div>
+        </div>
+        <button class="btn btn-g" style="width:100%;margin-top:10px;" onclick="verificarComplianceIA()">&#9670; Verificar Compliance com IA</button>
+        <div id="s5ComplianceSaida" style="margin-top:10px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ S8 · RH ═══ -->
+  <div class="page" id="page-s8rh">
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#4f7cff;margin-bottom:14px;">S8 · RH + DEPARTAMENTO PESSOAL</div>
+    <div class="kg k3" style="margin-bottom:12px;">
+      <div class="kpi pk"><div class="kl">Headcount</div><div class="kv" id="s8_head">—</div><div class="ks">colaboradores ativos</div></div>
+      <div class="kpi pk"><div class="kl">Turnover</div><div class="kv" id="s8_turn">—</div><div class="ks">mês atual</div></div>
+      <div class="kpi pk"><div class="kl">Vagas Abertas</div><div class="kv" id="s8_vagas">—</div><div class="ks">em recrutamento</div></div>
+      <div class="kpi pk"><div class="kl">NPS x Desempenho</div><div class="kv" id="s8_nps">—</div><div class="ks">média colaboradores</div></div>
+      <div class="kpi pk"><div class="kl">Contratos vencendo</div><div class="kv" id="s8_contratos">—</div><div class="ks">próx 30 dias</div></div>
+      <div class="kpi hot"><div class="kl">Obrigações DP</div><div class="kv" id="s8_dp">—</div><div class="ks">pendentes</div></div>
+    </div>
+    <div class="kg k2">
+      <div class="panel"><div class="ph"><div class="pt">Recrutamento</div><span class="tag on">IA</span></div>
+        <div class="pb">
+          <div class="fg"><label class="fl">Cargo</label><input class="fi" id="s8cargo" placeholder="Ex: Analista de Dados Sênior"/></div>
+          <div class="fg"><label class="fl">Departamento</label><input class="fi" id="s8depto" placeholder="Ex: BI & Analytics"/></div>
+          <div class="fg"><label class="fl">Requisitos principais</label><textarea class="fta" id="s8req" style="min-height:60px;" placeholder="Ex: Python, SQL, 3+ anos BI, experiência em Energia ou Varejo..."></textarea></div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-p" style="flex:1;" onclick="gerarDescricaoVaga()">&#9670; Gerar Descrição da Vaga</button>
+            <button class="btn btn-g" style="font-size:10px;" onclick="criarTriagemCV()">Criar Triagem IA</button>
+          </div>
+          <div id="s8VagaSaida" style="margin-top:10px;"></div>
+        </div>
+      </div>
+      <div class="panel"><div class="ph"><div class="pt">Calendário DP — Obrigações</div><span class="tag hot">Alertas</span></div>
+        <div class="pb">
+          <div id="s8CalDP" style="display:flex;flex-direction:column;gap:6px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:rgba(240,112,48,.08);border:1px solid rgba(240,112,48,.2);border-radius:5px;"><span style="font-size:11px;">FGTS Digital (dia 7)</span><span class="tag hot">Configurar</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:rgba(240,112,48,.08);border:1px solid rgba(240,112,48,.2);border-radius:5px;"><span style="font-size:11px;">eSocial — Remuneração</span><span class="tag hot">Configurar</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:5px;"><span style="font-size:11px;">DARF — IRRF (dia 20)</span><span class="tag gd">Monitorar</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:5px;"><span style="font-size:11px;">Holerites + Ponto</span><span class="tag gd">Mensal</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--bg4);border:1px solid var(--bd);border-radius:5px;"><span style="font-size:11px;">RAIS (jan) / DIRF (mar)</span><span class="tag off">Anual</span></div>
+          </div>
+          <button class="btn btn-g" style="width:100%;margin-top:10px;" onclick="analisarObrigacoesDP()">&#9670; Analisar Obrigações com IA</button>
+          <div id="s8DPSaida" style="margin-top:8px;"></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:12px;">
+      <div class="ph"><div class="pt">Avaliação de Desempenho 360°</div><span class="tag on">IA</span></div>
+      <div class="pb">
+        <div class="fg"><label class="fl">Colaborador</label><input class="fi" id="s8colab" placeholder="Nome do colaborador"/></div>
+        <div class="fg"><label class="fl">Cargo e área</label><input class="fi" id="s8colab_cargo" placeholder="Ex: Analista de Dados — BI"/></div>
+        <div class="fg"><label class="fl">Pontos positivos observados</label><textarea class="fta" id="s8positivos" style="min-height:50px;" placeholder="Ex: Excelente nas entregas, proativo com cliente..."></textarea></div>
+        <div class="fg"><label class="fl">Pontos de desenvolvimento</label><textarea class="fta" id="s8desenvolver" style="min-height:50px;" placeholder="Ex: Comunicação com stakeholders, gestão de tempo..."></textarea></div>
+        <div class="fg"><label class="fl">NPS dos projetos que participou</label><input class="fi" id="s8npsProj" placeholder="Ex: 8.5, 9.2, 7.8"/></div>
+        <button class="btn btn-or" style="width:100%;" onclick="gerarAvaliacaoDesempenho()">&#9670; Gerar Avaliação + PDI com IA</button>
+        <div id="s8AvalSaida" style="margin-top:10px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ S9 · GESTÃO DE PROJETOS ═══ -->
+  <div class="page" id="page-s9projetos">
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#22d3a3;margin-bottom:14px;">S9 · GESTÃO DE PROJETOS</div>
+    <div class="kg k3" style="margin-bottom:12px;">
+      <div class="kpi pk"><div class="kl">Projetos Ativos</div><div class="kv" id="s9_ativos">—</div><div class="ks">em andamento</div></div>
+      <div class="kpi pk"><div class="kl">No prazo</div><div class="kv" id="s9_prazo">—</div><div class="ks">verde</div></div>
+      <div class="kpi hot"><div class="kl">Em risco</div><div class="kv" id="s9_risco">—</div><div class="ks">amarelo/vermelho</div></div>
+      <div class="kpi pk"><div class="kl">Marcos este mês</div><div class="kv" id="s9_marcos">—</div><div class="ks">entregas</div></div>
+      <div class="kpi pk"><div class="kl">NPS médio</div><div class="kv" id="s9_nps">—</div><div class="ks">satisfação</div></div>
+      <div class="kpi gd"><div class="kl">% conclusão avg</div><div class="kv" id="s9_conclusao">—</div><div class="ks">média carteira</div></div>
+    </div>
+    <div class="kg k2">
+      <div class="panel"><div class="ph"><div class="pt">Novo Projeto</div><span class="tag on">IA</span></div>
+        <div class="pb">
+          <div class="fg"><label class="fl">Nome do projeto</label><input class="fi" id="s9nome" placeholder="Ex: Implantação BI — Usiminas"/></div>
+          <div class="fg"><label class="fl">Cliente</label><input class="fi" id="s9cliente" placeholder="Nome da empresa cliente"/></div>
+          <div class="fg"><label class="fl">Escopo resumido</label><textarea class="fta" id="s9escopo" style="min-height:70px;" placeholder="Ex: Implantação de dashboards de vendas e produção. 4 fases, 6 meses..."></textarea></div>
+          <div class="kg k2" style="gap:8px;">
+            <div class="fg" style="margin:0;"><label class="fl">Data início</label><input class="fi" type="date" id="s9inicio"/></div>
+            <div class="fg" style="margin:0;"><label class="fl">Prazo final</label><input class="fi" type="date" id="s9prazo"/></div>
+          </div>
+          <div class="fg"><label class="fl">Valor do contrato</label><input class="fi" id="s9valor" placeholder="R$ 0,00"/></div>
+          <button class="btn btn-p" style="width:100%;margin-top:8px;" onclick="criarProjetoIA()">&#9670; Criar Plano com IA</button>
+          <div id="s9ProjSaida" style="margin-top:10px;"></div>
+        </div>
+      </div>
+      <div class="panel"><div class="ph"><div class="pt">Gerar Status Report PDF</div><span class="tag on">IA</span></div>
+        <div class="pb">
+          <div class="fg"><label class="fl">Projeto</label><input class="fi" id="s9srProjeto" placeholder="Nome do projeto"/></div>
+          <div class="fg"><label class="fl">% Conclusão atual</label><input class="fi" id="s9srPct" placeholder="Ex: 65"/></div>
+          <div class="fg"><label class="fl">Status geral</label>
+            <select class="fsel" id="s9srStatus">
+              <option>🟢 No prazo</option>
+              <option>🟡 Em risco — atraso potencial</option>
+              <option>🔴 Atrasado</option>
+            </select>
+          </div>
+          <div class="fg"><label class="fl">Tarefas em andamento</label><textarea class="fta" id="s9srTarefas" style="min-height:60px;" placeholder="Liste as tarefas em andamento..."></textarea></div>
+          <div class="fg"><label class="fl">Pendências / Riscos</label><textarea class="fta" id="s9srRiscos" style="min-height:50px;" placeholder="Liste riscos e dependências externas..."></textarea></div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-or" style="flex:1;" onclick="gerarStatusReport()">&#9670; Gerar Status Report</button>
+          </div>
+          <div id="s9SRSaida" style="margin-top:10px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ S10 · ATENDIMENTO ═══ -->
+  <div class="page" id="page-s10atend">
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#4f7cff;margin-bottom:14px;">S10 · ATENDIMENTO OMNICHANNEL + TICKETS</div>
+    <div class="kg k4" style="margin-bottom:12px;">
+      <div class="kpi pk"><div class="kl">Tickets abertos</div><div class="kv" id="s10_abertos">—</div><div class="ks">aguardando</div></div>
+      <div class="kpi pk"><div class="kl">Em SLA</div><div class="kv" id="s10_sla">—</div><div class="ks">no prazo</div></div>
+      <div class="kpi hot"><div class="kl">SLA violado</div><div class="kv" id="s10_violated">—</div><div class="ks">crítico</div></div>
+      <div class="kpi pk"><div class="kl">CSAT</div><div class="kv" id="s10_csat">—</div><div class="ks">satisfação</div></div>
+      <div class="kpi pk"><div class="kl">FCR</div><div class="kv" id="s10_fcr">—</div><div class="ks">1ª resolução</div></div>
+      <div class="kpi pk"><div class="kl">Orçamentos</div><div class="kv" id="s10_orcamentos">—</div><div class="ks">aguard. aprovação</div></div>
+      <div class="kpi pk"><div class="kl">Manut. Corretivas</div><div class="kv" id="s10_corret">—</div><div class="ks">em análise</div></div>
+      <div class="kpi gd"><div class="kl">TMA (min)</div><div class="kv" id="s10_tma">—</div><div class="ks">tempo médio atend.</div></div>
+    </div>
+    <div class="kg k2">
+      <div class="panel"><div class="ph"><div class="pt">Abrir Ticket</div><span class="tag on">IA Classifica</span></div>
+        <div class="pb">
+          <div class="fg"><label class="fl">Cliente</label><input class="fi" id="s10cliente" placeholder="Nome da empresa"/></div>
+          <div class="fg"><label class="fl">Canal de origem</label>
+            <select class="fsel" id="s10canal">
+              <option>WhatsApp</option><option>E-mail</option><option>Telefone</option><option>Chat</option>
+            </select>
+          </div>
+          <div class="fg"><label class="fl">Descrição da demanda</label>
+            <textarea class="fta" id="s10demanda" style="min-height:80px;" placeholder="Descreva a solicitação do cliente em detalhes..."></textarea>
+          </div>
+          <button class="btn btn-or" style="width:100%;" onclick="abrirTicketIA()">&#9670; Abrir Ticket e Classificar com IA</button>
+          <div id="s10TicketSaida" style="margin-top:10px;"></div>
+        </div>
+      </div>
+      <div class="panel"><div class="ph"><div class="pt">Gerar Orçamento de Manutenção</div><span class="tag on">IA</span></div>
+        <div class="pb">
+          <div class="fg"><label class="fl">Cliente</label><input class="fi" id="s10orcCliente" placeholder="Nome da empresa"/></div>
+          <div class="fg"><label class="fl">Tipo de manutenção</label>
+            <select class="fsel" id="s10orcTipo">
+              <option>Corretiva — dentro do contrato</option>
+              <option>Corretiva — fora do escopo</option>
+              <option>Evolutiva — nova funcionalidade</option>
+              <option>Evolutiva — melhoria existente</option>
+            </select>
+          </div>
+          <div class="fg"><label class="fl">Descrição técnica</label>
+            <textarea class="fta" id="s10orcDesc" style="min-height:70px;" placeholder="Descreva o que precisa ser feito tecnicamente..."></textarea>
+          </div>
+          <button class="btn btn-p" style="width:100%;" onclick="gerarOrcamentoManutencao()">&#9670; Gerar Orçamento com IA</button>
+          <div id="s10OrcSaida" style="margin-top:10px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ S11 · INSIDE SALES ═══ -->
+  <div class="page" id="page-s11sales">
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#f09433;margin-bottom:14px;">S11 · INSIDE SALES + VOZ IA</div>
+    <div class="kg k4" style="margin-bottom:12px;">
+      <div class="kpi pk"><div class="kl">Ligações hoje</div><div class="kv" id="s11_lig">—</div><div class="ks">IA + humano</div></div>
+      <div class="kpi pk"><div class="kl">Taxa contato</div><div class="kv" id="s11_tc">—</div><div class="ks">atendidas/discadas</div></div>
+      <div class="kpi pk"><div class="kl">SQLs gerados</div><div class="kv" id="s11_sql">—</div><div class="ks">qualificados</div></div>
+      <div class="kpi gd"><div class="kl">Resp. ao lead</div><div class="kv" id="s11_resp">—</div><div class="ks">meta < 5min</div></div>
+    </div>
+    <div class="kg k2">
+      <div class="panel"><div class="ph"><div class="pt">Qualificação de Lead (BANT)</div><span class="tag on">IA</span></div>
+        <div class="pb">
+          <div class="fg"><label class="fl">Nome do lead</label><input class="fi" id="s11lead" placeholder="Nome e empresa"/></div>
+          <div class="fg"><label class="fl">Informações disponíveis</label>
+            <textarea class="fta" id="s11leadInfo" style="min-height:70px;" placeholder="Ex: CEO de empresa de energia R$500M, preencheu formulário sobre BI, clicou em caso de sucesso do setor elétrico..."></textarea>
+          </div>
+          <div class="fg"><label class="fl">Canal de origem</label>
+            <select class="fsel" id="s11canal">
+              <option>Formulário site</option><option>LinkedIn</option><option>Indicação</option>
+              <option>RFP</option><option>WhatsApp inbound</option>
+            </select>
+          </div>
+          <button class="btn btn-or" style="width:100%;" onclick="qualificarLeadBANT()">&#9670; Qualificar com BANT + IA</button>
+          <div id="s11BANTSaida" style="margin-top:10px;"></div>
+        </div>
+      </div>
+      <div class="panel"><div class="ph"><div class="pt">Gerar Script de Ligação</div><span class="tag on">IA</span></div>
+        <div class="pb">
+          <div class="fg"><label class="fl">Nome do decisor</label><input class="fi" id="s11decisor" placeholder="Ex: Carlos Mendes — CTO"/></div>
+          <div class="fg"><label class="fl">Empresa e setor</label><input class="fi" id="s11empresa" placeholder="Ex: Usiminas — Siderurgia"/></div>
+          <div class="fg"><label class="fl">Objetivo da ligação</label>
+            <select class="fsel" id="s11objetivo">
+              <option>Qualificação inicial (BANT)</option>
+              <option>Follow-up após proposta enviada</option>
+              <option>Reativação de lead frio</option>
+              <option>Fechamento</option>
+              <option>Upsell em cliente ativo</option>
+            </select>
+          </div>
+          <div class="fg"><label class="fl">Contexto adicional</label>
+            <input class="fi" id="s11ctx" placeholder="Ex: Anunciou projeto de automação no LinkedIn..."/>
+          </div>
+          <button class="btn btn-p" style="width:100%;" onclick="gerarScriptLigacao()">&#9670; Gerar Script com IA</button>
+          <div id="s11ScriptSaida" style="margin-top:10px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ S6 · DEV + QA ═══ -->
+  <div class="page" id="page-s6dev">
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#22d3a3;margin-bottom:14px;">S6 · DESENVOLVIMENTO + QA + VERSÕES</div>
+    <div class="kg k3" style="margin-bottom:12px;">
+      <div class="kpi pk"><div class="kl">Versão atual</div><div class="kv" id="s6_versao">1.0.0</div><div class="ks">em produção</div></div>
+      <div class="kpi pk"><div class="kl">Próxima versão</div><div class="kv" id="s6_proxima">—</div><div class="ks">em desenvolvimento</div></div>
+      <div class="kpi pk"><div class="kl">QA status</div><div class="kv" id="s6_qa">—</div><div class="ks">aprovado/bloqueado</div></div>
+      <div class="kpi pk"><div class="kl">Tickets na versão</div><div class="kv" id="s6_tickets">—</div><div class="ks">incluídos</div></div>
+      <div class="kpi pk"><div class="kl">Cobertura testes</div><div class="kv" id="s6_cob">—</div><div class="ks">% cobertura</div></div>
+      <div class="kpi gd"><div class="kl">Bugs em prod</div><div class="kv" id="s6_bugs">—</div><div class="ks">abertos</div></div>
+    </div>
+    <div class="kg k2">
+      <div class="panel"><div class="ph"><div class="pt">Gerar Release Notes</div><span class="tag on">IA</span></div>
+        <div class="pb">
+          <div class="kg k2" style="gap:8px;">
+            <div class="fg" style="margin:0;"><label class="fl">Versão</label><input class="fi" id="s6versao" placeholder="Ex: 1.4.2"/></div>
+            <div class="fg" style="margin:0;"><label class="fl">Tipo</label>
+              <select class="fsel" id="s6tipo"><option>Minor</option><option>Patch/Hotfix</option><option>Major</option></select>
+            </div>
+          </div>
+          <div class="fg"><label class="fl">Correções incluídas</label>
+            <textarea class="fta" id="s6correcoes" style="min-height:70px;" placeholder="Ex: TKT-001: Corrigido erro no cálculo de margem&#10;TKT-002: Fix no carregamento do dashboard..."></textarea>
+          </div>
+          <div class="fg"><label class="fl">Melhorias/novas funcionalidades</label>
+            <textarea class="fta" id="s6melhorias" style="min-height:50px;" placeholder="Ex: Novo filtro por período no extrato bancário..."></textarea>
+          </div>
+          <button class="btn btn-p" style="width:100%;" onclick="gerarReleaseNotes()">&#9670; Gerar Release Notes com IA</button>
+          <div id="s6RNSaida" style="margin-top:10px;"></div>
+        </div>
+      </div>
+      <div class="panel"><div class="ph"><div class="pt">Checklist de QA de Versão</div><span class="tag on">IA</span></div>
+        <div class="pb">
+          <div class="fg"><label class="fl">Versão para QA</label><input class="fi" id="s6qaVersao" placeholder="Ex: 1.4.2-RC1"/></div>
+          <div class="fg"><label class="fl">Funcionalidades testadas</label>
+            <textarea class="fta" id="s6qaFuncs" style="min-height:60px;" placeholder="Liste as funcionalidades que precisam de QA nesta versão..."></textarea>
+          </div>
+          <div class="fg"><label class="fl">Riscos de regressão</label>
+            <input class="fi" id="s6qaRiscos" placeholder="Ex: Módulo financeiro, geração de PDF..."/>
+          </div>
+          <button class="btn btn-or" style="width:100%;" onclick="gerarChecklistQA()">&#9670; Gerar Checklist QA com IA</button>
+          <div id="s6QASaida" style="margin-top:10px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ S12 · DATA ENGINEERING SQUAD ═══ -->
+
+  <!-- PÁGINA PRINCIPAL: HUB DO PROJETO -->
+  <div class="page" id="page-s12hub">
+    <div style="background:linear-gradient(135deg,rgba(79,124,255,.15),rgba(34,211,163,.08));border:1px solid rgba(79,124,255,.25);border-radius:10px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:14px;">
+      <div style="font-size:28px;">&#128202;</div>
+      <div style="flex:1;">
+        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--blue);letter-spacing:2px;">S12 · DATA ENGINEERING SQUAD</div>
+        <div style="font-size:15px;font-weight:700;color:var(--t1);margin-top:2px;">Engenharia de Dados — DW + DataMart + Pipelines Medallion</div>
+        <div style="font-size:11px;color:var(--t2);margin-top:3px;">Gera Data Warehouse físico, Data Marts por área e pipelines completos prontos para implantar no ambiente do cliente</div>
+      </div>
+      <button class="btn btn-or" style="font-size:11px;padding:8px 16px;white-space:nowrap;" onclick="novoProjetoDE()">+ Novo Projeto</button>
+    </div>
+
+    <!-- PROJETOS SALVOS -->
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--blue);margin-bottom:10px;">PROJETOS DE DADOS ATIVOS</div>
+    <div id="s12ProjetosGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-bottom:16px;">
+      <!-- Exemplo CPFL -->
+      <div style="background:var(--bg4);border:1px solid rgba(79,124,255,.3);border-radius:9px;padding:14px;cursor:pointer;" onclick="abrirProjetoDE('cpfl_demo')">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <div style="width:32px;height:32px;background:linear-gradient(135deg,#1a3a8f,#4f7cff);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;">&#9889;</div>
+          <div><div style="font-size:12px;font-weight:600;color:var(--t1);">CPFL Energia</div><div style="font-size:10px;color:var(--t2);">Databricks · Delta Table · Python</div></div>
+          <span class="tag on" style="margin-left:auto;font-size:8px;">Demo</span>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <span style="font-size:9px;background:rgba(79,124,255,.12);color:var(--blue);padding:2px 7px;border-radius:3px;">Medallion</span>
+          <span style="font-size:9px;background:rgba(34,211,163,.12);color:var(--green);padding:2px 7px;border-radius:3px;">DW + 4 DataMarts</span>
+          <span style="font-size:9px;background:rgba(245,166,35,.12);color:var(--gold);padding:2px 7px;border-radius:3px;">Pipelines Python</span>
+        </div>
+      </div>
+      <!-- Exemplo Motriz -->
+      <div style="background:var(--bg4);border:1px solid rgba(34,211,163,.3);border-radius:9px;padding:14px;cursor:pointer;" onclick="abrirProjetoDE('motriz_demo')">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <div style="width:32px;height:32px;background:linear-gradient(135deg,#22d3a3,#1a3a8f);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;">&#128663;</div>
+          <div><div style="font-size:12px;font-weight:600;color:var(--t1);">Motriz</div><div style="font-size:10px;color:var(--t2);">GCP · BigQuery · Python</div></div>
+          <span class="tag on" style="margin-left:auto;font-size:8px;">Demo</span>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <span style="font-size:9px;background:rgba(79,124,255,.12);color:var(--blue);padding:2px 7px;border-radius:3px;">Medallion</span>
+          <span style="font-size:9px;background:rgba(34,211,163,.12);color:var(--green);padding:2px 7px;border-radius:3px;">DW + 3 DataMarts</span>
+          <span style="font-size:9px;background:rgba(245,166,35,.12);color:var(--gold);padding:2px 7px;border-radius:3px;">Pipelines Python</span>
+        </div>
+      </div>
+      <!-- Novo projeto CTA -->
+      <div style="background:var(--bg3);border:2px dashed rgba(79,124,255,.3);border-radius:9px;padding:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;min-height:90px;" onclick="nav('s12novo',this)">
+        <div style="font-size:24px;color:var(--blue);opacity:.5;">+</div>
+        <div style="font-size:11px;color:var(--t3);">Novo Projeto de Dados</div>
+      </div>
+    </div>
+
+    <!-- CAPACIDADES DO SQUAD -->
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--blue);margin-bottom:10px;">CAPACIDADES DO SQUAD S12</div>
+    <div class="kg k3">
+      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:13px;">
+        <div style="font-size:16px;margin-bottom:6px;">&#127963;</div>
+        <div style="font-family:var(--M);font-size:9px;color:var(--blue);margin-bottom:5px;">MODELAGEM DE DADOS</div>
+        <div style="font-size:11px;color:var(--t2);line-height:1.6;">Gera Data Warehouse físico completo com tabelas Fato e Dimensão, Data Marts por área de negócio e dicionário de dados completo a partir das especificações do cliente.</div>
+      </div>
+      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:13px;">
+        <div style="font-size:16px;margin-bottom:6px;">&#9881;</div>
+        <div style="font-family:var(--M);font-size:9px;color:var(--green);margin-bottom:5px;">ARQUITETURA MEDALLION</div>
+        <div style="font-size:11px;color:var(--t2);line-height:1.6;">Bronze (dados brutos), Silver (tratados e validados) e Gold (agregados para consumo). Pipelines completos para cada camada no ambiente e linguagem escolhidos pelo cliente.</div>
+      </div>
+      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:13px;">
+        <div style="font-size:16px;margin-bottom:6px;">&#128196;</div>
+        <div style="font-family:var(--M);font-size:9px;color:var(--gold);margin-bottom:5px;">SCRIPTS PRONTOS PARA IMPLANTAR</div>
+        <div style="font-size:11px;color:var(--t2);line-height:1.6;">DDL completo para criar o banco, scripts de pipeline Bronze→Silver→Gold, documentação técnica e guia de implantação — tudo pronto para rodar no ambiente do cliente.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PÁGINA: NOVO PROJETO DE DADOS -->
+  <div class="page" id="page-s12novo">
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--blue);margin-bottom:14px;">S12 · NOVO PROJETO DE ENGENHARIA DE DADOS</div>
+
+    <!-- STEP 1: AMBIENTE E TECNOLOGIA -->
+    <div class="panel" style="margin-bottom:12px;">
+      <div class="ph"><div class="pt">Step 1 — Cliente + Ambiente + Tecnologia</div><span class="tag on">Configurar</span></div>
+      <div class="pb">
+        <div class="kg k2">
+          <div>
+            <div class="fg"><label class="fl">Cliente</label><input class="fi" id="deCliente" placeholder="Ex: CPFL Energia"/></div>
+            <div class="fg"><label class="fl">Setor / Negócio</label>
+              <select class="fsel" id="deSetor">
+                <option>Energia e Utilities</option><option>Automotivo</option><option>Varejo</option>
+                <option>Industria / Manufatura</option><option>Financeiro / Bancário</option>
+                <option>Saúde</option><option>Logística</option><option>Telecomunicações</option>
+                <option>Agronegócio</option><option>Outro</option>
+              </select>
+            </div>
+            <div class="fg"><label class="fl">Ambente de Processamento (Pipeline)</label>
+              <select class="fsel" id="deAmbiente">
+                <option value="databricks">Databricks</option>
+                <option value="gcp_dataflow">GCP — Cloud Dataflow</option>
+                <option value="aws_glue">AWS Glue</option>
+                <option value="azure_adf">Azure Data Factory</option>
+                <option value="apache_spark">Apache Spark (on-premise)</option>
+                <option value="airflow">Apache Airflow</option>
+                <option value="dbt">dbt (Data Build Tool)</option>
+                <option value="python_raw">Python puro (scripts)</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <div class="fg"><label class="fl">Banco de Dados / Storage</label>
+              <select class="fsel" id="deBanco">
+                <option value="delta_databricks">Delta Table (Databricks)</option>
+                <option value="bigquery">BigQuery (GCP)</option>
+                <option value="redshift">Amazon Redshift</option>
+                <option value="snowflake">Snowflake</option>
+                <option value="synapse">Azure Synapse Analytics</option>
+                <option value="postgresql">PostgreSQL</option>
+                <option value="sqlserver">SQL Server</option>
+                <option value="oracle">Oracle Database</option>
+                <option value="mysql">MySQL</option>
+                <option value="duckdb">DuckDB</option>
+              </select>
+            </div>
+            <div class="fg"><label class="fl">Linguagem dos Pipelines</label>
+              <select class="fsel" id="deLinguagem">
+                <option value="python">Python</option>
+                <option value="scala">Scala (Spark)</option>
+                <option value="sql">SQL puro</option>
+                <option value="dbt_sql">dbt + SQL</option>
+                <option value="java">Java (Spark)</option>
+                <option value="pyspark">PySpark</option>
+              </select>
+            </div>
+            <div class="fg"><label class="fl">Arquitetura</label>
+              <select class="fsel" id="deArquitetura">
+                <option value="medallion">Medallion (Bronze → Silver → Gold)</option>
+                <option value="lambda">Lambda Architecture</option>
+                <option value="kappa">Kappa Architecture</option>
+                <option value="dw_classico">Data Warehouse Clássico (Kimball)</option>
+                <option value="data_lake">Data Lake simples</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="fg"><label class="fl">Fontes de dados do cliente</label>
+          <input class="fi" id="deFontes" placeholder="Ex: ERP SAP, Oracle Financeiro, CRM Salesforce, planilhas Excel, APIs externas, banco MySQL legado..."/>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 2: ESPECIFICAÇÃO DO NEGÓCIO -->
+    <div class="panel" style="margin-bottom:12px;">
+      <div class="ph"><div class="pt">Step 2 — Especificação do Negócio e Áreas</div><span class="tag on">Essencial para a modelagem</span></div>
+      <div class="pb">
+        <div class="fg"><label class="fl">Descrição geral do negócio e processos principais</label>
+          <textarea class="fta" id="deNegocio" style="min-height:80px;" placeholder="Ex: Empresa de distribuição de energia elétrica. Processos principais: medição de consumo, faturamento de clientes, manutenção de rede, atendimento de ocorrências, compra de energia no mercado livre..."></textarea>
+        </div>
+        <div style="font-family:var(--M);font-size:8px;color:var(--t2);margin-bottom:8px;margin-top:4px;">ÁREAS DE NEGÓCIO — defina cada área que terá Data Mart:</div>
+        <div id="deAreasContainer">
+          <div class="de-area-card" id="deArea0" style="background:var(--bg4);border:1px solid var(--bd);border-radius:7px;padding:12px;margin-bottom:8px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+              <span style="font-family:var(--M);font-size:8px;color:var(--blue);">ÁREA 1</span>
+              <button onclick="removerArea(0)" style="margin-left:auto;background:none;border:none;color:var(--red);cursor:pointer;font-size:12px;">&#10005;</button>
+            </div>
+            <div class="kg k2" style="gap:8px;">
+              <div class="fg" style="margin:0;"><label class="fl">Nome da área</label><input class="fi" id="deAreaNome0" placeholder="Ex: Comercial / Vendas"/></div>
+              <div class="fg" style="margin:0;"><label class="fl">Responsável / sistema de origem</label><input class="fi" id="deAreaSistema0" placeholder="Ex: Salesforce CRM"/></div>
+            </div>
+            <div class="fg" style="margin-top:8px;margin-bottom:0;"><label class="fl">Métricas e KPIs desta área</label>
+              <textarea class="fta" id="deAreaMetricas0" style="min-height:55px;" placeholder="Ex: Volume de vendas por mês/produto/região, taxa de churn, receita por cliente, ticket médio, crescimento YoY..."></textarea>
+            </div>
+            <div class="fg" style="margin-bottom:0;"><label class="fl">Principais tabelas / entidades do sistema de origem</label>
+              <input class="fi" id="deAreaTabelas0" placeholder="Ex: tb_pedidos, tb_clientes, tb_produtos, tb_vendedores..."/>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-g" style="width:100%;font-size:10px;" onclick="adicionarArea()">+ Adicionar Área de Negócio</button>
+      </div>
+    </div>
+
+    <!-- STEP 3: GERAR -->
+    <div class="panel">
+      <div class="ph"><div class="pt">Step 3 — Gerar com IA</div><span class="tag on">Agentes S12</span></div>
+      <div class="pb">
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px;">
+          <button class="btn btn-p" style="padding:10px;" onclick="gerarModelagemDW()">&#127963; Modelagem DW + DataMarts</button>
+          <button class="btn btn-gn" style="padding:10px;" onclick="gerarDDL()">&#128196; Gerar DDL (CREATE TABLE)</button>
+          <button class="btn btn-or" style="padding:10px;" onclick="gerarPipelinesMedallion()">&#9881; Pipelines Medallion Completos</button>
+          <button class="btn" style="padding:10px;color:var(--blue);border-color:var(--blue);" onclick="gerarDocumentacaoDE()">&#128214; Documentação Técnica</button>
+        </div>
+        <button class="btn btn-p" style="width:100%;padding:12px;font-size:13px;font-weight:600;" onclick="gerarTudoDE()">&#9670; Gerar TUDO — DW + DataMarts + DDL + Pipelines + Docs</button>
+        <div id="s12GerarSaida" style="margin-top:12px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PÁGINA: MODELAGEM DW -->
+  <div class="page" id="page-s12modelagem">
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--blue);margin-bottom:14px;">S12 · MODELAGEM — DATA WAREHOUSE + DATA MARTS</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <button class="btn btn-p" id="s12btnDW" onclick="mostrarAbaDE('dw')" style="font-size:10px;">&#127963; Data Warehouse</button>
+      <button class="btn" id="s12btnMarts" onclick="mostrarAbaDE('marts')" style="font-size:10px;">&#128200; Data Marts</button>
+      <button class="btn" id="s12btnDDL" onclick="mostrarAbaDE('ddl')" style="font-size:10px;">&#128196; DDL Scripts</button>
+      <button class="btn" id="s12btnPipes" onclick="mostrarAbaDE('pipes')" style="font-size:10px;">&#9881; Pipelines</button>
+      <button class="btn" id="s12btnDocs" onclick="mostrarAbaDE('docs')" style="font-size:10px;">&#128214; Documentação</button>
+      <div style="flex:1;"></div>
+      <button class="btn btn-g" style="font-size:9px;" onclick="copiarConteudoDE()">&#128203; Copiar</button>
+      <span id="s12ProjetoLabel" style="font-size:10px;color:var(--t2);align-self:center;"></span>
+    </div>
+
+    <!-- Indicadores do projeto -->
+    <div class="kg k4" style="margin-bottom:12px;" id="s12IndPanel">
+      <div class="kpi pk"><div class="kl">Tabelas Fato</div><div class="kv" id="s12_fatos">—</div><div class="ks">no DW</div></div>
+      <div class="kpi pk"><div class="kl">Dimensões</div><div class="kv" id="s12_dims">—</div><div class="ks">no DW</div></div>
+      <div class="kpi pk"><div class="kl">Data Marts</div><div class="kv" id="s12_marts">—</div><div class="ks">por área</div></div>
+      <div class="kpi gd"><div class="kl">Pipelines</div><div class="kv" id="s12_pipes">—</div><div class="ks">gerados</div></div>
+    </div>
+
+    <!-- OUTPUT PRINCIPAL -->
+    <div id="s12AbaOutput" style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:0;min-height:300px;overflow:hidden;">
+      <div style="background:var(--bg3);border-bottom:1px solid var(--bd);padding:8px 14px;display:flex;align-items:center;gap:8px;">
+        <span id="s12AbaTitle" style="font-family:var(--M);font-size:9px;color:var(--blue);text-transform:uppercase;">DATA WAREHOUSE — Modelo Físico</span>
+        <span id="s12AbaEnv" style="font-size:9px;color:var(--t3);"></span>
+      </div>
+      <div id="s12AbaConteudo" style="padding:14px;font-family:monospace;font-size:11px;line-height:1.7;color:#e0e0e0;white-space:pre-wrap;max-height:600px;overflow-y:auto;">
+        Configure o projeto na aba "Novo Projeto" e clique em Gerar.
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ S13 · DASHBOARD STUDIO ═══ -->
+
+  <!-- HUB -->
+  <div class="page" id="page-s13hub">
+    <div style="background:linear-gradient(135deg,rgba(156,109,255,.18),rgba(79,124,255,.08));border:1px solid rgba(156,109,255,.3);border-radius:10px;padding:18px 22px;margin-bottom:16px;display:flex;align-items:center;gap:14px;">
+      <div style="font-size:30px;">&#128202;</div>
+      <div style="flex:1;">
+        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:#9c6dff;letter-spacing:2px;">S13 · DASHBOARD STUDIO</div>
+        <div style="font-size:15px;font-weight:700;color:var(--t1);margin-top:3px;">Power BI · Looker Studio · Python (Plotly/Streamlit)</div>
+        <div style="font-size:11px;color:var(--t2);margin-top:4px;">Especifique o dashboard, o cliente escolhe a tecnologia e o banco. A IA gera mockup interativo, refina por conversa e entrega o código final.</div>
+      </div>
+      <button class="btn btn-p" style="font-size:11px;padding:8px 16px;white-space:nowrap;" onclick="nav('s13novo',null)">+ Novo Dashboard</button>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kg k4" style="margin-bottom:14px;">
+      <div class="kpi pk"><div class="kl">Dashboards criados</div><div class="kv" id="s13_total">—</div><div class="ks">todos os clientes</div></div>
+      <div class="kpi pk"><div class="kl">Em refinamento</div><div class="kv" id="s13_refinando">—</div><div class="ks">mockup ativo</div></div>
+      <div class="kpi pk"><div class="kl">Aprovados</div><div class="kv" id="s13_aprovados">—</div><div class="ks">código gerado</div></div>
+      <div class="kpi gd"><div class="kl">Tecnologias</div><div class="kv">3</div><div class="ks">Power BI · Looker · Python</div></div>
+    </div>
+
+    <!-- PROJETOS -->
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#9c6dff;margin-bottom:10px;">DASHBOARDS SALVOS</div>
+    <div id="s13ProjetosGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:16px;">
+      <div style="background:var(--bg3);border:2px dashed rgba(156,109,255,.3);border-radius:9px;padding:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;" onclick="nav('s13novo',null)">
+        <div style="font-size:28px;color:#9c6dff;opacity:.5;">+</div>
+        <div style="font-size:11px;color:var(--t3);">Novo Dashboard</div>
+      </div>
+    </div>
+
+    <!-- CAPACIDADES -->
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#9c6dff;margin-bottom:10px;">CAPACIDADES DO SQUAD S13</div>
+    <div class="kg k4">
+      <div style="background:var(--bg4);border:1px solid rgba(156,109,255,.2);border-radius:8px;padding:13px;">
+        <div style="font-size:20px;margin-bottom:6px;">&#128101;</div>
+        <div style="font-family:var(--M);font-size:9px;color:#9c6dff;margin-bottom:5px;">POWER BI</div>
+        <div style="font-size:10px;color:var(--t2);line-height:1.6;">Gera modelo de dados DAX, medidas calculadas, relacionamentos e código M de transformação. Exporta .pbit template.</div>
+      </div>
+      <div style="background:var(--bg4);border:1px solid rgba(79,124,255,.2);border-radius:8px;padding:13px;">
+        <div style="font-size:20px;margin-bottom:6px;">&#128200;</div>
+        <div style="font-family:var(--M);font-size:9px;color:var(--blue);margin-bottom:5px;">LOOKER STUDIO (GCP)</div>
+        <div style="font-size:10px;color:var(--t2);line-height:1.6;">Configura conexão BigQuery/Sheets, cria campos calculados, gera JSON de configuração do relatório e queries LookML.</div>
+      </div>
+      <div style="background:var(--bg4);border:1px solid rgba(34,211,163,.2);border-radius:8px;padding:13px;">
+        <div style="font-size:20px;margin-bottom:6px;">&#128013;</div>
+        <div style="font-family:var(--M);font-size:9px;color:var(--green);margin-bottom:5px;">PYTHON (Plotly / Streamlit)</div>
+        <div style="font-size:10px;color:var(--t2);line-height:1.6;">Gera app Streamlit completo ou script Plotly Dash com conexão ao banco, gráficos interativos e filtros dinâmicos.</div>
+      </div>
+      <div style="background:var(--bg4);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:13px;">
+        <div style="font-size:20px;margin-bottom:6px;">&#128172;</div>
+        <div style="font-family:var(--M);font-size:9px;color:var(--gold);margin-bottom:5px;">MOCKUP CONVERSACIONAL</div>
+        <div style="font-size:10px;color:var(--t2);line-height:1.6;">Visualização interativa do layout no browser. Cliente refina por chat com IA antes de gerar o código final.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NOVO DASHBOARD -->
+  <div class="page" id="page-s13novo">
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#9c6dff;margin-bottom:14px;">S13 · ESPECIFICAÇÃO DO DASHBOARD</div>
+
+    <div class="kg k2">
+      <!-- COLUNA ESQUERDA: CONFIG -->
+      <div>
+        <div class="panel" style="margin-bottom:10px;">
+          <div class="ph"><div class="pt">Cliente + Tecnologia</div><span class="tag on">Step 1</span></div>
+          <div class="pb">
+            <div class="fg"><label class="fl">Cliente</label><input class="fi" id="s13Cliente" placeholder="Ex: CPFL Energia"/></div>
+            <div class="fg"><label class="fl">Nome do Dashboard</label><input class="fi" id="s13Nome" placeholder="Ex: Dashboard Comercial — Vendas e Churn"/></div>
+            <div class="fg"><label class="fl">Tecnologia de Visualização</label>
+              <select class="fsel" id="s13Tecnologia" onchange="s13UpdateTechInfo()">
+                <option value="powerbi">Power BI (Desktop + Service)</option>
+                <option value="looker">Looker Studio (GCP)</option>
+                <option value="streamlit">Python — Streamlit</option>
+                <option value="plotly">Python — Plotly Dash</option>
+                <option value="superset">Apache Superset</option>
+                <option value="metabase">Metabase</option>
+              </select>
+            </div>
+            <div id="s13TechInfo" style="background:rgba(156,109,255,.08);border:1px solid rgba(156,109,255,.2);border-radius:6px;padding:10px;font-size:10px;color:var(--t2);margin-bottom:8px;line-height:1.6;">
+              Power BI: gera modelo DAX, medidas calculadas, Power Query M e template .pbit pronto para importar.
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-bottom:10px;">
+          <div class="ph"><div class="pt">Banco de Dados / Fonte</div><span class="tag on">Step 2</span></div>
+          <div class="pb">
+            <div class="fg"><label class="fl">Fonte de dados</label>
+              <select class="fsel" id="s13Banco">
+                <option value="sqlserver">SQL Server</option>
+                <option value="postgresql">PostgreSQL</option>
+                <option value="bigquery">BigQuery (GCP)</option>
+                <option value="delta_databricks">Delta Lake (Databricks)</option>
+                <option value="snowflake">Snowflake</option>
+                <option value="redshift">Amazon Redshift</option>
+                <option value="mysql">MySQL / MariaDB</option>
+                <option value="oracle">Oracle Database</option>
+                <option value="excel_sheets">Excel / Google Sheets</option>
+                <option value="api_rest">API REST</option>
+              </select>
+            </div>
+            <div class="fg"><label class="fl">Schema / Database / Dataset</label>
+              <input class="fi" id="s13Schema" placeholder="Ex: dw_comercial, gold_schema, atlantyx_dw"/>
+            </div>
+            <div class="fg"><label class="fl">Tabelas / Views principais</label>
+              <input class="fi" id="s13Tabelas" placeholder="Ex: fato_vendas, dim_cliente, dim_produto, vw_kpis_mensais"/>
+            </div>
+            <div class="fg"><label class="fl">Credenciais / Acesso</label>
+              <select class="fsel" id="s13Auth">
+                <option>Service Account / Connection String (variável de ambiente)</option>
+                <option>OAuth 2.0 (Google)</option>
+                <option>Azure AD (Power BI Service)</option>
+                <option>API Key</option>
+                <option>Username + Password</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- COLUNA DIREITA: ESPECIFICAÇÃO -->
+      <div>
+        <div class="panel" style="margin-bottom:10px;">
+          <div class="ph"><div class="pt">Especificação do Dashboard</div><span class="tag on">Step 3</span></div>
+          <div class="pb">
+            <div class="fg"><label class="fl">Objetivo do dashboard</label>
+              <textarea class="fta" id="s13Objetivo" style="min-height:65px;" placeholder="Ex: Monitorar performance comercial em tempo real: volume de vendas, churn de clientes, receita por região e produto, comparativo com metas mensais..."></textarea>
+            </div>
+            <div class="fg"><label class="fl">Público / usuários</label>
+              <select class="fsel" id="s13Publico">
+                <option>Diretoria / C-Level (visão executiva, alto nível)</option>
+                <option>Gerência (visão operacional + tendências)</option>
+                <option>Analistas (visão detalhada + drill-down)</option>
+                <option>Vendedores / Campo (visão individual)</option>
+                <option>Múltiplos perfis (com row-level security)</option>
+              </select>
+            </div>
+            <div class="fg"><label class="fl">KPIs e métricas a exibir</label>
+              <textarea class="fta" id="s13KPIs" style="min-height:65px;" placeholder="Ex: Receita MoM e YoY, Ticket médio, Churn Rate %, Win Rate, Leads × Conversões, Top 10 clientes, Mapa de vendas por estado..."></textarea>
+            </div>
+            <div class="fg"><label class="fl">Filtros e dimensões de análise</label>
+              <input class="fi" id="s13Filtros" placeholder="Ex: Período, Região, Produto, Vendedor, Segmento de cliente"/>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="ph"><div class="pt">Regras de Negócio</div><span class="tag on">Step 4 — Essencial</span></div>
+          <div class="pb">
+            <div class="fg"><label class="fl">Regras de cálculo e lógica de negócio</label>
+              <textarea class="fta" id="s13Regras" style="min-height:90px;" placeholder="Ex:&#10;• Receita = SUM(fato_vendas.valor_liquido) WHERE status = 'CONFIRMADO'&#10;• Churn Rate = clientes_perdidos_mes / base_clientes_inicio_mes * 100&#10;• Meta: R$1.5M/mês — semáforo verde >100%, amarelo >80%, vermelho <80%&#10;• Ticket médio = Receita / COUNT(pedidos) excluindo devoluções&#10;• YoY = comparar com mesmo período ano anterior (ajustado sazonalidade)"></textarea>
+            </div>
+            <div class="fg"><label class="fl">Alertas e thresholds</label>
+              <input class="fi" id="s13Alertas" placeholder="Ex: Alertar quando churn > 5%, receita abaixo de 80% da meta, lead time > 30 dias"/>
+            </div>
+            <div class="fg"><label class="fl">Periodicidade de atualização</label>
+              <select class="fsel" id="s13Refresh">
+                <option>Tempo real (streaming)</option>
+                <option>A cada 15 minutos</option>
+                <option>De hora em hora</option>
+                <option>Diário (scheduled refresh)</option>
+                <option>Semanal</option>
+                <option>Sob demanda (manual)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AÇÕES -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px;">
+      <button class="btn btn-p" style="padding:12px;" onclick="gerarMockupDashboard()">&#9670; Gerar Mockup Interativo</button>
+      <button class="btn btn-or" style="padding:12px;" onclick="gerarCodigoFinal()">&#128196; Gerar Código Final</button>
+      <button class="btn btn-gn" style="padding:12px;" onclick="gerarTudoDashboard()">&#9733; Gerar Tudo (Mockup + Código)</button>
+    </div>
+    <div id="s13GerarSaida" style="margin-top:12px;"></div>
+  </div>
+
+  <!-- MOCKUP + REFINAMENTO -->
+  <div class="page" id="page-s13mockup">
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#9c6dff;margin-bottom:12px;">S13 · MOCKUP INTERATIVO — REFINAR COM IA</div>
+
+    <div class="kg k2" style="gap:12px;">
+      <!-- MOCKUP VISUAL -->
+      <div style="flex:2;">
+        <div style="background:var(--bg4);border:1px solid rgba(156,109,255,.3);border-radius:9px;overflow:hidden;">
+          <div style="background:var(--bg3);border-bottom:1px solid var(--bd);padding:10px 14px;display:flex;align-items:center;gap:8px;">
+            <span id="s13MockupTitle" style="font-family:var(--M);font-size:9px;color:#9c6dff;text-transform:uppercase;">MOCKUP — Dashboard</span>
+            <span id="s13MockupTech" style="font-size:9px;color:var(--t3);"></span>
+            <div style="flex:1;"></div>
+            <button class="btn btn-gn" style="font-size:9px;padding:3px 10px;" onclick="aprovarMockup()">&#10003; Aprovar Mockup</button>
+            <button class="btn" style="font-size:9px;padding:3px 10px;" onclick="gerarCodigoFinal()">&#128196; Gerar Código</button>
+          </div>
+          <div id="s13MockupOutput" style="padding:16px;min-height:500px;font-family:monospace;font-size:11px;overflow-y:auto;">
+            <div style="color:var(--t3);text-align:center;padding:60px;">Configure e gere o mockup na aba Novo Dashboard</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CHAT DE REFINAMENTO -->
+      <div style="min-width:280px;">
+        <div class="panel" style="height:100%;">
+          <div class="ph"><div class="pt">Refinar com IA</div><span class="tag live">Chat</span></div>
+          <div class="pb" style="display:flex;flex-direction:column;height:calc(100% - 44px);">
+            <div id="s13ChatMsgs" style="flex:1;overflow-y:auto;min-height:300px;max-height:400px;display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
+              <div style="background:rgba(156,109,255,.1);border-radius:6px;padding:10px;font-size:11px;color:var(--t1);">
+                Olá! Seu mockup está pronto. Me diga o que deseja ajustar:<br/><br/>
+                <span style="color:var(--t2);">• Adicionar/remover gráficos<br/>• Mudar cores ou layout<br/>• Ajustar métricas<br/>• Adicionar filtros<br/>• Mudar tipo de visualização</span>
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;">
+              <input class="fi" id="s13ChatInput" placeholder="Ex: Adicione um gráfico de linha para tendência mensal..." style="flex:1;font-size:11px;" onkeydown="if(event.key==='Enter')enviarMsgRefinamento()"/>
+              <button class="btn btn-p" style="font-size:12px;padding:6px 10px;" onclick="enviarMsgRefinamento()">&#9658;</button>
+            </div>
+            <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">
+              <button class="btn btn-g" style="font-size:8px;padding:2px 7px;" onclick="s13QuickMsg('Mude as cores para azul corporativo e gold')">Cores corp.</button>
+              <button class="btn btn-g" style="font-size:8px;padding:2px 7px;" onclick="s13QuickMsg('Adicione drill-down por região')">+ Drill-down</button>
+              <button class="btn btn-g" style="font-size:8px;padding:2px 7px;" onclick="s13QuickMsg('Adicione alertas visuais de meta')">+ Alertas</button>
+              <button class="btn btn-g" style="font-size:8px;padding:2px 7px;" onclick="s13QuickMsg('Separe em 2 abas: Executivo e Operacional')">+ Abas</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CÓDIGO FINAL -->
+  <div class="page" id="page-s13codigo">
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#9c6dff;margin-bottom:12px;">S13 · CÓDIGO FINAL DO DASHBOARD</div>
+
+    <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+      <button class="btn btn-p" id="s13codeBtnQuery"   onclick="mostrarAbaS13('query')"  style="font-size:10px;">&#128202; Queries SQL</button>
+      <button class="btn" id="s13codeBtnCalc"    onclick="mostrarAbaS13('calc')"   style="font-size:10px;">&#9881; Métricas/DAX</button>
+      <button class="btn" id="s13codeBtnApp"     onclick="mostrarAbaS13('app')"    style="font-size:10px;">&#128013; Código App</button>
+      <button class="btn" id="s13codeBtnDeploy"  onclick="mostrarAbaS13('deploy')" style="font-size:10px;">&#128640; Deploy Guide</button>
+      <div style="flex:1;"></div>
+      <button class="btn btn-g" style="font-size:9px;" onclick="copiarCodigoS13()">&#128203; Copiar</button>
+      <span id="s13CodigoLabel" style="font-size:10px;color:var(--t2);align-self:center;"></span>
+    </div>
+
+    <div style="background:var(--bg4);border:1px solid rgba(156,109,255,.2);border-radius:8px;overflow:hidden;">
+      <div style="background:var(--bg3);border-bottom:1px solid var(--bd);padding:8px 14px;display:flex;align-items:center;gap:8px;">
+        <span id="s13CodeAbaTitle" style="font-family:var(--M);font-size:9px;color:#9c6dff;text-transform:uppercase;">QUERIES SQL — Fonte de Dados</span>
+        <span id="s13CodeInfo" style="font-size:9px;color:var(--t3);"></span>
+      </div>
+      <div id="s13CodeOutput" style="padding:16px;font-family:monospace;font-size:11px;line-height:1.7;color:#e0e0e0;white-space:pre-wrap;max-height:600px;overflow-y:auto;background:#0d0e1a;">
+        Gere o código na aba Novo Dashboard ou aprove o mockup.
+      </div>
+    </div>
+
+    <div style="margin-top:10px;background:rgba(34,211,163,.06);border:1px solid rgba(34,211,163,.2);border-radius:8px;padding:12px;">
+      <div style="font-family:var(--M);font-size:8px;color:var(--green);margin-bottom:6px;">CHECKLIST DE IMPLANTAÇÃO</div>
+      <div id="s13Checklist" style="font-size:11px;color:var(--t2);line-height:1.9;">Configure o dashboard para gerar o checklist de implantação.</div>
+    </div>
+  </div>
+
 <!-- ═══ MODULO FINANCEIRO S3 - JS injetado automaticamente ═══ -->
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
@@ -11664,25 +11663,8 @@ function fmtBRLcompleto(v) {
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. SYNC QUICKBOOKS — agora chama /api/financeiro corretamente
 // ═══════════════════════════════════════════════════════════════════════════
-// Resolve os elementos conforme a tela ativa: o Painel Financeiro (s3dash) e a
-// Receita Realizada (s3realizado) tem o mesmo botao com ids diferentes.
-function qbEls() {
-  const naTela = id => {
-    const el = document.getElementById(id);
-    return el && el.closest('.page') && el.closest('.page').classList.contains('active') ? el : null;
-  };
-  if (naTela('f_realTable') || naTela('btnQBReal')) {
-    return { btn: document.getElementById('btnQBReal'),
-             alvo: document.getElementById('f_realTable'),
-             tag: document.getElementById('qbRealTag'), realizado: true };
-  }
-  return { btn: document.getElementById('btnSyncQB'),
-           alvo: document.getElementById('f_lancamentos'),
-           tag: document.getElementById('qbTag'), realizado: false };
-}
-
 async function syncQuickBooks() {
-  const { btn, alvo, tag: tagEl, realizado } = qbEls();
+  const btn = document.getElementById('btnSyncQB');
   if (btn) { btn.disabled = true; btn.textContent = '⟳ Sincronizando...'; }
   if (typeof addLog === 'function') addLog('info', '[S3] Sincronizando QuickBooks...');
 
@@ -11690,7 +11672,7 @@ async function syncQuickBooks() {
     const d = await finApi('painel_resumo');
 
     if (!d.qb_configurado) {
-      if (alvo) alvo.innerHTML = `
+      document.getElementById('f_lancamentos').innerHTML = `
         <div style="background:var(--go2);border:1px solid rgba(245,166,35,.2);border-radius:7px;padding:12px;font-size:11px;color:var(--gold);margin-bottom:10px;">
           QuickBooks não conectado. Configure as variáveis de ambiente no Vercel.
         </div>
@@ -11700,12 +11682,13 @@ async function syncQuickBooks() {
           3. Gere o Refresh Token via OAuth 2.0 Playground<br>
           4. Adicione no Vercel: QB_CLIENT_ID · QB_CLIENT_SECRET · QB_REFRESH_TOKEN · QB_REALM_ID
         </div>`;
-      if (tagEl) { tagEl.className = 'tag off'; tagEl.textContent = 'Não configurado'; }
+      const tag = document.getElementById('qbTag');
+      if (tag) { tag.className = 'tag off'; tag.textContent = 'Não configurado'; }
     } else {
       atualizarPainelFinanceiro(d.realAnual, d.realMes, d.aReceber, d.projetado, d.saldoCaixa);
-      renderLancamentos(d.lancamentos || [], realizado ? 'f_realTable' : 'f_lancamentos');
-      document.querySelectorAll('#qbBanner').forEach(b => b.style.display = 'none');
-      if (tagEl) { tagEl.className = 'tag on'; tagEl.textContent = 'Sincronizado ' + new Date().toLocaleTimeString('pt-BR'); }
+      renderLancamentos(d.lancamentos || []);
+      const tag = document.getElementById('qbTag');
+      if (tag) { tag.className = 'tag on'; tag.textContent = 'Sincronizado ' + new Date().toLocaleTimeString('pt-BR'); }
       if (typeof addLog === 'function') addLog('ok', `[S3] QB OK — ${d.lancamentos?.length || 0} lançamentos · saldo ${fmtBRL(d.saldoCaixa)}`);
     }
 
@@ -11771,8 +11754,8 @@ async function atualizarPainelFinanceiro(realAnual, realMes, aReceber, projetado
   }
 }
 
-function renderLancamentos(lancamentos, alvoId) {
-  const el = document.getElementById(alvoId || 'f_lancamentos');
+function renderLancamentos(lancamentos) {
+  const el = document.getElementById('f_lancamentos');
   if (!el) return;
   if (!lancamentos.length) {
     el.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:18px;">Nenhum lançamento no período</div>';
@@ -13010,20 +12993,15 @@ async function carregarKanbanMarcos() {
 
   try {
     const d = await finApi('marcos_kanban', { projeto_id: projId });
-    renderKanbanMarcos(d);
+    renderKanban(d);
   } catch (e) {
     if (cont) cont.innerHTML = `<div style="color:var(--red);padding:14px;font-size:11px;">Erro: ${e.message}</div>`;
   }
 }
 
-function renderKanbanMarcos(d) {
+function renderKanban(d) {
   const cont = document.getElementById('kanbanContainer');
   if (!cont) return;
-
-  if (!d || !d.colunas || !Array.isArray(d.ordem)) {
-    cont.innerHTML = '<div style="color:var(--t3);font-size:11px;padding:30px;text-align:center;width:100%;">Nenhum dado de kanban carregado.</div>';
-    return;
-  }
 
   // Stats
   const agg = ['aguardando_entrega','liberacao_gp'].reduce((s,k)=>s+(d.colunas[k]?.total_count||0),0);
@@ -13140,6 +13118,66 @@ async function enviarTermo(id) {
   } catch (e) {
     if (typeof toast === 'function') toast('Erro: ' + e.message, 'error');
   }
+}
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HEALTHCHECK & BUILD INFO (v1.4)
+// Carrega build ID atual do servidor. Usa /api/health (leve, sem IA).
+// ═══════════════════════════════════════════════════════════════════════════
+async function carregarBuildInfo() {
+  try {
+    const r = await fetch('/api/health');
+    const d = await r.json();
+    const el1 = document.getElementById('sidebarBuildId');
+    const el2 = document.getElementById('buildCode');
+    if (el1) el1.textContent = d.build_id || 'ATX-desconhecido';
+    if (el2) el2.textContent = d.build_id || 'ATX-desconhecido';
+    // Se houver problema, tinge vermelho
+    if (d.status === 'unhealthy') {
+      if (el2) el2.style.color = 'var(--red)';
+      if (el1) el1.style.color = 'var(--red)';
+    }
+  } catch (e) {
+    const el = document.getElementById('sidebarBuildId');
+    if (el) { el.textContent = 'ATX-offline'; el.style.color = 'var(--red)'; }
+  }
+}
+
+async function verificarSaude() {
+  const el = document.getElementById('buildCode');
+  const cor_orig = el ? el.style.color : '';
+  if (el) { el.textContent = 'checando...'; el.style.color = 'var(--gold)'; }
+
+  try {
+    const r = await fetch('/api/health?full=1');
+    const d = await r.json();
+
+    let msg = `Build: ${d.build_id}\n\n`;
+    msg += `Status geral: ${d.status.toUpperCase()}\n\n`;
+    msg += '── CHECAGENS ──\n';
+    for (const [k, v] of Object.entries(d.checks)) {
+      const icon = v.status === 'ok' ? '✓' : '✗';
+      msg += `${icon} ${k}: ${v.message}\n`;
+    }
+    alert(msg);
+
+    if (el) {
+      el.textContent = d.build_id;
+      el.style.color = d.status === 'healthy' ? 'var(--blue)' : 'var(--red)';
+    }
+  } catch (e) {
+    alert('Erro ao consultar /api/health: ' + e.message);
+    if (el) { el.textContent = 'ATX-erro'; el.style.color = 'var(--red)'; }
+  }
+}
+
+// Carregar build info assim que a página abre
+if (document.readyState !== 'loading') {
+  carregarBuildInfo();
+} else {
+  document.addEventListener('DOMContentLoaded', carregarBuildInfo);
 }
 
 </script>
