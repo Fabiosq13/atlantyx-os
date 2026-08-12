@@ -242,6 +242,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sbi s2" onclick="nav('s2img',this)">&#127912; Gerar Imagem <span class="nbx gn">Ideogram</span></div>
       <div class="sbi s2" onclick="nav('s2campanha',this)">&#9654; Nova Campanha</div>
       <div class="sbi s2" onclick="nav('s2kanban',this)">&#9632; Kanban Aprovacao <span class="nbx gd" id="kanbanCnt">0</span></div>
+      <div class="sbi s2" onclick="nav('s2desempenho',this)">&#128200; Desempenho <span class="nbx gn">NEW</span></div>
       <div class="sg-sub">OUTBOUND</div>
       <div class="sbi s2" onclick="nav('s2wa',this)">&#9679; WhatsApp IA <span class="nbx gn">IA</span></div>
       <div class="sbi s2" onclick="nav('s2outbound',this)">&#8593; Ads + SEO</div>
@@ -1758,6 +1759,73 @@ tr:hover td{background:rgba(79,124,255,.03);}
     </div>
   </div>
 
+  <!-- DESEMPENHO DE CAMPANHAS (v1.5) -->
+  <div class="page" id="page-s2desempenho">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+      <div style="display:flex;gap:8px;align-items:center;">
+        <select class="fsel" id="despCampanhaSel" onchange="renderDesempenho()" style="width:240px;"><option value="">Todas as campanhas</option></select>
+        <select class="fsel" id="despPeriodoSel" onchange="carregarDesempenho()" style="width:140px;">
+          <option value="7">Últimos 7 dias</option>
+          <option value="30" selected>Últimos 30 dias</option>
+          <option value="90">Últimos 90 dias</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span class="tag off" id="mcStatusTag">Metricool: verificando...</span>
+        <button class="btn btn-gn" onclick="carregarDesempenho()">&#8635; Atualizar</button>
+      </div>
+    </div>
+
+    <!-- KPIs topo -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px;">
+      <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);">Publicações</div><div style="font-size:22px;font-weight:700;" id="despPub">—</div></div>
+      <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);">Impressões</div><div style="font-size:22px;font-weight:700;color:var(--blue);" id="despImp">—</div></div>
+      <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);">Cliques</div><div style="font-size:22px;font-weight:700;color:var(--gold);" id="despCli">—</div></div>
+      <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);">Engajamento</div><div style="font-size:22px;font-weight:700;color:var(--green);" id="despEng">—</div></div>
+      <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);">Leads (HubSpot)</div><div style="font-size:22px;font-weight:700;color:var(--s7c);" id="despLeads">—</div></div>
+      <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);">Custo / Lead</div><div style="font-size:22px;font-weight:700;" id="despCPL">—</div></div>
+    </div>
+
+    <!-- Funil -->
+    <div class="panel" style="margin-bottom:14px;">
+      <div class="ph"><div class="pt">Funil da Campanha — Publicação → Lead</div></div>
+      <div class="pb" id="despFunil"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando...</div></div>
+    </div>
+
+    <!-- Comparativo por rede -->
+    <div class="panel" style="margin-bottom:14px;">
+      <div class="ph"><div class="pt">Comparativo por Rede</div></div>
+      <div class="pb" id="despRedes"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando...</div></div>
+    </div>
+
+    <!-- Publicações -->
+    <div class="panel">
+      <div class="ph"><div class="pt">Publicações da Campanha</div>
+        <button class="btn" style="font-size:10px;" onclick="abrirRegistroManual()">+ Registrar publicação manual</button>
+      </div>
+      <div class="pb" id="despPosts"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Nenhuma publicação ainda. Aprove uma peça no Kanban e clique em Publicar.</div></div>
+    </div>
+
+    <!-- Modal registro manual de métricas -->
+    <div id="despManualModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:999;align-items:center;justify-content:center;">
+      <div class="panel" style="width:420px;max-width:92vw;">
+        <div class="ph"><div class="pt">Registrar métricas manualmente</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('despManualModal').style.display='none'">✕</button></div>
+        <div class="pb">
+          <input type="hidden" id="manPubId"/>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div><label style="font-size:10px;color:var(--t2);">Impressões</label><input class="fsel" type="number" id="manImp" style="width:100%;"/></div>
+            <div><label style="font-size:10px;color:var(--t2);">Cliques</label><input class="fsel" type="number" id="manCli" style="width:100%;"/></div>
+            <div><label style="font-size:10px;color:var(--t2);">Curtidas</label><input class="fsel" type="number" id="manCur" style="width:100%;"/></div>
+            <div><label style="font-size:10px;color:var(--t2);">Comentários</label><input class="fsel" type="number" id="manCom" style="width:100%;"/></div>
+            <div><label style="font-size:10px;color:var(--t2);">Compartilh.</label><input class="fsel" type="number" id="manSha" style="width:100%;"/></div>
+            <div><label style="font-size:10px;color:var(--t2);">Leads gerados</label><input class="fsel" type="number" id="manLeads" style="width:100%;"/></div>
+          </div>
+          <button class="btn btn-gn" style="width:100%;margin-top:12px;" onclick="salvarMetricasManuais()">Salvar métricas</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- NOVA CAMPANHA -->
   <div class="page" id="page-s2campanha">
 
@@ -2849,7 +2917,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <div class="toast" id="toastEl"></div>
 <script>
 const LOGS=[];let logCount=0;
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S3 · Kanban Financeiro de Marcos',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash')setTimeout(syncQuickBooks,150);if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s2kanban')setTimeout(carregarKanbanDoBanco,150);}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S3 · Kanban Financeiro de Marcos',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash')setTimeout(syncQuickBooks,150);if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s2kanban')setTimeout(carregarKanbanDoBanco,150);if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -4011,6 +4079,8 @@ function renderKanban() {
           <div style="font-family:var(--M);font-size:8px;padding:1px 6px;border-radius:3px;display:inline-block;background:${p.canal==='LinkedIn'?'var(--b2)':p.canal==='Instagram'?'rgba(240,48,112,.12)':'var(--bg4)'};color:${p.canal==='LinkedIn'?'var(--blue)':p.canal==='Instagram'?'var(--s7c)':'var(--t2)'};">${p.canal}</div>
           <div style="font-size:10px;color:var(--t2);margin-top:4px;">${p.agente}</div>
           ${col==='Revisão'?`<div style="display:flex;gap:4px;margin-top:6px;"><button class="btn btn-gn" style="flex:1;font-size:8.5px;padding:2px 5px;" onclick="aprovarPeca('${p.id}',event)">OK</button><button class="btn btn-rd" style="flex:1;font-size:8.5px;padding:2px 5px;" onclick="recusarPeca('${p.id}',event)">x</button></div>`:''}
+          ${col==='Aprovado'?`<button class="btn btn-p" style="width:100%;font-size:8.5px;padding:3px 5px;margin-top:6px;" onclick="event.stopPropagation();publicarPeca('${p.id}')">🚀 Publicar</button>`:''}
+          ${col==='Publicado'?`<div style="font-size:8px;color:var(--green);margin-top:5px;">✓ publicada</div>`:''}
         </div>`).join('')}
       ${!pecas.length?`<div style="font-size:9px;color:var(--t3);padding:8px 0;text-align:center">--</div>`:''}
     </div>`;
@@ -13387,12 +13457,339 @@ async function enviarTermo(id) {
 
 
 // ═══════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PUBLICAÇÃO EM REDES + PAINEL DE DESEMPENHO (v1.5)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ---------- Persistência das publicações (Neon + localStorage fallback) ----
+let _publicacoes = [];   // { id, campanhaId, pecaId, rede, texto, data, metodo:'manual'|'metricool', metricool_id, metricas:{imp,cli,cur,com,sha,leads} }
+let _mcConfigurado = null; // cache status metricool
+
+async function carregarPublicacoes() {
+  try {
+    const r = await fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'get', key:'atx:publicacoes' }) });
+    const d = await r.json();
+    if (Array.isArray(d.value)) { _publicacoes = d.value; return; }
+  } catch {}
+  try { _publicacoes = JSON.parse(localStorage.getItem('atx:publicacoes') || '[]'); } catch { _publicacoes = []; }
+}
+
+async function salvarPublicacoes() {
+  try { localStorage.setItem('atx:publicacoes', JSON.stringify(_publicacoes)); } catch {}
+  try {
+    await fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'set', key:'atx:publicacoes', value:_publicacoes }) });
+  } catch (e) { addLog('warn', '[Pub] não salvou no banco: ' + e.message); }
+}
+
+// ---------- Status Metricool -----------------------------------------------
+async function verificarMetricool() {
+  if (_mcConfigurado !== null) return _mcConfigurado;
+  try {
+    const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'status' }) });
+    const d = await r.json();
+    _mcConfigurado = !!d.configurado;
+    const tag = document.getElementById('mcStatusTag');
+    if (tag) {
+      if (_mcConfigurado) { tag.textContent = 'Metricool: conectado' + (d.marca ? ' · ' + d.marca.nome : ''); tag.className = 'tag live'; }
+      else { tag.textContent = 'Metricool: não configurado (modo manual)'; tag.className = 'tag off'; tag.title = d.instrucoes || ''; }
+    }
+    return _mcConfigurado;
+  } catch (e) {
+    _mcConfigurado = false;
+    return false;
+  }
+}
+
+// ---------- Publicar (chamado do Kanban) -----------------------------------
+// Abre modal de escolha: Manual ou Metricool
+async function publicarPeca(pecaId) {
+  const p = kanbanPecas.find(x => x.id === pecaId);
+  if (!p) { toast('Peça não encontrada', 'error'); return; }
+  if (p.status !== 'Aprovado' && p.status !== 'Publicado') {
+    toast('Aprove a peça antes de publicar', 'error'); return;
+  }
+
+  const temMc = await verificarMetricool();
+
+  // Redes da campanha vinculada (se houver) ou pergunta
+  let redes = ['linkedin'];
+  if (p.campanhaId) {
+    const camp = (_todasCampanhas || []).find(c => c.id === p.campanhaId) || (campAtiva?.id === p.campanhaId ? campAtiva : null);
+    if (camp?.redes_ativas) {
+      redes = Object.entries(camp.redes_ativas).filter(([k,v]) => v && ['linkedin','instagram','facebook'].includes(k)).map(([k]) => k);
+      if (!redes.length) redes = ['linkedin'];
+    }
+  }
+
+  const texto = (p.copy || p.narrativa || p.titulo || '').trim();
+
+  // Montar modal dinâmico de publicação
+  let modal = document.getElementById('pubModal');
+  if (modal) modal.remove();
+  modal = document.createElement('div');
+  modal.id = 'pubModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:999;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = `
+    <div class="panel" style="width:480px;max-width:94vw;">
+      <div class="ph"><div class="pt">Publicar: ${p.titulo}</div>
+        <button class="btn" style="font-size:10px;" onclick="document.getElementById('pubModal').remove()">✕</button></div>
+      <div class="pb">
+        <div style="font-size:10px;color:var(--t2);margin-bottom:6px;">REDES DESTA PUBLICAÇÃO</div>
+        <div style="display:flex;gap:12px;margin-bottom:12px;">
+          ${['linkedin','instagram','facebook'].map(r =>
+            `<label style="font-size:11px;display:flex;gap:4px;align-items:center;cursor:pointer;">
+              <input type="checkbox" class="pubRede" value="${r}" ${redes.includes(r)?'checked':''}/> ${r.charAt(0).toUpperCase()+r.slice(1)}
+            </label>`).join('')}
+        </div>
+        <div style="font-size:10px;color:var(--t2);margin-bottom:4px;">TEXTO (editável)</div>
+        <textarea id="pubTexto" class="fsel" style="width:100%;height:120px;font-size:11px;">${texto.replace(/</g,'&lt;')}</textarea>
+        <div style="font-size:10px;color:var(--t2);margin:10px 0 4px;">AGENDAR PARA (vazio = publicar agora)</div>
+        <input type="datetime-local" id="pubQuando" class="fsel" style="width:100%;"/>
+        <div style="display:flex;gap:8px;margin-top:14px;">
+          ${temMc
+            ? `<button class="btn btn-gn" style="flex:1;" onclick="executarPublicacao('${p.id}','metricool')">🚀 Publicar via Metricool (auto)</button>`
+            : `<button class="btn" style="flex:1;opacity:.55;cursor:not-allowed;" title="Configure METRICOOL_USER_TOKEN / USER_ID / BLOG_ID no Vercel">Metricool não configurado</button>`}
+          <button class="btn btn-p" style="flex:1;" onclick="executarPublicacao('${p.id}','manual')">✋ Manual (abrir rede)</button>
+        </div>
+        <div style="font-size:9px;color:var(--t3);margin-top:8px;">Manual: abre o compositor de cada rede com o texto copiado — você cola e confirma. Metricool: publica automaticamente na data escolhida.</div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function executarPublicacao(pecaId, metodo) {
+  const p = kanbanPecas.find(x => x.id === pecaId);
+  if (!p) return;
+  const texto = document.getElementById('pubTexto')?.value?.trim() || '';
+  const quando = document.getElementById('pubQuando')?.value || null;
+  const redes = Array.from(document.querySelectorAll('.pubRede:checked')).map(x => x.value);
+  if (!texto) { toast('Texto vazio', 'error'); return; }
+  if (!redes.length) { toast('Escolha ao menos uma rede', 'error'); return; }
+
+  if (metodo === 'metricool') {
+    try {
+      addLog('info', '[Pub] Enviando ao Metricool: ' + redes.join(','));
+      const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ action:'publicar', payload: { texto, redes, data_hora: quando ? new Date(quando).toISOString() : null } }) });
+      const d = await r.json();
+      if (!d.success) throw new Error(d.error || 'falha metricool');
+      redes.forEach(rede => registrarPublicacao(p, rede, texto, 'metricool', d.metricool_id));
+      p.status = 'Publicado';
+      renderKanban(); salvarKanbanNoBanco(); salvarPublicacoes();
+      toast('Publicado via Metricool! (' + redes.join(', ') + ')', 'success');
+      addLog('ok', '[Pub] Metricool OK · agendado: ' + (d.agendado_para || 'agora'));
+    } catch (e) {
+      addLog('err', '[Pub] Metricool falhou: ' + e.message);
+      toast('Erro Metricool: ' + e.message, 'error');
+      return;
+    }
+  } else {
+    // MANUAL: copia texto + abre compositor por rede
+    try { await navigator.clipboard.writeText(texto); toast('Texto copiado! Cole em cada rede.', 'success'); }
+    catch { /* clipboard pode falhar sem https/foco */ }
+    const urls = {
+      linkedin: 'https://www.linkedin.com/feed/?shareActive=true&text=' + encodeURIComponent(texto.substring(0, 2800)),
+      facebook: 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent('https://atlantyx.com.br') + '&quote=' + encodeURIComponent(texto.substring(0, 900)),
+      instagram: 'https://www.instagram.com/', // IG não tem compositor web c/ texto — usuário cola
+    };
+    redes.forEach((rede, i) => {
+      setTimeout(() => window.open(urls[rede] || 'about:blank', '_blank'), i * 400);
+      registrarPublicacao(p, rede, texto, 'manual', null);
+    });
+    p.status = 'Publicado';
+    renderKanban(); salvarKanbanNoBanco(); salvarPublicacoes();
+    addLog('ok', '[Pub] Manual: abas abertas para ' + redes.join(', '));
+  }
+  const modal = document.getElementById('pubModal');
+  if (modal) modal.remove();
+}
+
+function registrarPublicacao(peca, rede, texto, metodo, metricoolId) {
+  _publicacoes.push({
+    id: 'pub_' + Date.now() + '_' + Math.random().toString(36).substr(2,4),
+    campanhaId: peca.campanhaId || null,
+    pecaId: peca.id,
+    titulo: peca.titulo,
+    rede, texto: texto.substring(0, 500), metodo,
+    metricool_id: metricoolId || null,
+    data: new Date().toISOString(),
+    metricas: { imp: 0, cli: 0, cur: 0, com: 0, sha: 0, leads: 0 },
+  });
+}
+
+// ---------- Painel de Desempenho -------------------------------------------
+async function carregarDesempenho() {
+  await carregarPublicacoes();
+  await verificarMetricool();
+  // Popular select de campanhas
+  const sel = document.getElementById('despCampanhaSel');
+  if (sel) {
+    const atual = sel.value;
+    if (!_todasCampanhas || !_todasCampanhas.length) { try { await carregarCampanhasDB(); } catch {} }
+    sel.innerHTML = '<option value="">Todas as campanhas</option>' +
+      (_todasCampanhas || []).map(c => `<option value="${c.id}" ${c.id===atual?'selected':''}>${(c.nome||c.id).substring(0,40)}</option>`).join('');
+  }
+  // Se Metricool configurado, puxar métricas de posts e mesclar
+  if (_mcConfigurado) {
+    const dias = parseInt(document.getElementById('despPeriodoSel')?.value || '30');
+    const ini = new Date(Date.now() - dias * 864e5).toISOString().substring(0, 10);
+    for (const rede of ['linkedin','instagram','facebook']) {
+      try {
+        const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ action:'metricas_posts', payload: { rede, inicio: ini } }) });
+        const d = await r.json();
+        if (d.success && d.posts) mesclarMetricasMc(rede, d.posts);
+      } catch (e) { addLog('warn', '[Desemp] ' + rede + ': ' + e.message); }
+    }
+    salvarPublicacoes();
+  }
+  renderDesempenho();
+}
+
+function mesclarMetricasMc(rede, postsMc) {
+  // Casa publicações registradas com posts do Metricool pelo texto (primeiros 60 chars)
+  _publicacoes.filter(p => p.rede === rede).forEach(pub => {
+    const alvo = postsMc.find(mp => mp.texto && pub.texto && mp.texto.substring(0,60) === pub.texto.substring(0,60));
+    if (alvo) {
+      pub.metricas.imp = alvo.impressoes || pub.metricas.imp;
+      pub.metricas.cli = alvo.cliques || pub.metricas.cli;
+      pub.metricas.cur = alvo.curtidas || pub.metricas.cur;
+      pub.metricas.com = alvo.comentarios || pub.metricas.com;
+      pub.metricas.sha = alvo.compartilhamentos || pub.metricas.sha;
+    }
+  });
+}
+
+function renderDesempenho() {
+  const campId = document.getElementById('despCampanhaSel')?.value || '';
+  const pubs = campId ? _publicacoes.filter(p => p.campanhaId === campId) : _publicacoes;
+
+  const tot = pubs.reduce((a,p) => ({
+    imp: a.imp + (p.metricas?.imp||0), cli: a.cli + (p.metricas?.cli||0),
+    cur: a.cur + (p.metricas?.cur||0), com: a.com + (p.metricas?.com||0),
+    sha: a.sha + (p.metricas?.sha||0), leads: a.leads + (p.metricas?.leads||0),
+  }), { imp:0, cli:0, cur:0, com:0, sha:0, leads:0 });
+
+  const eng = tot.cur + tot.com + tot.sha;
+  const setT = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  setT('despPub', pubs.length);
+  setT('despImp', tot.imp.toLocaleString('pt-BR'));
+  setT('despCli', tot.cli.toLocaleString('pt-BR'));
+  setT('despEng', eng.toLocaleString('pt-BR'));
+  setT('despLeads', tot.leads);
+
+  // Custo por lead — pega orçamento da campanha
+  let cpl = '—';
+  if (campId && tot.leads > 0) {
+    const camp = (_todasCampanhas||[]).find(c => c.id === campId);
+    const orcNum = parseFloat(String(camp?.orc||'').replace(/[^0-9.,]/g,'').replace('.','').replace(',','.'));
+    if (orcNum > 0) cpl = 'R$ ' + (orcNum / tot.leads).toFixed(0);
+  }
+  setT('despCPL', cpl);
+
+  // Funil
+  const funil = document.getElementById('despFunil');
+  if (funil) {
+    const etapas = [
+      { label: 'Publicações', v: pubs.length, cor: 'var(--t1)' },
+      { label: 'Impressões', v: tot.imp, cor: 'var(--blue)' },
+      { label: 'Cliques', v: tot.cli, cor: 'var(--gold)' },
+      { label: 'Engajamento', v: eng, cor: 'var(--green)' },
+      { label: 'Leads', v: tot.leads, cor: 'var(--s7c)' },
+    ];
+    const max = Math.max(...etapas.map(e => e.v), 1);
+    funil.innerHTML = etapas.map(e =>
+      `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        <div style="width:110px;font-size:10px;color:var(--t2);text-align:right;">${e.label}</div>
+        <div style="flex:1;background:var(--bg4);border-radius:4px;height:22px;position:relative;">
+          <div style="width:${Math.max(2,(e.v/max)*100)}%;background:${e.cor}33;border-left:3px solid ${e.cor};height:100%;border-radius:4px;"></div>
+          <div style="position:absolute;left:8px;top:3px;font-size:11px;font-weight:600;">${e.v.toLocaleString('pt-BR')}</div>
+        </div>
+      </div>`).join('');
+  }
+
+  // Comparativo por rede
+  const redesEl = document.getElementById('despRedes');
+  if (redesEl) {
+    const porRede = {};
+    pubs.forEach(p => {
+      if (!porRede[p.rede]) porRede[p.rede] = { pubs:0, imp:0, cli:0, eng:0 };
+      porRede[p.rede].pubs++;
+      porRede[p.rede].imp += p.metricas?.imp||0;
+      porRede[p.rede].cli += p.metricas?.cli||0;
+      porRede[p.rede].eng += (p.metricas?.cur||0)+(p.metricas?.com||0)+(p.metricas?.sha||0);
+    });
+    const cores = { linkedin:'#0a66c2', instagram:'#e1306c', facebook:'#1877f2' };
+    redesEl.innerHTML = Object.keys(porRede).length
+      ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">' +
+        Object.entries(porRede).map(([rede,m]) =>
+          `<div style="background:var(--bg4);border-left:3px solid ${cores[rede]||'var(--bd)'};border-radius:6px;padding:10px;">
+            <div style="font-size:12px;font-weight:700;text-transform:capitalize;color:${cores[rede]||'var(--t1)'};">${rede}</div>
+            <div style="font-size:10px;color:var(--t2);margin-top:5px;">${m.pubs} publicações</div>
+            <div style="font-size:10px;color:var(--t2);">${m.imp.toLocaleString('pt-BR')} impressões · ${m.cli} cliques</div>
+            <div style="font-size:10px;color:var(--t2);">${m.eng} interações</div>
+          </div>`).join('') + '</div>'
+      : '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Sem publicações no período.</div>';
+  }
+
+  // Lista de publicações
+  const postsEl = document.getElementById('despPosts');
+  if (postsEl) {
+    postsEl.innerHTML = pubs.length
+      ? pubs.slice().reverse().map(p =>
+        `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--bd);">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.titulo || '(sem título)'}</div>
+            <div style="font-size:9px;color:var(--t3);">${new Date(p.data).toLocaleString('pt-BR')} · ${p.rede} · ${p.metodo === 'metricool' ? '🚀 auto' : '✋ manual'}</div>
+          </div>
+          <div style="font-size:9px;color:var(--t2);white-space:nowrap;">${(p.metricas?.imp||0)} imp · ${(p.metricas?.cli||0)} cli · ${(p.metricas?.leads||0)} leads</div>
+          <button class="btn" style="font-size:9px;padding:3px 8px;" onclick="abrirRegistroManual('${p.id}')">✎ métricas</button>
+        </div>`).join('')
+      : '<div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Nenhuma publicação ainda. Aprove uma peça no Kanban e clique em Publicar.</div>';
+  }
+}
+
+// ---------- Registro manual de métricas ------------------------------------
+function abrirRegistroManual(pubId) {
+  const modal = document.getElementById('despManualModal');
+  if (!modal) return;
+  const pub = pubId ? _publicacoes.find(p => p.id === pubId) : null;
+  document.getElementById('manPubId').value = pub?.id || '';
+  ['manImp','manCli','manCur','manCom','manSha','manLeads'].forEach((id, i) => {
+    const keys = ['imp','cli','cur','com','sha','leads'];
+    document.getElementById(id).value = pub?.metricas?.[keys[i]] || 0;
+  });
+  modal.style.display = 'flex';
+}
+
+async function salvarMetricasManuais() {
+  const id = document.getElementById('manPubId').value;
+  const pub = _publicacoes.find(p => p.id === id);
+  if (!pub) { toast('Publicação não encontrada — use ✎ métricas na lista', 'error'); return; }
+  pub.metricas = {
+    imp: parseInt(document.getElementById('manImp').value)||0,
+    cli: parseInt(document.getElementById('manCli').value)||0,
+    cur: parseInt(document.getElementById('manCur').value)||0,
+    com: parseInt(document.getElementById('manCom').value)||0,
+    sha: parseInt(document.getElementById('manSha').value)||0,
+    leads: parseInt(document.getElementById('manLeads').value)||0,
+  };
+  await salvarPublicacoes();
+  document.getElementById('despManualModal').style.display = 'none';
+  renderDesempenho();
+  toast('Métricas salvas!', 'success');
+}
+
 // HEALTHCHECK & BUILD INFO (v1.4.2)
 // Estratégia DEFENSIVA: só chama a API quando o usuário clicar.
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.4.5-DEBUG] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.5-PUBLICACAO] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -13408,7 +13805,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.4.5-DEBUG';
+window.__ATX_BUILD_ID__ = 'ATX-v1.5-PUBLICACAO';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
