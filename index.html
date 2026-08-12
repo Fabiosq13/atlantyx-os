@@ -13123,13 +13123,15 @@ async function enviarTermo(id) {
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// HEALTHCHECK & BUILD INFO (v1.4)
+// HEALTHCHECK & BUILD INFO (v1.4.2)
 // Estratégia DEFENSIVA: só chama a API quando o usuário clicar.
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
+console.log('%c[ATLANTYX v1.4.2-FIX] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.4';
+window.__ATX_BUILD_ID__ = 'ATX-v1.4.2-FIX';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
