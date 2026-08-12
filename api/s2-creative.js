@@ -722,11 +722,17 @@ async function claude(system, user, maxTokens = 1000) {
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] })
+    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] })
   });
   const d = await r.json();
-  if (!r.ok) throw new Error(d.error?.message || 'Erro Claude API');
-  return d.content[0].text;
+  if (!r.ok) {
+    const msg = d?.error?.message || d?.error?.type || `HTTP ${r.status}`;
+    console.error('[claude API]', msg, JSON.stringify(d).substring(0, 300));
+    throw new Error('Claude API: ' + msg);
+  }
+  const text = d?.content?.[0]?.text;
+  if (!text) throw new Error('Claude retornou resposta vazia');
+  return text;
 }
 
 function parseJSON(text) {

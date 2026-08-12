@@ -334,7 +334,7 @@ async function driveResumirPasta({ folder_id, folder_name, pergunta } = {}) {
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 2000,
       system: 'Você é o assistente estratégico da Atlantyx. Analise documentos internos e extraia insights relevantes para o planejamento estratégico. Seja objetivo e direto.',
       messages: [{
@@ -398,7 +398,7 @@ async function analisarFinanceiro() {
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 3000,
       system: `Você é o Agente S1-04 (CFO-Agente) da Atlantyx.
 Analise os dados financeiros reais e gere insights estratégicos.
@@ -482,7 +482,7 @@ async function contextoEstrategico() {
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 2000,
       system: 'Você é o sistema de Inteligência Estratégica da Atlantyx. Consolide os dados em um contexto executivo claro.',
       messages: [{

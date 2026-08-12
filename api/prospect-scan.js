@@ -167,7 +167,7 @@ Retorne array JSON com ${quantidade} empresas reais, ordenadas por score A → B
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 8000,
       system,
       messages: [{ role: 'user', content: user }]
@@ -278,7 +278,7 @@ export async function mapearCadeiaCLevel(empresa, setor, cargos) {
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 6000,
       system: `Você é o Agente S2-02 + S7-04 da Atlantyx.
 Mapeie decisores C-level com dados reais de fontes públicas (LinkedIn, sites corporativos, notícias).

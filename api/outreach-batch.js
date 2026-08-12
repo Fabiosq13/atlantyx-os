@@ -99,16 +99,10 @@ Regras:
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 300, system, messages: [{ role: 'user', content: user }] })
+    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 300, system, messages: [{ role: 'user', content: user }] })
   });
-  if (!r.ok) {
-    const err = await r.text().catch(() => '');
-    throw new Error('Claude API ' + r.status + ': ' + err.substring(0, 200));
-  }
   const d = await r.json();
-  const msg = d?.content?.[0]?.text;
-  if (!msg) throw new Error('Claude retornou resposta vazia ou inválida');
-  return msg;
+  return d.content[0].text;
 }
 
 async function enviarWhatsApp(phone, message) {

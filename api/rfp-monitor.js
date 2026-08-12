@@ -135,7 +135,7 @@ async function filtrarComClaude(licitacoes, setor) {
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 3000,
       system: `Você é o Agente S2-04 da Atlantyx — analista de oportunidades de licitação.
 A Atlantyx fornece: BI, Engenharia de Dados, Analytics, IA, Dashboards, Integração de Sistemas.
@@ -199,7 +199,7 @@ async function gerarRFPsInteligentesFallback(setor) {
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 2500,
       system: `Você é o Agente S2-04 da Atlantyx. Gere RFPs/licitações REALISTAS e PLAUSÍVEIS.
 Base: licitações reais que órgãos públicos brasileiros e estatais publicam para BI/Dados/IA.
