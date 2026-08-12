@@ -13124,68 +13124,60 @@ async function enviarTermo(id) {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HEALTHCHECK & BUILD INFO (v1.4)
-// Carrega build ID atual do servidor. Usa /api/health (leve, sem IA).
+// Estratégia DEFENSIVA: só chama a API quando o usuário clicar.
+// Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
-async function carregarBuildInfo() {
+
+// Placeholder fixo do build ID — atualizado só se o usuário clicar
+window.__ATX_BUILD_ID__ = 'ATX-v1.4';
+
+// Atualiza os textos da UI com o valor atual
+function atualizarBuildIdUI(id, cor) {
   try {
-    const r = await fetch('/api/health');
-    const d = await r.json();
     const el1 = document.getElementById('sidebarBuildId');
     const el2 = document.getElementById('buildCode');
-    if (el1) el1.textContent = d.build_id || 'ATX-desconhecido';
-    if (el2) el2.textContent = d.build_id || 'ATX-desconhecido';
-    // Se houver problema, tinge vermelho
-    if (d.status === 'unhealthy') {
-      if (el2) el2.style.color = 'var(--red)';
-      if (el1) el1.style.color = 'var(--red)';
-    }
-  } catch (e) {
-    const el = document.getElementById('sidebarBuildId');
-    if (el) { el.textContent = 'ATX-offline'; el.style.color = 'var(--red)'; }
-  }
+    if (el1) { el1.textContent = id; if (cor) el1.style.color = cor; }
+    if (el2) { el2.textContent = id; if (cor) el2.style.color = cor; }
+  } catch (_) {}
 }
 
+// Setar valor inicial visível — não faz fetch, só substitui o "ATX-carregando..."
+try { atualizarBuildIdUI(window.__ATX_BUILD_ID__); } catch (_) {}
+
+// Handler do clique no build ID — carrega e mostra healthcheck completo
 async function verificarSaude() {
-  const el = document.getElementById('buildCode');
-  const cor_orig = el ? el.style.color : '';
-  if (el) { el.textContent = 'checando...'; el.style.color = 'var(--gold)'; }
+  atualizarBuildIdUI('checando...', 'var(--gold)');
 
   try {
     const r = await fetch('/api/health?full=1');
+    if (!r.ok) {
+      atualizarBuildIdUI('ATX-erro', 'var(--red)');
+      alert('Healthcheck retornou HTTP ' + r.status + '.\n\nProvavelmente /api/health ainda não foi deployado. Faça o deploy da v1.4 completa.');
+      return;
+    }
     const d = await r.json();
 
-    let msg = `Build: ${d.build_id}\n\n`;
-    msg += `Status geral: ${d.status.toUpperCase()}\n\n`;
+    let msg = 'Build: ' + (d.build_id || 'desconhecido') + '\n\n';
+    msg += 'Status geral: ' + (d.status || '').toUpperCase() + '\n\n';
     msg += '── CHECAGENS ──\n';
-    for (const [k, v] of Object.entries(d.checks)) {
-      const icon = v.status === 'ok' ? '✓' : '✗';
-      msg += `${icon} ${k}: ${v.message}\n`;
+    if (d.checks) {
+      for (const [k, v] of Object.entries(d.checks)) {
+        const icon = v.status === 'ok' ? 'OK' : 'FALHOU';
+        msg += '[' + icon + '] ' + k + ': ' + v.message + '\n';
+      }
     }
     alert(msg);
 
-    if (el) {
-      el.textContent = d.build_id;
-      el.style.color = d.status === 'healthy' ? 'var(--blue)' : 'var(--red)';
+    if (d.build_id) {
+      atualizarBuildIdUI(d.build_id, d.status === 'healthy' ? 'var(--blue)' : 'var(--red)');
     }
   } catch (e) {
+    atualizarBuildIdUI('ATX-offline', 'var(--red)');
     alert('Erro ao consultar /api/health: ' + e.message);
-    if (el) { el.textContent = 'ATX-erro'; el.style.color = 'var(--red)'; }
   }
-}
-
-// Carregar build info assim que a página abre
-if (document.readyState !== 'loading') {
-  carregarBuildInfo();
-} else {
-  document.addEventListener('DOMContentLoaded', carregarBuildInfo);
 }
 
 </script>
 
 </body>
-</html
-// ── ENRIQUECIMENTO DE LEADS — busca email/telefone via Apollo ────────────────
-
-
-
->
+</html>
