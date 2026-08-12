@@ -1764,6 +1764,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <!-- HEADER COM ABAS -->
     <div style="display:flex;gap:6px;margin-bottom:13px;border-bottom:1px solid rgba(79,124,255,.15);padding-bottom:10px;align-items:center;">
       <button class="btn btn-p" id="abaNovaBtn" onclick="mostrarAbaCampanha('nova')" style="font-size:11px;padding:5px 14px;">+ Nova Campanha</button>
+      <button class="btn" id="btnLimparCampanha" onclick="novaCampanhaLimpa()" style="font-size:10px;padding:5px 10px;margin-left:6px;color:var(--t2);" title="Limpar formulário e começar do zero (a anterior fica salva no banco)">✕ Limpar (nova do zero)</button>
       <button class="btn btn-g" id="abaListaBtn" onclick="mostrarAbaCampanha('lista')" style="font-size:11px;padding:5px 14px;">&#128193; Minhas Campanhas</button>
       <button class="btn btn-g" id="abaCalBtn" onclick="mostrarAbaCampanha('calendario')" style="font-size:11px;padding:5px 14px;">&#128197; Calendário</button>
       <div style="flex:1;"></div>
@@ -2848,7 +2849,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <div class="toast" id="toastEl"></div>
 <script>
 const LOGS=[];let logCount=0;
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S3 · Kanban Financeiro de Marcos',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash')setTimeout(syncQuickBooks,150);if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S3 · Kanban Financeiro de Marcos',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash')setTimeout(syncQuickBooks,150);if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s2kanban')setTimeout(carregarKanbanDoBanco,150);}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -4047,9 +4048,30 @@ function selecionarPeca(id) {
           <div>Agente: ${p.agente}</div>
           <div>Status: ${p.status}</div>
           ${p.data ? '<div>Data: '+p.data+'</div>' : ''}
+          ${p.campanhaId ? '<div style="margin-top:4px;color:var(--t3);font-size:10px;">Campanha ID: '+p.campanhaId+'</div>' : ''}
         </div>
+        ${p.campanhaId ? `<button class="btn btn-p" style="margin-top:8px;width:100%;font-size:11px;padding:7px;" onclick="editarCampanhaDaPeca('${p.campanhaId}')">✎ Editar Campanha &amp; Re-rodar</button>` : ''}
       </div>
     </div>`;
+}
+
+// FIX v1.4.4: leva o usuário à aba Nova Campanha COM a campanha carregada, pronta pra editar/re-rodar
+async function editarCampanhaDaPeca(campanhaId) {
+  addLog('info', '[Kanban→Campanha] Abrindo campanha ' + campanhaId + ' para edição...');
+  // Navegar pra tela s2campanha (o nav vai chamar resetCampanhaState que agora preserva)
+  // Antes de navegar, forçar carregamento da campanha
+  try {
+    await abrirCampanhaDB(campanhaId);
+    // Agora navega — resetCampanhaState verá campAtiva e vai RESTAURAR ela
+    const menuItem = document.querySelector(".sbi[onclick*=\"'s2campanha'\"]");
+    if (menuItem) menuItem.click();
+    else nav('s2campanha');
+    setTimeout(mostrarBotaoRerodar, 300);
+    toast('Campanha aberta — edite os campos e clique em Re-rodar', 'success');
+  } catch (e) {
+    addLog('err', '[Kanban→Campanha] falha: ' + e.message);
+    toast('Erro ao abrir campanha: ' + e.message, 'error');
+  }
 }
 
 function aprovarPeca(id, evt) {
@@ -4101,11 +4123,47 @@ function recusarTodosKanban() {
   addLog('warn', '[Kanban] Todas peças recusadas');
 }
 
-function adicionarAoKanban(titulo, canal, agente, narrativa, copy, design) {
+function adicionarAoKanban(titulo, canal, agente, narrativa, copy, design, campanhaId) {
   const id = 'peca_' + Date.now() + '_' + Math.random().toString(36).substr(2,5);
-  kanbanPecas.push({ id, titulo, canal, agente, narrativa, copy, design, status: 'Revisão', data: new Date().toLocaleString('pt-BR') });
+  // FIX v1.4.4: peça vincula à campanha para permitir editar/re-rodar a partir do kanban
+  const peca = { id, titulo, canal, agente, narrativa, copy, design, campanhaId: campanhaId || null, status: 'Revisão', data: new Date().toLocaleString('pt-BR') };
+  kanbanPecas.push(peca);
   renderKanban();
-  addLog('ok', '[Kanban] Nova peça adicionada: ' + titulo);
+  addLog('ok', '[Kanban] Nova peça adicionada: ' + titulo + (campanhaId ? ' (camp: ' + campanhaId + ')' : ''));
+  // FIX v1.4.4: persistir no banco para sobreviver reload
+  salvarKanbanNoBanco();
+}
+
+// FIX v1.4.4: Persistência do Kanban
+async function salvarKanbanNoBanco() {
+  try {
+    await fetch('/api/db', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'set', key: 'atx:kanban:pecas', value: kanbanPecas })
+    });
+  } catch (e) { addLog('warn', '[Kanban] Não salvou no banco: ' + e.message); }
+  try { localStorage.setItem('atx:kanban:pecas', JSON.stringify(kanbanPecas)); } catch {}
+}
+
+async function carregarKanbanDoBanco() {
+  try {
+    const r = await fetch('/api/db', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'get', key: 'atx:kanban:pecas' })
+    });
+    const d = await r.json();
+    if (d.value && Array.isArray(d.value)) {
+      kanbanPecas = d.value;
+      addLog('ok', '[Kanban] ' + kanbanPecas.length + ' peças carregadas do banco');
+    }
+  } catch (e) {
+    // Fallback localStorage
+    try {
+      const v = JSON.parse(localStorage.getItem('atx:kanban:pecas') || '[]');
+      if (Array.isArray(v) && v.length) { kanbanPecas = v; addLog('info', '[Kanban] cache local: ' + v.length + ' peças'); }
+    } catch {}
+  }
+  renderKanban();
 }
 
 // CAMPANHA COMPLETA
@@ -6645,10 +6703,9 @@ nav = function(p, el) {
 
 // ── RESET ESTADO DA CAMPANHA ─────────────────────────────────────────────────
 function resetCampanhaState() {
-  // Resetar estado para "Nova Campanha" limpa
-  campAtiva = null;
-  campVersoesCopy = [];
-  window._campanhaAtual = null;
+  // FIX v1.4.4: se já tem campanha ativa (ex: usuário navegou pra outra aba e voltou),
+  // RESTAURA os dados dela em vez de apagar. Nova campanha só via botão explícito.
+  const jaTemCampanhaAtiva = campAtiva || window._campanhaAtual;
 
   // Mostrar aba Nova por padrão
   const abaNova  = document.getElementById('abaNova');
@@ -6656,13 +6713,30 @@ function resetCampanhaState() {
   if (abaNova)  abaNova.style.display  = 'block';
   if (abaLista) abaLista.style.display = 'none';
 
+  // Resetar botão de criar
+  const btn = document.getElementById('btnCampanha');
+  if (btn) { btn.disabled = false; btn.textContent = '◆ Criar Campanha com IA'; }
+
+  if (jaTemCampanhaAtiva) {
+    // RESTAURA em vez de apagar
+    campAtiva = campAtiva || window._campanhaAtual;
+    window._campanhaAtual = campAtiva;
+    restaurarFormularioCampanha(campAtiva);
+    addLog('info', '[Campanha] Restaurada última campanha ao voltar na tela: ' + campAtiva.nome);
+    return;
+  }
+
+  // Não tinha nada — inicializa limpo. Tenta carregar última do banco (async).
+  campAtiva = null;
+  campVersoesCopy = [];
+  window._campanhaAtual = null;
+
   // Esconder editor
   const editor = document.getElementById('campEditorPanel');
   if (editor) editor.style.display = 'none';
 
-  // Resetar botão de criar
-  const btn = document.getElementById('btnCampanha');
-  if (btn) { btn.disabled = false; btn.textContent = '◆ Criar Campanha com IA'; }
+  // Tenta restaurar a última salva
+  restaurarUltimaCampanha();
 
   // Resetar tags
   const tag = document.getElementById('campTag');
@@ -6739,6 +6813,156 @@ function mostrarEdAba(aba) {
 }
 
 // ── BANCO DE DADOS — Neon via /api/db ─────────────────────────────────────────
+
+// FIX v1.4.4: preenche o formulário e o editor com os dados de uma campanha
+function restaurarFormularioCampanha(camp) {
+  if (!camp) return;
+  // Preencher inputs
+  const map = { cNome: camp.nome, cCanal: camp.canal, cPublico: camp.pub, cObj: camp.obj, cOrc: camp.orc, cCtx: camp.ctx };
+  Object.entries(map).forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if (el && val != null) el.value = val;
+  });
+  // Se tem dados dos agentes, mostra editor e re-render
+  if (camp.data) {
+    const edPanel = document.getElementById('campEditorPanel');
+    if (edPanel) edPanel.style.display = 'block';
+    const savBtn = document.getElementById('btnSalvarCamp');
+    if (savBtn) savBtn.style.display = 'inline-block';
+    try { preencherEditorCampanha(camp.data); } catch (e) { addLog('warn', '[Campanha] falha preencher editor: ' + e.message); }
+    // Mostrar botão re-rodar
+    mostrarBotaoRerodar();
+  }
+  // Tag
+  const tag = document.getElementById('campTag');
+  if (tag) { tag.textContent = 'Salva'; tag.className = 'tag on'; }
+}
+
+// FIX v1.4.4: ao abrir a tela sem campanha em memória, tenta pegar a última do banco
+async function restaurarUltimaCampanha() {
+  try {
+    // Ordena por atualizado_em desc — pega a última editada
+    if (!_todasCampanhas || !_todasCampanhas.length) {
+      await carregarCampanhasDB();
+    }
+    if (_todasCampanhas && _todasCampanhas.length) {
+      const ultima = _todasCampanhas.slice().sort((a,b) =>
+        new Date(b.atualizado_em||b.criado_em||0) - new Date(a.atualizado_em||a.criado_em||0)
+      )[0];
+      if (ultima) {
+        campAtiva = ultima;
+        window._campanhaAtual = ultima;
+        restaurarFormularioCampanha(ultima);
+        addLog('info', '[Campanha] Restaurada última campanha do banco: "' + ultima.nome + '"');
+      }
+    }
+  } catch (e) {
+    addLog('warn', '[Campanha] Não foi possível restaurar última: ' + e.message);
+  }
+}
+
+// FIX v1.4.4: limpar formulário e começar do zero (a campanha ativa foi salva no banco)
+function novaCampanhaLimpa() {
+  if (campAtiva) {
+    const ok = confirm('Limpar o formulário e criar uma NOVA campanha?\n\nA campanha atual "' + campAtiva.nome + '" foi salva no banco e continua acessível em Minhas Campanhas ou no Kanban.');
+    if (!ok) return;
+  }
+  campAtiva = null;
+  campVersoesCopy = [];
+  window._campanhaAtual = null;
+  // Limpar inputs
+  ['cNome','cCanal','cPublico','cObj','cOrc','cCtx'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  // Esconder editor e botões
+  const editor = document.getElementById('campEditorPanel');
+  if (editor) editor.style.display = 'none';
+  const savBtn = document.getElementById('btnSalvarCamp');
+  if (savBtn) savBtn.style.display = 'none';
+  const rerBtn = document.getElementById('btnRerodarCampanha');
+  if (rerBtn) rerBtn.remove();
+  // Resetar resultado
+  const res = document.getElementById('campResult');
+  if (res) res.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:30px;">Configure e clique em Criar.</div>';
+  // Tag
+  const tag = document.getElementById('campTag');
+  if (tag) { tag.textContent = 'Aguardando'; tag.className = 'tag off'; }
+  addLog('info', '[Campanha] Formulário limpo para nova campanha');
+  toast('Formulário limpo', 'success');
+}
+
+// FIX v1.4.4: botão de "Re-rodar com IA" após edição
+function mostrarBotaoRerodar() {
+  // Injeta o botão se ainda não existir, dentro do editor
+  let btn = document.getElementById('btnRerodarCampanha');
+  if (btn) return;
+  const savBtn = document.getElementById('btnSalvarCamp');
+  if (!savBtn || !savBtn.parentElement) return;
+  btn = document.createElement('button');
+  btn.id = 'btnRerodarCampanha';
+  btn.className = 'btn btn-p';
+  btn.style.cssText = 'margin-left:8px;';
+  btn.textContent = '↻ Re-rodar com IA (após edição do contexto)';
+  btn.onclick = rerodarCampanhaAtiva;
+  savBtn.parentElement.insertBefore(btn, savBtn.nextSibling);
+}
+
+// FIX v1.4.4: re-executa os agentes usando os campos ATUAIS do formulário,
+// preservando o ID da campanha (edita em vez de duplicar)
+async function rerodarCampanhaAtiva() {
+  if (!campAtiva) { toast('Nenhuma campanha ativa', 'error'); return; }
+  const confirmar = confirm('Re-rodar agentes de IA para a campanha "' + campAtiva.nome + '"?\n\nOs textos e briefs atuais serão substituídos pelos novos, mas as imagens já geradas serão preservadas.');
+  if (!confirmar) return;
+
+  const idOriginal = campAtiva.id;
+  const criadoEmOriginal = campAtiva.criado_em;
+  const imagensOriginais = campAtiva.imagens || [];
+
+  const nome  = document.getElementById('cNome')?.value?.trim() || campAtiva.nome;
+  const obj   = document.getElementById('cObj')?.value  || campAtiva.obj;
+  const canal = document.getElementById('cCanal')?.value || campAtiva.canal;
+  const pub   = document.getElementById('cPublico')?.value || campAtiva.pub;
+  const orc   = document.getElementById('cOrc')?.value || campAtiva.orc || '';
+  const ctx   = document.getElementById('cCtx')?.value?.trim() || campAtiva.ctx || '';
+
+  const btn = document.getElementById('btnRerodarCampanha');
+  if (btn) { btn.disabled = true; btn.textContent = 'Re-rodando IA...'; }
+  addLog('info', '[Campanha] RE-RODANDO IA para: "' + nome + '" (id: ' + idOriginal + ')');
+
+  try {
+    const r = await fetch('/api/s2-creative', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'campanha_completa', payload: { campanha: nome, objetivo: obj, canal, publico: pub, orcamento: orc, contexto: ctx } })
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    if (!data.success) throw new Error(data.error || 'erro');
+
+    // MERGE: preserva id/imagens, substitui narrativa/copy/design
+    campAtiva = Object.assign({}, campAtiva, {
+      id: idOriginal,
+      criado_em: criadoEmOriginal,
+      atualizado_em: new Date().toISOString(),
+      nome, obj, canal, pub, orc, ctx,
+      data: data,
+      imagens: imagensOriginais,
+    });
+    window._campanhaAtual = campAtiva;
+
+    // Repopular editor
+    preencherEditorCampanha(data);
+    await salvarCampanhaDB(true);
+    addLog('ok', '[Campanha] Re-rodado e salvo com sucesso');
+    toast('Campanha re-rodada!', 'success');
+  } catch (e) {
+    addLog('err', '[Campanha] Erro ao re-rodar: ' + e.message);
+    toast('Erro: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '↻ Re-rodar com IA (após edição do contexto)'; }
+  }
+}
+
 async function salvarCampanhaDB(skipColeta = false) {
   if (!campAtiva) { toast('Gere uma campanha primeiro', 'error'); return; }
   if (!skipColeta) campAtiva = coletarEdicoesAtuais(campAtiva);
@@ -6946,7 +7170,7 @@ async function criarCampanhaCompleta() {
     addLog('ok', '[S2-Campanha] Campanha ID: ' + campAtiva.id + ' | status: ' + campAtiva.status);
     // KANBAN
     const _cp0 = campAtiva.data?.copy?.versoes?.[0] || {};
-    adicionarAoKanban(campAtiva.nome, campAtiva.canal, 'Campanha Completa', campAtiva.data?.narrativa?.tema_central || '', (_cp0.headline?_cp0.headline+'\n\n':'') + (_cp0.corpo||''), campAtiva.data?.design?.conceito_visual || '');
+    adicionarAoKanban(campAtiva.nome, campAtiva.canal, 'Campanha Completa', campAtiva.data?.narrativa?.tema_central || '', (_cp0.headline?_cp0.headline+'\n\n':'') + (_cp0.corpo||''), campAtiva.data?.design?.conceito_visual || '', campAtiva.id);
     addLog('ok', '[Kanban] "' + campAtiva.nome + '" adicionada');
 
     etapas[3].done = true; renderEt();
@@ -7617,6 +7841,8 @@ async function abrirCampanhaDB(id) {
   mostrarEdAba('copy');
   const tag = document.getElementById('campTag');
   if (tag) { tag.textContent = camp.status || 'rascunho'; tag.className = 'tag live'; }
+  // FIX v1.4.4: mostrar botão de re-rodar após abrir campanha existente
+  mostrarBotaoRerodar();
   toast('Campanha aberta: ' + camp.nome, 'success');
 }
 
@@ -12993,13 +13219,13 @@ async function carregarKanbanMarcos() {
 
   try {
     const d = await finApi('marcos_kanban', { projeto_id: projId });
-    renderKanban(d);
+    renderKanbanMarcos(d);
   } catch (e) {
     if (cont) cont.innerHTML = `<div style="color:var(--red);padding:14px;font-size:11px;">Erro: ${e.message}</div>`;
   }
 }
 
-function renderKanban(d) {
+function renderKanbanMarcos(d) {
   const cont = document.getElementById('kanbanContainer');
   if (!cont) return;
 
@@ -13128,10 +13354,10 @@ async function enviarTermo(id) {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.4.2-FIX] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.4.4-CAMPANHAS] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.4.2-FIX';
+window.__ATX_BUILD_ID__ = 'ATX-v1.4.4-CAMPANHAS';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
