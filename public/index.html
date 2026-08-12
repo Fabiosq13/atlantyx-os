@@ -6965,7 +6965,11 @@ async function rerodarCampanhaAtiva() {
 
 async function salvarCampanhaDB(skipColeta = false) {
   if (!campAtiva) { toast('Gere uma campanha primeiro', 'error'); return; }
-  if (!skipColeta) campAtiva = coletarEdicoesAtuais(campAtiva);
+  // FIX v1.4.5: se coletarEdicoesAtuais falhar (elemento faltando etc), não trava o save
+  if (!skipColeta) {
+    try { campAtiva = coletarEdicoesAtuais(campAtiva); }
+    catch (colErr) { addLog('warn', '[Campanha] coletarEdicoes falhou: ' + colErr.message + ' — salvando estado atual'); }
+  }
   campAtiva.atualizado_em = new Date().toISOString();
   campAtiva.status = campAtiva.status || 'rascunho';
 
@@ -7168,42 +7172,75 @@ async function criarCampanhaCompleta() {
     etapas[3].done = true; renderEt();
 
     addLog('ok', '[S2-Campanha] Campanha ID: ' + campAtiva.id + ' | status: ' + campAtiva.status);
-    // KANBAN
-    const _cp0 = campAtiva.data?.copy?.versoes?.[0] || {};
-    adicionarAoKanban(campAtiva.nome, campAtiva.canal, 'Campanha Completa', campAtiva.data?.narrativa?.tema_central || '', (_cp0.headline?_cp0.headline+'\n\n':'') + (_cp0.corpo||''), campAtiva.data?.design?.conceito_visual || '', campAtiva.id);
-    addLog('ok', '[Kanban] "' + campAtiva.nome + '" adicionada');
+
+    // FIX v1.4.5: cada bloco em try isolado para uma falha não trave o resto
+    // e para que erros individuais apareçam no log com detalhes.
+
+    // KANBAN — passa campanhaId para permitir edição a partir do card
+    try {
+      const _cp0 = campAtiva.data?.copy?.versoes?.[0] || {};
+      adicionarAoKanban(
+        campAtiva.nome,
+        campAtiva.canal,
+        'Campanha Completa',
+        campAtiva.data?.narrativa?.tema_central || '',
+        (_cp0.headline ? _cp0.headline + '\n\n' : '') + (_cp0.corpo || ''),
+        campAtiva.data?.design?.conceito_visual || '',
+        campAtiva.id
+      );
+      addLog('ok', '[Kanban] "' + campAtiva.nome + '" adicionada');
+    } catch (kanbanErr) {
+      addLog('err', '[Kanban] Falha ao adicionar peça: ' + kanbanErr.message);
+      // Não relança — kanban falhar não deve travar a criação
+    }
 
     etapas[3].done = true; renderEt();
 
     // Preencher editor
-    const edPanel = document.getElementById('campEditorPanel');
-    if (edPanel) edPanel.style.display = 'block';
-    addLog('info', '[S2-Campanha] Editor aberto — preenchendo campos...');
-    if (savBtn) savBtn.style.display = 'inline-block';
-    preencherEditorCampanha(data);
-    mostrarEdAba('copy');
+    try {
+      const edPanel = document.getElementById('campEditorPanel');
+      if (edPanel) edPanel.style.display = 'block';
+      addLog('info', '[S2-Campanha] Editor aberto — preenchendo campos...');
+      if (savBtn) savBtn.style.display = 'inline-block';
+      preencherEditorCampanha(data);
+      mostrarEdAba('copy');
+    } catch (edErr) {
+      addLog('err', '[S2-Campanha] Falha ao preencher editor: ' + edErr.message);
+      // Continua mesmo assim — o resumo será mostrado
+    }
+
+    // Mostrar botão re-rodar sempre que criar campanha
+    try { mostrarBotaoRerodar(); } catch (_) {}
 
     // Resultado resumido
-    const headline = data.copy?.versoes?.[0]?.headline || '';
-    const copyTexto = data.copy?.versoes?.[0]?.corpo || '';
-    res.innerHTML = '<div style="background:var(--g2);border:1px solid rgba(34,211,163,.2);border-radius:8px;padding:13px;margin-bottom:8px;">'
-      + '<div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:6px;">CAMPANHA CRIADA E SALVA NO BANCO</div>'
-      + '<div style="font-size:13px;font-weight:600;margin-bottom:3px;">' + nome + '</div>'
-      + '<div style="font-size:11px;color:var(--t2);">' + canal + ' · ' + obj + '</div>'
-      + (headline ? '<div style="font-size:12px;font-weight:600;margin-top:8px;color:var(--blue);">' + headline + '</div>' : '')
-      + '</div><div style="font-size:11px;color:var(--t2);text-align:center;padding:8px;">Use as abas abaixo para editar narrativa, copy, imagem e ver o preview.</div>';
-
-    // Kanban
-    adicionarAoKanban(nome, canal, 'Campanha Completa', data.narrativa?.tema_central||'', copyTexto, data.design?.conceito_visual||'');
+    try {
+      const headline = data.copy?.versoes?.[0]?.headline || '';
+      res.innerHTML = '<div style="background:var(--g2);border:1px solid rgba(34,211,163,.2);border-radius:8px;padding:13px;margin-bottom:8px;">'
+        + '<div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:6px;">CAMPANHA CRIADA E SALVA NO BANCO</div>'
+        + '<div style="font-size:13px;font-weight:600;margin-bottom:3px;">' + nome + '</div>'
+        + '<div style="font-size:11px;color:var(--t2);">' + canal + ' · ' + obj + '</div>'
+        + (headline ? '<div style="font-size:12px;font-weight:600;margin-top:8px;color:var(--blue);">' + headline + '</div>' : '')
+        + '</div><div style="font-size:11px;color:var(--t2);text-align:center;padding:8px;">Use as abas abaixo para editar narrativa, copy, imagem e ver o preview.</div>';
+    } catch (resErr) {
+      addLog('err', '[S2-Campanha] Falha ao renderizar resumo: ' + resErr.message);
+    }
 
     tag.textContent = 'Criada'; tag.className = 'tag live';
     toast('Campanha criada e salva no banco!', 'success');
     addLog('ok', '[S2-Campanha] Concluída: ' + nome);
 
   } catch(e) {
+    // FIX v1.4.5: mostrar erro COMPLETO na tela + no log com stack
     tag.textContent = 'Erro'; tag.className = 'tag hot';
-    res.innerHTML = '<div style="color:var(--red);font-size:11px;padding:14px;">' + e.message + '</div>';
+    const errHtml = '<div style="color:var(--red);font-size:11px;padding:14px;border:1px solid var(--red);border-radius:6px;background:rgba(239,68,68,.05);">'
+      + '<div style="font-weight:700;margin-bottom:6px;">✗ Erro na execução da campanha</div>'
+      + '<div style="font-family:var(--M);font-size:10px;color:var(--t1);margin-bottom:8px;">' + (e.message || 'erro desconhecido') + '</div>'
+      + (e.stack ? '<details style="margin-top:8px;"><summary style="cursor:pointer;color:var(--t2);font-size:10px;">Ver stack trace</summary><pre style="font-size:9px;color:var(--t3);white-space:pre-wrap;margin-top:6px;">' + (e.stack.substring(0, 800)) + '</pre></details>' : '')
+      + '</div>';
+    res.innerHTML = errHtml;
     addLog('err', '[S2-Campanha] Erro: ' + e.message);
+    if (e.stack) addLog('err', '[S2-Campanha] Stack: ' + e.stack.split('\n').slice(0, 3).join(' | '));
+    console.error('[S2-Campanha] Erro completo:', e);
   }
   btn.disabled = false; btn.textContent = 'Criar Campanha com IA';
 }
@@ -7513,7 +7550,8 @@ async function aprovarCampanhaFinal() {
     'Aprovada',
     campAtiva.data?.narrativa?.tema_central || '',
     conteudo,
-    imgUrl || campAtiva.data?.design?.conceito_visual || ''
+    imgUrl || campAtiva.data?.design?.conceito_visual || '',
+    campAtiva.id
   );
 
   await salvarCampanhaDB();
@@ -13354,10 +13392,23 @@ async function enviarTermo(id) {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.4.4-CAMPANHAS] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.4.5-DEBUG] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+
+// FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
+// e mostra no log da UI. Assim erros silenciosos ficam visíveis.
+window.addEventListener('error', function(evt) {
+  const msg = '[JS ERROR] ' + (evt.message || 'erro') + ' em ' + (evt.filename || '?').split('/').pop() + ':' + (evt.lineno || '?');
+  console.error('[GLOBAL ERROR]', evt.error || evt.message, evt);
+  try { if (typeof addLog === 'function') addLog('err', msg); } catch(_) {}
+});
+window.addEventListener('unhandledrejection', function(evt) {
+  const msg = '[PROMISE REJEITADA] ' + (evt.reason?.message || evt.reason || 'erro');
+  console.error('[UNHANDLED REJECTION]', evt.reason);
+  try { if (typeof addLog === 'function') addLog('err', msg); } catch(_) {}
+});
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.4.4-CAMPANHAS';
+window.__ATX_BUILD_ID__ = 'ATX-v1.4.5-DEBUG';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
