@@ -237,9 +237,16 @@ Retorne:
   "checklist_qualidade": ["item 1", "item 2", "item 3"]
 }`;
 
-  const r = await claude(system, user, 2000);
+  const r = await claude(system, user, 3000);
   const design = parseJSON(r);
-  console.log(`[S2-Designer] Especificação de design criada: ${formato} para ${canal}`);
+  // FIX v1.5.1: se o JSON veio truncado/inválido, parseJSON devolve {raw}.
+  // Garante que os campos usados pelo frontend nunca fiquem vazios.
+  if (design.raw && !design.conceito_visual && !design.prompt_ia_imagem) {
+    design.conceito_visual = design.raw.substring(0, 800);
+    design.prompt_ia_imagem = 'Premium B2B corporate scene: executive in dark modern office with glowing data dashboards. Dark navy #1A3A8F background, electric blue #4F7CFF accents, cinematic lighting, photorealistic, no text.';
+    console.warn('[S2-Designer] JSON truncado — usando fallback de conceito/prompt');
+  }
+  console.log(`[S2-Designer] Especificação de design criada: ${formato} para ${canal} (prompt=${(design.prompt_ia_imagem||'').length} chars)`);
   return { design, agente: 'S2-Designer' };
 }
 

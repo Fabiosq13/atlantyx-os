@@ -114,6 +114,57 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, note_id: d.id });
     }
 
+    if (action === 'leads_por_campanha') {
+      // v1.5.4: atribuição automática de leads por UTM
+      // Busca contatos criados no período e extrai utm_campaign da URL de origem
+      // (hs_analytics_first_url guarda a primeira URL visitada, com UTMs).
+      const dias = parseInt(properties.dias || 90);
+      const desde = Date.now() - dias * 864e5;
+
+      const props = ['email', 'createdate', 'hs_analytics_first_url', 'hs_analytics_source', 'hs_analytics_source_data_1', 'hs_analytics_source_data_2'];
+      let after = undefined;
+      const contatos = [];
+      // Paginar até 300 contatos (3 páginas) para não estourar tempo
+      for (let pag = 0; pag < 3; pag++) {
+        const body = {
+          filterGroups: [{ filters: [{ propertyName: 'createdate', operator: 'GTE', value: String(desde) }] }],
+          properties: props,
+          sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }],
+          limit: 100,
+          ...(after ? { after } : {}),
+        };
+        const r = await fetch(BASE + '/crm/v3/objects/contacts/search', { method: 'POST', headers: H, body: JSON.stringify(body) });
+        const d = await r.json();
+        if (!r.ok) return res.status(200).json({ success: false, error: d.message || 'erro search', status: r.status });
+        contatos.push(...(d.results || []));
+        after = d.paging?.next?.after;
+        if (!after) break;
+      }
+
+      // Extrair utm_campaign da URL de origem
+      const porCampanha = {};   // { camp_xxx: { total, por_rede: {linkedin: n, ...} } }
+      let sem_utm = 0;
+      for (const c of contatos) {
+        const url = c.properties?.hs_analytics_first_url || '';
+        const mCamp = url.match(/utm_campaign=([^&\s]+)/i);
+        const mSrc  = url.match(/utm_source=([^&\s]+)/i);
+        if (!mCamp) { sem_utm++; continue; }
+        const camp = decodeURIComponent(mCamp[1]);
+        const rede = mSrc ? decodeURIComponent(mSrc[1]).toLowerCase() : 'desconhecida';
+        if (!porCampanha[camp]) porCampanha[camp] = { total: 0, por_rede: {} };
+        porCampanha[camp].total++;
+        porCampanha[camp].por_rede[rede] = (porCampanha[camp].por_rede[rede] || 0) + 1;
+      }
+
+      return res.status(200).json({
+        success: true,
+        periodo_dias: dias,
+        contatos_analisados: contatos.length,
+        sem_utm,
+        leads_por_campanha: porCampanha,
+      });
+    }
+
     return res.status(400).json({ success: false, error: 'Acao invalida: ' + action });
   } catch(e) {
     return res.status(500).json({ success: false, error: e.message });
