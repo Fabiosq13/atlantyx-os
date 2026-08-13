@@ -1773,6 +1773,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
         <span class="tag off" id="mcStatusTag">Metricool: verificando...</span>
+        <button class="btn" style="font-size:10px;" onclick="listarLandingPagesHS()">&#128279; Landing Pages HubSpot</button>
         <button class="btn btn-gn" onclick="carregarDesempenho()">&#8635; Atualizar</button>
       </div>
     </div>
@@ -1785,6 +1786,13 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);">Engajamento</div><div style="font-size:22px;font-weight:700;color:var(--green);" id="despEng">—</div></div>
       <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);">Leads (HubSpot)</div><div style="font-size:22px;font-weight:700;color:var(--s7c);" id="despLeads">—</div></div>
       <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);">Custo / Lead</div><div style="font-size:22px;font-weight:700;" id="despCPL">—</div></div>
+    </div>
+
+    <!-- Landing Pages HubSpot (v1.5.5) -->
+    <div class="panel" style="margin-bottom:14px;display:none;" id="lpPanel">
+      <div class="ph"><div class="pt">Landing Pages do HubSpot</div>
+        <button class="btn" style="font-size:10px;" onclick="document.getElementById('lpPanel').style.display='none'">✕</button></div>
+      <div class="pb" id="lpLista"><div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Carregando...</div></div>
     </div>
 
     <!-- Funil -->
@@ -13917,6 +13925,64 @@ function renderDesempenho() {
   }
 }
 
+// ---------- Landing Pages HubSpot (v1.5.5) ---------------------------------
+async function listarLandingPagesHS() {
+  const panel = document.getElementById('lpPanel');
+  const lista = document.getElementById('lpLista');
+  if (panel) panel.style.display = 'block';
+  if (lista) lista.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Consultando HubSpot...</div>';
+  try {
+    const r = await fetch('/api/hubspot', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action: 'listar_landing_pages' }) });
+    const d = await r.json();
+    if (!d.success) {
+      lista.innerHTML = '<div style="background:rgba(239,68,68,.06);border:1px solid var(--red);border-radius:6px;padding:12px;font-size:11px;">'
+        + '<div style="color:var(--red);font-weight:700;margin-bottom:5px;">Não foi possível listar (HTTP ' + (d.status||'?') + ')</div>'
+        + '<div style="color:var(--t1);font-size:10px;margin-bottom:6px;">' + (d.error||'') + '</div>'
+        + (d.hint ? '<div style="color:var(--gold);font-size:10px;line-height:1.6;">💡 ' + d.hint + '</div>' : '')
+        + '</div>';
+      addLog('warn', '[LP] ' + (d.error || 'erro'));
+      return;
+    }
+    if (!d.paginas?.length) {
+      lista.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Nenhuma landing page encontrada no HubSpot.</div>';
+      return;
+    }
+    lista.innerHTML = d.paginas.map(p => `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--bd);">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:11.5px;font-weight:600;">${p.nome} ${p.publicada ? '<span style="color:var(--green);font-size:9px;">● publicada</span>' : '<span style="color:var(--t3);font-size:9px;">○ rascunho</span>'}</div>
+          <div style="font-size:9.5px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.url || '(sem URL pública)'}</div>
+        </div>
+        ${p.url ? `<a href="${p.url}" target="_blank" class="btn" style="font-size:9px;padding:3px 8px;">abrir ↗</a>
+        <button class="btn btn-p" style="font-size:9px;padding:3px 8px;" onclick="usarLPComoLink('${p.url.replace(/'/g,"\\'")}')">usar como link</button>` : ''}
+      </div>`).join('');
+    addLog('ok', '[LP] ' + d.paginas.length + ' landing page(s) do HubSpot listadas');
+  } catch (e) {
+    if (lista) lista.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Erro: ' + e.message + '</div>';
+  }
+}
+
+// Define a LP como link_destino da campanha selecionada no Desempenho
+async function usarLPComoLink(url) {
+  const campId = document.getElementById('despCampanhaSel')?.value;
+  if (!campId) {
+    try { await navigator.clipboard.writeText(url); } catch {}
+    toast('Selecione uma campanha no filtro para vincular — URL copiada para a área de transferência', 'success');
+    return;
+  }
+  const camp = (_todasCampanhas || []).find(c => c.id === campId);
+  if (!camp) { toast('Campanha não encontrada', 'error'); return; }
+  camp.link_destino = url;
+  try { salvarCampanhaLocal(camp); } catch {}
+  try {
+    await fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'save_campanha', value: camp }) });
+  } catch {}
+  toast('Landing page definida como link de destino de "' + camp.nome + '" — próximas publicações já vêm com ela', 'success');
+  addLog('ok', '[LP] link_destino de ' + camp.nome + ' = ' + url);
+}
+
 // ---------- Registro manual de métricas ------------------------------------
 function abrirRegistroManual(pubId) {
   const modal = document.getElementById('despManualModal');
@@ -13953,7 +14019,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.5.4] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.5.5] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -13969,7 +14035,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.5.4';
+window.__ATX_BUILD_ID__ = 'ATX-v1.5.5';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
