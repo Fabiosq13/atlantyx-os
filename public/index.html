@@ -381,6 +381,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     </div>
     <div class="sf"><span class="dot on"></span>Claude API · Ativo</div>
     <div class="sf"><span class="dot" id="dotHS"></span><span id="statHS">HubSpot · Verificando</span></div>
+    <div class="sf"><span class="dot off" id="dotMC"></span><span id="statMC">Metricool · Verificando</span></div>
     <div class="sf"><span class="dot off" id="dotWA"></span><span id="statWA">Z-API · Configurar</span></div>
     <div class="sf"><span class="dot" id="dotDB"></span><span id="statDB">DB · Conectando...</span></div>
     <div class="sf"><span class="dot on"></span>Auto-refresh 30s</div>
@@ -6849,19 +6850,32 @@ function resetCampanhaState() {
 
 // ── ABAS ─────────────────────────────────────────────────────────────────────
 function mostrarAbaCampanha(aba) {
-  document.getElementById('abaNova').style.display   = aba === 'nova'  ? 'block' : 'none';
-  document.getElementById('abaLista').style.display  = aba === 'lista' ? 'block' : 'none';
-  var cal = document.getElementById('abaCalendario'); if (cal) cal.style.display = aba === 'calendario' ? 'block' : 'none';
-  var bcal = document.getElementById('abaCalBtn'); if (bcal) bcal.style.borderColor = aba === 'calendario' ? 'var(--blue)' : '';
-  if (aba === 'calendario') setTimeout(renderCalCampanhas, 100);
-  document.getElementById('abaNovaBtn').style.borderColor  = aba === 'nova'  ? 'var(--blue)' : '';
-  document.getElementById('abaListaBtn').style.borderColor = aba === 'lista' ? 'var(--blue)' : '';
-  if (aba === 'lista') {
-    setTimeout(() => {
-      _todasCampanhas = getCampanhasLocal();
-      filtrarCampanhas();
-      carregarCampanhasDB();
-    }, 50);
+  // FIX v1.5.2: versão defensiva — nunca quebra por elemento faltando, loga o clique
+  try {
+    if (typeof addLog === 'function') addLog('info', '[Campanha] Aba: ' + aba);
+    const el = id => document.getElementById(id);
+    const nova = el('abaNova'), lista = el('abaLista');
+    if (nova)  nova.style.display  = aba === 'nova'  ? 'block' : 'none';
+    if (lista) lista.style.display = aba === 'lista' ? 'block' : 'none';
+    const cal = el('abaCalendario'); if (cal) cal.style.display = aba === 'calendario' ? 'block' : 'none';
+    const bcal = el('abaCalBtn'); if (bcal) bcal.style.borderColor = aba === 'calendario' ? 'var(--blue)' : '';
+    if (aba === 'calendario') setTimeout(() => { try { renderCalCampanhas(); } catch(e) { addLog('err','[Calendario] '+e.message); } }, 100);
+    const bn = el('abaNovaBtn'); if (bn) bn.style.borderColor  = aba === 'nova'  ? 'var(--blue)' : '';
+    const bl = el('abaListaBtn'); if (bl) bl.style.borderColor = aba === 'lista' ? 'var(--blue)' : '';
+    if (aba === 'lista') {
+      // Placeholder imediato enquanto o banco responde
+      const grid = el('campListaGrid');
+      if (grid && !grid.innerHTML.trim()) grid.innerHTML = '<div style="grid-column:1/-1;color:var(--t3);font-size:11px;text-align:center;padding:30px;">Carregando campanhas...</div>';
+      setTimeout(() => {
+        try { _todasCampanhas = getCampanhasLocal(); filtrarCampanhas(); } catch(e) { addLog('err','[Campanhas] filtro: '+e.message); }
+        try { carregarCampanhasDB(); } catch(e) { addLog('err','[Campanhas] banco: '+e.message); }
+      }, 50);
+      // Rolar até a lista para o usuário VER
+      if (lista) setTimeout(() => lista.scrollIntoView({ behavior:'smooth', block:'start' }), 150);
+    }
+  } catch (e) {
+    if (typeof addLog === 'function') addLog('err', '[Campanha] mostrarAba falhou: ' + e.message);
+    console.error('[mostrarAbaCampanha]', e);
   }
 }
 
@@ -6883,6 +6897,28 @@ function mostrarEdAba(aba) {
 }
 
 // ── BANCO DE DADOS — Neon via /api/db ─────────────────────────────────────────
+
+// FIX v1.5.1: rola a tela até o editor da campanha (pós-criação)
+function rolarAteEditor() {
+  const edPanel = document.getElementById('campEditorPanel');
+  if (edPanel) {
+    edPanel.style.display = 'block';
+    edPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Destaque temporário para chamar atenção
+    edPanel.style.transition = 'box-shadow .3s';
+    edPanel.style.boxShadow = '0 0 0 2px var(--green)';
+    setTimeout(() => { edPanel.style.boxShadow = ''; }, 2200);
+  }
+}
+
+// FIX v1.5.1: abre o editor direto na aba Imagem, pronto pra gerar no Ideogram
+function irParaAbaImagem() {
+  const edPanel = document.getElementById('campEditorPanel');
+  if (edPanel) edPanel.style.display = 'block';
+  try { mostrarEdAba('img'); } catch (e) { addLog('warn', '[Campanha] aba imagem: ' + e.message); }
+  rolarAteEditor();
+  toast('Configure formato e estilo, depois clique em "Gerar no Ideogram"', 'success');
+}
 
 // FIX v1.4.4: preenche o formulário e o editor com os dados de uma campanha
 function restaurarFormularioCampanha(camp) {
@@ -7286,18 +7322,27 @@ async function criarCampanhaCompleta() {
     try {
       const headline = data.copy?.versoes?.[0]?.headline || '';
       res.innerHTML = '<div style="background:var(--g2);border:1px solid rgba(34,211,163,.2);border-radius:8px;padding:13px;margin-bottom:8px;">'
-        + '<div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:6px;">CAMPANHA CRIADA E SALVA NO BANCO</div>'
+        + '<div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:6px;">✓ CAMPANHA CRIADA E SALVA NO BANCO</div>'
         + '<div style="font-size:13px;font-weight:600;margin-bottom:3px;">' + nome + '</div>'
         + '<div style="font-size:11px;color:var(--t2);">' + canal + ' · ' + obj + '</div>'
         + (headline ? '<div style="font-size:12px;font-weight:600;margin-top:8px;color:var(--blue);">' + headline + '</div>' : '')
-        + '</div><div style="font-size:11px;color:var(--t2);text-align:center;padding:8px;">Use as abas abaixo para editar narrativa, copy, imagem e ver o preview.</div>';
+        + '</div>'
+        // FIX v1.5.1: próximos passos explícitos com botões de ação
+        + '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">'
+        + '<button class="btn btn-p" style="flex:1;min-width:160px;font-size:11px;padding:9px;" onclick="irParaAbaImagem()">🎨 Gerar Imagens da Campanha</button>'
+        + '<button class="btn btn-gn" style="flex:1;min-width:140px;font-size:11px;padding:9px;" onclick="rolarAteEditor()">📝 Revisar no Editor</button>'
+        + '<button class="btn" style="flex:1;min-width:130px;font-size:11px;padding:9px;" onclick="nav(\'s2kanban\')">■ Ver no Kanban</button>'
+        + '</div>';
     } catch (resErr) {
       addLog('err', '[S2-Campanha] Falha ao renderizar resumo: ' + resErr.message);
     }
 
     tag.textContent = 'Criada'; tag.className = 'tag live';
-    toast('Campanha criada e salva no banco!', 'success');
+    toast('✓ Campanha "' + nome + '" criada e salva! Role para revisar ou gere as imagens.', 'success');
     addLog('ok', '[S2-Campanha] Concluída: ' + nome);
+
+    // FIX v1.5.1: rolar automaticamente até o editor para o usuário VER o resultado
+    setTimeout(rolarAteEditor, 400);
 
   } catch(e) {
     // FIX v1.4.5: mostrar erro COMPLETO na tela + no log com stack
@@ -11973,13 +12018,25 @@ async function enriquecerLeads() {
 
 // ── Helper de chamadas ─────────────────────────────────────────────────────
 async function finApi(action, params = {}) {
-  const r = await fetch('/api/financeiro', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, params }),
-  });
-  const d = await r.json();
-  if (!d.success) throw new Error(d.error || 'Erro na API financeiro');
+  let r;
+  try {
+    r = await fetch('/api/financeiro', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, params }),
+    });
+  } catch (netErr) {
+    throw new Error('Rede: não conectou em /api/financeiro — ' + netErr.message);
+  }
+  // FIX v1.5.2: diagnóstico claro por status HTTP
+  if (r.status === 404) {
+    throw new Error('ENDPOINT AUSENTE: /api/financeiro retornou 404. O arquivo api/financeiro.js não está no deploy — confirme que ele existe no repositório e faça novo deploy.');
+  }
+  const raw = await r.text();
+  let d;
+  try { d = JSON.parse(raw); }
+  catch { throw new Error('Resposta não-JSON de /api/financeiro (HTTP ' + r.status + '): ' + raw.substring(0, 150)); }
+  if (!d.success) throw new Error(d.error || ('HTTP ' + r.status + ' na API financeiro'));
   return d;
 }
 
@@ -12032,6 +12089,25 @@ async function syncQuickBooks() {
   } catch (e) {
     if (typeof addLog === 'function') addLog('err', '[S3] ' + e.message);
     if (typeof toast === 'function') toast('Erro sync QB: ' + e.message, 'error');
+    // FIX v1.5.2: erro fica visível no painel, com hint de correção
+    const lanc = document.getElementById('f_lancamentos');
+    if (lanc) {
+      lanc.innerHTML = `
+        <div style="background:rgba(239,68,68,.06);border:1px solid var(--red);border-radius:7px;padding:14px;font-size:11px;">
+          <div style="color:var(--red);font-weight:700;margin-bottom:6px;">✗ Erro ao sincronizar QuickBooks</div>
+          <div style="font-family:var(--M);font-size:10px;color:var(--t1);margin-bottom:10px;word-break:break-word;">${e.message}</div>
+          <div style="font-size:10px;color:var(--t2);line-height:1.8;">
+            Causas comuns:<br>
+            • <strong>404</strong> → arquivo api/financeiro.js ausente no deploy<br>
+            • <strong>QB OAuth</strong> → QB_REFRESH_TOKEN expirado (gere novo no OAuth Playground)<br>
+            • <strong>QB 403</strong> → QB_REALM_ID errado ou app sem permissão Accounting<br>
+            • <strong>sandbox</strong> → confira QB_SANDBOX: "true" p/ Development, remova p/ Production
+          </div>
+          <button class="btn btn-gn" style="margin-top:10px;font-size:10px;" onclick="syncQuickBooks()">↻ Tentar novamente</button>
+        </div>`;
+    }
+    const tag = document.getElementById('qbTag');
+    if (tag) { tag.className = 'tag hot'; tag.textContent = 'Erro'; }
   }
 
   if (btn) { btn.disabled = false; btn.textContent = '⟳ Sync QuickBooks'; }
@@ -13465,6 +13541,7 @@ async function enviarTermo(id) {
 // ---------- Persistência das publicações (Neon + localStorage fallback) ----
 let _publicacoes = [];   // { id, campanhaId, pecaId, rede, texto, data, metodo:'manual'|'metricool', metricool_id, metricas:{imp,cli,cur,com,sha,leads} }
 let _mcConfigurado = null; // cache status metricool
+let _leadsHubspot = {};    // v1.5.4: { camp_xxx: { total, por_rede } } — atribuição automática via UTM
 
 async function carregarPublicacoes() {
   try {
@@ -13497,12 +13574,25 @@ async function verificarMetricool() {
       if (_mcConfigurado) { tag.textContent = 'Metricool: conectado' + (d.marca ? ' · ' + d.marca.nome : ''); tag.className = 'tag live'; }
       else { tag.textContent = 'Metricool: não configurado (modo manual)'; tag.className = 'tag off'; tag.title = d.instrucoes || ''; }
     }
+    // FIX v1.5.2: status também na sidebar principal
+    const dotMC = document.getElementById('dotMC');
+    const statMC = document.getElementById('statMC');
+    if (dotMC && statMC) {
+      if (_mcConfigurado) { dotMC.className = 'dot on'; statMC.textContent = 'Metricool · Conectado'; }
+      else { dotMC.className = 'dot off'; statMC.textContent = 'Metricool · Configurar'; }
+    }
     return _mcConfigurado;
   } catch (e) {
     _mcConfigurado = false;
+    const dotMC = document.getElementById('dotMC');
+    const statMC = document.getElementById('statMC');
+    if (dotMC && statMC) { dotMC.className = 'dot off'; statMC.textContent = 'Metricool · Offline'; }
     return false;
   }
 }
+
+// FIX v1.5.2: checar Metricool ao carregar a página (async, não bloqueia)
+setTimeout(() => { try { verificarMetricool(); } catch(_) {} }, 2500);
 
 // ---------- Publicar (chamado do Kanban) -----------------------------------
 // Abre modal de escolha: Manual ou Metricool
@@ -13527,6 +13617,13 @@ async function publicarPeca(pecaId) {
 
   const texto = (p.copy || p.narrativa || p.titulo || '').trim();
 
+  // FIX v1.5.3: link de destino da campanha (campo link_destino, se cadastrado)
+  let linkCampanha = '';
+  if (p.campanhaId) {
+    const campL = (_todasCampanhas || []).find(c => c.id === p.campanhaId) || (campAtiva?.id === p.campanhaId ? campAtiva : null);
+    linkCampanha = campL?.link_destino || '';
+  }
+
   // Montar modal dinâmico de publicação
   let modal = document.getElementById('pubModal');
   if (modal) modal.remove();
@@ -13547,6 +13644,11 @@ async function publicarPeca(pecaId) {
         </div>
         <div style="font-size:10px;color:var(--t2);margin-bottom:4px;">TEXTO (editável)</div>
         <textarea id="pubTexto" class="fsel" style="width:100%;height:120px;font-size:11px;">${texto.replace(/</g,'&lt;')}</textarea>
+        <div style="font-size:10px;color:var(--t2);margin:10px 0 4px;">LINK DE DESTINO (landing page, site, agenda — opcional)</div>
+        <input type="url" id="pubLink" class="fsel" style="width:100%;" placeholder="https://sua-landing-page.com.br/oferta" value="${linkCampanha}"/>
+        <label style="font-size:10px;color:var(--t2);display:flex;gap:5px;align-items:center;margin-top:5px;cursor:pointer;">
+          <input type="checkbox" id="pubUtm" checked/> Adicionar UTMs de rastreio (utm_source=rede, utm_campaign=campanha)
+        </label>
         <div style="font-size:10px;color:var(--t2);margin:10px 0 4px;">AGENDAR PARA (vazio = publicar agora)</div>
         <input type="datetime-local" id="pubQuando" class="fsel" style="width:100%;"/>
         <div style="display:flex;gap:8px;margin-top:14px;">
@@ -13570,14 +13672,33 @@ async function executarPublicacao(pecaId, metodo) {
   if (!texto) { toast('Texto vazio', 'error'); return; }
   if (!redes.length) { toast('Escolha ao menos uma rede', 'error'); return; }
 
+  // FIX v1.5.3: link de destino com UTMs por rede
+  const linkBase = document.getElementById('pubLink')?.value?.trim() || '';
+  const usarUtm = document.getElementById('pubUtm')?.checked !== false;
+  const campSlug = (p.campanhaId || p.titulo || 'campanha').toString().replace(/[^a-z0-9_-]/gi,'-').toLowerCase().substring(0,40);
+  const montarLink = (rede) => {
+    if (!linkBase) return '';
+    if (!usarUtm) return linkBase;
+    const sep = linkBase.includes('?') ? '&' : '?';
+    return linkBase + sep + 'utm_source=' + rede + '&utm_medium=social&utm_campaign=' + campSlug;
+  };
+  // salvar link na campanha para próximas publicações
+  if (linkBase && p.campanhaId) {
+    const campSv = (_todasCampanhas || []).find(c => c.id === p.campanhaId) || (campAtiva?.id === p.campanhaId ? campAtiva : null);
+    if (campSv && campSv.link_destino !== linkBase) { campSv.link_destino = linkBase; try { salvarCampanhaLocal(campSv); } catch(_){} }
+  }
+
   if (metodo === 'metricool') {
     try {
       addLog('info', '[Pub] Enviando ao Metricool: ' + redes.join(','));
+      // Anexa o link (com UTM da primeira rede) ao fim do texto — Metricool publica texto como está
+      const linkMc = montarLink(redes[0]);
+      const textoMc = linkMc ? (texto + '\n\n' + linkMc) : texto;
       const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ action:'publicar', payload: { texto, redes, data_hora: quando ? new Date(quando).toISOString() : null } }) });
+        body: JSON.stringify({ action:'publicar', payload: { texto: textoMc, redes, data_hora: quando ? new Date(quando).toISOString() : null } }) });
       const d = await r.json();
       if (!d.success) throw new Error(d.error || 'falha metricool');
-      redes.forEach(rede => registrarPublicacao(p, rede, texto, 'metricool', d.metricool_id));
+      redes.forEach(rede => registrarPublicacao(p, rede, textoMc, 'metricool', d.metricool_id, montarLink(rede)));
       p.status = 'Publicado';
       renderKanban(); salvarKanbanNoBanco(); salvarPublicacoes();
       toast('Publicado via Metricool! (' + redes.join(', ') + ')', 'success');
@@ -13591,14 +13712,19 @@ async function executarPublicacao(pecaId, metodo) {
     // MANUAL: copia texto + abre compositor por rede
     try { await navigator.clipboard.writeText(texto); toast('Texto copiado! Cole em cada rede.', 'success'); }
     catch { /* clipboard pode falhar sem https/foco */ }
-    const urls = {
-      linkedin: 'https://www.linkedin.com/feed/?shareActive=true&text=' + encodeURIComponent(texto.substring(0, 2800)),
-      facebook: 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent('https://atlantyx.com.br') + '&quote=' + encodeURIComponent(texto.substring(0, 900)),
-      instagram: 'https://www.instagram.com/', // IG não tem compositor web c/ texto — usuário cola
-    };
     redes.forEach((rede, i) => {
+      const lk = montarLink(rede);
+      const textoRede = lk ? (texto + '\n\n' + lk) : texto;
+      const urls = {
+        linkedin: 'https://www.linkedin.com/feed/?shareActive=true&text=' + encodeURIComponent(textoRede.substring(0, 2800)),
+        // FB sharer compartilha a URL de destino real (não mais placeholder); sem link, abre o composer do FB
+        facebook: lk
+          ? 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(lk) + '&quote=' + encodeURIComponent(texto.substring(0, 900))
+          : 'https://www.facebook.com/',
+        instagram: 'https://www.instagram.com/', // IG não tem compositor web c/ texto — usuário cola
+      };
       setTimeout(() => window.open(urls[rede] || 'about:blank', '_blank'), i * 400);
-      registrarPublicacao(p, rede, texto, 'manual', null);
+      registrarPublicacao(p, rede, textoRede, 'manual', null, lk);
     });
     p.status = 'Publicado';
     renderKanban(); salvarKanbanNoBanco(); salvarPublicacoes();
@@ -13608,13 +13734,14 @@ async function executarPublicacao(pecaId, metodo) {
   if (modal) modal.remove();
 }
 
-function registrarPublicacao(peca, rede, texto, metodo, metricoolId) {
+function registrarPublicacao(peca, rede, texto, metodo, metricoolId, linkDestino) {
   _publicacoes.push({
     id: 'pub_' + Date.now() + '_' + Math.random().toString(36).substr(2,4),
     campanhaId: peca.campanhaId || null,
     pecaId: peca.id,
     titulo: peca.titulo,
     rede, texto: texto.substring(0, 500), metodo,
+    link_destino: linkDestino || '',
     metricool_id: metricoolId || null,
     data: new Date().toISOString(),
     metricas: { imp: 0, cli: 0, cur: 0, com: 0, sha: 0, leads: 0 },
@@ -13633,6 +13760,20 @@ async function carregarDesempenho() {
     sel.innerHTML = '<option value="">Todas as campanhas</option>' +
       (_todasCampanhas || []).map(c => `<option value="${c.id}" ${c.id===atual?'selected':''}>${(c.nome||c.id).substring(0,40)}</option>`).join('');
   }
+  // v1.5.4: leads automáticos do HubSpot via UTM (não bloqueia o resto se falhar)
+  try {
+    const dias = parseInt(document.getElementById('despPeriodoSel')?.value || '30');
+    const r = await fetch('/api/hubspot', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'leads_por_campanha', properties: { dias: Math.max(dias, 90) } }) });
+    const d = await r.json();
+    if (d.success && d.leads_por_campanha) {
+      _leadsHubspot = d.leads_por_campanha;
+      addLog('ok', '[Desemp] HubSpot: ' + Object.keys(_leadsHubspot).length + ' campanha(s) com leads via UTM (' + d.contatos_analisados + ' contatos analisados)');
+    } else if (d.error) {
+      addLog('warn', '[Desemp] HubSpot leads: ' + d.error);
+    }
+  } catch (e) { addLog('warn', '[Desemp] HubSpot leads: ' + e.message); }
+
   // Se Metricool configurado, puxar métricas de posts e mesclar
   if (_mcConfigurado) {
     const dias = parseInt(document.getElementById('despPeriodoSel')?.value || '30');
@@ -13675,19 +13816,33 @@ function renderDesempenho() {
   }), { imp:0, cli:0, cur:0, com:0, sha:0, leads:0 });
 
   const eng = tot.cur + tot.com + tot.sha;
+
+  // v1.5.4: leads automáticos HubSpot via UTM — o utm_campaign usa o slug do campanhaId
+  const slugDe = id => (id || '').toString().replace(/[^a-z0-9_-]/gi,'-').toLowerCase().substring(0,40);
+  let leadsAuto = 0;
+  if (campId) {
+    const slug = slugDe(campId);
+    leadsAuto = _leadsHubspot[slug]?.total || _leadsHubspot[campId]?.total || 0;
+  } else {
+    // todas: soma apenas campanhas conhecidas (slug bate com alguma campanha do sistema)
+    const slugsConhecidos = new Set((_todasCampanhas||[]).map(c => slugDe(c.id)));
+    leadsAuto = Object.entries(_leadsHubspot).reduce((a,[k,v]) => a + (slugsConhecidos.has(k) ? (v.total||0) : 0), 0);
+  }
+  const leadsTotal = Math.max(leadsAuto, tot.leads); // auto tem prioridade; manual serve de fallback
+
   const setT = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
   setT('despPub', pubs.length);
   setT('despImp', tot.imp.toLocaleString('pt-BR'));
   setT('despCli', tot.cli.toLocaleString('pt-BR'));
   setT('despEng', eng.toLocaleString('pt-BR'));
-  setT('despLeads', tot.leads);
+  setT('despLeads', leadsTotal + (leadsAuto > 0 ? ' 🔗' : ''));
 
   // Custo por lead — pega orçamento da campanha
   let cpl = '—';
-  if (campId && tot.leads > 0) {
+  if (campId && leadsTotal > 0) {
     const camp = (_todasCampanhas||[]).find(c => c.id === campId);
     const orcNum = parseFloat(String(camp?.orc||'').replace(/[^0-9.,]/g,'').replace('.','').replace(',','.'));
-    if (orcNum > 0) cpl = 'R$ ' + (orcNum / tot.leads).toFixed(0);
+    if (orcNum > 0) cpl = 'R$ ' + (orcNum / leadsTotal).toFixed(0);
   }
   setT('despCPL', cpl);
 
@@ -13699,7 +13854,7 @@ function renderDesempenho() {
       { label: 'Impressões', v: tot.imp, cor: 'var(--blue)' },
       { label: 'Cliques', v: tot.cli, cor: 'var(--gold)' },
       { label: 'Engajamento', v: eng, cor: 'var(--green)' },
-      { label: 'Leads', v: tot.leads, cor: 'var(--s7c)' },
+      { label: 'Leads', v: leadsTotal, cor: 'var(--s7c)' },
     ];
     const max = Math.max(...etapas.map(e => e.v), 1);
     funil.innerHTML = etapas.map(e =>
@@ -13723,6 +13878,15 @@ function renderDesempenho() {
       porRede[p.rede].cli += p.metricas?.cli||0;
       porRede[p.rede].eng += (p.metricas?.cur||0)+(p.metricas?.com||0)+(p.metricas?.sha||0);
     });
+    // v1.5.4: leads por rede do HubSpot (se campanha selecionada)
+    if (campId) {
+      const slug = slugDe(campId);
+      const porRedeHS = (_leadsHubspot[slug] || _leadsHubspot[campId] || {}).por_rede || {};
+      Object.entries(porRedeHS).forEach(([rede, n]) => {
+        if (porRede[rede]) porRede[rede].leadsAuto = n;
+        else porRede[rede] = { pubs:0, imp:0, cli:0, eng:0, leadsAuto:n };
+      });
+    }
     const cores = { linkedin:'#0a66c2', instagram:'#e1306c', facebook:'#1877f2' };
     redesEl.innerHTML = Object.keys(porRede).length
       ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">' +
@@ -13731,7 +13895,7 @@ function renderDesempenho() {
             <div style="font-size:12px;font-weight:700;text-transform:capitalize;color:${cores[rede]||'var(--t1)'};">${rede}</div>
             <div style="font-size:10px;color:var(--t2);margin-top:5px;">${m.pubs} publicações</div>
             <div style="font-size:10px;color:var(--t2);">${m.imp.toLocaleString('pt-BR')} impressões · ${m.cli} cliques</div>
-            <div style="font-size:10px;color:var(--t2);">${m.eng} interações</div>
+            <div style="font-size:10px;color:var(--t2);">${m.eng} interações${m.leadsAuto ? ' · <span style=\"color:var(--green);font-weight:700;\">' + m.leadsAuto + ' leads 🔗</span>' : ''}</div>
           </div>`).join('') + '</div>'
       : '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Sem publicações no período.</div>';
   }
@@ -13744,7 +13908,7 @@ function renderDesempenho() {
         `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--bd);">
           <div style="flex:1;min-width:0;">
             <div style="font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.titulo || '(sem título)'}</div>
-            <div style="font-size:9px;color:var(--t3);">${new Date(p.data).toLocaleString('pt-BR')} · ${p.rede} · ${p.metodo === 'metricool' ? '🚀 auto' : '✋ manual'}</div>
+            <div style="font-size:9px;color:var(--t3);">${new Date(p.data).toLocaleString('pt-BR')} · ${p.rede} · ${p.metodo === 'metricool' ? '🚀 auto' : '✋ manual'}${p.link_destino ? ' · <a href="'+p.link_destino+'" target="_blank" style="color:var(--blue);">link ↗</a>' : ''}</div>
           </div>
           <div style="font-size:9px;color:var(--t2);white-space:nowrap;">${(p.metricas?.imp||0)} imp · ${(p.metricas?.cli||0)} cli · ${(p.metricas?.leads||0)} leads</div>
           <button class="btn" style="font-size:9px;padding:3px 8px;" onclick="abrirRegistroManual('${p.id}')">✎ métricas</button>
@@ -13789,7 +13953,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.5-PUBLICACAO] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.5.4] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -13805,7 +13969,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.5-PUBLICACAO';
+window.__ATX_BUILD_ID__ = 'ATX-v1.5.4';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
