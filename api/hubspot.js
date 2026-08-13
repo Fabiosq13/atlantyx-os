@@ -165,6 +165,31 @@ export default async function handler(req, res) {
       });
     }
 
+    if (action === 'listar_landing_pages') {
+      // v1.5.5: lista landing pages do HubSpot CMS para usar como link de destino
+      // Requer escopo "content" no Private App (se 403, adicionar o escopo e gerar novo token)
+      const r = await fetch(BASE + '/cms/v3/pages/landing-pages?limit=20&sort=-updatedAt', { headers: H });
+      const d = await r.json();
+      if (!r.ok) {
+        const precisaEscopo = r.status === 403;
+        return res.status(200).json({
+          success: false, status: r.status,
+          error: d.message || 'erro ao listar landing pages',
+          hint: precisaEscopo
+            ? 'O Private App não tem o escopo "content". HubSpot → Settings → Integrations → Private Apps → seu app → Scopes → marque "content" → salve → copie o NOVO token → atualize HUBSPOT_TOKEN no Vercel → Redeploy.'
+            : 'Verifique HUBSPOT_TOKEN.',
+        });
+      }
+      const paginas = (d.results || []).map(p => ({
+        id: p.id,
+        nome: p.name,
+        url: p.url || (p.domain && p.slug ? 'https://' + p.domain + '/' + p.slug : ''),
+        publicada: p.currentState === 'PUBLISHED' || p.state === 'PUBLISHED',
+        atualizado_em: p.updatedAt,
+      }));
+      return res.status(200).json({ success: true, total: paginas.length, paginas });
+    }
+
     return res.status(400).json({ success: false, error: 'Acao invalida: ' + action });
   } catch(e) {
     return res.status(500).json({ success: false, error: e.message });
