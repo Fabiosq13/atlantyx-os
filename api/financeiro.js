@@ -55,6 +55,7 @@ export default async function handler(req, res) {
       qb_contas_pagar:       () => qbContasPagar(params),
       qb_orcamento:          () => qbOrcamento(params),
       qb_saldo_contas:       () => qbSaldoContas(params),
+      qb_status:             () => qbStatus(params),
 
       // ── Painel consolidado (frontend chama este) ─────────────────────────
       painel_resumo:         () => painelResumo(params),
@@ -307,6 +308,27 @@ async function ensureTabelas(sql) {
 // ═══════════════════════════════════════════════════════════════════════════
 // QuickBooks — token + fetch (reuso do padrão de s1-data.js)
 // ═══════════════════════════════════════════════════════════════════════════
+
+// v1.5.6: status leve para a sidebar — checa envvars e valida o token
+async function qbStatus() {
+  const faltando = [
+    !process.env.QB_CLIENT_ID && 'QB_CLIENT_ID',
+    !process.env.QB_CLIENT_SECRET && 'QB_CLIENT_SECRET',
+    !process.env.QB_REFRESH_TOKEN && 'QB_REFRESH_TOKEN',
+    !process.env.QB_REALM_ID && 'QB_REALM_ID',
+  ].filter(Boolean);
+
+  if (faltando.length) {
+    return { configurado: false, conectado: false, faltando, sandbox: process.env.QB_SANDBOX === 'true' };
+  }
+  // Testa o refresh do token (chamada leve à Intuit, ~300ms)
+  try {
+    await qbToken();
+    return { configurado: true, conectado: true, sandbox: process.env.QB_SANDBOX === 'true' };
+  } catch (e) {
+    return { configurado: true, conectado: false, erro: e.message, sandbox: process.env.QB_SANDBOX === 'true' };
+  }
+}
 
 async function qbToken() {
   const refreshToken = process.env.QB_REFRESH_TOKEN;
