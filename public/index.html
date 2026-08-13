@@ -381,6 +381,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     </div>
     <div class="sf"><span class="dot on"></span>Claude API · Ativo</div>
     <div class="sf"><span class="dot" id="dotHS"></span><span id="statHS">HubSpot · Verificando</span></div>
+    <div class="sf"><span class="dot off" id="dotQB"></span><span id="statQB">QuickBooks · Verificando</span></div>
     <div class="sf"><span class="dot off" id="dotMC"></span><span id="statMC">Metricool · Verificando</span></div>
     <div class="sf"><span class="dot off" id="dotWA"></span><span id="statWA">Z-API · Configurar</span></div>
     <div class="sf"><span class="dot" id="dotDB"></span><span id="statDB">DB · Conectando...</span></div>
@@ -13602,6 +13603,36 @@ async function verificarMetricool() {
 // FIX v1.5.2: checar Metricool ao carregar a página (async, não bloqueia)
 setTimeout(() => { try { verificarMetricool(); } catch(_) {} }, 2500);
 
+// v1.5.6: status do QuickBooks na sidebar (checa envvars + valida token na Intuit)
+async function verificarQuickBooks() {
+  const dot = document.getElementById('dotQB');
+  const stat = document.getElementById('statQB');
+  if (!dot || !stat) return;
+  try {
+    const d = await finApi('qb_status');
+    if (!d.configurado) {
+      dot.className = 'dot off';
+      stat.textContent = 'QuickBooks · Configurar';
+      stat.title = 'Faltando: ' + (d.faltando || []).join(', ');
+    } else if (d.conectado) {
+      dot.className = 'dot on';
+      stat.textContent = 'QuickBooks · Conectado' + (d.sandbox ? ' (sandbox)' : '');
+      stat.title = '';
+    } else {
+      dot.className = 'dot off';
+      dot.style.background = 'var(--red)';
+      stat.textContent = 'QuickBooks · Erro token';
+      stat.title = d.erro || 'Refresh token inválido — gere novo no OAuth Playground';
+      addLog('warn', '[QB] ' + (d.erro || 'token inválido'));
+    }
+  } catch (e) {
+    dot.className = 'dot off';
+    stat.textContent = 'QuickBooks · Offline';
+    stat.title = e.message;
+  }
+}
+setTimeout(() => { try { verificarQuickBooks(); } catch(_) {} }, 3200);
+
 // ---------- Publicar (chamado do Kanban) -----------------------------------
 // Abre modal de escolha: Manual ou Metricool
 async function publicarPeca(pecaId) {
@@ -14019,7 +14050,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.5.5] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.5.6] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -14035,7 +14066,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.5.5';
+window.__ATX_BUILD_ID__ = 'ATX-v1.5.6';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
