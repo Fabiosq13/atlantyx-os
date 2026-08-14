@@ -3,6 +3,11 @@
     { "source": "/api/:path*", "destination": "/api/:path*" },
     { "source": "/(.*)", "destination": "/public/index.html" }
   ],
+  "functions": {
+    "api/s2-creative.js": { "maxDuration": 60 },
+    "api/financeiro.js": { "maxDuration": 60 },
+    "api/email-intel.js": { "maxDuration": 60 }
+  },
   "crons": [
     { "path": "/api/rfp-monitor", "schedule": "0 */6 * * *" },
     { "path": "/api/followup-cron", "schedule": "0 * * * *" },
