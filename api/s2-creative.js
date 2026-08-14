@@ -177,8 +177,13 @@ Retorne:
   "notas_para_motion": "briefing se virar video"
 }`;
 
-  const r = await claude(system, user, 2500);
+  const r = await claude(system, user, 3000);
   const copy = parseJSON(r);
+  // FIX v1.5.7: se o JSON veio truncado/inválido, garantir versoes utilizáveis (nunca mais "--")
+  if (copy.raw && !copy.versoes) {
+    copy.versoes = [{ headline: '', corpo: copy.raw.substring(0, 1500), cta: '' }];
+    console.warn('[S2-Copywriter] JSON truncado — usando raw como corpo');
+  }
   console.log(`[S2-Copywriter] ${copy.versoes?.length || 0} versões criadas para ${canal}`);
   return { copy, agente: 'S2-Copywriter' };
 }
@@ -686,7 +691,7 @@ Retorne:
 }
 
 // ── CAMPANHA COMPLETA — todos os agentes em sequência ─────────────────────────
-async function campanhaCompleta({ campanha, objetivo, canal, orcamento, publico, contexto }) {
+async function campanhaCompleta({ campanha, objetivo, canal, orcamento, publico, contexto, redes = [] }) {
   const etapas = [];
 
   // 1. Storyteller
@@ -705,12 +710,32 @@ async function campanhaCompleta({ campanha, objetivo, canal, orcamento, publico,
   const { post } = await agSocialPost({ copy, design, rede: canal });
   etapas.push({ agente: 'Social Media', status: 'AGUARDANDO_APROVAÇÃO', output: 'Post pronto para aprovação no Kanban' });
 
-  console.log(`[S2-Campanha] Pipeline completo criado: ${campanha}`);
+  // 5. v1.5.7: adaptação da copy POR REDE ativa (um call único, não quebra o pipeline se falhar)
+  let copy_por_rede = {};
+  const redesValidas = (redes || []).filter(r => ['linkedin','instagram','facebook','whatsapp','email'].includes(r));
+  if (redesValidas.length) {
+    try {
+      const base = copy.versoes?.[0] || {};
+      const baseTexto = (base.headline ? base.headline + '\n\n' : '') + (base.corpo || copy.raw || '');
+      const sys = 'Você é o Copywriter da Atlantyx. Adapte a copy abaixo para cada rede, respeitando formato e tom nativos de cada uma. Responda APENAS JSON válido, sem markdown.';
+      const usr = `COPY BASE:\n${baseTexto.substring(0, 1800)}\n\nNARRATIVA: ${narrativa.tema_central || ''}\n\nGere JSON exatamente neste formato para as redes [${redesValidas.join(', ')}]:\n{${redesValidas.map(rd => rd === 'email' ? '"email": {"assunto": "...", "texto": "..."}' : `"${rd}": {"texto": "..."}`).join(', ')}}\n\nRegras por rede: linkedin = profissional, 1200-2200 chars, 3-5 hashtags no fim; instagram = leve, emojis moderados, até 1500 chars, hashtags; facebook = conversacional, até 900 chars; whatsapp = direto e pessoal, até 500 chars, sem hashtag; email = assunto curto (max 60 chars) + texto 400-800 chars.`;
+      const rr = await claude(sys, usr, 3000);
+      copy_por_rede = parseJSON(rr);
+      if (copy_por_rede.raw) copy_por_rede = {}; // truncou — segue sem, frontend usa copy base
+      etapas.push({ agente: 'Copywriter (por rede)', status: 'CONCLUÍDO', output: Object.keys(copy_por_rede).join(', ') || 'fallback copy base' });
+    } catch (e) {
+      console.warn('[S2-Campanha] copy_por_rede falhou (segue com copy base):', e.message);
+      etapas.push({ agente: 'Copywriter (por rede)', status: 'FALHOU (usa copy base)', output: e.message });
+    }
+  }
+
+  console.log(`[S2-Campanha] Pipeline completo criado: ${campanha} (redes: ${redesValidas.join(',') || 'nenhuma'})`);
   return {
     campanha: { nome: campanha, objetivo, canal, orcamento },
     etapas,
     narrativa,
     copy,
+    copy_por_rede,
     design,
     post,
     status: 'AGUARDANDO_APROVACAO_KANBAN',
