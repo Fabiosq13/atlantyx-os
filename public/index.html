@@ -14036,6 +14036,12 @@ async function publicarPeca(pecaId) {
         <label style="font-size:10px;color:var(--t2);display:flex;gap:5px;align-items:center;margin-top:5px;cursor:pointer;">
           <input type="checkbox" id="pubUtm" checked/> Adicionar UTMs de rastreio (utm_source=rede, utm_campaign=campanha)
         </label>
+        <div style="font-size:10px;color:var(--t2);margin:8px 0 4px;">TEXTO DO CTA (aparece antes do link — posts não suportam "clique aqui" clicável)</div>
+        <input type="text" id="pubCta" class="fsel" style="width:100%;" value="👉 Agende uma conversa:"/>
+        <label style="font-size:10px;color:var(--t2);display:flex;gap:5px;align-items:center;margin-top:5px;cursor:pointer;">
+          <input type="checkbox" id="pubEncurtar" checked/> Encurtar link via Metricool (recomendado — URL longa vira link curto rastreável)
+        </label>
+        <div style="font-size:9px;color:var(--t3);margin-top:3px;">Instagram: caption não aceita link clicável — o post vai com "🔗 Link na bio" (mantenha o link da campanha na bio do perfil).</div>
         <div style="font-size:10px;color:var(--t2);margin:10px 0 4px;">AGENDAR PARA (vazio = publicar agora)</div>
         <input type="datetime-local" id="pubQuando" class="fsel" style="width:100%;"/>
         <div style="display:flex;gap:8px;margin-top:14px;">
@@ -14061,6 +14067,13 @@ async function executarPublicacao(pecaId, metodo) {
 
   // FIX v1.5.3: link de destino com UTMs por rede
   const linkBase = document.getElementById('pubLink')?.value?.trim() || '';
+  const ctaTexto = document.getElementById('pubCta')?.value?.trim() || '👉 Saiba mais:';
+  // v1.6.9: bloco de CTA por rede — IG não linkifica caption, vai "Link na bio"
+  const montarBlocoCta = (rede, link) => {
+    if (!link) return '';
+    if (rede === 'instagram') return '\n\n' + ctaTexto + ' 🔗 Link na bio';
+    return '\n\n' + ctaTexto + '\n' + link;
+  };
   const usarUtm = document.getElementById('pubUtm')?.checked !== false;
   const campSlug = (p.campanhaId || p.titulo || 'campanha').toString().replace(/[^a-z0-9_-]/gi,'-').toLowerCase().substring(0,40);
   const montarLink = (rede) => {
@@ -14080,13 +14093,16 @@ async function executarPublicacao(pecaId, metodo) {
       addLog('info', '[Pub] Enviando ao Metricool: ' + redes.join(','));
       // Anexa o link (com UTM da primeira rede) ao fim do texto — Metricool publica texto como está
       const linkMc = montarLink(redes[0]);
-      const textoMc = linkMc ? (texto + '\n\n' + linkMc) : texto;
+      const soInstagram = redes.length === 1 && redes[0] === 'instagram';
+      const textoMc = linkMc ? (texto + montarBlocoCta(soInstagram ? 'instagram' : redes.find(r => r !== 'instagram') || redes[0], linkMc)) : texto;
+      if (redes.includes('instagram') && linkMc) toast('Instagram: mantenha o link da campanha na BIO do perfil (caption não clica)', 'success');
+      const encurtar = document.getElementById('pubEncurtar')?.checked !== false;
       const imgPub = document.getElementById('pubImagem')?.value?.trim() || null;
       if (!imgPub && redes.includes('instagram')) {
         if (!confirm('Instagram está marcado mas NÃO há imagem — o IG vai recusar.\n\nPublicar mesmo assim (nas outras redes)?')) return;
       }
       const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ action:'publicar', payload: { texto: textoMc, redes, data_hora: quando ? new Date(quando).toISOString() : null, imagem_url: imgPub } }) });
+        body: JSON.stringify({ action:'publicar', payload: { texto: textoMc, redes, data_hora: quando ? new Date(quando).toISOString() : null, imagem_url: imgPub, encurtar_link: encurtar } }) });
       const d = await r.json();
       if (!d.success) throw new Error(d.error || 'falha metricool');
       redes.forEach(rede => registrarPublicacao(p, rede, textoMc, 'metricool', d.metricool_id, montarLink(rede)));
@@ -14109,7 +14125,7 @@ async function executarPublicacao(pecaId, metodo) {
     redes.forEach((rede, i) => {
       const lk = montarLink(rede);
       const baseRede = _cprCamp[rede]?.texto || texto; // v1.5.7: usa a versão da rede se existir
-      const textoRede = lk ? (baseRede + '\n\n' + lk) : baseRede;
+      const textoRede = baseRede + montarBlocoCta(rede, lk); // v1.6.9: CTA antes do link; IG = Link na bio
       const urls = {
         linkedin: 'https://www.linkedin.com/feed/?shareActive=true&text=' + encodeURIComponent(textoRede.substring(0, 2800)),
         // FB sharer compartilha a URL de destino real (não mais placeholder); sem link, abre o composer do FB
@@ -14407,7 +14423,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.6.8] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.6.9] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -14423,7 +14439,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.6.8';
+window.__ATX_BUILD_ID__ = 'ATX-v1.6.9';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
