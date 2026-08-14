@@ -115,28 +115,20 @@ Canal: ${canal || 'LinkedIn + Instagram'}
 Público: ${publico || BRAND.icp}
 ${contexto ? 'INSTRUCAO PRIORITARIA - siga exatamente: ' + contexto + '. Esta instrucao deve guiar TODA a narrativa.' : 'Contexto: prospeccao ativa B2B no ICP da Atlantyx.'}
 
-Retorne:
+SEJA CONCISO: cada campo em NO MÁXIMO 1-2 frases. Retorne:
 {
-  "tema_central": "o fio condutor emocional e racional da campanha",
-  "problema_escolhido": "qual dor específica esta campanha toca",
-  "angulo_narrativo": "o ponto de vista único — como contamos a história",
-  "jornada_do_heroi": "o decisor é o herói, a Atlantyx é o guia. Descreva o arco: Situação → Problema → Transformação → Resultado",
-  "gancho_principal": "a frase de abertura que para o scroll",
-  "promessa_central": "o que o decisor vai ganhar — concreto e mensurável",
-  "prova_social": "como validamos a promessa (dado, case, resultado)",
-  "call_to_action": "o próximo passo que pedimos",
-  "tom_para_esta_campanha": "variação do tom da Atlantyx para este objetivo específico",
-  "palavras_proibidas": ["clichês e termos que não usar nesta campanha"],
-  "referencias_visuais": "descrição do mood visual que complementa esta narrativa",
-  "adaptacoes_por_canal": {
-    "linkedin": "como adaptar para LinkedIn (mais racional, dados, case)",
-    "instagram": "como adaptar para Instagram (mais visual, impacto rápido)",
-    "youtube": "como adaptar para YouTube (narrativa longa, educacional)",
-    "email": "como adaptar para e-mail (personalizado, direto)"
-  }
+  "tema_central": "fio condutor (1-2 frases)",
+  "problema_escolhido": "dor específica (1 frase)",
+  "angulo_narrativo": "ponto de vista único (1 frase)",
+  "gancho_principal": "frase de abertura que para o scroll",
+  "promessa_central": "ganho concreto e mensurável (1 frase)",
+  "prova_social": "validação: dado/case (1 frase)",
+  "call_to_action": "próximo passo (1 frase)",
+  "tom_para_esta_campanha": "variação do tom (1 frase)",
+  "referencias_visuais": "mood visual em 1 frase"
 }`;
 
-  const r = await claude(system, user, 2000);
+  const r = await claude(system, user, 900);
   const narrativa = parseJSON(r);
   console.log(`[S2-Storyteller] Narrativa criada: "${narrativa.tema_central}"`);
   return { narrativa, agente: 'S2-Storyteller' };
@@ -164,30 +156,25 @@ Canal: ${canal || 'LinkedIn'}
 Narrativa base: ${JSON.stringify(narrativa || { tema_central: 'Dados inconsistentes custam caro', gancho_principal: 'Quantas decisões ruins sua empresa tomou este mês por causa de dados atrasados?' })}
 ${copy_anterior ? 'Copy anterior (melhore este): ' + copy_anterior : ''}
 ${ajuste_comentario ? 'INSTRUCAO DE AJUSTE — siga exatamente: ' + ajuste_comentario : ''}
-Versões: ${versoes}
+Versões: 2 (uma provocativa, uma consultiva). SEJA CONCISO — corpo com no máximo 110 palavras.
 
 Retorne:
 {
   "versoes": [
     {
       "versao": 1,
-      "estilo": "Provocativo / Consultivo / Data-driven / Case / Pergunta",
-      "headline": "título principal (max 10 palavras)",
-      "subheadline": "complemento (max 15 palavras)",
-      "corpo": "texto completo da peça — parágrafos curtos, no máximo 150 palavras",
+      "estilo": "Provocativo | Consultivo",
+      "headline": "título (max 10 palavras)",
+      "subheadline": "complemento (max 12 palavras)",
+      "corpo": "texto da peça — parágrafos curtos, MAX 110 palavras",
       "cta": "call to action específico",
-      "hashtags": ["#hashtag1", "#hashtag2"],
-      "caracteres_total": 0,
-      "nota_qualidade": 0-10,
-      "por_que_funciona": "argumento técnico de copy"
+      "hashtags": ["#h1", "#h2", "#h3"]
     }
   ],
-  "versao_recomendada": 1,
-  "notas_para_designer": "briefing para o agente designer",
-  "notas_para_motion": "briefing se virar video"
+  "versao_recomendada": 1
 }`;
 
-  const r = await claude(system, user, 3000);
+  const r = await claude(system, user, 1400);
   const copy = parseJSON(r);
   // FIX v1.5.7: se o JSON veio truncado/inválido, garantir versoes utilizáveis (nunca mais "--")
   if (copy.raw && !copy.versoes) {
@@ -225,34 +212,16 @@ IDENTIDADE VISUAL OBRIGATÓRIA:
 - Estética: premium B2B, limpo, data-driven, sem logos ou marcas de terceiros
 - SEMPRE incluir elemento visual de dados: gráfico, linha, número em destaque, dashboard
 
-Retorne:
+SEJA CONCISO — cada campo texto em no máximo 2 frases. Retorne:
 {
-  "brief_visual": "descrição completa da peça em linguagem de design",
-  "conceito_visual": "a ideia visual central que diferencia esta peça",
-  "layout": {
-    "estrutura": "descrição do layout — grid, hierarquia visual",
-    "zona_titulo": "posição, tamanho, cor, fonte do título",
-    "zona_corpo": "posição, tamanho, cor, fonte do corpo",
-    "zona_logo": "posicionamento do logo Atlantyx",
-    "zona_cta": "design do botão/chamada de ação",
-    "zona_dados": "se houver gráfico ou número em destaque — como apresentar"
-  },
+  "conceito_visual": "a ideia visual central (max 2 frases)",
+  "brief_visual": "descrição da peça em linguagem de design (max 3 frases)",
+  "layout": { "estrutura": "grid e hierarquia (1 frase)", "zona_titulo": "1 frase", "zona_dados": "1 frase" },
   "paleta_esta_peca": ["#cor1", "#cor2", "#cor3"],
-  "elementos_graficos": ["elemento 1", "elemento 2"],
-  "imagem_ou_ilustracao": "descrição detalhada de imagem/ilustração para esta peça ou 'não usar'",
-  "prompt_ia_imagem": "Descreva APENAS a cena visual em inglês — SEM nenhum texto na imagem. NÃO inclua palavras como 'text overlay', 'typography', 'reading', 'bold text'. Descreva: (1) CENA: ambiente corporativo concreto baseado no copy, ex: 'C-level executive in dark modern office analyzing live data dashboards'; (2) COMPOSICAO: posicoes, iluminacao, enquadramento; (3) ELEMENTOS VISUAIS: telas, graficos, interface digital, dados em movimento. Apenas descricao visual pura — o texto sera adicionado pelo usuario no Canva",
-  "animacao_sugerida": "se tiver versão animada — descrição da animação",
-  "adaptacoes_formato": {
-    "stories": "adaptação para Stories 1080x1920",
-    "banner": "adaptação para banner LinkedIn 1584x396",
-    "capa_youtube": "adaptação para thumbnail YouTube 1280x720"
-  },
-  "ferramentas_sugeridas": ["Figma", "Canva Pro", "Adobe Express"],
-  "tempo_producao_estimado": "X horas",
-  "checklist_qualidade": ["item 1", "item 2", "item 3"]
+  "prompt_ia_imagem": "cena visual em inglês, 40-70 palavras, SEM texto/tipografia na imagem: (1) ambiente corporativo concreto baseado no copy; (2) composição e iluminação; (3) telas/gráficos/dados. Cores: dark navy #1A3A8F + electric blue #4F7CFF"
 }`;
 
-  const r = await claude(system, user, 3000);
+  const r = await claude(system, user, 1100);
   const design = parseJSON(r);
   // FIX v1.5.1: se o JSON veio truncado/inválido, parseJSON devolve {raw}.
   // Garante que os campos usados pelo frontend nunca fiquem vazios.
@@ -722,7 +691,7 @@ async function campanhaFase2({ campanha, canal, narrativa, copy, redes = [] }) {
       const baseTexto = (base.headline ? base.headline + '\n\n' : '') + (base.corpo || copy.raw || '');
       const sys = 'Você é o Copywriter da Atlantyx. Adapte a copy abaixo para cada rede, respeitando formato e tom nativos de cada uma. Responda APENAS JSON válido, sem markdown.';
       const usr = `COPY BASE:\n${baseTexto.substring(0, 1800)}\n\nNARRATIVA: ${narrativa?.tema_central || ''}\n\nGere JSON exatamente neste formato para as redes [${redesValidas.join(', ')}]:\n{${redesValidas.map(rd => rd === 'email' ? '"email": {"assunto": "...", "texto": "..."}' : `"${rd}": {"texto": "..."}`).join(', ')}}\n\nRegras por rede: linkedin = profissional, 1200-2200 chars, 3-5 hashtags no fim; instagram = leve, emojis moderados, até 1500 chars, hashtags; facebook = conversacional, até 900 chars; whatsapp = direto e pessoal, até 500 chars, sem hashtag; email = assunto curto (max 60 chars) + texto 400-800 chars.`;
-      const rr = await claude(sys, usr, 3000);
+      const rr = await claude(sys, usr, 1800);
       const parsed = parseJSON(rr);
       return parsed.raw ? {} : parsed;
     } catch (e) {
@@ -761,7 +730,7 @@ async function campanhaCompleta({ campanha, objetivo, canal, orcamento, publico,
       const baseTexto = (base.headline ? base.headline + '\n\n' : '') + (base.corpo || copy.raw || '');
       const sys = 'Você é o Copywriter da Atlantyx. Adapte a copy abaixo para cada rede, respeitando formato e tom nativos de cada uma. Responda APENAS JSON válido, sem markdown.';
       const usr = `COPY BASE:\n${baseTexto.substring(0, 1800)}\n\nNARRATIVA: ${narrativa.tema_central || ''}\n\nGere JSON exatamente neste formato para as redes [${redesValidas.join(', ')}]:\n{${redesValidas.map(rd => rd === 'email' ? '"email": {"assunto": "...", "texto": "..."}' : `"${rd}": {"texto": "..."}`).join(', ')}}\n\nRegras por rede: linkedin = profissional, 1200-2200 chars, 3-5 hashtags no fim; instagram = leve, emojis moderados, até 1500 chars, hashtags; facebook = conversacional, até 900 chars; whatsapp = direto e pessoal, até 500 chars, sem hashtag; email = assunto curto (max 60 chars) + texto 400-800 chars.`;
-      const rr = await claude(sys, usr, 3000);
+      const rr = await claude(sys, usr, 1800);
       const parsed = parseJSON(rr);
       return parsed.raw ? {} : parsed; // truncou → segue sem, frontend usa copy base
     } catch (e) {
