@@ -44,6 +44,13 @@ export default async function handler(req, res) {
       // GESTÃO
       finops:           () => agFinOps(payload),
       hubspot_agendar:  () => agendarHubSpot(payload),
+      // v1.6.1: mede a velocidade real da API Anthropic nesta conta/modelo
+      diagnostico_ia: async () => {
+        const t0 = Date.now();
+        const resp = await claude('Responda APENAS a palavra OK, nada mais.', 'ping', 20);
+        return { modelo: MODEL, envvar_CLAUDE_MODEL: process.env.CLAUDE_MODEL || '(vazia — usando fallback)', resposta: resp.substring(0, 20), tempo_ms: Date.now() - t0 };
+      },
+
       // PIPELINE COMPLETO
       campanha_completa: () => campanhaCompleta(payload),
       // v1.6: pipeline em 2 fases — cada request curto, imune a 504
@@ -825,16 +832,28 @@ async function agendarHubSpot({ tipo, titulo, data, responsavel, descricao }) {
 async function claude(system, user, maxTokens = 1000) {
   const t0 = Date.now();
   let r, d;
+  // v1.6.1: timeout de 25s por chamada — se a Anthropic pendurar, falha COM MENSAGEM
+  // em vez de segurar a função até o Vercel matar em 60s (504 mudo)
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 25000);
   try {
     r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] })
+      body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] }),
+      signal: ctrl.signal,
     });
   } catch (fetchErr) {
+    clearTimeout(timer);
+    const ms = Date.now() - t0;
+    if (fetchErr.name === 'AbortError') {
+      console.error('[claude TIMEOUT 25s]', { model: MODEL, ms });
+      throw new Error(`Anthropic não respondeu em 25s (modelo: ${MODEL}). API lenta ou modelo pesado — verifique a envvar CLAUDE_MODEL no Vercel (recomendado: claude-sonnet-4-6 ou vazio).`);
+    }
     console.error('[claude fetch fail]', fetchErr.message);
     throw new Error('Falha ao conectar à API Anthropic: ' + fetchErr.message);
   }
+  clearTimeout(timer);
 
   const ms = Date.now() - t0;
   const rawText = await r.text();
@@ -862,6 +881,7 @@ async function claude(system, user, maxTokens = 1000) {
     console.error('[claude empty response]', { status: r.status, data: JSON.stringify(d).substring(0, 300) });
     throw new Error('Claude retornou resposta vazia (content[0].text não existe)');
   }
+  console.log(`[claude ok] ${ms}ms · model=${MODEL} · out_tokens≈${Math.round(text.length/4)}`);
 
   console.log(`[claude OK] ${MODEL} em ${ms}ms, ${text.length} chars`);
   return text;
