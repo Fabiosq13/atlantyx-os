@@ -4091,7 +4091,12 @@ function renderKanban() {
           <div style="font-size:10px;font-weight:600;margin-bottom:2px;">${p.titulo}</div>
           <div style="font-family:var(--M);font-size:8px;padding:1px 6px;border-radius:3px;display:inline-block;background:${p.canal==='LinkedIn'?'var(--b2)':p.canal==='Instagram'?'rgba(240,48,112,.12)':'var(--bg4)'};color:${p.canal==='LinkedIn'?'var(--blue)':p.canal==='Instagram'?'var(--s7c)':'var(--t2)'};">${p.canal}</div>
           <div style="font-size:10px;color:var(--t2);margin-top:4px;">${p.agente}</div>
-          ${col==='Revisão'?`<div style="display:flex;gap:4px;margin-top:6px;"><button class="btn btn-gn" style="flex:1;font-size:8.5px;padding:2px 5px;" onclick="aprovarPeca('${p.id}',event)">OK</button><button class="btn btn-rd" style="flex:1;font-size:8.5px;padding:2px 5px;" onclick="recusarPeca('${p.id}',event)">x</button></div>`:''}
+          ${p.data?`<div style="font-family:var(--M);font-size:8px;color:var(--t3);margin-top:3px;">🕓 ${p.data}</div>`:''}
+          <div style="display:flex;gap:4px;margin-top:6px;">
+            <button class="btn" style="flex:1;font-size:8.5px;padding:2px 5px;color:var(--blue);" onclick="event.stopPropagation();editarPecaDoKanban('${p.id}')" title="Abrir campanha completa para edição">✎ Editar</button>
+            <button class="btn" style="font-size:8.5px;padding:2px 7px;color:var(--red);" onclick="excluirPecaKanban('${p.id}',event)" title="Excluir">🗑</button>
+          </div>
+          ${col==='Revisão'?`<div style="display:flex;gap:4px;margin-top:4px;"><button class="btn btn-gn" style="flex:1;font-size:8.5px;padding:2px 5px;" onclick="aprovarPeca('${p.id}',event)">OK</button><button class="btn btn-rd" style="flex:1;font-size:8.5px;padding:2px 5px;" onclick="recusarPeca('${p.id}',event)">x</button></div>`:''}
           ${col==='Aprovado'?`<button class="btn btn-p" style="width:100%;font-size:8.5px;padding:3px 5px;margin-top:6px;" onclick="event.stopPropagation();publicarPeca('${p.id}')">🚀 Publicar</button>`:''}
           ${col==='Publicado'?`<div style="font-size:8px;color:var(--green);margin-top:5px;">✓ publicada</div>`:''}
         </div>`).join('')}
@@ -4109,7 +4114,9 @@ function selecionarPeca(id) {
   const body = document.getElementById('kanbanDetBody');
   if (!det) return;
   det.style.display = 'block';
-  tit.textContent = p.titulo + ' -- ' + p.canal + ' -- ' + p.status;
+  // v1.6.4: rolar até o painel — antes abria fora da viewport e parecia que "não abria"
+  setTimeout(() => { try { det.scrollIntoView({ behavior:'smooth', block:'start' }); det.style.boxShadow='0 0 0 2px var(--blue)'; setTimeout(()=>det.style.boxShadow='',1800); } catch(_){} }, 60);
+  tit.textContent = p.titulo + ' -- ' + p.canal + ' -- ' + p.status + (p.data ? '  ·  🕓 ' + p.data : '');
   body.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
       <div>
@@ -4151,6 +4158,66 @@ function selecionarPeca(id) {
 }
 
 // FIX v1.4.4: leva o usuário à aba Nova Campanha COM a campanha carregada, pronta pra editar/re-rodar
+// v1.6.4: abre a campanha completa a partir da PEÇA — resolve por campanhaId
+// ou, para peças antigas sem vínculo, pelo TÍTULO na lista de campanhas
+async function editarPecaDoKanban(pecaId) {
+  const p = kanbanPecas.find(x => x.id === pecaId);
+  if (!p) { toast('Peça não encontrada', 'error'); return; }
+  let campId = p.campanhaId;
+  if (!campId) {
+    try {
+      if (!_todasCampanhas || !_todasCampanhas.length) await carregarCampanhasDB();
+      const porTitulo = (_todasCampanhas || []).find(c => (c.nome || '').trim().toLowerCase() === (p.titulo || '').trim().toLowerCase());
+      if (porTitulo) {
+        campId = porTitulo.id;
+        p.campanhaId = campId; // religa o vínculo para o futuro
+        salvarKanbanNoBanco();
+        addLog('info', '[Kanban] peça "' + p.titulo + '" religada à campanha ' + campId + ' (match por título)');
+      }
+    } catch (_) {}
+  }
+  if (!campId) {
+    toast('Esta peça não tem campanha vinculada (criada em versão antiga). Use "↻ Reconstruir peças das campanhas" ou abra a campanha por Minhas Campanhas.', 'error');
+    return;
+  }
+  await editarCampanhaDaPeca(campId);
+}
+
+// v1.6.4: excluir peça do kanban (e opcionalmente a campanha do banco)
+async function excluirPecaKanban(pecaId, evt) {
+  if (evt) evt.stopPropagation();
+  const p = kanbanPecas.find(x => x.id === pecaId);
+  if (!p) return;
+  if (!confirm('Excluir a peça "' + p.titulo + '" do kanban?')) return;
+  kanbanPecas = kanbanPecas.filter(x => x.id !== pecaId);
+  const det = document.getElementById('kanbanDetalhe');
+  if (det && kanbanPecaSelecionada === pecaId) det.style.display = 'none';
+  renderKanban();
+  await salvarKanbanNoBanco();
+  addLog('info', '[Kanban] Peça excluída: ' + p.titulo);
+  // Excluir também a campanha do banco?
+  if (p.campanhaId) {
+    const tambem = confirm('Excluir TAMBÉM a campanha "' + p.titulo + '" do banco de dados?\n\nOK = apaga a campanha definitivamente\nCancelar = mantém a campanha em Minhas Campanhas');
+    if (tambem) {
+      try {
+        await fetch('/api/db', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify({ action: 'delete_campanha', key: p.campanhaId })
+        });
+        _todasCampanhas = (_todasCampanhas || []).filter(c => c.id !== p.campanhaId);
+        try { localStorage.setItem('atx:campanhas', JSON.stringify(_todasCampanhas)); } catch(_) {}
+        if (campAtiva?.id === p.campanhaId) { campAtiva = null; window._campanhaAtual = null; }
+        toast('Peça e campanha excluídas', 'info');
+        addLog('info', '[Kanban] Campanha excluída do banco: ' + p.campanhaId);
+      } catch (e) { toast('Peça excluída; falha ao excluir campanha: ' + e.message, 'error'); }
+    } else {
+      toast('Peça excluída (campanha mantida no banco)', 'info');
+    }
+  } else {
+    toast('Peça excluída', 'info');
+  }
+}
+
 async function editarCampanhaDaPeca(campanhaId) {
   addLog('info', '[Kanban→Campanha] Abrindo campanha ' + campanhaId + ' para edição...');
   // Navegar pra tela s2campanha (o nav vai chamar resetCampanhaState que agora preserva)
@@ -14202,7 +14269,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.6.3] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.6.4] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -14218,7 +14285,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.6.3';
+window.__ATX_BUILD_ID__ = 'ATX-v1.6.4';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
