@@ -4152,7 +4152,7 @@ function selecionarPeca(id) {
           ${p.data ? '<div>Data: '+p.data+'</div>' : ''}
           ${p.campanhaId ? '<div style="margin-top:4px;color:var(--t3);font-size:10px;">Campanha ID: '+p.campanhaId+'</div>' : ''}
         </div>
-        ${p.campanhaId ? `<button class="btn btn-p" style="margin-top:8px;width:100%;font-size:11px;padding:7px;" onclick="editarCampanhaDaPeca('${p.campanhaId}')">✎ Editar Campanha &amp; Re-rodar</button>` : ''}
+        ${p.campanhaId ? `<button class="btn btn-p" style="margin-top:8px;width:100%;font-size:11px;padding:7px;" onclick="editarPecaDoKanban('${p.id}')">✎ Editar Campanha &amp; Re-rodar</button>` : ''}
       </div>
     </div>`;
 }
@@ -4180,7 +4180,41 @@ async function editarPecaDoKanban(pecaId) {
     toast('Esta peça não tem campanha vinculada (criada em versão antiga). Use "↻ Reconstruir peças das campanhas" ou abra a campanha por Minhas Campanhas.', 'error');
     return;
   }
-  await editarCampanhaDaPeca(campId);
+  try {
+    await editarCampanhaDaPeca(campId);
+  } catch (e) {
+    // v1.6.7: campanha sumiu do banco E do cache — reconstruir a partir da PEÇA
+    if (!/não encontrada/i.test(e.message || '')) return;
+    if (!confirm('A campanha desta peça não está mais no banco (provável falha de save durante os erros 504).\n\nRECONSTRUIR a campanha a partir do conteúdo da peça (narrativa, copy, imagem)?')) return;
+    const campRec = {
+      id: campId,
+      nome: p.titulo || ('Campanha ' + campId),
+      canal: p.canal || 'Todos',
+      obj: 'Gerar leads qualificados (reuniões)',
+      pub: '', orc: '', ctx: '',
+      status: p.status === 'Aprovado' || p.status === 'Publicado' ? 'aprovada' : 'rascunho',
+      criado_em: new Date().toISOString(),
+      atualizado_em: new Date().toISOString(),
+      imagens: (typeof p.design === 'string' && p.design.startsWith('http')) ? [{ url: p.design, origem: 'reconstrucao' }] : [],
+      data: {
+        narrativa: { tema_central: p.narrativa || '' },
+        copy: { versoes: [{ headline: '', corpo: p.copy || '', cta: '' }] },
+        design: (typeof p.design === 'string' && !p.design.startsWith('http')) ? { conceito_visual: p.design } : {},
+        copy_por_rede: {},
+      },
+    };
+    try {
+      await fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()},
+        body: JSON.stringify({ action:'save_campanha', value: campRec }) });
+      (_todasCampanhas = _todasCampanhas || []).push(campRec);
+      try { localStorage.setItem('atx:campanhas', JSON.stringify(_todasCampanhas)); } catch(_) {}
+      addLog('ok', '[Campanha] Reconstruída da peça e salva: ' + campRec.nome);
+      toast('Campanha reconstruída ✓', 'success');
+      await editarCampanhaDaPeca(campId);
+    } catch (recErr) {
+      toast('Falha ao reconstruir: ' + recErr.message, 'error');
+    }
+  }
 }
 
 // v1.6.4: excluir peça do kanban (e opcionalmente a campanha do banco)
@@ -4235,6 +4269,7 @@ async function editarCampanhaDaPeca(campanhaId) {
   } catch (e) {
     addLog('err', '[Kanban→Campanha] falha: ' + e.message);
     toast('Erro ao abrir campanha: ' + e.message, 'error');
+    throw e; // v1.6.7: o chamador (editarPecaDoKanban) pode reconstruir a campanha
   }
 }
 
@@ -7358,9 +7393,21 @@ async function carregarCampanhasDB() {
     });
     const d = await r.json();
     if (d.success && Array.isArray(d.campanhas) && d.campanhas.length) {
-      campanhas = d.campanhas;
+      // v1.6.7: MERGE banco + localStorage por id — campanhas que só existem
+      // localmente (save falhou num 504 etc.) NÃO são mais descartadas
+      const locais = getCampanhasLocal();
+      const idsBanco = new Set(d.campanhas.map(c => c.id));
+      const orfas = locais.filter(c => c && c.id && !idsBanco.has(c.id));
+      campanhas = d.campanhas.concat(orfas);
       try { localStorage.setItem('atx:campanhas', JSON.stringify(campanhas)); } catch(e) {}
-      addLog('ok', '[Campanhas] ' + campanhas.length + ' campanhas carregadas do Neon');
+      addLog('ok', '[Campanhas] ' + d.campanhas.length + ' do Neon' + (orfas.length ? ' + ' + orfas.length + ' local(is) não sincronizada(s)' : ''));
+      // Consolidar: re-enviar órfãs ao banco em background (até 5)
+      orfas.slice(0, 5).forEach(c => {
+        fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ action:'save_campanha', value: c }) })
+          .then(() => addLog('ok', '[Campanhas] Re-sincronizada no banco: ' + (c.nome || c.id)))
+          .catch(() => {});
+      });
     }
   } catch(e) {
     addLog('warn', '[Campanhas] Banco offline: ' + e.message);
@@ -8202,6 +8249,19 @@ async function abrirCampanhaDB(id) {
       await carregarCampanhasDB();
       camp = (_todasCampanhas || []).find(c => c.id === id);
     } catch (e) { addLog('warn', '[Campanha] recarga da lista falhou: ' + e.message); }
+  }
+  if (!camp) {
+    // v1.6.7: localStorage pode ter a campanha que o banco perdeu (save falhou num 504)
+    const local = getCampanhasLocal().find(c => c.id === id);
+    if (local) {
+      camp = local;
+      addLog('info', '[Campanha] Recuperada do cache local — re-salvando no banco');
+      try {
+        await fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()},
+          body: JSON.stringify({ action:'save_campanha', value: local }) });
+      } catch(_) {}
+      if (!(_todasCampanhas || []).some(c => c.id === id)) (_todasCampanhas = _todasCampanhas || []).push(local);
+    }
   }
   if (!camp) {
     // Fallback antigo (KV) por compatibilidade
@@ -13933,10 +13993,17 @@ async function publicarPeca(pecaId) {
   let linkCampanha = '';
   let imagemCampanha = '';
   if (p.campanhaId) {
-    const campL = (_todasCampanhas || []).find(c => c.id === p.campanhaId) || (campAtiva?.id === p.campanhaId ? campAtiva : null);
+    // v1.6.8: preferir campAtiva quando é a mesma campanha (versão mais fresca —
+    // a lista _todasCampanhas pode ter sido carregada ANTES da imagem ser gerada)
+    let campL = (campAtiva?.id === p.campanhaId ? campAtiva : null) || (_todasCampanhas || []).find(c => c.id === p.campanhaId);
+    if (campL && !(campL.imagens?.length)) {
+      // lista desatualizada? recarrega do banco e tenta de novo
+      try { await carregarCampanhasDB(); const fresh = (_todasCampanhas || []).find(c => c.id === p.campanhaId); if (fresh?.imagens?.length) campL = fresh; } catch(_) {}
+    }
     linkCampanha = campL?.link_destino || '';
-    // v1.6.5: imagem da campanha (Ideogram) para anexar à publicação
     imagemCampanha = campL?.imagens?.[0]?.url || '';
+    if (imagemCampanha) addLog('info', '[Pub] Imagem da campanha localizada: ' + imagemCampanha.substring(0, 60) + '...');
+    else addLog('warn', '[Pub] Campanha ' + p.campanhaId + ' sem imagem em imagens[] — cole a URL no modal');
   }
   if (!imagemCampanha && typeof p.design === 'string' && p.design.startsWith('http')) imagemCampanha = p.design;
 
@@ -14340,7 +14407,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.6.6] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.6.8] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -14356,7 +14423,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.6.6';
+window.__ATX_BUILD_ID__ = 'ATX-v1.6.8';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
