@@ -13875,10 +13875,14 @@ async function publicarPeca(pecaId) {
 
   // FIX v1.5.3: link de destino da campanha (campo link_destino, se cadastrado)
   let linkCampanha = '';
+  let imagemCampanha = '';
   if (p.campanhaId) {
     const campL = (_todasCampanhas || []).find(c => c.id === p.campanhaId) || (campAtiva?.id === p.campanhaId ? campAtiva : null);
     linkCampanha = campL?.link_destino || '';
+    // v1.6.5: imagem da campanha (Ideogram) para anexar à publicação
+    imagemCampanha = campL?.imagens?.[0]?.url || '';
   }
+  if (!imagemCampanha && typeof p.design === 'string' && p.design.startsWith('http')) imagemCampanha = p.design;
 
   // Montar modal dinâmico de publicação
   let modal = document.getElementById('pubModal');
@@ -13902,6 +13906,10 @@ async function publicarPeca(pecaId) {
         <textarea id="pubTexto" class="fsel" style="width:100%;height:120px;font-size:11px;">${texto.replace(/</g,'&lt;')}</textarea>
         <div style="font-size:10px;color:var(--t2);margin:10px 0 4px;">LINK DE DESTINO (landing page, site, agenda — opcional)</div>
         <input type="url" id="pubLink" class="fsel" style="width:100%;" placeholder="https://sua-landing-page.com.br/oferta" value="${linkCampanha}"/>
+        <div style="font-size:10px;color:var(--t2);margin:10px 0 4px;">IMAGEM DA PUBLICAÇÃO (URL — obrigatória p/ Instagram)</div>
+        <input type="url" id="pubImagem" class="fsel" style="width:100%;" placeholder="https://ideogram.ai/assets/..." value="${imagemCampanha}" oninput="document.getElementById('pubImgPrev').src=this.value;document.getElementById('pubImgPrev').style.display=this.value?'block':'none';"/>
+        <img id="pubImgPrev" src="${imagemCampanha}" style="display:${imagemCampanha?'block':'none'};max-height:90px;border-radius:6px;margin-top:6px;border:1px solid var(--bd);" onerror="this.style.display='none'"/>
+        <div id="pubImgAviso" style="font-size:9px;color:var(--gold);margin-top:4px;${imagemCampanha?'display:none;':''}">⚠ Sem imagem: o Instagram vai recusar a publicação. Gere a imagem na campanha (aba Imagem → Ideogram) ou cole uma URL acima.</div>
         <label style="font-size:10px;color:var(--t2);display:flex;gap:5px;align-items:center;margin-top:5px;cursor:pointer;">
           <input type="checkbox" id="pubUtm" checked/> Adicionar UTMs de rastreio (utm_source=rede, utm_campaign=campanha)
         </label>
@@ -13950,8 +13958,12 @@ async function executarPublicacao(pecaId, metodo) {
       // Anexa o link (com UTM da primeira rede) ao fim do texto — Metricool publica texto como está
       const linkMc = montarLink(redes[0]);
       const textoMc = linkMc ? (texto + '\n\n' + linkMc) : texto;
+      const imgPub = document.getElementById('pubImagem')?.value?.trim() || null;
+      if (!imgPub && redes.includes('instagram')) {
+        if (!confirm('Instagram está marcado mas NÃO há imagem — o IG vai recusar.\n\nPublicar mesmo assim (nas outras redes)?')) return;
+      }
       const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ action:'publicar', payload: { texto: textoMc, redes, data_hora: quando ? new Date(quando).toISOString() : null } }) });
+        body: JSON.stringify({ action:'publicar', payload: { texto: textoMc, redes, data_hora: quando ? new Date(quando).toISOString() : null, imagem_url: imgPub } }) });
       const d = await r.json();
       if (!d.success) throw new Error(d.error || 'falha metricool');
       redes.forEach(rede => registrarPublicacao(p, rede, textoMc, 'metricool', d.metricool_id, montarLink(rede)));
@@ -13968,6 +13980,8 @@ async function executarPublicacao(pecaId, metodo) {
     // MANUAL: copia texto + abre compositor por rede
     try { await navigator.clipboard.writeText(texto); toast('Texto copiado! Cole em cada rede.', 'success'); }
     catch { /* clipboard pode falhar sem https/foco */ }
+    const imgManual = document.getElementById('pubImagem')?.value?.trim() || '';
+    if (imgManual) { setTimeout(() => window.open(imgManual, '_blank'), 100); toast('Imagem aberta em outra aba — salve e anexe ao post', 'success'); }
     const _cprCamp = ((_todasCampanhas||[]).find(c => c.id === p.campanhaId) || (campAtiva?.id === p.campanhaId ? campAtiva : null))?.data?.copy_por_rede || {};
     redes.forEach((rede, i) => {
       const lk = montarLink(rede);
@@ -14000,6 +14014,7 @@ function registrarPublicacao(peca, rede, texto, metodo, metricoolId, linkDestino
     titulo: peca.titulo,
     rede, texto: texto.substring(0, 500), metodo,
     link_destino: linkDestino || '',
+    imagem_url: (document.getElementById('pubImagem')?.value?.trim() || ''),
     metricool_id: metricoolId || null,
     data: new Date().toISOString(),
     metricas: { imp: 0, cli: 0, cur: 0, com: 0, sha: 0, leads: 0 },
@@ -14269,7 +14284,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.6.4] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.6.5] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -14285,7 +14300,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.6.4';
+window.__ATX_BUILD_ID__ = 'ATX-v1.6.5';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
