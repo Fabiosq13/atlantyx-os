@@ -4593,7 +4593,11 @@ document.addEventListener('input', function(e) {
     const img = document.getElementById('imgPreviewEl');
     if (url && (url.startsWith('http') || url.startsWith('data:'))) {
       img.src = url;
-      img.onload = () => { preview.style.display = 'block'; };
+      img.onload = () => {
+        preview.style.display = 'block';
+        // v1.6.6: sincronizar a imagem com a PEÇA selecionada e a CAMPANHA vinculada
+        try { sincronizarImagemPecaCampanha(url); } catch(_) {}
+      };
       img.onerror = () => { preview.style.display = 'none'; };
     } else {
       preview.style.display = 'none';
@@ -4621,6 +4625,43 @@ function copiarPrompt() {
   if (!prompt) { toast('Nenhum prompt disponivel', 'error'); return; }
   navigator.clipboard.writeText(prompt);
   toast('Prompt copiado! Cole no Ideogram.', 'success');
+}
+
+// v1.6.6: imagem colada no loop de revisão vira imagem oficial da peça E da campanha
+let _ultimaImgSync = '';
+async function sincronizarImagemPecaCampanha(url) {
+  if (!url || url === _ultimaImgSync) return;
+  _ultimaImgSync = url;
+  const peca = (typeof kanbanPecas !== 'undefined' ? kanbanPecas : []).find(p => p.id === kanbanPecaSelecionada);
+  if (!peca) return;
+  peca.design = url;
+  try { salvarKanbanNoBanco(); } catch(_) {}
+  // Campanha vinculada
+  if (peca.campanhaId) {
+    let campI = (_todasCampanhas || []).find(c => c.id === peca.campanhaId) || (campAtiva?.id === peca.campanhaId ? campAtiva : null);
+    if (!campI) {
+      // v1.6.6: lista pode não ter carregado ainda (ex: kanban direto após F5)
+      try { await carregarCampanhasDB(); campI = (_todasCampanhas || []).find(c => c.id === peca.campanhaId); } catch(_) {}
+    }
+    if (campI) {
+      campI.imagens = campI.imagens || [];
+      if (!campI.imagens.some(im => (im.url || im) === url)) {
+        campI.imagens.unshift({ url, origem: 'ideogram_kanban', colada_em: new Date().toISOString() });
+        try { salvarCampanhaLocal(campI); } catch(_) {}
+        try {
+          await fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()},
+            body: JSON.stringify({ action:'save_campanha', value: campI }) });
+        } catch(_) {}
+        addLog('ok', '[Imagem] Salva na peça E na campanha "' + (campI.nome || campI.id) + '" — vai aparecer no editor e na publicação');
+        toast('Imagem vinculada à campanha ✓', 'success');
+      }
+    }
+  }
+  // Aviso: URLs "ephemeral" do Ideogram expiram (~24h)
+  if (url.includes('ephemeral') || /[?&]exp=/.test(url)) {
+    addLog('warn', '[Imagem] ⚠ Esta URL do Ideogram é TEMPORÁRIA (expira em ~24h). Para publicar depois: baixe a imagem e use um link permanente (no Ideogram, abra a imagem e copie o link do asset, ou re-hospede).');
+    toast('⚠ URL temporária do Ideogram — expira em ~24h (veja o log)', 'error');
+  }
 }
 
 async function ajustarComIA() {
@@ -8192,6 +8233,21 @@ async function abrirCampanhaDB(id) {
   const savBtn = document.getElementById('btnSalvarCamp');
   if (savBtn) savBtn.style.display = 'inline-block';
   if (camp.data) preencherEditorCampanha(camp.data);
+
+  // v1.6.6: se a campanha não tem imagens salvas mas a PEÇA vinculada tem
+  // (URL colada no loop de revisão do kanban), adota a imagem da peça
+  if ((!camp.imagens || !camp.imagens.length) && typeof kanbanPecas !== 'undefined') {
+    const pecaComImg = (kanbanPecas || []).find(p => p.campanhaId === camp.id && typeof p.design === 'string' && p.design.startsWith('http'));
+    if (pecaComImg) {
+      camp.imagens = [{ url: pecaComImg.design, origem: 'peca_kanban', adotada_em: new Date().toISOString() }];
+      addLog('info', '[Campanha] Imagem adotada da peça do kanban para o editor');
+      try { salvarCampanhaLocal(camp); } catch(_) {}
+      try {
+        fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()},
+          body: JSON.stringify({ action:'save_campanha', value: camp }) });
+      } catch(_) {}
+    }
+  }
 
   // Restaurar imagens geradas se houver
   if (camp.imagens?.length) {
@@ -14284,7 +14340,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.6.5] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.6.6] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -14300,7 +14356,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.6.5';
+window.__ATX_BUILD_ID__ = 'ATX-v1.6.6';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
