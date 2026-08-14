@@ -7141,7 +7141,10 @@ async function rerodarCampanhaAtiva() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'campanha_completa', payload: { campanha: nome, objetivo: obj, canal, publico: pub, orcamento: orc, contexto: ctx, redes: Object.entries((typeof _redesMarcadas !== 'undefined' && _redesMarcadas) || (campAtiva?.redes_ativas) || { linkedin: document.getElementById('cRedeLI')?.checked, instagram: document.getElementById('cRedeIG')?.checked, facebook: document.getElementById('cRedeFB')?.checked, whatsapp: document.getElementById('cRedeWA')?.checked, email: document.getElementById('cRedeEM')?.checked }).filter(([k,v]) => v).map(([k]) => k) } })
     });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
+    if (!r.ok) {
+      if (r.status === 504) throw new Error('TIMEOUT (504): pipeline passou do limite de tempo. Confirme o vercel.json com maxDuration:60 no deploy.');
+      throw new Error('HTTP ' + r.status);
+    }
     const data = await r.json();
     if (!data.success) throw new Error(data.error || 'erro');
 
@@ -7341,14 +7344,53 @@ async function criarCampanhaCompleta() {
   addLog('info', '[S2-Campanha] Chamando /api/s2-creative...');
 
   try {
-    const r = await fetch('/api/s2-creative', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'campanha_completa', payload: { campanha: nome, objetivo: obj, canal, publico: pub, orcamento: orc, contexto: ctx, redes: Object.entries((typeof _redesMarcadas !== 'undefined' && _redesMarcadas) || (campAtiva?.redes_ativas) || { linkedin: document.getElementById('cRedeLI')?.checked, instagram: document.getElementById('cRedeIG')?.checked, facebook: document.getElementById('cRedeFB')?.checked, whatsapp: document.getElementById('cRedeWA')?.checked, email: document.getElementById('cRedeEM')?.checked }).filter(([k,v]) => v).map(([k]) => k) } })
+    const redesArr = Object.entries(_redesMarcadas).filter(([k,v]) => v).map(([k]) => k);
+
+    // v1.6: FASE 1 — Narrativa + Copy (request curto, imune a 504)
+    addLog('info', '[S2-Campanha] Fase 1/2: Storyteller + Copywriter...');
+    const r1 = await fetch('/api/s2-creative', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'campanha_fase1', payload: { campanha: nome, objetivo: obj, canal, publico: pub, contexto: ctx } })
     });
-    if (!r.ok) throw new Error('Servidor: ' + r.status);
-    const data = await r.json();
-    if (!data.success) throw new Error(data.error || 'Erro desconhecido');
+    if (!r1.ok) {
+      if (r1.status === 504) throw new Error('TIMEOUT (504) já na Fase 1 (2 chamadas de IA, ~10s). Isso indica limite de 10s ativo na função: confirme no Vercel → Deployments → [deploy] → Source que o vercel.json aparece com o bloco functions/maxDuration.');
+      throw new Error('Fase 1 — Servidor: ' + r1.status);
+    }
+    const f1 = await r1.json();
+    if (!f1.success) throw new Error(f1.error || 'Erro na Fase 1');
+    etapas[0].done = true; etapas[1].done = true; renderEt();
+    addLog('ok', '[S2-Campanha] Fase 1 OK — Narrativa: tema="' + (f1.narrativa?.tema_central || '').substring(0, 60) + '"');
+    addLog('ok', '[S2-Campanha] Copy: headline="' + (f1.copy?.versoes?.[0]?.headline || '').substring(0, 60) + '"');
+
+    // v1.6: FASE 2 — Designer ‖ Copy por rede (segundo request curto)
+    addLog('info', '[S2-Campanha] Fase 2/2: Designer + Copy por rede (' + (redesArr.join(', ') || 'sem redes') + ')...');
+    let f2 = { design: {}, copy_por_rede: {}, post: null };
+    try {
+      const r2 = await fetch('/api/s2-creative', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'campanha_fase2', payload: { campanha: nome, canal, narrativa: f1.narrativa, copy: f1.copy, redes: redesArr } })
+      });
+      if (!r2.ok) throw new Error(r2.status === 504 ? 'TIMEOUT na Fase 2' : 'Fase 2 — Servidor: ' + r2.status);
+      const d2 = await r2.json();
+      if (!d2.success) throw new Error(d2.error || 'Erro na Fase 2');
+      f2 = d2;
+      addLog('ok', '[S2-Campanha] Fase 2 OK — Design: ' + ((d2.design?.conceito_visual || '').substring(0, 50) || 'n/d') + ' | Redes: ' + (Object.keys(d2.copy_por_rede || {}).join(', ') || 'copy base'));
+    } catch (f2Err) {
+      // Fase 2 falhou: a campanha ainda é salva com narrativa+copy; design pode ser re-rodado depois
+      addLog('warn', '[S2-Campanha] Fase 2 falhou (' + f2Err.message + ') — salvando com Narrativa+Copy; use Re-rodar para completar o design');
+      toast('Design não gerado (' + f2Err.message + ') — campanha salva; re-rode para completar', 'error');
+    }
+    etapas[2].done = true; renderEt();
+
+    // Montar o data no formato que o restante do fluxo espera
+    const data = {
+      success: true,
+      narrativa: f1.narrativa,
+      copy: f1.copy,
+      copy_por_rede: f2.copy_por_rede || {},
+      design: f2.design || {},
+      post: f2.post || null,
+    };
 
     addLog('ok', '[S2-Campanha] API retornou com sucesso');
     addLog('info', '[S2-Campanha] Narrativa: tema="' + (data.narrativa?.tema_central||'').substring(0,50) + '"');
@@ -14152,7 +14194,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.5.8] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.6] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -14168,7 +14210,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.5.8';
+window.__ATX_BUILD_ID__ = 'ATX-v1.6';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
