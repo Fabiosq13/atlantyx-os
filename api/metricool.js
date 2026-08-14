@@ -83,8 +83,11 @@ export default async function handler(req, res) {
           autoPublish: true,
           shortener: false,
           draft: false,
-          ...(imagem_url ? { medias: [imagem_url] } : {}),
+          // v1.6.8: a doc da API varia entre "media" e "medias" — enviar ambos
+          // (campos desconhecidos são ignorados; o correto é aplicado)
+          ...(imagem_url ? { media: [imagem_url], medias: [imagem_url] } : {}),
         };
+        console.log('[metricool publicar] payload:', JSON.stringify({ providers: body.providers, temImagem: !!imagem_url, imagem: (imagem_url||'').substring(0,80), quando: body.publicationDate.dateTime }));
 
         const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
         return {
