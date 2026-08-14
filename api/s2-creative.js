@@ -46,6 +46,9 @@ export default async function handler(req, res) {
       hubspot_agendar:  () => agendarHubSpot(payload),
       // PIPELINE COMPLETO
       campanha_completa: () => campanhaCompleta(payload),
+      // v1.6: pipeline em 2 fases — cada request curto, imune a 504
+      campanha_fase1:    () => campanhaFase1(payload),
+      campanha_fase2:    () => campanhaFase2(payload),
     };
 
     if (!acoes[action]) return res.status(400).json({ error: `Ação inválida. Disponíveis: ${Object.keys(acoes).join(', ')}` });
@@ -691,6 +694,42 @@ Retorne:
 }
 
 // ── CAMPANHA COMPLETA — todos os agentes em sequência ─────────────────────────
+// v1.6: FASE 1 — Storyteller + Copywriter (2 calls sequenciais, ~8-15s)
+async function campanhaFase1({ campanha, objetivo, canal, publico, contexto }) {
+  const { narrativa } = await agStoryteller({ campanha, objetivo, canal, publico, contexto });
+  const { copy } = await agCopywriter({ narrativa, canal });
+  console.log(`[S2-Campanha] Fase 1 OK: ${campanha}`);
+  return { narrativa, copy, fase: 1 };
+}
+
+// v1.6: FASE 2 — Designer ‖ Copy-por-rede em paralelo + post (1 nível de call, ~8-15s)
+async function campanhaFase2({ campanha, canal, narrativa, copy, redes = [] }) {
+  if (!copy) throw new Error('Fase 2 requer narrativa e copy da Fase 1');
+  const redesValidas = (redes || []).filter(r => ['linkedin','instagram','facebook','whatsapp','email'].includes(r));
+
+  const pDesigner = agDesigner({ copy, canal });
+  const pPorRede = (async () => {
+    if (!redesValidas.length) return {};
+    try {
+      const base = copy.versoes?.[0] || {};
+      const baseTexto = (base.headline ? base.headline + '\n\n' : '') + (base.corpo || copy.raw || '');
+      const sys = 'Você é o Copywriter da Atlantyx. Adapte a copy abaixo para cada rede, respeitando formato e tom nativos de cada uma. Responda APENAS JSON válido, sem markdown.';
+      const usr = `COPY BASE:\n${baseTexto.substring(0, 1800)}\n\nNARRATIVA: ${narrativa?.tema_central || ''}\n\nGere JSON exatamente neste formato para as redes [${redesValidas.join(', ')}]:\n{${redesValidas.map(rd => rd === 'email' ? '"email": {"assunto": "...", "texto": "..."}' : `"${rd}": {"texto": "..."}`).join(', ')}}\n\nRegras por rede: linkedin = profissional, 1200-2200 chars, 3-5 hashtags no fim; instagram = leve, emojis moderados, até 1500 chars, hashtags; facebook = conversacional, até 900 chars; whatsapp = direto e pessoal, até 500 chars, sem hashtag; email = assunto curto (max 60 chars) + texto 400-800 chars.`;
+      const rr = await claude(sys, usr, 3000);
+      const parsed = parseJSON(rr);
+      return parsed.raw ? {} : parsed;
+    } catch (e) {
+      console.warn('[S2-Campanha] copy_por_rede falhou:', e.message);
+      return {};
+    }
+  })();
+
+  const [{ design }, copy_por_rede] = await Promise.all([pDesigner, pPorRede]);
+  const { post } = await agSocialPost({ copy, design, rede: canal });
+  console.log(`[S2-Campanha] Fase 2 OK: ${campanha} (redes: ${redesValidas.join(',') || 'nenhuma'})`);
+  return { design, copy_por_rede, post, fase: 2 };
+}
+
 async function campanhaCompleta({ campanha, objetivo, canal, orcamento, publico, contexto, redes = [] }) {
   const etapas = [];
 
@@ -702,32 +741,35 @@ async function campanhaCompleta({ campanha, objetivo, canal, orcamento, publico,
   const { copy } = await agCopywriter({ narrativa, canal });
   etapas.push({ agente: 'Copywriter', status: 'CONCLUÍDO', output: copy.versoes?.[0]?.headline });
 
-  // 3. Designer
-  const { design } = await agDesigner({ copy, canal });
-  etapas.push({ agente: 'Designer', status: 'CONCLUÍDO', output: design.conceito_visual });
-
-  // 4. Social Post agendado
-  const { post } = await agSocialPost({ copy, design, rede: canal });
-  etapas.push({ agente: 'Social Media', status: 'AGUARDANDO_APROVAÇÃO', output: 'Post pronto para aprovação no Kanban' });
-
-  // 5. v1.5.7: adaptação da copy POR REDE ativa (um call único, não quebra o pipeline se falhar)
-  let copy_por_rede = {};
+  // 3+5. v1.5.9: Designer e Copy-por-rede dependem APENAS do copy →
+  // rodam EM PARALELO (corta ~25-35% do tempo total e evita 504)
   const redesValidas = (redes || []).filter(r => ['linkedin','instagram','facebook','whatsapp','email'].includes(r));
-  if (redesValidas.length) {
+
+  const pDesigner = agDesigner({ copy, canal });
+
+  const pPorRede = (async () => {
+    if (!redesValidas.length) return {};
     try {
       const base = copy.versoes?.[0] || {};
       const baseTexto = (base.headline ? base.headline + '\n\n' : '') + (base.corpo || copy.raw || '');
       const sys = 'Você é o Copywriter da Atlantyx. Adapte a copy abaixo para cada rede, respeitando formato e tom nativos de cada uma. Responda APENAS JSON válido, sem markdown.';
       const usr = `COPY BASE:\n${baseTexto.substring(0, 1800)}\n\nNARRATIVA: ${narrativa.tema_central || ''}\n\nGere JSON exatamente neste formato para as redes [${redesValidas.join(', ')}]:\n{${redesValidas.map(rd => rd === 'email' ? '"email": {"assunto": "...", "texto": "..."}' : `"${rd}": {"texto": "..."}`).join(', ')}}\n\nRegras por rede: linkedin = profissional, 1200-2200 chars, 3-5 hashtags no fim; instagram = leve, emojis moderados, até 1500 chars, hashtags; facebook = conversacional, até 900 chars; whatsapp = direto e pessoal, até 500 chars, sem hashtag; email = assunto curto (max 60 chars) + texto 400-800 chars.`;
       const rr = await claude(sys, usr, 3000);
-      copy_por_rede = parseJSON(rr);
-      if (copy_por_rede.raw) copy_por_rede = {}; // truncou — segue sem, frontend usa copy base
-      etapas.push({ agente: 'Copywriter (por rede)', status: 'CONCLUÍDO', output: Object.keys(copy_por_rede).join(', ') || 'fallback copy base' });
+      const parsed = parseJSON(rr);
+      return parsed.raw ? {} : parsed; // truncou → segue sem, frontend usa copy base
     } catch (e) {
       console.warn('[S2-Campanha] copy_por_rede falhou (segue com copy base):', e.message);
-      etapas.push({ agente: 'Copywriter (por rede)', status: 'FALHOU (usa copy base)', output: e.message });
+      return {};
     }
-  }
+  })();
+
+  const [{ design }, copy_por_rede] = await Promise.all([pDesigner, pPorRede]);
+  etapas.push({ agente: 'Designer', status: 'CONCLUÍDO', output: design.conceito_visual });
+  etapas.push({ agente: 'Copywriter (por rede)', status: Object.keys(copy_por_rede).length ? 'CONCLUÍDO' : 'FALLBACK (copy base)', output: Object.keys(copy_por_rede).join(', ') || 'copy base' });
+
+  // 4. Social Post agendado (montagem local, sem IA)
+  const { post } = await agSocialPost({ copy, design, rede: canal });
+  etapas.push({ agente: 'Social Media', status: 'AGUARDANDO_APROVAÇÃO', output: 'Post pronto para aprovação no Kanban' });
 
   console.log(`[S2-Campanha] Pipeline completo criado: ${campanha} (redes: ${redesValidas.join(',') || 'nenhuma'})`);
   return {
