@@ -1688,6 +1688,9 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
   <!-- KANBAN DE APROVAÇÃO -->
   <div class="page" id="page-s2kanban">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+      <button class="btn" style="font-size:10px;" onclick="reconstruirPecasDasCampanhas()" title="Recria no kanban as peças de campanhas salvas que sumiram">&#8635; Reconstruir peças das campanhas</button>
+    </div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
       <div style="flex:1;">
         <div style="font-family:var(--H);font-size:15px;font-weight:700">Kanban de Aprovação — Peças e Campanhas</div>
@@ -4228,9 +4231,30 @@ function adicionarAoKanban(titulo, canal, agente, narrativa, copy, design, campa
   salvarKanbanNoBanco();
 }
 
-// FIX v1.4.4: Persistência do Kanban
+// FIX v1.4.4 + v1.5.8: Persistência do Kanban (com MERGE anti-perda)
+let _kanbanCarregado = false; // v1.5.8: só permite sobrescrever após um load bem-sucedido
+
 async function salvarKanbanNoBanco() {
   try {
+    // v1.5.8: NUNCA sobrescrever cegamente. Se ainda não carregou do banco,
+    // faz merge por id com o que está lá (evita apagar peças de sessões anteriores).
+    if (!_kanbanCarregado) {
+      try {
+        const r0 = await fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ action:'get', key:'atx:kanban:pecas' }) });
+        const d0 = await r0.json();
+        if (Array.isArray(d0.value) && d0.value.length) {
+          const ids = new Set(kanbanPecas.map(p => p.id));
+          const doBanco = d0.value.filter(p => !ids.has(p.id));
+          if (doBanco.length) {
+            kanbanPecas = doBanco.concat(kanbanPecas);
+            addLog('info', '[Kanban] merge: ' + doBanco.length + ' peça(s) do banco preservadas antes de salvar');
+            renderKanban();
+          }
+        }
+        _kanbanCarregado = true;
+      } catch (_) { /* se o merge falhar, ainda salva — melhor que perder a peça nova */ }
+    }
     await fetch('/api/db', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'set', key: 'atx:kanban:pecas', value: kanbanPecas })
@@ -4240,25 +4264,71 @@ async function salvarKanbanNoBanco() {
 }
 
 async function carregarKanbanDoBanco() {
+  let doBanco = null;
   try {
     const r = await fetch('/api/db', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'get', key: 'atx:kanban:pecas' })
     });
     const d = await r.json();
-    if (d.value && Array.isArray(d.value)) {
-      kanbanPecas = d.value;
-      addLog('ok', '[Kanban] ' + kanbanPecas.length + ' peças carregadas do banco');
-    }
-  } catch (e) {
-    // Fallback localStorage
-    try {
-      const v = JSON.parse(localStorage.getItem('atx:kanban:pecas') || '[]');
-      if (Array.isArray(v) && v.length) { kanbanPecas = v; addLog('info', '[Kanban] cache local: ' + v.length + ' peças'); }
-    } catch {}
+    if (Array.isArray(d.value)) doBanco = d.value;
+  } catch (e) { addLog('warn', '[Kanban] load banco: ' + e.message); }
+
+  // v1.5.8: fallback localStorage SEMPRE que o banco não trouxe nada útil
+  // (antes só rodava em exceção de rede — resposta 200 com value null pulava o cache)
+  let doLocal = null;
+  try {
+    const v = JSON.parse(localStorage.getItem('atx:kanban:pecas') || 'null');
+    if (Array.isArray(v)) doLocal = v;
+  } catch {}
+
+  // Merge por id: união banco + local + memória (nada se perde)
+  const mapa = {};
+  [].concat(doBanco || [], doLocal || [], kanbanPecas || []).forEach(p => { if (p && p.id) mapa[p.id] = Object.assign({}, mapa[p.id] || {}, p); });
+  const unidas = Object.values(mapa);
+  if (unidas.length) {
+    kanbanPecas = unidas;
+    _kanbanCarregado = true;
+    addLog('ok', '[Kanban] ' + unidas.length + ' peça(s) — banco: ' + (doBanco?.length ?? 'n/d') + ' · local: ' + (doLocal?.length ?? 0));
+    // Se banco estava mais pobre que a união, re-grava consolidado
+    if ((doBanco?.length || 0) < unidas.length) salvarKanbanNoBanco();
+  } else {
+    _kanbanCarregado = (doBanco !== null); // banco respondeu vazio de fato
   }
   renderKanban();
 }
+
+// v1.5.8: recupera peças a partir das CAMPANHAS salvas (tabela campanhas nunca perdeu nada)
+async function reconstruirPecasDasCampanhas() {
+  try {
+    if (!_todasCampanhas || !_todasCampanhas.length) await carregarCampanhasDB();
+    const comPeca = new Set(kanbanPecas.map(p => p.campanhaId).filter(Boolean));
+    const faltantes = (_todasCampanhas || []).filter(c => !comPeca.has(c.id));
+    if (!faltantes.length) { toast('Todas as campanhas já têm peça no kanban', 'success'); return; }
+    faltantes.forEach(c => {
+      const cp0 = c.data?.copy?.versoes?.[0] || {};
+      kanbanPecas.push({
+        id: 'peca_rec_' + c.id,
+        titulo: c.nome || c.id,
+        canal: c.canal || '',
+        agente: 'Campanha Completa',
+        narrativa: c.data?.narrativa?.tema_central || '',
+        copy: (cp0.headline ? cp0.headline + '\n\n' : '') + (cp0.corpo || ''),
+        design: c.data?.design?.conceito_visual || '',
+        campanhaId: c.id,
+        status: c.status === 'aprovada' ? 'Aprovado' : 'Revisão',
+        data: new Date(c.atualizado_em || Date.now()).toLocaleString('pt-BR'),
+      });
+    });
+    renderKanban();
+    await salvarKanbanNoBanco();
+    toast(faltantes.length + ' peça(s) reconstruída(s) a partir das campanhas', 'success');
+    addLog('ok', '[Kanban] Reconstruídas: ' + faltantes.map(c => c.nome).join(', '));
+  } catch (e) { toast('Erro ao reconstruir: ' + e.message, 'error'); }
+}
+
+// v1.5.8: carregar kanban no BOOT (não só ao abrir a aba) — evita race que apagava peças
+setTimeout(() => { try { carregarKanbanDoBanco(); } catch(_) {} }, 1200);
 
 // CAMPANHA COMPLETA
 
@@ -6797,6 +6867,13 @@ nav = function(p, el) {
 
 // ── RESET ESTADO DA CAMPANHA ─────────────────────────────────────────────────
 function resetCampanhaState() {
+  // v1.5.8: se há campanha PROCESSANDO agora, não tocar em NADA —
+  // o DOM da página persiste (SPA), então o pipeline/“Criando...” continua visível.
+  if (window._campanhaProcessando) {
+    addLog('info', '[Campanha] "' + window._campanhaProcessando.nome + '" ainda processando — tela preservada');
+    try { toast('Campanha "' + window._campanhaProcessando.nome + '" ainda em criação...', 'success'); } catch(_) {}
+    return;
+  }
   // FIX v1.4.4: se já tem campanha ativa (ex: usuário navegou pra outra aba e voltou),
   // RESTAURA os dados dela em vez de apagar. Nova campanha só via botão explícito.
   const jaTemCampanhaAtiva = campAtiva || window._campanhaAtual;
@@ -7257,6 +7334,7 @@ async function criarCampanhaCompleta() {
   const renderEt = () => { res.innerHTML = etapas.map(e => '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--bd);"><span style="font-size:14px;">' + (e.done ? '&#10003;' : '&#9702;') + '</span><span style="font-size:12px;color:' + (e.done?'var(--green)':'var(--blue)') + ';">' + e.label + '</span></div>').join(''); };
   renderEt();
   addLog('info', '[S2-Campanha] ══════════════════════════════════');
+  window._campanhaProcessando = { nome, iniciadoEm: Date.now() }; // v1.5.8
   addLog('info', '[S2-Campanha] INICIANDO: ' + nome);
   addLog('info', '[S2-Campanha] Canal: ' + canal + ' | Público: ' + pub);
   addLog('info', '[S2-Campanha] Objetivo: ' + obj);
@@ -7380,6 +7458,7 @@ async function criarCampanhaCompleta() {
     if (e.stack) addLog('err', '[S2-Campanha] Stack: ' + e.stack.split('\n').slice(0, 3).join(' | '));
     console.error('[S2-Campanha] Erro completo:', e);
   }
+  window._campanhaProcessando = null; // v1.5.8: liberou (sucesso ou erro)
   btn.disabled = false; btn.textContent = 'Criar Campanha com IA';
 }
 
@@ -14073,7 +14152,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.5.7] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.5.8] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -14089,7 +14168,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.5.7';
+window.__ATX_BUILD_ID__ = 'ATX-v1.5.8';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
