@@ -4115,7 +4115,19 @@ function selecionarPeca(id) {
       </div>
       <div>
         <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--blue);margin-bottom:5px">COPY PRINCIPAL (Copywriter)</div>
-        <div style="font-size:11.5px;line-height:1.7;background:var(--bg4);padding:10px;border-radius:6px;white-space:pre-wrap;">${p.copy || '--'}</div>
+        <div style="font-size:11.5px;line-height:1.7;background:var(--bg4);padding:10px;border-radius:6px;white-space:pre-wrap;">${p.copy || p.narrativa || '(copy não gerada — abra a campanha e re-rode)'}</div>
+        ${(() => { /* v1.5.7: copy por rede da campanha vinculada */
+          try {
+            const cpr = ((_todasCampanhas||[]).find(c => c.id === p.campanhaId) || (campAtiva?.id === p.campanhaId ? campAtiva : null))?.data?.copy_por_rede;
+            if (!cpr || !Object.keys(cpr).length) return '';
+            const nomes = { linkedin:'LinkedIn', instagram:'Instagram', facebook:'Facebook', whatsapp:'WhatsApp', email:'E-mail' };
+            return '<div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin:10px 0 5px">COPY POR REDE</div>' +
+              Object.entries(cpr).map(([rd, v]) =>
+                '<details style="margin-bottom:6px;"><summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--blue);">' + (nomes[rd]||rd) + '</summary>' +
+                '<div style="font-size:11px;line-height:1.6;background:var(--bg4);padding:9px;border-radius:6px;white-space:pre-wrap;margin-top:4px;">' +
+                (v?.assunto ? 'Assunto: ' + v.assunto + '\n\n' : '') + (v?.texto || '') + '</div></details>').join('');
+          } catch(_) { return ''; }
+        })()}
       </div>
       <div>
         <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:5px">BRIEF VISUAL (Designer)</div>
@@ -4142,11 +4154,13 @@ async function editarCampanhaDaPeca(campanhaId) {
   // Antes de navegar, forçar carregamento da campanha
   try {
     await abrirCampanhaDB(campanhaId);
-    // Agora navega — resetCampanhaState verá campAtiva e vai RESTAURAR ela
-    const menuItem = document.querySelector(".sbi[onclick*=\"'s2campanha'\"]");
-    if (menuItem) menuItem.click();
-    else nav('s2campanha');
-    setTimeout(mostrarBotaoRerodar, 300);
+    // FIX v1.5.7: só navega se a campanha realmente carregou
+    if (!campAtiva || campAtiva.id !== campanhaId) throw new Error('Campanha não carregou (id: ' + campanhaId + ')');
+    try { nav('s2campanha'); } catch (navErr) {
+      const menuItem = document.querySelector(".sbi[onclick*=\"'s2campanha'\"]");
+      if (menuItem) menuItem.click(); else throw navErr;
+    }
+    setTimeout(() => { try { mostrarBotaoRerodar(); rolarAteEditor(); } catch(_){} }, 350);
     toast('Campanha aberta — edite os campos e clique em Re-rodar', 'success');
   } catch (e) {
     addLog('err', '[Kanban→Campanha] falha: ' + e.message);
@@ -7048,7 +7062,7 @@ async function rerodarCampanhaAtiva() {
   try {
     const r = await fetch('/api/s2-creative', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'campanha_completa', payload: { campanha: nome, objetivo: obj, canal, publico: pub, orcamento: orc, contexto: ctx } })
+      body: JSON.stringify({ action: 'campanha_completa', payload: { campanha: nome, objetivo: obj, canal, publico: pub, orcamento: orc, contexto: ctx, redes: Object.entries((typeof _redesMarcadas !== 'undefined' && _redesMarcadas) || (campAtiva?.redes_ativas) || { linkedin: document.getElementById('cRedeLI')?.checked, instagram: document.getElementById('cRedeIG')?.checked, facebook: document.getElementById('cRedeFB')?.checked, whatsapp: document.getElementById('cRedeWA')?.checked, email: document.getElementById('cRedeEM')?.checked }).filter(([k,v]) => v).map(([k]) => k) } })
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const data = await r.json();
@@ -7252,7 +7266,7 @@ async function criarCampanhaCompleta() {
     const r = await fetch('/api/s2-creative', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'campanha_completa', payload: { campanha: nome, objetivo: obj, canal, publico: pub, orcamento: orc, contexto: ctx } })
+      body: JSON.stringify({ action: 'campanha_completa', payload: { campanha: nome, objetivo: obj, canal, publico: pub, orcamento: orc, contexto: ctx, redes: Object.entries((typeof _redesMarcadas !== 'undefined' && _redesMarcadas) || (campAtiva?.redes_ativas) || { linkedin: document.getElementById('cRedeLI')?.checked, instagram: document.getElementById('cRedeIG')?.checked, facebook: document.getElementById('cRedeFB')?.checked, whatsapp: document.getElementById('cRedeWA')?.checked, email: document.getElementById('cRedeEM')?.checked }).filter(([k,v]) => v).map(([k]) => k) } })
     });
     if (!r.ok) throw new Error('Servidor: ' + r.status);
     const data = await r.json();
@@ -7944,9 +7958,16 @@ async function renderCalCampanhas() {
 }
 
 async function abrirCampanhaDB(id) {
-  let camp = _todasCampanhas.find(c => c.id === id);
+  let camp = (_todasCampanhas || []).find(c => c.id === id);
   if (!camp) {
-    // Tentar buscar do banco
+    // FIX v1.5.7: campanhas moram na TABELA campanhas (list_campanhas) — recarregar a lista
+    try {
+      await carregarCampanhasDB();
+      camp = (_todasCampanhas || []).find(c => c.id === id);
+    } catch (e) { addLog('warn', '[Campanha] recarga da lista falhou: ' + e.message); }
+  }
+  if (!camp) {
+    // Fallback antigo (KV) por compatibilidade
     try {
       const r = await fetch('/api/db', {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -7956,7 +7977,7 @@ async function abrirCampanhaDB(id) {
       if (d.value) camp = d.value;
     } catch(e) {}
   }
-  if (!camp) { toast('Campanha não encontrada', 'error'); return; }
+  if (!camp) { toast('Campanha não encontrada (id: ' + id + ')', 'error'); throw new Error('Campanha ' + id + ' não encontrada no banco'); }
 
   campAtiva = camp;
   campVersoesCopy = [];
@@ -13751,9 +13772,11 @@ async function executarPublicacao(pecaId, metodo) {
     // MANUAL: copia texto + abre compositor por rede
     try { await navigator.clipboard.writeText(texto); toast('Texto copiado! Cole em cada rede.', 'success'); }
     catch { /* clipboard pode falhar sem https/foco */ }
+    const _cprCamp = ((_todasCampanhas||[]).find(c => c.id === p.campanhaId) || (campAtiva?.id === p.campanhaId ? campAtiva : null))?.data?.copy_por_rede || {};
     redes.forEach((rede, i) => {
       const lk = montarLink(rede);
-      const textoRede = lk ? (texto + '\n\n' + lk) : texto;
+      const baseRede = _cprCamp[rede]?.texto || texto; // v1.5.7: usa a versão da rede se existir
+      const textoRede = lk ? (baseRede + '\n\n' + lk) : baseRede;
       const urls = {
         linkedin: 'https://www.linkedin.com/feed/?shareActive=true&text=' + encodeURIComponent(textoRede.substring(0, 2800)),
         // FB sharer compartilha a URL de destino real (não mais placeholder); sem link, abre o composer do FB
@@ -14050,7 +14073,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.5.6] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.5.7] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -14066,7 +14089,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.5.6';
+window.__ATX_BUILD_ID__ = 'ATX-v1.5.7';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
