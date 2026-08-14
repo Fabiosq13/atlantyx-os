@@ -62,7 +62,7 @@ export default async function handler(req, res) {
       // Publicar/agendar post
       // payload: { texto, redes: ['linkedin','instagram','facebook'], data_hora (ISO opcional), imagem_url (opcional), campanha_id, peca_id }
       publicar: async () => {
-        const { texto, redes = [], data_hora, imagem_url } = payload;
+        const { texto, redes = [], data_hora, imagem_url, encurtar_link = true } = payload;
         if (!texto || !redes.length) throw new Error('texto e redes são obrigatórios');
 
         // Mapear nomes internos → providers Metricool
@@ -81,7 +81,7 @@ export default async function handler(req, res) {
           },
           text: texto,
           autoPublish: true,
-          shortener: false,
+          shortener: !!encurtar_link, // v1.6.9: Metricool encurta URLs do texto (some o link gigante)
           draft: false,
           // v1.6.8: a doc da API varia entre "media" e "medias" — enviar ambos
           // (campos desconhecidos são ignorados; o correto é aplicado)
