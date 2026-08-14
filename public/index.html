@@ -7142,8 +7142,10 @@ async function rerodarCampanhaAtiva() {
       body: JSON.stringify({ action: 'campanha_completa', payload: { campanha: nome, objetivo: obj, canal, publico: pub, orcamento: orc, contexto: ctx, redes: Object.entries((typeof _redesMarcadas !== 'undefined' && _redesMarcadas) || (campAtiva?.redes_ativas) || { linkedin: document.getElementById('cRedeLI')?.checked, instagram: document.getElementById('cRedeIG')?.checked, facebook: document.getElementById('cRedeFB')?.checked, whatsapp: document.getElementById('cRedeWA')?.checked, email: document.getElementById('cRedeEM')?.checked }).filter(([k,v]) => v).map(([k]) => k) } })
     });
     if (!r.ok) {
+      let detR = '';
+      try { const jeR = await r.json(); detR = jeR.error || ''; } catch {}
       if (r.status === 504) throw new Error('TIMEOUT (504): pipeline passou do limite de tempo. Confirme o vercel.json com maxDuration:60 no deploy.');
-      throw new Error('HTTP ' + r.status);
+      throw new Error(detR || ('HTTP ' + r.status));
     }
     const data = await r.json();
     if (!data.success) throw new Error(data.error || 'erro');
@@ -7353,8 +7355,10 @@ async function criarCampanhaCompleta() {
       body: JSON.stringify({ action: 'campanha_fase1', payload: { campanha: nome, objetivo: obj, canal, publico: pub, contexto: ctx } })
     });
     if (!r1.ok) {
-      if (r1.status === 504) throw new Error('TIMEOUT (504) já na Fase 1 (2 chamadas de IA, ~10s). Isso indica limite de 10s ativo na função: confirme no Vercel → Deployments → [deploy] → Source que o vercel.json aparece com o bloco functions/maxDuration.');
-      throw new Error('Fase 1 — Servidor: ' + r1.status);
+      let det1 = '', hint1 = '';
+      try { const je = await r1.json(); det1 = je.error || ''; hint1 = je.hint || ''; } catch {}
+      if (r1.status === 504) throw new Error('TIMEOUT (504) já na Fase 1 (2 chamadas de IA, ~10s). Isso indica limite de 10s ativo na função: confirme no Vercel → Deployments → [deploy] → Source que o vercel.json aparece com functions/maxDuration.');
+      throw new Error('Fase 1 — ' + (det1 || ('Servidor: ' + r1.status)) + (hint1 ? ' | 💡 ' + hint1 : ''));
     }
     const f1 = await r1.json();
     if (!f1.success) throw new Error(f1.error || 'Erro na Fase 1');
@@ -7370,7 +7374,11 @@ async function criarCampanhaCompleta() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'campanha_fase2', payload: { campanha: nome, canal, narrativa: f1.narrativa, copy: f1.copy, redes: redesArr } })
       });
-      if (!r2.ok) throw new Error(r2.status === 504 ? 'TIMEOUT na Fase 2' : 'Fase 2 — Servidor: ' + r2.status);
+      if (!r2.ok) {
+        let det2 = '';
+        try { const je2 = await r2.json(); det2 = je2.error || ''; } catch {}
+        throw new Error(r2.status === 504 ? 'TIMEOUT na Fase 2' : ('Fase 2 — ' + (det2 || 'Servidor: ' + r2.status)));
+      }
       const d2 = await r2.json();
       if (!d2.success) throw new Error(d2.error || 'Erro na Fase 2');
       f2 = d2;
@@ -14194,7 +14202,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.6.1] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.6.2] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -14210,7 +14218,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.6.1';
+window.__ATX_BUILD_ID__ = 'ATX-v1.6.2';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
