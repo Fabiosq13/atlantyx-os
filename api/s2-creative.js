@@ -260,7 +260,7 @@ Retorne:
   const copy = parseJSON(r);
   // FIX v1.5.7: se o JSON veio truncado/inválido, garantir versoes utilizáveis (nunca mais "--")
   if (copy.raw && !copy.versoes) {
-    copy.versoes = [{ headline: '', corpo: copy.raw.substring(0, 1500), cta: '' }];
+    copy.versoes = [{ headline: '', corpo: safeCut(copy.raw, 1500), cta: '' }];
     console.warn('[S2-Copywriter] JSON truncado — usando raw como corpo');
   }
   console.log(`[S2-Copywriter] ${copy.versoes?.length || 0} versões criadas para ${canal}`);
@@ -285,7 +285,7 @@ Retorne APENAS JSON válido.`;
 Canal: ${canal || 'LinkedIn'}
 Formato: ${formato || 'post carrossel'}
 Dimensões: ${dimensoes || '1080x1080px'}
-Copy aprovado: ${JSON.stringify(copy?.versoes?.[0] || { headline: 'Dados inconsistentes custam caro', corpo: 'Sua empresa toma decisões críticas com dados que chegam 3 dias atrasados.' })}
+${copy?.tema ? 'TEMA CENTRAL DA CAMPANHA (a cena DEVE refletir este tema): ' + copy.tema + '\n' : ''}Copy aprovado: ${JSON.stringify(copy?.versoes?.[0] || { headline: 'Dados inconsistentes custam caro', corpo: 'Sua empresa toma decisões críticas com dados que chegam 3 dias atrasados.' })}
 
 IDENTIDADE VISUAL OBRIGATÓRIA:
 - Fundo: azul navy profundo (#1A3A8F) ou branco puro
@@ -308,7 +308,7 @@ SEJA CONCISO — cada campo texto em no máximo 2 frases. Retorne:
   // FIX v1.5.1: se o JSON veio truncado/inválido, parseJSON devolve {raw}.
   // Garante que os campos usados pelo frontend nunca fiquem vazios.
   if (design.raw && !design.conceito_visual && !design.prompt_ia_imagem) {
-    design.conceito_visual = design.raw.substring(0, 800);
+    design.conceito_visual = safeCut(design.raw, 800);
     design.prompt_ia_imagem = 'Premium B2B corporate scene: executive in dark modern office with glowing data dashboards. Dark navy #1A3A8F background, electric blue #4F7CFF accents, cinematic lighting, photorealistic, no text.';
     console.warn('[S2-Designer] JSON truncado — usando fallback de conceito/prompt');
   }
@@ -938,6 +938,12 @@ async function claude(system, user, maxTokens = 1000) {
   return text;
 }
 
+// v1.9.8: corte que não parte emojis (surrogate pairs) — texto partido gera JSON inválido p/ Postgres
+function safeCut(str, n) {
+  let s = String(str || '').substring(0, n);
+  if (s.length && /[\ud800-\udbff]$/.test(s)) s = s.slice(0, -1);
+  return typeof s.toWellFormed === 'function' ? s.toWellFormed() : s;
+}
 function parseJSON(text) {
   try { return JSON.parse(text.replace(/```json|```/g, '').trim()); }
   catch {

@@ -87,6 +87,13 @@ export default async function handler(req, res) {
     const { action, key, value } = req.body || {};
 
     // STATUS
+    // v1.9.8: JSONB rejeita \u0000 e surrogates soltos (emoji partido) → saneia qualquer JSON antes de gravar
+    const jsonSeguro = (obj) => {
+      let s = JSON.stringify(obj);
+      if (typeof s.toWellFormed === 'function') s = s.toWellFormed();
+      else s = s.replace(/[\ud800-\udbff](?![\udc00-\udfff])/g, '\ufffd').replace(/(^|[^\ud800-\udbff])[\udc00-\udfff]/g, '$1\ufffd');
+      return s.replace(/\\u0000/g, '').replace(/\u0000/g, '');
+    };
     if (action === 'status' || req.method === 'GET') {
       const r = await sql`SELECT NOW() as ts`;
       return res.status(200).json({ success: true, db: 'Neon Postgres', ts: r[0].ts });
@@ -98,7 +105,8 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, key, value: r[0]?.value ?? null });
     }
     if (action === 'set') {
-      await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${key}, ${JSON.stringify(value)}, NOW())
+      // v1.9.8: saneia o valor (kanban etc.)
+      await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${key}, ${jsonSeguro(value)}, NOW())
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
       return res.status(200).json({ success: true, key });
     }
@@ -111,14 +119,17 @@ export default async function handler(req, res) {
     if (action === 'save_campanha') {
       const camp = value;
       if (!camp?.id) return res.status(400).json({ error: 'id obrigatório' });
-      const dataInicio = camp.data_inicio || null;
-      const dataFim    = camp.data_fim    || null;
+      const dataJson = jsonSeguro(camp);
+      if (dataJson.length > 6 * 1024 * 1024) return res.status(413).json({ success: false, error: 'campanha muito grande (' + (dataJson.length/1048576).toFixed(1) + ' MB) — remova imagens/base64 do objeto' });
+      const okDate = d => (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) ? d : null;
+      const dataInicio = okDate(camp.data_inicio);
+      const dataFim    = okDate(camp.data_fim);
       const ativa      = !!camp.ativa;
       const redesAtivas = camp.redes_ativas || {};
       await sql`INSERT INTO campanhas (id, nome, canal, status, data, data_inicio, data_fim, ativa, redes_ativas, atualizado_em)
         VALUES (${camp.id}, ${camp.nome||''}, ${camp.canal||''}, ${camp.status||'rascunho'},
-                ${JSON.stringify(camp)}, ${dataInicio}, ${dataFim}, ${ativa},
-                ${JSON.stringify(redesAtivas)}::jsonb, NOW())
+                ${dataJson}::jsonb, ${dataInicio || null}, ${dataFim || null}, ${ativa},
+                ${jsonSeguro(redesAtivas)}::jsonb, NOW())
         ON CONFLICT (id) DO UPDATE SET nome=EXCLUDED.nome, canal=EXCLUDED.canal,
           status=EXCLUDED.status, data=EXCLUDED.data,
           data_inicio=EXCLUDED.data_inicio, data_fim=EXCLUDED.data_fim,
