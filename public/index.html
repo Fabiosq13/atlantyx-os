@@ -2041,10 +2041,11 @@ tr:hover td{background:rgba(79,124,255,.03);}
               <div class="pb">
                 <div class="fg"><label class="fl">Brief Visual</label>
                   <textarea class="fta" id="edBriefVisual" style="min-height:80px;font-size:11px;"></textarea>
-                  <div style="display:flex;gap:6px;align-items:center;margin-top:6px;">
-                    <button class="btn" id="btnRegerarBrief" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="regerarBriefVisual(false)" title="Refaz o brief/prompt de imagem a partir do tema e da copy ATUAIS (útil depois de editar o tema ou refazer a copy)">🎨 Regerar brief com o tema atual</button>
-                    <span style="font-size:9px;color:var(--t3);">Mudou o tema/copy? Regere o brief antes de gerar no Ideogram — senão a imagem sai do tema antigo.</span>
+                  <div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap;">
+                    <input class="fi" id="edBriefDirecao" style="flex:1;min-width:220px;font-size:10.5px;" placeholder="Direção para a imagem (opcional): ex. 'chão de fábrica com robôs', 'metáfora de farol na névoa', 'sem pessoas'"/>
+                    <button class="btn" id="btnRegerarBrief" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="regerarBriefVisual(false)" title="Refaz o brief/prompt de imagem a partir do tema, da copy ATUAL e da sua direção — sempre diferente do brief anterior">🎨 Regerar brief com o tema atual</button>
                   </div>
+                  <div id="edBriefStatus" style="font-size:9.5px;color:var(--t3);margin-top:4px;">Mudou o tema/copy? Regere o brief antes de gerar no Ideogram — senão a imagem sai do tema antigo.</div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
                   <div class="fg" style="margin:0;"><label class="fl">Formato</label>
@@ -6437,23 +6438,33 @@ async function regerarBriefVisual(silencioso) {
   // usa o que está NA TELA (edições manuais contam), com fallback ao salvo
   const copyAtual = { versoes: [{ headline: g('edHeadline') || campAtiva.data?.copy?.versoes?.[0]?.headline || '', subheadline: g('edSubheadline'), corpo: g('edCorpo') || campAtiva.data?.copy?.versoes?.[0]?.corpo || '', cta: g('edCtaCopy') }] };
   const tema = g('edTemaCentral') || campAtiva.data?.narrativa?.tema_central || '';
-  const bt = document.getElementById('btnRegerarBrief'); if (bt) { bt.disabled = true; bt.textContent = 'Gerando brief...'; }
-  if (!silencioso) toast('🎨 Regerando brief visual com o tema atual...', 'success');
+  const bt = document.getElementById('btnRegerarBrief'); if (bt) { bt.disabled = true; bt.textContent = 'Gerando brief...'; bt.style.background = ''; }
+  const stEl = document.getElementById('edBriefStatus');
+  const briefAnterior = g('edBriefVisual');
+  const direcao = g('edBriefDirecao');
+  if (stEl) { stEl.style.color = 'var(--blue)'; stEl.textContent = '⏳ Designer criando um brief NOVO' + (direcao ? ' com a direção "' + direcao + '"' : '') + ' — a partir do tema "' + tema.substring(0, 60) + '" e da copy atual...'; }
+  if (!silencioso) toast('🎨 Regerando brief visual...', 'success');
+  const guard = setTimeout(() => { if (bt && bt.disabled) { bt.disabled = false; bt.textContent = '🎨 Regerar brief com o tema atual'; if (stEl) { stEl.style.color = 'var(--red)'; stEl.textContent = 'Demorou demais (>40 s). Tente de novo.'; } } }, 40000);
   try {
-    const r = await fetch('/api/s2-creative', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ action:'designer', payload: { copy: Object.assign({}, copyAtual, { tema: tema }), canal: campAtiva.canal || 'Todos' } }) });
+    const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), 38000);
+    const r = await fetch('/api/s2-creative', { method:'POST', headers:{'Content-Type':'application/json'}, signal: ctrl.signal,
+      body: JSON.stringify({ action:'designer', payload: { copy: Object.assign({}, copyAtual, { tema: tema, direcao: direcao || '', brief_anterior: briefAnterior || '' }), canal: campAtiva.canal || 'Todos' } }) });
+    clearTimeout(tm);
     const d = await r.json();
     if (!d.success || !d.design) throw new Error(d.error || 'Designer falhou');
+    if (briefAnterior && (d.design.prompt_ia_imagem || '') === briefAnterior) throw new Error('A IA devolveu o mesmo brief — tente com uma direção no campo ao lado');
     campAtiva.data = campAtiva.data || {}; campAtiva.data.design = d.design;
     if (tema) campAtiva.data.narrativa = Object.assign({}, campAtiva.data.narrativa, { tema_central: tema });
     const brief = d.design.prompt_ia_imagem || d.design.conceito_visual || d.design.brief_visual || '';
     const el = document.getElementById('edBriefVisual'); if (el) el.value = brief;
     try { const kb = (kanbanPecas||[]).find(x => x.campanhaId === campAtiva.id); if (kb && !(typeof kb.design === 'string' && kb.design.startsWith('http'))) { kb.design = d.design.conceito_visual || brief; salvarKanbanNoBanco(); } } catch(_) {}
     await salvarCampanhaNoBanco(campAtiva, 'brief visual');
+    if (stEl) { stEl.style.color = 'var(--green, #22d3a3)'; stEl.innerHTML = '✅ Brief NOVO às ' + new Date().toLocaleTimeString('pt-BR').substring(0,5) + ' · conceito: <b>' + (d.design.conceito_visual || '').replace(/</g,'&lt;').substring(0, 140) + '</b> · agora clique em ◆ Gerar no Ideogram'; }
+    try { const ta = document.getElementById('edBriefVisual'); if (ta) { ta.style.boxShadow = '0 0 0 2px var(--gold)'; setTimeout(() => ta.style.boxShadow = '', 2500); } } catch(_) {}
     addLog('ok', '[Designer] Brief visual refeito p/ tema "' + tema.substring(0, 50) + '": ' + brief.substring(0, 70) + '...');
     if (!silencioso) toast('Brief visual atualizado — clique em Gerar no Ideogram', 'success');
-  } catch (e) { addLog('err', '[Designer] ' + e.message); toast('Erro no brief: ' + e.message, 'error'); }
-  finally { if (bt) { bt.disabled = false; bt.textContent = '🎨 Regerar brief com o tema atual'; } }
+  } catch (e) { addLog('err', '[Designer] ' + e.message); toast('Erro no brief: ' + e.message, 'error'); if (stEl) { stEl.style.color = 'var(--red)'; stEl.textContent = '⛔ ' + e.message; } }
+  finally { clearTimeout(guard); if (bt) { bt.disabled = false; bt.textContent = '🎨 Regerar brief com o tema atual'; } }
 }
 
 // v1.9.4: aplica uma copy nova na campanha ativa + editor + banco + peça do kanban
@@ -14906,6 +14917,11 @@ function _statusPainel(prefix, estado, titulo, detalhe, pct) {
   if (!document.getElementById('atxSpinStyle')) { const st = document.createElement('style'); st.id = 'atxSpinStyle'; st.textContent = '@keyframes atxspin{to{transform:rotate(360deg)}}'; document.head.appendChild(st); }
   try { if (estado === 'err') bar.scrollIntoView({ behavior:'smooth', block:'center' }); } catch(_) {}
 }
+// v1.10: URLs de mídia antigas (?m=ID) viram /media/ID.ext (Metricool exige extensão)
+function _urlMidiaPublica(url, ext) {
+  try { const u = new URL(url, location.href); const id = u.searchParams.get('m'); if (id && u.pathname.includes('/api/media-upload')) return u.origin + '/media/' + id + '.' + (ext || 'bin'); } catch(_) {}
+  return url;
+}
 function _linkCurtoVisivel(url) { try { const u = new URL(url); return u.host.replace(/^www\./,'') + u.pathname.replace(/\/$/,''); } catch(_) { return url; } }
 function _linkStoriesReels() { return (campAtiva?.link_destino || linkReuniao()); }
 
@@ -15062,7 +15078,7 @@ async function publicarStories() {
     _statusPainel('story', 'run', 'Agendando story ' + (i+1) + ' de ' + st.length + ' no Metricool...', quando.toLocaleString('pt-BR') + ' · ' + redesSt.join(', ') + (ehCta ? ' · com sticker de link' : ''), (i / st.length) * 100);
     try {
       const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ action:'publicar', payload: { tipo:'STORY', texto: st[i].texto_tela || '', redes: redesSt, data_hora: quando.toISOString(), imagem_url: st[i].imagem_composta || st[i].imagem_url, encurtar_link: false, link_sticker: (ehCta && link) ? link : '' } }) });
+        body: JSON.stringify({ action:'publicar', payload: { tipo:'STORY', texto: '', redes: redesSt, data_hora: quando.toISOString(), imagem_url: _urlMidiaPublica(st[i].imagem_composta || st[i].imagem_url, 'png'), encurtar_link: false, link_sticker: (ehCta && link) ? link : '' } }) });
       const d = await r.json();
       if (!d.success) throw new Error(d.error || 'falha');
       okN++;
@@ -15075,7 +15091,7 @@ async function publicarStories() {
   try { renderCalendarioKanban(); } catch(_) {}
   const tg = document.getElementById('storyTag'); if (tg) { tg.textContent = okN + '/' + st.length + ' agendados'; tg.className = 'tag on'; }
   if (okN) { campAtiva.stories_agendado_em = new Date(inicio).toISOString(); try { salvarCampanhaNoBanco(campAtiva, 'stories agendados'); } catch(_) {} }
-  if (okN === st.length) _statusPainel('story', 'ok', okN + ' stories agendados no Metricool ✓', 'A partir de ' + new Date(inicio).toLocaleString('pt-BR') + ' (a cada 2 min) · ' + redesSt.join(', ') + ' · sticker de link no último: <b>' + link + '</b>. Confira no Planner do Metricool e no calendário do Kanban.');
+  if (okN === st.length) _statusPainel('story', 'ok', okN + ' stories agendados no Metricool ✓', 'A partir de ' + new Date(inicio).toLocaleString('pt-BR') + ' (a cada 2 min) · ' + redesSt.join(', ') + ' · sticker de link no último: <b>' + link + '</b>.<br>Mídia enviada: ' + _urlMidiaPublica(st[0].imagem_composta || st[0].imagem_url, 'png') + ' (texto gravado na imagem; stories não têm legenda). Confira no Planner do Metricool.');
   else _statusPainel('story', 'err', okN + ' de ' + st.length + ' stories agendados', errosPub.join('<br>') || 'Veja o Log.');
   toast(okN + ' de ' + st.length + ' stories agendados', okN ? 'success' : 'error');
 }
@@ -15288,7 +15304,7 @@ async function publicarReel() {
   const redes = ['instagram']; if (campAtiva.redes_ativas?.facebook) redes.push('facebook');
   try {
     const resp = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ action:'publicar', payload: { tipo:'REEL', texto: legenda, redes, data_hora: new Date(quando).toISOString(), imagem_url: r.video_url, encurtar_link: false } }) });
+      body: JSON.stringify({ action:'publicar', payload: { tipo:'REEL', texto: legenda, redes, data_hora: new Date(quando).toISOString(), imagem_url: _urlMidiaPublica(r.video_url, (r.video_mime||'').includes('webm') ? 'webm' : 'mp4'), encurtar_link: false } }) });
     const d = await resp.json();
     if (!d.success) throw new Error(d.error || 'falha');
     const pFake = { id: 'reel_' + campAtiva.id, campanhaId: campAtiva.id, titulo: campAtiva.nome + ' · Reel' };
@@ -15433,7 +15449,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.9.8] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.10] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -15449,7 +15465,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.9.8';
+window.__ATX_BUILD_ID__ = 'ATX-v1.10';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
