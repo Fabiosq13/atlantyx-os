@@ -1690,7 +1690,20 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div class="page" id="page-s2kanban">
     <div style="display:flex;justify-content:space-between;margin-bottom:8px;gap:8px;flex-wrap:wrap;">
       <button class="btn btn-p" style="font-size:11px;padding:6px 14px;" onclick="gerarCampanhaAutomatica()" title="A IA analisa as métricas do Metricool + benchmarks e agenda 3 publicações otimizadas">&#129302; Auto-campanha IA (3 posts otimizados)</button>
+      <span style="font-size:9.5px;color:var(--t3);align-self:center;">📱 Stories e 🎬 Reels: abra uma campanha (✎ Editar no card ou Nova Campanha) → abas Stories / Reels</span>
       <button class="btn" style="font-size:10px;" onclick="reconstruirPecasDasCampanhas()" title="Recria no kanban as peças de campanhas salvas que sumiram">&#8635; Reconstruir peças das campanhas</button>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px;background:var(--bg4);border:1px solid var(--bd);border-radius:7px;padding:6px 10px;">
+      <span style="font-size:9.5px;color:var(--t2);font-family:var(--M);">FILTRAR POR</span>
+      <select id="kbCampo" class="fsel" style="font-size:10px;width:auto;" onchange="aplicarFiltroKanban()"><option value="criacao">data de criação</option><option value="agendamento">data de publicação agendada</option></select>
+      <input type="date" id="kbDe" class="fsel" style="font-size:10px;width:auto;" onchange="aplicarFiltroKanban()"/>
+      <span style="font-size:10px;color:var(--t3);">até</span>
+      <input type="date" id="kbAte" class="fsel" style="font-size:10px;width:auto;" onchange="aplicarFiltroKanban()"/>
+      <button class="btn" style="font-size:9px;" onclick="aplicarFiltroKanban('hoje')">Hoje</button>
+      <button class="btn" style="font-size:9px;" onclick="aplicarFiltroKanban('7')">7 dias</button>
+      <button class="btn" style="font-size:9px;" onclick="aplicarFiltroKanban('30')">30 dias</button>
+      <button class="btn" style="font-size:9px;color:var(--gold);" onclick="aplicarFiltroKanban('prox14')">📅 Próximos 14 dias</button>
+      <button class="btn" style="font-size:9px;" onclick="aplicarFiltroKanban('todos')">Todos</button>
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
       <div style="flex:1;">
@@ -1959,6 +1972,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <button class="btn" id="edAbaStory"   onclick="mostrarEdAba('story')"   style="font-size:10px;padding:4px 10px;">&#128221; Narrativa</button>
           <button class="btn" id="edAbaCopy"    onclick="mostrarEdAba('copy')"    style="font-size:10px;padding:4px 10px;">&#9997; Copy</button>
           <button class="btn" id="edAbaImg"     onclick="mostrarEdAba('img')"     style="font-size:10px;padding:4px 10px;">&#127912; Imagem</button>
+          <button class="btn" id="edAbaStories" onclick="mostrarEdAba('img');setTimeout(()=>document.getElementById('storyTag')?.closest('.panel')?.scrollIntoView({behavior:'smooth',block:'start'}),120)" style="font-size:10px;padding:4px 10px;color:var(--gold);border-color:rgba(245,185,75,.5);" title="Sequência de 3 stories 9:16 com sticker de link (quem já te segue)">&#128241; Stories</button>
+          <button class="btn" id="edAbaReels" onclick="mostrarEdAba('img');setTimeout(()=>document.getElementById('reelTag')?.closest('.panel')?.scrollIntoView({behavior:'smooth',block:'start'}),120)" style="font-size:10px;padding:4px 10px;color:var(--gold);border-color:rgba(245,185,75,.5);" title="Reel em slideshow 9:16 gerado no navegador (topo de funil)">&#127916; Reels</button>
           <button class="btn btn-p" id="edAbaPreview" onclick="mostrarEdAba('preview')" style="font-size:10px;padding:4px 10px;">&#128247; Preview por Canal</button>
         </div>
         <!-- ABA NARRATIVA -->
@@ -4125,6 +4140,47 @@ const KANBAN_COLS = ['Gerado','Revisão','Aprovado','Agendado','Publicado'];
 let kanbanPecas = [];
 let kanbanPecaSelecionada = null;
 
+// v1.9.2: publicações agendadas de uma peça (por pecaId ou título) — usado por card, detalhe e calendário
+function pubsDaPeca(p) {
+  const arr = (_publicacoes || []).filter(x => (x.pecaId && x.pecaId === p.id) || (!x.pecaId && x.titulo === p.titulo) || (p.campanhaId && x.campanhaId === p.campanhaId && x.titulo === p.titulo));
+  return arr.sort((a, b) => new Date(a.agendado_para || a.data) - new Date(b.agendado_para || b.data));
+}
+function dataAgendadaDaPeca(p) {
+  if (p.agendado_para) return p.agendado_para;
+  const pubs = pubsDaPeca(p);
+  return pubs.length ? (pubs[0].agendado_para || pubs[0].data) : null;
+}
+function fmtDH(iso) { try { const d = new Date(iso); return d.toLocaleDateString('pt-BR') + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); } catch(_) { return ''; } }
+// v1.9.2: filtro de data do kanban
+let _kbFiltro = { de: '', ate: '', campo: 'criacao' };
+function aplicarFiltroKanban(preset) {
+  const de = document.getElementById('kbDe'), ate = document.getElementById('kbAte'), campo = document.getElementById('kbCampo');
+  const iso = d => d.toISOString().substring(0, 10);
+  const hoje = new Date();
+  if (preset === 'hoje') { de.value = iso(hoje); ate.value = iso(hoje); }
+  else if (preset === '7') { const d = new Date(hoje); d.setDate(d.getDate() - 7); de.value = iso(d); ate.value = iso(hoje); }
+  else if (preset === '30') { const d = new Date(hoje); d.setDate(d.getDate() - 30); de.value = iso(d); ate.value = iso(hoje); }
+  else if (preset === 'prox14') { const d = new Date(hoje); d.setDate(d.getDate() + 14); de.value = iso(hoje); ate.value = iso(d); if (campo) campo.value = 'agendamento'; }
+  else if (preset === 'todos') { de.value = ''; ate.value = ''; }
+  _kbFiltro = { de: de?.value || '', ate: ate?.value || '', campo: campo?.value || 'criacao' };
+  renderKanban();
+}
+function _pecaPassaFiltro(p) {
+  if (!_kbFiltro.de && !_kbFiltro.ate) return true;
+  let ref;
+  if (_kbFiltro.campo === 'agendamento') { const a = dataAgendadaDaPeca(p); if (!a) return false; ref = new Date(a); }
+  else { ref = p.data ? _parseDataBR(p.data) : null; if (!ref) return true; }
+  const dia = ref.toISOString ? new Date(ref.getTime() - ref.getTimezoneOffset()*60000).toISOString().substring(0,10) : '';
+  if (_kbFiltro.de && dia < _kbFiltro.de) return false;
+  if (_kbFiltro.ate && dia > _kbFiltro.ate) return false;
+  return true;
+}
+function _parseDataBR(str) { // "17/08/2026, 14:35:15" → Date
+  const m = String(str).match(/(\d{2})\/(\d{2})\/(\d{4})(?:,?\s*(\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if (!m) { const d = new Date(str); return isNaN(d) ? null : d; }
+  return new Date(+m[3], +m[2]-1, +m[1], +(m[4]||0), +(m[5]||0), +(m[6]||0));
+}
+
 function renderKanban() {
   const board = document.getElementById('kanbanBoard');
   if (!board) return;
@@ -4133,7 +4189,7 @@ function renderKanban() {
   if (cnt) { cnt.textContent = pendentes || '0'; cnt.className = pendentes > 0 ? 'nbx rd' : 'nbx of'; }
 
   board.innerHTML = KANBAN_COLS.map(col => {
-    const pecas = kanbanPecas.filter(p => p.status === col);
+    const pecas = kanbanPecas.filter(p => p.status === col && _pecaPassaFiltro(p));
     const corHead = col==='Aprovado'?'var(--green)':col==='Publicado'?'var(--blue)':col==='Revisão'?'var(--gold)':'var(--t2)';
     return `<div style="background:var(--bg4);border-radius:8px;padding:9px;min-height:200px;">
       <div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:${corHead};margin-bottom:8px;display:flex;justify-content:space-between;">
@@ -4145,6 +4201,7 @@ function renderKanban() {
           <div style="font-family:var(--M);font-size:8px;padding:1px 6px;border-radius:3px;display:inline-block;background:${p.canal==='LinkedIn'?'var(--b2)':p.canal==='Instagram'?'rgba(240,48,112,.12)':'var(--bg4)'};color:${p.canal==='LinkedIn'?'var(--blue)':p.canal==='Instagram'?'var(--s7c)':'var(--t2)'};">${p.canal}</div>
           <div style="font-size:10px;color:var(--t2);margin-top:4px;">${p.agente}</div>
           ${p.data?`<div style="font-family:var(--M);font-size:8px;color:var(--t3);margin-top:3px;">🕓 ${p.data}</div>`:''}
+          ${(() => { const a = dataAgendadaDaPeca(p); const pubs = pubsDaPeca(p); return a ? `<div style="font-family:var(--M);font-size:8.5px;color:var(--gold);margin-top:2px;">📅 ${fmtDH(a)}${pubs.length ? ' · ' + [...new Set(pubs.map(x=>x.rede))].map(r=>({linkedin:'in',instagram:'ig',facebook:'fb',whatsapp:'wa',email:'@'}[r]||r)).join('/') : ''}</div>` : (col==='Agendado' ? '<div style="font-size:8px;color:var(--red);margin-top:2px;">⚠ sem publicação registrada</div>' : ''); })()}
           <div style="display:flex;gap:4px;margin-top:6px;">
             <button class="btn" style="flex:1;font-size:8.5px;padding:2px 5px;color:var(--blue);" onclick="event.stopPropagation();editarPecaDoKanban('${p.id}')" title="Abrir campanha completa para edição">✎ Editar</button>
             <button class="btn" style="font-size:8.5px;padding:2px 7px;color:var(--red);" onclick="excluirPecaKanban('${p.id}',event)" title="Excluir">🗑</button>
@@ -4169,7 +4226,8 @@ function selecionarPeca(id) {
   det.style.display = 'block';
   // v1.6.4: rolar até o painel — antes abria fora da viewport e parecia que "não abria"
   setTimeout(() => { try { det.scrollIntoView({ behavior:'smooth', block:'start' }); det.style.boxShadow='0 0 0 2px var(--blue)'; setTimeout(()=>det.style.boxShadow='',1800); } catch(_){} }, 60);
-  tit.textContent = p.titulo + ' -- ' + p.canal + ' -- ' + p.status + (p.data ? '  ·  🕓 ' + p.data : '');
+  const _ag = dataAgendadaDaPeca(p);
+  tit.textContent = p.titulo + ' -- ' + p.canal + ' -- ' + p.status + (p.data ? '  ·  🕓 ' + p.data : '') + (_ag ? '  ·  📅 publica ' + fmtDH(_ag) : '');
   body.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
       <div>
@@ -4202,7 +4260,8 @@ function selecionarPeca(id) {
           <div>Canal: ${p.canal}</div>
           <div>Agente: ${p.agente}</div>
           <div>Status: ${p.status}</div>
-          ${p.data ? '<div>Data: '+p.data+'</div>' : ''}
+          ${p.data ? '<div>Criada em: '+p.data+'</div>' : ''}
+          ${(() => { const pubs = pubsDaPeca(p); if (!pubs.length) return p.status === 'Agendado' ? '<div style="color:var(--red);margin-top:4px;">⚠ Nenhuma publicação registrada — o agendamento no Metricool pode ter falhado (veja o Log). Use 🚀 Publicar para reagendar.</div>' : ''; return '<div style="margin-top:6px;color:var(--gold);font-weight:600;">📅 Publicação agendada:</div>' + pubs.map(x => '<div style="padding-left:10px;">' + fmtDH(x.agendado_para || x.data) + ' · ' + x.rede + (x.metodo==='metricool' ? ' 🚀 Metricool' : ' ✋ manual') + (x.metricool_id ? ' <span style="color:var(--t3);font-size:9px;">#' + x.metricool_id + '</span>' : '') + '</div>').join(''); })()}
           ${p.campanhaId ? '<div style="margin-top:4px;color:var(--t3);font-size:10px;">Campanha ID: '+p.campanhaId+'</div>' : ''}
         </div>
         ${p.campanhaId ? `<button class="btn btn-p" style="margin-top:8px;width:100%;font-size:11px;padding:7px;" onclick="editarPecaDoKanban('${p.id}')">✎ Editar Campanha &amp; Re-rodar</button>` : ''}
@@ -7609,6 +7668,7 @@ async function criarCampanhaCompleta() {
     };
 
     addLog('ok', '[S2-Campanha] API retornou com sucesso');
+  addLog('info', '[S2-Campanha] Próximos passos: aba 🎨 Imagem (arte do post) · 📱 Stories · 🎬 Reels — todos a partir desta campanha');
     addLog('info', '[S2-Campanha] Narrativa: tema="' + (data.narrativa?.tema_central||'').substring(0,50) + '"');
     addLog('info', '[S2-Campanha] Copy: headline="' + (data.copy?.versoes?.[0]?.headline||'').substring(0,50) + '"');
     addLog('info', '[S2-Campanha] Copy: corpo=' + (data.copy?.versoes?.[0]?.corpo||'').length + ' chars');
@@ -14186,7 +14246,8 @@ async function executarPublicacao(pecaId, metodo) {
         }
       }
       redesPrincipal.forEach(rede => registrarPublicacao(p, rede, textoMc, 'metricool', d.metricool_id, montarLink(rede), quando ? new Date(quando).toISOString() : new Date().toISOString()));
-      p.status = 'Publicado';
+      p.agendado_para = quando ? new Date(quando).toISOString() : new Date().toISOString(); // v1.9.2
+      p.status = (quando && new Date(quando) > new Date()) ? 'Agendado' : 'Publicado';
       renderKanban(); salvarKanbanNoBanco(); salvarPublicacoes();
       toast('Publicado via Metricool! (' + redes.join(', ') + ')', 'success');
       addLog('ok', '[Pub] Metricool OK · agendado: ' + (d.agendado_para || 'agora'));
@@ -14606,7 +14667,9 @@ async function gerarCampanhaAutomatica() {
     } catch (e) { addLog('warn', '[Auto-IA] Imagem falhou (' + post.titulo + '): ' + e.message + ' — publicará sem imagem'); }
 
     // 3b. Próxima ocorrência do dia/hora sugeridos
-    const alvoDia = diaIdx[(post.dia_semana||'').toLowerCase()] ?? 2;
+    const _ds = (post.dia_semana||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/-?feira/,'').trim();
+    const alvoDia = diaIdx[_ds] ?? 2;
+    if (diaIdx[_ds] == null) addLog('warn', '[Auto-IA] dia_semana não reconhecido ("' + post.dia_semana + '") — usando terça');
     const [hh, mm] = (post.hora || '10:00').split(':').map(n => parseInt(n)||0);
     const quando = new Date(); quando.setHours(hh, mm, 0, 0);
     let addD = (alvoDia - quando.getDay() + 7) % 7;
@@ -14615,10 +14678,11 @@ async function gerarCampanhaAutomatica() {
 
     // 3c. Peça no kanban
     const pecaId = 'peca_auto_' + Date.now() + '_' + Math.random().toString(36).substr(2,4);
-    kanbanPecas.push({ id: pecaId, titulo: post.titulo, canal: 'Todos', agente: '🤖 Auto-IA',
+    const pecaObj = { id: pecaId, titulo: post.titulo, canal: 'Todos', agente: '🤖 Auto-IA',
       narrativa: post.justificativa || '', copy: post.texto, design: imgUrl || (post.prompt_imagem||''),
-      campanhaId: null, status: temMc2 ? 'Agendado' : 'Aprovado',
-      data: new Date().toLocaleString('pt-BR') });
+      campanhaId: null, status: 'Aprovado', // v1.9.2: só vira Agendado se o Metricool confirmar
+      data: new Date().toLocaleString('pt-BR'), agendado_para: null };
+    kanbanPecas.push(pecaObj);
 
     // 3d. Agendar no Metricool (todas as redes) — IG só com imagem
     if (temMc2) {
@@ -14629,13 +14693,16 @@ async function gerarCampanhaAutomatica() {
         const dp = await rp.json();
         if (dp.success) {
           agendados++;
+          pecaObj.status = 'Agendado'; pecaObj.agendado_para = quando.toISOString(); pecaObj.metricool_id = dp.metricool_id;
           const pFake = { id: pecaId, campanhaId: null, titulo: post.titulo };
           redesPost.forEach(rd => registrarPublicacao(pFake, rd, post.texto, 'metricool', dp.metricool_id, '', quando.toISOString()));
           addLog('ok', '[Auto-IA] Agendado: "' + post.titulo + '" → ' + quando.toLocaleString('pt-BR') + ' (' + redesPost.join(',') + ')');
         } else {
-          addLog('err', '[Auto-IA] Metricool recusou "' + post.titulo + '": ' + (dp.error||''));
+          pecaObj.narrativa = (pecaObj.narrativa ? pecaObj.narrativa + ' · ' : '') + '⚠ Metricool recusou: ' + (dp.error||'sem detalhe');
+          addLog('err', '[Auto-IA] Metricool recusou "' + post.titulo + '" (' + quando.toLocaleString('pt-BR') + '): ' + (dp.error||'') + ' — peça ficou em Aprovado; publique pelo card');
+          toast('Metricool recusou "' + post.titulo + '" — ficou em Aprovado', 'error');
         }
-      } catch (e) { addLog('err', '[Auto-IA] Agendamento falhou: ' + e.message); }
+      } catch (e) { addLog('err', '[Auto-IA] Agendamento falhou (' + post.titulo + '): ' + e.message + ' — peça em Aprovado'); }
     }
   }
   renderKanban();
@@ -15082,7 +15149,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.9] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.9.2] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -15098,7 +15165,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.9';
+window.__ATX_BUILD_ID__ = 'ATX-v1.9.2';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
