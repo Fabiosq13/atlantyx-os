@@ -6343,173 +6343,94 @@ async function gerarImagemCampanha() {
 
 
 async function ajustarCopyComIA() {
+  // v1.9.4: reescrito — opera sobre a CAMPANHA ATIVA e os campos do editor
+  // (antes escrevia num elemento do antigo Studio que não existe nesta tela)
+  if (!campAtiva) { toast('Abra ou crie uma campanha primeiro', 'error'); return; }
   const comentario = document.getElementById('copyAjusteComentario')?.value?.trim();
-  const copyAtual  = document.getElementById('copyAtualTexto')?.textContent?.trim();
-  const copyEl     = document.getElementById('copyAtualTexto');
-  const planEl     = document.getElementById('copyPlanejamento');
-  const btn        = document.getElementById('btnAjustarCopy');
-
-  if (!comentario) { toast('Descreva o que quer ajustar no copy', 'error'); return; }
-
-  // Salvar versao atual antes de ajustar
-  if (copyAtual && copyAtual !== 'Gere uma campanha para ver o copy aqui.') {
-    copyVersoesList.push({ versao: copyVersoesList.length + 1, texto: copyAtual, timestamp: new Date().toLocaleTimeString('pt-BR') });
-    renderCopyVersoes();
-  }
-
-  btn.disabled = true; btn.textContent = 'Ajustando...';
-  if (copyEl) { copyEl.style.opacity = '0.4'; copyEl.textContent = 'Agente S2-Copywriter reescrevendo com base no seu comentario...'; }
-  addLog('info', '[S2-Copywriter] Ajustando: "' + comentario + '"');
-
-  const ctx = window._campanhaAtual || {};
+  if (!comentario) { toast('Escreva o ajuste desejado (ex: "mais direto, citar ROI")', 'error'); return; }
+  const btn = document.getElementById('btnAjustarCopy');
+  const get = id => document.getElementById(id)?.value || '';
+  const atual = { headline: get('edHeadline'), subheadline: get('edSubheadline'), corpo: get('edCorpo'), cta: get('edCtaCopy') };
+  if (atual.corpo || atual.headline) { campVersoesCopy.push({ versao: campVersoesCopy.length + 1, headline: atual.headline, texto: atual.corpo, timestamp: new Date().toLocaleTimeString('pt-BR') }); try { renderCopyVersoes(); } catch(_) {} }
+  if (btn) { btn.disabled = true; btn.textContent = 'Ajustando...'; }
+  addLog('info', '[Copy] Ajuste com IA: "' + comentario + '"');
   try {
-    const r = await fetch('/api/s2-creative', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'copywriter',
-        payload: {
-          canal: ctx.canal || 'LinkedIn',
-          objetivo: ctx.obj || 'Gerar leads',
-          ajuste_comentario: comentario,
-          copy_anterior: copyAtual,
-          narrativa: ctx.data?.narrativa || { tema_central: ctx.narrativaTema || '', gancho_principal: '' },
-          versoes: 1
-        }
-      })
-    });
-
-    if (!r.ok) throw new Error('Servidor retornou ' + r.status);
-    const data = await r.json();
-
-    const novoTexto = data.copy?.versoes?.[0]?.corpo
-                   || data.copy?.versoes?.[0]?.texto
-                   || data.versoes?.[0]?.corpo
-                   || '';
-
-    if (novoTexto) {
-      if (copyEl) { copyEl.style.opacity = '1'; copyEl.textContent = novoTexto; }
-      document.getElementById('copyAjusteComentario').value = '';
-      addLog('ok', '[S2-Copywriter] Copy ajustado (v' + (copyVersoesList.length) + '): "' + novoTexto.substring(0,60) + '..."');
-      toast('Copy ajustado com sucesso!', 'success');
-    } else {
-      // Mostrar o que veio para debug
-      const debug = JSON.stringify(data).substring(0, 300);
-      if (copyEl) { copyEl.style.opacity = '1'; copyEl.textContent = copyAtual; }
-      addLog('err', '[S2-Copywriter] Resposta sem corpo: ' + debug);
-      toast('Agente nao retornou novo copy — tente novamente', 'error');
-    }
-  } catch(e) {
-    if (copyEl) { copyEl.style.opacity = '1'; copyEl.textContent = copyAtual; }
-    addLog('err', '[S2-Copywriter] Erro: ' + e.message);
-    toast('Erro ao ajustar: ' + e.message, 'error');
-  }
-  btn.disabled = false; btn.textContent = 'Ajustar Copy';
+    const narrativa = campAtiva.data?.narrativa || {};
+    const r = await fetch('/api/s2-creative', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'copywriter', payload: { canal: campAtiva.canal || 'Todos', objetivo: campAtiva.obj || 'Gerar leads', narrativa: Object.assign({}, narrativa, {
+        tema_central: (narrativa.tema_central || '') + ' | AJUSTE SOLICITADO: ' + comentario + ' | COPY ATUAL (revisar, não repetir): ' + (atual.headline ? atual.headline + ' — ' : '') + atual.corpo.substring(0, 700) }), versoes: 1 } }) });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error || 'falha');
+    const v = d.copy?.versoes?.[0] || {};
+    if (!v.corpo && !d.copy?.raw) throw new Error('IA não retornou copy');
+    const nova = { headline: v.headline || atual.headline, subheadline: v.subheadline || atual.subheadline, corpo: v.corpo || d.copy.raw || atual.corpo, cta: v.cta || atual.cta, hashtags: v.hashtags || [] };
+    await _aplicarCopyNaCampanha(nova, 'Ajustada com IA');
+    document.getElementById('copyAjusteComentario').value = '';
+    toast('Copy ajustada ✓ (versão anterior guardada em VERSÕES)', 'success');
+  } catch (e) { addLog('err', '[Copy] ajuste: ' + e.message); toast('Erro: ' + e.message, 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = 'Ajustar Copy'; } }
 }
 
 async function refazerCopyCompleto() {
-  const ctx       = window._campanhaAtual || {};
-  const copyAtual = document.getElementById('copyAtualTexto')?.textContent?.trim();
-  const comentario= document.getElementById('copyAjusteComentario')?.value?.trim();
-  const copyEl    = document.getElementById('copyAtualTexto');
-  const planEl    = document.getElementById('copyPlanejamento');
-  const btn       = document.getElementById('btnRefazerCopy');
-
-  // Salvar versao atual
-  if (copyAtual && copyAtual !== 'Gere uma campanha para ver o copy aqui.') {
-    copyVersoesList.push({ versao: copyVersoesList.length + 1, texto: copyAtual, timestamp: new Date().toLocaleTimeString('pt-BR') });
-    renderCopyVersoes();
-  }
-
-  btn.disabled = true; btn.textContent = 'Refazendo...';
-  if (copyEl) { copyEl.style.opacity = '0.4'; copyEl.textContent = 'Storyteller criando nova narrativa...'; }
-  if (planEl) { planEl.style.opacity = '0.4'; planEl.textContent = 'Aguardando nova narrativa...'; }
-  addLog('info', '[S2-Storyteller+Copywriter] Refazendo tudo' + (comentario ? ': "' + comentario + '"' : ''));
-
+  // v1.9.4: reescrito — Storyteller + Copywriter novos, aplicados na CAMPANHA ATIVA e no editor
+  if (!campAtiva) { toast('Abra ou crie uma campanha primeiro', 'error'); return; }
+  const comentario = document.getElementById('copyAjusteComentario')?.value?.trim();
+  const btn = document.getElementById('btnRefazerCopy');
+  const get = id => document.getElementById(id)?.value || '';
+  const atual = { headline: get('edHeadline'), corpo: get('edCorpo') };
+  if (atual.corpo || atual.headline) { campVersoesCopy.push({ versao: campVersoesCopy.length + 1, headline: atual.headline, texto: atual.corpo, timestamp: new Date().toLocaleTimeString('pt-BR') }); try { renderCopyVersoes(); } catch(_) {} }
+  if (btn) { btn.disabled = true; btn.textContent = 'Refazendo...'; }
+  addLog('info', '[Refazer] Storyteller + Copywriter novos' + (comentario ? ': "' + comentario + '"' : ''));
   try {
-    // ── PASSO 1: Novo Storyteller com contexto de ajuste ─────────────────────
-    const stR = await fetch('/api/s2-creative', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'storyteller',
-        payload: {
-          campanha: ctx.nome || 'Campanha Atlantyx',
-          canal:    ctx.canal || 'LinkedIn',
-          objetivo: ctx.obj  || 'Gerar leads',
-          publico:  ctx.pub  || 'CIO/CTO em empresas R$100M+',
-          contexto: comentario
-            ? 'INSTRUCAO DE AJUSTE: ' + comentario + '. Criar narrativa completamente nova com este direcionamento.'
-            : 'Criar narrativa diferente da anterior — novo angulo, novo gancho, nova abordagem para o mesmo ICP.'
-        }
-      })
-    });
+    // 1) nova narrativa
+    const r1 = await fetch('/api/s2-creative', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'storyteller', payload: { campanha: campAtiva.nome, canal: campAtiva.canal || 'Todos', objetivo: campAtiva.obj || 'Gerar leads', publico: campAtiva.pub || '', contexto: (campAtiva.ctx || '') + (comentario ? ' | INSTRUÇÃO DE AJUSTE: ' + comentario + '. Criar narrativa completamente nova com este direcionamento.' : ' | Criar narrativa DIFERENTE da anterior (tema anterior: "' + (campAtiva.data?.narrativa?.tema_central || '') + '") — novo ângulo, novo gancho.') } }) });
+    const d1 = await r1.json();
+    if (!d1.success || !d1.narrativa) throw new Error(d1.error || 'Storyteller falhou');
+    const narrativa = d1.narrativa;
+    addLog('ok', '[Refazer] Nova narrativa: "' + (narrativa.tema_central || '') + '"');
+    // 2) nova copy
+    const r2 = await fetch('/api/s2-creative', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'copywriter', payload: { canal: campAtiva.canal || 'Todos', objetivo: campAtiva.obj || 'Gerar leads', narrativa, versoes: 2 } }) });
+    const d2 = await r2.json();
+    if (!d2.success) throw new Error(d2.error || 'Copywriter falhou');
+    const v = d2.copy?.versoes?.[0] || {};
+    if (!v.corpo && !d2.copy?.raw) throw new Error('Copywriter não retornou texto');
+    // aplicar narrativa
+    campAtiva.data = campAtiva.data || {};
+    campAtiva.data.narrativa = narrativa;
+    window._campanhaAtual = campAtiva;
+    const setv = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+    setv('edTemaCentral', narrativa.tema_central); setv('edGancho', narrativa.gancho_principal); setv('edPromessa', narrativa.promessa_central); setv('edCTA', narrativa.call_to_action);
+    await _aplicarCopyNaCampanha({ headline: v.headline || '', subheadline: v.subheadline || '', corpo: v.corpo || d2.copy.raw || '', cta: v.cta || '', hashtags: v.hashtags || [] }, 'Refeita (narrativa + copy)', d2.copy);
+    if (comentario) document.getElementById('copyAjusteComentario').value = '';
+    try { mostrarEdAba('copy'); } catch(_) {}
+    toast('Narrativa e copy refeitas ✓ (anterior em VERSÕES)', 'success');
+  } catch (e) { addLog('err', '[Refazer] ' + e.message); toast('Erro ao refazer: ' + e.message, 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = 'Refazer Tudo'; } }
+}
 
-    if (!stR.ok) throw new Error('Storyteller retornou ' + stR.status);
-    const stData = await stR.json();
-    const novaNarrativa = stData.narrativa || {};
-
-    // Atualizar planejamento na tela
-    if (planEl) {
-      planEl.style.opacity = '1';
-      planEl.textContent = [
-        'Tema central: ' + (novaNarrativa.tema_central || ''),
-        'Gancho: ' + (novaNarrativa.gancho_principal || ''),
-        'Angulo: ' + (novaNarrativa.angulo_narrativo || ''),
-        'Promessa: ' + (novaNarrativa.promessa_central || ''),
-      ].join('\\n');
-    }
-    if (copyEl) copyEl.textContent = 'Copywriter reescrevendo com a nova narrativa...';
-    addLog('ok', '[S2-Storyteller] Nova narrativa: "' + (novaNarrativa.tema_central || '') + '"');
-
-    // ── PASSO 2: Novo Copywriter baseado na narrativa nova ────────────────────
-    const cpR = await fetch('/api/s2-creative', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'copywriter',
-        payload: {
-          canal:     ctx.canal || 'LinkedIn',
-          objetivo:  ctx.obj   || 'Gerar leads',
-          narrativa: novaNarrativa,
-          ajuste_comentario: comentario || '',
-          versoes: 1
-        }
-      })
-    });
-
-    if (!cpR.ok) throw new Error('Copywriter retornou ' + cpR.status);
-    const cpData = await cpR.json();
-    const novoTexto = cpData.copy?.versoes?.[0]?.corpo
-                   || cpData.copy?.versoes?.[0]?.texto
-                   || cpData.versoes?.[0]?.corpo
-                   || '';
-
-    if (novoTexto) {
-      if (copyEl) { copyEl.style.opacity = '1'; copyEl.textContent = novoTexto; }
-      // Atualizar contexto global com nova narrativa
-      if (window._campanhaAtual) {
-        if (!window._campanhaAtual.data) window._campanhaAtual.data = {};
-        window._campanhaAtual.data.narrativa = novaNarrativa;
-        window._campanhaAtual.narrativaTema = novaNarrativa.tema_central || '';
-      }
-      if (document.getElementById('copyAjusteComentario')) document.getElementById('copyAjusteComentario').value = '';
-      addLog('ok', '[S2-Copywriter] Refazimento concluido: "' + novoTexto.substring(0,60) + '..."');
-      toast('Narrativa e copy refeitos com sucesso!', 'success');
-    } else {
-      if (copyEl) { copyEl.style.opacity = '1'; copyEl.textContent = copyAtual; }
-      addLog('err', '[S2-Copywriter] Sem novo corpo: ' + JSON.stringify(cpData).substring(0,200));
-      toast('Copywriter nao retornou texto — tente novamente', 'error');
-    }
-
-  } catch(e) {
-    if (copyEl) { copyEl.style.opacity = '1'; copyEl.textContent = copyAtual; }
-    if (planEl) planEl.style.opacity = '1';
-    addLog('err', '[S2-Refazer] Erro: ' + e.message);
-    toast('Erro ao refazer: ' + e.message, 'error');
-  }
-
-  btn.disabled = false; btn.textContent = 'Refazer Tudo';
+// v1.9.4: aplica uma copy nova na campanha ativa + editor + banco + peça do kanban
+async function _aplicarCopyNaCampanha(nova, motivo, copyCompleta) {
+  campAtiva.data = campAtiva.data || {};
+  const cp = copyCompleta || campAtiva.data.copy || { versoes: [] };
+  cp.versoes = cp.versoes && cp.versoes.length ? cp.versoes : [{}];
+  cp.versoes[0] = Object.assign({}, cp.versoes[0], nova, { versao: 1 });
+  campAtiva.data.copy = cp;
+  campAtiva.data.copy_por_rede = {}; // versões por rede ficaram desatualizadas — Preview por Canal recalcula
+  campAtiva.atualizado_em = new Date().toISOString();
+  const setv = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+  setv('edHeadline', nova.headline); setv('edSubheadline', nova.subheadline); setv('edCorpo', nova.corpo); setv('edCtaCopy', nova.cta);
+  // resumo no card do topo (se existir)
+  try { const hd = document.querySelector('#campResumoHeadline'); if (hd) hd.textContent = nova.headline || ''; } catch(_) {}
+  try { salvarCampanhaLocal(campAtiva); } catch(_) {}
+  try { await fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()}, body: JSON.stringify({ action:'save_campanha', value: campAtiva }) }); } catch(_) {}
+  // peça no kanban vinculada: atualiza copy
+  try {
+    const p = (kanbanPecas || []).find(x => x.campanhaId === campAtiva.id);
+    if (p) { p.copy = (nova.headline ? nova.headline + '\n\n' : '') + (nova.corpo || ''); p.narrativa = campAtiva.data?.narrativa?.tema_central || p.narrativa; renderKanban(); salvarKanbanNoBanco(); }
+  } catch(_) {}
+  addLog('ok', '[Copy] ' + motivo + ': "' + (nova.headline || nova.corpo || '').substring(0, 60) + '"');
 }
 
 
@@ -15211,7 +15132,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.9.3] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.9.4] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -15227,7 +15148,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.9.3';
+window.__ATX_BUILD_ID__ = 'ATX-v1.9.4';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
