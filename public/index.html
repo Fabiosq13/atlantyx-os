@@ -1691,6 +1691,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div style="display:flex;justify-content:space-between;margin-bottom:8px;gap:8px;flex-wrap:wrap;">
       <button class="btn btn-p" style="font-size:11px;padding:6px 14px;" onclick="gerarCampanhaAutomatica()" title="A IA analisa as métricas do Metricool + benchmarks e agenda 3 publicações otimizadas">&#129302; Auto-campanha IA (3 posts otimizados)</button>
       <span style="font-size:9.5px;color:var(--t3);align-self:center;">📱 Stories e 🎬 Reels: abra uma campanha (✎ Editar no card ou Nova Campanha) → abas Stories / Reels</span>
+      <button class="btn" style="font-size:10px;" onclick="definirLinkReuniao()" title="Link padrão de reunião usado em publicações, stories, impulso e auto-campanha">🔗 Link de reunião padrão</button>
       <button class="btn" style="font-size:10px;" onclick="reconstruirPecasDasCampanhas()" title="Recria no kanban as peças de campanhas salvas que sumiram">&#8635; Reconstruir peças das campanhas</button>
     </div>
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px;background:var(--bg4);border:1px solid var(--bd);border-radius:7px;padding:6px 10px;">
@@ -1921,11 +1922,11 @@ tr:hover td{background:rgba(79,124,255,.03);}
             <div class="fg" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
               <div>
                 <label class="fl">Data de início</label>
-                <input type="date" class="fi" id="cDataInicio"/>
+                <input type="date" class="fi" id="cDataInicio" autocomplete="off"/>
               </div>
               <div>
                 <label class="fl">Data de fim</label>
-                <input type="date" class="fi" id="cDataFim"/>
+                <input type="date" class="fi" id="cDataFim" autocomplete="off"/>
               </div>
             </div>
             <div class="fg"><label class="fl">Setor / Público Alvo</label>
@@ -2173,8 +2174,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <!-- ABA MINHAS CAMPANHAS -->
     <div id="abaLista" style="display:none;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-        <input class="fi" id="campBusca" placeholder="Buscar campanha..." style="flex:1;" oninput="filtrarCampanhas()"/>
-        <select class="fsel" id="campFiltroStatus" onchange="filtrarCampanhas()" style="width:160px;">
+        <input class="fi" id="campBusca" placeholder="Buscar campanha..." style="flex:1;" oninput="filtrarCampanhas()" autocomplete="off"/>
+        <select class="fsel" id="campFiltroStatus" onchange="filtrarCampanhas()" style="width:160px;" autocomplete="off">
           <option value="">Todos os status</option>
           <option value="rascunho">Rascunho</option>
           <option value="aprovada">Aprovada</option>
@@ -2182,7 +2183,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <option value="pausada">Pausada</option>
           <option value="encerrada">Encerrada</option>
         </select>
-        <select class="fsel" id="campFiltroRede" onchange="filtrarCampanhas()" style="width:140px;">
+        <select class="fsel" id="campFiltroRede" onchange="filtrarCampanhas()" style="width:140px;" autocomplete="off">
           <option value="">Todas as redes</option>
           <option value="linkedin">LinkedIn</option>
           <option value="instagram">Instagram</option>
@@ -4136,6 +4137,17 @@ function renderEmailCategories(emails) {
 //    S2 MARKETING DIGITAL CRIATIVO                                             
 
 // KANBAN STATE
+// v1.9.3: link de reunião padrão (HubSpot Meetings) — usado como default em publicações,
+// stories, impulso e auto-campanha. Pode ser trocado em Configurações (localStorage atx:link_reuniao).
+const LINK_REUNIAO_PADRAO = 'https://meetings.hubspot.com/atlantyx?uuid=eca883eb-276d-45cb-bda8-d7d5d2ae9219';
+function linkReuniao() { try { return (localStorage.getItem('atx:link_reuniao') || '').trim() || LINK_REUNIAO_PADRAO; } catch(_) { return LINK_REUNIAO_PADRAO; } }
+function definirLinkReuniao() {
+  const atual = linkReuniao();
+  const novo = prompt('Link padrão de reunião (usado nas publicações, stories, impulso e auto-campanha):', atual);
+  if (novo === null) return;
+  try { if (novo.trim()) localStorage.setItem('atx:link_reuniao', novo.trim()); else localStorage.removeItem('atx:link_reuniao'); } catch(_) {}
+  toast('Link de reunião padrão: ' + linkReuniao(), 'success');
+}
 const KANBAN_COLS = ['Gerado','Revisão','Aprovado','Agendado','Publicado'];
 let kanbanPecas = [];
 let kanbanPecaSelecionada = null;
@@ -4541,6 +4553,8 @@ async function reconstruirPecasDasCampanhas() {
   } catch (e) { toast('Erro ao reconstruir: ' + e.message, 'error'); }
 }
 
+// v1.9.3: datas padrão no boot (se vazias)
+setTimeout(() => { try { definirDatasPadraoCampanha(false); } catch(_) {} }, 900);
 // v1.5.8: carregar kanban no BOOT (não só ao abrir a aba) — evita race que apagava peças
 setTimeout(() => { try { carregarKanbanDoBanco(); } catch(_) {} }, 1200);
 
@@ -4936,6 +4950,7 @@ selecionarPeca = function(id) {
   const els = ['ajusteResultado','promptAtual','versaoHistorico','imgPreview'];
   els.forEach(el => { const e = document.getElementById(el); if(e) e.style.display = 'none'; });
   const img = document.getElementById('imgUrl'); if(img) img.value = '';
+  try { definirDatasPadraoCampanha(true); } catch(_) {} // v1.9.3
   const com = document.getElementById('ajusteComentario'); if(com) com.value = '';
 };
 
@@ -7121,6 +7136,16 @@ nav = function(p, el) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 // ── RESET ESTADO DA CAMPANHA ─────────────────────────────────────────────────
+// v1.9.3: datas padrão da campanha (hoje → +14 dias); navegadores restauram valores antigos
+// dos inputs após reload, o que "travava" as datas em outra máquina
+function definirDatasPadraoCampanha(force) {
+  const di = document.getElementById('cDataInicio'), df = document.getElementById('cDataFim');
+  if (!di || !df) return;
+  const iso = d => { const t = new Date(d.getTime() - d.getTimezoneOffset()*60000); return t.toISOString().substring(0,10); };
+  const hoje = new Date(), fim = new Date(); fim.setDate(fim.getDate() + 14);
+  if (force || !di.value || di.value < iso(new Date(hoje.getTime() - 365*864e5))) di.value = iso(hoje);
+  if (force || !df.value || df.value < di.value) df.value = iso(fim);
+}
 function resetCampanhaState() {
   // v1.5.8: se há campanha PROCESSANDO agora, não tocar em NADA —
   // o DOM da página persiste (SPA), então o pipeline/“Criando...” continua visível.
@@ -7221,6 +7246,8 @@ function mostrarAbaCampanha(aba) {
       // Placeholder imediato enquanto o banco responde
       const grid = el('campListaGrid');
       if (grid && !grid.innerHTML.trim()) grid.innerHTML = '<div style="grid-column:1/-1;color:var(--t3);font-size:11px;text-align:center;padding:30px;">Carregando campanhas...</div>';
+      // v1.9.3: filtros podem vir "restaurados" pelo navegador (valor antigo) → zera ao abrir a aba
+      try { const fs_ = el('campFiltroStatus'), fr_ = el('campFiltroRede'), fb_ = el('campBusca'); if (fs_) fs_.value = ''; if (fr_) fr_.value = ''; if (fb_) fb_.value = ''; } catch(_) {}
       setTimeout(() => {
         try { _todasCampanhas = getCampanhasLocal(); filtrarCampanhas(); } catch(e) { addLog('err','[Campanhas] filtro: '+e.message); }
         try { carregarCampanhasDB(); } catch(e) { addLog('err','[Campanhas] banco: '+e.message); }
@@ -7522,7 +7549,7 @@ async function carregarCampanhasDB() {
       });
     }
   } catch(e) {
-    addLog('warn', '[Campanhas] Banco offline: ' + e.message);
+    addLog('warn', '[Campanhas] Banco offline: ' + e.message + ' — verifique DATABASE_URL/Neon no Vercel');
   }
 
   // Sempre garante fallback do localStorage
@@ -8135,9 +8162,14 @@ function filtrarCampanhas() {
     if (!grid) { addLog('err','[Campanhas] campListaGrid nao encontrado'); return; }
 
     if (!camps.length) {
-      grid.innerHTML = '<div style="grid-column:1/-1;color:var(--t3);font-size:12px;text-align:center;padding:40px;">Nenhuma campanha encontrada.<br/><br/><span style="color:var(--blue);">Crie sua primeira campanha na aba + Nova Campanha</span></div>';
+      const total = (_todasCampanhas || []).length;
+      grid.innerHTML = total
+        ? '<div style="grid-column:1/-1;color:var(--t3);font-size:12px;text-align:center;padding:40px;">' + total + ' campanha(s) carregada(s), mas nenhuma passa nos filtros atuais (busca/status/rede).<br/><br/><button class="btn btn-p" style="font-size:11px;" onclick="document.getElementById(\'campBusca\').value=\'\';document.getElementById(\'campFiltroStatus\').value=\'\';document.getElementById(\'campFiltroRede\').value=\'\';filtrarCampanhas()">Limpar filtros</button></div>'
+        : '<div style="grid-column:1/-1;color:var(--t3);font-size:12px;text-align:center;padding:40px;">Nenhuma campanha encontrada.<br/><br/><span style="color:var(--blue);">Crie sua primeira campanha na aba + Nova Campanha</span><br/><br/><button class="btn" style="font-size:10px;" onclick="carregarCampanhasDB()">↻ Recarregar do banco</button></div>';
+      addLog('info', '[Campanhas] ' + total + ' carregada(s) · 0 após filtros' + (busca||status||rede ? ' (busca="'+busca+'" status="'+status+'" rede="'+rede+'")' : ''));
       return;
     }
+    addLog('info', '[Campanhas] exibindo ' + camps.length + ' de ' + (_todasCampanhas||[]).length);
 
     grid.innerHTML = camps.map(camp => {
       try {
@@ -8301,6 +8333,7 @@ async function renderCalCampanhas() {
   const inicioMes = new Date(ano, mes, 1).getTime();
   const fimMes = new Date(ano, mes + 1, 0, 23, 59, 59).getTime();
 
+  const semPeriodo = (_todasCampanhas || []).filter(c => !c.data_inicio && !c.data_fim);
   const campsMes = (_todasCampanhas || []).filter(c => {
     if (!c.data_inicio && !c.data_fim) return false;
     const di = c.data_inicio ? new Date(c.data_inicio + 'T00:00:00').getTime() : 0;
@@ -8351,7 +8384,28 @@ async function renderCalCampanhas() {
          + chips + '</div>';
   }
   html += '</div>';
+  // v1.9.3: campanhas sem período não apareciam em lugar nenhum → lista com ação
+  if (semPeriodo.length) {
+    html += '<div style="margin-top:12px;background:var(--bg4);border:1px dashed var(--gold);border-radius:7px;padding:10px;">'
+      + '<div style="font-size:10.5px;color:var(--gold);font-weight:600;margin-bottom:6px;">⚠ ' + semPeriodo.length + ' campanha(s) sem período definido (não entram no calendário):</div>'
+      + semPeriodo.slice(0, 12).map(c => '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:10.5px;padding:3px 0;border-bottom:1px solid var(--bd);">'
+          + '<span>' + (c.nome || c.id) + ' <span style="color:var(--t3);font-size:9px;">' + (c.criado_em ? new Date(c.criado_em).toLocaleDateString('pt-BR') : '') + '</span></span>'
+          + '<button class="btn" style="font-size:9px;" onclick="definirPeriodoRapido(\'' + c.id + '\')">📅 Definir período</button></div>').join('')
+      + (semPeriodo.length > 12 ? '<div style="font-size:9px;color:var(--t3);margin-top:4px;">+' + (semPeriodo.length - 12) + ' outras — defina pelo cartão em Minhas Campanhas</div>' : '')
+      + '</div>';
+  } else if (!campsMes.length && !(_todasCampanhas||[]).length) {
+    html += '<div style="margin-top:12px;color:var(--t3);font-size:11px;text-align:center;">Nenhuma campanha carregada. <button class="btn" style="font-size:9px;" onclick="carregarCampanhasDB().then(renderCalCampanhas)">↻ Recarregar do banco</button></div>';
+  }
   grid.innerHTML = html;
+}
+async function definirPeriodoRapido(id) {
+  const c = (_todasCampanhas || []).find(x => x.id === id); if (!c) return;
+  const iso = d => { const t = new Date(d.getTime() - d.getTimezoneOffset()*60000); return t.toISOString().substring(0,10); };
+  const hoje = new Date(), fim = new Date(); fim.setDate(fim.getDate() + 14);
+  const di = prompt('Início (AAAA-MM-DD) de "' + (c.nome||id) + '":', c.data_inicio || iso(hoje)); if (!di) return;
+  const df = prompt('Fim (AAAA-MM-DD):', c.data_fim || iso(fim)); if (!df) return;
+  await salvarPeriodoCampanha(id, di, df);
+  renderCalCampanhas();
 }
 
 async function abrirCampanhaDB(id) {
@@ -8406,6 +8460,8 @@ async function abrirCampanhaDB(id) {
   const savBtn = document.getElementById('btnSalvarCamp');
   if (savBtn) savBtn.style.display = 'inline-block';
   if (camp.data) preencherEditorCampanha(camp.data);
+  // v1.9.3: período da campanha
+  try { const di = document.getElementById('cDataInicio'), df = document.getElementById('cDataFim'); if (di) di.value = camp.data_inicio || ''; if (df) df.value = camp.data_fim || ''; if (!camp.data_inicio) definirDatasPadraoCampanha(false); } catch(_) {}
 
   // v1.6.6: se a campanha não tem imagens salvas mas a PEÇA vinculada tem
   // (URL colada no loop de revisão do kanban), adota a imagem da peça
@@ -14118,11 +14174,12 @@ async function publicarPeca(pecaId) {
       // lista desatualizada? recarrega do banco e tenta de novo
       try { await carregarCampanhasDB(); const fresh = (_todasCampanhas || []).find(c => c.id === p.campanhaId); if (fresh?.imagens?.length) campL = fresh; } catch(_) {}
     }
-    linkCampanha = campL?.link_destino || '';
+    linkCampanha = campL?.link_destino || linkReuniao(); // v1.9.3: default = link de reunião
     imagemCampanha = campL?.imagens?.[0]?.url || '';
     if (imagemCampanha) addLog('info', '[Pub] Imagem da campanha localizada: ' + imagemCampanha.substring(0, 60) + '...');
     else addLog('warn', '[Pub] Campanha ' + p.campanhaId + ' sem imagem em imagens[] — cole a URL no modal');
   }
+  if (!linkCampanha) linkCampanha = linkReuniao(); // v1.9.3
   if (!imagemCampanha && typeof p.design === 'string' && p.design.startsWith('http')) imagemCampanha = p.design;
 
   // Montar modal dinâmico de publicação
@@ -14688,14 +14745,18 @@ async function gerarCampanhaAutomatica() {
     if (temMc2) {
       const redesPost = imgUrl ? ['linkedin','instagram','facebook'] : ['linkedin','facebook'];
       try {
+        // v1.9.3: link de reunião com UTM no post (IG: "link na bio")
+        const _lr = linkReuniao(); const _slugAuto = 'auto_' + new Date().toISOString().substring(0,10).replace(/-/g,'');
+        const _linkPost = _lr + (_lr.includes('?') ? '&' : '?') + 'utm_source=' + (redesPost.find(r => r !== 'instagram') || 'social') + '&utm_medium=social&utm_campaign=' + _slugAuto;
+        const _textoPost = post.texto + '\n\n👉 Agende uma conversa:\n' + (redesPost.length === 1 && redesPost[0] === 'instagram' ? '🔗 Link na bio' : _linkPost);
         const rp = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ action:'publicar', payload: { texto: post.texto, redes: redesPost, data_hora: quando.toISOString(), imagem_url: imgUrl || null, encurtar_link: true } }) });
+          body: JSON.stringify({ action:'publicar', payload: { texto: _textoPost, redes: redesPost, data_hora: quando.toISOString(), imagem_url: imgUrl || null, encurtar_link: true } }) });
         const dp = await rp.json();
         if (dp.success) {
           agendados++;
           pecaObj.status = 'Agendado'; pecaObj.agendado_para = quando.toISOString(); pecaObj.metricool_id = dp.metricool_id;
           const pFake = { id: pecaId, campanhaId: null, titulo: post.titulo };
-          redesPost.forEach(rd => registrarPublicacao(pFake, rd, post.texto, 'metricool', dp.metricool_id, '', quando.toISOString()));
+          redesPost.forEach(rd => registrarPublicacao(pFake, rd, _textoPost, 'metricool', dp.metricool_id, _linkPost, quando.toISOString()));
           addLog('ok', '[Auto-IA] Agendado: "' + post.titulo + '" → ' + quando.toLocaleString('pt-BR') + ' (' + redesPost.join(',') + ')');
         } else {
           pecaObj.narrativa = (pecaObj.narrativa ? pecaObj.narrativa + ' · ' : '') + '⚠ Metricool recusou: ' + (dp.error||'sem detalhe');
@@ -14743,7 +14804,7 @@ async function gerarStoryPack() {
   const tg = document.getElementById('storyTag'); if (tg) tg.textContent = 'Gerando...';
   addLog('info', '[Stories] Gerando roteiro para "' + campAtiva.nome + '"');
   try {
-    const link = campAtiva.link_destino || '';
+    const link = campAtiva.link_destino || linkReuniao();
     const r = await fetch('/api/s2-creative', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ action:'story_pack', payload: { narrativa: campAtiva.data?.narrativa || {}, copy: campAtiva.data?.copy || {}, link, canal: campAtiva.canal } }) });
     const d = await r.json();
@@ -14786,7 +14847,7 @@ async function publicarStories() {
   if (!temMc) { toast('Metricool não configurado — publique os stories manualmente com as artes acima', 'error'); return; }
   const inicio = prompt('Data/hora do 1º story (os outros seguem a cada 2 min):', new Date(Date.now() + 10*60000).toISOString().substring(0,16));
   if (!inicio) return;
-  const linkBase = campAtiva.link_destino || '';
+  const linkBase = campAtiva.link_destino || linkReuniao(); // v1.9.3
   const link = linkBase ? linkBase + (linkBase.includes('?') ? '&' : '?') + 'utm_source=instagram&utm_medium=story&utm_campaign=' + (typeof slugDe === 'function' ? slugDe(campAtiva.id) : String(campAtiva.id).toLowerCase().replace(/[^a-z0-9_-]/g,'')) : '';
   const redesSt = []; if (campAtiva.redes_ativas?.instagram !== false) redesSt.push('instagram'); if (campAtiva.redes_ativas?.facebook) redesSt.push('facebook');
   if (!redesSt.length) redesSt.push('instagram');
@@ -15031,7 +15092,8 @@ async function abrirImpulso(pubId) {
   const pub = (_publicacoes || []).find(x => x.id === pubId);
   if (!pub) return;
   // link pago: troca utm_medium=social por paid (rastreio separado no HubSpot)
-  const linkPago = (pub.link_destino || '').replace('utm_medium=social', 'utm_medium=paid') || pub.link_destino || '';
+  const _lb = pub.link_destino || linkReuniao(); // v1.9.3
+  const linkPago = _lb.includes('utm_medium=') ? _lb.replace(/utm_medium=[^&]*/, 'utm_medium=paid') : _lb + (_lb.includes('?') ? '&' : '?') + 'utm_source=meta&utm_medium=paid&utm_campaign=' + (pub.campanhaId || 'impulso');
   let modal = document.getElementById('impulsoModal');
   if (modal) modal.remove();
   modal = document.createElement('div');
@@ -15149,7 +15211,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.9.2] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.9.3] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -15165,7 +15227,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.9.2';
+window.__ATX_BUILD_ID__ = 'ATX-v1.9.3';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
