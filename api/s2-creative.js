@@ -44,6 +44,88 @@ export default async function handler(req, res) {
       // GESTÃO
       finops:           () => agFinOps(payload),
       hubspot_agendar:  () => agendarHubSpot(payload),
+      // v1.7: plano automático de 3 publicações otimizadas por métricas
+      campanha_auto: async () => {
+        const { contexto = '', metricas_resumo = '', redes = ['linkedin','instagram','facebook'] } = payload;
+        const sys = `Você é o estrategista de social media B2B da Atlantyx (${BRAND.proposta_valor}). Tom: ${BRAND.tom_de_voz}. ICP: ${BRAND.icp}.
+Sua tarefa: planejar 3 publicações de MÁXIMA CONVERSÃO (gerar cliques e reuniões agendadas), combinando:
+(a) benchmarks de mercado B2B (LinkedIn: ter-qui 9h-11h30 e 17h; Instagram: ter/qui 11h-13h e 18h-19h; Facebook: qua-qui 9h-12h; evitar seg cedo e sex tarde),
+(b) as MÉTRICAS REAIS da conta fornecidas abaixo (dias/horários e temas que mais performaram têm prioridade sobre o benchmark).
+Cada copy: max 110 palavras, específica da Atlantyx, com dado concreto, SEM clichês (proibido: revolucionar, disruptivo, game-changer), terminando com CTA de reunião.
+Responda APENAS JSON válido.`;
+        const usr = `MÉTRICAS DA CONTA (Metricool, últimos 30 dias):
+${metricas_resumo || '(sem dados suficientes — use apenas benchmarks de mercado B2B)'}
+
+CONTEXTO ADICIONAL: ${contexto || 'captação de leads e reuniões para a Atlantyx'}
+REDES-ALVO: ${redes.join(', ')}
+
+Gere exatamente este JSON:
+{"posts":[{"titulo":"nome curto da publicação","texto":"copy completa pronta para publicar (max 110 palavras, com CTA de reunião no fim)","dia_semana":"segunda|terca|quarta|quinta|sexta","hora":"HH:MM","justificativa":"1 frase: por que este slot/tema converte (cite a métrica ou benchmark)","prompt_imagem":"cena visual em inglês 40-60 palavras, SEM texto na imagem, dark navy #1A3A8F + electric blue #4F7CFF, ambiente corporativo com dados/dashboards"}]}
+Regras: 3 posts, dias/horários DIFERENTES entre si, temas complementares (dor → prova/case → oferta de reunião).`;
+        const rr = await claude(sys, usr, 2400);
+        const plano = parseJSON(rr);
+        if (!plano.posts?.length) throw new Error('IA não retornou posts válidos' + (plano.raw ? ' (resposta truncada)' : ''));
+        return { posts: plano.posts.slice(0, 3) };
+      },
+
+      // v1.9: REEL (slideshow) — 5 slides p/ TOPO de funil (descoberta) + legenda com hashtags
+      reel_pack: async () => {
+        const { narrativa = {}, copy = {}, canal = 'Instagram', n_slides = 5 } = payload;
+        const v0 = copy.versoes?.[0] || {};
+        const base = (v0.headline ? v0.headline + '\n' : '') + (v0.corpo || copy.raw || '').substring(0, 900);
+        const n = Math.max(3, Math.min(6, parseInt(n_slides) || 5));
+        const sys = `Você é o Social Media da Atlantyx (${BRAND.proposta_valor}). Tom: ${BRAND.tom_de_voz}. ICP: ${BRAND.icp}. Reels são TOPO DE FUNIL: alcançam quem NÃO segue — o 1º slide precisa parar o dedo em 1 segundo. Responda APENAS JSON válido.`;
+        const usr = `NARRATIVA: ${narrativa.tema_central || ''} | Gancho: ${narrativa.gancho_principal || ''}
+COPY BASE:\n${base}
+
+Crie um Reel em SLIDESHOW de ${n} slides (9:16, ~3s cada). Regras: cada slide tem no MÁXIMO 12 palavras na tela, ideia única, linguagem direta; slide 1 = gancho forte (pergunta/dado/contraste), slides do meio = insight/prova, último = CTA ("Siga" ou "Link na bio"). Sem clichês (proibido: revolucionar, disruptivo, game-changer). Legenda: até 120 palavras, começa com o gancho, termina com CTA "🔗 Link na bio", + 5-8 hashtags B2B relevantes no fim.
+JSON: {"slides":[{"ordem":1,"texto_tela":"...","destaque":"palavra ou número a destacar (opcional)","prompt_imagem":"cena vertical 9:16 em inglês, 35-55 palavras, SEM texto na imagem, dark navy #1A3A8F + electric blue #4F7CFF, área central limpa"}],"legenda":"...","hashtags":["#..."],"trilha_sugerida":"tipo de música/ritmo em 5 palavras"}`;
+        const rr = await claude(sys, usr, 1900);
+        const pk = parseJSON(rr);
+        if (!pk.slides?.length) throw new Error('Reel pack inválido' + (pk.raw ? ' (truncado)' : ''));
+        return { slides: pk.slides.slice(0, 6), legenda: pk.legenda || '', hashtags: pk.hashtags || [], trilha_sugerida: pk.trilha_sugerida || '' };
+      },
+
+      // v1.8: STORY — adapta a campanha para 3 stories sequenciais (9:16) com texto curto e link
+      story_pack: async () => {
+        const { narrativa = {}, copy = {}, link = '', canal = 'Instagram' } = payload;
+        const v0 = copy.versoes?.[0] || {};
+        const base = (v0.headline ? v0.headline + '\n' : '') + (v0.corpo || copy.raw || '').substring(0, 900);
+        const sys = `Você é o Social Media da Atlantyx (${BRAND.proposta_valor}). Tom: ${BRAND.tom_de_voz}. Stories são vistos por quem JÁ SEGUE — foco em conversão (clique no link) e proximidade. Responda APENAS JSON válido.`;
+        const usr = `NARRATIVA: ${narrativa.tema_central || ''} | Gancho: ${narrativa.gancho_principal || ''}
+COPY BASE:\n${base}
+LINK (sticker do último story): ${link || '(sem link)'}
+
+Crie 3 stories em sequência (9:16). Regras: cada story tem no MÁXIMO 18 palavras na tela; frases curtas, uma ideia por story; o 1º prende (pergunta ou dado), o 2º entrega valor/prova, o 3º chama pra ação com o link. Sem clichês. Sem hashtags.
+JSON: {"stories":[{"ordem":1,"papel":"gancho","texto_tela":"...","cta_sticker":"","prompt_imagem":"cena vertical 9:16 em inglês, 35-55 palavras, SEM texto na imagem, dark navy #1A3A8F + electric blue #4F7CFF, área central limpa para sobrepor texto"},{"ordem":2,"papel":"valor",...},{"ordem":3,"papel":"cta","cta_sticker":"texto curto do sticker de link (ex: Agende sua conversa)",...}]}`;
+        const rr = await claude(sys, usr, 1600);
+        const pk = parseJSON(rr);
+        if (!pk.stories?.length) throw new Error('Story pack inválido' + (pk.raw ? ' (truncado)' : ''));
+        return { stories: pk.stories.slice(0, 3) };
+      },
+
+      // v1.7.2: plano de impulsionamento (Meta Ads) para um post orgânico vencedor
+      plano_impulso: async () => {
+        const { texto = '', cliques = 0, rede = 'facebook', link = '' } = payload;
+        const sys = `Você é o gestor de tráfego pago B2B da Atlantyx (${BRAND.proposta_valor}). ICP: ${BRAND.icp}. Responda APENAS JSON válido, conciso (campos de 1-2 frases).`;
+        const usr = `Este post orgânico performou bem (${cliques} cliques em ${rede}) e será IMPULSIONADO no Meta Ads:
+"${texto.substring(0, 600)}"
+Link de destino: ${link}
+
+Gere o plano de impulsionamento em JSON:
+{"objetivo_campanha":"Tráfego|Leads|Conversões — qual e por quê (1 frase)",
+"cta_botao":"o CTA ideal do Meta (ex: Agendar horário)",
+"segmentacao":{"cargos":["..."],"setores":["..."],"interesses":["..."],"faixa_etaria":"XX-XX","localizacao":"sugestão"},
+"orcamento_diario_brl":número,
+"duracao_dias":número,
+"headline_anuncio":"título curto p/ o anúncio (max 8 palavras)",
+"justificativa":"por que essa configuração maximiza reuniões (1-2 frases)"}`;
+        const rr = await claude(sys, usr, 900);
+        const plano = parseJSON(rr);
+        if (plano.raw) throw new Error('Plano truncado — tente novamente');
+        return { plano };
+      },
+
       // v1.6.1: mede a velocidade real da API Anthropic nesta conta/modelo
       diagnostico_ia: async () => {
         const t0 = Date.now();

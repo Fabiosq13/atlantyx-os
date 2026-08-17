@@ -148,12 +148,15 @@ export default async function handler(req, res) {
         const url = c.properties?.hs_analytics_first_url || '';
         const mCamp = url.match(/utm_campaign=([^&\s]+)/i);
         const mSrc  = url.match(/utm_source=([^&\s]+)/i);
+        const mMed  = url.match(/utm_medium=([^&\s]+)/i);
         if (!mCamp) { sem_utm++; continue; }
         const camp = decodeURIComponent(mCamp[1]);
         const rede = mSrc ? decodeURIComponent(mSrc[1]).toLowerCase() : 'desconhecida';
-        if (!porCampanha[camp]) porCampanha[camp] = { total: 0, por_rede: {} };
+        const medium = mMed ? decodeURIComponent(mMed[1]).toLowerCase() : 'social';
+        if (!porCampanha[camp]) porCampanha[camp] = { total: 0, por_rede: {}, pagos: 0 };
         porCampanha[camp].total++;
         porCampanha[camp].por_rede[rede] = (porCampanha[camp].por_rede[rede] || 0) + 1;
+        if (medium === 'paid' || medium === 'cpc' || medium === 'ads') porCampanha[camp].pagos++;
       }
 
       return res.status(200).json({

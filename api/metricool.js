@@ -62,8 +62,11 @@ export default async function handler(req, res) {
       // Publicar/agendar post
       // payload: { texto, redes: ['linkedin','instagram','facebook'], data_hora (ISO opcional), imagem_url (opcional), campanha_id, peca_id }
       publicar: async () => {
-        const { texto, redes = [], data_hora, imagem_url, encurtar_link = true } = payload;
-        if (!texto || !redes.length) throw new Error('texto e redes são obrigatórios');
+        const { texto, redes = [], data_hora, imagem_url, encurtar_link = true, tipo = 'POST', link_sticker = '' } = payload;
+        if (!redes.length) throw new Error('redes são obrigatórias');
+        if (tipo !== 'STORY' && !texto) throw new Error('texto é obrigatório');
+        if (tipo === 'STORY' && !imagem_url) throw new Error('Story exige imagem 9:16');
+        if (tipo === 'REEL' && !imagem_url) throw new Error('Reel exige a URL pública do vídeo MP4 (imagem_url)');
 
         // Mapear nomes internos → providers Metricool
         const provMap = { linkedin: 'LINKEDIN', instagram: 'INSTAGRAM', facebook: 'FACEBOOK', twitter: 'TWITTER', tiktok: 'TIKTOK' };
@@ -74,12 +77,19 @@ export default async function handler(req, res) {
         const quando = data_hora ? new Date(data_hora) : new Date(Date.now() + 2 * 60 * 1000);
 
         const body = {
-          providers: providers.map(p => ({ network: p })),
+          // v1.8: Story do Instagram/Facebook — provider com data { postType: STORY }
+          providers: providers.map(p => {
+            if (tipo === 'STORY' && (p === 'INSTAGRAM' || p === 'FACEBOOK')) return { network: p, data: { postType: 'STORY', ...(link_sticker ? { linkSticker: link_sticker } : {}) } };
+            if (tipo === 'REEL'  && (p === 'INSTAGRAM' || p === 'FACEBOOK')) return { network: p, data: { postType: 'REEL' } }; // v1.9
+            return { network: p };
+          }),
           publicationDate: {
             dateTime: quando.toISOString().substring(0, 19),
             timezone: 'America/Sao_Paulo',
           },
-          text: texto,
+          text: texto || '',
+          ...(tipo === 'STORY' ? { instagramData: { type: 'STORY', ...(link_sticker ? { link: link_sticker } : {}) }, facebookData: { type: 'STORY' } } : {}),
+          ...(tipo === 'REEL'  ? { instagramData: { type: 'REEL' }, facebookData: { type: 'REEL' } } : {}),
           autoPublish: true,
           shortener: !!encurtar_link, // v1.6.9: Metricool encurta URLs do texto (some o link gigante)
           draft: false,
@@ -87,7 +97,7 @@ export default async function handler(req, res) {
           // (campos desconhecidos são ignorados; o correto é aplicado)
           ...(imagem_url ? { media: [imagem_url], medias: [imagem_url] } : {}),
         };
-        console.log('[metricool publicar] payload:', JSON.stringify({ providers: body.providers, temImagem: !!imagem_url, imagem: (imagem_url||'').substring(0,80), quando: body.publicationDate.dateTime }));
+        console.log('[metricool publicar] payload:', JSON.stringify({ tipo, providers: body.providers, temImagem: !!imagem_url, imagem: (imagem_url||'').substring(0,80), quando: body.publicationDate.dateTime }));
 
         const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
         return {
@@ -97,6 +107,14 @@ export default async function handler(req, res) {
           metricool_id: r?.data?.id || r?.id || null,
           resposta: r,
         };
+      },
+
+      // v1.7: excluir post agendado (sincroniza exclusão do calendário)
+      excluir: async () => {
+        const { metricool_id } = payload;
+        if (!metricool_id) throw new Error('metricool_id obrigatório');
+        const r = await mc(`/v2/scheduler/posts/${metricool_id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'DELETE');
+        return { excluido: true, metricool_id, resposta: r };
       },
 
       // Listar posts agendados/publicados
