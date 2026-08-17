@@ -1951,6 +1951,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
             </div>
             <div style="display:flex;gap:8px;">
               <button class="btn btn-or" style="flex:1;" id="btnCampanha" onclick="criarCampanhaCompleta()">&#9670; Criar Campanha com IA</button>
+              <button class="btn btn-gn" style="font-size:11px;" id="btnSalvarCampanha" onclick="salvarEdicoesCampanha(true)" title="Grava nome, objetivo, canal, redes, datas e contexto da campanha aberta (sem re-rodar a IA)">💾 Salvar</button>
               <button class="btn btn-p" onclick="criarVideoMotion()" style="font-size:11px;">&#9654; Motion</button>
             </div>
           </div>
@@ -2040,6 +2041,10 @@ tr:hover td{background:rgba(79,124,255,.03);}
               <div class="pb">
                 <div class="fg"><label class="fl">Brief Visual</label>
                   <textarea class="fta" id="edBriefVisual" style="min-height:80px;font-size:11px;"></textarea>
+                  <div style="display:flex;gap:6px;align-items:center;margin-top:6px;">
+                    <button class="btn" id="btnRegerarBrief" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="regerarBriefVisual(false)" title="Refaz o brief/prompt de imagem a partir do tema e da copy ATUAIS (útil depois de editar o tema ou refazer a copy)">🎨 Regerar brief com o tema atual</button>
+                    <span style="font-size:9px;color:var(--t3);">Mudou o tema/copy? Regere o brief antes de gerar no Ideogram — senão a imagem sai do tema antigo.</span>
+                  </div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
                   <div class="fg" style="margin:0;"><label class="fl">Formato</label>
@@ -6408,11 +6413,47 @@ async function refazerCopyCompleto() {
     const setv = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
     setv('edTemaCentral', narrativa.tema_central); setv('edGancho', narrativa.gancho_principal); setv('edPromessa', narrativa.promessa_central); setv('edCTA', narrativa.call_to_action);
     await _aplicarCopyNaCampanha({ headline: v.headline || '', subheadline: v.subheadline || '', corpo: v.corpo || d2.copy.raw || '', cta: v.cta || '', hashtags: v.hashtags || [] }, 'Refeita (narrativa + copy)', d2.copy);
+    // 3) v1.9.8: brief visual (Designer) refeito com a copy nova — antes ficava o tema antigo
+    if (btn) btn.textContent = 'Refazendo brief visual...';
+    await regerarBriefVisual(true);
     if (comentario) document.getElementById('copyAjusteComentario').value = '';
     try { mostrarEdAba('copy'); } catch(_) {}
     toast('Narrativa e copy refeitas ✓ (anterior em VERSÕES)', 'success');
   } catch (e) { addLog('err', '[Refazer] ' + e.message); toast('Erro ao refazer: ' + e.message, 'error'); }
   finally { if (btn) { btn.disabled = false; btn.textContent = 'Refazer Tudo'; } }
+}
+
+// v1.9.8: aviso de brief desatualizado quando o tema/copy mudam na tela
+setTimeout(() => {
+  ['edTemaCentral','edGancho','edHeadline','edCorpo'].forEach(id => {
+    const el = document.getElementById(id); if (!el) return;
+    el.addEventListener('change', () => { const bt = document.getElementById('btnRegerarBrief'); if (bt) { bt.textContent = '🎨 Regerar brief (tema/copy mudaram)'; bt.style.background = 'rgba(245,185,75,.15)'; } });
+  });
+}, 1100);
+// v1.9.8: regenera o brief visual (Designer) a partir do TEMA/COPY atuais da campanha
+async function regerarBriefVisual(silencioso) {
+  if (!campAtiva) { toast('Abra ou crie uma campanha primeiro', 'error'); return; }
+  const g = id => document.getElementById(id)?.value || '';
+  // usa o que está NA TELA (edições manuais contam), com fallback ao salvo
+  const copyAtual = { versoes: [{ headline: g('edHeadline') || campAtiva.data?.copy?.versoes?.[0]?.headline || '', subheadline: g('edSubheadline'), corpo: g('edCorpo') || campAtiva.data?.copy?.versoes?.[0]?.corpo || '', cta: g('edCtaCopy') }] };
+  const tema = g('edTemaCentral') || campAtiva.data?.narrativa?.tema_central || '';
+  const bt = document.getElementById('btnRegerarBrief'); if (bt) { bt.disabled = true; bt.textContent = 'Gerando brief...'; }
+  if (!silencioso) toast('🎨 Regerando brief visual com o tema atual...', 'success');
+  try {
+    const r = await fetch('/api/s2-creative', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'designer', payload: { copy: Object.assign({}, copyAtual, { tema: tema }), canal: campAtiva.canal || 'Todos' } }) });
+    const d = await r.json();
+    if (!d.success || !d.design) throw new Error(d.error || 'Designer falhou');
+    campAtiva.data = campAtiva.data || {}; campAtiva.data.design = d.design;
+    if (tema) campAtiva.data.narrativa = Object.assign({}, campAtiva.data.narrativa, { tema_central: tema });
+    const brief = d.design.prompt_ia_imagem || d.design.conceito_visual || d.design.brief_visual || '';
+    const el = document.getElementById('edBriefVisual'); if (el) el.value = brief;
+    try { const kb = (kanbanPecas||[]).find(x => x.campanhaId === campAtiva.id); if (kb && !(typeof kb.design === 'string' && kb.design.startsWith('http'))) { kb.design = d.design.conceito_visual || brief; salvarKanbanNoBanco(); } } catch(_) {}
+    await salvarCampanhaNoBanco(campAtiva, 'brief visual');
+    addLog('ok', '[Designer] Brief visual refeito p/ tema "' + tema.substring(0, 50) + '": ' + brief.substring(0, 70) + '...');
+    if (!silencioso) toast('Brief visual atualizado — clique em Gerar no Ideogram', 'success');
+  } catch (e) { addLog('err', '[Designer] ' + e.message); toast('Erro no brief: ' + e.message, 'error'); }
+  finally { if (bt) { bt.disabled = false; bt.textContent = '🎨 Regerar brief com o tema atual'; } }
 }
 
 // v1.9.4: aplica uma copy nova na campanha ativa + editor + banco + peça do kanban
@@ -7072,6 +7113,39 @@ function definirDatasPadraoCampanha(force) {
   if (force || !di.value || di.value < iso(new Date(hoje.getTime() - 365*864e5))) di.value = iso(hoje);
   if (force || !df.value || df.value < di.value) df.value = iso(fim);
 }
+// v1.9.7: grava as edições do FORMULÁRIO (nome/objetivo/canal/público/orçamento/contexto/datas/redes)
+// na campanha aberta — antes só a IA gravava; editar o contexto e sair perdia tudo
+let _salvarEdTimer = null;
+function _coletarFormCampanha() {
+  const g = id => document.getElementById(id)?.value || '';
+  return { nome: g('cNome'), obj: g('cObj'), canal: g('cCanal'), pub: g('cPublico'), orc: g('cOrc'), ctx: g('cCtx'),
+    data_inicio: g('cDataInicio') || null, data_fim: g('cDataFim') || null,
+    redes_ativas: { linkedin: !!document.getElementById('cRedeLI')?.checked, instagram: !!document.getElementById('cRedeIG')?.checked, facebook: !!document.getElementById('cRedeFB')?.checked, whatsapp: !!document.getElementById('cRedeWA')?.checked, email: !!document.getElementById('cRedeEM')?.checked } };
+}
+async function salvarEdicoesCampanha(manual) {
+  if (!campAtiva) { if (manual) toast('Nenhuma campanha aberta — crie uma primeiro', 'error'); return; }
+  if (window._campanhaProcessando) return;
+  const f = _coletarFormCampanha();
+  if (!f.nome) { if (manual) toast('Nome da campanha vazio', 'error'); return; }
+  Object.assign(campAtiva, f, { atualizado_em: new Date().toISOString() });
+  try { _redesMarcadas = Object.assign({}, f.redes_ativas); } catch(_) {}
+  window._campanhaAtual = campAtiva;
+  try { salvarCampanhaLocal(campAtiva); } catch(_) {}
+  const r = await salvarCampanhaNoBanco(campAtiva, manual ? 'salvar manual' : 'auto-save form');
+  if (r.success) {
+    try { const idx = (_todasCampanhas||[]).findIndex(c => c.id === campAtiva.id); if (idx >= 0) _todasCampanhas[idx] = campAtiva; } catch(_) {}
+    try { const p = (kanbanPecas||[]).find(x => x.campanhaId === campAtiva.id); if (p && p.titulo !== f.nome) { p.titulo = f.nome; renderKanban(); salvarKanbanNoBanco(); } } catch(_) {}
+    if (manual) { toast('Campanha salva ✓', 'success'); addLog('ok', '[Campanha] Edições salvas: ' + f.nome); }
+    const b = document.getElementById('btnSalvarCampanha'); if (b) { b.textContent = '💾 Salvo'; setTimeout(() => b.textContent = '💾 Salvar', 1500); }
+  }
+}
+function _agendarAutoSaveForm() { clearTimeout(_salvarEdTimer); _salvarEdTimer = setTimeout(() => salvarEdicoesCampanha(false), 1500); }
+setTimeout(() => {
+  ['cNome','cObj','cCanal','cPublico','cOrc','cCtx','cDataInicio','cDataFim','cRedeLI','cRedeIG','cRedeFB','cRedeWA','cRedeEM'].forEach(id => {
+    const el = document.getElementById(id); if (!el) return;
+    el.addEventListener('change', _agendarAutoSaveForm); el.addEventListener('input', _agendarAutoSaveForm);
+  });
+}, 1000);
 function resetCampanhaState() {
   // v1.5.8: se há campanha PROCESSANDO agora, não tocar em NADA —
   // o DOM da página persiste (SPA), então o pipeline/“Criando...” continua visível.
@@ -7747,7 +7821,7 @@ function preencherEditorCampanha(data) {
   set('edSubheadline',cp.subheadline);
   set('edCorpo',      cp.corpo);
   set('edCtaCopy',    cp.cta);
-  set('edBriefVisual',d.prompt_ia_imagem || d.conceito_visual || d.brief_visual);
+  { const el = document.getElementById('edBriefVisual'); if (el) el.value = d.prompt_ia_imagem || d.conceito_visual || d.brief_visual || ''; }
 }
 
 // ── REGERAR NARRATIVA ─────────────────────────────────────────────────────────
@@ -14582,7 +14656,8 @@ async function excluirPublicacaoAgendada(pubId) {
 
 // ---------- AUTO-CAMPANHA IA (v1.7) -----------------------------------------
 async function gerarCampanhaAutomatica() {
-  if (!confirm('🤖 Auto-campanha IA\n\nA IA vai:\n1. Analisar as métricas do Metricool (cliques/engajamento por dia e horário)\n2. Gerar 3 publicações completas (copy + imagem) para máxima conversão\n3. Agendar nas 3 redes nos horários ideais\n\nIsso consome créditos de IA e Ideogram. Continuar?')) return;
+  if (!confirm('🤖 Auto-campanha IA COMPLETA\n\nA IA vai:\n1. Analisar as métricas do Metricool (cliques/engajamento por dia e horário)\n2. Criar a CAMPANHA (narrativa + copy) e 3 publicações com imagem, agendadas nos horários ideais\n3. Criar 3 STORIES (artes 9:16 com texto e sticker de link) e agendar\n4. Criar 1 REEL em slideshow (vídeo montado aqui no navegador) e agendar\n\nLeva ~4-6 min e consome créditos de IA/Ideogram. Mantenha esta aba aberta.\nContinuar?')) return;
+  const _incluirFormatos = confirm('Incluir Stories e Reel?\n\nOK = campanha completa (posts + stories + reel)\nCancelar = só os 3 posts');
   addLog('info', '[Auto-IA] ════ Iniciando auto-campanha ════');
   toast('🤖 Analisando métricas e gerando plano...', 'success');
 
@@ -14633,6 +14708,21 @@ async function gerarCampanhaAutomatica() {
     return;
   }
 
+  // v1.9.7: a auto-campanha agora É uma campanha (narrativa + copy) — base para stories/reel
+  const _autoId = 'camp_auto_' + Date.now();
+  const _autoNome = 'Auto-campanha ' + new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR').substring(0,5);
+  const _post0 = plano[0] || {};
+  const campAuto = { id: _autoId, nome: _autoNome, obj: 'Gerar leads qualificados (reuniões)', canal: 'Todos', pub: 'Todos os C-Levels', orc: '', ctx: (document.getElementById('cCtx')?.value || 'captação de leads e reuniões') + ' | gerada automaticamente por métricas',
+    status: 'aprovada', ativa: true, redes_ativas: { linkedin:true, instagram:true, facebook:true }, link_destino: linkReuniao(),
+    data_inicio: new Date().toISOString().substring(0,10), data_fim: new Date(Date.now()+14*864e5).toISOString().substring(0,10),
+    criado_em: new Date().toISOString(), atualizado_em: new Date().toISOString(), imagens: [],
+    data: { narrativa: { tema_central: _post0.titulo || 'Auto-campanha', gancho_principal: (_post0.texto||'').split(/[.!?]\s/)[0] || '', promessa_central: _post0.justificativa || '', call_to_action: 'Agende uma conversa' },
+            copy: { versoes: plano.map((p, i) => ({ versao: i+1, headline: p.titulo, corpo: p.texto, cta: 'Agende uma conversa', hashtags: [] })) }, design: {}, copy_por_rede: {} } };
+  (_todasCampanhas = _todasCampanhas || []).push(campAuto);
+  try { salvarCampanhaLocal(campAuto); } catch(_) {}
+  await salvarCampanhaNoBanco(campAuto, 'auto-campanha');
+  addLog('ok', '[Auto-IA] Campanha criada: ' + _autoNome);
+
   // 3. Para cada post: imagem + agendamento + peça + registro
   const diaIdx = { domingo:0, segunda:1, terca:2, 'terça':2, quarta:3, quinta:4, sexta:5, sabado:6, 'sábado':6 };
   const temMc2 = _mcConfigurado; // já verificado com force acima
@@ -14661,9 +14751,10 @@ async function gerarCampanhaAutomatica() {
 
     // 3c. Peça no kanban
     const pecaId = 'peca_auto_' + Date.now() + '_' + Math.random().toString(36).substr(2,4);
+    if (imgUrl) campAuto.imagens.push({ url: imgUrl, origem: 'auto', post: post.titulo });
     const pecaObj = { id: pecaId, titulo: post.titulo, canal: 'Todos', agente: '🤖 Auto-IA',
       narrativa: post.justificativa || '', copy: post.texto, design: imgUrl || (post.prompt_imagem||''),
-      campanhaId: null, status: 'Aprovado', // v1.9.2: só vira Agendado se o Metricool confirmar
+      campanhaId: _autoId, status: 'Aprovado', // v1.9.2: só vira Agendado se o Metricool confirmar
       data: new Date().toLocaleString('pt-BR'), agendado_para: null };
     kanbanPecas.push(pecaObj);
 
@@ -14681,8 +14772,9 @@ async function gerarCampanhaAutomatica() {
         if (dp.success) {
           agendados++;
           pecaObj.status = 'Agendado'; pecaObj.agendado_para = quando.toISOString(); pecaObj.metricool_id = dp.metricool_id;
-          const pFake = { id: pecaId, campanhaId: null, titulo: post.titulo };
+          const pFake = { id: pecaId, campanhaId: _autoId, titulo: post.titulo };
           redesPost.forEach(rd => registrarPublicacao(pFake, rd, _textoPost, 'metricool', dp.metricool_id, _linkPost, quando.toISOString()));
+          if (!campAuto._primeiroSlot) campAuto._primeiroSlot = quando.getTime();
           addLog('ok', '[Auto-IA] Agendado: "' + post.titulo + '" → ' + quando.toLocaleString('pt-BR') + ' (' + redesPost.join(',') + ')');
         } else {
           pecaObj.narrativa = (pecaObj.narrativa ? pecaObj.narrativa + ' · ' : '') + '⚠ Metricool recusou: ' + (dp.error||'sem detalhe');
@@ -14696,8 +14788,65 @@ async function gerarCampanhaAutomatica() {
   await salvarKanbanNoBanco();
   await salvarPublicacoes();
   renderCalendarioKanban();
-  toast('🤖 Auto-campanha concluída: ' + plano.length + ' posts criados' + (agendados ? ', ' + agendados + ' agendados no Metricool' : ' (Metricool off — aprove e publique manualmente)'), 'success');
-  addLog('ok', '[Auto-IA] ════ Concluída ════');
+  await salvarCampanhaNoBanco(campAuto, 'auto-campanha imagens');
+  toast('🤖 Posts prontos: ' + plano.length + ' criados' + (agendados ? ', ' + agendados + ' agendados' : ''), 'success');
+
+  // ── v1.9.7: STORIES + REEL a partir da campanha auto (com barras de status visíveis) ──
+  if (_incluirFormatos) {
+    try {
+      // abrir a campanha no editor (os painéis de stories/reel vivem lá) — o usuário VÊ o progresso
+      campAtiva = campAuto; window._campanhaAtual = campAtiva; window._reelBlob = null;
+      try { nav('s2campanha'); } catch(_) {}
+      try { mostrarAbaCampanha('nova'); } catch(_) {}
+      try { const c = document.getElementById('campEditorPanel'); if (c) c.style.display = 'block'; preencherEditorCampanha(campAtiva.data); mostrarEdAba('img'); } catch(_) {}
+      try { const lk = document.getElementById('storyLink'); if (lk) lk.value = linkReuniao(); } catch(_) {}
+      const base = campAuto._primeiroSlot || (Date.now() + 3600000);
+      // STORIES: 3 artes + texto gravado + agendar (mesmo dia do 1º post, às 18:00; se já passou, +1 dia)
+      addLog('info', '[Auto-IA] ▶ Stories: roteiro → artes → compor → agendar');
+      await gerarStoryPack();
+      if (campAtiva.stories?.length) {
+        await gerarArtesStories();
+        if (campAtiva.stories.every(x => x.imagem_url)) {
+          const okc = await comporArtesStories(true);
+          if (okc && temMc2) {
+            let dS = new Date(base); dS.setHours(18, 0, 0, 0); if (dS <= new Date()) dS.setDate(dS.getDate() + 1);
+            window._autoAgendaStories = dS.toISOString().substring(0,16);
+            await publicarStories();
+          } else if (!temMc2) addLog('info', '[Auto-IA] Stories prontos (Metricool off — publique manualmente com as artes compostas)');
+        }
+      }
+      // REEL: roteiro → artes → montar vídeo (navegador) → hospedar → agendar (dia seguinte ao 1º post, 12:00)
+      addLog('info', '[Auto-IA] ▶ Reel: roteiro → artes → montar → hospedar → agendar');
+      try { const bt = document.getElementById('edAbaReels'); if (bt) bt.click(); } catch(_) {}
+      await gerarReelPack();
+      if (campAtiva.reel?.slides?.length) {
+        await gerarArtesReel();
+        if (campAtiva.reel.slides.every(x => x.imagem_url)) {
+          await montarVideoReel();
+          if (window._reelBlob) {
+            await hospedarReel();
+            if (campAtiva.reel.video_url && temMc2) {
+              let dR = new Date(base + 864e5); dR.setHours(12, 0, 0, 0); if (dR <= new Date()) dR.setDate(dR.getDate() + 1);
+              window._autoAgendaReel = dR.toISOString().substring(0,16);
+              await publicarReel();
+            }
+          }
+        }
+      }
+      await salvarCampanhaNoBanco(campAtiva, 'auto-campanha completa');
+      try { nav('s2kanban'); } catch(_) {}
+      renderKanban(); renderCalendarioKanban();
+      const resumo = plano.length + ' posts' + (agendados ? ' (' + agendados + ' agendados)' : '') + ' · stories: ' + ((campAtiva.stories||[]).every(x => x.imagem_composta) ? 'prontos' + (campAtiva.stories_agendado_em ? ' e agendados' : '') : 'incompletos') + ' · reel: ' + (campAtiva.reel?.video_url ? 'hospedado' + (campAtiva.reel?.agendado_em ? ' e agendado' : '') : 'incompleto');
+      toast('🤖 Auto-campanha COMPLETA: ' + resumo, 'success');
+      addLog('ok', '[Auto-IA] ════ Concluída: ' + resumo + ' ════');
+      alert('🤖 Auto-campanha concluída\n\n' + resumo.replace(/ · /g, '\n') + '\n\nA campanha "' + _autoNome + '" está em Minhas Campanhas; peças no Kanban; publicações no calendário.');
+    } catch (e) {
+      addLog('err', '[Auto-IA] Stories/Reel: ' + e.message);
+      toast('Auto-campanha: posts ok; stories/reel com erro: ' + e.message, 'error');
+    }
+  } else {
+    addLog('ok', '[Auto-IA] ════ Concluída (só posts) ════');
+  }
 }
 
 // ---------- SAVE DE CAMPANHA ROBUSTO (v1.9.6) --------------------------------
@@ -14707,7 +14856,7 @@ function _sanearCampanhaParaSave(c) {
   const clean = (v, k) => {
     if (v == null) return v;
     if (typeof v === 'function') return undefined;
-    if (typeof v === 'string') { if (v.startsWith('blob:')) return undefined; return v.replace(/\u0000/g, ''); }
+    if (typeof v === 'string') { if (v.startsWith('blob:')) return undefined; let t = v.replace(/\u0000/g, ''); if (typeof t.toWellFormed === 'function') t = t.toWellFormed(); else t = t.replace(/[\ud800-\udbff](?![\udc00-\udfff])/g, '').replace(/(^|[^\ud800-\udbff])[\udc00-\udfff]/g, '$1'); return t; }
     if (typeof v !== 'object') return v;
     if (seen.has(v)) return undefined; seen.add(v);
     if (Array.isArray(v)) return v.map(x => clean(x)).filter(x => x !== undefined);
@@ -14786,6 +14935,7 @@ function _renderStoryPack() {
   const bC = document.getElementById('btnComporStories'); if (bC) bC.disabled = !temArte;
   const bP = document.getElementById('btnPubStories'); if (bP) bP.disabled = !temArte;
   const lk = document.getElementById('storyLink'); if (lk && !lk.value) lk.value = _linkStoriesReels();
+  if (st.every(x => x.imagem_composta) && !campAtiva._storyStatusMostrado) { campAtiva._storyStatusMostrado = true; _statusPainel('story', 'ok', campAtiva.stories_agendado_em ? 'Stories já agendados (' + new Date(campAtiva.stories_agendado_em).toLocaleString('pt-BR') + ')' : 'Stories prontos (texto gravado nas artes)', 'Não precisa refazer. Clique em 🚀 Agendar stories' + (campAtiva.stories_agendado_em ? ' para reagendar.' : '.')); }
   const tg = document.getElementById('storyTag'); if (tg) { tg.textContent = temArte ? 'Pronto p/ agendar' : 'Roteiro ok'; tg.className = 'tag ' + (temArte ? 'on' : 'off'); }
 }
 
@@ -14898,7 +15048,8 @@ async function publicarStories() {
   }
   const temMc = await verificarMetricool(true);
   if (!temMc) { toast('Metricool não configurado — publique os stories manualmente com as artes acima', 'error'); return; }
-  const inicio = prompt('Data/hora do 1º story (os outros seguem a cada 2 min):', new Date(Date.now() + 10*60000).toISOString().substring(0,16));
+  const inicio = window._autoAgendaStories || prompt('Data/hora do 1º story (os outros seguem a cada 2 min):', new Date(Date.now() + 10*60000).toISOString().substring(0,16));
+  window._autoAgendaStories = null;
   if (!inicio) return;
   const linkBase = document.getElementById('storyLink')?.value?.trim() || campAtiva.link_destino || linkReuniao(); // v1.9.5
   const link = linkBase ? linkBase + (linkBase.includes('?') ? '&' : '?') + 'utm_source=instagram&utm_medium=story&utm_campaign=' + (typeof slugDe === 'function' ? slugDe(campAtiva.id) : String(campAtiva.id).toLowerCase().replace(/[^a-z0-9_-]/g,'')) : '';
@@ -14923,6 +15074,7 @@ async function publicarStories() {
   await salvarPublicacoes();
   try { renderCalendarioKanban(); } catch(_) {}
   const tg = document.getElementById('storyTag'); if (tg) { tg.textContent = okN + '/' + st.length + ' agendados'; tg.className = 'tag on'; }
+  if (okN) { campAtiva.stories_agendado_em = new Date(inicio).toISOString(); try { salvarCampanhaNoBanco(campAtiva, 'stories agendados'); } catch(_) {} }
   if (okN === st.length) _statusPainel('story', 'ok', okN + ' stories agendados no Metricool ✓', 'A partir de ' + new Date(inicio).toLocaleString('pt-BR') + ' (a cada 2 min) · ' + redesSt.join(', ') + ' · sticker de link no último: <b>' + link + '</b>. Confira no Planner do Metricool e no calendário do Kanban.');
   else _statusPainel('story', 'err', okN + ' de ' + st.length + ' stories agendados', errosPub.join('<br>') || 'Veja o Log.');
   toast(okN + ' de ' + st.length + ' stories agendados', okN ? 'success' : 'error');
@@ -14963,7 +15115,11 @@ function _renderReel() {
   const temArte = sl.every(x => x.imagem_url);
   const on = (id, v) => { const b = document.getElementById(id); if (b) b.disabled = !v; };
   on('btnArtesReel', true); on('btnMontarReel', temArte); on('btnHostReel', !!r.video_blob_pronto); on('btnPubReel', !!r.video_url);
-  if (r.video_url) { const v = document.getElementById('reelVideo'); if (v && v.src !== r.video_url) { v.src = r.video_url; v.style.display = 'block'; const ph = document.getElementById('reelVideoPlaceholder'); if (ph) ph.style.display = 'none'; } }
+  if (r.video_url) {
+    const v = document.getElementById('reelVideo'); if (v && v.src !== r.video_url) { v.src = r.video_url; v.style.display = 'block'; const ph = document.getElementById('reelVideoPlaceholder'); if (ph) ph.style.display = 'none'; }
+    const dl = document.getElementById('reelDownload'); if (dl) { dl.href = r.video_url; dl.style.display = 'block'; }
+    if (!window._reelBlob && !r._statusMostrado) { r._statusMostrado = true; _statusPainel('reel', 'ok', r.agendado_em ? 'Reel já agendado para ' + new Date(r.agendado_em).toLocaleString('pt-BR') : 'Vídeo já montado e hospedado', 'Não precisa montar de novo. ' + (r.agendado_em ? 'Para reagendar, clique em 🚀 Agendar Reel.' : 'Clique em 🚀 Agendar Reel — ou 🎬 Montar vídeo só se quiser refazê-lo.')); }
+  }
 }
 async function _salvarReel() {
   if (!campAtiva) return;
@@ -15125,7 +15281,8 @@ async function publicarReel() {
   if (!r?.video_url) { toast('Hospede o vídeo primeiro', 'error'); return; }
   const temMc = await verificarMetricool(true);
   if (!temMc) { toast('Metricool não configurado — baixe o vídeo e publique pelo app', 'error'); return; }
-  const quando = prompt('Data/hora do Reel:', new Date(Date.now() + 15*60000).toISOString().substring(0,16));
+  const quando = window._autoAgendaReel || prompt('Data/hora do Reel:', new Date(Date.now() + 15*60000).toISOString().substring(0,16));
+  window._autoAgendaReel = null;
   if (!quando) return;
   const legenda = document.getElementById('reelLegenda')?.value || r.legenda || '';
   const redes = ['instagram']; if (campAtiva.redes_ativas?.facebook) redes.push('facebook');
@@ -15276,7 +15433,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.9.6] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.9.8] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -15292,7 +15449,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.9.6';
+window.__ATX_BUILD_ID__ = 'ATX-v1.9.8';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
