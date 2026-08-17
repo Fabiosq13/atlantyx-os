@@ -2085,8 +2085,13 @@ tr:hover td{background:rgba(79,124,255,.03);}
               <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
                 <button class="btn btn-p" style="font-size:10.5px;" onclick="gerarStoryPack()">🤖 Gerar roteiro de 3 stories</button>
                 <button class="btn btn-or" style="font-size:10.5px;" onclick="gerarArtesStories()" id="btnArtesStories" disabled>◆ Gerar artes 9:16 (Ideogram)</button>
+                <button class="btn" style="font-size:10.5px;color:var(--gold);border-color:var(--gold);" onclick="comporArtesStories()" id="btnComporStories" disabled>🖼 Compor artes com texto</button>
                 <button class="btn btn-gn" style="font-size:10.5px;" onclick="publicarStories()" id="btnPubStories" disabled>🚀 Agendar stories (Metricool)</button>
-                <span style="font-size:9px;color:var(--t3);">Sticker de link no 3º story → clique direto (sem "link na bio")</span>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+                <span style="font-size:10px;color:var(--gold);white-space:nowrap;">🔗 LINK DA REUNIÃO (sticker do 3º story):</span>
+                <input id="storyLink" class="fsel" style="flex:1;font-size:10px;" placeholder="https://meetings.hubspot.com/..." onfocus="if(!this.value)this.value=_linkStoriesReels()"/>
+                <span style="font-size:9px;color:var(--t3);white-space:nowrap;">Compor = grava o texto NA IMAGEM (o que o Instagram mostra)</span>
               </div>
               <div id="storyPack" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
                 <div style="grid-column:1/-1;color:var(--t3);font-size:11px;text-align:center;padding:14px;">Gere o roteiro: a IA adapta a campanha em 3 stories curtos (gancho → valor → CTA com link).</div>
@@ -6424,7 +6429,7 @@ async function _aplicarCopyNaCampanha(nova, motivo, copyCompleta) {
   // resumo no card do topo (se existir)
   try { const hd = document.querySelector('#campResumoHeadline'); if (hd) hd.textContent = nova.headline || ''; } catch(_) {}
   try { salvarCampanhaLocal(campAtiva); } catch(_) {}
-  try { await fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()}, body: JSON.stringify({ action:'save_campanha', value: campAtiva }) }); } catch(_) {}
+  await salvarCampanhaNoBanco(campAtiva, 'copy');
   // peça no kanban vinculada: atualiza copy
   try {
     const p = (kanbanPecas || []).find(x => x.campanhaId === campAtiva.id);
@@ -14695,6 +14700,66 @@ async function gerarCampanhaAutomatica() {
   addLog('ok', '[Auto-IA] ════ Concluída ════');
 }
 
+// ---------- SAVE DE CAMPANHA ROBUSTO (v1.9.6) --------------------------------
+// Remove campos transitórios (blob:, _erro, funções) e mostra o motivo real de um 500
+function _sanearCampanhaParaSave(c) {
+  const seen = new WeakSet();
+  const clean = (v, k) => {
+    if (v == null) return v;
+    if (typeof v === 'function') return undefined;
+    if (typeof v === 'string') { if (v.startsWith('blob:')) return undefined; return v.replace(/\u0000/g, ''); }
+    if (typeof v !== 'object') return v;
+    if (seen.has(v)) return undefined; seen.add(v);
+    if (Array.isArray(v)) return v.map(x => clean(x)).filter(x => x !== undefined);
+    const o = {};
+    for (const key of Object.keys(v)) { if (key.startsWith('_') || key === 'composta_local' || key === 'video_blob_pronto') continue; const cv = clean(v[key], key); if (cv !== undefined) o[key] = cv; }
+    return o;
+  };
+  return clean(c);
+}
+async function salvarCampanhaNoBanco(camp, origem) {
+  const limpa = _sanearCampanhaParaSave(camp || campAtiva);
+  if (!limpa?.id) return { success: false, error: 'campanha sem id' };
+  const body = JSON.stringify({ action: 'save_campanha', value: limpa });
+  if (body.length > 4 * 1024 * 1024) { addLog('err', '[Campanha] save abortado: payload ' + (body.length/1048576).toFixed(1) + ' MB (>4 MB)'); return { success:false, error:'campanha grande demais para salvar (' + (body.length/1048576).toFixed(1) + ' MB)' }; }
+  try {
+    const r = await fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()}, body });
+    let d = {}; try { d = await r.json(); } catch(_) {}
+    if (!r.ok || !d.success) {
+      const msg = d.error || ('HTTP ' + r.status);
+      addLog('err', '[Campanha] save_campanha falhou (' + (origem||'') + '): ' + msg + ' · payload ' + (body.length/1024).toFixed(0) + ' KB');
+      toast('Erro ao salvar campanha: ' + msg, 'error');
+      return { success:false, error: msg };
+    }
+    return d;
+  } catch (e) { addLog('err', '[Campanha] save_campanha erro de rede: ' + e.message); toast('Erro ao salvar: ' + e.message, 'error'); return { success:false, error: e.message }; }
+}
+
+// ---------- BARRA DE STATUS GRANDE (v1.9.5) — Stories/Reels -----------------
+// estado: 'run' (processando, azul + spinner) · 'ok' (verde) · 'err' (vermelho, texto grande) · 'off' (some)
+function _statusPainel(prefix, estado, titulo, detalhe, pct) {
+  const tagEl = document.getElementById(prefix + 'Tag');
+  const painel = tagEl ? tagEl.closest('.panel') : null;
+  const pb = painel ? painel.querySelector('.pb') : null;
+  if (!pb) return;
+  let bar = document.getElementById(prefix + 'StatusBar');
+  if (!bar) { bar = document.createElement('div'); bar.id = prefix + 'StatusBar'; pb.insertBefore(bar, pb.firstChild); }
+  if (estado === 'off') { bar.style.display = 'none'; return; }
+  const cor = estado === 'err' ? 'var(--red)' : estado === 'ok' ? 'var(--green, #22d3a3)' : 'var(--blue)';
+  const bg  = estado === 'err' ? 'rgba(255,80,80,.10)' : estado === 'ok' ? 'rgba(34,211,163,.10)' : 'rgba(79,124,255,.12)';
+  bar.style.cssText = 'display:block;margin-bottom:12px;padding:12px 14px;border-radius:9px;border:1.5px solid ' + cor + ';background:' + bg + ';';
+  bar.innerHTML = '<div style="display:flex;align-items:center;gap:10px;">'
+    + (estado === 'run' ? '<div style="width:16px;height:16px;border:3px solid rgba(79,124,255,.25);border-top-color:var(--blue);border-radius:50%;animation:atxspin .8s linear infinite;flex-shrink:0;"></div>' : estado === 'ok' ? '<span style="font-size:18px;">✅</span>' : '<span style="font-size:18px;">⛔</span>')
+    + '<div style="flex:1;min-width:0;"><div style="font-size:' + (estado === 'err' ? '14px' : '13px') + ';font-weight:700;color:' + cor + ';">' + (titulo || '') + '</div>'
+    + (detalhe ? '<div style="font-size:11.5px;color:var(--t1);margin-top:3px;line-height:1.45;word-break:break-word;">' + detalhe + '</div>' : '') + '</div>'
+    + (typeof pct === 'number' ? '<div style="font-family:var(--M);font-size:14px;font-weight:700;color:' + cor + ';">' + Math.round(pct) + '%</div>' : '') + '</div>'
+    + (typeof pct === 'number' ? '<div style="height:6px;background:rgba(255,255,255,.08);border-radius:3px;margin-top:9px;overflow:hidden;"><div style="height:100%;width:' + Math.max(2, Math.min(100, pct)) + '%;background:' + cor + ';transition:width .3s;"></div></div>' : '');
+  if (!document.getElementById('atxSpinStyle')) { const st = document.createElement('style'); st.id = 'atxSpinStyle'; st.textContent = '@keyframes atxspin{to{transform:rotate(360deg)}}'; document.head.appendChild(st); }
+  try { if (estado === 'err') bar.scrollIntoView({ behavior:'smooth', block:'center' }); } catch(_) {}
+}
+function _linkCurtoVisivel(url) { try { const u = new URL(url); return u.host.replace(/^www\./,'') + u.pathname.replace(/\/$/,''); } catch(_) { return url; } }
+function _linkStoriesReels() { return (campAtiva?.link_destino || linkReuniao()); }
+
 // ---------- STORIES 9:16 (v1.8) ---------------------------------------------
 function _renderStoryPack() {
   const box = document.getElementById('storyPack');
@@ -14705,24 +14770,29 @@ function _renderStoryPack() {
     <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:10px;">
       <div style="font-family:var(--M);font-size:8.5px;color:var(--t3);margin-bottom:6px;">STORY ${x.ordem || i+1} · ${(x.papel||'').toUpperCase()}</div>
       <div style="aspect-ratio:9/16;background:linear-gradient(160deg,#1A3A8F,#0B1226);border-radius:6px;position:relative;overflow:hidden;margin-bottom:8px;">
-        ${x.imagem_url ? `<img src="${x.imagem_url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.9;"/>` : ''}
-        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:14px;text-align:center;">
+        ${x.imagem_composta ? `<img src="${x.imagem_composta}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;"/>` : (x.imagem_url ? `<img src="${x.imagem_url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.9;"/>` : '')}
+        ${x.imagem_composta ? '' : `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:14px;text-align:center;">
           <div style="font-size:12.5px;font-weight:700;color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.85);line-height:1.35;">${(x.texto_tela||'').replace(/</g,'&lt;')}</div>
         </div>
-        ${x.cta_sticker ? `<div style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:#fff;color:#0B1226;font-size:9px;font-weight:700;padding:4px 10px;border-radius:12px;white-space:nowrap;">🔗 ${x.cta_sticker}</div>` : ''}
+        ${x.cta_sticker || i === st.length-1 ? `<div style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:#fff;color:#0B1226;font-size:9px;font-weight:700;padding:4px 10px;border-radius:12px;white-space:nowrap;">🔗 ${x.cta_sticker || 'Agende sua conversa'}</div>` : ''}`}
+        ${x.imagem_composta ? '<div style="position:absolute;top:6px;right:6px;background:#22d3a3;color:#052;font-size:8px;font-weight:700;padding:2px 6px;border-radius:8px;">TEXTO GRAVADO</div>' : ''}
       </div>
+      ${i === st.length-1 ? `<div style="font-size:9px;color:var(--gold);margin-bottom:4px;word-break:break-all;">🔗 Sticker → ${(document.getElementById('storyLink')?.value || _linkStoriesReels())}</div>` : ''}
       <textarea class="fsel" style="width:100%;height:52px;font-size:10px;" oninput="campAtiva.stories[${i}].texto_tela=this.value">${(x.texto_tela||'').replace(/</g,'&lt;')}</textarea>
       <input class="fsel" style="width:100%;font-size:9px;margin-top:4px;" placeholder="URL da arte 9:16 (gerada ou colada)" value="${x.imagem_url||''}" oninput="campAtiva.stories[${i}].imagem_url=this.value;_renderStoryPack()"/>
     </div>`).join('');
   const temArte = st.every(x => x.imagem_url);
   const bA = document.getElementById('btnArtesStories'); if (bA) bA.disabled = false;
+  const bC = document.getElementById('btnComporStories'); if (bC) bC.disabled = !temArte;
   const bP = document.getElementById('btnPubStories'); if (bP) bP.disabled = !temArte;
+  const lk = document.getElementById('storyLink'); if (lk && !lk.value) lk.value = _linkStoriesReels();
   const tg = document.getElementById('storyTag'); if (tg) { tg.textContent = temArte ? 'Pronto p/ agendar' : 'Roteiro ok'; tg.className = 'tag ' + (temArte ? 'on' : 'off'); }
 }
 
 async function gerarStoryPack() {
   if (!campAtiva) { toast('Abra ou crie uma campanha primeiro', 'error'); return; }
   const tg = document.getElementById('storyTag'); if (tg) tg.textContent = 'Gerando...';
+  _statusPainel('story', 'run', 'Gerando roteiro dos 3 stories com IA...', 'Adaptando a narrativa e a copy da campanha "' + (campAtiva.nome||'') + '" (gancho → valor → CTA).', 15);
   addLog('info', '[Stories] Gerando roteiro para "' + campAtiva.nome + '"');
   try {
     const link = campAtiva.link_destino || linkReuniao();
@@ -14732,71 +14802,142 @@ async function gerarStoryPack() {
     if (!d.success || !d.stories?.length) throw new Error(d.error || 'sem stories');
     campAtiva.stories = d.stories.map(x => Object.assign({ imagem_url: '' }, x));
     salvarCampanhaLocal(campAtiva);
-    try { await fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()}, body: JSON.stringify({ action:'save_campanha', value: campAtiva }) }); } catch(_) {}
+    { const rs = await salvarCampanhaNoBanco(campAtiva, 'stories roteiro'); if (!rs.success) _statusPainel('story', 'err', 'Roteiro gerado, mas NÃO foi salvo no banco', rs.error); }
     _renderStoryPack();
+    _statusPainel('story', 'ok', 'Roteiro pronto (3 stories)', 'Próximo passo: ◆ Gerar artes 9:16 → 🖼 Compor artes com texto → 🚀 Agendar. O link da reunião vai no sticker do 3º story.');
     addLog('ok', '[Stories] Roteiro: ' + campAtiva.stories.map(x => x.papel).join(' → '));
     toast('Roteiro de 3 stories pronto — edite os textos e gere as artes', 'success');
-  } catch (e) { addLog('err', '[Stories] ' + e.message); toast('Erro: ' + e.message, 'error'); if (tg) tg.textContent = 'Erro'; }
+  } catch (e) { addLog('err', '[Stories] ' + e.message); _statusPainel('story', 'err', 'Falha ao gerar o roteiro', e.message); toast('Erro: ' + e.message, 'error'); if (tg) tg.textContent = 'Erro'; }
 }
 
 async function gerarArtesStories() {
   const st = campAtiva?.stories || [];
   if (!st.length) return;
   const tg = document.getElementById('storyTag'); if (tg) tg.textContent = 'Gerando artes...';
+  let _falhas = [];
   for (let i = 0; i < st.length; i++) {
+    _statusPainel('story', 'run', 'Gerando arte ' + (i+1) + ' de ' + st.length + ' no Ideogram (9:16)...', 'Cada arte leva ~15 s. Não feche esta aba.', (i / st.length) * 100);
     if (st[i].imagem_url) continue;
     try {
       const r = await fetch('/api/image-gen', { method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ prompt: st[i].prompt_imagem || ('vertical corporate scene, dark navy and electric blue, clean center'), formato: 'ASPECT_9_16', estilo: 'DESIGN', quantidade: 1 }) });
       const d = await r.json();
       st[i].imagem_url = d.imagens?.[0]?.url || d.imagens?.[0] || '';
-      if (st[i].imagem_url) addLog('ok', '[Stories] Arte ' + (i+1) + ' gerada'); else addLog('warn', '[Stories] Arte ' + (i+1) + ' sem retorno');
+      if (st[i].imagem_url) addLog('ok', '[Stories] Arte ' + (i+1) + ' gerada'); else { addLog('warn', '[Stories] Arte ' + (i+1) + ' sem retorno'); _falhas.push('arte ' + (i+1) + ': sem retorno do Ideogram'); }
       _renderStoryPack();
-    } catch (e) { addLog('warn', '[Stories] Arte ' + (i+1) + ' falhou: ' + e.message); }
+    } catch (e) { addLog('warn', '[Stories] Arte ' + (i+1) + ' falhou: ' + e.message); _falhas.push('arte ' + (i+1) + ': ' + e.message); }
   }
+  if (_falhas.length) _statusPainel('story', 'err', 'Falha em ' + _falhas.length + ' arte(s)', _falhas.join(' · ') + '<br>Cole uma URL manualmente no campo do story ou tente de novo.');
+  else _statusPainel('story', 'ok', 'Artes 9:16 prontas', 'Agora clique em 🖼 Compor artes com texto — isso grava o texto e o CTA na imagem (o Instagram NÃO mostra legenda em stories). Depois 🚀 Agendar.');
   salvarCampanhaLocal(campAtiva);
-  try { await fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()}, body: JSON.stringify({ action:'save_campanha', value: campAtiva }) }); } catch(_) {}
+  { const rs = await salvarCampanhaNoBanco(campAtiva, 'stories artes'); if (!rs.success) _statusPainel('story', 'err', 'Artes geradas, mas NÃO foram salvas no banco', rs.error); }
   _renderStoryPack();
-  toast('Artes 9:16 prontas (o texto vai sobreposto no story)', 'success');
+  toast('Artes 9:16 prontas', 'success');
   addLog('warn', '[Stories] URLs do Ideogram são temporárias (~24h) — agende os stories enquanto válidas');
+}
+
+// v1.9.5: grava texto + CTA + link NA IMAGEM (canvas 720x1280) e hospeda → é isso que o Instagram exibe
+async function comporArtesStories(silencioso) {
+  const st = campAtiva?.stories || [];
+  if (!st.length || !st.every(x => x.imagem_url)) { toast('Gere as 3 artes antes', 'error'); return false; }
+  const link = document.getElementById('storyLink')?.value?.trim() || _linkStoriesReels();
+  const W = 720, H = 1280;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext && cv.getContext('2d');
+  if (!ctx) { _statusPainel('story', 'err', 'Este navegador não permite compor imagens', 'Use Chrome/Edge atualizados.'); return false; }
+  const wrap = (text, maxW) => { const words = (text||'').split(/\s+/), lines = []; let cur = ''; words.forEach(w => { const t = cur ? cur + ' ' + w : w; if (ctx.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t; }); if (cur) lines.push(cur); return lines; };
+  let hospedadas = 0, baixaveis = [];
+  for (let i = 0; i < st.length; i++) {
+    _statusPainel('story', 'run', 'Compondo story ' + (i+1) + ' de ' + st.length + ' (texto na imagem)...', 'Gravando texto, marca e CTA sobre a arte.', (i / st.length) * 100);
+    try {
+      const im = await _reelLoadImg(st[i].imagem_url);
+      ctx.fillStyle = '#05070f'; ctx.fillRect(0, 0, W, H);
+      const sc = Math.max(W / im.width, H / im.height), dw = im.width * sc, dh = im.height * sc;
+      ctx.drawImage(im, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      const g = ctx.createLinearGradient(0, H * 0.2, 0, H); g.addColorStop(0, 'rgba(5,7,15,0)'); g.addColorStop(0.5, 'rgba(5,7,15,0.35)'); g.addColorStop(1, 'rgba(5,7,15,0.9)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = 'rgba(79,124,255,0.95)'; ctx.fillRect(48, 64, 6, 34); ctx.font = '700 22px Calibri, Arial, sans-serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.fillText('ATLANTYX', 66, 90);
+      ctx.font = '800 52px Calibri, Arial, sans-serif'; ctx.textAlign = 'center';
+      const lines = wrap(st[i].texto_tela || '', W - 130), lh = 66; let y = H / 2 - (lines.length - 1) * lh / 2 + 20;
+      ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 18; ctx.fillStyle = '#fff';
+      lines.forEach(ln => { ctx.fillText(ln, W / 2, y); y += lh; }); ctx.shadowBlur = 0;
+      const ehCta = (st[i].papel === 'cta') || i === st.length - 1;
+      if (ehCta) {
+        const cta = st[i].cta_sticker || 'Agende sua conversa';
+        ctx.font = '700 28px Calibri, Arial, sans-serif'; const tw = ctx.measureText(cta).width + 70;
+        const px = (W - tw) / 2, py = H - 250; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(px, py, tw, 60, 30) : ctx.rect(px, py, tw, 60); ctx.fill();
+        ctx.fillStyle = '#0B1226'; ctx.fillText('🔗 ' + cta, W / 2, py + 41);
+        ctx.font = '600 24px Calibri, Arial, sans-serif'; ctx.fillStyle = '#F5B94B'; ctx.fillText(_linkCurtoVisivel(link), W / 2, H - 150);
+        ctx.font = '500 19px Calibri, Arial, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillText('toque no link ↑', W / 2, H - 112);
+      } else { ctx.font = '600 22px Calibri, Arial, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillText((i+1) + ' / ' + st.length + '  ·  deslize →', W / 2, H - 120); }
+      const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+      st[i].composta_local = URL.createObjectURL(blob); baixaveis.push({ n: i+1, url: st[i].composta_local });
+      const resp = await fetch('/api/media-upload?name=' + encodeURIComponent('story-' + (campAtiva.id||'x') + '-' + (i+1) + '.png') + '&pasta=stories', { method:'POST', headers:{ 'Content-Type':'image/png' }, body: blob });
+      const d = await resp.json();
+      if (d.success) { st[i].imagem_composta = d.url; hospedadas++; }
+      else { st[i].imagem_composta = ''; st[i]._erro_host = d.error + (d.hint ? ' — ' + d.hint : ''); }
+    } catch (e) { st[i]._erro_host = e.message; addLog('warn', '[Stories] compor ' + (i+1) + ': ' + e.message); }
+    _renderStoryPack();
+  }
+  try { salvarCampanhaLocal(campAtiva); } catch(_) {}
+  { const rs = await salvarCampanhaNoBanco(campAtiva, 'stories compostas'); if (!rs.success) addLog('warn', '[Stories] compostas não salvas no banco: ' + rs.error); }
+  _renderStoryPack();
+  if (hospedadas === st.length) { _statusPainel('story', 'ok', 'Artes compostas e hospedadas (' + hospedadas + '/' + st.length + ')', 'Texto e CTA já estão gravados na imagem. Link do sticker: <b>' + link + '</b>. Pode 🚀 Agendar.'); return true; }
+  const erro = (st.find(x => x._erro_host) || {})._erro_host || 'hospedagem indisponível';
+  _statusPainel('story', 'err', 'Compus as artes, mas não consegui hospedar (' + hospedadas + '/' + st.length + ')', erro + '<br>Baixe as artes prontas e publique manualmente: ' + baixaveis.map(b => '<a href="' + b.url + '" download="story-' + b.n + '.png" style="color:var(--blue);">story ' + b.n + '</a>').join(' · '));
+  return false;
 }
 
 async function publicarStories() {
   const st = campAtiva?.stories || [];
   if (!st.length || !st.every(x => x.imagem_url)) { toast('Gere as 3 artes antes', 'error'); return; }
+  // v1.9.5: garantir texto gravado na imagem antes de publicar
+  if (!st.every(x => x.imagem_composta)) {
+    _statusPainel('story', 'run', 'Antes de agendar: compondo o texto nas artes...', 'O Instagram não mostra legenda em stories — o texto precisa estar NA imagem.', 5);
+    const okc = await comporArtesStories(true);
+    if (!okc) { toast('Não foi possível hospedar as artes compostas — veja a barra vermelha', 'error'); return; }
+  }
   const temMc = await verificarMetricool(true);
   if (!temMc) { toast('Metricool não configurado — publique os stories manualmente com as artes acima', 'error'); return; }
   const inicio = prompt('Data/hora do 1º story (os outros seguem a cada 2 min):', new Date(Date.now() + 10*60000).toISOString().substring(0,16));
   if (!inicio) return;
-  const linkBase = campAtiva.link_destino || linkReuniao(); // v1.9.3
+  const linkBase = document.getElementById('storyLink')?.value?.trim() || campAtiva.link_destino || linkReuniao(); // v1.9.5
   const link = linkBase ? linkBase + (linkBase.includes('?') ? '&' : '?') + 'utm_source=instagram&utm_medium=story&utm_campaign=' + (typeof slugDe === 'function' ? slugDe(campAtiva.id) : String(campAtiva.id).toLowerCase().replace(/[^a-z0-9_-]/g,'')) : '';
   const redesSt = []; if (campAtiva.redes_ativas?.instagram !== false) redesSt.push('instagram'); if (campAtiva.redes_ativas?.facebook) redesSt.push('facebook');
   if (!redesSt.length) redesSt.push('instagram');
-  let okN = 0;
+  let okN = 0, errosPub = [];
   for (let i = 0; i < st.length; i++) {
     const quando = new Date(new Date(inicio).getTime() + i * 2 * 60000);
     const ehCta = (st[i].papel === 'cta') || i === st.length - 1;
+    _statusPainel('story', 'run', 'Agendando story ' + (i+1) + ' de ' + st.length + ' no Metricool...', quando.toLocaleString('pt-BR') + ' · ' + redesSt.join(', ') + (ehCta ? ' · com sticker de link' : ''), (i / st.length) * 100);
     try {
       const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ action:'publicar', payload: { tipo:'STORY', texto: st[i].texto_tela || '', redes: redesSt, data_hora: quando.toISOString(), imagem_url: st[i].imagem_url, encurtar_link: false, link_sticker: (ehCta && link) ? link : '' } }) });
+        body: JSON.stringify({ action:'publicar', payload: { tipo:'STORY', texto: st[i].texto_tela || '', redes: redesSt, data_hora: quando.toISOString(), imagem_url: st[i].imagem_composta || st[i].imagem_url, encurtar_link: false, link_sticker: (ehCta && link) ? link : '' } }) });
       const d = await r.json();
       if (!d.success) throw new Error(d.error || 'falha');
       okN++;
       const pFake = { id: 'story_' + campAtiva.id + '_' + (i+1), campanhaId: campAtiva.id, titulo: campAtiva.nome + ' · Story ' + (i+1) };
       redesSt.forEach(rd => registrarPublicacao(pFake, rd, '[STORY] ' + (st[i].texto_tela||''), 'metricool', d.metricool_id, ehCta ? link : '', quando.toISOString()));
       addLog('ok', '[Stories] Story ' + (i+1) + ' agendado → ' + quando.toLocaleString('pt-BR') + (ehCta && link ? ' (com sticker de link)' : ''));
-    } catch (e) { addLog('err', '[Stories] Story ' + (i+1) + ': ' + e.message); }
+    } catch (e) { addLog('err', '[Stories] Story ' + (i+1) + ': ' + e.message); errosPub.push('story ' + (i+1) + ': ' + e.message); }
   }
   await salvarPublicacoes();
   try { renderCalendarioKanban(); } catch(_) {}
   const tg = document.getElementById('storyTag'); if (tg) { tg.textContent = okN + '/' + st.length + ' agendados'; tg.className = 'tag on'; }
+  if (okN === st.length) _statusPainel('story', 'ok', okN + ' stories agendados no Metricool ✓', 'A partir de ' + new Date(inicio).toLocaleString('pt-BR') + ' (a cada 2 min) · ' + redesSt.join(', ') + ' · sticker de link no último: <b>' + link + '</b>. Confira no Planner do Metricool e no calendário do Kanban.');
+  else _statusPainel('story', 'err', okN + ' de ' + st.length + ' stories agendados', errosPub.join('<br>') || 'Veja o Log.');
   toast(okN + ' de ' + st.length + ' stories agendados', okN ? 'success' : 'error');
 }
 
 // ---------- REELS SLIDESHOW (v1.9) ------------------------------------------
-function _reelSet(status, tag) {
+function _reelSet(status, tag, pct) {
   const st = document.getElementById('reelStatus'); if (st && status != null) st.textContent = status;
   const tg = document.getElementById('reelTag'); if (tg && tag) { tg.textContent = tag; tg.className = 'tag ' + (/pronto|hospedado|agendado/i.test(tag) ? 'on' : 'off'); }
+  // v1.9.5: barra grande
+  if (status != null) {
+    const ehErro = /^erro|falha|não |nao |⚠/i.test(status) || /erro/i.test(tag||'');
+    const ehOk = /pronto|hospedado|agendado ✓|agendado para|prontas/i.test(status) && !ehErro;
+    _statusPainel('reel', ehErro ? 'err' : ehOk ? 'ok' : 'run', ehErro ? 'Problema no Reel' : ehOk ? 'Reel: ' + status : status, ehErro ? status : '', typeof pct === 'number' ? pct : undefined);
+  }
 }
 function _renderReel() {
   const box = document.getElementById('reelSlides');
@@ -14814,6 +14955,7 @@ function _renderReel() {
           <div style="font-size:10.5px;font-weight:800;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.9);line-height:1.3;">${(x.texto_tela||'').replace(/</g,'&lt;')}</div>
         </div>
       </div>
+      ${i===sl.length-1 ? `<div style="font-size:8.5px;color:var(--gold);margin-bottom:3px;word-break:break-all;">🔗 no vídeo: ${_linkCurtoVisivel(_linkStoriesReels())}</div>` : ''}
       <textarea class="fsel" style="width:100%;height:46px;font-size:9.5px;" oninput="campAtiva.reel.slides[${i}].texto_tela=this.value">${(x.texto_tela||'').replace(/</g,'&lt;')}</textarea>
       <input class="fsel" style="width:100%;font-size:8.5px;margin-top:3px;" placeholder="URL arte 9:16" value="${x.imagem_url||''}" oninput="campAtiva.reel.slides[${i}].imagem_url=this.value;_renderReel()"/>
     </div>`).join('');
@@ -14826,7 +14968,8 @@ function _renderReel() {
 async function _salvarReel() {
   if (!campAtiva) return;
   try { salvarCampanhaLocal(campAtiva); } catch(_) {}
-  try { await fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()}, body: JSON.stringify({ action:'save_campanha', value: campAtiva }) }); } catch(_) {}
+  const rs = await salvarCampanhaNoBanco(campAtiva, 'reel');
+  if (!rs.success) _statusPainel('reel', 'err', 'Reel gerado, mas NÃO foi salvo no banco', rs.error + ' — o trabalho está no cache local deste navegador; corrija e tente de novo.');
 }
 
 async function gerarReelPack() {
@@ -14837,7 +14980,8 @@ async function gerarReelPack() {
       body: JSON.stringify({ action:'reel_pack', payload: { narrativa: campAtiva.data?.narrativa || {}, copy: campAtiva.data?.copy || {}, canal: campAtiva.canal, n_slides: 5 } }) });
     const d = await r.json();
     if (!d.success || !d.slides?.length) throw new Error(d.error || 'sem slides');
-    campAtiva.reel = { slides: d.slides.map(x => Object.assign({ imagem_url: '' }, x)), legenda: (d.legenda || '') + (d.hashtags?.length ? '\n\n' + d.hashtags.join(' ') : ''), trilha: d.trilha_sugerida || '', video_url: '', video_blob_pronto: false };
+    const _lkReel = _linkStoriesReels(); const _lkReelUtm = _lkReel + (_lkReel.includes('?') ? '&' : '?') + 'utm_source=instagram&utm_medium=reel&utm_campaign=' + (campAtiva.id || 'reel');
+    campAtiva.reel = { slides: d.slides.map(x => Object.assign({ imagem_url: '' }, x)), legenda: (d.legenda || '') + '\n\n👉 Agende sua conversa (link na bio):\n' + _lkReelUtm + (d.hashtags?.length ? '\n\n' + d.hashtags.join(' ') : ''), link: _lkReelUtm, trilha: d.trilha_sugerida || '', video_url: '', video_blob_pronto: false };
     window._reelBlob = null;
     await _salvarReel(); _renderReel();
     _reelSet('Roteiro pronto: ' + d.slides.length + ' slides' + (d.trilha_sugerida ? ' · trilha sugerida: ' + d.trilha_sugerida : ''), 'Roteiro ok');
@@ -14924,7 +15068,7 @@ async function montarVideoReel() {
     ctx.globalAlpha = alpha;
     ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(48, H - 72, W - 96, 5);
     ctx.fillStyle = '#4F7CFF'; ctx.fillRect(48, H - 72, (W - 96) * ((i + p) / sl.length), 5);
-    if (i === sl.length - 1) { ctx.font = '700 26px Calibri, Arial, sans-serif'; ctx.fillStyle = '#F5B94B'; ctx.fillText('🔗 Link na bio', W / 2, H - 110); }
+    if (i === sl.length - 1) { ctx.font = '700 26px Calibri, Arial, sans-serif'; ctx.fillStyle = '#F5B94B'; ctx.fillText('🔗 Link na bio', W / 2, H - 150); ctx.font = '600 22px Calibri, Arial, sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText(_linkCurtoVisivel(_linkStoriesReels()), W / 2, H - 112); }
     ctx.restore();
   };
 
@@ -14942,7 +15086,7 @@ async function montarVideoReel() {
       ctx.fillStyle = '#05070f'; ctx.fillRect(0, 0, W, H);
       drawSlide(i, tl, 1);
       if (tl > DUR - FADE && i < sl.length - 1) drawSlide(i + 1, 0, (tl - (DUR - FADE)) / FADE); // crossfade
-      _reelSet('Gravando ' + Math.round(t / total * 100) + '%...', null);
+      _reelSet('Gravando vídeo... ' + Math.round(t / total * 100) + '%', null, t / total * 100);
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
@@ -14970,10 +15114,10 @@ async function hospedarReel() {
     const d = await resp.json();
     if (!d.success) throw new Error(d.error + (d.hint ? ' — ' + d.hint : ''));
     r.video_url = d.url; await _salvarReel(); _renderReel();
-    _reelSet('Hospedado: ' + d.url, 'Hospedado');
+    _reelSet('Hospedado (' + (d.hospedagem || 'ok') + '): ' + d.url, 'Hospedado');
     addLog('ok', '[Reel] Hospedado em ' + d.url);
     toast('Vídeo hospedado — pode agendar', 'success');
-  } catch (e) { addLog('err', '[Reel] hospedagem: ' + e.message); _reelSet('Falha na hospedagem: ' + e.message + ' · Alternativa: ⬇ Baixar e subir manualmente no Metricool/Instagram.', 'Erro'); toast(e.message, 'error'); }
+  } catch (e) { addLog('err', '[Reel] hospedagem: ' + e.message); _reelSet('Falha na hospedagem: ' + e.message + ' · O vídeo é hospedado no seu banco Neon (sem configuração extra). Se persistir, ⬇ Baixar e subir manualmente no Metricool/Instagram.', 'Erro'); toast(e.message, 'error'); }
 }
 
 async function publicarReel() {
@@ -15132,7 +15276,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.9.4] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.9.6] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -15148,7 +15292,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.9.4';
+window.__ATX_BUILD_ID__ = 'ATX-v1.9.6';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
