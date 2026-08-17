@@ -1,18 +1,48 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/:path*" },
-    { "source": "/(.*)", "destination": "/public/index.html" }
+    {
+      "source": "/api/:path*",
+      "destination": "/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/public/index.html"
+    }
   ],
   "functions": {
-    "api/s2-creative.js": { "maxDuration": 60 },
-    "api/financeiro.js": { "maxDuration": 60 },
-    "api/email-intel.js": { "maxDuration": 60 }
+    "api/s2-creative.js": {
+      "maxDuration": 60
+    },
+    "api/financeiro.js": {
+      "maxDuration": 60
+    },
+    "api/email-intel.js": {
+      "maxDuration": 60
+    },
+    "api/media-upload.js": {
+      "maxDuration": 30
+    }
   },
   "crons": [
-    { "path": "/api/rfp-monitor", "schedule": "0 */6 * * *" },
-    { "path": "/api/followup-cron", "schedule": "0 * * * *" },
-    { "path": "/api/briefing-cron", "schedule": "0 * * * *" },
-    { "path": "/api/financeiro?action=marcos_processar_alertas", "schedule": "0 9 * * *" },
-    { "path": "/api/health?full=1", "schedule": "0 9 * * 1" }
+    {
+      "path": "/api/rfp-monitor",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/followup-cron",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/briefing-cron",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/financeiro?action=marcos_processar_alertas",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/health?full=1",
+      "schedule": "0 9 * * 1"
+    }
   ]
 }
