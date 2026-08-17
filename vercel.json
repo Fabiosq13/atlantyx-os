@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/media/:file",
+      "destination": "/api/media-upload?f=:file"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/:path*"
     },
