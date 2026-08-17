@@ -44,16 +44,24 @@ async function getNeon() {
   } catch (e) { console.error('[media-upload] neon indisponível:', e.message); return null; }
 }
 function novoId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
-function urlPublica(req, id) {
+function extDe(ct, nome) {
+  const c = (ct || '').toLowerCase();
+  if (c.includes('mp4')) return 'mp4'; if (c.includes('quicktime')) return 'mov'; if (c.includes('webm')) return 'webm';
+  if (c.includes('jpeg') || c.includes('jpg')) return 'jpg'; if (c.includes('png')) return 'png'; if (c.includes('webp')) return 'webp'; if (c.includes('gif')) return 'gif';
+  const mm = String(nome || '').match(/\.([a-z0-9]{2,4})$/i); return mm ? mm[1].toLowerCase() : 'bin';
+}
+// v1.10: URL pública COM extensão no caminho (/media/ID.mp4) — Metricool/Instagram validam tipo pela extensão;
+// sem ela o Reel era lido como "imagem" e a Story ficava "Sem imagem"
+function urlPublica(req, id, ext) {
   const proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
   const host = req.headers['x-forwarded-host'] || req.headers.host;
-  return `${proto}://${host}/api/media-upload?m=${id}`;
+  return `${proto}://${host}/media/${id}.${ext || 'bin'}`;
 }
 async function salvarNeon(req, sql, buf, ct, nome, pasta) {
   const id = novoId();
   await sql`INSERT INTO media_store (id, nome, content_type, bytes_b64, tamanho, pasta)
             VALUES (${id}, ${nome}, ${ct}, ${buf.toString('base64')}, ${buf.length}, ${pasta || 'geral'})`;
-  return { url: urlPublica(req, id), id };
+  return { url: urlPublica(req, id, extDe(ct, nome)), id };
 }
 
 async function getBlob() {
@@ -80,18 +88,35 @@ export default async function handler(req, res) {
   }
 
   // ── servir mídia hospedada no Neon (URL pública p/ Metricool/Instagram) ──
-  if (req.method === 'GET' && url.searchParams.get('m')) {
+  const fParam = url.searchParams.get('f'); // /media/ID.ext → ?f=ID.ext
+  const mid = url.searchParams.get('m') || (fParam ? fParam.split('.')[0] : null);
+  if ((req.method === 'GET' || req.method === 'HEAD') && mid) {
     const sql = await getNeon();
     if (!sql) return res.status(500).json({ success: false, error: 'DATABASE_URL ausente' });
     try {
-      const rows = await sql`SELECT content_type, bytes_b64, nome FROM media_store WHERE id = ${url.searchParams.get('m')} LIMIT 1`;
+      const rows = await sql`SELECT content_type, bytes_b64, nome FROM media_store WHERE id = ${mid} LIMIT 1`;
       if (!rows.length) return res.status(404).json({ success: false, error: 'mídia não encontrada' });
       const buf = Buffer.from(rows[0].bytes_b64, 'base64');
-      res.setHeader('Content-Type', rows[0].content_type || 'application/octet-stream');
-      res.setHeader('Content-Length', String(buf.length));
-      res.setHeader('Content-Disposition', 'inline; filename="' + (rows[0].nome || 'media').replace(/[^\w.\-]/g, '_') + '"');
+      const ct = rows[0].content_type || 'application/octet-stream';
+      const nome = (rows[0].nome || ('media.' + extDe(ct))).replace(/[^\w.\-]/g, '_');
+      res.setHeader('Content-Type', ct);
+      res.setHeader('Content-Disposition', 'inline; filename="' + nome + '"');
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       res.setHeader('Accept-Ranges', 'bytes');
+      // v1.10: Range (players/validadores de vídeo pedem trechos) + HEAD (checagem de tamanho/tipo)
+      const range = req.headers['range'];
+      if (range && /^bytes=\d*-\d*$/.test(range)) {
+        let [s0, e0] = range.replace('bytes=', '').split('-');
+        let start = s0 ? parseInt(s0) : 0, end = e0 ? parseInt(e0) : buf.length - 1;
+        if (isNaN(start) || start >= buf.length) { res.setHeader('Content-Range', 'bytes */' + buf.length); return res.status(416).end(); }
+        end = Math.min(end, buf.length - 1);
+        res.setHeader('Content-Range', `bytes ${start}-${end}/${buf.length}`);
+        res.setHeader('Content-Length', String(end - start + 1));
+        if (req.method === 'HEAD') return res.status(206).end();
+        return res.status(206).send(buf.subarray(start, end + 1));
+      }
+      res.setHeader('Content-Length', String(buf.length));
+      if (req.method === 'HEAD') return res.status(200).end();
       return res.status(200).send(buf);
     } catch (e) { return res.status(500).json({ success: false, error: 'media: ' + e.message }); }
   }

@@ -87,7 +87,8 @@ export default async function handler(req, res) {
             dateTime: quando.toISOString().substring(0, 19),
             timezone: 'America/Sao_Paulo',
           },
-          text: texto || '',
+          // v1.10: Stories NÃO aceitam texto ("Máximo de caracteres permitido 0") — o texto vai gravado na imagem
+          text: tipo === 'STORY' ? '' : (texto || ''),
           ...(tipo === 'STORY' ? { instagramData: { type: 'STORY', ...(link_sticker ? { link: link_sticker } : {}) }, facebookData: { type: 'STORY' } } : {}),
           ...(tipo === 'REEL'  ? { instagramData: { type: 'REEL' }, facebookData: { type: 'REEL' } } : {}),
           autoPublish: true,
