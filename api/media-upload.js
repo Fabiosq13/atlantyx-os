@@ -30,6 +30,32 @@ async function readRaw(req) {
   return Buffer.concat(chunks);
 }
 
+// ── v1.9.6: armazenamento próprio no Neon (funciona SEM Vercel Blob) ──
+async function getNeon() {
+  const url = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.NEON_DATABASE_URL;
+  if (!url) return null;
+  try {
+    const { neon } = await import('@neondatabase/serverless');
+    const sql = neon(url);
+    await sql`CREATE TABLE IF NOT EXISTS media_store (
+      id TEXT PRIMARY KEY, nome TEXT, content_type TEXT, bytes_b64 TEXT, tamanho INT,
+      pasta TEXT, criado_em TIMESTAMPTZ DEFAULT NOW())`;
+    return sql;
+  } catch (e) { console.error('[media-upload] neon indisponível:', e.message); return null; }
+}
+function novoId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function urlPublica(req, id) {
+  const proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  return `${proto}://${host}/api/media-upload?m=${id}`;
+}
+async function salvarNeon(req, sql, buf, ct, nome, pasta) {
+  const id = novoId();
+  await sql`INSERT INTO media_store (id, nome, content_type, bytes_b64, tamanho, pasta)
+            VALUES (${id}, ${nome}, ${ct}, ${buf.toString('base64')}, ${buf.length}, ${pasta || 'geral'})`;
+  return { url: urlPublica(req, id), id };
+}
+
 async function getBlob() {
   try {
     const mod = await import('@vercel/blob');
@@ -49,7 +75,25 @@ export default async function handler(req, res) {
   // ── status ──
   if (req.method === 'GET' && url.searchParams.get('status')) {
     const blob = await getBlob();
-    return res.status(200).json({ success: true, blob_configurado: !!(token && blob), pacote_instalado: !!blob, token_presente: !!token });
+    const sqlS = await getNeon();
+    return res.status(200).json({ success: true, blob_configurado: !!(token && blob), neon_configurado: !!sqlS, hospedagem: (token && blob) ? 'vercel-blob' : (sqlS ? 'neon' : 'nenhuma'), pacote_instalado: !!blob, token_presente: !!token });
+  }
+
+  // ── servir mídia hospedada no Neon (URL pública p/ Metricool/Instagram) ──
+  if (req.method === 'GET' && url.searchParams.get('m')) {
+    const sql = await getNeon();
+    if (!sql) return res.status(500).json({ success: false, error: 'DATABASE_URL ausente' });
+    try {
+      const rows = await sql`SELECT content_type, bytes_b64, nome FROM media_store WHERE id = ${url.searchParams.get('m')} LIMIT 1`;
+      if (!rows.length) return res.status(404).json({ success: false, error: 'mídia não encontrada' });
+      const buf = Buffer.from(rows[0].bytes_b64, 'base64');
+      res.setHeader('Content-Type', rows[0].content_type || 'application/octet-stream');
+      res.setHeader('Content-Length', String(buf.length));
+      res.setHeader('Content-Disposition', 'inline; filename="' + (rows[0].nome || 'media').replace(/[^\w.\-]/g, '_') + '"');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      res.setHeader('Accept-Ranges', 'bytes');
+      return res.status(200).send(buf);
+    } catch (e) { return res.status(500).json({ success: false, error: 'media: ' + e.message }); }
   }
 
   // ── proxy de imagem (CORS) ──
@@ -73,7 +117,7 @@ export default async function handler(req, res) {
   const blob = await getBlob();
   const semBlob = () => res.status(501).json({
     success: false,
-    error: 'Hospedagem de mídia não configurada',
+    error: 'Hospedagem de mídia indisponível (nem Vercel Blob nem DATABASE_URL/Neon)',
     hint: 'No repo: npm i @vercel/blob (commitar package.json). No Vercel: Storage → Create → Blob → conectar ao projeto (cria BLOB_READ_WRITE_TOKEN) → Redeploy.',
     pacote_instalado: !!blob, token_presente: !!token,
   });
@@ -86,16 +130,21 @@ export default async function handler(req, res) {
     try { body = JSON.parse((await readRaw(req)).toString('utf8') || '{}'); } catch (_) {}
     if (body.action === 'rehost') {
       if (!body.url || !/^https?:\/\//i.test(body.url)) return res.status(400).json({ success: false, error: 'url obrigatória' });
-      if (!token || !blob) return semBlob();
       try {
         const r = await fetch(body.url, { headers: { 'User-Agent': 'AtlantyxOS/1.9' } });
         if (!r.ok) throw new Error('origem respondeu ' + r.status);
         const buf = Buffer.from(await r.arrayBuffer());
         const ct = r.headers.get('content-type') || 'image/png';
         const ext = ct.includes('jpeg') ? 'jpg' : ct.includes('webp') ? 'webp' : ct.includes('mp4') ? 'mp4' : 'png';
-        const name = 'atlantyx/' + (body.pasta || 'img') + '/' + Date.now() + '-' + Math.random().toString(36).slice(2, 7) + '.' + ext;
-        const out = await blob.put(name, buf, { access: 'public', contentType: ct, token, addRandomSuffix: false });
-        return res.status(200).json({ success: true, url: out.url, bytes: buf.length, contentType: ct });
+        if (token && blob) {
+          const name = 'atlantyx/' + (body.pasta || 'img') + '/' + Date.now() + '-' + Math.random().toString(36).slice(2, 7) + '.' + ext;
+          const out = await blob.put(name, buf, { access: 'public', contentType: ct, token, addRandomSuffix: false });
+          return res.status(200).json({ success: true, url: out.url, bytes: buf.length, contentType: ct, hospedagem: 'vercel-blob' });
+        }
+        const sql = await getNeon(); if (!sql) return semBlob();
+        if (buf.length > 4.3 * 1024 * 1024) return res.status(413).json({ success: false, error: 'Arquivo acima de ~4,3 MB' });
+        const out = await salvarNeon(req, sql, buf, ct, 'rehost.' + ext, body.pasta || 'img');
+        return res.status(200).json({ success: true, url: out.url, bytes: buf.length, contentType: ct, hospedagem: 'neon' });
       } catch (e) {
         return res.status(500).json({ success: false, error: 'rehost: ' + e.message });
       }
@@ -103,18 +152,25 @@ export default async function handler(req, res) {
     return res.status(400).json({ success: false, error: 'action desconhecida' });
   }
 
-  // ── upload binário (vídeo/imagem) ──
-  if (!token || !blob) return semBlob();
+  // ── upload binário (vídeo/imagem): Vercel Blob se configurado, senão Neon (já existente) ──
   try {
     const buf = await readRaw(req);
     if (!buf.length) return res.status(400).json({ success: false, error: 'corpo vazio' });
     if (buf.length > 4.3 * 1024 * 1024) return res.status(413).json({ success: false, error: 'Arquivo acima de ~4,3 MB (limite da função). Reduza a duração/qualidade do vídeo ou envie manualmente ao Metricool.' });
     const nomeIn = url.searchParams.get('name') || req.headers['x-file-name'] || ('media-' + Date.now());
     const safe = String(nomeIn).replace(/[^a-zA-Z0-9._-]/g, '_');
-    const name = 'atlantyx/' + (url.searchParams.get('pasta') || 'reels') + '/' + Date.now() + '-' + safe;
-    const out = await blob.put(name, buf, { access: 'public', contentType: ctype || 'application/octet-stream', token, addRandomSuffix: false });
-    console.log('[media-upload] ok', name, buf.length, 'bytes');
-    return res.status(200).json({ success: true, url: out.url, bytes: buf.length });
+    const pasta = url.searchParams.get('pasta') || 'reels';
+    if (token && blob) {
+      const name = 'atlantyx/' + pasta + '/' + Date.now() + '-' + safe;
+      const out = await blob.put(name, buf, { access: 'public', contentType: ctype || 'application/octet-stream', token, addRandomSuffix: false });
+      console.log('[media-upload] blob ok', name, buf.length, 'bytes');
+      return res.status(200).json({ success: true, url: out.url, bytes: buf.length, hospedagem: 'vercel-blob' });
+    }
+    const sql = await getNeon();
+    if (!sql) return semBlob();
+    const out = await salvarNeon(req, sql, buf, ctype || 'application/octet-stream', safe, pasta);
+    console.log('[media-upload] neon ok', out.id, buf.length, 'bytes');
+    return res.status(200).json({ success: true, url: out.url, bytes: buf.length, hospedagem: 'neon' });
   } catch (e) {
     console.error('[media-upload] erro', e.message);
     return res.status(500).json({ success: false, error: 'upload: ' + e.message });
