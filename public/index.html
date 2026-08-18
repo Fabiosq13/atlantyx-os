@@ -14952,6 +14952,14 @@ function _urlMidiaPublica(url, ext) {
 // v1.10.4: descobre QUAL forma de URL está servindo a mídia neste deploy (rota dinâmica, rewrite ou query)
 // e devolve a primeira que funciona — assim Reels/Stories não dependem de UMA rota específica estar no ar.
 const _midiaCache = {};
+let _mediaBaseInfo = null;
+async function _obterBasePublica() {
+  if (_mediaBaseInfo) return _mediaBaseInfo;
+  try { const st = await fetch('/api/media-upload?status=1').then(r => r.json()); _mediaBaseInfo = st || {}; } catch(_) { _mediaBaseInfo = {}; }
+  if (!_mediaBaseInfo.base_publica) _mediaBaseInfo.base_publica = location.origin;
+  _mediaBaseInfo.base_publica = String(_mediaBaseInfo.base_publica).replace(/\/$/, '');
+  return _mediaBaseInfo;
+}
 function _idMidiaDe(url) {
   try { const u = new URL(url, location.href); const q = u.searchParams.get('m') || (u.searchParams.get('f') || '').split('.')[0]; if (q) return q; const mm = u.pathname.match(/\/(?:api\/)?media\/([^/.]+)\.[a-z0-9]+$/i); if (mm) return mm[1]; } catch(_) {}
   return null;
@@ -14961,8 +14969,10 @@ async function _resolverUrlMidia(url, ext, esperado) {
   if (!id) { const chk = await _verificarMidiaPublica(url, esperado); return { url, chk }; }
   const key = id + '|' + ext;
   if (_midiaCache[key]) return _midiaCache[key];
-  const o = location.origin;
-  const candidatos = [o + '/api/media/' + id + '.' + ext, o + '/media/' + id + '.' + ext, o + '/api/media-upload?f=' + id + '.' + ext, o + '/api/media-upload?m=' + id];
+  const info = await _obterBasePublica();
+  const bases = [...new Set([info.base_publica, location.origin])];
+  const candidatos = [];
+  bases.forEach(b => { candidatos.push(b + '/media/' + id + '.' + ext, b + '/api/media/' + id + '.' + ext, b + '/api/media-upload?f=' + id + '.' + ext, b + '/api/media-upload?m=' + id); });
   const falhas = [];
   for (const c of candidatos) {
     const chk = await _verificarMidiaPublica(c, esperado);
@@ -14973,6 +14983,18 @@ async function _resolverUrlMidia(url, ext, esperado) {
 }
 // v1.10.3: verifica se a mídia hospedada é acessível publicamente e com o tipo certo (o que o Metricool/IG vão ver)
 async function _verificarMidiaPublica(url, esperado) {
+  // v1.10.5: primeiro pelo SERVIDOR (sem os seus cookies do Vercel) — é o que o Metricool/Instagram enxergam.
+  try {
+    const sv = await fetch('/api/media-upload?check=' + encodeURIComponent(url)).then(r => r.json());
+    if (sv && sv.success && typeof sv.status === 'number') {
+      if (sv.auth_wall) return { ok: false, motivo: 'URL protegida pelo Deployment Protection do Vercel (HTTP ' + sv.status + (sv.location ? ' → ' + sv.location.substring(0, 60) : '') + '). Abre para você porque está logado, mas o Metricool recebe a tela de login. Use o domínio de PRODUÇÃO (Vercel → Settings → Domains) ou defina MEDIA_PUBLIC_BASE, ou desative a proteção em Settings → Deployment Protection. URL: ' + url };
+      const ct = (sv.content_type || '').toLowerCase();
+      if (sv.status !== 200 && sv.status !== 206) return { ok: false, motivo: 'HTTP ' + sv.status + ' (visto pelo servidor) ao acessar ' + url };
+      if (ct.includes('text/html')) return { ok: false, motivo: 'a URL devolve HTML (rota de mídia não está no ar): ' + url };
+      if (esperado && !ct.startsWith(esperado)) return { ok: false, motivo: 'tipo inesperado ' + (ct || '(vazio)') + ' — esperado ' + esperado + '* em ' + url };
+      return { ok: true, ct, via: 'servidor' };
+    }
+  } catch (_) { /* cai para a checagem pelo navegador */ }
   try {
     const r = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-1' } });
     const ct = (r.headers.get('content-type') || '').toLowerCase();
@@ -15287,8 +15309,10 @@ async function testarHospedagemMidia() {
     if (!up.success) throw new Error(up.error + (up.hint ? ' — ' + up.hint : ''));
     const rr = await _resolverUrlMidia(up.url, 'jpg', 'image/');
     if (!rr.chk.ok) throw new Error(rr.chk.motivo);
-    _statusPainel('reel', 'ok', 'Hospedagem OK (' + (up.hospedagem || st.hospedagem || '?') + ')', 'URL pública que funciona neste deploy: ' + rr.url + ' (' + rr.chk.ct + ')' + (rr.tentativas?.length ? '<br>⚠ Rotas que NÃO responderam: ' + rr.tentativas.join(' | ') + ' — funciona mesmo assim, mas vale conferir o deploy de api/media/[file].js e vercel.json.' : '') + '<br>Reels e Stories vão carregar no Metricool.');
-  } catch (e) { _statusPainel('reel', 'err', 'Hospedagem com problema', e.message + '<br>Confira: api/media-upload.js e api/media/[file].js deployados; DATABASE_URL no Vercel.'); }
+    const info = await _obterBasePublica();
+    const avisoBase = (info.host_parece_deployment && info.base_publica.includes(location.host)) ? '<br>⚠ Você está usando uma URL de DEPLOYMENT do Vercel (' + location.host + '). Se o Metricool mostrar "Sem imagem", é o Deployment Protection: defina a env MEDIA_PUBLIC_BASE com o domínio de produção (ex.: https://atlantyx-os.vercel.app) no Vercel e Redeploy, ou desative a proteção.' : '<br>Base pública: ' + info.base_publica + (info.producao_env ? ' (produção: ' + info.producao_env + ')' : '');
+    _statusPainel('reel', 'ok', 'Hospedagem OK (' + (up.hospedagem || st.hospedagem || '?') + ') — verificada pelo servidor, como o Metricool vê', 'URL pública que funciona: ' + rr.url + ' (' + rr.chk.ct + (rr.chk.via ? ', via ' + rr.chk.via : '') + ')' + avisoBase + (rr.tentativas?.length ? '<br>Rotas que NÃO responderam: ' + rr.tentativas.join(' | ') : '') + '<br>Reels e Stories vão carregar no Metricool.');
+  } catch (e) { _statusPainel('reel', 'err', 'Hospedagem com problema', e.message + '<br>Confira: api/media-upload.js deployado; DATABASE_URL no Vercel; domínio de produção público.'); }
 }
 async function _carregarMp4Muxer() {
   if (window.Mp4Muxer) return true;
@@ -15601,7 +15625,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.10.4] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.10.5] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -15617,7 +15641,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.10.4';
+window.__ATX_BUILD_ID__ = 'ATX-v1.10.5';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
