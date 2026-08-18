@@ -6452,7 +6452,28 @@ async function regerarBriefVisual(silencioso) {
     clearTimeout(tm);
     const d = await r.json();
     if (!d.success || !d.design) throw new Error(d.error || 'Designer falhou');
-    if (briefAnterior && (d.design.prompt_ia_imagem || '') === briefAnterior) throw new Error('A IA devolveu o mesmo brief — tente com uma direção no campo ao lado');
+    // v1.10.1: se o brief novo é "o mesmo de sempre" (>55% das palavras iguais ao anterior), força variação
+    const _sim = (a, b) => { const A = new Set(String(a).toLowerCase().match(/[a-záéíóúâêôãõç]{4,}/g) || []), B = new Set(String(b).toLowerCase().match(/[a-záéíóúâêôãõç]{4,}/g) || []); if (!A.size || !B.size) return 0; let n = 0; A.forEach(w => { if (B.has(w)) n++; }); return n / Math.min(A.size, B.size); };
+    let promptNovo = d.design.prompt_ia_imagem || '';
+    if (briefAnterior && _sim(promptNovo, briefAnterior) > 0.55) {
+      const metaforas = ['melting clock over financial reports', 'misaligned gears grinding, one glowing gear aligning them', 'lighthouse beam cutting through dense fog over a harbor of cargo ships', 'hourglass with sand turning into coins', 'city map with a single glowing route among dark streets', 'factory floor with robotic arms and a glowing control tower', 'chess board mid-game with one illuminated decisive move', 'tangled cables resolving into a single clean fiber of light', 'compass on a table of blueprints', 'a bridge being built in light across a dark chasm'];
+      const met = metaforas[Math.floor(Math.random() * metaforas.length)];
+      if (stEl) stEl.textContent = '⏳ O brief veio parecido com o anterior — pedindo uma cena diferente (metáfora: ' + met + ')...';
+      addLog('warn', '[Designer] brief similar ao anterior (' + Math.round(_sim(promptNovo, briefAnterior)*100) + '%) — retry com metáfora "' + met + '"');
+      try {
+        const r2 = await fetch('/api/s2-creative', { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ action:'designer', payload: { copy: Object.assign({}, copyAtual, { tema, brief_anterior: promptNovo, direcao: (direcao ? direcao + ' | ' : '') + 'CENA OBRIGATORIAMENTE DIFERENTE, sem executivo e sem monitores. Metáfora visual central: ' + met }), canal: campAtiva.canal || 'Todos' } }) });
+        const d2 = await r2.json();
+        if (d2.success && d2.design?.prompt_ia_imagem && _sim(d2.design.prompt_ia_imagem, briefAnterior) <= 0.55) { d.design = d2.design; promptNovo = d2.design.prompt_ia_imagem; }
+        else {
+          // fallback local determinístico: nunca deixa o brief igual
+          const temaEn = (direcao || tema || 'business intelligence for decision makers');
+          promptNovo = `Cinematic vertical/square scene built around this idea: "${temaEn}". Central visual metaphor: ${met}. Environment lit in deep navy #1A3A8F with electric blue #4F7CFF highlights, dramatic rim light, high contrast, premium B2B editorial look, shallow depth of field, clean negative space in the center, no people staring at screens, no text or typography anywhere.`;
+          d.design = Object.assign({}, d.design, { conceito_visual: 'Metáfora: ' + met + ' — ' + temaEn, prompt_ia_imagem: promptNovo, origem: 'fallback_local' });
+          addLog('warn', '[Designer] IA insistiu na mesma cena — brief montado localmente com a metáfora "' + met + '"');
+        }
+      } catch (_) {}
+    }
     campAtiva.data = campAtiva.data || {}; campAtiva.data.design = d.design;
     if (tema) campAtiva.data.narrativa = Object.assign({}, campAtiva.data.narrativa, { tema_central: tema });
     const brief = d.design.prompt_ia_imagem || d.design.conceito_visual || d.design.brief_visual || '';
@@ -14991,6 +15012,7 @@ async function gerarArtesStories() {
       st[i].imagem_url = d.imagens?.[0]?.url || d.imagens?.[0] || '';
       if (st[i].imagem_url) addLog('ok', '[Stories] Arte ' + (i+1) + ' gerada'); else { addLog('warn', '[Stories] Arte ' + (i+1) + ' sem retorno'); _falhas.push('arte ' + (i+1) + ': sem retorno do Ideogram'); }
       _renderStoryPack();
+      try { salvarCampanhaLocal(campAtiva); salvarCampanhaNoBanco(campAtiva, 'stories arte ' + (i+1)); } catch(_) {} // v1.10.1: salva a cada arte
     } catch (e) { addLog('warn', '[Stories] Arte ' + (i+1) + ' falhou: ' + e.message); _falhas.push('arte ' + (i+1) + ': ' + e.message); }
   }
   if (_falhas.length) _statusPainel('story', 'err', 'Falha em ' + _falhas.length + ' arte(s)', _falhas.join(' · ') + '<br>Cole uma URL manualmente no campo do story ou tente de novo.');
@@ -15039,7 +15061,7 @@ async function comporArtesStories(silencioso) {
       st[i].composta_local = URL.createObjectURL(blob); baixaveis.push({ n: i+1, url: st[i].composta_local });
       const resp = await fetch('/api/media-upload?name=' + encodeURIComponent('story-' + (campAtiva.id||'x') + '-' + (i+1) + '.png') + '&pasta=stories', { method:'POST', headers:{ 'Content-Type':'image/png' }, body: blob });
       const d = await resp.json();
-      if (d.success) { st[i].imagem_composta = d.url; hospedadas++; }
+      if (d.success) { st[i].imagem_composta = d.url; hospedadas++; try { salvarCampanhaLocal(campAtiva); salvarCampanhaNoBanco(campAtiva, 'story composta ' + (i+1)); } catch(_) {} } // v1.10.1: salva a cada composição
       else { st[i].imagem_composta = ''; st[i]._erro_host = d.error + (d.hint ? ' — ' + d.hint : ''); }
     } catch (e) { st[i]._erro_host = e.message; addLog('warn', '[Stories] compor ' + (i+1) + ': ' + e.message); }
     _renderStoryPack();
@@ -15132,8 +15154,15 @@ function _renderReel() {
   const on = (id, v) => { const b = document.getElementById(id); if (b) b.disabled = !v; };
   on('btnArtesReel', true); on('btnMontarReel', temArte); on('btnHostReel', !!r.video_blob_pronto); on('btnPubReel', !!r.video_url);
   if (r.video_url) {
-    const v = document.getElementById('reelVideo'); if (v && v.src !== r.video_url) { v.src = r.video_url; v.style.display = 'block'; const ph = document.getElementById('reelVideoPlaceholder'); if (ph) ph.style.display = 'none'; }
-    const dl = document.getElementById('reelDownload'); if (dl) { dl.href = r.video_url; dl.style.display = 'block'; }
+    const vurl = _urlMidiaPublica(r.video_url, (r.video_mime||'').includes('webm') ? 'webm' : 'mp4');
+    const v = document.getElementById('reelVideo');
+    if (v && v.getAttribute('data-src') !== vurl) {
+      v.setAttribute('data-src', vurl); v.src = vurl; v.style.display = 'block'; v.preload = 'metadata';
+      v.onerror = () => { _statusPainel('reel', 'err', 'Não consegui carregar o vídeo hospedado', 'URL: ' + vurl + '<br>Se você acabou de atualizar o sistema, confirme que vercel.json e api/media-upload.js foram deployados (rota /media). Alternativa: 🎬 Montar vídeo de novo e ☁ Hospedar.'); };
+      v.onloadedmetadata = () => { if (v.duration && isFinite(v.duration)) addLog('ok', '[Reel] vídeo carregado: ' + v.duration.toFixed(1) + 's · ' + vurl); };
+      const ph = document.getElementById('reelVideoPlaceholder'); if (ph) ph.style.display = 'none';
+    }
+    const dl = document.getElementById('reelDownload'); if (dl) { dl.href = vurl; dl.style.display = 'block'; }
     if (!window._reelBlob && !r._statusMostrado) { r._statusMostrado = true; _statusPainel('reel', 'ok', r.agendado_em ? 'Reel já agendado para ' + new Date(r.agendado_em).toLocaleString('pt-BR') : 'Vídeo já montado e hospedado', 'Não precisa montar de novo. ' + (r.agendado_em ? 'Para reagendar, clique em 🚀 Agendar Reel.' : 'Clique em 🚀 Agendar Reel — ou 🎬 Montar vídeo só se quiser refazê-lo.')); }
   }
 }
@@ -15171,7 +15200,8 @@ async function gerarArtesReel() {
         body: JSON.stringify({ prompt: sl[i].prompt_imagem || 'vertical corporate scene, dark navy and electric blue, clean center', formato: 'ASPECT_9_16', estilo: 'DESIGN', quantidade: 1 }) });
       const d = await r.json();
       sl[i].imagem_url = d.imagens?.[0]?.url || d.imagens?.[0] || '';
-      _renderReel(); _reelSet('Arte ' + (i+1) + '/' + sl.length + ' ok', null);
+      _renderReel(); _reelSet('Arte ' + (i+1) + '/' + sl.length + ' ok', null, ((i+1) / sl.length) * 100);
+      try { salvarCampanhaLocal(campAtiva); salvarCampanhaNoBanco(campAtiva, 'reel arte ' + (i+1)); } catch(_) {} // v1.10.1
     } catch (e) { addLog('warn', '[Reel] arte ' + (i+1) + ': ' + e.message); }
   }
   await _salvarReel(); _renderReel();
@@ -15449,7 +15479,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.10] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.10.1] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -15465,7 +15495,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.10';
+window.__ATX_BUILD_ID__ = 'ATX-v1.10.1';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
