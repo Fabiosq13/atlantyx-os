@@ -52,10 +52,20 @@ function extDe(ct, nome) {
 }
 // v1.10: URL pública COM extensão no caminho (/media/ID.mp4) — Metricool/Instagram validam tipo pela extensão;
 // sem ela o Reel era lido como "imagem" e a Story ficava "Sem imagem"
-function urlPublica(req, id, ext) {
+// v1.10.5: base PÚBLICA. As URLs de deployment do Vercel (project-xxxx-team.vercel.app) ficam atrás do
+// "Deployment Protection" — abrem no SEU navegador (logado no Vercel) mas o Metricool/Instagram recebem
+// uma tela de login → "Sem imagem"/spinner. Usar o domínio de PRODUÇÃO (VERCEL_PROJECT_PRODUCTION_URL)
+// ou MEDIA_PUBLIC_BASE definido por você.
+function basePublica(req) {
   const proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
   const host = req.headers['x-forwarded-host'] || req.headers.host;
-  return `${proto}://${host}/media/${id}.${ext || 'bin'}`;
+  const envBase = (process.env.MEDIA_PUBLIC_BASE || '').trim().replace(/\/$/, '');
+  if (envBase) return envBase.startsWith('http') ? envBase : 'https://' + envBase;
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return 'https://' + process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  return `${proto}://${host}`;
+}
+function urlPublica(req, id, ext) {
+  return `${basePublica(req)}/media/${id}.${ext || 'bin'}`; // rota via rewrite do vercel.json (a que está no ar)
 }
 async function salvarNeon(req, sql, buf, ct, nome, pasta) {
   const id = novoId();
@@ -84,7 +94,22 @@ export default async function handler(req, res) {
   if (req.method === 'GET' && url.searchParams.get('status')) {
     const blob = await getBlob();
     const sqlS = await getNeon();
-    return res.status(200).json({ success: true, blob_configurado: !!(token && blob), neon_configurado: !!sqlS, hospedagem: (token && blob) ? 'vercel-blob' : (sqlS ? 'neon' : 'nenhuma'), pacote_instalado: !!blob, token_presente: !!token });
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    return res.status(200).json({ success: true, blob_configurado: !!(token && blob), neon_configurado: !!sqlS, hospedagem: (token && blob) ? 'vercel-blob' : (sqlS ? 'neon' : 'nenhuma'), pacote_instalado: !!blob, token_presente: !!token,
+      base_publica: basePublica(req), host_atual: host, producao_env: process.env.VERCEL_PROJECT_PRODUCTION_URL || null, media_public_base_env: process.env.MEDIA_PUBLIC_BASE || null,
+      host_parece_deployment: /-[a-z0-9]{6,}-[a-z0-9-]+\.vercel\.app$/i.test(host || '') });
+  }
+  // ── v1.10.5: checagem SERVER-SIDE de uma URL pública (sem cookies — o que o Metricool/Instagram veem) ──
+  if (req.method === 'GET' && url.searchParams.get('check')) {
+    const alvo = url.searchParams.get('check');
+    if (!/^https?:\/\//i.test(alvo)) return res.status(400).json({ success: false, error: 'url inválida' });
+    try {
+      const r = await fetch(alvo, { method: 'GET', redirect: 'manual', headers: { 'Range': 'bytes=0-1', 'User-Agent': 'Mozilla/5.0 (compatible; MetricoolBot-check; AtlantyxOS)' } });
+      const ct = r.headers.get('content-type') || '';
+      const loc = r.headers.get('location') || '';
+      const authWall = r.status === 401 || r.status === 403 || (r.status >= 300 && r.status < 400 && /vercel\.com|sso|login|_vercel/i.test(loc));
+      return res.status(200).json({ success: true, status: r.status, content_type: ct, location: loc, auth_wall: authWall, ok: (r.status === 200 || r.status === 206) && !ct.includes('text/html') });
+    } catch (e) { return res.status(200).json({ success: true, status: 0, content_type: '', ok: false, erro: e.message }); }
   }
 
   // ── servir mídia hospedada no Neon (URL pública p/ Metricool/Instagram) ──
