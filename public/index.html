@@ -223,6 +223,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sg-sub">PLANEJAMENTO</div>
       <div class="sbi s3" onclick="nav('s3orcamento',this)">&#128202; Orçamento Anual</div>
       <div class="sbi s3" onclick="nav('s3fluxo',this)">&#9776; Fluxo Futuro 12 Meses</div>
+      <div class="sbi s3" onclick="nav('s3fluxodet',this)">&#9636; Fluxo Detalhado (Extrato + Futuro) <span class="nbx gn">QB</span></div>
       <div class="sbi s3" onclick="nav('s3projetado',this)">&#9654; Projetado + Contratos</div>
       <div class="sbi s3" onclick="nav('s3agenda',this)">&#128197; Agenda de Despesas</div>
       <div class="sg-sub">CONTROLE</div>
@@ -2587,6 +2588,44 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </div>
 </div>
 
+<!-- v1.16: FLUXO DE CAIXA DETALHADO (extrato até hoje + futuro lançamento a lançamento) -->
+<div class="page" id="page-s3fluxodet">
+  <div style="background:linear-gradient(135deg,rgba(79,124,255,.14),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Fluxo de Caixa Detalhado</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Extrato realizado até hoje + futuro lançamento a lançamento (QuickBooks: recebíveis e pagáveis reais) · saldo projetado</div></div>
+    <label style="font-size:10px;color:var(--t2);display:flex;align-items:center;gap:5px;"><input type="checkbox" id="fd_incluirSim" checked/> incluir simulados</label>
+    <button class="btn btn-gn" onclick="carregarFluxoDetalhado()">&#8635; Atualizar</button>
+  </div>
+  <div id="fdStatus" style="display:none;margin-bottom:10px;"></div>
+  <div class="kg k4" style="margin-bottom:12px;">
+    <div class="kpi bl"><div class="kl">Saldo de hoje</div><div class="kv" id="fd_saldoHoje">—</div><div class="ks" id="fd_saldoHojeSub">realizado</div></div>
+    <div class="kpi gn"><div class="kl">A receber (futuro real, QB)</div><div class="kv" id="fd_receber">—</div><div class="ks" id="fd_receberSub">—</div></div>
+    <div class="kpi rd"><div class="kl">A pagar (futuro real, QB+Atlantyx)</div><div class="kv" id="fd_pagar">—</div><div class="ks" id="fd_pagarSub">—</div></div>
+    <div class="kpi pu"><div class="kl">Saldo projetado final</div><div class="kv" id="fd_saldoFinal">—</div><div class="ks" id="fd_saldoFinalSub">até onde há dados</div></div>
+  </div>
+  <div id="fd_menorSaldo" style="display:none;margin-bottom:12px;"></div>
+
+  <div class="panel">
+    <div class="ph"><div class="pt">📗 Realizado — até hoje</div><span class="tag off" id="fd_tagPassado">Carregando</span></div>
+    <div class="pb" style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:700px;">
+        <thead><tr style="border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">DATA</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">DESCRIÇÃO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">CATEGORIA</th><th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">VALOR</th><th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">SALDO ACUM.</th></tr></thead>
+        <tbody id="fd_tbodyPassado"><tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Carregando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:12px;border:1px solid rgba(79,124,255,.3);">
+    <div class="ph"><div class="pt">📘 Projetado — a partir de hoje (lançamento a lançamento)</div><span class="tag off" id="fd_tagFuturo">Carregando</span></div>
+    <div class="pb" style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:700px;">
+        <thead><tr style="border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">DATA</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">DESCRIÇÃO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">CATEGORIA / FONTE</th><th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">VALOR</th><th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">SALDO PROJETADO</th></tr></thead>
+        <tbody id="fd_tbodyFuturo"><tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Carregando...</td></tr></tbody>
+      </table>
+    </div>
+    <div style="padding:10px 14px;font-size:9.5px;color:var(--t3);border-top:1px solid var(--bd);">Fonte "QuickBooks" = faturas (Invoice) e contas (Bill) em aberto reais, pela data de vencimento. Fonte "Atlantyx" = despesas programadas e lançamentos simulados futuros cadastrados no sistema. O projetado vai até onde houver dado — sem limite fixo de meses.</div>
+  </div>
+</div>
+
 <div class="page" id="page-s3extrato">
     <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(34,211,163,.03));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;">
       <div style="font-family:var(--H);font-size:15px;font-weight:700">Extrato Financeiro · Saldo Acumulado</div>
@@ -2882,9 +2921,11 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <button class="btn btn-g" onclick="gerarAnaliseFin()" style="font-size:9px;padding:3px 8px;">&#9670; Analisar com IA</button>
       </div>
       <div class="pb">
-        <div style="background:var(--go2);border:1px solid rgba(245,166,35,.2);border-radius:7px;padding:11px;margin-bottom:12px;font-size:11px;color:var(--gold);">
-          &#9888; Para ativar: adicione <strong>QB_CLIENT_ID</strong>, <strong>QB_CLIENT_SECRET</strong> e <strong>QB_REFRESH_TOKEN</strong> no Vercel. Obtenha em developer.intuit.com
+        <div id="qbAvisoRealizado" style="background:var(--go2);border:1px solid rgba(245,166,35,.2);border-radius:7px;padding:11px;margin-bottom:12px;font-size:11px;color:var(--gold);">
+          &#9888; QuickBooks não conectado — clique em <a style="color:var(--blue);cursor:pointer;" onclick="conectarQuickBooks()">Conectar QuickBooks</a> (OAuth) ou confira as variáveis no Vercel.
         </div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;"><button class="btn" style="font-size:10px;" onclick="diagnosticoQB('qbDiagRealizado')">&#128269; Diagnóstico QuickBooks (empresa, contagens, datas com dados)</button></div>
+        <div id="qbDiagRealizado"></div>
         <div id="f_realTable"><div style="color:var(--t3);font-size:11px;text-align:center;padding:24px;">Sincronize o QuickBooks para ver os lancamentos realizados</div></div>
       </div>
     </div>
@@ -3104,7 +3145,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <div class="toast" id="toastEl"></div>
 <script>
 const LOGS=[];let logCount=0;
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S3 · Kanban Financeiro de Marcos',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S3 · Kanban Financeiro de Marcos',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -12857,12 +12898,15 @@ async function carregarExtrato() {
   const incluirSim = document.getElementById('f_ext_incluirSim')?.checked !== false;
 
   const el = document.getElementById('f_extratoTabela');
-  if (el) el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--t2);font-size:11px;">Carregando extrato...</div>';
+  if (el) el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--t2);font-size:11px;">Carregando extrato... <span id="f_extLoadHint" style="color:var(--t3);"></span></div>';
+  const _hintT = setTimeout(() => { const h = document.getElementById('f_extLoadHint'); if (h) h.textContent = '(consultando o QuickBooks — pode levar até 60 s)'; }, 8000);
 
   try {
     const d = await finApi('extrato_consolidado', { data_inicio: ini, data_fim: fim, incluir_simulados: incluirSim });
+    clearTimeout(_hintT);
     _extratoCache = d;
     renderExtrato(d);
+    try { _avisoQbErro('f_extratoTabela', d); } catch(_) {}
   } catch (e) {
     if (el) el.innerHTML = `<div style="color:var(--red);font-size:11px;padding:14px;">Erro: ${e.message}</div>`;
   }
@@ -13009,6 +13053,7 @@ async function carregarDespesas() {
     ]);
     _despCache = d.despesas;
     _ocoCache = o.ocorrencias;
+    try { const nQb = o.qb_bills || 0; addLog('info', '[Agenda] ' + (_ocoCache.length) + ' ocorrência(s) · ' + nQb + ' conta(s) a pagar do QuickBooks' + (o.qb_erro ? ' · QB: ' + o.qb_erro : '')); const hd = document.querySelector('#page-s3agenda .pt'); if (hd && !document.getElementById('agendaQbBadge')) { const b = document.createElement('span'); b.id = 'agendaQbBadge'; b.className = 'nbx gn'; b.style.marginLeft = '8px'; hd.appendChild(b); } const bd = document.getElementById('agendaQbBadge'); if (bd) bd.textContent = 'QB: ' + nQb; } catch(_) {}
     renderDespesasLista();
     renderCalendario();
   } catch (e) {
@@ -13172,7 +13217,7 @@ function mostrarDetalhesDia(dia) {
     return dt.getFullYear() === ano && dt.getMonth() === mes && dt.getDate() === dia;
   });
   const total = ocs.reduce((s, o) => s + o.valor, 0);
-  const detalhes = ocs.map(o => `• ${o.descricao} — ${fmtBRLcompleto(o.valor)} [${o.status}]`).join('\n');
+  const detalhes = ocs.map(o => `• ${o.descricao} — ${fmtBRLcompleto(o.valor)} [${o.status}]${o.fonte === 'quickbooks' ? ' (QuickBooks)' : ''}`).join('\n');
   alert(`Despesas em ${dia}/${mes + 1}/${ano}\n\n${detalhes}\n\nTotal: ${fmtBRLcompleto(total)}`);
 }
 
@@ -13527,7 +13572,12 @@ async function carregarConciliacao() {
     window._concSugestoes = d.sugestoes;
 
     if (!d.sugestoes.length) {
-      if (lista) lista.innerHTML = '<div style="text-align:center;color:var(--t3);padding:24px;font-size:11px;">Tudo conciliado ou nada para conciliar no período.</div>';
+      // v1.15.1: dizer EXATAMENTE o caso — antes "tudo conciliado ou nada" confundia
+      let msg;
+      if ((d.total_reais || 0) === 0) msg = '<div style="font-size:12px;color:var(--gold);margin-bottom:6px;">Nenhum lançamento real encontrado no período ' + (d.periodo?.data_inicio||ini) + ' a ' + (d.periodo?.data_fim||fim) + '.</div><div style="font-size:10.5px;color:var(--t2);">Nada foi conciliado — não há o que conciliar. ' + (d.fontes?.qb_erro ? '⚠ QuickBooks: ' + d.fontes.qb_erro + ' · <a style="color:var(--blue);cursor:pointer;" onclick="conectarQuickBooks()">reconectar</a>' : 'QuickBooks conectado, mas sem lançamentos nessas datas (no sandbox os dados são antigos — use o 🔎 Diagnóstico na tela Realizado QuickBooks e ajuste o período).') + '</div>';
+      else if ((d.ja_conciliados || 0) >= (d.total_reais || 0)) msg = '<div style="font-size:12px;color:var(--green,#22d3a3);margin-bottom:6px;">✅ Todos os ' + d.total_reais + ' lançamentos do período já estão conciliados.</div>';
+      else msg = '<div style="font-size:12px;color:var(--gold);margin-bottom:6px;">' + d.total_reais + ' lançamento(s) no período, ' + (d.ja_conciliados||0) + ' conciliado(s), ' + (d.sem_sugestao||0) + ' sem sugestão automática (score < 55%).</div><div style="font-size:10.5px;color:var(--t2);">Cadastre despesas programadas / A Receber correspondentes ou concilie manualmente pelo Extrato.</div>';
+      if (lista) lista.innerHTML = '<div style="text-align:center;padding:24px;">' + msg + '</div>';
       return;
     }
 
@@ -14258,6 +14308,61 @@ async function verificarMetricool(force) {
 // FIX v1.5.2: checar Metricool ao carregar a página (async, não bloqueia)
 setTimeout(() => { try { verificarMetricool(); } catch(_) {} }, 2500);
 
+// ═══ v1.16: FLUXO DE CAIXA DETALHADO ═══
+function _fdLinha(l, corSaldo) {
+  const cor = l.tipo === 'entrada' ? 'var(--green,#22d3a3)' : 'var(--red)';
+  const fonte = l.origem === 'quickbooks' ? '🔗 QuickBooks' : l.origem === 'quickbooks_futuro' ? '🔗 QuickBooks' : l.origem === 'simulado' || l.origem === 'simulado_futuro' ? '✎ Simulado' : l.origem === 'atlantyx_futuro' ? '📋 Atlantyx' : (l.origem || '');
+  const venc = l.vencida ? ' <span style="color:var(--red);font-size:9px;">⚠ vencida</span>' : '';
+  return '<tr style="border-bottom:1px solid var(--bd);">'
+    + '<td style="padding:6px;font-family:var(--M);color:var(--t2);white-space:nowrap;">' + (l.data || '') + '</td>'
+    + '<td style="padding:6px;">' + (l.descricao || '') + venc + '</td>'
+    + '<td style="padding:6px;color:var(--t2);font-size:10px;">' + (l.categoria || '') + ' · ' + fonte + '</td>'
+    + '<td style="padding:6px;text-align:right;color:' + cor + ';font-family:var(--M);">' + (l.tipo === 'saida' ? '-' : '+') + fmtBRLcompleto(l.valor) + '</td>'
+    + '<td style="padding:6px;text-align:right;font-family:var(--M);font-weight:600;color:' + (l.saldo_acumulado < 0 ? 'var(--red)' : (corSaldo || 'var(--t1)')) + ';">' + fmtBRLcompleto(l.saldo_acumulado) + '</td>'
+    + '</tr>';
+}
+async function carregarFluxoDetalhado() {
+  const st = document.getElementById('fdStatus');
+  const tbP = document.getElementById('fd_tbodyPassado'), tbF = document.getElementById('fd_tbodyFuturo');
+  if (tbP) tbP.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Carregando... <span style="color:var(--t3);font-size:9px;">(consultando QuickBooks, pode levar até 60s)</span></td></tr>';
+  if (tbF) tbF.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Carregando...</td></tr>';
+  if (st) st.style.display = 'none';
+  try {
+    const incluirSim = document.getElementById('fd_incluirSim')?.checked !== false;
+    const d = await finApi('fluxo_detalhado', { dias_passado: 60, incluir_simulados: incluirSim });
+    const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    u('fd_saldoHoje', fmtBRLcompleto(d.saldo_hoje));
+    u('fd_saldoHojeSub', 'realizado até ' + d.hoje?.split('-').reverse().join('/'));
+    u('fd_receber', fmtBRLcompleto(d.futuro.total_recebiveis));
+    u('fd_receberSub', d.futuro.qtd_qb + ' doc(s) QB · ' + d.futuro.qtd_atlantyx + ' Atlantyx');
+    u('fd_pagar', fmtBRLcompleto(d.futuro.total_pagaveis));
+    u('fd_pagarSub', 'até ' + (d.futuro.ate?.split('-').reverse().join('/') || '—'));
+    u('fd_saldoFinal', fmtBRLcompleto(d.saldo_projetado_final));
+    u('fd_saldoFinalSub', d.futuro.lancamentos.length + ' lançamento(s) futuro(s)');
+
+    const ms = document.getElementById('fd_menorSaldo');
+    if (ms) { if (d.menor_saldo_projetado && d.menor_saldo_projetado.valor < 0) { ms.style.display = 'block'; ms.innerHTML = '<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:10px 14px;font-size:11.5px;">🔴 <b>Saldo fica negativo</b>: ' + fmtBRLcompleto(d.menor_saldo_projetado.valor) + ' em ' + d.menor_saldo_projetado.data?.split('-').reverse().join('/') + ' (' + d.menor_saldo_projetado.descricao + ')</div>'; }
+      else if (d.menor_saldo_projetado) { ms.style.display = 'block'; ms.innerHTML = '<div style="background:rgba(34,211,163,.1);border:1px solid var(--green,#22d3a3);border-radius:8px;padding:10px 14px;font-size:11.5px;">✅ Saldo projetado permanece positivo em todo o horizonte (mínimo: ' + fmtBRLcompleto(d.menor_saldo_projetado.valor) + ' em ' + d.menor_saldo_projetado.data?.split('-').reverse().join('/') + ')</div>'; }
+      else ms.style.display = 'none';
+    }
+
+    const pas = d.passado.lancamentos || [];
+    if (tbP) tbP.innerHTML = pas.length ? pas.map(l => _fdLinha(l)).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Nenhum lançamento realizado nos últimos 60 dias' + (d.passado.qb_erro ? ' · ⚠ QuickBooks: ' + d.passado.qb_erro : '') + '.</td></tr>';
+    const fut = d.futuro.lancamentos || [];
+    if (tbF) tbF.innerHTML = fut.length ? fut.map(l => _fdLinha(l, 'var(--blue)')).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Nenhum recebível/pagável futuro encontrado no QuickBooks' + (d.futuro.qb_erro ? ' · ⚠ ' + d.futuro.qb_erro : ' (sem faturas/contas em aberto, sem despesas programadas futuras e sem simulados futuros)') + '.</td></tr>';
+
+    const tg1 = document.getElementById('fd_tagPassado'); if (tg1) { tg1.textContent = pas.length + ' lançamento(s)'; tg1.className = 'tag on'; }
+    const tg2 = document.getElementById('fd_tagFuturo'); if (tg2) { tg2.textContent = fut.length + ' lançamento(s)'; tg2.className = 'tag ' + (fut.length ? 'on' : 'off'); }
+
+    if (d.passado.qb_erro || d.futuro.qb_erro) { if (st) { st.style.display = 'block'; st.innerHTML = '<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:10px;font-size:11px;">⚠ QuickBooks: ' + (d.passado.qb_erro || d.futuro.qb_erro) + ' — <a style="color:var(--blue);cursor:pointer;" onclick="conectarQuickBooks()">reconectar</a></div>'; } }
+    addLog('ok', '[Fluxo Detalhado] ' + pas.length + ' realizados + ' + fut.length + ' futuros · saldo hoje ' + fmtBRLcompleto(d.saldo_hoje) + ' → projetado ' + fmtBRLcompleto(d.saldo_projetado_final));
+  } catch (e) {
+    if (tbP) tbP.innerHTML = '<tr><td colspan="5" style="color:var(--red);text-align:center;padding:20px;">Erro: ' + e.message + '</td></tr>';
+    if (tbF) tbF.innerHTML = '';
+    addLog('err', '[Fluxo Detalhado] ' + e.message);
+  }
+}
+
 // ═══ v1.14: DASHBOARD FINANCEIRO ═══
 async function carregarDashboardFinanceiro() {
   const st = document.getElementById('dfStatus'); const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
@@ -14312,6 +14417,39 @@ async function perguntarGerente(textoFixo) {
 }
 function limparChatGerente() { _gfHist = []; const box = document.getElementById('gfChat'); if (box) box.innerHTML = '<div style="background:var(--bg4);border-radius:10px;padding:12px;font-size:12px;line-height:1.55;max-width:85%;">Nova conversa. O que quer saber sobre as finanças?</div>'; }
 
+// v1.15: diagnóstico do QuickBooks (o que existe na empresa conectada e em que datas)
+async function diagnosticoQB(targetId) {
+  const el = document.getElementById(targetId); if (!el) return;
+  el.innerHTML = '<div style="color:var(--blue);font-size:11px;padding:8px;">⏳ Consultando o QuickBooks (7 entidades)... ~10 s</div>';
+  try {
+    const d = await finApi('qb_diagnostico'); const x = d.diagnostico || {};
+    const brl = v => v == null ? '—' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+    const ent = Object.entries(x.entidades || {}).map(([k, v]) => '<tr style="border-bottom:1px solid var(--bd);"><td style="padding:4px 6px;">' + k + '</td><td style="padding:4px 6px;text-align:right;font-family:var(--M);">' + (v.erro ? '<span style="color:var(--red);">' + v.erro + '</span>' : (v.total ?? '—')) + '</td><td style="padding:4px 6px;font-family:var(--M);color:var(--t2);">' + (v.primeira || '—') + ' → ' + (v.ultima || '—') + '</td></tr>').join('');
+    const contas = (x.contas || []).map(c => '<div style="font-size:10.5px;">' + c.nome + ' <span style="color:var(--t3);">(' + c.tipo + ')</span> · <span style="font-family:var(--M);">' + brl(c.saldo) + ' ' + (c.moeda||'') + '</span></div>').join('') || '<div style="font-size:10.5px;color:var(--t3);">nenhuma conta bancária</div>';
+    const iv = x.intervalo_dados;
+    el.innerHTML = '<div style="background:var(--bg4);border:1px solid ' + (x.ok ? 'var(--green,#22d3a3)' : 'var(--red)') + ';border-radius:8px;padding:12px;font-size:11px;line-height:1.6;">'
+      + '<div style="font-weight:700;margin-bottom:6px;">' + (x.ok ? '✅ QuickBooks respondeu' : '⛔ QuickBooks com erro') + (x.sandbox ? ' · SANDBOX (empresa de teste da Intuit)' : ' · PRODUÇÃO') + '</div>'
+      + (x.empresa ? '<div><b>Empresa:</b> ' + (x.empresa.nome || '?') + ' · ' + (x.empresa.pais || '') + ' · moeda ' + (x.empresa.moeda || '?') + ' · realm ' + (x.realm || '') + '</div>' : '')
+      + (x.tokens ? '<div><b>Tokens:</b> ' + x.tokens.origem + (x.tokens.refresh_expira_em ? ' · refresh válido até ' + new Date(x.tokens.refresh_expira_em).toLocaleDateString('pt-BR') : '') + '</div>' : '')
+      + (iv ? '<div style="margin:6px 0;padding:8px;background:rgba(245,185,75,.12);border-radius:6px;"><b>📅 Há lançamentos entre ' + iv.de + ' e ' + iv.ate + '.</b> Se as telas mostram zero, ajuste o período (Início/Fim) para dentro desse intervalo — no sandbox os dados são antigos e em ' + (x.empresa?.moeda || 'USD') + '.</div>' : '<div style="margin:6px 0;color:var(--gold);">Nenhum lançamento encontrado nas entidades consultadas.</div>')
+      + '<table style="width:100%;border-collapse:collapse;margin-top:4px;"><thead><tr style="color:var(--t2);font-family:var(--M);font-size:9px;"><th style="text-align:left;padding:4px 6px;">Entidade</th><th style="text-align:right;padding:4px 6px;">Total</th><th style="text-align:left;padding:4px 6px;">Primeira → última data</th></tr></thead><tbody>' + ent + '</tbody></table>'
+      + '<div style="margin-top:8px;"><b>Contas bancárias:</b>' + contas + '</div>'
+      + ((x.erros||[]).length ? '<div style="margin-top:6px;color:var(--red);">Erros: ' + x.erros.join(' · ') + '</div>' : '') + '</div>';
+    addLog('ok', '[QB diag] ' + (x.empresa?.nome || '') + (iv ? ' · dados ' + iv.de + '→' + iv.ate : ''));
+  } catch (e) { el.innerHTML = '<div style="color:var(--red);font-size:11px;padding:8px;">Erro no diagnóstico: ' + e.message + '</div>'; }
+}
+function _avisoQbErro(containerId, d) {
+  // v1.15: mostra o erro/aviso do QuickBooks embaixo das tabelas do extrato/diário/mensal
+  const el = document.getElementById(containerId); if (!el) return;
+  let msg = '';
+  if (d && d.qb_erro) msg = '⚠ QuickBooks: ' + d.qb_erro + ' — <a style="color:var(--blue);cursor:pointer;" onclick="conectarQuickBooks()">reconectar</a>';
+  else if (d && d.qb_lancamentos === 0 && (d.lancamentos||[]).length === 0) msg = 'ℹ Nenhum lançamento do QuickBooks neste período. Sandbox costuma ter dados em datas antigas — use o 🔎 Diagnóstico (tela Realizado QuickBooks) para ver o intervalo com dados e ajuste Início/Fim.';
+  let box = document.getElementById(containerId + '_qbmsg');
+  if (!box) { box = document.createElement('div'); box.id = containerId + '_qbmsg'; el.parentElement?.appendChild(box); }
+  box.style.cssText = msg ? 'margin-top:8px;font-size:10.5px;color:var(--gold);background:rgba(245,185,75,.08);border:1px solid rgba(245,185,75,.3);border-radius:6px;padding:8px;' : 'display:none;';
+  box.innerHTML = msg;
+}
+
 // v1.5.6: status do QuickBooks na sidebar (checa envvars + valida token na Intuit)
 async function verificarQuickBooks() {
   const dot = document.getElementById('dotQB');
@@ -14325,6 +14463,7 @@ async function verificarQuickBooks() {
       stat.textContent = 'QuickBooks · Configurar';
       stat.title = 'Faltando: ' + (d.faltando || []).join(', ');
     } else if (d.conectado) {
+      try { const av = document.getElementById('qbAvisoRealizado'); if (av) av.style.display = 'none'; } catch(_) {}
       dot.className = 'dot on';
       stat.textContent = 'QuickBooks · Conectado' + (d.sandbox ? ' (sandbox)' : '');
       stat.title = (d.tokens_no_banco ? 'Tokens no banco (renovação automática) · ' : 'Token da env (semente) · ') + (d.refresh_expira_em ? 'refresh válido até ' + new Date(d.refresh_expira_em).toLocaleDateString('pt-BR') : '') + ' · clique para reconectar se precisar';
@@ -16013,7 +16152,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.14.1] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.16] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -16029,7 +16168,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.14.1';
+window.__ATX_BUILD_ID__ = 'ATX-v1.16';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
