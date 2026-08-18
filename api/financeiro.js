@@ -27,6 +27,9 @@ export default async function handler(req, res) {
   // com header Authorization: Bearer ${CRON_SECRET}
   if (req.method === 'GET') {
     const action = req.query?.action;
+    // v1.12: OAuth do QuickBooks — callback do Intuit
+    if (req.query?.qb_callback) return qbCallback(req, res);
+    if (action === 'qb_auth_url') { try { return res.status(200).json({ success: true, ...qbAuthUrl(req) }); } catch (e) { return res.status(400).json({ success: false, error: e.message }); } }
     if (action !== 'marcos_processar_alertas') {
       return res.status(400).json({ error: 'GET só aceito para marcos_processar_alertas' });
     }
@@ -56,6 +59,8 @@ export default async function handler(req, res) {
       qb_orcamento:          () => qbOrcamento(params),
       qb_saldo_contas:       () => qbSaldoContas(params),
       qb_status:             () => qbStatus(params),
+      qb_auth_url:           () => qbAuthUrl(req),
+      qb_desconectar:        async () => { const sql = await getSql(); await sql`DELETE FROM kv_store WHERE key = 'qb:tokens'`; _qbTokCache = null; return { desconectado: true }; },
 
       // ── Painel consolidado (frontend chama este) ─────────────────────────
       painel_resumo:         () => painelResumo(params),
@@ -324,34 +329,92 @@ async function qbStatus() {
   // Testa o refresh do token (chamada leve à Intuit, ~300ms)
   try {
     await qbToken();
-    return { configurado: true, conectado: true, sandbox: process.env.QB_SANDBOX === 'true' };
+    const t = await qbTokensLer();
+    return { configurado: true, conectado: true, sandbox: process.env.QB_SANDBOX === 'true', tokens_no_banco: !!t, refresh_expira_em: t?.refresh_expira_em ? new Date(t.refresh_expira_em).toISOString() : null, atualizado_em: t?.atualizado_em || null, realm_id: t?.realm_id || process.env.QB_REALM_ID || null };
   } catch (e) {
-    return { configurado: true, conectado: false, erro: e.message, sandbox: process.env.QB_SANDBOX === 'true' };
+    return { configurado: true, conectado: false, erro: e.message, sandbox: process.env.QB_SANDBOX === 'true', pode_reconectar: !!(process.env.QB_CLIENT_ID && process.env.QB_CLIENT_SECRET) };
   }
 }
 
-async function qbToken() {
-  const refreshToken = process.env.QB_REFRESH_TOKEN;
-  const clientId = process.env.QB_CLIENT_ID;
-  const clientSecret = process.env.QB_CLIENT_SECRET;
-  if (!refreshToken || !clientId || !clientSecret) {
-    throw new Error('QuickBooks não configurado (QB_CLIENT_ID/SECRET/REFRESH_TOKEN)');
-  }
+// ═══ v1.12: TOKENS DO QUICKBOOKS PERSISTIDOS NO BANCO ═══
+// O Intuit ROTACIONA o refresh_token a cada renovação (devolve um novo e o antigo morre em ~24h).
+// Lendo só da env var, o sistema quebrava sempre → "Erro token". Agora: kv_store 'qb:tokens' é a
+// fonte da verdade (atualizada a cada refresh); a env QB_REFRESH_TOKEN é só a semente inicial.
+// Também: access_token em cache até expirar (evita 1 refresh por chamada) e reconexão por OAuth.
+let _qbTokCache = null; // { access_token, expira_em }
+async function qbTokensLer() {
+  try {
+    const sql = await getSql();
+    await sql`CREATE TABLE IF NOT EXISTS kv_store (key TEXT PRIMARY KEY, value JSONB, updated_at TIMESTAMPTZ DEFAULT NOW())`;
+    const rows = await sql`SELECT value FROM kv_store WHERE key = 'qb:tokens' LIMIT 1`;
+    if (rows.length && rows[0].value) { const v = typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value; if (v && v.refresh_token) return v; }
+  } catch (e) { console.warn('[QB] kv tokens:', e.message); }
+  return null;
+}
+async function qbTokensGravar(t) {
+  try {
+    const sql = await getSql();
+    await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('qb:tokens', ${JSON.stringify(t)}, NOW())
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
+    return true;
+  } catch (e) { console.error('[QB] não gravou tokens no banco:', e.message); return false; }
+}
+async function qbTrocarTokens(bodyForm) {
+  const clientId = process.env.QB_CLIENT_ID, clientSecret = process.env.QB_CLIENT_SECRET;
+  if (!clientId || !clientSecret) throw new Error('QuickBooks não configurado (QB_CLIENT_ID/QB_CLIENT_SECRET)');
   const creds = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
   const r = await fetch('https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${creds}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json',
-    },
-    body: `grant_type=refresh_token&refresh_token=${refreshToken}`,
-  });
-  const d = await r.json();
-  if (!r.ok || !d.access_token) {
-    throw new Error(`QB OAuth: ${d.error_description || d.error || 'token inválido'}`);
+    method: 'POST', headers: { 'Authorization': `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: bodyForm });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.access_token) throw new Error(`QB OAuth: ${d.error_description || d.error || ('HTTP ' + r.status)}`);
+  return d;
+}
+async function qbToken() {
+  if (_qbTokCache && _qbTokCache.expira_em > Date.now() + 60000) return _qbTokCache.access_token;
+  const salvo = await qbTokensLer();
+  const refreshToken = salvo?.refresh_token || process.env.QB_REFRESH_TOKEN;
+  if (!refreshToken) throw new Error('QuickBooks não conectado — use "Conectar QuickBooks" (ou defina QB_REFRESH_TOKEN)');
+  let d;
+  try { d = await qbTrocarTokens(`grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}`); }
+  catch (e) {
+    // se o token do banco falhou e há um da env diferente, tenta a semente
+    if (salvo?.refresh_token && process.env.QB_REFRESH_TOKEN && process.env.QB_REFRESH_TOKEN !== salvo.refresh_token) {
+      d = await qbTrocarTokens(`grant_type=refresh_token&refresh_token=${encodeURIComponent(process.env.QB_REFRESH_TOKEN)}`);
+    } else throw new Error(e.message + ' — reconecte em Financeiro → "Conectar QuickBooks"');
   }
-  return d.access_token;
+  const agora = Date.now();
+  const novo = { access_token: d.access_token, refresh_token: d.refresh_token || refreshToken, expira_em: agora + ((d.expires_in || 3600) * 1000), refresh_expira_em: agora + ((d.x_refresh_token_expires_in || 8640000) * 1000), realm_id: salvo?.realm_id || process.env.QB_REALM_ID || null, atualizado_em: new Date(agora).toISOString() };
+  await qbTokensGravar(novo);
+  _qbTokCache = { access_token: novo.access_token, expira_em: novo.expira_em };
+  return novo.access_token;
+}
+function qbRealmId() { return process.env.QB_REALM_ID; }
+// OAuth: URL de autorização (o usuário clica, autoriza no Intuit, volta para /api/financeiro?qb_callback=1)
+function qbRedirectUri(req) {
+  const env = (process.env.QB_REDIRECT_URI || '').trim(); if (env) return env;
+  const proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0];
+  const host = process.env.MEDIA_PUBLIC_BASE ? process.env.MEDIA_PUBLIC_BASE.replace(/^https?:\/\//, '').replace(/\/$/, '') : (process.env.VERCEL_PROJECT_PRODUCTION_URL || req.headers['x-forwarded-host'] || req.headers.host);
+  return `${proto}://${host}/api/financeiro?qb_callback=1`;
+}
+function qbAuthUrl(req) {
+  const clientId = process.env.QB_CLIENT_ID; if (!clientId) throw new Error('QB_CLIENT_ID não configurado');
+  const p = new URLSearchParams({ client_id: clientId, response_type: 'code', scope: 'com.intuit.quickbooks.accounting', redirect_uri: qbRedirectUri(req), state: 'atx' + Date.now() });
+  return { url: 'https://appcenter.intuit.com/connect/oauth2?' + p.toString(), redirect_uri: qbRedirectUri(req) };
+}
+async function qbCallback(req, res) {
+  const url = new URL(req.url, 'http://x');
+  const code = url.searchParams.get('code'), realmId = url.searchParams.get('realmId'), err = url.searchParams.get('error');
+  const volta = (msg, okk) => { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.status(200).send(`<!doctype html><html><body style="font-family:system-ui;background:#0B1226;color:#fff;padding:40px"><h2>${okk ? '✅ QuickBooks conectado' : '⛔ QuickBooks: falha na conexão'}</h2><p>${msg}</p><p><a style="color:#4F7CFF" href="/">Voltar ao Atlantyx</a></p><script>setTimeout(()=>{ try{ if (window.opener) { window.opener.postMessage({ qb: ${okk ? 'true' : 'false'} }, '*'); window.close(); } }catch(e){} }, 1500);</script></body></html>`); };
+  if (err) return volta('Intuit retornou: ' + err, false);
+  if (!code) return volta('Callback sem "code".', false);
+  try {
+    const d = await qbTrocarTokens(`grant_type=authorization_code&code=${encodeURIComponent(code)}&redirect_uri=${encodeURIComponent(qbRedirectUri(req))}`);
+    const agora = Date.now();
+    const novo = { access_token: d.access_token, refresh_token: d.refresh_token, expira_em: agora + ((d.expires_in || 3600) * 1000), refresh_expira_em: agora + ((d.x_refresh_token_expires_in || 8640000) * 1000), realm_id: realmId || process.env.QB_REALM_ID || null, atualizado_em: new Date(agora).toISOString(), conectado_em: new Date(agora).toISOString() };
+    const gravou = await qbTokensGravar(novo);
+    _qbTokCache = { access_token: novo.access_token, expira_em: novo.expira_em };
+    return volta(gravou ? 'Tokens salvos no banco. Realm: ' + (novo.realm_id || '(env)') + '. Pode fechar esta janela.' : 'Autorizou, mas não consegui gravar no banco (DATABASE_URL?).', gravou);
+  } catch (e) { return volta(e.message, false); }
 }
 
 function qbBase() {
@@ -361,8 +424,8 @@ function qbBase() {
 }
 
 async function qbFetch(endpoint, token) {
-  const realmId = process.env.QB_REALM_ID;
-  if (!realmId) throw new Error('QB_REALM_ID não configurado');
+  const realmId = (await qbTokensLer())?.realm_id || process.env.QB_REALM_ID;
+  if (!realmId) throw new Error('QB_REALM_ID não configurado (ou reconecte pelo botão Conectar QuickBooks)');
   const sep = endpoint.includes('?') ? '&' : '?';
   const url = `${qbBase()}/v3/company/${realmId}${endpoint}${sep}minorversion=65`;
   const r = await fetch(url, {
@@ -381,7 +444,7 @@ async function qbQuery(sqlQuery, token) {
 }
 
 function qbConfigurado() {
-  return !!(process.env.QB_CLIENT_ID && process.env.QB_REFRESH_TOKEN && process.env.QB_REALM_ID);
+  return !!(process.env.QB_CLIENT_ID && process.env.QB_CLIENT_SECRET && (process.env.QB_REFRESH_TOKEN || process.env.QB_REALM_ID || true)); // tokens podem estar no banco
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

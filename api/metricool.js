@@ -110,6 +110,28 @@ export default async function handler(req, res) {
         };
       },
 
+      // v1.11.2: reagendar post — tenta atualizar a data; se não der (ou sem suporte), recria com o payload original
+      reagendar: async () => {
+        const { metricool_id, data_hora, payload: orig } = payload;
+        if (!metricool_id || !data_hora) throw new Error('metricool_id e data_hora obrigatórios');
+        const quando = new Date(data_hora); if (isNaN(quando)) throw new Error('data_hora inválida');
+        const dt = { dateTime: quando.toISOString().substring(0, 19), timezone: 'America/Sao_Paulo' };
+        // 1) tentativa de update in-place
+        let atualizado = false, erroPut = '';
+        try {
+          const r = await mc(`/v2/scheduler/posts/${metricool_id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'PUT', { publicationDate: dt });
+          if (r && (r.id || r.success || r.status === 'ok' || (typeof r === 'object' && !r.error))) atualizado = true;
+        } catch (e) { erroPut = e.message; }
+        if (atualizado) return { reagendado: true, metodo: 'atualizado', metricool_id, agendado_para: quando.toISOString() };
+        // 2) recriar: precisa do payload original
+        if (!orig || !orig.redes?.length) throw new Error('Metricool não aceitou alterar a data (' + (erroPut || 'sem retorno') + ') e não há payload original para recriar. Exclua e publique de novo.');
+        try { await mc(`/v2/scheduler/posts/${metricool_id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'DELETE'); } catch (e) { console.warn('[metricool reagendar] delete antigo falhou:', e.message); }
+        // recria com o payload original (mesma montagem de body/providers da action publicar)
+        Object.assign(payload, orig, { data_hora: quando.toISOString() });
+        const novo = await acoes.publicar();
+        return { reagendado: true, metodo: 'recriado', antigo: metricool_id, metricool_id: novo.metricool_id, agendado_para: quando.toISOString(), detalhe: novo };
+      },
+
       // v1.7: excluir post agendado (sincroniza exclusão do calendário)
       excluir: async () => {
         const { metricool_id } = payload;

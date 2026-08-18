@@ -126,8 +126,9 @@ JSON: {"stories":[{"ordem":1,"papel":"gancho","texto_tela":"...","cta_sticker":"
 "${texto.substring(0, 600)}"
 Link de destino: ${link}
 
+REGRAS (v1.12): B2B no Meta NÃO se segmenta bem por cargo/interesse — o Turbinar do celular sai do ICP. Portanto: (1) objetivo Leads ou Conversões (nunca Engajamento); (2) públicos próprios obrigatórios: Público Personalizado com a lista de leads/clientes do HubSpot + Lookalike 1% dela + retargeting de visitantes do site (Pixel); interesses só como complemento; (3) exclusões: clientes atuais, funcionários, quem já converteu; (4) copy com LINHA QUALIFICADORA no início ("Para CIOs/CFOs de empresas com +R$100M em receita...") para afastar quem não é o perfil; (5) formulário com cargo e porte obrigatórios.
 Gere o plano de impulsionamento em JSON:
-{"objetivo_campanha":"Tráfego|Leads|Conversões — qual e por quê (1 frase)",
+{"objetivo_campanha":"Leads|Conversões — qual e por quê (1 frase)","publicos_proprios":["Personalizado: lista HubSpot (clientes+leads)","Lookalike 1% da lista","Retargeting site 90d"],"exclusoes":["clientes atuais","funcionários","já converteram"],"linha_qualificadora":"1 frase que abre a copy e filtra o público",
 "cta_botao":"o CTA ideal do Meta (ex: Agendar horário)",
 "segmentacao":{"cargos":["..."],"setores":["..."],"interesses":["..."],"faixa_etaria":"XX-XX","localizacao":"sugestão"},
 "orcamento_diario_brl":número,
