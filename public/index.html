@@ -14737,8 +14737,8 @@ async function excluirPublicacaoAgendada(pubId) {
 
 // ---------- AUTO-CAMPANHA IA (v1.7) -----------------------------------------
 async function gerarCampanhaAutomatica() {
-  if (!confirm('🤖 Auto-campanha IA COMPLETA\n\nA IA vai:\n1. Analisar as métricas do Metricool (cliques/engajamento por dia e horário)\n2. Criar a CAMPANHA (narrativa + copy) e 3 publicações com imagem, agendadas nos horários ideais\n3. Criar 3 STORIES (artes 9:16 com texto e sticker de link) e agendar\n4. Criar 1 REEL em slideshow (vídeo montado aqui no navegador) e agendar\n\nLeva ~4-6 min e consome créditos de IA/Ideogram. Mantenha esta aba aberta.\nContinuar?')) return;
-  const _incluirFormatos = confirm('Incluir Stories e Reel?\n\nOK = campanha completa (posts + stories + reel)\nCancelar = só os 3 posts');
+  if (!confirm('🤖 Auto-campanha IA COMPLETA\n\nA IA vai:\n1. Analisar as métricas do Metricool (cliques/engajamento por dia e horário)\n2. Criar a CAMPANHA (narrativa + copy) e 3 publicações com imagem, agendadas nos horários ideais\n3. Criar 3 STORIES (artes 9:16 com texto e sticker de link) e agendar\n4. Criar 1 REEL em slideshow (vídeo montado aqui no navegador) e agendar\n5. Criar 1 CARROSSEL do feed (5 artes 1:1 com texto) e agendar\n\nLeva ~6-8 min e consome créditos de IA/Ideogram (~19 imagens). Mantenha esta aba aberta.\nContinuar?')) return;
+  const _incluirFormatos = confirm('Incluir Stories, Reel e Carrossel?\n\nOK = campanha completa (posts + stories + reel + carrossel)\nCancelar = só os 3 posts');
   addLog('info', '[Auto-IA] ════ Iniciando auto-campanha ════');
   toast('🤖 Analisando métricas e gerando plano...', 'success');
 
@@ -14920,10 +14920,27 @@ async function gerarCampanhaAutomatica() {
           }
         }
       }
+      // CARROSSEL (v1.11.1): roteiro → 5 artes 1:1 → texto gravado → publicar (dia seguinte ao reel, 12h; texto por rede)
+      addLog('info', '[Auto-IA] ▶ Carrossel: roteiro → artes → compor → publicar');
+      try { const bt = document.getElementById('edAbaCarr'); if (bt) bt.click(); } catch(_) {}
+      try {
+        await gerarCarrosselPack();
+        if (campAtiva.carrossel?.slides?.length) {
+          await gerarArtesCarrossel();
+          if (campAtiva.carrossel.slides.every(x => x.imagem_url)) {
+            const okc = await comporArtesCarrossel();
+            if (okc && temMc2) {
+              let dC = new Date(base + 2 * 864e5); dC.setHours(12, 0, 0, 0); if (dC <= new Date()) dC.setDate(dC.getDate() + 1);
+              window._autoAgendaCarr = dC.toISOString().substring(0,16);
+              await publicarCarrossel();
+            } else if (!temMc2) addLog('info', '[Auto-IA] Carrossel pronto (Metricool off — publique manualmente com as artes compostas)');
+          }
+        }
+      } catch (eC) { addLog('err', '[Auto-IA] Carrossel: ' + eC.message); }
       await salvarCampanhaNoBanco(campAtiva, 'auto-campanha completa');
       try { nav('s2kanban'); } catch(_) {}
       renderKanban(); renderCalendarioKanban();
-      const resumo = plano.length + ' posts' + (agendados ? ' (' + agendados + ' agendados)' : '') + ' · stories: ' + ((campAtiva.stories||[]).every(x => x.imagem_composta) ? 'prontos' + (campAtiva.stories_agendado_em ? ' e agendados' : '') : 'incompletos') + ' · reel: ' + (campAtiva.reel?.video_url ? 'hospedado' + (campAtiva.reel?.agendado_em ? ' e agendado' : '') : 'incompleto');
+      const resumo = plano.length + ' posts' + (agendados ? ' (' + agendados + ' agendados)' : '') + ' · stories: ' + ((campAtiva.stories||[]).every(x => x.imagem_composta) ? 'prontos' + (campAtiva.stories_agendado_em ? ' e agendados' : '') : 'incompletos') + ' · reel: ' + (campAtiva.reel?.video_url ? 'hospedado' + (campAtiva.reel?.agendado_em ? ' e agendado' : '') : 'incompleto') + ' · carrossel: ' + ((campAtiva.carrossel?.slides||[]).length && campAtiva.carrossel.slides.every(x => x.imagem_composta) ? 'pronto' + (campAtiva.carrossel.publicado_em ? ' e agendado' : '') : 'incompleto');
       toast('🤖 Auto-campanha COMPLETA: ' + resumo, 'success');
       addLog('ok', '[Auto-IA] ════ Concluída: ' + resumo + ' ════');
       alert('🤖 Auto-campanha concluída\n\n' + resumo.replace(/ · /g, '\n') + '\n\nA campanha "' + _autoNome + '" está em Minhas Campanhas; peças no Kanban; publicações no calendário.');
@@ -15789,7 +15806,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.11] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.11.1] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -15805,7 +15822,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.11';
+window.__ATX_BUILD_ID__ = 'ATX-v1.11.1';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
