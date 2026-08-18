@@ -2205,6 +2205,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <div id="previewOutput" style="margin-top:8px;min-height:200px;">
             <div style="color:var(--t3);font-size:12px;text-align:center;padding:30px;">Clique em Gerar Previews para ver o preview do canal selecionado.</div>
           </div>
+        </div><!-- fim edPreview (v1.14.1: faltava este fechamento — todas as páginas seguintes ficavam aninhadas dentro da campanha e apareciam pretas) -->
         <!-- AÇÕES FINAIS -->
         <div style="display:flex;gap:8px;margin-top:12px;padding:12px;background:var(--bg4);border-radius:8px;">
           <button class="btn btn-gn" onclick="aprovarCampanhaFinal()" style="flex:1;">&#10003; Aprovar e Enviar ao Kanban</button>
@@ -16012,7 +16013,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.14] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.14.1] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -16028,7 +16029,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.14';
+window.__ATX_BUILD_ID__ = 'ATX-v1.14.1';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
