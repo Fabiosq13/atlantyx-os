@@ -14949,12 +14949,34 @@ function _urlMidiaPublica(url, ext) {
   } catch(_) {}
   return url;
 }
+// v1.10.4: descobre QUAL forma de URL está servindo a mídia neste deploy (rota dinâmica, rewrite ou query)
+// e devolve a primeira que funciona — assim Reels/Stories não dependem de UMA rota específica estar no ar.
+const _midiaCache = {};
+function _idMidiaDe(url) {
+  try { const u = new URL(url, location.href); const q = u.searchParams.get('m') || (u.searchParams.get('f') || '').split('.')[0]; if (q) return q; const mm = u.pathname.match(/\/(?:api\/)?media\/([^/.]+)\.[a-z0-9]+$/i); if (mm) return mm[1]; } catch(_) {}
+  return null;
+}
+async function _resolverUrlMidia(url, ext, esperado) {
+  const id = _idMidiaDe(url);
+  if (!id) { const chk = await _verificarMidiaPublica(url, esperado); return { url, chk }; }
+  const key = id + '|' + ext;
+  if (_midiaCache[key]) return _midiaCache[key];
+  const o = location.origin;
+  const candidatos = [o + '/api/media/' + id + '.' + ext, o + '/media/' + id + '.' + ext, o + '/api/media-upload?f=' + id + '.' + ext, o + '/api/media-upload?m=' + id];
+  const falhas = [];
+  for (const c of candidatos) {
+    const chk = await _verificarMidiaPublica(c, esperado);
+    if (chk.ok) { _midiaCache[key] = { url: c, chk, tentativas: falhas }; if (c !== candidatos[0]) addLog('warn', '[Mídia] rota principal indisponível — usando ' + c + ' (' + falhas.join(' | ') + ')'); return _midiaCache[key]; }
+    falhas.push(chk.motivo.split(' ao acessar')[0].split(' (')[0]);
+  }
+  return { url: candidatos[0], chk: { ok: false, motivo: 'Nenhuma rota de mídia respondeu: ' + candidatos.map((c, i) => c.replace(o, '') + ' → ' + falhas[i]).join(' · ') + '. Verifique se api/media-upload.js foi deployado e se DATABASE_URL está no Vercel.' } };
+}
 // v1.10.3: verifica se a mídia hospedada é acessível publicamente e com o tipo certo (o que o Metricool/IG vão ver)
 async function _verificarMidiaPublica(url, esperado) {
   try {
     const r = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-1' } });
     const ct = (r.headers.get('content-type') || '').toLowerCase();
-    if (!r.ok && r.status !== 206) return { ok: false, motivo: 'HTTP ' + r.status + ' ao acessar ' + url };
+    if (!r.ok && r.status !== 206) { let extra = ''; try { const xv = r.headers.get('x-vercel-error'); const txt = (await r.text()).substring(0, 80); extra = (xv ? ' [' + xv + ']' : '') + (txt ? ' "' + txt.replace(/\s+/g,' ') + '"' : ''); } catch(_) {} return { ok: false, motivo: 'HTTP ' + r.status + extra + ' ao acessar ' + url }; }
     if (ct.includes('text/html')) return { ok: false, motivo: 'a URL devolve HTML (a rota de mídia não está no ar — deploy da pasta api/media e do media-upload.js pendente): ' + url };
     if (esperado && !ct.startsWith(esperado)) return { ok: false, motivo: 'tipo inesperado ' + (ct || '(vazio)') + ' — esperado ' + esperado + '* em ' + url };
     return { ok: true, ct };
@@ -15088,9 +15110,9 @@ async function comporArtesStories(silencioso) {
   { const rs = await salvarCampanhaNoBanco(campAtiva, 'stories compostas'); if (!rs.success) addLog('warn', '[Stories] compostas não salvas no banco: ' + rs.error); }
   _renderStoryPack();
   if (hospedadas === st.length) {
-    const chk = await _verificarMidiaPublica(_urlMidiaPublica(st[0].imagem_composta, 'jpg'), 'image/');
-    if (!chk.ok) { _statusPainel('story', 'err', 'Artes hospedadas, mas a URL pública NÃO está servindo a imagem', chk.motivo + '<br>O Metricool vai mostrar "Sem imagem" até isso estar no ar. Confira o deploy de api/media-upload.js e api/media/[file].js.'); return false; }
-    _statusPainel('story', 'ok', 'Artes compostas, hospedadas e verificadas (' + hospedadas + '/' + st.length + ')', 'Texto e CTA já estão gravados na imagem (' + chk.ct + '). Link do sticker: <b>' + link + '</b>. Pode 🚀 Agendar.'); return true; }
+    const res0 = await _resolverUrlMidia(st[0].imagem_composta, 'jpg', 'image/');
+    if (!res0.chk.ok) { _statusPainel('story', 'err', 'Artes hospedadas, mas nenhuma URL pública está servindo a imagem', res0.chk.motivo + '<br>O Metricool vai mostrar "Sem imagem" até isso estar no ar.'); return false; }
+    _statusPainel('story', 'ok', 'Artes compostas, hospedadas e verificadas (' + hospedadas + '/' + st.length + ')', 'Texto e CTA já estão gravados na imagem (' + res0.chk.ct + '). URL: ' + res0.url + '. Link do sticker: <b>' + link + '</b>. Pode 🚀 Agendar.'); return true; }
   const erro = (st.find(x => x._erro_host) || {})._erro_host || 'hospedagem indisponível';
   _statusPainel('story', 'err', 'Compus as artes, mas não consegui hospedar (' + hospedadas + '/' + st.length + ')', erro + '<br>Baixe as artes prontas e publique manualmente: ' + baixaveis.map(b => '<a href="' + b.url + '" download="story-' + b.n + '.jpg" style="color:var(--blue);">story ' + b.n + '</a>').join(' · '));
   return false;
@@ -15107,8 +15129,13 @@ async function publicarStories() {
   }
   const temMc = await verificarMetricool(true);
   if (!temMc) { toast('Metricool não configurado — publique os stories manualmente com as artes acima', 'error'); return; }
-  { const u0 = _urlMidiaPublica(st[0].imagem_composta || st[0].imagem_url, (st[0].imagem_composta||'').includes('.png') ? 'png' : 'jpg'); const chk = await _verificarMidiaPublica(u0, 'image/');
-    if (!chk.ok) { _statusPainel('story', 'err', 'Não vou agendar: a imagem do story não está acessível publicamente', chk.motivo + '<br>Sem isso o Metricool mostra "Sem imagem". Corrija o deploy e tente de novo (ou ⬇ baixe as artes compostas e publique manualmente).'); toast('Imagem do story não acessível — veja a barra vermelha', 'error'); return; } }
+  const _urlsStory = [];
+  for (let i = 0; i < st.length; i++) {
+    const src = st[i].imagem_composta || st[i].imagem_url; const ext = (st[i].imagem_composta||'').includes('.png') ? 'png' : 'jpg';
+    const rs = _idMidiaDe(src) ? await _resolverUrlMidia(src, ext, 'image/') : { url: src, chk: await _verificarMidiaPublica(src, 'image/') };
+    if (!rs.chk.ok) { _statusPainel('story', 'err', 'Não vou agendar: a imagem do story ' + (i+1) + ' não está acessível publicamente', rs.chk.motivo + '<br>Sem isso o Metricool mostra "Sem imagem". Corrija e tente de novo (ou ⬇ baixe as artes compostas e publique manualmente).'); toast('Imagem do story não acessível — veja a barra vermelha', 'error'); return; }
+    _urlsStory.push(rs.url);
+  }
   const inicio = window._autoAgendaStories || prompt('Data/hora do 1º story (os outros seguem a cada 2 min):', new Date(Date.now() + 10*60000).toISOString().substring(0,16));
   window._autoAgendaStories = null;
   if (!inicio) return;
@@ -15123,7 +15150,7 @@ async function publicarStories() {
     _statusPainel('story', 'run', 'Agendando story ' + (i+1) + ' de ' + st.length + ' no Metricool...', quando.toLocaleString('pt-BR') + ' · ' + redesSt.join(', ') + (ehCta ? ' · com sticker de link' : ''), (i / st.length) * 100);
     try {
       const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ action:'publicar', payload: { tipo:'STORY', texto: '', redes: redesSt, data_hora: quando.toISOString(), imagem_url: _urlMidiaPublica(st[i].imagem_composta || st[i].imagem_url, (st[i].imagem_composta||'').includes('.png') ? 'png' : 'jpg'), encurtar_link: false, link_sticker: (ehCta && link) ? link : '' } }) });
+        body: JSON.stringify({ action:'publicar', payload: { tipo:'STORY', texto: '', redes: redesSt, data_hora: quando.toISOString(), imagem_url: _urlsStory[i], encurtar_link: false, link_sticker: (ehCta && link) ? link : '' } }) });
       const d = await r.json();
       if (!d.success) throw new Error(d.error || 'falha');
       okN++;
@@ -15177,7 +15204,7 @@ function _renderReel() {
   const on = (id, v) => { const b = document.getElementById(id); if (b) b.disabled = !v; };
   on('btnArtesReel', true); on('btnMontarReel', temArte); on('btnHostReel', !!r.video_blob_pronto); on('btnPubReel', !!r.video_url);
   if (r.video_url) {
-    const vurl = _urlMidiaPublica(r.video_url, (r.video_mime||'').includes('webm') ? 'webm' : 'mp4');
+    const vurl = r.video_url_publica || _urlMidiaPublica(r.video_url, (r.video_mime||'').includes('webm') ? 'webm' : 'mp4');
     const v = document.getElementById('reelVideo');
     if (v && v.getAttribute('data-src') !== vurl) {
       v.setAttribute('data-src', vurl); v.src = vurl; v.style.display = 'block'; v.preload = 'metadata';
@@ -15258,10 +15285,9 @@ async function testarHospedagemMidia() {
     const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.9));
     const up = await fetch('/api/media-upload?name=teste.jpg&pasta=teste', { method:'POST', headers:{ 'Content-Type':'image/jpeg' }, body: blob }).then(r => r.json());
     if (!up.success) throw new Error(up.error + (up.hint ? ' — ' + up.hint : ''));
-    const url = _urlMidiaPublica(up.url, 'jpg');
-    const chk = await _verificarMidiaPublica(url, 'image/');
-    if (!chk.ok) throw new Error(chk.motivo);
-    _statusPainel('reel', 'ok', 'Hospedagem OK (' + (up.hospedagem || st.hospedagem || '?') + ')', 'URL pública respondeu ' + chk.ct + ': ' + url + '<br>Reels e Stories vão carregar no Metricool.');
+    const rr = await _resolverUrlMidia(up.url, 'jpg', 'image/');
+    if (!rr.chk.ok) throw new Error(rr.chk.motivo);
+    _statusPainel('reel', 'ok', 'Hospedagem OK (' + (up.hospedagem || st.hospedagem || '?') + ')', 'URL pública que funciona neste deploy: ' + rr.url + ' (' + rr.chk.ct + ')' + (rr.tentativas?.length ? '<br>⚠ Rotas que NÃO responderam: ' + rr.tentativas.join(' | ') + ' — funciona mesmo assim, mas vale conferir o deploy de api/media/[file].js e vercel.json.' : '') + '<br>Reels e Stories vão carregar no Metricool.');
   } catch (e) { _statusPainel('reel', 'err', 'Hospedagem com problema', e.message + '<br>Confira: api/media-upload.js e api/media/[file].js deployados; DATABASE_URL no Vercel.'); }
 }
 async function _carregarMp4Muxer() {
@@ -15407,9 +15433,9 @@ async function hospedarReel() {
     const d = await resp.json();
     if (!d.success) throw new Error(d.error + (d.hint ? ' — ' + d.hint : ''));
     r.video_url = d.url; await _salvarReel(); _renderReel();
-    const chk = await _verificarMidiaPublica(_urlMidiaPublica(d.url, 'mp4'), 'video/');
-    if (!chk.ok) { _reelSet('Falha na hospedagem: hospedou, mas a URL pública não está servindo o vídeo — ' + chk.motivo, 'Erro'); }
-    else _reelSet('Hospedado (' + (d.hospedagem || 'ok') + ') e verificado (' + chk.ct + '): ' + _urlMidiaPublica(d.url, 'mp4'), 'Hospedado');
+    const rr = await _resolverUrlMidia(d.url, ext, 'video/');
+    if (!rr.chk.ok) { _reelSet('Falha na hospedagem: hospedou, mas nenhuma URL pública está servindo o vídeo — ' + rr.chk.motivo, 'Erro'); }
+    else { r.video_url_publica = rr.url; await _salvarReel(); _reelSet('Hospedado (' + (d.hospedagem || 'ok') + ') e verificado (' + rr.chk.ct + '): ' + rr.url, 'Hospedado'); }
     addLog('ok', '[Reel] Hospedado em ' + d.url);
     toast('Vídeo hospedado — pode agendar', 'success');
   } catch (e) { addLog('err', '[Reel] hospedagem: ' + e.message); _reelSet('Falha na hospedagem: ' + e.message + ' · O vídeo é hospedado no seu banco Neon (sem configuração extra). Se persistir, ⬇ Baixar e subir manualmente no Metricool/Instagram.', 'Erro'); toast(e.message, 'error'); }
@@ -15420,8 +15446,9 @@ async function publicarReel() {
   if (!r?.video_url) { toast('Hospede o vídeo primeiro', 'error'); return; }
   const temMc = await verificarMetricool(true);
   if (!temMc) { toast('Metricool não configurado — baixe o vídeo e publique pelo app', 'error'); return; }
-  { const chk = await _verificarMidiaPublica(_urlMidiaPublica(r.video_url, (r.video_mime||'').includes('webm') ? 'webm' : 'mp4'), 'video/');
-    if (!chk.ok) { _statusPainel('reel', 'err', 'Não vou agendar: o vídeo não está acessível publicamente', chk.motivo + '<br>O Metricool ficaria "carregando" para sempre. Corrija o deploy (api/media-upload.js + api/media/[file].js) ou monte/hospede de novo.'); toast('Vídeo não acessível — veja a barra vermelha', 'error'); return; } }
+  const rv = await _resolverUrlMidia(r.video_url, (r.video_mime||'').includes('webm') ? 'webm' : 'mp4', 'video/');
+  if (!rv.chk.ok) { _statusPainel('reel', 'err', 'Não vou agendar: o vídeo não está acessível publicamente', rv.chk.motivo + '<br>O Metricool ficaria "carregando" para sempre. Corrija o deploy ou monte/hospede de novo.'); toast('Vídeo não acessível — veja a barra vermelha', 'error'); return; }
+  const _urlReel = rv.url;
   const quando = window._autoAgendaReel || prompt('Data/hora do Reel:', new Date(Date.now() + 15*60000).toISOString().substring(0,16));
   window._autoAgendaReel = null;
   if (!quando) return;
@@ -15429,7 +15456,7 @@ async function publicarReel() {
   const redes = ['instagram']; if (campAtiva.redes_ativas?.facebook) redes.push('facebook');
   try {
     const resp = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ action:'publicar', payload: { tipo:'REEL', texto: legenda, redes, data_hora: new Date(quando).toISOString(), imagem_url: _urlMidiaPublica(r.video_url, (r.video_mime||'').includes('webm') ? 'webm' : 'mp4'), encurtar_link: false } }) });
+      body: JSON.stringify({ action:'publicar', payload: { tipo:'REEL', texto: legenda, redes, data_hora: new Date(quando).toISOString(), imagem_url: _urlReel, encurtar_link: false } }) });
     const d = await resp.json();
     if (!d.success) throw new Error(d.error || 'falha');
     const pFake = { id: 'reel_' + campAtiva.id, campanhaId: campAtiva.id, titulo: campAtiva.nome + ' · Reel' };
@@ -15574,7 +15601,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.10.3] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.10.4] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -15590,7 +15617,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.10.3';
+window.__ATX_BUILD_ID__ = 'ATX-v1.10.4';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
