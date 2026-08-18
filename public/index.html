@@ -1692,6 +1692,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <button class="btn btn-p" style="font-size:11px;padding:6px 14px;" onclick="gerarCampanhaAutomatica()" title="A IA analisa as métricas do Metricool + benchmarks e agenda 3 publicações otimizadas">&#129302; Auto-campanha IA (3 posts otimizados)</button>
       <span style="font-size:9.5px;color:var(--t3);align-self:center;">📱 Stories e 🎬 Reels: abra uma campanha (✎ Editar no card ou Nova Campanha) → abas Stories / Reels</span>
       <button class="btn" style="font-size:10px;" onclick="definirLinkReuniao()" title="Link padrão de reunião usado em publicações, stories, impulso e auto-campanha">🔗 Link de reunião padrão</button>
+      <button class="btn" style="font-size:10px;" onclick="definirTextoLinkBio()" title="Frase que explica o 'link na bio' do Instagram (leva ao seu site → cadastro de contato)">📲 Texto do link na bio</button>
       <button class="btn" style="font-size:10px;" onclick="reconstruirPecasDasCampanhas()" title="Recria no kanban as peças de campanhas salvas que sumiram">&#8635; Reconstruir peças das campanhas</button>
     </div>
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px;background:var(--bg4);border:1px solid var(--bd);border-radius:7px;padding:6px 10px;">
@@ -1975,6 +1976,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <button class="btn" id="edAbaCopy"    onclick="mostrarEdAba('copy')"    style="font-size:10px;padding:4px 10px;">&#9997; Copy</button>
           <button class="btn" id="edAbaImg"     onclick="mostrarEdAba('img')"     style="font-size:10px;padding:4px 10px;">&#127912; Imagem</button>
           <button class="btn" id="edAbaStories" onclick="mostrarEdAba('img');setTimeout(()=>document.getElementById('storyTag')?.closest('.panel')?.scrollIntoView({behavior:'smooth',block:'start'}),120)" style="font-size:10px;padding:4px 10px;color:var(--gold);border-color:rgba(245,185,75,.5);" title="Sequência de 3 stories 9:16 com sticker de link (quem já te segue)">&#128241; Stories</button>
+          <button class="btn" id="edAbaCarr" onclick="mostrarEdAba('img');setTimeout(()=>document.getElementById('carrTag')?.closest('.panel')?.scrollIntoView({behavior:'smooth',block:'start'}),120)" style="font-size:10px;padding:4px 10px;color:var(--gold);border-color:rgba(245,185,75,.5);" title="Carrossel do feed 1:1 (post com várias imagens deslizáveis)">&#128444; Carrossel</button>
           <button class="btn" id="edAbaReels" onclick="mostrarEdAba('img');setTimeout(()=>document.getElementById('reelTag')?.closest('.panel')?.scrollIntoView({behavior:'smooth',block:'start'}),120)" style="font-size:10px;padding:4px 10px;color:var(--gold);border-color:rgba(245,185,75,.5);" title="Reel em slideshow 9:16 gerado no navegador (topo de funil)">&#127916; Reels</button>
           <button class="btn btn-p" id="edAbaPreview" onclick="mostrarEdAba('preview')" style="font-size:10px;padding:4px 10px;">&#128247; Preview por Canal</button>
         </div>
@@ -2101,6 +2103,26 @@ tr:hover td{background:rgba(79,124,255,.03);}
               </div>
               <div id="storyPack" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
                 <div style="grid-column:1/-1;color:var(--t3);font-size:11px;text-align:center;padding:14px;">Gere o roteiro: a IA adapta a campanha em 3 stories curtos (gancho → valor → CTA com link).</div>
+              </div>
+            </div>
+          </div>
+          <!-- v1.11: CARROSSEL DO FEED 1:1 -->
+          <div class="panel" style="margin-top:14px;">
+            <div class="ph"><div class="pt">🖼 Carrossel do feed (1:1) — meio de funil, educa e converte no feed</div><span class="tag off" id="carrTag">Aguardando</span></div>
+            <div class="pb">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+                <button class="btn btn-p" style="font-size:10.5px;" onclick="gerarCarrosselPack()">🤖 Gerar roteiro (5 slides + legendas)</button>
+                <button class="btn btn-or" style="font-size:10.5px;" onclick="gerarArtesCarrossel()" id="btnArtesCarr" disabled>◆ Gerar artes 1:1</button>
+                <button class="btn" style="font-size:10.5px;color:var(--gold);border-color:var(--gold);" onclick="comporArtesCarrossel()" id="btnComporCarr" disabled>🖼 Compor artes com texto</button>
+                <button class="btn btn-gn" style="font-size:10.5px;" onclick="publicarCarrossel()" id="btnPubCarr" disabled>🚀 Publicar carrossel</button>
+                <span style="font-size:9px;color:var(--t3);">Um post com várias imagens deslizáveis · texto por rede: LinkedIn/FB com link, Instagram com a frase do link na bio</span>
+              </div>
+              <div id="carrSlides" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;">
+                <div style="grid-column:1/-1;color:var(--t3);font-size:11px;text-align:center;padding:14px;">Gere o roteiro: capa → ideias → CTA, com legenda por rede.</div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+                <div><div style="font-size:10px;color:var(--t2);margin-bottom:4px;">LEGENDA LINKEDIN / FACEBOOK (com link)</div><textarea id="carrLegLi" class="fsel" style="width:100%;height:80px;font-size:10.5px;" oninput="if(campAtiva?.carrossel)campAtiva.carrossel.legenda_linkedin=this.value"></textarea></div>
+                <div><div style="font-size:10px;color:var(--t2);margin-bottom:4px;">LEGENDA INSTAGRAM (link na bio explicado)</div><textarea id="carrLegIg" class="fsel" style="width:100%;height:80px;font-size:10.5px;" oninput="if(campAtiva?.carrossel)campAtiva.carrossel.legenda_instagram=this.value"></textarea></div>
               </div>
             </div>
           </div>
@@ -4159,6 +4181,19 @@ function definirLinkReuniao() {
   if (novo === null) return;
   try { if (novo.trim()) localStorage.setItem('atx:link_reuniao', novo.trim()); else localStorage.removeItem('atx:link_reuniao'); } catch(_) {}
   toast('Link de reunião padrão: ' + linkReuniao(), 'success');
+}
+// v1.10.6: texto padrão que explica o link na bio (Instagram) — o link da bio leva ao SITE, onde a pessoa deixa o contato
+const TEXTO_LINK_BIO_PADRAO = '🔗 Link na bio → acesse o site e deixe seu contato: nossa equipe fala com você em até 24h.';
+const TEXTO_LINK_BIO_CURTO_PADRAO = 'acesse o site e deixe seu contato';
+function textoLinkBio() { try { return (localStorage.getItem('atx:texto_link_bio') || '').trim() || TEXTO_LINK_BIO_PADRAO; } catch(_) { return TEXTO_LINK_BIO_PADRAO; } }
+function textoLinkBioCurto() { try { return (localStorage.getItem('atx:texto_link_bio_curto') || '').trim() || TEXTO_LINK_BIO_CURTO_PADRAO; } catch(_) { return TEXTO_LINK_BIO_CURTO_PADRAO; } }
+function definirTextoLinkBio() {
+  const t = prompt('Texto que explica o LINK NA BIO nas publicações do Instagram (o link da bio leva ao seu site, onde a pessoa deixa o contato):', textoLinkBio());
+  if (t === null) return;
+  try { if (t.trim()) localStorage.setItem('atx:texto_link_bio', t.trim()); else localStorage.removeItem('atx:texto_link_bio'); } catch(_) {}
+  const c = prompt('Versão CURTA (vai gravada no último slide do Reel, máx. ~6 palavras):', textoLinkBioCurto());
+  if (c !== null) { try { if (c.trim()) localStorage.setItem('atx:texto_link_bio_curto', c.trim()); else localStorage.removeItem('atx:texto_link_bio_curto'); } catch(_) {} }
+  toast('Texto do link na bio: ' + textoLinkBio(), 'success');
 }
 const KANBAN_COLS = ['Gerado','Revisão','Aprovado','Agendado','Publicado'];
 let kanbanPecas = [];
@@ -8515,6 +8550,8 @@ async function abrirCampanhaDB(id) {
   try { setTimeout(_renderStoryPack, 80); } catch(_) {}
   // v1.9: restaurar reel salvo
   try { window._reelBlob = null; setTimeout(_renderReel, 90); } catch(_) {}
+  // v1.11: restaurar carrossel salvo
+  try { setTimeout(_renderCarrossel, 95); } catch(_) {}
 
   // Restaurar imagens geradas se houver
   if (camp.imagens?.length) {
@@ -14252,7 +14289,7 @@ async function publicarPeca(pecaId) {
         <label style="font-size:10px;color:var(--t2);display:flex;gap:5px;align-items:center;margin-top:5px;cursor:pointer;">
           <input type="checkbox" id="pubFbCard"/> Facebook como CARD DE LINK clicável (publica SEM a imagem anexada — o FB gera o cartão do link, todo clicável; melhor para gerar cliques)
         </label>
-        <div style="font-size:9px;color:var(--t3);margin-top:3px;">Instagram: caption não aceita link clicável — o post vai com "🔗 Link na bio" (mantenha o link da campanha na bio do perfil).</div>
+        <div style="font-size:9px;color:var(--t3);margin-top:3px;">Instagram: caption não aceita link clicável — o post vai com a frase do link na bio (📲 configurável no Kanban): "<span id="pubTextoBioPreview"></span>". Mantenha na bio do perfil o link do seu site (com formulário de contato).</div>
         <div style="font-size:9px;color:var(--gold);margin-top:4px;">ℹ Botão "Agende uma reunião" (como em posts de concorrentes) só existe em post IMPULSIONADO (Meta Ads) — orgânico não tem botão. Este material (copy+imagem+link UTM) já sai pronto para impulsionar no Meta Business.</div>
         <div style="font-size:10px;color:var(--t2);margin:10px 0 4px;">AGENDAR PARA (vazio = publicar agora)</div>
         <input type="datetime-local" id="pubQuando" class="fsel" style="width:100%;"/>
@@ -14280,10 +14317,11 @@ async function executarPublicacao(pecaId, metodo) {
   // FIX v1.5.3: link de destino com UTMs por rede
   const linkBase = document.getElementById('pubLink')?.value?.trim() || '';
   const ctaTexto = document.getElementById('pubCta')?.value?.trim() || '👉 Saiba mais:';
+  try { const pv = document.getElementById('pubTextoBioPreview'); if (pv) pv.textContent = textoLinkBio(); } catch(_) {}
   // v1.6.9: bloco de CTA por rede — IG não linkifica caption, vai "Link na bio"
   const montarBlocoCta = (rede, link) => {
     if (!link) return '';
-    if (rede === 'instagram') return '\n\n' + ctaTexto + ' 🔗 Link na bio';
+    if (rede === 'instagram') return '\n\n' + textoLinkBio(); // v1.10.6: explica o que acontece no link da bio
     return '\n\n' + ctaTexto + '\n' + link;
   };
   const usarUtm = document.getElementById('pubUtm')?.checked !== false;
@@ -14307,7 +14345,9 @@ async function executarPublicacao(pecaId, metodo) {
       const linkMc = montarLink(redes[0]);
       const soInstagram = redes.length === 1 && redes[0] === 'instagram';
       const textoMc = linkMc ? (texto + montarBlocoCta(soInstagram ? 'instagram' : redes.find(r => r !== 'instagram') || redes[0], linkMc)) : texto;
-      if (redes.includes('instagram') && linkMc) toast('Instagram: mantenha o link da campanha na BIO do perfil (caption não clica)', 'success');
+      // v1.11: TEXTO POR REDE — Instagram vai em request separado com a frase do link na bio; LinkedIn/FB com o link
+      const textoIg = texto + montarBlocoCta('instagram', linkMc || 'x');
+      const separarIg = redes.includes('instagram') && redes.length > 1;
       const encurtar = document.getElementById('pubEncurtar')?.checked !== false;
       const imgPub = document.getElementById('pubImagem')?.value?.trim() || null;
       if (!imgPub && redes.includes('instagram')) {
@@ -14315,13 +14355,21 @@ async function executarPublicacao(pecaId, metodo) {
       }
       // v1.7.1: Facebook como card de link → vai SEM imagem (num post separado)
       const fbCard = document.getElementById('pubFbCard')?.checked && redes.includes('facebook') && !!linkMc;
-      const redesPrincipal = fbCard ? redes.filter(rd => rd !== 'facebook') : redes;
+      let redesPrincipal = fbCard ? redes.filter(rd => rd !== 'facebook') : redes;
+      if (separarIg) redesPrincipal = redesPrincipal.filter(rd => rd !== 'instagram');
       let d = { success: true, metricool_id: null };
       if (redesPrincipal.length) {
         const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ action:'publicar', payload: { texto: textoMc, redes: redesPrincipal, data_hora: quando ? new Date(quando).toISOString() : null, imagem_url: imgPub, encurtar_link: encurtar } }) });
+          body: JSON.stringify({ action:'publicar', payload: { texto: soInstagram ? textoIg : textoMc, redes: redesPrincipal, data_hora: quando ? new Date(quando).toISOString() : null, imagem_url: imgPub, encurtar_link: encurtar } }) });
         d = await r.json();
         if (!d.success) throw new Error(d.error || 'falha metricool');
+      }
+      if (separarIg) {
+        const rIg = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ action:'publicar', payload: { texto: textoIg, redes: ['instagram'], data_hora: quando ? new Date(quando).toISOString() : null, imagem_url: imgPub, encurtar_link: false } }) });
+        const dIg = await rIg.json();
+        if (dIg.success) { registrarPublicacao(p, 'instagram', textoIg, 'metricool', dIg.metricool_id, '', quando ? new Date(quando).toISOString() : new Date().toISOString()); addLog('ok', '[Pub] Instagram publicado com texto próprio (link na bio explicado)'); }
+        else addLog('err', '[Pub] Instagram falhou: ' + (dIg.error || ''));
       }
       if (fbCard) {
         // FB sem imagem e SEM encurtador (o card usa a URL real p/ puxar o preview OG)
@@ -14657,7 +14705,7 @@ function renderCalendarioKanban() {
               const hh = new Date(p.agendado_para || p.data);
               return '<div style="background:var(--bg3);border-left:2px solid ' + (cores[p.rede] || 'var(--bd)') + ';border-radius:4px;padding:4px 5px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;gap:4px;">'
                 + '<div style="min-width:0;"><div style="font-size:9px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + (p.titulo||'') + '">' + String(hh.getHours()).padStart(2,'0') + ':' + String(hh.getMinutes()).padStart(2,'0') + ' ' + (p.titulo||'') + '</div>'
-                + '<div style="font-size:8px;color:' + (cores[p.rede]||'var(--t3)') + ';">' + (icone[p.rede]||p.rede) + ((p.texto||'').startsWith('[STORY]') ? ' · 📱' : (p.texto||'').startsWith('[REEL]') ? ' · 🎬' : '') + (p.metodo==='metricool' ? ' · 🚀' : ' · ✋') + '</div></div>'
+                + '<div style="font-size:8px;color:' + (cores[p.rede]||'var(--t3)') + ';">' + (icone[p.rede]||p.rede) + ((p.texto||'').startsWith('[STORY]') ? ' · 📱' : (p.texto||'').startsWith('[REEL]') ? ' · 🎬' : (p.texto||'').startsWith('[CARROSSEL]') ? ' · 🖼' : '') + (p.metodo==='metricool' ? ' · 🚀' : ' · ✋') + '</div></div>'
                 + '<button class="btn" style="font-size:8px;padding:1px 5px;color:var(--red);flex-shrink:0;" onclick="excluirPublicacaoAgendada(\'' + p.id + '\')" title="Excluir (também do Metricool)">🗑</button>'
                 + '</div>';
             }).join('') : '<div style="font-size:8px;color:var(--t3);text-align:center;padding:6px 0;">—</div>')
@@ -14798,15 +14846,21 @@ async function gerarCampanhaAutomatica() {
         // v1.9.3: link de reunião com UTM no post (IG: "link na bio")
         const _lr = linkReuniao(); const _slugAuto = 'auto_' + new Date().toISOString().substring(0,10).replace(/-/g,'');
         const _linkPost = _lr + (_lr.includes('?') ? '&' : '?') + 'utm_source=' + (redesPost.find(r => r !== 'instagram') || 'social') + '&utm_medium=social&utm_campaign=' + _slugAuto;
-        const _textoPost = post.texto + '\n\n👉 Agende uma conversa:\n' + (redesPost.length === 1 && redesPost[0] === 'instagram' ? '🔗 Link na bio' : _linkPost);
-        const rp = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ action:'publicar', payload: { texto: _textoPost, redes: redesPost, data_hora: quando.toISOString(), imagem_url: imgUrl || null, encurtar_link: true } }) });
-        const dp = await rp.json();
+        const _textoPost = post.texto + '\n\n👉 Agende uma conversa:\n' + _linkPost;
+        const _textoIg = post.texto + '\n\n' + textoLinkBio();
+        const _redesLink = redesPost.filter(r => r !== 'instagram');
+        let dp = { success: false, error: 'sem redes' };
+        if (_redesLink.length) { const rp = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'publicar', payload: { texto: _textoPost, redes: _redesLink, data_hora: quando.toISOString(), imagem_url: imgUrl || null, encurtar_link: true } }) }); dp = await rp.json(); }
+        if (redesPost.includes('instagram')) { // v1.11: texto por rede — IG com a frase do link na bio
+          try { const rIg = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'publicar', payload: { texto: _textoIg, redes: ['instagram'], data_hora: quando.toISOString(), imagem_url: imgUrl || null, encurtar_link: false } }) }); const dIg = await rIg.json();
+            if (dIg.success) { registrarPublicacao({ id: pecaId, campanhaId: _autoId, titulo: post.titulo }, 'instagram', _textoIg, 'metricool', dIg.metricool_id, '', quando.toISOString()); if (!_redesLink.length) dp = dIg; }
+            else addLog('warn', '[Auto-IA] Instagram recusou "' + post.titulo + '": ' + (dIg.error||'')); } catch(e) { addLog('warn', '[Auto-IA] IG: ' + e.message); }
+        }
         if (dp.success) {
           agendados++;
           pecaObj.status = 'Agendado'; pecaObj.agendado_para = quando.toISOString(); pecaObj.metricool_id = dp.metricool_id;
           const pFake = { id: pecaId, campanhaId: _autoId, titulo: post.titulo };
-          redesPost.forEach(rd => registrarPublicacao(pFake, rd, _textoPost, 'metricool', dp.metricool_id, _linkPost, quando.toISOString()));
+          _redesLink.forEach(rd => registrarPublicacao(pFake, rd, _textoPost, 'metricool', dp.metricool_id, _linkPost, quando.toISOString()));
           if (!campAuto._primeiroSlot) campAuto._primeiroSlot = quando.getTime();
           addLog('ok', '[Auto-IA] Agendado: "' + post.titulo + '" → ' + quando.toLocaleString('pt-BR') + ' (' + redesPost.join(',') + ')');
         } else {
@@ -15190,6 +15244,116 @@ async function publicarStories() {
   toast(okN + ' de ' + st.length + ' stories agendados', okN ? 'success' : 'error');
 }
 
+// ---------- CARROSSEL DO FEED 1:1 (v1.11) -----------------------------------
+function _renderCarrossel() {
+  const box = document.getElementById('carrSlides'); const c = campAtiva?.carrossel; if (!box) return;
+  const sl = c?.slides || [];
+  if (!sl.length) { box.innerHTML = '<div style="grid-column:1/-1;color:var(--t3);font-size:11px;text-align:center;padding:14px;">Gere o roteiro.</div>'; return; }
+  box.style.gridTemplateColumns = 'repeat(' + Math.min(sl.length, 8) + ',1fr)';
+  box.innerHTML = sl.map((x, i) => `
+    <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:8px;">
+      <div style="font-family:var(--M);font-size:8px;color:var(--t3);margin-bottom:5px;">SLIDE ${i+1}${i===0?' · CAPA':i===sl.length-1?' · CTA':''}</div>
+      <div style="aspect-ratio:1/1;background:linear-gradient(160deg,#1A3A8F,#0B1226);border-radius:6px;position:relative;overflow:hidden;margin-bottom:6px;">
+        ${x.imagem_composta ? `<img src="${x.imagem_composta}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;"/>` : (x.imagem_url ? `<img src="${x.imagem_url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.85;"/>` : '')}
+        ${x.imagem_composta ? '<div style="position:absolute;top:6px;right:6px;background:#22d3a3;color:#052;font-size:8px;font-weight:700;padding:2px 6px;border-radius:8px;">TEXTO GRAVADO</div>' : `<div style="position:absolute;left:0;right:0;bottom:0;padding:8px;background:linear-gradient(transparent,rgba(5,7,15,.9));"><div style="font-size:10.5px;font-weight:800;color:#fff;line-height:1.25;">${(x.titulo||'').replace(/</g,'&lt;')}</div><div style="font-size:8.5px;color:#cbd5f5;margin-top:3px;">${(x.apoio||'').replace(/</g,'&lt;')}</div></div>`}
+      </div>
+      <input class="fsel" style="width:100%;font-size:9.5px;margin-bottom:3px;" value="${(x.titulo||'').replace(/"/g,'&quot;')}" oninput="campAtiva.carrossel.slides[${i}].titulo=this.value" placeholder="Título"/>
+      <input class="fsel" style="width:100%;font-size:9px;margin-bottom:3px;" value="${(x.apoio||'').replace(/"/g,'&quot;')}" oninput="campAtiva.carrossel.slides[${i}].apoio=this.value" placeholder="Frase de apoio"/>
+      <input class="fsel" style="width:100%;font-size:8.5px;" placeholder="URL arte 1:1" value="${x.imagem_url||''}" oninput="campAtiva.carrossel.slides[${i}].imagem_url=this.value;_renderCarrossel()"/>
+    </div>`).join('');
+  const li = document.getElementById('carrLegLi'), ig = document.getElementById('carrLegIg');
+  if (li && c.legenda_linkedin != null && li.value !== c.legenda_linkedin) li.value = c.legenda_linkedin;
+  if (ig && c.legenda_instagram != null && ig.value !== c.legenda_instagram) ig.value = c.legenda_instagram;
+  const temArte = sl.every(x => x.imagem_url), temComp = sl.every(x => x.imagem_composta);
+  const on = (id, v) => { const b = document.getElementById(id); if (b) b.disabled = !v; };
+  on('btnArtesCarr', true); on('btnComporCarr', temArte); on('btnPubCarr', temComp);
+  const tg = document.getElementById('carrTag'); if (tg) { tg.textContent = c.publicado_em ? 'Publicado' : temComp ? 'Pronto p/ publicar' : temArte ? 'Artes ok' : 'Roteiro ok'; tg.className = 'tag ' + (temComp ? 'on' : 'off'); }
+}
+async function gerarCarrosselPack() {
+  if (!campAtiva) { toast('Abra ou crie uma campanha primeiro', 'error'); return; }
+  _statusPainel('carr', 'run', 'Gerando roteiro do carrossel com IA...', 'Capa → ideias → CTA, com legenda por rede.', 15);
+  try {
+    const r = await fetch('/api/s2-creative', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'carrossel_pack', payload: { narrativa: campAtiva.data?.narrativa || {}, copy: campAtiva.data?.copy || {}, n_slides: 5 } }) });
+    const d = await r.json(); if (!d.success || !d.slides?.length) throw new Error(d.error || 'sem slides');
+    const link = _linkStoriesReels(); const linkUtm = link + (link.includes('?') ? '&' : '?') + 'utm_source=linkedin&utm_medium=social&utm_campaign=' + (campAtiva.id || 'carrossel');
+    const hs = d.hashtags?.length ? '\n\n' + d.hashtags.join(' ') : '';
+    campAtiva.carrossel = { slides: d.slides.map(x => Object.assign({ imagem_url: '' }, x)),
+      legenda_linkedin: ((d.legenda_linkedin || d.legenda || '').replace('{LINK}', linkUtm) + (/(https?:\/\/)/.test(d.legenda_linkedin || '') ? '' : '\n\n👉 Agende uma conversa:\n' + linkUtm) + hs).trim(),
+      legenda_instagram: ((d.legenda_instagram || d.legenda || '') + (/(link na bio)/i.test(d.legenda_instagram || d.legenda || '') ? '' : '\n\n' + textoLinkBio()) + hs).trim(),
+      link: linkUtm };
+    await salvarCampanhaNoBanco(campAtiva, 'carrossel roteiro'); _renderCarrossel();
+    _statusPainel('carr', 'ok', 'Roteiro pronto (' + d.slides.length + ' slides)', 'Próximo: ◆ Gerar artes 1:1 → 🖼 Compor artes com texto → 🚀 Publicar.');
+  } catch (e) { addLog('err', '[Carrossel] ' + e.message); _statusPainel('carr', 'err', 'Falha ao gerar o roteiro', e.message); }
+}
+async function gerarArtesCarrossel() {
+  const sl = campAtiva?.carrossel?.slides || []; if (!sl.length) return;
+  for (let i = 0; i < sl.length; i++) {
+    _statusPainel('carr', 'run', 'Gerando arte ' + (i+1) + ' de ' + sl.length + ' no Ideogram (1:1)...', 'Não feche a aba.', (i / sl.length) * 100);
+    if (sl[i].imagem_url) continue;
+    try { const r = await fetch('/api/image-gen', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ prompt: sl[i].prompt_imagem || 'square corporate abstract scene, dark navy and electric blue, clean bottom third', formato: 'ASPECT_1_1', estilo: 'DESIGN', quantidade: 1 }) });
+      const d = await r.json(); sl[i].imagem_url = d.imagens?.[0]?.url || d.imagens?.[0] || ''; _renderCarrossel();
+      try { salvarCampanhaLocal(campAtiva); salvarCampanhaNoBanco(campAtiva, 'carrossel arte ' + (i+1)); } catch(_) {}
+    } catch (e) { addLog('warn', '[Carrossel] arte ' + (i+1) + ': ' + e.message); }
+  }
+  _renderCarrossel();
+  _statusPainel('carr', sl.every(x => x.imagem_url) ? 'ok' : 'err', sl.every(x => x.imagem_url) ? 'Artes prontas' : 'Faltaram artes', sl.every(x => x.imagem_url) ? 'Agora 🖼 Compor artes com texto (título e apoio gravados na imagem).' : 'Cole a URL manualmente nos slides que faltaram.');
+}
+async function comporArtesCarrossel() {
+  const sl = campAtiva?.carrossel?.slides || []; if (!sl.length || !sl.every(x => x.imagem_url)) { toast('Gere as artes antes', 'error'); return false; }
+  const W = 1080, H = 1080; const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const ctx = cv.getContext && cv.getContext('2d');
+  if (!ctx) { _statusPainel('carr', 'err', 'Navegador sem canvas', 'Use Chrome/Edge.'); return false; }
+  const wrap = (t, maxW) => { const w = (t||'').split(/\s+/), L = []; let cur = ''; w.forEach(x => { const s2 = cur ? cur + ' ' + x : x; if (ctx.measureText(s2).width > maxW && cur) { L.push(cur); cur = x; } else cur = s2; }); if (cur) L.push(cur); return L; };
+  let okN = 0;
+  for (let i = 0; i < sl.length; i++) {
+    _statusPainel('carr', 'run', 'Compondo slide ' + (i+1) + ' de ' + sl.length + '...', 'Título e apoio gravados na imagem.', (i / sl.length) * 100);
+    try {
+      const im = await _reelLoadImg(sl[i].imagem_url);
+      const sc = Math.max(W / im.width, H / im.height), dw = im.width * sc, dh = im.height * sc;
+      ctx.fillStyle = '#05070f'; ctx.fillRect(0, 0, W, H); ctx.drawImage(im, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      const g = ctx.createLinearGradient(0, H * 0.45, 0, H); g.addColorStop(0, 'rgba(5,7,15,0)'); g.addColorStop(1, 'rgba(5,7,15,0.94)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = 'rgba(79,124,255,0.95)'; ctx.fillRect(60, 60, 8, 40); ctx.font = '700 26px Calibri, Arial, sans-serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.fillText('ATLANTYX', 82, 91);
+      ctx.font = '600 24px Calibri, Arial, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.textAlign = 'right'; ctx.fillText((i+1) + ' / ' + sl.length, W - 60, 91);
+      ctx.textAlign = 'left'; ctx.shadowColor = 'rgba(0,0,0,.9)'; ctx.shadowBlur = 14;
+      const tit = wrap(sl[i].titulo || '', W - 140); ctx.font = (i === 0 ? '800 64px' : '800 54px') + ' Calibri, Arial, sans-serif'; const lh = i === 0 ? 74 : 64;
+      const ap = wrap(sl[i].apoio || '', W - 140); ctx.font = '500 32px Calibri, Arial, sans-serif'; const lha = 42;
+      let y = H - 90 - ap.length * lha - (ap.length ? 22 : 0) - (tit.length - 1) * lh;
+      ctx.font = (i === 0 ? '800 64px' : '800 54px') + ' Calibri, Arial, sans-serif'; ctx.fillStyle = '#fff'; tit.forEach(l => { ctx.fillText(l, 70, y); y += lh; });
+      y += 8; ctx.font = '500 32px Calibri, Arial, sans-serif'; ctx.fillStyle = '#CADCFC'; ap.forEach(l => { ctx.fillText(l, 70, y); y += lha; });
+      if (i < sl.length - 1) { ctx.shadowBlur = 0; ctx.font = '700 26px Calibri, Arial, sans-serif'; ctx.fillStyle = '#F5B94B'; ctx.textAlign = 'right'; ctx.fillText('deslize →', W - 60, H - 50); }
+      ctx.shadowBlur = 0;
+      const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92));
+      const resp = await fetch('/api/media-upload?name=' + encodeURIComponent('carr-' + (campAtiva.id||'x') + '-' + (i+1) + '.jpg') + '&pasta=carrossel', { method:'POST', headers:{ 'Content-Type':'image/jpeg' }, body: blob });
+      const d = await resp.json(); if (!d.success) throw new Error(d.error || 'upload');
+      sl[i].imagem_composta = d.url; okN++; try { salvarCampanhaLocal(campAtiva); salvarCampanhaNoBanco(campAtiva, 'carrossel composto ' + (i+1)); } catch(_) {}
+    } catch (e) { addLog('warn', '[Carrossel] compor ' + (i+1) + ': ' + e.message); }
+    _renderCarrossel();
+  }
+  if (okN === sl.length) { const rr = await _resolverUrlMidia(sl[0].imagem_composta, 'jpg', 'image/'); if (!rr.chk.ok) { _statusPainel('carr', 'err', 'Compostas, mas a URL pública não serve a imagem', rr.chk.motivo); return false; } _statusPainel('carr', 'ok', 'Carrossel composto e verificado (' + okN + ' slides)', 'URL: ' + rr.url + '. Pode 🚀 Publicar.'); return true; }
+  _statusPainel('carr', 'err', 'Compus ' + okN + ' de ' + sl.length, 'Veja o Log e tente de novo.'); return false;
+}
+async function publicarCarrossel() {
+  const c = campAtiva?.carrossel; const sl = c?.slides || [];
+  if (!sl.length || !sl.every(x => x.imagem_composta)) { toast('Componha as artes antes', 'error'); return; }
+  const temMc = await verificarMetricool(true); if (!temMc) { toast('Metricool não configurado — baixe as artes e publique pelo app', 'error'); return; }
+  const quando = window._autoAgendaCarr || prompt('Data/hora do carrossel:', new Date(Date.now() + 20*60000).toISOString().substring(0,16)); window._autoAgendaCarr = null; if (!quando) return;
+  const urls = []; for (const x of sl) { const rr = await _resolverUrlMidia(x.imagem_composta, 'jpg', 'image/'); if (!rr.chk.ok) { _statusPainel('carr', 'err', 'Não vou publicar: imagem não acessível', rr.chk.motivo); return; } urls.push(rr.url); }
+  const legLi = document.getElementById('carrLegLi')?.value || c.legenda_linkedin || '', legIg = document.getElementById('carrLegIg')?.value || c.legenda_instagram || '';
+  const redes = Object.entries(campAtiva.redes_ativas || { linkedin:true, instagram:true, facebook:true }).filter(([k,v]) => v && ['linkedin','instagram','facebook'].includes(k)).map(([k]) => k);
+  const grupos = [{ redes: redes.filter(r => r !== 'instagram'), texto: legLi, enc: true }, { redes: redes.filter(r => r === 'instagram'), texto: legIg, enc: false }].filter(g => g.redes.length);
+  let okN = 0, ids = [];
+  for (const g of grupos) {
+    _statusPainel('carr', 'run', 'Publicando carrossel em ' + g.redes.join(', ') + '...', urls.length + ' imagens · ' + new Date(quando).toLocaleString('pt-BR'), 50);
+    try { const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'publicar', payload: { texto: g.texto, redes: g.redes, data_hora: new Date(quando).toISOString(), imagem_url: urls[0], imagens_urls: urls, encurtar_link: g.enc } }) });
+      const d = await r.json(); if (!d.success) throw new Error(d.error || 'falha');
+      okN++; ids.push(d.metricool_id);
+      const pFake = { id: 'carr_' + campAtiva.id, campanhaId: campAtiva.id, titulo: campAtiva.nome + ' · Carrossel' };
+      g.redes.forEach(rd => registrarPublicacao(pFake, rd, '[CARROSSEL] ' + g.texto, 'metricool', d.metricool_id, rd === 'instagram' ? '' : c.link, new Date(quando).toISOString()));
+    } catch (e) { addLog('err', '[Carrossel] ' + g.redes.join(',') + ': ' + e.message); _statusPainel('carr', 'err', 'Falha ao publicar em ' + g.redes.join(', '), e.message); }
+  }
+  await salvarPublicacoes(); try { renderCalendarioKanban(); } catch(_) {}
+  if (okN) { c.publicado_em = new Date(quando).toISOString(); await salvarCampanhaNoBanco(campAtiva, 'carrossel publicado'); _statusPainel('carr', 'ok', 'Carrossel agendado (' + okN + ' grupo(s) de rede)', new Date(quando).toLocaleString('pt-BR') + ' · ' + urls.length + ' imagens · texto por rede aplicado (LinkedIn/FB com link, Instagram com link na bio). Metricool #' + ids.join(', ')); _renderCarrossel(); }
+}
+
 // ---------- REELS SLIDESHOW (v1.9) ------------------------------------------
 function _reelSet(status, tag, pct) {
   const st = document.getElementById('reelStatus'); if (st && status != null) st.textContent = status;
@@ -15217,7 +15381,7 @@ function _renderReel() {
           <div style="font-size:10.5px;font-weight:800;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.9);line-height:1.3;">${(x.texto_tela||'').replace(/</g,'&lt;')}</div>
         </div>
       </div>
-      ${i===sl.length-1 ? `<div style="font-size:8.5px;color:var(--gold);margin-bottom:3px;word-break:break-all;">🔗 no vídeo: ${_linkCurtoVisivel(_linkStoriesReels())}</div>` : ''}
+      ${i===sl.length-1 ? `<div style="font-size:8.5px;color:var(--gold);margin-bottom:3px;">🔗 no vídeo: "Link na bio — ${textoLinkBioCurto()}"</div>` : ''}
       <textarea class="fsel" style="width:100%;height:46px;font-size:9.5px;" oninput="campAtiva.reel.slides[${i}].texto_tela=this.value">${(x.texto_tela||'').replace(/</g,'&lt;')}</textarea>
       <input class="fsel" style="width:100%;font-size:8.5px;margin-top:3px;" placeholder="URL arte 9:16" value="${x.imagem_url||''}" oninput="campAtiva.reel.slides[${i}].imagem_url=this.value;_renderReel()"/>
     </div>`).join('');
@@ -15254,7 +15418,7 @@ async function gerarReelPack() {
     const d = await r.json();
     if (!d.success || !d.slides?.length) throw new Error(d.error || 'sem slides');
     const _lkReel = _linkStoriesReels(); const _lkReelUtm = _lkReel + (_lkReel.includes('?') ? '&' : '?') + 'utm_source=instagram&utm_medium=reel&utm_campaign=' + (campAtiva.id || 'reel');
-    campAtiva.reel = { slides: d.slides.map(x => Object.assign({ imagem_url: '' }, x)), legenda: (d.legenda || '') + '\n\n👉 Agende sua conversa (link na bio):\n' + _lkReelUtm + (d.hashtags?.length ? '\n\n' + d.hashtags.join(' ') : ''), link: _lkReelUtm, trilha: d.trilha_sugerida || '', video_url: '', video_blob_pronto: false };
+    campAtiva.reel = { slides: d.slides.map(x => Object.assign({ imagem_url: '' }, x)), legenda: (d.legenda || '') + (/(link na bio)/i.test(d.legenda || '') ? '' : '\n\n' + textoLinkBio()) + (d.hashtags?.length ? '\n\n' + d.hashtags.join(' ') : ''), link: _lkReelUtm, trilha: d.trilha_sugerida || '', video_url: '', video_blob_pronto: false };
     window._reelBlob = null;
     await _salvarReel(); _renderReel();
     _reelSet('Roteiro pronto: ' + d.slides.length + ' slides' + (d.trilha_sugerida ? ' · trilha sugerida: ' + d.trilha_sugerida : ''), 'Roteiro ok');
@@ -15369,7 +15533,7 @@ async function montarVideoReel() {
     ctx.globalAlpha = alpha;
     ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(48, H - 72, W - 96, 5);
     ctx.fillStyle = '#4F7CFF'; ctx.fillRect(48, H - 72, (W - 96) * ((i + p) / sl.length), 5);
-    if (i === sl.length - 1) { ctx.font = '700 26px Calibri, Arial, sans-serif'; ctx.fillStyle = '#F5B94B'; ctx.fillText('🔗 Link na bio', W / 2, H - 150); ctx.font = '600 22px Calibri, Arial, sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText(_linkCurtoVisivel(_linkStoriesReels()), W / 2, H - 112); }
+    if (i === sl.length - 1) { ctx.font = '700 26px Calibri, Arial, sans-serif'; ctx.fillStyle = '#F5B94B'; ctx.fillText('🔗 Link na bio', W / 2, H - 150); ctx.font = '600 22px Calibri, Arial, sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText(textoLinkBioCurto(), W / 2, H - 112); }
     ctx.restore();
   };
 
@@ -15625,7 +15789,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.10.5] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.11] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -15641,7 +15805,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.10.5';
+window.__ATX_BUILD_ID__ = 'ATX-v1.11';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
