@@ -59,6 +59,8 @@ export default async function handler(req, res) {
       qb_orcamento:          () => qbOrcamento(params),
       qb_saldo_contas:       () => qbSaldoContas(params),
       qb_status:             () => qbStatus(params),
+      fluxo_detalhado:       () => fluxoDetalhado(params),
+      qb_diagnostico:        () => qbDiagnostico(),
       gerente_financeiro:    () => gerenteFinanceiro(params),
       dashboard_financeiro:  () => dashboardFinanceiro(params),
       qb_auth_url:           () => qbAuthUrl(req),
@@ -363,6 +365,30 @@ async function dashboardFinanceiro() {
   return { dashboard: ctx, gerado_em: new Date().toISOString() };
 }
 
+// v1.15: diagnóstico do QuickBooks — empresa, realm, contagens e INTERVALO DE DATAS com dados (sandbox costuma ter
+// lançamentos em datas antigas → telas com período atual mostram zero)
+async function qbDiagnostico() {
+  const out = { ok: false, empresa: null, realm: null, sandbox: process.env.QB_SANDBOX === 'true', tokens: null, entidades: {}, contas: [], erros: [] };
+  try {
+    const t = await qbTokensLer(); out.tokens = t ? { origem: 'banco', atualizado_em: t.atualizado_em, refresh_expira_em: t.refresh_expira_em ? new Date(t.refresh_expira_em).toISOString() : null } : { origem: 'env' };
+    const token = await qbToken(); const realm = (t?.realm_id) || process.env.QB_REALM_ID; out.realm = realm;
+    try { const ci = await qbFetch(`/companyinfo/${realm}`, token); const c = ci?.CompanyInfo || {}; out.empresa = { nome: c.CompanyName, pais: c.Country, moeda: c.Currency?.value || null, criada_em: c.MetaData?.CreateTime || null }; } catch (e) { out.erros.push('companyinfo: ' + e.message); }
+    for (const ent of ['Purchase','Deposit','Invoice','Bill','Payment','JournalEntry','SalesReceipt']) {
+      try {
+        const cnt = await qbQuery(`select count(*) from ${ent}`, token);
+        const first = await qbQuery(`select * from ${ent} orderby TxnDate asc maxresults 1`, token);
+        const last = await qbQuery(`select * from ${ent} orderby TxnDate desc maxresults 1`, token);
+        const g = r => (r?.QueryResponse?.[ent] || [])[0]?.TxnDate || null;
+        out.entidades[ent] = { total: cnt?.QueryResponse?.totalCount ?? null, primeira: g(first), ultima: g(last) };
+      } catch (e) { out.entidades[ent] = { erro: e.message.substring(0, 140) }; }
+    }
+    try { const ac = await qbQuery(`select * from Account where AccountType in ('Bank','Credit Card') maxresults 20`, token); out.contas = (ac?.QueryResponse?.Account || []).map(a => ({ nome: a.Name, tipo: a.AccountType, saldo: a.CurrentBalance, moeda: a.CurrencyRef?.value })); } catch (e) { out.erros.push('accounts: ' + e.message); }
+    const datas = Object.values(out.entidades).flatMap(e => [e.primeira, e.ultima]).filter(Boolean).sort();
+    out.intervalo_dados = datas.length ? { de: datas[0], ate: datas[datas.length - 1] } : null;
+    out.ok = true;
+  } catch (e) { out.erros.push(e.message); }
+  return { diagnostico: out };
+}
 async function qbStatus() {
   const faltando = [
     !process.env.QB_CLIENT_ID && 'QB_CLIENT_ID',
@@ -501,7 +527,7 @@ function qbConfigurado() {
 
 // 1.1 Lançamentos linha-a-linha (Purchase, Payment, Deposit, JournalEntry, SalesReceipt)
 async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
-  if (!qbConfigurado()) return { lancamentos: [], qb_configurado: false };
+  if (!qbConfigurado()) return { erros: ['QuickBooks não configurado'], lancamentos: [], qb_configurado: false };
   const token = await qbToken();
   const hoje = new Date().toISOString().split('T')[0];
   const ini = data_inicio || new Date(Date.now() - 90 * 86400 * 1000).toISOString().split('T')[0];
@@ -516,7 +542,7 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
     { tipo: 'invoice',  q: `select * from Invoice where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
   ];
 
-  const lancamentos = [];
+  const lancamentos = []; const erros = [];
   for (const { tipo, q } of queries) {
     try {
       const data = await qbQuery(q, token);
@@ -547,7 +573,7 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
         });
       }
     } catch (e) {
-      console.log(`[QB] ${tipo}: ${e.message}`);
+      console.log(`[QB] ${tipo}: ${e.message}`); erros.push(tipo + ': ' + e.message);
     }
   }
 
@@ -563,7 +589,7 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
   const filtrados = lancamentos.filter(l => !ocultos.has(l.qb_txn_id));
 
   filtrados.sort((a, b) => (a.data < b.data ? -1 : 1));
-  return {
+  return { erros,
     lancamentos: filtrados,
     total: filtrados.length,
     ocultos_count: lancamentos.length - filtrados.length,
@@ -762,12 +788,13 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
   const fim = data_fim || hoje;
 
   // 1. Lançamentos QB (já filtrados de ocultos)
-  let qbLanc = [];
+  let qbLanc = [], qbErro = null;
   try {
     const r = await qbLancamentos({ data_inicio: ini, data_fim: fim, limite: 500 });
     qbLanc = r.lancamentos || [];
+    if (r.erros?.length) qbErro = r.erros.join(' | ');
   } catch (e) {
-    console.log('[Extrato] QB indisponível:', e.message);
+    console.log('[Extrato] QB indisponível:', e.message); qbErro = e.message;
   }
 
   // 2. Simulados
@@ -835,8 +862,93 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
       total: todos.length,
     },
     periodo: { data_inicio: ini, data_fim: fim },
+    qb_erro: qbErro,
+    qb_lancamentos: qbLanc.length,
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v1.16: FLUXO DE CAIXA DETALHADO — extrato até hoje + futuro lançamento a
+// lançamento (QB: Invoice/RecurringTransaction em aberto + Bill em aberto)
+// compondo o saldo projetado, sem limite de meses fixo (até onde o QB tiver dado)
+// ═══════════════════════════════════════════════════════════════════════════
+async function qbFuturosDetalhado({ data_fim } = {}) {
+  // Recebíveis (Invoice em aberto) e Pagáveis (Bill em aberto) do QuickBooks,
+  // um lançamento por documento — não agregado por mês.
+  const out = { recebiveis: [], pagaveis: [], erro: null };
+  if (!qbConfigurado()) { out.erro = 'QuickBooks não configurado'; return out; }
+  try {
+    const token = await qbToken();
+    const lim = data_fim ? `and DueDate <= '${data_fim}'` : '';
+    const [inv, bill] = await Promise.all([
+      qbQuery(`select * from Invoice where Balance > '0' ${lim} orderby DueDate asc maxresults 1000`, token).catch(e => ({ _erro: e.message })),
+      qbQuery(`select * from Bill where Balance > '0' ${lim} orderby DueDate asc maxresults 1000`, token).catch(e => ({ _erro: e.message })),
+    ]);
+    if (inv?._erro) out.erro = (out.erro ? out.erro + ' | ' : '') + 'Invoice: ' + inv._erro;
+    else out.recebiveis = (inv?.QueryResponse?.Invoice || []).map(i => ({
+      id: 'inv_' + i.Id, data: i.DueDate || i.TxnDate, descricao: (i.CustomerRef?.name || 'Cliente') + (i.DocNumber ? ' · Fat. ' + i.DocNumber : ''),
+      categoria: 'A Receber (Invoice)', valor: parseFloat(i.Balance || 0), valor_total: parseFloat(i.TotalAmt || 0), tipo: 'entrada', origem: 'quickbooks_futuro', vencida: i.DueDate ? new Date(i.DueDate) < new Date(new Date().toISOString().split('T')[0]) : false,
+    }));
+    if (bill?._erro) out.erro = (out.erro ? out.erro + ' | ' : '') + 'Bill: ' + bill._erro;
+    else out.pagaveis = (bill?.QueryResponse?.Bill || []).map(b => ({
+      id: 'bill_' + b.Id, data: b.DueDate || b.TxnDate, descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''),
+      categoria: 'A Pagar (Bill)', valor: parseFloat(b.Balance || 0), valor_total: parseFloat(b.TotalAmt || 0), tipo: 'saida', origem: 'quickbooks_futuro', vencida: b.DueDate ? new Date(b.DueDate) < new Date(new Date().toISOString().split('T')[0]) : false,
+    }));
+  } catch (e) { out.erro = e.message; }
+  return out;
+}
+
+async function fluxoDetalhado({ dias_passado = 60, incluir_simulados = true } = {}) {
+  const hoje = new Date().toISOString().split('T')[0];
+  const ini = new Date(Date.now() - dias_passado * 86400 * 1000).toISOString().split('T')[0];
+
+  // 1. Passado até hoje: reaproveita o extrato consolidado (QB realizado + simulados)
+  const extrato = await extratoConsolidado({ data_inicio: ini, data_fim: hoje, incluir_simulados });
+
+  // 2. Futuro: recebíveis/pagáveis reais do QB (sem limite de meses — até onde o QB tiver dado)
+  const fut = await qbFuturosDetalhado({});
+
+  // 3. Despesas programadas do Atlantyx com ocorrência futura (não vinculadas a Bill do QB, para não duplicar)
+  let despFuturas = [];
+  try {
+    const sql = await getSql();
+    const rows = await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat
+      FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
+      WHERE o.data_prevista > ${hoje} AND o.status != 'paga' ORDER BY o.data_prevista ASC`;
+    despFuturas = rows.map(r => ({ id: 'desp_' + r.id, data: String(r.data_prevista).split('T')[0], descricao: r.despesa_desc || 'Despesa programada', categoria: r.despesa_cat || 'Despesa', valor: parseFloat(r.valor), tipo: 'saida', origem: 'atlantyx_futuro' }));
+  } catch (e) { console.warn('[FluxoDetalhado] despesas futuras:', e.message); }
+
+  // 4. Simulados futuros (lançamentos manuais com data > hoje)
+  let simFuturos = [];
+  try {
+    const sql = await getSql();
+    const rows = await sql`SELECT * FROM lancamentos_simulados WHERE excluido = false AND data > ${hoje} ORDER BY data ASC`;
+    simFuturos = rows.map(r => ({ id: 'sim_' + r.id, data: String(r.data).split('T')[0], descricao: r.descricao, categoria: r.categoria, valor: parseFloat(r.valor), tipo: r.tipo, origem: 'simulado_futuro' }));
+  } catch (e) { console.warn('[FluxoDetalhado] simulados futuros:', e.message); }
+
+  // 5. Montar linha do tempo futura ordenada, calculando saldo em cascata a partir do saldo de hoje
+  const futTodos = [...fut.recebiveis, ...fut.pagaveis, ...despFuturas, ...simFuturos]
+    .filter(l => l.data && l.data > hoje)
+    .sort((a, b) => a.data < b.data ? -1 : a.data > b.data ? 1 : 0);
+  let saldoCorrente = extrato.saldo_final || 0;
+  const futuroComSaldo = futTodos.map(l => {
+    saldoCorrente += l.tipo === 'entrada' ? l.valor : -l.valor;
+    return { ...l, saldo_acumulado: Math.round(saldoCorrente * 100) / 100 };
+  });
+
+  const menorSaldo = futuroComSaldo.length ? futuroComSaldo.reduce((min, l) => l.saldo_acumulado < min.saldo_acumulado ? l : min, futuroComSaldo[0]) : null;
+  const ultimaData = futuroComSaldo.length ? futuroComSaldo[futuroComSaldo.length - 1].data : hoje;
+
+  return {
+    hoje,
+    passado: { saldo_inicial: extrato.saldo_inicial, saldo_inicial_data: extrato.saldo_inicial_data, lancamentos: extrato.lancamentos, total_entradas: extrato.total_entradas, total_saidas: extrato.total_saidas, qb_erro: extrato.qb_erro },
+    saldo_hoje: extrato.saldo_final || 0,
+    futuro: { lancamentos: futuroComSaldo, total_recebiveis: fut.recebiveis.reduce((s, l) => s + l.valor, 0), total_pagaveis: fut.pagaveis.reduce((s, l) => s + l.valor, 0), qtd_qb: fut.recebiveis.length + fut.pagaveis.length, qtd_atlantyx: despFuturas.length + simFuturos.length, qb_erro: fut.erro, ate: ultimaData },
+    saldo_projetado_final: futuroComSaldo.length ? futuroComSaldo[futuroComSaldo.length - 1].saldo_acumulado : (extrato.saldo_final || 0),
+    menor_saldo_projetado: menorSaldo ? { valor: menorSaldo.saldo_acumulado, data: menorSaldo.data, descricao: menorSaldo.descricao } : null,
+  };
+}
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 4. CRUD lançamentos simulados
@@ -965,10 +1077,20 @@ async function despDelete({ id } = {}) {
   return { id, deletada: true };
 }
 
-async function despOcorrencias({ data_inicio, data_fim, status } = {}) {
+async function despOcorrencias({ data_inicio, data_fim, status, incluir_qb = true } = {}) {
   const sql = await getSql();
   const ini = data_inicio || new Date().toISOString().split('T')[0];
   const fim = data_fim || new Date(Date.now() + 365 * 86400 * 1000).toISOString().split('T')[0];
+  // v1.15: contas a pagar do QuickBooks (Bills) no período entram na agenda como ocorrências fonte 'quickbooks'
+  let qbBills = [], qbErro = null;
+  if (incluir_qb && qbConfigurado()) {
+    try {
+      const token = await qbToken();
+      const iniQ = data_inicio || new Date(Date.now() - 90 * 86400 * 1000).toISOString().split('T')[0]; // inclui vencidas recentes
+      const data = await qbQuery(`select * from Bill where DueDate >= '${iniQ}' and DueDate <= '${fim}' maxresults 500`, token);
+      qbBills = (data?.QueryResponse?.Bill || []).map(b => ({ id: 'qb_' + b.Id, despesa_id: null, descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''), categoria: 'QuickBooks · Conta a pagar', data_prevista: b.DueDate || b.TxnDate, valor: parseFloat(b.Balance ?? b.TotalAmt ?? 0), valor_total: parseFloat(b.TotalAmt || 0), status: parseFloat(b.Balance ?? 0) > 0 ? 'prevista' : 'paga', data_pagamento: null, fonte: 'quickbooks', moeda: b.CurrencyRef?.value || null }));
+    } catch (e) { qbErro = e.message; console.warn('[Agenda] Bills QB:', e.message); }
+  }
   const rows = status
     ? await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat
                 FROM despesas_ocorrencias o
@@ -980,8 +1102,7 @@ async function despOcorrencias({ data_inicio, data_fim, status } = {}) {
                 LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
                 WHERE o.data_prevista >= ${ini} AND o.data_prevista <= ${fim}
                 ORDER BY o.data_prevista ASC`;
-  return {
-    ocorrencias: rows.map(r => ({
+  const locais = rows.map(r => ({
       id: r.id,
       despesa_id: r.despesa_id,
       descricao: r.despesa_desc,
@@ -990,8 +1111,10 @@ async function despOcorrencias({ data_inicio, data_fim, status } = {}) {
       valor: parseFloat(r.valor),
       status: r.status,
       data_pagamento: r.data_pagamento ? String(r.data_pagamento).split('T')[0] : null,
-    })),
-  };
+      fonte: 'atlantyx',
+    }));
+  const filtQb = status ? qbBills.filter(b => b.status === status) : qbBills;
+  return { ocorrencias: locais.concat(filtQb).sort((a, b) => String(a.data_prevista).localeCompare(String(b.data_prevista))), qb_bills: qbBills.length, qb_erro: qbErro };
 }
 
 async function despMarcarPaga({ id, data_pagamento, qb_txn_id } = {}) {
@@ -1537,6 +1660,7 @@ async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55 } 
   return {
     periodo: { data_inicio: ini, data_fim: fim },
     total_reais: totalReais,
+    fontes: { qb: reais.filter(r => (r.origem||r.fonte||'').toString().toLowerCase().includes('q')).length, simulados: reais.filter(r => (r.origem||r.fonte||'').toString().toLowerCase().includes('sim')).length, qb_erro: ext.qb_erro || null },
     ja_conciliados: jaConciliados,
     sugestoes_pendentes: comSugestao,
     sem_sugestao: semSugestao,
