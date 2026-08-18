@@ -381,7 +381,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     </div>
     <div class="sf"><span class="dot on"></span>Claude API · Ativo</div>
     <div class="sf"><span class="dot" id="dotHS"></span><span id="statHS">HubSpot · Verificando</span></div>
-    <div class="sf"><span class="dot off" id="dotQB"></span><span id="statQB">QuickBooks · Verificando</span></div>
+    <div class="sf" style="cursor:pointer;" onclick="conectarQuickBooks()" title="Clique para conectar/reconectar o QuickBooks (OAuth)"><span class="dot off" id="dotQB"></span><span id="statQB">QuickBooks · Verificando</span></div>
     <div class="sf"><span class="dot off" id="dotMC"></span><span id="statMC">Metricool · Verificando</span></div>
     <div class="sf"><span class="dot off" id="dotWA"></span><span id="statWA">Z-API · Configurar</span></div>
     <div class="sf"><span class="dot" id="dotDB"></span><span id="statDB">DB · Conectando...</span></div>
@@ -491,7 +491,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
   <div class="page" id="page-s2prospect">
     <!-- BANNER: Prospecção Externa -->
-    <div style="background:linear-gradient(135deg,rgba(240,112,48,.12),rgba(79,124,255,.08));border:1px solid rgba(240,112,48,.3);border-radius:8px;padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px;">
+    <div style="background:linear-gradient(135deg,rgba(240,112,48,.12),rgba(79,124,255,.08));border:1px solid rgba(240,112,48,.3);border-radius:8px;padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="font-size:20px;">&#127911;</div>
       <div>
         <div style="font-family:var(--M);font-size:9px;color:var(--or);text-transform:uppercase;letter-spacing:1px;">Prospecção de Novos Leads — Externos ao CRM</div>
@@ -1229,7 +1229,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
   <!-- S1 DASHBOARD -->
   <div class="page" id="page-s1dash">
-    <div style="background:linear-gradient(135deg,rgba(26,58,143,.22),rgba(107,159,255,.08));border:1px solid rgba(107,159,255,.2);border-radius:9px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
+    <div style="background:linear-gradient(135deg,rgba(26,58,143,.22),rgba(107,159,255,.08));border:1px solid rgba(107,159,255,.2);border-radius:9px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="font-family:var(--H);font-size:24px;font-weight:800;opacity:.12;">S1</div>
       <div style="flex:1;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">Planejamento Estratégico + Linha de Produtos</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px;">Captação · Viabilidade · Pesquisa · Financeiro · Comitê · Fundador · Handoff · GP · OKR · Relatórios</div></div>
       <div style="background:rgba(26,58,143,.3);border:1px solid rgba(107,159,255,.25);padding:4px 10px;border-radius:5px;font-family:var(--M);font-size:8.5px;color:#6b9fff;">● 10 Agentes</div>
@@ -1270,7 +1270,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
   <!-- S1 ANÁLISE DE IDEIA COM IA — S1-03 + Upload de Imagens/Documentos -->
   <div class="page" id="page-s1analise">
-    <div style="background:linear-gradient(135deg,rgba(156,109,255,.18),rgba(79,124,255,.06));border:1px solid rgba(156,109,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
+    <div style="background:linear-gradient(135deg,rgba(156,109,255,.18),rgba(79,124,255,.06));border:1px solid rgba(156,109,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="font-size:22px;">&#9670;</div>
       <div style="flex:1;">
         <div style="font-family:var(--H);font-size:15px;font-weight:700;">S1-03 · Análise Profunda de Ideia</div>
@@ -1513,7 +1513,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   ════════════════════════════════════════════════════════════════════ -->
 
   <div class="page" id="page-email">
-    <div style="background:linear-gradient(135deg,rgba(0,207,200,.18),rgba(0,207,200,.04));border:1px solid rgba(0,207,200,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
+    <div style="background:linear-gradient(135deg,rgba(0,207,200,.18),rgba(0,207,200,.04));border:1px solid rgba(0,207,200,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="font-size:20px;">✉</div>
       <div style="flex:1;">
         <div style="font-family:var(--H);font-size:15px;font-weight:700;">Email Intelligence — Agente de Leitura e Roteamento</div>
@@ -1613,7 +1613,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
   <!-- STUDIO CRIATIVO -->
   <div class="page" id="page-s2studio">
-    <div style="background:linear-gradient(135deg,rgba(240,112,48,.18),rgba(240,112,48,.05));border:1px solid rgba(240,112,48,.18);border-radius:9px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
+    <div style="background:linear-gradient(135deg,rgba(240,112,48,.18),rgba(240,112,48,.05));border:1px solid rgba(240,112,48,.18);border-radius:9px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="font-family:var(--H);font-size:24px;font-weight:800;opacity:.12">S2</div>
       <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Studio Criativo — Agentes de Marketing Digital</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Storyteller · Copywriter · Designer · Motion · Social Media · DM · Inbound · Outbound · FinOps</div></div>
       <button class="btn btn-or" onclick="nav('s2campanha',null)" style="white-space:nowrap">&#9654; Nova Campanha</button>
@@ -2456,7 +2456,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
   <!-- S3 DASHBOARD FINANCEIRO -->
   <div class="page" id="page-s3dash">
-    <div style="background:linear-gradient(135deg,rgba(34,211,163,.15),rgba(34,211,163,.04));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
+    <div style="background:linear-gradient(135deg,rgba(34,211,163,.15),rgba(34,211,163,.04));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">S3 · Painel Financeiro</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Saldo · Realizado (QuickBooks) · A Receber · A Pagar · Lancamentos</div></div>
       <button class="btn btn-gn" id="btnSyncQB" onclick="syncQuickBooks()">&#8635; Sync QuickBooks</button>
     </div>
@@ -2609,7 +2609,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- S3 SALDO DIÁRIO -->
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <div class="page" id="page-s3diario">
-    <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(34,211,163,.03));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
+    <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(34,211,163,.03));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Saldo Diário</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Movimento + saldo acumulado dia a dia</div></div>
       <input type="date" class="fi" id="diario_ini" style="width:140px;"/>
       <input type="date" class="fi" id="diario_fim" style="width:140px;"/>
@@ -2635,7 +2635,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- S3 SALDO MENSAL -->
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <div class="page" id="page-s3mensal">
-    <div style="background:linear-gradient(135deg,rgba(79,124,255,.12),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
+    <div style="background:linear-gradient(135deg,rgba(79,124,255,.12),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Saldo Mensal</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Resumo mês a mês — 12 meses do ano selecionado</div></div>
       <select class="fsel" id="mensal_ano" onchange="carregarExtratoMensal()" style="width:120px;"></select>
       <button class="btn btn-gn" onclick="carregarExtratoMensal()">&#8635; Atualizar</button>
@@ -2660,7 +2660,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- S3 CONCILIAÇÃO BANCÁRIA -->
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <div class="page" id="page-s3conciliacao">
-    <div style="background:linear-gradient(135deg,rgba(245,166,35,.12),rgba(245,166,35,.03));border:1px solid rgba(245,166,35,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
+    <div style="background:linear-gradient(135deg,rgba(245,166,35,.12),rgba(245,166,35,.03));border:1px solid rgba(245,166,35,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Conciliação Bancária</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Bate lançamentos reais (QB) com despesas programadas e A Receber automaticamente</div></div>
       <input type="date" class="fi" id="conc_ini" style="width:140px;"/>
       <input type="date" class="fi" id="conc_fim" style="width:140px;"/>
@@ -2682,7 +2682,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- S3 ORÇAMENTO -->
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <div class="page" id="page-s3orcamento">
-    <div style="background:linear-gradient(135deg,rgba(156,109,255,.12),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
+    <div style="background:linear-gradient(135deg,rgba(156,109,255,.12),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Orçamento Anual</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Orçamento do QuickBooks × Realizado · barras de utilização por categoria</div></div>
       <select class="fsel" id="orc_ano" onchange="carregarOrcamento()" style="width:120px;"></select>
       <button class="btn btn-gn" onclick="carregarOrcamento()">&#8635; Recarregar</button>
@@ -2706,7 +2706,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- S3 PROJETOS & MARCOS -->
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <div class="page" id="page-s3projetos">
-    <div style="background:linear-gradient(135deg,rgba(79,124,255,.12),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
+    <div style="background:linear-gradient(135deg,rgba(79,124,255,.12),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Projetos &amp; Marcos Financeiros</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Cadastro de projetos + marcos com data de entrega, percentual, valor, NF e data de pagamento</div></div>
       <button class="btn btn-gn" onclick="abrirFormProjeto()">+ Novo Projeto</button>
     </div>
@@ -2783,7 +2783,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- S3 KANBAN FINANCEIRO -->
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <div class="page" id="page-s3marcoskanban">
-    <div style="background:linear-gradient(135deg,rgba(156,109,255,.12),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
+    <div style="background:linear-gradient(135deg,rgba(156,109,255,.12),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Kanban Financeiro de Marcos</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Fluxo: Aguardando → Liberação GP → Aprovado → Termo → Cliente → NF → Pagamento → Concluído</div></div>
       <select class="fsel" id="kanbanFiltroProjeto" onchange="carregarKanbanMarcos()" style="width:200px;"><option value="">Todos os projetos</option></select>
       <button class="btn btn-gn" onclick="carregarKanbanMarcos()">&#8635; Atualizar</button>
@@ -2841,7 +2841,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
   <!-- S3 FLUXO DE CAIXA -->
   <div class="page" id="page-s3fluxo">
-    <div style="background:linear-gradient(135deg,rgba(79,124,255,.12),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
+    <div style="background:linear-gradient(135deg,rgba(79,124,255,.12),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Fluxo de Caixa Futuro &middot; 12 Meses</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Matriz editavel &middot; Cada celula azul pode ser sobrescrita &middot; Calculo deterministico (nao IA)</div></div>
       <button class="btn btn-g" onclick="limparOverridesFluxo()" style="font-size:10px;padding:5px 10px;">Limpar overrides</button>
       <button class="btn btn-gn" id="btnFluxo" onclick="gerarFluxoMatriz()">&#9670; Recalcular Fluxo</button>
@@ -2946,7 +2946,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
   <!-- GERADOR DE IMAGENS — IDEOGRAM -->
   <div class="page" id="page-s2img">
-    <div style="background:linear-gradient(135deg,rgba(34,211,163,.18),rgba(79,124,255,.08));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
+    <div style="background:linear-gradient(135deg,rgba(34,211,163,.18),rgba(79,124,255,.08));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="font-size:20px;">&#127912;</div>
       <div style="flex:1;">
         <div style="font-family:var(--H);font-size:15px;font-weight:700;">Gerador de Imagens — Ideogram IA</div>
@@ -3033,7 +3033,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <div class="toast" id="toastEl"></div>
 <script>
 const LOGS=[];let logCount=0;
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S3 · Kanban Financeiro de Marcos',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash')setTimeout(syncQuickBooks,150);if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S3 · Kanban Financeiro de Marcos',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash')setTimeout(syncQuickBooks,150);if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -4320,7 +4320,7 @@ function selecionarPeca(id) {
           <div>Agente: ${p.agente}</div>
           <div>Status: ${p.status}</div>
           ${p.data ? '<div>Criada em: '+p.data+'</div>' : ''}
-          ${(() => { const pubs = pubsDaPeca(p); if (!pubs.length) return p.status === 'Agendado' ? '<div style="color:var(--red);margin-top:4px;">⚠ Nenhuma publicação registrada — o agendamento no Metricool pode ter falhado (veja o Log). Use 🚀 Publicar para reagendar.</div>' : ''; return '<div style="margin-top:6px;color:var(--gold);font-weight:600;">📅 Publicação agendada:</div>' + pubs.map(x => '<div style="padding-left:10px;">' + fmtDH(x.agendado_para || x.data) + ' · ' + x.rede + (x.metodo==='metricool' ? ' 🚀 Metricool' : ' ✋ manual') + (x.metricool_id ? ' <span style="color:var(--t3);font-size:9px;">#' + x.metricool_id + '</span>' : '') + '</div>').join(''); })()}
+          ${(() => { const pubs = pubsDaPeca(p); if (!pubs.length) return p.status === 'Agendado' ? '<div style="color:var(--red);margin-top:4px;">⚠ Nenhuma publicação registrada — o agendamento no Metricool pode ter falhado (veja o Log). Use 🚀 Publicar para reagendar.</div>' : ''; return '<div style="margin-top:6px;color:var(--gold);font-weight:600;">📅 Publicação agendada:</div>' + pubs.map(x => '<div style="padding-left:10px;display:flex;gap:6px;align-items:center;">' + fmtDH(x.agendado_para || x.data) + ' · ' + x.rede + (x.metodo==='metricool' ? ' 🚀 Metricool' : ' ✋ manual') + (x.metricool_id ? ' <span style="color:var(--t3);font-size:9px;">#' + x.metricool_id + '</span>' : '') + ' <button class="btn" style="font-size:8px;padding:0 5px;color:var(--gold);" onclick="reagendarPublicacao(\'' + x.id + '\')" title="Mudar data/hora (também no Metricool)">✎ data</button></div>').join(''); })()}
           ${p.campanhaId ? '<div style="margin-top:4px;color:var(--t3);font-size:10px;">Campanha ID: '+p.campanhaId+'</div>' : ''}
         </div>
         ${p.campanhaId ? `<button class="btn btn-p" style="margin-top:8px;width:100%;font-size:11px;padding:7px;" onclick="editarPecaDoKanban('${p.id}')">✎ Editar Campanha &amp; Re-rodar</button>` : ''}
@@ -11726,7 +11726,7 @@ async function enriquecerLeads() {
 
     <!-- S3 · KPIs DE SAUDE FINANCEIRA -->
   <div class="page" id="page-s3kpis">
-    <div style="background:linear-gradient(135deg,rgba(0,207,200,.10),rgba(0,207,200,.02));border:1px solid rgba(0,207,200,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;">
+    <div style="background:linear-gradient(135deg,rgba(0,207,200,.10),rgba(0,207,200,.02));border:1px solid rgba(0,207,200,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">KPIs de Saude Financeira</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Calculo deterministico sobre dados QuickBooks &middot; Semaforo automatico</div></div>
       <button class="btn btn-gn" onclick="calcularKpisFinanceiros()">&#9670; Calcular KPIs de Saude</button>
     </div>
@@ -12622,7 +12622,11 @@ async function finApi(action, params = {}) {
   let d;
   try { d = JSON.parse(raw); }
   catch { throw new Error('Resposta não-JSON de /api/financeiro (HTTP ' + r.status + '): ' + raw.substring(0, 150)); }
-  if (!d.success) throw new Error(d.error || ('HTTP ' + r.status + ' na API financeiro'));
+  if (!d.success) {
+    let msg = d.error || ('HTTP ' + r.status + ' na API financeiro');
+    if (/QB OAuth|QuickBooks não conectado|invalid_grant|refresh_token|QB_REFRESH_TOKEN/i.test(msg)) msg += ' → clique em "QuickBooks" na barra lateral para reconectar (OAuth)';
+    throw new Error(msg);
+  }
   return d;
 }
 
@@ -13569,6 +13573,8 @@ async function carregarOrcamento() {
   try {
     const d = await finApi('orcamento_consolidado', { ano });
     const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    d.total_geral = d.total_geral || { orcado: 0, realizado: 0, utilizacao_pct: 0, diferenca: 0 }; // v1.12: defensivo (QB off/sem dados)
+    d.categorias = d.categorias || []; d.meses = d.meses || [];
     u('orc_orcado', fmtBRLcompleto(d.total_geral.orcado));
     u('orc_realizado', fmtBRLcompleto(d.total_geral.realizado));
     u('orc_util', (d.total_geral.utilizacao_pct ?? 0) + '%');
@@ -13601,6 +13607,7 @@ async function carregarOrcamento() {
     }
 
     // Matriz mensal completa
+    if (matriz && !d.categorias.length) matriz.innerHTML = '<div style="text-align:center;color:var(--t3);padding:24px;font-size:11px;">Sem dados de orçamento para o ano (QuickBooks desconectado ou sem orçamento cadastrado).</div>';
     if (matriz && d.categorias.length) {
       const nomesMes = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
       let html = `<table style="width:100%;min-width:1100px;border-collapse:collapse;font-size:10px;">
@@ -14194,13 +14201,13 @@ async function verificarQuickBooks() {
     } else if (d.conectado) {
       dot.className = 'dot on';
       stat.textContent = 'QuickBooks · Conectado' + (d.sandbox ? ' (sandbox)' : '');
-      stat.title = '';
+      stat.title = (d.tokens_no_banco ? 'Tokens no banco (renovação automática) · ' : 'Token da env (semente) · ') + (d.refresh_expira_em ? 'refresh válido até ' + new Date(d.refresh_expira_em).toLocaleDateString('pt-BR') : '') + ' · clique para reconectar se precisar';
     } else {
       dot.className = 'dot off';
       dot.style.background = 'var(--red)';
-      stat.textContent = 'QuickBooks · Erro token';
-      stat.title = d.erro || 'Refresh token inválido — gere novo no OAuth Playground';
-      addLog('warn', '[QB] ' + (d.erro || 'token inválido'));
+      stat.textContent = 'QuickBooks · Erro token — clique p/ reconectar';
+      stat.title = (d.erro || 'Refresh token inválido') + ' · Clique aqui para reconectar por OAuth (sem Playground)';
+      addLog('warn', '[QB] ' + (d.erro || 'token inválido') + ' — clique em "QuickBooks" na sidebar para reconectar');
     }
   } catch (e) {
     dot.className = 'dot off';
@@ -14209,6 +14216,20 @@ async function verificarQuickBooks() {
   }
 }
 setTimeout(() => { try { verificarQuickBooks(); } catch(_) {} }, 3200);
+// v1.12: conectar/reconectar QuickBooks por OAuth (abre popup do Intuit; callback grava tokens no banco)
+async function conectarQuickBooks() {
+  try {
+    const d = await finApi('qb_auth_url');
+    if (!d.success && !d.url) throw new Error(d.error || 'sem URL de autorização');
+    const url = d.url || d.result?.url; const redir = d.redirect_uri || d.result?.redirect_uri;
+    if (!url) throw new Error(d.error || 'QB_CLIENT_ID não configurado no Vercel');
+    if (!confirm('Conectar QuickBooks\n\nVai abrir a autorização da Intuit. IMPORTANTE: no portal developer.intuit.com → seu app → Keys & credentials → Redirect URIs, precisa constar exatamente:\n\n' + redir + '\n\nContinuar?')) return;
+    const w = window.open(url, 'qb_oauth', 'width=640,height=760');
+    const onMsg = (ev) => { if (ev.data && typeof ev.data.qb !== 'undefined') { window.removeEventListener('message', onMsg); toast(ev.data.qb ? 'QuickBooks conectado ✓' : 'Falha na conexão do QuickBooks', ev.data.qb ? 'success' : 'error'); setTimeout(verificarQuickBooks, 800); } };
+    window.addEventListener('message', onMsg);
+    if (!w) toast('Popup bloqueado — permita popups para este site', 'error');
+  } catch (e) { toast('QuickBooks: ' + e.message, 'error'); addLog('err', '[QB] ' + e.message); }
+}
 
 // ---------- Publicar (chamado do Kanban) -----------------------------------
 // Abre modal de escolha: Manual ou Metricool
@@ -14424,10 +14445,27 @@ async function executarPublicacao(pecaId, metodo) {
   if (modal) modal.remove();
 }
 
+// v1.11.2: guarda o payload de cada publicação no Metricool (por id) — necessário para reagendar recriando
+window._mcPayloads = window._mcPayloads || {};
+(function () {
+  const orig = window.fetch;
+  window.fetch = async function (url, opts) {
+    const r = await orig.apply(this, arguments);
+    try {
+      if (typeof url === 'string' && url.includes('/api/metricool') && opts && typeof opts.body === 'string' && opts.body.includes('"publicar"')) {
+        const b = JSON.parse(opts.body); if (b.action === 'publicar' && b.payload) {
+          r.clone().json().then(d => { if (d && d.success && d.metricool_id) window._mcPayloads[d.metricool_id] = b.payload; }).catch(() => {});
+        }
+      }
+    } catch (_) {}
+    return r;
+  };
+})();
 function registrarPublicacao(peca, rede, texto, metodo, metricoolId, linkDestino, agendadoPara) {
   _publicacoes.push({
     id: 'pub_' + Date.now() + '_' + Math.random().toString(36).substr(2,4),
     agendado_para: agendadoPara || null,
+    mc_payload: (metodo === 'metricool' && metricoolId && window._mcPayloads?.[metricoolId]) ? window._mcPayloads[metricoolId] : null,
     campanhaId: peca.campanhaId || null,
     pecaId: peca.id,
     titulo: peca.titulo,
@@ -14706,12 +14744,48 @@ function renderCalendarioKanban() {
               return '<div style="background:var(--bg3);border-left:2px solid ' + (cores[p.rede] || 'var(--bd)') + ';border-radius:4px;padding:4px 5px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;gap:4px;">'
                 + '<div style="min-width:0;"><div style="font-size:9px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + (p.titulo||'') + '">' + String(hh.getHours()).padStart(2,'0') + ':' + String(hh.getMinutes()).padStart(2,'0') + ' ' + (p.titulo||'') + '</div>'
                 + '<div style="font-size:8px;color:' + (cores[p.rede]||'var(--t3)') + ';">' + (icone[p.rede]||p.rede) + ((p.texto||'').startsWith('[STORY]') ? ' · 📱' : (p.texto||'').startsWith('[REEL]') ? ' · 🎬' : (p.texto||'').startsWith('[CARROSSEL]') ? ' · 🖼' : '') + (p.metodo==='metricool' ? ' · 🚀' : ' · ✋') + '</div></div>'
+                + '<button class="btn" style="font-size:8px;padding:1px 4px;color:var(--gold);flex-shrink:0;" onclick="reagendarPublicacao(\'' + p.id + '\')" title="Mudar data/hora (também no Metricool)">✎</button>'
                 + '<button class="btn" style="font-size:8px;padding:1px 5px;color:var(--red);flex-shrink:0;" onclick="excluirPublicacaoAgendada(\'' + p.id + '\')" title="Excluir (também do Metricool)">🗑</button>'
                 + '</div>';
             }).join('') : '<div style="font-size:8px;color:var(--t3);text-align:center;padding:6px 0;">—</div>')
           + '</div>';
       }).join('')
     + '</div></div>';
+}
+
+// v1.11.2: mudar data/hora de uma publicação agendada (no Metricool também)
+async function reagendarPublicacao(pubId) {
+  const pub = (_publicacoes || []).find(p => p.id === pubId); if (!pub) return;
+  const atual = new Date(pub.agendado_para || pub.data);
+  const iso = d => new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().substring(0,16);
+  const nova = prompt('Nova data/hora para "' + (pub.titulo||'') + '" (' + pub.rede + '):', iso(isNaN(atual) ? new Date() : atual));
+  if (!nova) return;
+  const quando = new Date(nova); if (isNaN(quando)) { toast('Data inválida', 'error'); return; }
+  const irmas = pub.metricool_id ? _publicacoes.filter(p => p.metricool_id === pub.metricool_id) : [pub];
+  if (pub.metricool_id) {
+    toast('Reagendando no Metricool...', 'success');
+    try {
+      const payloadOrig = pub.mc_payload || irmas.find(p => p.mc_payload)?.mc_payload || window._mcPayloads?.[pub.metricool_id] || null;
+      const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ action:'reagendar', payload: { metricool_id: pub.metricool_id, data_hora: quando.toISOString(), payload: payloadOrig } }) });
+      const d = await r.json();
+      if (!d.success) throw new Error(d.error || 'falha');
+      const novoId = d.metricool_id || pub.metricool_id;
+      irmas.forEach(p => { p.metricool_id = novoId; p.agendado_para = quando.toISOString(); if (payloadOrig) p.mc_payload = Object.assign({}, payloadOrig, { data_hora: quando.toISOString() }); });
+      addLog('ok', '[Calendário] Reagendado (' + (d.metodo || 'ok') + ') → ' + quando.toLocaleString('pt-BR') + (d.antigo ? ' · Metricool #' + d.antigo + ' → #' + novoId : ''));
+      toast('Reagendado para ' + quando.toLocaleString('pt-BR') + (d.metodo === 'recriado' ? ' (post recriado no Metricool)' : ''), 'success');
+    } catch (e) { addLog('err', '[Calendário] reagendar: ' + e.message); toast('Não foi possível reagendar no Metricool: ' + e.message, 'error'); return; }
+  } else {
+    irmas.forEach(p => { p.agendado_para = quando.toISOString(); });
+    toast('Data atualizada (publicação manual)', 'success');
+  }
+  // peça do kanban
+  try { const pc = (kanbanPecas||[]).find(x => x.id === pub.pecaId || (pub.titulo && x.titulo === pub.titulo)); if (pc) { pc.agendado_para = quando.toISOString(); renderKanban(); salvarKanbanNoBanco(); } } catch(_) {}
+  // reel/stories/carrossel da campanha
+  try { const c = (_todasCampanhas||[]).find(x => x.id === pub.campanhaId) || (campAtiva?.id === pub.campanhaId ? campAtiva : null);
+    if (c) { if ((pub.texto||'').startsWith('[REEL]') && c.reel) c.reel.agendado_em = quando.toISOString(); if ((pub.texto||'').startsWith('[CARROSSEL]') && c.carrossel) c.carrossel.publicado_em = quando.toISOString(); salvarCampanhaNoBanco(c, 'reagendar'); } } catch(_) {}
+  await salvarPublicacoes();
+  renderCalendarioKanban(); try { renderDesempenho(); } catch(_) {}
 }
 
 // v1.7: excluir publicação do calendário E do Metricool
@@ -15731,6 +15805,9 @@ async function gerarPlanoImpulso(pubId) {
     await salvarPublicacoes();
     alvo.innerHTML = `<div style="background:var(--bg4);border-radius:7px;padding:10px;font-size:10.5px;line-height:1.7;">
       <div><strong>Objetivo:</strong> ${pl.objetivo_campanha || '-'}</div>
+      ${pl.linha_qualificadora ? '<div><strong>Linha qualificadora (abre a copy):</strong> ' + pl.linha_qualificadora + '</div>' : ''}
+      ${pl.publicos_proprios?.length ? '<div><strong>Públicos próprios (obrigatórios):</strong> ' + pl.publicos_proprios.join(' · ') + '</div>' : ''}
+      ${pl.exclusoes?.length ? '<div><strong>Excluir:</strong> ' + pl.exclusoes.join(', ') + '</div>' : ''}
       <div><strong>CTA:</strong> ${pl.cta_botao || 'Agendar horário'} · <strong>Headline:</strong> ${pl.headline_anuncio || '-'}</div>
       <div><strong>Segmentação:</strong> ${(pl.segmentacao?.cargos||[]).join(', ')} · ${(pl.segmentacao?.setores||[]).join(', ')}</div>
       <div><strong>Interesses:</strong> ${(pl.segmentacao?.interesses||[]).join(', ')} · ${pl.segmentacao?.faixa_etaria || ''} · ${pl.segmentacao?.localizacao || ''}</div>
@@ -15753,7 +15830,11 @@ async function copiarPacoteImpulso(pubId) {
     'IMAGEM: ' + (pub.imagem_url || '(sem imagem — use a arte da campanha)'), '',
     'CTA: ' + (pl.cta_botao || 'Agendar horário'),
     'HEADLINE: ' + (pl.headline_anuncio || ''),
-    'OBJETIVO: ' + (pl.objetivo_campanha || 'Tráfego'),
+    'OBJETIVO: ' + (pl.objetivo_campanha || 'Leads'),
+    'LINHA QUALIFICADORA (início da copy): ' + (pl.linha_qualificadora || ''),
+    'PÚBLICOS PRÓPRIOS: ' + ((pl.publicos_proprios||[]).join(' · ') || 'Personalizado HubSpot · Lookalike 1% · Retargeting site'),
+    'EXCLUSÕES: ' + ((pl.exclusoes||[]).join(', ') || 'clientes, funcionários, convertidos'),
+    'ATENÇÃO: usar Ads Manager (não o Turbinar do celular) — o Turbinar otimiza clique barato e sai do ICP.',
     'SEGMENTAÇÃO: ' + [(pl.segmentacao?.cargos||[]).join(', '), (pl.segmentacao?.setores||[]).join(', '), (pl.segmentacao?.interesses||[]).join(', '), pl.segmentacao?.faixa_etaria, pl.segmentacao?.localizacao].filter(Boolean).join(' · '),
     'ORÇAMENTO: R$ ' + (pl.orcamento_diario_brl || '?') + '/dia × ' + (pl.duracao_dias || '?') + ' dias',
   ].join('\n');
@@ -15806,7 +15887,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.11.1] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.12] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -15822,7 +15903,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.11.1';
+window.__ATX_BUILD_ID__ = 'ATX-v1.12';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
