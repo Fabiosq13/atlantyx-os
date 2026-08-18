@@ -212,6 +212,9 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <span class="sg-lbl">Financeiro</span><span class="sg-arr open" id="arr-gFinanceiro">&#9660;</span>
     </div>
     <div class="sg-body" id="gFinanceiro">
+      <div class="sbi s3" onclick="nav('s3dashboard',this)">&#128200; Dashboard Financeiro <span class="nbx gn">KPIs</span></div>
+      <div class="sg-sub">GERENTE FINANCEIRO IA</div>
+      <div class="sbi s1" onclick="nav('s3gerente',this)">&#129302; Gerente Financeiro IA <span class="nbx pu">chat</span></div>
       <div class="sg-sub">EXTRATOS &amp; SALDOS</div>
       <div class="sbi s3" onclick="nav('s3extrato',this)">&#9636; Extrato (Saldo Acumulado)</div>
       <div class="sbi s3" onclick="nav('s3diario',this)">&#9776; Saldo Diário</div>
@@ -2523,7 +2526,67 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </div>
 
   <!-- S3 EXTRATO COM SALDO ACUMULADO -->
-  <div class="page" id="page-s3extrato">
+  <!-- v1.14: DASHBOARD FINANCEIRO -->
+<div class="page" id="page-s3dashboard">
+  <div style="background:linear-gradient(135deg,rgba(79,124,255,.14),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Dashboard Financeiro</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Todos os KPIs financeiros num só lugar · QuickBooks + fluxo + projetos + conciliação</div></div>
+    <span id="dfAtualizado" style="font-size:9.5px;color:var(--t3);"></span>
+    <button class="btn btn-gn" onclick="carregarDashboardFinanceiro()">&#8635; Atualizar</button>
+    <button class="btn btn-p" onclick="nav('s3gerente')">&#129302; Perguntar ao Gerente IA</button>
+  </div>
+  <div id="dfStatus" style="display:none;margin-bottom:10px;"></div>
+  <div class="kg k4" style="margin-bottom:12px;">
+    <div class="kpi bl"><div class="kl">Saldo em caixa</div><div class="kv" id="df_saldo">—</div><div class="ks">contas bancárias (QB)</div></div>
+    <div class="kpi gn"><div class="kl">A receber</div><div class="kv" id="df_receber">—</div><div class="ks">faturas em aberto</div></div>
+    <div class="kpi rd"><div class="kl">A pagar</div><div class="kv" id="df_pagar">—</div><div class="ks">contas em aberto</div></div>
+    <div class="kpi pu"><div class="kl">Receita do mês</div><div class="kv" id="df_recmes">—</div><div class="ks" id="df_recano">ano: —</div></div>
+  </div>
+  <div class="kg k4" style="margin-bottom:12px;">
+    <div class="kpi gd"><div class="kl">Saúde financeira</div><div class="kv" id="df_semaforo">—</div><div class="ks" id="df_semaforo_sub">semáforo automático</div></div>
+    <div class="kpi bl"><div class="kl">Orçamento utilizado</div><div class="kv" id="df_orc">—</div><div class="ks" id="df_orc_sub">orçado vs realizado</div></div>
+    <div class="kpi gn"><div class="kl">Conciliação</div><div class="kv" id="df_conc">—</div><div class="ks" id="df_conc_sub">lançamentos batidos</div></div>
+    <div class="kpi pu"><div class="kl">Marcos em fluxo</div><div class="kv" id="df_marcos">—</div><div class="ks" id="df_marcos_sub">valor aguardando pagamento</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:12px;">
+    <div class="panel"><div class="ph"><div class="pt">Fluxo de caixa · próximos 6 meses</div></div><div class="pb" id="df_fluxo"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando...</div></div></div>
+    <div class="panel"><div class="ph"><div class="pt">Indicadores de saúde</div></div><div class="pb" id="df_kpis"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando...</div></div></div>
+  </div>
+  <div class="panel" style="margin-top:12px;"><div class="ph"><div class="pt">Últimos lançamentos (QuickBooks)</div></div><div class="pb" id="df_lanc"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando...</div></div></div>
+</div>
+
+<!-- v1.14: GERENTE FINANCEIRO IA -->
+<div class="page" id="page-s3gerente">
+  <div style="background:linear-gradient(135deg,rgba(156,109,255,.14),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#129302; Gerente Financeiro IA</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Pergunte qualquer coisa: caixa, fluxo, orçamento, contas, indicadores, conceitos — ele responde com os seus dados reais</div></div>
+    <button class="btn" onclick="limparChatGerente()">&#10005; Nova conversa</button>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 280px;gap:12px;align-items:start;">
+    <div class="panel">
+      <div class="pb" id="gfChat" style="min-height:380px;max-height:60vh;overflow-y:auto;display:flex;flex-direction:column;gap:10px;">
+        <div style="background:var(--bg4);border-radius:10px;padding:12px;font-size:12px;line-height:1.55;max-width:85%;">Olá! Sou o seu gerente financeiro. Posso analisar o caixa, explicar o fluxo dos próximos meses, apontar riscos, comparar orçado x realizado, sugerir cortes ou prioridades de cobrança — e tirar dúvidas de conceitos. O que quer saber?</div>
+      </div>
+      <div style="display:flex;gap:8px;padding:10px;border-top:1px solid var(--bd);">
+        <textarea id="gfInput" class="fsel" style="flex:1;height:56px;font-size:12px;resize:vertical;" placeholder="Ex.: Como está meu caixa para os próximos 3 meses? · O que devo cobrar primeiro? · Explique o que é capital de giro no meu caso..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();perguntarGerente();}"></textarea>
+        <button class="btn btn-p" id="gfBtn" style="padding:0 18px;" onclick="perguntarGerente()">Enviar</button>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="ph"><div class="pt">Perguntas rápidas</div></div>
+      <div class="pb" style="display:flex;flex-direction:column;gap:6px;">
+        <button class="btn" style="text-align:left;font-size:10.5px;" onclick="perguntarGerente('Faça um resumo executivo da minha situação financeira hoje: caixa, a receber, a pagar, saúde e riscos.')">📊 Resumo executivo de hoje</button>
+        <button class="btn" style="text-align:left;font-size:10.5px;" onclick="perguntarGerente('Como está o fluxo de caixa dos próximos 6 meses? Em algum mês fico negativo? O que fazer?')">📈 Fluxo dos próximos 6 meses</button>
+        <button class="btn" style="text-align:left;font-size:10.5px;" onclick="perguntarGerente('O que devo cobrar primeiro e por quê? Priorize os recebíveis e marcos aguardando pagamento.')">💰 O que cobrar primeiro</button>
+        <button class="btn" style="text-align:left;font-size:10.5px;" onclick="perguntarGerente('Onde estou gastando acima do orçado? Sugira 3 ações de corte ou renegociação.')">✂ Onde cortar custos</button>
+        <button class="btn" style="text-align:left;font-size:10.5px;" onclick="perguntarGerente('Explique os indicadores de saúde financeira do meu negócio e o que cada um significa na prática.')">🩺 Entender meus indicadores</button>
+        <button class="btn" style="text-align:left;font-size:10.5px;" onclick="perguntarGerente('Quais decisões financeiras eu deveria tomar esta semana? Liste em ordem de prioridade com o valor envolvido.')">✅ Decisões desta semana</button>
+      </div>
+      <div class="ph" style="border-top:1px solid var(--bd);"><div class="pt">Contexto usado</div></div>
+      <div class="pb" id="gfContexto" style="font-size:10px;color:var(--t2);line-height:1.6;">QuickBooks (caixa, receber, pagar, receita), KPIs de saúde, fluxo 6 meses, conciliação, marcos, orçamento e últimos lançamentos — carregados a cada pergunta.</div>
+    </div>
+  </div>
+</div>
+
+<div class="page" id="page-s3extrato">
     <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(34,211,163,.03));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;">
       <div style="font-family:var(--H);font-size:15px;font-weight:700">Extrato Financeiro · Saldo Acumulado</div>
       <div style="font-size:10.5px;color:var(--t2);margin-top:2px">QuickBooks (realizado) + Simulados &minus; Ocultos · Recalcula saldo em cada linha</div>
@@ -3040,7 +3103,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <div class="toast" id="toastEl"></div>
 <script>
 const LOGS=[];let logCount=0;
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S3 · Kanban Financeiro de Marcos',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S3 · Kanban Financeiro de Marcos',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -14194,6 +14257,60 @@ async function verificarMetricool(force) {
 // FIX v1.5.2: checar Metricool ao carregar a página (async, não bloqueia)
 setTimeout(() => { try { verificarMetricool(); } catch(_) {} }, 2500);
 
+// ═══ v1.14: DASHBOARD FINANCEIRO ═══
+async function carregarDashboardFinanceiro() {
+  const st = document.getElementById('dfStatus'); const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  try {
+    const d = await finApi('dashboard_financeiro'); const x = d.dashboard || {};
+    const c = x.caixa || {}, sd = x.saude || {}, o = x.orcamento, cc = x.conciliacao || {}, mk = x.marcos || {};
+    const brl = v => (v == null || isNaN(v)) ? '—' : fmtBRL(v);
+    u('df_saldo', brl(c.saldo)); u('df_receber', brl(c.a_receber)); u('df_pagar', brl(c.a_pagar)); u('df_recmes', brl(c.receita_mes)); u('df_recano', 'ano: ' + brl(c.receita_ano));
+    const semCor = { verde: '🟢 Saudável', amarelo: '🟡 Atenção', vermelho: '🔴 Crítico', cinza: '⚪ Sem dados' };
+    u('df_semaforo', semCor[sd.semaforo] || '—'); u('df_semaforo_sub', (sd.motivos || []).slice(0, 2).join(' · ') || 'semáforo automático');
+    u('df_orc', o ? ((o.utilizacao_pct ?? 0) + '%') : '—'); u('df_orc_sub', o ? (brl(o.realizado) + ' de ' + brl(o.orcado)) : 'orçado vs realizado');
+    u('df_conc', cc.taxa != null ? (String(cc.taxa).replace('%','') + '%') : '—'); u('df_conc_sub', (cc.conciliados ?? 0) + ' batidos · ' + (cc.pendentes ?? 0) + ' pendentes');
+    const aguard = (mk.nf_emitida?.valor || 0) + (mk.aguardando_pagamento?.valor || 0); const emFluxo = Object.entries(mk).filter(([k]) => !/concluido/.test(k)).reduce((a, [, v]) => a + (v.qtd || 0), 0);
+    u('df_marcos', brl(aguard)); u('df_marcos_sub', emFluxo + ' marco(s) em fluxo');
+    // fluxo 6m
+    const fl = document.getElementById('df_fluxo');
+    if (fl) { const ms = x.fluxo_6m || []; if (!ms.length) fl.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Sem projeção — cadastre despesas/marcos ou conecte o QuickBooks.</div>';
+      else { const mx = Math.max(...ms.map(m => Math.max(Math.abs(m.entradas||0), Math.abs(m.saidas||0), 1)));
+        fl.innerHTML = '<div style="display:grid;grid-template-columns:repeat(' + ms.length + ',1fr);gap:8px;align-items:end;height:150px;">' + ms.map(m => { const he = Math.round((m.entradas||0)/mx*120), hs = Math.round((m.saidas||0)/mx*120); return '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;height:100%;justify-content:flex-end;" title="Entradas ' + brl(m.entradas) + ' · Saídas ' + brl(m.saidas) + ' · Saldo ' + brl(m.saldo) + '"><div style="display:flex;gap:2px;align-items:end;"><div style="width:14px;height:' + he + 'px;background:var(--green,#22d3a3);border-radius:2px 2px 0 0;"></div><div style="width:14px;height:' + hs + 'px;background:var(--red);border-radius:2px 2px 0 0;"></div></div><div style="font-size:8.5px;color:var(--t2);font-family:var(--M);">' + (m.mes||'') + '</div><div style="font-size:8.5px;color:' + ((m.saldo||0) < 0 ? 'var(--red)' : 'var(--t1)') + ';">' + brl(m.saldo) + '</div></div>'; }).join('') + '</div><div style="font-size:9px;color:var(--t3);margin-top:6px;">▮ entradas · ▮ saídas · valor = saldo final do mês</div>'; } }
+    const kp = document.getElementById('df_kpis');
+    if (kp) { const ent = Object.entries(sd.kpis || {}).filter(([k, v]) => v != null && typeof v !== 'object'); kp.innerHTML = ent.length ? ent.map(([k, v]) => '<div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--bd);"><span style="color:var(--t2);">' + k.replace(/_/g,' ') + '</span><span style="font-family:var(--M);">' + (typeof v === 'number' ? (Math.abs(v) >= 1000 ? fmtBRL(v) : (Math.round(v*100)/100)) : v) + '</span></div>').join('') : '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Sem indicadores (QB desconectado?)</div>'; }
+    const ln = document.getElementById('df_lanc');
+    if (ln) { const ls = x.ultimos_lancamentos || []; ln.innerHTML = ls.length ? '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + ls.map(l => '<tr style="border-bottom:1px solid var(--bd);"><td style="padding:5px;color:var(--t2);font-family:var(--M);font-size:10px;">' + (l.data||'') + '</td><td style="padding:5px;">' + (l.desc||'') + '</td><td style="padding:5px;text-align:right;color:' + ((l.tipo||'').match(/sa[ií]da|despesa|expense/i) || (l.valor||0) < 0 ? 'var(--red)' : 'var(--green,#22d3a3)') + ';font-family:var(--M);">' + brl(l.valor) + '</td></tr>').join('') + '</table>' : '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Sem lançamentos (QB desconectado?)</div>'; }
+    u('dfAtualizado', 'atualizado ' + new Date().toLocaleTimeString('pt-BR').substring(0,5) + (x.quickbooks?.conectado ? ' · QB ok' : ' · QB sem dados'));
+    if (st) { if (x.quickbooks && !x.quickbooks.conectado && x.quickbooks.erros?.length) { st.style.display = 'block'; st.innerHTML = '<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:10px;font-size:11px;color:var(--t1);">⚠ QuickBooks: ' + x.quickbooks.erros[0] + ' — <a style="color:var(--blue);cursor:pointer;" onclick="conectarQuickBooks()">reconectar</a></div>'; } else st.style.display = 'none'; }
+  } catch (e) { if (st) { st.style.display = 'block'; st.innerHTML = '<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:10px;font-size:11px;">Erro ao carregar dashboard: ' + e.message + '</div>'; } addLog('err', '[Dashboard Fin] ' + e.message); }
+}
+
+// ═══ v1.14: GERENTE FINANCEIRO IA (chat) ═══
+let _gfHist = [];
+function _gfBubble(role, text) {
+  const box = document.getElementById('gfChat'); if (!box) return;
+  const div = document.createElement('div');
+  div.style.cssText = 'border-radius:10px;padding:12px;font-size:12px;line-height:1.55;max-width:85%;white-space:pre-wrap;word-break:break-word;' + (role === 'user' ? 'align-self:flex-end;background:rgba(79,124,255,.18);border:1px solid rgba(79,124,255,.35);' : 'background:var(--bg4);');
+  div.textContent = text; box.appendChild(div); box.scrollTop = box.scrollHeight; return div;
+}
+async function perguntarGerente(textoFixo) {
+  const inp = document.getElementById('gfInput'); const btn = document.getElementById('gfBtn');
+  const msg = (textoFixo || inp?.value || '').trim(); if (!msg) return;
+  if (inp && !textoFixo) inp.value = '';
+  _gfBubble('user', msg);
+  const think = _gfBubble('assistant', '⏳ Analisando seus dados financeiros...');
+  if (btn) btn.disabled = true;
+  try {
+    const d = await finApi('gerente_financeiro', { mensagem: msg, historico: _gfHist });
+    think.textContent = d.resposta || '(sem resposta)';
+    _gfHist.push({ role: 'user', content: msg }, { role: 'assistant', content: d.resposta || '' });
+    const cx = document.getElementById('gfContexto'); if (cx && d.contexto_resumo) { const r = d.contexto_resumo; cx.innerHTML = 'Contexto desta resposta: saldo ' + (r.saldo != null ? fmtBRL(r.saldo) : '—') + ' · a receber ' + (r.a_receber != null ? fmtBRL(r.a_receber) : '—') + ' · a pagar ' + (r.a_pagar != null ? fmtBRL(r.a_pagar) : '—') + ' · saúde ' + (r.semaforo || '—') + ' · QuickBooks ' + (r.qb ? 'conectado' : 'sem dados'); }
+    addLog('ok', '[Gerente IA] respondeu (' + (d.resposta||'').length + ' chars)');
+  } catch (e) { think.textContent = '⛔ ' + e.message; think.style.border = '1px solid var(--red)'; addLog('err', '[Gerente IA] ' + e.message); }
+  finally { if (btn) btn.disabled = false; }
+}
+function limparChatGerente() { _gfHist = []; const box = document.getElementById('gfChat'); if (box) box.innerHTML = '<div style="background:var(--bg4);border-radius:10px;padding:12px;font-size:12px;line-height:1.55;max-width:85%;">Nova conversa. O que quer saber sobre as finanças?</div>'; }
+
 // v1.5.6: status do QuickBooks na sidebar (checa envvars + valida token na Intuit)
 async function verificarQuickBooks() {
   const dot = document.getElementById('dotQB');
@@ -15895,7 +16012,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.13] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.14] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -15911,7 +16028,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.13';
+window.__ATX_BUILD_ID__ = 'ATX-v1.14';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
