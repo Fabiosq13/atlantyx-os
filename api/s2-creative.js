@@ -279,13 +279,16 @@ REGRAS DO PROMPT IDEOGRAM:
 1. O prompt_ia_imagem deve ser em inglês, descrevendo APENAS a cena visual: (a) ambiente e pessoas, (b) paleta de cores: dark navy #1A3A8F + electric blue #4F7CFF, (c) elementos de dados/gráficos animados nas telas, (d) composição e iluminação. PROIBIDO: mencionar EY, McKinsey, Accenture ou qualquer marca. PROIBIDO: incluir texto, tipografia, palavras ou letras na imagem.
 2. NUNCA gere prompt genérico — seja específico ao contexto do copy aprovado.
 3. Inclua sempre: dark navy blue #1A3A8F, electric blue #4F7CFF, bold white typography.
+4. ANTI-REPETIÇÃO (v1.9.9): a cena "executivo olhando dashboards/monitores em escritório escuro" é PROIBIDA como padrão — só use se a copy falar literalmente disso. Extraia da HEADLINE e do TEMA uma METÁFORA VISUAL CONCRETA e diferente (ex.: relógio derretendo sobre relatórios = decisão atrasada; engrenagens desalinhadas = sistemas fragmentados; farol em névoa = clareza; ampulheta com moedas = custo do tempo; mapa com rota traçada = plano). Pense em 3 conceitos distintos e escolha o mais forte; descreva-o no campo conceito_visual em 1 frase e construa o prompt_ia_imagem em cima dele.
+5. Se receber BRIEF ANTERIOR, o novo deve ser CLARAMENTE diferente (outra metáfora, outro enquadramento, outro ambiente).
+6. Se receber DIREÇÃO DO USUÁRIO, ela manda acima de tudo.
 Retorne APENAS JSON válido.`;
 
   const user = `Crie a especificação completa de design para:
 Canal: ${canal || 'LinkedIn'}
 Formato: ${formato || 'post carrossel'}
 Dimensões: ${dimensoes || '1080x1080px'}
-${copy?.tema ? 'TEMA CENTRAL DA CAMPANHA (a cena DEVE refletir este tema): ' + copy.tema + '\n' : ''}Copy aprovado: ${JSON.stringify(copy?.versoes?.[0] || { headline: 'Dados inconsistentes custam caro', corpo: 'Sua empresa toma decisões críticas com dados que chegam 3 dias atrasados.' })}
+${copy?.tema ? 'TEMA CENTRAL DA CAMPANHA (a cena DEVE refletir este tema): ' + copy.tema + '\n' : ''}${copy?.direcao ? 'DIREÇÃO DO USUÁRIO PARA A IMAGEM (prioridade máxima): ' + copy.direcao + '\n' : ''}${copy?.brief_anterior ? 'BRIEF ANTERIOR (o novo deve ser DIFERENTE deste): ' + String(copy.brief_anterior).substring(0, 400) + '\n' : ''}Copy aprovado: ${JSON.stringify(copy?.versoes?.[0] || { headline: 'Dados inconsistentes custam caro', corpo: 'Sua empresa toma decisões críticas com dados que chegam 3 dias atrasados.' })}
 
 IDENTIDADE VISUAL OBRIGATÓRIA:
 - Fundo: azul navy profundo (#1A3A8F) ou branco puro
