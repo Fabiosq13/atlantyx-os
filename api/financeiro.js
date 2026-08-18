@@ -59,6 +59,8 @@ export default async function handler(req, res) {
       qb_orcamento:          () => qbOrcamento(params),
       qb_saldo_contas:       () => qbSaldoContas(params),
       qb_status:             () => qbStatus(params),
+      gerente_financeiro:    () => gerenteFinanceiro(params),
+      dashboard_financeiro:  () => dashboardFinanceiro(params),
       qb_auth_url:           () => qbAuthUrl(req),
       qb_desconectar:        async () => { const sql = await getSql(); await sql`DELETE FROM kv_store WHERE key = 'qb:tokens'`; _qbTokCache = null; return { desconectado: true }; },
 
@@ -315,6 +317,52 @@ async function ensureTabelas(sql) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 // v1.5.6: status leve para a sidebar — checa envvars e valida o token
+// ═══ v1.14: GERENTE FINANCEIRO IA (chat livre com contexto real) + DASHBOARD FINANCEIRO ═══
+const FIN_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
+async function claudeFin(system, messages, maxTokens = 1400) {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
+  const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), 40000);
+  const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ctrl.signal,
+    headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: FIN_MODEL, max_tokens: maxTokens, system, messages }) });
+  clearTimeout(tm);
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error('Claude API [' + r.status + ']: ' + (d.error?.message || 'erro'));
+  return d.content?.[0]?.text || '';
+}
+async function contextoFinanceiro() {
+  const [resumo, kpis, fluxo, conc, kanban, orc] = await Promise.allSettled([
+    painelResumo(), kpisSaude({}), fluxoFuturo({ meses: 6 }), conciliacaoStatus({}), marcosKanban({}), orcamentoConsolidado({})
+  ]);
+  const v = p => p.status === 'fulfilled' ? p.value : { erro: p.reason?.message };
+  const R = v(resumo), K = v(kpis), F = v(fluxo), C = v(conc), M = v(kanban), O = v(orc);
+  return {
+    quickbooks: { conectado: !R.erros?.length || (R.saldoCaixa !== undefined && R.saldoCaixa !== 0), erros: (R.erros || []).slice(0, 3) },
+    caixa: { saldo: R.saldoCaixa ?? null, a_receber: R.aReceber ?? null, a_pagar: R.aPagar ?? null, receita_mes: R.realMes ?? null, receita_ano: R.realAnual ?? null },
+    saude: { semaforo: K.semaforo, motivos: K.semaforo_motivos, kpis: Object.fromEntries(Object.entries(K).filter(([k]) => !/semaforo|erro/.test(k)).slice(0, 14)) },
+    fluxo_6m: (F.meses || F.linhas || []).slice(0, 6).map(m => ({ mes: m.mes || m.label || m.ref, entradas: m.entradas ?? m.receitas, saidas: m.saidas ?? m.despesas, saldo: m.saldo_final ?? m.saldo })),
+    conciliacao: { conciliados: C.conciliados ?? C.aprovados, pendentes: C.pendentes ?? C.com_sugestao, sem_sugestao: C.sem_sugestao, taxa: C.taxa ?? C.taxa_pct },
+    marcos: Object.fromEntries(Object.entries(M.colunas || {}).map(([k, c]) => [k, { qtd: c.total_count, valor: c.total_valor }])),
+    orcamento: O.total_geral || null,
+    ultimos_lancamentos: (R.lancamentos || []).slice(0, 12).map(l => ({ data: l.data, desc: (l.descricao || l.nome || '').substring(0, 50), valor: l.valor, tipo: l.tipo })),
+  };
+}
+async function gerenteFinanceiro({ mensagem, historico = [] } = {}) {
+  if (!mensagem) throw new Error('mensagem obrigatória');
+  const ctx = await contextoFinanceiro();
+  const system = `Você é o GERENTE FINANCEIRO IA da Atlantyx — um CFO experiente, direto e prático, falando em português do Brasil. Você tem acesso aos DADOS FINANCEIROS REAIS abaixo (QuickBooks + sistema). Regras: responda com números do contexto quando existirem; se um dado não estiver disponível, diga claramente e sugira onde obter; explique conceitos financeiros quando pedirem, com exemplos do próprio negócio; sugira ações concretas (o que fazer, quando, quanto); seja conciso (até ~200 palavras salvo pedido de detalhe); nunca invente valores. Ferramentas do sistema que você pode recomendar: Extrato, Saldo Diário/Mensal, Conciliação, Orçamento Anual, Fluxo Futuro 12 meses, Agenda de Despesas, Projetos & Marcos, Kanban Financeiro, KPIs de Saúde, A Receber.
+
+CONTEXTO FINANCEIRO (JSON, valores em moeda da conta):
+${JSON.stringify(ctx).substring(0, 9000)}`;
+  const msgs = [...historico.slice(-10).map(h => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content || '').substring(0, 2000) })), { role: 'user', content: mensagem.substring(0, 3000) }];
+  const resposta = await claudeFin(system, msgs, 1400);
+  return { resposta, contexto_resumo: { saldo: ctx.caixa.saldo, a_receber: ctx.caixa.a_receber, a_pagar: ctx.caixa.a_pagar, semaforo: ctx.saude.semaforo, qb: ctx.quickbooks.conectado } };
+}
+async function dashboardFinanceiro() {
+  const ctx = await contextoFinanceiro();
+  return { dashboard: ctx, gerado_em: new Date().toISOString() };
+}
+
 async function qbStatus() {
   const faltando = [
     !process.env.QB_CLIENT_ID && 'QB_CLIENT_ID',
