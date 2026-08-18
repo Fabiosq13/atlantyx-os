@@ -62,7 +62,7 @@ export default async function handler(req, res) {
       // Publicar/agendar post
       // payload: { texto, redes: ['linkedin','instagram','facebook'], data_hora (ISO opcional), imagem_url (opcional), campanha_id, peca_id }
       publicar: async () => {
-        const { texto, redes = [], data_hora, imagem_url, encurtar_link = true, tipo = 'POST', link_sticker = '' } = payload;
+        const { texto, redes = [], data_hora, imagem_url, encurtar_link = true, tipo = 'POST', link_sticker = '', imagens_urls = [] } = payload; // v1.11: imagens_urls = carrossel
         if (!redes.length) throw new Error('redes são obrigatórias');
         if (tipo !== 'STORY' && !texto) throw new Error('texto é obrigatório');
         if (tipo === 'STORY' && !imagem_url) throw new Error('Story exige imagem 9:16');
@@ -96,9 +96,9 @@ export default async function handler(req, res) {
           draft: false,
           // v1.6.8: a doc da API varia entre "media" e "medias" — enviar ambos
           // (campos desconhecidos são ignorados; o correto é aplicado)
-          ...(imagem_url ? { media: [imagem_url], medias: [imagem_url] } : {}),
+          ...(Array.isArray(imagens_urls) && imagens_urls.length > 1 ? { media: imagens_urls, medias: imagens_urls } : (imagem_url ? { media: [imagem_url], medias: [imagem_url] } : {})),
         };
-        console.log('[metricool publicar] payload:', JSON.stringify({ tipo, providers: body.providers, temImagem: !!imagem_url, imagem: (imagem_url||'').substring(0,80), quando: body.publicationDate.dateTime }));
+        console.log('[metricool publicar] payload:', JSON.stringify({ tipo, providers: body.providers, nMidias: (body.media||[]).length, temImagem: !!imagem_url, imagem: (imagem_url||'').substring(0,80), quando: body.publicationDate.dateTime }));
 
         const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
         return {

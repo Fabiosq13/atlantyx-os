@@ -51,7 +51,7 @@ export default async function handler(req, res) {
 Sua tarefa: planejar 3 publicações de MÁXIMA CONVERSÃO (gerar cliques e reuniões agendadas), combinando:
 (a) benchmarks de mercado B2B (LinkedIn: ter-qui 9h-11h30 e 17h; Instagram: ter/qui 11h-13h e 18h-19h; Facebook: qua-qui 9h-12h; evitar seg cedo e sex tarde),
 (b) as MÉTRICAS REAIS da conta fornecidas abaixo (dias/horários e temas que mais performaram têm prioridade sobre o benchmark).
-Cada copy: max 110 palavras, específica da Atlantyx, com dado concreto, SEM clichês (proibido: revolucionar, disruptivo, game-changer), terminando com CTA de reunião.
+Cada copy: max 110 palavras, específica da Atlantyx, com dado concreto, SEM clichês (proibido: revolucionar, disruptivo, game-changer), terminando com CTA de reunião. REGRA DO LINK NA BIO (Instagram): o link da bio leva ao SITE da Atlantyx, onde a pessoa deixa o contato. Sempre que citar 'link na bio', explique em 1 frase direta o que acontece: ex. 'Link na bio → acesse o site e deixe seu contato; nossa equipe fala com você em até 24h'. Nunca deixe 'link na bio' solto.
 Responda APENAS JSON válido.`;
         const usr = `MÉTRICAS DA CONTA (Metricool, últimos 30 dias):
 ${metricas_resumo || '(sem dados suficientes — use apenas benchmarks de mercado B2B)'}
@@ -68,6 +68,20 @@ Regras: 3 posts, dias/horários DIFERENTES entre si, temas complementares (dor �
         return { posts: plano.posts.slice(0, 3) };
       },
 
+      // v1.11: CARROSSEL do feed (1:1) — 5 slides educativos (meio de funil) + legenda por rede
+      carrossel_pack: async () => {
+        const { narrativa = {}, copy = {}, n_slides = 5 } = payload;
+        const v0 = copy.versoes?.[0] || {};
+        const base = (v0.headline ? v0.headline + '\n' : '') + (v0.corpo || copy.raw || '').substring(0, 900);
+        const n = Math.max(3, Math.min(8, parseInt(n_slides) || 5));
+        const sys = `Você é o Social Media da Atlantyx (${BRAND.proposta_valor}). Tom: ${BRAND.tom_de_voz}. ICP: ${BRAND.icp}. Carrossel de feed = MEIO de funil: educa quem já te viu; cada slide é uma ideia; o último converte. REGRA DO LINK NA BIO (Instagram): o link da bio leva ao SITE, onde a pessoa deixa o contato — explique isso em 1 frase quando citar. Responda APENAS JSON válido.`;
+        const usr = `NARRATIVA: ${narrativa.tema_central || ''} | Gancho: ${narrativa.gancho_principal || ''}\nCOPY BASE:\n${base}\n\nCrie um CARROSSEL de ${n} slides quadrados. Regras: slide 1 = capa com título forte (máx 8 palavras) + subtítulo (máx 12); slides do meio = 1 ideia cada, título (máx 7 palavras) + 1 frase de apoio (máx 20 palavras); último = CTA. Sem clichês. Legenda: até 150 palavras, começa com o gancho, lista o que o carrossel entrega, termina com CTA; + 5-8 hashtags B2B.\nJSON: {"slides":[{"ordem":1,"titulo":"...","apoio":"...","prompt_imagem":"cena quadrada 1:1 em inglês, 35-55 palavras, SEM texto, dark navy #1A3A8F + electric blue #4F7CFF, área limpa no terço inferior para texto"}],"legenda":"...","legenda_instagram":"mesma legenda com CTA 'Link na bio → acesse o site e deixe seu contato'","legenda_linkedin":"mesma legenda com CTA 'Agende uma conversa: {LINK}'","hashtags":["#..."]}`;
+        const rr = await claude(sys, usr, 2200);
+        const pk = parseJSON(rr);
+        if (!pk.slides?.length) throw new Error('Carrossel inválido' + (pk.raw ? ' (truncado)' : ''));
+        return { slides: pk.slides.slice(0, 8), legenda: pk.legenda || '', legenda_instagram: pk.legenda_instagram || '', legenda_linkedin: pk.legenda_linkedin || '', hashtags: pk.hashtags || [] };
+      },
+
       // v1.9: REEL (slideshow) — 5 slides p/ TOPO de funil (descoberta) + legenda com hashtags
       reel_pack: async () => {
         const { narrativa = {}, copy = {}, canal = 'Instagram', n_slides = 5 } = payload;
@@ -78,7 +92,7 @@ Regras: 3 posts, dias/horários DIFERENTES entre si, temas complementares (dor �
         const usr = `NARRATIVA: ${narrativa.tema_central || ''} | Gancho: ${narrativa.gancho_principal || ''}
 COPY BASE:\n${base}
 
-Crie um Reel em SLIDESHOW de ${n} slides (9:16, ~3s cada). Regras: cada slide tem no MÁXIMO 12 palavras na tela, ideia única, linguagem direta; slide 1 = gancho forte (pergunta/dado/contraste), slides do meio = insight/prova, último = CTA ("Siga" ou "Link na bio"). Sem clichês (proibido: revolucionar, disruptivo, game-changer). Legenda: até 120 palavras, começa com o gancho, termina com CTA "🔗 Link na bio", + 5-8 hashtags B2B relevantes no fim.
+Crie um Reel em SLIDESHOW de ${n} slides (9:16, ~3s cada). Regras: cada slide tem no MÁXIMO 12 palavras na tela, ideia única, linguagem direta; slide 1 = gancho forte (pergunta/dado/contraste), slides do meio = insight/prova, último = CTA "Link na bio → acesse o site e deixe seu contato". Sem clichês (proibido: revolucionar, disruptivo, game-changer). Legenda: até 120 palavras, começa com o gancho, termina com "🔗 Link na bio → acesse o site e deixe seu contato; falamos com você em até 24h", + 5-8 hashtags B2B relevantes no fim. REGRA DO LINK NA BIO (Instagram): o link da bio leva ao SITE da Atlantyx, onde a pessoa deixa o contato. Sempre que citar 'link na bio', explique em 1 frase direta o que acontece: ex. 'Link na bio → acesse o site e deixe seu contato; nossa equipe fala com você em até 24h'. Nunca deixe 'link na bio' solto.
 JSON: {"slides":[{"ordem":1,"texto_tela":"...","destaque":"palavra ou número a destacar (opcional)","prompt_imagem":"cena vertical 9:16 em inglês, 35-55 palavras, SEM texto na imagem, dark navy #1A3A8F + electric blue #4F7CFF, área central limpa"}],"legenda":"...","hashtags":["#..."],"trilha_sugerida":"tipo de música/ritmo em 5 palavras"}`;
         const rr = await claude(sys, usr, 1900);
         const pk = parseJSON(rr);
@@ -96,7 +110,7 @@ JSON: {"slides":[{"ordem":1,"texto_tela":"...","destaque":"palavra ou número a 
 COPY BASE:\n${base}
 LINK (sticker do último story): ${link || '(sem link)'}
 
-Crie 3 stories em sequência (9:16). Regras: cada story tem no MÁXIMO 18 palavras na tela; frases curtas, uma ideia por story; o 1º prende (pergunta ou dado), o 2º entrega valor/prova, o 3º chama pra ação com o link. Sem clichês. Sem hashtags.
+Crie 3 stories em sequência (9:16). Regras: cada story tem no MÁXIMO 18 palavras na tela; frases curtas, uma ideia por story; o 1º prende (pergunta ou dado), o 2º entrega valor/prova, o 3º chama pra ação: 'toque no link' (sticker abre a agenda de reunião direto). Sem clichês. Sem hashtags.
 JSON: {"stories":[{"ordem":1,"papel":"gancho","texto_tela":"...","cta_sticker":"","prompt_imagem":"cena vertical 9:16 em inglês, 35-55 palavras, SEM texto na imagem, dark navy #1A3A8F + electric blue #4F7CFF, área central limpa para sobrepor texto"},{"ordem":2,"papel":"valor",...},{"ordem":3,"papel":"cta","cta_sticker":"texto curto do sticker de link (ex: Agende sua conversa)",...}]}`;
         const rr = await claude(sys, usr, 1600);
         const pk = parseJSON(rr);
@@ -219,6 +233,7 @@ SEJA CONCISO: cada campo em NO MÁXIMO 1-2 frases. Retorne:
 // ── S2 COPYWRITER — Textos das Campanhas ─────────────────────────────────────
 async function agCopywriter({ narrativa, formato, canal, versoes = 3, copy_anterior, ajuste_comentario } = {}, payload = {}) {
   const system = `Você é o Agente Copywriter da Atlantyx — especialista em copy B2B para grandes empresas.
+REGRA DO LINK NA BIO (Instagram): o link da bio leva ao SITE da Atlantyx, onde a pessoa deixa o contato. Sempre que citar 'link na bio', explique em 1 frase direta: ex. 'Link na bio → acesse o site e deixe seu contato; nossa equipe fala com você em até 24h'. Nunca deixe 'link na bio' solto.
 Tom: ${BRAND.tom_de_voz}
 ICP: ${BRAND.icp}
 Proposta de valor: ${BRAND.proposta_valor}
