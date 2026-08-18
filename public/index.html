@@ -14192,6 +14192,7 @@ async function verificarQuickBooks() {
   const dot = document.getElementById('dotQB');
   const stat = document.getElementById('statQB');
   if (!dot || !stat) return;
+  dot.style.background = ''; // v1.12.1: limpa o vermelho inline de um erro anterior
   try {
     const d = await finApi('qb_status');
     if (!d.configurado) {
@@ -15887,7 +15888,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.12] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.12.1] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -15903,7 +15904,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.12';
+window.__ATX_BUILD_ID__ = 'ATX-v1.12.1';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
