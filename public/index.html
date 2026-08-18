@@ -15225,14 +15225,25 @@ function _reelWrap(ctx, text, maxW) {
   if (cur) lines.push(cur); return lines;
 }
 
+// v1.10.2: carrega mp4-muxer (CDN) uma vez — muxer MP4 com moov no início (faststart)
+async function _carregarMp4Muxer() {
+  if (window.Mp4Muxer) return true;
+  const urls = ['https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js', 'https://unpkg.com/mp4-muxer@5.2.2/build/mp4-muxer.min.js'];
+  for (const u of urls) {
+    try {
+      await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = u; sc.onload = res; sc.onerror = () => rej(new Error('falha ao carregar ' + u)); document.head.appendChild(sc); setTimeout(() => rej(new Error('timeout ' + u)), 12000); });
+      if (window.Mp4Muxer) return true;
+    } catch (e) { addLog('warn', '[Reel] ' + e.message); }
+  }
+  return false;
+}
 async function montarVideoReel() {
   const r = campAtiva?.reel; const sl = r?.slides || [];
   if (!sl.length || !sl.every(x => x.imagem_url)) { toast('Gere/cole as artes de todos os slides', 'error'); return; }
   const canvas = document.getElementById('reelCanvas');
-  if (!canvas || !canvas.captureStream || typeof MediaRecorder === 'undefined') { toast('Este navegador não grava vídeo (use Chrome/Edge atualizados)', 'error'); return; }
+  if (!canvas || (typeof VideoEncoder === 'undefined' && (!canvas.captureStream || typeof MediaRecorder === 'undefined'))) { toast('Este navegador não grava vídeo (use Chrome/Edge atualizados)', 'error'); return; }
   const mimes = ['video/mp4;codecs=avc1.42E01E', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
-  const mime = mimes.find(m => { try { return MediaRecorder.isTypeSupported(m); } catch(_) { return false; } });
-  if (!mime) { toast('MediaRecorder sem formato suportado', 'error'); return; }
+  const mime = mimes.find(m => { try { return MediaRecorder.isTypeSupported(m); } catch(_) { return false; } }) || 'video/webm';
   const ehMp4 = mime.startsWith('video/mp4');
   _reelSet('Carregando imagens...', 'Montando');
   let imgs;
@@ -15274,35 +15285,77 @@ async function montarVideoReel() {
     ctx.restore();
   };
 
-  const stream = canvas.captureStream(FPS);
-  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2_000_000 });
-  const chunks = []; rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-  const done = new Promise(res => { rec.onstop = res; });
-  rec.start(250);
-  const t0 = performance.now();
-  await new Promise(resolve => {
-    const frame = () => {
-      const t = performance.now() - t0;
-      if (t >= total) return resolve();
-      const i = Math.min(sl.length - 1, Math.floor(t / DUR)), tl = t - i * DUR;
-      ctx.fillStyle = '#05070f'; ctx.fillRect(0, 0, W, H);
-      drawSlide(i, tl, 1);
-      if (tl > DUR - FADE && i < sl.length - 1) drawSlide(i + 1, 0, (tl - (DUR - FADE)) / FADE); // crossfade
-      _reelSet('Gravando vídeo... ' + Math.round(t / total * 100) + '%', null, t / total * 100);
+  const renderAt = (t) => {
+    const i = Math.min(sl.length - 1, Math.floor(t / DUR)), tl = t - i * DUR;
+    ctx.fillStyle = '#05070f'; ctx.fillRect(0, 0, W, H);
+    drawSlide(i, tl, 1);
+    if (tl > DUR - FADE && i < sl.length - 1) drawSlide(i + 1, 0, (tl - (DUR - FADE)) / FADE); // crossfade
+  };
+  let blob = null, modo = '';
+  // v1.10.2: MP4 "de verdade" (H.264, moov no início, duração declarada) via WebCodecs + mp4-muxer.
+  // O MediaRecorder gera MP4 fragmentado sem duração no cabeçalho → o player do Metricool/Instagram fica
+  // carregando para sempre (spinner). WebCodecs resolve; MediaRecorder fica como fallback.
+  if (typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined') {
+    try {
+      _reelSet('Preparando codificador MP4 (H.264)...', null, 1);
+      const okLib = await _carregarMp4Muxer();
+      if (okLib) {
+        const codecs = ['avc1.42E01F', 'avc1.4D401F', 'avc1.42001F', 'avc1.640028'];
+        let cfg = null;
+        for (const c of codecs) { const test = { codec: c, width: W, height: H, bitrate: 2_200_000, framerate: FPS, avc: { format: 'avc' } }; try { const sup = await VideoEncoder.isConfigSupported(test); if (sup.supported) { cfg = test; break; } } catch(_) {} }
+        if (!cfg) throw new Error('nenhum perfil H.264 suportado neste navegador');
+        const muxer = new Mp4Muxer.Muxer({ target: new Mp4Muxer.ArrayBufferTarget(), video: { codec: 'avc', width: W, height: H }, fastStart: 'in-memory', firstTimestampBehavior: 'offset' });
+        let encErr = null;
+        const encoder = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: e => { encErr = e; } });
+        encoder.configure(cfg);
+        const nFrames = Math.round(total / 1000 * FPS), us = Math.round(1e6 / FPS);
+        for (let f = 0; f < nFrames; f++) {
+          renderAt(f * (1000 / FPS));
+          const frame = new VideoFrame(canvas, { timestamp: f * us, duration: us });
+          encoder.encode(frame, { keyFrame: f % (FPS * 2) === 0 });
+          frame.close();
+          if (encErr) throw encErr;
+          if (encoder.encodeQueueSize > 8) await new Promise(rs => setTimeout(rs, 8)); // backpressure
+          if (f % 6 === 0) { _reelSet('Codificando MP4... ' + Math.round(f / nFrames * 100) + '%', null, f / nFrames * 100); await new Promise(rs => setTimeout(rs, 0)); }
+        }
+        await encoder.flush(); encoder.close();
+        muxer.finalize();
+        blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
+        modo = 'MP4 H.264 (WebCodecs, ' + cfg.codec + ')';
+      }
+    } catch (e) { addLog('warn', '[Reel] WebCodecs indisponível (' + e.message + ') — usando gravação em tempo real'); blob = null; }
+  }
+  if (!blob) {
+    const stream = canvas.captureStream(FPS);
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2_000_000 });
+    const chunks = []; rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    const done = new Promise(res => { rec.onstop = res; });
+    rec.start(250);
+    const t0 = performance.now();
+    await new Promise(resolve => {
+      const frame = () => {
+        const t = performance.now() - t0;
+        if (t >= total) return resolve();
+        renderAt(t);
+        _reelSet('Gravando vídeo... ' + Math.round(t / total * 100) + '%', null, t / total * 100);
+        requestAnimationFrame(frame);
+      };
       requestAnimationFrame(frame);
-    };
-    requestAnimationFrame(frame);
-  });
-  rec.stop(); await done;
-  const blob = new Blob(chunks, { type: ehMp4 ? 'video/mp4' : 'video/webm' });
+    });
+    rec.stop(); await done;
+    blob = new Blob(chunks, { type: ehMp4 ? 'video/mp4' : 'video/webm' });
+    modo = ehMp4 ? 'MP4 (MediaRecorder — ⚠ pode não tocar no Instagram; use Chrome/Edge atualizados para o modo H.264)' : 'WebM (⚠ Instagram exige MP4)';
+  }
   window._reelBlob = blob; r.video_blob_pronto = true; r.video_mime = blob.type; r.video_url = '';
   const url = URL.createObjectURL(blob);
   canvas.style.display = 'none'; if (vid) { vid.src = url; vid.style.display = 'block'; }
   const dl = document.getElementById('reelDownload'); if (dl) { dl.href = url; dl.download = 'atlantyx-reel.' + (ehMp4 ? 'mp4' : 'webm'); dl.style.display = 'block'; }
   const mb = (blob.size / 1048576).toFixed(1);
   _renderReel();
-  _reelSet('Vídeo pronto: ' + (total / 1000) + 's · ' + mb + ' MB · ' + (ehMp4 ? 'MP4' : 'WebM') + (ehMp4 ? '' : ' (⚠ Instagram exige MP4 — use Chrome/Edge para gravar em MP4, ou baixe e converta)') + (blob.size > 4.3 * 1048576 ? ' · ⚠ acima de 4,3 MB: reduza s/slide antes de hospedar' : ''), 'Vídeo pronto');
-  addLog('ok', '[Reel] Vídeo montado: ' + mb + ' MB ' + blob.type);
+  const dlx = document.getElementById('reelDownload'); if (dlx) dlx.download = 'atlantyx-reel.' + (blob.type.includes('mp4') ? 'mp4' : 'webm');
+  _reelSet('Vídeo pronto: ' + (total / 1000) + 's · ' + mb + ' MB · ' + modo + (blob.size > 4.3 * 1048576 ? ' · ⚠ acima de 4,3 MB: reduza s/slide antes de hospedar' : ''), 'Vídeo pronto');
+  addLog('ok', '[Reel] Vídeo montado: ' + mb + ' MB ' + blob.type + ' · ' + modo);
+  r.video_mime = blob.type; r.video_modo = modo;
 }
 
 async function hospedarReel() {
@@ -15479,7 +15532,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.10.1] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.10.2] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -15495,7 +15548,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.10.1';
+window.__ATX_BUILD_ID__ = 'ATX-v1.10.2';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
