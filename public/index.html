@@ -14556,7 +14556,9 @@ function _fatCard(t, col) {
 }
 
 // ── Detalhe do termo ──
+let _fatTermoAberto = null;
 async function abrirDetalheTermo(id) {
+  _fatTermoAberto = id;
   const box = document.getElementById('fatDetalhe'); if (!box) return;
   box.style.display = 'block'; box.innerHTML = '<div style="text-align:center;color:var(--t3);padding:20px;">Carregando...</div>';
   try { setTimeout(() => box.scrollIntoView({ behavior:'smooth', block:'start' }), 60); } catch(_) {}
@@ -14578,6 +14580,7 @@ async function abrirDetalheTermo(id) {
           ${t.status === 'aprovacao' ? `<button class="btn btn-gn" onclick="_fatAprovar('${t.id}')">✓ Aprovar (envia p/ Emissão de NF)</button><button class="btn btn-rd" onclick="_fatAvancar('${t.id}','elaboracao')">← Recusar / voltar</button>` : ''}
           ${t.status === 'emissao_nf' ? `<button class="btn btn-p" onclick="_fatAvancar('${t.id}','envio_nf')">Notas emitidas — ir p/ Envio →</button>` : ''}
           ${t.status === 'envio_nf' ? `<button class="btn btn-p" onclick="_fatVerificarEmail('${t.id}')" id="btnVerifEmail_${t.id}">📧 Verificar e-mail (atlanteambr@gmail.com)</button>${t.nf_status === 'completo' ? `<button class="btn btn-gn" onclick="_fatAvancar('${t.id}','pagamento')">Todas as notas ok — ir p/ Pagamento →</button>` : ''}` : ''}
+          ${(t.status === 'envio_nf' || t.status === 'pagamento') && emp.some(e => e.nf_status === 'encontrada' && !e.qb_invoice_id) ? `<button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="_fatLancarTodasQb('${t.id}')" id="btnLancarQb_${t.id}">📤 Lançar notas no QuickBooks (Contas a Receber)</button>` : ''}
           ${t.status === 'pagamento' ? `<button class="btn btn-p" onclick="_fatVerificarPagamento('${t.id}')" id="btnVerifPag_${t.id}">🏦 Verificar pagamento no QuickBooks</button>` : ''}
           <button class="btn" style="color:var(--red);margin-left:auto;" onclick="_fatExcluir('${t.id}')">🗑 Excluir termo</button>
         </div>
@@ -14585,30 +14588,35 @@ async function abrirDetalheTermo(id) {
           ${t.nf_status==='completo' ? '✅ Todas as notas fiscais encontradas e o valor bate com o termo ('+fmtBRLcompleto(t.nf_soma)+').' : t.nf_status==='divergente' ? '⚠ Notas encontradas somam '+fmtBRLcompleto(t.nf_soma)+' — diferença de '+fmtBRLcompleto(t.nf_diferenca)+' em relação ao termo ('+fmtBRLcompleto(t.valor_total_termo)+'). Faltam nota(s) ou há divergência de valor.' : 'ℹ Nenhuma nota fiscal encontrada ainda no e-mail atlanteambr@gmail.com para este termo.'}
         </div>` : ''}
         <table style="width:100%;border-collapse:collapse;font-size:11px;">
-          <thead><tr style="border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">EMPRESA</th><th style="text-align:right;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">VALOR DA PARCELA</th><th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">NOTA FISCAL</th><th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">PAGAMENTO</th><th></th></tr></thead>
+          <thead><tr style="border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">EMPRESA</th><th style="text-align:right;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">VALOR DA PARCELA</th><th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">NOTA FISCAL</th><th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">CONTAS A RECEBER (QB)</th><th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">PAGAMENTO</th></tr></thead>
           <tbody>${emp.map(e => `<tr style="border-bottom:1px solid var(--bd);">
             <td style="padding:6px;">${e.empresa}</td>
             <td style="padding:6px;text-align:right;font-family:var(--M);">${fmtBRLcompleto(e.valor_parcela)}</td>
             <td style="padding:6px;">${e.nf_status==='encontrada' ? '✅ '+(e.nf_numero||'')+' · '+fmtBRLcompleto(e.nf_valor) : '<span style="color:var(--gold);">⏳ pendente</span>'} <button class="btn" style="font-size:8px;padding:1px 5px;margin-left:4px;" onclick="_fatMarcarNfManual('${e.id}')" title="Marcar manualmente">✎</button></td>
+            <td style="padding:6px;">${e.qb_invoice_id ? '✅ Fatura #'+(e.qb_invoice_doc||e.qb_invoice_id) : e.nf_status==='encontrada' ? `<button class="btn" style="font-size:8px;padding:1px 6px;color:var(--gold);" onclick="_fatLancarQb('${e.id}')" id="btnQb_${e.id}">📤 Lançar</button>` : '<span style="color:var(--t3);">—</span>'}${e.qb_erro ? '<div style="color:var(--red);font-size:8.5px;margin-top:2px;">⚠ '+e.qb_erro+'</div>' : ''}</td>
             <td style="padding:6px;">${e.pagamento_status==='pago' ? '✅ '+(e.pagamento_data||'') : '<span style="color:var(--t3);">pendente</span>'} <button class="btn" style="font-size:8px;padding:1px 5px;margin-left:4px;" onclick="_fatMarcarPagoManual('${e.id}')" title="Marcar como pago manualmente">✎</button></td>
-            <td></td></tr>`).join('')}</tbody>
+            </tr>`).join('')}</tbody>
         </table>
         ${notas.length ? `<div style="margin-top:12px;font-size:10px;color:var(--t2);"><b>${notas.length} anexo(s) de e-mail analisado(s):</b> ${notas.slice(0,8).map(n => n.anexo_nome).join(', ')}</div>` : ''}
       </div>
     </div>`;
   } catch (e) { box.innerHTML = '<div style="color:var(--red);text-align:center;padding:20px;">Erro: ' + e.message + '</div>'; }
 }
-async function _fatAvancar(id, status) { try { await fatApi('termo_mover', { id, status }); toast('Movido para: ' + FAT_LABELS[status], 'success'); carregarKanbanFaturamento(); abrirDetalheTermo(id); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
-async function _fatAprovar(id) { const por = prompt('Aprovado por:', ''); if (por === null) return; try { await fatApi('termo_aprovar', { id, aprovado_por: por }); toast('Termo aprovado', 'success'); carregarKanbanFaturamento(); abrirDetalheTermo(id); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
+async function _fatAvancar(id, status) { try { await fatApi('termo_mover', { id, status }); toast('Movido para: ' + FAT_LABELS[status], 'success'); carregarKanbanFaturamento(); await abrirDetalheTermo(id); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
+async function _fatAprovar(id) { const por = prompt('Aprovado por:', ''); if (por === null) return; try { await fatApi('termo_aprovar', { id, aprovado_por: por }); toast('Termo aprovado', 'success'); carregarKanbanFaturamento(); await abrirDetalheTermo(id); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
 async function _fatExcluir(id) { if (!confirm('Excluir este termo e todos os dados de rateio/notas? Ação não pode ser desfeita.')) return; try { await fatApi('termo_excluir', { id }); toast('Termo excluído', 'info'); document.getElementById('fatDetalhe').style.display='none'; carregarKanbanFaturamento(); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
 async function _fatMarcarNfManual(empresaId) {
   const numero = prompt('Número da NF:', ''); if (numero === null) return;
   const valor = prompt('Valor da NF (R$):', ''); if (valor === null) return;
-  try { await fatApi('termo_empresa_marcar_nf', { empresa_id: empresaId, nf_numero: numero, nf_valor: parseFloat(valor.replace(',','.'))||0, nf_status: 'encontrada' }); toast('NF marcada', 'success'); const t = Object.values(_fatColunas).flat().find(x => true); carregarKanbanFaturamento(); } catch (e) { toast('Erro: ' + e.message, 'error'); }
+  try { await fatApi('termo_empresa_marcar_nf', { empresa_id: empresaId, nf_numero: numero, nf_valor: parseFloat(valor.replace(',','.'))||0, nf_status: 'encontrada' }); toast('NF marcada', 'success'); }
+  catch (e) { toast('Erro: ' + e.message, 'error'); }
+  finally { if (_fatTermoAberto) await abrirDetalheTermo(_fatTermoAberto); carregarKanbanFaturamento(); }
 }
 async function _fatMarcarPagoManual(empresaId) {
   if (!confirm('Marcar esta empresa como paga?')) return;
-  try { await fatApi('termo_empresa_marcar_pago', { empresa_id: empresaId, pagamento_status: 'pago' }); toast('Marcado como pago', 'success'); carregarKanbanFaturamento(); } catch (e) { toast('Erro: ' + e.message, 'error'); }
+  try { await fatApi('termo_empresa_marcar_pago', { empresa_id: empresaId, pagamento_status: 'pago' }); toast('Marcado como pago', 'success'); }
+  catch (e) { toast('Erro: ' + e.message, 'error'); }
+  finally { if (_fatTermoAberto) await abrirDetalheTermo(_fatTermoAberto); carregarKanbanFaturamento(); }
 }
 async function _fatVerificarEmail(id) {
   const btn = document.getElementById('btnVerifEmail_' + id); if (btn) { btn.disabled = true; btn.textContent = '⏳ Verificando (pode levar até 40s)...'; }
@@ -14619,9 +14627,27 @@ async function _fatVerificarEmail(id) {
       toast((d.encontradas_agora?.length||0) + ' nota(s) nova(s) encontrada(s) · status: ' + d.nf_status, d.nf_status === 'completo' ? 'success' : 'error');
       if (d.alerta_enviado) addLog('warn', '[Faturamento] alerta de divergência enviado por e-mail');
     }
-    abrirDetalheTermo(id); carregarKanbanFaturamento();
+    await abrirDetalheTermo(id); carregarKanbanFaturamento();
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
   finally { if (btn) { btn.disabled = false; btn.textContent = '📧 Verificar e-mail (atlanteambr@gmail.com)'; } }
+}
+async function _fatLancarQb(empresaId) {
+  const btn = document.getElementById('btnQb_' + empresaId); if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
+  try {
+    const d = await fatApi('termo_empresa_lancar_qb', { empresa_id: empresaId });
+    toast(d.ja_lancado ? 'Já estava lançado no QB' : 'Lançada no QuickBooks: fatura #' + d.qb_invoice_doc + ' (' + d.cliente + ', ' + fmtBRLcompleto(d.valor) + ')', 'success');
+    addLog('ok', '[Faturamento] QB Invoice: ' + JSON.stringify(d));
+  } catch (e) { toast('Erro ao lançar no QB: ' + e.message, 'error'); addLog('err', '[Faturamento] lançar QB: ' + e.message); }
+  finally { if (_fatTermoAberto) await abrirDetalheTermo(_fatTermoAberto); carregarKanbanFaturamento(); }
+}
+async function _fatLancarTodasQb(id) {
+  const btn = document.getElementById('btnLancarQb_' + id); if (btn) { btn.disabled = true; btn.textContent = '⏳ Lançando notas no QuickBooks...'; }
+  try {
+    const d = await fatApi('termo_lancar_todas_qb', { termo_id: id });
+    toast(d.lancadas + ' fatura(s) lançada(s) no QuickBooks' + (d.erros ? ' · ' + d.erros + ' com erro (veja a tabela)' : ''), d.erros ? 'error' : 'success');
+    addLog('ok', '[Faturamento] Lançamento em lote: ' + JSON.stringify(d.resultados));
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '📤 Lançar notas no QuickBooks (Contas a Receber)'; } await abrirDetalheTermo(id); carregarKanbanFaturamento(); }
 }
 async function _fatVerificarPagamento(id) {
   const btn = document.getElementById('btnVerifPag_' + id); if (btn) { btn.disabled = true; btn.textContent = '⏳ Consultando QuickBooks...'; }
@@ -14629,7 +14655,7 @@ async function _fatVerificarPagamento(id) {
     const d = await fatApi('termo_verificar_pagamento', { termo_id: id });
     if (d.erro) toast('QuickBooks: ' + d.erro, 'error');
     else toast((d.atualizadas||0) + ' empresa(s) confirmada(s) paga(s) · status: ' + d.pagamento_status, d.pagamento_status === 'pago' ? 'success' : 'error');
-    abrirDetalheTermo(id); carregarKanbanFaturamento();
+    await abrirDetalheTermo(id); carregarKanbanFaturamento();
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
   finally { if (btn) { btn.disabled = false; btn.textContent = '🏦 Verificar pagamento no QuickBooks'; } }
 }
@@ -16423,7 +16449,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.17] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.18] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -16439,7 +16465,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.17';
+window.__ATX_BUILD_ID__ = 'ATX-v1.18';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
