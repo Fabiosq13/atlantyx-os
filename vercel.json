@@ -25,6 +25,9 @@
     },
     "api/media-upload.js": {
       "maxDuration": 30
+    },
+    "api/faturamento.js": {
+      "maxDuration": 60
     }
   },
   "crons": [
