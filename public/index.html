@@ -233,7 +233,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sg-sub">PROJETOS</div>
       <div class="sbi s3" onclick="nav('s3projetos',this)">&#128188; Projetos &amp; Marcos</div>
       <div class="sbi s3" onclick="nav('s3contratos',this)">&#128220; Contratos <span class="nbx gd" id="ctrMenuCnt"></span></div>
-      <div class="sbi s3" onclick="nav('s3marcoskanban',this)">&#128203; Kanban Financeiro</div>
+      <div class="sbi s3" onclick="nav('s3marcoskanban',this)">&#128203; Kanban Marcos de Projeto</div>
       <div class="sg-sub">FATURAMENTO</div>
       <div class="sbi s3" onclick="nav('s3fatkanban',this)">&#128203; Kanban de Faturamento <span class="nbx pu" id="fatMenuCnt"></span></div>
       <div class="sg-sub">INTELIGÊNCIA</div>
@@ -2964,6 +2964,18 @@ tr:hover td{background:rgba(79,124,255,.03);}
               <div class="fg" style="margin:0;"><label class="fl">Nota Fiscal (se já emitida)</label><input class="fi" id="mkNF" placeholder="opcional"/></div>
               <div class="fg" style="margin:0;"><label class="fl">Data de Pagamento</label><input type="date" class="fi" id="mkDataPag"/></div>
             </div>
+            <div class="fg" style="margin:0 0 8px;display:none;" id="mkStatusWrap">
+              <label class="fl">Etapa do Kanban (status)</label>
+              <select class="fsel" id="mkStatus" style="width:100%;">
+                <option value="aguardando_entrega">Aguardando Entrega</option>
+                <option value="liberacao_gp">Liberação do GP</option>
+                <option value="aprovado_gp">Aprovado pelo GP</option>
+                <option value="elaborando_termo">Elaborando Termo</option>
+                <option value="termo_pronto">Termo Pronto/Enviado</option>
+                <option value="concluido">Concluído</option>
+              </select>
+              <div style="font-size:9px;color:var(--t3);margin-top:3px;">Mudar aqui move o marco para outra coluna do Kanban Marcos de Projeto.</div>
+            </div>
             <div class="fg" style="margin:0;"><label class="fl">Observações</label><textarea class="fi" id="mkObs" rows="2"></textarea></div>
             <div style="display:flex;gap:8px;margin-top:8px;">
               <button class="btn btn-gn" onclick="salvarMarco()">Salvar Marco</button>
@@ -2983,16 +2995,16 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <div class="page" id="page-s3marcoskanban">
     <div style="background:linear-gradient(135deg,rgba(156,109,255,.12),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Kanban Financeiro de Marcos</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Fluxo: Aguardando → Liberação GP → Aprovado → Termo → Cliente → NF → Pagamento → Concluído</div></div>
+      <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Kanban Marcos de Projeto</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Fluxo: Aguardando Entrega → Liberação GP → Aprovado pelo GP → Elaborando Termo → Termo Pronto/Enviado → Concluído · NF e pagamento são acompanhados no Kanban de Faturamento</div></div>
       <select class="fsel" id="kanbanFiltroProjeto" onchange="carregarKanbanMarcos()" style="width:200px;"><option value="">Todos os projetos</option></select>
       <button class="btn btn-gn" onclick="carregarKanbanMarcos()">&#8635; Atualizar</button>
     </div>
 
     <div class="kg k4" style="margin-bottom:12px;">
-      <div class="kpi gd"><div class="kl">Aguardando ação</div><div class="kv" id="kban_aguardando">0</div><div class="ks">cards abertos</div></div>
-      <div class="kpi bl"><div class="kl">Em fluxo</div><div class="kv" id="kban_fluxo">0</div><div class="ks">com GP, termo, cliente</div></div>
-      <div class="kpi pu"><div class="kl">Aguardando $</div><div class="kv" id="kban_aguardandopag">0</div><div class="ks">NF/pagamento</div></div>
-      <div class="kpi gn"><div class="kl">Concluídos (mês)</div><div class="kv" id="kban_concluidos">0</div><div class="ks">finalizados</div></div>
+      <div class="kpi gd"><div class="kl">Aguardando ação</div><div class="kv" id="kban_aguardando">0</div><div class="ks">entrega + liberação GP</div></div>
+      <div class="kpi bl"><div class="kl">Em elaboração</div><div class="kv" id="kban_fluxo">0</div><div class="ks">aprovado + elaborando termo</div></div>
+      <div class="kpi pu"><div class="kl">Termo Enviado</div><div class="kv" id="kban_aguardandopag">0</div><div class="ks">aguardando conclusão</div></div>
+      <div class="kpi gn"><div class="kl">Concluídos</div><div class="kv" id="kban_concluidos">0</div><div class="ks">finalizados</div></div>
     </div>
 
     <div id="kanbanContainer" style="display:flex;gap:10px;overflow-x:auto;padding-bottom:10px;">
@@ -3234,7 +3246,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <div class="toast" id="toastEl"></div>
 <script>
 const LOGS=[];let logCount=0;
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S3 · Kanban Financeiro de Marcos',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -14126,6 +14138,7 @@ function renderMarcosLista() {
 
 function abrirFormMarco(id) {
   const panel = document.getElementById('formMarcoPanel');
+  const wrapStatus = document.getElementById('mkStatusWrap');
   if (id && _projetoAberto) {
     const m = _projetoAberto.marcos.find(x => x.id === id);
     if (!m) return;
@@ -14137,10 +14150,15 @@ function abrirFormMarco(id) {
     document.getElementById('mkNF').value = m.nota_fiscal || '';
     document.getElementById('mkDataPag').value = m.data_pagamento || '';
     document.getElementById('mkObs').value = m.observacoes || '';
+    // v1.20: etapa atual — se o marco estiver numa etapa antiga já eliminada, mostra "Termo Pronto/Enviado" como referência
+    const statusAtual = ['aguardando_entrega','liberacao_gp','aprovado_gp','elaborando_termo','termo_pronto','concluido'].includes(m.status_kanban) ? m.status_kanban : 'termo_pronto';
+    document.getElementById('mkStatus').value = statusAtual;
+    if (wrapStatus) wrapStatus.style.display = 'block';
   } else {
     ['mkEditId','mkDesc','mkData','mkPct','mkValor','mkNF','mkDataPag','mkObs'].forEach(i => {
       const el = document.getElementById(i); if (el) el.value = '';
     });
+    if (wrapStatus) wrapStatus.style.display = 'none';
   }
   panel.style.display = 'block';
 }
@@ -14164,9 +14182,19 @@ async function salvarMarco() {
   }
   try {
     await finApi('marco_save', p);
+    // v1.20: se estava editando e a etapa (status) foi alterada no dropdown, move no Kanban também
+    if (p.id) {
+      const marcoAtual = _projetoAberto.marcos.find(x => x.id === p.id);
+      const novoStatus = document.getElementById('mkStatus')?.value;
+      if (novoStatus && marcoAtual && novoStatus !== marcoAtual.status_kanban) {
+        try { await finApi('marco_mover_status', { id: p.id, novo_status: novoStatus, ator: 'Edição manual' }); }
+        catch (eMov) { if (typeof toast === 'function') toast('Marco salvo, mas não mudou de etapa: ' + eMov.message, 'error'); }
+      }
+    }
     if (typeof toast === 'function') toast('Marco salvo', 'success');
     document.getElementById('formMarcoPanel').style.display = 'none';
     await abrirProjeto(_projetoAberto.id);
+    try { carregarKanbanMarcos(); } catch(_) {}
   } catch (e) {
     if (typeof toast === 'function') toast('Erro: ' + e.message, 'error');
   }
@@ -14216,11 +14244,10 @@ function renderKanbanMarcos(d) {
   const cont = document.getElementById('kanbanContainer');
   if (!cont) return;
 
-  // Stats
+  // Stats (v1.20: 6 colunas — Aguardando Entrega → Liberação GP → Aprovado GP → Elaborando Termo → Termo Pronto/Enviado → Concluído)
   const agg = ['aguardando_entrega','liberacao_gp'].reduce((s,k)=>s+(d.colunas[k]?.total_count||0),0);
-  const fluxo = ['aprovado_gp','elaborando_termo','termo_pronto','aguardando_cliente'].reduce((s,k)=>s+(d.colunas[k]?.total_count||0),0);
-  const aguardpag = ['nf_emitida','aguardando_pagamento'].reduce((s,k)=>s+(d.colunas[k]?.total_count||0),0);
-  // Concluídos no mês: filtrar concluido_em do mês atual (não temos campo no payload, então só conta total)
+  const fluxo = ['aprovado_gp','elaborando_termo'].reduce((s,k)=>s+(d.colunas[k]?.total_count||0),0);
+  const aguardpag = d.colunas['termo_pronto']?.total_count || 0;
   const concl = d.colunas['concluido']?.total_count || 0;
   const u = (id,v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
   u('kban_aguardando', agg);
@@ -14261,12 +14288,8 @@ function renderMarcoCard(m, colKey) {
     acoes = `<button class="btn" style="font-size:9px;padding:4px 10px;width:100%;margin-top:6px;" onclick="uploadTermo('${m.id}')">📎 Upload Termo</button>
       ${m.tem_termo ? `<button class="btn btn-gn" style="font-size:9px;padding:4px 10px;width:100%;margin-top:4px;" onclick="enviarTermo('${m.id}')">📤 Enviar pro Cliente</button>` : ''}`;
   } else if (colKey === 'termo_pronto') {
-    acoes = `<button class="btn btn-gn" style="font-size:9px;padding:4px 10px;width:100%;margin-top:6px;" onclick="enviarTermo('${m.id}')">📤 Reenviar</button>`;
-  } else if (colKey === 'aguardando_cliente') {
-    acoes = `<div style="font-size:9px;color:var(--t3);margin-top:4px;">${m.cliente_lembretes_count || 0} lembrete(s) enviado(s)</div>
-      <button class="btn btn-p" style="font-size:9px;padding:4px 10px;width:100%;margin-top:4px;" onclick="moverMarco('${m.id}','nf_emitida','Financeiro')">🧾 Marcar NF Emitida</button>`;
-  } else if (colKey === 'nf_emitida' || colKey === 'aguardando_pagamento') {
-    acoes = `<button class="btn btn-gn" style="font-size:9px;padding:4px 10px;width:100%;margin-top:6px;" onclick="moverMarco('${m.id}','concluido','Financeiro')">✓ Concluir</button>`;
+    acoes = `<button class="btn" style="font-size:9px;padding:4px 10px;width:100%;margin-top:6px;" onclick="enviarTermo('${m.id}')">📤 Reenviar termo</button>
+      <button class="btn btn-gn" style="font-size:9px;padding:4px 10px;width:100%;margin-top:4px;" onclick="moverMarco('${m.id}','concluido','Financeiro')">✓ Concluir (NF/pagamento no Kanban de Faturamento)</button>`;
   }
   return `<div style="background:#0f1024;border:1px solid ${urgente && colKey === 'aguardando_entrega' ? 'var(--gold)' : 'var(--bd)'};border-radius:6px;padding:8px;margin-bottom:6px;font-size:10px;">
     <div style="font-weight:600;font-size:11px;margin-bottom:3px;color:var(--t1);">${m.descricao}</div>
@@ -16658,7 +16681,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.19] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.20] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -16674,7 +16697,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.19';
+window.__ATX_BUILD_ID__ = 'ATX-v1.20';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
