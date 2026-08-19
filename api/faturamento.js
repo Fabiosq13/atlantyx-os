@@ -117,7 +117,11 @@ async function termoList({ status } = {}) {
     porColuna[t.status] = porColuna[t.status] || [];
     porColuna[t.status].push({ ...t, valor_total_termo: num(t.valor_total_termo), nf_soma: num(t.nf_soma), nf_diferenca: num(t.nf_diferenca), n_empresas: emp.length, n_nf_encontradas: emp.filter(e => e.nf_status === 'encontrada').length, n_pagas: emp.filter(e => e.pagamento_status === 'pago').length });
   }
-  return { colunas: porColuna, labels: STATUS_LABEL, total: termos.length };
+  // v1.20.3: total em valor (e contagem) por etapa, para o cabeçalho do Kanban de Faturamento
+  const totaisPorColuna = {};
+  STATUS.forEach(s => { const lista = porColuna[s] || []; totaisPorColuna[s] = { qtd: lista.length, valor: Math.round(lista.reduce((sm, t) => sm + num(t.valor_total_termo), 0) * 100) / 100 }; });
+  const totalGeral = { qtd: termos.length, valor: Math.round(termos.reduce((sm, t) => sm + num(t.valor_total_termo), 0) * 100) / 100 };
+  return { colunas: porColuna, labels: STATUS_LABEL, total: termos.length, totais_por_coluna: totaisPorColuna, total_geral: totalGeral };
 }
 
 async function termoGet({ id } = {}) {
