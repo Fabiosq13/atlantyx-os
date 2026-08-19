@@ -232,6 +232,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sbi s3" onclick="nav('s3kpis',this)">&#9711; KPIs de Saúde <span class="nbx gn">Auto</span></div>
       <div class="sg-sub">PROJETOS</div>
       <div class="sbi s3" onclick="nav('s3projetos',this)">&#128188; Projetos &amp; Marcos</div>
+      <div class="sbi s3" onclick="nav('s3contratos',this)">&#128220; Contratos <span class="nbx gd" id="ctrMenuCnt"></span></div>
       <div class="sbi s3" onclick="nav('s3marcoskanban',this)">&#128203; Kanban Financeiro</div>
       <div class="sg-sub">FATURAMENTO</div>
       <div class="sbi s3" onclick="nav('s3fatkanban',this)">&#128203; Kanban de Faturamento <span class="nbx pu" id="fatMenuCnt"></span></div>
@@ -2664,6 +2665,55 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </div>
 </div>
 
+<!-- v1.19: TELA DE CONTRATOS -->
+<div class="page" id="page-s3contratos">
+  <div style="background:linear-gradient(135deg,rgba(79,124,255,.12),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Contratos</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Número, vigência e vencimento de cada contrato — alimentado por importação de planilha</div></div>
+    <button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="abrirImportarPM()">&#128194; Importar Planilha</button>
+    <button class="btn btn-gn" onclick="abrirFormContrato()">+ Novo Contrato</button>
+    <button class="btn" onclick="carregarContratos()">&#8635; Atualizar</button>
+  </div>
+  <div class="kg k4" style="margin-bottom:12px;">
+    <div class="kpi bl"><div class="kl">Total de contratos</div><div class="kv" id="ctr_total">—</div></div>
+    <div class="kpi gn"><div class="kl">Vigentes</div><div class="kv" id="ctr_vigente">—</div><div class="ks">venc. &gt; 60 dias</div></div>
+    <div class="kpi gd"><div class="kl">Vencendo</div><div class="kv" id="ctr_vencendo">—</div><div class="ks">nos próximos 60 dias</div></div>
+    <div class="kpi rd"><div class="kl">Vencidos</div><div class="kv" id="ctr_vencido">—</div></div>
+  </div>
+  <div class="panel" style="margin-bottom:12px;display:none;" id="formContratoPanel">
+    <div class="ph"><div class="pt">Novo Contrato</div></div>
+    <div class="pb">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;">
+        <div class="fg" style="margin:0;"><label class="fl">Nº do Contrato</label><input class="fi" id="ctNumero" placeholder="Ex: CW2337039"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Projeto</label><input class="fi" id="ctProjeto" placeholder="Nome do projeto"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Prazo (texto livre)</label><input class="fi" id="ctPrazoTexto" placeholder="Ex: 24 meses"/></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+        <div class="fg" style="margin:0;"><label class="fl">Data de Início</label><input type="date" class="fi" id="ctInicio"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Data de Vencimento</label><input type="date" class="fi" id="ctVencimento"/></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button class="btn btn-gn" onclick="salvarContrato()">Salvar</button>
+        <button class="btn" onclick="document.getElementById('formContratoPanel').style.display='none'">Cancelar</button>
+      </div>
+    </div>
+  </div>
+  <div class="panel"><div class="ph"><div class="pt">Todos os contratos</div></div><div class="pb" id="ctrLista"><div style="text-align:center;color:var(--t3);padding:20px;">Carregando...</div></div></div>
+</div>
+
+<!-- v1.19: modal de importação (Projetos+Marcos+Contratos) -->
+<div id="pmImportModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:999;align-items:center;justify-content:center;overflow:auto;">
+  <div class="panel" style="width:560px;max-width:95vw;max-height:92vh;overflow:auto;">
+    <div class="ph"><div class="pt">&#128194; Importar Planilha de Projetos, Marcos e Contratos</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('pmImportModal').style.display='none'">✕</button></div>
+    <div class="pb">
+      <div style="font-size:11px;color:var(--t2);margin-bottom:10px;line-height:1.5;">Envie o arquivo .xlsx de planejamento financeiro. O sistema procura automaticamente uma aba com as colunas <b>Projeto, Marco, Valor, Status</b> (marcos) e/ou uma aba com <b>nº contrato, início, projeto, vencimento, prazo</b> (contratos) — importa o que encontrar. Projetos citados que ainda não existem são criados automaticamente.</div>
+      <input type="file" id="pmArquivoInput" accept=".xlsx,.xls" class="fi" style="width:100%;margin-bottom:10px;" onchange="_pmArquivoSelecionado(this)"/>
+      <div id="pmImportPreview" style="display:none;"></div>
+      <div id="pmImportErro" style="display:none;color:var(--red);font-size:11px;margin-top:8px;"></div>
+      <button class="btn btn-p" style="width:100%;margin-top:10px;" id="pmBtnConfirmarImport" onclick="confirmarImportarPM()" disabled>Confirmar importação</button>
+    </div>
+  </div>
+</div>
+
 <div class="page" id="page-s3extrato">
     <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(34,211,163,.03));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;">
       <div style="font-family:var(--H);font-size:15px;font-weight:700">Extrato Financeiro · Saldo Acumulado</div>
@@ -2856,6 +2906,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div class="page" id="page-s3projetos">
     <div style="background:linear-gradient(135deg,rgba(79,124,255,.12),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Projetos &amp; Marcos Financeiros</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Cadastro de projetos + marcos com data de entrega, percentual, valor, NF e data de pagamento</div></div>
+      <button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="abrirImportarPM()">&#128194; Importar Planilha (Projetos, Marcos e Contratos)</button>
       <button class="btn btn-gn" onclick="abrirFormProjeto()">+ Novo Projeto</button>
     </div>
 
@@ -3183,7 +3234,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <div class="toast" id="toastEl"></div>
 <script>
 const LOGS=[];let logCount=0;
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S3 · Kanban Financeiro de Marcos',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S3 · Kanban Financeiro de Marcos',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -14660,6 +14711,164 @@ async function _fatVerificarPagamento(id) {
   finally { if (btn) { btn.disabled = false; btn.textContent = '🏦 Verificar pagamento no QuickBooks'; } }
 }
 
+// ═══ v1.19: IMPORTAÇÃO DE PROJETOS, MARCOS E CONTRATOS ═══
+const MESES_PT = { janeiro:0, fevereiro:1, março:2, marco:2, abril:3, maio:4, junho:5, julho:6, agosto:7, setembro:8, outubro:9, novembro:10, dezembro:11 };
+function _pmParseDataPt(v) {
+  if (v == null || v === '') return null;
+  if (v instanceof Date) return _fdIso ? _fdIso(v) : v.toISOString().substring(0, 10);
+  const s2 = String(v).trim().toLowerCase().replace(/\.$/, '');
+  // "06 de junho de 2024"
+  const m = s2.match(/(\d{1,2})\s*(?:de)?\s*([a-zçã]+)\s*(?:de)?\s*(\d{4})/);
+  if (m && MESES_PT[m[2]] != null) { const d = new Date(parseInt(m[3]), MESES_PT[m[2]], parseInt(m[1])); return d.toISOString().substring(0, 10); }
+  // ISO ou serial do Excel já tratado pelo SheetJS como string tipo "2025-12-08 00:00:00"
+  const m2 = s2.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m2) return m2[0].substring(0,10);
+  const d2 = new Date(v); if (!isNaN(d2)) return d2.toISOString().substring(0, 10);
+  return null;
+}
+function _pmParseValorBR(v) {
+  if (v == null || v === '') return 0;
+  if (typeof v === 'number') return v;
+  let s2 = String(v).trim().replace(/^R\$\s*/i, '');
+  if (/,\d{1,2}$/.test(s2)) s2 = s2.replace(/\./g, '').replace(',', '.');
+  else s2 = s2.replace(/,/g, '');
+  const n = parseFloat(s2); return isNaN(n) ? 0 : n;
+}
+function _pmParsePrazoMeses(v) { if (v == null) return null; const m = String(v).match(/(\d+)/); return m ? parseInt(m[1]) : null; }
+
+function _pmAcharAba(wb, testeHeader) {
+  for (const nome of wb.SheetNames) {
+    const ws = wb.Sheets[nome];
+    for (let r = 0; r < 6; r++) {
+      const linha = [];
+      for (let c = 0; c < 10; c++) { const cell = ws[window.XLSX.utils.encode_cell({ c, r })]; linha.push(cell ? String(cell.v).trim().toLowerCase() : ''); }
+      if (testeHeader(linha)) return { nome, headerRow: r, ws };
+    }
+  }
+  return null;
+}
+
+function _pmParseMarcos(ws, headerRow, XLSX) {
+  const get = (col, row) => { const cell = ws[XLSX.utils.encode_cell({ c: col, r: row })]; return cell ? cell.v : null; };
+  const header = []; for (let c = 0; c < 10; c++) header.push(String(get(c, headerRow) || '').trim().toLowerCase());
+  const idx = (padrao) => header.findIndex(h => h.includes(padrao));
+  const cProj = idx('projeto'), cMarco = idx('marco'), cSol = idx('solicita'), cPag = idx('pagamento'), cVal = idx('valor'), cStatus = idx('status'), cGp = idx('gp') >= 0 ? idx('gp') : idx('respons');
+  const linhas = [];
+  for (let r = headerRow + 1; r < headerRow + 500; r++) {
+    const proj = get(cProj, r); if (proj == null || String(proj).trim() === '') { if (r > headerRow + 3 && linhas.length) break; continue; }
+    const marco = get(cMarco, r); if (marco == null || String(marco).trim() === '') continue;
+    linhas.push({
+      projeto: String(proj).trim(), marco: String(marco).trim(),
+      data_solicitacao: cSol >= 0 ? _pmParseDataPt(get(cSol, r)) : null,
+      data_pagamento: cPag >= 0 ? _pmParseDataPt(get(cPag, r)) : null,
+      valor: cVal >= 0 ? _pmParseValorBR(get(cVal, r)) : 0,
+      status: cStatus >= 0 ? String(get(cStatus, r) || '').trim() : '',
+      gp_responsavel: cGp >= 0 ? String(get(cGp, r) || '').trim() : '',
+    });
+  }
+  return linhas;
+}
+function _pmParseContratos(ws, headerRow, XLSX) {
+  const get = (col, row) => { const cell = ws[XLSX.utils.encode_cell({ c: col, r: row })]; return cell ? cell.v : null; };
+  const header = []; for (let c = 0; c < 8; c++) header.push(String(get(c, headerRow) || '').trim().toLowerCase());
+  const idx = (padrao) => header.findIndex(h => h.includes(padrao));
+  const cNum = idx('contrato'), cIni = idx('inicio') >= 0 ? idx('inicio') : idx('início'), cProj = idx('projeto'), cVenc = idx('vencimento'), cPrazo = idx('prazo');
+  const linhas = [];
+  for (let r = headerRow + 1; r < headerRow + 500; r++) {
+    const numc = get(cNum, r); if (numc == null || String(numc).trim() === '') { if (r > headerRow + 3 && linhas.length) break; continue; }
+    linhas.push({
+      numero_contrato: String(numc).trim(), projeto: cProj >= 0 ? String(get(cProj, r) || '').trim() : '',
+      data_inicio: cIni >= 0 ? _pmParseDataPt(get(cIni, r)) : null, data_vencimento: cVenc >= 0 ? _pmParseDataPt(get(cVenc, r)) : null,
+      prazo_texto: cPrazo >= 0 ? String(get(cPrazo, r) || '').trim() : '', prazo_meses: cPrazo >= 0 ? _pmParsePrazoMeses(get(cPrazo, r)) : null,
+    });
+  }
+  return linhas;
+}
+
+let _pmParsed = null;
+async function _pmArquivoSelecionado(input) {
+  const file = input.files?.[0]; if (!file) return;
+  const prev = document.getElementById('pmImportPreview'), err = document.getElementById('pmImportErro'), btn = document.getElementById('pmBtnConfirmarImport');
+  err.style.display = 'none'; prev.style.display = 'none'; btn.disabled = true; _pmParsed = null;
+  try {
+    await _carregarSheetJS();
+    const buf = await file.arrayBuffer();
+    const wb = window.XLSX.read(buf, { type: 'array' });
+    const abaMarcos = _pmAcharAba(wb, l => l.some(h => h.includes('projeto')) && l.some(h => h.includes('marco')));
+    const abaContratos = _pmAcharAba(wb, l => l.some(h => h.includes('contrato')) && l.some(h => h.includes('vencimento')));
+    const marcos = abaMarcos ? _pmParseMarcos(abaMarcos.ws, abaMarcos.headerRow, window.XLSX) : [];
+    const contratos = abaContratos ? _pmParseContratos(abaContratos.ws, abaContratos.headerRow, window.XLSX) : [];
+    if (!marcos.length && !contratos.length) throw new Error('Não encontrei nenhuma aba com colunas de Marcos (Projeto/Marco/Valor/Status) ou Contratos (nº contrato/início/vencimento/prazo).');
+    _pmParsed = { marcos, contratos };
+    const projetosUnicos = [...new Set(marcos.map(m => m.projeto))];
+    prev.style.display = 'block';
+    prev.innerHTML = `<div style="background:var(--bg4);border-radius:8px;padding:10px;font-size:11px;line-height:1.7;">
+      ${marcos.length ? `<div><b>📋 ${marcos.length} marco(s)</b> encontrados (aba "${abaMarcos.nome}") em <b>${projetosUnicos.length} projeto(s)</b>: ${projetosUnicos.slice(0,6).join(', ')}${projetosUnicos.length>6?'…':''}</div>
+      <div style="max-height:120px;overflow-y:auto;margin-top:4px;">${marcos.slice(0,15).map(m => '<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid var(--bd);"><span>'+m.projeto+' · '+m.marco.substring(0,30)+'</span><span style="font-family:var(--M);">'+fmtBRLcompleto(m.valor)+' · '+(m.status||'—')+'</span></div>').join('')}${marcos.length>15?'<div style="color:var(--t3);">+'+(marcos.length-15)+' outro(s)…</div>':''}</div>` : '<div style="color:var(--t3);">Nenhum marco encontrado.</div>'}
+      ${contratos.length ? `<div style="margin-top:10px;"><b>📄 ${contratos.length} contrato(s)</b> encontrados (aba "${abaContratos.nome}")</div>
+      <div style="max-height:100px;overflow-y:auto;margin-top:4px;">${contratos.map(c => '<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid var(--bd);"><span>'+c.numero_contrato+' · '+(c.projeto||'')+'</span><span style="color:var(--t2);">vence '+(c.data_vencimento||'—')+'</span></div>').join('')}</div>` : ''}
+    </div>`;
+    btn.disabled = false;
+  } catch (e) { err.style.display = 'block'; err.textContent = 'Erro ao ler o arquivo: ' + e.message; }
+}
+function abrirImportarPM() {
+  _pmParsed = null; document.getElementById('pmArquivoInput').value = '';
+  document.getElementById('pmImportPreview').style.display = 'none'; document.getElementById('pmImportErro').style.display = 'none';
+  document.getElementById('pmBtnConfirmarImport').disabled = true;
+  document.getElementById('pmImportModal').style.display = 'flex';
+}
+async function confirmarImportarPM() {
+  if (!_pmParsed) return;
+  const btn = document.getElementById('pmBtnConfirmarImport'); btn.disabled = true; btn.textContent = 'Importando...';
+  try {
+    let msgs = [];
+    if (_pmParsed.marcos.length) { const r = await finApi('marcos_importar', { linhas: _pmParsed.marcos }); msgs.push(r.marcos_criados + ' marco(s)' + (r.projetos_criados?.length ? ' · ' + r.projetos_criados.length + ' projeto(s) novo(s)' : '') + (r.erros?.length ? ' · ' + r.erros.length + ' erro(s)' : '')); }
+    if (_pmParsed.contratos.length) { const r2 = await finApi('contratos_importar', { linhas: _pmParsed.contratos }); msgs.push(r2.contratos_criados + ' contrato(s)' + (r2.erros?.length ? ' · ' + r2.erros.length + ' erro(s)' : '')); }
+    document.getElementById('pmImportModal').style.display = 'none';
+    toast('Importado: ' + msgs.join(' · '), 'success');
+    addLog('ok', '[Importação] ' + msgs.join(' · '));
+    try { carregarProjetos(); } catch(_) {}
+    try { carregarContratos(); } catch(_) {}
+  } catch (e) { document.getElementById('pmImportErro').style.display = 'block'; document.getElementById('pmImportErro').textContent = 'Erro ao importar: ' + e.message; }
+  finally { btn.disabled = false; btn.textContent = 'Confirmar importação'; }
+}
+
+// ── Tela de Contratos ──
+async function carregarContratos() {
+  const box = document.getElementById('ctrLista'); if (!box) return;
+  try {
+    const d = await finApi('contrato_list');
+    const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    u('ctr_total', d.resumo.total); u('ctr_vigente', d.resumo.vigente); u('ctr_vencendo', d.resumo.vencendo); u('ctr_vencido', d.resumo.vencido);
+    const badge = document.getElementById('ctrMenuCnt'); if (badge) badge.textContent = (d.resumo.vencendo + d.resumo.vencido) || '';
+    const cor = { vigente: 'var(--green,#22d3a3)', vencendo: 'var(--gold)', vencido: 'var(--red)', sem_data: 'var(--t3)' };
+    const lbl = { vigente: '🟢 Vigente', vencendo: '🟡 Vencendo', vencido: '🔴 Vencido', sem_data: '⚪ Sem data' };
+    box.innerHTML = d.contratos.length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;">
+      <thead><tr style="border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">Nº CONTRATO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">PROJETO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">INÍCIO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">VENCIMENTO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">PRAZO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">STATUS</th><th></th></tr></thead>
+      <tbody>${d.contratos.map(c => `<tr style="border-bottom:1px solid var(--bd);">
+        <td style="padding:6px;font-family:var(--M);">${c.numero_contrato}</td>
+        <td style="padding:6px;">${c.projeto||'—'}</td>
+        <td style="padding:6px;color:var(--t2);">${c.data_inicio ? c.data_inicio.split('-').reverse().join('/') : '—'}</td>
+        <td style="padding:6px;color:var(--t2);">${c.data_vencimento ? c.data_vencimento.split('-').reverse().join('/') : '—'}</td>
+        <td style="padding:6px;color:var(--t2);">${c.prazo_texto||(c.prazo_meses?c.prazo_meses+' meses':'—')}</td>
+        <td style="padding:6px;color:${cor[c.status_calc]};">${lbl[c.status_calc]}${c.dias_restantes!=null && c.status_calc!=='vencido' ? ' ('+c.dias_restantes+'d)' : c.dias_restantes!=null ? ' ('+Math.abs(c.dias_restantes)+'d atrás)' : ''}</td>
+        <td style="padding:6px;"><button class="btn" style="font-size:8px;padding:1px 5px;color:var(--red);" onclick="_ctrExcluir('${c.id}')">🗑</button></td>
+        </tr>`).join('')}</tbody></table>` : '<div style="text-align:center;color:var(--t3);padding:20px;">Nenhum contrato cadastrado — importe uma planilha ou clique em + Novo Contrato.</div>';
+  } catch (e) { box.innerHTML = '<div style="color:var(--red);text-align:center;padding:20px;">Erro: ' + e.message + '</div>'; }
+}
+function abrirFormContrato() {
+  ['ctNumero','ctProjeto','ctPrazoTexto','ctInicio','ctVencimento'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+  document.getElementById('formContratoPanel').style.display = 'block';
+}
+async function salvarContrato() {
+  const numero = document.getElementById('ctNumero')?.value?.trim();
+  if (!numero) { toast('Informe o número do contrato', 'error'); return; }
+  try {
+    await finApi('contrato_save', { numero_contrato: numero, projeto: document.getElementById('ctProjeto')?.value?.trim(), data_inicio: document.getElementById('ctInicio')?.value || null, data_vencimento: document.getElementById('ctVencimento')?.value || null, prazo_texto: document.getElementById('ctPrazoTexto')?.value?.trim() });
+    toast('Contrato salvo', 'success'); document.getElementById('formContratoPanel').style.display = 'none'; carregarContratos();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+async function _ctrExcluir(id) { if (!confirm('Excluir este contrato?')) return; try { await finApi('contrato_delete', { id }); toast('Contrato excluído', 'info'); carregarContratos(); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
+
 // ═══ v1.14: DASHBOARD FINANCEIRO ═══
 async function carregarDashboardFinanceiro() {
   const st = document.getElementById('dfStatus'); const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
@@ -16449,7 +16658,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.18] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.19] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -16465,7 +16674,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.18';
+window.__ATX_BUILD_ID__ = 'ATX-v1.19';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
