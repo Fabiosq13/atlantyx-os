@@ -233,6 +233,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sg-sub">PROJETOS</div>
       <div class="sbi s3" onclick="nav('s3projetos',this)">&#128188; Projetos &amp; Marcos</div>
       <div class="sbi s3" onclick="nav('s3marcoskanban',this)">&#128203; Kanban Financeiro</div>
+      <div class="sg-sub">FATURAMENTO</div>
+      <div class="sbi s3" onclick="nav('s3fatkanban',this)">&#128203; Kanban de Faturamento <span class="nbx pu" id="fatMenuCnt"></span></div>
       <div class="sg-sub">INTELIGÊNCIA</div>
       <div class="sbi s1" onclick="nav('s1financeiro',this)">&#8593; Análise Financeira IA</div>
       <div class="sbi s1" onclick="nav('s1dados',this)">&#128200; Dados Reais (QB + Drive)</div>
@@ -2592,7 +2594,15 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <div class="page" id="page-s3fluxodet">
   <div style="background:linear-gradient(135deg,rgba(79,124,255,.14),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
     <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Fluxo de Caixa Detalhado</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Extrato realizado até hoje + futuro lançamento a lançamento (QuickBooks: recebíveis e pagáveis reais) · saldo projetado</div></div>
-    <label style="font-size:10px;color:var(--t2);display:flex;align-items:center;gap:5px;"><input type="checkbox" id="fd_incluirSim" checked/> incluir simulados</label>
+    <label style="font-size:10px;color:var(--t2);">DE</label>
+    <input type="date" id="fd_dataInicio" class="fsel" style="font-size:11px;width:auto;" onchange="carregarFluxoDetalhado()"/>
+    <label style="font-size:10px;color:var(--t2);">ATÉ</label>
+    <input type="date" id="fd_dataFim" class="fsel" style="font-size:11px;width:auto;" placeholder="sem limite" onchange="carregarFluxoDetalhado()"/>
+    <button class="btn" style="font-size:9px;" onclick="_fdPreset(60,null)">60d passados</button>
+    <button class="btn" style="font-size:9px;" onclick="_fdPreset(30,90)">±30/90d</button>
+    <button class="btn" style="font-size:9px;" onclick="_fdPreset(90,365)">3m passado · 1a futuro</button>
+    <button class="btn" style="font-size:9px;" onclick="_fdPreset(60,null,true)">&#10005; Limpar (sem limite futuro)</button>
+    <label style="font-size:10px;color:var(--t2);display:flex;align-items:center;gap:5px;"><input type="checkbox" id="fd_incluirSim" checked onchange="carregarFluxoDetalhado()"/> incluir simulados</label>
     <button class="btn btn-gn" onclick="carregarFluxoDetalhado()">&#8635; Atualizar</button>
   </div>
   <div id="fdStatus" style="display:none;margin-bottom:10px;"></div>
@@ -2623,6 +2633,34 @@ tr:hover td{background:rgba(79,124,255,.03);}
       </table>
     </div>
     <div style="padding:10px 14px;font-size:9.5px;color:var(--t3);border-top:1px solid var(--bd);">Fonte "QuickBooks" = faturas (Invoice) e contas (Bill) em aberto reais, pela data de vencimento. Fonte "Atlantyx" = despesas programadas e lançamentos simulados futuros cadastrados no sistema. O projetado vai até onde houver dado — sem limite fixo de meses.</div>
+  </div>
+</div>
+
+<!-- v1.17: KANBAN DE FATURAMENTO -->
+<div class="page" id="page-s3fatkanban">
+  <div style="background:linear-gradient(135deg,rgba(156,109,255,.14),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Kanban de Faturamento</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Termo de Aceite → Aprovação → Emissão de NF → Envio de NF (confere e-mail) → Pagamento (confere QuickBooks)</div></div>
+    <button class="btn btn-p" onclick="abrirImportarTermo()">&#128194; Importar Termo de Faturamento</button>
+    <button class="btn" onclick="carregarKanbanFaturamento()">&#8635; Atualizar</button>
+  </div>
+  <div id="fatKbStatus" style="display:none;margin-bottom:10px;"></div>
+  <div id="fatKanbanBoard" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;align-items:start;">
+    <div style="grid-column:1/-1;text-align:center;color:var(--t3);font-size:11px;padding:24px;">Carregando...</div>
+  </div>
+  <div id="fatDetalhe" style="display:none;margin-top:16px;"></div>
+</div>
+
+<!-- Modal de importação -->
+<div id="fatImportModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:999;align-items:center;justify-content:center;overflow:auto;">
+  <div class="panel" style="width:520px;max-width:95vw;max-height:92vh;overflow:auto;">
+    <div class="ph"><div class="pt">&#128194; Importar Termo de Faturamento</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('fatImportModal').style.display='none'">✕</button></div>
+    <div class="pb">
+      <div style="font-size:11px;color:var(--t2);margin-bottom:10px;line-height:1.5;">Envie o arquivo .xlsx do Termo de Aceite de Faturamento (modelo com abas "Termo_Aceite"/"Termo Aceite"). O sistema lê o cabeçalho e a tabela "Valores e Rateios entre as Empresas" automaticamente — uma nota fiscal será esperada por empresa do rateio.</div>
+      <input type="file" id="fatArquivoInput" accept=".xlsx,.xls" class="fi" style="width:100%;margin-bottom:10px;" onchange="_fatArquivoSelecionado(this)"/>
+      <div id="fatImportPreview" style="display:none;"></div>
+      <div id="fatImportErro" style="display:none;color:var(--red);font-size:11px;margin-top:8px;"></div>
+      <button class="btn btn-p" style="width:100%;margin-top:10px;" id="fatBtnConfirmarImport" onclick="confirmarImportarTermo()" disabled>Confirmar importação</button>
+    </div>
   </div>
 </div>
 
@@ -3145,7 +3183,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <div class="toast" id="toastEl"></div>
 <script>
 const LOGS=[];let logCount=0;
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S3 · Kanban Financeiro de Marcos',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S3 · Kanban Financeiro de Marcos',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -14321,7 +14359,19 @@ function _fdLinha(l, corSaldo) {
     + '<td style="padding:6px;text-align:right;font-family:var(--M);font-weight:600;color:' + (l.saldo_acumulado < 0 ? 'var(--red)' : (corSaldo || 'var(--t1)')) + ';">' + fmtBRLcompleto(l.saldo_acumulado) + '</td>'
     + '</tr>';
 }
+function _fdIso(d) { return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().substring(0, 10); }
+function _fdPreset(diasPassado, diasFuturo, limpar) {
+  const hoje = new Date();
+  const ini = new Date(hoje); ini.setDate(ini.getDate() - diasPassado);
+  document.getElementById('fd_dataInicio').value = _fdIso(ini);
+  if (limpar || diasFuturo == null) { document.getElementById('fd_dataFim').value = ''; }
+  else { const fim = new Date(hoje); fim.setDate(fim.getDate() + diasFuturo); document.getElementById('fd_dataFim').value = _fdIso(fim); }
+  carregarFluxoDetalhado();
+}
 async function carregarFluxoDetalhado() {
+  // v1.16.1: datas padrão (60 dias atrás → sem limite futuro) na primeira carga
+  const iEl = document.getElementById('fd_dataInicio'), fEl = document.getElementById('fd_dataFim');
+  if (iEl && !iEl.value) { const d = new Date(); d.setDate(d.getDate() - 60); iEl.value = _fdIso(d); }
   const st = document.getElementById('fdStatus');
   const tbP = document.getElementById('fd_tbodyPassado'), tbF = document.getElementById('fd_tbodyFuturo');
   if (tbP) tbP.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Carregando... <span style="color:var(--t3);font-size:9px;">(consultando QuickBooks, pode levar até 60s)</span></td></tr>';
@@ -14329,7 +14379,9 @@ async function carregarFluxoDetalhado() {
   if (st) st.style.display = 'none';
   try {
     const incluirSim = document.getElementById('fd_incluirSim')?.checked !== false;
-    const d = await finApi('fluxo_detalhado', { dias_passado: 60, incluir_simulados: incluirSim });
+    const dIni = document.getElementById('fd_dataInicio')?.value || null;
+    const dFim = document.getElementById('fd_dataFim')?.value || null;
+    const d = await finApi('fluxo_detalhado', { data_inicio: dIni, data_fim: dFim, incluir_simulados: incluirSim });
     const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
     u('fd_saldoHoje', fmtBRLcompleto(d.saldo_hoje));
     u('fd_saldoHojeSub', 'realizado até ' + d.hoje?.split('-').reverse().join('/'));
@@ -14338,7 +14390,7 @@ async function carregarFluxoDetalhado() {
     u('fd_pagar', fmtBRLcompleto(d.futuro.total_pagaveis));
     u('fd_pagarSub', 'até ' + (d.futuro.ate?.split('-').reverse().join('/') || '—'));
     u('fd_saldoFinal', fmtBRLcompleto(d.saldo_projetado_final));
-    u('fd_saldoFinalSub', d.futuro.lancamentos.length + ' lançamento(s) futuro(s)');
+    u('fd_saldoFinalSub', d.futuro.lancamentos.length + ' lançamento(s) futuro(s)' + (d.periodo?.data_fim ? ' até ' + d.periodo.data_fim.split('-').reverse().join('/') : ' · sem limite'));
 
     const ms = document.getElementById('fd_menorSaldo');
     if (ms) { if (d.menor_saldo_projetado && d.menor_saldo_projetado.valor < 0) { ms.style.display = 'block'; ms.innerHTML = '<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:10px 14px;font-size:11.5px;">🔴 <b>Saldo fica negativo</b>: ' + fmtBRLcompleto(d.menor_saldo_projetado.valor) + ' em ' + d.menor_saldo_projetado.data?.split('-').reverse().join('/') + ' (' + d.menor_saldo_projetado.descricao + ')</div>'; }
@@ -14361,6 +14413,225 @@ async function carregarFluxoDetalhado() {
     if (tbF) tbF.innerHTML = '';
     addLog('err', '[Fluxo Detalhado] ' + e.message);
   }
+}
+
+// ═══ v1.17: KANBAN DE FATURAMENTO ═══
+async function fatApi(action, params = {}) {
+  let r;
+  try { r = await fetch('/api/faturamento', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action, payload: params }) }); }
+  catch (netErr) { throw new Error('Rede: não conectou em /api/faturamento — ' + netErr.message); }
+  const raw = await r.text(); let d;
+  try { d = JSON.parse(raw); } catch { throw new Error('Resposta não-JSON de /api/faturamento (HTTP ' + r.status + '): ' + raw.substring(0,150)); }
+  if (!d.success) throw new Error(d.error || ('HTTP ' + r.status + ' na API faturamento'));
+  return d;
+}
+
+// ── carregar SheetJS sob demanda (CDN) para ler o .xlsx no navegador ──
+function _carregarSheetJS() {
+  return new Promise((resolve, reject) => {
+    if (window.XLSX) return resolve();
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    sc.onload = () => resolve(); sc.onerror = () => reject(new Error('falha ao carregar SheetJS (CDN bloqueada?)'));
+    document.head.appendChild(sc);
+  });
+}
+
+// ── parser do modelo "Termo de Aceite de Faturamento" (posições fixas confirmadas nos 4 modelos) ──
+function _fatParseTermo(ws, XLSX) {
+  const get = (col, row) => { const cell = ws[XLSX.utils.encode_cell({ c: col, r: row })]; return cell ? cell.v : null; };
+  const strip = (v, prefixo) => { if (v == null) return ''; let t = String(v).replace(/\n/g, ' ').trim(); const i = t.indexOf(':'); if (prefixo && i >= 0) t = t.substring(i + 1).trim(); return t; };
+  // linhas 0-indexed: row3(planilha)=idx2, row7=idx6, row10=idx9, row11=idx10, row19=idx18
+  const cabecalho = {
+    projeto: strip(get(0, 2), true), fase: strip(get(6, 2), true), contratada: strip(get(9, 2), true),
+    contratante: strip(get(0, 6), true), cnpj_fornecedor: strip(get(6, 6), true), periodo_medicao: strip(get(9, 6), true),
+    marco_projeto: strip(get(0, 9), true), numero_termo: get(6, 10) != null ? String(get(6, 10)) : '', parcela: get(9, 10) != null ? String(get(9, 10)) : '',
+    valor_mensal_sustentacao: 0,
+  };
+  // valor mensal sustentação: procura na linha 14 (idx13) coluna I (idx8), formato livre "Valor mensal Sustentacao : R$ X"
+  const obsTxt = String(get(8, 13) || '');
+  const mVal = obsTxt.match(/([\d.,]+)\s*$/);
+  if (mVal) cabecalho.valor_mensal_sustentacao = parseFloat(mVal[1].replace(/\./g, '').replace(',', '.')) || parseFloat(mVal[1]) || 0;
+
+  // localizar a linha do cabeçalho "EMPRESA" varrendo a coluna A (mais robusto que fixar linha 19)
+  let headerRow = -1;
+  for (let r2 = 10; r2 < 40; r2++) { const v = get(0, r2); if (v && String(v).trim().toUpperCase() === 'EMPRESA') { headerRow = r2; break; } }
+  if (headerRow < 0) throw new Error('Não encontrei a tabela "EMPRESA" (Valores e Rateios) na aba do termo.');
+  const empresas = [];
+  for (let r2 = headerRow + 1; r2 < headerRow + 60; r2++) {
+    const nome = get(0, r2);
+    if (nome == null || String(nome).trim() === '') continue;
+    if (String(nome).trim().toLowerCase().startsWith('total')) break;
+    empresas.push({
+      empresa: String(nome).trim(), contrato: get(2, r2) != null ? String(get(2, r2)) : '', ncm: get(3, r2) != null ? String(get(3, r2)) : '',
+      centro_custo: get(4, r2) != null ? String(get(4, r2)) : '', diferimento: get(5, r2) != null ? String(get(5, r2)) : '',
+      valor_total_contrato: parseFloat(get(6, r2)) || 0, percentual: parseFloat(get(8, r2)) || 0,
+      valor_ja_faturado: parseFloat(get(9, r2)) || 0, valor_parcela_anterior: parseFloat(get(10, r2)) || 0,
+      valor_parcela: parseFloat(get(11, r2)) || 0, saldo_contrato: parseFloat(get(12, r2)) || 0,
+    });
+  }
+  return { cabecalho, empresas };
+}
+
+let _fatParsed = null;
+async function _fatArquivoSelecionado(input) {
+  const file = input.files?.[0]; if (!file) return;
+  const prev = document.getElementById('fatImportPreview'), err = document.getElementById('fatImportErro'), btn = document.getElementById('fatBtnConfirmarImport');
+  err.style.display = 'none'; prev.style.display = 'none'; btn.disabled = true; _fatParsed = null;
+  try {
+    await _carregarSheetJS();
+    const buf = await file.arrayBuffer();
+    const wb = window.XLSX.read(buf, { type: 'array' });
+    const sheetName = wb.SheetNames.find(n => /termo.?aceite/i.test(n)) || wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
+    const { cabecalho, empresas } = _fatParseTermo(ws, window.XLSX);
+    if (!empresas.length) throw new Error('Nenhuma empresa encontrada na tabela de rateio.');
+    const total = empresas.reduce((s, e) => s + (e.valor_parcela || 0), 0);
+    _fatParsed = { arquivo_nome: file.name, cabecalho, empresas };
+    prev.style.display = 'block';
+    prev.innerHTML = `<div style="background:var(--bg4);border-radius:8px;padding:10px;font-size:11px;line-height:1.7;">
+      <div><b>Projeto:</b> ${cabecalho.projeto || '—'}</div>
+      <div><b>Contratante:</b> ${cabecalho.contratante || '—'} · <b>Nº Termo:</b> ${cabecalho.numero_termo || '—'} (parcela ${cabecalho.parcela || '—'})</div>
+      <div><b>Período:</b> ${cabecalho.periodo_medicao || '—'}</div>
+      <div style="margin-top:6px;"><b>${empresas.length} empresa(s) no rateio</b> — total a faturar: <span style="color:var(--gold);font-weight:700;">${fmtBRLcompleto(total)}</span></div>
+      <div style="margin-top:4px;max-height:140px;overflow-y:auto;">${empresas.map(e => '<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid var(--bd);"><span>' + e.empresa + '</span><span style="font-family:var(--M);">' + fmtBRLcompleto(e.valor_parcela) + '</span></div>').join('')}</div>
+    </div>`;
+    btn.disabled = false;
+  } catch (e) { err.style.display = 'block'; err.textContent = 'Erro ao ler o arquivo: ' + e.message; }
+}
+function abrirImportarTermo() {
+  _fatParsed = null;
+  document.getElementById('fatArquivoInput').value = '';
+  document.getElementById('fatImportPreview').style.display = 'none';
+  document.getElementById('fatImportErro').style.display = 'none';
+  document.getElementById('fatBtnConfirmarImport').disabled = true;
+  document.getElementById('fatImportModal').style.display = 'flex';
+}
+async function confirmarImportarTermo() {
+  if (!_fatParsed) return;
+  const btn = document.getElementById('fatBtnConfirmarImport'); btn.disabled = true; btn.textContent = 'Importando...';
+  try {
+    await fatApi('termo_importar', _fatParsed);
+    document.getElementById('fatImportModal').style.display = 'none';
+    toast('Termo importado — ' + _fatParsed.empresas.length + ' empresa(s) no rateio', 'success');
+    addLog('ok', '[Faturamento] Termo importado: ' + (_fatParsed.cabecalho.projeto || _fatParsed.arquivo_nome));
+    carregarKanbanFaturamento();
+  } catch (e) { document.getElementById('fatImportErro').style.display = 'block'; document.getElementById('fatImportErro').textContent = 'Erro ao importar: ' + e.message; }
+  finally { btn.disabled = false; btn.textContent = 'Confirmar importação'; }
+}
+
+// ── Kanban board ──
+const FAT_COLS = ['elaboracao','aprovacao','emissao_nf','envio_nf','pagamento'];
+const FAT_LABELS = { elaboracao:'📝 Elaboração do Termo', aprovacao:'✅ Aprovação', emissao_nf:'🧾 Emissão de NF', envio_nf:'📧 Envio de NF', pagamento:'💰 Pagamento', concluido:'🏁 Concluído' };
+let _fatColunas = {};
+async function carregarKanbanFaturamento() {
+  const board = document.getElementById('fatKanbanBoard'); if (!board) return;
+  try {
+    const d = await fatApi('termo_list');
+    _fatColunas = d.colunas || {};
+    const cntTotal = FAT_COLS.reduce((s, c) => s + (_fatColunas[c]?.length || 0), 0);
+    const badge = document.getElementById('fatMenuCnt'); if (badge) badge.textContent = cntTotal || '';
+    board.innerHTML = FAT_COLS.map(col => {
+      const termos = _fatColunas[col] || [];
+      return `<div>
+        <div style="font-family:var(--M);font-size:10px;color:var(--t2);margin-bottom:6px;display:flex;justify-content:space-between;">${FAT_LABELS[col]}<span style="color:var(--t3);">${termos.length}</span></div>
+        <div style="display:flex;flex-direction:column;gap:8px;min-height:60px;">
+        ${termos.map(t => _fatCard(t, col)).join('') || '<div style="text-align:center;color:var(--t3);font-size:10px;padding:14px;background:var(--bg4);border-radius:8px;">—</div>'}
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) { board.innerHTML = '<div style="grid-column:1/-1;color:var(--red);text-align:center;padding:20px;font-size:11px;">Erro: ' + e.message + '</div>'; addLog('err', '[Faturamento] ' + e.message); }
+}
+function _fatCard(t, col) {
+  const nfBadge = col === 'envio_nf' || col === 'pagamento' || col === 'aprovacao' || col === 'emissao_nf'
+    ? `<div style="font-size:9px;margin-top:4px;">🧾 ${t.n_nf_encontradas}/${t.n_empresas} nota(s)${t.nf_status === 'divergente' ? ' <span style="color:var(--red);">⚠ divergente</span>' : t.nf_status === 'completo' ? ' <span style="color:var(--green,#22d3a3);">✓ completo</span>' : ''}</div>` : '';
+  const pagBadge = col === 'pagamento' ? `<div style="font-size:9px;margin-top:2px;">💰 ${t.n_pagas}/${t.n_empresas} paga(s)</div>` : '';
+  return `<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:9px;cursor:pointer;" onclick="abrirDetalheTermo('${t.id}')">
+    <div style="font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${(t.projeto||'Termo').replace(/</g,'&lt;')}</div>
+    <div style="font-size:9px;color:var(--t2);margin-top:2px;">${t.contratante||''} · ${t.periodo_medicao||''}</div>
+    <div style="font-size:11px;font-family:var(--M);color:var(--gold);margin-top:4px;">${fmtBRLcompleto(t.valor_total_termo)}</div>
+    <div style="font-size:9px;color:var(--t3);">${t.n_empresas} empresa(s) no rateio</div>
+    ${nfBadge}${pagBadge}
+  </div>`;
+}
+
+// ── Detalhe do termo ──
+async function abrirDetalheTermo(id) {
+  const box = document.getElementById('fatDetalhe'); if (!box) return;
+  box.style.display = 'block'; box.innerHTML = '<div style="text-align:center;color:var(--t3);padding:20px;">Carregando...</div>';
+  try { setTimeout(() => box.scrollIntoView({ behavior:'smooth', block:'start' }), 60); } catch(_) {}
+  try {
+    const d = await fatApi('termo_get', { id });
+    const t = d.termo, emp = d.empresas, notas = d.notas || [];
+    const idxCol = FAT_COLS.indexOf(t.status);
+    const proximo = t.status === 'concluido' ? null : (t.status === 'aprovacao' ? null : FAT_COLS[idxCol + 1]);
+    box.innerHTML = `<div class="panel" style="border:1px solid rgba(156,109,255,.4);">
+      <div class="ph"><div class="pt">${(t.projeto||'Termo').replace(/</g,'&lt;')} — ${FAT_LABELS[t.status]}</div>
+        <button class="btn" style="font-size:10px;" onclick="document.getElementById('fatDetalhe').style.display='none'">Fechar</button></div>
+      <div class="pb">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;font-size:11px;margin-bottom:12px;">
+          <div><b>Contratante:</b> ${t.contratante||'—'}</div><div><b>Nº Termo:</b> ${t.numero_termo||'—'} (${t.parcela||'—'})</div><div><b>Período:</b> ${t.periodo_medicao||'—'}</div>
+          <div><b>Fase contratual:</b> ${t.fase||'—'}</div><div><b>Marco:</b> ${(t.marco_projeto||'').substring(0,40)}</div><div><b>Valor total:</b> <span style="color:var(--gold);font-family:var(--M);">${fmtBRLcompleto(t.valor_total_termo)}</span></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+          ${t.status === 'elaboracao' ? `<button class="btn btn-p" onclick="_fatAvancar('${t.id}','aprovacao')">Enviar para Aprovação →</button>` : ''}
+          ${t.status === 'aprovacao' ? `<button class="btn btn-gn" onclick="_fatAprovar('${t.id}')">✓ Aprovar (envia p/ Emissão de NF)</button><button class="btn btn-rd" onclick="_fatAvancar('${t.id}','elaboracao')">← Recusar / voltar</button>` : ''}
+          ${t.status === 'emissao_nf' ? `<button class="btn btn-p" onclick="_fatAvancar('${t.id}','envio_nf')">Notas emitidas — ir p/ Envio →</button>` : ''}
+          ${t.status === 'envio_nf' ? `<button class="btn btn-p" onclick="_fatVerificarEmail('${t.id}')" id="btnVerifEmail_${t.id}">📧 Verificar e-mail (atlanteambr@gmail.com)</button>${t.nf_status === 'completo' ? `<button class="btn btn-gn" onclick="_fatAvancar('${t.id}','pagamento')">Todas as notas ok — ir p/ Pagamento →</button>` : ''}` : ''}
+          ${t.status === 'pagamento' ? `<button class="btn btn-p" onclick="_fatVerificarPagamento('${t.id}')" id="btnVerifPag_${t.id}">🏦 Verificar pagamento no QuickBooks</button>` : ''}
+          <button class="btn" style="color:var(--red);margin-left:auto;" onclick="_fatExcluir('${t.id}')">🗑 Excluir termo</button>
+        </div>
+        ${t.nf_status && t.status !== 'elaboracao' ? `<div style="margin-bottom:10px;padding:8px 12px;border-radius:7px;font-size:11px;background:${t.nf_status==='completo'?'rgba(34,211,163,.1);border:1px solid var(--green,#22d3a3)':t.nf_status==='divergente'?'rgba(255,80,80,.1);border:1px solid var(--red)':'rgba(245,185,75,.1);border:1px solid var(--gold)'};">
+          ${t.nf_status==='completo' ? '✅ Todas as notas fiscais encontradas e o valor bate com o termo ('+fmtBRLcompleto(t.nf_soma)+').' : t.nf_status==='divergente' ? '⚠ Notas encontradas somam '+fmtBRLcompleto(t.nf_soma)+' — diferença de '+fmtBRLcompleto(t.nf_diferenca)+' em relação ao termo ('+fmtBRLcompleto(t.valor_total_termo)+'). Faltam nota(s) ou há divergência de valor.' : 'ℹ Nenhuma nota fiscal encontrada ainda no e-mail atlanteambr@gmail.com para este termo.'}
+        </div>` : ''}
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead><tr style="border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">EMPRESA</th><th style="text-align:right;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">VALOR DA PARCELA</th><th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">NOTA FISCAL</th><th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">PAGAMENTO</th><th></th></tr></thead>
+          <tbody>${emp.map(e => `<tr style="border-bottom:1px solid var(--bd);">
+            <td style="padding:6px;">${e.empresa}</td>
+            <td style="padding:6px;text-align:right;font-family:var(--M);">${fmtBRLcompleto(e.valor_parcela)}</td>
+            <td style="padding:6px;">${e.nf_status==='encontrada' ? '✅ '+(e.nf_numero||'')+' · '+fmtBRLcompleto(e.nf_valor) : '<span style="color:var(--gold);">⏳ pendente</span>'} <button class="btn" style="font-size:8px;padding:1px 5px;margin-left:4px;" onclick="_fatMarcarNfManual('${e.id}')" title="Marcar manualmente">✎</button></td>
+            <td style="padding:6px;">${e.pagamento_status==='pago' ? '✅ '+(e.pagamento_data||'') : '<span style="color:var(--t3);">pendente</span>'} <button class="btn" style="font-size:8px;padding:1px 5px;margin-left:4px;" onclick="_fatMarcarPagoManual('${e.id}')" title="Marcar como pago manualmente">✎</button></td>
+            <td></td></tr>`).join('')}</tbody>
+        </table>
+        ${notas.length ? `<div style="margin-top:12px;font-size:10px;color:var(--t2);"><b>${notas.length} anexo(s) de e-mail analisado(s):</b> ${notas.slice(0,8).map(n => n.anexo_nome).join(', ')}</div>` : ''}
+      </div>
+    </div>`;
+  } catch (e) { box.innerHTML = '<div style="color:var(--red);text-align:center;padding:20px;">Erro: ' + e.message + '</div>'; }
+}
+async function _fatAvancar(id, status) { try { await fatApi('termo_mover', { id, status }); toast('Movido para: ' + FAT_LABELS[status], 'success'); carregarKanbanFaturamento(); abrirDetalheTermo(id); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
+async function _fatAprovar(id) { const por = prompt('Aprovado por:', ''); if (por === null) return; try { await fatApi('termo_aprovar', { id, aprovado_por: por }); toast('Termo aprovado', 'success'); carregarKanbanFaturamento(); abrirDetalheTermo(id); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
+async function _fatExcluir(id) { if (!confirm('Excluir este termo e todos os dados de rateio/notas? Ação não pode ser desfeita.')) return; try { await fatApi('termo_excluir', { id }); toast('Termo excluído', 'info'); document.getElementById('fatDetalhe').style.display='none'; carregarKanbanFaturamento(); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
+async function _fatMarcarNfManual(empresaId) {
+  const numero = prompt('Número da NF:', ''); if (numero === null) return;
+  const valor = prompt('Valor da NF (R$):', ''); if (valor === null) return;
+  try { await fatApi('termo_empresa_marcar_nf', { empresa_id: empresaId, nf_numero: numero, nf_valor: parseFloat(valor.replace(',','.'))||0, nf_status: 'encontrada' }); toast('NF marcada', 'success'); const t = Object.values(_fatColunas).flat().find(x => true); carregarKanbanFaturamento(); } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+async function _fatMarcarPagoManual(empresaId) {
+  if (!confirm('Marcar esta empresa como paga?')) return;
+  try { await fatApi('termo_empresa_marcar_pago', { empresa_id: empresaId, pagamento_status: 'pago' }); toast('Marcado como pago', 'success'); carregarKanbanFaturamento(); } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+async function _fatVerificarEmail(id) {
+  const btn = document.getElementById('btnVerifEmail_' + id); if (btn) { btn.disabled = true; btn.textContent = '⏳ Verificando (pode levar até 40s)...'; }
+  try {
+    const d = await fatApi('termo_verificar_email', { termo_id: id });
+    if (d.erro) { toast('E-mail: ' + d.erro + (d.hint ? ' — ' + d.hint : ''), 'error'); addLog('warn', '[Faturamento] e-mail: ' + d.erro); }
+    else {
+      toast((d.encontradas_agora?.length||0) + ' nota(s) nova(s) encontrada(s) · status: ' + d.nf_status, d.nf_status === 'completo' ? 'success' : 'error');
+      if (d.alerta_enviado) addLog('warn', '[Faturamento] alerta de divergência enviado por e-mail');
+    }
+    abrirDetalheTermo(id); carregarKanbanFaturamento();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '📧 Verificar e-mail (atlanteambr@gmail.com)'; } }
+}
+async function _fatVerificarPagamento(id) {
+  const btn = document.getElementById('btnVerifPag_' + id); if (btn) { btn.disabled = true; btn.textContent = '⏳ Consultando QuickBooks...'; }
+  try {
+    const d = await fatApi('termo_verificar_pagamento', { termo_id: id });
+    if (d.erro) toast('QuickBooks: ' + d.erro, 'error');
+    else toast((d.atualizadas||0) + ' empresa(s) confirmada(s) paga(s) · status: ' + d.pagamento_status, d.pagamento_status === 'pago' ? 'success' : 'error');
+    abrirDetalheTermo(id); carregarKanbanFaturamento();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '🏦 Verificar pagamento no QuickBooks'; } }
 }
 
 // ═══ v1.14: DASHBOARD FINANCEIRO ═══
@@ -16152,7 +16423,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.16] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.17] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -16168,7 +16439,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.16';
+window.__ATX_BUILD_ID__ = 'ATX-v1.17';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
