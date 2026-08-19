@@ -2645,6 +2645,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <button class="btn" onclick="carregarKanbanFaturamento()">&#8635; Atualizar</button>
   </div>
   <div id="fatKbStatus" style="display:none;margin-bottom:10px;"></div>
+  <div id="fatKbTotais" style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:12px;"></div>
   <div id="fatKanbanBoard" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;align-items:start;">
     <div style="grid-column:1/-1;text-align:center;color:var(--t3);font-size:11px;padding:24px;">Carregando...</div>
   </div>
@@ -14696,6 +14697,18 @@ async function carregarKanbanFaturamento() {
     _fatColunas = d.colunas || {};
     const cntTotal = FAT_COLS.reduce((s, c) => s + (_fatColunas[c]?.length || 0), 0);
     const badge = document.getElementById('fatMenuCnt'); if (badge) badge.textContent = cntTotal || '';
+    // v1.20.3: faixa de totais em valor por etapa, no topo
+    const totCores = { elaboracao:'bl', aprovacao:'gd', emissao_nf:'pu', envio_nf:'gd', pagamento:'gn' };
+    const boxTot = document.getElementById('fatKbTotais');
+    if (boxTot) {
+      const tp = d.totais_por_coluna || {};
+      const cards = FAT_COLS.map(col => {
+        const t = tp[col] || { qtd: 0, valor: 0 };
+        return `<div class="kpi ${totCores[col]||'bl'}"><div class="kl">${FAT_LABELS[col].replace(/^[^\s]+\s/,'')}</div><div class="kv" style="font-size:15px;">${fmtBRLcompleto(t.valor)}</div><div class="ks">${t.qtd} termo(s)</div></div>`;
+      }).join('');
+      const tg = d.total_geral || { qtd: 0, valor: 0 };
+      boxTot.innerHTML = cards + `<div class="kpi gd" style="border:1px solid var(--gold);"><div class="kl">Total geral</div><div class="kv" style="font-size:15px;color:var(--gold);">${fmtBRLcompleto(tg.valor)}</div><div class="ks">${tg.qtd} termo(s)</div></div>`;
+    }
     board.innerHTML = FAT_COLS.map(col => {
       const termos = _fatColunas[col] || [];
       return `<div>
@@ -16772,7 +16785,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.20.2] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.20.3] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -16788,7 +16801,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.20.2';
+window.__ATX_BUILD_ID__ = 'ATX-v1.20.3';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
