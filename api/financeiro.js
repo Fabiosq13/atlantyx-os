@@ -125,6 +125,11 @@ export default async function handler(req, res) {
       marco_enviar_termo:    () => marcoEnviarTermo(params),
       marco_log:             () => marcoLog(params),
       marcos_kanban:         () => marcosKanban(params),
+      marcos_importar:       () => marcosImportarPlanilha(params),
+      contrato_save:         () => contratoSave(params),
+      contrato_list:         () => contratoList(params),
+      contrato_delete:       () => contratoDelete(params),
+      contratos_importar:    () => contratosImportarPlanilha(params),
       // Disparado por cron (vercel.json): envia avisos 10 dias antes e lembretes
       marcos_processar_alertas: () => marcosProcessarAlertas(params),
     };
@@ -296,6 +301,22 @@ async function ensureTabelas(sql) {
   await sql`CREATE INDEX IF NOT EXISTS idx_marcos_proj ON projetos_marcos(projeto_id)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_marcos_status ON projetos_marcos(status_kanban)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_marcos_entrega ON projetos_marcos(data_entrega) WHERE status_kanban IN ('aguardando_entrega', 'liberacao_gp')`;
+
+  // v1.19: Contratos (tela nova — alimentada por importação de planilha)
+  await sql`CREATE TABLE IF NOT EXISTS contratos_financeiros (
+    id TEXT PRIMARY KEY,
+    numero_contrato TEXT NOT NULL,
+    projeto TEXT,
+    projeto_id TEXT REFERENCES projetos_financeiros(id) ON DELETE SET NULL,
+    data_inicio DATE,
+    data_vencimento DATE,
+    prazo_meses INT,
+    prazo_texto TEXT,
+    observacoes TEXT,
+    criado_em TIMESTAMPTZ DEFAULT NOW(),
+    atualizado_em TIMESTAMPTZ DEFAULT NOW()
+  )`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_contratos_venc ON contratos_financeiros(data_vencimento)`;
 
   // Log de eventos do marco (auditoria + histórico de emails)
   await sql`CREATE TABLE IF NOT EXISTS projetos_marcos_log (
@@ -496,6 +517,8 @@ function qbBase() {
     ? 'https://sandbox-quickbooks.api.intuit.com'
     : 'https://quickbooks.api.intuit.com';
 }
+
+const num = v => { const n = parseFloat(String(v).replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.')); return isNaN(n) ? 0 : Math.round(n * 100) / 100; };
 
 async function qbFetch(endpoint, token) {
   const realmId = (await qbTokensLer())?.realm_id || process.env.QB_REALM_ID;
@@ -872,17 +895,18 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
 // lançamento (QB: Invoice/RecurringTransaction em aberto + Bill em aberto)
 // compondo o saldo projetado, sem limite de meses fixo (até onde o QB tiver dado)
 // ═══════════════════════════════════════════════════════════════════════════
-async function qbFuturosDetalhado({ data_fim } = {}) {
+async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
   // Recebíveis (Invoice em aberto) e Pagáveis (Bill em aberto) do QuickBooks,
   // um lançamento por documento — não agregado por mês.
   const out = { recebiveis: [], pagaveis: [], erro: null };
   if (!qbConfigurado()) { out.erro = 'QuickBooks não configurado'; return out; }
   try {
     const token = await qbToken();
-    const lim = data_fim ? `and DueDate <= '${data_fim}'` : '';
+    const limIni = data_inicio ? `and DueDate >= '${data_inicio}'` : '';
+    const limFim = data_fim ? `and DueDate <= '${data_fim}'` : '';
     const [inv, bill] = await Promise.all([
-      qbQuery(`select * from Invoice where Balance > '0' ${lim} orderby DueDate asc maxresults 1000`, token).catch(e => ({ _erro: e.message })),
-      qbQuery(`select * from Bill where Balance > '0' ${lim} orderby DueDate asc maxresults 1000`, token).catch(e => ({ _erro: e.message })),
+      qbQuery(`select * from Invoice where Balance > '0' ${limIni} ${limFim} orderby DueDate asc maxresults 1000`, token).catch(e => ({ _erro: e.message })),
+      qbQuery(`select * from Bill where Balance > '0' ${limIni} ${limFim} orderby DueDate asc maxresults 1000`, token).catch(e => ({ _erro: e.message })),
     ]);
     if (inv?._erro) out.erro = (out.erro ? out.erro + ' | ' : '') + 'Invoice: ' + inv._erro;
     else out.recebiveis = (inv?.QueryResponse?.Invoice || []).map(i => ({
@@ -898,23 +922,33 @@ async function qbFuturosDetalhado({ data_fim } = {}) {
   return out;
 }
 
-async function fluxoDetalhado({ dias_passado = 60, incluir_simulados = true } = {}) {
+async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, incluir_simulados = true } = {}) {
   const hoje = new Date().toISOString().split('T')[0];
-  const ini = new Date(Date.now() - dias_passado * 86400 * 1000).toISOString().split('T')[0];
+  // v1.16.1: filtro de período explícito. Se data_inicio/data_fim vierem, o "hoje" divisório
+  // passado/futuro só se aplica dentro desse período — passado é [ini, min(hoje,fim)],
+  // futuro é [max(hoje+1,ini), fim] (fim vazio = sem limite, como antes).
+  const ini = data_inicio || new Date(Date.now() - dias_passado * 86400 * 1000).toISOString().split('T')[0];
+  const fim = data_fim || null;
+  const fimPassado = fim && fim < hoje ? fim : hoje;
+  const iniFuturo = ini > hoje ? ini : hoje;
 
-  // 1. Passado até hoje: reaproveita o extrato consolidado (QB realizado + simulados)
-  const extrato = await extratoConsolidado({ data_inicio: ini, data_fim: hoje, incluir_simulados });
+  // 1. Passado até hoje (ou até "fim", se o período pedido for todo no passado): extrato consolidado
+  const extrato = await extratoConsolidado({ data_inicio: ini, data_fim: fimPassado, incluir_simulados });
 
-  // 2. Futuro: recebíveis/pagáveis reais do QB (sem limite de meses — até onde o QB tiver dado)
-  const fut = await qbFuturosDetalhado({});
+  // 2. Futuro: recebíveis/pagáveis reais do QB, respeitando o fim do período (se houver)
+  const fut = (fim && fim < hoje) ? { recebiveis: [], pagaveis: [], erro: null } : await qbFuturosDetalhado({ data_inicio: iniFuturo, data_fim: fim });
 
   // 3. Despesas programadas do Atlantyx com ocorrência futura (não vinculadas a Bill do QB, para não duplicar)
   let despFuturas = [];
   try {
     const sql = await getSql();
-    const rows = await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat
-      FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
-      WHERE o.data_prevista > ${hoje} AND o.status != 'paga' ORDER BY o.data_prevista ASC`;
+    const rows = fim
+      ? await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat
+          FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
+          WHERE o.data_prevista > ${hoje} AND o.data_prevista <= ${fim} AND o.status != 'paga' ORDER BY o.data_prevista ASC`
+      : await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat
+          FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
+          WHERE o.data_prevista > ${hoje} AND o.status != 'paga' ORDER BY o.data_prevista ASC`;
     despFuturas = rows.map(r => ({ id: 'desp_' + r.id, data: String(r.data_prevista).split('T')[0], descricao: r.despesa_desc || 'Despesa programada', categoria: r.despesa_cat || 'Despesa', valor: parseFloat(r.valor), tipo: 'saida', origem: 'atlantyx_futuro' }));
   } catch (e) { console.warn('[FluxoDetalhado] despesas futuras:', e.message); }
 
@@ -922,7 +956,9 @@ async function fluxoDetalhado({ dias_passado = 60, incluir_simulados = true } = 
   let simFuturos = [];
   try {
     const sql = await getSql();
-    const rows = await sql`SELECT * FROM lancamentos_simulados WHERE excluido = false AND data > ${hoje} ORDER BY data ASC`;
+    const rows = fim
+      ? await sql`SELECT * FROM lancamentos_simulados WHERE excluido = false AND data > ${hoje} AND data <= ${fim} ORDER BY data ASC`
+      : await sql`SELECT * FROM lancamentos_simulados WHERE excluido = false AND data > ${hoje} ORDER BY data ASC`;
     simFuturos = rows.map(r => ({ id: 'sim_' + r.id, data: String(r.data).split('T')[0], descricao: r.descricao, categoria: r.categoria, valor: parseFloat(r.valor), tipo: r.tipo, origem: 'simulado_futuro' }));
   } catch (e) { console.warn('[FluxoDetalhado] simulados futuros:', e.message); }
 
@@ -941,6 +977,7 @@ async function fluxoDetalhado({ dias_passado = 60, incluir_simulados = true } = 
 
   return {
     hoje,
+    periodo: { data_inicio: ini, data_fim: fim },
     passado: { saldo_inicial: extrato.saldo_inicial, saldo_inicial_data: extrato.saldo_inicial_data, lancamentos: extrato.lancamentos, total_entradas: extrato.total_entradas, total_saidas: extrato.total_saidas, qb_erro: extrato.qb_erro },
     saldo_hoje: extrato.saldo_final || 0,
     futuro: { lancamentos: futuroComSaldo, total_recebiveis: fut.recebiveis.reduce((s, l) => s + l.valor, 0), total_pagaveis: fut.pagaveis.reduce((s, l) => s + l.valor, 0), qtd_qb: fut.recebiveis.length + fut.pagaveis.length, qtd_atlantyx: despFuturas.length + simFuturos.length, qb_erro: fut.erro, ate: ultimaData },
@@ -2097,6 +2134,110 @@ async function projetoDelete({ id } = {}) {
   const sql = await getSql();
   await sql`DELETE FROM projetos_financeiros WHERE id = ${id}`;
   return { id, deletado: true };
+}
+
+// ─── CRUD Contrato ────────────────────────────────────────────────────────
+async function contratoSave(p = {}) {
+  if (!p.numero_contrato) throw new Error('numero_contrato obrigatório');
+  const sql = await getSql();
+  const id = p.id || `ctr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  await sql`INSERT INTO contratos_financeiros
+    (id, numero_contrato, projeto, projeto_id, data_inicio, data_vencimento, prazo_meses, prazo_texto, observacoes, atualizado_em)
+    VALUES (${id}, ${p.numero_contrato}, ${p.projeto || null}, ${p.projeto_id || null},
+            ${p.data_inicio || null}, ${p.data_vencimento || null}, ${p.prazo_meses || null}, ${p.prazo_texto || null},
+            ${p.observacoes || null}, NOW())
+    ON CONFLICT (id) DO UPDATE SET
+      numero_contrato=EXCLUDED.numero_contrato, projeto=EXCLUDED.projeto, projeto_id=EXCLUDED.projeto_id,
+      data_inicio=EXCLUDED.data_inicio, data_vencimento=EXCLUDED.data_vencimento,
+      prazo_meses=EXCLUDED.prazo_meses, prazo_texto=EXCLUDED.prazo_texto,
+      observacoes=EXCLUDED.observacoes, atualizado_em=NOW()`;
+  return { id };
+}
+function _contratoStatus(dataVenc) {
+  if (!dataVenc) return 'sem_data';
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const venc = new Date(dataVenc);
+  const dias = Math.round((venc - hoje) / 86400000);
+  if (dias < 0) return 'vencido';
+  if (dias <= 60) return 'vencendo';
+  return 'vigente';
+}
+async function contratoList({ status } = {}) {
+  const sql = await getSql();
+  const rows = await sql`SELECT * FROM contratos_financeiros ORDER BY data_vencimento ASC NULLS LAST`;
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  let lista = rows.map(r => {
+    const st = _contratoStatus(r.data_vencimento);
+    const dias = r.data_vencimento ? Math.round((new Date(r.data_vencimento) - hoje) / 86400000) : null;
+    return { ...r, status_calc: st, dias_restantes: dias };
+  });
+  if (status) lista = lista.filter(c => c.status_calc === status);
+  const resumo = { total: rows.length, vigente: 0, vencendo: 0, vencido: 0, sem_data: 0 };
+  rows.forEach(r => { resumo[_contratoStatus(r.data_vencimento)]++; });
+  return { contratos: lista, resumo };
+}
+async function contratoDelete({ id } = {}) {
+  if (!id) throw new Error('id obrigatório');
+  const sql = await getSql();
+  await sql`DELETE FROM contratos_financeiros WHERE id = ${id}`;
+  return { id, deletado: true };
+}
+
+// ─── IMPORTAÇÃO EM LOTE (v1.19) — planilha de Projetos, Marcos e Contratos ──
+// O frontend lê o .xlsx no navegador (SheetJS) e manda as linhas já estruturadas;
+// aqui só validamos, achamos/criamos o projeto por nome, e gravamos em lote.
+async function marcosImportarPlanilha({ linhas = [] } = {}) {
+  if (!linhas.length) throw new Error('Nenhuma linha para importar');
+  const sql = await getSql();
+  const projetosCache = {};
+  const resultado = { marcos_criados: 0, projetos_criados: [], erros: [] };
+  for (const l of linhas) {
+    try {
+      if (!l.projeto || !l.marco) { resultado.erros.push({ linha: l, erro: 'projeto ou marco vazio' }); continue; }
+      const nomeProj = String(l.projeto).trim();
+      let projId = projetosCache[nomeProj.toLowerCase()];
+      if (!projId) {
+        const achado = await sql`SELECT id FROM projetos_financeiros WHERE LOWER(nome) = ${nomeProj.toLowerCase()} LIMIT 1`;
+        if (achado.length) projId = achado[0].id;
+        else {
+          projId = `proj_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+          await sql`INSERT INTO projetos_financeiros (id, nome, gerente_projeto_nome, status, atualizado_em)
+            VALUES (${projId}, ${nomeProj}, ${l.gp_responsavel || null}, 'ativo', NOW())`;
+          resultado.projetos_criados.push(nomeProj);
+        }
+        projetosCache[nomeProj.toLowerCase()] = projId;
+      }
+      const marcoId = `mar_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const dataEntrega = l.data_solicitacao || l.data_pagamento || new Date().toISOString().substring(0, 10);
+      const semDataOriginal = !l.data_solicitacao;
+      const statusKanban = /pago/i.test(l.status || '') ? 'concluido' : (l.status ? 'aguardando_pagamento' : 'aguardando_entrega');
+      const obs = [l.observacoes, semDataOriginal ? 'Data de entrega não informada na planilha original — ajuste se necessário.' : null, l.gp_responsavel ? 'GP: ' + l.gp_responsavel : null].filter(Boolean).join(' · ');
+      await sql`INSERT INTO projetos_marcos (id, projeto_id, descricao, data_entrega, valor, status_kanban, data_pagamento, observacoes, atualizado_em)
+        VALUES (${marcoId}, ${projId}, ${String(l.marco).trim()}, ${dataEntrega}, ${num(l.valor)}, ${statusKanban}, ${l.data_pagamento || null}, ${obs || null}, NOW())`;
+      resultado.marcos_criados++;
+    } catch (e) { resultado.erros.push({ linha: l, erro: e.message }); }
+  }
+  console.log(`[Financeiro] Importação de marcos: ${resultado.marcos_criados} criados, ${resultado.projetos_criados.length} projeto(s) novo(s), ${resultado.erros.length} erro(s)`);
+  return resultado;
+}
+
+async function contratosImportarPlanilha({ linhas = [] } = {}) {
+  if (!linhas.length) throw new Error('Nenhuma linha para importar');
+  const sql = await getSql();
+  const resultado = { contratos_criados: 0, erros: [] };
+  for (const l of linhas) {
+    try {
+      if (!l.numero_contrato) { resultado.erros.push({ linha: l, erro: 'número do contrato vazio' }); continue; }
+      let projId = null;
+      if (l.projeto) { const achado = await sql`SELECT id FROM projetos_financeiros WHERE LOWER(nome) = ${String(l.projeto).trim().toLowerCase()} LIMIT 1`; if (achado.length) projId = achado[0].id; }
+      const id = `ctr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      await sql`INSERT INTO contratos_financeiros (id, numero_contrato, projeto, projeto_id, data_inicio, data_vencimento, prazo_meses, prazo_texto, atualizado_em)
+        VALUES (${id}, ${String(l.numero_contrato).trim()}, ${l.projeto || null}, ${projId}, ${l.data_inicio || null}, ${l.data_vencimento || null}, ${l.prazo_meses || null}, ${l.prazo_texto || null}, NOW())`;
+      resultado.contratos_criados++;
+    } catch (e) { resultado.erros.push({ linha: l, erro: e.message }); }
+  }
+  console.log(`[Financeiro] Importação de contratos: ${resultado.contratos_criados} criados, ${resultado.erros.length} erro(s)`);
+  return resultado;
 }
 
 // ─── CRUD Marco ───────────────────────────────────────────────────────────
