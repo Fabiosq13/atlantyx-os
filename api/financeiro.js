@@ -318,6 +318,16 @@ async function ensureTabelas(sql) {
   )`;
   await sql`CREATE INDEX IF NOT EXISTS idx_contratos_venc ON contratos_financeiros(data_vencimento)`;
 
+  // v1.20: migração — marcos que estavam em etapas eliminadas do Kanban Marcos de
+  // Projeto (aguardando_cliente, nf_emitida, aguardando_pagamento) são realocados:
+  // aguardando_cliente → termo_pronto (termo já enviado, continua ali);
+  // nf_emitida / aguardando_pagamento → concluido (o rastreio de NF/pagamento
+  // passou para o Kanban de Faturamento). Idempotente.
+  try {
+    await sql`UPDATE projetos_marcos SET status_kanban = 'termo_pronto', atualizado_em = NOW() WHERE status_kanban = 'aguardando_cliente'`;
+    await sql`UPDATE projetos_marcos SET status_kanban = 'concluido', concluido_em = COALESCE(concluido_em, NOW()), atualizado_em = NOW() WHERE status_kanban IN ('nf_emitida', 'aguardando_pagamento')`;
+  } catch (e) { console.warn('[Financeiro] migração kanban marcos:', e.message); }
+
   // Log de eventos do marco (auditoria + histórico de emails)
   await sql`CREATE TABLE IF NOT EXISTS projetos_marcos_log (
     id TEXT PRIMARY KEY,
@@ -2037,17 +2047,20 @@ async function extratoMensal({ ano } = {}) {
 // 13. PROJETOS FINANCEIROS + MARCOS + KANBAN
 // ═══════════════════════════════════════════════════════════════════════════
 
+// v1.20: "Kanban Marcos de Projeto" — etapas até o Termo Pronto/Enviado.
+// As etapas Aguardando Cliente, NF Emitida e Aguardando Pagamento foram
+// eliminadas daqui: o rastreio de nota fiscal e pagamento passou a ser
+// feito no Kanban de Faturamento (S1 · Financeiro → Kanban de Faturamento).
 const KANBAN_COLUNAS = [
   'aguardando_entrega',     // marco cadastrado, prazo no futuro
   'liberacao_gp',           // 10 dias antes do prazo → aguarda GP aprovar
   'aprovado_gp',            // GP aprovou → notifica financeiro
   'elaborando_termo',       // financeiro confirmou que está fazendo o termo
   'termo_pronto',           // termo carregado, enviado pro cliente
-  'aguardando_cliente',     // cliente recebeu, lembrete cada 3 dias até NF
-  'nf_emitida',             // financeiro emitiu NF
-  'aguardando_pagamento',   // lembrete cada 3 dias pro financeiro
   'concluido'
 ];
+// etapas antigas (mantidas só para migrar dados históricos, não usadas mais)
+const KANBAN_COLUNAS_LEGADO = ['aguardando_cliente', 'nf_emitida', 'aguardando_pagamento'];
 
 const KANBAN_LABEL = {
   aguardando_entrega:    { label: 'Aguardando Entrega',   cor: '#7a7c9e' },
@@ -2358,8 +2371,6 @@ async function marcoMoverStatus({ id, novo_status, ator, observacao } = {}) {
   if (novo_status === 'aprovado_gp')          { sets.gp_aprovado_em = new Date(); sets.gp_aprovado_por = ator || null; }
   if (novo_status === 'elaborando_termo')     { sets.fin_termo_iniciado_em = new Date(); }
   if (novo_status === 'termo_pronto')         { sets.fin_termo_pronto_em = new Date(); }
-  if (novo_status === 'aguardando_cliente')   { sets.termo_enviado_cliente_em = new Date(); }
-  if (novo_status === 'nf_emitida')           { sets.fin_nf_emitida_em = new Date(); }
   if (novo_status === 'concluido')            { sets.concluido_em = new Date(); }
 
   // Update dinâmico
@@ -2379,10 +2390,6 @@ async function marcoMoverStatus({ id, novo_status, ator, observacao } = {}) {
   } else if (novo_status === 'termo_pronto') {
     await sql`UPDATE projetos_marcos
       SET status_kanban=${novo_status}, fin_termo_pronto_em=NOW(), atualizado_em=NOW()
-      WHERE id=${id}`;
-  } else if (novo_status === 'nf_emitida') {
-    await sql`UPDATE projetos_marcos
-      SET status_kanban=${novo_status}, fin_nf_emitida_em=NOW(), atualizado_em=NOW()
       WHERE id=${id}`;
   } else if (novo_status === 'concluido') {
     await sql`UPDATE projetos_marcos
