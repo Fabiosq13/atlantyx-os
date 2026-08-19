@@ -2956,7 +2956,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <div class="pb">
             <div style="display:grid;grid-template-columns:2fr 130px 100px;gap:8px;margin-bottom:8px;">
               <div class="fg" style="margin:0;"><label class="fl">Descrição do Marco</label><input class="fi" id="mkDesc" placeholder="Ex: Entrega Sprint 1 — Discovery"/></div>
-              <div class="fg" style="margin:0;"><label class="fl">Data de Entrega</label><input type="date" class="fi" id="mkData"/></div>
+              <div class="fg" style="margin:0;"><label class="fl">Data de Entrega</label><input type="date" class="fi" id="mkData"/><div id="mkDataHint" style="display:none;font-size:9px;color:var(--gold);margin-top:2px;">⚠ este marco não tinha data cadastrada — confira/ajuste antes de salvar</div></div>
               <div class="fg" style="margin:0;"><label class="fl">Percentual %</label><input class="fi" id="mkPct" placeholder="20"/></div>
             </div>
             <div style="display:grid;grid-template-columns:130px 130px 130px;gap:8px;margin-bottom:8px;">
@@ -14144,7 +14144,12 @@ function abrirFormMarco(id) {
     if (!m) return;
     document.getElementById('mkEditId').value = m.id;
     document.getElementById('mkDesc').value = m.descricao || '';
-    document.getElementById('mkData').value = m.data_entrega || '';
+    // v1.20.1: marco legado sem data de entrega — preenche com referência (pagamento ou hoje) em vez de deixar mudo,
+    // já que o campo é obrigatório para salvar; avisa que precisa conferir
+    const dataRef = m.data_entrega || m.data_pagamento || new Date().toISOString().substring(0, 10);
+    document.getElementById('mkData').value = dataRef;
+    const hintData = document.getElementById('mkDataHint');
+    if (hintData) hintData.style.display = m.data_entrega ? 'none' : 'block';
     document.getElementById('mkPct').value = m.percentual != null ? m.percentual : '';
     document.getElementById('mkValor').value = m.valor || '';
     document.getElementById('mkNF').value = m.nota_fiscal || '';
@@ -14176,8 +14181,15 @@ async function salvarMarco() {
     data_pagamento: document.getElementById('mkDataPag').value || null,
     observacoes: document.getElementById('mkObs').value.trim() || null,
   };
-  if (!p.descricao || !p.data_entrega || !p.valor) {
-    if (typeof toast === 'function') toast('descrição, data e valor obrigatórios', 'error');
+  // v1.20.1: mensagem precisa — diz exatamente qual campo falta, em vez de listar os 3 sempre
+  const faltando = [];
+  if (!p.descricao) faltando.push('Descrição do Marco');
+  if (!p.data_entrega) faltando.push('Data de Entrega');
+  if (!p.valor) faltando.push('Valor R$');
+  if (faltando.length) {
+    if (typeof toast === 'function') toast('Preencha: ' + faltando.join(', '), 'error');
+    const idsFoco = { 'Descrição do Marco': 'mkDesc', 'Data de Entrega': 'mkData', 'Valor R$': 'mkValor' };
+    const primeiro = document.getElementById(idsFoco[faltando[0]]); if (primeiro) { primeiro.style.borderColor = 'var(--red)'; primeiro.focus(); setTimeout(() => primeiro.style.borderColor = '', 3000); }
     return;
   }
   try {
@@ -16681,7 +16693,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.20] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.20.1] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -16697,7 +16709,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.20';
+window.__ATX_BUILD_ID__ = 'ATX-v1.20.1';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
