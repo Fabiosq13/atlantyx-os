@@ -52,8 +52,14 @@ async function ensureTabelas(sql) {
     valor_ja_faturado NUMERIC DEFAULT 0, valor_parcela_anterior NUMERIC DEFAULT 0,
     valor_parcela NUMERIC DEFAULT 0, saldo_contrato NUMERIC DEFAULT 0,
     nf_numero TEXT, nf_valor NUMERIC, nf_data TEXT, nf_status TEXT DEFAULT 'pendente',
-    pagamento_status TEXT DEFAULT 'pendente', pagamento_data TEXT
+    pagamento_status TEXT DEFAULT 'pendente', pagamento_data TEXT,
+    qb_invoice_id TEXT, qb_invoice_doc TEXT, qb_lancado_em TIMESTAMPTZ, qb_erro TEXT
   )`;
+  // v1.18: migração leve p/ bancos já existentes (colunas novas sem quebrar dados)
+  try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS qb_invoice_id TEXT`; } catch (_) {}
+  try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS qb_invoice_doc TEXT`; } catch (_) {}
+  try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS qb_lancado_em TIMESTAMPTZ`; } catch (_) {}
+  try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS qb_erro TEXT`; } catch (_) {}
   await sql`CREATE TABLE IF NOT EXISTS termos_notas_encontradas (
     id TEXT PRIMARY KEY, termo_id TEXT REFERENCES termos_faturamento(id) ON DELETE CASCADE,
     empresa_id TEXT, email_assunto TEXT, email_data TIMESTAMPTZ, email_remetente TEXT,
@@ -263,6 +269,11 @@ async function termoVerificarEmail({ termo_id, dias = 45 } = {}) {
           encontradasNovas.push({ id: notaId, anexo: anexo.nome, empresa: empresaMatch?.empresa || null, valor: dados.nf_valor });
           if (empresaMatch && dados.nf_valor != null) {
             await sql`UPDATE termos_empresas SET nf_numero = ${dados.nf_numero}, nf_valor = ${dados.nf_valor}, nf_data = ${dados.dh_emi ? String(dados.dh_emi).substring(0, 10) : null}, nf_status = 'encontrada' WHERE id = ${empresaMatch.id}`;
+            // v1.18: lançamento automático no QB é OPT-IN (env FAT_AUTO_LANCAR_QB=true) — por padrão,
+            // o lançamento contábil fica sob controle manual do financeiro (botão na tela)
+            if (process.env.FAT_AUTO_LANCAR_QB === 'true') {
+              try { await termoEmpresaLancarQb({ empresa_id: empresaMatch.id }); } catch (e) { console.warn('[Faturamento] auto-lançar QB falhou:', empresaMatch.empresa, e.message); }
+            }
           }
         }
       }
@@ -353,6 +364,104 @@ async function termoVerificarPagamento({ termo_id } = {}) {
   return { atualizadas, pagamento_status: recalc.status, erro: erroQ };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 5. LANÇAR NO QUICKBOOKS — CONTAS A RECEBER (Invoice) por empresa
+//    Ao confirmar a nota fiscal de uma empresa (por e-mail ou manual), lança
+//    a fatura correspondente no QuickBooks, associada ao cliente daquela
+//    empresa, no valor exato da nota / parcela.
+// ═══════════════════════════════════════════════════════════════════════════
+async function qbBuscarCliente(nomeEmpresa, token, realm, sandbox) {
+  const alvo = normEmpresa(nomeEmpresa);
+  const data = await qbQueryFat(`select * from Customer where Active = true maxresults 1000`, token, realm, sandbox);
+  const clientes = data?.QueryResponse?.Customer || [];
+  // 1) match exato normalizado, 2) match por conter, 3) match pelo maior nome em comum
+  let achou = clientes.find(c => normEmpresa(c.DisplayName || c.CompanyName || '') === alvo);
+  if (!achou) achou = clientes.find(c => { const n = normEmpresa(c.DisplayName || c.CompanyName || ''); return n && (n.includes(alvo) || alvo.includes(n)); });
+  return achou ? { id: achou.Id, nome: achou.DisplayName } : null;
+}
+
+async function qbItemPadrao(token, realm, sandbox) {
+  const sql = await getSql();
+  try { const cache = await sql`SELECT value FROM kv_store WHERE key = 'qb:item_padrao' LIMIT 1`; if (cache.length && cache[0].value) { const v = typeof cache[0].value === 'string' ? JSON.parse(cache[0].value) : cache[0].value; if (v?.id) return v; } } catch (_) {}
+  const nomeEnv = process.env.QB_DEFAULT_ITEM_NAME;
+  let item = null;
+  if (nomeEnv) {
+    const data = await qbQueryFat(`select * from Item where Name = '${nomeEnv.replace(/'/g, "\'")}' maxresults 1`, token, realm, sandbox);
+    item = (data?.QueryResponse?.Item || [])[0];
+  }
+  if (!item) {
+    const data = await qbQueryFat(`select * from Item where Type = 'Service' maxresults 1`, token, realm, sandbox);
+    item = (data?.QueryResponse?.Item || [])[0];
+  }
+  if (!item) throw new Error('Nenhum "Item" de serviço encontrado no QuickBooks para usar na linha da fatura. Cadastre um item (ex.: "Serviços de Consultoria") no QuickBooks, ou defina a env QB_DEFAULT_ITEM_NAME com o nome exato do item.');
+  const out = { id: item.Id, nome: item.Name };
+  try { await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('qb:item_padrao', ${JSON.stringify(out)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {}
+  return out;
+}
+
+async function qbCriarInvoice({ customerId, itemId, valor, descricao, docNumber }, token, realm, sandbox) {
+  const base = sandbox ? 'https://sandbox-quickbooks.api.intuit.com' : 'https://quickbooks.api.intuit.com';
+  const body = {
+    CustomerRef: { value: String(customerId) },
+    TxnDate: new Date().toISOString().substring(0, 10),
+    PrivateNote: descricao,
+    Line: [{ Amount: num(valor), DetailType: 'SalesItemLineDetail', Description: descricao, SalesItemLineDetail: { ItemRef: { value: String(itemId) }, Qty: 1, UnitPrice: num(valor) } }],
+    ...(docNumber ? { DocNumber: String(docNumber).substring(0, 21) } : {}),
+  };
+  const r = await fetch(`${base}/v3/company/${realm}/invoice?minorversion=65`, { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const msg = d.Fault?.Error?.[0]?.Message || JSON.stringify(d).substring(0, 200);
+    // DocNumber duplicado é o erro mais comum — tenta de novo sem ele
+    if (docNumber && /duplicate|already exists|DocNumber/i.test(msg)) {
+      delete body.DocNumber;
+      const r2 = await fetch(`${base}/v3/company/${realm}/invoice?minorversion=65`, { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) });
+      const d2 = await r2.json().catch(() => ({}));
+      if (r2.ok) return d2.Invoice;
+      throw new Error('QB Invoice [' + r2.status + ']: ' + (d2.Fault?.Error?.[0]?.Message || msg));
+    }
+    throw new Error('QB Invoice [' + r.status + ']: ' + msg);
+  }
+  return d.Invoice;
+}
+
+async function termoEmpresaLancarQb({ empresa_id } = {}) {
+  if (!empresa_id) throw new Error('empresa_id obrigatório');
+  const sql = await getSql();
+  const rows = await sql`SELECT e.*, t.projeto, t.numero_termo, t.parcela, t.periodo_medicao, t.contratante FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id WHERE e.id = ${empresa_id} LIMIT 1`;
+  if (!rows.length) throw new Error('Empresa não encontrada');
+  const e = rows[0];
+  if (e.qb_invoice_id) return { ja_lancado: true, qb_invoice_id: e.qb_invoice_id, qb_invoice_doc: e.qb_invoice_doc };
+  if (e.nf_status !== 'encontrada') throw new Error('Confirme a nota fiscal desta empresa antes de lançar no QuickBooks (nota ainda pendente).');
+  let token, realm;
+  try { const t = await qbTokenFat(); token = t.token; realm = t.realm; } catch (err) { throw new Error('QuickBooks: ' + err.message); }
+  const sandbox = process.env.QB_SANDBOX === 'true';
+  const cliente = await qbBuscarCliente(e.empresa, token, realm, sandbox);
+  if (!cliente) { await sql`UPDATE termos_empresas SET qb_erro = ${'Cliente "' + e.empresa + '" não encontrado no QuickBooks'} WHERE id = ${empresa_id}`; throw new Error('Cliente "' + e.empresa + '" não encontrado no QuickBooks — cadastre esse cliente primeiro (Contatos → Clientes) e tente novamente.'); }
+  const item = await qbItemPadrao(token, realm, sandbox);
+  const valor = e.nf_valor != null ? num(e.nf_valor) : num(e.valor_parcela);
+  const descricao = `${e.projeto || ''} — ${e.periodo_medicao || ''} — Termo ${e.numero_termo || ''}/${e.parcela || ''} — ${e.empresa}`;
+  let invoice;
+  try { invoice = await qbCriarInvoice({ customerId: cliente.id, itemId: item.id, valor, descricao, docNumber: e.nf_numero }, token, realm, sandbox); }
+  catch (err) { await sql`UPDATE termos_empresas SET qb_erro = ${err.message} WHERE id = ${empresa_id}`; throw err; }
+  await sql`UPDATE termos_empresas SET qb_invoice_id = ${invoice.Id}, qb_invoice_doc = ${invoice.DocNumber || invoice.Id}, qb_lancado_em = NOW(), qb_erro = NULL WHERE id = ${empresa_id}`;
+  console.log(`[Faturamento] Invoice lançada no QB: empresa=${e.empresa} valor=${valor} invoice=${invoice.Id}`);
+  return { lancado: true, qb_invoice_id: invoice.Id, qb_invoice_doc: invoice.DocNumber || invoice.Id, cliente: cliente.nome, valor };
+}
+
+async function termoLancarTodasQb({ termo_id } = {}) {
+  if (!termo_id) throw new Error('termo_id obrigatório');
+  const { empresas } = await termoGet({ id: termo_id });
+  const resultados = [];
+  for (const e of empresas) {
+    if (e.qb_invoice_id) { resultados.push({ empresa: e.empresa, ja_lancado: true }); continue; }
+    if (e.nf_status !== 'encontrada') { resultados.push({ empresa: e.empresa, pulado: 'nota não encontrada' }); continue; }
+    try { const r = await termoEmpresaLancarQb({ empresa_id: e.id }); resultados.push({ empresa: e.empresa, ...r }); }
+    catch (err) { resultados.push({ empresa: e.empresa, erro: err.message }); }
+  }
+  return { resultados, lancadas: resultados.filter(r => r.lancado).length, erros: resultados.filter(r => r.erro).length };
+}
+
 async function termoQbDiagnostico() {
   try { const t = await qbTokenFat(); return { ok: true, realm: t.realm }; } catch (e) { return { ok: false, erro: e.message }; }
 }
@@ -380,6 +489,8 @@ export default async function handler(req, res) {
     termo_empresa_marcar_pago: () => termoEmpresaMarcarPago(payload),
     termo_verificar_email:     () => termoVerificarEmail(payload),
     termo_verificar_pagamento: () => termoVerificarPagamento(payload),
+    termo_empresa_lancar_qb:   () => termoEmpresaLancarQb(payload),
+    termo_lancar_todas_qb:     () => termoLancarTodasQb(payload),
     termo_qb_diagnostico:      () => termoQbDiagnostico(),
     status:                    () => ({ ok: true, modulo: 'faturamento', colunas: STATUS }),
   };
