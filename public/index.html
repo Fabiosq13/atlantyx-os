@@ -14733,6 +14733,107 @@ function _fatCard(t, col) {
   </div>`;
 }
 
+// v1.20.4: barra de progresso do valor de NF carregado x valor do termo
+function _fatBarraProgressoNf(t) {
+  const total = t.valor_total_termo || 0;
+  const carregado = Math.max(0, Math.min(total, t.nf_soma || 0));
+  const pct = total > 0 ? Math.round((carregado / total) * 100) : 0;
+  const falta = Math.max(0, Math.round((total - carregado) * 100) / 100);
+  const cor = pct >= 100 ? 'var(--green,#22d3a3)' : pct > 0 ? 'var(--gold)' : 'var(--t3)';
+  return `<div style="margin-bottom:12px;">
+    <div style="display:flex;justify-content:space-between;font-size:10.5px;margin-bottom:4px;">
+      <span><b>${fmtBRLcompleto(carregado)}</b> carregado de ${fmtBRLcompleto(total)}</span>
+      <span style="color:${falta > 0 ? 'var(--gold)' : 'var(--green,#22d3a3)'};">${falta > 0 ? 'falta ' + fmtBRLcompleto(falta) : '✓ completo'}</span>
+    </div>
+    <div style="height:8px;background:var(--bg4);border-radius:4px;overflow:hidden;"><div style="height:100%;width:${Math.min(100,pct)}%;background:${cor};transition:width .3s;"></div></div>
+  </div>`;
+}
+
+// v1.20.4: card de upload manual de NF — visível na etapa Emissão de NF
+function _fatCardUploadNf(t, emp) {
+  const pendentes = emp.filter(e => e.nf_status !== 'encontrada');
+  return `<div class="panel" style="background:var(--bg4);border:1px dashed var(--gold);margin-bottom:12px;">
+    <div class="ph"><div class="pt" style="font-size:12px;">📎 Carregar Notas Fiscais desta emissão</div></div>
+    <div class="pb">
+      <div style="font-size:10px;color:var(--t2);margin-bottom:8px;">Envie o PDF ou XML da nota fiscal. Em arquivos XML (NFe), número e valor são lidos automaticamente; em PDF, digite manualmente. Vincule a nota à empresa do rateio para atualizar o total carregado.</div>
+      <div style="display:grid;grid-template-columns:1fr 140px 140px 1fr auto;gap:6px;align-items:end;">
+        <div><div style="font-size:9px;color:var(--t2);margin-bottom:3px;">ARQUIVO (PDF/XML)</div><input type="file" id="fatNfArquivo_${t.id}" accept=".pdf,.xml" class="fi" style="font-size:10px;padding:4px;" onchange="_fatNfArquivoSelecionado('${t.id}', this)"/></div>
+        <div><div style="font-size:9px;color:var(--t2);margin-bottom:3px;">Nº DA NF</div><input class="fi" id="fatNfNumero_${t.id}" style="font-size:10px;" placeholder="opcional"/></div>
+        <div><div style="font-size:9px;color:var(--t2);margin-bottom:3px;">VALOR (R$)</div><input class="fi" id="fatNfValor_${t.id}" style="font-size:10px;" placeholder="0,00"/></div>
+        <div><div style="font-size:9px;color:var(--t2);margin-bottom:3px;">EMPRESA DO RATEIO</div>
+          <select class="fsel" id="fatNfEmpresa_${t.id}" style="width:100%;font-size:10px;">
+            <option value="">— sem vínculo (só registra o arquivo) —</option>
+            ${pendentes.map(e => `<option value="${e.id}">${e.empresa} · ${fmtBRLcompleto(e.valor_parcela)}</option>`).join('')}
+          </select>
+        </div>
+        <button class="btn btn-p" style="font-size:10px;" onclick="_fatNfConfirmarUpload('${t.id}')" id="fatNfBtnUp_${t.id}" disabled>+ Adicionar</button>
+      </div>
+      <div id="fatNfUploadMsg_${t.id}" style="font-size:9.5px;margin-top:6px;"></div>
+    </div>
+  </div>`;
+}
+
+// v1.20.4: parser leve de XML de NFe no navegador (mesmo padrão do backend, para preencher os campos sozinho)
+function _fatExtrairXmlNFe(xmlTexto) {
+  try {
+    const get = (tag) => { const m = xmlTexto.match(new RegExp('<' + tag + '>([^<]*)</' + tag + '>')); return m ? m[1] : null; };
+    const getIn = (tag, dentro) => { const bloco = xmlTexto.match(new RegExp('<' + dentro + '>([\\s\\S]*?)</' + dentro + '>')); if (!bloco) return null; const m = bloco[1].match(new RegExp('<' + tag + '>([^<]*)</' + tag + '>')); return m ? m[1] : null; };
+    const vNF = get('vNF') || get('vFatur');
+    const nNF = get('nNF');
+    if (!vNF && !nNF) return null;
+    return { nf_numero: nNF, nf_valor: vNF ? parseFloat(vNF) : null, dest_nome: getIn('xNome', 'dest'), emit_nome: getIn('xNome', 'emit') };
+  } catch (_) { return null; }
+}
+
+let _fatNfPendente = {}; // { [termoId]: { url, tipo, nome } }
+async function _fatNfArquivoSelecionado(termoId, input) {
+  const file = input.files?.[0]; if (!file) return;
+  const msg = document.getElementById('fatNfUploadMsg_' + termoId);
+  const btn = document.getElementById('fatNfBtnUp_' + termoId);
+  if (msg) { msg.style.color = 'var(--blue)'; msg.textContent = '⏳ Enviando arquivo...'; }
+  if (btn) btn.disabled = true;
+  try {
+    const isXml = /\.xml$/i.test(file.name);
+    if (isXml) {
+      const texto = await file.text();
+      const dados = _fatExtrairXmlNFe(texto);
+      if (dados) {
+        if (dados.nf_numero) document.getElementById('fatNfNumero_' + termoId).value = dados.nf_numero;
+        if (dados.nf_valor != null) document.getElementById('fatNfValor_' + termoId).value = dados.nf_valor.toFixed(2).replace('.', ',');
+        const sel = document.getElementById('fatNfEmpresa_' + termoId);
+        const alvo = (dados.dest_nome || dados.emit_nome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
+        if (sel && alvo) { for (const opt of sel.options) { const n = opt.textContent.split('·')[0].trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,''); if (n && (alvo.includes(n) || n.includes(alvo))) { sel.value = opt.value; break; } } }
+      }
+    }
+    const resp = await fetch('/api/media-upload?name=' + encodeURIComponent(file.name) + '&pasta=notas_fiscais', { method:'POST', headers:{ 'Content-Type': file.type || (isXml ? 'application/xml' : 'application/pdf') }, body: file });
+    const d = await resp.json();
+    if (!d.success) throw new Error(d.error + (d.hint ? ' — ' + d.hint : ''));
+    _fatNfPendente[termoId] = { url: d.url, tipo: isXml ? 'xml' : 'pdf', nome: file.name };
+    if (msg) { msg.style.color = 'var(--green,#22d3a3)'; msg.textContent = '✓ Arquivo enviado: ' + file.name + (isXml ? ' — dados lidos automaticamente, confira antes de adicionar.' : ' — preencha número e valor manualmente.'); }
+    if (btn) btn.disabled = false;
+  } catch (e) { if (msg) { msg.style.color = 'var(--red)'; msg.textContent = '⛔ Erro ao enviar: ' + e.message; } if (btn) btn.disabled = true; }
+}
+async function _fatNfConfirmarUpload(termoId) {
+  const pendente = _fatNfPendente[termoId];
+  if (!pendente) { toast('Selecione um arquivo primeiro', 'error'); return; }
+  const numero = document.getElementById('fatNfNumero_' + termoId)?.value?.trim() || null;
+  const valorTxt = document.getElementById('fatNfValor_' + termoId)?.value?.trim() || '';
+  const valor = parseFloat(valorTxt.replace(/\./g, '').replace(',', '.'));
+  if (!valor || valor <= 0) { toast('Informe o valor da nota fiscal', 'error'); return; }
+  const empresaId = document.getElementById('fatNfEmpresa_' + termoId)?.value || null;
+  const btn = document.getElementById('fatNfBtnUp_' + termoId); if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
+  try {
+    const d = await fatApi('termo_nf_upload', { termo_id: termoId, empresa_id: empresaId, nf_numero: numero, nf_valor: valor, anexo_nome: pendente.nome, arquivo_url: pendente.url, tipo_arquivo: pendente.tipo });
+    toast('Nota fiscal adicionada — ' + fmtBRLcompleto(valor) + (empresaId ? ' vinculada à empresa' : ' registrada sem vínculo'), 'success');
+    delete _fatNfPendente[termoId];
+    await abrirDetalheTermo(termoId); carregarKanbanFaturamento();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); if (btn) { btn.disabled = false; btn.textContent = '+ Adicionar'; } }
+}
+async function _fatNfExcluir(notaId, termoId) {
+  if (!confirm('Remover esta nota fiscal carregada?')) return;
+  try { await fatApi('termo_nf_excluir', { nota_id: notaId }); toast('Nota removida', 'info'); await abrirDetalheTermo(termoId); carregarKanbanFaturamento(); } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+
 // ── Detalhe do termo ──
 let _fatTermoAberto = null;
 async function abrirDetalheTermo(id) {
@@ -14765,6 +14866,8 @@ async function abrirDetalheTermo(id) {
         ${t.nf_status && t.status !== 'elaboracao' ? `<div style="margin-bottom:10px;padding:8px 12px;border-radius:7px;font-size:11px;background:${t.nf_status==='completo'?'rgba(34,211,163,.1);border:1px solid var(--green,#22d3a3)':t.nf_status==='divergente'?'rgba(255,80,80,.1);border:1px solid var(--red)':'rgba(245,185,75,.1);border:1px solid var(--gold)'};">
           ${t.nf_status==='completo' ? '✅ Todas as notas fiscais encontradas e o valor bate com o termo ('+fmtBRLcompleto(t.nf_soma)+').' : t.nf_status==='divergente' ? '⚠ Notas encontradas somam '+fmtBRLcompleto(t.nf_soma)+' — diferença de '+fmtBRLcompleto(t.nf_diferenca)+' em relação ao termo ('+fmtBRLcompleto(t.valor_total_termo)+'). Faltam nota(s) ou há divergência de valor.' : 'ℹ Nenhuma nota fiscal encontrada ainda no e-mail atlanteambr@gmail.com para este termo.'}
         </div>` : ''}
+        ${_fatBarraProgressoNf(t)}
+        ${t.status === 'emissao_nf' ? _fatCardUploadNf(t, emp) : ''}
         <table style="width:100%;border-collapse:collapse;font-size:11px;">
           <thead><tr style="border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">EMPRESA</th><th style="text-align:right;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">VALOR DA PARCELA</th><th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">NOTA FISCAL</th><th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">CONTAS A RECEBER (QB)</th><th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">PAGAMENTO</th></tr></thead>
           <tbody>${emp.map(e => `<tr style="border-bottom:1px solid var(--bd);">
@@ -14775,7 +14878,13 @@ async function abrirDetalheTermo(id) {
             <td style="padding:6px;">${e.pagamento_status==='pago' ? '✅ '+(e.pagamento_data||'') : '<span style="color:var(--t3);">pendente</span>'} <button class="btn" style="font-size:8px;padding:1px 5px;margin-left:4px;" onclick="_fatMarcarPagoManual('${e.id}')" title="Marcar como pago manualmente">✎</button></td>
             </tr>`).join('')}</tbody>
         </table>
-        ${notas.length ? `<div style="margin-top:12px;font-size:10px;color:var(--t2);"><b>${notas.length} anexo(s) de e-mail analisado(s):</b> ${notas.slice(0,8).map(n => n.anexo_nome).join(', ')}</div>` : ''}
+        ${notas.length ? `<div style="margin-top:12px;font-size:10px;color:var(--t2);">
+          <b>${notas.length} nota(s)/anexo(s) carregado(s):</b>
+          <div style="margin-top:4px;max-height:120px;overflow-y:auto;">${notas.map(n => `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid var(--bd);">
+            <span>${n.origem === 'manual' ? '📎' : '📧'} ${n.anexo_nome || '(sem nome)'} ${n.nf_numero ? '· NF ' + n.nf_numero : ''} ${n.nf_valor != null ? '· ' + fmtBRLcompleto(n.nf_valor) : ''} ${n.arquivo_url ? `· <a href="${n.arquivo_url}" target="_blank" style="color:var(--blue);">ver arquivo</a>` : ''}</span>
+            ${n.origem === 'manual' ? `<button class="btn" style="font-size:8px;padding:1px 5px;color:var(--red);" onclick="_fatNfExcluir('${n.id}','${t.id}')">🗑</button>` : ''}
+          </div>`).join('')}</div>
+        </div>` : ''}
       </div>
     </div>`;
   } catch (e) { box.innerHTML = '<div style="color:var(--red);text-align:center;padding:20px;">Erro: ' + e.message + '</div>'; }
@@ -16785,7 +16894,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.20.3] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.20.4] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -16801,7 +16910,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.20.3';
+window.__ATX_BUILD_ID__ = 'ATX-v1.20.4';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
