@@ -64,8 +64,11 @@ async function ensureTabelas(sql) {
     id TEXT PRIMARY KEY, termo_id TEXT REFERENCES termos_faturamento(id) ON DELETE CASCADE,
     empresa_id TEXT, email_assunto TEXT, email_data TIMESTAMPTZ, email_remetente TEXT,
     anexo_nome TEXT, nf_numero TEXT, nf_valor NUMERIC, nf_chave TEXT, tipo_arquivo TEXT,
+    arquivo_url TEXT, origem TEXT DEFAULT 'email',
     criado_em TIMESTAMPTZ DEFAULT NOW()
   )`;
+  try { await sql`ALTER TABLE termos_notas_encontradas ADD COLUMN IF NOT EXISTS arquivo_url TEXT`; } catch (_) {}
+  try { await sql`ALTER TABLE termos_notas_encontradas ADD COLUMN IF NOT EXISTS origem TEXT DEFAULT 'email'`; } catch (_) {}
 }
 
 function novoId(prefixo) { return (prefixo || 'id') + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
@@ -197,6 +200,39 @@ async function recalcularPagamento(termoId) {
   await sql`UPDATE termos_faturamento SET pagamento_status = ${status}, pagamento_verificado_em = NOW(), atualizado_em = NOW() WHERE id = ${termoId}`;
   if (status === 'pago') await sql`UPDATE termos_faturamento SET status = 'concluido' WHERE id = ${termoId}`;
   return { status };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 2b. CARGA MANUAL DE NOTA FISCAL (etapa Emissão de NF) — o frontend já subiu
+//    o arquivo (PDF/XML) via api/media-upload.js e manda a URL + os dados aqui
+// ═══════════════════════════════════════════════════════════════════════════
+async function termoNfUpload({ termo_id, empresa_id, nf_numero, nf_valor, anexo_nome, arquivo_url, tipo_arquivo } = {}) {
+  if (!termo_id) throw new Error('termo_id obrigatório');
+  if (!nf_valor || num(nf_valor) <= 0) throw new Error('valor da nota fiscal obrigatório');
+  const sql = await getSql();
+  const notaId = novoId('nota');
+  await sql`INSERT INTO termos_notas_encontradas (id, termo_id, empresa_id, email_assunto, email_remetente, anexo_nome, nf_numero, nf_valor, tipo_arquivo, arquivo_url, origem)
+    VALUES (${notaId}, ${termo_id}, ${empresa_id || null}, 'Carga manual', 'manual', ${anexo_nome || null}, ${nf_numero || null}, ${num(nf_valor)}, ${tipo_arquivo || null}, ${arquivo_url || null}, 'manual')`;
+  if (empresa_id) {
+    await sql`UPDATE termos_empresas SET nf_numero = ${nf_numero || null}, nf_valor = ${num(nf_valor)}, nf_data = ${new Date().toISOString().substring(0,10)}, nf_status = 'encontrada' WHERE id = ${empresa_id}`;
+  }
+  const recalc = await recalcularNf(termo_id);
+  console.log(`[Faturamento] NF carregada manualmente: termo=${termo_id} valor=${num(nf_valor)} empresa=${empresa_id || '(sem vínculo)'}`);
+  return { nota_id: notaId, nf_status: recalc.status, nf_soma: recalc.soma, nf_diferenca: recalc.diff };
+}
+async function termoNfExcluir({ nota_id } = {}) {
+  if (!nota_id) throw new Error('nota_id obrigatório');
+  const sql = await getSql();
+  const rows = await sql`SELECT termo_id, empresa_id FROM termos_notas_encontradas WHERE id = ${nota_id} LIMIT 1`;
+  if (!rows.length) throw new Error('Nota não encontrada');
+  await sql`DELETE FROM termos_notas_encontradas WHERE id = ${nota_id}`;
+  if (rows[0].empresa_id) {
+    // Só limpa a empresa se não houver outra nota vinculada a ela
+    const outra = await sql`SELECT id FROM termos_notas_encontradas WHERE empresa_id = ${rows[0].empresa_id} LIMIT 1`;
+    if (!outra.length) await sql`UPDATE termos_empresas SET nf_numero = NULL, nf_valor = NULL, nf_data = NULL, nf_status = 'pendente' WHERE id = ${rows[0].empresa_id}`;
+  }
+  const recalc = await recalcularNf(rows[0].termo_id);
+  return { excluido: true, nf_status: recalc.status, nf_soma: recalc.soma, nf_diferenca: recalc.diff };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -490,6 +526,8 @@ export default async function handler(req, res) {
     termo_aprovar:             () => termoAprovar(payload),
     termo_excluir:             () => termoExcluir(payload),
     termo_empresa_marcar_nf:   () => termoEmpresaMarcarNf(payload),
+    termo_nf_upload:           () => termoNfUpload(payload),
+    termo_nf_excluir:          () => termoNfExcluir(payload),
     termo_empresa_marcar_pago: () => termoEmpresaMarcarPago(payload),
     termo_verificar_email:     () => termoVerificarEmail(payload),
     termo_verificar_pagamento: () => termoVerificarPagamento(payload),
