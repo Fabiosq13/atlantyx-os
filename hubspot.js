@@ -1,0 +1,200 @@
+// api/hubspot.js — apenas propriedades nativas HubSpot
+
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method === 'GET') {
+    const t = process.env.HUBSPOT_TOKEN;
+    return res.status(200).json({ ok: true, token_configured: !!t, token_preview: t ? t.substring(0,12)+'...' : 'NOT SET' });
+  }
+  if (req.method !== 'POST') return res.status(405).end();
+
+  const token = process.env.HUBSPOT_TOKEN;
+  if (!token) return res.status(500).json({ success: false, error: 'HUBSPOT_TOKEN nao configurado' });
+
+  const { action, properties = {} } = req.body || {};
+  if (!action) return res.status(400).json({ success: false, error: 'action obrigatoria' });
+
+  const BASE = 'https://api.hubapi.com';
+  const H = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token };
+
+  try {
+    if (action === 'create_contact') {
+      // APENAS campos 100% nativos do HubSpot — sem customizados
+      const p = {};
+      if (properties.firstname) p.firstname = properties.firstname;
+      if (properties.lastname)  p.lastname  = properties.lastname;
+      if (properties.email)     p.email     = properties.email;
+      if (properties.phone)     p.phone     = properties.phone;
+      if (properties.jobtitle)  p.jobtitle  = properties.jobtitle;
+      if (properties.company)   p.company   = properties.company;
+      if (properties.website)   p.website   = properties.linkedin_url || properties.website || '';
+      // Colocar LinkedIn no campo website (nativo) se não houver website
+      // Nota: não usamos 'description', 'leadsource', 'score_atlantyx' — não existem no portal
+
+      // Verificar duplicata por email
+      if (p.email) {
+        try {
+          const sr = await fetch(BASE + '/crm/v3/objects/contacts/search', {
+            method: 'POST', headers: H,
+            body: JSON.stringify({ filterGroups: [{ filters: [{ propertyName: 'email', operator: 'EQ', value: p.email }] }], limit: 1 }),
+          });
+          const sd = await sr.json();
+          if (sd.results?.length > 0) return res.status(200).json({ success: true, id: sd.results[0].id, status: 'already_exists' });
+        } catch(e) {}
+      }
+
+      // Criar contato
+      const r = await fetch(BASE + '/crm/v3/objects/contacts', {
+        method: 'POST', headers: H, body: JSON.stringify({ properties: p }),
+      });
+      const d = await r.json();
+      if (!r.ok) return res.status(200).json({ success: false, error: d.message || JSON.stringify(d).substring(0,300) });
+
+      const contactId = d.id;
+      let dealId = null;
+
+      // Criar deal no pipeline
+      try {
+        const dealName = (p.company || p.firstname || 'Lead') + ' — ' + (p.jobtitle || 'C-Level') + ' (Apollo)';
+        const dr = await fetch(BASE + '/crm/v3/objects/deals', {
+          method: 'POST', headers: H,
+          body: JSON.stringify({ properties: {
+            dealname:  dealName,
+            dealstage: 'appointmentscheduled',
+            pipeline:  process.env.HUBSPOT_PIPELINE_ID || '890074401',
+          }}),
+        });
+        const dd = await dr.json();
+        dealId = dd.id;
+        if (dealId && contactId) {
+          await fetch(BASE + '/crm/v4/associations/contacts/' + contactId + '/deals/' + dealId + '/labels', {
+            method: 'PUT', headers: H,
+            body: JSON.stringify([{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 4 }]),
+          });
+        }
+      } catch(e) { console.log('[HubSpot] Deal err:', e.message); }
+
+      return res.status(200).json({ success: true, id: contactId, deal_id: dealId, status: 'created' });
+    }
+
+    if (action === 'list_pipeline') {
+      const r = await fetch(BASE + '/crm/v3/objects/deals?limit=50&properties=dealname,dealstage,amount', { headers: H });
+      const d = await r.json();
+      return res.status(200).json({ success: true, deals: d.results || [] });
+    }
+
+    // ── CRIAR NOTA NO CONTATO ──────────────────────────────────────────────
+    if (action === 'create_note') {
+      const { contact_id, deal_id, note } = req.body || {};
+      if (!contact_id || !note) return res.status(400).json({ success: false, error: 'contact_id e note obrigatórios' });
+
+      const noteBody = {
+        properties: {
+          hs_note_body: note,
+          hs_timestamp: Date.now().toString(),
+        },
+        associations: [
+          { to: { id: contact_id }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 202 }] },
+        ],
+      };
+      if (deal_id) {
+        noteBody.associations.push({
+          to: { id: deal_id }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 214 }]
+        });
+      }
+
+      const r = await fetch(BASE + '/crm/v3/objects/notes', {
+        method: 'POST', headers: H, body: JSON.stringify(noteBody)
+      });
+      const d = await r.json();
+      if (!r.ok) return res.status(200).json({ success: false, error: d.message||'Note error' });
+      return res.status(200).json({ success: true, note_id: d.id });
+    }
+
+    if (action === 'leads_por_campanha') {
+      // v1.5.4: atribuição automática de leads por UTM
+      // Busca contatos criados no período e extrai utm_campaign da URL de origem
+      // (hs_analytics_first_url guarda a primeira URL visitada, com UTMs).
+      const dias = parseInt(properties.dias || 90);
+      const desde = Date.now() - dias * 864e5;
+
+      const props = ['email', 'createdate', 'hs_analytics_first_url', 'hs_analytics_source', 'hs_analytics_source_data_1', 'hs_analytics_source_data_2'];
+      let after = undefined;
+      const contatos = [];
+      // Paginar até 300 contatos (3 páginas) para não estourar tempo
+      for (let pag = 0; pag < 3; pag++) {
+        const body = {
+          filterGroups: [{ filters: [{ propertyName: 'createdate', operator: 'GTE', value: String(desde) }] }],
+          properties: props,
+          sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }],
+          limit: 100,
+          ...(after ? { after } : {}),
+        };
+        const r = await fetch(BASE + '/crm/v3/objects/contacts/search', { method: 'POST', headers: H, body: JSON.stringify(body) });
+        const d = await r.json();
+        if (!r.ok) return res.status(200).json({ success: false, error: d.message || 'erro search', status: r.status });
+        contatos.push(...(d.results || []));
+        after = d.paging?.next?.after;
+        if (!after) break;
+      }
+
+      // Extrair utm_campaign da URL de origem
+      const porCampanha = {};   // { camp_xxx: { total, por_rede: {linkedin: n, ...} } }
+      let sem_utm = 0;
+      for (const c of contatos) {
+        const url = c.properties?.hs_analytics_first_url || '';
+        const mCamp = url.match(/utm_campaign=([^&\s]+)/i);
+        const mSrc  = url.match(/utm_source=([^&\s]+)/i);
+        const mMed  = url.match(/utm_medium=([^&\s]+)/i);
+        if (!mCamp) { sem_utm++; continue; }
+        const camp = decodeURIComponent(mCamp[1]);
+        const rede = mSrc ? decodeURIComponent(mSrc[1]).toLowerCase() : 'desconhecida';
+        const medium = mMed ? decodeURIComponent(mMed[1]).toLowerCase() : 'social';
+        if (!porCampanha[camp]) porCampanha[camp] = { total: 0, por_rede: {}, pagos: 0 };
+        porCampanha[camp].total++;
+        porCampanha[camp].por_rede[rede] = (porCampanha[camp].por_rede[rede] || 0) + 1;
+        if (medium === 'paid' || medium === 'cpc' || medium === 'ads') porCampanha[camp].pagos++;
+      }
+
+      return res.status(200).json({
+        success: true,
+        periodo_dias: dias,
+        contatos_analisados: contatos.length,
+        sem_utm,
+        leads_por_campanha: porCampanha,
+      });
+    }
+
+    if (action === 'listar_landing_pages') {
+      // v1.5.5: lista landing pages do HubSpot CMS para usar como link de destino
+      // Requer escopo "content" no Private App (se 403, adicionar o escopo e gerar novo token)
+      const r = await fetch(BASE + '/cms/v3/pages/landing-pages?limit=20&sort=-updatedAt', { headers: H });
+      const d = await r.json();
+      if (!r.ok) {
+        const precisaEscopo = r.status === 403;
+        return res.status(200).json({
+          success: false, status: r.status,
+          error: d.message || 'erro ao listar landing pages',
+          hint: precisaEscopo
+            ? 'O Private App não tem o escopo "content". HubSpot → Settings → Integrations → Private Apps → seu app → Scopes → marque "content" → salve → copie o NOVO token → atualize HUBSPOT_TOKEN no Vercel → Redeploy.'
+            : 'Verifique HUBSPOT_TOKEN.',
+        });
+      }
+      const paginas = (d.results || []).map(p => ({
+        id: p.id,
+        nome: p.name,
+        url: p.url || (p.domain && p.slug ? 'https://' + p.domain + '/' + p.slug : ''),
+        publicada: p.currentState === 'PUBLISHED' || p.state === 'PUBLISHED',
+        atualizado_em: p.updatedAt,
+      }));
+      return res.status(200).json({ success: true, total: paginas.length, paginas });
+    }
+
+    return res.status(400).json({ success: false, error: 'Acao invalida: ' + action });
+  } catch(e) {
+    return res.status(500).json({ success: false, error: e.message });
+  }
+}
