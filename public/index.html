@@ -2779,14 +2779,17 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <div style="display:grid;grid-template-columns:2fr 1fr 100px 130px;gap:8px;margin-bottom:8px;">
           <div class="fg" style="margin:0;"><label class="fl">Descricao</label><input class="fi" id="f_desp_desc" placeholder="Ex: Folha de pagamento"/></div>
           <div class="fg" style="margin:0;"><label class="fl">Categoria</label><input class="fi" id="f_desp_cat" placeholder="Ex: Pessoal"/></div>
-          <div class="fg" style="margin:0;"><label class="fl">Recorrencia</label><select class="fi" id="f_desp_rec"><option value="mensal">Mensal</option><option value="trimestral">Trimestral</option><option value="anual">Anual</option><option value="unica">Unica</option></select></div>
+          <div class="fg" style="margin:0;">
+            <label class="fl" style="display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" id="f_desp_recorrente" onchange="_despToggleRecorrencia()"/> Recorrente?</label>
+            <select class="fi" id="f_desp_rec" style="display:none;margin-top:4px;"><option value="mensal">Mensal</option><option value="trimestral">Trimestral</option><option value="anual">Anual</option></select>
+          </div>
           <div class="fg" style="margin:0;"><label class="fl">Valor R$</label><input class="fi" id="f_desp_valor" placeholder="0,00"/></div>
         </div>
         <div style="display:grid;grid-template-columns:130px 130px 80px 1fr auto;gap:8px;align-items:end;">
           <div class="fg" style="margin:0;"><label class="fl">Inicio</label><input type="date" class="fi" id="f_desp_inicio"/></div>
-          <div class="fg" style="margin:0;"><label class="fl">Fim (opcional)</label><input type="date" class="fi" id="f_desp_fim"/></div>
+          <div class="fg" style="margin:0;display:none;"><label class="fl">Fim (opcional)</label><input type="date" class="fi" id="f_desp_fim"/></div>
           <div class="fg" style="margin:0;"><label class="fl">Dia venc.</label><input class="fi" id="f_desp_dia" placeholder="5"/></div>
-          <div class="fg" style="margin:0;"><label class="fl">Fornecedor</label><input class="fi" id="f_desp_forn" placeholder="opcional"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Fornecedor</label><input class="fi" id="f_desp_forn" list="despFornecedoresList" placeholder="digite ou escolha do QuickBooks" autocomplete="off"/><datalist id="despFornecedoresList"></datalist></div>
           <button class="btn btn-gn" onclick="adicionarDespesa()">+ Cadastrar</button>
         </div>
       </div>
@@ -11948,7 +11951,7 @@ async function enriquecerLeads() {
     <div class="kg k3" style="margin-bottom:12px;">
       <div class="kpi pk"><div class="kl">EBITDA</div><div class="kv" id="s3_ebitda">&mdash;</div><div class="ks">mes atual</div></div>
       <div class="kpi pk"><div class="kl">Margem Liquida</div><div class="kv" id="s3_margem">&mdash;</div><div class="ks">% lucro/receita</div></div>
-      <div class="kpi pk"><div class="kl">ROI Total</div><div class="kv" id="s3_roi">&mdash;</div><div class="ks">retorno mes</div></div>
+      <div class="kpi pk"><div class="kl">ROI Total</div><div class="kv" id="s3_roi">&mdash;</div><div class="ks" id="s3_roi_sub">lucro &divide; patrim&ocirc;nio l&iacute;quido</div></div>
       <div class="kpi pk"><div class="kl">Liquidez Corrente</div><div class="kv" id="s3_liq">&mdash;</div><div class="ks">ideal &gt; 1.5</div></div>
       <div class="kpi pk"><div class="kl">Runway</div><div class="kv" id="s3_runway">&mdash;</div><div class="ks">meses de caixa</div></div>
       <div class="kpi gd"><div class="kl">Contas a Receber</div><div class="kv" id="s3_backlog">&mdash;</div><div class="ks">em aberto</div></div>
@@ -11960,14 +11963,16 @@ async function enriquecerLeads() {
         <div class="pb" id="s3RentPanel"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Clique em Calcular KPIs de Saude</div></div>
       </div>
       <div class="panel">
-        <div class="ph"><div class="pt">Tributario + Compliance</div></div>
+        <div class="ph"><div class="pt">Tributario + Compliance</div><button class="btn" style="font-size:9.5px;" onclick="abrirConfigTributos()">&#9881; Configurar</button></div>
         <div class="pb" id="s3TribPanel">
+          <div id="s3TribAviso" style="display:none;font-size:10.5px;color:var(--gold);background:rgba(245,185,75,.08);border:1px solid rgba(245,185,75,.3);border-radius:6px;padding:8px 10px;margin-bottom:10px;">&#9888; Nao configurado ainda &mdash; clique em <b>Configurar</b> para informar regime tributario, aliquotas e folha de pagamento. Sem isso, os campos abaixo ficam vazios (o sistema nao inventa valor de imposto).</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">DAS Simples</div><div style="font-size:14px;font-weight:600;" id="s3_das">&mdash;</div></div>
+            <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">DAS Simples <span style="color:var(--t3);">(estimativa)</span></div><div style="font-size:14px;font-weight:600;" id="s3_das">&mdash;</div></div>
             <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">FGTS</div><div style="font-size:14px;font-weight:600;" id="s3_fgts">&mdash;</div></div>
-            <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">IRPJ/CSLL</div><div style="font-size:14px;font-weight:600;" id="s3_irpj">&mdash;</div></div>
-            <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">ISS</div><div style="font-size:14px;font-weight:600;" id="s3_iss">&mdash;</div></div>
+            <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">IRPJ/CSLL <span style="color:var(--t3);">(estimativa)</span></div><div style="font-size:14px;font-weight:600;" id="s3_irpj">&mdash;</div></div>
+            <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">ISS <span style="color:var(--t3);">(estimativa)</span></div><div style="font-size:14px;font-weight:600;" id="s3_iss">&mdash;</div></div>
           </div>
+          <div style="font-size:8.5px;color:var(--t3);margin-top:8px;">Valores estimados a partir da receita/folha informadas &mdash; nao substituem o calculo do seu contador.</div>
         </div>
       </div>
     </div>
@@ -13147,7 +13152,28 @@ async function salvarSaldoInicial() {
 let _despCache = [];
 let _ocoCache = [];
 
+function _despToggleRecorrencia() {
+  const chk = document.getElementById('f_desp_recorrente');
+  const sel = document.getElementById('f_desp_rec');
+  const fimWrap = document.getElementById('f_desp_fim')?.closest('.fg');
+  if (sel) sel.style.display = chk?.checked ? 'block' : 'none';
+  if (fimWrap) fimWrap.style.display = chk?.checked ? 'block' : 'none';
+}
+let _fornecedoresQbCache = null;
+async function _carregarFornecedoresQb() {
+  if (_fornecedoresQbCache) return _fornecedoresQbCache;
+  try {
+    const d = await finApi('qb_fornecedores_list', {});
+    _fornecedoresQbCache = d.fornecedores || [];
+    const dl = document.getElementById('despFornecedoresList');
+    if (dl) dl.innerHTML = _fornecedoresQbCache.map(f => `<option value="${f.nome.replace(/"/g,'&quot;')}"></option>`).join('');
+    if (d.erro) addLog('warn', '[Despesas] fornecedores QB: ' + d.erro);
+    else if (_fornecedoresQbCache.length) addLog('info', '[Despesas] ' + _fornecedoresQbCache.length + ' fornecedor(es) do QuickBooks carregado(s) para o combo');
+  } catch (e) { addLog('warn', '[Despesas] fornecedores QB: ' + e.message); }
+  return _fornecedoresQbCache || [];
+}
 async function carregarDespesas() {
+  _carregarFornecedoresQb(); // v1.20.8: popula o combo de fornecedores (não bloqueia o resto da tela)
   try {
     const [d, o] = await Promise.all([
       finApi('desp_list', {}),
@@ -13205,25 +13231,28 @@ function renderDespesasLista() {
 }
 
 async function adicionarDespesa() {
+  // v1.20.6: recorrência agora é opcional — se o checkbox não estiver marcado, cadastra como 'unica'
+  const ehRecorrente = document.getElementById('f_desp_recorrente')?.checked;
   const p = {
     descricao: document.getElementById('f_desp_desc')?.value?.trim(),
     categoria: document.getElementById('f_desp_cat')?.value?.trim(),
     valor: parseFloat((document.getElementById('f_desp_valor')?.value || '0').replace(/[^\d,-]/g, '').replace(',', '.')),
-    recorrencia: document.getElementById('f_desp_rec')?.value,
+    recorrencia: ehRecorrente ? (document.getElementById('f_desp_rec')?.value || 'mensal') : 'unica',
     data_inicio: document.getElementById('f_desp_inicio')?.value,
-    data_fim: document.getElementById('f_desp_fim')?.value || null,
+    data_fim: ehRecorrente ? (document.getElementById('f_desp_fim')?.value || null) : null,
     dia_vencimento: parseInt(document.getElementById('f_desp_dia')?.value) || null,
     fornecedor: document.getElementById('f_desp_forn')?.value?.trim() || null,
   };
-  if (!p.descricao || !p.valor || !p.recorrencia || !p.data_inicio) {
-    if (typeof toast === 'function') toast('Preencha descrição, valor, recorrência e data início', 'error');
+  if (!p.descricao || !p.valor || !p.data_inicio) {
+    if (typeof toast === 'function') toast('Preencha descrição, valor e data início', 'error');
     return;
   }
   try {
     await finApi('desp_save', p);
-    if (typeof toast === 'function') toast('Despesa cadastrada', 'success');
+    if (typeof toast === 'function') toast('Despesa cadastrada' + (ehRecorrente ? ' (recorrente: ' + p.recorrencia + ')' : ' (única)'), 'success');
     ['f_desp_desc', 'f_desp_cat', 'f_desp_valor', 'f_desp_inicio', 'f_desp_fim', 'f_desp_dia', 'f_desp_forn']
       .forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+    const chk = document.getElementById('f_desp_recorrente'); if (chk) chk.checked = false; _despToggleRecorrencia();
     await carregarDespesas();
   } catch (e) {
     if (typeof toast === 'function') toast('Erro: ' + e.message, 'error');
@@ -13311,6 +13340,7 @@ function mudarMesCal(delta) {
   renderCalendario();
 }
 
+// v1.20.6: modal de verdade no lugar do alert() — com ações (marcar paga / lançar no QuickBooks)
 function mostrarDetalhesDia(dia) {
   const ano = _calMes.getFullYear();
   const mes = _calMes.getMonth();
@@ -13319,8 +13349,41 @@ function mostrarDetalhesDia(dia) {
     return dt.getFullYear() === ano && dt.getMonth() === mes && dt.getDate() === dia;
   });
   const total = ocs.reduce((s, o) => s + o.valor, 0);
-  const detalhes = ocs.map(o => `• ${o.descricao} — ${fmtBRLcompleto(o.valor)} [${o.status}]${o.fonte === 'quickbooks' ? ' (QuickBooks)' : ''}`).join('\n');
-  alert(`Despesas em ${dia}/${mes + 1}/${ano}\n\n${detalhes}\n\nTotal: ${fmtBRLcompleto(total)}`);
+  let modal = document.getElementById('despDiaModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'despDiaModal';
+    modal.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:999;align-items:center;justify-content:center;overflow:auto;';
+    document.body.appendChild(modal);
+  }
+  modal.style.display = 'flex';
+  const statusLbl = { prevista: '⏳ prevista', lancada: '📤 lançada no QB', paga: '✅ paga' };
+  modal.innerHTML = `<div class="panel" style="width:520px;max-width:95vw;max-height:85vh;overflow:auto;">
+    <div class="ph"><div class="pt">Despesas em ${dia}/${mes+1}/${ano}</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('despDiaModal').style.display='none'">✕</button></div>
+    <div class="pb">
+      ${ocs.map(o => `<div style="border-bottom:1px solid var(--bd);padding:8px 0;">
+        <div style="display:flex;justify-content:space-between;font-size:11.5px;"><b>${o.descricao}</b><span style="font-family:var(--M);color:var(--red);">${fmtBRLcompleto(o.valor)}</span></div>
+        <div style="font-size:9.5px;color:var(--t2);margin-top:2px;">${statusLbl[o.status] || o.status}${o.fonte === 'quickbooks' ? ' · já é conta a pagar no QuickBooks' : ''}${o.qb_txn_id ? ' · QB #' + o.qb_txn_id : ''}</div>
+        ${o.fonte !== 'quickbooks' && o.status !== 'paga' ? `<div style="display:flex;gap:6px;margin-top:5px;">
+          <button class="btn btn-gn" style="font-size:9px;padding:3px 8px;" onclick="_despMarcarPagaUI('${o.id}', ${dia})">✓ Marcar como paga</button>
+          ${!o.qb_txn_id ? `<button class="btn" style="font-size:9px;padding:3px 8px;color:var(--gold);border-color:var(--gold);" onclick="_despLancarQbUI('${o.id}', ${dia})" id="btnDespQb_${o.id}">📤 Lançar no QuickBooks</button>` : ''}
+        </div>` : ''}
+      </div>`).join('') || '<div style="text-align:center;color:var(--t3);padding:16px;">Sem despesas neste dia.</div>'}
+      <div style="display:flex;justify-content:space-between;margin-top:10px;font-size:11.5px;"><b>Total</b><b style="color:var(--red);font-family:var(--M);">${fmtBRLcompleto(total)}</b></div>
+    </div>
+  </div>`;
+}
+async function _despMarcarPagaUI(ocorrenciaId, dia) {
+  try { await finApi('desp_marcar_paga', { id: ocorrenciaId }); if (typeof toast === 'function') toast('Marcada como paga', 'success'); await carregarDespesas(); mostrarDetalhesDia(dia); }
+  catch (e) { if (typeof toast === 'function') toast('Erro: ' + e.message, 'error'); }
+}
+async function _despLancarQbUI(ocorrenciaId, dia) {
+  const btn = document.getElementById('btnDespQb_' + ocorrenciaId); if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
+  try {
+    const d = await finApi('desp_lancar_qb', { ocorrencia_id: ocorrenciaId });
+    if (typeof toast === 'function') toast(d.ja_lancado ? 'Já estava lançada no QB' : 'Lançada no QuickBooks — ' + d.fornecedor + ' · ' + fmtBRLcompleto(d.valor), 'success');
+    await carregarDespesas(); mostrarDetalhesDia(dia);
+  } catch (e) { if (typeof toast === 'function') toast('Erro ao lançar no QB: ' + e.message, 'error'); if (btn) { btn.disabled = false; btn.textContent = '📤 Lançar no QuickBooks'; } }
 }
 
 async function gerarOcorrenciasFuturas() {
@@ -13483,13 +13546,33 @@ async function calcularKpisFinanceiros() {
   if (btn && btn.disabled !== undefined) { btn.disabled = false; btn.textContent = '◇ Calcular KPIs de Saúde'; }
 }
 
+// v1.20.7: configuração de tributos (localStorage — o sistema não inventa alíquota/regime)
+function _tribConfig() {
+  try { return JSON.parse(localStorage.getItem('atx:config_tributos') || 'null'); } catch(_) { return null; }
+}
+function abrirConfigTributos() {
+  const c = _tribConfig() || {};
+  const regime = prompt('Regime tributário (simples / presumido / real):', c.regime || 'simples');
+  if (regime === null) return;
+  const aliqDas = regime === 'simples' ? parseFloat(prompt('Alíquota efetiva do DAS (Simples Nacional), em % — confira na sua faixa do Anexo:', c.aliq_das ?? '6')) : null;
+  const aliqIrpjCsll = (regime === 'presumido' || regime === 'real') ? parseFloat(prompt('Alíquota estimada de IRPJ+CSLL sobre o lucro, em % (ex.: 24 para Presumido típico):', c.aliq_irpj ?? '24')) : null;
+  const aliqIss = parseFloat(prompt('Alíquota de ISS do seu município, em % (0 se não presta serviço tributado por ISS):', c.aliq_iss ?? '5'));
+  const folha = parseFloat((prompt('Folha de pagamento mensal (R$), para calcular o FGTS (8%):', c.folha ?? '0') || '0').replace(/\./g,'').replace(',','.'));
+  const novo = { regime, aliq_das: isNaN(aliqDas) ? null : aliqDas, aliq_irpj: isNaN(aliqIrpjCsll) ? null : aliqIrpjCsll, aliq_iss: isNaN(aliqIss) ? 0 : aliqIss, folha: isNaN(folha) ? 0 : folha };
+  try { localStorage.setItem('atx:config_tributos', JSON.stringify(novo)); } catch(_) {}
+  toast('Configuração de tributos salva', 'success');
+  if (_ultimoKpi) renderKpisSaude(_ultimoKpi);
+}
+let _ultimoKpi = null;
 function renderKpisSaude(k) {
+  _ultimoKpi = k;
   const u = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   u('s3_ebitda', k.ebitda_mes !== null ? fmtBRL(k.ebitda_mes) : '—');
   u('s3_margem', k.margem_liquida_pct !== null ? k.margem_liquida_pct + '%' : '—');
-  u('s3_roi', k.margem_liquida_pct !== null ? k.margem_liquida_pct + '%' : '—');
+  u('s3_roi', k.roi_pct != null ? k.roi_pct + '%' : '—'); // v1.20.7 FIX: era igual à margem líquida; agora é lucro/patrimônio líquido
+  { const subRoi = document.getElementById('s3_roi_sub'); if (subRoi) subRoi.textContent = k.roi_pct != null ? 'lucro ÷ patrimônio líquido' : (k.patrimonio_liquido == null ? 'sem dado de patrimônio no QB' : 'lucro ÷ patrimônio líquido'); }
   u('s3_liq', k.liquidez_corrente !== null ? k.liquidez_corrente : '—');
-  u('s3_runway', k.runway_meses !== null ? (k.runway_meses === 999 ? '∞' : k.runway_meses + 'm') : '—');
+  u('s3_runway', k.runway_meses !== null ? (k.runway_meses === 999 ? '∞' : k.runway_meses === 0 && k.saldo_caixa <= 0 ? '0m ⚠' : k.runway_meses + 'm') : '—'); // v1.20.7 FIX: caixa negativo agora mostra 0m em vez de sumir
   u('s3_backlog', fmtBRL(k.contas_receber));
 
   // Painel rentabilidade
@@ -13515,6 +13598,19 @@ function renderKpisSaude(k) {
         </div>
       ` : ''}
     `;
+  }
+
+  // v1.20.7: Tributário + Compliance — cálculo transparente a partir da config local
+  const cfg = _tribConfig();
+  const aviso = document.getElementById('s3TribAviso');
+  if (!cfg) { if (aviso) aviso.style.display = 'block'; u('s3_das','—'); u('s3_fgts','—'); u('s3_irpj','—'); u('s3_iss','—'); }
+  else {
+    if (aviso) aviso.style.display = 'none';
+    const receita = k.receita_mes || 0, lucro = (k.receita_mes||0) - (k.despesa_mes||0);
+    u('s3_das', cfg.regime === 'simples' && cfg.aliq_das != null ? fmtBRL(receita * cfg.aliq_das/100) : (cfg.regime === 'simples' ? '—' : 'n/a (regime ' + cfg.regime + ')'));
+    u('s3_fgts', cfg.folha > 0 ? fmtBRL(cfg.folha * 0.08) : (cfg.folha === 0 ? fmtBRL(0) : '—'));
+    u('s3_irpj', (cfg.regime === 'presumido' || cfg.regime === 'real') && cfg.aliq_irpj != null ? fmtBRL(Math.max(0,lucro) * cfg.aliq_irpj/100) : (cfg.regime === 'simples' ? 'incluso no DAS' : '—'));
+    u('s3_iss', cfg.aliq_iss > 0 ? fmtBRL(receita * cfg.aliq_iss/100) : (cfg.aliq_iss === 0 ? 'n/a' : '—'));
   }
 }
 
@@ -14194,7 +14290,7 @@ async function salvarMarco() {
     return;
   }
   try {
-    await finApi('marco_save', p);
+    const rSave = await finApi('marco_save', p);
     // v1.20: se estava editando e a etapa (status) foi alterada no dropdown, move no Kanban também
     if (p.id) {
       const marcoAtual = _projetoAberto.marcos.find(x => x.id === p.id);
@@ -14204,7 +14300,9 @@ async function salvarMarco() {
         catch (eMov) { if (typeof toast === 'function') toast('Marco salvo, mas não mudou de etapa: ' + eMov.message, 'error'); }
       }
     }
-    if (typeof toast === 'function') toast('Marco salvo', 'success');
+    // v1.20.6: confirmação com a data que REALMENTE ficou gravada no banco (round-trip do backend)
+    const dataConf = rSave?.data_entrega_confirmada ? rSave.data_entrega_confirmada.split('-').reverse().join('/') : null;
+    if (typeof toast === 'function') toast(dataConf ? 'Marco salvo — entrega em ' + dataConf : 'Marco salvo', 'success');
     document.getElementById('formMarcoPanel').style.display = 'none';
     await abrirProjeto(_projetoAberto.id);
     try { carregarKanbanMarcos(); } catch(_) {}
@@ -14752,26 +14850,21 @@ function _fatBarraProgressoNf(t) {
 // v1.20.4: card de upload manual de NF — visível na etapa Emissão de NF
 function _fatCardUploadNf(t, emp) {
   const pendentes = emp.filter(e => e.nf_status !== 'encontrada');
+  _fatEmpresasAtual[t.id] = pendentes; // p/ os detectores de empresa usarem ao processar os arquivos
+  if (!_fatNfFila[t.id]) _fatNfFila[t.id] = [];
   return `<div class="panel" style="background:var(--bg4);border:1px dashed var(--gold);margin-bottom:12px;">
     <div class="ph"><div class="pt" style="font-size:12px;">📎 Carregar Notas Fiscais desta emissão</div></div>
     <div class="pb">
-      <div style="font-size:10px;color:var(--t2);margin-bottom:8px;">Envie o PDF ou XML da nota fiscal. Em arquivos XML (NFe), número e valor são lidos automaticamente; em PDF, digite manualmente. Vincule a nota à empresa do rateio para atualizar o total carregado.</div>
-      <div style="display:grid;grid-template-columns:1fr 140px 140px 1fr auto;gap:6px;align-items:end;">
-        <div><div style="font-size:9px;color:var(--t2);margin-bottom:3px;">ARQUIVO (PDF/XML)</div><input type="file" id="fatNfArquivo_${t.id}" accept=".pdf,.xml" class="fi" style="font-size:10px;padding:4px;" onchange="_fatNfArquivoSelecionado('${t.id}', this)"/></div>
-        <div><div style="font-size:9px;color:var(--t2);margin-bottom:3px;">Nº DA NF</div><input class="fi" id="fatNfNumero_${t.id}" style="font-size:10px;" placeholder="opcional"/></div>
-        <div><div style="font-size:9px;color:var(--t2);margin-bottom:3px;">VALOR (R$)</div><input class="fi" id="fatNfValor_${t.id}" style="font-size:10px;" placeholder="0,00"/></div>
-        <div><div style="font-size:9px;color:var(--t2);margin-bottom:3px;">EMPRESA DO RATEIO</div>
-          <select class="fsel" id="fatNfEmpresa_${t.id}" style="width:100%;font-size:10px;">
-            <option value="">— sem vínculo (só registra o arquivo) —</option>
-            ${pendentes.map(e => `<option value="${e.id}">${e.empresa} · ${fmtBRLcompleto(e.valor_parcela)}</option>`).join('')}
-          </select>
-        </div>
-        <button class="btn btn-p" style="font-size:10px;" onclick="_fatNfConfirmarUpload('${t.id}')" id="fatNfBtnUp_${t.id}" disabled>+ Adicionar</button>
-      </div>
+      <div style="font-size:10px;color:var(--t2);margin-bottom:8px;">Envie um ou vários arquivos (PDF/XML) de uma vez. Em XML (NFe) e em PDF (DANFE), o sistema tenta ler número, valor e empresa sozinho — confira cada linha antes de confirmar.</div>
+      <input type="file" id="fatNfArquivo_${t.id}" accept=".pdf,.xml" multiple class="fi" style="width:100%;font-size:10px;padding:5px;margin-bottom:8px;" onchange="_fatNfArquivosSelecionados('${t.id}', this)"/>
+      <div id="fatNfFilaBox_${t.id}"></div>
       <div id="fatNfUploadMsg_${t.id}" style="font-size:9.5px;margin-top:6px;"></div>
     </div>
   </div>`;
 }
+window._fatEmpresasAtual = window._fatEmpresasAtual || {};
+window._fatNfFila = window._fatNfFila || {};
+var _fatEmpresasAtual = window._fatEmpresasAtual, _fatNfFila = window._fatNfFila;
 
 // v1.20.4: parser leve de XML de NFe no navegador (mesmo padrão do backend, para preencher os campos sozinho)
 function _fatExtrairXmlNFe(xmlTexto) {
@@ -14785,49 +14878,124 @@ function _fatExtrairXmlNFe(xmlTexto) {
   } catch (_) { return null; }
 }
 
-let _fatNfPendente = {}; // { [termoId]: { url, tipo, nome } }
-async function _fatNfArquivoSelecionado(termoId, input) {
-  const file = input.files?.[0]; if (!file) return;
-  const msg = document.getElementById('fatNfUploadMsg_' + termoId);
-  const btn = document.getElementById('fatNfBtnUp_' + termoId);
-  if (msg) { msg.style.color = 'var(--blue)'; msg.textContent = '⏳ Enviando arquivo...'; }
-  if (btn) btn.disabled = true;
-  try {
-    const isXml = /\.xml$/i.test(file.name);
-    if (isXml) {
-      const texto = await file.text();
-      const dados = _fatExtrairXmlNFe(texto);
-      if (dados) {
-        if (dados.nf_numero) document.getElementById('fatNfNumero_' + termoId).value = dados.nf_numero;
-        if (dados.nf_valor != null) document.getElementById('fatNfValor_' + termoId).value = dados.nf_valor.toFixed(2).replace('.', ',');
-        const sel = document.getElementById('fatNfEmpresa_' + termoId);
-        const alvo = (dados.dest_nome || dados.emit_nome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
-        if (sel && alvo) { for (const opt of sel.options) { const n = opt.textContent.split('·')[0].trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,''); if (n && (alvo.includes(n) || n.includes(alvo))) { sel.value = opt.value; break; } } }
-      }
-    }
-    const resp = await fetch('/api/media-upload?name=' + encodeURIComponent(file.name) + '&pasta=notas_fiscais', { method:'POST', headers:{ 'Content-Type': file.type || (isXml ? 'application/xml' : 'application/pdf') }, body: file });
-    const d = await resp.json();
-    if (!d.success) throw new Error(d.error + (d.hint ? ' — ' + d.hint : ''));
-    _fatNfPendente[termoId] = { url: d.url, tipo: isXml ? 'xml' : 'pdf', nome: file.name };
-    if (msg) { msg.style.color = 'var(--green,#22d3a3)'; msg.textContent = '✓ Arquivo enviado: ' + file.name + (isXml ? ' — dados lidos automaticamente, confira antes de adicionar.' : ' — preencha número e valor manualmente.'); }
-    if (btn) btn.disabled = false;
-  } catch (e) { if (msg) { msg.style.color = 'var(--red)'; msg.textContent = '⛔ Erro ao enviar: ' + e.message; } if (btn) btn.disabled = true; }
+// v1.20.5: PDF.js sob demanda (leitura de texto do PDF, para tentar detectar valor/empresa/nº como já fazemos com XML)
+function _carregarPdfJs() {
+  return new Promise((resolve, reject) => {
+    if (window.pdfjsLib) return resolve();
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    sc.onload = () => { try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; resolve(); } catch (e) { reject(e); } };
+    sc.onerror = () => reject(new Error('falha ao carregar leitor de PDF (CDN bloqueada?)'));
+    document.head.appendChild(sc);
+  });
 }
-async function _fatNfConfirmarUpload(termoId) {
-  const pendente = _fatNfPendente[termoId];
-  if (!pendente) { toast('Selecione um arquivo primeiro', 'error'); return; }
-  const numero = document.getElementById('fatNfNumero_' + termoId)?.value?.trim() || null;
-  const valorTxt = document.getElementById('fatNfValor_' + termoId)?.value?.trim() || '';
-  const valor = parseFloat(valorTxt.replace(/\./g, '').replace(',', '.'));
-  if (!valor || valor <= 0) { toast('Informe o valor da nota fiscal', 'error'); return; }
-  const empresaId = document.getElementById('fatNfEmpresa_' + termoId)?.value || null;
-  const btn = document.getElementById('fatNfBtnUp_' + termoId); if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
-  try {
-    const d = await fatApi('termo_nf_upload', { termo_id: termoId, empresa_id: empresaId, nf_numero: numero, nf_valor: valor, anexo_nome: pendente.nome, arquivo_url: pendente.url, tipo_arquivo: pendente.tipo });
-    toast('Nota fiscal adicionada — ' + fmtBRLcompleto(valor) + (empresaId ? ' vinculada à empresa' : ' registrada sem vínculo'), 'success');
-    delete _fatNfPendente[termoId];
-    await abrirDetalheTermo(termoId); carregarKanbanFaturamento();
-  } catch (e) { toast('Erro: ' + e.message, 'error'); if (btn) { btn.disabled = false; btn.textContent = '+ Adicionar'; } }
+async function _fatExtrairTextoPdf(file) {
+  await _carregarPdfJs();
+  const buf = await file.arrayBuffer();
+  const doc = await window.pdfjsLib.getDocument({ data: buf }).promise;
+  let texto = '';
+  const nPag = Math.min(doc.numPages, 3); // DANFE/nota costuma ser 1 página; 3 cobre com folga
+  for (let p = 1; p <= nPag; p++) { const pg = await doc.getPage(p); const tc = await pg.getTextContent(); texto += ' ' + tc.items.map(i => i.str).join(' '); }
+  return texto;
+}
+// v1.20.5: heurística de leitura do texto do PDF — só preenche o que achar com razoável confiança;
+// não "chuta" o maior número do documento (evita preencher valor errado silenciosamente)
+function _fatParsePdfNF(texto, empresasPendentes) {
+  const norm = t => String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9., ]/g,' ').replace(/\s+/g,' ');
+  const txt = norm(texto);
+  let nf_valor = null, nf_numero = null, empresa_id = null;
+  // valor: procura rótulos típicos de DANFE seguidos de um número em formato BR
+  const rotulosValor = ['valor total da nota', 'valor total da nf', 'valor total nf-e', 'valor total', 'total da nota', 'total geral'];
+  for (const rot of rotulosValor) {
+    const i = txt.indexOf(rot); if (i < 0) continue;
+    const trecho = txt.substring(i, i + rot.length + 40);
+    const m = trecho.match(/(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/);
+    if (m) { nf_valor = _pmParseValorBR(m[1]); break; }
+  }
+  // número da NF: padrões comuns em DANFE ("NF-e Nº 12345", "Número 12345", "N. 12345")
+  const mNum = texto.match(/N[ºo°.]?\s*(?:DA\s*)?(?:NF-?E)?\s*[:.]?\s*(\d{2,9})\b/i) || texto.match(/N[uú]mero\s*[:.]?\s*(\d{2,9})\b/i);
+  if (mNum) nf_numero = mNum[1];
+  // empresa: procura o nome de cada empresa pendente (sem código tipo "D001 - ") dentro do texto
+  for (const e of (empresasPendentes || [])) {
+    const nomeBase = String(e.empresa || '').replace(/^[A-Za-z0-9]+\s*-\s*/, '').trim();
+    const n1 = norm(nomeBase), n2 = norm(e.empresa);
+    if ((n1 && txt.includes(n1)) || (n2 && txt.includes(n2))) { empresa_id = e.id; break; }
+  }
+  return { nf_valor, nf_numero, empresa_id, detectado: nf_valor != null || empresa_id != null };
+}
+
+async function _fatNfArquivosSelecionados(termoId, input) {
+  const files = Array.from(input.files || []); if (!files.length) return;
+  const msg = document.getElementById('fatNfUploadMsg_' + termoId);
+  const pendentes = _fatEmpresasAtual[termoId] || [];
+  for (const file of files) {
+    if (msg) { msg.style.color = 'var(--blue)'; msg.textContent = '⏳ Processando ' + file.name + '...'; }
+    try {
+      const isXml = /\.xml$/i.test(file.name);
+      let detectado = { nf_valor: null, nf_numero: null, empresa_id: null };
+      if (isXml) {
+        const texto = await file.text();
+        const d = _fatExtrairXmlNFe(texto);
+        if (d) {
+          detectado.nf_numero = d.nf_numero; detectado.nf_valor = d.nf_valor;
+          const alvo = (d.dest_nome || d.emit_nome || '');
+          const p = _fatParsePdfNF(alvo, pendentes); // reaproveita o mesmo casador de empresa por nome
+          detectado.empresa_id = p.empresa_id;
+        }
+      } else if (/\.pdf$/i.test(file.name)) {
+        try { const texto = await _fatExtrairTextoPdf(file); const d = _fatParsePdfNF(texto, pendentes); detectado = d; }
+        catch (ePdf) { console.warn('[Faturamento] leitura de PDF falhou:', ePdf.message); }
+      }
+      const resp = await fetch('/api/media-upload?name=' + encodeURIComponent(file.name) + '&pasta=notas_fiscais', { method:'POST', headers:{ 'Content-Type': file.type || (isXml ? 'application/xml' : 'application/pdf') }, body: file });
+      const dUp = await resp.json();
+      if (!dUp.success) throw new Error(dUp.error + (dUp.hint ? ' — ' + dUp.hint : ''));
+      _fatNfFila[termoId].push({ url: dUp.url, tipo: isXml ? 'xml' : 'pdf', nome: file.name, nf_numero: detectado.nf_numero || '', nf_valor: detectado.nf_valor, empresa_id: detectado.empresa_id || '', auto: !!(detectado.nf_valor != null || detectado.empresa_id) });
+    } catch (e) { if (msg) { msg.style.color = 'var(--red)'; msg.textContent = '⛔ ' + file.name + ': ' + e.message; } }
+  }
+  if (msg) { msg.style.color = 'var(--t2)'; msg.textContent = files.length + ' arquivo(s) processado(s) — confira as linhas abaixo antes de adicionar.'; }
+  input.value = '';
+  _fatRenderFilaNf(termoId);
+}
+
+function _fatRenderFilaNf(termoId) {
+  const box = document.getElementById('fatNfFilaBox_' + termoId); if (!box) return;
+  const fila = _fatNfFila[termoId] || [];
+  const pendentes = _fatEmpresasAtual[termoId] || [];
+  if (!fila.length) { box.innerHTML = ''; return; }
+  const somaFila = fila.reduce((s, f) => s + (parseFloat(f.nf_valor) || 0), 0);
+  box.innerHTML = `<div style="margin-top:4px;">
+    ${fila.map((f, i) => `<div style="display:grid;grid-template-columns:1fr 110px 120px 1fr auto;gap:6px;align-items:center;padding:5px 0;border-bottom:1px solid var(--bd);">
+      <div style="font-size:9.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${f.nome}">${f.tipo==='xml'?'📄':'📕'} ${f.nome} ${f.auto ? '<span style="color:var(--green,#22d3a3);font-size:8px;">🤖 detectado</span>' : '<span style="color:var(--gold);font-size:8px;">confira</span>'}</div>
+      <input class="fi" style="font-size:9.5px;" placeholder="Nº NF" value="${f.nf_numero||''}" oninput="_fatNfFila['${termoId}'][${i}].nf_numero=this.value"/>
+      <input class="fi" style="font-size:9.5px;" placeholder="Valor R$" value="${f.nf_valor!=null?String(f.nf_valor).replace('.',','):''}" oninput="_fatNfFila['${termoId}'][${i}].nf_valor=parseFloat((this.value||'0').replace(/\\./g,'').replace(',','.'))||0"/>
+      <select class="fsel" style="width:100%;font-size:9.5px;" onchange="_fatNfFila['${termoId}'][${i}].empresa_id=this.value">
+        <option value="">— sem vínculo —</option>
+        ${pendentes.map(e => `<option value="${e.id}" ${f.empresa_id===e.id?'selected':''}>${e.empresa} · ${fmtBRLcompleto(e.valor_parcela)}</option>`).join('')}
+      </select>
+      <button class="btn" style="font-size:8px;padding:2px 6px;color:var(--red);" onclick="_fatNfRemoverDaFila('${termoId}', ${i})">✕</button>
+    </div>`).join('')}
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+      <div style="font-size:10.5px;color:var(--t2);">Total desta remessa: <b style="color:var(--gold);">${fmtBRLcompleto(somaFila)}</b> em ${fila.length} nota(s)</div>
+      <button class="btn btn-p" onclick="_fatNfAdicionarTodas('${termoId}')" id="fatNfBtnLote_${termoId}">+ Adicionar ${fila.length} nota(s)</button>
+    </div>
+  </div>`;
+}
+function _fatNfRemoverDaFila(termoId, idx) { _fatNfFila[termoId].splice(idx, 1); _fatRenderFilaNf(termoId); }
+
+async function _fatNfAdicionarTodas(termoId) {
+  const fila = _fatNfFila[termoId] || []; if (!fila.length) return;
+  const semValor = fila.findIndex(f => !f.nf_valor || f.nf_valor <= 0);
+  if (semValor >= 0) { toast('Preencha o valor da nota "' + fila[semValor].nome + '" antes de adicionar', 'error'); return; }
+  const btn = document.getElementById('fatNfBtnLote_' + termoId); if (btn) { btn.disabled = true; btn.textContent = '⏳ Adicionando...'; }
+  let ok = 0, erros = [];
+  for (const f of fila) {
+    try { await fatApi('termo_nf_upload', { termo_id: termoId, empresa_id: f.empresa_id || null, nf_numero: f.nf_numero || null, nf_valor: f.nf_valor, anexo_nome: f.nome, arquivo_url: f.url, tipo_arquivo: f.tipo }); ok++; }
+    catch (e) { erros.push(f.nome + ': ' + e.message); }
+  }
+  toast(ok + ' nota(s) adicionada(s)' + (erros.length ? ' · ' + erros.length + ' erro(s)' : ''), erros.length ? 'error' : 'success');
+  if (erros.length) addLog('err', '[Faturamento] carga em lote: ' + erros.join(' | '));
+  _fatNfFila[termoId] = [];
+  await abrirDetalheTermo(termoId); carregarKanbanFaturamento();
 }
 async function _fatNfExcluir(notaId, termoId) {
   if (!confirm('Remover esta nota fiscal carregada?')) return;
@@ -14855,8 +15023,9 @@ async function abrirDetalheTermo(id) {
           <div><b>Fase contratual:</b> ${t.fase||'—'}</div><div><b>Marco:</b> ${(t.marco_projeto||'').substring(0,40)}</div><div><b>Valor total:</b> <span style="color:var(--gold);font-family:var(--M);">${fmtBRLcompleto(t.valor_total_termo)}</span></div>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+          ${idxCol > 0 ? `<button class="btn" style="color:var(--t2);" onclick="_fatVoltar('${t.id}','${FAT_COLS[idxCol-1]}')" title="Volta para: ${FAT_LABELS[FAT_COLS[idxCol-1]]}">← Voltar p/ ${FAT_LABELS[FAT_COLS[idxCol-1]].replace(/^[^\s]+\s/,'')}</button>` : ''}
           ${t.status === 'elaboracao' ? `<button class="btn btn-p" onclick="_fatAvancar('${t.id}','aprovacao')">Enviar para Aprovação →</button>` : ''}
-          ${t.status === 'aprovacao' ? `<button class="btn btn-gn" onclick="_fatAprovar('${t.id}')">✓ Aprovar (envia p/ Emissão de NF)</button><button class="btn btn-rd" onclick="_fatAvancar('${t.id}','elaboracao')">← Recusar / voltar</button>` : ''}
+          ${t.status === 'aprovacao' ? `<button class="btn btn-gn" onclick="_fatAprovar('${t.id}')">✓ Aprovar (envia p/ Emissão de NF)</button>` : ''}
           ${t.status === 'emissao_nf' ? `<button class="btn btn-p" onclick="_fatAvancar('${t.id}','envio_nf')">Notas emitidas — ir p/ Envio →</button>` : ''}
           ${t.status === 'envio_nf' ? `<button class="btn btn-p" onclick="_fatVerificarEmail('${t.id}')" id="btnVerifEmail_${t.id}">📧 Verificar e-mail (atlanteambr@gmail.com)</button>${t.nf_status === 'completo' ? `<button class="btn btn-gn" onclick="_fatAvancar('${t.id}','pagamento')">Todas as notas ok — ir p/ Pagamento →</button>` : ''}` : ''}
           ${(t.status === 'envio_nf' || t.status === 'pagamento') && emp.some(e => e.nf_status === 'encontrada' && !e.qb_invoice_id) ? `<button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="_fatLancarTodasQb('${t.id}')" id="btnLancarQb_${t.id}">📤 Lançar notas no QuickBooks (Contas a Receber)</button>` : ''}
@@ -14889,6 +15058,10 @@ async function abrirDetalheTermo(id) {
     </div>`;
   } catch (e) { box.innerHTML = '<div style="color:var(--red);text-align:center;padding:20px;">Erro: ' + e.message + '</div>'; }
 }
+async function _fatVoltar(id, statusAnterior) {
+  if (!confirm('Voltar este termo para a etapa "' + FAT_LABELS[statusAnterior] + '"?')) return;
+  try { await fatApi('termo_mover', { id, status: statusAnterior }); toast('Voltou para: ' + FAT_LABELS[statusAnterior], 'success'); carregarKanbanFaturamento(); await abrirDetalheTermo(id); } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
 async function _fatAvancar(id, status) { try { await fatApi('termo_mover', { id, status }); toast('Movido para: ' + FAT_LABELS[status], 'success'); carregarKanbanFaturamento(); await abrirDetalheTermo(id); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
 async function _fatAprovar(id) { const por = prompt('Aprovado por:', ''); if (por === null) return; try { await fatApi('termo_aprovar', { id, aprovado_por: por }); toast('Termo aprovado', 'success'); carregarKanbanFaturamento(); await abrirDetalheTermo(id); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
 async function _fatExcluir(id) { if (!confirm('Excluir este termo e todos os dados de rateio/notas? Ação não pode ser desfeita.')) return; try { await fatApi('termo_excluir', { id }); toast('Termo excluído', 'info'); document.getElementById('fatDetalhe').style.display='none'; carregarKanbanFaturamento(); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
@@ -14909,10 +15082,18 @@ async function _fatVerificarEmail(id) {
   const btn = document.getElementById('btnVerifEmail_' + id); if (btn) { btn.disabled = true; btn.textContent = '⏳ Verificando (pode levar até 40s)...'; }
   try {
     const d = await fatApi('termo_verificar_email', { termo_id: id });
-    if (d.erro) { toast('E-mail: ' + d.erro + (d.hint ? ' — ' + d.hint : ''), 'error'); addLog('warn', '[Faturamento] e-mail: ' + d.erro); }
+    if (d.erro) { toast('E-mail: ' + d.erro + (d.hint ? ' — ' + d.hint : ''), 'error'); addLog('warn', '[Faturamento] e-mail: ' + d.erro + (d.hint ? ' — ' + d.hint : '')); }
     else {
       toast((d.encontradas_agora?.length||0) + ' nota(s) nova(s) encontrada(s) · status: ' + d.nf_status, d.nf_status === 'completo' ? 'success' : 'error');
       if (d.alerta_enviado) addLog('warn', '[Faturamento] alerta de divergência enviado por e-mail');
+      // v1.20.8: diagnóstico detalhado — mostra exatamente o que a verificação achou
+      const g = d.diagnostico;
+      if (g) {
+        addLog('info', `[Faturamento] E-mail: ${g.emails_escaneados} e-mail(s) escaneado(s) · ${g.emails_com_anexo} com anexo · ${g.anexos_total} anexo(s) (${g.anexos_xml} XML, ${g.anexos_pdf} PDF) · ${g.casados_com_empresa} casado(s) com empresa · ${g.sem_casar} sem casar automaticamente` + (g.anexos_pdf > 0 && g.pdf_parse_instalado === false ? ' · ⚠ leitor de PDF não instalado no servidor (npm i pdf-parse)' : ''));
+        if (g.anexos_pdf > 0 && g.pdf_parse_instalado === false) toast('Há ' + g.anexos_pdf + ' PDF(s) que não puderam ser lidos — falta instalar o leitor de PDF no servidor (veja o Log)', 'error');
+        else if (g.emails_com_anexo === 0) toast('Nenhum e-mail com anexo encontrado nos últimos 45 dias em atlanteambr@gmail.com — confira se as notas realmente chegaram nessa caixa', 'error');
+        else if (g.sem_casar > 0) toast(g.sem_casar + ' anexo(s) encontrado(s) mas não deu pra casar com nenhuma empresa automaticamente — vincule manualmente (✎) na tabela abaixo', 'error');
+      }
     }
     await abrirDetalheTermo(id); carregarKanbanFaturamento();
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
@@ -16894,7 +17075,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.20.4] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.20.8] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -16910,7 +17091,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.20.4';
+window.__ATX_BUILD_ID__ = 'ATX-v1.20.8';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
