@@ -86,6 +86,8 @@ export default async function handler(req, res) {
       desp_delete:           () => despDelete(params),
       desp_ocorrencias:      () => despOcorrencias(params),
       desp_marcar_paga:      () => despMarcarPaga(params),
+      desp_lancar_qb:        () => despLancarQb(params),
+      qb_fornecedores_list:  () => qbFornecedoresList(),
       desp_gerar_ocorrencias: () => despGerarOcorrencias(params),
 
       // ── Saldo inicial (snapshots) ────────────────────────────────────────
@@ -1174,6 +1176,85 @@ async function despMarcarPaga({ id, data_pagamento, qb_txn_id } = {}) {
   return { id, paga: true };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// v1.20.6: LANÇAR DESPESA NO QUICKBOOKS (Contas a Pagar / Bill)
+// Atenção com despesas PROGRAMADAS (recorrentes): cada OCORRÊNCIA tem sua
+// própria linha e seu próprio qb_txn_id — lançar a ocorrência de agosto não
+// afeta a de setembro, e relançar a mesma ocorrência não duplica (idempotente).
+// ═══════════════════════════════════════════════════════════════════════════
+// v1.20.8: listar fornecedores do QuickBooks (p/ combo no cadastro de despesas)
+async function qbFornecedoresList() {
+  if (!qbConfigurado()) return { fornecedores: [], erro: 'QuickBooks não conectado' };
+  try {
+    const token = await qbToken();
+    const data = await qbQuery(`select * from Vendor where Active = true orderby DisplayName maxresults 1000`, token);
+    const fornecedores = (data?.QueryResponse?.Vendor || []).map(v => ({ id: v.Id, nome: v.DisplayName }));
+    return { fornecedores };
+  } catch (e) { return { fornecedores: [], erro: e.message }; }
+}
+async function qbBuscarFornecedor(nome, token, realm, sandbox) {
+  if (!nome) return null;
+  const alvo = String(nome).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+  if (!alvo) return null;
+  const data = await qbQuery(`select * from Vendor where Active = true maxresults 1000`, token);
+  const fornecedores = data?.QueryResponse?.Vendor || [];
+  const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+  let achou = fornecedores.find(v => norm(v.DisplayName) === alvo);
+  if (!achou) achou = fornecedores.find(v => { const n = norm(v.DisplayName); return n && (n.includes(alvo) || alvo.includes(n)); });
+  return achou ? { id: achou.Id, nome: achou.DisplayName } : null;
+}
+async function qbContaDespesaPadrao(token, realm, sandbox, categoria) {
+  const sql = await getSql();
+  const chave = 'qb:conta_despesa_padrao';
+  try { const cache = await sql`SELECT value FROM kv_store WHERE key = ${chave} LIMIT 1`; if (cache.length && cache[0].value) { const v = typeof cache[0].value === 'string' ? JSON.parse(cache[0].value) : cache[0].value; if (v?.id) return v; } } catch (_) {}
+  const nomeEnv = process.env.QB_DEFAULT_EXPENSE_ACCOUNT_NAME;
+  let conta = null;
+  if (categoria) { const data = await qbQuery(`select * from Account where AccountType = 'Expense' and Name like '%${String(categoria).replace(/'/g, "\'")}%' maxresults 1`, token); conta = (data?.QueryResponse?.Account || [])[0]; }
+  if (!conta && nomeEnv) { const data = await qbQuery(`select * from Account where Name = '${nomeEnv.replace(/'/g, "\'")}' maxresults 1`, token); conta = (data?.QueryResponse?.Account || [])[0]; }
+  if (!conta) { const data = await qbQuery(`select * from Account where AccountType = 'Expense' maxresults 1`, token); conta = (data?.QueryResponse?.Account || [])[0]; }
+  if (!conta) throw new Error('Nenhuma conta de despesa encontrada no QuickBooks. Cadastre uma conta (ex.: "Despesas Operacionais") ou defina QB_DEFAULT_EXPENSE_ACCOUNT_NAME.');
+  const out = { id: conta.Id, nome: conta.Name };
+  if (!categoria) { try { await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${chave}, ${JSON.stringify(out)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {} }
+  return out;
+}
+async function qbCriarBill({ vendorId, accountId, valor, descricao, dataVencimento }, token, realm, sandbox) {
+  const base = sandbox ? 'https://sandbox-quickbooks.api.intuit.com' : 'https://quickbooks.api.intuit.com';
+  const body = {
+    VendorRef: { value: String(vendorId) },
+    TxnDate: new Date().toISOString().substring(0, 10),
+    ...(dataVencimento ? { DueDate: dataVencimento } : {}),
+    PrivateNote: descricao,
+    Line: [{ Amount: parseFloat(valor), DetailType: 'AccountBasedExpenseLineDetail', Description: descricao, AccountBasedExpenseLineDetail: { AccountRef: { value: String(accountId) } } }],
+  };
+  const r = await fetch(`${base}/v3/company/${realm}/bill?minorversion=65`, { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error('QB Bill [' + r.status + ']: ' + (d.Fault?.Error?.[0]?.Message || JSON.stringify(d).substring(0, 200)));
+  return d.Bill;
+}
+async function despLancarQb({ ocorrencia_id } = {}) {
+  if (!ocorrencia_id) throw new Error('ocorrencia_id obrigatório');
+  const sql = await getSql();
+  const rows = await sql`SELECT o.*, d.descricao AS desp_desc, d.categoria AS desp_cat, d.fornecedor AS desp_fornecedor
+    FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id WHERE o.id = ${ocorrencia_id} LIMIT 1`;
+  if (!rows.length) throw new Error('Ocorrência não encontrada');
+  const o = rows[0];
+  // v1.20.6: idempotente — se essa OCORRÊNCIA específica já tem qb_txn_id, não lança de novo
+  // (cada mês de uma despesa recorrente é uma ocorrência própria, então isso nunca bloqueia o próximo mês)
+  if (o.qb_txn_id) return { ja_lancado: true, qb_txn_id: o.qb_txn_id };
+  if (!o.desp_fornecedor) throw new Error('Esta despesa não tem "Fornecedor" cadastrado — edite a despesa programada e informe o fornecedor (precisa bater com o nome no QuickBooks) antes de lançar.');
+  const token = await qbToken();
+  const realm = qbRealmId();
+  const sandbox = process.env.QB_SANDBOX === 'true';
+  const fornecedor = await qbBuscarFornecedor(o.desp_fornecedor, token, realm, sandbox);
+  if (!fornecedor) throw new Error(`Fornecedor "${o.desp_fornecedor}" não encontrado no QuickBooks — cadastre-o lá primeiro e tente de novo.`);
+  const conta = await qbContaDespesaPadrao(token, realm, sandbox, o.desp_cat);
+  const descricao = `${o.desp_desc || 'Despesa'} — ${String(o.data_prevista).split('T')[0]}${o.desp_cat ? ' · ' + o.desp_cat : ''}`;
+  const bill = await qbCriarBill({ vendorId: fornecedor.id, accountId: conta.id, valor: o.valor, descricao, dataVencimento: String(o.data_prevista).split('T')[0] }, token, realm, sandbox);
+  await sql`UPDATE despesas_ocorrencias SET qb_txn_id = ${bill.Id}, status = CASE WHEN status = 'prevista' THEN 'lancada' ELSE status END WHERE id = ${ocorrencia_id}`;
+  console.log(`[Financeiro] Despesa lançada no QB: ocorrencia=${ocorrencia_id} fornecedor=${fornecedor.nome} valor=${o.valor} bill=${bill.Id}`);
+  return { lancado: true, qb_bill_id: bill.Id, fornecedor: fornecedor.nome, valor: parseFloat(o.valor) };
+}
+
 async function despGerarOcorrencias({ meses = 12 } = {}) {
   const sql = await getSql();
   const desp = await sql`SELECT * FROM despesas_programadas WHERE ativa = true`;
@@ -1417,6 +1498,8 @@ async function fluxoFuturo({ meses = 12, overrides = {} } = {}) {
 async function kpisSaude({ overrides = {} } = {}) {
   const kpis = {
     saldo_caixa: 0,
+    roi_pct: null,
+    patrimonio_liquido: null,
     receita_mes: 0,
     receita_ano: 0,
     despesa_mes: 0,
@@ -1446,12 +1529,13 @@ async function kpisSaude({ overrides = {} } = {}) {
       const inicioAno = `${hoje.getFullYear()}-01-01`;
       const hojeStr = hoje.toISOString().split('T')[0];
 
-      const [contas, dreM, dreA, ar, ap] = await Promise.allSettled([
+      const [contas, dreM, dreA, ar, ap, bs] = await Promise.allSettled([
         qbQuery(`select * from Account where AccountType = 'Bank'`, token),
         qbFetch(`/reports/ProfitAndLoss?start_date=${inicioMes}&end_date=${hojeStr}`, token),
         qbFetch(`/reports/ProfitAndLoss?start_date=${inicioAno}&end_date=${hojeStr}`, token),
         qbFetch(`/reports/AgedReceivables?date_macro=Today`, token),
         qbFetch(`/reports/AgedPayables?date_macro=Today`, token),
+        qbFetch(`/reports/BalanceSheet?date_macro=Today`, token), // v1.20.7: p/ ROI real (patrimônio líquido)
       ]);
 
       if (contas.status === 'fulfilled') {
@@ -1487,6 +1571,17 @@ async function kpisSaude({ overrides = {} } = {}) {
         const l = extrairLinhasRelatorio(ap.value);
         kpis.contas_pagar = l.find(x => x.tipo === 'total')?.valor || 0;
       }
+
+      // v1.20.7 FIX: "ROI Total" era igual à Margem Líquida (bug de exibição — a mesma variável
+      // era usada nos dois cartões). Agora calcula um ROI de verdade: lucro do mês / patrimônio
+      // líquido (do Balanço Patrimonial), que é uma métrica genuinamente diferente da margem.
+      if (bs.status === 'fulfilled') {
+        const l = extrairLinhasRelatorio(bs.value);
+        kpis.patrimonio_liquido = somaPorPadrao(l, /total equity|patrim[oô]nio l[ií]quido|total patrim[oô]nio/i) || null;
+        if (kpis.patrimonio_liquido && kpis.patrimonio_liquido !== 0 && kpis.ebitda_mes != null) {
+          kpis.roi_pct = round((kpis.ebitda_mes / kpis.patrimonio_liquido) * 100);
+        }
+      }
     } catch (e) {
       console.log('[KPIs QB] erro:', e.message);
     }
@@ -1499,7 +1594,11 @@ async function kpisSaude({ overrides = {} } = {}) {
   kpis.burn_rate_mensal = kpis.despesa_mes;
 
   // Runway
-  if (kpis.burn_rate_mensal > 0 && kpis.saldo_caixa > 0) {
+  // v1.20.7 FIX: com caixa negativo o runway ficava "—" (indefinido) sem explicação — agora
+  // mostra 0 explicitamente (não há fôlego de caixa nenhum) em vez de sumir da tela.
+  if (kpis.saldo_caixa <= 0 && kpis.burn_rate_mensal != null) {
+    kpis.runway_meses = 0; kpis.runway_dias = 0;
+  } else if (kpis.burn_rate_mensal > 0 && kpis.saldo_caixa > 0) {
     // Burn líquido = despesa - receita (se ainda perde dinheiro)
     const burnLiquido = Math.max(0, kpis.despesa_mes - kpis.receita_mes);
     if (burnLiquido > 0) {
@@ -1525,8 +1624,11 @@ async function kpisSaude({ overrides = {} } = {}) {
     const hoje = new Date();
     const inicio = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
     const fim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().split('T')[0];
+    // v1.20.7 FIX: contar 'prevista' E 'lancada' (só excluir as já pagas) — antes só somava
+    // 'prevista', então despesas já lançadas no QuickBooks (status vira 'lancada') sumiam
+    // deste cálculo mesmo continuando por pagar, subestimando a cobertura de despesas fixas.
     const r = await sql`SELECT COALESCE(SUM(valor), 0) AS total FROM despesas_ocorrencias
-      WHERE status = 'prevista' AND data_prevista >= ${inicio} AND data_prevista <= ${fim}`;
+      WHERE status != 'paga' AND data_prevista >= ${inicio} AND data_prevista <= ${fim}`;
     const despFixas = parseFloat(r[0]?.total || 0);
     if (despFixas > 0) {
       kpis.cobertura_despesas_fixas = round(kpis.saldo_caixa / despFixas, 1);
@@ -2182,7 +2284,13 @@ async function contratoList({ status } = {}) {
   let lista = rows.map(r => {
     const st = _contratoStatus(r.data_vencimento);
     const dias = r.data_vencimento ? Math.round((new Date(r.data_vencimento) - hoje) / 86400000) : null;
-    return { ...r, status_calc: st, dias_restantes: dias };
+    // v1.20.6: FIX — faltava normalizar as datas p/ 'YYYY-MM-DD' antes de mandar ao frontend.
+    // O driver pode devolver com timestamp ("...T00:00:00.000Z"); sem isso, o front (que faz
+    // data.split('-').reverse().join('/')) quebrava o formato de exibição.
+    return { ...r,
+      data_inicio: r.data_inicio ? String(r.data_inicio).split('T')[0] : null,
+      data_vencimento: r.data_vencimento ? String(r.data_vencimento).split('T')[0] : null,
+      status_calc: st, dias_restantes: dias };
   });
   if (status) lista = lista.filter(c => c.status_calc === status);
   const resumo = { total: rows.length, vigente: 0, vencendo: 0, vencido: 0, sem_data: 0 };
@@ -2276,7 +2384,14 @@ async function marcoSave(p = {}) {
       nota_fiscal=EXCLUDED.nota_fiscal, data_pagamento=EXCLUDED.data_pagamento,
       observacoes=EXCLUDED.observacoes, atualizado_em=NOW()`;
   if (isNovo) await logMarco(sql, id, 'criado', null, p.status_kanban || 'aguardando_entrega', `Marco criado: ${p.descricao}`, p.ator);
-  return { id };
+  // v1.20.6: verificação de gravação — relê a linha e confere se a data realmente persistiu.
+  // Se não bateu, isso vira um ERRO VISÍVEL na hora (em vez de sumir silenciosamente).
+  const conf = await sql`SELECT data_entrega, data_pagamento FROM projetos_marcos WHERE id = ${id}`;
+  const gravouEntrega = conf[0] && conf[0].data_entrega ? String(conf[0].data_entrega).split('T')[0] : null;
+  if (gravouEntrega !== p.data_entrega) {
+    throw new Error(`A data de entrega não foi gravada corretamente (enviado: ${p.data_entrega}, no banco: ${gravouEntrega || 'vazio'}). Tente salvar novamente; se persistir, avise o suporte.`);
+  }
+  return { id, data_entrega_confirmada: gravouEntrega, data_pagamento_confirmada: conf[0]?.data_pagamento ? String(conf[0].data_pagamento).split('T')[0] : null };
 }
 
 async function marcoList({ projeto_id, status_kanban } = {}) {
