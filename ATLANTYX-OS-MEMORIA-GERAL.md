@@ -1,6 +1,8 @@
 # ATLANTYX OS — Memória Geral do Projeto
-**Backup consolidado · Atualizado em 13/08/2026**
-**Dono:** Fabio · Repo: `Fabiosq13/atlantyx-os` · Versão atual: **v1.5.6**
+**Backup consolidado · Atualizado em 18/08/2026** (versão anterior: `ATLANTYX-OS-MEMORIA-GERAL-2026-08-13.md`)
+**Dono:** Fabio · Repo: `Fabiosq13/atlantyx-os` · Domínio de produção: `https://atlantyx-os.vercel.app` · Versão atual: **v1.14.1**
+
+> Ponto de retomada de qualquer conversa: arquitetura, decisões, estado, pendências e aprendizados. Detalhes de cada versão nos `CHANGELOG-vX.Y.md` em `/outputs`.
 
 ---
 
@@ -8,173 +10,120 @@
 
 | Camada | Tecnologia |
 |---|---|
-| Hosting/Deploy | Vercel (deploy automático via push na `main`) |
-| Banco de dados | Neon PostgreSQL (15 tabelas em 6 grupos, DBML em `atlantyx-os-schema.dbml`) |
-| IA | Anthropic Claude API — modelo centralizado em `process.env.CLAUDE_MODEL` (fallback `claude-sonnet-4-6`) em 17 arquivos backend |
-| Frontend | `public/index.html` único (~880KB, 2 blocos `<script>`) |
-| Integrações | QuickBooks, HubSpot, Apollo, PhantomBuster, Z-API (WhatsApp), Resend (email), Metricool (redes sociais), Ideogram (imagens) |
+| Hosting/Deploy | Vercel (push na `main` = deploy). **Acessar sempre pelo domínio de produção**, não pela URL de deployment (`project-xxxx-…vercel.app`, protegida por Deployment Protection) |
+| Banco | Neon PostgreSQL — `kv_store` (kanban, tokens QB, configs), `campanhas`, `kpis_diarios`, `leads`, `ideias`, `squad_registros`, `s13_projetos`, tabelas do financeiro (simulados, despesas, ocorrências, projetos, marcos, logs, conciliação), **`media_store`** (mídia hospedada de reels/stories/carrossel) |
+| IA | Anthropic Claude API — `CLAUDE_MODEL` (fallback `claude-sonnet-4-6`); agentes S2 com **saídas compactas** (Storyteller 900 tk · Copywriter 1400 · Designer 1100 · por-rede 1800) e **timeout 25 s por chamada** |
+| Frontend | `public/index.html` único (~950 KB, SPA). Console marker `[ATLANTYX vX.Y.Z]` confirma deploy |
+| Mídia | Canvas + **WebCodecs (H.264) + mp4-muxer** para Reels; canvas → JPEG para Stories/Carrossel; hospedagem no Neon servida em `/media/ID.ext` (rewrite do `vercel.json`); fallback Vercel Blob se houver token |
+| Integrações | QuickBooks (OAuth próprio, tokens no banco), HubSpot, Metricool (posts/stories/reels/carrossel + métricas + excluir/reagendar), Ideogram (`api/image-gen.js` — **existe só no repo, nunca nos pacotes**), Apollo, PhantomBuster, Z-API, Resend |
 
-### Backend — 24 arquivos em `api/`
-analytics, apollo, claude, db, decisor-map, email-intel, **financeiro** (2.4k linhas), followup-cron, **health**, **hubspot**, lead-capture, meeting-schedule, **metricool**, outreach-batch, phantom, portal-cadastro, prospect-scan, rfp-monitor, s1-data, s1-intel, s1-strategy, **s2-creative**, wa-batch-generate, wa-response
+### Backend — `api/` (25 arquivos)
+analytics, apollo, claude, **db** (jsonSeguro), decisor-map, email-intel, **financeiro** (~2.6k linhas: QB OAuth+tokens, gerente IA, dashboard, 45+ actions), followup-cron, health, hubspot (utm_medium), image-gen*, lead-capture, **media-upload** (+ `media/[file].js`), **metricool** (STORY/REEL/carrossel/excluir/reagendar), rfp-monitor, s1-data, s1-intel, **s2-creative** (fases 1/2, story_pack, reel_pack, carrossel_pack, campanha_auto, plano_impulso, diagnostico_ia), briefing-cron…
+`vercel.json`: rewrites `/media/:file` → `/api/media-upload?f=:file` · `/api/:path*` · catch-all → index.html; `maxDuration` 60 (s2-creative, financeiro, email-intel), 30 (media-upload); crons (rfp 6h, followup/briefing 1h, marcos 9h, health seg 9h).
 
-⚠ **REGRA CRÍTICA:** nunca substituir a pasta `api/` inteira por um pacote parcial — em agosto/2026 isso removeu `financeiro.js`/`db.js` do deploy e derrubou o painel financeiro (v1.5.2 corrigiu repondo os 24 arquivos no pacote).
+⚠ **REGRA CRÍTICA:** nunca substituir a pasta `api/` inteira por um pacote — `image-gen.js` só existe no repositório. Sempre **mesclar**.
 
-### Módulos do sistema
-- **S0 Estratégia:** Propósito+Metas, Inteligência (agentes S1), Planejamento
-- **S2 Marketing Digital:** Studio Criativo, Nova Campanha, Kanban Aprovação, **Desempenho** (novo v1.5), Prospecção Apollo/LinkedIn, WhatsApp IA, RFP Monitor, E-mail Marketing
-- **S3 Financeiro:** Painel (14 páginas), Extrato, Conciliação (score 60/30/10), Orçamento QB, Fluxo Futuro 12m, Agenda Despesas, Projetos & Marcos (Kanban 9 colunas + cron de alertas 9h)
-- **S4 CRM:** KPIs HubSpot
+### Módulos (menu lateral)
+- **S0 · Estratégia:** Propósito+Metas, Inbox Aprovações, Diagnóstico IA, Riscos, Inteligência de Mercado, Planejamento, Ideias+Produtos
+- **S1 · FINANCEIRO (v1.13/1.14):** 📈 Dashboard Financeiro · 🤖 Gerente Financeiro IA (chat) · Extratos & Saldos (Extrato, Saldo Diário, Saldo Mensal, Realizado QB) · Planejamento (Orçamento Anual, Fluxo Futuro 12m, Projetado+Contratos, Agenda de Despesas) · Controle (Conciliação, A Receber, KPIs de Saúde) · Projetos (Projetos & Marcos, Kanban Financeiro 9 colunas) · Inteligência (Análise Financeira IA, Dados Reais). "Painel Financeiro" removido (link antigo cai em Realizado).
+- **S2 · Marketing Digital:** Studio Criativo, Nova Campanha (abas Narrativa/Copy/Imagem/**Stories/Carrossel/Reels**/Preview), Kanban Aprovação (calendário 14 dias, filtro de data, 🤖 Auto-campanha, 🔗 link de reunião, 📲 texto do link na bio, ↻ reconstruir peças), Desempenho (atribuição UTM, orgânico vs pago, ⭐ candidatos a impulso), Prospecção, RFPs, WhatsApp IA, Ads+SEO, E-mail, Social, FinOps, KPIs
+- **S4 CRM · S5 Jurídico · S6 Dev · S7 Vendas ativo** (menus existentes)
 
 ---
 
-## 2. VARIÁVEIS DE AMBIENTE (Vercel)
+## 2. VARIÁVEIS DE AMBIENTE (Vercel) — 18/08
 
-| Grupo | Variáveis | Status (13/08) |
+| Grupo | Variáveis | Status |
 |---|---|---|
-| Core | `DATABASE_URL`, `ANTHROPIC_API_KEY` (Sensitive, rotacionada), `CRON_SECRET`, `CLAUDE_MODEL` (opcional) | ✅ OK |
-| QuickBooks | `QB_CLIENT_ID`, `QB_CLIENT_SECRET`, `QB_REFRESH_TOKEN`, `QB_REALM_ID`, `QB_SANDBOX` | ⚠ **Refresh token inválido** — regenerar (ver §6) |
-| HubSpot | `HUBSPOT_TOKEN` (Private App, 4 escopos CRM) | ✅ Conectado · escopo `content` pendente p/ landing pages |
-| Metricool | `METRICOOL_USER_TOKEN`, `METRICOOL_USER_ID`, `METRICOOL_BLOG_ID` | ✅ **Conectado** (plano c/ API ativado) |
-| Email | `RESEND_API_KEY`, `RESEND_FROM`, `FINANCEIRO_EMAIL` | Configurado |
-| LinkedIn | `APOLLO_API_KEY`, `PHANTOM_API_KEY`, `PHANTOM_AGENT_ID`, `PHANTOM_SESSION` (cookie li_at) | Configurado |
-| WhatsApp | `ZAPI_INSTANCE`, `ZAPI_TOKEN`, `ZAPI_CLIENT_TOKEN` | A configurar |
+| Core | `DATABASE_URL`, `ANTHROPIC_API_KEY`, `CRON_SECRET`, `CLAUDE_MODEL` (opc.) | ✅ |
+| **Público** | **`MEDIA_PUBLIC_BASE=https://atlantyx-os.vercel.app`** — base das URLs de mídia (Metricool) e do callback QuickBooks | ✅ confirmar |
+| QuickBooks | `QB_CLIENT_ID`, `QB_CLIENT_SECRET` (**Development**), `QB_SANDBOX=true`, `QB_REDIRECT_URI` (opc.), `QB_REFRESH_TOKEN`/`QB_REALM_ID` (opcionais — tokens vivem no banco `kv_store 'qb:tokens'`) | ✅ **conectado (sandbox)** |
+| HubSpot | `HUBSPOT_TOKEN` | ✅ · escopo `content` pendente |
+| Metricool | `METRICOOL_USER_TOKEN`, `METRICOOL_USER_ID`, `METRICOOL_BLOG_ID` | ✅ |
+| Email | `RESEND_API_KEY`, `RESEND_FROM`, `FINANCEIRO_EMAIL` | ✅ |
+| Blob (opc.) | `BLOB_READ_WRITE_TOKEN` — desnecessário (Neon hospeda mídia) | — |
+| LinkedIn / WhatsApp | Apollo/Phantom ✅ · Z-API ⚪ | |
 
-**Regra:** toda variável nova/alterada exige **Redeploy** manual. Tokens sempre marcados **Sensitive**.
+Toda env nova exige **Redeploy**.
 
 ---
 
-## 3. HISTÓRICO DE VERSÕES (a jornada v1.3 → v1.5.6)
+## 3. HISTÓRICO DE VERSÕES (v1.5.7 → v1.14.1) — detalhes nos CHANGELOGs
 
-### v1.3 (junho/2026)
-Financeiro completo (42 actions) + Projetos & Marcos com Kanban 9 colunas + cron diário de alertas (GP 10 dias antes; cliente e financeiro 3-em-3 dias) + templates email + campanhas com período/redes/calendário.
-
-### v1.4.x (12/08/2026) — a saga do erro 500
-| Versão | O que foi |
+| Faixa | Entregas |
 |---|---|
-| v1.4 | **Causa raiz do 500: créditos Anthropic ZERADOS** (não era modelo deprecated — falso diagnóstico inicial). Centralização `CLAUDE_MODEL` em 17 arquivos, `/api/health` + cron semanal (seg 9h), build ID dinâmico. Chave API exposta em print → rotacionada + Sensitive |
-| v1.4.2 | **Menus não abriam:** `SyntaxError` na linha 7546 — escape excessivo `\\'` no calendário de campanhas quebrava TODO o script (nav() nunca declarada). Fix: template literal. Bug existia desde v1.2 |
-| v1.4.3 | **Colisão de nomes:** dois `renderKanban()` (S2 campanhas linha 3993 + S3 marcos linha 13002). Segunda sobrescrevia primeira → TypeError 'colunas'. Fix: renomeada p/ `renderKanbanMarcos()` |
-| v1.4.4 | **Fluxo de campanhas (7 bugs):** kanban persiste no Neon (`atx:kanban:pecas`), recarrega ao abrir, `resetCampanhaState` RESTAURA em vez de apagar, form preenche com última campanha, card do kanban → botão "✎ Editar Campanha & Re-rodar", `rerodarCampanhaAtiva()` preserva id+imagens, peças carregam `campanhaId`, botão "✕ Limpar (nova do zero)" |
-| v1.4.5 | Handler global de erros JS (`window.error` + `unhandledrejection` → log da UI), try/catch isolado por etapa, erro com stack visível na tela, `adicionarAoKanban` duplicado removido |
-
-### v1.5.x — Publicação, Desempenho e integrações
-| Versão | O que foi |
-|---|---|
-| v1.5 | **Publicação nas redes** (modal com escolha Manual vs Metricool por peça aprovada no Kanban) + `api/metricool.js` (status/publicar/listar/métricas, graceful degradation) + **página S2 → Desempenho** (KPIs, funil, comparativo por rede, lista de publicações, registro manual de métricas) |
-| v1.5.1 | Pós-criação visível (auto-scroll + 3 botões: 🎨 Gerar Imagens / 📝 Editor / ■ Kanban) + **fix Designer truncado** (max_tokens 2000→3000 + fallback raw — "brief=0 chars" resolvido) |
-| v1.5.2 | **Pacote completo 24 arquivos** (financeiro.js etc. repostos!) + Metricool na sidebar + `finApi` diagnostica 404 + erro QB visível no painel com 4 causas + `mostrarAbaCampanha` blindada com scroll |
-| v1.5.3 | **Link de destino + UTMs:** campo no modal de publicação, `utm_source=<rede>&utm_medium=social&utm_campaign=<slug-campanha>`, salvo em `camp.link_destino`, placeholder atlantyx.com.br do FB sharer removido |
-| v1.5.4 | **Leads automáticos HubSpot:** action `leads_por_campanha` lê `hs_analytics_first_url` dos contatos (até 300, paginado), extrai UTMs, atribui por campanha/rede. Painel: KPI Leads 🔗, CPL, funil e comparativo automáticos (manual = fallback, vale o maior) |
-| v1.5.5 | **Landing Pages HubSpot:** botão no Desempenho lista LPs do CMS (action `listar_landing_pages`), "abrir ↗" e "usar como link" (grava `link_destino` da campanha). Se 403 → instruções p/ escopo `content` |
-| v1.5.6 | **Status QuickBooks na sidebar:** action `qb_status` valida refresh token real na Intuit (~300ms). Estados: Conectado / Conectado (sandbox) / Erro token (tooltip com erro) / Configurar (tooltip lista faltantes) / Offline |
+| v1.5.7–v1.5.9 | Copy por rede; kanban anti-perda (merge, boot load, ↻ reconstruir); flag de campanha em processamento; pipeline paralelo |
+| **v1.6–v1.6.3** | **Saga do 504:** 2 fases (`campanha_fase1/2`), timeout 25 s por call, frontend lê corpo do erro, **saídas compactas** (causa real: API lenta × respostas grandes) |
+| v1.6.4–v1.6.9 | Kanban c/ data/hora, ✎ editar, 🗑 excluir; imagem nas publicações; sync imagem peça↔campanha; recuperação de órfãs; media/medias; CTA + encurtador + regra IG |
+| v1.7–v1.7.2 | Calendário 14 dias + exclusão sync Metricool; **Auto-campanha IA** por métricas; FB card de link; **Impulsionamento** (⭐, plano IA, pacote Meta Ads, utm_medium=paid) |
+| v1.8 | **Stories 9:16** (roteiro IA, artes, sticker de link) |
+| v1.9–v1.9.9 | **Reels slideshow**; hospedagem de mídia; abas Stories/Reels; filtro de data e datas de publicação no kanban; link de reunião padrão; datas travadas/listas vazias (form restoration); Refazer Tudo/Ajustar Copy na campanha; barras de status; compor artes com texto; save robusto; auto-campanha completa; salvar edições do form; brief acompanha o tema (Designer anti-genérico + direção + retry/fallback) |
+| v1.10–v1.10.6 | Mídia com extensão (`/media/ID.ext`, Range/HEAD); MP4 real via **WebCodecs**; rota `api/media/[file].js`; resolver entre 4 rotas; **Deployment Protection** detectado (verificação server-side); texto do link na bio |
+| v1.11–v1.11.2 | **Carrossel do feed**; texto por rede (IG separado); carrossel na auto-campanha; **reagendar** no Metricool |
+| **v1.12–v1.12.1** | **QuickBooks: tokens no banco + OAuth próprio (fim do "Erro token")**; faxina financeiro (orçamento defensivo, auto-load Receber/Realizado, flex-wrap em 15 cabeçalhos); impulso dentro do ICP |
+| v1.13 | Menu **S1 · FINANCEIRO** próprio, aberto por padrão |
+| v1.14 | **Dashboard Financeiro** (8 KPIs + fluxo 6m + indicadores + lançamentos) e **Gerente Financeiro IA** (chat com contexto real) |
+| **v1.14.1** | **Tela preta do financeiro — causa raiz:** faltava um `</div>` (edPreview) na Nova Campanha; todas as páginas seguintes ficavam aninhadas dentro dela e ocultas. Auditoria agora verifica a árvore DOM (0 páginas aninhadas) |
 
 ---
 
-## 4. FLUXO COMPLETO DE CAMPANHAS (como está hoje)
+## 4. FLUXOS PRINCIPAIS
 
-```
-1. S2 → Nova Campanha (form restaura última automaticamente)
-2. Criar Campanha com IA → 4 agentes (Storyteller→Copywriter→Designer→Banco)
-3. Salva no Neon + peça no Kanban (vinculada por campanhaId)
-4. Auto-scroll ao editor → 🎨 Gerar Imagens (Ideogram) / editar / re-rodar
-5. Kanban: aprovar peça → 🚀 Publicar
-6. Modal: redes pré-marcadas + texto editável + link destino (LP HubSpot) + UTMs + agendamento
-   → 🚀 Metricool (auto) OU ✋ Manual (abre compositores)
-7. Peça → coluna Publicado · registro em atx:publicacoes (Neon)
-8. Visitante clica (link com UTM) → converte na LP HubSpot → lead criado
-9. S2 → Desempenho: leads atribuídos automaticamente por campanha/rede,
-   CPL, funil, métricas Metricool mescladas por matching de texto
-```
-
-**Ciclo fechado:** publicação → clique → lead → atribuição, sem input manual (leads manuais seguem como fallback).
+**Campanha manual:** Nova Campanha → Criar (Fase 1 Story+Copy → Fase 2 Designer‖por-rede) → Neon + peça no Kanban → aba Imagem (🎨 Regerar brief se mudou o tema → Ideogram) → aprovar → 🚀 Publicar (modal: redes, CTA, link de reunião c/ UTM, encurtador, FB card, imagem; **IG em request separado com a frase do link na bio**) → Metricool ou manual → calendário/Desempenho. Edições do formulário salvam sozinhas (💾 Salvar).
+**Formatos por campanha:** 📱 Stories (roteiro → artes → 🖼 compor c/ texto → agendar; sticker de link p/ agenda no 3º) · 🖼 Carrossel (roteiro → artes 1:1 → compor → publicar; LI/FB com link, IG com bio) · 🎬 Reel (roteiro → artes → montar MP4 no navegador → ☁ hospedar → agendar). Antes de agendar: **verificação server-side** da URL de mídia; se falhar, barra vermelha e não agenda.
+**Auto-campanha completa (Kanban 🤖):** métricas Metricool → campanha (narrativa/copy) → 3 posts nos slots ideais → 3 stories (dia do 1º post 18h) → reel (dia seguinte 12h) → carrossel (+2 dias 12h). ~19 imagens, 6–8 min, aba aberta.
+**Funil:** Reel = topo · Post/Carrossel = meio · Story = fundo. Instagram: "🔗 Link na bio → acesse o site e deixe seu contato; falamos em até 24h" (📲 configurável).
+**Impulsionar:** Desempenho ⭐ (≥10 cliques) → 📣 (plano IA: públicos próprios HubSpot/lookalike/retargeting, exclusões, linha qualificadora, utm_medium=paid) → Ads Manager (**não o Turbinar do celular** — sai do ICP).
+**Financeiro:** Dashboard → Gerente IA (perguntas livres com contexto QB) → telas específicas. Token QB renova sozinho; reconectar = clicar "QuickBooks" na sidebar.
 
 ---
 
-## 5. STATUS DAS INTEGRAÇÕES (sidebar, 13/08/2026)
+## 5. STATUS DAS INTEGRAÇÕES (18/08)
 
 | Serviço | Status | Observação |
 |---|---|---|
-| Claude API | 🟢 Ativo | Créditos comprados; configurar alerta de saldo baixo no console Anthropic |
-| HubSpot | 🟢 Conectado | Landing page da Atlantyx existe no HubSpot; falta escopo `content` p/ listá-la no Atlantyx |
-| QuickBooks | 🔴 **Erro token** | `QB OAuth: Incorrect or invalid refresh token` — ver §6 |
-| Metricool | 🟢 Conectado | Plano com API ativo; 3 envvars OK após redeploy |
-| Z-API | ⚪ Configurar | WhatsApp pendente |
-| KV/DB | 🟢 Conectado | Neon operacional |
+| Claude API | 🟢 | alerta de saldo baixo por configurar |
+| QuickBooks | 🟢 **Conectado (sandbox)** | Redirect URI Development: `https://atlantyx-os.vercel.app/api/financeiro?qb_callback=1`. Produção: revisão do app Intuit → chaves Production, `QB_SANDBOX=false`, mesmo URI na aba Production, reconectar |
+| Metricool | 🟢 | posts OK; **stories/reels/carrossel dependem de `MEDIA_PUBLIC_BASE`** — validar com "🔍 Testar hospedagem" verde "verificada pelo servidor" |
+| HubSpot | 🟢 | escopo `content` pendente |
+| Z-API | ⚪ | pendente |
+| Neon | 🟢 | inclui `media_store` |
 
 ---
 
-## 6. PENDÊNCIA ATIVA — QuickBooks refresh token
-
-**Erro:** `[QB] QB OAuth: Incorrect or invalid refresh token`
-
-**Causas prováveis:** token rotacionado (Intuit emite novo a cada uso no Playground e mata o antigo), colado incompleto, ou mismatch de ambiente (token sandbox com credenciais Production ou vice-versa).
-
-**Solução (pendente de execução pelo Fabio):**
-1. OAuth Playground → selecionar o app → conferir ambiente → escopo Accounting → Get authorization code → autorizar
-2. Copiar o **novo** Refresh Token imediatamente (não usar mais o Playground depois)
-3. Conferir que as **5 variáveis são do mesmo ambiente** (Development: tudo da aba Development + `QB_SANDBOX=true` · Production: tudo da aba Production + sem `QB_SANDBOX`)
-4. Atualizar `QB_REFRESH_TOKEN` no Vercel → **Redeploy**
-5. Validar: sidebar deve virar 🟢 "QuickBooks · Conectado"; depois testar sync no Painel Financeiro
-
-**Regra de ouro:** após ativar, NUNCA mais usar o Playground com esse app (rotaciona e mata o token de produção). O Atlantyx renova sozinho a cada sync. Token expira em 100 dias SEM uso — usar sync ≥1x/mês.
+## 6. PENDÊNCIAS ATIVAS
+- [ ] Confirmar `MEDIA_PUBLIC_BASE` + Redeploy → 🔍 Testar hospedagem verde → recompor Stories / rehospedar Reel → agendar → excluir posts quebrados no Metricool
+- [ ] Conferir no Instagram se o **sticker de link** do 3º story aparece (2 formatos implementados, não confirmado)
+- [ ] Bio do Instagram com link do site (+ `utm_source=instagram&utm_medium=bio`)
+- [ ] QuickBooks Production (revisão Intuit) ao sair do teste
+- [ ] Escopo `content` HubSpot; Z-API; alerta de saldo Anthropic
+- [ ] Prints de telas do financeiro ainda desalinhadas (pós v1.14.1) para ajuste fino
+- [ ] Contador de "leads pagos qualificados" no Desempenho (cargo/porte via HubSpot)
+- [ ] Deck comercial: alinhar mapa de módulos ao menu S1 · Financeiro
+- [ ] Schema DBML: adicionar `media_store` e a chave `qb:tokens`
 
 ---
 
-## 7. METRICOOL — decisão de plano (resolvida)
-
-- Plano **Starter NÃO tem API** (confirmado ago/2026: API só no Advanced, ~US$53-54/mês)
-- Fabio inicialmente contratou Starter → tela Settings→API não existia
-- **Resolvido:** upgrade feito (status "Conectado" na sidebar em 13/08)
-- Alternativas mapeadas caso reavalie custo: Publer Business, PostFast Growth (~€40), Postiz (API em todos os planos, tem self-hosted). Conector isolado em `api/metricool.js` → troca de provedor ≈ 1h de trabalho
-- Envvars: token em Settings→API; `userId=` e `blogId=` aparecem na URL do painel (blogId é POR MARCA)
-
----
-
-## 8. APRENDIZADOS TÉCNICOS (não repetir erros)
-
-1. **Diagnosticar antes de corrigir** — o 500 era saldo zerado; perdi tempo em "modelo deprecated". Checar env/billing/config PRIMEIRO
-2. **`node --check` + JSDOM antes de toda entrega** — pegou os bugs das v1.4.2/1.4.3. JSDOM instalado em `/tmp/node_modules/jsdom`
-3. **Nomes de função com prefixo de módulo** — colisão `renderKanban` custou uma versão inteira
-4. **Pacotes de update SEMPRE completos** (24 arquivos) — pacote parcial apagou o financeiro
-5. **Console marker + build ID** (`[ATLANTYX vX.Y.Z]` verde no F12) — confirma deploy/cache na hora
-6. **Handler global de erros** — transformou "não funciona" em mensagens com linha exata
-7. **Erros visíveis e persistentes na UI** (box no painel > toast que some)
-8. **Graceful degradation** em toda integração opcional (Metricool → modo manual; Resend → log-only)
-9. **UX: auto-scroll ao resultado** — duas vezes o sistema "não funcionou" porque o resultado estava fora da viewport
-10. **Intuit rotaciona refresh tokens** — Playground só para o primeiro token
-11. **DBML dbdiagram.io:** sem `unique: true` em `indexes{}`; refs inline apenas (não duplicar com blocos `Ref:`)
-12. **HubSpot first-touch:** atribuição usa `hs_analytics_first_url` — contato pré-existente não conta como lead novo da campanha (correto p/ aquisição)
+## 7. APRENDIZADOS TÉCNICOS
+1. **Latência LLM ∝ tokens de saída** — compactar JSON dos agentes resolveu o 504; timeout por chamada torna erros legíveis
+2. **Nunca sobrescrever storage sem merge** (kanban, campanhas) — união por id + recuperação
+3. **Um `</div>` faltando aninha páginas inteiras** — auditar a árvore DOM (parent de cada `.page`), não só classes
+4. **JSONB rejeita `\u0000` e surrogates soltos** (emoji cortado por `substring`) → `jsonSeguro()` no db.js, `safeCut()` nos agentes
+5. **Intuit rotaciona refresh tokens** → persistir no banco a cada refresh; OAuth próprio, sem Playground
+6. **Vercel Deployment Protection** bloqueia terceiros nas URLs de deployment → domínio de produção + verificação server-side (teste no navegador do dono passa por causa do cookie)
+7. **Metricool:** story sem texto; mídia com extensão no path; MP4 com moov no início (MediaRecorder não serve → WebCodecs)
+8. **Form restoration do navegador** trava datas/filtros → autocomplete=off + reset ao abrir
+9. **Reels/Stories/Carrossel derivam da copy** — mudou tema: Refazer Tudo + regerar brief + refazer roteiros
+10. Sempre `node --check` + JSDOM (url real; checagem de DOM tree) antes de entregar; pacotes completos; nunca substituir `api/`
 
 ---
 
-## 9. PRÓXIMOS PASSOS
-
-**Imediato:**
-- [ ] Regenerar QB_REFRESH_TOKEN (§6) → sidebar verde → validar sync no painel
-- [ ] Adicionar escopo `content` no Private App HubSpot → listar LP da Atlantyx → "usar como link" na campanha
-- [ ] Teste ponta-a-ponta: publicar peça real via Metricool → conferir Planner → aguardar métricas no Desempenho
-
-**Curto prazo:**
-- [ ] Configurar Z-API (WhatsApp)
-- [ ] Alerta de saldo baixo na Anthropic (console → billing)
-- [ ] Primeira campanha real com LP + UTM + leads automáticos
-
-**Backlog:**
-- [ ] Métricas Metricool: matching por ID em vez de texto (mais robusto)
-- [ ] Distribuição de leads por publicação individual (hoje é por campanha)
-- [ ] Documentação do schema atualizada (DBML) com tabelas de publicações
-
----
-
-## 10. ARQUIVOS DE REFERÊNCIA EM /outputs/
-
+## 8. ARQUIVOS DE REFERÊNCIA EM /outputs/
 | Arquivo | Conteúdo |
 |---|---|
-| `atlantyx-v1.5.6.zip` | **Pacote completo atual** (24 api + index + vercel.json + changelogs) |
-| `index-v1.5.6.html` | Frontend atual standalone |
-| `financeiro-v1.5.6.js`, `hubspot-v1.5.5.js`, `metricool.js`, `s2-creative-v1.5.1.js` | Backends-chave standalone |
-| `Atlantyx-OS-Guia-Instalacao-v1.3.docx/pdf` | Guia de instalação 28 págs c/ 17 mockups |
-| `atlantyx-os-schema.dbml` | Schema das 15 tabelas |
-| `CHANGELOG-v1.4.md` … `CHANGELOG-v1.5.6.md` | Histórico detalhado por versão |
-
-**Identificação de deploy:** console F12 mostra `[ATLANTYX v1.5.6]` em verde; sidebar/header mostram o build ID. Se divergir do esperado → faltou deploy ou hard refresh (Ctrl+Shift+R).
+| `atlantyx-v1.14.1.zip` | Pacote completo atual (api + public + vercel.json + changelogs) |
+| `index-v1.14.1.html` | Frontend atual |
+| `financeiro-v1.14.js`, `metricool-v1.12.js`, `s2-creative-v1.12.js`, `db-v1.9.8.js`, `media-upload-v1.10.5.js`, `media-[file]-v1.10.3.js`, `vercel-v1.10.json` | Backends-chave standalone (última alteração de cada um) |
+| `Atlantyx-OS-Apresentacao-Comercial.pptx` | Deck comercial 20 slides |
+| `CHANGELOG-v1.6.3.md … CHANGELOG-v1.14.md` | Histórico detalhado |
+| `atlantyx-os-schema.dbml` | Schema das tabelas |
