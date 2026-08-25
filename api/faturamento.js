@@ -240,32 +240,6 @@ async function termoNfExcluir({ nota_id } = {}) {
 //    Procura anexos (XML de NFe é lido de verdade: valor, número, chave;
 //    PDF só é registrado pelo nome, sem valor extraído automaticamente)
 // ═══════════════════════════════════════════════════════════════════════════
-// v1.20.8: leitor de PDF server-side (pdf-parse) — sob demanda, sem quebrar nada se não instalado
-async function getPdfParse() {
-  try { const mod = await import('pdf-parse'); return mod.default || mod; }
-  catch (e) { return null; }
-}
-function _fatNormTexto(t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9., ]/g, ' ').replace(/\s+/g, ' '); }
-// mesma heurística usada no upload manual (v1.20.5), agora também para PDFs vindos por e-mail
-function extrairPdfNFe(texto, empresas) {
-  const txt = _fatNormTexto(texto);
-  let nf_valor = null, nf_numero = null, empresaMatch = null;
-  const rotulosValor = ['valor total da nota', 'valor total da nf', 'valor total nf-e', 'valor total', 'total da nota', 'total geral'];
-  for (const rot of rotulosValor) {
-    const i = txt.indexOf(rot); if (i < 0) continue;
-    const trecho = txt.substring(i, i + rot.length + 40);
-    const m = trecho.match(/(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/);
-    if (m) { nf_valor = parseFloat(m[1].replace(/\./g, '').replace(',', '.')); break; }
-  }
-  const mNum = texto.match(/N[ºo°.]?\s*(?:DA\s*)?(?:NF-?E)?\s*[:.]?\s*(\d{2,9})\b/i) || texto.match(/N[uú]mero\s*[:.]?\s*(\d{2,9})\b/i);
-  if (mNum) nf_numero = mNum[1];
-  for (const e of (empresas || [])) {
-    const nomeBase = String(e.empresa || '').replace(/^[A-Za-z0-9]+\s*-\s*/, '').trim();
-    const n1 = _fatNormTexto(nomeBase), n2 = _fatNormTexto(e.empresa);
-    if ((n1 && txt.includes(n1)) || (n2 && txt.includes(n2))) { empresaMatch = e; break; }
-  }
-  return { nf_valor, nf_numero, empresaMatch, lido: nf_valor != null || nf_numero != null || !!empresaMatch };
-}
 async function getImap() {
   try { const mod = await import('imapflow'); return mod.ImapFlow || mod.default?.ImapFlow || mod.default; }
   catch (e) { return null; }
@@ -297,16 +271,12 @@ async function termoVerificarEmail({ termo_id, dias = 45 } = {}) {
   const client = new ImapFlow({ host, port, secure: true, auth: { user, pass }, logger: false });
   const encontradasNovas = [];
   const sql = await getSql();
-  // v1.20.8: diagnóstico — para você ver exatamente o que a verificação encontrou (e não "nada aconteceu")
-  const diag = { emails_escaneados: 0, emails_com_anexo: 0, anexos_total: 0, anexos_xml: 0, anexos_pdf: 0, pdf_lido_com_sucesso: 0, casados_com_empresa: 0, sem_casar: 0, pdf_parse_instalado: null };
-  let PdfParse = null;
   try {
     await client.connect();
     const lock = await client.getMailboxLock('INBOX');
     try {
       const desde = new Date(Date.now() - dias * 86400 * 1000);
       const uids = await client.search({ since: desde }, { uid: true });
-      diag.emails_escaneados = (uids || []).length;
       for (const uid of (uids || []).slice(-300)) { // limite de segurança
         let msg;
         try { msg = await client.fetchOne(uid, { envelope: true, bodyStructure: true, source: false }, { uid: true }); } catch (_) { continue; }
@@ -321,39 +291,18 @@ async function termoVerificarEmail({ termo_id, dias = 45 } = {}) {
           (node.childNodes || []).forEach(coletar);
         })(msg.bodyStructure);
         if (!anexos.length) continue;
-        diag.emails_com_anexo++;
         for (const anexo of anexos) {
-          diag.anexos_total++;
           let jaTem;
           try { jaTem = await sql`SELECT id FROM termos_notas_encontradas WHERE termo_id = ${termo_id} AND anexo_nome = ${anexo.nome} AND email_assunto = ${msg.envelope?.subject || ''} LIMIT 1`; } catch (_) { jaTem = []; }
           if (jaTem.length) continue;
           let dados = { nf_numero: null, nf_valor: null, nf_chave: null, emit_nome: null, dest_nome: null };
-          let empresaMatchDireto = null;
           if (/\.xml$/i.test(anexo.nome)) {
-            diag.anexos_xml++;
             try { const dl = await client.download(uid, anexo.part, { uid: true }); const chunks = []; for await (const c of dl.content) chunks.push(c); const parsed = extrairXmlNFe(Buffer.concat(chunks)); if (parsed) dados = parsed; } catch (e) { console.warn('[Faturamento] baixar/ler xml:', e.message); }
-          } else {
-            // v1.20.8 FIX: PDF (DANFE) agora também é lido — antes só XML era processado, então
-            // toda nota enviada em PDF nunca casava com a empresa nem atualizava o total do termo.
-            diag.anexos_pdf++;
-            if (PdfParse === null) { PdfParse = await getPdfParse(); diag.pdf_parse_instalado = !!PdfParse; }
-            if (PdfParse) {
-              try {
-                const dl = await client.download(uid, anexo.part, { uid: true }); const chunks = []; for await (const c of dl.content) chunks.push(c);
-                const parsedPdf = await PdfParse(Buffer.concat(chunks));
-                const r = extrairPdfNFe(parsedPdf.text || '', empresas);
-                if (r.lido) diag.pdf_lido_com_sucesso++;
-                dados.nf_valor = r.nf_valor; dados.nf_numero = r.nf_numero; empresaMatchDireto = r.empresaMatch;
-              } catch (e) { console.warn('[Faturamento] baixar/ler pdf:', e.message); }
-            }
           }
-          // Casar com empresa: já casado direto (PDF) OU pelo nome extraído do XML/assunto/nome do arquivo
-          let empresaMatch = empresaMatchDireto;
-          if (!empresaMatch) {
-            const alvo = normEmpresa(dados.dest_nome || dados.emit_nome || '') || normEmpresa(anexo.nome) || normEmpresa(msg.envelope?.subject || '');
-            for (const e of empresas) { const ne = normEmpresa(e.empresa); if (ne && alvo.includes(ne)) { empresaMatch = e; break; } }
-          }
-          if (empresaMatch) diag.casados_com_empresa++; else diag.sem_casar++;
+          // Casar com empresa: pelo nome extraído do XML, ou pelo assunto/nome do anexo
+          const alvo = normEmpresa(dados.dest_nome || dados.emit_nome || '') || normEmpresa(anexo.nome) || normEmpresa(msg.envelope?.subject || '');
+          let empresaMatch = null;
+          for (const e of empresas) { const ne = normEmpresa(e.empresa); if (ne && alvo.includes(ne)) { empresaMatch = e; break; } }
           const notaId = novoId('nota');
           await sql`INSERT INTO termos_notas_encontradas (id, termo_id, empresa_id, email_assunto, email_data, email_remetente, anexo_nome, nf_numero, nf_valor, nf_chave, tipo_arquivo)
             VALUES (${notaId}, ${termo_id}, ${empresaMatch?.id || null}, ${msg.envelope?.subject || ''}, ${msg.envelope?.date ? new Date(msg.envelope.date).toISOString() : null}, ${(msg.envelope?.from || [])[0]?.address || ''}, ${anexo.nome}, ${dados.nf_numero}, ${dados.nf_valor}, ${dados.nf_chave}, /\.xml$/i.test(anexo.nome) ? 'xml' : 'pdf')`;
@@ -381,7 +330,7 @@ async function termoVerificarEmail({ termo_id, dias = 45 } = {}) {
   if (recalc.status !== 'completo') {
     try { await enviarAlertaFaturamento(termo, recalc); alertaEnviado = true; await sql`UPDATE termos_faturamento SET nf_alerta_enviado_em = NOW() WHERE id = ${termo_id}`; } catch (e) { console.warn('[Faturamento] alerta e-mail falhou:', e.message); }
   }
-  return { encontradas_agora: encontradasNovas, nf_status: recalc.status, nf_soma: recalc.soma, nf_diferenca: recalc.diff, alerta_enviado: alertaEnviado, diagnostico: diag };
+  return { encontradas_agora: encontradasNovas, nf_status: recalc.status, nf_soma: recalc.soma, nf_diferenca: recalc.diff, alerta_enviado: alertaEnviado };
 }
 
 async function enviarAlertaFaturamento(termo, recalc) {
