@@ -123,20 +123,63 @@ export default async function handler(req, res) {
         if (!metricool_id || !data_hora) throw new Error('metricool_id e data_hora obrigatórios');
         const quando = new Date(data_hora); if (isNaN(quando)) throw new Error('data_hora inválida');
         const dt = { dateTime: quando.toISOString().substring(0, 19), timezone: 'America/Sao_Paulo' };
-        // 1) tentativa de update in-place
-        let atualizado = false, erroPut = '';
+
+        // v1.26.1 FIX: o Metricool rejeita PUT parcial ("text must not be null, providers must not be null").
+        // Agora BUSCAMOS o post no Metricool primeiro e reenviamos o registro COMPLETO só com a data trocada —
+        // assim funciona também para posts que não foram criados por este sistema (sem payload salvo).
+        let postAtual = null, erroGet = '';
         try {
-          const r = await mc(`/v2/scheduler/posts/${metricool_id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'PUT', { publicationDate: dt });
-          if (r && (r.id || r.success || r.status === 'ok' || (typeof r === 'object' && !r.error))) atualizado = true;
-        } catch (e) { erroPut = e.message; }
-        if (atualizado) return { reagendado: true, metodo: 'atualizado', metricool_id, agendado_para: quando.toISOString() };
-        // 2) recriar: precisa do payload original
-        if (!orig || !orig.redes?.length) throw new Error('Metricool não aceitou alterar a data (' + (erroPut || 'sem retorno') + ') e não há payload original para recriar. Exclua e publique de novo.');
-        try { await mc(`/v2/scheduler/posts/${metricool_id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'DELETE'); } catch (e) { console.warn('[metricool reagendar] delete antigo falhou:', e.message); }
-        // recria com o payload original (mesma montagem de body/providers da action publicar)
-        Object.assign(payload, orig, { data_hora: quando.toISOString() });
+          const g = await mc(`/v2/scheduler/posts/${metricool_id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN);
+          postAtual = g?.data || g?.post || g;
+          if (postAtual && !postAtual.providers && !postAtual.text) postAtual = null; // resposta não parece um post
+        } catch (e) { erroGet = e.message; }
+
+        let erroPut = '';
+        if (postAtual) {
+          // Reenvia o post inteiro, trocando apenas a data (mantém texto, redes, mídia, tipo de post)
+          const corpo = {
+            ...postAtual,
+            publicationDate: dt,
+            text: postAtual.text ?? '',
+            providers: postAtual.providers || [],
+            ...(postAtual.media ? { media: postAtual.media } : {}),
+            ...(postAtual.medias ? { medias: postAtual.medias } : {}),
+            draft: false,
+          };
+          delete corpo.id; delete corpo.uuid; delete corpo.creationDate; delete corpo.publishedDate; delete corpo.status;
+          try {
+            const r = await mc(`/v2/scheduler/posts/${metricool_id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'PUT', corpo);
+            if (r && (r.id || r.data || r.success || r.status === 'ok' || (typeof r === 'object' && !r.error))) {
+              return { reagendado: true, metodo: 'atualizado', metricool_id, agendado_para: quando.toISOString(),
+                detalhe: 'post completo reenviado com a nova data' };
+            }
+          } catch (e) { erroPut = e.message; }
+        }
+
+        // Plano B: recriar. Usa o payload original salvo OU reconstrói a partir do post buscado no Metricool.
+        let dadosRecriar = null;
+        if (orig && orig.redes?.length) dadosRecriar = orig;
+        else if (postAtual) {
+          const invMap = { LINKEDIN: 'linkedin', INSTAGRAM: 'instagram', FACEBOOK: 'facebook', TWITTER: 'twitter', TIKTOK: 'tiktok' };
+          const redes = (postAtual.providers || []).map(p => invMap[(p.network || p).toString().toUpperCase()]).filter(Boolean);
+          const midias = postAtual.media || postAtual.medias || [];
+          if (redes.length) dadosRecriar = { texto: postAtual.text || '', redes,
+            imagem_url: midias[0] || null, imagens_urls: midias.length > 1 ? midias : undefined,
+            tipo: (postAtual.providers || []).some(p => p?.data?.postType === 'REEL') ? 'REEL'
+                : (postAtual.providers || []).some(p => p?.data?.postType === 'STORY') ? 'STORY' : 'POST',
+            encurtar_link: false };
+        }
+        if (!dadosRecriar) {
+          throw new Error('Não consegui reagendar: o Metricool recusou a alteração' + (erroPut ? ' (' + erroPut.substring(0, 120) + ')' : '')
+            + (erroGet ? ' e não foi possível ler o post original (' + erroGet.substring(0, 80) + ')' : '')
+            + '. Exclua o post no Metricool e publique de novo pelo Atlantyx.');
+        }
+        try { await mc(`/v2/scheduler/posts/${metricool_id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'DELETE'); }
+        catch (e) { console.warn('[metricool reagendar] delete antigo falhou:', e.message); }
+        Object.assign(payload, dadosRecriar, { data_hora: quando.toISOString() });
         const novo = await acoes.publicar();
-        return { reagendado: true, metodo: 'recriado', antigo: metricool_id, metricool_id: novo.metricool_id, agendado_para: quando.toISOString(), detalhe: novo };
+        return { reagendado: true, metodo: orig ? 'recriado' : 'recriado_do_metricool', antigo: metricool_id,
+          metricool_id: novo.metricool_id, agendado_para: quando.toISOString(), detalhe: novo };
       },
 
       // v1.7: excluir post agendado (sincroniza exclusão do calendário)
