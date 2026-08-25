@@ -30,8 +30,15 @@ export default async function handler(req, res) {
     // v1.12: OAuth do QuickBooks — callback do Intuit
     if (req.query?.qb_callback) return qbCallback(req, res);
     if (action === 'qb_auth_url') { try { return res.status(200).json({ success: true, ...qbAuthUrl(req) }); } catch (e) { return res.status(400).json({ success: false, error: e.message }); } }
+    // v1.24: cron diário do relatório de pagamentos
+    if (action === 'relatorio_pagamentos') {
+      const authR = req.headers?.authorization || '';
+      if (process.env.CRON_SECRET && authR !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'CRON_SECRET inválido' });
+      try { const r = await relatorioPagamentosEnviar({}); return res.status(200).json({ success: true, ...r }); }
+      catch (e) { console.error('[CRON relatorio_pagamentos]', e.message); return res.status(500).json({ success: false, error: e.message }); }
+    }
     if (action !== 'marcos_processar_alertas') {
-      return res.status(400).json({ error: 'GET só aceito para marcos_processar_alertas' });
+      return res.status(400).json({ error: 'GET só aceito para marcos_processar_alertas e relatorio_pagamentos' });
     }
     const auth = req.headers?.authorization || '';
     if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -59,6 +66,7 @@ export default async function handler(req, res) {
       qb_orcamento:          () => qbOrcamento(params),
       qb_saldo_contas:       () => qbSaldoContas(params),
       qb_status:             () => qbStatus(params),
+      relatorio_pagamentos:  () => relatorioPagamentosEnviar(params),
       fluxo_detalhado:       () => fluxoDetalhado(params),
       qb_diagnostico:        () => qbDiagnostico(),
       gerente_financeiro:    () => gerenteFinanceiro(params),
@@ -422,6 +430,144 @@ async function qbDiagnostico() {
   } catch (e) { out.erros.push(e.message); }
   return { diagnostico: out };
 }
+// ═══════════════════════════════════════════════════════════════════════════
+// v1.24: RELATÓRIO DIÁRIO DE PAGAMENTOS POR E-MAIL
+// Enviado VIA atlanteambr@gmail.com (SMTP do Gmail, mesma senha de app já usada
+// para ler as notas fiscais) para financeiro@atlanteam.com.br e contato@atlanteam.com.br
+// ═══════════════════════════════════════════════════════════════════════════
+const DEST_RELATORIO = (process.env.RELATORIO_PAGAMENTOS_PARA || 'financeiro@atlanteam.com.br,contato@atlanteam.com.br')
+  .split(',').map(s => s.trim()).filter(Boolean);
+
+async function pagamentosDoDiaEPendentes() {
+  const sql = await getSql();
+  const hoje = new Date().toISOString().split('T')[0];
+  const inicioMes = hoje.substring(0, 8) + '01';
+  const fimMes = new Date(new Date(hoje).getFullYear(), new Date(hoje).getMonth() + 1, 0).toISOString().split('T')[0];
+
+  // 1. Despesas do Atlantyx com vencimento HOJE
+  const doDia = await sql`SELECT o.*, d.descricao AS desp_desc, d.categoria AS desp_cat, d.fornecedor AS desp_forn
+    FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
+    WHERE o.data_prevista = ${hoje} ORDER BY o.valor DESC`;
+
+  // 2. Pendentes do MÊS (não pagas, vencimento dentro do mês corrente) — inclui atrasadas do mês
+  const pendentesMes = await sql`SELECT o.*, d.descricao AS desp_desc, d.categoria AS desp_cat, d.fornecedor AS desp_forn
+    FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
+    WHERE o.status != 'paga' AND o.data_prevista >= ${inicioMes} AND o.data_prevista <= ${fimMes}
+    ORDER BY o.data_prevista ASC`;
+
+  // 3. Contas a pagar do QuickBooks (Bills em aberto) — mesmo período
+  let qbHoje = [], qbMes = [], qbErro = null;
+  if (qbConfigurado()) {
+    try {
+      const token = await qbToken();
+      const data = await qbQuery(`select * from Bill where Balance > '0' and DueDate >= '${inicioMes}' and DueDate <= '${fimMes}' maxresults 500`, token);
+      const bills = (data?.QueryResponse?.Bill || []).map(b => ({
+        descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''),
+        fornecedor: b.VendorRef?.name || '', categoria: 'QuickBooks · Conta a pagar',
+        data_prevista: b.DueDate || b.TxnDate, valor: parseFloat(b.Balance ?? b.TotalAmt ?? 0), fonte: 'quickbooks',
+      }));
+      qbMes = bills;
+      qbHoje = bills.filter(b => String(b.data_prevista).split('T')[0] === hoje);
+    } catch (e) { qbErro = e.message; }
+  }
+
+  const norm = r => ({ descricao: r.desp_desc || r.descricao || 'Despesa', fornecedor: r.desp_forn || r.fornecedor || '',
+    categoria: r.desp_cat || r.categoria || '', data: String(r.data_prevista).split('T')[0],
+    valor: parseFloat(r.valor) || 0, status: r.status || 'prevista', fonte: r.fonte || 'atlantyx' });
+
+  const listaDia = [...doDia.map(norm), ...qbHoje.map(norm)].sort((a, b) => b.valor - a.valor);
+  const listaMes = [...pendentesMes.map(norm), ...qbMes.map(norm)]
+    .filter(x => !(x.fonte === 'quickbooks' && x.data === hoje && listaDia.some(d => d.fonte === 'quickbooks' && d.descricao === x.descricao)))
+    .sort((a, b) => a.data.localeCompare(b.data));
+
+  const soma = l => Math.round(l.reduce((s, x) => s + x.valor, 0) * 100) / 100;
+  const atrasadas = listaMes.filter(x => x.data < hoje);
+  return { hoje, inicioMes, fimMes, listaDia, listaMes, atrasadas,
+    total_dia: soma(listaDia), total_mes_pendente: soma(listaMes), total_atrasado: soma(atrasadas), qb_erro: qbErro };
+}
+
+function _htmlRelatorioPagamentos(d) {
+  const brl = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const dataBR = s => String(s || '').split('-').reverse().join('/');
+  const linha = (x, destacarAtraso) => `<tr${destacarAtraso && x.data < d.hoje ? ' style="background:#fdeded;"' : ''}>
+    <td style="padding:7px 9px;border-bottom:1px solid #e4e8f2;font-family:monospace;white-space:nowrap;">${dataBR(x.data)}${destacarAtraso && x.data < d.hoje ? ' <span style="color:#c0392b;font-weight:bold;">⚠</span>' : ''}</td>
+    <td style="padding:7px 9px;border-bottom:1px solid #e4e8f2;">${x.descricao}${x.fornecedor ? '<br><span style="color:#8a93a8;font-size:11px;">' + x.fornecedor + '</span>' : ''}</td>
+    <td style="padding:7px 9px;border-bottom:1px solid #e4e8f2;color:#5a6478;font-size:11px;">${x.categoria}${x.fonte === 'quickbooks' ? ' <span style="color:#1FB287;">(QB)</span>' : ''}</td>
+    <td style="padding:7px 9px;border-bottom:1px solid #e4e8f2;text-align:right;font-family:monospace;white-space:nowrap;">${brl(x.valor)}</td>
+    <td style="padding:7px 9px;border-bottom:1px solid #e4e8f2;font-size:11px;">${x.status === 'paga' ? '✅ paga' : x.status === 'lancada' ? '📤 lançada' : '⏳ prevista'}</td></tr>`;
+  const cab = `<tr style="background:#1A3A8F;color:#fff;"><th style="padding:7px 9px;text-align:left;font-size:11px;">VENCIMENTO</th><th style="padding:7px 9px;text-align:left;font-size:11px;">DESCRIÇÃO</th><th style="padding:7px 9px;text-align:left;font-size:11px;">CATEGORIA</th><th style="padding:7px 9px;text-align:right;font-size:11px;">VALOR</th><th style="padding:7px 9px;text-align:left;font-size:11px;">STATUS</th></tr>`;
+  // v1.24: <meta charset> é obrigatório — sem ele, acentos chegam corrompidos ("MÊS" vira "MÃŠS") no e-mail
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+  <body style="margin:0;padding:0;background:#f4f6fb;"><div style="font-family:Arial,Helvetica,sans-serif;color:#1c2333;max-width:820px;">
+  <div style="background:linear-gradient(135deg,#0B1226,#1A3A8F);color:#fff;padding:18px 22px;border-radius:10px 10px 0 0;">
+    <div style="font-size:12px;letter-spacing:2px;color:#8fb0ff;">ATLANTYX OS · FINANCEIRO</div>
+    <div style="font-size:21px;font-weight:bold;margin-top:4px;">Pagamentos de ${dataBR(d.hoje)}</div>
+  </div>
+  <div style="border:1px solid #e4e8f2;border-top:none;padding:18px 22px;border-radius:0 0 10px 10px;">
+    <div style="display:block;margin-bottom:18px;">
+      <table style="width:100%;border-collapse:collapse;"><tr>
+        <td style="padding:10px;background:#EEF3FF;border-radius:8px;width:33%;"><div style="font-size:11px;color:#5a6478;">A PAGAR HOJE</div><div style="font-size:19px;font-weight:bold;color:#1A3A8F;">${brl(d.total_dia)}</div><div style="font-size:11px;color:#8a93a8;">${d.listaDia.length} lançamento(s)</div></td>
+        <td style="width:8px;"></td>
+        <td style="padding:10px;background:#FFF8E8;border-radius:8px;width:33%;"><div style="font-size:11px;color:#5a6478;">PENDENTE NO MÊS</div><div style="font-size:19px;font-weight:bold;color:#E0A422;">${brl(d.total_mes_pendente)}</div><div style="font-size:11px;color:#8a93a8;">${d.listaMes.length} lançamento(s)</div></td>
+        <td style="width:8px;"></td>
+        <td style="padding:10px;background:${d.total_atrasado > 0 ? '#FDEDED' : '#EAFBF5'};border-radius:8px;width:33%;"><div style="font-size:11px;color:#5a6478;">EM ATRASO</div><div style="font-size:19px;font-weight:bold;color:${d.total_atrasado > 0 ? '#D64545' : '#1FB287'};">${brl(d.total_atrasado)}</div><div style="font-size:11px;color:#8a93a8;">${d.atrasadas.length} vencida(s)</div></td>
+      </tr></table>
+    </div>
+
+    <h2 style="font-size:15px;color:#17224a;border-bottom:2px solid #4F7CFF;padding-bottom:5px;">💰 Pagamentos de hoje (${dataBR(d.hoje)})</h2>
+    ${d.listaDia.length ? `<table style="width:100%;border-collapse:collapse;font-size:13px;">${cab}${d.listaDia.map(x => linha(x, false)).join('')}
+      <tr style="background:#f7f9fe;font-weight:bold;"><td colspan="3" style="padding:8px 9px;">TOTAL DO DIA</td><td style="padding:8px 9px;text-align:right;font-family:monospace;">${brl(d.total_dia)}</td><td></td></tr></table>`
+      : '<p style="color:#5a6478;font-size:13px;padding:10px 0;">Nenhum pagamento com vencimento hoje. 🎉</p>'}
+
+    <h2 style="font-size:15px;color:#17224a;border-bottom:2px solid #E0A422;padding-bottom:5px;margin-top:26px;">📅 Pendentes do mês (até ${dataBR(d.fimMes)})</h2>
+    ${d.atrasadas.length ? `<div style="background:#FDEDED;border-left:4px solid #D64545;padding:9px 12px;font-size:13px;margin-bottom:10px;"><b>⚠ ${d.atrasadas.length} pagamento(s) em atraso</b> — total ${brl(d.total_atrasado)} (destacados em vermelho abaixo)</div>` : ''}
+    ${d.listaMes.length ? `<table style="width:100%;border-collapse:collapse;font-size:13px;">${cab}${d.listaMes.map(x => linha(x, true)).join('')}
+      <tr style="background:#f7f9fe;font-weight:bold;"><td colspan="3" style="padding:8px 9px;">TOTAL PENDENTE NO MÊS</td><td style="padding:8px 9px;text-align:right;font-family:monospace;">${brl(d.total_mes_pendente)}</td><td></td></tr></table>`
+      : '<p style="color:#5a6478;font-size:13px;padding:10px 0;">Nenhum pagamento pendente no mês.</p>'}
+
+    ${d.qb_erro ? `<p style="color:#E0A422;font-size:12px;margin-top:14px;">⚠ Não foi possível consultar o QuickBooks nesta execução (${d.qb_erro}) — a lista pode estar incompleta.</p>` : ''}
+    <p style="color:#8a93a8;font-size:11px;margin-top:20px;border-top:1px solid #e4e8f2;padding-top:10px;">
+      Enviado automaticamente pelo Atlantyx OS · Inclui despesas programadas do sistema e contas a pagar do QuickBooks (todos os fornecedores).
+    </p>
+  </div></div></body></html>`;
+}
+
+// Envio via SMTP do Gmail (atlanteambr@gmail.com) — reaproveita a senha de app já
+// configurada em EMAIL_IMAP_PASS. Cai para o Resend se o nodemailer não estiver instalado.
+async function enviarEmailGmail({ para, assunto, html }) {
+  const user = process.env.EMAIL_IMAP_USER || 'atlanteambr@gmail.com';
+  const pass = process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS;
+  let nodemailer = null;
+  try { const m = await import('nodemailer'); nodemailer = m.default || m; } catch (_) {}
+  if (nodemailer && pass) {
+    const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass } });
+    const info = await transporter.sendMail({ from: `Atlantyx OS Financeiro <${user}>`, to: para.join(', '), subject: assunto, html });
+    return { via: 'gmail-smtp', de: user, id: info.messageId };
+  }
+  // Reserva: Resend (não sai como Gmail, mas garante a entrega)
+  const key = process.env.RESEND_API_KEY;
+  if (!key) throw new Error('Não foi possível enviar: instale o nodemailer (npm i nodemailer) e configure EMAIL_IMAP_PASS, ou configure RESEND_API_KEY.');
+  const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: process.env.RESEND_FROM || 'Atlantyx <noreply@atlantyx.com.br>', to: para, subject: assunto, html }) });
+  if (!r.ok) throw new Error('Resend HTTP ' + r.status);
+  const d = await r.json().catch(() => ({}));
+  return { via: 'resend', de: process.env.RESEND_FROM, id: d.id, aviso: 'nodemailer não instalado — enviado pelo Resend, não pelo Gmail' };
+}
+
+async function relatorioPagamentosEnviar({ apenas_gerar, para } = {}) {
+  const d = await pagamentosDoDiaEPendentes();
+  const html = _htmlRelatorioPagamentos(d);
+  const resumo = { data: d.hoje, total_dia: d.total_dia, qtd_dia: d.listaDia.length,
+    total_mes_pendente: d.total_mes_pendente, qtd_mes: d.listaMes.length, total_atrasado: d.total_atrasado, qtd_atrasadas: d.atrasadas.length, qb_erro: d.qb_erro };
+  if (apenas_gerar) return { ...resumo, html, enviado: false };
+  const destinatarios = (para && para.length) ? para : DEST_RELATORIO;
+  const dataBR = d.hoje.split('-').reverse().join('/');
+  const assunto = `[Atlantyx] Pagamentos de ${dataBR} — hoje R$ ${d.total_dia.toLocaleString('pt-BR',{minimumFractionDigits:2})} · pendente no mês R$ ${d.total_mes_pendente.toLocaleString('pt-BR',{minimumFractionDigits:2})}${d.total_atrasado > 0 ? ' · ⚠ ' + d.atrasadas.length + ' em atraso' : ''}`;
+  const envio = await enviarEmailGmail({ para: destinatarios, assunto, html });
+  console.log(`[Financeiro] Relatório diário enviado para ${destinatarios.join(', ')} via ${envio.via}`);
+  return { ...resumo, enviado: true, destinatarios, ...envio };
+}
+
 async function qbStatus() {
   const faltando = [
     !process.env.QB_CLIENT_ID && 'QB_CLIENT_ID',
@@ -1273,8 +1419,11 @@ async function regerarOcorrencias(sql, despesaId, meses = 12) {
 
   // Apaga ocorrências futuras ainda previstas
   const hoje = new Date().toISOString().split('T')[0];
+  // v1.21.1 FIX: apagar também as 'lancada' (não pagas) — antes só 'prevista' era removida,
+  // então editar uma despesa recorrente deixava ocorrências antigas duplicadas no calendário.
+  // As 'paga' são preservadas (histórico real não se mexe).
   await sql`DELETE FROM despesas_ocorrencias
-    WHERE despesa_id = ${despesaId} AND status = 'prevista' AND data_prevista >= ${hoje}`;
+    WHERE despesa_id = ${despesaId} AND status IN ('prevista', 'lancada') AND data_prevista >= ${hoje}`;
 
   const datas = gerarDatasRecorrencia(d, meses);
   let count = 0;
@@ -1380,7 +1529,10 @@ async function fluxoFuturo({ meses = 12, overrides = {} } = {}) {
   try {
     const fimHorizonte = new Date(hoje.getFullYear(), hoje.getMonth() + meses, 0).toISOString().split('T')[0];
     const r = await despOcorrencias({ data_inicio: hoje.toISOString().split('T')[0], data_fim: fimHorizonte });
-    ocorrencias = r.ocorrencias.filter(o => o.status === 'prevista');
+    // v1.21.1 FIX: incluir 'lancada' — despesa lançada no QuickBooks continua a PAGAR, então
+    // precisa entrar na projeção de saídas. Antes só 'prevista' entrava e o fluxo futuro ficava
+    // otimista demais (mostrava saldo maior do que a realidade).
+    ocorrencias = r.ocorrencias.filter(o => o.status === 'prevista' || o.status === 'lancada');
   } catch {}
 
   // 4. A Receber QB (alimenta entradas dos próximos meses)
@@ -1705,7 +1857,9 @@ async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55 } 
   const ocorPrev = await sql`SELECT o.*, d.descricao AS desc_d, d.categoria AS cat_d, d.fornecedor
     FROM despesas_ocorrencias o
     LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
-    WHERE o.status IN ('prevista', 'atrasada')
+    -- v1.20.9 FIX: 'atrasada' nunca é gravado em lugar nenhum (morto); faltava 'lancada'
+    -- (desde v1.20.6, despesa lançada no QB vira 'lancada' e sumia do pool de conciliação)
+    WHERE o.status IN ('prevista', 'lancada')
       AND o.data_prevista BETWEEN ${new Date(new Date(ini).getTime() - 30*86400*1000).toISOString().split('T')[0]} AND ${new Date(new Date(fim).getTime() + 30*86400*1000).toISOString().split('T')[0]}`;
 
   const arQB = [];

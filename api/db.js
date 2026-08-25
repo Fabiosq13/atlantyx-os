@@ -292,6 +292,31 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true });
     }
 
+    // ═══ v1.21: GERENTE DE MARKETING IA (chat com contexto real: campanhas, funil, leads) ═══
+    if (action === 'gerente_marketing') {
+      const { mensagem, historico = [] } = value || {};
+      if (!mensagem) return res.status(400).json({ success: false, error: 'mensagem obrigatória' });
+      const [campRows, kpiRows, leadRows] = await Promise.all([
+        sql`SELECT nome, canal, status, ativa, data_inicio, data_fim FROM campanhas ORDER BY atualizado_em DESC LIMIT 20`,
+        sql`SELECT * FROM kpis_diarios ORDER BY data DESC LIMIT 14`,
+        sql`SELECT score, empresa, criado_em FROM leads ORDER BY criado_em DESC LIMIT 100`,
+      ]);
+      const funilTotais = kpiRows.reduce((s, k) => ({ contatos: s.contatos + (k.contatos||0), respostas: s.respostas + (k.respostas||0), reunioes_marcadas: s.reunioes_marcadas + (k.reunioes_marcadas||0), reunioes_feitas: s.reunioes_feitas + (k.reunioes_feitas||0), propostas: s.propostas + (k.propostas||0), fechamentos: s.fechamentos + (k.fechamentos||0) }), { contatos:0, respostas:0, reunioes_marcadas:0, reunioes_feitas:0, propostas:0, fechamentos:0 });
+      const leadsPorScore = {}; leadRows.forEach(l => { leadsPorScore[l.score || 'sem score'] = (leadsPorScore[l.score || 'sem score'] || 0) + 1; });
+      const ctx = {
+        campanhas: { total: campRows.length, ativas: campRows.filter(c => c.ativa).length, por_canal: campRows.reduce((a,c) => { a[c.canal||'?'] = (a[c.canal||'?']||0)+1; return a; }, {}), lista: campRows.slice(0,10).map(c => ({ nome: c.nome, canal: c.canal, status: c.status, ativa: c.ativa })) },
+        funil_ultimos_14_dias: funilTotais,
+        leads_ultimos_100: { total: leadRows.length, por_score: leadsPorScore },
+      };
+      const system = `Você é o GERENTE DE MARKETING IA da Atlantyx — direto, prático, português do Brasil. Dados REAIS abaixo (campanhas, funil de vendas dos últimos 14 dias, leads recentes). Responda com os dados quando existirem; se faltar dado, diga; ajude a pensar em estratégia (quais campanhas priorizar, gargalos do funil, qualidade dos leads); seja conciso (~200 palavras salvo pedido de detalhe); nunca invente número.\n\nCONTEXTO (JSON):\n${JSON.stringify(ctx).substring(0,8000)}`;
+      const msgs = [...historico.slice(-10).map(h => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content||'').substring(0,2000) })), { role: 'user', content: String(mensagem).substring(0,3000) }];
+      if (!process.env.ANTHROPIC_API_KEY) return res.status(400).json({ success: false, error: 'ANTHROPIC_API_KEY não configurada' });
+      const rr = await fetch('https://api.anthropic.com/v1/messages', { method:'POST', headers:{ 'Content-Type':'application/json', 'x-api-key':process.env.ANTHROPIC_API_KEY, 'anthropic-version':'2023-06-01' }, body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6', max_tokens: 1400, system, messages: msgs }) });
+      const dd = await rr.json().catch(() => ({}));
+      if (!rr.ok) return res.status(400).json({ success: false, error: 'Claude API [' + rr.status + ']: ' + (dd.error?.message || 'erro') });
+      return res.status(200).json({ success: true, resposta: dd.content?.[0]?.text || '', contexto_resumo: { campanhas_ativas: ctx.campanhas.ativas, leads: ctx.leads_ultimos_100.total } });
+    }
+
         return res.status(400).json({ error: 'Ação inválida: ' + action });
 
   } catch (error) {
