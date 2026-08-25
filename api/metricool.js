@@ -19,7 +19,11 @@ export default async function handler(req, res) {
 
   const TOKEN  = process.env.METRICOOL_USER_TOKEN;
   const USERID = process.env.METRICOOL_USER_ID;
-  const BLOGID = process.env.METRICOOL_BLOG_ID;
+  const BLOGID_PADRAO = process.env.METRICOOL_BLOG_ID;
+  // v1.26: permite escolher OUTRA marca/página do Metricool por chamada (payload.blog_id),
+  // sem precisar mudar a variável de ambiente. Cada "marca" no Metricool tem seus próprios
+  // perfis conectados — é assim que se posta em outra página do LinkedIn na mesma conta.
+  const BLOGID = (req.body?.payload?.blog_id || req.body?.blog_id || BLOGID_PADRAO);
 
   try {
     const { action, payload = {} } = req.body || {};
@@ -47,6 +51,9 @@ export default async function handler(req, res) {
         success: true, configurado: true,
         marca: marca ? { id: marca.id, nome: marca.label || marca.title || marca.name } : null,
         redes_conectadas: marca ? extrairRedes(marca) : [],
+        blog_id_ativo: BLOGID, blog_id_padrao: BLOGID_PADRAO,
+        // v1.26: todas as marcas da conta, para o seletor de página na tela
+        marcas: marcas.map(m => ({ id: m.id, nome: m.label || m.title || m.name || ('Marca ' + m.id), redes: extrairRedes(m) })),
       });
     }
 
