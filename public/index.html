@@ -13147,7 +13147,9 @@ async function finApi(action, params = {}) {
   if (!d.success) {
     let msg = d.error || ('HTTP ' + r.status + ' na API financeiro');
     if (/QB OAuth|QuickBooks não conectado|invalid_grant|refresh_token|QB_REFRESH_TOKEN/i.test(msg)) msg += ' → clique em "QuickBooks" na barra lateral para reconectar (OAuth)';
-    throw new Error(msg);
+    // v1.26.2: preserva hint/trilha do backend (antes se perdiam e o usuário via só "500")
+    const err = new Error(msg); err.hint = d.hint; err.trilha = d.trilha; err.httpStatus = r.status;
+    throw err;
   }
   return d;
 }
@@ -15021,7 +15023,24 @@ async function enviarRelatorioPagamentos(soParaMim) {
     toast('Relatório enviado para ' + (d.destinatarios||[]).join(', ') + ' (via ' + d.via + ')' + (d.aviso ? ' — ' + d.aviso : ''), 'success');
     addLog('ok', '[Financeiro] Relatório de pagamentos enviado via ' + d.via + ' para ' + (d.destinatarios||[]).join(', '));
     document.getElementById('relPagModal').style.display = 'none';
-  } catch (e) { toast('Erro ao enviar: ' + e.message + ' — use 🔍 Diagnosticar envio para ver o motivo', 'error'); addLog('err', '[E-mail] ' + e.message); }
+  } catch (e) {
+    // v1.26.2: erro completo na tela (o toast some rápido e o 500 do F12 não diz nada)
+    toast('Falha no envio — veja o detalhe na tela', 'error');
+    addLog('err', '[E-mail] ' + e.message + (e.hint ? ' · ' + e.hint : ''));
+    const modal = document.getElementById('relPagModal');
+    if (modal) { modal.style.display = 'flex';
+      modal.innerHTML = `<div class="panel" style="width:640px;max-width:95vw;max-height:90vh;overflow:auto;">
+        <div class="ph"><div class="pt" style="color:var(--red);">⛔ Falha ao enviar o e-mail</div>
+          <button class="btn" style="font-size:10px;" onclick="document.getElementById('relPagModal').style.display='none'">✕</button></div>
+        <div class="pb">
+          <div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:12px;font-size:12px;line-height:1.6;">
+            <b>Motivo:</b><br>${(e.message||'erro desconhecido').replace(/</g,'&lt;')}
+          </div>
+          ${e.hint ? `<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:8px;padding:12px;font-size:11.5px;margin-top:10px;">💡 <b>O que fazer:</b><br>${e.hint.replace(/</g,'&lt;')}</div>` : ''}
+          ${e.trilha ? `<div style="margin-top:10px;"><div style="font-size:10px;color:var(--t2);margin-bottom:4px;">Trilha do envio:</div><pre style="font-size:10px;white-space:pre-wrap;background:var(--bg4);padding:10px;border-radius:6px;color:var(--t2);">${e.trilha.join('\n').replace(/</g,'&lt;')}</pre></div>` : ''}
+          <button class="btn btn-p" style="width:100%;margin-top:12px;" onclick="diagnosticarEmail()">🔍 Rodar diagnóstico completo</button>
+        </div></div>`; }
+  }
   finally { if (btn) { btn.disabled = false; btn.textContent = '📤 Enviar agora'; } }
 }
 
@@ -17945,7 +17964,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.26.1] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.26.2] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -17961,7 +17980,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.26.1';
+window.__ATX_BUILD_ID__ = 'ATX-v1.26.2';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
