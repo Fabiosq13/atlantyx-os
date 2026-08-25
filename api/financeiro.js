@@ -67,6 +67,7 @@ export default async function handler(req, res) {
       qb_saldo_contas:       () => qbSaldoContas(params),
       qb_status:             () => qbStatus(params),
       relatorio_pagamentos:  () => relatorioPagamentosEnviar(params),
+      email_diagnostico:     () => emailDiagnostico(params),
       fluxo_detalhado:       () => fluxoDetalhado(params),
       qb_diagnostico:        () => qbDiagnostico(),
       gerente_financeiro:    () => gerenteFinanceiro(params),
@@ -537,21 +538,73 @@ function _htmlRelatorioPagamentos(d) {
 async function enviarEmailGmail({ para, assunto, html }) {
   const user = process.env.EMAIL_IMAP_USER || 'atlanteambr@gmail.com';
   const pass = process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS;
+  const trilha = []; // v1.25.1: registra CADA tentativa, para o erro nunca ser silencioso
   let nodemailer = null;
-  try { const m = await import('nodemailer'); nodemailer = m.default || m; } catch (_) {}
+  try { const m = await import('nodemailer'); nodemailer = m.default || m; trilha.push('nodemailer: instalado'); }
+  catch (e) { trilha.push('nodemailer: NÃO instalado (' + e.message.substring(0, 60) + ')'); }
+  trilha.push('senha SMTP: ' + (pass ? 'configurada (' + pass.length + ' caracteres)' : 'AUSENTE'));
+
   if (nodemailer && pass) {
-    const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass } });
-    const info = await transporter.sendMail({ from: `Atlantyx OS Financeiro <${user}>`, to: para.join(', '), subject: assunto, html });
-    return { via: 'gmail-smtp', de: user, id: info.messageId };
+    try {
+      const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass }, connectionTimeout: 20000, greetingTimeout: 20000 });
+      // verify() falha rápido e com mensagem clara se a credencial estiver errada
+      try { await transporter.verify(); trilha.push('SMTP Gmail: autenticação OK'); }
+      catch (eV) { trilha.push('SMTP Gmail: autenticação FALHOU — ' + eV.message.substring(0, 120)); throw eV; }
+      const info = await transporter.sendMail({ from: `Atlantyx OS Financeiro <${user}>`, to: para.join(', '), subject: assunto, html });
+      trilha.push('SMTP Gmail: aceito pelo servidor · destinatários aceitos: ' + JSON.stringify(info.accepted || []) + (info.rejected?.length ? ' · REJEITADOS: ' + JSON.stringify(info.rejected) : ''));
+      return { via: 'gmail-smtp', de: user, id: info.messageId, aceitos: info.accepted, rejeitados: info.rejected, resposta_servidor: info.response, trilha };
+    } catch (eSmtp) {
+      trilha.push('→ caindo para o Resend porque o SMTP falhou');
+      const key0 = process.env.RESEND_API_KEY;
+      if (!key0) { const err = new Error('Envio pelo Gmail falhou: ' + eSmtp.message); err.trilha = trilha;
+        err.hint = /invalid login|username and password|BadCredentials/i.test(eSmtp.message)
+          ? 'A senha de app do Gmail parece inválida. Gere uma nova em myaccount.google.com/apppasswords (precisa de verificação em 2 etapas ativada) e cole em EMAIL_IMAP_PASS SEM espaços.'
+          : 'Verifique EMAIL_IMAP_USER/EMAIL_IMAP_PASS no Vercel e refaça o Redeploy.';
+        throw err; }
+    }
   }
-  // Reserva: Resend (não sai como Gmail, mas garante a entrega)
+  // Reserva: Resend
   const key = process.env.RESEND_API_KEY;
-  if (!key) throw new Error('Não foi possível enviar: instale o nodemailer (npm i nodemailer) e configure EMAIL_IMAP_PASS, ou configure RESEND_API_KEY.');
+  if (!key) { const err = new Error('Não foi possível enviar: nodemailer ausente ou senha não configurada, e sem RESEND_API_KEY de reserva.'); err.trilha = trilha;
+    err.hint = 'Confirme que o package.json tem "nodemailer" nas dependencies (e que o deploy rodou depois disso) e que EMAIL_IMAP_PASS está preenchida no Vercel.'; throw err; }
   const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
     body: JSON.stringify({ from: process.env.RESEND_FROM || 'Atlantyx <noreply@atlantyx.com.br>', to: para, subject: assunto, html }) });
-  if (!r.ok) throw new Error('Resend HTTP ' + r.status);
   const d = await r.json().catch(() => ({}));
-  return { via: 'resend', de: process.env.RESEND_FROM, id: d.id, aviso: 'nodemailer não instalado — enviado pelo Resend, não pelo Gmail' };
+  if (!r.ok) {
+    // v1.25.1: mostrar o MOTIVO do Resend (antes era só "HTTP 4xx", inútil para diagnosticar)
+    trilha.push('Resend: HTTP ' + r.status + ' — ' + (d.message || d.error || JSON.stringify(d).substring(0, 150)));
+    const err = new Error('Resend recusou: ' + (d.message || d.name || ('HTTP ' + r.status)));
+    err.trilha = trilha;
+    if (/domain is not verified|from/i.test(JSON.stringify(d))) err.hint = 'O domínio do remetente (RESEND_FROM) não está verificado no Resend. Verifique o domínio no painel do Resend ou instale o nodemailer para enviar pelo Gmail.';
+    throw err;
+  }
+  trilha.push('Resend: aceito, id ' + d.id);
+  return { via: 'resend', de: process.env.RESEND_FROM, id: d.id, trilha, aviso: 'enviado pelo Resend (não pelo Gmail) — instale o nodemailer para sair de atlanteambr@gmail.com' };
+}
+
+// v1.25.1: diagnóstico de e-mail — diz exatamente o que está configurado e testa o envio
+async function emailDiagnostico({ para } = {}) {
+  const out = { nodemailer_instalado: false, senha_configurada: false, usuario: process.env.EMAIL_IMAP_USER || 'atlanteambr@gmail.com',
+    resend_configurado: !!process.env.RESEND_API_KEY, resend_from: process.env.RESEND_FROM || null, destinatarios_padrao: DEST_RELATORIO, etapas: [] };
+  try { await import('nodemailer'); out.nodemailer_instalado = true; out.etapas.push('✓ Pacote nodemailer instalado'); }
+  catch (e) { out.etapas.push('✗ Pacote nodemailer NÃO instalado — adicione "nodemailer" nas dependencies do package.json e faça novo deploy'); }
+  const pass = process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS;
+  out.senha_configurada = !!pass;
+  out.etapas.push(pass ? `✓ Senha de app configurada (${pass.length} caracteres${pass.includes(' ') ? ' — ⚠ contém espaços, remova-os!' : ''})` : '✗ EMAIL_IMAP_PASS não configurada no Vercel');
+  if (out.nodemailer_instalado && pass) {
+    try {
+      const m = await import('nodemailer'); const nm = m.default || m;
+      const t = nm.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user: out.usuario, pass }, connectionTimeout: 15000 });
+      await t.verify(); out.etapas.push('✓ Autenticação no SMTP do Gmail bem-sucedida'); out.smtp_ok = true;
+    } catch (e) { out.smtp_ok = false; out.etapas.push('✗ Autenticação no Gmail falhou: ' + e.message.substring(0, 140)); }
+  }
+  if (para) {
+    try {
+      const envio = await enviarEmailGmail({ para: [para], assunto: '[Atlantyx] Teste de envio', html: '<p>Teste de envio do Atlantyx OS. Se você recebeu isto, o e-mail está funcionando.</p>' });
+      out.teste_envio = { ok: true, ...envio }; out.etapas.push(`✓ E-mail de teste enviado para ${para} via ${envio.via}`);
+    } catch (e) { out.teste_envio = { ok: false, erro: e.message, trilha: e.trilha, hint: e.hint }; out.etapas.push('✗ Falha ao enviar teste: ' + e.message); }
+  }
+  return out;
 }
 
 async function relatorioPagamentosEnviar({ apenas_gerar, para } = {}) {
