@@ -73,6 +73,7 @@ export default async function handler(req, res) {
       qb_diagnostico:        () => qbDiagnostico(),
       qb_contas_diagnostico: () => qbContasDiagnostico(),
       qb_rastrear_duplicados: () => qbRastrearDuplicados(params),
+      qb_varrer_duplicados:  () => qbVarrerDuplicados(params),
       gerente_financeiro:    () => gerenteFinanceiro(params),
       dashboard_financeiro:  () => dashboardFinanceiro(params),
       qb_auth_url:           () => qbAuthUrl(req),
@@ -930,6 +931,93 @@ async function qbOrcamento({ ano } = {}) {
 // mostra o que compõe o saldo e aponta classificações suspeitas.
 // v1.44: rastreia lançamentos repetidos — diz se a duplicidade está NO QUICKBOOKS
 // (dois registros de verdade) ou se é o Atlantyx contando duas vezes o mesmo registro.
+// v1.45: varredura de duplicidade — analisa um período inteiro e lista os suspeitos,
+// separando o que é duplicidade REAL na base contábil do que é vínculo normal
+// (pagamento + depósito, nota + recebimento) que o sistema já sabe tratar.
+async function qbVarrerDuplicados({ data_inicio, data_fim, tolerancia_dias = 3 } = {}) {
+  if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
+  const token = await qbToken();
+  const hoje = new Date().toISOString().split('T')[0];
+  const ini = data_inicio || new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
+  const fim = data_fim || hoje;
+
+  const entidades = ['Payment', 'Deposit', 'Purchase', 'Bill', 'Invoice', 'SalesReceipt'];
+  const todos = [];
+  const errosConsulta = [];
+  for (const ent of entidades) {
+    try {
+      const d = await qbQuery(`select * from ${ent} where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults 1000`, token);
+      (d?.QueryResponse?.[ent] || []).forEach(it => {
+        const vinculos = [];
+        (it.Line || []).forEach(l => (l.LinkedTxn || []).forEach(lt => vinculos.push(`${lt.TxnType}#${lt.TxnId}`)));
+        todos.push({ entidade: ent, id: it.Id, doc: it.DocNumber || null,
+          data: (it.TxnDate || '').substring(0, 10),
+          valor: Math.round(parseFloat(it.TotalAmt || 0) * 100) / 100,
+          contraparte: it.CustomerRef?.name || it.VendorRef?.name || it.EntityRef?.name || '',
+          vinculos, criado_em: it.MetaData?.CreateTime || null,
+          memo: (it.PrivateNote || it.CustomerMemo?.value || '').substring(0, 80) });
+      });
+    } catch (e) { errosConsulta.push(`${ent}: ${e.message}`); }
+  }
+
+  // Agrupa por valor + contraparte; datas próximas (dentro da tolerância) contam como o mesmo evento
+  const grupos = {};
+  todos.forEach(t => {
+    if (!t.valor) return;
+    const chave = `${t.valor.toFixed(2)}|${normEmpresaFin(t.contraparte)}`;
+    (grupos[chave] = grupos[chave] || []).push(t);
+  });
+
+  const suspeitos = [];
+  for (const [chave, itens] of Object.entries(grupos)) {
+    if (itens.length < 2) continue;
+    itens.sort((a, b) => (a.data || '').localeCompare(b.data || ''));
+    // Só agrupa os que estão dentro da janela de dias
+    const dif = (a, b) => Math.abs((new Date(a).getTime() - new Date(b).getTime()) / 86400000);
+    const bloco = [itens[0]];
+    for (let i = 1; i < itens.length; i++) {
+      if (dif(itens[i].data, bloco[0].data) <= tolerancia_dias) bloco.push(itens[i]);
+    }
+    if (bloco.length < 2) continue;
+
+    // Classificação: mesma entidade = duplicidade real; entidades ligadas = vínculo normal
+    const idsNoBloco = bloco.map(b => `${b.entidade}#${b.id}`);
+    const temVinculoEntreSi = bloco.some(b => (b.vinculos || []).some(v => idsNoBloco.includes(v)));
+    const porEntidade = {};
+    bloco.forEach(b => { porEntidade[b.entidade] = (porEntidade[b.entidade] || 0) + 1; });
+    const mesmaEntidadeRepetida = Object.entries(porEntidade).filter(([, n]) => n > 1);
+
+    let classificacao, gravidade, explicacao;
+    if (mesmaEntidadeRepetida.length) {
+      classificacao = 'duplicidade_real'; gravidade = 'alta';
+      explicacao = `${mesmaEntidadeRepetida.map(([e, n]) => n + ' registros de ' + e).join(' e ')} com o mesmo valor e contraparte. Provável lançamento repetido na contabilidade.`;
+    } else if (temVinculoEntreSi) {
+      classificacao = 'vinculado'; gravidade = 'ok';
+      explicacao = 'Registros de tipos diferentes e vinculados entre si (ex.: pagamento e o depósito dele). O sistema já trata — não conta em dobro.';
+    } else {
+      classificacao = 'suspeito_sem_vinculo'; gravidade = 'media';
+      explicacao = 'Tipos diferentes, mesmo valor e contraparte, SEM vínculo declarado. Pode ser o mesmo dinheiro registrado duas vezes (ex.: depósito criado à mão em vez de casado com o recebimento).';
+    }
+    suspeitos.push({ valor: bloco[0].valor, contraparte: bloco[0].contraparte || '(sem nome)',
+      classificacao, gravidade, explicacao, registros: bloco,
+      impacto_no_caixa: gravidade === 'alta' ? Math.round(bloco[0].valor * (bloco.length - 1) * 100) / 100 : 0 });
+  }
+
+  suspeitos.sort((a, b) => (b.gravidade === 'alta') - (a.gravidade === 'alta') || b.valor - a.valor);
+  const resumo = {
+    periodo: { de: ini, ate: fim },
+    registros_analisados: todos.length,
+    duplicidade_real: suspeitos.filter(s => s.classificacao === 'duplicidade_real').length,
+    suspeitos_sem_vinculo: suspeitos.filter(s => s.classificacao === 'suspeito_sem_vinculo').length,
+    vinculados_ok: suspeitos.filter(s => s.classificacao === 'vinculado').length,
+    impacto_total: Math.round(suspeitos.reduce((s, x) => s + x.impacto_no_caixa, 0) * 100) / 100,
+  };
+  return { varredura: { resumo, suspeitos, erros_consulta: errosConsulta } };
+}
+function normEmpresaFin(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '').substring(0, 20);
+}
+
 async function qbRastrearDuplicados({ data, valor, cliente } = {}) {
   if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
   const token = await qbToken();
@@ -1200,16 +1288,53 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
   }
 
   // 3. Saldo inicial mais próximo (anterior a data_inicio)
+  // v1.46 FIX: o saldo inicial vinha SÓ de um cadastro manual (saldos_iniciais). Se não houvesse
+  // registro, ficava ZERO — e o extrato de um mês começava do nada, ignorando todo o histórico
+  // anterior. Era o motivo de o saldo não acumular ao filtrar um período.
+  // Agora: pega o saldo cadastrado mais próximo ANTES do período e soma tudo que aconteceu
+  // entre essa data e o início do período. Sem cadastro nenhum, reconstrói desde o começo.
   let saldoInicial = 0;
   let saldoInicialData = null;
+  let saldoInicialOrigem = 'zero';
+  let saldoInicialDetalhe = null;
   try {
     const sql = await getSql();
     const rows = await sql`SELECT * FROM saldos_iniciais WHERE data_ref <= ${ini} ORDER BY data_ref DESC LIMIT 1`;
+    let baseValor = 0, baseData = null;
     if (rows[0]) {
-      saldoInicial = parseFloat(rows[0].valor);
-      saldoInicialData = String(rows[0].data_ref).split('T')[0];
+      baseValor = parseFloat(rows[0].valor);
+      baseData = String(rows[0].data_ref).split('T')[0];
+      saldoInicialOrigem = 'saldo_cadastrado';
     }
-  } catch {}
+    // Movimento entre a data do saldo cadastrado (ou o começo de tudo) e o início do período
+    const desde = baseData || '2000-01-01';
+    const ateAnterior = new Date(new Date(ini + 'T12:00:00').getTime() - 86400000).toISOString().split('T')[0];
+    if (ateAnterior >= desde) {
+      const anteriores = await qbLancamentos({ data_inicio: desde, data_fim: ateAnterior, limite: 1000 });
+      const movAnterior = (anteriores.lancamentos || []).reduce((s, l) => {
+        if (l.tipo === 'entrada') return s + l.valor;
+        if (l.tipo === 'saida') return s - l.valor;
+        return s; // 'referencia' (nota emitida) não move caixa
+      }, 0);
+      // Simulados anteriores também contam, se estiverem sendo considerados
+      let movSimulado = 0;
+      if (incluir_simulados) {
+        try {
+          const simAnt = await simList({ data_inicio: desde, data_fim: ateAnterior });
+          movSimulado = (simAnt.lancamentos || []).reduce((s, l) => s + (l.tipo === 'entrada' ? l.valor : -l.valor), 0);
+        } catch (_) {}
+      }
+      saldoInicial = round(baseValor + movAnterior + movSimulado);
+      saldoInicialData = ini;
+      saldoInicialOrigem = baseData ? 'cadastrado_mais_movimento' : 'reconstruido_do_historico';
+      saldoInicialDetalhe = { saldo_base: round(baseValor), base_data: baseData,
+        movimento_anterior: round(movAnterior + movSimulado), lancamentos_considerados: (anteriores.lancamentos || []).length };
+    } else {
+      saldoInicial = round(baseValor);
+      saldoInicialData = baseData;
+      saldoInicialDetalhe = { saldo_base: round(baseValor), base_data: baseData, movimento_anterior: 0 };
+    }
+  } catch (e) { console.warn('[extrato] saldo inicial:', e.message); }
 
   // 4. Combinar e ordenar por data
   const todos = [...qbLanc, ...simulados].sort((a, b) => {
@@ -1235,6 +1360,8 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
   return {
     saldo_inicial: saldoInicial,
     saldo_inicial_data: saldoInicialData,
+    saldo_inicial_origem: saldoInicialOrigem,     // v1.46
+    saldo_inicial_detalhe: saldoInicialDetalhe,   // v1.46: base + movimento anterior
     saldo_final: saldo,
     total_entradas: entradas,
     total_saidas: saidas,
