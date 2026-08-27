@@ -13934,6 +13934,18 @@ function renderFluxoMatriz(d) {
     html += '</div>';
   }
 
+  // v1.37: transparência sobre o que compõe (e o que NÃO compõe) a projeção
+  if (d.fontes) {
+    const f = d.fontes;
+    html += `<div style="margin-top:12px;background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:10px 12px;font-size:10.5px;line-height:1.7;">
+      <b style="font-size:11px;">De onde vêm os números</b><br>
+      <span style="color:var(--t2);">Entradas:</span> ${fmtBRLcompleto(f.a_receber_no_horizonte || 0)} em faturas a receber dentro dos 12 meses${f.simulados_count ? ' · ' + f.simulados_count + ' lançamento(s) simulado(s)' : ''}<br>
+      <span style="color:var(--t2);">Saídas:</span> ${f.ocorrencias_count || 0} despesa(s) programada(s) não paga(s)<br>
+      ${(f.a_receber_vencido > 0 || f.a_receber_fora_horizonte > 0) ? `<span style="color:var(--gold);">Fora da projeção:</span> ${f.a_receber_vencido > 0 ? fmtBRLcompleto(f.a_receber_vencido) + ' já vencido' : ''}${f.a_receber_vencido > 0 && f.a_receber_fora_horizonte > 0 ? ' · ' : ''}${f.a_receber_fora_horizonte > 0 ? fmtBRLcompleto(f.a_receber_fora_horizonte) + ' vence depois do horizonte' : ''}<br>` : ''}
+      <span style="color:var(--t3);font-size:9.5px;">O saldo inicial vem do saldo bancário atual no QuickBooks. Faturas vencidas não entram na projeção porque o vencimento já passou — aparecem como alerta acima.</span>
+    </div>`;
+  }
+
   // Resumo
   html += `
     <div style="margin-top:12px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
