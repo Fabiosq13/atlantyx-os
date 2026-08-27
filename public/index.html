@@ -15470,6 +15470,24 @@ async function carregarFluxoDetalhado() {
     const dFim = document.getElementById('fd_dataFim')?.value || null;
     const d = await finApi('fluxo_detalhado', { data_inicio: dIni, data_fim: dFim, incluir_simulados: incluirSim });
     const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    // v1.49: avisa quando o QuickBooks limitou as consultas (dados incompletos = saldo errado)
+    {
+      const inc = d.passado?.dados_incompletos || d.futuro?.dados_incompletos;
+      let box = document.getElementById('fdAvisoIncompleto');
+      if (inc) {
+        if (!box) { box = document.createElement('div'); box.id = 'fdAvisoIncompleto';
+          const pg = document.getElementById('page-s3fluxodet'); pg?.insertBefore(box, pg.firstChild); }
+        box.style.cssText = 'background:rgba(255,80,80,.12);border:1px solid var(--red);border-radius:8px;padding:10px 13px;margin-bottom:12px;font-size:11px;line-height:1.6;';
+        box.innerHTML = '<b>⛔ Dados incompletos nesta carga</b><br>' + (d.passado?.aviso_incompleto || d.futuro?.aviso_incompleto || 'O QuickBooks limitou as consultas.') + '<br><button class="btn" style="font-size:10px;margin-top:6px;" onclick="carregarFluxoDetalhado()">↻ Tentar de novo</button>';
+      } else if (box) box.remove();
+    }
+    // v1.49: "Saldo de hoje" só faz sentido quando o período vai até hoje
+    {
+      const lbl = document.getElementById('fd_saldoHojeLabel');
+      const ate = document.getElementById('fd_dataFim')?.value;
+      const hj = new Date().toISOString().split('T')[0];
+      if (lbl) lbl.textContent = (ate && ate < hj) ? 'Saldo no fim do período' : 'Saldo de hoje';
+    }
     u('fd_saldoHoje', fmtBRLcompleto(d.saldo_hoje));
     u('fd_saldoHojeSub', 'realizado até ' + d.hoje?.split('-').reverse().join('/'));
     u('fd_receber', fmtBRLcompleto(d.futuro.total_recebiveis));
