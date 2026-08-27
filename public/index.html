@@ -3439,6 +3439,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div class="page" id="page-s3fluxo">
     <div style="background:linear-gradient(135deg,rgba(79,124,255,.12),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Fluxo de Caixa Futuro &middot; 12 Meses</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Matriz editavel &middot; Cada celula azul pode ser sobrescrita &middot; Calculo deterministico (nao IA)</div></div>
+      <button class="btn" style="font-size:10px;padding:5px 10px;color:var(--gold);border-color:var(--gold);" onclick="diagnosticarSaldoAbertura()" title="Ver de onde vem o saldo inicial, conta a conta">&#128269; Saldo de abertura</button>
       <button class="btn btn-g" onclick="limparOverridesFluxo()" style="font-size:10px;padding:5px 10px;">Limpar overrides</button>
       <button class="btn btn-gn" id="btnFluxo" onclick="gerarFluxoMatriz()">&#9670; Recalcular Fluxo</button>
     </div>
@@ -13942,7 +13943,8 @@ function renderFluxoMatriz(d) {
       <span style="color:var(--t2);">Entradas:</span> ${fmtBRLcompleto(f.a_receber_no_horizonte || 0)} em faturas a receber dentro dos 12 meses${f.simulados_count ? ' · ' + f.simulados_count + ' lançamento(s) simulado(s)' : ''}<br>
       <span style="color:var(--t2);">Saídas:</span> ${f.ocorrencias_count || 0} despesa(s) programada(s) não paga(s)<br>
       ${(f.a_receber_vencido > 0 || f.a_receber_fora_horizonte > 0) ? `<span style="color:var(--gold);">Fora da projeção:</span> ${f.a_receber_vencido > 0 ? fmtBRLcompleto(f.a_receber_vencido) + ' já vencido' : ''}${f.a_receber_vencido > 0 && f.a_receber_fora_horizonte > 0 ? ' · ' : ''}${f.a_receber_fora_horizonte > 0 ? fmtBRLcompleto(f.a_receber_fora_horizonte) + ' vence depois do horizonte' : ''}<br>` : ''}
-      <span style="color:var(--t3);font-size:9.5px;">O saldo inicial vem do saldo bancário atual no QuickBooks. Faturas vencidas não entram na projeção porque o vencimento já passou — aparecem como alerta acima.</span>
+      <span style="color:var(--t3);font-size:9.5px;">Faturas vencidas não entram na projeção porque o vencimento já passou — aparecem como alerta acima.</span>
+      ${f.origem_saldo_inicial ? _fluxoOrigemSaldoHtml(f.origem_saldo_inicial, d.saldo_inicial_atual) : ''}
     </div>`;
   }
 
@@ -15191,6 +15193,67 @@ async function enviarRelatorioPagamentos(soParaMim) {
         </div></div>`; }
   }
   finally { if (btn) { btn.disabled = false; btn.textContent = '📤 Enviar agora'; } }
+}
+
+// v1.40: diagnóstico do saldo de abertura — mostra todas as contas e aponta classificação errada
+async function diagnosticarSaldoAbertura() {
+  let modal = document.getElementById('saldoAberturaModal');
+  if (!modal) { modal = document.createElement('div'); modal.id = 'saldoAberturaModal';
+    modal.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:999;align-items:center;justify-content:center;overflow:auto;padding:20px;'; document.body.appendChild(modal); }
+  modal.style.display = 'flex';
+  modal.innerHTML = '<div class="panel" style="width:720px;max-width:96vw;"><div class="pb" style="text-align:center;color:var(--t3);padding:30px;">⏳ Consultando as contas no QuickBooks...</div></div>';
+  try {
+    const r = await finApi('qb_contas_diagnostico');
+    const d = r.diagnostico_contas || {};
+    if (d.erro) throw new Error(d.erro);
+    const linhaConta = c => `<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--bd);font-size:11px;${c.saldo < 0 ? 'color:var(--red);' : ''}">
+      <span>${c.nome}${c.subtipo ? ' <span style="color:var(--t3);font-size:9px;">· ' + c.subtipo + '</span>' : ''}</span>
+      <span style="font-family:var(--M);white-space:nowrap;">${fmtBRLcompleto(c.saldo)}</span></div>`;
+    modal.innerHTML = `<div class="panel" style="width:720px;max-width:96vw;max-height:90vh;overflow:auto;">
+      <div class="ph"><div class="pt">🔍 De onde vem o saldo de abertura</div>
+        <button class="btn" style="font-size:10px;" onclick="document.getElementById('saldoAberturaModal').style.display='none'">✕</button></div>
+      <div class="pb">
+        <div style="background:var(--bg4);border-radius:8px;padding:12px;margin-bottom:12px;">
+          <div style="font-size:10px;color:var(--t2);">SALDO DE PARTIDA DO FLUXO (soma das contas "Bank")</div>
+          <div style="font-size:22px;font-family:var(--M);color:${d.saldo_bank_total < 0 ? 'var(--red)' : 'var(--green,#22d3a3)'};">${fmtBRLcompleto(d.saldo_bank_total)}</div>
+          ${d.saldo_bank_se_corrigido != null ? `<div style="font-size:11px;color:var(--gold);margin-top:5px;">Se os cartões abaixo forem reclassificados: <b>${fmtBRLcompleto(d.saldo_bank_se_corrigido)}</b></div>` : ''}
+        </div>
+        ${d.suspeitas?.length ? `<div style="margin-bottom:12px;">${d.suspeitas.map(s => `
+          <div style="background:rgba(255,80,80,.08);border:1px solid var(--red);border-radius:8px;padding:11px;margin-bottom:8px;font-size:11px;line-height:1.6;">
+            <b>⚠ ${s.conta}</b> · ${fmtBRLcompleto(s.saldo)}<br>
+            <span style="color:var(--t2);">${s.problema}</span><br>
+            <span style="color:var(--t2);"><b>Efeito:</b> ${s.efeito}</span><br>
+            <span style="color:var(--gold);"><b>Como corrigir:</b> ${s.acao}</span>
+          </div>`).join('')}</div>` : '<div style="background:rgba(34,211,163,.08);border:1px solid var(--green,#22d3a3);border-radius:8px;padding:10px;font-size:11px;margin-bottom:12px;">✅ Nenhuma classificação suspeita encontrada.</div>'}
+        <div style="font-size:11.5px;font-weight:600;margin:10px 0 4px;">Contas bancárias (entram no saldo)</div>
+        ${(d.contas_bank||[]).map(linhaConta).join('') || '<div style="color:var(--t3);font-size:11px;">Nenhuma.</div>'}
+        ${(d.contas_cartao||[]).length ? `<div style="font-size:11.5px;font-weight:600;margin:14px 0 4px;">Cartões de crédito <span style="color:var(--t3);font-size:10px;font-weight:400;">(corretamente fora do saldo de caixa)</span></div>
+          ${d.contas_cartao.map(linhaConta).join('')}` : ''}
+        ${(d.outras_relevantes||[]).length ? `<div style="font-size:11.5px;font-weight:600;margin:14px 0 4px;">Outras contas com saldo <span style="color:var(--t3);font-size:10px;font-weight:400;">(não entram no fluxo)</span></div>
+          ${d.outras_relevantes.map(linhaConta).join('')}` : ''}
+        <div style="margin-top:14px;font-size:10px;color:var(--t3);line-height:1.7;">
+          O fluxo de caixa parte da soma das contas do tipo <b>Bank</b>. Cartões de crédito e outras contas não entram — o que é o correto, porque não são dinheiro disponível.
+        </div>
+      </div></div>`;
+  } catch (e) {
+    modal.innerHTML = `<div class="panel" style="width:520px;max-width:95vw;"><div class="pb" style="padding:20px;color:var(--red);font-size:12px;">Erro: ${e.message}<br><br><button class="btn" onclick="document.getElementById('saldoAberturaModal').style.display='none'">Fechar</button></div></div>`;
+  }
+}
+
+// v1.39: explica de onde vem o saldo de partida (conta a conta), principalmente se for negativo
+function _fluxoOrigemSaldoHtml(o, saldoTotal) {
+  if (!o || o.fonte === 'nenhuma') return '<div style="margin-top:8px;color:var(--gold);font-size:10px;">⚠ Saldo de partida não identificado (QuickBooks sem contas bancárias e sem saldo inicial cadastrado).</div>';
+  if (o.fonte === 'saldo_inicial_manual') return `<div style="margin-top:8px;font-size:10px;color:var(--t2);">💡 <b>Saldo de partida:</b> ${o.observacao || 'informado manualmente'}</div>`;
+  const negativo = (saldoTotal || 0) < 0;
+  return `<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--bd);">
+    <div style="font-size:10.5px;font-weight:600;margin-bottom:5px;">Saldo de partida: ${fmtBRLcompleto(saldoTotal || 0)} ${negativo ? '<span style="color:var(--red);">(negativo)</span>' : ''}</div>
+    <div style="font-size:10px;color:var(--t2);margin-bottom:5px;">Soma das contas do tipo <b>Bank</b> no QuickBooks:</div>
+    ${(o.contas || []).map(c => `<div style="display:flex;justify-content:space-between;font-size:10px;padding:2px 0;${c.saldo < 0 ? 'color:var(--red);' : 'color:var(--t2);'}">
+      <span>${c.nome}${c.tipo ? ' <span style="color:var(--t3);">· ' + c.tipo + '</span>' : ''}</span><span style="font-family:var(--M);">${fmtBRLcompleto(c.saldo)}</span></div>`).join('') || '<div style="font-size:10px;color:var(--t3);">Nenhuma conta bancária ativa encontrada.</div>'}
+    ${o.observacao ? `<div style="margin-top:7px;padding:8px;background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:6px;font-size:10px;line-height:1.6;">⚠ ${o.observacao}</div>` : ''}
+    ${negativo ? `<div style="margin-top:6px;font-size:9.5px;color:var(--t3);line-height:1.6;">
+      <b>O que verificar no QuickBooks:</b> (1) se algum cartão de crédito está classificado como conta "Bank" — o correto é "Credit Card", senão a dívida vira saldo negativo de caixa; (2) se há conta com lançamentos importados sem o saldo inicial correspondente; (3) se a conta corrente está mesmo no cheque especial.</div>` : ''}
+  </div>`;
 }
 
 // ═══ v1.16: FLUXO DE CAIXA DETALHADO ═══
