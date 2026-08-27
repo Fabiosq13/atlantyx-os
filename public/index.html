@@ -2656,12 +2656,76 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <button class="btn btn-p" onclick="abrirImportarTermo()">&#128194; Importar Termo de Faturamento</button>
     <button class="btn" onclick="carregarKanbanFaturamento()">&#8635; Atualizar</button>
   </div>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;padding:9px 12px;background:var(--bg4);border-radius:8px;">
+    <span style="font-size:10px;color:var(--t2);font-family:var(--M);">FILTRAR:</span>
+    <select class="fsel" id="fatFiltroMes" style="font-size:11px;width:auto;" onchange="carregarKanbanFaturamento()">
+      <option value="">Todos os meses</option>
+      <option value="1">Janeiro</option><option value="2">Fevereiro</option><option value="3">Março</option>
+      <option value="4">Abril</option><option value="5">Maio</option><option value="6">Junho</option>
+      <option value="7">Julho</option><option value="8">Agosto</option><option value="9">Setembro</option>
+      <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
+    </select>
+    <select class="fsel" id="fatFiltroAno" style="font-size:11px;width:auto;" onchange="carregarKanbanFaturamento()">
+      <option value="">Todos os anos</option>
+    </select>
+    <input class="fi" id="fatFiltroTexto" style="font-size:11px;width:200px;" placeholder="buscar projeto, nº do termo, período..." onkeydown="if(event.key==='Enter')carregarKanbanFaturamento()"/>
+    <button class="btn" style="font-size:10px;" onclick="carregarKanbanFaturamento()">🔍 Aplicar</button>
+    <button class="btn" style="font-size:10px;" onclick="_fatLimparFiltros()">✕ Limpar</button>
+    <span style="font-size:10px;color:var(--t3);margin-left:auto;" id="fatFiltroInfo"></span>
+  </div>
   <div id="fatKbStatus" style="display:none;margin-bottom:10px;"></div>
   <div id="fatKbTotais" style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:12px;"></div>
   <div id="fatKanbanBoard" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;align-items:start;">
     <div style="grid-column:1/-1;text-align:center;color:var(--t3);font-size:11px;padding:24px;">Carregando...</div>
   </div>
   <div id="fatDetalhe" style="display:none;margin-top:16px;"></div>
+</div>
+
+<!-- v1.31: modal de edição completa do termo -->
+<div id="fatEditModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:999;align-items:center;justify-content:center;overflow:auto;padding:20px;">
+  <div class="panel" style="width:960px;max-width:97vw;max-height:92vh;overflow:auto;">
+    <div class="ph"><div class="pt">✎ Editar Termo de Faturamento</div>
+      <button class="btn" style="font-size:10px;" onclick="document.getElementById('fatEditModal').style.display='none'">✕</button></div>
+    <div class="pb">
+      <input type="hidden" id="edTermoId"/>
+      <div style="font-size:10.5px;color:var(--t2);margin-bottom:10px;">Altere o que precisar. O valor total do termo é recalculado pela soma do rateio e reconferido com as notas fiscais já lançadas.</div>
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px;margin-bottom:8px;">
+        <div class="fg" style="margin:0;"><label class="fl">Projeto / Serviço</label><input class="fi" id="edProjeto"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Contratante</label><input class="fi" id="edContratante"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Período de Medição</label><input class="fi" id="edPeriodo" placeholder="ex: julho/2026"/></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 2fr;gap:8px;margin-bottom:8px;">
+        <div class="fg" style="margin:0;"><label class="fl">Nº do Termo</label><input class="fi" id="edNumTermo"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Parcela</label><input class="fi" id="edParcela" placeholder="ex: 33/36"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Fase</label><input class="fi" id="edFase"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Contratada / CNPJ</label><input class="fi" id="edContratada"/></div>
+      </div>
+      <div class="fg" style="margin:0 0 12px;"><label class="fl">Marco do Projeto / Observações</label><input class="fi" id="edMarco"/></div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="font-size:11.5px;font-weight:700;">Rateio entre as empresas</div>
+        <button class="btn btn-gn" style="font-size:10px;" onclick="_edAddEmpresa()">+ Adicionar empresa</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:640px;">
+          <thead><tr style="border-bottom:1px solid var(--bd);">
+            <th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">EMPRESA</th>
+            <th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">CONTRATO</th>
+            <th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">CENTRO CUSTO</th>
+            <th style="text-align:right;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">VALOR DA PARCELA</th>
+            <th style="width:30px;"></th></tr></thead>
+          <tbody id="edEmpresasBody"></tbody>
+          <tfoot><tr style="border-top:2px solid var(--bd);"><td colspan="3" style="padding:7px;font-weight:700;">TOTAL DO TERMO</td>
+            <td style="padding:7px;text-align:right;font-weight:700;color:var(--gold);font-family:var(--M);" id="edTotalRateio">R$ 0,00</td><td></td></tr></tfoot>
+        </table>
+      </div>
+      <div id="edAvisoNotas" style="display:none;margin-top:10px;"></div>
+      <div style="display:flex;gap:8px;margin-top:14px;">
+        <button class="btn btn-gn" onclick="salvarEdicaoTermo()" id="btnSalvarTermo">Salvar alterações</button>
+        <button class="btn" onclick="document.getElementById('fatEditModal').style.display='none'">Cancelar</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Modal de importação -->
@@ -15366,8 +15430,29 @@ let _fatColunas = {};
 async function carregarKanbanFaturamento() {
   const board = document.getElementById('fatKanbanBoard'); if (!board) return;
   try {
-    const d = await fatApi('termo_list');
+    // v1.32: filtros de mês/ano e busca por texto
+    const filtros = {
+      mes: document.getElementById('fatFiltroMes')?.value || null,
+      ano: document.getElementById('fatFiltroAno')?.value || null,
+      periodo_texto: document.getElementById('fatFiltroTexto')?.value?.trim() || null,
+    };
+    const d = await fatApi('termo_list', filtros);
     _fatColunas = d.colunas || {};
+    // Popula o seletor de anos com o que existe na base (só na primeira carga)
+    const selAno = document.getElementById('fatFiltroAno');
+    if (selAno && selAno.options.length <= 1 && d.anos_disponiveis?.length) {
+      selAno.innerHTML = '<option value="">Todos os anos</option>' + d.anos_disponiveis.map(a => `<option value="${a}">${a}</option>`).join('');
+      if (filtros.ano) selAno.value = filtros.ano;
+    }
+    const infoEl = document.getElementById('fatFiltroInfo');
+    if (infoEl) {
+      const ativos = [];
+      if (filtros.mes) ativos.push(['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][parseInt(filtros.mes)]);
+      if (filtros.ano) ativos.push(filtros.ano);
+      if (filtros.periodo_texto) ativos.push('"' + filtros.periodo_texto + '"');
+      infoEl.textContent = ativos.length ? `${d.total} termo(s) · filtro: ${ativos.join(' · ')}` : `${d.total} termo(s) no total`;
+      infoEl.style.color = ativos.length ? 'var(--gold)' : 'var(--t3)';
+    }
     const cntTotal = FAT_COLS.reduce((s, c) => s + (_fatColunas[c]?.length || 0), 0);
     const badge = document.getElementById('fatMenuCnt'); if (badge) badge.textContent = cntTotal || '';
     // v1.20.3: faixa de totais em valor por etapa, no topo
@@ -15393,17 +15478,99 @@ async function carregarKanbanFaturamento() {
     }).join('');
   } catch (e) { board.innerHTML = '<div style="grid-column:1/-1;color:var(--red);text-align:center;padding:20px;font-size:11px;">Erro: ' + e.message + '</div>'; addLog('err', '[Faturamento] ' + e.message); }
 }
+async function _fatLimparFiltros() {
+  ['fatFiltroMes','fatFiltroAno'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+  const t = document.getElementById('fatFiltroTexto'); if (t) t.value = '';
+  await carregarKanbanFaturamento(); // v1.32: await — sem ele o texto informativo ficava com o filtro antigo
+}
 function _fatCard(t, col) {
   const nfBadge = col === 'envio_nf' || col === 'pagamento' || col === 'aprovacao' || col === 'emissao_nf'
     ? `<div style="font-size:9px;margin-top:4px;">🧾 ${t.n_nf_encontradas}/${t.n_empresas} nota(s)${t.nf_status === 'divergente' ? ' <span style="color:var(--red);">⚠ divergente</span>' : t.nf_status === 'completo' ? ' <span style="color:var(--green,#22d3a3);">✓ completo</span>' : ''}</div>` : '';
   const pagBadge = col === 'pagamento' ? `<div style="font-size:9px;margin-top:2px;">💰 ${t.n_pagas}/${t.n_empresas} paga(s)</div>` : '';
+  // v1.33: datas explícitas no card
+  const _dt = d => d ? d.split('-').reverse().slice(0,2).join('/') : null;
+  const datasBadge = (t.data_emissao || t.data_pagamento) ? `<div style="display:flex;gap:8px;font-size:8.5px;margin-top:4px;padding-top:4px;border-top:1px solid var(--bd);">
+      ${t.data_emissao ? `<span title="Data de emissão da nota fiscal${t.data_emissao_ultima ? ' (primeira; última em ' + _dt(t.data_emissao_ultima) + ')' : ''}" style="color:var(--t2);">🧾 ${_dt(t.data_emissao)}${t.data_emissao_ultima ? '+' : ''}</span>` : ''}
+      ${t.data_pagamento ? `<span title="${t.pagamento_completo ? 'Pagamento concluído' : 'Último pagamento recebido (parcial)'}" style="color:${t.pagamento_completo ? 'var(--green,#22d3a3)' : 'var(--gold)'};">💵 ${_dt(t.data_pagamento)}${t.pagamento_completo ? '' : '*'}</span>` : ''}
+    </div>` : '';
   return `<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:9px;cursor:pointer;" onclick="abrirDetalheTermo('${t.id}')">
     <div style="font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${(t.projeto||'Termo').replace(/</g,'&lt;')}</div>
     <div style="font-size:9px;color:var(--t2);margin-top:2px;">${t.contratante||''} · ${t.periodo_medicao||''}</div>
     <div style="font-size:11px;font-family:var(--M);color:var(--gold);margin-top:4px;">${fmtBRLcompleto(t.valor_total_termo)}</div>
     <div style="font-size:9px;color:var(--t3);">${t.n_empresas} empresa(s) no rateio</div>
-    ${nfBadge}${pagBadge}
+    ${nfBadge}${pagBadge}${datasBadge}
   </div>`;
+}
+
+// ═══ v1.31: EDIÇÃO COMPLETA DO TERMO ═══
+let _edEmpresas = [], _edNotasPorEmpresa = {};
+async function abrirEdicaoTermo(id) {
+  try {
+    const d = await fatApi('termo_get', { id });
+    const t = d.termo;
+    document.getElementById('edTermoId').value = id;
+    const set = (el, v) => { const e = document.getElementById(el); if (e) e.value = v || ''; };
+    set('edProjeto', t.projeto); set('edContratante', t.contratante); set('edPeriodo', t.periodo_medicao);
+    set('edNumTermo', t.numero_termo); set('edParcela', t.parcela); set('edFase', t.fase);
+    set('edContratada', t.contratada || t.cnpj_fornecedor); set('edMarco', t.marco_projeto);
+    _edEmpresas = (d.empresas || []).map(e => ({ ...e }));
+    // Marca quais empresas já têm nota (não podem ser removidas)
+    _edNotasPorEmpresa = {};
+    (d.notas || []).forEach(n => { if (n.empresa_id) _edNotasPorEmpresa[n.empresa_id] = (_edNotasPorEmpresa[n.empresa_id] || 0) + 1; });
+    _edRenderEmpresas();
+    document.getElementById('fatEditModal').style.display = 'flex';
+  } catch (e) { toast('Erro ao abrir edição: ' + e.message, 'error'); }
+}
+function _edRenderEmpresas() {
+  const tb = document.getElementById('edEmpresasBody'); if (!tb) return;
+  tb.innerHTML = _edEmpresas.map((e, i) => {
+    const temNota = e.id && _edNotasPorEmpresa[e.id];
+    return `<tr style="border-bottom:1px solid var(--bd);">
+      <td style="padding:4px;"><input class="fi" style="font-size:10.5px;width:100%;" value="${(e.empresa||'').replace(/"/g,'&quot;')}" oninput="_edEmpresas[${i}].empresa=this.value"/></td>
+      <td style="padding:4px;"><input class="fi" style="font-size:10.5px;width:100%;" value="${(e.contrato||'').replace(/"/g,'&quot;')}" oninput="_edEmpresas[${i}].contrato=this.value"/></td>
+      <td style="padding:4px;"><input class="fi" style="font-size:10.5px;width:100%;" value="${(e.centro_custo||'').replace(/"/g,'&quot;')}" oninput="_edEmpresas[${i}].centro_custo=this.value"/></td>
+      <td style="padding:4px;"><input class="fi" style="font-size:10.5px;width:100%;text-align:right;" value="${String(e.valor_parcela ?? 0).replace('.',',')}" oninput="_edEmpresas[${i}].valor_parcela=parseFloat((this.value||'0').replace(/\./g,'').replace(',','.'))||0;_edAtualizaTotal()"/></td>
+      <td style="padding:4px;text-align:center;">${temNota
+        ? `<span title="Tem ${temNota} nota(s) vinculada(s) — remova a nota antes de excluir" style="color:var(--t3);font-size:11px;cursor:help;">🔒</span>`
+        : `<button class="btn" style="font-size:9px;padding:1px 5px;color:var(--red);" onclick="_edRemoveEmpresa(${i})">✕</button>`}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--t3);padding:14px;">Nenhuma empresa no rateio. Clique em + Adicionar empresa.</td></tr>';
+  _edAtualizaTotal();
+}
+function _edAtualizaTotal() {
+  const total = _edEmpresas.reduce((s, e) => s + (parseFloat(e.valor_parcela) || 0), 0);
+  const el = document.getElementById('edTotalRateio'); if (el) el.textContent = fmtBRLcompleto(total);
+  // Avisa se o novo total diverge das notas já lançadas
+  const somaNotas = Object.keys(_edNotasPorEmpresa).length
+    ? _edEmpresas.filter(e => e.id && _edNotasPorEmpresa[e.id]).reduce((s, e) => s + (parseFloat(e.nf_valor) || 0), 0) : 0;
+  const aviso = document.getElementById('edAvisoNotas');
+  if (aviso) {
+    if (somaNotas > 0 && Math.abs(total - somaNotas) > 1) {
+      aviso.style.display = 'block';
+      aviso.innerHTML = `<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:8px;padding:9px 12px;font-size:11px;">
+        ⚠ Já existem notas lançadas somando <b>${fmtBRLcompleto(somaNotas)}</b>. Com este novo total (${fmtBRLcompleto(total)}), o termo ficará <b>divergente em ${fmtBRLcompleto(Math.abs(total - somaNotas))}</b>.</div>`;
+    } else aviso.style.display = 'none';
+  }
+}
+function _edAddEmpresa() { _edEmpresas.push({ empresa:'', contrato:'', centro_custo:'', valor_parcela:0 }); _edRenderEmpresas(); }
+function _edRemoveEmpresa(i) { _edEmpresas.splice(i, 1); _edRenderEmpresas(); }
+async function salvarEdicaoTermo() {
+  const id = document.getElementById('edTermoId').value;
+  const vazias = _edEmpresas.filter(e => !e.empresa || !String(e.empresa).trim());
+  if (vazias.length) { toast('Há empresa sem nome no rateio — preencha ou remova a linha', 'error'); return; }
+  const btn = document.getElementById('btnSalvarTermo'); if (btn) { btn.disabled = true; btn.textContent = '⏳ Salvando...'; }
+  try {
+    const v = el => document.getElementById(el)?.value?.trim() || null;
+    await fatApi('termo_editar', { id,
+      cabecalho: { projeto: v('edProjeto'), contratante: v('edContratante'), periodo_medicao: v('edPeriodo'),
+        numero_termo: v('edNumTermo'), parcela: v('edParcela'), fase: v('edFase'),
+        contratada: v('edContratada'), marco_projeto: v('edMarco') },
+      empresas: _edEmpresas });
+    toast('Termo atualizado', 'success');
+    document.getElementById('fatEditModal').style.display = 'none';
+    await abrirDetalheTermo(id); carregarKanbanFaturamento();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = 'Salvar alterações'; } }
 }
 
 // v1.20.4: barra de progresso do valor de NF carregado x valor do termo
@@ -15596,6 +15763,9 @@ async function abrirDetalheTermo(id) {
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;font-size:11px;margin-bottom:12px;">
           <div><b>Contratante:</b> ${t.contratante||'—'}</div><div><b>Nº Termo:</b> ${t.numero_termo||'—'} (${t.parcela||'—'})</div><div><b>Período:</b> ${t.periodo_medicao||'—'}</div>
           <div><b>Fase contratual:</b> ${t.fase||'—'}</div><div><b>Marco:</b> ${(t.marco_projeto||'').substring(0,40)}</div><div><b>Valor total:</b> <span style="color:var(--gold);font-family:var(--M);">${fmtBRLcompleto(t.valor_total_termo)}</span></div>
+          <div><b>🧾 Emissão da NF:</b> ${t.data_emissao ? t.data_emissao.split('-').reverse().join('/') + (t.data_emissao_ultima ? ' <span style="color:var(--t3);font-size:10px;">(última: ' + t.data_emissao_ultima.split('-').reverse().join('/') + ')</span>' : '') : '<span style="color:var(--t3);">não emitida</span>'}</div>
+          <div><b>💵 Pagamento:</b> ${t.data_pagamento ? '<span style="color:' + (t.pagamento_completo ? 'var(--green,#22d3a3)' : 'var(--gold)') + ';">' + t.data_pagamento.split('-').reverse().join('/') + (t.pagamento_completo ? ' (completo)' : ' (parcial)') + '</span>' : '<span style="color:var(--t3);">não pago</span>'}</div>
+          <div><b>Aprovado em:</b> ${t.aprovado_em ? new Date(t.aprovado_em).toLocaleDateString('pt-BR') + (t.aprovado_por ? ' por ' + t.aprovado_por : '') : '—'}</div>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
           ${idxCol > 0 ? `<button class="btn" style="color:var(--t2);" onclick="_fatVoltar('${t.id}','${FAT_COLS[idxCol-1]}')" title="Volta para: ${FAT_LABELS[FAT_COLS[idxCol-1]]}">← Voltar p/ ${FAT_LABELS[FAT_COLS[idxCol-1]].replace(/^[^\s]+\s/,'')}</button>` : ''}
@@ -15604,7 +15774,8 @@ async function abrirDetalheTermo(id) {
           ${t.status === 'emissao_nf' ? `<button class="btn btn-p" onclick="_fatAvancar('${t.id}','envio_nf')">Notas emitidas — ir p/ Envio →</button>` : ''}
           ${t.status === 'envio_nf' ? `<button class="btn btn-p" onclick="_fatVerificarEmail('${t.id}')" id="btnVerifEmail_${t.id}">📧 Verificar e-mail (atlanteambr@gmail.com)</button>${t.nf_status === 'completo' ? `<button class="btn btn-gn" onclick="_fatAvancar('${t.id}','pagamento')">Todas as notas ok — ir p/ Pagamento →</button>` : ''}` : ''}
           ${(t.status === 'envio_nf' || t.status === 'pagamento') && emp.some(e => e.nf_status === 'encontrada' && !e.qb_invoice_id) ? `<button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="_fatLancarTodasQb('${t.id}')" id="btnLancarQb_${t.id}">📤 Lançar notas no QuickBooks (Contas a Receber)</button>` : ''}
-          ${t.status === 'pagamento' ? `<button class="btn btn-p" onclick="_fatVerificarPagamento('${t.id}')" id="btnVerifPag_${t.id}">🏦 Verificar pagamento no QuickBooks</button>` : ''}
+          ${t.status === 'pagamento' ? `<button class="btn btn-p" onclick="_fatVerificarPagamento('${t.id}')" id="btnVerifPag_${t.id}" title="Procura a fatura baixada e, se não achar, busca o recebimento no extrato">🏦 Verificar pagamento (fatura + extrato)</button>` : ''}
+          <button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="abrirEdicaoTermo('${t.id}')">✎ Editar termo</button>
           <button class="btn" style="color:var(--red);margin-left:auto;" onclick="_fatExcluir('${t.id}')">🗑 Excluir termo</button>
         </div>
         ${t.nf_status && t.status !== 'elaboracao' ? `<div style="margin-bottom:10px;padding:8px 12px;border-radius:7px;font-size:11px;background:${t.nf_status==='completo'?'rgba(34,211,163,.1);border:1px solid var(--green,#22d3a3)':t.nf_status==='divergente'?'rgba(255,80,80,.1);border:1px solid var(--red)':'rgba(245,185,75,.1);border:1px solid var(--gold)'};">
@@ -15617,9 +15788,11 @@ async function abrirDetalheTermo(id) {
           <tbody>${emp.map(e => `<tr style="border-bottom:1px solid var(--bd);">
             <td style="padding:6px;">${e.empresa}</td>
             <td style="padding:6px;text-align:right;font-family:var(--M);">${fmtBRLcompleto(e.valor_parcela)}</td>
-            <td style="padding:6px;">${e.nf_status==='encontrada' ? '✅ '+(e.nf_numero||'')+' · '+fmtBRLcompleto(e.nf_valor) : '<span style="color:var(--gold);">⏳ pendente</span>'} <button class="btn" style="font-size:8px;padding:1px 5px;margin-left:4px;" onclick="_fatMarcarNfManual('${e.id}')" title="Marcar manualmente">✎</button></td>
+            <td style="padding:6px;">${e.nf_status==='encontrada' ? '✅ '+(e.nf_numero||'')+' · '+fmtBRLcompleto(e.nf_valor) : '<span style="color:var(--gold);">⏳ pendente</span>'} <button class="btn" style="font-size:8px;padding:1px 5px;margin-left:4px;" onclick="_fatMarcarNfManual('${e.id}')" title="Marcar manualmente">✎</button>
+              <div style="font-size:8.5px;color:var(--t3);margin-top:2px;">🧾 ${e.nf_data ? e.nf_data.split('-').reverse().join('/') : '<span style="color:var(--t3);">sem data</span>'} <button class="btn" style="font-size:7.5px;padding:0 4px;" onclick="_fatEditarData('${e.id}','nf')" title="Ajustar data de emissão">✎</button></div></td>
             <td style="padding:6px;">${e.qb_invoice_id ? '✅ Fatura #'+(e.qb_invoice_doc||e.qb_invoice_id) : e.nf_status==='encontrada' ? `<button class="btn" style="font-size:8px;padding:1px 6px;color:var(--gold);" onclick="_fatLancarQb('${e.id}')" id="btnQb_${e.id}">📤 Lançar</button>` : '<span style="color:var(--t3);">—</span>'}${e.qb_erro ? '<div style="color:var(--red);font-size:8.5px;margin-top:2px;">⚠ '+e.qb_erro+'</div>' : ''}</td>
-            <td style="padding:6px;">${e.pagamento_status==='pago' ? '✅ '+(e.pagamento_data||'') : '<span style="color:var(--t3);">pendente</span>'} <button class="btn" style="font-size:8px;padding:1px 5px;margin-left:4px;" onclick="_fatMarcarPagoManual('${e.id}')" title="Marcar como pago manualmente">✎</button></td>
+            <td style="padding:6px;">${e.pagamento_status==='pago' ? '<span style="color:var(--green,#22d3a3);">✅ pago</span>' : '<span style="color:var(--t3);">pendente</span>'} <button class="btn" style="font-size:8px;padding:1px 5px;margin-left:4px;" onclick="_fatMarcarPagoManual('${e.id}')" title="Marcar como pago manualmente">✎</button>
+              <div style="font-size:8.5px;color:var(--t3);margin-top:2px;">💵 ${e.pagamento_data ? e.pagamento_data.split('-').reverse().join('/') : '<span style="color:var(--t3);">sem data</span>'} <button class="btn" style="font-size:7.5px;padding:0 4px;" onclick="_fatEditarData('${e.id}','pag')" title="Ajustar data de pagamento">✎</button>${e.pagamento_origem === 'extrato' ? ' <span title="Encontrado no extrato — a fatura ainda não foi baixada no QuickBooks" style="color:var(--gold);">🏦</span>' : e.pagamento_origem === 'fatura_baixada' ? ' <span title="Fatura baixada no QuickBooks" style="color:var(--green,#22d3a3);">✓</span>' : ''}</div></td>
             </tr>`).join('')}</tbody>
         </table>
         ${notas.length ? `<div style="margin-top:12px;font-size:10px;color:var(--t2);">
@@ -15640,6 +15813,20 @@ async function _fatVoltar(id, statusAnterior) {
 async function _fatAvancar(id, status) { try { await fatApi('termo_mover', { id, status }); toast('Movido para: ' + FAT_LABELS[status], 'success'); carregarKanbanFaturamento(); await abrirDetalheTermo(id); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
 async function _fatAprovar(id) { const por = prompt('Aprovado por:', ''); if (por === null) return; try { await fatApi('termo_aprovar', { id, aprovado_por: por }); toast('Termo aprovado', 'success'); carregarKanbanFaturamento(); await abrirDetalheTermo(id); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
 async function _fatExcluir(id) { if (!confirm('Excluir este termo e todos os dados de rateio/notas? Ação não pode ser desfeita.')) return; try { await fatApi('termo_excluir', { id }); toast('Termo excluído', 'info'); document.getElementById('fatDetalhe').style.display='none'; carregarKanbanFaturamento(); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
+// v1.33: ajustar manualmente a data de emissão da NF ou de pagamento
+async function _fatEditarData(empresaId, tipo) {
+  const label = tipo === 'nf' ? 'emissão da nota fiscal' : 'pagamento';
+  const hoje = new Date().toISOString().split('T')[0];
+  const valor = prompt(`Data de ${label} (formato AAAA-MM-DD):`, hoje);
+  if (!valor) return;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(valor.trim())) { toast('Use o formato AAAA-MM-DD (ex.: 2026-08-25)', 'error'); return; }
+  try {
+    await fatApi('termo_empresa_datas', { empresa_id: empresaId, [tipo === 'nf' ? 'nf_data' : 'pagamento_data']: valor.trim() });
+    toast('Data de ' + label + ' atualizada', 'success');
+    if (_fatTermoAberto) await abrirDetalheTermo(_fatTermoAberto);
+    carregarKanbanFaturamento();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
 async function _fatMarcarNfManual(empresaId) {
   const numero = prompt('Número da NF:', ''); if (numero === null) return;
   const valor = prompt('Valor da NF (R$):', ''); if (valor === null) return;
@@ -15697,7 +15884,13 @@ async function _fatVerificarPagamento(id) {
   try {
     const d = await fatApi('termo_verificar_pagamento', { termo_id: id });
     if (d.erro) toast('QuickBooks: ' + d.erro, 'error');
-    else toast((d.atualizadas||0) + ' empresa(s) confirmada(s) paga(s) · status: ' + d.pagamento_status, d.pagamento_status === 'pago' ? 'success' : 'error');
+    else {
+      toast(d.resumo || ((d.atualizadas||0) + ' empresa(s) confirmada(s)'), d.pagamento_status === 'pago' ? 'success' : (d.atualizadas ? 'success' : 'error'));
+      // v1.34: registra no Log de onde veio cada confirmação (fatura baixada x extrato)
+      if (d.detalhes?.length) d.detalhes.forEach(x => addLog('ok', `[Faturamento] ${x.empresa}: pago em ${x.data ? x.data.split('-').reverse().join('/') : '?'} · ${fmtBRLcompleto(x.valor)} · via ${x.via}`));
+      if (d.encontrados_via_extrato) addLog('warn', `[Faturamento] ${d.encontrados_via_extrato} pagamento(s) achado(s) no EXTRATO — a fatura correspondente ainda não foi baixada no QuickBooks. Vale regularizar lá para a contabilidade fechar.`);
+      if (!d.atualizadas && d.ainda_pendentes) addLog('info', `[Faturamento] ${d.ainda_pendentes} empresa(s) sem pagamento localizado (tolerância de ${d.tolerancia_pct}% no valor). Se o valor recebido teve retenção maior, confirme manualmente pelo ✎.`);
+    }
     await abrirDetalheTermo(id); carregarKanbanFaturamento();
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
   finally { if (btn) { btn.disabled = false; btn.textContent = '🏦 Verificar pagamento no QuickBooks'; } }
@@ -18211,7 +18404,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.30] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.34] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -18227,7 +18420,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.30';
+window.__ATX_BUILD_ID__ = 'ATX-v1.34';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
