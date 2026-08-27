@@ -3441,6 +3441,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div style="background:linear-gradient(135deg,rgba(79,124,255,.12),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Fluxo de Caixa Futuro &middot; 12 Meses</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Matriz editavel &middot; Cada celula azul pode ser sobrescrita &middot; Calculo deterministico (nao IA)</div></div>
       <button class="btn" style="font-size:10px;padding:5px 10px;color:var(--gold);border-color:var(--gold);" onclick="diagnosticarSaldoAbertura()" title="Ver de onde vem o saldo inicial, conta a conta">&#128269; Saldo de abertura</button>
+      <button class="btn" style="font-size:10px;padding:5px 10px;color:var(--red);border-color:var(--red);" onclick="varrerDuplicados()" title="Procura lançamentos duplicados no QuickBooks num período inteiro">&#9888; Procurar duplicados</button>
       <button class="btn btn-g" onclick="limparOverridesFluxo()" style="font-size:10px;padding:5px 10px;">Limpar overrides</button>
       <button class="btn btn-gn" id="btnFluxo" onclick="gerarFluxoMatriz()">&#9670; Recalcular Fluxo</button>
     </div>
@@ -13470,7 +13471,19 @@ function renderExtrato(d) {
   // KPIs cabeçalho
   const upd = (id, v) => { const x = document.getElementById(id); if (x) x.textContent = v; };
   upd('f_ext_saldoInicial', fmtBRLcompleto(d.saldo_inicial));
-  upd('f_ext_saldoInicialData', d.saldo_inicial_data ? 'em ' + d.saldo_inicial_data : '(sem snapshot)');
+  // v1.46: explica a composição do saldo inicial (base cadastrada + movimento anterior)
+  {
+    const det = d.saldo_inicial_detalhe;
+    let txt;
+    if (d.saldo_inicial_origem === 'cadastrado_mais_movimento' && det) {
+      txt = `${fmtBRLcompleto(det.saldo_base)} em ${(det.base_data||'').split('-').reverse().join('/')} + ${fmtBRLcompleto(det.movimento_anterior)} de movimento até o início do período`;
+    } else if (d.saldo_inicial_origem === 'reconstruido_do_historico' && det) {
+      txt = `reconstruído de todo o histórico (${det.lancamentos_considerados} lançamento(s) antes do período) — nenhum saldo inicial cadastrado`;
+    } else if (d.saldo_inicial_data) {
+      txt = 'em ' + String(d.saldo_inicial_data).split('-').reverse().join('/');
+    } else txt = '(sem saldo inicial cadastrado)';
+    upd('f_ext_saldoInicialData', txt);
+  }
   upd('f_ext_totalEntradas', fmtBRLcompleto(d.total_entradas));
   upd('f_ext_totalSaidas', fmtBRLcompleto(d.total_saidas));
   upd('f_ext_resultado', fmtBRLcompleto(d.resultado));
@@ -15195,6 +15208,57 @@ async function enviarRelatorioPagamentos(soParaMim) {
         </div></div>`; }
   }
   finally { if (btn) { btn.disabled = false; btn.textContent = '📤 Enviar agora'; } }
+}
+
+// v1.45: varredura de duplicidade num período inteiro
+async function varrerDuplicados() {
+  const hoje = new Date().toISOString().split('T')[0];
+  const padraoIni = new Date(Date.now() - 90*864e5).toISOString().split('T')[0];
+  const ini = prompt('Procurar duplicados a partir de qual data? (AAAA-MM-DD)', padraoIni);
+  if (!ini) return;
+  const fim = prompt('Até qual data?', hoje);
+  if (!fim) return;
+  let modal = document.getElementById('varreduraModal');
+  if (!modal) { modal = document.createElement('div'); modal.id='varreduraModal';
+    modal.style.cssText='display:flex;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:1000;align-items:center;justify-content:center;overflow:auto;padding:20px;'; document.body.appendChild(modal); }
+  modal.style.display='flex';
+  modal.innerHTML = '<div class="panel" style="width:820px;max-width:96vw;"><div class="pb" style="text-align:center;color:var(--t3);padding:30px;">⏳ Varrendo o QuickBooks (pode levar até 40s)...</div></div>';
+  try {
+    const d = await finApi('qb_varrer_duplicados', { data_inicio: ini, data_fim: fim });
+    const v = d.varredura || {}; const r = v.resumo || {};
+    const corG = g => g==='alta' ? 'var(--red)' : g==='media' ? 'var(--gold)' : 'var(--green,#22d3a3)';
+    const icone = c => c==='duplicidade_real' ? '🔴' : c==='suspeito_sem_vinculo' ? '🟡' : '🟢';
+    modal.innerHTML = `<div class="panel" style="width:820px;max-width:96vw;max-height:90vh;overflow:auto;">
+      <div class="ph"><div class="pt">⚠ Varredura de duplicidade</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('varreduraModal').style.display='none'">✕</button></div>
+      <div class="pb">
+        <div style="font-size:10.5px;color:var(--t2);margin-bottom:10px;">Período ${(r.periodo?.de||'').split('-').reverse().join('/')} a ${(r.periodo?.ate||'').split('-').reverse().join('/')} · ${r.registros_analisados} registros analisados</div>
+        <div style="display:flex;gap:8px;margin-bottom:14px;">
+          <div class="kpi rd" style="flex:1;"><div class="kl">Duplicidade real</div><div class="kv">${r.duplicidade_real}</div><div class="ks">corrigir no QuickBooks</div></div>
+          <div class="kpi gd" style="flex:1;"><div class="kl">Suspeitos</div><div class="kv">${r.suspeitos_sem_vinculo}</div><div class="ks">conferir</div></div>
+          <div class="kpi gn" style="flex:1;"><div class="kl">Vinculados (ok)</div><div class="kv">${r.vinculados_ok}</div><div class="ks">já tratados</div></div>
+          <div class="kpi bl" style="flex:1;"><div class="kl">Caixa inflado</div><div class="kv" style="font-size:15px;">${fmtBRLcompleto(r.impacto_total||0)}</div></div>
+        </div>
+        ${(v.suspeitos||[]).length ? v.suspeitos.map(s => `
+          <div style="border-left:3px solid ${corG(s.gravidade)};background:var(--bg4);border-radius:6px;padding:10px;margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:11.5px;font-weight:600;">${icone(s.classificacao)} ${s.contraparte}</span>
+              <span style="font-family:var(--M);font-size:12px;">${fmtBRLcompleto(s.valor)}</span>
+            </div>
+            <div style="font-size:10.5px;color:var(--t2);margin:4px 0;">${s.explicacao}</div>
+            ${s.impacto_no_caixa ? `<div style="font-size:10.5px;color:var(--red);">Infla o caixa em ${fmtBRLcompleto(s.impacto_no_caixa)}</div>` : ''}
+            <div style="margin-top:5px;font-size:9.5px;color:var(--t3);font-family:var(--M);">
+              ${s.registros.map(g => `${g.entidade}#${g.id}${g.doc?' (doc '+g.doc+')':''} · ${(g.data||'').split('-').reverse().join('/')}${g.criado_em?' · criado '+new Date(g.criado_em).toLocaleString('pt-BR'):''}`).join('<br>')}
+            </div>
+          </div>`).join('')
+        : '<div style="background:rgba(34,211,163,.08);border:1px solid var(--green,#22d3a3);border-radius:8px;padding:14px;font-size:11.5px;">✅ Nenhuma duplicidade encontrada no período.</div>'}
+        ${(v.erros_consulta||[]).length ? `<div style="margin-top:10px;font-size:10px;color:var(--gold);">Consultas com erro: ${v.erros_consulta.join(' · ')}</div>` : ''}
+        <div style="margin-top:12px;font-size:10px;color:var(--t3);line-height:1.7;">
+          🔴 <b>Duplicidade real</b>: dois registros do mesmo tipo, valor e contraparte — corrija no QuickBooks (exclua ou estorne o repetido).<br>
+          🟡 <b>Suspeito</b>: tipos diferentes sem vínculo declarado — pode ser o mesmo dinheiro lançado duas vezes. Confira antes de excluir.<br>
+          🟢 <b>Vinculado</b>: pagamento e depósito ligados entre si — normal, o sistema não conta em dobro.
+        </div>
+      </div></div>`;
+  } catch (e) { modal.innerHTML = `<div class="panel" style="width:520px;"><div class="pb" style="padding:20px;color:var(--red);">Erro: ${e.message}<br><br><button class="btn" onclick="document.getElementById('varreduraModal').style.display='none'">Fechar</button></div></div>`; }
 }
 
 // v1.44: rastreia se a duplicidade está no QuickBooks ou no Atlantyx
@@ -18741,7 +18805,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.44] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.46] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -18757,7 +18821,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.44';
+window.__ATX_BUILD_ID__ = 'ATX-v1.46';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
