@@ -2625,6 +2625,10 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <button class="btn" style="font-size:9px;" onclick="_fdPreset(90,365)">3m passado · 1a futuro</button>
     <button class="btn" style="font-size:9px;" onclick="_fdPreset(60,null,true)">&#10005; Limpar (sem limite futuro)</button>
     <label style="font-size:10px;color:var(--t2);display:flex;align-items:center;gap:5px;"><input type="checkbox" id="fd_incluirSim" checked onchange="carregarFluxoDetalhado()"/> incluir simulados</label>
+    <select class="fsel" id="fd_conta" style="font-size:11px;width:auto;max-width:230px;" onchange="carregarFluxoDetalhado()" title="Filtrar por conta bancária — permite bater com o extrato de um banco específico">
+      <option value="">Todas as contas</option>
+    </select>
+    <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="compararSaldoPorConta()" title="Compara o saldo do Atlantyx com o saldo de cada conta no QuickBooks">&#9878; Comparar por conta</button>
     <button class="btn btn-gn" onclick="carregarFluxoDetalhado()">&#8635; Atualizar</button>
   </div>
   <div id="fdStatus" style="display:none;margin-bottom:10px;"></div>
@@ -15210,6 +15214,44 @@ async function enviarRelatorioPagamentos(soParaMim) {
   finally { if (btn) { btn.disabled = false; btn.textContent = '📤 Enviar agora'; } }
 }
 
+// v1.52: compara o saldo do Atlantyx com o saldo de CADA conta no QuickBooks
+async function compararSaldoPorConta() {
+  const dt = document.getElementById('fd_dataInicio')?.value || new Date().toISOString().split('T')[0];
+  let modal = document.getElementById('saldoContaModal');
+  if (!modal) { modal = document.createElement('div'); modal.id='saldoContaModal';
+    modal.style.cssText='display:flex;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:1000;align-items:center;justify-content:center;overflow:auto;padding:20px;'; document.body.appendChild(modal); }
+  modal.style.display='flex';
+  modal.innerHTML = '<div class="panel" style="width:720px;max-width:96vw;"><div class="pb" style="text-align:center;color:var(--t3);padding:30px;">⏳ Consultando saldo por conta...</div></div>';
+  try {
+    const d = await finApi('qb_saldo_por_conta', { data: dt });
+    const r = d.saldo_por_conta || {};
+    modal.innerHTML = `<div class="panel" style="width:720px;max-width:96vw;max-height:90vh;overflow:auto;">
+      <div class="ph"><div class="pt">⚖ Saldo por conta no QuickBooks</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('saldoContaModal').style.display='none'">✕</button></div>
+      <div class="pb">
+        <div style="font-size:10.5px;color:var(--t2);margin-bottom:10px;">O fluxo do Atlantyx usa a <b>soma de todas as contas do tipo Bank</b>. Se você compara com o Plano de Contas de uma conta específica, os números não vão bater.</div>
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead><tr style="border-bottom:1px solid var(--bd);">
+            <th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">CONTA</th>
+            <th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">SALDO EM ${(r.data||'').split('-').reverse().join('/')}</th>
+            <th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">SALDO HOJE</th></tr></thead>
+          <tbody>${(r.contas||[]).map(c => `<tr style="border-bottom:1px solid var(--bd);${c.saldo_hoje<0?'color:var(--red);':''}">
+            <td style="padding:6px;">${c.nome}${c.subtipo?' <span style="color:var(--t3);font-size:9px;">· '+c.subtipo+'</span>':''}</td>
+            <td style="padding:6px;text-align:right;font-family:var(--M);">${c.saldo_na_data != null ? fmtBRLcompleto(c.saldo_na_data) : '<span style="color:var(--t3);">—</span>'}</td>
+            <td style="padding:6px;text-align:right;font-family:var(--M);">${fmtBRLcompleto(c.saldo_hoje)}</td></tr>`).join('')}
+            <tr style="border-top:2px solid var(--bd);font-weight:700;">
+              <td style="padding:7px;">TOTAL (o que o Atlantyx usa)</td>
+              <td style="padding:7px;text-align:right;font-family:var(--M);">${r.saldo_total_na_data != null ? fmtBRLcompleto(r.saldo_total_na_data) : '—'}</td>
+              <td style="padding:7px;text-align:right;font-family:var(--M);color:${r.saldo_total_hoje<0?'var(--red)':'var(--green,#22d3a3)'};">${fmtBRLcompleto(r.saldo_total_hoje)}</td></tr>
+          </tbody></table>
+        ${(r.observacoes||[]).map(o => `<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:7px;padding:9px 11px;font-size:10.5px;line-height:1.6;margin-top:10px;">💡 ${o}</div>`).join('')}
+        ${r.erro ? `<div style="color:var(--red);font-size:10.5px;margin-top:8px;">Erro: ${r.erro}</div>` : ''}
+        <div style="margin-top:12px;font-size:10px;color:var(--t3);line-height:1.7;">
+          <b>Como usar:</b> compare a coluna "saldo hoje" de cada conta com o extrato real dela no banco. A conta cujo saldo não bater é onde está o problema — geralmente saldo de abertura não lançado, lançamento duplicado, ou tipo de conta errado (cartão marcado como Bank).
+        </div>
+      </div></div>`;
+  } catch (e) { modal.innerHTML = `<div class="panel" style="width:520px;"><div class="pb" style="padding:20px;color:var(--red);">Erro: ${e.message}<br><br><button class="btn" onclick="document.getElementById('saldoContaModal').style.display='none'">Fechar</button></div></div>`; }
+}
+
 // v1.47: conferência com o banco — explica lançamentos faltando
 async function conferirComBanco() {
   let modal = document.getElementById('confBancoModal');
@@ -15455,6 +15497,21 @@ function _fdPreset(diasPassado, diasFuturo, limpar) {
   else { const fim = new Date(hoje); fim.setDate(fim.getDate() + diasFuturo); document.getElementById('fd_dataFim').value = _fdIso(fim); }
   carregarFluxoDetalhado();
 }
+// v1.53: popula o seletor de contas bancárias (uma vez)
+let _fdContasCarregadas = false;
+async function _fdPopularContas() {
+  if (_fdContasCarregadas) return;
+  const sel = document.getElementById('fd_conta'); if (!sel) return;
+  try {
+    const d = await finApi('qb_contas_filtro');
+    if (!d.contas?.length) return;
+    _fdContasCarregadas = true;
+    const atual = sel.value;
+    sel.innerHTML = `<option value="">Todas as contas (${d.contas.length}) · ${fmtBRLcompleto(d.saldo_total||0)}</option>` +
+      d.contas.map(c => `<option value="${c.id}">${c.nome} · ${fmtBRLcompleto(c.saldo)}</option>`).join('');
+    sel.value = atual;
+  } catch (e) { addLog('warn', '[Fluxo] contas: ' + e.message); }
+}
 async function carregarFluxoDetalhado() {
   // v1.16.1: datas padrão (60 dias atrás → sem limite futuro) na primeira carga
   const iEl = document.getElementById('fd_dataInicio'), fEl = document.getElementById('fd_dataFim');
@@ -15468,7 +15525,9 @@ async function carregarFluxoDetalhado() {
     const incluirSim = document.getElementById('fd_incluirSim')?.checked !== false;
     const dIni = document.getElementById('fd_dataInicio')?.value || null;
     const dFim = document.getElementById('fd_dataFim')?.value || null;
-    const d = await finApi('fluxo_detalhado', { data_inicio: dIni, data_fim: dFim, incluir_simulados: incluirSim });
+    const contaSel = document.getElementById('fd_conta')?.value || null;
+    const d = await finApi('fluxo_detalhado', { data_inicio: dIni, data_fim: dFim, incluir_simulados: incluirSim, conta_id: contaSel });
+    _fdPopularContas(); // v1.53: popula o combo na primeira carga
     const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
     // v1.49: avisa quando o QuickBooks limitou as consultas (dados incompletos = saldo errado)
     {
@@ -15495,7 +15554,9 @@ async function carregarFluxoDetalhado() {
       const hj = new Date().toISOString().split('T')[0];
       const dataRef = (ate && ate < hj) ? ate : d.hoje;
       const ini = d.periodo?.data_inicio;
-      let sub = `calculado: saldo de ${ini ? ini.split('-').reverse().join('/') : '?'} + movimento até ${dataRef?.split('-').reverse().join('/')}`;
+      const selC = document.getElementById('fd_conta');
+      const nomeConta = selC && selC.value ? selC.options[selC.selectedIndex]?.text?.split('·')[0]?.trim() : null;
+      let sub = (nomeConta ? `[${nomeConta}] ` : '') + `calculado: saldo de ${ini ? ini.split('-').reverse().join('/') : '?'} + movimento até ${dataRef?.split('-').reverse().join('/')}`;
       if (d.saldo_real_banco != null) {
         sub += ` · banco hoje: ${fmtBRLcompleto(d.saldo_real_banco)}`;
         if (d.divergencia_relevante) sub += ` · ⚠ diferença de ${fmtBRLcompleto(Math.abs(d.divergencia_calculado_vs_real))}`;
@@ -18892,7 +18953,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.46.1] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.53] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -18908,7 +18969,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.46.1';
+window.__ATX_BUILD_ID__ = 'ATX-v1.53';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
