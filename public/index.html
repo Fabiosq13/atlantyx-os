@@ -337,6 +337,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sg-sub">ESTRUTURA IA-FIRST</div>
       <div class="sbi s1" onclick="nav('s8organograma',this)">&#127970; Organograma <span class="nbx gn">IA-first</span></div>
       <div class="sbi s1" onclick="nav('s8conselho',this)">&#127963; Sala do Conselho <span class="nbx pu">debate</span></div>
+      <div class="sbi s1" onclick="nav('s8reuniao',this)">&#127909; Sala de Reuniao <span class="nbx gn">ao vivo</span></div>
     </div>
 
     <!-- S9 · PROJETOS -->
@@ -2963,6 +2964,61 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </div>
 </div>
 
+<!-- v1.28: SALA DE REUNIÃO PERMANENTE (vídeo + conselheiros IA) -->
+<div class="page" id="page-s8reuniao">
+  <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(34,211,163,.03));border:1px solid rgba(34,211,163,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Sala de Reunião Permanente</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Áudio e vídeo com sua equipe · conselheiros IA ouvem a conversa e participam por voz</div></div>
+    <button class="btn" onclick="copiarLinkSala()">&#128279; Copiar link da sala</button>
+    <button class="btn" onclick="compartilharTela()" id="btnCompartilhar" title="Compartilhar sua tela com os participantes">&#128421; Compartilhar tela</button>
+    <button class="btn" onclick="expandirSala()" id="btnExpandir" title="Ampliar a área de vídeo (melhor para ver tela compartilhada)">&#8599; Ampliar</button>
+    <button class="btn btn-gn" onclick="entrarSala()" id="btnEntrarSala">&#127909; Entrar na sala</button>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 340px;gap:12px;align-items:start;">
+    <div>
+      <div class="panel" style="margin:0;">
+        <div class="pb" style="padding:0;">
+          <div id="jitsiContainer" style="width:100%;height:56vh;background:var(--bg4);border-radius:8px;display:flex;align-items:center;justify-content:center;">
+            <div style="text-align:center;color:var(--t3);font-size:12px;padding:20px;">
+              <div style="font-size:34px;margin-bottom:8px;">&#127909;</div>
+              Clique em <b>Entrar na sala</b> para abrir o vídeo.<br>
+              <span style="font-size:10.5px;">A sala é permanente — o link é sempre o mesmo.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:12px;">
+        <div class="ph"><div class="pt">🎙 Conselheiros ouvindo</div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <span id="micStatus" style="font-size:10px;color:var(--t3);">microfone desligado</span>
+            <button class="btn btn-p" style="font-size:10px;" onclick="toggleEscutaConselheiros()" id="btnEscuta">🎙 Ativar escuta</button>
+          </div></div>
+        <div class="pb">
+          <div style="font-size:10.5px;color:var(--t2);margin-bottom:8px;">Com a escuta ativa, os conselheiros acompanham a conversa. Chame pelo nome (ex.: <i>"conselheiro de finanças, o que acha?"</i>) ou clique em <b>Pedir opinião</b>.</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+            <button class="btn" style="font-size:10px;" onclick="pedirOpiniaoConselheiro()">💬 Pedir opinião ao conselho</button>
+            <label style="font-size:10px;color:var(--t2);display:flex;align-items:center;gap:4px;"><input type="checkbox" id="chkVozIA" checked/> falar em voz alta</label>
+            <label style="font-size:10px;color:var(--t2);display:flex;align-items:center;gap:4px;"><input type="checkbox" id="chkAutoComentar"/> comentar sozinho</label>
+            <button class="btn" style="font-size:10px;margin-left:auto;color:var(--gold);border-color:var(--gold);" onclick="gerarAtaReuniao()">📋 Gerar ata</button>
+          </div>
+          <div id="transcricaoBox" style="max-height:200px;overflow-y:auto;background:var(--bg4);border-radius:8px;padding:10px;font-size:11.5px;line-height:1.6;">
+            <div style="color:var(--t3);text-align:center;padding:12px;">A transcrição da conversa aparece aqui.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="ph"><div class="pt">Conselheiros na sala</div></div>
+      <div class="pb" id="conselheirosSala"><div style="color:var(--t3);font-size:11px;text-align:center;padding:14px;">Carregando...</div></div>
+      <div class="ph" style="border-top:1px solid var(--bd);"><div class="pt">Como funciona</div></div>
+      <div class="pb" style="font-size:10px;color:var(--t2);line-height:1.7;">
+        O vídeo entre pessoas é feito por uma sala segura do Jitsi, embutida aqui.<br><br>
+        Os conselheiros IA <b>não entram como participantes de vídeo</b> — eles acompanham pela transcrição do seu microfone e respondem por voz no seu alto-falante.<br><br>
+        <b>Para os outros ouvirem os conselheiros:</b> use fone com microfone aberto ou compartilhe a aba com áudio. A resposta também aparece sempre escrita aqui.
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="page" id="page-s3extrato">
     <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(34,211,163,.03));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;">
       <div style="font-family:var(--H);font-size:15px;font-weight:700">Extrato Financeiro · Saldo Acumulado</div>
@@ -3498,7 +3554,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <div class="toast" id="toastEl"></div>
 <script>
 const LOGS=[];let logCount=0;
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -13144,8 +13200,14 @@ async function finApi(action, params = {}) {
   let d;
   try { d = JSON.parse(raw); }
   catch { throw new Error('Resposta não-JSON de /api/financeiro (HTTP ' + r.status + '): ' + raw.substring(0, 150)); }
-  if (!d.success) {
+  if (!d.success && !d.error && !d.disponiveis) { /* resposta atípica: segue o fluxo abaixo */ }
+  if (!d.success || d.disponiveis) {
     let msg = d.error || ('HTTP ' + r.status + ' na API financeiro');
+    // v1.26.3: "ação não existe" = api/financeiro.js desatualizado no Vercel
+    if (d.disponiveis || /não existe na versão|action inválida/i.test(msg)) {
+      msg = `⚠ O arquivo api/financeiro.js no servidor está DESATUALIZADO — a função "${action}" não existe nele${d.versao_api ? ' (versão no ar: ' + d.versao_api + ')' : ''}.`;
+      d.hint = d.hint || 'Suba a versão mais recente de api/financeiro.js no GitHub e faça Redeploy no Vercel.';
+    }
     if (/QB OAuth|QuickBooks não conectado|invalid_grant|refresh_token|QB_REFRESH_TOKEN/i.test(msg)) msg += ' → clique em "QuickBooks" na barra lateral para reconectar (OAuth)';
     // v1.26.2: preserva hint/trilha do backend (antes se perdiam e o usuário via só "500")
     const err = new Error(msg); err.hint = d.hint; err.trilha = d.trilha; err.httpStatus = r.status;
@@ -15921,6 +15983,191 @@ async function _devCopiar(projetoId, fase) {
 async function _devMover(id, fase) { try { await devApi('projeto_mover', { id, fase }); toast('Movido', 'success'); await abrirDevProjeto(id); carregarPipeline(); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
 async function _devExcluir(id) { if (!confirm('Excluir este projeto e todos os artefatos gerados?')) return; try { await devApi('projeto_delete', { id }); toast('Excluído', 'info'); document.getElementById('pipelineDetalhe').style.display='none'; carregarPipeline(); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
 
+// ═══ v1.28: SALA DE REUNIÃO PERMANENTE (vídeo Jitsi + conselheiros IA por voz) ═══
+const SALA_NOME = 'AtlantyxConselho-' + (location.hostname.replace(/\W/g,'') || 'atlantyx');
+let _jitsiApi = null, _recon = null, _escutando = false, _transcricao = [], _histSala = [], _falandoIA = false;
+
+async function carregarSalaReuniao() {
+  const box = document.getElementById('conselheirosSala'); if (!box) return;
+  try {
+    const d = await rhApi('conselho_list');
+    box.innerHTML = (d.cadeiras||[]).map(c => `<div style="display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);">
+      <div style="width:30px;height:30px;border-radius:50%;background:rgba(156,109,255,.2);display:flex;align-items:center;justify-content:center;font-size:15px;">🤖</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:10.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${(c.agente?.nome||'—').substring(0,34)}</div>
+        <div style="font-size:8.5px;color:var(--t3);">${(c.especialidade||'').substring(0,42)}</div>
+      </div>
+      <button class="btn" style="font-size:8px;padding:2px 6px;" onclick="pedirOpiniaoConselheiro('${(c.agente?.nome||'').replace(/'/g,'')}')" title="Pedir a opinião deste conselheiro">💬</button>
+    </div>`).join('') || '<div style="color:var(--t3);font-size:11px;text-align:center;padding:14px;">Nenhum conselheiro configurado.</div>';
+  } catch (e) { box.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Erro: ' + e.message + '</div>'; }
+}
+function copiarLinkSala() {
+  const link = 'https://meet.jit.si/' + SALA_NOME;
+  navigator.clipboard.writeText(link).then(() => toast('Link copiado: ' + link, 'success')).catch(() => prompt('Link da sala:', link));
+}
+function entrarSala() {
+  const cont = document.getElementById('jitsiContainer'); if (!cont) return;
+  if (_jitsiApi) { toast('Você já está na sala', 'success'); return; }
+  const btn = document.getElementById('btnEntrarSala'); if (btn) { btn.disabled = true; btn.textContent = '⏳ Abrindo...'; }
+  const iniciar = () => {
+    try {
+      cont.innerHTML = '';
+      _jitsiApi = new window.JitsiMeetExternalAPI('meet.jit.si', {
+        roomName: SALA_NOME, parentNode: cont, width: '100%', height: '100%',
+        userInfo: { displayName: 'Atlantyx' },
+        configOverwrite: { prejoinPageEnabled: false, startWithAudioMuted: false, disableDeepLinking: true },
+        interfaceConfigOverwrite: { DEFAULT_BACKGROUND: '#0B1226',
+          TOOLBAR_BUTTONS: ['microphone','camera','desktop','fullscreen','hangup','chat','participants-pane','tileview','settings','raisehand','videoquality','filmstrip'],
+          DISABLE_VIDEO_BACKGROUND: false, SHOW_JITSI_WATERMARK: false, TILE_VIEW_MAX_COLUMNS: 3 },
+      });
+      _jitsiApi.addEventListener('videoConferenceLeft', () => { _jitsiApi = null; if (_salaExpandida) expandirSala(); cont.innerHTML = '<div style="text-align:center;color:var(--t3);font-size:12px;padding:40px;">Você saiu da sala. Clique em Entrar na sala para voltar.</div>'; if (btn) { btn.disabled = false; btn.textContent = '🎥 Entrar na sala'; } });
+      // v1.28.1: feedback visual de compartilhamento ativo
+      _jitsiApi.addEventListener('screenSharingStatusChanged', (ev) => {
+        const b = document.getElementById('btnCompartilhar');
+        if (b) { if (ev.on) { b.innerHTML = '&#9209; Parar compartilhamento'; b.style.color = 'var(--green,#22d3a3)'; b.style.borderColor = 'var(--green,#22d3a3)'; }
+                 else { b.innerHTML = '&#128421; Compartilhar tela'; b.style.color = ''; b.style.borderColor = ''; } }
+        addLog('info', '[Reunião] Compartilhamento de tela ' + (ev.on ? 'iniciado' : 'encerrado'));
+      });
+      if (btn) { btn.disabled = false; btn.textContent = '🎥 Na sala'; }
+      addLog('ok', '[Reunião] Entrou na sala ' + SALA_NOME);
+    } catch (e) { cont.innerHTML = '<div style="color:var(--red);padding:20px;font-size:12px;text-align:center;">Não foi possível abrir o vídeo: ' + e.message + '<br><a href="https://meet.jit.si/' + SALA_NOME + '" target="_blank" style="color:var(--blue);">Abrir em nova aba</a></div>'; if (btn) { btn.disabled = false; btn.textContent = '🎥 Entrar na sala'; } }
+  };
+  if (window.JitsiMeetExternalAPI) return iniciar();
+  const sc = document.createElement('script');
+  sc.src = 'https://meet.jit.si/external_api.js';
+  sc.onload = iniciar;
+  sc.onerror = () => { cont.innerHTML = '<div style="color:var(--red);padding:20px;font-size:12px;text-align:center;">Não consegui carregar o vídeo (rede bloqueada?).<br><a href="https://meet.jit.si/' + SALA_NOME + '" target="_blank" style="color:var(--blue);">Abrir a sala em nova aba</a></div>'; if (btn) { btn.disabled = false; btn.textContent = '🎥 Entrar na sala'; } };
+  document.head.appendChild(sc);
+}
+
+// v1.28.1: compartilhar tela pelo botão do Atlantyx (além do botão nativo na barra do vídeo)
+function compartilharTela() {
+  if (!_jitsiApi) { toast('Entre na sala primeiro', 'error'); return; }
+  try {
+    _jitsiApi.executeCommand('toggleShareScreen');
+    toast('Escolha a tela, janela ou aba que quer compartilhar', 'success');
+    // Ao compartilhar, ampliar automaticamente ajuda a enxergar o conteúdo
+    setTimeout(() => { if (!_salaExpandida) expandirSala(); }, 800);
+  } catch (e) { toast('Use o botão de compartilhar tela na barra do vídeo: ' + e.message, 'error'); }
+}
+let _salaExpandida = false, _alturaOriginal = null;
+function expandirSala() {
+  const cont = document.getElementById('jitsiContainer'); if (!cont) return;
+  const grid = cont.closest('.page')?.querySelector('div[style*="grid-template-columns:1fr 340px"]');
+  const btn = document.getElementById('btnExpandir');
+  if (!_salaExpandida) {
+    _alturaOriginal = cont.style.height;
+    cont.style.height = '78vh';
+    if (grid) { grid.dataset.gridOriginal = grid.style.gridTemplateColumns; grid.style.gridTemplateColumns = '1fr'; }
+    if (btn) btn.innerHTML = '&#8600; Reduzir';
+    _salaExpandida = true;
+  } else {
+    cont.style.height = _alturaOriginal || '56vh';
+    if (grid) grid.style.gridTemplateColumns = grid.dataset.gridOriginal || '1fr 340px';
+    if (btn) btn.innerHTML = '&#8599; Ampliar';
+    _salaExpandida = false;
+  }
+}
+
+// ── Escuta: transcreve a conversa no navegador (sem enviar áudio para lugar nenhum) ──
+function toggleEscutaConselheiros() {
+  if (_escutando) { _pararEscuta(); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { toast('Seu navegador não suporta transcrição por voz — use Chrome ou Edge', 'error'); return; }
+  _recon = new SR();
+  _recon.lang = 'pt-BR'; _recon.continuous = true; _recon.interimResults = false;
+  _recon.onresult = (ev) => {
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      if (!ev.results[i].isFinal) continue;
+      const texto = ev.results[i][0].transcript.trim();
+      if (texto.length < 3 || _falandoIA) continue; // ignora a própria voz da IA
+      _addTranscricao('Você', texto, 'humano');
+      _avaliarChamada(texto);
+    }
+  };
+  _recon.onerror = (e) => { if (e.error === 'not-allowed') { toast('Permissão de microfone negada', 'error'); _pararEscuta(); } };
+  _recon.onend = () => { if (_escutando) { try { _recon.start(); } catch(_) {} } }; // reinicia sozinho
+  try { _recon.start(); _escutando = true;
+    document.getElementById('btnEscuta').textContent = '⏹ Parar escuta';
+    document.getElementById('micStatus').textContent = '🔴 ouvindo';
+    document.getElementById('micStatus').style.color = 'var(--green,#22d3a3)';
+    toast('Conselheiros ouvindo a conversa', 'success');
+  } catch (e) { toast('Erro ao iniciar escuta: ' + e.message, 'error'); }
+}
+function _pararEscuta() {
+  _escutando = false; try { _recon && _recon.stop(); } catch(_) {}
+  const b = document.getElementById('btnEscuta'); if (b) b.textContent = '🎙 Ativar escuta';
+  const m = document.getElementById('micStatus'); if (m) { m.textContent = 'microfone desligado'; m.style.color = 'var(--t3)'; }
+}
+function _addTranscricao(autor, texto, tipo) {
+  _transcricao.push({ autor, texto, tipo, ts: new Date().toISOString() });
+  const box = document.getElementById('transcricaoBox'); if (!box) return;
+  if (_transcricao.length === 1) box.innerHTML = '';
+  const div = document.createElement('div');
+  div.style.cssText = 'margin-bottom:7px;' + (tipo === 'agente' ? 'padding:7px;background:rgba(156,109,255,.12);border-radius:7px;' : '');
+  div.innerHTML = `<span style="font-size:9px;color:${tipo==='agente'?'var(--purple,#9c6dff)':'var(--t3)'};">${tipo==='agente'?'🤖':'👤'} ${autor}</span><br>${texto.replace(/</g,'&lt;')}`;
+  box.appendChild(div); box.scrollTop = box.scrollHeight;
+}
+// Detecta se chamaram um conselheiro pelo nome, ou se o modo "comentar sozinho" está ativo
+function _avaliarChamada(texto) {
+  const t = texto.toLowerCase();
+  const chamou = /conselheir|conselho|o que (você|voce|vocês|voces) acha|qual sua opini|pergunta pro conselho/.test(t);
+  const auto = document.getElementById('chkAutoComentar')?.checked;
+  if (chamou || auto) _consultarConselheiro(texto, chamou ? _extrairNomeChamado(t) : null);
+}
+function _extrairNomeChamado(t) {
+  if (/financ|caixa|custo|dinheiro/.test(t)) return 'Finanças';
+  if (/mercado|cliente|concorr|venda/.test(t)) return 'Estratégia';
+  if (/tecnolog|sistema|produto|software/.test(t)) return 'Tecnologia';
+  return null;
+}
+async function _consultarConselheiro(transcricao, conselheiro) {
+  try {
+    const d = await rhApi('sala_falar', { transcricao, historico: _histSala, conselheiro });
+    if (!d.comentou || !d.resposta) return; // conselheiro achou que não cabia comentar
+    _addTranscricao(d.conselheiro, d.resposta, 'agente');
+    _histSala.push({ role: 'user', content: transcricao }, { role: 'assistant', content: d.resposta });
+    if (document.getElementById('chkVozIA')?.checked) _falarEmVozAlta(d.resposta);
+  } catch (e) { addLog('warn', '[Reunião] conselheiro: ' + e.message); }
+}
+function _falarEmVozAlta(texto) {
+  try {
+    if (!window.speechSynthesis) return;
+    _falandoIA = true; // evita que a transcrição capte a própria voz da IA
+    const u = new SpeechSynthesisUtterance(texto);
+    u.lang = 'pt-BR'; u.rate = 1.05;
+    const vozes = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith('pt'));
+    if (vozes.length) u.voice = vozes[0];
+    u.onend = () => { setTimeout(() => { _falandoIA = false; }, 400); };
+    u.onerror = () => { _falandoIA = false; };
+    window.speechSynthesis.speak(u);
+  } catch (_) { _falandoIA = false; }
+}
+async function pedirOpiniaoConselheiro(nome) {
+  const ultimas = _transcricao.slice(-6).map(t => `${t.autor}: ${t.texto}`).join('\n');
+  const pergunta = prompt(nome ? `O que perguntar para ${nome}?` : 'O que perguntar ao conselho?',
+    ultimas ? 'Sobre o que acabamos de conversar, qual sua opinião?' : '');
+  if (!pergunta) return;
+  _addTranscricao('Você', pergunta, 'humano');
+  const contexto = ultimas ? ultimas + '\n\nPergunta: ' + pergunta : pergunta;
+  toast('Consultando conselheiro...', 'success');
+  await _consultarConselheiro(contexto, nome || null);
+}
+async function gerarAtaReuniao() {
+  if (!_transcricao.length) { toast('Nada foi transcrito ainda', 'error'); return; }
+  const titulo = prompt('Título da reunião:', 'Reunião ' + new Date().toLocaleDateString('pt-BR'));
+  if (!titulo) return;
+  toast('Gerando ata...', 'success');
+  try {
+    const d = await rhApi('sala_ata', { transcricao: _transcricao, titulo });
+    const box = document.getElementById('transcricaoBox');
+    if (box) { const div = document.createElement('div');
+      div.style.cssText = 'margin-top:10px;padding:10px;background:rgba(34,211,163,.1);border:1px solid var(--green,#22d3a3);border-radius:8px;white-space:pre-wrap;';
+      div.innerHTML = '<b>📋 ATA</b>\n\n' + d.ata.replace(/</g,'&lt;'); box.appendChild(div); box.scrollTop = box.scrollHeight; }
+    toast(d.salvo ? 'Ata gerada e salva no histórico do conselho' : 'Ata gerada', 'success');
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+
 // ═══ v1.22: ORGANOGRAMA IA-FIRST ═══
 let _orgCache = null;
 async function carregarOrganograma() {
@@ -17964,7 +18211,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.26.2] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.28.1] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -17980,7 +18227,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.26.2';
+window.__ATX_BUILD_ID__ = 'ATX-v1.28.1';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
