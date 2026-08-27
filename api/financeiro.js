@@ -798,7 +798,12 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
         const chave = `${entidade}:${item.Id}`;
         if (vistos.has(chave)) continue;
         vistos.add(chave);
-        const entrada = ['pagamento', 'deposito', 'venda', 'invoice'].includes(tipo);
+        // v1.38 FIX (dupla contagem de receita): 'invoice' é a EMISSÃO da nota (competência) e
+        // 'pagamento'/'deposito' é o dinheiro ENTRANDO (caixa). Contar os dois como entrada no
+        // extrato dobrava a receita da mesma venda. Como este extrato é de CAIXA, a Invoice entra
+        // como referência (valor 0 no saldo) e só o recebimento movimenta o saldo.
+        const entrada = ['pagamento', 'deposito', 'venda'].includes(tipo);
+        const soReferencia = tipo === 'invoice';
         lancamentos.push({
           id: `qb_${tipo}_${item.Id}`,
           qb_txn_id: `${tipo}:${item.Id}`,
@@ -810,8 +815,10 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
                   || `${tipo} #${item.DocNumber || item.Id}`,
           categoria: item.AccountRef?.name || tipo,
           conta: item.AccountRef?.name || item.DepositToAccountRef?.name || '',
-          tipo: entrada ? 'entrada' : 'saida',
+          tipo: soReferencia ? 'referencia' : (entrada ? 'entrada' : 'saida'),
           valor: parseFloat(item.TotalAmt || 0),
+          // v1.38: nota emitida não movimenta caixa — fica visível na lista, mas não soma no saldo
+          afeta_saldo: !soReferencia,
           origem: 'quickbooks',
           qb_tipo: tipo,
           memo: item.PrivateNote || '',
@@ -1092,15 +1099,19 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
   });
 
   // 5. Recalcular saldo acumulado
+  // v1.38: linhas de 'referencia' (nota fiscal emitida) NÃO movimentam o saldo de caixa —
+  // aparecem na lista para você ver a emissão, mas o saldo só muda quando o dinheiro entra.
   let saldo = saldoInicial;
   const comSaldo = todos.map(l => {
-    saldo += l.tipo === 'entrada' ? l.valor : -l.valor;
+    if (l.tipo === 'entrada') saldo += l.valor;
+    else if (l.tipo === 'saida') saldo -= l.valor;
     return { ...l, saldo_acumulado: Math.round(saldo * 100) / 100 };
   });
 
   // 6. Resumo
   const entradas = todos.filter(l => l.tipo === 'entrada').reduce((s, l) => s + l.valor, 0);
   const saidas = todos.filter(l => l.tipo === 'saida').reduce((s, l) => s + l.valor, 0);
+  const notasEmitidas = todos.filter(l => l.tipo === 'referencia').reduce((s, l) => s + l.valor, 0);
 
   return {
     saldo_inicial: saldoInicial,
@@ -1109,6 +1120,7 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
     total_entradas: entradas,
     total_saidas: saidas,
     resultado: entradas - saidas,
+    total_notas_emitidas: Math.round(notasEmitidas * 100) / 100, // v1.38: competência, não caixa
     lancamentos: comSaldo,
     contagem: {
       qb: qbLanc.length,
@@ -1199,7 +1211,8 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
     .sort((a, b) => a.data < b.data ? -1 : a.data > b.data ? 1 : 0);
   let saldoCorrente = extrato.saldo_final || 0;
   const futuroComSaldo = futTodos.map(l => {
-    saldoCorrente += l.tipo === 'entrada' ? l.valor : -l.valor;
+    if (l.tipo === 'entrada') saldoCorrente += l.valor;
+    else if (l.tipo === 'saida') saldoCorrente -= l.valor;
     return { ...l, saldo_acumulado: Math.round(saldoCorrente * 100) / 100 };
   });
 
@@ -1639,6 +1652,15 @@ async function fluxoFuturo({ meses = 12, overrides = {} } = {}) {
     } catch {}
   }
 
+  // 4b. v1.38: realizado do mês corrente (extrato de caixa do dia 1 até hoje)
+  // Necessário porque a projeção do mês atual precisa somar o que JÁ aconteceu com o que falta.
+  let realizadoMesCorrente = { entradas: 0, saidas: 0 };
+  try {
+    const ini = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
+    const ext = await extratoConsolidado({ data_inicio: ini, data_fim: hoje.toISOString().split('T')[0], incluir_simulados: false });
+    realizadoMesCorrente = { entradas: ext.total_entradas || 0, saidas: ext.total_saidas || 0 };
+  } catch (e) { console.warn('[fluxoFuturo] realizado do mês:', e.message); }
+
   // 5. Simulados futuros
   let simulados = [];
   try {
@@ -1666,16 +1688,23 @@ async function fluxoFuturo({ meses = 12, overrides = {} } = {}) {
     // Override prioritário
     const ovM = overrides[mes] || {};
 
-    const aReceberM = ovM['+ A Receber QB'] ?? (aReceberPorMes[mes] || 0);
+    // v1.38: no MÊS CORRENTE, entradas = já realizado no mês + o que ainda está a receber.
+    // Antes só entrava o "a receber", ignorando tudo que já foi recebido no mês — o que fazia
+    // o mês atual parecer muito pior do que é.
+    const realizadoMes = (mes === mesAtual) ? (realizadoMesCorrente.entradas || 0) : 0;
+    const aReceberM = ovM['+ A Receber QB'] ?? ((aReceberPorMes[mes] || 0) + realizadoMes);
     const mrrM = ovM['+ Receita Recorrente (MRR)'] ?? (overrides._mrr || 0);
 
     const entradasSim = simulados.filter(s => s.data.startsWith(mes) && s.tipo === 'entrada')
       .reduce((s, x) => s + x.valor, 0);
     const outrasEntradas = ovM['+ Outras Entradas Simuladas'] ?? entradasSim;
 
+    // v1.38: no mês corrente, saídas = despesas já pagas no mês + programadas não pagas.
+    // 'ocorrencias' já traz só as NÃO pagas (prevista/lancada) do dia 1 em diante.
     const despM = ocorrencias.filter(o => o.data_prevista.startsWith(mes))
       .reduce((s, x) => s + x.valor, 0);
-    const despesasMes = ovM['− Despesas Programadas'] ?? despM;
+    const pagoNoMes = (mes === mesAtual) ? (realizadoMesCorrente.saidas || 0) : 0;
+    const despesasMes = ovM['− Despesas Programadas'] ?? (despM + pagoNoMes);
 
     const saidasSim = simulados.filter(s => s.data.startsWith(mes) && s.tipo === 'saida')
       .reduce((s, x) => s + x.valor, 0);
@@ -1737,6 +1766,7 @@ async function fluxoFuturo({ meses = 12, overrides = {} } = {}) {
       a_receber_vencido: round(aReceberVencido),
       a_receber_fora_horizonte: round(aReceberForaHorizonte),
       a_receber_no_horizonte: round(Object.values(aReceberPorMes).reduce((s, v) => s + v, 0)),
+      realizado_mes_corrente: { entradas: round(realizadoMesCorrente.entradas), saidas: round(realizadoMesCorrente.saidas) },
     },
   };
 }
@@ -2153,6 +2183,28 @@ async function conciliacaoStatus({ data_inicio, data_fim } = {}) {
 // 11. ORÇAMENTO CONSOLIDADO (QB Budget + Realizado QB + Despesas Programadas)
 // ═══════════════════════════════════════════════════════════════════════════
 
+// v1.38: interpreta o título de coluna do relatório do QuickBooks em várias línguas/formatos.
+// Ex.: "2026-08", "Aug 2026", "Ago 2026", "Aug 1-31, 2026", "Agosto 2026"
+function _mesDaColunaQB(titulo, anoRef, indiceColuna) {
+  const t = String(titulo || '').trim();
+  if (!t) return null;
+  const iso = t.match(/(\d{4})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}`;
+  const meses = { jan:1, feb:2, fev:2, mar:3, apr:4, abr:4, may:5, mai:5, jun:6, jul:7, aug:8, ago:8,
+                  sep:9, set:9, oct:10, out:10, nov:11, dec:12, dez:12 };
+  const norm = t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  for (const [abrev, num] of Object.entries(meses)) {
+    if (norm.startsWith(abrev)) {
+      const anoM = t.match(/(\d{4})/);
+      const ano = anoM ? anoM[1] : anoRef;
+      return `${ano}-${String(num).padStart(2, '0')}`;
+    }
+  }
+  // Último recurso: se as colunas vierem em ordem (jan..dez), usa a posição
+  if (indiceColuna >= 1 && indiceColuna <= 12) return `${anoRef}-${String(indiceColuna).padStart(2, '0')}`;
+  return null;
+}
+
 async function orcamentoConsolidado({ ano } = {}) {
   const anoRef = ano || new Date().getFullYear();
   const inicioAno = `${anoRef}-01-01`;
@@ -2188,11 +2240,14 @@ async function orcamentoConsolidado({ ano } = {}) {
           if (!cat) return;
           if (!realizado[cat]) realizado[cat] = {};
           for (let i = 1; i < cols.length - 1; i++) {
+            // v1.38 FIX: o QuickBooks devolve o título da coluna como "Aug 2026", "Ago 2026" ou
+            // "Aug 1-31, 2026" — o código só aceitava "AAAA-MM", então NENHUM mês era reconhecido
+            // e o realizado do orçamento ficava zerado/furado. Agora entende os três formatos.
             const mesCol = colNames[i] || '';
-            const mesMatch = mesCol.match(/(\d{4})-(\d{2})/);
-            if (mesMatch) {
-              const mesKey = `${mesMatch[1]}-${mesMatch[2]}`;
-              realizado[cat][mesKey] = (realizado[cat][mesKey] || 0) + parseFloat(cols[i].value || 0);
+            const mesKey = _mesDaColunaQB(mesCol, anoRef, i);
+            if (mesKey) {
+              const v = parseFloat(String(cols[i].value || '0').replace(/[^\d.-]/g, '')) || 0;
+              realizado[cat][mesKey] = (realizado[cat][mesKey] || 0) + v;
             }
           }
         }
