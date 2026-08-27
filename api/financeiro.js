@@ -72,6 +72,7 @@ export default async function handler(req, res) {
       fluxo_detalhado:       () => fluxoDetalhado(params),
       qb_diagnostico:        () => qbDiagnostico(),
       qb_contas_diagnostico: () => qbContasDiagnostico(),
+      qb_rastrear_duplicados: () => qbRastrearDuplicados(params),
       gerente_financeiro:    () => gerenteFinanceiro(params),
       dashboard_financeiro:  () => dashboardFinanceiro(params),
       qb_auth_url:           () => qbAuthUrl(req),
@@ -927,6 +928,62 @@ async function qbOrcamento({ ano } = {}) {
 // 1.4 Saldo das contas bancárias
 // v1.40: diagnóstico do saldo de abertura — lista TODAS as contas (Bank e Credit Card),
 // mostra o que compõe o saldo e aponta classificações suspeitas.
+// v1.44: rastreia lançamentos repetidos — diz se a duplicidade está NO QUICKBOOKS
+// (dois registros de verdade) ou se é o Atlantyx contando duas vezes o mesmo registro.
+async function qbRastrearDuplicados({ data, valor, cliente } = {}) {
+  if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
+  const token = await qbToken();
+  const dia = (data || new Date().toISOString().split('T')[0]).substring(0, 10);
+  const alvoValor = valor != null ? parseFloat(valor) : null;
+  const out = { data: dia, valor_procurado: alvoValor, cliente_procurado: cliente || null, achados: [], conclusao: null };
+
+  const entidades = ['Payment', 'Deposit', 'Invoice', 'SalesReceipt'];
+  for (const ent of entidades) {
+    try {
+      const d = await qbQuery(`select * from ${ent} where TxnDate = '${dia}' maxresults 200`, token);
+      const itens = d?.QueryResponse?.[ent] || [];
+      for (const it of itens) {
+        const total = parseFloat(it.TotalAmt || 0);
+        const nomeCli = it.CustomerRef?.name || it.DepositToAccountRef?.name || '';
+        if (alvoValor != null && Math.abs(total - alvoValor) > 0.01) continue;
+        if (cliente && !String(nomeCli).toLowerCase().includes(String(cliente).toLowerCase())) continue;
+        const vinculos = [];
+        (it.Line || []).forEach(l => (l.LinkedTxn || []).forEach(lt => vinculos.push(`${lt.TxnType}#${lt.TxnId}`)));
+        out.achados.push({ entidade: ent, id: it.Id, doc: it.DocNumber || null, data: it.TxnDate,
+          valor: Math.round(total * 100) / 100, cliente: nomeCli,
+          vinculado_a: vinculos, criado_em: it.MetaData?.CreateTime || null,
+          conta: it.DepositToAccountRef?.name || it.APAccountRef?.name || null,
+          memo: (it.PrivateNote || it.CustomerMemo?.value || '').substring(0, 120) });
+      }
+    } catch (e) { out.achados.push({ entidade: ent, erro: e.message }); }
+  }
+
+  // Conclusão automática
+  const reais = out.achados.filter(a => !a.erro);
+  const mesmaEntidade = {};
+  reais.forEach(a => { mesmaEntidade[a.entidade] = (mesmaEntidade[a.entidade] || 0) + 1; });
+  const duplicadosNoQb = Object.entries(mesmaEntidade).filter(([, n]) => n > 1);
+  if (duplicadosNoQb.length) {
+    out.conclusao = { origem: 'quickbooks',
+      texto: `Existem ${duplicadosNoQb.map(([e, n]) => n + ' registros de ' + e).join(' e ')} com o mesmo valor e data NO PRÓPRIO QUICKBOOKS. A duplicidade está na base contábil, não no Atlantyx.`,
+      acao: 'Abra esses registros no QuickBooks e exclua/estorne o lançamento repetido. Os IDs estão listados acima.' };
+  } else if (reais.length > 1) {
+    const temVinculo = reais.some(a => (a.vinculado_a || []).length);
+    out.conclusao = { origem: temVinculo ? 'relacionados' : 'distintos',
+      texto: temVinculo
+        ? 'Os registros encontrados são de tipos diferentes e estão VINCULADOS entre si (ex.: um pagamento e o depósito dele). O Atlantyx já deduplica esse caso a partir da v1.41.'
+        : `Foram encontrados ${reais.length} registros de tipos diferentes com o mesmo valor, SEM vínculo entre si. Podem ser transações realmente distintas que coincidem em valor — confira os memos e contas acima.`,
+      acao: temVinculo ? 'Se ainda aparecer duplicado na tela, o deploy da v1.41 pode não estar ativo.' : 'Confira no QuickBooks se são mesmo duas entradas diferentes.' };
+  } else if (reais.length === 1) {
+    out.conclusao = { origem: 'unico', texto: 'Só existe UM registro com esse valor e data no QuickBooks. Se a tela mostra duas linhas, o problema é do Atlantyx (contagem em duplicidade).',
+      acao: 'Me envie este resultado — com um único registro na origem, o defeito é de leitura e eu corrijo.' };
+  } else {
+    out.conclusao = { origem: 'nenhum', texto: 'Nenhum registro encontrado com esse valor nesta data no QuickBooks.',
+      acao: 'Confira a data e o valor. Lembre que o QuickBooks pode registrar em data diferente da exibida.' };
+  }
+  return { rastreamento: out };
+}
+
 async function qbContasDiagnostico() {
   if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
   const token = await qbToken();
