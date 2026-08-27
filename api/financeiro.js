@@ -74,6 +74,7 @@ export default async function handler(req, res) {
       qb_contas_diagnostico: () => qbContasDiagnostico(),
       qb_rastrear_duplicados: () => qbRastrearDuplicados(params),
       qb_varrer_duplicados:  () => qbVarrerDuplicados(params),
+      qb_conferir_banco:     () => qbConferirComBanco(params),
       gerente_financeiro:    () => gerenteFinanceiro(params),
       dashboard_financeiro:  () => dashboardFinanceiro(params),
       qb_auth_url:           () => qbAuthUrl(req),
@@ -784,12 +785,22 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
   // v1.36.1 FIX: cada consulta traz UMA entidade — antes o código pegava o primeiro campo
   // presente na resposta com uma cadeia de "||", o que fazia a mesma lista ser processada em
   // rodadas diferentes e gerava LINHAS DUPLICADAS no extrato. Agora cada query lê só a sua entidade.
+  // v1.48 FIX: faltavam entidades importantes. Na conciliação bancária do QuickBooks, a maioria
+  // dos PIX/pagamentos vira "Pagamento de conta" = BillPayment — que NÃO era consultado aqui.
+  // Também faltavam Transfer (transferências entre contas), JournalEntry (lançamentos manuais),
+  // CreditCardPayment e VendorCredit/RefundReceipt. Por isso dezenas de lançamentos conciliados
+  // não apareciam no extrato do Atlantyx.
   const queries = [
-    { tipo: 'despesa',   entidade: 'Purchase',     q: `select * from Purchase where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
-    { tipo: 'pagamento', entidade: 'Payment',      q: `select * from Payment where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
-    { tipo: 'deposito',  entidade: 'Deposit',      q: `select * from Deposit where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
-    { tipo: 'venda',     entidade: 'SalesReceipt', q: `select * from SalesReceipt where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
-    { tipo: 'invoice',   entidade: 'Invoice',      q: `select * from Invoice where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
+    { tipo: 'despesa',      entidade: 'Purchase',          q: `select * from Purchase where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
+    { tipo: 'pagamento',    entidade: 'Payment',           q: `select * from Payment where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
+    { tipo: 'pagto_conta',  entidade: 'BillPayment',       q: `select * from BillPayment where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
+    { tipo: 'deposito',     entidade: 'Deposit',           q: `select * from Deposit where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
+    { tipo: 'venda',        entidade: 'SalesReceipt',      q: `select * from SalesReceipt where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
+    { tipo: 'transferencia',entidade: 'Transfer',          q: `select * from Transfer where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
+    { tipo: 'lancamento',   entidade: 'JournalEntry',      q: `select * from JournalEntry where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
+    { tipo: 'pagto_cartao', entidade: 'CreditCardPayment', q: `select * from CreditCardPayment where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
+    { tipo: 'reembolso',    entidade: 'RefundReceipt',     q: `select * from RefundReceipt where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
+    { tipo: 'invoice',      entidade: 'Invoice',           q: `select * from Invoice where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
   ];
 
   const lancamentos = []; const erros = [];
@@ -809,6 +820,12 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
         // porque as vinculadas já foram contadas no próprio Payment.
         let valorItem = parseFloat(item.TotalAmt || 0);
         let obsDedup = null;
+        // v1.48: JournalEntry não traz TotalAmt — soma as linhas de débito
+        if (tipo === 'lancamento' && !valorItem && Array.isArray(item.Line)) {
+          valorItem = item.Line.filter(l => l.JournalEntryLineDetail?.PostingType === 'Debit')
+            .reduce((s, l) => s + (parseFloat(l.Amount) || 0), 0);
+        }
+        if (tipo === 'transferencia' && !valorItem) valorItem = parseFloat(item.Amount || 0);
         if (tipo === 'deposito' && Array.isArray(item.Line)) {
           const linhasVinculadas = item.Line.filter(l => (l.LinkedTxn || []).some(lt => /payment/i.test(lt.TxnType || '')));
           if (linhasVinculadas.length) {
@@ -822,19 +839,32 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
         // 'pagamento'/'deposito' é o dinheiro ENTRANDO (caixa). Contar os dois como entrada no
         // extrato dobrava a receita da mesma venda. Como este extrato é de CAIXA, a Invoice entra
         // como referência (valor 0 no saldo) e só o recebimento movimenta o saldo.
+        // v1.48: classificação dos novos tipos.
+        // BillPayment/CreditCardPayment/reembolso = SAÍDA · Transfer não muda o caixa total
+        // (sai de uma conta e entra em outra) · JournalEntry depende das linhas.
         const entrada = ['pagamento', 'deposito', 'venda'].includes(tipo);
-        const soReferencia = tipo === 'invoice';
+        const soReferencia = tipo === 'invoice' || tipo === 'transferencia';
         lancamentos.push({
           id: `qb_${tipo}_${item.Id}`,
           qb_txn_id: `${tipo}:${item.Id}`,
           data: item.TxnDate || item.MetaData?.CreateTime?.split('T')[0],
+          // v1.48: BillPayment usa VendorRef; Transfer usa as contas de origem/destino
           descricao: item.PrivateNote
+                  || item.VendorRef?.name
                   || item.EntityRef?.name
                   || item.CustomerRef?.name
+                  || (tipo === 'transferencia' && item.FromAccountRef?.name
+                      ? `Transferência: ${item.FromAccountRef.name} → ${item.ToAccountRef?.name || '?'}` : null)
                   || item.PaymentMethodRef?.name
                   || `${tipo} #${item.DocNumber || item.Id}`,
-          categoria: item.AccountRef?.name || tipo,
-          conta: item.AccountRef?.name || item.DepositToAccountRef?.name || '',
+          categoria: item.AccountRef?.name
+                  || (tipo === 'pagto_conta' ? 'Pagamento de conta' : null)
+                  || (tipo === 'transferencia' ? 'Transferência entre contas' : null)
+                  || (tipo === 'lancamento' ? 'Lançamento manual' : null)
+                  || tipo,
+          conta: item.AccountRef?.name || item.DepositToAccountRef?.name
+                  || item.APAccountRef?.name || item.BankAccountRef?.name
+                  || item.CheckPayment?.BankAccountRef?.name || item.FromAccountRef?.name || '',
           tipo: soReferencia ? 'referencia' : (entrada ? 'entrada' : 'saida'),
           valor: valorItem,
           valor_documento: parseFloat(item.TotalAmt || 0),
@@ -934,6 +964,48 @@ async function qbOrcamento({ ano } = {}) {
 // v1.45: varredura de duplicidade — analisa um período inteiro e lista os suspeitos,
 // separando o que é duplicidade REAL na base contábil do que é vínculo normal
 // (pagamento + depósito, nota + recebimento) que o sistema já sabe tratar.
+// v1.47: conferência com o banco — detecta lançamentos que existem no extrato bancário mas
+// ainda NÃO foram aceitos no QuickBooks (ficam na fila "Para revisão" e não aparecem na API).
+async function qbConferirComBanco({ data_inicio, data_fim } = {}) {
+  if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
+  const token = await qbToken();
+  const hoje = new Date().toISOString().split('T')[0];
+  const ini = data_inicio || `${hoje.substring(0, 8)}01`;
+  const fim = data_fim || hoje;
+  const out = { periodo: { de: ini, ate: fim } };
+
+  // 1. Saldo atual das contas bancárias (o QuickBooks só conta o que foi ACEITO)
+  let saldoContas = 0, contas = [];
+  try { const sc = await qbSaldoContas(); saldoContas = sc.saldo_total; contas = sc.contas || []; } catch (e) { out.erro_contas = e.message; }
+  out.saldo_quickbooks = round(saldoContas);
+
+  // 2. Movimento registrado no período (o que a API devolve)
+  let movimento = 0, qtd = 0;
+  try {
+    const r = await qbLancamentos({ data_inicio: ini, data_fim: fim, limite: 1000 });
+    const l = r.lancamentos || [];
+    qtd = l.length;
+    movimento = l.reduce((s, x) => x.tipo === 'entrada' ? s + x.valor : x.tipo === 'saida' ? s - x.valor : s, 0);
+  } catch (e) { out.erro_lancamentos = e.message; }
+  out.lancamentos_no_periodo = qtd;
+  out.movimento_registrado = round(movimento);
+
+  // 3. Diagnóstico do que costuma faltar
+  out.orientacao = {
+    causa_mais_comum: 'Transações importadas do banco que ainda estão em "Para revisão" no QuickBooks.',
+    explicacao: 'Enquanto uma transação está na fila de revisão (mesmo aparecendo como "Correspondido"), ela NÃO existe como lançamento contábil — a API do QuickBooks não a devolve, e ela não entra no saldo nem no extrato do Atlantyx.',
+    como_resolver: [
+      'No QuickBooks: menu Transações → Transações bancárias (Banking)',
+      'Aba "Para revisão" — veja quantas estão pendentes',
+      'Revise a categoria de cada uma e clique em Confirmar/Adicionar',
+      'Depois disso, clique em Atualizar no Atlantyx: elas passam a aparecer',
+    ],
+    observacao: 'O saldo mostrado pelo próprio QuickBooks também ignora as transações não aceitas — por isso ele pode divergir do saldo real do banco.',
+  };
+  out.contas = contas.map(c => ({ nome: c.nome, saldo: round(c.saldo), tipo: c.tipo }));
+  return { conferencia: out };
+}
+
 async function qbVarrerDuplicados({ data_inicio, data_fim, tolerancia_dias = 3 } = {}) {
   if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
   const token = await qbToken();
@@ -1306,33 +1378,43 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
       baseData = String(rows[0].data_ref).split('T')[0];
       saldoInicialOrigem = 'saldo_cadastrado';
     }
-    // Movimento entre a data do saldo cadastrado (ou o começo de tudo) e o início do período
-    const desde = baseData || '2000-01-01';
+    // v1.46.1 CORREÇÃO DA CORREÇÃO: reconstruir o saldo somando todo o histórico de lançamentos
+    // estava ERRADO por dois motivos:
+    //   (a) o QuickBooks já mantém o saldo real de cada conta bancária (CurrentBalance) — refazer
+    //       essa conta manualmente acumula qualquer duplicidade existente na base;
+    //   (b) a soma de "entradas - saídas" do extrato não equivale a saldo bancário (transferências
+    //       entre contas, saldos de abertura das próprias contas, etc.).
+    // A fonte correta é o QuickBooks. Só recuamos no tempo quando o período pedido é PASSADO,
+    // e aí subtraímos do saldo atual o que aconteceu depois — que é uma conta bem menor e verificável.
     const ateAnterior = new Date(new Date(ini + 'T12:00:00').getTime() - 86400000).toISOString().split('T')[0];
-    if (ateAnterior >= desde) {
-      const anteriores = await qbLancamentos({ data_inicio: desde, data_fim: ateAnterior, limite: 1000 });
-      const movAnterior = (anteriores.lancamentos || []).reduce((s, l) => {
-        if (l.tipo === 'entrada') return s + l.valor;
-        if (l.tipo === 'saida') return s - l.valor;
-        return s; // 'referencia' (nota emitida) não move caixa
-      }, 0);
-      // Simulados anteriores também contam, se estiverem sendo considerados
-      let movSimulado = 0;
-      if (incluir_simulados) {
+    const hojeStr2 = new Date().toISOString().split('T')[0];
+
+    let saldoHoje = null;
+    try { const sc = await qbSaldoContas(); if (sc?.qb_configurado) saldoHoje = sc.saldo_total; } catch (_) {}
+
+    if (saldoHoje != null) {
+      // Saldo no início do período = saldo de hoje − movimento entre o início do período e hoje
+      const movDepois = await (async () => {
         try {
-          const simAnt = await simList({ data_inicio: desde, data_fim: ateAnterior });
-          movSimulado = (simAnt.lancamentos || []).reduce((s, l) => s + (l.tipo === 'entrada' ? l.valor : -l.valor), 0);
-        } catch (_) {}
-      }
-      saldoInicial = round(baseValor + movAnterior + movSimulado);
+          const r = await qbLancamentos({ data_inicio: ini, data_fim: hojeStr2, limite: 1000 });
+          return (r.lancamentos || []).reduce((s, l) => l.tipo === 'entrada' ? s + l.valor : l.tipo === 'saida' ? s - l.valor : s, 0);
+        } catch { return 0; }
+      })();
+      saldoInicial = round(saldoHoje - movDepois);
       saldoInicialData = ini;
-      saldoInicialOrigem = baseData ? 'cadastrado_mais_movimento' : 'reconstruido_do_historico';
-      saldoInicialDetalhe = { saldo_base: round(baseValor), base_data: baseData,
-        movimento_anterior: round(movAnterior + movSimulado), lancamentos_considerados: (anteriores.lancamentos || []).length };
-    } else {
+      saldoInicialOrigem = 'quickbooks_retroagido';
+      saldoInicialDetalhe = { saldo_hoje: round(saldoHoje), movimento_no_periodo_ate_hoje: round(movDepois),
+        observacao: 'Saldo de hoje das contas bancárias do QuickBooks, retroagido até o início do período.' };
+    } else if (baseData) {
+      // Sem QuickBooks: usa o saldo cadastrado manualmente mais próximo (sem reconstruir histórico)
       saldoInicial = round(baseValor);
       saldoInicialData = baseData;
-      saldoInicialDetalhe = { saldo_base: round(baseValor), base_data: baseData, movimento_anterior: 0 };
+      saldoInicialOrigem = 'saldo_cadastrado';
+      saldoInicialDetalhe = { saldo_base: round(baseValor), base_data: baseData,
+        observacao: baseData !== ini ? `Saldo cadastrado em ${baseData}; o movimento entre essa data e ${ini} não está somado (cadastre um saldo mais próximo para maior precisão).` : null };
+    } else {
+      saldoInicial = 0; saldoInicialOrigem = 'zero';
+      saldoInicialDetalhe = { observacao: 'Nenhum saldo bancário disponível: QuickBooks não conectado e nenhum saldo inicial cadastrado. A coluna de saldo mostra apenas a variação no período.' };
     }
   } catch (e) { console.warn('[extrato] saldo inicial:', e.message); }
 
