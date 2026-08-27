@@ -1419,16 +1419,32 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
 
     if (saldoHoje != null) {
       // Saldo no início do período = saldo de hoje − movimento entre o início do período e hoje
+      // v1.51 FIX: este movimento PRECISA ser idêntico ao que o extrato vai somar depois.
+      // Antes havia 3 diferenças que faziam a conta não fechar:
+      //   (a) período: aqui ia até HOJE, mas o extrato vai até o fim do filtro;
+      //   (b) lançamentos ocultados pelo usuário eram descontados aqui mas não lá (ou vice-versa);
+      //   (c) simulados entravam no extrato e não entravam aqui.
+      // Agora reaproveitamos a MESMA lista que o extrato usa.
       const movDepois = await (async () => {
         try {
           const r = await qbLancamentos({ data_inicio: ini, data_fim: hojeStr2, limite: 1000 });
+          // Mesma lista já vem sem os ocultos (qbLancamentos filtra internamente)
           return (r.lancamentos || []).reduce((s, l) => l.tipo === 'entrada' ? s + l.valor : l.tipo === 'saida' ? s - l.valor : s, 0);
         } catch { return 0; }
       })();
-      saldoInicial = round(saldoHoje - movDepois);
+      // Simulados também entram no extrato — precisam entrar aqui para a conta fechar
+      let movSimuladoAte = 0;
+      if (incluir_simulados) {
+        try {
+          const simAte = await simList({ data_inicio: ini, data_fim: hojeStr2 });
+          movSimuladoAte = (simAte.lancamentos || []).reduce((s, l) => s + (l.tipo === 'entrada' ? l.valor : -l.valor), 0);
+        } catch (_) {}
+      }
+      saldoInicial = round(saldoHoje - movDepois - movSimuladoAte);
       saldoInicialData = ini;
       saldoInicialOrigem = 'quickbooks_retroagido';
-      saldoInicialDetalhe = { saldo_hoje: round(saldoHoje), movimento_no_periodo_ate_hoje: round(movDepois),
+      saldoInicialDetalhe = { saldo_hoje: round(saldoHoje), movimento_no_periodo_ate_hoje: round(movDepois + movSimuladoAte),
+        movimento_qb: round(movDepois), movimento_simulado: round(movSimuladoAte),
         observacao: 'Saldo de hoje das contas bancárias do QuickBooks, retroagido até o início do período.' };
     } else if (baseData) {
       // Sem QuickBooks: usa o saldo cadastrado manualmente mais próximo (sem reconstruir histórico)
@@ -1588,7 +1604,7 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
     contas_banco: contasBanco.map(c => ({ nome: c.nome, saldo: round(c.saldo) })),
     divergencia_calculado_vs_real: divergencia,
     divergencia_relevante: divergencia != null && Math.abs(divergencia) > 1,
-    passado: { saldo_inicial: extrato.saldo_inicial, saldo_inicial_data: extrato.saldo_inicial_data, lancamentos: extrato.lancamentos, total_entradas: extrato.total_entradas, total_saidas: extrato.total_saidas, qb_erro: extrato.qb_erro },
+    passado: { saldo_inicial: extrato.saldo_inicial, saldo_inicial_data: extrato.saldo_inicial_data, saldo_inicial_detalhe: extrato.saldo_inicial_detalhe, lancamentos: extrato.lancamentos, total_entradas: extrato.total_entradas, total_saidas: extrato.total_saidas, qb_erro: extrato.qb_erro },
     saldo_hoje: extrato.saldo_final || 0,
     futuro: { lancamentos: futuroComSaldo, total_recebiveis: fut.recebiveis.reduce((s, l) => s + l.valor, 0), total_pagaveis: fut.pagaveis.reduce((s, l) => s + l.valor, 0), qtd_qb: fut.recebiveis.length + fut.pagaveis.length, qtd_atlantyx: despFuturas.length + simFuturos.length, qb_erro: fut.erro, ate: ultimaData },
     saldo_projetado_final: futuroComSaldo.length ? futuroComSaldo[futuroComSaldo.length - 1].saldo_acumulado : (extrato.saldo_final || 0),
