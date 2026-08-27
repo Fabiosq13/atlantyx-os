@@ -71,6 +71,7 @@ export default async function handler(req, res) {
       versao:                () => ({ versao_api: VERSAO_API }),
       fluxo_detalhado:       () => fluxoDetalhado(params),
       qb_diagnostico:        () => qbDiagnostico(),
+      qb_contas_diagnostico: () => qbContasDiagnostico(),
       gerente_financeiro:    () => gerenteFinanceiro(params),
       dashboard_financeiro:  () => dashboardFinanceiro(params),
       qb_auth_url:           () => qbAuthUrl(req),
@@ -905,6 +906,48 @@ async function qbOrcamento({ ano } = {}) {
 }
 
 // 1.4 Saldo das contas bancárias
+// v1.40: diagnóstico do saldo de abertura — lista TODAS as contas (Bank e Credit Card),
+// mostra o que compõe o saldo e aponta classificações suspeitas.
+async function qbContasDiagnostico() {
+  if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
+  const token = await qbToken();
+  const out = { contas_bank: [], contas_cartao: [], outras_relevantes: [], suspeitas: [], saldo_bank_total: 0 };
+  try {
+    const d = await qbQuery(`select * from Account where AccountType in ('Bank','Credit Card','Other Current Asset','Other Current Liability') maxresults 200`, token);
+    const contas = (d?.QueryResponse?.Account || []).filter(a => a.Active !== false);
+    for (const a of contas) {
+      const item = { id: a.Id, nome: a.Name, tipo: a.AccountType, subtipo: a.AccountSubType || '',
+        saldo: round(parseFloat(a.CurrentBalance || 0)), moeda: a.CurrencyRef?.value || 'BRL',
+        numero: a.AcctNum || '', descricao: a.Description || '' };
+      if (a.AccountType === 'Bank') { out.contas_bank.push(item); out.saldo_bank_total += item.saldo; }
+      else if (a.AccountType === 'Credit Card') out.contas_cartao.push(item);
+      else if (item.saldo !== 0) out.outras_relevantes.push(item);
+
+      // Heurísticas de classificação suspeita
+      const nomeLower = (a.Name + ' ' + (a.Description || '')).toLowerCase();
+      const pareceCartao = /cart[aã]o|credit|visa|master|amex|elo\b/.test(nomeLower);
+      if (a.AccountType === 'Bank' && pareceCartao) {
+        out.suspeitas.push({ conta: a.Name, saldo: item.saldo, tipo_atual: 'Bank',
+          problema: 'O nome sugere CARTÃO DE CRÉDITO, mas está classificada como conta bancária (Bank).',
+          efeito: 'A dívida do cartão é somada como se fosse saldo negativo em caixa, derrubando o saldo de partida do fluxo.',
+          acao: 'No QuickBooks: Plano de Contas → editar esta conta → mudar o tipo para "Cartão de crédito" (Credit Card).' });
+      }
+      if (a.AccountType === 'Bank' && item.saldo < 0 && !pareceCartao) {
+        out.suspeitas.push({ conta: a.Name, saldo: item.saldo, tipo_atual: 'Bank',
+          problema: 'Conta bancária com saldo negativo.',
+          efeito: 'Entra integralmente como caixa negativo no ponto de partida da projeção.',
+          acao: 'Confirme se é cheque especial de verdade. Se a conta foi importada, verifique se o saldo de abertura (opening balance) foi lançado — sem ele, só as saídas entram e o saldo fica negativo artificialmente.' });
+      }
+    }
+    out.saldo_bank_total = round(out.saldo_bank_total);
+    out.saldo_cartoes_total = round(out.contas_cartao.reduce((s, c) => s + c.saldo, 0));
+    // Como ficaria se as suspeitas de cartão fossem reclassificadas
+    const somaSuspeitasCartao = out.suspeitas.filter(s => /CART[AÃ]O/i.test(s.problema)).reduce((s, x) => s + x.saldo, 0);
+    if (somaSuspeitasCartao !== 0) out.saldo_bank_se_corrigido = round(out.saldo_bank_total - somaSuspeitasCartao);
+  } catch (e) { out.erro = e.message; }
+  return { diagnostico_contas: out };
+}
+
 async function qbSaldoContas() {
   if (!qbConfigurado()) return { contas: [], saldo_total: 0, qb_configurado: false };
   const token = await qbToken();
@@ -1596,17 +1639,31 @@ async function fluxoFuturo({ meses = 12, overrides = {} } = {}) {
   }
 
   // 2. Saldo inicial = saldo atual de caixa (QB ou saldo inicial mais recente)
+  // v1.39: guarda a COMPOSIÇÃO do saldo — conta a conta — para a tela poder explicar
+  // de onde vem o número (principalmente quando ele é negativo).
   let saldoAtual = 0;
+  let origemSaldo = { fonte: 'nenhuma', contas: [], negativas: [], observacao: null };
   if (qbConfigurado()) {
     try {
-      const { saldo_total } = await qbSaldoContas();
+      const { saldo_total, contas } = await qbSaldoContas();
       saldoAtual = saldo_total;
-    } catch {}
+      origemSaldo = {
+        fonte: 'quickbooks',
+        contas: (contas || []).map(c => ({ nome: c.nome, tipo: c.tipo, saldo: round(c.saldo) })),
+        negativas: (contas || []).filter(c => c.saldo < 0).map(c => ({ nome: c.nome, tipo: c.tipo, saldo: round(c.saldo) })),
+        observacao: null,
+      };
+      if (origemSaldo.negativas.length) {
+        origemSaldo.observacao = `${origemSaldo.negativas.length} conta(s) com saldo negativo no QuickBooks puxam o total para baixo. Conta corrente negativa = cheque especial usado; se for cartão de crédito classificado como "Bank", o saldo devedor entra como negativo.`;
+      }
+    } catch (e) { origemSaldo.observacao = 'Falha ao ler contas do QuickBooks: ' + e.message; }
   }
   if (saldoAtual === 0) {
     try {
-      const { saldo } = await saldoInicialGet({ data_ref: hoje.toISOString().split('T')[0] });
+      const { saldo, data_ref } = await saldoInicialGet({ data_ref: hoje.toISOString().split('T')[0] });
       saldoAtual = saldo;
+      origemSaldo = { fonte: 'saldo_inicial_manual', contas: [], negativas: [],
+        observacao: `Saldo informado manualmente em Saldos Iniciais${data_ref ? ' (referência: ' + data_ref + ')' : ''} — o QuickBooks não retornou saldo bancário.` };
     } catch {}
   }
 
@@ -1732,6 +1789,9 @@ async function fluxoFuturo({ meses = 12, overrides = {} } = {}) {
   // 7. Alertas
   const alertas = [];
   // v1.37: avisos sobre o que NÃO entrou na projeção (antes sumia silenciosamente)
+  if (saldoAtual < 0) alertas.push({ tipo: 'critico',
+    mensagem: `O saldo de PARTIDA já é negativo (${saldoAtual.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}) — toda a projeção parte daí.` +
+      (origemSaldo.negativas?.length ? ` Contas negativas no QuickBooks: ${origemSaldo.negativas.map(c => c.nome + ' (' + c.saldo.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) + ')').join(', ')}.` : '') });
   if (aReceberVencido > 0) alertas.push({ tipo: 'vencido',
     mensagem: `R$ ${aReceberVencido.toLocaleString('pt-BR',{minimumFractionDigits:2})} em faturas JÁ VENCIDAS não entram na projeção (o vencimento passou). Cobre esses recebíveis ou renegocie a data no QuickBooks.` });
   if (aReceberForaHorizonte > 0) alertas.push({ tipo: 'fora_horizonte',
@@ -1767,6 +1827,7 @@ async function fluxoFuturo({ meses = 12, overrides = {} } = {}) {
       a_receber_fora_horizonte: round(aReceberForaHorizonte),
       a_receber_no_horizonte: round(Object.values(aReceberPorMes).reduce((s, v) => s + v, 0)),
       realizado_mes_corrente: { entradas: round(realizadoMesCorrente.entradas), saidas: round(realizadoMesCorrente.saidas) },
+      origem_saldo_inicial: origemSaldo, // v1.39: de onde vem o saldo de partida
     },
   };
 }
