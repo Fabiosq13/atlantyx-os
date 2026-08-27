@@ -2545,8 +2545,17 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- v1.14: DASHBOARD FINANCEIRO -->
 <div class="page" id="page-s3dashboard">
   <div style="background:linear-gradient(135deg,rgba(79,124,255,.14),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Dashboard Financeiro</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Todos os KPIs financeiros num só lugar · QuickBooks + fluxo + projetos + conciliação</div></div>
+    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Dashboard Financeiro</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Todos os KPIs financeiros num só lugar · QuickBooks + fluxo + projetos + conciliação<span id="dashPeriodoLabel" style="color:var(--gold);"></span></div></div>
     <span id="dfAtualizado" style="font-size:9.5px;color:var(--t3);"></span>
+    <select class="fsel" id="dashFiltroMes" style="font-size:11px;width:auto;" onchange="carregarDashboardFinanceiro()">
+      <option value="">Ano inteiro</option>
+      <option value="1">Janeiro</option><option value="2">Fevereiro</option><option value="3">Março</option>
+      <option value="4">Abril</option><option value="5">Maio</option><option value="6">Junho</option>
+      <option value="7">Julho</option><option value="8">Agosto</option><option value="9">Setembro</option>
+      <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
+    </select>
+    <select class="fsel" id="dashFiltroAno" style="font-size:11px;width:auto;" onchange="carregarDashboardFinanceiro()"></select>
+    <button class="btn" style="font-size:10px;" onclick="_dashMesAtual()" title="Voltar para o mês corrente">&#8634; Mês atual</button>
     <button class="btn btn-gn" onclick="carregarDashboardFinanceiro()">&#8635; Atualizar</button>
     <button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="previewRelatorioPagamentos()">&#128231; Relatório de Pagamentos</button>
     <button class="btn btn-p" onclick="nav('s3gerente')">&#129302; Perguntar ao Gerente IA</button>
@@ -3033,6 +3042,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(34,211,163,.03));border:1px solid rgba(34,211,163,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
     <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Sala de Reunião Permanente</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Áudio e vídeo com sua equipe · conselheiros IA ouvem a conversa e participam por voz</div></div>
     <button class="btn" onclick="copiarLinkSala()">&#128279; Copiar link da sala</button>
+    <button class="btn" style="font-size:10px;" onclick="configurarServidorVideo()" title="Usar servidor Jitsi próprio (libera vídeo embutido sem limite de tempo)">&#9881; <span id="lblServidorVideo">Servidor de vídeo</span></button>
     <button class="btn" onclick="compartilharTela()" id="btnCompartilhar" title="Compartilhar sua tela com os participantes">&#128421; Compartilhar tela</button>
     <button class="btn" onclick="expandirSala()" id="btnExpandir" title="Ampliar a área de vídeo (melhor para ver tela compartilhada)">&#8599; Ampliar</button>
     <button class="btn btn-gn" onclick="entrarSala()" id="btnEntrarSala">&#127909; Entrar na sala</button>
@@ -3075,7 +3085,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="pb" id="conselheirosSala"><div style="color:var(--t3);font-size:11px;text-align:center;padding:14px;">Carregando...</div></div>
       <div class="ph" style="border-top:1px solid var(--bd);"><div class="pt">Como funciona</div></div>
       <div class="pb" style="font-size:10px;color:var(--t2);line-height:1.7;">
-        O vídeo entre pessoas é feito por uma sala segura do Jitsi, embutida aqui.<br><br>
+        O vídeo abre em uma <b>janela própria</b> (o meet.jit.si limita a 5 minutos quando o vídeo fica embutido na página). Deixe as duas janelas lado a lado.<br><br>
+        Para embutir o vídeo aqui sem limite, configure um servidor Jitsi próprio em <b>⚙ Servidor de vídeo</b>.<br><br>
         Os conselheiros IA <b>não entram como participantes de vídeo</b> — eles acompanham pela transcrição do seu microfone e respondem por voz no seu alto-falante.<br><br>
         <b>Para os outros ouvirem os conselheiros:</b> use fone com microfone aberto ou compartilhe a aba com áudio. A resposta também aparece sempre escrita aqui.
       </div>
@@ -13497,7 +13508,7 @@ function renderExtrato(d) {
           return `
             <tr style="border-bottom:1px solid rgba(255,255,255,.04);${isSim ? 'background:rgba(245,166,35,.04);' : ''}">
               <td style="padding:7px 8px;color:var(--t2);font-family:var(--M);font-size:10px;">${l.data}</td>
-              <td style="padding:7px 8px;">${l.descricao}</td>
+              <td style="padding:7px 8px;">${l.descricao}${l.qb_txn_id ? `<span style="color:var(--t3);font-size:9px;margin-left:5px;font-family:var(--M);" title="Identificação no QuickBooks — use para localizar o lançamento lá">#${l.qb_txn_id}</span>` : ''}</td>
               <td style="padding:7px 8px;color:var(--t3);font-size:10px;">${l.categoria || '-'}</td>
               <td style="padding:7px 8px;text-align:center;">
                 <span style="font-size:9px;padding:2px 6px;border:1px solid ${corOrigem};color:${corOrigem};border-radius:3px;">${isSim ? 'SIM' : 'QB'}</span>
@@ -16195,17 +16206,61 @@ async function carregarSalaReuniao() {
   } catch (e) { box.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Erro: ' + e.message + '</div>'; }
 }
 function copiarLinkSala() {
-  const link = 'https://meet.jit.si/' + SALA_NOME;
+  const link = 'https://' + _jitsiDominio() + '/' + SALA_NOME;
   navigator.clipboard.writeText(link).then(() => toast('Link copiado: ' + link, 'success')).catch(() => prompt('Link da sala:', link));
 }
+// v1.35: por padrão abre em JANELA PRÓPRIA — o meet.jit.si corta chamadas EMBUTIDAS (iframe)
+// em 5 minutos ("apenas para demonstração"). Fora do iframe não há esse limite.
+let _janelaSala = null;
 function entrarSala() {
+  const dominio = _jitsiDominio();
+  const url = 'https://' + dominio + '/' + SALA_NOME + '#config.prejoinPageEnabled=false';
+  // Se o usuário configurou um servidor próprio (JaaS/self-hosted), o embutido é liberado
+  if (dominio !== 'meet.jit.si') return entrarSalaEmbutida();
+  try {
+    if (_janelaSala && !_janelaSala.closed) { _janelaSala.focus(); toast('A sala já está aberta na outra janela', 'success'); return; }
+    _janelaSala = window.open(url, 'AtlantyxSala', 'width=1200,height=800');
+    if (!_janelaSala) { toast('O navegador bloqueou a janela — libere o pop-up e tente de novo', 'error'); return; }
+    const cont = document.getElementById('jitsiContainer');
+    if (cont) cont.innerHTML = `<div style="text-align:center;padding:30px;font-size:12px;">
+      <div style="font-size:34px;margin-bottom:8px;">🎥</div>
+      <div style="color:var(--green,#22d3a3);font-weight:600;margin-bottom:6px;">Sala aberta em outra janela</div>
+      <div style="color:var(--t2);max-width:420px;margin:0 auto;line-height:1.6;">Deixe aquela janela ao lado desta. Os conselheiros continuam ouvindo por aqui — ative a escuta abaixo.</div>
+      <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;">
+        <button class="btn btn-gn" onclick="_janelaSala&&!_janelaSala.closed?_janelaSala.focus():entrarSala()">Ir para a sala</button>
+        <button class="btn" onclick="entrarSalaEmbutida()" title="Abre aqui dentro, mas o meet.jit.si limita a 5 minutos">Abrir aqui mesmo (5 min)</button>
+      </div>
+      <div style="margin-top:14px;font-size:10px;color:var(--t3);max-width:440px;margin-left:auto;margin-right:auto;">
+        Para ter o vídeo embutido nesta tela sem limite de tempo, configure um servidor Jitsi próprio em ⚙ Servidor de vídeo.
+      </div></div>`;
+    const btn = document.getElementById('btnEntrarSala'); if (btn) btn.textContent = '🎥 Na sala';
+    addLog('ok', '[Reunião] Sala aberta em janela própria: ' + url);
+  } catch (e) { toast('Erro ao abrir a sala: ' + e.message, 'error'); }
+}
+function _jitsiDominio() { try { return localStorage.getItem('atx:jitsi_dominio') || 'meet.jit.si'; } catch(_) { return 'meet.jit.si'; } }
+function configurarServidorVideo() {
+  const atual = _jitsiDominio();
+  const novo = prompt('Domínio do servidor de vídeo.\n\n· meet.jit.si (padrão, gratuito — mas só 5 min quando embutido)\n· 8x8.vc ou seu domínio JaaS\n· o endereço do seu Jitsi próprio\n\nDeixe vazio para voltar ao padrão:', atual === 'meet.jit.si' ? '' : atual);
+  if (novo === null) return;
+  const d = (novo || '').trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
+  try { if (d) localStorage.setItem('atx:jitsi_dominio', d); else localStorage.removeItem('atx:jitsi_dominio'); } catch(_) {}
+  toast(d ? 'Servidor de vídeo: ' + d + ' (vídeo embutido liberado)' : 'Voltou para meet.jit.si (abre em janela própria)', 'success');
+  _atualizaLabelServidor();
+}
+function _atualizaLabelServidor() {
+  const el = document.getElementById('lblServidorVideo');
+  if (el) { const d = _jitsiDominio(); el.textContent = d === 'meet.jit.si' ? 'Servidor de vídeo' : d.substring(0, 20); }
+}
+setTimeout(_atualizaLabelServidor, 1600);
+
+function entrarSalaEmbutida() {
   const cont = document.getElementById('jitsiContainer'); if (!cont) return;
   if (_jitsiApi) { toast('Você já está na sala', 'success'); return; }
   const btn = document.getElementById('btnEntrarSala'); if (btn) { btn.disabled = true; btn.textContent = '⏳ Abrindo...'; }
   const iniciar = () => {
     try {
       cont.innerHTML = '';
-      _jitsiApi = new window.JitsiMeetExternalAPI('meet.jit.si', {
+      _jitsiApi = new window.JitsiMeetExternalAPI(_jitsiDominio(), {
         roomName: SALA_NOME, parentNode: cont, width: '100%', height: '100%',
         userInfo: { displayName: 'Atlantyx' },
         configOverwrite: { prejoinPageEnabled: false, startWithAudioMuted: false, disableDeepLinking: true },
@@ -16227,7 +16282,7 @@ function entrarSala() {
   };
   if (window.JitsiMeetExternalAPI) return iniciar();
   const sc = document.createElement('script');
-  sc.src = 'https://meet.jit.si/external_api.js';
+  sc.src = 'https://' + _jitsiDominio() + '/external_api.js';
   sc.onload = iniciar;
   sc.onerror = () => { cont.innerHTML = '<div style="color:var(--red);padding:20px;font-size:12px;text-align:center;">Não consegui carregar o vídeo (rede bloqueada?).<br><a href="https://meet.jit.si/' + SALA_NOME + '" target="_blank" style="color:var(--blue);">Abrir a sala em nova aba</a></div>'; if (btn) { btn.disabled = false; btn.textContent = '🎥 Entrar na sala'; } };
   document.head.appendChild(sc);
@@ -16616,10 +16671,27 @@ async function perguntarRh(textoFixo) {
 function limparChatRh() { _rhHist = []; const box = document.getElementById('rhChat'); if (box) box.innerHTML = '<div style="background:var(--bg4);border-radius:10px;padding:12px;font-size:12px;line-height:1.55;max-width:85%;">Nova conversa. O que quer saber sobre a equipe?</div>'; }
 
 // ═══ v1.14: DASHBOARD FINANCEIRO ═══
+function _dashMesAtual() {
+  const m = document.getElementById('dashFiltroMes'), a = document.getElementById('dashFiltroAno');
+  if (m) m.value = String(new Date().getMonth()+1);
+  if (a) a.value = String(new Date().getFullYear());
+  carregarDashboardFinanceiro();
+}
 async function carregarDashboardFinanceiro() {
   const st = document.getElementById('dfStatus'); const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
   try {
-    const d = await finApi('dashboard_financeiro'); const x = d.dashboard || {};
+    // v1.36: filtro de mês/ano
+    const selMes = document.getElementById('dashFiltroMes'), selAno = document.getElementById('dashFiltroAno');
+    if (selAno && !selAno.options.length) {
+      const anoAtual = new Date().getFullYear();
+      selAno.innerHTML = Array.from({length:5},(_,i)=>anoAtual-i).map(a=>`<option value="${a}">${a}</option>`).join('');
+      selAno.value = anoAtual;
+      if (selMes && !selMes.value) selMes.value = String(new Date().getMonth()+1);
+    }
+    const d = await finApi('dashboard_financeiro', { mes: selMes?.value || null, ano: selAno?.value || null });
+    const lbl = document.getElementById('dashPeriodoLabel');
+    if (lbl) { const p = d.periodo || d.dashboard?.periodo;
+      lbl.textContent = p ? ` · período: ${p.de.split('-').reverse().join('/')} a ${p.ate.split('-').reverse().join('/')}${p.atual ? ' (em curso)' : ''}` : ''; } const x = d.dashboard || {};
     const c = x.caixa || {}, sd = x.saude || {}, o = x.orcamento, cc = x.conciliacao || {}, mk = x.marcos || {};
     const brl = v => (v == null || isNaN(v)) ? '—' : fmtBRL(v);
     u('df_saldo', brl(c.saldo)); u('df_receber', brl(c.a_receber)); u('df_pagar', brl(c.a_pagar)); u('df_recmes', brl(c.receita_mes)); u('df_recano', 'ano: ' + brl(c.receita_ano));
@@ -18404,7 +18476,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.34] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.35] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -18420,7 +18492,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.34';
+window.__ATX_BUILD_ID__ = 'ATX-v1.35';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
