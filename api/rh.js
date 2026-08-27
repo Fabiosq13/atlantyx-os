@@ -368,6 +368,98 @@ Seja conciso e não invente nada que não esteja no debate.`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// v1.28: SALA DE REUNIÃO PERMANENTE — conselheiros IA participando da conversa
+// O áudio/vídeo entre PESSOAS é feito pelo Jitsi (embutido). Os conselheiros IA
+// acompanham pela transcrição do que é falado e respondem por voz quando chamados.
+// ═══════════════════════════════════════════════════════════════════════════
+async function salaFalar({ transcricao = '', historico = [], conselheiro, participantes = [] } = {}) {
+  if (!transcricao.trim()) throw new Error('transcricao vazia');
+  const { cadeiras } = await conselhoList();
+  const agentes = cadeiras.map(c => c.agente).filter(Boolean);
+  if (!agentes.length) throw new Error('Nenhum conselheiro IA configurado');
+
+  // Contexto real da empresa (mesmo dos outros agentes)
+  let ctx = {};
+  try {
+    const rh = await contextoRh();
+    ctx = { equipe: rh.resumo, alocacao_por_projeto: rh.alocacao_por_projeto };
+  } catch (_) {}
+  try {
+    const base = process.env.MEDIA_PUBLIC_BASE || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? 'https://' + process.env.VERCEL_PROJECT_PRODUCTION_URL : null);
+    if (base) {
+      const r = await fetch(base + '/api/financeiro', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'painel_resumo', params: {} }) });
+      const d = await r.json().catch(() => ({}));
+      if (d?.success) ctx.financeiro = { saldo: d.saldoCaixa, a_receber: d.aReceber, a_pagar: d.aPagar, receita_mes: d.realMes };
+    }
+  } catch (_) {}
+
+  // Quem responde: o chamado pelo nome, ou o mais pertinente ao assunto
+  let escolhido = null;
+  if (conselheiro) escolhido = agentes.find(a => (a.nome || '').toLowerCase().includes(String(conselheiro).toLowerCase()));
+  if (!escolhido) {
+    const t = transcricao.toLowerCase();
+    const pontua = a => {
+      const esp = (a.especialidade || '').toLowerCase();
+      let p = 0;
+      const mapa = { financ: ['custo','caixa','receita','margem','pagar','receber','orçamento','orcamento','lucro','preço','preco','investir','risco'],
+                     mercado: ['cliente','concorrente','mercado','venda','proposta','crescimento','posicionamento','marca'],
+                     tecnolog: ['sistema','software','tecnologia','produto','integração','integracao','dados','automação','automacao','ia'] };
+      for (const [chave, palavras] of Object.entries(mapa)) if (esp.includes(chave)) palavras.forEach(w => { if (t.includes(w)) p++; });
+      return p;
+    };
+    escolhido = agentes.map(a => ({ a, p: pontua(a) })).sort((x, y) => y.p - x.p)[0]?.a || agentes[0];
+  }
+
+  const system = `Você é ${escolhido.nome}, conselheiro(a) da Atlantyx, participando de uma REUNIÃO POR VOZ ao vivo.
+Sua especialidade: ${escolhido.especialidade}.
+Participantes humanos na sala: ${participantes.length ? participantes.join(', ') : 'CIO e equipe'}.
+
+REGRAS DE FALA (é uma conversa por voz, não um relatório):
+- Máximo 60 palavras. Fala curta, como alguém falando numa reunião.
+- Sem markdown, sem listas, sem títulos — texto corrido para ser lido em voz alta.
+- Vá direto ao ponto e tome posição. Se discordar, discorde com fundamento.
+- Fale só da sua especialidade. Se o assunto for de outro conselheiro, diga isso em uma frase.
+- Nunca invente número. Se não tiver o dado, diga que falta.
+- Se a fala não pedir nada de você, responda exatamente: [SEM_COMENTARIO]
+
+DADOS REAIS DA EMPRESA: ${JSON.stringify(ctx).substring(0, 2500)}`;
+
+  const msgs = [
+    ...historico.slice(-8).map(h => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content || '').substring(0, 600) })),
+    { role: 'user', content: transcricao.substring(0, 1500) },
+  ];
+  const resposta = await claudeRh(system, msgs, 300);
+  const silencio = resposta.includes('[SEM_COMENTARIO]');
+  return { conselheiro: escolhido.nome, especialidade: escolhido.especialidade,
+    resposta: silencio ? '' : resposta.replace(/\[SEM_COMENTARIO\]/g, '').trim(), comentou: !silencio };
+}
+
+// Ata da reunião a partir da transcrição acumulada
+async function salaAta({ transcricao = [], titulo } = {}) {
+  if (!transcricao.length) throw new Error('Nada foi transcrito nesta reunião ainda');
+  const texto = transcricao.map(t => `${t.autor}: ${t.texto}`).join('\n').substring(0, 12000);
+  const system = `Você é o(a) secretário(a) de reuniões da Atlantyx. A partir da transcrição, escreva uma ATA objetiva em português do Brasil:
+## Assuntos tratados
+## Decisões tomadas
+## Pendências e próximos passos (com responsável, se citado)
+## Pontos levantados pelos conselheiros
+Não invente nada que não esteja na transcrição. Se algo ficou sem conclusão, diga que ficou em aberto.`;
+  const ata = await claudeRh(system, [{ role: 'user', content: `REUNIÃO: ${titulo || 'Reunião'}\n\nTRANSCRIÇÃO:\n${texto}` }], 1500);
+  // Guarda como sessão do conselho, para ficar no histórico
+  try {
+    const sql = await getSql();
+    const id = novoId('sess');
+    await sql`INSERT INTO conselho_sessoes (id, assunto, contexto, status, decisao)
+      VALUES (${id}, ${titulo || 'Reunião por voz'}, 'Transcrição de reunião ao vivo', 'sintetizada', ${ata})`;
+    for (const t of transcricao.slice(0, 200)) {
+      await sql`INSERT INTO conselho_falas (id, sessao_id, autor, autor_tipo, conteudo)
+        VALUES (${novoId('fala')}, ${id}, ${t.autor}, ${t.tipo || 'humano'}, ${t.texto})`;
+    }
+    return { ata, sessao_id: id, salvo: true };
+  } catch (e) { return { ata, salvo: false, erro_salvar: e.message }; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // GERENTE DE RH IA (chat com contexto real: funcionários, custo/hora, alocação)
 // ═══════════════════════════════════════════════════════════════════════════
 const RH_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
@@ -431,6 +523,8 @@ export default async function handler(req, res) {
     conselho_falar:             () => conselhoFalar(payload),
     conselho_debater:           () => conselhoDebater(payload),
     conselho_sintetizar:        () => conselhoSintetizar(payload),
+    sala_falar:                 () => salaFalar(payload),
+    sala_ata:                   () => salaAta(payload),
     status:                     () => ({ ok: true, modulo: 'rh' }),
   };
 

@@ -68,6 +68,7 @@ export default async function handler(req, res) {
       qb_status:             () => qbStatus(params),
       relatorio_pagamentos:  () => relatorioPagamentosEnviar(params),
       email_diagnostico:     () => emailDiagnostico(params),
+      versao:                () => ({ versao_api: VERSAO_API }),
       fluxo_detalhado:       () => fluxoDetalhado(params),
       qb_diagnostico:        () => qbDiagnostico(),
       gerente_financeiro:    () => gerenteFinanceiro(params),
@@ -146,8 +147,12 @@ export default async function handler(req, res) {
     };
 
     if (!acoes[action]) {
+      // v1.26.3: erro autoexplicativo — a causa quase sempre é deploy desatualizado
       return res.status(400).json({
-        error: 'action inválida',
+        success: false,
+        error: `Ação "${action}" não existe na versão do servidor que está no ar (api/financeiro.js ${VERSAO_API}).`,
+        hint: 'O arquivo api/financeiro.js no Vercel está desatualizado. Suba a versão mais recente no GitHub e faça Redeploy.',
+        versao_api: VERSAO_API,
         disponiveis: Object.keys(acoes),
       });
     }
@@ -620,6 +625,9 @@ async function relatorioPagamentosEnviar({ apenas_gerar, para } = {}) {
   console.log(`[Financeiro] Relatório diário enviado para ${destinatarios.join(', ')} via ${envio.via}`);
   return { ...resumo, enviado: true, destinatarios, ...envio };
 }
+
+// v1.26.3: versão do arquivo — permite detectar deploy desatualizado sem adivinhação
+const VERSAO_API = 'v1.26.3';
 
 async function qbStatus() {
   const faltando = [
