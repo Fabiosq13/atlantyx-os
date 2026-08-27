@@ -2614,7 +2614,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
 <!-- v1.16: FLUXO DE CAIXA DETALHADO (extrato até hoje + futuro lançamento a lançamento) -->
 <div class="page" id="page-s3fluxodet">
-  <div style="background:linear-gradient(135deg,rgba(79,124,255,.14),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <div style="background:linear-gradient(135deg,rgba(79,124,255,.14),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
     <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Fluxo de Caixa Detalhado</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Extrato realizado até hoje + futuro lançamento a lançamento (QuickBooks: recebíveis e pagáveis reais) · saldo projetado</div></div>
     <label style="font-size:10px;color:var(--t2);">DE</label>
     <input type="date" id="fd_dataInicio" class="fsel" style="font-size:11px;width:auto;" onchange="carregarFluxoDetalhado()"/>
@@ -15210,6 +15210,38 @@ async function enviarRelatorioPagamentos(soParaMim) {
   finally { if (btn) { btn.disabled = false; btn.textContent = '📤 Enviar agora'; } }
 }
 
+// v1.47: conferência com o banco — explica lançamentos faltando
+async function conferirComBanco() {
+  let modal = document.getElementById('confBancoModal');
+  if (!modal) { modal = document.createElement('div'); modal.id='confBancoModal';
+    modal.style.cssText='display:flex;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:1000;align-items:center;justify-content:center;overflow:auto;padding:20px;'; document.body.appendChild(modal); }
+  modal.style.display='flex';
+  modal.innerHTML = '<div class="panel" style="width:700px;max-width:96vw;"><div class="pb" style="text-align:center;color:var(--t3);padding:30px;">⏳ Conferindo com o QuickBooks...</div></div>';
+  try {
+    const ini = document.getElementById('fd_de')?.value || null;
+    const fim = document.getElementById('fd_ate')?.value || null;
+    const d = await finApi('qb_conferir_banco', { data_inicio: ini, data_fim: fim });
+    const c = d.conferencia || {}; const o = c.orientacao || {};
+    modal.innerHTML = `<div class="panel" style="width:700px;max-width:96vw;max-height:90vh;overflow:auto;">
+      <div class="ph"><div class="pt">🔍 Conferência com o banco</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('confBancoModal').style.display='none'">✕</button></div>
+      <div class="pb">
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <div class="kpi bl" style="flex:1;"><div class="kl">Saldo no QuickBooks</div><div class="kv" style="font-size:16px;">${fmtBRLcompleto(c.saldo_quickbooks)}</div><div class="ks">só o que foi confirmado</div></div>
+          <div class="kpi" style="flex:1;"><div class="kl">Lançamentos no período</div><div class="kv">${c.lancamentos_no_periodo}</div><div class="ks">${fmtBRLcompleto(c.movimento_registrado)} de movimento</div></div>
+        </div>
+        <div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:8px;padding:12px;font-size:11px;line-height:1.7;margin-bottom:12px;">
+          <b>${o.causa_mais_comum || ''}</b><br>${o.explicacao || ''}
+        </div>
+        <div style="font-size:11.5px;font-weight:600;margin-bottom:5px;">Como resolver</div>
+        <ol style="font-size:11px;color:var(--t2);line-height:1.8;padding-left:20px;margin:0 0 12px;">${(o.como_resolver||[]).map(p=>`<li>${p}</li>`).join('')}</ol>
+        <div style="font-size:10.5px;color:var(--t3);line-height:1.6;margin-bottom:12px;">${o.observacao || ''}</div>
+        <div style="font-size:11.5px;font-weight:600;margin-bottom:5px;">Contas bancárias no QuickBooks</div>
+        ${(c.contas||[]).map(x=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--bd);${x.saldo<0?'color:var(--red);':''}"><span>${x.nome}</span><span style="font-family:var(--M);">${fmtBRLcompleto(x.saldo)}</span></div>`).join('') || '<div style="color:var(--t3);font-size:11px;">Nenhuma conta.</div>'}
+        <div style="margin-top:12px;font-size:10px;color:var(--t3);line-height:1.7;"><b>Como conferir de verdade:</b> compare o saldo acima com o saldo real da conta no banco hoje. Se o banco tiver mais dinheiro, há entradas não confirmadas; se tiver menos, há saídas não confirmadas. A diferença costuma ser exatamente a soma do que está em "Para revisão".</div>
+      </div></div>`;
+  } catch (e) { modal.innerHTML = `<div class="panel" style="width:520px;"><div class="pb" style="padding:20px;color:var(--red);">Erro: ${e.message}<br><br><button class="btn" onclick="document.getElementById('confBancoModal').style.display='none'">Fechar</button></div></div>`; }
+}
+
 // v1.45: varredura de duplicidade num período inteiro
 async function varrerDuplicados() {
   const hoje = new Date().toISOString().split('T')[0];
@@ -15358,6 +15390,13 @@ function _fluxoOrigemSaldoHtml(o, saldoTotal) {
 }
 
 // ═══ v1.16: FLUXO DE CAIXA DETALHADO ═══
+// v1.46.1: marca linhas repetidas na própria tabela (mesma data + descrição + valor)
+function _fdMarcarRepetidos(lista) {
+  const cont = {};
+  lista.forEach(l => { const k = `${l.data}|${(l.descricao||'').trim()}|${l.valor}`; cont[k] = (cont[k]||0)+1; });
+  lista.forEach(l => { const k = `${l.data}|${(l.descricao||'').trim()}|${l.valor}`; if (cont[k] > 1) l._repetido = cont[k]; });
+  return lista;
+}
 function _fdLinha(l, corSaldo) {
   // v1.38: 'referencia' = nota fiscal emitida (competência) — não movimenta caixa
   const ehRef = l.tipo === 'referencia';
@@ -15365,11 +15404,12 @@ function _fdLinha(l, corSaldo) {
   const fonte = l.origem === 'quickbooks' ? '🔗 QuickBooks' : l.origem === 'quickbooks_futuro' ? '🔗 QuickBooks' : l.origem === 'simulado' || l.origem === 'simulado_futuro' ? '✎ Simulado' : l.origem === 'atlantyx_futuro' ? '📋 Atlantyx' : (l.origem || '');
   const venc = l.vencida ? ' <span style="color:var(--red);font-size:9px;">⚠ vencida</span>' : '';
   const refTag = ehRef ? ' <span style="color:var(--t3);font-size:9px;" title="Nota fiscal emitida — o caixa só muda quando o pagamento entra">📄 emissão (não move o caixa)</span>' : '';
+  const repTag = l._repetido ? ` <span style="color:var(--red);font-size:9px;font-weight:600;" title="Aparece ${l._repetido}x com a mesma data, descrição e valor — pode ser duplicidade na contabilidade. Use o 🔎 para rastrear.">⚠ ${l._repetido}x repetido</span>` : '';
   // v1.38: botão para abrir o detalhe completo do lançamento
   const acao = '<button class="btn" style="font-size:8px;padding:1px 6px;" onclick=\'_fdDetalhe(' + JSON.stringify(JSON.stringify(l)) + ')\' title="Ver detalhes deste lançamento">🔎</button>';
   return '<tr style="border-bottom:1px solid var(--bd);' + (ehRef ? 'opacity:.6;' : '') + '">'
     + '<td style="padding:6px;font-family:var(--M);color:var(--t2);white-space:nowrap;">' + (l.data || '') + '</td>'
-    + '<td style="padding:6px;">' + (l.descricao || '') + venc + refTag + '</td>'
+    + '<td style="padding:6px;">' + (l.descricao || '') + venc + refTag + repTag + '</td>'
     + '<td style="padding:6px;color:var(--t2);font-size:10px;">' + (l.categoria || '') + ' · ' + fonte + '</td>'
     + '<td style="padding:6px;text-align:right;color:' + cor + ';font-family:var(--M);">' + (ehRef ? '' : (l.tipo === 'saida' ? '-' : '+')) + fmtBRLcompleto(l.valor) + '</td>'
     + '<td style="padding:6px;text-align:right;font-family:var(--M);font-weight:600;color:' + (l.saldo_acumulado < 0 ? 'var(--red)' : (corSaldo || 'var(--t1)')) + ';">' + fmtBRLcompleto(l.saldo_acumulado) + '</td>'
@@ -15446,9 +15486,9 @@ async function carregarFluxoDetalhado() {
     }
 
     const pas = d.passado.lancamentos || [];
-    if (tbP) tbP.innerHTML = pas.length ? pas.map(l => _fdLinha(l)).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Nenhum lançamento realizado nos últimos 60 dias' + (d.passado.qb_erro ? ' · ⚠ QuickBooks: ' + d.passado.qb_erro : '') + '.</td></tr>';
+    if (tbP) tbP.innerHTML = pas.length ? _fdMarcarRepetidos(pas).map(l => _fdLinha(l)).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Nenhum lançamento realizado nos últimos 60 dias' + (d.passado.qb_erro ? ' · ⚠ QuickBooks: ' + d.passado.qb_erro : '') + '.</td></tr>';
     const fut = d.futuro.lancamentos || [];
-    if (tbF) tbF.innerHTML = fut.length ? fut.map(l => _fdLinha(l, 'var(--blue)')).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Nenhum recebível/pagável futuro encontrado no QuickBooks' + (d.futuro.qb_erro ? ' · ⚠ ' + d.futuro.qb_erro : ' (sem faturas/contas em aberto, sem despesas programadas futuras e sem simulados futuros)') + '.</td></tr>';
+    if (tbF) tbF.innerHTML = fut.length ? _fdMarcarRepetidos(fut).map(l => _fdLinha(l, 'var(--blue)')).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Nenhum recebível/pagável futuro encontrado no QuickBooks' + (d.futuro.qb_erro ? ' · ⚠ ' + d.futuro.qb_erro : ' (sem faturas/contas em aberto, sem despesas programadas futuras e sem simulados futuros)') + '.</td></tr>';
 
     const tg1 = document.getElementById('fd_tagPassado'); if (tg1) { tg1.textContent = pas.length + ' lançamento(s)'; tg1.className = 'tag on'; }
     const tg2 = document.getElementById('fd_tagFuturo'); if (tg2) { tg2.textContent = fut.length + ' lançamento(s)'; tg2.className = 'tag ' + (fut.length ? 'on' : 'off'); }
@@ -18805,7 +18845,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.46] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.46.1] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -18821,7 +18861,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.46';
+window.__ATX_BUILD_ID__ = 'ATX-v1.46.1';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
