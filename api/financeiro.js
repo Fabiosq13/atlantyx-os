@@ -759,7 +759,23 @@ async function qbFetch(endpoint, token) {
   return r.json();
 }
 
-async function qbQuery(sqlQuery, token) {
+// v1.49: o QuickBooks limita requisições (429 ThrottleExceeded). Sem tratamento, a consulta
+// falhava em silêncio e o extrato saía incompleto — com saldo errado.
+async function qbEsperar(ms) { return new Promise(r => setTimeout(r, ms)); }
+async function qbQuery(sqlQuery, token, _tentativa = 0) {
+  try { return await _qbQueryInterno(sqlQuery, token); }
+  catch (e) {
+    const ehThrottle = /throttle|429/i.test(e.message || '');
+    if (ehThrottle && _tentativa < 3) {
+      const espera = [1200, 3000, 6000][_tentativa];
+      console.warn(`[QB] Throttle (tentativa ${_tentativa + 1}), aguardando ${espera}ms`);
+      await qbEsperar(espera);
+      return qbQuery(sqlQuery, token, _tentativa + 1);
+    }
+    throw e;
+  }
+}
+async function _qbQueryInterno(sqlQuery, token) {
   // QuickBooks SQL-like query language
   return qbFetch(`/query?query=${encodeURIComponent(sqlQuery)}`, token);
 }
@@ -804,9 +820,11 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
   ];
 
   const lancamentos = []; const erros = [];
+  let incompletoPorThrottle = false; // v1.49
   const vistos = new Set(); // trava extra contra duplicidade (mesmo id não entra duas vezes)
-  for (const { tipo, entidade, q } of queries) {
+  for (const [idx, { tipo, entidade, q }] of queries.entries()) {
     try {
+      if (idx > 0) await qbEsperar(120); // v1.49: evita estourar o limite do QuickBooks
       const data = await qbQuery(q, token);
       const items = data?.QueryResponse?.[entidade] || [];
       for (const item of items) {
@@ -878,6 +896,8 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
       }
     } catch (e) {
       console.log(`[QB] ${tipo}: ${e.message}`); erros.push(tipo + ': ' + e.message);
+      // v1.49: throttle compromete os números — precisa ser sinalizado, não engolido
+      if (/throttle|429/i.test(e.message || '')) incompletoPorThrottle = true;
     }
   }
 
@@ -899,6 +919,11 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
     ocultos_count: lancamentos.length - filtrados.length,
     periodo: { data_inicio: ini, data_fim: fim },
     qb_configurado: true,
+    // v1.49: avisa que os números NÃO são confiáveis nesta carga
+    dados_incompletos: incompletoPorThrottle,
+    aviso_incompleto: incompletoPorThrottle
+      ? 'O QuickBooks limitou as consultas (ThrottleExceeded) e parte dos lançamentos não foi carregada. Os saldos desta tela estão INCOMPLETOS. Aguarde 1 minuto e clique em Atualizar.'
+      : null,
   };
 }
 
@@ -1547,9 +1572,22 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   const menorSaldo = futuroComSaldo.length ? futuroComSaldo.reduce((min, l) => l.saldo_acumulado < min.saldo_acumulado ? l : min, futuroComSaldo[0]) : null;
   const ultimaData = futuroComSaldo.length ? futuroComSaldo[futuroComSaldo.length - 1].data : hoje;
 
+  // v1.50: o saldo REAL das contas no QuickBooks, para conferência contra o calculado.
+  // Sem isso, "Saldo de hoje" era um número derivado (saldo inicial + movimento do período)
+  // que herdava qualquer erro do caminho — mas parecia o saldo do banco.
+  let saldoRealBanco = null, contasBanco = [];
+  try { const sc = await qbSaldoContas(); if (sc?.qb_configurado) { saldoRealBanco = round(sc.saldo_total); contasBanco = sc.contas || []; } } catch (_) {}
+  const saldoCalculado = extrato.saldo_final || 0;
+  const divergencia = saldoRealBanco != null ? round(saldoCalculado - saldoRealBanco) : null;
+
   return {
     hoje,
     periodo: { data_inicio: ini, data_fim: fim },
+    // v1.50: conferência explícita
+    saldo_real_banco: saldoRealBanco,
+    contas_banco: contasBanco.map(c => ({ nome: c.nome, saldo: round(c.saldo) })),
+    divergencia_calculado_vs_real: divergencia,
+    divergencia_relevante: divergencia != null && Math.abs(divergencia) > 1,
     passado: { saldo_inicial: extrato.saldo_inicial, saldo_inicial_data: extrato.saldo_inicial_data, lancamentos: extrato.lancamentos, total_entradas: extrato.total_entradas, total_saidas: extrato.total_saidas, qb_erro: extrato.qb_erro },
     saldo_hoje: extrato.saldo_final || 0,
     futuro: { lancamentos: futuroComSaldo, total_recebiveis: fut.recebiveis.reduce((s, l) => s + l.valor, 0), total_pagaveis: fut.pagaveis.reduce((s, l) => s + l.valor, 0), qtd_qb: fut.recebiveis.length + fut.pagaveis.length, qtd_atlantyx: despFuturas.length + simFuturos.length, qb_erro: fut.erro, ate: ultimaData },
