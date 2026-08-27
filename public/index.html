@@ -2629,6 +2629,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <option value="">Todas as contas</option>
     </select>
     <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="compararSaldoPorConta()" title="Compara o saldo do Atlantyx com o saldo de cada conta no QuickBooks">&#9878; Comparar por conta</button>
+    <button class="btn" style="font-size:10px;" onclick="verRazaoConta()" title="Razão contábil da conta no QuickBooks, com saldo inicial e final do período">&#128220; Razão da conta</button>
     <button class="btn btn-gn" onclick="carregarFluxoDetalhado()">&#8635; Atualizar</button>
   </div>
   <div id="fdStatus" style="display:none;margin-bottom:10px;"></div>
@@ -15214,6 +15215,103 @@ async function enviarRelatorioPagamentos(soParaMim) {
   finally { if (btn) { btn.disabled = false; btn.textContent = '📤 Enviar agora'; } }
 }
 
+// v1.55: razão da conta — compara o saldo do Atlantyx com o razão contábil do QuickBooks
+async function verRazaoConta() {
+  const contaId = document.getElementById('fd_conta')?.value || null;
+  const ini = document.getElementById('fd_dataInicio')?.value || null;
+  const fim = document.getElementById('fd_dataFim')?.value || null;
+  let modal = document.getElementById('razaoModal');
+  if (!modal) { modal = document.createElement('div'); modal.id='razaoModal';
+    modal.style.cssText='display:flex;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:1000;align-items:center;justify-content:center;overflow:auto;padding:20px;'; document.body.appendChild(modal); }
+  modal.style.display='flex';
+  modal.innerHTML = '<div class="panel" style="width:860px;max-width:96vw;"><div class="pb" style="text-align:center;color:var(--t3);padding:30px;">⏳ Buscando o razão no QuickBooks...</div></div>';
+  try {
+    const d = await finApi('qb_razao_conta', { conta_id: contaId, data_inicio: ini, data_fim: fim });
+    const r = d.razao || {};
+    const saldoAtx = _fdUltimoSaldo != null ? _fdUltimoSaldo : null;
+    const difRazao = (saldoAtx != null && r.saldo_final_razao != null) ? Math.round((saldoAtx - r.saldo_final_razao) * 100) / 100 : null;
+    modal.innerHTML = `<div class="panel" style="width:860px;max-width:96vw;max-height:90vh;overflow:auto;">
+      <div class="ph"><div class="pt">📜 Razão contábil · ${r.conta_nome || ''}</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('razaoModal').style.display='none'">✕</button></div>
+      <div class="pb">
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+          <div class="kpi" style="flex:1;min-width:150px;"><div class="kl">Saldo inicial (razão)</div><div class="kv" style="font-size:15px;">${r.saldo_inicial_razao != null ? fmtBRLcompleto(r.saldo_inicial_razao) : '—'}</div><div class="ks">em ${(r.periodo?.de||'').split('-').reverse().join('/')}</div></div>
+          <div class="kpi bl" style="flex:1;min-width:150px;"><div class="kl">Movimento</div><div class="kv" style="font-size:15px;">${fmtBRLcompleto(r.movimento_periodo || 0)}</div><div class="ks">${r.total_linhas || 0} lançamento(s)</div></div>
+          <div class="kpi gn" style="flex:1;min-width:150px;"><div class="kl">Saldo final (razão)</div><div class="kv" style="font-size:15px;">${r.saldo_final_razao != null ? fmtBRLcompleto(r.saldo_final_razao) : '—'}</div></div>
+          <div class="kpi gd" style="flex:1;min-width:150px;"><div class="kl">Saldo contábil hoje</div><div class="kv" style="font-size:15px;">${fmtBRLcompleto(r.saldo_contabil_hoje || 0)}</div><div class="ks">CurrentBalance (API)</div></div>
+        </div>
+        ${difRazao != null && Math.abs(difRazao) > 1 ? `<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:8px;padding:10px;font-size:11px;margin-bottom:10px;">⚠ O saldo do Atlantyx (${fmtBRLcompleto(saldoAtx)}) difere do razão em <b>${fmtBRLcompleto(Math.abs(difRazao))}</b>.</div>` : ''}
+        <div style="background:var(--bg4);border-radius:8px;padding:11px;font-size:10.5px;line-height:1.7;margin-bottom:12px;">
+          <b>Os três saldos que existem — e por que diferem:</b><br>
+          • <b>Contábil (API)</b>: ${r.explicacao?.saldo_contabil || ''}<br>
+          • <b>Razão</b>: ${r.explicacao?.saldo_razao || ''}<br>
+          • <b>Banco</b>: ${r.explicacao?.saldo_banco || ''}
+        </div>
+        ${(r.linhas||[]).length ? `<table style="width:100%;border-collapse:collapse;font-size:10.5px;">
+          <thead><tr style="border-bottom:1px solid var(--bd);">
+            <th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;">DATA</th><th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;">TIPO</th>
+            <th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;">NOME</th><th style="text-align:right;padding:5px;color:var(--t2);font-size:9px;">VALOR</th>
+            <th style="text-align:right;padding:5px;color:var(--t2);font-size:9px;">SALDO</th></tr></thead>
+          <tbody>${r.linhas.map(l => `<tr style="border-bottom:1px solid var(--bd);">
+            <td style="padding:5px;font-family:var(--M);">${l.data}</td><td style="padding:5px;color:var(--t2);">${l.tipo}</td>
+            <td style="padding:5px;">${(l.nome||l.memo||'').substring(0,38)}</td>
+            <td style="padding:5px;text-align:right;font-family:var(--M);color:${(l.valor||0)<0?'var(--red)':'var(--green,#22d3a3)'};">${l.valor != null ? fmtBRLcompleto(l.valor) : '—'}</td>
+            <td style="padding:5px;text-align:right;font-family:var(--M);">${l.saldo != null ? fmtBRLcompleto(l.saldo) : '—'}</td></tr>`).join('')}</tbody></table>`
+        : `<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Nenhuma linha no razão para este período.${r.erro_razao ? '<br>Erro: ' + r.erro_razao : ''}</div>`}
+      </div></div>`;
+  } catch (e) { modal.innerHTML = `<div class="panel" style="width:520px;"><div class="pb" style="padding:20px;color:var(--red);">Erro: ${e.message}<br><br><button class="btn" onclick="document.getElementById('razaoModal').style.display='none'">Fechar</button></div></div>`; }
+}
+let _fdUltimoSaldo = null;
+
+// v1.54: excluir lançamento no QuickBooks — duas etapas, porque mexe na contabilidade
+async function _excluirNoQb(qbTxnId) {
+  let modal = document.getElementById('excluirQbModal');
+  if (!modal) { modal = document.createElement('div'); modal.id='excluirQbModal';
+    modal.style.cssText='display:flex;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:1001;align-items:center;justify-content:center;overflow:auto;padding:20px;'; document.body.appendChild(modal); }
+  modal.style.display='flex';
+  modal.innerHTML = '<div class="panel" style="width:560px;max-width:95vw;"><div class="pb" style="text-align:center;color:var(--t3);padding:30px;">⏳ Buscando o lançamento no QuickBooks...</div></div>';
+  try {
+    // Etapa 1: prévia (não exclui nada)
+    const p = await finApi('qb_excluir_lancamento', { qb_txn_id: qbTxnId, confirmar: false });
+    const r = p.sera_excluido || {};
+    const temVinculo = (r.vinculos || []).length > 0;
+    modal.innerHTML = `<div class="panel" style="width:560px;max-width:95vw;max-height:90vh;overflow:auto;border:1px solid var(--red);">
+      <div class="ph"><div class="pt" style="color:var(--red);">🗑 Excluir lançamento no QuickBooks</div>
+        <button class="btn" style="font-size:10px;" onclick="document.getElementById('excluirQbModal').style.display='none'">✕</button></div>
+      <div class="pb">
+        <div style="background:var(--bg4);border-radius:8px;padding:12px;margin-bottom:10px;font-size:11.5px;line-height:1.8;">
+          <div style="font-size:13px;font-weight:600;">${r.contraparte || r.memo || '(sem descrição)'}</div>
+          <div style="font-size:19px;font-family:var(--M);color:var(--red);margin:4px 0;">${fmtBRLcompleto(r.valor)}</div>
+          <span style="color:var(--t2);">Tipo:</span> ${r.entidade} #${r.id}${r.doc ? ' · doc ' + r.doc : ''}<br>
+          <span style="color:var(--t2);">Data:</span> ${(r.data||'').split('-').reverse().join('/')}<br>
+          ${r.conta ? `<span style="color:var(--t2);">Conta:</span> ${r.conta}<br>` : ''}
+          ${r.criado_em ? `<span style="color:var(--t2);">Criado no QB:</span> ${new Date(r.criado_em).toLocaleString('pt-BR')}<br>` : ''}
+          ${r.memo ? `<span style="color:var(--t3);font-size:10px;">${r.memo}</span>` : ''}
+        </div>
+        <div style="background:${temVinculo?'rgba(255,80,80,.12)':'var(--bg4)'};border:1px solid ${temVinculo?'var(--red)':'var(--bd)'};border-radius:8px;padding:10px;font-size:10.5px;line-height:1.6;margin-bottom:10px;">
+          ${p.aviso || ''}<br><b style="color:var(--red);">${p.irreversivel || ''}</b>
+        </div>
+        <div style="font-size:10.5px;color:var(--t2);margin-bottom:8px;">Para confirmar, digite <b>EXCLUIR</b> abaixo:</div>
+        <input class="fi" id="confExcluir" placeholder="EXCLUIR" style="width:100%;margin-bottom:10px;text-transform:uppercase;"/>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-rd" style="flex:1;" onclick="_excluirNoQbConfirmar('${qbTxnId}')">🗑 Excluir definitivamente</button>
+          <button class="btn" style="flex:1;" onclick="document.getElementById('excluirQbModal').style.display='none'">Cancelar</button>
+        </div>
+      </div></div>`;
+  } catch (e) { modal.innerHTML = `<div class="panel" style="width:520px;"><div class="pb" style="padding:20px;color:var(--red);">Erro: ${e.message}<br><br><button class="btn" onclick="document.getElementById('excluirQbModal').style.display='none'">Fechar</button></div></div>`; }
+}
+async function _excluirNoQbConfirmar(qbTxnId) {
+  const txt = (document.getElementById('confExcluir')?.value || '').trim().toUpperCase();
+  if (txt !== 'EXCLUIR') { toast('Digite EXCLUIR para confirmar', 'error'); return; }
+  try {
+    const d = await finApi('qb_excluir_lancamento', { qb_txn_id: qbTxnId, confirmar: true });
+    toast('Lançamento excluído no QuickBooks: ' + fmtBRLcompleto(d.registro?.valor || 0), 'success');
+    addLog('warn', `[Financeiro] EXCLUÍDO no QuickBooks: ${d.registro?.entidade}#${d.registro?.id} · ${fmtBRLcompleto(d.registro?.valor||0)} · ${d.registro?.contraparte||''}`);
+    document.getElementById('excluirQbModal').style.display = 'none';
+    const det = document.getElementById('fdDetalheModal'); if (det) det.style.display = 'none';
+    carregarFluxoDetalhado();
+  } catch (e) { toast('Erro ao excluir: ' + e.message, 'error'); }
+}
+
 // v1.52: compara o saldo do Atlantyx com o saldo de CADA conta no QuickBooks
 async function compararSaldoPorConta() {
   const dt = document.getElementById('fd_dataInicio')?.value || new Date().toISOString().split('T')[0];
@@ -15486,6 +15584,7 @@ function _fdDetalhe(json) {
       ${l.valor_documento && l.valor_documento !== l.valor ? linha('Valor original do documento', fmtBRLcompleto(l.valor_documento)) : ''}
       ${l.qb_txn_id ? `<div style="margin-top:12px;padding:9px;background:var(--bg4);border-radius:7px;font-size:10px;color:var(--t2);line-height:1.6;">Para ver este lançamento no QuickBooks, procure por <b>${(l.descricao||'').substring(0,30)}</b> na data ${l.data ? l.data.split('-').reverse().join('/') : ''}. O identificador acima (<code>${l.qb_txn_id}</code>) indica o tipo e o número do documento lá.</div>` : ''}
       <button class="btn btn-p" style="width:100%;margin-top:10px;font-size:10.5px;" onclick='_rastrearDuplicado(${JSON.stringify(JSON.stringify({data:l.data, valor:l.valor, cliente:(l.descricao||'').split('·')[0].trim()}))})'>🔍 Este lançamento está duplicado? Rastrear no QuickBooks</button>
+      ${l.qb_txn_id ? `<button class="btn" style="width:100%;margin-top:6px;font-size:10.5px;color:var(--red);border-color:var(--red);" onclick="_excluirNoQb('${l.qb_txn_id}')">🗑 Excluir este lançamento no QuickBooks</button>` : ''}
     </div></div>`;
 }
 function _fdIso(d) { return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().substring(0, 10); }
@@ -15548,6 +15647,7 @@ async function carregarFluxoDetalhado() {
       if (lbl) lbl.textContent = (ate && ate < hj) ? 'Saldo no fim do período' : 'Saldo de hoje';
     }
     // v1.50: deixa claro que este é um saldo CALCULADO e mostra o saldo real do banco ao lado
+    _fdUltimoSaldo = d.saldo_hoje; // v1.55: guarda para comparar com o razão
     u('fd_saldoHoje', fmtBRLcompleto(d.saldo_hoje));
     {
       const ate = document.getElementById('fd_dataFim')?.value;
@@ -18953,7 +19053,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.53] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.55] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -18969,7 +19069,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.53';
+window.__ATX_BUILD_ID__ = 'ATX-v1.55';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
