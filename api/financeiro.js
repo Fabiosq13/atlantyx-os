@@ -1601,7 +1601,11 @@ async function fluxoFuturo({ meses = 12, overrides = {} } = {}) {
   let ocorrencias = [];
   try {
     const fimHorizonte = new Date(hoje.getFullYear(), hoje.getMonth() + meses, 0).toISOString().split('T')[0];
-    const r = await despOcorrencias({ data_inicio: hoje.toISOString().split('T')[0], data_fim: fimHorizonte });
+    // v1.37 FIX: as despesas começavam em HOJE, mas as entradas do mês corrente vinham do mês
+    // inteiro — mistura que fazia o primeiro mês parecer muito melhor do que é. Agora ambos
+    // partem do dia 1 do mês corrente; o que já foi pago tem status 'paga' e é excluído abaixo.
+    const inicioMesCorrente = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
+    const r = await despOcorrencias({ data_inicio: inicioMesCorrente, data_fim: fimHorizonte });
     // v1.21.1 FIX: incluir 'lancada' — despesa lançada no QuickBooks continua a PAGAR, então
     // precisa entrar na projeção de saídas. Antes só 'prevista' entrava e o fluxo futuro ficava
     // otimista demais (mostrava saldo maior do que a realidade).
@@ -1609,16 +1613,28 @@ async function fluxoFuturo({ meses = 12, overrides = {} } = {}) {
   } catch {}
 
   // 4. A Receber QB (alimenta entradas dos próximos meses)
+  // v1.37 FIX: três problemas corrigidos aqui —
+  //  (a) faturas VENCIDAS caíam em meses fora do horizonte e sumiam do fluxo sem aviso;
+  //  (b) fatura vencida no mês corrente era contada como se fosse entrar ainda este mês;
+  //  (c) faturas com vencimento além dos 12 meses inflavam buckets inexistentes.
+  // Agora: vencidas viram uma linha própria (o dinheiro está atrasado, não é projeção),
+  // e o que passa do horizonte é somado no último mês, com aviso.
   let aReceberPorMes = {};
+  let aReceberVencido = 0, aReceberForaHorizonte = 0;
+  const ultimoMes = listaMeses[listaMeses.length - 1];
   if (qbConfigurado()) {
     try {
       const token = await qbToken();
-      const data = await qbQuery(`select * from Invoice where Balance > '0'`, token);
+      const data = await qbQuery(`select * from Invoice where Balance > '0' maxresults 1000`, token);
       const invoices = data?.QueryResponse?.Invoice || [];
       for (const inv of invoices) {
         const venc = inv.DueDate || inv.TxnDate;
         const mes = (venc || '').substring(0, 7);
-        if (mes) aReceberPorMes[mes] = (aReceberPorMes[mes] || 0) + parseFloat(inv.Balance || 0);
+        const valor = parseFloat(inv.Balance || 0);
+        if (!mes || !valor) continue;
+        if (mes < mesAtual) { aReceberVencido += valor; continue; }      // já venceu: atrasado, não é projeção
+        if (mes > ultimoMes) { aReceberForaHorizonte += valor; continue; } // além do horizonte
+        aReceberPorMes[mes] = (aReceberPorMes[mes] || 0) + valor;
       }
     } catch {}
   }
@@ -1686,6 +1702,11 @@ async function fluxoFuturo({ meses = 12, overrides = {} } = {}) {
 
   // 7. Alertas
   const alertas = [];
+  // v1.37: avisos sobre o que NÃO entrou na projeção (antes sumia silenciosamente)
+  if (aReceberVencido > 0) alertas.push({ tipo: 'vencido',
+    mensagem: `R$ ${aReceberVencido.toLocaleString('pt-BR',{minimumFractionDigits:2})} em faturas JÁ VENCIDAS não entram na projeção (o vencimento passou). Cobre esses recebíveis ou renegocie a data no QuickBooks.` });
+  if (aReceberForaHorizonte > 0) alertas.push({ tipo: 'fora_horizonte',
+    mensagem: `R$ ${aReceberForaHorizonte.toLocaleString('pt-BR',{minimumFractionDigits:2})} a receber com vencimento além dos ${meses} meses — fora deste horizonte.` });
   const saldosFinais = listaMeses.map(m => linhas['= Saldo Final'][m]);
   const menorSaldo = Math.min(...saldosFinais);
   const indiceMenor = saldosFinais.indexOf(menorSaldo);
@@ -1712,6 +1733,10 @@ async function fluxoFuturo({ meses = 12, overrides = {} } = {}) {
       saldo_quickbooks: qbConfigurado(),
       ocorrencias_count: ocorrencias.length,
       simulados_count: simulados.length,
+      // v1.37: transparência sobre o que ficou de fora da projeção
+      a_receber_vencido: round(aReceberVencido),
+      a_receber_fora_horizonte: round(aReceberForaHorizonte),
+      a_receber_no_horizonte: round(Object.values(aReceberPorMes).reduce((s, v) => s + v, 0)),
     },
   };
 }
