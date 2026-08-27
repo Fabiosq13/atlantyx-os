@@ -68,6 +68,7 @@ async function ensureTabelas(sql) {
     criado_em TIMESTAMPTZ DEFAULT NOW()
   )`;
   try { await sql`ALTER TABLE termos_notas_encontradas ADD COLUMN IF NOT EXISTS arquivo_url TEXT`; } catch (_) {}
+  try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS pagamento_origem TEXT`; } catch (_) {} // v1.34
   try { await sql`ALTER TABLE termos_notas_encontradas ADD COLUMN IF NOT EXISTS origem TEXT DEFAULT 'email'`; } catch (_) {}
 }
 
@@ -102,11 +103,36 @@ async function termoImportar({ arquivo_nome, cabecalho = {}, empresas = [] } = {
 // ═══════════════════════════════════════════════════════════════════════════
 // 2. LISTAR / DETALHAR / MOVER
 // ═══════════════════════════════════════════════════════════════════════════
-async function termoList({ status } = {}) {
+async function termoList({ status, mes, ano, periodo_texto } = {}) {
   const sql = await getSql();
-  const termos = status
-    ? await sql`SELECT * FROM termos_faturamento WHERE status = ${status} ORDER BY criado_em DESC`
-    : await sql`SELECT * FROM termos_faturamento ORDER BY criado_em DESC`;
+  // v1.32: filtro por mês/ano (data de criação do termo) e/ou por texto do período de medição.
+  // Filtra pela criação porque "periodo_medicao" é texto livre ("julho/2026", "07/2026") e não
+  // é confiável para comparação de data — mas dá para buscar por ele como texto.
+  let termos;
+  const temMesAno = (mes || ano);
+  if (temMesAno) {
+    const anoF = parseInt(ano) || new Date().getFullYear();
+    const ini = mes ? `${anoF}-${String(parseInt(mes)).padStart(2, '0')}-01` : `${anoF}-01-01`;
+    const fim = mes
+      ? new Date(anoF, parseInt(mes), 0).toISOString().split('T')[0]
+      : `${anoF}-12-31`;
+    termos = status
+      ? await sql`SELECT * FROM termos_faturamento WHERE status = ${status}
+          AND criado_em >= ${ini + ' 00:00:00'} AND criado_em <= ${fim + ' 23:59:59'} ORDER BY criado_em DESC`
+      : await sql`SELECT * FROM termos_faturamento
+          WHERE criado_em >= ${ini + ' 00:00:00'} AND criado_em <= ${fim + ' 23:59:59'} ORDER BY criado_em DESC`;
+  } else {
+    termos = status
+      ? await sql`SELECT * FROM termos_faturamento WHERE status = ${status} ORDER BY criado_em DESC`
+      : await sql`SELECT * FROM termos_faturamento ORDER BY criado_em DESC`;
+  }
+  // Busca livre pelo texto do período de medição (ex.: "julho", "07/2026")
+  if (periodo_texto && periodo_texto.trim()) {
+    const alvo = periodo_texto.trim().toLowerCase();
+    termos = termos.filter(t => (t.periodo_medicao || '').toLowerCase().includes(alvo)
+      || (t.projeto || '').toLowerCase().includes(alvo)
+      || (t.numero_termo || '').toLowerCase().includes(alvo));
+  }
   const ids = termos.map(t => t.id);
   let empresasPorTermo = {};
   if (ids.length) {
@@ -118,13 +144,29 @@ async function termoList({ status } = {}) {
   for (const t of termos) {
     const emp = empresasPorTermo[t.id] || [];
     porColuna[t.status] = porColuna[t.status] || [];
-    porColuna[t.status].push({ ...t, valor_total_termo: num(t.valor_total_termo), nf_soma: num(t.nf_soma), nf_diferenca: num(t.nf_diferenca), n_empresas: emp.length, n_nf_encontradas: emp.filter(e => e.nf_status === 'encontrada').length, n_pagas: emp.filter(e => e.pagamento_status === 'pago').length });
+    // v1.33: datas consolidadas do termo — emissão = primeira NF emitida · pagamento = último pagamento recebido
+    const datasNf = emp.map(e => e.nf_data).filter(Boolean).sort();
+    const datasPag = emp.map(e => e.pagamento_data).filter(Boolean).sort();
+    porColuna[t.status].push({ ...t, valor_total_termo: num(t.valor_total_termo), nf_soma: num(t.nf_soma), nf_diferenca: num(t.nf_diferenca),
+      n_empresas: emp.length, n_nf_encontradas: emp.filter(e => e.nf_status === 'encontrada').length, n_pagas: emp.filter(e => e.pagamento_status === 'pago').length,
+      data_emissao: datasNf[0] ? String(datasNf[0]).split('T')[0] : null,
+      data_emissao_ultima: datasNf.length > 1 ? String(datasNf[datasNf.length - 1]).split('T')[0] : null,
+      data_pagamento: datasPag.length ? String(datasPag[datasPag.length - 1]).split('T')[0] : null,
+      pagamento_completo: emp.length > 0 && emp.every(e => e.pagamento_status === 'pago') });
   }
   // v1.20.3: total em valor (e contagem) por etapa, para o cabeçalho do Kanban de Faturamento
   const totaisPorColuna = {};
   STATUS.forEach(s => { const lista = porColuna[s] || []; totaisPorColuna[s] = { qtd: lista.length, valor: Math.round(lista.reduce((sm, t) => sm + num(t.valor_total_termo), 0) * 100) / 100 }; });
   const totalGeral = { qtd: termos.length, valor: Math.round(termos.reduce((sm, t) => sm + num(t.valor_total_termo), 0) * 100) / 100 };
-  return { colunas: porColuna, labels: STATUS_LABEL, total: termos.length, totais_por_coluna: totaisPorColuna, total_geral: totalGeral };
+  // v1.32: anos disponíveis (para o seletor) — sempre da base inteira, não do filtro atual
+  let anosDisponiveis = [];
+  try {
+    const r = await sql`SELECT DISTINCT EXTRACT(YEAR FROM criado_em)::int AS ano FROM termos_faturamento ORDER BY ano DESC`;
+    anosDisponiveis = r.map(x => x.ano);
+  } catch (_) {}
+  return { colunas: porColuna, labels: STATUS_LABEL, total: termos.length,
+    totais_por_coluna: totaisPorColuna, total_geral: totalGeral,
+    anos_disponiveis: anosDisponiveis, filtro_aplicado: { mes: mes || null, ano: ano || null, periodo_texto: periodo_texto || null } };
 }
 
 async function termoGet({ id } = {}) {
@@ -135,7 +177,14 @@ async function termoGet({ id } = {}) {
   const termo = rows[0];
   const empresas = await sql`SELECT * FROM termos_empresas WHERE termo_id = ${id} ORDER BY ordem`;
   const notas = await sql`SELECT * FROM termos_notas_encontradas WHERE termo_id = ${id} ORDER BY criado_em DESC`;
-  return { termo: { ...termo, valor_total_termo: num(termo.valor_total_termo), nf_soma: num(termo.nf_soma), nf_diferenca: num(termo.nf_diferenca) },
+  const _datasNf = empresas.map(e => e.nf_data).filter(Boolean).sort();
+  const _datasPag = empresas.map(e => e.pagamento_data).filter(Boolean).sort();
+  return { termo: { ...termo, valor_total_termo: num(termo.valor_total_termo), nf_soma: num(termo.nf_soma), nf_diferenca: num(termo.nf_diferenca),
+      // v1.33: datas consolidadas para exibição
+      data_emissao: _datasNf[0] ? String(_datasNf[0]).split('T')[0] : null,
+      data_emissao_ultima: _datasNf.length > 1 ? String(_datasNf[_datasNf.length - 1]).split('T')[0] : null,
+      data_pagamento: _datasPag.length ? String(_datasPag[_datasPag.length - 1]).split('T')[0] : null,
+      pagamento_completo: empresas.length > 0 && empresas.every(e => e.pagamento_status === 'pago') },
     empresas: empresas.map(e => ({ ...e, valor_parcela: num(e.valor_parcela), valor_total_contrato: num(e.valor_total_contrato), saldo_contrato: num(e.saldo_contrato), nf_valor: e.nf_valor != null ? num(e.nf_valor) : null })),
     notas };
 }
@@ -190,6 +239,19 @@ async function termoEmpresaMarcarPago({ empresa_id, pagamento_status, pagamento_
   return { atualizado: true };
 }
 
+// v1.33: ajustar manualmente a data de emissão da NF ou a data de pagamento de uma empresa
+async function termoEmpresaDatas({ empresa_id, nf_data, pagamento_data } = {}) {
+  if (!empresa_id) throw new Error('empresa_id obrigatório');
+  const sql = await getSql();
+  const rows = await sql`SELECT termo_id FROM termos_empresas WHERE id = ${empresa_id} LIMIT 1`;
+  if (!rows.length) throw new Error('Empresa não encontrada');
+  await sql`UPDATE termos_empresas SET
+    nf_data = COALESCE(${nf_data ?? null}, nf_data),
+    pagamento_data = COALESCE(${pagamento_data ?? null}, pagamento_data)
+    WHERE id = ${empresa_id}`;
+  return await termoGet({ id: rows[0].termo_id });
+}
+
 async function recalcularNf(termoId) {
   const sql = await getSql();
   const empresas = await sql`SELECT * FROM termos_empresas WHERE termo_id = ${termoId}`;
@@ -231,6 +293,79 @@ async function recalcularPagamento(termoId) {
   await sql`UPDATE termos_faturamento SET pagamento_status = ${status}, pagamento_verificado_em = NOW(), atualizado_em = NOW() WHERE id = ${termoId}`;
   if (status === 'pago') await sql`UPDATE termos_faturamento SET status = 'concluido' WHERE id = ${termoId}`;
   return { status };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v1.31: EDIÇÃO COMPLETA DO TERMO (cabeçalho + empresas do rateio)
+// ═══════════════════════════════════════════════════════════════════════════
+async function termoEditar({ id, cabecalho = {}, empresas } = {}) {
+  if (!id) throw new Error('id do termo obrigatório');
+  const sql = await getSql();
+  const atual = await sql`SELECT * FROM termos_faturamento WHERE id = ${id} LIMIT 1`;
+  if (!atual.length) throw new Error('Termo não encontrado');
+
+  // Cabeçalho: só sobrescreve o que veio preenchido (não apaga o resto)
+  const c = cabecalho;
+  await sql`UPDATE termos_faturamento SET
+      projeto = COALESCE(${c.projeto ?? null}, projeto),
+      fase = COALESCE(${c.fase ?? null}, fase),
+      contratante = COALESCE(${c.contratante ?? null}, contratante),
+      contratada = COALESCE(${c.contratada ?? null}, contratada),
+      cnpj_fornecedor = COALESCE(${c.cnpj_fornecedor ?? null}, cnpj_fornecedor),
+      periodo_medicao = COALESCE(${c.periodo_medicao ?? null}, periodo_medicao),
+      numero_termo = COALESCE(${c.numero_termo ?? null}, numero_termo),
+      parcela = COALESCE(${c.parcela ?? null}, parcela),
+      marco_projeto = COALESCE(${c.marco_projeto ?? null}, marco_projeto),
+      observacoes = COALESCE(${c.observacoes ?? null}, observacoes),
+      atualizado_em = NOW()
+    WHERE id = ${id}`;
+
+  // Empresas do rateio: substitui o conjunto pelo enviado (preservando notas já vinculadas)
+  if (Array.isArray(empresas)) {
+    const existentes = await sql`SELECT id FROM termos_empresas WHERE termo_id = ${id}`;
+    const idsEnviados = empresas.filter(e => e.id).map(e => e.id);
+    const removidas = existentes.filter(e => !idsEnviados.includes(e.id)).map(e => e.id);
+
+    // Proteção: não remove empresa que já tem nota fiscal vinculada
+    if (removidas.length) {
+      const comNota = await sql`SELECT DISTINCT empresa_id FROM termos_notas_encontradas
+        WHERE termo_id = ${id} AND empresa_id = ANY(${removidas})`;
+      const bloqueadas = comNota.map(n => n.empresa_id);
+      if (bloqueadas.length) {
+        const nomes = await sql`SELECT empresa FROM termos_empresas WHERE id = ANY(${bloqueadas})`;
+        throw new Error('Não é possível remover empresa que já tem nota fiscal vinculada: ' +
+          nomes.map(n => n.empresa).join(', ') + '. Remova a nota primeiro.');
+      }
+      await sql`DELETE FROM termos_empresas WHERE id = ANY(${removidas})`;
+    }
+
+    let ordem = 0;
+    for (const e of empresas) {
+      const valor = num(e.valor_parcela);
+      if (e.id) {
+        await sql`UPDATE termos_empresas SET empresa = ${e.empresa || ''}, contrato = ${e.contrato || ''},
+          ncm = ${e.ncm || ''}, centro_custo = ${e.centro_custo || ''}, diferimento = ${e.diferimento || ''},
+          valor_total_contrato = ${num(e.valor_total_contrato)}, percentual = ${num(e.percentual)},
+          valor_ja_faturado = ${num(e.valor_ja_faturado)}, valor_parcela_anterior = ${num(e.valor_parcela_anterior)},
+          valor_parcela = ${valor}, saldo_contrato = ${num(e.saldo_contrato)}, ordem = ${ordem++}
+          WHERE id = ${e.id}`;
+      } else {
+        await sql`INSERT INTO termos_empresas (id, termo_id, ordem, empresa, contrato, ncm, centro_custo, diferimento,
+            valor_total_contrato, percentual, valor_ja_faturado, valor_parcela_anterior, valor_parcela, saldo_contrato)
+          VALUES (${novoId('temp')}, ${id}, ${ordem++}, ${e.empresa || ''}, ${e.contrato || ''}, ${e.ncm || ''},
+            ${e.centro_custo || ''}, ${e.diferimento || ''}, ${num(e.valor_total_contrato)}, ${num(e.percentual)},
+            ${num(e.valor_ja_faturado)}, ${num(e.valor_parcela_anterior)}, ${valor}, ${num(e.saldo_contrato)})`;
+      }
+    }
+    // Total do termo passa a ser a soma do rateio editado
+    const soma = empresas.reduce((s, e) => s + num(e.valor_parcela), 0);
+    await sql`UPDATE termos_faturamento SET valor_total_termo = ${Math.round(soma * 100) / 100} WHERE id = ${id}`;
+  }
+
+  // Recalcula a comparação com as notas (o total pode ter mudado)
+  const recalc = await recalcularNf(id);
+  console.log(`[Faturamento] Termo ${id} editado · novo total conferido com notas: ${recalc.status}`);
+  return await termoGet({ id });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -463,7 +598,7 @@ async function qbQueryFat(sqlQuery, token, realm, sandbox) {
   return d;
 }
 
-async function termoVerificarPagamento({ termo_id } = {}) {
+async function termoVerificarPagamento({ termo_id, tolerancia_pct } = {}) {
   if (!termo_id) throw new Error('termo_id obrigatório');
   const { termo, empresas } = await termoGet({ id: termo_id });
   let token, realm;
@@ -471,19 +606,77 @@ async function termoVerificarPagamento({ termo_id } = {}) {
   if (!realm) return { erro: 'QB_REALM_ID ausente', configurado: false };
   const sandbox = process.env.QB_SANDBOX === 'true';
   const sql = await getSql();
+  // v1.34: tolerância configurável (padrão 2%) — cobre retenção de imposto e arredondamento
+  const tolPct = tolerancia_pct != null ? parseFloat(tolerancia_pct) : parseFloat(process.env.FAT_TOLERANCIA_PAGTO_PCT || '2');
+  const dentroTolerancia = (recebido, esperado) => Math.abs(num(recebido) - num(esperado)) <= Math.max(1, num(esperado) * (tolPct / 100));
+
   let atualizadas = 0, erroQ = null;
+  const detalhes = [], naoEncontradas = [];
+
+  // ── ETAPA 1: fatura baixada no QuickBooks (caminho principal) ──
   try {
     const data = await qbQueryFat(`select * from Invoice where Balance = '0' maxresults 1000`, token, realm, sandbox);
     const pagas = data?.QueryResponse?.Invoice || [];
     for (const e of empresas) {
       if (e.pagamento_status === 'pago') continue;
       const alvo = normEmpresa(e.empresa);
-      const achou = pagas.find(inv => normEmpresa(inv.CustomerRef?.name || '').includes(alvo) && Math.abs(num(inv.TotalAmt) - num(e.valor_parcela)) < Math.max(1, num(e.valor_parcela) * 0.02));
-      if (achou) { await sql`UPDATE termos_empresas SET pagamento_status = 'pago', pagamento_data = ${(achou.TxnDate || '').substring(0, 10)} WHERE id = ${e.id}`; atualizadas++; }
+      const achou = pagas.find(inv => normEmpresa(inv.CustomerRef?.name || '').includes(alvo) && dentroTolerancia(inv.TotalAmt, e.valor_parcela));
+      if (achou) {
+        await sql`UPDATE termos_empresas SET pagamento_status = 'pago', pagamento_data = ${(achou.TxnDate || '').substring(0, 10)}, pagamento_origem = 'fatura_baixada' WHERE id = ${e.id}`;
+        atualizadas++; detalhes.push({ empresa: e.empresa, via: 'fatura baixada no QuickBooks', data: (achou.TxnDate || '').substring(0, 10), valor: num(achou.TotalAmt) });
+      } else naoEncontradas.push(e);
     }
   } catch (e) { erroQ = e.message; }
+
+  // ── ETAPA 2 (v1.34): fallback no EXTRATO — procura o recebimento de verdade ──
+  // Só roda para quem não foi encontrado na etapa 1. Consulta Payments (baixas registradas)
+  // e Deposits (entradas em conta) dos últimos 120 dias.
+  const viaExtrato = [];
+  if (naoEncontradas.length) {
+    const desde = new Date(Date.now() - 120 * 86400000).toISOString().split('T')[0];
+    let pagamentos = [], depositos = [];
+    try {
+      const dp = await qbQueryFat(`select * from Payment where TxnDate >= '${desde}' maxresults 500`, token, realm, sandbox);
+      pagamentos = dp?.QueryResponse?.Payment || [];
+    } catch (e) { console.warn('[Faturamento] Payments:', e.message); }
+    try {
+      const dd = await qbQueryFat(`select * from Deposit where TxnDate >= '${desde}' maxresults 500`, token, realm, sandbox);
+      depositos = dd?.QueryResponse?.Deposit || [];
+    } catch (e) { console.warn('[Faturamento] Deposits:', e.message); }
+
+    for (const e of naoEncontradas) {
+      const alvo = normEmpresa(e.empresa);
+      // 2a. Payment do cliente com valor compatível (recebimento registrado, mesmo sem baixar a fatura)
+      let achou = pagamentos.find(p => normEmpresa(p.CustomerRef?.name || '').includes(alvo) && dentroTolerancia(p.TotalAmt, e.valor_parcela));
+      let via = 'recebimento (Payment) no QuickBooks';
+      // 2b. Depósito com linha do cliente ou valor batendo (dinheiro que entrou na conta)
+      if (!achou) {
+        achou = depositos.find(d => {
+          const linhas = d.Line || [];
+          const porCliente = linhas.some(l => normEmpresa(l.DepositLineDetail?.Entity?.name || '').includes(alvo) && dentroTolerancia(l.Amount, e.valor_parcela));
+          const porValorTotal = dentroTolerancia(d.TotalAmt, e.valor_parcela)
+            && linhas.some(l => normEmpresa(l.DepositLineDetail?.Entity?.name || '').includes(alvo));
+          return porCliente || porValorTotal;
+        });
+        if (achou) via = 'depósito em conta (extrato) no QuickBooks';
+      }
+      if (achou) {
+        await sql`UPDATE termos_empresas SET pagamento_status = 'pago', pagamento_data = ${(achou.TxnDate || '').substring(0, 10)}, pagamento_origem = 'extrato' WHERE id = ${e.id}`;
+        atualizadas++;
+        const registro = { empresa: e.empresa, via, data: (achou.TxnDate || '').substring(0, 10), valor: num(achou.TotalAmt) };
+        detalhes.push(registro); viaExtrato.push(registro);
+      }
+    }
+  }
+
   const recalc = await recalcularPagamento(termo_id);
-  return { atualizadas, pagamento_status: recalc.status, erro: erroQ };
+  const aindaPendentes = empresas.length - (empresas.filter(e => e.pagamento_status === 'pago').length + atualizadas);
+  return { atualizadas, pagamento_status: recalc.status, erro: erroQ, detalhes,
+    encontrados_via_extrato: viaExtrato.length, ainda_pendentes: Math.max(0, aindaPendentes),
+    tolerancia_pct: tolPct,
+    resumo: atualizadas
+      ? `${atualizadas} pagamento(s) confirmado(s)` + (viaExtrato.length ? ` · ${viaExtrato.length} encontrado(s) no extrato (fatura ainda não baixada no QuickBooks)` : '')
+      : 'Nenhum pagamento novo encontrado — nem fatura baixada, nem entrada no extrato' };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -605,12 +798,14 @@ export default async function handler(req, res) {
     termo_list:               () => termoList(payload),
     termo_get:                 () => termoGet(payload),
     termo_mover:               () => termoMover(payload),
+    termo_editar:              () => termoEditar(payload),
     termo_aprovar:             () => termoAprovar(payload),
     termo_excluir:             () => termoExcluir(payload),
     termo_empresa_marcar_nf:   () => termoEmpresaMarcarNf(payload),
     termo_nf_upload:           () => termoNfUpload(payload),
     termo_nf_excluir:          () => termoNfExcluir(payload),
     termo_empresa_marcar_pago: () => termoEmpresaMarcarPago(payload),
+    termo_empresa_datas:       () => termoEmpresaDatas(payload),
     termo_verificar_email:     () => termoVerificarEmail(payload),
     termo_verificar_pagamento: () => termoVerificarPagamento(payload),
     termo_empresa_lancar_qb:   () => termoEmpresaLancarQb(payload),
