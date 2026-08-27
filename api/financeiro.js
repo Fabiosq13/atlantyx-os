@@ -379,14 +379,15 @@ async function claudeFin(system, messages, maxTokens = 1400) {
   if (!r.ok) throw new Error('Claude API [' + r.status + ']: ' + (d.error?.message || 'erro'));
   return d.content?.[0]?.text || '';
 }
-async function contextoFinanceiro() {
+async function contextoFinanceiro({ mes, ano } = {}) {
   const [resumo, kpis, fluxo, conc, kanban, orc] = await Promise.allSettled([
-    painelResumo(), kpisSaude({}), fluxoFuturo({ meses: 6 }), conciliacaoStatus({}), marcosKanban({}), orcamentoConsolidado({})
+    painelResumo({ mes, ano }), kpisSaude({}), fluxoFuturo({ meses: 6 }), conciliacaoStatus({}), marcosKanban({}), orcamentoConsolidado({ ano })
   ]);
   const v = p => p.status === 'fulfilled' ? p.value : { erro: p.reason?.message };
   const R = v(resumo), K = v(kpis), F = v(fluxo), C = v(conc), M = v(kanban), O = v(orc);
   return {
     quickbooks: { conectado: !R.erros?.length || (R.saldoCaixa !== undefined && R.saldoCaixa !== 0), erros: (R.erros || []).slice(0, 3) },
+    periodo: R.periodo || null,
     caixa: { saldo: R.saldoCaixa ?? null, a_receber: R.aReceber ?? null, a_pagar: R.aPagar ?? null, receita_mes: R.realMes ?? null, receita_ano: R.realAnual ?? null },
     saude: { semaforo: K.semaforo, motivos: K.semaforo_motivos, kpis: Object.fromEntries(Object.entries(K).filter(([k]) => !/semaforo|erro/.test(k)).slice(0, 14)) },
     fluxo_6m: (F.meses || F.linhas || []).slice(0, 6).map(m => ({ mes: m.mes || m.label || m.ref, entradas: m.entradas ?? m.receitas, saidas: m.saidas ?? m.despesas, saldo: m.saldo_final ?? m.saldo })),
@@ -407,9 +408,9 @@ ${JSON.stringify(ctx).substring(0, 9000)}`;
   const resposta = await claudeFin(system, msgs, 1400);
   return { resposta, contexto_resumo: { saldo: ctx.caixa.saldo, a_receber: ctx.caixa.a_receber, a_pagar: ctx.caixa.a_pagar, semaforo: ctx.saude.semaforo, qb: ctx.quickbooks.conectado } };
 }
-async function dashboardFinanceiro() {
-  const ctx = await contextoFinanceiro();
-  return { dashboard: ctx, gerado_em: new Date().toISOString() };
+async function dashboardFinanceiro({ mes, ano } = {}) {
+  const ctx = await contextoFinanceiro({ mes, ano });
+  return { dashboard: ctx, gerado_em: new Date().toISOString(), periodo: ctx.periodo || null };
 }
 
 // v1.15: diagnóstico do QuickBooks — empresa, realm, contagens e INTERVALO DE DATAS com dados (sandbox costuma ter
@@ -776,25 +777,27 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
   const fim = data_fim || hoje;
 
   // Query separada por tipo — QB não tem "UNION"
+  // v1.36.1 FIX: cada consulta traz UMA entidade — antes o código pegava o primeiro campo
+  // presente na resposta com uma cadeia de "||", o que fazia a mesma lista ser processada em
+  // rodadas diferentes e gerava LINHAS DUPLICADAS no extrato. Agora cada query lê só a sua entidade.
   const queries = [
-    { tipo: 'despesa',  q: `select * from Purchase where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
-    { tipo: 'pagamento', q: `select * from Payment where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
-    { tipo: 'deposito', q: `select * from Deposit where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
-    { tipo: 'venda',    q: `select * from SalesReceipt where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
-    { tipo: 'invoice',  q: `select * from Invoice where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
+    { tipo: 'despesa',   entidade: 'Purchase',     q: `select * from Purchase where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
+    { tipo: 'pagamento', entidade: 'Payment',      q: `select * from Payment where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
+    { tipo: 'deposito',  entidade: 'Deposit',      q: `select * from Deposit where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
+    { tipo: 'venda',     entidade: 'SalesReceipt', q: `select * from SalesReceipt where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
+    { tipo: 'invoice',   entidade: 'Invoice',      q: `select * from Invoice where TxnDate >= '${ini}' and TxnDate <= '${fim}' maxresults ${limite}` },
   ];
 
   const lancamentos = []; const erros = [];
-  for (const { tipo, q } of queries) {
+  const vistos = new Set(); // trava extra contra duplicidade (mesmo id não entra duas vezes)
+  for (const { tipo, entidade, q } of queries) {
     try {
       const data = await qbQuery(q, token);
-      const items = data?.QueryResponse?.Purchase
-                  || data?.QueryResponse?.Payment
-                  || data?.QueryResponse?.Deposit
-                  || data?.QueryResponse?.SalesReceipt
-                  || data?.QueryResponse?.Invoice
-                  || [];
+      const items = data?.QueryResponse?.[entidade] || [];
       for (const item of items) {
+        const chave = `${entidade}:${item.Id}`;
+        if (vistos.has(chave)) continue;
+        vistos.add(chave);
         const entrada = ['pagamento', 'deposito', 'venda', 'invoice'].includes(tipo);
         lancamentos.push({
           id: `qb_${tipo}_${item.Id}`,
@@ -945,7 +948,7 @@ function extrairLinhasRelatorio(data) {
 // 2. Painel resumo — único endpoint que o frontend chama no Sync
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function painelResumo() {
+async function painelResumo({ mes, ano } = {}) {
   const resp = {
     qb_configurado: qbConfigurado(),
     timestamp: new Date().toISOString(),
@@ -969,18 +972,27 @@ async function painelResumo() {
   const token = await qbToken();
 
   // Em paralelo: DRE do ano, DRE do mês, AR, AP, saldos, lançamentos recentes
+  // v1.36: período selecionável. Sem filtro = mês/ano corrente (comportamento antigo).
+  // Com mês/ano escolhidos, o "mês" vira o mês inteiro selecionado e o "ano" vai até o fim dele.
   const hoje = new Date();
-  const inicioMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
-  const inicioAno = `${hoje.getFullYear()}-01-01`;
-  const hojeStr = hoje.toISOString().split('T')[0];
+  const anoSel = ano ? parseInt(ano) : hoje.getFullYear();
+  const mesSel = mes ? parseInt(mes) : (ano ? null : hoje.getMonth() + 1);
+  const ehPeriodoAtual = anoSel === hoje.getFullYear() && (!mesSel || mesSel === hoje.getMonth() + 1);
+  const inicioMes = mesSel ? `${anoSel}-${String(mesSel).padStart(2, '0')}-01` : `${anoSel}-01-01`;
+  const fimMes = mesSel
+    ? (ehPeriodoAtual ? hoje.toISOString().split('T')[0] : new Date(anoSel, mesSel, 0).toISOString().split('T')[0])
+    : (anoSel === hoje.getFullYear() ? hoje.toISOString().split('T')[0] : `${anoSel}-12-31`);
+  const inicioAno = `${anoSel}-01-01`;
+  const hojeStr = fimMes; // fim do período selecionado
+  resp.periodo = { ano: anoSel, mes: mesSel, de: inicioMes, ate: fimMes, atual: ehPeriodoAtual };
 
   const [pAno, pMes, ar, ap, contas, lanc] = await Promise.allSettled([
     qbFetch(`/reports/ProfitAndLoss?start_date=${inicioAno}&end_date=${hojeStr}`, token),
-    qbFetch(`/reports/ProfitAndLoss?start_date=${inicioMes}&end_date=${hojeStr}`, token),
+    qbFetch(`/reports/ProfitAndLoss?start_date=${inicioMes}&end_date=${fimMes}`, token),
     qbFetch(`/reports/AgedReceivables?date_macro=Today`, token),
     qbFetch(`/reports/AgedPayables?date_macro=Today`, token),
     qbQuery(`select * from Account where AccountType = 'Bank'`, token),
-    qbLancamentos({ data_inicio: inicioMes, data_fim: hojeStr, limite: 50 }),
+    qbLancamentos({ data_inicio: inicioMes, data_fim: fimMes, limite: 50 }),
   ]);
 
   if (pAno.status === 'fulfilled') {
