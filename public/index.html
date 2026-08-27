@@ -2892,6 +2892,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <button class="btn" style="text-align:left;font-size:10.5px;" onclick="perguntarMkt('Onde está o maior gargalo do funil (contatos → respostas → reuniões → propostas → fechamentos)?')">🔍 Gargalo do funil</button>
         <button class="btn" style="text-align:left;font-size:10.5px;" onclick="perguntarMkt('Quais campanhas devo priorizar ou pausar essa semana e por quê?')">🎯 Priorizar campanhas</button>
         <button class="btn" style="text-align:left;font-size:10.5px;" onclick="perguntarMkt('Os leads recentes parecem qualificados? O que os scores sugerem?')">✅ Qualidade dos leads</button>
+      <button class="btn" style="text-align:left;font-size:10.5px;color:var(--gold);border-color:var(--gold);" onclick="auditarCampanhas()">🔧 Auditar campanhas (canais)</button>
       </div>
     </div>
   </div>
@@ -14932,6 +14933,7 @@ async function enviarTermo(id) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ---------- Persistência das publicações (Neon + localStorage fallback) ----
+let _mcAvisoMetricas = null;
 let _publicacoes = [];   // { id, campanhaId, pecaId, rede, texto, data, metodo:'manual'|'metricool', metricool_id, metricas:{imp,cli,cur,com,sha,leads} }
 let _mcConfigurado = null; // cache status metricool
 let _leadsHubspot = {};    // v1.5.4: { camp_xxx: { total, por_rede } } — atribuição automática via UTM
@@ -15299,6 +15301,8 @@ function _fdDetalhe(json) {
       ${linha('Vencida', l.vencida ? '⚠ sim' : null)}
       ${linha('Saldo acumulado após', fmtBRLcompleto(l.saldo_acumulado))}
       ${linha('Observação', l.memo)}
+      ${l.nota_dedup ? `<div style="margin-top:10px;padding:9px;background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:7px;font-size:10px;line-height:1.6;">ℹ ${l.nota_dedup}</div>` : ''}
+      ${l.valor_documento && l.valor_documento !== l.valor ? linha('Valor original do documento', fmtBRLcompleto(l.valor_documento)) : ''}
       ${l.qb_txn_id ? `<div style="margin-top:12px;padding:9px;background:var(--bg4);border-radius:7px;font-size:10px;color:var(--t2);line-height:1.6;">Para ver este lançamento no QuickBooks, procure por <b>${(l.descricao||'').substring(0,30)}</b> na data ${l.data ? l.data.split('-').reverse().join('/') : ''}. O identificador acima (<code>${l.qb_txn_id}</code>) indica o tipo e o número do documento lá.</div>` : ''}
     </div></div>`;
 }
@@ -16676,6 +16680,56 @@ async function perguntarMkt(textoFixo) {
 }
 function limparChatMkt() { _mktHist = []; const box = document.getElementById('mktChat'); if (box) box.innerHTML = '<div style="background:var(--bg4);border-radius:10px;padding:12px;font-size:12px;line-height:1.55;max-width:85%;">Nova conversa. O que quer saber sobre marketing?</div>'; }
 
+// v1.43: auditoria de campanhas — encontra canal vazio/inválido e permite corrigir na hora
+async function auditarCampanhas() {
+  let modal = document.getElementById('audCampModal');
+  if (!modal) { modal = document.createElement('div'); modal.id='audCampModal';
+    modal.style.cssText='display:flex;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:999;align-items:center;justify-content:center;overflow:auto;padding:20px;'; document.body.appendChild(modal); }
+  modal.style.display='flex';
+  modal.innerHTML = '<div class="panel" style="width:760px;max-width:96vw;"><div class="pb" style="text-align:center;color:var(--t3);padding:30px;">⏳ Auditando campanhas...</div></div>';
+  try {
+    const r = await fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()}, body: JSON.stringify({ action:'auditar_campanhas' }) });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error||'falha');
+    const cor = g => g==='alta' ? 'var(--red)' : g==='media' ? 'var(--gold)' : 'var(--t3)';
+    const opts = (d.canais_validos||[]).map(c=>`<option value="${c}">${c}</option>`).join('');
+    modal.innerHTML = `<div class="panel" style="width:760px;max-width:96vw;max-height:90vh;overflow:auto;">
+      <div class="ph"><div class="pt">🔧 Auditoria de campanhas</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('audCampModal').style.display='none'">✕</button></div>
+      <div class="pb">
+        <div style="display:flex;gap:10px;margin-bottom:12px;">
+          <div class="kpi bl" style="flex:1;"><div class="kl">Campanhas</div><div class="kv">${d.total_campanhas}</div></div>
+          <div class="kpi rd" style="flex:1;"><div class="kl">Problema grave</div><div class="kv">${d.resumo.alta}</div><div class="ks">aprovada sem canal</div></div>
+          <div class="kpi gd" style="flex:1;"><div class="kl">Atenção</div><div class="kv">${d.resumo.media}</div></div>
+          <div class="kpi" style="flex:1;"><div class="kl">Rascunhos</div><div class="kv">${d.resumo.baixa}</div><div class="ks">sem canal ainda</div></div>
+        </div>
+        ${d.problemas.length ? d.problemas.map(p => `
+          <div style="border-left:3px solid ${cor(p.gravidade)};background:var(--bg4);border-radius:6px;padding:10px;margin-bottom:8px;">
+            <div style="font-size:11.5px;font-weight:600;">${p.nome || '(sem nome)'}</div>
+            <div style="font-size:10px;color:var(--t2);margin:3px 0;">canal: <b>${p.canal}</b> · status: ${p.status}${p.ativa?' · ATIVA':''}</div>
+            <div style="font-size:10.5px;color:${cor(p.gravidade)};">${p.problema}</div>
+            <div style="display:flex;gap:6px;margin-top:6px;align-items:center;">
+              <select class="fsel" id="fix_${p.id}" style="font-size:10px;width:auto;"><option value="">— escolher canal —</option>${opts}</select>
+              <button class="btn btn-gn" style="font-size:9px;padding:2px 8px;" onclick="_corrigirCanal('${p.id}')">Corrigir</button>
+            </div>
+          </div>`).join('')
+        : '<div style="background:rgba(34,211,163,.08);border:1px solid var(--green,#22d3a3);border-radius:8px;padding:12px;font-size:11.5px;">✅ Nenhum problema de canal encontrado.</div>'}
+        <div style="margin-top:12px;font-size:10px;color:var(--t3);line-height:1.7;">A partir de agora o sistema <b>bloqueia</b> aprovar ou ativar campanha sem canal válido. Canais aceitos: ${(d.canais_validos||[]).join(', ')}.</div>
+      </div></div>`;
+  } catch (e) { modal.innerHTML = `<div class="panel" style="width:520px;"><div class="pb" style="padding:20px;color:var(--red);">Erro: ${e.message}<br><br><button class="btn" onclick="document.getElementById('audCampModal').style.display='none'">Fechar</button></div></div>`; }
+}
+async function _corrigirCanal(id) {
+  const canal = document.getElementById('fix_'+id)?.value;
+  if (!canal) { toast('Escolha um canal', 'error'); return; }
+  try {
+    const r = await fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()},
+      body: JSON.stringify({ action:'auditar_campanhas', value:{ corrigir:{ id, canal } } }) });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error||'falha');
+    toast('Canal corrigido para ' + canal, 'success');
+    auditarCampanhas();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+
 // ═══ v1.21: RH — CADASTRO DE FUNCIONÁRIOS + GERENTE DE RH IA ═══
 async function rhApi(action, params = {}) {
   let r;
@@ -17210,7 +17264,14 @@ async function carregarDesempenho() {
         const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({ action:'metricas_posts', payload: { rede, inicio: ini } }) });
         const d = await r.json();
-        if (d.success && d.posts) mesclarMetricasMc(rede, d.posts);
+        if (d.success && d.posts) {
+          const res = mesclarMetricasMc(rede, d.posts);
+          // v1.42: se a API devolveu posts sem NENHUMA métrica, o problema é de permissão no Metricool
+          if (d.diagnostico?.sem_metricas) {
+            addLog('err', `[Desempenho] ${rede}: ${d.diagnostico.aviso}`);
+            _mcAvisoMetricas = _mcAvisoMetricas || {}; _mcAvisoMetricas[rede] = d.diagnostico.aviso;
+          }
+        }
       } catch (e) { addLog('warn', '[Desemp] ' + rede + ': ' + e.message); }
     }
     salvarPublicacoes();
@@ -17218,18 +17279,78 @@ async function carregarDesempenho() {
   renderDesempenho();
 }
 
+// v1.42: casamento robusto entre a publicação registrada e o post do Metricool.
+// Antes exigia os 60 primeiros caracteres IDÊNTICOS — qualquer emoji, quebra de linha ou
+// corte de texto fazia falhar, e a publicação ficava com métricas zeradas.
+function _normTexto(t) {
+  return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/https?:\/\/\S+/g, '')            // links encurtados mudam entre os dois lados
+    .replace(/[^a-z0-9 ]/g, ' ')               // emoji, pontuação, quebras
+    .replace(/\s+/g, ' ').trim();
+}
+function _similaridade(a, b) {
+  const A = new Set(_normTexto(a).split(' ').filter(w => w.length > 3));
+  const B = new Set(_normTexto(b).split(' ').filter(w => w.length > 3));
+  if (!A.size || !B.size) return 0;
+  let inter = 0; A.forEach(w => { if (B.has(w)) inter++; });
+  return inter / Math.min(A.size, B.size); // proporção de palavras em comum
+}
 function mesclarMetricasMc(rede, postsMc) {
-  // Casa publicações registradas com posts do Metricool pelo texto (primeiros 60 chars)
+  let casados = 0, semCasar = 0;
   _publicacoes.filter(p => p.rede === rede).forEach(pub => {
-    const alvo = postsMc.find(mp => mp.texto && pub.texto && mp.texto.substring(0,60) === pub.texto.substring(0,60));
-    if (alvo) {
-      pub.metricas.imp = alvo.impressoes || pub.metricas.imp;
-      pub.metricas.cli = alvo.cliques || pub.metricas.cli;
-      pub.metricas.cur = alvo.curtidas || pub.metricas.cur;
-      pub.metricas.com = alvo.comentarios || pub.metricas.com;
-      pub.metricas.sha = alvo.compartilhamentos || pub.metricas.sha;
+    let alvo = null;
+    // 1) pelo id do Metricool, quando a publicação foi feita pelo sistema (mais confiável)
+    if (pub.metricool_id) alvo = postsMc.find(mp => String(mp.id) === String(pub.metricool_id));
+    // 2) por data + similaridade de texto
+    if (!alvo) {
+      const candidatos = postsMc.map(mp => ({ mp, sim: _similaridade(mp.texto, pub.texto),
+        mesmaData: mp.data && pub.data && String(mp.data).substring(0,10) === String(pub.data).substring(0,10) }))
+        .filter(c => c.sim >= 0.6 || (c.mesmaData && c.sim >= 0.35))
+        .sort((a, b) => (b.mesmaData - a.mesmaData) || (b.sim - a.sim));
+      alvo = candidatos[0]?.mp || null;
     }
+    if (alvo) {
+      casados++;
+      // v1.42: usar ?? em vez de || — antes um valor 0 legítimo era descartado como "falso"
+      if (alvo.impressoes != null) pub.metricas.imp = alvo.impressoes;
+      if (alvo.cliques != null) pub.metricas.cli = alvo.cliques;
+      if (alvo.curtidas != null) pub.metricas.cur = alvo.curtidas;
+      if (alvo.comentarios != null) pub.metricas.com = alvo.comentarios;
+      if (alvo.compartilhamentos != null) pub.metricas.sha = alvo.compartilhamentos;
+      pub.metricas_origem = 'metricool';
+      pub.metricas_atualizado = new Date().toISOString();
+    } else semCasar++;
   });
+  if (semCasar) addLog('warn', `[Desempenho] ${rede}: ${casados} publicação(ões) casada(s) com o Metricool, ${semCasar} sem correspondência (métricas ficam zeradas nessas).`);
+  return { casados, semCasar };
+}
+
+// v1.42: explica zeros suspeitos — impressão zerada e clique sem lead
+function _despAvisoMetricas(porRede) {
+  const avisos = [];
+  const semImp = Object.entries(porRede).filter(([r, m]) => m.pubs > 0 && m.imp === 0).map(([r]) => r);
+  if (semImp.length) {
+    const detalhe = _mcAvisoMetricas ? Object.values(_mcAvisoMetricas)[0] : null;
+    avisos.push(`<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:8px;padding:10px 12px;font-size:10.5px;line-height:1.7;margin-top:10px;">
+      <b>⚠ Sem impressões em: ${semImp.join(', ')}</b><br>
+      ${detalhe ? detalhe + '<br>' : ''}
+      <b>O que costuma causar:</b><br>
+      1. O perfil não é <b>Business/Creator</b> — perfis pessoais não liberam insights (Instagram e Facebook exigem conta comercial).<br>
+      2. Permissão de <b>estatísticas não concedida</b> ao Metricool na hora de conectar a rede. Reconecte o perfil no Metricool aceitando todas as permissões.<br>
+      3. Publicações feitas <b>fora do Metricool</b> — ele só coleta métricas de perfis que administra.<br>
+      4. Métricas ainda <b>não processadas</b> pela rede (LinkedIn e Instagram levam algumas horas).</div>`);
+  }
+  const cliqueSemLead = Object.entries(porRede).filter(([r, m]) => m.cli > 0 && !m.leadsAuto);
+  if (cliqueSemLead.length) {
+    avisos.push(`<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:10px 12px;font-size:10.5px;line-height:1.7;margin-top:8px;">
+      <b>🔗 Houve cliques, mas nenhum lead registrado (${cliqueSemLead.map(([r, m]) => r + ': ' + m.cli).join(', ')})</b><br>
+      Um clique leva a pessoa ao site; ela só vira <b>lead</b> se preencher o formulário lá. Entre um e outro, o que costuma quebrar:<br>
+      1. <b>Link sem UTM</b> — sem <code>utm_source</code>, o sistema não sabe que o lead veio daquela rede, e ele é contado como "origem desconhecida" em vez de aparecer aqui.<br>
+      2. <b>Formulário não integrado</b> ao HubSpot/sistema — a pessoa preenche e o lead não chega.<br>
+      3. <b>Página de destino</b> lenta, quebrada no celular ou sem chamada clara para ação.<br>
+      4. Taxa normal: <b>1 a 3 cliques em 100 viram lead</b> é o esperado — com poucos cliques, zero lead é estatisticamente normal.</div>`);
+  }
+  return avisos.join('');
 }
 
 function renderDesempenho() {
@@ -17324,9 +17445,9 @@ function renderDesempenho() {
           `<div style="background:var(--bg4);border-left:3px solid ${cores[rede]||'var(--bd)'};border-radius:6px;padding:10px;">
             <div style="font-size:12px;font-weight:700;text-transform:capitalize;color:${cores[rede]||'var(--t1)'};">${rede}</div>
             <div style="font-size:10px;color:var(--t2);margin-top:5px;">${m.pubs} publicações</div>
-            <div style="font-size:10px;color:var(--t2);">${m.imp.toLocaleString('pt-BR')} impressões · ${m.cli} cliques</div>
-            <div style="font-size:10px;color:var(--t2);">${m.eng} interações${m.leadsAuto ? ' · <span style=\"color:var(--green);font-weight:700;\">' + m.leadsAuto + ' leads 🔗</span>' : ''}</div>
-          </div>`).join('') + '</div>'
+            <div style="font-size:10px;color:${m.imp === 0 && m.pubs > 0 ? 'var(--gold)' : 'var(--t2)'};">${m.imp.toLocaleString('pt-BR')} impressões${m.imp === 0 && m.pubs > 0 ? ' ⚠' : ''} · ${m.cli} cliques</div>
+            <div style="font-size:10px;color:var(--t2);">${m.eng} interações${m.leadsAuto ? ' · <span style=\"color:var(--green);font-weight:700;\">' + m.leadsAuto + ' leads 🔗</span>' : (m.cli > 0 ? ' · <span style=\"color:var(--t3);\" title=\"Houve cliques mas nenhum lead identificado — veja a explicação abaixo\">0 leads</span>' : '')}</div>
+          </div>`).join('') + '</div>' + _despAvisoMetricas(porRede)
       : '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Sem publicações no período.</div>';
   }
 
@@ -18584,7 +18705,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.35] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.43] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -18600,7 +18721,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.35';
+window.__ATX_BUILD_ID__ = 'ATX-v1.43';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
