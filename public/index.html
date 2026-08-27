@@ -15197,6 +15197,41 @@ async function enviarRelatorioPagamentos(soParaMim) {
   finally { if (btn) { btn.disabled = false; btn.textContent = '📤 Enviar agora'; } }
 }
 
+// v1.44: rastreia se a duplicidade está no QuickBooks ou no Atlantyx
+async function _rastrearDuplicado(json) {
+  let p; try { p = typeof json === 'string' ? JSON.parse(json) : json; } catch { return; }
+  let modal = document.getElementById('rastreioModal');
+  if (!modal) { modal = document.createElement('div'); modal.id='rastreioModal';
+    modal.style.cssText='display:flex;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:1000;align-items:center;justify-content:center;overflow:auto;padding:20px;'; document.body.appendChild(modal); }
+  modal.style.display='flex';
+  modal.innerHTML = '<div class="panel" style="width:760px;max-width:96vw;"><div class="pb" style="text-align:center;color:var(--t3);padding:30px;">⏳ Consultando o QuickBooks...</div></div>';
+  try {
+    const d = await finApi('qb_rastrear_duplicados', { data: p.data, valor: p.valor, cliente: p.cliente });
+    const r = d.rastreamento || {};
+    const c = r.conclusao || {};
+    const corConc = c.origem === 'quickbooks' ? 'var(--red)' : c.origem === 'unico' ? 'var(--gold)' : 'var(--green,#22d3a3)';
+    modal.innerHTML = `<div class="panel" style="width:760px;max-width:96vw;max-height:90vh;overflow:auto;">
+      <div class="ph"><div class="pt">🔍 Rastreamento no QuickBooks</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('rastreioModal').style.display='none'">✕</button></div>
+      <div class="pb">
+        <div style="font-size:11px;color:var(--t2);margin-bottom:10px;">Procurando por <b>${fmtBRLcompleto(r.valor_procurado)}</b> em <b>${(r.data||'').split('-').reverse().join('/')}</b>${r.cliente_procurado ? ' · cliente contendo "' + r.cliente_procurado + '"' : ''}</div>
+        <div style="background:${c.origem==='quickbooks'?'rgba(255,80,80,.1)':'var(--bg4)'};border:1px solid ${corConc};border-radius:8px;padding:12px;margin-bottom:12px;font-size:11.5px;line-height:1.6;">
+          <b style="color:${corConc};">${c.origem === 'quickbooks' ? '🔴 A duplicidade está NO QUICKBOOKS' : c.origem === 'unico' ? '🟡 Só existe 1 registro na origem' : c.origem === 'relacionados' ? '🟢 Registros vinculados (já tratado)' : c.origem === 'distintos' ? '🟢 Registros distintos' : 'Nada encontrado'}</b><br>
+          ${c.texto || ''}<br>${c.acao ? '<span style="color:var(--gold);">→ ' + c.acao + '</span>' : ''}
+        </div>
+        <div style="font-size:11.5px;font-weight:600;margin-bottom:5px;">Registros encontrados (${(r.achados||[]).filter(a=>!a.erro).length})</div>
+        ${(r.achados||[]).map(a => a.erro
+          ? `<div style="font-size:10px;color:var(--t3);padding:4px 0;">${a.entidade}: ${a.erro}</div>`
+          : `<div style="background:var(--bg4);border-radius:6px;padding:9px;margin-bottom:6px;font-size:10.5px;line-height:1.6;">
+              <b>${a.entidade} #${a.id}</b>${a.doc ? ' · doc ' + a.doc : ''} · <span style="font-family:var(--M);">${fmtBRLcompleto(a.valor)}</span><br>
+              <span style="color:var(--t2);">Cliente: ${a.cliente || '—'}${a.conta ? ' · Conta: ' + a.conta : ''}</span><br>
+              ${a.vinculado_a?.length ? `<span style="color:var(--green,#22d3a3);">Vinculado a: ${a.vinculado_a.join(', ')}</span><br>` : '<span style="color:var(--t3);">Sem vínculo com outro registro</span><br>'}
+              ${a.criado_em ? `<span style="color:var(--t3);font-size:9px;">Criado no QB em: ${new Date(a.criado_em).toLocaleString('pt-BR')}</span>` : ''}
+              ${a.memo ? `<br><span style="color:var(--t3);font-size:9px;">${a.memo}</span>` : ''}
+            </div>`).join('') || '<div style="color:var(--t3);font-size:11px;">Nenhum registro encontrado.</div>'}
+      </div></div>`;
+  } catch (e) { modal.innerHTML = `<div class="panel" style="width:520px;"><div class="pb" style="padding:20px;color:var(--red);">Erro: ${e.message}<br><br><button class="btn" onclick="document.getElementById('rastreioModal').style.display='none'">Fechar</button></div></div>`; }
+}
+
 // v1.40: diagnóstico do saldo de abertura — mostra todas as contas e aponta classificação errada
 async function diagnosticarSaldoAbertura() {
   let modal = document.getElementById('saldoAberturaModal');
@@ -15304,6 +15339,7 @@ function _fdDetalhe(json) {
       ${l.nota_dedup ? `<div style="margin-top:10px;padding:9px;background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:7px;font-size:10px;line-height:1.6;">ℹ ${l.nota_dedup}</div>` : ''}
       ${l.valor_documento && l.valor_documento !== l.valor ? linha('Valor original do documento', fmtBRLcompleto(l.valor_documento)) : ''}
       ${l.qb_txn_id ? `<div style="margin-top:12px;padding:9px;background:var(--bg4);border-radius:7px;font-size:10px;color:var(--t2);line-height:1.6;">Para ver este lançamento no QuickBooks, procure por <b>${(l.descricao||'').substring(0,30)}</b> na data ${l.data ? l.data.split('-').reverse().join('/') : ''}. O identificador acima (<code>${l.qb_txn_id}</code>) indica o tipo e o número do documento lá.</div>` : ''}
+      <button class="btn btn-p" style="width:100%;margin-top:10px;font-size:10.5px;" onclick='_rastrearDuplicado(${JSON.stringify(JSON.stringify({data:l.data, valor:l.valor, cliente:(l.descricao||'').split('·')[0].trim()}))})'>🔍 Este lançamento está duplicado? Rastrear no QuickBooks</button>
     </div></div>`;
 }
 function _fdIso(d) { return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().substring(0, 10); }
@@ -18705,7 +18741,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.43] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.44] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -18721,7 +18757,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.43';
+window.__ATX_BUILD_ID__ = 'ATX-v1.44';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
