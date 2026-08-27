@@ -15514,6 +15514,7 @@ async function carregarFluxoDetalhado() {
         box.innerHTML = `<b>⚠ O saldo calculado não bate com o saldo do banco</b><br>
           Calculado nesta tela: <b>${fmtBRLcompleto(d.saldo_hoje)}</b> · Saldo real das contas no QuickBooks: <b>${fmtBRLcompleto(d.saldo_real_banco)}</b> · Diferença: <b style="color:var(--gold);">${fmtBRLcompleto(Math.abs(d.divergencia_calculado_vs_real))}</b><br>
           <span style="color:var(--t2);">O calculado parte do saldo estimado no início do período e soma o movimento. A diferença aponta lançamento faltando, duplicado, ou saldo inicial impreciso. Contas no QuickBooks: ${(d.contas_banco||[]).map(c => c.nome + ' ' + fmtBRLcompleto(c.saldo)).join(' · ') || '—'}</span><br>
+          ${d.passado?.saldo_inicial_detalhe ? `<span style="color:var(--t3);font-size:10px;">Composição do saldo inicial: ${fmtBRLcompleto(d.passado.saldo_inicial_detalhe.saldo_hoje || 0)} (saldo do QuickBooks hoje) − ${fmtBRLcompleto(d.passado.saldo_inicial_detalhe.movimento_no_periodo_ate_hoje || 0)} (movimento do período) = ${fmtBRLcompleto(d.passado.saldo_inicial || 0)}</span><br>` : ''}
           <button class="btn" style="font-size:10px;margin-top:5px;" onclick="varrerDuplicados()">⚠ Procurar duplicados</button>
           <button class="btn" style="font-size:10px;margin-top:5px;" onclick="conferirComBanco()">🔍 Conferir com o banco</button>`;
       } else if (box) box.remove();
