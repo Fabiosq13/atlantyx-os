@@ -15488,8 +15488,36 @@ async function carregarFluxoDetalhado() {
       const hj = new Date().toISOString().split('T')[0];
       if (lbl) lbl.textContent = (ate && ate < hj) ? 'Saldo no fim do período' : 'Saldo de hoje';
     }
+    // v1.50: deixa claro que este é um saldo CALCULADO e mostra o saldo real do banco ao lado
     u('fd_saldoHoje', fmtBRLcompleto(d.saldo_hoje));
-    u('fd_saldoHojeSub', 'realizado até ' + d.hoje?.split('-').reverse().join('/'));
+    {
+      const ate = document.getElementById('fd_dataFim')?.value;
+      const hj = new Date().toISOString().split('T')[0];
+      const dataRef = (ate && ate < hj) ? ate : d.hoje;
+      const ini = d.periodo?.data_inicio;
+      let sub = `calculado: saldo de ${ini ? ini.split('-').reverse().join('/') : '?'} + movimento até ${dataRef?.split('-').reverse().join('/')}`;
+      if (d.saldo_real_banco != null) {
+        sub += ` · banco hoje: ${fmtBRLcompleto(d.saldo_real_banco)}`;
+        if (d.divergencia_relevante) sub += ` · ⚠ diferença de ${fmtBRLcompleto(Math.abs(d.divergencia_calculado_vs_real))}`;
+      }
+      u('fd_saldoHojeSub', sub);
+      const el = document.getElementById('fd_saldoHojeSub');
+      if (el) el.style.color = d.divergencia_relevante ? 'var(--gold)' : 'var(--t3)';
+    }
+    // v1.50: painel de conferência quando o calculado não bate com o banco
+    {
+      let box = document.getElementById('fdDivergencia');
+      if (d.divergencia_relevante) {
+        if (!box) { box = document.createElement('div'); box.id = 'fdDivergencia';
+          const pg = document.getElementById('page-s3fluxodet'); pg?.insertBefore(box, pg.children[1] || null); }
+        box.style.cssText = 'background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:8px;padding:11px 13px;margin-bottom:12px;font-size:11px;line-height:1.7;';
+        box.innerHTML = `<b>⚠ O saldo calculado não bate com o saldo do banco</b><br>
+          Calculado nesta tela: <b>${fmtBRLcompleto(d.saldo_hoje)}</b> · Saldo real das contas no QuickBooks: <b>${fmtBRLcompleto(d.saldo_real_banco)}</b> · Diferença: <b style="color:var(--gold);">${fmtBRLcompleto(Math.abs(d.divergencia_calculado_vs_real))}</b><br>
+          <span style="color:var(--t2);">O calculado parte do saldo estimado no início do período e soma o movimento. A diferença aponta lançamento faltando, duplicado, ou saldo inicial impreciso. Contas no QuickBooks: ${(d.contas_banco||[]).map(c => c.nome + ' ' + fmtBRLcompleto(c.saldo)).join(' · ') || '—'}</span><br>
+          <button class="btn" style="font-size:10px;margin-top:5px;" onclick="varrerDuplicados()">⚠ Procurar duplicados</button>
+          <button class="btn" style="font-size:10px;margin-top:5px;" onclick="conferirComBanco()">🔍 Conferir com o banco</button>`;
+      } else if (box) box.remove();
+    }
     u('fd_receber', fmtBRLcompleto(d.futuro.total_recebiveis));
     u('fd_receberSub', d.futuro.qtd_qb + ' doc(s) QB · ' + d.futuro.qtd_atlantyx + ' Atlantyx');
     u('fd_pagar', fmtBRLcompleto(d.futuro.total_pagaveis));
