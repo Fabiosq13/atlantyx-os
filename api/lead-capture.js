@@ -66,13 +66,35 @@ function normalizeLead(body) {
   };
 
   // Score ICP Atlantyx
-  let score = 0;
-  if (lead.company) score += 20;
-  if (/CIO|CTO|CFO|CEO|Diretor|Director|VP|Head|Gerente/i.test(lead.job_title)) score += 40;
-  if (lead.phone) score += 20;
-  if (lead.email && !/@gmail|@hotmail|@yahoo|@outlook/.test(lead.email)) score += 20;
+  // v1.43 (report DEV, item 4): "todos os leads com score C" NÃO é bug de algoritmo nem cron
+  // parado — o scoring roda na captura e está correto. A causa é que os campos que dão pontos
+  // (cargo e telefone) chegam VAZIOS do formulário: sem eles, o teto é 40 pontos = sempre C.
+  // Agora o score é proporcional ao que foi possível avaliar, e registramos o que faltou.
+  const criterios = [];
+  let score = 0, pontosPossiveis = 0;
+  pontosPossiveis += 20; if (lead.company) { score += 20; criterios.push('empresa informada (+20)'); } else criterios.push('empresa ausente');
+  const temCargo = lead.job_title != null && String(lead.job_title).trim() !== '';
+  if (temCargo) { pontosPossiveis += 40;
+    if (/CIO|CTO|CFO|CEO|Diretor|Director|VP|Head|Gerente|Coordenador|Superintendente|S[oó]cio|Owner|Founder|Presidente/i.test(lead.job_title)) { score += 40; criterios.push('cargo decisor (+40)'); }
+    else criterios.push(`cargo "${lead.job_title}" não é de decisão`);
+  } else criterios.push('⚠ CARGO NÃO CAPTURADO — critério de maior peso (40 pts) não pôde ser avaliado');
+  const temTelefone = lead.phone != null && String(lead.phone).trim() !== '';
+  if (temTelefone) { pontosPossiveis += 20; score += 20; criterios.push('telefone informado (+20)'); }
+  else criterios.push('⚠ telefone não capturado (20 pts não avaliados)');
+  pontosPossiveis += 20;
+  if (lead.email && !/@gmail|@hotmail|@yahoo|@outlook|@bol|@uol|@terra/i.test(lead.email)) { score += 20; criterios.push('e-mail corporativo (+20)'); }
+  else criterios.push('e-mail pessoal ou ausente');
+
   lead.score = score;
-  lead.score_label = score >= 60 ? 'A' : score >= 40 ? 'B' : 'C';
+  lead.score_criterios = criterios;
+  lead.score_pontos_possiveis = pontosPossiveis;
+  // Score proporcional ao que foi avaliado: assim um lead com dados incompletos não é
+  // automaticamente rebaixado para C por falta de informação que nunca foi pedida.
+  const pct = pontosPossiveis > 0 ? (score / pontosPossiveis) * 100 : 0;
+  lead.score_pct = Math.round(pct);
+  lead.score_label = pct >= 70 ? 'A' : pct >= 45 ? 'B' : 'C';
+  lead.score_confiavel = pontosPossiveis >= 80; // sem cargo, a classificação é pouco confiável
+  if (!lead.score_confiavel) lead.score_aviso = 'Score pouco confiável: o formulário não capturou cargo (e/ou telefone). Adicione esses campos para o scoring funcionar de verdade.';
 
   // Formatar telefone para WhatsApp
   if (lead.phone) {

@@ -119,6 +119,20 @@ export default async function handler(req, res) {
     if (action === 'save_campanha') {
       const camp = value;
       if (!camp?.id) return res.status(400).json({ error: 'id obrigatório' });
+      // v1.43 (report DEV, itens 1 e 2): o canal era gravado como `camp.canal||''` sem validação —
+      // campanha podia ser APROVADA e ATIVADA com canal vazio ou com lixo tipo "?".
+      const CANAIS_VALIDOS = ['LinkedIn', 'Instagram', 'Facebook', 'Google Ads', 'E-mail', 'WhatsApp', 'Todos os canais'];
+      const canalNorm = String(camp.canal || '').trim();
+      const canalOk = CANAIS_VALIDOS.find(c => c.toLowerCase() === canalNorm.toLowerCase()) || null;
+      const vaiPublicar = ['aprovada', 'ativa', 'publicada'].includes(String(camp.status || '').toLowerCase()) || camp.ativa === true;
+      if (vaiPublicar && !canalOk) {
+        return res.status(400).json({ success: false,
+          error: `Não é possível aprovar/ativar uma campanha sem canal válido (recebido: "${canalNorm || '(vazio)'}").`,
+          hint: 'Escolha um destes canais: ' + CANAIS_VALIDOS.join(', ') + '. A campanha pode ficar em rascunho sem canal, mas não pode ser aprovada assim.',
+          canais_validos: CANAIS_VALIDOS });
+      }
+      // Em rascunho, aceita vazio; se veio algo inválido (ex.: "?"), limpa em vez de gravar lixo
+      camp.canal = canalOk || (canalNorm && !canalOk ? '' : canalNorm);
       const dataJson = jsonSeguro(camp);
       if (dataJson.length > 6 * 1024 * 1024) return res.status(413).json({ success: false, error: 'campanha muito grande (' + (dataJson.length/1048576).toFixed(1) + ' MB) — remova imagens/base64 do objeto' });
       const okDate = d => (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) ? d : null;
@@ -127,7 +141,7 @@ export default async function handler(req, res) {
       const ativa      = !!camp.ativa;
       const redesAtivas = camp.redes_ativas || {};
       await sql`INSERT INTO campanhas (id, nome, canal, status, data, data_inicio, data_fim, ativa, redes_ativas, atualizado_em)
-        VALUES (${camp.id}, ${camp.nome||''}, ${camp.canal||''}, ${camp.status||'rascunho'},
+        VALUES (${camp.id}, ${camp.nome||''}, ${camp.canal || ''}, ${camp.status||'rascunho'},
                 ${dataJson}::jsonb, ${dataInicio || null}, ${dataFim || null}, ${ativa},
                 ${jsonSeguro(redesAtivas)}::jsonb, NOW())
         ON CONFLICT (id) DO UPDATE SET nome=EXCLUDED.nome, canal=EXCLUDED.canal,
@@ -290,6 +304,36 @@ export default async function handler(req, res) {
     if (action === 'delete_squad_registro') {
       await sql`DELETE FROM squad_registros WHERE id = ${key}`;
       return res.status(200).json({ success: true });
+    }
+
+    // v1.43 (report DEV, item 1/2/6): auditoria e saneamento de campanhas com canal inválido
+    if (action === 'auditar_campanhas') {
+      const CANAIS_VALIDOS = ['LinkedIn', 'Instagram', 'Facebook', 'Google Ads', 'E-mail', 'WhatsApp', 'Todos os canais'];
+      const rows = await sql`SELECT id, nome, canal, status, ativa, data_inicio, data_fim, atualizado_em FROM campanhas ORDER BY atualizado_em DESC`;
+      const problemas = [];
+      for (const c of rows) {
+        const canal = String(c.canal || '').trim();
+        const valido = CANAIS_VALIDOS.some(v => v.toLowerCase() === canal.toLowerCase());
+        const publicando = ['aprovada','ativa','publicada'].includes(String(c.status||'').toLowerCase()) || c.ativa;
+        if (!canal && publicando) problemas.push({ id: c.id, nome: c.nome, canal: '(vazio)', status: c.status, ativa: c.ativa,
+          gravidade: 'alta', problema: 'Campanha aprovada/ativa SEM canal definido — não tem onde veicular.' });
+        else if (canal && !valido) problemas.push({ id: c.id, nome: c.nome, canal, status: c.status, ativa: c.ativa,
+          gravidade: publicando ? 'alta' : 'media', problema: `Canal "${canal}" não é um valor válido.` });
+        else if (!canal && !publicando) problemas.push({ id: c.id, nome: c.nome, canal: '(vazio)', status: c.status, ativa: c.ativa,
+          gravidade: 'baixa', problema: 'Rascunho sem canal — precisa definir antes de aprovar.' });
+      }
+      // Correção opcional: manda canal_corrigido junto com id para gravar
+      if (value?.corrigir?.id && value?.corrigir?.canal) {
+        const novo = CANAIS_VALIDOS.find(v => v.toLowerCase() === String(value.corrigir.canal).trim().toLowerCase());
+        if (!novo) return res.status(400).json({ success:false, error:'Canal inválido', canais_validos: CANAIS_VALIDOS });
+        await sql`UPDATE campanhas SET canal = ${novo}, atualizado_em = NOW() WHERE id = ${value.corrigir.id}`;
+        return res.status(200).json({ success: true, corrigido: { id: value.corrigir.id, canal: novo } });
+      }
+      return res.status(200).json({ success: true, total_campanhas: rows.length, problemas,
+        canais_validos: CANAIS_VALIDOS,
+        resumo: { alta: problemas.filter(p=>p.gravidade==='alta').length,
+                  media: problemas.filter(p=>p.gravidade==='media').length,
+                  baixa: problemas.filter(p=>p.gravidade==='baixa').length } });
     }
 
     // ═══ v1.21: GERENTE DE MARKETING IA (chat com contexto real: campanhas, funil, leads) ═══

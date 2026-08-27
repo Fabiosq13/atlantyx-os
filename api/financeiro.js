@@ -770,6 +770,7 @@ function qbConfigurado() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 // 1.1 Lançamentos linha-a-linha (Purchase, Payment, Deposit, JournalEntry, SalesReceipt)
+const fmtNum = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
 async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
   if (!qbConfigurado()) return { erros: ['QuickBooks não configurado'], lancamentos: [], qb_configurado: false };
   const token = await qbToken();
@@ -799,6 +800,22 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
         const chave = `${entidade}:${item.Id}`;
         if (vistos.has(chave)) continue;
         vistos.add(chave);
+        // v1.41 FIX (2ª dupla contagem): no QuickBooks, receber um Payment e depois DEPOSITAR
+        // esse pagamento gera DOIS registros — o Payment e o Deposit que o contém. Contar os
+        // dois duplica a entrada (era o caso do CPFL R$ 43.280,98 repetido em 27/08).
+        // Regra: um Deposit só entra pelo valor das linhas SEM vínculo (LinkedTxn) com Payment,
+        // porque as vinculadas já foram contadas no próprio Payment.
+        let valorItem = parseFloat(item.TotalAmt || 0);
+        let obsDedup = null;
+        if (tipo === 'deposito' && Array.isArray(item.Line)) {
+          const linhasVinculadas = item.Line.filter(l => (l.LinkedTxn || []).some(lt => /payment/i.test(lt.TxnType || '')));
+          if (linhasVinculadas.length) {
+            const valorVinculado = linhasVinculadas.reduce((s, l) => s + (parseFloat(l.Amount) || 0), 0);
+            valorItem = Math.round((valorItem - valorVinculado) * 100) / 100;
+            obsDedup = `Depósito de ${fmtNum(valorVinculado)} já contado como recebimento (Payment) — não somado de novo.`;
+            if (valorItem <= 0) continue; // o depósito era só o agrupamento de pagamentos já contados
+          }
+        }
         // v1.38 FIX (dupla contagem de receita): 'invoice' é a EMISSÃO da nota (competência) e
         // 'pagamento'/'deposito' é o dinheiro ENTRANDO (caixa). Contar os dois como entrada no
         // extrato dobrava a receita da mesma venda. Como este extrato é de CAIXA, a Invoice entra
@@ -817,7 +834,9 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
           categoria: item.AccountRef?.name || tipo,
           conta: item.AccountRef?.name || item.DepositToAccountRef?.name || '',
           tipo: soReferencia ? 'referencia' : (entrada ? 'entrada' : 'saida'),
-          valor: parseFloat(item.TotalAmt || 0),
+          valor: valorItem,
+          valor_documento: parseFloat(item.TotalAmt || 0),
+          nota_dedup: obsDedup,
           // v1.38: nota emitida não movimenta caixa — fica visível na lista, mas não soma no saldo
           afeta_saldo: !soReferencia,
           origem: 'quickbooks',

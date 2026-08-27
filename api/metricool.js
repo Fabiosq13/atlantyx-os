@@ -240,18 +240,35 @@ export default async function handler(req, res) {
         const ep = redeEp[rede.toLowerCase()];
         if (!ep) throw new Error('Rede não suportada: ' + rede);
         const r = await mc(ep, TOKEN);
-        const posts = (Array.isArray(r) ? r : (r?.data || [])).map(p => ({
+        const brutos = Array.isArray(r) ? r : (r?.data || []);
+        // v1.42 FIX: cada rede nomeia as métricas de um jeito. O código lia só "impressions",
+        // então LinkedIn (impressionCount) e Facebook (post_impressions) sempre davam ZERO.
+        // Agora procura em todos os nomes conhecidos e também dentro de sub-objetos comuns.
+        const pega = (obj, nomes) => {
+          for (const n of nomes) {
+            const v = obj?.[n] ?? obj?.metrics?.[n] ?? obj?.insights?.[n] ?? obj?.statistics?.[n] ?? obj?.stats?.[n];
+            if (v != null && v !== '') { const num = parseFloat(v); if (!isNaN(num)) return num; }
+          }
+          return null;
+        };
+        const posts = brutos.map(p => ({
           id: p.id || p.postId,
           texto: (p.text || p.content || '').substring(0, 120),
           data: p.date || p.publicationDate || p.created,
-          impressoes: p.impressions ?? p.reach ?? 0,
-          cliques: p.clicks ?? 0,
-          curtidas: p.likes ?? p.reactions ?? 0,
-          comentarios: p.comments ?? 0,
-          compartilhamentos: p.shares ?? 0,
-          engajamento: p.engagement ?? null,
+          impressoes: pega(p, ['impressions','impressionCount','impression_count','post_impressions','views','viewCount','reach','reachCount','organicImpressions']),
+          alcance:    pega(p, ['reach','reachCount','post_impressions_unique','uniqueImpressions']),
+          cliques:    pega(p, ['clicks','clickCount','click_count','post_clicks','linkClicks','totalClicks']),
+          curtidas:   pega(p, ['likes','likeCount','reactions','reactionCount','post_reactions']),
+          comentarios: pega(p, ['comments','commentCount','comment_count']),
+          compartilhamentos: pega(p, ['shares','shareCount','share_count','reposts']),
+          engajamento: pega(p, ['engagement','engagementRate','engagement_rate']),
         }));
-        return { rede, inicio: ini, fim, posts, total: posts.length };
+        // Diagnóstico: se TODAS as métricas vierem nulas, o problema é de nome de campo ou permissão
+        const semMetrica = posts.length > 0 && posts.every(p => p.impressoes == null && p.cliques == null && p.curtidas == null);
+        const amostraCampos = brutos.length ? Object.keys(brutos[0]).slice(0, 25) : [];
+        return { rede, inicio: ini, fim, posts, total: posts.length,
+          diagnostico: { sem_metricas: semMetrica, campos_recebidos: amostraCampos,
+            aviso: semMetrica ? `A API do Metricool devolveu ${posts.length} publicação(ões) sem nenhuma métrica. Campos recebidos: ${amostraCampos.join(', ') || '(nenhum)'}. Normalmente é permissão/insights não liberado para o perfil no Metricool, ou o perfil não é uma conta business/creator.` : null } };
       },
     };
 
