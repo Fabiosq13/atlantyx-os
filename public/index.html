@@ -2640,7 +2640,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div class="ph"><div class="pt">📗 Realizado — até hoje</div><span class="tag off" id="fd_tagPassado">Carregando</span></div>
     <div class="pb" style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:700px;">
-        <thead><tr style="border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">DATA</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">DESCRIÇÃO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">CATEGORIA</th><th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">VALOR</th><th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">SALDO ACUM.</th></tr></thead>
+        <thead><tr style="border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">DATA</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">DESCRIÇÃO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">CATEGORIA</th><th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">VALOR</th><th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">SALDO ACUM.</th><th style="width:34px;"></th></tr></thead>
         <tbody id="fd_tbodyPassado"><tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Carregando...</td></tr></tbody>
       </table>
     </div>
@@ -15195,16 +15195,49 @@ async function enviarRelatorioPagamentos(soParaMim) {
 
 // ═══ v1.16: FLUXO DE CAIXA DETALHADO ═══
 function _fdLinha(l, corSaldo) {
-  const cor = l.tipo === 'entrada' ? 'var(--green,#22d3a3)' : 'var(--red)';
+  // v1.38: 'referencia' = nota fiscal emitida (competência) — não movimenta caixa
+  const ehRef = l.tipo === 'referencia';
+  const cor = ehRef ? 'var(--t3)' : (l.tipo === 'entrada' ? 'var(--green,#22d3a3)' : 'var(--red)');
   const fonte = l.origem === 'quickbooks' ? '🔗 QuickBooks' : l.origem === 'quickbooks_futuro' ? '🔗 QuickBooks' : l.origem === 'simulado' || l.origem === 'simulado_futuro' ? '✎ Simulado' : l.origem === 'atlantyx_futuro' ? '📋 Atlantyx' : (l.origem || '');
   const venc = l.vencida ? ' <span style="color:var(--red);font-size:9px;">⚠ vencida</span>' : '';
-  return '<tr style="border-bottom:1px solid var(--bd);">'
+  const refTag = ehRef ? ' <span style="color:var(--t3);font-size:9px;" title="Nota fiscal emitida — o caixa só muda quando o pagamento entra">📄 emissão (não move o caixa)</span>' : '';
+  // v1.38: botão para abrir o detalhe completo do lançamento
+  const acao = '<button class="btn" style="font-size:8px;padding:1px 6px;" onclick=\'_fdDetalhe(' + JSON.stringify(JSON.stringify(l)) + ')\' title="Ver detalhes deste lançamento">🔎</button>';
+  return '<tr style="border-bottom:1px solid var(--bd);' + (ehRef ? 'opacity:.6;' : '') + '">'
     + '<td style="padding:6px;font-family:var(--M);color:var(--t2);white-space:nowrap;">' + (l.data || '') + '</td>'
-    + '<td style="padding:6px;">' + (l.descricao || '') + venc + '</td>'
+    + '<td style="padding:6px;">' + (l.descricao || '') + venc + refTag + '</td>'
     + '<td style="padding:6px;color:var(--t2);font-size:10px;">' + (l.categoria || '') + ' · ' + fonte + '</td>'
-    + '<td style="padding:6px;text-align:right;color:' + cor + ';font-family:var(--M);">' + (l.tipo === 'saida' ? '-' : '+') + fmtBRLcompleto(l.valor) + '</td>'
+    + '<td style="padding:6px;text-align:right;color:' + cor + ';font-family:var(--M);">' + (ehRef ? '' : (l.tipo === 'saida' ? '-' : '+')) + fmtBRLcompleto(l.valor) + '</td>'
     + '<td style="padding:6px;text-align:right;font-family:var(--M);font-weight:600;color:' + (l.saldo_acumulado < 0 ? 'var(--red)' : (corSaldo || 'var(--t1)')) + ';">' + fmtBRLcompleto(l.saldo_acumulado) + '</td>'
+    + '<td style="padding:6px;text-align:center;">' + acao + '</td>'
     + '</tr>';
+}
+// v1.38: detalhe do lançamento — mostra tudo que o sistema sabe e como localizar no QuickBooks
+function _fdDetalhe(json) {
+  let l; try { l = typeof json === 'string' ? JSON.parse(json) : json; } catch { return; }
+  let modal = document.getElementById('fdDetalheModal');
+  if (!modal) { modal = document.createElement('div'); modal.id = 'fdDetalheModal';
+    modal.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:999;align-items:center;justify-content:center;'; document.body.appendChild(modal); }
+  modal.style.display = 'flex';
+  const linha = (rot, val) => val != null && val !== '' ? `<div style="display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid var(--bd);"><span style="color:var(--t2);font-size:10.5px;">${rot}</span><span style="font-size:11px;text-align:right;">${val}</span></div>` : '';
+  const tipoLbl = l.tipo === 'referencia' ? '📄 Nota emitida (não move o caixa)' : l.tipo === 'entrada' ? '💚 Entrada' : '🔴 Saída';
+  modal.innerHTML = `<div class="panel" style="width:520px;max-width:95vw;max-height:88vh;overflow:auto;">
+    <div class="ph"><div class="pt">Detalhe do lançamento</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('fdDetalheModal').style.display='none'">✕</button></div>
+    <div class="pb">
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px;">${(l.descricao||'—')}</div>
+      <div style="font-size:20px;font-family:var(--M);color:${l.tipo==='saida'?'var(--red)':l.tipo==='referencia'?'var(--t3)':'var(--green,#22d3a3)'};margin-bottom:12px;">${fmtBRLcompleto(l.valor)}</div>
+      ${linha('Data', l.data ? l.data.split('-').reverse().join('/') : '—')}
+      ${linha('Tipo', tipoLbl)}
+      ${linha('Categoria', l.categoria)}
+      ${linha('Conta', l.conta)}
+      ${linha('Origem', l.origem)}
+      ${linha('Identificação no QuickBooks', l.qb_txn_id ? '<code style="font-size:10px;">' + l.qb_txn_id + '</code>' : null)}
+      ${linha('Valor total do documento', l.valor_total && l.valor_total !== l.valor ? fmtBRLcompleto(l.valor_total) + ' <span style="color:var(--t3);font-size:9px;">(saldo em aberto: ' + fmtBRLcompleto(l.valor) + ')</span>' : null)}
+      ${linha('Vencida', l.vencida ? '⚠ sim' : null)}
+      ${linha('Saldo acumulado após', fmtBRLcompleto(l.saldo_acumulado))}
+      ${linha('Observação', l.memo)}
+      ${l.qb_txn_id ? `<div style="margin-top:12px;padding:9px;background:var(--bg4);border-radius:7px;font-size:10px;color:var(--t2);line-height:1.6;">Para ver este lançamento no QuickBooks, procure por <b>${(l.descricao||'').substring(0,30)}</b> na data ${l.data ? l.data.split('-').reverse().join('/') : ''}. O identificador acima (<code>${l.qb_txn_id}</code>) indica o tipo e o número do documento lá.</div>` : ''}
+    </div></div>`;
 }
 function _fdIso(d) { return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().substring(0, 10); }
 function _fdPreset(diasPassado, diasFuturo, limpar) {
