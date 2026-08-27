@@ -72,9 +72,11 @@ export default async function handler(req, res) {
       fluxo_detalhado:       () => fluxoDetalhado(params),
       qb_diagnostico:        () => qbDiagnostico(),
       qb_contas_diagnostico: () => qbContasDiagnostico(),
+      qb_contas_filtro:      () => qbContasParaFiltro(),
       qb_rastrear_duplicados: () => qbRastrearDuplicados(params),
       qb_varrer_duplicados:  () => qbVarrerDuplicados(params),
       qb_conferir_banco:     () => qbConferirComBanco(params),
+      qb_saldo_por_conta:    () => qbSaldoPorContaNaData(params),
       gerente_financeiro:    () => gerenteFinanceiro(params),
       dashboard_financeiro:  () => dashboardFinanceiro(params),
       qb_auth_url:           () => qbAuthUrl(req),
@@ -790,7 +792,7 @@ function qbConfigurado() {
 
 // 1.1 Lançamentos linha-a-linha (Purchase, Payment, Deposit, JournalEntry, SalesReceipt)
 const fmtNum = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
-async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
+async function qbLancamentos({ data_inicio, data_fim, limite = 200, conta_id = null } = {}) {
   if (!qbConfigurado()) return { erros: ['QuickBooks não configurado'], lancamentos: [], qb_configurado: false };
   const token = await qbToken();
   const hoje = new Date().toISOString().split('T')[0];
@@ -883,6 +885,10 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
           conta: item.AccountRef?.name || item.DepositToAccountRef?.name
                   || item.APAccountRef?.name || item.BankAccountRef?.name
                   || item.CheckPayment?.BankAccountRef?.name || item.FromAccountRef?.name || '',
+          // v1.53: id da conta, para o filtro por conta bancária
+          conta_id: item.AccountRef?.value || item.DepositToAccountRef?.value
+                  || item.BankAccountRef?.value || item.CheckPayment?.BankAccountRef?.value
+                  || item.FromAccountRef?.value || null,
           tipo: soReferencia ? 'referencia' : (entrada ? 'entrada' : 'saida'),
           valor: valorItem,
           valor_documento: parseFloat(item.TotalAmt || 0),
@@ -910,7 +916,11 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200 } = {}) {
       ocultos = new Set(rows.map(r => r.qb_txn_id));
     } catch {}
   }
-  const filtrados = lancamentos.filter(l => !ocultos.has(l.qb_txn_id));
+  let filtrados = lancamentos.filter(l => !ocultos.has(l.qb_txn_id));
+  // v1.53: filtro por conta bancária — permite bater a tela com o extrato de UM banco
+  if (conta_id) {
+    filtrados = filtrados.filter(l => String(l.conta_id || '') === String(conta_id));
+  }
 
   filtrados.sort((a, b) => (a.data < b.data ? -1 : 1));
   return { erros,
@@ -1169,6 +1179,59 @@ async function qbRastrearDuplicados({ data, valor, cliente } = {}) {
   return { rastreamento: out };
 }
 
+// v1.52: compara o saldo do Atlantyx com o saldo POR CONTA do QuickBooks numa data,
+// para achar de onde vem uma diferença constante (conta a mais/a menos na soma).
+// v1.53: lista as contas bancárias para o seletor da tela
+async function qbContasParaFiltro() {
+  if (!qbConfigurado()) return { contas: [], qb_configurado: false };
+  try {
+    const token = await qbToken();
+    const d = await qbQuery(`select * from Account where AccountType = 'Bank' maxresults 100`, token);
+    const contas = (d?.QueryResponse?.Account || []).filter(a => a.Active !== false)
+      .map(a => ({ id: a.Id, nome: a.Name, subtipo: a.AccountSubType || '', saldo: round(parseFloat(a.CurrentBalance || 0)) }))
+      .sort((a, b) => a.nome.localeCompare(b.nome));
+    return { contas, qb_configurado: true, saldo_total: round(contas.reduce((s, c) => s + c.saldo, 0)) };
+  } catch (e) { return { contas: [], erro: e.message }; }
+}
+
+async function qbSaldoPorContaNaData({ data } = {}) {
+  if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
+  const token = await qbToken();
+  const alvo = (data || new Date().toISOString().split('T')[0]).substring(0, 10);
+  const out = { data: alvo, contas: [], saldo_total_hoje: 0, observacoes: [] };
+  try {
+    // Saldo ATUAL de cada conta
+    const d = await qbQuery(`select * from Account where AccountType = 'Bank' maxresults 100`, token);
+    const contas = (d?.QueryResponse?.Account || []).filter(a => a.Active !== false);
+    // Relatório de balancete NA DATA pedida — dá o saldo histórico por conta
+    let saldosNaData = {};
+    try {
+      const bs = await qbFetch(`/reports/BalanceSheet?date=${alvo}&accounting_method=Cash`, token);
+      const linhas = extrairLinhasRelatorio(bs);
+      linhas.forEach(l => { if (l.nome) saldosNaData[String(l.nome).toLowerCase().trim()] = l.valor; });
+    } catch (e) { out.observacoes.push('Balancete na data indisponível: ' + e.message); }
+
+    for (const a of contas) {
+      const nome = a.Name;
+      const saldoNaData = saldosNaData[String(nome).toLowerCase().trim()];
+      out.contas.push({ id: a.Id, nome, subtipo: a.AccountSubType || '',
+        saldo_hoje: round(parseFloat(a.CurrentBalance || 0)),
+        saldo_na_data: saldoNaData != null ? round(saldoNaData) : null });
+      out.saldo_total_hoje += parseFloat(a.CurrentBalance || 0);
+    }
+    out.saldo_total_hoje = round(out.saldo_total_hoje);
+    out.saldo_total_na_data = out.contas.every(c => c.saldo_na_data != null)
+      ? round(out.contas.reduce((s, c) => s + c.saldo_na_data, 0)) : null;
+
+    if (out.contas.length > 1) {
+      out.observacoes.push(`O fluxo do Atlantyx soma TODAS as ${out.contas.length} contas do tipo Bank. Se você está comparando com o Plano de Contas de UMA conta só, a diferença é o saldo das outras.`);
+    }
+    const negativas = out.contas.filter(c => c.saldo_hoje < 0);
+    if (negativas.length) out.observacoes.push(`${negativas.length} conta(s) com saldo negativo: ${negativas.map(c => c.nome + ' (' + c.saldo_hoje.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) + ')').join(', ')}.`);
+  } catch (e) { out.erro = e.message; }
+  return { saldo_por_conta: out };
+}
+
 async function qbContasDiagnostico() {
   if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
   const token = await qbToken();
@@ -1347,7 +1410,7 @@ async function painelResumo({ mes, ano } = {}) {
 // 3. Extrato consolidado (QB + simulados − ocultos) com saldo acumulado
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = true } = {}) {
+async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = true, conta_id = null } = {}) {
   const hoje = new Date().toISOString().split('T')[0];
   const ini = data_inicio || new Date(Date.now() - 90 * 86400 * 1000).toISOString().split('T')[0];
   const fim = data_fim || hoje;
@@ -1415,7 +1478,15 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
     const hojeStr2 = new Date().toISOString().split('T')[0];
 
     let saldoHoje = null;
-    try { const sc = await qbSaldoContas(); if (sc?.qb_configurado) saldoHoje = sc.saldo_total; } catch (_) {}
+    try {
+      const sc = await qbSaldoContas();
+      if (sc?.qb_configurado) {
+        // v1.53: com filtro de conta, usa o saldo APENAS dessa conta
+        saldoHoje = conta_id
+          ? (sc.contas || []).filter(c => String(c.id) === String(conta_id)).reduce((s, c) => s + c.saldo, 0)
+          : sc.saldo_total;
+      }
+    } catch (_) {}
 
     if (saldoHoje != null) {
       // Saldo no início do período = saldo de hoje − movimento entre o início do período e hoje
@@ -1427,7 +1498,7 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
       // Agora reaproveitamos a MESMA lista que o extrato usa.
       const movDepois = await (async () => {
         try {
-          const r = await qbLancamentos({ data_inicio: ini, data_fim: hojeStr2, limite: 1000 });
+          const r = await qbLancamentos({ data_inicio: ini, data_fim: hojeStr2, limite: 1000, conta_id });
           // Mesma lista já vem sem os ocultos (qbLancamentos filtra internamente)
           return (r.lancamentos || []).reduce((s, l) => l.tipo === 'entrada' ? s + l.valor : l.tipo === 'saida' ? s - l.valor : s, 0);
         } catch { return 0; }
@@ -1534,7 +1605,7 @@ async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
   return out;
 }
 
-async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, incluir_simulados = true } = {}) {
+async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, incluir_simulados = true, conta_id = null } = {}) {
   const hoje = new Date().toISOString().split('T')[0];
   // v1.16.1: filtro de período explícito. Se data_inicio/data_fim vierem, o "hoje" divisório
   // passado/futuro só se aplica dentro desse período — passado é [ini, min(hoje,fim)],
@@ -1545,7 +1616,7 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   const iniFuturo = ini > hoje ? ini : hoje;
 
   // 1. Passado até hoje (ou até "fim", se o período pedido for todo no passado): extrato consolidado
-  const extrato = await extratoConsolidado({ data_inicio: ini, data_fim: fimPassado, incluir_simulados });
+  const extrato = await extratoConsolidado({ data_inicio: ini, data_fim: fimPassado, incluir_simulados, conta_id });
 
   // 2. Futuro: recebíveis/pagáveis reais do QB, respeitando o fim do período (se houver)
   const fut = (fim && fim < hoje) ? { recebiveis: [], pagaveis: [], erro: null } : await qbFuturosDetalhado({ data_inicio: iniFuturo, data_fim: fim });
@@ -1592,7 +1663,17 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   // Sem isso, "Saldo de hoje" era um número derivado (saldo inicial + movimento do período)
   // que herdava qualquer erro do caminho — mas parecia o saldo do banco.
   let saldoRealBanco = null, contasBanco = [];
-  try { const sc = await qbSaldoContas(); if (sc?.qb_configurado) { saldoRealBanco = round(sc.saldo_total); contasBanco = sc.contas || []; } } catch (_) {}
+  try {
+    const sc = await qbSaldoContas();
+    if (sc?.qb_configurado) {
+      contasBanco = sc.contas || [];
+      // v1.53: com conta filtrada, compara só com o saldo dela
+      saldoRealBanco = conta_id
+        ? round(contasBanco.filter(c => String(c.id) === String(conta_id)).reduce((s, c) => s + c.saldo, 0))
+        : round(sc.saldo_total);
+      if (conta_id) contasBanco = contasBanco.filter(c => String(c.id) === String(conta_id));
+    }
+  } catch (_) {}
   const saldoCalculado = extrato.saldo_final || 0;
   const divergencia = saldoRealBanco != null ? round(saldoCalculado - saldoRealBanco) : null;
 
