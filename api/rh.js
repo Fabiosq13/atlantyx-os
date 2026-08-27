@@ -113,7 +113,7 @@ async function ensureTabelas(sql) {
   const jaConselho = await sql`SELECT COUNT(*)::int AS n FROM conselho_membros`;
   if (!jaConselho[0].n) {
     const cadeiras = [
-      [1, 'Conselheiro(a) de Estratégia & Mercado', 'Visão de mercado, concorrência, posicionamento e crescimento'],
+      [1, 'Conselheiro(a) de Estratégia & Mercado', 'Modelo de negócio, estratégia de vendas, funil comercial, precificação, mercado, concorrência e posicionamento'],
       [2, 'Conselheiro(a) de Finanças & Risco', 'Saúde financeira, capital, risco e sustentabilidade do negócio'],
       [3, 'Conselheiro(a) de Tecnologia & Inovação', 'Tecnologia, produto, inovação e escalabilidade'],
     ];
@@ -317,7 +317,9 @@ async function conselhoDebater({ sessao_id, pergunta } = {}) {
   // Contexto real da empresa para embasar o debate (equipe + estrutura)
   let ctxEmpresa = {};
   try { const rh = await contextoRh(); const org = await organograma();
-    ctxEmpresa = { equipe: rh.resumo, alocacao_por_projeto: rh.alocacao_por_projeto, estrutura: org.resumo }; } catch (_) {}
+    ctxEmpresa = { equipe: rh.resumo, alocacao_por_projeto: rh.alocacao_por_projeto, estrutura: org.resumo };
+    ctxEmpresa.comercial = await contextoComercial();
+    ctxEmpresa.financeiro = await contextoFinanceiroDireto(); } catch (_) {} // v1.30
 
   const historico = falas.map(f => `${f.autor} (${f.autor_tipo}): ${f.conteudo}`).join('\n').substring(0, 4000)
     + (pergunta ? `\nCIO (humano): ${pergunta}` : '');
@@ -372,6 +374,90 @@ Seja conciso e não invente nada que não esteja no debate.`;
 // O áudio/vídeo entre PESSOAS é feito pelo Jitsi (embutido). Os conselheiros IA
 // acompanham pela transcrição do que é falado e respondem por voz quando chamados.
 // ═══════════════════════════════════════════════════════════════════════════
+// v1.29: contexto COMERCIAL (funil, leads, campanhas) — sem isso os conselheiros discutiam
+// estratégia de vendas sem os números de vendas, que é justamente o dado que importa.
+// v1.30: contexto financeiro completo, lido direto do banco.
+// Inclui o que faltava para decisões de investimento: projeção de caixa, compromissos
+// futuros, faturamento em andamento e contratos a vencer.
+async function contextoFinanceiroDireto() {
+  const out = { fonte: 'banco_direto' };
+  try {
+    const sql = await getSql();
+    const hoje = new Date().toISOString().split('T')[0];
+    const inicioMes = hoje.substring(0, 8) + '01';
+    const fim90 = new Date(Date.now() + 90 * 86400000).toISOString().split('T')[0];
+
+    const [despMes, despFuturas, marcos, termos, contratos, projetos] = await Promise.all([
+      // Despesas do mês corrente (pagas e a pagar)
+      sql`SELECT status, COALESCE(SUM(valor),0) AS total, COUNT(*)::int AS qtd FROM despesas_ocorrencias
+          WHERE data_prevista >= ${inicioMes} AND data_prevista <= ${hoje} GROUP BY status`,
+      // Compromissos dos próximos 90 dias (o que ainda vai sair do caixa)
+      sql`SELECT COALESCE(SUM(valor),0) AS total, COUNT(*)::int AS qtd FROM despesas_ocorrencias
+          WHERE status != 'paga' AND data_prevista > ${hoje} AND data_prevista <= ${fim90}`,
+      // Marcos de projeto: o que está por receber e em que etapa
+      sql`SELECT status_kanban, COALESCE(SUM(valor),0) AS total, COUNT(*)::int AS qtd
+          FROM projetos_marcos GROUP BY status_kanban`,
+      // Faturamento em andamento
+      sql`SELECT status, COALESCE(SUM(valor_total_termo),0) AS total, COUNT(*)::int AS qtd
+          FROM termos_faturamento GROUP BY status`,
+      // Contratos vencendo nos próximos 90 dias (risco de receita)
+      sql`SELECT numero_contrato, projeto, data_vencimento FROM contratos_financeiros
+          WHERE data_vencimento IS NOT NULL AND data_vencimento <= ${fim90} ORDER BY data_vencimento LIMIT 10`,
+      sql`SELECT status, COUNT(*)::int AS qtd, COALESCE(SUM(valor_total),0) AS total
+          FROM projetos_financeiros GROUP BY status`,
+    ]);
+
+    const n = v => Math.round((parseFloat(v) || 0) * 100) / 100;
+    const porStatus = (rows, campo = 'status') => rows.reduce((a, r) => { a[r[campo] || '?'] = { valor: n(r.total), qtd: r.qtd }; return a; }, {});
+
+    out.despesas_mes_corrente = porStatus(despMes);
+    out.compromissos_proximos_90_dias = { valor: n(despFuturas[0]?.total), qtd: despFuturas[0]?.qtd || 0 };
+    out.marcos_por_etapa = porStatus(marcos, 'status_kanban');
+    out.a_receber_de_marcos = n(marcos.filter(m => m.status_kanban !== 'concluido').reduce((s, m) => s + (parseFloat(m.total) || 0), 0));
+    out.faturamento_em_andamento = porStatus(termos);
+    out.contratos_vencendo_90_dias = contratos.map(c => ({ contrato: c.numero_contrato, projeto: c.projeto,
+      vence_em: c.data_vencimento ? String(c.data_vencimento).split('T')[0] : null }));
+    out.carteira_projetos = porStatus(projetos);
+
+    // Sinal simples de fôlego: o que entra de marcos vs o que sai de despesas nos próximos 90 dias
+    const entra = out.a_receber_de_marcos, sai = out.compromissos_proximos_90_dias.valor;
+    out.saldo_previsto_90_dias = { a_receber_marcos: entra, a_pagar_despesas: sai, diferenca: Math.round((entra - sai) * 100) / 100 };
+    out.observacao = 'Saldo bancário atual vem do QuickBooks e não está incluído aqui — pergunte ao Gerente Financeiro IA se precisar do caixa exato.';
+  } catch (e) {
+    // v1.30: falha NÃO é mais silenciosa — os conselheiros são avisados de que estão sem dado
+    out.erro = 'Não foi possível ler os dados financeiros: ' + e.message;
+    out.aviso_para_o_agente = 'ATENÇÃO: você está SEM dados financeiros nesta conversa. Diga isso claramente antes de opinar sobre dinheiro.';
+  }
+  return out;
+}
+
+async function contextoComercial() {
+  try {
+    const sql = await getSql();
+    const [kpis, leads, camp] = await Promise.all([
+      sql`SELECT * FROM kpis_diarios ORDER BY data DESC LIMIT 30`,
+      sql`SELECT score, empresa, criado_em FROM leads ORDER BY criado_em DESC LIMIT 200`,
+      sql`SELECT nome, canal, ativa FROM campanhas ORDER BY atualizado_em DESC LIMIT 15`,
+    ]);
+    const soma = (arr, campo) => arr.reduce((s, k) => s + (k[campo] || 0), 0);
+    const f30 = { contatos: soma(kpis, 'contatos'), respostas: soma(kpis, 'respostas'),
+      reunioes_marcadas: soma(kpis, 'reunioes_marcadas'), reunioes_feitas: soma(kpis, 'reunioes_feitas'),
+      propostas: soma(kpis, 'propostas'), fechamentos: soma(kpis, 'fechamentos') };
+    const taxa = (a, b) => b > 0 ? Math.round((a / b) * 1000) / 10 : null;
+    return {
+      funil_30_dias: f30,
+      taxas_conversao_pct: {
+        contato_para_resposta: taxa(f30.respostas, f30.contatos),
+        resposta_para_reuniao: taxa(f30.reunioes_marcadas, f30.respostas),
+        reuniao_para_proposta: taxa(f30.propostas, f30.reunioes_feitas),
+        proposta_para_fechamento: taxa(f30.fechamentos, f30.propostas),
+      },
+      leads_recentes: { total: leads.length, por_score: leads.reduce((a, l) => { const k = l.score || 'sem score'; a[k] = (a[k] || 0) + 1; return a; }, {}) },
+      campanhas: { ativas: camp.filter(c => c.ativa).length, por_canal: camp.reduce((a, c) => { a[c.canal || '?'] = (a[c.canal || '?'] || 0) + 1; return a; }, {}) },
+    };
+  } catch (e) { return { erro: 'sem dados comerciais: ' + e.message }; }
+}
+
 async function salaFalar({ transcricao = '', historico = [], conselheiro, participantes = [] } = {}) {
   if (!transcricao.trim()) throw new Error('transcricao vazia');
   const { cadeiras } = await conselhoList();
@@ -384,14 +470,11 @@ async function salaFalar({ transcricao = '', historico = [], conselheiro, partic
     const rh = await contextoRh();
     ctx = { equipe: rh.resumo, alocacao_por_projeto: rh.alocacao_por_projeto };
   } catch (_) {}
-  try {
-    const base = process.env.MEDIA_PUBLIC_BASE || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? 'https://' + process.env.VERCEL_PROJECT_PRODUCTION_URL : null);
-    if (base) {
-      const r = await fetch(base + '/api/financeiro', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'painel_resumo', params: {} }) });
-      const d = await r.json().catch(() => ({}));
-      if (d?.success) ctx.financeiro = { saldo: d.saldoCaixa, a_receber: d.aReceber, a_pagar: d.aPagar, receita_mes: d.realMes };
-    }
-  } catch (_) {}
+  try { ctx.comercial = await contextoComercial(); } catch (_) {}
+  // v1.30: financeiro lido DIRETO DO BANCO (mesma base) — antes dependia de uma chamada HTTP
+  // entre módulos que falhava em silêncio se MEDIA_PUBLIC_BASE não estivesse configurada,
+  // deixando os conselheiros opinarem sobre dinheiro sem nenhum dado financeiro.
+  ctx.financeiro = await contextoFinanceiroDireto();
 
   // Quem responde: o chamado pelo nome, ou o mais pertinente ao assunto
   let escolhido = null;
@@ -420,9 +503,11 @@ REGRAS DE FALA (é uma conversa por voz, não um relatório):
 - Vá direto ao ponto e tome posição. Se discordar, discorde com fundamento.
 - Fale só da sua especialidade. Se o assunto for de outro conselheiro, diga isso em uma frase.
 - Nunca invente número. Se não tiver o dado, diga que falta.
+- Em conversa sobre modelo de negócio, preço ou estratégia de vendas: use as TAXAS DO FUNIL e a carteira de projetos do contexto para embasar (ex.: "com 12% de conversão de proposta, precisaríamos de X propostas"). Dado de fora (mercado, concorrência, preço praticado) não está no contexto — peça ao CIO em uma frase em vez de supor.
+- Em conversa sobre INVESTIMENTO ou GASTO: olhe "compromissos_proximos_90_dias" e "saldo_previsto_90_dias" antes de opinar. Se o campo financeiro trouxer "erro" ou "aviso_para_o_agente", AVISE que está sem dados financeiros antes de qualquer recomendação — não opine sobre dinheiro no escuro.
 - Se a fala não pedir nada de você, responda exatamente: [SEM_COMENTARIO]
 
-DADOS REAIS DA EMPRESA: ${JSON.stringify(ctx).substring(0, 2500)}`;
+DADOS REAIS DA EMPRESA (inclui funil de vendas, leads, campanhas e carteira de projetos): ${JSON.stringify(ctx).substring(0, 3500)}`;
 
   const msgs = [
     ...historico.slice(-8).map(h => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content || '').substring(0, 600) })),
