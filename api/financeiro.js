@@ -73,6 +73,8 @@ export default async function handler(req, res) {
       qb_diagnostico:        () => qbDiagnostico(),
       qb_contas_diagnostico: () => qbContasDiagnostico(),
       qb_contas_filtro:      () => qbContasParaFiltro(),
+      qb_excluir_lancamento: () => qbExcluirLancamento(params),
+      qb_razao_conta:        () => qbRazaoConta(params),
       qb_rastrear_duplicados: () => qbRastrearDuplicados(params),
       qb_varrer_duplicados:  () => qbVarrerDuplicados(params),
       qb_conferir_banco:     () => qbConferirComBanco(params),
@@ -1182,6 +1184,132 @@ async function qbRastrearDuplicados({ data, valor, cliente } = {}) {
 // v1.52: compara o saldo do Atlantyx com o saldo POR CONTA do QuickBooks numa data,
 // para achar de onde vem uma diferença constante (conta a mais/a menos na soma).
 // v1.53: lista as contas bancárias para o seletor da tela
+// v1.54: EXCLUIR um lançamento diretamente no QuickBooks.
+// Ação destrutiva e irreversível na contabilidade — por isso exige confirmação explícita
+// (confirmar: true) e devolve o registro completo antes de apagar, para conferência.
+const ENTIDADE_POR_TIPO = {
+  despesa: 'Purchase', pagamento: 'Payment', pagto_conta: 'BillPayment', deposito: 'Deposit',
+  venda: 'SalesReceipt', transferencia: 'Transfer', lancamento: 'JournalEntry',
+  pagto_cartao: 'CreditCardPayment', reembolso: 'RefundReceipt', invoice: 'Invoice',
+};
+async function qbExcluirLancamento({ qb_txn_id, confirmar = false } = {}) {
+  if (!qb_txn_id) throw new Error('qb_txn_id obrigatório');
+  if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
+  const [tipo, id] = String(qb_txn_id).split(':');
+  const entidade = ENTIDADE_POR_TIPO[tipo];
+  if (!entidade || !id) throw new Error(`Identificador inválido: ${qb_txn_id}`);
+
+  const token = await qbToken();
+  const realm = qbRealmId();
+  const sandbox = process.env.QB_SANDBOX === 'true';
+  const base = sandbox ? 'https://sandbox-quickbooks.api.intuit.com' : 'https://quickbooks.api.intuit.com';
+
+  // 1. Buscar o registro (precisamos do SyncToken e queremos mostrar o que será apagado)
+  const r = await qbQuery(`select * from ${entidade} where Id = '${id}'`, token);
+  const item = (r?.QueryResponse?.[entidade] || [])[0];
+  if (!item) throw new Error(`Lançamento ${entidade} #${id} não encontrado no QuickBooks (já foi excluído?).`);
+
+  const resumo = {
+    entidade, id: item.Id, doc: item.DocNumber || null, data: item.TxnDate,
+    valor: round(parseFloat(item.TotalAmt || 0)),
+    contraparte: item.VendorRef?.name || item.CustomerRef?.name || item.EntityRef?.name || '',
+    conta: item.AccountRef?.name || item.DepositToAccountRef?.name || item.BankAccountRef?.name || '',
+    memo: (item.PrivateNote || '').substring(0, 200),
+    vinculos: [], criado_em: item.MetaData?.CreateTime || null,
+  };
+  (item.Line || []).forEach(l => (l.LinkedTxn || []).forEach(lt => resumo.vinculos.push(`${lt.TxnType}#${lt.TxnId}`)));
+
+  // 2. Sem confirmação, devolve a prévia — a tela mostra e pede o "sim"
+  if (!confirmar) {
+    return { previa: true, sera_excluido: resumo,
+      aviso: resumo.vinculos.length
+        ? `⚠ Este lançamento está VINCULADO a: ${resumo.vinculos.join(', ')}. Excluí-lo pode deixar a fatura/conta ligada em aberto novamente.`
+        : 'Nenhum vínculo com outros lançamentos.',
+      irreversivel: 'A exclusão é feita direto na sua contabilidade e NÃO pode ser desfeita pelo Atlantyx.' };
+  }
+
+  // 3. Exclusão
+  const resp = await fetch(`${base}/v3/company/${realm}/${entidade.toLowerCase()}?operation=delete&minorversion=65`, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ Id: item.Id, SyncToken: item.SyncToken }),
+  });
+  const d = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const msg = d.Fault?.Error?.[0]?.Message || d.Fault?.Error?.[0]?.Detail || JSON.stringify(d).substring(0, 200);
+    throw new Error(`QuickBooks recusou a exclusão: ${msg}`);
+  }
+  console.log(`[Financeiro] EXCLUÍDO no QuickBooks: ${entidade}#${id} · ${resumo.valor} · ${resumo.contraparte}`);
+  return { excluido: true, registro: resumo, resposta_qb: d[entidade]?.status || 'Deleted' };
+}
+
+// v1.55: razão (General Ledger) de uma conta numa data — dá o saldo REAL do razão,
+// que é diferente do CurrentBalance e do saldo do banco.
+async function qbRazaoConta({ conta_id, data_inicio, data_fim } = {}) {
+  if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
+  const token = await qbToken();
+  const hoje = new Date().toISOString().split('T')[0];
+  const ini = data_inicio || `${hoje.substring(0, 8)}01`;
+  const fim = data_fim || hoje;
+  const out = { periodo: { de: ini, ate: fim }, conta_id: conta_id || null };
+
+  // Nome e saldos da conta
+  try {
+    const d = await qbQuery(`select * from Account where AccountType = 'Bank' maxresults 100`, token);
+    const contas = (d?.QueryResponse?.Account || []).filter(a => a.Active !== false);
+    const alvo = conta_id ? contas.find(c => String(c.Id) === String(conta_id)) : null;
+    out.conta_nome = alvo?.Name || (conta_id ? 'conta ' + conta_id : 'todas as contas');
+    out.saldo_contabil_hoje = alvo ? round(parseFloat(alvo.CurrentBalance || 0)) : round(contas.reduce((s, c) => s + parseFloat(c.CurrentBalance || 0), 0));
+  } catch (e) { out.erro_conta = e.message; }
+
+  // Razão do período
+  try {
+    const params = `start_date=${ini}&end_date=${fim}&accounting_method=Accrual&columns=tx_date,txn_type,doc_num,name,memo,split_acc,subt_nat_amount,rbal_nat_amount`
+      + (conta_id ? `&account=${conta_id}` : '');
+    const rep = await qbFetch(`/reports/GeneralLedger?${params}`, token);
+    const linhas = [];
+    let saldoInicialRazao = null, saldoFinalRazao = null;
+    (function percorrer(node) {
+      if (!node) return;
+      if (Array.isArray(node)) return node.forEach(percorrer);
+      if (node.Rows?.Row) percorrer(node.Rows.Row);
+      if (node.Header?.ColData) {
+        const t = node.Header.ColData.map(c => c.value).join(' ').toLowerCase();
+        if (/beginning balance|saldo inicial/.test(t)) {
+          const v = node.Header.ColData.map(c => parseFloat(String(c.value).replace(/[^\d.-]/g, ''))).filter(n => !isNaN(n));
+          if (v.length) saldoInicialRazao = v[v.length - 1];
+        }
+      }
+      if (node.Summary?.ColData) {
+        const v = node.Summary.ColData.map(c => parseFloat(String(c.value).replace(/[^\d.-]/g, ''))).filter(n => !isNaN(n));
+        if (v.length) saldoFinalRazao = v[v.length - 1];
+      }
+      if (node.ColData && !node.Rows) {
+        const c = node.ColData.map(x => x.value);
+        const valor = parseFloat(String(c[6] ?? c[c.length - 2] ?? '').replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, ''));
+        const saldo = parseFloat(String(c[7] ?? c[c.length - 1] ?? '').replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, ''));
+        if (c[0] && /\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4}/.test(String(c[0]))) {
+          linhas.push({ data: String(c[0]).substring(0, 10), tipo: c[1] || '', doc: c[2] || '',
+            nome: c[3] || '', memo: c[4] || '', contrapartida: c[5] || '',
+            valor: isNaN(valor) ? null : round(valor), saldo: isNaN(saldo) ? null : round(saldo) });
+        }
+      }
+    })(rep?.Rows?.Row || rep?.Rows);
+    out.linhas = linhas;
+    out.total_linhas = linhas.length;
+    out.saldo_inicial_razao = saldoInicialRazao != null ? round(saldoInicialRazao) : (linhas.length && linhas[0].saldo != null && linhas[0].valor != null ? round(linhas[0].saldo - linhas[0].valor) : null);
+    out.saldo_final_razao = saldoFinalRazao != null ? round(saldoFinalRazao) : (linhas.length ? linhas[linhas.length - 1].saldo : null);
+    out.movimento_periodo = linhas.reduce((s, l) => s + (l.valor || 0), 0);
+  } catch (e) { out.erro_razao = e.message; }
+
+  out.explicacao = {
+    saldo_contabil: 'CurrentBalance da conta na API — o que o Atlantyx usa como saldo de hoje.',
+    saldo_razao: 'Saldo apurado pelo relatório de razão no período pedido.',
+    saldo_banco: 'O QuickBooks também exibe o "saldo do banco" na tela de contas. Ele NÃO vem pela API. Se ele for diferente do contábil, a diferença é o que ainda não foi conciliado (transações que o banco já processou e o QuickBooks ainda não lançou).',
+  };
+  return { razao: out };
+}
+
 async function qbContasParaFiltro() {
   if (!qbConfigurado()) return { contas: [], qb_configurado: false };
   try {
