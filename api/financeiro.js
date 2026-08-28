@@ -1261,10 +1261,19 @@ async function qbExcluirLancamento({ qb_txn_id, confirmar = false } = {}) {
 //  -R$ 137.644,04 porque somava lançamentos datados depois do período.)
 const _cacheSaldoData = new Map();
 let _saldoAberturaTruncado = false; // v1.59
+let _ultimaOrigemSaldo = null, _ultimoErroSaldo = null; // v1.60.1 diagnóstico
 async function qbSaldoContaNaData({ conta_id = null, data } = {}) {
   if (!qbConfigurado() || !data) return null;
+  _ultimaOrigemSaldo = null; _ultimoErroSaldo = null; // v1.60.1
   const chave = `${conta_id || 'todas'}|${data}`;
-  if (_cacheSaldoData.has(chave)) return _cacheSaldoData.get(chave);
+  // v1.60.1: só reaproveita o cache se o valor for VÁLIDO. Antes, se a primeira consulta
+  // falhasse (throttle, timing), o null ficava guardado e todas as chamadas seguintes
+  // devolviam null — mesmo quando o razão já conseguia buscar o número certo.
+  if (_cacheSaldoData.has(chave)) {
+    const c = _cacheSaldoData.get(chave);
+    if (c != null) return c;
+    _cacheSaldoData.delete(chave);
+  }
 
   // v1.60: FONTE PRIMÁRIA — o próprio QuickBooks informa o saldo de abertura na linha
   // "Saldo inicial" do razão. É o número oficial (91.913,38 no caso do Itaú), sem cálculo nosso.
@@ -1289,9 +1298,11 @@ async function qbSaldoContaNaData({ conta_id = null, data } = {}) {
       if (achado != null) {
         console.log(`[QB] Saldo de abertura em ${data} (conta ${conta_id}): ${achado} — linha "Saldo inicial" do razão`);
         _cacheSaldoData.set(chave, achado);
+        _ultimaOrigemSaldo = 'razao_saldo_inicial';
         return achado;
       }
-    } catch (e) { console.warn('[QB] saldo inicial pelo razão:', e.message); }
+      console.warn(`[QB] Razão consultado para ${inicioRef} (conta ${conta_id}) mas sem linha "Saldo inicial".`);
+    } catch (e) { console.warn('[QB] saldo inicial pelo razão FALHOU:', e.message); _ultimoErroSaldo = e.message; }
   }
 
   // Reserva: soma todas as transações da conta ATÉ a data.
@@ -1852,7 +1863,11 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
       saldoInicialDetalhe = { saldo_abertura: saldoAberturaBS, data_base: diaAnterior,
         saldo_current_balance: saldoHoje != null ? round(saldoHoje) : null,
         truncado: _saldoAberturaTruncado,
-        observacao: `Saldo acumulado de todas as transações até ${diaAnterior.split('-').reverse().join('/')} — é o saldo de abertura do período.`
+        origem_real: _ultimaOrigemSaldo || 'soma_transacoes',
+        erro_razao: _ultimoErroSaldo || null,
+        observacao: (_ultimaOrigemSaldo === 'razao_saldo_inicial'
+          ? `Linha "Saldo inicial" do razão do QuickBooks em ${diaAnterior.split('-').reverse().join('/')} — número oficial.`
+          : `Soma das transações até ${diaAnterior.split('-').reverse().join('/')} (o razão não respondeu${_ultimoErroSaldo ? ': ' + _ultimoErroSaldo : ''}).`)
           + (_saldoAberturaTruncado ? ' ⚠ O histórico atingiu o limite de 1000 transações; o saldo pode estar incompleto — cadastre um Saldo Inicial próximo para maior precisão.' : '')
           + (saldoHoje != null && Math.abs(saldoHoje - saldoAberturaBS) > 1
              ? ` O CurrentBalance da conta (${saldoHoje.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}) difere porque inclui lançamentos de outras datas, inclusive futuras.` : '') };
