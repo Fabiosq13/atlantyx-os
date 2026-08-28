@@ -15234,18 +15234,24 @@ async function verRazaoConta() {
       <div class="ph"><div class="pt">📜 Razão contábil · ${r.conta_nome || ''}</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('razaoModal').style.display='none'">✕</button></div>
       <div class="pb">
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-          <div class="kpi" style="flex:1;min-width:150px;"><div class="kl">Saldo inicial (razão)</div><div class="kv" style="font-size:15px;">${r.saldo_inicial_razao != null ? fmtBRLcompleto(r.saldo_inicial_razao) : '—'}</div><div class="ks">em ${(r.periodo?.de||'').split('-').reverse().join('/')}</div></div>
+          <div class="kpi gn" style="flex:1;min-width:180px;"><div class="kl">Saldo em ${(r.periodo?.de||'').split('-').reverse().join('/')}</div><div class="kv" style="font-size:15px;">${r.saldo_na_data_balanco != null ? fmtBRLcompleto(r.saldo_na_data_balanco) : (r.saldo_inicial_razao != null ? fmtBRLcompleto(r.saldo_inicial_razao) : '—')}</div><div class="ks">${r.saldo_na_data_balanco != null ? 'Balanço Patrimonial (QuickBooks)' : 'razão'}</div></div>
           <div class="kpi bl" style="flex:1;min-width:150px;"><div class="kl">Movimento</div><div class="kv" style="font-size:15px;">${fmtBRLcompleto(r.movimento_periodo || 0)}</div><div class="ks">${r.total_linhas || 0} lançamento(s)</div></div>
           <div class="kpi gn" style="flex:1;min-width:150px;"><div class="kl">Saldo final (razão)</div><div class="kv" style="font-size:15px;">${r.saldo_final_razao != null ? fmtBRLcompleto(r.saldo_final_razao) : '—'}</div></div>
           <div class="kpi gd" style="flex:1;min-width:150px;"><div class="kl">Saldo contábil hoje</div><div class="kv" style="font-size:15px;">${fmtBRLcompleto(r.saldo_contabil_hoje || 0)}</div><div class="ks">CurrentBalance (API)</div></div>
         </div>
         ${difRazao != null && Math.abs(difRazao) > 1 ? `<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:8px;padding:10px;font-size:11px;margin-bottom:10px;">⚠ O saldo do Atlantyx (${fmtBRLcompleto(saldoAtx)}) difere do razão em <b>${fmtBRLcompleto(Math.abs(difRazao))}</b>.</div>` : ''}
+        ${(r.linhas||[]).length && r.linhas.every(l => l.valor == null) ? `<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:10px;font-size:11px;line-height:1.6;margin-bottom:10px;">
+          ⚠ <b>O relatório de razão veio sem valores nas linhas.</b> O formato do relatório neste QuickBooks é diferente do esperado — abra "🔧 Ver estrutura bruta" abaixo e me envie o conteúdo para eu mapear corretamente.<br>
+          Enquanto isso, use o <b>Saldo em ${(r.periodo?.de||'').split('-').reverse().join('/')}</b> acima, que vem do Balanço Patrimonial e é confiável.</div>` : ''}
         <div style="background:var(--bg4);border-radius:8px;padding:11px;font-size:10.5px;line-height:1.7;margin-bottom:12px;">
           <b>Os três saldos que existem — e por que diferem:</b><br>
           • <b>Contábil (API)</b>: ${r.explicacao?.saldo_contabil || ''}<br>
           • <b>Razão</b>: ${r.explicacao?.saldo_razao || ''}<br>
           • <b>Banco</b>: ${r.explicacao?.saldo_banco || ''}
         </div>
+        ${r.debug_estrutura ? `<details style="margin-bottom:10px;"><summary style="cursor:pointer;font-size:10.5px;color:var(--gold);">🔧 Ver estrutura bruta do relatório (para diagnóstico)</summary>
+          <pre style="font-size:9px;background:var(--bg4);padding:10px;border-radius:6px;max-height:260px;overflow:auto;color:var(--t2);white-space:pre-wrap;">${JSON.stringify(r.debug_estrutura, null, 1).replace(/</g,'&lt;').substring(0,4000)}</pre>
+          <div style="font-size:10px;color:var(--t3);margin-top:4px;">Copie este conteúdo e envie — com ele dá para mapear o formato exato do seu QuickBooks.</div></details>` : ''}
         ${(r.linhas||[]).length ? `<table style="width:100%;border-collapse:collapse;font-size:10.5px;">
           <thead><tr style="border-bottom:1px solid var(--bd);">
             <th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;">DATA</th><th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;">TIPO</th>
@@ -19053,7 +19059,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.55.1] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.56] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -19069,7 +19075,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.55.1';
+window.__ATX_BUILD_ID__ = 'ATX-v1.56';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
