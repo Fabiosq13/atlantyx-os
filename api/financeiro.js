@@ -1267,6 +1267,33 @@ async function qbRazaoConta({ conta_id, data_inicio, data_fim } = {}) {
     const params = `start_date=${ini}&end_date=${fim}&accounting_method=Accrual&columns=tx_date,txn_type,doc_num,name,memo,split_acc,subt_nat_amount,rbal_nat_amount`
       + (conta_id ? `&account=${conta_id}` : '');
     const rep = await qbFetch(`/reports/GeneralLedger?${params}`, token);
+
+    // v1.55.1 FIX: o QuickBooks devolve os valores no formato AMERICANO ("4198.24"), com ponto
+    // como separador DECIMAL. Meu código removia todos os pontos achando que eram separador de
+    // milhar — "4198.24" virava 419824, e o total explodia para quatrilhões.
+    const numQB = (v) => {
+      if (v == null || v === '') return null;
+      const s = String(v).trim();
+      // formato americano: ponto decimal, vírgula opcional como milhar
+      const limpo = s.replace(/[^\d.,-]/g, '').replace(/,/g, '');
+      const n = parseFloat(limpo);
+      return isNaN(n) ? null : Math.round(n * 100) / 100;
+    };
+    // v1.55.1: as colunas vêm na ordem pedida em `columns` — mapeamos pelo cabeçalho quando possível
+    const nomesCol = (rep?.Columns?.Column || []).map(c => (c.ColType || c.ColTitle || '').toLowerCase());
+    const idxDe = (...chaves) => {
+      for (const k of chaves) { const i = nomesCol.findIndex(n => n.includes(k)); if (i >= 0) return i; }
+      return -1;
+    };
+    const iData = idxDe('tx_date', 'date') >= 0 ? idxDe('tx_date', 'date') : 0;
+    const iTipo = idxDe('txn_type', 'type');
+    const iDoc = idxDe('doc_num');
+    const iNome = idxDe('name');
+    const iMemo = idxDe('memo');
+    const iSplit = idxDe('split');
+    const iValor = idxDe('subt_nat_amount', 'amount');
+    const iSaldo = idxDe('rbal_nat_amount', 'balance');
+
     const linhas = [];
     let saldoInicialRazao = null, saldoFinalRazao = null;
     (function percorrer(node) {
@@ -1276,30 +1303,38 @@ async function qbRazaoConta({ conta_id, data_inicio, data_fim } = {}) {
       if (node.Header?.ColData) {
         const t = node.Header.ColData.map(c => c.value).join(' ').toLowerCase();
         if (/beginning balance|saldo inicial/.test(t)) {
-          const v = node.Header.ColData.map(c => parseFloat(String(c.value).replace(/[^\d.-]/g, ''))).filter(n => !isNaN(n));
+          const v = node.Header.ColData.map(c => numQB(c.value)).filter(n => n != null);
           if (v.length) saldoInicialRazao = v[v.length - 1];
         }
       }
       if (node.Summary?.ColData) {
-        const v = node.Summary.ColData.map(c => parseFloat(String(c.value).replace(/[^\d.-]/g, ''))).filter(n => !isNaN(n));
+        const v = node.Summary.ColData.map(c => numQB(c.value)).filter(n => n != null);
         if (v.length) saldoFinalRazao = v[v.length - 1];
       }
       if (node.ColData && !node.Rows) {
         const c = node.ColData.map(x => x.value);
-        const valor = parseFloat(String(c[6] ?? c[c.length - 2] ?? '').replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, ''));
-        const saldo = parseFloat(String(c[7] ?? c[c.length - 1] ?? '').replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, ''));
-        if (c[0] && /\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4}/.test(String(c[0]))) {
-          linhas.push({ data: String(c[0]).substring(0, 10), tipo: c[1] || '', doc: c[2] || '',
-            nome: c[3] || '', memo: c[4] || '', contrapartida: c[5] || '',
-            valor: isNaN(valor) ? null : round(valor), saldo: isNaN(saldo) ? null : round(saldo) });
+        const dataStr = String(c[iData] ?? '');
+        if (dataStr && /\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4}/.test(dataStr)) {
+          const valor = numQB(iValor >= 0 ? c[iValor] : c[c.length - 2]);
+          const saldo = numQB(iSaldo >= 0 ? c[iSaldo] : c[c.length - 1]);
+          linhas.push({ data: dataStr.substring(0, 10),
+            tipo: (iTipo >= 0 ? c[iTipo] : c[1]) || '', doc: (iDoc >= 0 ? c[iDoc] : '') || '',
+            nome: (iNome >= 0 ? c[iNome] : c[3]) || '', memo: (iMemo >= 0 ? c[iMemo] : '') || '',
+            contrapartida: (iSplit >= 0 ? c[iSplit] : '') || '',
+            valor, saldo });
         }
       }
     })(rep?.Rows?.Row || rep?.Rows);
     out.linhas = linhas;
+    out.colunas_recebidas = nomesCol; // diagnóstico: mostra o que o QB devolveu
     out.total_linhas = linhas.length;
     out.saldo_inicial_razao = saldoInicialRazao != null ? round(saldoInicialRazao) : (linhas.length && linhas[0].saldo != null && linhas[0].valor != null ? round(linhas[0].saldo - linhas[0].valor) : null);
     out.saldo_final_razao = saldoFinalRazao != null ? round(saldoFinalRazao) : (linhas.length ? linhas[linhas.length - 1].saldo : null);
-    out.movimento_periodo = linhas.reduce((s, l) => s + (l.valor || 0), 0);
+    out.movimento_periodo = round(linhas.reduce((s, l) => s + (l.valor || 0), 0));
+    // v1.55.1: se o saldo inicial não veio no cabeçalho, deduz da 1ª linha (saldo − valor)
+    if (out.saldo_inicial_razao == null && linhas.length && linhas[0].saldo != null && linhas[0].valor != null) {
+      out.saldo_inicial_razao = round(linhas[0].saldo - linhas[0].valor);
+    }
   } catch (e) { out.erro_razao = e.message; }
 
   out.explicacao = {
