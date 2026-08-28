@@ -1873,7 +1873,13 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
              ? ` O CurrentBalance da conta (${saldoHoje.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}) difere porque inclui lançamentos de outras datas, inclusive futuras.` : '') };
     }
 
-    if (saldoAberturaBS == null && saldoHoje != null) {
+    // v1.60.2 FIX CRÍTICO: esta cadeia if/else if/else era INDEPENDENTE do bloco acima.
+    // Quando o balanço/razão acertava o saldo mas esta cadeia caía no "else" final,
+    // ela SOBRESCREVIA o valor correto com ZERO — por isso o Razão mostrava 91.913,38
+    // e o Fluxo continuava errado, mesmo com a função devolvendo o número certo.
+    if (saldoAberturaBS != null) {
+      // já resolvido acima pela fonte oficial — não mexer
+    } else if (saldoHoje != null) {
       // Reserva (só se o Balanço Patrimonial não responder): retroagir do saldo de hoje
       // v1.51 FIX: este movimento PRECISA ser idêntico ao que o extrato vai somar depois.
       // Antes havia 3 diferenças que faziam a conta não fechar:
