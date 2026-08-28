@@ -15242,9 +15242,7 @@ async function verRazaoConta() {
           <div class="kpi gd" style="flex:1;min-width:150px;"><div class="kl">Saldo contábil hoje</div><div class="kv" style="font-size:15px;">${fmtBRLcompleto(r.saldo_contabil_hoje || 0)}</div><div class="ks">CurrentBalance (API)</div></div>
         </div>
         ${difRazao != null && Math.abs(difRazao) > 1 ? `<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:8px;padding:10px;font-size:11px;margin-bottom:10px;">⚠ O saldo do Atlantyx (${fmtBRLcompleto(saldoAtx)}) difere do razão em <b>${fmtBRLcompleto(Math.abs(difRazao))}</b>.</div>` : ''}
-        ${(r.linhas||[]).length && r.linhas.every(l => l.valor == null) ? `<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:10px;font-size:11px;line-height:1.6;margin-bottom:10px;">
-          ⚠ <b>O relatório de razão veio sem valores nas linhas.</b> O formato do relatório neste QuickBooks é diferente do esperado — abra "🔧 Ver estrutura bruta" abaixo e me envie o conteúdo para eu mapear corretamente.<br>
-          Enquanto isso, use o <b>Saldo em ${(r.periodo?.de||'').split('-').reverse().join('/')}</b> acima, que vem do Balanço Patrimonial e é confiável.</div>` : ''}
+        ${r.aviso_origem ? `<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:8px;padding:10px;font-size:10.5px;line-height:1.6;margin-bottom:10px;">ℹ ${r.aviso_origem}</div>` : ''}
         <div style="background:var(--bg4);border-radius:8px;padding:11px;font-size:10.5px;line-height:1.7;margin-bottom:12px;">
           <b>Os três saldos que existem — e por que diferem:</b><br>
           • <b>Contábil (API)</b>: ${r.explicacao?.saldo_contabil || ''}<br>
@@ -15366,12 +15364,14 @@ async function conferirComBanco() {
   modal.style.display='flex';
   modal.innerHTML = '<div class="panel" style="width:700px;max-width:96vw;"><div class="pb" style="text-align:center;color:var(--t3);padding:30px;">⏳ Conferindo com o QuickBooks...</div></div>';
   try {
-    const ini = document.getElementById('fd_de')?.value || null;
-    const fim = document.getElementById('fd_ate')?.value || null;
-    const d = await finApi('qb_conferir_banco', { data_inicio: ini, data_fim: fim });
+    // v1.58.1: usa os ids corretos dos campos e respeita a conta filtrada na tela
+    const ini = document.getElementById('fd_dataInicio')?.value || null;
+    const fim = document.getElementById('fd_dataFim')?.value || null;
+    const contaSel = document.getElementById('fd_conta')?.value || null;
+    const d = await finApi('qb_conferir_banco', { data_inicio: ini, data_fim: fim, conta_id: contaSel });
     const c = d.conferencia || {}; const o = c.orientacao || {};
     modal.innerHTML = `<div class="panel" style="width:700px;max-width:96vw;max-height:90vh;overflow:auto;">
-      <div class="ph"><div class="pt">🔍 Conferência com o banco</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('confBancoModal').style.display='none'">✕</button></div>
+      <div class="ph"><div class="pt">🔍 Conferência com o banco${c.conta_filtrada ? ' · ' + c.conta_filtrada : ' · todas as contas'}</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('confBancoModal').style.display='none'">✕</button></div>
       <div class="pb">
         <div style="display:flex;gap:8px;margin-bottom:12px;">
           <div class="kpi bl" style="flex:1;"><div class="kl">Saldo no QuickBooks</div><div class="kv" style="font-size:16px;">${fmtBRLcompleto(c.saldo_quickbooks)}</div><div class="ks">só o que foi confirmado</div></div>
@@ -19061,7 +19061,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.57] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.58.1] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -19077,7 +19077,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.57';
+window.__ATX_BUILD_ID__ = 'ATX-v1.58.1';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
