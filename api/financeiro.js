@@ -1266,7 +1266,35 @@ async function qbSaldoContaNaData({ conta_id = null, data } = {}) {
   const chave = `${conta_id || 'todas'}|${data}`;
   if (_cacheSaldoData.has(chave)) return _cacheSaldoData.get(chave);
 
-  // v1.59: MÉTODO DIRETO — soma todas as transações da conta ATÉ a data.
+  // v1.60: FONTE PRIMÁRIA — o próprio QuickBooks informa o saldo de abertura na linha
+  // "Saldo inicial" do razão. É o número oficial (91.913,38 no caso do Itaú), sem cálculo nosso.
+  if (conta_id) {
+    try {
+      const token0 = await qbToken();
+      const inicioRef = new Date(new Date(data + 'T12:00:00').getTime() + 86400000).toISOString().split('T')[0];
+      const rep0 = await qbFetch(`/reports/GeneralLedger?start_date=${inicioRef}&end_date=${inicioRef}&accounting_method=Accrual&minorversion=65&account=${conta_id}`, token0);
+      let achado = null;
+      (function p(n) {
+        if (!n || achado != null) return;
+        if (Array.isArray(n)) return n.forEach(p);
+        if (n.ColData) {
+          const c = n.ColData.map(x => x.value);
+          if (/^(saldo inicial|beginning balance)/i.test(String(c[0] || '').trim())) {
+            const v = parseFloat(String(c[c.length - 1] || '').replace(/,/g, ''));
+            if (!isNaN(v)) achado = Math.round(v * 100) / 100;
+          }
+        }
+        if (n.Rows?.Row) p(n.Rows.Row);
+      })(rep0?.Rows?.Row || rep0?.Rows);
+      if (achado != null) {
+        console.log(`[QB] Saldo de abertura em ${data} (conta ${conta_id}): ${achado} — linha "Saldo inicial" do razão`);
+        _cacheSaldoData.set(chave, achado);
+        return achado;
+      }
+    } catch (e) { console.warn('[QB] saldo inicial pelo razão:', e.message); }
+  }
+
+  // Reserva: soma todas as transações da conta ATÉ a data.
   // O Balanço Patrimonial exigia localizar a conta dentro de um relatório aninhado e, quando
   // não encontrava, devolvia null → o saldo inicial virava ZERO e a coluna toda saía errada.
   // Somar as transações usa a mesma fonte que já funciona no extrato (e que sabemos estar
@@ -1399,7 +1427,12 @@ async function qbRazaoConta({ conta_id, data_inicio, data_fim } = {}) {
       return isNaN(n) ? null : Math.round(n * 100) / 100;
     };
     // v1.55.1: as colunas vêm na ordem pedida em `columns` — mapeamos pelo cabeçalho quando possível
-    const nomesCol = (rep?.Columns?.Column || []).map(c => (c.ColType || c.ColTitle || '').toLowerCase());
+    // v1.60 FIX: o nome real da coluna está em MetaData[].Value (ColKey), não em ColType.
+    // ColType devolve só o tipo genérico (Date/String/Money) — a busca nunca achava a coluna.
+    const nomesCol = (rep?.Columns?.Column || []).map(c => {
+      const key = (c.MetaData || []).find(m => m.Name === 'ColKey')?.Value;
+      return String(key || c.ColTitle || c.ColType || '').toLowerCase();
+    });
     const idxDe = (...chaves) => {
       for (const k of chaves) { const i = nomesCol.findIndex(n => n.includes(k)); if (i >= 0) return i; }
       return -1;
@@ -1410,8 +1443,8 @@ async function qbRazaoConta({ conta_id, data_inicio, data_fim } = {}) {
     const iNome = idxDe('name');
     const iMemo = idxDe('memo');
     const iSplit = idxDe('split');
-    const iValor = idxDe('subt_nat_amount', 'amount', 'valor', 'debit', 'credit');
-    const iSaldo = idxDe('rbal_nat_amount', 'balance', 'saldo', 'running');
+    const iValor = idxDe('subt_nat_home_amount', 'subt_nat_amount', 'amount', 'valor', 'debit');
+    const iSaldo = idxDe('rbal_nat_home_amount', 'rbal_nat_amount', 'balance', 'saldo', 'running');
 
     const linhas = [];
     let saldoInicialRazao = null, saldoFinalRazao = null;
@@ -1432,6 +1465,14 @@ async function qbRazaoConta({ conta_id, data_inicio, data_fim } = {}) {
       }
       if (node.ColData && !node.Rows) {
         const c = node.ColData.map(x => x.value);
+        // v1.60: "Saldo inicial" vem como linha de DADOS (não header), com o valor na coluna
+        // de saldo. É o saldo de abertura oficial do QuickBooks.
+        const primeiro = String(c[0] || '').toLowerCase().trim();
+        if (/^(saldo inicial|beginning balance|saldo de abertura)/.test(primeiro)) {
+          const v = numQB(iSaldo >= 0 ? c[iSaldo] : c[c.length - 1]);
+          if (v != null) saldoInicialRazao = v;
+          return;
+        }
         const dataStr = String(c[iData] ?? '');
         if (dataStr && /\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4}/.test(dataStr)) {
           const valor = numQB(iValor >= 0 ? c[iValor] : c[c.length - 2]);
