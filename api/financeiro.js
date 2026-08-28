@@ -1326,7 +1326,17 @@ async function qbRazaoConta({ conta_id, data_inicio, data_fim } = {}) {
       }
     })(rep?.Rows?.Row || rep?.Rows);
     out.linhas = linhas;
-    out.colunas_recebidas = nomesCol; // diagnóstico: mostra o que o QB devolveu
+    out.colunas_recebidas = nomesCol;
+    // v1.56: DIAGNÓSTICO — devolve a estrutura bruta do relatório para mapear o formato real.
+    // Parei de adivinhar o layout: com a amostra abaixo dá para ver exatamente onde estão
+    // os valores e ajustar o parsing com base em dado real, não em suposição.
+    try {
+      out.debug_estrutura = {
+        colunas_completas: (rep?.Columns?.Column || []).map(c => ({ titulo: c.ColTitle, tipo: c.ColType, meta: c.MetaData })),
+        primeiras_linhas_brutas: JSON.parse(JSON.stringify(rep?.Rows?.Row || [])).slice(0, 3),
+        tem_header: !!rep?.Header, tem_summary: !!(rep?.Rows?.Row || []).some(r => r.Summary),
+      };
+    } catch (e) { out.debug_estrutura = { erro: e.message }; }
     out.total_linhas = linhas.length;
     out.saldo_inicial_razao = saldoInicialRazao != null ? round(saldoInicialRazao) : (linhas.length && linhas[0].saldo != null && linhas[0].valor != null ? round(linhas[0].saldo - linhas[0].valor) : null);
     out.saldo_final_razao = saldoFinalRazao != null ? round(saldoFinalRazao) : (linhas.length ? linhas[linhas.length - 1].saldo : null);
@@ -1336,6 +1346,39 @@ async function qbRazaoConta({ conta_id, data_inicio, data_fim } = {}) {
       out.saldo_inicial_razao = round(linhas[0].saldo - linhas[0].valor);
     }
   } catch (e) { out.erro_razao = e.message; }
+
+  // v1.56: FONTE ALTERNATIVA — o saldo da conta numa data pelo Balanço Patrimonial.
+  // Mais confiável que o razão para responder "qual era o saldo em 01/08", porque é um número
+  // único por conta, sem depender de interpretar linhas de relatório.
+  if (conta_id) {
+    try {
+      const diaAnterior = new Date(new Date(ini + 'T12:00:00').getTime() - 86400000).toISOString().split('T')[0];
+      const bs = await qbFetch(`/reports/BalanceSheet?date=${diaAnterior}&accounting_method=Accrual&minorversion=65`, token);
+      const achar = (node, alvo) => {
+        let achado = null;
+        (function p(n) {
+          if (!n || achado) return;
+          if (Array.isArray(n)) return n.forEach(p);
+          const cols = n.ColData || n.Header?.ColData || n.Summary?.ColData;
+          if (cols && cols.length >= 2) {
+            const nome = String(cols[0].value || '').toLowerCase().trim();
+            if (nome && alvo && nome.includes(alvo)) {
+              const v = parseFloat(String(cols[cols.length - 1].value || '').replace(/,/g, ''));
+              if (!isNaN(v)) achado = Math.round(v * 100) / 100;
+            }
+          }
+          if (n.Rows?.Row) p(n.Rows.Row);
+        })(node);
+        return achado;
+      };
+      const nomeAlvo = String(out.conta_nome || '').toLowerCase().trim();
+      const saldoBS = achar(bs?.Rows?.Row || bs?.Rows, nomeAlvo);
+      if (saldoBS != null) {
+        out.saldo_na_data_balanco = saldoBS;
+        out.saldo_na_data_fonte = `Balanço Patrimonial em ${diaAnterior} (fechamento do dia anterior ao período)`;
+      }
+    } catch (e) { out.erro_balanco = e.message; }
+  }
 
   out.explicacao = {
     saldo_contabil: 'CurrentBalance da conta na API — o que o Atlantyx usa como saldo de hoje.',
