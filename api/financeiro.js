@@ -1003,7 +1003,7 @@ async function qbOrcamento({ ano } = {}) {
 // (pagamento + depósito, nota + recebimento) que o sistema já sabe tratar.
 // v1.47: conferência com o banco — detecta lançamentos que existem no extrato bancário mas
 // ainda NÃO foram aceitos no QuickBooks (ficam na fila "Para revisão" e não aparecem na API).
-async function qbConferirComBanco({ data_inicio, data_fim } = {}) {
+async function qbConferirComBanco({ data_inicio, data_fim, conta_id = null } = {}) {
   if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
   const token = await qbToken();
   const hoje = new Date().toISOString().split('T')[0];
@@ -1013,13 +1013,22 @@ async function qbConferirComBanco({ data_inicio, data_fim } = {}) {
 
   // 1. Saldo atual das contas bancárias (o QuickBooks só conta o que foi ACEITO)
   let saldoContas = 0, contas = [];
-  try { const sc = await qbSaldoContas(); saldoContas = sc.saldo_total; contas = sc.contas || []; } catch (e) { out.erro_contas = e.message; }
+  try {
+    const sc = await qbSaldoContas();
+    contas = sc.contas || [];
+    // v1.58.1: respeitar a conta filtrada na tela — antes mostrava sempre o total de todas
+    if (conta_id) {
+      contas = contas.filter(c => String(c.id) === String(conta_id));
+      saldoContas = contas.reduce((s, c) => s + c.saldo, 0);
+      out.conta_filtrada = contas[0]?.nome || ('conta ' + conta_id);
+    } else saldoContas = sc.saldo_total;
+  } catch (e) { out.erro_contas = e.message; }
   out.saldo_quickbooks = round(saldoContas);
 
   // 2. Movimento registrado no período (o que a API devolve)
   let movimento = 0, qtd = 0;
   try {
-    const r = await qbLancamentos({ data_inicio: ini, data_fim: fim, limite: 1000 });
+    const r = await qbLancamentos({ data_inicio: ini, data_fim: fim, limite: 1000, conta_id });
     const l = r.lancamentos || [];
     qtd = l.length;
     movimento = l.reduce((s, x) => x.tipo === 'entrada' ? s + x.valor : x.tipo === 'saida' ? s - x.valor : s, 0);
@@ -1269,22 +1278,28 @@ async function qbSaldoContaNaData({ conta_id = null, data } = {}) {
     }
     const alvo = nomeConta ? nomeConta.toLowerCase().trim() : null;
 
-    let total = null;
+    // v1.58.1 FIX: o casamento por "includes" pegava a linha errada (ex.: um subtotal que
+    // contém o nome da conta). Agora exige nome EXATO primeiro; só usa aproximação se falhar,
+    // e prefere a linha que também traz o id da conta.
+    let exato = null, porId = null, aproximado = null;
     (function percorrer(n) {
       if (!n) return;
       if (Array.isArray(n)) return n.forEach(percorrer);
       const cols = n.ColData || n.Header?.ColData || n.Summary?.ColData;
       if (cols && cols.length >= 2) {
         const nome = String(cols[0].value || '').toLowerCase().trim();
+        const idLinha = cols[0].id != null ? String(cols[0].id) : null;
         const valor = parseFloat(String(cols[cols.length - 1].value || '').replace(/,/g, ''));
         if (!isNaN(valor)) {
-          if (alvo && nome && nome.includes(alvo)) { total = valor; }
-          // Sem filtro: soma a seção de contas bancárias
-          else if (!alvo && /bank accounts|contas banc/i.test(nome)) { total = valor; }
+          if (conta_id && idLinha && String(idLinha) === String(conta_id)) porId = valor;
+          else if (alvo && nome === alvo) exato = valor;
+          else if (alvo && nome && nome.includes(alvo) && aproximado == null) aproximado = valor;
+          else if (!alvo && /^(bank accounts|contas banc|total bank)/i.test(nome)) exato = valor;
         }
       }
       if (n.Rows?.Row) percorrer(n.Rows.Row);
     })(rep?.Rows?.Row || rep?.Rows);
+    const total = porId != null ? porId : (exato != null ? exato : aproximado);
 
     const resultado = total != null ? Math.round(total * 100) / 100 : null;
     _cacheSaldoData.set(chave, resultado);
@@ -1309,11 +1324,37 @@ async function qbRazaoConta({ conta_id, data_inicio, data_fim } = {}) {
     out.saldo_contabil_hoje = alvo ? round(parseFloat(alvo.CurrentBalance || 0)) : round(contas.reduce((s, c) => s + parseFloat(c.CurrentBalance || 0), 0));
   } catch (e) { out.erro_conta = e.message; }
 
+  // v1.58: saldo de abertura ANTES do razão — o fallback abaixo depende dele.
+  // (Estava sendo calculado depois, então o fallback usava 0 como base.)
+  try {
+    const diaAnterior = new Date(new Date(ini + 'T12:00:00').getTime() - 86400000).toISOString().split('T')[0];
+    const s = await qbSaldoContaNaData({ conta_id, data: diaAnterior });
+    if (s != null) {
+      out.saldo_na_data_balanco = s;
+      out.saldo_na_data_fonte = `Balanço Patrimonial em ${diaAnterior} (fechamento do dia anterior ao período)`;
+    }
+  } catch (e) { out.erro_balanco = e.message; }
+
   // Razão do período
   try {
-    const params = `start_date=${ini}&end_date=${fim}&accounting_method=Accrual&columns=tx_date,txn_type,doc_num,name,memo,split_acc,subt_nat_amount,rbal_nat_amount`
-      + (conta_id ? `&account=${conta_id}` : '');
-    const rep = await qbFetch(`/reports/GeneralLedger?${params}`, token);
+    // v1.58 FIX: a estrutura bruta provou que o QuickBooks IGNOROU os nomes de coluna que eu
+    // pedia (subt_nat_amount / rbal_nat_amount) e devolvia só as 6 textuais — sem valor e sem
+    // saldo. Não era erro de leitura: os números nunca vinham.
+    // Agora não forçamos lista de colunas: o relatório vem com o layout PADRÃO, que já inclui
+    // Amount e Balance. Se ainda faltar, tentamos os nomes alternativos aceitos pela API.
+    const monta = (cols) => `start_date=${ini}&end_date=${fim}&accounting_method=Accrual&minorversion=65`
+      + (cols ? `&columns=${cols}` : '') + (conta_id ? `&account=${conta_id}` : '');
+    let rep = null, tentativa = null;
+    for (const cols of [null, 'tx_date,txn_type,doc_num,name,memo,split_acc,amount,balance', 'tx_date,txn_type,name,amount,balance']) {
+      try {
+        const r = await qbFetch(`/reports/GeneralLedger?${monta(cols)}`, token);
+        const nomes = (r?.Columns?.Column || []).map(c => (c.MetaData?.[0]?.Value || c.ColTitle || '').toLowerCase());
+        const temValor = nomes.some(n => /amount|valor|debit|credit/.test(n));
+        if (temValor || !rep) { rep = r; tentativa = cols || '(padrão)'; }
+        if (temValor) break;
+      } catch (e) { console.warn('[QB] GL tentativa', cols, e.message); }
+    }
+    out.tentativa_colunas = tentativa;
 
     // v1.55.1 FIX: o QuickBooks devolve os valores no formato AMERICANO ("4198.24"), com ponto
     // como separador DECIMAL. Meu código removia todos os pontos achando que eram separador de
@@ -1338,8 +1379,8 @@ async function qbRazaoConta({ conta_id, data_inicio, data_fim } = {}) {
     const iNome = idxDe('name');
     const iMemo = idxDe('memo');
     const iSplit = idxDe('split');
-    const iValor = idxDe('subt_nat_amount', 'amount');
-    const iSaldo = idxDe('rbal_nat_amount', 'balance');
+    const iValor = idxDe('subt_nat_amount', 'amount', 'valor', 'debit', 'credit');
+    const iSaldo = idxDe('rbal_nat_amount', 'balance', 'saldo', 'running');
 
     const linhas = [];
     let saldoInicialRazao = null, saldoFinalRazao = null;
@@ -1372,7 +1413,26 @@ async function qbRazaoConta({ conta_id, data_inicio, data_fim } = {}) {
         }
       }
     })(rep?.Rows?.Row || rep?.Rows);
-    out.linhas = linhas;
+    // v1.58: se o relatório vier sem valores, monta o razão a partir das transações da API
+    // (que funcionam) — assim a tela sempre mostra algo útil, com saldo acumulado real.
+    if (!linhas.length || linhas.every(l => l.valor == null)) {
+      try {
+        const tx = await qbLancamentos({ data_inicio: ini, data_fim: fim, limite: 1000, conta_id });
+        const base = out.saldo_na_data_balanco != null ? out.saldo_na_data_balanco : 0;
+        let acum = base;
+        out.linhas = (tx.lancamentos || []).map(l => {
+          const v = l.tipo === 'entrada' ? l.valor : l.tipo === 'saida' ? -l.valor : 0;
+          acum = Math.round((acum + v) * 100) / 100;
+          return { data: l.data, tipo: l.categoria || l.qb_tipo, doc: '', nome: l.descricao,
+            memo: l.memo || '', contrapartida: l.conta || '', valor: v || null, saldo: acum };
+        });
+        out.origem_linhas = 'transacoes_api';
+        out.aviso_origem = 'O relatório de razão do QuickBooks não devolveu valores para esta conta. As linhas abaixo foram montadas a partir das transações da API, com saldo acumulado a partir do Balanço Patrimonial.';
+        out.movimento_periodo = round(out.linhas.reduce((s, l) => s + (l.valor || 0), 0));
+        out.saldo_final_razao = out.linhas.length ? out.linhas[out.linhas.length - 1].saldo : base;
+        out.saldo_inicial_razao = base;
+      } catch (e) { out.erro_fallback = e.message; }
+    } else { out.origem_linhas = 'relatorio_razao'; }
     out.colunas_recebidas = nomesCol;
     // v1.56: DIAGNÓSTICO — devolve a estrutura bruta do relatório para mapear o formato real.
     // Parei de adivinhar o layout: com a amostra abaixo dá para ver exatamente onde estão
@@ -1393,39 +1453,6 @@ async function qbRazaoConta({ conta_id, data_inicio, data_fim } = {}) {
       out.saldo_inicial_razao = round(linhas[0].saldo - linhas[0].valor);
     }
   } catch (e) { out.erro_razao = e.message; }
-
-  // v1.56: FONTE ALTERNATIVA — o saldo da conta numa data pelo Balanço Patrimonial.
-  // Mais confiável que o razão para responder "qual era o saldo em 01/08", porque é um número
-  // único por conta, sem depender de interpretar linhas de relatório.
-  if (conta_id) {
-    try {
-      const diaAnterior = new Date(new Date(ini + 'T12:00:00').getTime() - 86400000).toISOString().split('T')[0];
-      const bs = await qbFetch(`/reports/BalanceSheet?date=${diaAnterior}&accounting_method=Accrual&minorversion=65`, token);
-      const achar = (node, alvo) => {
-        let achado = null;
-        (function p(n) {
-          if (!n || achado) return;
-          if (Array.isArray(n)) return n.forEach(p);
-          const cols = n.ColData || n.Header?.ColData || n.Summary?.ColData;
-          if (cols && cols.length >= 2) {
-            const nome = String(cols[0].value || '').toLowerCase().trim();
-            if (nome && alvo && nome.includes(alvo)) {
-              const v = parseFloat(String(cols[cols.length - 1].value || '').replace(/,/g, ''));
-              if (!isNaN(v)) achado = Math.round(v * 100) / 100;
-            }
-          }
-          if (n.Rows?.Row) p(n.Rows.Row);
-        })(node);
-        return achado;
-      };
-      const nomeAlvo = String(out.conta_nome || '').toLowerCase().trim();
-      const saldoBS = achar(bs?.Rows?.Row || bs?.Rows, nomeAlvo);
-      if (saldoBS != null) {
-        out.saldo_na_data_balanco = saldoBS;
-        out.saldo_na_data_fonte = `Balanço Patrimonial em ${diaAnterior} (fechamento do dia anterior ao período)`;
-      }
-    } catch (e) { out.erro_balanco = e.message; }
-  }
 
   out.explicacao = {
     saldo_contabil: 'CurrentBalance da conta na API — o que o Atlantyx usa como saldo de hoje.',
