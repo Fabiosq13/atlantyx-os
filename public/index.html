@@ -13480,7 +13480,9 @@ function renderExtrato(d) {
   {
     const det = d.saldo_inicial_detalhe;
     let txt;
-    if (d.saldo_inicial_origem === 'cadastrado_mais_movimento' && det) {
+    if (d.saldo_inicial_origem === 'balanco_patrimonial' && det) {
+      txt = `saldo de fechamento de ${(det.data_base||'').split('-').reverse().join('/')} no Balanço Patrimonial do QuickBooks`;
+    } else if (d.saldo_inicial_origem === 'cadastrado_mais_movimento' && det) {
       txt = `${fmtBRLcompleto(det.saldo_base)} em ${(det.base_data||'').split('-').reverse().join('/')} + ${fmtBRLcompleto(det.movimento_anterior)} de movimento até o início do período`;
     } else if (d.saldo_inicial_origem === 'reconstruido_do_historico' && det) {
       txt = `reconstruído de todo o histórico (${det.lancamentos_considerados} lançamento(s) antes do período) — nenhum saldo inicial cadastrado`;
@@ -19059,7 +19061,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.56] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.57] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -19075,7 +19077,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.56';
+window.__ATX_BUILD_ID__ = 'ATX-v1.57';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
