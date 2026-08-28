@@ -1245,6 +1245,53 @@ async function qbExcluirLancamento({ qb_txn_id, confirmar = false } = {}) {
 
 // v1.55: razão (General Ledger) de uma conta numa data — dá o saldo REAL do razão,
 // que é diferente do CurrentBalance e do saldo do banco.
+// v1.57: saldo REAL de uma conta numa data, pelo Balanço Patrimonial.
+// Substitui o retroagir a partir do CurrentBalance, que estava errado: o CurrentBalance
+// inclui lançamentos com DATA FUTURA, e ao retroagir esse excesso era arrastado para trás.
+// (No caso real: razão do Itaú fechava 31/07 em R$ 91.913,38, mas o CurrentBalance dizia
+//  -R$ 137.644,04 porque somava lançamentos datados depois do período.)
+const _cacheSaldoData = new Map();
+async function qbSaldoContaNaData({ conta_id = null, data } = {}) {
+  if (!qbConfigurado() || !data) return null;
+  const chave = `${conta_id || 'todas'}|${data}`;
+  if (_cacheSaldoData.has(chave)) return _cacheSaldoData.get(chave);
+  try {
+    const token = await qbToken();
+    const rep = await qbFetch(`/reports/BalanceSheet?date=${data}&accounting_method=Accrual&minorversion=65`, token);
+
+    // Nome da conta, quando filtrada
+    let nomeConta = null;
+    if (conta_id) {
+      try {
+        const d = await qbQuery(`select * from Account where Id = '${conta_id}'`, token);
+        nomeConta = (d?.QueryResponse?.Account || [])[0]?.Name || null;
+      } catch (_) {}
+    }
+    const alvo = nomeConta ? nomeConta.toLowerCase().trim() : null;
+
+    let total = null;
+    (function percorrer(n) {
+      if (!n) return;
+      if (Array.isArray(n)) return n.forEach(percorrer);
+      const cols = n.ColData || n.Header?.ColData || n.Summary?.ColData;
+      if (cols && cols.length >= 2) {
+        const nome = String(cols[0].value || '').toLowerCase().trim();
+        const valor = parseFloat(String(cols[cols.length - 1].value || '').replace(/,/g, ''));
+        if (!isNaN(valor)) {
+          if (alvo && nome && nome.includes(alvo)) { total = valor; }
+          // Sem filtro: soma a seção de contas bancárias
+          else if (!alvo && /bank accounts|contas banc/i.test(nome)) { total = valor; }
+        }
+      }
+      if (n.Rows?.Row) percorrer(n.Rows.Row);
+    })(rep?.Rows?.Row || rep?.Rows);
+
+    const resultado = total != null ? Math.round(total * 100) / 100 : null;
+    _cacheSaldoData.set(chave, resultado);
+    return resultado;
+  } catch (e) { console.warn('[QB] saldo na data:', e.message); return null; }
+}
+
 async function qbRazaoConta({ conta_id, data_inicio, data_fim } = {}) {
   if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
   const token = await qbToken();
@@ -1683,19 +1730,35 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
     const ateAnterior = new Date(new Date(ini + 'T12:00:00').getTime() - 86400000).toISOString().split('T')[0];
     const hojeStr2 = new Date().toISOString().split('T')[0];
 
+    // v1.57: FONTE PRIMÁRIA = saldo do Balanço Patrimonial no dia anterior ao período.
+    // É o número que o QuickBooks mostra no razão como saldo de abertura — sem contaminação
+    // de lançamentos futuros, e sem depender de retroagir cálculo nenhum.
+    const diaAnterior = new Date(new Date(ini + 'T12:00:00').getTime() - 86400000).toISOString().split('T')[0];
+    const saldoAberturaBS = await qbSaldoContaNaData({ conta_id, data: diaAnterior });
+
     let saldoHoje = null;
     try {
       const sc = await qbSaldoContas();
       if (sc?.qb_configurado) {
-        // v1.53: com filtro de conta, usa o saldo APENAS dessa conta
         saldoHoje = conta_id
           ? (sc.contas || []).filter(c => String(c.id) === String(conta_id)).reduce((s, c) => s + c.saldo, 0)
           : sc.saldo_total;
       }
     } catch (_) {}
 
-    if (saldoHoje != null) {
-      // Saldo no início do período = saldo de hoje − movimento entre o início do período e hoje
+    if (saldoAberturaBS != null) {
+      saldoInicial = saldoAberturaBS;
+      saldoInicialData = ini;
+      saldoInicialOrigem = 'balanco_patrimonial';
+      saldoInicialDetalhe = { saldo_abertura: saldoAberturaBS, data_base: diaAnterior,
+        saldo_current_balance: saldoHoje != null ? round(saldoHoje) : null,
+        observacao: `Saldo de fechamento de ${diaAnterior.split('-').reverse().join('/')} no Balanço Patrimonial do QuickBooks — é o saldo de abertura do período.`
+          + (saldoHoje != null && Math.abs(saldoHoje - saldoAberturaBS) > 1
+             ? ` O CurrentBalance da conta (${saldoHoje.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}) difere porque inclui lançamentos de outras datas, inclusive futuras.` : '') };
+    }
+
+    if (saldoAberturaBS == null && saldoHoje != null) {
+      // Reserva (só se o Balanço Patrimonial não responder): retroagir do saldo de hoje
       // v1.51 FIX: este movimento PRECISA ser idêntico ao que o extrato vai somar depois.
       // Antes havia 3 diferenças que faziam a conta não fechar:
       //   (a) período: aqui ia até HOJE, mas o extrato vai até o fim do filtro;
