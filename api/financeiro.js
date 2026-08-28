@@ -1260,10 +1260,41 @@ async function qbExcluirLancamento({ qb_txn_id, confirmar = false } = {}) {
 // (No caso real: razão do Itaú fechava 31/07 em R$ 91.913,38, mas o CurrentBalance dizia
 //  -R$ 137.644,04 porque somava lançamentos datados depois do período.)
 const _cacheSaldoData = new Map();
+let _saldoAberturaTruncado = false; // v1.59
 async function qbSaldoContaNaData({ conta_id = null, data } = {}) {
   if (!qbConfigurado() || !data) return null;
   const chave = `${conta_id || 'todas'}|${data}`;
   if (_cacheSaldoData.has(chave)) return _cacheSaldoData.get(chave);
+
+  // v1.59: MÉTODO DIRETO — soma todas as transações da conta ATÉ a data.
+  // O Balanço Patrimonial exigia localizar a conta dentro de um relatório aninhado e, quando
+  // não encontrava, devolvia null → o saldo inicial virava ZERO e a coluna toda saía errada.
+  // Somar as transações usa a mesma fonte que já funciona no extrato (e que sabemos estar
+  // correta desde a v1.48/v1.51), então é confiável e não depende de casar nome de conta.
+  try {
+    const ate = data;
+    const r = await qbLancamentos({ data_inicio: '2000-01-01', data_fim: ate, limite: 1000, conta_id });
+    const lanc = r.lancamentos || [];
+    // v1.59: se bateu no teto de registros, o histórico está incompleto e a soma seria menor
+    // que a real — melhor avisar do que devolver um número errado com cara de certo.
+    if (lanc.length >= 1000) {
+      console.warn('[QB] Saldo de abertura: atingiu o limite de 1000 transações — histórico pode estar truncado.');
+      _saldoAberturaTruncado = true;
+    }
+    if (r.dados_incompletos) {
+      console.warn('[QB] Saldo de abertura: consulta incompleta (throttle) — não é confiável.');
+      return null; // não devolve número parcial
+    }
+    if (lanc.length) {
+      const soma = lanc.reduce((s, l) => l.tipo === 'entrada' ? s + l.valor : l.tipo === 'saida' ? s - l.valor : s, 0);
+      const val = Math.round(soma * 100) / 100;
+      _cacheSaldoData.set(chave, val);
+      console.log(`[QB] Saldo em ${ate}${conta_id ? ' (conta ' + conta_id + ')' : ''}: ${val} — ${lanc.length} transação(ões) somada(s)`);
+      return val;
+    }
+  } catch (e) { console.warn('[QB] saldo por transações:', e.message); }
+
+  // Reserva: Balanço Patrimonial (mantido para o caso de a soma não retornar nada)
   try {
     const token = await qbToken();
     const rep = await qbFetch(`/reports/BalanceSheet?date=${data}&accounting_method=Accrual&minorversion=65`, token);
@@ -1779,7 +1810,9 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
       saldoInicialOrigem = 'balanco_patrimonial';
       saldoInicialDetalhe = { saldo_abertura: saldoAberturaBS, data_base: diaAnterior,
         saldo_current_balance: saldoHoje != null ? round(saldoHoje) : null,
-        observacao: `Saldo de fechamento de ${diaAnterior.split('-').reverse().join('/')} no Balanço Patrimonial do QuickBooks — é o saldo de abertura do período.`
+        truncado: _saldoAberturaTruncado,
+        observacao: `Saldo acumulado de todas as transações até ${diaAnterior.split('-').reverse().join('/')} — é o saldo de abertura do período.`
+          + (_saldoAberturaTruncado ? ' ⚠ O histórico atingiu o limite de 1000 transações; o saldo pode estar incompleto — cadastre um Saldo Inicial próximo para maior precisão.' : '')
           + (saldoHoje != null && Math.abs(saldoHoje - saldoAberturaBS) > 1
              ? ` O CurrentBalance da conta (${saldoHoje.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}) difere porque inclui lançamentos de outras datas, inclusive futuras.` : '') };
     }
