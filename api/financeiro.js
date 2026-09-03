@@ -2010,6 +2010,9 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   const extrato = await extratoConsolidado({ data_inicio: ini, data_fim: fimPassado, incluir_simulados, conta_id });
 
   // 2. Futuro: recebíveis/pagáveis reais do QB, respeitando o fim do período (se houver)
+  // v1.61: Invoice e Bill não pertencem a uma conta bancária (só sabem em qual conta serão
+  // liquidados quando o pagamento acontecer). Por isso o filtro de conta NÃO se aplica a eles —
+  // a tela avisa isso para o número não parecer inconsistente com o extrato filtrado.
   const fut = (fim && fim < hoje) ? { recebiveis: [], pagaveis: [], erro: null } : await qbFuturosDetalhado({ data_inicio: iniFuturo, data_fim: fim });
 
   // 3. Despesas programadas do Atlantyx com ocorrência futura (não vinculadas a Bill do QB, para não duplicar)
@@ -2078,7 +2081,22 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
     divergencia_relevante: divergencia != null && Math.abs(divergencia) > 1,
     passado: { saldo_inicial: extrato.saldo_inicial, saldo_inicial_data: extrato.saldo_inicial_data, saldo_inicial_detalhe: extrato.saldo_inicial_detalhe, lancamentos: extrato.lancamentos, total_entradas: extrato.total_entradas, total_saidas: extrato.total_saidas, qb_erro: extrato.qb_erro },
     saldo_hoje: extrato.saldo_final || 0,
-    futuro: { lancamentos: futuroComSaldo, total_recebiveis: fut.recebiveis.reduce((s, l) => s + l.valor, 0), total_pagaveis: fut.pagaveis.reduce((s, l) => s + l.valor, 0), qtd_qb: fut.recebiveis.length + fut.pagaveis.length, qtd_atlantyx: despFuturas.length + simFuturos.length, qb_erro: fut.erro, ate: ultimaData },
+    futuro: { lancamentos: futuroComSaldo,
+      total_recebiveis: round(fut.recebiveis.reduce((s, l) => s + l.valor, 0)),
+      total_pagaveis: round(fut.pagaveis.reduce((s, l) => s + l.valor, 0)),
+      // v1.61 FIX: qtd_qb somava recebíveis + pagáveis num número só, e a tela exibia esse
+      // total ao lado do "A Receber" — daí "4 doc(s) QB" com R$ 0,00 (os 4 eram pagáveis).
+      qtd_recebiveis: fut.recebiveis.length,
+      qtd_pagaveis: fut.pagaveis.length,
+      qtd_qb: fut.recebiveis.length + fut.pagaveis.length,
+      qtd_atlantyx: despFuturas.length + simFuturos.length,
+      // v1.61: quanto do total já está VENCIDO — um recebível vencido não é previsão de entrada
+      recebiveis_vencidos: round(fut.recebiveis.filter(r => r.vencida).reduce((s, l) => s + l.valor, 0)),
+      pagaveis_vencidos: round(fut.pagaveis.filter(p => p.vencida).reduce((s, l) => s + l.valor, 0)),
+      qtd_recebiveis_vencidos: fut.recebiveis.filter(r => r.vencida).length,
+      qtd_pagaveis_vencidos: fut.pagaveis.filter(p => p.vencida).length,
+      qb_erro: fut.erro, ate: ultimaData,
+      filtro_conta_nao_aplicavel: !!conta_id },
     saldo_projetado_final: futuroComSaldo.length ? futuroComSaldo[futuroComSaldo.length - 1].saldo_acumulado : (extrato.saldo_final || 0),
     menor_saldo_projetado: menorSaldo ? { valor: menorSaldo.saldo_acumulado, data: menorSaldo.data, descricao: menorSaldo.descricao } : null,
   };
