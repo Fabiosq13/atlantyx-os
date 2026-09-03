@@ -15691,10 +15691,37 @@ async function carregarFluxoDetalhado() {
           <button class="btn" style="font-size:10px;margin-top:5px;" onclick="conferirComBanco()">🔍 Conferir com o banco</button>`;
       } else if (box) box.remove();
     }
+    // v1.61: contagens separadas — antes o subtítulo do "A Receber" mostrava a soma de
+    // recebíveis + pagáveis, o que fazia aparecer "4 doc(s) QB" com valor R$ 0,00.
     u('fd_receber', fmtBRLcompleto(d.futuro.total_recebiveis));
-    u('fd_receberSub', d.futuro.qtd_qb + ' doc(s) QB · ' + d.futuro.qtd_atlantyx + ' Atlantyx');
+    {
+      const f = d.futuro;
+      let sub = (f.qtd_recebiveis != null ? f.qtd_recebiveis : '?') + ' fatura(s) a receber';
+      if (f.recebiveis_vencidos > 0) sub += ` · ⚠ ${fmtBRLcompleto(f.recebiveis_vencidos)} já vencido(s)`;
+      if (f.qtd_atlantyx) sub += ` · ${f.qtd_atlantyx} Atlantyx`;
+      u('fd_receberSub', sub);
+      const el = document.getElementById('fd_receberSub');
+      if (el) el.style.color = f.recebiveis_vencidos > 0 ? 'var(--gold)' : 'var(--t3)';
+    }
     u('fd_pagar', fmtBRLcompleto(d.futuro.total_pagaveis));
-    u('fd_pagarSub', 'até ' + (d.futuro.ate?.split('-').reverse().join('/') || '—'));
+    {
+      const f = d.futuro;
+      let sub = (f.qtd_pagaveis != null ? f.qtd_pagaveis : '?') + ' conta(s) a pagar';
+      if (f.pagaveis_vencidos > 0) sub += ` · ⚠ ${fmtBRLcompleto(f.pagaveis_vencidos)} vencido(s)`;
+      sub += ' · até ' + (f.ate?.split('-').reverse().join('/') || '—');
+      u('fd_pagarSub', sub);
+    }
+    // v1.61: aviso de que faturas e contas não pertencem a uma conta bancária
+    {
+      let box = document.getElementById('fdAvisoFiltroFuturo');
+      if (d.futuro.filtro_conta_nao_aplicavel && (d.futuro.qtd_qb > 0)) {
+        if (!box) { box = document.createElement('div'); box.id = 'fdAvisoFiltroFuturo';
+          const alvo = document.getElementById('fd_receberSub')?.closest('.kpi');
+          alvo?.parentElement?.insertAdjacentElement('afterend', box); }
+        box.style.cssText = 'background:var(--bg4);border:1px solid var(--bd);border-radius:7px;padding:8px 11px;font-size:10px;color:var(--t2);line-height:1.6;margin-bottom:10px;';
+        box.innerHTML = 'ℹ <b>A Receber e A Pagar não são filtrados por conta bancária.</b> Faturas e contas em aberto ainda não têm conta definida no QuickBooks — ela só é conhecida quando o pagamento acontece. Os valores acima são da empresa inteira.';
+      } else if (box) box.remove();
+    }
     u('fd_saldoFinal', fmtBRLcompleto(d.saldo_projetado_final));
     u('fd_saldoFinalSub', d.futuro.lancamentos.length + ' lançamento(s) futuro(s)' + (d.periodo?.data_fim ? ' até ' + d.periodo.data_fim.split('-').reverse().join('/') : ' · sem limite'));
 
@@ -19064,7 +19091,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.60.2] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.61] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -19080,7 +19107,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.60.2';
+window.__ATX_BUILD_ID__ = 'ATX-v1.61';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
