@@ -1376,8 +1376,39 @@ async function qbSaldoContaNaData({ conta_id = null, data } = {}) {
     _cacheSaldoData.delete(chave);
   }
 
-  // v1.60: FONTE PRIMÁRIA — o próprio QuickBooks informa o saldo de abertura na linha
-  // "Saldo inicial" do razão. É o número oficial (91.913,38 no caso do Itaú), sem cálculo nosso.
+  // v1.72 FIX: SEM conta filtrada, o caminho oficial era pulado e caía na reserva que soma
+  // TODAS as transações desde 2000 — o método que produzia os milhões. Como a tela abre sem
+  // filtro por padrão, era esse o número errado que aparecia.
+  // Agora, sem filtro, somamos o saldo de abertura de CADA conta pelo razão (fonte oficial).
+  if (!conta_id) {
+    try {
+      const token1 = await qbToken();
+      const dContas = await qbQuery(`select * from Account where AccountType = 'Bank' maxresults 100`, token1);
+      const contas = (dContas?.QueryResponse?.Account || []).filter(a => a.Active !== false);
+      if (contas.length) {
+        let total = 0, achadas = 0, faltaram = [];
+        for (const c of contas) {
+          const s = await qbSaldoContaNaData({ conta_id: c.Id, data });   // recursão com 1 conta
+          if (s != null) { total += s; achadas++; }
+          else faltaram.push(c.Name);
+          await qbEsperar(100);   // respeita o limite de requisições
+        }
+        if (achadas === contas.length) {
+          const val = round(total);
+          _cacheSaldoData.set(chave, val);
+          _ultimaOrigemSaldo = 'razao_soma_contas';
+          console.log(`[QB] Saldo de abertura em ${data} (todas as contas): ${val} — soma do razão de ${achadas} conta(s)`);
+          return val;
+        }
+        // Se alguma conta não respondeu, o total ficaria menor que o real: melhor não devolver
+        console.warn(`[QB] Saldo de abertura: ${faltaram.length} conta(s) sem resposta do razão (${faltaram.join(', ')}). Não devolvendo total parcial.`);
+        _ultimoErroSaldo = `razão não respondeu para: ${faltaram.join(', ')}`;
+        return null;
+      }
+    } catch (e) { console.warn('[QB] saldo agregado pelo razão:', e.message); _ultimoErroSaldo = e.message; }
+  }
+
+  // FONTE PRIMÁRIA por conta — linha "Saldo inicial" do razão do QuickBooks
   if (conta_id) {
     try {
       const token0 = await qbToken();
@@ -1406,7 +1437,15 @@ async function qbSaldoContaNaData({ conta_id = null, data } = {}) {
     } catch (e) { console.warn('[QB] saldo inicial pelo razão FALHOU:', e.message); _ultimoErroSaldo = e.message; }
   }
 
-  // Reserva: soma todas as transações da conta ATÉ a data.
+  // v1.72: a soma de transações desde 2000 acumula duplicidades, transferências e saldos de
+  // abertura das próprias contas — foi ela que gerou os valores na casa dos milhões.
+  // Só é usada COM conta filtrada (escopo pequeno e verificável) e nunca para o total geral.
+  if (!conta_id) {
+    console.warn('[QB] Saldo de abertura: razão não respondeu e a soma de transações não é confiável para o total geral. Devolvendo null.');
+    return null;
+  }
+
+  // Reserva (apenas com conta filtrada): soma as transações da conta ATÉ a data.
   // O Balanço Patrimonial exigia localizar a conta dentro de um relatório aninhado e, quando
   // não encontrava, devolvia null → o saldo inicial virava ZERO e a coluna toda saía errada.
   // Somar as transações usa a mesma fonte que já funciona no extrato (e que sabemos estar
