@@ -75,6 +75,8 @@ export default async function handler(req, res) {
       qb_contas_filtro:      () => qbContasParaFiltro(),
       qb_excluir_lancamento: () => qbExcluirLancamento(params),
       qb_razao_conta:        () => qbRazaoConta(params),
+      executar_tarefa:       () => executarTarefaFin(params),
+      listar_tarefas:        () => ({ tarefas: Object.entries(TAREFAS_FIN).map(([k,v]) => ({ id:k, descricao:v.descricao, params:v.params })) }),
       qb_rastrear_duplicados: () => qbRastrearDuplicados(params),
       qb_varrer_duplicados:  () => qbVarrerDuplicados(params),
       qb_conferir_banco:     () => qbConferirComBanco(params),
@@ -387,9 +389,9 @@ async function claudeFin(system, messages, maxTokens = 1400) {
   if (!r.ok) throw new Error('Claude API [' + r.status + ']: ' + (d.error?.message || 'erro'));
   return d.content?.[0]?.text || '';
 }
-async function contextoFinanceiro({ mes, ano } = {}) {
+async function contextoFinanceiro({ mes, ano, conta_id = null } = {}) {
   const [resumo, kpis, fluxo, conc, kanban, orc] = await Promise.allSettled([
-    painelResumo({ mes, ano }), kpisSaude({}), fluxoFuturo({ meses: 6 }), conciliacaoStatus({}), marcosKanban({}), orcamentoConsolidado({ ano })
+    painelResumo({ mes, ano }), kpisSaude({ conta_id }), fluxoFuturo({ meses: 6, conta_id }), conciliacaoStatus({ conta_id }), marcosKanban({}), orcamentoConsolidado({ ano })
   ]);
   const v = p => p.status === 'fulfilled' ? p.value : { erro: p.reason?.message };
   const R = v(resumo), K = v(kpis), F = v(fluxo), C = v(conc), M = v(kanban), O = v(orc);
@@ -405,6 +407,78 @@ async function contextoFinanceiro({ mes, ano } = {}) {
     ultimos_lancamentos: (R.lancamentos || []).slice(0, 12).map(l => ({ data: l.data, desc: (l.descricao || l.nome || '').substring(0, 50), valor: l.valor, tipo: l.tipo })),
   };
 }
+// v1.71: TAREFAS OPERACIONAIS — o gerente IA não só responde, ele EXECUTA e devolve
+// um link que abre a tela já filtrada com o resultado.
+const TAREFAS_FIN = {
+  fluxo_periodo: {
+    descricao: 'Rodar o fluxo de caixa de um período ou mês',
+    params: 'data_inicio, data_fim, conta_id (opcional)',
+    executar: async (p) => {
+      const hoje = new Date().toISOString().split('T')[0];
+      const ini = p.data_inicio || `${hoje.substring(0,8)}01`;
+      const fim = p.data_fim || hoje;
+      const d = await fluxoDetalhado({ data_inicio: ini, data_fim: fim, conta_id: p.conta_id || null });
+      return {
+        resumo: `Fluxo de ${ini.split('-').reverse().join('/')} a ${fim.split('-').reverse().join('/')}: saldo ${fmtBR(d.saldo_hoje)}, a receber ${fmtBR(d.futuro?.total_recebiveis)}, a pagar ${fmtBR(d.futuro?.total_pagaveis)}, projetado ${fmtBR(d.saldo_projetado_final)}.`,
+        numeros: { saldo: d.saldo_hoje, a_receber: d.futuro?.total_recebiveis, a_pagar: d.futuro?.total_pagaveis, projetado: d.saldo_projetado_final, lancamentos: d.passado?.lancamentos?.length || 0 },
+        tela: 's3fluxodet', filtros: { fd_dataInicio: ini, fd_dataFim: fim, ...(p.conta_id ? { fd_conta: p.conta_id } : {}) },
+      };
+    },
+  },
+  extrato_periodo: {
+    descricao: 'Abrir o extrato com saldo acumulado de um período',
+    params: 'data_inicio, data_fim, conta_id (opcional)',
+    executar: async (p) => {
+      const hoje = new Date().toISOString().split('T')[0];
+      const ini = p.data_inicio || `${hoje.substring(0,8)}01`, fim = p.data_fim || hoje;
+      const d = await extratoConsolidado({ data_inicio: ini, data_fim: fim, conta_id: p.conta_id || null });
+      return {
+        resumo: `Extrato de ${ini.split('-').reverse().join('/')} a ${fim.split('-').reverse().join('/')}: ${d.lancamentos?.length || 0} lançamentos, entradas ${fmtBR(d.total_entradas)}, saídas ${fmtBR(d.total_saidas)}, saldo final ${fmtBR(d.saldo_final)}.`,
+        numeros: { entradas: d.total_entradas, saidas: d.total_saidas, saldo_final: d.saldo_final, lancamentos: d.lancamentos?.length || 0 },
+        tela: 's3extrato', filtros: { ext_dataInicio: ini, ext_dataFim: fim, ...(p.conta_id ? { ext_conta: p.conta_id } : {}) },
+      };
+    },
+  },
+  saldo_contas: {
+    descricao: 'Consultar o saldo de cada conta bancária',
+    params: 'nenhum',
+    executar: async () => {
+      const d = await qbSaldoContas();
+      return { resumo: `${(d.contas||[]).length} conta(s): ` + (d.contas||[]).map(c => `${c.nome} ${fmtBR(c.saldo)}`).join(' · ') + `. Total ${fmtBR(d.saldo_total)}.`,
+        numeros: { total: d.saldo_total, contas: d.contas }, tela: 's3fluxodet', filtros: {} };
+    },
+  },
+  fluxo_futuro: {
+    descricao: 'Projeção de caixa dos próximos meses',
+    params: 'meses (padrão 12)',
+    executar: async (p) => {
+      const d = await fluxoFuturo({ meses: parseInt(p.meses) || 12 });
+      const neg = (d.meses || []).find(m => m.saldo_acumulado < 0);
+      return { resumo: `Projeção de ${p.meses || 12} meses. Saldo inicial ${fmtBR(d.saldo_inicial)}.` + (neg ? ` ⚠ Fica negativo em ${neg.mes} (${fmtBR(neg.saldo_acumulado)}).` : ' Permanece positivo em todo o horizonte.'),
+        numeros: { saldo_inicial: d.saldo_inicial, primeiro_mes_negativo: neg?.mes || null }, tela: 's3fluxo', filtros: {} };
+    },
+  },
+  duplicados: {
+    descricao: 'Procurar lançamentos duplicados no QuickBooks',
+    params: 'data_inicio, data_fim',
+    executar: async (p) => {
+      const d = await qbVarrerDuplicados({ data_inicio: p.data_inicio, data_fim: p.data_fim });
+      const r = d.varredura || d;
+      return { resumo: `Varredura: ${r.duplicados_reais?.length || 0} duplicidade(s) real(is), ${r.suspeitos?.length || 0} suspeito(s).`,
+        numeros: { reais: r.duplicados_reais?.length || 0, suspeitos: r.suspeitos?.length || 0, impacto: r.impacto_caixa },
+        tela: 's3fluxodet', filtros: {} };
+    },
+  },
+};
+function fmtBR(v) { return (typeof v === 'number' ? v : 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' }); }
+
+async function executarTarefaFin({ tarefa, params = {} } = {}) {
+  const t = TAREFAS_FIN[tarefa];
+  if (!t) throw new Error('Tarefa desconhecida. Disponíveis: ' + Object.keys(TAREFAS_FIN).join(', '));
+  const r = await t.executar(params);
+  return { tarefa, ...r };
+}
+
 async function gerenteFinanceiro({ mensagem, historico = [] } = {}) {
   if (!mensagem) throw new Error('mensagem obrigatória');
   const ctx = await contextoFinanceiro();
@@ -412,12 +486,39 @@ async function gerenteFinanceiro({ mensagem, historico = [] } = {}) {
 
 CONTEXTO FINANCEIRO (JSON, valores em moeda da conta):
 ${JSON.stringify(ctx).substring(0, 9000)}`;
-  const msgs = [...historico.slice(-10).map(h => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content || '').substring(0, 2000) })), { role: 'user', content: mensagem.substring(0, 3000) }];
+  // v1.71: antes de responder, verifica se a mensagem é uma ORDEM DE TAREFA para executar
+  let tarefaExecutada = null;
+  try {
+    const hoje = new Date().toISOString().split('T')[0];
+    const sysT = `Decida se a mensagem do usuário é uma ORDEM para executar uma operação financeira.
+Hoje é ${hoje}.
+
+TAREFAS DISPONÍVEIS:
+${Object.entries(TAREFAS_FIN).map(([k,v]) => `- ${k}: ${v.descricao} (parâmetros: ${v.params})`).join('\n')}
+
+Devolva SOMENTE JSON:
+{"executar": true|false, "tarefa": "id ou null", "params": {...}}
+
+Regras:
+- executar=true só quando o usuário PEDE uma operação ("rode o fluxo de agosto", "me mostre o extrato da semana", "procure duplicados").
+- Pergunta conceitual ou opinião ("o que acha do meu caixa?", "como melhoro a margem?") → executar=false.
+- Converta período em datas: "agosto" = ${hoje.substring(0,4)}-08-01 a ${hoje.substring(0,4)}-08-31; "este mês" = do dia 1 até ${hoje}; "últimos 30 dias" = calcule.
+- Sem período explícito, deixe params vazio (o sistema usa o mês corrente).`;
+    const dec = await claudeFin(sysT, [{ role: 'user', content: mensagem.substring(0, 500) }], 400);
+    const j = JSON.parse(String(dec).replace(/```json|```/g, '').trim());
+    if (j.executar && TAREFAS_FIN[j.tarefa]) {
+      tarefaExecutada = await executarTarefaFin({ tarefa: j.tarefa, params: j.params || {} });
+    }
+  } catch (e) { console.warn('[gerente] decisão de tarefa:', e.message); }
+
+  const msgs = [...historico.slice(-10).map(h => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content || '').substring(0, 2000) })),
+    { role: 'user', content: mensagem.substring(0, 3000) + (tarefaExecutada ? `\n\n[O sistema já executou a operação solicitada. Resultado: ${tarefaExecutada.resumo}. Comente o resultado em até 80 palavras, apontando o que merece atenção. Não repita os números crus — interprete.]` : '') }];
   const resposta = await claudeFin(system, msgs, 1400);
-  return { resposta, contexto_resumo: { saldo: ctx.caixa.saldo, a_receber: ctx.caixa.a_receber, a_pagar: ctx.caixa.a_pagar, semaforo: ctx.saude.semaforo, qb: ctx.quickbooks.conectado } };
+  return { resposta, tarefa: tarefaExecutada,
+    contexto_resumo: { saldo: ctx.caixa.saldo, a_receber: ctx.caixa.a_receber, a_pagar: ctx.caixa.a_pagar, semaforo: ctx.saude.semaforo, qb: ctx.quickbooks.conectado } };
 }
-async function dashboardFinanceiro({ mes, ano } = {}) {
-  const ctx = await contextoFinanceiro({ mes, ano });
+async function dashboardFinanceiro({ mes, ano, conta_id = null } = {}) {
+  const ctx = await contextoFinanceiro({ mes, ano, conta_id });
   return { dashboard: ctx, gerado_em: new Date().toISOString(), periodo: ctx.periodo || null };
 }
 
@@ -1820,6 +1921,7 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
   let saldoInicialData = null;
   let saldoInicialOrigem = 'zero';
   let saldoInicialDetalhe = null;
+  let saldoInicialConferencia = null; // v1.66
   try {
     const sql = await getSql();
     const rows = await sql`SELECT * FROM saldos_iniciais WHERE data_ref <= ${ini} ORDER BY data_ref DESC LIMIT 1`;
@@ -1860,6 +1962,28 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
       saldoInicial = saldoAberturaBS;
       saldoInicialData = ini;
       saldoInicialOrigem = 'balanco_patrimonial';
+      // v1.66: CONFERÊNCIA — o saldo inicial precisa bater com o saldo contábil da conta
+      // na data de início. Se não bater, a tela avisa em vez de mostrar número errado calado.
+      try {
+        if (conta_id) {
+          const sqlC = await getSql();
+          const cad = await sqlC`SELECT valor, data_ref FROM saldos_iniciais WHERE data_ref <= ${ini} ORDER BY data_ref DESC LIMIT 1`;
+          if (cad.length) {
+            const cadastrado = parseFloat(cad[0].valor);
+            const dataCad = String(cad[0].data_ref).split('T')[0];
+            if (dataCad === diaAnterior || dataCad === ini) {
+              const dif = round(saldoAberturaBS - cadastrado);
+              if (Math.abs(dif) > 1) {
+                saldoInicialConferencia = { cadastrado: round(cadastrado), calculado: saldoAberturaBS,
+                  diferenca: dif, data_base: dataCad,
+                  aviso: `O saldo inicial cadastrado (${cadastrado.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}) difere do saldo contábil do QuickBooks nesta data (${saldoAberturaBS.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}) em ${Math.abs(dif).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}. O extrato usa o do QuickBooks.` };
+              } else {
+                saldoInicialConferencia = { confere: true, cadastrado: round(cadastrado), calculado: saldoAberturaBS };
+              }
+            }
+          }
+        }
+      } catch (e) { console.warn('[extrato] conferência do saldo inicial:', e.message); }
       saldoInicialDetalhe = { saldo_abertura: saldoAberturaBS, data_base: diaAnterior,
         saldo_current_balance: saldoHoje != null ? round(saldoHoje) : null,
         truncado: _saldoAberturaTruncado,
@@ -1947,6 +2071,7 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
     saldo_inicial_data: saldoInicialData,
     saldo_inicial_origem: saldoInicialOrigem,     // v1.46
     saldo_inicial_detalhe: saldoInicialDetalhe,   // v1.46: base + movimento anterior
+    saldo_inicial_conferencia: saldoInicialConferencia, // v1.66: cadastrado x contábil
     saldo_final: saldo,
     total_entradas: entradas,
     total_saidas: saidas,
@@ -2455,7 +2580,7 @@ async function saldoInicialGet({ data_ref } = {}) {
 // 8. Motor de fluxo de caixa futuro mês a mês
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function fluxoFuturo({ meses = 12, overrides = {} } = {}) {
+async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {}) {
   const sql = await getSql();
   const hoje = new Date();
   const mesAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
@@ -2472,6 +2597,15 @@ async function fluxoFuturo({ meses = 12, overrides = {} } = {}) {
   // de onde vem o número (principalmente quando ele é negativo).
   let saldoAtual = 0;
   let origemSaldo = { fonte: 'nenhuma', contas: [], negativas: [], observacao: null };
+  // v1.68 FIX: o Fluxo Futuro usava o CurrentBalance das contas — a MESMA fonte que
+  // descobrimos (v1.57) estar contaminada por lançamentos de data futura. O Fluxo Detalhado
+  // já foi corrigido para usar a linha "Saldo inicial" do razão; este ficou para trás.
+  // Agora usa a mesma fonte oficial, e o CurrentBalance vira apenas reserva.
+  const hojeStrFF = hoje.toISOString().split('T')[0];
+  const ontemFF = new Date(hoje.getTime() - 86400000).toISOString().split('T')[0];
+  let saldoOficial = null;
+  try { saldoOficial = await qbSaldoContaNaData({ conta_id, data: ontemFF }); } catch (_) {}
+
   if (qbConfigurado()) {
     try {
       const { saldo_total, contas } = await qbSaldoContas();
@@ -2487,7 +2621,20 @@ async function fluxoFuturo({ meses = 12, overrides = {} } = {}) {
       }
     } catch (e) { origemSaldo.observacao = 'Falha ao ler contas do QuickBooks: ' + e.message; }
   }
-  if (saldoAtual === 0) {
+  // v1.68: o saldo do razão tem prioridade sobre o CurrentBalance
+  if (saldoOficial != null) {
+    const divergencia = round(saldoAtual - saldoOficial);
+    origemSaldo.saldo_current_balance = round(saldoAtual);
+    origemSaldo.saldo_razao = saldoOficial;
+    origemSaldo.divergencia = divergencia;
+    if (Math.abs(divergencia) > 1) {
+      origemSaldo.observacao = (origemSaldo.observacao ? origemSaldo.observacao + ' ' : '')
+        + `O saldo contábil do razão (${saldoOficial.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}) difere do CurrentBalance da API (${saldoAtual.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}) em ${Math.abs(divergencia).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} — normalmente por lançamentos com data futura. O fluxo usa o do razão.`;
+    }
+    saldoAtual = saldoOficial;
+    origemSaldo.fonte = 'razao_quickbooks';
+  }
+  if (saldoAtual === 0 && saldoOficial == null) {
     try {
       const { saldo, data_ref } = await saldoInicialGet({ data_ref: hoje.toISOString().split('T')[0] });
       saldoAtual = saldo;
@@ -2543,7 +2690,7 @@ async function fluxoFuturo({ meses = 12, overrides = {} } = {}) {
   let realizadoMesCorrente = { entradas: 0, saidas: 0 };
   try {
     const ini = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
-    const ext = await extratoConsolidado({ data_inicio: ini, data_fim: hoje.toISOString().split('T')[0], incluir_simulados: false });
+    const ext = await extratoConsolidado({ data_inicio: ini, data_fim: hoje.toISOString().split('T')[0], incluir_simulados: false, conta_id });
     realizadoMesCorrente = { entradas: ext.total_entradas || 0, saidas: ext.total_saidas || 0 };
   } catch (e) { console.warn('[fluxoFuturo] realizado do mês:', e.message); }
 
@@ -2665,7 +2812,7 @@ async function fluxoFuturo({ meses = 12, overrides = {} } = {}) {
 // 9. KPIs determinísticos de saúde
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function kpisSaude({ overrides = {} } = {}) {
+async function kpisSaude({ overrides = {}, conta_id = null } = {}) {
   const kpis = {
     saldo_caixa: 0,
     roi_pct: null,
@@ -2854,14 +3001,14 @@ function round(n, casas = 2) {
 // Score baseado em valor (peso 0.6) + data (peso 0.3) + descrição similar (0.1).
 // Lançamentos já aprovados não voltam à lista. Status: sugestao | aprovada | rejeitada.
 
-async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55 } = {}) {
+async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55, conta_id = null } = {}) {
   const sql = await getSql();
   const hoje = new Date().toISOString().split('T')[0];
   const ini = data_inicio || new Date(Date.now() - 60 * 86400 * 1000).toISOString().split('T')[0];
   const fim = data_fim || hoje;
 
   // 1. Buscar lançamentos REAIS (QB + simulados − ocultos) no período
-  const ext = await extratoConsolidado({ data_inicio: ini, data_fim: fim });
+  const ext = await extratoConsolidado({ conta_id, data_inicio: ini, data_fim: fim });
   const reais = ext.lancamentos || [];
 
   // 2. Já tem conciliação aprovada/rejeitada para algum deles?
@@ -3047,7 +3194,7 @@ async function conciliacaoRejeitar({ real_id, motivo } = {}) {
   return { id, status: 'rejeitada' };
 }
 
-async function conciliacaoStatus({ data_inicio, data_fim } = {}) {
+async function conciliacaoStatus({ data_inicio, data_fim, conta_id = null } = {}) {
   const sql = await getSql();
   const ini = data_inicio || new Date(Date.now() - 60*86400*1000).toISOString().split('T')[0];
   const fim = data_fim || new Date().toISOString().split('T')[0];
@@ -3230,12 +3377,13 @@ async function orcamentoConsolidado({ ano } = {}) {
 // 12. EXTRATO AGREGADO DIÁRIO / MENSAL
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function extratoDiario({ data_inicio, data_fim } = {}) {
+async function extratoDiario({ data_inicio, data_fim, conta_id = null } = {}) {
   const hoje = new Date().toISOString().split('T')[0];
   const ini = data_inicio || new Date(Date.now() - 30 * 86400 * 1000).toISOString().split('T')[0];
   const fim = data_fim || hoje;
 
-  const ext = await extratoConsolidado({ data_inicio: ini, data_fim: fim });
+  // v1.66: respeita o filtro de conta — o saldo inicial vem da mesma fonte oficial do extrato
+  const ext = await extratoConsolidado({ data_inicio: ini, data_fim: fim, conta_id });
 
   // Agregar por dia
   const porDia = {};
@@ -3281,6 +3429,9 @@ async function extratoDiario({ data_inicio, data_fim } = {}) {
   const totalSaidas = dias.reduce((s, d) => s + d.saidas, 0);
 
   return {
+    saldo_inicial: ext.saldo_inicial, saldo_inicial_origem: ext.saldo_inicial_origem,
+    saldo_inicial_detalhe: ext.saldo_inicial_detalhe, conta_id: conta_id || null,
+
     periodo: { data_inicio: ini, data_fim: fim },
     saldo_inicial: ext.saldo_inicial,
     saldo_final: round(saldoCorrente),
@@ -3290,12 +3441,12 @@ async function extratoDiario({ data_inicio, data_fim } = {}) {
   };
 }
 
-async function extratoMensal({ ano } = {}) {
+async function extratoMensal({ ano, conta_id = null } = {}) {
   const anoRef = ano || new Date().getFullYear();
   const inicio = `${anoRef}-01-01`;
   const fim = `${anoRef}-12-31`;
 
-  const ext = await extratoConsolidado({ data_inicio: inicio, data_fim: fim });
+  const ext = await extratoConsolidado({ data_inicio: inicio, data_fim: fim, conta_id });
 
   // Agregar por mês
   const porMes = {};
@@ -3333,6 +3484,9 @@ async function extratoMensal({ ano } = {}) {
 
   const meses = Object.values(porMes);
   return {
+    saldo_inicial: ext.saldo_inicial, saldo_inicial_origem: ext.saldo_inicial_origem,
+    saldo_inicial_detalhe: ext.saldo_inicial_detalhe, conta_id: conta_id || null,
+
     ano: anoRef,
     saldo_inicial: ext.saldo_inicial,
     saldo_final: round(saldoCorrente),
