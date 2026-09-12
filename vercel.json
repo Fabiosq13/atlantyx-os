@@ -37,6 +37,9 @@
     },
     "api/cnab.js": {
       "maxDuration": 30
+    },
+    "api/pmo.js": {
+      "maxDuration": 60
     }
   },
   "crons": [
