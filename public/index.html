@@ -3749,7 +3749,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div class="page" id="page-s3projetado">
     <div class="panel">
       <div class="ph"><div class="pt">Receita Projetada — Contratos + Projetos em Andamento</div><span class="tag on">Claude IA</span>
-        <button class="btn btn-gn" id="btnProj" onclick="gerarProjetado()" style="font-size:9px;padding:3px 8px;">&#9670; Gerar Projecao</button>
+        <select class="fsel contaFiltro" id="s3projetado_conta" style="font-size:11px;width:auto;max-width:200px;" onchange="gerarProjetado()"><option value="">Todas as contas</option></select>
+      <button class="btn btn-gn" id="btnProj" onclick="gerarProjetado()" style="font-size:9px;padding:3px 8px;">&#9670; Gerar Projecao</button>
       </div>
       <div class="pb">
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
@@ -3801,7 +3802,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
             <div class="fg" style="margin:0;"><label class="fl">Cliente</label><input class="fi" id="f_recCliente" placeholder="Nome do cliente"/></div>
             <div class="fg" style="margin:0;"><label class="fl">Valor</label><input class="fi" id="f_recValor" placeholder="R$X"/></div>
             <div class="fg" style="margin:0;"><label class="fl">Vencimento</label><input class="fi" id="f_recVenc" placeholder="DD/MM/AAAA"/></div>
-            <button class="btn btn-gn" style="margin-bottom:10px;" onclick="addReceber()">+ Adicionar</button>
+            <select class="fsel contaFiltro" id="s3receber_conta" style="font-size:11px;width:auto;max-width:200px;" onchange="syncReceberQB()"><option value="">Todas as contas</option></select>
+      <button class="btn btn-gn" style="margin-bottom:10px;" onclick="addReceber()">+ Adicionar</button>
           </div>
         </div>
       </div>
@@ -6735,6 +6737,7 @@ async function gerarAnaliseFin() {
 }
 
 async function gerarProjetado() {
+  popularSeletoresConta(); // v1.75
   const btn = document.getElementById('btnProj');
   if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
   const contratos = document.getElementById('f_contratos')?.value || '0';
@@ -6820,7 +6823,8 @@ async function marcarRecebido(i) {
   toast('Marcado como recebido! Metas atualizadas.', 'success');
 }
 
-async function syncReceberQB() { syncQuickBooks(); }
+async function syncReceberQB() {
+  popularSeletoresConta(); // v1.75 syncQuickBooks(); }
 
 async function initS3() {
   // Carregar contas a receber salvas
@@ -12725,13 +12729,13 @@ async function enriquecerLeads() {
       <div class="kpi gd"><div class="kl">Contas a Receber</div><div class="kv" id="s3_backlog">&mdash;</div><div class="ks">em aberto</div></div>
     </div>
 
-    <div class="kg k2">
-      <div class="panel">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:12px;align-items:start;">
+      <div class="panel" style="margin:0;">
         <div class="ph"><div class="pt">Indicadores de Saude Detalhados</div><span class="tag on">Deterministico</span></div>
         <div class="pb" id="s3RentPanel"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Clique em Calcular KPIs de Saude</div></div>
       </div>
-      <div class="panel">
-        <div class="ph"><div class="pt">Tributario + Compliance</div><button class="btn" style="font-size:9.5px;" onclick="abrirConfigTributos()">&#9881; Configurar</button></div>
+      <div class="panel" style="margin:0;">
+        <div class="ph"><div class="pt">Tributario + Compliance</div><button class="btn" style="font-size:9.5px;" onclick="abrirConfigTributos()" id="btnCfgTrib">&#9881; Configurar</button></div>
         <div class="pb" id="s3TribPanel">
           <div id="s3TribAviso" style="display:none;font-size:10.5px;color:var(--gold);background:rgba(245,185,75,.08);border:1px solid rgba(245,185,75,.3);border-radius:6px;padding:8px 10px;margin-bottom:10px;">&#9888; Nao configurado ainda &mdash; clique em <b>Configurar</b> para informar regime tributario, aliquotas e folha de pagamento. Sem isso, os campos abaixo ficam vazios (o sistema nao inventa valor de imposto).</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
@@ -14344,6 +14348,7 @@ function limparOverridesFluxo() {
 
 async function calcularKpisFinanceiros() {
   popularSeletoresConta(); // v1.67
+  await _tribCarregarDoBanco(); // v1.75: config vale em qualquer navegador
   const btn = event && event.target;
   if (btn && btn.disabled !== undefined) { btn.disabled = true; btn.textContent = 'Calculando...'; }
   try {
@@ -14358,8 +14363,27 @@ async function calcularKpisFinanceiros() {
 }
 
 // v1.20.7: configuração de tributos (localStorage — o sistema não inventa alíquota/regime)
+let _tribCache = null;
 function _tribConfig() {
+  if (_tribCache) return _tribCache;
   try { return JSON.parse(localStorage.getItem('atx:config_tributos') || 'null'); } catch(_) { return null; }
+}
+// v1.75: busca a configuração no BANCO (vale em qualquer navegador/máquina) e sincroniza
+// com o localStorage. Antes ficava só no navegador — trocar de máquina fazia a tela
+// pedir configuração já feita.
+async function _tribCarregarDoBanco() {
+  try {
+    const d = await finApi('config_get', { chave: 'tributos' });
+    if (d.valor) {
+      _tribCache = d.valor;
+      try { localStorage.setItem('atx:config_tributos', JSON.stringify(d.valor)); } catch(_) {}
+      return d.valor;
+    }
+    // se existe só no navegador, sobe para o banco (migração automática, uma vez)
+    const local = (() => { try { return JSON.parse(localStorage.getItem('atx:config_tributos') || 'null'); } catch(_) { return null; } })();
+    if (local) { await finApi('config_salvar', { chave: 'tributos', valor: local }); _tribCache = local; return local; }
+  } catch (_) {}
+  return null;
 }
 function abrirConfigTributos() {
   const c = _tribConfig() || {};
@@ -14371,6 +14395,11 @@ function abrirConfigTributos() {
   const folha = parseFloat((prompt('Folha de pagamento mensal (R$), para calcular o FGTS (8%):', c.folha ?? '0') || '0').replace(/\./g,'').replace(',','.'));
   const novo = { regime, aliq_das: isNaN(aliqDas) ? null : aliqDas, aliq_irpj: isNaN(aliqIrpjCsll) ? null : aliqIrpjCsll, aliq_iss: isNaN(aliqIss) ? 0 : aliqIss, folha: isNaN(folha) ? 0 : folha };
   try { localStorage.setItem('atx:config_tributos', JSON.stringify(novo)); } catch(_) {}
+  _tribCache = novo;
+  // v1.75: grava também no banco para valer em qualquer navegador
+  finApi('config_salvar', { chave: 'tributos', valor: novo })
+    .then(() => toast('Configuração salva (vale em qualquer navegador)', 'success'))
+    .catch(e => addLog('warn', '[Config] não salvou no banco: ' + e.message));
   toast('Configuração de tributos salva', 'success');
   if (_ultimoKpi) renderKpisSaude(_ultimoKpi);
 }
@@ -20888,7 +20917,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.74] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.75] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -20904,7 +20933,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.74';
+window.__ATX_BUILD_ID__ = 'ATX-v1.75';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
