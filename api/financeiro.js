@@ -1409,32 +1409,58 @@ async function qbSaldoContaNaData({ conta_id = null, data } = {}) {
   // TODAS as transações desde 2000 — o método que produzia os milhões. Como a tela abre sem
   // filtro por padrão, era esse o número errado que aparecia.
   // Agora, sem filtro, somamos o saldo de abertura de CADA conta pelo razão (fonte oficial).
+  // v1.76 FIX TIMEOUT: consultar o razão de CADA conta em série causava 504 (6 contas ×
+  // ~8s cada + espera). O Balanço Patrimonial traz TODAS as contas numa única requisição.
   if (!conta_id) {
     try {
       const token1 = await qbToken();
-      const dContas = await qbQuery(`select * from Account where AccountType = 'Bank' maxresults 100`, token1);
-      const contas = (dContas?.QueryResponse?.Account || []).filter(a => a.Active !== false);
-      if (contas.length) {
-        let total = 0, achadas = 0, faltaram = [];
-        for (const c of contas) {
-          const s = await qbSaldoContaNaData({ conta_id: c.Id, data });   // recursão com 1 conta
-          if (s != null) { total += s; achadas++; }
-          else faltaram.push(c.Name);
-          await qbEsperar(100);   // respeita o limite de requisições
+      const bs = await qbFetch(`/reports/BalanceSheet?date=${data}&accounting_method=Accrual&minorversion=65`, token1);
+      let totalBancos = null;
+      (function varrer(n) {
+        if (!n || totalBancos != null) return;
+        if (Array.isArray(n)) return n.forEach(varrer);
+        const cols = n.Summary?.ColData || n.Header?.ColData || n.ColData;
+        if (cols && cols.length >= 2) {
+          const nome = String(cols[0].value || '').toLowerCase().trim();
+          if (/^(total )?(bank accounts|contas banc|caixa e equivalentes|cash and cash equivalents)/.test(nome)) {
+            const v = parseFloat(String(cols[cols.length - 1].value || '').replace(/,/g, ''));
+            if (!isNaN(v)) totalBancos = Math.round(v * 100) / 100;
+          }
         }
-        if (achadas === contas.length) {
-          const val = round(total);
-          _cacheSaldoData.set(chave, val);
-          _ultimaOrigemSaldo = 'razao_soma_contas';
-          console.log(`[QB] Saldo de abertura em ${data} (todas as contas): ${val} — soma do razão de ${achadas} conta(s)`);
-          return val;
-        }
-        // Se alguma conta não respondeu, o total ficaria menor que o real: melhor não devolver
-        console.warn(`[QB] Saldo de abertura: ${faltaram.length} conta(s) sem resposta do razão (${faltaram.join(', ')}). Não devolvendo total parcial.`);
-        _ultimoErroSaldo = `razão não respondeu para: ${faltaram.join(', ')}`;
-        return null;
+        if (n.Rows?.Row) varrer(n.Rows.Row);
+      })(bs?.Rows?.Row || bs?.Rows);
+
+      if (totalBancos != null) {
+        _cacheSaldoData.set(chave, totalBancos);
+        _ultimaOrigemSaldo = 'balanco_patrimonial_total';
+        console.log(`[QB] Saldo em ${data} (todas as contas): ${totalBancos} — Balanço Patrimonial, 1 requisição`);
+        return totalBancos;
       }
-    } catch (e) { console.warn('[QB] saldo agregado pelo razão:', e.message); _ultimoErroSaldo = e.message; }
+      // Reserva: somar as linhas de conta bancária do próprio balanço
+      let soma = 0, achou = 0;
+      const dContas = await qbQuery(`select Id, Name from Account where AccountType = 'Bank' maxresults 100`, token1);
+      const nomes = (dContas?.QueryResponse?.Account || []).map(a => String(a.Name).toLowerCase().trim());
+      (function varrer2(n) {
+        if (!n) return;
+        if (Array.isArray(n)) return n.forEach(varrer2);
+        const cols = n.ColData;
+        if (cols && cols.length >= 2) {
+          const nome = String(cols[0].value || '').toLowerCase().trim();
+          if (nomes.includes(nome)) {
+            const v = parseFloat(String(cols[cols.length - 1].value || '').replace(/,/g, ''));
+            if (!isNaN(v)) { soma += v; achou++; }
+          }
+        }
+        if (n.Rows?.Row) varrer2(n.Rows.Row);
+      })(bs?.Rows?.Row || bs?.Rows);
+      if (achou) {
+        const val = round(soma);
+        _cacheSaldoData.set(chave, val);
+        _ultimaOrigemSaldo = 'balanco_soma_linhas';
+        console.log(`[QB] Saldo em ${data}: ${val} — soma de ${achou} conta(s) no Balanço`);
+        return val;
+      }
+    } catch (e) { console.warn('[QB] saldo pelo Balanço:', e.message); _ultimoErroSaldo = e.message; }
   }
 
   // FONTE PRIMÁRIA por conta — linha "Saldo inicial" do razão do QuickBooks
@@ -2264,9 +2290,34 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   const saldoCalculado = extrato.saldo_final || 0;
   const divergencia = saldoRealBanco != null ? round(saldoCalculado - saldoRealBanco) : null;
 
+  // ═══ v1.76: INDICADORES com a semântica definida pelo negócio ═══
+  // Saldo inicial   = saldo contábil do QuickBooks NA DATA "de" do filtro
+  // A receber       = créditos já recebidos no período + previstos a receber
+  // A pagar         = valor pago no período + a pagar do período
+  // Saldo projetado = saldo inicial + (receitas − despesas)
+  const lancPer = extrato.lancamentos || [];
+  const recebidoPeriodo = round(lancPer.filter(l => l.tipo === 'entrada').reduce((s, l) => s + l.valor, 0));
+  const pagoPeriodo     = round(lancPer.filter(l => l.tipo === 'saida').reduce((s, l) => s + l.valor, 0));
+  const aReceberFut = round((fut.recebiveis || []).reduce((s, l) => s + l.valor, 0));
+  const aPagarFut   = round((fut.pagaveis   || []).reduce((s, l) => s + l.valor, 0));
+  const totalReceitas = round(recebidoPeriodo + aReceberFut);
+  const totalDespesas = round(pagoPeriodo + aPagarFut);
+  const saldoInicialPer = extrato.saldo_inicial ?? 0;
+  const saldoProjetadoNovo = round(saldoInicialPer + totalReceitas - totalDespesas);
+  const fmtB = v => (v || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+
   return {
     hoje,
     periodo: { data_inicio: ini, data_fim: fim },
+    // v1.76
+    saldo_inicial: saldoInicialPer,
+    saldo_inicial_data: ini,
+    a_receber_total: totalReceitas,
+    a_receber_composicao: { recebido: recebidoPeriodo, previsto: aReceberFut, qtd_previstos: (fut.recebiveis||[]).length },
+    a_pagar_total: totalDespesas,
+    a_pagar_composicao: { pago: pagoPeriodo, a_pagar: aPagarFut, qtd_a_pagar: (fut.pagaveis||[]).length },
+    saldo_projetado: saldoProjetadoNovo,
+    saldo_projetado_formula: `${fmtB(saldoInicialPer)} + ${fmtB(totalReceitas)} − ${fmtB(totalDespesas)}`,
     // v1.50: conferência explícita
     saldo_real_banco: saldoRealBanco,
     contas_banco: contasBanco.map(c => ({ nome: c.nome, saldo: round(c.saldo) })),
