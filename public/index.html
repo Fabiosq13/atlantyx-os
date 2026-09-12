@@ -256,6 +256,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sbi s2" onclick="nav('s2studio',this)">&#9670; Studio Criativo</div>
       <div class="sbi s2" onclick="nav('s2img',this)">&#127912; Gerar Imagem <span class="nbx gn">Ideogram</span></div>
       <div class="sbi s2" onclick="nav('s2campanha',this)">&#9654; Nova Campanha</div>
+      <div class="sbi s2" onclick="nav('s2auto',this)">&#128260; Autocampanha <span class="nbx gd">7 dias</span></div>
       <div class="sbi s2" onclick="nav('s2kanban',this)">&#9632; Kanban Aprovacao <span class="nbx gd" id="kanbanCnt">0</span></div>
       <div class="sbi s2" onclick="nav('s2desempenho',this)">&#128200; Desempenho <span class="nbx gn">NEW</span></div>
       <div class="sg-sub">OUTBOUND</div>
@@ -3388,6 +3389,36 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div id="roteiroBox"><div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;font-size:11.5px;">Clique em <b>Montar roteiro</b>.<br><span style="font-size:10px;">O roteiro e montado com os leads que responderam positivamente ao contato.</span></div></div></div>
 </div>
 
+<!-- v1.74: AUTOCAMPANHA -->
+<div class="page" id="page-s2auto">
+  <div style="background:linear-gradient(135deg,rgba(245,185,75,.12),rgba(245,185,75,.03));border:1px solid rgba(245,185,75,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;">
+    <div style="font-family:var(--H);font-size:15px;font-weight:700">&#128260; Autocampanha</div>
+    <div style="font-size:10.5px;color:var(--t2);margin-top:2px">Olha os proximos dias e preenche so os horarios que estiverem vazios &middot; nunca sobrescreve o que ja esta agendado</div>
+  </div>
+  <div class="panel" style="margin-bottom:12px;">
+    <div class="ph"><div class="pt">Configuracao</div></div>
+    <div class="pb">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr) 1fr 1fr;gap:9px;margin-bottom:10px;">
+        <div class="fg" style="margin:0;"><label class="fl">Horario 1</label><input type="time" class="fi" id="ac_h1" value="08:30"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Horario 2</label><input type="time" class="fi" id="ac_h2" value="12:15"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Horario 3</label><input type="time" class="fi" id="ac_h3" value="17:30"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Dias a frente</label><input type="number" class="fi" id="ac_dias" value="7" min="1" max="30"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Fim de semana</label>
+          <select class="fsel" id="ac_fds" style="width:100%;"><option value="pular">Pular sab/dom</option><option value="incluir">Incluir</option></select></div>
+      </div>
+      <div class="fg" style="margin:0 0 10px;"><label class="fl">Tema base dos posts</label>
+        <input class="fi" id="ac_tema" value="dados, IA aplicada e eficiencia operacional para grandes empresas"/></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn" onclick="acPlanejar()" id="btnAcPlan">&#128269; Ver horarios vagos</button>
+        <button class="btn btn-p" onclick="acExecutar(true)" id="btnAcRasc">&#9998; Gerar rascunhos</button>
+        <button class="btn btn-gn" onclick="acExecutar(false)" id="btnAcExec">&#128228; Gerar e agendar</button>
+        <button class="btn" style="font-size:10px;margin-left:auto;" onclick="acSugerirHorarios()">&#128161; Sugerir horarios pelos meus dados</button>
+      </div>
+    </div>
+  </div>
+  <div id="acResultado"></div>
+</div>
+
 <div class="page" id="page-s3extrato">
     <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(34,211,163,.03));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Extrato Financeiro · Saldo Acumulado</div>
@@ -3931,7 +3962,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <div class="toast" id="toastEl"></div>
 <script>
 const LOGS=[];let logCount=0;
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -17411,6 +17442,98 @@ function _srExportarPdf() {
   _srImprimir();
 }
 
+// ═══ v1.74: AUTOCAMPANHA ═══
+async function mcApi(action, params = {}) {
+  const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action, ...params }) });
+  const raw = await r.text(); let d;
+  try { d = JSON.parse(raw); } catch { throw new Error('Resposta não-JSON (HTTP ' + r.status + ')'); }
+  if (d.success === false) throw new Error(d.error || 'falha');
+  return d;
+}
+function _acCfg() {
+  const h = ['ac_h1','ac_h2','ac_h3'].map(id => document.getElementById(id)?.value).filter(Boolean);
+  return { horarios: h, dias: parseInt(document.getElementById('ac_dias')?.value) || 7,
+    pular_fim_de_semana: document.getElementById('ac_fds')?.value !== 'incluir',
+    tema: document.getElementById('ac_tema')?.value || null,
+    blog_id: localStorage.getItem('atx:metricool_blog_id') || null };
+}
+async function acPlanejar() {
+  const btn = document.getElementById('btnAcPlan'); if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
+  const box = document.getElementById('acResultado');
+  try {
+    const c = _acCfg();
+    const d = await mcApi('autocampanha_planejar', c);
+    const p = d.plano;
+    const porDia = {};
+    p.vagos.forEach(v => (porDia[v.data] = porDia[v.data] || { vagos: [], ocupados: [] }).vagos.push(v.hora));
+    p.ja_agendados.forEach(v => { porDia[v.data] = porDia[v.data] || { vagos: [], ocupados: [] }; porDia[v.data].ocupados.push(v.hora); });
+    box.innerHTML = `<div class="panel"><div class="ph"><div class="pt">Agenda dos próximos ${p.dias} dias</div>
+      <span style="font-size:10px;color:var(--t2);">${p.resumo}</span></div><div class="pb">
+      ${p.erro_consulta ? `<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:7px;padding:9px;font-size:10.5px;margin-bottom:10px;">⚠ Não consegui ler a agenda do Metricool (${p.erro_consulta}). Os horários abaixo aparecem todos como vagos — confira antes de agendar, para não duplicar.</div>` : ''}
+      ${Object.entries(porDia).sort().map(([dia, v]) => {
+        const dt = new Date(dia + 'T12:00:00');
+        const sem = ['dom','seg','ter','qua','qui','sex','sáb'][dt.getDay()];
+        return `<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--bd);font-size:11px;">
+          <span style="font-family:var(--M);min-width:110px;">${dia.split('-').reverse().join('/')} <span style="color:var(--t3);">${sem}</span></span>
+          ${v.vagos.map(h => `<span style="background:rgba(34,211,163,.15);color:var(--green,#22d3a3);padding:2px 7px;border-radius:5px;font-family:var(--M);font-size:10px;">${h} vago</span>`).join('')}
+          ${v.ocupados.map(h => `<span style="background:var(--bg4);color:var(--t3);padding:2px 7px;border-radius:5px;font-family:var(--M);font-size:10px;">${h} ocupado</span>`).join('')}
+        </div>`; }).join('')}
+      <div style="margin-top:10px;font-size:10.5px;color:var(--t2);">Ao gerar, só os <b>vagos</b> são preenchidos.</div>
+      </div></div>`;
+  } catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:16px;font-size:11px;">Erro: ${e.message}</div></div>`; }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = '&#128269; Ver horarios vagos'; } }
+}
+async function acExecutar(rascunho) {
+  const c = _acCfg();
+  if (!rascunho && !confirm(`Vai gerar e AGENDAR posts nos horários vagos dos próximos ${c.dias} dias.\n\nOs textos são criados por IA e publicados automaticamente nas datas. Continuar?`)) return;
+  const btn = document.getElementById(rascunho ? 'btnAcRasc' : 'btnAcExec');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando...'; }
+  const box = document.getElementById('acResultado');
+  box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ Escrevendo os posts... isso leva alguns minutos.</div></div>';
+  try {
+    const d = await mcApi('autocampanha_executar', { ...c, apenas_rascunho: !!rascunho });
+    box.innerHTML = `<div class="panel"><div class="ph"><div class="pt">${rascunho ? '✎ Rascunhos gerados' : '📤 Posts agendados'}</div>
+      <span style="font-size:10px;color:var(--t2);">${d.resumo || ''}</span></div><div class="pb">
+      ${(d.erros||[]).length ? `<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:7px;padding:9px;font-size:10.5px;margin-bottom:10px;">${d.erros.length} falha(s):<br>${d.erros.slice(0,4).join('<br>')}</div>` : ''}
+      ${(d.posts||[]).map(p => `<div style="background:var(--bg4);border-radius:8px;padding:10px;margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t2);margin-bottom:5px;">
+          <span>📅 ${p.data.split('-').reverse().join('/')} (${p.dia_semana}) às <b>${p.hora}</b></span>
+          <span style="color:${p.status==='agendado'?'var(--green,#22d3a3)':'var(--gold)'};">${p.status}${p.angulo?' · '+p.angulo:''}</span></div>
+        <div style="font-size:11.5px;line-height:1.6;white-space:pre-wrap;">${(p.texto||'').replace(/</g,'&lt;')}</div>
+      </div>`).join('') || '<div style="color:var(--t3);text-align:center;padding:16px;">Nenhum post gerado.</div>'}
+      ${d.aviso ? `<div style="font-size:10.5px;color:var(--t2);">${d.aviso}</div>` : ''}
+      </div></div>`;
+    toast(d.resumo || 'Concluído', 'success');
+  } catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:16px;font-size:11px;">Erro: ${e.message}</div></div>`; }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = rascunho ? '&#9998; Gerar rascunhos' : '&#128228; Gerar e agendar'; } }
+}
+// Sugere horários a partir do desempenho real dos posts já publicados
+async function acSugerirHorarios() {
+  try {
+    toast('Analisando seus posts publicados...', 'success');
+    const d = await mcApi('metricas', { dias: 90 });
+    const posts = d.posts || d.metricas || [];
+    if (!posts.length) { alert('Ainda não há posts com métricas suficientes para sugerir horários.\n\nUse os horários padrão por enquanto: 08:30, 12:15 e 17:30. Depois de ~20 publicações, volte aqui que eu sugiro com base no seu público.'); return; }
+    const porHora = {};
+    posts.forEach(p => {
+      const dt = p.publicationDate?.dateTime || p.data || '';
+      const h = String(dt).substring(11,13);
+      if (!h) return;
+      const eng = (p.impressoes||p.impressions||0) + (p.engajamento||p.engagement||0) * 10;
+      porHora[h] = porHora[h] || { total:0, n:0 };
+      porHora[h].total += eng; porHora[h].n++;
+    });
+    const rank = Object.entries(porHora).filter(([,v]) => v.n >= 2)
+      .map(([h,v]) => ({ hora: h, media: Math.round(v.total/v.n), posts: v.n }))
+      .sort((a,b) => b.media - a.media);
+    if (rank.length < 3) { alert('Poucos horários diferentes testados até agora — não dá para comparar com segurança.\n\nSugestão: mantenha 08:30 / 12:15 / 17:30 por 3 semanas e volte aqui.'); return; }
+    alert('Seus 5 melhores horários (por engajamento médio):\n\n' +
+      rank.slice(0,5).map((r,i) => `${i+1}. ${r.hora}:00 — média ${r.media} (${r.posts} posts)`).join('\n') +
+      '\n\nOs 3 primeiros já foram preenchidos nos campos acima.');
+    ['ac_h1','ac_h2','ac_h3'].forEach((id,i) => { const e = document.getElementById(id); if (e && rank[i]) e.value = rank[i].hora + ':00'; });
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+
 // ═══ v1.71: ORGANOGRAMA VISUAL EDITÁVEL ═══
 let _orgModo = 'lista', _orgZoom = 1, _orgCargos = [], _orgPos = {};
 function orgAlternarModo() {
@@ -20765,7 +20888,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.73] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.74] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -20781,7 +20904,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.73';
+window.__ATX_BUILD_ID__ = 'ATX-v1.74';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
