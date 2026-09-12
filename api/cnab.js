@@ -19,12 +19,35 @@ async function getSql() {
   return _sql;
 }
 async function ensureTabelas(sql) {
-  // Dados bancários do fornecedor ficam na própria despesa programada
-  for (const col of [
+  // v1.73 FIX: a migração falhava em silêncio (o catch engolia o erro) e a tela quebrava
+  // depois com "column d.forn_cnpj_cpf does not exist". Agora conferimos se a coluna existe
+  // de fato e, se a criação falhar, o erro sobe com uma mensagem que diz o que fazer.
+  const colunas = [
     'forn_cnpj_cpf TEXT', 'forn_banco TEXT', 'forn_agencia TEXT', 'forn_conta TEXT',
     'forn_conta_dac TEXT', 'forn_tipo_conta TEXT', 'forn_codigo_barras TEXT', 'forma_pagamento TEXT',
-  ]) {
-    try { await sql.query(`ALTER TABLE despesas_programadas ADD COLUMN IF NOT EXISTS ${col}`); } catch (e) { console.warn('[CNAB] migração:', e.message); }
+  ];
+  const falhas = [];
+  for (const col of colunas) {
+    const nome = col.split(' ')[0];
+    try {
+      await sql.query(`ALTER TABLE despesas_programadas ADD COLUMN IF NOT EXISTS ${col}`);
+    } catch (e) { falhas.push(`${nome}: ${e.message}`); }
+  }
+  // Confere no catálogo do banco se as colunas realmente existem
+  try {
+    const existentes = await sql`SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'despesas_programadas'`;
+    const tem = new Set(existentes.map(r => r.column_name));
+    const faltando = colunas.map(c => c.split(' ')[0]).filter(n => !tem.has(n));
+    if (faltando.length) {
+      const err = new Error(`A tabela despesas_programadas está sem as colunas: ${faltando.join(', ')}.`);
+      err.dica = 'Rode no banco: ' + faltando.map(n => `ALTER TABLE despesas_programadas ADD COLUMN IF NOT EXISTS ${n} TEXT;`).join(' ')
+        + (falhas.length ? ' Erro original: ' + falhas[0] : '');
+      throw err;
+    }
+  } catch (e) {
+    if (e.dica) throw e;
+    console.warn('[CNAB] verificação de colunas:', e.message);
   }
   await sql`CREATE TABLE IF NOT EXISTS cnab_remessas (
     id TEXT PRIMARY KEY,
