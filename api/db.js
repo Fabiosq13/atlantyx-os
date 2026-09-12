@@ -358,7 +358,49 @@ export default async function handler(req, res) {
       const rr = await fetch('https://api.anthropic.com/v1/messages', { method:'POST', headers:{ 'Content-Type':'application/json', 'x-api-key':process.env.ANTHROPIC_API_KEY, 'anthropic-version':'2023-06-01' }, body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6', max_tokens: 1400, system, messages: msgs }) });
       const dd = await rr.json().catch(() => ({}));
       if (!rr.ok) return res.status(400).json({ success: false, error: 'Claude API [' + rr.status + ']: ' + (dd.error?.message || 'erro') });
-      return res.status(200).json({ success: true, resposta: dd.content?.[0]?.text || '', contexto_resumo: { campanhas_ativas: ctx.campanhas.ativas, leads: ctx.leads_ultimos_100.total } });
+      // v1.71: se a mensagem for uma ORDEM (ex.: "crie campanha com briefing X"), executa e devolve o link
+      let tarefaMkt = null;
+      try {
+        const hojeM = new Date().toISOString().split('T')[0];
+        const sysT = `Decida se a mensagem é uma ORDEM para executar uma operação de marketing.
+Hoje é ${hojeM}.
+
+TAREFAS:
+- criar_campanha: criar uma campanha a partir de um briefing (params: nome, canal, objetivo, publico, briefing, data_inicio, data_fim)
+- listar_campanhas: mostrar as campanhas e o status de cada uma
+- analisar_funil: analisar o funil dos últimos dias
+
+Devolva SOMENTE JSON: {"executar":true|false,"tarefa":"id ou null","params":{...}}
+- executar=true só quando o usuário PEDE a operação ("crie uma campanha para X", "rode a análise do funil").
+- Pergunta de opinião ("o que acha das campanhas?") → executar=false.
+- Em criar_campanha: extraia o nome (se não houver, invente um curto e descritivo a partir do briefing), o canal citado (linkedin, email, instagram, google, evento) e o briefing completo que o usuário escreveu.`;
+        const rt = await fetch('https://api.anthropic.com/v1/messages', { method:'POST', headers:{ 'Content-Type':'application/json', 'x-api-key':process.env.ANTHROPIC_API_KEY, 'anthropic-version':'2023-06-01' },
+          body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6', max_tokens: 500, system: sysT, messages: [{ role:'user', content: String(mensagem).substring(0,600) }] }) });
+        const dt = await rt.json().catch(() => ({}));
+        const j = JSON.parse(String(dt.content?.[0]?.text || '{}').replace(/```json|```/g,'').trim());
+        if (j.executar && j.tarefa === 'criar_campanha') {
+          const p = j.params || {};
+          const canaisOk = ['linkedin','email','instagram','facebook','google','evento','whatsapp','outbound'];
+          const canal = canaisOk.includes(String(p.canal||'').toLowerCase()) ? String(p.canal).toLowerCase() : 'linkedin';
+          const idC = 'camp_' + Date.now().toString(36);
+          await sql`INSERT INTO campanhas (id, nome, canal, status, ativa, objetivo, publico_alvo, briefing, data_inicio, data_fim, criado_em, atualizado_em)
+            VALUES (${idC}, ${p.nome || 'Campanha ' + hojeM}, ${canal}, 'rascunho', false, ${p.objetivo || null},
+              ${p.publico || null}, ${p.briefing || String(mensagem).substring(0,2000)}, ${p.data_inicio || null}, ${p.data_fim || null}, NOW(), NOW())
+            ON CONFLICT (id) DO NOTHING`;
+          tarefaMkt = { tarefa:'criar_campanha', resumo: `Campanha "${p.nome || 'nova'}" criada no canal ${canal}, em rascunho — revise antes de ativar.`,
+            numeros: { canal, status: 'rascunho' }, tela: 's2kanban', filtros: {}, campanha_id: idC };
+        } else if (j.executar && j.tarefa === 'listar_campanhas') {
+          tarefaMkt = { tarefa:'listar_campanhas', resumo: `${ctx.campanhas.total} campanha(s), ${ctx.campanhas.ativas} ativa(s).`,
+            numeros: { total: ctx.campanhas.total, ativas: ctx.campanhas.ativas }, tela: 's2kanban', filtros: {} };
+        } else if (j.executar && j.tarefa === 'analisar_funil') {
+          const fu = ctx.funil_ultimos_14_dias;
+          tarefaMkt = { tarefa:'analisar_funil', resumo: `Funil 14 dias: ${fu.contatos} contatos → ${fu.respostas} respostas → ${fu.reunioes_marcadas} reuniões → ${fu.fechamentos} fechamentos.`,
+            numeros: fu, tela: 's2desempenho', filtros: {} };
+        }
+      } catch (e) { console.warn('[gerente mkt] tarefa:', e.message); }
+
+      return res.status(200).json({ success: true, resposta: dd.content?.[0]?.text || '', tarefa: tarefaMkt,
+        contexto_resumo: { campanhas_ativas: ctx.campanhas.ativas, leads: ctx.leads_ultimos_100.total } });
     }
 
         return res.status(400).json({ error: 'Ação inválida: ' + action });
