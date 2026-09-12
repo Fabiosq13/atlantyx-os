@@ -17823,8 +17823,12 @@ let _qaResultados = [], _qaErrosJs = [], _qaRodando = false;
 })();
 
 function _qaTelas() {
-  // Todas as páginas, na ordem do menu
+  // v1.73: marca as páginas que NÃO têm item de menu — são telas órfãs (legado), e não
+  // faz sentido cobrá-las como se estivessem quebradas: ninguém chega nelas pela navegação.
+  const noMenu = new Set([...document.querySelectorAll('[onclick*="nav("]')]
+    .map(e => (e.getAttribute('onclick').match(/nav\('([\w]+)'/) || [])[1]).filter(Boolean));
   return [...document.querySelectorAll('.page')].map(p => ({
+    semMenu: !noMenu.has(p.id.replace('page-','')),
     id: p.id.replace('page-',''),
     el: p,
     titulo: (p.querySelector('[style*="font-family:var(--H)"]')?.textContent
@@ -17844,11 +17848,18 @@ function _qaAnalisar(tela) {
   // 1. TELA VAZIA / PRETA — o erro mais grave
   const texto = (p.textContent || '').trim();
   const visiveis = [...p.querySelectorAll('div,table,button,input,canvas,svg,img')].filter(_qaVisivel);
-  if (texto.length < 25) add('alta','tela_vazia','Tela praticamente vazia — nada renderizou','Menos de 25 caracteres visíveis. Costuma ser erro no carregamento dos dados.');
+  if (tela.semMenu) {
+    add('baixa','tela_orfa','Tela sem item de menu — nenhuma navegação leva até ela (provável legado)',
+      'Se não é mais usada, pode ser removida; se deveria estar no menu, falta o item.');
+  } else if (texto.length < 25) add('alta','tela_vazia','Tela praticamente vazia — nada renderizou','Menos de 25 caracteres visíveis. Costuma ser erro no carregamento dos dados.');
   else if (visiveis.length < 3) add('alta','tela_vazia','Quase nenhum elemento visível na tela', visiveis.length + ' elemento(s) com dimensão > 0');
 
   // 2. MENSAGEM DE ERRO NA TELA
-  const erroTxt = texto.match(/(Erro:[^\n]{0,120}|falhou[^\n]{0,80}|não foi possível[^\n]{0,80}|undefined|NaN|\[object Object\])/i);
+  // v1.73 FIX: a regex antiga tinha /i e NaN sem delimitador — "fiNANceiro" disparava o alerta,
+  // poluindo ~20 telas com falso positivo. Agora exige palavra inteira.
+  // v1.73.1: textContent junta elementos sem espaço ("CNABErro:"), então \b antes de "Erro"
+  // nunca casava. Usamos "Erro\s*:" que funciona colado ou separado.
+  const erroTxt = texto.match(/(Erro\s*:[^\n]{0,120}|\bfalhou\b[^\n]{0,80}|não foi possível[^\n]{0,80}|\bundefined\b|\bNaN\b|\[object Object\])/);
   if (erroTxt) {
     const t = erroTxt[0];
     add(/undefined|NaN|\[object Object\]/.test(t) ? 'alta' : 'media', 'erro_na_tela',
@@ -17885,10 +17896,25 @@ function _qaAnalisar(tela) {
     if (!valor || valor === '—' || valor === '-') kpisVazios.push(label);
     else if (/^(R\$\s*)?0(,00)?$/.test(valor.replace(/\s/g,''))) kpisZerados.push(label + ' = ' + valor);
   });
-  if (kpisVazios.length) add(kpisVazios.length === kpis.length ? 'alta' : 'media', 'kpi_vazio',
-    `${kpisVazios.length} de ${kpis.length} indicador(es) sem valor`, kpisVazios.slice(0,5).join(' · '));
-  if (kpisZerados.length >= 2) add('media','kpi_zerado',
-    `${kpisZerados.length} indicador(es) zerados — conferir se é real`, kpisZerados.slice(0,5).join(' · '));
+  // v1.73: distinguir "não carregou" de "tela que só carrega ao clicar num botão".
+  // Se a tela tem botão de ação e nenhum dado, provavelmente é operação sob demanda — não é erro.
+  const temBotaoAcao = !![...p.querySelectorAll('button')].find(b => _qaVisivel(b) &&
+    /calcular|gerar|buscar|carregar|analisar|montar|rodar|consultar|processar/i.test(b.textContent||''));
+  if (kpisVazios.length) {
+    const todosVazios = kpisVazios.length === kpis.length;
+    add(todosVazios && !temBotaoAcao ? 'alta' : 'media', 'kpi_vazio',
+      `${kpisVazios.length} de ${kpis.length} indicador(es) sem valor` + (temBotaoAcao ? ' (tela carrega sob demanda)' : ''),
+      kpisVazios.slice(0,5).join(' · '));
+  }
+  // v1.73: tela de módulo ainda sem uso (tudo zerado + nenhuma linha em tabela) não é defeito
+  const temDados = [...p.querySelectorAll('tbody tr')].some(_qaVisivel);
+  if (kpisZerados.length >= 2) {
+    const moduloVazio = kpisZerados.length === kpis.length && !temDados;
+    add(moduloVazio ? 'baixa' : 'media', 'kpi_zerado',
+      moduloVazio ? `Módulo ainda sem dados cadastrados (${kpisZerados.length} indicadores em zero)`
+                  : `${kpisZerados.length} indicador(es) zerados — conferir se é real`,
+      kpisZerados.slice(0,5).join(' · '));
+  }
 
   // 6. TABELAS VAZIAS
   const tabelas = [...p.querySelectorAll('table')].filter(_qaVisivel);
@@ -17987,7 +18013,7 @@ async function qaRodarTudo() {
     errosNaTela.forEach(e => probs.push({ gravidade:'alta', tipo:'erro_js', msg:'Erro de JavaScript ao abrir a tela', detalhe: e.msg.substring(0,140) }));
     _qaResultados.push({ tela: tela.id, titulo: tela.titulo, problemas: probs,
       ok: probs.length === 0,
-      gravidade: probs.some(p=>p.gravidade==='alta') ? 'alta' : probs.length ? 'media' : 'ok' });
+      gravidade: probs.some(p=>p.gravidade==='alta') ? 'alta' : probs.some(p=>p.gravidade==='media') ? 'media' : probs.length ? 'baixa' : 'ok' });
   }
   nav(telaAtual);
   _qaRodando = false;
@@ -18005,8 +18031,8 @@ function _qaRenderizar(segundos) {
   u('qa_medios', r.filter(x=>x.gravidade==='media').length);
   u('qa_ok', r.filter(x=>x.ok).length);
   u('qa_tempo', segundos ? `concluído em ${segundos}s` : '');
-  const cor = g => g==='alta'?'var(--red)':g==='media'?'var(--gold)':'var(--green,#22d3a3)';
-  const ico = g => g==='alta'?'🔴':g==='media'?'🟡':'🟢';
+  const cor = g => g==='alta'?'var(--red)':g==='media'?'var(--gold)':g==='baixa'?'var(--t3)':'var(--green,#22d3a3)';
+  const ico = g => g==='alta'?'🔴':g==='media'?'🟡':g==='baixa'?'⚪':'🟢';
   const comProblema = r.filter(x=>!x.ok).sort((a,b)=>(b.gravidade==='alta')-(a.gravidade==='alta'));
   const box = document.getElementById('qaResultado');
   box.innerHTML = `
@@ -20739,7 +20765,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.72] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.73] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -20755,7 +20781,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.72';
+window.__ATX_BUILD_ID__ = 'ATX-v1.73';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
