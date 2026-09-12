@@ -44,7 +44,7 @@ async function autoCampanhaConfig({ salvar } = {}) {
 // Consulta o Metricool para saber quais horários já têm post agendado
 async function _slotsOcupados({ de, ate, blogId }) {
   try {
-    const TOKEN = process.env.METRICOOL_TOKEN, USERID = process.env.METRICOOL_USER_ID;
+    const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID;
     const BLOGID = blogId || process.env.METRICOOL_BLOG_ID;
     const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${de.replace(/-/g,'')}0000&end=${ate.replace(/-/g,'')}2359`, TOKEN);
     const lista = Array.isArray(r) ? r : (r?.data || r?.posts || []);
@@ -108,6 +108,28 @@ async function autoCampanhaExecutar({ dias, horarios, pular_fim_de_semana, tema,
   const alvos = plano.vagos.slice(0, parseInt(limite) || 21);
   if (!alvos.length) return { criados: 0, plano, aviso: 'Nenhum horário vago — a agenda já está completa no período.' };
 
+  // v1.77: confere as credenciais ANTES de gerar os textos. Sem isso, o sistema gastava
+  // minutos escrevendo 21 posts com IA para depois falhar com 401 em todos.
+  if (!apenas_rascunho) {
+    const T = process.env.METRICOOL_USER_TOKEN, U = process.env.METRICOOL_USER_ID;
+    const B = blog_id || process.env.METRICOOL_BLOG_ID;
+    if (!T || !U || !B) {
+      const faltando = [!T && 'METRICOOL_USER_TOKEN', !U && 'METRICOOL_USER_ID', !B && 'METRICOOL_BLOG_ID'].filter(Boolean);
+      const err = new Error('Credenciais do Metricool ausentes: ' + faltando.join(', '));
+      err.dica = 'Configure no Vercel (Settings → Environment Variables) e faça o redeploy.';
+      throw err;
+    }
+    try {
+      await mc(`/v2/scheduler/posts?userId=${U}&blogId=${B}&start=${new Date().toISOString().substring(0,10).replace(/-/g,'')}0000&end=${new Date().toISOString().substring(0,10).replace(/-/g,'')}2359`, T);
+    } catch (e) {
+      if (/401|Authentication/i.test(e.message)) {
+        const err = new Error('O Metricool recusou a autenticação (401). Nada foi gerado.');
+        err.dica = 'Confira METRICOOL_USER_TOKEN, METRICOOL_USER_ID e METRICOOL_BLOG_ID no Vercel. O token é o "User Token" da conta, não a chave da API.';
+        throw err;
+      }
+    }
+  }
+
   const temaBase = tema || cfg.tema_base;
   const redesAlvo = (Array.isArray(redes) && redes.length ? redes : cfg.redes);
   const criados = [], erros = [];
@@ -138,13 +160,14 @@ Evite repetir o mesmo ângulo de outros posts da semana.`;
         criados.push({ ...slot, texto: j.texto, angulo: j.angulo, status: 'rascunho' });
       } else {
         const quando = `${slot.data}T${slot.hora}:00`;
-        const TOKEN = process.env.METRICOOL_TOKEN, USERID = process.env.METRICOOL_USER_ID;
+        const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID;
         const BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
+        // v1.77: alinhado ao publicador que já funciona — redes em MAIÚSCULO e data sem timezone no texto
         const body = {
           text: j.texto,
-          providers: redesAlvo.map(n => ({ network: n })),
+          providers: redesAlvo.map(n => ({ network: String(n).toUpperCase() })),
           publicationDate: { dateTime: quando, timezone: 'America/Sao_Paulo' },
-          autoPublish: true, draft: false,
+          autoPublish: true, shortener: false, draft: false,
         };
         const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
         criados.push({ ...slot, texto: j.texto, angulo: j.angulo, status: 'agendado', metricool_id: r?.id || r?.data?.id || null });
