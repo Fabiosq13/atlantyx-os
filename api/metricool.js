@@ -107,6 +107,38 @@ export default async function handler(req, res) {
         };
         console.log('[metricool publicar] payload:', JSON.stringify({ tipo, providers: body.providers, nMidias: (body.media||[]).length, temImagem: !!imagem_url, imagem: (imagem_url||'').substring(0,80), quando: body.publicationDate.dateTime }));
 
+        // v1.68: VALIDA A MÍDIA ANTES DE PUBLICAR. O Metricool precisa baixar a imagem/vídeo
+        // de uma URL pública — se ela estiver fora do ar, exigir login ou devolver HTML em vez
+        // de imagem, ele recusa o post com erro genérico. Conferir antes dá um erro claro.
+        const midias = body.media || [];
+        if (midias.length) {
+          const problemas = [];
+          for (const url of midias.slice(0, 10)) {
+            if (!/^https:\/\//i.test(url)) { problemas.push(`${url.substring(0,60)} — precisa ser HTTPS público`); continue; }
+            try {
+              const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), 12000);
+              let resp = await fetch(url, { method: 'HEAD', signal: ctrl.signal });
+              if (resp.status === 405 || resp.status === 501) resp = await fetch(url, { method: 'GET', signal: ctrl.signal, headers: { Range: 'bytes=0-1024' } });
+              clearTimeout(tm);
+              const ct = (resp.headers.get('content-type') || '').toLowerCase();
+              const tam = parseInt(resp.headers.get('content-length') || '0');
+              if (!resp.ok) problemas.push(`${url.substring(0,60)} — HTTP ${resp.status} (o Metricool não consegue baixar)`);
+              else if (ct.includes('text/html')) problemas.push(`${url.substring(0,60)} — devolveu HTML em vez de mídia (link de página, não do arquivo?)`);
+              else if (tipo === 'REEL' && !ct.includes('video')) problemas.push(`${url.substring(0,60)} — Reel exige vídeo MP4, veio "${ct}"`);
+              else if (tipo !== 'REEL' && ct && !ct.includes('image')) problemas.push(`${url.substring(0,60)} — esperado imagem, veio "${ct}"`);
+              else if (tam && tam < 1024) problemas.push(`${url.substring(0,60)} — arquivo muito pequeno (${tam} bytes), pode estar corrompido`);
+            } catch (e) {
+              problemas.push(`${url.substring(0,60)} — inacessível (${e.name === 'AbortError' ? 'tempo esgotado' : e.message})`);
+            }
+          }
+          if (problemas.length) {
+            const err = new Error('A(s) mídia(s) não estão acessíveis publicamente, e o Metricool precisa baixá-las para publicar:\n• ' + problemas.join('\n• '));
+            err.midias_com_problema = problemas;
+            err.dica = 'Confira se MEDIA_PUBLIC_BASE aponta para o domínio público correto e se o arquivo abre numa aba anônima do navegador.';
+            throw err;
+          }
+        }
+
         const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
         return {
           publicado: true,
@@ -301,7 +333,15 @@ async function mc(path, token, method = 'GET', body = null) {
   const raw = await r.text();
   let d;
   try { d = JSON.parse(raw); } catch { d = { raw: raw.substring(0, 300) }; }
-  if (!r.ok) throw new Error(`Metricool HTTP ${r.status}: ${d?.error?.message || d?.message || raw.substring(0, 200)}`);
+  if (!r.ok) {
+    // v1.68: mensagem do Metricool costuma vir em campos diferentes — mostrar o que houver
+    const det = d?.error?.message || d?.message || d?.detail || d?.errors?.[0]?.message
+      || (Array.isArray(d?.errors) ? JSON.stringify(d.errors).substring(0, 200) : null)
+      || raw.substring(0, 300);
+    const err = new Error(`Metricool HTTP ${r.status}: ${det}`);
+    if (/media|image|video|file/i.test(det)) err.dica = 'O erro menciona mídia: confirme que a URL da imagem/vídeo é pública e abre fora do sistema.';
+    throw err;
+  }
   return d;
 }
 
