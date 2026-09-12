@@ -76,6 +76,8 @@ export default async function handler(req, res) {
       qb_excluir_lancamento: () => qbExcluirLancamento(params),
       qb_razao_conta:        () => qbRazaoConta(params),
       executar_tarefa:       () => executarTarefaFin(params),
+      config_get:            () => configAppGet(params),
+      config_salvar:         () => configAppSalvar(params),
       listar_tarefas:        () => ({ tarefas: Object.entries(TAREFAS_FIN).map(([k,v]) => ({ id:k, descricao:v.descricao, params:v.params })) }),
       qb_rastrear_duplicados: () => qbRastrearDuplicados(params),
       qb_varrer_duplicados:  () => qbVarrerDuplicados(params),
@@ -471,6 +473,33 @@ const TAREFAS_FIN = {
   },
 };
 function fmtBR(v) { return (typeof v === 'number' ? v : 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' }); }
+
+// v1.75: configurações do app no BANCO, não só no navegador.
+// Antes ficavam em localStorage: mudar de navegador, limpar cache ou abrir em outra máquina
+// fazia a tela pedir a configuração de novo, mesmo já tendo sido feita.
+async function configAppGet({ chave } = {}) {
+  const sql = await getSql();
+  await sql`CREATE TABLE IF NOT EXISTS app_config (
+    chave TEXT PRIMARY KEY, valor JSONB, atualizado_em TIMESTAMPTZ DEFAULT NOW()
+  )`;
+  if (chave) {
+    const r = await sql`SELECT valor FROM app_config WHERE chave = ${chave} LIMIT 1`;
+    return { chave, valor: r[0]?.valor ?? null };
+  }
+  const rows = await sql`SELECT chave, valor FROM app_config`;
+  const out = {}; rows.forEach(r => out[r.chave] = r.valor);
+  return { configs: out };
+}
+async function configAppSalvar({ chave, valor } = {}) {
+  if (!chave) throw new Error('chave obrigatória');
+  const sql = await getSql();
+  await sql`CREATE TABLE IF NOT EXISTS app_config (
+    chave TEXT PRIMARY KEY, valor JSONB, atualizado_em TIMESTAMPTZ DEFAULT NOW()
+  )`;
+  await sql`INSERT INTO app_config (chave, valor, atualizado_em) VALUES (${chave}, ${JSON.stringify(valor ?? null)}, NOW())
+    ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = NOW()`;
+  return { salvo: true, chave };
+}
 
 async function executarTarefaFin({ tarefa, params = {} } = {}) {
   const t = TAREFAS_FIN[tarefa];
