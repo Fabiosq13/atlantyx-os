@@ -17995,7 +17995,7 @@ function ceoExportarAgenda() {
 }
 
 // ═══ v1.69: AGENTE DE QA VISUAL — testa cada tela no navegador ═══
-let _qaResultados = [], _qaErrosJs = [], _qaRodando = false;
+let _qaResultados = [], _qaErrosJs = [], _qaRodando = false, _qaTotalTelas = 0;
 
 // Captura erros de JS durante a varredura (não some no console)
 (function(){
@@ -18029,7 +18029,10 @@ function _qaAnalisar(tela) {
   // 1. TELA VAZIA / PRETA — o erro mais grave
   const texto = (p.textContent || '').trim();
   const visiveis = [...p.querySelectorAll('div,table,button,input,canvas,svg,img')].filter(_qaVisivel);
-  if (tela.semMenu) {
+  if (tela._naoAbriu) {
+    add('media','nao_abriu','A navegação não conseguiu abrir esta tela para o teste',
+      'Pode ser erro no carregamento ou a tela depende de uma ação anterior. Abra manualmente para conferir.');
+  } else if (tela.semMenu) {
     add('baixa','tela_orfa','Tela sem item de menu — nenhuma navegação leva até ela (provável legado)',
       'Se não é mais usada, pode ser removida; se deveria estar no menu, falta o item.');
   } else if (texto.length < 25) add('alta','tela_vazia','Tela praticamente vazia — nada renderizou','Menos de 25 caracteres visíveis. Costuma ser erro no carregamento dos dados.');
@@ -18176,6 +18179,7 @@ async function qaRodarTudo() {
   const t0 = Date.now();
   const telaAtual = [...document.querySelectorAll('.page.active')][0]?.id?.replace('page-','') || 's6qa';
   const telas = _qaTelas().filter(t => t.id !== 's6qa');
+  _qaTotalTelas = telas.length; // v1.78
   const prog = document.getElementById('qaProgresso');
   if (prog) prog.style.display = 'block';
 
@@ -18188,8 +18192,23 @@ async function qaRodarTudo() {
     try {
       nav(tela.id);                              // abre a tela (dispara o carregamento dos dados)
       await new Promise(r => setTimeout(r, carregarDados ? 2200 : 350));
+      // v1.78: confirma que a tela ficou ativa. Se a navegação não pegou, medir dá
+      // "0 elementos visíveis" e vira falso positivo de tela vazia.
+      if (!tela.el.classList.contains('active')) {
+        await new Promise(r => setTimeout(r, 600));
+        if (!tela.el.classList.contains('active')) tela._naoAbriu = true;
+      }
     } catch (e) { _qaErrosJs.push({ msg: 'Falha ao abrir a tela: ' + e.message, tela: tela.id }); }
-    const probs = _qaAnalisar(tela);
+    // v1.78: a análise também precisa de proteção. Antes, um erro aqui matava o loop
+    // inteiro — a varredura parava na tela problemática e o relatório saía truncado
+    // (7 de 85 telas, no seu caso), dando a impressão de que o resto estava OK.
+    let probs = [];
+    try {
+      probs = _qaAnalisar(tela);
+    } catch (e) {
+      probs = [{ gravidade:'alta', tipo:'erro_na_analise',
+        msg:'O QA não conseguiu analisar esta tela', detalhe: (e.message||String(e)).substring(0,140) }];
+    }
     const errosNaTela = _qaErrosJs.slice(errosAntes);
     errosNaTela.forEach(e => probs.push({ gravidade:'alta', tipo:'erro_js', msg:'Erro de JavaScript ao abrir a tela', detalhe: e.msg.substring(0,140) }));
     _qaResultados.push({ tela: tela.id, titulo: tela.titulo, problemas: probs,
@@ -18207,7 +18226,7 @@ async function qaRodarTudo() {
 function _qaRenderizar(segundos) {
   const r = _qaResultados;
   const u = (id,v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
-  u('qa_telas', r.length);
+  u('qa_telas', _qaTotalTelas && r.length < _qaTotalTelas ? `${r.length}/${_qaTotalTelas}` : r.length);
   u('qa_graves', r.filter(x=>x.gravidade==='alta').length);
   u('qa_medios', r.filter(x=>x.gravidade==='media').length);
   u('qa_ok', r.filter(x=>x.ok).length);
@@ -18239,7 +18258,12 @@ function qaExportar() {
   linhas.push('Navegador: ' + navigator.userAgent.substring(0,80));
   linhas.push('Resolução: ' + window.innerWidth + 'x' + window.innerHeight);
   linhas.push('');
-  linhas.push(`Telas testadas: ${r.length} · Graves: ${r.filter(x=>x.gravidade==='alta').length} · Atenção: ${r.filter(x=>x.gravidade==='media').length} · OK: ${r.filter(x=>x.ok).length}`);
+  linhas.push(`Telas testadas: ${r.length} de ${_qaTotalTelas || r.length} · Graves: ${r.filter(x=>x.gravidade==='alta').length} · Atenção: ${r.filter(x=>x.gravidade==='media').length} · OK: ${r.filter(x=>x.ok).length}`);
+  if (_qaTotalTelas && r.length < _qaTotalTelas) {
+    linhas.push('');
+    linhas.push(`⚠ VARREDURA INCOMPLETA — ${_qaTotalTelas - r.length} tela(s) não foram testadas.`);
+    linhas.push('  O relatório abaixo cobre apenas as telas percorridas.');
+  }
   linhas.push('═'.repeat(68));
   r.filter(x=>!x.ok).sort((a,b)=>(b.gravidade==='alta')-(a.gravidade==='alta')).forEach(t => {
     linhas.push('');
@@ -20946,7 +20970,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.77] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.78] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -20962,7 +20986,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.77';
+window.__ATX_BUILD_ID__ = 'ATX-v1.78';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
