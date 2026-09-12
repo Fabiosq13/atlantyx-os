@@ -10,6 +10,151 @@
 
 const MC_BASE = 'https://app.metricool.com/api';
 
+// ═══ v1.74: AUTOCAMPANHA — preenche a agenda dos próximos 7 dias ═══
+// Olha os 7 dias à frente e, para cada horário configurado que estiver VAZIO, cria uma
+// publicação. Nunca sobrescreve o que já existe agendado.
+
+const HORARIOS_PADRAO = ['08:30', '12:15', '17:30'];
+
+async function _claudeAuto(system, user, maxTokens = 700) {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
+  const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), 50000);
+  const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ctrl.signal,
+    headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6', max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] }) });
+  clearTimeout(tm);
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error('Claude API [' + r.status + ']: ' + (d.error?.message || 'erro'));
+  return d.content?.[0]?.text || '';
+}
+
+// A configuração vem do frontend (localStorage) ou dos valores padrão — este módulo não
+// tem banco próprio, e assim a tela controla tudo sem precisar de migração.
+async function autoCampanhaConfig({ salvar } = {}) {
+  return {
+    horarios: (salvar?.horarios && Array.isArray(salvar.horarios) && salvar.horarios.length) ? salvar.horarios : HORARIOS_PADRAO,
+    dias_a_frente: parseInt(salvar?.dias_a_frente) || 7,
+    pular_fim_de_semana: salvar?.pular_fim_de_semana !== false,
+    redes: salvar?.redes?.length ? salvar.redes : ['linkedin'],
+    tema_base: salvar?.tema_base || 'dados, IA aplicada e eficiência operacional para grandes empresas',
+    padrao: HORARIOS_PADRAO,
+  };
+}
+
+// Consulta o Metricool para saber quais horários já têm post agendado
+async function _slotsOcupados({ de, ate, blogId }) {
+  try {
+    const TOKEN = process.env.METRICOOL_TOKEN, USERID = process.env.METRICOOL_USER_ID;
+    const BLOGID = blogId || process.env.METRICOOL_BLOG_ID;
+    const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${de.replace(/-/g,'')}0000&end=${ate.replace(/-/g,'')}2359`, TOKEN);
+    const lista = Array.isArray(r) ? r : (r?.data || r?.posts || []);
+    const ocupados = new Set();
+    lista.forEach(p => {
+      const dt = p.publicationDate?.dateTime || p.data || p.publicationDate;
+      if (!dt) return;
+      const s = String(dt);
+      const dia = s.substring(0, 10);
+      const hora = s.substring(11, 16);
+      // v1.74: guarda dia + minuto absoluto. Comparar por PROXIMIDADE evita o furo de gerar
+      // marcas de 15 em 15 min (um post às 12:10 não casava com o slot das 12:15).
+      const [H, M] = hora.split(':').map(Number);
+      ocupados.add(`${dia}|${H * 60 + M}`);
+    });
+    return { ocupados, total: lista.length, erro: null };
+  } catch (e) { return { ocupados: new Set(), total: 0, erro: e.message }; }
+}
+
+async function autoCampanhaPlanejar({ dias, horarios, pular_fim_de_semana, blog_id } = {}) {
+  const cfg = await autoCampanhaConfig();
+  const hs = (Array.isArray(horarios) && horarios.length ? horarios : cfg.horarios)
+    .map(h => String(h).trim()).filter(h => /^\d{2}:\d{2}$/.test(h));
+  if (!hs.length) throw new Error('Nenhum horário válido (use o formato HH:MM)');
+  const nDias = parseInt(dias) || cfg.dias_a_frente;
+  const pularFds = pular_fim_de_semana !== undefined ? !!pular_fim_de_semana : cfg.pular_fim_de_semana;
+
+  const hoje = new Date();
+  const de = new Date(hoje.getTime() + 86400000).toISOString().split('T')[0];
+  const ate = new Date(hoje.getTime() + nDias * 86400000).toISOString().split('T')[0];
+  const { ocupados, total, erro } = await _slotsOcupados({ de, ate, blogId: blog_id });
+
+  const vagos = [], jaAgendados = [];
+  for (let i = 1; i <= nDias; i++) {
+    const d = new Date(hoje.getTime() + i * 86400000);
+    const diaSemana = d.getDay();
+    if (pularFds && (diaSemana === 0 || diaSemana === 6)) continue;
+    const dia = d.toISOString().split('T')[0];
+    hs.forEach(h => {
+      // v1.74: ocupado se houver post no mesmo dia a menos de 45 min do slot
+      const [hh, mm] = h.split(':').map(Number);
+      const alvoMin = hh * 60 + mm;
+      const ocupado = [...ocupados].some(k => {
+        const [d2, m2] = String(k).split('|');
+        return d2 === dia && Math.abs(parseInt(m2) - alvoMin) <= 45;
+      });
+      if (ocupado) jaAgendados.push({ data: dia, hora: h });
+      else vagos.push({ data: dia, hora: h, dia_semana: ['dom','seg','ter','qua','qui','sex','sáb'][diaSemana] });
+    });
+  }
+  return { plano: { vagos, ja_agendados: jaAgendados, periodo: { de, ate },
+    horarios: hs, dias: nDias, pular_fim_de_semana: pularFds,
+    posts_existentes: total, erro_consulta: erro,
+    resumo: `${vagos.length} horário(s) vago(s) e ${jaAgendados.length} já preenchido(s) nos próximos ${nDias} dias.` } };
+}
+
+// Gera o conteúdo e agenda, um slot por vez
+async function autoCampanhaExecutar({ dias, horarios, pular_fim_de_semana, tema, redes, blog_id, apenas_rascunho = false, limite = 21 } = {}) {
+  const cfg = await autoCampanhaConfig();
+  const { plano } = await autoCampanhaPlanejar({ dias, horarios, pular_fim_de_semana, blog_id });
+  const alvos = plano.vagos.slice(0, parseInt(limite) || 21);
+  if (!alvos.length) return { criados: 0, plano, aviso: 'Nenhum horário vago — a agenda já está completa no período.' };
+
+  const temaBase = tema || cfg.tema_base;
+  const redesAlvo = (Array.isArray(redes) && redes.length ? redes : cfg.redes);
+  const criados = [], erros = [];
+
+  for (const slot of alvos) {
+    try {
+      const system = `Você escreve posts de LinkedIn para a Atlantyx — consultoria brasileira de dados e IA, 17 anos de mercado, clientes como CPFL Energia, Enel e Caixa Capitalização. Público: executivos e gestores de grandes empresas.
+
+REGRAS:
+- Entre 60 e 130 palavras. Primeira linha precisa parar o scroll — sem "Você sabia que".
+- Uma ideia só por post, concreta. Traga um exemplo, um número ou uma situação real de projeto.
+- Sem emoji em excesso (no máximo 1), sem hashtag genérica, sem "revolucionar", "transformar digitalmente", "game changer".
+- Termine com uma pergunta ou um convite à conversa — nunca com "entre em contato".
+- Nunca invente cliente, número ou caso que não foi informado.
+- Português do Brasil, tom de quem entende do assunto falando com um par.
+
+Devolva SOMENTE JSON: {"texto":"...","angulo":"em 5 palavras, o ângulo escolhido"}`;
+      const user = `Tema geral: ${temaBase}
+Data da publicação: ${slot.data} (${slot.dia_semana}) às ${slot.hora}
+${slot.hora < '11:00' ? 'Horário da manhã: pode ser um post mais analítico, para quem abre o feed começando o dia.'
+  : slot.hora < '15:00' ? 'Horário do meio-dia: leitura rápida, algo que se lê entre uma reunião e outra.'
+  : 'Fim de tarde: bom para reflexão ou balanço, quando o executivo está fechando o dia.'}
+Evite repetir o mesmo ângulo de outros posts da semana.`;
+      const txt = await _claudeAuto(system, user, 700);
+      const j = JSON.parse(String(txt).replace(/```json|```/g, '').trim());
+
+      if (apenas_rascunho) {
+        criados.push({ ...slot, texto: j.texto, angulo: j.angulo, status: 'rascunho' });
+      } else {
+        const quando = `${slot.data}T${slot.hora}:00`;
+        const TOKEN = process.env.METRICOOL_TOKEN, USERID = process.env.METRICOOL_USER_ID;
+        const BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
+        const body = {
+          text: j.texto,
+          providers: redesAlvo.map(n => ({ network: n })),
+          publicationDate: { dateTime: quando, timezone: 'America/Sao_Paulo' },
+          autoPublish: true, draft: false,
+        };
+        const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
+        criados.push({ ...slot, texto: j.texto, angulo: j.angulo, status: 'agendado', metricool_id: r?.id || r?.data?.id || null });
+      }
+    } catch (e) { erros.push(`${slot.data} ${slot.hora}: ${e.message}`); }
+  }
+  return { criados: criados.length, posts: criados, erros, plano,
+    resumo: `${criados.length} publicação(ões) ${apenas_rascunho ? 'em rascunho' : 'agendadas'} nos horários vagos.` };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -66,6 +211,9 @@ export default async function handler(req, res) {
     }
 
     const acoes = {
+    autocampanha_config:    () => autoCampanhaConfig(payload),
+    autocampanha_planejar:  () => autoCampanhaPlanejar(payload),
+    autocampanha_executar:  () => autoCampanhaExecutar(payload),
       // Publicar/agendar post
       // payload: { texto, redes: ['linkedin','instagram','facebook'], data_hora (ISO opcional), imagem_url (opcional), campanha_id, peca_id }
       publicar: async () => {
