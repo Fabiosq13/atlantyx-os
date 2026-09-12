@@ -17500,7 +17500,7 @@ async function mcApi(action, params = {}) {
   const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action, ...params }) });
   const raw = await r.text(); let d;
   try { d = JSON.parse(raw); } catch { throw new Error('Resposta não-JSON (HTTP ' + r.status + ')'); }
-  if (d.success === false) throw new Error(d.error || 'falha');
+  if (d.success === false) { const e = new Error(d.error || 'falha'); e.dica = d.dica; throw e; }
   return d;
 }
 function _acCfg() {
@@ -17557,7 +17557,12 @@ async function acExecutar(rascunho) {
       ${d.aviso ? `<div style="font-size:10.5px;color:var(--t2);">${d.aviso}</div>` : ''}
       </div></div>`;
     toast(d.resumo || 'Concluído', 'success');
-  } catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:16px;font-size:11px;">Erro: ${e.message}</div></div>`; }
+  } catch (e) {
+    box.innerHTML = `<div class="panel"><div class="pb" style="padding:16px;font-size:11px;">
+      <div style="color:var(--red);font-weight:600;margin-bottom:6px;">Erro: ${e.message}</div>
+      ${e.dica ? `<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:7px;padding:9px 11px;color:var(--t2);line-height:1.6;">💡 ${e.dica}</div>` : ''}
+      </div></div>`;
+  }
   finally { if (btn) { btn.disabled = false; btn.innerHTML = rascunho ? '&#9998; Gerar rascunhos' : '&#128228; Gerar e agendar'; } }
 }
 // Sugere horários a partir do desempenho real dos posts já publicados
@@ -20941,7 +20946,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.75] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.77] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -20957,7 +20962,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.75';
+window.__ATX_BUILD_ID__ = 'ATX-v1.77';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
