@@ -2641,7 +2641,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </div>
   <div id="fdStatus" style="display:none;margin-bottom:10px;"></div>
   <div class="kg k4" style="margin-bottom:12px;">
-    <div class="kpi bl"><div class="kl">Saldo de hoje</div><div class="kv" id="fd_saldoHoje">—</div><div class="ks" id="fd_saldoHojeSub">realizado</div></div>
+    <div class="kpi bl"><div class="kl" id="fd_saldoHojeLabel">Saldo inicial</div><div class="kv" id="fd_saldoHoje">—</div><div class="ks" id="fd_saldoHojeSub">saldo contabil na data inicial</div></div>
     <div class="kpi gn"><div class="kl">A receber (futuro real, QB)</div><div class="kv" id="fd_receber">—</div><div class="ks" id="fd_receberSub">—</div></div>
     <div class="kpi rd"><div class="kl">A pagar (futuro real, QB+Atlantyx)</div><div class="kv" id="fd_pagar">—</div><div class="ks" id="fd_pagarSub">—</div></div>
     <div class="kpi pu"><div class="kl">Saldo projetado final</div><div class="kv" id="fd_saldoFinal">—</div><div class="ks" id="fd_saldoFinalSub">até onde há dados</div></div>
@@ -16058,11 +16058,10 @@ async function carregarFluxoDetalhado() {
       const lbl = document.getElementById('fd_saldoHojeLabel');
       const ate = document.getElementById('fd_dataFim')?.value;
       const hj = new Date().toISOString().split('T')[0];
-      if (lbl) lbl.textContent = (ate && ate < hj) ? 'Saldo no fim do período' : 'Saldo de hoje';
+      if (lbl) lbl.textContent = 'Saldo inicial'; // v1.76
     }
-    // v1.50: deixa claro que este é um saldo CALCULADO e mostra o saldo real do banco ao lado
-    _fdUltimoSaldo = d.saldo_hoje; // v1.55: guarda para comparar com o razão
-    u('fd_saldoHoje', fmtBRLcompleto(d.saldo_hoje));
+    _fdUltimoSaldo = d.saldo_inicial ?? d.saldo_hoje;
+    u('fd_saldoHoje', fmtBRLcompleto(d.saldo_inicial ?? d.saldo_hoje));
     {
       const ate = document.getElementById('fd_dataFim')?.value;
       const hj = new Date().toISOString().split('T')[0];
@@ -16070,7 +16069,7 @@ async function carregarFluxoDetalhado() {
       const ini = d.periodo?.data_inicio;
       const selC = document.getElementById('fd_conta');
       const nomeConta = selC && selC.value ? selC.options[selC.selectedIndex]?.text?.split('·')[0]?.trim() : null;
-      let sub = (nomeConta ? `[${nomeConta}] ` : '') + `calculado: saldo de ${ini ? ini.split('-').reverse().join('/') : '?'} + movimento até ${dataRef?.split('-').reverse().join('/')}`;
+      let sub = (nomeConta ? `[${nomeConta}] ` : '') + `saldo contábil do QuickBooks em ${ini ? ini.split('-').reverse().join('/') : '?'}`;
       if (d.saldo_real_banco != null) {
         sub += ` · banco hoje: ${fmtBRLcompleto(d.saldo_real_banco)}`;
         if (d.divergencia_relevante) sub += ` · ⚠ diferença de ${fmtBRLcompleto(Math.abs(d.divergencia_calculado_vs_real))}`;
@@ -16127,6 +16126,29 @@ async function carregarFluxoDetalhado() {
     }
     u('fd_saldoFinal', fmtBRLcompleto(d.saldo_projetado_final));
     u('fd_saldoFinalSub', d.futuro.lancamentos.length + ' lançamento(s) futuro(s)' + (d.periodo?.data_fim ? ' até ' + d.periodo.data_fim.split('-').reverse().join('/') : ' · sem limite'));
+
+    // v1.76: aplicado POR ÚLTIMO — a semântica do negócio prevalece sobre o render antigo.
+    // Saldo inicial = contábil na data "de" · A receber = recebido + previsto
+    // A pagar = pago + a pagar · Projetado = inicial + receitas − despesas
+    {
+      const lbl76 = document.getElementById('fd_saldoHojeLabel');
+      if (lbl76) lbl76.textContent = 'Saldo inicial';
+      const ar = d.a_receber_composicao, ap = d.a_pagar_composicao;
+      if (d.a_receber_total != null) {
+        u('fd_receber', fmtBRLcompleto(d.a_receber_total));
+        u('fd_receberSub', ar ? `${fmtBRLcompleto(ar.recebido)} recebido + ${fmtBRLcompleto(ar.previsto)} previsto (${ar.qtd_previstos} doc)` : '');
+      }
+      if (d.a_pagar_total != null) {
+        u('fd_pagar', fmtBRLcompleto(d.a_pagar_total));
+        u('fd_pagarSub', ap ? `${fmtBRLcompleto(ap.pago)} pago + ${fmtBRLcompleto(ap.a_pagar)} a pagar (${ap.qtd_a_pagar} doc)` : '');
+      }
+      if (d.saldo_projetado != null) {
+        u('fd_saldoFinal', fmtBRLcompleto(d.saldo_projetado));
+        u('fd_saldoFinalSub', d.saldo_projetado_formula || '');
+        const elP = document.getElementById('fd_saldoFinal');
+        if (elP) elP.style.color = d.saldo_projetado < 0 ? 'var(--red)' : '';
+      }
+    }
 
     const ms = document.getElementById('fd_menorSaldo');
     if (ms) { if (d.menor_saldo_projetado && d.menor_saldo_projetado.valor < 0) { ms.style.display = 'block'; ms.innerHTML = '<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:10px 14px;font-size:11.5px;">🔴 <b>Saldo fica negativo</b>: ' + fmtBRLcompleto(d.menor_saldo_projetado.valor) + ' em ' + d.menor_saldo_projetado.data?.split('-').reverse().join('/') + ' (' + d.menor_saldo_projetado.descricao + ')</div>'; }
