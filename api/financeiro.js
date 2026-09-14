@@ -2858,11 +2858,46 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
     '− Despesas Programadas': {},
     '− Outras Saídas Simuladas': {},
     '= Total Saídas': {},
+    '± Já lançado no QuickBooks': {},
     '= Resultado do Mês': {},
     '= Saldo Final': {},
   };
 
   let saldoCorrente = saldoAtual;
+  // v1.86: a projeção agora INCLUI os lançamentos bancários já registrados com data futura —
+  // é o que o QuickBooks conta e a nossa projeção ignorava (a diferença de R$ 53.111,39).
+  // Bill e Invoice em aberto continuam contando como previsão; o que entra aqui são os
+  // movimentos que já estão lançados no banco (BillPayment, Purchase, Payment, Deposit).
+  const jaLancadoPorMes = {};
+  try {
+    const hojeStrFF2 = new Date().toISOString().split('T')[0];
+    const ultimoMesFF = listaMeses[listaMeses.length - 1];
+    if (ultimoMesFF) {
+      const [aaF, mmF] = ultimoMesFF.split('-').map(Number);
+      const fimHorizonte = `${aaF}-${String(mmF).padStart(2,'0')}-${String(new Date(aaF, mmF, 0).getDate()).padStart(2,'0')}`;
+      const amanha = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+      const futuros = await qbLancamentos({ data_inicio: amanha, data_fim: fimHorizonte, limite: 1000, conta_id });
+      // v1.86: proteção contra DUPLA CONTAGEM. Um Bill em aberto já entra como "a pagar";
+      // se o BillPayment dele também estiver lançado no futuro, contaríamos duas vezes.
+      // Guardamos os valores já previstos para não somar de novo.
+      const previstos = new Set();
+      (fut.pagaveis || []).forEach(p => previstos.add(`${String(p.data).substring(0,10)}|${Math.abs(p.valor).toFixed(2)}`));
+      (fut.recebiveis || []).forEach(p => previstos.add(`${String(p.data).substring(0,10)}|${Math.abs(p.valor).toFixed(2)}`));
+      let ignorados = 0;
+      (futuros.lancamentos || []).forEach(l => {
+        if (l.tipo === 'referencia') return;                 // nota emitida não move caixa
+        const chaveDup = `${String(l.data).substring(0,10)}|${Math.abs(l.valor).toFixed(2)}`;
+        if (previstos.has(chaveDup)) { ignorados++; return; } // já contado como previsão
+        const mes = String(l.data).substring(0, 7);
+        const v = l.tipo === 'entrada' ? l.valor : -l.valor;
+        jaLancadoPorMes[mes] = round((jaLancadoPorMes[mes] || 0) + v);
+      });
+      if (ignorados) console.log(`[fluxoFuturo] ${ignorados} lançamento(s) ignorado(s) por já constarem como previsão`);
+      console.log('[fluxoFuturo] lançados no futuro por mês:', JSON.stringify(jaLancadoPorMes));
+    }
+  } catch (e) { console.warn('[fluxoFuturo] lançamentos futuros:', e.message); }
+
+
   for (const mes of listaMeses) {
     // Override prioritário
     const ovM = overrides[mes] || {};
@@ -2891,7 +2926,10 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
 
     const totEnt = aReceberM + mrrM + outrasEntradas;
     const totSai = despesasMes + outrasSaidas;
-    const resultado = totEnt - totSai;
+    // v1.86: soma os lançamentos bancários JÁ REGISTRADOS com data neste mês.
+    // É o que o QuickBooks conta no saldo contábil futuro e a projeção ignorava.
+    const jaLancado = jaLancadoPorMes[mes] || 0;
+    const resultado = totEnt - totSai + jaLancado;
     const saldoFinal = saldoCorrente + resultado;
 
     linhas['Saldo Inicial'][mes] = round(saldoCorrente);
@@ -2902,6 +2940,7 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
     linhas['− Despesas Programadas'][mes] = round(despesasMes);
     linhas['− Outras Saídas Simuladas'][mes] = round(outrasSaidas);
     linhas['= Total Saídas'][mes] = round(totSai);
+    linhas['± Já lançado no QuickBooks'][mes] = round(jaLancado);
     linhas['= Resultado do Mês'][mes] = round(resultado);
     linhas['= Saldo Final'][mes] = round(saldoFinal);
 
