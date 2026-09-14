@@ -3423,7 +3423,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <button class="btn" onclick="acPlanejar()" id="btnAcPlan">&#128269; Ver horarios vagos</button>
         <button class="btn btn-p" onclick="acExecutar(true)" id="btnAcRasc">&#9998; Gerar rascunhos</button>
         <button class="btn btn-gn" onclick="acExecutar(false)" id="btnAcExec">&#128228; Gerar e agendar</button>
-        <button class="btn" style="font-size:10px;margin-left:auto;" onclick="acSugerirHorarios()">&#128161; Sugerir horarios pelos meus dados</button>
+        <button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red);" onclick="acCorrigirImagens()" title="Corrige posts agendados cuja imagem vai expirar antes da publicacao">&#128295; Corrigir imagens agendadas</button>
+    <button class="btn" style="font-size:10px;margin-left:auto;" onclick="acSugerirHorarios()">&#128161; Sugerir horarios pelos meus dados</button>
       </div>
     </div>
   </div>
@@ -17576,6 +17577,24 @@ async function acExecutar(rascunho) {
   }
   finally { if (btn) { btn.disabled = false; btn.innerHTML = rascunho ? '&#9998; Gerar rascunhos' : '&#128228; Gerar e agendar'; } }
 }
+// v1.80: corrige posts agendados com imagem que expira (causa do "Error downloading the image")
+async function acCorrigirImagens() {
+  try {
+    toast('Procurando posts com imagem que expira...', 'success');
+    const d = await mcApi('corrigir_imagens', { dias: 60, aplicar: false, blog_id: localStorage.getItem('atx:metricool_blog_id') || null });
+    if (!d.afetados?.length) { alert('✅ Nenhum post agendado usa imagem que expira.\n\nOs ' + d.total_posts + ' posts verificados estão com imagens permanentes.'); return; }
+    const lista = d.afetados.slice(0, 12).map(a => `• ${a.data} — ${a.texto}${a.texto.length >= 60 ? '…' : ''}`).join('\n');
+    if (!confirm(`${d.afetados.length} post(s) agendado(s) usam imagem que vai EXPIRAR antes da publicação:\n\n${lista}${d.afetados.length > 12 ? '\n(e mais ' + (d.afetados.length-12) + ')' : ''}\n\nCorrigir agora? As imagens serão copiadas para o domínio da Atlantyx, com link permanente.`)) return;
+    toast('Corrigindo... isso pode levar um minuto.', 'success');
+    const r = await mcApi('corrigir_imagens', { dias: 60, aplicar: true, blog_id: localStorage.getItem('atx:metricool_blog_id') || null });
+    alert(`${r.resumo}${r.erros?.length ? '\n\nFalhas:\n' + r.erros.slice(0,5).join('\n') : ''}`);
+    if (r.erros?.length) addLog('warn', '[Autocampanha] ' + r.erros.length + ' post(s) não puderam ser corrigidos');
+  } catch (e) {
+    toast('Erro: ' + e.message, 'error');
+    if (e.dica) alert(e.message + '\n\n' + e.dica);
+  }
+}
+
 // Sugere horários a partir do desempenho real dos posts já publicados
 async function acSugerirHorarios() {
   try {
@@ -20989,7 +21008,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.79] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.80] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -21005,7 +21024,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.79';
+window.__ATX_BUILD_ID__ = 'ATX-v1.80';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
