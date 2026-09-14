@@ -16139,6 +16139,19 @@ async function carregarFluxoDetalhado() {
     u('fd_saldoFinal', fmtBRLcompleto(d.saldo_projetado_final));
     u('fd_saldoFinalSub', d.futuro.lancamentos.length + ' lançamento(s) futuro(s)' + (d.periodo?.data_fim ? ' até ' + d.periodo.data_fim.split('-').reverse().join('/') : ' · sem limite'));
 
+    // v1.83: se o saldo inicial falhou, avisa em vermelho — zero silencioso engana
+    {
+      let al = document.getElementById('fdAvisoSaldoIni');
+      if (d.saldo_inicial_falhou && d.saldo_inicial_aviso) {
+        if (!al) { al = document.createElement('div'); al.id = 'fdAvisoSaldoIni';
+          const pg = document.getElementById('page-s3fluxodet');
+          const kg = pg?.querySelector('.kg');
+          if (kg) kg.insertAdjacentElement('beforebegin', al); else pg?.appendChild(al); }
+        al.style.cssText = 'background:rgba(255,80,80,.12);border:1px solid var(--red);border-radius:8px;padding:10px 13px;font-size:11px;line-height:1.6;margin-bottom:12px;';
+        al.innerHTML = '⛔ <b>Saldo inicial indisponível</b><br>' + d.saldo_inicial_aviso +
+          '<br><button class="btn" style="font-size:10px;margin-top:6px;" onclick="carregarFluxoDetalhado()">↻ Recarregar</button>';
+      } else if (al) al.remove();
+    }
     // v1.81: explica por que o QuickBooks mostra outro saldo (o CurrentBalance inclui futuros)
     {
       let nota = document.getElementById('fdNotaSaldoQb');
@@ -21085,7 +21098,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.82] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.83] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -21101,7 +21114,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.82';
+window.__ATX_BUILD_ID__ = 'ATX-v1.83';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
