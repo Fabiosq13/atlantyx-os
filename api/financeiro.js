@@ -2933,9 +2933,37 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
     });
   }
 
+  // v1.85: CONFERÊNCIA com o saldo contábil do QuickBooks na data final do horizonte.
+  // Os dois números respondem perguntas diferentes:
+  //  • o nosso fluxo parte do saldo de hoje e soma o que está EM ABERTO (Balance > 0)
+  //  • o QuickBooks mostra o saldo contábil considerando TUDO que já está LANÇADO até a data,
+  //    inclusive despesas futuras já registradas e baixadas
+  // A diferença é justamente o que já está lançado mas não aparece como "em aberto".
+  let conferenciaFinal = null;
+  try {
+    const ultimoMes = listaMeses[listaMeses.length - 1];           // AAAA-MM
+    if (ultimoMes) {
+      const [aa, mm] = ultimoMes.split('-').map(Number);
+      const ultimoDia = new Date(aa, mm, 0).getDate();             // último dia real do mês
+      const dataFim = `${aa}-${String(mm).padStart(2,'0')}-${String(ultimoDia).padStart(2,'0')}`;
+      const saldoContabilFim = await qbSaldoContaNaData({ conta_id, data: dataFim });
+      const projetadoFim = linhas?.['= Saldo Final']?.[ultimoMes] ?? null;
+      if (saldoContabilFim != null) {
+        conferenciaFinal = {
+          data: dataFim,
+          saldo_contabil_quickbooks: saldoContabilFim,
+          saldo_projetado_sistema: projetadoFim,
+          diferenca: projetadoFim != null ? round(projetadoFim - saldoContabilFim) : null,
+          explicacao: 'O QuickBooks mostra o saldo contábil na data, somando tudo que já está LANÇADO — inclusive despesas com data futura já registradas. Esta projeção parte do saldo de hoje e soma apenas o que está EM ABERTO. A diferença é o que já foi lançado à frente mas não consta como pendência.',
+        };
+      }
+    }
+  } catch (e) { console.warn('[fluxoFuturo] conferência final:', e.message); }
+
   return {
     meses: listaMeses,
     linhas,
+    conferencia_final: conferenciaFinal,
     saldo_inicial_atual: round(saldoAtual),
     menor_saldo_projetado: round(menorSaldo),
     mes_menor_saldo: listaMeses[indiceMenor],
