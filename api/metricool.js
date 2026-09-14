@@ -10,6 +10,45 @@
 
 const MC_BASE = 'https://app.metricool.com/api';
 
+// v1.80: corrige os posts JÁ AGENDADOS que apontam para imagem efêmera.
+// Sem isso, tudo que foi agendado antes desta versão continua falhando na data.
+async function corrigirImagensAgendadas({ blog_id, dias = 60, aplicar = false } = {}) {
+  const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID;
+  const BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
+  if (!TOKEN || !USERID || !BLOGID) throw new Error('Credenciais do Metricool ausentes');
+
+  const hoje = new Date();
+  const ini = hoje.toISOString().substring(0,10).replace(/-/g,'') + '0000';
+  const fim = new Date(hoje.getTime() + dias*86400000).toISOString().substring(0,10).replace(/-/g,'') + '2359';
+  const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${ini}&end=${fim}`, TOKEN);
+  const lista = Array.isArray(r) ? r : (r?.data || r?.posts || []);
+
+  const { garantirPermanente, ehEfemera } = await import('./media.js');
+  const afetados = [], corrigidos = [], erros = [];
+
+  for (const p of lista) {
+    const midias = p.media || p.medias || [];
+    const comProblema = (Array.isArray(midias) ? midias : []).filter(u => ehEfemera(u));
+    if (!comProblema.length) continue;
+    const quando = p.publicationDate?.dateTime || p.publicationDate || '';
+    afetados.push({ id: p.id, data: String(quando).substring(0,16).replace('T',' '),
+      texto: String(p.text || '').substring(0, 60), midias: comProblema.length });
+    if (!aplicar) continue;
+    try {
+      const novas = [];
+      for (const u of midias) novas.push((await garantirPermanente({ url: u })).url);
+      const corpo = { ...p, media: novas, medias: novas };
+      await mc(`/v2/scheduler/posts/${p.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'PUT', corpo);
+      corrigidos.push(p.id);
+    } catch (e) { erros.push(`${p.id}: ${e.message}`); }
+  }
+  return { total_posts: lista.length, afetados, corrigidos: corrigidos.length, erros,
+    aplicado: !!aplicar,
+    resumo: aplicar
+      ? `${corrigidos.length} post(s) corrigido(s) de ${afetados.length} com imagem que expira.`
+      : `${afetados.length} post(s) agendado(s) usam imagem que vai expirar antes da publicação.` };
+}
+
 // ═══ v1.74: AUTOCAMPANHA — preenche a agenda dos próximos 7 dias ═══
 // Olha os 7 dias à frente e, para cada horário configurado que estiver VAZIO, cria uma
 // publicação. Nunca sobrescreve o que já existe agendado.
@@ -169,6 +208,13 @@ Evite repetir o mesmo ângulo de outros posts da semana.`;
           publicationDate: { dateTime: quando, timezone: 'America/Sao_Paulo' },
           autoPublish: true, shortener: false, draft: false,
         };
+        // v1.80: se a autocampanha passar a usar imagem, ela também precisa ser permanente
+        if (Array.isArray(body.media) && body.media.length) {
+          const { garantirPermanente } = await import('./media.js');
+          const conv = [];
+          for (const u of body.media) conv.push((await garantirPermanente({ url: u })).url);
+          body.media = conv; body.medias = conv;
+        }
         const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
         criados.push({ ...slot, texto: j.texto, angulo: j.angulo, status: 'agendado', metricool_id: r?.id || r?.data?.id || null });
       }
@@ -235,6 +281,7 @@ export default async function handler(req, res) {
 
     const acoes = {
     autocampanha_config:    () => autoCampanhaConfig(payload),
+    corrigir_imagens:       () => corrigirImagensAgendadas(payload),
     autocampanha_planejar:  () => autoCampanhaPlanejar(payload),
     autocampanha_executar:  () => autoCampanhaExecutar(payload),
       // Publicar/agendar post
@@ -277,6 +324,28 @@ export default async function handler(req, res) {
           ...(Array.isArray(imagens_urls) && imagens_urls.length > 1 ? { media: imagens_urls, medias: imagens_urls } : (imagem_url ? { media: [imagem_url], medias: [imagem_url] } : {})),
         };
         console.log('[metricool publicar] payload:', JSON.stringify({ tipo, providers: body.providers, nMidias: (body.media||[]).length, temImagem: !!imagem_url, imagem: (imagem_url||'').substring(0,80), quando: body.publicationDate.dateTime }));
+
+        // v1.80: CONVERTE URLs EFÊMERAS ANTES DE AGENDAR.
+        // O Ideogram devolve links que expiram em poucas horas (exp=...&sig=...). O Metricool
+        // só baixa a imagem NA HORA de publicar — dias depois o link já morreu, e o post falha
+        // com "Error downloading the image" (LinkedIn) ou "url should represent a valid URL" (Facebook).
+        // Copiamos a imagem para o nosso domínio, com URL que não expira.
+        if (Array.isArray(body.media) && body.media.length) {
+          try {
+            const { garantirPermanente } = await import('./media.js');
+            const convertidas = [];
+            for (const u of body.media) {
+              const r = await garantirPermanente({ url: u, req });
+              convertidas.push(r.url);
+              if (r.convertida) console.log(`[metricool] imagem efêmera convertida: ${String(u).substring(0,60)} → ${r.url}`);
+            }
+            body.media = convertidas; body.medias = convertidas;
+          } catch (e) {
+            const err = new Error('Não consegui tornar a imagem permanente: ' + e.message);
+            err.dica = e.dica || 'A URL da imagem expira antes da data de publicação. Gere a imagem de novo e publique logo em seguida.';
+            throw err;
+          }
+        }
 
         // v1.68: VALIDA A MÍDIA ANTES DE PUBLICAR. O Metricool precisa baixar a imagem/vídeo
         // de uma URL pública — se ela estiver fora do ar, exigir login ou devolver HTML em vez
