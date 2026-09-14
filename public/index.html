@@ -14232,6 +14232,24 @@ async function gerarFluxoMatriz() {
 }
 
 function renderFluxoMatriz(d) {
+  // v1.85: conferência com o saldo contábil do QuickBooks na data final do horizonte.
+  // Os dois números são legítimos e respondem perguntas diferentes — a tela explica qual é qual.
+  {
+    let box = document.getElementById('fxConferencia');
+    const c = d.conferencia_final;
+    if (c && c.saldo_contabil_quickbooks != null && Math.abs(c.diferenca ?? 0) > 1) {
+      if (!box) { box = document.createElement('div'); box.id = 'fxConferencia';
+        const pg = document.getElementById('page-s3fluxo');
+        const alvo = pg?.querySelector('.panel') || pg;
+        alvo?.insertAdjacentElement('beforebegin', box); }
+      box.style.cssText = 'background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:8px;padding:11px 13px;font-size:11px;line-height:1.7;margin-bottom:12px;';
+      box.innerHTML = '⚖ <b>Comparação com o QuickBooks em ' + (c.data||'').split('-').reverse().join('/') + '</b><br>'
+        + 'Saldo contábil no QuickBooks: <b>' + fmtBRLcompleto(c.saldo_contabil_quickbooks) + '</b> · '
+        + 'Projeção desta tela: <b>' + fmtBRLcompleto(c.saldo_projetado_sistema) + '</b> · '
+        + 'Diferença: <b style="color:var(--gold);">' + fmtBRLcompleto(Math.abs(c.diferenca)) + '</b><br>'
+        + '<span style="color:var(--t2);font-size:10px;">' + (c.explicacao||'') + '</span>';
+    } else if (box) box.remove();
+  }
   const el = document.getElementById('f_fluxoResult');
   if (!el) return;
 
@@ -21098,7 +21116,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.84] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.85] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -21114,7 +21132,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.84';
+window.__ATX_BUILD_ID__ = 'ATX-v1.85';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
