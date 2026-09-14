@@ -3326,18 +3326,29 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
 <!-- v1.69: AGENTE DE QA VISUAL -->
 <div class="page" id="page-s6qa">
-  <div style="background:linear-gradient(135deg,rgba(245,185,75,.12),rgba(245,185,75,.03));border:1px solid rgba(245,185,75,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#129514; Agente de QA Visual</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Percorre cada tela, carrega os dados e verifica layout, valores e ações &middot; roda no seu navegador</div></div>
-    <label style="font-size:10px;color:var(--t2);display:flex;align-items:center;gap:4px;"><input type="checkbox" id="qaCarregarDados" checked/> carregar dados de cada tela (mais lento, mais completo)</label>
-    <button class="btn btn-gn" onclick="qaRodarTudo()" id="btnQaRodar">&#9654; Rodar QA completo</button>
-    <button class="btn" onclick="qaExportar()" id="btnQaExportar" disabled>&#128229; Exportar relatório</button>
+  <!-- v1.79: cabeçalho reorganizado em duas linhas — antes o texto longo do checkbox e os
+       dois botões disputavam a mesma linha do título e quebravam o alinhamento. -->
+  <div style="background:linear-gradient(135deg,rgba(245,185,75,.12),rgba(245,185,75,.03));border:1px solid rgba(245,185,75,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;">
+    <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:280px;">
+        <div style="font-family:var(--H);font-size:15px;font-weight:700">&#129514; Agente de QA Visual</div>
+        <div style="font-size:10.5px;color:var(--t2);margin-top:2px">Percorre cada tela, carrega os dados e verifica layout, valores e acoes &middot; roda no seu navegador</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-shrink:0;">
+        <button class="btn btn-gn" onclick="qaRodarTudo()" id="btnQaRodar">&#9654; Rodar QA completo</button>
+        <button class="btn" onclick="qaExportar()" id="btnQaExportar" disabled>&#128229; Exportar relatorio</button>
+      </div>
+    </div>
+    <label style="font-size:10px;color:var(--t2);display:flex;align-items:center;gap:5px;margin-top:10px;padding-top:9px;border-top:1px solid rgba(245,185,75,.18);cursor:pointer;">
+      <input type="checkbox" id="qaCarregarDados" checked/> carregar os dados de cada tela &mdash; mais lento, porem encontra os erros que so aparecem com dados reais
+    </label>
   </div>
   <div id="qaProgresso" style="display:none;margin-bottom:12px;"></div>
   <div class="kg k4" style="margin-bottom:12px;">
-    <div class="kpi bl"><div class="kl">Telas testadas</div><div class="kv" id="qa_telas">—</div></div>
+    <div class="kpi bl"><div class="kl">Telas testadas</div><div class="kv" id="qa_telas">&mdash;</div><div class="ks" id="qa_telasSub">de 85 telas</div></div>
     <div class="kpi rd"><div class="kl">Problemas graves</div><div class="kv" id="qa_graves">—</div><div class="ks">tela quebrada ou vazia</div></div>
     <div class="kpi gd"><div class="kl">Atenção</div><div class="kv" id="qa_medios">—</div><div class="ks">valor suspeito ou layout</div></div>
-    <div class="kpi gn"><div class="kl">Telas OK</div><div class="kv" id="qa_ok">—</div></div>
+    <div class="kpi gn"><div class="kl">Telas OK</div><div class="kv" id="qa_ok">&mdash;</div><div class="ks">sem problema</div></div>
   </div>
   <div class="panel">
     <div class="ph"><div class="pt">Resultado por tela</div><span style="font-size:10px;color:var(--t2);" id="qa_tempo"></span></div>
@@ -18226,7 +18237,15 @@ async function qaRodarTudo() {
 function _qaRenderizar(segundos) {
   const r = _qaResultados;
   const u = (id,v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
-  u('qa_telas', _qaTotalTelas && r.length < _qaTotalTelas ? `${r.length}/${_qaTotalTelas}` : r.length);
+  u('qa_telas', r.length);
+  {
+    const sub = document.getElementById('qa_telasSub');
+    if (sub) {
+      const incompleto = _qaTotalTelas && r.length < _qaTotalTelas;
+      sub.textContent = incompleto ? `⚠ de ${_qaTotalTelas} — varredura incompleta` : `de ${_qaTotalTelas || r.length} telas`;
+      sub.style.color = incompleto ? 'var(--gold)' : 'var(--t3)';
+    }
+  }
   u('qa_graves', r.filter(x=>x.gravidade==='alta').length);
   u('qa_medios', r.filter(x=>x.gravidade==='media').length);
   u('qa_ok', r.filter(x=>x.ok).length);
@@ -20970,7 +20989,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.78] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.79] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -20986,7 +21005,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.78';
+window.__ATX_BUILD_ID__ = 'ATX-v1.79';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
