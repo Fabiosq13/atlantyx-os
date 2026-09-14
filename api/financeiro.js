@@ -2292,14 +2292,20 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   // v1.50: o saldo REAL das contas no QuickBooks, para conferência contra o calculado.
   // Sem isso, "Saldo de hoje" era um número derivado (saldo inicial + movimento do período)
   // que herdava qualquer erro do caminho — mas parecia o saldo do banco.
-  // v1.81: saldo REAL até hoje (Balanço na data). O CurrentBalance inclui lançamentos futuros.
-  let saldoRealBanco = null, contasBanco = [], saldoRealFonte = null, saldoRealAviso = null;
+  // v1.83: REVERTIDO o comportamento da v1.81 aqui. Buscar o saldo pelo Balanço a cada
+  // carregamento acrescentava uma requisição pesada ao QuickBooks, aumentando o risco de
+  // throttle — e quando o throttle acontece, o SALDO INICIAL falha e a tela inteira sai errada.
+  // A conferência não vale esse preço: voltamos ao CurrentBalance (já disponível, sem custo
+  // extra) e explicamos na tela que ele inclui lançamentos futuros.
+  let saldoRealBanco = null, contasBanco = [], saldoRealFonte = 'current_balance';
+  const saldoRealAviso = 'Este número vem do CurrentBalance do QuickBooks, que inclui lançamentos com data futura — é o saldo do último dia do fluxo, não o de hoje.';
   try {
-    const sr = await qbSaldoRealAte({ data: hoje, conta_id });
-    saldoRealBanco = sr.saldo; saldoRealFonte = sr.fonte; saldoRealAviso = sr.aviso || null;
     const sc = await qbSaldoContas();
     if (sc?.qb_configurado) {
       contasBanco = sc.contas || [];
+      saldoRealBanco = conta_id
+        ? round(contasBanco.filter(c => String(c.id) === String(conta_id)).reduce((s, c) => s + c.saldo, 0))
+        : round(sc.saldo_total);
       if (conta_id) contasBanco = contasBanco.filter(c => String(c.id) === String(conta_id));
     }
   } catch (_) {}
@@ -2318,7 +2324,10 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   const aPagarFut   = round((fut.pagaveis   || []).reduce((s, l) => s + l.valor, 0));
   const totalReceitas = round(recebidoPeriodo + aReceberFut);
   const totalDespesas = round(pagoPeriodo + aPagarFut);
+  // v1.83: se o saldo inicial não veio (throttle, API fora), NÃO assumir zero em silêncio —
+  // zero faz a coluna inteira parecer certa e estar errada. Melhor declarar que falhou.
   const saldoInicialPer = extrato.saldo_inicial ?? 0;
+  const saldoInicialFalhou = extrato.saldo_inicial == null || extrato.saldo_inicial === 0 && extrato.saldo_inicial_origem === 'zero';
   const saldoProjetadoNovo = round(saldoInicialPer + totalReceitas - totalDespesas);
   const fmtB = v => (v || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
 
@@ -2328,6 +2337,10 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
     // v1.76
     saldo_inicial: saldoInicialPer,
     saldo_inicial_data: ini,
+    saldo_inicial_falhou: saldoInicialFalhou,
+    saldo_inicial_aviso: saldoInicialFalhou
+      ? 'Não foi possível obter o saldo contábil na data inicial (o QuickBooks pode ter limitado as consultas). A coluna de saldo está partindo de zero — recarregue em alguns segundos.'
+      : null,
     a_receber_total: totalReceitas,
     a_receber_composicao: { recebido: recebidoPeriodo, previsto: aReceberFut, qtd_previstos: (fut.recebiveis||[]).length },
     a_pagar_total: totalDespesas,
