@@ -1415,51 +1415,43 @@ async function qbSaldoContaNaData({ conta_id = null, data } = {}) {
     try {
       const token1 = await qbToken();
       const bs = await qbFetch(`/reports/BalanceSheet?date=${data}&accounting_method=Accrual&minorversion=65`, token1);
-      let totalBancos = null;
+
+      // v1.84 FIX: antes eu pegava o TOTAL de uma seção do Balanço ("Cash and cash equivalents",
+      // "Bank Accounts"). Essas seções agregam mais do que contas bancárias — aplicações,
+      // adiantamentos, cartões — e isso somava uma parcela fixa indevida (R$ 195.500 no caso real,
+      // constante em todas as datas, que é a assinatura típica desse erro).
+      // Agora somamos APENAS as contas de tipo Bank, casadas pelo ID que o Balanço traz em cada linha.
+      const dContas = await qbQuery(`select Id, Name from Account where AccountType = 'Bank' maxresults 100`, token1);
+      const contasBank = (dContas?.QueryResponse?.Account || []);
+      const idsBank = new Set(contasBank.map(a => String(a.Id)));
+      const nomesBank = new Map(contasBank.map(a => [String(a.Name).toLowerCase().trim(), String(a.Id)]));
+
+      let soma = 0; const achadas = [];
       (function varrer(n) {
-        if (!n || totalBancos != null) return;
+        if (!n) return;
         if (Array.isArray(n)) return n.forEach(varrer);
-        const cols = n.Summary?.ColData || n.Header?.ColData || n.ColData;
+        const cols = n.ColData;   // só linhas de dados — nunca Summary/Header (que são totais de seção)
         if (cols && cols.length >= 2) {
+          const idLinha = cols[0].id != null ? String(cols[0].id) : null;
           const nome = String(cols[0].value || '').toLowerCase().trim();
-          if (/^(total )?(bank accounts|contas banc|caixa e equivalentes|cash and cash equivalents)/.test(nome)) {
+          const ehBank = (idLinha && idsBank.has(idLinha)) || (!idLinha && nomesBank.has(nome));
+          if (ehBank && !achadas.some(a => a.id === (idLinha || nomesBank.get(nome)))) {
             const v = parseFloat(String(cols[cols.length - 1].value || '').replace(/,/g, ''));
-            if (!isNaN(v)) totalBancos = Math.round(v * 100) / 100;
+            if (!isNaN(v)) { soma += v; achadas.push({ id: idLinha || nomesBank.get(nome), nome: cols[0].value, valor: v }); }
           }
         }
         if (n.Rows?.Row) varrer(n.Rows.Row);
       })(bs?.Rows?.Row || bs?.Rows);
 
-      if (totalBancos != null) {
-        _cacheSaldoData.set(chave, totalBancos);
-        _ultimaOrigemSaldo = 'balanco_patrimonial_total';
-        console.log(`[QB] Saldo em ${data} (todas as contas): ${totalBancos} — Balanço Patrimonial, 1 requisição`);
-        return totalBancos;
-      }
-      // Reserva: somar as linhas de conta bancária do próprio balanço
-      let soma = 0, achou = 0;
-      const dContas = await qbQuery(`select Id, Name from Account where AccountType = 'Bank' maxresults 100`, token1);
-      const nomes = (dContas?.QueryResponse?.Account || []).map(a => String(a.Name).toLowerCase().trim());
-      (function varrer2(n) {
-        if (!n) return;
-        if (Array.isArray(n)) return n.forEach(varrer2);
-        const cols = n.ColData;
-        if (cols && cols.length >= 2) {
-          const nome = String(cols[0].value || '').toLowerCase().trim();
-          if (nomes.includes(nome)) {
-            const v = parseFloat(String(cols[cols.length - 1].value || '').replace(/,/g, ''));
-            if (!isNaN(v)) { soma += v; achou++; }
-          }
-        }
-        if (n.Rows?.Row) varrer2(n.Rows.Row);
-      })(bs?.Rows?.Row || bs?.Rows);
-      if (achou) {
+      if (achadas.length) {
         const val = round(soma);
         _cacheSaldoData.set(chave, val);
-        _ultimaOrigemSaldo = 'balanco_soma_linhas';
-        console.log(`[QB] Saldo em ${data}: ${val} — soma de ${achou} conta(s) no Balanço`);
+        _ultimaOrigemSaldo = 'balanco_contas_bank';
+        console.log(`[QB] Saldo em ${data}: ${val} — soma de ${achadas.length} conta(s) Bank: ` +
+          achadas.map(a => `${a.nome}=${a.valor}`).join(', '));
         return val;
       }
+      console.warn(`[QB] Saldo em ${data}: nenhuma conta Bank localizada no Balanço (${contasBank.length} conta(s) cadastrada(s)).`);
     } catch (e) { console.warn('[QB] saldo pelo Balanço:', e.message); _ultimoErroSaldo = e.message; }
   }
 
