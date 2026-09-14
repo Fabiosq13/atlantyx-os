@@ -2320,7 +2320,10 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
     saldo_projetado_formula: `${fmtB(saldoInicialPer)} + ${fmtB(totalReceitas)} − ${fmtB(totalDespesas)}`,
     // v1.50: conferência explícita
     saldo_real_banco: saldoRealBanco,
-    contas_banco: contasBanco.map(c => ({ nome: c.nome, saldo: round(c.saldo) })),
+    saldo_real_fonte: saldoRealFonte,
+    saldo_real_aviso: saldoRealAviso,
+    // v1.81: o saldo das contas aqui é o CurrentBalance — INCLUI lançamentos futuros
+    contas_banco: contasBanco.map(c => ({ nome: c.nome, saldo: round(c.saldo), inclui_futuros: true })),
     divergencia_calculado_vs_real: divergencia,
     divergencia_relevante: divergencia != null && Math.abs(divergencia) > 1,
     passado: { saldo_inicial: extrato.saldo_inicial, saldo_inicial_data: extrato.saldo_inicial_data, saldo_inicial_detalhe: extrato.saldo_inicial_detalhe, lancamentos: extrato.lancamentos, total_entradas: extrato.total_entradas, total_saidas: extrato.total_saidas, qb_erro: extrato.qb_erro },
