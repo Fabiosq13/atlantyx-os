@@ -16139,6 +16139,26 @@ async function carregarFluxoDetalhado() {
     u('fd_saldoFinal', fmtBRLcompleto(d.saldo_projetado_final));
     u('fd_saldoFinalSub', d.futuro.lancamentos.length + ' lançamento(s) futuro(s)' + (d.periodo?.data_fim ? ' até ' + d.periodo.data_fim.split('-').reverse().join('/') : ' · sem limite'));
 
+    // v1.81: explica por que o QuickBooks mostra outro saldo (o CurrentBalance inclui futuros)
+    {
+      let nota = document.getElementById('fdNotaSaldoQb');
+      const contas = d.contas_banco || [];
+      const somaCb = contas.reduce((a, c) => a + (c.saldo || 0), 0);
+      const difFut = (d.saldo_real_banco != null && contas.length) ? Math.round((somaCb - d.saldo_real_banco) * 100) / 100 : 0;
+      if (Math.abs(difFut) > 1) {
+        if (!nota) {
+          nota = document.createElement('div'); nota.id = 'fdNotaSaldoQb';
+          const pg = document.getElementById('page-s3fluxodet');
+          const kg = pg?.querySelector('.kg');
+          if (kg) kg.insertAdjacentElement('afterend', nota); else pg?.appendChild(nota);
+        }
+        nota.style.cssText = 'background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:9px 12px;font-size:10.5px;line-height:1.7;color:var(--t2);margin-bottom:12px;';
+        nota.innerHTML = 'ℹ <b>Por que o QuickBooks mostra outro saldo:</b> a tela de contas do QB exibe <b>'
+          + fmtBRLcompleto(somaCb) + '</b>, que <b>inclui lançamentos com data futura</b> — na prática, o saldo do último dia do fluxo. '
+          + 'O saldo real até hoje é <b>' + fmtBRLcompleto(d.saldo_real_banco) + '</b>. A diferença de <b>'
+          + fmtBRLcompleto(Math.abs(difFut)) + '</b> são compromissos já lançados que ainda não venceram.';
+      } else if (nota) nota.remove();
+    }
     // v1.76: aplicado POR ÚLTIMO — a semântica do negócio prevalece sobre o render antigo.
     // Saldo inicial = contábil na data "de" · A receber = recebido + previsto
     // A pagar = pago + a pagar · Projetado = inicial + receitas − despesas
@@ -21008,7 +21028,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.80] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.81] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -21024,7 +21044,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.80';
+window.__ATX_BUILD_ID__ = 'ATX-v1.81';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
