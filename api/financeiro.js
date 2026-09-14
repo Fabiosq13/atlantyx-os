@@ -1830,6 +1830,23 @@ async function qbContasDiagnostico() {
   return { diagnostico_contas: out };
 }
 
+// v1.81: o CurrentBalance do QuickBooks INCLUI lançamentos com data futura — é o saldo do
+// último dia do fluxo, não o de hoje. (Confirmado: o QB mostrava -R$ 454.854,52 considerando
+// os compromissos já lançados à frente.) Esta função devolve o saldo REAL até uma data.
+async function qbSaldoRealAte({ data, conta_id = null } = {}) {
+  const alvo = data || new Date().toISOString().split('T')[0];
+  const s = await qbSaldoContaNaData({ conta_id, data: alvo });
+  if (s != null) return { saldo: s, data: alvo, fonte: 'balanco_na_data', inclui_futuros: false };
+  try {
+    const sc = await qbSaldoContas();
+    const v = conta_id
+      ? round((sc.contas || []).filter(c => String(c.id) === String(conta_id)).reduce((a, c) => a + c.saldo, 0))
+      : round(sc.saldo_total);
+    return { saldo: v, data: alvo, fonte: 'current_balance', inclui_futuros: true,
+      aviso: 'Saldo vindo do CurrentBalance do QuickBooks, que INCLUI lançamentos futuros — não é o saldo de hoje.' };
+  } catch (e) { return { saldo: null, erro: e.message }; }
+}
+
 async function qbSaldoContas() {
   if (!qbConfigurado()) return { contas: [], saldo_total: 0, qb_configurado: false };
   const token = await qbToken();
@@ -2275,15 +2292,14 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   // v1.50: o saldo REAL das contas no QuickBooks, para conferência contra o calculado.
   // Sem isso, "Saldo de hoje" era um número derivado (saldo inicial + movimento do período)
   // que herdava qualquer erro do caminho — mas parecia o saldo do banco.
-  let saldoRealBanco = null, contasBanco = [];
+  // v1.81: saldo REAL até hoje (Balanço na data). O CurrentBalance inclui lançamentos futuros.
+  let saldoRealBanco = null, contasBanco = [], saldoRealFonte = null, saldoRealAviso = null;
   try {
+    const sr = await qbSaldoRealAte({ data: hoje, conta_id });
+    saldoRealBanco = sr.saldo; saldoRealFonte = sr.fonte; saldoRealAviso = sr.aviso || null;
     const sc = await qbSaldoContas();
     if (sc?.qb_configurado) {
       contasBanco = sc.contas || [];
-      // v1.53: com conta filtrada, compara só com o saldo dela
-      saldoRealBanco = conta_id
-        ? round(contasBanco.filter(c => String(c.id) === String(conta_id)).reduce((s, c) => s + c.saldo, 0))
-        : round(sc.saldo_total);
       if (conta_id) contasBanco = contasBanco.filter(c => String(c.id) === String(conta_id));
     }
   } catch (_) {}
@@ -2320,6 +2336,9 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
     saldo_projetado_formula: `${fmtB(saldoInicialPer)} + ${fmtB(totalReceitas)} − ${fmtB(totalDespesas)}`,
     // v1.50: conferência explícita
     saldo_real_banco: saldoRealBanco,
+    saldo_real_fonte: saldoRealFonte,
+    saldo_real_aviso: saldoRealAviso,
+    contas_incluem_futuros: true,
     saldo_real_fonte: saldoRealFonte,
     saldo_real_aviso: saldoRealAviso,
     // v1.81: o saldo das contas aqui é o CurrentBalance — INCLUI lançamentos futuros
