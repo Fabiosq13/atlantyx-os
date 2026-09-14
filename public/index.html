@@ -9459,7 +9459,7 @@ async function renderCalCampanhas() {
     html += '<div style="margin-top:12px;background:var(--bg4);border:1px dashed var(--gold);border-radius:7px;padding:10px;">'
       + '<div style="font-size:10.5px;color:var(--gold);font-weight:600;margin-bottom:6px;">⚠ ' + semPeriodo.length + ' campanha(s) sem período definido (não entram no calendário):</div>'
       + semPeriodo.slice(0, 12).map(c => '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:10.5px;padding:3px 0;border-bottom:1px solid var(--bd);">'
-          + '<span>' + (c.nome || c.id) + ' <span style="color:var(--t3);font-size:9px;">' + (c.criado_em ? new Date(c.criado_em).toLocaleDateString('pt-BR') : '') + '</span></span>'
+          + '<span>' + (c.nome || c.id) + ' <span style="color:var(--t3);font-size:9px;">' + (c.criado_em ? fmtData(c.criado_em) : '') + '</span></span>'
           + '<button class="btn" style="font-size:9px;" onclick="definirPeriodoRapido(\'' + c.id + '\')">📅 Definir período</button></div>').join('')
       + (semPeriodo.length > 12 ? '<div style="font-size:9px;color:var(--t3);margin-top:4px;">+' + (semPeriodo.length - 12) + ' outras — defina pelo cartão em Minhas Campanhas</div>' : '')
       + '</div>';
@@ -10880,7 +10880,7 @@ function s13RenderizarHub(ps) {
   if (!grid || !ps.length) return;
   grid.innerHTML = '';
   ps.forEach(function(p) {
-    var dt = p.salvo_em ? new Date(p.salvo_em).toLocaleDateString('pt-BR') : '';
+    var dt = p.salvo_em ? fmtData(p.salvo_em) : '';
     var card = document.createElement('div');
     card.style.cssText = 'background:var(--bg4);border:1px solid rgba(156,109,255,.2);border-radius:9px;padding:13px;cursor:pointer;';
     card.innerHTML = '<div style="font-size:13px;font-weight:600;color:var(--t1);margin-bottom:4px;">' + (p.nome||'Dashboard') + '</div>'
@@ -10990,7 +10990,7 @@ async function squadMostrarHistorico(squad, containerId, renderFn) {
   el.innerHTML = registros.map(function(r) { return renderFn ? renderFn(r) : defaultSquadCard(r); }).join('');
 }
 function defaultSquadCard(r) {
-  var dt = r.salvo_em ? new Date(r.salvo_em).toLocaleDateString('pt-BR') : '';
+  var dt = r.salvo_em ? fmtData(r.salvo_em) : '';
   var card = document.createElement('div');
   card.style.cssText = 'background:var(--bg4);border:1px solid var(--bd);border-radius:7px;padding:10px;margin-bottom:6px;';
   var row = document.createElement('div');
@@ -15670,7 +15670,7 @@ async function _excluirNoQb(qbTxnId) {
           <span style="color:var(--t2);">Tipo:</span> ${r.entidade} #${r.id}${r.doc ? ' · doc ' + r.doc : ''}<br>
           <span style="color:var(--t2);">Data:</span> ${(r.data||'').split('-').reverse().join('/')}<br>
           ${r.conta ? `<span style="color:var(--t2);">Conta:</span> ${r.conta}<br>` : ''}
-          ${r.criado_em ? `<span style="color:var(--t2);">Criado no QB:</span> ${new Date(r.criado_em).toLocaleString('pt-BR')}<br>` : ''}
+          ${r.criado_em ? `<span style="color:var(--t2);">Criado no QB:</span> ${fmtDataHora(r.criado_em)}<br>` : ''}
           ${r.memo ? `<span style="color:var(--t3);font-size:10px;">${r.memo}</span>` : ''}
         </div>
         <div style="background:${temVinculo?'rgba(255,80,80,.12)':'var(--bg4)'};border:1px solid ${temVinculo?'var(--red)':'var(--bd)'};border-radius:8px;padding:10px;font-size:10.5px;line-height:1.6;margin-bottom:10px;">
@@ -15807,7 +15807,7 @@ async function varrerDuplicados() {
             <div style="font-size:10.5px;color:var(--t2);margin:4px 0;">${s.explicacao}</div>
             ${s.impacto_no_caixa ? `<div style="font-size:10.5px;color:var(--red);">Infla o caixa em ${fmtBRLcompleto(s.impacto_no_caixa)}</div>` : ''}
             <div style="margin-top:5px;font-size:9.5px;color:var(--t3);font-family:var(--M);">
-              ${s.registros.map(g => `${g.entidade}#${g.id}${g.doc?' (doc '+g.doc+')':''} · ${(g.data||'').split('-').reverse().join('/')}${g.criado_em?' · criado '+new Date(g.criado_em).toLocaleString('pt-BR'):''}`).join('<br>')}
+              ${s.registros.map(g => `${g.entidade}#${g.id}${g.doc?' (doc '+g.doc+')':''} · ${(g.data||'').split('-').reverse().join('/')}${g.criado_em?' · criado '+fmtDataHora(g.criado_em):''}`).join('<br>')}
             </div>
           </div>`).join('')
         : '<div style="background:rgba(34,211,163,.08);border:1px solid var(--green,#22d3a3);border-radius:8px;padding:14px;font-size:11.5px;">✅ Nenhuma duplicidade encontrada no período.</div>'}
@@ -15849,7 +15849,7 @@ async function _rastrearDuplicado(json) {
               <b>${a.entidade} #${a.id}</b>${a.doc ? ' · doc ' + a.doc : ''} · <span style="font-family:var(--M);">${fmtBRLcompleto(a.valor)}</span><br>
               <span style="color:var(--t2);">Cliente: ${a.cliente || '—'}${a.conta ? ' · Conta: ' + a.conta : ''}</span><br>
               ${a.vinculado_a?.length ? `<span style="color:var(--green,#22d3a3);">Vinculado a: ${a.vinculado_a.join(', ')}</span><br>` : '<span style="color:var(--t3);">Sem vínculo com outro registro</span><br>'}
-              ${a.criado_em ? `<span style="color:var(--t3);font-size:9px;">Criado no QB em: ${new Date(a.criado_em).toLocaleString('pt-BR')}</span>` : ''}
+              ${a.criado_em ? `<span style="color:var(--t3);font-size:9px;">Criado no QB em: ${fmtDataHora(a.criado_em)}</span>` : ''}
               ${a.memo ? `<br><span style="color:var(--t3);font-size:9px;">${a.memo}</span>` : ''}
             </div>`).join('') || '<div style="color:var(--t3);font-size:11px;">Nenhum registro encontrado.</div>'}
       </div></div>`;
@@ -16731,7 +16731,7 @@ async function abrirDetalheTermo(id) {
           <div><b>Fase contratual:</b> ${t.fase||'—'}</div><div><b>Marco:</b> ${(t.marco_projeto||'').substring(0,40)}</div><div><b>Valor total:</b> <span style="color:var(--gold);font-family:var(--M);">${fmtBRLcompleto(t.valor_total_termo)}</span></div>
           <div><b>🧾 Emissão da NF:</b> ${t.data_emissao ? t.data_emissao.split('-').reverse().join('/') + (t.data_emissao_ultima ? ' <span style="color:var(--t3);font-size:10px;">(última: ' + t.data_emissao_ultima.split('-').reverse().join('/') + ')</span>' : '') : '<span style="color:var(--t3);">não emitida</span>'}</div>
           <div><b>💵 Pagamento:</b> ${t.data_pagamento ? '<span style="color:' + (t.pagamento_completo ? 'var(--green,#22d3a3)' : 'var(--gold)') + ';">' + t.data_pagamento.split('-').reverse().join('/') + (t.pagamento_completo ? ' (completo)' : ' (parcial)') + '</span>' : '<span style="color:var(--t3);">não pago</span>'}</div>
-          <div><b>Aprovado em:</b> ${t.aprovado_em ? new Date(t.aprovado_em).toLocaleDateString('pt-BR') + (t.aprovado_por ? ' por ' + t.aprovado_por : '') : '—'}</div>
+          <div><b>Aprovado em:</b> ${t.aprovado_em ? fmtData(t.aprovado_em) + (t.aprovado_por ? ' por ' + t.aprovado_por : '') : '—'}</div>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
           ${idxCol > 0 ? `<button class="btn" style="color:var(--t2);" onclick="_fatVoltar('${t.id}','${FAT_COLS[idxCol-1]}')" title="Volta para: ${FAT_LABELS[FAT_COLS[idxCol-1]]}">← Voltar p/ ${FAT_LABELS[FAT_COLS[idxCol-1]].replace(/^[^\s]+\s/,'')}</button>` : ''}
@@ -18044,8 +18044,52 @@ function ceoExportarAgenda() {
   toast('Agenda exportada', 'success');
 }
 
+// v1.82: formatação de data à prova de nulo/inválido. Era a origem dos "Invalid Date"
+// e "01/01/1970" que apareciam na tela quando um registro vinha sem data.
+function fmtData(v, padrao) {
+  if (v == null || v === '' ) return padrao ?? '—';
+  try {
+    const d = v instanceof Date ? v : new Date(v);
+    if (isNaN(d.getTime()) || d.getFullYear() < 1990) return padrao ?? '—';
+    return d.toLocaleDateString('pt-BR');
+  } catch (_) { return padrao ?? '—'; }
+}
+function fmtDataHora(v, padrao) {
+  if (v == null || v === '') return padrao ?? '—';
+  try {
+    const d = v instanceof Date ? v : new Date(v);
+    if (isNaN(d.getTime()) || d.getFullYear() < 1990) return padrao ?? '—';
+    return d.toLocaleString('pt-BR');
+  } catch (_) { return padrao ?? '—'; }
+}
+
 // ═══ v1.69: AGENTE DE QA VISUAL — testa cada tela no navegador ═══
 let _qaResultados = [], _qaErrosJs = [], _qaRodando = false, _qaTotalTelas = 0;
+// v1.82: contador de requisições em andamento. Sem isso, o QA media a tela antes de os
+// dados chegarem e acusava "todos os indicadores sem valor" em telas que estavam apenas
+// carregando — o Fluxo Detalhado chega a levar dezenas de segundos consultando o QuickBooks.
+let _qaFetchPendentes = 0;
+(function interceptarFetch(){
+  const original = window.fetch;
+  window.fetch = function(...args) {
+    if (!_qaRodando) return original.apply(this, args);
+    _qaFetchPendentes++;
+    return original.apply(this, args).finally(() => { _qaFetchPendentes = Math.max(0, _qaFetchPendentes - 1); });
+  };
+})();
+// Espera a tela parar de carregar: sem requisições pendentes por 400ms seguidos
+async function _qaAguardarCarregar(timeoutMs) {
+  const t0 = Date.now();
+  let quietoDesde = null;
+  while (Date.now() - t0 < timeoutMs) {
+    await new Promise(r => setTimeout(r, 200));
+    if (_qaFetchPendentes === 0) {
+      if (quietoDesde == null) quietoDesde = Date.now();
+      else if (Date.now() - quietoDesde >= 400) return { esperou: Date.now() - t0, completou: true };
+    } else quietoDesde = null;
+  }
+  return { esperou: timeoutMs, completou: false, pendentes: _qaFetchPendentes };
+}
 
 // Captura erros de JS durante a varredura (não some no console)
 (function(){
@@ -18079,6 +18123,12 @@ function _qaAnalisar(tela) {
   // 1. TELA VAZIA / PRETA — o erro mais grave
   const texto = (p.textContent || '').trim();
   const visiveis = [...p.querySelectorAll('div,table,button,input,canvas,svg,img')].filter(_qaVisivel);
+  if (tela._aindaCarregando) {
+    add('media','ainda_carregando',
+      `A tela ainda estava carregando quando o teste mediu (${tela._aindaCarregando} requisição(ões) pendente(s) após 25s)`,
+      'Os indicadores podem estar vazios só por isso. Abra a tela e confira — se demora demais, é problema de desempenho da API.');
+    return probs;   // não acusa KPI vazio numa tela que não terminou de carregar
+  }
   if (tela._naoAbriu) {
     add('media','nao_abriu','A navegação não conseguiu abrir esta tela para o teste',
       'Pode ser erro no carregamento ou a tela depende de uma ação anterior. Abra manualmente para conferir.');
@@ -18241,7 +18291,14 @@ async function qaRodarTudo() {
     const errosAntes = _qaErrosJs.length;
     try {
       nav(tela.id);                              // abre a tela (dispara o carregamento dos dados)
-      await new Promise(r => setTimeout(r, carregarDados ? 2200 : 350));
+      // v1.82: espera de verdade — até 25s, mas só o tempo necessário
+      if (carregarDados) {
+        await new Promise(r => setTimeout(r, 450));     // dá tempo de as chamadas dispararem
+        const w = await _qaAguardarCarregar(25000);
+        if (!w.completou) tela._aindaCarregando = w.pendentes;
+      } else {
+        await new Promise(r => setTimeout(r, 350));
+      }
       // v1.78: confirma que a tela ficou ativa. Se a navegação não pegou, medir dá
       // "0 elementos visíveis" e vira falso positivo de tela vazia.
       if (!tela.el.classList.contains('active')) {
@@ -18472,7 +18529,7 @@ async function carregarSalaPmo() {
     carregarAlertasOrion(); // v1.63
     const bx = document.getElementById('pmoReunioes');
     if (bx) bx.innerHTML = (reu.reunioes||[]).length ? reu.reunioes.map(r => `<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:10.5px;cursor:pointer;" onclick="_verAtaPmo('${r.id}')">
-      <div style="font-weight:600;">${r.titulo}</div><div style="font-size:9px;color:var(--t3);">${new Date(r.data_hora).toLocaleString('pt-BR')}${r.ata ? ' · 📋 com ata' : ''}</div></div>`).join('')
+      <div style="font-weight:600;">${r.titulo}</div><div style="font-size:9px;color:var(--t3);">${fmtDataHora(r.data_hora)}${r.ata ? ' · 📋 com ata' : ''}</div></div>`).join('')
       : '<div style="color:var(--t3);font-size:11px;text-align:center;padding:14px;">Nenhuma reunião registrada.</div>';
   } catch (e) { addLog('warn', '[PMO] ' + e.message); }
 }
@@ -19239,7 +19296,7 @@ async function diagnosticoQB(targetId) {
     el.innerHTML = '<div style="background:var(--bg4);border:1px solid ' + (x.ok ? 'var(--green,#22d3a3)' : 'var(--red)') + ';border-radius:8px;padding:12px;font-size:11px;line-height:1.6;">'
       + '<div style="font-weight:700;margin-bottom:6px;">' + (x.ok ? '✅ QuickBooks respondeu' : '⛔ QuickBooks com erro') + (x.sandbox ? ' · SANDBOX (empresa de teste da Intuit)' : ' · PRODUÇÃO') + '</div>'
       + (x.empresa ? '<div><b>Empresa:</b> ' + (x.empresa.nome || '?') + ' · ' + (x.empresa.pais || '') + ' · moeda ' + (x.empresa.moeda || '?') + ' · realm ' + (x.realm || '') + '</div>' : '')
-      + (x.tokens ? '<div><b>Tokens:</b> ' + x.tokens.origem + (x.tokens.refresh_expira_em ? ' · refresh válido até ' + new Date(x.tokens.refresh_expira_em).toLocaleDateString('pt-BR') : '') + '</div>' : '')
+      + (x.tokens ? '<div><b>Tokens:</b> ' + x.tokens.origem + (x.tokens.refresh_expira_em ? ' · refresh válido até ' + fmtData(x.tokens.refresh_expira_em) : '') + '</div>' : '')
       + (iv ? '<div style="margin:6px 0;padding:8px;background:rgba(245,185,75,.12);border-radius:6px;"><b>📅 Há lançamentos entre ' + iv.de + ' e ' + iv.ate + '.</b> Se as telas mostram zero, ajuste o período (Início/Fim) para dentro desse intervalo — no sandbox os dados são antigos e em ' + (x.empresa?.moeda || 'USD') + '.</div>' : '<div style="margin:6px 0;color:var(--gold);">Nenhum lançamento encontrado nas entidades consultadas.</div>')
       + '<table style="width:100%;border-collapse:collapse;margin-top:4px;"><thead><tr style="color:var(--t2);font-family:var(--M);font-size:9px;"><th style="text-align:left;padding:4px 6px;">Entidade</th><th style="text-align:right;padding:4px 6px;">Total</th><th style="text-align:left;padding:4px 6px;">Primeira → última data</th></tr></thead><tbody>' + ent + '</tbody></table>'
       + '<div style="margin-top:8px;"><b>Contas bancárias:</b>' + contas + '</div>'
@@ -19275,7 +19332,7 @@ async function verificarQuickBooks() {
       try { const av = document.getElementById('qbAvisoRealizado'); if (av) av.style.display = 'none'; } catch(_) {}
       dot.className = 'dot on';
       stat.textContent = 'QuickBooks · Conectado' + (d.sandbox ? ' (sandbox)' : '');
-      stat.title = (d.tokens_no_banco ? 'Tokens no banco (renovação automática) · ' : 'Token da env (semente) · ') + (d.refresh_expira_em ? 'refresh válido até ' + new Date(d.refresh_expira_em).toLocaleDateString('pt-BR') : '') + ' · clique para reconectar se precisar';
+      stat.title = (d.tokens_no_banco ? 'Tokens no banco (renovação automática) · ' : 'Token da env (semente) · ') + (d.refresh_expira_em ? 'refresh válido até ' + fmtData(d.refresh_expira_em) : '') + ' · clique para reconectar se precisar';
     } else {
       dot.className = 'dot off';
       dot.style.background = 'var(--red)';
@@ -19782,7 +19839,7 @@ function renderDesempenho() {
         `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--bd);">
           <div style="flex:1;min-width:0;">
             <div style="font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.titulo || '(sem título)'}</div>
-            <div style="font-size:9px;color:var(--t3);">${new Date(p.data).toLocaleString('pt-BR')} · ${p.rede} · ${p.metodo === 'metricool' ? '🚀 auto' : '✋ manual'}${p.link_destino ? ' · <a href="'+p.link_destino+'" target="_blank" style="color:var(--blue);">link ↗</a>' : ''}</div>
+            <div style="font-size:9px;color:var(--t3);">${fmtDataHora(p.data)} · ${p.rede} · ${p.metodo === 'metricool' ? '🚀 auto' : '✋ manual'}${p.link_destino ? ' · <a href="'+p.link_destino+'" target="_blank" style="color:var(--blue);">link ↗</a>' : ''}</div>
           </div>
           <div style="font-size:9px;color:var(--t2);white-space:nowrap;">${(p.metricas?.imp||0)} imp · ${(p.metricas?.cli||0)} cli · ${(p.metricas?.leads||0)} leads${(p.metricas?.cli||0) >= _limiarImpulso() ? ' <span title="Alto nº de cliques orgânicos — vale impulsionar">⭐</span>' : ''}${p.impulso?.status ? ' · <span style=\"color:var(--gold);\">📣 ' + p.impulso.status + '</span>' : ''}</div>
           ${(p.metricas?.cli||0) >= _limiarImpulso() || p.impulso ? `<button class="btn btn-or" style="font-size:9px;padding:3px 8px;" onclick="abrirImpulso('${p.id}')">📣 Impulsionar</button>` : ''}
@@ -20319,7 +20376,7 @@ function _renderStoryPack() {
   const bC = document.getElementById('btnComporStories'); if (bC) bC.disabled = !temArte;
   const bP = document.getElementById('btnPubStories'); if (bP) bP.disabled = !temArte;
   const lk = document.getElementById('storyLink'); if (lk && !lk.value) lk.value = _linkStoriesReels();
-  if (st.every(x => x.imagem_composta) && !campAtiva._storyStatusMostrado) { campAtiva._storyStatusMostrado = true; _statusPainel('story', 'ok', campAtiva.stories_agendado_em ? 'Stories já agendados (' + new Date(campAtiva.stories_agendado_em).toLocaleString('pt-BR') + ')' : 'Stories prontos (texto gravado nas artes)', 'Não precisa refazer. Clique em 🚀 Agendar stories' + (campAtiva.stories_agendado_em ? ' para reagendar.' : '.')); }
+  if (st.every(x => x.imagem_composta) && !campAtiva._storyStatusMostrado) { campAtiva._storyStatusMostrado = true; _statusPainel('story', 'ok', campAtiva.stories_agendado_em ? 'Stories já agendados (' + fmtDataHora(campAtiva.stories_agendado_em) + ')' : 'Stories prontos (texto gravado nas artes)', 'Não precisa refazer. Clique em 🚀 Agendar stories' + (campAtiva.stories_agendado_em ? ' para reagendar.' : '.')); }
   const tg = document.getElementById('storyTag'); if (tg) { tg.textContent = temArte ? 'Pronto p/ agendar' : 'Roteiro ok'; tg.className = 'tag ' + (temArte ? 'on' : 'off'); }
 }
 
@@ -20471,7 +20528,7 @@ async function publicarStories() {
   try { renderCalendarioKanban(); } catch(_) {}
   const tg = document.getElementById('storyTag'); if (tg) { tg.textContent = okN + '/' + st.length + ' agendados'; tg.className = 'tag on'; }
   if (okN) { campAtiva.stories_agendado_em = new Date(inicio).toISOString(); try { salvarCampanhaNoBanco(campAtiva, 'stories agendados'); } catch(_) {} }
-  if (okN === st.length) _statusPainel('story', 'ok', okN + ' stories agendados no Metricool ✓', 'A partir de ' + new Date(inicio).toLocaleString('pt-BR') + ' (a cada 2 min) · ' + redesSt.join(', ') + ' · sticker de link no último: <b>' + link + '</b>.<br>Mídia enviada: ' + _urlMidiaPublica(st[0].imagem_composta || st[0].imagem_url, 'png') + ' (texto gravado na imagem; stories não têm legenda). Confira no Planner do Metricool.');
+  if (okN === st.length) _statusPainel('story', 'ok', okN + ' stories agendados no Metricool ✓', 'A partir de ' + fmtDataHora(inicio) + ' (a cada 2 min) · ' + redesSt.join(', ') + ' · sticker de link no último: <b>' + link + '</b>.<br>Mídia enviada: ' + _urlMidiaPublica(st[0].imagem_composta || st[0].imagem_url, 'png') + ' (texto gravado na imagem; stories não têm legenda). Confira no Planner do Metricool.');
   else _statusPainel('story', 'err', okN + ' de ' + st.length + ' stories agendados', errosPub.join('<br>') || 'Veja o Log.');
   toast(okN + ' de ' + st.length + ' stories agendados', okN ? 'success' : 'error');
 }
@@ -20574,7 +20631,7 @@ async function publicarCarrossel() {
   const grupos = [{ redes: redes.filter(r => r !== 'instagram'), texto: legLi, enc: true }, { redes: redes.filter(r => r === 'instagram'), texto: legIg, enc: false }].filter(g => g.redes.length);
   let okN = 0, ids = [];
   for (const g of grupos) {
-    _statusPainel('carr', 'run', 'Publicando carrossel em ' + g.redes.join(', ') + '...', urls.length + ' imagens · ' + new Date(quando).toLocaleString('pt-BR'), 50);
+    _statusPainel('carr', 'run', 'Publicando carrossel em ' + g.redes.join(', ') + '...', urls.length + ' imagens · ' + fmtDataHora(quando), 50);
     try { const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'publicar', payload: { texto: g.texto, redes: g.redes, data_hora: new Date(quando).toISOString(), imagem_url: urls[0], imagens_urls: urls, encurtar_link: g.enc } }) });
       const d = await r.json(); if (!d.success) throw new Error(d.error || 'falha');
       okN++; ids.push(d.metricool_id);
@@ -20583,7 +20640,7 @@ async function publicarCarrossel() {
     } catch (e) { addLog('err', '[Carrossel] ' + g.redes.join(',') + ': ' + e.message); _statusPainel('carr', 'err', 'Falha ao publicar em ' + g.redes.join(', '), e.message); }
   }
   await salvarPublicacoes(); try { renderCalendarioKanban(); } catch(_) {}
-  if (okN) { c.publicado_em = new Date(quando).toISOString(); await salvarCampanhaNoBanco(campAtiva, 'carrossel publicado'); _statusPainel('carr', 'ok', 'Carrossel agendado (' + okN + ' grupo(s) de rede)', new Date(quando).toLocaleString('pt-BR') + ' · ' + urls.length + ' imagens · texto por rede aplicado (LinkedIn/FB com link, Instagram com link na bio). Metricool #' + ids.join(', ')); _renderCarrossel(); }
+  if (okN) { c.publicado_em = new Date(quando).toISOString(); await salvarCampanhaNoBanco(campAtiva, 'carrossel publicado'); _statusPainel('carr', 'ok', 'Carrossel agendado (' + okN + ' grupo(s) de rede)', fmtDataHora(quando) + ' · ' + urls.length + ' imagens · texto por rede aplicado (LinkedIn/FB com link, Instagram com link na bio). Metricool #' + ids.join(', ')); _renderCarrossel(); }
 }
 
 // ---------- REELS SLIDESHOW (v1.9) ------------------------------------------
@@ -20631,7 +20688,7 @@ function _renderReel() {
       const ph = document.getElementById('reelVideoPlaceholder'); if (ph) ph.style.display = 'none';
     }
     const dl = document.getElementById('reelDownload'); if (dl) { dl.href = vurl; dl.style.display = 'block'; }
-    if (!window._reelBlob && !r._statusMostrado) { r._statusMostrado = true; _statusPainel('reel', 'ok', r.agendado_em ? 'Reel já agendado para ' + new Date(r.agendado_em).toLocaleString('pt-BR') : 'Vídeo já montado e hospedado', 'Não precisa montar de novo. ' + (r.agendado_em ? 'Para reagendar, clique em 🚀 Agendar Reel.' : 'Clique em 🚀 Agendar Reel — ou 🎬 Montar vídeo só se quiser refazê-lo.')); }
+    if (!window._reelBlob && !r._statusMostrado) { r._statusMostrado = true; _statusPainel('reel', 'ok', r.agendado_em ? 'Reel já agendado para ' + fmtDataHora(r.agendado_em) : 'Vídeo já montado e hospedado', 'Não precisa montar de novo. ' + (r.agendado_em ? 'Para reagendar, clique em 🚀 Agendar Reel.' : 'Clique em 🚀 Agendar Reel — ou 🎬 Montar vídeo só se quiser refazê-lo.')); }
   }
 }
 async function _salvarReel() {
@@ -20883,8 +20940,8 @@ async function publicarReel() {
     redes.forEach(rd => registrarPublicacao(pFake, rd, '[REEL] ' + legenda, 'metricool', d.metricool_id, '', new Date(quando).toISOString()));
     await salvarPublicacoes(); try { renderCalendarioKanban(); } catch(_) {}
     r.agendado_em = new Date(quando).toISOString(); await _salvarReel();
-    _reelSet('Reel agendado para ' + new Date(quando).toLocaleString('pt-BR'), 'Agendado');
-    addLog('ok', '[Reel] Agendado (' + redes.join(',') + ') → ' + new Date(quando).toLocaleString('pt-BR'));
+    _reelSet('Reel agendado para ' + fmtDataHora(quando), 'Agendado');
+    addLog('ok', '[Reel] Agendado (' + redes.join(',') + ') → ' + fmtDataHora(quando));
     toast('Reel agendado 🎬', 'success');
   } catch (e) { addLog('err', '[Reel] ' + e.message); toast('Erro: ' + e.message, 'error'); }
 }
@@ -21028,7 +21085,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.81] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.82] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -21044,7 +21101,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.81';
+window.__ATX_BUILD_ID__ = 'ATX-v1.82';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
