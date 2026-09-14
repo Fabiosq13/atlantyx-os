@@ -3582,12 +3582,20 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- S3 CONCILIAÇÃO BANCÁRIA -->
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <div class="page" id="page-s3conciliacao">
+  <div id="concRecebiveisBox"></div>
     <div style="background:linear-gradient(135deg,rgba(245,166,35,.12),rgba(245,166,35,.03));border:1px solid rgba(245,166,35,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Conciliação Bancária</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Bate lançamentos reais (QB) com despesas programadas e A Receber automaticamente</div></div>
       <input type="date" class="fi" id="conc_ini" style="width:140px;"/>
       <input type="date" class="fi" id="conc_fim" style="width:140px;"/>
       <select class="fsel contaFiltro" id="conc_conta" style="font-size:11px;width:auto;max-width:200px;" onchange="carregarConciliacao()"><option value="">Todas as contas</option></select>
-      <button class="btn btn-gn" onclick="carregarConciliacao()">&#8635; Buscar Sugestões</button>
+      <select class="fsel" id="conc_tipo" style="font-size:11px;width:auto;" onchange="carregarConciliacao()">
+      <option value="todos">Despesas e receitas</option>
+      <option value="receitas">Somente receitas</option>
+      <option value="despesas">Somente despesas</option>
+    </select>
+    <label style="font-size:10px;color:var(--t2);display:flex;align-items:center;gap:4px;"><input type="checkbox" id="conc_futuros" onchange="carregarConciliacao()"/> só lancamentos futuros</label>
+    <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="conciliarRecebiveis()">&#129534; Conciliar recebiveis (termo x NF x fatura)</button>
+    <button class="btn btn-gn" onclick="carregarConciliacao()">&#8635; Buscar Sugestões</button>
     </div>
     <div class="kg k4" style="margin-bottom:12px;">
       <div class="kpi gn"><div class="kl">Já Conciliados</div><div class="kv" id="conc_ja">0</div><div class="ks">aprovados</div></div>
@@ -18075,6 +18083,66 @@ function ceoExportarAgenda() {
   toast('Agenda exportada', 'success');
 }
 
+// ═══ v1.87: CONCILIAÇÃO DE RECEBÍVEIS — termo × NF × fatura no QuickBooks ═══
+async function conciliarRecebiveis() {
+  const box = document.getElementById('concRecebiveisBox');
+  if (!box) return;
+  box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ Cruzando termos, notas fiscais e faturas...</div></div>';
+  try {
+    const d = await finApi('conc_recebiveis', { tolerancia_valor_pct: 2, tolerancia_dias: 10, prazo_padrao_dias: 30,
+      apenas_futuros: document.getElementById('conc_futuros')?.checked !== false });
+    if (d.erro) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:16px;font-size:11px;">${d.erro}</div></div>`; return; }
+    const r = d.resumo || {};
+    const ico = s => s === 'ok' ? '🟢' : s === 'atencao' ? '🟡' : '🔴';
+    const cor = s => s === 'ok' ? 'var(--green,#22d3a3)' : s === 'atencao' ? 'var(--gold)' : 'var(--red)';
+    box.innerHTML = `
+      <div class="kg k4" style="margin-bottom:12px;">
+        <div class="kpi bl"><div class="kl">Termos conferidos</div><div class="kv">${r.total||0}</div><div class="ks">${fmtBRLcompleto(r.valor_termos||0)}</div></div>
+        <div class="kpi gn"><div class="kl">Conciliados</div><div class="kv">${r.ok||0}</div><div class="ks">termo = NF = fatura</div></div>
+        <div class="kpi gd"><div class="kl">Atenção</div><div class="kv">${r.atencao||0}</div><div class="ks">divergência de valor ou data</div></div>
+        <div class="kpi rd"><div class="kl">Crítico</div><div class="kv">${r.critico||0}</div><div class="ks">sem fatura no QuickBooks</div></div>
+      </div>
+      <div class="panel" style="margin-bottom:12px;">
+        <div class="ph"><div class="pt">Termo × Nota Fiscal × Fatura no QuickBooks</div>
+          <span style="font-size:10px;color:var(--t2);">tolerância: ${d.parametros?.tolerancia_valor_pct}% no valor · ${d.parametros?.tolerancia_dias} dias no vencimento · prazo ${d.parametros?.prazo_padrao_dias} dias</span></div>
+        <div class="pb" style="max-height:60vh;overflow-y:auto;">
+          ${(d.termos||[]).filter(t => t.situacao !== 'ok').concat((d.termos||[]).filter(t => t.situacao === 'ok')).map(t => `
+            <div style="border-left:3px solid ${cor(t.situacao)};background:var(--bg4);border-radius:8px;padding:11px;margin-bottom:9px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+                <span style="font-size:12px;font-weight:600;">${ico(t.situacao)} Termo ${t.numero || t.termo_id} · ${t.cliente || ''}</span>
+                <span style="font-size:10px;color:var(--t2);">${t.projeto || ''} ${t.periodo ? '· ' + t.periodo : ''}</span>
+              </div>
+              <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10.5px;margin-top:6px;color:var(--t2);">
+                <span>Termo: <b style="color:var(--t1,#fff);">${fmtBRLcompleto(t.valor_termo)}</b></span>
+                <span>Notas (${t.qtd_notas}): <b style="color:var(--t1,#fff);">${fmtBRLcompleto(t.soma_notas)}</b></span>
+                <span>No QuickBooks: <b style="color:${Math.abs(t.valor_no_qb - t.valor_termo) > 1 ? 'var(--gold)' : 'var(--green,#22d3a3)'};">${fmtBRLcompleto(t.valor_no_qb)}</b></span>
+                <span>Casamento: <b>${t.casamento}</b></span>
+              </div>
+              ${t.emissao_referencia ? `<div style="font-size:10px;color:var(--t3);margin-top:4px;">Emissão ${t.emissao_referencia.split('-').reverse().join('/')} → vencimento esperado ${(t.vencimento_esperado||'').split('-').reverse().join('/')}</div>` : ''}
+              ${(t.faturas||[]).length ? `<div style="font-size:10px;color:var(--t2);margin-top:5px;">Faturas: ${t.faturas.map(f => `${f.doc || '(s/nº)'} ${fmtBRLcompleto(f.valor)} venc. ${String(f.vencimento||'').substring(0,10).split('-').reverse().join('/')}`).join(' · ')}</div>` : ''}
+              ${t.fatura_candidata ? `<div style="font-size:10px;color:var(--gold);margin-top:4px;background:rgba(245,185,75,.08);border-radius:5px;padding:5px 8px;">💡 Fatura candidata: ${t.fatura_candidata.doc || '(s/nº)'} de ${fmtBRLcompleto(t.fatura_candidata.valor)} — diferença de ${fmtBRLcompleto(t.fatura_candidata.diferenca)}</div>` : ''}
+              ${(t.problemas||[]).map(p => `<div style="font-size:10.5px;line-height:1.6;margin-top:4px;color:${p.g==='alta'?'var(--red)':'var(--gold)'};">• ${p.txt}</div>`).join('')}
+            </div>`).join('') || '<div style="text-align:center;color:var(--t3);padding:20px;">Nenhum termo aprovado para conciliar.</div>'}
+        </div>
+      </div>
+      ${(d.faturas_sem_termo||[]).length ? `<div class="panel">
+        <div class="ph"><div class="pt">Faturas no QuickBooks sem termo correspondente</div>
+          <span style="font-size:10px;color:var(--t2);">${d.faturas_sem_termo.length} fatura(s) · ${fmtBRLcompleto(r.valor_sem_termo||0)}</span></div>
+        <div class="pb" style="max-height:34vh;overflow-y:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:11px;">
+            <thead><tr style="border-bottom:1px solid var(--bd);">${['DOC','CLIENTE','VALOR','VENCIMENTO'].map(h=>`<th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;">${h}</th>`).join('')}</tr></thead>
+            <tbody>${d.faturas_sem_termo.map(f => `<tr style="border-bottom:1px solid var(--bd);">
+              <td style="padding:5px;font-family:var(--M);">${f.doc||'—'}</td>
+              <td style="padding:5px;">${f.cliente||'—'}</td>
+              <td style="padding:5px;font-family:var(--M);">${fmtBRLcompleto(f.valor)}</td>
+              <td style="padding:5px;font-family:var(--M);">${String(f.vencimento||'').substring(0,10).split('-').reverse().join('/')}</td></tr>`).join('')}</tbody>
+          </table>
+          <div style="font-size:10px;color:var(--t3);margin-top:8px;line-height:1.6;">Estas faturas estão no contas a receber mas não casaram com nenhum termo aprovado — podem ser de outro processo ou ter valor diferente do termo.</div>
+        </div></div>` : ''}`;
+    toast(`${r.total} termo(s) conferido(s) · ${r.critico} crítico(s)`, r.critico ? 'error' : 'success');
+  } catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:16px;font-size:11px;">Erro: ${e.message}</div></div>`; }
+}
+
 // v1.82: formatação de data à prova de nulo/inválido. Era a origem dos "Invalid Date"
 // e "01/01/1970" que apareciam na tela quando um registro vinha sem data.
 function fmtData(v, padrao) {
@@ -21116,7 +21184,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.86] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.87] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -21132,7 +21200,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.86';
+window.__ATX_BUILD_ID__ = 'ATX-v1.87';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
