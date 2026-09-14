@@ -124,6 +124,7 @@ export default async function handler(req, res) {
 
       // ── Conciliação bancária ─────────────────────────────────────────────
       conc_sugestoes:        () => conciliacaoSugestoes(params),
+      conc_recebiveis:       () => conciliacaoRecebiveis(params),
       conc_aprovar:          () => conciliacaoAprovar(params),
       conc_rejeitar:         () => conciliacaoRejeitar(params),
       conc_status:           () => conciliacaoStatus(params),
@@ -3213,6 +3214,151 @@ function round(n, casas = 2) {
 // uma referência compatível em (a) despesas programadas pendentes, (b) AR do QB.
 // Score baseado em valor (peso 0.6) + data (peso 0.3) + descrição similar (0.1).
 // Lançamentos já aprovados não voltam à lista. Status: sugestao | aprovada | rejeitada.
+
+// ═══ v1.87: CONCILIAÇÃO DE RECEBÍVEIS ═══
+// Cruza três fontes: termos aprovados → notas fiscais emitidas → faturas no QuickBooks.
+// Regra de negócio: o contas a receber futuro deve conter OU o valor total do termo,
+// OU as notas uma a uma, com vencimento ~30 dias após a emissão.
+async function conciliacaoRecebiveis({ tolerancia_valor_pct = 2, tolerancia_dias = 10, prazo_padrao_dias = 30, apenas_futuros = true } = {}) {
+  const sql = await getSql();
+  const hoje = new Date().toISOString().split('T')[0];
+
+  // 1. Termos aprovados, com empresas e notas
+  let termos = [];
+  try {
+    termos = await sql`SELECT t.id, t.numero_termo, t.projeto, t.contratante, t.periodo_medicao,
+        t.valor_total_termo, t.status, t.aprovado_em, t.nf_soma
+      FROM termos_faturamento t
+      WHERE t.status IN ('aprovado','nf_recebida','pagamento','concluido')
+      ORDER BY t.aprovado_em DESC NULLS LAST LIMIT 200`;
+  } catch (e) { return { erro: 'Não consegui ler os termos: ' + e.message }; }
+  if (!termos.length) return { termos: [], resumo: { total: 0 }, aviso: 'Nenhum termo aprovado encontrado.' };
+
+  const ids = termos.map(t => t.id);
+  const empresas = await sql`SELECT * FROM termos_empresas WHERE termo_id = ANY(${ids})`;
+  const notas = await sql`SELECT * FROM termos_notas_encontradas WHERE termo_id = ANY(${ids})`;
+
+  // 2. Faturas no QuickBooks (em aberto = contas a receber futuro)
+  let invoices = [];
+  if (qbConfigurado()) {
+    try {
+      const token = await qbToken();
+      const d = await qbQuery(`select * from Invoice where Balance > '0' orderby DueDate asc maxresults 1000`, token);
+      invoices = (d?.QueryResponse?.Invoice || []).map(i => ({
+        id: i.Id, doc: i.DocNumber, cliente: i.CustomerRef?.name,
+        valor: round(parseFloat(i.TotalAmt || 0)), saldo: round(parseFloat(i.Balance || 0)),
+        emissao: i.TxnDate, vencimento: i.DueDate || i.TxnDate,
+      }));
+    } catch (e) { return { erro: 'QuickBooks: ' + e.message }; }
+  }
+  const invUsadas = new Set();
+  const dias = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
+
+  const resultados = termos.map(t => {
+    const emps = empresas.filter(e => e.termo_id === t.id);
+    const nts = notas.filter(n => n.termo_id === t.id);
+    const valorTermo = num(t.valor_total_termo);
+    const somaNotas = round(nts.reduce((s, n) => s + num(n.nf_valor), 0));
+
+    // Data de referência: emissão da nota mais recente (ou aprovação do termo)
+    const datasNf = nts.map(n => n.email_data || n.criado_em).filter(Boolean).sort();
+    const emissaoRef = (datasNf[datasNf.length - 1] || t.aprovado_em || '');
+    const emissao = emissaoRef ? String(emissaoRef).substring(0, 10) : null;
+    const vencimentoEsperado = emissao
+      ? new Date(new Date(emissao).getTime() + prazo_padrao_dias * 86400000).toISOString().split('T')[0] : null;
+
+    // 3. Procurar no QuickBooks: total do termo OU nota a nota
+    const tolV = v => Math.max(v * (tolerancia_valor_pct / 100), 1);
+    const achados = { por_total: null, por_nota: [], sobra: [] };
+
+    // a) uma fatura com o valor total do termo
+    const porTotal = invoices.find(i => !invUsadas.has(i.id) && Math.abs(i.valor - valorTermo) <= tolV(valorTermo));
+    if (porTotal) { achados.por_total = porTotal; invUsadas.add(porTotal.id); }
+
+    // b) senão, uma fatura por nota
+    if (!porTotal && nts.length) {
+      nts.forEach(n => {
+        const vn = num(n.nf_valor);
+        if (!vn) return;
+        const inv = invoices.find(i => !invUsadas.has(i.id) && Math.abs(i.valor - vn) <= tolV(vn));
+        if (inv) { invUsadas.add(inv.id); achados.por_nota.push({ nota: n.nf_numero, valor: vn, invoice: inv }); }
+        else achados.sobra.push({ nota: n.nf_numero, valor: vn, motivo: 'sem fatura correspondente no QuickBooks' });
+      });
+    }
+
+    // 4. Conferir datas de pagamento (a do QuickBooks é a referência)
+    const invsDoTermo = achados.por_total ? [achados.por_total] : achados.por_nota.map(x => x.invoice);
+    const conferenciaData = invsDoTermo.map(i => {
+      const d = vencimentoEsperado ? dias(vencimentoEsperado, i.vencimento) : null;
+      return { doc: i.doc, vencimento_qb: i.vencimento, vencimento_esperado: vencimentoEsperado,
+        diferenca_dias: d, dentro_tolerancia: d == null ? null : Math.abs(d) <= tolerancia_dias };
+    });
+
+    // 5. Diagnóstico
+    const problemas = [];
+    const valorNoQb = round(invsDoTermo.reduce((s, i) => s + i.valor, 0));
+    if (!invsDoTermo.length) {
+      // v1.87: não basta dizer "não achei" — procurar a fatura mais próxima ajuda a decidir.
+      // Pode ser a mesma cobrança com valor digitado errado, ou um desconto não previsto.
+      const proxima = invoices.filter(i => !invUsadas.has(i.id))
+        .map(i => ({ ...i, dif: Math.abs(i.valor - valorTermo) }))
+        .sort((a, b) => a.dif - b.dif)[0];
+      if (proxima && proxima.dif <= valorTermo * 0.35) {
+        problemas.push({ g:'alta',
+          txt: `Nenhuma fatura com o valor do termo (${fmtBR(valorTermo)}). A mais próxima é ${proxima.doc || '(s/nº)'} de ${fmtBR(proxima.valor)} — diferença de ${fmtBR(proxima.dif)}${proxima.cliente ? ' · cliente ' + proxima.cliente : ''}.` });
+        achados.candidata = { doc: proxima.doc, valor: proxima.valor, diferenca: round(proxima.dif),
+          vencimento: proxima.vencimento, cliente: proxima.cliente };
+      } else {
+        problemas.push({ g:'alta', txt: `Nenhuma fatura no contas a receber do QuickBooks para este termo (${fmtBR(valorTermo)}).` });
+      }
+    } else if (Math.abs(valorNoQb - valorTermo) > tolV(valorTermo)) {
+      problemas.push({ g:'alta', txt: `Valor no QuickBooks (${fmtBR(valorNoQb)}) difere do termo (${fmtBR(valorTermo)}) em ${fmtBR(Math.abs(valorNoQb - valorTermo))}.` });
+    }
+    if (nts.length && Math.abs(somaNotas - valorTermo) > tolV(valorTermo)) {
+      problemas.push({ g:'media', txt: `Soma das notas (${fmtBR(somaNotas)}) difere do termo (${fmtBR(valorTermo)}).` });
+    }
+    if (!nts.length) problemas.push({ g:'media', txt: 'Termo aprovado sem nota fiscal anexada.' });
+    achados.sobra.forEach(s => problemas.push({ g:'media', txt: `NF ${s.nota} (${fmtBR(s.valor)}): ${s.motivo}.` }));
+    conferenciaData.filter(c => c.dentro_tolerancia === false).forEach(c => {
+      problemas.push({ g:'media', txt: `Fatura ${c.doc}: vencimento ${String(c.vencimento_qb).substring(0,10)} está ${Math.abs(c.diferenca_dias)} dia(s) ${c.diferenca_dias > 0 ? 'depois' : 'antes'} do esperado (${prazo_padrao_dias} dias da emissão).` });
+    });
+
+    return {
+      termo_id: t.id, numero: t.numero_termo, projeto: t.projeto, cliente: t.contratante,
+      periodo: t.periodo_medicao, status: t.status,
+      valor_termo: valorTermo, soma_notas: somaNotas, valor_no_qb: valorNoQb,
+      qtd_notas: nts.length, qtd_empresas: emps.length,
+      emissao_referencia: emissao, vencimento_esperado: vencimentoEsperado,
+      casamento: achados.por_total ? 'valor total do termo' : (achados.por_nota.length ? 'nota a nota' : 'não encontrado'),
+      fatura_candidata: achados.candidata || null,
+      faturas: invsDoTermo.map(i => ({ doc: i.doc, valor: i.valor, vencimento: i.vencimento, emissao: i.emissao })),
+      conferencia_data: conferenciaData,
+      problemas,
+      situacao: problemas.some(p => p.g === 'alta') ? 'critico' : problemas.length ? 'atencao' : 'ok',
+    };
+  });
+
+  // Faturas no QB que não casaram com nenhum termo
+  const orfas = invoices.filter(i => !invUsadas.has(i.id))
+    .filter(i => !apenas_futuros || String(i.vencimento || '') >= hoje)
+    .map(i => ({ doc: i.doc, cliente: i.cliente, valor: i.valor, vencimento: i.vencimento }));
+
+  return {
+    termos: resultados,
+    faturas_sem_termo: orfas,
+    resumo: {
+      total: resultados.length,
+      ok: resultados.filter(r => r.situacao === 'ok').length,
+      atencao: resultados.filter(r => r.situacao === 'atencao').length,
+      critico: resultados.filter(r => r.situacao === 'critico').length,
+      valor_termos: round(resultados.reduce((s, r) => s + r.valor_termo, 0)),
+      valor_no_qb: round(resultados.reduce((s, r) => s + r.valor_no_qb, 0)),
+      faturas_sem_termo: orfas.length,
+      valor_sem_termo: round(orfas.reduce((s, o) => s + o.valor, 0)),
+    },
+    parametros: { tolerancia_valor_pct, tolerancia_dias, prazo_padrao_dias },
+  };
+}
 
 async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55, conta_id = null } = {}) {
   const sql = await getSql();
