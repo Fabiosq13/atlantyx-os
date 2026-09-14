@@ -40,6 +40,9 @@
     },
     "api/pmo.js": {
       "maxDuration": 60
+    },
+    "api/media.js": {
+      "maxDuration": 60
     }
   },
   "crons": [
