@@ -392,6 +392,239 @@ ${texto}`, 1800);
   const r = await reuniaoSalvar({ titulo, transcricao, ata });
   return { ata, reuniao_id: r.id };
 }
+// ═══ v1.95: RAIO-X DO PROJETO ═══
+// Cruza três dimensões: cronograma físico (módulo externo), performance da equipe
+// e retorno financeiro (receitas × despesas ao longo do projeto).
+const CRONO_URL_PADRAO = 'https://atlantyx-vercel-deploy.vercel.app';
+
+async function cronogramaConfig({ salvar } = {}) {
+  const sql = await getSql();
+  await sql`CREATE TABLE IF NOT EXISTS pmo_config (chave TEXT PRIMARY KEY, valor TEXT, atualizado_em TIMESTAMPTZ DEFAULT NOW())`;
+  if (salvar) {
+    for (const [k, v] of Object.entries(salvar)) {
+      if (v === undefined) continue;
+      await sql`INSERT INTO pmo_config (chave, valor, atualizado_em) VALUES (${'crono_' + k}, ${v || null}, NOW())
+        ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = NOW()`;
+    }
+  }
+  const rows = await sql`SELECT chave, valor FROM pmo_config WHERE chave LIKE 'crono_%'`;
+  const c = {}; rows.forEach(r => c[r.chave.replace('crono_', '')] = r.valor);
+  return {
+    url: c.url || process.env.CRONOGRAMA_API_URL || CRONO_URL_PADRAO,
+    caminho: c.caminho || '/api/projetos',
+    token: c.token || process.env.CRONOGRAMA_API_TOKEN || null,
+    configurado: true,
+  };
+}
+
+// Descobre o formato dos dados — não dá para adivinhar a estrutura de outra base
+async function cronogramaTestar({ url, caminho, token } = {}) {
+  const cfg = await cronogramaConfig();
+  const base = (url || cfg.url || '').replace(/\/$/, '');
+  const path = caminho || cfg.caminho;
+  const tk = token || cfg.token;
+  const alvo = base + (path.startsWith('/') ? path : '/' + path);
+  const out = { url_testada: alvo };
+  try {
+    const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), 25000);
+    const r = await fetch(alvo, { signal: ctrl.signal,
+      headers: { Accept: 'application/json', ...(tk ? { Authorization: 'Bearer ' + tk } : {}) } });
+    clearTimeout(tm);
+    out.http_status = r.status;
+    const texto = await r.text();
+    if (!r.ok) { out.erro = `HTTP ${r.status}`; out.resposta = texto.substring(0, 400); return { teste: out }; }
+    let d; try { d = JSON.parse(texto); } catch { out.erro = 'A resposta não é JSON'; out.resposta = texto.substring(0, 400); return { teste: out }; }
+    const lista = Array.isArray(d) ? d : (d.projetos || d.data || d.items || d.results || d.rows || d.tarefas || null);
+    out.ok = true;
+    out.formato = Array.isArray(d) ? 'array na raiz' : (lista ? 'array dentro do objeto' : 'objeto sem lista');
+    out.total = Array.isArray(lista) ? lista.length : null;
+    out.campos = Array.isArray(lista) && lista[0] ? Object.keys(lista[0]) : Object.keys(d || {}).slice(0, 40);
+    out.amostra = Array.isArray(lista) ? lista.slice(0, 3) : d;
+    return { teste: out };
+  } catch (e) {
+    out.erro = e.name === 'AbortError' ? 'Tempo esgotado (25s)' : e.message;
+    return { teste: out };
+  }
+}
+
+async function cronogramaBuscar({ projeto } = {}) {
+  const cfg = await cronogramaConfig();
+  const alvo = cfg.url.replace(/\/$/, '') + (cfg.caminho.startsWith('/') ? cfg.caminho : '/' + cfg.caminho);
+  try {
+    const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), 25000);
+    const r = await fetch(alvo, { signal: ctrl.signal,
+      headers: { Accept: 'application/json', ...(cfg.token ? { Authorization: 'Bearer ' + cfg.token } : {}) } });
+    clearTimeout(tm);
+    if (!r.ok) return { tarefas: [], erro: `HTTP ${r.status}` };
+    const d = await r.json();
+    const lista = Array.isArray(d) ? d : (d.projetos || d.tarefas || d.data || d.items || d.rows || []);
+    const pega = (o, ...ks) => { for (const k of ks) if (o?.[k] != null && o[k] !== '') return o[k]; return null; };
+    let tarefas = lista.map(t => ({
+      projeto: pega(t, 'projeto', 'project', 'nome_projeto', 'obra'),
+      tarefa: pega(t, 'tarefa', 'atividade', 'nome', 'name', 'descricao', 'title'),
+      responsavel: pega(t, 'responsavel', 'executante', 'owner', 'assignee', 'equipe'),
+      inicio_prev: pega(t, 'inicio_previsto', 'data_inicio', 'inicio', 'start', 'baseline_inicio'),
+      fim_prev: pega(t, 'fim_previsto', 'data_fim', 'fim', 'end', 'baseline_fim', 'prazo'),
+      inicio_real: pega(t, 'inicio_real', 'data_inicio_real', 'real_start'),
+      fim_real: pega(t, 'fim_real', 'data_fim_real', 'real_end', 'concluido_em'),
+      pct: num(pega(t, 'percentual', 'pct', 'progresso', 'progress', 'avanco', 'percent_complete')),
+      peso: num(pega(t, 'peso', 'weight', 'horas', 'esforco')) || 1,
+      status: pega(t, 'status', 'situacao', 'state'),
+      _bruto: t,
+    }));
+    if (projeto) {
+      const alvoN = String(projeto).toLowerCase();
+      tarefas = tarefas.filter(t => String(t.projeto || '').toLowerCase().includes(alvoN)
+        || alvoN.includes(String(t.projeto || '').toLowerCase()));
+    }
+    return { tarefas, total: tarefas.length, fonte: alvo };
+  } catch (e) { return { tarefas: [], erro: e.message }; }
+}
+
+// Análise do cronograma: avanço físico real × planejado
+function _analisarCronograma(tarefas) {
+  if (!tarefas.length) return null;
+  const hoje = new Date().toISOString().split('T')[0];
+  const pesoTotal = tarefas.reduce((s, t) => s + (t.peso || 1), 0) || 1;
+  const avancoReal = round(tarefas.reduce((s, t) => s + (t.pct || 0) * (t.peso || 1), 0) / pesoTotal);
+
+  // Planejado: quanto deveria estar pronto hoje, pelas datas previstas
+  let planejado = 0;
+  tarefas.forEach(t => {
+    const ini = t.inicio_prev, fim = t.fim_prev, peso = t.peso || 1;
+    if (!ini || !fim) return;
+    let p = 0;
+    if (hoje >= fim) p = 100;
+    else if (hoje > ini) {
+      const total = (new Date(fim) - new Date(ini)) || 1;
+      p = Math.max(0, Math.min(100, ((new Date(hoje) - new Date(ini)) / total) * 100));
+    }
+    planejado += p * peso;
+  });
+  planejado = round(planejado / pesoTotal);
+
+  const atrasadas = tarefas.filter(t => t.fim_prev && t.fim_prev < hoje && (t.pct || 0) < 100);
+  const concluidas = tarefas.filter(t => (t.pct || 0) >= 100).length;
+  const emAndamento = tarefas.filter(t => (t.pct || 0) > 0 && (t.pct || 0) < 100).length;
+  const spi = planejado > 0 ? round(avancoReal / planejado) : null;
+
+  return {
+    total_tarefas: tarefas.length, concluidas, em_andamento: emAndamento,
+    nao_iniciadas: tarefas.length - concluidas - emAndamento,
+    avanco_real: avancoReal, avanco_planejado: planejado,
+    desvio: round(avancoReal - planejado),
+    spi, situacao: spi == null ? 'sem base' : spi >= 0.95 ? 'no prazo' : spi >= 0.85 ? 'atenção' : 'atrasado',
+    atrasadas: atrasadas.slice(0, 15).map(t => ({ tarefa: t.tarefa, responsavel: t.responsavel,
+      fim_previsto: t.fim_prev, pct: t.pct,
+      dias_atraso: Math.floor((new Date(hoje) - new Date(t.fim_prev)) / 86400000) })),
+    qtd_atrasadas: atrasadas.length,
+  };
+}
+
+// Performance por responsável
+function _performanceEquipe(tarefas) {
+  const porPessoa = {};
+  tarefas.forEach(t => {
+    const p = t.responsavel || '(sem responsável)';
+    porPessoa[p] = porPessoa[p] || { nome: p, total: 0, concluidas: 0, atrasadas: 0, soma_pct: 0, peso: 0 };
+    const r = porPessoa[p];
+    r.total++; r.soma_pct += (t.pct || 0) * (t.peso || 1); r.peso += (t.peso || 1);
+    if ((t.pct || 0) >= 100) r.concluidas++;
+    const hoje = new Date().toISOString().split('T')[0];
+    if (t.fim_prev && t.fim_prev < hoje && (t.pct || 0) < 100) r.atrasadas++;
+  });
+  return Object.values(porPessoa).map(r => ({
+    nome: r.nome, tarefas: r.total, concluidas: r.concluidas, atrasadas: r.atrasadas,
+    avanco_medio: round(r.peso ? r.soma_pct / r.peso : 0),
+    taxa_conclusao: round(r.total ? (r.concluidas / r.total) * 100 : 0),
+    situacao: r.atrasadas === 0 ? 'ok' : r.atrasadas <= 2 ? 'atenção' : 'crítico',
+  })).sort((a, b) => b.atrasadas - a.atrasadas || b.tarefas - a.tarefas);
+}
+
+async function raioXProjeto({ projeto, projeto_id } = {}) {
+  if (!projeto) throw new Error('Informe o nome do projeto');
+  const sql = await getSql();
+  const out = { projeto, gerado_em: new Date().toISOString() };
+
+  // 1. CRONOGRAMA FÍSICO (módulo externo)
+  const cr = await cronogramaBuscar({ projeto });
+  out.cronograma = cr.erro ? { erro: cr.erro, aviso: 'Não consegui ler o cronograma. Configure a fonte em ⚙ Cronograma.' }
+    : (_analisarCronograma(cr.tarefas) || { aviso: 'Nenhuma tarefa encontrada para este projeto na base de cronograma.' });
+  out.equipe = cr.tarefas?.length ? _performanceEquipe(cr.tarefas) : [];
+
+  // 2. FINANCEIRO — receitas e despesas do projeto ao longo do tempo
+  const fin = { receitas: [], despesas: [], erro: null };
+  try {
+    // Receitas: termos de faturamento do projeto
+    const termos = await sql`SELECT numero_termo, periodo_medicao, valor_total_termo, status,
+        criado_em, aprovado_em FROM termos_faturamento
+      WHERE projeto ILIKE ${'%' + projeto + '%'} ORDER BY criado_em`;
+    fin.receitas = termos.map(t => ({
+      referencia: t.numero_termo || t.periodo_medicao,
+      data: String(t.aprovado_em || t.criado_em || '').substring(0, 10),
+      valor: num(t.valor_total_termo), status: t.status,
+      recebido: ['pagamento', 'concluido'].includes(t.status),
+    }));
+  } catch (e) { fin.erro = e.message; }
+  try {
+    const desp = await sql`SELECT descricao, valor, data_prevista, pago, categoria
+      FROM despesas_programadas WHERE projeto ILIKE ${'%' + projeto + '%'} ORDER BY data_prevista`;
+    fin.despesas = desp.map(d => ({ descricao: d.descricao, data: String(d.data_prevista || '').substring(0, 10),
+      valor: num(d.valor), pago: !!d.pago, categoria: d.categoria }));
+  } catch (_) { /* a tabela pode não ter a coluna projeto */ }
+
+  const receitaTotal = round(fin.receitas.reduce((s, r) => s + r.valor, 0));
+  const receitaRecebida = round(fin.receitas.filter(r => r.recebido).reduce((s, r) => s + r.valor, 0));
+  const despesaTotal = round(fin.despesas.reduce((s, d) => s + d.valor, 0));
+  const despesaPaga = round(fin.despesas.filter(d => d.pago).reduce((s, d) => s + d.valor, 0));
+  const lucro = round(receitaTotal - despesaTotal);
+  const margem = receitaTotal > 0 ? round((lucro / receitaTotal) * 100) : null;
+
+  // Linha do tempo mês a mês
+  const porMes = {};
+  fin.receitas.forEach(r => { if (!r.data) return; const m = r.data.substring(0, 7);
+    porMes[m] = porMes[m] || { mes: m, receita: 0, despesa: 0 }; porMes[m].receita = round(porMes[m].receita + r.valor); });
+  fin.despesas.forEach(d => { if (!d.data) return; const m = d.data.substring(0, 7);
+    porMes[m] = porMes[m] || { mes: m, receita: 0, despesa: 0 }; porMes[m].despesa = round(porMes[m].despesa + d.valor); });
+  let acum = 0;
+  const linhaTempo = Object.values(porMes).sort((a, b) => a.mes.localeCompare(b.mes))
+    .map(m => { const res = round(m.receita - m.despesa); acum = round(acum + res);
+      return { ...m, resultado: res, acumulado: acum }; });
+
+  out.financeiro = {
+    receita_total: receitaTotal, receita_recebida: receitaRecebida, receita_a_receber: round(receitaTotal - receitaRecebida),
+    despesa_total: despesaTotal, despesa_paga: despesaPaga,
+    lucro, margem_pct: margem,
+    linha_tempo: linhaTempo,
+    qtd_termos: fin.receitas.length, qtd_despesas: fin.despesas.length,
+    erro: fin.erro,
+  };
+
+  // 3. RAIO-X: cruzamento físico × financeiro
+  const avanco = out.cronograma?.avanco_real;
+  const pctReceita = receitaTotal > 0 ? round((receitaRecebida / receitaTotal) * 100) : null;
+  const alertas = [];
+  if (avanco != null && pctReceita != null && avanco - pctReceita > 15) {
+    alertas.push({ g: 'alta', txt: `Obra ${avanco}% executada mas só ${pctReceita}% recebido — há entrega feita sem faturamento correspondente.` });
+  }
+  if (avanco != null && despesaTotal > 0 && receitaTotal > 0) {
+    const consumo = round((despesaTotal / receitaTotal) * 100);
+    if (consumo > avanco + 15) alertas.push({ g: 'alta', txt: `${consumo}% do orçamento consumido para ${avanco}% de avanço — risco de estouro.` });
+  }
+  if (margem != null && margem < 10) alertas.push({ g: margem < 0 ? 'alta' : 'media', txt: `Margem de ${margem}%${margem < 0 ? ' — o projeto está dando prejuízo' : ' — abaixo do saudável'}.` });
+  if (out.cronograma?.qtd_atrasadas > 0) alertas.push({ g: out.cronograma.qtd_atrasadas > 5 ? 'alta' : 'media', txt: `${out.cronograma.qtd_atrasadas} tarefa(s) com prazo vencido.` });
+  const semResp = out.equipe.find(e => e.nome === '(sem responsável)');
+  if (semResp) alertas.push({ g: 'media', txt: `${semResp.tarefas} tarefa(s) sem responsável definido.` });
+
+  out.raio_x = {
+    avanco_fisico: avanco, pct_receita_recebida: pctReceita,
+    consumo_orcamento_pct: receitaTotal > 0 ? round((despesaTotal / receitaTotal) * 100) : null,
+    lucro, margem_pct: margem, alertas,
+    veredito: alertas.some(a => a.g === 'alta') ? 'requer ação' : alertas.length ? 'atenção' : 'saudável',
+  };
+  return out;
+}
+
 // v1.64: PAINEL MESTRE — uma linha por projeto, visão executiva de todos de uma vez.
 // Junta o cadastro de projetos (sistema externo) com o último status report de cada um,
 // e sinaliza quem não atualizou no ciclo da semana.
@@ -638,6 +871,10 @@ export default async function handler(req, res) {
     gerente_projeto:   () => gerenteProjetoIA(payload),
     alertas_projetos:  () => alertasProjetos(),
     painel_mestre:     () => painelMestre(payload),
+    raio_x_projeto:    () => raioXProjeto(payload),
+    crono_config:      () => cronogramaConfig(payload),
+    crono_testar:      () => cronogramaTestar(payload),
+    crono_buscar:      () => cronogramaBuscar(payload),
     projetos_config_salvar: () => projetosConfigSalvar(payload),
     projetos_config_list:   () => projetosConfigList(),
     status:            () => ({ ok: true, modulo: 'pmo' }),
