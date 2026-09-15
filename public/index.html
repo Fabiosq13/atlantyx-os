@@ -18103,7 +18103,7 @@ async function verificarTermosObrigatorios() {
       <div class="pb">
         <div style="background:${d.faltando.length ? 'rgba(255,80,80,.1)' : 'rgba(34,211,163,.1)'};border:1px solid ${d.faltando.length ? 'var(--red)' : 'var(--green,#22d3a3)'};border-radius:8px;padding:11px;font-size:11.5px;margin-bottom:12px;">
           ${d.faltando.length ? '⚠' : '✅'} <b>${d.resumo}</b><br>
-          <span style="color:var(--t2);font-size:10.5px;">Prazo até o dia ${d.dia_limite} · hoje é dia ${d.dia_hoje}${d.dentro_do_prazo ? '' : ' (fora do prazo)'}</span>
+          <span style="color:var(--t2);font-size:10.5px;">Janela de alerta: dias ${d.janela_envio?.de || 5} a ${d.janela_envio?.ate || 10} · hoje é dia ${d.dia_hoje} ${d.na_janela ? '<b style="color:var(--gold);">(dentro da janela — o alerta sai hoje se faltar termo)</b>' : d.dia_hoje < (d.janela_envio?.de || 5) ? '(ainda não — o alerta começa no dia ' + (d.janela_envio?.de || 5) + ')' : '(janela encerrada)'}</span>
         </div>
         ${d.faltando.length ? `<div style="font-size:11.5px;font-weight:600;margin-bottom:6px;color:var(--red);">Não lançados</div>
           ${d.faltando.map(x => `<div style="background:var(--bg4);border-left:3px solid var(--red);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:11px;">${x.nome}</div>`).join('')}` : ''}
@@ -18115,7 +18115,7 @@ async function verificarTermosObrigatorios() {
           <button class="btn" onclick="editarTermosObrigatorios()">⚙ Editar a lista</button>
         </div>
         <div style="font-size:10px;color:var(--t3);margin-top:10px;line-height:1.6;">
-          A busca é por semelhança de nome (${d.total_lancados_no_mes} termo(s) lançado(s) no mês). O alerta automático roda todo dia às 9h e só envia se faltar algum e estivermos até o dia ${d.dia_limite}.
+          A busca é por semelhança de nome (${d.total_lancados_no_mes} termo(s) lançado(s) no mês). O alerta automático roda todo dia às 9h e só envia se faltar algum termo <b>e</b> estivermos entre os dias ${d.janela_envio?.de || 5} e ${d.janela_envio?.ate || 10}.
         </div>
       </div></div>`;
   } catch (e) { modal.innerHTML = `<div class="panel" style="width:520px;"><div class="pb" style="padding:18px;color:var(--red);">Erro: ${e.message}<br><br><button class="btn" onclick="document.getElementById('termosObrigModal').style.display='none'">Fechar</button></div></div>`; }
@@ -21241,7 +21241,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.91] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.92] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -21257,7 +21257,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.91';
+window.__ATX_BUILD_ID__ = 'ATX-v1.92';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
