@@ -14702,7 +14702,7 @@ async function carregarConciliacao() {
             <div>
               <div style="font-family:var(--M);font-size:8px;color:var(--t2);text-transform:uppercase;">REFERÊNCIA (${s.sugestao.ref_tipo.replace('_', ' ')})</div>
               <div style="font-size:11px;color:var(--t2);margin-top:2px;">${s.sugestao.ref_data}</div>
-              <div style="font-size:12px;font-weight:600;margin-top:2px;">${s.sugestao.ref_descricao}</div>
+              <div style="font-size:12px;font-weight:600;margin-top:2px;">${s.sugestao.ref_descricao}${s.sugestao.ref_detalhe ? `<br><span style="font-size:9px;color:var(--t3);">${s.sugestao.ref_detalhe}</span>` : ''}</div>
               <div style="font-family:var(--M);font-size:13px;font-weight:600;color:var(--blue);margin-top:3px;">${fmtBRLcompleto(s.sugestao.ref_valor)}${dif !== null ? ` <span style="font-size:9px;color:${Math.abs(dif)<0.01?'var(--green)':'var(--gold)'};">(dif ${fmtBRLcompleto(dif)})</span>` : ''}</div>
             </div>
             <div style="display:flex;flex-direction:column;gap:5px;">
@@ -21184,7 +21184,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.87] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.88] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -21200,7 +21200,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.87';
+window.__ATX_BUILD_ID__ = 'ATX-v1.88';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
