@@ -3313,8 +3313,10 @@ async function verificarTermosDoMes({ mes, ano, nomes, dia_inicio = 5, limite_di
     obrigatorios, total: obrigatorios.length,
     encontrados, faltando,
     total_lancados_no_mes: lancados.length,
-    janela_envio: { de: dia_inicio, ate: limite_dia },
+    janela_envio: { de: dia_inicio, ate: limite_dia, continua_apos: true },
     na_janela: naJanela,
+    prazo_vencido: prazoVencido,
+    dias_de_atraso: prazoVencido ? diaHoje - limite_dia : 0,
     dentro_do_prazo: diaHoje <= limite_dia,
     dia_inicio, dia_limite: limite_dia, dia_hoje: diaHoje,
     deve_alertar: faltando.length > 0,
@@ -3329,10 +3331,8 @@ async function alertaTermosDoMes({ forcar = false, para, mes, ano } = {}) {
   if (v.erro) return v;
   if (!v.deve_alertar && !forcar) return { ...v, enviado: false, motivo: 'Todos os termos estão lançados — nenhum alerta necessário.' };
   if (!v.na_janela && !forcar) {
-    const motivo = v.dia_hoje < v.dia_inicio
-      ? `Hoje é dia ${v.dia_hoje}. O alerta começa a ser enviado a partir do dia ${v.dia_inicio} — antes disso é cedo, os termos ainda estão sendo preparados.`
-      : `Hoje é dia ${v.dia_hoje}. A janela de envio terminou no dia ${v.dia_limite}.`;
-    return { ...v, enviado: false, motivo };
+    return { ...v, enviado: false,
+      motivo: `Hoje é dia ${v.dia_hoje}. O alerta começa no dia ${v.dia_inicio} — antes disso é cedo, os termos ainda estão sendo preparados.` };
   }
 
   const mesTxt = `${String(v.periodo.mes).padStart(2,'0')}/${v.periodo.ano}`;
@@ -3340,8 +3340,10 @@ async function alertaTermosDoMes({ forcar = false, para, mes, ano } = {}) {
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="font-family:Arial,Helvetica,sans-serif;color:#1c2333;">
   <div style="max-width:640px;margin:0 auto;">
     <div style="border-bottom:3px solid #D64545;padding:14px 0 10px;">
-      <div style="font-size:18px;font-weight:bold;color:#D64545;">⚠ Termos de faturamento pendentes — ${mesTxt}</div>
-      <div style="font-size:12px;color:#5a6478;margin-top:3px;">Prazo até o dia ${v.dia_limite} · hoje é dia ${v.dia_hoje} · ${v.dia_limite - v.dia_hoje >= 0 ? `faltam ${v.dia_limite - v.dia_hoje} dia(s)` : 'prazo vencido'}</div>
+      <div style="font-size:18px;font-weight:bold;color:#D64545;">${v.prazo_vencido ? '🔴 ATRASADO · ' : '⚠ '}Termos de faturamento pendentes — ${mesTxt}</div>
+      <div style="font-size:12px;color:#5a6478;margin-top:3px;">${v.prazo_vencido
+        ? `<b style="color:#D64545;">Prazo vencido há ${v.dias_de_atraso} dia(s)</b> — o limite era o dia ${v.dia_limite}. O faturamento do mês depende disso.`
+        : `Prazo até o dia ${v.dia_limite} · hoje é dia ${v.dia_hoje} · faltam ${v.dia_limite - v.dia_hoje} dia(s)`}</div>
     </div>
     <p style="font-size:14px;line-height:1.6;">${v.resumo}</p>
     <div style="background:#FDECEC;border:1px solid #D64545;border-radius:8px;padding:12px;margin:14px 0;">
@@ -3361,7 +3363,9 @@ async function alertaTermosDoMes({ forcar = false, para, mes, ano } = {}) {
   </div></body></html>`;
 
   try {
-    const r = await enviarEmailGmail({ para: destino, assunto: `⚠ ${v.faltando.length} termo(s) de faturamento pendente(s) — ${mesTxt}`, html });
+    const r = await enviarEmailGmail({ para: destino, assunto: v.prazo_vencido
+        ? `🔴 ATRASADO há ${v.dias_de_atraso} dia(s): ${v.faltando.length} termo(s) de faturamento — ${mesTxt}`
+        : `⚠ ${v.faltando.length} termo(s) de faturamento pendente(s) — ${mesTxt}`, html });
     return { ...v, enviado: true, para: destino, detalhe_envio: r };
   } catch (e) {
     return { ...v, enviado: false, erro_envio: e.message, para: destino };
