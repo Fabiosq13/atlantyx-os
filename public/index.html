@@ -3594,6 +3594,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <option value="despesas">Somente despesas</option>
     </select>
     <label style="font-size:10px;color:var(--t2);display:flex;align-items:center;gap:4px;"><input type="checkbox" id="conc_futuros" onchange="carregarConciliacao()"/> só lancamentos futuros</label>
+    <label style="font-size:10px;color:var(--t2);display:flex;align-items:center;gap:4px;" title="Distancia maxima entre o recebimento e o vencimento da nota">janela
+      <input type="number" class="fi" id="conc_janela" value="30" min="1" max="120" style="width:58px;font-size:10px;padding:3px 5px;" onchange="carregarConciliacao()"/> dias</label>
     <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="conciliarRecebiveis()">&#129534; Conciliar recebiveis (termo x NF x fatura)</button>
     <button class="btn btn-gn" onclick="carregarConciliacao()">&#8635; Buscar Sugestões</button>
     </div>
@@ -14643,7 +14645,7 @@ async function carregarConciliacao() {
   const lista = document.getElementById('conc_lista');
   if (lista) lista.innerHTML = '<div style="text-align:center;padding:24px;color:var(--t2);font-size:11px;">Buscando sugestões...</div>';
   try {
-    const d = await finApi('conc_sugestoes', { data_inicio: ini, data_fim: fim, conta_id: document.getElementById('conc_conta')?.value || null, tipo: document.getElementById('conc_tipo')?.value || 'todos', apenas_futuros: document.getElementById('conc_futuros')?.checked || false });
+    const d = await finApi('conc_sugestoes', { data_inicio: ini, data_fim: fim, conta_id: document.getElementById('conc_conta')?.value || null, tipo: document.getElementById('conc_tipo')?.value || 'todos', apenas_futuros: document.getElementById('conc_futuros')?.checked || false, janela_dias: parseInt(document.getElementById('conc_janela')?.value) || 30 });
     const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
     u('conc_ja', d.ja_conciliados);
     u('conc_sug', d.sugestoes_pendentes);
@@ -21184,7 +21186,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.89] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.90] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -21200,7 +21202,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.89';
+window.__ATX_BUILD_ID__ = 'ATX-v1.90';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
