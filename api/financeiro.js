@@ -17,6 +17,19 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default async function handler(req, res) {
+  // v1.91: cron diário do alerta de termos obrigatórios. A função decide se hoje é dia de
+  // enviar (até o dia 10) e se há algo faltando — o cron só precisa chamar todo dia.
+  if (req.query?.cron === 'termos_obrigatorios') {
+    try {
+      const r = await alertaTermosDoMes({});
+      console.log('[cron termos]', r.resumo, '| enviado:', r.enviado, r.motivo || '');
+      return res.status(200).json({ success: true, cron: 'termos_obrigatorios', ...r });
+    } catch (e) {
+      console.error('[cron termos] erro:', e.message);
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -125,6 +138,8 @@ export default async function handler(req, res) {
       // ── Conciliação bancária ─────────────────────────────────────────────
       conc_sugestoes:        () => conciliacaoSugestoes(params),
       conc_recebiveis:       () => conciliacaoRecebiveis(params),
+      termos_verificar:      () => verificarTermosDoMes(params),
+      termos_alertar:        () => alertaTermosDoMes(params),
       conc_aprovar:          () => conciliacaoAprovar(params),
       conc_rejeitar:         () => conciliacaoRejeitar(params),
       conc_status:           () => conciliacaoStatus(params),
@@ -3214,6 +3229,135 @@ function round(n, casas = 2) {
 // uma referência compatível em (a) despesas programadas pendentes, (b) AR do QB.
 // Score baseado em valor (peso 0.6) + data (peso 0.3) + descrição similar (0.1).
 // Lançamentos já aprovados não voltam à lista. Status: sugestao | aprovada | rejeitada.
+
+// ═══ v1.91: ALERTA DE TERMOS OBRIGATÓRIOS DO MÊS ═══
+// Todo mês, até o dia 10, estes termos precisam estar lançados no kanban de faturamento.
+// Se pelo menos um faltar, sai e-mail para o financeiro.
+const TERMOS_OBRIGATORIOS_PADRAO = [
+  'Termo de sustentação bigdata atlanteam',
+  'Termo sustentação xplann',
+  'Termo anaplan',
+  'Termo projeto cadastro',
+  'Termo projeto Motriz',
+];
+
+// Similaridade por palavras — os nomes no sistema nunca vêm exatamente iguais
+function _normTermo(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+const _STOP_TERMO = new Set(['termo','de','do','da','projeto','sustentacao','contrato','medicao','parcela']);
+function _similaridadeTermo(alvo, candidato) {
+  const pa = _normTermo(alvo).split(' ').filter(w => w.length > 2);
+  const pc = _normTermo(candidato).split(' ').filter(w => w.length > 2);
+  if (!pa.length || !pc.length) return 0;
+  // as palavras que identificam de fato (bigdata, xplann, anaplan, cadastro, motriz)
+  const chaves = pa.filter(w => !_STOP_TERMO.has(w));
+  const usar = chaves.length ? chaves : pa;
+  let achou = 0;
+  usar.forEach(w => { if (pc.some(c => c === w || c.includes(w) || w.includes(c))) achou++; });
+  return Math.round((achou / usar.length) * 100) / 100;
+}
+
+async function verificarTermosDoMes({ mes, ano, nomes, limite_dia = 10, score_min = 0.6 } = {}) {
+  const sql = await getSql();
+  const hoje = new Date();
+  const m = parseInt(mes) || (hoje.getMonth() + 1);
+  const a = parseInt(ano) || hoje.getFullYear();
+  const ini = `${a}-${String(m).padStart(2,'0')}-01`;
+  const fim = `${a}-${String(m).padStart(2,'0')}-${String(new Date(a, m, 0).getDate()).padStart(2,'0')}`;
+
+  // Lista configurável (guardada em app_config)
+  let obrigatorios = Array.isArray(nomes) && nomes.length ? nomes : null;
+  if (!obrigatorios) {
+    try {
+      const c = await configAppGet({ chave: 'termos_obrigatorios' });
+      obrigatorios = Array.isArray(c.valor) && c.valor.length ? c.valor : TERMOS_OBRIGATORIOS_PADRAO;
+    } catch { obrigatorios = TERMOS_OBRIGATORIOS_PADRAO; }
+  }
+
+  // Termos lançados no mês — pela data de criação OU pelo período de medição
+  let lancados = [];
+  try {
+    lancados = await sql`SELECT id, numero_termo, projeto, contratante, periodo_medicao, status,
+        valor_total_termo, criado_em
+      FROM termos_faturamento
+      WHERE (criado_em >= ${ini}::date AND criado_em < (${fim}::date + interval '1 day'))
+         OR (periodo_medicao ILIKE ${'%' + String(m).padStart(2,'0') + '/' + a + '%'})
+      ORDER BY criado_em DESC`;
+  } catch (e) { return { erro: 'Não consegui ler o kanban de faturamento: ' + e.message }; }
+
+  const encontrados = [], faltando = [];
+  obrigatorios.forEach(nome => {
+    let melhor = null;
+    lancados.forEach(t => {
+      const texto = [t.numero_termo, t.projeto, t.contratante].filter(Boolean).join(' ');
+      const s = _similaridadeTermo(nome, texto);
+      if (s >= score_min && (!melhor || s > melhor.score)) {
+        melhor = { score: s, termo_id: t.id, encontrado_como: texto.substring(0, 70),
+          status: t.status, valor: num(t.valor_total_termo),
+          criado_em: t.criado_em ? String(t.criado_em).substring(0,10) : null };
+      }
+    });
+    if (melhor) encontrados.push({ nome, ...melhor });
+    else faltando.push({ nome });
+  });
+
+  const diaHoje = hoje.getDate();
+  return {
+    periodo: { mes: m, ano: a, de: ini, ate: fim },
+    obrigatorios, total: obrigatorios.length,
+    encontrados, faltando,
+    total_lancados_no_mes: lancados.length,
+    dentro_do_prazo: diaHoje <= limite_dia,
+    dia_limite: limite_dia, dia_hoje: diaHoje,
+    deve_alertar: faltando.length > 0,
+    resumo: faltando.length
+      ? `${faltando.length} de ${obrigatorios.length} termo(s) ainda não lançado(s) no mês ${String(m).padStart(2,'0')}/${a}.`
+      : `Todos os ${obrigatorios.length} termos obrigatórios estão lançados em ${String(m).padStart(2,'0')}/${a}.`,
+  };
+}
+
+async function alertaTermosDoMes({ forcar = false, para, mes, ano } = {}) {
+  const v = await verificarTermosDoMes({ mes, ano });
+  if (v.erro) return v;
+  if (!v.deve_alertar && !forcar) return { ...v, enviado: false, motivo: 'Todos os termos estão lançados — nenhum alerta necessário.' };
+  if (v.dia_hoje > v.dia_limite && !forcar) {
+    return { ...v, enviado: false, motivo: `Hoje é dia ${v.dia_hoje}; o alerta é enviado até o dia ${v.dia_limite}. Use "forçar" para enviar mesmo assim.` };
+  }
+
+  const mesTxt = `${String(v.periodo.mes).padStart(2,'0')}/${v.periodo.ano}`;
+  const destino = para || process.env.RELATORIO_PAGAMENTOS_PARA || 'financeiro@atlanteam.com.br, contato@atlanteam.com.br';
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="font-family:Arial,Helvetica,sans-serif;color:#1c2333;">
+  <div style="max-width:640px;margin:0 auto;">
+    <div style="border-bottom:3px solid #D64545;padding:14px 0 10px;">
+      <div style="font-size:18px;font-weight:bold;color:#D64545;">⚠ Termos de faturamento pendentes — ${mesTxt}</div>
+      <div style="font-size:12px;color:#5a6478;margin-top:3px;">Prazo: até o dia ${v.dia_limite} · hoje é dia ${v.dia_hoje}</div>
+    </div>
+    <p style="font-size:14px;line-height:1.6;">${v.resumo}</p>
+    <div style="background:#FDECEC;border:1px solid #D64545;border-radius:8px;padding:12px;margin:14px 0;">
+      <div style="font-weight:bold;font-size:13px;margin-bottom:7px;">Não lançados no kanban:</div>
+      ${v.faltando.map(x => `<div style="font-size:13px;padding:3px 0;">• ${x.nome}</div>`).join('')}
+    </div>
+    ${v.encontrados.length ? `<div style="background:#EAF7F1;border:1px solid #1FB287;border-radius:8px;padding:12px;margin:14px 0;">
+      <div style="font-weight:bold;font-size:13px;margin-bottom:7px;">Já lançados:</div>
+      ${v.encontrados.map(x => `<div style="font-size:12.5px;padding:3px 0;">✓ ${x.nome}<br><span style="color:#5a6478;font-size:11px;">encontrado como "${x.encontrado_como}" · ${x.status}${x.valor ? ' · ' + x.valor.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : ''}</span></div>`).join('')}
+    </div>` : ''}
+    <p style="font-size:12.5px;color:#5a6478;line-height:1.6;">
+      ${v.total_lancados_no_mes} termo(s) lançado(s) no mês no total. A busca é por semelhança de nome — se algum termo foi lançado com nome muito diferente, pode não ter sido reconhecido.
+    </p>
+    <div style="border-top:1px solid #d7dce8;margin-top:18px;padding-top:10px;font-size:11px;color:#8a93a8;">
+      Atlantyx OS · alerta automático de termos obrigatórios
+    </div>
+  </div></body></html>`;
+
+  try {
+    const r = await enviarEmailGmail({ para: destino, assunto: `⚠ ${v.faltando.length} termo(s) de faturamento pendente(s) — ${mesTxt}`, html });
+    return { ...v, enviado: true, para: destino, detalhe_envio: r };
+  } catch (e) {
+    return { ...v, enviado: false, erro_envio: e.message, para: destino };
+  }
+}
 
 // ═══ v1.87: CONCILIAÇÃO DE RECEBÍVEIS ═══
 // Cruza três fontes: termos aprovados → notas fiscais emitidas → faturas no QuickBooks.
