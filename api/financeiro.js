@@ -19,6 +19,17 @@
 export default async function handler(req, res) {
   // v1.91: cron diário do alerta de termos obrigatórios. A função decide se hoje é dia de
   // enviar (até o dia 10) e se há algo faltando — o cron só precisa chamar todo dia.
+  // v1.94: cron diário das pendências do faturamento
+  if (req.query?.cron === 'pendencias_faturamento') {
+    try {
+      const r = await alertaPendenciasFaturamento({});
+      console.log('[cron pendências]', r.resumo || r.erro, '| enviado:', r.enviado);
+      return res.status(200).json({ success: true, cron: 'pendencias_faturamento', ...r });
+    } catch (e) {
+      console.error('[cron pendências] erro:', e.message);
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
   if (req.query?.cron === 'termos_obrigatorios') {
     try {
       const r = await alertaTermosDoMes({});
@@ -140,6 +151,7 @@ export default async function handler(req, res) {
       conc_recebiveis:       () => conciliacaoRecebiveis(params),
       termos_verificar:      () => verificarTermosDoMes(params),
       termos_alertar:        () => alertaTermosDoMes(params),
+      pendencias_alertar:    () => alertaPendenciasFaturamento(params),
       conc_aprovar:          () => conciliacaoAprovar(params),
       conc_rejeitar:         () => conciliacaoRejeitar(params),
       conc_status:           () => conciliacaoStatus(params),
@@ -3229,6 +3241,93 @@ function round(n, casas = 2) {
 // uma referência compatível em (a) despesas programadas pendentes, (b) AR do QB.
 // Score baseado em valor (peso 0.6) + data (peso 0.3) + descrição similar (0.1).
 // Lançamentos já aprovados não voltam à lista. Status: sugestao | aprovada | rejeitada.
+
+// ═══ v1.94: ALERTA DIÁRIO DE PENDÊNCIAS DO FATURAMENTO ═══
+// Dois pontos de atenção que travam o recebimento:
+//  1. Termo na coluna "pagamento" sem a confirmação de que as notas estão no portal da CPFL
+//  2. Termo parado em "envio de NF" há mais de 5 dias
+async function alertaPendenciasFaturamento({ forcar = false, para, dias_limite_envio_nf = 5 } = {}) {
+  let p;
+  try {
+    const mod = await import('./faturamento.js');
+    // a função é interna ao módulo; chamamos pela própria API para não duplicar a regra
+    const r = await fetch(`${_baseUrlInterna()}/api/faturamento`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'status_pendencias', payload: { dias_limite_envio_nf } }),
+    });
+    p = await r.json();
+    if (!p.success) throw new Error(p.error || 'falha ao ler pendências');
+  } catch (e) { return { erro: 'Não consegui ler as pendências do faturamento: ' + e.message }; }
+
+  if (!p.deve_alertar && !forcar) {
+    return { ...p, enviado: false, motivo: 'Nenhuma pendência — todos os termos em pagamento estão confirmados e nenhum parado em envio de NF.' };
+  }
+
+  const destino = para || process.env.RELATORIO_PAGAMENTOS_PARA || 'financeiro@atlanteam.com.br, contato@atlanteam.com.br';
+  const fmtV = v => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const dt = d => d ? String(d).substring(0, 10).split('-').reverse().join('/') : '—';
+  const semConf = p.sem_confirmacao_cpfl || [];
+  const parados = p.parados_envio_nf || [];
+  const totalSemConf = semConf.reduce((s, t) => s + (t.valor || 0), 0);
+  const totalParados = parados.reduce((s, t) => s + (t.valor || 0), 0);
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="font-family:Arial,Helvetica,sans-serif;color:#1c2333;">
+  <div style="max-width:660px;margin:0 auto;">
+    <div style="border-bottom:3px solid #1A3A8F;padding:14px 0 10px;">
+      <div style="font-size:18px;font-weight:bold;color:#1A3A8F;">Pendências do faturamento</div>
+      <div style="font-size:12px;color:#5a6478;margin-top:3px;">${new Date().toLocaleDateString('pt-BR')} · ${p.resumo}</div>
+    </div>
+
+    ${semConf.length ? `
+    <div style="margin-top:16px;">
+      <div style="font-size:14px;font-weight:bold;color:#D64545;">⚠ Sem confirmação no sistema da CPFL (${semConf.length})</div>
+      <div style="font-size:12px;color:#5a6478;margin:4px 0 8px;">Termos na coluna <b>pagamento</b> cujas notas ainda não foram confirmadas como entregues e aprovadas no portal de fornecedores. Total: <b>${fmtV(totalSemConf)}</b></div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <tr style="background:#1A3A8F;color:#fff;">
+          ${['TERMO','CLIENTE','PERÍODO','VALOR','EM PAGAMENTO DESDE'].map(h => `<th style="padding:6px 8px;text-align:left;font-size:10.5px;">${h}</th>`).join('')}
+        </tr>
+        ${semConf.map(t => `<tr style="border-bottom:1px solid #d7dce8;">
+          <td style="padding:6px 8px;">${t.numero || t.id}</td>
+          <td style="padding:6px 8px;">${t.cliente || '—'}</td>
+          <td style="padding:6px 8px;">${t.periodo || '—'}</td>
+          <td style="padding:6px 8px;">${fmtV(t.valor)}</td>
+          <td style="padding:6px 8px;">${dt(t.desde)}</td></tr>`).join('')}
+      </table>
+    </div>` : ''}
+
+    ${parados.length ? `
+    <div style="margin-top:18px;">
+      <div style="font-size:14px;font-weight:bold;color:#E0A422;">⏱ Parados em envio de NF há mais de ${p.limite_envio_nf} dias (${parados.length})</div>
+      <div style="font-size:12px;color:#5a6478;margin:4px 0 8px;">Total: <b>${fmtV(totalParados)}</b></div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <tr style="background:#E0A422;color:#fff;">
+          ${['TERMO','CLIENTE','PERÍODO','VALOR','PARADO HÁ'].map(h => `<th style="padding:6px 8px;text-align:left;font-size:10.5px;">${h}</th>`).join('')}
+        </tr>
+        ${parados.map(t => `<tr style="border-bottom:1px solid #d7dce8;">
+          <td style="padding:6px 8px;">${t.numero || t.id}</td>
+          <td style="padding:6px 8px;">${t.cliente || '—'}</td>
+          <td style="padding:6px 8px;">${t.periodo || '—'}</td>
+          <td style="padding:6px 8px;">${fmtV(t.valor)}</td>
+          <td style="padding:6px 8px;"><b style="color:#D64545;">${t.dias_parado} dias</b> (desde ${dt(t.desde)})</td></tr>`).join('')}
+      </table>
+    </div>` : ''}
+
+    <div style="border-top:1px solid #d7dce8;margin-top:20px;padding-top:10px;font-size:11px;color:#8a93a8;">
+      Atlantyx OS · alerta diário de pendências do faturamento. Marque a confirmação da CPFL no card do termo, no Kanban de Faturamento.
+    </div>
+  </div></body></html>`;
+
+  const assunto = `Faturamento: ${semConf.length} sem confirmação CPFL${parados.length ? ` · ${parados.length} parado(s) em envio de NF` : ''}`;
+  try {
+    const r = await enviarEmailGmail({ para: destino, assunto, html });
+    return { ...p, enviado: true, para: destino, detalhe_envio: r };
+  } catch (e) { return { ...p, enviado: false, erro_envio: e.message, para: destino }; }
+}
+function _baseUrlInterna() {
+  const b = process.env.MEDIA_PUBLIC_BASE || process.env.VERCEL_PROJECT_PRODUCTION_URL || '';
+  if (!b) return 'http://localhost:3000';
+  return b.startsWith('http') ? b.replace(/\/$/, '') : `https://${b}`;
+}
 
 // ═══ v1.91: ALERTA DE TERMOS OBRIGATÓRIOS DO MÊS ═══
 // Todo mês, até o dia 10, estes termos precisam estar lançados no kanban de faturamento.
