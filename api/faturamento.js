@@ -70,6 +70,78 @@ async function ensureTabelas(sql) {
   try { await sql`ALTER TABLE termos_notas_encontradas ADD COLUMN IF NOT EXISTS arquivo_url TEXT`; } catch (_) {}
   try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS pagamento_origem TEXT`; } catch (_) {} // v1.34
   try { await sql`ALTER TABLE termos_notas_encontradas ADD COLUMN IF NOT EXISTS origem TEXT DEFAULT 'email'`; } catch (_) {}
+  // v1.94: confirmação de que as notas entraram no portal de fornecedores da CPFL e estão
+  // programadas para pagamento. É o analista financeiro quem marca — o sistema não tem
+  // acesso ao portal, então não pode inferir isso sozinho.
+  for (const col of [
+    'cpfl_confirmado BOOLEAN DEFAULT false',
+    'cpfl_confirmado_em TIMESTAMPTZ',
+    'cpfl_confirmado_por TEXT',
+    'cpfl_observacao TEXT',
+    'cpfl_previsao_pagamento DATE',
+    'entrou_em_envio_nf TIMESTAMPTZ',     // para medir há quantos dias está nessa etapa
+  ]) {
+    try { await sql.query(`ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS ${col}`); } catch (e) { console.warn('[FAT] migração v1.94:', e.message); }
+  }
+}
+
+// v1.94: o analista marca que as notas estão no sistema da CPFL programadas para pagamento
+async function cpflConfirmar({ termo_id, confirmado = true, por, observacao, previsao_pagamento } = {}) {
+  if (!termo_id) throw new Error('termo_id obrigatório');
+  const sql = await getSql();
+  await sql`UPDATE termos_faturamento SET
+      cpfl_confirmado = ${!!confirmado},
+      cpfl_confirmado_em = ${confirmado ? new Date().toISOString() : null},
+      cpfl_confirmado_por = ${confirmado ? (por || 'financeiro') : null},
+      cpfl_observacao = ${observacao || null},
+      cpfl_previsao_pagamento = ${previsao_pagamento || null},
+      atualizado_em = NOW()
+    WHERE id = ${termo_id}`;
+  const r = await sql`SELECT id, numero_termo, cpfl_confirmado, cpfl_confirmado_em, cpfl_confirmado_por,
+    cpfl_observacao, cpfl_previsao_pagamento FROM termos_faturamento WHERE id = ${termo_id}`;
+  return { termo: r[0] || null };
+}
+
+// v1.94: o que precisa de atenção hoje — base do e-mail diário
+async function statusPendencias({ dias_limite_envio_nf = 5 } = {}) {
+  const sql = await getSql();
+  const hoje = new Date();
+
+  // 1. Termos em "pagamento" sem a confirmação da CPFL
+  const semConfirmacao = await sql`SELECT id, numero_termo, projeto, contratante, periodo_medicao,
+      valor_total_termo, atualizado_em, cpfl_confirmado
+    FROM termos_faturamento
+    WHERE status = 'pagamento' AND (cpfl_confirmado IS NULL OR cpfl_confirmado = false)
+    ORDER BY atualizado_em ASC`;
+
+  // 2. Termos parados em "envio_nf" há mais de N dias
+  const emEnvio = await sql`SELECT id, numero_termo, projeto, contratante, periodo_medicao,
+      valor_total_termo, atualizado_em, entrou_em_envio_nf
+    FROM termos_faturamento
+    WHERE status = 'envio_nf'
+    ORDER BY COALESCE(entrou_em_envio_nf, atualizado_em) ASC`;
+
+  const paradosEnvio = emEnvio.map(t => {
+    const desde = t.entrou_em_envio_nf || t.atualizado_em;
+    const dias = desde ? Math.floor((hoje - new Date(desde)) / 86400000) : null;
+    return { ...t, desde: desde ? String(desde).substring(0, 10) : null, dias_parado: dias };
+  }).filter(t => t.dias_parado != null && t.dias_parado > dias_limite_envio_nf);
+
+  return {
+    sem_confirmacao_cpfl: semConfirmacao.map(t => ({
+      id: t.id, numero: t.numero_termo, projeto: t.projeto, cliente: t.contratante,
+      periodo: t.periodo_medicao, valor: num(t.valor_total_termo),
+      desde: t.atualizado_em ? String(t.atualizado_em).substring(0, 10) : null,
+    })),
+    parados_envio_nf: paradosEnvio.map(t => ({
+      id: t.id, numero: t.numero_termo, projeto: t.projeto, cliente: t.contratante,
+      periodo: t.periodo_medicao, valor: num(t.valor_total_termo),
+      desde: t.desde, dias_parado: t.dias_parado,
+    })),
+    limite_envio_nf: dias_limite_envio_nf,
+    deve_alertar: semConfirmacao.length > 0 || paradosEnvio.length > 0,
+    resumo: `${semConfirmacao.length} termo(s) em pagamento sem confirmação da CPFL · ${paradosEnvio.length} parado(s) em envio de NF há mais de ${dias_limite_envio_nf} dias.`,
+  };
 }
 
 function novoId(prefixo) { return (prefixo || 'id') + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
@@ -192,7 +264,17 @@ async function termoGet({ id } = {}) {
 async function termoMover({ id, status } = {}) {
   if (!id || !STATUS.includes(status)) throw new Error('id e status válido obrigatórios (' + STATUS.join(', ') + ')');
   const sql = await getSql();
-  await sql`UPDATE termos_faturamento SET status = ${status}, atualizado_em = NOW() WHERE id = ${id}`;
+  // v1.94: marca QUANDO entrou em envio_nf, para medir há quantos dias está parado.
+  // Sem isso, usar atualizado_em zeraria a contagem a cada edição do termo.
+  if (status === 'envio_nf') {
+    await sql`UPDATE termos_faturamento SET status = ${status},
+      entrou_em_envio_nf = COALESCE(entrou_em_envio_nf, NOW()), atualizado_em = NOW() WHERE id = ${id}`;
+  } else if (status === 'pagamento') {
+    await sql`UPDATE termos_faturamento SET status = ${status}, atualizado_em = NOW() WHERE id = ${id}`;
+  } else {
+    // saiu de envio_nf para trás: limpa o marcador para não contar tempo antigo
+    await sql`UPDATE termos_faturamento SET status = ${status}, entrou_em_envio_nf = NULL, atualizado_em = NOW() WHERE id = ${id}`;
+  }
   return await termoGet({ id });
 }
 
@@ -794,6 +876,8 @@ export default async function handler(req, res) {
   const { action, payload = {} } = body;
 
   const acoes = {
+    cpfl_confirmar:    () => cpflConfirmar(payload),
+    status_pendencias: () => statusPendencias(payload),
     termo_importar:          () => termoImportar(payload),
     termo_list:               () => termoList(payload),
     termo_get:                 () => termoGet(payload),
