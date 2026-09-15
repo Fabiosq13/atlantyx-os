@@ -351,6 +351,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
     </div>
     <div class="sg-body closed" id="gProjetos">
       <div class="sbi s2" onclick="nav('s9projetos',this)">&#9670; Painel de Projetos <span class="nbx gn">IA</span></div>
+      <div class="sbi s2" onclick="nav('s9raiox',this)">&#128300; Raio-X do Projeto <span class="nbx gd">novo</span></div>
+      <div class="sbi s2" onclick="nav('s9conselho',this)">&#127963; Sala com Conselheiros</div>
       <div class="sbi s2" onclick="nav('s9painel',this)">&#128209; Painel Mestre <span class="nbx gd">8 projetos</span></div>
       <div class="sbi s2" onclick="nav('s9status',this)">&#128202; Status Report <span class="nbx gn">novo</span></div>
       <div class="sbi s2" onclick="nav('s9sala',this)">&#127909; Sala de Reuniao <span class="nbx pu">gerentes</span></div>
@@ -3126,6 +3128,37 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
 <!-- v1.62: S9 · STATUS REPORT -->
 <!-- v1.64: S9 · PAINEL MESTRE -->
+<!-- v1.95: RAIO-X DO PROJETO -->
+<div class="page" id="page-s9raiox">
+  <div style="background:linear-gradient(135deg,rgba(0,207,200,.12),rgba(0,207,200,.03));border:1px solid rgba(0,207,200,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#128300; Raio-X do Projeto</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Cronograma fisico &middot; performance da equipe &middot; retorno financeiro e lucro</div></div>
+    <select class="fsel" id="rx_projeto" style="font-size:11px;width:auto;min-width:220px;"><option value="">Escolha o projeto</option></select>
+    <button class="btn" style="font-size:10px;" onclick="cronogramaConfigurar()">&#9881; Cronograma</button>
+    <button class="btn btn-gn" onclick="gerarRaioX()" id="btnRaioX">&#128300; Gerar raio-X</button>
+  </div>
+  <div id="raioXBox"><div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:26px;font-size:11.5px;">Escolha o projeto e clique em <b>Gerar raio-X</b>.<br><span style="font-size:10px;">Cruza o cronograma fisico do modulo externo com as receitas e despesas do projeto.</span></div></div></div>
+</div>
+
+<!-- v1.95: SALA COM CONSELHEIROS (PROJETOS) -->
+<div class="page" id="page-s9conselho">
+  <div style="background:linear-gradient(135deg,rgba(156,109,255,.14),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#127963; Sala do Conselho &middot; Projetos</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Todos os conselheiros na mesa, com <b>ORION</b> (Gerente de Projetos IA) conduzindo a pauta</div></div>
+    <select class="fsel" id="cp_projeto" style="font-size:11px;width:auto;min-width:200px;"><option value="">Todos os projetos</option></select>
+    <button class="btn btn-gn" onclick="abrirDebateProjetos()" id="btnDebProj">&#128172; Abrir debate</button>
+  </div>
+  <div class="panel" style="margin-bottom:12px;">
+    <div class="ph"><div class="pt">Pauta</div></div>
+    <div class="pb">
+      <textarea class="fi" id="cp_pauta" style="height:64px;" placeholder="O que levar ao conselho? Ex.: o projeto Motriz esta 19 pontos atrasado e consumiu 65% do orcamento — seguimos ou renegociamos o escopo?"></textarea>
+      <div style="font-size:10px;color:var(--t2);margin-top:6px;">ORION abre com a leitura tecnica do projeto; os conselheiros respondem de suas especialidades e sao instruidos a discordar com fundamento.</div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="ph"><div class="pt">Debate</div><button class="btn" style="font-size:10px;" onclick="gerarAtaConselhoProj()">&#128203; Gerar ata</button></div>
+    <div class="pb" id="cpDebate" style="max-height:56vh;overflow-y:auto;"><div style="text-align:center;color:var(--t3);padding:22px;font-size:11.5px;">Escreva a pauta e clique em <b>Abrir debate</b>.</div></div>
+  </div>
+</div>
+
 <div class="page" id="page-s9painel">
   <div style="background:linear-gradient(135deg,rgba(245,185,75,.12),rgba(245,185,75,.03));border:1px solid rgba(245,185,75,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
     <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Painel Mestre de Projetos</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Uma linha por projeto · visão executiva do ciclo semanal · alimentado pelo sistema de projetos</div></div>
@@ -3987,7 +4020,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <div class="toast" id="toastEl"></div>
 <script>
 const LOGS=[];let logCount=0;
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -18120,6 +18153,190 @@ function ceoExportarAgenda() {
   toast('Agenda exportada', 'success');
 }
 
+// ═══ v1.95: RAIO-X DO PROJETO E SALA DO CONSELHO · PROJETOS ═══
+async function _rxPopularProjetos() {
+  try {
+    const d = await pmoApi('projetos_listar');
+    const lista = (d.projetos || []).map(p => p.nome).filter(Boolean);
+    ['rx_projeto','cp_projeto'].forEach((id, idx) => {
+      const sel = document.getElementById(id); if (!sel) return;
+      const atual = sel.value;
+      sel.innerHTML = (idx ? '<option value="">Todos os projetos</option>' : '<option value="">Escolha o projeto</option>')
+        + lista.map(n => `<option value="${n.replace(/"/g,'')}">${n}</option>`).join('');
+      sel.value = atual;
+    });
+  } catch (e) { addLog('warn', '[PMO] projetos: ' + e.message); }
+}
+async function cronogramaConfigurar() {
+  try {
+    const c = await pmoApi('crono_config');
+    const url = prompt('URL do módulo de cronograma:', c.url || '');
+    if (url === null) return;
+    const caminho = prompt('Caminho da API que devolve as tarefas/cronograma:', c.caminho || '/api/projetos');
+    if (caminho === null) return;
+    const token = prompt('Token (deixe vazio se a API for aberta):', c.token || '') || '';
+    await pmoApi('crono_config', { salvar: { url: url.trim(), caminho: caminho.trim(), token } });
+    toast('Testando a conexão...', 'success');
+    const t = await pmoApi('crono_testar', {});
+    const r = t.teste || {};
+    if (r.ok) {
+      alert(`✅ Conectado!\n\nURL: ${r.url_testada}\nRegistros: ${r.total}\nFormato: ${r.formato}\n\nCampos encontrados:\n${(r.campos||[]).join(', ')}\n\nSe algum campo importante (percentual, datas, responsável) tiver nome diferente do esperado, me envie esta lista que eu ajusto o mapeamento.`);
+    } else {
+      alert(`⚠ Não consegui conectar.\n\nURL: ${r.url_testada}\nErro: ${r.erro}${r.resposta ? '\n\nResposta: ' + String(r.resposta).substring(0,250) : ''}`);
+    }
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+async function gerarRaioX() {
+  const proj = document.getElementById('rx_projeto')?.value;
+  if (!proj) { toast('Escolha o projeto', 'error'); return; }
+  const btn = document.getElementById('btnRaioX'); if (btn) { btn.disabled = true; btn.textContent = '⏳ Analisando...'; }
+  const box = document.getElementById('raioXBox');
+  box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:26px;">⏳ Cruzando cronograma, equipe e financeiro...</div></div>';
+  try {
+    const d = await pmoApi('raio_x_projeto', { projeto: proj });
+    const c = d.cronograma || {}, f = d.financeiro || {}, rx = d.raio_x || {};
+    const corV = { 'saudável':'var(--green,#22d3a3)', 'atenção':'var(--gold)', 'requer ação':'var(--red)' }[rx.veredito] || 'var(--t3)';
+    const barra = (pct, cor) => `<div style="height:7px;background:var(--bd);border-radius:4px;overflow:hidden;margin-top:4px;"><div style="height:100%;width:${Math.max(0,Math.min(100,pct||0))}%;background:${cor};"></div></div>`;
+    box.innerHTML = `
+      <div style="background:var(--bg4);border-left:4px solid ${corV};border-radius:9px;padding:13px 16px;margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+          <span style="font-size:14px;font-weight:700;">${proj}</span>
+          <span style="font-size:11px;color:${corV};font-weight:600;text-transform:uppercase;">${rx.veredito || '—'}</span>
+        </div>
+        ${(rx.alertas||[]).map(a => `<div style="font-size:11px;line-height:1.6;margin-top:5px;color:${a.g==='alta'?'var(--red)':'var(--gold)'};">• ${a.txt}</div>`).join('')
+          || '<div style="font-size:11px;color:var(--green,#22d3a3);margin-top:5px;">Nenhum ponto crítico identificado.</div>'}
+      </div>
+
+      <div class="kg k4" style="margin-bottom:12px;">
+        <div class="kpi bl"><div class="kl">Avanço físico</div><div class="kv">${c.avanco_real != null ? c.avanco_real + '%' : '—'}</div><div class="ks">planejado ${c.avanco_planejado != null ? c.avanco_planejado + '%' : '—'}</div></div>
+        <div class="kpi ${c.spi >= 0.95 ? 'gn' : c.spi >= 0.85 ? 'gd' : 'rd'}"><div class="kl">SPI</div><div class="kv">${c.spi != null ? c.spi.toFixed(2).replace('.',',') : '—'}</div><div class="ks">${c.situacao || ''}</div></div>
+        <div class="kpi ${(f.lucro||0) >= 0 ? 'gn' : 'rd'}"><div class="kl">Lucro do projeto</div><div class="kv" style="font-size:15px;">${fmtBRLcompleto(f.lucro||0)}</div><div class="ks">margem ${f.margem_pct != null ? f.margem_pct + '%' : '—'}</div></div>
+        <div class="kpi gd"><div class="kl">Consumo do orçamento</div><div class="kv">${rx.consumo_orcamento_pct != null ? rx.consumo_orcamento_pct + '%' : '—'}</div><div class="ks">para ${c.avanco_real != null ? c.avanco_real + '%' : '—'} de avanço</div></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:12px;align-items:start;">
+        <div class="panel" style="margin:0;">
+          <div class="ph"><div class="pt">📅 Cronograma físico</div><span style="font-size:10px;color:var(--t2);">${c.total_tarefas || 0} tarefa(s)</span></div>
+          <div class="pb">
+            ${c.erro || c.aviso ? `<div style="font-size:11px;color:var(--gold);line-height:1.6;">${c.erro || c.aviso}<br><button class="btn" style="font-size:10px;margin-top:6px;" onclick="cronogramaConfigurar()">⚙ Configurar a fonte</button></div>` : `
+            <div style="font-size:11px;margin-bottom:8px;">
+              <div style="display:flex;justify-content:space-between;"><span>Executado</span><b>${c.avanco_real}%</b></div>${barra(c.avanco_real, 'var(--green,#22d3a3)')}
+              <div style="display:flex;justify-content:space-between;margin-top:8px;"><span>Planejado até hoje</span><b>${c.avanco_planejado}%</b></div>${barra(c.avanco_planejado, 'var(--blue,#4f7cff)')}
+              <div style="margin-top:7px;color:${c.desvio < 0 ? 'var(--red)' : 'var(--green,#22d3a3)'};">Desvio: ${c.desvio > 0 ? '+' : ''}${c.desvio} pontos</div>
+            </div>
+            <div style="display:flex;gap:12px;font-size:10.5px;color:var(--t2);padding-top:7px;border-top:1px solid var(--bd);">
+              <span>✓ ${c.concluidas} concluída(s)</span><span>▶ ${c.em_andamento} em andamento</span><span>○ ${c.nao_iniciadas} não iniciada(s)</span>
+            </div>
+            ${(c.atrasadas||[]).length ? `<div style="margin-top:9px;">
+              <div style="font-size:11px;font-weight:600;color:var(--red);margin-bottom:5px;">⏱ ${c.qtd_atrasadas} tarefa(s) com prazo vencido</div>
+              ${c.atrasadas.slice(0,8).map(t => `<div style="font-size:10px;padding:3px 0;border-bottom:1px solid var(--bd);">
+                ${t.tarefa} <span style="color:var(--t3);">· ${t.responsavel || 's/ resp.'} · ${t.pct}%</span>
+                <span style="color:var(--red);float:right;">${t.dias_atraso}d</span></div>`).join('')}
+            </div>` : ''}`}
+          </div>
+        </div>
+
+        <div class="panel" style="margin:0;">
+          <div class="ph"><div class="pt">👥 Performance da equipe</div></div>
+          <div class="pb">
+            ${(d.equipe||[]).length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;">
+              <thead><tr style="border-bottom:1px solid var(--bd);">${['PESSOA','TAREFAS','CONCL.','ATRAS.','AVANÇO'].map(h=>`<th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;">${h}</th>`).join('')}</tr></thead>
+              <tbody>${d.equipe.map(e => `<tr style="border-bottom:1px solid var(--bd);">
+                <td style="padding:5px;">${e.situacao==='crítico'?'🔴':e.situacao==='atenção'?'🟡':'🟢'} ${e.nome}</td>
+                <td style="padding:5px;">${e.tarefas}</td><td style="padding:5px;">${e.concluidas}</td>
+                <td style="padding:5px;${e.atrasadas?'color:var(--red);':''}">${e.atrasadas||'—'}</td>
+                <td style="padding:5px;font-family:var(--M);">${e.avanco_medio}%</td></tr>`).join('')}</tbody></table>`
+            : '<div style="font-size:11px;color:var(--t3);text-align:center;padding:16px;">Sem dados de equipe — depende do cronograma.</div>'}
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:12px;">
+        <div class="ph"><div class="pt">💰 Retorno financeiro ao longo do projeto</div>
+          <span style="font-size:10px;color:var(--t2);">${f.qtd_termos} termo(s) · ${f.qtd_despesas} despesa(s)</span></div>
+        <div class="pb">
+          <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:11px;margin-bottom:10px;">
+            <span>Receita: <b style="color:var(--green,#22d3a3);">${fmtBRLcompleto(f.receita_total)}</b> <span style="color:var(--t3);">(${fmtBRLcompleto(f.receita_recebida)} recebido)</span></span>
+            <span>Despesa: <b style="color:var(--red);">${fmtBRLcompleto(f.despesa_total)}</b></span>
+            <span>Lucro: <b style="color:${(f.lucro||0)>=0?'var(--green,#22d3a3)':'var(--red)'};">${fmtBRLcompleto(f.lucro)}</b></span>
+          </div>
+          ${(f.linha_tempo||[]).length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;">
+            <thead><tr style="border-bottom:1px solid var(--bd);">${['MÊS','RECEITA','DESPESA','RESULTADO','ACUMULADO'].map(h=>`<th style="text-align:right;padding:5px;color:var(--t2);font-size:9px;${h==='MÊS'?'text-align:left;':''}">${h}</th>`).join('')}</tr></thead>
+            <tbody>${f.linha_tempo.map(m => `<tr style="border-bottom:1px solid var(--bd);">
+              <td style="padding:5px;font-family:var(--M);">${m.mes.split('-').reverse().join('/')}</td>
+              <td style="padding:5px;text-align:right;font-family:var(--M);color:var(--green,#22d3a3);">${m.receita ? fmtBRLcompleto(m.receita) : '—'}</td>
+              <td style="padding:5px;text-align:right;font-family:var(--M);color:var(--red);">${m.despesa ? fmtBRLcompleto(m.despesa) : '—'}</td>
+              <td style="padding:5px;text-align:right;font-family:var(--M);">${fmtBRLcompleto(m.resultado)}</td>
+              <td style="padding:5px;text-align:right;font-family:var(--M);font-weight:600;color:${m.acumulado>=0?'var(--green,#22d3a3)':'var(--red)'};">${fmtBRLcompleto(m.acumulado)}</td></tr>`).join('')}</tbody></table>`
+          : `<div style="font-size:11px;color:var(--t3);text-align:center;padding:14px;">Sem lançamentos financeiros vinculados a este projeto.${f.erro ? '<br>' + f.erro : ''}</div>`}
+        </div>
+      </div>`;
+  } catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:16px;font-size:11px;">Erro: ${e.message}</div></div>`; }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = '&#128300; Gerar raio-X'; } }
+}
+
+// ── Sala do Conselho · Projetos (ORION conduz, conselheiros debatem) ──
+let _cpDebate = [];
+async function abrirDebateProjetos() {
+  const pauta = document.getElementById('cp_pauta')?.value?.trim();
+  if (!pauta) { toast('Escreva a pauta', 'error'); return; }
+  const proj = document.getElementById('cp_projeto')?.value || null;
+  const btn = document.getElementById('btnDebProj'); if (btn) { btn.disabled = true; btn.textContent = '⏳ Debatendo...'; }
+  const box = document.getElementById('cpDebate');
+  box.innerHTML = '<div style="text-align:center;color:var(--t3);padding:20px;font-size:11.5px;">⏳ ORION abrindo a reunião...</div>';
+  _cpDebate = [];
+  try {
+    // 1. ORION abre com a leitura técnica
+    const o = await pmoApi('gerente_projeto', { modo: 'analise_inicial',
+      pergunta: `Abra a reunião do conselho sobre: ${pauta}${proj ? ' (projeto: ' + proj + ')' : ''}. Traga a leitura técnica dos números.` });
+    _cpFala(box, 'ORION · Gerente de Projetos IA', o.resposta, 'orion');
+    _cpDebate.push({ autor: 'ORION', texto: o.resposta });
+
+    // 2. Conselheiros respondem
+    const ctx = `PAUTA: ${pauta}\n\nLEITURA DO GERENTE DE PROJETOS (ORION): ${o.resposta}`;
+    const r = await rhApi('conselho_debate', { tema: ctx, rodadas: 1 });
+    (r.falas || r.debate || []).forEach(f => {
+      const autor = f.autor || f.nome || f.membro || 'Conselheiro';
+      const texto = f.texto || f.fala || f.conteudo || '';
+      if (!texto) return;
+      _cpFala(box, autor, texto, 'conselheiro');
+      _cpDebate.push({ autor, texto });
+    });
+
+    // 3. ORION fecha com o encaminhamento
+    const fecha = await pmoApi('gerente_projeto', {
+      pergunta: `O conselho opinou:\n${_cpDebate.slice(1).map(d => d.autor + ': ' + d.texto).join('\n\n')}\n\nFeche a reunião: qual o encaminhamento concreto para os projetos? Máximo 90 palavras.`,
+      historico: _cpDebate.map(d => ({ role: 'assistant', content: d.texto })) });
+    _cpFala(box, 'ORION · encaminhamento', fecha.resposta, 'fecho');
+    _cpDebate.push({ autor: 'ORION (fecho)', texto: fecha.resposta });
+  } catch (e) { box.innerHTML += `<div style="color:var(--red);font-size:11px;padding:10px;">Erro: ${e.message}</div>`; }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = '&#128172; Abrir debate'; } }
+}
+function _cpFala(box, autor, texto, tipo) {
+  if (_cpDebate.length === 0) box.innerHTML = '';
+  const cores = { orion: 'var(--purple,#9c6dff)', conselheiro: 'var(--blue,#4f7cff)', fecho: 'var(--green,#22d3a3)' };
+  const d = document.createElement('div');
+  d.style.cssText = `margin-bottom:10px;padding:10px 12px;border-radius:9px;background:var(--bg4);border-left:3px solid ${cores[tipo]||'var(--bd)'};`;
+  d.innerHTML = `<div style="font-size:10px;color:${cores[tipo]||'var(--t2)'};font-weight:600;margin-bottom:4px;">${tipo==='orion'?'🤖':tipo==='fecho'?'✅':'🏛'} ${autor}</div>
+    <div style="font-size:11.5px;line-height:1.7;white-space:pre-wrap;">${String(texto||'').replace(/</g,'&lt;')}</div>`;
+  box.appendChild(d); box.scrollTop = box.scrollHeight;
+}
+async function gerarAtaConselhoProj() {
+  if (!_cpDebate.length) { toast('Nenhum debate para registrar', 'error'); return; }
+  try {
+    const d = await pmoApi('reuniao_ata', {
+      titulo: 'Conselho · Projetos ' + new Date().toLocaleDateString('pt-BR'),
+      transcricao: _cpDebate.map(x => ({ autor: x.autor, texto: x.texto })),
+      projetos_discutidos: [document.getElementById('cp_projeto')?.value].filter(Boolean) });
+    const box = document.getElementById('cpDebate');
+    const el = document.createElement('div');
+    el.style.cssText = 'margin-top:12px;padding:12px;background:rgba(34,211,163,.1);border:1px solid var(--green,#22d3a3);border-radius:9px;white-space:pre-wrap;font-size:11.5px;line-height:1.7;';
+    el.innerHTML = '<b>📋 ATA</b>\n\n' + String(d.ata||'').replace(/</g,'&lt;');
+    box.appendChild(el); box.scrollTop = box.scrollHeight;
+    toast('Ata gerada e salva', 'success');
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+
 // ═══ v1.91: TERMOS OBRIGATÓRIOS DO MÊS ═══
 async function verificarTermosObrigatorios() {
   let modal = document.getElementById('termosObrigModal');
@@ -21275,7 +21492,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.94] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.95] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -21291,7 +21508,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.94';
+window.__ATX_BUILD_ID__ = 'ATX-v1.95';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
