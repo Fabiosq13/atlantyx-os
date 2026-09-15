@@ -16492,9 +16492,26 @@ async function _fatLimparFiltros() {
   await carregarKanbanFaturamento(); // v1.32: await — sem ele o texto informativo ficava com o filtro antigo
 }
 function _fatCard(t, col) {
+  // v1.94: quantos dias parado em envio de NF — acima de 5 o card avisa
+  const diasEnvio = (col === 'envio_nf' && (t.entrou_em_envio_nf || t.atualizado_em))
+    ? Math.floor((Date.now() - new Date(t.entrou_em_envio_nf || t.atualizado_em)) / 86400000) : null;
+  const paradoBadge = (diasEnvio != null && diasEnvio > 5)
+    ? `<div style="font-size:9px;margin-top:4px;color:var(--red);background:rgba(255,80,80,.12);border-radius:5px;padding:2px 6px;display:inline-block;">⏱ parado há ${diasEnvio} dias</div>` : '';
   const nfBadge = col === 'envio_nf' || col === 'pagamento' || col === 'aprovacao' || col === 'emissao_nf'
     ? `<div style="font-size:9px;margin-top:4px;">🧾 ${t.n_nf_encontradas}/${t.n_empresas} nota(s)${t.nf_status === 'divergente' ? ' <span style="color:var(--red);">⚠ divergente</span>' : t.nf_status === 'completo' ? ' <span style="color:var(--green,#22d3a3);">✓ completo</span>' : ''}</div>` : '';
   const pagBadge = col === 'pagamento' ? `<div style="font-size:9px;margin-top:2px;">💰 ${t.n_pagas}/${t.n_empresas} paga(s)</div>` : '';
+  // v1.94: confirmação de que as notas estão no portal de fornecedores da CPFL.
+  // Só o analista sabe disso — o sistema não acessa o portal. Editável direto no card.
+  const cpflBadge = col === 'pagamento' ? `<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--bd);">
+      <span onclick="event.stopPropagation();_fatToggleCpfl('${t.id}', ${t.cpfl_confirmado ? 'false' : 'true'})"
+        title="${t.cpfl_confirmado ? 'Confirmado por ' + (t.cpfl_confirmado_por || '—') + (t.cpfl_confirmado_em ? ' em ' + String(t.cpfl_confirmado_em).substring(0,10).split('-').reverse().join('/') : '') + ' — clique para desmarcar' : 'Marcar que as notas estão no sistema da CPFL, programadas para pagamento'}"
+        style="cursor:pointer;font-size:9px;display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:5px;
+          background:${t.cpfl_confirmado ? 'rgba(34,211,163,.15)' : 'rgba(255,80,80,.12)'};
+          color:${t.cpfl_confirmado ? 'var(--green,#22d3a3)' : 'var(--red)'};border:1px solid ${t.cpfl_confirmado ? 'rgba(34,211,163,.4)' : 'rgba(255,80,80,.35)'};">
+        ${t.cpfl_confirmado ? '✅ CPFL confirmado' : '⬜ confirmar no sistema CPFL'}
+      </span>
+      ${t.cpfl_previsao_pagamento ? `<span style="font-size:8.5px;color:var(--t3);margin-left:5px;">prev. ${String(t.cpfl_previsao_pagamento).substring(0,10).split('-').reverse().join('/')}</span>` : ''}
+    </div>` : '';
   // v1.33: datas explícitas no card
   const _dt = d => d ? d.split('-').reverse().slice(0,2).join('/') : null;
   const datasBadge = (t.data_emissao || t.data_pagamento) ? `<div style="display:flex;gap:8px;font-size:8.5px;margin-top:4px;padding-top:4px;border-top:1px solid var(--bd);">
@@ -16506,7 +16523,7 @@ function _fatCard(t, col) {
     <div style="font-size:9px;color:var(--t2);margin-top:2px;">${t.contratante||''} · ${t.periodo_medicao||''}</div>
     <div style="font-size:11px;font-family:var(--M);color:var(--gold);margin-top:4px;">${fmtBRLcompleto(t.valor_total_termo)}</div>
     <div style="font-size:9px;color:var(--t3);">${t.n_empresas} empresa(s) no rateio</div>
-    ${nfBadge}${pagBadge}${datasBadge}
+    ${nfBadge}${pagBadge}${cpflBadge}${paradoBadge}${datasBadge}
   </div>`;
 }
 
@@ -16598,6 +16615,23 @@ function _fatBarraProgressoNf(t) {
 }
 
 // v1.20.4: card de upload manual de NF — visível na etapa Emissão de NF
+// v1.94: marca/desmarca a confirmação da CPFL direto no card
+async function _fatToggleCpfl(termoId, confirmar) {
+  try {
+    let obs = null, prev = null;
+    if (confirmar) {
+      const r = prompt('Confirmar que as notas deste termo estão no sistema de fornecedores da CPFL, programadas para pagamento.\n\nOpcional — previsão de pagamento (AAAA-MM-DD) e observação, separados por |:', '');
+      if (r === null) return;
+      const [p, o] = r.split('|').map(x => (x || '').trim());
+      if (p && /^\d{4}-\d{2}-\d{2}$/.test(p)) prev = p;
+      obs = o || (p && !prev ? p : null);
+    }
+    await fatApi('cpfl_confirmar', { termo_id: termoId, confirmado: confirmar, por: 'financeiro', observacao: obs, previsao_pagamento: prev });
+    toast(confirmar ? 'Confirmado no sistema da CPFL' : 'Confirmação removida', confirmar ? 'success' : 'info');
+    carregarKanbanFaturamento();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+
 function _fatCardUploadNf(t, emp) {
   const pendentes = emp.filter(e => e.nf_status !== 'encontrada');
   _fatEmpresasAtual[t.id] = pendentes; // p/ os detectores de empresa usarem ao processar os arquivos
@@ -21241,7 +21275,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.93] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.94] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -21257,7 +21291,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.93';
+window.__ATX_BUILD_ID__ = 'ATX-v1.94';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
