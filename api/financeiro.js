@@ -3360,7 +3360,7 @@ async function conciliacaoRecebiveis({ tolerancia_valor_pct = 2, tolerancia_dias
   };
 }
 
-async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55, conta_id = null, tipo = 'todos', apenas_futuros = false } = {}) {
+async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55, conta_id = null, tipo = 'todos', apenas_futuros = false, janela_dias = 30 } = {}) {
   const sql = await getSql();
   const hoje = new Date().toISOString().split('T')[0];
   const ini = data_inicio || new Date(Date.now() - 60 * 86400 * 1000).toISOString().split('T')[0];
@@ -3454,13 +3454,17 @@ async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55, c
     if (r.tipo === 'entrada') {
       for (const ar of arQB) {
         const diasEmissao = ar.emissao ? Math.round((new Date(r.data) - new Date(ar.emissao)) / 86400000) : null;
-        // Nota emitida DEPOIS do recebimento não pode ter gerado esse recebimento
-        if (diasEmissao != null && diasEmissao < -3) continue;          // -3 = folga p/ lançamento no mesmo dia
-        // Janela razoável: até 180 dias entre emissão e recebimento
-        if (diasEmissao != null && diasEmissao > 180) continue;
+        const diasVenc = ar.vencimento ? Math.round((new Date(r.data) - new Date(ar.vencimento)) / 86400000) : null;
 
-        // O score compara o recebimento com o VENCIMENTO (quando o dinheiro era esperado),
-        // não com a emissão — é o vencimento que fica próximo da data do extrato.
+        // v1.90: JANELA APERTADA. A de 180 dias era larga demais e sugeria absurdos —
+        // um recebimento de 14/08 casando com nota emitida em 11/06 (64 dias antes).
+        // Agora o critério é a proximidade com o VENCIMENTO: o dinheiro entra perto da
+        // data em que era esperado, não meses depois.
+        if (diasEmissao != null && diasEmissao < -3) continue;              // emitida depois do recebimento
+        if (diasVenc != null && Math.abs(diasVenc) > janela_dias) continue; // longe do vencimento
+        // Sem vencimento cadastrado, usa a emissão com a mesma janela + o prazo padrão
+        if (diasVenc == null && diasEmissao != null && diasEmissao > janela_dias + 30) continue;
+
         const score = calcScore(r.valor, ar.valor, r.data, ar.vencimento || ar.data, r.descricao, ar.descricao);
         if (score >= score_min) {
           candidatos.push({
@@ -3473,10 +3477,11 @@ async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55, c
             ref_emissao: ar.emissao,
             ref_vencimento: ar.vencimento,
             dias_emissao_ate_recebimento: diasEmissao,
+            dias_do_vencimento: diasVenc,
             ref_detalhe: ar.emissao
               ? `emitida ${String(ar.emissao).substring(0,10).split('-').reverse().join('/')}` +
                 (ar.vencimento && ar.vencimento !== ar.emissao ? ` · vence ${String(ar.vencimento).substring(0,10).split('-').reverse().join('/')}` : '') +
-                (diasEmissao != null ? ` · recebido ${diasEmissao} dia(s) depois` : '')
+                (diasVenc != null ? ` · recebido ${diasVenc === 0 ? 'no dia' : Math.abs(diasVenc) + ' dia(s) ' + (diasVenc > 0 ? 'após' : 'antes')} do vencimento` : '')
               : null,
             score,
           });
@@ -3524,7 +3529,7 @@ async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55, c
 
   return {
     periodo: { data_inicio: ini, data_fim: fim },
-    filtro: { tipo, apenas_futuros },   // v1.89: a tela confirma o que foi aplicado
+    filtro: { tipo, apenas_futuros, janela_dias },   // v1.90
     total_reais: totalReais,
     fontes: { qb: reais.filter(r => (r.origem||r.fonte||'').toString().toLowerCase().includes('q')).length, simulados: reais.filter(r => (r.origem||r.fonte||'').toString().toLowerCase().includes('sim')).length, qb_erro: ext.qb_erro || null },
     ja_conciliados: jaConciliados,
