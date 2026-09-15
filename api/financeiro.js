@@ -3397,8 +3397,16 @@ async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55, c
           id: 'inv_' + inv.Id,
           tipo: 'invoice',
           data: inv.DueDate || inv.TxnDate,
+          // v1.88: guardamos emissão e vencimento separados. Uma nota emitida em julho é paga
+          // em agosto — comparar a entrada do extrato só com a emissão penalizava o casamento
+          // certo. O que importa é: a emissão veio ANTES do recebimento, e o vencimento está
+          // próximo dele.
+          emissao: inv.TxnDate,
+          vencimento: inv.DueDate || inv.TxnDate,
           valor: parseFloat(inv.Balance || 0),
+          valor_total: parseFloat(inv.TotalAmt || inv.Balance || 0),
           descricao: (inv.CustomerRef?.name || 'Invoice ') + ' #' + (inv.DocNumber || inv.Id),
+          cliente: inv.CustomerRef?.name || '',
         });
       }
     } catch {}
@@ -3430,9 +3438,19 @@ async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55, c
       }
     }
     // Entradas → match com AR QB
+    // v1.88 REGRA: um recebimento no extrato casa com nota EMITIDA ANTES dele e ainda em aberto.
+    // A entrada de agosto deve procurar invoices de julho (ou antes), não do próprio mês.
     if (r.tipo === 'entrada') {
       for (const ar of arQB) {
-        const score = calcScore(r.valor, ar.valor, r.data, ar.data, r.descricao, ar.descricao);
+        const diasEmissao = ar.emissao ? Math.round((new Date(r.data) - new Date(ar.emissao)) / 86400000) : null;
+        // Nota emitida DEPOIS do recebimento não pode ter gerado esse recebimento
+        if (diasEmissao != null && diasEmissao < -3) continue;          // -3 = folga p/ lançamento no mesmo dia
+        // Janela razoável: até 180 dias entre emissão e recebimento
+        if (diasEmissao != null && diasEmissao > 180) continue;
+
+        // O score compara o recebimento com o VENCIMENTO (quando o dinheiro era esperado),
+        // não com a emissão — é o vencimento que fica próximo da data do extrato.
+        const score = calcScore(r.valor, ar.valor, r.data, ar.vencimento || ar.data, r.descricao, ar.descricao);
         if (score >= score_min) {
           candidatos.push({
             ref_id: ar.id,
@@ -3440,6 +3458,15 @@ async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55, c
             ref_data: ar.data,
             ref_valor: ar.valor,
             ref_descricao: ar.descricao,
+            // v1.88: mostra a linha do tempo, que é o que permite conferir o casamento
+            ref_emissao: ar.emissao,
+            ref_vencimento: ar.vencimento,
+            dias_emissao_ate_recebimento: diasEmissao,
+            ref_detalhe: ar.emissao
+              ? `emitida ${String(ar.emissao).substring(0,10).split('-').reverse().join('/')}` +
+                (ar.vencimento && ar.vencimento !== ar.emissao ? ` · vence ${String(ar.vencimento).substring(0,10).split('-').reverse().join('/')}` : '') +
+                (diasEmissao != null ? ` · recebido ${diasEmissao} dia(s) depois` : '')
+              : null,
             score,
           });
         }
