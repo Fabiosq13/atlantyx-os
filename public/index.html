@@ -2725,7 +2725,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
         <div style="font-size:11.5px;font-weight:700;">Rateio entre as empresas</div>
-        <button class="btn btn-gn" style="font-size:10px;" onclick="_edAddEmpresa()">+ Adicionar empresa</button>
+        <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="verificarTermosObrigatorios()" title="Confere se os termos obrigatorios do mes estao lancados">&#9888; Termos do mes</button>
+    <button class="btn btn-gn" style="font-size:10px;" onclick="_edAddEmpresa()">+ Adicionar empresa</button>
       </div>
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:640px;">
@@ -18085,6 +18086,60 @@ function ceoExportarAgenda() {
   toast('Agenda exportada', 'success');
 }
 
+// ═══ v1.91: TERMOS OBRIGATÓRIOS DO MÊS ═══
+async function verificarTermosObrigatorios() {
+  let modal = document.getElementById('termosObrigModal');
+  if (!modal) { modal = document.createElement('div'); modal.id='termosObrigModal';
+    modal.style.cssText='display:flex;position:fixed;inset:0;background:rgba(0,0,0,.84);z-index:1000;align-items:center;justify-content:center;overflow:auto;padding:20px;'; document.body.appendChild(modal); }
+  modal.style.display='flex';
+  modal.innerHTML = '<div class="panel" style="width:640px;max-width:95vw;"><div class="pb" style="text-align:center;color:var(--t3);padding:28px;">⏳ Conferindo os termos do mês...</div></div>';
+  try {
+    const d = await finApi('termos_verificar', {});
+    if (d.erro) { modal.innerHTML = `<div class="panel" style="width:520px;"><div class="pb" style="padding:18px;color:var(--red);">${d.erro}<br><br><button class="btn" onclick="document.getElementById('termosObrigModal').style.display='none'">Fechar</button></div></div>`; return; }
+    const mes = String(d.periodo.mes).padStart(2,'0') + '/' + d.periodo.ano;
+    modal.innerHTML = `<div class="panel" style="width:640px;max-width:95vw;max-height:90vh;overflow:auto;">
+      <div class="ph"><div class="pt">⚠ Termos obrigatórios · ${mes}</div>
+        <button class="btn" style="font-size:10px;" onclick="document.getElementById('termosObrigModal').style.display='none'">✕</button></div>
+      <div class="pb">
+        <div style="background:${d.faltando.length ? 'rgba(255,80,80,.1)' : 'rgba(34,211,163,.1)'};border:1px solid ${d.faltando.length ? 'var(--red)' : 'var(--green,#22d3a3)'};border-radius:8px;padding:11px;font-size:11.5px;margin-bottom:12px;">
+          ${d.faltando.length ? '⚠' : '✅'} <b>${d.resumo}</b><br>
+          <span style="color:var(--t2);font-size:10.5px;">Prazo até o dia ${d.dia_limite} · hoje é dia ${d.dia_hoje}${d.dentro_do_prazo ? '' : ' (fora do prazo)'}</span>
+        </div>
+        ${d.faltando.length ? `<div style="font-size:11.5px;font-weight:600;margin-bottom:6px;color:var(--red);">Não lançados</div>
+          ${d.faltando.map(x => `<div style="background:var(--bg4);border-left:3px solid var(--red);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:11px;">${x.nome}</div>`).join('')}` : ''}
+        ${d.encontrados.length ? `<div style="font-size:11.5px;font-weight:600;margin:12px 0 6px;color:var(--green,#22d3a3);">Já lançados</div>
+          ${d.encontrados.map(x => `<div style="background:var(--bg4);border-left:3px solid var(--green,#22d3a3);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:11px;">
+            <b>${x.nome}</b><br><span style="color:var(--t3);font-size:9.5px;">encontrado como "${x.encontrado_como}" · ${x.status}${x.criado_em ? ' · ' + x.criado_em.split('-').reverse().join('/') : ''}</span></div>`).join('')}` : ''}
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+          ${d.faltando.length ? `<button class="btn btn-gn" onclick="enviarAlertaTermos()">📧 Enviar alerta ao financeiro</button>` : ''}
+          <button class="btn" onclick="editarTermosObrigatorios()">⚙ Editar a lista</button>
+        </div>
+        <div style="font-size:10px;color:var(--t3);margin-top:10px;line-height:1.6;">
+          A busca é por semelhança de nome (${d.total_lancados_no_mes} termo(s) lançado(s) no mês). O alerta automático roda todo dia às 9h e só envia se faltar algum e estivermos até o dia ${d.dia_limite}.
+        </div>
+      </div></div>`;
+  } catch (e) { modal.innerHTML = `<div class="panel" style="width:520px;"><div class="pb" style="padding:18px;color:var(--red);">Erro: ${e.message}<br><br><button class="btn" onclick="document.getElementById('termosObrigModal').style.display='none'">Fechar</button></div></div>`; }
+}
+async function enviarAlertaTermos() {
+  try {
+    const d = await finApi('termos_alertar', { forcar: true });
+    if (d.enviado) { toast('Alerta enviado para ' + d.para, 'success'); addLog('ok', '[Faturamento] alerta de termos enviado'); }
+    else toast(d.motivo || d.erro_envio || 'Não enviado', 'error');
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+async function editarTermosObrigatorios() {
+  try {
+    const d = await finApi('termos_verificar', {});
+    const atual = (d.obrigatorios || []).join('\n');
+    const novo = prompt('Termos obrigatórios — um por linha.\nA busca é por semelhança, então o nome não precisa ser exato.', atual);
+    if (novo === null) return;
+    const lista = novo.split('\n').map(x => x.trim()).filter(Boolean);
+    await finApi('config_salvar', { chave: 'termos_obrigatorios', valor: lista });
+    toast(lista.length + ' termo(s) na lista', 'success');
+    verificarTermosObrigatorios();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+
 // ═══ v1.87: CONCILIAÇÃO DE RECEBÍVEIS — termo × NF × fatura no QuickBooks ═══
 async function conciliarRecebiveis() {
   const box = document.getElementById('concRecebiveisBox');
@@ -21186,7 +21241,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.90] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.91] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -21202,7 +21257,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.90';
+window.__ATX_BUILD_ID__ = 'ATX-v1.91';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
