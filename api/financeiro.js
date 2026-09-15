@@ -3360,7 +3360,7 @@ async function conciliacaoRecebiveis({ tolerancia_valor_pct = 2, tolerancia_dias
   };
 }
 
-async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55, conta_id = null } = {}) {
+async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55, conta_id = null, tipo = 'todos', apenas_futuros = false } = {}) {
   const sql = await getSql();
   const hoje = new Date().toISOString().split('T')[0];
   const ini = data_inicio || new Date(Date.now() - 60 * 86400 * 1000).toISOString().split('T')[0];
@@ -3368,7 +3368,18 @@ async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55, c
 
   // 1. Buscar lançamentos REAIS (QB + simulados − ocultos) no período
   const ext = await extratoConsolidado({ conta_id, data_inicio: ini, data_fim: fim });
-  const reais = ext.lancamentos || [];
+  let reais = ext.lancamentos || [];
+
+  // v1.89: aplica os filtros da tela. Antes o seletor existia mas ninguém lia o valor —
+  // "somente receitas" continuava trazendo despesas.
+  if (tipo === 'receitas') reais = reais.filter(l => l.tipo === 'entrada');
+  else if (tipo === 'despesas') reais = reais.filter(l => l.tipo === 'saida');
+  else reais = reais.filter(l => l.tipo === 'entrada' || l.tipo === 'saida');  // exclui 'referencia'
+
+  if (apenas_futuros) {
+    const hojeF = new Date().toISOString().split('T')[0];
+    reais = reais.filter(l => String(l.data) > hojeF);
+  }
 
   // 2. Já tem conciliação aprovada/rejeitada para algum deles?
   let realIds = reais.map(r => r.id);
@@ -3513,6 +3524,7 @@ async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55, c
 
   return {
     periodo: { data_inicio: ini, data_fim: fim },
+    filtro: { tipo, apenas_futuros },   // v1.89: a tela confirma o que foi aplicado
     total_reais: totalReais,
     fontes: { qb: reais.filter(r => (r.origem||r.fonte||'').toString().toLowerCase().includes('q')).length, simulados: reais.filter(r => (r.origem||r.fonte||'').toString().toLowerCase().includes('sim')).length, qb_erro: ext.qb_erro || null },
     ja_conciliados: jaConciliados,
