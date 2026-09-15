@@ -14643,7 +14643,7 @@ async function carregarConciliacao() {
   const lista = document.getElementById('conc_lista');
   if (lista) lista.innerHTML = '<div style="text-align:center;padding:24px;color:var(--t2);font-size:11px;">Buscando sugestões...</div>';
   try {
-    const d = await finApi('conc_sugestoes', { data_inicio: ini, data_fim: fim, conta_id: document.getElementById('conc_conta')?.value || null });
+    const d = await finApi('conc_sugestoes', { data_inicio: ini, data_fim: fim, conta_id: document.getElementById('conc_conta')?.value || null, tipo: document.getElementById('conc_tipo')?.value || 'todos', apenas_futuros: document.getElementById('conc_futuros')?.checked || false });
     const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
     u('conc_ja', d.ja_conciliados);
     u('conc_sug', d.sugestoes_pendentes);
@@ -21184,7 +21184,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.88] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.89] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -21200,7 +21200,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.88';
+window.__ATX_BUILD_ID__ = 'ATX-v1.89';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
