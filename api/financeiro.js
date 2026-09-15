@@ -3259,7 +3259,7 @@ function _similaridadeTermo(alvo, candidato) {
   return Math.round((achou / usar.length) * 100) / 100;
 }
 
-async function verificarTermosDoMes({ mes, ano, nomes, limite_dia = 10, score_min = 0.6 } = {}) {
+async function verificarTermosDoMes({ mes, ano, nomes, dia_inicio = 5, limite_dia = 10, score_min = 0.6 } = {}) {
   const sql = await getSql();
   const hoje = new Date();
   const m = parseInt(mes) || (hoje.getMonth() + 1);
@@ -3303,14 +3303,20 @@ async function verificarTermosDoMes({ mes, ano, nomes, limite_dia = 10, score_mi
     else faltando.push({ nome });
   });
 
+  // v1.92: o alerta só sai na JANELA entre os dias 5 e 10. Antes do dia 5 é cedo — o mês
+  // mal começou e o termo pode estar sendo preparado; depois do dia 10 o prazo já passou
+  // e o aviso diário viraria ruído.
   const diaHoje = hoje.getDate();
+  const naJanela = diaHoje >= dia_inicio && diaHoje <= limite_dia;
   return {
     periodo: { mes: m, ano: a, de: ini, ate: fim },
     obrigatorios, total: obrigatorios.length,
     encontrados, faltando,
     total_lancados_no_mes: lancados.length,
+    janela_envio: { de: dia_inicio, ate: limite_dia },
+    na_janela: naJanela,
     dentro_do_prazo: diaHoje <= limite_dia,
-    dia_limite: limite_dia, dia_hoje: diaHoje,
+    dia_inicio, dia_limite: limite_dia, dia_hoje: diaHoje,
     deve_alertar: faltando.length > 0,
     resumo: faltando.length
       ? `${faltando.length} de ${obrigatorios.length} termo(s) ainda não lançado(s) no mês ${String(m).padStart(2,'0')}/${a}.`
@@ -3322,8 +3328,11 @@ async function alertaTermosDoMes({ forcar = false, para, mes, ano } = {}) {
   const v = await verificarTermosDoMes({ mes, ano });
   if (v.erro) return v;
   if (!v.deve_alertar && !forcar) return { ...v, enviado: false, motivo: 'Todos os termos estão lançados — nenhum alerta necessário.' };
-  if (v.dia_hoje > v.dia_limite && !forcar) {
-    return { ...v, enviado: false, motivo: `Hoje é dia ${v.dia_hoje}; o alerta é enviado até o dia ${v.dia_limite}. Use "forçar" para enviar mesmo assim.` };
+  if (!v.na_janela && !forcar) {
+    const motivo = v.dia_hoje < v.dia_inicio
+      ? `Hoje é dia ${v.dia_hoje}. O alerta começa a ser enviado a partir do dia ${v.dia_inicio} — antes disso é cedo, os termos ainda estão sendo preparados.`
+      : `Hoje é dia ${v.dia_hoje}. A janela de envio terminou no dia ${v.dia_limite}.`;
+    return { ...v, enviado: false, motivo };
   }
 
   const mesTxt = `${String(v.periodo.mes).padStart(2,'0')}/${v.periodo.ano}`;
@@ -3332,7 +3341,7 @@ async function alertaTermosDoMes({ forcar = false, para, mes, ano } = {}) {
   <div style="max-width:640px;margin:0 auto;">
     <div style="border-bottom:3px solid #D64545;padding:14px 0 10px;">
       <div style="font-size:18px;font-weight:bold;color:#D64545;">⚠ Termos de faturamento pendentes — ${mesTxt}</div>
-      <div style="font-size:12px;color:#5a6478;margin-top:3px;">Prazo: até o dia ${v.dia_limite} · hoje é dia ${v.dia_hoje}</div>
+      <div style="font-size:12px;color:#5a6478;margin-top:3px;">Prazo até o dia ${v.dia_limite} · hoje é dia ${v.dia_hoje} · ${v.dia_limite - v.dia_hoje >= 0 ? `faltam ${v.dia_limite - v.dia_hoje} dia(s)` : 'prazo vencido'}</div>
     </div>
     <p style="font-size:14px;line-height:1.6;">${v.resumo}</p>
     <div style="background:#FDECEC;border:1px solid #D64545;border-radius:8px;padding:12px;margin:14px 0;">
