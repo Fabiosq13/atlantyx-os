@@ -3178,7 +3178,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </div>
   <div class="panel">
     <div class="ph"><div class="pt">Todos os projetos</div><span style="font-size:10px;color:var(--t2);" id="pm_semana"></span></div>
-    <div class="pb" style="overflow-x:auto;" id="pmTabela"><div style="text-align:center;color:var(--t3);padding:20px;">Carregando...</div></div>
+    <div class="pb" style="overflow-x:auto;overflow-y:auto;max-height:62vh;" id="pmTabela"><div style="text-align:center;color:var(--t3);padding:20px;">Carregando...</div></div>
   </div>
 </div>
 
@@ -17652,7 +17652,7 @@ function _srHtmlApresentacao(r) {
   <div style="page-break-before:always;padding:14px 18px 6px;border-bottom:2px solid #1A3A8F;margin-top:18px;">
     <div style="font-size:16px;font-weight:bold;color:#1A3A8F;">Riscos do Projeto – ${r.projeto_nome}</div>
   </div>
-  <table style="width:100%;border-collapse:collapse;">
+  <table style="width:100%;border-collapse:collapse;min-width:820px;">
     <tr>${['ISSUE','DESCRIÇÃO','AÇÃO','RESPONSÁVEL','PROBABILIDADE'].map(h=>`<th style="${cabec}">${h}</th>`).join('')}</tr>
     ${r.riscos_projeto.map((x,i)=>`<tr>
       <td style="${cel}text-align:center;">${i+1}</td>
@@ -18972,6 +18972,45 @@ function _qaAnalisar(tela) {
     estourando.length + ' elemento(s) mais largos que a tela (cria barra de rolagem horizontal)',
     estourando.slice(0,3).map(e => e.tagName.toLowerCase() + (e.className ? '.'+String(e.className).split(' ')[0] : '')).join(', '));
 
+  // v1.99: 3b. CONTEÚDO APERTADO DENTRO DO PRÓPRIO CONTAINER.
+  // O detector acima media getBoundingClientRect, mas um elemento dentro de um container com
+  // overflow-x:auto NUNCA estoura — o container corta. Era por isso que o Painel Mestre
+  // (11 colunas em 900px) passava batido: visualmente espremido, tecnicamente "dentro".
+  const apertados = [...p.querySelectorAll('table,.pb,[style*="overflow"]')].filter(e => {
+    if (!_qaVisivel(e)) return false;
+    const sw = e.scrollWidth || 0, cw = e.clientWidth || 0;
+    return cw > 0 && sw > cw * 1.25;      // conteúdo 25% maior que o espaço
+  });
+  if (apertados.length) add('media','layout_apertado',
+    apertados.length + ' área(s) com conteúdo bem maior que o espaço disponível',
+    apertados.slice(0,3).map(e => {
+      const n = e.tagName.toLowerCase() + (e.id ? '#'+e.id : '');
+      return `${n}: precisa de ${e.scrollWidth}px e tem ${e.clientWidth}px`;
+    }).join(' · '));
+
+  // v1.99: 3c. TABELA COM MUITAS COLUNAS EM POUCO ESPAÇO — o caso do Painel Mestre.
+  // Menos de 85px por coluna faz o texto quebrar em várias linhas e a leitura vira sopa.
+  [...p.querySelectorAll('table')].filter(_qaVisivel).forEach(tb => {
+    const cols = tb.querySelectorAll('thead th').length || tb.querySelector('tr')?.children.length || 0;
+    const larg = tb.getBoundingClientRect().width || tb.scrollWidth || 0;
+    if (cols >= 6 && larg > 0) {
+      const porColuna = larg / cols;
+      if (porColuna < 85) add('media','tabela_espremida',
+        `Tabela com ${cols} colunas em ${Math.round(larg)}px — ${Math.round(porColuna)}px por coluna`,
+        'Abaixo de 85px por coluna o texto quebra em várias linhas. Aumente o min-width da tabela ou reduza as colunas.');
+    }
+  });
+
+  // v1.99: 3d. CÉLULAS COM TEXTO QUEBRANDO EM MUITAS LINHAS
+  const celulasAltas = [...p.querySelectorAll('td')].filter(td => {
+    if (!_qaVisivel(td)) return false;
+    const r = td.getBoundingClientRect();
+    return r.height > 60 && (td.textContent||'').trim().length > 15;   // 3+ linhas de texto
+  });
+  if (celulasAltas.length >= 3) add('media','celula_quebrada',
+    `${celulasAltas.length} célula(s) com texto quebrando em várias linhas`,
+    'Sinal de coluna estreita demais. Considere ellipsis com title, ou mais largura.');
+
   // 4. LAYOUT — elementos fora da área visível (deslocados)
   const rp = p.getBoundingClientRect();
   const deslocados = [...p.querySelectorAll('.kpi,.panel,button')].filter(e => {
@@ -19230,9 +19269,9 @@ async function carregarPainelMestre() {
 
     const cor = f => f==='verde'?'var(--green,#22d3a3)':f==='amarelo'?'var(--gold)':f==='vermelho'?'var(--red)':'var(--t3)';
     const ico = f => f==='verde'?'🟢':f==='amarelo'?'🟡':f==='vermelho'?'🔴':'⚪';
-    box.innerHTML = (d.painel||[]).length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:900px;">
+    box.innerHTML = (d.painel||[]).length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:1180px;table-layout:auto;">
       <thead><tr style="border-bottom:1px solid var(--bd);">
-        ${['PROJETO','TIPO','GERENTE','FAROL','AVANÇO','DESVIO','PRÓXIMO MARCO','RISCOS','AÇÕES','ATUALIZADO',''].map(h=>`<th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;white-space:nowrap;">${h}</th>`).join('')}
+        ${['PROJETO','TIPO','GERENTE','FAROL','AVANÇO','DESVIO','PRÓXIMO MARCO','RISCOS','AÇÕES','ATUALIZADO',''].map(h=>`<th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;white-space:nowrap;position:sticky;top:0;background:var(--bg2,#0f1420);z-index:2;">${h}</th>`).join('')}
       </tr></thead>
       <tbody>${d.painel.map(l => {
         const ehSust = l.tipo === 'sustentacao';
@@ -19244,13 +19283,13 @@ async function carregarPainelMestre() {
           : (ehSust && l.chamados_abertos != null ? `<span style="color:var(--t2);">${l.chamados_abertos} abertos</span>` : '—');
         const proxMarco = (l.marcos_proximos||[])[0];
         return `<tr style="border-bottom:1px solid var(--bd);${!l.atualizado_na_semana ? 'background:rgba(245,185,75,.05);' : ''}">
-          <td style="padding:6px;font-weight:600;">${l.projeto}</td>
+          <td style="padding:6px;font-weight:600;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${String(l.projeto||'').replace(/"/g,'')}">${l.projeto}</td>
           <td style="padding:6px;"><span style="font-size:9px;padding:1px 5px;border-radius:4px;background:${ehSust?'rgba(79,124,255,.15)':'rgba(156,109,255,.15)'};">${ehSust?'sustentação':'entrega'}</span></td>
-          <td style="padding:6px;color:var(--t2);">${l.gerente||'—'}</td>
+          <td style="padding:6px;color:var(--t2);white-space:nowrap;">${l.gerente||'—'}</td>
           <td style="padding:6px;color:${cor(l.farol)};white-space:nowrap;">${ico(l.farol)} ${l.farol||'sem report'}</td>
           <td style="padding:6px;font-family:var(--M);">${avanco}${!ehSust && l.pct_planejado!=null ? `<span style="color:var(--t3);font-size:9px;"> / ${l.pct_planejado}%</span>` : ''}</td>
           <td style="padding:6px;font-family:var(--M);">${desvio}</td>
-          <td style="padding:6px;color:var(--t2);font-size:10px;">${proxMarco ? (typeof proxMarco==='string'?proxMarco:proxMarco.descricao||'').substring(0,28) : '—'}</td>
+          <td style="padding:6px;color:var(--t2);font-size:10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${proxMarco ? String(typeof proxMarco==='string'?proxMarco:proxMarco.descricao||'').replace(/"/g,'') : ''}">${proxMarco ? (typeof proxMarco==='string'?proxMarco:proxMarco.descricao||'').substring(0,28) : '—'}</td>
           <td style="padding:6px;">${l.bloqueios ? `<span style="color:var(--red);">⛔${l.bloqueios}</span> ` : ''}${l.riscos ? `<span style="color:var(--gold);">⚠${l.riscos}</span>` : (!l.bloqueios ? '—' : '')}</td>
           <td style="padding:6px;">${l.acoes_abertas || '—'}</td>
           <td style="padding:6px;font-size:10px;${!l.atualizado_na_semana?'color:var(--gold);':'color:var(--t2);'}">${l.ultimo_report ? l.ultimo_report.split('-').reverse().join('/') + (l.dias_sem_report>7?` (${l.dias_sem_report}d)`:'') : '<span style="color:var(--red);">nunca</span>'}</td>
@@ -21897,7 +21936,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.98] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.99] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -21913,7 +21952,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.98';
+window.__ATX_BUILD_ID__ = 'ATX-v1.99';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
