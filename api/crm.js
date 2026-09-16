@@ -200,6 +200,148 @@ async function clientesListar({ fonte, busca, apenas_clientes = false } = {}) {
   };
 }
 
+// ═══ v1.97: MAPA DE RELACIONAMENTO — organograma de atuação comercial por cliente ═══
+// Três camadas:
+//   'venda'      — conhecemos e já vendemos para essa pessoa
+//   'conhecido'  — conhecemos mas ainda não vendemos
+//   'potencial'  — não conhecemos; é quem falta mapear (pode ser sugerido pela IA)
+async function mapaGarantirTabela(sql) {
+  await sql`CREATE TABLE IF NOT EXISTS crm_mapa_contatos (
+    id TEXT PRIMARY KEY,
+    cliente TEXT NOT NULL,
+    nome TEXT,
+    cargo TEXT,
+    area TEXT,
+    camada TEXT DEFAULT 'potencial',
+    reporta_para TEXT,
+    email TEXT, telefone TEXT, linkedin TEXT,
+    influencia TEXT,          -- decisor | influenciador | usuario | gatekeeper
+    observacao TEXT,
+    origem TEXT DEFAULT 'manual',
+    pos_x NUMERIC, pos_y NUMERIC,
+    criado_em TIMESTAMPTZ DEFAULT NOW(),
+    atualizado_em TIMESTAMPTZ DEFAULT NOW()
+  )`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_mapa_cliente ON crm_mapa_contatos(cliente)`;
+}
+function novoIdMapa() { return 'mc_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+async function mapaListar({ cliente } = {}) {
+  const sql = await getSql();
+  await mapaGarantirTabela(sql);
+  const rows = cliente
+    ? await sql`SELECT * FROM crm_mapa_contatos WHERE cliente = ${cliente} ORDER BY camada, cargo`
+    : await sql`SELECT * FROM crm_mapa_contatos ORDER BY cliente, camada`;
+  const contatos = rows.map(r => ({ ...r,
+    pos_x: r.pos_x != null ? parseFloat(r.pos_x) : null,
+    pos_y: r.pos_y != null ? parseFloat(r.pos_y) : null }));
+  const porCamada = { venda: 0, conhecido: 0, potencial: 0 };
+  contatos.forEach(c => { if (porCamada[c.camada] != null) porCamada[c.camada]++; });
+  return { contatos, total: contatos.length, por_camada: porCamada,
+    clientes: [...new Set(contatos.map(c => c.cliente))] };
+}
+
+async function mapaSalvar(p = {}) {
+  if (!p.cliente) throw new Error('cliente obrigatório');
+  if (!p.nome && !p.cargo) throw new Error('informe ao menos o nome ou o cargo');
+  const sql = await getSql();
+  await mapaGarantirTabela(sql);
+  const id = p.id || novoIdMapa();
+  const camada = ['venda', 'conhecido', 'potencial'].includes(p.camada) ? p.camada : 'potencial';
+  await sql`INSERT INTO crm_mapa_contatos (id, cliente, nome, cargo, area, camada, reporta_para,
+      email, telefone, linkedin, influencia, observacao, origem, pos_x, pos_y, atualizado_em)
+    VALUES (${id}, ${p.cliente}, ${p.nome || null}, ${p.cargo || null}, ${p.area || null}, ${camada},
+      ${p.reporta_para || null}, ${p.email || null}, ${p.telefone || null}, ${p.linkedin || null},
+      ${p.influencia || null}, ${p.observacao || null}, ${p.origem || 'manual'},
+      ${p.pos_x ?? null}, ${p.pos_y ?? null}, NOW())
+    ON CONFLICT (id) DO UPDATE SET cliente=EXCLUDED.cliente, nome=EXCLUDED.nome, cargo=EXCLUDED.cargo,
+      area=EXCLUDED.area, camada=EXCLUDED.camada, reporta_para=EXCLUDED.reporta_para,
+      email=EXCLUDED.email, telefone=EXCLUDED.telefone, linkedin=EXCLUDED.linkedin,
+      influencia=EXCLUDED.influencia, observacao=EXCLUDED.observacao,
+      pos_x=COALESCE(EXCLUDED.pos_x, crm_mapa_contatos.pos_x),
+      pos_y=COALESCE(EXCLUDED.pos_y, crm_mapa_contatos.pos_y), atualizado_em=NOW()`;
+  return { id };
+}
+async function mapaExcluir({ id }) {
+  if (!id) throw new Error('id obrigatório');
+  const sql = await getSql();
+  await sql`DELETE FROM crm_mapa_contatos WHERE id = ${id}`;
+  return { excluido: true };
+}
+async function mapaPosicao({ id, x, y }) {
+  if (!id) throw new Error('id obrigatório');
+  const sql = await getSql();
+  await sql`UPDATE crm_mapa_contatos SET pos_x = ${x}, pos_y = ${y}, atualizado_em = NOW() WHERE id = ${id}`;
+  return { ok: true };
+}
+
+// IA sugere a estrutura que provavelmente existe e ainda não mapeamos
+async function mapaSugerir({ cliente, setor, porte, observacao } = {}) {
+  if (!cliente) throw new Error('cliente obrigatório');
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
+  const sql = await getSql();
+  await mapaGarantirTabela(sql);
+  const jaTemos = await sql`SELECT nome, cargo, area, camada FROM crm_mapa_contatos WHERE cliente = ${cliente}`;
+
+  const system = `Você mapeia a estrutura de decisão de grandes empresas para uma consultoria de dados e IA (Atlantyx).
+A partir do que já se conhece do cliente, sugira os CARGOS que provavelmente existem e ainda não foram mapeados —
+as pessoas que precisam ser prospectadas para ampliar a conta.
+
+REGRAS:
+- Sugira CARGOS e ÁREAS, nunca nomes de pessoas. Você não tem como saber quem ocupa o cargo — inventar nome é pior que não sugerir.
+- Considere o setor e o porte: uma empresa de energia tem estrutura diferente de um banco.
+- Foque em quem decide, influencia ou usa soluções de dados/IA/tecnologia.
+- Entre 4 e 8 sugestões. Não repita cargos que já constam como mapeados.
+- Indique a quem cada um provavelmente reporta (pelo cargo) e o tipo de influência.
+
+Devolva SOMENTE JSON:
+{"sugestoes":[{"cargo":"...","area":"...","reporta_para_cargo":"... ou null","influencia":"decisor|influenciador|usuario|gatekeeper","porque":"em até 15 palavras, por que vale prospectar"}]}`;
+
+  const user = `CLIENTE: ${cliente}
+${setor ? 'Setor: ' + setor : ''}
+${porte ? 'Porte: ' + porte : ''}
+${observacao ? 'Contexto: ' + observacao : ''}
+
+JÁ MAPEADOS (não repita):
+${jaTemos.length ? jaTemos.map(c => `- ${c.cargo || '?'}${c.area ? ' (' + c.area + ')' : ''}${c.nome ? ' — ' + c.nome : ''} [${c.camada}]`).join('\n') : '(nenhum ainda)'}`;
+
+  const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), 55000);
+  const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ctrl.signal,
+    headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6', max_tokens: 1200, system, messages: [{ role: 'user', content: user }] }) });
+  clearTimeout(tm);
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error('Claude API [' + r.status + ']: ' + (d.error?.message || 'erro'));
+  let j;
+  try { j = JSON.parse(String(d.content?.[0]?.text || '{}').replace(/```json|```/g, '').trim()); }
+  catch { return { erro: 'A IA não devolveu JSON válido', bruto: String(d.content?.[0]?.text || '').substring(0, 400) }; }
+  return { sugestoes: j.sugestoes || [], cliente,
+    aviso: 'São cargos prováveis, não pessoas confirmadas. Valide antes de prospectar.' };
+}
+
+async function mapaAplicarSugestoes({ cliente, sugestoes = [] } = {}) {
+  if (!cliente || !sugestoes.length) throw new Error('cliente e sugestões obrigatórios');
+  const sql = await getSql();
+  await mapaGarantirTabela(sql);
+  // Casa "reporta_para_cargo" com quem já existe no mapa
+  const existentes = await sql`SELECT id, cargo FROM crm_mapa_contatos WHERE cliente = ${cliente}`;
+  const porCargo = {};
+  existentes.forEach(e => { if (e.cargo) porCargo[String(e.cargo).toLowerCase().trim()] = e.id; });
+  const criados = [];
+  for (const s of sugestoes) {
+    if (!s.cargo) continue;
+    const pai = s.reporta_para_cargo ? porCargo[String(s.reporta_para_cargo).toLowerCase().trim()] || null : null;
+    const id = novoIdMapa();
+    await sql`INSERT INTO crm_mapa_contatos (id, cliente, cargo, area, camada, reporta_para,
+        influencia, observacao, origem, atualizado_em)
+      VALUES (${id}, ${cliente}, ${s.cargo}, ${s.area || null}, 'potencial', ${pai},
+        ${s.influencia || null}, ${s.porque || null}, 'ia', NOW())`;
+    porCargo[String(s.cargo).toLowerCase().trim()] = id;
+    criados.push({ id, cargo: s.cargo });
+  }
+  return { criados: criados.length, contatos: criados };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -214,6 +356,12 @@ export default async function handler(req, res) {
 
   const acoes = {
     clientes_listar: () => clientesListar(payload),
+    mapa_listar:     () => mapaListar(payload),
+    mapa_salvar:     () => mapaSalvar(payload),
+    mapa_excluir:    () => mapaExcluir(payload),
+    mapa_posicao:    () => mapaPosicao(payload),
+    mapa_sugerir:    () => mapaSugerir(payload),
+    mapa_aplicar:    () => mapaAplicarSugestoes(payload),
     hubspot_testar:  () => hubspotClientes({ limite: 5 }),
     status:          () => ({ ok: true, modulo: 'crm', hubspot: !!process.env.HUBSPOT_TOKEN }),
   };
