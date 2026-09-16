@@ -421,9 +421,45 @@ async function cronoSchema({ tabela } = {}) {
     try { amostra = await sql.query(`SELECT * FROM "${tabela}" LIMIT 3`); } catch (e) { /* tabela vazia ou sem permissão */ }
     let total = null;
     try { const c = await sql.query(`SELECT COUNT(*)::int AS n FROM "${tabela}"`); total = c[0]?.n ?? null; } catch (_) {}
+    // v1.99: tabelas do tipo "store" (chave-valor com JSON) precisam ser abertas por dentro —
+    // as colunas não dizem nada sobre o que está guardado.
+    const nomes = cols.map(c => c.column_name.toLowerCase());
+    const ehStore = nomes.some(n => ['key','chave','k'].includes(n)) &&
+                    nomes.some(n => ['value','valor','v','data','payload','json'].includes(n));
+    let chaves = null, exemploValor = null;
+    if (ehStore && total) {
+      const colChave = cols.find(c => ['key','chave','k'].includes(c.column_name.toLowerCase()))?.column_name;
+      const colValor = cols.find(c => ['value','valor','v','data','payload','json'].includes(c.column_name.toLowerCase()))?.column_name;
+      try {
+        const ks = await sql.query(`SELECT "${colChave}" AS chave,
+          LEFT(("${colValor}")::text, 120) AS previa,
+          LENGTH(("${colValor}")::text) AS tamanho
+          FROM "${tabela}" ORDER BY LENGTH(("${colValor}")::text) DESC LIMIT 60`);
+        chaves = ks.map(k => ({ chave: k.chave, previa: k.previa, tamanho: k.tamanho }));
+        if (ks[0]) {
+          const v = await sql.query(`SELECT ("${colValor}")::text AS v FROM "${tabela}" WHERE "${colChave}" = $1 LIMIT 1`, [ks[0].chave]);
+          exemploValor = String(v[0]?.v || '').substring(0, 1500);
+        }
+      } catch (e) { chaves = [{ erro: e.message }]; }
+      return { tabela, colunas: cols.map(c => ({ nome: c.column_name, tipo: c.data_type })),
+        total_registros: total, amostra, tipo: 'chave-valor',
+        coluna_chave: colChave, coluna_valor: colValor, chaves, exemplo_valor: exemploValor,
+        aviso: 'Esta tabela guarda os dados como chave-valor. O conteúdo real está dentro do campo de valor (JSON), não nas colunas.' };
+    }
     return { tabela, colunas: cols.map(c => ({ nome: c.column_name, tipo: c.data_type, aceita_nulo: c.is_nullable === 'YES' })),
-      total_registros: total, amostra };
+      total_registros: total, amostra, tipo: 'relacional' };
   }
+  // v1.99: lista também os OUTROS bancos do servidor. Um engano comum é apontar a string
+  // para 'neondb' (o padrão) quando os dados estão em outro database — aí tudo parece vazio.
+  let outrosBancos = [];
+  try {
+    const bd = await sql`SELECT datname FROM pg_database
+      WHERE datistemplate = false AND datname NOT IN ('postgres') ORDER BY datname`;
+    outrosBancos = bd.map(b => b.datname);
+  } catch (_) {}
+  let bancoAtual = null;
+  try { const c = await sql`SELECT current_database() AS db`; bancoAtual = c[0]?.db || null; } catch (_) {}
+
   const tabelas = await sql`SELECT table_name,
       (SELECT COUNT(*)::int FROM information_schema.columns c WHERE c.table_name = t.table_name AND c.table_schema='public') AS n_colunas
     FROM information_schema.tables t
@@ -438,6 +474,11 @@ async function cronoSchema({ tabela } = {}) {
   }
   return { tabelas: comContagem.sort((a, b) => (b.registros || 0) - (a.registros || 0)),
     total_tabelas: comContagem.length,
+    banco_atual: bancoAtual,
+    outros_bancos: outrosBancos.filter(b => b !== bancoAtual),
+    aviso_banco: (!comContagem.length || comContagem.every(t => !t.registros)) && outrosBancos.length > 1
+      ? `Este banco (${bancoAtual}) está vazio. Há outros no mesmo servidor: ${outrosBancos.filter(b => b !== bancoAtual).join(', ')}. Talvez a connection string precise apontar para outro — troque o nome do banco no fim da URL.`
+      : null,
     provaveis: {
       cronograma: comContagem.filter(t => /crono|tarefa|atividad|projeto|etapa|marco|gantt/i.test(t.tabela)).map(t => t.tabela),
       apontamento: comContagem.filter(t => /apont|hora|timesheet|ponto|lancamento/i.test(t.tabela)).map(t => t.tabela),
@@ -446,6 +487,23 @@ async function cronoSchema({ tabela } = {}) {
 }
 
 // Consulta livre, somente leitura — para eu mapear os dados com você
+// v1.99: lê o conteúdo de uma chave do store
+async function cronoLerChave({ tabela, chave, coluna_chave = 'key', coluna_valor = 'value' } = {}) {
+  if (!tabela || !chave) throw new Error('tabela e chave obrigatórias');
+  const sql = await getSqlCrono();
+  const r = await sql.query(`SELECT ("${coluna_valor}")::text AS valor FROM "${tabela}" WHERE "${coluna_chave}" = $1 LIMIT 1`, [chave]);
+  const bruto = r[0]?.valor || null;
+  if (!bruto) return { chave, encontrado: false };
+  let json = null, tipo = 'texto';
+  try { json = JSON.parse(bruto); tipo = Array.isArray(json) ? 'array' : 'objeto'; } catch (_) {}
+  return { chave, encontrado: true, tipo, tamanho: bruto.length,
+    total_itens: Array.isArray(json) ? json.length : null,
+    campos: Array.isArray(json) && json[0] && typeof json[0] === 'object' ? Object.keys(json[0])
+          : (json && typeof json === 'object' ? Object.keys(json) : null),
+    amostra: Array.isArray(json) ? json.slice(0, 3) : json,
+    bruto: json ? null : bruto.substring(0, 2000) };
+}
+
 async function cronoConsultar({ sql: query, limite = 50 } = {}) {
   if (!query) throw new Error('consulta obrigatória');
   const q = String(query).trim();
@@ -1014,6 +1072,7 @@ export default async function handler(req, res) {
     crono_config:      () => cronogramaConfig(payload),
     crono_schema:      () => cronoSchema(payload),
     crono_consultar:   () => cronoConsultar(payload),
+    crono_ler_chave:   () => cronoLerChave(payload),
     apont_horas:       () => apontamentoHoras(payload),
     apont_config:      () => apontamentoConfig(payload),
     crono_testar:      () => cronogramaTestar(payload),
