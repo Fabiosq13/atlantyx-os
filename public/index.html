@@ -18357,10 +18357,25 @@ async function explorarBancoCrono() {
         </table>
       </div></div>`;
   } catch (e) {
-    modal.innerHTML = `<div class="panel" style="width:600px;max-width:95vw;"><div class="pb" style="padding:18px;">
+    // v2.03: quando o banco não existe, mostra os nomes reais disponíveis
+    let bancos = e.bancos || null;
+    if (!bancos && /does not exist/i.test(e.message || '')) {
+      try { const lb = await pmoApi('crono_bancos'); bancos = lb.bancos || null; } catch (_) {}
+    }
+    modal.innerHTML = `<div class="panel" style="width:620px;max-width:95vw;"><div class="pb" style="padding:18px;">
       <div style="color:var(--red);font-size:12px;font-weight:600;margin-bottom:8px;">Não consegui acessar o banco</div>
-      <div style="font-size:11px;color:var(--t2);line-height:1.6;margin-bottom:10px;">${e.message}</div>
-      ${e.dica ? `<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:7px;padding:10px;font-size:10.5px;line-height:1.7;">💡 ${e.dica}</div>` : ''}
+      <div style="font-size:11px;color:var(--t2);line-height:1.6;margin-bottom:10px;font-family:var(--M);">${e.message}</div>
+      ${bancos && bancos.length ? `
+        <div style="background:rgba(34,211,163,.08);border:1px solid rgba(34,211,163,.35);border-radius:8px;padding:11px;margin-bottom:10px;">
+          <div style="font-size:11px;font-weight:600;margin-bottom:7px;">✅ Bancos que existem neste servidor:</div>
+          ${bancos.map(b => `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;">
+            <span style="font-family:var(--M);"><b>${b.nome}</b></span>
+            <span style="color:var(--t3);font-size:10px;">${b.tamanho}</span>
+          </div>`).join('')}
+          <div style="font-size:10px;color:var(--t2);margin-top:8px;line-height:1.6;">
+            Copie o nome exato e troque no fim da <b>CRONOGRAMA_DATABASE_URL</b>, no Vercel → Settings → Environment Variables. Depois faça Redeploy.
+          </div>
+        </div>` : (e.dica ? `<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:7px;padding:10px;font-size:10.5px;line-height:1.7;">💡 ${e.dica}</div>` : '')}
       <button class="btn" style="margin-top:12px;" onclick="document.getElementById('cronoDbModal').style.display='none'">Fechar</button>
     </div></div>`;
   }
@@ -22198,7 +22213,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.02] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.03] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22214,7 +22229,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.02';
+window.__ATX_BUILD_ID__ = 'ATX-v2.03';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
