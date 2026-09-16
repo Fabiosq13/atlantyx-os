@@ -1659,7 +1659,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div class="page" id="page-s2studio">
     <div style="background:linear-gradient(135deg,rgba(240,112,48,.18),rgba(240,112,48,.05));border:1px solid rgba(240,112,48,.18);border-radius:9px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="font-family:var(--H);font-size:24px;font-weight:800;opacity:.12">S2</div>
-      <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Studio Criativo — Agentes de Marketing Digital</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Storyteller · Copywriter · Designer · Motion · Social Media · DM · Inbound · Outbound · FinOps</div></div>
+      <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Studio Criativo — Agentes de Marketing Digital</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Storyteller · Copywriter · Designer · Motion · Social Media · DM · Inbound · Outbound · FinOps</div></div>
       <button class="btn btn-or" onclick="nav('s2campanha',null)" style="white-space:nowrap">&#9654; Nova Campanha</button>
       <button class="btn btn-s7" onclick="nav('s2kanban',null)" style="white-space:nowrap">&#9632; Kanban</button>
     </div>
@@ -2503,7 +2503,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- S3 DASHBOARD FINANCEIRO -->
   <div class="page" id="page-s3dash">
     <div style="background:linear-gradient(135deg,rgba(34,211,163,.15),rgba(34,211,163,.04));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">S3 · Painel Financeiro</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Saldo · Realizado (QuickBooks) · A Receber · A Pagar · Lancamentos</div></div>
+      <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">S3 · Painel Financeiro</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Saldo · Realizado (QuickBooks) · A Receber · A Pagar · Lancamentos</div></div>
       <button class="btn btn-gn" id="btnSyncQB" onclick="syncQuickBooks()">&#8635; Sync QuickBooks</button>
     </div>
 
@@ -2565,7 +2565,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- v1.14: DASHBOARD FINANCEIRO -->
 <div class="page" id="page-s3dashboard">
   <div style="background:linear-gradient(135deg,rgba(79,124,255,.14),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Dashboard Financeiro</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Todos os KPIs financeiros num só lugar · QuickBooks + fluxo + projetos + conciliação<span id="dashPeriodoLabel" style="color:var(--gold);"></span></div></div>
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Dashboard Financeiro</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Todos os KPIs financeiros num só lugar · QuickBooks + fluxo + projetos + conciliação<span id="dashPeriodoLabel" style="color:var(--gold);"></span></div></div>
     <span id="dfAtualizado" style="font-size:9.5px;color:var(--t3);"></span>
     <select class="fsel" id="dashFiltroMes" style="font-size:11px;width:auto;" onchange="carregarDashboardFinanceiro()">
       <option value="">Ano inteiro</option>
@@ -2604,7 +2604,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <!-- v1.14: GERENTE FINANCEIRO IA -->
 <div class="page" id="page-s3gerente">
   <div style="background:linear-gradient(135deg,rgba(156,109,255,.14),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#129302; Gerente Financeiro IA</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Pergunte qualquer coisa: caixa, fluxo, orçamento, contas, indicadores, conceitos — ele responde com os seus dados reais</div></div>
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#129302; Gerente Financeiro IA</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Pergunte qualquer coisa: caixa, fluxo, orçamento, contas, indicadores, conceitos — ele responde com os seus dados reais</div></div>
     <button class="btn" onclick="limparChatGerente()">&#10005; Nova conversa</button>
   </div>
   <div style="display:grid;grid-template-columns:1fr 280px;gap:12px;align-items:start;">
@@ -2636,7 +2636,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <!-- v1.16: FLUXO DE CAIXA DETALHADO (extrato até hoje + futuro lançamento a lançamento) -->
 <div class="page" id="page-s3fluxodet">
     <div style="background:linear-gradient(135deg,rgba(79,124,255,.14),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Fluxo de Caixa Detalhado</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Extrato realizado até hoje + futuro lançamento a lançamento (QuickBooks: recebíveis e pagáveis reais) · saldo projetado</div></div>
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Fluxo de Caixa Detalhado</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Extrato realizado até hoje + futuro lançamento a lançamento (QuickBooks: recebíveis e pagáveis reais) · saldo projetado</div></div>
     <label style="font-size:10px;color:var(--t2);">DE</label>
     <input type="date" id="fd_dataInicio" class="fsel" style="font-size:11px;width:auto;" onchange="carregarFluxoDetalhado()"/>
     <label style="font-size:10px;color:var(--t2);">ATÉ</label>
@@ -2687,7 +2687,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <!-- v1.17: KANBAN DE FATURAMENTO -->
 <div class="page" id="page-s3fatkanban">
   <div style="background:linear-gradient(135deg,rgba(156,109,255,.14),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Kanban de Faturamento</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Termo de Aceite → Aprovação → Emissão de NF → Envio de NF (confere e-mail) → Pagamento (confere QuickBooks)</div></div>
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Kanban de Faturamento</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Termo de Aceite → Aprovação → Emissão de NF → Envio de NF (confere e-mail) → Pagamento (confere QuickBooks)</div></div>
     <button class="btn btn-p" onclick="abrirImportarTermo()">&#128194; Importar Termo de Faturamento</button>
     <button class="btn" onclick="carregarKanbanFaturamento()">&#8635; Atualizar</button>
   </div>
@@ -2781,7 +2781,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <!-- v1.19: TELA DE CONTRATOS -->
 <div class="page" id="page-s3contratos">
   <div style="background:linear-gradient(135deg,rgba(79,124,255,.12),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Contratos</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Número, vigência e vencimento de cada contrato — alimentado por importação de planilha</div></div>
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Contratos</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Número, vigência e vencimento de cada contrato — alimentado por importação de planilha</div></div>
     <button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="abrirImportarPM()">&#128194; Importar Planilha</button>
     <button class="btn btn-gn" onclick="abrirFormContrato()">+ Novo Contrato</button>
     <button class="btn" onclick="carregarContratos()">&#8635; Atualizar</button>
@@ -2830,7 +2830,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <!-- v1.21: RH — CADASTRO DE FUNCIONÁRIOS -->
 <div class="page" id="page-s8funcionarios">
   <div style="background:linear-gradient(135deg,rgba(79,124,255,.12),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Cadastro de Funcionários</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Nome, custo/hora e projetos em que atua (pode ser mais de um)</div></div>
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Cadastro de Funcionários</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Nome, custo/hora e projetos em que atua (pode ser mais de um)</div></div>
     <button class="btn btn-gn" onclick="abrirFormFuncionario()">+ Novo Funcionário</button>
     <button class="btn" onclick="carregarFuncionarios()">&#8635; Atualizar</button>
   </div>
@@ -2871,7 +2871,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <!-- v1.21: GERENTE DE RH IA -->
 <div class="page" id="page-s8gerente">
   <div style="background:linear-gradient(135deg,rgba(156,109,255,.14),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#129302; Gerente de RH IA</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Pergunte sobre equipe, custo por projeto, contratação, realocação — com os dados reais do cadastro</div></div>
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#129302; Gerente de RH IA</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Pergunte sobre equipe, custo por projeto, contratação, realocação — com os dados reais do cadastro</div></div>
     <button class="btn" onclick="limparChatRh()">&#10005; Nova conversa</button>
   </div>
   <div style="display:grid;grid-template-columns:1fr 280px;gap:12px;align-items:start;">
@@ -2899,7 +2899,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <!-- v1.21: GERENTE DE MARKETING IA -->
 <div class="page" id="page-s2gerente">
   <div style="background:linear-gradient(135deg,rgba(156,109,255,.14),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#129302; Gerente de Marketing IA</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Estratégia com dados reais: campanhas, funil dos últimos 14 dias, leads recentes</div></div>
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#129302; Gerente de Marketing IA</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Estratégia com dados reais: campanhas, funil dos últimos 14 dias, leads recentes</div></div>
     <button class="btn" onclick="limparChatMkt()">&#10005; Nova conversa</button>
   </div>
   <div style="display:grid;grid-template-columns:1fr 280px;gap:12px;align-items:start;">
@@ -2928,7 +2928,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <!-- v1.22: ORGANOGRAMA IA-FIRST -->
 <div class="page" id="page-s8organograma">
   <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(34,211,163,.03));border:1px solid rgba(34,211,163,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Organograma IA-First</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Cada cargo tem um par: a pessoa real e o agente de IA de apoio na mesma função</div></div>
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Organograma IA-First</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Cada cargo tem um par: a pessoa real e o agente de IA de apoio na mesma função</div></div>
     <button class="btn" style="font-size:10px;" id="btnModoOrg" onclick="orgAlternarModo()">&#128506; Ver como diagrama</button>
     <button class="btn btn-gn" onclick="abrirFormCargo()">+ Novo Cargo</button>
     <button class="btn" onclick="carregarOrganograma()">&#8635; Atualizar</button>
@@ -2981,7 +2981,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <!-- v1.22: SALA DO CONSELHO -->
 <div class="page" id="page-s8conselho">
   <div style="background:linear-gradient(135deg,rgba(156,109,255,.14),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#127963; Sala do Conselho</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Conselho paralelo: 3 cadeiras, cada uma com conselheiro real + agente IA especialista · debate com o CIO</div></div>
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#127963; Sala do Conselho</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Conselho paralelo: 3 cadeiras, cada uma com conselheiro real + agente IA especialista · debate com o CIO</div></div>
     <button class="btn btn-p" onclick="abrirNovaSessao()">+ Nova Pauta</button>
     <button class="btn" onclick="carregarConselho()">&#8635; Atualizar</button>
   </div>
@@ -3007,7 +3007,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <!-- v1.23: LINHA DE PRODUÇÃO DE SISTEMAS -->
 <div class="page" id="page-s6pipeline">
   <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(34,211,163,.03));border:1px solid rgba(34,211,163,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Linha de Produção de Sistemas</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Da ideia à documentação · cada fase tem um agente de IA que produz o artefato daquela etapa</div></div>
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Linha de Produção de Sistemas</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Da ideia à documentação · cada fase tem um agente de IA que produz o artefato daquela etapa</div></div>
     <button class="btn btn-gn" onclick="abrirFormDevProjeto()">+ Nova Ideia</button>
     <button class="btn" onclick="carregarPipeline()">&#8635; Atualizar</button>
   </div>
@@ -3033,7 +3033,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <!-- v1.25: REMESSA DE PAGAMENTOS CNAB 240 -->
 <div class="page" id="page-s3cnab">
   <div style="background:linear-gradient(135deg,rgba(245,185,75,.12),rgba(245,185,75,.03));border:1px solid rgba(245,185,75,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Remessa de Pagamentos (CNAB 240)</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Gera o arquivo para subir no internet banking do Itaú — você confere e aprova lá</div></div>
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Remessa de Pagamentos (CNAB 240)</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Gera o arquivo para subir no internet banking do Itaú — você confere e aprova lá</div></div>
     <input type="date" id="cnabDataPagto" class="fsel" style="font-size:11px;width:auto;"/>
     <button class="btn btn-gn" onclick="gerarRemessaCnab()" id="btnGerarCnab">&#128190; Gerar arquivo</button>
     <button class="btn" onclick="carregarCnab()">&#8635; Atualizar</button>
@@ -3084,7 +3084,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <!-- v1.28: SALA DE REUNIÃO PERMANENTE (vídeo + conselheiros IA) -->
 <div class="page" id="page-s8reuniao">
   <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(34,211,163,.03));border:1px solid rgba(34,211,163,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Sala de Reunião Permanente</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Áudio e vídeo com sua equipe · conselheiros IA ouvem a conversa e participam por voz</div></div>
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Sala de Reunião Permanente</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Áudio e vídeo com sua equipe · conselheiros IA ouvem a conversa e participam por voz</div></div>
     <button class="btn" onclick="copiarLinkSala()">&#128279; Copiar link da sala</button>
     <button class="btn" style="font-size:10px;" onclick="configurarServidorVideo()" title="Usar servidor Jitsi próprio (libera vídeo embutido sem limite de tempo)">&#9881; <span id="lblServidorVideo">Servidor de vídeo</span></button>
     <button class="btn" onclick="compartilharTela()" id="btnCompartilhar" title="Compartilhar sua tela com os participantes">&#128421; Compartilhar tela</button>
@@ -3174,7 +3174,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
 <div class="page" id="page-s9painel">
   <div style="background:linear-gradient(135deg,rgba(245,185,75,.12),rgba(245,185,75,.03));border:1px solid rgba(245,185,75,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Painel Mestre de Projetos</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Uma linha por projeto · visão executiva do ciclo semanal · alimentado pelo sistema de projetos</div></div>
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Painel Mestre de Projetos</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Uma linha por projeto · visão executiva do ciclo semanal · alimentado pelo sistema de projetos</div></div>
     <button class="btn" style="font-size:10px;" onclick="cadastrarProjetosCiclo()" title="Definir os projetos do ciclo e o tipo de cada um">&#9881; Projetos do ciclo</button>
     <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="pautaReuniaoSemanal()" title="Monta a pauta da reunião com os amarelos e vermelhos">&#128203; Pauta da semana</button>
     <button class="btn btn-gn" onclick="carregarPainelMestre()">&#8635; Atualizar</button>
@@ -3194,7 +3194,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
 <div class="page" id="page-s9status">
   <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(34,211,163,.03));border:1px solid rgba(34,211,163,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Status Report de Projetos</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Acompanhamento por farol · riscos e bloqueios · histórico por projeto</div></div>
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Status Report de Projetos</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Acompanhamento por farol · riscos e bloqueios · histórico por projeto</div></div>
     <button class="btn" style="font-size:10px;" onclick="configurarFontePmo()" title="Conectar ao sistema de projetos externo">&#9881; Fonte de dados</button>
     <button class="btn btn-gn" onclick="abrirNovoReport()">+ Novo Status Report</button>
     <button class="btn" onclick="carregarStatusReports()">&#8635; Atualizar</button>
@@ -3219,7 +3219,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <!-- v1.62: S9 · SALA DE REUNIÃO COM OS GERENTES -->
 <div class="page" id="page-s9sala">
   <div style="background:linear-gradient(135deg,rgba(156,109,255,.14),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#127909; Sala de Reunião · Gerentes de Projeto</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Áudio e vídeo com a equipe · assistente do PMO com os dados dos projetos · ata automática</div></div>
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#127909; Sala de Reunião · Gerentes de Projeto</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Áudio e vídeo com a equipe · assistente do PMO com os dados dos projetos · ata automática</div></div>
     <button class="btn" onclick="copiarLinkSalaPmo()">&#128279; Copiar link</button>
     <button class="btn btn-gn" onclick="entrarSalaPmo()" id="btnEntrarSalaPmo">&#127909; Entrar na sala</button>
   </div>
@@ -3467,7 +3467,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
 <div class="page" id="page-s7ceo">
   <div style="background:linear-gradient(135deg,rgba(156,109,255,.13),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#127970; Robo de Contato C-Level</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Escreve, envia, le a resposta e classifica o interesse &middot; voce aprova cada e-mail antes de sair</div></div>
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#127970; Robo de Contato C-Level</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Escreve, envia, le a resposta e classifica o interesse &middot; voce aprova cada e-mail antes de sair</div></div>
     <button class="btn" style="font-size:10px;" onclick="ceoConfig()">&#9881; Pitch e remetente</button>
     <button class="btn" style="font-size:10px;" onclick="ceoImportar()">&#128229; Importar leads</button>
     <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="ceoLerRespostas()" id="btnLerResp">&#128231; Ler respostas</button>
@@ -3494,7 +3494,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <!-- v1.70: S7 · AGENDA DE VISITAS -->
 <div class="page" id="page-s7agenda">
   <div style="background:linear-gradient(135deg,rgba(79,124,255,.13),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#9992; Agenda de Visitas pelo Brasil</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Roteiro montado a partir de quem respondeu positivamente &middot; agrupado por regiao e cidade</div></div>
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#9992; Agenda de Visitas pelo Brasil</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Roteiro montado a partir de quem respondeu positivamente &middot; agrupado por regiao e cidade</div></div>
     <input type="date" class="fi" id="rot_inicio" style="width:150px;" title="Data de inicio da primeira viagem"/>
     <button class="btn btn-gn" onclick="montarRoteiroVisitas()" id="btnRoteiro">&#128506; Montar roteiro</button>
     <button class="btn" onclick="ceoExportarAgenda()" id="btnExpAgenda" disabled>&#128229; Exportar agenda</button>
@@ -3541,7 +3541,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
 <div class="page" id="page-s3extrato">
     <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(34,211,163,.03));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Extrato Financeiro · Saldo Acumulado</div>
+      <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Extrato Financeiro · Saldo Acumulado</div>
       <div style="font-size:10.5px;color:var(--t2);margin-top:2px">QuickBooks (realizado) + Simulados &minus; Ocultos · Recalcula saldo em cada linha</div></div>
       <select class="fsel contaFiltro" id="ext_conta" style="font-size:11px;width:auto;max-width:230px;" onchange="carregarExtrato()"><option value="">Todas as contas</option></select>
     </div>
@@ -3638,7 +3638,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <div class="page" id="page-s3diario">
     <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(34,211,163,.03));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Saldo Diário</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Movimento + saldo acumulado dia a dia</div></div>
+      <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Saldo Diário</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Movimento + saldo acumulado dia a dia</div></div>
       <input type="date" class="fi" id="diario_ini" style="width:140px;"/>
       <input type="date" class="fi" id="diario_fim" style="width:140px;"/>
       <select class="fsel contaFiltro" id="diario_conta" style="font-size:11px;width:auto;max-width:200px;" onchange="carregarExtratoDiario()"><option value="">Todas as contas</option></select>
@@ -3665,7 +3665,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <div class="page" id="page-s3mensal">
     <div style="background:linear-gradient(135deg,rgba(79,124,255,.12),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Saldo Mensal</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Resumo mês a mês — 12 meses do ano selecionado</div></div>
+      <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Saldo Mensal</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Resumo mês a mês — 12 meses do ano selecionado</div></div>
       <select class="fsel" id="mensal_ano" onchange="carregarExtratoMensal()" style="width:120px;"></select>
       <select class="fsel contaFiltro" id="mensal_conta" style="font-size:11px;width:auto;max-width:200px;" onchange="carregarExtratoMensal()"><option value="">Todas as contas</option></select>
       <button class="btn btn-gn" onclick="carregarExtratoMensal()">&#8635; Atualizar</button>
@@ -3692,7 +3692,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div class="page" id="page-s3conciliacao">
   <div id="concRecebiveisBox"></div>
     <div style="background:linear-gradient(135deg,rgba(245,166,35,.12),rgba(245,166,35,.03));border:1px solid rgba(245,166,35,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Conciliação Bancária</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Bate lançamentos reais (QB) com despesas programadas e A Receber automaticamente</div></div>
+      <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Conciliação Bancária</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Bate lançamentos reais (QB) com despesas programadas e A Receber automaticamente</div></div>
       <input type="date" class="fi" id="conc_ini" style="width:140px;"/>
       <input type="date" class="fi" id="conc_fim" style="width:140px;"/>
       <select class="fsel contaFiltro" id="conc_conta" style="font-size:11px;width:auto;max-width:200px;" onchange="carregarConciliacao()"><option value="">Todas as contas</option></select>
@@ -3724,7 +3724,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <div class="page" id="page-s3orcamento">
     <div style="background:linear-gradient(135deg,rgba(156,109,255,.12),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Orçamento Anual</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Orçamento do QuickBooks × Realizado · barras de utilização por categoria</div></div>
+      <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Orçamento Anual</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Orçamento do QuickBooks × Realizado · barras de utilização por categoria</div></div>
       <select class="fsel" id="orc_ano" onchange="carregarOrcamento()" style="width:120px;"></select>
       <button class="btn btn-gn" onclick="carregarOrcamento()">&#8635; Recarregar</button>
     </div>
@@ -3748,7 +3748,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <div class="page" id="page-s3projetos">
     <div style="background:linear-gradient(135deg,rgba(79,124,255,.12),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Projetos &amp; Marcos Financeiros</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Cadastro de projetos + marcos com data de entrega, percentual, valor, NF e data de pagamento</div></div>
+      <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Projetos &amp; Marcos Financeiros</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Cadastro de projetos + marcos com data de entrega, percentual, valor, NF e data de pagamento</div></div>
       <button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="abrirImportarPM()">&#128194; Importar Planilha (Projetos, Marcos e Contratos)</button>
       <button class="btn btn-gn" onclick="abrirFormProjeto()">+ Novo Projeto</button>
     </div>
@@ -3838,7 +3838,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <div class="page" id="page-s3marcoskanban">
     <div style="background:linear-gradient(135deg,rgba(156,109,255,.12),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Kanban Marcos de Projeto</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Fluxo: Aguardando Entrega → Liberação GP → Aprovado pelo GP → Elaborando Termo → Termo Pronto/Enviado → Concluído · NF e pagamento são acompanhados no Kanban de Faturamento</div></div>
+      <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Kanban Marcos de Projeto</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Fluxo: Aguardando Entrega → Liberação GP → Aprovado pelo GP → Elaborando Termo → Termo Pronto/Enviado → Concluído · NF e pagamento são acompanhados no Kanban de Faturamento</div></div>
       <select class="fsel" id="kanbanFiltroProjeto" onchange="carregarKanbanMarcos()" style="width:200px;"><option value="">Todos os projetos</option></select>
       <button class="btn btn-gn" onclick="carregarKanbanMarcos()">&#8635; Atualizar</button>
     </div>
@@ -3899,7 +3899,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- S3 FLUXO DE CAIXA -->
   <div class="page" id="page-s3fluxo">
     <div style="background:linear-gradient(135deg,rgba(79,124,255,.12),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">Fluxo de Caixa Futuro &middot; 12 Meses</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Matriz editavel &middot; Cada celula azul pode ser sobrescrita &middot; Calculo deterministico (nao IA)</div></div>
+      <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Fluxo de Caixa Futuro &middot; 12 Meses</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Matriz editavel &middot; Cada celula azul pode ser sobrescrita &middot; Calculo deterministico (nao IA)</div></div>
       <select class="fsel contaFiltro" id="fluxo_conta" style="font-size:11px;width:auto;max-width:200px;" onchange="gerarFluxoMatriz()"><option value="">Todas as contas</option></select>
       <button class="btn" style="font-size:10px;padding:5px 10px;color:var(--gold);border-color:var(--gold);" onclick="diagnosticarSaldoAbertura()" title="Ver de onde vem o saldo inicial, conta a conta">&#128269; Saldo de abertura</button>
       <button class="btn" style="font-size:10px;padding:5px 10px;color:var(--red);border-color:var(--red);" onclick="varrerDuplicados()" title="Procura lançamentos duplicados no QuickBooks num período inteiro">&#9888; Procurar duplicados</button>
@@ -12847,7 +12847,7 @@ async function enriquecerLeads() {
     <!-- S3 · KPIs DE SAUDE FINANCEIRA -->
   <div class="page" id="page-s3kpis">
     <div style="background:linear-gradient(135deg,rgba(0,207,200,.10),rgba(0,207,200,.02));border:1px solid rgba(0,207,200,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">KPIs de Saude Financeira</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Calculo deterministico sobre dados QuickBooks &middot; Semaforo automatico</div></div>
+      <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">KPIs de Saude Financeira</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Calculo deterministico sobre dados QuickBooks &middot; Semaforo automatico</div></div>
       <select class="fsel contaFiltro" id="kpis_conta" style="font-size:11px;width:auto;max-width:200px;" onchange="calcularKpisFinanceiros()"><option value="">Todas as contas</option></select>
       <button class="btn btn-gn" onclick="calcularKpisFinanceiros()">&#9670; Calcular KPIs de Saude</button>
     </div>
@@ -19265,6 +19265,43 @@ function _qaAnalisar(tela) {
   if (botoesMortos.length) add('media','botao_sem_acao', botoesMortos.length + ' botão(ões) sem ação',
     botoesMortos.slice(0,3).map(b => '"' + b.textContent.trim().substring(0,20) + '"').join(', '));
 
+  // v2.02 — LAYOUT QUEBRADO EM CABEÇALHO FLEX.
+  // Por que o QA não pegava isso antes: ele só media elementos que ESTOURAVAM a largura da
+  // tela. Um cabeçalho que se reorganiza em várias linhas cabe na tela — e por isso passava
+  // batido, mesmo estando visualmente quebrado. Agora medimos a ALTURA: um cabeçalho de
+  // uma linha que ocupa 3 linhas de altura está quebrado, mesmo sem estourar a largura.
+  {
+    const cabecalhos = [...p.querySelectorAll('div')].filter(d => {
+      const st = d.getAttribute('style') || '';
+      return st.includes('display:flex') && st.includes('flex-wrap:wrap') && d.children.length >= 3;
+    });
+    cabecalhos.forEach(cab => {
+      if (!_qaVisivel(cab)) return;
+      const r = cab.getBoundingClientRect();
+      const filhos = [...cab.children].filter(_qaVisivel);
+      if (filhos.length < 3) return;
+      // altura de cada filho vs altura do container: se o container é muito mais alto,
+      // os filhos quebraram para várias linhas
+      const alturaFilho = Math.max(...filhos.map(f => f.getBoundingClientRect().height || 0));
+      const linhas = alturaFilho > 0 ? Math.round(r.height / alturaFilho) : 1;
+      if (linhas >= 3) {
+        add('media','cabecalho_quebrado',
+          `Cabeçalho reorganizado em ${linhas} linhas — título e botões não cabem lado a lado`,
+          'Os elementos estão se espremendo. Costuma ser falta de min-width no título ou texto longo nos botões.');
+      }
+      // elemento com flex:1 sem min-width encolhe até quebrar o texto
+      const semMin = filhos.filter(f => {
+        const st = f.getAttribute('style') || '';
+        return /flex:\s*1/.test(st) && !/min-width/.test(st);
+      });
+      if (semMin.length) {
+        add('baixa','flex_sem_minwidth',
+          `${semMin.length} elemento(s) com flex:1 sem min-width no cabeçalho`,
+          'Em telas menores esse elemento encolhe indefinidamente e desalinha o cabeçalho.');
+      }
+    });
+  }
+
   // v1.71 — 9. VALORES ABSURDOS: números que existem mas não fazem sentido para a empresa
   // (Esta é a checagem mais valiosa: o sistema mostra um número, parece certo, e está errado.)
   {
@@ -19313,6 +19350,30 @@ function _qaAnalisar(tela) {
       .map(x => parseInt(x[3])).filter(a => a < 2000 || a > anoAtual + 10);
     if (anosRuins.length) add('alta','data_fora_faixa',
       `${anosRuins.length} data(s) com ano implausível`, [...new Set(anosRuins)].slice(0,4).join(' · '));
+  }
+
+  // v2.02 — TABELA LARGA SEM ROLAGEM: estoura a tela e some conteúdo pela direita
+  {
+    const tabelas = [...p.querySelectorAll('table')].filter(_qaVisivel);
+    tabelas.forEach(t => {
+      const cols = t.querySelectorAll('thead th').length || (t.querySelector('tr')?.children.length || 0);
+      const st = t.getAttribute('style') || '';
+      const minW = parseInt((st.match(/min-width:\s*(\d+)px/) || [])[1] || 0);
+      const pai = t.parentElement;
+      const paiSt = pai?.getAttribute('style') || '';
+      const rolavel = /overflow-x:\s*(auto|scroll)/.test(paiSt) || /overflow:\s*(auto|scroll)/.test(paiSt);
+      if (cols >= 8 && !rolavel) {
+        add('media','tabela_sem_rolagem',
+          `Tabela de ${cols} colunas sem container rolável — colunas podem ficar cortadas`,
+          'Envolver num div com overflow-x:auto.');
+      }
+      // largura mínima incompatível com o número de colunas (menos de 90px por coluna)
+      if (cols >= 8 && minW && minW / cols < 90) {
+        add('baixa','tabela_espremida',
+          `Tabela com ${cols} colunas em ${minW}px (${Math.round(minW/cols)}px por coluna) — conteúdo vai quebrar`,
+          'Aumentar o min-width ou reduzir o número de colunas.');
+      }
+    });
   }
 
   // 10. SELETOR DE CONTA vazio nas telas financeiras
@@ -22137,7 +22198,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.01] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.02] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22153,7 +22214,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.01';
+window.__ATX_BUILD_ID__ = 'ATX-v2.02';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
