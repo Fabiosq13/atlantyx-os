@@ -16061,6 +16061,49 @@ function _fdMarcarRepetidos(lista) {
   lista.forEach(l => { const k = `${l.data}|${(l.descricao||'').trim()}|${l.valor}`; if (cont[k] > 1) l._repetido = cont[k]; });
   return lista;
 }
+// v2.06: insere uma linha de separação a cada mudança de mês, com o subtotal do mês.
+// Sem isso, uma lista longa vira um bloco só e fica difícil achar onde agosto termina.
+function _fdComQuebraMes(lista, corSaldo) {
+  if (!lista.length) return '';
+  const MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  let mesAtual = null, buffer = [], saida = [];
+  const fecharMes = () => {
+    if (!buffer.length || !mesAtual) return;
+    const ent = buffer.filter(l => l.tipo === 'entrada').reduce((a, l) => a + l.valor, 0);
+    const sai = buffer.filter(l => l.tipo === 'saida').reduce((a, l) => a + l.valor, 0);
+    const res = ent - sai;
+    const [aa, mm] = mesAtual.split('-');
+    saida.push(`<tr style="background:var(--bg3,#151b2e);">
+      <td colspan="5" style="padding:6px 8px;border-top:2px solid var(--bd);border-bottom:1px solid var(--bd);">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;font-size:10px;">
+          <span style="font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--t2);">
+            ${MESES[parseInt(mm,10)-1]} de ${aa} · ${buffer.length} lançamento(s)</span>
+          <span style="font-family:var(--M);display:flex;gap:12px;">
+            <span style="color:var(--green,#22d3a3);">+${fmtBRLcompleto(ent)}</span>
+            <span style="color:var(--red);">−${fmtBRLcompleto(sai)}</span>
+            <span style="color:${res>=0?'var(--green,#22d3a3)':'var(--red)'};font-weight:700;">= ${fmtBRLcompleto(res)}</span>
+          </span>
+        </div>
+      </td></tr>`);
+    buffer = [];
+  };
+  _fdMarcarRepetidos(lista).forEach(l => {
+    const mes = String(l.data || '').substring(0, 7);
+    if (mes && mes !== mesAtual) {
+      fecharMes();
+      mesAtual = mes;
+      const [aa, mm] = mes.split('-');
+      saida.push(`<tr><td colspan="5" style="padding:9px 8px 4px;border-top:2px solid var(--gold);">
+        <span style="font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:1px;">
+          ▸ ${MESES[parseInt(mm,10)-1]} ${aa}</span></td></tr>`);
+    }
+    buffer.push(l);
+    saida.push(_fdLinha(l, corSaldo));
+  });
+  fecharMes();
+  return saida.join('');
+}
+
 function _fdLinha(l, corSaldo) {
   // v1.38: 'referencia' = nota fiscal emitida (competência) — não movimenta caixa
   const ehRef = l.tipo === 'referencia';
@@ -16338,7 +16381,7 @@ async function carregarFluxoDetalhado() {
     }
 
     const pas = d.passado.lancamentos || [];
-    if (tbP) tbP.innerHTML = pas.length ? _fdMarcarRepetidos(pas).map(l => _fdLinha(l)).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Nenhum lançamento realizado nos últimos 60 dias' + (d.passado.qb_erro ? ' · ⚠ QuickBooks: ' + d.passado.qb_erro : '') + '.</td></tr>';
+    if (tbP) tbP.innerHTML = pas.length ? _fdComQuebraMes(pas) : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Nenhum lançamento realizado nos últimos 60 dias' + (d.passado.qb_erro ? ' · ⚠ QuickBooks: ' + d.passado.qb_erro : '') + '.</td></tr>';
     const fut = d.futuro.lancamentos || [];
     // v2.04: separa o que vence no período do que está em aberto fora dele — os dois importam,
     // mas por motivos diferentes. Vencido e não pago é o mais urgente e vinha sumindo.
@@ -16347,7 +16390,7 @@ async function carregarFluxoDetalhado() {
       const noPer = fut.filter(l => !l.vencida && l.no_periodo !== false);
       const foraPer = fut.filter(l => !l.vencida && l.no_periodo === false);
       const secao = (titulo, lista, cor, nota) => lista.length ? `<tr><td colspan="5" style="padding:7px 6px 4px;font-size:10px;color:${cor};font-weight:600;border-top:1px solid var(--bd);">${titulo} · ${lista.length} documento(s) · ${fmtBRLcompleto(lista.reduce((a,x)=>a+x.valor,0))}${nota?` <span style="font-weight:400;color:var(--t3);">${nota}</span>`:''}</td></tr>`
-        + _fdMarcarRepetidos(lista).map(l => _fdLinha(l, cor)).join('') : '';
+        + _fdComQuebraMes(lista, cor) : '';
       tbF.innerHTML = fut.length
         ? secao('⚠ VENCIDOS E NÃO PAGOS', vencidos, 'var(--red)', '— cobrar primeiro')
           + secao('NO PERÍODO CONSULTADO', noPer, 'var(--blue,#4f7cff)')
@@ -22225,7 +22268,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.05] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.06] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22241,7 +22284,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.05';
+window.__ATX_BUILD_ID__ = 'ATX-v2.06';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
