@@ -411,9 +411,51 @@ async function getSqlCrono() {
   return _sqlCrono;
 }
 
+// v2.03: quando o banco do nome não existe, conecta num que sabidamente existe e lista os
+// nomes reais. Assim você não fica tentando adivinhar entre hífen, underscore e maiúscula.
+async function cronoListarBancos() {
+  const url = process.env.CRONOGRAMA_DATABASE_URL;
+  if (!url) throw new Error('CRONOGRAMA_DATABASE_URL não configurada');
+  const { neon } = await import('@neondatabase/serverless');
+  const tentativas = [];
+  // tenta a URL como está, depois trocando o banco por candidatos que quase sempre existem
+  const nomeAtual = (url.match(/\/([^/?]+)(\?|$)/) || [])[1] || '';
+  const candidatos = [nomeAtual, 'neondb', 'postgres', 'defaultdb'].filter((v, i, a) => v && a.indexOf(v) === i);
+  for (const nome of candidatos) {
+    const u = url.replace(/\/[^/?]+(\?|$)/, `/${nome}$1`);
+    try {
+      const s = neon(u);
+      const bancos = await s`SELECT datname, pg_size_pretty(pg_database_size(datname)) AS tamanho
+        FROM pg_database WHERE datistemplate = false ORDER BY pg_database_size(datname) DESC`;
+      return { conectou_em: nome, bancos: bancos.map(b => ({ nome: b.datname, tamanho: b.tamanho })),
+        tentativas, banco_na_url: nomeAtual };
+    } catch (e) { tentativas.push({ banco: nome, erro: String(e.message).substring(0, 120) }); }
+  }
+  const err = new Error('Não consegui conectar em nenhum banco deste servidor.');
+  err.tentativas = tentativas;
+  throw err;
+}
+
 // Descobre o que existe no outro banco — sem isso é chute
 async function cronoSchema({ tabela } = {}) {
-  const sql = await getSqlCrono();
+  let sql;
+  try { sql = await getSqlCrono(); }
+  catch (e) { throw e; }
+  // Teste de conexão antes de qualquer consulta, para dar erro útil
+  try { await sql`SELECT 1`; }
+  catch (e) {
+    if (/does not exist/i.test(e.message)) {
+      let lista = null;
+      try { lista = await cronoListarBancos(); } catch (_) {}
+      const err = new Error(e.message);
+      err.dica = lista
+        ? `O banco na URL (${lista.banco_na_url}) não existe. Bancos disponíveis neste servidor: ${lista.bancos.map(b => b.nome + ' (' + b.tamanho + ')').join(', ')}. Troque o nome no fim da CRONOGRAMA_DATABASE_URL.`
+        : 'Confira o nome do banco no fim da CRONOGRAMA_DATABASE_URL (atenção a hífen vs underscore).';
+      err.bancos = lista?.bancos || null;
+      throw err;
+    }
+    throw e;
+  }
   if (tabela) {
     const cols = await sql`SELECT column_name, data_type, is_nullable
       FROM information_schema.columns
@@ -1167,6 +1209,7 @@ export default async function handler(req, res) {
     crono_consultar:   () => cronoConsultar(payload),
     crono_ler_chave:   () => cronoLerChave(payload),
     crono_cfg_banco:   () => cronogramaConfigBanco(payload),
+    crono_bancos:      () => cronoListarBancos(),
     apont_horas:       () => apontamentoHoras(payload),
     apont_config:      () => apontamentoConfig(payload),
     crono_testar:      () => cronogramaTestar(payload),
