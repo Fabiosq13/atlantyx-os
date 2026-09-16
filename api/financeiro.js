@@ -910,7 +910,7 @@ function _addMeses(data, n) {
   d.setMonth(d.getMonth() + n);
   return d.toISOString().split('T')[0];
 }
-const num = v = { const n = parseFloat(String(v).replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.')); return isNaN(n) ? 0 : Math.round(n * 100) / 100; };
+const num = v => { const n = parseFloat(String(v).replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.')); return isNaN(n) ? 0 : Math.round(n * 100) / 100; };
 
 async function qbFetch(endpoint, token) {
   const realmId = (await qbTokensLer())?.realm_id || process.env.QB_REALM_ID;
