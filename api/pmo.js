@@ -81,6 +81,8 @@ async function ensureTabelas(sql) {
 }
 function novoId(p) { return (p || 'id') + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 const num = v => { const n = parseFloat(v); return isNaN(n) ? 0 : Math.round(n * 100) / 100; };
+// v2.00: round era usado em 26 lugares sem existir — causava "round is not defined" no raio-X
+const round = v => Math.round((parseFloat(v) || 0) * 100) / 100;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONECTOR COM O SISTEMA EXTERNO DE PROJETOS (outro projeto no Vercel)
@@ -644,7 +646,98 @@ async function cronogramaTestar({ url, caminho, token } = {}) {
   }
 }
 
+// v2.00: o cronograma agora vem do BANCO do outro módulo, não de uma URL.
+// Lê tanto tabela relacional quanto store chave-valor (atlx_store), que é o caso da Atlantyx.
+async function cronogramaBuscarBanco({ projeto } = {}) {
+  const sqlCfg = await getSql();
+  let cfg = {};
+  try {
+    const rows = await sqlCfg`SELECT chave, valor FROM pmo_config WHERE chave LIKE 'cronodb_%'`;
+    rows.forEach(r => cfg[r.chave.replace('cronodb_', '')] = r.valor);
+  } catch (_) {}
+  if (!cfg.tabela) {
+    const e = new Error('Fonte do cronograma não configurada.');
+    e.dica = 'Use "🔍 Explorar banco", abra a tabela/chave do cronograma e clique em "Usar como cronograma".';
+    throw e;
+  }
+  const sql = await getSqlCrono();
+  let lista = [];
+
+  if (cfg.chave) {
+    // store chave-valor: o cronograma está dentro de um JSON
+    const r = await sql.query(
+      `SELECT ("${cfg.col_valor || 'value'}")::text AS v FROM "${cfg.tabela}" WHERE "${cfg.col_chave || 'key'}" = $1 LIMIT 1`,
+      [cfg.chave]);
+    const bruto = r[0]?.v;
+    if (!bruto) return { tarefas: [], erro: `Chave "${cfg.chave}" não encontrada em ${cfg.tabela}` };
+    let j; try { j = JSON.parse(bruto); } catch (e) { return { tarefas: [], erro: 'O valor da chave não é JSON válido' }; }
+    lista = Array.isArray(j) ? j : (j.tarefas || j.cronograma || j.atividades || j.items || j.data || []);
+    // pode estar aninhado: { projetos: [ { tarefas: [...] } ] }
+    if (!Array.isArray(lista) || !lista.length) {
+      const cand = Object.values(j || {}).find(v => Array.isArray(v) && v.length);
+      if (cand) lista = cand;
+    }
+  } else {
+    lista = await sql.query(`SELECT * FROM "${cfg.tabela}" LIMIT 5000`);
+  }
+
+  const pega = (o, ...ks) => { for (const k of ks) if (o?.[k] != null && o[k] !== '') return o[k]; return null; };
+  const M = (campo, ...padrao) => {
+    const custom = cfg['col_' + campo];
+    return custom ? [custom, ...padrao] : padrao;
+  };
+  let tarefas = lista.map(t => ({
+    projeto:      pega(t, ...M('projeto','projeto','project','nome_projeto','obra','cliente')),
+    tarefa:       pega(t, ...M('tarefa','tarefa','atividade','nome','name','descricao','title','titulo')),
+    responsavel:  pega(t, ...M('responsavel','responsavel','executante','owner','assignee','equipe','recurso','colaborador')),
+    inicio_prev:  pega(t, ...M('inicio','inicio_previsto','data_inicio','inicio','start','baseline_inicio','dt_inicio')),
+    fim_prev:     pega(t, ...M('fim','fim_previsto','data_fim','fim','end','baseline_fim','prazo','dt_fim')),
+    inicio_real:  pega(t, 'inicio_real','data_inicio_real','real_start'),
+    fim_real:     pega(t, 'fim_real','data_fim_real','real_end','concluido_em'),
+    pct:          num(pega(t, ...M('pct','percentual','pct','progresso','progress','avanco','percent_complete','conclusao','pct_concluido'))),
+    peso:         num(pega(t, ...M('peso','peso','weight','horas','esforco','duracao'))) || 1,
+    status:       pega(t, 'status','situacao','state'),
+    _bruto: t,
+  }));
+  if (projeto) {
+    const alvo = String(projeto).toLowerCase();
+    const filtradas = tarefas.filter(t => String(t.projeto || '').toLowerCase().includes(alvo)
+      || alvo.includes(String(t.projeto || '').toLowerCase()));
+    // se o filtro zerar mas há tarefas, provavelmente a base não separa por projeto
+    if (filtradas.length) tarefas = filtradas;
+    else if (tarefas.length) return { tarefas, total: tarefas.length, fonte: cfg.tabela,
+      aviso: `Nenhuma tarefa com o projeto "${projeto}" — mostrando todas as ${tarefas.length}. A base pode não ter coluna de projeto.` };
+  }
+  return { tarefas, total: tarefas.length, fonte: cfg.tabela + (cfg.chave ? ' / ' + cfg.chave : '') };
+}
+
+async function cronogramaConfigBanco({ salvar } = {}) {
+  const sql = await getSql();
+  await sql`CREATE TABLE IF NOT EXISTS pmo_config (chave TEXT PRIMARY KEY, valor TEXT, atualizado_em TIMESTAMPTZ DEFAULT NOW())`;
+  if (salvar) {
+    for (const [k, v] of Object.entries(salvar)) {
+      if (v === undefined) continue;
+      await sql`INSERT INTO pmo_config (chave, valor, atualizado_em) VALUES (${'cronodb_' + k}, ${v || null}, NOW())
+        ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = NOW()`;
+    }
+  }
+  const rows = await sql`SELECT chave, valor FROM pmo_config WHERE chave LIKE 'cronodb_%'`;
+  const c = {}; rows.forEach(r => c[r.chave.replace('cronodb_', '')] = r.valor);
+  return { config: c, banco_conectado: !!process.env.CRONOGRAMA_DATABASE_URL };
+}
+
 async function cronogramaBuscar({ projeto } = {}) {
+  // v2.00: prioriza o banco; a API antiga fica como reserva
+  try {
+    const r = await cronogramaBuscarBanco({ projeto });
+    if (r.tarefas?.length || !r.erro) return r;
+  } catch (e) {
+    if (!process.env.CRONOGRAMA_API_URL) return { tarefas: [], erro: e.message, dica: e.dica };
+  }
+  return await cronogramaBuscarApi({ projeto });
+}
+
+async function cronogramaBuscarApi({ projeto } = {}) {
   const cfg = await cronogramaConfig();
   const alvo = cfg.url.replace(/\/$/, '') + (cfg.caminho.startsWith('/') ? cfg.caminho : '/' + cfg.caminho);
   try {
@@ -1073,6 +1166,7 @@ export default async function handler(req, res) {
     crono_schema:      () => cronoSchema(payload),
     crono_consultar:   () => cronoConsultar(payload),
     crono_ler_chave:   () => cronoLerChave(payload),
+    crono_cfg_banco:   () => cronogramaConfigBanco(payload),
     apont_horas:       () => apontamentoHoras(payload),
     apont_config:      () => apontamentoConfig(payload),
     crono_testar:      () => cronogramaTestar(payload),
