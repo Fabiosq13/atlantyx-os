@@ -16340,7 +16340,19 @@ async function carregarFluxoDetalhado() {
     const pas = d.passado.lancamentos || [];
     if (tbP) tbP.innerHTML = pas.length ? _fdMarcarRepetidos(pas).map(l => _fdLinha(l)).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Nenhum lançamento realizado nos últimos 60 dias' + (d.passado.qb_erro ? ' · ⚠ QuickBooks: ' + d.passado.qb_erro : '') + '.</td></tr>';
     const fut = d.futuro.lancamentos || [];
-    if (tbF) tbF.innerHTML = fut.length ? _fdMarcarRepetidos(fut).map(l => _fdLinha(l, 'var(--blue)')).join('') : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Nenhum recebível/pagável futuro encontrado no QuickBooks' + (d.futuro.qb_erro ? ' · ⚠ ' + d.futuro.qb_erro : ' (sem faturas/contas em aberto, sem despesas programadas futuras e sem simulados futuros)') + '.</td></tr>';
+    // v2.04: separa o que vence no período do que está em aberto fora dele — os dois importam,
+    // mas por motivos diferentes. Vencido e não pago é o mais urgente e vinha sumindo.
+    if (tbF) {
+      const vencidos = fut.filter(l => l.vencida);
+      const noPer = fut.filter(l => !l.vencida && l.no_periodo !== false);
+      const foraPer = fut.filter(l => !l.vencida && l.no_periodo === false);
+      const secao = (titulo, lista, cor, nota) => lista.length ? `<tr><td colspan="5" style="padding:7px 6px 4px;font-size:10px;color:${cor};font-weight:600;border-top:1px solid var(--bd);">${titulo} · ${lista.length} documento(s) · ${fmtBRLcompleto(lista.reduce((a,x)=>a+x.valor,0))}${nota?` <span style="font-weight:400;color:var(--t3);">${nota}</span>`:''}</td></tr>`
+        + _fdMarcarRepetidos(lista).map(l => _fdLinha(l, cor)).join('') : '';
+      tbF.innerHTML = fut.length
+        ? secao('⚠ VENCIDOS E NÃO PAGOS', vencidos, 'var(--red)', '— cobrar primeiro')
+          + secao('NO PERÍODO CONSULTADO', noPer, 'var(--blue,#4f7cff)')
+          + secao('EM ABERTO, FORA DO PERÍODO', foraPer, 'var(--t3)', '— aparecem porque continuam a receber/pagar')
+        : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Nenhum recebível/pagável futuro encontrado no QuickBooks' + (d.futuro.qb_erro ? ' · ⚠ ' + d.futuro.qb_erro : ' (sem faturas/contas em aberto, sem despesas programadas futuras e sem simulados futuros)') + '.</td></tr>'; }
 
     const tg1 = document.getElementById('fd_tagPassado'); if (tg1) { tg1.textContent = pas.length + ' lançamento(s)'; tg1.className = 'tag on'; }
     const tg2 = document.getElementById('fd_tagFuturo'); if (tg2) { tg2.textContent = fut.length + ' lançamento(s)'; tg2.className = 'tag ' + (fut.length ? 'on' : 'off'); }
@@ -22213,7 +22225,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.03] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.04] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22229,7 +22241,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.03';
+window.__ATX_BUILD_ID__ = 'ATX-v2.04';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
