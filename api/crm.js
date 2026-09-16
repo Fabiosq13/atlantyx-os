@@ -342,6 +342,89 @@ async function mapaAplicarSugestoes({ cliente, sugestoes = [] } = {}) {
   return { criados: criados.length, contatos: criados };
 }
 
+// ═══ v2.01: BRIEFINGS DE REUNIÃO — armazenar e consultar ═══
+async function briefingGarantirTabela(sql) {
+  await sql`CREATE TABLE IF NOT EXISTS briefings_reuniao (
+    id TEXT PRIMARY KEY,
+    lead_nome TEXT, empresa TEXT, cargo TEXT, setor TEXT,
+    telefone TEXT, deal_id TEXT,
+    data_reuniao TEXT,
+    briefing TEXT NOT NULL,
+    resultado TEXT,               -- preenchido depois da reunião
+    proximos_passos TEXT,
+    status TEXT DEFAULT 'agendada',   -- agendada | realizada | cancelada | remarcada
+    criado_em TIMESTAMPTZ DEFAULT NOW(),
+    atualizado_em TIMESTAMPTZ DEFAULT NOW()
+  )`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_brief_empresa ON briefings_reuniao(empresa)`;
+}
+function novoIdBrief() { return 'br_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+async function briefingSalvar(p = {}) {
+  if (!p.briefing) throw new Error('briefing obrigatório');
+  const sql = await getSql();
+  await briefingGarantirTabela(sql);
+  const id = p.id || novoIdBrief();
+  await sql`INSERT INTO briefings_reuniao (id, lead_nome, empresa, cargo, setor, telefone, deal_id,
+      data_reuniao, briefing, resultado, proximos_passos, status, atualizado_em)
+    VALUES (${id}, ${p.lead_nome || null}, ${p.empresa || null}, ${p.cargo || null}, ${p.setor || null},
+      ${p.telefone || null}, ${p.deal_id || null}, ${p.data_reuniao || null}, ${p.briefing},
+      ${p.resultado || null}, ${p.proximos_passos || null}, ${p.status || 'agendada'}, NOW())
+    ON CONFLICT (id) DO UPDATE SET lead_nome=EXCLUDED.lead_nome, empresa=EXCLUDED.empresa,
+      cargo=EXCLUDED.cargo, setor=EXCLUDED.setor, telefone=EXCLUDED.telefone, deal_id=EXCLUDED.deal_id,
+      data_reuniao=EXCLUDED.data_reuniao, briefing=EXCLUDED.briefing,
+      resultado=COALESCE(EXCLUDED.resultado, briefings_reuniao.resultado),
+      proximos_passos=COALESCE(EXCLUDED.proximos_passos, briefings_reuniao.proximos_passos),
+      status=EXCLUDED.status, atualizado_em=NOW()`;
+  return { id, salvo: true };
+}
+
+async function briefingListar({ empresa, busca, status, limite = 100 } = {}) {
+  const sql = await getSql();
+  await briefingGarantirTabela(sql);
+  let rows;
+  if (busca) {
+    const b = '%' + busca + '%';
+    rows = await sql`SELECT * FROM briefings_reuniao
+      WHERE empresa ILIKE ${b} OR lead_nome ILIKE ${b} OR briefing ILIKE ${b} OR setor ILIKE ${b}
+      ORDER BY criado_em DESC LIMIT ${limite}`;
+  } else if (empresa) {
+    rows = await sql`SELECT * FROM briefings_reuniao WHERE empresa ILIKE ${'%' + empresa + '%'}
+      ORDER BY criado_em DESC LIMIT ${limite}`;
+  } else if (status) {
+    rows = await sql`SELECT * FROM briefings_reuniao WHERE status = ${status} ORDER BY criado_em DESC LIMIT ${limite}`;
+  } else {
+    rows = await sql`SELECT * FROM briefings_reuniao ORDER BY criado_em DESC LIMIT ${limite}`;
+  }
+  const briefings = rows.map(r => ({ ...r,
+    criado_em: r.criado_em ? String(r.criado_em).substring(0, 10) : null,
+    previa: String(r.briefing || '').substring(0, 160) }));
+  return { briefings, total: briefings.length,
+    empresas: [...new Set(briefings.map(b => b.empresa).filter(Boolean))],
+    por_status: briefings.reduce((a, b) => { a[b.status || 'agendada'] = (a[b.status || 'agendada'] || 0) + 1; return a; }, {}) };
+}
+
+async function briefingGet({ id }) {
+  if (!id) throw new Error('id obrigatório');
+  const sql = await getSql();
+  await briefingGarantirTabela(sql);
+  const r = await sql`SELECT * FROM briefings_reuniao WHERE id = ${id} LIMIT 1`;
+  if (!r.length) throw new Error('Briefing não encontrado');
+  // Histórico com a mesma empresa — contexto que ajuda na próxima conversa
+  const hist = await sql`SELECT id, lead_nome, data_reuniao, status, criado_em
+    FROM briefings_reuniao WHERE empresa = ${r[0].empresa} AND id <> ${id}
+    ORDER BY criado_em DESC LIMIT 10`;
+  return { briefing: r[0], historico_empresa: hist.map(h => ({ ...h,
+    criado_em: h.criado_em ? String(h.criado_em).substring(0, 10) : null })) };
+}
+
+async function briefingExcluir({ id }) {
+  if (!id) throw new Error('id obrigatório');
+  const sql = await getSql();
+  await sql`DELETE FROM briefings_reuniao WHERE id = ${id}`;
+  return { excluido: true };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -356,6 +439,10 @@ export default async function handler(req, res) {
 
   const acoes = {
     clientes_listar: () => clientesListar(payload),
+    brief_salvar:    () => briefingSalvar(payload),
+    brief_listar:    () => briefingListar(payload),
+    brief_get:       () => briefingGet(payload),
+    brief_excluir:   () => briefingExcluir(payload),
     mapa_listar:     () => mapaListar(payload),
     mapa_salvar:     () => mapaSalvar(payload),
     mapa_excluir:    () => mapaExcluir(payload),
