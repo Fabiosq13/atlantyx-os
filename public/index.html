@@ -3136,7 +3136,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#128300; Raio-X do Projeto</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Cronograma fisico &middot; performance da equipe &middot; retorno financeiro e lucro</div></div>
     <select class="fsel" id="rx_projeto" style="font-size:11px;width:auto;min-width:220px;"><option value="">Escolha o projeto</option></select>
     <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="explorarBancoCrono()">&#128269; Explorar banco</button>
-    <button class="btn" style="font-size:10px;" onclick="cronogramaConfigurar()">&#9881; Cronograma</button>
+    <button class="btn" style="font-size:10px;" onclick="verFonteCronograma()">&#9881; Fonte do cronograma</button>
     <button class="btn btn-gn" onclick="gerarRaioX()" id="btnRaioX">&#128300; Gerar raio-X</button>
   </div>
   <div id="raioXBox"><div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:26px;font-size:11.5px;">Escolha o projeto e clique em <b>Gerar raio-X</b>.<br><span style="font-size:10px;">Cruza o cronograma fisico do modulo externo com as receitas e despesas do projeto.</span></div></div></div>
@@ -18300,7 +18300,8 @@ async function verTabelaCrono(tabela) {
             <tbody>${am.map(r => `<tr style="border-bottom:1px solid var(--bd);">${Object.values(r).map(v=>`<td style="padding:4px;white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;">${String(v ?? '—').substring(0,40)}</td>`).join('')}</tr>`).join('')}</tbody>
           </table></div>` : (d.tipo !== 'chave-valor' ? '<div style="font-size:11px;color:var(--t3);">Tabela vazia.</div>' : '')}
         <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
-          <button class="btn btn-gn" style="font-size:10px;" onclick="configurarApontamento('${tabela}')">⚙ Usar como tabela de apontamento</button>
+          <button class="btn btn-gn" style="font-size:10px;" onclick="configurarApontamento('${tabela}')">⏱ Usar como apontamento de horas</button>
+          ${d.tipo !== 'chave-valor' ? `<button class="btn btn-p" style="font-size:10px;" onclick="usarComoCronograma('${tabela}')">📅 Usar como cronograma</button>` : ''}
           <button class="btn" style="font-size:10px;" onclick="copiarSchema('${tabela}')">📋 Copiar estrutura</button>
         </div>
         <div style="font-size:10px;color:var(--t3);margin-top:10px;line-height:1.6;">
@@ -18330,13 +18331,56 @@ async function lerChaveCrono(tabela, chave, colChave, colValor) {
         <div style="font-size:11.5px;font-weight:600;margin-bottom:6px;">Conteúdo</div>
         <pre style="background:var(--bg4);border:1px solid var(--bd);border-radius:7px;padding:10px;font-size:10px;line-height:1.6;overflow-x:auto;max-height:44vh;">${
           JSON.stringify(d.amostra ?? d.bruto, null, 2).substring(0, 4000).replace(/</g,'&lt;')}</pre>
-        <button class="btn btn-gn" style="font-size:10px;margin-top:10px;" onclick="copiarChaveCrono()">📋 Copiar para me enviar</button>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+          <button class="btn btn-p" style="font-size:10px;" onclick="usarComoCronograma('${tabela}','${String(chave).replace(/'/g,"")}',' ${colChave}','${colValor}')">📅 Usar como cronograma</button>
+          <button class="btn btn-gn" style="font-size:10px;" onclick="copiarChaveCrono()">📋 Copiar para me enviar</button>
+        </div>
         <div style="font-size:10px;color:var(--t3);margin-top:8px;line-height:1.6;">
           Copie e cole no chat: com os campos reais eu configuro o cronograma e o apontamento de horas.
         </div>
       </div></div>`;
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
+// v2.00: define qual tabela/chave do outro banco é o cronograma
+async function usarComoCronograma(tabela, chave, colChave, colValor) {
+  try {
+    const ex = window._cronoUltimaChave?.campos || window._cronoUltimoSchema?.colunas?.map(c => c.split(' ')[0]) || [];
+    const dica = ex.length ? `\n\nCampos disponíveis:\n${ex.join(', ')}` : '';
+    const r = prompt(`Mapeamento do cronograma — informe o nome de cada campo, separado por | :
+
+projeto | tarefa | responsável | início | fim | percentual | peso
+
+Deixe vazio o que não existir (o sistema tenta nomes comuns).${dica}`,
+      ' |  |  |  |  |  | ');
+    if (r === null) return;
+    const [col_projeto, col_tarefa, col_responsavel, col_inicio, col_fim, col_pct, col_peso] = r.split('|').map(x => x.trim());
+    await pmoApi('crono_cfg_banco', { salvar: { tabela, chave: chave || '', col_chave: (colChave||'').trim(), col_valor: (colValor||'').trim(),
+      col_projeto, col_tarefa, col_responsavel, col_inicio, col_fim, col_pct, col_peso } });
+    toast('Fonte salva — testando...', 'success');
+    const t = await pmoApi('crono_buscar', {});
+    if (t.erro) { alert('⚠ ' + t.erro + (t.dica ? '\n\n' + t.dica : '')); return; }
+    const am = (t.tarefas||[]).slice(0,3);
+    alert(`✅ ${t.total} tarefa(s) lida(s) de ${t.fonte}\n\nAmostra:\n${am.map(x => `  ${x.tarefa || '(sem nome)'} — ${x.responsavel || 's/ resp.'} — ${x.pct || 0}%`).join('\n')}\n\n${am.some(x => !x.tarefa || !x.pct) ? '⚠ Alguns campos vieram vazios. Se o nome da coluna for diferente, refaça o mapeamento.' : 'Mapeamento funcionando.'}`);
+    document.getElementById('cronoDbModal').style.display = 'none';
+  } catch (e) { toast('Erro: ' + e.message, 'error'); if (e.dica) alert(e.dica); }
+}
+async function verFonteCronograma() {
+  try {
+    const d = await pmoApi('crono_cfg_banco');
+    const c = d.config || {};
+    if (!d.banco_conectado) {
+      alert('⚠ Banco do cronograma não conectado.\n\nConfigure CRONOGRAMA_DATABASE_URL no Vercel e faça Redeploy.');
+      return;
+    }
+    if (!c.tabela) {
+      if (confirm('Nenhuma fonte de cronograma definida ainda.\n\nAbrir o explorador do banco para escolher?')) explorarBancoCrono();
+      return;
+    }
+    const txt = `Fonte atual do cronograma:\n\nTabela: ${c.tabela}${c.chave ? '\nChave: ' + c.chave : ''}\n\nMapeamento:\n  projeto: ${c.col_projeto||'(automático)'}\n  tarefa: ${c.col_tarefa||'(automático)'}\n  responsável: ${c.col_responsavel||'(automático)'}\n  início: ${c.col_inicio||'(automático)'}\n  fim: ${c.col_fim||'(automático)'}\n  percentual: ${c.col_pct||'(automático)'}`;
+    if (confirm(txt + '\n\nQuer trocar a fonte?')) explorarBancoCrono();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+
 function copiarChaveCrono() {
   const d = window._cronoUltimaChave; if (!d) return;
   const txt = `CHAVE: ${d.chave}\nTIPO: ${d.tipo}${d.total_itens!=null?' ('+d.total_itens+' itens)':''}\nCAMPOS: ${(d.campos||[]).join(', ')}\n\nAMOSTRA:\n${JSON.stringify(d.amostra, null, 1).substring(0,2500)}`;
@@ -21990,7 +22034,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.99] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.00] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22006,7 +22050,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.99';
+window.__ATX_BUILD_ID__ = 'ATX-v2.00';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
