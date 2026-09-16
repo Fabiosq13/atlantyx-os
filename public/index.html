@@ -18231,7 +18231,12 @@ async function explorarBancoCrono() {
       <div class="ph"><div class="pt">🔍 Banco do módulo de cronograma</div>
         <button class="btn" style="font-size:10px;" onclick="document.getElementById('cronoDbModal').style.display='none'">✕</button></div>
       <div class="pb">
-        <div style="font-size:11px;color:var(--t2);margin-bottom:10px;">${d.total_tabelas} tabela(s). Clique numa para ver as colunas e uma amostra dos dados.</div>
+        <div style="font-size:11px;color:var(--t2);margin-bottom:10px;">
+          Banco <b>${d.banco_atual || '?'}</b> · ${d.total_tabelas} tabela(s). Clique numa para ver o conteúdo.</div>
+        ${d.aviso_banco ? `<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:10px 12px;font-size:10.5px;line-height:1.7;margin-bottom:10px;">
+          ⚠ <b>Banco possivelmente errado</b><br>${d.aviso_banco}</div>` : ''}
+        ${(d.outros_bancos||[]).length ? `<div style="font-size:10px;color:var(--t3);margin-bottom:10px;">
+          Outros bancos neste servidor: ${d.outros_bancos.map(b=>`<b>${b}</b>`).join(', ')} — para trocar, mude o nome no fim da CRONOGRAMA_DATABASE_URL.</div>` : ''}
         ${(p.apontamento||[]).length || (p.cronograma||[]).length ? `<div style="background:rgba(34,211,163,.08);border:1px solid rgba(34,211,163,.3);border-radius:8px;padding:10px;font-size:10.5px;line-height:1.7;margin-bottom:10px;">
           💡 <b>Provavelmente o que você procura:</b><br>
           ${(p.cronograma||[]).length ? `Cronograma: ${p.cronograma.map(t=>`<b>${t}</b>`).join(', ')}<br>` : ''}
@@ -18273,11 +18278,27 @@ async function verTabelaCrono(tabela) {
           ${cols.map(c => `<span style="font-size:10px;background:var(--bg4);border:1px solid var(--bd);border-radius:5px;padding:2px 7px;">
             <b>${c.nome}</b> <span style="color:var(--t3);">${c.tipo}</span></span>`).join('')}
         </div>
-        ${am.length ? `<div style="font-size:11.5px;font-weight:600;margin-bottom:6px;">Amostra</div>
+        ${d.tipo === 'chave-valor' ? `
+          <div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:7px;padding:9px 11px;font-size:10.5px;line-height:1.7;margin-bottom:10px;">
+            🔑 <b>Tabela chave-valor</b> — ${d.aviso}<br>
+            Chave: <b>${d.coluna_chave}</b> · Valor: <b>${d.coluna_valor}</b></div>
+          <div style="font-size:11.5px;font-weight:600;margin-bottom:6px;">Chaves guardadas (${(d.chaves||[]).length})</div>
+          <div style="max-height:34vh;overflow-y:auto;margin-bottom:12px;">
+            ${(d.chaves||[]).map(k => k.erro ? `<div style="color:var(--red);font-size:10px;">${k.erro}</div>` : `
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 7px;border-bottom:1px solid var(--bd);font-size:10.5px;">
+                <div style="flex:1;min-width:0;">
+                  <b>${k.chave}</b>
+                  <div style="font-size:9px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${String(k.previa||'').replace(/</g,'&lt;')}</div>
+                </div>
+                <span style="font-size:9px;color:var(--t3);white-space:nowrap;">${(k.tamanho/1024).toFixed(1)} KB</span>
+                <button class="btn" style="font-size:8.5px;padding:1px 6px;" onclick="lerChaveCrono('${tabela}','${String(k.chave).replace(/'/g,"")}','${d.coluna_chave}','${d.coluna_valor}')">abrir</button>
+              </div>`).join('')}
+          </div>` : ''}
+        ${am.length && d.tipo !== 'chave-valor' ? `<div style="font-size:11.5px;font-weight:600;margin-bottom:6px;">Amostra</div>
           <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:10px;">
             <thead><tr style="border-bottom:1px solid var(--bd);">${Object.keys(am[0]).map(k=>`<th style="text-align:left;padding:4px;color:var(--t2);font-size:9px;white-space:nowrap;">${k}</th>`).join('')}</tr></thead>
             <tbody>${am.map(r => `<tr style="border-bottom:1px solid var(--bd);">${Object.values(r).map(v=>`<td style="padding:4px;white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;">${String(v ?? '—').substring(0,40)}</td>`).join('')}</tr>`).join('')}</tbody>
-          </table></div>` : '<div style="font-size:11px;color:var(--t3);">Tabela vazia.</div>'}
+          </table></div>` : (d.tipo !== 'chave-valor' ? '<div style="font-size:11px;color:var(--t3);">Tabela vazia.</div>' : '')}
         <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
           <button class="btn btn-gn" style="font-size:10px;" onclick="configurarApontamento('${tabela}')">⚙ Usar como tabela de apontamento</button>
           <button class="btn" style="font-size:10px;" onclick="copiarSchema('${tabela}')">📋 Copiar estrutura</button>
@@ -18289,6 +18310,39 @@ async function verTabelaCrono(tabela) {
     window._cronoUltimoSchema = { tabela, colunas: cols.map(c => c.nome + ' (' + c.tipo + ')'), amostra: am.slice(0,2) };
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
+// v1.99: abre o conteúdo de uma chave do store
+async function lerChaveCrono(tabela, chave, colChave, colValor) {
+  const modal = document.getElementById('cronoDbModal');
+  try {
+    const d = await pmoApi('crono_ler_chave', { tabela, chave, coluna_chave: colChave, coluna_valor: colValor });
+    if (!d.encontrado) { toast('Chave vazia', 'error'); return; }
+    window._cronoUltimaChave = d;
+    modal.innerHTML = `<div class="panel" style="width:880px;max-width:96vw;max-height:92vh;overflow:auto;">
+      <div class="ph"><div class="pt">🔑 ${chave}</div>
+        <span style="font-size:10px;color:var(--t2);">${d.tipo}${d.total_itens != null ? ' · ' + d.total_itens + ' item(ns)' : ''} · ${(d.tamanho/1024).toFixed(1)} KB</span>
+        <button class="btn" style="font-size:10px;" onclick="verTabelaCrono('${tabela}')">← voltar</button>
+        <button class="btn" style="font-size:10px;" onclick="document.getElementById('cronoDbModal').style.display='none'">✕</button></div>
+      <div class="pb">
+        ${d.campos ? `<div style="font-size:11.5px;font-weight:600;margin-bottom:6px;">Campos de cada item</div>
+          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px;">
+            ${d.campos.map(c => `<span style="font-size:10px;background:var(--bg4);border:1px solid var(--bd);border-radius:5px;padding:2px 7px;"><b>${c}</b></span>`).join('')}
+          </div>` : ''}
+        <div style="font-size:11.5px;font-weight:600;margin-bottom:6px;">Conteúdo</div>
+        <pre style="background:var(--bg4);border:1px solid var(--bd);border-radius:7px;padding:10px;font-size:10px;line-height:1.6;overflow-x:auto;max-height:44vh;">${
+          JSON.stringify(d.amostra ?? d.bruto, null, 2).substring(0, 4000).replace(/</g,'&lt;')}</pre>
+        <button class="btn btn-gn" style="font-size:10px;margin-top:10px;" onclick="copiarChaveCrono()">📋 Copiar para me enviar</button>
+        <div style="font-size:10px;color:var(--t3);margin-top:8px;line-height:1.6;">
+          Copie e cole no chat: com os campos reais eu configuro o cronograma e o apontamento de horas.
+        </div>
+      </div></div>`;
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+function copiarChaveCrono() {
+  const d = window._cronoUltimaChave; if (!d) return;
+  const txt = `CHAVE: ${d.chave}\nTIPO: ${d.tipo}${d.total_itens!=null?' ('+d.total_itens+' itens)':''}\nCAMPOS: ${(d.campos||[]).join(', ')}\n\nAMOSTRA:\n${JSON.stringify(d.amostra, null, 1).substring(0,2500)}`;
+  navigator.clipboard.writeText(txt).then(() => toast('Copiado — cole no chat', 'success')).catch(() => prompt('Copie:', txt));
+}
+
 function copiarSchema(tabela) {
   const s = window._cronoUltimoSchema;
   if (!s) return;
