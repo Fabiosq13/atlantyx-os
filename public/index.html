@@ -313,7 +313,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sbi s7" onclick="nav('s7pipe',this)">&#9647; Pipeline HubSpot <span class="nbx bl" id="dealCnt">—</span></div>
       <div class="sbi s7" onclick="nav('s7kpi',this)">&#9711; Metas + KPIs</div>
       <div class="sg-sub">OUTREACH</div>
-      <div class="sbi s7" onclick="nav('s7ceo',this)">&#127970; Robo CEO <span class="nbx gd">novo</span></div>
+      <div class="sbi s7" onclick="nav('s7clientes',this)">&#127970; Clientes do CRM <span class="nbx gn">novo</span></div>
+      <div class="sbi s7" onclick="nav('s7ceo',this)">&#128188; Robo CEO</div>
       <div class="sbi s7" onclick="nav('s7agenda',this)">&#9992; Agenda de Visitas</div>
       <div class="sbi s7" onclick="nav('s7outreach',this)">&#8594; Outreach em Lote</div>
       <div class="sbi s7" onclick="nav('s7meet',this)">&#9633; Reunioes + Briefings <span class="nbx gd" id="meetCnt">—</span></div>
@@ -3391,6 +3392,33 @@ tr:hover td{background:rgba(79,124,255,.03);}
 </div>
 
 <!-- v1.70: S7 · ROBÔ DE CONTATO COM CEOs -->
+<!-- v1.96: CLIENTES DO CRM -->
+<div class="page" id="page-s7clientes">
+  <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(34,211,163,.03));border:1px solid rgba(34,211,163,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:230px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#127970; Clientes do CRM</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">HubSpot + leads capturados + prospeccao C-Level + quem ja fatura &middot; duplicados unificados</div></div>
+    <input class="fi" id="cli_busca" placeholder="Buscar empresa, contato ou setor" style="width:220px;font-size:11px;" onkeydown="if(event.key==='Enter')carregarClientes()"/>
+    <select class="fsel" id="cli_fonte" style="font-size:11px;width:auto;" onchange="carregarClientes()">
+      <option value="">Todas as fontes</option>
+      <option value="faturamento">Ja faturam</option>
+      <option value="hubspot">HubSpot</option>
+      <option value="captura">Captura de leads</option>
+      <option value="prospecção">Prospeccao C-Level</option>
+    </select>
+    <button class="btn btn-gn" onclick="carregarClientes()">&#8635; Atualizar</button>
+  </div>
+  <div id="cliAviso" style="display:none;margin-bottom:10px;"></div>
+  <div class="kg k4" style="margin-bottom:12px;">
+    <div class="kpi gn"><div class="kl">Clientes ativos</div><div class="kv" id="cli_ativos">&mdash;</div><div class="ks" id="cli_fatTotal">ja faturaram</div></div>
+    <div class="kpi bl"><div class="kl">Prospects</div><div class="kv" id="cli_prospects">&mdash;</div><div class="ks">ainda sem faturamento</div></div>
+    <div class="kpi gd"><div class="kl">Pipeline HubSpot</div><div class="kv" id="cli_pipeline" style="font-size:15px;">&mdash;</div><div class="ks">negocios em aberto</div></div>
+    <div class="kpi"><div class="kl">Total na base</div><div class="kv" id="cli_total">&mdash;</div><div class="ks" id="cli_dup">&mdash;</div></div>
+  </div>
+  <div class="panel">
+    <div class="ph"><div class="pt">Base de clientes</div><span style="font-size:10px;color:var(--t2);" id="cli_fontes"></span></div>
+    <div class="pb" id="cliLista" style="max-height:62vh;overflow-y:auto;"><div style="text-align:center;color:var(--t3);padding:22px;">Carregando...</div></div>
+  </div>
+</div>
+
 <div class="page" id="page-s7ceo">
   <div style="background:linear-gradient(135deg,rgba(156,109,255,.13),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
     <div style="flex:1"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#127970; Robo de Contato C-Level</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Escreve, envia, le a resposta e classifica o interesse &middot; voce aprova cada e-mail antes de sair</div></div>
@@ -4020,7 +4048,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <div class="toast" id="toastEl"></div>
 <script>
 const LOGS=[];let logCount=0;
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7clientes:'/ S7 · Clientes do CRM',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7clientes')setTimeout(carregarClientes,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -18153,6 +18181,70 @@ function ceoExportarAgenda() {
   toast('Agenda exportada', 'success');
 }
 
+// ═══ v1.96: CLIENTES DO CRM ═══
+async function crmApi(action, params = {}) {
+  const r = await fetch('/api/crm', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action, payload: params }) });
+  const raw = await r.text(); let d;
+  try { d = JSON.parse(raw); } catch { throw new Error('Resposta não-JSON (HTTP ' + r.status + ')'); }
+  if (!d.success) throw new Error(d.error || 'falha');
+  return d;
+}
+async function carregarClientes() {
+  const box = document.getElementById('cliLista'); if (!box) return;
+  box.innerHTML = '<div style="text-align:center;color:var(--t3);padding:22px;">⏳ Consultando HubSpot e bases internas...</div>';
+  try {
+    const d = await crmApi('clientes_listar', {
+      fonte: document.getElementById('cli_fonte')?.value || null,
+      busca: document.getElementById('cli_busca')?.value?.trim() || null });
+    const r = d.resumo || {};
+    const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    u('cli_ativos', r.clientes_ativos); u('cli_prospects', r.prospects); u('cli_total', r.total);
+    u('cli_fatTotal', fmtBRLcompleto(r.faturamento_total || 0) + ' faturado');
+    u('cli_pipeline', fmtBRLcompleto(r.pipeline_hubspot || 0));
+    u('cli_dup', r.em_mais_de_uma_fonte ? r.em_mais_de_uma_fonte + ' em mais de uma fonte' : 'sem sobreposição');
+    const pf = r.por_fonte || {};
+    u('cli_fontes', `HubSpot ${pf.hubspot||0} · captura ${pf.captura||0} · prospecção ${pf.prospeccao||0} · faturam ${pf.faturamento||0}`);
+
+    // Aviso quando o HubSpot não respondeu — senão a tela parece vazia sem motivo
+    const av = document.getElementById('cliAviso');
+    if (av) {
+      if (d.hubspot?.erro) { av.style.display = 'block';
+        av.innerHTML = `<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:8px;padding:9px 12px;font-size:10.5px;line-height:1.6;">
+          ⚠ <b>HubSpot não respondeu:</b> ${d.hubspot.erro}<br>A lista abaixo mostra só as bases internas. ${!d.hubspot.configurado ? 'Configure HUBSPOT_TOKEN no Vercel.' : ''}</div>`;
+      } else av.style.display = 'none';
+    }
+
+    const tagFonte = f => {
+      const cores = { hubspot:'rgba(255,122,0,.18)|#ff7a00', captura:'rgba(79,124,255,.18)|#4f7cff',
+        'prospecção':'rgba(156,109,255,.18)|#9c6dff', faturamento:'rgba(34,211,163,.18)|#22d3a3' };
+      const [bg, cor] = (cores[f] || 'var(--bg4)|var(--t2)').split('|');
+      return `<span style="font-size:8.5px;padding:1px 5px;border-radius:4px;background:${bg};color:${cor};">${f}</span>`;
+    };
+    box.innerHTML = (d.clientes||[]).length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;">
+      <thead><tr style="border-bottom:1px solid var(--bd);">
+        ${['EMPRESA','SETOR / LOCAL','CONTATOS','FATURADO','PIPELINE','FONTES'].map(h=>`<th style="text-align:left;padding:6px;color:var(--t2);font-size:9px;">${h}</th>`).join('')}
+      </tr></thead>
+      <tbody>${d.clientes.map(c => `<tr style="border-bottom:1px solid var(--bd);${c.e_cliente?'background:rgba(34,211,163,.04);':''}">
+        <td style="padding:6px;">
+          <div style="font-weight:600;">${c.e_cliente ? '⭐ ' : ''}${c.empresa || '(sem nome)'}</div>
+          ${c.dominio ? `<div style="font-size:9px;color:var(--t3);">${c.dominio}</div>` : ''}
+          ${c.status ? `<div style="font-size:9px;color:var(--t3);">${c.status}${c.intencao ? ' · ' + c.intencao : ''}</div>` : ''}
+        </td>
+        <td style="padding:6px;color:var(--t2);font-size:10px;">${c.setor || '—'}${c.cidade ? '<br>' + c.cidade + (c.uf ? '/' + c.uf : '') : ''}</td>
+        <td style="padding:6px;font-size:10px;">
+          ${(c.contatos||[]).slice(0,2).map(x => `<div>${x.nome}${x.cargo ? ` <span style="color:var(--t3);">${x.cargo}</span>` : ''}</div>`).join('')
+            || '<span style="color:var(--t3);">—</span>'}
+          ${c.qtd_contatos > 2 ? `<div style="color:var(--t3);font-size:9px;">+${c.qtd_contatos-2} contato(s)</div>` : ''}
+        </td>
+        <td style="padding:6px;font-family:var(--M);${c.faturamento?'color:var(--green,#22d3a3);':''}">
+          ${c.faturamento ? fmtBRLcompleto(c.faturamento.valor_total) + `<div style="font-size:9px;color:var(--t3);">${c.faturamento.termos} termo(s)</div>` : '—'}</td>
+        <td style="padding:6px;font-family:var(--M);">${c.valor_negocios ? fmtBRLcompleto(c.valor_negocios) + `<div style="font-size:9px;color:var(--t3);">${c.negocios.length} negócio(s)</div>` : '—'}</td>
+        <td style="padding:6px;">${(c.fontes||[]).map(tagFonte).join(' ')}</td>
+      </tr>`).join('')}</tbody></table>`
+      : `<div style="text-align:center;color:var(--t3);padding:22px;font-size:11.5px;">Nenhum cliente encontrado${document.getElementById('cli_busca')?.value ? ' para esta busca' : ''}.</div>`;
+  } catch (e) { box.innerHTML = `<div style="color:var(--red);text-align:center;padding:20px;font-size:11px;">Erro: ${e.message}</div>`; }
+}
+
 // ═══ v1.95: RAIO-X DO PROJETO E SALA DO CONSELHO · PROJETOS ═══
 async function _rxPopularProjetos() {
   try {
@@ -21492,7 +21584,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.95] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.96] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -21508,7 +21600,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.95';
+window.__ATX_BUILD_ID__ = 'ATX-v1.96';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
