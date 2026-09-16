@@ -392,6 +392,145 @@ ${texto}`, 1800);
   const r = await reuniaoSalvar({ titulo, transcricao, ata });
   return { ata, reuniao_id: r.id };
 }
+// ═══ v1.98: CONEXÃO DIRETA COM O BANCO DO MÓDULO DE CRONOGRAMA ═══
+// Ler o banco direto é melhor que consumir API: não depende de o outro projeto expor
+// endpoints, e dá acesso a qualquer tabela. Basta a connection string em CRONOGRAMA_DATABASE_URL.
+let _sqlCrono = null;
+async function getSqlCrono() {
+  const url = process.env.CRONOGRAMA_DATABASE_URL;
+  if (!url) {
+    const e = new Error('CRONOGRAMA_DATABASE_URL não configurada.');
+    e.dica = 'No Vercel do projeto de cronograma: Storage → o banco → .env.local → copie DATABASE_URL. Cole aqui em Settings → Environment Variables como CRONOGRAMA_DATABASE_URL.';
+    throw e;
+  }
+  if (_sqlCrono) return _sqlCrono;
+  const { neon } = await import('@neondatabase/serverless');
+  _sqlCrono = neon(url);
+  return _sqlCrono;
+}
+
+// Descobre o que existe no outro banco — sem isso é chute
+async function cronoSchema({ tabela } = {}) {
+  const sql = await getSqlCrono();
+  if (tabela) {
+    const cols = await sql`SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = ${tabela}
+      ORDER BY ordinal_position`;
+    let amostra = [];
+    try { amostra = await sql.query(`SELECT * FROM "${tabela}" LIMIT 3`); } catch (e) { /* tabela vazia ou sem permissão */ }
+    let total = null;
+    try { const c = await sql.query(`SELECT COUNT(*)::int AS n FROM "${tabela}"`); total = c[0]?.n ?? null; } catch (_) {}
+    return { tabela, colunas: cols.map(c => ({ nome: c.column_name, tipo: c.data_type, aceita_nulo: c.is_nullable === 'YES' })),
+      total_registros: total, amostra };
+  }
+  const tabelas = await sql`SELECT table_name,
+      (SELECT COUNT(*)::int FROM information_schema.columns c WHERE c.table_name = t.table_name AND c.table_schema='public') AS n_colunas
+    FROM information_schema.tables t
+    WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+    ORDER BY table_name`;
+  // Conta registros de cada uma — ajuda a saber onde estão os dados de verdade
+  const comContagem = [];
+  for (const t of tabelas) {
+    let n = null;
+    try { const c = await sql.query(`SELECT COUNT(*)::int AS n FROM "${t.table_name}"`); n = c[0]?.n ?? null; } catch (_) {}
+    comContagem.push({ tabela: t.table_name, colunas: t.n_colunas, registros: n });
+  }
+  return { tabelas: comContagem.sort((a, b) => (b.registros || 0) - (a.registros || 0)),
+    total_tabelas: comContagem.length,
+    provaveis: {
+      cronograma: comContagem.filter(t => /crono|tarefa|atividad|projeto|etapa|marco|gantt/i.test(t.tabela)).map(t => t.tabela),
+      apontamento: comContagem.filter(t => /apont|hora|timesheet|ponto|lancamento/i.test(t.tabela)).map(t => t.tabela),
+      pessoas: comContagem.filter(t => /pessoa|colaborador|funcionario|usuario|equipe|membro/i.test(t.tabela)).map(t => t.tabela),
+    } };
+}
+
+// Consulta livre, somente leitura — para eu mapear os dados com você
+async function cronoConsultar({ sql: query, limite = 50 } = {}) {
+  if (!query) throw new Error('consulta obrigatória');
+  const q = String(query).trim();
+  // Trava de segurança: este conector é só de leitura
+  if (!/^select\s/i.test(q)) throw new Error('Somente SELECT é permitido neste conector.');
+  if (/\b(insert|update|delete|drop|alter|create|truncate|grant)\b/i.test(q)) {
+    throw new Error('Comando de escrita bloqueado — este conector é somente leitura.');
+  }
+  const sql = await getSqlCrono();
+  const comLimite = /\blimit\b/i.test(q) ? q : `${q.replace(/;+$/, '')} LIMIT ${Math.min(parseInt(limite) || 50, 500)}`;
+  const linhas = await sql.query(comLimite);
+  return { linhas, total: linhas.length, consulta: comLimite };
+}
+
+// Apontamento de horas — mapeamento configurável, porque não sei os nomes das colunas
+async function apontamentoHoras({ projeto, data_inicio, data_fim, tabela, col_projeto, col_pessoa, col_data, col_horas } = {}) {
+  const sql = await getSqlCrono();
+  const cfgSql = await getSql();
+  let cfg = {};
+  try {
+    const rows = await cfgSql`SELECT chave, valor FROM pmo_config WHERE chave LIKE 'apont_%'`;
+    rows.forEach(r => cfg[r.chave.replace('apont_', '')] = r.valor);
+  } catch (_) {}
+
+  const T = tabela || cfg.tabela;
+  if (!T) {
+    const e = new Error('Tabela de apontamento não configurada.');
+    e.dica = 'Use "🔍 Explorar banco" para ver as tabelas disponíveis e configurar qual é a de apontamento de horas.';
+    throw e;
+  }
+  const cP = col_projeto || cfg.col_projeto || 'projeto';
+  const cU = col_pessoa  || cfg.col_pessoa  || 'colaborador';
+  const cD = col_data    || cfg.col_data    || 'data';
+  const cH = col_horas   || cfg.col_horas   || 'horas';
+
+  const cond = [];
+  if (projeto) cond.push(`"${cP}"::text ILIKE '%${String(projeto).replace(/'/g, "''")}%'`);
+  if (data_inicio) cond.push(`"${cD}" >= '${data_inicio}'`);
+  if (data_fim) cond.push(`"${cD}" <= '${data_fim}'`);
+  const where = cond.length ? 'WHERE ' + cond.join(' AND ') : '';
+
+  try {
+    const linhas = await sql.query(`SELECT "${cP}" AS projeto, "${cU}" AS pessoa, "${cD}" AS data,
+      SUM(("${cH}")::numeric) AS horas FROM "${T}" ${where}
+      GROUP BY 1,2,3 ORDER BY 3 DESC LIMIT 2000`);
+
+    const porPessoa = {}, porProjeto = {}, porMes = {};
+    let total = 0;
+    linhas.forEach(l => {
+      const h = parseFloat(l.horas || 0); total += h;
+      const p = l.pessoa || '(sem nome)', pr = l.projeto || '(sem projeto)';
+      const m = String(l.data || '').substring(0, 7);
+      porPessoa[p] = round((porPessoa[p] || 0) + h);
+      porProjeto[pr] = round((porProjeto[pr] || 0) + h);
+      if (m) porMes[m] = round((porMes[m] || 0) + h);
+    });
+    return {
+      total_horas: round(total), registros: linhas.length,
+      por_pessoa: Object.entries(porPessoa).map(([nome, horas]) => ({ nome, horas })).sort((a, b) => b.horas - a.horas),
+      por_projeto: Object.entries(porProjeto).map(([nome, horas]) => ({ nome, horas })).sort((a, b) => b.horas - a.horas),
+      por_mes: Object.entries(porMes).map(([mes, horas]) => ({ mes, horas })).sort((a, b) => a.mes.localeCompare(b.mes)),
+      mapeamento: { tabela: T, projeto: cP, pessoa: cU, data: cD, horas: cH },
+    };
+  } catch (e) {
+    const err = new Error(`Erro ao ler ${T}: ${e.message}`);
+    err.dica = `Confira os nomes das colunas. Mapeamento usado: projeto="${cP}", pessoa="${cU}", data="${cD}", horas="${cH}". Use "🔍 Explorar banco" para ver os nomes reais.`;
+    throw err;
+  }
+}
+
+async function apontamentoConfig({ salvar } = {}) {
+  const sql = await getSql();
+  await sql`CREATE TABLE IF NOT EXISTS pmo_config (chave TEXT PRIMARY KEY, valor TEXT, atualizado_em TIMESTAMPTZ DEFAULT NOW())`;
+  if (salvar) {
+    for (const [k, v] of Object.entries(salvar)) {
+      if (v === undefined) continue;
+      await sql`INSERT INTO pmo_config (chave, valor, atualizado_em) VALUES (${'apont_' + k}, ${v || null}, NOW())
+        ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = NOW()`;
+    }
+  }
+  const rows = await sql`SELECT chave, valor FROM pmo_config WHERE chave LIKE 'apont_%'`;
+  const c = {}; rows.forEach(r => c[r.chave.replace('apont_', '')] = r.valor);
+  return { config: c, conectado: !!process.env.CRONOGRAMA_DATABASE_URL };
+}
+
 // ═══ v1.95: RAIO-X DO PROJETO ═══
 // Cruza três dimensões: cronograma físico (módulo externo), performance da equipe
 // e retorno financeiro (receitas × despesas ao longo do projeto).
@@ -873,6 +1012,10 @@ export default async function handler(req, res) {
     painel_mestre:     () => painelMestre(payload),
     raio_x_projeto:    () => raioXProjeto(payload),
     crono_config:      () => cronogramaConfig(payload),
+    crono_schema:      () => cronoSchema(payload),
+    crono_consultar:   () => cronoConsultar(payload),
+    apont_horas:       () => apontamentoHoras(payload),
+    apont_config:      () => apontamentoConfig(payload),
     crono_testar:      () => cronogramaTestar(payload),
     crono_buscar:      () => cronogramaBuscar(payload),
     projetos_config_salvar: () => projetosConfigSalvar(payload),
