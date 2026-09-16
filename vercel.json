@@ -43,6 +43,9 @@
     },
     "api/media.js": {
       "maxDuration": 60
+    },
+    "api/crm.js": {
+      "maxDuration": 60
     }
   },
   "crons": [
