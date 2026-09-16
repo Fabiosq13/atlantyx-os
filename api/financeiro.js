@@ -904,7 +904,13 @@ function qbBase() {
     : 'https://quickbooks.api.intuit.com';
 }
 
-const num = v => { const n = parseFloat(String(v).replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.')); return isNaN(n) ? 0 : Math.round(n * 100) / 100; };
+// v2.04: horizonte de 12 meses à frente para não trazer faturas de anos futuros
+function _addMeses(data, n) {
+  const d = new Date(data + 'T12:00:00');
+  d.setMonth(d.getMonth() + n);
+  return d.toISOString().split('T')[0];
+}
+const num = v = { const n = parseFloat(String(v).replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.')); return isNaN(n) ? 0 : Math.round(n * 100) / 100; };
 
 async function qbFetch(endpoint, token) {
   const realmId = (await qbTokensLer())?.realm_id || process.env.QB_REALM_ID;
@@ -2232,8 +2238,12 @@ async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
   if (!qbConfigurado()) { out.erro = 'QuickBooks não configurado'; return out; }
   try {
     const token = await qbToken();
-    const limIni = data_inicio ? `and DueDate >= '${data_inicio}'` : '';
-    const limFim = data_fim ? `and DueDate <= '${data_fim}'` : '';
+    // v2.04 FIX: o filtro por DueDate escondia faturas EM ABERTO fora do período consultado —
+    // inclusive as vencidas e não pagas, que são as mais urgentes. Uma conta em aberto é um
+    // direito (ou uma obrigação) que existe hoje, independentemente do mês que você está olhando.
+    // Agora trazemos TUDO que está em aberto e marcamos o que cai dentro do período.
+    const limIni = '';
+    const limFim = data_fim ? `and DueDate <= '${_addMeses(data_fim, 12)}'` : '';
     const [inv, bill] = await Promise.all([
       qbQuery(`select * from Invoice where Balance > '0' ${limIni} ${limFim} orderby DueDate asc maxresults 1000`, token).catch(e => ({ _erro: e.message })),
       qbQuery(`select * from Bill where Balance > '0' ${limIni} ${limFim} orderby DueDate asc maxresults 1000`, token).catch(e => ({ _erro: e.message })),
@@ -2241,12 +2251,17 @@ async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
     if (inv?._erro) out.erro = (out.erro ? out.erro + ' | ' : '') + 'Invoice: ' + inv._erro;
     else out.recebiveis = (inv?.QueryResponse?.Invoice || []).map(i => ({
       id: 'inv_' + i.Id, data: i.DueDate || i.TxnDate, descricao: (i.CustomerRef?.name || 'Cliente') + (i.DocNumber ? ' · Fat. ' + i.DocNumber : ''),
-      categoria: 'A Receber (Invoice)', valor: parseFloat(i.Balance || 0), valor_total: parseFloat(i.TotalAmt || 0), tipo: 'entrada', origem: 'quickbooks_futuro', vencida: i.DueDate ? new Date(i.DueDate) < new Date(new Date().toISOString().split('T')[0]) : false,
+      categoria: 'A Receber (Invoice)', valor: parseFloat(i.Balance || 0), valor_total: parseFloat(i.TotalAmt || 0), tipo: 'entrada', origem: 'quickbooks_futuro',
+      vencida: i.DueDate ? new Date(i.DueDate) < new Date(new Date().toISOString().split('T')[0]) : false,
+      // v2.04: diz se cai no período consultado, sem excluir o que está fora
+      no_periodo: (!data_inicio || (i.DueDate || i.TxnDate) >= data_inicio) && (!data_fim || (i.DueDate || i.TxnDate) <= data_fim),
+      emissao: i.TxnDate,
     }));
     if (bill?._erro) out.erro = (out.erro ? out.erro + ' | ' : '') + 'Bill: ' + bill._erro;
     else out.pagaveis = (bill?.QueryResponse?.Bill || []).map(b => ({
       id: 'bill_' + b.Id, data: b.DueDate || b.TxnDate, descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''),
-      categoria: 'A Pagar (Bill)', valor: parseFloat(b.Balance || 0), valor_total: parseFloat(b.TotalAmt || 0), tipo: 'saida', origem: 'quickbooks_futuro', vencida: b.DueDate ? new Date(b.DueDate) < new Date(new Date().toISOString().split('T')[0]) : false,
+      categoria: 'A Pagar (Bill)', valor: parseFloat(b.Balance || 0), valor_total: parseFloat(b.TotalAmt || 0), tipo: 'saida', origem: 'quickbooks_futuro',
+      no_periodo: (!data_inicio || (b.DueDate || b.TxnDate) >= data_inicio) && (!data_fim || (b.DueDate || b.TxnDate) <= data_fim), vencida: b.DueDate ? new Date(b.DueDate) < new Date(new Date().toISOString().split('T')[0]) : false,
     }));
   } catch (e) { out.erro = e.message; }
   return out;
