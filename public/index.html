@@ -313,7 +313,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sbi s7" onclick="nav('s7pipe',this)">&#9647; Pipeline HubSpot <span class="nbx bl" id="dealCnt">—</span></div>
       <div class="sbi s7" onclick="nav('s7kpi',this)">&#9711; Metas + KPIs</div>
       <div class="sg-sub">OUTREACH</div>
-      <div class="sbi s7" onclick="nav('s7clientes',this)">&#127970; Clientes do CRM <span class="nbx gn">novo</span></div>
+      <div class="sbi s7" onclick="nav('s7clientes',this)">&#127970; Clientes do CRM</div>
+      <div class="sbi s7" onclick="nav('s7mapa',this)">&#128506; Mapa de Atuacao <span class="nbx gn">novo</span></div>
       <div class="sbi s7" onclick="nav('s7ceo',this)">&#128188; Robo CEO</div>
       <div class="sbi s7" onclick="nav('s7agenda',this)">&#9992; Agenda de Visitas</div>
       <div class="sbi s7" onclick="nav('s7outreach',this)">&#8594; Outreach em Lote</div>
@@ -3393,6 +3394,40 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
 <!-- v1.70: S7 · ROBÔ DE CONTATO COM CEOs -->
 <!-- v1.96: CLIENTES DO CRM -->
+<!-- v1.97: MAPA DE ATUAÇÃO COMERCIAL -->
+<div class="page" id="page-s7mapa">
+  <div style="background:linear-gradient(135deg,rgba(156,109,255,.13),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:230px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#128506; Mapa de Atuacao Comercial</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Quem conhecemos e compra &middot; quem conhecemos e nao compra &middot; quem falta mapear</div></div>
+    <select class="fsel" id="mp_cliente" style="font-size:11px;width:auto;min-width:200px;" onchange="carregarMapa()"><option value="">Escolha o cliente</option></select>
+    <button class="btn" style="font-size:10px;" onclick="mapaNovoContato()">+ Contato</button>
+    <button class="btn btn-p" style="font-size:10px;" onclick="mapaSugerirIA()" id="btnMapaIA">&#129504; Sugerir quem falta</button>
+    <button class="btn" style="font-size:10px;" onclick="mapaExportar()">&#128247; Exportar</button>
+  </div>
+  <div class="kg k4" style="margin-bottom:12px;">
+    <div class="kpi gn"><div class="kl">Conhecemos e vendemos</div><div class="kv" id="mp_venda">&mdash;</div><div class="ks">relacao ativa</div></div>
+    <div class="kpi gd"><div class="kl">Conhecemos, sem venda</div><div class="kv" id="mp_conhecido">&mdash;</div><div class="ks">oportunidade aberta</div></div>
+    <div class="kpi"><div class="kl">A prospectar</div><div class="kv" id="mp_potencial">&mdash;</div><div class="ks">ainda nao conhecemos</div></div>
+    <div class="kpi bl"><div class="kl">Cobertura</div><div class="kv" id="mp_cobertura">&mdash;</div><div class="ks">do mapa conhecido</div></div>
+  </div>
+  <div class="panel">
+    <div class="ph"><div class="pt">Estrutura de decisao</div>
+      <span style="font-size:9.5px;color:var(--t2);">
+        <span style="color:var(--green,#22d3a3);">&#9632;</span> vendemos &nbsp;
+        <span style="color:var(--gold);">&#9632;</span> conhecemos &nbsp;
+        <span style="color:var(--t3);">&#9633;</span> a prospectar
+      </span>
+      <button class="btn" style="font-size:9.5px;" onclick="mapaZoom(0.1)">+</button>
+      <button class="btn" style="font-size:9.5px;" onclick="mapaZoom(-0.1)">&minus;</button>
+      <button class="btn" style="font-size:9.5px;" onclick="mapaZoom(0)">100%</button>
+    </div>
+    <div class="pb" style="padding:0;">
+      <div id="mapaCanvas" style="width:100%;height:64vh;overflow:auto;background:var(--bg4);border-radius:0 0 9px 9px;">
+        <div id="mapaPalco" style="position:relative;transform-origin:0 0;min-width:1200px;min-height:800px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="page" id="page-s7clientes">
   <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(34,211,163,.03));border:1px solid rgba(34,211,163,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
     <div style="flex:1;min-width:230px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#127970; Clientes do CRM</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">HubSpot + leads capturados + prospeccao C-Level + quem ja fatura &middot; duplicados unificados</div></div>
@@ -4048,7 +4083,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <div class="toast" id="toastEl"></div>
 <script>
 const LOGS=[];let logCount=0;
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7clientes:'/ S7 · Clientes do CRM',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7clientes')setTimeout(carregarClientes,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7clientes:'/ S7 · Clientes do CRM',s7mapa:'/ S7 · Mapa de Atuacao Comercial',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7clientes')setTimeout(carregarClientes,150);if(p==='s7mapa')setTimeout(_mpPopularClientes,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -18181,6 +18216,186 @@ function ceoExportarAgenda() {
   toast('Agenda exportada', 'success');
 }
 
+// ═══ v1.97: MAPA DE ATUAÇÃO COMERCIAL ═══
+let _mpContatos = [], _mpZoom = 1, _mpArr = null;
+const _MP_CORES = {
+  venda:     { borda:'var(--green,#22d3a3)', fundo:'rgba(34,211,163,.10)', rotulo:'vendemos' },
+  conhecido: { borda:'var(--gold)',          fundo:'rgba(245,185,75,.10)', rotulo:'conhecemos' },
+  potencial: { borda:'var(--t3)',            fundo:'transparent',          rotulo:'a prospectar' },
+};
+async function _mpPopularClientes() {
+  try {
+    const [cl, mp] = await Promise.all([crmApi('clientes_listar', {}), crmApi('mapa_listar', {})]);
+    const nomes = [...new Set([...(cl.clientes||[]).map(c => c.empresa), ...(mp.clientes||[])])].filter(Boolean).sort();
+    const sel = document.getElementById('mp_cliente'); if (!sel) return;
+    const atual = sel.value;
+    sel.innerHTML = '<option value="">Escolha o cliente</option>' +
+      nomes.map(n => `<option value="${String(n).replace(/"/g,'')}">${n}</option>`).join('');
+    sel.value = atual;
+    if (sel.value) carregarMapa();
+  } catch (e) { addLog('warn', '[CRM] ' + e.message); }
+}
+async function carregarMapa() {
+  const cliente = document.getElementById('mp_cliente')?.value;
+  const palco = document.getElementById('mapaPalco'); if (!palco) return;
+  if (!cliente) { palco.innerHTML = '<div style="padding:40px;text-align:center;color:var(--t3);font-size:12px;">Escolha um cliente para ver o mapa de atuação.</div>'; return; }
+  try {
+    const d = await crmApi('mapa_listar', { cliente });
+    _mpContatos = d.contatos || [];
+    const pc = d.por_camada || {};
+    const u = (id,v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    u('mp_venda', pc.venda||0); u('mp_conhecido', pc.conhecido||0); u('mp_potencial', pc.potencial||0);
+    const conhecidos = (pc.venda||0) + (pc.conhecido||0);
+    u('mp_cobertura', d.total ? Math.round(conhecidos / d.total * 100) + '%' : '—');
+    _mpDesenhar();
+  } catch (e) { palco.innerHTML = `<div style="padding:30px;text-align:center;color:var(--red);font-size:11px;">Erro: ${e.message}</div>`; }
+}
+function _mpDesenhar() {
+  const palco = document.getElementById('mapaPalco'); if (!palco) return;
+  if (!_mpContatos.length) {
+    palco.innerHTML = `<div style="padding:40px;text-align:center;color:var(--t3);font-size:12px;">
+      Nenhum contato mapeado para este cliente.<br>
+      <button class="btn btn-gn" style="margin-top:10px;" onclick="mapaNovoContato()">+ Adicionar quem conhecemos</button>
+      <button class="btn btn-p" style="margin-top:10px;" onclick="mapaSugerirIA()">🧠 Sugerir quem falta</button></div>`;
+    return;
+  }
+  // Árvore por reporta_para
+  const porId = {}; _mpContatos.forEach(c => porId[c.id] = { ...c, filhos: [] });
+  const raizes = [];
+  _mpContatos.forEach(c => {
+    if (c.reporta_para && porId[c.reporta_para]) porId[c.reporta_para].filhos.push(porId[c.id]);
+    else raizes.push(porId[c.id]);
+  });
+  const LARG = 200, ALT = 80, GAPX = 24, GAPY = 56;
+  let cursor = 20;
+  (function pos(ns, nivel) {
+    ns.forEach(n => {
+      if (!n.filhos.length) { n._x = cursor; n._y = 20 + nivel*(ALT+GAPY); cursor += LARG+GAPX; }
+      else { pos(n.filhos, nivel+1); n._x = (n.filhos[0]._x + n.filhos[n.filhos.length-1]._x)/2; n._y = 20 + nivel*(ALT+GAPY); }
+    });
+  })(raizes, 0);
+  const todos = []; (function col(ns){ ns.forEach(n=>{todos.push(n); col(n.filhos);}); })(raizes);
+  todos.forEach(n => { if (n.pos_x != null && n.pos_y != null) { n._x = n.pos_x; n._y = n.pos_y; } });
+
+  const maxX = Math.max(...todos.map(n=>n._x)) + LARG + 60, maxY = Math.max(...todos.map(n=>n._y)) + ALT + 60;
+  palco.style.minWidth = Math.max(1000, maxX) + 'px';
+  palco.style.minHeight = Math.max(600, maxY) + 'px';
+
+  let svg = `<svg style="position:absolute;inset:0;width:${Math.max(1000,maxX)}px;height:${Math.max(600,maxY)}px;pointer-events:none;">`;
+  todos.forEach(n => n.filhos.forEach(f => {
+    const x1=n._x+LARG/2, y1=n._y+ALT, x2=f._x+LARG/2, y2=f._y, ym=y1+(y2-y1)/2;
+    const tracejado = f.camada === 'potencial' ? 'stroke-dasharray="4,3"' : '';
+    svg += `<path d="M${x1},${y1} L${x1},${ym} L${x2},${ym} L${x2},${y2}" stroke="var(--bd)" stroke-width="1.5" fill="none" ${tracejado}/>`;
+  }));
+  svg += '</svg>';
+
+  const caixas = todos.map(n => {
+    const c = _MP_CORES[n.camada] || _MP_CORES.potencial;
+    const tracejada = n.camada === 'potencial';
+    const inf = { decisor:'👑 decisor', influenciador:'💬 influenciador', usuario:'🔧 usuário', gatekeeper:'🚪 gatekeeper' }[n.influencia] || '';
+    return `<div class="mpBox" data-id="${n.id}" style="position:absolute;left:${n._x}px;top:${n._y}px;width:${LARG}px;min-height:${ALT}px;
+      background:${c.fundo};border:${tracejada?'1.5px dashed':'1px solid'} ${c.borda};border-radius:8px;padding:8px 9px;cursor:move;
+      box-shadow:${tracejada?'none':'0 2px 8px rgba(0,0,0,.25)'};overflow:hidden;"
+      onmousedown="_mpArrastar(event,'${n.id}')" ondblclick="mapaEditarContato('${n.id}')">
+      <div style="font-size:11px;font-weight:700;line-height:1.25;${!n.nome?'color:var(--t3);font-style:italic;':''}">
+        ${n.nome ? String(n.nome).substring(0,26) : '(a identificar)'}</div>
+      <div style="font-size:9.5px;color:var(--t2);margin-top:2px;line-height:1.3;">${String(n.cargo||'').substring(0,30)}</div>
+      ${n.area ? `<div style="font-size:9px;color:var(--t3);">${String(n.area).substring(0,26)}</div>` : ''}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+        <span style="font-size:8.5px;color:${c.borda};">${c.rotulo}</span>
+        ${inf ? `<span style="font-size:8.5px;color:var(--t3);">${inf}</span>` : ''}
+      </div>
+      ${n.origem === 'ia' ? '<div style="position:absolute;bottom:3px;right:5px;font-size:8px;color:var(--purple,#9c6dff);" title="Sugerido pela IA — valide antes de prospectar">🧠</div>' : ''}
+      <div style="position:absolute;top:4px;right:5px;display:flex;gap:3px;">
+        <span onclick="event.stopPropagation();mapaEditarContato('${n.id}')" style="cursor:pointer;font-size:10px;opacity:.55;">✎</span>
+        <span onclick="event.stopPropagation();mapaAddSubordinado('${n.id}')" title="Adicionar quem reporta a esta pessoa" style="cursor:pointer;font-size:11px;opacity:.55;">＋</span>
+      </div></div>`;
+  }).join('');
+  palco.innerHTML = svg + caixas;
+  palco.style.transform = `scale(${_mpZoom})`;
+}
+function mapaZoom(d) { _mpZoom = d===0 ? 1 : Math.max(0.4, Math.min(1.8, _mpZoom+d));
+  const p = document.getElementById('mapaPalco'); if (p) p.style.transform = `scale(${_mpZoom})`; }
+function _mpArrastar(ev, id) {
+  if (ev.target.tagName === 'SPAN') return;
+  const box = ev.currentTarget;
+  _mpArr = { id, box, x0: ev.clientX, y0: ev.clientY, left: parseFloat(box.style.left), top: parseFloat(box.style.top) };
+  document.addEventListener('mousemove', _mpMover); document.addEventListener('mouseup', _mpSoltar);
+  ev.preventDefault();
+}
+function _mpMover(ev) { if (!_mpArr) return;
+  _mpArr.box.style.left = (_mpArr.left + (ev.clientX-_mpArr.x0)/_mpZoom) + 'px';
+  _mpArr.box.style.top  = (_mpArr.top  + (ev.clientY-_mpArr.y0)/_mpZoom) + 'px'; }
+function _mpSoltar() {
+  if (_mpArr) {
+    const x = parseFloat(_mpArr.box.style.left), y = parseFloat(_mpArr.box.style.top);
+    crmApi('mapa_posicao', { id: _mpArr.id, x, y }).catch(()=>{});
+    const c = _mpContatos.find(c => c.id === _mpArr.id); if (c) { c.pos_x = x; c.pos_y = y; }
+  }
+  _mpArr = null;
+  document.removeEventListener('mousemove', _mpMover); document.removeEventListener('mouseup', _mpSoltar);
+}
+async function mapaNovoContato(paiId) { await _mpForm(null, paiId); }
+async function mapaAddSubordinado(paiId) { await _mpForm(null, paiId); }
+async function mapaEditarContato(id) { await _mpForm(_mpContatos.find(c => c.id === id)); }
+async function _mpForm(c, paiId) {
+  const cliente = document.getElementById('mp_cliente')?.value;
+  if (!cliente) { toast('Escolha o cliente primeiro', 'error'); return; }
+  const pai = paiId ? _mpContatos.find(x => x.id === paiId) : (c?.reporta_para ? _mpContatos.find(x => x.id === c.reporta_para) : null);
+  const d = prompt(`${c ? 'Editar' : 'Novo'} contato em ${cliente}${pai ? ' (reporta a ' + (pai.nome || pai.cargo) + ')' : ''}
+
+Preencha separado por | :
+nome | cargo | área | camada | influência | e-mail
+
+camada:     venda (já compramos) · conhecido (conhecemos, sem venda) · potencial (a prospectar)
+influência: decisor · influenciador · usuario · gatekeeper`,
+    c ? [c.nome,c.cargo,c.area,c.camada,c.influencia,c.email].map(x=>x||'').join(' | ') : ' |  |  | conhecido | influenciador | ');
+  if (d === null) return;
+  const [nome, cargo, area, camada, influencia, email] = d.split('|').map(x => x.trim());
+  if (!nome && !cargo) { toast('Informe ao menos o nome ou o cargo', 'error'); return; }
+  try {
+    await crmApi('mapa_salvar', { id: c?.id, cliente, nome, cargo, area,
+      camada: ['venda','conhecido','potencial'].includes(camada) ? camada : 'conhecido',
+      influencia, email, reporta_para: paiId || c?.reporta_para || null });
+    toast('Contato salvo', 'success'); carregarMapa();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+async function mapaSugerirIA() {
+  const cliente = document.getElementById('mp_cliente')?.value;
+  if (!cliente) { toast('Escolha o cliente primeiro', 'error'); return; }
+  const btn = document.getElementById('btnMapaIA'); if (btn) { btn.disabled = true; btn.textContent = '⏳ Analisando...'; }
+  try {
+    const ctx = prompt(`Contexto sobre ${cliente} (setor, porte, o que sabemos) — ajuda a IA a sugerir os cargos certos.\n\nOpcional, pode deixar vazio:`, '');
+    if (ctx === null) { return; }
+    const d = await crmApi('mapa_sugerir', { cliente, observacao: ctx });
+    if (d.erro) { toast(d.erro, 'error'); return; }
+    const sug = d.sugestoes || [];
+    if (!sug.length) { toast('A IA não trouxe sugestões novas', 'info'); return; }
+    const lista = sug.map((x,i) => `${i+1}. ${x.cargo}${x.area ? ' (' + x.area + ')' : ''}\n   ${x.influencia || ''} — ${x.porque || ''}`).join('\n\n');
+    if (!confirm(`${sug.length} cargo(s) sugerido(s) para prospectar em ${cliente}:\n\n${lista}\n\n⚠ ${d.aviso}\n\nAdicionar ao mapa como "a prospectar"?`)) return;
+    const r = await crmApi('mapa_aplicar', { cliente, sugestoes: sug });
+    toast(`${r.criados} cargo(s) adicionado(s) ao mapa`, 'success');
+    carregarMapa();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = '&#129504; Sugerir quem falta'; } }
+}
+function mapaExportar() {
+  const palco = document.getElementById('mapaPalco');
+  const cliente = document.getElementById('mp_cliente')?.value || '';
+  if (!palco || !_mpContatos.length) { toast('Nada para exportar', 'error'); return; }
+  const w = window.open('', '_blank', 'width=1300,height=900');
+  if (!w) { toast('Libere o pop-up', 'error'); return; }
+  const estilos = [...document.querySelectorAll('style')].map(x => x.outerHTML).join('');
+  w.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Mapa de Atuação — ${cliente}</title>${estilos}
+    <style>@page{size:A3 landscape;margin:8mm}body{background:#fff;margin:0;padding:14px;}.mpBox{box-shadow:none!important;}</style></head>
+    <body><h2 style="font-family:Arial;color:#1A3A8F;">Mapa de Atuação Comercial — ${cliente}</h2>
+    <div style="font-family:Arial;font-size:12px;color:#5a6478;margin-bottom:10px;">
+      ■ verde: conhecemos e vendemos · ■ dourado: conhecemos, sem venda · ▢ tracejado: a prospectar</div>
+    <div style="position:relative;">${palco.innerHTML}</div></body></html>`);
+  w.document.close();
+  setTimeout(() => { w.focus(); w.print(); }, 500);
+}
+
 // ═══ v1.96: CLIENTES DO CRM ═══
 async function crmApi(action, params = {}) {
   const r = await fetch('/api/crm', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action, payload: params }) });
@@ -21584,7 +21799,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v1.96] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v1.97] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -21600,7 +21815,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v1.96';
+window.__ATX_BUILD_ID__ = 'ATX-v1.97';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
