@@ -16664,6 +16664,21 @@ function _fatCard(t, col) {
   const pagBadge = col === 'pagamento' ? `<div style="font-size:9px;margin-top:2px;">💰 ${t.n_pagas}/${t.n_empresas} paga(s)</div>` : '';
   // v1.94: confirmação de que as notas estão no portal de fornecedores da CPFL.
   // Só o analista sabe disso — o sistema não acessa o portal. Editável direto no card.
+  // v2.07: marca termos criados em mês anterior ao filtrado — eles aparecem porque ainda
+  // estão em aberto, e essa etiqueta evita confundi-los com os do mês corrente.
+  const mesFiltro = document.getElementById('fatFiltroMes')?.value;
+  const anoFiltro = document.getElementById('fatFiltroAno')?.value;
+  let mesAntBadge = '';
+  if (mesFiltro && anoFiltro && t.criado_em) {
+    const cri = String(t.criado_em).substring(0, 7);
+    const alvo = `${anoFiltro}-${String(mesFiltro).padStart(2,'0')}`;
+    if (cri && cri < alvo) {
+      const [ca, cm] = cri.split('-');
+      const dias = Math.floor((Date.now() - new Date(t.criado_em)) / 86400000);
+      mesAntBadge = `<div style="font-size:8.5px;margin-top:3px;color:var(--gold);background:rgba(245,185,75,.1);border-radius:4px;padding:1px 5px;display:inline-block;"
+        title="Criado em ${cm}/${ca} e ainda em aberto — por isso continua aparecendo">⏳ de ${cm}/${ca} · ${dias} dias em aberto</div>`;
+    }
+  }
   const cpflBadge = col === 'pagamento' ? `<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--bd);">
       <span onclick="event.stopPropagation();_fatToggleCpfl('${t.id}', ${t.cpfl_confirmado ? 'false' : 'true'})"
         title="${t.cpfl_confirmado ? 'Confirmado por ' + (t.cpfl_confirmado_por || '—') + (t.cpfl_confirmado_em ? ' em ' + String(t.cpfl_confirmado_em).substring(0,10).split('-').reverse().join('/') : '') + ' — clique para desmarcar' : 'Marcar que as notas estão no sistema da CPFL, programadas para pagamento'}"
@@ -16685,7 +16700,7 @@ function _fatCard(t, col) {
     <div style="font-size:9px;color:var(--t2);margin-top:2px;">${t.contratante||''} · ${t.periodo_medicao||''}</div>
     <div style="font-size:11px;font-family:var(--M);color:var(--gold);margin-top:4px;">${fmtBRLcompleto(t.valor_total_termo)}</div>
     <div style="font-size:9px;color:var(--t3);">${t.n_empresas} empresa(s) no rateio</div>
-    ${nfBadge}${pagBadge}${cpflBadge}${paradoBadge}${datasBadge}
+    ${mesAntBadge}${nfBadge}${pagBadge}${cpflBadge}${paradoBadge}${datasBadge}
   </div>`;
 }
 
@@ -22268,7 +22283,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.06] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.07] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22284,7 +22299,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.06';
+window.__ATX_BUILD_ID__ = 'ATX-v2.07';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
