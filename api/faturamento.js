@@ -964,6 +964,41 @@ async function termoQbDiagnostico() {
 
 // ═══════════════════════════════════════════════════════════════════════════
 export default async function handler(req, res) {
+  // v2.13: rota de manutenção acessível pelo navegador, para executar e VER o resultado.
+  // Criada porque o botão da tela "não funcionou" e não havia como saber o que aconteceu.
+  //   /api/faturamento?manutencao=ver         → contagem por status (sem alterar nada)
+  //   /api/faturamento?manutencao=mover_pagos → move TODOS os concluídos para pago
+  if (req.method === 'GET' && req.query?.manutencao) {
+    try {
+      const sql = await getSql();
+      const antes = await sql`SELECT status, COUNT(*)::int AS n FROM termos_faturamento GROUP BY status ORDER BY status`;
+      const out = { operacao: req.query.manutencao, antes: Object.fromEntries(antes.map(r => [r.status, r.n])) };
+      if (req.query.manutencao === 'mover_pagos') {
+        // garante a coluna pago_em
+        try { await sql`ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS pago_em TIMESTAMPTZ` } catch (_) {}
+        try { await sql`ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS concluido_motivo TEXT` } catch (_) {}
+        const movidos = await sql`UPDATE termos_faturamento
+          SET status = 'pago', pago_em = COALESCE(pago_em, atualizado_em, NOW()),
+              concluido_motivo = 'migrado para Pago (manutenção v2.13)', atualizado_em = NOW()
+          WHERE status = 'concluido'
+          RETURNING id, numero_termo, projeto, contratante, valor_total_termo`;
+        out.movidos = movidos.length;
+        out.termos = movidos.map(t => ({ numero: t.numero_termo, projeto: t.projeto, cliente: t.contratante, valor: num(t.valor_total_termo) }));
+        const depois = await sql`SELECT status, COUNT(*)::int AS n FROM termos_faturamento GROUP BY status ORDER BY status`;
+        out.depois = Object.fromEntries(depois.map(r => [r.status, r.n]));
+        out.mensagem = movidos.length
+          ? `${movidos.length} termo(s) movido(s) de "concluido" para "pago". Recarregue o Kanban (Ctrl+Shift+R).`
+          : 'Nenhum termo com status "concluido" — nada a mover. Veja a contagem em "antes".';
+      } else {
+        out.mensagem = 'Contagem atual por status. Para mover, use ?manutencao=mover_pagos';
+      }
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      return res.status(200).send(JSON.stringify(out, null, 2));
+    } catch (e) {
+      return res.status(500).json({ erro: e.message, dica: 'Se disser que a coluna não existe, a migração v1.94 ainda não rodou — abra o Kanban uma vez e tente de novo.' });
+    }
+  }
+
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
