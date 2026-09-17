@@ -2740,6 +2740,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
         <div style="font-size:11.5px;font-weight:700;">Rateio entre as empresas</div>
         <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="verificarTermosObrigatorios()" title="Confere se os termos obrigatorios do mes estao lancados">&#9888; Termos do mes</button>
+    <button class="btn" style="font-size:10px;" onclick="diagnosticoTermos()" title="Mostra o que esta no banco, sem filtro">&#128269; Diagnostico</button>
     <button class="btn btn-gn" style="font-size:10px;" onclick="_edAddEmpresa()">+ Adicionar empresa</button>
       </div>
       <div style="overflow-x:auto;">
@@ -19028,6 +19029,52 @@ async function gerarAtaConselhoProj() {
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
 
+// v2.08: mostra o conteúdo real do banco, sem filtro nenhum
+async function diagnosticoTermos() {
+  let m = document.getElementById('diagTermosModal');
+  if (!m) { m = document.createElement('div'); m.id='diagTermosModal';
+    m.style.cssText='display:flex;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:1000;align-items:center;justify-content:center;overflow:auto;padding:20px;'; document.body.appendChild(m); }
+  m.style.display='flex';
+  m.innerHTML='<div class="panel" style="width:700px;max-width:96vw;"><div class="pb" style="text-align:center;color:var(--t3);padding:26px;">⏳ Lendo o banco...</div></div>';
+  try {
+    const d = await fatApi('termo_diagnostico', {});
+    const fmtD = x => x ? String(x).split('-').reverse().join('/') : '—';
+    m.innerHTML = `<div class="panel" style="width:700px;max-width:96vw;max-height:92vh;overflow:auto;">
+      <div class="ph"><div class="pt">🔍 O que está no banco</div>
+        <span style="font-size:10px;color:var(--t2);">${d.total_no_banco} termo(s) no total</span>
+        <button class="btn" style="font-size:10px;" onclick="document.getElementById('diagTermosModal').style.display='none'">✕</button></div>
+      <div class="pb">
+        ${d.aviso ? `<div style="background:rgba(255,80,80,.12);border:1px solid var(--red);border-radius:8px;padding:11px;font-size:11px;line-height:1.7;margin-bottom:12px;">
+          ⚠ <b>Causa provável encontrada</b><br>${d.aviso}</div>` : ''}
+        <div style="font-size:11.5px;font-weight:600;margin-bottom:6px;">Por status</div>
+        <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:14px;">
+          <thead><tr style="border-bottom:1px solid var(--bd);">${['STATUS','QTD','VALOR','MAIS ANTIGO','MAIS NOVO'].map(h=>`<th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;">${h}</th>`).join('')}</tr></thead>
+          <tbody>${(d.por_status||[]).map(s => {
+            const ok = (d.statuses_validos||[]).includes(s.status);
+            return `<tr style="border-bottom:1px solid var(--bd);${ok?'':'background:rgba(255,80,80,.08);'}">
+              <td style="padding:5px;font-family:var(--M);${ok?'':'color:var(--red);font-weight:600;'}">${s.status || '(vazio)'}${ok?'':' ⚠'}</td>
+              <td style="padding:5px;">${s.quantidade}</td>
+              <td style="padding:5px;font-family:var(--M);">${fmtBRLcompleto(s.valor)}</td>
+              <td style="padding:5px;font-size:10px;color:var(--t3);">${fmtD(s.mais_antigo)}</td>
+              <td style="padding:5px;font-size:10px;color:var(--t3);">${fmtD(s.mais_novo)}</td></tr>`;}).join('')}</tbody>
+        </table>
+        <div style="font-size:11.5px;font-weight:600;margin-bottom:6px;">Termos em "pagamento" (${(d.em_pagamento||[]).length})</div>
+        ${(d.em_pagamento||[]).length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead><tr style="border-bottom:1px solid var(--bd);">${['TERMO','PROJETO','CLIENTE','CRIADO','VALOR'].map(h=>`<th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;">${h}</th>`).join('')}</tr></thead>
+          <tbody>${d.em_pagamento.map(t => `<tr style="border-bottom:1px solid var(--bd);">
+            <td style="padding:5px;font-family:var(--M);">${t.numero || t.id}</td>
+            <td style="padding:5px;">${t.projeto || '—'}</td>
+            <td style="padding:5px;">${t.cliente || '—'}</td>
+            <td style="padding:5px;font-size:10px;">${fmtD(t.criado_em)}</td>
+            <td style="padding:5px;font-family:var(--M);">${fmtBRLcompleto(t.valor)}</td></tr>`).join('')}</tbody></table>`
+          : '<div style="font-size:11px;color:var(--t3);padding:10px;">Nenhum termo com status "pagamento" no banco.</div>'}
+        <div style="font-size:10px;color:var(--t3);margin-top:12px;line-height:1.6;">
+          Se um termo aparece aqui e não no kanban, o problema é de exibição. Se não aparece nem aqui, o status dele está diferente do esperado — me envie esta tela.
+        </div>
+      </div></div>`;
+  } catch (e) { m.innerHTML = `<div class="panel" style="width:520px;"><div class="pb" style="padding:18px;color:var(--red);">Erro: ${e.message}<br><br><button class="btn" onclick="document.getElementById('diagTermosModal').style.display='none'">Fechar</button></div></div>`; }
+}
+
 // ═══ v1.91: TERMOS OBRIGATÓRIOS DO MÊS ═══
 async function verificarTermosObrigatorios() {
   let modal = document.getElementById('termosObrigModal');
@@ -22283,7 +22330,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.07] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.08] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22299,7 +22346,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.07';
+window.__ATX_BUILD_ID__ = 'ATX-v2.08';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
