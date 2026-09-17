@@ -2690,6 +2690,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Kanban de Faturamento</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Termo de Aceite → Aprovação → Emissão de NF → Envio de NF (confere e-mail) → Pagamento (confere QuickBooks)</div></div>
     <button class="btn btn-p" onclick="abrirImportarTermo()">&#128194; Importar Termo de Faturamento</button>
     <button class="btn" onclick="carregarKanbanFaturamento()">&#8635; Atualizar</button>
+    <button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="verificarTermosObrigatorios()" title="Confere se os termos obrigatorios do mes estao lancados">&#9888; Termos do mes</button>
+    <button class="btn" onclick="diagnosticoTermos()" title="Mostra o que esta no banco, sem nenhum filtro">&#128270; Diagnostico</button>
   </div>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;padding:9px 12px;background:var(--bg4);border-radius:8px;">
     <span style="font-size:10px;color:var(--t2);font-family:var(--M);">FILTRAR:</span>
@@ -2739,9 +2741,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
         <div style="font-size:11.5px;font-weight:700;">Rateio entre as empresas</div>
-        <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="verificarTermosObrigatorios()" title="Confere se os termos obrigatorios do mes estao lancados">&#9888; Termos do mes</button>
-    <button class="btn" style="font-size:10px;" onclick="diagnosticoTermos()" title="Mostra o que esta no banco, sem filtro">&#128269; Diagnostico</button>
-    <button class="btn btn-gn" style="font-size:10px;" onclick="_edAddEmpresa()">+ Adicionar empresa</button>
+        <button class="btn btn-gn" style="font-size:10px;" onclick="_edAddEmpresa()">+ Adicionar empresa</button>
       </div>
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:640px;">
@@ -22330,7 +22330,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.08] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.09] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22346,7 +22346,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.08';
+window.__ATX_BUILD_ID__ = 'ATX-v2.09';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
