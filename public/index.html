@@ -2711,9 +2711,16 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <span style="font-size:10px;color:var(--t3);margin-left:auto;" id="fatFiltroInfo"></span>
   </div>
   <div id="fatKbStatus" style="display:none;margin-bottom:10px;"></div>
-  <div id="fatKbTotais" style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:12px;"></div>
-  <div id="fatKanbanBoard" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;align-items:start;">
+  <div id="fatKbTotais" style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-bottom:12px;"></div>
+  <div id="fatKanbanBoard" style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;align-items:start;">
     <div style="grid-column:1/-1;text-align:center;color:var(--t3);font-size:11px;padding:24px;">Carregando...</div>
+  </div>
+  <!-- v2.11: concluídos ficavam sem coluna — nunca apareciam. Agora têm uma seção própria. -->
+  <div class="panel" style="margin-top:12px;">
+    <div class="ph" style="cursor:pointer;" onclick="const b=document.getElementById('fatConcluidosBox');b.style.display=b.style.display==='none'?'block':'none';">
+      <div class="pt">&#127937; Concluidos <span id="fatConcCnt" style="color:var(--t3);font-weight:400;"></span></div>
+      <span style="font-size:10px;color:var(--t2);">ultimos 90 dias &middot; clique para abrir/fechar</span></div>
+    <div class="pb" id="fatConcluidosBox" style="display:none;"><div id="fatConcluidosLista" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;"></div></div>
   </div>
   <div id="fatDetalhe" style="display:none;margin-top:16px;"></div>
 </div>
@@ -16595,8 +16602,8 @@ async function confirmarImportarTermo() {
 }
 
 // ── Kanban board ──
-const FAT_COLS = ['elaboracao','aprovacao','emissao_nf','envio_nf','pagamento'];
-const FAT_LABELS = { elaboracao:'📝 Elaboração do Termo', aprovacao:'✅ Aprovação', emissao_nf:'🧾 Emissão de NF', envio_nf:'📧 Envio de NF', pagamento:'💰 Pagamento', concluido:'🏁 Concluído' };
+const FAT_COLS = ['elaboracao','aprovacao','emissao_nf','envio_nf','pagamento', 'pago'];
+const FAT_LABELS = { elaboracao:'📝 Elaboração do Termo', aprovacao:'✅ Aprovação', emissao_nf:'🧾 Emissão de NF', envio_nf:'📧 Envio de NF', pagamento:'💰 Pagamento', pago:'💵 Pago', concluido:'🏁 Concluído' };
 let _fatColunas = {};
 async function carregarKanbanFaturamento() {
   const board = document.getElementById('fatKanbanBoard'); if (!board) return;
@@ -16627,7 +16634,7 @@ async function carregarKanbanFaturamento() {
     const cntTotal = FAT_COLS.reduce((s, c) => s + (_fatColunas[c]?.length || 0), 0);
     const badge = document.getElementById('fatMenuCnt'); if (badge) badge.textContent = cntTotal || '';
     // v1.20.3: faixa de totais em valor por etapa, no topo
-    const totCores = { elaboracao:'bl', aprovacao:'gd', emissao_nf:'pu', envio_nf:'gd', pagamento:'gn' };
+    const totCores = { elaboracao:'bl', aprovacao:'gd', emissao_nf:'pu', envio_nf:'gd', pagamento:'gd', pago:'gn' };
     const boxTot = document.getElementById('fatKbTotais');
     if (boxTot) {
       const tp = d.totais_por_coluna || {};
@@ -16637,6 +16644,14 @@ async function carregarKanbanFaturamento() {
       }).join('');
       const tg = d.total_geral || { qtd: 0, valor: 0 };
       boxTot.innerHTML = cards + `<div class="kpi gd" style="border:1px solid var(--gold);"><div class="kl">Total geral</div><div class="kv" style="font-size:15px;color:var(--gold);">${fmtBRLcompleto(tg.valor)}</div><div class="ks">${tg.qtd} termo(s)</div></div>`;
+    }
+    // v2.11: concluídos na seção própria
+    {
+      const conc = _fatColunas.concluido || [];
+      const cnt = document.getElementById('fatConcCnt'); if (cnt) cnt.textContent = conc.length ? `(${conc.length})` : '';
+      const lista = document.getElementById('fatConcluidosLista');
+      if (lista) lista.innerHTML = conc.length ? conc.map(t => _fatCard(t, 'concluido')).join('')
+        : '<div style="grid-column:1/-1;text-align:center;color:var(--t3);font-size:10px;padding:12px;">Nenhum termo concluído nos últimos 90 dias.</div>';
     }
     board.innerHTML = FAT_COLS.map(col => {
       const termos = _fatColunas[col] || [];
@@ -16681,6 +16696,12 @@ function _fatCard(t, col) {
     }
   }
   // v2.10: no concluído, mostra QUANDO e POR QUE — e permite reabrir se foi automático demais.
+  // v2.11: na coluna PAGO — quando detectou, e o botão de concluir
+  const pagoBadge = col === 'pago' ? `<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--bd);font-size:9px;">
+      <span style="color:var(--green,#22d3a3);">💵 pago ${t.pago_em ? String(t.pago_em).substring(0,10).split('-').reverse().join('/') : ''}</span>
+      <span onclick="event.stopPropagation();_fatConcluir('${t.id}')" style="cursor:pointer;color:var(--gold);margin-left:8px;" title="Fechar este termo (vai para Concluído)">🏁 concluir</span>
+      <span onclick="event.stopPropagation();_fatReabrir('${t.id}')" style="cursor:pointer;color:var(--t3);margin-left:6px;" title="Voltar para Pagamento">↩</span>
+    </div>` : '';
   const concBadge = col === 'concluido' ? `<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--bd);font-size:9px;color:var(--t3);">
       ✅ ${t.concluido_em ? String(t.concluido_em).substring(0,10).split('-').reverse().join('/') : (t.atualizado_em ? String(t.atualizado_em).substring(0,10).split('-').reverse().join('/') : '')}
       ${t.concluido_motivo ? `<span title="${String(t.concluido_motivo).replace(/"/g,'')}">${String(t.concluido_motivo).startsWith('automático') ? '· automático' : ''}</span>` : ''}
@@ -16707,7 +16728,7 @@ function _fatCard(t, col) {
     <div style="font-size:9px;color:var(--t2);margin-top:2px;">${t.contratante||''} · ${t.periodo_medicao||''}</div>
     <div style="font-size:11px;font-family:var(--M);color:var(--gold);margin-top:4px;">${fmtBRLcompleto(t.valor_total_termo)}</div>
     <div style="font-size:9px;color:var(--t3);">${t.n_empresas} empresa(s) no rateio</div>
-    ${mesAntBadge}${nfBadge}${pagBadge}${cpflBadge}${paradoBadge}${concBadge}${datasBadge}
+    ${mesAntBadge}${nfBadge}${pagBadge}${cpflBadge}${paradoBadge}${pagoBadge}${concBadge}${datasBadge}
   </div>`;
 }
 
@@ -16800,6 +16821,13 @@ function _fatBarraProgressoNf(t) {
 
 // v1.20.4: card de upload manual de NF — visível na etapa Emissão de NF
 // v1.94: marca/desmarca a confirmação da CPFL direto no card
+async function _fatConcluir(termoId) {
+  if (!confirm('Fechar este termo? Ele vai para a coluna Concluído.')) return;
+  try {
+    await fatApi('termo_mover', { id: termoId, status: 'concluido' });
+    toast('Termo concluído', 'success'); carregarKanbanFaturamento();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
 async function _fatReabrir(termoId) {
   const motivo = prompt('Devolver este termo para a coluna de PAGAMENTO?\n\nMotivo (opcional):', '');
   if (motivo === null) return;
@@ -19044,6 +19072,18 @@ async function gerarAtaConselhoProj() {
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
 
+async function migrarPagos() {
+  try {
+    const d = await fatApi('termo_migrar_pagos', { aplicar: false });
+    if (!d.total) { alert('Nenhum termo concluído automaticamente para migrar.'); return; }
+    const lista = d.candidatos.slice(0,12).map(c => `• ${c.numero || c.id} · ${c.projeto || ''} · ${fmtBRLcompleto(c.valor)} · ${(c.data||'').split('-').reverse().join('/')}`).join('\n');
+    if (!confirm(`${d.total} termo(s) foram concluídos automaticamente por pagamento detectado:\n\n${lista}${d.total>12?'\n(e mais '+(d.total-12)+')':''}\n\nMover para a coluna PAGO?`)) return;
+    const r = await fatApi('termo_migrar_pagos', { aplicar: true });
+    toast(`${r.total} termo(s) movido(s) para Pago`, 'success');
+    document.getElementById('diagTermosModal').style.display = 'none';
+    carregarKanbanFaturamento();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
 // v2.08: mostra o conteúdo real do banco, sem filtro nenhum
 async function diagnosticoTermos() {
   let m = document.getElementById('diagTermosModal');
@@ -19083,6 +19123,10 @@ async function diagnosticoTermos() {
             <td style="padding:5px;font-size:10px;">${fmtD(t.criado_em)}</td>
             <td style="padding:5px;font-family:var(--M);">${fmtBRLcompleto(t.valor)}</td></tr>`).join('')}</tbody></table>`
           : '<div style="font-size:11px;color:var(--t3);padding:10px;">Nenhum termo com status "pagamento" no banco.</div>'}
+        <div style="margin-top:12px;">
+          <button class="btn btn-gn" style="font-size:10px;" onclick="migrarPagos()">💵 Mover concluídos automáticos para "Pago"</button>
+          <div style="font-size:10px;color:var(--t3);margin-top:5px;line-height:1.6;">Devolve à coluna Pago os termos que o sistema concluiu sozinho ao detectar pagamento. Os concluídos manualmente não mudam.</div>
+        </div>
         <div style="font-size:10px;color:var(--t3);margin-top:12px;line-height:1.6;">
           Se um termo aparece aqui e não no kanban, o problema é de exibição. Se não aparece nem aqui, o status dele está diferente do esperado — me envie esta tela.
         </div>
@@ -22345,7 +22389,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.10] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.11] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22361,7 +22405,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.10';
+window.__ATX_BUILD_ID__ = 'ATX-v2.11';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
