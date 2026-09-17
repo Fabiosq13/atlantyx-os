@@ -80,6 +80,8 @@ async function ensureTabelas(sql) {
     'cpfl_observacao TEXT',
     'cpfl_previsao_pagamento DATE',
     'entrou_em_envio_nf TIMESTAMPTZ',     // para medir há quantos dias está nessa etapa
+    'concluido_em TIMESTAMPTZ',           // v2.10
+    'concluido_motivo TEXT',              // v2.10
   ]) {
     try { await sql.query(`ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS ${col}`); } catch (e) { console.warn('[FAT] migração v1.94:', e.message); }
   }
@@ -236,6 +238,7 @@ async function termoList({ status, mes, ano, periodo_texto } = {}) {
       : await sql`SELECT * FROM termos_faturamento
           WHERE status = ANY(${EM_ABERTO})
              OR (criado_em >= ${ini + ' 00:00:00'} AND criado_em <= ${fim + ' 23:59:59'})
+             OR (status = 'concluido' AND COALESCE(concluido_em, atualizado_em) >= NOW() - INTERVAL '90 days')
           ORDER BY criado_em DESC`;
   } else {
     termos = status
@@ -319,6 +322,16 @@ async function termoMover({ id, status } = {}) {
     // saiu de envio_nf para trás: limpa o marcador para não contar tempo antigo
     await sql`UPDATE termos_faturamento SET status = ${status}, entrou_em_envio_nf = NULL, atualizado_em = NOW() WHERE id = ${id}`;
   }
+  return await termoGet({ id });
+}
+
+// v2.10: reabre um termo concluído automaticamente, devolvendo-o à coluna de pagamento
+async function termoReabrir({ id, motivo } = {}) {
+  if (!id) throw new Error('id obrigatório');
+  const sql = await getSql();
+  await sql`UPDATE termos_faturamento SET status = 'pagamento',
+    concluido_em = NULL, concluido_motivo = ${'reaberto: ' + (motivo || 'sem motivo informado')},
+    atualizado_em = NOW() WHERE id = ${id}`;
   return await termoGet({ id });
 }
 
@@ -417,7 +430,14 @@ async function recalcularPagamento(termoId) {
   const pagas = empresas.filter(e => e.pagamento_status === 'pago').length;
   const status = pagas === 0 ? 'pendente' : (pagas === empresas.length ? 'pago' : 'parcial');
   await sql`UPDATE termos_faturamento SET pagamento_status = ${status}, pagamento_verificado_em = NOW(), atualizado_em = NOW() WHERE id = ${termoId}`;
-  if (status === 'pago') await sql`UPDATE termos_faturamento SET status = 'concluido' WHERE id = ${termoId}`;
+  // v2.10: registra QUANDO e POR QUE concluiu. Antes o termo mudava de coluna em silêncio e
+  // parecia ter sumido — foi o que aconteceu com 8 termos entre 19 e 26/08.
+  if (status === 'pago') {
+    await sql`UPDATE termos_faturamento SET status = 'concluido',
+      concluido_em = COALESCE(concluido_em, NOW()),
+      concluido_motivo = COALESCE(concluido_motivo, 'automático: todas as empresas com pagamento detectado')
+      WHERE id = ${termoId} AND status <> 'concluido'`;
+  }
   return { status };
 }
 
@@ -925,6 +945,7 @@ export default async function handler(req, res) {
     termo_importar:          () => termoImportar(payload),
     termo_list:               () => termoList(payload),
     termo_diagnostico:        () => termoDiagnostico(),
+    termo_reabrir:            () => termoReabrir(payload),
     termo_get:                 () => termoGet(payload),
     termo_mover:               () => termoMover(payload),
     termo_editar:              () => termoEditar(payload),
