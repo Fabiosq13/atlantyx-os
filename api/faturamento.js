@@ -175,6 +175,41 @@ async function termoImportar({ arquivo_nome, cabecalho = {}, empresas = [] } = {
 // ═══════════════════════════════════════════════════════════════════════════
 // 2. LISTAR / DETALHAR / MOVER
 // ═══════════════════════════════════════════════════════════════════════════
+// v2.08: diagnóstico — mostra o que REALMENTE está no banco, sem nenhum filtro.
+// Criado porque estávamos supondo a causa do sumiço em vez de olhar os dados.
+async function termoDiagnostico() {
+  const sql = await getSql();
+  const porStatus = await sql`SELECT status, COUNT(*)::int AS n,
+      MIN(criado_em) AS mais_antigo, MAX(criado_em) AS mais_novo,
+      SUM(COALESCE(valor_total_termo,0))::numeric AS valor
+    FROM termos_faturamento GROUP BY status ORDER BY n DESC`;
+  const total = await sql`SELECT COUNT(*)::int AS n FROM termos_faturamento`;
+  // status fora da lista esperada — a causa mais provável de card invisível
+  const ESPERADOS = ['elaboracao','aprovacao','emissao_nf','envio_nf','pagamento','concluido'];
+  const inesperados = porStatus.filter(s => !ESPERADOS.includes(s.status));
+  const emPagamento = await sql`SELECT id, numero_termo, projeto, contratante, status,
+      criado_em, valor_total_termo FROM termos_faturamento
+    WHERE status = 'pagamento' ORDER BY criado_em DESC LIMIT 50`;
+  const porMes = await sql`SELECT TO_CHAR(criado_em, 'YYYY-MM') AS mes, status, COUNT(*)::int AS n
+    FROM termos_faturamento GROUP BY 1, 2 ORDER BY 1 DESC, 2`;
+  return {
+    total_no_banco: total[0]?.n || 0,
+    por_status: porStatus.map(s => ({ status: s.status, quantidade: s.n,
+      valor: Math.round(parseFloat(s.valor || 0) * 100) / 100,
+      mais_antigo: s.mais_antigo ? String(s.mais_antigo).substring(0,10) : null,
+      mais_novo: s.mais_novo ? String(s.mais_novo).substring(0,10) : null })),
+    status_inesperados: inesperados.map(s => ({ status: s.status, quantidade: s.n })),
+    em_pagamento: emPagamento.map(t => ({ id: t.id, numero: t.numero_termo, projeto: t.projeto,
+      cliente: t.contratante, criado_em: t.criado_em ? String(t.criado_em).substring(0,10) : null,
+      valor: Math.round(parseFloat(t.valor_total_termo || 0) * 100) / 100 })),
+    por_mes: porMes.map(m => ({ mes: m.mes, status: m.status, quantidade: m.n })),
+    statuses_validos: ESPERADOS,
+    aviso: inesperados.length
+      ? `${inesperados.length} status fora do esperado: ${inesperados.map(s => `"${s.status}" (${s.n})`).join(', ')}. Cards com esses status não aparecem em nenhuma coluna do kanban.`
+      : null,
+  };
+}
+
 async function termoList({ status, mes, ano, periodo_texto } = {}) {
   const sql = await getSql();
   // v1.32: filtro por mês/ano (data de criação do termo) e/ou por texto do período de medição.
@@ -889,6 +924,7 @@ export default async function handler(req, res) {
     status_pendencias: () => statusPendencias(payload),
     termo_importar:          () => termoImportar(payload),
     termo_list:               () => termoList(payload),
+    termo_diagnostico:        () => termoDiagnostico(),
     termo_get:                 () => termoGet(payload),
     termo_mover:               () => termoMover(payload),
     termo_editar:              () => termoEditar(payload),
