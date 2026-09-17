@@ -16680,6 +16680,12 @@ function _fatCard(t, col) {
         title="Criado em ${cm}/${ca} e ainda em aberto — por isso continua aparecendo">⏳ de ${cm}/${ca} · ${dias} dias em aberto</div>`;
     }
   }
+  // v2.10: no concluído, mostra QUANDO e POR QUE — e permite reabrir se foi automático demais.
+  const concBadge = col === 'concluido' ? `<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--bd);font-size:9px;color:var(--t3);">
+      ✅ ${t.concluido_em ? String(t.concluido_em).substring(0,10).split('-').reverse().join('/') : (t.atualizado_em ? String(t.atualizado_em).substring(0,10).split('-').reverse().join('/') : '')}
+      ${t.concluido_motivo ? `<span title="${String(t.concluido_motivo).replace(/"/g,'')}">${String(t.concluido_motivo).startsWith('automático') ? '· automático' : ''}</span>` : ''}
+      <span onclick="event.stopPropagation();_fatReabrir('${t.id}')" style="cursor:pointer;color:var(--gold);margin-left:6px;" title="Devolver este termo para a coluna de pagamento">↩ reabrir</span>
+    </div>` : '';
   const cpflBadge = col === 'pagamento' ? `<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--bd);">
       <span onclick="event.stopPropagation();_fatToggleCpfl('${t.id}', ${t.cpfl_confirmado ? 'false' : 'true'})"
         title="${t.cpfl_confirmado ? 'Confirmado por ' + (t.cpfl_confirmado_por || '—') + (t.cpfl_confirmado_em ? ' em ' + String(t.cpfl_confirmado_em).substring(0,10).split('-').reverse().join('/') : '') + ' — clique para desmarcar' : 'Marcar que as notas estão no sistema da CPFL, programadas para pagamento'}"
@@ -16701,7 +16707,7 @@ function _fatCard(t, col) {
     <div style="font-size:9px;color:var(--t2);margin-top:2px;">${t.contratante||''} · ${t.periodo_medicao||''}</div>
     <div style="font-size:11px;font-family:var(--M);color:var(--gold);margin-top:4px;">${fmtBRLcompleto(t.valor_total_termo)}</div>
     <div style="font-size:9px;color:var(--t3);">${t.n_empresas} empresa(s) no rateio</div>
-    ${mesAntBadge}${nfBadge}${pagBadge}${cpflBadge}${paradoBadge}${datasBadge}
+    ${mesAntBadge}${nfBadge}${pagBadge}${cpflBadge}${paradoBadge}${concBadge}${datasBadge}
   </div>`;
 }
 
@@ -16794,6 +16800,15 @@ function _fatBarraProgressoNf(t) {
 
 // v1.20.4: card de upload manual de NF — visível na etapa Emissão de NF
 // v1.94: marca/desmarca a confirmação da CPFL direto no card
+async function _fatReabrir(termoId) {
+  const motivo = prompt('Devolver este termo para a coluna de PAGAMENTO?\n\nMotivo (opcional):', '');
+  if (motivo === null) return;
+  try {
+    await fatApi('termo_reabrir', { id: termoId, motivo });
+    toast('Termo reaberto — de volta a pagamento', 'success');
+    carregarKanbanFaturamento();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
 async function _fatToggleCpfl(termoId, confirmar) {
   try {
     let obs = null, prev = null;
@@ -22330,7 +22345,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.09] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.10] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22346,7 +22361,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.09';
+window.__ATX_BUILD_ID__ = 'ATX-v2.10';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
