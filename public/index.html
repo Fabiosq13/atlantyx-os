@@ -19072,13 +19072,13 @@ async function gerarAtaConselhoProj() {
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
 
-async function migrarPagos() {
+async function migrarPagos(todos) {
   try {
-    const d = await fatApi('termo_migrar_pagos', { aplicar: false });
+    const d = await fatApi('termo_migrar_pagos', { aplicar: false, todos: !!todos });
     if (!d.total) { alert('Nenhum termo concluído automaticamente para migrar.'); return; }
     const lista = d.candidatos.slice(0,12).map(c => `• ${c.numero || c.id} · ${c.projeto || ''} · ${fmtBRLcompleto(c.valor)} · ${(c.data||'').split('-').reverse().join('/')}`).join('\n');
     if (!confirm(`${d.total} termo(s) foram concluídos automaticamente por pagamento detectado:\n\n${lista}${d.total>12?'\n(e mais '+(d.total-12)+')':''}\n\nMover para a coluna PAGO?`)) return;
-    const r = await fatApi('termo_migrar_pagos', { aplicar: true });
+    const r = await fatApi('termo_migrar_pagos', { aplicar: true, todos: !!todos });
     toast(`${r.total} termo(s) movido(s) para Pago`, 'success');
     document.getElementById('diagTermosModal').style.display = 'none';
     carregarKanbanFaturamento();
@@ -19124,8 +19124,9 @@ async function diagnosticoTermos() {
             <td style="padding:5px;font-family:var(--M);">${fmtBRLcompleto(t.valor)}</td></tr>`).join('')}</tbody></table>`
           : '<div style="font-size:11px;color:var(--t3);padding:10px;">Nenhum termo com status "pagamento" no banco.</div>'}
         <div style="margin-top:12px;">
-          <button class="btn btn-gn" style="font-size:10px;" onclick="migrarPagos()">💵 Mover concluídos automáticos para "Pago"</button>
-          <div style="font-size:10px;color:var(--t3);margin-top:5px;line-height:1.6;">Devolve à coluna Pago os termos que o sistema concluiu sozinho ao detectar pagamento. Os concluídos manualmente não mudam.</div>
+          <button class="btn btn-gn" style="font-size:10px;" onclick="migrarPagos(true)">💵 Mover TODOS os concluídos para "Pago"</button>
+          <button class="btn" style="font-size:10px;" onclick="migrarPagos(false)">só os automáticos</button>
+          <div style="font-size:10px;color:var(--t3);margin-top:5px;line-height:1.6;">Devolve os termos concluídos à coluna Pago. A partir daí, só vai para Concluído quem você fechar com o 🏁 no card.</div>
         </div>
         <div style="font-size:10px;color:var(--t3);margin-top:12px;line-height:1.6;">
           Se um termo aparece aqui e não no kanban, o problema é de exibição. Se não aparece nem aqui, o status dele está diferente do esperado — me envie esta tela.
@@ -22389,7 +22390,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.11] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.12] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22405,7 +22406,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.11';
+window.__ATX_BUILD_ID__ = 'ATX-v2.12';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
