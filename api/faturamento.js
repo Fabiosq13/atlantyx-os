@@ -188,11 +188,20 @@ async function termoList({ status, mes, ano, periodo_texto } = {}) {
     const fim = mes
       ? new Date(anoF, parseInt(mes), 0).toISOString().split('T')[0]
       : `${anoF}-12-31`;
+    // v2.07 FIX: o filtro por mês de criação escondia termos EM ABERTO de meses anteriores.
+    // Um termo criado em julho que ainda não foi pago continua sendo trabalho a fazer — ele
+    // não pode sumir do kanban só porque você está olhando setembro. Só as fases FINAIS
+    // (concluído) respeitam o filtro de mês; o que está em andamento aparece sempre.
+    const EM_ABERTO = ['elaboracao', 'aprovacao', 'emissao_nf', 'envio_nf', 'pagamento'];
     termos = status
-      ? await sql`SELECT * FROM termos_faturamento WHERE status = ${status}
-          AND criado_em >= ${ini + ' 00:00:00'} AND criado_em <= ${fim + ' 23:59:59'} ORDER BY criado_em DESC`
+      ? (EM_ABERTO.includes(status)
+          ? await sql`SELECT * FROM termos_faturamento WHERE status = ${status} ORDER BY criado_em DESC`
+          : await sql`SELECT * FROM termos_faturamento WHERE status = ${status}
+              AND criado_em >= ${ini + ' 00:00:00'} AND criado_em <= ${fim + ' 23:59:59'} ORDER BY criado_em DESC`)
       : await sql`SELECT * FROM termos_faturamento
-          WHERE criado_em >= ${ini + ' 00:00:00'} AND criado_em <= ${fim + ' 23:59:59'} ORDER BY criado_em DESC`;
+          WHERE status = ANY(${EM_ABERTO})
+             OR (criado_em >= ${ini + ' 00:00:00'} AND criado_em <= ${fim + ' 23:59:59'})
+          ORDER BY criado_em DESC`;
   } else {
     termos = status
       ? await sql`SELECT * FROM termos_faturamento WHERE status = ${status} ORDER BY criado_em DESC`
