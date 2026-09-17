@@ -331,15 +331,21 @@ async function termoMover({ id, status } = {}) {
 // v2.10: reabre um termo concluído automaticamente, devolvendo-o à coluna de pagamento
 // v2.11: move para 'pago' os termos que foram concluídos automaticamente por pagamento
 // detectado — eram os 8 que "sumiram". Concluídos manualmente ficam como estão.
-async function termoMigrarPagos({ aplicar = false } = {}) {
+async function termoMigrarPagos({ aplicar = false, todos = false } = {}) {
   const sql = await getSql();
-  const candidatos = await sql`SELECT id, numero_termo, projeto, contratante, valor_total_termo,
-      atualizado_em, concluido_motivo, pagamento_status
-    FROM termos_faturamento
-    WHERE status = 'concluido'
-      AND pagamento_status = 'pago'
-      AND (concluido_motivo IS NULL OR concluido_motivo LIKE 'automático%' OR concluido_motivo LIKE 'pagamento detectado%')
-    ORDER BY atualizado_em DESC`;
+  // v2.12: com `todos`, move TODOS os concluídos para Pago — a pedido do usuário. A coluna
+  // Concluído fica vazia para ser preenchida daqui em diante só por decisão manual.
+  const candidatos = todos
+    ? await sql`SELECT id, numero_termo, projeto, contratante, valor_total_termo,
+        atualizado_em, concluido_motivo, pagamento_status
+      FROM termos_faturamento WHERE status = 'concluido' ORDER BY atualizado_em DESC`
+    : await sql`SELECT id, numero_termo, projeto, contratante, valor_total_termo,
+        atualizado_em, concluido_motivo, pagamento_status
+      FROM termos_faturamento
+      WHERE status = 'concluido'
+        AND pagamento_status = 'pago'
+        AND (concluido_motivo IS NULL OR concluido_motivo LIKE 'automático%' OR concluido_motivo LIKE 'pagamento detectado%')
+      ORDER BY atualizado_em DESC`;
   if (aplicar && candidatos.length) {
     const ids = candidatos.map(c => c.id);
     await sql`UPDATE termos_faturamento SET status = 'pago',
