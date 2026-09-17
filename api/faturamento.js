@@ -15,10 +15,12 @@
 //
 // Todas as tabelas são criadas automaticamente (ensureTabelas) na 1ª chamada.
 
-const STATUS = ['elaboracao', 'aprovacao', 'emissao_nf', 'envio_nf', 'pagamento', 'concluido'];
+// v2.11: nova coluna 'pago' entre pagamento e concluído. O sistema move para 'pago' quando
+// detecta o pagamento; 'concluído' passa a ser fechamento manual.
+const STATUS = ['elaboracao', 'aprovacao', 'emissao_nf', 'envio_nf', 'pagamento', 'pago', 'concluido'];
 const STATUS_LABEL = {
   elaboracao: 'Elaboração do Termo', aprovacao: 'Aprovação do Termo', emissao_nf: 'Emissão de Nota Fiscal',
-  envio_nf: 'Envio de Nota Fiscal', pagamento: 'Pagamento', concluido: 'Concluído',
+  envio_nf: 'Envio de Nota Fiscal', pagamento: 'Pagamento', pago: 'Pago', concluido: 'Concluído',
 };
 
 let _sql = null;
@@ -81,6 +83,7 @@ async function ensureTabelas(sql) {
     'cpfl_previsao_pagamento DATE',
     'entrou_em_envio_nf TIMESTAMPTZ',     // para medir há quantos dias está nessa etapa
     'concluido_em TIMESTAMPTZ',           // v2.10
+    'pago_em TIMESTAMPTZ',                // v2.11
     'concluido_motivo TEXT',              // v2.10
   ]) {
     try { await sql.query(`ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS ${col}`); } catch (e) { console.warn('[FAT] migração v1.94:', e.message); }
@@ -187,7 +190,7 @@ async function termoDiagnostico() {
     FROM termos_faturamento GROUP BY status ORDER BY n DESC`;
   const total = await sql`SELECT COUNT(*)::int AS n FROM termos_faturamento`;
   // status fora da lista esperada — a causa mais provável de card invisível
-  const ESPERADOS = ['elaboracao','aprovacao','emissao_nf','envio_nf','pagamento','concluido'];
+  const ESPERADOS = ['elaboracao','aprovacao','emissao_nf','envio_nf','pagamento','pago','concluido'];
   const inesperados = porStatus.filter(s => !ESPERADOS.includes(s.status));
   const emPagamento = await sql`SELECT id, numero_termo, projeto, contratante, status,
       criado_em, valor_total_termo FROM termos_faturamento
@@ -229,7 +232,7 @@ async function termoList({ status, mes, ano, periodo_texto } = {}) {
     // Um termo criado em julho que ainda não foi pago continua sendo trabalho a fazer — ele
     // não pode sumir do kanban só porque você está olhando setembro. Só as fases FINAIS
     // (concluído) respeitam o filtro de mês; o que está em andamento aparece sempre.
-    const EM_ABERTO = ['elaboracao', 'aprovacao', 'emissao_nf', 'envio_nf', 'pagamento'];
+    const EM_ABERTO = ['elaboracao', 'aprovacao', 'emissao_nf', 'envio_nf', 'pagamento', 'pago'];
     termos = status
       ? (EM_ABERTO.includes(status)
           ? await sql`SELECT * FROM termos_faturamento WHERE status = ${status} ORDER BY criado_em DESC`
@@ -326,6 +329,30 @@ async function termoMover({ id, status } = {}) {
 }
 
 // v2.10: reabre um termo concluído automaticamente, devolvendo-o à coluna de pagamento
+// v2.11: move para 'pago' os termos que foram concluídos automaticamente por pagamento
+// detectado — eram os 8 que "sumiram". Concluídos manualmente ficam como estão.
+async function termoMigrarPagos({ aplicar = false } = {}) {
+  const sql = await getSql();
+  const candidatos = await sql`SELECT id, numero_termo, projeto, contratante, valor_total_termo,
+      atualizado_em, concluido_motivo, pagamento_status
+    FROM termos_faturamento
+    WHERE status = 'concluido'
+      AND pagamento_status = 'pago'
+      AND (concluido_motivo IS NULL OR concluido_motivo LIKE 'automático%' OR concluido_motivo LIKE 'pagamento detectado%')
+    ORDER BY atualizado_em DESC`;
+  if (aplicar && candidatos.length) {
+    const ids = candidatos.map(c => c.id);
+    await sql`UPDATE termos_faturamento SET status = 'pago',
+      pago_em = COALESCE(pago_em, atualizado_em),
+      concluido_motivo = 'migrado para a coluna Pago (v2.11)'
+      WHERE id = ANY(${ids})`;
+  }
+  return { candidatos: candidatos.map(c => ({ id: c.id, numero: c.numero_termo, projeto: c.projeto,
+      cliente: c.contratante, valor: num(c.valor_total_termo),
+      data: c.atualizado_em ? String(c.atualizado_em).substring(0,10) : null })),
+    total: candidatos.length, aplicado: !!aplicar };
+}
+
 async function termoReabrir({ id, motivo } = {}) {
   if (!id) throw new Error('id obrigatório');
   const sql = await getSql();
@@ -432,11 +459,13 @@ async function recalcularPagamento(termoId) {
   await sql`UPDATE termos_faturamento SET pagamento_status = ${status}, pagamento_verificado_em = NOW(), atualizado_em = NOW() WHERE id = ${termoId}`;
   // v2.10: registra QUANDO e POR QUE concluiu. Antes o termo mudava de coluna em silêncio e
   // parecia ter sumido — foi o que aconteceu com 8 termos entre 19 e 26/08.
+  // v2.11: ao detectar o pagamento, o termo vai para a coluna PAGO — não mais para concluído.
+  // Concluir é decisão do analista, depois de conferir.
   if (status === 'pago') {
-    await sql`UPDATE termos_faturamento SET status = 'concluido',
-      concluido_em = COALESCE(concluido_em, NOW()),
-      concluido_motivo = COALESCE(concluido_motivo, 'automático: todas as empresas com pagamento detectado')
-      WHERE id = ${termoId} AND status <> 'concluido'`;
+    await sql`UPDATE termos_faturamento SET status = 'pago',
+      pago_em = COALESCE(pago_em, NOW()),
+      concluido_motivo = COALESCE(concluido_motivo, 'pagamento detectado automaticamente')
+      WHERE id = ${termoId} AND status NOT IN ('pago', 'concluido')`;
   }
   return { status };
 }
@@ -946,6 +975,7 @@ export default async function handler(req, res) {
     termo_list:               () => termoList(payload),
     termo_diagnostico:        () => termoDiagnostico(),
     termo_reabrir:            () => termoReabrir(payload),
+    termo_migrar_pagos:       () => termoMigrarPagos(payload),
     termo_get:                 () => termoGet(payload),
     termo_mover:               () => termoMover(payload),
     termo_editar:              () => termoEditar(payload),
