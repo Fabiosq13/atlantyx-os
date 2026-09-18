@@ -17884,9 +17884,30 @@ async function acExecutar(rascunho) {
   const btn = document.getElementById(rascunho ? 'btnAcRasc' : 'btnAcExec');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando...'; }
   const box = document.getElementById('acResultado');
-  box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ Escrevendo os posts... isso leva alguns minutos.</div></div>';
+  box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ Planejando os horários...</div></div>';
   try {
-    const d = await mcApi('autocampanha_executar', { ...c, apenas_rascunho: !!rascunho });
+    // v2.16: gera em LOTES de 3. Antes era tudo de uma vez: ~90s, a função era cortada
+    // e o navegador recebia "Failed to fetch" sem nenhum post.
+    const plano = (await mcApi('autocampanha_planejar', c)).plano;
+    const vagos = plano?.vagos || [];
+    if (!vagos.length) { box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:20px;">Nenhum horário vago — a agenda já está completa no período.</div></div>'; return; }
+    const LOTE = 3, posts = [], erros = [];
+    for (let i = 0; i < vagos.length; i += LOTE) {
+      const lote = vagos.slice(i, i + LOTE);
+      box.innerHTML = `<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">
+        ⏳ Escrevendo post ${Math.min(i + LOTE, vagos.length)} de ${vagos.length}...
+        <div style="height:6px;background:var(--bd);border-radius:3px;margin:12px auto 0;max-width:300px;overflow:hidden;"><div style="height:100%;width:${Math.round(i / vagos.length * 100)}%;background:var(--green,#22d3a3);transition:width .3s;"></div></div>
+        ${posts.length ? `<div style="font-size:10px;margin-top:8px;">${posts.length} pronto(s)</div>` : ''}</div></div>`;
+      try {
+        const r = await mcApi('autocampanha_executar', { ...c, apenas_rascunho: !!rascunho, slots: lote });
+        posts.push(...(r.posts || [])); erros.push(...(r.erros || []));
+        if (r.dica && !posts.length) throw Object.assign(new Error(r.aviso || 'falha'), { dica: r.dica });
+      } catch (e) {
+        if (e.dica) throw e;                       // erro de credencial: para tudo
+        erros.push(`lote ${i / LOTE + 1}: ${e.message}`);
+      }
+    }
+    const d = { posts, erros, resumo: `${posts.length} publicação(ões) ${rascunho ? 'em rascunho' : 'agendadas'} nos horários vagos.` };
     box.innerHTML = `<div class="panel"><div class="ph"><div class="pt">${rascunho ? '✎ Rascunhos gerados' : '📤 Posts agendados'}</div>
       <span style="font-size:10px;color:var(--t2);">${d.resumo || ''}</span></div><div class="pb">
       ${(d.erros||[]).length ? `<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:7px;padding:9px;font-size:10.5px;margin-bottom:10px;">${d.erros.length} falha(s):<br>${d.erros.slice(0,4).join('<br>')}</div>` : ''}
@@ -22442,7 +22463,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.15] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.16] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22458,7 +22479,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.15';
+window.__ATX_BUILD_ID__ = 'ATX-v2.16';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
