@@ -17086,7 +17086,18 @@ async function _fatVoltar(id, statusAnterior) {
   if (!confirm('Voltar este termo para a etapa "' + FAT_LABELS[statusAnterior] + '"?')) return;
   try { await fatApi('termo_mover', { id, status: statusAnterior }); toast('Voltou para: ' + FAT_LABELS[statusAnterior], 'success'); carregarKanbanFaturamento(); await abrirDetalheTermo(id); } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
-async function _fatAvancar(id, status) { try { await fatApi('termo_mover', { id, status }); toast('Movido para: ' + FAT_LABELS[status], 'success'); carregarKanbanFaturamento(); await abrirDetalheTermo(id); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
+async function _fatAvancar(id, status) {
+  try {
+    await fatApi('termo_mover', { id, status });
+    toast('Movido para: ' + FAT_LABELS[status], 'success');
+    carregarKanbanFaturamento(); await abrirDetalheTermo(id);
+  } catch (e) {
+    // v2.17: mostra o erro completo — "Erro" sozinho não ajuda a diagnosticar
+    toast('Não moveu: ' + e.message, 'error');
+    addLog('err', '[Faturamento] termo_mover ' + id + ' → ' + status + ': ' + e.message);
+    alert('Não consegui mover o termo.\n\nErro: ' + e.message + '\n\nSe mencionar "column ... does not exist", é migração pendente no banco — me envie esta mensagem.');
+  }
+}
 async function _fatAprovar(id) { const por = prompt('Aprovado por:', ''); if (por === null) return; try { await fatApi('termo_aprovar', { id, aprovado_por: por }); toast('Termo aprovado', 'success'); carregarKanbanFaturamento(); await abrirDetalheTermo(id); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
 async function _fatExcluir(id) { if (!confirm('Excluir este termo e todos os dados de rateio/notas? Ação não pode ser desfeita.')) return; try { await fatApi('termo_excluir', { id }); toast('Termo excluído', 'info'); document.getElementById('fatDetalhe').style.display='none'; carregarKanbanFaturamento(); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
 // v1.33: ajustar manualmente a data de emissão da NF ou de pagamento
@@ -22463,7 +22474,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.16] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.17] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22479,7 +22490,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.16';
+window.__ATX_BUILD_ID__ = 'ATX-v2.17';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
