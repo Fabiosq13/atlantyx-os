@@ -2711,6 +2711,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <span style="font-size:10px;color:var(--t3);margin-left:auto;" id="fatFiltroInfo"></span>
   </div>
   <div id="fatKbStatus" style="display:none;margin-bottom:10px;"></div>
+  <div id="fatDiagLinha" style="font-size:9.5px;color:var(--t3);font-family:var(--M);margin-bottom:6px;"></div>
   <div id="fatKbTotais" style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-bottom:12px;"></div>
   <div id="fatKanbanBoard" style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;align-items:start;">
     <div style="grid-column:1/-1;text-align:center;color:var(--t3);font-size:11px;padding:24px;">Carregando...</div>
@@ -16616,6 +16617,13 @@ async function carregarKanbanFaturamento() {
     };
     const d = await fatApi('termo_list', filtros);
     _fatColunas = d.colunas || {};
+    // v2.14: a coluna PAGO reúne 'pago' E 'concluido' — montado aqui na tela, sem depender de
+    // migração no banco. Foi a terceira tentativa; esta não tem como falhar por dado ou cache.
+    _fatColunas.pago = [ ...(_fatColunas.pago || []), ...(_fatColunas.concluido || []) ];
+    // Diagnóstico visível: o que o servidor devolveu, por status
+    const diag = Object.entries(d.colunas || {}).map(([k, v]) => `${k}:${(v||[]).length}`).join(' · ');
+    const dEl = document.getElementById('fatDiagLinha');
+    if (dEl) dEl.textContent = 'recebido do servidor → ' + (diag || 'nada') + (d.aviso ? ' · ' + d.aviso : '');
     // Popula o seletor de anos com o que existe na base (só na primeira carga)
     const selAno = document.getElementById('fatFiltroAno');
     if (selAno && selAno.options.length <= 1 && d.anos_disponiveis?.length) {
@@ -16630,6 +16638,10 @@ async function carregarKanbanFaturamento() {
       if (filtros.periodo_texto) ativos.push('"' + filtros.periodo_texto + '"');
       infoEl.textContent = ativos.length ? `${d.total} termo(s) · filtro: ${ativos.join(' · ')}` : `${d.total} termo(s) no total`;
       infoEl.style.color = ativos.length ? 'var(--gold)' : 'var(--t3)';
+    }
+    if (d.totais_por_coluna) {
+      const tp = d.totais_por_coluna.pago || { qtd: 0, valor: 0 }, tc = d.totais_por_coluna.concluido || { qtd: 0, valor: 0 };
+      d.totais_por_coluna.pago = { qtd: (tp.qtd||0) + (tc.qtd||0), valor: (tp.valor||0) + (tc.valor||0) };
     }
     const cntTotal = FAT_COLS.reduce((s, c) => s + (_fatColunas[c]?.length || 0), 0);
     const badge = document.getElementById('fatMenuCnt'); if (badge) badge.textContent = cntTotal || '';
@@ -16648,7 +16660,7 @@ async function carregarKanbanFaturamento() {
     // v2.11: concluídos na seção própria
     {
       const conc = _fatColunas.concluido || [];
-      const cnt = document.getElementById('fatConcCnt'); if (cnt) cnt.textContent = conc.length ? `(${conc.length})` : '';
+      const cnt = document.getElementById('fatConcCnt'); if (cnt) cnt.textContent = conc.length ? `(${conc.length} — também na coluna Pago)` : '';
       const lista = document.getElementById('fatConcluidosLista');
       if (lista) lista.innerHTML = conc.length ? conc.map(t => _fatCard(t, 'concluido')).join('')
         : '<div style="grid-column:1/-1;text-align:center;color:var(--t3);font-size:10px;padding:12px;">Nenhum termo concluído nos últimos 90 dias.</div>';
@@ -16698,7 +16710,7 @@ function _fatCard(t, col) {
   // v2.10: no concluído, mostra QUANDO e POR QUE — e permite reabrir se foi automático demais.
   // v2.11: na coluna PAGO — quando detectou, e o botão de concluir
   const pagoBadge = col === 'pago' ? `<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--bd);font-size:9px;">
-      <span style="color:var(--green,#22d3a3);">💵 pago ${t.pago_em ? String(t.pago_em).substring(0,10).split('-').reverse().join('/') : ''}</span>
+      <span style="color:var(--green,#22d3a3);">💵 ${t.status === 'concluido' ? 'concluído' : 'pago'} ${(t.pago_em || t.concluido_em || t.atualizado_em) ? String(t.pago_em || t.concluido_em || t.atualizado_em).substring(0,10).split('-').reverse().join('/') : ''}</span>
       <span onclick="event.stopPropagation();_fatConcluir('${t.id}')" style="cursor:pointer;color:var(--gold);margin-left:8px;" title="Fechar este termo (vai para Concluído)">🏁 concluir</span>
       <span onclick="event.stopPropagation();_fatReabrir('${t.id}')" style="cursor:pointer;color:var(--t3);margin-left:6px;" title="Voltar para Pagamento">↩</span>
     </div>` : '';
@@ -22390,7 +22402,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.13] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.14] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22406,7 +22418,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.13';
+window.__ATX_BUILD_ID__ = 'ATX-v2.14';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
