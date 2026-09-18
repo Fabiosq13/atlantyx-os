@@ -86,7 +86,8 @@ async function ensureTabelas(sql) {
     'pago_em TIMESTAMPTZ',                // v2.11
     'concluido_motivo TEXT',              // v2.10
   ]) {
-    try { await sql.query(`ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS ${col}`); } catch (e) { console.warn('[FAT] migração v1.94:', e.message); }
+    try { await sql.query(`ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS ${col}`); }
+    catch (e) { console.error('[FAT] MIGRAÇÃO FALHOU — coluna', col.split(' ')[0], ':', e.message, '| funções que dependem dela ficam degradadas'); }
   }
 }
 
@@ -94,6 +95,7 @@ async function ensureTabelas(sql) {
 async function cpflConfirmar({ termo_id, confirmado = true, por, observacao, previsao_pagamento } = {}) {
   if (!termo_id) throw new Error('termo_id obrigatório');
   const sql = await getSql();
+  try { await sql`ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS cpfl_confirmado BOOLEAN DEFAULT false`; } catch (_) {}
   await sql`UPDATE termos_faturamento SET
       cpfl_confirmado = ${!!confirmado},
       cpfl_confirmado_em = ${confirmado ? new Date().toISOString() : null},
@@ -314,17 +316,21 @@ async function termoGet({ id } = {}) {
 async function termoMover({ id, status } = {}) {
   if (!id || !STATUS.includes(status)) throw new Error('id e status válido obrigatórios (' + STATUS.join(', ') + ')');
   const sql = await getSql();
-  // v1.94: marca QUANDO entrou em envio_nf, para medir há quantos dias está parado.
-  // Sem isso, usar atualizado_em zeraria a contagem a cada edição do termo.
-  if (status === 'envio_nf') {
-    await sql`UPDATE termos_faturamento SET status = ${status},
-      entrou_em_envio_nf = COALESCE(entrou_em_envio_nf, NOW()), atualizado_em = NOW() WHERE id = ${id}`;
-  } else if (status === 'pagamento') {
-    await sql`UPDATE termos_faturamento SET status = ${status}, atualizado_em = NOW() WHERE id = ${id}`;
-  } else {
-    // saiu de envio_nf para trás: limpa o marcador para não contar tempo antigo
-    await sql`UPDATE termos_faturamento SET status = ${status}, entrou_em_envio_nf = NULL, atualizado_em = NOW() WHERE id = ${id}`;
-  }
+  // v2.17 FIX: o movimento de status NÃO pode depender de coluna opcional. A v1.94 fazia o
+  // UPDATE de status e de entrou_em_envio_nf na mesma instrução — se a migração que cria a
+  // coluna falhou em silêncio (sem permissão de ALTER, como no CNAB), o UPDATE inteiro
+  // quebrava e o botão "Enviar para Aprovação" parava de funcionar.
+  // Agora: primeiro o status (sempre funciona), depois o marcador (se der).
+  const r = await sql`UPDATE termos_faturamento SET status = ${status}, atualizado_em = NOW()
+    WHERE id = ${id} RETURNING id`;
+  if (!r.length) throw new Error('Termo não encontrado: ' + id);
+  try {
+    if (status === 'envio_nf') {
+      await sql`UPDATE termos_faturamento SET entrou_em_envio_nf = COALESCE(entrou_em_envio_nf, NOW()) WHERE id = ${id}`;
+    } else if (!['pagamento', 'pago', 'concluido'].includes(status)) {
+      await sql`UPDATE termos_faturamento SET entrou_em_envio_nf = NULL WHERE id = ${id}`;
+    }
+  } catch (e) { console.warn('[FAT] marcador entrou_em_envio_nf indisponível:', e.message); }
   return await termoGet({ id });
 }
 
