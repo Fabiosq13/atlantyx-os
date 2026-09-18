@@ -218,10 +218,18 @@ async function autoCampanhaPlanejar({ dias, horarios, pular_fim_de_semana, blog_
 }
 
 // Gera o conteúdo e agenda, um slot por vez
-async function autoCampanhaExecutar({ dias, horarios, pular_fim_de_semana, tema, redes, blog_id, apenas_rascunho = false, limite = 21 } = {}) {
+async function autoCampanhaExecutar({ dias, horarios, pular_fim_de_semana, tema, redes, blog_id, apenas_rascunho = false, limite = 21, slots = null } = {}) {
   const cfg = await autoCampanhaConfig();
-  const { plano } = await autoCampanhaPlanejar({ dias, horarios, pular_fim_de_semana, blog_id });
-  const alvos = plano.vagos.slice(0, parseInt(limite) || 21);
+  // v2.16: quando o navegador manda `slots`, gera só esses (lote). Evita o "Failed to fetch":
+  // 15 posts de uma vez levavam ~90s e a função era cortada pelo limite do Vercel.
+  let plano, alvos;
+  if (Array.isArray(slots) && slots.length) {
+    plano = { vagos: slots, ja_agendados: [], resumo: `lote de ${slots.length}` };
+    alvos = slots.slice(0, 5);
+  } else {
+    ({ plano } = await autoCampanhaPlanejar({ dias, horarios, pular_fim_de_semana, blog_id }));
+    alvos = plano.vagos.slice(0, Math.min(parseInt(limite) || 21, 5));
+  }
   if (!alvos.length) return { criados: 0, plano, aviso: 'Nenhum horário vago — a agenda já está completa no período.' };
 
   // v1.77: confere as credenciais ANTES de gerar os textos. Sem isso, o sistema gastava
