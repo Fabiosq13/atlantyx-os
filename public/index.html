@@ -3541,6 +3541,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <button class="btn btn-p" onclick="acExecutar(true)" id="btnAcRasc">&#9998; Gerar rascunhos</button>
         <button class="btn btn-gn" onclick="acExecutar(false)" id="btnAcExec">&#128228; Gerar e agendar</button>
         <button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red);" onclick="acCorrigirImagens()" title="Corrige posts agendados cuja imagem vai expirar antes da publicacao">&#128295; Corrigir imagens agendadas</button>
+    <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="acAuditoria()" title="Por que nao ha leads? Cruza publicacoes, erros e capturas">&#128269; Auditoria do funil</button>
     <button class="btn" style="font-size:10px;margin-left:auto;" onclick="acSugerirHorarios()">&#128161; Sugerir horarios pelos meus dados</button>
       </div>
     </div>
@@ -17894,6 +17895,8 @@ async function acExecutar(rascunho) {
           <span>📅 ${p.data.split('-').reverse().join('/')} (${p.dia_semana}) às <b>${p.hora}</b></span>
           <span style="color:${p.status==='agendado'?'var(--green,#22d3a3)':'var(--gold)'};">${p.status}${p.angulo?' · '+p.angulo:''}</span></div>
         <div style="font-size:11.5px;line-height:1.6;white-space:pre-wrap;">${(p.texto||'').replace(/</g,'&lt;')}</div>
+        ${p.comentario ? `<div style="margin-top:7px;padding:7px 9px;background:rgba(34,211,163,.08);border-left:3px solid var(--green,#22d3a3);border-radius:5px;font-size:10px;">
+          <b>1º comentário:</b> ${String(p.comentario).replace(/</g,'&lt;')}</div>` : ''}
       </div>`).join('') || '<div style="color:var(--t3);text-align:center;padding:16px;">Nenhum post gerado.</div>'}
       ${d.aviso ? `<div style="font-size:10.5px;color:var(--t2);">${d.aviso}</div>` : ''}
       </div></div>`;
@@ -17922,6 +17925,43 @@ async function acCorrigirImagens() {
     toast('Erro: ' + e.message, 'error');
     if (e.dica) alert(e.message + '\n\n' + e.dica);
   }
+}
+
+// v2.15: auditoria do funil — publicação → clique → captura
+async function acAuditoria() {
+  const box = document.getElementById('acResultado');
+  box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ Cruzando Metricool, leads e página de captura...</div></div>';
+  try {
+    const d = await mcApi('auditoria_funil', { dias: 30 });
+    const p = d.posts || {}, l = d.leads || {}, c = d.captura || {};
+    const cor = d.veredito === 'funil íntegro' ? 'var(--green,#22d3a3)' : d.veredito === 'funil com vazamento' ? 'var(--gold)' : 'var(--red)';
+    box.innerHTML = `
+      <div style="background:var(--bg4);border-left:4px solid ${cor};border-radius:9px;padding:13px 16px;margin-bottom:12px;">
+        <div style="font-size:13px;font-weight:700;color:${cor};text-transform:uppercase;">${d.veredito}</div>
+        ${(d.problemas||[]).map(x => `<div style="font-size:11px;line-height:1.6;margin-top:5px;color:${x.g==='alta'?'var(--red)':'var(--gold)'};">• ${x.txt}</div>`).join('') || '<div style="font-size:11px;color:var(--green,#22d3a3);margin-top:5px;">Nenhum problema encontrado.</div>'}
+      </div>
+      <div class="kg k4" style="margin-bottom:12px;">
+        <div class="kpi bl"><div class="kl">Posts (30 dias)</div><div class="kv">${p.total ?? '—'}</div><div class="ks">${p.publicado ?? 0} publicado(s) · ${p.agendado ?? 0} agendado(s)</div></div>
+        <div class="kpi ${(p.erro||0)>0?'rd':'gn'}"><div class="kl">Com erro</div><div class="kv">${p.erro ?? '—'}</div><div class="ks">falharam ao publicar</div></div>
+        <div class="kpi ${(p.sem_link||0)>0?'gd':'gn'}"><div class="kl">Sem link</div><div class="kv">${p.sem_link ?? '—'}</div><div class="ks">de ${p.total ?? 0} — sem caminho até o formulário</div></div>
+        <div class="kpi ${(l.no_periodo||0)>0?'gn':'rd'}"><div class="kl">Leads (30 dias)</div><div class="kv">${l.no_periodo ?? '—'}</div><div class="ks">${l.total_historico ?? 0} no histórico${l.ultimo_historico ? ' · último ' + l.ultimo_historico.split('-').reverse().join('/') : ''}</div></div>
+      </div>
+      ${(p.erros||[]).length ? `<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">❌ Publicações que falharam</div></div><div class="pb" style="max-height:30vh;overflow-y:auto;">
+        ${p.erros.map(e => `<div style="border-left:3px solid var(--red);background:var(--bg4);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:10.5px;">
+          <div style="color:var(--t2);">${(e.data||'').replace('T',' ')} · ${(e.redes||[]).join(', ')}</div>
+          <div>${String(e.texto||'').replace(/</g,'&lt;')}…</div>
+          <div style="color:var(--red);font-size:10px;margin-top:3px;">${String(e.motivo||'').replace(/</g,'&lt;')}</div></div>`).join('')}
+      </div></div>` : ''}
+      <div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">🎯 Página de captura</div></div><div class="pb" style="font-size:11px;line-height:1.8;">
+        <div>Endpoint: <span style="font-family:var(--M);">${c.endpoint||'—'}</span> ${c.endpoint_responde ? '<span style="color:var(--green,#22d3a3);">✓ responde</span>' : '<span style="color:var(--red);">✗ não responde</span>'}</div>
+        <div>Página pública: <span style="font-family:var(--M);">${c.pagina_sugerida||'—'}</span> ${c.pagina_existe ? '<span style="color:var(--green,#22d3a3);">✓ existe</span>' : '<span style="color:var(--red);">✗ não existe — nesta versão ela foi criada, aparece após o deploy</span>'}</div>
+        ${(l.por_origem||[]).length ? `<div style="margin-top:6px;color:var(--t2);">Leads por origem: ${l.por_origem.map(o => `${o.origem} (${o.n})`).join(' · ')}</div>` : ''}
+      </div></div>
+      <div class="panel"><div class="ph"><div class="pt">💡 O que muda a partir de agora</div></div><div class="pb">
+        ${(d.recomendacoes||[]).map(r => `<div style="font-size:11px;line-height:1.7;padding:4px 0;border-bottom:1px solid var(--bd);">→ ${r}</div>`).join('')}
+        <div style="margin-top:10px;font-size:10.5px;color:var(--t2);line-height:1.6;">A autocampanha já foi ajustada: cada post agora <b>oferece algo concreto</b> (diagnóstico, checklist, conversa) e publica o <b>link de captura com UTM no primeiro comentário</b>. Gere rascunhos para ver a diferença.</div>
+      </div></div>`;
+  } catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:16px;font-size:11px;">Erro: ${e.message}</div></div>`; }
 }
 
 // Sugere horários a partir do desempenho real dos posts já publicados
@@ -22402,7 +22442,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.14] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.15] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22418,7 +22458,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.14';
+window.__ATX_BUILD_ID__ = 'ATX-v2.15';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
