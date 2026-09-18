@@ -49,6 +49,83 @@ async function corrigirImagensAgendadas({ blog_id, dias = 60, aplicar = false } 
       : `${afetados.length} post(s) agendado(s) usam imagem que vai expirar antes da publicação.` };
 }
 
+// ═══ v2.15: AUDITORIA DO FUNIL — por que não há leads? ═══
+// Cruza três coisas: o que foi agendado no Metricool, o que de fato publicou, e quantos leads
+// chegaram. Sem isso a pergunta "cadê os leads" não tem resposta — só suposição.
+async function auditoriaFunil({ dias = 30 } = {}) {
+  const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = process.env.METRICOOL_BLOG_ID;
+  const out = { periodo_dias: dias, posts: {}, leads: {}, problemas: [], recomendacoes: [] };
+
+  // 1. Posts no Metricool: agendados, publicados, com erro
+  try {
+    const hoje = new Date(), ini = new Date(hoje.getTime() - dias * 86400000);
+    const f = d => d.toISOString().substring(0, 10).replace(/-/g, '');
+    const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${f(ini)}0000&end=${f(hoje)}2359`, TOKEN);
+    const lista = Array.isArray(r) ? r : (r?.data || r?.posts || []);
+    const status = { publicado: 0, agendado: 0, erro: 0, rascunho: 0, outro: 0 };
+    const comErro = [], semLink = [], comLink = [];
+    lista.forEach(p => {
+      const st = String(p.status || p.publishStatus || (p.draft ? 'draft' : '') || '').toLowerCase();
+      const providers = p.providers || [];
+      const errProv = providers.filter(x => /error|fail|reject/i.test(String(x.status || x.publishStatus || '')));
+      if (errProv.length || /error|fail/.test(st)) {
+        status.erro++;
+        comErro.push({ id: p.id, data: String(p.publicationDate?.dateTime || p.publicationDate || '').substring(0,16),
+          texto: String(p.text || '').substring(0, 60), redes: errProv.map(x => x.network),
+          motivo: errProv.map(x => x.error || x.message || x.errorMessage || 'sem detalhe').join('; ').substring(0, 200) });
+      } else if (/publish|sent|done/.test(st)) status.publicado++;
+      else if (/draft/.test(st)) status.rascunho++;
+      else if (/schedul|pending|queue/.test(st) || !st) status.agendado++;
+      else status.outro++;
+      const txt = String(p.text || '');
+      if (/https?:\/\//i.test(txt) || (p.media && p.media.some(m => /http/.test(String(m))))) comLink.push(p.id); else semLink.push(p.id);
+    });
+    out.posts = { total: lista.length, ...status, com_link: comLink.length, sem_link: semLink.length, erros: comErro.slice(0, 15) };
+    if (comErro.length) out.problemas.push({ g: 'alta', txt: `${comErro.length} publicação(ões) FALHARAM no Metricool nos últimos ${dias} dias.` });
+    if (lista.length && semLink.length === lista.length) out.problemas.push({ g: 'alta', txt: `NENHUM dos ${lista.length} posts tem link. O leitor não tem para onde ir — não existe caminho até o formulário.` });
+    else if (semLink.length > comLink.length) out.problemas.push({ g: 'media', txt: `${semLink.length} de ${lista.length} posts sem link de captura.` });
+    if (!lista.length) out.problemas.push({ g: 'alta', txt: `Nenhum post encontrado no Metricool nos últimos ${dias} dias.` });
+  } catch (e) { out.posts = { erro: e.message }; out.problemas.push({ g: 'alta', txt: 'Não consegui ler o Metricool: ' + e.message }); }
+
+  // 2. Leads capturados no período
+  try {
+    const { neon } = await import('@neondatabase/serverless');
+    const sql = neon(process.env.DATABASE_URL);
+    const ini = new Date(Date.now() - dias * 86400000).toISOString();
+    const leads = await sql`SELECT COUNT(*)::int AS n, MAX(criado_em) AS ultimo FROM leads WHERE criado_em >= ${ini}`;
+    const total = await sql`SELECT COUNT(*)::int AS n, MAX(criado_em) AS ultimo FROM leads`;
+    const porOrigem = await sql`SELECT COALESCE(data->>'source', data->>'origem', 'sem origem') AS origem, COUNT(*)::int AS n
+      FROM leads WHERE criado_em >= ${ini} GROUP BY 1 ORDER BY 2 DESC LIMIT 10`;
+    out.leads = { no_periodo: leads[0]?.n || 0, ultimo_no_periodo: leads[0]?.ultimo ? String(leads[0].ultimo).substring(0,10) : null,
+      total_historico: total[0]?.n || 0, ultimo_historico: total[0]?.ultimo ? String(total[0].ultimo).substring(0,10) : null,
+      por_origem: porOrigem.map(o => ({ origem: o.origem, n: o.n })) };
+    if (!out.leads.no_periodo) out.problemas.push({ g: 'alta', txt: `ZERO leads capturados nos últimos ${dias} dias${out.leads.total_historico ? ` (${out.leads.total_historico} no histórico, último em ${out.leads.ultimo_historico})` : ' — e nenhum no histórico'}.` });
+  } catch (e) { out.leads = { erro: e.message }; }
+
+  // 3. A página de captura existe e responde?
+  const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
+  out.captura = { endpoint: base + '/api/lead-capture', pagina_sugerida: base + '/captura.html' };
+  try {
+    const r = await fetch(base + '/api/lead-capture', { method: 'OPTIONS' });
+    out.captura.endpoint_responde = r.status < 500;
+  } catch (e) { out.captura.endpoint_responde = false; }
+  try {
+    const r2 = await fetch(base + '/captura.html', { method: 'HEAD' });
+    out.captura.pagina_existe = r2.status === 200;
+    if (r2.status !== 200) out.problemas.push({ g: 'alta', txt: 'Não existe uma página pública de captura de lead. Mesmo com link no post, o clique não teria onde cair.' });
+  } catch (e) { out.captura.pagina_existe = false; }
+
+  // 4. Recomendações
+  out.recomendacoes = [
+    'Todo post precisa de UM caminho claro: link para a página de captura, com UTM para saber de onde veio o clique.',
+    'No LinkedIn, link no corpo reduz alcance. Alternativa: "link nos comentários" — e o sistema publica o link como primeiro comentário.',
+    'A página de captura precisa ser curta: nome, empresa, cargo, e-mail. Cada campo a mais derruba a conversão.',
+    'Posts de opinião geram engajamento, não lead. Para lead, o post precisa oferecer algo (diagnóstico, checklist, conversa) em troca do contato.',
+  ];
+  out.veredito = out.problemas.some(p => p.g === 'alta') ? 'funil quebrado' : out.problemas.length ? 'funil com vazamento' : 'funil íntegro';
+  return out;
+}
+
 // ═══ v1.74: AUTOCAMPANHA — preenche a agenda dos próximos 7 dias ═══
 // Olha os 7 dias à frente e, para cada horário configurado que estiver VAZIO, cria uma
 // publicação. Nunca sobrescreve o que já existe agendado.
@@ -181,11 +258,16 @@ REGRAS:
 - Entre 60 e 130 palavras. Primeira linha precisa parar o scroll — sem "Você sabia que".
 - Uma ideia só por post, concreta. Traga um exemplo, um número ou uma situação real de projeto.
 - Sem emoji em excesso (no máximo 1), sem hashtag genérica, sem "revolucionar", "transformar digitalmente", "game changer".
-- Termine com uma pergunta ou um convite à conversa — nunca com "entre em contato".
 - Nunca invente cliente, número ou caso que não foi informado.
 - Português do Brasil, tom de quem entende do assunto falando com um par.
 
-Devolva SOMENTE JSON: {"texto":"...","angulo":"em 5 palavras, o ângulo escolhido"}`;
+O MAIS IMPORTANTE — o post precisa gerar LEAD, não só curtida:
+- Termine OFERECENDO algo concreto em troca de uma conversa: um diagnóstico de 30 min, um checklist, uma segunda opinião sobre um problema específico. Algo que o leitor ganha.
+- A última frase aponta para o link: "O link está no primeiro comentário" (LinkedIn reduz alcance de link no corpo).
+- Não escreva a URL no texto — o sistema coloca o link no comentário.
+- Proibido terminar só com pergunta retórica ou "o que você acha?" — isso gera engajamento e zero lead.
+
+Devolva SOMENTE JSON: {"texto":"...","angulo":"em 5 palavras, o ângulo escolhido","oferta":"o que está sendo oferecido, em até 8 palavras"}`;
       const user = `Tema geral: ${temaBase}
 Data da publicação: ${slot.data} (${slot.dia_semana}) às ${slot.hora}
 ${slot.hora < '11:00' ? 'Horário da manhã: pode ser um post mais analítico, para quem abre o feed começando o dia.'
@@ -194,9 +276,15 @@ ${slot.hora < '11:00' ? 'Horário da manhã: pode ser um post mais analítico, p
 Evite repetir o mesmo ângulo de outros posts da semana.`;
       const txt = await _claudeAuto(system, user, 700);
       const j = JSON.parse(String(txt).replace(/```json|```/g, '').trim());
+      // v2.15: link de captura com UTM — é o que transforma o post em fonte rastreável de lead
+      const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
+      const utm = new URLSearchParams({ utm_source: 'linkedin', utm_medium: 'autocampanha',
+        utm_campaign: `${slot.data}_${slot.hora.replace(':', '')}`, utm_content: (j.angulo || '').substring(0, 40).replace(/\s+/g, '-').toLowerCase() });
+      j.link = `${base}/captura.html?${utm.toString()}`;
+      j.comentario = `${j.oferta ? j.oferta.charAt(0).toUpperCase() + j.oferta.slice(1) + ' → ' : ''}${j.link}`;
 
       if (apenas_rascunho) {
-        criados.push({ ...slot, texto: j.texto, angulo: j.angulo, status: 'rascunho' });
+        criados.push({ ...slot, texto: j.texto, angulo: j.angulo, oferta: j.oferta, link: j.link, comentario: j.comentario, status: 'rascunho' });
       } else {
         const quando = `${slot.data}T${slot.hora}:00`;
         const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID;
@@ -207,6 +295,8 @@ Evite repetir o mesmo ângulo de outros posts da semana.`;
           providers: redesAlvo.map(n => ({ network: String(n).toUpperCase() })),
           publicationDate: { dateTime: quando, timezone: 'America/Sao_Paulo' },
           autoPublish: true, shortener: false, draft: false,
+          // v2.15: o link vai no PRIMEIRO COMENTÁRIO — preserva o alcance no LinkedIn e ainda dá o caminho
+          firstComment: j.comentario,
         };
         // v1.80: se a autocampanha passar a usar imagem, ela também precisa ser permanente
         if (Array.isArray(body.media) && body.media.length) {
@@ -216,7 +306,7 @@ Evite repetir o mesmo ângulo de outros posts da semana.`;
           body.media = conv; body.medias = conv;
         }
         const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
-        criados.push({ ...slot, texto: j.texto, angulo: j.angulo, status: 'agendado', metricool_id: r?.id || r?.data?.id || null });
+        criados.push({ ...slot, texto: j.texto, angulo: j.angulo, oferta: j.oferta, link: j.link, comentario: j.comentario, status: 'agendado', metricool_id: r?.id || r?.data?.id || null });
       }
     } catch (e) { erros.push(`${slot.data} ${slot.hora}: ${e.message}`); }
   }
@@ -282,6 +372,7 @@ export default async function handler(req, res) {
     const acoes = {
     autocampanha_config:    () => autoCampanhaConfig(payload),
     corrigir_imagens:       () => corrigirImagensAgendadas(payload),
+    auditoria_funil:        () => auditoriaFunil(payload),
     autocampanha_planejar:  () => autoCampanhaPlanejar(payload),
     autocampanha_executar:  () => autoCampanhaExecutar(payload),
       // Publicar/agendar post
