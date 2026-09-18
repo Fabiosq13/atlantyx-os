@@ -46,6 +46,9 @@
     },
     "api/crm.js": {
       "maxDuration": 60
+    },
+    "api/metricool.js": {
+      "maxDuration": 60
     }
   },
   "crons": [
