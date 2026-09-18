@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlantyx — Vamos conversar sobre dados e IA na sua operação</title>
+<meta name="description" content="17 anos de dados e IA para grandes empresas. Deixe seu contato e falamos sobre o seu caso.">
+<style>
+  :root { --azul:#1A3A8F; --azul2:#0F2660; --dourado:#E0A422; --cinza:#5a6478; --bg:#f6f7fb; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif; background:var(--bg); color:#1c2333; }
+  .wrap { max-width:520px; margin:0 auto; padding:28px 18px 40px; }
+  .logo { font-weight:800; letter-spacing:2px; color:var(--azul); font-size:14px; margin-bottom:22px; }
+  h1 { font-size:24px; line-height:1.25; margin:0 0 10px; color:var(--azul2); }
+  .sub { color:var(--cinza); font-size:15px; line-height:1.6; margin:0 0 22px; }
+  .card { background:#fff; border-radius:14px; padding:22px 20px; box-shadow:0 6px 24px rgba(26,58,143,.08); }
+  label { display:block; font-size:12px; font-weight:600; color:var(--cinza); margin:12px 0 5px; text-transform:uppercase; letter-spacing:.4px; }
+  input, select { width:100%; padding:12px 13px; border:1.5px solid #d7dce8; border-radius:9px; font-size:15px; }
+  input:focus, select:focus { outline:none; border-color:var(--azul); }
+  button { width:100%; margin-top:18px; padding:14px; background:var(--azul); color:#fff; border:0; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; }
+  button:disabled { opacity:.6; cursor:wait; }
+  .ok { text-align:center; padding:26px 10px; }
+  .ok h2 { color:var(--azul); margin:0 0 8px; }
+  .prova { display:flex; gap:14px; justify-content:center; flex-wrap:wrap; margin-top:20px; font-size:11px; color:var(--cinza); }
+  .prova span { background:#fff; border:1px solid #e3e7f0; border-radius:20px; padding:5px 11px; }
+  .erro { color:#D64545; font-size:13px; margin-top:8px; display:none; }
+  .fine { font-size:11px; color:#8a93a8; margin-top:14px; line-height:1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">ATLANTYX</div>
+  <h1 id="titulo">Dados e IA que sua operação usa de verdade</h1>
+  <p class="sub" id="sub">17 anos entregando para CPFL, Enel, Caixa e outras grandes empresas. Deixe seu contato e conversamos sobre o seu caso — sem apresentação genérica.</p>
+
+  <div class="card" id="form">
+    <label for="nome">Seu nome</label>
+    <input id="nome" autocomplete="name" required>
+    <label for="empresa">Empresa</label>
+    <input id="empresa" autocomplete="organization" required>
+    <label for="cargo">Cargo</label>
+    <input id="cargo" autocomplete="organization-title" placeholder="Ex.: Gerente de TI, Diretor de Operações">
+    <label for="email">E-mail corporativo</label>
+    <input id="email" type="email" autocomplete="email" required>
+    <label for="telefone">WhatsApp (opcional)</label>
+    <input id="telefone" type="tel" autocomplete="tel" placeholder="(11) 99999-9999">
+    <button id="btn" onclick="enviar()">Quero conversar</button>
+    <div class="erro" id="erro"></div>
+    <div class="fine">Usamos seu contato só para retornar sobre este assunto. Nada de lista de e-mail.</div>
+  </div>
+
+  <div class="card ok" id="ok" style="display:none;">
+    <h2>Recebido.</h2>
+    <p style="color:var(--cinza);line-height:1.6;">Retornamos em até um dia útil. Se preferir adiantar, <a id="wa" href="#" style="color:var(--azul);font-weight:600;">fale agora pelo WhatsApp</a>.</p>
+  </div>
+
+  <div class="prova">
+    <span>CPFL Energia</span><span>Enel</span><span>Caixa Capitalização</span><span>Jelta</span>
+  </div>
+</div>
+<script>
+  // Origem da visita — vem da UTM do post. É o que permite saber QUAL campanha gerou o lead.
+  const q = new URLSearchParams(location.search);
+  const utm = { source: q.get('utm_source') || 'direto', medium: q.get('utm_medium') || '', campaign: q.get('utm_campaign') || '', content: q.get('utm_content') || '' };
+  // Título pode ser personalizado por campanha: ?t=Texto&s=Subtexto
+  if (q.get('t')) document.getElementById('titulo').textContent = q.get('t');
+  if (q.get('s')) document.getElementById('sub').textContent = q.get('s');
+
+  async function enviar() {
+    const g = id => document.getElementById(id).value.trim();
+    const erro = document.getElementById('erro');
+    erro.style.display = 'none';
+    if (!g('nome') || !g('empresa') || !g('email')) { erro.textContent = 'Preencha nome, empresa e e-mail.'; erro.style.display = 'block'; return; }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(g('email'))) { erro.textContent = 'E-mail inválido.'; erro.style.display = 'block'; return; }
+    const btn = document.getElementById('btn'); btn.disabled = true; btn.textContent = 'Enviando...';
+    try {
+      const r = await fetch('/api/lead-capture', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: g('nome'), company: g('empresa'), title: g('cargo'), email: g('email'), phone: g('telefone'),
+          source: utm.source, campaign_name: utm.campaign || 'captura', utm,
+          page: location.href, form_name: 'captura-publica',
+        }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || d.success === false) throw new Error(d.error || 'HTTP ' + r.status);
+      document.getElementById('form').style.display = 'none';
+      document.getElementById('ok').style.display = 'block';
+      const wa = document.getElementById('wa');
+      wa.href = 'https://wa.me/5521999999999?text=' + encodeURIComponent(`Olá, sou ${g('nome')} da ${g('empresa')}. Vi o post sobre ${utm.campaign || 'dados e IA'} e quero conversar.`);
+    } catch (e) {
+      erro.textContent = 'Não consegui enviar (' + e.message + '). Tente de novo ou fale pelo WhatsApp.'; erro.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Quero conversar';
+    }
+  }
+</script>
+</body>
+</html>
