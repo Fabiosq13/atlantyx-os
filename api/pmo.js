@@ -394,6 +394,86 @@ ${texto}`, 1800);
   const r = await reuniaoSalvar({ titulo, transcricao, ata });
   return { ata, reuniao_id: r.id };
 }
+// ═══ v2.18: AGENDA DO GERENTE DE PROJETOS ═══
+// Junta tudo que tem data: marcos (financeiro), reuniões (PMO), reports pendentes, compromissos manuais.
+async function agendaGP({ dias = 30 } = {}) {
+  const sql = await getSql();
+  await sql`CREATE TABLE IF NOT EXISTS pmo_compromissos (
+    id TEXT PRIMARY KEY, titulo TEXT NOT NULL, data DATE NOT NULL, hora TEXT,
+    projeto TEXT, tipo TEXT DEFAULT 'compromisso', notas TEXT, concluido BOOLEAN DEFAULT false,
+    criado_em TIMESTAMPTZ DEFAULT NOW()
+  )`;
+  const hoje = new Date().toISOString().split('T')[0];
+  const fim = new Date(Date.now() + dias * 86400000).toISOString().split('T')[0];
+  const itens = [];
+
+  // 1. Marcos de projeto (financeiro) — com data prevista no horizonte OU atrasados
+  try {
+    const marcos = await sql`SELECT m.id, m.descricao, m.data_prevista, m.valor, m.status, m.projeto_id,
+        p.nome AS projeto FROM projetos_marcos m LEFT JOIN projetos p ON p.id = m.projeto_id
+      WHERE m.status NOT IN ('concluido','faturado','pago','cancelado')
+        AND m.data_prevista IS NOT NULL AND m.data_prevista <= ${fim}
+      ORDER BY m.data_prevista`;
+    marcos.forEach(m => {
+      const d = String(m.data_prevista).substring(0, 10);
+      itens.push({ tipo: 'marco', data: d, titulo: m.descricao, projeto: m.projeto, valor: num(m.valor),
+        status: m.status, atrasado: d < hoje, id: m.id, acao: 's3marcoskanban' });
+    });
+  } catch (e) { console.warn('[agenda] marcos:', e.message); }
+
+  // 2. Reuniões do PMO
+  try {
+    const reun = await sql`SELECT id, titulo, data_reuniao, projetos_discutidos FROM pmo_reunioes
+      WHERE data_reuniao >= ${hoje} AND data_reuniao <= ${fim} ORDER BY data_reuniao`;
+    reun.forEach(r => itens.push({ tipo: 'reuniao', data: String(r.data_reuniao).substring(0, 10), titulo: r.titulo,
+      projeto: Array.isArray(r.projetos_discutidos) ? r.projetos_discutidos.join(', ') : null, id: r.id, acao: 's9reuniao' }));
+  } catch (_) {}
+
+  // 3. Reports pendentes — projetos do ciclo sem report na semana
+  let reportsPendentes = [];
+  try {
+    const cfg = await sql`SELECT projeto FROM pmo_projetos_config`;
+    const ult = await sql`SELECT projeto, MAX(criado_em) AS ultimo FROM status_reports GROUP BY projeto`;
+    const mapa = {}; ult.forEach(u => mapa[u.projeto] = u.ultimo);
+    const corte = new Date(Date.now() - 7 * 86400000);
+    cfg.forEach(c => {
+      const u = mapa[c.projeto];
+      if (!u || new Date(u) < corte) {
+        reportsPendentes.push(c.projeto);
+        // próxima sexta = prazo do ciclo
+        const d = new Date(); const dow = d.getDay(); d.setDate(d.getDate() + ((5 - dow + 7) % 7 || 7));
+        itens.push({ tipo: 'report', data: d.toISOString().split('T')[0], titulo: 'Status report pendente', projeto: c.projeto,
+          atrasado: !u || (Date.now() - new Date(u)) > 14 * 86400000, acao: 's9status' });
+      }
+    });
+  } catch (_) {}
+
+  // 4. Compromissos manuais
+  try {
+    const comp = await sql`SELECT * FROM pmo_compromissos WHERE data >= ${hoje} AND data <= ${fim} AND concluido = false ORDER BY data, hora`;
+    comp.forEach(c => itens.push({ tipo: 'compromisso', data: String(c.data).substring(0, 10), hora: c.hora, titulo: c.titulo,
+      projeto: c.projeto, notas: c.notas, id: c.id }));
+  } catch (_) {}
+
+  itens.sort((a, b) => (a.atrasado ? -1 : 0) - (b.atrasado ? -1 : 0) || a.data.localeCompare(b.data) || (a.hora || '').localeCompare(b.hora || ''));
+  const em7 = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+  return { itens, hoje, ate: fim,
+    resumo: { atrasados: itens.filter(i => i.atrasado).length,
+      esta_semana: itens.filter(i => i.data >= hoje && i.data <= em7).length,
+      marcos_valor: round(itens.filter(i => i.tipo === 'marco').reduce((s, i) => s + (i.valor || 0), 0)),
+      reports_pendentes: reportsPendentes.length, projetos_sem_report: reportsPendentes } };
+}
+async function compromissoSalvar({ id, titulo, data, hora, projeto, notas, concluido } = {}) {
+  if (!titulo || !data) throw new Error('título e data obrigatórios');
+  const sql = await getSql();
+  const cid = id || 'cp_' + Date.now().toString(36);
+  await sql`INSERT INTO pmo_compromissos (id, titulo, data, hora, projeto, notas, concluido)
+    VALUES (${cid}, ${titulo}, ${data}, ${hora || null}, ${projeto || null}, ${notas || null}, ${!!concluido})
+    ON CONFLICT (id) DO UPDATE SET titulo=EXCLUDED.titulo, data=EXCLUDED.data, hora=EXCLUDED.hora,
+      projeto=EXCLUDED.projeto, notas=EXCLUDED.notas, concluido=EXCLUDED.concluido`;
+  return { id: cid };
+}
+
 // ═══ v1.98: CONEXÃO DIRETA COM O BANCO DO MÓDULO DE CRONOGRAMA ═══
 // Ler o banco direto é melhor que consumir API: não depende de o outro projeto expor
 // endpoints, e dá acesso a qualquer tabela. Basta a connection string em CRONOGRAMA_DATABASE_URL.
@@ -1204,6 +1284,8 @@ export default async function handler(req, res) {
     alertas_projetos:  () => alertasProjetos(),
     painel_mestre:     () => painelMestre(payload),
     raio_x_projeto:    () => raioXProjeto(payload),
+    agenda_gp:         () => agendaGP(payload),
+    compromisso_salvar:() => compromissoSalvar(payload),
     crono_config:      () => cronogramaConfig(payload),
     crono_schema:      () => cronoSchema(payload),
     crono_consultar:   () => cronoConsultar(payload),
