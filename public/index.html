@@ -3765,6 +3765,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <button class="btn btn-gn" style="font-size:10px;" onclick="concNotasMes()">&#129534; Notas x extrato (mes)</button>
     <button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red);" onclick="concFaturasVencidas()">&#9888; Faturas vencidas +30d</button>
     <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="concDespesasDup()">&#128179; Despesas duplicadas (mes anterior)</button>
+    <button class="btn" style="font-size:10px;color:var(--purple,#9c6dff);border-color:var(--purple,#9c6dff);" onclick="concDespesasNovas()">&#128269; Despesas nao cadastradas</button>
     <label class="btn" style="font-size:10px;cursor:pointer;">&#128196; Importar OFX do banco<input type="file" accept=".ofx,.OFX,.txt" style="display:none;" onchange="concImportarOfx(this)"/></label>
     <select class="fsel" id="conc_mesNotas" style="font-size:10px;width:auto;">${''}</select>
   </div>
@@ -14201,6 +14202,20 @@ async function carregarDespesas() {
   }
 }
 
+// v2.29: ajusta valor/dia de uma despesa e replica nas ocorrências futuras (cria até 12 meses)
+async function ajustarDespesaReplicar(id, descricao, valorAtual, diaAtual) {
+  const r = prompt(`Ajustar "${descricao}" e replicar nos próximos 12 meses.\n\nSepare por | : novo valor | novo dia de vencimento | a partir de (AAAA-MM-DD, vazio = hoje) | atualizar Bills já lançadas no QuickBooks? (sim/não) | lançar as novas no QuickBooks? (sim/não)`,
+    `${(valorAtual||0).toFixed(2)} | ${diaAtual||1} |  | não | não`);
+  if (!r) return;
+  const [valor, dia, desde, atQb, lancQb] = r.split('|').map(x => x.trim());
+  try {
+    toast('Ajustando e replicando...', 'success');
+    const d = await finApi('desp_ajustar_replicar', { despesa_id: id, valor: parseFloat(valor), dia_vencimento: parseInt(dia),
+      a_partir_de: desde || null, meses: 12, atualizar_qb: /^s/i.test(atQb||''), lancar_qb: /^s/i.test(lancQb||'') });
+    alert(`✅ "${descricao}" ajustada para ${fmtBRLcompleto(d.valor)} no dia ${d.dia_vencimento}.\n\n${d.ocorrencias_ajustadas} ocorrência(s) futura(s) ajustada(s)\n${d.ocorrencias_criadas} nova(s) criada(s) até completar 12 meses${d.bills_atualizadas_qb ? '\n' + d.bills_atualizadas_qb + ' Bill(s) atualizada(s) no QuickBooks' : ''}${(d.erros_qb||[]).length ? '\n\nFalhas no QB:\n' + d.erros_qb.join('\n') : ''}`);
+    if (typeof carregarAgendaDespesas === 'function') carregarAgendaDespesas();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); alert(e.message); }
+}
 function renderDespesasLista() {
   const el = document.getElementById('f_despLista');
   if (!el) return;
@@ -14233,6 +14248,7 @@ function renderDespesasLista() {
               </span>
             </td>
             <td style="text-align:center;">
+              <button onclick="ajustarDespesaReplicar('${d.id}','${String(d.descricao||'').replace(/'/g,'')}',${parseFloat(d.valor)||0},${parseInt(d.dia_vencimento)||1})" title="Ajustar valor/dia e replicar nos próximos 12 meses" style="background:transparent;border:none;color:var(--gold);cursor:pointer;font-size:12px;margin-right:4px;">✎↻</button>
               <button onclick="excluirDespesa('${d.id}')" style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:14px;">×</button>
             </td>
           </tr>
@@ -19891,6 +19907,41 @@ async function concExcluirBill(id, doc, forn, valor) {
   try { const r = await finApi('conc_excluir_bill', { bill_id: id, confirmar: 'EXCLUIR', motivo: 'duplicada com o extrato' }); toast(`Conta ${r.doc||''} de ${r.fornecedor||''} excluída`, 'success'); addLog('warn', `[Conciliação] bill ${r.doc} (${r.fornecedor}) excluída`); concDespesasDup(); }
   catch (e) { toast('Erro: ' + e.message, 'error'); alert(e.message); }
 }
+// 5. Despesas do extrato que não estão programadas — criar e replicar 12 meses
+async function concDespesasNovas() {
+  _concBox('<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ Procurando saídas recorrentes sem cadastro...</div></div>');
+  try {
+    const d = await finApi('desp_nao_cadastradas', { meses: 3 });
+    window._concCand = d.candidatas || [];
+    _concBox(`<div class="panel"><div class="ph"><div class="pt">🔍 Saídas do extrato sem despesa programada</div>
+        <span style="font-size:10px;color:var(--t2);">${d.total} · ${d.recorrentes_provaveis} recorrente(s) · ${fmtBRLcompleto(d.valor_mensal_nao_cadastrado||0)}/mês fora do fluxo futuro</span></div>
+      <div class="pb"><div style="font-size:10.5px;color:var(--t2);margin-bottom:8px;line-height:1.6;">${d.aviso}</div>
+        ${(d.candidatas||[]).length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="border-bottom:1px solid var(--bd);">${['DESCRIÇÃO','VALOR MÉDIO','VEZES','DIA','SUGESTÃO',''].map(h=>`<th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;">${h}</th>`).join('')}</tr></thead>
+        <tbody>${d.candidatas.map((c, i) => `<tr style="border-bottom:1px solid var(--bd);${c.ocorrencias>=2?'background:rgba(156,109,255,.06);':''}">
+          <td style="padding:5px;">${(c.descricao||'').substring(0,44)}<div style="font-size:9px;color:var(--t3);">${c.datas.map(_dt).join(' · ')}</div></td>
+          <td style="padding:5px;font-family:var(--M);">${fmtBRLcompleto(c.valor)}</td>
+          <td style="padding:5px;">${c.ocorrencias}× <span style="color:${c.confianca==='alta'?'var(--green,#22d3a3)':c.confianca==='media'?'var(--gold)':'var(--t3)'};font-size:9px;">${c.confianca}</span></td>
+          <td style="padding:5px;">${c.dia_vencimento_sugerido}</td><td style="padding:5px;">${c.recorrencia_sugerida}</td>
+          <td style="padding:5px;white-space:nowrap;"><button class="btn btn-p" style="font-size:9px;" onclick="concCriarDespesa(${i})">＋ cadastrar 12 meses</button></td></tr>`).join('')}</tbody></table>`
+        : '<div style="text-align:center;color:var(--green,#22d3a3);padding:16px;">Todas as saídas recorrentes dos últimos 3 meses já estão programadas.</div>'}</div></div>`);
+  } catch (e) { _concErro(e); }
+}
+async function concCriarDespesa(i) {
+  const c = (window._concCand||[])[i]; if (!c) return;
+  const r = prompt(`Cadastrar como despesa programada e replicar 12 meses.\n\nSepare por | : descrição | fornecedor | valor | dia do vencimento | recorrência (mensal/trimestral/anual/unica) | lançar no QuickBooks? (sim/não)`,
+    `${(c.descricao||'').substring(0,40)} | ${c.chave} | ${c.valor.toFixed(2)} | ${c.dia_vencimento_sugerido} | ${c.recorrencia_sugerida} | não`);
+  if (!r) return;
+  const [descricao, fornecedor, valor, dia, rec, qb] = r.split('|').map(x => x.trim());
+  const lancarQb = /^s/i.test(qb || '');
+  if (lancarQb && !confirm(`Vai criar até 12 contas a pagar no QuickBooks para "${descricao}". O fornecedor precisa existir lá. Continuar?`)) return;
+  try {
+    toast('Criando despesa e ocorrências...', 'success');
+    const d = await finApi('desp_criar_replicar', { descricao, fornecedor, valor: parseFloat(valor), dia_vencimento: parseInt(dia), recorrencia: rec || 'mensal', meses: 12, lancar_qb: lancarQb });
+    alert(`✅ Despesa criada.\n\n${d.ocorrencias} ocorrência(s) de ${_dt(d.primeira)} a ${_dt(d.ultima)}.${lancarQb ? `\n${d.lancadas_no_qb} lançada(s) no QuickBooks.` : ''}${(d.erros_qb||[]).length ? '\n\nFalhas no QB:\n' + d.erros_qb.join('\n') : ''}`);
+    concDespesasNovas();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); alert(e.message); }
+}
+
 // 4. OFX do banco × QuickBooks
 async function concImportarOfx(input) {
   const file = input.files?.[0]; if (!file) return;
@@ -23121,7 +23172,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.28] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.29] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23137,7 +23188,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.28';
+window.__ATX_BUILD_ID__ = 'ATX-v2.29';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
