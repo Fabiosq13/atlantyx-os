@@ -197,6 +197,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sbi s1" onclick="nav('s1acoes',this)">&#9776; Plano Acao 90d</div>
       <div class="sbi s1" onclick="nav('s1cenarios',this)">&#9671; Cenarios de Futuro</div>
       <div class="sbi s1" onclick="nav('s1okr',this)">&#9711; OKRs + Metas</div>
+      <div class="sbi s1" onclick="nav('s1comercial',this)">&#128188; Politica Comercial <span class="nbx gn">novo</span></div>
       <div class="sbi s1" onclick="nav('s1dados',this)">&#128200; Dados Reais <span class="nbx gn">QB</span></div>
     </div>
     <div class="sg-hd sg-fundador" onclick="toggleGrupo('gIdeias')" data-g="gIdeias">
@@ -1140,22 +1141,58 @@ tr:hover td{background:rgba(79,124,255,.03);}
     </div>
   </div>
 
-  <div class="page" id="page-s7kpi">
+  <!-- v2.27: POLÍTICA E ESTRUTURA COMERCIAL (S1) -->
+<div class="page" id="page-s1comercial">
+  <div style="background:linear-gradient(135deg,rgba(0,207,200,.12),rgba(0,207,200,.03));border:1px solid rgba(0,207,200,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#128188; Politica e Estrutura Comercial</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Fonte de verdade das premissas &mdash; o S7 le daqui para calibrar metas e calcular o CAC</div></div>
+    <button class="btn btn-gn" onclick="comSalvar()">&#128190; Salvar</button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:12px;align-items:start;">
+    <div class="panel" style="margin:0;"><div class="ph"><div class="pt">1 &middot; Politica comercial</div><span id="com_fatQb" style="font-size:9.5px;color:var(--t2);"></span></div>
+      <div class="pb">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div class="fg" style="margin:0;"><label class="fl">Faturamento mensal de referencia (R$)</label><input class="fi" id="com_fat" type="number" step="0.01"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Origem</label><select class="fsel" id="com_fatOrigem" style="width:100%;"><option value="manual">Manual</option><option value="quickbooks">QuickBooks (real)</option></select></div>
+          <div class="fg" style="margin:0;"><label class="fl">% investimento comercial+mkt</label><input class="fi" id="com_pctInv" type="number" step="0.5" placeholder="10"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">LTV medio por cliente (R$)</label><input class="fi" id="com_ltv" type="number" step="0.01" placeholder="pre-requisito do alerta de CAC"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Split comercial (%)</label><input class="fi" id="com_splitCom" type="number" step="0.5" placeholder="62.5"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Split marketing (%)</label><input class="fi" id="com_splitMkt" type="number" step="0.5" placeholder="37.5"/></div>
+        </div>
+        <div style="font-size:10.5px;font-weight:600;margin:12px 0 6px;">Quebra do marketing (%)</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
+          <div class="fg" style="margin:0;"><label class="fl">Conteudo LinkedIn</label><input class="fi" id="com_mk1" type="number"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Trafego pago</label><input class="fi" id="com_mk2" type="number"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Materiais</label><input class="fi" id="com_mk3" type="number"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">SEO/automacao</label><input class="fi" id="com_mk4" type="number"/></div>
+        </div>
+        <div style="font-size:10.5px;font-weight:600;margin:12px 0 6px;">Metas de atividade para FULL-TIME (40h) &mdash; base da calibracao</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
+          <div class="fg" style="margin:0;"><label class="fl">Contatos/semana</label><input class="fi" id="com_tC" type="number"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Reunioes/semana</label><input class="fi" id="com_tR" type="number"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Fechamento a cada N dias</label><input class="fi" id="com_tF" type="number"/></div>
+        </div>
+        <div id="com_orcamento" style="margin-top:12px;font-size:11px;background:var(--bg4);border-radius:7px;padding:9px 11px;line-height:1.7;"></div>
+      </div></div>
+    <div class="panel" style="margin:0;"><div class="ph"><div class="pt">2 &middot; Papeis</div><span style="font-size:9.5px;color:var(--t2);">horas/semana e o multiplicador das metas</span></div>
+      <div class="pb"><div id="com_papeis"></div>
+        <div id="com_calib" style="margin-top:8px;font-size:10.5px;"></div></div></div>
+    <div class="panel" style="margin:0;"><div class="ph"><div class="pt">5 &middot; Cadencia (rituais)</div></div>
+      <div class="pb"><div id="com_rituais"></div>
+        <button class="btn" style="font-size:9.5px;margin-top:6px;" onclick="comAddRitual()">+ ritual</button></div></div>
+  </div>
+</div>
 
-    <!-- META REAL ATLANTYX -->
-    <div style="background:linear-gradient(135deg,rgba(240,112,48,.12),rgba(240,112,48,.04));border:1px solid rgba(240,112,48,.25);border-radius:10px;padding:14px 18px;margin-bottom:14px;">
-      <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--or);letter-spacing:1px;margin-bottom:10px;">META REAL ATLANTYX</div>
-      <div class="kg k2">
-        <div>
-          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:6px;">SDR</div>
-          <div style="font-size:12px;line-height:2;"><span style="color:var(--or);font-weight:600;">50–100</span> contatos/dia &nbsp;·&nbsp; <span style="color:var(--or);font-weight:600;">3–5</span> reuniões/dia</div>
-        </div>
-        <div>
-          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:6px;">Closer (Você)</div>
-          <div style="font-size:12px;line-height:2;"><span style="color:var(--green);font-weight:600;">3–5</span> reuniões/dia &nbsp;·&nbsp; <span style="color:var(--green);font-weight:600;">1</span> fechamento a cada 3–5 dias</div>
-        </div>
-      </div>
+<div class="page" id="page-s7kpi">
+
+    <!-- v2.27: SEMÁFORO POR PAPEL (calibrado por horas) + CAC -->
+    <div id="s7SemaforoBox"><div style="text-align:center;color:var(--t3);padding:14px;font-size:11px;">Carregando semaforo...</div></div>
+    <div class="kg k4" style="margin-bottom:12px;">
+      <div class="kpi bl"><div class="kl">Investimento no trimestre</div><div class="kv" id="cac_inv" style="font-size:15px;">&mdash;</div><div class="ks">faturamento x % x 3</div></div>
+      <div class="kpi gn"><div class="kl">Clientes fechados (90d)</div><div class="kv" id="cac_n">&mdash;</div><div class="ks" id="cac_fonte">HubSpot</div></div>
+      <div class="kpi gd"><div class="kl">CAC trimestral</div><div class="kv" id="cac_v" style="font-size:15px;">&mdash;</div><div class="ks" id="cac_alerta">investimento / novos clientes</div></div>
+      <div class="kpi"><div class="kl">LTV medio</div><div class="kv" id="cac_ltv" style="font-size:15px;">&mdash;</div><div class="ks">alerta se CAC &gt; LTV/3</div></div>
     </div>
+    <div id="cac_expl" style="font-size:10px;color:var(--t3);margin:-6px 0 12px;font-family:var(--M);"></div>
 
     <!-- REGISTRO DIÁRIO -->
     <div class="panel" style="margin-bottom:13px;">
@@ -4128,7 +4165,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <div class="toast" id="toastEl"></div>
 <script>
 const LOGS=[];let logCount=0;
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9agenda:'/ S9 · Agenda do GP',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7clientes:'/ S7 · Clientes do CRM',s7mapa:'/ S7 · Mapa de Atuacao Comercial',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7clientes')setTimeout(carregarClientes,150);if(p==='s7meet')setTimeout(carregarBriefings,150);if(p==='s7mapa')setTimeout(_mpPopularClientes,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9agenda')setTimeout(carregarAgendaGP,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9agenda:'/ S9 · Agenda do GP',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1fundador:'/ S1 · Inbox do Fundador',s1comercial:'/ S1 · Politica Comercial',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7clientes:'/ S7 · Clientes do CRM',s7mapa:'/ S7 · Mapa de Atuacao Comercial',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7kpi:'/ S7 Metas'};document.getElementById('tbc').textContent=lb[p]||'';if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7clientes')setTimeout(carregarClientes,150);if(p==='s1comercial')setTimeout(comCarregar,150);if(p==='s7kpi')setTimeout(carregarSemaforoComercial,150);if(p==='s7meet')setTimeout(carregarBriefings,150);if(p==='s7mapa')setTimeout(_mpPopularClientes,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9agenda')setTimeout(carregarAgendaGP,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -19267,6 +19304,116 @@ function mapaExportar() {
   setTimeout(() => { w.focus(); w.print(); }, 500);
 }
 
+// ═══ v2.27: POLÍTICA COMERCIAL (S1) E SEMÁFORO POR PAPEL + CAC (S7) ═══
+let _comCfg = null;
+async function comCarregar() {
+  try {
+    const d = await crmApi('comercial_config');
+    _comCfg = d;
+    const p = d.politica, g = (id, v) => { const e = document.getElementById(id); if (e && v != null) e.value = v; };
+    g('com_fat', p.faturamento_mensal_referencia); g('com_fatOrigem', p.faturamento_origem || 'manual');
+    g('com_pctInv', Math.round(p.pct_investimento_comercial_marketing * 1000) / 10); g('com_ltv', p.ltv_medio || '');
+    g('com_splitCom', Math.round(p.pct_split_comercial * 1000) / 10); g('com_splitMkt', Math.round(p.pct_split_marketing * 1000) / 10);
+    const mb = p.marketing_breakdown || {};
+    g('com_mk1', Math.round((mb.conteudo_linkedin||0)*100)); g('com_mk2', Math.round((mb.trafego_pago||0)*100)); g('com_mk3', Math.round((mb.materiais_venda||0)*100)); g('com_mk4', Math.round((mb.seo_automacao||0)*100));
+    const t = p.activity_targets_fulltime || {};
+    g('com_tC', t.contatos_semana_fulltime); g('com_tR', t.reunioes_semana_fulltime); g('com_tF', t.fechamento_a_cada_dias_fulltime);
+    const fq = document.getElementById('com_fatQb'); if (fq) fq.textContent = d.faturamento_real_qb ? 'QuickBooks: ' + fmtBRLcompleto(d.faturamento_real_qb) + '/mês' : 'QuickBooks sem receita do mês';
+    _comRenderPapeis(d.papeis); _comRenderRituais(d.rituais); _comOrcamento();
+    ['com_fat','com_pctInv','com_splitCom','com_splitMkt'].forEach(id => document.getElementById(id)?.addEventListener('input', _comOrcamento));
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+function _comOrcamento() {
+  const v = id => parseFloat(document.getElementById(id)?.value) || 0;
+  const inv = v('com_fat') * v('com_pctInv') / 100;
+  const el = document.getElementById('com_orcamento'); if (!el) return;
+  el.innerHTML = `Orçamento mensal comercial+marketing: <b>${fmtBRLcompleto(inv)}</b> → comercial <b>${fmtBRLcompleto(inv * v('com_splitCom') / 100)}</b> · marketing <b>${fmtBRLcompleto(inv * v('com_splitMkt') / 100)}</b>`;
+}
+function _comRenderPapeis(papeis) {
+  const box = document.getElementById('com_papeis'); if (!box) return;
+  box.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="border-bottom:1px solid var(--bd);">
+    ${['PAPEL','TIPO','H/SEM','CUSTO/MÊS','FOCO'].map(h=>`<th style="text-align:left;padding:4px;color:var(--t2);font-size:9px;">${h}</th>`).join('')}</tr></thead>
+    <tbody>${papeis.map((p,i) => `<tr style="border-bottom:1px solid var(--bd);" data-i="${i}">
+      <td style="padding:3px;"><input class="fi" style="padding:3px 6px;font-size:10.5px;" value="${(p.nome||'').replace(/"/g,'&quot;')}" data-c="nome"/></td>
+      <td style="padding:3px;"><select class="fsel" style="font-size:10px;width:100%;" data-c="tipo">${['interno','part_time','part_time_freelance','full_time'].map(t=>`<option ${p.tipo===t?'selected':''}>${t}</option>`).join('')}</select></td>
+      <td style="padding:3px;"><input class="fi" style="padding:3px 6px;font-size:10.5px;width:64px;${!(p.horas_semana>0)?'border-color:var(--gold);':''}" type="number" value="${p.horas_semana ?? ''}" data-c="horas_semana" placeholder="?"/></td>
+      <td style="padding:3px;"><input class="fi" style="padding:3px 6px;font-size:10.5px;width:92px;" type="number" value="${p.custo_mensal ?? 0}" data-c="custo_mensal"/></td>
+      <td style="padding:3px;"><input class="fi" style="padding:3px 6px;font-size:10.5px;" value="${(p.foco||'').replace(/"/g,'&quot;')}" data-c="foco"/></td>
+    </tr>`).join('')}</tbody></table>`;
+  const c = document.getElementById('com_calib');
+  const semH = papeis.filter(p => !(p.horas_semana > 0));
+  if (c) c.innerHTML = semH.length ? `<span style="color:var(--gold);">⚠ ${semH.length} papel(is) sem horas/semana — o S7 não gera meta para eles até calibrar.</span>` : '<span style="color:var(--green,#22d3a3);">✓ Todos calibrados — metas geradas no S7.</span>';
+}
+function _comRenderRituais(rituais) {
+  const box = document.getElementById('com_rituais'); if (!box) return;
+  const ordem = { diario: 0, semanal: 1, quinzenal: 2, mensal: 3, trimestral: 4 };
+  box.innerHTML = (rituais || []).sort((a,b) => (ordem[a.frequencia]??9)-(ordem[b.frequencia]??9)).map((r,i) => `<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px;" data-ri="${i}">
+    <select class="fsel" style="font-size:10px;width:96px;" data-c="frequencia">${Object.keys(ordem).map(f=>`<option ${r.frequencia===f?'selected':''}>${f}</option>`).join('')}</select>
+    <input class="fi" style="padding:3px 6px;font-size:10.5px;flex:1;" value="${(r.nome||'').replace(/"/g,'&quot;')}" data-c="nome"/>
+    <input class="fi" style="padding:3px 6px;font-size:10.5px;width:130px;" value="${(r.responsavel||'').replace(/"/g,'&quot;')}" data-c="responsavel" placeholder="responsável"/>
+    <span onclick="this.parentElement.remove()" style="cursor:pointer;color:var(--red);font-size:11px;">✕</span></div>`).join('');
+}
+function comAddRitual() { const box = document.getElementById('com_rituais'); const d = document.createElement('div'); d.setAttribute('data-ri','x');
+  d.style.cssText='display:flex;gap:6px;align-items:center;margin-bottom:5px;';
+  d.innerHTML = `<select class="fsel" style="font-size:10px;width:96px;" data-c="frequencia">${['diario','semanal','quinzenal','mensal','trimestral'].map(f=>`<option>${f}</option>`).join('')}</select>
+    <input class="fi" style="padding:3px 6px;font-size:10.5px;flex:1;" data-c="nome" placeholder="nome do ritual"/>
+    <input class="fi" style="padding:3px 6px;font-size:10.5px;width:130px;" data-c="responsavel" placeholder="responsável"/>
+    <span onclick="this.parentElement.remove()" style="cursor:pointer;color:var(--red);font-size:11px;">✕</span>`; box.appendChild(d); }
+async function comSalvar() {
+  const v = id => parseFloat(document.getElementById(id)?.value);
+  const politica = { faturamento_mensal_referencia: v('com_fat') || 0, faturamento_origem: document.getElementById('com_fatOrigem')?.value || 'manual',
+    pct_investimento_comercial_marketing: (v('com_pctInv') || 0) / 100, ltv_medio: v('com_ltv') || null,
+    pct_split_comercial: (v('com_splitCom') || 0) / 100, pct_split_marketing: (v('com_splitMkt') || 0) / 100,
+    marketing_breakdown: { conteudo_linkedin: (v('com_mk1')||0)/100, trafego_pago: (v('com_mk2')||0)/100, materiais_venda: (v('com_mk3')||0)/100, seo_automacao: (v('com_mk4')||0)/100 },
+    activity_targets_fulltime: { contatos_semana_fulltime: v('com_tC') || 250, reunioes_semana_fulltime: v('com_tR') || 15, fechamento_a_cada_dias_fulltime: v('com_tF') || 4 } };
+  const papeis = [...document.querySelectorAll('#com_papeis tr[data-i]')].map((tr, i) => {
+    const g = c => tr.querySelector(`[data-c="${c}"]`)?.value;
+    const orig = (_comCfg?.papeis || [])[parseInt(tr.dataset.i)] || {};
+    return { id: orig.id || ('papel_' + i), nome: g('nome'), tipo: g('tipo'), horas_semana: parseFloat(g('horas_semana')) || null, custo_mensal: parseFloat(g('custo_mensal')) || 0, foco: g('foco') }; });
+  const rituais = [...document.querySelectorAll('#com_rituais [data-ri]')].map(d => { const g = c => d.querySelector(`[data-c="${c}"]`)?.value?.trim(); return { frequencia: g('frequencia'), nome: g('nome'), responsavel: g('responsavel') }; }).filter(r => r.nome);
+  const somaMk = Object.values(politica.marketing_breakdown).reduce((a,b)=>a+b,0);
+  if (Math.abs(somaMk - 1) > 0.01 && somaMk > 0 && !confirm(`A quebra do marketing soma ${Math.round(somaMk*100)}%, não 100%. Salvar assim mesmo?`)) return;
+  try { const d = await crmApi('comercial_salvar', { politica, papeis, rituais }); _comCfg = d; toast('Política comercial salva', 'success'); _comRenderPapeis(d.papeis); }
+  catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+async function carregarSemaforoComercial() {
+  const box = document.getElementById('s7SemaforoBox'); if (!box) return;
+  try {
+    const [s, c] = await Promise.all([crmApi('comercial_semaforo'), crmApi('comercial_cac')]);
+    const cor = f => ({ verde:'var(--green,#22d3a3)', amarelo:'var(--gold)', vermelho:'var(--red)', cinza:'var(--t3)' }[f] || 'var(--t3)');
+    box.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:12px;">
+      ${(s.cards||[]).map(k => `<div style="background:var(--bg4);border-left:4px solid ${cor(k.farol)};border-radius:9px;padding:10px 12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:11.5px;font-weight:700;">${k.nome}</span>
+          <span style="width:11px;height:11px;border-radius:50%;background:${cor(k.farol)};"></span></div>
+        <div style="font-size:9.5px;color:var(--t3);margin-top:2px;">${k.horas_semana ? k.horas_semana + 'h/sem · ×' + k.fator : 'sem horas'} · ${k.motivo}</div>
+        ${k.calibrado ? `<div style="font-size:10.5px;margin-top:6px;line-height:1.7;">
+          ${k.meta_contatos_semana ? `contatos: <b>${k.atividade.contatos}</b>/${k.meta_contatos_semana} <span style="color:var(--t3);">(${k.pct_contatos}%)</span><br>` : ''}
+          ${k.meta_reunioes_semana ? `reuniões: <b>${k.atividade.reunioes}</b>/${k.meta_reunioes_semana} <span style="color:var(--t3);">(${k.pct_reunioes}%)</span><br>` : ''}
+          ${k.meta_fechamento_a_cada_dias ? `fechamento: 1 a cada ${k.meta_fechamento_a_cada_dias} dias · <b>${k.atividade.fechamentos}</b> na semana` : ''}</div>
+          <button class="btn" style="font-size:9px;margin-top:6px;" onclick="registrarAtividadeComercial('${k.id}','${k.nome.replace(/'/g,'')}')">+ registrar atividade</button>`
+        : `<div style="font-size:10px;color:var(--gold);margin-top:6px;">⚪ ${k.aviso}</div><button class="btn" style="font-size:9px;margin-top:6px;" onclick="nav('s1comercial')">calibrar no S1 →</button>`}
+      </div>`).join('')}</div>
+      ${!s.calibrado ? `<div style="font-size:10px;color:var(--gold);margin-bottom:10px;">⚠ Sem horas/semana em: ${(s.papeis_sem_horas||[]).join(', ')}. As metas são função das horas — sem elas o sistema não gera meta, só sinaliza.</div>` : ''}`;
+    const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    u('cac_inv', fmtBRLcompleto(c.investimento_trimestre || 0));
+    u('cac_n', c.novos_clientes_trimestre ?? '—'); u('cac_fonte', c.fonte === 'hubspot' ? 'HubSpot · fechados em 90d' : (c.erro || 'indisponível'));
+    u('cac_v', c.cac != null ? fmtBRLcompleto(c.cac) : '—');
+    u('cac_ltv', c.ltv_medio ? fmtBRLcompleto(c.ltv_medio) : 'não informado');
+    const al = document.getElementById('cac_alerta');
+    if (al) { if (c.ltv_pendente) { al.textContent = 'informe o LTV no S1 para o alerta'; al.style.color = 'var(--gold)'; }
+      else if (c.alerta_cac) { al.textContent = '⚠ CAC acima de LTV/3'; al.style.color = 'var(--red)'; }
+      else if (c.cac != null) { al.textContent = '✓ dentro de LTV/3'; al.style.color = 'var(--green,#22d3a3)'; } }
+    u('cac_expl', c.explicacao || '');
+  } catch (e) { box.innerHTML = `<div style="color:var(--red);font-size:11px;padding:10px;">Erro: ${e.message}</div>`; }
+}
+async function registrarAtividadeComercial(papelId, nome) {
+  const r = prompt(`Atividade de ${nome} — separe por | :\ncontatos | reuniões | fechamentos | data (AAAA-MM-DD, vazio = hoje)`, '0 | 0 | 0 | ');
+  if (!r) return;
+  const [c, re, f, d] = r.split('|').map(x => x.trim());
+  try { await crmApi('comercial_atividade', { papel_id: papelId, contatos: c, reunioes: re, fechamentos: f, data: d || null }); toast('Atividade registrada', 'success'); carregarSemaforoComercial(); }
+  catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+
 // ═══ v1.96: CLIENTES DO CRM ═══
 async function crmApi(action, params = {}) {
   const r = await fetch('/api/crm', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action, payload: params }) });
@@ -22833,7 +22980,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.24] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.27] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22849,7 +22996,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.24';
+window.__ATX_BUILD_ID__ = 'ATX-v2.27';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
