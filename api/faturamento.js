@@ -957,8 +957,10 @@ async function qbCriarInvoice({ customerId, itemId, valor, descricao, docNumber 
   const d = await r.json().catch(() => ({}));
   if (!r.ok) {
     const msg = d.Fault?.Error?.[0]?.Message || JSON.stringify(d).substring(0, 200);
-    // DocNumber duplicado é o erro mais comum — tenta de novo sem ele
-    if (docNumber && /duplicate|already exists|DocNumber/i.test(msg)) {
+    // DocNumber duplicado é o erro mais comum — tenta de novo sem ele.
+    // v2.22: o QuickBooks devolve a mensagem no IDIOMA da conta ("número do documento duplicado")
+    // e a regex só cobria inglês — por isso o erro chegava até a tela.
+    if (docNumber && /duplicate|already exists|DocNumber|duplicad|n[úu]mero do documento/i.test(msg)) {
       delete body.DocNumber;
       const r2 = await fetch(`${base}/v3/company/${realm}/invoice?minorversion=65`, { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) });
       const d2 = await r2.json().catch(() => ({}));
@@ -998,6 +1000,23 @@ async function termoEmpresaLancarQb({ empresa_id } = {}) {
   const valor = e.nf_valor != null ? num(e.nf_valor) : num(e.valor_parcela);
   const descricao = `${e.projeto || ''} — ${e.periodo_medicao || ''} — Termo ${e.numero_termo || ''}/${e.parcela || ''} — ${e.empresa}`;
   let invoice;
+  // v2.22: antes de criar, verifica se já existe fatura com esse número. Se for do mesmo cliente
+  // e mesmo valor, é a MESMA fatura (lançada antes por outro caminho) — vincula em vez de duplicar.
+  if (e.nf_numero) {
+    try {
+      const docN = String(e.nf_numero).substring(0, 21).replace(/'/g, "''");
+      const ex = await qbQueryFat(`select * from Invoice where DocNumber = '${docN}' maxresults 5`, token, realm, sandbox);
+      const lista = ex?.QueryResponse?.Invoice || [];
+      const mesma = lista.find(i => String(i.CustomerRef?.value) === String(cliente.id) && Math.abs(num(i.TotalAmt) - valor) < 1);
+      if (mesma) {
+        await sql`UPDATE termos_empresas SET qb_invoice_id = ${mesma.Id}, qb_invoice_doc = ${mesma.DocNumber || null}, qb_erro = NULL, qb_lancado_em = NOW() WHERE id = ${empresa_id}`;
+        console.log(`[FAT] Fatura ${mesma.DocNumber} já existia no QuickBooks para ${e.empresa} — vinculada sem duplicar`);
+        return { lancado: true, ja_existia: true, qb_invoice_id: mesma.Id, qb_invoice_doc: mesma.DocNumber,
+          aviso: `A fatura ${mesma.DocNumber} já existia no QuickBooks para este cliente e valor — vinculei em vez de criar outra.` };
+      }
+      if (lista.length) console.log(`[FAT] DocNumber ${docN} já usado por outro cliente/valor — vou lançar sem número fixo`);
+    } catch (err) { console.warn('[FAT] verificação de fatura existente:', err.message); }
+  }
   try { invoice = await qbCriarInvoice({ customerId: cliente.id, itemId: item.id, valor, descricao, docNumber: e.nf_numero }, token, realm, sandbox); }
   catch (err) { await sql`UPDATE termos_empresas SET qb_erro = ${err.message} WHERE id = ${empresa_id}`; throw err; }
   await sql`UPDATE termos_empresas SET qb_invoice_id = ${invoice.Id}, qb_invoice_doc = ${invoice.DocNumber || invoice.Id}, qb_lancado_em = NOW(), qb_erro = NULL WHERE id = ${empresa_id}`;
