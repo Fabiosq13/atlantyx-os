@@ -16152,11 +16152,15 @@ function _fdLinha(l, corSaldo) {
   const venc = l.vencida ? ' <span style="color:var(--red);font-size:9px;">⚠ vencida</span>' : '';
   const refTag = ehRef ? ' <span style="color:var(--t3);font-size:9px;" title="Nota fiscal emitida — o caixa só muda quando o pagamento entra">📄 emissão (não move o caixa)</span>' : '';
   const repTag = l._repetido ? ` <span style="color:var(--red);font-size:9px;font-weight:600;" title="Aparece ${l._repetido}x com a mesma data, descrição e valor — pode ser duplicidade na contabilidade. Use o 🔎 para rastrear.">⚠ ${l._repetido}x repetido</span>` : '';
+  // v2.19: receita casada com termo de faturamento → link direto para o termo
+  const termoTag = l.termo_id ? ` <span onclick="event.stopPropagation();abrirDetalheTermo('${l.termo_id}')"
+      title="Termo ${l.termo_numero || ''} · ${(l.termo_projeto||'').replace(/"/g,'')}${l.termo_empresa ? ' · ' + l.termo_empresa.replace(/"/g,'') : ''}${l.termo_periodo ? ' · ' + l.termo_periodo : ''} · clique para abrir"
+      style="cursor:pointer;font-size:9px;padding:1px 6px;border-radius:4px;background:rgba(245,185,75,.15);color:var(--gold);border:1px solid rgba(245,185,75,.4);white-space:nowrap;">📋 Termo ${l.termo_numero || ''}${l.termo_confianca === 'media' ? ' ?' : ''}</span>` : '';
   // v1.38: botão para abrir o detalhe completo do lançamento
   const acao = '<button class="btn" style="font-size:8px;padding:1px 6px;" onclick=\'_fdDetalhe(' + JSON.stringify(JSON.stringify(l)) + ')\' title="Ver detalhes deste lançamento">🔎</button>';
   return '<tr style="border-bottom:1px solid var(--bd);' + (ehRef ? 'opacity:.6;' : '') + '">'
     + '<td style="padding:6px;font-family:var(--M);color:var(--t2);white-space:nowrap;">' + (l.data || '') + '</td>'
-    + '<td style="padding:6px;">' + (l.descricao || '') + venc + refTag + repTag + '</td>'
+    + '<td style="padding:6px;">' + (l.descricao || '') + venc + refTag + repTag + termoTag + '</td>'
     + '<td style="padding:6px;color:var(--t2);font-size:10px;">' + (l.categoria || '') + ' · ' + fonte + '</td>'
     + '<td style="padding:6px;text-align:right;color:' + cor + ';font-family:var(--M);">' + (ehRef ? '' : (l.tipo === 'saida' ? '-' : '+')) + fmtBRLcompleto(l.valor) + '</td>'
     + '<td style="padding:6px;text-align:right;font-family:var(--M);font-weight:600;color:' + (l.saldo_acumulado < 0 ? 'var(--red)' : (corSaldo || 'var(--t1)')) + ';">' + fmtBRLcompleto(l.saldo_acumulado) + '</td>'
@@ -22797,7 +22801,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.18] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.19] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22813,7 +22817,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.18';
+window.__ATX_BUILD_ID__ = 'ATX-v2.19';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
