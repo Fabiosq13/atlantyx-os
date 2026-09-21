@@ -165,6 +165,7 @@ export default async function handler(req, res) {
       conc_notas_extrato:    () => conciliacaoNotasExtrato(params),
       conc_termo:            () => conciliarTermo(params),
       conc_faturas_vencidas: () => faturasVencidasSemConciliar(params),
+      conc_ofx:              () => conciliarOfx(params),
       conc_excluir_invoice:  () => qbExcluirInvoice(params),
       conc_despesas_dup:     () => despesasDuplicadas(params),
       conc_excluir_bill:     () => qbExcluirBill(params),
@@ -3575,6 +3576,72 @@ async function alertaTermosDoMes({ forcar = false, para, mes, ano } = {}) {
 // QuickBooks uma RECEITA do mesmo valor (±2%) numa janela de ±10 dias ao redor de emissão+30.
 // Quando todas as notas de um termo casam, o termo recebe a marca "conciliado" — sem sair da
 // coluna Pago: conciliado é um atributo, não uma fase.
+// ═══ v2.28: IMPORTAÇÃO OFX — o extrato do BANCO contra o extrato CONTÁBIL do QuickBooks ═══
+// OFX dos bancos brasileiros é SGML (tags sem fechamento) e às vezes vem em latin-1. O parser
+// abaixo não depende de XML válido: pega cada <STMTTRN>...</STMTTRN> e lê as tags por regex.
+function parseOfx(texto) {
+  const t = String(texto || '');
+  const tag = (bloco, nome) => { const m = bloco.match(new RegExp('<' + nome + '>([^<\\r\\n]*)', 'i')); return m ? m[1].trim() : null; };
+  const data = v => { if (!v) return null; const m = v.match(/(\d{4})(\d{2})(\d{2})/); return m ? `${m[1]}-${m[2]}-${m[3]}` : null; };
+  const conta = { banco: tag(t, 'BANKID'), agencia: tag(t, 'BRANCHID'), conta: tag(t, 'ACCTID'), moeda: tag(t, 'CURDEF') };
+  const periodo = { de: data(tag(t, 'DTSTART')), ate: data(tag(t, 'DTEND')) };
+  const saldoFinal = parseFloat((tag(t, 'BALAMT') || '').replace(',', '.'));
+  const dataSaldo = data(tag(t, 'DTASOF'));
+  const blocos = t.match(/<STMTTRN>[\s\S]*?(?=<STMTTRN>|<\/BANKTRANLIST>|<LEDGERBAL>|$)/gi) || [];
+  const lanc = blocos.map(b => {
+    const valor = parseFloat((tag(b, 'TRNAMT') || '0').replace(',', '.'));
+    return { data: data(tag(b, 'DTPOSTED')), valor: Math.abs(valor), tipo: valor >= 0 ? 'entrada' : 'saida',
+      tipo_banco: tag(b, 'TRNTYPE'), fitid: tag(b, 'FITID'), doc: tag(b, 'CHECKNUM') || tag(b, 'REFNUM'),
+      descricao: [tag(b, 'NAME'), tag(b, 'MEMO')].filter(Boolean).join(' · ').replace(/\s+/g, ' ').trim() };
+  }).filter(l => l.data && !isNaN(l.valor));
+  return { conta, periodo, saldo_final: isNaN(saldoFinal) ? null : saldoFinal, data_saldo: dataSaldo, lancamentos: lanc, total: lanc.length };
+}
+
+async function conciliarOfx({ ofx_texto, conta_id = null, tolerancia_dias = 3 } = {}) {
+  if (!ofx_texto) throw new Error('Envie o conteúdo do arquivo OFX');
+  const ofx = parseOfx(ofx_texto);
+  if (!ofx.total) throw new Error('Nenhum lançamento encontrado no OFX — confira se é um extrato de conta corrente.');
+  const de = ofx.periodo.de || ofx.lancamentos.reduce((s, l) => l.data < s ? l.data : s, ofx.lancamentos[0].data);
+  const ate = ofx.periodo.ate || ofx.lancamentos.reduce((s, l) => l.data > s ? l.data : s, ofx.lancamentos[0].data);
+  const ext = await extratoConsolidado({ data_inicio: de, data_fim: ate, conta_id, incluir_simulados: false });
+  const qb = (ext.lancamentos || []).filter(l => l.tipo === 'entrada' || l.tipo === 'saida');
+  const usados = new Set();
+  const dias = (a, b) => Math.abs((new Date(a) - new Date(b)) / 86400000);
+  const casados = [], soBanco = [];
+  for (const b of ofx.lancamentos) {
+    let melhor = null;
+    for (const q of qb) {
+      if (usados.has(q.id) || q.tipo !== b.tipo) continue;
+      if (Math.abs(q.valor - b.valor) > 0.01) continue;
+      const d = dias(q.data, b.data);
+      if (d > tolerancia_dias) continue;
+      if (!melhor || d < melhor.d) melhor = { q, d };
+    }
+    if (melhor) { usados.add(melhor.q.id); casados.push({ banco: b, qb: melhor.q, dias: Math.round(melhor.d) }); }
+    else soBanco.push(b);
+  }
+  const soQb = qb.filter(q => !usados.has(q.id));
+  // Saldo: o do OFX é o oficial do banco na data; comparar com o contábil
+  let saldoQbNaData = null;
+  try { saldoQbNaData = await qbSaldoContaNaData({ conta_id, data: ofx.data_saldo || ate }); } catch (_) {}
+  const difSaldo = (ofx.saldo_final != null && saldoQbNaData != null) ? round(ofx.saldo_final - saldoQbNaData) : null;
+  const r = { ofx: { conta: ofx.conta, periodo: { de, ate }, total: ofx.total, saldo_final: ofx.saldo_final, data_saldo: ofx.data_saldo },
+    casados: casados.length,
+    so_no_banco: soBanco, so_no_quickbooks: soQb.map(q => ({ id: q.id, data: q.data, valor: q.valor, tipo: q.tipo, descricao: q.descricao, origem: q.origem })),
+    saldo_quickbooks_na_data: saldoQbNaData, diferenca_saldo: difSaldo,
+    resumo: { casados: casados.length, so_banco: soBanco.length, so_qb: soQb.length,
+      valor_so_banco: round(soBanco.reduce((s, l) => s + (l.tipo === 'entrada' ? l.valor : -l.valor), 0)),
+      valor_so_qb: round(soQb.reduce((s, l) => s + (l.tipo === 'entrada' ? l.valor : -l.valor), 0)),
+      pct_conciliado: ofx.total ? Math.round(casados.length / ofx.total * 100) : 0 },
+    veredito: !soBanco.length && !soQb.length && Math.abs(difSaldo || 0) < 1 ? 'conciliado' : (soBanco.length || Math.abs(difSaldo || 0) >= 1) ? 'divergente' : 'atenção',
+    leitura: [] };
+  if (soBanco.length) r.leitura.push(`${soBanco.length} lançamento(s) estão no banco e NÃO no QuickBooks — falta lançar (ou o QB tem data/valor diferente).`);
+  if (soQb.length) r.leitura.push(`${soQb.length} lançamento(s) estão no QuickBooks e NÃO no banco — podem ser duplicados, futuros ou lançados na conta errada.`);
+  if (difSaldo != null && Math.abs(difSaldo) >= 1) r.leitura.push(`O saldo do banco (${fmtBR(ofx.saldo_final)}) difere do contábil (${fmtBR(saldoQbNaData)}) em ${fmtBR(Math.abs(difSaldo))}.`);
+  if (r.veredito === 'conciliado') r.leitura.push('Banco e QuickBooks batem: todos os lançamentos casaram e o saldo confere.');
+  return r;
+}
+
 // ═══ v2.26: FATURAS VENCIDAS HÁ MAIS DE 30 DIAS SEM CONCILIAÇÃO ═══
 async function faturasVencidasSemConciliar({ dias = 30 } = {}) {
   if (!qbConfigurado()) return { faturas: [], erro: 'QuickBooks não configurado' };
