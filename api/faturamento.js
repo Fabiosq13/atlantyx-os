@@ -882,6 +882,37 @@ async function qbBuscarCliente(nomeEmpresa, token, realm, sandbox) {
   return achou ? { id: achou.Id, nome: achou.DisplayName } : null;
 }
 
+// v2.20: cria o cliente no QuickBooks quando não existe — em vez de parar e pedir cadastro manual.
+// Usa o nome da empresa como está no termo e, se houver CNPJ no rateio, grava no campo de
+// identificação fiscal. O ID novo volta para a mesma função que lança a fatura.
+async function qbCriarCliente({ nome, cnpj, contratante }, token, realm, sandbox) {
+  const base = sandbox ? 'https://sandbox-quickbooks.api.intuit.com' : 'https://quickbooks.api.intuit.com';
+  const limpo = String(nome || '').trim().substring(0, 100);
+  if (!limpo) throw new Error('Nome do cliente vazio — não dá para criar no QuickBooks');
+  const corpo = {
+    DisplayName: limpo,
+    CompanyName: limpo,
+    Notes: `Criado automaticamente pelo Atlantyx OS${contratante ? ' · grupo ' + contratante : ''}`,
+  };
+  if (cnpj) corpo.PrimaryTaxIdentifier = String(cnpj).replace(/[^\d]/g, '');
+  const r = await fetch(`${base}/v3/company/${realm}/customer?minorversion=65`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(corpo) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const det = d?.Fault?.Error?.[0];
+    // Nome duplicado: o QuickBooks recusa — então ele existe com grafia diferente. Buscar de novo.
+    if (det && /Duplicate Name/i.test(det.Message || det.Detail || '')) {
+      const again = await qbBuscarCliente(limpo, token, realm, sandbox);
+      if (again) return { ...again, criado: false, motivo: 'já existia com nome parecido' };
+    }
+    throw new Error('QuickBooks recusou criar o cliente: ' + (det?.Detail || det?.Message || 'HTTP ' + r.status));
+  }
+  const c = d.Customer;
+  console.log(`[FAT] Cliente criado no QuickBooks: ${c?.DisplayName} (Id ${c?.Id})`);
+  return { id: c.Id, nome: c.DisplayName, criado: true };
+}
+
 async function qbItemPadrao(token, realm, sandbox) {
   const sql = await getSql();
   try { const cache = await sql`SELECT value FROM kv_store WHERE key = 'qb:item_padrao' LIMIT 1`; if (cache.length && cache[0].value) { const v = typeof cache[0].value === 'string' ? JSON.parse(cache[0].value) : cache[0].value; if (v?.id) return v; } } catch (_) {}
@@ -938,8 +969,19 @@ async function termoEmpresaLancarQb({ empresa_id } = {}) {
   let token, realm;
   try { const t = await qbTokenFat(); token = t.token; realm = t.realm; } catch (err) { throw new Error('QuickBooks: ' + err.message); }
   const sandbox = process.env.QB_SANDBOX === 'true';
-  const cliente = await qbBuscarCliente(e.empresa, token, realm, sandbox);
-  if (!cliente) { await sql`UPDATE termos_empresas SET qb_erro = ${'Cliente "' + e.empresa + '" não encontrado no QuickBooks'} WHERE id = ${empresa_id}`; throw new Error('Cliente "' + e.empresa + '" não encontrado no QuickBooks — cadastre esse cliente primeiro (Contatos → Clientes) e tente novamente.'); }
+  let cliente = await qbBuscarCliente(e.empresa, token, realm, sandbox);
+  let clienteCriado = false;
+  if (!cliente) {
+    // v2.20: cria em vez de travar. Antes, parava com "cadastre primeiro" — o operador tinha
+    // que ir ao QuickBooks, criar à mão e voltar. Agora o sistema cria e segue.
+    try {
+      cliente = await qbCriarCliente({ nome: e.empresa, cnpj: e.cnpj, contratante: e.contratante }, token, realm, sandbox);
+      clienteCriado = !!cliente.criado;
+    } catch (err) {
+      await sql`UPDATE termos_empresas SET qb_erro = ${'Não consegui criar o cliente "' + e.empresa + '" no QuickBooks: ' + err.message} WHERE id = ${empresa_id}`;
+      throw new Error('Cliente "' + e.empresa + '" não existia no QuickBooks e a criação automática falhou: ' + err.message);
+    }
+  }
   const item = await qbItemPadrao(token, realm, sandbox);
   const valor = e.nf_valor != null ? num(e.nf_valor) : num(e.valor_parcela);
   const descricao = `${e.projeto || ''} — ${e.periodo_medicao || ''} — Termo ${e.numero_termo || ''}/${e.parcela || ''} — ${e.empresa}`;
@@ -948,7 +990,7 @@ async function termoEmpresaLancarQb({ empresa_id } = {}) {
   catch (err) { await sql`UPDATE termos_empresas SET qb_erro = ${err.message} WHERE id = ${empresa_id}`; throw err; }
   await sql`UPDATE termos_empresas SET qb_invoice_id = ${invoice.Id}, qb_invoice_doc = ${invoice.DocNumber || invoice.Id}, qb_lancado_em = NOW(), qb_erro = NULL WHERE id = ${empresa_id}`;
   console.log(`[Faturamento] Invoice lançada no QB: empresa=${e.empresa} valor=${valor} invoice=${invoice.Id}`);
-  return { lancado: true, qb_invoice_id: invoice.Id, qb_invoice_doc: invoice.DocNumber || invoice.Id, cliente: cliente.nome, valor };
+  return { lancado: true, qb_invoice_id: invoice.Id, qb_invoice_doc: invoice.DocNumber || invoice.Id, cliente: cliente.nome, valor, cliente_criado: clienteCriado, cliente_nome: cliente.nome };
 }
 
 async function termoLancarTodasQb({ termo_id } = {}) {
