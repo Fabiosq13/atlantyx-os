@@ -313,9 +313,21 @@ async function termoGet({ id } = {}) {
     notas };
 }
 
-async function termoMover({ id, status } = {}) {
+async function termoMover({ id, status, pago_em, manual } = {}) {
   if (!id || !STATUS.includes(status)) throw new Error('id e status válido obrigatórios (' + STATUS.join(', ') + ')');
   const sql = await getSql();
+  // v2.21: marcação manual de pago — grava a data informada e o motivo, separado do sync
+  if (status === 'pago') {
+    try {
+      await sql`UPDATE termos_faturamento SET pago_em = ${pago_em || null}::timestamptz,
+        concluido_motivo = ${manual ? 'pago — marcado manualmente' : 'pagamento detectado automaticamente'}
+        WHERE id = ${id}`;
+      if (!pago_em) await sql`UPDATE termos_faturamento SET pago_em = NOW() WHERE id = ${id} AND pago_em IS NULL`;
+      // marca as empresas do rateio como pagas também, para a tela ficar coerente
+      await sql`UPDATE termos_empresas SET pago = true, pagamento_data = COALESCE(pagamento_data, ${pago_em || null}::date, CURRENT_DATE)
+        WHERE termo_id = ${id} AND (pago IS NULL OR pago = false)`;
+    } catch (e) { console.warn('[FAT] campos de pago indisponíveis:', e.message); }
+  }
   // v2.17 FIX: o movimento de status NÃO pode depender de coluna opcional. A v1.94 fazia o
   // UPDATE de status e de entrou_em_envio_nf na mesma instrução — se a migração que cria a
   // coluna falhou em silêncio (sem permissão de ALTER, como no CNAB), o UPDATE inteiro
