@@ -529,6 +529,67 @@ async function configAppSalvar({ chave, valor } = {}) {
   return { salvo: true, chave };
 }
 
+// v2.19: casa cada RECEITA do extrato com o termo de faturamento correspondente.
+// Regra: mesmo valor (±2%) de uma empresa do rateio OU do total do termo, e a empresa/cliente
+// aparecendo na descrição do lançamento. Sem casamento confiável, não vincula — pior que
+// não ter link é ter link para o termo errado.
+async function vincularReceitasATermos(lancamentos = []) {
+  const entradas = lancamentos.filter(l => l.tipo === 'entrada' && l.valor > 0);
+  if (!entradas.length) return lancamentos;
+  let termos = [], empresas = [];
+  try {
+    const sql = await getSql();
+    termos = await sql`SELECT id, numero_termo, projeto, contratante, periodo_medicao, valor_total_termo, status
+      FROM termos_faturamento WHERE status NOT IN ('elaboracao') ORDER BY criado_em DESC LIMIT 400`;
+    const ids = termos.map(t => t.id);
+    if (ids.length) empresas = await sql`SELECT termo_id, empresa, valor_parcela, pagamento_data, pago
+      FROM termos_empresas WHERE termo_id = ANY(${ids})`;
+  } catch (e) { console.warn('[vincular] termos:', e.message); return lancamentos; }
+  if (!termos.length) return lancamentos;
+
+  const porTermo = {}; termos.forEach(t => porTermo[t.id] = t);
+  const normN = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\b(ltda|s\.?a\.?|me|eireli|epp|energia|cia|companhia)\b/g, '').replace(/[^a-z0-9 ]/g, ' ').trim();
+  const primeiraPalavraForte = s => normN(s).split(/\s+/).find(w => w.length >= 4) || '';
+  const usados = new Set();
+
+  return lancamentos.map(l => {
+    if (l.tipo !== 'entrada' || !(l.valor > 0)) return l;
+    const desc = normN(l.descricao || l.contraparte || '');
+    const tol = Math.max(l.valor * 0.02, 1);
+    let melhor = null;
+
+    // 1) empresa do rateio com o mesmo valor
+    for (const e of empresas) {
+      if (usados.has('e' + e.termo_id + e.empresa)) continue;
+      if (Math.abs(num(e.valor_parcela) - l.valor) > tol) continue;
+      const t = porTermo[e.termo_id]; if (!t) continue;
+      const chave = primeiraPalavraForte(e.empresa) || primeiraPalavraForte(t.contratante);
+      const nomeBate = chave && desc.includes(chave);
+      const score = 0.7 + (nomeBate ? 0.3 : 0);
+      if (!melhor || score > melhor.score) melhor = { score, termo: t, empresa: e.empresa, via: 'empresa', chave: 'e' + e.termo_id + e.empresa };
+    }
+    // 2) total do termo com o mesmo valor
+    for (const t of termos) {
+      if (usados.has('t' + t.id)) continue;
+      if (Math.abs(num(t.valor_total_termo) - l.valor) > tol) continue;
+      const chave = primeiraPalavraForte(t.contratante) || primeiraPalavraForte(t.projeto);
+      const nomeBate = chave && desc.includes(chave);
+      const score = 0.65 + (nomeBate ? 0.3 : 0);
+      if (!melhor || score > melhor.score) melhor = { score, termo: t, empresa: null, via: 'total', chave: 't' + t.id };
+    }
+    // Só vincula se valor bateu E (nome bateu OU o valor é específico o bastante — >= 1000 e único)
+    if (melhor && (melhor.score >= 0.95 || (melhor.score >= 0.65 && l.valor >= 1000))) {
+      usados.add(melhor.chave);
+      const t = melhor.termo;
+      return { ...l, termo_id: t.id, termo_numero: t.numero_termo, termo_projeto: t.projeto,
+        termo_periodo: t.periodo_medicao, termo_empresa: melhor.empresa, termo_status: t.status,
+        termo_confianca: melhor.score >= 0.95 ? 'alta' : 'media' };
+    }
+    return l;
+  });
+}
+
 async function executarTarefaFin({ tarefa, params = {} } = {}) {
   const t = TAREFAS_FIN[tarefa];
   if (!t) throw new Error('Tarefa desconhecida. Disponíveis: ' + Object.keys(TAREFAS_FIN).join(', '));
@@ -2393,7 +2454,7 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
     contas_banco: contasBanco.map(c => ({ nome: c.nome, saldo: round(c.saldo), inclui_futuros: true })),
     divergencia_calculado_vs_real: divergencia,
     divergencia_relevante: divergencia != null && Math.abs(divergencia) > 1,
-    passado: { saldo_inicial: extrato.saldo_inicial, saldo_inicial_data: extrato.saldo_inicial_data, saldo_inicial_detalhe: extrato.saldo_inicial_detalhe, lancamentos: extrato.lancamentos, total_entradas: extrato.total_entradas, total_saidas: extrato.total_saidas, qb_erro: extrato.qb_erro },
+    passado: { saldo_inicial: extrato.saldo_inicial, saldo_inicial_data: extrato.saldo_inicial_data, saldo_inicial_detalhe: extrato.saldo_inicial_detalhe, lancamentos: await vincularReceitasATermos(extrato.lancamentos || []), total_entradas: extrato.total_entradas, total_saidas: extrato.total_saidas, qb_erro: extrato.qb_erro },
     saldo_hoje: extrato.saldo_final || 0,
     futuro: { lancamentos: futuroComSaldo,
       total_recebiveis: round(fut.recebiveis.reduce((s, l) => s + l.valor, 0)),
