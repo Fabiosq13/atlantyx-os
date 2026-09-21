@@ -61,6 +61,8 @@ async function ensureTabelas(sql) {
   try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS qb_invoice_id TEXT`; } catch (_) {}
   try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS qb_invoice_doc TEXT`; } catch (_) {}
   try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS qb_lancado_em TIMESTAMPTZ`; } catch (_) {}
+  try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS pagamento_obs TEXT`; } catch (_) {}
+  try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS pagamento_status TEXT`; } catch (_) {}
   try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS qb_erro TEXT`; } catch (_) {}
   await sql`CREATE TABLE IF NOT EXISTS termos_notas_encontradas (
     id TEXT PRIMARY KEY, termo_id TEXT REFERENCES termos_faturamento(id) ON DELETE CASCADE,
@@ -440,6 +442,29 @@ async function termoEmpresaDatas({ empresa_id, nf_data, pagamento_data } = {}) {
     pagamento_data = COALESCE(${pagamento_data ?? null}, pagamento_data)
     WHERE id = ${empresa_id}`;
   return await termoGet({ id: rows[0].termo_id });
+}
+
+// v2.23: desmarca um pagamento registrado indevidamente (sync casou errado, ou marcação manual
+// equivocada). Se o termo estava em "pago" e alguma empresa volta a pendente, o termo volta
+// para "pagamento" — a coluna precisa refletir o que falta receber.
+async function termoEmpresaDesmarcarPago({ empresa_id, motivo } = {}) {
+  if (!empresa_id) throw new Error('empresa_id obrigatório');
+  const sql = await getSql();
+  const rows = await sql`SELECT termo_id, empresa, pagamento_origem FROM termos_empresas WHERE id = ${empresa_id} LIMIT 1`;
+  if (!rows.length) throw new Error('Empresa não encontrada');
+  const termoId = rows[0].termo_id;
+  await sql`UPDATE termos_empresas SET pago = false, pagamento_data = NULL, pagamento_origem = NULL,
+    pagamento_status = 'pendente',
+    pagamento_obs = ${'desmarcado manualmente' + (motivo ? ': ' + motivo : '') + ' (era: ' + (rows[0].pagamento_origem || 'sem origem') + ')'}
+    WHERE id = ${empresa_id}`;
+  // o termo não pode continuar em "pago" se há empresa pendente
+  const t = await sql`SELECT status FROM termos_faturamento WHERE id = ${termoId}`;
+  if (t[0] && ['pago', 'concluido'].includes(t[0].status)) {
+    await sql`UPDATE termos_faturamento SET status = 'pagamento', pago_em = NULL,
+      concluido_motivo = ${'reaberto: pagamento de "' + rows[0].empresa + '" desmarcado'}, atualizado_em = NOW() WHERE id = ${termoId}`;
+  }
+  console.log(`[FAT] Pagamento desmarcado: ${rows[0].empresa} (termo ${termoId})`);
+  return await termoGet({ id: termoId });
 }
 
 async function recalcularNf(termoId) {
@@ -1105,6 +1130,7 @@ export default async function handler(req, res) {
     termo_nf_upload:           () => termoNfUpload(payload),
     termo_nf_excluir:          () => termoNfExcluir(payload),
     termo_empresa_marcar_pago: () => termoEmpresaMarcarPago(payload),
+    termo_empresa_desmarcar_pago: () => termoEmpresaDesmarcarPago(payload),
     termo_empresa_datas:       () => termoEmpresaDatas(payload),
     termo_verificar_email:     () => termoVerificarEmail(payload),
     termo_verificar_pagamento: () => termoVerificarPagamento(payload),
