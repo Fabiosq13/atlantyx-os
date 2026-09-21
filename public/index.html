@@ -17202,6 +17202,7 @@ async function _fatLancarQb(empresaId) {
   try {
     const d = await fatApi('termo_empresa_lancar_qb', { empresa_id: empresaId });
     if (d && d.cliente_criado) toast('Cliente "' + d.cliente_nome + '" criado no QuickBooks e fatura lançada', 'success');
+    if (d && d.ja_existia) toast(d.aviso || 'Fatura já existia — vinculada', 'success');
     toast(d.ja_lancado ? 'Já estava lançado no QB' : 'Lançada no QuickBooks: fatura #' + d.qb_invoice_doc + ' (' + d.cliente + ', ' + fmtBRLcompleto(d.valor) + ')', 'success');
     addLog('ok', '[Faturamento] QB Invoice: ' + JSON.stringify(d));
   } catch (e) { toast('Erro ao lançar no QB: ' + e.message, 'error'); addLog('err', '[Faturamento] lançar QB: ' + e.message); }
@@ -22817,7 +22818,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.21] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.22] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22833,7 +22834,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.21';
+window.__ATX_BUILD_ID__ = 'ATX-v2.22';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
