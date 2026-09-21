@@ -166,6 +166,9 @@ export default async function handler(req, res) {
       conc_termo:            () => conciliarTermo(params),
       conc_faturas_vencidas: () => faturasVencidasSemConciliar(params),
       conc_ofx:              () => conciliarOfx(params),
+      desp_nao_cadastradas:  () => despesasNaoCadastradas(params),
+      desp_criar_replicar:   () => despesaCriarReplicar(params),
+      desp_ajustar_replicar: () => despesaAjustarReplicar(params),
       conc_excluir_invoice:  () => qbExcluirInvoice(params),
       conc_despesas_dup:     () => despesasDuplicadas(params),
       conc_excluir_bill:     () => qbExcluirBill(params),
@@ -3576,6 +3579,153 @@ async function alertaTermosDoMes({ forcar = false, para, mes, ano } = {}) {
 // QuickBooks uma RECEITA do mesmo valor (±2%) numa janela de ±10 dias ao redor de emissão+30.
 // Quando todas as notas de um termo casam, o termo recebe a marca "conciliado" — sem sair da
 // coluna Pago: conciliado é um atributo, não uma fase.
+// ═══ v2.29: DESPESAS FUTURAS — descobrir, criar e replicar 12 meses no QuickBooks ═══
+
+// Helper: soma meses preservando o dia (sem estourar fevereiro)
+function _addMesesData(data, n) {
+  const [a, m, d] = String(data).substring(0, 10).split('-').map(Number);
+  const alvo = new Date(a, m - 1 + n, 1);
+  const ultimoDia = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0).getDate();
+  return `${alvo.getFullYear()}-${String(alvo.getMonth() + 1).padStart(2, '0')}-${String(Math.min(d, ultimoDia)).padStart(2, '0')}`;
+}
+
+// 1. Despesas do extrato que NÃO estão cadastradas como programadas — candidatas a recorrente.
+//    Olha 3 meses: se o mesmo fornecedor/valor aparece 2+ vezes, é recorrente quase certa.
+async function despesasNaoCadastradas({ meses = 3, tolerancia_pct = 5 } = {}) {
+  const sql = await getSql();
+  const hoje = new Date();
+  const ini = _addMesesData(hoje.toISOString().substring(0, 10), -meses).substring(0, 8) + '01';
+  const fim = hoje.toISOString().substring(0, 10);
+  const ext = await extratoConsolidado({ data_inicio: ini, data_fim: fim, incluir_simulados: false });
+  const saidas = (ext.lancamentos || []).filter(l => l.tipo === 'saida' && l.valor >= 50);
+  const desp = await sql`SELECT id, descricao, fornecedor, valor, recorrencia FROM despesas_programadas WHERE ativa = true`;
+  const normN = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\b(ltda|s\.?a\.?|me|eireli|epp|cia|pagamento|pgto|ted|pix|doc|debito|deb|aut|ref)\b/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const chaveDe = s => normN(s).split(' ').filter(w => w.length >= 4).slice(0, 2).join(' ');
+  // agrupa saídas por (chave do nome, valor arredondado)
+  const grupos = {};
+  saidas.forEach(l => {
+    const k = chaveDe(l.descricao || l.contraparte);
+    if (!k) return;
+    const vk = Math.round(l.valor);
+    const gk = k + '|' + vk;
+    (grupos[gk] = grupos[gk] || { chave: k, valor: l.valor, itens: [] }).itens.push(l);
+  });
+  const jaCadastrada = (g) => desp.some(d => {
+    const kd = chaveDe(d.fornecedor || d.descricao);
+    const tol = Math.max(num(d.valor) * tolerancia_pct / 100, 5);
+    return kd && (g.chave.includes(kd) || kd.includes(g.chave)) && Math.abs(num(d.valor) - g.valor) <= tol;
+  });
+  const candidatas = Object.values(grupos).filter(g => !jaCadastrada(g)).map(g => {
+    const datas = g.itens.map(i => i.data).sort();
+    const dias = datas.map(d => parseInt(d.substring(8, 10)));
+    const diaMedio = Math.round(dias.reduce((s, x) => s + x, 0) / dias.length);
+    return { chave: g.chave, descricao: g.itens[0].descricao, valor: round(g.itens.reduce((s, i) => s + i.valor, 0) / g.itens.length),
+      ocorrencias: g.itens.length, datas, dia_vencimento_sugerido: diaMedio,
+      recorrencia_sugerida: g.itens.length >= 2 ? 'mensal' : 'unica',
+      confianca: g.itens.length >= 3 ? 'alta' : g.itens.length === 2 ? 'media' : 'baixa' };
+  }).sort((a, b) => b.ocorrencias - a.ocorrencias || b.valor - a.valor);
+  return { periodo: { de: ini, ate: fim }, candidatas, total: candidatas.length,
+    recorrentes_provaveis: candidatas.filter(c => c.ocorrencias >= 2).length,
+    valor_mensal_nao_cadastrado: round(candidatas.filter(c => c.ocorrencias >= 2).reduce((s, c) => s + c.valor, 0)),
+    aviso: 'Saídas do extrato sem despesa programada correspondente. As que se repetem são quase certamente recorrentes — cadastrar evita que o fluxo futuro as ignore.' };
+}
+
+// 2. Cria a despesa programada + 12 ocorrências + (opcional) 12 Bills no QuickBooks
+async function despesaCriarReplicar({ descricao, fornecedor, valor, dia_vencimento, categoria, recorrencia = 'mensal', data_inicio, meses = 12, lancar_qb = false } = {}) {
+  if (!descricao || !valor) throw new Error('descricao e valor obrigatórios');
+  const sql = await getSql();
+  const hoje = new Date().toISOString().substring(0, 10);
+  const dia = parseInt(dia_vencimento) || parseInt(hoje.substring(8, 10));
+  let inicio = data_inicio || `${hoje.substring(0, 7)}-${String(dia).padStart(2, '0')}`;
+  if (inicio < hoje) inicio = _addMesesData(inicio, 1);
+  const id = 'dp_' + Date.now().toString(36);
+  await sql`INSERT INTO despesas_programadas (id, descricao, categoria, valor, recorrencia, dia_vencimento, data_inicio, ativa, fornecedor, criado_em, atualizado_em)
+    VALUES (${id}, ${descricao}, ${categoria || 'Despesa recorrente'}, ${num(valor)}, ${recorrencia}, ${dia}, ${inicio}, true, ${fornecedor || descricao}, NOW(), NOW())`;
+  const n = recorrencia === 'unica' ? 1 : Math.min(parseInt(meses) || 12, 24);
+  const passo = recorrencia === 'trimestral' ? 3 : recorrencia === 'anual' ? 12 : 1;
+  const criadas = [];
+  for (let i = 0; i < n; i++) {
+    const dt = _addMesesData(inicio, i * passo);
+    const oid = `${id}_${dt.substring(0, 7)}`;
+    await sql`INSERT INTO despesas_ocorrencias (id, despesa_id, data_prevista, valor, status, criado_em)
+      VALUES (${oid}, ${id}, ${dt}, ${num(valor)}, 'pendente', NOW()) ON CONFLICT (id) DO NOTHING`;
+    criadas.push({ id: oid, data: dt });
+  }
+  let lancadas = 0, errosQb = [];
+  if (lancar_qb) {
+    for (const o of criadas) {
+      try { await despLancarQb({ ocorrencia_id: o.id }); lancadas++; await qbEsperar(250); }
+      catch (e) { errosQb.push(`${o.data}: ${e.message.substring(0, 80)}`); if (errosQb.length >= 3) { errosQb.push('parando — corrija o fornecedor no QuickBooks e use "replicar" depois'); break; } }
+    }
+  }
+  return { despesa_id: id, ocorrencias: criadas.length, primeira: criadas[0]?.data, ultima: criadas[criadas.length - 1]?.data,
+    lancadas_no_qb: lancadas, erros_qb: errosQb };
+}
+
+// 3. Ajusta uma despesa (valor/dia) e replica nas ocorrências futuras — criando até 12 meses à frente
+async function despesaAjustarReplicar({ despesa_id, valor, dia_vencimento, a_partir_de, meses = 12, lancar_qb = false, atualizar_qb = false } = {}) {
+  if (!despesa_id) throw new Error('despesa_id obrigatório');
+  const sql = await getSql();
+  const d = (await sql`SELECT * FROM despesas_programadas WHERE id = ${despesa_id}`)[0];
+  if (!d) throw new Error('Despesa não encontrada');
+  const hoje = new Date().toISOString().substring(0, 10);
+  const desde = a_partir_de || hoje;
+  const novoValor = valor != null ? num(valor) : num(d.valor);
+  const novoDia = parseInt(dia_vencimento) || parseInt(d.dia_vencimento) || parseInt(desde.substring(8, 10));
+  await sql`UPDATE despesas_programadas SET valor = ${novoValor}, dia_vencimento = ${novoDia}, atualizado_em = NOW() WHERE id = ${despesa_id}`;
+
+  // ocorrências futuras pendentes: ajusta valor e dia
+  const futuras = await sql`SELECT id, data_prevista, qb_txn_id FROM despesas_ocorrencias
+    WHERE despesa_id = ${despesa_id} AND data_prevista >= ${desde} AND status = 'pendente' ORDER BY data_prevista`;
+  let ajustadas = 0, criadas = 0, qbAtualizadas = 0, errosQb = [];
+  for (const o of futuras) {
+    const dt = String(o.data_prevista).substring(0, 10);
+    const ultimo = new Date(parseInt(dt.substring(0, 4)), parseInt(dt.substring(5, 7)), 0).getDate();
+    const novaData = `${dt.substring(0, 7)}-${String(Math.min(novoDia, ultimo)).padStart(2, '0')}`;
+    await sql`UPDATE despesas_ocorrencias SET valor = ${novoValor}, data_prevista = ${novaData} WHERE id = ${o.id}`;
+    ajustadas++;
+    if (atualizar_qb && o.qb_txn_id) {
+      try { await _qbAtualizarBill(o.qb_txn_id, { valor: novoValor, dataVencimento: novaData }); qbAtualizadas++; await qbEsperar(250); }
+      catch (e) { errosQb.push(`${novaData}: ${e.message.substring(0, 80)}`); }
+    }
+  }
+  // completa até `meses` à frente
+  const passo = d.recorrencia === 'trimestral' ? 3 : d.recorrencia === 'anual' ? 12 : 1;
+  if (d.recorrencia !== 'unica') {
+    const base = `${desde.substring(0, 7)}-01`;
+    const existentes = new Set((await sql`SELECT TO_CHAR(data_prevista, 'YYYY-MM') AS m FROM despesas_ocorrencias WHERE despesa_id = ${despesa_id}`).map(r => r.m));
+    for (let i = 0; i < Math.min(parseInt(meses) || 12, 24); i += passo) {
+      const dt0 = _addMesesData(base, i);
+      const mes = dt0.substring(0, 7);
+      if (existentes.has(mes)) continue;
+      const ultimo = new Date(parseInt(mes.substring(0, 4)), parseInt(mes.substring(5, 7)), 0).getDate();
+      const dt = `${mes}-${String(Math.min(novoDia, ultimo)).padStart(2, '0')}`;
+      if (dt < hoje) continue;
+      const oid = `${despesa_id}_${mes}`;
+      await sql`INSERT INTO despesas_ocorrencias (id, despesa_id, data_prevista, valor, status, criado_em)
+        VALUES (${oid}, ${despesa_id}, ${dt}, ${novoValor}, 'pendente', NOW()) ON CONFLICT (id) DO NOTHING`;
+      criadas++;
+      if (lancar_qb) { try { await despLancarQb({ ocorrencia_id: oid }); await qbEsperar(250); } catch (e) { errosQb.push(`${dt}: ${e.message.substring(0, 80)}`); } }
+    }
+  }
+  return { despesa_id, valor: novoValor, dia_vencimento: novoDia, a_partir_de: desde,
+    ocorrencias_ajustadas: ajustadas, ocorrencias_criadas: criadas, bills_atualizadas_qb: qbAtualizadas, erros_qb: errosQb };
+}
+
+// Atualiza uma Bill existente no QuickBooks (valor e vencimento) — leitura → SyncToken → update
+async function _qbAtualizarBill(billId, { valor, dataVencimento }) {
+  const token = await qbToken();
+  const atual = (await qbQuery(`select * from Bill where Id = '${String(billId).replace(/'/g, '')}'`, token))?.QueryResponse?.Bill?.[0];
+  if (!atual) throw new Error('Bill não encontrada no QuickBooks');
+  if (parseFloat(atual.Balance || 0) <= 0) throw new Error('Bill já paga — não altera');
+  const linha = (atual.Line || []).find(l => l.DetailType === 'AccountBasedExpenseLineDetail') || atual.Line?.[0];
+  const corpo = { ...atual, sparse: true, DueDate: dataVencimento || atual.DueDate, TotalAmt: valor,
+    Line: [{ ...linha, Amount: valor }] };
+  delete corpo.Balance; delete corpo.MetaData;
+  return await qbFetch('/bill?minorversion=65', token, 'POST', corpo);
+}
+
 // ═══ v2.28: IMPORTAÇÃO OFX — o extrato do BANCO contra o extrato CONTÁBIL do QuickBooks ═══
 // OFX dos bancos brasileiros é SGML (tags sem fechamento) e às vezes vem em latin-1. O parser
 // abaixo não depende de XML válido: pega cada <STMTTRN>...</STMTTRN> e lê as tags por regex.
