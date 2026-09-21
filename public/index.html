@@ -16460,7 +16460,7 @@ async function fatApi(action, params = {}) {
   catch (netErr) { throw new Error('Rede: não conectou em /api/faturamento — ' + netErr.message); }
   const raw = await r.text(); let d;
   try { d = JSON.parse(raw); } catch { throw new Error('Resposta não-JSON de /api/faturamento (HTTP ' + r.status + '): ' + raw.substring(0,150)); }
-  if (!d.success) throw new Error(d.error || ('HTTP ' + r.status + ' na API faturamento'));
+  if (!d.success) { const e = new Error(d.error || ('HTTP ' + r.status + ' na API faturamento')); e.dica = d.dica || null; throw e; }
   return d;
 }
 
@@ -16649,6 +16649,8 @@ async function carregarKanbanFaturamento() {
       mes: document.getElementById('fatFiltroMes')?.value || null,
       ano: document.getElementById('fatFiltroAno')?.value || null,
       periodo_texto: document.getElementById('fatFiltroTexto')?.value?.trim() || null,
+      pag_de: document.getElementById('fatPagDe')?.value || null,     // v2.24
+      pag_ate: document.getElementById('fatPagAte')?.value || null,
     };
     const d = await fatApi('termo_list', filtros);
     _fatColunas = d.colunas || {};
@@ -16911,7 +16913,10 @@ async function _fatToggleCpfl(termoId, confirmar) {
     await fatApi('cpfl_confirmar', { termo_id: termoId, confirmado: confirmar, por: 'financeiro', observacao: obs, previsao_pagamento: prev });
     toast(confirmar ? 'Confirmado no sistema da CPFL' : 'Confirmação removida', confirmar ? 'success' : 'info');
     carregarKanbanFaturamento();
-  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+  } catch (e) {
+    toast('Erro: ' + e.message, 'error');
+    alert('Não consegui gravar a confirmação.\n\nErro: ' + e.message + (e.dica ? '\n\n💡 ' + e.dica : '') + '\n\nMe envie esta mensagem.');
+  }
 }
 
 function _fatCardUploadNf(t, emp) {
@@ -22828,7 +22833,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.23] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.24] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22844,7 +22849,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.23';
+window.__ATX_BUILD_ID__ = 'ATX-v2.24';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
