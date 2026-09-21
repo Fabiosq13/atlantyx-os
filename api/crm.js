@@ -425,6 +425,163 @@ async function briefingExcluir({ id }) {
   return { excluido: true };
 }
 
+// ═══ v2.27: ESTRUTURA COMERCIAL — política, papéis, cadência (S1) e metas calibradas + CAC (S7) ═══
+async function _cfgGet(sql, chave) {
+  await sql`CREATE TABLE IF NOT EXISTS app_config (chave TEXT PRIMARY KEY, valor JSONB, atualizado_em TIMESTAMPTZ DEFAULT NOW())`;
+  const r = await sql`SELECT valor FROM app_config WHERE chave = ${chave} LIMIT 1`;
+  return r[0]?.valor ?? null;
+}
+async function _cfgSet(sql, chave, valor) {
+  await sql`INSERT INTO app_config (chave, valor, atualizado_em) VALUES (${chave}, ${JSON.stringify(valor)}, NOW())
+    ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = NOW()`;
+}
+const POLITICA_PADRAO = {
+  faturamento_mensal_referencia: 0, faturamento_origem: 'manual',
+  pct_investimento_comercial_marketing: 0.10, pct_split_comercial: 0.625, pct_split_marketing: 0.375,
+  marketing_breakdown: { conteudo_linkedin: 0.35, trafego_pago: 0.30, materiais_venda: 0.20, seo_automacao: 0.15 },
+  activity_targets_fulltime: { contatos_semana_fulltime: 250, reunioes_semana_fulltime: 15, fechamento_a_cada_dias_fulltime: 4 },
+  ltv_medio: null, revisao_periodicidade: 'trimestral', data_ultima_revisao: null,
+};
+const PAPEIS_PADRAO = [
+  { id: 'sales_ops_jr', nome: 'Estagiário(a)/Júnior Sales Ops', tipo: 'interno', horas_semana: null, foco: 'crm_cobranca_campanhas', custo_mensal: 0 },
+  { id: 'hunter_1', nome: 'Agente comercial 1', tipo: 'part_time', horas_semana: null, foco: 'prospeccao_qualificacao', custo_mensal: 0 },
+  { id: 'hunter_2', nome: 'Agente comercial 2', tipo: 'part_time', horas_semana: null, foco: 'prospeccao_qualificacao', custo_mensal: 0 },
+  { id: 'closer_freelance', nome: 'Freelancer de contas', tipo: 'part_time_freelance', horas_semana: null, foco: 'fechamento_gestao_contas', custo_mensal: 0 },
+];
+const RITUAIS_PADRAO = [
+  { frequencia: 'diario', nome: 'Atualização CRM', responsavel: 'hunters+closer' },
+  { frequencia: 'diario', nome: 'Cobrança de pendências', responsavel: 'sales_ops_jr' },
+  { frequencia: 'semanal', nome: 'Check-in comercial 15-20min', responsavel: 'ceo+equipe' },
+  { frequencia: 'semanal', nome: 'Resumo funil', responsavel: 'sales_ops_jr' },
+  { frequencia: 'quinzenal', nome: '1:1 freelancer', responsavel: 'ceo' },
+  { frequencia: 'trimestral', nome: 'Revisão CAC e orçamento', responsavel: 'ceo' },
+];
+
+async function comercialConfigGet() {
+  const sql = await getSql();
+  const politica = { ...POLITICA_PADRAO, ...((await _cfgGet(sql, 'commercial_policy')) || {}) };
+  const papeis = (await _cfgGet(sql, 'commercial_roles')) || PAPEIS_PADRAO;
+  const rituais = (await _cfgGet(sql, 'commercial_rituals')) || RITUAIS_PADRAO;
+  // Faturamento real do QuickBooks, se disponível — a política manda usar o real quando possível
+  let faturamentoReal = null;
+  try {
+    const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
+    const r = await fetch(base + '/api/financeiro', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'kpis_saude', params: {} }) });
+    const d = await r.json().catch(() => ({}));
+    const rec = d?.kpis?.receita_mes ?? d?.receita_mes ?? d?.kpis?.receita_mensal ?? null;
+    if (typeof rec === 'number' && rec > 0) faturamentoReal = Math.round(rec * 100) / 100;
+  } catch (_) {}
+  if (faturamentoReal && politica.faturamento_origem !== 'manual') politica.faturamento_mensal_referencia = faturamentoReal;
+  return { politica, papeis, rituais, faturamento_real_qb: faturamentoReal,
+    calibrado: papeis.every(p => p.horas_semana != null && p.horas_semana > 0),
+    papeis_sem_horas: papeis.filter(p => !(p.horas_semana > 0)).map(p => p.nome) };
+}
+async function comercialConfigSalvar({ politica, papeis, rituais } = {}) {
+  const sql = await getSql();
+  if (politica) await _cfgSet(sql, 'commercial_policy', { ...POLITICA_PADRAO, ...politica, data_ultima_revisao: new Date().toISOString().substring(0, 10) });
+  if (papeis) await _cfgSet(sql, 'commercial_roles', papeis);
+  if (rituais) await _cfgSet(sql, 'commercial_rituals', rituais);
+  return await comercialConfigGet();
+}
+
+// Metas calibradas por papel: meta = (horas/40) × meta_fulltime. Sem horas, não gera meta.
+function _metasPorPapel(politica, papeis) {
+  const t = politica.activity_targets_fulltime || POLITICA_PADRAO.activity_targets_fulltime;
+  return papeis.map(p => {
+    if (!(p.horas_semana > 0)) return { ...p, calibrado: false, aviso: 'pendente de calibração — informe as horas/semana' };
+    const fator = p.horas_semana / 40;
+    const prospecta = /prospec|hunter/.test(p.foco || '') || /hunter/.test(p.id);
+    const fecha = /fecha|closer|contas/.test(p.foco || '') || /closer/.test(p.id);
+    return { ...p, calibrado: true, fator: Math.round(fator * 100) / 100,
+      meta_contatos_semana: prospecta ? Math.round(t.contatos_semana_fulltime * fator) : 0,
+      meta_reunioes_semana: (prospecta || fecha) ? Math.round(t.reunioes_semana_fulltime * fator) : 0,
+      meta_fechamento_a_cada_dias: fecha ? Math.round(t.fechamento_a_cada_dias_fulltime / fator) : null };
+  });
+}
+
+// Atividade real por papel, dos últimos 7 dias
+async function _atividadePorPapel(sql, papeis) {
+  const out = {};
+  try {
+    await sql`CREATE TABLE IF NOT EXISTS comercial_atividade (
+      id TEXT PRIMARY KEY, papel_id TEXT, data DATE, contatos INT DEFAULT 0, reunioes INT DEFAULT 0, fechamentos INT DEFAULT 0,
+      obs TEXT, criado_em TIMESTAMPTZ DEFAULT NOW())`;
+    const rows = await sql`SELECT papel_id, SUM(contatos)::int AS c, SUM(reunioes)::int AS r, SUM(fechamentos)::int AS f,
+        MAX(data) AS ultimo FROM comercial_atividade WHERE data >= CURRENT_DATE - INTERVAL '7 days' GROUP BY papel_id`;
+    rows.forEach(r => out[r.papel_id] = { contatos: r.c, reunioes: r.r, fechamentos: r.f, ultimo: r.ultimo ? String(r.ultimo).substring(0, 10) : null });
+  } catch (_) {}
+  papeis.forEach(p => { if (!out[p.id]) out[p.id] = { contatos: 0, reunioes: 0, fechamentos: 0, ultimo: null }; });
+  return out;
+}
+
+async function semaforoComercial() {
+  const sql = await getSql();
+  const cfg = await comercialConfigGet();
+  const metas = _metasPorPapel(cfg.politica, cfg.papeis);
+  const ativ = await _atividadePorPapel(sql, cfg.papeis);
+  const cards = metas.map(m => {
+    const a = ativ[m.id] || {};
+    if (!m.calibrado) return { ...m, atividade: a, farol: 'cinza', motivo: m.aviso };
+    const pc = m.meta_contatos_semana ? a.contatos / m.meta_contatos_semana : null;
+    const pr = m.meta_reunioes_semana ? a.reunioes / m.meta_reunioes_semana : null;
+    const pior = [pc, pr].filter(x => x != null).reduce((s, x) => Math.min(s, x), 1);
+    const semAtiv = !a.ultimo || (Date.now() - new Date(a.ultimo)) > 3 * 86400000;
+    const farol = semAtiv ? 'vermelho' : pior >= 0.8 ? 'verde' : pior >= 0.5 ? 'amarelo' : 'vermelho';
+    return { ...m, atividade: a, pct_contatos: pc != null ? Math.round(pc * 100) : null, pct_reunioes: pr != null ? Math.round(pr * 100) : null,
+      farol, motivo: semAtiv ? 'sem registro de atividade há mais de 3 dias' : `${Math.round(pior * 100)}% da meta da semana` };
+  });
+  return { cards, calibrado: cfg.calibrado, papeis_sem_horas: cfg.papeis_sem_horas, targets_fulltime: cfg.politica.activity_targets_fulltime };
+}
+
+async function registrarAtividade({ papel_id, data, contatos = 0, reunioes = 0, fechamentos = 0, obs } = {}) {
+  if (!papel_id) throw new Error('papel_id obrigatório');
+  const sql = await getSql();
+  await _atividadePorPapel(sql, []);   // garante a tabela
+  const d = data || new Date().toISOString().substring(0, 10);
+  const id = `${papel_id}_${d}`;
+  await sql`INSERT INTO comercial_atividade (id, papel_id, data, contatos, reunioes, fechamentos, obs)
+    VALUES (${id}, ${papel_id}, ${d}, ${parseInt(contatos)||0}, ${parseInt(reunioes)||0}, ${parseInt(fechamentos)||0}, ${obs || null})
+    ON CONFLICT (id) DO UPDATE SET contatos = comercial_atividade.contatos + EXCLUDED.contatos,
+      reunioes = comercial_atividade.reunioes + EXCLUDED.reunioes, fechamentos = comercial_atividade.fechamentos + EXCLUDED.fechamentos,
+      obs = COALESCE(EXCLUDED.obs, comercial_atividade.obs)`;
+  return { id };
+}
+
+// CAC trimestral: investimento (3 meses da política) ÷ deals fechados no HubSpot nos últimos 90 dias
+async function cacTrimestral() {
+  const cfg = await comercialConfigGet();
+  const p = cfg.politica;
+  const investimento = Math.round((p.faturamento_mensal_referencia || 0) * (p.pct_investimento_comercial_marketing || 0) * 3 * 100) / 100;
+  let fechados = null, valorFechado = 0, erro = null, fonte = 'hubspot';
+  const token = process.env.HUBSPOT_TOKEN;
+  if (token) {
+    try {
+      const desde = Date.now() - 90 * 86400000;
+      const r = await fetch('https://api.hubapi.com/crm/v3/objects/deals/search', { method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filterGroups: [{ filters: [
+            { propertyName: 'closedate', operator: 'GTE', value: String(desde) },
+            { propertyName: 'hs_is_closed_won', operator: 'EQ', value: 'true' } ] }],
+          properties: ['dealname', 'amount', 'closedate', 'pipeline'], limit: 100 }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.message || 'HTTP ' + r.status);
+      const lista = (d.results || []).filter(x => !process.env.HUBSPOT_PIPELINE_ID || x.properties?.pipeline === process.env.HUBSPOT_PIPELINE_ID);
+      fechados = lista.length; valorFechado = lista.reduce((s, x) => s + (parseFloat(x.properties?.amount) || 0), 0);
+    } catch (e) { erro = e.message; }
+  } else erro = 'HUBSPOT_TOKEN não configurada';
+  if (fechados == null) {
+    // reserva: termos aprovados como proxy de novos clientes? não — cliente novo ≠ termo novo. Fica sem CAC.
+    fonte = 'indisponível';
+  }
+  const cac = fechados ? Math.round(investimento / fechados * 100) / 100 : null;
+  const ltv = p.ltv_medio || null;
+  return { investimento_trimestre: investimento, novos_clientes_trimestre: fechados, valor_fechado_trimestre: Math.round(valorFechado * 100) / 100,
+    cac, ltv_medio: ltv, alerta_cac: (cac != null && ltv) ? cac > ltv / 3 : null,
+    ltv_pendente: !ltv, fonte, erro,
+    explicacao: `CAC = (${(p.faturamento_mensal_referencia||0).toLocaleString('pt-BR')} × ${Math.round((p.pct_investimento_comercial_marketing||0)*100)}% × 3) ÷ ${fechados ?? '?'} cliente(s) fechado(s) em 90 dias` };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -439,6 +596,11 @@ export default async function handler(req, res) {
 
   const acoes = {
     clientes_listar: () => clientesListar(payload),
+    comercial_config:   () => comercialConfigGet(),
+    comercial_salvar:   () => comercialConfigSalvar(payload),
+    comercial_semaforo: () => semaforoComercial(),
+    comercial_atividade:() => registrarAtividade(payload),
+    comercial_cac:      () => cacTrimestral(),
     brief_salvar:    () => briefingSalvar(payload),
     brief_listar:    () => briefingListar(payload),
     brief_get:       () => briefingGet(payload),
