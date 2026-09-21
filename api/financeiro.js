@@ -30,6 +30,19 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: e.message });
     }
   }
+  // v2.26: conciliação automática nota × extrato, 3x ao dia (cron) — concilia o mês corrente e o anterior
+  if (req.query?.cron === 'conciliar_notas') {
+    try {
+      const hoje = new Date();
+      const atual = await conciliacaoNotasExtrato({ mes: hoje.getMonth() + 1, ano: hoje.getFullYear(), aplicar: true });
+      const antM = hoje.getMonth() === 0 ? 12 : hoje.getMonth(), antA = hoje.getMonth() === 0 ? hoje.getFullYear() - 1 : hoje.getFullYear();
+      const anterior = await conciliacaoNotasExtrato({ mes: antM, ano: antA, aplicar: true });
+      const r = { mes_atual: atual.resumo, mes_anterior: anterior.resumo,
+        termos_fechados: [...new Set([...(atual.termos_conciliados || []), ...(anterior.termos_conciliados || [])])].length };
+      console.log('[cron conciliar_notas]', JSON.stringify(r));
+      return res.status(200).json({ success: true, cron: 'conciliar_notas', ...r });
+    } catch (e) { console.error('[cron conciliar_notas]', e.message); return res.status(500).json({ success: false, error: e.message }); }
+  }
   if (req.query?.cron === 'termos_obrigatorios') {
     try {
       const r = await alertaTermosDoMes({});
@@ -149,6 +162,12 @@ export default async function handler(req, res) {
       // ── Conciliação bancária ─────────────────────────────────────────────
       conc_sugestoes:        () => conciliacaoSugestoes(params),
       conc_recebiveis:       () => conciliacaoRecebiveis(params),
+      conc_notas_extrato:    () => conciliacaoNotasExtrato(params),
+      conc_termo:            () => conciliarTermo(params),
+      conc_faturas_vencidas: () => faturasVencidasSemConciliar(params),
+      conc_excluir_invoice:  () => qbExcluirInvoice(params),
+      conc_despesas_dup:     () => despesasDuplicadas(params),
+      conc_excluir_bill:     () => qbExcluirBill(params),
       termos_verificar:      () => verificarTermosDoMes(params),
       termos_alertar:        () => alertaTermosDoMes(params),
       pendencias_alertar:    () => alertaPendenciasFaturamento(params),
@@ -973,13 +992,16 @@ function _addMeses(data, n) {
 }
 const num = v => { const n = parseFloat(String(v).replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.')); return isNaN(n) ? 0 : Math.round(n * 100) / 100; };
 
-async function qbFetch(endpoint, token) {
+async function qbFetch(endpoint, token, method = 'GET', body = null) {
   const realmId = (await qbTokensLer())?.realm_id || process.env.QB_REALM_ID;
   if (!realmId) throw new Error('QB_REALM_ID não configurado (ou reconecte pelo botão Conectar QuickBooks)');
   const sep = endpoint.includes('?') ? '&' : '?';
-  const url = `${qbBase()}/v3/company/${realmId}${endpoint}${sep}minorversion=65`;
+  const url = `${qbBase()}/v3/company/${realmId}${endpoint}${endpoint.includes('minorversion') ? '' : sep + 'minorversion=65'}`;
+  // v2.26: aceita POST com corpo — necessário para as operações de exclusão (delete via POST no QB)
   const r = await fetch(url, {
-    headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' },
+    method,
+    headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}),
   });
   if (!r.ok) {
     const err = await r.json().catch(() => ({}));
@@ -3545,6 +3567,238 @@ async function alertaTermosDoMes({ forcar = false, para, mes, ano } = {}) {
   } catch (e) {
     return { ...v, enviado: false, erro_envio: e.message, para: destino };
   }
+}
+
+// ═══ v2.25: CONCILIAÇÃO NOTA A NOTA × EXTRATO CONTÁBIL ═══
+// Regra do negócio: o cliente paga cada nota individualmente, 30 dias corridos após a emissão.
+// Para cada nota (termos_empresas com nf_numero/nf_valor/nf_data), procuramos no extrato do
+// QuickBooks uma RECEITA do mesmo valor (±2%) numa janela de ±10 dias ao redor de emissão+30.
+// Quando todas as notas de um termo casam, o termo recebe a marca "conciliado" — sem sair da
+// coluna Pago: conciliado é um atributo, não uma fase.
+// ═══ v2.26: FATURAS VENCIDAS HÁ MAIS DE 30 DIAS SEM CONCILIAÇÃO ═══
+async function faturasVencidasSemConciliar({ dias = 30 } = {}) {
+  if (!qbConfigurado()) return { faturas: [], erro: 'QuickBooks não configurado' };
+  const token = await qbToken();
+  const d = await qbQuery(`select * from Invoice where Balance > '0' orderby DueDate asc maxresults 1000`, token);
+  const hoje = new Date();
+  const corte = new Date(hoje.getTime() - dias * 86400000).toISOString().split('T')[0];
+  const lista = (d?.QueryResponse?.Invoice || [])
+    .map(i => ({ id: i.Id, doc: i.DocNumber, cliente: i.CustomerRef?.name, valor: round(parseFloat(i.TotalAmt || 0)),
+      saldo: round(parseFloat(i.Balance || 0)), emissao: i.TxnDate, vencimento: i.DueDate || i.TxnDate, sync_token: i.SyncToken,
+      dias_vencida: Math.floor((hoje - new Date(i.DueDate || i.TxnDate)) / 86400000) }))
+    .filter(i => i.vencimento <= corte);
+  return { faturas: lista, total: lista.length, valor_total: round(lista.reduce((s, i) => s + i.saldo, 0)), corte, dias };
+}
+
+// Exclui uma fatura em aberto do QuickBooks. IRREVERSÍVEL — só pela tela de conciliação, com confirmação.
+async function qbExcluirInvoice({ invoice_id, motivo, confirmar } = {}) {
+  if (confirmar !== 'EXCLUIR') throw new Error('Confirmação obrigatória: envie confirmar = "EXCLUIR"');
+  if (!invoice_id) throw new Error('invoice_id obrigatório');
+  const token = await qbToken();
+  const atual = await qbQuery(`select * from Invoice where Id = '${String(invoice_id).replace(/'/g, '')}'`, token);
+  const inv = atual?.QueryResponse?.Invoice?.[0];
+  if (!inv) throw new Error('Fatura não encontrada no QuickBooks (já excluída?)');
+  if (parseFloat(inv.Balance || 0) <= 0) throw new Error('Esta fatura já está paga/baixada — não excluir.');
+  const r = await qbFetch(`/invoice?operation=delete&minorversion=65`, token, 'POST', { Id: inv.Id, SyncToken: inv.SyncToken });
+  console.log(`[QB] Invoice ${inv.DocNumber || inv.Id} EXCLUÍDA — motivo: ${motivo || 'não informado'}`);
+  try {
+    const sql = await getSql();
+    await sql`UPDATE termos_empresas SET qb_invoice_id = NULL, qb_invoice_doc = NULL, qb_erro = ${'fatura excluída do QB em ' + new Date().toISOString().substring(0,10) + (motivo ? ': ' + motivo : '')} WHERE qb_invoice_id = ${String(inv.Id)}`;
+  } catch (_) {}
+  return { excluida: true, doc: inv.DocNumber, valor: parseFloat(inv.TotalAmt || 0), resposta: r?.Invoice?.status || 'Deleted' };
+}
+
+// ═══ v2.26: CONCILIAÇÃO DE DESPESAS — Bill em aberto que JÁ FOI PAGA pelo extrato ═══
+// Padrão: a despesa foi lançada como Bill (a pagar) e depois paga direto na conta (Purchase/
+// cheque), sem baixar a Bill. Resultado: o valor conta duas vezes — uma no extrato, outra no
+// "a pagar". A varredura casa Bill em aberto × saída no extrato do mesmo fornecedor e valor,
+// no mês anterior ao vigente. A exclusão da Bill duplicada é manual, uma a uma.
+async function despesasDuplicadas({ mes, ano, tolerancia_pct = 2, tolerancia_dias = 45 } = {}) {
+  if (!qbConfigurado()) return { duplicadas: [], erro: 'QuickBooks não configurado' };
+  const hoje = new Date();
+  // padrão: mês ANTERIOR ao vigente
+  const ref = mes && ano ? new Date(parseInt(ano), parseInt(mes) - 1, 1) : new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+  const m = ref.getMonth() + 1, a = ref.getFullYear();
+  const ini = `${a}-${String(m).padStart(2,'0')}-01`, fim = `${a}-${String(m).padStart(2,'0')}-${String(new Date(a, m, 0).getDate()).padStart(2,'0')}`;
+  const token = await qbToken();
+  const bills = (await qbQuery(`select * from Bill where Balance > '0' maxresults 1000`, token))?.QueryResponse?.Bill || [];
+  const iniExt = new Date(new Date(ini).getTime() - tolerancia_dias * 86400000).toISOString().split('T')[0];
+  const fimExt = new Date(new Date(fim).getTime() + tolerancia_dias * 86400000).toISOString().split('T')[0];
+  const ext = await extratoConsolidado({ data_inicio: iniExt, data_fim: fimExt, incluir_simulados: false });
+  const saidas = (ext.lancamentos || []).filter(l => l.tipo === 'saida' && l.valor > 0);
+  const normN = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\b(ltda|s\.?a\.?|me|eireli|epp|cia)\b/g, '').replace(/[^a-z0-9 ]/g, ' ').trim();
+  const usadas = new Set(), duplicadas = [];
+  for (const b of bills) {
+    const venc = b.DueDate || b.TxnDate;
+    if (!venc || venc < ini || venc > fim) continue;            // só Bills do mês de referência
+    const valor = round(parseFloat(b.TotalAmt || 0)), tol = Math.max(valor * tolerancia_pct / 100, 1);
+    const forn = b.VendorRef?.name || '';
+    const chave = normN(forn).split(' ').find(w => w.length >= 4) || '';
+    let melhor = null;
+    for (const s of saidas) {
+      if (usadas.has(s.id)) continue;
+      if (Math.abs(s.valor - valor) > tol) continue;
+      const nome = chave && normN(s.descricao + ' ' + (s.contraparte || '')).includes(chave);
+      const dist = Math.abs((new Date(s.data) - new Date(venc)) / 86400000);
+      if (dist > tolerancia_dias) continue;
+      const score = (nome ? 0.6 : 0.2) + (1 - dist / (tolerancia_dias + 1)) * 0.4;
+      if (!melhor || score > melhor.score) melhor = { s, score, nome, dist };
+    }
+    if (melhor && melhor.score >= 0.5) {
+      usadas.add(melhor.s.id);
+      duplicadas.push({ bill_id: b.Id, sync_token: b.SyncToken, doc: b.DocNumber, fornecedor: forn, valor, vencimento: venc,
+        extrato_data: melhor.s.data, extrato_descricao: melhor.s.descricao, extrato_valor: melhor.s.valor,
+        nome_bateu: melhor.nome, dias: Math.round(melhor.dist), confianca: melhor.score >= 0.8 ? 'alta' : 'media' });
+    }
+  }
+  return { mes: m, ano: a, duplicadas, total: duplicadas.length, valor_total: round(duplicadas.reduce((s, d) => s + d.valor, 0)),
+    bills_no_mes: bills.filter(b => (b.DueDate || b.TxnDate) >= ini && (b.DueDate || b.TxnDate) <= fim).length,
+    aviso: 'Cada linha é uma conta a pagar em aberto cujo pagamento já aparece no extrato. Excluir a Bill remove a duplicidade do "a pagar" — o pagamento real no extrato fica intacto.' };
+}
+
+async function qbExcluirBill({ bill_id, motivo, confirmar } = {}) {
+  if (confirmar !== 'EXCLUIR') throw new Error('Confirmação obrigatória: envie confirmar = "EXCLUIR"');
+  if (!bill_id) throw new Error('bill_id obrigatório');
+  const token = await qbToken();
+  const atual = await qbQuery(`select * from Bill where Id = '${String(bill_id).replace(/'/g, '')}'`, token);
+  const b = atual?.QueryResponse?.Bill?.[0];
+  if (!b) throw new Error('Conta a pagar não encontrada no QuickBooks (já excluída?)');
+  if (parseFloat(b.Balance || 0) <= 0) throw new Error('Esta conta já está paga/baixada — não excluir.');
+  // trava: só do mês anterior ao vigente (ou antes) — nunca do mês corrente
+  const hoje = new Date(); const iniMesAtual = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}-01`;
+  if ((b.DueDate || b.TxnDate) >= iniMesAtual) throw new Error('Só é permitido excluir contas do mês anterior ao vigente ou anteriores.');
+  const r = await qbFetch(`/bill?operation=delete&minorversion=65`, token, 'POST', { Id: b.Id, SyncToken: b.SyncToken });
+  console.log(`[QB] Bill ${b.DocNumber || b.Id} (${b.VendorRef?.name}) EXCLUÍDA — motivo: ${motivo || 'duplicada com o extrato'}`);
+  return { excluida: true, doc: b.DocNumber, fornecedor: b.VendorRef?.name, valor: parseFloat(b.TotalAmt || 0) };
+}
+
+// v2.26: conciliação manual de UM termo — botão no card/detalhe
+async function conciliarTermo({ termo_id } = {}) {
+  if (!termo_id) throw new Error('termo_id obrigatório');
+  const sql = await getSql();
+  const notas = await sql`SELECT nf_data FROM termos_empresas WHERE termo_id = ${termo_id} AND nf_numero IS NOT NULL`;
+  if (!notas.length) return { termo_id, resumo: { total: 0 }, aviso: 'Este termo não tem notas com número/valor/data para conciliar.' };
+  // roda a conciliação nos meses em que as notas dessa termo vencem
+  const meses = new Set();
+  notas.forEach(n => { const m = String(n.nf_data || '').match(/(\d{4})-(\d{2})/) || String(n.nf_data || '').match(/(\d{2})\/(\d{4})/);
+    if (m) { const ano = m[1].length === 4 ? m[1] : m[2], mes = m[1].length === 4 ? m[2] : m[1];
+      const d = new Date(parseInt(ano), parseInt(mes) - 1 + 1, 1); meses.add(`${d.getFullYear()}-${d.getMonth() + 1}`);
+      const d2 = new Date(parseInt(ano), parseInt(mes) - 1, 1); meses.add(`${d2.getFullYear()}-${d2.getMonth() + 1}`); } });
+  let itens = [];
+  for (const k of meses) { const [a, m] = k.split('-').map(Number);
+    const r = await conciliacaoNotasExtrato({ mes: m, ano: a, aplicar: true });
+    itens.push(...(r.notas || []).filter(x => x.termo_id === termo_id)); }
+  const vistos = new Set(); itens = itens.filter(x => !vistos.has(x.empresa_id) && vistos.add(x.empresa_id));
+  const t = await sql`SELECT conciliado, conciliado_em FROM termos_faturamento WHERE id = ${termo_id}`;
+  return { termo_id, notas: itens, conciliado: !!t[0]?.conciliado,
+    resumo: { total: itens.length, conciliadas: itens.filter(x => x.situacao === 'conciliada').length,
+      em_atraso: itens.filter(x => x.situacao === 'em_atraso').length } };
+}
+
+async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_dias = 10, tolerancia_pct = 2, aplicar = true, conta_id = null } = {}) {
+  const sql = await getSql();
+  for (const col of ['conciliado_em TIMESTAMPTZ', 'conciliado_extrato_id TEXT', 'conciliado_extrato_data TEXT', 'conciliado_obs TEXT']) {
+    try { await sql.query(`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
+  }
+  for (const col of ['conciliado BOOLEAN DEFAULT false', 'conciliado_em TIMESTAMPTZ']) {
+    try { await sql.query(`ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
+  }
+  const hoje = new Date();
+  const m = parseInt(mes) || (hoje.getMonth() + 1), a = parseInt(ano) || hoje.getFullYear();
+  const mesIni = `${a}-${String(m).padStart(2,'0')}-01`;
+  const mesFim = `${a}-${String(m).padStart(2,'0')}-${String(new Date(a, m, 0).getDate()).padStart(2,'0')}`;
+
+  // 1. Notas cujo pagamento ESPERADO (emissão + prazo) cai no mês, mais as ainda não conciliadas de meses anteriores
+  const notas = await sql`SELECT e.id, e.termo_id, e.empresa, e.nf_numero, e.nf_valor, e.nf_data, e.pago, e.pagamento_data,
+      e.conciliado_em, t.numero_termo, t.projeto, t.contratante, t.status AS termo_status
+    FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id
+    WHERE e.nf_numero IS NOT NULL AND e.nf_valor IS NOT NULL AND e.nf_valor > 0
+      AND t.status NOT IN ('elaboracao','aprovacao')
+    ORDER BY e.nf_data`;
+  const parseData = v => { if (!v) return null; const s = String(v); const m2 = s.match(/(\d{4})-(\d{2})-(\d{2})/) || s.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    if (!m2) return null; return m2[0].includes('/') ? `${m2[3]}-${m2[2]}-${m2[1]}` : m2[0]; };
+  const addDias = (d, n) => new Date(new Date(d + 'T12:00:00').getTime() + n * 86400000).toISOString().split('T')[0];
+  const candidatas = notas.map(n => {
+    const emissao = parseData(n.nf_data);
+    const esperado = emissao ? addDias(emissao, prazo_dias) : null;
+    return { ...n, emissao, esperado, janela_ini: esperado ? addDias(esperado, -tolerancia_dias) : null, janela_fim: esperado ? addDias(esperado, tolerancia_dias) : null };
+  }).filter(n => n.esperado && (n.esperado >= mesIni && n.esperado <= mesFim || (!n.conciliado_em && n.esperado < mesIni)));
+
+  if (!candidatas.length) return { mes: m, ano: a, notas: [], resumo: { total: 0 }, aviso: 'Nenhuma nota com pagamento esperado neste mês.' };
+
+  // 2. Receitas do extrato no intervalo que cobre todas as janelas
+  const ini = candidatas.reduce((s, n) => n.janela_ini < s ? n.janela_ini : s, mesIni);
+  const fim = candidatas.reduce((s, n) => n.janela_fim > s ? n.janela_fim : s, mesFim);
+  const ext = await extratoConsolidado({ data_inicio: ini, data_fim: fim, conta_id, incluir_simulados: false });
+  const receitas = (ext.lancamentos || []).filter(l => l.tipo === 'entrada' && l.valor > 0);
+  const usadas = new Set();
+  const normN = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ');
+
+  // 3. Casamento nota a nota
+  const resultado = [];
+  for (const n of candidatas) {
+    const valor = num(n.nf_valor), tol = Math.max(valor * tolerancia_pct / 100, 1);
+    let melhor = null;
+    for (const r of receitas) {
+      if (usadas.has(r.id)) continue;
+      if (Math.abs(r.valor - valor) > tol) continue;
+      if (r.data < n.janela_ini || r.data > n.janela_fim) continue;
+      const dist = Math.abs((new Date(r.data) - new Date(n.esperado)) / 86400000);
+      const chave = normN(n.empresa || n.contratante).split(' ').find(w => w.length >= 4) || '';
+      const nome = chave && normN(r.descricao).includes(chave);
+      const score = (1 - dist / (tolerancia_dias + 1)) * 0.6 + (nome ? 0.4 : 0.2);
+      if (!melhor || score > melhor.score) melhor = { r, score, dist, nome };
+    }
+    const item = { empresa_id: n.id, termo_id: n.termo_id, termo: n.numero_termo, projeto: n.projeto, cliente: n.contratante,
+      empresa: n.empresa, nf: n.nf_numero, valor, emissao: n.emissao, esperado: n.esperado,
+      ja_conciliada: !!n.conciliado_em };
+    if (melhor) {
+      usadas.add(melhor.r.id);
+      Object.assign(item, { situacao: 'conciliada', extrato_data: melhor.r.data, extrato_valor: melhor.r.valor,
+        extrato_descricao: melhor.r.descricao, dias_do_esperado: Math.round(melhor.dist), nome_bateu: melhor.nome,
+        confianca: melhor.score >= 0.75 ? 'alta' : 'media' });
+      if (aplicar && !n.conciliado_em) {
+        await sql`UPDATE termos_empresas SET conciliado_em = NOW(), conciliado_extrato_id = ${String(melhor.r.id)},
+          conciliado_extrato_data = ${melhor.r.data}, pago = true, pagamento_data = COALESCE(pagamento_data, ${melhor.r.data}::date),
+          pagamento_origem = COALESCE(pagamento_origem, 'conciliacao_extrato') WHERE id = ${n.id}`;
+      }
+    } else {
+      const atrasada = n.esperado < hoje.toISOString().split('T')[0];
+      Object.assign(item, { situacao: atrasada ? 'em_atraso' : 'aguardando',
+        dias_atraso: atrasada ? Math.floor((hoje - new Date(n.esperado)) / 86400000) : 0 });
+    }
+    resultado.push(item);
+  }
+
+  // 4. Termo conciliado = todas as notas dele conciliadas
+  const porTermo = {};
+  resultado.forEach(x => { (porTermo[x.termo_id] = porTermo[x.termo_id] || []).push(x); });
+  const termosConciliados = [];
+  for (const [tid, itens] of Object.entries(porTermo)) {
+    const todas = await sql`SELECT COUNT(*)::int AS n, COUNT(conciliado_em)::int AS c FROM termos_empresas WHERE termo_id = ${tid} AND nf_numero IS NOT NULL`;
+    const completo = todas[0] && todas[0].n > 0 && todas[0].n === todas[0].c;
+    if (completo) {
+      termosConciliados.push(tid);
+      if (aplicar) await sql`UPDATE termos_faturamento SET conciliado = true, conciliado_em = COALESCE(conciliado_em, NOW()) WHERE id = ${tid}`;
+    }
+  }
+
+  // 5. Receitas do mês que não casaram com nota nenhuma
+  const orfas = receitas.filter(r => !usadas.has(r.id) && r.data >= mesIni && r.data <= mesFim)
+    .map(r => ({ data: r.data, descricao: r.descricao, valor: r.valor }));
+
+  const conc = resultado.filter(x => x.situacao === 'conciliada');
+  return { mes: m, ano: a, periodo_extrato: { de: ini, ate: fim }, notas: resultado, receitas_sem_nota: orfas,
+    termos_conciliados: termosConciliados,
+    resumo: { total: resultado.length, conciliadas: conc.length,
+      aguardando: resultado.filter(x => x.situacao === 'aguardando').length,
+      em_atraso: resultado.filter(x => x.situacao === 'em_atraso').length,
+      valor_conciliado: round(conc.reduce((s, x) => s + x.valor, 0)),
+      valor_em_atraso: round(resultado.filter(x => x.situacao === 'em_atraso').reduce((s, x) => s + x.valor, 0)),
+      termos_fechados: termosConciliados.length, receitas_sem_nota: orfas.length,
+      valor_sem_nota: round(orfas.reduce((s, r) => s + r.valor, 0)) },
+    parametros: { prazo_dias, tolerancia_dias, tolerancia_pct }, aplicado: !!aplicar };
 }
 
 // ═══ v1.87: CONCILIAÇÃO DE RECEBÍVEIS ═══
