@@ -17117,7 +17117,7 @@ async function abrirDetalheTermo(id) {
               <div style="font-size:8.5px;color:var(--t3);margin-top:2px;">🧾 ${e.nf_data ? e.nf_data.split('-').reverse().join('/') : '<span style="color:var(--t3);">sem data</span>'} <button class="btn" style="font-size:7.5px;padding:0 4px;" onclick="_fatEditarData('${e.id}','nf')" title="Ajustar data de emissão">✎</button></div></td>
             <td style="padding:6px;">${e.qb_invoice_id ? '✅ Fatura #'+(e.qb_invoice_doc||e.qb_invoice_id) : e.nf_status==='encontrada' ? `<button class="btn" style="font-size:8px;padding:1px 6px;color:var(--gold);" onclick="_fatLancarQb('${e.id}')" id="btnQb_${e.id}">📤 Lançar</button>` : '<span style="color:var(--t3);">—</span>'}${e.qb_erro ? '<div style="color:var(--red);font-size:8.5px;margin-top:2px;">⚠ '+e.qb_erro+'</div>' : ''}</td>
             <td style="padding:6px;">${e.pagamento_status==='pago' ? '<span style="color:var(--green,#22d3a3);">✅ pago</span>' : '<span style="color:var(--t3);">pendente</span>'} <button class="btn" style="font-size:8px;padding:1px 5px;margin-left:4px;" onclick="_fatMarcarPagoManual('${e.id}')" title="Marcar como pago manualmente">✎</button>
-              <div style="font-size:8.5px;color:var(--t3);margin-top:2px;">💵 ${e.pagamento_data ? e.pagamento_data.split('-').reverse().join('/') : '<span style="color:var(--t3);">sem data</span>'} <button class="btn" style="font-size:7.5px;padding:0 4px;" onclick="_fatEditarData('${e.id}','pag')" title="Ajustar data de pagamento">✎</button>${e.pagamento_origem === 'extrato' ? ' <span title="Encontrado no extrato — a fatura ainda não foi baixada no QuickBooks" style="color:var(--gold);">🏦</span>' : e.pagamento_origem === 'fatura_baixada' ? ' <span title="Fatura baixada no QuickBooks" style="color:var(--green,#22d3a3);">✓</span>' : ''}</div></td>
+              <div style="font-size:8.5px;color:var(--t3);margin-top:2px;">💵 ${e.pagamento_data ? e.pagamento_data.split('-').reverse().join('/') : '<span style="color:var(--t3);">sem data</span>'} <button class="btn" style="font-size:7.5px;padding:0 4px;" onclick="_fatEditarData('${e.id}','pag')" title="Ajustar data de pagamento">✎</button>${(e.pago || e.pagamento_data) ? `<button class="btn" style="font-size:7.5px;padding:0 4px;color:var(--red);border-color:var(--red);" onclick="_fatDesmarcarPago('${e.id}','${String(e.empresa||'').replace(/'/g,'')}')" title="Este pagamento NÃO aconteceu — desmarcar">✕</button>` : ''}${e.pagamento_origem === 'extrato' ? ' <span title="Encontrado no extrato — a fatura ainda não foi baixada no QuickBooks" style="color:var(--gold);">🏦</span>' : e.pagamento_origem === 'fatura_baixada' ? ' <span title="Fatura baixada no QuickBooks" style="color:var(--green,#22d3a3);">✓</span>' : ''}</div></td>
             </tr>`).join('')}</tbody>
         </table>
         ${notas.length ? `<div style="margin-top:12px;font-size:10px;color:var(--t2);">
@@ -17150,6 +17150,16 @@ async function _fatAvancar(id, status) {
 async function _fatAprovar(id) { const por = prompt('Aprovado por:', ''); if (por === null) return; try { await fatApi('termo_aprovar', { id, aprovado_por: por }); toast('Termo aprovado', 'success'); carregarKanbanFaturamento(); await abrirDetalheTermo(id); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
 async function _fatExcluir(id) { if (!confirm('Excluir este termo e todos os dados de rateio/notas? Ação não pode ser desfeita.')) return; try { await fatApi('termo_excluir', { id }); toast('Termo excluído', 'info'); document.getElementById('fatDetalhe').style.display='none'; carregarKanbanFaturamento(); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
 // v1.33: ajustar manualmente a data de emissão da NF ou de pagamento
+async function _fatDesmarcarPago(empresaId, empresa) {
+  const motivo = prompt(`Desmarcar o pagamento de "${empresa}"?\n\nO pagamento será registrado como pendente e, se o termo estiver em Pago, volta para Pagamento.\n\nMotivo (opcional):`, '');
+  if (motivo === null) return;
+  try {
+    await fatApi('termo_empresa_desmarcar_pago', { empresa_id: empresaId, motivo });
+    toast('Pagamento desmarcado — ' + empresa + ' volta a pendente', 'success');
+    if (_fatTermoAberto) await abrirDetalheTermo(_fatTermoAberto);
+    carregarKanbanFaturamento();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
 async function _fatEditarData(empresaId, tipo) {
   const label = tipo === 'nf' ? 'emissão da nota fiscal' : 'pagamento';
   const hoje = new Date().toISOString().split('T')[0];
@@ -22818,7 +22828,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.22] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.23] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22834,7 +22844,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.22';
+window.__ATX_BUILD_ID__ = 'ATX-v2.23';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
