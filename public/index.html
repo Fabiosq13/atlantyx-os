@@ -16755,6 +16755,8 @@ function _fatCard(t, col) {
       <span onclick="event.stopPropagation();_fatReabrir('${t.id}')" style="cursor:pointer;color:var(--gold);margin-left:6px;" title="Devolver este termo para a coluna de pagamento">↩ reabrir</span>
     </div>` : '';
   const cpflBadge = col === 'pagamento' ? `<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--bd);">
+      <span onclick="event.stopPropagation();_fatMarcarPago('${t.id}')" title="Confirmar que o pagamento entrou — move para a coluna Pago"
+        style="cursor:pointer;font-size:9px;display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:5px;margin-bottom:4px;background:rgba(34,211,163,.15);color:var(--green,#22d3a3);border:1px solid rgba(34,211,163,.4);">💵 marcar como pago</span><br>
       <span onclick="event.stopPropagation();_fatToggleCpfl('${t.id}', ${t.cpfl_confirmado ? 'false' : 'true'})"
         title="${t.cpfl_confirmado ? 'Confirmado por ' + (t.cpfl_confirmado_por || '—') + (t.cpfl_confirmado_em ? ' em ' + String(t.cpfl_confirmado_em).substring(0,10).split('-').reverse().join('/') : '') + ' — clique para desmarcar' : 'Marcar que as notas estão no sistema da CPFL, programadas para pagamento'}"
         style="cursor:pointer;font-size:9px;display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:5px;
@@ -16868,6 +16870,18 @@ function _fatBarraProgressoNf(t) {
 
 // v1.20.4: card de upload manual de NF — visível na etapa Emissão de NF
 // v1.94: marca/desmarca a confirmação da CPFL direto no card
+// v2.21: marcação MANUAL de pago. Antes só o sync automático movia para Pago — se o pagamento
+// entrou por um caminho que o sync não reconhece, o termo ficava preso em Pagamento.
+async function _fatMarcarPago(termoId) {
+  const r = prompt('Confirmar que este termo foi PAGO?\n\nData do pagamento (AAAA-MM-DD) — deixe vazio para hoje:', new Date().toISOString().split('T')[0]);
+  if (r === null) return;
+  try {
+    await fatApi('termo_mover', { id: termoId, status: 'pago', pago_em: (r || '').trim() || null, manual: true });
+    toast('Termo marcado como pago', 'success');
+    carregarKanbanFaturamento();
+    const det = document.getElementById('fatDetalheModal'); if (det && det.style.display !== 'none') abrirDetalheTermo(termoId);
+  } catch (e) { toast('Não moveu: ' + e.message, 'error'); alert('Erro ao marcar como pago:\n' + e.message); }
+}
 async function _fatConcluir(termoId) {
   if (!confirm('Fechar este termo? Ele vai para a coluna Concluído.')) return;
   try {
@@ -17085,6 +17099,7 @@ async function abrirDetalheTermo(id) {
           ${t.status === 'envio_nf' ? `<button class="btn btn-p" onclick="_fatVerificarEmail('${t.id}')" id="btnVerifEmail_${t.id}">📧 Verificar e-mail (atlanteambr@gmail.com)</button>${t.nf_status === 'completo' ? `<button class="btn btn-gn" onclick="_fatAvancar('${t.id}','pagamento')">Todas as notas ok — ir p/ Pagamento →</button>` : ''}` : ''}
           ${(t.status === 'envio_nf' || t.status === 'pagamento') && emp.some(e => e.nf_status === 'encontrada' && !e.qb_invoice_id) ? `<button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="_fatLancarTodasQb('${t.id}')" id="btnLancarQb_${t.id}">📤 Lançar notas no QuickBooks (Contas a Receber)</button>` : ''}
           ${t.status === 'pagamento' ? `<button class="btn btn-p" onclick="_fatVerificarPagamento('${t.id}')" id="btnVerifPag_${t.id}" title="Procura a fatura baixada e, se não achar, busca o recebimento no extrato">🏦 Verificar pagamento (fatura + extrato)</button>` : ''}
+          ${t.status === 'pagamento' ? `<button class="btn btn-gn" onclick="_fatMarcarPago('${t.id}')" title="Confirmar manualmente que o pagamento entrou">💵 Marcar como PAGO</button>` : ''}
           <button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="abrirEdicaoTermo('${t.id}')">✎ Editar termo</button>
           <button class="btn" style="color:var(--red);margin-left:auto;" onclick="_fatExcluir('${t.id}')">🗑 Excluir termo</button>
         </div>
@@ -22802,7 +22817,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.20] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.21] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22818,7 +22833,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.20';
+window.__ATX_BUILD_ID__ = 'ATX-v2.21';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
