@@ -3760,6 +3760,15 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- S3 CONCILIAÇÃO BANCÁRIA -->
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <div class="page" id="page-s3conciliacao">
+  <!-- v2.28: quatro frentes de conciliação -->
+  <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
+    <button class="btn btn-gn" style="font-size:10px;" onclick="concNotasMes()">&#129534; Notas x extrato (mes)</button>
+    <button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red);" onclick="concFaturasVencidas()">&#9888; Faturas vencidas +30d</button>
+    <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="concDespesasDup()">&#128179; Despesas duplicadas (mes anterior)</button>
+    <label class="btn" style="font-size:10px;cursor:pointer;">&#128196; Importar OFX do banco<input type="file" accept=".ofx,.OFX,.txt" style="display:none;" onchange="concImportarOfx(this)"/></label>
+    <select class="fsel" id="conc_mesNotas" style="font-size:10px;width:auto;">${''}</select>
+  </div>
+  <div id="concFrentesBox"></div>
   <div id="concRecebiveisBox"></div>
     <div style="background:linear-gradient(135deg,rgba(245,166,35,.12),rgba(245,166,35,.03));border:1px solid rgba(245,166,35,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Conciliação Bancária</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Bate lançamentos reais (QB) com despesas programadas e A Receber automaticamente</div></div>
@@ -16784,6 +16793,7 @@ function _fatCard(t, col) {
   // v2.10: no concluído, mostra QUANDO e POR QUE — e permite reabrir se foi automático demais.
   // v2.11: na coluna PAGO — quando detectou, e o botão de concluir
   const pagoBadge = col === 'pago' ? `<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--bd);font-size:9px;">
+      ${t.conciliado ? `<span style="color:var(--green,#22d3a3);background:rgba(34,211,163,.15);padding:1px 6px;border-radius:4px;" title="Todas as notas casaram com receitas do extrato${t.conciliado_em ? ' em ' + String(t.conciliado_em).substring(0,10).split('-').reverse().join('/') : ''}">✓ conciliado</span>` : `<span onclick="event.stopPropagation();_fatConciliarTermo('${t.id}')" style="cursor:pointer;color:var(--t2);background:var(--bg3,#151b2e);padding:1px 6px;border-radius:4px;border:1px solid var(--bd);" title="Casar as notas deste termo com o extrato do QuickBooks">⟳ conciliar</span>`}<br>
       <span style="color:var(--green,#22d3a3);">💵 ${t.status === 'concluido' ? 'concluído' : 'pago'} ${(t.pago_em || t.concluido_em || t.atualizado_em) ? String(t.pago_em || t.concluido_em || t.atualizado_em).substring(0,10).split('-').reverse().join('/') : ''}</span>
       <span onclick="event.stopPropagation();_fatConcluir('${t.id}')" style="cursor:pointer;color:var(--gold);margin-left:8px;" title="Fechar este termo (vai para Concluído)">🏁 concluir</span>
       <span onclick="event.stopPropagation();_fatReabrir('${t.id}')" style="cursor:pointer;color:var(--t3);margin-left:6px;" title="Voltar para Pagamento">↩</span>
@@ -16920,6 +16930,17 @@ async function _fatMarcarPago(termoId) {
     carregarKanbanFaturamento();
     const det = document.getElementById('fatDetalheModal'); if (det && det.style.display !== 'none') abrirDetalheTermo(termoId);
   } catch (e) { toast('Não moveu: ' + e.message, 'error'); alert('Erro ao marcar como pago:\n' + e.message); }
+}
+// v2.28: conciliação manual de um termo (nota a nota × extrato)
+async function _fatConciliarTermo(termoId) {
+  toast('Conciliando as notas do termo...', 'success');
+  try {
+    const d = await finApi('conc_termo', { termo_id: termoId });
+    const r = d.resumo || {};
+    const linhas = (d.notas||[]).map(n => `${n.situacao==='conciliada'?'✓':n.situacao==='em_atraso'?'🔴':'⏳'} NF ${n.nf} · ${n.empresa||''} · ${fmtBRLcompleto(n.valor)} · esperado ${(n.esperado||'').split('-').reverse().join('/')}${n.extrato_data ? ' → recebido ' + n.extrato_data.split('-').reverse().join('/') : n.situacao==='em_atraso' ? ' → EM ATRASO ' + n.dias_atraso + 'd' : ''}`).join('\n');
+    alert(`${d.conciliado ? '✅ TERMO CONCILIADO' : '⏳ Termo ainda com notas pendentes'}\n\n${r.conciliadas||0} de ${r.total||0} nota(s) casaram com o extrato.${r.em_atraso ? '\n' + r.em_atraso + ' em atraso.' : ''}\n\n${linhas || d.aviso || ''}`);
+    carregarKanbanFaturamento();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
 async function _fatConcluir(termoId) {
   if (!confirm('Fechar este termo? Ele vai para a coluna Concluído.')) return;
@@ -19778,6 +19799,126 @@ async function editarTermosObrigatorios() {
     verificarTermosObrigatorios();
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
+
+// ═══ v2.28: AS QUATRO FRENTES DE CONCILIAÇÃO ═══
+function _concBox(html) { const b = document.getElementById('concFrentesBox'); if (b) b.innerHTML = html; }
+function _concErro(e) { _concBox(`<div class="panel"><div class="pb" style="color:var(--red);padding:16px;font-size:11px;">Erro: ${e.message}${e.dica ? '<br><span style="color:var(--gold);">💡 ' + e.dica + '</span>' : ''}</div></div>`); }
+function _concMesSel() {
+  const sel = document.getElementById('conc_mesNotas');
+  if (sel && !sel.options.length) { const h = new Date();
+    for (let i = 0; i < 6; i++) { const d = new Date(h.getFullYear(), h.getMonth() - i, 1);
+      const o = document.createElement('option'); o.value = `${d.getMonth()+1}|${d.getFullYear()}`; o.textContent = `${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; sel.appendChild(o); } }
+  const [m, a] = (sel?.value || '').split('|'); return { mes: parseInt(m) || (new Date().getMonth()+1), ano: parseInt(a) || new Date().getFullYear() };
+}
+const _dt = d => d ? String(d).substring(0,10).split('-').reverse().join('/') : '—';
+
+// 1. Notas × extrato do mês
+async function concNotasMes() {
+  const { mes, ano } = _concMesSel();
+  _concBox('<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ Casando notas com o extrato...</div></div>');
+  try {
+    const d = await finApi('conc_notas_extrato', { mes, ano, aplicar: true });
+    const r = d.resumo || {};
+    const ico = s => s === 'conciliada' ? '🟢' : s === 'em_atraso' ? '🔴' : '⏳';
+    _concBox(`<div class="kg k4" style="margin-bottom:12px;">
+        <div class="kpi gn"><div class="kl">Conciliadas</div><div class="kv">${r.conciliadas||0}</div><div class="ks">${fmtBRLcompleto(r.valor_conciliado||0)}</div></div>
+        <div class="kpi rd"><div class="kl">Em atraso</div><div class="kv">${r.em_atraso||0}</div><div class="ks">${fmtBRLcompleto(r.valor_em_atraso||0)} — cobrar</div></div>
+        <div class="kpi gd"><div class="kl">Aguardando</div><div class="kv">${r.aguardando||0}</div><div class="ks">dentro do prazo</div></div>
+        <div class="kpi bl"><div class="kl">Termos fechados</div><div class="kv">${r.termos_fechados||0}</div><div class="ks">todas as notas conciliadas</div></div>
+      </div>
+      <div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">Nota a nota · ${String(mes).padStart(2,'0')}/${ano}</div>
+        <span style="font-size:10px;color:var(--t2);">prazo ${d.parametros?.prazo_dias}d · janela ±${d.parametros?.tolerancia_dias}d · roda sozinho às 8h, 12h e 17h</span></div>
+        <div class="pb" style="max-height:48vh;overflow-y:auto;">${(d.notas||[]).length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead><tr style="border-bottom:1px solid var(--bd);">${['','NF','TERMO','EMPRESA','VALOR','EMISSÃO','ESPERADO','RECEBIDO','SITUAÇÃO'].map(h=>`<th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;">${h}</th>`).join('')}</tr></thead>
+          <tbody>${d.notas.sort((a,b)=>(a.situacao==='em_atraso'?0:1)-(b.situacao==='em_atraso'?0:1)).map(n => `<tr style="border-bottom:1px solid var(--bd);${n.situacao==='em_atraso'?'background:rgba(255,80,80,.06);':''}">
+            <td style="padding:5px;">${ico(n.situacao)}</td><td style="padding:5px;font-family:var(--M);">${n.nf}</td>
+            <td style="padding:5px;"><span style="cursor:pointer;color:var(--gold);" onclick="abrirDetalheTermo('${n.termo_id}')">${n.termo||'—'}</span></td>
+            <td style="padding:5px;">${n.empresa||n.cliente||'—'}</td><td style="padding:5px;font-family:var(--M);">${fmtBRLcompleto(n.valor)}</td>
+            <td style="padding:5px;">${_dt(n.emissao)}</td><td style="padding:5px;">${_dt(n.esperado)}</td>
+            <td style="padding:5px;">${n.extrato_data ? _dt(n.extrato_data) + ` <span style="color:var(--t3);font-size:9px;">(${n.dias_do_esperado}d${n.confianca==='media'?' ?':''})</span>` : '—'}</td>
+            <td style="padding:5px;">${n.situacao==='conciliada'?'<span style="color:var(--green,#22d3a3);">conciliada</span>':n.situacao==='em_atraso'?`<span style="color:var(--red);">atraso ${n.dias_atraso}d</span>`:'aguardando'}</td></tr>`).join('')}</tbody></table>`
+          : `<div style="text-align:center;color:var(--t3);padding:16px;">${d.aviso||'Nada a conciliar neste mês.'}</div>`}</div></div>
+      ${(d.receitas_sem_nota||[]).length ? `<div class="panel"><div class="ph"><div class="pt">Receitas do mês sem nota correspondente</div><span style="font-size:10px;color:var(--t2);">${d.receitas_sem_nota.length} · ${fmtBRLcompleto(r.valor_sem_nota||0)}</span></div>
+        <div class="pb" style="max-height:26vh;overflow-y:auto;">${d.receitas_sem_nota.map(x => `<div style="font-size:10.5px;padding:4px 0;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;"><span>${_dt(x.data)} · ${x.descricao||''}</span><span style="font-family:var(--M);">${fmtBRLcompleto(x.valor)}</span></div>`).join('')}</div></div>` : ''}`);
+  } catch (e) { _concErro(e); }
+}
+// 2. Faturas vencidas há +30 dias sem conciliar — com exclusão
+async function concFaturasVencidas() {
+  _concBox('<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ Buscando faturas vencidas no QuickBooks...</div></div>');
+  try {
+    const d = await finApi('conc_faturas_vencidas', { dias: 30 });
+    _concBox(`<div class="panel"><div class="ph"><div class="pt">⚠ Faturas em aberto vencidas há mais de ${d.dias} dias</div>
+        <span style="font-size:10px;color:var(--t2);">${d.total} · ${fmtBRLcompleto(d.valor_total||0)}</span></div>
+      <div class="pb">${(d.faturas||[]).length ? `<div style="font-size:10.5px;color:var(--t2);margin-bottom:8px;line-height:1.6;">Estão no contas a receber do QuickBooks mas nada entrou há mais de 30 dias do vencimento. Ou cobra, ou — se a nota foi cancelada/substituída — exclui a fatura para o contas a receber parar de mentir.</div>
+        <table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="border-bottom:1px solid var(--bd);">${['DOC','CLIENTE','VALOR','SALDO','VENCIMENTO','VENCIDA HÁ',''].map(h=>`<th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;">${h}</th>`).join('')}</tr></thead>
+        <tbody>${d.faturas.map(f => `<tr style="border-bottom:1px solid var(--bd);background:rgba(255,80,80,.05);">
+          <td style="padding:5px;font-family:var(--M);">${f.doc||f.id}</td><td style="padding:5px;">${f.cliente||'—'}</td>
+          <td style="padding:5px;font-family:var(--M);">${fmtBRLcompleto(f.valor)}</td><td style="padding:5px;font-family:var(--M);">${fmtBRLcompleto(f.saldo)}</td>
+          <td style="padding:5px;">${_dt(f.vencimento)}</td><td style="padding:5px;color:var(--red);font-weight:600;">${f.dias_vencida} dias</td>
+          <td style="padding:5px;"><button class="btn" style="font-size:9px;color:var(--red);border-color:var(--red);" onclick="concExcluirInvoice('${f.id}','${String(f.doc||'').replace(/'/g,'')}','${(f.cliente||'').replace(/'/g,'')}',${f.valor})">🗑 excluir do QB</button></td></tr>`).join('')}</tbody></table>`
+        : '<div style="text-align:center;color:var(--green,#22d3a3);padding:16px;">Nenhuma fatura vencida há mais de 30 dias sem conciliar.</div>'}</div></div>`);
+  } catch (e) { _concErro(e); }
+}
+async function concExcluirInvoice(id, doc, cliente, valor) {
+  const c = prompt(`EXCLUIR a fatura ${doc} de ${cliente} (${fmtBRLcompleto(valor)}) do QuickBooks?\n\nIsso é IRREVERSÍVEL. A fatura some do contas a receber.\n\nDigite EXCLUIR para confirmar, e o motivo depois de |:\n(ex.: EXCLUIR | nota cancelada e reemitida)`, '');
+  if (!c) return;
+  const [conf, motivo] = c.split('|').map(x => x.trim());
+  if (conf !== 'EXCLUIR') { toast('Não excluído — confirmação não bateu', 'error'); return; }
+  try { const r = await finApi('conc_excluir_invoice', { invoice_id: id, confirmar: 'EXCLUIR', motivo }); toast(`Fatura ${r.doc||''} excluída do QuickBooks`, 'success'); addLog('warn', `[Conciliação] fatura ${r.doc} excluída — ${motivo||'sem motivo'}`); concFaturasVencidas(); }
+  catch (e) { toast('Erro: ' + e.message, 'error'); alert(e.message); }
+}
+// 3. Despesas duplicadas — Bill em aberto já paga no extrato (mês anterior)
+async function concDespesasDup() {
+  _concBox('<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ Cruzando contas a pagar com o extrato do mês anterior...</div></div>');
+  try {
+    const d = await finApi('conc_despesas_dup', {});
+    _concBox(`<div class="panel"><div class="ph"><div class="pt">💳 Contas a pagar em aberto que JÁ foram pagas · ${String(d.mes).padStart(2,'0')}/${d.ano}</div>
+        <span style="font-size:10px;color:var(--t2);">${d.total} de ${d.bills_no_mes} · ${fmtBRLcompleto(d.valor_total||0)}</span></div>
+      <div class="pb"><div style="font-size:10.5px;color:var(--t2);margin-bottom:8px;line-height:1.6;">${d.aviso||''} Só o mês anterior ao vigente — o mês corrente nunca é tocado.</div>
+        ${(d.duplicadas||[]).length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="border-bottom:1px solid var(--bd);">${['FORNECEDOR','DOC','VALOR','VENC.','PAGO NO EXTRATO','CONF.',''].map(h=>`<th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;">${h}</th>`).join('')}</tr></thead>
+        <tbody>${d.duplicadas.map(x => `<tr style="border-bottom:1px solid var(--bd);">
+          <td style="padding:5px;">${x.fornecedor||'—'}</td><td style="padding:5px;font-family:var(--M);">${x.doc||x.bill_id}</td>
+          <td style="padding:5px;font-family:var(--M);">${fmtBRLcompleto(x.valor)}</td><td style="padding:5px;">${_dt(x.vencimento)}</td>
+          <td style="padding:5px;font-size:10px;">${_dt(x.extrato_data)} · ${(x.extrato_descricao||'').substring(0,34)} (${x.dias}d)</td>
+          <td style="padding:5px;">${x.confianca==='alta'?'<span style="color:var(--green,#22d3a3);">alta</span>':'<span style="color:var(--gold);">média ?</span>'}</td>
+          <td style="padding:5px;"><button class="btn" style="font-size:9px;color:var(--red);border-color:var(--red);" onclick="concExcluirBill('${x.bill_id}','${String(x.doc||'').replace(/'/g,'')}','${(x.fornecedor||'').replace(/'/g,'')}',${x.valor})">🗑 excluir do QB</button></td></tr>`).join('')}</tbody></table>`
+        : '<div style="text-align:center;color:var(--green,#22d3a3);padding:16px;">Nenhuma conta a pagar duplicada com o extrato no mês anterior.</div>'}</div></div>`);
+  } catch (e) { _concErro(e); }
+}
+async function concExcluirBill(id, doc, forn, valor) {
+  const c = prompt(`EXCLUIR a conta a pagar ${doc||id} de ${forn} (${fmtBRLcompleto(valor)}) do QuickBooks?\n\nO pagamento real no extrato fica. Só some a duplicidade do "a pagar". IRREVERSÍVEL.\n\nDigite EXCLUIR para confirmar:`, '');
+  if (c !== 'EXCLUIR') { if (c !== null) toast('Não excluído — confirmação não bateu', 'error'); return; }
+  try { const r = await finApi('conc_excluir_bill', { bill_id: id, confirmar: 'EXCLUIR', motivo: 'duplicada com o extrato' }); toast(`Conta ${r.doc||''} de ${r.fornecedor||''} excluída`, 'success'); addLog('warn', `[Conciliação] bill ${r.doc} (${r.fornecedor}) excluída`); concDespesasDup(); }
+  catch (e) { toast('Erro: ' + e.message, 'error'); alert(e.message); }
+}
+// 4. OFX do banco × QuickBooks
+async function concImportarOfx(input) {
+  const file = input.files?.[0]; if (!file) return;
+  _concBox('<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ Lendo o OFX e comparando com o QuickBooks...</div></div>');
+  try {
+    const buf = await file.arrayBuffer();
+    let texto; try { texto = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { texto = new TextDecoder('windows-1252').decode(buf); }
+    const d = await finApi('conc_ofx', { ofx_texto: texto, conta_id: document.getElementById('conc_conta')?.value || null });
+    const r = d.resumo || {}, cor = d.veredito === 'conciliado' ? 'var(--green,#22d3a3)' : d.veredito === 'atenção' ? 'var(--gold)' : 'var(--red)';
+    const lista = (arr, titulo, nota) => arr.length ? `<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">${titulo}</div><span style="font-size:10px;color:var(--t2);">${arr.length}</span></div>
+      <div class="pb" style="max-height:30vh;overflow-y:auto;"><div style="font-size:10px;color:var(--t3);margin-bottom:6px;">${nota}</div>
+      ${arr.map(l => `<div style="font-size:10.5px;padding:4px 0;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;gap:8px;"><span>${_dt(l.data)} · ${(l.descricao||'').substring(0,60)}</span><span style="font-family:var(--M);color:${l.tipo==='entrada'?'var(--green,#22d3a3)':'var(--red)'};white-space:nowrap;">${l.tipo==='entrada'?'+':'−'}${fmtBRLcompleto(l.valor)}</span></div>`).join('')}</div></div>` : '';
+    _concBox(`<div style="background:var(--bg4);border-left:4px solid ${cor};border-radius:9px;padding:12px 15px;margin-bottom:12px;">
+        <div style="font-size:13px;font-weight:700;color:${cor};text-transform:uppercase;">${d.veredito}</div>
+        <div style="font-size:10px;color:var(--t3);margin-top:2px;">${file.name} · banco ${d.ofx?.conta?.banco||'?'} ag ${d.ofx?.conta?.agencia||'?'} cc ${d.ofx?.conta?.conta||'?'} · ${_dt(d.ofx?.periodo?.de)} a ${_dt(d.ofx?.periodo?.ate)}</div>
+        ${(d.leitura||[]).map(l => `<div style="font-size:11px;line-height:1.6;margin-top:5px;">• ${l}</div>`).join('')}</div>
+      <div class="kg k4" style="margin-bottom:12px;">
+        <div class="kpi gn"><div class="kl">Casados</div><div class="kv">${r.casados||0}</div><div class="ks">de ${d.ofx?.total||0} do banco (${r.pct_conciliado||0}%)</div></div>
+        <div class="kpi rd"><div class="kl">Só no banco</div><div class="kv">${r.so_banco||0}</div><div class="ks">${fmtBRLcompleto(r.valor_so_banco||0)} — falta no QB</div></div>
+        <div class="kpi gd"><div class="kl">Só no QuickBooks</div><div class="kv">${r.so_qb||0}</div><div class="ks">${fmtBRLcompleto(r.valor_so_qb||0)} — sobra no QB</div></div>
+        <div class="kpi ${Math.abs(d.diferenca_saldo||0)<1?'gn':'rd'}"><div class="kl">Saldo banco × contábil</div><div class="kv" style="font-size:14px;">${d.diferenca_saldo!=null?fmtBRLcompleto(Math.abs(d.diferenca_saldo)):'—'}</div><div class="ks">${fmtBRLcompleto(d.ofx?.saldo_final||0)} × ${d.saldo_quickbooks_na_data!=null?fmtBRLcompleto(d.saldo_quickbooks_na_data):'?'}</div></div>
+      </div>
+      ${lista(d.so_no_banco||[], '🏦 No banco e NÃO no QuickBooks', 'Falta lançar no QB, ou está lá com data/valor diferente (tolerância: mesmo valor, ±3 dias).')}
+      ${lista(d.so_no_quickbooks||[], '📒 No QuickBooks e NÃO no banco', 'Pode ser duplicado, lançamento futuro, ou conta errada. Cada um destes é candidato a correção.')}`);
+  } catch (e) { _concErro(e); }
+  input.value = '';
+}
+document.addEventListener('DOMContentLoaded', () => { try { _concMesSel(); } catch (_) {} });
 
 // ═══ v1.87: CONCILIAÇÃO DE RECEBÍVEIS — termo × NF × fatura no QuickBooks ═══
 async function conciliarRecebiveis() {
@@ -22980,7 +23121,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.27] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.28] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -22996,7 +23137,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.27';
+window.__ATX_BUILD_ID__ = 'ATX-v2.28';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
