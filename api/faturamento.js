@@ -97,7 +97,19 @@ async function ensureTabelas(sql) {
 async function cpflConfirmar({ termo_id, confirmado = true, por, observacao, previsao_pagamento } = {}) {
   if (!termo_id) throw new Error('termo_id obrigatório');
   const sql = await getSql();
-  try { await sql`ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS cpfl_confirmado BOOLEAN DEFAULT false`; } catch (_) {}
+  // v2.24: confere se as colunas existem antes do UPDATE. Se a migração falhou (sem permissão
+  // de ALTER), o erro sai claro em vez de "column does not exist" genérico.
+  for (const col of ['cpfl_confirmado BOOLEAN DEFAULT false','cpfl_confirmado_em TIMESTAMPTZ','cpfl_confirmado_por TEXT','cpfl_observacao TEXT','cpfl_previsao_pagamento DATE']) {
+    try { await sql.query(`ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
+  }
+  const cols = await sql`SELECT column_name FROM information_schema.columns WHERE table_name = 'termos_faturamento' AND column_name LIKE 'cpfl_%'`;
+  const tem = new Set(cols.map(c => c.column_name));
+  const faltam = ['cpfl_confirmado','cpfl_confirmado_em','cpfl_confirmado_por','cpfl_observacao','cpfl_previsao_pagamento'].filter(c => !tem.has(c));
+  if (faltam.length) {
+    const err = new Error(`As colunas ${faltam.join(', ')} não existem na tabela termos_faturamento e o sistema não tem permissão para criá-las.`);
+    err.dica = 'Rode no console SQL do Neon: ' + faltam.map(c => `ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS ${c} ${c==='cpfl_confirmado'?'BOOLEAN DEFAULT false':c.endsWith('_em')?'TIMESTAMPTZ':c==='cpfl_previsao_pagamento'?'DATE':'TEXT'};`).join(' ');
+    throw err;
+  }
   await sql`UPDATE termos_faturamento SET
       cpfl_confirmado = ${!!confirmado},
       cpfl_confirmado_em = ${confirmado ? new Date().toISOString() : null},
@@ -219,7 +231,7 @@ async function termoDiagnostico() {
   };
 }
 
-async function termoList({ status, mes, ano, periodo_texto } = {}) {
+async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate } = {}) {
   const sql = await getSql();
   // v1.32: filtro por mês/ano (data de criação do termo) e/ou por texto do período de medição.
   // Filtra pela criação porque "periodo_medicao" é texto livre ("julho/2026", "07/2026") e não
@@ -290,6 +302,24 @@ async function termoList({ status, mes, ano, periodo_texto } = {}) {
     const r = await sql`SELECT DISTINCT EXTRACT(YEAR FROM criado_em)::int AS ano FROM termos_faturamento ORDER BY ano DESC`;
     anosDisponiveis = r.map(x => x.ano);
   } catch (_) {}
+  // v2.24: filtro por DATA DE PAGAMENTO — mantém só os termos com alguma empresa paga no intervalo
+  if (pag_de || pag_ate) {
+    try {
+      const idsT = termos.map(t => t.id);
+      const pagas = idsT.length ? await sql`SELECT DISTINCT termo_id FROM termos_empresas
+        WHERE termo_id = ANY(${idsT}) AND pagamento_data IS NOT NULL
+          AND (${pag_de || null}::date IS NULL OR pagamento_data >= ${pag_de || null}::date)
+          AND (${pag_ate || null}::date IS NULL OR pagamento_data <= ${pag_ate || null}::date)` : [];
+      const ok = new Set(pagas.map(p => p.termo_id));
+      // também aceita pago_em do termo (marcação manual sem data por empresa)
+      const pagoEm = idsT.length ? await sql`SELECT id FROM termos_faturamento WHERE id = ANY(${idsT}) AND pago_em IS NOT NULL
+          AND (${pag_de || null}::date IS NULL OR pago_em::date >= ${pag_de || null}::date)
+          AND (${pag_ate || null}::date IS NULL OR pago_em::date <= ${pag_ate || null}::date)` : [];
+      pagoEm.forEach(p => ok.add(p.id));
+      termos = termos.filter(t => ok.has(t.id));
+    } catch (e) { console.warn('[FAT] filtro por pagamento:', e.message); }
+  }
+
   return { colunas: porColuna, labels: STATUS_LABEL, total: termos.length,
     totais_por_coluna: totaisPorColuna, total_geral: totalGeral,
     anos_disponiveis: anosDisponiveis, filtro_aplicado: { mes: mes || null, ano: ano || null, periodo_texto: periodo_texto || null } };
@@ -1146,6 +1176,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, action, ...resultado });
   } catch (error) {
     console.error('[ERRO faturamento]', action, error.message);
-    return res.status(500).json({ success: false, error: error.message });
+    return res.status(500).json({ success: false, error: error.message, dica: error.dica || null });
   }
 }
