@@ -3594,6 +3594,19 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <div class="fg" style="margin:0;"><label class="fl">Fim de semana</label>
           <select class="fsel" id="ac_fds" style="width:100%;"><option value="pular">Pular sab/dom</option><option value="incluir">Incluir</option></select></div>
       </div>
+      <div style="display:flex;gap:14px;align-items:center;margin:0 0 10px;font-size:10.5px;color:var(--t2);flex-wrap:wrap;">
+        <span style="font-weight:600;">Redes:</span>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" class="acRede" value="linkedin" checked/> LinkedIn</label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" class="acRede" value="instagram"/> Instagram</label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" class="acRede" value="facebook"/> Facebook</label>
+        <span id="acBioAviso" style="display:none;color:var(--gold);font-size:10px;">⚠ No Instagram o link só funciona na bio — veja abaixo</span>
+      </div>
+      <div id="acBioBox" style="display:none;background:rgba(245,185,75,.08);border:1px solid rgba(245,185,75,.35);border-radius:8px;padding:9px 11px;margin:0 0 10px;font-size:10.5px;line-height:1.7;">
+        📌 <b>Link para colocar na bio do Instagram</b> (uma vez só — vale para todos os posts):<br>
+        <span style="font-family:var(--M);font-size:10px;word-break:break-all;" id="acBioLink"></span>
+        <button class="btn" style="font-size:9px;margin-left:6px;" onclick="navigator.clipboard.writeText(document.getElementById('acBioLink').textContent).then(()=>toast('Link da bio copiado','success'))">📋 copiar</button>
+        <div style="color:var(--t2);font-size:10px;margin-top:3px;">Os posts vão terminar com "👉 Link na bio" e trazem o link visível na legenda, com UTM de Instagram. Sem a bio apontando para cá, não há como o clique chegar.</div>
+      </div>
       <div class="fg" style="margin:0 0 10px;"><label class="fl">Tema base dos posts</label>
         <input class="fi" id="ac_tema" value="dados, IA aplicada e eficiencia operacional para grandes empresas"/></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -18135,8 +18148,19 @@ function _acCfg() {
   return { horarios: h, dias: parseInt(document.getElementById('ac_dias')?.value) || 7,
     pular_fim_de_semana: document.getElementById('ac_fds')?.value !== 'incluir',
     tema: document.getElementById('ac_tema')?.value || null,
+    redes: [...document.querySelectorAll('.acRede:checked')].map(c => c.value),   // v2.30
     blog_id: localStorage.getItem('atx:metricool_blog_id') || null };
 }
+// v2.30: ao marcar Instagram, mostra o link da bio
+document.addEventListener('change', e => {
+  if (!e.target.classList?.contains('acRede')) return;
+  const ig = document.querySelector('.acRede[value="instagram"]')?.checked;
+  const base = location.origin;
+  const box = document.getElementById('acBioBox'), av = document.getElementById('acBioAviso'), lk = document.getElementById('acBioLink');
+  if (box) box.style.display = ig ? 'block' : 'none';
+  if (av) av.style.display = ig ? 'inline' : 'none';
+  if (lk) lk.textContent = base + '/captura.html?utm_source=instagram&utm_medium=bio';
+});
 async function acPlanejar() {
   const btn = document.getElementById('btnAcPlan'); if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
   const box = document.getElementById('acResultado');
@@ -18202,7 +18226,9 @@ async function acExecutar(rascunho) {
           <span style="color:${p.status==='agendado'?'var(--green,#22d3a3)':'var(--gold)'};">${p.status}${p.angulo?' · '+p.angulo:''}</span></div>
         <div style="font-size:11.5px;line-height:1.6;white-space:pre-wrap;">${(p.texto||'').replace(/</g,'&lt;')}</div>
         ${p.comentario ? `<div style="margin-top:7px;padding:7px 9px;background:rgba(34,211,163,.08);border-left:3px solid var(--green,#22d3a3);border-radius:5px;font-size:10px;">
-          <b>1º comentário:</b> ${String(p.comentario).replace(/</g,'&lt;')}</div>` : ''}
+          <b>1º comentário (LinkedIn/Facebook):</b> ${String(p.comentario).replace(/</g,'&lt;')}</div>` : ''}
+        ${p.link_instagram ? `<div style="margin-top:5px;padding:7px 9px;background:rgba(245,185,75,.08);border-left:3px solid var(--gold);border-radius:5px;font-size:10px;">
+          <b>Instagram:</b> "link na bio" na legenda + link visível com UTM · bio deve apontar para <span style="font-family:var(--M);">${String(p.link_bio||'').replace(/</g,'&lt;')}</span></div>` : ''}
       </div>`).join('') || '<div style="color:var(--t3);text-align:center;padding:16px;">Nenhum post gerado.</div>'}
       ${d.aviso ? `<div style="font-size:10.5px;color:var(--t2);">${d.aviso}</div>` : ''}
       </div></div>`;
@@ -23172,7 +23198,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.29] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.30] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23188,7 +23214,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.29';
+window.__ATX_BUILD_ID__ = 'ATX-v2.30';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
