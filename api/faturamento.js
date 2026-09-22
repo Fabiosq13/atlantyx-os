@@ -278,8 +278,10 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
     const alvo = String(nf).trim().replace(/^0+/, '').toLowerCase();
     try {
       const idsT = termos.map(t => t.id);
+      // v2.43: busca pelo nº da NF OU pelo nº da fatura (invoice) no QuickBooks
       const achados = idsT.length ? await sql`SELECT DISTINCT termo_id FROM termos_empresas
-        WHERE termo_id = ANY(${idsT}) AND LTRIM(LOWER(COALESCE(nf_numero,'')), '0') LIKE ${'%' + alvo + '%'}` : [];
+        WHERE termo_id = ANY(${idsT}) AND (LTRIM(LOWER(COALESCE(nf_numero,'')), '0') LIKE ${'%' + alvo + '%'}
+           OR LTRIM(LOWER(COALESCE(qb_invoice_doc,'')), '0') LIKE ${'%' + alvo + '%'} OR qb_invoice_id = ${String(nf).trim()})` : [];
       const ok = new Set(achados.map(a => a.termo_id));
       try { const n2 = idsT.length ? await sql`SELECT DISTINCT termo_id FROM termos_notas_encontradas
           WHERE termo_id = ANY(${idsT}) AND LTRIM(LOWER(COALESCE(nf_numero,'')), '0') LIKE ${'%' + alvo + '%'}` : [];
