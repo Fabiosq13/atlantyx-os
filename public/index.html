@@ -17166,6 +17166,12 @@ async function _fatNfExcluir(notaId, termoId) {
 let _fatTermoAberto = null;
 async function abrirDetalheTermo(id) {
   _fatTermoAberto = id;
+  // v2.37: chamado de outra tela (ex.: conciliação) → vai ao Kanban e abre lá
+  const pgKanban = document.getElementById('page-s3fatkanban');
+  if (pgKanban && !pgKanban.classList.contains('active')) {
+    nav('s3fatkanban');
+    await new Promise(r => setTimeout(r, 350));
+  }
   const box = document.getElementById('fatDetalhe'); if (!box) return;
   box.style.display = 'block'; box.innerHTML = '<div style="text-align:center;color:var(--t3);padding:20px;">Carregando...</div>';
   try { setTimeout(() => box.scrollIntoView({ behavior:'smooth', block:'start' }), 60); } catch(_) {}
@@ -19977,7 +19983,8 @@ async function concNotasMes() {
           <thead><tr style="border-bottom:1px solid var(--bd);">${['','NF','TERMO','EMPRESA','VALOR','EMISSÃO','ESPERADO','RECEBIDO','SITUAÇÃO'].map(h=>`<th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;">${h}</th>`).join('')}</tr></thead>
           <tbody>${d.notas.sort((a,b)=>(a.situacao==='em_atraso'?0:1)-(b.situacao==='em_atraso'?0:1)).map(n => `<tr style="border-bottom:1px solid var(--bd);${n.situacao==='em_atraso'?'background:rgba(255,80,80,.06);':''}">
             <td style="padding:5px;">${ico(n.situacao)}</td><td style="padding:5px;font-family:var(--M);">${n.nf}</td>
-            <td style="padding:5px;"><span style="cursor:pointer;color:var(--gold);" onclick="abrirDetalheTermo('${n.termo_id}')">${n.termo||'—'}</span></td>
+            <td style="padding:5px;white-space:nowrap;"><a href="#" onclick="event.preventDefault();abrirDetalheTermo('${n.termo_id}')" title="Abrir o termo ${n.termo||''}"
+              style="color:var(--gold);text-decoration:underline;font-weight:600;">📋 ${n.termo||'termo'}</a></td>
             <td style="padding:5px;">${n.empresa||n.cliente||'—'}</td><td style="padding:5px;font-family:var(--M);">${fmtBRLcompleto(n.valor)}</td>
             <td style="padding:5px;">${_dt(n.emissao)}</td><td style="padding:5px;">${_dt(n.esperado)}</td>
             <td style="padding:5px;">${n.extrato_data ? _dt(n.extrato_data) + ` <span style="color:var(--t3);font-size:9px;">(${n.dias_do_esperado}d${n.confianca==='media'?' ?':''})</span>` : '—'}</td>
@@ -23329,7 +23336,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.36] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.37] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23345,7 +23352,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.36';
+window.__ATX_BUILD_ID__ = 'ATX-v2.37';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
