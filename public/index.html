@@ -2746,6 +2746,9 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <option value="">Todos os anos</option>
     </select>
     <input class="fi" id="fatFiltroNf" placeholder="Nº NF / invoice" style="width:110px;font-size:10.5px;" onkeydown="if(event.key==='Enter')carregarKanbanFaturamento()" title="Filtra pelo numero da nota fiscal OU pelo numero da fatura no QuickBooks"/>
+    <label style="font-size:9.5px;color:var(--t2);display:flex;align-items:center;gap:4px;white-space:nowrap;">pago de
+      <input type="date" class="fi" id="fatPagDe" style="width:128px;font-size:10px;padding:3px 5px;" onchange="carregarKanbanFaturamento()"/> ate
+      <input type="date" class="fi" id="fatPagAte" style="width:128px;font-size:10px;padding:3px 5px;" onchange="carregarKanbanFaturamento()"/></label>
     <input class="fi" id="fatFiltroTexto" style="font-size:11px;width:200px;" placeholder="buscar projeto, nº do termo, período..." onkeydown="if(event.key==='Enter')carregarKanbanFaturamento()"/>
     <button class="btn" style="font-size:10px;" onclick="carregarKanbanFaturamento()">🔍 Aplicar</button>
     <button class="btn" style="font-size:10px;" onclick="_fatLimparFiltros()">✕ Limpar</button>
@@ -23360,7 +23363,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.44] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.45] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23376,7 +23379,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.44';
+window.__ATX_BUILD_ID__ = 'ATX-v2.45';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
