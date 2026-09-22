@@ -4033,9 +4033,11 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
 
   if (!candidatas.length) return { mes: m, ano: a, notas: [], resumo: { total: 0 }, aviso: 'Nenhuma nota com pagamento esperado neste mês.' };
 
-  // 2. Receitas do extrato no intervalo que cobre todas as janelas
-  const ini = candidatas.reduce((s, n) => n.janela_ini < s ? n.janela_ini : s, mesIni);
-  const fim = candidatas.reduce((s, n) => n.janela_fim > s ? n.janela_fim : s, mesFim);
+  // 2. Receitas do extrato no intervalo que cobre todas as janelas — e também as datas de
+  //    pagamento registradas nos termos (v2.40), para a 3ª tentativa ter onde procurar
+  let ini = candidatas.reduce((s, n) => n.janela_ini < s ? n.janela_ini : s, mesIni);
+  let fim = candidatas.reduce((s, n) => n.janela_fim > s ? n.janela_fim : s, mesFim);
+  candidatas.forEach(n => { const dp = parseData(n.pagamento_data); if (dp) { if (addDias(dp, -3) < ini) ini = addDias(dp, -3); if (addDias(dp, 3) > fim) fim = addDias(dp, 3); } });
   const ext = await extratoConsolidado({ data_inicio: ini, data_fim: fim, conta_id, incluir_simulados: false });
   const receitas = (ext.lancamentos || []).filter(l => l.tipo === 'entrada' && l.valor > 0);
   const usadas = new Set();
@@ -4079,6 +4081,24 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
       const score = (1 - dist / (tolerancia_dias + 1)) * 0.6 + (nome ? 0.4 : 0.2);
       if (!melhor || score > melhor.score) melhor = { r, score, dist, nome, por_numero: false, valor_bate: true };
     }
+    // 3c. v2.40: senão, pela DATA DE PAGAMENTO registrada no termo. Se alguém anotou quando
+    // pagou (manual ou sync), olhamos o extrato nessa data (±3 dias) atrás de uma receita
+    // com o valor da nota — fora da janela padrão, porque a data registrada vale mais que o prazo.
+    const dataPagTermo = parseData(n.pagamento_data);
+    if (!melhor && dataPagTermo) {
+      const jiP = addDias(dataPagTermo, -3), jfP = addDias(dataPagTermo, 3);
+      for (const r of receitas) {
+        if (usadas.has(r.id)) continue;
+        if (Math.abs(r.valor - valor) > tol) continue;
+        if (r.data < jiP || r.data > jfP) continue;
+        const dist = Math.abs((new Date(r.data) - new Date(n.esperado)) / 86400000);
+        const distPag = Math.abs((new Date(r.data) - new Date(dataPagTermo)) / 86400000);
+        const score = 0.85 - distPag * 0.03;
+        if (!melhor || score > melhor.score) melhor = { r, score, dist, nome: false, por_numero: false, por_data_termo: true, valor_bate: true };
+      }
+      // A data de pagamento do termo pode estar fora do período de extrato carregado — avisar
+      if (!melhor && (dataPagTermo < ini || dataPagTermo > fim)) n._aviso_data_termo = `O termo diz que foi pago em ${dataPagTermo.split('-').reverse().join('/')}, fora do período consultado (${ini.split('-').reverse().join('/')} a ${fim.split('-').reverse().join('/')}). Consulte esse mês.`;
+    }
     const item = { empresa_id: n.id, termo_id: n.termo_id, termo: n.numero_termo, projeto: n.projeto, cliente: n.contratante,
       empresa: n.empresa, nf: n.nf_numero, valor, emissao: n.emissao, esperado: n.esperado,
       ja_conciliada: !!n.conciliado_em };
@@ -4086,7 +4106,7 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
       usadas.add(melhor.r.id);
       Object.assign(item, { situacao: 'conciliada', extrato_data: melhor.r.data, extrato_valor: melhor.r.valor,
         extrato_descricao: melhor.r.descricao, dias_do_esperado: Math.round(melhor.dist), nome_bateu: melhor.nome,
-        por_numero_nf: !!melhor.por_numero, valor_bate: melhor.valor_bate !== false,
+        por_numero_nf: !!melhor.por_numero, por_data_termo: !!melhor.por_data_termo, valor_bate: melhor.valor_bate !== false,
         confianca: melhor.por_numero ? 'alta' : (melhor.score >= 0.75 ? 'alta' : 'media'),
         alerta: (melhor.por_numero && melhor.valor_bate === false) ? `NF ${n.nf_numero} citada na descrição, mas o valor recebido (${fmtBR(melhor.r.valor)}) difere da nota (${fmtBR(valor)})` : null });
       if (aplicar && !n.conciliado_em) {
@@ -4097,7 +4117,8 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
     } else {
       const atrasada = n.esperado < hoje.toISOString().split('T')[0];
       Object.assign(item, { situacao: atrasada ? 'em_atraso' : 'aguardando',
-        dias_atraso: atrasada ? Math.floor((hoje - new Date(n.esperado)) / 86400000) : 0 });
+        dias_atraso: atrasada ? Math.floor((hoje - new Date(n.esperado)) / 86400000) : 0,
+        pagamento_data_termo: parseData(n.pagamento_data) || null, aviso: n._aviso_data_termo || null });
     }
     resultado.push(item);
   }
