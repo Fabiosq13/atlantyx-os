@@ -308,8 +308,8 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate } = 
       const idsT = termos.map(t => t.id);
       const pagas = idsT.length ? await sql`SELECT DISTINCT termo_id FROM termos_empresas
         WHERE termo_id = ANY(${idsT}) AND pagamento_data IS NOT NULL
-          AND (${pag_de || null}::date IS NULL OR pagamento_data >= ${pag_de || null}::date)
-          AND (${pag_ate || null}::date IS NULL OR pagamento_data <= ${pag_ate || null}::date)` : [];
+          AND (${pag_de || null}::text IS NULL OR pagamento_data::date >= ${pag_de || null}::date)
+          AND (${pag_ate || null}::text IS NULL OR pagamento_data::date <= ${pag_ate || null}::date)` : [];
       const ok = new Set(pagas.map(p => p.termo_id));
       // também aceita pago_em do termo (marcação manual sem data por empresa)
       const pagoEm = idsT.length ? await sql`SELECT id FROM termos_faturamento WHERE id = ANY(${idsT}) AND pago_em IS NOT NULL
