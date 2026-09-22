@@ -4066,7 +4066,7 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
         confianca: melhor.score >= 0.75 ? 'alta' : 'media' });
       if (aplicar && !n.conciliado_em) {
         await sql`UPDATE termos_empresas SET conciliado_em = NOW(), conciliado_extrato_id = ${String(melhor.r.id)},
-          conciliado_extrato_data = ${melhor.r.data}, pagamento_status = 'pago', pagamento_data = COALESCE(pagamento_data, ${melhor.r.data}::date),
+          conciliado_extrato_data = ${melhor.r.data}, pagamento_status = 'pago', pagamento_data = COALESCE(pagamento_data, ${melhor.r.data}),
           pagamento_origem = COALESCE(pagamento_origem, 'conciliacao_extrato') WHERE id = ${n.id}`;
       }
     } else {
