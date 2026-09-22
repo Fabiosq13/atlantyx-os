@@ -63,6 +63,7 @@ async function ensureTabelas(sql) {
   try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS qb_lancado_em TIMESTAMPTZ`; } catch (_) {}
   try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS pagamento_obs TEXT`; } catch (_) {}
   try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS pagamento_status TEXT`; } catch (_) {}
+  try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS cnpj TEXT`; } catch (_) {}   // v2.41: CNPJ do cliente da nota
   try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS qb_erro TEXT`; } catch (_) {}
   await sql`CREATE TABLE IF NOT EXISTS termos_notas_encontradas (
     id TEXT PRIMARY KEY, termo_id TEXT REFERENCES termos_faturamento(id) ON DELETE CASCADE,
@@ -185,9 +186,10 @@ async function termoImportar({ arquivo_nome, cabecalho = {}, empresas = [] } = {
   let ordem = 0;
   for (const e of empresas) {
     await sql`INSERT INTO termos_empresas
-      (id, termo_id, ordem, empresa, contrato, ncm, centro_custo, diferimento, valor_total_contrato, percentual, valor_ja_faturado, valor_parcela_anterior, valor_parcela, saldo_contrato)
+      (id, termo_id, ordem, empresa, contrato, ncm, centro_custo, diferimento, valor_total_contrato, percentual, valor_ja_faturado, valor_parcela_anterior, valor_parcela, saldo_contrato, cnpj)
       VALUES (${novoId('temp')}, ${id}, ${ordem++}, ${e.empresa || ''}, ${e.contrato || ''}, ${e.ncm || ''}, ${e.centro_custo || ''}, ${e.diferimento || ''},
-              ${num(e.valor_total_contrato)}, ${num(e.percentual)}, ${num(e.valor_ja_faturado)}, ${num(e.valor_parcela_anterior)}, ${num(e.valor_parcela)}, ${num(e.saldo_contrato)})`;
+              ${num(e.valor_total_contrato)}, ${num(e.percentual)}, ${num(e.valor_ja_faturado)}, ${num(e.valor_parcela_anterior)}, ${num(e.valor_parcela)}, ${num(e.saldo_contrato)},
+              ${String(e.cnpj || '').replace(/[^0-9]/g, '') || null})`;
   }
   console.log(`[Faturamento] Termo importado: ${id} · ${cabecalho.projeto} · ${empresas.length} empresa(s) · total R$ ${valorTotal}`);
   return await termoGet({ id });
@@ -231,7 +233,7 @@ async function termoDiagnostico() {
   };
 }
 
-async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate } = {}) {
+async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf } = {}) {
   const sql = await getSql();
   // v1.32: filtro por mês/ano (data de criação do termo) e/ou por texto do período de medição.
   // Filtra pela criação porque "periodo_medicao" é texto livre ("julho/2026", "07/2026") e não
@@ -270,6 +272,20 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate } = 
     termos = termos.filter(t => (t.periodo_medicao || '').toLowerCase().includes(alvo)
       || (t.projeto || '').toLowerCase().includes(alvo)
       || (t.numero_termo || '').toLowerCase().includes(alvo));
+  }
+  // v2.42: filtro por NÚMERO DA NOTA FISCAL — busca nas empresas do rateio e nas notas encontradas
+  if (nf && String(nf).trim()) {
+    const alvo = String(nf).trim().replace(/^0+/, '').toLowerCase();
+    try {
+      const idsT = termos.map(t => t.id);
+      const achados = idsT.length ? await sql`SELECT DISTINCT termo_id FROM termos_empresas
+        WHERE termo_id = ANY(${idsT}) AND LTRIM(LOWER(COALESCE(nf_numero,'')), '0') LIKE ${'%' + alvo + '%'}` : [];
+      const ok = new Set(achados.map(a => a.termo_id));
+      try { const n2 = idsT.length ? await sql`SELECT DISTINCT termo_id FROM termos_notas_encontradas
+          WHERE termo_id = ANY(${idsT}) AND LTRIM(LOWER(COALESCE(nf_numero,'')), '0') LIKE ${'%' + alvo + '%'}` : [];
+        n2.forEach(a => ok.add(a.termo_id)); } catch (_) {}
+      termos = termos.filter(t => ok.has(t.id));
+    } catch (e) { console.warn('[FAT] filtro por NF:', e.message); }
   }
   const ids = termos.map(t => t.id);
   let empresasPorTermo = {};
