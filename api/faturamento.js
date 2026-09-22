@@ -290,6 +290,7 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
     } catch (e) { console.warn('[FAT] filtro por NF:', e.message); }
   }
   const ids = termos.map(t => t.id);
+  if (typeof notasNoPeriodo !== 'undefined') termos.forEach(t => { t.notas_no_periodo = notasNoPeriodo[t.id] || []; });
   let empresasPorTermo = {};
   if (ids.length) {
     const rows = await sql`SELECT * FROM termos_empresas WHERE termo_id = ANY(${ids}) ORDER BY termo_id, ordem`;
@@ -305,6 +306,7 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
     const datasPag = emp.map(e => e.pagamento_data).filter(Boolean).sort();
     porColuna[t.status].push({ ...t, valor_total_termo: num(t.valor_total_termo), nf_soma: num(t.nf_soma), nf_diferenca: num(t.nf_diferenca),
       n_empresas: emp.length, n_nf_encontradas: emp.filter(e => e.nf_status === 'encontrada').length, n_pagas: emp.filter(e => e.pagamento_status === 'pago').length,
+      nf_numeros: emp.map(e => e.nf_numero).filter(Boolean),   // v2.44: para o card destacar a NF filtrada
       data_emissao: datasNf[0] ? String(datasNf[0]).split('T')[0] : null,
       data_emissao_ultima: datasNf.length > 1 ? String(datasNf[datasNf.length - 1]).split('T')[0] : null,
       data_pagamento: datasPag.length ? String(datasPag[datasPag.length - 1]).split('T')[0] : null,
@@ -324,11 +326,16 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
   if (pag_de || pag_ate) {
     try {
       const idsT = termos.map(t => t.id);
-      const pagas = idsT.length ? await sql`SELECT DISTINCT termo_id FROM termos_empresas
-        WHERE termo_id = ANY(${idsT}) AND pagamento_data IS NOT NULL
-          AND (${pag_de || null}::text IS NULL OR pagamento_data::date >= ${pag_de || null}::date)
-          AND (${pag_ate || null}::text IS NULL OR pagamento_data::date <= ${pag_ate || null}::date)` : [];
+      // v2.44: pagamento_data é TEXT e pode vir como AAAA-MM-DD ou DD/MM/AAAA. Normaliza no SQL
+      // antes de comparar — um único registro mal formatado derrubava o filtro inteiro.
+      const pagas = idsT.length ? await sql`SELECT termo_id, id AS empresa_id, empresa, nf_numero, pagamento_data FROM termos_empresas
+        WHERE termo_id = ANY(${idsT}) AND pagamento_data IS NOT NULL AND pagamento_data <> ''
+          AND (CASE WHEN pagamento_data ~ '^\\d{4}-\\d{2}-\\d{2}' THEN SUBSTRING(pagamento_data,1,10)::date
+                    WHEN pagamento_data ~ '^\\d{2}/\\d{2}/\\d{4}' THEN TO_DATE(SUBSTRING(pagamento_data,1,10),'DD/MM/YYYY')
+                    ELSE NULL END) BETWEEN COALESCE(${pag_de || null}::date, '1900-01-01'::date) AND COALESCE(${pag_ate || null}::date, '2999-12-31'::date)` : [];
       const ok = new Set(pagas.map(p => p.termo_id));
+      // guarda quais notas caem no período, para o card destacar
+      var notasNoPeriodo = {}; pagas.forEach(p => (notasNoPeriodo[p.termo_id] = notasNoPeriodo[p.termo_id] || []).push({ empresa: p.empresa, nf: p.nf_numero, data: p.pagamento_data }));
       // também aceita pago_em do termo (marcação manual sem data por empresa)
       const pagoEm = idsT.length ? await sql`SELECT id FROM termos_faturamento WHERE id = ANY(${idsT}) AND pago_em IS NOT NULL
           AND (${pag_de || null}::date IS NULL OR pago_em::date >= ${pag_de || null}::date)
@@ -340,7 +347,7 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
 
   return { colunas: porColuna, labels: STATUS_LABEL, total: termos.length,
     totais_por_coluna: totaisPorColuna, total_geral: totalGeral,
-    anos_disponiveis: anosDisponiveis, filtro_aplicado: { mes: mes || null, ano: ano || null, periodo_texto: periodo_texto || null } };
+    anos_disponiveis: anosDisponiveis, filtro_aplicado: { mes: mes || null, ano: ano || null, periodo_texto: periodo_texto || null, pag_de: pag_de || null, pag_ate: pag_ate || null, nf: nf || null } };
 }
 
 async function termoGet({ id } = {}) {
