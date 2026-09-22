@@ -356,8 +356,8 @@ async function termoMover({ id, status, pago_em, manual } = {}) {
         WHERE id = ${id}`;
       if (!pago_em) await sql`UPDATE termos_faturamento SET pago_em = NOW() WHERE id = ${id} AND pago_em IS NULL`;
       // marca as empresas do rateio como pagas também, para a tela ficar coerente
-      await sql`UPDATE termos_empresas SET pago = true, pagamento_data = COALESCE(pagamento_data, ${pago_em || null}::date, CURRENT_DATE)
-        WHERE termo_id = ${id} AND (pago IS NULL OR pago = false)`;
+      await sql`UPDATE termos_empresas SET pagamento_status = 'pago', pagamento_data = COALESCE(pagamento_data, ${pago_em || null}::date, CURRENT_DATE)
+        WHERE termo_id = ${id} AND (pagamento_status IS NULL OR pagamento_status <> 'pago')`;
     } catch (e) { console.warn('[FAT] campos de pago indisponíveis:', e.message); }
   }
   // v2.17 FIX: o movimento de status NÃO pode depender de coluna opcional. A v1.94 fazia o
@@ -483,7 +483,7 @@ async function termoEmpresaDesmarcarPago({ empresa_id, motivo } = {}) {
   const rows = await sql`SELECT termo_id, empresa, pagamento_origem FROM termos_empresas WHERE id = ${empresa_id} LIMIT 1`;
   if (!rows.length) throw new Error('Empresa não encontrada');
   const termoId = rows[0].termo_id;
-  await sql`UPDATE termos_empresas SET pago = false, pagamento_data = NULL, pagamento_origem = NULL,
+  await sql`UPDATE termos_empresas SET pagamento_data = NULL, pagamento_origem = NULL,
     pagamento_status = 'pendente',
     pagamento_obs = ${'desmarcado manualmente' + (motivo ? ': ' + motivo : '') + ' (era: ' + (rows[0].pagamento_origem || 'sem origem') + ')'}
     WHERE id = ${empresa_id}`;
