@@ -3997,7 +3997,7 @@ async function conciliarTermo({ termo_id } = {}) {
 
 async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_dias = 10, tolerancia_pct = 2, aplicar = true, conta_id = null } = {}) {
   const sql = await getSql();
-  for (const col of ['conciliado_em TIMESTAMPTZ', 'conciliado_extrato_id TEXT', 'conciliado_extrato_data TEXT', 'conciliado_obs TEXT']) {
+  for (const col of ['conciliado_em TIMESTAMPTZ', 'conciliado_extrato_id TEXT', 'conciliado_extrato_data TEXT', 'conciliado_obs TEXT', 'cnpj TEXT']) {
     try { await sql.query(`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
   }
   // v2.35: confere se as colunas existem de fato — se o ALTER falhou por permissão, avisa com o remédio
@@ -4016,7 +4016,7 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
   const mesFim = `${a}-${String(m).padStart(2,'0')}-${String(new Date(a, m, 0).getDate()).padStart(2,'0')}`;
 
   // 1. Notas cujo pagamento ESPERADO (emissão + prazo) cai no mês, mais as ainda não conciliadas de meses anteriores
-  const notas = await sql`SELECT e.id, e.termo_id, e.empresa, e.nf_numero, e.nf_valor, e.nf_data, e.pagamento_status, e.pagamento_data,
+  const notas = await sql`SELECT e.id, e.termo_id, e.empresa, e.cnpj, e.nf_numero, e.nf_valor, e.nf_data, e.pagamento_status, e.pagamento_data,
       e.conciliado_em, t.numero_termo, t.projeto, t.contratante, t.status AS termo_status
     FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id
     WHERE e.nf_numero IS NOT NULL AND e.nf_valor IS NOT NULL AND e.nf_valor > 0
@@ -4042,6 +4042,21 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
   const receitas = (ext.lancamentos || []).filter(l => l.tipo === 'entrada' && l.valor > 0);
   const usadas = new Set();
   const normN = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ');
+  // v2.41: CNPJ dos clientes do QuickBooks (nome → CNPJ), para casar pela identidade fiscal.
+  // A receita do extrato traz a contraparte (nome do cliente); o cliente no QB tem o CNPJ.
+  const cnpjPorNome = {};
+  try {
+    const token = await qbToken();
+    const cli = (await qbQuery(`select Id, DisplayName, CompanyName, PrimaryTaxIdentifier from Customer where Active = true maxresults 1000`, token))?.QueryResponse?.Customer || [];
+    cli.forEach(c => { const cnpj = String(c.PrimaryTaxIdentifier || '').replace(/[^0-9]/g, ''); if (cnpj.length >= 11) { [c.DisplayName, c.CompanyName].filter(Boolean).forEach(n => cnpjPorNome[normN(n).trim()] = cnpj); } });
+  } catch (e) { console.warn('[conc] clientes QB:', e.message); }
+  const cnpjDaReceita = r => { const n = normN(r.contraparte || '').trim(); if (cnpjPorNome[n]) return cnpjPorNome[n];
+    const d = String(r.descricao || '').replace(/[^0-9]/g, ''); const m = d.match(/\d{14}/); return m ? m[0] : null; };   // CNPJ escrito na descrição também vale
+  receitas.forEach(r => r._cnpj = cnpjDaReceita(r));
+  // Retenções: IRRF 1,5% + PIS/COFINS/CSLL 4,65% + ISS até 5% + INSS 11% em alguns casos → o líquido
+  // pode ficar em ~78% da nota. Quando a IDENTIDADE bate (nº da NF ou CNPJ), aceitamos esse intervalo.
+  const RET_MIN = 0.78, RET_MAX = 1.005;
+  const valorCompativelComRetencao = (recebido, nota) => recebido >= nota * RET_MIN && recebido <= nota * RET_MAX;
 
   // 3. Casamento nota a nota
   // v2.39: PRIMEIRO procura o NÚMERO DA NOTA na descrição do lançamento ("PAGAMENTO NF 1180",
@@ -4067,8 +4082,23 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
       const dist = Math.abs((new Date(r.data) - new Date(n.esperado)) / 86400000);
       if (dist > 90) continue;
       const valorBate = Math.abs(r.valor - valor) <= tol;
-      const score = 1.0 - (valorBate ? 0 : 0.15);        // número na descrição vale mais que tudo
-      if (!melhor || score > melhor.score) melhor = { r, score, dist, nome: true, por_numero: true, valor_bate: valorBate };
+      const comRetencao = !valorBate && valorCompativelComRetencao(r.valor, valor);
+      if (!valorBate && !comRetencao) continue;          // número bate mas valor fora de qualquer retenção plausível: não é esta
+      const score = 1.0 - (valorBate ? 0 : 0.05);        // número na descrição vale mais que tudo
+      if (!melhor || score > melhor.score) melhor = { r, score, dist, nome: true, por_numero: true, valor_bate: valorBate, com_retencao: comRetencao };
+    }
+    // 3a2. v2.41: pelo CNPJ do cliente — identidade fiscal + valor líquido plausível (com retenção) + até 60 dias
+    const cnpjNota = String(n.cnpj || '').replace(/[^0-9]/g, '');
+    if (!melhor && cnpjNota.length >= 11) for (const r of receitas) {
+      if (usadas.has(r.id)) continue;
+      if (!r._cnpj || r._cnpj !== cnpjNota) continue;
+      const valorBate = Math.abs(r.valor - valor) <= tol;
+      const comRetencao = !valorBate && valorCompativelComRetencao(r.valor, valor);
+      if (!valorBate && !comRetencao) continue;
+      const dist = Math.abs((new Date(r.data) - new Date(n.esperado)) / 86400000);
+      if (dist > 60) continue;
+      const score = 0.95 - dist * 0.002 - (valorBate ? 0 : 0.03);
+      if (!melhor || score > melhor.score) melhor = { r, score, dist, nome: true, por_cnpj: true, valor_bate: valorBate, com_retencao: comRetencao };
     }
     // 3b. senão, por valor + janela + nome
     if (!melhor) for (const r of receitas) {
@@ -4106,9 +4136,13 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
       usadas.add(melhor.r.id);
       Object.assign(item, { situacao: 'conciliada', extrato_data: melhor.r.data, extrato_valor: melhor.r.valor,
         extrato_descricao: melhor.r.descricao, dias_do_esperado: Math.round(melhor.dist), nome_bateu: melhor.nome,
-        por_numero_nf: !!melhor.por_numero, por_data_termo: !!melhor.por_data_termo, valor_bate: melhor.valor_bate !== false,
-        confianca: melhor.por_numero ? 'alta' : (melhor.score >= 0.75 ? 'alta' : 'media'),
-        alerta: (melhor.por_numero && melhor.valor_bate === false) ? `NF ${n.nf_numero} citada na descrição, mas o valor recebido (${fmtBR(melhor.r.valor)}) difere da nota (${fmtBR(valor)})` : null });
+        por_numero_nf: !!melhor.por_numero, por_cnpj: !!melhor.por_cnpj, por_data_termo: !!melhor.por_data_termo, valor_bate: melhor.valor_bate !== false,
+        cnpj_nota: cnpjNota || null, cnpj_receita: melhor.r._cnpj || null,
+        retencao: melhor.com_retencao ? round(valor - melhor.r.valor) : 0,
+        retencao_pct: melhor.com_retencao ? round((valor - melhor.r.valor) / valor * 100) : 0,
+        confianca: (melhor.por_numero || melhor.por_cnpj) ? 'alta' : (melhor.score >= 0.75 ? 'alta' : 'media'),
+        alerta: melhor.com_retencao ? `Recebido ${fmtBR(melhor.r.valor)} de uma nota de ${fmtBR(valor)}: diferença de ${fmtBR(round(valor - melhor.r.valor))} (${round((valor - melhor.r.valor) / valor * 100)}%) — compatível com retenção de impostos`
+          : (melhor.por_numero && melhor.valor_bate === false) ? `NF ${n.nf_numero} citada na descrição, mas o valor recebido (${fmtBR(melhor.r.valor)}) difere da nota (${fmtBR(valor)})` : null });
       if (aplicar && !n.conciliado_em) {
         await sql`UPDATE termos_empresas SET conciliado_em = NOW(), conciliado_extrato_id = ${String(melhor.r.id)},
           conciliado_extrato_data = ${melhor.r.data}, pagamento_status = 'pago', pagamento_data = COALESCE(pagamento_data, ${melhor.r.data}),
