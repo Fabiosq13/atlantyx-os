@@ -3976,7 +3976,7 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
   const mesFim = `${a}-${String(m).padStart(2,'0')}-${String(new Date(a, m, 0).getDate()).padStart(2,'0')}`;
 
   // 1. Notas cujo pagamento ESPERADO (emissão + prazo) cai no mês, mais as ainda não conciliadas de meses anteriores
-  const notas = await sql`SELECT e.id, e.termo_id, e.empresa, e.nf_numero, e.nf_valor, e.nf_data, e.pago, e.pagamento_data,
+  const notas = await sql`SELECT e.id, e.termo_id, e.empresa, e.nf_numero, e.nf_valor, e.nf_data, e.pagamento_status, e.pagamento_data,
       e.conciliado_em, t.numero_termo, t.projeto, t.contratante, t.status AS termo_status
     FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id
     WHERE e.nf_numero IS NOT NULL AND e.nf_valor IS NOT NULL AND e.nf_valor > 0
@@ -4026,7 +4026,7 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
         confianca: melhor.score >= 0.75 ? 'alta' : 'media' });
       if (aplicar && !n.conciliado_em) {
         await sql`UPDATE termos_empresas SET conciliado_em = NOW(), conciliado_extrato_id = ${String(melhor.r.id)},
-          conciliado_extrato_data = ${melhor.r.data}, pago = true, pagamento_data = COALESCE(pagamento_data, ${melhor.r.data}::date),
+          conciliado_extrato_data = ${melhor.r.data}, pagamento_status = 'pago', pagamento_data = COALESCE(pagamento_data, ${melhor.r.data}::date),
           pagamento_origem = COALESCE(pagamento_origem, 'conciliacao_extrato') WHERE id = ${n.id}`;
       }
     } else {
