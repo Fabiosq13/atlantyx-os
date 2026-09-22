@@ -4042,11 +4042,34 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
   const normN = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ');
 
   // 3. Casamento nota a nota
+  // v2.39: PRIMEIRO procura o NÚMERO DA NOTA na descrição do lançamento ("PAGAMENTO NF 1180",
+  // "NFS-e 1180", "NF1180"). Quando está lá, é prova direta — casa sem depender de valor
+  // aproximado nem de janela de data (aceita até 90 dias, porque o cliente pode atrasar).
+  // Só sem o número na descrição é que cai no casamento por valor + data + nome.
+  const numeroNaDescricao = (descricao, nf) => {
+    const d = String(descricao || '').toUpperCase().replace(/[.\-\/]/g, ' ');
+    const n = String(nf || '').replace(/^0+/, '').replace(/[^0-9]/g, '');
+    if (!n || n.length < 3) return false;
+    // número como palavra inteira, aceitando zeros à esquerda na descrição ("001180")
+    return new RegExp('(^|[^0-9])0*' + n + '([^0-9]|$)').test(d) &&
+           (/\b(NF|NFS|NFSE|NFE|NOTA|N[ºO°]?|FAT|FATURA|DOC)\b/.test(d) || d.replace(/[^0-9]/g, '').length <= n.length + 6);
+  };
   const resultado = [];
   for (const n of candidatas) {
     const valor = num(n.nf_valor), tol = Math.max(valor * tolerancia_pct / 100, 1);
     let melhor = null;
+    // 3a. pelo número da nota na descrição
     for (const r of receitas) {
+      if (usadas.has(r.id)) continue;
+      if (!numeroNaDescricao(r.descricao, n.nf_numero)) continue;
+      const dist = Math.abs((new Date(r.data) - new Date(n.esperado)) / 86400000);
+      if (dist > 90) continue;
+      const valorBate = Math.abs(r.valor - valor) <= tol;
+      const score = 1.0 - (valorBate ? 0 : 0.15);        // número na descrição vale mais que tudo
+      if (!melhor || score > melhor.score) melhor = { r, score, dist, nome: true, por_numero: true, valor_bate: valorBate };
+    }
+    // 3b. senão, por valor + janela + nome
+    if (!melhor) for (const r of receitas) {
       if (usadas.has(r.id)) continue;
       if (Math.abs(r.valor - valor) > tol) continue;
       if (r.data < n.janela_ini || r.data > n.janela_fim) continue;
@@ -4054,7 +4077,7 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
       const chave = normN(n.empresa || n.contratante).split(' ').find(w => w.length >= 4) || '';
       const nome = chave && normN(r.descricao).includes(chave);
       const score = (1 - dist / (tolerancia_dias + 1)) * 0.6 + (nome ? 0.4 : 0.2);
-      if (!melhor || score > melhor.score) melhor = { r, score, dist, nome };
+      if (!melhor || score > melhor.score) melhor = { r, score, dist, nome, por_numero: false, valor_bate: true };
     }
     const item = { empresa_id: n.id, termo_id: n.termo_id, termo: n.numero_termo, projeto: n.projeto, cliente: n.contratante,
       empresa: n.empresa, nf: n.nf_numero, valor, emissao: n.emissao, esperado: n.esperado,
@@ -4063,7 +4086,9 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
       usadas.add(melhor.r.id);
       Object.assign(item, { situacao: 'conciliada', extrato_data: melhor.r.data, extrato_valor: melhor.r.valor,
         extrato_descricao: melhor.r.descricao, dias_do_esperado: Math.round(melhor.dist), nome_bateu: melhor.nome,
-        confianca: melhor.score >= 0.75 ? 'alta' : 'media' });
+        por_numero_nf: !!melhor.por_numero, valor_bate: melhor.valor_bate !== false,
+        confianca: melhor.por_numero ? 'alta' : (melhor.score >= 0.75 ? 'alta' : 'media'),
+        alerta: (melhor.por_numero && melhor.valor_bate === false) ? `NF ${n.nf_numero} citada na descrição, mas o valor recebido (${fmtBR(melhor.r.valor)}) difere da nota (${fmtBR(valor)})` : null });
       if (aplicar && !n.conciliado_em) {
         await sql`UPDATE termos_empresas SET conciliado_em = NOW(), conciliado_extrato_id = ${String(melhor.r.id)},
           conciliado_extrato_data = ${melhor.r.data}, pagamento_status = 'pago', pagamento_data = COALESCE(pagamento_data, ${melhor.r.data}),
