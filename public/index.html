@@ -3779,6 +3779,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <button class="btn btn-gn" style="font-size:10px;" onclick="concNotasMes()">&#129534; Notas x extrato (mes)</button>
     <button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red);" onclick="concFaturasVencidas()">&#9888; Faturas vencidas +30d</button>
     <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="concDespesasDup()">&#128179; Despesas duplicadas (mes anterior)</button>
+    <button class="btn btn-p" style="font-size:10px;" onclick="concRazao()" title="Compara o extrato do sistema com o razao do QuickBooks e aponta o que difere">&#9878; Conferir com o razao QB</button>
     <button class="btn" style="font-size:10px;color:var(--purple,#9c6dff);border-color:var(--purple,#9c6dff);" onclick="concDespesasNovas()">&#128269; Despesas nao cadastradas</button>
     <label class="btn" style="font-size:10px;cursor:pointer;">&#128196; Importar OFX do banco<input type="file" accept=".ofx,.OFX,.txt" style="display:none;" onchange="concImportarOfx(this)"/></label>
     <select class="fsel" id="conc_mesNotas" style="font-size:10px;width:auto;">${''}</select>
@@ -20035,6 +20036,34 @@ async function concExcluirBill(id, doc, forn, valor) {
   try { const r = await finApi('conc_excluir_bill', { bill_id: id, confirmar: 'EXCLUIR', motivo: 'duplicada com o extrato' }); toast(`Conta ${r.doc||''} de ${r.fornecedor||''} excluída`, 'success'); addLog('warn', `[Conciliação] bill ${r.doc} (${r.fornecedor}) excluída`); concDespesasDup(); }
   catch (e) { toast('Erro: ' + e.message, 'error'); alert(e.message); }
 }
+// 6. Conferência linha a linha com o razão do QuickBooks
+async function concRazao() {
+  const conta = document.getElementById('conc_conta')?.value;
+  if (!conta) { toast('Escolha a conta (a conferência é por conta)', 'error'); return; }
+  const ini = document.getElementById('conc_dataInicio')?.value || document.getElementById('conc_de')?.value;
+  const fim = document.getElementById('conc_dataFim')?.value || document.getElementById('conc_ate')?.value;
+  _concBox('<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ Lendo o razão do QuickBooks e comparando linha a linha...</div></div>');
+  try {
+    const d = await finApi('conc_razao', { conta_id: conta, data_inicio: ini || null, data_fim: fim || null });
+    const S = d.saldos || {}, r = d.resumo || {};
+    const ok = Math.abs(S.dif_final || 0) < 1;
+    const lista = (arr, titulo, cor, nota) => arr.length ? `<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt" style="color:${cor};">${titulo}</div><span style="font-size:10px;color:var(--t2);">${arr.length}</span></div>
+      <div class="pb" style="max-height:32vh;overflow-y:auto;"><div style="font-size:10px;color:var(--t3);margin-bottom:6px;">${nota}</div>
+      ${arr.map(l => `<div style="font-size:10.5px;padding:4px 0;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;gap:8px;"><span>${_dt(l.data)} · ${(l.descricao||'').substring(0,64)}${l.origem?' <span style="color:var(--t3);">['+l.origem+(l.qb_tipo?' '+l.qb_tipo:'')+']</span>':''}</span><span style="font-family:var(--M);color:${l.tipo==='entrada'?'var(--green,#22d3a3)':'var(--red)'};white-space:nowrap;">${l.tipo==='entrada'?'+':'−'}${fmtBRLcompleto(l.valor)}</span></div>`).join('')}</div></div>` : '';
+    _concBox(`<div style="background:var(--bg4);border-left:4px solid ${ok?'var(--green,#22d3a3)':'var(--red)'};border-radius:9px;padding:12px 15px;margin-bottom:12px;">
+        <div style="font-size:13px;font-weight:700;color:${ok?'var(--green,#22d3a3)':'var(--red)'};">${ok ? 'SISTEMA E RAZÃO BATEM' : 'DIFERENÇA DE ' + fmtBRLcompleto(Math.abs(S.dif_final||0)) + ' NO SALDO FINAL'}</div>
+        <div style="font-size:10px;color:var(--t3);margin-top:2px;">${_dt(d.periodo?.de)} a ${_dt(d.periodo?.ate)} · ${d.sistema_linhas} linha(s) no sistema · ${d.razao_linhas} no razão${d.razao_erro ? ' · ⚠ ' + d.razao_erro : ''}</div>
+        ${(d.leitura||[]).map(l => `<div style="font-size:11px;line-height:1.6;margin-top:5px;">• ${l}</div>`).join('')}</div>
+      <div class="kg k4" style="margin-bottom:12px;">
+        <div class="kpi ${Math.abs(S.dif_inicial||0)<1?'gn':'rd'}"><div class="kl">Saldo inicial</div><div class="kv" style="font-size:13px;">${fmtBRLcompleto(S.sistema?.inicial||0)}</div><div class="ks">razão: ${fmtBRLcompleto(S.razao?.inicial||0)}${Math.abs(S.dif_inicial||0)>=1?' · dif '+fmtBRLcompleto(S.dif_inicial):''}</div></div>
+        <div class="kpi ${ok?'gn':'rd'}"><div class="kl">Saldo final</div><div class="kv" style="font-size:13px;">${fmtBRLcompleto(S.sistema?.final||0)}</div><div class="ks">razão: ${fmtBRLcompleto(S.razao?.final||0)}${!ok?' · dif '+fmtBRLcompleto(S.dif_final):''}</div></div>
+        <div class="kpi ${r.so_sistema?'gd':'gn'}"><div class="kl">Só no sistema</div><div class="kv">${r.so_sistema||0}</div><div class="ks">${fmtBRLcompleto(r.valor_so_sistema||0)}</div></div>
+        <div class="kpi ${r.so_razao?'gd':'gn'}"><div class="kl">Só no razão</div><div class="kv">${r.so_razao||0}</div><div class="ks">${fmtBRLcompleto(r.valor_so_razao||0)}</div></div>
+      </div>
+      ${lista(d.so_no_sistema||[], '📒 No sistema e NÃO no razão', 'var(--gold)', 'Provável duplicidade (a mesma transação lida por duas entidades) ou lançamento de outra conta. Cada linha aqui infla o saldo do sistema.')}
+      ${lista(d.so_no_razao||[], '📗 No razão e NÃO no sistema', 'var(--blue,#4f7cff)', 'O sistema não está lendo este tipo de transação — me diga o [tipo] que aparece e eu incluo na leitura.')}`);
+  } catch (e) { _concErro(e); }
+}
 // 5. Despesas do extrato que não estão programadas — criar e replicar 12 meses
 async function concDespesasNovas() {
   _concBox('<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ Procurando saídas recorrentes sem cadastro...</div></div>');
@@ -23300,7 +23329,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.32] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.33] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23316,7 +23345,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.32';
+window.__ATX_BUILD_ID__ = 'ATX-v2.33';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
