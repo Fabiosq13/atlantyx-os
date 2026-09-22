@@ -18345,6 +18345,10 @@ async function acAuditoria() {
   try {
     const d = await mcApi('auditoria_funil', { dias: 30 });
     const p = d.posts || {}, l = d.leads || {}, c = d.captura || {};
+    // v2.32: teste ponta a ponta e funil por campanha — responde COM FATOS por que não há leads
+    let teste = null, funil = null;
+    try { teste = await crmApi('testar_captura'); } catch (e) { teste = { veredito: 'erro', falhas: [e.message], passos: [] }; }
+    try { funil = await crmApi('funil_campanha', { dias: 90 }); } catch (_) {}
     const cor = d.veredito === 'funil íntegro' ? 'var(--green,#22d3a3)' : d.veredito === 'funil com vazamento' ? 'var(--gold)' : 'var(--red)';
     box.innerHTML = `
       <div style="background:var(--bg4);border-left:4px solid ${cor};border-radius:9px;padding:13px 16px;margin-bottom:12px;">
@@ -18368,6 +18372,16 @@ async function acAuditoria() {
         <div>Página pública: <span style="font-family:var(--M);">${c.pagina_sugerida||'—'}</span> ${c.pagina_existe ? '<span style="color:var(--green,#22d3a3);">✓ existe</span>' : '<span style="color:var(--red);">✗ não existe — nesta versão ela foi criada, aparece após o deploy</span>'}</div>
         ${(l.por_origem||[]).length ? `<div style="margin-top:6px;color:var(--t2);">Leads por origem: ${l.por_origem.map(o => `${o.origem} (${o.n})`).join(' · ')}</div>` : ''}
       </div></div>
+      ${teste ? `<div class="panel" style="margin-bottom:12px;border-left:4px solid ${teste.veredito==='captura funciona'?'var(--green,#22d3a3)':'var(--red)'};"><div class="ph"><div class="pt">🧪 Teste ponta a ponta da captura</div>
+        <span style="font-size:11px;font-weight:700;color:${teste.veredito==='captura funciona'?'var(--green,#22d3a3)':'var(--red)'};text-transform:uppercase;">${teste.veredito}</span></div>
+        <div class="pb"><div style="font-size:10.5px;color:var(--t2);margin-bottom:8px;">Enviei um lead de teste pelo mesmo caminho do formulário e conferi cada etapa (depois removi):</div>
+          ${(teste.passos||[]).map(x => `<div style="font-size:10.5px;padding:3px 0;border-bottom:1px solid var(--bd);"><span style="color:${x.ok?'var(--green,#22d3a3)':'var(--red)'};">${x.ok?'✓':'✗'}</span> <b>${x.etapa}</b> <span style="color:var(--t3);">— ${String(x.detalhe||'').replace(/</g,'&lt;')}</span></div>`).join('')}
+          ${(teste.falhas||[]).length ? `<div style="margin-top:8px;font-size:10.5px;color:var(--red);">Falhas que perdem lead: ${teste.falhas.length}. Etapas marcadas como "falha" NÃO derrubam mais a captura — o lead fica gravado mesmo assim.</div>` : ''}
+        </div></div>` : ''}
+      ${funil && (funil.campanhas||[]).length ? `<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">📊 Leads e reuniões por campanha (90 dias)</div>
+        <span style="font-size:10px;color:var(--t2);">${funil.total_leads} lead(s) · ${funil.total_reunioes} reunião(ões)</span></div>
+        <div class="pb"><table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="border-bottom:1px solid var(--bd);">${['CAMPANHA','ORIGEM','LEADS','REUNIÕES','TAXA','ÚLTIMO'].map(h=>`<th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;">${h}</th>`).join('')}</tr></thead>
+        <tbody>${funil.campanhas.map(x => `<tr style="border-bottom:1px solid var(--bd);"><td style="padding:5px;">${x.campanha}</td><td style="padding:5px;color:var(--t2);">${x.origem}</td><td style="padding:5px;">${x.leads}</td><td style="padding:5px;${x.reunioes?'color:var(--green,#22d3a3);font-weight:600;':''}">${x.reunioes}</td><td style="padding:5px;">${x.taxa}%</td><td style="padding:5px;color:var(--t3);">${(x.ultimo||'').split('-').reverse().join('/')}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
       <div class="panel"><div class="ph"><div class="pt">💡 O que muda a partir de agora</div></div><div class="pb">
         ${(d.recomendacoes||[]).map(r => `<div style="font-size:11px;line-height:1.7;padding:4px 0;border-bottom:1px solid var(--bd);">→ ${r}</div>`).join('')}
         <div style="margin-top:10px;font-size:10.5px;color:var(--t2);line-height:1.6;">A autocampanha já foi ajustada: cada post agora <b>oferece algo concreto</b> (diagnóstico, checklist, conversa) e publica o <b>link de captura com UTM no primeiro comentário</b>. Gere rascunhos para ver a diferença.</div>
@@ -19564,6 +19578,14 @@ async function crmApi(action, params = {}) {
   if (!d.success) throw new Error(d.error || 'falha');
   return d;
 }
+// v2.32: marca reunião num lead — dispara alerta com a campanha de origem
+async function marcarReuniaoLead(leadId, empresa) {
+  const r = prompt(`Reunião marcada com ${empresa}.\n\nData/hora (ex.: 2026-09-25 14:00) | observação:`, '');
+  if (r === null) return;
+  const [data, obs] = r.split('|').map(x => x.trim());
+  try { await crmApi('lead_reuniao', { lead_id: leadId, data_reuniao: data || null, obs: obs || null }); toast('Reunião registrada — alerta enviado com a campanha de origem', 'success'); carregarClientes(); }
+  catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
 async function carregarClientes() {
   const box = document.getElementById('cliLista'); if (!box) return;
   box.innerHTML = '<div style="text-align:center;color:var(--t3);padding:22px;">⏳ Consultando HubSpot e bases internas...</div>';
@@ -19614,7 +19636,8 @@ async function carregarClientes() {
         <td style="padding:6px;font-family:var(--M);${c.faturamento?'color:var(--green,#22d3a3);':''}">
           ${c.faturamento ? fmtBRLcompleto(c.faturamento.valor_total) + `<div style="font-size:9px;color:var(--t3);">${c.faturamento.termos} termo(s)</div>` : '—'}</td>
         <td style="padding:6px;font-family:var(--M);">${c.valor_negocios ? fmtBRLcompleto(c.valor_negocios) + `<div style="font-size:9px;color:var(--t3);">${c.negocios.length} negócio(s)</div>` : '—'}</td>
-        <td style="padding:6px;">${(c.fontes||[]).map(tagFonte).join(' ')}</td>
+        <td style="padding:6px;">${(c.fontes||[]).map(tagFonte).join(' ')}
+          ${(c.id||'').startsWith('lead_') ? `<div style="margin-top:3px;"><span onclick="marcarReuniaoLead('${String(c.id).replace('lead_','')}','${(c.empresa||'').replace(/'/g,'')}')" style="cursor:pointer;font-size:9px;color:var(--green,#22d3a3);border:1px solid rgba(34,211,163,.4);border-radius:4px;padding:1px 5px;">📅 reunião marcada</span></div>` : ''}</td>
       </tr>`).join('')}</tbody></table>`
       : `<div style="text-align:center;color:var(--t3);padding:22px;font-size:11.5px;">Nenhum cliente encontrado${document.getElementById('cli_busca')?.value ? ' para esta busca' : ''}.</div>`;
   } catch (e) { box.innerHTML = `<div style="color:var(--red);text-align:center;padding:20px;font-size:11px;">Erro: ${e.message}</div>`; }
@@ -23277,7 +23300,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.31] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.32] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23293,7 +23316,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.31';
+window.__ATX_BUILD_ID__ = 'ATX-v2.32';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
