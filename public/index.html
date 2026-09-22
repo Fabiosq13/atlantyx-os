@@ -2745,7 +2745,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <select class="fsel" id="fatFiltroAno" style="font-size:11px;width:auto;" onchange="carregarKanbanFaturamento()">
       <option value="">Todos os anos</option>
     </select>
-    <input class="fi" id="fatFiltroNf" placeholder="Nº da NF" style="width:110px;font-size:10.5px;" onkeydown="if(event.key==='Enter')carregarKanbanFaturamento()" title="Filtra os termos que contem esta nota fiscal"/>
+    <input class="fi" id="fatFiltroNf" placeholder="Nº NF / invoice" style="width:110px;font-size:10.5px;" onkeydown="if(event.key==='Enter')carregarKanbanFaturamento()" title="Filtra pelo numero da nota fiscal OU pelo numero da fatura no QuickBooks"/>
     <input class="fi" id="fatFiltroTexto" style="font-size:11px;width:200px;" placeholder="buscar projeto, nº do termo, período..." onkeydown="if(event.key==='Enter')carregarKanbanFaturamento()"/>
     <button class="btn" style="font-size:10px;" onclick="carregarKanbanFaturamento()">🔍 Aplicar</button>
     <button class="btn" style="font-size:10px;" onclick="_fatLimparFiltros()">✕ Limpar</button>
@@ -23354,7 +23354,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.42] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.43] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23370,7 +23370,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.42';
+window.__ATX_BUILD_ID__ = 'ATX-v2.43';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
