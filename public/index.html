@@ -3615,6 +3615,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <button class="btn btn-gn" onclick="acExecutar(false)" id="btnAcExec">&#128228; Gerar e agendar</button>
         <button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red);" onclick="acCorrigirImagens()" title="Corrige posts agendados cuja imagem vai expirar antes da publicacao">&#128295; Corrigir imagens agendadas</button>
     <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="acAuditoria()" title="Por que nao ha leads? Cruza publicacoes, erros e capturas">&#128269; Auditoria do funil</button>
+    <button class="btn" style="font-size:10px;color:#e1306c;border-color:#e1306c;" onclick="acGerarStory()" title="Gera um Story do Instagram com oferta, QR code e link de captura">&#128247; Story com link</button>
     <button class="btn" style="font-size:10px;margin-left:auto;" onclick="acSugerirHorarios()">&#128161; Sugerir horarios pelos meus dados</button>
       </div>
     </div>
@@ -18259,6 +18260,84 @@ async function acCorrigirImagens() {
   }
 }
 
+// ═══ v2.31: STORY DO INSTAGRAM COM LINK + QR ═══
+async function _carregarQr() {
+  if (window.QRCode) return true;
+  await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); }).catch(() => {});
+  return !!window.QRCode;
+}
+function _storyQrDataUrl(texto) {
+  const tmp = document.createElement('div'); tmp.style.cssText = 'position:absolute;left:-9999px;'; document.body.appendChild(tmp);
+  new window.QRCode(tmp, { text: texto, width: 320, height: 320, correctLevel: window.QRCode.CorrectLevel.M });
+  const c = tmp.querySelector('canvas'); const url = c ? c.toDataURL('image/png') : (tmp.querySelector('img')?.src || '');
+  document.body.removeChild(tmp); return url;
+}
+async function _storyRender({ titulo, apoio, chamada, oferta, link }) {
+  const cv = document.createElement('canvas'); cv.width = 1080; cv.height = 1920; const g = cv.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 0, 1920); grad.addColorStop(0, '#0F2660'); grad.addColorStop(1, '#1A3A8F');
+  g.fillStyle = grad; g.fillRect(0, 0, 1080, 1920);
+  g.fillStyle = 'rgba(224,164,34,.9)'; g.fillRect(0, 0, 1080, 14);
+  g.fillStyle = '#E0A422'; g.font = 'bold 34px Arial'; g.textAlign = 'left'; g.fillText('ATLANTYX', 80, 140);
+  g.fillStyle = 'rgba(255,255,255,.7)'; g.font = '26px Arial'; g.fillText('DADOS E IA PARA GRANDES EMPRESAS', 80, 185);
+  const wrap = (txt, x, y, maxW, lh, font, cor) => { g.font = font; g.fillStyle = cor; const words = String(txt||'').split(' '); let line = '', yy = y;
+    for (const w of words) { const t = line ? line + ' ' + w : w; if (g.measureText(t).width > maxW && line) { g.fillText(line, x, yy); line = w; yy += lh; } else line = t; }
+    if (line) g.fillText(line, x, yy); return yy + lh; };
+  let y = wrap(titulo, 80, 420, 920, 96, 'bold 84px Arial', '#FFFFFF');
+  y = wrap(apoio, 80, y + 30, 920, 54, '42px Arial', 'rgba(255,255,255,.85)');
+  g.fillStyle = 'rgba(224,164,34,.18)'; g.fillRect(80, y + 40, 920, 120);
+  g.fillStyle = '#E0A422'; g.font = 'bold 40px Arial'; g.fillText('✓ ' + (oferta || 'Conversa de 30 min'), 110, y + 115);
+  // QR
+  if (await _carregarQr()) { const qr = _storyQrDataUrl(link); if (qr) { const img = new Image(); await new Promise(r => { img.onload = r; img.src = qr; });
+    g.fillStyle = '#FFFFFF'; g.fillRect(360, 1180, 360, 360); g.drawImage(img, 380, 1200, 320, 320); } }
+  g.fillStyle = '#FFFFFF'; g.font = 'bold 44px Arial'; g.textAlign = 'center'; g.fillText(chamada || 'Toque no link', 540, 1620);
+  g.fillStyle = 'rgba(255,255,255,.6)'; g.font = '26px Arial'; g.fillText(String(link).replace(/^https?:\/\//,'').split('?')[0], 540, 1670);
+  g.fillText('ou aponte a câmera para o QR', 540, 1715);
+  g.fillStyle = 'rgba(255,255,255,.35)'; g.font = '22px Arial'; g.fillText('CPFL · Enel · Caixa · Jelta', 540, 1840);
+  return cv.toDataURL('image/png');
+}
+async function acGerarStory() {
+  const tema = document.getElementById('ac_tema')?.value || '';
+  const box = document.getElementById('acResultado');
+  box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ Escrevendo o Story e gerando a imagem com QR...</div></div>';
+  try {
+    const t = await mcApi('story_texto', { tema });
+    const link = location.origin + '/captura.html?utm_source=instagram&utm_medium=stories&utm_campaign=' + new Date().toISOString().substring(0,10);
+    const dataUrl = await _storyRender({ ...t, link });
+    window._storyAtual = { ...t, link, dataUrl };
+    box.innerHTML = `<div class="panel"><div class="ph"><div class="pt">📷 Story do Instagram com link</div>
+        <span style="font-size:10px;color:var(--t2);">1080×1920 · QR + link de captura com UTM de Stories</span></div>
+      <div class="pb" style="display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start;">
+        <img src="${dataUrl}" style="width:300px;border-radius:10px;border:1px solid var(--bd);"/>
+        <div style="font-size:11px;line-height:1.7;">
+          <div><b>Título:</b> ${String(t.titulo||'').replace(/</g,'&lt;')}</div>
+          <div><b>Apoio:</b> ${String(t.apoio||'').replace(/</g,'&lt;')}</div>
+          <div><b>Oferta:</b> ${String(t.oferta||'').replace(/</g,'&lt;')}</div>
+          <div><b>Chamada:</b> ${String(t.chamada||'').replace(/</g,'&lt;')}</div>
+          <div style="margin-top:8px;"><b>Link (para o sticker):</b><br><span style="font-family:var(--M);font-size:10px;word-break:break-all;">${link}</span>
+            <button class="btn" style="font-size:9px;margin-left:4px;" onclick="navigator.clipboard.writeText('${link}').then(()=>toast('Link copiado','success'))">📋</button></div>
+          <div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:7px;padding:9px;margin-top:10px;font-size:10.5px;line-height:1.6;">
+            ⚠ <b>O sticker de link não vai pela API.</b> Ao publicar, o Metricool notifica no celular — abra o Story, adicione o sticker <b>Link</b> com a URL acima e publique. Leva 5 segundos. O QR já funciona mesmo sem o sticker.</div>
+          <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+            <input type="datetime-local" class="fi" id="storyQuando" style="width:200px;font-size:10.5px;"/>
+            <button class="btn btn-gn" onclick="acAgendarStory()">📤 Agendar no Metricool</button>
+            <a class="btn" download="story-atlantyx.png" href="${dataUrl}" style="font-size:10px;text-decoration:none;">⬇ Baixar imagem</a>
+            <button class="btn" style="font-size:10px;" onclick="acGerarStory()">↻ Gerar outro</button>
+          </div></div></div></div>`;
+    const q = document.getElementById('storyQuando'); if (q) { const d = new Date(Date.now() + 3600000); d.setMinutes(0); q.value = d.toISOString().substring(0,16); }
+  } catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:16px;font-size:11px;">Erro: ${e.message}</div></div>`; }
+}
+async function acAgendarStory() {
+  const st = window._storyAtual; if (!st) return;
+  const quando = document.getElementById('storyQuando')?.value; if (!quando) { toast('Escolha data e hora', 'error'); return; }
+  try {
+    toast('Enviando a imagem...', 'success');
+    const r = await fetch('/api/media', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'salvar_base64', payload:{ base64: st.dataUrl, content_type:'image/png', origem:'story-instagram' } }) });
+    const m = await r.json(); if (!m.success) throw new Error(m.error || 'falha ao salvar a imagem');
+    const d = await mcApi('story_agendar', { imagem_url: m.url, quando: quando + ':00', texto: `${st.titulo} — ${st.oferta}. Link nos Stories.`, link: st.link, blog_id: localStorage.getItem('atx:metricool_blog_id') || null });
+    alert(`✅ Story agendado para ${quando.replace('T',' ')}.\n\n${d.aviso}\n\n${d.link}`);
+  } catch (e) { toast('Erro: ' + e.message, 'error'); if (e.dica) alert(e.message + '\n\n' + e.dica); }
+}
+
 // v2.15: auditoria do funil — publicação → clique → captura
 async function acAuditoria() {
   const box = document.getElementById('acResultado');
@@ -23198,7 +23277,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.30] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.31] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23214,7 +23293,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.30';
+window.__ATX_BUILD_ID__ = 'ATX-v2.31';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
