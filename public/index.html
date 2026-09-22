@@ -16807,6 +16807,12 @@ function _fatCard(t, col) {
     ? Math.floor((Date.now() - new Date(t.entrou_em_envio_nf || t.atualizado_em)) / 86400000) : null;
   const paradoBadge = (diasEnvio != null && diasEnvio > 5)
     ? `<div style="font-size:9px;margin-top:4px;color:var(--red);background:rgba(255,80,80,.12);border-radius:5px;padding:2px 6px;display:inline-block;">⏱ parado há ${diasEnvio} dias</div>` : '';
+  // v2.42/v2.44: destaques no card quando há filtro por NF ou por data de pagamento
+  const nfFiltro = (document.getElementById('fatFiltroNf')?.value || '').trim().replace(/^0+/,'');
+  const nfHit = nfFiltro && (t.nf_numeros || []).some(x => String(x||'').replace(/^0+/,'').includes(nfFiltro));
+  const nfFiltroBadge = nfHit ? `<div style="font-size:9px;margin-top:3px;color:var(--gold);background:rgba(245,185,75,.15);border-radius:4px;padding:1px 5px;display:inline-block;">🧾 contém NF ${nfFiltro}</div>` : '';
+  const pagoBadgeData = (t.notas_no_periodo || []).length ? `<div style="font-size:9px;margin-top:3px;color:var(--green,#22d3a3);background:rgba(34,211,163,.12);border-radius:4px;padding:2px 5px;line-height:1.5;">
+      💵 pago no período: ${t.notas_no_periodo.map(n => `${n.nf ? 'NF ' + n.nf : n.empresa} (${String(n.data||'').substring(0,10).split('-').reverse().join('/')})`).join(' · ')}</div>` : '';
   const nfBadge = col === 'envio_nf' || col === 'pagamento' || col === 'aprovacao' || col === 'emissao_nf'
     ? `<div style="font-size:9px;margin-top:4px;">🧾 ${t.n_nf_encontradas}/${t.n_empresas} nota(s)${t.nf_status === 'divergente' ? ' <span style="color:var(--red);">⚠ divergente</span>' : t.nf_status === 'completo' ? ' <span style="color:var(--green,#22d3a3);">✓ completo</span>' : ''}</div>` : '';
   const pagBadge = col === 'pagamento' ? `<div style="font-size:9px;margin-top:2px;">💰 ${t.n_pagas}/${t.n_empresas} paga(s)</div>` : '';
@@ -16866,7 +16872,7 @@ function _fatCard(t, col) {
     <div style="font-size:9px;color:var(--t2);margin-top:2px;">${t.contratante||''} · ${t.periodo_medicao||''}</div>
     <div style="font-size:11px;font-family:var(--M);color:var(--gold);margin-top:4px;">${fmtBRLcompleto(t.valor_total_termo)}</div>
     <div style="font-size:9px;color:var(--t3);">${t.n_empresas} empresa(s) no rateio</div>
-    ${mesAntBadge}${nfBadge}${pagBadge}${cpflBadge}${paradoBadge}${pagoBadge}${concBadge}${datasBadge}
+    ${mesAntBadge}${nfFiltroBadge}${pagoBadgeData}${nfBadge}${pagBadge}${cpflBadge}${paradoBadge}${pagoBadge}${concBadge}${datasBadge}
   </div>`;
 }
 
@@ -23354,7 +23360,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.43] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.44] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23370,7 +23376,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.43';
+window.__ATX_BUILD_ID__ = 'ATX-v2.44';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
