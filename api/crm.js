@@ -582,6 +582,71 @@ async function cacTrimestral() {
     explicacao: `CAC = (${(p.faturamento_mensal_referencia||0).toLocaleString('pt-BR')} × ${Math.round((p.pct_investimento_comercial_marketing||0)*100)}% × 3) ÷ ${fechados ?? '?'} cliente(s) fechado(s) em 90 dias` };
 }
 
+// ═══ v2.32: REUNIÃO MARCADA por campanha + TESTE PONTA A PONTA da captura ═══
+async function leadMarcarReuniao({ lead_id, data_reuniao, obs } = {}) {
+  if (!lead_id) throw new Error('lead_id obrigatório');
+  const sql = await getSql();
+  await sql`UPDATE leads SET status = 'reuniao_marcada', reuniao_marcada_em = NOW(),
+    data = COALESCE(data, '{}'::jsonb) || ${JSON.stringify({ reuniao_data: data_reuniao || null, reuniao_obs: obs || null })}::jsonb WHERE id = ${lead_id}`;
+  const l = (await sql`SELECT * FROM leads WHERE id = ${lead_id}`)[0];
+  // alerta por e-mail com a campanha de origem
+  try {
+    const nodemailer = (await import('nodemailer')).default;
+    const user = process.env.EMAIL_IMAP_USER, pass = process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS;
+    if (user && pass) {
+      const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass } });
+      await t.sendMail({ from: `Atlantyx OS <${user}>`, to: process.env.LEADS_ALERTA_PARA || process.env.RELATORIO_PAGAMENTOS_PARA || user,
+        subject: `📅 Reunião marcada: ${l.nome} (${l.empresa || '—'}) — campanha ${l.campanha || l.origem || '?'}`,
+        html: `<div style="font-family:Arial;max-width:560px;"><h2 style="color:#1A3A8F;">Reunião marcada</h2>
+          <p style="font-size:13px;"><b>${l.nome}</b> · ${l.empresa || ''} · ${l.cargo || ''}<br>${data_reuniao ? 'Data: <b>' + data_reuniao + '</b><br>' : ''}${obs || ''}</p>
+          <div style="padding:10px;background:#EAF7F1;border-left:3px solid #1FB287;font-size:13px;"><b>Veio de:</b> ${l.origem || '?'} · <b>Campanha:</b> ${l.campanha || 'não identificada'}</div>
+          <p style="font-size:12px;color:#8a93a8;">Esta campanha gerou uma reunião — vale repetir o formato.</p></div>` });
+    }
+  } catch (e) { console.warn('[lead] alerta reunião:', e.message); }
+  return { ok: true, lead: l };
+}
+
+// Funil por campanha: leads → reuniões, por origem/campanha
+async function funilPorCampanha({ dias = 90 } = {}) {
+  const sql = await getSql();
+  const ini = new Date(Date.now() - dias * 86400000).toISOString();
+  let rows = [];
+  try {
+    rows = await sql`SELECT COALESCE(campanha, origem, 'sem origem') AS campanha, COALESCE(origem,'?') AS origem,
+        COUNT(*)::int AS leads, COUNT(*) FILTER (WHERE status = 'reuniao_marcada')::int AS reunioes,
+        MAX(criado_em) AS ultimo FROM leads WHERE criado_em >= ${ini} GROUP BY 1, 2 ORDER BY leads DESC`;
+  } catch (e) { return { erro: e.message, campanhas: [] }; }
+  return { dias, campanhas: rows.map(r => ({ ...r, ultimo: r.ultimo ? String(r.ultimo).substring(0, 10) : null,
+    taxa: r.leads ? Math.round(r.reunioes / r.leads * 100) : 0 })),
+    total_leads: rows.reduce((s, r) => s + r.leads, 0), total_reunioes: rows.reduce((s, r) => s + r.reunioes, 0) };
+}
+
+// Teste ponta a ponta: envia um lead de teste pela própria API e verifica cada etapa
+async function testarCaptura() {
+  const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
+  const out = { passos: [] };
+  const marca = 'TESTE-' + Date.now().toString(36);
+  try {
+    const r = await fetch(base + '/api/lead-capture', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Lead de Teste ' + marca, company: 'Atlantyx (teste)', title: 'CEO', email: 'teste+' + marca + '@atlantyx.local',
+        source: 'teste', campaign_name: marca, utm: { source: 'teste', medium: 'auditoria', campaign: marca }, form_name: 'teste-ponta-a-ponta' }) });
+    const d = await r.json().catch(() => ({}));
+    out.passos.push({ etapa: 'POST /api/lead-capture', ok: r.ok && d.success, detalhe: r.ok ? `HTTP ${r.status}` : `HTTP ${r.status}: ${JSON.stringify(d).substring(0, 160)}` });
+    if (d.etapas) Object.entries(d.etapas).forEach(([k, v]) => out.passos.push({ etapa: k, ok: v === 'ok', detalhe: String(v) }));
+    out.lead_id = d.lead_id || null;
+  } catch (e) { out.passos.push({ etapa: 'POST /api/lead-capture', ok: false, detalhe: e.message }); }
+  // confere se ficou no banco
+  try {
+    const sql = await getSql();
+    const r = await sql`SELECT id, nome, campanha, criado_em FROM leads WHERE campanha = ${marca} LIMIT 1`;
+    out.passos.push({ etapa: 'lead gravado no banco', ok: !!r.length, detalhe: r.length ? r[0].id : 'não encontrado na tabela leads' });
+    if (r.length) { await sql`DELETE FROM leads WHERE campanha = ${marca}`; out.passos.push({ etapa: 'limpeza do teste', ok: true, detalhe: 'lead de teste removido' }); }
+  } catch (e) { out.passos.push({ etapa: 'lead gravado no banco', ok: false, detalhe: e.message }); }
+  out.veredito = out.passos.filter(p => ['POST /api/lead-capture', 'banco', 'lead gravado no banco'].includes(p.etapa)).every(p => p.ok) ? 'captura funciona' : 'captura quebrada';
+  out.falhas = out.passos.filter(p => !p.ok).map(p => p.etapa + ': ' + p.detalhe);
+  return out;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -601,6 +666,9 @@ export default async function handler(req, res) {
     comercial_semaforo: () => semaforoComercial(),
     comercial_atividade:() => registrarAtividade(payload),
     comercial_cac:      () => cacTrimestral(),
+    lead_reuniao:       () => leadMarcarReuniao(payload),
+    funil_campanha:     () => funilPorCampanha(payload),
+    testar_captura:     () => testarCaptura(),
     brief_salvar:    () => briefingSalvar(payload),
     brief_listar:    () => briefingListar(payload),
     brief_get:       () => briefingGet(payload),
