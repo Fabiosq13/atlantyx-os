@@ -129,6 +129,38 @@ async function auditoriaFunil({ dias = 30 } = {}) {
   return out;
 }
 
+// ═══ v2.31: STORIES DO INSTAGRAM COM LINK ═══
+// A imagem (1080×1920) é montada no navegador com a oferta, a URL e um QR code, salva em /api/media
+// (URL permanente) e agendada aqui como STORY. O sticker de link é adicionado no app ao publicar —
+// a API do Instagram não aceita sticker via automação. O QR garante o caminho mesmo sem o sticker.
+async function storyTexto({ tema, oferta } = {}) {
+  const system = `Você escreve o texto de um STORY de Instagram para a Atlantyx (dados e IA para grandes empresas).
+REGRAS: título de até 6 palavras que para o dedo; uma frase de apoio de até 14 palavras; uma chamada de até 5 palavras
+apontando para o link (ex.: "Toque no link", "Arraste para cima"). Sem hashtag, sem emoji além de 1. Português do Brasil.
+Devolva SOMENTE JSON: {"titulo":"...","apoio":"...","chamada":"...","oferta":"o que ganha ao clicar, até 8 palavras"}`;
+  const user = `Tema: ${tema || 'dados e IA aplicada'}${oferta ? '\nOferta: ' + oferta : ''}`;
+  const txt = await _claudeAuto(system, user, 400);
+  return JSON.parse(String(txt).replace(/```json|```/g, '').trim());
+}
+async function storyAgendar({ imagem_url, quando, texto, link, blog_id } = {}) {
+  const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID;
+  const BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
+  if (!TOKEN || !USERID || !BLOGID) throw new Error('Credenciais do Metricool ausentes');
+  if (!imagem_url) throw new Error('imagem_url obrigatória');
+  const body = {
+    text: texto || '',
+    providers: [{ network: 'INSTAGRAM' }],
+    media: [imagem_url], medias: [imagem_url],
+    publicationDate: { dateTime: quando, timezone: 'America/Sao_Paulo' },
+    autoPublish: true, shortener: false, draft: false,
+    instagramData: { type: 'STORY', link },
+    postType: 'STORY',
+  };
+  const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
+  return { agendado: true, metricool_id: r?.id || r?.data?.id || null, quando,
+    aviso: 'Ao publicar, adicione o sticker de LINK no app do Instagram com a URL abaixo — a API não faz isso sozinha. O QR na imagem já funciona.', link };
+}
+
 // ═══ v1.74: AUTOCAMPANHA — preenche a agenda dos próximos 7 dias ═══
 // Olha os 7 dias à frente e, para cada horário configurado que estiver VAZIO, cria uma
 // publicação. Nunca sobrescreve o que já existe agendado.
@@ -402,6 +434,8 @@ export default async function handler(req, res) {
     autocampanha_config:    () => autoCampanhaConfig(payload),
     corrigir_imagens:       () => corrigirImagensAgendadas(payload),
     auditoria_funil:        () => auditoriaFunil(payload),
+    story_texto:            () => storyTexto(payload),
+    story_agendar:          () => storyAgendar(payload),
     autocampanha_planejar:  () => autoCampanhaPlanejar(payload),
     autocampanha_executar:  () => autoCampanhaExecutar(payload),
       // Publicar/agendar post
