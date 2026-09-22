@@ -121,6 +121,19 @@ export default async function handler(req, res) {
   const { action, payload = {} } = body;
 
   const acoes = {
+    // v2.31: upload direto de imagem gerada no navegador (Story com QR)
+    salvar_base64:  async () => {
+      const { base64, content_type = 'image/png', origem } = payload;
+      if (!base64) throw new Error('base64 obrigatório');
+      const limpo = String(base64).replace(/^data:[^;]+;base64,/, '');
+      const buf = Buffer.from(limpo, 'base64');
+      if (buf.length > 8 * 1024 * 1024) throw new Error('Imagem acima de 8 MB');
+      const sql = await getSql();
+      const id = novoId();
+      await sql`INSERT INTO media_arquivos (id, conteudo, content_type, tamanho, origem)
+        VALUES (${id}, ${limpo}, ${content_type}, ${buf.length}, ${String(origem || 'upload').substring(0, 300)})`;
+      return { id, content_type, tamanho: buf.length, url: `${baseUrl(req)}/api/media?id=${id}` };
+    },
     salvar_de_url:  async () => {
       const r = await salvarDeUrl(payload);
       return { ...r, url: `${baseUrl(req)}/api/media?id=${r.id}` };
