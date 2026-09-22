@@ -30,6 +30,39 @@ export default async function handler(req, res) {
       return res.status(500).json({ success: false, error: e.message });
     }
   }
+  // v2.35: diagnóstico de schema — lista as colunas que o sistema precisa e que NÃO existem no banco.
+  // Existe porque o usuário do Neon não tem permissão de ALTER TABLE: as migrações do código falham
+  // em silêncio (CNAB, cpfl_*, conciliado_em...). Esta rota gera o script para rodar no console.
+  //   /api/financeiro?manutencao=schema
+  if (req.method === 'GET' && req.query?.manutencao === 'schema') {
+    try {
+      const sql = await getSql();
+      const ESPERADO = {
+        termos_empresas: { conciliado_em:'TIMESTAMPTZ', conciliado_extrato_id:'TEXT', conciliado_extrato_data:'TEXT', conciliado_obs:'TEXT', pagamento_obs:'TEXT', pagamento_status:'TEXT', pagamento_origem:'TEXT', qb_invoice_id:'TEXT', qb_invoice_doc:'TEXT', qb_lancado_em:'TIMESTAMPTZ', qb_erro:'TEXT' },
+        termos_faturamento: { conciliado:'BOOLEAN DEFAULT false', conciliado_em:'TIMESTAMPTZ', cpfl_confirmado:'BOOLEAN DEFAULT false', cpfl_confirmado_em:'TIMESTAMPTZ', cpfl_confirmado_por:'TEXT', cpfl_observacao:'TEXT', cpfl_previsao_pagamento:'DATE', entrou_em_envio_nf:'TIMESTAMPTZ', concluido_em:'TIMESTAMPTZ', concluido_motivo:'TEXT', pago_em:'TIMESTAMPTZ' },
+        despesas_programadas: { forn_cnpj_cpf:'TEXT', forn_banco:'TEXT', forn_agencia:'TEXT', forn_conta:'TEXT', forn_conta_dac:'TEXT', forn_tipo_conta:'TEXT', forn_codigo_barras:'TEXT', forma_pagamento:'TEXT' },
+        leads: { origem:'TEXT', campanha:'TEXT', utm:'JSONB', email:'TEXT', telefone:'TEXT', hubspot_contact:'TEXT', hubspot_deal:'TEXT', etapas:'JSONB', status:"TEXT DEFAULT 'novo'", reuniao_marcada_em:'TIMESTAMPTZ' },
+        campanhas: { ativa:'BOOLEAN DEFAULT false', data_inicio:'DATE', data_fim:'DATE' },
+      };
+      const faltando = [], script = [];
+      let permissaoAlter = null;
+      for (const [tab, cols] of Object.entries(ESPERADO)) {
+        const ex = await sql`SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name = ${tab}`;
+        const tem = new Set(ex.map(r => r.column_name));
+        if (!ex.length) { faltando.push({ tabela: tab, coluna: '(tabela inteira)' }); continue; }
+        for (const [c, tipo] of Object.entries(cols)) if (!tem.has(c)) { faltando.push({ tabela: tab, coluna: c, tipo }); script.push(`ALTER TABLE ${tab} ADD COLUMN IF NOT EXISTS ${c} ${tipo};`); }
+      }
+      // testa se o usuário consegue fazer ALTER (numa tabela descartável)
+      try { await sql`CREATE TABLE IF NOT EXISTS _atx_teste_ddl (id INT)`; await sql`ALTER TABLE _atx_teste_ddl ADD COLUMN IF NOT EXISTS x INT`; await sql`DROP TABLE _atx_teste_ddl`; permissaoAlter = true; }
+      catch (e) { permissaoAlter = false; }
+      const out = { colunas_faltando: faltando.length, faltando, usuario_tem_permissao_alter: permissaoAlter,
+        diagnostico: permissaoAlter === false ? 'O usuário do banco NÃO consegue criar colunas — por isso as migrações do código falham em silêncio. Rode o script abaixo no console SQL do Neon com um usuário owner.'
+          : faltando.length ? 'O usuário consegue fazer ALTER, mas há colunas faltando — o código que as cria ainda não rodou. Rode o script abaixo ou abra as telas correspondentes.' : 'Schema completo.',
+        script: script.join('\n') };
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      return res.status(200).send(JSON.stringify(out, null, 2));
+    } catch (e) { return res.status(500).json({ erro: e.message }); }
+  }
   // v2.26: conciliação automática nota × extrato, 3x ao dia (cron) — concilia o mês corrente e o anterior
   if (req.query?.cron === 'conciliar_notas') {
     try {
@@ -3966,6 +3999,13 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
   const sql = await getSql();
   for (const col of ['conciliado_em TIMESTAMPTZ', 'conciliado_extrato_id TEXT', 'conciliado_extrato_data TEXT', 'conciliado_obs TEXT']) {
     try { await sql.query(`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
+  }
+  // v2.35: confere se as colunas existem de fato — se o ALTER falhou por permissão, avisa com o remédio
+  const chk = await sql`SELECT column_name FROM information_schema.columns WHERE table_name='termos_empresas' AND column_name IN ('conciliado_em','pagamento_status')`;
+  if (chk.length < 2) {
+    const e = new Error('A tabela termos_empresas está sem as colunas de conciliação (conciliado_em / pagamento_status) e o sistema não tem permissão para criá-las.');
+    e.dica = 'Abra /api/financeiro?manutencao=schema para ver tudo que falta e copie o script para o console SQL do Neon.';
+    throw e;
   }
   for (const col of ['conciliado BOOLEAN DEFAULT false', 'conciliado_em TIMESTAMPTZ']) {
     try { await sql.query(`ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
