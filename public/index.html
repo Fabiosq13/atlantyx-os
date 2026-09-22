@@ -16886,7 +16886,17 @@ function _fatCard(t, col) {
       ${t.data_emissao ? `<span title="Data de emissão da nota fiscal${t.data_emissao_ultima ? ' (primeira; última em ' + _dt(t.data_emissao_ultima) + ')' : ''}" style="color:var(--t2);">🧾 ${_dt(t.data_emissao)}${t.data_emissao_ultima ? '+' : ''}</span>` : ''}
       ${t.data_pagamento ? `<span title="${t.pagamento_completo ? 'Pagamento concluído' : 'Último pagamento recebido (parcial)'}" style="color:${t.pagamento_completo ? 'var(--green,#22d3a3)' : 'var(--gold)'};">💵 ${_dt(t.data_pagamento)}${t.pagamento_completo ? '' : '*'}</span>` : ''}
     </div>` : '';
-  return `<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:9px;cursor:pointer;" onclick="abrirDetalheTermo('${t.id}')">
+  // v2.47: prazo de recebimento — 35 dias corridos a partir da emissão (NF mais antiga; sem NF, a
+  // criação do termo). Passou de 35 e não está pago → card VERMELHO com os dias decorridos.
+  const PRAZO_DIAS = 35;
+  const dataBase = t.data_emissao || (t.criado_em ? String(t.criado_em).substring(0,10) : null);
+  const diasDecorridos = dataBase ? Math.floor((Date.now() - new Date(dataBase + 'T12:00:00')) / 86400000) : null;
+  const naoPago = !['pago', 'concluido'].includes(t.status);
+  const estourou = naoPago && diasDecorridos != null && diasDecorridos > PRAZO_DIAS;
+  const prazoBadge = diasDecorridos != null && naoPago ? `<div style="font-size:9px;margin-top:4px;padding:2px 6px;border-radius:4px;display:inline-block;${estourou ? 'background:rgba(255,80,80,.18);color:var(--red);font-weight:700;' : diasDecorridos > PRAZO_DIAS - 7 ? 'background:rgba(245,185,75,.15);color:var(--gold);' : 'background:var(--bg3,#151b2e);color:var(--t3);'}" title="Prazo de ${PRAZO_DIAS} dias corridos a partir de ${dataBase.split('-').reverse().join('/')}${t.data_emissao ? ' (emissão da NF)' : ' (criação do termo)'}">
+      ${estourou ? '⏰ ' + diasDecorridos + ' dias — vencido há ' + (diasDecorridos - PRAZO_DIAS) : '⏱ ' + diasDecorridos + '/' + PRAZO_DIAS + ' dias'}</div>` : '';
+  const cardStyle = estourou ? 'background:rgba(255,80,80,.08);border:1.5px solid var(--red);box-shadow:0 0 0 1px rgba(255,80,80,.25);' : 'background:var(--bg4);border:1px solid var(--bd);';
+  return `<div style="${cardStyle}border-radius:8px;padding:9px;cursor:pointer;" onclick="abrirDetalheTermo('${t.id}')">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
       <div style="font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;">${(t.projeto||'Termo').replace(/</g,'&lt;')}</div>
       ${t.numero_termo ? `<span style="font-family:var(--M);font-size:10px;font-weight:700;color:var(--gold);background:rgba(245,185,75,.15);border:1px solid rgba(245,185,75,.4);border-radius:5px;padding:1px 6px;white-space:nowrap;flex-shrink:0;" title="Número do termo">Nº ${String(t.numero_termo).replace(/</g,'&lt;')}</span>` : ''}
@@ -16894,7 +16904,7 @@ function _fatCard(t, col) {
     <div style="font-size:9px;color:var(--t2);margin-top:2px;">${t.contratante||''} · ${t.periodo_medicao||''}</div>
     <div style="font-size:11px;font-family:var(--M);color:var(--gold);margin-top:4px;">${fmtBRLcompleto(t.valor_total_termo)}</div>
     <div style="font-size:9px;color:var(--t3);">${t.n_empresas} empresa(s) no rateio</div>
-    ${mesAntBadge}${nfFiltroBadge}${pagoBadgeData}${nfBadge}${pagBadge}${cpflBadge}${paradoBadge}${pagoBadge}${concBadge}${datasBadge}
+    ${prazoBadge}${mesAntBadge}${nfFiltroBadge}${pagoBadgeData}${nfBadge}${pagBadge}${cpflBadge}${paradoBadge}${pagoBadge}${concBadge}${datasBadge}
   </div>`;
 }
 
@@ -23382,7 +23392,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.46] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.47] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23398,7 +23408,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.46';
+window.__ATX_BUILD_ID__ = 'ATX-v2.47';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
