@@ -2745,6 +2745,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <select class="fsel" id="fatFiltroAno" style="font-size:11px;width:auto;" onchange="carregarKanbanFaturamento()">
       <option value="">Todos os anos</option>
     </select>
+    <input class="fi" id="fatFiltroNf" placeholder="Nº da NF" style="width:110px;font-size:10.5px;" onkeydown="if(event.key==='Enter')carregarKanbanFaturamento()" title="Filtra os termos que contem esta nota fiscal"/>
     <input class="fi" id="fatFiltroTexto" style="font-size:11px;width:200px;" placeholder="buscar projeto, nº do termo, período..." onkeydown="if(event.key==='Enter')carregarKanbanFaturamento()"/>
     <button class="btn" style="font-size:10px;" onclick="carregarKanbanFaturamento()">🔍 Aplicar</button>
     <button class="btn" style="font-size:10px;" onclick="_fatLimparFiltros()">✕ Limpar</button>
@@ -16636,6 +16637,7 @@ function _fatParseTermo(ws, XLSX) {
   const cParcAnt = acharCol('valor parcela anterior', 'parcela anterior');
   const cParcela = acharCol('valor desta parcela', 'desta parcela'); // ← a coluna que estava errada
   const cSaldo = acharCol('saldo do contrato', 'saldo contrato');
+  const cCnpj = acharCol('cnpj');   // v2.41: CNPJ do cliente da nota — usado na conciliação
   if (cParcela < 0) throw new Error('Não encontrei a coluna "Valor desta Parcela" no cabeçalho da tabela — confira se o modelo do arquivo não foi alterado.');
 
   const numParse = v => { if (v == null || v === '') return 0; if (typeof v === 'number') return v; let t = String(v).trim().replace(/^R\$\s*/i, ''); t = /,\d{1,2}$/.test(t) ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, ''); const n = parseFloat(t); return isNaN(n) ? 0 : n; };
@@ -16657,6 +16659,7 @@ function _fatParseTermo(ws, XLSX) {
       valor_parcela_anterior: cParcAnt >= 0 ? numParse(get(cParcAnt, r2)) : 0,
       valor_parcela: numParse(get(cParcela, r2)),
       saldo_contrato: cSaldo >= 0 ? numParse(get(cSaldo, r2)) : 0,
+      cnpj: cCnpj >= 0 && get(cCnpj, r2) != null ? String(get(cCnpj, r2)).replace(/[^0-9]/g, '') : '',
     });
   }
   // v1.20.2: conferência automática contra o "Total R$" declarado na própria planilha
@@ -16726,6 +16729,7 @@ async function carregarKanbanFaturamento() {
       mes: document.getElementById('fatFiltroMes')?.value || null,
       ano: document.getElementById('fatFiltroAno')?.value || null,
       periodo_texto: document.getElementById('fatFiltroTexto')?.value?.trim() || null,
+      nf: document.getElementById('fatFiltroNf')?.value?.trim() || null,   // v2.42
       pag_de: document.getElementById('fatPagDe')?.value || null,     // v2.24
       pag_ate: document.getElementById('fatPagAte')?.value || null,
     };
@@ -19992,10 +19996,11 @@ async function concNotasMes() {
             <td style="padding:5px;">${ico(n.situacao)}</td><td style="padding:5px;font-family:var(--M);">${n.nf}</td>
             <td style="padding:5px;white-space:nowrap;"><a href="#" onclick="event.preventDefault();abrirDetalheTermo('${n.termo_id}')" title="Abrir o termo ${n.termo||''}"
               style="color:var(--gold);text-decoration:underline;font-weight:600;">📋 ${n.termo||'termo'}</a></td>
-            <td style="padding:5px;">${n.empresa||n.cliente||'—'}</td><td style="padding:5px;font-family:var(--M);">${fmtBRLcompleto(n.valor)}</td>
+            <td style="padding:5px;">${n.empresa||n.cliente||'—'}</td><td style="padding:5px;font-family:var(--M);">${fmtBRLcompleto(n.valor)}${n.retencao ? `<div style="font-size:9px;color:var(--gold);" title="Nota ${fmtBRLcompleto(n.valor)} · recebido ${fmtBRLcompleto(n.extrato_valor)}">líq. ${fmtBRLcompleto(n.extrato_valor)} · ret. ${n.retencao_pct}%</div>` : ''}</td>
             <td style="padding:5px;">${_dt(n.emissao)}</td><td style="padding:5px;">${_dt(n.esperado)}</td>
             <td style="padding:5px;">${n.extrato_data ? _dt(n.extrato_data) + ` <span style="color:var(--t3);font-size:9px;">(${n.dias_do_esperado}d${n.confianca==='media'?' ?':''})</span>`
               + (n.por_numero_nf ? `<div style="font-size:9px;color:var(--green,#22d3a3);" title="${String(n.extrato_descricao||'').replace(/"/g,'')}">🔢 nº da NF na descrição</div>`
+                 : n.por_cnpj ? `<div style="font-size:9px;color:var(--green,#22d3a3);" title="${String(n.extrato_descricao||'').replace(/"/g,'')}">🏢 CNPJ do cliente bate</div>`
                  : n.por_data_termo ? `<div style="font-size:9px;color:var(--blue,#4f7cff);" title="${String(n.extrato_descricao||'').replace(/"/g,'')}">📅 pela data de pagamento do termo</div>`
                  : `<div style="font-size:9px;color:var(--t3);" title="${String(n.extrato_descricao||'').replace(/"/g,'')}">por valor + data</div>`)
               + (n.alerta ? `<div style="font-size:9px;color:var(--gold);">⚠ ${n.alerta}</div>` : '') : '—'}</td>
@@ -23349,7 +23354,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.40] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.42] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23365,7 +23370,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.40';
+window.__ATX_BUILD_ID__ = 'ATX-v2.42';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
