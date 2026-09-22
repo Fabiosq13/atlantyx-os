@@ -104,7 +104,10 @@ async function auditoriaFunil({ dias = 30 } = {}) {
 
   // 3. A página de captura existe e responde?
   const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
-  out.captura = { endpoint: base + '/api/lead-capture', pagina_sugerida: base + '/captura.html' };
+  out.captura = { endpoint: base + '/api/lead-capture', pagina_sugerida: base + '/captura.html',
+    link_bio_instagram: base + '/captura.html?utm_source=instagram&utm_medium=bio' };
+  out.recomendacoes = out.recomendacoes || [];
+  out.recomendacoes.unshift('Instagram: link no post NÃO é clicável. Coloque o link da bio (abaixo) no perfil — sem isso, nenhum post do Instagram gera lead, por mais que diga "link na bio".');
   try {
     const r = await fetch(base + '/api/lead-capture', { method: 'OPTIONS' });
     out.captura.endpoint_responde = r.status < 500;
@@ -290,9 +293,26 @@ Evite repetir o mesmo ângulo de outros posts da semana.`;
         utm_campaign: `${slot.data}_${slot.hora.replace(':', '')}`, utm_content: (j.angulo || '').substring(0, 40).replace(/\s+/g, '-').toLowerCase() });
       j.link = `${base}/captura.html?${utm.toString()}`;
       j.comentario = `${j.oferta ? j.oferta.charAt(0).toUpperCase() + j.oferta.slice(1) + ' → ' : ''}${j.link}`;
+      // v2.30: cada rede tem o seu caminho para o link.
+      //  LinkedIn  → link no 1º comentário (preserva alcance)
+      //  Instagram → link no texto NÃO é clicável; o caminho é "link na bio" + o link visível
+      //              no fim da legenda (quem quiser copia). A bio precisa apontar para a captura.
+      //  Facebook  → link no texto é clicável, então vai direto no corpo
+      const temIg = redesAlvo.some(r => /instagram/i.test(r));
+      const temFb = redesAlvo.some(r => /facebook/i.test(r));
+      const temLi = redesAlvo.some(r => /linkedin/i.test(r));
+      if (temIg) {
+        const utmIg = new URLSearchParams({ ...Object.fromEntries(utm), utm_source: 'instagram' });
+        j.link_instagram = `${base}/captura.html?${utmIg.toString()}`;
+        j.texto = String(j.texto).replace(/o link est[áa] no primeiro coment[áa]rio\.?/i, '').trim()
+          + `\n\n👉 Link na bio para ${j.oferta || 'conversar'}.\n${j.link_instagram}`;
+        j.link_bio = `${base}/captura.html?utm_source=instagram&utm_medium=bio`;
+      } else if (temFb && !temLi) {
+        j.texto = String(j.texto).replace(/o link est[áa] no primeiro coment[áa]rio\.?/i, '').trim() + `\n\n👉 ${j.link}`;
+      }
 
       if (apenas_rascunho) {
-        criados.push({ ...slot, texto: j.texto, angulo: j.angulo, oferta: j.oferta, link: j.link, comentario: j.comentario, status: 'rascunho' });
+        criados.push({ ...slot, texto: j.texto, angulo: j.angulo, oferta: j.oferta, link: j.link, link_instagram: j.link_instagram, link_bio: j.link_bio, comentario: j.comentario, status: 'rascunho' });
       } else {
         const quando = `${slot.data}T${slot.hora}:00`;
         const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID;
@@ -303,8 +323,9 @@ Evite repetir o mesmo ângulo de outros posts da semana.`;
           providers: redesAlvo.map(n => ({ network: String(n).toUpperCase() })),
           publicationDate: { dateTime: quando, timezone: 'America/Sao_Paulo' },
           autoPublish: true, shortener: false, draft: false,
-          // v2.15: o link vai no PRIMEIRO COMENTÁRIO — preserva o alcance no LinkedIn e ainda dá o caminho
-          firstComment: j.comentario,
+          // v2.15/v2.30: 1º comentário só onde faz sentido (LinkedIn/Facebook); no Instagram o link
+          // fica na legenda + bio, porque comentário com link não é clicável lá
+          firstComment: redesAlvo.some(r => /linkedin|facebook/i.test(r)) ? j.comentario : undefined,
         };
         // v1.80: se a autocampanha passar a usar imagem, ela também precisa ser permanente
         if (Array.isArray(body.media) && body.media.length) {
@@ -314,7 +335,7 @@ Evite repetir o mesmo ângulo de outros posts da semana.`;
           body.media = conv; body.medias = conv;
         }
         const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
-        criados.push({ ...slot, texto: j.texto, angulo: j.angulo, oferta: j.oferta, link: j.link, comentario: j.comentario, status: 'agendado', metricool_id: r?.id || r?.data?.id || null });
+        criados.push({ ...slot, texto: j.texto, angulo: j.angulo, oferta: j.oferta, link: j.link, link_instagram: j.link_instagram, link_bio: j.link_bio, comentario: j.comentario, status: 'agendado', metricool_id: r?.id || r?.data?.id || null });
       }
     } catch (e) { erros.push(`${slot.data} ${slot.hora}: ${e.message}`); }
   }
