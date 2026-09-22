@@ -166,6 +166,7 @@ export default async function handler(req, res) {
       conc_termo:            () => conciliarTermo(params),
       conc_faturas_vencidas: () => faturasVencidasSemConciliar(params),
       conc_ofx:              () => conciliarOfx(params),
+      conc_razao:            () => conferirComRazao(params),
       desp_nao_cadastradas:  () => despesasNaoCadastradas(params),
       desp_criar_replicar:   () => despesaCriarReplicar(params),
       desp_ajustar_replicar: () => despesaAjustarReplicar(params),
@@ -3579,6 +3580,54 @@ async function alertaTermosDoMes({ forcar = false, para, mes, ano } = {}) {
 // QuickBooks uma RECEITA do mesmo valor (±2%) numa janela de ±10 dias ao redor de emissão+30.
 // Quando todas as notas de um termo casam, o termo recebe a marca "conciliado" — sem sair da
 // coluna Pago: conciliado é um atributo, não uma fase.
+// ═══ v2.33: CONFERÊNCIA LINHA A LINHA — extrato do sistema × razão do QuickBooks ═══
+// O razão (GeneralLedger) é a fonte contábil oficial da conta. Se o saldo do sistema difere do
+// QuickBooks, a diferença está em lançamentos que estão de um lado e não do outro. Esta função
+// acha quais são, em vez de deixar você deduzir.
+async function conferirComRazao({ conta_id, data_inicio, data_fim } = {}) {
+  if (!conta_id) throw new Error('Escolha uma conta — a conferência é por conta.');
+  const hoje = new Date().toISOString().substring(0, 10);
+  const ini = data_inicio || `${hoje.substring(0, 8)}01`, fim = data_fim || hoje;
+  const [razaoR, ext] = await Promise.all([
+    qbRazaoConta({ conta_id, data_inicio: ini, data_fim: fim }),
+    extratoConsolidado({ conta_id, data_inicio: ini, data_fim: fim, incluir_simulados: false }),
+  ]);
+  const razao = razaoR.razao || {};
+  const linhasRazao = (razao.linhas || []).filter(l => l.valor != null && Math.abs(l.valor) > 0.001);
+  const linhasSis = (ext.lancamentos || []).filter(l => l.tipo === 'entrada' || l.tipo === 'saida');
+  const usadas = new Set(), casadas = [], soRazao = [], soSistema = [];
+  const dias = (a, b) => Math.abs((new Date(a) - new Date(b)) / 86400000);
+  for (const r of linhasRazao) {
+    const tipo = r.valor > 0 ? 'entrada' : 'saida', valor = Math.abs(r.valor);
+    let melhor = null;
+    for (const s of linhasSis) {
+      if (usadas.has(s.id) || s.tipo !== tipo) continue;
+      if (Math.abs(s.valor - valor) > 0.01) continue;
+      const d = dias(s.data, r.data); if (d > 2) continue;
+      if (!melhor || d < melhor.d) melhor = { s, d };
+    }
+    if (melhor) { usadas.add(melhor.s.id); casadas.push({ razao: r, sistema: melhor.s }); }
+    else soRazao.push({ data: r.data, tipo, valor, descricao: [r.nome, r.memo, r.tipo].filter(Boolean).join(' · '), doc: r.doc });
+  }
+  for (const s of linhasSis) if (!usadas.has(s.id)) soSistema.push({ id: s.id, data: s.data, tipo: s.tipo, valor: s.valor, descricao: s.descricao, origem: s.origem, qb_tipo: s.qb_tipo });
+  const somaAssinada = arr => round(arr.reduce((a, l) => a + (l.tipo === 'entrada' ? l.valor : -l.valor), 0));
+  const saldoIniSis = ext.saldo_inicial ?? null, saldoFimSis = ext.saldo_final ?? null;
+  const saldoIniRz = razao.saldo_inicial_razao ?? null, saldoFimRz = razao.saldo_final_razao ?? null;
+  const difFim = (saldoFimSis != null && saldoFimRz != null) ? round(saldoFimSis - saldoFimRz) : null;
+  const difIni = (saldoIniSis != null && saldoIniRz != null) ? round(saldoIniSis - saldoIniRz) : null;
+  const difMov = round(somaAssinada(soSistema) - somaAssinada(soRazao));
+  const leitura = [];
+  if (difIni != null && Math.abs(difIni) >= 1) leitura.push(`O SALDO INICIAL já difere em ${fmtBR(difIni)} (sistema ${fmtBR(saldoIniSis)} × razão ${fmtBR(saldoIniRz)}) — o problema vem de antes do período.`);
+  if (soSistema.length) leitura.push(`${soSistema.length} lançamento(s) estão no sistema e NÃO no razão (${fmtBR(somaAssinada(soSistema))}) — candidatos a duplicidade ou conta errada.`);
+  if (soRazao.length) leitura.push(`${soRazao.length} lançamento(s) estão no razão e NÃO no sistema (${fmtBR(somaAssinada(soRazao))}) — o sistema não está lendo esse tipo de transação.`);
+  if (difFim != null) leitura.push(`Diferença no saldo final: ${fmtBR(difFim)}. ${Math.abs(difFim - (difIni || 0) - difMov) < 1 ? 'Ela se explica pelo saldo inicial + os lançamentos acima.' : `Sobra ${fmtBR(round(difFim - (difIni || 0) - difMov))} não explicada pelos lançamentos — pode ser valor diferente num lançamento que casou por data.`}`);
+  return { periodo: { de: ini, ate: fim }, conta_id,
+    saldos: { sistema: { inicial: saldoIniSis, final: saldoFimSis }, razao: { inicial: saldoIniRz, final: saldoFimRz }, dif_inicial: difIni, dif_final: difFim },
+    casados: casadas.length, so_no_sistema: soSistema, so_no_razao: soRazao,
+    resumo: { casados: casadas.length, so_sistema: soSistema.length, so_razao: soRazao.length, valor_so_sistema: somaAssinada(soSistema), valor_so_razao: somaAssinada(soRazao) },
+    leitura, razao_linhas: linhasRazao.length, sistema_linhas: linhasSis.length, razao_erro: razaoR.erro || razao.erro || null };
+}
+
 // ═══ v2.29: DESPESAS FUTURAS — descobrir, criar e replicar 12 meses no QuickBooks ═══
 
 // Helper: soma meses preservando o dia (sem estourar fevereiro)
