@@ -20040,8 +20040,8 @@ async function concExcluirBill(id, doc, forn, valor) {
 async function concRazao() {
   const conta = document.getElementById('conc_conta')?.value;
   if (!conta) { toast('Escolha a conta (a conferência é por conta)', 'error'); return; }
-  const ini = document.getElementById('conc_dataInicio')?.value || document.getElementById('conc_de')?.value;
-  const fim = document.getElementById('conc_dataFim')?.value || document.getElementById('conc_ate')?.value;
+  const ini = document.getElementById('conc_ini')?.value || null;
+  const fim = document.getElementById('conc_fim')?.value || null;
   _concBox('<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ Lendo o razão do QuickBooks e comparando linha a linha...</div></div>');
   try {
     const d = await finApi('conc_razao', { conta_id: conta, data_inicio: ini || null, data_fim: fim || null });
