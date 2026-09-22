@@ -19995,9 +19995,13 @@ async function concNotasMes() {
             <td style="padding:5px;">${n.empresa||n.cliente||'—'}</td><td style="padding:5px;font-family:var(--M);">${fmtBRLcompleto(n.valor)}</td>
             <td style="padding:5px;">${_dt(n.emissao)}</td><td style="padding:5px;">${_dt(n.esperado)}</td>
             <td style="padding:5px;">${n.extrato_data ? _dt(n.extrato_data) + ` <span style="color:var(--t3);font-size:9px;">(${n.dias_do_esperado}d${n.confianca==='media'?' ?':''})</span>`
-              + (n.por_numero_nf ? `<div style="font-size:9px;color:var(--green,#22d3a3);" title="${String(n.extrato_descricao||'').replace(/"/g,'')}">🔢 nº da NF na descrição</div>` : `<div style="font-size:9px;color:var(--t3);" title="${String(n.extrato_descricao||'').replace(/"/g,'')}">por valor + data</div>`)
+              + (n.por_numero_nf ? `<div style="font-size:9px;color:var(--green,#22d3a3);" title="${String(n.extrato_descricao||'').replace(/"/g,'')}">🔢 nº da NF na descrição</div>`
+                 : n.por_data_termo ? `<div style="font-size:9px;color:var(--blue,#4f7cff);" title="${String(n.extrato_descricao||'').replace(/"/g,'')}">📅 pela data de pagamento do termo</div>`
+                 : `<div style="font-size:9px;color:var(--t3);" title="${String(n.extrato_descricao||'').replace(/"/g,'')}">por valor + data</div>`)
               + (n.alerta ? `<div style="font-size:9px;color:var(--gold);">⚠ ${n.alerta}</div>` : '') : '—'}</td>
-            <td style="padding:5px;">${n.situacao==='conciliada'?'<span style="color:var(--green,#22d3a3);">conciliada</span>':n.situacao==='em_atraso'?`<span style="color:var(--red);">atraso ${n.dias_atraso}d</span>`:'aguardando'}</td></tr>`).join('')}</tbody></table>`
+            <td style="padding:5px;">${n.situacao==='conciliada'?'<span style="color:var(--green,#22d3a3);">conciliada</span>':n.situacao==='em_atraso'?`<span style="color:var(--red);">atraso ${n.dias_atraso}d</span>`:'aguardando'}
+              ${n.situacao!=='conciliada' && n.pagamento_data_termo ? `<div style="font-size:9px;color:var(--gold);">termo diz pago em ${_dt(n.pagamento_data_termo)} — sem receita no extrato</div>` : ''}
+              ${n.aviso ? `<div style="font-size:9px;color:var(--gold);">${n.aviso}</div>` : ''}</td></tr>`).join('')}</tbody></table>`
           : `<div style="text-align:center;color:var(--t3);padding:16px;">${d.aviso||'Nada a conciliar neste mês.'}</div>`}</div></div>
       ${(d.receitas_sem_nota||[]).length ? `<div class="panel"><div class="ph"><div class="pt">Receitas do mês sem nota correspondente</div><span style="font-size:10px;color:var(--t2);">${d.receitas_sem_nota.length} · ${fmtBRLcompleto(r.valor_sem_nota||0)}</span></div>
         <div class="pb" style="max-height:26vh;overflow-y:auto;">${d.receitas_sem_nota.map(x => `<div style="font-size:10.5px;padding:4px 0;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;"><span>${_dt(x.data)} · ${x.descricao||''}</span><span style="font-family:var(--M);">${fmtBRLcompleto(x.valor)}</span></div>`).join('')}</div></div>` : ''}`);
@@ -23345,7 +23349,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.39] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.40] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23361,7 +23365,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.39';
+window.__ATX_BUILD_ID__ = 'ATX-v2.40';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
