@@ -15,35 +15,51 @@ export default async function handler(req, res) {
 
     // ── 1. NORMALIZAR DADOS DO LEAD (Meta, LinkedIn ou formulário próprio) ──
     const lead = normalizeLead(body);
-    console.log(`[S2] Lead recebido: ${lead.name} | ${lead.company} | Score: ${lead.score_label}`);
+    lead.utm = body.utm || { source: body.source || body.utm_source || null, medium: body.utm_medium || null, campaign: body.campaign_name || body.utm_campaign || null, content: body.utm_content || null };
+    lead.campanha = lead.utm.campaign || body.campaign_name || null;
+    lead.origem = lead.utm.source || body.source || 'formulario';
+    console.log(`[S2] Lead recebido: ${lead.name} | ${lead.company} | origem ${lead.origem} · ${lead.campanha || 'sem campanha'} | Score: ${lead.score_label}`);
 
-    // ── 2. CLAUDE — Agente S2-02 Mapeamento + S7-05 Outreach WhatsApp ──
-    const mensagem = await gerarMensagemClaude(lead);
-    console.log(`[S7-05] Mensagem gerada para ${lead.name}`);
+    // ── v2.32 — 1b. GRAVAR NO BANCO PRIMEIRO, SEMPRE. ──
+    // Antes o lead só existia no HubSpot, e se QUALQUER etapa abaixo falhasse, o catch engolia
+    // tudo e o lead se PERDIA — a pessoa preencheu o formulário e nada ficou. Agora o registro
+    // local é a primeira coisa e nunca depende das integrações.
+    const etapas = { banco: null, mensagem: null, hubspot: null, whatsapp: null, followup: null, alerta: null };
+    let leadId = null;
+    try { leadId = await gravarLeadLocal(lead); etapas.banco = 'ok'; }
+    catch (e) { etapas.banco = 'falha: ' + e.message; console.error('[S2] gravar lead local:', e.message); }
 
-    // ── 3. HUBSPOT — Criar contato + deal no pipeline ──
-    const { contactId, dealId } = await criarNoHubSpot(lead);
-    console.log(`[HubSpot] Contato ${contactId} + Deal ${dealId} criados`);
+    // ── 1c. ALERTA IMEDIATO por e-mail — "novo lead da campanha X" ──
+    try { await alertarNovoLead(lead); etapas.alerta = 'ok'; } catch (e) { etapas.alerta = 'falha: ' + e.message; }
 
-    // ── 4. Z-API — Enviar WhatsApp ──
-    if (lead.phone) {
-      await enviarWhatsApp(lead.phone, mensagem);
-      console.log(`[S7-05] WhatsApp enviado para ${lead.phone}`);
-      await atualizarDealHubSpot(dealId, 'ABORDADO');
-    }
+    // As etapas seguintes são INDEPENDENTES: uma falhar não derruba as outras nem o lead.
+    let mensagem = null, contactId = null, dealId = null;
+    try { mensagem = await gerarMensagemClaude(lead); etapas.mensagem = 'ok'; }
+    catch (e) { etapas.mensagem = 'falha: ' + e.message; }
 
-    // ── 5. AGENDAR FOLLOW-UP 48H ──
-    await agendarFollowUp(lead, dealId, mensagem);
+    try { ({ contactId, dealId } = await criarNoHubSpot(lead)); etapas.hubspot = contactId ? 'ok' : 'sem retorno'; }
+    catch (e) { etapas.hubspot = 'falha: ' + e.message; }
+
+    if (lead.phone && mensagem) {
+      try { await enviarWhatsApp(lead.phone, mensagem); etapas.whatsapp = 'ok'; if (dealId) await atualizarDealHubSpot(dealId, 'ABORDADO').catch(() => {}); }
+      catch (e) { etapas.whatsapp = 'falha: ' + e.message; }
+    } else etapas.whatsapp = lead.phone ? 'sem mensagem' : 'sem telefone';
+
+    try { if (mensagem) { await agendarFollowUp(lead, dealId, mensagem); etapas.followup = 'ok'; } else etapas.followup = 'sem mensagem'; }
+    catch (e) { etapas.followup = 'falha: ' + e.message; }
+
+    // registra no lead o que deu certo e o que não
+    try { if (leadId) await atualizarLeadLocal(leadId, { hubspot_contact: contactId, hubspot_deal: dealId, etapas }); } catch (_) {}
+    const falhas = Object.entries(etapas).filter(([, v]) => String(v).startsWith('falha'));
+    if (falhas.length) console.warn('[S2] etapas com falha:', falhas.map(([k, v]) => k + '=' + v).join(' | '));
 
     return res.status(200).json({
       success: true,
-      lead: lead.name,
-      company: lead.company,
-      score: lead.score_label,
-      hubspot_contact: contactId,
-      hubspot_deal: dealId,
-      whatsapp_sent: !!lead.phone,
-      followup_scheduled: true
+      lead: lead.name, company: lead.company, score: lead.score_label,
+      origem: lead.origem, campanha: lead.campanha,
+      lead_id: leadId, hubspot_contact: contactId, hubspot_deal: dealId,
+      whatsapp_sent: etapas.whatsapp === 'ok', followup_scheduled: etapas.followup === 'ok',
+      etapas,
     });
 
   } catch (error) {
@@ -53,6 +69,54 @@ export default async function handler(req, res) {
 }
 
 // ── FUNÇÕES ───────────────────────────────────────────────────────────────────
+
+// v2.32: registro local do lead — a fonte de verdade da tela e da auditoria
+async function gravarLeadLocal(lead) {
+  const { neon } = await import('@neondatabase/serverless');
+  const sql = neon(process.env.DATABASE_URL);
+  await sql`CREATE TABLE IF NOT EXISTS leads (
+    id TEXT PRIMARY KEY, nome TEXT, empresa TEXT, cargo TEXT, setor TEXT, score TEXT, data JSONB,
+    criado_em TIMESTAMPTZ DEFAULT NOW())`;
+  for (const col of ['origem TEXT', 'campanha TEXT', 'utm JSONB', 'email TEXT', 'telefone TEXT', 'hubspot_contact TEXT', 'hubspot_deal TEXT', 'etapas JSONB', 'status TEXT DEFAULT \'novo\'', 'reuniao_marcada_em TIMESTAMPTZ']) {
+    try { await sql.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
+  }
+  const id = 'ld_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  await sql`INSERT INTO leads (id, nome, empresa, cargo, setor, score, data, origem, campanha, utm, email, telefone, status)
+    VALUES (${id}, ${lead.name}, ${lead.company}, ${lead.title || null}, ${lead.sector || null}, ${lead.score_label || null},
+      ${JSON.stringify(lead)}, ${lead.origem || null}, ${lead.campanha || null}, ${JSON.stringify(lead.utm || {})},
+      ${lead.email || null}, ${lead.phone || null}, 'novo')`;
+  return id;
+}
+async function atualizarLeadLocal(id, campos) {
+  const { neon } = await import('@neondatabase/serverless');
+  const sql = neon(process.env.DATABASE_URL);
+  await sql`UPDATE leads SET hubspot_contact = ${campos.hubspot_contact || null}, hubspot_deal = ${campos.hubspot_deal || null},
+    etapas = ${JSON.stringify(campos.etapas || {})} WHERE id = ${id}`;
+}
+// v2.32: alerta por e-mail a cada lead, dizendo de qual campanha veio
+async function alertarNovoLead(lead) {
+  const nodemailer = (await import('nodemailer')).default;
+  const user = process.env.EMAIL_IMAP_USER, pass = process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS;
+  if (!user || !pass) throw new Error('EMAIL_IMAP_USER/EMAIL_SMTP_PASS não configurados');
+  const para = process.env.LEADS_ALERTA_PARA || process.env.RELATORIO_PAGAMENTOS_PARA || user;
+  const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass } });
+  const u = lead.utm || {};
+  await t.sendMail({ from: `Atlantyx OS <${user}>`, to: para,
+    subject: `🎯 Novo lead: ${lead.name} (${lead.company}) — via ${lead.origem || '?'}${lead.campanha ? ' · ' + lead.campanha : ''}`,
+    html: `<div style="font-family:Arial;max-width:560px;">
+      <h2 style="color:#1A3A8F;margin:0 0 6px;">Novo lead capturado</h2>
+      <table style="font-size:13px;border-collapse:collapse;">
+        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">Nome</td><td><b>${lead.name}</b></td></tr>
+        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">Empresa</td><td>${lead.company || '—'}</td></tr>
+        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">Cargo</td><td>${lead.title || '—'}</td></tr>
+        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">E-mail</td><td>${lead.email || '—'}</td></tr>
+        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">WhatsApp</td><td>${lead.phone || '—'}</td></tr>
+        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">Score</td><td>${lead.score_label || '—'}</td></tr>
+      </table>
+      <div style="margin-top:12px;padding:10px;background:#EAF7F1;border-left:3px solid #1FB287;font-size:13px;">
+        <b>Origem:</b> ${lead.origem || '?'} · <b>Campanha:</b> ${lead.campanha || 'não identificada'}${u.medium ? ' · ' + u.medium : ''}${u.content ? '<br><span style="color:#5a6478;font-size:12px;">post: ' + u.content + '</span>' : ''}</div>
+      <p style="font-size:12px;color:#8a93a8;margin-top:14px;">Atlantyx OS · alerta automático de captura</p></div>` });
+}
 
 function normalizeLead(body) {
   const lead = {
