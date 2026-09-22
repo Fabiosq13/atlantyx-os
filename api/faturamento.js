@@ -356,7 +356,7 @@ async function termoMover({ id, status, pago_em, manual } = {}) {
         WHERE id = ${id}`;
       if (!pago_em) await sql`UPDATE termos_faturamento SET pago_em = NOW() WHERE id = ${id} AND pago_em IS NULL`;
       // marca as empresas do rateio como pagas também, para a tela ficar coerente
-      await sql`UPDATE termos_empresas SET pagamento_status = 'pago', pagamento_data = COALESCE(pagamento_data, ${pago_em || null}::date, CURRENT_DATE)
+      await sql`UPDATE termos_empresas SET pagamento_status = 'pago', pagamento_data = COALESCE(pagamento_data, ${pago_em || null}, CURRENT_DATE::text)
         WHERE termo_id = ${id} AND (pagamento_status IS NULL OR pagamento_status <> 'pago')`;
     } catch (e) { console.warn('[FAT] campos de pago indisponíveis:', e.message); }
   }
