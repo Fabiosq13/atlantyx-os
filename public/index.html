@@ -16744,7 +16744,19 @@ async function carregarKanbanFaturamento() {
     // Diagnóstico visível: o que o servidor devolveu, por status
     const diag = Object.entries(d.colunas || {}).map(([k, v]) => `${k}:${(v||[]).length}`).join(' · ');
     const dEl = document.getElementById('fatDiagLinha');
-    if (dEl) dEl.textContent = 'recebido do servidor → ' + (diag || 'nada') + (d.aviso ? ' · ' + d.aviso : '');
+    // v2.46: mostra o filtro ATIVO e o resultado — "nada aconteceu" não pode mais acontecer
+    const fa = d.filtro_aplicado || {};
+    const ativos = [];
+    if (fa.nf) ativos.push('NF/invoice "' + fa.nf + '"');
+    if (fa.pag_de || fa.pag_ate) ativos.push('pago ' + (fa.pag_de ? 'de ' + fa.pag_de.split('-').reverse().join('/') : '') + (fa.pag_ate ? ' até ' + fa.pag_ate.split('-').reverse().join('/') : ''));
+    if (fa.periodo_texto) ativos.push('texto "' + fa.periodo_texto + '"');
+    const totalTermos = Object.values(d.colunas || {}).reduce((a, v) => a + (v || []).length, 0);
+    const hojeStr = new Date().toISOString().substring(0, 10);
+    const futuro = fa.pag_de && fa.pag_de > hojeStr;
+    if (dEl) {
+      dEl.innerHTML = (ativos.length ? `<span style="color:var(--gold);font-weight:600;">filtro ativo: ${ativos.join(' + ')} → ${totalTermos} termo(s)</span>` + (futuro ? ` <span style="color:var(--t3);">· o período começa no futuro (${fa.pag_de.split('-').reverse().join('/')}) — não há pagamentos registrados ainda</span>` : '') + ' · ' : '')
+        + 'recebido do servidor → ' + (diag || 'nada') + (d.aviso ? ' · ' + d.aviso : '');
+    }
     // Popula o seletor de anos com o que existe na base (só na primeira carga)
     const selAno = document.getElementById('fatFiltroAno');
     if (selAno && selAno.options.length <= 1 && d.anos_disponiveis?.length) {
@@ -16788,6 +16800,13 @@ async function carregarKanbanFaturamento() {
     }
     // v2.38: se veio de outra tela pedindo um termo específico, abre agora que o board está pronto
     if (window._fatAbrirPendente) { const pid = window._fatAbrirPendente; window._fatAbrirPendente = null; setTimeout(() => abrirDetalheTermo(pid), 120); }
+    if (ativos.length && totalTermos === 0) {
+      board.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:26px;color:var(--t2);font-size:11.5px;line-height:1.7;">
+        Nenhum termo corresponde ao filtro <b>${ativos.join(' + ')}</b>.${futuro ? '<br><span style="color:var(--gold);">O período começa em ' + fa.pag_de.split('-').reverse().join('/') + ', que ainda não chegou — nenhum pagamento pode ter sido registrado.</span>' : '<br>Confira se as notas desse período estão marcadas como pagas (com data) no rateio dos termos.'}
+        <br><button class="btn" style="font-size:10px;margin-top:8px;" onclick="document.getElementById('fatFiltroNf').value='';document.getElementById('fatPagDe').value='';document.getElementById('fatPagAte').value='';document.getElementById('fatFiltroTexto').value='';carregarKanbanFaturamento()">✕ Limpar filtros</button></div>`;
+      const tot = document.getElementById('fatKbTotais'); if (tot) tot.innerHTML = '';
+      return;
+    }
     board.innerHTML = FAT_COLS.map(col => {
       const termos = _fatColunas[col] || [];
       return `<div>
@@ -23363,7 +23382,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.45] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.46] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23379,7 +23398,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.45';
+window.__ATX_BUILD_ID__ = 'ATX-v2.46';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
