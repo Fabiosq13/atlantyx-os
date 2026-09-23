@@ -15504,9 +15504,11 @@ function renderKanbanMarcos(d) {
         </div>
         <div style="font-family:var(--M);font-size:11px;color:var(--t1);margin-top:2px;">${fmtBRL(col.total_valor)}</div>
       </div>
-      <div style="padding:8px;overflow-y:auto;flex:1;">
+      <div style="padding:8px;overflow-y:auto;flex:1;min-height:80px;" data-mkcol="${colKey}"
+           ondragover="event.preventDefault();this.style.background='rgba(245,185,75,.08)'" ondragleave="this.style.background=''"
+           ondrop="event.preventDefault();this.style.background='';_mkDrop(event,'${colKey}')">
         ${col.marcos.length === 0
-          ? '<div style="color:var(--t3);font-size:10px;text-align:center;padding:14px;">Vazio</div>'
+          ? '<div style="color:var(--t3);font-size:10px;text-align:center;padding:14px;">Vazio — arraste um marco para cá</div>'
           : col.marcos.map(m => renderMarcoCard(m, colKey)).join('')}
       </div>
     </div>`;
@@ -15524,6 +15526,14 @@ function renderMarcoCard(m, colKey) {
       <input type="checkbox" ${_mkSelecionados.has(m.id)?'checked':''} onchange="_mkToggle('${m.id}',this.checked)"/> incluir no termo</label>`;
   }
   // Botões de ação baseados na coluna
+  // v2.50: "Aguardando entrega" não tinha botão nenhum — os marcos ficavam presos. E toda coluna
+  // ganha um "◀ voltar" para desfazer um avanço errado.
+  const ORDEM = ['aguardando_entrega','liberacao_gp','aprovado_gp','elaborando_termo','termo_pronto','concluido'];
+  const idx = ORDEM.indexOf(colKey);
+  const voltar = idx > 0 ? `<button class="btn" style="font-size:8.5px;padding:2px 8px;margin-top:4px;color:var(--t3);" onclick="moverMarco('${m.id}','${ORDEM[idx-1]}','manual')" title="Voltar para a etapa anterior">◀ voltar</button>` : '';
+  if (colKey === 'aguardando_entrega') {
+    acoes += `<button class="btn btn-gn" style="font-size:9px;padding:4px 10px;width:100%;margin-top:6px;" onclick="moverMarco('${m.id}','liberacao_gp','entrega')">✓ Entregue — liberar para o GP</button>`;
+  }
   if (colKey === 'liberacao_gp') {
     acoes += `<button class="btn btn-gn" style="font-size:9px;padding:4px 10px;width:100%;margin-top:6px;" onclick="moverMarco('${m.id}','aprovado_gp','GP')">✓ Aprovar como GP</button>`;
   } else if (colKey === 'aprovado_gp') {
@@ -15535,7 +15545,9 @@ function renderMarcoCard(m, colKey) {
     acoes += `<button class="btn" style="font-size:9px;padding:4px 10px;width:100%;margin-top:6px;" onclick="enviarTermo('${m.id}')">📤 Reenviar termo</button>
       <button class="btn btn-gn" style="font-size:9px;padding:4px 10px;width:100%;margin-top:4px;" onclick="moverMarco('${m.id}','concluido','Financeiro')">✓ Concluir (NF/pagamento no Kanban de Faturamento)</button>`;
   }
-  return `<div style="background:#0f1024;border:1px solid ${urgente && colKey === 'aguardando_entrega' ? 'var(--gold)' : 'var(--bd)'};border-radius:6px;padding:8px;margin-bottom:6px;font-size:10px;">
+  acoes += voltar;
+  return `<div draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${m.id}');event.dataTransfer.effectAllowed='move';this.style.opacity='.5'" ondragend="this.style.opacity=''" title="Arraste para outra etapa"
+    style="cursor:grab;background:#0f1024;border:1px solid ${urgente && colKey === 'aguardando_entrega' ? 'var(--gold)' : 'var(--bd)'};border-radius:6px;padding:8px;margin-bottom:6px;font-size:10px;">
     <div style="font-weight:600;font-size:11px;margin-bottom:3px;color:var(--t1);">${m.descricao}</div>
     <div style="font-size:9px;color:var(--t2);margin-bottom:4px;">${m.projeto_nome} · ${m.projeto_cliente || ''}</div>
     <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t2);">
@@ -15547,14 +15559,23 @@ function renderMarcoCard(m, colKey) {
   </div>`;
 }
 
-async function moverMarco(id, novoStatus, ator) {
-  if (!confirm(`Mover marco para "${novoStatus.replace('_',' ')}"?`)) return;
+// v2.50: soltar um card em outra coluna
+async function _mkDrop(ev, colDestino) {
+  const id = ev.dataTransfer.getData('text/plain'); if (!id) return;
+  const m = _mkSelecionaveis[id]; const atual = m?.status_kanban;
+  if (atual === colDestino) return;
+  await moverMarco(id, colDestino, 'arrastar', true);
+}
+async function moverMarco(id, novoStatus, ator, semConfirm) {
+  if (!semConfirm && !confirm(`Mover marco para "${novoStatus.replace(/_/g,' ')}"?`)) return;
   try {
     await finApi('marco_mover_status', { id, novo_status: novoStatus, ator });
-    if (typeof toast === 'function') toast('Movido com sucesso', 'success');
+    if (typeof toast === 'function') toast('Movido para ' + novoStatus.replace(/_/g,' '), 'success');
     await carregarKanbanMarcos();
   } catch (e) {
-    if (typeof toast === 'function') toast('Erro: ' + e.message, 'error');
+    if (typeof toast === 'function') toast('Não moveu: ' + e.message, 'error');
+    alert('Não consegui mover o marco.\n\nErro: ' + e.message + '\n\nMe envie esta mensagem.');
+    await carregarKanbanMarcos();
   }
 }
 
@@ -23446,7 +23467,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.49] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.50] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23462,7 +23483,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.49';
+window.__ATX_BUILD_ID__ = 'ATX-v2.50';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
