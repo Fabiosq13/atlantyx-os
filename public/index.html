@@ -2732,6 +2732,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <button class="btn" onclick="carregarKanbanFaturamento()">&#8635; Atualizar</button>
     <button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="verificarTermosObrigatorios()" title="Confere se os termos obrigatorios do mes estao lancados">&#9888; Termos do mes</button>
     <button class="btn" onclick="diagnosticoTermos()" title="Mostra o que esta no banco, sem nenhum filtro">&#128270; Diagnostico</button>
+    <label class="btn btn-gn" style="cursor:pointer;" title="Sobe o XML exportado do emissor nacional NFS-e (gov.br) e atrela cada nota ao termo pelo CNPJ do tomador e valor">&#129534; Importar NFS-e (XML)<input type="file" accept=".xml,.XML,.zip" multiple style="display:none;" onchange="fatImportarNfse(this)"/></label>
   </div>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;padding:9px 12px;background:var(--bg4);border-radius:8px;">
     <span style="font-size:10px;color:var(--t2);font-family:var(--M);">FILTRAR:</span>
@@ -19895,6 +19896,41 @@ async function migrarPagos(todos) {
     carregarKanbanFaturamento();
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
+// v2.48: importação de NFS-e do padrão nacional (XML)
+async function fatImportarNfse(input) {
+  const files = [...(input.files || [])]; if (!files.length) return;
+  toast(`Lendo ${files.length} arquivo(s)...`, 'success');
+  try {
+    let xml = '';
+    for (const f of files) {
+      if (/\.zip$/i.test(f.name)) { toast('ZIP ainda não suportado — extraia e envie os .xml', 'error'); continue; }
+      const buf = await f.arrayBuffer();
+      let t; try { t = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { t = new TextDecoder('windows-1252').decode(buf); }
+      xml += '\n' + t;
+    }
+    const d = await fatApi('nfse_importar', { xml, aplicar: true });
+    let m = document.getElementById('nfseModal');
+    if (!m) { m = document.createElement('div'); m.id='nfseModal'; m.style.cssText='display:flex;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:1000;align-items:center;justify-content:center;overflow:auto;padding:20px;'; document.body.appendChild(m); }
+    m.style.display = 'flex';
+    const ico = x => x === 'casada' ? '🟢' : x === 'cancelada' ? '⚫' : '🟡';
+    m.innerHTML = `<div class="panel" style="width:860px;max-width:96vw;max-height:92vh;overflow:auto;">
+      <div class="ph"><div class="pt">🧾 NFS-e importadas · ${d.total} nota(s)</div>
+        <span style="font-size:10px;color:var(--t2);">${d.casadas} atrelada(s) a ${d.termos_afetados} termo(s) · ${fmtBRLcompleto(d.valor_casado||0)} · ${d.sem_termo} sem termo · ${d.canceladas} cancelada(s)</span>
+        <button class="btn" style="font-size:10px;" onclick="document.getElementById('nfseModal').style.display='none';carregarKanbanFaturamento()">✕</button></div>
+      <div class="pb"><table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="border-bottom:1px solid var(--bd);">${['','NF','EMISSÃO','TOMADOR','SERVIÇO','LÍQUIDO','TERMO','COMO'].map(h=>`<th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;">${h}</th>`).join('')}</tr></thead>
+        <tbody>${(d.notas||[]).map(n => `<tr style="border-bottom:1px solid var(--bd);${n.situacao_casamento==='sem_termo'?'background:rgba(245,185,75,.06);':''}">
+          <td style="padding:5px;">${ico(n.situacao_casamento)}</td><td style="padding:5px;font-family:var(--M);">${n.numero}</td>
+          <td style="padding:5px;">${(n.emissao||'').split('-').reverse().join('/')}</td>
+          <td style="padding:5px;">${(n.tomador_nome||'').substring(0,28)}<div style="font-size:9px;color:var(--t3);font-family:var(--M);">${n.tomador_cnpj||''}</div></td>
+          <td style="padding:5px;font-family:var(--M);">${fmtBRLcompleto(n.valor_servico)}</td>
+          <td style="padding:5px;font-family:var(--M);">${fmtBRLcompleto(n.valor_liquido||0)}${n.retencoes?`<div style="font-size:9px;color:var(--t3);">ret. ${fmtBRLcompleto(n.retencoes)}</div>`:''}</td>
+          <td style="padding:5px;">${n.termo ? `<a href="#" onclick="event.preventDefault();document.getElementById('nfseModal').style.display='none';abrirDetalheTermo('${n.termo_id}')" style="color:var(--gold);font-weight:600;">📋 ${n.termo}</a><div style="font-size:9px;color:var(--t3);">${n.empresa||''}</div>` : n.situacao_casamento==='cancelada' ? '<span style="color:var(--t3);">cancelada</span>' : '<span style="color:var(--gold);">sem termo correspondente</span>'}</td>
+          <td style="padding:5px;font-size:10px;color:var(--t2);">${n.via||''}</td></tr>`).join('')}</tbody></table>
+        <div style="font-size:10px;color:var(--t3);margin-top:10px;line-height:1.6;">Casamento por CNPJ do tomador + valor (serviço ou líquido, ±2%). "Sem termo" = nota emitida sem termo no sistema, ou termo cuja empresa está sem CNPJ e com nome diferente do tomador.</div>
+      </div></div>`;
+  } catch (e) { toast('Erro: ' + e.message, 'error'); alert(e.message); }
+  input.value = '';
+}
 // v2.08: mostra o conteúdo real do banco, sem filtro nenhum
 async function diagnosticoTermos() {
   let m = document.getElementById('diagTermosModal');
@@ -23392,7 +23428,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.47] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.48] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23408,7 +23444,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.47';
+window.__ATX_BUILD_ID__ = 'ATX-v2.48';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
