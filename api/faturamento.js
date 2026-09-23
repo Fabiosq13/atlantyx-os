@@ -200,6 +200,111 @@ async function termoImportar({ arquivo_nome, cabecalho = {}, empresas = [] } = {
 // ═══════════════════════════════════════════════════════════════════════════
 // v2.08: diagnóstico — mostra o que REALMENTE está no banco, sem nenhum filtro.
 // Criado porque estávamos supondo a causa do sumiço em vez de olhar os dados.
+// ═══ v2.48: NFS-e PADRÃO NACIONAL — importar XML e atrelar aos termos ═══
+// O Rio aderiu ao padrão nacional (gov.br). O XML da NFS-e tem estrutura fixa:
+//   <NFSe><infNFSe Id="NFS..."><nNFSe>..</nNFSe><dhProc>..</dhProc><emit><CNPJ>..</CNPJ></emit>
+//     <DPS><infDPS><toma><CNPJ>..</CNPJ><xNome>..</xNome></toma><serv><xDescServ>..</xDescServ></serv>
+//     <valores><vServPrest><vServ>..</vServ></vServPrest>...<vLiq>..</vLiq></valores>
+// O parser é tolerante (regex por tag), porque os lotes exportados variam em namespace e indentação.
+function parseNfseXml(xml) {
+  const t = String(xml || '');
+  const tag = (bloco, nome) => { const m = bloco.match(new RegExp('<(?:\\w+:)?' + nome + '(?:\\s[^>]*)?>([^<]*)<', 'i')); return m ? m[1].trim() : null; };
+  const blocos = t.match(/<(?:\w+:)?infNFSe[\s\S]*?<\/(?:\w+:)?infNFSe>/gi) || (t.match(/<(?:\w+:)?NFSe[\s\S]*?<\/(?:\w+:)?NFSe>/gi) || []);
+  return blocos.map(b => {
+    const toma = (b.match(/<(?:\w+:)?toma>[\s\S]*?<\/(?:\w+:)?toma>/i) || [''])[0];
+    const emit = (b.match(/<(?:\w+:)?emit>[\s\S]*?<\/(?:\w+:)?emit>/i) || [''])[0];
+    const dh = tag(b, 'dhProc') || tag(b, 'dhEmi') || tag(b, 'dCompet') || '';
+    return {
+      numero: tag(b, 'nNFSe') || tag(b, 'nDPS') || null,
+      chave: (b.match(/Id="(NFS[0-9A-Z]+)"/i) || [])[1] || null,
+      emissao: dh ? dh.substring(0, 10) : null,
+      competencia: tag(b, 'dCompet') || null,
+      emitente_cnpj: (tag(emit, 'CNPJ') || '').replace(/[^0-9]/g, '') || null,
+      tomador_cnpj: (tag(toma, 'CNPJ') || tag(toma, 'CPF') || '').replace(/[^0-9]/g, '') || null,
+      tomador_nome: tag(toma, 'xNome') || null,
+      descricao: tag(b, 'xDescServ') || tag(b, 'xDiscriminacao') || null,
+      valor_servico: parseFloat(tag(b, 'vServ') || '0') || 0,
+      valor_liquido: parseFloat(tag(b, 'vLiq') || tag(b, 'vLiqNFSe') || '0') || 0,
+      iss: parseFloat(tag(b, 'vISS') || tag(b, 'vISSQN') || '0') || 0,
+      retencoes: ['vRetIRRF','vRetPP','vRetCSLL','vRetCOFINS','vRetCP','vRetPIS'].reduce((s, k) => s + (parseFloat(tag(b, k) || '0') || 0), 0),
+      situacao: /<(?:\w+:)?(cancel|infCanc|dhCanc)/i.test(b) ? 'cancelada' : 'ativa',
+    };
+  }).filter(n => n.numero && n.valor_servico > 0);
+}
+
+// Casa cada NFS-e com uma empresa de termo: CNPJ do tomador + valor (±2% ou líquido) + período.
+// Grava nf_numero / nf_valor / nf_data na empresa e registra em termos_notas_encontradas.
+async function nfseImportar({ xml, aplicar = true } = {}) {
+  if (!xml) throw new Error('Envie o conteúdo do XML (lote ou nota única)');
+  const notas = parseNfseXml(xml);
+  if (!notas.length) throw new Error('Nenhuma NFS-e reconhecida no XML — confira se é o XML exportado do emissor nacional (padrão NFS-e gov.br).');
+  const sql = await getSql();
+  try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS cnpj TEXT`; } catch (_) {}
+  try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS nf_chave TEXT`; } catch (_) {}
+  const empresas = await sql`SELECT e.id, e.termo_id, e.empresa, e.cnpj, e.valor_parcela, e.nf_numero, e.nf_status,
+      t.numero_termo, t.projeto, t.contratante, t.periodo_medicao, t.status AS termo_status, t.criado_em
+    FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id
+    WHERE t.status NOT IN ('concluido') ORDER BY t.criado_em DESC`;
+  const normN = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\b(ltda|s\.?a\.?|energia|cia)\b/g, '').replace(/[^a-z0-9 ]/g, ' ').trim();
+  const usadas = new Set(), resultado = [];
+  for (const n of notas) {
+    if (n.situacao === 'cancelada') { resultado.push({ ...n, situacao_casamento: 'cancelada' }); continue; }
+    let melhor = null;
+    for (const e of empresas) {
+      if (usadas.has(e.id)) continue;
+      if (e.nf_numero && String(e.nf_numero).replace(/^0+/, '') === String(n.numero).replace(/^0+/, '')) { melhor = { e, score: 1.0, via: 'número já registrado' }; break; }
+      const vp = num(e.valor_parcela), tol = Math.max(vp * 0.02, 1);
+      const valorBate = Math.abs(n.valor_servico - vp) <= tol || Math.abs(n.valor_liquido - vp) <= tol;
+      if (!valorBate) continue;
+      const cnpjBate = n.tomador_cnpj && e.cnpj && String(e.cnpj).replace(/[^0-9]/g, '') === n.tomador_cnpj;
+      const chave = normN(e.empresa || e.contratante).split(' ').find(w => w.length >= 4) || '';
+      const nomeBate = chave && normN(n.tomador_nome).includes(chave);
+      const jaTemOutra = e.nf_numero && e.nf_numero !== n.numero;
+      const score = (cnpjBate ? 0.6 : 0) + (nomeBate ? 0.3 : 0) + 0.1 - (jaTemOutra ? 0.5 : 0);
+      if (score >= 0.4 && (!melhor || score > melhor.score)) melhor = { e, score, via: cnpjBate ? 'CNPJ + valor' : 'nome + valor' };
+    }
+    if (melhor) {
+      usadas.add(melhor.e.id);
+      const item = { ...n, situacao_casamento: 'casada', confianca: melhor.score >= 0.9 ? 'alta' : melhor.score >= 0.6 ? 'alta' : 'media', via: melhor.via,
+        termo_id: melhor.e.termo_id, termo: melhor.e.numero_termo, projeto: melhor.e.projeto, empresa: melhor.e.empresa, empresa_id: melhor.e.id, valor_parcela: num(melhor.e.valor_parcela) };
+      if (aplicar) {
+        await sql`UPDATE termos_empresas SET nf_numero = ${n.numero}, nf_valor = ${n.valor_servico}, nf_data = ${n.emissao}, nf_status = 'encontrada',
+          nf_chave = ${n.chave}, cnpj = COALESCE(cnpj, ${n.tomador_cnpj}) WHERE id = ${melhor.e.id}`;
+        try { await sql`INSERT INTO termos_notas_encontradas (id, termo_id, empresa_id, nf_numero, nf_valor, nf_chave, tipo_arquivo, anexo_nome, encontrado_em)
+          VALUES (${novoId('nfe')}, ${melhor.e.termo_id}, ${melhor.e.id}, ${n.numero}, ${n.valor_servico}, ${n.chave}, 'xml-nfse', 'nfse-gov', NOW()) ON CONFLICT DO NOTHING`; } catch (_) {}
+        try { await recalcularNf(melhor.e.termo_id); } catch (_) {}
+        item.gravada = true;
+      }
+      resultado.push(item);
+    } else resultado.push({ ...n, situacao_casamento: 'sem_termo' });
+  }
+  const casadas = resultado.filter(r => r.situacao_casamento === 'casada');
+  return { total: notas.length, casadas: casadas.length, sem_termo: resultado.filter(r => r.situacao_casamento === 'sem_termo').length,
+    canceladas: resultado.filter(r => r.situacao_casamento === 'cancelada').length,
+    valor_casado: round(casadas.reduce((s, r) => s + r.valor_servico, 0)), notas: resultado, aplicado: !!aplicar,
+    termos_afetados: [...new Set(casadas.map(r => r.termo_id))].length };
+}
+
+// v2.48: estrutura para a consulta AUTOMÁTICA no Ambiente de Dados Nacional (ADN) da NFS-e.
+// Exige certificado A1 (mTLS). Sem NFSE_CERT_PFX_BASE64 + NFSE_CERT_SENHA, devolve instrução.
+async function nfseConsultarApi({ desde_nsu = 0 } = {}) {
+  const pfx = process.env.NFSE_CERT_PFX_BASE64, senha = process.env.NFSE_CERT_SENHA, cnpj = process.env.NFSE_CNPJ;
+  if (!pfx || !senha || !cnpj) return { configurado: false,
+    instrucao: 'Para a consulta automática, configure no Vercel: NFSE_CERT_PFX_BASE64 (o .pfx do e-CNPJ A1 em base64), NFSE_CERT_SENHA e NFSE_CNPJ (14 dígitos). Até lá, use a importação do XML.' };
+  const https = await import('https');
+  const agent = new https.Agent({ pfx: Buffer.from(pfx, 'base64'), passphrase: senha, rejectUnauthorized: true });
+  // Distribuição de DFe do ADN: retorna documentos a partir de um NSU (número sequencial)
+  const url = `https://adn.nfse.gov.br/contribuintes/DFe/${desde_nsu}`;
+  return await new Promise((res, rej) => {
+    https.get(url, { agent, headers: { Accept: 'application/json' } }, r => {
+      let body = ''; r.on('data', c => body += c); r.on('end', () => {
+        if (r.statusCode !== 200) return rej(new Error(`ADN NFS-e HTTP ${r.statusCode}: ${body.substring(0, 200)}`));
+        try { const d = JSON.parse(body); res({ configurado: true, ultimo_nsu: d.UltimoNSU || d.ultimoNSU, documentos: (d.LoteDFe || d.loteDFe || []).length, bruto: d }); }
+        catch (e) { rej(new Error('Resposta não-JSON do ADN: ' + body.substring(0, 200))); } });
+    }).on('error', rej);
+  });
+}
+
 async function termoDiagnostico() {
   const sql = await getSql();
   const porStatus = await sql`SELECT status, COUNT(*)::int AS n,
@@ -1174,6 +1279,8 @@ export default async function handler(req, res) {
     termo_importar:          () => termoImportar(payload),
     termo_list:               () => termoList(payload),
     termo_diagnostico:        () => termoDiagnostico(),
+    nfse_importar:            () => nfseImportar(payload),
+    nfse_consultar_api:       () => nfseConsultarApi(payload),
     termo_reabrir:            () => termoReabrir(payload),
     termo_migrar_pagos:       () => termoMigrarPagos(payload),
     termo_get:                 () => termoGet(payload),
