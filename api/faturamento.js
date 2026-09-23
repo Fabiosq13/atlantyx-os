@@ -85,6 +85,7 @@ async function ensureTabelas(sql) {
     'cpfl_observacao TEXT',
     'cpfl_previsao_pagamento DATE',
     'entrou_em_envio_nf TIMESTAMPTZ',     // para medir há quantos dias está nessa etapa
+    'data_termo DATE',                    // v2.56: data do termo (emissão) — base do prazo de 35 dias
     'concluido_em TIMESTAMPTZ',           // v2.10
     'pago_em TIMESTAMPTZ',                // v2.11
     'concluido_motivo TEXT',              // v2.10
@@ -412,6 +413,11 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
     porColuna[t.status].push({ ...t, valor_total_termo: num(t.valor_total_termo), nf_soma: num(t.nf_soma), nf_diferenca: num(t.nf_diferenca),
       n_empresas: emp.length, n_nf_encontradas: emp.filter(e => e.nf_status === 'encontrada').length, n_pagas: emp.filter(e => e.pagamento_status === 'pago').length,
       nf_numeros: emp.map(e => e.nf_numero).filter(Boolean),   // v2.44: para o card destacar a NF filtrada
+      // v2.56: data-base do prazo, na ordem: informada → derivada do período → NF mais antiga → criação
+      data_termo: t.data_termo ? String(t.data_termo).substring(0,10) : null,
+      data_base_prazo: (t.data_termo ? String(t.data_termo).substring(0,10) : null) || derivarDataTermo(t.periodo_medicao)
+        || (datasNf[0] ? String(datasNf[0]).split('T')[0] : null) || (t.criado_em ? String(t.criado_em).substring(0,10) : null),
+      data_base_origem: t.data_termo ? 'data do termo' : derivarDataTermo(t.periodo_medicao) ? 'período de medição' : datasNf[0] ? 'emissão da NF' : 'criação no sistema',
       data_emissao: datasNf[0] ? String(datasNf[0]).split('T')[0] : null,
       data_emissao_ultima: datasNf.length > 1 ? String(datasNf[datasNf.length - 1]).split('T')[0] : null,
       data_pagamento: datasPag.length ? String(datasPag[datasPag.length - 1]).split('T')[0] : null,
@@ -466,6 +472,7 @@ async function termoGet({ id } = {}) {
   const _datasNf = empresas.map(e => e.nf_data).filter(Boolean).sort();
   const _datasPag = empresas.map(e => e.pagamento_data).filter(Boolean).sort();
   return { termo: { ...termo, valor_total_termo: num(termo.valor_total_termo), nf_soma: num(termo.nf_soma), nf_diferenca: num(termo.nf_diferenca),
+      data_termo: termo.data_termo ? String(termo.data_termo).substring(0,10) : null, data_base_prazo: (termo.data_termo ? String(termo.data_termo).substring(0,10) : null) || derivarDataTermo(termo.periodo_medicao) || null, data_base_origem: termo.data_termo ? 'data do termo' : derivarDataTermo(termo.periodo_medicao) ? 'período de medição' : 'criação no sistema',
       // v1.33: datas consolidadas para exibição
       data_emissao: _datasNf[0] ? String(_datasNf[0]).split('T')[0] : null,
       data_emissao_ultima: _datasNf.length > 1 ? String(_datasNf[_datasNf.length - 1]).split('T')[0] : null,
@@ -683,6 +690,21 @@ async function recalcularPagamento(termoId) {
 // v1.31: EDIÇÃO COMPLETA DO TERMO (cabeçalho + empresas do rateio)
 // ═══════════════════════════════════════════════════════════════════════════
 // v2.53: último rateio do mesmo projeto — base para calcular parcela anterior e já faturado
+// v2.56: deriva a data do termo do "Período de Medição" quando não foi informada.
+//   "01/07/2026 a 31/07/2026" → 31/07/2026 (fim do período)   "07/2026" → 31/07/2026
+//   "Julho/2026" → 31/07/2026   "01/07/2026" → 01/07/2026   nada reconhecido → null
+function derivarDataTermo(periodo) {
+  const p = String(periodo || '').toLowerCase().trim(); if (!p) return null;
+  const MES = { jan:1, fev:2, mar:3, abr:4, mai:5, jun:6, jul:7, ago:8, set:9, out:10, nov:11, dez:12 };
+  const fimMes = (a, m) => { const d = new Date(a, m, 0); return `${a}-${String(m).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+  const datas = [...p.matchAll(/(\d{2})\/(\d{2})\/(\d{4})/g)].map(m => `${m[3]}-${m[2]}-${m[1]}`);
+  if (datas.length) return datas[datas.length - 1];                         // última data do texto = fim do período
+  const mm = p.match(/(\d{2})\/(\d{4})/); if (mm) return fimMes(+mm[2], +mm[1]);
+  const nome = p.match(/([a-zç]{3})[a-zç]*\s*(?:de|\/)?\s*(\d{4})/); if (nome && MES[nome[1]]) return fimMes(+nome[2], MES[nome[1]]);
+  const iso = p.match(/(\d{4})-(\d{2})-(\d{2})/); if (iso) return iso[0];
+  return null;
+}
+
 async function termoUltimoRateio({ projeto, termo_id_atual } = {}) {
   if (!projeto) throw new Error('projeto obrigatório');
   const sql = await getSql();
@@ -698,6 +720,7 @@ async function termoUltimoRateio({ projeto, termo_id_atual } = {}) {
 }
 
 async function termoEditar({ id, cabecalho = {}, empresas } = {}) {
+  if (cabecalho.data_termo !== undefined) { try { const sql0 = await getSql(); await sql0`UPDATE termos_faturamento SET data_termo = ${cabecalho.data_termo || null} WHERE id = ${id}`; } catch (e) { console.warn('[FAT] data_termo:', e.message); } }
   if (!id) throw new Error('id do termo obrigatório');
   const sql = await getSql();
   const atual = await sql`SELECT * FROM termos_faturamento WHERE id = ${id} LIMIT 1`;
