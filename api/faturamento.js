@@ -415,9 +415,11 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
       nf_numeros: emp.map(e => e.nf_numero).filter(Boolean),   // v2.44: para o card destacar a NF filtrada
       // v2.56: data-base do prazo, na ordem: informada → derivada do período → NF mais antiga → criação
       data_termo: t.data_termo ? String(t.data_termo).substring(0,10) : null,
-      data_base_prazo: (t.data_termo ? String(t.data_termo).substring(0,10) : null) || derivarDataTermo(t.periodo_medicao)
-        || (datasNf[0] ? String(datasNf[0]).split('T')[0] : null) || (t.criado_em ? String(t.criado_em).substring(0,10) : null),
-      data_base_origem: t.data_termo ? 'data do termo' : derivarDataTermo(t.periodo_medicao) ? 'período de medição' : datasNf[0] ? 'emissão da NF' : 'criação no sistema',
+      // v2.58: base do prazo = data de INCLUSÃO no sistema (criado_em). O período de medição é o mês
+      // dos serviços, anterior ao termo — usá-lo inflava os dias (dava 53). A data do termo
+      // informada manualmente continua tendo prioridade, quando existir.
+      data_base_prazo: (t.data_termo ? String(t.data_termo).substring(0,10) : null) || (t.criado_em ? String(t.criado_em).substring(0,10) : null),
+      data_base_origem: t.data_termo ? 'data do termo (informada)' : 'inclusão no sistema',
       data_emissao: datasNf[0] ? String(datasNf[0]).split('T')[0] : null,
       data_emissao_ultima: datasNf.length > 1 ? String(datasNf[datasNf.length - 1]).split('T')[0] : null,
       data_pagamento: datasPag.length ? String(datasPag[datasPag.length - 1]).split('T')[0] : null,
@@ -472,7 +474,7 @@ async function termoGet({ id } = {}) {
   const _datasNf = empresas.map(e => e.nf_data).filter(Boolean).sort();
   const _datasPag = empresas.map(e => e.pagamento_data).filter(Boolean).sort();
   return { termo: { ...termo, valor_total_termo: num(termo.valor_total_termo), nf_soma: num(termo.nf_soma), nf_diferenca: num(termo.nf_diferenca),
-      data_termo: termo.data_termo ? String(termo.data_termo).substring(0,10) : null, data_base_prazo: (termo.data_termo ? String(termo.data_termo).substring(0,10) : null) || derivarDataTermo(termo.periodo_medicao) || null, data_base_origem: termo.data_termo ? 'data do termo' : derivarDataTermo(termo.periodo_medicao) ? 'período de medição' : 'criação no sistema',
+      data_termo: termo.data_termo ? String(termo.data_termo).substring(0,10) : null, data_base_prazo: (termo.data_termo ? String(termo.data_termo).substring(0,10) : null) || (termo.criado_em ? String(termo.criado_em).substring(0,10) : null), data_base_origem: termo.data_termo ? 'data do termo (informada)' : 'inclusão no sistema',
       // v1.33: datas consolidadas para exibição
       data_emissao: _datasNf[0] ? String(_datasNf[0]).split('T')[0] : null,
       data_emissao_ultima: _datasNf.length > 1 ? String(_datasNf[_datasNf.length - 1]).split('T')[0] : null,
