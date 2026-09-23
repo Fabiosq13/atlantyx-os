@@ -2757,12 +2757,12 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </div>
   <div id="fatKbStatus" style="display:none;margin-bottom:10px;"></div>
   <div id="fatDiagLinha" style="font-size:9.5px;color:var(--t3);font-family:var(--M);margin-bottom:6px;"></div>
-  <div id="fatKbTotais" style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-bottom:12px;"></div>
-  <div id="fatKanbanBoard" style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;align-items:start;">
+  <div id="fatKbTotais" style="display:grid;grid-template-columns:repeat(8,1fr);gap:8px;margin-bottom:12px;"></div>
+  <div id="fatKanbanBoard" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;align-items:start;">
     <div style="grid-column:1/-1;text-align:center;color:var(--t3);font-size:11px;padding:24px;">Carregando...</div>
   </div>
   <!-- v2.11: concluídos ficavam sem coluna — nunca apareciam. Agora têm uma seção própria. -->
-  <div class="panel" style="margin-top:12px;">
+  <div class="panel" style="margin-top:12px;display:none;">
     <div class="ph" style="cursor:pointer;" onclick="const b=document.getElementById('fatConcluidosBox');b.style.display=b.style.display==='none'?'block':'none';">
       <div class="pt">&#127937; Concluidos <span id="fatConcCnt" style="color:var(--t3);font-weight:400;"></span></div>
       <span style="font-size:10px;color:var(--t2);">ultimos 90 dias &middot; clique para abrir/fechar</span></div>
@@ -16769,7 +16769,7 @@ async function confirmarImportarTermo() {
 }
 
 // ── Kanban board ──
-const FAT_COLS = ['elaboracao','aprovacao','emissao_nf','envio_nf','pagamento', 'pago'];
+const FAT_COLS = ['elaboracao','aprovacao','emissao_nf','envio_nf','pagamento', 'pago', 'concluido'];
 const FAT_LABELS = { elaboracao:'📝 Elaboração do Termo', aprovacao:'✅ Aprovação', emissao_nf:'🧾 Emissão de NF', envio_nf:'📧 Envio de NF', pagamento:'💰 Pagamento', pago:'💵 Pago', concluido:'🏁 Concluído' };
 let _fatColunas = {};
 async function carregarKanbanFaturamento() {
@@ -16788,7 +16788,7 @@ async function carregarKanbanFaturamento() {
     _fatColunas = d.colunas || {};
     // v2.14: a coluna PAGO reúne 'pago' E 'concluido' — montado aqui na tela, sem depender de
     // migração no banco. Foi a terceira tentativa; esta não tem como falhar por dado ou cache.
-    _fatColunas.pago = [ ...(_fatColunas.pago || []), ...(_fatColunas.concluido || []) ];
+    // v2.57: Concluído virou coluna própria — Pago mostra só os pagos
     // Diagnóstico visível: o que o servidor devolveu, por status
     const diag = Object.entries(d.colunas || {}).map(([k, v]) => `${k}:${(v||[]).length}`).join(' · ');
     const dEl = document.getElementById('fatDiagLinha');
@@ -16820,14 +16820,11 @@ async function carregarKanbanFaturamento() {
       infoEl.textContent = ativos.length ? `${d.total} termo(s) · filtro: ${ativos.join(' · ')}` : `${d.total} termo(s) no total`;
       infoEl.style.color = ativos.length ? 'var(--gold)' : 'var(--t3)';
     }
-    if (d.totais_por_coluna) {
-      const tp = d.totais_por_coluna.pago || { qtd: 0, valor: 0 }, tc = d.totais_por_coluna.concluido || { qtd: 0, valor: 0 };
-      d.totais_por_coluna.pago = { qtd: (tp.qtd||0) + (tc.qtd||0), valor: (tp.valor||0) + (tc.valor||0) };
-    }
+
     const cntTotal = FAT_COLS.reduce((s, c) => s + (_fatColunas[c]?.length || 0), 0);
     const badge = document.getElementById('fatMenuCnt'); if (badge) badge.textContent = cntTotal || '';
     // v1.20.3: faixa de totais em valor por etapa, no topo
-    const totCores = { elaboracao:'bl', aprovacao:'gd', emissao_nf:'pu', envio_nf:'gd', pagamento:'gd', pago:'gn' };
+    const totCores = { elaboracao:'bl', aprovacao:'gd', emissao_nf:'pu', envio_nf:'gd', pagamento:'gd', pago:'gn', concluido:'gn' };
     const boxTot = document.getElementById('fatKbTotais');
     if (boxTot) {
       const tp = d.totais_por_coluna || {};
@@ -17343,6 +17340,8 @@ async function abrirDetalheTermo(id) {
           ${(t.status === 'envio_nf' || t.status === 'pagamento') && emp.some(e => e.nf_status === 'encontrada' && !e.qb_invoice_id) ? `<button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="_fatLancarTodasQb('${t.id}')" id="btnLancarQb_${t.id}">📤 Lançar notas no QuickBooks (Contas a Receber)</button>` : ''}
           ${t.status === 'pagamento' ? `<button class="btn btn-p" onclick="_fatVerificarPagamento('${t.id}')" id="btnVerifPag_${t.id}" title="Procura a fatura baixada e, se não achar, busca o recebimento no extrato">🏦 Verificar pagamento (fatura + extrato)</button>` : ''}
           ${t.status === 'pagamento' ? `<button class="btn btn-gn" onclick="_fatMarcarPago('${t.id}')" title="Confirmar manualmente que o pagamento entrou">💵 Marcar como PAGO</button>` : ''}
+          ${t.status === 'pago' ? `<button class="btn btn-gn" onclick="_fatConcluir('${t.id}')" title="Fechar o termo — vai para a coluna Concluído">🏁 Concluir termo</button><button class="btn" onclick="_fatReabrir('${t.id}')" title="Voltar para Pagamento">↩ Voltar p/ Pagamento</button>` : ''}
+          ${t.status === 'concluido' ? `<button class="btn" onclick="_fatAvancar('${t.id}','pago')" title="Reabrir — volta para Pago">↩ Voltar p/ Pago</button>` : ''}
           <button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="abrirEdicaoTermo('${t.id}')">✎ Editar termo</button>
           <button class="btn" style="color:var(--red);margin-left:auto;" onclick="_fatExcluir('${t.id}')">🗑 Excluir termo</button>
         </div>
@@ -23581,7 +23580,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.56] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.57] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23597,7 +23596,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.56';
+window.__ATX_BUILD_ID__ = 'ATX-v2.57';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
