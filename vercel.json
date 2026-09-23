@@ -49,6 +49,10 @@
     },
     "api/metricool.js": {
       "maxDuration": 60
+    },
+    "api/termo-excel.js": {
+      "maxDuration": 30,
+      "includeFiles": "api/modelos/**"
     }
   },
   "crons": [
