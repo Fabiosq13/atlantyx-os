@@ -2781,6 +2781,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div style="font-size:10.5px;color:var(--t2);margin-bottom:10px;">Altere o que precisar. O valor total do termo é recalculado pela soma do rateio e reconferido com as notas fiscais já lançadas.</div>
       <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px;margin-bottom:8px;">
         <div class="fg" style="margin:0;"><label class="fl">Projeto / Serviço</label><input class="fi" id="edProjeto"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Data do termo <span style="font-weight:400;color:var(--t3);">(base do prazo de 35 dias)</span></label><input class="fi" id="edDataTermo" type="date"/></div>
         <div class="fg" style="margin:0;"><label class="fl">Contratante</label><input class="fi" id="edContratante"/></div>
         <div class="fg" style="margin:0;"><label class="fl">Período de Medição</label><input class="fi" id="edPeriodo" placeholder="ex: julho/2026"/></div>
       </div>
@@ -16938,12 +16939,15 @@ function _fatCard(t, col) {
   //   ≥ 35 dias  → vermelho "⚠ em atraso · N dias", e o card inteiro fica vermelho
   // Termos em Pago/Concluído não recebem o alerta.
   const PRAZO_DIAS = 35;
-  const dataBase = t.criado_em ? String(t.criado_em).substring(0,10) : (t.data_emissao || null);
+  // v2.56: a base é a DATA DO TERMO (informada, ou derivada do período de medição), não a criação no sistema —
+  // termos reimportados contavam a partir da reimportação e apareciam com "5 dias".
+  const dataBase = t.data_base_prazo || (t.criado_em ? String(t.criado_em).substring(0,10) : null);
+  const origemBase = t.data_base_origem || 'criação no sistema';
   const diasDecorridos = dataBase ? Math.floor((Date.now() - new Date(dataBase + 'T12:00:00')) / 86400000) : null;
   const naoPago = !['pago', 'concluido'].includes(t.status);
   const estourou = naoPago && diasDecorridos != null && diasDecorridos >= PRAZO_DIAS;
-  const prazoBadge = diasDecorridos != null && naoPago ? `<div style="font-size:9.5px;margin-top:4px;padding:2px 7px;border-radius:4px;display:inline-block;font-weight:700;${estourou ? 'background:rgba(255,80,80,.18);color:var(--red);' : 'background:rgba(34,211,163,.15);color:var(--green,#22d3a3);'}" title="Criado em ${dataBase.split('-').reverse().join('/')} · prazo de ${PRAZO_DIAS} dias corridos para receber">
-      ${estourou ? '⚠ em atraso · ' + diasDecorridos + ' dias' : '✓ em dia · ' + diasDecorridos + ' dias'}</div>` : '';
+  const prazoBadge = diasDecorridos != null && naoPago ? `<div style="font-size:9.5px;margin-top:4px;padding:2px 7px;border-radius:4px;display:inline-block;font-weight:700;${estourou ? 'background:rgba(255,80,80,.18);color:var(--red);' : 'background:rgba(34,211,163,.15);color:var(--green,#22d3a3);'}" title="Base: ${dataBase.split('-').reverse().join('/')} (${origemBase}) · prazo de ${PRAZO_DIAS} dias corridos para receber${origemBase==='criação no sistema' ? ' · ⚠ sem data do termo nem período reconhecível — informe a Data do termo na edição' : ''}">
+      ${estourou ? '⚠ em atraso · ' + diasDecorridos + ' dias' : '✓ em dia · ' + diasDecorridos + ' dias'}${origemBase==='criação no sistema' ? ' <span style="font-weight:400;opacity:.7;" title="Contado da criação no sistema — informe a Data do termo">?</span>' : ''}</div>` : '';
   const cardStyle = estourou ? 'background:rgba(255,80,80,.08);border:1.5px solid var(--red);box-shadow:0 0 0 1px rgba(255,80,80,.25);' : 'background:var(--bg4);border:1px solid var(--bd);';
   return `<div style="${cardStyle}border-radius:8px;padding:9px;cursor:pointer;" onclick="abrirDetalheTermo('${t.id}')">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
@@ -16966,6 +16970,7 @@ async function abrirEdicaoTermo(id) {
     document.getElementById('edTermoId').value = id;
     const set = (el, v) => { const e = document.getElementById(el); if (e) e.value = v || ''; };
     set('edProjeto', t.projeto); set('edContratante', t.contratante); set('edPeriodo', t.periodo_medicao);
+    set('edDataTermo', t.data_termo ? String(t.data_termo).substring(0,10) : (t.data_base_prazo && t.data_base_origem === 'período de medição' ? t.data_base_prazo : ''));
     set('edNumTermo', t.numero_termo); set('edParcela', t.parcela); set('edFase', t.fase);
     set('edContratada', t.contratada || t.cnpj_fornecedor); set('edMarco', t.marco_projeto);
     _edEmpresas = (d.empresas || []).map(e => ({ ...e }));
@@ -17056,7 +17061,7 @@ async function salvarEdicaoTermo() {
   try {
     const v = el => document.getElementById(el)?.value?.trim() || null;
     await fatApi('termo_editar', { id,
-      cabecalho: { projeto: v('edProjeto'), contratante: v('edContratante'), periodo_medicao: v('edPeriodo'),
+      cabecalho: { projeto: v('edProjeto'), contratante: v('edContratante'), periodo_medicao: v('edPeriodo'), data_termo: v('edDataTermo') || null,
         numero_termo: v('edNumTermo'), parcela: v('edParcela'), fase: v('edFase'),
         contratada: v('edContratada'), marco_projeto: v('edMarco') },
       empresas: _edEmpresas });
@@ -23576,7 +23581,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.55] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.56] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23592,7 +23597,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.55';
+window.__ATX_BUILD_ID__ = 'ATX-v2.56';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
