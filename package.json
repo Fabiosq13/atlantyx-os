@@ -1,15 +1,18 @@
 {
   "name": "atlantyx-os",
   "version": "1.0.0",
-  "description": "Atlantyx OS — Plataforma de Agentes de IA",
+  "description": "Atlantyx OS \u2014 Plataforma de Agentes de IA",
   "private": true,
   "type": "module",
-  "engines": { "node": "24.x" },
+  "engines": {
+    "node": "24.x"
+  },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",
     "nodemailer": "^6.9.14",
     "imapflow": "^1.0.164",
-    "pdf-parse": "^1.1.1"
+    "pdf-parse": "^1.1.1",
+    "exceljs": "^4.4.0"
   },
   "scripts": {
     "deploy": "node deploy.js",
