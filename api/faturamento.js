@@ -357,16 +357,28 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
     // não pode sumir do kanban só porque você está olhando setembro. Só as fases FINAIS
     // (concluído) respeitam o filtro de mês; o que está em andamento aparece sempre.
     const EM_ABERTO = ['elaboracao', 'aprovacao', 'emissao_nf', 'envio_nf', 'pagamento', 'pago'];
-    termos = status
-      ? (EM_ABERTO.includes(status)
-          ? await sql`SELECT * FROM termos_faturamento WHERE status = ${status} ORDER BY criado_em DESC`
-          : await sql`SELECT * FROM termos_faturamento WHERE status = ${status}
-              AND criado_em >= ${ini + ' 00:00:00'} AND criado_em <= ${fim + ' 23:59:59'} ORDER BY criado_em DESC`)
-      : await sql`SELECT * FROM termos_faturamento
-          WHERE status = ANY(${EM_ABERTO})
-             OR (criado_em >= ${ini + ' 00:00:00'} AND criado_em <= ${fim + ' 23:59:59'})
-             OR (status = 'concluido' AND COALESCE(concluido_em, atualizado_em) >= NOW() - INTERVAL '90 days')
-          ORDER BY criado_em DESC`;
+    // v2.59: o filtro de mês/ano é ESTRITO quando o usuário escolhe um mês — vale para todos os
+    // status. A regra "em aberto aparece sempre" (v2.07) só vale sem mês escolhido; com mês
+    // escolhido ela deixava o filtro parecer morto.
+    const mesEscolhido = !!(mes && String(mes).trim()) || !!(ano && String(ano).trim());   // mês OU ano escolhido → estrito
+    if (mesEscolhido) {
+      termos = status
+        ? await sql`SELECT * FROM termos_faturamento WHERE status = ${status}
+            AND criado_em >= ${ini + ' 00:00:00'} AND criado_em <= ${fim + ' 23:59:59'} ORDER BY criado_em DESC`
+        : await sql`SELECT * FROM termos_faturamento
+            WHERE criado_em >= ${ini + ' 00:00:00'} AND criado_em <= ${fim + ' 23:59:59'} ORDER BY criado_em DESC`;
+    } else {
+      termos = status
+        ? (EM_ABERTO.includes(status)
+            ? await sql`SELECT * FROM termos_faturamento WHERE status = ${status} ORDER BY criado_em DESC`
+            : await sql`SELECT * FROM termos_faturamento WHERE status = ${status}
+                AND criado_em >= ${ini + ' 00:00:00'} AND criado_em <= ${fim + ' 23:59:59'} ORDER BY criado_em DESC`)
+        : await sql`SELECT * FROM termos_faturamento
+            WHERE status = ANY(${EM_ABERTO})
+               OR (criado_em >= ${ini + ' 00:00:00'} AND criado_em <= ${fim + ' 23:59:59'})
+               OR (status = 'concluido' AND COALESCE(concluido_em, atualizado_em) >= NOW() - INTERVAL '90 days')
+            ORDER BY criado_em DESC`;
+    }
   } else {
     termos = status
       ? await sql`SELECT * FROM termos_faturamento WHERE status = ${status} ORDER BY criado_em DESC`
