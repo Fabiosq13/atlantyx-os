@@ -54,7 +54,14 @@ export async function gerarTermoExcel({ cabecalho: c = {}, empresas = [] }) {
   ws.getCell('G11').value = c.numero_termo ? (isNaN(Number(c.numero_termo)) ? c.numero_termo : Number(c.numero_termo)) : '';
   ws.getCell('J11').value = c.parcela ? (isNaN(Number(c.parcela)) ? c.parcela : Number(c.parcela)) : ws.getCell('J11').value;
   if (c.descricao_servicos) ws.getCell('A14').value = String(c.descricao_servicos);
-  if (c.valor_mensal_sustentacao) ws.getCell('I14').value = 'Valor mensal Sustentacao : ' + fmtBR(c.valor_mensal_sustentacao) + '\n';
+  // v2.54: "Observações e Ressalvas" (I14) é dinâmico — texto padrão com o valor do termo.
+  // O valor do termo = soma das parcelas do rateio (o mesmo que o TOTAL da tabela).
+  const valorTermo = empresas.reduce((s, e) => s + num(e.valor_parcela), 0) || num(c.valor_mensal_sustentacao) || num(c.valor_total_termo);
+  const impostos = num(c.impostos) || 0;
+  ws.getCell('I14').value = c.observacoes_ressalvas
+    ? String(c.observacoes_ressalvas)
+    : `Valor mensal Sustentacao : ${fmtBR(valorTermo)}\nImpostos: ${fmtBR(impostos)}\nTotal :  ${fmtBR(valorTermo + impostos)}`;
+  ws.getCell('I14').alignment = { ...(ws.getCell('I14').alignment || {}), wrapText: true, vertical: 'top' };
 
   // ── Rateio: linhas 20 a 26 (7 vagas no modelo) ──
   const PRIMEIRA = 20, ULTIMA = 26;
