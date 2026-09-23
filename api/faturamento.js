@@ -682,6 +682,21 @@ async function recalcularPagamento(termoId) {
 // ═══════════════════════════════════════════════════════════════════════════
 // v1.31: EDIÇÃO COMPLETA DO TERMO (cabeçalho + empresas do rateio)
 // ═══════════════════════════════════════════════════════════════════════════
+// v2.53: último rateio do mesmo projeto — base para calcular parcela anterior e já faturado
+async function termoUltimoRateio({ projeto, termo_id_atual } = {}) {
+  if (!projeto) throw new Error('projeto obrigatório');
+  const sql = await getSql();
+  const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+  const todos = await sql`SELECT id, numero_termo, projeto, periodo_medicao, criado_em FROM termos_faturamento
+    WHERE status <> 'elaboracao' OR id <> ${termo_id_atual || ''} ORDER BY criado_em DESC LIMIT 300`;
+  const alvo = norm(projeto);
+  const t = todos.find(x => x.id !== termo_id_atual && (norm(x.projeto) === alvo || norm(x.projeto).includes(alvo) || alvo.includes(norm(x.projeto))));
+  if (!t) return { empresas: [] };
+  const emps = await sql`SELECT empresa, cnpj, contrato, ncm, centro_custo, diferimento, valor_total_contrato, percentual,
+      valor_ja_faturado, valor_parcela_anterior, valor_parcela, saldo_contrato FROM termos_empresas WHERE termo_id = ${t.id} ORDER BY ordem, empresa`;
+  return { termo_id: t.id, numero_termo: t.numero_termo, periodo_medicao: t.periodo_medicao, empresas: emps };
+}
+
 async function termoEditar({ id, cabecalho = {}, empresas } = {}) {
   if (!id) throw new Error('id do termo obrigatório');
   const sql = await getSql();
@@ -1286,6 +1301,7 @@ export default async function handler(req, res) {
     termo_get:                 () => termoGet(payload),
     termo_mover:               () => termoMover(payload),
     termo_editar:              () => termoEditar(payload),
+    termo_ultimo_rateio:       () => termoUltimoRateio(payload),
     termo_aprovar:             () => termoAprovar(payload),
     termo_excluir:             () => termoExcluir(payload),
     termo_empresa_marcar_nf:   () => termoEmpresaMarcarNf(payload),
