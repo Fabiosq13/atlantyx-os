@@ -2794,18 +2794,25 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
         <div style="font-size:11.5px;font-weight:700;">Rateio entre as empresas</div>
+        <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="_edPuxarUltimoTermo()" title="Copia contrato, NCM, % e totais do último termo deste projeto e calcula parcela anterior e já faturado">⤵ Puxar do termo anterior</button>
         <button class="btn btn-gn" style="font-size:10px;" onclick="_edAddEmpresa()">+ Adicionar empresa</button>
       </div>
       <div style="overflow-x:auto;">
-        <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:640px;">
+        <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:1180px;">
           <thead><tr style="border-bottom:1px solid var(--bd);">
             <th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">EMPRESA</th>
             <th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">CONTRATO</th>
+            <th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">NCM</th>
             <th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">CENTRO CUSTO</th>
-            <th style="text-align:right;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">VALOR DA PARCELA</th>
+            <th style="text-align:right;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;" title="Valor total do contrato desta empresa">TOTAL CONTRATO</th>
+            <th style="text-align:right;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;" title="Percentual desta empresa no rateio — calcula a parcela">%</th>
+            <th style="text-align:right;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;" title="Acumulado faturado ANTES desta parcela">JÁ FATURADO</th>
+            <th style="text-align:right;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">PARCELA ANTERIOR</th>
+            <th style="text-align:right;padding:5px;color:var(--gold);font-family:var(--M);font-size:9px;">DESTA PARCELA</th>
+            <th style="text-align:right;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;" title="= total do contrato − já faturado − desta parcela">SALDO</th>
             <th style="width:30px;"></th></tr></thead>
           <tbody id="edEmpresasBody"></tbody>
-          <tfoot><tr style="border-top:2px solid var(--bd);"><td colspan="3" style="padding:7px;font-weight:700;">TOTAL DO TERMO</td>
+          <tfoot><tr style="border-top:2px solid var(--bd);"><td colspan="8" style="padding:7px;font-weight:700;">TOTAL DO TERMO <span style="font-weight:400;color:var(--t3);font-size:10px;">· valor base <input class="fi" id="edValorBase" style="width:110px;font-size:10.5px;padding:2px 6px;display:inline-block;" placeholder="ex.: 80000" oninput="_edRecalcPorPercentual()" title="Valor base do termo — as parcelas são calculadas por % sobre ele"/></span></td>
             <td style="padding:7px;text-align:right;font-weight:700;color:var(--gold);font-family:var(--M);" id="edTotalRateio">R$ 0,00</td><td></td></tr></tfoot>
         </table>
       </div>
@@ -16969,19 +16976,58 @@ async function abrirEdicaoTermo(id) {
 }
 function _edRenderEmpresas() {
   const tb = document.getElementById('edEmpresasBody'); if (!tb) return;
+  const IN = (i, campo, val, extra = '') => `<input class="fi" style="font-size:10.5px;width:100%;${extra}" value="${String(val ?? '').replace(/"/g,'&quot;')}" oninput="_edEmpresas[${i}].${campo}=this.value;_edCalcLinha(${i})"/>`;
+  const NUM = (i, campo, val, cor = '') => `<input class="fi" style="font-size:10.5px;width:100%;text-align:right;font-family:var(--M);${cor}" value="${val == null || val === '' ? '' : String(Number(val).toFixed(2)).replace('.',',')}" oninput="_edEmpresas[${i}].${campo}=parseFloat(String(this.value).replace(/\./g,'').replace(',','.'))||0;_edCalcLinha(${i})"/>`;
   tb.innerHTML = _edEmpresas.map((e, i) => {
     const temNota = e.id && _edNotasPorEmpresa[e.id];
-    return `<tr style="border-bottom:1px solid var(--bd);">
-      <td style="padding:4px;"><input class="fi" style="font-size:10.5px;width:100%;" value="${(e.empresa||'').replace(/"/g,'&quot;')}" oninput="_edEmpresas[${i}].empresa=this.value"/></td>
-      <td style="padding:4px;"><input class="fi" style="font-size:10.5px;width:100%;" value="${(e.contrato||'').replace(/"/g,'&quot;')}" oninput="_edEmpresas[${i}].contrato=this.value"/></td>
-      <td style="padding:4px;"><input class="fi" style="font-size:10.5px;width:100%;" value="${(e.centro_custo||'').replace(/"/g,'&quot;')}" oninput="_edEmpresas[${i}].centro_custo=this.value"/></td>
-      <td style="padding:4px;"><input class="fi" style="font-size:10.5px;width:100%;text-align:right;" value="${String(e.valor_parcela ?? 0).replace('.',',')}" oninput="_edEmpresas[${i}].valor_parcela=parseFloat((this.value||'0').replace(/\./g,'').replace(',','.'))||0;_edAtualizaTotal()"/></td>
+    const pct = e.percentual != null && e.percentual !== '' ? (Number(e.percentual) <= 1 ? Number(e.percentual) * 100 : Number(e.percentual)) : '';
+    return `<tr style="border-bottom:1px solid var(--bd);" data-i="${i}">
+      <td style="padding:3px;min-width:140px;">${IN(i,'empresa',e.empresa)}</td>
+      <td style="padding:3px;width:90px;">${IN(i,'contrato',e.contrato)}</td>
+      <td style="padding:3px;width:60px;">${IN(i,'ncm',e.ncm)}</td>
+      <td style="padding:3px;width:100px;">${IN(i,'centro_custo',e.centro_custo)}</td>
+      <td style="padding:3px;width:110px;">${NUM(i,'valor_total_contrato',e.valor_total_contrato)}</td>
+      <td style="padding:3px;width:70px;"><input class="fi" style="font-size:10.5px;width:100%;text-align:right;font-family:var(--M);" value="${pct === '' ? '' : String(Number(pct).toFixed(2)).replace('.',',')}" oninput="_edEmpresas[${i}].percentual=(parseFloat(String(this.value).replace(',','.'))||0)/100;_edCalcLinha(${i},'pct')" title="% do valor base"/></td>
+      <td style="padding:3px;width:105px;">${NUM(i,'valor_ja_faturado',e.valor_ja_faturado)}</td>
+      <td style="padding:3px;width:105px;">${NUM(i,'valor_parcela_anterior',e.valor_parcela_anterior)}</td>
+      <td style="padding:3px;width:110px;">${NUM(i,'valor_parcela',e.valor_parcela,'color:var(--gold);font-weight:700;')}</td>
+      <td style="padding:3px;width:110px;text-align:right;font-family:var(--M);color:var(--t2);" id="edSaldo_${i}">${fmtBRLcompleto((parseFloat(e.valor_total_contrato)||0) - (parseFloat(e.valor_ja_faturado)||0) - (parseFloat(e.valor_parcela)||0))}</td>
       <td style="padding:4px;text-align:center;">${temNota
         ? `<span title="Tem ${temNota} nota(s) vinculada(s) — remova a nota antes de excluir" style="color:var(--t3);font-size:11px;cursor:help;">🔒</span>`
         : `<button class="btn" style="font-size:9px;padding:1px 5px;color:var(--red);" onclick="_edRemoveEmpresa(${i})">✕</button>`}</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--t3);padding:14px;">Nenhuma empresa no rateio. Clique em + Adicionar empresa.</td></tr>';
+  }).join('') || '<tr><td colspan="11" style="text-align:center;color:var(--t3);padding:14px;">Nenhuma empresa no rateio. Clique em + Adicionar empresa.</td></tr>';
   _edAtualizaTotal();
+}
+// v2.53: regras do termo — saldo = total do contrato − já faturado − desta parcela;
+// com valor base informado, desta parcela = base × %. "Já faturado" é o acumulado ANTES desta.
+function _edCalcLinha(i, origem) {
+  const e = _edEmpresas[i]; if (!e) return;
+  const base = parseFloat(String(document.getElementById('edValorBase')?.value || '').replace(/\./g,'').replace(',','.')) || 0;
+  if (origem === 'pct' && base > 0) {
+    e.valor_parcela = Math.round(base * (parseFloat(e.percentual) || 0) * 100) / 100;
+    const tr = document.querySelector(`#edEmpresasBody tr[data-i="${i}"]`);
+    const inp = tr?.querySelectorAll('input')[8]; if (inp) inp.value = String(e.valor_parcela.toFixed(2)).replace('.',',');
+  }
+  e.saldo_contrato = Math.round(((parseFloat(e.valor_total_contrato)||0) - (parseFloat(e.valor_ja_faturado)||0) - (parseFloat(e.valor_parcela)||0)) * 100) / 100;
+  const el = document.getElementById('edSaldo_' + i); if (el) { el.textContent = fmtBRLcompleto(e.saldo_contrato); el.style.color = e.saldo_contrato < 0 ? 'var(--red)' : 'var(--t2)'; }
+  _edAtualizaTotal();
+}
+function _edRecalcPorPercentual() { _edEmpresas.forEach((e, i) => { if (parseFloat(e.percentual) > 0) _edCalcLinha(i, 'pct'); }); }
+// Puxa contrato/NCM/%/total e o acumulado do ÚLTIMO termo do mesmo projeto — parcela anterior
+// e já faturado são calculados a partir dele
+async function _edPuxarUltimoTermo() {
+  const projeto = document.getElementById('edProjeto')?.value?.trim(); if (!projeto) { toast('Informe o projeto primeiro', 'error'); return; }
+  try {
+    const d = await fatApi('termo_ultimo_rateio', { projeto, termo_id_atual: _fatTermoAberto || null });
+    if (!d.empresas?.length) { toast('Nenhum termo anterior deste projeto', 'error'); return; }
+    if (!confirm(`Encontrei o termo ${d.numero_termo || ''} (${d.periodo_medicao || ''}) com ${d.empresas.length} empresa(s).\n\nPreencher o rateio a partir dele?\n• contrato, NCM, centro de custo, % e total do contrato: copiados\n• parcela anterior = parcela daquele termo\n• já faturado = já faturado daquele + parcela daquele`)) return;
+    _edEmpresas = d.empresas.map(e => ({ empresa: e.empresa, cnpj: e.cnpj, contrato: e.contrato, ncm: e.ncm, centro_custo: e.centro_custo, diferimento: e.diferimento,
+      valor_total_contrato: e.valor_total_contrato, percentual: e.percentual, valor_ja_faturado: Math.round(((parseFloat(e.valor_ja_faturado)||0) + (parseFloat(e.valor_parcela)||0))*100)/100,
+      valor_parcela_anterior: e.valor_parcela, valor_parcela: e.valor_parcela }));
+    _edRenderEmpresas(); _edRecalcPorPercentual();
+    toast('Rateio preenchido a partir do termo anterior — confira os valores', 'success');
+  } catch (err) { toast('Erro: ' + err.message, 'error'); }
 }
 function _edAtualizaTotal() {
   const total = _edEmpresas.reduce((s, e) => s + (parseFloat(e.valor_parcela) || 0), 0);
@@ -19032,21 +19078,16 @@ async function gerarTermoDeMarcos() {
         ${F('tm_marco','Marco do Projeto', sel.map(m => m.descricao || m.titulo).join('; '), 4)}
       </div>
       <div style="font-size:11.5px;font-weight:600;margin-bottom:6px;">Rateio entre empresas <span style="font-weight:400;color:var(--t3);font-size:10px;">— mesmo formato da planilha de importação</span></div>
-      <table style="width:100%;border-collapse:collapse;font-size:11px;" id="tm_tabela">
-        <thead><tr style="border-bottom:1px solid var(--bd);">${['EMPRESA','CNPJ','VALOR DESTA PARCELA','JÁ FATURADO','SALDO CONTRATO',''].map(h=>`<th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;">${h}</th>`).join('')}</tr></thead>
+      <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:1100px;" id="tm_tabela">
+        <thead><tr style="border-bottom:1px solid var(--bd);">${['EMPRESA','CNPJ','CONTRATO','NCM','TOTAL CONTRATO','%','JÁ FATURADO','PARCELA ANT.','DESTA PARCELA','SALDO',''].map(h=>`<th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;white-space:nowrap;">${h}</th>`).join('')}</tr></thead>
         <tbody id="tm_linhas">
-          ${sel.map((m, i) => `<tr>
-            <td style="padding:3px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;" value="${(m.empresa || projetos[0] || 'Empresa').replace(/"/g,'&quot;')}" data-c="empresa"/></td>
-            <td style="padding:3px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;" value="" data-c="cnpj"/></td>
-            <td style="padding:3px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;font-family:var(--M);" value="${(parseFloat(m.valor)||0).toFixed(2)}" data-c="valor_parcela"/></td>
-            <td style="padding:3px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;font-family:var(--M);" value="0.00" data-c="ja_faturado"/></td>
-            <td style="padding:3px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;font-family:var(--M);" value="" data-c="saldo_contrato"/></td>
-            <td style="padding:3px;"><span onclick="this.closest('tr').remove();_tmRecalc()" style="cursor:pointer;color:var(--red);">✕</span></td>
-          </tr>`).join('')}
+          ${sel.map((m, i) => _tmLinhaHtml({ empresa: m.empresa || projetos[0] || 'Empresa', valor_parcela: parseFloat(m.valor)||0 })).join('')}
         </tbody>
-      </table>
+      </table></div>
+      <div style="font-size:10px;color:var(--t3);margin-top:5px;">Saldo = total do contrato − já faturado − desta parcela (calculado). Use ⤵ para puxar contrato, NCM, % e acumulados do termo anterior deste projeto.</div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
-        <button class="btn" style="font-size:9.5px;" onclick="_tmAddLinha()">+ empresa</button>
+        <span><button class="btn" style="font-size:9.5px;color:var(--gold);border-color:var(--gold);" onclick="_tmPuxarAnterior()">⤵ Puxar do termo anterior</button>
+        <button class="btn" style="font-size:9.5px;" onclick="_tmAddLinha()">+ empresa</button></span>
         <div style="font-size:12px;">Total: <b id="tm_total" style="color:var(--gold);">${fmtBRLcompleto(total)}</b></div>
       </div>
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
@@ -19055,19 +19096,51 @@ async function gerarTermoDeMarcos() {
       </div>
       <div style="font-size:10px;color:var(--t3);margin-top:8px;line-height:1.6;">O Excel sai no mesmo layout que o sistema importa — dá para editar, enviar ao cliente e reimportar. "Criar no Kanban" já lança em Elaboração e vincula os marcos.</div>
     </div></div>`;
-  modal.querySelectorAll('input[data-c="valor_parcela"]').forEach(i => i.addEventListener('input', _tmRecalc));
+  _tmRecalc();
   window._tmMarcosSel = sel;
 }
-function _tmRecalc() {
-  const t = [...document.querySelectorAll('#tm_linhas input[data-c="valor_parcela"]')].reduce((s, i) => s + (parseFloat(i.value) || 0), 0);
+function _tmRecalc(inputPct) {
+  // se mexeu no %, recalcula a parcela dessa linha sobre o valor base (total das parcelas informado ou o total atual)
+  const linhas = [...document.querySelectorAll('#tm_linhas tr')];
+  const v = (tr, c) => parseFloat(String(tr.querySelector(`[data-c="${c}"]`)?.value || '').replace(',', '.')) || 0;
+  if (inputPct) { const tr = inputPct.closest('tr'); const base = parseFloat(document.getElementById('tm_valor_mensal')?.value) || 0;
+    if (base > 0) { const p = v(tr, 'percentual') / 100; tr.querySelector('[data-c="valor_parcela"]').value = (base * p).toFixed(2); } }
+  let t = 0;
+  linhas.forEach(tr => { const parcela = v(tr, 'valor_parcela'); t += parcela;
+    const saldo = v(tr, 'valor_total_contrato') - v(tr, 'ja_faturado') - parcela;
+    const sv = tr.querySelector('[data-c="saldo_view"]'); if (sv) { sv.textContent = fmtBRLcompleto(saldo); sv.style.color = saldo < 0 ? 'var(--red)' : 'var(--t2)'; } });
   const e = document.getElementById('tm_total'); if (e) e.textContent = fmtBRLcompleto(t);
 }
+function _tmLinhaHtml(e = {}) {
+  const N = v => v == null || v === '' ? '' : String(Number(v).toFixed(2));
+  const pct = e.percentual != null && e.percentual !== '' ? (Number(e.percentual) <= 1 ? Number(e.percentual)*100 : Number(e.percentual)) : '';
+  return `<tr>
+    <td style="padding:3px;min-width:130px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;" value="${String(e.empresa||'').replace(/"/g,'&quot;')}" data-c="empresa"/></td>
+    <td style="padding:3px;width:120px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;" value="${String(e.cnpj||'')}" data-c="cnpj"/></td>
+    <td style="padding:3px;width:90px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;" value="${String(e.contrato||'')}" data-c="contrato"/></td>
+    <td style="padding:3px;width:60px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;" value="${String(e.ncm||'')}" data-c="ncm"/></td>
+    <td style="padding:3px;width:100px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;font-family:var(--M);" value="${N(e.valor_total_contrato)}" data-c="valor_total_contrato" oninput="_tmRecalc()"/></td>
+    <td style="padding:3px;width:60px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;font-family:var(--M);" value="${pct===''?'':Number(pct).toFixed(2)}" data-c="percentual" oninput="_tmRecalc(this)"/></td>
+    <td style="padding:3px;width:100px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;font-family:var(--M);" value="${N(e.valor_ja_faturado ?? 0)}" data-c="ja_faturado" oninput="_tmRecalc()"/></td>
+    <td style="padding:3px;width:100px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;font-family:var(--M);" value="${N(e.valor_parcela_anterior ?? 0)}" data-c="valor_parcela_anterior"/></td>
+    <td style="padding:3px;width:100px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;font-family:var(--M);color:var(--gold);font-weight:700;" value="${N(e.valor_parcela ?? 0)}" data-c="valor_parcela" oninput="_tmRecalc()"/></td>
+    <td style="padding:3px;width:100px;text-align:right;font-family:var(--M);color:var(--t2);" data-c="saldo_view">—</td>
+    <td style="padding:3px;"><span onclick="this.closest('tr').remove();_tmRecalc()" style="cursor:pointer;color:var(--red);">✕</span></td>
+  </tr>`;
+}
 function _tmAddLinha() {
-  const tb = document.getElementById('tm_linhas');
-  const tr = document.createElement('tr');
-  tr.innerHTML = ['empresa','cnpj','valor_parcela','ja_faturado','saldo_contrato'].map(c => `<td style="padding:3px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;" value="${c==='valor_parcela'||c==='ja_faturado'?'0.00':''}" data-c="${c}"/></td>`).join('')
-    + '<td style="padding:3px;"><span onclick="this.closest(\'tr\').remove();_tmRecalc()" style="cursor:pointer;color:var(--red);">✕</span></td>';
-  tb.appendChild(tr); tr.querySelector('input[data-c="valor_parcela"]').addEventListener('input', _tmRecalc);
+  const tb = document.getElementById('tm_linhas'); tb.insertAdjacentHTML('beforeend', _tmLinhaHtml({})); _tmRecalc();
+}
+async function _tmPuxarAnterior() {
+  const projeto = document.getElementById('tm_projeto')?.value?.trim(); if (!projeto) { toast('Informe o projeto', 'error'); return; }
+  try {
+    const d = await fatApi('termo_ultimo_rateio', { projeto });
+    if (!d.empresas?.length) { toast('Nenhum termo anterior deste projeto', 'error'); return; }
+    if (!confirm(`Termo ${d.numero_termo || ''} (${d.periodo_medicao || ''}) com ${d.empresas.length} empresa(s).\n\nPreencher a partir dele? Parcela anterior = parcela daquele; já faturado = já faturado + parcela daquele.`)) return;
+    const tb = document.getElementById('tm_linhas');
+    tb.innerHTML = d.empresas.map(e => _tmLinhaHtml({ ...e, valor_ja_faturado: (parseFloat(e.valor_ja_faturado)||0) + (parseFloat(e.valor_parcela)||0), valor_parcela_anterior: e.valor_parcela })).join('');
+    _tmRecalc(); toast('Rateio preenchido — confira os valores desta parcela', 'success');
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
 function _tmColetar() {
   const g = id => document.getElementById(id)?.value?.trim() || '';
@@ -19076,8 +19149,12 @@ function _tmColetar() {
     valor_mensal_sustentacao: g('tm_valor_mensal'), marco_projeto: g('tm_marco') };
   const empresas = [...document.querySelectorAll('#tm_linhas tr')].map(tr => {
     const v = c => tr.querySelector(`input[data-c="${c}"]`)?.value?.trim() || '';
-    return { empresa: v('empresa'), cnpj: v('cnpj'), valor_parcela: parseFloat(v('valor_parcela')) || 0,
-      valor_ja_faturado: parseFloat(v('ja_faturado')) || 0, saldo_contrato: parseFloat(v('saldo_contrato')) || null };
+    const n = c => parseFloat(String(v(c)).replace(',', '.')) || 0;
+    const parcela = n('valor_parcela');
+    return { empresa: v('empresa'), cnpj: v('cnpj'), contrato: v('contrato'), ncm: v('ncm'),
+      valor_total_contrato: n('valor_total_contrato'), percentual: n('percentual') / 100,
+      valor_ja_faturado: n('ja_faturado'), valor_parcela_anterior: n('valor_parcela_anterior'), valor_parcela: parcela,
+      saldo_contrato: Math.round((n('valor_total_contrato') - n('ja_faturado') - parcela) * 100) / 100 };
   }).filter(e => e.empresa);
   return { cabecalho, empresas };
 }
@@ -23497,7 +23574,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.52] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.53] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23513,7 +23590,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.52';
+window.__ATX_BUILD_ID__ = 'ATX-v2.53';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
