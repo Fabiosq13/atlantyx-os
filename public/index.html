@@ -17282,6 +17282,7 @@ async function abrirDetalheTermo(id) {
         </div>
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
           ${idxCol > 0 ? `<button class="btn" style="color:var(--t2);" onclick="_fatVoltar('${t.id}','${FAT_COLS[idxCol-1]}')" title="Volta para: ${FAT_LABELS[FAT_COLS[idxCol-1]]}">← Voltar p/ ${FAT_LABELS[FAT_COLS[idxCol-1]].replace(/^[^\s]+\s/,'')}</button>` : ''}
+          <button class="btn" onclick="_fatExportarExcel('${t.id}')" title="Baixa este termo em Excel, no mesmo layout de importação">📥 Exportar Excel</button>
           ${t.status === 'elaboracao' ? `<button class="btn btn-p" onclick="_fatAvancar('${t.id}','aprovacao')">Enviar para Aprovação →</button>` : ''}
           ${t.status === 'aprovacao' ? `<button class="btn btn-gn" onclick="_fatAprovar('${t.id}')">✓ Aprovar (envia p/ Emissão de NF)</button>` : ''}
           ${t.status === 'emissao_nf' ? `<button class="btn btn-p" onclick="_fatAvancar('${t.id}','envio_nf')">Notas emitidas — ir p/ Envio →</button>` : ''}
@@ -18948,6 +18949,45 @@ async function agNovoCompromisso() {
   catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
 
+// v2.51: carregador único da biblioteca de Excel — a exportação falhava porque o XLSX só era
+// carregado ao IMPORTAR um termo. Quem exportava sem ter importado antes via "não carregada".
+async function _garantirXlsx() {
+  if (window.XLSX) return true;
+  await new Promise((res, rej) => { const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); }).catch(() => {});
+  return !!window.XLSX;
+}
+// Monta e baixa a planilha no layout de importação, a partir de cabeçalho + empresas
+function _termoParaExcel(c, empresas, nomeBase) {
+  const linhas = [
+    ['TERMO DE ACEITE / FATURAMENTO'], [],
+    ['Nome do Projeto', c.projeto || ''], ['Fase', c.fase || ''], ['N Termo de Aceite', c.numero_termo || ''],
+    ['Contratante', c.contratante || ''], ['Contratada', c.contratada || ''], ['CNPJ', c.cnpj_fornecedor || ''],
+    ['Periodo de Medicao', c.periodo_medicao || ''], ['Parcela', c.parcela || ''], ['Valor Base mensal', c.valor_mensal_sustentacao || ''],
+    ['Marco do Projeto', c.marco_projeto || ''], [],
+    ['EMPRESA', 'CNPJ', 'Valor desta parcela', 'Valor ja faturado', 'Saldo do contrato'],
+    ...empresas.map(e => [e.empresa, e.cnpj || '', parseFloat(e.valor_parcela) || 0, parseFloat(e.valor_ja_faturado) || 0, e.saldo_contrato ?? '']),
+    ['TOTAL', '', empresas.reduce((s, e) => s + (parseFloat(e.valor_parcela) || 0), 0), '', ''],
+  ];
+  const ws = window.XLSX.utils.aoa_to_sheet(linhas);
+  ws['!cols'] = [{ wch: 34 }, { wch: 22 }, { wch: 20 }, { wch: 18 }, { wch: 18 }];
+  const wb = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(wb, ws, 'Termo Aceite');
+  const nome = `Termo_${String(nomeBase || c.projeto || 'projeto').replace(/[^\w]+/g, '_')}_${String(c.periodo_medicao || '').replace(/\//g, '-')}.xlsx`;
+  window.XLSX.writeFile(wb, nome);
+  return nome;
+}
+// v2.51: exportar um termo JÁ EXISTENTE (do Kanban de Faturamento)
+async function _fatExportarExcel(termoId) {
+  if (!(await _garantirXlsx())) { toast('Não consegui carregar a biblioteca de Excel — verifique a rede', 'error'); return; }
+  try {
+    const d = await fatApi('termo_get', { id: termoId });
+    const t = d.termo || d, emps = d.empresas || t.empresas || [];
+    const nome = _termoParaExcel(t, emps, (t.numero_termo ? 'N' + t.numero_termo + '_' : '') + (t.projeto || ''));
+    toast('Excel gerado: ' + nome, 'success');
+  } catch (e) { toast('Erro ao exportar: ' + e.message, 'error'); }
+}
+
 // ═══ v2.18: TERMO DE FATURAMENTO A PARTIR DOS MARCOS ═══
 let _mkSelecionados = new Set(), _mkSelecionaveis = {};
 function _mkToggle(id, on) {
@@ -19036,27 +19076,11 @@ function _tmColetar() {
   return { cabecalho, empresas };
 }
 // Exporta no MESMO layout que _fatParseTermo lê: rótulos na coluna A, valores na B, tabela de rateio abaixo
-function _tmExportarExcel() {
-  if (!window.XLSX) { toast('Biblioteca de Excel não carregada', 'error'); return; }
+async function _tmExportarExcel() {
+  if (!(await _garantirXlsx())) { toast('Não consegui carregar a biblioteca de Excel — verifique a rede', 'error'); return; }
   const { cabecalho: c, empresas } = _tmColetar();
   if (!empresas.length) { toast('Informe ao menos uma empresa', 'error'); return; }
-  const linhas = [
-    ['TERMO DE ACEITE / FATURAMENTO'], [],
-    ['Nome do Projeto', c.projeto], ['Fase', c.fase], ['N Termo de Aceite', c.numero_termo],
-    ['Contratante', c.contratante], ['Contratada', c.contratada], ['CNPJ', c.cnpj_fornecedor],
-    ['Periodo de Medicao', c.periodo_medicao], ['Parcela', c.parcela], ['Valor Base mensal', c.valor_mensal_sustentacao],
-    ['Marco do Projeto', c.marco_projeto], [],
-    ['EMPRESA', 'CNPJ', 'Valor desta parcela', 'Valor ja faturado', 'Saldo do contrato'],
-    ...empresas.map(e => [e.empresa, e.cnpj, e.valor_parcela, e.valor_ja_faturado, e.saldo_contrato ?? '']),
-    ['TOTAL', '', empresas.reduce((s, e) => s + e.valor_parcela, 0), '', ''],
-  ];
-  const ws = window.XLSX.utils.aoa_to_sheet(linhas);
-  ws['!cols'] = [{ wch: 34 }, { wch: 22 }, { wch: 20 }, { wch: 18 }, { wch: 18 }];
-  const wb = window.XLSX.utils.book_new();
-  window.XLSX.utils.book_append_sheet(wb, ws, 'Termo Aceite');
-  const nome = `Termo_${(c.projeto||'projeto').replace(/[^\w]+/g,'_')}_${(c.periodo_medicao||'').replace(/\//g,'-')}.xlsx`;
-  window.XLSX.writeFile(wb, nome);
-  toast('Excel gerado: ' + nome, 'success');
+  const nome = _termoParaExcel(c, empresas); toast('Excel gerado: ' + nome, 'success');
 }
 async function _tmCriarNoKanban() {
   const { cabecalho, empresas } = _tmColetar();
@@ -23467,7 +23491,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.50] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.51] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23483,7 +23507,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.50';
+window.__ATX_BUILD_ID__ = 'ATX-v2.51';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
