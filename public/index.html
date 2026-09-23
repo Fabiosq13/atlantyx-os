@@ -16795,6 +16795,7 @@ async function carregarKanbanFaturamento() {
     // v2.46: mostra o filtro ATIVO e o resultado — "nada aconteceu" não pode mais acontecer
     const fa = d.filtro_aplicado || {};
     const ativos = [];
+    if (fa.mes || fa.ano) ativos.push((fa.mes ? ['','jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][parseInt(fa.mes)] + '/' : '') + (fa.ano || ''));
     if (fa.nf) ativos.push('NF/invoice "' + fa.nf + '"');
     if (fa.pag_de || fa.pag_ate) ativos.push('pago ' + (fa.pag_de ? 'de ' + fa.pag_de.split('-').reverse().join('/') : '') + (fa.pag_ate ? ' até ' + fa.pag_ate.split('-').reverse().join('/') : ''));
     if (fa.periodo_texto) ativos.push('texto "' + fa.periodo_texto + '"');
@@ -23581,7 +23582,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.58] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.59] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23597,7 +23598,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.58';
+window.__ATX_BUILD_ID__ = 'ATX-v2.59';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
