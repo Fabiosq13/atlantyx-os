@@ -16933,15 +16933,17 @@ function _fatCard(t, col) {
       ${t.data_emissao ? `<span title="Data de emissão da nota fiscal${t.data_emissao_ultima ? ' (primeira; última em ' + _dt(t.data_emissao_ultima) + ')' : ''}" style="color:var(--t2);">🧾 ${_dt(t.data_emissao)}${t.data_emissao_ultima ? '+' : ''}</span>` : ''}
       ${t.data_pagamento ? `<span title="${t.pagamento_completo ? 'Pagamento concluído' : 'Último pagamento recebido (parcial)'}" style="color:${t.pagamento_completo ? 'var(--green,#22d3a3)' : 'var(--gold)'};">💵 ${_dt(t.data_pagamento)}${t.pagamento_completo ? '' : '*'}</span>` : ''}
     </div>` : '';
-  // v2.47: prazo de recebimento — 35 dias corridos a partir da emissão (NF mais antiga; sem NF, a
-  // criação do termo). Passou de 35 e não está pago → card VERMELHO com os dias decorridos.
+  // v2.55: prazo de recebimento — 35 dias corridos a partir da CRIAÇÃO do termo.
+  //   < 35 dias  → verde  "✓ em dia · N dias"
+  //   ≥ 35 dias  → vermelho "⚠ em atraso · N dias", e o card inteiro fica vermelho
+  // Termos em Pago/Concluído não recebem o alerta.
   const PRAZO_DIAS = 35;
-  const dataBase = t.data_emissao || (t.criado_em ? String(t.criado_em).substring(0,10) : null);
+  const dataBase = t.criado_em ? String(t.criado_em).substring(0,10) : (t.data_emissao || null);
   const diasDecorridos = dataBase ? Math.floor((Date.now() - new Date(dataBase + 'T12:00:00')) / 86400000) : null;
   const naoPago = !['pago', 'concluido'].includes(t.status);
-  const estourou = naoPago && diasDecorridos != null && diasDecorridos > PRAZO_DIAS;
-  const prazoBadge = diasDecorridos != null && naoPago ? `<div style="font-size:9px;margin-top:4px;padding:2px 6px;border-radius:4px;display:inline-block;${estourou ? 'background:rgba(255,80,80,.18);color:var(--red);font-weight:700;' : diasDecorridos > PRAZO_DIAS - 7 ? 'background:rgba(245,185,75,.15);color:var(--gold);' : 'background:var(--bg3,#151b2e);color:var(--t3);'}" title="Prazo de ${PRAZO_DIAS} dias corridos a partir de ${dataBase.split('-').reverse().join('/')}${t.data_emissao ? ' (emissão da NF)' : ' (criação do termo)'}">
-      ${estourou ? '⏰ ' + diasDecorridos + ' dias — vencido há ' + (diasDecorridos - PRAZO_DIAS) : '⏱ ' + diasDecorridos + '/' + PRAZO_DIAS + ' dias'}</div>` : '';
+  const estourou = naoPago && diasDecorridos != null && diasDecorridos >= PRAZO_DIAS;
+  const prazoBadge = diasDecorridos != null && naoPago ? `<div style="font-size:9.5px;margin-top:4px;padding:2px 7px;border-radius:4px;display:inline-block;font-weight:700;${estourou ? 'background:rgba(255,80,80,.18);color:var(--red);' : 'background:rgba(34,211,163,.15);color:var(--green,#22d3a3);'}" title="Criado em ${dataBase.split('-').reverse().join('/')} · prazo de ${PRAZO_DIAS} dias corridos para receber">
+      ${estourou ? '⚠ em atraso · ' + diasDecorridos + ' dias' : '✓ em dia · ' + diasDecorridos + ' dias'}</div>` : '';
   const cardStyle = estourou ? 'background:rgba(255,80,80,.08);border:1.5px solid var(--red);box-shadow:0 0 0 1px rgba(255,80,80,.25);' : 'background:var(--bg4);border:1px solid var(--bd);';
   return `<div style="${cardStyle}border-radius:8px;padding:9px;cursor:pointer;" onclick="abrirDetalheTermo('${t.id}')">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
@@ -23574,7 +23576,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.53] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.55] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23590,7 +23592,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.53';
+window.__ATX_BUILD_ID__ = 'ATX-v2.55';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
