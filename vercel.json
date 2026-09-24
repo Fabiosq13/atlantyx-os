@@ -53,6 +53,9 @@
     "api/termo-excel.js": {
       "maxDuration": 30,
       "includeFiles": "api/modelos/**"
+    },
+    "api/prospeccao.js": {
+      "maxDuration": 60
     }
   },
   "crons": [
