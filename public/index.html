@@ -355,9 +355,10 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <span class="sg-lbl">Gestao de Projetos</span><span class="sg-arr" id="arr-gProjetos">&#9660;</span>
     </div>
     <div class="sg-body closed" id="gProjetos">
+      <div class="sbi s2" onclick="nav('s3marcoskanban',this)">&#127937; Kanban de Marcos</div>
+      <div class="sbi s2" onclick="nav('s3fatkanban',this)">&#128196; Kanban de Faturamento</div>
       <div class="sbi s2" onclick="nav('s9projetos',this)">&#9670; Painel de Projetos <span class="nbx gn">IA</span></div>
       <div class="sbi s2" onclick="nav('s9agenda',this)">&#128197; Agenda do GP <span class="nbx gn">novo</span></div>
-      <div class="sbi s2" onclick="nav('s3marcoskanban',this)">&#127937; Kanban de Marcos</div>
       <div class="sbi s2" onclick="nav('s3projetos',this)">&#128176; Projetos &amp; Marcos $</div>
       <div class="sbi s2" onclick="nav('s9raiox',this)">&#128300; Raio-X do Projeto</div>
       <div class="sbi s2" onclick="nav('s9conselho',this)">&#127963; Sala com Conselheiros</div>
@@ -2875,6 +2876,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
             <td style="padding:7px;text-align:right;font-weight:700;color:var(--gold);font-family:var(--M);" id="edTotalRateio">R$ 0,00</td><td></td></tr></tfoot>
         </table>
       </div>
+      <!-- v2.71: carregar notas (PDF/XML) direto na edição -->
+      <div id="edUploadNfBox" style="margin-top:12px;"></div>
       <div id="edAvisoNotas" style="display:none;margin-top:10px;"></div>
       <div style="display:flex;gap:8px;margin-top:14px;">
         <button class="btn btn-gn" onclick="salvarEdicaoTermo()" id="btnSalvarTermo">Salvar alterações</button>
@@ -17031,6 +17034,7 @@ async function abrirEdicaoTermo(id) {
     set('edProjeto', t.projeto); set('edContratante', t.contratante); set('edPeriodo', t.periodo_medicao);
     set('edDataTermo', t.data_termo ? String(t.data_termo).substring(0,10) : '');
     set('edNumTermo', t.numero_termo); set('edParcela', t.parcela); set('edFase', t.fase);
+    try { const ub = document.getElementById('edUploadNfBox'); if (ub) ub.innerHTML = (d.empresas || []).length ? _fatCardUploadNf(t, d.empresas) : '<div style="font-size:10px;color:var(--t3);">Salve o rateio antes de carregar as notas.</div>'; } catch (_) {}
     set('edContratada', t.contratada || t.cnpj_fornecedor); set('edMarco', t.marco_projeto);
     _edEmpresas = (d.empresas || []).map(e => ({ ...e }));
     // Marca quais empresas já têm nota (não podem ser removidas)
@@ -17208,7 +17212,8 @@ async function _fatToggleCpfl(termoId, confirmar) {
 }
 
 function _fatCardUploadNf(t, emp) {
-  const pendentes = emp.filter(e => e.nf_status !== 'encontrada');
+  const pendentes0 = emp.filter(e => e.nf_status !== 'encontrada');
+  const pendentes = pendentes0.length ? pendentes0 : emp;   // v2.71: sem pendentes, permite substituir qualquer nota
   _fatEmpresasAtual[t.id] = pendentes; // p/ os detectores de empresa usarem ao processar os arquivos
   if (!_fatNfFila[t.id]) _fatNfFila[t.id] = [];
   return `<div class="panel" style="background:var(--bg4);border:1px dashed var(--gold);margin-bottom:12px;">
@@ -17411,7 +17416,8 @@ async function abrirDetalheTermo(id) {
           ${t.nf_status==='completo' ? '✅ Todas as notas fiscais encontradas e o valor bate com o termo ('+fmtBRLcompleto(t.nf_soma)+').' : t.nf_status==='divergente' ? '⚠ Notas encontradas somam '+fmtBRLcompleto(t.nf_soma)+' — diferença de '+fmtBRLcompleto(t.nf_diferenca)+' em relação ao termo ('+fmtBRLcompleto(t.valor_total_termo)+'). Faltam nota(s) ou há divergência de valor.' : 'ℹ Nenhuma nota fiscal encontrada ainda no e-mail atlanteambr@gmail.com para este termo.'}
         </div>` : ''}
         ${_fatBarraProgressoNf(t)}
-        ${t.status === 'emissao_nf' ? _fatCardUploadNf(t, emp) : ''}
+        ${t.status === 'emissao_nf' ? _fatCardUploadNf(t, emp)
+          : ['envio_nf','pagamento','pago','concluido'].includes(t.status) ? `<details style="margin-bottom:12px;"><summary style="cursor:pointer;font-size:11px;color:var(--gold);">📎 Carregar / substituir notas fiscais (PDF/XML)</summary><div style="margin-top:8px;">${_fatCardUploadNf(t, emp)}</div></details>` : ''}
         <table style="width:100%;border-collapse:collapse;font-size:11px;">
           <thead><tr style="border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">EMPRESA</th><th style="text-align:right;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">VALOR DA PARCELA</th><th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">NOTA FISCAL</th><th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">CONTAS A RECEBER (QB)</th><th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">PAGAMENTO</th></tr></thead>
           <tbody>${emp.map(e => `<tr style="border-bottom:1px solid var(--bd);">
@@ -23841,7 +23847,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.70] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.71] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23857,7 +23863,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.70';
+window.__ATX_BUILD_ID__ = 'ATX-v2.71';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
