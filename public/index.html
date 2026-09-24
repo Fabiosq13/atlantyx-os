@@ -3688,6 +3688,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <button class="btn btn-gn" onclick="acExecutar(false)" id="btnAcExec">&#128228; Gerar e agendar</button>
         <button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red);" onclick="acCorrigirImagens()" title="Corrige posts agendados cuja imagem vai expirar antes da publicacao">&#128295; Corrigir imagens agendadas</button>
     <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="acAuditoria()" title="Por que nao ha leads? Cruza publicacoes, erros e capturas">&#128269; Auditoria do funil</button>
+    <button class="btn" style="font-size:10px;" onclick="acVerFila()" title="Andamento e resultado da fila em segundo plano">&#128203; Ver fila</button>
     <button class="btn" style="font-size:10px;color:#e1306c;border-color:#e1306c;" onclick="acGerarStory()" title="Gera um Story do Instagram com oferta, QR code e link de captura">&#128247; Story com link</button>
     <button class="btn" style="font-size:10px;margin-left:auto;" onclick="acSugerirHorarios()">&#128161; Sugerir horarios pelos meus dados</button>
       </div>
@@ -18410,6 +18411,21 @@ async function _acGerarImagem(post) {
     if (m.success && m.url) return m.url; } catch (_) {}
   return url;
 }
+async function acVerFila() {
+  const box = document.getElementById('acResultado');
+  try {
+    try { await mcApi('fila_processar', {}); } catch (_) {}
+    const st = await mcApi('fila_status', {});
+    const r = st.resumo;
+    box.innerHTML = `<div class="panel"><div class="ph"><div class="pt">📋 Fila da autocampanha</div><span style="font-size:10px;color:var(--t2);">${r.prontos} pronto(s) · ${r.pendentes + r.processando} na fila · ${r.falhas} falha(s)</span>
+        <button class="btn" style="font-size:9.5px;" onclick="acVerFila()">↻</button></div>
+      <div class="pb" style="max-height:60vh;overflow-y:auto;">${st.itens.length ? st.itens.map(x => `<div style="border-left:3px solid ${x.status==='pronto'?'var(--green,#22d3a3)':x.status==='falhou'?'var(--red)':'var(--gold)'};background:var(--bg4);border-radius:7px;padding:9px 11px;margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;font-size:10.5px;"><span><b>${x.data.split('-').reverse().join('/')} ${x.hora}</b> · ${x.status==='pronto'?(x.metricool_id?'📤 agendado':'✎ rascunho'):x.status==='falhou'?'✗ falhou':'⏳ '+x.etapa}</span><span style="color:var(--t3);">${x.angulo||''}</span></div>
+        ${x.imagem_url ? `<img src="${x.imagem_url}" style="width:100%;max-width:280px;border-radius:7px;margin:6px 0;display:block;"/>` : ''}
+        ${x.texto ? `<div style="font-size:11px;line-height:1.55;white-space:pre-wrap;margin-top:4px;">${String(x.texto).replace(/</g,'&lt;')}</div>` : ''}
+        ${x.erro ? `<div style="font-size:10px;color:var(--red);margin-top:4px;">${String(x.erro).replace(/</g,'&lt;')}</div>` : ''}</div>`).join('') : '<div style="text-align:center;color:var(--t3);padding:16px;">Fila vazia.</div>'}</div></div>`;
+  } catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:14px;">${e.message}</div></div>`; }
+}
 async function acExecutar(rascunho) {
   const c = _acCfg();
   if (!rascunho && !confirm(`Vai gerar e AGENDAR posts nos horários vagos dos próximos ${c.dias} dias.\n\nOs textos são criados por IA e publicados automaticamente nas datas. Continuar?`)) return;
@@ -18423,37 +18439,30 @@ async function acExecutar(rascunho) {
     const plano = (await mcApi('autocampanha_planejar', c)).plano;
     const vagos = plano?.vagos || [];
     if (!vagos.length) { box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:20px;">Nenhum horário vago — a agenda já está completa no período.</div></div>'; return; }
-    // v2.65: UM post por chamada (o plano Hobby do Vercel corta em 10s — três textos estouravam)
-    // e a IMAGEM de cada post em chamada separada, depois do texto. Antes a autocampanha não
-    // gerava imagem nenhuma — os posts saíam só com texto.
+    // v2.68: FILA — o navegador enfileira e acompanha; o servidor processa em segundo plano.
+    // Acabou a dependência de requisições longas (era a causa do "Failed to fetch").
     const comImagem = document.getElementById('ac_imagens')?.checked !== false;
+    const enf = await mcApi('fila_enfileirar', { slots: vagos, tema: c.tema, redes: c.redes, blog_id: c.blog_id, apenas_rascunho: !!rascunho, com_imagem: comImagem });
+    window._acLote = enf.lote;
     const posts = [], erros = [];
-    const prog = (msg, i) => { box.innerHTML = `<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ ${msg}
-        <div style="height:6px;background:var(--bd);border-radius:3px;margin:12px auto 0;max-width:300px;overflow:hidden;"><div style="height:100%;width:${Math.round(i / vagos.length * 100)}%;background:var(--green,#22d3a3);transition:width .3s;"></div></div>
-        ${posts.length ? `<div style="font-size:10px;margin-top:8px;">${posts.length} pronto(s)</div>` : ''}</div></div>`; };
-    for (let i = 0; i < vagos.length; i++) {
-      const slot = vagos[i];
-      prog(`Escrevendo post ${i + 1} de ${vagos.length}...`, i);
-      let post = null;
-      try {
-        // rascunho SEMPRE primeiro (rápido); o agendamento no Metricool vem depois, com a imagem
-        const r = await mcApi('autocampanha_executar', { ...c, apenas_rascunho: true, slots: [slot] });
-        post = (r.posts || [])[0]; erros.push(...(r.erros || []));
-        if (r.dica && !post) throw Object.assign(new Error(r.aviso || 'falha'), { dica: r.dica });
-        if (!post) continue;
-      } catch (e) { if (e.dica) throw e; erros.push(`post ${i + 1}: ${e.message}${/Failed to fetch|504|timeout/i.test(e.message) ? ' — a função foi cortada pelo limite de tempo do Vercel (plano Hobby = 10s)' : ''}`); continue; }
-      if (comImagem) {
-        prog(`Gerando a imagem do post ${i + 1} de ${vagos.length}...`, i + 0.5);
-        try { post.imagem_url = await _acGerarImagem(post); }
-        catch (e) { erros.push(`imagem do post ${i + 1}: ${e.message}`); }
-      }
-      if (!rascunho) {
-        prog(`Agendando post ${i + 1} de ${vagos.length}...`, i + 0.8);
-        try { const a = await mcApi('autocampanha_agendar_um', { post, blog_id: c.blog_id, redes: c.redes }); post.status = 'agendado'; post.metricool_id = a.metricool_id; }
-        catch (e) { post.status = 'rascunho'; erros.push(`agendar post ${i + 1}: ${e.message}`); }
-      }
-      posts.push(post);
+    const ETQ = { texto: '✍ escrevendo', imagem: '🎨 gerando imagem', agendar: '📤 agendando', fim: '✓' };
+    let ultimo = null;
+    for (let volta = 0; volta < 400; volta++) {
+      // cutuca o servidor: processa um passo (o cron faz o mesmo a cada minuto, mesmo com a tela fechada)
+      try { await mcApi('fila_processar', { lote: enf.lote }); } catch (_) {}
+      const st = await mcApi('fila_status', { lote: enf.lote });
+      const r = st.resumo;
+      box.innerHTML = `<div class="panel"><div class="pb" style="padding:18px;">
+        <div style="text-align:center;color:var(--t2);font-size:12px;">⏳ Processando em segundo plano — ${r.prontos} pronto(s) · ${r.pendentes + r.processando} na fila · ${r.falhas} falha(s)</div>
+        <div style="height:6px;background:var(--bd);border-radius:3px;margin:10px auto;max-width:320px;overflow:hidden;"><div style="height:100%;width:${Math.round((r.prontos + r.falhas) / Math.max(r.total,1) * 100)}%;background:var(--green,#22d3a3);transition:width .3s;"></div></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin-top:8px;">${st.itens.map(x => `<div style="font-size:10px;padding:5px 7px;border-radius:6px;background:var(--bg4);border-left:3px solid ${x.status==='pronto'?'var(--green,#22d3a3)':x.status==='falhou'?'var(--red)':x.status==='processando'?'var(--gold)':'var(--bd)'};">${x.data.substring(5).split('-').reverse().join('/')} ${x.hora}<br><span style="color:var(--t3);">${x.status==='pronto'?'✓ pronto':x.status==='falhou'?'✗ '+(x.erro||'').substring(0,40):(ETQ[x.etapa]||x.etapa)+(x.tentativas?' (tent. '+(x.tentativas+1)+')':'')}</span></div>`).join('')}</div>
+        <div style="font-size:10px;color:var(--t3);text-align:center;margin-top:10px;">Pode fechar esta tela — a fila continua sozinha e os posts aparecem em "Ver fila" quando voltar.</div></div></div>`;
+      ultimo = st;
+      if (st.concluido) break;
+      await new Promise(r => setTimeout(r, 2500));
     }
+    (ultimo?.itens || []).forEach(x => { if (x.status === 'pronto') posts.push({ data: x.data, hora: x.hora, dia_semana: x.dia_semana, texto: x.texto, angulo: x.angulo, oferta: x.oferta, link: x.link, comentario: x.comentario, link_instagram: x.link_instagram, link_bio: x.link_bio, imagem_url: x.imagem_url, status: x.metricool_id ? 'agendado' : 'rascunho', metricool_id: x.metricool_id });
+      else if (x.status === 'falhou') erros.push(`${x.data} ${x.hora} (${x.etapa}): ${x.erro || 'falhou'}`); });
     const d = { posts, erros, resumo: `${posts.length} publicação(ões) ${rascunho ? 'em rascunho' : 'agendadas'} nos horários vagos.` };
     box.innerHTML = `<div class="panel"><div class="ph"><div class="pt">${rascunho ? '✎ Rascunhos gerados' : '📤 Posts agendados'}</div>
       <span style="font-size:10px;color:var(--t2);">${d.resumo || ''}</span></div><div class="pb">
@@ -23796,7 +23805,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.67] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.68] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23812,7 +23821,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.67';
+window.__ATX_BUILD_ID__ = 'ATX-v2.68';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
