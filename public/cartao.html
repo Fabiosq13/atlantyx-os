@@ -37,7 +37,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 (async () => {
-  const r = await fetch('/api/prospeccao?cartao=1'); const d = await r.json(); const c = d.cartao || {};
+  const r = await fetch('/api/prospeccao?cartao=1&t=' + Date.now(), { cache: 'no-store' }); const d = await r.json(); const c = d.cartao || {};
   const wa = String(c.whatsapp || c.telefone || '').replace(/[^0-9]/g, '');
   const waNum = wa ? (wa.length <= 11 ? '55' + wa : wa) : '';
   const waLink = waNum ? `https://wa.me/${waNum}?text=${encodeURIComponent('Olá ' + (c.nome||'').split(' ')[0] + ', vi seu cartão da Atlantyx.')}` : '';
@@ -54,7 +54,7 @@
       ${c.telefone ? `<a class="tel" href="tel:+${String(c.telefone).replace(/[^0-9]/g,'')}">📞 Ligar</a>` : ''}
       <a class="vcf" href="/api/prospeccao?vcard=1">💾 Salvar contato</a>
     </div>
-    ${waLink ? `<div class="qr"><div id="qr"></div><div class="leg">Aponte a câmera para abrir o WhatsApp</div></div>` : ''}
+    <div class="qr"><div id="qr"></div><div class="leg">${waLink ? 'Aponte a câmera para abrir o WhatsApp' : '<span style="color:#D64545;">Informe o telefone/WhatsApp na edição do cartão para o QR aparecer</span>'}</div></div>
     <div class="info">
       ${c.email ? `<div><span>✉</span><span>${c.email}</span></div>` : ''}
       ${c.telefone ? `<div><span>📞</span><span>+${String(c.telefone).replace(/[^0-9]/g,'')}</span></div>` : ''}
@@ -64,7 +64,12 @@
       ${c.endereco_sp ? `<div><span>📍</span><span>${c.endereco_sp}</span></div>` : ''}
     </div>
     ${c.clientes ? `<div class="clientes">Clientes: ${c.clientes}</div>` : ''}`;
-  if (waLink && window.QRCode) new QRCode(document.getElementById('qr'), { text: waLink, width: 168, height: 168, correctLevel: QRCode.CorrectLevel.M });
+  // v2.62: QR com fallback — se a biblioteca do CDN não carregar, usa um gerador de imagem
+  if (waLink) {
+    const box = document.getElementById('qr');
+    if (window.QRCode) { try { new QRCode(box, { text: waLink, width: 168, height: 168, correctLevel: QRCode.CorrectLevel.M }); } catch (_) {} }
+    if (!box.querySelector('canvas,img')) box.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(waLink)}" width="180" height="180" alt="QR WhatsApp">`;
+  }
   document.title = (c.nome || 'Cartão') + ' — ' + (c.empresa || 'Atlantyx');
 })().catch(e => { document.getElementById('card').innerHTML = '<div style="padding:30px;color:#D64545;">' + e.message + '</div>'; });
 </script>
