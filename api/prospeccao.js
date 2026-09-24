@@ -190,7 +190,43 @@ async function feedReenviar({ id } = {}) {
   return { ok: true, anexos: res.anexos };
 }
 
+// ── v2.61: CARTÃO DE VISITAS DIGITAL ──
+const CARTAO_PADRAO = { nome: 'Fabio Quintanilha', cargo: 'CEO', empresa: 'Atlantyx', tagline: 'Dados, analytics e IA para grandes empresas',
+  email: '', telefone: '', whatsapp: '', linkedin: '', site: 'https://atlantyx.com.br',
+  endereco_rj: 'AQUA · Av. Oscar Niemeyer, 2000 — Rio de Janeiro', endereco_sp: 'Regus · Av. Brigadeiro Faria Lima, 3729 — São Paulo',
+  foto_media_id: null, cor: '#1A3A8F', clientes: 'CPFL Energia · Enel · Caixa · Jelta' };
+async function cartaoGet() {
+  const sql = await getSql();
+  const r = await sql`SELECT valor FROM app_config WHERE chave = 'cartao_visita'`;
+  return { ...CARTAO_PADRAO, ...(r[0]?.valor || {}) };
+}
+async function cartaoSet(payload) {
+  const sql = await getSql();
+  const novo = { ...(await cartaoGet()), ...payload };
+  await sql`INSERT INTO app_config (chave, valor, atualizado_em) VALUES ('cartao_visita', ${JSON.stringify(novo)}, NOW())
+    ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = NOW()`;
+  return novo;
+}
+// vCard para "salvar contato" no celular
+function vcard(c) {
+  const tel = String(c.telefone || c.whatsapp || '').replace(/[^0-9+]/g, '');
+  return ['BEGIN:VCARD', 'VERSION:3.0', `N:${(c.nome||'').split(' ').slice(1).join(' ')};${(c.nome||'').split(' ')[0]};;;`, `FN:${c.nome||''}`,
+    `ORG:${c.empresa||''}`, `TITLE:${c.cargo||''}`, tel ? `TEL;TYPE=CELL:${tel.startsWith('+') ? tel : '+' + tel}` : '', c.email ? `EMAIL:${c.email}` : '',
+    c.site ? `URL:${c.site}` : '', c.linkedin ? `URL:${c.linkedin}` : '', c.endereco_rj ? `ADR;TYPE=WORK:;;${c.endereco_rj};;;;` : '', 'END:VCARD'].filter(Boolean).join('\r\n');
+}
+
 export default async function handler(req, res) {
+  // GET /api/prospeccao?cartao=1  → JSON público do cartão (para a página cartao.html)
+  // GET /api/prospeccao?vcard=1   → arquivo .vcf
+  if (req.method === 'GET' && (req.query?.cartao || req.query?.vcard)) {
+    try {
+      const c = await cartaoGet();
+      if (req.query.vcard) { res.setHeader('Content-Type', 'text/vcard; charset=utf-8'); res.setHeader('Content-Disposition', `attachment; filename="${(c.nome||'contato').replace(/\s+/g,'_')}.vcf"`); return res.status(200).send(vcard(c)); }
+      const pub = { ...c }; delete pub.foto_media_id; pub.foto_url = c.foto_media_id ? baseUrl() + '/api/media?id=' + c.foto_media_id : null;
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      return res.status(200).json({ success: true, cartao: pub });
+    } catch (e) { return res.status(500).json({ success: false, error: e.message }); }
+  }
   if (req.method !== 'POST') return res.status(405).json({ success: false, error: 'método' });
   const { action, payload = {} } = req.body || {};
   const acoes = {
@@ -201,6 +237,8 @@ export default async function handler(req, res) {
     feed_config_set: () => configSet(payload),
     feed_enviar_whatsapp: () => feedEnviarWhatsApp(payload),
     feed_reenviar: () => feedReenviar(payload),
+    cartao_get: () => cartaoGet(),
+    cartao_set: () => cartaoSet(payload),
   };
   if (!acoes[action]) return res.status(400).json({ success: false, error: 'Ação inválida: ' + Object.keys(acoes).join(', ') });
   try { const r = await acoes[action](); return res.status(200).json({ success: true, ...r }); }
