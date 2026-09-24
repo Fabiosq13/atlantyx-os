@@ -161,6 +161,97 @@ async function storyAgendar({ imagem_url, quando, texto, link, blog_id } = {}) {
     aviso: 'Ao publicar, adicione o sticker de LINK no app do Instagram com a URL abaixo — a API não faz isso sozinha. O QR na imagem já funciona.', link };
 }
 
+// ═══ v2.68: FILA DA AUTOCAMPANHA — processada em segundo plano, um passo por vez ═══
+// O navegador enfileira os slots e acompanha. Um cron (a cada minuto) e um "cutucão" da tela
+// executam UM passo por chamada: texto → imagem → agendar. Cada passo cabe no limite de tempo,
+// e se um falhar, tenta de novo até 3 vezes. Sem requisições longas no navegador → sem "Failed to fetch".
+async function _filaTabela() {
+  const sql = await getSql();
+  await sql`CREATE TABLE IF NOT EXISTS autocampanha_fila (
+    id TEXT PRIMARY KEY, lote TEXT, data TEXT, hora TEXT, dia_semana TEXT, tema TEXT, redes JSONB, blog_id TEXT,
+    apenas_rascunho BOOLEAN DEFAULT true, com_imagem BOOLEAN DEFAULT true,
+    etapa TEXT DEFAULT 'texto', status TEXT DEFAULT 'pendente', tentativas INT DEFAULT 0,
+    texto TEXT, angulo TEXT, oferta TEXT, link TEXT, comentario TEXT, link_instagram TEXT, link_bio TEXT,
+    imagem_url TEXT, metricool_id TEXT, erro TEXT, criado_em TIMESTAMPTZ DEFAULT NOW(), atualizado_em TIMESTAMPTZ DEFAULT NOW())`;
+  return sql;
+}
+async function filaEnfileirar({ slots = [], tema, redes, blog_id, apenas_rascunho = true, com_imagem = true } = {}) {
+  if (!slots.length) throw new Error('nenhum slot');
+  const sql = await _filaTabela();
+  const lote = 'lt_' + Date.now().toString(36);
+  for (const s of slots) {
+    const id = `${lote}_${s.data}_${String(s.hora).replace(':', '')}`;
+    await sql`INSERT INTO autocampanha_fila (id, lote, data, hora, dia_semana, tema, redes, blog_id, apenas_rascunho, com_imagem)
+      VALUES (${id}, ${lote}, ${s.data}, ${s.hora}, ${s.dia_semana || null}, ${tema || null}, ${JSON.stringify(redes || ['linkedin'])}, ${blog_id || null}, ${!!apenas_rascunho}, ${!!com_imagem})
+      ON CONFLICT (id) DO NOTHING`;
+  }
+  return { lote, enfileirados: slots.length };
+}
+async function filaStatus({ lote } = {}) {
+  const sql = await _filaTabela();
+  const rows = lote ? await sql`SELECT * FROM autocampanha_fila WHERE lote = ${lote} ORDER BY data, hora`
+    : await sql`SELECT * FROM autocampanha_fila WHERE criado_em >= NOW() - INTERVAL '2 days' ORDER BY criado_em DESC, data, hora LIMIT 60`;
+  const resumo = { total: rows.length, pendentes: rows.filter(r => r.status === 'pendente').length, prontos: rows.filter(r => r.status === 'pronto').length,
+    falhas: rows.filter(r => r.status === 'falhou').length, processando: rows.filter(r => r.status === 'processando').length };
+  return { lote, itens: rows, resumo, concluido: resumo.pendentes === 0 && resumo.processando === 0 };
+}
+// Executa UM passo de UM item. Chamado pelo cron e pelo "cutucão" da tela.
+async function filaProcessar({ lote } = {}) {
+  const sql = await _filaTabela();
+  // libera itens travados há mais de 3 min (função cortada no meio)
+  await sql`UPDATE autocampanha_fila SET status = 'pendente' WHERE status = 'processando' AND atualizado_em < NOW() - INTERVAL '3 minutes'`;
+  const cand = lote
+    ? await sql`SELECT * FROM autocampanha_fila WHERE lote = ${lote} AND status = 'pendente' ORDER BY data, hora LIMIT 1`
+    : await sql`SELECT * FROM autocampanha_fila WHERE status = 'pendente' ORDER BY criado_em, data, hora LIMIT 1`;
+  const it = cand[0];
+  if (!it) return { ocioso: true };
+  await sql`UPDATE autocampanha_fila SET status = 'processando', atualizado_em = NOW() WHERE id = ${it.id}`;
+  const falhar = async (msg) => {
+    const t = (it.tentativas || 0) + 1;
+    await sql`UPDATE autocampanha_fila SET status = ${t >= 3 ? 'falhou' : 'pendente'}, tentativas = ${t}, erro = ${String(msg).substring(0, 300)}, atualizado_em = NOW() WHERE id = ${it.id}`;
+    return { id: it.id, etapa: it.etapa, erro: msg, tentativa: t, desistiu: t >= 3 };
+  };
+  try {
+    if (it.etapa === 'texto') {
+      const r = await autoCampanhaExecutar({ tema: it.tema, redes: it.redes, blog_id: it.blog_id, apenas_rascunho: true,
+        slots: [{ data: it.data, hora: it.hora, dia_semana: it.dia_semana }] });
+      const p = (r.posts || [])[0];
+      if (!p || !p.texto) throw new Error((r.erros || [])[0] || r.aviso || 'sem texto');
+      const prox = it.com_imagem ? 'imagem' : (it.apenas_rascunho ? 'fim' : 'agendar');
+      await sql`UPDATE autocampanha_fila SET texto = ${p.texto}, angulo = ${p.angulo || null}, oferta = ${p.oferta || null}, link = ${p.link || null},
+        comentario = ${p.comentario || null}, link_instagram = ${p.link_instagram || null}, link_bio = ${p.link_bio || null},
+        etapa = ${prox}, status = ${prox === 'fim' ? 'pronto' : 'pendente'}, erro = NULL, atualizado_em = NOW() WHERE id = ${it.id}`;
+      return { id: it.id, etapa: 'texto', ok: true, proxima: prox };
+    }
+    if (it.etapa === 'imagem') {
+      const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
+      const prompt = `Editorial illustration for a LinkedIn post by a B2B data & AI consultancy. Theme: ${it.angulo || it.oferta || 'data and AI in enterprise operations'}. Clean, modern, abstract, corporate; navy blue and gold palette; no text, no letters, no logos, no faces.`;
+      const r = await fetch(base + '/api/image-gen', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, formato: 'ASPECT_1_1', estilo: 'DESIGN', quantidade: 1 }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.success || !d.imagens?.length) throw new Error(d.error || 'image-gen HTTP ' + r.status);
+      let url = d.imagens[0].url || d.imagens[0];
+      try { const m = await fetch(base + '/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'salvar_de_url', payload: { url, origem: 'autocampanha' } }) }).then(x => x.json()); if (m.success && m.url) url = m.url; } catch (_) {}
+      const prox = it.apenas_rascunho ? 'fim' : 'agendar';
+      await sql`UPDATE autocampanha_fila SET imagem_url = ${url}, etapa = ${prox}, status = ${prox === 'fim' ? 'pronto' : 'pendente'}, erro = NULL, atualizado_em = NOW() WHERE id = ${it.id}`;
+      return { id: it.id, etapa: 'imagem', ok: true, proxima: prox };
+    }
+    if (it.etapa === 'agendar') {
+      const a = await autoCampanhaAgendarUm({ post: { texto: it.texto, data: it.data, hora: it.hora, comentario: it.comentario, imagem_url: it.imagem_url }, blog_id: it.blog_id, redes: it.redes });
+      await sql`UPDATE autocampanha_fila SET metricool_id = ${a.metricool_id || null}, etapa = 'fim', status = 'pronto', erro = NULL, atualizado_em = NOW() WHERE id = ${it.id}`;
+      return { id: it.id, etapa: 'agendar', ok: true };
+    }
+    await sql`UPDATE autocampanha_fila SET status = 'pronto', atualizado_em = NOW() WHERE id = ${it.id}`;
+    return { id: it.id, ok: true };
+  } catch (e) { return await falhar(e.message); }
+}
+async function filaLimpar({ lote } = {}) {
+  const sql = await _filaTabela();
+  if (lote) await sql`DELETE FROM autocampanha_fila WHERE lote = ${lote}`; else await sql`DELETE FROM autocampanha_fila WHERE status IN ('pronto','falhou') AND criado_em < NOW() - INTERVAL '7 days'`;
+  return { ok: true };
+}
+
 // ═══ v2.65: agendar UM post já escrito (texto + imagem opcional) no Metricool ═══
 // Separado da geração para caber no limite de tempo: escrever, gerar imagem e agendar são três
 // chamadas curtas em vez de uma longa.
@@ -416,6 +507,12 @@ Evite repetir o mesmo ângulo de outros posts da semana.`;
 }
 
 export default async function handler(req, res) {
+  // v2.68: cron da fila — um passo por minuto, em segundo plano
+  if (req.method === 'GET' && req.query?.cron === 'fila') {
+    try { const out = []; for (let i = 0; i < 2; i++) { const r = await filaProcessar({}); out.push(r); if (r.ocioso) break; }
+      return res.status(200).json({ success: true, passos: out }); }
+    catch (e) { return res.status(500).json({ success: false, error: e.message }); }
+  }
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -476,6 +573,10 @@ export default async function handler(req, res) {
     auditoria_funil:        () => auditoriaFunil(payload),
     story_texto:            () => storyTexto(payload),
     autocampanha_agendar_um:() => autoCampanhaAgendarUm(payload),
+    fila_enfileirar:        () => filaEnfileirar(payload),
+    fila_status:            () => filaStatus(payload),
+    fila_processar:         () => filaProcessar(payload),
+    fila_limpar:            () => filaLimpar(payload),
     story_agendar:          () => storyAgendar(payload),
     autocampanha_planejar:  () => autoCampanhaPlanejar(payload),
     autocampanha_executar:  () => autoCampanhaExecutar(payload),
