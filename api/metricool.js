@@ -161,6 +161,28 @@ async function storyAgendar({ imagem_url, quando, texto, link, blog_id } = {}) {
     aviso: 'Ao publicar, adicione o sticker de LINK no app do Instagram com a URL abaixo — a API não faz isso sozinha. O QR na imagem já funciona.', link };
 }
 
+// ═══ v2.65: agendar UM post já escrito (texto + imagem opcional) no Metricool ═══
+// Separado da geração para caber no limite de tempo: escrever, gerar imagem e agendar são três
+// chamadas curtas em vez de uma longa.
+async function autoCampanhaAgendarUm({ post, blog_id, redes } = {}) {
+  const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID;
+  const BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
+  if (!TOKEN || !USERID || !BLOGID) throw new Error('Credenciais do Metricool ausentes');
+  if (!post?.texto || !post?.data || !post?.hora) throw new Error('post com texto, data e hora obrigatórios');
+  const redesAlvo = (Array.isArray(redes) && redes.length ? redes : ['linkedin']);
+  const quando = `${post.data}T${post.hora}:00`;
+  const body = {
+    text: post.texto,
+    providers: redesAlvo.map(n => ({ network: String(n).toUpperCase() })),
+    publicationDate: { dateTime: quando, timezone: 'America/Sao_Paulo' },
+    autoPublish: true, shortener: false, draft: false,
+    firstComment: redesAlvo.some(r => /linkedin|facebook/i.test(r)) ? post.comentario : undefined,
+  };
+  if (post.imagem_url) { body.media = [post.imagem_url]; body.medias = [post.imagem_url]; }
+  const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
+  return { agendado: true, metricool_id: r?.id || r?.data?.id || null, quando, com_imagem: !!post.imagem_url };
+}
+
 // ═══ v1.74: AUTOCAMPANHA — preenche a agenda dos próximos 7 dias ═══
 // Olha os 7 dias à frente e, para cada horário configurado que estiver VAZIO, cria uma
 // publicação. Nunca sobrescreve o que já existe agendado.
@@ -435,6 +457,7 @@ export default async function handler(req, res) {
     corrigir_imagens:       () => corrigirImagensAgendadas(payload),
     auditoria_funil:        () => auditoriaFunil(payload),
     story_texto:            () => storyTexto(payload),
+    autocampanha_agendar_um:() => autoCampanhaAgendarUm(payload),
     story_agendar:          () => storyAgendar(payload),
     autocampanha_planejar:  () => autoCampanhaPlanejar(payload),
     autocampanha_executar:  () => autoCampanhaExecutar(payload),
