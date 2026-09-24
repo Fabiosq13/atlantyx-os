@@ -18407,8 +18407,10 @@ async function acPlanejar() {
 }
 // v2.65: imagem do post — prompt a partir do ângulo, Ideogram via /api/image-gen, cópia permanente em /api/media
 async function _acGerarImagem(post) {
-  const prompt = `Editorial illustration for a LinkedIn post by a B2B data & AI consultancy. Theme: ${post.angulo || post.oferta || 'data and AI in enterprise operations'}. Clean, modern, abstract, corporate; navy blue (#1A3A8F) and gold (#E0A422) palette; no text, no letters, no logos, no people faces.`;
-  const r = await fetch('/api/image-gen', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, formato: 'ASPECT_1_1', estilo: 'DESIGN', quantidade: 1 }) });
+  const cena = post.imagem_prompt || `Professional corporate photograph illustrating: ${String(post.texto || '').replace(/\s+/g, ' ').substring(0, 220)}. Setting: energy utility control room or modern data center with dashboards.`;
+  const prompt = `${cena} Photorealistic corporate photography, B2B technology consulting, natural light, navy blue and gold color accents.`;
+  const r = await fetch('/api/image-gen', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, formato: 'ASPECT_1_1', estilo: 'REALISTIC', quantidade: 1, magic_prompt: false, estilo_padrao: false,
+    negativo: 'animal, monkey, ape, dog, cat, bird, cartoon, anime, illustration, character, mascot, toy, childish, fantasy, text, letters, words, watermark, logo, close-up face, distorted, blurry, low quality' }) });
   const d = await r.json().catch(() => ({}));
   if (!r.ok || !d.success || !d.imagens?.length) throw new Error(d.error || 'sem imagem');
   const url = d.imagens[0].url || d.imagens[0];
@@ -23847,7 +23849,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.71] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.72] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23863,7 +23865,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.71';
+window.__ATX_BUILD_ID__ = 'ATX-v2.72';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
