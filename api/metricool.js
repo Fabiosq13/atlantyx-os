@@ -161,6 +161,15 @@ async function storyAgendar({ imagem_url, quando, texto, link, blog_id } = {}) {
     aviso: 'Ao publicar, adicione o sticker de LINK no app do Instagram com a URL abaixo — a API não faz isso sozinha. O QR na imagem já funciona.', link };
 }
 
+// v2.69: conexão com o banco — a fila usava getSql() sem ele existir neste módulo
+let _sqlMc = null;
+async function getSql() {
+  if (_sqlMc) return _sqlMc;
+  const { neon } = await import('@neondatabase/serverless');
+  _sqlMc = neon(process.env.DATABASE_URL);
+  return _sqlMc;
+}
+
 // ═══ v2.68: FILA DA AUTOCAMPANHA — processada em segundo plano, um passo por vez ═══
 // O navegador enfileira os slots e acompanha. Um cron (a cada minuto) e um "cutucão" da tela
 // executam UM passo por chamada: texto → imagem → agendar. Cada passo cabe no limite de tempo,
@@ -528,7 +537,11 @@ export default async function handler(req, res) {
   const BLOGID = (req.body?.payload?.blog_id || req.body?.blog_id || BLOGID_PADRAO);
 
   try {
-    const { action, payload = {} } = req.body || {};
+    // v2.69: a tela (mcApi) envia os parâmetros SOLTOS no corpo, não em "payload". Antes nenhum
+    // parâmetro chegava — slots, tema, redes, horários eram ignorados, e cada chamada "de um post"
+    // gerava o plano inteiro (5 posts com IA). Era a causa real dos "Failed to fetch".
+    const { action, payload: _pl, ...resto } = req.body || {};
+    const payload = (_pl && typeof _pl === 'object') ? { ...resto, ..._pl } : resto;
     if (!action) return res.status(400).json({ error: 'Campo "action" obrigatório' });
 
     // Status da conexão — sempre disponível, mesmo sem credenciais
@@ -840,13 +853,14 @@ export default async function handler(req, res) {
       },
     };
 
-    if (!acoes[action]) return res.status(400).json({ error: `Ação inválida. Disponíveis: status, ${Object.keys(acoes).join(', ')}` });
+    if (!acoes[action]) return res.status(400).json({ success: false, error: `Ação inválida. Disponíveis: status, ${Object.keys(acoes).join(', ')}` });
     const resultado = await acoes[action]();
     return res.status(200).json({ success: true, action, ...resultado });
 
   } catch (error) {
     console.error('[ERRO metricool]', error.message);
     return res.status(500).json({
+      success: false,
       error: error.message,
       module: 'metricool',
       hint: error.message?.includes('401') || error.message?.includes('403')
