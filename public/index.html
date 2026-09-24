@@ -1208,7 +1208,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <div class="fg" style="margin:0;"><label class="fl">Clientes (prova social)</label><input class="fi" id="ct_clientes"/></div>
         <div class="fg" style="margin:0;grid-column:span 2;"><label class="fl">Endereco Rio</label><input class="fi" id="ct_endereco_rj"/></div>
         <div class="fg" style="margin:0;grid-column:span 2;"><label class="fl">Endereco Sao Paulo</label><input class="fi" id="ct_endereco_sp"/></div>
-        <div class="fg" style="margin:0;grid-column:span 2;"><label class="fl">Foto (JPG/PNG, ate 2 MB)</label><input type="file" accept="image/*" id="ct_foto" style="font-size:10.5px;"/> <span id="ct_fotoInfo" style="font-size:10px;color:var(--t3);"></span></div>
+        <div class="fg" style="margin:0;grid-column:span 2;"><label class="fl">Foto (qualquer tamanho — e redimensionada ao enviar)</label>
+          <div style="display:flex;align-items:center;gap:12px;"><span id="ct_fotoInfo" style="font-size:10px;color:var(--t3);display:flex;align-items:center;gap:8px;min-height:56px;"></span><input type="file" accept="image/*" id="ct_foto" style="font-size:10.5px;"/></div></div>
       </div></div></div>
     <div class="panel" style="margin:0;"><div class="ph"><div class="pt">Compartilhar</div></div><div class="pb" style="text-align:center;">
       <div id="ct_qrLink" style="display:inline-block;background:#fff;padding:8px;border-radius:8px;"></div>
@@ -19819,7 +19820,7 @@ async function cartaoCarregar() {
   try {
     const d = await prospApi('cartao_get');
     CT_CAMPOS.forEach(k => { const e = document.getElementById('ct_' + k); if (e) e.value = d[k] || ''; });
-    const fi = document.getElementById('ct_fotoInfo'); if (fi) fi.innerHTML = d.foto_media_id ? `<img src="/api/media?id=${d.foto_media_id}&t=${Date.now()}" style="width:44px;height:44px;border-radius:50%;object-fit:cover;vertical-align:middle;border:2px solid var(--green,#22d3a3);"> ✓ foto carregada` : 'sem foto — o cartão mostra as iniciais';
+    const fi = document.getElementById('ct_fotoInfo'); if (fi) fi.innerHTML = d.foto_media_id ? `<img src="/api/media?id=${d.foto_media_id}&t=${Date.now()}" style="width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid var(--green,#22d3a3);flex-shrink:0;"><span>✓ foto carregada</span>` : 'sem foto — o cartão mostra as iniciais';
     const url = location.origin + '/cartao.html'; document.getElementById('ct_url').textContent = url;
     const box = document.getElementById('ct_qrLink'); box.innerHTML = '';
     if (await _carregarQr()) { try { new window.QRCode(box, { text: url, width: 150, height: 150, correctLevel: window.QRCode.CorrectLevel.M }); } catch (_) {} }
@@ -23766,7 +23767,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.63] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.64] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23782,7 +23783,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.63';
+window.__ATX_BUILD_ID__ = 'ATX-v2.64';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
