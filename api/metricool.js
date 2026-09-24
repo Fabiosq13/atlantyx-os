@@ -196,11 +196,16 @@ async function _claudeAuto(system, user, maxTokens = 700) {
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     // v2.66: Haiku para os textos da autocampanha — o Sonnet levava 8–14s e estourava o limite de
     // 10s do plano Hobby do Vercel ("Failed to fetch" em todo post). Haiku responde em 2–4s.
-    body: JSON.stringify({ model: process.env.CLAUDE_MODEL_RAPIDO || 'claude-haiku-4-5-20251001', max_tokens: Math.min(maxTokens, 500), system, messages: [{ role: 'user', content: user }] }) });
+    body: JSON.stringify({ model: process.env.CLAUDE_MODEL_RAPIDO || 'claude-haiku-4-5-20251001', max_tokens: Math.min(maxTokens, 500),
+      system: system + '\n\nIMPORTANTE: responda SOMENTE com o JSON pedido. Nunca peça mais informações — se faltar algo, escolha você mesmo um ângulo plausível e escreva.',
+      messages: [{ role: 'user', content: user }, { role: 'assistant', content: '{' }] }) });   // prefill: a resposta já começa com "{" 
   clearTimeout(tm);
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error('Claude API [' + r.status + ']: ' + (d.error?.message || 'erro'));
-  return d.content?.[0]?.text || '';
+  const _raw = '{' + String(d.content?.[0]?.text || '' || '');
+  // v2.67: extrai o primeiro objeto JSON válido, mesmo com texto em volta
+  const _m = _raw.match(/\{[\s\S]*\}/);
+  return _m ? _m[0] : _raw;
 }
 
 // A configuração vem do frontend (localStorage) ou dos valores padrão — este módulo não
@@ -314,7 +319,10 @@ async function autoCampanhaExecutar({ dias, horarios, pular_fim_de_semana, tema,
     }
   }
 
-  const temaBase = tema || cfg.tema_base;
+  // v2.67: sem tema, o modelo respondia "preciso de mais informação" em vez de escrever. Agora há
+  // um tema padrão concreto e um cardápio de ângulos que o modelo pode escolher.
+  const temaBase = (tema && tema.trim()) || (cfg.tema_base && cfg.tema_base.trim()) ||
+    'Dados, analytics e IA aplicados à operação de grandes empresas (energia, bancos, indústria): sustentação de plataformas de dados, governança, automação com IA, decisões com dados confiáveis. Ângulos possíveis: um erro comum que custa caro; o que muda quando o dado é confiável; IA que resolve um problema chato e específico; por que projetos de dados atrasam; o que um CEO deveria perguntar ao time de dados.';
   const redesAlvo = (Array.isArray(redes) && redes.length ? redes : cfg.redes);
   const criados = [], erros = [];
 
@@ -343,7 +351,14 @@ ${slot.hora < '11:00' ? 'Horário da manhã: pode ser um post mais analítico, p
   : 'Fim de tarde: bom para reflexão ou balanço, quando o executivo está fechando o dia.'}
 Evite repetir o mesmo ângulo de outros posts da semana.`;
       const txt = await _claudeAuto(system, user, 700);
-      const j = JSON.parse(String(txt).replace(/```json|```/g, '').trim());
+      let j;
+      try { j = JSON.parse(String(txt).replace(/```json|```/g, '').trim()); }
+      catch (_) {
+        // v2.67: resposta fora do formato — aproveita o texto como post em vez de perder o slot
+        const limpo = String(txt).replace(/^\{?\s*"?texto"?\s*:?\s*"?/i, '').replace(/[{}"]+$/g, '').trim();
+        if (limpo.length < 40 || /preciso de|não tenho|informa[çc]/i.test(limpo.substring(0, 60))) throw new Error('modelo não escreveu o post (resposta: ' + limpo.substring(0, 60) + '…)');
+        j = { texto: limpo, angulo: 'sem ângulo declarado', oferta: 'conversa de 30 min' };
+      }
       // v2.15: link de captura com UTM — é o que transforma o post em fonte rastreável de lead
       const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
       const utm = new URLSearchParams({ utm_source: 'linkedin', utm_medium: 'autocampanha',
