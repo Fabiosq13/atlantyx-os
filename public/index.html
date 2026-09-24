@@ -18441,7 +18441,7 @@ async function acExecutar(rascunho) {
         post = (r.posts || [])[0]; erros.push(...(r.erros || []));
         if (r.dica && !post) throw Object.assign(new Error(r.aviso || 'falha'), { dica: r.dica });
         if (!post) continue;
-      } catch (e) { if (e.dica) throw e; erros.push(`post ${i + 1}: ${e.message}`); continue; }
+      } catch (e) { if (e.dica) throw e; erros.push(`post ${i + 1}: ${e.message}${/Failed to fetch|504|timeout/i.test(e.message) ? ' — a função foi cortada pelo limite de tempo do Vercel (plano Hobby = 10s)' : ''}`); continue; }
       if (comImagem) {
         prog(`Gerando a imagem do post ${i + 1} de ${vagos.length}...`, i + 0.5);
         try { post.imagem_url = await _acGerarImagem(post); }
@@ -23796,7 +23796,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.65] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.66] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23812,7 +23812,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.65';
+window.__ATX_BUILD_ID__ = 'ATX-v2.66';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
