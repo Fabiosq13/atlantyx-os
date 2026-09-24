@@ -3667,6 +3667,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <select class="fsel" id="ac_fds" style="width:100%;"><option value="pular">Pular sab/dom</option><option value="incluir">Incluir</option></select></div>
       </div>
       <div style="display:flex;gap:14px;align-items:center;margin:0 0 10px;font-size:10.5px;color:var(--t2);flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;margin-right:8px;"><input type="checkbox" id="ac_imagens" checked/> <b>gerar imagem por post</b></label>
         <span style="font-weight:600;">Redes:</span>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" class="acRede" value="linkedin" checked/> LinkedIn</label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" class="acRede" value="instagram"/> Instagram</label>
@@ -18397,6 +18398,18 @@ async function acPlanejar() {
   } catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:16px;font-size:11px;">Erro: ${e.message}</div></div>`; }
   finally { if (btn) { btn.disabled = false; btn.innerHTML = '&#128269; Ver horarios vagos'; } }
 }
+// v2.65: imagem do post — prompt a partir do ângulo, Ideogram via /api/image-gen, cópia permanente em /api/media
+async function _acGerarImagem(post) {
+  const prompt = `Editorial illustration for a LinkedIn post by a B2B data & AI consultancy. Theme: ${post.angulo || post.oferta || 'data and AI in enterprise operations'}. Clean, modern, abstract, corporate; navy blue (#1A3A8F) and gold (#E0A422) palette; no text, no letters, no logos, no people faces.`;
+  const r = await fetch('/api/image-gen', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, formato: 'quadrado', estilo: 'DESIGN', quantidade: 1 }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.success || !d.imagens?.length) throw new Error(d.error || 'sem imagem');
+  const url = d.imagens[0].url || d.imagens[0];
+  // permanente (as URLs do Ideogram expiram — v1.80)
+  try { const m = await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'salvar_de_url', payload: { url, origem: 'autocampanha' } }) }).then(x => x.json());
+    if (m.success && m.url) return m.url; } catch (_) {}
+  return url;
+}
 async function acExecutar(rascunho) {
   const c = _acCfg();
   if (!rascunho && !confirm(`Vai gerar e AGENDAR posts nos horários vagos dos próximos ${c.dias} dias.\n\nOs textos são criados por IA e publicados automaticamente nas datas. Continuar?`)) return;
@@ -18410,21 +18423,36 @@ async function acExecutar(rascunho) {
     const plano = (await mcApi('autocampanha_planejar', c)).plano;
     const vagos = plano?.vagos || [];
     if (!vagos.length) { box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:20px;">Nenhum horário vago — a agenda já está completa no período.</div></div>'; return; }
-    const LOTE = 3, posts = [], erros = [];
-    for (let i = 0; i < vagos.length; i += LOTE) {
-      const lote = vagos.slice(i, i + LOTE);
-      box.innerHTML = `<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">
-        ⏳ Escrevendo post ${Math.min(i + LOTE, vagos.length)} de ${vagos.length}...
+    // v2.65: UM post por chamada (o plano Hobby do Vercel corta em 10s — três textos estouravam)
+    // e a IMAGEM de cada post em chamada separada, depois do texto. Antes a autocampanha não
+    // gerava imagem nenhuma — os posts saíam só com texto.
+    const comImagem = document.getElementById('ac_imagens')?.checked !== false;
+    const posts = [], erros = [];
+    const prog = (msg, i) => { box.innerHTML = `<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ ${msg}
         <div style="height:6px;background:var(--bd);border-radius:3px;margin:12px auto 0;max-width:300px;overflow:hidden;"><div style="height:100%;width:${Math.round(i / vagos.length * 100)}%;background:var(--green,#22d3a3);transition:width .3s;"></div></div>
-        ${posts.length ? `<div style="font-size:10px;margin-top:8px;">${posts.length} pronto(s)</div>` : ''}</div></div>`;
+        ${posts.length ? `<div style="font-size:10px;margin-top:8px;">${posts.length} pronto(s)</div>` : ''}</div></div>`; };
+    for (let i = 0; i < vagos.length; i++) {
+      const slot = vagos[i];
+      prog(`Escrevendo post ${i + 1} de ${vagos.length}...`, i);
+      let post = null;
       try {
-        const r = await mcApi('autocampanha_executar', { ...c, apenas_rascunho: !!rascunho, slots: lote });
-        posts.push(...(r.posts || [])); erros.push(...(r.erros || []));
-        if (r.dica && !posts.length) throw Object.assign(new Error(r.aviso || 'falha'), { dica: r.dica });
-      } catch (e) {
-        if (e.dica) throw e;                       // erro de credencial: para tudo
-        erros.push(`lote ${i / LOTE + 1}: ${e.message}`);
+        // rascunho SEMPRE primeiro (rápido); o agendamento no Metricool vem depois, com a imagem
+        const r = await mcApi('autocampanha_executar', { ...c, apenas_rascunho: true, slots: [slot] });
+        post = (r.posts || [])[0]; erros.push(...(r.erros || []));
+        if (r.dica && !post) throw Object.assign(new Error(r.aviso || 'falha'), { dica: r.dica });
+        if (!post) continue;
+      } catch (e) { if (e.dica) throw e; erros.push(`post ${i + 1}: ${e.message}`); continue; }
+      if (comImagem) {
+        prog(`Gerando a imagem do post ${i + 1} de ${vagos.length}...`, i + 0.5);
+        try { post.imagem_url = await _acGerarImagem(post); }
+        catch (e) { erros.push(`imagem do post ${i + 1}: ${e.message}`); }
       }
+      if (!rascunho) {
+        prog(`Agendando post ${i + 1} de ${vagos.length}...`, i + 0.8);
+        try { const a = await mcApi('autocampanha_agendar_um', { post, blog_id: c.blog_id, redes: c.redes }); post.status = 'agendado'; post.metricool_id = a.metricool_id; }
+        catch (e) { post.status = 'rascunho'; erros.push(`agendar post ${i + 1}: ${e.message}`); }
+      }
+      posts.push(post);
     }
     const d = { posts, erros, resumo: `${posts.length} publicação(ões) ${rascunho ? 'em rascunho' : 'agendadas'} nos horários vagos.` };
     box.innerHTML = `<div class="panel"><div class="ph"><div class="pt">${rascunho ? '✎ Rascunhos gerados' : '📤 Posts agendados'}</div>
@@ -18434,6 +18462,7 @@ async function acExecutar(rascunho) {
         <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t2);margin-bottom:5px;">
           <span>📅 ${p.data.split('-').reverse().join('/')} (${p.dia_semana}) às <b>${p.hora}</b></span>
           <span style="color:${p.status==='agendado'?'var(--green,#22d3a3)':'var(--gold)'};">${p.status}${p.angulo?' · '+p.angulo:''}</span></div>
+        ${p.imagem_url ? `<img src="${p.imagem_url}" style="width:100%;max-width:320px;border-radius:8px;margin:6px 0;display:block;" loading="lazy"/>` : `<div style="font-size:9.5px;color:var(--t3);margin:4px 0;">sem imagem</div>`}
         <div style="font-size:11.5px;line-height:1.6;white-space:pre-wrap;">${(p.texto||'').replace(/</g,'&lt;')}</div>
         ${p.comentario ? `<div style="margin-top:7px;padding:7px 9px;background:rgba(34,211,163,.08);border-left:3px solid var(--green,#22d3a3);border-radius:5px;font-size:10px;">
           <b>1º comentário (LinkedIn/Facebook):</b> ${String(p.comentario).replace(/</g,'&lt;')}</div>` : ''}
@@ -23767,7 +23796,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.64] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.65] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23783,7 +23812,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.64';
+window.__ATX_BUILD_ID__ = 'ATX-v2.65';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
