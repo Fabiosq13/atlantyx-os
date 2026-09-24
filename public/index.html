@@ -18411,6 +18411,26 @@ async function _acGerarImagem(post) {
     if (m.success && m.url) return m.url; } catch (_) {}
   return url;
 }
+async function acAgendarRascunhos(ids) {
+  const box = document.getElementById('acResultado');
+  try {
+    const r = await mcApi('fila_agendar_rascunhos', ids ? { ids } : {});
+    if (!r.agendando) { toast(r.aviso || 'Nada para agendar', 'error'); if (r.pulados_horario_passado?.length) alert('Rascunhos com horário já passado (não dá para agendar):\n' + r.pulados_horario_passado.join('\n') + '\n\nGere de novo para os próximos horários.'); return; }
+    if (r.pulados_horario_passado?.length) toast(r.pulados_horario_passado.length + ' rascunho(s) com horário já passado foram pulados', 'error');
+    for (let v = 0; v < 200; v++) {
+      try { await mcApi('fila_processar', {}); } catch (_) {}
+      const st = await mcApi('fila_status', {});
+      const alvo = (st.itens || []).filter(x => (r.lotes || []).includes(x.lote));
+      const pend = alvo.filter(x => x.status === 'pendente' || x.status === 'processando').length;
+      const ag = alvo.filter(x => x.metricool_id).length, fal = alvo.filter(x => x.status === 'falhou').length;
+      box.innerHTML = `<div class="panel"><div class="pb" style="text-align:center;padding:20px;color:var(--t2);font-size:12px;">📤 Agendando rascunhos no Metricool — ${ag} agendado(s) · ${pend} na fila · ${fal} falha(s)</div></div>`;
+      if (!pend) break;
+      await new Promise(x => setTimeout(x, 2000));
+    }
+    toast('Rascunhos agendados', 'success');
+    acVerFila();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
 async function acVerFila() {
   const box = document.getElementById('acResultado');
   try {
@@ -18419,15 +18439,28 @@ async function acVerFila() {
     if (!st.resumo) throw new Error(st.error || 'resposta inesperada da fila');
     const r = st.resumo;
     box.innerHTML = `<div class="panel"><div class="ph"><div class="pt">📋 Fila da autocampanha</div><span style="font-size:10px;color:var(--t2);">${r.prontos} pronto(s) · ${r.pendentes + r.processando} na fila · ${r.falhas} falha(s)</span>
+        ${st.itens.some(x => x.status === 'pronto' && !x.metricool_id && x.texto) ? `<button class="btn btn-gn" style="font-size:10px;" onclick="acAgendarRascunhos()">📤 Agendar rascunhos prontos</button>` : ''}
         <button class="btn" style="font-size:9.5px;" onclick="acVerFila()">↻</button></div>
       <div class="pb" style="max-height:60vh;overflow-y:auto;">${st.itens.length ? st.itens.map(x => `<div style="border-left:3px solid ${x.status==='pronto'?'var(--green,#22d3a3)':x.status==='falhou'?'var(--red)':'var(--gold)'};background:var(--bg4);border-radius:7px;padding:9px 11px;margin-bottom:8px;">
         <div style="display:flex;justify-content:space-between;font-size:10.5px;"><span><b>${x.data.split('-').reverse().join('/')} ${x.hora}</b> · ${x.status==='pronto'?(x.metricool_id?'📤 agendado':'✎ rascunho'):x.status==='falhou'?'✗ falhou':'⏳ '+x.etapa}</span><span style="color:var(--t3);">${x.angulo||''}</span></div>
         ${x.imagem_url ? `<img src="${x.imagem_url}" style="width:100%;max-width:280px;border-radius:7px;margin:6px 0;display:block;"/>` : ''}
         ${x.texto ? `<div style="font-size:11px;line-height:1.55;white-space:pre-wrap;margin-top:4px;">${String(x.texto).replace(/</g,'&lt;')}</div>` : ''}
-        ${x.erro ? `<div style="font-size:10px;color:var(--red);margin-top:4px;">${String(x.erro).replace(/</g,'&lt;')}</div>` : ''}</div>`).join('') : '<div style="text-align:center;color:var(--t3);padding:16px;">Fila vazia.</div>'}</div></div>`;
+        ${x.erro ? `<div style="font-size:10px;color:var(--red);margin-top:4px;">${String(x.erro).replace(/</g,'&lt;')}</div>` : ''}
+        ${x.status === 'pronto' && !x.metricool_id && x.texto ? `<button class="btn" style="font-size:9px;margin-top:6px;" onclick="acAgendarRascunhos(['${x.id}'])">📤 agendar só este</button>` : ''}</div>`).join('') : '<div style="text-align:center;color:var(--t3);padding:16px;">Fila vazia.</div>'}</div></div>`;
   } catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:14px;">${e.message}</div></div>`; }
 }
 async function acExecutar(rascunho) {
+  // v2.70: se já existem rascunhos prontos, agendar ELES em vez de gerar tudo de novo
+  if (!rascunho) {
+    try {
+      const st = await mcApi('fila_status', {});
+      const prontos = (st.itens || []).filter(x => x.status === 'pronto' && !x.metricool_id && x.texto);
+      if (prontos.length) {
+        const q = confirm(`Você tem ${prontos.length} rascunho(s) prontos e revisados.\n\nOK = agendar ESTES rascunhos no Metricool (sem reescrever)\nCancelar = gerar posts novos do zero`);
+        if (q) return acAgendarRascunhos();
+      }
+    } catch (_) {}
+  }
   const c = _acCfg();
   if (!rascunho && !confirm(`Vai gerar e AGENDAR posts nos horários vagos dos próximos ${c.dias} dias.\n\nOs textos são criados por IA e publicados automaticamente nas datas. Continuar?`)) return;
   const btn = document.getElementById(rascunho ? 'btnAcRasc' : 'btnAcExec');
@@ -18463,6 +18496,7 @@ async function acExecutar(rascunho) {
       if (st.concluido) break;
       await new Promise(r => setTimeout(r, 2500));
     }
+    if (rascunho) { toast('Rascunhos prontos — revise e use "📤 Agendar rascunhos prontos"', 'success'); return acVerFila(); }
     (ultimo?.itens || []).forEach(x => { if (x.status === 'pronto') posts.push({ data: x.data, hora: x.hora, dia_semana: x.dia_semana, texto: x.texto, angulo: x.angulo, oferta: x.oferta, link: x.link, comentario: x.comentario, link_instagram: x.link_instagram, link_bio: x.link_bio, imagem_url: x.imagem_url, status: x.metricool_id ? 'agendado' : 'rascunho', metricool_id: x.metricool_id });
       else if (x.status === 'falhou') erros.push(`${x.data} ${x.hora} (${x.etapa}): ${x.erro || 'falhou'}`); });
     const d = { posts, erros, resumo: `${posts.length} publicação(ões) ${rascunho ? 'em rascunho' : 'agendadas'} nos horários vagos.` };
@@ -23807,7 +23841,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.69] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.70] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23823,7 +23857,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.69';
+window.__ATX_BUILD_ID__ = 'ATX-v2.70';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
