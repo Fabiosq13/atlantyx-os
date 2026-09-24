@@ -18416,6 +18416,7 @@ async function acVerFila() {
   try {
     try { await mcApi('fila_processar', {}); } catch (_) {}
     const st = await mcApi('fila_status', {});
+    if (!st.resumo) throw new Error(st.error || 'resposta inesperada da fila');
     const r = st.resumo;
     box.innerHTML = `<div class="panel"><div class="ph"><div class="pt">📋 Fila da autocampanha</div><span style="font-size:10px;color:var(--t2);">${r.prontos} pronto(s) · ${r.pendentes + r.processando} na fila · ${r.falhas} falha(s)</span>
         <button class="btn" style="font-size:9.5px;" onclick="acVerFila()">↻</button></div>
@@ -18451,6 +18452,7 @@ async function acExecutar(rascunho) {
       // cutuca o servidor: processa um passo (o cron faz o mesmo a cada minuto, mesmo com a tela fechada)
       try { await mcApi('fila_processar', { lote: enf.lote }); } catch (_) {}
       const st = await mcApi('fila_status', { lote: enf.lote });
+      if (!st.resumo) throw new Error(st.error || 'resposta inesperada da fila');
       const r = st.resumo;
       box.innerHTML = `<div class="panel"><div class="pb" style="padding:18px;">
         <div style="text-align:center;color:var(--t2);font-size:12px;">⏳ Processando em segundo plano — ${r.prontos} pronto(s) · ${r.pendentes + r.processando} na fila · ${r.falhas} falha(s)</div>
@@ -23805,7 +23807,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.68] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.69] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23821,7 +23823,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.68';
+window.__ATX_BUILD_ID__ = 'ATX-v2.69';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
