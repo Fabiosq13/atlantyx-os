@@ -19822,7 +19822,8 @@ async function cartaoCarregar() {
     const fi = document.getElementById('ct_fotoInfo'); if (fi) fi.textContent = d.foto_media_id ? '✓ foto carregada' : 'sem foto — o cartão mostra as iniciais';
     const url = location.origin + '/cartao.html'; document.getElementById('ct_url').textContent = url;
     const box = document.getElementById('ct_qrLink'); box.innerHTML = '';
-    if (await _carregarQr()) new window.QRCode(box, { text: url, width: 150, height: 150, correctLevel: window.QRCode.CorrectLevel.M });
+    if (await _carregarQr()) { try { new window.QRCode(box, { text: url, width: 150, height: 150, correctLevel: window.QRCode.CorrectLevel.M }); } catch (_) {} }
+    if (!box.querySelector('canvas,img')) box.innerHTML = '<img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + encodeURIComponent(url) + '" width="150" height="150">';
     document.getElementById('ct_preview').src = '/cartao.html?v=' + Date.now();
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
@@ -23752,7 +23753,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.61] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.62] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23768,7 +23769,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.61';
+window.__ATX_BUILD_ID__ = 'ATX-v2.62';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
