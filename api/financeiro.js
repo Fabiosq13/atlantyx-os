@@ -200,6 +200,7 @@ export default async function handler(req, res) {
       conc_faturas_vencidas: () => faturasVencidasSemConciliar(params),
       conc_ofx:              () => conciliarOfx(params),
       conc_razao:            () => conferirComRazao(params),
+      qb_cliente_criar:      () => qbClienteCriar(params),
       desp_nao_cadastradas:  () => despesasNaoCadastradas(params),
       desp_criar_replicar:   () => despesaCriarReplicar(params),
       desp_ajustar_replicar: () => despesaAjustarReplicar(params),
@@ -3659,6 +3660,24 @@ async function conferirComRazao({ conta_id, data_inicio, data_fim } = {}) {
     casados: casadas.length, so_no_sistema: soSistema, so_no_razao: soRazao,
     resumo: { casados: casadas.length, so_sistema: soSistema.length, so_razao: soRazao.length, valor_so_sistema: somaAssinada(soSistema), valor_so_razao: somaAssinada(soRazao) },
     leitura, razao_linhas: linhasRazao.length, sistema_linhas: linhasSis.length, razao_erro: razaoR.erro || razao.erro || null };
+}
+
+// ═══ v2.60: criar Customer no QuickBooks a partir do feed de prospecção ═══
+async function qbClienteCriar({ nome, contato, email, telefone, cnpj } = {}) {
+  if (!nome) throw new Error('nome obrigatório');
+  if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
+  const token = await qbToken();
+  const limpo = String(nome).trim().substring(0, 100).replace(/'/g, '');
+  // já existe?
+  const ex = (await qbQuery(`select Id, DisplayName from Customer where DisplayName = '${limpo}' maxresults 1`, token))?.QueryResponse?.Customer?.[0];
+  if (ex) return { id: ex.Id, nome: ex.DisplayName, criado: false };
+  const corpo = { DisplayName: limpo, CompanyName: limpo, Notes: 'Prospecção · criado pelo Atlantyx OS' };
+  if (contato) { const p = String(contato).trim().split(' '); corpo.GivenName = p[0]; if (p.length > 1) corpo.FamilyName = p.slice(1).join(' '); }
+  if (email) corpo.PrimaryEmailAddr = { Address: email };
+  if (telefone) corpo.PrimaryPhone = { FreeFormNumber: String(telefone).replace(/^55/, '+55 ') };
+  if (cnpj) corpo.PrimaryTaxIdentifier = String(cnpj).replace(/[^0-9]/g, '');
+  const r = await qbFetch('/customer', token, 'POST', corpo);
+  return { id: r?.Customer?.Id, nome: r?.Customer?.DisplayName, criado: true };
 }
 
 // ═══ v2.29: DESPESAS FUTURAS — descobrir, criar e replicar 12 meses no QuickBooks ═══
