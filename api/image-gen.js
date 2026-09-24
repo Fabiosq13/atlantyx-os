@@ -29,6 +29,7 @@ export default async function handler(req, res) {
       modelo = 'V_2',
       negativo = 'blurry, low quality, text errors, watermark, amateur, cartoon, childish',
       magic_prompt = true,
+      estilo_padrao = true,   // v2.72: false = não acrescenta o estilo fixo (autocampanha usa foto realista)
     } = req.body;
 
     if (!prompt) return res.status(400).json({ error: 'prompt obrigatorio' });
@@ -45,7 +46,7 @@ export default async function handler(req, res) {
     const apiKeyClean = apiKey.trim().replace(/\s+/g, '');
     console.log(`[Ideogram] Key: ${apiKeyClean.substring(0,8)}... len:${apiKeyClean.length}`);
 
-    const promptFinal = `${prompt}
+    const promptFinal = estilo_padrao === false ? prompt : `${prompt}
 
 Visual style: premium B2B tech corporate, dark navy blue (#1A3A8F) background, electric blue accent (#4F7CFF), bold clean typography, data visualization elements, professional consulting aesthetic, no clutter, high contrast`;
 
