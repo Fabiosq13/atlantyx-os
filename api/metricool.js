@@ -182,6 +182,7 @@ async function _filaTabela() {
     etapa TEXT DEFAULT 'texto', status TEXT DEFAULT 'pendente', tentativas INT DEFAULT 0,
     texto TEXT, angulo TEXT, oferta TEXT, link TEXT, comentario TEXT, link_instagram TEXT, link_bio TEXT,
     imagem_url TEXT, metricool_id TEXT, erro TEXT, criado_em TIMESTAMPTZ DEFAULT NOW(), atualizado_em TIMESTAMPTZ DEFAULT NOW())`;
+  try { await sql`ALTER TABLE autocampanha_fila ADD COLUMN IF NOT EXISTS imagem_prompt TEXT`; } catch (_) {}
   return sql;
 }
 async function filaEnfileirar({ slots = [], tema, redes, blog_id, apenas_rascunho = true, com_imagem = true } = {}) {
@@ -227,6 +228,7 @@ async function filaProcessar({ lote } = {}) {
       const p = (r.posts || [])[0];
       if (!p || !p.texto) throw new Error((r.erros || [])[0] || r.aviso || 'sem texto');
       const prox = it.com_imagem ? 'imagem' : (it.apenas_rascunho ? 'fim' : 'agendar');
+      try { await sql`UPDATE autocampanha_fila SET imagem_prompt = ${p.imagem_prompt || null} WHERE id = ${it.id}`; } catch (_) {}
       await sql`UPDATE autocampanha_fila SET texto = ${p.texto}, angulo = ${p.angulo || null}, oferta = ${p.oferta || null}, link = ${p.link || null},
         comentario = ${p.comentario || null}, link_instagram = ${p.link_instagram || null}, link_bio = ${p.link_bio || null},
         etapa = ${prox}, status = ${prox === 'fim' ? 'pronto' : 'pendente'}, erro = NULL, atualizado_em = NOW() WHERE id = ${it.id}`;
@@ -234,9 +236,14 @@ async function filaProcessar({ lote } = {}) {
     }
     if (it.etapa === 'imagem') {
       const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
-      const prompt = `Editorial illustration for a LinkedIn post by a B2B data & AI consultancy. Theme: ${it.angulo || it.oferta || 'data and AI in enterprise operations'}. Clean, modern, abstract, corporate; navy blue and gold palette; no text, no letters, no logos, no faces.`;
+      // v2.72: a cena vem do próprio post (escrita pela IA junto com o texto). Sem ela, deriva do
+      // texto do post — nunca mais só do "ângulo" em 3 palavras, que deixava o Ideogram inventar.
+      const cena = it.imagem_prompt || `Professional corporate photograph illustrating: ${String(it.texto || '').replace(/\s+/g, ' ').substring(0, 220)}. Setting: energy utility control room or modern data center with dashboards.`;
+      const prompt = `${cena} Photorealistic corporate photography, B2B technology consulting, natural light, shallow depth of field, navy blue and gold color accents.`;
       const r = await fetch(base + '/api/image-gen', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, formato: 'ASPECT_1_1', estilo: 'DESIGN', quantidade: 1 }) });
+        body: JSON.stringify({ prompt, formato: 'ASPECT_1_1', estilo: 'REALISTIC', quantidade: 1,
+          magic_prompt: false, estilo_padrao: false,   // o "magic prompt" reescrevia o pedido e gerava coisas fora de contexto (animais etc.)
+          negativo: 'animal, monkey, ape, dog, cat, bird, cartoon, anime, illustration, character, mascot, toy, childish, fantasy, text, letters, words, watermark, logo, close-up face, distorted, blurry, low quality' }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || !d.success || !d.imagens?.length) throw new Error(d.error || 'image-gen HTTP ' + r.status);
       let url = d.imagens[0].url || d.imagens[0];
@@ -463,7 +470,12 @@ O MAIS IMPORTANTE — o post precisa gerar LEAD, não só curtida:
 - Não escreva a URL no texto — o sistema coloca o link no comentário.
 - Proibido terminar só com pergunta retórica ou "o que você acha?" — isso gera engajamento e zero lead.
 
-Devolva SOMENTE JSON: {"texto":"...","angulo":"em 5 palavras, o ângulo escolhido","oferta":"o que está sendo oferecido, em até 8 palavras"}`;
+IMAGEM — escreva também, EM INGLÊS, a descrição de UMA cena fotográfica que ilustre ESTE post especificamente.
+Deve ser concreta e do mundo corporativo real: salas de controle de energia, subestações, turbinas eólicas, data centers,
+dashboards em telas, reuniões de diretoria vistas de longe, mesas de trabalho com gráficos, redes de dados, linhas de transmissão.
+Proibido: animais, personagens, desenhos, rostos em close, texto ou letras na imagem, logotipos, qualquer coisa lúdica.
+
+Devolva SOMENTE JSON: {"texto":"...","angulo":"em 5 palavras, o ângulo escolhido","oferta":"o que está sendo oferecido, em até 8 palavras","imagem":"scene description in English, 20-40 words"}`;
       const user = `Tema geral: ${temaBase}
 Data da publicação: ${slot.data} (${slot.dia_semana}) às ${slot.hora}
 ${slot.hora < '11:00' ? 'Horário da manhã: pode ser um post mais analítico, para quem abre o feed começando o dia.'
@@ -504,7 +516,7 @@ Evite repetir o mesmo ângulo de outros posts da semana.`;
       }
 
       if (apenas_rascunho) {
-        criados.push({ ...slot, texto: j.texto, angulo: j.angulo, oferta: j.oferta, link: j.link, link_instagram: j.link_instagram, link_bio: j.link_bio, comentario: j.comentario, status: 'rascunho' });
+        criados.push({ ...slot, texto: j.texto, angulo: j.angulo, oferta: j.oferta, imagem_prompt: j.imagem || null, link: j.link, link_instagram: j.link_instagram, link_bio: j.link_bio, comentario: j.comentario, status: 'rascunho' });
       } else {
         const quando = `${slot.data}T${slot.hora}:00`;
         const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID;
@@ -527,7 +539,7 @@ Evite repetir o mesmo ângulo de outros posts da semana.`;
           body.media = conv; body.medias = conv;
         }
         const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
-        criados.push({ ...slot, texto: j.texto, angulo: j.angulo, oferta: j.oferta, link: j.link, link_instagram: j.link_instagram, link_bio: j.link_bio, comentario: j.comentario, status: 'agendado', metricool_id: r?.id || r?.data?.id || null });
+        criados.push({ ...slot, texto: j.texto, angulo: j.angulo, oferta: j.oferta, imagem_prompt: j.imagem || null, link: j.link, link_instagram: j.link_instagram, link_bio: j.link_bio, comentario: j.comentario, status: 'agendado', metricool_id: r?.id || r?.data?.id || null });
       }
     } catch (e) { erros.push(`${slot.data} ${slot.hora}: ${e.message}`); }
   }
