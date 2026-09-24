@@ -223,7 +223,7 @@ export default async function handler(req, res) {
       const c = await cartaoGet();
       if (req.query.vcard) { res.setHeader('Content-Type', 'text/vcard; charset=utf-8'); res.setHeader('Content-Disposition', `attachment; filename="${(c.nome||'contato').replace(/\s+/g,'_')}.vcf"`); return res.status(200).send(vcard(c)); }
       const pub = { ...c }; delete pub.foto_media_id; pub.foto_url = c.foto_media_id ? baseUrl() + '/api/media?id=' + c.foto_media_id : null;
-      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.setHeader('Cache-Control', 'no-store');   // v2.62: sem cache — o cartão mostrava dados antigos por 5 min após salvar
       return res.status(200).json({ success: true, cartao: pub });
     } catch (e) { return res.status(500).json({ success: false, error: e.message }); }
   }
