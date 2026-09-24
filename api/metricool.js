@@ -255,6 +255,26 @@ async function filaProcessar({ lote } = {}) {
     return { id: it.id, ok: true };
   } catch (e) { return await falhar(e.message); }
 }
+// v2.70: agenda os RASCUNHOS já prontos — sem reescrever texto nem regerar imagem.
+// Muda os itens prontos e não agendados para a etapa "agendar"; a fila faz o resto.
+async function filaAgendarRascunhos({ lote, ids } = {}) {
+  const sql = await _filaTabela();
+  const alvo = Array.isArray(ids) && ids.length
+    ? await sql`SELECT id FROM autocampanha_fila WHERE id = ANY(${ids}) AND status = 'pronto' AND metricool_id IS NULL AND texto IS NOT NULL`
+    : lote
+      ? await sql`SELECT id FROM autocampanha_fila WHERE lote = ${lote} AND status = 'pronto' AND metricool_id IS NULL AND texto IS NOT NULL`
+      : await sql`SELECT id FROM autocampanha_fila WHERE status = 'pronto' AND metricool_id IS NULL AND texto IS NOT NULL AND criado_em >= NOW() - INTERVAL '7 days'`;
+  const lista = alvo.map(a => a.id);
+  if (!lista.length) return { agendando: 0, aviso: 'Nenhum rascunho pronto para agendar.' };
+  // horário no passado não pode ser agendado — avisa e pula
+  const passados = await sql`SELECT id, data, hora FROM autocampanha_fila WHERE id = ANY(${lista}) AND (data || ' ' || hora) < TO_CHAR(NOW() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD HH24:MI')`;
+  const idsPassados = new Set(passados.map(p => p.id));
+  const validos = lista.filter(id => !idsPassados.has(id));
+  if (validos.length) await sql`UPDATE autocampanha_fila SET apenas_rascunho = false, etapa = 'agendar', status = 'pendente', tentativas = 0, erro = NULL, atualizado_em = NOW() WHERE id = ANY(${validos})`;
+  const lotes = await sql`SELECT DISTINCT lote FROM autocampanha_fila WHERE id = ANY(${lista})`;
+  return { agendando: validos.length, pulados_horario_passado: passados.map(p => `${p.data} ${p.hora}`), lotes: lotes.map(l => l.lote) };
+}
+
 async function filaLimpar({ lote } = {}) {
   const sql = await _filaTabela();
   if (lote) await sql`DELETE FROM autocampanha_fila WHERE lote = ${lote}`; else await sql`DELETE FROM autocampanha_fila WHERE status IN ('pronto','falhou') AND criado_em < NOW() - INTERVAL '7 days'`;
@@ -590,6 +610,7 @@ export default async function handler(req, res) {
     fila_status:            () => filaStatus(payload),
     fila_processar:         () => filaProcessar(payload),
     fila_limpar:            () => filaLimpar(payload),
+    fila_agendar_rascunhos: () => filaAgendarRascunhos(payload),
     story_agendar:          () => storyAgendar(payload),
     autocampanha_planejar:  () => autoCampanhaPlanejar(payload),
     autocampanha_executar:  () => autoCampanhaExecutar(payload),
