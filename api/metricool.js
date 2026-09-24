@@ -194,7 +194,9 @@ async function _claudeAuto(system, user, maxTokens = 700) {
   const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), 50000);
   const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ctrl.signal,
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6', max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] }) });
+    // v2.66: Haiku para os textos da autocampanha — o Sonnet levava 8–14s e estourava o limite de
+    // 10s do plano Hobby do Vercel ("Failed to fetch" em todo post). Haiku responde em 2–4s.
+    body: JSON.stringify({ model: process.env.CLAUDE_MODEL_RAPIDO || 'claude-haiku-4-5-20251001', max_tokens: Math.min(maxTokens, 500), system, messages: [{ role: 'user', content: user }] }) });
   clearTimeout(tm);
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error('Claude API [' + r.status + ']: ' + (d.error?.message || 'erro'));
@@ -276,6 +278,7 @@ async function autoCampanhaPlanejar({ dias, horarios, pular_fim_de_semana, blog_
 
 // Gera o conteúdo e agenda, um slot por vez
 async function autoCampanhaExecutar({ dias, horarios, pular_fim_de_semana, tema, redes, blog_id, apenas_rascunho = false, limite = 21, slots = null } = {}) {
+  const _t0 = Date.now();
   const cfg = await autoCampanhaConfig();
   // v2.16: quando o navegador manda `slots`, gera só esses (lote). Evita o "Failed to fetch":
   // 15 posts de uma vez levavam ~90s e a função era cortada pelo limite do Vercel.
