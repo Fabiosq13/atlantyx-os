@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cartão — Atlantyx</title>
+<style>
+  :root { --azul:#1A3A8F; --azul2:#0F2660; --ouro:#E0A422; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif; background:linear-gradient(160deg,#0F2660,#1A3A8F 60%,#0b1a45); color:#fff; display:flex; align-items:center; justify-content:center; padding:24px 14px; }
+  .card { width:100%; max-width:420px; background:#fff; color:#1c2333; border-radius:22px; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.35); }
+  .topo { background:var(--azul); padding:28px 22px 60px; text-align:center; position:relative; }
+  .topo .marca { font-size:12px; letter-spacing:3px; color:var(--ouro); font-weight:800; }
+  .foto { width:118px; height:118px; border-radius:50%; border:5px solid #fff; object-fit:cover; background:#e6e9f2; margin:-59px auto 0; display:block; box-shadow:0 6px 18px rgba(0,0,0,.2); }
+  .foto.vazia { display:flex; align-items:center; justify-content:center; font-size:44px; color:var(--azul); font-weight:800; }
+  .nome { text-align:center; margin:12px 0 2px; font-size:24px; font-weight:800; color:var(--azul2); }
+  .cargo { text-align:center; color:#5a6478; font-size:14px; }
+  .tag { text-align:center; color:#8a93a8; font-size:12px; margin:4px 20px 0; }
+  .acoes { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:18px 20px 6px; }
+  .acoes a { display:flex; align-items:center; justify-content:center; gap:6px; padding:12px; border-radius:11px; text-decoration:none; font-weight:700; font-size:14px; }
+  .wa { background:#25D366; color:#fff; } .mail { background:var(--azul); color:#fff; } .tel { background:#eef1f8; color:var(--azul2); } .vcf { background:var(--ouro); color:#1c2333; }
+  .qr { text-align:center; padding:12px 20px 6px; }
+  .qr canvas, .qr img { border-radius:10px; border:1px solid #e3e7f0; padding:6px; background:#fff; }
+  .qr .leg { font-size:11px; color:#8a93a8; margin-top:6px; }
+  .info { padding:6px 22px 20px; font-size:12.5px; color:#5a6478; line-height:1.7; }
+  .info div { display:flex; gap:8px; }
+  .info span:first-child { width:18px; text-align:center; }
+  .clientes { text-align:center; font-size:11px; color:#8a93a8; padding:0 20px 18px; }
+  .rodape { text-align:center; font-size:11px; color:rgba(255,255,255,.5); margin-top:14px; }
+</style>
+</head>
+<body>
+<div>
+<div class="card" id="card"><div style="padding:40px;text-align:center;color:#8a93a8;">Carregando...</div></div>
+<div class="rodape">Atlantyx OS · cartão digital</div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+(async () => {
+  const r = await fetch('/api/prospeccao?cartao=1'); const d = await r.json(); const c = d.cartao || {};
+  const wa = String(c.whatsapp || c.telefone || '').replace(/[^0-9]/g, '');
+  const waNum = wa ? (wa.length <= 11 ? '55' + wa : wa) : '';
+  const waLink = waNum ? `https://wa.me/${waNum}?text=${encodeURIComponent('Olá ' + (c.nome||'').split(' ')[0] + ', vi seu cartão da Atlantyx.')}` : '';
+  const ini = (c.nome || 'A').split(' ').map(x => x[0]).slice(0, 2).join('').toUpperCase();
+  document.getElementById('card').innerHTML = `
+    <div class="topo"><div class="marca">${(c.empresa||'ATLANTYX').toUpperCase()}</div></div>
+    ${c.foto_url ? `<img class="foto" src="${c.foto_url}" alt="${c.nome||''}">` : `<div class="foto vazia">${ini}</div>`}
+    <div class="nome">${c.nome||''}</div>
+    <div class="cargo">${[c.cargo, c.empresa].filter(Boolean).join(' · ')}</div>
+    ${c.tagline ? `<div class="tag">${c.tagline}</div>` : ''}
+    <div class="acoes">
+      ${waLink ? `<a class="wa" href="${waLink}" target="_blank">💬 WhatsApp</a>` : ''}
+      ${c.email ? `<a class="mail" href="mailto:${c.email}">✉ E-mail</a>` : ''}
+      ${c.telefone ? `<a class="tel" href="tel:+${String(c.telefone).replace(/[^0-9]/g,'')}">📞 Ligar</a>` : ''}
+      <a class="vcf" href="/api/prospeccao?vcard=1">💾 Salvar contato</a>
+    </div>
+    ${waLink ? `<div class="qr"><div id="qr"></div><div class="leg">Aponte a câmera para abrir o WhatsApp</div></div>` : ''}
+    <div class="info">
+      ${c.email ? `<div><span>✉</span><span>${c.email}</span></div>` : ''}
+      ${c.telefone ? `<div><span>📞</span><span>+${String(c.telefone).replace(/[^0-9]/g,'')}</span></div>` : ''}
+      ${c.site ? `<div><span>🌐</span><a href="${c.site}" target="_blank" style="color:#1A3A8F;">${c.site.replace(/^https?:\/\//,'')}</a></div>` : ''}
+      ${c.linkedin ? `<div><span>in</span><a href="${c.linkedin}" target="_blank" style="color:#1A3A8F;">LinkedIn</a></div>` : ''}
+      ${c.endereco_rj ? `<div><span>📍</span><span>${c.endereco_rj}</span></div>` : ''}
+      ${c.endereco_sp ? `<div><span>📍</span><span>${c.endereco_sp}</span></div>` : ''}
+    </div>
+    ${c.clientes ? `<div class="clientes">Clientes: ${c.clientes}</div>` : ''}`;
+  if (waLink && window.QRCode) new QRCode(document.getElementById('qr'), { text: waLink, width: 168, height: 168, correctLevel: QRCode.CorrectLevel.M });
+  document.title = (c.nome || 'Cartão') + ' — ' + (c.empresa || 'Atlantyx');
+})().catch(e => { document.getElementById('card').innerHTML = '<div style="padding:30px;color:#D64545;">' + e.message + '</div>'; });
+</script>
+</body>
+</html>
