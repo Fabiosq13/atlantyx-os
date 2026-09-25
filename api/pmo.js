@@ -1,3 +1,8 @@
+
+// v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
+// SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
+// Antes, toda chamada sql.query() falhava em silêncio: colunas novas nunca eram criadas.
+const _q = (db, texto, params) => (typeof db.query === 'function' ? db.query(texto, params) : db(texto, params));
 // api/pmo.js — v1.62 · S9 · Projetos
 // Sala de reunião com os gerentes de projeto + Status Report (criação e visualização).
 // Os dados de projeto podem vir de um sistema EXTERNO (outro projeto no Vercel) — o conector
@@ -55,7 +60,7 @@ async function ensureTabelas(sql) {
     'riscos_projeto JSONB DEFAULT \'[]\'',         // issues descrição ação responsável probabilidade
     'cliente TEXT',
   ]) {
-    try { await sql.query(`ALTER TABLE status_reports ADD COLUMN IF NOT EXISTS ${col}`); } catch (e) { console.warn('[PMO] migração:', e.message); }
+    try { await _q(sql, `ALTER TABLE status_reports ADD COLUMN IF NOT EXISTS ${col}`); } catch (e) { console.warn('[PMO] migração:', e.message); }
   }
   await sql`CREATE TABLE IF NOT EXISTS pmo_projetos_config (
     projeto_nome TEXT PRIMARY KEY,
@@ -542,9 +547,9 @@ async function cronoSchema({ tabela } = {}) {
       WHERE table_schema = 'public' AND table_name = ${tabela}
       ORDER BY ordinal_position`;
     let amostra = [];
-    try { amostra = await sql.query(`SELECT * FROM "${tabela}" LIMIT 3`); } catch (e) { /* tabela vazia ou sem permissão */ }
+    try { amostra = await _q(sql, `SELECT * FROM "${tabela}" LIMIT 3`); } catch (e) { /* tabela vazia ou sem permissão */ }
     let total = null;
-    try { const c = await sql.query(`SELECT COUNT(*)::int AS n FROM "${tabela}"`); total = c[0]?.n ?? null; } catch (_) {}
+    try { const c = await _q(sql, `SELECT COUNT(*)::int AS n FROM "${tabela}"`); total = c[0]?.n ?? null; } catch (_) {}
     // v1.99: tabelas do tipo "store" (chave-valor com JSON) precisam ser abertas por dentro —
     // as colunas não dizem nada sobre o que está guardado.
     const nomes = cols.map(c => c.column_name.toLowerCase());
@@ -555,13 +560,13 @@ async function cronoSchema({ tabela } = {}) {
       const colChave = cols.find(c => ['key','chave','k'].includes(c.column_name.toLowerCase()))?.column_name;
       const colValor = cols.find(c => ['value','valor','v','data','payload','json'].includes(c.column_name.toLowerCase()))?.column_name;
       try {
-        const ks = await sql.query(`SELECT "${colChave}" AS chave,
+        const ks = await _q(sql, `SELECT "${colChave}" AS chave,
           LEFT(("${colValor}")::text, 120) AS previa,
           LENGTH(("${colValor}")::text) AS tamanho
           FROM "${tabela}" ORDER BY LENGTH(("${colValor}")::text) DESC LIMIT 60`);
         chaves = ks.map(k => ({ chave: k.chave, previa: k.previa, tamanho: k.tamanho }));
         if (ks[0]) {
-          const v = await sql.query(`SELECT ("${colValor}")::text AS v FROM "${tabela}" WHERE "${colChave}" = $1 LIMIT 1`, [ks[0].chave]);
+          const v = await _q(sql, `SELECT ("${colValor}")::text AS v FROM "${tabela}" WHERE "${colChave}" = $1 LIMIT 1`, [ks[0].chave]);
           exemploValor = String(v[0]?.v || '').substring(0, 1500);
         }
       } catch (e) { chaves = [{ erro: e.message }]; }
@@ -593,7 +598,7 @@ async function cronoSchema({ tabela } = {}) {
   const comContagem = [];
   for (const t of tabelas) {
     let n = null;
-    try { const c = await sql.query(`SELECT COUNT(*)::int AS n FROM "${t.table_name}"`); n = c[0]?.n ?? null; } catch (_) {}
+    try { const c = await _q(sql, `SELECT COUNT(*)::int AS n FROM "${t.table_name}"`); n = c[0]?.n ?? null; } catch (_) {}
     comContagem.push({ tabela: t.table_name, colunas: t.n_colunas, registros: n });
   }
   return { tabelas: comContagem.sort((a, b) => (b.registros || 0) - (a.registros || 0)),
@@ -615,7 +620,7 @@ async function cronoSchema({ tabela } = {}) {
 async function cronoLerChave({ tabela, chave, coluna_chave = 'key', coluna_valor = 'value' } = {}) {
   if (!tabela || !chave) throw new Error('tabela e chave obrigatórias');
   const sql = await getSqlCrono();
-  const r = await sql.query(`SELECT ("${coluna_valor}")::text AS valor FROM "${tabela}" WHERE "${coluna_chave}" = $1 LIMIT 1`, [chave]);
+  const r = await _q(sql, `SELECT ("${coluna_valor}")::text AS valor FROM "${tabela}" WHERE "${coluna_chave}" = $1 LIMIT 1`, [chave]);
   const bruto = r[0]?.valor || null;
   if (!bruto) return { chave, encontrado: false };
   let json = null, tipo = 'texto';
@@ -638,7 +643,7 @@ async function cronoConsultar({ sql: query, limite = 50 } = {}) {
   }
   const sql = await getSqlCrono();
   const comLimite = /\blimit\b/i.test(q) ? q : `${q.replace(/;+$/, '')} LIMIT ${Math.min(parseInt(limite) || 50, 500)}`;
-  const linhas = await sql.query(comLimite);
+  const linhas = await _q(sql, comLimite);
   return { linhas, total: linhas.length, consulta: comLimite };
 }
 
@@ -670,7 +675,7 @@ async function apontamentoHoras({ projeto, data_inicio, data_fim, tabela, col_pr
   const where = cond.length ? 'WHERE ' + cond.join(' AND ') : '';
 
   try {
-    const linhas = await sql.query(`SELECT "${cP}" AS projeto, "${cU}" AS pessoa, "${cD}" AS data,
+    const linhas = await _q(sql, `SELECT "${cP}" AS projeto, "${cU}" AS pessoa, "${cD}" AS data,
       SUM(("${cH}")::numeric) AS horas FROM "${T}" ${where}
       GROUP BY 1,2,3 ORDER BY 3 DESC LIMIT 2000`);
 
@@ -787,7 +792,7 @@ async function cronogramaBuscarBanco({ projeto } = {}) {
 
   if (cfg.chave) {
     // store chave-valor: o cronograma está dentro de um JSON
-    const r = await sql.query(
+    const r = await _q(sql, 
       `SELECT ("${cfg.col_valor || 'value'}")::text AS v FROM "${cfg.tabela}" WHERE "${cfg.col_chave || 'key'}" = $1 LIMIT 1`,
       [cfg.chave]);
     const bruto = r[0]?.v;
@@ -800,7 +805,7 @@ async function cronogramaBuscarBanco({ projeto } = {}) {
       if (cand) lista = cand;
     }
   } else {
-    lista = await sql.query(`SELECT * FROM "${cfg.tabela}" LIMIT 5000`);
+    lista = await _q(sql, `SELECT * FROM "${cfg.tabela}" LIMIT 5000`);
   }
 
   const pega = (o, ...ks) => { for (const k of ks) if (o?.[k] != null && o[k] !== '') return o[k]; return null; };
