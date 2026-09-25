@@ -174,7 +174,22 @@ const normEmpresa = s => String(s || '').toLowerCase().normalize('NFD').replace(
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. IMPORTAR TERMO (o frontend já leu o XLSX com SheetJS e manda o JSON pronto)
 // ═══════════════════════════════════════════════════════════════════════════
-async function termoImportar({ arquivo_nome, cabecalho = {}, empresas = [] } = {}) {
+async function termoImportar({ arquivo_nome, cabecalho = {}, empresas = [], forcar_duplicado = false } = {}) {
+  // v2.86: bloqueia a criação de um SEGUNDO termo com o mesmo número + projeto — era assim que as notas
+  // de uma pessoa iam para um registro e as de outra para o outro. Só cria se o usuário confirmar.
+  if (!forcar_duplicado && cabecalho.numero_termo) {
+    const sql0 = await getSql();
+    const alvo = String(cabecalho.numero_termo).trim().replace(/^0+/, '').split('/')[0].trim();
+    const ex = await sql0`SELECT id, numero_termo, projeto, status, periodo_medicao, criado_em FROM termos_faturamento
+      WHERE LTRIM(SPLIT_PART(TRIM(COALESCE(numero_termo,'')), '/', 1), '0') = ${alvo}`;
+    const normP = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+    const mesmo = ex.filter(x => !cabecalho.projeto || !x.projeto || normP(x.projeto) === normP(cabecalho.projeto) || normP(x.projeto).includes(normP(cabecalho.projeto)) || normP(cabecalho.projeto).includes(normP(x.projeto)));
+    if (mesmo.length) {
+      const e = new Error(`Já existe o termo nº ${mesmo[0].numero_termo} (${mesmo[0].projeto || 'sem projeto'}, ${mesmo[0].status}, período ${mesmo[0].periodo_medicao || '—'}). Importar de novo cria um DUPLICADO e as notas ficam divididas entre os dois.`);
+      e.dica = 'Para atualizar o termo existente, abra-o no Kanban e use Editar. Se for mesmo um termo diferente com o mesmo número, confirme a importação.';
+      e.duplicado_de = mesmo[0].id; throw e;
+    }
+  }
   if (!empresas.length) throw new Error('Nenhuma empresa/rateio encontrado no arquivo — confira se a aba "Termo_Aceite" tem a tabela "Valores e Rateios entre as Empresas"');
   const sql = await getSql();
   const id = novoId('termo');
@@ -829,7 +844,10 @@ async function _vincularEmpresaNota(sql, termo_id, nf_valor) {
 async function termoRecomputarNotas({ termo_id } = {}) {
   if (!termo_id) throw new Error('termo_id obrigatório');
   const sql = await getSql();
-  const soltas = await sql`SELECT id, nf_numero, nf_valor FROM termos_notas_encontradas WHERE termo_id = ${termo_id} AND empresa_id IS NULL AND nf_valor IS NOT NULL`;
+  // v2.86: "solta" = sem empresa OU apontando para empresa que não existe (mais) neste termo
+  const soltas = await sql`SELECT n.id, n.nf_numero, n.nf_valor FROM termos_notas_encontradas n
+    WHERE n.termo_id = ${termo_id} AND n.nf_valor IS NOT NULL
+      AND (n.empresa_id IS NULL OR NOT EXISTS (SELECT 1 FROM termos_empresas e WHERE e.id = n.empresa_id AND e.termo_id = ${termo_id}))`;
   const vinculadas = [], sem = [];
   for (const n of soltas) {
     const e = await _vincularEmpresaNota(sql, termo_id, n.nf_valor);
@@ -843,6 +861,42 @@ async function termoRecomputarNotas({ termo_id } = {}) {
   const recalc = await recalcularNf(termo_id);
   const tot = await sql`SELECT COUNT(*)::int AS n FROM termos_notas_encontradas WHERE termo_id = ${termo_id}`;
   return { notas_no_termo: tot[0]?.n || 0, vinculadas, sem_vinculo: sem, nf_status: recalc.status, nf_soma: recalc.soma, nf_diferenca: recalc.diff };
+}
+
+// v2.86: rastreia TODOS os termos com o mesmo número (duplicados por reimportação) e onde está cada nota
+async function termoRastrearNotas({ termo_id, numero } = {}) {
+  const sql = await getSql();
+  let nro = numero;
+  if (!nro && termo_id) nro = (await sql`SELECT numero_termo FROM termos_faturamento WHERE id = ${termo_id}`)[0]?.numero_termo;
+  if (!nro) throw new Error('Informe o número do termo');
+  const alvo = String(nro).trim().replace(/^0+/, '').split('/')[0].trim();
+  const termos = await sql`SELECT id, numero_termo, projeto, contratante, status, periodo_medicao, valor_total_termo, nf_soma, nf_status, criado_em, atualizado_em
+    FROM termos_faturamento WHERE LTRIM(SPLIT_PART(TRIM(COALESCE(numero_termo,'')), '/', 1), '0') = ${alvo} ORDER BY criado_em`;
+  const out = [];
+  for (const t of termos) {
+    const emps = await sql`SELECT id, empresa, valor_parcela, nf_status FROM termos_empresas WHERE termo_id = ${t.id}`;
+    const ids = new Set(emps.map(e => e.id));
+    const notas = await sql`SELECT id, nf_numero, nf_valor, anexo_nome, origem, empresa_id, criado_em FROM termos_notas_encontradas WHERE termo_id = ${t.id} ORDER BY criado_em`;
+    out.push({ id: t.id, numero: t.numero_termo, projeto: t.projeto, cliente: t.contratante, status: t.status, periodo: t.periodo_medicao,
+      valor: num(t.valor_total_termo), nf_soma: num(t.nf_soma), nf_status: t.nf_status,
+      criado_em: t.criado_em ? String(t.criado_em).substring(0, 16).replace('T', ' ') : null, empresas: emps.length,
+      notas: notas.map(n => ({ id: n.id, nf: n.nf_numero, valor: num(n.nf_valor), arquivo: n.anexo_nome, origem: n.origem,
+        vinculada: !!(n.empresa_id && ids.has(n.empresa_id)), criado_em: n.criado_em ? String(n.criado_em).substring(0, 16).replace('T', ' ') : null })) });
+  }
+  return { numero: nro, termos: out, duplicado: out.length > 1,
+    leitura: out.length > 1 ? `Existem ${out.length} termos com o nº ${nro}. As notas podem ter sido carregadas em um deles e você estar olhando o outro — use "mover notas" para juntá-las no termo certo.` : (out.length === 1 ? 'Só existe um termo com esse número.' : 'Nenhum termo com esse número.') };
+}
+// Move TODAS as notas de um termo para outro (juntar duplicados) e recomputa o destino
+async function termoMoverNotas({ de_termo_id, para_termo_id, arquivar_origem = false } = {}) {
+  if (!de_termo_id || !para_termo_id || de_termo_id === para_termo_id) throw new Error('Informe origem e destino diferentes');
+  const sql = await getSql();
+  const r = await sql`UPDATE termos_notas_encontradas SET termo_id = ${para_termo_id}, empresa_id = NULL WHERE termo_id = ${de_termo_id} RETURNING id`;
+  const rec = await termoRecomputarNotas({ termo_id: para_termo_id });
+  try { await recalcularNf(de_termo_id); } catch (_) {}
+  if (arquivar_origem) {
+    try { await sql`UPDATE termos_faturamento SET status = 'concluido', concluido_motivo = ${'duplicado — notas movidas para ' + para_termo_id}, atualizado_em = NOW() WHERE id = ${de_termo_id}`; } catch (_) {}
+  }
+  return { movidas: r.length, destino: rec };
 }
 
 async function termoNfUpload({ termo_id, empresa_id, nf_numero, nf_valor, anexo_nome, arquivo_url, tipo_arquivo } = {}) {
@@ -1385,6 +1439,8 @@ export default async function handler(req, res) {
     termo_nf_upload:           () => termoNfUpload(payload),
     termo_nf_excluir:          () => termoNfExcluir(payload),
     termo_recomputar_notas:    () => termoRecomputarNotas(payload),
+    termo_rastrear_notas:      () => termoRastrearNotas(payload),
+    termo_mover_notas:         () => termoMoverNotas(payload),
     termo_empresa_marcar_pago: () => termoEmpresaMarcarPago(payload),
     termo_empresa_desmarcar_pago: () => termoEmpresaDesmarcarPago(payload),
     termo_empresa_datas:       () => termoEmpresaDatas(payload),
@@ -1402,6 +1458,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, action, ...resultado });
   } catch (error) {
     console.error('[ERRO faturamento]', action, error.message);
-    return res.status(500).json({ success: false, error: error.message, dica: error.dica || null });
+    return res.status(500).json({ success: false, error: error.message, dica: error.dica || null, duplicado_de: error.duplicado_de || null });
   }
 }
