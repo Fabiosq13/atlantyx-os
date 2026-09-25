@@ -137,7 +137,8 @@ async function storyTexto({ tema, oferta } = {}) {
   const system = `Você escreve o texto de um STORY de Instagram para a Atlantyx (dados e IA para grandes empresas).
 REGRAS: título de até 6 palavras que para o dedo; uma frase de apoio de até 14 palavras; uma chamada de até 5 palavras
 apontando para o link (ex.: "Toque no link", "Arraste para cima"). Sem hashtag, sem emoji além de 1. Português do Brasil.
-Devolva SOMENTE JSON: {"titulo":"...","apoio":"...","chamada":"...","oferta":"o que ganha ao clicar, até 8 palavras"}`;
+Escreva também, EM INGLÊS, uma cena fotográfica VERTICAL e concreta do mundo corporativo real (sala de controle de energia, data center, subestação, turbinas, dashboards), sem animais, sem pessoas em close, sem texto.
+Devolva SOMENTE JSON: {"titulo":"...","apoio":"...","chamada":"...","oferta":"o que ganha ao clicar, até 8 palavras","imagem":"vertical scene in English, 20-35 words"}`;
   const user = `Tema: ${tema || 'dados e IA aplicada'}${oferta ? '\nOferta: ' + oferta : ''}`;
   const txt = await _claudeAuto(system, user, 400);
   return JSON.parse(String(txt).replace(/```json|```/g, '').trim());
@@ -183,19 +184,31 @@ async function _filaTabela() {
     texto TEXT, angulo TEXT, oferta TEXT, link TEXT, comentario TEXT, link_instagram TEXT, link_bio TEXT,
     imagem_url TEXT, metricool_id TEXT, erro TEXT, criado_em TIMESTAMPTZ DEFAULT NOW(), atualizado_em TIMESTAMPTZ DEFAULT NOW())`;
   try { await sql`ALTER TABLE autocampanha_fila ADD COLUMN IF NOT EXISTS imagem_prompt TEXT`; } catch (_) {}
+  try { await sql`ALTER TABLE autocampanha_fila ADD COLUMN IF NOT EXISTS tipo TEXT DEFAULT 'post'`; } catch (_) {}
+  try { await sql`ALTER TABLE autocampanha_fila ADD COLUMN IF NOT EXISTS story_json TEXT`; } catch (_) {}
   return sql;
 }
-async function filaEnfileirar({ slots = [], tema, redes, blog_id, apenas_rascunho = true, com_imagem = true } = {}) {
+async function filaEnfileirar({ slots = [], tema, redes, blog_id, apenas_rascunho = true, com_imagem = true, stories = false, story_hora = '10:00' } = {}) {
   if (!slots.length) throw new Error('nenhum slot');
   const sql = await _filaTabela();
   const lote = 'lt_' + Date.now().toString(36);
+  // v2.73: um STORY do Instagram por dia do plano
+  if (stories) {
+    const dias = [...new Set(slots.map(s => s.data))];
+    for (const d of dias) {
+      const id = `${lote}_story_${d}`;
+      await sql`INSERT INTO autocampanha_fila (id, lote, data, hora, tema, redes, blog_id, apenas_rascunho, com_imagem)
+        VALUES (${id}, ${lote}, ${d}, ${story_hora}, ${tema || null}, ${JSON.stringify(['instagram'])}, ${blog_id || null}, ${!!apenas_rascunho}, true) ON CONFLICT (id) DO NOTHING`;
+      try { await sql`UPDATE autocampanha_fila SET tipo = 'story' WHERE id = ${id}`; } catch (_) {}
+    }
+  }
   for (const s of slots) {
     const id = `${lote}_${s.data}_${String(s.hora).replace(':', '')}`;
     await sql`INSERT INTO autocampanha_fila (id, lote, data, hora, dia_semana, tema, redes, blog_id, apenas_rascunho, com_imagem)
       VALUES (${id}, ${lote}, ${s.data}, ${s.hora}, ${s.dia_semana || null}, ${tema || null}, ${JSON.stringify(redes || ['linkedin'])}, ${blog_id || null}, ${!!apenas_rascunho}, ${!!com_imagem})
       ON CONFLICT (id) DO NOTHING`;
   }
-  return { lote, enfileirados: slots.length };
+  return { lote, enfileirados: slots.length, stories: stories ? [...new Set(slots.map(s => s.data))].length : 0 };
 }
 async function filaStatus({ lote } = {}) {
   const sql = await _filaTabela();
@@ -221,6 +234,41 @@ async function filaProcessar({ lote } = {}) {
     await sql`UPDATE autocampanha_fila SET status = ${t >= 3 ? 'falhou' : 'pendente'}, tentativas = ${t}, erro = ${String(msg).substring(0, 300)}, atualizado_em = NOW() WHERE id = ${it.id}`;
     return { id: it.id, etapa: it.etapa, erro: msg, tentativa: t, desistiu: t >= 3 };
   };
+  const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
+  const NEG = 'animal, monkey, ape, dog, cat, bird, cartoon, anime, illustration, character, mascot, toy, childish, fantasy, text, letters, words, watermark, logo, close-up face, distorted, blurry, low quality';
+  // v2.73: STORY — texto curto + fundo vertical 9:16 + composição com título/oferta/link (JPEG)
+  if (it.tipo === 'story') {
+    try {
+      if (it.etapa === 'texto') {
+        const t = await storyTexto({ tema: it.tema });
+        const link = `${base}/captura.html?utm_source=instagram&utm_medium=stories&utm_campaign=${it.data}`;
+        await sql`UPDATE autocampanha_fila SET story_json = ${JSON.stringify({ ...t, link })}, texto = ${(t.titulo || '') + ' — ' + (t.apoio || '')},
+          angulo = ${t.oferta || null}, link = ${link}, etapa = 'imagem', status = 'pendente', erro = NULL, atualizado_em = NOW() WHERE id = ${it.id}`;
+        try { await sql`UPDATE autocampanha_fila SET imagem_prompt = ${t.imagem || null} WHERE id = ${it.id}`; } catch (_) {}
+        return { id: it.id, etapa: 'texto', ok: true, proxima: 'imagem', tipo: 'story' };
+      }
+      if (it.etapa === 'imagem') {
+        const st = JSON.parse(it.story_json || '{}');
+        const cena = it.imagem_prompt || 'Vertical photograph of a modern energy utility control room with large grid monitoring dashboards, operators seen from behind, dusk light';
+        const r = await fetch(base + '/api/image-gen', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: cena + ' Photorealistic corporate photography, dark tones at the bottom.', formato: 'ASPECT_9_16', estilo: 'REALISTIC', quantidade: 1, magic_prompt: false, estilo_padrao: false, negativo: NEG }) });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || !d.success || !d.imagens?.length) throw new Error(d.error || 'image-gen HTTP ' + r.status);
+        const comp = await fetch(base + '/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'story_compor', payload: { url: d.imagens[0].url || d.imagens[0], titulo: st.titulo, apoio: st.apoio, oferta: st.oferta, chamada: st.chamada || 'Link na bio', link: st.link } }) }).then(x => x.json());
+        if (!comp.success || !comp.url) throw new Error(comp.error || 'falha ao compor o story');
+        const prox = it.apenas_rascunho ? 'fim' : 'agendar';
+        await sql`UPDATE autocampanha_fila SET imagem_url = ${comp.url}, etapa = ${prox}, status = ${prox === 'fim' ? 'pronto' : 'pendente'}, erro = NULL, atualizado_em = NOW() WHERE id = ${it.id}`;
+        return { id: it.id, etapa: 'imagem', ok: true, tipo: 'story' };
+      }
+      if (it.etapa === 'agendar') {
+        const a = await storyAgendar({ imagem_url: it.imagem_url, quando: `${it.data}T${it.hora}:00`, texto: it.texto, link: it.link, blog_id: it.blog_id });
+        await sql`UPDATE autocampanha_fila SET metricool_id = ${a.metricool_id || null}, etapa = 'fim', status = 'pronto', erro = NULL, atualizado_em = NOW() WHERE id = ${it.id}`;
+        return { id: it.id, etapa: 'agendar', ok: true, tipo: 'story' };
+      }
+      await sql`UPDATE autocampanha_fila SET status = 'pronto' WHERE id = ${it.id}`; return { id: it.id, ok: true };
+    } catch (e) { return await falhar(e.message); }
+  }
   try {
     if (it.etapa === 'texto') {
       const r = await autoCampanhaExecutar({ tema: it.tema, redes: it.redes, blog_id: it.blog_id, apenas_rascunho: true,
@@ -248,7 +296,7 @@ async function filaProcessar({ lote } = {}) {
       if (!r.ok || !d.success || !d.imagens?.length) throw new Error(d.error || 'image-gen HTTP ' + r.status);
       let url = d.imagens[0].url || d.imagens[0];
       try { const m = await fetch(base + '/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'salvar_de_url', payload: { url, origem: 'autocampanha' } }) }).then(x => x.json()); if (m.success && m.url) url = m.url; } catch (_) {}
+          body: JSON.stringify({ action: 'salvar_de_url', payload: { url, origem: 'autocampanha', jpeg: true } }) }).then(x => x.json()); if (m.success && m.url) url = m.url; } catch (_) {}
       const prox = it.apenas_rascunho ? 'fim' : 'agendar';
       await sql`UPDATE autocampanha_fila SET imagem_url = ${url}, etapa = ${prox}, status = ${prox === 'fim' ? 'pronto' : 'pendente'}, erro = NULL, atualizado_em = NOW() WHERE id = ${it.id}`;
       return { id: it.id, etapa: 'imagem', ok: true, proxima: prox };
