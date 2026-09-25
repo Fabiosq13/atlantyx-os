@@ -1216,6 +1216,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <div class="page" id="page-s7feed">
   <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(34,211,163,.03));border:1px solid rgba(34,211,163,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
     <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#9889; Feed de Prospeccao</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Digite nome + e-mail ou telefone (e empresa, se souber). O sistema cadastra no QuickBooks e dispara a apresentacao.</div></div>
+    <button class="btn" style="font-size:10px;" onclick="feedTestarEmail()" title="Confere se o envio de e-mail (SMTP do Gmail) esta configurado">&#128268; Testar envio de e-mail</button>
     <button class="btn" style="font-size:10px;" onclick="feedConfig()">&#9881; Apresentacao e textos</button>
   </div>
   <div class="panel" style="margin-bottom:12px;"><div class="pb">
@@ -19881,7 +19882,7 @@ function mapaExportar() {
 // ═══ v2.60: FEED DE PROSPECÇÃO ═══
 async function prospApi(action, payload = {}) {
   const r = await fetch('/api/prospeccao', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, payload }) });
-  const d = await r.json().catch(() => ({})); if (!r.ok || d.success === false) throw new Error(d.error || 'HTTP ' + r.status); return d;
+  const d = await r.json().catch(() => ({})); if (!r.ok || d.success === false) { const e = new Error(d.error || 'HTTP ' + r.status); e.dica = d.dica; throw e; } return d;
 }
 let _feedPrevT = null;
 function feedPreview() {
@@ -19998,7 +19999,17 @@ async function feedDisparar(id) {
       anexo_media_id: _feedAnexo ? _feedAnexo.media_id : '', anexo_nome: _feedAnexo?.nome || null });
     toast(`E-mail enviado para ${r.para}${r.anexos ? ' com anexo' : ' sem anexo'}`, 'success');
     document.getElementById('feedEdModal').style.display = 'none'; feedListar();
-  } catch (e) { toast('Erro ao enviar: ' + e.message, 'error'); if (btn) { btn.disabled = false; btn.textContent = '📤 Disparar e-mail'; } }
+  } catch (e) { toast('Erro ao enviar: ' + e.message, 'error'); if (e.dica) alert(e.message + '\n\nComo resolver:\n' + e.dica.replace(/ (\d\))/g, '\n$1')); if (btn) { btn.disabled = false; btn.textContent = '📤 Disparar e-mail'; } }
+}
+async function feedTestarEmail() {
+  toast('Testando a conexão com o Gmail...', 'success');
+  try {
+    const r = await prospApi('testar_email');
+    if (r.ok) { toast('✓ ' + r.mensagem, 'success'); alert('✓ ' + r.mensagem + '\n\nRemetente: ' + r.usuario); return; }
+    alert('✗ Envio de e-mail NÃO está funcionando.\n\n' + (r.erro || '') + (r.aviso ? '\n\n⚠ ' + r.aviso : '')
+      + '\n\nVariáveis encontradas no Vercel: ' + ((r.variaveis_presentes || []).join(', ') || 'nenhuma')
+      + (r.como ? '\n\nComo resolver:\n' + r.como.replace(/ (\d\))/g, '\n$1') : ''));
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
 async function feedReenviar(id) { try { const r = await prospApi('feed_reenviar', { id }); toast('E-mail reenviado' + (r.anexos ? ' com anexo' : ' (sem anexo)'), 'success'); feedListar(); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
 async function feedConfig() {
@@ -23989,7 +24000,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.79] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.80] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -24005,7 +24016,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.79';
+window.__ATX_BUILD_ID__ = 'ATX-v2.80';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
