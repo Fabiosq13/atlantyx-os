@@ -227,7 +227,7 @@ async function enviarEmail({ lead_id, assunto, corpo, aprovado_por } = {}) {
   const l = r[0];
   if (!l.email) throw new Error(`${l.empresa} está sem e-mail cadastrado`);
 
-  const user = process.env.EMAIL_IMAP_USER || 'atlanteambr@gmail.com';
+  const user = (process.env.EMAIL_SMTP_USER || process.env.EMAIL_IMAP_USER) || 'atlanteambr@gmail.com';
   const pass = process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS;
   let nodemailer = null;
   try { const m = await import('nodemailer'); nodemailer = m.default || m; } catch (_) {}
