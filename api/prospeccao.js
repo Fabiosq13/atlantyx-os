@@ -23,6 +23,9 @@ async function getSql() {
     canal TEXT, status TEXT DEFAULT 'novo', qb_customer_id TEXT, qb_erro TEXT,
     email_enviado_em TIMESTAMPTZ, email_erro TEXT, whatsapp_enviado_em TIMESTAMPTZ, whatsapp_erro TEXT,
     mensagem TEXT, criado_em TIMESTAMPTZ DEFAULT NOW())`;
+  for (const col of ['contexto TEXT', 'assunto TEXT', 'anexo_media_id TEXT', 'anexo_nome TEXT']) {
+    try { await _sql.query(`ALTER TABLE prospeccao_feed ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
+  }
   await _sql`CREATE TABLE IF NOT EXISTS app_config (chave TEXT PRIMARY KEY, valor JSONB, atualizado_em TIMESTAMPTZ DEFAULT NOW())`;
   return _sql;
 }
@@ -80,7 +83,8 @@ function baseUrl() { return (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-
 // ── 3. QuickBooks: cadastrar o contato como Customer ──
 async function qbCadastrar(c) {
   const r = await fetch(baseUrl() + '/api/financeiro', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'qb_cliente_criar', params: { nome: c.empresa ? `${c.empresa} — ${c.nome}` : c.nome, contato: c.nome, email: c.email, telefone: c.telefone } }) });
+    body: JSON.stringify({ action: 'qb_cliente_criar', params: { nome: c.empresa ? `${c.empresa} — ${c.nome}` : c.nome, contato: c.nome, email: c.email, telefone: c.telefone,
+      notas: 'Prospecção · Atlantyx OS' + (c.contexto ? ' · onde nos conhecemos: ' + c.contexto : '') + (c.cargo ? ' · cargo: ' + c.cargo : '') } }) });
   const d = await r.json().catch(() => ({}));
   if (!r.ok || d.success === false) throw new Error(d.error || 'HTTP ' + r.status);
   return d.id || d.cliente?.id || null;
@@ -90,7 +94,7 @@ async function qbCadastrar(c) {
 async function gerarTexto(c, cfg, canal) {
   const key = process.env.ANTHROPIC_API_KEY;
   const fallback = canal === 'email'
-    ? `Olá ${c.nome},\n\nSou o Fabio Quintanilha, CEO da Atlantyx. Há 17 anos ajudamos empresas como CPFL, Enel e Caixa a transformar dados em decisão — com engenharia de dados, analytics e IA aplicada à operação.\n\nSegue em anexo uma apresentação curta. Se fizer sentido para ${c.empresa || 'a sua empresa'}, proponho uma conversa de 30 minutos para entender o seu cenário.\n\n${cfg.assinatura}`
+    ? `Olá ${c.nome},\n\n${c.contexto ? 'Foi um prazer o contato em ' + c.contexto + '. ' : ''}Sou o Fabio Quintanilha, CEO da Atlantyx. Há 17 anos ajudamos empresas como CPFL, Enel e Caixa a transformar dados em decisão — com engenharia de dados, analytics e IA aplicada à operação.\n\nSegue em anexo uma apresentação curta. Se fizer sentido para ${c.empresa || 'a sua empresa'}, proponho uma conversa de 30 minutos para entender o seu cenário.\n\n${cfg.assinatura}`
     : `Olá ${c.nome}, aqui é o Fabio Quintanilha, da Atlantyx. Trabalhamos com dados e IA para grandes operações (CPFL, Enel, Caixa). Posso te mandar uma apresentação curta? Se preferir, aqui está o link: ${cfg.apresentacao_url || baseUrl() + '/captura.html?utm_source=whatsapp&utm_medium=prospeccao'}`;
   if (!key) return fallback;
   try {
@@ -99,7 +103,8 @@ async function gerarTexto(c, cfg, canal) {
       body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 500, system: canal === 'email'
         ? `Escreva um e-mail de apresentação da Atlantyx (17 anos, dados/analytics/IA para grandes empresas; clientes CPFL, Enel, Caixa, Jelta) para um contato novo. Tom de CEO falando com um par: direto, sem jargão de marketing, sem "revolucionar". 90 a 130 palavras. Mencione que a apresentação vai em anexo. Feche pedindo uma conversa de 30 min. Assine como "${cfg.assinatura}". Devolva só o corpo do e-mail, sem assunto.`
         : `Escreva uma mensagem de WhatsApp de primeiro contato da Atlantyx (dados e IA para grandes empresas). Máximo 60 palavras, tom pessoal, sem emoji além de 1, terminando com a oferta de enviar a apresentação. Assine como Fabio. Devolva só a mensagem.`,
-        messages: [{ role: 'user', content: `Contato: ${c.nome}${c.cargo ? ', ' + c.cargo : ''}${c.empresa ? ', empresa ' + c.empresa : ''}.` }] }) });
+        messages: [{ role: 'user', content: `Contato: ${c.nome}${c.cargo ? ', ' + c.cargo : ''}${c.empresa ? ', empresa ' + c.empresa : ''}.`
+          + (c.contexto ? `\nOnde nos conhecemos / contexto do contato: ${c.contexto}. ABRA o e-mail retomando esse contexto de forma natural e específica (ex.: "Foi ótimo conversar com você no ..."), sem soar genérico.` : '\nPrimeiro contato frio — não finja que já se conheceram.') }] }) });
     const d = await r.json();
     const txt = d?.content?.find(x => x.type === 'text')?.text?.trim();
     return txt || fallback;
@@ -107,7 +112,8 @@ async function gerarTexto(c, cfg, canal) {
 }
 
 // ── 5. E-mail com anexo ──
-async function enviarEmail(c, cfg, corpo) {
+async function enviarEmail(c, cfg, corpo, over = {}) {
+  cfg = { ...cfg, ...(over.assunto ? { assunto: over.assunto } : {}), ...(over.anexo_media_id !== undefined ? { apresentacao_media_id: over.anexo_media_id, apresentacao_nome: over.anexo_nome || cfg.apresentacao_nome } : {}) };
   const nodemailer = (await import('nodemailer')).default;
   const user = process.env.EMAIL_IMAP_USER, pass = process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS;
   if (!user || !pass) throw new Error('EMAIL_IMAP_USER/EMAIL_SMTP_PASS não configurados');
@@ -136,8 +142,9 @@ async function enviarWhatsApp(telefone, mensagem) {
 }
 
 // ── 7. Incluir (o fluxo completo) ──
-async function feedIncluir({ texto, contato, enviar = true } = {}) {
+async function feedIncluir({ texto, contato, enviar = true, contexto } = {}) {
   const c = contato && contato.nome ? contato : interpretarContato(texto);
+  if (contexto) c.contexto = String(contexto).trim();
   if (!c.valido && !(c.nome && (c.email || c.telefone))) throw new Error(c.aviso || 'Contato incompleto');
   const sql = await getSql();
   const cfg = await configGet();
@@ -151,7 +158,9 @@ async function feedIncluir({ texto, contato, enviar = true } = {}) {
   catch (e) { etapas.quickbooks = 'falha: ' + e.message; await sql`UPDATE prospeccao_feed SET qb_erro = ${e.message} WHERE id = ${id}`; }
   // Mensagem
   const mensagem = await gerarTexto(c, cfg, canal);
+  const assunto = c.contexto ? `${c.nome.split(' ')[0]}, retomando nossa conversa — Atlantyx` : cfg.assunto;
   await sql`UPDATE prospeccao_feed SET mensagem = ${mensagem} WHERE id = ${id}`;
+  try { await sql`UPDATE prospeccao_feed SET contexto = ${c.contexto || null}, assunto = ${assunto} WHERE id = ${id}`; } catch (_) {}
   if (enviar) {
     if (canal === 'email') {
       try { const r = await enviarEmail(c, cfg, mensagem); etapas.email = r.anexos ? 'ok, com anexo' : 'ok, SEM anexo (configure a apresentação)';
@@ -166,7 +175,8 @@ async function feedIncluir({ texto, contato, enviar = true } = {}) {
       } else { etapas.whatsapp = 'registrado para envio (Z-API não configurada — use o botão 📲 para abrir no WhatsApp)'; await sql`UPDATE prospeccao_feed SET status = 'whatsapp_pendente' WHERE id = ${id}`; }
     }
   } else { await sql`UPDATE prospeccao_feed SET status = 'registrado' WHERE id = ${id}`; }
-  return { id, contato: c, canal, mensagem, etapas,
+  return { id, contato: c, canal, mensagem, assunto, etapas,
+    anexo_padrao: cfg.apresentacao_media_id ? { media_id: cfg.apresentacao_media_id, nome: cfg.apresentacao_nome } : null,
     whatsapp_link: c.telefone ? `https://wa.me/${c.telefone}?text=${encodeURIComponent(mensagem)}` : null };
 }
 async function feedListar({ dias = 30 } = {}) {
@@ -180,6 +190,18 @@ async function feedEnviarWhatsApp({ id } = {}) {
   await enviarWhatsApp(r.telefone, r.mensagem);
   await sql`UPDATE prospeccao_feed SET whatsapp_enviado_em = NOW(), whatsapp_erro = NULL, status = 'whatsapp_enviado' WHERE id = ${id}`;
   return { ok: true };
+}
+// v2.79: disparo a partir do editor — com o assunto, corpo e anexo que o usuário revisou na tela
+async function feedDisparar({ id, assunto, corpo, anexo_media_id, anexo_nome, para } = {}) {
+  const sql = await getSql();
+  const r = (await sql`SELECT * FROM prospeccao_feed WHERE id = ${id}`)[0]; if (!r) throw new Error('Registro não encontrado');
+  const destino = (para || r.email || '').trim(); if (!destino) throw new Error('Sem e-mail de destino');
+  const cfg = await configGet();
+  const txt = corpo || r.mensagem;
+  const res = await enviarEmail({ ...r, email: destino }, cfg, txt, { assunto: assunto || r.assunto || cfg.assunto, anexo_media_id: anexo_media_id === '' ? null : (anexo_media_id ?? cfg.apresentacao_media_id), anexo_nome });
+  await sql`UPDATE prospeccao_feed SET mensagem = ${txt}, email = ${destino}, email_enviado_em = NOW(), email_erro = NULL, status = 'email_enviado' WHERE id = ${id}`;
+  try { await sql`UPDATE prospeccao_feed SET assunto = ${assunto || r.assunto || null}, anexo_media_id = ${anexo_media_id || null}, anexo_nome = ${anexo_nome || null} WHERE id = ${id}`; } catch (_) {}
+  return { ok: true, anexos: res.anexos, para: destino };
 }
 async function feedReenviar({ id } = {}) {
   const sql = await getSql();
@@ -237,6 +259,7 @@ export default async function handler(req, res) {
     feed_config_set: () => configSet(payload),
     feed_enviar_whatsapp: () => feedEnviarWhatsApp(payload),
     feed_reenviar: () => feedReenviar(payload),
+    feed_disparar: () => feedDisparar(payload),
     cartao_get: () => cartaoGet(),
     cartao_set: () => cartaoSet(payload),
   };
