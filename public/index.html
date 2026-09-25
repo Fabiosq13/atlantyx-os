@@ -660,6 +660,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
                   <option value="President">President</option>
                   <option value="custom">Cargo personalizado...</option>
                 </select>
+          <label style="display:flex;align-items:center;gap:4px;font-size:9.5px;color:var(--t2);margin-top:3px;cursor:pointer;" title="Desmarcado, o Apollo inclui cargos parecidos (ex.: CFO traz também Finance Manager)"><input type="checkbox" id="liCargoEstrito" checked/> só o cargo exato</label>
               </div>
               <div class="fg" style="margin-bottom:8px;" id="liCargoCustomDiv" style="display:none;">
                 <label class="fl">Cargo personalizado</label>
@@ -729,7 +730,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;margin-bottom:10px;">
             <div style="font-family:var(--M);font-size:8px;color:var(--t2);margin-bottom:6px;">OU BUSCA POR NOME / URL LINKEDIN</div>
             <div style="display:flex;gap:8px;">
-              <input class="fi" id="liNomeDirecto" placeholder="Ex: Carlos Mendes, linkedin.com/in/carlos-mendes..." style="flex:1;font-size:11px;"/>
+              <input class="fi" id="liNomeDirecto" placeholder="Nome  ·  Nome, Empresa  ·  ou URL do LinkedIn — ex.: Carlos Mendes, Petrobras" style="flex:1;font-size:11px;" onkeydown="if(event.key==='Enter')buscarPorNomeApollo()"/>
               <button class="btn btn-g" style="font-size:10px;white-space:nowrap;" onclick="buscarPorNomeApollo()">Buscar</button>
             </div>
           </div>
@@ -758,7 +759,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
             </div>
           </div>
           <div style="background:var(--bg3);border-bottom:1px solid var(--bd);padding:8px 12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-            <span style="font-family:var(--M);font-size:8px;color:var(--t2);text-transform:uppercase;white-space:nowrap;">Filtrar:</span>
+            <span style="font-family:var(--M);font-size:8px;color:var(--t2);text-transform:uppercase;white-space:nowrap;">Filtrar:<input class="fi" id="liBuscaResultados" placeholder="Filtrar resultados por nome, empresa ou cargo…" style="width:230px;font-size:10.5px;padding:4px 8px;margin-right:6px;" oninput="filtrarLeadsCanal(liFiltroAtual || 'todos')"/></span>
             <button class="btn" id="filtLI_todos"    onclick="filtrarLeadsCanal('todos')"    style="font-size:9px;padding:3px 10px;border-color:var(--blue);color:var(--blue);">Todos</button>
             <button class="btn" id="filtLI_linkedin" onclick="filtrarLeadsCanal('linkedin')" style="font-size:9px;padding:3px 10px;">&#128101; LinkedIn</button>
             <button class="btn" id="filtLI_email"    onclick="filtrarLeadsCanal('email')"    style="font-size:9px;padding:3px 10px;">&#9993; E-mail</button>
@@ -4292,7 +4293,7 @@ function renderPipelineEtapas(e){const ETAPAS=['Mapeado','Abordado','Respondeu',
 function renderPipelineMock(){const mock={'Mapeado':12,'Abordado':8,'Respondeu':4,'Reuniao':3,'Proposta':1,'Fechado':0};const el=document.getElementById('s7-pipeline');if(el)el.innerHTML=Object.entries(mock).map(([n,c])=>`<div class="pc"><div class="pch">${n}<span class="pcnt">${c}</span></div><div style="font-size:9px;color:var(--t3);padding:4px;">Conecte HubSpot</div></div>`).join('');}
 async function loadKPIs(){const data=await api('/api/analytics?tipo=kpis');if(!data||!data.kpis){addLog('warn','KPIs: configure HUBSPOT_TOKEN');return;}const k=data.kpis;document.getElementById('kLeads').textContent=k.leads_30_dias||'--';document.getElementById('kScoreA').textContent=k.score_a||'--';document.getElementById('k_leads30').textContent=k.leads_30_dias||'--';document.getElementById('k_mql').textContent=(k.taxa_qualificacao||0)+'%';document.getElementById('s7_d30').textContent=k.deals_30_dias||'--';document.getElementById('s7_tq').textContent=(k.taxa_qualificacao||0)+'%';document.getElementById('p_fc').textContent=k.pipeline_valor?'R$'+(k.pipeline_valor/1000000).toFixed(1)+'M':'--';addLog('success','[S2-09] KPIs: '+k.leads_30_dias+' leads, '+k.taxa_qualificacao+'% qualificacao');}
 async function loadAnalytics(){addLog('info','[S2-09] Gerando analise Claude...');const data=await api('/api/analytics?tipo=analise');if(!data||!data.analise){addLog('err','Analytics: erro');return;}const a=data.analise;const html=`<div style="margin-bottom:9px;"><div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--green);margin-bottom:5px;">INSIGHTS</div>${(a.insights||[]).map((x,n)=>`<div style="padding:5px 0;border-bottom:1px solid var(--bd);font-size:11.5px;"><strong style="color:var(--blue);">${n+1}.</strong> ${x}</div>`).join('')}</div><div style="margin-bottom:9px;"><div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:var(--red);margin-bottom:5px;">ALERTAS</div>${(a.alertas||[]).map(x=>`<div style="padding:5px 8px;background:var(--r2);border-radius:5px;font-size:11px;margin-bottom:4px;">! ${x}</div>`).join('')}</div><div style="padding:8px;background:var(--b2);border-radius:5px;font-size:11px;color:var(--blue);"><strong>Recomendacao:</strong> ${a.recomendacao_principal||''}</div>`;document.getElementById('dash-insights').innerHTML=html;document.getElementById('s2-insights').innerHTML=html;addLog('success','[S2-09] Analise concluida: '+a.tendencia);}
-async function runProspect(){const btn=document.getElementById('btnProspect');const st=document.getElementById('prospStatus');const res=document.getElementById('prospResult');btn.disabled=true;btn.textContent='Mapeando...';st.textContent='Executando';st.className='tag on';res.innerHTML='<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:10px;">Agente S2-02 buscando empresas...</div>';addLog('info','[S2-02] Iniciando: '+document.getElementById('pSetor').value);const data=await api('/api/prospect-scan','POST',{setor:document.getElementById('pSetor').value,regiao:document.getElementById('pRegiao').value,faturamento_min:document.getElementById('pFat').value,cargo_decisor:document.getElementById('pCargo').value,quantidade:parseInt(document.getElementById('pQtd').value),iniciar_outreach:false,incluir_crm:false});if(!data||!data.empresas){st.textContent='Erro';st.className='tag hot';res.innerHTML='<div style="color:var(--red);font-size:11px;padding:10px;">Erro. Verifique variaveis de ambiente no Vercel.</div>';addLog('err','[S2-02] Erro no mapeamento');}else{st.textContent=data.total_mapeado+' empresas';st.className='tag live';res.innerHTML=renderProspectResult(data);document.getElementById('kLeads').textContent=data.total_mapeado;addLog('success','[S2-02] '+data.total_mapeado+' empresas mapeadas, Score A: '+data.score_a);toast(data.total_mapeado+' empresas mapeadas! Clique Carregar no CRM se quiser adicionar.','success');
+async function runProspect(){const btn=document.getElementById('btnProspect');const st=document.getElementById('prospStatus');const res=document.getElementById('prospResult');btn.disabled=true;btn.textContent='Mapeando...';st.textContent='Executando';st.className='tag on';res.innerHTML='<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:10px;">Agente S2-02 buscando empresas...</div>';addLog('info','[S2-02] Iniciando: '+document.getElementById('pSetor').value);const data=await api('/api/prospect-scan','POST',{setor:document.getElementById('pSetor').value,regiao:document.getElementById('pRegiao').value,faturamento_min:document.getElementById('pFat').value,cargo_decisor:document.getElementById('pCargo').value,quantidade:parseInt(document.getElementById('pQtd').value),iniciar_outreach:false,incluir_crm:false});if(!data||!data.empresas){st.textContent='Erro';st.className='tag hot';const _m=(data&&(data.error||data.erro||data.message))||(data?'resposta sem empresas':'sem resposta do servidor (função caiu ou excedeu o tempo)');res.innerHTML='<div style="color:var(--red);font-size:11px;padding:10px;">Não consegui mapear: '+String(_m).replace(/</g,'&lt;').substring(0,300)+'</div>';addLog('err','[S2-02] Erro no mapeamento: '+_m);}else{st.textContent=data.total_mapeado+' empresas';st.className='tag live';res.innerHTML=renderProspectResult(data);document.getElementById('kLeads').textContent=data.total_mapeado;addLog('success','[S2-02] '+data.total_mapeado+' empresas mapeadas, Score A: '+data.score_a);toast(data.total_mapeado+' empresas mapeadas! Clique Carregar no CRM se quiser adicionar.','success');
 }
 btn.disabled=false;btn.textContent='&#9654; Executar Agente';}
 async function runRfpMonitor(){const btn=document.getElementById('btnRfp');const res=document.getElementById('rfpResult');btn.disabled=true;btn.textContent='Varrendo...';res.innerHTML='<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:10px;">Agente S2-04 varrendo portais...</div>';addLog('info','[S2-04] Varrendo ComprasNet, SAP Ariba, Beehive...');const data=await api('/api/rfp-monitor','GET');if(!data){res.innerHTML='<div style="color:var(--red);font-size:11px;padding:10px;">Erro - configure CRON_SECRET</div>';addLog('err','[S2-04] Erro');}else{const rfps=data.rfps||[];document.getElementById('rfpCnt').textContent=rfps.length||'0';document.getElementById('kRfp').textContent=rfps.length||'0';if(rfps.length===0){res.innerHTML='<div style="color:var(--t2);font-size:11px;padding:10px;">Nenhum RFP novo. Proximo ciclo em 6h.</div>';}else{res.innerHTML='<div class="tw"><table><thead><tr><th>Empresa</th><th>Valor</th><th>Prazo</th></tr></thead><tbody>'+rfps.map(r=>`<tr><td><strong>${r.empresa}</strong></td><td style="font-family:var(--M);font-size:9.5px;color:var(--gold);">${r.valor}</td><td style="font-family:var(--M);font-size:9.5px;">${r.prazo}</td></tr>`).join('')+'</tbody></table></div>';addLog('success','[S2-04] '+rfps.length+' RFPs - notificacao WA enviada');toast(rfps.length+' RFPs identificados!','success');}}btn.disabled=false;btn.textContent='&#9654; Executar Agora';}
@@ -11620,13 +11621,19 @@ async function buscarLeadsApollo() {
 
   // LOG PASSO A PASSO
   addLog('info', '━━━ APOLLO BUSCA INICIADA ━━━');
-  addLog('info', '[STEP 1] Filtros: cargo="' + (cargo||'(todos)') + '" | setor="' + (setor||'(todos)') + '" | qtd=' + qtd);
+  addLog('info', '[STEP 1] Filtros: cargo="' + (cargo||'(todos)') + '" | setor="' + (setor||'(todos)') + '" | país="' + (document.getElementById('liPais')?.value||'(todos)') + '" | cidade="' + (document.getElementById('liCidade')?.value||'(todas)') + '" | qtd=' + qtd);
   addLog('info', '[STEP 2] API Key campo: ' + (creds.apolloKey ? creds.apolloKey.substring(0,8)+'...' : 'VAZIA — usa Vercel env var'));
 
-  // Montar body SEM organization_locations, SEM api_key no body
-  var body = { page: 1, per_page: qtd };
-  if (cargo) body.person_titles = [cargo];
-  if (setor) body.q_organization_industries = [setor];
+  // v2.89: TODOS os filtros da tela vão para o Apollo (antes país, cidade e faturamento eram ignorados)
+  var pais   = document.getElementById('liPais')?.value || '';
+  var cidade = (document.getElementById('liCidade')?.value || '').trim();
+  var fatMinBRL = parseInt(document.getElementById('liFatMin')?.value || '0');
+  var estrito = document.getElementById('liCargoEstrito') ? document.getElementById('liCargoEstrito').checked : true;
+  var body = { page: 1, per_page: qtd, cargo_estrito: estrito };
+  if (cargo) body.person_titles = cargo.split(/\s*[,;]\s*/).filter(Boolean);
+  if (setor) body.setores = [setor];
+  if (cidade || pais) body.person_locations = [cidade && pais ? cidade + ', ' + pais : (cidade || pais)];
+  if (fatMinBRL > 0) body.revenue_min = Math.round(fatMinBRL / 5.5);   // Apollo trabalha em USD (câmbio aproximado R$5,50)
 
   addLog('info', '[STEP 3] Body enviado ao proxy: ' + JSON.stringify(body));
   addLog('info', '[STEP 4] POST /api/apollo → mixed_people/api_search ...');
@@ -11651,7 +11658,8 @@ async function buscarLeadsApollo() {
     var people = d.people || [];
 
     addLog('info', '[STEP 6] total_entries Apollo: ' + (d.pagination?.total_entries || d.total_entries || '?') + ' | retornados: ' + people.length);
-    addLog('info', '[STEP 7] _stats: ' + JSON.stringify(d._stats || {}));
+    addLog('info', '[STEP 7] _stats: ' + JSON.stringify(d._stats || {}) + ' | filtros enviados: ' + JSON.stringify(d._filtros_enviados || {}));
+    window._liStats = d._stats || null;
 
     if (people.length > 0) {
       var p0 = people[0];
@@ -11710,7 +11718,10 @@ async function buscarLeadsApollo() {
     if (tag) { tag.textContent = liLeadsCache.length + ' leads'; tag.className = 'tag live'; }
 
     var countEl = document.getElementById('liFilterCount');
-    if (countEl) countEl.textContent = liLeadsCache.length + ' leads | Email: ' + comEM + ' | LI Empresa: ' + comLIemp + ' | WA: ' + comWA;
+    var st = window._liStats || {}; var desc = st.descartados || {};
+    var descTxt = (desc.cargo || desc.local) ? ' · conferência descartou ' + [(desc.cargo ? desc.cargo + ' fora do cargo' : ''), (desc.local ? desc.local + ' fora do local' : '')].filter(Boolean).join(', ') : '';
+    if (countEl) countEl.textContent = liLeadsCache.length + ' leads' + (st.total_apollo ? ' (de ' + st.total_apollo + ' no Apollo)' : '') + ' | Email: ' + comEM + ' | LI Empresa: ' + comLIemp + ' | WA: ' + comWA + descTxt;
+    var bf = document.getElementById('liBuscaResultados'); if (bf) bf.value = '';
 
     liFiltroAtual = 'todos';
     var btnT = document.getElementById('filtLI_todos');
@@ -11727,64 +11738,47 @@ async function buscarLeadsApollo() {
 }
 
 async function buscarPorNomeApollo() {
+  // v2.89: aceita "Nome", "Nome, Empresa" ou URL do LinkedIn. Antes pegava o 1º resultado de uma busca por
+  // palavra-chave — que muitas vezes era outra pessoa. Agora: com empresa ou URL, faz o "match" exato;
+  // sem empresa, busca e mostra SÓ quem tem o nome digitado, para você escolher.
   var creds = getLICredenciais();
-  // API Key via campo ou APOLLO_API_KEY no Vercel
-  var nome = document.getElementById('liNomeDirecto')?.value?.trim();
-  if (!nome) { toast('Digite um nome ou URL LinkedIn', 'error'); return; }
-
-  addLog('info', '[Apollo] Buscando por nome: ' + nome);
-
+  var entrada = document.getElementById('liNomeDirecto')?.value?.trim();
+  if (!entrada) { toast('Digite um nome (ou "Nome, Empresa") ou a URL do LinkedIn', 'error'); return; }
+  var lista = document.getElementById('liLeadsLista'), result = document.getElementById('liLeadsResultado');
+  if (result) result.style.display = 'block';
+  if (lista) lista.innerHTML = '<div style="color:var(--blue);font-size:11px;padding:16px;text-align:center;">Procurando "' + entrada.replace(/</g,'&lt;') + '" no Apollo...</div>';
+  var isUrl = /linkedin\.com\//i.test(entrada);
+  var partes = entrada.split(/\s*[,|]\s*/); var nome = isUrl ? '' : partes[0]; var empresa = isUrl ? '' : (partes[1] || '');
+  var paraLead = function(p) { return { id: 'li_direct_' + Date.now() + '_' + Math.random().toString(36).slice(2,5), apollo_id: p.id || '',
+    nome: ((p.first_name || '') + ' ' + (p.last_name || p.last_name_obfuscated || '')).trim() || p.name || '', first_name: p.first_name || '', last_name_full: p.last_name || '',
+    cargo: p.title || '', empresa: p.organization?.name || p.organization_name || '', setor: p.organization?.industry || '',
+    email: p.email || '', telefone: p.phone_numbers?.[0]?.sanitized_number || p.mobile_phone || '', linkedin_url: p.linkedin_url || (isUrl ? entrada : ''),
+    linkedin_empresa: p.organization?.linkedin_url || '', website_empresa: p.organization?.website_url || '', cidade: p.city || '', pais: p.country || '',
+    score: 'A', selecionado: true, status_li: 'pendente', status_wa: p.mobile_phone ? 'disponivel' : 'sem_tel', status_email: p.email ? 'disponivel' : 'sem_email', status_crm: 'novo' }; };
   try {
-    var isUrl = nome.includes('linkedin.com');
-    var body = isUrl
-      ? { api_key: creds.apolloKey, linkedin_url: nome }
-      : { api_key: creds.apolloKey, name: nome };
-
-    var endpoint = isUrl
-      ? 'https://api.apollo.io/v1/people/match'
-      : 'https://api.apollo.io/v1/mixed_people/search';
-
-    if (!isUrl) body.q_keywords = nome;
-
-    // Chamar via proxy
-    var proxyAction = isUrl ? 'person_match' : 'people_search';
-    var r = await fetch('/api/apollo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: proxyAction, api_key: creds.apolloKey, ...body })
-    });
-    var d = await r.json();
-    var person = d.person || (d.people||[])[0];
-
-    if (!person) { toast('Pessoa não encontrada no Apollo', 'error'); return; }
-
-    var lead = {
-      id: 'li_direct_' + Date.now(),
-      nome: (person.first_name||'') + ' ' + (person.last_name||''),
-      cargo: person.title || '',
-      empresa: person.organization?.name || '',
-      email: person.email || '',
-      telefone: person.phone_numbers?.[0]?.sanitized_number || '',
-      linkedin_url: person.linkedin_url || nome,
-      score: 'A',
-      selecionado: true,
-      status_li: 'pendente',
-      status_wa: person.mobile_phone ? 'disponivel' : 'sem_tel',
-    };
-
-    liLeadsCache.unshift(lead);
-    liSelecionados.unshift(lead);
-
-    var lista = document.getElementById('liLeadsLista');
-    var result = document.getElementById('liLeadsResultado');
-    if (result) result.style.display = 'block';
-    renderLeadsLI(lista, liLeadsCache);
-    toast('Lead encontrado: ' + lead.nome, 'success');
-    addLog('ok', '[Apollo] Lead direto: ' + lead.nome + ' | ' + lead.empresa);
-  } catch(e) {
-    toast('Erro: ' + e.message, 'error');
-    addLog('err', '[Apollo] Busca direta: ' + e.message);
-  }
+    var encontrados = [];
+    if (isUrl || empresa) {
+      var bodyM = isUrl ? { linkedin_url: entrada } : { name: nome, organization_name: empresa };
+      var rm = await fetch('/api/apollo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'person_match', api_key: creds.apolloKey, ...bodyM }) });
+      var dm = await rm.json().catch(function(){ return {}; });
+      if (dm.person) encontrados = [dm.person];
+    }
+    if (!encontrados.length && nome) {
+      var rs = await fetch('/api/apollo', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'people_search', api_key: creds.apolloKey, q_keywords: nome + (empresa ? ' ' + empresa : ''), nome_exato: nome, per_page: 25 }) });
+      var ds = await rs.json().catch(function(){ return {}; });
+      if (ds.success === false) throw new Error(ds.error || 'falha na busca');
+      encontrados = ds.people || [];
+    }
+    if (!encontrados.length) { if (lista) lista.innerHTML = '<div style="font-size:11px;color:var(--gold);padding:14px;">Ninguém com o nome "' + nome.replace(/</g,'&lt;') + '" encontrado' + (empresa ? ' na ' + empresa.replace(/</g,'&lt;') : '') + '. Tente "Nome Sobrenome, Empresa" ou a URL do LinkedIn.</div>'; return; }
+    var novos = encontrados.map(paraLead);
+    liLeadsCache = novos.concat(liLeadsCache.filter(function(l){ return !novos.some(function(n){ return n.apollo_id && n.apollo_id === l.apollo_id; }); }));
+    liSelecionados = liLeadsCache.filter(function(l){ return l.selecionado; });
+    renderLeadsLI(lista, novos);
+    var tag = document.getElementById('liLeadsTag'); if (tag) tag.textContent = novos.length + ' encontrado(s)';
+    var ce = document.getElementById('liFilterCount'); if (ce) ce.textContent = novos.length + ' pessoa(s) com o nome "' + (nome || 'da URL') + '"' + (empresa ? ' · ' + empresa : '') + ' — desmarque quem não for';
+    toast(novos.length === 1 ? 'Encontrado: ' + novos[0].nome + (novos[0].empresa ? ' · ' + novos[0].empresa : '') : novos.length + ' pessoas com esse nome — confira empresa e cargo', 'success');
+  } catch (e) { if (lista) lista.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Erro: ' + e.message + '</div>'; }
 }
 
 function calcScoreApollo(p) {
@@ -12847,6 +12841,9 @@ function filtrarLeadsCanal(canal) {
     : canal === 'email'    ? liLeadsCache.filter(function(l){return !!l.email;})
     : canal === 'whatsapp' ? liLeadsCache.filter(function(l){return !!l.telefone;})
     : liLeadsCache;
+  // v2.89: filtro de texto (nome, empresa, cargo, cidade) somado ao filtro de canal
+  var q = (document.getElementById('liBuscaResultados')?.value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  if (q) { var tk = q.split(/\s+/); filtrados = filtrados.filter(function(l){ var t = [l.nome, l.empresa, l.cargo, l.cidade, l.setor].join(' ').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); return tk.every(function(x){ return t.includes(x); }); }); }
   var countEl = document.getElementById('liFilterCount');
   if (countEl) countEl.textContent = filtrados.length + ' de ' + liLeadsCache.length;
   var lista = document.getElementById('liLeadsLista');
@@ -12856,6 +12853,15 @@ function filtrarLeadsCanal(canal) {
   if (tag) tag.textContent = filtrados.length + ' leads';
 }
 
+// v2.89: resumo do enriquecimento — era chamada mas nunca tinha sido criada (o botão quebrava no fim)
+function mostrarModalEnrichInfo(comLI, comEM, comWA) {
+  const total = (typeof liLeadsCache !== 'undefined' && liLeadsCache) ? liLeadsCache.length : 0;
+  if (!total) { toast('Nenhum lead com ID do Apollo para enriquecer — faça uma busca primeiro', 'error'); return; }
+  toast(`Enriquecimento concluído · LinkedIn: ${comLI || 0} · E-mail: ${comEM || 0}${comWA ? ' · WhatsApp: ' + comWA : ''} (de ${total})`, (comLI || comEM) ? 'success' : 'error');
+  const ce = document.getElementById('liFilterCount');
+  if (ce) ce.textContent = `${total} leads · após enriquecer: LinkedIn ${comLI || 0} · E-mail ${comEM || 0}${comWA ? ' · WhatsApp ' + comWA : ''}` + ((comLI || comEM) ? '' : ' — o plano do Apollo pode não liberar e-mail/LinkedIn (consome créditos de exportação)');
+  try { filtrarLeadsCanal(liFiltroAtual || 'todos'); } catch (_) {}
+}
 async function enriquecerLeads() {
   var btn = document.getElementById('btnEnriquecerLI');
   if (!liLeadsCache.length) { toast('Busque leads primeiro', 'error'); return; }
@@ -24112,7 +24118,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.88] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.89] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -24128,7 +24134,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.88';
+window.__ATX_BUILD_ID__ = 'ATX-v2.89';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
