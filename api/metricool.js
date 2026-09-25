@@ -465,19 +465,22 @@ async function _autoCampanhaAgendarUmANTIGO({ post, blog_id, redes } = {}) {
 const HORARIOS_PADRAO = ['08:30', '12:15', '17:30'];
 
 async function _claudeAuto(system, user, maxTokens = 700) {
+  const _modeloRapido = process.env.CLAUDE_MODEL_RAPIDO || 'claude-haiku-4-5-20251001';
+  const _aceitaPrefill = !/(opus-4-[6-9]|sonnet-4-[6-9]|sonnet-5|opus-5|fable|mythos)/i.test(_modeloRapido);
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
   const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), 50000);
   const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ctrl.signal,
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     // v2.66: Haiku para os textos da autocampanha — o Sonnet levava 8–14s e estourava o limite de
     // 10s do plano Hobby do Vercel ("Failed to fetch" em todo post). Haiku responde em 2–4s.
-    body: JSON.stringify({ model: process.env.CLAUDE_MODEL_RAPIDO || 'claude-haiku-4-5-20251001', max_tokens: Math.min(maxTokens, 500),
-      system: system + '\n\nIMPORTANTE: responda SOMENTE com o JSON pedido. Nunca peça mais informações — se faltar algo, escolha você mesmo um ângulo plausível e escreva.',
-      messages: [{ role: 'user', content: user }, { role: 'assistant', content: '{' }] }) });   // prefill: a resposta já começa com "{" 
+    body: JSON.stringify({ model: _modeloRapido, max_tokens: Math.min(maxTokens, 500),
+      system: system + '\n\nIMPORTANTE: responda SOMENTE com o JSON pedido, começando por "{". Nunca peça mais informações — se faltar algo, escolha você mesmo um ângulo plausível e escreva.',
+      // v2.93: pré-preenchimento só em modelos que aceitam — Opus/Sonnet 4.6+ e os modelos 5 respondem 400
+      messages: _aceitaPrefill ? [{ role: 'user', content: user }, { role: 'assistant', content: '{' }] : [{ role: 'user', content: user }] }) });
   clearTimeout(tm);
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error('Claude API [' + r.status + ']: ' + (d.error?.message || 'erro'));
-  const _raw = '{' + String(d.content?.[0]?.text || '' || '');
+  const _raw = (_aceitaPrefill ? '{' : '') + String(d.content?.[0]?.text || '' || '');
   // v2.67: extrai o primeiro objeto JSON válido, mesmo com texto em volta
   const _m = _raw.match(/\{[\s\S]*\}/);
   return _m ? _m[0] : _raw;
