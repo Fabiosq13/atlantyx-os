@@ -1,3 +1,15 @@
+
+// v2.81: servidor SMTP configurável — Gmail, HostGator (cPanel) ou outro.
+//   EMAIL_SMTP_HOST  (padrão: smtp.gmail.com se o usuário for @gmail; senão mail.<domínio do e-mail>)
+//   EMAIL_SMTP_PORT  (padrão 465 = SSL; 587 = STARTTLS)
+//   EMAIL_SMTP_TLS_RELAXADO=1  → aceita certificado que não bate com o host (comum em hospedagem compartilhada)
+function _smtpConfig(user, pass) {
+  const dom = String(user || '').split('@')[1] || '';
+  const host = process.env.EMAIL_SMTP_HOST || (/gmail\.com$/i.test(dom) ? 'smtp.gmail.com' : (dom ? 'mail.' + dom : 'smtp.gmail.com'));
+  const port = parseInt(process.env.EMAIL_SMTP_PORT || '465', 10);
+  return { host, port, secure: port === 465, auth: { user, pass }, connectionTimeout: 20000, greetingTimeout: 15000, socketTimeout: 30000,
+    ...(process.env.EMAIL_SMTP_TLS_RELAXADO === '1' ? { tls: { rejectUnauthorized: false } } : {}) };
+}
 // api/vendas-outbound.js — v1.70 · S7 · Vendas Ativo
 // Robô de contato com CEOs de grandes empresas: escreve, envia, lê a resposta,
 // classifica a intenção e monta o roteiro de visitas agrupado por região.
@@ -225,7 +237,7 @@ async function enviarEmail({ lead_id, assunto, corpo, aprovado_por } = {}) {
     throw err;
   }
   const cfg = await configGet();
-  const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass } });
+  const transporter = nodemailer.createTransport(_smtpConfig(user, pass));
   const corpoHtml = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#1c2333;">
     ${String(corpo).split('\n').filter(Boolean).map(p => `<p style="margin:0 0 12px;">${p.replace(/</g,'&lt;')}</p>`).join('')}
     <p style="margin:18px 0 0;color:#5a6478;font-size:13px;">${cfg.remetente_nome}<br>${cfg.remetente_cargo}</p>
