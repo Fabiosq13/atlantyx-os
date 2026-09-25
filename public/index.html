@@ -4408,6 +4408,61 @@ function autoGerarMensagens(filtro) {
 }
 
 
+// ═══ v2.91: TELEFONE VIA APOLLO PARA O WHATSAPP ═══
+function _waRef(m) { return String(m.email || ('hs:' + m.contact_id) || m.name).toLowerCase().trim(); }
+async function _waPedirTelefone(m) {
+  const creds = (typeof getLICredenciais === 'function') ? getLICredenciais() : {};
+  const r = await fetch('/api/apollo', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'telefone_buscar', api_key: creds.apolloKey, ref: _waRef(m), email: m.email || undefined,
+      name: m.name || undefined, organization_name: m.company || undefined, hubspot_id: m.contact_id || undefined }) });
+  const d = await r.json().catch(() => ({}));
+  if (d.success === false) throw new Error(d.error || 'falha');
+  return d;
+}
+function _waAplicar(m, d) {
+  m.tel_status = d.status; m.tel_erro = d.erro || null;
+  if (d.telefone) { m.phone = d.telefone; m.tel_fonte = 'apollo'; m.tel_status = 'encontrado'; }
+}
+let _waPollT = null;
+function _waAcompanhar() {
+  clearInterval(_waPollT);
+  let voltas = 0;
+  _waPollT = setInterval(async () => {
+    const esperando = batchMensagens.filter(m => m.tel_status === 'aguardando');
+    if (!esperando.length || ++voltas > 24) { clearInterval(_waPollT); if (esperando.length) { esperando.forEach(m => { m.tel_status = 'sem_telefone'; m.tel_erro = 'O Apollo não entregou o celular em 4 minutos — tente de novo mais tarde'; }); renderBatchList(); } return; }
+    try {
+      const r = await fetch('/api/apollo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'telefone_status', refs: esperando.map(_waRef) }) });
+      const d = await r.json(); let mudou = 0;
+      (d.itens || []).forEach(it => { const m = esperando.find(x => _waRef(x) === it.ref); if (m && it.status !== 'aguardando') { _waAplicar(m, it); mudou++; } });
+      if (mudou) { renderBatchList(); const ok = batchMensagens.filter(m => m.tel_fonte === 'apollo').length; toast(`${ok} celular(es) encontrados no Apollo`, 'success'); }
+    } catch (_) {}
+  }, 10000);
+}
+async function waBuscarTelefone(i, ev) {
+  if (ev) ev.stopPropagation();
+  const m = batchMensagens[i]; if (!m) return;
+  if (!m.email && !m.company) { toast('Para achar o telefone com segurança o lead precisa de e-mail ou empresa no HubSpot', 'error'); return; }
+  try {
+    toast('Buscando o celular de ' + m.name + ' no Apollo...', 'success');
+    const d = await _waPedirTelefone(m); _waAplicar(m, d); renderBatchList();
+    if (d.status === 'encontrado') toast('Celular encontrado: ' + d.telefone, 'success');
+    else if (d.status === 'aguardando') { toast('O Apollo está revelando o celular — aparece aqui em alguns minutos', 'success'); _waAcompanhar(); }
+    else toast('Sem celular no Apollo: ' + (d.erro || 'não encontrado'), 'error');
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+async function waBuscarTelefonesFaltantes() {
+  const alvo = batchMensagens.map((m, i) => ({ m, i })).filter(x => !x.m.phone && !x.m.enviado && !x.m.tel_status && (x.m.email || x.m.company));
+  if (!alvo.length) { toast('Nenhum lead sem telefone com e-mail ou empresa para buscar', 'error'); return; }
+  if (!confirm(`Buscar no Apollo o celular de ${alvo.length} lead(s)?\n\nCada celular revelado consome crédito do seu plano Apollo. Números já encontrados antes não são cobrados de novo.`)) return;
+  let ok = 0, esperando = 0, sem = 0;
+  for (const x of alvo) {
+    try { const d = await _waPedirTelefone(x.m); _waAplicar(x.m, d); if (d.status === 'encontrado') ok++; else if (d.status === 'aguardando') esperando++; else sem++; }
+    catch (e) { x.m.tel_status = 'erro'; x.m.tel_erro = e.message; sem++; if (/créditos|credit/i.test(e.message)) break; }
+    renderBatchList();
+  }
+  toast(`Apollo: ${ok} encontrado(s) agora · ${esperando} chegando · ${sem} sem celular`, ok || esperando ? 'success' : 'error');
+  if (esperando) _waAcompanhar();
+}
 function renderBatchList() {
   const list = document.getElementById('waBatchList');
   if (!batchMensagens.length) {
@@ -4421,6 +4476,7 @@ function renderBatchList() {
     <button class="btn btn-gn" style="font-size:9px;padding:3px 9px;margin-left:auto;" onclick="aprovarTodos()">&#10003; Aprovar e Enviar Todos</button>
     <button class="btn btn-rd" style="font-size:9px;padding:3px 9px;" onclick="recusarTodos()">&#10005; Recusar Todos</button>
     <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="expandAll()">&#9660; Expandir</button>
+    ${batchMensagens.some(m => !m.phone && !m.enviado && !m.tel_status) ? `<button class="btn" style="font-size:9px;padding:3px 9px;color:var(--blue);border-color:var(--blue);" onclick="waBuscarTelefonesFaltantes()" title="Busca no Apollo o celular de todos os leads sem telefone (consome créditos)">📞 Buscar telefones faltantes (${batchMensagens.filter(m => !m.phone && !m.enviado && !m.tel_status).length})</button>` : ''}
   </div>`;
 
   list.innerHTML = actionBar + batchMensagens.map((m, i) => {
@@ -4444,7 +4500,10 @@ function renderBatchList() {
         <div style="display:flex;gap:4px;">
           ${hasPhone && !m.enviado && !m.recusado ? `<button class="btn btn-gn" style="font-size:8.5px;padding:3px 7px;" onclick="aprovarUm(${i},event)">&#10003; Aprovar</button>` : ''}
           ${!m.enviado && !m.recusado ? `<button class="btn btn-rd" style="font-size:8.5px;padding:3px 7px;" onclick="recusarUm(${i},event)">&#10005;</button>` : ''}
-          ${!hasPhone ? '<span style="font-family:var(--M);font-size:8px;color:var(--red);">Sem tel.</span>' : ''}
+          ${!hasPhone && !m.enviado ? (m.tel_status === 'aguardando' ? '<span style="font-family:var(--M);font-size:8px;color:var(--gold);" title="O Apollo está revelando o celular — chega em alguns minutos">⏳ Apollo</span>'
+            : m.tel_status === 'sem_telefone' || m.tel_status === 'nao_encontrado' || m.tel_status === 'erro' ? `<span style="font-family:var(--M);font-size:8px;color:var(--red);" title="${String(m.tel_erro || 'O Apollo não tem celular para esta pessoa').replace(/"/g,'')}">Sem tel. (Apollo)</span>`
+            : `<button class="btn" style="font-size:8.5px;padding:3px 7px;color:var(--blue);border-color:var(--blue);" onclick="waBuscarTelefone(${i},event)" title="Busca o celular no Apollo (consome crédito de celular)">📞 Buscar no Apollo</button>`) : ''}
+          ${hasPhone ? `<span style="font-family:var(--M);font-size:8px;color:var(--t3);" title="${m.tel_fonte === 'apollo' ? 'Encontrado no Apollo' : 'Do HubSpot'}">${m.phone}${m.tel_fonte === 'apollo' ? ' · Apollo' : ''}</span>` : ''}
         </div>
         <span style="color:var(--t3);font-size:10px;" id="chevron-${i}"> </span>
       </div>
@@ -24135,7 +24194,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.90] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.91] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -24151,7 +24210,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.90';
+window.__ATX_BUILD_ID__ = 'ATX-v2.91';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
