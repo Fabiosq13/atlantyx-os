@@ -184,6 +184,24 @@ export default async function handler(req, res) {
       await sql`INSERT INTO media_arquivos (id, conteudo, content_type, tamanho, origem) VALUES (${id}, ${out.toString('base64')}, 'image/jpeg', ${out.length}, 'story-autocampanha')`;
       return { id, url: `${baseUrl(req)}/m/${id}.jpg`, tamanho: out.length };
     },
+    // v2.76: testa sharp (JPEG) e a fonte dos Stories no ambiente real
+    diagnostico_imagem: async () => {
+      const out = { jpeg: false, fonte: false };
+      try {
+        const path = await import('path'); const { fileURLToPath } = await import('url'); const fs = await import('fs');
+        const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fonts');
+        out.fonte_arquivos = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+        process.env.FONTCONFIG_PATH = dir; process.env.FONTCONFIG_FILE = path.join(dir, 'fonts.conf');
+        const sharp = (await import('sharp')).default;
+        const png = await sharp({ create: { width: 40, height: 40, channels: 3, background: '#123456' } }).png().toBuffer();
+        const jpg = await sharp(png).jpeg().toBuffer(); out.jpeg = (await sharp(jpg).metadata()).format === 'jpeg';
+        const svg = '<svg width="300" height="80" xmlns="http://www.w3.org/2000/svg"><rect width="300" height="80" fill="#000"/><text x="10" y="55" font-family="Roboto" font-size="44" font-weight="700" fill="#fff">Teste</text></svg>';
+        const { data } = await sharp(Buffer.from(svg)).raw().toBuffer({ resolveWithObject: true });
+        let claros = 0; for (let i = 0; i < data.length; i += 3) if (data[i] > 200) claros++;
+        out.fonte = claros > 300; if (!out.fonte) out.erro_fonte = `texto não renderizou (${claros} px) · arquivos: ${out.fonte_arquivos.join(', ') || 'nenhum'}`;
+      } catch (e) { out.erro = e.message; }
+      return out;
+    },
     garantir_permanente: () => garantirPermanente({ ...payload, req }),
     eh_efemera:     () => ({ url: payload.url, efemera: ehEfemera(payload.url) }),
     listar:         async () => {
