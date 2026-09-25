@@ -3693,6 +3693,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red);" onclick="acCorrigirImagens()" title="Corrige posts agendados cuja imagem vai expirar antes da publicacao">&#128295; Corrigir imagens agendadas</button>
     <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="acAuditoria()" title="Por que nao ha leads? Cruza publicacoes, erros e capturas">&#128269; Auditoria do funil</button>
     <button class="btn" style="font-size:10px;" onclick="acVerFila()" title="Andamento e resultado da fila em segundo plano">&#128203; Ver fila</button>
+    <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="acCriarCampanhas()" title="Salva os posts prontos da fila como campanhas em rascunho — nao posta no Metricool">&#128190; Criar campanhas (sem postar)</button>
     <button class="btn" style="font-size:10px;color:#e1306c;border-color:#e1306c;" onclick="acGerarStory()" title="Gera um Story do Instagram com oferta, QR code e link de captura">&#128247; Story com link</button>
     <button class="btn" style="font-size:10px;margin-left:auto;" onclick="acSugerirHorarios()">&#128161; Sugerir horarios pelos meus dados</button>
       </div>
@@ -18543,12 +18544,15 @@ async function acExecutar(rascunho) {
       if (st.concluido) break;
       await new Promise(r => setTimeout(r, 2500));
     }
-    if (rascunho) { toast('Rascunhos prontos — revise e use "📤 Agendar rascunhos prontos"', 'success'); return acVerFila(); }
+    if (rascunho) toast('Rascunhos prontos — revise, e use "💾 Criar como campanhas" ou "📤 Agendar"', 'success');
     (ultimo?.itens || []).forEach(x => { if (x.status === 'pronto') posts.push({ data: x.data, hora: x.hora, dia_semana: x.dia_semana, texto: x.texto, angulo: x.angulo, oferta: x.oferta, link: x.link, comentario: x.comentario, link_instagram: x.link_instagram, link_bio: x.link_bio, imagem_url: x.imagem_url, status: x.metricool_id ? 'agendado' : 'rascunho', metricool_id: x.metricool_id });
       else if (x.status === 'falhou') erros.push(`${x.data} ${x.hora} (${x.etapa}): ${x.erro || 'falhou'}`); });
     const d = { posts, erros, resumo: `${posts.length} publicação(ões) ${rascunho ? 'em rascunho' : 'agendadas'} nos horários vagos.` };
     box.innerHTML = `<div class="panel"><div class="ph"><div class="pt">${rascunho ? '✎ Rascunhos gerados' : '📤 Posts agendados'}</div>
-      <span style="font-size:10px;color:var(--t2);">${d.resumo || ''}</span></div><div class="pb">
+      <span style="font-size:10px;color:var(--t2);">${d.resumo || ''}</span>
+      ${posts.length ? `<button class="btn" style="font-size:10.5px;color:var(--gold);border-color:var(--gold);font-weight:700;" onclick="acCriarCampanhas()">💾 Criar como campanhas (sem postar)</button>` : ''}
+      ${rascunho && posts.length ? `<button class="btn btn-gn" style="font-size:10.5px;" onclick="acAgendarRascunhos()">📤 Agendar no Metricool</button>` : ''}</div>
+      <div class="pb">
       ${(d.erros||[]).length ? `<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:7px;padding:9px;font-size:10.5px;margin-bottom:10px;">${d.erros.length} falha(s):<br>${d.erros.slice(0,4).join('<br>')}</div>` : ''}
       ${(d.posts||[]).map(p => `<div style="background:var(--bg4);border-radius:8px;padding:10px;margin-bottom:8px;">
         <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t2);margin-bottom:5px;">
@@ -23888,7 +23892,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.74] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.75] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23904,7 +23908,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.74';
+window.__ATX_BUILD_ID__ = 'ATX-v2.75';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
