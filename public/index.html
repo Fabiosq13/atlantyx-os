@@ -17342,6 +17342,17 @@ function _fatRenderFilaNf(termoId) {
 }
 function _fatNfRemoverDaFila(termoId, idx) { _fatNfFila[termoId].splice(idx, 1); _fatRenderFilaNf(termoId); }
 
+async function _fatRecomputarNotas(termoId) {
+  try {
+    const r = await fatApi('termo_recomputar_notas', { termo_id: termoId });
+    const f = v => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    let msg = `${r.notas_no_termo} nota(s) no termo · soma ${f(r.nf_soma)} · diferença para o termo ${f(r.nf_diferenca)} · situação: ${r.nf_status}`;
+    if (r.vinculadas.length) msg += '\n\nVinculadas agora:\n' + r.vinculadas.map(v => `• NF ${v.nf || '?'} (${f(v.valor)}) → ${v.empresa} [${v.via}]`).join('\n');
+    if (r.sem_vinculo.length) msg += '\n\nNão consegui vincular (valor não bate com nenhuma parcela do rateio):\n' + r.sem_vinculo.map(v => `• NF ${v.nf || '?'} (${f(v.valor)})`).join('\n') + '\n\nConfira o valor da parcela de cada empresa na edição do termo.';
+    alert(msg);
+    await abrirDetalheTermo(termoId); carregarKanbanFaturamento();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
 async function _fatNfAdicionarTodas(termoId) {
   const fila = _fatNfFila[termoId] || []; if (!fila.length) return;
   const semValor = fila.findIndex(f => !f.nf_valor || f.nf_valor <= 0);
@@ -17349,7 +17360,8 @@ async function _fatNfAdicionarTodas(termoId) {
   const btn = document.getElementById('fatNfBtnLote_' + termoId); if (btn) { btn.disabled = true; btn.textContent = '⏳ Adicionando...'; }
   let ok = 0, erros = [];
   for (const f of fila) {
-    try { await fatApi('termo_nf_upload', { termo_id: termoId, empresa_id: f.empresa_id || null, nf_numero: f.nf_numero || null, nf_valor: f.nf_valor, anexo_nome: f.nome, arquivo_url: f.url, tipo_arquivo: f.tipo }); ok++; }
+    try { const rr = await fatApi('termo_nf_upload', { termo_id: termoId, empresa_id: f.empresa_id || null, nf_numero: f.nf_numero || null, nf_valor: f.nf_valor, anexo_nome: f.nome, arquivo_url: f.url, tipo_arquivo: f.tipo }); ok++;
+      if (rr && rr.sem_vinculo) erros.push(f.nome + ': gravada, mas sem empresa do rateio (valor não bate com nenhuma parcela) — confira o rateio e use 🔄 Recomputar notas'); }
     catch (e) { erros.push(f.nome + ': ' + e.message); }
   }
   toast(ok + ' nota(s) adicionada(s)' + (erros.length ? ' · ' + erros.length + ' erro(s)' : ''), erros.length ? 'error' : 'success');
@@ -17428,6 +17440,8 @@ async function abrirDetalheTermo(id) {
         </table>
         ${notas.length ? `<div style="margin-top:12px;font-size:10px;color:var(--t2);">
           <b>${notas.length} nota(s)/anexo(s) carregado(s):</b>
+          ${notas.some(n => !n.empresa_id) ? `<span style="color:var(--gold);font-size:10px;margin-left:6px;">⚠ ${notas.filter(n => !n.empresa_id).length} sem empresa vinculada — não estão sendo computadas</span>` : ''}
+          <button class="btn" style="font-size:9px;padding:1px 7px;margin-left:6px;" onclick="_fatRecomputarNotas('${t.id}')" title="Vincula as notas soltas às empresas do rateio e recalcula o total">🔄 Recomputar notas</button>
           <div style="margin-top:4px;max-height:120px;overflow-y:auto;">${notas.map(n => `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid var(--bd);">
             <span>${n.origem === 'manual' ? '📎' : '📧'} ${n.anexo_nome || '(sem nome)'} ${n.nf_numero ? '· NF ' + n.nf_numero : ''} ${n.nf_valor != null ? '· ' + fmtBRLcompleto(n.nf_valor) : ''} ${n.arquivo_url ? `· <a href="${n.arquivo_url}" target="_blank" style="color:var(--blue);">ver arquivo</a>` : ''}</span>
             ${n.origem === 'manual' ? `<button class="btn" style="font-size:8px;padding:1px 5px;color:var(--red);" onclick="_fatNfExcluir('${n.id}','${t.id}')">🗑</button>` : ''}
@@ -24036,7 +24050,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.84] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.85] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -24052,7 +24066,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.84';
+window.__ATX_BUILD_ID__ = 'ATX-v2.85';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
