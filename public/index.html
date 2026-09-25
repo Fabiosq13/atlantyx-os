@@ -1222,10 +1222,10 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div style="display:flex;gap:8px;align-items:flex-start;">
       <textarea class="fi" id="feedTexto" style="flex:1;height:64px;font-size:12.5px;" placeholder="Ex.: Maria Silva, maria@cpfl.com.br&#10;Ex.: Joao Pereira 21 99876-5432 Enel&#10;Ex.: Carlos (Diretor de TI) | Jelta | carlos@jelta.com.br" oninput="feedPreview()"></textarea>
       <div style="display:flex;flex-direction:column;gap:6px;">
-        <button class="btn btn-gn" onclick="feedIncluir(true)" title="Cadastra no QuickBooks e envia (e-mail com anexo) ou registra (WhatsApp)">&#128640; Incluir e enviar</button>
-        <button class="btn" style="font-size:10px;" onclick="feedIncluir(false)" title="Cadastra e gera a mensagem, sem enviar">Incluir sem enviar</button>
+        <button class="btn btn-gn" onclick="feedIncluir(false)" title="Cadastra no QuickBooks e prepara o e-mail para voce revisar antes de disparar">&#9997; Preparar e-mail</button>
       </div>
     </div>
+    <input class="fi" id="feedContexto" style="margin-top:6px;font-size:12px;" placeholder="Onde nos conhecemos / contexto — ex.: evento ABRADEE em SP, indicacao do Joao da Enel, comentou no meu post sobre IA"/>
     <div id="feedPreview" style="font-size:10.5px;color:var(--t3);margin-top:6px;min-height:16px;"></div>
     <div id="feedResultado" style="margin-top:8px;"></div>
   </div></div>
@@ -19900,7 +19900,12 @@ async function feedIncluir(enviar) {
   const box = document.getElementById('feedResultado');
   box.innerHTML = '<div style="font-size:11px;color:var(--t3);">⏳ Interpretando, cadastrando no QuickBooks e preparando a mensagem...</div>';
   try {
-    const d = await prospApi('feed_incluir', { texto: t, enviar });
+    const contexto = document.getElementById('feedContexto')?.value?.trim() || '';
+    const d = await prospApi('feed_incluir', { texto: t, enviar, contexto });
+    document.getElementById('feedContexto').value = '';
+    if (d.canal === 'email') { box.innerHTML = ''; document.getElementById('feedTexto').value = ''; document.getElementById('feedPreview').textContent = '';
+      feedListar(); return feedEditor({ id: d.id, nome: d.contato.nome, empresa: d.contato.empresa, email: d.contato.email, contexto: d.contato.contexto,
+        assunto: d.assunto, mensagem: d.mensagem, qb: d.etapas?.quickbooks, anexo_padrao: d.anexo_padrao }); }
     const e = d.etapas || {};
     const li = (k, v) => `<div style="font-size:10.5px;padding:2px 0;"><span style="color:${String(v).startsWith('falha') ? 'var(--red)' : 'var(--green,#22d3a3)'};">${String(v).startsWith('falha') ? '✗' : '✓'}</span> <b>${k}</b>: ${v}</div>`;
     box.innerHTML = `<div style="background:var(--bg4);border-radius:8px;padding:10px 12px;">
@@ -19912,20 +19917,88 @@ async function feedIncluir(enviar) {
     feedListar();
   } catch (err) { box.innerHTML = `<div style="color:var(--red);font-size:11px;">${err.message}</div>`; }
 }
+let _feedItens = [];
+async function feedAbrir(id) {
+  const x = _feedItens.find(i => i.id === id); if (!x) return;
+  let anexo_padrao = null; try { const c = await prospApi('feed_config_get'); if (c.apresentacao_media_id) anexo_padrao = { media_id: c.apresentacao_media_id, nome: c.apresentacao_nome }; } catch (_) {}
+  feedEditor({ ...x, anexo_padrao: x.anexo_media_id ? { media_id: x.anexo_media_id, nome: x.anexo_nome } : anexo_padrao });
+}
 async function feedListar() {
   const box = document.getElementById('feedLista'); if (!box) return;
   try {
     const d = await prospApi('feed_listar', { dias: 60 });
-    document.getElementById('feedCnt').textContent = d.total + ' nos últimos 60 dias';
+    document.getElementById('feedCnt').textContent = d.total + ' nos últimos 60 dias'; _feedItens = d.itens || [];
     const st = { novo:'registrado', registrado:'registrado', email_enviado:'📧 enviado', email_falhou:'📧 falhou', whatsapp_enviado:'📲 enviado', whatsapp_pendente:'📲 pendente' };
     box.innerHTML = d.itens.length ? d.itens.map(x => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:11px;">
-      <div style="min-width:0;"><b>${x.nome}</b>${x.empresa ? ' · ' + x.empresa : ''}${x.cargo ? ' · <span style="color:var(--t3);">' + x.cargo + '</span>' : ''}<div style="font-size:10px;color:var(--t3);">${x.email || (x.telefone ? '+' + x.telefone : '')} · ${new Date(x.criado_em).toLocaleDateString('pt-BR')}${x.qb_customer_id ? ' · QB #' + x.qb_customer_id : x.qb_erro ? ' · <span style="color:var(--red);">QB: ' + x.qb_erro.substring(0,40) + '</span>' : ''}</div></div>
+      <div style="min-width:0;"><b>${x.nome}</b>${x.empresa ? ' · ' + x.empresa : ''}${x.contexto ? ' <span style="color:var(--t3);font-size:10px;">📍 ' + x.contexto + '</span>' : ''}${x.cargo ? ' · <span style="color:var(--t3);">' + x.cargo + '</span>' : ''}<div style="font-size:10px;color:var(--t3);">${x.email || (x.telefone ? '+' + x.telefone : '')} · ${new Date(x.criado_em).toLocaleDateString('pt-BR')}${x.qb_customer_id ? ' · QB #' + x.qb_customer_id : x.qb_erro ? ' · <span style="color:var(--red);">QB: ' + x.qb_erro.substring(0,40) + '</span>' : ''}</div></div>
       <div style="display:flex;gap:5px;align-items:center;white-space:nowrap;">
         <span style="font-size:9.5px;padding:2px 7px;border-radius:4px;background:${/enviado$/.test(x.status)?'rgba(34,211,163,.15)':/falhou|pendente/.test(x.status)?'rgba(245,185,75,.15)':'var(--bg3,#151b2e)'};color:${/enviado$/.test(x.status)?'var(--green,#22d3a3)':/falhou|pendente/.test(x.status)?'var(--gold)':'var(--t3)'};">${st[x.status]||x.status}</span>
         ${x.telefone ? `<a class="btn" href="${x.whatsapp_link}" target="_blank" style="font-size:9px;text-decoration:none;">📲</a>` : ''}
-        ${x.email ? `<button class="btn" style="font-size:9px;" onclick="feedReenviar('${x.id}')" title="Reenviar o e-mail">↻</button>` : ''}
+        ${x.email ? `<button class="btn" style="font-size:9px;${x.status !== 'email_enviado' ? 'color:var(--green,#22d3a3);border-color:var(--green,#22d3a3);' : ''}" onclick="feedAbrir('${x.id}')" title="${x.status === 'email_enviado' ? 'Abrir e reenviar' : 'Revisar e disparar o e-mail'}">✉ ${x.status === 'email_enviado' ? 'reenviar' : 'revisar e enviar'}</button>` : ''}
       </div></div>`).join('') : '<div style="text-align:center;color:var(--t3);padding:16px;">Nenhum contato ainda.</div>';
   } catch (e) { box.innerHTML = `<div style="color:var(--red);font-size:11px;padding:10px;">${e.message}</div>`; }
+}
+// v2.79: editor do e-mail — revisar, trocar o anexo e disparar
+let _feedAnexo = null;   // { media_id, nome } escolhido na tela; null = sem anexo
+function feedEditor(x) {
+  _feedAnexo = x.anexo_padrao || (x.anexo_media_id ? { media_id: x.anexo_media_id, nome: x.anexo_nome } : null);
+  let m = document.getElementById('feedEdModal');
+  if (!m) { m = document.createElement('div'); m.id = 'feedEdModal'; m.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:1000;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 16px;'; document.body.appendChild(m); }
+  m.style.display = 'flex';
+  const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  m.innerHTML = `<div class="panel" style="width:760px;max-width:96vw;">
+    <div class="ph"><div class="pt">✉ E-mail para ${esc(x.nome)}${x.empresa ? ' · ' + esc(x.empresa) : ''}</div>
+      <button class="btn" style="font-size:10px;" onclick="document.getElementById('feedEdModal').style.display='none'">✕</button></div>
+    <div class="pb">
+      ${x.contexto ? `<div style="font-size:10.5px;color:var(--t2);margin-bottom:8px;">📍 Contexto: <b>${esc(x.contexto)}</b></div>` : ''}
+      ${x.qb ? `<div style="font-size:10px;color:${String(x.qb).startsWith('falha') ? 'var(--red)' : 'var(--green,#22d3a3)'};margin-bottom:8px;">QuickBooks: ${esc(x.qb)}</div>` : ''}
+      <div class="fg" style="margin:0 0 8px;"><label class="fl">Para</label><input class="fi" id="feEd_para" value="${esc(x.email)}"/></div>
+      <div class="fg" style="margin:0 0 8px;"><label class="fl">Assunto</label><input class="fi" id="feEd_assunto" value="${esc(x.assunto)}"/></div>
+      <div class="fg" style="margin:0 0 8px;"><label class="fl">Mensagem <span style="font-weight:400;color:var(--t3);">— edite à vontade</span></label>
+        <textarea class="fi" id="feEd_corpo" style="height:240px;font-size:12.5px;line-height:1.6;">${esc(x.mensagem)}</textarea></div>
+      <div style="background:var(--bg4);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
+        <div style="font-size:11px;font-weight:600;margin-bottom:6px;">📎 Anexo</div>
+        <div id="feEd_anexoInfo" style="font-size:11px;margin-bottom:6px;"></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <label class="btn" style="font-size:10px;cursor:pointer;">📎 Anexar outro arquivo<input type="file" accept=".pdf,.pptx,.ppt,.docx,.png,.jpg" style="display:none;" onchange="feedAnexar(this)"/></label>
+          <button class="btn" style="font-size:10px;" onclick="_feedAnexo=null;_feedAnexoRender()">sem anexo</button>
+          <span style="font-size:9.5px;color:var(--t3);">até 3 MB por arquivo</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn" onclick="document.getElementById('feedEdModal').style.display='none'" title="O contato já está salvo — dá para enviar depois pela lista">Enviar depois</button>
+        <button class="btn btn-gn" id="feEd_btn" onclick="feedDisparar('${x.id}')">📤 Disparar e-mail</button>
+      </div>
+    </div></div>`;
+  _feedAnexoRender();
+}
+function _feedAnexoRender() {
+  const el = document.getElementById('feEd_anexoInfo'); if (!el) return;
+  el.innerHTML = _feedAnexo ? `<span style="color:var(--green,#22d3a3);">✓ ${_feedAnexo.nome || 'arquivo'}</span> <a href="/api/media?id=${_feedAnexo.media_id}" target="_blank" style="font-size:10px;color:var(--t2);margin-left:6px;">ver</a>`
+    : '<span style="color:var(--gold);">nenhum anexo — o e-mail vai só com o texto</span>';
+}
+async function feedAnexar(input) {
+  const f = input.files?.[0]; if (!f) return;
+  if (f.size > 3.2 * 1024 * 1024) { toast('Arquivo acima de 3 MB — o servidor não aceita. Comprima o PDF (ex.: ilovepdf.com) e tente de novo.', 'error'); input.value = ''; return; }
+  const el = document.getElementById('feEd_anexoInfo'); if (el) el.textContent = '⏳ enviando ' + f.name + '...';
+  try {
+    const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(f); });
+    const r = await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'salvar_base64', payload: { base64: b64, content_type: f.type || 'application/octet-stream', origem: 'anexo-prospeccao' } }) });
+    const d = await r.json(); if (!d.success) throw new Error(d.error || 'falha no upload');
+    _feedAnexo = { media_id: d.id, nome: f.name }; _feedAnexoRender();
+  } catch (e) { toast('Erro no anexo: ' + e.message, 'error'); _feedAnexoRender(); }
+  input.value = '';
+}
+async function feedDisparar(id) {
+  const g = k => document.getElementById('feEd_' + k)?.value?.trim() || '';
+  if (!g('para') || !/@/.test(g('para'))) { toast('Informe um e-mail de destino válido', 'error'); return; }
+  const btn = document.getElementById('feEd_btn'); if (btn) { btn.disabled = true; btn.textContent = '⏳ enviando...'; }
+  try {
+    const r = await prospApi('feed_disparar', { id, para: g('para'), assunto: g('assunto'), corpo: document.getElementById('feEd_corpo').value,
+      anexo_media_id: _feedAnexo ? _feedAnexo.media_id : '', anexo_nome: _feedAnexo?.nome || null });
+    toast(`E-mail enviado para ${r.para}${r.anexos ? ' com anexo' : ' sem anexo'}`, 'success');
+    document.getElementById('feedEdModal').style.display = 'none'; feedListar();
+  } catch (e) { toast('Erro ao enviar: ' + e.message, 'error'); if (btn) { btn.disabled = false; btn.textContent = '📤 Disparar e-mail'; } }
 }
 async function feedReenviar(id) { try { const r = await prospApi('feed_reenviar', { id }); toast('E-mail reenviado' + (r.anexos ? ' com anexo' : ' (sem anexo)'), 'success'); feedListar(); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
 async function feedConfig() {
@@ -19951,7 +20024,7 @@ async function feedConfigSalvar() {
   const f = document.getElementById('feedCfgArq')?.files?.[0];
   try {
     if (f) {
-      if (f.size > 7 * 1024 * 1024) { toast('Arquivo acima de 7 MB — reduza o PDF', 'error'); return; }
+      if (f.size > 3.2 * 1024 * 1024) { toast('Arquivo acima de 3 MB — o servidor não aceita. Comprima o PDF e tente de novo.', 'error'); return; }
       toast('Enviando a apresentação...', 'success');
       const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(f); });
       const r = await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'salvar_base64', payload: { base64: b64, content_type: f.type || 'application/pdf', origem: 'apresentacao-prospeccao' } }) });
@@ -23916,7 +23989,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.78] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.79] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23932,7 +24005,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.78';
+window.__ATX_BUILD_ID__ = 'ATX-v2.79';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
