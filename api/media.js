@@ -41,7 +41,18 @@ function ehEfemera(url) {
       || /replicate\.delivery/i.test(u);
 }
 
-async function salvarDeUrl({ url, origem } = {}) {
+// v2.73: Instagram (via Metricool) só aceita JPEG — o Ideogram entrega PNG. Converte quando pedido.
+async function _paraJpeg(buf, ct) {
+  if (/jpe?g/i.test(ct)) return { buf, ct: 'image/jpeg' };
+  try {
+    const sharp = (await import('sharp')).default;
+    const out = await sharp(buf).flatten({ background: '#ffffff' }).jpeg({ quality: 88, mozjpeg: true }).toBuffer();
+    return { buf: out, ct: 'image/jpeg' };
+  } catch (e) { console.warn('[media] conversão para JPEG indisponível:', e.message); return { buf, ct }; }
+}
+const extDe = ct => /jpe?g/i.test(ct) ? 'jpg' : /png/i.test(ct) ? 'png' : /webp/i.test(ct) ? 'webp' : /mp4/i.test(ct) ? 'mp4' : 'bin';
+
+async function salvarDeUrl({ url, origem, jpeg = false } = {}) {
   if (!url) throw new Error('url obrigatória');
   const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), 45000);
   let resp;
@@ -63,7 +74,9 @@ async function salvarDeUrl({ url, origem } = {}) {
   if (!/^image\//.test(ct) && !/^video\//.test(ct)) {
     throw new Error(`A URL não devolveu imagem nem vídeo (veio "${ct}").`);
   }
-  const buf = Buffer.from(await resp.arrayBuffer());
+  let buf = Buffer.from(await resp.arrayBuffer());
+  let ctFinal = ct;
+  if (jpeg && /^image\//.test(ct)) ({ buf, ct: ctFinal } = await _paraJpeg(buf, ct));
   // Limite defensivo: o banco não é um CDN
   if (buf.length > 8 * 1024 * 1024) {
     throw new Error(`Arquivo muito grande (${(buf.length/1048576).toFixed(1)} MB). Limite: 8 MB.`);
@@ -71,9 +84,9 @@ async function salvarDeUrl({ url, origem } = {}) {
   const sql = await getSql();
   const id = novoId();
   await sql`INSERT INTO media_arquivos (id, conteudo, content_type, tamanho, origem)
-    VALUES (${id}, ${buf.toString('base64')}, ${ct}, ${buf.length}, ${String(origem || url).substring(0, 300)})`;
-  console.log(`[media] guardada ${id} (${ct}, ${(buf.length/1024).toFixed(0)} KB) de ${String(url).substring(0,60)}`);
-  return { id, content_type: ct, tamanho: buf.length };
+    VALUES (${id}, ${buf.toString('base64')}, ${ctFinal}, ${buf.length}, ${String(origem || url).substring(0, 300)})`;
+  console.log(`[media] guardada ${id} (${ctFinal}, ${(buf.length/1024).toFixed(0)} KB) de ${String(url).substring(0,60)}`);
+  return { id, content_type: ctFinal, tamanho: buf.length };
 }
 
 // Garante URL permanente: se já for estável, devolve como está
@@ -136,7 +149,40 @@ export default async function handler(req, res) {
     },
     salvar_de_url:  async () => {
       const r = await salvarDeUrl(payload);
-      return { ...r, url: `${baseUrl(req)}/api/media?id=${r.id}` };
+      // v2.73: URL com extensão — alguns leitores de mídia (Instagram/Metricool) recusam URL sem ela
+      return { ...r, url: `${baseUrl(req)}/m/${r.id}.${extDe(r.content_type)}`, url_api: `${baseUrl(req)}/api/media?id=${r.id}` };
+    },
+    // v2.73: compõe um STORY (1080x1920): imagem de fundo + faixa escura + título, apoio, oferta, chamada e link
+    story_compor:   async () => {
+      const { url, titulo = '', apoio = '', oferta = '', chamada = 'Link na bio', link = '' } = payload;
+      if (!url) throw new Error('url obrigatória');
+      // v2.73: o servidor da Vercel não tem fontes — aponta o fontconfig para a Roboto embutida em api/fonts,
+      // senão o texto do Story sai em branco. Precisa estar definido ANTES de carregar o sharp.
+      const path = await import('path'); const { fileURLToPath } = await import('url');
+      const dirFontes = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fonts');
+      process.env.FONTCONFIG_PATH = dirFontes; process.env.FONTCONFIG_FILE = path.join(dirFontes, 'fonts.conf');
+      const sharp = (await import('sharp')).default;
+      const r = await fetch(url); if (!r.ok) throw new Error('não baixei o fundo: HTTP ' + r.status);
+      const fundo = await sharp(Buffer.from(await r.arrayBuffer())).resize(1080, 1920, { fit: 'cover' }).toBuffer();
+      const esc = t => String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const quebrar = (t, max) => { const w = String(t || '').split(/\s+/), l = []; let c = ''; for (const x of w) { if ((c + ' ' + x).trim().length > max) { if (c) l.push(c); c = x; } else c = (c + ' ' + x).trim(); } if (c) l.push(c); return l.slice(0, 4); };
+      const tl = quebrar(titulo, 18), al = quebrar(apoio, 32);
+      let y = 1060;
+      const svg = `<svg width="1080" height="1920" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0F2660" stop-opacity="0"/><stop offset=".45" stop-color="#0F2660" stop-opacity=".82"/><stop offset="1" stop-color="#0F2660" stop-opacity=".96"/></linearGradient></defs>
+        <rect x="0" y="700" width="1080" height="1220" fill="url(#g)"/>
+        <rect x="0" y="0" width="1080" height="14" fill="#E0A422"/>
+        <text x="80" y="130" font-family="Roboto, Arial, sans-serif" font-size="34" font-weight="700" fill="#E0A422" letter-spacing="4">ATLANTYX</text>
+        ${tl.map((l, i) => `<text x="80" y="${y + i * 92}" font-family="Roboto, Arial, sans-serif" font-size="80" font-weight="800" fill="#FFFFFF">${esc(l)}</text>`).join('')}
+        ${al.map((l, i) => `<text x="80" y="${y + tl.length * 92 + 40 + i * 54}" font-family="Roboto, Arial, sans-serif" font-size="42" fill="#DDE3F2">${esc(l)}</text>`).join('')}
+        ${oferta ? `<rect x="80" y="${y + tl.length * 92 + al.length * 54 + 80}" width="920" height="96" rx="14" fill="#E0A422"/><text x="112" y="${y + tl.length * 92 + al.length * 54 + 142}" font-family="Roboto, Arial, sans-serif" font-size="40" font-weight="700" fill="#0F2660">${esc(oferta)}</text>` : ''}
+        <text x="540" y="1760" text-anchor="middle" font-family="Roboto, Arial, sans-serif" font-size="46" font-weight="700" fill="#FFFFFF">${esc(chamada)}</text>
+        <text x="540" y="1818" text-anchor="middle" font-family="Roboto, Arial, sans-serif" font-size="28" fill="#B9C3DE">${esc(String(link).replace(/^https?:\/\//, '').split('?')[0])}</text>
+      </svg>`;
+      const out = await sharp(fundo).composite([{ input: Buffer.from(svg), top: 0, left: 0 }]).jpeg({ quality: 88, mozjpeg: true }).toBuffer();
+      const sql = await getSql(); const id = novoId();
+      await sql`INSERT INTO media_arquivos (id, conteudo, content_type, tamanho, origem) VALUES (${id}, ${out.toString('base64')}, 'image/jpeg', ${out.length}, 'story-autocampanha')`;
+      return { id, url: `${baseUrl(req)}/m/${id}.jpg`, tamanho: out.length };
     },
     garantir_permanente: () => garantirPermanente({ ...payload, req }),
     eh_efemera:     () => ({ url: payload.url, efemera: ehEfemera(payload.url) }),
