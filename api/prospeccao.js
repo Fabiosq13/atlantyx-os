@@ -13,6 +13,7 @@
 //   feed_reenviar { id }                        → reenvia e-mail
 
 import { neon } from '@neondatabase/serverless';
+import { enviarContatoHubSpot, registrarAtividade, testarHubSpot } from '../lib/hubspot-sync.js';
 
 // v2.81: servidor SMTP configurável — Gmail, HostGator (cPanel) ou outro.
 //   EMAIL_SMTP_HOST  (padrão: smtp.gmail.com se o usuário for @gmail; senão mail.<domínio do e-mail>)
@@ -35,7 +36,7 @@ async function getSql() {
     canal TEXT, status TEXT DEFAULT 'novo', qb_customer_id TEXT, qb_erro TEXT,
     email_enviado_em TIMESTAMPTZ, email_erro TEXT, whatsapp_enviado_em TIMESTAMPTZ, whatsapp_erro TEXT,
     mensagem TEXT, criado_em TIMESTAMPTZ DEFAULT NOW())`;
-  for (const col of ['contexto TEXT', 'assunto TEXT', 'anexo_media_id TEXT', 'anexo_nome TEXT', 'analise TEXT']) {
+  for (const col of ['contexto TEXT', 'assunto TEXT', 'anexo_media_id TEXT', 'anexo_nome TEXT', 'analise TEXT', 'hubspot_contato_id TEXT', 'hubspot_negocio_id TEXT', 'hubspot_erro TEXT']) {
     try { await _sql.query(`ALTER TABLE prospeccao_feed ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
   }
   await _sql`CREATE TABLE IF NOT EXISTS app_config (chave TEXT PRIMARY KEY, valor JSONB, atualizado_em TIMESTAMPTZ DEFAULT NOW())`;
@@ -317,6 +318,16 @@ async function feedIncluir({ texto, contato, enviar = true, contexto } = {}) {
   if (canal === 'email') { analise = await analisarEmpresa(c); etapas.analise = analise ? `ok — ${analise.dores?.length || 0} dor(es), ${analise.oportunidades?.length || 0} oportunidade(s)` : 'sem dados suficientes (e-mail pessoal ou empresa não encontrada)'; }
   try { if (analise) await sql`UPDATE prospeccao_feed SET analise = ${JSON.stringify(analise)} WHERE id = ${id}`; } catch (_) {}
   const mensagem = await gerarTexto(c, cfg, canal, analise);
+  // v2.87: HubSpot — contato (upsert), empresa, nota com contexto + análise, e negócio no pipeline
+  try {
+    const nota = [`<b>Prospecção — Atlantyx OS</b>`, c.contexto ? `📍 Onde nos conhecemos: ${c.contexto}` : null,
+      analise ? `🔎 ${analise.empresa || c.empresa || ''} · ${analise.setor || ''}<br>${analise.resumo || ''}` : null,
+      analise?.dores?.length ? `Dores prováveis: ${analise.dores.join('; ')}` : null,
+      analise?.oportunidades?.length ? `Onde ajudamos: ${analise.oportunidades.map(o => o.solucao).join('; ')}` : null].filter(Boolean).join('<br><br>');
+    const hsr = await enviarContatoHubSpot({ ...c, origem: 'Feed de Prospecção' + (c.contexto ? ' · ' + c.contexto : '') }, { nota, origem: 'Prospecção' });
+    await sql`UPDATE prospeccao_feed SET hubspot_contato_id = ${hsr.contato_id}, hubspot_negocio_id = ${hsr.negocio_id || null}, hubspot_erro = NULL WHERE id = ${id}`;
+    etapas.hubspot = `ok — contato ${hsr.acao}${hsr.negocio_id ? ' + negócio no pipeline' : ''}${hsr.aviso_empresa || hsr.aviso_negocio ? ' (avisos: ' + [hsr.aviso_empresa, hsr.aviso_negocio].filter(Boolean).join('; ').substring(0, 120) + ')' : ''}`;
+  } catch (e) { etapas.hubspot = 'falha: ' + e.message; try { await sql`UPDATE prospeccao_feed SET hubspot_erro = ${e.message} WHERE id = ${id}`; } catch (_) {} }
   const assunto = c.contexto ? `Atlantyx | Continuidade do nosso contato — ${c.empresa || c.nome}` : (cfg.assunto || `Atlantyx | Apresentação institucional — ${c.empresa || c.nome}`);
   await sql`UPDATE prospeccao_feed SET mensagem = ${mensagem} WHERE id = ${id}`;
   try { await sql`UPDATE prospeccao_feed SET contexto = ${c.contexto || null}, assunto = ${assunto} WHERE id = ${id}`; } catch (_) {}
@@ -351,6 +362,22 @@ async function feedEnviarWhatsApp({ id } = {}) {
   return { ok: true };
 }
 // v2.79: disparo a partir do editor — com o assunto, corpo e anexo que o usuário revisou na tela
+async function feedHubspot({ id } = {}) {
+  const sql = await getSql();
+  const r = (await sql`SELECT * FROM prospeccao_feed WHERE id = ${id}`)[0]; if (!r) throw new Error('Registro não encontrado');
+  let analise = null; try { analise = r.analise ? JSON.parse(r.analise) : null; } catch (_) {}
+  const nota = [`<b>Prospecção — Atlantyx OS</b>`, r.contexto ? `📍 Onde nos conhecemos: ${r.contexto}` : null, analise?.resumo || null].filter(Boolean).join('<br><br>');
+  const hsr = await enviarContatoHubSpot({ nome: r.nome, email: r.email, telefone: r.telefone, empresa: r.empresa, cargo: r.cargo, contexto: r.contexto, origem: 'Feed de Prospecção' }, { nota, origem: 'Prospecção' });
+  await sql`UPDATE prospeccao_feed SET hubspot_contato_id = ${hsr.contato_id}, hubspot_negocio_id = ${hsr.negocio_id || null}, hubspot_erro = NULL WHERE id = ${id}`;
+  return hsr;
+}
+async function feedHubspotPendentes() {
+  const sql = await getSql();
+  const rows = await sql`SELECT id FROM prospeccao_feed WHERE hubspot_contato_id IS NULL ORDER BY criado_em DESC LIMIT 25`;
+  let ok = 0; const erros = [];
+  for (const x of rows) { try { await feedHubspot({ id: x.id }); ok++; } catch (e) { erros.push(e.message); if (/HUBSPOT_TOKEN|401|403/.test(e.message)) break; } }
+  return { enviados: ok, pendentes: rows.length, erros: [...new Set(erros)].slice(0, 3) };
+}
 async function feedPreviewHtml({ corpo } = {}) {
   const cfg = await configGet();
   return { html: emailHtml(corpo || '', await _cartaoParaAssinatura(), cfg.assinatura || '') };
@@ -373,6 +400,7 @@ async function feedDisparar({ id, assunto, corpo, anexo_media_id, anexo_nome, pa
   const txt = corpo || r.mensagem;
   const res = await enviarEmail({ ...r, email: destino }, cfg, txt, { assunto: assunto || r.assunto || cfg.assunto, anexo_media_id: anexo_media_id === '' ? null : (anexo_media_id ?? cfg.apresentacao_media_id), anexo_nome });
   await sql`UPDATE prospeccao_feed SET mensagem = ${txt}, email = ${destino}, email_enviado_em = NOW(), email_erro = NULL, status = 'email_enviado' WHERE id = ${id}`;
+  if (r.hubspot_contato_id) await registrarAtividade(r.hubspot_contato_id, `<b>E-mail de apresentação enviado</b> (${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })})<br>Assunto: ${assunto || r.assunto || ''}<br>${res.anexos ? 'Com apresentação em anexo' : 'Sem anexo'}<br><br>${String(txt).replace(/\n/g, '<br>')}`);
   try { await sql`UPDATE prospeccao_feed SET assunto = ${assunto || r.assunto || null}, anexo_media_id = ${anexo_media_id || null}, anexo_nome = ${anexo_nome || null} WHERE id = ${id}`; } catch (_) {}
   return { ok: true, anexos: res.anexos, para: destino };
 }
@@ -439,6 +467,9 @@ export default async function handler(req, res) {
     feed_disparar: () => feedDisparar(payload),
     feed_reescrever: () => feedReescrever(payload),
     feed_preview_html: () => feedPreviewHtml(payload),
+    feed_hubspot: () => feedHubspot(payload),
+    feed_hubspot_pendentes: () => feedHubspotPendentes(),
+    testar_hubspot: () => testarHubSpot(),
     testar_email: () => testarSmtp(),
     cartao_get: () => cartaoGet(),
     cartao_set: () => cartaoSet(payload),
