@@ -18476,6 +18476,11 @@ async function acAgendarRascunhos(ids) {
     acVerFila();
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
+async function acLimparFila() {
+  if (!confirm('Limpar a fila?\n\nApaga rascunhos, falhas e itens pendentes. Os posts já agendados no Metricool não são afetados.')) return;
+  try { const r = await mcApi('fila_limpar', { modo: 'nao_agendados' }); toast(`${r.removidos || 0} item(ns) removido(s)`, 'success'); acVerFila(); }
+  catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
 async function acDiagnostico() {
   const box = document.getElementById('acResultado');
   box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:22px;">🩺 Testando cada peça da autocampanha...</div></div>';
@@ -18498,7 +18503,9 @@ async function acVerFila() {
     box.innerHTML = `<div class="panel"><div class="ph"><div class="pt">📋 Fila da autocampanha</div><span style="font-size:10px;color:var(--t2);">${r.prontos} pronto(s) · ${r.pendentes + r.processando} na fila · ${r.falhas} falha(s)</span>
         ${st.itens.some(x => x.status === 'pronto' && x.texto) ? `<button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="acCriarCampanhas()" title="Salva os posts prontos como campanhas em rascunho — não posta no Metricool">💾 Criar como campanhas (sem postar)</button>` : ''}
         ${st.itens.some(x => x.status === 'pronto' && !x.metricool_id && x.texto) ? `<button class="btn btn-gn" style="font-size:10px;" onclick="acAgendarRascunhos()">📤 Agendar rascunhos prontos</button>` : ''}
+        <button class="btn" style="font-size:9.5px;color:var(--red);" onclick="acLimparFila()" title="Apaga rascunhos, falhas e pendentes (o que já foi agendado no Metricool fica)">🗑 Limpar</button>
         <button class="btn" style="font-size:9.5px;" onclick="acVerFila()">↻</button></div>
+      ${st.itens_de_outras_geracoes ? `<div style="font-size:10px;color:var(--t3);padding:6px 14px 0;">Mostrando só a última geração · ${st.itens_de_outras_geracoes} item(ns) de gerações anteriores ocultos</div>` : ''}
       <div class="pb" style="max-height:60vh;overflow-y:auto;">${st.itens.length ? st.itens.map(x => `<div style="border-left:3px solid ${x.status==='pronto'?'var(--green,#22d3a3)':x.status==='falhou'?'var(--red)':'var(--gold)'};background:var(--bg4);border-radius:7px;padding:9px 11px;margin-bottom:8px;">
         <div style="display:flex;justify-content:space-between;font-size:10.5px;"><span>${x.tipo==='story'?'<span style="color:#e1306c;font-weight:700;">STORY</span> · ':''}<b>${x.data.split('-').reverse().join('/')} ${x.hora}</b> · ${x.status==='pronto'?(x.metricool_id?'📤 agendado':'✎ rascunho'):x.status==='falhou'?'✗ falhou':'⏳ '+x.etapa}</span><span style="color:var(--t3);">${x.angulo||''}</span></div>
         ${x.imagem_url ? `<img src="${x.imagem_url}" style="width:100%;max-width:${x.tipo==='story'?'170':'280'}px;border-radius:7px;margin:6px 0;display:block;"/>` : ''}
@@ -18536,6 +18543,18 @@ async function acExecutar(rascunho) {
     // v2.68: FILA — o navegador enfileira e acompanha; o servidor processa em segundo plano.
     // Acabou a dependência de requisições longas (era a causa do "Failed to fetch").
     const comImagem = document.getElementById('ac_imagens')?.checked !== false;
+    // v2.77: nova geração começa LIMPA — apaga rascunhos, falhas e pendentes da geração anterior
+    // (os pendentes continuariam sendo processados pelo cron). O que já foi agendado no Metricool fica.
+    try {
+      const ant = await mcApi('fila_status', {});
+      const naoAg = (ant.itens || []).filter(x => !x.metricool_id).length + (ant.itens_de_outras_geracoes || 0);
+      if (naoAg) {
+        const prontos = (ant.itens || []).filter(x => x.status === 'pronto' && !x.metricool_id).length;
+        const ok = prontos ? confirm(`A fila tem ${prontos} rascunho(s) da geração anterior que ainda não foram agendados nem salvos como campanha.\n\nOK = descartar e começar uma geração nova\nCancelar = manter (use "💾 Criar campanhas" antes)`) : true;
+        if (!ok) { box.innerHTML = ''; return; }
+        await mcApi('fila_limpar', { modo: 'nao_agendados' });
+      }
+    } catch (_) {}
     const enf = await mcApi('fila_enfileirar', { slots: vagos, tema: c.tema, redes: c.redes, blog_id: c.blog_id, apenas_rascunho: !!rascunho, com_imagem: comImagem,
       stories: !!document.getElementById('ac_stories')?.checked });
     window._acLote = enf.lote;
@@ -23905,7 +23924,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.76] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.77] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23921,7 +23940,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.76';
+window.__ATX_BUILD_ID__ = 'ATX-v2.77';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
