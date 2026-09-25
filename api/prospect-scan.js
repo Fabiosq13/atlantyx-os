@@ -22,6 +22,7 @@ export default async function handler(req, res) {
       cargo_decisor = 'CIO, CTO, Diretor de TI',
       quantidade = 15,
       iniciar_outreach = false,
+      incluir_crm = false,
     } = req.body;
 
     // ── MODO CADEIA C-LEVEL ──────────────────────────────────────────────────
@@ -52,7 +53,7 @@ export default async function handler(req, res) {
     for (const empresa of empresas) {
       try {
         let hubspotId = null;
-        if (process.env.HUBSPOT_TOKEN) {
+        if (process.env.HUBSPOT_TOKEN && incluir_crm) {   // v2.92: só cria no CRM se a tela pedir
           hubspotId = await criarEmpresaHubSpot(empresa);
           if (iniciar_outreach && empresa.decisor_nome && empresa.decisor_nome !== 'A identificar') {
             const contatoId = await criarContatoHubSpot(empresa, hubspotId);
@@ -90,7 +91,7 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('[ERRO prospect-scan]', error.message);
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ success: false, error: error.message });
   }
 }
 
@@ -160,33 +161,45 @@ Para cada empresa retorne objeto COMPLETO:
 
 Retorne array JSON com ${quantidade} empresas reais, ordenadas por score A → B → C.`;
 
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 8000,
-      system,
-      messages: [{ role: 'user', content: user }]
-    })
-  });
+  // v2.92: antes era UMA chamada pedindo até 8.000 tokens (60–100 s) — a função era cortada pelo
+  // limite de tempo, ou a resposta vinha truncada e o JSON quebrado virava "0 empresas" em silêncio.
+  // Agora: lotes de até 5 empresas em PARALELO, cada lote numa faixa diferente do ranking (evita repetição).
+  const qtd = Math.max(1, Math.min(parseInt(quantidade) || 10, 30));
+  const TAM = 5, nLotes = Math.ceil(qtd / TAM);
+  const pedir = async (k) => {
+    const ini = k * TAM + 1, fim = Math.min(qtd, (k + 1) * TAM), n = fim - ini + 1;
+    const userLote = user.replace(new RegExp('\\b' + qtd + '\\b', 'g'), String(n)) +
+      `\n\nLOTE ${k + 1} de ${nLotes}: considere o ranking das empresas que se encaixam no perfil (por porte/faturamento) e traga APENAS as posições ${ini} a ${fim} desse ranking — ${n} empresa(s). Seja conciso nos textos (1–2 frases por campo). Responda SOMENTE com o array JSON.`;
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: MODEL, max_tokens: 650 * n + 300, system, messages: [{ role: 'user', content: userLote }, { role: 'assistant', content: '[' }] })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error?.message || ('Claude API ' + r.status));
+    return extrairObjetos('[' + (d.content || []).filter(x => x.type === 'text').map(x => x.text).join(''));
+  };
+  const res = await Promise.allSettled(Array.from({ length: nLotes }, (_, k) => pedir(k)));
+  const erros = res.filter(x => x.status === 'rejected').map(x => x.reason?.message);
+  const todas = res.filter(x => x.status === 'fulfilled').flatMap(x => x.value);
+  if (!todas.length && erros.length) throw new Error('IA falhou: ' + erros[0]);
+  const vistos = new Set();
+  return todas.filter(e => { const k = String(e.nome || e.empresa || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, ''); if (!k || vistos.has(k)) return false; vistos.add(k); return true; }).slice(0, qtd);
+}
 
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.error?.message || 'Erro Claude API');
-
-  const text = d.content[0].text.replace(/```json|```/g, '').trim();
-  try {
-    const parsed = JSON.parse(text);
-    return Array.isArray(parsed) ? parsed : [parsed];
-  } catch {
-    const m = text.match(/\[[\s\S]*\]/);
-    if (m) { try { return JSON.parse(m[0]); } catch {} }
-    return [];
+// v2.92: extrai todos os objetos JSON COMPLETOS de um texto — funciona mesmo se a resposta foi cortada no meio
+function extrairObjetos(texto) {
+  const t = String(texto || '').replace(/```json|```/g, '');
+  try { const p = JSON.parse(t.trim()); return Array.isArray(p) ? p : [p]; } catch (_) {}
+  const out = []; let prof = 0, ini = -1, emStr = false, esc = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (emStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') emStr = false; continue; }
+    if (c === '"') { emStr = true; continue; }
+    if (c === '{') { if (prof === 0) ini = i; prof++; }
+    else if (c === '}') { prof--; if (prof === 0 && ini >= 0) { try { out.push(JSON.parse(t.substring(ini, i + 1))); } catch (_) {} ini = -1; } }
   }
+  return out;
 }
 
 // ── CRIAR EMPRESA NO HUBSPOT ──────────────────────────────────────────────────
@@ -280,7 +293,7 @@ export async function mapearCadeiaCLevel(empresa, setor, cargos) {
     },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 6000,
+      max_tokens: 3500,
       system: `Você é o Agente S2-02 + S7-04 da Atlantyx.
 Mapeie decisores C-level com dados reais de fontes públicas (LinkedIn, sites corporativos, notícias).
 Use nomes reais quando a empresa for conhecida. Retorne APENAS JSON array.`,
@@ -312,13 +325,7 @@ Para cada cargo retorne:
   });
 
   const d = await r.json();
-  const text = d.content[0].text.replace(/```json|```/g, '').trim();
-  try {
-    const parsed = JSON.parse(text);
-    return Array.isArray(parsed) ? parsed : [parsed];
-  } catch {
-    const m = text.match(/\[[\s\S]*\]/);
-    if (m) { try { return JSON.parse(m[0]); } catch {} }
-    return [];
-  }
+  if (!r.ok) throw new Error(d.error?.message || ('Claude API ' + r.status));
+  const text = (d.content || []).filter(x => x.type === 'text').map(x => x.text).join('');
+  return extrairObjetos(text);
 }
