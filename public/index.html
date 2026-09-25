@@ -730,7 +730,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;margin-bottom:10px;">
             <div style="font-family:var(--M);font-size:8px;color:var(--t2);margin-bottom:6px;">OU BUSCA POR NOME / URL LINKEDIN</div>
             <div style="display:flex;gap:8px;">
-              <input class="fi" id="liNomeDirecto" placeholder="Nome  ·  Nome, Empresa  ·  ou URL do LinkedIn — ex.: Carlos Mendes, Petrobras" style="flex:1;font-size:11px;" onkeydown="if(event.key==='Enter')buscarPorNomeApollo()"/>
+              <input class="fi" id="liNomeDirecto" placeholder="E-mail  ·  Nome Sobrenome  ·  Nome, Empresa  ·  URL do LinkedIn — traz só a pessoa descrita" style="flex:1;font-size:11px;" onkeydown="if(event.key==='Enter')buscarPorNomeApollo()"/>
               <button class="btn btn-g" style="font-size:10px;white-space:nowrap;" onclick="buscarPorNomeApollo()">Buscar</button>
             </div>
           </div>
@@ -11747,8 +11747,11 @@ async function buscarPorNomeApollo() {
   var lista = document.getElementById('liLeadsLista'), result = document.getElementById('liLeadsResultado');
   if (result) result.style.display = 'block';
   if (lista) lista.innerHTML = '<div style="color:var(--blue);font-size:11px;padding:16px;text-align:center;">Procurando "' + entrada.replace(/</g,'&lt;') + '" no Apollo...</div>';
+  // v2.90: e-mail, URL ou nome — e SÓ a pessoa descrita volta (nada de "parecidos")
   var isUrl = /linkedin\.com\//i.test(entrada);
-  var partes = entrada.split(/\s*[,|]\s*/); var nome = isUrl ? '' : partes[0]; var empresa = isUrl ? '' : (partes[1] || '');
+  var emailM = entrada.match(/[\w.+-]+@[\w-]+\.[\w.-]+/); var email = emailM ? emailM[0].toLowerCase() : '';
+  var semEmail = email ? entrada.replace(emailM[0], '').replace(/^[\s,|]+|[\s,|]+$/g, '') : entrada;
+  var partes = semEmail.split(/\s*[,|]\s*/).filter(Boolean); var nome = isUrl ? '' : (partes[0] || ''); var empresa = isUrl ? '' : (partes[1] || '');
   var paraLead = function(p) { return { id: 'li_direct_' + Date.now() + '_' + Math.random().toString(36).slice(2,5), apollo_id: p.id || '',
     nome: ((p.first_name || '') + ' ' + (p.last_name || p.last_name_obfuscated || '')).trim() || p.name || '', first_name: p.first_name || '', last_name_full: p.last_name || '',
     cargo: p.title || '', empresa: p.organization?.name || p.organization_name || '', setor: p.organization?.industry || '',
@@ -11756,27 +11759,41 @@ async function buscarPorNomeApollo() {
     linkedin_empresa: p.organization?.linkedin_url || '', website_empresa: p.organization?.website_url || '', cidade: p.city || '', pais: p.country || '',
     score: 'A', selecionado: true, status_li: 'pendente', status_wa: p.mobile_phone ? 'disponivel' : 'sem_tel', status_email: p.email ? 'disponivel' : 'sem_email', status_crm: 'novo' }; };
   try {
-    var encontrados = [];
-    if (isUrl || empresa) {
-      var bodyM = isUrl ? { linkedin_url: entrada } : { name: nome, organization_name: empresa };
-      var rm = await fetch('/api/apollo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'person_match', api_key: creds.apolloKey, ...bodyM }) });
+    var encontrados = [], motivo = '';
+    var pedeMatch = async function (b) {
+      var rm = await fetch('/api/apollo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'person_match', api_key: creds.apolloKey, ...b }) });
       var dm = await rm.json().catch(function(){ return {}; });
-      if (dm.person) encontrados = [dm.person];
+      if (dm.success === false) throw new Error(dm.error || 'falha na busca');
+      if (dm._descartado) motivo = dm._descartado;
+      return dm.person ? [dm.person] : [];
+    };
+    if (email) {
+      // e-mail identifica UMA pessoa: busca exata e mais nada (sem cair em busca por nome)
+      encontrados = await pedeMatch({ email: email, ...(nome ? { name: nome } : {}), ...(empresa ? { organization_name: empresa } : {}) });
+    } else if (isUrl) {
+      encontrados = await pedeMatch({ linkedin_url: entrada });
+    } else if (nome) {
+      if (empresa) encontrados = await pedeMatch({ name: nome, organization_name: empresa });
+      if (!encontrados.length) {
+        // busca por nome com conferência ESTRITA: primeiro nome igual, sobrenomes como palavra inteira, e a empresa (se informada)
+        var rs = await fetch('/api/apollo', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'people_search', api_key: creds.apolloKey, q_keywords: nome + (empresa ? ' ' + empresa : ''), nome_exato: nome, ...(empresa ? { empresa_exata: empresa } : {}), per_page: 50 }) });
+        var ds = await rs.json().catch(function(){ return {}; });
+        if (ds.success === false) throw new Error(ds.error || 'falha na busca');
+        encontrados = ds.people || [];
+      }
     }
-    if (!encontrados.length && nome) {
-      var rs = await fetch('/api/apollo', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'people_search', api_key: creds.apolloKey, q_keywords: nome + (empresa ? ' ' + empresa : ''), nome_exato: nome, per_page: 25 }) });
-      var ds = await rs.json().catch(function(){ return {}; });
-      if (ds.success === false) throw new Error(ds.error || 'falha na busca');
-      encontrados = ds.people || [];
+    if (!encontrados.length) {
+      var quem = email ? 'o e-mail ' + email : isUrl ? 'esse perfil do LinkedIn' : '"' + nome + '"' + (empresa ? ' na ' + empresa : '');
+      if (lista) lista.innerHTML = '<div style="font-size:11px;color:var(--gold);padding:14px;line-height:1.6;">Nenhuma pessoa encontrada para ' + quem.replace(/</g,'&lt;') + '.' + (motivo ? '<br><span style="color:var(--t3);">O Apollo sugeriu outra pessoa e ela foi descartada: ' + motivo.replace(/</g,'&lt;') + '</span>' : '') + '<br>Só aparece quem corresponde exatamente ao que foi digitado.' + (!email && !isUrl && !empresa ? ' Para nomes comuns, use "Nome Sobrenome, Empresa".' : '') + '</div>';
+      var tg = document.getElementById('liLeadsTag'); if (tg) tg.textContent = '0 encontrado(s)'; var cz = document.getElementById('liFilterCount'); if (cz) cz.textContent = 'Nenhuma pessoa corresponde exatamente a ' + quem; return;
     }
-    if (!encontrados.length) { if (lista) lista.innerHTML = '<div style="font-size:11px;color:var(--gold);padding:14px;">Ninguém com o nome "' + nome.replace(/</g,'&lt;') + '" encontrado' + (empresa ? ' na ' + empresa.replace(/</g,'&lt;') : '') + '. Tente "Nome Sobrenome, Empresa" ou a URL do LinkedIn.</div>'; return; }
     var novos = encontrados.map(paraLead);
     liLeadsCache = novos.concat(liLeadsCache.filter(function(l){ return !novos.some(function(n){ return n.apollo_id && n.apollo_id === l.apollo_id; }); }));
     liSelecionados = liLeadsCache.filter(function(l){ return l.selecionado; });
     renderLeadsLI(lista, novos);
     var tag = document.getElementById('liLeadsTag'); if (tag) tag.textContent = novos.length + ' encontrado(s)';
-    var ce = document.getElementById('liFilterCount'); if (ce) ce.textContent = novos.length + ' pessoa(s) com o nome "' + (nome || 'da URL') + '"' + (empresa ? ' · ' + empresa : '') + ' — desmarque quem não for';
+    var ce = document.getElementById('liFilterCount'); if (ce) ce.textContent = email ? 'Pessoa do e-mail ' + email : isUrl ? 'Pessoa do perfil informado' : (novos.length === 1 ? '1 pessoa: ' : novos.length + ' pessoas com exatamente esse nome: ') + nome + (empresa ? ' · ' + empresa : '') + (novos.length > 1 ? ' — informe a empresa para chegar a uma só' : '');
     toast(novos.length === 1 ? 'Encontrado: ' + novos[0].nome + (novos[0].empresa ? ' · ' + novos[0].empresa : '') : novos.length + ' pessoas com esse nome — confira empresa e cargo', 'success');
   } catch (e) { if (lista) lista.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Erro: ' + e.message + '</div>'; }
 }
@@ -24118,7 +24135,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.89] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.90] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -24134,7 +24151,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.89';
+window.__ATX_BUILD_ID__ = 'ATX-v2.90';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
