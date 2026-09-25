@@ -1,4 +1,9 @@
 
+// v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
+// SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
+// Antes, toda chamada sql.query() falhava em silêncio: colunas novas nunca eram criadas.
+const _q = (db, texto, params) => (typeof db.query === 'function' ? db.query(texto, params) : db(texto, params));
+
 // v2.81: servidor SMTP configurável — Gmail, HostGator (cPanel) ou outro.
 //   EMAIL_SMTP_HOST  (padrão: smtp.gmail.com se o usuário for @gmail; senão mail.<domínio do e-mail>)
 //   EMAIL_SMTP_PORT  (padrão 465 = SSL; 587 = STARTTLS)
@@ -4029,7 +4034,7 @@ async function conciliarTermo({ termo_id } = {}) {
 async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_dias = 10, tolerancia_pct = 2, aplicar = true, conta_id = null } = {}) {
   const sql = await getSql();
   for (const col of ['conciliado_em TIMESTAMPTZ', 'conciliado_extrato_id TEXT', 'conciliado_extrato_data TEXT', 'conciliado_obs TEXT', 'cnpj TEXT']) {
-    try { await sql.query(`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
+    try { await _q(sql, `ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
   }
   // v2.35: confere se as colunas existem de fato — se o ALTER falhou por permissão, avisa com o remédio
   const chk = await sql`SELECT column_name FROM information_schema.columns WHERE table_name='termos_empresas' AND column_name IN ('conciliado_em','pagamento_status')`;
@@ -4039,7 +4044,7 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
     throw e;
   }
   for (const col of ['conciliado BOOLEAN DEFAULT false', 'conciliado_em TIMESTAMPTZ']) {
-    try { await sql.query(`ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
+    try { await _q(sql, `ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
   }
   const hoje = new Date();
   const m = parseInt(mes) || (hoje.getMonth() + 1), a = parseInt(ano) || hoje.getFullYear();
