@@ -12,7 +12,8 @@
     "nodemailer": "^6.9.14",
     "imapflow": "^1.0.164",
     "pdf-parse": "^1.1.1",
-    "exceljs": "^4.4.0"
+    "exceljs": "^4.4.0",
+    "sharp": "^0.33.5"
   },
   "scripts": {
     "deploy": "node deploy.js",
