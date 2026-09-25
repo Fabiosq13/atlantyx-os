@@ -16648,7 +16648,7 @@ async function fatApi(action, params = {}) {
   catch (netErr) { throw new Error('Rede: não conectou em /api/faturamento — ' + netErr.message); }
   const raw = await r.text(); let d;
   try { d = JSON.parse(raw); } catch { throw new Error('Resposta não-JSON de /api/faturamento (HTTP ' + r.status + '): ' + raw.substring(0,150)); }
-  if (!d.success) { const e = new Error(d.error || ('HTTP ' + r.status + ' na API faturamento')); e.dica = d.dica || null; throw e; }
+  if (!d.success) { const e = new Error(d.error || ('HTTP ' + r.status + ' na API faturamento')); e.dica = d.dica || null; e.duplicado_de = d.duplicado_de || null; throw e; }
   return d;
 }
 
@@ -16818,7 +16818,15 @@ async function confirmarImportarTermo() {
   if (!_fatParsed) return;
   const btn = document.getElementById('fatBtnConfirmarImport'); btn.disabled = true; btn.textContent = 'Importando...';
   try {
-    await fatApi('termo_importar', _fatParsed);
+    try { await fatApi('termo_importar', _fatParsed); }
+    catch (e) {
+      if (!e.duplicado_de) throw e;
+      // v2.86: número já existe — oferecer abrir o existente em vez de criar duplicado
+      const abrir = confirm(e.message + '\n\nOK = abrir o termo existente (recomendado)\nCancelar = escolher outra opção');
+      if (abrir) { document.getElementById('fatImportModal').style.display = 'none'; abrirDetalheTermo(e.duplicado_de); return; }
+      if (!confirm('Criar um SEGUNDO termo com o mesmo número mesmo assim?\n\nSó faça isso se for realmente um termo diferente.')) return;
+      await fatApi('termo_importar', { ..._fatParsed, forcar_duplicado: true });
+    }
     document.getElementById('fatImportModal').style.display = 'none';
     toast('Termo importado — ' + _fatParsed.empresas.length + ' empresa(s) no rateio', 'success');
     addLog('ok', '[Faturamento] Termo importado: ' + (_fatParsed.cabecalho.projeto || _fatParsed.arquivo_nome));
@@ -17353,6 +17361,36 @@ async function _fatRecomputarNotas(termoId) {
     await abrirDetalheTermo(termoId); carregarKanbanFaturamento();
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
+async function _fatRastrearNotas(termoId) {
+  try {
+    const d = await fatApi('termo_rastrear_notas', { termo_id: termoId });
+    let m = document.getElementById('fatRastroModal');
+    if (!m) { m = document.createElement('div'); m.id = 'fatRastroModal'; m.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:1001;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 16px;'; document.body.appendChild(m); }
+    m.style.display = 'flex';
+    const f = v => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    m.innerHTML = `<div class="panel" style="width:860px;max-width:96vw;"><div class="ph"><div class="pt">🔎 Termos nº ${d.numero} e suas notas</div>
+        <button class="btn" style="font-size:10px;" onclick="document.getElementById('fatRastroModal').style.display='none'">✕</button></div>
+      <div class="pb"><div style="font-size:11.5px;margin-bottom:10px;color:${d.duplicado ? 'var(--gold)' : 'var(--t2)'};">${d.duplicado ? '⚠ ' : ''}${d.leitura}</div>
+      ${d.termos.map(t => `<div style="border:1px solid ${t.id === termoId ? 'var(--gold)' : 'var(--bd)'};border-radius:9px;padding:10px 12px;margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:11.5px;">
+          <span><b>${t.projeto || '(sem projeto)'}</b> · ${t.status} · período ${t.periodo || '—'} · criado ${t.criado_em || '—'} ${t.id === termoId ? '<span style="color:var(--gold);">← este</span>' : ''}</span>
+          <span>termo ${f(t.valor)} · notas ${f(t.nf_soma)} · ${t.empresas} empresa(s)</span></div>
+        <div style="margin-top:6px;font-size:10.5px;">${t.notas.length ? t.notas.map(n => `<div style="padding:2px 0;">${n.origem === 'manual' ? '📎' : '📧'} ${n.arquivo || '(sem nome)'} ${n.nf ? '· NF ' + n.nf : ''} · ${f(n.valor)} · ${n.criado_em || ''} ${n.vinculada ? '<span style="color:var(--green,#22d3a3);">✓ computada</span>' : '<span style="color:var(--red);">✗ não computada</span>'}</div>`).join('') : '<span style="color:var(--t3);">nenhuma nota</span>'}</div>
+        ${t.id !== termoId && t.notas.length ? `<button class="btn btn-gn" style="font-size:10px;margin-top:6px;" onclick="_fatMoverNotas('${t.id}','${termoId}')">⤵ Mover estas ${t.notas.length} nota(s) para o termo aberto</button>` : ''}
+      </div>`).join('')}
+      </div></div>`;
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+async function _fatMoverNotas(de, para) {
+  const arq = confirm('Mover as notas para o termo aberto e recomputar.\n\nOK = mover E marcar o termo de origem como Concluído (duplicado)\nCancelar = só mover as notas');
+  try {
+    const r = await fatApi('termo_mover_notas', { de_termo_id: de, para_termo_id: para, arquivar_origem: arq });
+    const f = v => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    alert(`${r.movidas} nota(s) movida(s).\n\nTermo aberto agora: ${r.destino.notas_no_termo} nota(s), soma ${f(r.destino.nf_soma)}, diferença ${f(r.destino.nf_diferenca)} — ${r.destino.nf_status}.` + (r.destino.sem_vinculo.length ? `\n\n${r.destino.sem_vinculo.length} nota(s) não bateram com nenhuma parcela do rateio — confira os valores na edição do termo.` : ''));
+    document.getElementById('fatRastroModal').style.display = 'none';
+    await abrirDetalheTermo(para); carregarKanbanFaturamento();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
 async function _fatNfAdicionarTodas(termoId) {
   const fila = _fatNfFila[termoId] || []; if (!fila.length) return;
   const semValor = fila.findIndex(f => !f.nf_valor || f.nf_valor <= 0);
@@ -17408,6 +17446,7 @@ async function abrirDetalheTermo(id) {
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
           ${idxCol > 0 ? `<button class="btn" style="color:var(--t2);" onclick="_fatVoltar('${t.id}','${FAT_COLS[idxCol-1]}')" title="Volta para: ${FAT_LABELS[FAT_COLS[idxCol-1]]}">← Voltar p/ ${FAT_LABELS[FAT_COLS[idxCol-1]].replace(/^[^\s]+\s/,'')}</button>` : ''}
           <button class="btn" onclick="_fatExportarExcel('${t.id}')" title="Baixa este termo em Excel, no mesmo layout de importação">📥 Exportar Excel</button>
+          <button class="btn" onclick="_fatRastrearNotas('${t.id}')" title="Procura outros termos com o mesmo número e onde estão as notas">🔎 Rastrear notas</button>
           ${t.status === 'elaboracao' ? `<button class="btn btn-p" onclick="_fatAvancar('${t.id}','aprovacao')">Enviar para Aprovação →</button>` : ''}
           ${t.status === 'aprovacao' ? `<button class="btn btn-gn" onclick="_fatAprovar('${t.id}')">✓ Aprovar (envia p/ Emissão de NF)</button>` : ''}
           ${t.status === 'emissao_nf' ? `<button class="btn btn-p" onclick="_fatAvancar('${t.id}','envio_nf')">Notas emitidas — ir p/ Envio →</button>` : ''}
@@ -17442,6 +17481,7 @@ async function abrirDetalheTermo(id) {
           <b>${notas.length} nota(s)/anexo(s) carregado(s):</b>
           ${notas.some(n => !n.empresa_id) ? `<span style="color:var(--gold);font-size:10px;margin-left:6px;">⚠ ${notas.filter(n => !n.empresa_id).length} sem empresa vinculada — não estão sendo computadas</span>` : ''}
           <button class="btn" style="font-size:9px;padding:1px 7px;margin-left:6px;" onclick="_fatRecomputarNotas('${t.id}')" title="Vincula as notas soltas às empresas do rateio e recalcula o total">🔄 Recomputar notas</button>
+          <button class="btn" style="font-size:9px;padding:1px 7px;margin-left:4px;color:var(--gold);" onclick="_fatRastrearNotas('${t.id}')" title="Procura outros termos com o mesmo número (duplicados) e onde estão as notas">🔎 Rastrear notas deste nº</button>
           <div style="margin-top:4px;max-height:120px;overflow-y:auto;">${notas.map(n => `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid var(--bd);">
             <span>${n.origem === 'manual' ? '📎' : '📧'} ${n.anexo_nome || '(sem nome)'} ${n.nf_numero ? '· NF ' + n.nf_numero : ''} ${n.nf_valor != null ? '· ' + fmtBRLcompleto(n.nf_valor) : ''} ${n.arquivo_url ? `· <a href="${n.arquivo_url}" target="_blank" style="color:var(--blue);">ver arquivo</a>` : ''}</span>
             ${n.origem === 'manual' ? `<button class="btn" style="font-size:8px;padding:1px 5px;color:var(--red);" onclick="_fatNfExcluir('${n.id}','${t.id}')">🗑</button>` : ''}
@@ -24050,7 +24090,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.85] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.86] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -24066,7 +24106,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.85';
+window.__ATX_BUILD_ID__ = 'ATX-v2.86';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
