@@ -31,27 +31,56 @@ export default async function handler(req, res) {
 
     // ── BUSCA PRINCIPAL ───────────────────────────────────────────────────────
     if (action === 'people_search') {
-      const body = {
-        page:     params.page     || 1,
-        per_page: Math.min(params.per_page || 25, 100),
-        contact_email_status: ['verified', 'likely_to_engage', 'unavailable'],
-        reveal_personal_emails: true,
-      };
-      if (params.person_titles?.length)             body.person_titles             = params.person_titles;
-      if (params.q_organization_industries?.length) body.q_organization_industries = params.q_organization_industries;
-      if (params.q_keywords)                        body.q_keywords                = params.q_keywords;
+      // v2.89: parâmetros CORRETOS da API de busca de pessoas do Apollo + conferência do resultado.
+      // Antes: setor ia em "q_organization_industries" (não existe → ignorado), país/cidade/faturamento
+      // nunca eram enviados, e o cargo trazia "títulos semelhantes" — por isso o filtro não era respeitado.
+      const perPage = Math.min(parseInt(params.per_page) || 25, 100);
+      const body = { page: params.page || 1, per_page: perPage };
+      const titulos = (params.person_titles || []).filter(Boolean);
+      if (titulos.length) { body.person_titles = titulos; body.include_similar_titles = params.cargo_estrito === false; }
+      const setores = (params.setores || params.q_organization_industries || []).filter(Boolean);
+      if (setores.length) body.q_organization_keyword_tags = setores;
+      const locais = (params.person_locations || []).filter(Boolean);
+      if (locais.length) body.person_locations = locais;
+      // faixa de faturamento vai na URL (é assim que a API de busca do Apollo lê esse filtro), em USD
+      const qs = new URLSearchParams();
+      if (params.revenue_min) qs.set('revenue_range[min]', String(parseInt(params.revenue_min)));
+      if (params.revenue_max) qs.set('revenue_range[max]', String(parseInt(params.revenue_max)));
+      if (params.person_seniorities?.length) body.person_seniorities = params.person_seniorities;
+      if (params.q_keywords) body.q_keywords = params.q_keywords;
+      if (params.q_organization_domains_list?.length) body.q_organization_domains_list = params.q_organization_domains_list;
 
-      const r = await fetch('https://api.apollo.io/v1/mixed_people/api_search', {
-        method: 'POST', headers, body: JSON.stringify(body)
-      });
+      const r = await fetch('https://api.apollo.io/api/v1/mixed_people/api_search' + (qs.toString() ? '?' + qs.toString() : ''), { method: 'POST', headers, body: JSON.stringify(body) });
       const text = await r.text();
-      if (!r.ok) return res.status(r.status).json({ success: false, error: 'Apollo ' + r.status + ': ' + text.substring(0,300) });
-
+      if (!r.ok) return res.status(r.status).json({ success: false, error: 'Apollo ' + r.status + ': ' + text.substring(0, 300), enviado: body });
       const data = safeJsonParse(text, 'people_search');
-      const total = data.people?.length || 0;
-      const comLI = data.people?.filter(p => !!p.linkedin_url).length || 0;
-      data._stats = { total_buscados: total, com_li_pessoa: comLI };
-      console.log('[Apollo] Busca:', total, '| LI:', comLI);
+      let people = data.people || [];
+
+      // Conferência: descarta o que não bate com o filtro pedido (o Apollo às vezes amplia a busca)
+      const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const SIGLAS = { ceo: ['ceo', 'chief executive', 'presidente', 'diretor presidente', 'president'], cio: ['cio', 'chief information'], cto: ['cto', 'chief technology'],
+        cfo: ['cfo', 'chief financial', 'diretor financeiro', 'diretora financeira'], coo: ['coo', 'chief operat', 'diretor de operac'], cdo: ['cdo', 'chief data', 'chief digital'],
+        cmo: ['cmo', 'chief marketing'], cso: ['cso', 'chief strateg', 'chief sales'] };
+      const removidos = { cargo: 0, local: 0, nome: 0 };
+      if (titulos.length && params.cargo_estrito !== false) {
+        const alvos = titulos.flatMap(t => SIGLAS[norm(t)] || [norm(t)]);
+        people = people.filter(p => { const ok = alvos.some(a => new RegExp('(^|[^a-z])' + a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(norm(p.title))); if (!ok) removidos.cargo++; return ok; });
+      }
+      if (locais.length) {
+        const ls = locais.map(norm);
+        people = people.filter(p => { const onde = norm([p.city, p.state, p.country, p.location_city, p.location_country].filter(Boolean).join(' '));
+          const ok = !onde || ls.some(l => l.split(',').map(x => x.trim()).filter(Boolean).every(parte => onde.includes(parte))); if (!ok) removidos.local++; return ok; });
+      }
+      if (params.nome_exato) {
+        const toks = norm(params.nome_exato).split(/\s+/).filter(t => t.length > 1);
+        people = people.filter(p => { const n = norm([p.first_name, p.last_name, p.last_name_obfuscated, p.name].filter(Boolean).join(' '));
+          const ok = toks.every(t => n.includes(t) || (t === toks[toks.length - 1] && /\*/.test(n))); if (!ok) removidos.nome++; return ok; });
+      }
+      data.people = people;
+      data._stats = { total_apollo: data.pagination?.total_entries ?? data.total_entries ?? null, retornados_apollo: (data.people || []).length + removidos.cargo + removidos.local + removidos.nome,
+        apos_conferencia: people.length, descartados: removidos, com_li_pessoa: people.filter(p => !!p.linkedin_url).length };
+      data._filtros_enviados = { ...body, ...(qs.toString() ? { url: qs.toString() } : {}) };
+      console.log('[Apollo] busca', JSON.stringify(body).substring(0, 300), '→', JSON.stringify(data._stats));
       return res.status(200).json({ success: true, ...data });
     }
 
