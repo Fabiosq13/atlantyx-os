@@ -35,7 +35,7 @@ async function getSql() {
     canal TEXT, status TEXT DEFAULT 'novo', qb_customer_id TEXT, qb_erro TEXT,
     email_enviado_em TIMESTAMPTZ, email_erro TEXT, whatsapp_enviado_em TIMESTAMPTZ, whatsapp_erro TEXT,
     mensagem TEXT, criado_em TIMESTAMPTZ DEFAULT NOW())`;
-  for (const col of ['contexto TEXT', 'assunto TEXT', 'anexo_media_id TEXT', 'anexo_nome TEXT']) {
+  for (const col of ['contexto TEXT', 'assunto TEXT', 'anexo_media_id TEXT', 'anexo_nome TEXT', 'analise TEXT']) {
     try { await _sql.query(`ALTER TABLE prospeccao_feed ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
   }
   await _sql`CREATE TABLE IF NOT EXISTS app_config (chave TEXT PRIMARY KEY, valor JSONB, atualizado_em TIMESTAMPTZ DEFAULT NOW())`;
@@ -102,8 +102,47 @@ async function qbCadastrar(c) {
   return d.id || d.cliente?.id || null;
 }
 
+// ── v2.82: ANÁLISE DA EMPRESA — pesquisa na web, dores prováveis e onde a Atlantyx ajuda ──
+const PORTFOLIO_ATLANTYX = `Soluções da Atlantyx (17 anos, B2B):
+- Engenharia de dados e Data Warehouse/Lakehouse (Azure, Databricks, Snowflake): integração de sistemas legados, pipelines, modelagem.
+- Sustentação 24x7 de plataformas de dados e cargas (SLA por severidade, monitoramento, correção de pipelines).
+- BI e analytics (Power BI): painéis executivos, indicadores operacionais, self-service governado.
+- IA aplicada à operação: agentes de IA, automação de processos com LLM, classificação de documentos, atendimento, previsão.
+- Governança e qualidade de dados: catálogo, linhagem, reconciliação entre sistemas, dado confiável para decisão.
+- Alocação de especialistas (dados, IA, desenvolvimento) sob demanda.
+- Atlantyx OS: plataforma de agentes de IA para finanças, projetos, vendas e marketing.
+Casos reais: CPFL Energia (sustentação Big Data, data warehouse de parques eólicos, cadastro/tarifação), Enel, Caixa Capitalização, Grupo Jelta Veículos.`;
+async function analisarEmpresa(c) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  const dominio = c.email && !/gmail|hotmail|outlook|yahoo|icloud|uol|bol|terra|live\./i.test(c.email) ? c.email.split('@')[1] : null;
+  const alvo = c.empresa || (dominio ? dominio.split('.')[0] : null);
+  if (!key || !alvo) return null;
+  const system = `Você é analista de pré-vendas da Atlantyx. Pesquise a empresa-alvo na web (site oficial, notícias recentes, setor, porte, movimentos como expansão, M&A, regulação, transformação digital) e identifique DORES PROVÁVEIS ligadas a dados, operação, tecnologia e eficiência.
+Depois cruze com o portfólio abaixo e aponte onde a Atlantyx ajuda de forma CONCRETA.
+${PORTFOLIO_ATLANTYX}
+REGRAS: não invente fatos — o que não achou, não afirme; dores são hipóteses e devem soar como tal ("é comum que…", "empresas nesse momento costumam…"). Seja específico ao setor.
+Responda SOMENTE com JSON:
+{"empresa":"nome oficial","setor":"...","resumo":"2 frases sobre a empresa e o momento dela","sinais":["fato recente verificável 1","..."],
+ "dores":["dor provável 1","dor 2","dor 3"],
+ "oportunidades":[{"dor":"...","solucao":"solução Atlantyx","como_ajuda":"1 frase concreta","caso":"caso Atlantyx parecido, se houver"}],
+ "gancho":"1 frase para abrir a conversa conectando o momento da empresa a uma dor","fontes":["url1","url2"]}`;
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST',
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1400, system,
+        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
+        messages: [{ role: 'user', content: `Empresa-alvo: ${alvo}${dominio ? ' (site provável: ' + dominio + ')' : ''}. Contato: ${c.nome}${c.cargo ? ', ' + c.cargo : ''}.${c.contexto ? ' Contexto do contato: ' + c.contexto + '.' : ''}` }] }) });
+    const d = await r.json();
+    if (!r.ok) { console.warn('[analise] API:', d?.error?.message); return null; }
+    const texto = (d.content || []).filter(x => x.type === 'text').map(x => x.text).join('\n');
+    const m = texto.match(/\{[\s\S]*\}/); if (!m) return null;
+    const a = JSON.parse(m[0]);
+    return a && (a.dores?.length || a.oportunidades?.length) ? a : null;
+  } catch (e) { console.warn('[analise]', e.message); return null; }
+}
+
 // ── 4. Texto do e-mail / WhatsApp com IA ──
-async function gerarTexto(c, cfg, canal) {
+async function gerarTexto(c, cfg, canal, analise = null) {
   const key = process.env.ANTHROPIC_API_KEY;
   const fallback = canal === 'email'
     ? `Olá ${c.nome},\n\n${c.contexto ? 'Foi um prazer o contato em ' + c.contexto + '. ' : ''}Sou o Fabio Quintanilha, CEO da Atlantyx. Há 17 anos ajudamos empresas como CPFL, Enel e Caixa a transformar dados em decisão — com engenharia de dados, analytics e IA aplicada à operação.\n\nSegue em anexo uma apresentação curta. Se fizer sentido para ${c.empresa || 'a sua empresa'}, proponho uma conversa de 30 minutos para entender o seu cenário.\n\n${cfg.assinatura}`
@@ -112,11 +151,14 @@ async function gerarTexto(c, cfg, canal) {
   try {
     const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST',
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 500, system: canal === 'email'
-        ? `Escreva um e-mail de apresentação da Atlantyx (17 anos, dados/analytics/IA para grandes empresas; clientes CPFL, Enel, Caixa, Jelta) para um contato novo. Tom de CEO falando com um par: direto, sem jargão de marketing, sem "revolucionar". 90 a 130 palavras. Mencione que a apresentação vai em anexo. Feche pedindo uma conversa de 30 min. Assine como "${cfg.assinatura}". Devolva só o corpo do e-mail, sem assunto.`
+      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 900, system: canal === 'email'
+        ? `Escreva um e-mail de apresentação da Atlantyx (17 anos, dados/analytics/IA para grandes empresas; clientes CPFL, Enel, Caixa, Jelta) para um contato novo. Tom de CEO falando com um par: direto, sem jargão de marketing, sem "revolucionar".
+ESTRUTURA: (1) abertura pelo contexto do contato, se houver; (2) UM parágrafo mostrando que você olhou a empresa dele — o momento/setor e 2 ou 3 frentes CONCRETAS onde a Atlantyx pode ajudar, ligadas às dores prováveis (use a análise fornecida; trate dores como hipóteses, nunca afirme problemas internos como fato); cite um caso Atlantyx parecido se couber; (3) mencione que a apresentação vai em anexo; (4) feche pedindo 30 min para entender o cenário.
+130 a 190 palavras. Pode usar uma lista curta de 2-3 itens para as frentes. Assine como "${cfg.assinatura}". Devolva só o corpo do e-mail, sem assunto.`
         : `Escreva uma mensagem de WhatsApp de primeiro contato da Atlantyx (dados e IA para grandes empresas). Máximo 60 palavras, tom pessoal, sem emoji além de 1, terminando com a oferta de enviar a apresentação. Assine como Fabio. Devolva só a mensagem.`,
         messages: [{ role: 'user', content: `Contato: ${c.nome}${c.cargo ? ', ' + c.cargo : ''}${c.empresa ? ', empresa ' + c.empresa : ''}.`
-          + (c.contexto ? `\nOnde nos conhecemos / contexto do contato: ${c.contexto}. ABRA o e-mail retomando esse contexto de forma natural e específica (ex.: "Foi ótimo conversar com você no ..."), sem soar genérico.` : '\nPrimeiro contato frio — não finja que já se conheceram.') }] }) });
+          + (c.contexto ? `\nOnde nos conhecemos / contexto do contato: ${c.contexto}. ABRA o e-mail retomando esse contexto de forma natural e específica (ex.: "Foi ótimo conversar com você no ..."), sem soar genérico.` : '\nPrimeiro contato frio — não finja que já se conheceram.')
+          + (analise ? `\n\nANÁLISE DA EMPRESA (base para o parágrafo de "onde podemos ajudar"):\n${JSON.stringify({ setor: analise.setor, resumo: analise.resumo, sinais: analise.sinais, dores: analise.dores, oportunidades: analise.oportunidades, gancho: analise.gancho })}` : '\n(Sem análise da empresa — fale das frentes da Atlantyx de forma adequada ao setor provável, sem inventar fatos sobre a empresa.)') }] }) });
     const d = await r.json();
     const txt = d?.content?.find(x => x.type === 'text')?.text?.trim();
     return txt || fallback;
@@ -201,7 +243,11 @@ async function feedIncluir({ texto, contato, enviar = true, contexto } = {}) {
   try { const qbId = await qbCadastrar(c); await sql`UPDATE prospeccao_feed SET qb_customer_id = ${qbId} WHERE id = ${id}`; etapas.quickbooks = qbId ? 'ok' : 'sem id'; }
   catch (e) { etapas.quickbooks = 'falha: ' + e.message; await sql`UPDATE prospeccao_feed SET qb_erro = ${e.message} WHERE id = ${id}`; }
   // Mensagem
-  const mensagem = await gerarTexto(c, cfg, canal);
+  // v2.82: analisa a empresa (pesquisa na web) antes de escrever o e-mail
+  let analise = null;
+  if (canal === 'email') { analise = await analisarEmpresa(c); etapas.analise = analise ? `ok — ${analise.dores?.length || 0} dor(es), ${analise.oportunidades?.length || 0} oportunidade(s)` : 'sem dados suficientes (e-mail pessoal ou empresa não encontrada)'; }
+  try { if (analise) await sql`UPDATE prospeccao_feed SET analise = ${JSON.stringify(analise)} WHERE id = ${id}`; } catch (_) {}
+  const mensagem = await gerarTexto(c, cfg, canal, analise);
   const assunto = c.contexto ? `${c.nome.split(' ')[0]}, retomando nossa conversa — Atlantyx` : cfg.assunto;
   await sql`UPDATE prospeccao_feed SET mensagem = ${mensagem} WHERE id = ${id}`;
   try { await sql`UPDATE prospeccao_feed SET contexto = ${c.contexto || null}, assunto = ${assunto} WHERE id = ${id}`; } catch (_) {}
@@ -219,7 +265,7 @@ async function feedIncluir({ texto, contato, enviar = true, contexto } = {}) {
       } else { etapas.whatsapp = 'registrado para envio (Z-API não configurada — use o botão 📲 para abrir no WhatsApp)'; await sql`UPDATE prospeccao_feed SET status = 'whatsapp_pendente' WHERE id = ${id}`; }
     }
   } else { await sql`UPDATE prospeccao_feed SET status = 'registrado' WHERE id = ${id}`; }
-  return { id, contato: c, canal, mensagem, assunto, etapas,
+  return { id, contato: c, canal, mensagem, assunto, etapas, analise,
     anexo_padrao: cfg.apresentacao_media_id ? { media_id: cfg.apresentacao_media_id, nome: cfg.apresentacao_nome } : null,
     whatsapp_link: c.telefone ? `https://wa.me/${c.telefone}?text=${encodeURIComponent(mensagem)}` : null };
 }
@@ -236,6 +282,16 @@ async function feedEnviarWhatsApp({ id } = {}) {
   return { ok: true };
 }
 // v2.79: disparo a partir do editor — com o assunto, corpo e anexo que o usuário revisou na tela
+async function feedReescrever({ id, refazer_analise = false } = {}) {
+  const sql = await getSql();
+  const r = (await sql`SELECT * FROM prospeccao_feed WHERE id = ${id}`)[0]; if (!r) throw new Error('Registro não encontrado');
+  const c = { nome: r.nome, email: r.email, empresa: r.empresa, cargo: r.cargo, contexto: r.contexto };
+  let analise = null; try { analise = r.analise ? JSON.parse(r.analise) : null; } catch (_) {}
+  if (refazer_analise || !analise) { analise = await analisarEmpresa(c); if (analise) await sql`UPDATE prospeccao_feed SET analise = ${JSON.stringify(analise)} WHERE id = ${id}`; }
+  const mensagem = await gerarTexto(c, await configGet(), 'email', analise);
+  await sql`UPDATE prospeccao_feed SET mensagem = ${mensagem} WHERE id = ${id}`;
+  return { id, mensagem, analise };
+}
 async function feedDisparar({ id, assunto, corpo, anexo_media_id, anexo_nome, para } = {}) {
   const sql = await getSql();
   const r = (await sql`SELECT * FROM prospeccao_feed WHERE id = ${id}`)[0]; if (!r) throw new Error('Registro não encontrado');
@@ -308,6 +364,7 @@ export default async function handler(req, res) {
     feed_enviar_whatsapp: () => feedEnviarWhatsApp(payload),
     feed_reenviar: () => feedReenviar(payload),
     feed_disparar: () => feedDisparar(payload),
+    feed_reescrever: () => feedReescrever(payload),
     testar_email: () => testarSmtp(),
     cartao_get: () => cartaoGet(),
     cartao_set: () => cartaoSet(payload),
