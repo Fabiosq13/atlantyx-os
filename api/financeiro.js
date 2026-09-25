@@ -1,3 +1,15 @@
+
+// v2.81: servidor SMTP configurável — Gmail, HostGator (cPanel) ou outro.
+//   EMAIL_SMTP_HOST  (padrão: smtp.gmail.com se o usuário for @gmail; senão mail.<domínio do e-mail>)
+//   EMAIL_SMTP_PORT  (padrão 465 = SSL; 587 = STARTTLS)
+//   EMAIL_SMTP_TLS_RELAXADO=1  → aceita certificado que não bate com o host (comum em hospedagem compartilhada)
+function _smtpConfig(user, pass) {
+  const dom = String(user || '').split('@')[1] || '';
+  const host = process.env.EMAIL_SMTP_HOST || (/gmail\.com$/i.test(dom) ? 'smtp.gmail.com' : (dom ? 'mail.' + dom : 'smtp.gmail.com'));
+  const port = parseInt(process.env.EMAIL_SMTP_PORT || '465', 10);
+  return { host, port, secure: port === 465, auth: { user, pass }, connectionTimeout: 20000, greetingTimeout: 15000, socketTimeout: 30000,
+    ...(process.env.EMAIL_SMTP_TLS_RELAXADO === '1' ? { tls: { rejectUnauthorized: false } } : {}) };
+}
 // api/financeiro.js
 // ═══════════════════════════════════════════════════════════════════════════
 // Módulo Financeiro S3 — endpoint central
@@ -837,7 +849,7 @@ async function enviarEmailGmail({ para, assunto, html }) {
 
   if (nodemailer && pass) {
     try {
-      const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass }, connectionTimeout: 20000, greetingTimeout: 20000 });
+      const transporter = nodemailer.createTransport(_smtpConfig(user, pass));
       // verify() falha rápido e com mensagem clara se a credencial estiver errada
       try { await transporter.verify(); trilha.push('SMTP Gmail: autenticação OK'); }
       catch (eV) { trilha.push('SMTP Gmail: autenticação FALHOU — ' + eV.message.substring(0, 120)); throw eV; }
@@ -885,7 +897,7 @@ async function emailDiagnostico({ para } = {}) {
   if (out.nodemailer_instalado && pass) {
     try {
       const m = await import('nodemailer'); const nm = m.default || m;
-      const t = nm.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user: out.usuario, pass }, connectionTimeout: 15000 });
+      const t = nm.createTransport(_smtpConfig(out.usuario, pass));
       await t.verify(); out.etapas.push('✓ Autenticação no SMTP do Gmail bem-sucedida'); out.smtp_ok = true;
     } catch (e) { out.smtp_ok = false; out.etapas.push('✗ Autenticação no Gmail falhou: ' + e.message.substring(0, 140)); }
   }
