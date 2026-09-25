@@ -839,7 +839,7 @@ function _htmlRelatorioPagamentos(d) {
 // Envio via SMTP do Gmail (atlanteambr@gmail.com) — reaproveita a senha de app já
 // configurada em EMAIL_IMAP_PASS. Cai para o Resend se o nodemailer não estiver instalado.
 async function enviarEmailGmail({ para, assunto, html }) {
-  const user = process.env.EMAIL_IMAP_USER || 'atlanteambr@gmail.com';
+  const user = (process.env.EMAIL_SMTP_USER || process.env.EMAIL_IMAP_USER) || 'atlanteambr@gmail.com';
   const pass = process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS;
   const trilha = []; // v1.25.1: registra CADA tentativa, para o erro nunca ser silencioso
   let nodemailer = null;
@@ -887,7 +887,7 @@ async function enviarEmailGmail({ para, assunto, html }) {
 
 // v1.25.1: diagnóstico de e-mail — diz exatamente o que está configurado e testa o envio
 async function emailDiagnostico({ para } = {}) {
-  const out = { nodemailer_instalado: false, senha_configurada: false, usuario: process.env.EMAIL_IMAP_USER || 'atlanteambr@gmail.com',
+  const out = { nodemailer_instalado: false, senha_configurada: false, usuario: (process.env.EMAIL_SMTP_USER || process.env.EMAIL_IMAP_USER) || 'atlanteambr@gmail.com',
     resend_configurado: !!process.env.RESEND_API_KEY, resend_from: process.env.RESEND_FROM || null, destinatarios_padrao: DEST_RELATORIO, etapas: [] };
   try { await import('nodemailer'); out.nodemailer_instalado = true; out.etapas.push('✓ Pacote nodemailer instalado'); }
   catch (e) { out.etapas.push('✗ Pacote nodemailer NÃO instalado — adicione "nodemailer" nas dependencies do package.json e faça novo deploy'); }
