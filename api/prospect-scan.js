@@ -173,11 +173,11 @@ Retorne array JSON com ${quantidade} empresas reais, ordenadas por score A → B
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: MODEL, max_tokens: 650 * n + 300, system, messages: [{ role: 'user', content: userLote }, { role: 'assistant', content: '[' }] })
+      body: JSON.stringify({ model: MODEL, max_tokens: 650 * n + 300, system, messages: [{ role: 'user', content: userLote }] })   // v2.93: sem pré-preenchimento — Sonnet 4.6+ responde 400
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error?.message || ('Claude API ' + r.status));
-    return extrairObjetos('[' + (d.content || []).filter(x => x.type === 'text').map(x => x.text).join(''));
+    return extrairObjetos((d.content || []).filter(x => x.type === 'text').map(x => x.text).join(''));
   };
   const res = await Promise.allSettled(Array.from({ length: nLotes }, (_, k) => pedir(k)));
   const erros = res.filter(x => x.status === 'rejected').map(x => x.reason?.message);
