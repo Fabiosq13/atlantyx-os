@@ -19906,7 +19906,7 @@ async function feedIncluir(enviar) {
     document.getElementById('feedContexto').value = '';
     if (d.canal === 'email') { box.innerHTML = ''; document.getElementById('feedTexto').value = ''; document.getElementById('feedPreview').textContent = '';
       feedListar(); return feedEditor({ id: d.id, nome: d.contato.nome, empresa: d.contato.empresa, email: d.contato.email, contexto: d.contato.contexto,
-        assunto: d.assunto, mensagem: d.mensagem, qb: d.etapas?.quickbooks, anexo_padrao: d.anexo_padrao }); }
+        assunto: d.assunto, mensagem: d.mensagem, qb: d.etapas?.quickbooks, anexo_padrao: d.anexo_padrao, analise: d.analise }); }
     const e = d.etapas || {};
     const li = (k, v) => `<div style="font-size:10.5px;padding:2px 0;"><span style="color:${String(v).startsWith('falha') ? 'var(--red)' : 'var(--green,#22d3a3)'};">${String(v).startsWith('falha') ? '✗' : '✓'}</span> <b>${k}</b>: ${v}</div>`;
     box.innerHTML = `<div style="background:var(--bg4);border-radius:8px;padding:10px 12px;">
@@ -19952,11 +19952,16 @@ function feedEditor(x) {
       <button class="btn" style="font-size:10px;" onclick="document.getElementById('feedEdModal').style.display='none'">✕</button></div>
     <div class="pb">
       ${x.contexto ? `<div style="font-size:10.5px;color:var(--t2);margin-bottom:8px;">📍 Contexto: <b>${esc(x.contexto)}</b></div>` : ''}
+      <div id="feEd_analise">${_feedAnaliseHtml(x.analise)}</div>
       ${x.qb ? `<div style="font-size:10px;color:${String(x.qb).startsWith('falha') ? 'var(--red)' : 'var(--green,#22d3a3)'};margin-bottom:8px;">QuickBooks: ${esc(x.qb)}</div>` : ''}
       <div class="fg" style="margin:0 0 8px;"><label class="fl">Para</label><input class="fi" id="feEd_para" value="${esc(x.email)}"/></div>
       <div class="fg" style="margin:0 0 8px;"><label class="fl">Assunto</label><input class="fi" id="feEd_assunto" value="${esc(x.assunto)}"/></div>
       <div class="fg" style="margin:0 0 8px;"><label class="fl">Mensagem <span style="font-weight:400;color:var(--t3);">— edite à vontade</span></label>
-        <textarea class="fi" id="feEd_corpo" style="height:240px;font-size:12.5px;line-height:1.6;">${esc(x.mensagem)}</textarea></div>
+        <textarea class="fi" id="feEd_corpo" style="height:300px;font-size:12.5px;line-height:1.6;">${esc(x.mensagem)}</textarea>
+        <div style="display:flex;gap:6px;margin-top:5px;">
+          <button class="btn" style="font-size:9.5px;" onclick="feedReescrever('${x.id}',false)" title="Escreve de novo usando a mesma análise">↻ Reescrever e-mail</button>
+          <button class="btn" style="font-size:9.5px;" onclick="feedReescrever('${x.id}',true)" title="Pesquisa a empresa de novo e reescreve">🔍 Refazer análise e reescrever</button>
+        </div></div>
       <div style="background:var(--bg4);border-radius:8px;padding:10px 12px;margin-bottom:12px;">
         <div style="font-size:11px;font-weight:600;margin-bottom:6px;">📎 Anexo</div>
         <div id="feEd_anexoInfo" style="font-size:11px;margin-bottom:6px;"></div>
@@ -19972,6 +19977,28 @@ function feedEditor(x) {
       </div>
     </div></div>`;
   _feedAnexoRender();
+}
+function _feedAnaliseHtml(a) {
+  if (typeof a === 'string') { try { a = JSON.parse(a); } catch (_) { a = null; } }
+  if (!a) return '<div style="font-size:10px;color:var(--t3);margin-bottom:8px;">Sem análise da empresa (e-mail pessoal ou empresa não encontrada) — o texto fala das frentes da Atlantyx de forma geral.</div>';
+  const esc = v => String(v ?? '').replace(/</g,'&lt;');
+  return `<details open style="background:var(--bg4);border-radius:8px;padding:9px 12px;margin-bottom:10px;border-left:3px solid var(--blue,#4f7cff);">
+    <summary style="cursor:pointer;font-size:11px;font-weight:600;">🔎 Análise da empresa ${a.empresa ? '— ' + esc(a.empresa) : ''}${a.setor ? ' · ' + esc(a.setor) : ''}</summary>
+    <div style="font-size:10.5px;line-height:1.6;margin-top:6px;">
+      ${a.resumo ? `<div style="color:var(--t2);margin-bottom:5px;">${esc(a.resumo)}</div>` : ''}
+      ${(a.sinais||[]).length ? `<div><b>Sinais:</b> ${a.sinais.map(esc).join(' · ')}</div>` : ''}
+      ${(a.dores||[]).length ? `<div style="margin-top:4px;"><b>Dores prováveis:</b><ul style="margin:2px 0 0 16px;padding:0;">${a.dores.map(d => `<li>${esc(d)}</li>`).join('')}</ul></div>` : ''}
+      ${(a.oportunidades||[]).length ? `<div style="margin-top:4px;"><b>Onde a Atlantyx ajuda:</b><ul style="margin:2px 0 0 16px;padding:0;">${a.oportunidades.map(o => `<li><b>${esc(o.solucao)}</b> — ${esc(o.como_ajuda)}${o.caso ? ` <span style="color:var(--t3);">(caso: ${esc(o.caso)})</span>` : ''}</li>`).join('')}</ul></div>` : ''}
+      ${(a.fontes||[]).length ? `<div style="margin-top:4px;font-size:9.5px;color:var(--t3);">Fontes: ${a.fontes.slice(0,4).map(u => `<a href="${esc(u)}" target="_blank" style="color:var(--t3);">${esc(String(u).replace(/^https?:\/\//,'').split('/')[0])}</a>`).join(' · ')}</div>` : ''}
+    </div></details>`;
+}
+async function feedReescrever(id, refazer) {
+  const ta = document.getElementById('feEd_corpo'); if (ta) { ta.disabled = true; ta.value = refazer ? '⏳ Pesquisando a empresa de novo e reescrevendo...' : '⏳ Reescrevendo...'; }
+  try {
+    const r = await prospApi('feed_reescrever', { id, refazer_analise: !!refazer });
+    if (ta) { ta.value = r.mensagem; ta.disabled = false; }
+    const box = document.getElementById('feEd_analise'); if (box) box.innerHTML = _feedAnaliseHtml(r.analise);
+  } catch (e) { if (ta) { ta.disabled = false; ta.value = ''; } toast('Erro: ' + e.message, 'error'); }
 }
 function _feedAnexoRender() {
   const el = document.getElementById('feEd_anexoInfo'); if (!el) return;
@@ -24000,7 +24027,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.80] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.82] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -24016,7 +24043,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.80';
+window.__ATX_BUILD_ID__ = 'ATX-v2.82';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
