@@ -217,13 +217,17 @@ async function filaEnfileirar({ slots = [], tema, redes, blog_id, apenas_rascunh
   }
   return { lote, enfileirados: slots.length, stories: stories ? [...new Set(slots.map(s => s.data))].length : 0 };
 }
-async function filaStatus({ lote } = {}) {
+async function filaStatus({ lote, todos = false } = {}) {
   const sql = await _filaTabela();
-  const rows = lote ? await sql`SELECT * FROM autocampanha_fila WHERE lote = ${lote} ORDER BY data, hora`
-    : await sql`SELECT * FROM autocampanha_fila WHERE criado_em >= NOW() - INTERVAL '2 days' ORDER BY criado_em DESC, data, hora LIMIT 60`;
+  // v2.77: sem lote informado, mostra só a ÚLTIMA geração (antes somava tudo dos últimos 2 dias)
+  let loteEf = lote;
+  if (!loteEf && !todos) { const u = await sql`SELECT lote FROM autocampanha_fila ORDER BY criado_em DESC LIMIT 1`; loteEf = u[0]?.lote || null; }
+  const rows = loteEf ? await sql`SELECT * FROM autocampanha_fila WHERE lote = ${loteEf} ORDER BY data, hora`
+    : await sql`SELECT * FROM autocampanha_fila WHERE criado_em >= NOW() - INTERVAL '7 days' ORDER BY criado_em DESC, data, hora LIMIT 120`;
+  const outros = await sql`SELECT COUNT(*)::int AS n FROM autocampanha_fila WHERE lote IS DISTINCT FROM ${loteEf || ''}`;
   const resumo = { total: rows.length, pendentes: rows.filter(r => r.status === 'pendente').length, prontos: rows.filter(r => r.status === 'pronto').length,
     falhas: rows.filter(r => r.status === 'falhou').length, processando: rows.filter(r => r.status === 'processando').length };
-  return { lote, itens: rows, resumo, concluido: resumo.pendentes === 0 && resumo.processando === 0 };
+  return { lote: loteEf, itens: rows, resumo, concluido: resumo.pendentes === 0 && resumo.processando === 0, itens_de_outras_geracoes: outros[0]?.n || 0 };
 }
 // Executa UM passo de UM item. Chamado pelo cron e pelo "cutucão" da tela.
 async function filaProcessar({ lote } = {}) {
@@ -232,7 +236,7 @@ async function filaProcessar({ lote } = {}) {
   await sql`UPDATE autocampanha_fila SET status = 'pendente' WHERE status = 'processando' AND atualizado_em < NOW() - INTERVAL '3 minutes'`;
   const cand = lote
     ? await sql`SELECT * FROM autocampanha_fila WHERE lote = ${lote} AND status = 'pendente' ORDER BY data, hora LIMIT 1`
-    : await sql`SELECT * FROM autocampanha_fila WHERE status = 'pendente' ORDER BY criado_em, data, hora LIMIT 1`;
+    : await sql`SELECT * FROM autocampanha_fila WHERE status = 'pendente' ORDER BY criado_em DESC, data, hora LIMIT 1`;   // v2.77: mais recente primeiro
   const it = cand[0];
   if (!it) return { ocioso: true };
   await sql`UPDATE autocampanha_fila SET status = 'processando', atualizado_em = NOW() WHERE id = ${it.id}`;
@@ -354,8 +358,15 @@ async function filaAgendarRascunhos({ lote, ids } = {}) {
   return { agendando: validos.length, pulados_horario_passado: passados.map(p => `${p.data} ${p.hora}`), lotes: lotes.map(l => l.lote) };
 }
 
-async function filaLimpar({ lote } = {}) {
+async function filaLimpar({ lote, modo } = {}) {
   const sql = await _filaTabela();
+  // v2.77: "nao_agendados" = tudo que NÃO foi para o Metricool (rascunhos, falhas e pendentes — que
+  // senão continuariam sendo processados pelo cron, gastando IA e imagens). Os já agendados ficam.
+  if (modo === 'nao_agendados') {
+    const r = await sql`DELETE FROM autocampanha_fila WHERE metricool_id IS NULL RETURNING id`;
+    return { ok: true, removidos: r.length };
+  }
+  if (modo === 'tudo') { const r = await sql`DELETE FROM autocampanha_fila RETURNING id`; return { ok: true, removidos: r.length }; }
   if (lote) await sql`DELETE FROM autocampanha_fila WHERE lote = ${lote}`; else await sql`DELETE FROM autocampanha_fila WHERE status IN ('pronto','falhou') AND criado_em < NOW() - INTERVAL '7 days'`;
   return { ok: true };
 }
