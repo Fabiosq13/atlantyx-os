@@ -1,3 +1,8 @@
+
+// v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
+// SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
+// Antes, toda chamada sql.query() falhava em silêncio: colunas novas nunca eram criadas.
+const _q = (db, texto, params) => (typeof db.query === 'function' ? db.query(texto, params) : db(texto, params));
 // api/cnab.js — v1.25
 // Gerador de arquivo de pagamentos CNAB 240 (padrão FEBRABAN / Itaú SISPAG).
 //
@@ -30,7 +35,7 @@ async function ensureTabelas(sql) {
   for (const col of colunas) {
     const nome = col.split(' ')[0];
     try {
-      await sql.query(`ALTER TABLE despesas_programadas ADD COLUMN IF NOT EXISTS ${col}`);
+      await _q(sql, `ALTER TABLE despesas_programadas ADD COLUMN IF NOT EXISTS ${col}`);
     } catch (e) { falhas.push(`${nome}: ${e.message}`); }
   }
   // Confere no catálogo do banco se as colunas realmente existem
