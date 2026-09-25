@@ -112,11 +112,34 @@ async function gerarTexto(c, cfg, canal) {
 }
 
 // ── 5. E-mail com anexo ──
+// v2.80: credenciais de SMTP — aceita os nomes alternativos mais comuns e diz EXATAMENTE o que falta
+export function credSmtp() {
+  const user = process.env.EMAIL_IMAP_USER || process.env.EMAIL_USER || process.env.SMTP_USER || process.env.GMAIL_USER || '';
+  const pass = (process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS || process.env.EMAIL_PASS || process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+  const presentes = ['EMAIL_IMAP_USER','EMAIL_USER','SMTP_USER','GMAIL_USER','EMAIL_SMTP_PASS','EMAIL_IMAP_PASS','EMAIL_PASS','SMTP_PASS','GMAIL_APP_PASSWORD'].filter(k => !!process.env[k]);
+  return { user, pass, presentes, ok: !!(user && pass),
+    falta: [!user ? 'EMAIL_IMAP_USER (o e-mail Gmail que envia, ex.: atlanteambr@gmail.com)' : null, !pass ? 'EMAIL_SMTP_PASS (senha de app do Gmail, 16 letras, sem espaços)' : null].filter(Boolean) };
+}
+async function testarSmtp() {
+  const cr = credSmtp();
+  const out = { variaveis_presentes: cr.presentes, usuario: cr.user ? cr.user.replace(/(.{3}).*(@.*)/, '$1…$2') : null, senha_tamanho: cr.pass ? cr.pass.length : 0, ok: false };
+  if (!cr.ok) { out.erro = 'Faltam no Vercel: ' + cr.falta.join(' e '); out.como = COMO_SMTP; return out; }
+  if (cr.pass.length !== 16) out.aviso = `A senha tem ${cr.pass.length} caracteres — senha de app do Gmail tem 16. Pode ser a senha normal da conta, que o Gmail recusa.`;
+  try {
+    const nodemailer = (await import('nodemailer')).default;
+    const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user: cr.user, pass: cr.pass } });
+    await t.verify(); out.ok = true; out.mensagem = 'Conexão SMTP com o Gmail OK — o envio vai funcionar.';
+  } catch (e) { out.erro = e.message; out.como = /Invalid login|Username and Password|535/i.test(e.message) ? 'O Gmail recusou usuário/senha. Use uma SENHA DE APP (não a senha normal): ' + COMO_SMTP : COMO_SMTP; }
+  return out;
+}
+const COMO_SMTP = '1) No Gmail que vai enviar, ative a verificação em 2 etapas (myaccount.google.com/security). 2) Gere uma senha de app em myaccount.google.com/apppasswords (nome: "Atlantyx OS"). 3) No Vercel → Settings → Environment Variables, crie EMAIL_IMAP_USER = o e-mail e EMAIL_SMTP_PASS = a senha de 16 letras sem espaços, marcando o ambiente PRODUCTION. 4) Deployments → ⋯ → Redeploy (variável nova só vale após redeploy).';
+
 async function enviarEmail(c, cfg, corpo, over = {}) {
   cfg = { ...cfg, ...(over.assunto ? { assunto: over.assunto } : {}), ...(over.anexo_media_id !== undefined ? { apresentacao_media_id: over.anexo_media_id, apresentacao_nome: over.anexo_nome || cfg.apresentacao_nome } : {}) };
   const nodemailer = (await import('nodemailer')).default;
-  const user = process.env.EMAIL_IMAP_USER, pass = process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS;
-  if (!user || !pass) throw new Error('EMAIL_IMAP_USER/EMAIL_SMTP_PASS não configurados');
+  const cr = credSmtp();
+  if (!cr.ok) { const e = new Error('Envio de e-mail não configurado — faltam no Vercel: ' + cr.falta.join(' e ')); e.dica = COMO_SMTP; throw e; }
+  const user = cr.user, pass = cr.pass;
   const anexos = [];
   if (cfg.apresentacao_media_id) {
     const sql = await getSql();
@@ -238,6 +261,10 @@ function vcard(c) {
 }
 
 export default async function handler(req, res) {
+  // v2.80: GET /api/prospeccao?teste_email=1 → testa o SMTP e diz o que falta (não mostra a senha)
+  if (req.method === 'GET' && req.query?.teste_email) {
+    const r = await testarSmtp(); res.setHeader('Content-Type', 'application/json; charset=utf-8'); return res.status(200).send(JSON.stringify(r, null, 2));
+  }
   // GET /api/prospeccao?cartao=1  → JSON público do cartão (para a página cartao.html)
   // GET /api/prospeccao?vcard=1   → arquivo .vcf
   if (req.method === 'GET' && (req.query?.cartao || req.query?.vcard)) {
@@ -260,10 +287,11 @@ export default async function handler(req, res) {
     feed_enviar_whatsapp: () => feedEnviarWhatsApp(payload),
     feed_reenviar: () => feedReenviar(payload),
     feed_disparar: () => feedDisparar(payload),
+    testar_email: () => testarSmtp(),
     cartao_get: () => cartaoGet(),
     cartao_set: () => cartaoSet(payload),
   };
   if (!acoes[action]) return res.status(400).json({ success: false, error: 'Ação inválida: ' + Object.keys(acoes).join(', ') });
   try { const r = await acoes[action](); return res.status(200).json({ success: true, ...r }); }
-  catch (e) { console.error('[prospeccao]', action, e.message); return res.status(500).json({ success: false, error: e.message }); }
+  catch (e) { console.error('[prospeccao]', action, e.message); return res.status(500).json({ success: false, error: e.message, dica: e.dica || null }); }
 }
