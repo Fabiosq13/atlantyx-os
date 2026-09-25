@@ -126,11 +126,11 @@ async function gerarTexto(c, cfg, canal) {
 // ── 5. E-mail com anexo ──
 // v2.80: credenciais de SMTP — aceita os nomes alternativos mais comuns e diz EXATAMENTE o que falta
 export function credSmtp() {
-  const user = process.env.EMAIL_IMAP_USER || process.env.EMAIL_USER || process.env.SMTP_USER || process.env.GMAIL_USER || '';
+  const user = process.env.EMAIL_SMTP_USER || process.env.EMAIL_IMAP_USER || process.env.EMAIL_USER || process.env.SMTP_USER || process.env.GMAIL_USER || '';   // v2.81: EMAIL_SMTP_USER separa envio da leitura
   const pass = (process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS || process.env.EMAIL_PASS || process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
-  const presentes = ['EMAIL_IMAP_USER','EMAIL_USER','SMTP_USER','GMAIL_USER','EMAIL_SMTP_PASS','EMAIL_IMAP_PASS','EMAIL_PASS','SMTP_PASS','GMAIL_APP_PASSWORD'].filter(k => !!process.env[k]);
+  const presentes = ['EMAIL_SMTP_USER','EMAIL_SMTP_HOST','EMAIL_SMTP_PORT','EMAIL_IMAP_USER','EMAIL_USER','SMTP_USER','GMAIL_USER','EMAIL_SMTP_PASS','EMAIL_IMAP_PASS','EMAIL_PASS','SMTP_PASS','GMAIL_APP_PASSWORD'].filter(k => !!process.env[k]);
   return { user, pass, presentes, ok: !!(user && pass),
-    falta: [!user ? 'EMAIL_IMAP_USER (o e-mail Gmail que envia, ex.: atlanteambr@gmail.com)' : null, !pass ? 'EMAIL_SMTP_PASS (senha de app do Gmail, 16 letras, sem espaços)' : null].filter(Boolean) };
+    falta: [!user ? 'EMAIL_SMTP_USER (o e-mail que envia, ex.: contato@atlanteam.com.br)' : null, !pass ? 'EMAIL_SMTP_PASS (senha de app do Gmail, 16 letras, sem espaços)' : null].filter(Boolean) };
 }
 async function testarSmtp() {
   const cr = credSmtp();
