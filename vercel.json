@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/m/:id.:ext",
+      "destination": "/api/media?id=:id"
+    },
+    {
       "source": "/media/:file",
       "destination": "/api/media-upload?f=:file"
     },
@@ -42,7 +46,8 @@
       "maxDuration": 60
     },
     "api/media.js": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "includeFiles": "api/fonts/**"
     },
     "api/crm.js": {
       "maxDuration": 60
