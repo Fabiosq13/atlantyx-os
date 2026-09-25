@@ -273,15 +273,6 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sbi s2" onclick="nav('s2ag',this)">&#9675; Todos Agentes S2</div>
     </div>
 
-    <!-- S4 · CRM -->
-    <div class="sg-divisor">S4 · VENDAS CRM</div>
-    <div class="sg-hd sg-front" onclick="toggleGrupo('gCRM')" data-g="gCRM">
-      <span class="sg-lbl">Vendas + CRM</span><span class="sg-arr" id="arr-gCRM">&#9660;</span>
-    </div>
-    <div class="sg-body closed" id="gCRM">
-      <div class="sbi s7" onclick="nav('s4crm',this)">&#9711; Metas + KPIs CRM <span class="nbx bl">S4</span></div>
-    </div>
-
     <!-- S5 · JURIDICO -->
     <div class="sg-divisor">S5 · JURIDICO</div>
     <div class="sg-hd sg-front" onclick="toggleGrupo('gJuridico')" data-g="gJuridico">
@@ -313,6 +304,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sg-sub">PIPELINE</div>
       <div class="sbi s7" onclick="nav('s7pipe',this)">&#9647; Pipeline HubSpot <span class="nbx bl" id="dealCnt">—</span></div>
       <div class="sbi s7" onclick="nav('s7kpi',this)">&#9711; Metas + KPIs</div>
+      <div class="sbi s7" onclick="nav('s4crm',this)">&#9711; Metas + KPIs CRM</div>
       <div class="sbi s7" onclick="nav('s7feed',this)">&#9889; Feed de Prospeccao <span class="nbx gn">novo</span></div>
       <div class="sbi s7" onclick="nav('s7cartao',this)">&#128100; Meu Cartao Digital <span class="nbx gn">novo</span></div>
       <div class="sg-sub">OUTREACH</div>
@@ -7010,7 +7002,7 @@ function toggleGrupo(id) {
 function initMenu() {
   // Fechar todos os grupos, abrir apenas gFundador por default
   const todos = ['gProposito','gFundador','gEstrategia','gPlanejamento','gIdeias','gFinanceiro',
-    'gMarketing','gCRM','gJuridico','gDev','gVendas','gRH','gProjetos','gAtend','gInsideSales','gDE','gDash'];
+    'gMarketing','gJuridico','gDev','gVendas','gRH','gProjetos','gAtend','gInsideSales','gDE','gDash'];
   todos.forEach(id => {
     const body = document.getElementById(id);
     const arr = document.getElementById('arr-' + id);
@@ -23924,7 +23916,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.77] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.78] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23940,7 +23932,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.77';
+window.__ATX_BUILD_ID__ = 'ATX-v2.78';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
