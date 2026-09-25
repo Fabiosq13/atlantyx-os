@@ -18,6 +18,21 @@ export default async function handler(req, res) {
     'X-Api-Key': apolloKey,
   };
 
+  // v2.90: comparação EXATA de nome e empresa
+  const normN = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9*\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const normEmp = s => normN(s).replace(/\b(ltda|s ?a|sa|me|eireli|epp|cia|companhia|grupo|holding|brasil|do brasil|inc|llc|corp|corporation|limited|ltd)\b/g, ' ').replace(/\s+/g, ' ').trim();
+  const LIGA = new Set(['da', 'de', 'do', 'das', 'dos', 'e']);
+  const _nomeBate = (digitado, p) => {
+    const toks = normN(digitado).split(' ').filter(t => t && !LIGA.has(t));
+    if (!toks.length) return false;
+    const primeiro = normN(p.first_name || (p.name || '').split(' ')[0]);
+    const sobre = normN([p.last_name, p.last_name_obfuscated].filter(Boolean).join(' ') || (p.name || '').split(' ').slice(1).join(' '));
+    const palavrasSobre = sobre.split(' ').filter(Boolean);
+    if (primeiro !== toks[0]) return false;
+    return toks.slice(1).every(t => palavrasSobre.includes(t) || palavrasSobre.some(w => w.includes('*') && w[0] === t[0]));
+  };
+  const _emailBate = (email, p) => { const e = String(email || '').toLowerCase().trim(); return [p.email, p.personal_emails, p.work_email].flat().filter(Boolean).some(x => String(x).toLowerCase().trim() === e); };
+
   // Helper: parse JSON com fallback
   const safeJsonParse = (text, label = '') => {
     try { return JSON.parse(text); }
@@ -72,12 +87,17 @@ export default async function handler(req, res) {
           const ok = !onde || ls.some(l => l.split(',').map(x => x.trim()).filter(Boolean).every(parte => onde.includes(parte))); if (!ok) removidos.local++; return ok; });
       }
       if (params.nome_exato) {
-        const toks = norm(params.nome_exato).split(/\s+/).filter(t => t.length > 1);
-        people = people.filter(p => { const n = norm([p.first_name, p.last_name, p.last_name_obfuscated, p.name].filter(Boolean).join(' '));
-          const ok = toks.every(t => n.includes(t) || (t === toks[toks.length - 1] && /\*/.test(n))); if (!ok) removidos.nome++; return ok; });
+        // v2.90: nome EXATO — primeiro nome igual ao digitado e cada sobrenome como PALAVRA inteira
+        // (antes "Ana Lima" passava por "Mariana Limaverde"). Sobrenome ocultado pelo plano ("Me***s")
+        // é aceito só se a inicial bater.
+        people = people.filter(p => { const ok = _nomeBate(params.nome_exato, p); if (!ok) removidos.nome++; return ok; });
+      }
+      if (params.empresa_exata) {
+        const alvo = normEmp(params.empresa_exata);
+        people = people.filter(p => { const e = normEmp(p.organization?.name || p.organization_name || ''); const ok = !!e && (e === alvo || e.includes(alvo) || alvo.includes(e)); if (!ok) removidos.empresa = (removidos.empresa || 0) + 1; return ok; });
       }
       data.people = people;
-      data._stats = { total_apollo: data.pagination?.total_entries ?? data.total_entries ?? null, retornados_apollo: (data.people || []).length + removidos.cargo + removidos.local + removidos.nome,
+      data._stats = { total_apollo: data.pagination?.total_entries ?? data.total_entries ?? null, retornados_apollo: (data.people || []).length + removidos.cargo + removidos.local + removidos.nome + (removidos.empresa || 0),
         apos_conferencia: people.length, descartados: removidos, com_li_pessoa: people.filter(p => !!p.linkedin_url).length };
       data._filtros_enviados = { ...body, ...(qs.toString() ? { url: qs.toString() } : {}) };
       console.log('[Apollo] busca', JSON.stringify(body).substring(0, 300), '→', JSON.stringify(data._stats));
@@ -111,7 +131,20 @@ export default async function handler(req, res) {
       if (!r.ok) return res.status(r.status).json({ success: false, error: 'Apollo match ' + r.status + ': ' + text.substring(0,300) });
 
       const data = safeJsonParse(text, 'person_match');
-      console.log('[Apollo person_match] resultado:', data.person ? 'encontrado' : 'nada');
+      // v2.90: o "match" do Apollo pode devolver uma pessoa PARECIDA. Só aceita se for a descrita:
+      //  • por e-mail: o e-mail devolvido tem de ser o mesmo (se o plano ocultar o e-mail, aceita — a busca foi pelo e-mail)
+      //  • por nome: primeiro nome e sobrenomes batem; com empresa, a empresa também
+      if (data.person) {
+        const p = data.person; let motivo = null;
+        if (params.email && p.email && !_emailBate(params.email, p)) motivo = `e-mail devolvido (${p.email}) é diferente do pedido`;
+        if (!motivo && (params.name || params.first_name) && !params.linkedin_url && !params.email && !_nomeBate(params.name || [params.first_name, params.last_name].filter(Boolean).join(' '), p)) motivo = `nome devolvido (${[p.first_name, p.last_name].filter(Boolean).join(' ')}) é outra pessoa`;
+        if (!motivo && params.organization_name && !params.email && !params.linkedin_url) {
+          const e = normEmp(p.organization?.name || ''), a = normEmp(params.organization_name);
+          if (e && !(e === a || e.includes(a) || a.includes(e))) motivo = `empresa devolvida (${p.organization?.name}) é outra`;
+        }
+        if (motivo) { data._descartado = motivo; data.person = null; }
+      }
+      console.log('[Apollo person_match] resultado:', data.person ? 'encontrado' : ('nada' + (data._descartado ? ' — ' + data._descartado : '')));
       return res.status(200).json({ success: true, ...data });
     }
 
