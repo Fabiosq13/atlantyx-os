@@ -79,9 +79,26 @@ Visual style: premium B2B tech corporate, dark navy blue (#1A3A8F) background, e
     if (!r.ok) {
       let errMsg = responseText;
       try { errMsg = JSON.parse(responseText)?.message || JSON.parse(responseText)?.error || responseText; } catch {}
+      // v2.76: reserva — se o Ideogram recusar (chave, crédito, instabilidade) e houver OPENAI_API_KEY, usa DALL·E 3
+      if (process.env.OPENAI_API_KEY) {
+        try {
+          const tam = /9_16|10_16|2_3|3_4/.test(formato) ? '1024x1792' : /16_9|16_10|3_2|4_3/.test(formato) ? '1792x1024' : '1024x1024';
+          const ro = await fetch('https://api.openai.com/v1/images/generations', { method: 'POST',
+            headers: { Authorization: 'Bearer ' + process.env.OPENAI_API_KEY.trim(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: 'dall-e-3', prompt: `${prompt}${negativo ? '\nDo NOT include: ' + negativo : ''}`.substring(0, 3900), size: tam, n: 1, quality: 'standard', style: 'natural' }) });
+          const od = await ro.json().catch(() => ({}));
+          if (ro.ok && od.data?.length) {
+            console.log('[image-gen] Ideogram falhou (' + r.status + ') — usada a reserva DALL·E 3');
+            return res.status(200).json({ success: true, imagens: od.data.map(x => ({ url: x.url, prompt_usado: x.revised_prompt })), total: od.data.length, provedor: 'dall-e-3', aviso_ideogram: `Ideogram ${r.status}: ${String(errMsg).substring(0, 120)}` });
+          }
+          console.warn('[image-gen] reserva OpenAI também falhou:', JSON.stringify(od).substring(0, 200));
+        } catch (e) { console.warn('[image-gen] reserva OpenAI erro:', e.message); }
+      }
       return res.status(500).json({
+        success: false,
         error: `Ideogram retornou ${r.status}: ${errMsg.substring(0, 300)}`,
         status: r.status,
+        dica: r.status === 401 ? 'Chave do Ideogram recusada: gere uma nova em ideogram.ai → API, confira o crédito, atualize IDEOGRAM_API_KEY no Vercel e faça Redeploy. Ou configure OPENAI_API_KEY para usar DALL·E como reserva.' : undefined,
         chave_prefixo: apiKeyClean.substring(0, 8) + '...',
       });
     }
