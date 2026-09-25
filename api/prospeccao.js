@@ -15,6 +15,11 @@
 import { neon } from '@neondatabase/serverless';
 import { enviarContatoHubSpot, registrarAtividade, testarHubSpot } from '../lib/hubspot-sync.js';
 
+// v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
+// SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
+// Antes, toda chamada sql.query() falhava em silêncio: colunas novas nunca eram criadas.
+const _q = (db, texto, params) => (typeof db.query === 'function' ? db.query(texto, params) : db(texto, params));
+
 // v2.81: servidor SMTP configurável — Gmail, HostGator (cPanel) ou outro.
 //   EMAIL_SMTP_HOST  (padrão: smtp.gmail.com se o usuário for @gmail; senão mail.<domínio do e-mail>)
 //   EMAIL_SMTP_PORT  (padrão 465 = SSL; 587 = STARTTLS)
@@ -37,7 +42,7 @@ async function getSql() {
     email_enviado_em TIMESTAMPTZ, email_erro TEXT, whatsapp_enviado_em TIMESTAMPTZ, whatsapp_erro TEXT,
     mensagem TEXT, criado_em TIMESTAMPTZ DEFAULT NOW())`;
   for (const col of ['contexto TEXT', 'assunto TEXT', 'anexo_media_id TEXT', 'anexo_nome TEXT', 'analise TEXT', 'hubspot_contato_id TEXT', 'hubspot_negocio_id TEXT', 'hubspot_erro TEXT']) {
-    try { await _sql.query(`ALTER TABLE prospeccao_feed ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
+    try { await _q(_sql, `ALTER TABLE prospeccao_feed ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
   }
   await _sql`CREATE TABLE IF NOT EXISTS app_config (chave TEXT PRIMARY KEY, valor JSONB, atualizado_em TIMESTAMPTZ DEFAULT NOW())`;
   return _sql;
