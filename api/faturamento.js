@@ -425,6 +425,7 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
     porColuna[t.status].push({ ...t, valor_total_termo: num(t.valor_total_termo), nf_soma: num(t.nf_soma), nf_diferenca: num(t.nf_diferenca),
       n_empresas: emp.length, n_nf_encontradas: emp.filter(e => e.nf_status === 'encontrada').length, n_pagas: emp.filter(e => e.pagamento_status === 'pago').length,
       nf_numeros: emp.map(e => e.nf_numero).filter(Boolean),   // v2.44: para o card destacar a NF filtrada
+      nf_soma: num(t.nf_soma), nf_status_termo: t.nf_status || null,
       // v2.56: data-base do prazo, na ordem: informada → derivada do período → NF mais antiga → criação
       data_termo: t.data_termo ? String(t.data_termo).substring(0,10) : null,
       // v2.58: base do prazo = data de INCLUSÃO no sistema (criado_em). O período de medição é o mês
@@ -808,11 +809,49 @@ async function termoEditar({ id, cabecalho = {}, empresas } = {}) {
 // 2b. CARGA MANUAL DE NOTA FISCAL (etapa Emissão de NF) — o frontend já subiu
 //    o arquivo (PDF/XML) via api/media-upload.js e manda a URL + os dados aqui
 // ═══════════════════════════════════════════════════════════════════════════
+// v2.85: vincula a nota a uma empresa do rateio quando a tela não conseguiu. Sem vínculo a nota era
+// gravada mas NÃO computada (o card conta empresas com nota, e o termo ficava "divergente").
+// Regras, em ordem: (1) termo com uma empresa só → ela; (2) empresa sem nota cujo valor da parcela
+// bate com a nota (±2%, ou líquido de retenção 78–100%); (3) qualquer empresa com valor exato.
+async function _vincularEmpresaNota(sql, termo_id, nf_valor) {
+  const emps = await sql`SELECT id, empresa, valor_parcela, nf_status FROM termos_empresas WHERE termo_id = ${termo_id} ORDER BY ordem`;
+  if (!emps.length) return null;
+  if (emps.length === 1) return { id: emps[0].id, empresa: emps[0].empresa, via: 'única empresa do termo' };
+  const v = num(nf_valor);
+  const bate = e => { const p = num(e.valor_parcela); return p > 0 && (Math.abs(p - v) <= Math.max(p * 0.02, 1) || (v >= p * 0.78 && v <= p * 1.005)); };
+  const livres = emps.filter(e => e.nf_status !== 'encontrada' && bate(e));
+  const ordena = arr => arr.sort((a, b) => Math.abs(num(a.valor_parcela) - v) - Math.abs(num(b.valor_parcela) - v));
+  if (livres.length) { const e = ordena(livres)[0]; return { id: e.id, empresa: e.empresa, via: 'valor da parcela' }; }
+  const exatas = emps.filter(e => Math.abs(num(e.valor_parcela) - v) <= 1);
+  if (exatas.length === 1) return { id: exatas[0].id, empresa: exatas[0].empresa, via: 'valor exato' };
+  return null;
+}
+async function termoRecomputarNotas({ termo_id } = {}) {
+  if (!termo_id) throw new Error('termo_id obrigatório');
+  const sql = await getSql();
+  const soltas = await sql`SELECT id, nf_numero, nf_valor FROM termos_notas_encontradas WHERE termo_id = ${termo_id} AND empresa_id IS NULL AND nf_valor IS NOT NULL`;
+  const vinculadas = [], sem = [];
+  for (const n of soltas) {
+    const e = await _vincularEmpresaNota(sql, termo_id, n.nf_valor);
+    if (e) {
+      await sql`UPDATE termos_notas_encontradas SET empresa_id = ${e.id} WHERE id = ${n.id}`;
+      await sql`UPDATE termos_empresas SET nf_numero = COALESCE(nf_numero, ${n.nf_numero || null}), nf_status = 'encontrada',
+        nf_data = COALESCE(nf_data, ${new Date().toISOString().substring(0, 10)}) WHERE id = ${e.id}`;
+      vinculadas.push({ nf: n.nf_numero, valor: num(n.nf_valor), empresa: e.empresa, via: e.via });
+    } else sem.push({ nf: n.nf_numero, valor: num(n.nf_valor) });
+  }
+  const recalc = await recalcularNf(termo_id);
+  const tot = await sql`SELECT COUNT(*)::int AS n FROM termos_notas_encontradas WHERE termo_id = ${termo_id}`;
+  return { notas_no_termo: tot[0]?.n || 0, vinculadas, sem_vinculo: sem, nf_status: recalc.status, nf_soma: recalc.soma, nf_diferenca: recalc.diff };
+}
+
 async function termoNfUpload({ termo_id, empresa_id, nf_numero, nf_valor, anexo_nome, arquivo_url, tipo_arquivo } = {}) {
   if (!termo_id) throw new Error('termo_id obrigatório');
   if (!nf_valor || num(nf_valor) <= 0) throw new Error('valor da nota fiscal obrigatório');
   const sql = await getSql();
   const notaId = novoId('nota');
+  let vinculo = null;
+  if (!empresa_id) { vinculo = await _vincularEmpresaNota(sql, termo_id, nf_valor); if (vinculo) empresa_id = vinculo.id; }
   await sql`INSERT INTO termos_notas_encontradas (id, termo_id, empresa_id, email_assunto, email_remetente, anexo_nome, nf_numero, nf_valor, tipo_arquivo, arquivo_url, origem)
     VALUES (${notaId}, ${termo_id}, ${empresa_id || null}, 'Carga manual', 'manual', ${anexo_nome || null}, ${nf_numero || null}, ${num(nf_valor)}, ${tipo_arquivo || null}, ${arquivo_url || null}, 'manual')`;
   if (empresa_id) {
@@ -820,7 +859,8 @@ async function termoNfUpload({ termo_id, empresa_id, nf_numero, nf_valor, anexo_
   }
   const recalc = await recalcularNf(termo_id);
   console.log(`[Faturamento] NF carregada manualmente: termo=${termo_id} valor=${num(nf_valor)} empresa=${empresa_id || '(sem vínculo)'}`);
-  return { nota_id: notaId, nf_status: recalc.status, nf_soma: recalc.soma, nf_diferenca: recalc.diff };
+  return { nota_id: notaId, nf_status: recalc.status, nf_soma: recalc.soma, nf_diferenca: recalc.diff,
+    vinculada_a: vinculo ? vinculo.empresa : (empresa_id ? 'empresa escolhida' : null), sem_vinculo: !empresa_id };
 }
 async function termoNfExcluir({ nota_id } = {}) {
   if (!nota_id) throw new Error('nota_id obrigatório');
@@ -1344,6 +1384,7 @@ export default async function handler(req, res) {
     termo_empresa_marcar_nf:   () => termoEmpresaMarcarNf(payload),
     termo_nf_upload:           () => termoNfUpload(payload),
     termo_nf_excluir:          () => termoNfExcluir(payload),
+    termo_recomputar_notas:    () => termoRecomputarNotas(payload),
     termo_empresa_marcar_pago: () => termoEmpresaMarcarPago(payload),
     termo_empresa_desmarcar_pago: () => termoEmpresaDesmarcarPago(payload),
     termo_empresa_datas:       () => termoEmpresaDatas(payload),
