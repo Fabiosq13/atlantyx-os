@@ -1,7 +1,64 @@
 // api/apollo.js — Enriquecimento via /people/bulk_match com details[{id}]
 // Hardened: try/catch em JSON.parse, action person_match adicionada
 
+// ── v2.91: TELEFONE VIA APOLLO (para o WhatsApp IA) ──
+// O Apollo NÃO devolve o celular na hora: com reveal_phone_number ele processa e ENTREGA depois num webhook.
+// Por isso: (1) pedimos o match com reveal + webhook; (2) se já vier telefone, usamos na hora;
+// (3) senão fica "aguardando" e o webhook grava quando chegar; a tela consulta o status.
+// Cada revelação de celular CONSOME CRÉDITO no Apollo — o número é guardado aqui e no HubSpot
+// para nunca ser pago duas vezes.
+let _sqlA = null;
+async function sqlA() {
+  if (_sqlA) return _sqlA;
+  const { neon } = await import('@neondatabase/serverless');
+  _sqlA = neon(process.env.DATABASE_URL);
+  await _sqlA`CREATE TABLE IF NOT EXISTS apollo_telefones (ref TEXT PRIMARY KEY, apollo_id TEXT, nome TEXT, email TEXT, hubspot_id TEXT,
+    telefone TEXT, tipo TEXT, status TEXT DEFAULT 'aguardando', erro TEXT, criado_em TIMESTAMPTZ DEFAULT NOW(), atualizado_em TIMESTAMPTZ DEFAULT NOW())`;
+  return _sqlA;
+}
+function _baseUrl() { return (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, ''); }
+async function _chaveWebhook() {
+  const { createHash } = await import('crypto');
+  return createHash('sha256').update('atlantyx-wa:' + (process.env.APOLLO_API_KEY || 'x')).digest('hex').substring(0, 20);
+}
+function _melhorTelefone(p) {
+  const lista = [...(p.phone_numbers || []), ...(p.mobile_phone ? [{ sanitized_number: p.mobile_phone, type_cd: 'mobile' }] : [])]
+    .map(x => ({ num: String(x.sanitized_number || x.raw_number || x.number || '').replace(/[^0-9+]/g, ''), tipo: x.type_cd || x.type || '', status: x.status_cd || x.status || '' }))
+    .filter(x => x.num.replace(/\D/g, '').length >= 10 && !/invalid|no_status_invalid/i.test(x.status));
+  // celular primeiro (é o que tem WhatsApp); no Brasil, número com 9 dígitos após o DDD é celular
+  const celBR = x => /^\+?55\d{2}9\d{8}$/.test(x.num);
+  lista.sort((a, b) => ((/mobile/i.test(b.tipo) || celBR(b)) ? 1 : 0) - ((/mobile/i.test(a.tipo) || celBR(a)) ? 1 : 0));
+  return lista[0] || null;
+}
+async function _gravarNoHubSpot(hubspotId, telefone) {
+  if (!hubspotId || !process.env.HUBSPOT_TOKEN || !telefone) return;
+  try {
+    await fetch(`https://api.hubapi.com/crm/v3/objects/contacts/${hubspotId}`, { method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.HUBSPOT_TOKEN}` },
+      body: JSON.stringify({ properties: { mobilephone: telefone } }) });
+  } catch (e) { console.warn('[Apollo tel] HubSpot:', e.message); }
+}
+
 export default async function handler(req, res) {
+  // Webhook do Apollo com o celular revelado
+  if (req.query?.webhook === 'telefone') {
+    try {
+      if (req.query.k !== await _chaveWebhook()) return res.status(403).json({ ok: false });
+      const sql = await sqlA();
+      const pessoas = req.body?.people || (req.body?.person ? [req.body.person] : []);
+      let gravados = 0;
+      for (const p of pessoas) {
+        const t = _melhorTelefone(p);
+        const linha = (await sql`SELECT * FROM apollo_telefones WHERE apollo_id = ${p.id} OR ref = ${req.query.ref || ''} LIMIT 1`)[0];
+        if (!linha) continue;
+        if (t) { await sql`UPDATE apollo_telefones SET telefone = ${t.num}, tipo = ${t.tipo || null}, status = 'encontrado', atualizado_em = NOW() WHERE ref = ${linha.ref}`; await _gravarNoHubSpot(linha.hubspot_id, t.num); gravados++; }
+        else await sql`UPDATE apollo_telefones SET status = 'sem_telefone', atualizado_em = NOW() WHERE ref = ${linha.ref}`;
+      }
+      console.log('[Apollo webhook telefone]', pessoas.length, 'pessoa(s),', gravados, 'telefone(s)');
+      return res.status(200).json({ ok: true, gravados });
+    } catch (e) { console.error('[Apollo webhook]', e.message); return res.status(200).json({ ok: false, erro: e.message }); }
+  }
+
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -102,6 +159,56 @@ export default async function handler(req, res) {
       data._filtros_enviados = { ...body, ...(qs.toString() ? { url: qs.toString() } : {}) };
       console.log('[Apollo] busca', JSON.stringify(body).substring(0, 300), '→', JSON.stringify(data._stats));
       return res.status(200).json({ success: true, ...data });
+    }
+
+    // ── v2.91: TELEFONE para o WhatsApp ──
+    if (action === 'telefone_buscar') {
+      const sql = await sqlA();
+      const ref = String(params.ref || params.email || params.hubspot_id || params.name || '').toLowerCase().trim();
+      if (!ref) return res.status(400).json({ success: false, error: 'Informe e-mail, nome+empresa ou LinkedIn' });
+      const ja = (await sql`SELECT * FROM apollo_telefones WHERE ref = ${ref}`)[0];
+      if (ja && (ja.status === 'encontrado' || (ja.status === 'aguardando' && Date.now() - new Date(ja.atualizado_em).getTime() < 10 * 60000) || ja.status === 'sem_telefone') && !params.forcar)
+        return res.status(200).json({ success: true, ref, status: ja.status, telefone: ja.telefone, de_cache: true });
+      const body = { reveal_phone_number: true, webhook_url: `${_baseUrl()}/api/apollo?webhook=telefone&k=${await _chaveWebhook()}&ref=${encodeURIComponent(ref)}` };
+      if (params.email) body.email = params.email;
+      if (params.linkedin_url) body.linkedin_url = params.linkedin_url;
+      if (params.name) { const pp = String(params.name).trim().split(/\s+/); body.first_name = pp[0]; if (pp.length > 1) body.last_name = pp.slice(1).join(' '); }
+      if (params.organization_name) body.organization_name = params.organization_name;
+      if (!body.email && !body.linkedin_url && !(body.first_name && body.organization_name))
+        return res.status(400).json({ success: false, error: 'Para achar o telefone com segurança: e-mail, LinkedIn, ou nome + empresa' });
+      const r = await fetch('https://api.apollo.io/api/v1/people/match', { method: 'POST', headers, body: JSON.stringify(body) });
+      const text = await r.text();
+      if (!r.ok) {
+        const msg = r.status === 422 && /webhook/i.test(text) ? 'o Apollo exige webhook para revelar celular' : r.status === 402 || /credit/i.test(text) ? 'sem créditos de celular no Apollo' : 'Apollo ' + r.status + ': ' + text.substring(0, 200);
+        await sql`INSERT INTO apollo_telefones (ref, email, nome, hubspot_id, status, erro) VALUES (${ref}, ${params.email || null}, ${params.name || null}, ${params.hubspot_id || null}, 'erro', ${msg})
+          ON CONFLICT (ref) DO UPDATE SET status = 'erro', erro = EXCLUDED.erro, atualizado_em = NOW()`;
+        return res.status(200).json({ success: true, ref, status: 'erro', erro: msg });
+      }
+      const data = safeJsonParse(text, 'telefone_buscar');
+      const p = data.person;
+      // mesma conferência da busca direta: só a pessoa descrita
+      let descartado = null;
+      if (p && params.email && p.email && !_emailBate(params.email, p)) descartado = `o Apollo devolveu outra pessoa (${p.email})`;
+      if (p && !descartado && !params.email && !params.linkedin_url && params.name && !_nomeBate(params.name, p)) descartado = `o Apollo devolveu outra pessoa (${[p.first_name, p.last_name].join(' ')})`;
+      if (!p || descartado) {
+        await sql`INSERT INTO apollo_telefones (ref, email, nome, hubspot_id, status, erro) VALUES (${ref}, ${params.email || null}, ${params.name || null}, ${params.hubspot_id || null}, 'nao_encontrado', ${descartado})
+          ON CONFLICT (ref) DO UPDATE SET status = 'nao_encontrado', erro = EXCLUDED.erro, atualizado_em = NOW()`;
+        return res.status(200).json({ success: true, ref, status: 'nao_encontrado', erro: descartado || 'pessoa não encontrada no Apollo' });
+      }
+      const t = _melhorTelefone(p);
+      const status = t ? 'encontrado' : 'aguardando';
+      await sql`INSERT INTO apollo_telefones (ref, apollo_id, nome, email, hubspot_id, telefone, tipo, status)
+        VALUES (${ref}, ${p.id}, ${[p.first_name, p.last_name].filter(Boolean).join(' ')}, ${params.email || p.email || null}, ${params.hubspot_id || null}, ${t?.num || null}, ${t?.tipo || null}, ${status})
+        ON CONFLICT (ref) DO UPDATE SET apollo_id = EXCLUDED.apollo_id, telefone = COALESCE(EXCLUDED.telefone, apollo_telefones.telefone), tipo = EXCLUDED.tipo, status = EXCLUDED.status, erro = NULL, atualizado_em = NOW()`;
+      if (t) await _gravarNoHubSpot(params.hubspot_id, t.num);
+      return res.status(200).json({ success: true, ref, status, telefone: t?.num || null, tipo: t?.tipo || null, pessoa: [p.first_name, p.last_name].filter(Boolean).join(' '), empresa: p.organization?.name || null });
+    }
+    if (action === 'telefone_status') {
+      const sql = await sqlA();
+      const refs = (params.refs || []).map(x => String(x).toLowerCase().trim()).filter(Boolean);
+      if (!refs.length) return res.status(200).json({ success: true, itens: [] });
+      const rows = await sql`SELECT ref, telefone, status, erro, atualizado_em FROM apollo_telefones WHERE ref = ANY(${refs})`;
+      return res.status(200).json({ success: true, itens: rows });
     }
 
     // ── MATCH POR URL LINKEDIN (lookup individual) ───────────────────────────
