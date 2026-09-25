@@ -3692,6 +3692,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <button class="btn btn-gn" onclick="acExecutar(false)" id="btnAcExec">&#128228; Gerar e agendar</button>
         <button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red);" onclick="acCorrigirImagens()" title="Corrige posts agendados cuja imagem vai expirar antes da publicacao">&#128295; Corrigir imagens agendadas</button>
     <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="acAuditoria()" title="Por que nao ha leads? Cruza publicacoes, erros e capturas">&#128269; Auditoria do funil</button>
+    <button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red);" onclick="acDiagnostico()" title="Testa Metricool, IA, gerador de imagem, JPEG, fontes e a fila — e diz o que corrigir">&#129658; Diagnostico</button>
     <button class="btn" style="font-size:10px;" onclick="acVerFila()" title="Andamento e resultado da fila em segundo plano">&#128203; Ver fila</button>
     <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="acCriarCampanhas()" title="Salva os posts prontos da fila como campanhas em rascunho — nao posta no Metricool">&#128190; Criar campanhas (sem postar)</button>
     <button class="btn" style="font-size:10px;color:#e1306c;border-color:#e1306c;" onclick="acGerarStory()" title="Gera um Story do Instagram com oferta, QR code e link de captura">&#128247; Story com link</button>
@@ -18475,6 +18476,18 @@ async function acAgendarRascunhos(ids) {
     acVerFila();
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
+async function acDiagnostico() {
+  const box = document.getElementById('acResultado');
+  box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:22px;">🩺 Testando cada peça da autocampanha...</div></div>';
+  try {
+    const d = await mcApi('autocampanha_diagnostico', {});
+    box.innerHTML = `<div class="panel"><div class="ph"><div class="pt">🩺 Diagnóstico da autocampanha</div>
+        <span style="font-size:11px;font-weight:700;color:${d.ok ? 'var(--green,#22d3a3)' : 'var(--red)'};">${d.resumo}</span></div>
+      <div class="pb">${(d.itens || []).map(i => `<div style="padding:8px 0;border-bottom:1px solid var(--bd);">
+        <div style="font-size:11.5px;"><span style="color:${i.ok ? 'var(--green,#22d3a3)' : 'var(--red)'};font-weight:700;">${i.ok ? '✓' : '✗'}</span> <b>${i.peca}</b> <span style="color:var(--t3);font-size:10.5px;">— ${String(i.detalhe || '').replace(/</g,'&lt;')}</span></div>
+        ${i.acao ? `<div style="font-size:10.5px;color:var(--gold);margin:3px 0 0 18px;">→ ${i.acao}</div>` : ''}</div>`).join('')}</div></div>`;
+  } catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:14px;">${e.message}</div></div>`; }
+}
 async function acVerFila() {
   const box = document.getElementById('acResultado');
   try {
@@ -23892,7 +23905,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.75] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.76] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23908,7 +23921,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.75';
+window.__ATX_BUILD_ID__ = 'ATX-v2.76';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
