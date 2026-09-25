@@ -61,6 +61,9 @@
     },
     "api/prospeccao.js": {
       "maxDuration": 60
+    },
+    "api/prospect-scan.js": {
+      "maxDuration": 60
     }
   },
   "crons": [
