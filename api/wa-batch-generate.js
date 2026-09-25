@@ -79,7 +79,7 @@ async function buscarLeadsHubSpot(filtro) {
   const body = {
     filterGroups: filtros[filtro] ? [{ filters: filtros[filtro] }] : [],
     properties: [
-      'firstname', 'lastname', 'email', 'phone', 'company',
+      'firstname', 'lastname', 'email', 'phone', 'mobilephone', 'company',
       'jobtitle', 'icp_score', 'sinal_compra', 'dores_provaveis',
       'lead_source_campaign', 'melhor_angulo', 'canal_recomendado'
     ],
@@ -87,13 +87,18 @@ async function buscarLeadsHubSpot(filtro) {
     limit: 50,
   };
 
-  const r = await fetch('https://api.hubapi.com/crm/v3/objects/contacts/search', {
+  let r = await fetch('https://api.hubapi.com/crm/v3/objects/contacts/search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
     body: JSON.stringify(body),
   });
+  // v2.91: se o portal não tem a propriedade icp_score, refaz sem ela em vez de falhar
+  if (r.status === 400 && filtro === 'score_a') {
+    body.filterGroups = [{ filters: filtros.novos }];
+    r = await fetch('https://api.hubapi.com/crm/v3/objects/contacts/search', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(body) });
+  }
 
-  if (!r.ok) return [];
+  if (!r.ok) { const t = await r.text(); throw new Error('HubSpot ' + r.status + ': ' + t.substring(0, 200)); }   // v2.91: antes o erro virava "nenhum lead"
   const data = await r.json();
 
   return (data.results || []).map(c => {
@@ -102,7 +107,7 @@ async function buscarLeadsHubSpot(filtro) {
       contact_id: c.id,
       name: `${p.firstname || ''} ${p.lastname || ''}`.trim() || 'Decisor',
       email: p.email || '',
-      phone: p.phone || '',
+      phone: p.mobilephone || p.phone || '',   // v2.91: celular (gravado pelo Apollo) tem prioridade — é o que tem WhatsApp
       company: p.company || '',
       job_title: p.jobtitle || '',
       score: p.icp_score || 'B',
@@ -123,9 +128,9 @@ async function gerarMensagensEmLote(leads, tom) {
   return resultados.map((r, i) => {
     const lead = leads[i];
     if (r.status === 'fulfilled') {
-      return { ...r.value, contact_id: lead.contact_id, phone: lead.phone, email: lead.email, score: lead.score, canal: lead.canal, enviado: false };
+      return { ...r.value, name: r.value?.name || lead.name, company: r.value?.company || lead.company, job_title: lead.job_title, contact_id: lead.contact_id, phone: lead.phone, email: lead.email, score: lead.score, canal: lead.canal, enviado: false };
     }
-    return { name: lead.name, company: lead.company, contact_id: lead.contact_id, phone: lead.phone, score: lead.score, mensagem: null, followup: null, erro: r.reason?.message, enviado: false };
+    return { name: lead.name, company: lead.company, job_title: lead.job_title, email: lead.email, contact_id: lead.contact_id, phone: lead.phone, score: lead.score, mensagem: null, followup: null, erro: r.reason?.message, enviado: false };
   });
 }
 
