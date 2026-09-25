@@ -1,4 +1,9 @@
 
+// v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
+// SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
+// Antes, toda chamada sql.query() falhava em silêncio: colunas novas nunca eram criadas.
+const _q = (db, texto, params) => (typeof db.query === 'function' ? db.query(texto, params) : db(texto, params));
+
 // v2.81: servidor SMTP configurável — Gmail, HostGator (cPanel) ou outro.
 //   EMAIL_SMTP_HOST  (padrão: smtp.gmail.com se o usuário for @gmail; senão mail.<domínio do e-mail>)
 //   EMAIL_SMTP_PORT  (padrão 465 = SSL; 587 = STARTTLS)
@@ -94,7 +99,7 @@ async function gravarLeadLocal(lead) {
     id TEXT PRIMARY KEY, nome TEXT, empresa TEXT, cargo TEXT, setor TEXT, score TEXT, data JSONB,
     criado_em TIMESTAMPTZ DEFAULT NOW())`;
   for (const col of ['origem TEXT', 'campanha TEXT', 'utm JSONB', 'email TEXT', 'telefone TEXT', 'hubspot_contact TEXT', 'hubspot_deal TEXT', 'etapas JSONB', 'status TEXT DEFAULT \'novo\'', 'reuniao_marcada_em TIMESTAMPTZ']) {
-    try { await sql.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
+    try { await _q(sql, `ALTER TABLE leads ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
   }
   const id = 'ld_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   await sql`INSERT INTO leads (id, nome, empresa, cargo, setor, score, data, origem, campanha, utm, email, telefone, status)
