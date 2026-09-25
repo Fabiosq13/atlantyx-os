@@ -18420,6 +18420,40 @@ async function _acGerarImagem(post) {
     if (m.success && m.url) return m.url; } catch (_) {}
   return url;
 }
+// v2.74: transforma os posts prontos da fila em CAMPANHAS do S2 (rascunho) — sem enviar ao Metricool.
+// Cada post vira uma campanha com a copy (headline/corpo/CTA), a imagem aprovada, as redes e a data.
+async function acCriarCampanhas(ids) {
+  try {
+    const st = await mcApi('fila_status', {});
+    const itens = (st.itens || []).filter(x => x.status === 'pronto' && x.texto && (!ids || ids.includes(x.id)));
+    if (!itens.length) { toast('Nenhum post pronto para virar campanha', 'error'); return; }
+    if (!confirm(`Criar ${itens.length} campanha(s) em rascunho no módulo de Campanhas?\n\nNada será enviado ao Metricool.`)) return;
+    let ok = 0, falhas = [];
+    for (const x of itens) {
+      const linhas = String(x.texto).split('\n').map(l => l.trim()).filter(Boolean);
+      const headline = (x.tipo === 'story' ? (JSON.parse(x.story_json || '{}').titulo || linhas[0]) : linhas[0] || '').substring(0, 120);
+      const cta = x.tipo === 'story' ? 'Link na bio' : (linhas[linhas.length - 1] || '').substring(0, 120);
+      const redes = Array.isArray(x.redes) ? x.redes : (typeof x.redes === 'string' ? JSON.parse(x.redes || '[]') : ['linkedin']);
+      const camp = {
+        id: 'camp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        nome: `${x.tipo === 'story' ? 'Story' : 'Post'} ${x.data.split('-').reverse().join('/')} ${x.hora} — ${(x.angulo || headline).substring(0, 50)}`,
+        obj: x.oferta || 'Gerar lead', canal: x.tipo === 'story' ? 'Instagram Stories' : redes.map(r => r.charAt(0).toUpperCase() + r.slice(1)).join(', '),
+        pub: 'Executivos de grandes empresas', orc: '', ctx: 'Gerada pela autocampanha' + (x.tema ? ' · tema: ' + x.tema : ''),
+        status: 'rascunho', data_inicio: x.data, data_fim: x.data, ativa: false, redes_ativas: redes,
+        criado_em: new Date().toISOString(), atualizado_em: new Date().toISOString(),
+        data: { copy: { versoes: [{ headline, subheadline: '', corpo: x.texto, cta }] }, copy_por_rede: {},
+          autocampanha: { fila_id: x.id, data: x.data, hora: x.hora, link: x.link, comentario: x.comentario, tipo: x.tipo || 'post', imagem_prompt: x.imagem_prompt || null } },
+        imagens: x.imagem_url ? [{ url: x.imagem_url, aprovada: true, ts: new Date().toISOString() }] : [],
+      };
+      const r = await salvarCampanhaNoBanco(camp, 'autocampanha');
+      if (r && r.success !== false) ok++; else falhas.push(`${x.data} ${x.hora}: ${r?.error || 'falha'}`);
+    }
+    toast(`${ok} campanha(s) criada(s) em rascunho — nada foi postado`, ok ? 'success' : 'error');
+    if (falhas.length) alert('Algumas não foram criadas:\n' + falhas.join('\n'));
+    try { _todasCampanhas = null; } catch (_) {}
+    if (ok && confirm(`${ok} campanha(s) criada(s). Abrir a lista de Campanhas?`)) { nav('s2campanha'); setTimeout(() => { try { carregarCampanhasDB(); } catch (_) {} }, 300); }
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
 async function acAgendarRascunhos(ids) {
   const box = document.getElementById('acResultado');
   try {
@@ -18448,6 +18482,7 @@ async function acVerFila() {
     if (!st.resumo) throw new Error(st.error || 'resposta inesperada da fila');
     const r = st.resumo;
     box.innerHTML = `<div class="panel"><div class="ph"><div class="pt">📋 Fila da autocampanha</div><span style="font-size:10px;color:var(--t2);">${r.prontos} pronto(s) · ${r.pendentes + r.processando} na fila · ${r.falhas} falha(s)</span>
+        ${st.itens.some(x => x.status === 'pronto' && x.texto) ? `<button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="acCriarCampanhas()" title="Salva os posts prontos como campanhas em rascunho — não posta no Metricool">💾 Criar como campanhas (sem postar)</button>` : ''}
         ${st.itens.some(x => x.status === 'pronto' && !x.metricool_id && x.texto) ? `<button class="btn btn-gn" style="font-size:10px;" onclick="acAgendarRascunhos()">📤 Agendar rascunhos prontos</button>` : ''}
         <button class="btn" style="font-size:9.5px;" onclick="acVerFila()">↻</button></div>
       <div class="pb" style="max-height:60vh;overflow-y:auto;">${st.itens.length ? st.itens.map(x => `<div style="border-left:3px solid ${x.status==='pronto'?'var(--green,#22d3a3)':x.status==='falhou'?'var(--red)':'var(--gold)'};background:var(--bg4);border-radius:7px;padding:9px 11px;margin-bottom:8px;">
@@ -18456,6 +18491,7 @@ async function acVerFila() {
         ${x.imagem_prompt ? `<details style="font-size:9.5px;color:var(--t3);"><summary style="cursor:pointer;">pedido da imagem</summary>${String(x.imagem_prompt).replace(/</g,'&lt;')}</details>` : ''}
         ${x.texto ? `<div style="font-size:11px;line-height:1.55;white-space:pre-wrap;margin-top:4px;">${String(x.texto).replace(/</g,'&lt;')}</div>` : ''}
         ${x.erro ? `<div style="font-size:10px;color:var(--red);margin-top:4px;">${String(x.erro).replace(/</g,'&lt;')}</div>` : ''}
+        ${x.status === 'pronto' && x.texto ? `<button class="btn" style="font-size:9px;margin-top:6px;color:var(--gold);" onclick="acCriarCampanhas(['${x.id}'])">💾 criar campanha</button>` : ''}
         ${x.status === 'pronto' && !x.metricool_id && x.texto ? `<button class="btn" style="font-size:9px;margin-top:6px;" onclick="acAgendarRascunhos(['${x.id}'])">📤 agendar só este</button>` : ''}</div>`).join('') : '<div style="text-align:center;color:var(--t3);padding:16px;">Fila vazia.</div>'}</div></div>`;
   } catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:14px;">${e.message}</div></div>`; }
 }
@@ -23852,7 +23888,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.73] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.74] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23868,7 +23904,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.73';
+window.__ATX_BUILD_ID__ = 'ATX-v2.74';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
