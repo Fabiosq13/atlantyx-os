@@ -1,3 +1,8 @@
+
+// v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
+// SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
+// Antes, toda chamada sql.query() falhava em silêncio: colunas novas nunca eram criadas.
+const _q = (db, texto, params) => (typeof db.query === 'function' ? db.query(texto, params) : db(texto, params));
 // api/faturamento.js — v1.17
 // Kanban de Faturamento: Elaboração do Termo → Aprovação → Emissão de NF →
 // Envio de NF (confere e-mail atlanteambr@gmail.com) → Pagamento (confere QuickBooks).
@@ -90,7 +95,7 @@ async function ensureTabelas(sql) {
     'pago_em TIMESTAMPTZ',                // v2.11
     'concluido_motivo TEXT',              // v2.10
   ]) {
-    try { await sql.query(`ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS ${col}`); }
+    try { await _q(sql, `ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS ${col}`); }
     catch (e) { console.error('[FAT] MIGRAÇÃO FALHOU — coluna', col.split(' ')[0], ':', e.message, '| funções que dependem dela ficam degradadas'); }
   }
 }
@@ -102,7 +107,7 @@ async function cpflConfirmar({ termo_id, confirmado = true, por, observacao, pre
   // v2.24: confere se as colunas existem antes do UPDATE. Se a migração falhou (sem permissão
   // de ALTER), o erro sai claro em vez de "column does not exist" genérico.
   for (const col of ['cpfl_confirmado BOOLEAN DEFAULT false','cpfl_confirmado_em TIMESTAMPTZ','cpfl_confirmado_por TEXT','cpfl_observacao TEXT','cpfl_previsao_pagamento DATE']) {
-    try { await sql.query(`ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
+    try { await _q(sql, `ALTER TABLE termos_faturamento ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
   }
   const cols = await sql`SELECT column_name FROM information_schema.columns WHERE table_name = 'termos_faturamento' AND column_name LIKE 'cpfl_%'`;
   const tem = new Set(cols.map(c => c.column_name));
