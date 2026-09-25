@@ -160,7 +160,7 @@ TOM FORMAL E CORPORATIVO (padrão de comunicação executiva no Brasil):
 - Retomada do contexto com formalidade: "Foi um prazer conhecê-lo(a) durante o [evento]…" ou "Em continuidade ao nosso contato no…".
 - Fechamento: "Coloco-me à disposição para uma breve conversa de 30 minutos, em data e horário de sua conveniência." seguido de "Atenciosamente," e a assinatura.
 ESTRUTURA: (1) abertura pelo contexto do contato, se houver; (2) UM parágrafo mostrando que você olhou a empresa dele — o momento/setor e 2 ou 3 frentes CONCRETAS onde a Atlantyx pode ajudar, ligadas às dores prováveis (use a análise fornecida; trate dores como hipóteses, nunca afirme problemas internos como fato); cite um caso Atlantyx parecido se couber; (3) mencione que a apresentação vai em anexo; (4) feche pedindo 30 min para entender o cenário.
-140 a 200 palavras. Pode usar uma lista curta de 2-3 itens para as frentes. Termine com "Atenciosamente," e, na linha seguinte, a assinatura "${cfg.assinatura}". Devolva só o corpo do e-mail, sem assunto.`
+140 a 200 palavras, em 4 a 5 parágrafos curtos SEPARADOS POR LINHA EM BRANCO. As frentes da Atlantyx em lista de 2-3 itens, cada item numa linha começando com "- " (pode destacar o nome da frente com **negrito**). Termine com "Atenciosamente," e, na linha seguinte, a assinatura "${cfg.assinatura}". Devolva só o corpo do e-mail, sem assunto.`
         : `Escreva uma mensagem de WhatsApp de primeiro contato da Atlantyx (dados e IA para grandes empresas). Máximo 60 palavras, tom pessoal, sem emoji além de 1, terminando com a oferta de enviar a apresentação. Assine como Fabio. Devolva só a mensagem.`,
         messages: [{ role: 'user', content: `Contato: ${c.nome}${c.cargo ? ', ' + c.cargo : ''}${c.empresa ? ', empresa ' + c.empresa : ''}.`
           + (c.contexto ? `\nOnde nos conhecemos / contexto do contato: ${c.contexto}. ABRA o e-mail retomando esse contexto de forma formal e específica (ex.: "Foi um prazer conhecê-lo durante o ..."), sem soar genérico.` : '\nPrimeiro contato frio — não finja que já se conheceram.')
@@ -169,6 +169,68 @@ ESTRUTURA: (1) abertura pelo contexto do contato, se houver; (2) UM parágrafo m
     const txt = d?.content?.find(x => x.type === 'text')?.text?.trim();
     return txt || fallback;
   } catch (_) { return fallback; }
+}
+
+// ── v2.84: E-MAIL EM HTML CORPORATIVO ──
+// Converte o texto (editável na tela) num e-mail bem estruturado: parágrafos com espaçamento, tipografia
+// definida, listas formatadas e assinatura profissional com os dados do cartão digital.
+// Layout em tabela e estilos inline — é o que Outlook e Gmail renderizam de forma consistente.
+function _escHtml(t) { return String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+export function emailHtml(corpo, cartao = {}, assinaturaTexto = '') {
+  const FONTE = "'Segoe UI', Calibri, Arial, Helvetica, sans-serif";
+  let linhas = String(corpo || '').replace(/\r/g, '').split('\n');
+  // remove a assinatura em texto do fim (a assinatura rica entra no lugar)
+  const nomeAss = String(cartao.nome || (assinaturaTexto.split('/')[0] || '')).trim().toLowerCase();
+  while (linhas.length && (!linhas[linhas.length - 1].trim() || (nomeAss && linhas[linhas.length - 1].trim().toLowerCase().startsWith(nomeAss.split(' ')[0])) || /^(ceo|atlantyx|fabio quintanilha)/i.test(linhas[linhas.length - 1].trim()))) linhas.pop();
+  let despedida = '';
+  if (linhas.length && /^(atenciosamente|cordialmente|respeitosamente|abraços|att\.?)[,.]?$/i.test(linhas[linhas.length - 1].trim())) despedida = linhas.pop().trim();
+  // agrupa em blocos: parágrafos e listas
+  const blocos = []; let par = [], lista = [];
+  const fechaPar = () => { if (par.length) { blocos.push({ t: 'p', v: par.join(' ') }); par = []; } };
+  const fechaLista = () => { if (lista.length) { blocos.push({ t: 'ul', v: lista }); lista = []; } };
+  for (const l of linhas) {
+    const x = l.trim();
+    if (!x) { fechaPar(); fechaLista(); continue; }
+    const mItem = x.match(/^(?:[-•*·▪]|\d+[.)])\s+(.*)$/);
+    if (mItem) { fechaPar(); lista.push(mItem[1]); continue; }
+    fechaLista(); par.push(x);
+  }
+  fechaPar(); fechaLista();
+  const inline = t => _escHtml(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  const P = 'margin:0 0 16px 0;font-family:' + FONTE + ';font-size:15px;line-height:1.65;color:#1f2937;';
+  const corpoHtml = blocos.map((b, i) => {
+    if (b.t === 'ul') return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px 0;">${b.v.map(it => `<tr><td valign="top" style="padding:0 10px 8px 4px;font-family:${FONTE};font-size:15px;line-height:1.6;color:#1A3A8F;font-weight:700;">•</td><td style="padding:0 0 8px 0;font-family:${FONTE};font-size:15px;line-height:1.6;color:#1f2937;">${inline(it)}</td></tr>`).join('')}</table>`;
+    const saud = i === 0 && /^(prezad|caro|cara|senhor|senhora|ol[áa])/i.test(b.v);
+    return `<p style="${P}${saud ? 'margin-bottom:18px;' : ''}">${inline(b.v)}</p>`;
+  }).join('');
+  const c = cartao || {};
+  const tel = String(c.telefone || c.whatsapp || '').replace(/[^0-9]/g, '');
+  const telFmt = tel ? (tel.length >= 12 ? `+${tel.slice(0, 2)} (${tel.slice(2, 4)}) ${tel.slice(4, tel.length - 4)}-${tel.slice(-4)}` : tel) : '';
+  const assinatura = `
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:6px;border-top:1px solid #e5e7eb;padding-top:14px;width:100%;max-width:520px;">
+      <tr>${c.foto_url ? `<td valign="top" style="padding:14px 14px 0 0;width:64px;"><img src="${_escHtml(c.foto_url)}" width="60" height="60" alt="" style="border-radius:50%;display:block;border:0;"></td>` : ''}
+        <td valign="top" style="padding-top:14px;font-family:${FONTE};">
+          <div style="font-size:15px;font-weight:700;color:#0F2660;">${_escHtml(c.nome || assinaturaTexto.split('/')[0] || 'Fabio Quintanilha')}</div>
+          <div style="font-size:13px;color:#4b5563;margin-top:2px;">${_escHtml([c.cargo || 'CEO', c.empresa || 'Atlantyx'].join(' · '))}</div>
+          <div style="height:3px;width:44px;background:#E0A422;margin:9px 0 9px 0;font-size:0;line-height:0;">&nbsp;</div>
+          <div style="font-size:12.5px;line-height:1.7;color:#4b5563;">
+            ${telFmt ? `${_escHtml(telFmt)}<br>` : ''}${c.email ? `<a href="mailto:${_escHtml(c.email)}" style="color:#1A3A8F;text-decoration:none;">${_escHtml(c.email)}</a><br>` : ''}${c.site ? `<a href="${_escHtml(c.site)}" style="color:#1A3A8F;text-decoration:none;">${_escHtml(String(c.site).replace(/^https?:\/\//, ''))}</a>` : ''}
+            ${c.endereco_rj ? `<br><span style="color:#9ca3af;font-size:11.5px;">${_escHtml(c.endereco_rj)}</span>` : ''}
+          </div>
+        </td></tr></table>`;
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#ffffff;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#ffffff;"><tr><td style="padding:24px 18px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:640px;"><tr><td>
+      ${corpoHtml}
+      ${despedida ? `<p style="${P}margin-bottom:4px;">${_escHtml(despedida)}</p>` : ''}
+      ${assinatura}
+    </td></tr></table>
+  </td></tr></table>
+</body></html>`;
+}
+async function _cartaoParaAssinatura() {
+  try { const c = await cartaoGet(); const base = baseUrl(); return { ...c, foto_url: c.foto_media_id ? `${base}/api/media?id=${c.foto_media_id}` : null }; } catch (_) { return {}; }
 }
 
 // ── 5. E-mail com anexo ──
@@ -216,8 +278,9 @@ async function enviarEmail(c, cfg, corpo, over = {}) {
     if (m) anexos.push({ filename: cfg.apresentacao_nome || 'Apresentacao_Atlantyx.pdf', content: Buffer.from(m.conteudo, 'base64'), contentType: m.content_type || 'application/pdf' });
   }
   const t = nodemailer.createTransport(_smtpConfig(user, pass));
-  await t.sendMail({ from: `Fabio Quintanilha — Atlantyx <${user}>`, to: c.email, subject: cfg.assunto, text: corpo,
-    html: `<div style="font-family:Arial;font-size:14px;line-height:1.6;max-width:600px;">${corpo.replace(/\n/g, '<br>')}</div>`, attachments: anexos });
+  const cartao = await _cartaoParaAssinatura();
+  await t.sendMail({ from: `${cartao.nome || 'Fabio Quintanilha'} — ${cartao.empresa || 'Atlantyx'} <${user}>`, to: c.email, subject: cfg.assunto, text: corpo,
+    html: emailHtml(corpo, cartao, cfg.assinatura || ''), attachments: anexos });
   return { anexos: anexos.length };
 }
 
@@ -288,6 +351,10 @@ async function feedEnviarWhatsApp({ id } = {}) {
   return { ok: true };
 }
 // v2.79: disparo a partir do editor — com o assunto, corpo e anexo que o usuário revisou na tela
+async function feedPreviewHtml({ corpo } = {}) {
+  const cfg = await configGet();
+  return { html: emailHtml(corpo || '', await _cartaoParaAssinatura(), cfg.assinatura || '') };
+}
 async function feedReescrever({ id, refazer_analise = false } = {}) {
   const sql = await getSql();
   const r = (await sql`SELECT * FROM prospeccao_feed WHERE id = ${id}`)[0]; if (!r) throw new Error('Registro não encontrado');
@@ -371,6 +438,7 @@ export default async function handler(req, res) {
     feed_reenviar: () => feedReenviar(payload),
     feed_disparar: () => feedDisparar(payload),
     feed_reescrever: () => feedReescrever(payload),
+    feed_preview_html: () => feedPreviewHtml(payload),
     testar_email: () => testarSmtp(),
     cartao_get: () => cartaoGet(),
     cartao_set: () => cartaoSet(payload),
