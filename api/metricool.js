@@ -144,6 +144,13 @@ Devolva SOMENTE JSON: {"titulo":"...","apoio":"...","chamada":"...","oferta":"o 
   return JSON.parse(String(txt).replace(/```json|```/g, '').trim());
 }
 async function storyAgendar({ imagem_url, quando, texto, link, blog_id } = {}) {
+  // v2.76: Story pela ação "publicar" do S2 — sem texto (Metricool recusa), tipo dentro do provider
+  if (!imagem_url) throw new Error('imagem_url obrigatória');
+  const d = await _publicarViaS2({ tipo: 'STORY', redes: ['instagram'], imagem_url, data_hora: String(quando).substring(0, 19), link_sticker: link || '' });
+  return { agendado: true, metricool_id: d.metricool_id || null, quando,
+    aviso: 'Story agendado. O sticker de link pode não ser aplicado pela API — confira no app ao publicar. O link também está escrito na imagem.', link };
+}
+async function _storyAgendarANTIGO({ imagem_url, quando, texto, link, blog_id } = {}) {
   const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID;
   const BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
   if (!TOKEN || !USERID || !BLOGID) throw new Error('Credenciais do Metricool ausentes');
@@ -231,6 +238,12 @@ async function filaProcessar({ lote } = {}) {
   await sql`UPDATE autocampanha_fila SET status = 'processando', atualizado_em = NOW() WHERE id = ${it.id}`;
   const falhar = async (msg) => {
     const t = (it.tentativas || 0) + 1;
+    // v2.76: imagem falhou de vez → segue sem imagem (texto não se perde; Instagram é pulado no agendar)
+    if (it.etapa === 'imagem' && t >= 3 && it.tipo !== 'story') {
+      const prox = it.apenas_rascunho ? 'fim' : 'agendar';
+      await sql`UPDATE autocampanha_fila SET etapa = ${prox}, status = ${prox === 'fim' ? 'pronto' : 'pendente'}, tentativas = 0, erro = ${'sem imagem: ' + String(msg).substring(0, 200)}, atualizado_em = NOW() WHERE id = ${it.id}`;
+      return { id: it.id, etapa: 'imagem', erro: msg, seguiu_sem_imagem: true };
+    }
     await sql`UPDATE autocampanha_fila SET status = ${t >= 3 ? 'falhou' : 'pendente'}, tentativas = ${t}, erro = ${String(msg).substring(0, 300)}, atualizado_em = NOW() WHERE id = ${it.id}`;
     return { id: it.id, etapa: it.etapa, erro: msg, tentativa: t, desistiu: t >= 3 };
   };
@@ -293,7 +306,18 @@ async function filaProcessar({ lote } = {}) {
           magic_prompt: false, estilo_padrao: false,   // o "magic prompt" reescrevia o pedido e gerava coisas fora de contexto (animais etc.)
           negativo: 'animal, monkey, ape, dog, cat, bird, cartoon, anime, illustration, character, mascot, toy, childish, fantasy, text, letters, words, watermark, logo, close-up face, distorted, blurry, low quality' }) });
       const d = await r.json().catch(() => ({}));
-      if (!r.ok || !d.success || !d.imagens?.length) throw new Error(d.error || 'image-gen HTTP ' + r.status);
+      if (!r.ok || !d.success || !d.imagens?.length) {
+        const msg = String(d.error || 'image-gen HTTP ' + r.status);
+        // chave inválida não adianta tentar de novo: marca para não repetir 3 vezes
+        if (/401|Access denied|API Token/i.test(msg)) {
+          // chave recusada: tentar de novo não resolve — o post segue SEM imagem na hora
+          const prox = it.apenas_rascunho ? 'fim' : 'agendar';
+          await sql`UPDATE autocampanha_fila SET etapa = ${prox}, status = ${prox === 'fim' ? 'pronto' : 'pendente'}, tentativas = 0,
+            erro = ${'sem imagem — gerador sem acesso (chave do Ideogram recusada): ' + msg.substring(0, 140)}, atualizado_em = NOW() WHERE id = ${it.id}`;
+          return { id: it.id, etapa: 'imagem', seguiu_sem_imagem: true, erro: msg };
+        }
+        throw new Error(msg);
+      }
       let url = d.imagens[0].url || d.imagens[0];
       try { const m = await fetch(base + '/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'salvar_de_url', payload: { url, origem: 'autocampanha', jpeg: true } }) }).then(x => x.json()); if (m.success && m.url) url = m.url; } catch (_) {}
@@ -336,10 +360,75 @@ async function filaLimpar({ lote } = {}) {
   return { ok: true };
 }
 
+// ═══ v2.76: DIAGNÓSTICO DA AUTOCAMPANHA — testa cada peça e diz o que está quebrado ═══
+async function autoCampanhaDiagnostico() {
+  const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
+  const itens = [];
+  const add = (peca, ok, detalhe, acao) => itens.push({ peca, ok, detalhe, acao: ok ? null : acao });
+  // Metricool
+  const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = process.env.METRICOOL_BLOG_ID;
+  add('Metricool — credenciais', !!(TOKEN && USERID && BLOGID), `token ${TOKEN ? 'ok' : 'FALTA'} · userId ${USERID ? 'ok' : 'FALTA'} · blogId ${BLOGID ? 'ok' : 'FALTA'}`, 'Configure METRICOOL_USER_TOKEN, METRICOOL_USER_ID e METRICOOL_BLOG_ID no Vercel');
+  if (TOKEN && USERID && BLOGID) {
+    try { const r = await mc(`/admin/simpleProfiles?userId=${USERID}&blogId=${BLOGID}`, TOKEN);
+      const perfis = Array.isArray(r) ? r : (r?.data || []);
+      const p = perfis.find(x => String(x.id) === String(BLOGID)) || perfis[0] || {};
+      const redes = ['linkedin', 'linkedinCompany', 'instagram', 'facebook', 'twitter'].filter(k => p[k] || p[k + 'Page'] || p[k + 'Account']);
+      add('Metricool — acesso e redes conectadas', true, `perfil "${p.label || p.title || BLOGID}" · redes: ${redes.join(', ') || 'não identificadas'}`);
+      if (!redes.some(r => /instagram/i.test(r))) add('Metricool — Instagram conectado', false, 'Instagram não aparece como conectado neste perfil', 'Conecte o Instagram (conta business) no Metricool — sem isso, Stories e posts de Instagram falham');
+    } catch (e) { add('Metricool — acesso', false, e.message.substring(0, 160), 'Token do Metricool inválido ou plano sem API. Regenere em Settings → API no Metricool'); }
+  }
+  // Anthropic
+  add('IA de texto (Anthropic)', !!process.env.ANTHROPIC_API_KEY, process.env.ANTHROPIC_API_KEY ? 'chave presente · modelo ' + (process.env.CLAUDE_MODEL_RAPIDO || 'claude-haiku-4-5-20251001') : 'ANTHROPIC_API_KEY ausente', 'Configure ANTHROPIC_API_KEY no Vercel');
+  // Gerador de imagem
+  const temIdeo = !!process.env.IDEOGRAM_API_KEY, temOai = !!process.env.OPENAI_API_KEY;
+  add('Imagem — chaves', temIdeo || temOai, `Ideogram ${temIdeo ? 'presente' : 'ausente'} · OpenAI ${temOai ? 'presente (reserva)' : 'ausente'}`, 'Configure IDEOGRAM_API_KEY (ou OPENAI_API_KEY como reserva)');
+  if (temIdeo) {
+    try { const r = await fetch('https://api.ideogram.ai/manage/api/api_keys', { headers: { 'Api-Key': process.env.IDEOGRAM_API_KEY.trim() } });
+      // qualquer resposta ≠ 401/403 significa que a chave é aceita
+      const ok = r.status !== 401 && r.status !== 403;
+      add('Imagem — chave do Ideogram aceita', ok, `HTTP ${r.status}`, 'A chave do Ideogram foi recusada (401). Gere uma nova em ideogram.ai → API, confira se há crédito, atualize IDEOGRAM_API_KEY no Vercel e faça Redeploy');
+    } catch (e) { add('Imagem — chave do Ideogram', false, e.message, 'Verifique a rede/chave do Ideogram'); }
+  }
+  // Conversão JPEG e fontes (Stories)
+  try { const r = await fetch(base + '/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'diagnostico_imagem', payload: {} }) }); const d = await r.json();
+    add('Imagem — conversão JPEG (Instagram)', !!d.jpeg, d.jpeg ? 'sharp disponível' : (d.erro || 'sharp indisponível'), 'O pacote sharp não carregou no Vercel — confira o deploy (package.json)');
+    add('Stories — fonte para o texto', !!d.fonte, d.fonte ? 'Roboto embutida ok' : (d.erro_fonte || 'fonte não encontrada'), 'As fontes em api/fonts não foram incluídas no deploy');
+  } catch (e) { add('Imagem — processamento', false, e.message, 'Confira o deploy do /api/media'); }
+  // Captura
+  try { const r = await fetch(base + '/captura.html', { method: 'HEAD' }); add('Página de captura (link dos posts)', r.ok, 'HTTP ' + r.status, 'A página captura.html não está publicada'); } catch (e) { add('Página de captura', false, e.message, 'Confira o deploy'); }
+  // Fila
+  try { const sql = await _filaTabela(); const r = await sql`SELECT status, COUNT(*)::int AS n FROM autocampanha_fila WHERE criado_em >= NOW() - INTERVAL '3 days' GROUP BY status`;
+    add('Fila em segundo plano', true, r.map(x => `${x.status}: ${x.n}`).join(' · ') || 'vazia');
+    const erros = await sql`SELECT erro, COUNT(*)::int AS n FROM autocampanha_fila WHERE erro IS NOT NULL AND criado_em >= NOW() - INTERVAL '3 days' GROUP BY erro ORDER BY n DESC LIMIT 5`;
+    erros.forEach(e => add('Fila — erro recorrente', false, `${e.n}× ${String(e.erro).substring(0, 160)}`, 'Veja a ação sugerida nos itens acima'));
+  } catch (e) { add('Fila', false, e.message, 'Tabela da fila indisponível'); }
+  const falhas = itens.filter(i => !i.ok);
+  return { itens, ok: !falhas.length, resumo: falhas.length ? `${falhas.length} problema(s) encontrado(s)` : 'Tudo certo' };
+}
+
 // ═══ v2.65: agendar UM post já escrito (texto + imagem opcional) no Metricool ═══
 // Separado da geração para caber no limite de tempo: escrever, gerar imagem e agendar são três
 // chamadas curtas em vez de uma longa.
+// v2.76: toda publicação da autocampanha passa pela ação "publicar" do S2 — o mesmo formato de corpo
+// que funciona desde a v1.x (Story sem texto, tipo dentro do provider, URL efêmera convertida etc.).
+// Os corpos montados à mão na v2.65/v2.31 eram incompatíveis com o Metricool.
+async function _publicarViaS2(params) {
+  const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
+  const r = await fetch(base + '/api/metricool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'publicar', payload: params }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.success === false) throw new Error(d.error || ('Metricool HTTP ' + r.status));
+  return d;
+}
 async function autoCampanhaAgendarUm({ post, blog_id, redes } = {}) {
+  if (!post?.texto || !post?.data || !post?.hora) throw new Error('post com texto, data e hora obrigatórios');
+  const redesAlvo = (Array.isArray(redes) && redes.length ? redes : ['linkedin']).map(r => String(r).toLowerCase());
+  // Instagram EXIGE imagem — sem imagem, publica só nas outras redes em vez de falhar tudo
+  const redesOk = post.imagem_url ? redesAlvo : redesAlvo.filter(r => r !== 'instagram');
+  if (!redesOk.length) throw new Error('Instagram exige imagem e este post ficou sem imagem');
+  const d = await _publicarViaS2({ texto: post.texto, redes: redesOk, data_hora: `${post.data}T${post.hora}:00`, imagem_url: post.imagem_url || undefined, tipo: 'POST', encurtar_link: false });
+  return { agendado: true, metricool_id: d.metricool_id || null, redes: d.redes, com_imagem: !!post.imagem_url, instagram_pulado: redesAlvo.length !== redesOk.length };
+}
+async function _autoCampanhaAgendarUmANTIGO({ post, blog_id, redes } = {}) {
   const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID;
   const BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
   if (!TOKEN || !USERID || !BLOGID) throw new Error('Credenciais do Metricool ausentes');
@@ -652,6 +741,9 @@ export default async function handler(req, res) {
       });
     }
 
+    // v2.76: diagnóstico roda mesmo sem credenciais (é justamente o que ele verifica)
+    if (action === 'autocampanha_diagnostico') return res.status(200).json({ success: true, ...(await autoCampanhaDiagnostico()) });
+
     // Daqui pra baixo exige credenciais
     if (!TOKEN || !USERID || !BLOGID) {
       return res.status(200).json({
@@ -671,6 +763,7 @@ export default async function handler(req, res) {
     fila_processar:         () => filaProcessar(payload),
     fila_limpar:            () => filaLimpar(payload),
     fila_agendar_rascunhos: () => filaAgendarRascunhos(payload),
+    autocampanha_diagnostico: () => autoCampanhaDiagnostico(),
     story_agendar:          () => storyAgendar(payload),
     autocampanha_planejar:  () => autoCampanhaPlanejar(payload),
     autocampanha_executar:  () => autoCampanhaExecutar(payload),
