@@ -3663,7 +3663,7 @@ async function conferirComRazao({ conta_id, data_inicio, data_fim } = {}) {
 }
 
 // ═══ v2.60: criar Customer no QuickBooks a partir do feed de prospecção ═══
-async function qbClienteCriar({ nome, contato, email, telefone, cnpj } = {}) {
+async function qbClienteCriar({ nome, contato, email, telefone, cnpj, notas } = {}) {
   if (!nome) throw new Error('nome obrigatório');
   if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
   const token = await qbToken();
@@ -3671,7 +3671,7 @@ async function qbClienteCriar({ nome, contato, email, telefone, cnpj } = {}) {
   // já existe?
   const ex = (await qbQuery(`select Id, DisplayName from Customer where DisplayName = '${limpo}' maxresults 1`, token))?.QueryResponse?.Customer?.[0];
   if (ex) return { id: ex.Id, nome: ex.DisplayName, criado: false };
-  const corpo = { DisplayName: limpo, CompanyName: limpo, Notes: 'Prospecção · criado pelo Atlantyx OS' };
+  const corpo = { DisplayName: limpo, CompanyName: limpo, Notes: String(notas || 'Prospecção · criado pelo Atlantyx OS').substring(0, 3900) };
   if (contato) { const p = String(contato).trim().split(' '); corpo.GivenName = p[0]; if (p.length > 1) corpo.FamilyName = p.slice(1).join(' '); }
   if (email) corpo.PrimaryEmailAddr = { Address: email };
   if (telefone) corpo.PrimaryPhone = { FreeFormNumber: String(telefone).replace(/^55/, '+55 ') };
