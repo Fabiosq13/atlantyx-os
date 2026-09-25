@@ -1,3 +1,15 @@
+
+// v2.81: servidor SMTP configurável — Gmail, HostGator (cPanel) ou outro.
+//   EMAIL_SMTP_HOST  (padrão: smtp.gmail.com se o usuário for @gmail; senão mail.<domínio do e-mail>)
+//   EMAIL_SMTP_PORT  (padrão 465 = SSL; 587 = STARTTLS)
+//   EMAIL_SMTP_TLS_RELAXADO=1  → aceita certificado que não bate com o host (comum em hospedagem compartilhada)
+function _smtpConfig(user, pass) {
+  const dom = String(user || '').split('@')[1] || '';
+  const host = process.env.EMAIL_SMTP_HOST || (/gmail\.com$/i.test(dom) ? 'smtp.gmail.com' : (dom ? 'mail.' + dom : 'smtp.gmail.com'));
+  const port = parseInt(process.env.EMAIL_SMTP_PORT || '465', 10);
+  return { host, port, secure: port === 465, auth: { user, pass }, connectionTimeout: 20000, greetingTimeout: 15000, socketTimeout: 30000,
+    ...(process.env.EMAIL_SMTP_TLS_RELAXADO === '1' ? { tls: { rejectUnauthorized: false } } : {}) };
+}
 // api/lead-capture.js
 // Agente S2-02 + S7-05
 // Recebe lead do Meta Ads / LinkedIn → Claude gera mensagem → HubSpot → WhatsApp
@@ -99,7 +111,7 @@ async function alertarNovoLead(lead) {
   const user = process.env.EMAIL_IMAP_USER || process.env.EMAIL_USER || process.env.SMTP_USER || process.env.GMAIL_USER, pass = (process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS || process.env.EMAIL_PASS || process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
   if (!user || !pass) throw new Error('EMAIL_IMAP_USER/EMAIL_SMTP_PASS não configurados');
   const para = process.env.LEADS_ALERTA_PARA || process.env.RELATORIO_PAGAMENTOS_PARA || user;
-  const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass } });
+  const t = nodemailer.createTransport(_smtpConfig(user, pass));
   const u = lead.utm || {};
   await t.sendMail({ from: `Atlantyx OS <${user}>`, to: para,
     subject: `🎯 Novo lead: ${lead.name} (${lead.company}) — via ${lead.origem || '?'}${lead.campanha ? ' · ' + lead.campanha : ''}`,
