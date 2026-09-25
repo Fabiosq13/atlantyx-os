@@ -3671,6 +3671,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       </div>
       <div style="display:flex;gap:14px;align-items:center;margin:0 0 10px;font-size:10.5px;color:var(--t2);flex-wrap:wrap;">
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;margin-right:8px;"><input type="checkbox" id="ac_imagens" checked/> <b>gerar imagem por post</b></label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;margin-right:8px;" title="Um Story vertical por dia, com título, oferta e link compostos na imagem"><input type="checkbox" id="ac_stories"/> <b>+ 1 Story/dia (Instagram)</b></label>
         <span style="font-weight:600;">Redes:</span>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" class="acRede" value="linkedin" checked/> LinkedIn</label>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" class="acRede" value="instagram"/> Instagram</label>
@@ -18415,7 +18416,7 @@ async function _acGerarImagem(post) {
   if (!r.ok || !d.success || !d.imagens?.length) throw new Error(d.error || 'sem imagem');
   const url = d.imagens[0].url || d.imagens[0];
   // permanente (as URLs do Ideogram expiram — v1.80)
-  try { const m = await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'salvar_de_url', payload: { url, origem: 'autocampanha' } }) }).then(x => x.json());
+  try { const m = await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'salvar_de_url', payload: { url, origem: 'autocampanha', jpeg: true } }) }).then(x => x.json());
     if (m.success && m.url) return m.url; } catch (_) {}
   return url;
 }
@@ -18450,8 +18451,9 @@ async function acVerFila() {
         ${st.itens.some(x => x.status === 'pronto' && !x.metricool_id && x.texto) ? `<button class="btn btn-gn" style="font-size:10px;" onclick="acAgendarRascunhos()">📤 Agendar rascunhos prontos</button>` : ''}
         <button class="btn" style="font-size:9.5px;" onclick="acVerFila()">↻</button></div>
       <div class="pb" style="max-height:60vh;overflow-y:auto;">${st.itens.length ? st.itens.map(x => `<div style="border-left:3px solid ${x.status==='pronto'?'var(--green,#22d3a3)':x.status==='falhou'?'var(--red)':'var(--gold)'};background:var(--bg4);border-radius:7px;padding:9px 11px;margin-bottom:8px;">
-        <div style="display:flex;justify-content:space-between;font-size:10.5px;"><span><b>${x.data.split('-').reverse().join('/')} ${x.hora}</b> · ${x.status==='pronto'?(x.metricool_id?'📤 agendado':'✎ rascunho'):x.status==='falhou'?'✗ falhou':'⏳ '+x.etapa}</span><span style="color:var(--t3);">${x.angulo||''}</span></div>
-        ${x.imagem_url ? `<img src="${x.imagem_url}" style="width:100%;max-width:280px;border-radius:7px;margin:6px 0;display:block;"/>` : ''}
+        <div style="display:flex;justify-content:space-between;font-size:10.5px;"><span>${x.tipo==='story'?'<span style="color:#e1306c;font-weight:700;">STORY</span> · ':''}<b>${x.data.split('-').reverse().join('/')} ${x.hora}</b> · ${x.status==='pronto'?(x.metricool_id?'📤 agendado':'✎ rascunho'):x.status==='falhou'?'✗ falhou':'⏳ '+x.etapa}</span><span style="color:var(--t3);">${x.angulo||''}</span></div>
+        ${x.imagem_url ? `<img src="${x.imagem_url}" style="width:100%;max-width:${x.tipo==='story'?'170':'280'}px;border-radius:7px;margin:6px 0;display:block;"/>` : ''}
+        ${x.imagem_prompt ? `<details style="font-size:9.5px;color:var(--t3);"><summary style="cursor:pointer;">pedido da imagem</summary>${String(x.imagem_prompt).replace(/</g,'&lt;')}</details>` : ''}
         ${x.texto ? `<div style="font-size:11px;line-height:1.55;white-space:pre-wrap;margin-top:4px;">${String(x.texto).replace(/</g,'&lt;')}</div>` : ''}
         ${x.erro ? `<div style="font-size:10px;color:var(--red);margin-top:4px;">${String(x.erro).replace(/</g,'&lt;')}</div>` : ''}
         ${x.status === 'pronto' && !x.metricool_id && x.texto ? `<button class="btn" style="font-size:9px;margin-top:6px;" onclick="acAgendarRascunhos(['${x.id}'])">📤 agendar só este</button>` : ''}</div>`).join('') : '<div style="text-align:center;color:var(--t3);padding:16px;">Fila vazia.</div>'}</div></div>`;
@@ -18484,7 +18486,8 @@ async function acExecutar(rascunho) {
     // v2.68: FILA — o navegador enfileira e acompanha; o servidor processa em segundo plano.
     // Acabou a dependência de requisições longas (era a causa do "Failed to fetch").
     const comImagem = document.getElementById('ac_imagens')?.checked !== false;
-    const enf = await mcApi('fila_enfileirar', { slots: vagos, tema: c.tema, redes: c.redes, blog_id: c.blog_id, apenas_rascunho: !!rascunho, com_imagem: comImagem });
+    const enf = await mcApi('fila_enfileirar', { slots: vagos, tema: c.tema, redes: c.redes, blog_id: c.blog_id, apenas_rascunho: !!rascunho, com_imagem: comImagem,
+      stories: !!document.getElementById('ac_stories')?.checked });
     window._acLote = enf.lote;
     const posts = [], erros = [];
     const ETQ = { texto: '✍ escrevendo', imagem: '🎨 gerando imagem', agendar: '📤 agendando', fim: '✓' };
@@ -23849,7 +23852,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.72] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.73] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -23865,7 +23868,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.72';
+window.__ATX_BUILD_ID__ = 'ATX-v2.73';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
