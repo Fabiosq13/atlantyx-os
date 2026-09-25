@@ -79,7 +79,7 @@ export function interpretarContato(texto) {
 async function configGet() {
   const sql = await getSql();
   const r = await sql`SELECT valor FROM app_config WHERE chave = 'prospeccao_feed'`;
-  return { apresentacao_media_id: null, apresentacao_nome: 'Apresentacao_Atlantyx.pdf', assunto: 'Atlantyx — dados e IA que sua operação usa de verdade',
+  return { apresentacao_media_id: null, apresentacao_nome: 'Apresentacao_Atlantyx.pdf', assunto: 'Atlantyx | Apresentação institucional — dados, analytics e IA',
     assinatura: 'Fabio Quintanilha / CEO – Atlantyx', whatsapp_texto: null, apresentacao_url: null, ...(r[0]?.valor || {}) };
 }
 async function configSet(payload) {
@@ -145,19 +145,25 @@ Responda SOMENTE com JSON:
 async function gerarTexto(c, cfg, canal, analise = null) {
   const key = process.env.ANTHROPIC_API_KEY;
   const fallback = canal === 'email'
-    ? `Olá ${c.nome},\n\n${c.contexto ? 'Foi um prazer o contato em ' + c.contexto + '. ' : ''}Sou o Fabio Quintanilha, CEO da Atlantyx. Há 17 anos ajudamos empresas como CPFL, Enel e Caixa a transformar dados em decisão — com engenharia de dados, analytics e IA aplicada à operação.\n\nSegue em anexo uma apresentação curta. Se fizer sentido para ${c.empresa || 'a sua empresa'}, proponho uma conversa de 30 minutos para entender o seu cenário.\n\n${cfg.assinatura}`
+    ? `Prezado(a) ${c.nome},\n\n${c.contexto ? 'Foi um prazer conhecê-lo(a) por ocasião de ' + c.contexto + '. ' : ''}Meu nome é Fabio Quintanilha, CEO da Atlantyx. Há 17 anos apoiamos organizações como CPFL Energia, Enel e Caixa Capitalização na transformação de dados em decisões, por meio de engenharia de dados, analytics e inteligência artificial aplicada à operação.\n\nEncaminho em anexo uma breve apresentação institucional. Caso o tema seja pertinente para ${c.empresa || 'sua organização'}, coloco-me à disposição para uma conversa de 30 minutos, em data e horário de sua conveniência, para compreender melhor o cenário atual.\n\nAtenciosamente,\n${cfg.assinatura}`
     : `Olá ${c.nome}, aqui é o Fabio Quintanilha, da Atlantyx. Trabalhamos com dados e IA para grandes operações (CPFL, Enel, Caixa). Posso te mandar uma apresentação curta? Se preferir, aqui está o link: ${cfg.apresentacao_url || baseUrl() + '/captura.html?utm_source=whatsapp&utm_medium=prospeccao'}`;
   if (!key) return fallback;
   try {
     const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST',
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 900, system: canal === 'email'
-        ? `Escreva um e-mail de apresentação da Atlantyx (17 anos, dados/analytics/IA para grandes empresas; clientes CPFL, Enel, Caixa, Jelta) para um contato novo. Tom de CEO falando com um par: direto, sem jargão de marketing, sem "revolucionar".
+        ? `Escreva um e-mail de apresentação da Atlantyx (17 anos, dados/analytics/IA para grandes empresas; clientes CPFL, Enel, Caixa, Jelta) para um contato novo.
+TOM FORMAL E CORPORATIVO (padrão de comunicação executiva no Brasil):
+- Saudação: "Prezado(a) Sr(a). [Sobrenome]," — use "Prezado Sr." ou "Prezada Sra." quando o gênero for claro pelo nome; na dúvida, "Prezado(a)". Se só houver primeiro nome, use "Prezado(a) [Nome],".
+- Tratamento em terceira pessoa ("o senhor" / "a senhora" / "V.Sa.") ou impessoal — nunca "você".
+- Frases completas e cordiais, vocabulário corporativo, sem gírias, sem exclamações, sem emoji, sem jargão de marketing ("revolucionar", "game changer").
+- Retomada do contexto com formalidade: "Foi um prazer conhecê-lo(a) durante o [evento]…" ou "Em continuidade ao nosso contato no…".
+- Fechamento: "Coloco-me à disposição para uma breve conversa de 30 minutos, em data e horário de sua conveniência." seguido de "Atenciosamente," e a assinatura.
 ESTRUTURA: (1) abertura pelo contexto do contato, se houver; (2) UM parágrafo mostrando que você olhou a empresa dele — o momento/setor e 2 ou 3 frentes CONCRETAS onde a Atlantyx pode ajudar, ligadas às dores prováveis (use a análise fornecida; trate dores como hipóteses, nunca afirme problemas internos como fato); cite um caso Atlantyx parecido se couber; (3) mencione que a apresentação vai em anexo; (4) feche pedindo 30 min para entender o cenário.
-130 a 190 palavras. Pode usar uma lista curta de 2-3 itens para as frentes. Assine como "${cfg.assinatura}". Devolva só o corpo do e-mail, sem assunto.`
+140 a 200 palavras. Pode usar uma lista curta de 2-3 itens para as frentes. Termine com "Atenciosamente," e, na linha seguinte, a assinatura "${cfg.assinatura}". Devolva só o corpo do e-mail, sem assunto.`
         : `Escreva uma mensagem de WhatsApp de primeiro contato da Atlantyx (dados e IA para grandes empresas). Máximo 60 palavras, tom pessoal, sem emoji além de 1, terminando com a oferta de enviar a apresentação. Assine como Fabio. Devolva só a mensagem.`,
         messages: [{ role: 'user', content: `Contato: ${c.nome}${c.cargo ? ', ' + c.cargo : ''}${c.empresa ? ', empresa ' + c.empresa : ''}.`
-          + (c.contexto ? `\nOnde nos conhecemos / contexto do contato: ${c.contexto}. ABRA o e-mail retomando esse contexto de forma natural e específica (ex.: "Foi ótimo conversar com você no ..."), sem soar genérico.` : '\nPrimeiro contato frio — não finja que já se conheceram.')
+          + (c.contexto ? `\nOnde nos conhecemos / contexto do contato: ${c.contexto}. ABRA o e-mail retomando esse contexto de forma formal e específica (ex.: "Foi um prazer conhecê-lo durante o ..."), sem soar genérico.` : '\nPrimeiro contato frio — não finja que já se conheceram.')
           + (analise ? `\n\nANÁLISE DA EMPRESA (base para o parágrafo de "onde podemos ajudar"):\n${JSON.stringify({ setor: analise.setor, resumo: analise.resumo, sinais: analise.sinais, dores: analise.dores, oportunidades: analise.oportunidades, gancho: analise.gancho })}` : '\n(Sem análise da empresa — fale das frentes da Atlantyx de forma adequada ao setor provável, sem inventar fatos sobre a empresa.)') }] }) });
     const d = await r.json();
     const txt = d?.content?.find(x => x.type === 'text')?.text?.trim();
@@ -248,7 +254,7 @@ async function feedIncluir({ texto, contato, enviar = true, contexto } = {}) {
   if (canal === 'email') { analise = await analisarEmpresa(c); etapas.analise = analise ? `ok — ${analise.dores?.length || 0} dor(es), ${analise.oportunidades?.length || 0} oportunidade(s)` : 'sem dados suficientes (e-mail pessoal ou empresa não encontrada)'; }
   try { if (analise) await sql`UPDATE prospeccao_feed SET analise = ${JSON.stringify(analise)} WHERE id = ${id}`; } catch (_) {}
   const mensagem = await gerarTexto(c, cfg, canal, analise);
-  const assunto = c.contexto ? `${c.nome.split(' ')[0]}, retomando nossa conversa — Atlantyx` : cfg.assunto;
+  const assunto = c.contexto ? `Atlantyx | Continuidade do nosso contato — ${c.empresa || c.nome}` : (cfg.assunto || `Atlantyx | Apresentação institucional — ${c.empresa || c.nome}`);
   await sql`UPDATE prospeccao_feed SET mensagem = ${mensagem} WHERE id = ${id}`;
   try { await sql`UPDATE prospeccao_feed SET contexto = ${c.contexto || null}, assunto = ${assunto} WHERE id = ${id}`; } catch (_) {}
   if (enviar) {
