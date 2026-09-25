@@ -592,7 +592,7 @@ async function leadMarcarReuniao({ lead_id, data_reuniao, obs } = {}) {
   // alerta por e-mail com a campanha de origem
   try {
     const nodemailer = (await import('nodemailer')).default;
-    const user = process.env.EMAIL_IMAP_USER, pass = process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS;
+    const user = process.env.EMAIL_IMAP_USER || process.env.EMAIL_USER || process.env.SMTP_USER || process.env.GMAIL_USER, pass = (process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS || process.env.EMAIL_PASS || process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
     if (user && pass) {
       const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass } });
       await t.sendMail({ from: `Atlantyx OS <${user}>`, to: process.env.LEADS_ALERTA_PARA || process.env.RELATORIO_PAGAMENTOS_PARA || user,
