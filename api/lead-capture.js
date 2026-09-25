@@ -49,7 +49,11 @@ export default async function handler(req, res) {
     try { mensagem = await gerarMensagemClaude(lead); etapas.mensagem = 'ok'; }
     catch (e) { etapas.mensagem = 'falha: ' + e.message; }
 
-    try { ({ contactId, dealId } = await criarNoHubSpot(lead)); etapas.hubspot = contactId ? 'ok' : 'sem retorno'; }
+    // v2.87: upsert robusto (não falha com e-mail já existente nem com propriedade personalizada ausente)
+    try { const { enviarContatoHubSpot } = await import('../lib/hubspot-sync.js');
+      const hsr = await enviarContatoHubSpot({ nome: lead.name, email: lead.email, telefone: lead.phone, empresa: lead.company, cargo: lead.job_title || lead.title, score: lead.score_label, origem: lead.origem || lead.source },
+        { nota: `<b>Lead capturado</b><br>Origem: ${lead.origem || '?'} · campanha: ${lead.campanha || '—'}`, origem: 'Captura · ' + (lead.origem || 'formulário') });
+      contactId = hsr.contato_id; dealId = hsr.negocio_id || null; etapas.hubspot = `ok — contato ${hsr.acao}`; }
     catch (e) { etapas.hubspot = 'falha: ' + e.message; }
 
     if (lead.phone && mensagem) {
