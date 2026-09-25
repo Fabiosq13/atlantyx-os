@@ -14,6 +14,18 @@
 
 import { neon } from '@neondatabase/serverless';
 
+// v2.81: servidor SMTP configurável — Gmail, HostGator (cPanel) ou outro.
+//   EMAIL_SMTP_HOST  (padrão: smtp.gmail.com se o usuário for @gmail; senão mail.<domínio do e-mail>)
+//   EMAIL_SMTP_PORT  (padrão 465 = SSL; 587 = STARTTLS)
+//   EMAIL_SMTP_TLS_RELAXADO=1  → aceita certificado que não bate com o host (comum em hospedagem compartilhada)
+function _smtpConfig(user, pass) {
+  const dom = String(user || '').split('@')[1] || '';
+  const host = process.env.EMAIL_SMTP_HOST || (/gmail\.com$/i.test(dom) ? 'smtp.gmail.com' : (dom ? 'mail.' + dom : 'smtp.gmail.com'));
+  const port = parseInt(process.env.EMAIL_SMTP_PORT || '465', 10);
+  return { host, port, secure: port === 465, auth: { user, pass }, connectionTimeout: 20000, greetingTimeout: 15000, socketTimeout: 30000,
+    ...(process.env.EMAIL_SMTP_TLS_RELAXADO === '1' ? { tls: { rejectUnauthorized: false } } : {}) };
+}
+
 let _sql = null;
 async function getSql() {
   if (_sql) return _sql;
@@ -124,15 +136,24 @@ async function testarSmtp() {
   const cr = credSmtp();
   const out = { variaveis_presentes: cr.presentes, usuario: cr.user ? cr.user.replace(/(.{3}).*(@.*)/, '$1…$2') : null, senha_tamanho: cr.pass ? cr.pass.length : 0, ok: false };
   if (!cr.ok) { out.erro = 'Faltam no Vercel: ' + cr.falta.join(' e '); out.como = COMO_SMTP; return out; }
-  if (cr.pass.length !== 16) out.aviso = `A senha tem ${cr.pass.length} caracteres — senha de app do Gmail tem 16. Pode ser a senha normal da conta, que o Gmail recusa.`;
+  const cfgS = _smtpConfig(cr.user, cr.pass);
+  out.servidor = `${cfgS.host}:${cfgS.port}${cfgS.tls ? ' (TLS relaxado)' : ''}`;
+  const gmail = /gmail/i.test(cfgS.host);
+  if (gmail && cr.pass.length !== 16) out.aviso = `A senha tem ${cr.pass.length} caracteres — senha de app do Gmail tem 16. Pode ser a senha normal da conta, que o Gmail recusa.`;
   try {
     const nodemailer = (await import('nodemailer')).default;
-    const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user: cr.user, pass: cr.pass } });
-    await t.verify(); out.ok = true; out.mensagem = 'Conexão SMTP com o Gmail OK — o envio vai funcionar.';
-  } catch (e) { out.erro = e.message; out.como = /Invalid login|Username and Password|535/i.test(e.message) ? 'O Gmail recusou usuário/senha. Use uma SENHA DE APP (não a senha normal): ' + COMO_SMTP : COMO_SMTP; }
+    const t = nodemailer.createTransport(cfgS);
+    await t.verify(); out.ok = true; out.mensagem = `Conexão SMTP OK com ${cfgS.host} — o envio vai funcionar.`;
+  } catch (e) {
+    out.erro = e.message;
+    if (/altnames|certificate|self.signed|CERT_/i.test(e.message)) out.como = 'O certificado do servidor não corresponde a "' + cfgS.host + '" (comum em hospedagem compartilhada). Opção 1: em EMAIL_SMTP_HOST use o nome do servidor da HostGator (cPanel → Contas de E-mail → Conectar dispositivos → "Servidor de saída", algo como br123.hostgator.com.br). Opção 2: crie EMAIL_SMTP_TLS_RELAXADO = 1.';
+    else if (/Invalid login|Username and Password|535|authentication/i.test(e.message)) out.como = gmail ? 'O Gmail recusou usuário/senha. Use uma SENHA DE APP: ' + COMO_SMTP : 'O servidor recusou usuário/senha. Confira EMAIL_IMAP_USER (o e-mail completo) e EMAIL_SMTP_PASS (a senha da caixa de e-mail no cPanel).';
+    else if (/ETIMEDOUT|ECONNREFUSED|ENOTFOUND|timeout/i.test(e.message)) out.como = `Não conectou em ${cfgS.host}:${cfgS.port}. Confira EMAIL_SMTP_HOST (cPanel → Contas de E-mail → Conectar dispositivos) e tente EMAIL_SMTP_PORT = 587 se a 465 estiver bloqueada.`;
+    else out.como = COMO_SMTP;
+  }
   return out;
 }
-const COMO_SMTP = '1) No Gmail que vai enviar, ative a verificação em 2 etapas (myaccount.google.com/security). 2) Gere uma senha de app em myaccount.google.com/apppasswords (nome: "Atlantyx OS"). 3) No Vercel → Settings → Environment Variables, crie EMAIL_IMAP_USER = o e-mail e EMAIL_SMTP_PASS = a senha de 16 letras sem espaços, marcando o ambiente PRODUCTION. 4) Deployments → ⋯ → Redeploy (variável nova só vale após redeploy).';
+const COMO_SMTP = 'HOSTGATOR: no Vercel crie EMAIL_IMAP_USER = o e-mail completo, EMAIL_SMTP_PASS = a senha da caixa, EMAIL_SMTP_HOST = mail.seudominio.com.br (ou o servidor indicado no cPanel), EMAIL_SMTP_PORT = 465, marque Production e faça Redeploy. GMAIL: 1) No Gmail que vai enviar, ative a verificação em 2 etapas (myaccount.google.com/security). 2) Gere uma senha de app em myaccount.google.com/apppasswords (nome: "Atlantyx OS"). 3) No Vercel → Settings → Environment Variables, crie EMAIL_IMAP_USER = o e-mail e EMAIL_SMTP_PASS = a senha de 16 letras sem espaços, marcando o ambiente PRODUCTION. 4) Deployments → ⋯ → Redeploy (variável nova só vale após redeploy).';
 
 async function enviarEmail(c, cfg, corpo, over = {}) {
   cfg = { ...cfg, ...(over.assunto ? { assunto: over.assunto } : {}), ...(over.anexo_media_id !== undefined ? { apresentacao_media_id: over.anexo_media_id, apresentacao_nome: over.anexo_nome || cfg.apresentacao_nome } : {}) };
@@ -146,7 +167,7 @@ async function enviarEmail(c, cfg, corpo, over = {}) {
     const m = (await sql`SELECT conteudo, content_type FROM media_arquivos WHERE id = ${cfg.apresentacao_media_id}`)[0];
     if (m) anexos.push({ filename: cfg.apresentacao_nome || 'Apresentacao_Atlantyx.pdf', content: Buffer.from(m.conteudo, 'base64'), contentType: m.content_type || 'application/pdf' });
   }
-  const t = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, auth: { user, pass } });
+  const t = nodemailer.createTransport(_smtpConfig(user, pass));
   await t.sendMail({ from: `Fabio Quintanilha — Atlantyx <${user}>`, to: c.email, subject: cfg.assunto, text: corpo,
     html: `<div style="font-family:Arial;font-size:14px;line-height:1.6;max-width:600px;">${corpo.replace(/\n/g, '<br>')}</div>`, attachments: anexos });
   return { anexos: anexos.length };
