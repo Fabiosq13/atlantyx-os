@@ -1212,6 +1212,10 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200, conta_id = n
           origem: 'quickbooks',
           qb_tipo: tipo,
           memo: item.PrivateNote || '',
+          // v2.99: faturas pagas por este recebimento (para mostrar o produto/serviço)
+          _inv_ids: tipo === 'pagamento' ? [...new Set((item.Line || []).flatMap(l => (l.LinkedTxn || []).filter(lt => /invoice/i.test(lt.TxnType || '')).map(lt => String(lt.TxnId))))] : null,
+          _desc_propria: tipo === 'venda' ? _descLinhasFatura(item) : '',
+          _invoice: tipo === 'invoice' ? item : null,
         });
       }
     } catch (e) {
@@ -1220,6 +1224,32 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200, conta_id = n
       if (/throttle|429/i.test(e.message || '')) incompletoPorThrottle = true;
     }
   }
+
+  // v2.99: recebimento (Payment) mostra o número e a descrição do produto/serviço das faturas pagas.
+  // As faturas do período já vieram na consulta; as de antes são buscadas de uma vez (Id in (...)).
+  try {
+    const invMap = {};
+    lancamentos.forEach(l => { if (l._invoice) invMap[String(l._invoice.Id)] = l._invoice; });
+    const faltam = [...new Set(lancamentos.flatMap(l => l._inv_ids || []))].filter(id => !invMap[id]);
+    for (let k = 0; k < faltam.length; k += 100) {
+      const lote = faltam.slice(k, k + 100).map(id => `'${id.replace(/'/g, '')}'`).join(',');
+      const d = await qbQuery(`select * from Invoice where Id in (${lote}) maxresults 100`, token).catch(() => null);
+      (d?.QueryResponse?.Invoice || []).forEach(inv => invMap[String(inv.Id)] = inv);
+    }
+    lancamentos.forEach(l => {
+      if (l._inv_ids?.length) {
+        const invs = l._inv_ids.map(id => invMap[id]).filter(Boolean);
+        if (invs.length) {
+          const nums = invs.map(i => i.DocNumber).filter(Boolean);
+          const desc = [...new Set(invs.map(i => _descLinhasFatura(i).replace(/^ · /, '')).filter(Boolean))];
+          let extra = (nums.length ? ' · Fat. ' + nums.join(', ') : '') + (desc.length ? ' · ' + desc.slice(0, 2).join(' / ') + (desc.length > 2 ? ` (+${desc.length - 2})` : '') : '');
+          if (extra.length > 180) extra = extra.substring(0, 177) + '…';
+          if (!String(l.descricao).includes(extra.trim())) l.descricao = l.descricao + extra;
+        }
+      } else if (l._desc_propria && !String(l.descricao).includes(l._desc_propria.replace(/^ · /, ''))) l.descricao = l.descricao + l._desc_propria;
+      delete l._inv_ids; delete l._desc_propria; delete l._invoice;
+    });
+  } catch (e) { console.warn('[extrato] descrição das faturas pagas:', e.message); lancamentos.forEach(l => { delete l._inv_ids; delete l._desc_propria; delete l._invoice; }); }
 
   // Filtrar ocultos
   const sql = await getSql().catch(() => null);
