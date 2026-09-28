@@ -3867,7 +3867,8 @@ async function _qbPrevisoesTodas(token) {
     const lote = d?.QueryResponse?.Estimate || [];
     lote.forEach(e => { const nota = String(e.PrivateNote || ''); if (!nota.includes(PREV_TAG)) return;
       out.push({ id: e.Id, sync: e.SyncToken, doc: e.DocNumber, status: e.TxnStatus, marco: (nota.match(/marco (\S+)/) || [])[1] || null,
-        emissao: e.TxnDate, receb: e.ExpirationDate, valor: parseFloat(e.TotalAmt || 0), criada: e.MetaData?.CreateTime || '' }); });
+        emissao: e.TxnDate, receb: e.ExpirationDate, valor: parseFloat(e.TotalAmt || 0), criada: e.MetaData?.CreateTime || '',
+        cliente: e.CustomerRef?.name || '', memo: e.CustomerMemo?.value || '' }); });
     if (lote.length < 1000) break;
   }
   return out;
@@ -3900,12 +3901,14 @@ async function marcosPrevisaoDeduplicar() {
 
 // Estimativas de previsão abertas (lidas pelos fluxos). Só as geradas pelo Atlantyx.
 async function _qbEstimativasPrevisao(token) {
-  const d = await qbQuery(`select * from Estimate where TxnStatus = 'Pending' maxresults 1000`, token);
-  const vistos = new Set();   // v2.96: uma por marco — cópias não inflam o fluxo
-  return (d?.QueryResponse?.Estimate || []).filter(e => String(e.PrivateNote || '').includes(PREV_TAG))
-    .filter(e => { const mk = (String(e.PrivateNote).match(/marco (\S+)/) || [])[1] || e.Id; if (vistos.has(mk)) return false; vistos.add(mk); return true; })
-    .map(e => ({ id: e.Id, doc: e.DocNumber, cliente: e.CustomerRef?.name || 'Cliente', data: e.ExpirationDate || e.TxnDate, emissao: e.TxnDate,
-      valor: parseFloat(e.TotalAmt || 0), descricao: (e.CustomerMemo?.value || '').replace(/^Previsão de faturamento — /, '') }));
+  // v2.97: o QuickBooks NÃO aceita filtrar Estimate por TxnStatus na consulta — a query falhava e o
+  // fluxo ficava sem as previsões. Agora lê todas as de previsão e filtra o status aqui.
+  const vistos = new Set();   // uma por marco — cópias não inflam o fluxo
+  return (await _qbPrevisoesTodas(token))
+    .filter(e => !['Closed', 'Converted', 'Rejected'].includes(e.status))
+    .filter(e => { const mk = e.marco || e.id; if (vistos.has(mk)) return false; vistos.add(mk); return true; })
+    .map(e => ({ id: e.id, doc: e.doc, cliente: e.cliente || 'Cliente', data: e.receb || e.emissao, emissao: e.emissao,
+      valor: e.valor, descricao: String(e.memo || '').replace(/^Previsão de faturamento — /, '') }));
 }
 
 // ═══ v2.29: DESPESAS FUTURAS — descobrir, criar e replicar 12 meses no QuickBooks ═══

@@ -16535,7 +16535,7 @@ function _fdLinha(l, corSaldo) {
   // v1.38: 'referencia' = nota fiscal emitida (competência) — não movimenta caixa
   const ehRef = l.tipo === 'referencia';
   const cor = ehRef ? 'var(--t3)' : (l.tipo === 'entrada' ? 'var(--green,#22d3a3)' : 'var(--red)');
-  const fonte = l.origem === 'quickbooks' ? '🔗 QuickBooks' : l.origem === 'quickbooks_futuro' ? '🔗 QuickBooks' : l.origem === 'simulado' || l.origem === 'simulado_futuro' ? '✎ Simulado' : l.origem === 'atlantyx_futuro' ? '📋 Atlantyx' : (l.origem || '');
+  const fonte = l.origem === 'quickbooks' ? '🔗 QuickBooks' : l.origem === 'quickbooks_futuro' ? '🔗 QuickBooks' : l.origem === 'quickbooks_previsao' ? '📅 Previsão (estimativa QB)' : l.origem === 'simulado' || l.origem === 'simulado_futuro' ? '✎ Simulado' : l.origem === 'atlantyx_futuro' ? '📋 Atlantyx' : (l.origem || '');
   const venc = l.vencida ? ' <span style="color:var(--red);font-size:9px;">⚠ vencida</span>' : '';
   const refTag = ehRef ? ' <span style="color:var(--t3);font-size:9px;" title="Nota fiscal emitida — o caixa só muda quando o pagamento entra">📄 emissão (não move o caixa)</span>' : '';
   const repTag = l._repetido ? ` <span style="color:var(--red);font-size:9px;font-weight:600;" title="Aparece ${l._repetido}x com a mesma data, descrição e valor — pode ser duplicidade na contabilidade. Use o 🔎 para rastrear.">⚠ ${l._repetido}x repetido</span>` : '';
@@ -24280,7 +24280,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.96] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.97] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -24296,7 +24296,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.96';
+window.__ATX_BUILD_ID__ = 'ATX-v2.97';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
