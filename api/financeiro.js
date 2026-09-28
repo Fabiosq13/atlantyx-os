@@ -2419,6 +2419,42 @@ function _descLinhasFatura(inv) {
   if (t.length > 140) t = t.substring(0, 137) + '…';
   return ' · ' + t;
 }
+// v3.00: TRANSAÇÕES RECORRENTES do QuickBooks (modelos agendados) projetadas nas próximas datas.
+// O QuickBooks conta com elas na previsão; o Atlantyx ignorava. Só modelos ativos e agendados.
+async function qbRecorrentesProjecao({ ate } = {}) {
+  if (!qbConfigurado()) return { itens: [], erro: null };
+  const token = await qbToken();
+  const d = await qbQuery(`select * from RecurringTransaction maxresults 500`, token);
+  const lista = d?.QueryResponse?.RecurringTransaction || [];
+  const hojeS = new Date().toISOString().substring(0, 10);
+  const lim = ate || _diasMais(hojeS, 366);
+  const ENT = { Invoice: 'entrada', SalesReceipt: 'entrada', Deposit: 'entrada', Estimate: null, Bill: 'saida', Purchase: 'saida', Check: 'saida', CreditCardCredit: null, JournalEntry: null, Transfer: null, VendorCredit: null, CreditMemo: null, RefundReceipt: 'saida', PurchaseOrder: null };
+  const itens = [];
+  for (const w of lista) {
+    const tipoEnt = Object.keys(w).find(k => w[k] && typeof w[k] === 'object' && w[k].RecurringInfo);
+    if (!tipoEnt) continue;
+    const t = w[tipoEnt], ri = t.RecurringInfo || {}, si = ri.ScheduleInfo || {};
+    const dir = ENT[tipoEnt]; if (!dir) continue;
+    if (ri.Active === false || /unscheduled/i.test(String(ri.RecurType || ''))) continue;   // inativo ou sem agenda: não projeta
+    const valor = parseFloat(t.TotalAmt || 0); if (!valor) continue;
+    let prox = si.NextDate || si.StartDate; if (!prox) continue;
+    const n = Math.max(1, parseInt(si.NumInterval) || 1), tipo = String(si.IntervalType || 'Monthly');
+    let restantes = si.RemainingOccurrences != null ? parseInt(si.RemainingOccurrences) : (si.MaxOccurrences != null ? parseInt(si.MaxOccurrences) : 999);
+    const fimModelo = si.EndDate || '9999-12-31';
+    const nome = t.CustomerRef?.name || t.VendorRef?.name || t.EntityRef?.name || ri.Name || tipoEnt;
+    const desc = tipoEnt === 'Invoice' || tipoEnt === 'SalesReceipt' ? _descLinhasFatura(t) : (t.PrivateNote ? ' · ' + String(t.PrivateNote).substring(0, 80) : '');
+    for (let k = 0; k < 400 && restantes > 0 && prox <= lim && prox <= fimModelo; k++) {
+      if (prox > hojeS) itens.push({ id: `rec_${t.Id || ri.Name}_${prox}`, data: prox, descricao: `${nome}${desc} (recorrente: ${ri.Name || tipoEnt})`,
+        categoria: 'Recorrente QB (' + tipoEnt + ')', valor, tipo: dir, origem: 'quickbooks_recorrente', no_periodo: true });
+      restantes--;
+      if (/daily/i.test(tipo)) prox = _diasMais(prox, n);
+      else if (/weekly/i.test(tipo)) prox = _diasMais(prox, 7 * n);
+      else if (/yearly/i.test(tipo)) prox = _addMesesData(prox, 12 * n);
+      else prox = _addMesesData(prox, n);   // Monthly (padrão)
+    }
+  }
+  return { itens, modelos: lista.length };
+}
 async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
   // Recebíveis (Invoice em aberto) e Pagáveis (Bill em aberto) do QuickBooks,
   // um lançamento por documento — não agregado por mês.
@@ -2506,7 +2542,30 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   } catch (e) { console.warn('[FluxoDetalhado] simulados futuros:', e.message); }
 
   // 5. Montar linha do tempo futura ordenada, calculando saldo em cascata a partir do saldo de hoje
-  const futTodos = [...fut.recebiveis, ...fut.pagaveis, ...despFuturas, ...simFuturos]
+  // v3.00: (a) lançamentos JÁ REGISTRADOS no QuickBooks com data futura (despesas agendadas, pagamentos
+  // programados, depósitos...) — o fluxo de 12 meses já contava, o detalhado não; (b) transações
+  // recorrentes do QuickBooks. Os dois com proteção contra dupla contagem (mesma data e valor de
+  // algo já previsto: fatura/conta em aberto ou despesa programada).
+  let qbLancFuturos = [], qbRecorrentes = [], qbExtraErro = null;
+  if (!(fim && fim < hoje)) {
+    const chave = (d, v) => `${String(d).substring(0, 10)}|${Math.abs(v).toFixed(2)}`;
+    const previstos = new Set([...fut.recebiveis, ...fut.pagaveis, ...despFuturas].map(p => chave(p.data, p.valor)));
+    const quase = (d, v) => [...previstos].some(k => { const [dd, vv] = k.split('|'); return vv === Math.abs(v).toFixed(2) && Math.abs((new Date(dd) - new Date(String(d).substring(0, 10))) / 864e5) <= 3; });
+    try {
+      const amanha = _diasMais(hoje, 1);
+      const r = await qbLancamentos({ data_inicio: amanha, data_fim: fim || _diasMais(hoje, 366), limite: 1000, conta_id });
+      qbLancFuturos = (r.lancamentos || []).filter(l => l.tipo !== 'referencia' && l.valor && !previstos.has(chave(l.data, l.valor)))
+        .map(l => ({ ...l, categoria: (l.categoria || l.qb_tipo) + ' · lançado com data futura', origem: 'quickbooks_lancado_futuro', no_periodo: true }));
+      qbLancFuturos.forEach(l => previstos.add(chave(l.data, l.valor)));
+      if (r.erros?.length) qbExtraErro = 'Lançamentos futuros: ' + r.erros.join(' | ');
+    } catch (e) { qbExtraErro = 'Lançamentos futuros: ' + e.message; }
+    try {
+      const rc = await qbRecorrentesProjecao({ ate: fim || _diasMais(hoje, 366) });
+      qbRecorrentes = (rc.itens || []).filter(l => !quase(l.data, l.valor));
+    } catch (e) { qbExtraErro = (qbExtraErro ? qbExtraErro + ' | ' : '') + 'Recorrentes: ' + e.message; }
+  }
+  if (qbExtraErro) fut.erro = (fut.erro ? fut.erro + ' | ' : '') + qbExtraErro;
+  const futTodos = [...fut.recebiveis, ...fut.pagaveis, ...despFuturas, ...simFuturos, ...qbLancFuturos, ...qbRecorrentes]
     .filter(l => l.data && l.data > hoje)
     .sort((a, b) => a.data < b.data ? -1 : a.data > b.data ? 1 : 0);
   let saldoCorrente = extrato.saldo_final || 0;
@@ -3134,6 +3193,11 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
         const v = l.tipo === 'entrada' ? l.valor : -l.valor;
         jaLancadoPorMes[mes] = round((jaLancadoPorMes[mes] || 0) + v);
       });
+      // v3.00: transações recorrentes do QuickBooks entram no "± Já lançado/agendado no QuickBooks"
+      try { const rc = await qbRecorrentesProjecao({ ate: fimHorizonte });
+        (rc.itens || []).forEach(l => { const ch = `${l.data}|${Math.abs(l.valor).toFixed(2)}`; if (previstos.has(ch)) { ignorados++; return; }
+          const mes = l.data.substring(0, 7); jaLancadoPorMes[mes] = round((jaLancadoPorMes[mes] || 0) + (l.tipo === 'entrada' ? l.valor : -l.valor)); }); }
+      catch (e) { console.warn('[fluxoFuturo] recorrentes:', e.message); }
       if (ignorados) console.log(`[fluxoFuturo] ${ignorados} lançamento(s) ignorado(s) por já constarem como previsão`);
       console.log('[fluxoFuturo] lançados no futuro por mês:', JSON.stringify(jaLancadoPorMes));
     }
