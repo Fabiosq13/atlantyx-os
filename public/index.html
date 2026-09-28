@@ -14019,11 +14019,33 @@ async function abrirPrevisaoMarcos() {
         <div class="fg" style="margin:0;"><label class="fl">Dia do recebimento</label><input class="fi" type="number" min="1" max="28" id="pvDia" value="25" style="width:90px;"/></div>
         <button class="btn" onclick="pvSimular()">↻ Simular</button>
         <div style="flex:1;"></div>
+        <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="pvDedup()" title="Mantém uma estimativa por marco e apaga as cópias">🧹 Limpar duplicadas</button>
         <button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red);" onclick="pvRemover()" title="Apaga do QuickBooks todas as estimativas de previsão geradas pelo Atlantyx">🗑 Remover previsões do QuickBooks</button>
       </div>
+      <div id="pvContagem" style="font-size:11px;margin-bottom:10px;color:var(--t3);">⏳ contando estimativas no QuickBooks...</div>
       <div id="pvCorpo"><div style="text-align:center;color:var(--t3);padding:20px;">⏳ Montando a sequência...</div></div>
     </div></div>`;
-  pvSimular();
+  pvSimular(); pvContar();
+}
+async function pvContar() {
+  const el = document.getElementById('pvContagem'); if (!el) return;
+  try { const c = await finApi('marcos_previsao_contar', {});
+    el.innerHTML = c.duplicadas ? `<span style="color:var(--red);font-weight:600;">⚠ No QuickBooks: ${c.total} estimativa(s) de previsão para ${c.marcos} marco(s) — ${c.duplicadas} cópia(s) a mais. Use "🧹 Limpar duplicadas".</span>`
+      : `No QuickBooks: ${c.total} estimativa(s) de previsão, uma por marco ✓`;
+  } catch (e) { el.textContent = 'Não consegui contar no QuickBooks: ' + e.message; }
+}
+async function pvDedup() {
+  if (!confirm('Manter UMA estimativa por marco e apagar as cópias no QuickBooks?')) return;
+  const el = document.getElementById('pvContagem'); let rem = 0, erros = [];
+  try {
+    for (let v = 0; v < 15; v++) {
+      if (el) el.textContent = `⏳ Apagando cópias... ${rem} removida(s)`;
+      const r = await finApi('marcos_previsao_dedup', {}); rem += r.removidas; erros.push(...r.erros);
+      if (!r.pendente || r.erros.length) break;
+    }
+    alert(`${rem} cópia(s) removida(s) do QuickBooks.` + (erros.length ? '\n\nErros:\n' + erros.slice(0, 6).join('\n') : ''));
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+  pvContar(); pvSimular();
 }
 let _pvPlano = null;
 async function pvSimular() {
@@ -14064,11 +14086,14 @@ async function pvGerar() {
   if (!confirm(`Criar ${n} estimativa(s) no QuickBooks, total ${_pvBRL(_pvPlano.total_valor)}?\n\nEstimativas não entram na contabilidade. Você pode removê-las todas depois pelo botão "Remover previsões".`)) return;
   const btn = document.getElementById('pvBtnGerar'); const tot = { criadas: 0, atualizadas: 0, fechadas: 0, erros: [], clientes: [] };
   try {
-    for (let volta = 0; volta < 20; volta++) {
+    // v2.96: no máximo 5 voltas, e para se a fila não diminuir (antes eram 20 voltas e recriava tudo)
+    let antes = Infinity;
+    for (let volta = 0; volta < 5; volta++) {
       if (btn) { btn.disabled = true; btn.textContent = `⏳ Gerando... ${tot.criadas + tot.atualizadas} de ${n}`; }
       const r = await finApi('marcos_previsao_gerar', { mes_inicio: _pvPlano.mes_inicio, dia_recebimento: _pvPlano.dia_recebimento, limite: 15 });
       tot.criadas += r.criadas; tot.atualizadas += r.atualizadas; tot.fechadas += r.fechadas; tot.erros.push(...r.erros); tot.clientes.push(...r.clientes_criados);
-      if (!r.pendentes || (r.criadas + r.atualizadas === 0)) break;
+      if (!r.pendentes || r.pendentes >= antes || r.erros.length) break;
+      antes = r.pendentes;
     }
     alert(`Previsão gerada no QuickBooks:\n\n• ${tot.criadas} estimativa(s) criada(s)` + (tot.atualizadas ? `\n• ${tot.atualizadas} atualizada(s)` : '') + (tot.fechadas ? `\n• ${tot.fechadas} fechada(s) (marcos já faturados)` : '')
       + (tot.clientes.length ? `\n• cliente(s) criado(s) no QB: ${[...new Set(tot.clientes)].join(', ')}` : '')
@@ -14079,7 +14104,9 @@ async function pvGerar() {
 }
 async function pvRemover() {
   if (!confirm('Remover do QuickBooks TODAS as estimativas de previsão geradas pelo Atlantyx?\n\nSó apaga as estimativas marcadas como previsão (PRV-). Faturas reais não são tocadas.')) return;
-  try { const r = await finApi('marcos_previsao_remover', {}); alert(`${r.removidas} estimativa(s) removida(s).` + (r.erros.length ? '\n\nErros:\n' + r.erros.join('\n') : '')); pvSimular(); }
+  try { let rem = 0, erros = [];
+    for (let v = 0; v < 15; v++) { const r = await finApi('marcos_previsao_remover', {}); rem += r.removidas; erros.push(...r.erros); if (!r.pendente || r.erros.length) break; }
+    alert(`${rem} estimativa(s) removida(s).` + (erros.length ? '\n\nErros:\n' + erros.slice(0, 6).join('\n') : '')); pvContar(); pvSimular(); }
   catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
 
@@ -24253,7 +24280,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.95] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.96] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -24269,7 +24296,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.95';
+window.__ATX_BUILD_ID__ = 'ATX-v2.96';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

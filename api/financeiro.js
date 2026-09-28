@@ -262,6 +262,8 @@ export default async function handler(req, res) {
       marcos_previsao_planejar: () => marcosPrevisaoPlanejar(params),
       marcos_previsao_gerar:    () => marcosPrevisaoGerar(params),
       marcos_previsao_remover:  () => marcosPrevisaoRemover(params),
+      marcos_previsao_dedup:    () => marcosPrevisaoDeduplicar(params),
+      marcos_previsao_contar:   async () => { const t = await qbToken(); const l = await _qbPrevisoesTodas(t); const m = {}; l.forEach(e => m[e.marco] = (m[e.marco] || 0) + 1); return { total: l.length, marcos: Object.keys(m).length, duplicadas: l.length - Object.keys(m).length }; },
     };
 
     if (!acoes[action]) {
@@ -3724,6 +3726,7 @@ async function qbClienteCriar({ nome, contato, email, telefone, cnpj, notas } = 
 // de entrega. Emissão no dia 1 do mês; recebimento previsto no dia 25 do mesmo mês.
 // Quando o marco é concluído (faturado de verdade), a estimativa é fechada — sem contar duas vezes.
 const PREV_TAG = 'PREVISAO-ATX';
+function _dStr(v) { if (!v) return ''; if (v instanceof Date) return isNaN(v) ? '' : v.toISOString().substring(0, 10); return String(v).substring(0, 10); }   // v2.96
 function _mesMais(ym, n) { const [a, m] = ym.split('-').map(Number); const d = new Date(a, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
 function _diasMais(data, n) { const d = new Date(data + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().substring(0, 10); }
 async function _marcosNaoFaturados(sql, projeto_ids) {
@@ -3766,7 +3769,7 @@ async function marcosPrevisaoPlanejar({ mes_inicio, prazo_dias = 35, dia_recebim
     const cli = token ? await _qbClientePrevisao(lista[0].projeto_cliente || lista[0].projeto_nome, token, cache).catch(() => null) : null;
     const itens = lista.map((m, i) => {
       const mes = _mesMais(inicio, i), emissao = mes + '-01', receb = mes + '-' + String(diaRec).padStart(2, '0');   // recebimento no dia fixo do mês
-      const igual = m.previsao_qb_estimate_id && String(m.previsao_mes || '').substring(0, 10) === emissao && String(m.previsao_recebimento || '').substring(0, 10) === receb;
+      const igual = m.previsao_qb_estimate_id && _dStr(m.previsao_mes) === emissao && _dStr(m.previsao_recebimento) === receb;   // v2.96: antes comparava objeto Date com texto e nunca batia
       return { marco_id: m.id, descricao: m.descricao, valor: num(m.valor), data_entrega: m.data_entrega ? String(m.data_entrega).substring(0, 10) : null,
         status_kanban: m.status_kanban, mes, emissao, recebimento: receb,
         acao: !m.previsao_qb_estimate_id ? 'criar' : igual ? 'manter' : 'atualizar', estimativa_atual: m.previsao_qb_doc || m.previsao_qb_estimate_id || null };
@@ -3785,9 +3788,10 @@ async function marcosPrevisaoPlanejar({ mes_inicio, prazo_dias = 35, dia_recebim
     a_fechar: fechar.map(x => ({ marco_id: x.id, projeto: x.projeto, descricao: x.descricao, valor: num(x.valor), estimativa: x.previsao_qb_estimate_id })) };
 }
 async function _qbFecharEstimativa(id, token) {
+  if (!id) return 'sem_id';
   const e = (await qbFetch(`/estimate/${id}`, token))?.Estimate;
-  if (!e || e.TxnStatus === 'Closed' || e.TxnStatus === 'Converted') return 'ja_fechada';
-  await qbFetch('/estimate?operation=delete', token, 'POST', { Id: e.Id, SyncToken: e.SyncToken });
+  if (!e) return 'ja_removida';
+  await _qbApagarEstimativa(e.Id, e.SyncToken, token);
   return 'removida';
 }
 async function marcosPrevisaoGerar({ mes_inicio, prazo_dias = 35, dia_recebimento = 25, projeto_ids, limite = 40 } = {}) {
@@ -3796,6 +3800,10 @@ async function marcosPrevisaoGerar({ mes_inicio, prazo_dias = 35, dia_recebiment
   const sql = await getSql(); const token = await qbToken();
   const item = await _qbItemPrevisao(token);
   const out = { criadas: 0, atualizadas: 0, mantidas: 0, fechadas: 0, erros: [], clientes_criados: [], pendentes: 0 };
+  // v2.96: antes de criar, olha o que JÁ existe no QuickBooks para cada marco — nunca cria uma segunda
+  const noQb = {}; (await _qbPrevisoesTodas(token)).forEach(e => { if (e.marco) (noQb[e.marco] = noQb[e.marco] || []).push(e); });
+  const dup = Object.values(noQb).filter(l => l.length > 1).length;
+  if (dup) throw new Error(`Há ${dup} marco(s) com estimativas duplicadas no QuickBooks. Use "Limpar duplicadas" antes de gerar de novo.`);
   // 1. fecha as de marcos já faturados
   for (const x of plano.a_fechar) {
     try { await _qbFecharEstimativa(x.estimativa, token); } catch (e) { if (!/not found|Object Not Found|610/i.test(e.message)) { out.erros.push(`${x.projeto} · ${x.descricao}: fechar — ${e.message.substring(0, 120)}`); continue; } }
@@ -3811,18 +3819,22 @@ async function marcosPrevisaoGerar({ mes_inicio, prazo_dias = 35, dia_recebiment
       if (feitos >= limite) { out.pendentes++; continue; }
       try {
         if (!cli?.id) { const c = await qbClienteCriar({ nome: p.cliente, notas: 'Cliente criado pelo Atlantyx OS para a previsão de faturamento dos marcos' }); cli = { id: c.id, nome: c.nome, existe: true }; p.cliente_qb = cli; if (c.criado) out.clientes_criados.push(c.nome); }
-        if (x.estimativa_atual) { try { await _qbFecharEstimativa((await sql`SELECT previsao_qb_estimate_id FROM projetos_marcos WHERE id = ${x.marco_id}`)[0]?.previsao_qb_estimate_id, token); } catch (_) {} }
         const desc = `${p.projeto} — ${x.descricao}`.substring(0, 3900);
-        const corpo = { CustomerRef: { value: String(cli.id) }, TxnDate: x.emissao, ExpirationDate: x.recebimento, TxnStatus: 'Pending',
-          DocNumber: ('PRV-' + x.marco_id.replace(/[^A-Za-z0-9]/g, '').slice(-12)).substring(0, 21),
+        const campos = { CustomerRef: { value: String(cli.id) }, TxnDate: x.emissao, ExpirationDate: x.recebimento, TxnStatus: 'Pending',
           PrivateNote: `${PREV_TAG} · marco ${x.marco_id} · previsão de recebimento ${x.recebimento.split('-').reverse().join('/')} · gerada pelo Atlantyx OS`,
           CustomerMemo: { value: `Previsão de faturamento — ${desc}`.substring(0, 1000) },
           Line: [{ Amount: x.valor, DetailType: 'SalesItemLineDetail', Description: desc, SalesItemLineDetail: { ItemRef: { value: String(item.Id) }, Qty: 1, UnitPrice: x.valor } }] };
-        const r = await qbFetch('/estimate', token, 'POST', corpo);
-        const est = r?.Estimate;
+        const existente = (noQb[x.marco_id] || [])[0];
+        let est;
+        if (existente) {
+          if (existente.emissao === x.emissao && existente.receb === x.recebimento && Math.abs(existente.valor - x.valor) < 0.01) { est = { Id: existente.id, DocNumber: existente.doc }; out.mantidas++; }
+          else { est = (await qbFetch('/estimate', token, 'POST', { ...campos, Id: existente.id, SyncToken: existente.sync, sparse: true }))?.Estimate; out.atualizadas++; }
+        } else {
+          est = (await qbFetch('/estimate', token, 'POST', { ...campos, DocNumber: ('PRV-' + x.marco_id.replace(/[^A-Za-z0-9]/g, '').slice(-12)).substring(0, 21) }))?.Estimate;
+          noQb[x.marco_id] = [{ id: est?.Id }]; out.criadas++;
+        }
         await sql`UPDATE projetos_marcos SET previsao_qb_estimate_id = ${est?.Id || null}, previsao_qb_doc = ${est?.DocNumber || null}, previsao_mes = ${x.emissao},
           previsao_recebimento = ${x.recebimento}, previsao_gerada_em = NOW() WHERE id = ${x.marco_id}`;
-        if (x.acao === 'atualizar') out.atualizadas++; else out.criadas++;
         feitos++;
       } catch (e) { out.erros.push(`${p.projeto} · ${x.descricao}: ${e.message.substring(0, 160)}`); feitos++; }
     }
@@ -3831,22 +3843,67 @@ async function marcosPrevisaoGerar({ mes_inicio, prazo_dias = 35, dia_recebiment
   return out;
 }
 async function marcosPrevisaoRemover({ projeto_ids } = {}) {
+  // v2.96: apaga do QuickBooks TODAS as estimativas de previsão (inclusive cópias que o banco não conhece)
   if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
   const sql = await getSql(); const token = await qbToken();
-  let rows = await sql`SELECT id, projeto_id, previsao_qb_estimate_id FROM projetos_marcos WHERE previsao_qb_estimate_id IS NOT NULL`;
-  if (projeto_ids?.length) rows = rows.filter(r => projeto_ids.includes(r.projeto_id));
-  let removidas = 0; const erros = [];
-  for (const r of rows) {
-    try { await _qbFecharEstimativa(r.previsao_qb_estimate_id, token); } catch (e) { if (!/not found|Object Not Found|610/i.test(e.message)) { erros.push(e.message.substring(0, 120)); continue; } }
-    await sql`UPDATE projetos_marcos SET previsao_qb_estimate_id = NULL, previsao_qb_doc = NULL, previsao_mes = NULL, previsao_recebimento = NULL WHERE id = ${r.id}`;
-    removidas++;
+  let todas = await _qbPrevisoesTodas(token);
+  if (projeto_ids?.length) { const ms = new Set((await sql`SELECT id FROM projetos_marcos WHERE projeto_id = ANY(${projeto_ids})`).map(r => r.id)); todas = todas.filter(e => ms.has(e.marco)); }
+  let removidas = 0; const erros = []; const inicio = Date.now();
+  for (const e of todas) {
+    if (Date.now() - inicio > 50000) return { removidas, erros, restantes: todas.length - removidas, pendente: true };
+    try { await _qbApagarEstimativa(e.id, e.sync, token); removidas++; } catch (err) { erros.push(`${e.doc || e.id}: ${err.message.substring(0, 140)}`); if (erros.length > 5) break; }
   }
-  return { removidas, erros };
+  if (!erros.length) {
+    if (projeto_ids?.length) await sql`UPDATE projetos_marcos SET previsao_qb_estimate_id = NULL, previsao_qb_doc = NULL, previsao_mes = NULL, previsao_recebimento = NULL WHERE projeto_id = ANY(${projeto_ids})`;
+    else await sql`UPDATE projetos_marcos SET previsao_qb_estimate_id = NULL, previsao_qb_doc = NULL, previsao_mes = NULL, previsao_recebimento = NULL WHERE previsao_qb_estimate_id IS NOT NULL`;
+  }
+  return { removidas, erros, restantes: todas.length - removidas, pendente: false };
 }
+// v2.96: todas as estimativas de previsão que existem no QuickBooks (paginado), com o marco de origem
+async function _qbPrevisoesTodas(token) {
+  const out = [];
+  for (let pos = 1; pos < 20000; pos += 1000) {
+    const d = await qbQuery(`select * from Estimate startposition ${pos} maxresults 1000`, token);
+    const lote = d?.QueryResponse?.Estimate || [];
+    lote.forEach(e => { const nota = String(e.PrivateNote || ''); if (!nota.includes(PREV_TAG)) return;
+      out.push({ id: e.Id, sync: e.SyncToken, doc: e.DocNumber, status: e.TxnStatus, marco: (nota.match(/marco (\S+)/) || [])[1] || null,
+        emissao: e.TxnDate, receb: e.ExpirationDate, valor: parseFloat(e.TotalAmt || 0), criada: e.MetaData?.CreateTime || '' }); });
+    if (lote.length < 1000) break;
+  }
+  return out;
+}
+async function _qbApagarEstimativa(id, sync, token) {
+  let s = sync;
+  if (s == null) s = (await qbFetch(`/estimate/${id}`, token))?.Estimate?.SyncToken;
+  await qbFetch('/estimate?operation=delete', token, 'POST', { Id: String(id), SyncToken: String(s ?? '0') });
+}
+// Remove as cópias: mantém UMA estimativa por marco (a registrada no banco; senão a mais antiga)
+async function marcosPrevisaoDeduplicar() {
+  if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
+  const sql = await getSql(); const token = await qbToken();
+  const todas = await _qbPrevisoesTodas(token);
+  const reg = {}; (await sql`SELECT id, previsao_qb_estimate_id FROM projetos_marcos WHERE previsao_qb_estimate_id IS NOT NULL`).forEach(r => reg[r.id] = String(r.previsao_qb_estimate_id));
+  const porMarco = {}; todas.forEach(e => (porMarco[e.marco || 'sem_marco_' + e.id] = porMarco[e.marco || 'sem_marco_' + e.id] || []).push(e));
+  let removidas = 0, mantidas = 0; const erros = [];
+  const inicio = Date.now();
+  for (const [marco, lista] of Object.entries(porMarco)) {
+    lista.sort((a, b) => (a.id === reg[marco] ? -1 : b.id === reg[marco] ? 1 : String(a.criada).localeCompare(String(b.criada))));
+    const [fica, ...sobras] = lista; mantidas++;
+    if (reg[marco] !== fica.id && !marco.startsWith('sem_marco_')) await sql`UPDATE projetos_marcos SET previsao_qb_estimate_id = ${fica.id}, previsao_qb_doc = ${fica.doc || null} WHERE id = ${marco}`;
+    for (const e of sobras) {
+      if (Date.now() - inicio > 50000) return { total_no_qb: todas.length, mantidas, removidas, erros, pendente: true };   // limite de tempo da função: a tela chama de novo
+      try { await _qbApagarEstimativa(e.id, e.sync, token); removidas++; } catch (err) { erros.push(`${e.doc || e.id}: ${err.message.substring(0, 140)}`); if (erros.length > 5) return { total_no_qb: todas.length, mantidas, removidas, erros, pendente: true }; }
+    }
+  }
+  return { total_no_qb: todas.length, mantidas, removidas, erros, pendente: false };
+}
+
 // Estimativas de previsão abertas (lidas pelos fluxos). Só as geradas pelo Atlantyx.
 async function _qbEstimativasPrevisao(token) {
   const d = await qbQuery(`select * from Estimate where TxnStatus = 'Pending' maxresults 1000`, token);
+  const vistos = new Set();   // v2.96: uma por marco — cópias não inflam o fluxo
   return (d?.QueryResponse?.Estimate || []).filter(e => String(e.PrivateNote || '').includes(PREV_TAG))
+    .filter(e => { const mk = (String(e.PrivateNote).match(/marco (\S+)/) || [])[1] || e.Id; if (vistos.has(mk)) return false; vistos.add(mk); return true; })
     .map(e => ({ id: e.Id, doc: e.DocNumber, cliente: e.CustomerRef?.name || 'Cliente', data: e.ExpirationDate || e.TxnDate, emissao: e.TxnDate,
       valor: parseFloat(e.TotalAmt || 0), descricao: (e.CustomerMemo?.value || '').replace(/^Previsão de faturamento — /, '') }));
 }
