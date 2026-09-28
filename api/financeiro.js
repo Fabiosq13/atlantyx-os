@@ -2379,6 +2379,16 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
 // lançamento (QB: Invoice/RecurringTransaction em aberto + Bill em aberto)
 // compondo o saldo projetado, sem limite de meses fixo (até onde o QB tiver dado)
 // ═══════════════════════════════════════════════════════════════════════════
+// v2.98: descrição do produto/serviço faturado (campo Descrição das linhas da fatura no QuickBooks)
+function _descLinhasFatura(inv) {
+  const ds = (inv.Line || []).filter(l => l.DetailType === 'SalesItemLineDetail' || l.DetailType === 'DescriptionOnly')
+    .map(l => String(l.Description || l.SalesItemLineDetail?.ItemRef?.name || '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const unicas = [...new Set(ds)];
+  if (!unicas.length) return '';
+  let t = unicas.slice(0, 2).join(' / ') + (unicas.length > 2 ? ` (+${unicas.length - 2})` : '');
+  if (t.length > 140) t = t.substring(0, 137) + '…';
+  return ' · ' + t;
+}
 async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
   // Recebíveis (Invoice em aberto) e Pagáveis (Bill em aberto) do QuickBooks,
   // um lançamento por documento — não agregado por mês.
@@ -2399,7 +2409,7 @@ async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
     ]);
     if (inv?._erro) out.erro = (out.erro ? out.erro + ' | ' : '') + 'Invoice: ' + inv._erro;
     else out.recebiveis = (inv?.QueryResponse?.Invoice || []).map(i => ({
-      id: 'inv_' + i.Id, data: i.DueDate || i.TxnDate, descricao: (i.CustomerRef?.name || 'Cliente') + (i.DocNumber ? ' · Fat. ' + i.DocNumber : ''),
+      id: 'inv_' + i.Id, data: i.DueDate || i.TxnDate, descricao: (i.CustomerRef?.name || 'Cliente') + (i.DocNumber ? ' · Fat. ' + i.DocNumber : '') + _descLinhasFatura(i),
       categoria: 'A Receber (Invoice)', valor: parseFloat(i.Balance || 0), valor_total: parseFloat(i.TotalAmt || 0), tipo: 'entrada', origem: 'quickbooks_futuro',
       vencida: i.DueDate ? new Date(i.DueDate) < new Date(new Date().toISOString().split('T')[0]) : false,
       // v2.04: diz se cai no período consultado, sem excluir o que está fora
