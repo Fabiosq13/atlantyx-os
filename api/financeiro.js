@@ -259,6 +259,9 @@ export default async function handler(req, res) {
       contratos_importar:    () => contratosImportarPlanilha(params),
       // Disparado por cron (vercel.json): envia avisos 10 dias antes e lembretes
       marcos_processar_alertas: () => marcosProcessarAlertas(params),
+      marcos_previsao_planejar: () => marcosPrevisaoPlanejar(params),
+      marcos_previsao_gerar:    () => marcosPrevisaoGerar(params),
+      marcos_previsao_remover:  () => marcosPrevisaoRemover(params),
     };
 
     if (!acoes[action]) {
@@ -430,6 +433,10 @@ async function ensureTabelas(sql) {
     atualizado_em TIMESTAMPTZ DEFAULT NOW()
   )`;
   await sql`CREATE INDEX IF NOT EXISTS idx_marcos_proj ON projetos_marcos(projeto_id)`;
+  // v2.95: previsão de recebimento — estimativa (Estimate) no QuickBooks por marco não faturado
+  for (const col of ['previsao_qb_estimate_id TEXT', 'previsao_qb_doc TEXT', 'previsao_mes DATE', 'previsao_recebimento DATE', 'previsao_gerada_em TIMESTAMPTZ']) {
+    try { await _q(sql, `ALTER TABLE projetos_marcos ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
+  }
   await sql`CREATE INDEX IF NOT EXISTS idx_marcos_status ON projetos_marcos(status_kanban)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_marcos_entrega ON projetos_marcos(data_entrega) WHERE status_kanban IN ('aguardando_entrega', 'liberacao_gp')`;
 
@@ -2383,9 +2390,10 @@ async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
     // Agora trazemos TUDO que está em aberto e marcamos o que cai dentro do período.
     const limIni = '';
     const limFim = data_fim ? `and DueDate <= '${_addMeses(data_fim, 12)}'` : '';
-    const [inv, bill] = await Promise.all([
+    const [inv, bill, prevs] = await Promise.all([
       qbQuery(`select * from Invoice where Balance > '0' ${limIni} ${limFim} orderby DueDate asc maxresults 1000`, token).catch(e => ({ _erro: e.message })),
       qbQuery(`select * from Bill where Balance > '0' ${limIni} ${limFim} orderby DueDate asc maxresults 1000`, token).catch(e => ({ _erro: e.message })),
+      _qbEstimativasPrevisao(token).catch(e => ({ _erro: e.message })),   // v2.95
     ]);
     if (inv?._erro) out.erro = (out.erro ? out.erro + ' | ' : '') + 'Invoice: ' + inv._erro;
     else out.recebiveis = (inv?.QueryResponse?.Invoice || []).map(i => ({
@@ -2396,6 +2404,12 @@ async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
       no_periodo: (!data_inicio || (i.DueDate || i.TxnDate) >= data_inicio) && (!data_fim || (i.DueDate || i.TxnDate) <= data_fim),
       emissao: i.TxnDate,
     }));
+    // v2.95: receita prevista dos marcos (estimativas do QuickBooks geradas pelo Atlantyx)
+    if (Array.isArray(prevs)) prevs.filter(e => (!data_fim || e.data <= _addMeses(data_fim, 12))).forEach(e => out.recebiveis.push({
+      id: 'est_' + e.id, data: e.data, descricao: e.cliente + ' · ' + (e.descricao || 'marco') + ' (previsão)', categoria: 'Receita prevista (marco)',
+      valor: e.valor, valor_total: e.valor, tipo: 'entrada', origem: 'quickbooks_previsao', previsao: true, vencida: false, emissao: e.emissao,
+      no_periodo: (!data_inicio || e.data >= data_inicio) && (!data_fim || e.data <= data_fim) }));
+    else if (prevs?._erro) out.erro = (out.erro ? out.erro + ' | ' : '') + 'Estimativas: ' + prevs._erro;
     if (bill?._erro) out.erro = (out.erro ? out.erro + ' | ' : '') + 'Bill: ' + bill._erro;
     else out.pagaveis = (bill?.QueryResponse?.Bill || []).map(b => ({
       id: 'bill_' + b.Id, data: b.DueDate || b.TxnDate, descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''),
@@ -2993,7 +3007,7 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
   //  (c) faturas com vencimento além dos 12 meses inflavam buckets inexistentes.
   // Agora: vencidas viram uma linha própria (o dinheiro está atrasado, não é projeção),
   // e o que passa do horizonte é somado no último mês, com aviso.
-  let aReceberPorMes = {};
+  let aReceberPorMes = {}, previstoMarcosPorMes = {};
   let aReceberVencido = 0, aReceberForaHorizonte = 0;
   const ultimoMes = listaMeses[listaMeses.length - 1];
   if (qbConfigurado()) {
@@ -3010,6 +3024,9 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
         if (mes > ultimoMes) { aReceberForaHorizonte += valor; continue; } // além do horizonte
         aReceberPorMes[mes] = (aReceberPorMes[mes] || 0) + valor;
       }
+      // v2.95: receita prevista dos marcos (estimativas) — em linha própria, separada do que já é fatura
+      try { for (const e of await _qbEstimativasPrevisao(token)) { const mes = (e.data || '').substring(0, 7); if (!mes || mes < mesAtual) continue;
+        const m2 = mes > ultimoMes ? ultimoMes : mes; previstoMarcosPorMes[m2] = (previstoMarcosPorMes[m2] || 0) + e.valor; } } catch (_) {}
     } catch {}
   }
 
@@ -3034,6 +3051,7 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
   const linhas = {
     'Saldo Inicial': {},
     '+ A Receber QB': {},
+    '+ Receita Prevista (marcos)': {},
     '+ Receita Recorrente (MRR)': {},
     '+ Outras Entradas Simuladas': {},
     '= Total Entradas': {},
@@ -3106,7 +3124,8 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
       .reduce((s, x) => s + x.valor, 0);
     const outrasSaidas = ovM['− Outras Saídas Simuladas'] ?? saidasSim;
 
-    const totEnt = aReceberM + mrrM + outrasEntradas;
+    const prevMarcos = ovM['+ Receita Prevista (marcos)'] ?? (previstoMarcosPorMes[mes] || 0);
+    const totEnt = aReceberM + prevMarcos + mrrM + outrasEntradas;
     const totSai = despesasMes + outrasSaidas;
     // v1.86: soma os lançamentos bancários JÁ REGISTRADOS com data neste mês.
     // É o que o QuickBooks conta no saldo contábil futuro e a projeção ignorava.
@@ -3116,6 +3135,7 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
 
     linhas['Saldo Inicial'][mes] = round(saldoCorrente);
     linhas['+ A Receber QB'][mes] = round(aReceberM);
+    linhas['+ Receita Prevista (marcos)'][mes] = round(prevMarcos);
     linhas['+ Receita Recorrente (MRR)'][mes] = round(mrrM);
     linhas['+ Outras Entradas Simuladas'][mes] = round(outrasEntradas);
     linhas['= Total Entradas'][mes] = round(totEnt);
@@ -3695,6 +3715,140 @@ async function qbClienteCriar({ nome, contato, email, telefone, cnpj, notas } = 
   if (cnpj) corpo.PrimaryTaxIdentifier = String(cnpj).replace(/[^0-9]/g, '');
   const r = await qbFetch('/customer', token, 'POST', corpo);
   return { id: r?.Customer?.Id, nome: r?.Customer?.DisplayName, criado: true };
+}
+
+// ═══ v2.95: PREVISÃO DE RECEBIMENTO DOS MARCOS — estimativas no QuickBooks ═══
+// Cada marco AINDA NÃO FATURADO vira uma ESTIMATIVA (Estimate) no QuickBooks: não entra na
+// contabilidade (não é receita nem contas a receber), mas o fluxo de caixa do Atlantyx a lê como
+// "receita prevista". Sequência: por projeto, um marco por mês a partir do mês inicial, na ordem
+// de entrega. Emissão no dia 1 do mês; recebimento previsto no dia 25 do mesmo mês.
+// Quando o marco é concluído (faturado de verdade), a estimativa é fechada — sem contar duas vezes.
+const PREV_TAG = 'PREVISAO-ATX';
+function _mesMais(ym, n) { const [a, m] = ym.split('-').map(Number); const d = new Date(a, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
+function _diasMais(data, n) { const d = new Date(data + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().substring(0, 10); }
+async function _marcosNaoFaturados(sql, projeto_ids) {
+  const rows = await sql`SELECT m.*, p.nome AS projeto_nome, p.cliente AS projeto_cliente, p.status AS projeto_status
+    FROM projetos_marcos m JOIN projetos_financeiros p ON p.id = m.projeto_id
+    WHERE m.status_kanban <> 'concluido' AND m.data_pagamento IS NULL AND COALESCE(TRIM(m.nota_fiscal), '') = ''
+      AND COALESCE(m.valor, 0) > 0 AND COALESCE(p.status, 'ativo') NOT IN ('cancelado', 'encerrado', 'inativo')
+    ORDER BY p.nome, m.data_entrega NULLS LAST, m.criado_em`;
+  return projeto_ids?.length ? rows.filter(r => projeto_ids.includes(r.projeto_id)) : rows;
+}
+async function _qbClientePrevisao(nome, token, cache) {
+  const alvo = String(nome || '').trim(); if (!alvo) return null;
+  if (cache[alvo] !== undefined) return cache[alvo];
+  const esc = alvo.replace(/'/g, "\\'");
+  let c = (await qbQuery(`select Id, DisplayName from Customer where DisplayName = '${esc}' maxresults 1`, token))?.QueryResponse?.Customer?.[0];
+  if (!c) c = (await qbQuery(`select Id, DisplayName from Customer where DisplayName like '%${esc}%' and Active = true maxresults 5`, token))?.QueryResponse?.Customer?.sort((a, b) => a.DisplayName.length - b.DisplayName.length)?.[0];
+  cache[alvo] = c ? { id: c.Id, nome: c.DisplayName, existe: true } : { id: null, nome: alvo, existe: false };
+  return cache[alvo];
+}
+async function _qbItemPrevisao(token) {
+  const nomeEnv = process.env.QB_DEFAULT_ITEM_NAME;
+  let it = nomeEnv ? (await qbQuery(`select Id, Name from Item where Name = '${nomeEnv.replace(/'/g, "\\'")}' maxresults 1`, token))?.QueryResponse?.Item?.[0] : null;
+  if (!it) it = (await qbQuery(`select Id, Name from Item where Type = 'Service' and Active = true maxresults 1`, token))?.QueryResponse?.Item?.[0];
+  if (!it) throw new Error('Nenhum item de serviço no QuickBooks para a linha da estimativa. Cadastre um (ex.: "Serviços de Consultoria") ou defina QB_DEFAULT_ITEM_NAME.');
+  return it;
+}
+async function marcosPrevisaoPlanejar({ mes_inicio, prazo_dias = 35, dia_recebimento = 25, projeto_ids } = {}) {
+  const sql = await getSql();
+  const hoje = new Date();
+  const inicio = /^\d{4}-\d{2}$/.test(mes_inicio || '') ? mes_inicio : `${hoje.getFullYear()}-${String(hoje.getMonth() + 2 > 12 ? 1 : hoje.getMonth() + 2).padStart(2, '0')}`;
+  const prazo = Math.max(0, Math.min(180, parseInt(prazo_dias) || 35));
+  const diaRec = Math.max(1, Math.min(28, parseInt(dia_recebimento) || 25));   // v2.95: recebimento sempre no dia 25 (padrão)
+  const marcos = await _marcosNaoFaturados(sql, projeto_ids);
+  const porProjeto = {};
+  for (const m of marcos) (porProjeto[m.projeto_id] = porProjeto[m.projeto_id] || []).push(m);
+  let token = null, cache = {};
+  if (qbConfigurado()) { try { token = await qbToken(); } catch (_) {} }
+  const projetos = [];
+  for (const [pid, lista] of Object.entries(porProjeto)) {
+    const cli = token ? await _qbClientePrevisao(lista[0].projeto_cliente || lista[0].projeto_nome, token, cache).catch(() => null) : null;
+    const itens = lista.map((m, i) => {
+      const mes = _mesMais(inicio, i), emissao = mes + '-01', receb = mes + '-' + String(diaRec).padStart(2, '0');   // recebimento no dia fixo do mês
+      const igual = m.previsao_qb_estimate_id && String(m.previsao_mes || '').substring(0, 10) === emissao && String(m.previsao_recebimento || '').substring(0, 10) === receb;
+      return { marco_id: m.id, descricao: m.descricao, valor: num(m.valor), data_entrega: m.data_entrega ? String(m.data_entrega).substring(0, 10) : null,
+        status_kanban: m.status_kanban, mes, emissao, recebimento: receb,
+        acao: !m.previsao_qb_estimate_id ? 'criar' : igual ? 'manter' : 'atualizar', estimativa_atual: m.previsao_qb_doc || m.previsao_qb_estimate_id || null };
+    });
+    projetos.push({ projeto_id: pid, projeto: lista[0].projeto_nome, cliente: lista[0].projeto_cliente || lista[0].projeto_nome,
+      cliente_qb: cli, total: itens.reduce((s, x) => s + x.valor, 0), marcos: itens });
+  }
+  // estimativas de marcos que já foram faturados/concluídos → serão fechadas
+  const fechar = await sql`SELECT m.id, m.descricao, m.valor, m.previsao_qb_estimate_id, p.nome AS projeto FROM projetos_marcos m JOIN projetos_financeiros p ON p.id = m.projeto_id
+    WHERE m.previsao_qb_estimate_id IS NOT NULL AND (m.status_kanban = 'concluido' OR m.data_pagamento IS NOT NULL OR COALESCE(TRIM(m.nota_fiscal), '') <> '')`;
+  const porMes = {};
+  projetos.forEach(p => p.marcos.forEach(x => { const k = x.recebimento.substring(0, 7); porMes[k] = (porMes[k] || 0) + x.valor; }));
+  return { mes_inicio: inicio, dia_recebimento: diaRec, qb_conectado: !!token, projetos,
+    total_marcos: projetos.reduce((s, p) => s + p.marcos.length, 0), total_valor: projetos.reduce((s, p) => s + p.total, 0),
+    recebimento_por_mes: Object.entries(porMes).sort().map(([mes, valor]) => ({ mes, valor })),
+    a_fechar: fechar.map(x => ({ marco_id: x.id, projeto: x.projeto, descricao: x.descricao, valor: num(x.valor), estimativa: x.previsao_qb_estimate_id })) };
+}
+async function _qbFecharEstimativa(id, token) {
+  const e = (await qbFetch(`/estimate/${id}`, token))?.Estimate;
+  if (!e || e.TxnStatus === 'Closed' || e.TxnStatus === 'Converted') return 'ja_fechada';
+  await qbFetch('/estimate?operation=delete', token, 'POST', { Id: e.Id, SyncToken: e.SyncToken });
+  return 'removida';
+}
+async function marcosPrevisaoGerar({ mes_inicio, prazo_dias = 35, dia_recebimento = 25, projeto_ids, limite = 40 } = {}) {
+  if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
+  const plano = await marcosPrevisaoPlanejar({ mes_inicio, prazo_dias, dia_recebimento, projeto_ids });
+  const sql = await getSql(); const token = await qbToken();
+  const item = await _qbItemPrevisao(token);
+  const out = { criadas: 0, atualizadas: 0, mantidas: 0, fechadas: 0, erros: [], clientes_criados: [], pendentes: 0 };
+  // 1. fecha as de marcos já faturados
+  for (const x of plano.a_fechar) {
+    try { await _qbFecharEstimativa(x.estimativa, token); } catch (e) { if (!/not found|Object Not Found|610/i.test(e.message)) { out.erros.push(`${x.projeto} · ${x.descricao}: fechar — ${e.message.substring(0, 120)}`); continue; } }
+    await sql`UPDATE projetos_marcos SET previsao_qb_estimate_id = NULL, previsao_qb_doc = NULL, previsao_mes = NULL, previsao_recebimento = NULL WHERE id = ${x.marco_id}`;
+    out.fechadas++;
+  }
+  // 2. cria/atualiza (em lotes — o limite evita estourar o tempo da função; a tela chama de novo até zerar)
+  let feitos = 0;
+  for (const p of plano.projetos) {
+    let cli = p.cliente_qb;
+    for (const x of p.marcos) {
+      if (x.acao === 'manter') { out.mantidas++; continue; }
+      if (feitos >= limite) { out.pendentes++; continue; }
+      try {
+        if (!cli?.id) { const c = await qbClienteCriar({ nome: p.cliente, notas: 'Cliente criado pelo Atlantyx OS para a previsão de faturamento dos marcos' }); cli = { id: c.id, nome: c.nome, existe: true }; p.cliente_qb = cli; if (c.criado) out.clientes_criados.push(c.nome); }
+        if (x.estimativa_atual) { try { await _qbFecharEstimativa((await sql`SELECT previsao_qb_estimate_id FROM projetos_marcos WHERE id = ${x.marco_id}`)[0]?.previsao_qb_estimate_id, token); } catch (_) {} }
+        const desc = `${p.projeto} — ${x.descricao}`.substring(0, 3900);
+        const corpo = { CustomerRef: { value: String(cli.id) }, TxnDate: x.emissao, ExpirationDate: x.recebimento, TxnStatus: 'Pending',
+          DocNumber: ('PRV-' + x.marco_id.replace(/[^A-Za-z0-9]/g, '').slice(-12)).substring(0, 21),
+          PrivateNote: `${PREV_TAG} · marco ${x.marco_id} · previsão de recebimento ${x.recebimento.split('-').reverse().join('/')} · gerada pelo Atlantyx OS`,
+          CustomerMemo: { value: `Previsão de faturamento — ${desc}`.substring(0, 1000) },
+          Line: [{ Amount: x.valor, DetailType: 'SalesItemLineDetail', Description: desc, SalesItemLineDetail: { ItemRef: { value: String(item.Id) }, Qty: 1, UnitPrice: x.valor } }] };
+        const r = await qbFetch('/estimate', token, 'POST', corpo);
+        const est = r?.Estimate;
+        await sql`UPDATE projetos_marcos SET previsao_qb_estimate_id = ${est?.Id || null}, previsao_qb_doc = ${est?.DocNumber || null}, previsao_mes = ${x.emissao},
+          previsao_recebimento = ${x.recebimento}, previsao_gerada_em = NOW() WHERE id = ${x.marco_id}`;
+        if (x.acao === 'atualizar') out.atualizadas++; else out.criadas++;
+        feitos++;
+      } catch (e) { out.erros.push(`${p.projeto} · ${x.descricao}: ${e.message.substring(0, 160)}`); feitos++; }
+    }
+  }
+  out.total_valor = plano.total_valor; out.total_marcos = plano.total_marcos;
+  return out;
+}
+async function marcosPrevisaoRemover({ projeto_ids } = {}) {
+  if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
+  const sql = await getSql(); const token = await qbToken();
+  let rows = await sql`SELECT id, projeto_id, previsao_qb_estimate_id FROM projetos_marcos WHERE previsao_qb_estimate_id IS NOT NULL`;
+  if (projeto_ids?.length) rows = rows.filter(r => projeto_ids.includes(r.projeto_id));
+  let removidas = 0; const erros = [];
+  for (const r of rows) {
+    try { await _qbFecharEstimativa(r.previsao_qb_estimate_id, token); } catch (e) { if (!/not found|Object Not Found|610/i.test(e.message)) { erros.push(e.message.substring(0, 120)); continue; } }
+    await sql`UPDATE projetos_marcos SET previsao_qb_estimate_id = NULL, previsao_qb_doc = NULL, previsao_mes = NULL, previsao_recebimento = NULL WHERE id = ${r.id}`;
+    removidas++;
+  }
+  return { removidas, erros };
+}
+// Estimativas de previsão abertas (lidas pelos fluxos). Só as geradas pelo Atlantyx.
+async function _qbEstimativasPrevisao(token) {
+  const d = await qbQuery(`select * from Estimate where TxnStatus = 'Pending' maxresults 1000`, token);
+  return (d?.QueryResponse?.Estimate || []).filter(e => String(e.PrivateNote || '').includes(PREV_TAG))
+    .map(e => ({ id: e.Id, doc: e.DocNumber, cliente: e.CustomerRef?.name || 'Cliente', data: e.ExpirationDate || e.TxnDate, emissao: e.TxnDate,
+      valor: parseFloat(e.TotalAmt || 0), descricao: (e.CustomerMemo?.value || '').replace(/^Previsão de faturamento — /, '') }));
 }
 
 // ═══ v2.29: DESPESAS FUTURAS — descobrir, criar e replicar 12 meses no QuickBooks ═══
@@ -5417,6 +5571,15 @@ async function marcosKanban({ projeto_id } = {}) {
 //   { "crons": [{ "path": "/api/financeiro?action=marcos_processar_alertas", "schedule": "0 9 * * *" }] }
 
 async function marcosProcessarAlertas() {
+  // v2.95: fecha no QuickBooks as estimativas de previsão de marcos que já foram faturados/concluídos
+  try { const sql0 = await getSql(); const n = (await sql0`SELECT COUNT(*)::int AS n FROM projetos_marcos WHERE previsao_qb_estimate_id IS NOT NULL
+      AND (status_kanban = 'concluido' OR data_pagamento IS NOT NULL OR COALESCE(TRIM(nota_fiscal), '') <> '')`)[0]?.n;
+    if (n && qbConfigurado()) { const tk = await qbToken(); const rows = await sql0`SELECT id, previsao_qb_estimate_id FROM projetos_marcos WHERE previsao_qb_estimate_id IS NOT NULL
+      AND (status_kanban = 'concluido' OR data_pagamento IS NOT NULL OR COALESCE(TRIM(nota_fiscal), '') <> '')`;
+      for (const r of rows) { try { await _qbFecharEstimativa(r.previsao_qb_estimate_id, tk); } catch (_) {}
+        await sql0`UPDATE projetos_marcos SET previsao_qb_estimate_id = NULL, previsao_qb_doc = NULL, previsao_mes = NULL, previsao_recebimento = NULL WHERE id = ${r.id}`; } } }
+  catch (e) { console.warn('[marcos previsão] fechar faturados:', e.message); }
+
   const sql = await getSql();
   const hoje = new Date();
   const hojeStr = hoje.toISOString().split('T')[0];

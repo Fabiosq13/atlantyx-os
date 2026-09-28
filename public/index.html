@@ -3921,6 +3921,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div style="background:linear-gradient(135deg,rgba(79,124,255,.12),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Projetos &amp; Marcos Financeiros</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Cadastro de projetos + marcos com data de entrega, percentual, valor, NF e data de pagamento</div></div>
       <button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="abrirImportarPM()">&#128194; Importar Planilha (Projetos, Marcos e Contratos)</button>
+      <button class="btn" style="color:var(--green,#22d3a3);border-color:var(--green,#22d3a3);" onclick="abrirPrevisaoMarcos()" title="Cria uma estimativa no QuickBooks para cada marco ainda não faturado — um por mês, projeto a projeto — e o fluxo de caixa passa a mostrar a receita prevista">&#128197; Previsão de faturamento (QuickBooks)</button>
       <button class="btn btn-gn" onclick="abrirFormProjeto()">+ Novo Projeto</button>
     </div>
 
@@ -13996,6 +13997,92 @@ async function enriquecerLeads() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ── Helper de chamadas ─────────────────────────────────────────────────────
+// ═══ v2.95: PREVISÃO DE FATURAMENTO DOS MARCOS → estimativas no QuickBooks ═══
+function _pvBRL(v) { return (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
+function _pvMes(ym) { const n = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']; const [a, m] = ym.split('-'); return n[parseInt(m) - 1] + '/' + a.slice(2); }
+function _pvModal() {
+  let m = document.getElementById('pvModal');
+  if (!m) { m = document.createElement('div'); m.id = 'pvModal'; m.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:1000;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 16px;'; document.body.appendChild(m); }
+  m.style.display = 'flex'; return m;
+}
+async function abrirPrevisaoMarcos() {
+  const m = _pvModal();
+  const hoje = new Date(); const prox = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1);
+  const padrao = `${prox.getFullYear()}-${String(prox.getMonth() + 1).padStart(2, '0')}`;
+  m.innerHTML = `<div class="panel" style="width:980px;max-width:98vw;"><div class="ph"><div class="pt">📅 Previsão de faturamento dos marcos → QuickBooks</div>
+      <button class="btn" style="font-size:10px;" onclick="document.getElementById('pvModal').style.display='none'">✕</button></div>
+    <div class="pb">
+      <div style="font-size:11px;color:var(--t2);line-height:1.6;margin-bottom:10px;">Cada marco <b>ainda não faturado</b> vira uma <b>estimativa</b> no QuickBooks — um marco por mês, em sequência, projeto a projeto, na ordem de entrega.
+        Emissão no dia 1 do mês e <b>recebimento previsto no dia 25</b>. A estimativa <b>não entra na contabilidade</b>; o fluxo de caixa do Atlantyx a mostra como <b>receita prevista</b>. Quando o marco for faturado de verdade, a estimativa é fechada sozinha.</div>
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
+        <div class="fg" style="margin:0;"><label class="fl">Começar em</label><input class="fi" type="month" id="pvMesIni" value="${padrao}" style="width:150px;"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Dia do recebimento</label><input class="fi" type="number" min="1" max="28" id="pvDia" value="25" style="width:90px;"/></div>
+        <button class="btn" onclick="pvSimular()">↻ Simular</button>
+        <div style="flex:1;"></div>
+        <button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red);" onclick="pvRemover()" title="Apaga do QuickBooks todas as estimativas de previsão geradas pelo Atlantyx">🗑 Remover previsões do QuickBooks</button>
+      </div>
+      <div id="pvCorpo"><div style="text-align:center;color:var(--t3);padding:20px;">⏳ Montando a sequência...</div></div>
+    </div></div>`;
+  pvSimular();
+}
+let _pvPlano = null;
+async function pvSimular() {
+  const box = document.getElementById('pvCorpo'); if (!box) return;
+  box.innerHTML = '<div style="text-align:center;color:var(--t3);padding:20px;">⏳ Montando a sequência...</div>';
+  try {
+    const d = await finApi('marcos_previsao_planejar', { mes_inicio: document.getElementById('pvMesIni').value, dia_recebimento: document.getElementById('pvDia').value });
+    _pvPlano = d;
+    if (!d.projetos.length) { box.innerHTML = '<div style="text-align:center;color:var(--t3);padding:20px;">Nenhum marco em aberto — todos já foram faturados.</div>'; return; }
+    const ac = { criar: ['criar', 'var(--green,#22d3a3)'], atualizar: ['atualizar', 'var(--gold)'], manter: ['já existe', 'var(--t3)'] };
+    const mx = Math.max(...d.recebimento_por_mes.map(x => x.valor), 1);
+    box.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
+        ${[['Marcos em aberto', d.total_marcos], ['Valor total previsto', _pvBRL(d.total_valor)], ['Projetos', d.projetos.length], ['Meses', d.recebimento_por_mes.length]].map(([l, v]) => `<div style="background:var(--bg4);border-radius:8px;padding:9px 11px;"><div style="font-size:9.5px;color:var(--t3);text-transform:uppercase;letter-spacing:.5px;">${l}</div><div style="font-size:15px;font-weight:700;margin-top:2px;">${v}</div></div>`).join('')}
+      </div>
+      ${!d.qb_conectado ? '<div style="color:var(--red);font-size:11px;margin-bottom:8px;">⚠ QuickBooks não conectado — a simulação funciona, mas não será possível gerar.</div>' : ''}
+      <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Recebimento previsto por mês</div>
+      <div style="margin-bottom:12px;">${d.recebimento_por_mes.map(x => `<div style="display:flex;align-items:center;gap:8px;font-size:10.5px;padding:2px 0;"><span style="width:56px;color:var(--t2);">${_pvMes(x.mes)}</span><div style="flex:1;height:10px;background:var(--bd);border-radius:3px;overflow:hidden;"><div style="height:100%;width:${Math.round(x.valor / mx * 100)}%;background:var(--green,#22d3a3);"></div></div><span style="width:120px;text-align:right;font-family:var(--M);">${_pvBRL(x.valor)}</span></div>`).join('')}</div>
+      <div style="max-height:42vh;overflow-y:auto;border:1px solid var(--bd);border-radius:8px;">
+        ${d.projetos.map(p => `<div style="padding:9px 12px;border-bottom:1px solid var(--bd);">
+          <div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;"><span><b>${p.projeto}</b> · <span style="color:var(--t2);">${p.cliente}</span>
+            ${p.cliente_qb ? (p.cliente_qb.existe ? `<span style="font-size:9.5px;color:var(--t3);"> → QB: ${p.cliente_qb.nome}</span>` : '<span style="font-size:9.5px;color:var(--gold);"> → cliente será criado no QB</span>') : ''}</span><b>${_pvBRL(p.total)}</b></div>
+          <table style="width:100%;font-size:10.5px;margin-top:5px;border-collapse:collapse;">${p.marcos.map(x => `<tr style="border-top:1px solid var(--bd);">
+            <td style="padding:3px 4px;width:62px;font-weight:600;">${_pvMes(x.mes)}</td><td style="padding:3px 4px;">${x.descricao}</td>
+            <td style="padding:3px 4px;color:var(--t3);width:120px;">receb. ${x.recebimento.split('-').reverse().join('/')}</td>
+            <td style="padding:3px 4px;text-align:right;width:110px;font-family:var(--M);">${_pvBRL(x.valor)}</td>
+            <td style="padding:3px 4px;width:70px;text-align:right;color:${ac[x.acao][1]};">${ac[x.acao][0]}</td></tr>`).join('')}</table></div>`).join('')}
+      </div>
+      ${d.a_fechar.length ? `<div style="font-size:10.5px;color:var(--t2);margin-top:8px;">${d.a_fechar.length} estimativa(s) de marcos já faturados serão fechadas no QuickBooks.</div>` : ''}
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+        <button class="btn btn-gn" id="pvBtnGerar" ${d.qb_conectado ? '' : 'disabled'} onclick="pvGerar()">📤 Gerar ${d.projetos.reduce((s, p) => s + p.marcos.filter(x => x.acao !== 'manter').length, 0)} estimativa(s) no QuickBooks</button>
+      </div>`;
+  } catch (e) { box.innerHTML = `<div style="color:var(--red);font-size:11.5px;padding:12px;">Erro: ${e.message}</div>`; }
+}
+async function pvGerar() {
+  if (!_pvPlano) return;
+  const n = _pvPlano.projetos.reduce((s, p) => s + p.marcos.filter(x => x.acao !== 'manter').length, 0);
+  if (!confirm(`Criar ${n} estimativa(s) no QuickBooks, total ${_pvBRL(_pvPlano.total_valor)}?\n\nEstimativas não entram na contabilidade. Você pode removê-las todas depois pelo botão "Remover previsões".`)) return;
+  const btn = document.getElementById('pvBtnGerar'); const tot = { criadas: 0, atualizadas: 0, fechadas: 0, erros: [], clientes: [] };
+  try {
+    for (let volta = 0; volta < 20; volta++) {
+      if (btn) { btn.disabled = true; btn.textContent = `⏳ Gerando... ${tot.criadas + tot.atualizadas} de ${n}`; }
+      const r = await finApi('marcos_previsao_gerar', { mes_inicio: _pvPlano.mes_inicio, dia_recebimento: _pvPlano.dia_recebimento, limite: 15 });
+      tot.criadas += r.criadas; tot.atualizadas += r.atualizadas; tot.fechadas += r.fechadas; tot.erros.push(...r.erros); tot.clientes.push(...r.clientes_criados);
+      if (!r.pendentes || (r.criadas + r.atualizadas === 0)) break;
+    }
+    alert(`Previsão gerada no QuickBooks:\n\n• ${tot.criadas} estimativa(s) criada(s)` + (tot.atualizadas ? `\n• ${tot.atualizadas} atualizada(s)` : '') + (tot.fechadas ? `\n• ${tot.fechadas} fechada(s) (marcos já faturados)` : '')
+      + (tot.clientes.length ? `\n• cliente(s) criado(s) no QB: ${[...new Set(tot.clientes)].join(', ')}` : '')
+      + (tot.erros.length ? `\n\n${tot.erros.length} erro(s):\n` + tot.erros.slice(0, 8).join('\n') : '')
+      + `\n\nNo QuickBooks: Vendas → Todas as vendas → filtro Tipo = Estimativas (as da previsão começam com "PRV-").\nNo Atlantyx: Fluxo de Caixa Futuro (linha "Receita Prevista (marcos)") e Fluxo Detalhado.`);
+    pvSimular();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); if (btn) { btn.disabled = false; btn.textContent = '📤 Tentar de novo'; } }
+}
+async function pvRemover() {
+  if (!confirm('Remover do QuickBooks TODAS as estimativas de previsão geradas pelo Atlantyx?\n\nSó apaga as estimativas marcadas como previsão (PRV-). Faturas reais não são tocadas.')) return;
+  try { const r = await finApi('marcos_previsao_remover', {}); alert(`${r.removidas} estimativa(s) removida(s).` + (r.erros.length ? '\n\nErros:\n' + r.erros.join('\n') : '')); pvSimular(); }
+  catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+
 async function finApi(action, params = {}) {
   let r;
   try {
@@ -14665,6 +14752,7 @@ function renderFluxoMatriz(d) {
   const linhasOrdenadas = [
     'Saldo Inicial',
     '+ A Receber QB',
+    '+ Receita Prevista (marcos)',
     '+ Receita Recorrente (MRR)',
     '+ Outras Entradas Simuladas',
     '= Total Entradas',
@@ -14675,7 +14763,7 @@ function renderFluxoMatriz(d) {
     '= Saldo Final',
   ];
 
-  const linhaEditavel = l => ['+ Receita Recorrente (MRR)', '+ Outras Entradas Simuladas', '− Despesas Programadas', '− Outras Saídas Simuladas', '+ A Receber QB'].includes(l);
+  const linhaEditavel = l => ['+ Receita Prevista (marcos)', '+ Receita Recorrente (MRR)', '+ Outras Entradas Simuladas', '− Despesas Programadas', '− Outras Saídas Simuladas', '+ A Receber QB'].includes(l);
   const linhaSubtotal = l => l.startsWith('=');
 
   let html = `
@@ -18648,98 +18736,49 @@ async function acVerFila() {
   } catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:14px;">${e.message}</div></div>`; }
 }
 async function acExecutar(rascunho) {
-  // v2.70: se já existem rascunhos prontos, agendar ELES em vez de gerar tudo de novo
-  if (!rascunho) {
-    try {
-      const st = await mcApi('fila_status', {});
-      const prontos = (st.itens || []).filter(x => x.status === 'pronto' && !x.metricool_id && x.texto);
-      if (prontos.length) {
-        const q = confirm(`Você tem ${prontos.length} rascunho(s) prontos e revisados.\n\nOK = agendar ESTES rascunhos no Metricool (sem reescrever)\nCancelar = gerar posts novos do zero`);
-        if (q) return acAgendarRascunhos();
-      }
-    } catch (_) {}
-  }
+  // v2.94: MESMO mecanismo do botão "Auto-campanha IA" do Kanban — a função gerarCampanhaAutomatica —
+  // aplicada aos horários vagos do período (7 dias). Plano da IA com as métricas do Metricool, imagem com
+  // o prompt de cada post, campanha criada, peças no Kanban e agendamento pela mesma ação "publicar".
   const c = _acCfg();
-  if (!rascunho && !confirm(`Vai gerar e AGENDAR posts nos horários vagos dos próximos ${c.dias} dias.\n\nOs textos são criados por IA e publicados automaticamente nas datas. Continuar?`)) return;
+  const comImagem = document.getElementById('ac_imagens')?.checked !== false;
+  const formatos = !!document.getElementById('ac_stories')?.checked;
   const btn = document.getElementById(rascunho ? 'btnAcRasc' : 'btnAcExec');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando...'; }
   const box = document.getElementById('acResultado');
-  box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ Planejando os horários...</div></div>';
+  const txtBtn = btn ? btn.textContent : '';
+  const prog = (msg, f) => { box.innerHTML = `<div class="panel"><div class="pb" style="text-align:center;color:var(--t2);padding:22px;font-size:12px;">${msg}
+      <div style="height:6px;background:var(--bd);border-radius:3px;margin:12px auto 0;max-width:340px;overflow:hidden;"><div style="height:100%;width:${Math.round(Math.min(1, f || 0) * 100)}%;background:var(--green,#22d3a3);transition:width .3s;"></div></div>
+      <div style="font-size:10px;color:var(--t3);margin-top:10px;">Mesmo processo do botão Auto-campanha do Kanban · mantenha esta aba aberta até terminar</div></div></div>`; };
   try {
-    // v2.16: gera em LOTES de 3. Antes era tudo de uma vez: ~90s, a função era cortada
-    // e o navegador recebia "Failed to fetch" sem nenhum post.
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando...'; }
+    prog('⏳ Planejando os horários vagos...', 0.02);
     const plano = (await mcApi('autocampanha_planejar', c)).plano;
-    const vagos = plano?.vagos || [];
+    const vagos = (plano?.vagos || []).filter(v => v.data && v.hora);
     if (!vagos.length) { box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:20px;">Nenhum horário vago — a agenda já está completa no período.</div></div>'; return; }
-    // v2.68: FILA — o navegador enfileira e acompanha; o servidor processa em segundo plano.
-    // Acabou a dependência de requisições longas (era a causa do "Failed to fetch").
-    const comImagem = document.getElementById('ac_imagens')?.checked !== false;
-    // v2.77: nova geração começa LIMPA — apaga rascunhos, falhas e pendentes da geração anterior
-    // (os pendentes continuariam sendo processados pelo cron). O que já foi agendado no Metricool fica.
-    try {
-      const ant = await mcApi('fila_status', {});
-      const naoAg = (ant.itens || []).filter(x => !x.metricool_id).length + (ant.itens_de_outras_geracoes || 0);
-      if (naoAg) {
-        const prontos = (ant.itens || []).filter(x => x.status === 'pronto' && !x.metricool_id).length;
-        const ok = prontos ? confirm(`A fila tem ${prontos} rascunho(s) da geração anterior que ainda não foram agendados nem salvos como campanha.\n\nOK = descartar e começar uma geração nova\nCancelar = manter (use "💾 Criar campanhas" antes)`) : true;
-        if (!ok) { box.innerHTML = ''; return; }
-        await mcApi('fila_limpar', { modo: 'nao_agendados' });
-      }
-    } catch (_) {}
-    const enf = await mcApi('fila_enfileirar', { slots: vagos, tema: c.tema, redes: c.redes, blog_id: c.blog_id, apenas_rascunho: !!rascunho, com_imagem: comImagem,
-      stories: !!document.getElementById('ac_stories')?.checked });
-    window._acLote = enf.lote;
-    const posts = [], erros = [];
-    const ETQ = { texto: '✍ escrevendo', imagem: '🎨 gerando imagem', agendar: '📤 agendando', fim: '✓' };
-    let ultimo = null;
-    for (let volta = 0; volta < 400; volta++) {
-      // cutuca o servidor: processa um passo (o cron faz o mesmo a cada minuto, mesmo com a tela fechada)
-      try { await mcApi('fila_processar', { lote: enf.lote }); } catch (_) {}
-      const st = await mcApi('fila_status', { lote: enf.lote });
-      if (!st.resumo) throw new Error(st.error || 'resposta inesperada da fila');
-      const r = st.resumo;
-      box.innerHTML = `<div class="panel"><div class="pb" style="padding:18px;">
-        <div style="text-align:center;color:var(--t2);font-size:12px;">⏳ Processando em segundo plano — ${r.prontos} pronto(s) · ${r.pendentes + r.processando} na fila · ${r.falhas} falha(s)</div>
-        <div style="height:6px;background:var(--bd);border-radius:3px;margin:10px auto;max-width:320px;overflow:hidden;"><div style="height:100%;width:${Math.round((r.prontos + r.falhas) / Math.max(r.total,1) * 100)}%;background:var(--green,#22d3a3);transition:width .3s;"></div></div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin-top:8px;">${st.itens.map(x => `<div style="font-size:10px;padding:5px 7px;border-radius:6px;background:var(--bg4);border-left:3px solid ${x.status==='pronto'?'var(--green,#22d3a3)':x.status==='falhou'?'var(--red)':x.status==='processando'?'var(--gold)':'var(--bd)'};">${x.data.substring(5).split('-').reverse().join('/')} ${x.hora}<br><span style="color:var(--t3);">${x.status==='pronto'?'✓ pronto':x.status==='falhou'?'✗ '+(x.erro||'').substring(0,40):(ETQ[x.etapa]||x.etapa)+(x.tentativas?' (tent. '+(x.tentativas+1)+')':'')}</span></div>`).join('')}</div>
-        <div style="font-size:10px;color:var(--t3);text-align:center;margin-top:10px;">Pode fechar esta tela — a fila continua sozinha e os posts aparecem em "Ver fila" quando voltar.</div></div></div>`;
-      ultimo = st;
-      if (st.concluido) break;
-      await new Promise(r => setTimeout(r, 2500));
-    }
-    if (rascunho) toast('Rascunhos prontos — revise, e use "💾 Criar como campanhas" ou "📤 Agendar"', 'success');
-    (ultimo?.itens || []).forEach(x => { if (x.status === 'pronto') posts.push({ data: x.data, hora: x.hora, dia_semana: x.dia_semana, texto: x.texto, angulo: x.angulo, oferta: x.oferta, link: x.link, comentario: x.comentario, link_instagram: x.link_instagram, link_bio: x.link_bio, imagem_url: x.imagem_url, status: x.metricool_id ? 'agendado' : 'rascunho', metricool_id: x.metricool_id });
-      else if (x.status === 'falhou') erros.push(`${x.data} ${x.hora} (${x.etapa}): ${x.erro || 'falhou'}`); });
-    const d = { posts, erros, resumo: `${posts.length} publicação(ões) ${rascunho ? 'em rascunho' : 'agendadas'} nos horários vagos.` };
+    const minutos = Math.ceil(vagos.length * (comImagem ? 0.5 : 0.25) + vagos.length / 3 * 0.4);
+    if (!confirm(`${rascunho ? 'Gerar como RASCUNHO' : 'Gerar e AGENDAR no Metricool'}: ${vagos.length} post(s) nos horários vagos dos próximos ${c.dias} dias.\n\n`
+      + `Usa o mesmo processo do botão Auto-campanha do Kanban: plano da IA com as métricas do Metricool, ${comImagem ? 'imagem por post, ' : ''}campanha em "Minhas Campanhas" e peças no Kanban`
+      + `${rascunho ? ' (em Gerado, para você revisar — nada vai ao Metricool)' : ' já agendadas'}.${formatos ? '\n+ Stories, Reel e Carrossel no final.' : ''}\n\nLeva cerca de ${minutos} min — mantenha a aba aberta. Continuar?`)) { box.innerHTML = ''; return; }
+    const r = await gerarCampanhaAutomatica({ slots: vagos, rascunho: !!rascunho, tema: c.tema, redes: c.redes, comImagem, formatos, onProgress: prog });
+    if (!r) throw new Error('a geração foi interrompida');
+    const pecas = r.pecas || [];
+    const semImg = pecas.filter(p => !/^https?:/.test(p.design || '')).length;
+    const falhas = pecas.filter(p => !rascunho && p.status !== 'Agendado').length;
     box.innerHTML = `<div class="panel"><div class="ph"><div class="pt">${rascunho ? '✎ Rascunhos gerados' : '📤 Posts agendados'}</div>
-      <span style="font-size:10px;color:var(--t2);">${d.resumo || ''}</span>
-      ${posts.length ? `<button class="btn" style="font-size:10.5px;color:var(--gold);border-color:var(--gold);font-weight:700;" onclick="acCriarCampanhas()">💾 Criar como campanhas (sem postar)</button>` : ''}
-      ${rascunho && posts.length ? `<button class="btn btn-gn" style="font-size:10.5px;" onclick="acAgendarRascunhos()">📤 Agendar no Metricool</button>` : ''}</div>
-      <div class="pb">
-      ${(d.erros||[]).length ? `<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:7px;padding:9px;font-size:10.5px;margin-bottom:10px;">${d.erros.length} falha(s):<br>${d.erros.slice(0,4).join('<br>')}</div>` : ''}
-      ${(d.posts||[]).map(p => `<div style="background:var(--bg4);border-radius:8px;padding:10px;margin-bottom:8px;">
-        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t2);margin-bottom:5px;">
-          <span>📅 ${p.data.split('-').reverse().join('/')} (${p.dia_semana}) às <b>${p.hora}</b></span>
-          <span style="color:${p.status==='agendado'?'var(--green,#22d3a3)':'var(--gold)'};">${p.status}${p.angulo?' · '+p.angulo:''}</span></div>
-        ${p.imagem_url ? `<img src="${p.imagem_url}" style="width:100%;max-width:320px;border-radius:8px;margin:6px 0;display:block;" loading="lazy"/>` : `<div style="font-size:9.5px;color:var(--t3);margin:4px 0;">sem imagem</div>`}
-        <div style="font-size:11.5px;line-height:1.6;white-space:pre-wrap;">${(p.texto||'').replace(/</g,'&lt;')}</div>
-        ${p.comentario ? `<div style="margin-top:7px;padding:7px 9px;background:rgba(34,211,163,.08);border-left:3px solid var(--green,#22d3a3);border-radius:5px;font-size:10px;">
-          <b>1º comentário (LinkedIn/Facebook):</b> ${String(p.comentario).replace(/</g,'&lt;')}</div>` : ''}
-        ${p.link_instagram ? `<div style="margin-top:5px;padding:7px 9px;background:rgba(245,185,75,.08);border-left:3px solid var(--gold);border-radius:5px;font-size:10px;">
-          <b>Instagram:</b> "link na bio" na legenda + link visível com UTM · bio deve apontar para <span style="font-family:var(--M);">${String(p.link_bio||'').replace(/</g,'&lt;')}</span></div>` : ''}
-      </div>`).join('') || '<div style="color:var(--t3);text-align:center;padding:16px;">Nenhum post gerado.</div>'}
-      ${d.aviso ? `<div style="font-size:10.5px;color:var(--t2);">${d.aviso}</div>` : ''}
+        <span style="font-size:10px;color:var(--t2);">${pecas.length} post(s)${rascunho ? '' : ' · ' + (r.agendados || 0) + ' agendado(s) no Metricool'}${semImg ? ' · ' + semImg + ' sem imagem' : ''}${falhas ? ' · ' + falhas + ' não agendado(s)' : ''}</span>
+        <button class="btn" style="font-size:10px;" onclick="nav('s2kanban')">📋 Abrir no Kanban</button></div>
+      <div class="pb"><div style="font-size:10.5px;color:var(--t3);margin-bottom:8px;">Campanha criada: <b>${String(r.campanha?.nome || '').replace(/</g,'&lt;')}</b> (em Minhas Campanhas)${rascunho ? ' · as peças estão no Kanban em <b>Gerado</b>; revise e publique pelo card' : ''}</div>
+      ${pecas.map(p => { const img = /^https?:/.test(p.design || '') ? p.design : ''; const qd = p.agendado_para || p.agendado_sugerido;
+        return `<div style="border-left:3px solid ${p.status === 'Agendado' ? 'var(--green,#22d3a3)' : rascunho ? 'var(--blue,#4f7cff)' : 'var(--gold)'};background:var(--bg4);border-radius:7px;padding:9px 11px;margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;font-size:10.5px;gap:8px;"><b>${String(p.titulo || '').replace(/</g,'&lt;')}</b><span style="color:var(--t3);white-space:nowrap;">${qd ? new Date(qd).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''} · ${p.status}</span></div>
+          ${img ? `<img src="${img}" style="width:100%;max-width:260px;border-radius:7px;margin:6px 0;display:block;" loading="lazy"/>` : '<div style="font-size:9.5px;color:var(--t3);margin:4px 0;">sem imagem</div>'}
+          <div style="font-size:11px;line-height:1.55;white-space:pre-wrap;">${String(p.copy || '').replace(/</g,'&lt;')}</div>
+          ${/Metricool recusou/.test(p.narrativa || '') ? `<div style="font-size:10px;color:var(--red);margin-top:4px;">${String(p.narrativa).split(' · ').filter(x => /Metricool/.test(x)).join(' ').replace(/</g,'&lt;')}</div>` : ''}</div>`; }).join('')}
       </div></div>`;
-    toast(d.resumo || 'Concluído', 'success');
+    toast(`${pecas.length} post(s) ${rascunho ? 'gerados como rascunho' : 'gerados · ' + (r.agendados || 0) + ' agendados'}`, 'success');
   } catch (e) {
-    box.innerHTML = `<div class="panel"><div class="pb" style="padding:16px;font-size:11px;">
-      <div style="color:var(--red);font-weight:600;margin-bottom:6px;">Erro: ${e.message}</div>
-      ${e.dica ? `<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:7px;padding:9px 11px;color:var(--t2);line-height:1.6;">💡 ${e.dica}</div>` : ''}
-      </div></div>`;
-  }
-  finally { if (btn) { btn.disabled = false; btn.innerHTML = rascunho ? '&#9998; Gerar rascunhos' : '&#128228; Gerar e agendar'; } }
+    box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:14px;font-size:11.5px;">Erro: ${String(e.message).replace(/</g,'&lt;')}${e.dica ? '<br><span style="color:var(--t3);">' + e.dica + '</span>' : ''}</div></div>`;
+  } finally { if (btn) { btn.disabled = false; btn.textContent = txtBtn; } }
 }
-// v1.80: corrige posts agendados com imagem que expira (causa do "Error downloading the image")
 async function acCorrigirImagens() {
   try {
     toast('Procurando posts com imagem que expira...', 'success');
@@ -23117,9 +23156,14 @@ async function excluirPublicacaoAgendada(pubId) {
 }
 
 // ---------- AUTO-CAMPANHA IA (v1.7) -----------------------------------------
-async function gerarCampanhaAutomatica() {
-  if (!confirm('🤖 Auto-campanha IA COMPLETA\n\nA IA vai:\n1. Analisar as métricas do Metricool (cliques/engajamento por dia e horário)\n2. Criar a CAMPANHA (narrativa + copy) e 3 publicações com imagem, agendadas nos horários ideais\n3. Criar 3 STORIES (artes 9:16 com texto e sticker de link) e agendar\n4. Criar 1 REEL em slideshow (vídeo montado aqui no navegador) e agendar\n5. Criar 1 CARROSSEL do feed (5 artes 1:1 com texto) e agendar\n\nLeva ~6-8 min e consome créditos de IA/Ideogram (~19 imagens). Mantenha esta aba aberta.\nContinuar?')) return;
-  const _incluirFormatos = confirm('Incluir Stories, Reel e Carrossel?\n\nOK = campanha completa (posts + stories + reel + carrossel)\nCancelar = só os 3 posts');
+async function gerarCampanhaAutomatica(opts = {}) {
+  // v2.94: a Autocampanha (7 dias) usa ESTA mesma função, passando os horários vagos do período.
+  // Sem opts, o comportamento é o do botão do Kanban (3 posts), idêntico ao de antes.
+  const _viaAc = Array.isArray(opts.slots) && opts.slots.length > 0;
+  const _prog = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
+  const _pecasCriadas = [];
+  if (!_viaAc && !confirm('🤖 Auto-campanha IA COMPLETA\n\nA IA vai:\n1. Analisar as métricas do Metricool (cliques/engajamento por dia e horário)\n2. Criar a CAMPANHA (narrativa + copy) e 3 publicações com imagem, agendadas nos horários ideais\n3. Criar 3 STORIES (artes 9:16 com texto e sticker de link) e agendar\n4. Criar 1 REEL em slideshow (vídeo montado aqui no navegador) e agendar\n5. Criar 1 CARROSSEL do feed (5 artes 1:1 com texto) e agendar\n\nLeva ~6-8 min e consome créditos de IA/Ideogram (~19 imagens). Mantenha esta aba aberta.\nContinuar?')) return;
+  const _incluirFormatos = _viaAc ? !!opts.formatos : confirm('Incluir Stories, Reel e Carrossel?\n\nOK = campanha completa (posts + stories + reel + carrossel)\nCancelar = só os 3 posts');
   addLog('info', '[Auto-IA] ════ Iniciando auto-campanha ════');
   toast('🤖 Analisando métricas e gerando plano...', 'success');
 
@@ -23155,28 +23199,37 @@ async function gerarCampanhaAutomatica() {
     }
   } catch (e) { addLog('warn', '[Auto-IA] métricas: ' + e.message); }
 
-  // 2. Plano da IA (3 posts)
-  let plano;
+  // 2. Plano da IA — 3 posts por chamada (Kanban: 1 chamada; Autocampanha: quantas precisar)
+  const _nPosts = _viaAc ? opts.slots.length : 3;
+  const _redes = (_viaAc && opts.redes?.length) ? opts.redes : ['linkedin','instagram','facebook'];
+  let plano = [];
   try {
-    const r = await fetch('/api/s2-creative', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ action:'campanha_auto', payload: { metricas_resumo: metricasResumo, contexto: document.getElementById('cCtx')?.value || '', redes: ['linkedin','instagram','facebook'] } }) });
-    const d = await r.json();
-    if (!d.success || !d.posts?.length) throw new Error(d.error || 'IA sem posts');
-    plano = d.posts;
+    const _ctxBase = (opts.tema ? 'TEMA DA SEMANA: ' + opts.tema + '. ' : '') + (document.getElementById('cCtx')?.value || '');
+    for (let _b = 0; plano.length < _nPosts && _b < Math.ceil(_nPosts / 3) + 2; _b++) {
+      _prog(`✍ Escrevendo posts ${plano.length + 1}–${Math.min(plano.length + 3, _nPosts)} de ${_nPosts}...`, 0.35 * plano.length / _nPosts);
+      const _ctx = _ctxBase + (plano.length ? ' NÃO repita os temas já planejados: ' + plano.map(p => p.titulo).join('; ') + '.' : '');
+      const r = await fetch('/api/s2-creative', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ action:'campanha_auto', payload: { metricas_resumo: metricasResumo, contexto: _ctx, redes: _redes } }) });
+      const d = await r.json().catch(() => ({ success: false, error: 'resposta inválida (HTTP ' + r.status + ')' }));
+      if (!d.success || !d.posts?.length) { if (!plano.length) throw new Error(d.error || 'IA sem posts'); addLog('warn', '[Auto-IA] lote extra falhou: ' + (d.error || '')); break; }
+      plano.push(...d.posts);
+    }
+    plano = plano.slice(0, _nPosts);
     addLog('ok', '[Auto-IA] Plano: ' + plano.map(p => p.titulo + ' (' + p.dia_semana + ' ' + p.hora + ')').join(' | '));
   } catch (e) {
     addLog('err', '[Auto-IA] Falha no plano: ' + e.message);
     toast('Erro ao gerar plano: ' + e.message, 'error');
+    if (_viaAc) throw new Error('Falha no plano da IA: ' + e.message);
     return;
   }
 
   // v1.9.7: a auto-campanha agora É uma campanha (narrativa + copy) — base para stories/reel
   const _autoId = 'camp_auto_' + Date.now();
-  const _autoNome = 'Auto-campanha ' + new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR').substring(0,5);
+  const _autoNome = (_viaAc ? 'Autocampanha ' + _nPosts + ' posts · ' : 'Auto-campanha ') + new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR').substring(0,5);
   const _post0 = plano[0] || {};
   const campAuto = { id: _autoId, nome: _autoNome, obj: 'Gerar leads qualificados (reuniões)', canal: 'Todos', pub: 'Todos os C-Levels', orc: '', ctx: (document.getElementById('cCtx')?.value || 'captação de leads e reuniões') + ' | gerada automaticamente por métricas',
-    status: 'aprovada', ativa: true, redes_ativas: { linkedin:true, instagram:true, facebook:true }, link_destino: linkReuniao(),
-    data_inicio: new Date().toISOString().substring(0,10), data_fim: new Date(Date.now()+14*864e5).toISOString().substring(0,10),
+    status: 'aprovada', ativa: true, redes_ativas: Object.fromEntries(_redes.map(r => [r, true])), link_destino: linkReuniao(),
+    data_inicio: _viaAc ? opts.slots[0].data : new Date().toISOString().substring(0,10), data_fim: _viaAc ? opts.slots[opts.slots.length - 1].data : new Date(Date.now()+14*864e5).toISOString().substring(0,10),
     criado_em: new Date().toISOString(), atualizado_em: new Date().toISOString(), imagens: [],
     data: { narrativa: { tema_central: _post0.titulo || 'Auto-campanha', gancho_principal: (_post0.texto||'').split(/[.!?]\s/)[0] || '', promessa_central: _post0.justificativa || '', call_to_action: 'Agende uma conversa' },
             copy: { versoes: plano.map((p, i) => ({ versao: i+1, headline: p.titulo, corpo: p.texto, cta: 'Agende uma conversa', hashtags: [] })) }, design: {}, copy_por_rede: {} } };
@@ -23189,11 +23242,13 @@ async function gerarCampanhaAutomatica() {
   const diaIdx = { domingo:0, segunda:1, terca:2, 'terça':2, quarta:3, quinta:4, sexta:5, sabado:6, 'sábado':6 };
   const temMc2 = _mcConfigurado; // já verificado com force acima
   let agendados = 0;
-  for (const post of plano) {
+  for (let _ix = 0; _ix < plano.length; _ix++) {
+    const post = plano[_ix];
     toast('🤖 Preparando: ' + post.titulo, 'success');
+    _prog(`🎨 Post ${_ix + 1} de ${plano.length}: imagem e agendamento — ${post.titulo}`, 0.35 + 0.65 * _ix / plano.length);
     // 3a. Imagem via Ideogram (endpoint do repo)
     let imgUrl = '';
-    try {
+    if (opts.comImagem !== false) try {
       const ri = await fetch('/api/image-gen', { method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ prompt: post.prompt_imagem, formato: 'ASPECT_1_1', estilo: 'DESIGN', quantidade: 1 }) });
       const di = await ri.json();
@@ -23210,6 +23265,8 @@ async function gerarCampanhaAutomatica() {
     let addD = (alvoDia - quando.getDay() + 7) % 7;
     if (addD === 0 && quando <= new Date()) addD = 7;
     quando.setDate(quando.getDate() + addD);
+    // v2.94: na Autocampanha, a data/hora é a do horário vago planejado (e não a sugerida pela IA)
+    if (_viaAc && opts.slots[_ix]) { const _q = new Date(opts.slots[_ix].data + 'T' + opts.slots[_ix].hora + ':00'); if (!isNaN(_q)) quando.setTime(_q.getTime()); }
 
     // 3c. Peça no kanban
     const pecaId = 'peca_auto_' + Date.now() + '_' + Math.random().toString(36).substr(2,4);
@@ -23218,11 +23275,12 @@ async function gerarCampanhaAutomatica() {
       narrativa: post.justificativa || '', copy: post.texto, design: imgUrl || (post.prompt_imagem||''),
       campanhaId: _autoId, status: 'Aprovado', // v1.9.2: só vira Agendado se o Metricool confirmar
       data: new Date().toLocaleString('pt-BR'), agendado_para: null };
-    kanbanPecas.push(pecaObj);
+    if (opts.rascunho) { pecaObj.status = 'Gerado'; pecaObj.agendado_sugerido = quando.toISOString(); pecaObj.narrativa = (pecaObj.narrativa ? pecaObj.narrativa + ' · ' : '') + 'Sugerido para ' + quando.toLocaleString('pt-BR'); }
+    kanbanPecas.push(pecaObj); _pecasCriadas.push(pecaObj);
 
     // 3d. Agendar no Metricool (todas as redes) — IG só com imagem
-    if (temMc2) {
-      const redesPost = imgUrl ? ['linkedin','instagram','facebook'] : ['linkedin','facebook'];
+    if (temMc2 && !opts.rascunho) {
+      const redesPost = (imgUrl ? ['linkedin','instagram','facebook'] : ['linkedin','facebook']).filter(r => _redes.includes(r));
       try {
         // v1.9.3: link de reunião com UTM no post (IG: "link na bio")
         const _lr = linkReuniao(); const _slugAuto = 'auto_' + new Date().toISOString().substring(0,10).replace(/-/g,'');
@@ -23332,6 +23390,7 @@ async function gerarCampanhaAutomatica() {
   } else {
     addLog('ok', '[Auto-IA] ════ Concluída (só posts) ════');
   }
+  return { plano, agendados, campanha: campAuto, pecas: _pecasCriadas };
 }
 
 // ---------- SAVE DE CAMPANHA ROBUSTO (v1.9.6) --------------------------------
@@ -24194,7 +24253,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v2.93] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v2.95] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -24210,7 +24269,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v2.93';
+window.__ATX_BUILD_ID__ = 'ATX-v2.95';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
