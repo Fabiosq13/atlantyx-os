@@ -2438,6 +2438,9 @@ async function qbRecorrentesProjecao({ ate } = {}) {
     if (!tipoEnt) continue;
     const t = w[tipoEnt], ri = t.RecurringInfo || {}, si = ri.ScheduleInfo || {};
     const dir = ENT[tipoEnt]; if (!dir) continue;
+    // v3.02: modelos recorrentes de RECEITA não são projetados — a receita da Atlantyx entra pelas
+    // faturas dos termos (e previsões dos marcos); projetar o modelo contava a mesma receita duas vezes.
+    if (dir === 'entrada') continue;
     if (ri.Active === false || /unscheduled/i.test(String(ri.RecurType || ''))) continue;   // inativo ou sem agenda: não projeta
     const valor = parseFloat(t.TotalAmt || 0); if (!valor) continue;
     let prox = si.NextDate || si.StartDate; if (!prox) continue;
@@ -2486,7 +2489,12 @@ async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
       emissao: i.TxnDate,
     }));
     // v2.95: receita prevista dos marcos (estimativas do QuickBooks geradas pelo Atlantyx)
-    if (Array.isArray(prevs)) prevs.filter(e => (!data_fim || e.data <= _addMeses(data_fim, 12))).forEach(e => out.recebiveis.push({
+    // v3.02: previsão de marco já faturado (termo virou fatura mas o marco não foi concluído) não conta de novo
+    const _normCli = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+    const _jaFaturada = e => out.recebiveis.some(r => r.origem === 'quickbooks_futuro' && Math.abs(r.valor - e.valor) <= Math.max(1, e.valor * 0.02)
+      && Math.abs((new Date(r.data) - new Date(e.data)) / 864e5) <= 45 && (_normCli(r.descricao).startsWith(_normCli(e.cliente)) || _normCli(e.cliente).startsWith(_normCli(r.descricao).substring(0, 6))));
+    out.previsoes_ignoradas = [];
+    if (Array.isArray(prevs)) prevs.filter(e => (!data_fim || e.data <= _addMeses(data_fim, 12))).filter(e => { if (_jaFaturada(e)) { out.previsoes_ignoradas.push(e); return false; } return true; }).forEach(e => out.recebiveis.push({
       id: 'est_' + e.id, data: e.data, descricao: e.cliente + ' · ' + (e.descricao || 'marco') + ' (previsão)', categoria: 'Receita prevista (marco)',
       valor: e.valor, valor_total: e.valor, tipo: 'entrada', origem: 'quickbooks_previsao', previsao: true, vencida: false, emissao: e.emissao,
       no_periodo: (!data_inicio || e.data >= data_inicio) && (!data_fim || e.data <= data_fim) }));
@@ -2564,7 +2572,10 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
     } catch (e) { qbExtraErro = 'Lançamentos futuros: ' + e.message; }
     try {
       const rc = await qbRecorrentesProjecao({ ate: fim || _diasMais(hoje, 366) });
-      qbRecorrentes = (rc.itens || []).filter(l => !quase(l.data, l.valor));
+      // v3.02: dedupe mais amplo — mesmo valor (±1%) no MESMO MÊS de uma conta a pagar, despesa programada ou lançamento futuro
+      const baseSaida = [...fut.pagaveis, ...despFuturas, ...qbLancFuturos.filter(x => x.tipo === 'saida')];
+      qbRecorrentes = (rc.itens || []).filter(l => !quase(l.data, l.valor) &&
+        !baseSaida.some(b => String(b.data).substring(0, 7) === l.data.substring(0, 7) && Math.abs(Math.abs(b.valor) - l.valor) <= Math.max(1, l.valor * 0.01)));
     } catch (e) { qbExtraErro = (qbExtraErro ? qbExtraErro + ' | ' : '') + 'Recorrentes: ' + e.message; }
   }
   if (qbExtraErro) fut.erro = (fut.erro ? fut.erro + ' | ' : '') + qbExtraErro;
@@ -3129,7 +3140,11 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
         aReceberPorMes[mes] = (aReceberPorMes[mes] || 0) + valor;
       }
       // v2.95: receita prevista dos marcos (estimativas) — em linha própria, separada do que já é fatura
+      const _nc = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
       try { for (const e of await _qbEstimativasPrevisao(token)) { const mes = (e.data || '').substring(0, 7); if (!mes || mes < mesAtual) continue;
+        // v3.02: previsão de marco que já virou fatura em aberto (mesmo cliente, valor ±2%, até 45 dias) não conta de novo
+        if (invoices.some(inv => Math.abs(parseFloat(inv.Balance || 0) - e.valor) <= Math.max(1, e.valor * 0.02) && Math.abs((new Date(inv.DueDate || inv.TxnDate) - new Date(e.data)) / 864e5) <= 45
+          && (_nc(inv.CustomerRef?.name).startsWith(_nc(e.cliente)) || _nc(e.cliente).startsWith(_nc(inv.CustomerRef?.name).substring(0, 6))))) continue;
         const m2 = mes > ultimoMes ? ultimoMes : mes; previstoMarcosPorMes[m2] = (previstoMarcosPorMes[m2] || 0) + e.valor; } } catch (_) {}
     } catch {}
   }
