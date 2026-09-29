@@ -14013,10 +14013,11 @@ async function abrirPrevisaoMarcos() {
       <button class="btn" style="font-size:10px;" onclick="document.getElementById('pvModal').style.display='none'">✕</button></div>
     <div class="pb">
       <div style="font-size:11px;color:var(--t2);line-height:1.6;margin-bottom:10px;">Cada marco <b>ainda não faturado</b> vira uma <b>estimativa</b> no QuickBooks — um marco por mês, em sequência, projeto a projeto, na ordem de entrega.
-        Emissão no dia 1 do mês e <b>recebimento previsto no dia 25</b>. A estimativa <b>não entra na contabilidade</b>; o fluxo de caixa do Atlantyx a mostra como <b>receita prevista</b>. Quando o marco for faturado de verdade, a estimativa é fechada sozinha.</div>
+        Emissão no dia 1 do mês e <b>recebimento previsto no dia escolhido</b> (+ os dias a somar). Para mudar só um marco, altere a data na linha dele. A estimativa <b>não entra na contabilidade</b>; o fluxo de caixa do Atlantyx a mostra como <b>receita prevista</b>. Quando o marco for faturado de verdade, a estimativa é fechada sozinha.</div>
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
-        <div class="fg" style="margin:0;"><label class="fl">Começar em</label><input class="fi" type="month" id="pvMesIni" value="${padrao}" style="width:150px;"/></div>
-        <div class="fg" style="margin:0;"><label class="fl">Dia do recebimento</label><input class="fi" type="number" min="1" max="28" id="pvDia" value="25" style="width:90px;"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Começar em</label><input class="fi" type="month" id="pvMesIni" value="" style="width:150px;"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Dia do recebimento</label><input class="fi" type="number" min="1" max="28" id="pvDia" value="" placeholder="25" style="width:90px;"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Somar dias ao recebimento</label><input class="fi" type="number" min="0" max="365" id="pvDiasAd" value="" placeholder="0" style="width:110px;" title="Ex.: 30 → recebimento de 25/10 passa para 24/11"/></div>
         <button class="btn" onclick="pvSimular()">↻ Simular</button>
         <div style="flex:1;"></div>
         <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="pvDedup()" title="Mantém uma estimativa por marco e apaga as cópias">🧹 Limpar duplicadas</button>
@@ -14052,8 +14053,12 @@ async function pvSimular() {
   const box = document.getElementById('pvCorpo'); if (!box) return;
   box.innerHTML = '<div style="text-align:center;color:var(--t3);padding:20px;">⏳ Montando a sequência...</div>';
   try {
-    const d = await finApi('marcos_previsao_planejar', { mes_inicio: document.getElementById('pvMesIni').value, dia_recebimento: document.getElementById('pvDia').value });
+    const v = id => document.getElementById(id)?.value || undefined;
+    const d = await finApi('marcos_previsao_planejar', { mes_inicio: v('pvMesIni'), dia_recebimento: v('pvDia'), dias_adicionais: v('pvDiasAd') });
     _pvPlano = d;
+    // v3.01: campos mostram a configuração em uso (a salva na última geração, se não foram alterados)
+    const pm = document.getElementById('pvMesIni'), pdia = document.getElementById('pvDia'), pad = document.getElementById('pvDiasAd');
+    if (pm && !pm.value) pm.value = d.mes_inicio; if (pdia && !pdia.value) pdia.value = d.dia_recebimento; if (pad && !pad.value) pad.value = d.dias_adicionais;
     if (!d.projetos.length) { box.innerHTML = '<div style="text-align:center;color:var(--t3);padding:20px;">Nenhum marco em aberto — todos já foram faturados.</div>'; return; }
     const ac = { criar: ['criar', 'var(--green,#22d3a3)'], atualizar: ['atualizar', 'var(--gold)'], manter: ['já existe', 'var(--t3)'] };
     const mx = Math.max(...d.recebimento_por_mes.map(x => x.valor), 1);
@@ -14070,7 +14075,9 @@ async function pvSimular() {
             ${p.cliente_qb ? (p.cliente_qb.existe ? `<span style="font-size:9.5px;color:var(--t3);"> → QB: ${p.cliente_qb.nome}</span>` : '<span style="font-size:9.5px;color:var(--gold);"> → cliente será criado no QB</span>') : ''}</span><b>${_pvBRL(p.total)}</b></div>
           <table style="width:100%;font-size:10.5px;margin-top:5px;border-collapse:collapse;">${p.marcos.map(x => `<tr style="border-top:1px solid var(--bd);">
             <td style="padding:3px 4px;width:62px;font-weight:600;">${_pvMes(x.mes)}</td><td style="padding:3px 4px;">${x.descricao}</td>
-            <td style="padding:3px 4px;color:var(--t3);width:120px;">receb. ${x.recebimento.split('-').reverse().join('/')}</td>
+            <td style="padding:3px 4px;width:175px;white-space:nowrap;"><span style="color:var(--t3);font-size:9.5px;">receb.</span>
+              <input type="date" value="${x.recebimento}" onchange="pvDataMarco('${x.marco_id}', this.value)" title="Mude a data só deste marco" style="font-size:10px;padding:1px 3px;background:var(--bg4);color:${x.data_manual ? 'var(--gold)' : 'var(--t1)'};border:1px solid ${x.data_manual ? 'var(--gold)' : 'var(--bd)'};border-radius:4px;"/>
+              ${x.data_manual ? `<span onclick="pvDataMarco('${x.marco_id}', '')" title="Voltar à data calculada" style="cursor:pointer;color:var(--gold);font-size:11px;">↺</span>` : ''}</td>
             <td style="padding:3px 4px;text-align:right;width:110px;font-family:var(--M);">${_pvBRL(x.valor)}</td>
             <td style="padding:3px 4px;width:70px;text-align:right;color:${ac[x.acao][1]};">${ac[x.acao][0]}</td></tr>`).join('')}</table></div>`).join('')}
       </div>
@@ -14079,6 +14086,10 @@ async function pvSimular() {
         <button class="btn btn-gn" id="pvBtnGerar" ${d.qb_conectado ? '' : 'disabled'} onclick="pvGerar()">📤 Gerar ${d.projetos.reduce((s, p) => s + p.marcos.filter(x => x.acao !== 'manter').length, 0)} estimativa(s) no QuickBooks</button>
       </div>`;
   } catch (e) { box.innerHTML = `<div style="color:var(--red);font-size:11.5px;padding:12px;">Erro: ${e.message}</div>`; }
+}
+async function pvDataMarco(marcoId, data) {
+  try { await finApi('marcos_previsao_data', { marco_id: marcoId, data: data || null }); toast(data ? 'Data do marco alterada — clique em Gerar para levar ao QuickBooks' : 'Marco voltou à data calculada', 'success'); pvSimular(); }
+  catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
 async function pvGerar() {
   if (!_pvPlano) return;
@@ -14090,7 +14101,7 @@ async function pvGerar() {
     let antes = Infinity;
     for (let volta = 0; volta < 5; volta++) {
       if (btn) { btn.disabled = true; btn.textContent = `⏳ Gerando... ${tot.criadas + tot.atualizadas} de ${n}`; }
-      const r = await finApi('marcos_previsao_gerar', { mes_inicio: _pvPlano.mes_inicio, dia_recebimento: _pvPlano.dia_recebimento, limite: 15 });
+      const r = await finApi('marcos_previsao_gerar', { mes_inicio: _pvPlano.mes_inicio, dia_recebimento: _pvPlano.dia_recebimento, dias_adicionais: _pvPlano.dias_adicionais, limite: 15 });
       tot.criadas += r.criadas; tot.atualizadas += r.atualizadas; tot.fechadas += r.fechadas; tot.erros.push(...r.erros); tot.clientes.push(...r.clientes_criados);
       if (!r.pendentes || r.pendentes >= antes || r.erros.length) break;
       antes = r.pendentes;
@@ -24280,7 +24291,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.00] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.01] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -24296,7 +24307,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.00';
+window.__ATX_BUILD_ID__ = 'ATX-v3.01';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

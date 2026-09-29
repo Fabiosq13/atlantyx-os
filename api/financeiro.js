@@ -263,6 +263,9 @@ export default async function handler(req, res) {
       marcos_previsao_gerar:    () => marcosPrevisaoGerar(params),
       marcos_previsao_remover:  () => marcosPrevisaoRemover(params),
       marcos_previsao_dedup:    () => marcosPrevisaoDeduplicar(params),
+      marcos_previsao_data:     async () => { const sql = await getSql(); if (!params.marco_id) throw new Error('marco_id obrigatório');
+        const d = params.data && /^\d{4}-\d{2}-\d{2}$/.test(params.data) ? params.data : null;
+        await sql`UPDATE projetos_marcos SET previsao_receb_manual = ${d} WHERE id = ${params.marco_id}`; return { ok: true, data: d }; },
       marcos_previsao_contar:   async () => { const t = await qbToken(); const l = await _qbPrevisoesTodas(t); const m = {}; l.forEach(e => m[e.marco] = (m[e.marco] || 0) + 1); return { total: l.length, marcos: Object.keys(m).length, duplicadas: l.length - Object.keys(m).length }; },
     };
 
@@ -436,7 +439,7 @@ async function ensureTabelas(sql) {
   )`;
   await sql`CREATE INDEX IF NOT EXISTS idx_marcos_proj ON projetos_marcos(projeto_id)`;
   // v2.95: previsão de recebimento — estimativa (Estimate) no QuickBooks por marco não faturado
-  for (const col of ['previsao_qb_estimate_id TEXT', 'previsao_qb_doc TEXT', 'previsao_mes DATE', 'previsao_recebimento DATE', 'previsao_gerada_em TIMESTAMPTZ']) {
+  for (const col of ['previsao_qb_estimate_id TEXT', 'previsao_qb_doc TEXT', 'previsao_mes DATE', 'previsao_recebimento DATE', 'previsao_gerada_em TIMESTAMPTZ', 'previsao_receb_manual DATE']) {
     try { await _q(sql, `ALTER TABLE projetos_marcos ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
   }
   await sql`CREATE INDEX IF NOT EXISTS idx_marcos_status ON projetos_marcos(status_kanban)`;
@@ -3857,8 +3860,20 @@ async function _qbItemPrevisao(token) {
   if (!it) throw new Error('Nenhum item de serviço no QuickBooks para a linha da estimativa. Cadastre um (ex.: "Serviços de Consultoria") ou defina QB_DEFAULT_ITEM_NAME.');
   return it;
 }
-async function marcosPrevisaoPlanejar({ mes_inicio, prazo_dias = 35, dia_recebimento = 25, projeto_ids } = {}) {
+// v3.01: configuração salva (mês inicial, dia do recebimento, dias a somar) — regerar não desfaz o ajuste
+async function _prevCfg(sql, novo) {
+  await sql`CREATE TABLE IF NOT EXISTS app_config (chave TEXT PRIMARY KEY, valor JSONB, atualizado_em TIMESTAMPTZ DEFAULT NOW())`;
+  if (novo) { await sql`INSERT INTO app_config (chave, valor, atualizado_em) VALUES ('previsao_marcos', ${JSON.stringify(novo)}, NOW())
+    ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = NOW()`; return novo; }
+  return (await sql`SELECT valor FROM app_config WHERE chave = 'previsao_marcos'`)[0]?.valor || {};
+}
+async function marcosPrevisaoPlanejar({ mes_inicio, prazo_dias = 35, dia_recebimento, dias_adicionais, projeto_ids } = {}) {
   const sql = await getSql();
+  const cfg = await _prevCfg(sql).catch(() => ({}));
+  if (!mes_inicio) mes_inicio = cfg.mes_inicio;
+  if (dia_recebimento == null || dia_recebimento === '') dia_recebimento = cfg.dia_recebimento ?? 25;
+  if (dias_adicionais == null || dias_adicionais === '') dias_adicionais = cfg.dias_adicionais ?? 0;
+  const diasAd = Math.max(0, Math.min(365, parseInt(dias_adicionais) || 0));
   const hoje = new Date();
   const inicio = /^\d{4}-\d{2}$/.test(mes_inicio || '') ? mes_inicio : `${hoje.getFullYear()}-${String(hoje.getMonth() + 2 > 12 ? 1 : hoje.getMonth() + 2).padStart(2, '0')}`;
   const prazo = Math.max(0, Math.min(180, parseInt(prazo_dias) || 35));
@@ -3872,10 +3887,13 @@ async function marcosPrevisaoPlanejar({ mes_inicio, prazo_dias = 35, dia_recebim
   for (const [pid, lista] of Object.entries(porProjeto)) {
     const cli = token ? await _qbClientePrevisao(lista[0].projeto_cliente || lista[0].projeto_nome, token, cache).catch(() => null) : null;
     const itens = lista.map((m, i) => {
-      const mes = _mesMais(inicio, i), emissao = mes + '-01', receb = mes + '-' + String(diaRec).padStart(2, '0');   // recebimento no dia fixo do mês
+      const mes = _mesMais(inicio, i), emissao = mes + '-01';
+      // v3.01: dia fixo do mês + dias a somar; uma data definida à mão para o marco tem prioridade
+      const manual = _dStr(m.previsao_receb_manual);
+      const receb = manual || _diasMais(mes + '-' + String(diaRec).padStart(2, '0'), diasAd);
       const igual = m.previsao_qb_estimate_id && _dStr(m.previsao_mes) === emissao && _dStr(m.previsao_recebimento) === receb;   // v2.96: antes comparava objeto Date com texto e nunca batia
       return { marco_id: m.id, descricao: m.descricao, valor: num(m.valor), data_entrega: m.data_entrega ? String(m.data_entrega).substring(0, 10) : null,
-        status_kanban: m.status_kanban, mes, emissao, recebimento: receb,
+        status_kanban: m.status_kanban, mes, emissao, recebimento: receb, data_manual: !!manual,
         acao: !m.previsao_qb_estimate_id ? 'criar' : igual ? 'manter' : 'atualizar', estimativa_atual: m.previsao_qb_doc || m.previsao_qb_estimate_id || null };
     });
     projetos.push({ projeto_id: pid, projeto: lista[0].projeto_nome, cliente: lista[0].projeto_cliente || lista[0].projeto_nome,
@@ -3886,7 +3904,7 @@ async function marcosPrevisaoPlanejar({ mes_inicio, prazo_dias = 35, dia_recebim
     WHERE m.previsao_qb_estimate_id IS NOT NULL AND (m.status_kanban = 'concluido' OR m.data_pagamento IS NOT NULL OR COALESCE(TRIM(m.nota_fiscal), '') <> '')`;
   const porMes = {};
   projetos.forEach(p => p.marcos.forEach(x => { const k = x.recebimento.substring(0, 7); porMes[k] = (porMes[k] || 0) + x.valor; }));
-  return { mes_inicio: inicio, dia_recebimento: diaRec, qb_conectado: !!token, projetos,
+  return { mes_inicio: inicio, dia_recebimento: diaRec, dias_adicionais: diasAd, qb_conectado: !!token, projetos,
     total_marcos: projetos.reduce((s, p) => s + p.marcos.length, 0), total_valor: projetos.reduce((s, p) => s + p.total, 0),
     recebimento_por_mes: Object.entries(porMes).sort().map(([mes, valor]) => ({ mes, valor })),
     a_fechar: fechar.map(x => ({ marco_id: x.id, projeto: x.projeto, descricao: x.descricao, valor: num(x.valor), estimativa: x.previsao_qb_estimate_id })) };
@@ -3898,10 +3916,11 @@ async function _qbFecharEstimativa(id, token) {
   await _qbApagarEstimativa(e.Id, e.SyncToken, token);
   return 'removida';
 }
-async function marcosPrevisaoGerar({ mes_inicio, prazo_dias = 35, dia_recebimento = 25, projeto_ids, limite = 40 } = {}) {
+async function marcosPrevisaoGerar({ mes_inicio, prazo_dias = 35, dia_recebimento, dias_adicionais, projeto_ids, limite = 40 } = {}) {
   if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
-  const plano = await marcosPrevisaoPlanejar({ mes_inicio, prazo_dias, dia_recebimento, projeto_ids });
+  const plano = await marcosPrevisaoPlanejar({ mes_inicio, prazo_dias, dia_recebimento, dias_adicionais, projeto_ids });
   const sql = await getSql(); const token = await qbToken();
+  await _prevCfg(sql, { mes_inicio: plano.mes_inicio, dia_recebimento: plano.dia_recebimento, dias_adicionais: plano.dias_adicionais }).catch(() => {});
   const item = await _qbItemPrevisao(token);
   const out = { criadas: 0, atualizadas: 0, mantidas: 0, fechadas: 0, erros: [], clientes_criados: [], pendentes: 0 };
   // v2.96: antes de criar, olha o que JÁ existe no QuickBooks para cada marco — nunca cria uma segunda
