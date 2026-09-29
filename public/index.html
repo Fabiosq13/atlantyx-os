@@ -8242,6 +8242,24 @@ function removerArquivo(nome) {
 }
 
 
+// v3.03: texto de PDF (todas as páginas), planilhas e arquivos de texto para a análise de ideias
+async function _anExtrairTexto(a) {
+  const bin = atob(String(a.base64).split(',')[1] || '');
+  const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  if (/pdf/i.test(a.tipo) || /\.pdf$/i.test(a.nome)) {
+    await _carregarPdfJs();
+    const doc = await window.pdfjsLib.getDocument({ data: bytes }).promise;
+    let t = '';
+    for (let p = 1; p <= Math.min(doc.numPages, 60); p++) { const pg = await doc.getPage(p); const tc = await pg.getTextContent(); t += `\n[pág. ${p}] ` + tc.items.map(i => i.str).join(' '); if (t.length > 60000) break; }
+    return t.trim() || '(PDF sem texto selecionável — provavelmente digitalizado como imagem)';
+  }
+  if ((/sheet|excel|csv/i.test(a.tipo) || /\.(xlsx?|csv)$/i.test(a.nome)) && window.XLSX) {
+    const wb = window.XLSX.read(bytes, { type: 'array' });
+    return wb.SheetNames.slice(0, 6).map(n => `[aba ${n}]\n` + window.XLSX.utils.sheet_to_csv(wb.Sheets[n]).substring(0, 15000)).join('\n');
+  }
+  if (/text|json|xml|markdown/i.test(a.tipo) || /\.(txt|md|csv|json)$/i.test(a.nome)) return new TextDecoder().decode(bytes).substring(0, 60000);
+  return '(formato não lido automaticamente — converta para PDF para a IA ler o conteúdo)';
+}
 async function analisarIdeia(modo) {
   const titulo    = document.getElementById('anTitulo')?.value?.trim();
   const desc      = document.getElementById('anDesc')?.value?.trim();
@@ -8266,6 +8284,15 @@ async function analisarIdeia(modo) {
     source: { type: 'base64', media_type: a.tipo, data: a.base64.split(',')[1] }
   }));
   const docsTexto = anArquivosData.filter(a => !a.isImage).map(a => a.nome).join(', ');
+  // v3.03: LÊ o conteúdo dos documentos (antes só o nome era enviado e a IA não via os PDFs)
+  const docs_texto = [];
+  for (const a of anArquivosData.filter(x => !x.isImage)) {
+    try {
+      if (result) result.innerHTML = '<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:20px;text-align:center;">Lendo ' + a.nome + '...</div>';
+      docs_texto.push({ nome: a.nome, texto: await _anExtrairTexto(a) });
+    } catch (e) { docs_texto.push({ nome: a.nome, texto: '(não consegui ler este arquivo: ' + e.message + ')' }); }
+  }
+  if (result) result.innerHTML = '<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:20px;text-align:center;">Agente S1-03 analisando a ideia' + (docs_texto.length ? ' + ' + docs_texto.length + ' documento(s) lidos' : '') + '... (pode levar até 2 minutos)</div>';
 
   // Montar payload para o backend
   const payload = {
@@ -8273,6 +8300,7 @@ async function analisarIdeia(modo) {
     titulo, desc, origem, cat, perguntas, modo: modo || 'completa',
     tem_arquivos: anArquivosData.length > 0,
     docs_nomes: docsTexto,
+    docs_texto,
     imagensBase64: imagensBase64.slice(0, 4) // max 4 imagens
   };
 
@@ -8282,12 +8310,11 @@ async function analisarIdeia(modo) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    if (!r.ok) throw new Error('Servidor retornou ' + r.status);
-    const data = await r.json();
-
-    if (!data.success) throw new Error(data.error || 'Erro desconhecido');
+    const data = await r.json().catch(() => ({ success: false, error: r.status === 504 ? 'A análise excedeu o tempo do servidor — tente "Análise Rápida" ou menos arquivos' : r.status === 413 ? 'Arquivos grandes demais para enviar — use menos imagens' : 'Servidor retornou ' + r.status }));
+    if (!r.ok || !data.success) throw new Error(data.error || ('Servidor retornou ' + r.status));
 
     const analise = data.analise || data;
+    if (analise.erro || analise.score == null) throw new Error('A IA não devolveu a análise completa. Tente de novo.');
     if (tag) { tag.textContent = analise.recomendacao === 'APROVAR' ? 'APROVAR' : analise.recomendacao === 'PILOTAR' ? 'PILOTAR' : 'ANALISAR'; tag.className = 'tag ' + (analise.recomendacao === 'APROVAR' ? 'live' : analise.recomendacao === 'PILOTAR' ? 'on' : 'off'); }
 
     // Renderizar análise
@@ -8307,6 +8334,8 @@ async function analisarIdeia(modo) {
       ${analise.prazo_desenvolvimento ? '<div style="margin-bottom:10px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--or);margin-bottom:4px;">PRAZO E ESFORÇO</div><div style="font-size:11.5px;">' + analise.prazo_desenvolvimento + '</div></div>' : ''}
       ${analise.proximos_passos?.length ? '<div style="margin-bottom:10px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--blue);margin-bottom:5px;">PRÓXIMOS PASSOS</div>' + analise.proximos_passos.map((p,i) => '<div style="font-size:11.5px;padding:2px 0;">' + (i+1) + '. ' + p + '</div>').join('') + '</div>' : ''}
       ${analise.analise_arquivos ? '<div style="margin-bottom:10px;background:var(--go2);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">ANÁLISE DOS ARQUIVOS</div><div style="font-size:11.5px;">' + analise.analise_arquivos + '</div></div>' : ''}
+      ${perguntas && analise.perguntas_respondidas ? '<div style="margin-bottom:10px;padding:12px;background:rgba(79,124,255,.10);border:1px solid rgba(79,124,255,.35);border-radius:8px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--blue);margin-bottom:5px;">RESPOSTA À SUA PERGUNTA</div><div style="font-size:12px;line-height:1.65;white-space:pre-wrap;">' + String(analise.perguntas_respondidas).replace(/</g,'&lt;') + '</div></div>' : ''}
+      ${analise.fit_icp ? '<div style="margin-bottom:10px;font-size:11px;color:var(--t2);"><b>Fit com o ICP:</b> ' + String(analise.fit_icp).replace(/</g,'&lt;') + '</div>' : ''}
       ${analise.parecer_final ? '<div style="padding:12px;background:var(--bg3);border-radius:8px;border-left:3px solid ' + scoreCor + ';"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:' + scoreCor + ';margin-bottom:5px;">PARECER FINAL — S1-03</div><div style="font-size:12px;line-height:1.7;">' + analise.parecer_final + '</div></div>' : ''}`;
 
     if (acoes) acoes.style.display = 'block';
@@ -24291,7 +24320,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.02] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.03] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -24307,7 +24336,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.02';
+window.__ATX_BUILD_ID__ = 'ATX-v3.03';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

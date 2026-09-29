@@ -64,6 +64,9 @@
     },
     "api/prospect-scan.js": {
       "maxDuration": 60
+    },
+    "api/s1-strategy.js": {
+      "maxDuration": 180
     }
   },
   "crons": [

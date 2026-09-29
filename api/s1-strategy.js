@@ -179,7 +179,7 @@ Retorne:
 }
 
 // ── S1-02: ANÁLISE DE VIABILIDADE ───────────────────────────────────────────
-async function analisarIdeia({ titulo, desc, descricao, origem, cat, perguntas, modo, tem_arquivos, docs_nomes, imagensBase64, ideia_id, problema }) {
+async function analisarIdeia({ titulo, desc, descricao, origem, cat, perguntas, modo, tem_arquivos, docs_nomes, docs_texto, imagensBase64, ideia_id, problema }) {
   const tituloFinal = titulo || 'Ideia sem título';
   const descFinal   = desc || descricao || problema || '';
   const modoFinal   = modo || 'completa';
@@ -204,7 +204,8 @@ Descrição: ${descFinal}
 Origem: ${origem || 'Não informada'}
 Categoria: ${cat || 'Não informada'}
 ${tem_arquivos ? 'ARQUIVOS ANEXADOS para análise: ' + (docs_nomes || '') + (imagensBase64?.length ? ' + ' + imagensBase64.length + ' imagem(ns)' : '') : ''}
-${perguntas ? 'PERGUNTAS ESPECÍFICAS DO SOLICITANTE: ' + perguntas : ''}
+${Array.isArray(docs_texto) && docs_texto.length ? '\nCONTEÚDO DOS DOCUMENTOS ANEXADOS (leia com atenção — valores, condições comerciais, prazos, responsabilidades):\n' + docs_texto.map(d => `\n===== ${d.nome} =====\n${String(d.texto || '').substring(0, 60000)}`).join('\n') : ''}
+${perguntas ? '\nPERGUNTAS ESPECÍFICAS DO SOLICITANTE (responda de forma direta, com números quando houver, e dê sua opinião clara): ' + perguntas : ''}
 
 Retorne JSON completo:
 {
@@ -219,7 +220,7 @@ Retorne JSON completo:
   "fit_icp": "Alto | Médio | Baixo — justificativa de 1 linha",
   "proximos_passos": ["ação 1 com responsável e prazo", "ação 2"],
   "analise_arquivos": "${tem_arquivos ? 'Análise do conteúdo dos arquivos anexados — o que revelam sobre a ideia' : 'Nenhum arquivo anexado'}",
-  "perguntas_respondidas": "${perguntas ? 'Respostas específicas para: ' + perguntas : 'Nenhuma pergunta específica'}",
+  "perguntas_respondidas": "${perguntas ? 'Resposta direta e fundamentada às perguntas do solicitante, usando os números dos documentos, com opinião final clara (sim/não/depende de quê)' : 'Nenhuma pergunta específica'}",
   "parecer_final": "Parecer detalhado do agente S1-03 — 3-4 linhas com posição clara e fundamentada"
 }`;
 
@@ -241,12 +242,14 @@ Retorne JSON completo:
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: MODEL, max_tokens: 2500, system, messages })
+    // v3.03: 2.500 tokens cortavam a resposta no meio (JSON quebrado → tela com "—")
+    body: JSON.stringify({ model: MODEL, max_tokens: 8000, system, messages })
   });
   const d = await resp.json();
   if (!resp.ok) throw new Error(d.error?.message || 'Erro Claude');
-
-  const analise = parseJSON(d.content[0].text);
+  const texto = (d.content || []).filter(x => x.type === 'text').map(x => x.text).join('');
+  const analise = parseJSON(texto);
+  if (analise.erro) throw new Error(d.stop_reason === 'max_tokens' ? 'A análise ficou longa demais e foi cortada. Tente "Análise Rápida" ou reduza a descrição.' : 'A IA não devolveu a análise no formato esperado. Tente de novo.');
   console.log(`[S1-03] Análise: ${tituloFinal} — score ${analise.score}/10 — ${analise.recomendacao}`);
   return { success: true, analise, pipeline_stage: 'Em Análise' };
 }
@@ -525,8 +528,12 @@ async function claude(system, user, maxTokens = 1000) {
 }
 
 function parseJSON(text) {
-  try { return JSON.parse(text.replace(/```json|```/g, '').trim()); }
-  catch { return { erro: 'JSON inválido', raw: text.substring(0, 200) }; }
+  const t = String(text || '').replace(/```json|```/g, '').trim();
+  try { return JSON.parse(t); } catch (_) {}
+  // v3.03: tolera texto antes/depois do JSON
+  const i = t.indexOf('{'), j = t.lastIndexOf('}');
+  if (i >= 0 && j > i) { try { return JSON.parse(t.substring(i, j + 1)); } catch (_) {} }
+  return { erro: 'JSON inválido', raw: t.substring(0, 200) };
 }
 
 async function whatsapp(phone, message) {
