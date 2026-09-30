@@ -4830,37 +4830,53 @@ function fecharModal() {
 
 //    WA INDIVIDUAL (mantida para uso em outros lugares)                        
 
+// v3.05: o pipeline usava S1_PIPELINE e renderS1Kanban, que não existiam — a captação travava
+// em "Captando..." e a ideia nunca era gravada. Agora a lista existe, é carregada do banco e
+// cada ideia (e cada mudança de etapa) é salva em /api/db.
+let S1_PIPELINE = [];
+function renderS1Kanban() { renderKanbanS1(S1_PIPELINE); try { const c = document.getElementById('s1PipeCnt'); if (c) c.textContent = S1_PIPELINE.length; const e = document.getElementById('s1_ideias'); if (e) e.textContent = S1_PIPELINE.length; } catch (_) {} }
+async function salvarIdeiaS1(ideia) {
+  try {
+    const r = await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save_ideia', value: ideia }) });
+    const d = await r.json().catch(() => ({}));
+    if (!d.success) throw new Error(d.error || ('Servidor retornou ' + r.status));
+    return true;
+  } catch (e) { addLog('err', '[S1] Não consegui salvar a ideia no banco: ' + e.message); toast('A ideia não foi salva no banco: ' + e.message, 'error'); return false; }
+}
+
 async function captarIdeia() {
-  const titulo = document.getElementById('s1Titulo')?.value;
-  const desc = document.getElementById('s1Desc')?.value;
+  const titulo = document.getElementById('s1Titulo')?.value?.trim();
+  const desc = document.getElementById('s1Desc')?.value?.trim() || '';
   const origem = document.getElementById('s1Origem')?.value;
   const cat = document.getElementById('s1Cat')?.value;
   if (!titulo) { toast('Informe o título da ideia', 'error'); return; }
 
   const btn = document.getElementById('btnCaptarIdeia');
-  btn.disabled = true; btn.textContent = '  Captando...';
+  btn.disabled = true; btn.textContent = 'Captando...';
   addLog('info', '[S1-01] Captando ideia: ' + titulo);
+  try {
+    // A estruturação por IA é um bônus: se falhar, a ideia entra assim mesmo
+    let estr = {};
+    const data = await api('/api/s1-strategy', 'POST', { action: 'captar_ideia', titulo, descricao: desc, origem, categoria: cat });
+    if (data?.success && data.ideia && !data.ideia.erro) estr = data.ideia;
+    else addLog('warn', '[S1-01] Estruturação por IA indisponível (' + (data?.error || 'sem resposta') + ') — ideia registrada com os dados digitados');
 
-  const data = await api('/api/s1-strategy', 'POST', { action: 'captar_ideia', titulo, descricao: desc, origem, categoria: cat });
-
-  if (data?.success) {
-    const ideia = data.ideia;
-    const novaIdeia = { id: Date.now(), titulo: ideia.titulo_estruturado || titulo, stage: 'Recebida', urgencia: ideia.urgencia, categoria: ideia.categoria, origem, desc, raw: ideia };
-    S1_PIPELINE.push(novaIdeia);
+    const novaIdeia = { id: 'ideia_' + Date.now(), titulo, titulo_estruturado: estr.titulo_estruturado || '', stage: 'Recebida',
+      urgencia: estr.urgencia || '', categoria: cat, origem, desc, raw: estr, criado_em: new Date().toISOString() };
+    const ok = await salvarIdeiaS1(novaIdeia);
+    S1_PIPELINE.unshift(novaIdeia);
     renderS1Kanban();
-    addLog('success', '[S1-01] Ideia captada: ' + novaIdeia.titulo + ' | Urgência: ' + ideia.urgencia);
-    toast('Ideia captada! Iniciando análise completa...', 'success');
+    addLog('success', '[S1-01] Ideia captada: ' + titulo + (estr.urgencia ? ' | Urgência: ' + estr.urgencia : ''));
+    if (ok) toast('Ideia salva no pipeline! Iniciando análise completa...', 'success');
     document.getElementById('s1Titulo').value = '';
     document.getElementById('s1Desc').value = '';
-
-    // Auto-iniciar análise completa
-    setTimeout(() => rodarAnaliseCompleta(novaIdeia), 1000);
-  } else {
-    toast('Erro ao captar ideia', 'error');
-    addLog('err', '[S1-01] Erro ao captar');
+    setTimeout(() => rodarAnaliseCompleta(novaIdeia), 800);
+  } catch (e) {
+    addLog('err', '[S1-01] Erro ao captar: ' + e.message);
+    toast('Erro ao captar a ideia: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '✦ Captar e Iniciar Análise Completa com IA';
   }
-
-  btn.disabled = false; btn.textContent = '  Captar e Iniciar Análise Completa com IA';
 }
 
 async function rodarAnaliseCompleta(ideia) {
@@ -4881,7 +4897,7 @@ async function rodarAnaliseCompleta(ideia) {
   for (const step of steps) {
     // Update ideia stage
     ideia.stage = 'Em Análise';
-    renderS1Kanban();
+    renderS1Kanban(); salvarIdeiaS1(ideia);
 
     // Show loading
     addLog('info', '[' + step.label + '] Analisando...');
@@ -4900,8 +4916,8 @@ async function rodarAnaliseCompleta(ideia) {
 
       // Render step result
       const r = data[step.field];
-      const nota = r?.nota_geral ?? r?.nota_final_squad ?? '--';
-      const rec = r?.recomendacao ?? r?.parecer ?? r?.recomendacao_financeira ?? '';
+      const nota = r?.nota_geral ?? r?.nota_final_squad ?? r?.score ?? '--';
+      const rec = String(r?.recomendacao ?? r?.parecer ?? r?.recomendacao_financeira ?? '');
       const cor = rec.includes('Aprovado') || rec.includes('Avançar') ? 'var(--green)' : rec.includes('Ressalvas') ? 'var(--gold)' : rec.includes('Rejeitar') || rec.includes('No-Go') || rec.includes('Arquivar') ? 'var(--red)' : 'var(--blue)';
 
       html += `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--bd);">
@@ -4913,12 +4929,16 @@ async function rodarAnaliseCompleta(ideia) {
     }
   }
 
+  // v3.05: guarda o resultado das análises junto com a ideia
+  if (resultados.analise) ideia.analise = { score: resultados.analise.score ?? resultados.analise.nota_geral, recomendacao: resultados.analise.recomendacao, resumo_executivo: resultados.analise.resumo_executivo };
+  ideia.resultados_s1 = { pesquisa: resultados.pesquisa || null, modelo: resultados.modelo || null, parecer: resultados.parecer || null };
   // Final parecer
   const parecer = resultados.parecer;
+  if (!parecer) { ideia.stage = ideia.stage === 'Em Análise' ? 'Viabilidade' : ideia.stage; renderS1Kanban(); salvarIdeiaS1(ideia); if (result) result.innerHTML = html || '<div style="color:var(--gold);font-size:11px;">A análise automática não retornou — a ideia está salva no pipeline; use o S1-03 para analisar.</div>'; }
   if (parecer) {
     const aprovado = parecer.parecer?.includes('Aprovado');
     ideia.stage = aprovado ? 'Aprovada Squad' : 'Recebida';
-    renderS1Kanban();
+    renderS1Kanban(); salvarIdeiaS1(ideia);
 
     const corFinal = aprovado ? 'var(--green)' : parecer.parecer?.includes('Ressalvas') ? 'var(--gold)' : 'var(--red)';
     html += `<div style="background:${corFinal.replace(')',', 0.08)')};border:1px solid ${corFinal.replace(')',', 0.2)')};border-radius:7px;padding:14px;margin-top:10px;">
@@ -4935,10 +4955,11 @@ async function rodarAnaliseCompleta(ideia) {
     </div>`;
 
     if (result) result.innerHTML = html;
+    salvarIdeiaS1(ideia);
 
     if (aprovado) {
       ideia.stage = 'Aguardando Fundador';
-      renderS1Kanban();
+      renderS1Kanban(); salvarIdeiaS1(ideia);
       addLog('success', '[S1-05] Análise concluída -- ' + parecer.parecer + ' -- Notificando fundador');
       toast('Análise completa! Squad aprova. Notificando fundador para decisão final.', 'success');
       // Auto-notificar
@@ -7674,8 +7695,10 @@ async function initS1() {
       if (el2) el2.textContent = emAnalise;
       if (el3) { el3.textContent = emFundador; document.getElementById('s1DecCnt').textContent = emFundador; }
       if (el4) el4.textContent = emDev;
-      // Renderizar kanban S1
+      // Renderizar kanban S1 (v3.05: alimenta S1_PIPELINE)
+      S1_PIPELINE = d.ideias;
       renderKanbanS1(d.ideias);
+      try { const c = document.getElementById('s1PipeCnt'); if (c) c.textContent = d.ideias.length; } catch (_) {}
       addLog('ok', '[S1] Pipeline carregado: ' + d.ideias.length + ' ideias');
     }
   } catch(e) {
@@ -7685,14 +7708,16 @@ async function initS1() {
 
 function renderKanbanS1(ideias) {
   const kanban = document.getElementById('s1Kanban');
-  if (!kanban || !ideias.length) return;
+  if (!kanban || !ideias || !ideias.length) return;
   window._s1IdeiasCache = [];
   const stages = ['Recebida','Em Análise','Pesquisa','Viabilidade','Comitê','Aguardando Fundador','Em Desenvolvimento'];
   const byStage = {};
   stages.forEach(s => byStage[s] = []);
   ideias.forEach(i => {
     const s = i.stage || i.status || 'Recebida';
-    if (byStage[s]) byStage[s].push(i);
+    const mapa = { 'Aprovada Squad': 'Comitê', 'Aprovado': 'Em Desenvolvimento', 'Análise': 'Em Análise', 'Fundador': 'Aguardando Fundador' };
+    const s2 = byStage[s] ? s : mapa[s];
+    if (s2 && byStage[s2]) byStage[s2].push(i);
     else byStage['Recebida'].push(i);
   });
   kanban.innerHTML = stages.map(s => {
@@ -24720,7 +24745,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.04] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.05] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -24736,7 +24761,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.04';
+window.__ATX_BUILD_ID__ = 'ATX-v3.05';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
