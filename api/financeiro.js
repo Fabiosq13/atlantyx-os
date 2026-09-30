@@ -520,7 +520,11 @@ async function contextoFinanceiro({ mes, ano, conta_id = null } = {}) {
     caixa: { saldo: R.saldoCaixa ?? null, a_receber: R.aReceber ?? null, a_pagar: R.aPagar ?? null, receita_mes: R.realMes ?? null, receita_ano: R.realAnual ?? null },
     saude: { semaforo: K.semaforo, motivos: K.semaforo_motivos, kpis: Object.fromEntries(Object.entries(K).filter(([k]) => !/semaforo|erro/.test(k)).slice(0, 14)) },
     fluxo_6m: (F.meses || F.linhas || []).slice(0, 6).map(m => ({ mes: m.mes || m.label || m.ref, entradas: m.entradas ?? m.receitas, saidas: m.saidas ?? m.despesas, saldo: m.saldo_final ?? m.saldo })),
-    conciliacao: { conciliados: C.conciliados ?? C.aprovados, pendentes: C.pendentes ?? C.com_sugestao, sem_sugestao: C.sem_sugestao, taxa: C.taxa ?? C.taxa_pct },
+    // v3.18 FIX: conciliacaoStatus devolve aprovadas/rejeitadas — os nomes antigos (conciliados/taxa) nunca
+    // existiam, por isso o card "Conciliação" do Dashboard ficava sempre vazio.
+    conciliacao: (() => { const ok = C.conciliados ?? C.aprovados ?? C.aprovadas ?? 0, rej = C.rejeitadas ?? 0, pend = C.pendentes ?? C.com_sugestao ?? rej;
+      const tot = ok + rej; return { conciliados: ok, pendentes: pend, rejeitadas: rej, sem_sugestao: C.sem_sugestao, total_aprovado: C.total_aprovado ?? null,
+        taxa: C.taxa ?? C.taxa_pct ?? (tot > 0 ? Math.round(ok / tot * 100) : null), janela_dias: 60, erro: C.erro || null }; })(),
     marcos: Object.fromEntries(Object.entries(M.colunas || {}).map(([k, c]) => [k, { qtd: c.total_count, valor: c.total_valor }])),
     orcamento: O.total_geral || null,
     ultimos_lancamentos: (R.lancamentos || []).slice(0, 12).map(l => ({ data: l.data, desc: (l.descricao || l.nome || '').substring(0, 50), valor: l.valor, tipo: l.tipo })),
