@@ -15223,6 +15223,11 @@ async function syncQuickBooks() {
     } else {
       atualizarPainelFinanceiro(d.realAnual, d.realMes, d.aReceber, d.projetado, d.saldoCaixa);
       renderLancamentos(d.lancamentos || []);
+      // v3.21: A Receber pela mesma base do Fluxo Detalhado (faturas em aberto no QuickBooks)
+      { const cr = d.contasReceber || {}; const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+        u('f_totalReceber', fmtBRL(cr.total || 0)); u('f_vencido', fmtBRL(cr.vencido || 0)); u('f_aVencer', fmtBRL(cr.a_vencer_30d || 0));
+        const bdg = document.getElementById('s3ReceberCnt'); if (bdg && cr.qtd != null) bdg.textContent = cr.qtd;
+        const sc = document.getElementById('f_saldoCaixa'); const ks = sc && sc.parentElement && sc.parentElement.querySelector('.ks'); if (ks && d.saldoCaixaFonte) ks.textContent = 'saldo de hoje · igual ao Fluxo Detalhado'; }
       const tag = document.getElementById('qbTag');
       if (tag) { tag.className = 'tag on'; tag.textContent = 'Sincronizado ' + new Date().toLocaleTimeString('pt-BR'); }
       if (typeof addLog === 'function') addLog('ok', `[S3] QB OK — ${d.lancamentos?.length || 0} lançamentos · saldo ${fmtBRL(d.saldoCaixa)}`);
@@ -16139,6 +16144,8 @@ async function carregarExtratoMensal() {
     u('mensal_ent', fmtBRLcompleto(d.total_entradas));
     u('mensal_sai', fmtBRLcompleto(d.total_saidas));
     u('mensal_sf', fmtBRLcompleto(d.saldo_final));
+    { const t = document.getElementById('mensal_tabela'); if (t && t.parentElement) { let n = document.getElementById('mensal_fonte'); if (!n) { n = document.createElement('div'); n.id = 'mensal_fonte'; n.style.cssText = 'font-size:10px;color:var(--t2);padding:6px 14px;'; t.parentElement.insertBefore(n, t); }
+      n.textContent = d.fonte ? `Fonte: ${d.fonte} — meses passados = realizado; mês atual = realizado até hoje + previsto; meses futuros = previsto.${d.saldo_hoje != null ? ' Saldo de hoje: ' + fmtBRLcompleto(d.saldo_hoje) + '.' : ''}${d.qb_erro ? ' ⚠ ' + d.qb_erro : ''}` : ''; } }
 
     // Chart de barras: entradas vs saídas por mês
     renderChartBarras('mensal_chart',
@@ -16163,7 +16170,7 @@ async function carregarExtratoMensal() {
         <tbody>${d.meses.map(x => {
           const mIdx = parseInt(x.mes.substring(5)) - 1;
           return `<tr style="border-bottom:1px solid rgba(255,255,255,.03);">
-            <td style="padding:7px;font-family:var(--M);font-size:11px;font-weight:600;">${nomesMes[mIdx]}/${x.mes.substring(2,4)}</td>
+            <td style="padding:7px;font-family:var(--M);font-size:11px;font-weight:600;">${nomesMes[mIdx]}/${x.mes.substring(2,4)}${x.situacao ? ` <span style="font-size:8px;font-weight:400;padding:1px 5px;border-radius:3px;border:1px solid var(--bd);color:${x.situacao === 'realizado' ? 'var(--green)' : x.situacao === 'previsto' ? 'var(--gold)' : 'var(--blue)'};">${x.situacao}</span>` : ''}</td>
             <td style="padding:7px;text-align:right;font-family:var(--M);color:var(--t2);">${fmtBRLcompleto(x.saldo_inicio)}</td>
             <td style="padding:7px;text-align:right;font-family:var(--M);color:var(--green);">${x.entradas>0?'+'+fmtBRLcompleto(x.entradas):'-'}</td>
             <td style="padding:7px;text-align:right;font-family:var(--M);color:var(--red);">${x.saidas>0?'-'+fmtBRLcompleto(x.saidas):'-'}</td>
@@ -25438,7 +25445,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.20] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.21] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -25454,7 +25461,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.20';
+window.__ATX_BUILD_ID__ = 'ATX-v3.21';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

@@ -2110,6 +2110,45 @@ function extrairLinhasRelatorio(data) {
 // 2. Painel resumo — único endpoint que o frontend chama no Sync
 // ═══════════════════════════════════════════════════════════════════════════
 
+// ═══ v3.21 — BASE ÚNICA DE CAIXA ═══
+// Todas as telas de consulta do financeiro passam a usar a MESMA fonte da tela "Fluxo Detalhado
+// (extrato real + previsto)", que é a que confere com o banco:
+//   • saldo de hoje   = abertura do mês pelo razão do QuickBooks + lançamentos até hoje (extratoConsolidado)
+//   • a receber/pagar = faturas (Invoice) e contas (Bill) EM ABERTO no QuickBooks (qbFuturosDetalhado)
+// Antes, Dashboard/KPIs/Painel usavam o CurrentBalance das contas (que INCLUI lançamentos com data
+// futura) e o primeiro "total" dos relatórios de aging — daí saldos diferentes do extrato e campos vazios.
+const _baseCache = new Map();
+async function baseCaixaHoje({ conta_id = null } = {}) {
+  const chave = String(conta_id || 'todas');
+  const c = _baseCache.get(chave);
+  if (c && Date.now() - c.em < 60000) return c.valor;
+  const hoje = new Date().toISOString().split('T')[0];
+  const ini = hoje.substring(0, 8) + '01';
+  const em30 = _diasMais(hoje, 30);
+  const [ext, fut] = await Promise.all([
+    extratoConsolidado({ data_inicio: ini, data_fim: hoje, incluir_simulados: true, conta_id }).catch(e => ({ _erro: e.message })),
+    qbFuturosDetalhado({ data_inicio: hoje, data_fim: null }).catch(e => ({ recebiveis: [], pagaveis: [], erro: e.message })),
+  ]);
+  const reais = (fut.recebiveis || []).filter(r => !r.previsao);
+  const prev = (fut.recebiveis || []).filter(r => r.previsao);
+  const soma = (l, f) => round(l.filter(f || (() => true)).reduce((a, x) => a + (x.valor || 0), 0));
+  const valor = {
+    hoje,
+    saldo_hoje: ext._erro || ext.saldo_inicial_origem === 'zero' && !ext.qb_lancamentos ? null : round(ext.saldo_final),
+    saldo_abertura_mes: ext._erro ? null : round(ext.saldo_inicial),
+    saldo_origem: ext._erro ? 'erro: ' + ext._erro : ext.saldo_inicial_origem,
+    entradas_mes: ext._erro ? null : round(ext.total_entradas), saidas_mes: ext._erro ? null : round(ext.total_saidas),
+    a_receber: soma(reais), a_receber_vencido: soma(reais, r => r.vencida), a_receber_30d: soma(reais, r => !r.vencida && r.data <= em30),
+    qtd_receber: reais.length, receita_prevista_marcos: soma(prev),
+    a_pagar: soma(fut.pagaveis || []), a_pagar_vencido: soma(fut.pagaveis || [], p => p.vencida), a_pagar_30d: soma(fut.pagaveis || [], p => !p.vencida && p.data <= em30),
+    qtd_pagar: (fut.pagaveis || []).length,
+    erro: [ext._erro, ext.qb_erro, fut.erro].filter(Boolean).join(' | ') || null,
+    fonte: 'Fluxo Detalhado (extrato real + previsto)',
+  };
+  _baseCache.set(chave, { em: Date.now(), valor });
+  return valor;
+}
+
 async function painelResumo({ mes, ano } = {}) {
   const resp = {
     qb_configurado: qbConfigurado(),
@@ -2184,8 +2223,19 @@ async function painelResumo({ mes, ano } = {}) {
 
   if (contas.status === 'fulfilled') {
     const accs = contas.value?.QueryResponse?.Account || [];
-    resp.saldoCaixa = accs.filter(a => a.Active !== false).reduce((s, a) => s + parseFloat(a.CurrentBalance || 0), 0);
+    resp.saldoCaixaCurrentBalance = accs.filter(a => a.Active !== false).reduce((s, a) => s + parseFloat(a.CurrentBalance || 0), 0);
+    resp.saldoCaixa = resp.saldoCaixaCurrentBalance;
   }
+  // v3.21: saldo, a receber e a pagar pela BASE ÚNICA (mesma do Fluxo Detalhado)
+  try {
+    const b = await baseCaixaHoje({});
+    if (b.saldo_hoje != null) { resp.saldoCaixa = b.saldo_hoje; resp.saldoCaixaFonte = b.fonte; }
+    resp.aReceber = b.a_receber; resp.aPagar = b.a_pagar;
+    resp.projetado = round(b.a_receber + b.receita_prevista_marcos);
+    resp.contasReceber = { total: b.a_receber, vencido: b.a_receber_vencido, a_vencer_30d: b.a_receber_30d, qtd: b.qtd_receber, previsto_marcos: b.receita_prevista_marcos };
+    resp.contasPagar = { total: b.a_pagar, vencido: b.a_pagar_vencido, a_vencer_30d: b.a_pagar_30d, qtd: b.qtd_pagar };
+    if (b.erro) resp.erros.push('Base de caixa: ' + b.erro);
+  } catch (e) { resp.erros.push('Base de caixa: ' + e.message); }
 
   if (lanc.status === 'fulfilled') {
     resp.lancamentos = lanc.value.lancamentos.slice(0, 20);
@@ -2206,7 +2256,9 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
   // 1. Lançamentos QB (já filtrados de ocultos)
   let qbLanc = [], qbErro = null;
   try {
-    const r = await qbLancamentos({ data_inicio: ini, data_fim: fim, limite: 500 });
+    // v3.21: períodos longos (Saldo Mensal = ano inteiro) estouravam 500 por tipo e perdiam lançamentos
+    const _dias = (new Date(fim + 'T12:00:00') - new Date(ini + 'T12:00:00')) / 864e5;
+    const r = await qbLancamentos({ data_inicio: ini, data_fim: fim, limite: _dias > 120 ? 1000 : 500 });
     qbLanc = r.lancamentos || [];
     if (r.erros?.length) qbErro = r.erros.join(' | ');
   } catch (e) {
@@ -2347,7 +2399,7 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
       if (incluir_simulados) {
         try {
           const simAte = await simList({ data_inicio: ini, data_fim: hojeStr2 });
-          movSimuladoAte = (simAte.lancamentos || []).reduce((s, l) => s + (l.tipo === 'entrada' ? l.valor : -l.valor), 0);
+          movSimuladoAte = (simAte.simulados || []).reduce((s, l) => s + (l.tipo === 'entrada' ? l.valor : -l.valor), 0);
         } catch (_) {}
       }
       saldoInicial = round(saldoHoje - movDepois - movSimuladoAte);
@@ -3158,17 +3210,29 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
   // 4b. v1.38: realizado do mês corrente (extrato de caixa do dia 1 até hoje)
   // Necessário porque a projeção do mês atual precisa somar o que JÁ aconteceu com o que falta.
   let realizadoMesCorrente = { entradas: 0, saidas: 0 };
+  // v3.21: FONTE ÚNICA = a mesma do Fluxo Detalhado (extrato real + previsto). Antes o fluxo partia do
+  // saldo de ONTEM (que já contém o que aconteceu no mês) e ainda somava o realizado do mês inteiro —
+  // o mês corrente era contado duas vezes. Agora parte do saldo de abertura do mês (dia 1) e soma o
+  // realizado; o "saldo atual" exibido é o saldo de hoje do extrato, idêntico ao da tela de extrato.
+  let saldoPartida = null;
   try {
     const ini = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
-    const ext = await extratoConsolidado({ data_inicio: ini, data_fim: hoje.toISOString().split('T')[0], incluir_simulados: false, conta_id });
+    const ext = await extratoConsolidado({ data_inicio: ini, data_fim: hoje.toISOString().split('T')[0], incluir_simulados: true, conta_id });
     realizadoMesCorrente = { entradas: ext.total_entradas || 0, saidas: ext.total_saidas || 0 };
+    if (ext.saldo_inicial != null && ext.saldo_inicial_origem !== 'zero') {
+      saldoPartida = round(ext.saldo_inicial);
+      saldoAtual = round(ext.saldo_final);
+      origemSaldo = { ...origemSaldo, fonte: 'extrato_consolidado', saldo_abertura_mes: saldoPartida, saldo_hoje: saldoAtual,
+        observacao: 'Mesmo saldo da tela Fluxo Detalhado (extrato real + previsto): abertura do mês pelo razão do QuickBooks + lançamentos até hoje.' + (origemSaldo.observacao ? ' ' + origemSaldo.observacao : '') };
+    }
   } catch (e) { console.warn('[fluxoFuturo] realizado do mês:', e.message); }
+  if (saldoPartida == null) saldoPartida = round(saldoAtual - ((realizadoMesCorrente.entradas || 0) - (realizadoMesCorrente.saidas || 0)));
 
   // 5. Simulados futuros
   let simulados = [];
   try {
     const fimHor = new Date(hoje.getFullYear(), hoje.getMonth() + meses, 0).toISOString().split('T')[0];
-    const r = await simList({ data_inicio: hoje.toISOString().split('T')[0], data_fim: fimHor });
+    const r = await simList({ data_inicio: new Date(hoje.getTime() + 86400000).toISOString().split('T')[0], data_fim: fimHor }); // v3.21: os de hoje já estão no realizado
     simulados = r.simulados;
   } catch {}
 
@@ -3188,7 +3252,7 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
     '= Saldo Final': {},
   };
 
-  let saldoCorrente = saldoAtual;
+  let saldoCorrente = saldoPartida;
   // v1.86: a projeção agora INCLUI os lançamentos bancários já registrados com data futura —
   // é o que o QuickBooks conta e a nossa projeção ignorava (a diferença de R$ 53.111,39).
   // Bill e Invoice em aberto continuam contando como previsão; o que entra aqui são os
@@ -3405,6 +3469,8 @@ async function kpisSaude({ overrides = {}, conta_id = null } = {}) {
           .filter(a => a.Active !== false)
           .reduce((s, a) => s + parseFloat(a.CurrentBalance || 0), 0);
       }
+      // v3.21: base única (mesma do Fluxo Detalhado) — substitui CurrentBalance e aging
+      let _b = null; try { _b = await baseCaixaHoje({ conta_id }); } catch (_) {}
 
       if (dreM.status === 'fulfilled') {
         const l = extrairLinhasRelatorio(dreM.value);
@@ -3432,6 +3498,12 @@ async function kpisSaude({ overrides = {}, conta_id = null } = {}) {
       if (ap.status === 'fulfilled') {
         const l = extrairLinhasRelatorio(ap.value);
         kpis.contas_pagar = l.find(x => x.tipo === 'total')?.valor || 0;
+      }
+      if (_b) {
+        if (_b.saldo_hoje != null) kpis.saldo_caixa = _b.saldo_hoje;
+        kpis.contas_receber = _b.a_receber; kpis.contas_pagar = _b.a_pagar;
+        kpis.contas_receber_vencido = _b.a_receber_vencido; kpis.contas_pagar_vencido = _b.a_pagar_vencido;
+        kpis.fonte_caixa = _b.fonte;
       }
 
       // v1.20.7 FIX: "ROI Total" era igual à Margem Líquida (bug de exibição — a mesma variável
@@ -5181,70 +5253,81 @@ async function orcamentoConsolidado({ ano } = {}) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function extratoDiario({ data_inicio, data_fim, conta_id = null } = {}) {
+  // v3.21: mesma fonte do Fluxo Detalhado. Dois erros corrigidos: (1) notas fiscais emitidas
+  // (tipo "referencia", que não movem caixa) eram somadas como SAÍDA; (2) dias futuros do período
+  // ficavam zerados — agora recebem o previsto (faturas/contas em aberto, despesas, simulados...).
   const hoje = new Date().toISOString().split('T')[0];
   const ini = data_inicio || new Date(Date.now() - 30 * 86400 * 1000).toISOString().split('T')[0];
   const fim = data_fim || hoje;
-
-  // v1.66: respeita o filtro de conta — o saldo inicial vem da mesma fonte oficial do extrato
-  const ext = await extratoConsolidado({ data_inicio: ini, data_fim: fim, conta_id });
-
-  // Agregar por dia
+  const fd = await fluxoDetalhado({ data_inicio: ini, data_fim: fim, conta_id });
   const porDia = {};
-  let saldoCorrente = ext.saldo_inicial || 0;
-  // Construir lista de dias do período
-  const dt0 = new Date(ini + 'T00:00:00');
-  const dt1 = new Date(fim + 'T00:00:00');
-  for (let d = new Date(dt0); d <= dt1; d.setDate(d.getDate() + 1)) {
+  for (let d = new Date(ini + 'T12:00:00'); d <= new Date(fim + 'T12:00:00'); d.setDate(d.getDate() + 1)) {
     const key = d.toISOString().split('T')[0];
-    porDia[key] = {
-      data: key,
-      entradas: 0,
-      saidas: 0,
-      resultado: 0,
-      lancamentos_count: 0,
-      saldo_inicio: saldoCorrente,
-      saldo_fim: saldoCorrente,
-    };
+    porDia[key] = { data: key, entradas: 0, saidas: 0, resultado: 0, lancamentos_count: 0, saldo_inicio: 0, saldo_fim: 0, previsto: key > hoje };
   }
-
-  // Agregar
-  for (const l of ext.lancamentos) {
-    const dia = porDia[l.data];
-    if (!dia) continue;
-    if (l.tipo === 'entrada') dia.entradas += l.valor;
-    else dia.saidas += l.valor;
-    dia.lancamentos_count++;
-  }
-
-  // Recalcular saldos em cascata
-  saldoCorrente = ext.saldo_inicial || 0;
-  for (const k of Object.keys(porDia).sort()) {
-    porDia[k].saldo_inicio = round(saldoCorrente);
-    porDia[k].resultado = round(porDia[k].entradas - porDia[k].saidas);
-    saldoCorrente += porDia[k].resultado;
-    porDia[k].saldo_fim = round(saldoCorrente);
-    porDia[k].entradas = round(porDia[k].entradas);
-    porDia[k].saidas = round(porDia[k].saidas);
-  }
-
+  const somar = l => { const dia = porDia[String(l.data).substring(0, 10)]; if (!dia) return;
+    if (l.tipo === 'entrada') dia.entradas += l.valor; else if (l.tipo === 'saida') dia.saidas += l.valor; else return;
+    dia.lancamentos_count++; };
+  (fd.passado?.lancamentos || []).forEach(somar);
+  (fd.futuro?.lancamentos || []).forEach(somar);
+  let saldoCorrente = fd.saldo_inicial || 0;
+  for (const k of Object.keys(porDia).sort()) { const d = porDia[k];
+    d.saldo_inicio = round(saldoCorrente); d.resultado = round(d.entradas - d.saidas); saldoCorrente += d.resultado; d.saldo_fim = round(saldoCorrente);
+    d.entradas = round(d.entradas); d.saidas = round(d.saidas); }
   const dias = Object.values(porDia);
-  const totalEntradas = dias.reduce((s, d) => s + d.entradas, 0);
-  const totalSaidas = dias.reduce((s, d) => s + d.saidas, 0);
-
   return {
-    saldo_inicial: ext.saldo_inicial, saldo_inicial_origem: ext.saldo_inicial_origem,
-    saldo_inicial_detalhe: ext.saldo_inicial_detalhe, conta_id: conta_id || null,
-
-    periodo: { data_inicio: ini, data_fim: fim },
-    saldo_inicial: ext.saldo_inicial,
+    periodo: { data_inicio: ini, data_fim: fim }, conta_id: conta_id || null, fonte: 'Fluxo Detalhado (extrato real + previsto)',
+    saldo_inicial: fd.saldo_inicial, saldo_inicial_origem: fd.passado?.saldo_inicial_detalhe ? 'balanco_patrimonial' : null,
+    saldo_inicial_detalhe: fd.passado?.saldo_inicial_detalhe || null, saldo_inicial_aviso: fd.saldo_inicial_aviso || null,
+    saldo_hoje: fd.saldo_hoje,
     saldo_final: round(saldoCorrente),
-    total_entradas: round(totalEntradas),
-    total_saidas: round(totalSaidas),
+    total_entradas: round(dias.reduce((s, d) => s + d.entradas, 0)),
+    total_saidas: round(dias.reduce((s, d) => s + d.saidas, 0)),
+    qb_erro: [fd.passado?.qb_erro, fd.futuro?.qb_erro].filter(Boolean).join(' | ') || null,
     dias,
   };
 }
 
 async function extratoMensal({ ano, conta_id = null } = {}) {
+  // v3.21: mesma fonte da tela Fluxo Detalhado (extrato real + previsto). Meses passados = realizado
+  // do extrato; mês corrente = realizado até hoje + previsto; meses futuros = previsto (faturas e contas
+  // em aberto, despesas programadas, simulados, lançamentos futuros e recorrentes do QuickBooks).
+  const anoRef = parseInt(ano) || new Date().getFullYear();
+  const inicio = `${anoRef}-01-01`, fim = `${anoRef}-12-31`;
+  const hoje = new Date().toISOString().split('T')[0];
+  if (inicio > hoje) return extratoMensalLegado({ ano: anoRef, conta_id });
+  const fd = await fluxoDetalhado({ data_inicio: inicio, data_fim: fim, conta_id });
+  const porMes = {};
+  for (let m = 1; m <= 12; m++) { const key = `${anoRef}-${String(m).padStart(2, '0')}`;
+    porMes[key] = { mes: key, entradas: 0, saidas: 0, entradas_realizadas: 0, saidas_realizadas: 0, entradas_previstas: 0, saidas_previstas: 0, resultado: 0, lancamentos_count: 0, saldo_inicio: 0, saldo_fim: 0,
+      situacao: key < hoje.substring(0, 7) ? 'realizado' : key === hoje.substring(0, 7) ? 'realizado + previsto' : 'previsto' }; }
+  const somar = (l, previsto) => { const m = porMes[String(l.data).substring(0, 7)]; if (!m) return;
+    if (l.tipo === 'entrada') { m.entradas += l.valor; m[previsto ? 'entradas_previstas' : 'entradas_realizadas'] += l.valor; }
+    else if (l.tipo === 'saida') { m.saidas += l.valor; m[previsto ? 'saidas_previstas' : 'saidas_realizadas'] += l.valor; }
+    else return;
+    m.lancamentos_count++; };
+  (fd.passado?.lancamentos || []).forEach(l => somar(l, false));
+  (fd.futuro?.lancamentos || []).filter(l => l.data <= fim).forEach(l => somar(l, true));
+  let saldoCorrente = fd.saldo_inicial || 0;
+  for (const k of Object.keys(porMes).sort()) { const m = porMes[k];
+    m.saldo_inicio = round(saldoCorrente); m.resultado = round(m.entradas - m.saidas); saldoCorrente += m.resultado; m.saldo_fim = round(saldoCorrente);
+    ['entradas','saidas','entradas_realizadas','saidas_realizadas','entradas_previstas','saidas_previstas'].forEach(c => m[c] = round(m[c])); }
+  const meses = Object.values(porMes);
+  const mesHoje = porMes[hoje.substring(0, 7)];
+  return {
+    ano: anoRef, conta_id: conta_id || null, fonte: 'Fluxo Detalhado (extrato real + previsto)',
+    saldo_inicial: fd.saldo_inicial, saldo_inicial_origem: fd.passado?.saldo_inicial_detalhe ? 'balanco_patrimonial' : null,
+    saldo_inicial_detalhe: fd.passado?.saldo_inicial_detalhe || null, saldo_inicial_aviso: fd.saldo_inicial_aviso || null,
+    saldo_hoje: fd.saldo_hoje,
+    saldo_final: round(saldoCorrente),
+    total_entradas: round(meses.reduce((s, m) => s + m.entradas, 0)),
+    total_saidas: round(meses.reduce((s, m) => s + m.saidas, 0)),
+    qb_erro: [fd.passado?.qb_erro, fd.futuro?.qb_erro].filter(Boolean).join(' | ') || null,
+    meses,
+  };
+}
+
+async function extratoMensalLegado({ ano, conta_id = null } = {}) {
   const anoRef = ano || new Date().getFullYear();
   const inicio = `${anoRef}-01-01`;
   const fim = `${anoRef}-12-31`;
@@ -5255,26 +5338,16 @@ async function extratoMensal({ ano, conta_id = null } = {}) {
   const porMes = {};
   for (let m = 1; m <= 12; m++) {
     const key = `${anoRef}-${String(m).padStart(2, '0')}`;
-    porMes[key] = {
-      mes: key,
-      entradas: 0,
-      saidas: 0,
-      resultado: 0,
-      lancamentos_count: 0,
-      saldo_inicio: 0,
-      saldo_fim: 0,
-    };
+    porMes[key] = { mes: key, entradas: 0, saidas: 0, resultado: 0, lancamentos_count: 0, saldo_inicio: 0, saldo_fim: 0 };
   }
   for (const l of ext.lancamentos) {
-    const mesKey = String(l.data).substring(0, 7);
-    const m = porMes[mesKey];
+    const m = porMes[String(l.data).substring(0, 7)];
     if (!m) continue;
     if (l.tipo === 'entrada') m.entradas += l.valor;
-    else m.saidas += l.valor;
+    else if (l.tipo === 'saida') m.saidas += l.valor;
+    else continue;
     m.lancamentos_count++;
   }
-
-  // Recalcular saldos em cascata
   let saldoCorrente = ext.saldo_inicial || 0;
   for (const k of Object.keys(porMes).sort()) {
     porMes[k].saldo_inicio = round(saldoCorrente);
@@ -5284,19 +5357,9 @@ async function extratoMensal({ ano, conta_id = null } = {}) {
     porMes[k].entradas = round(porMes[k].entradas);
     porMes[k].saidas = round(porMes[k].saidas);
   }
-
   const meses = Object.values(porMes);
-  return {
-    saldo_inicial: ext.saldo_inicial, saldo_inicial_origem: ext.saldo_inicial_origem,
-    saldo_inicial_detalhe: ext.saldo_inicial_detalhe, conta_id: conta_id || null,
-
-    ano: anoRef,
-    saldo_inicial: ext.saldo_inicial,
-    saldo_final: round(saldoCorrente),
-    total_entradas: round(meses.reduce((s, m) => s + m.entradas, 0)),
-    total_saidas: round(meses.reduce((s, m) => s + m.saidas, 0)),
-    meses,
-  };
+  return { saldo_inicial: ext.saldo_inicial, saldo_inicial_origem: ext.saldo_inicial_origem, saldo_inicial_detalhe: ext.saldo_inicial_detalhe, conta_id: conta_id || null,
+    ano: anoRef, saldo_final: round(saldoCorrente), total_entradas: round(meses.reduce((s, m) => s + m.entradas, 0)), total_saidas: round(meses.reduce((s, m) => s + m.saidas, 0)), meses };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
