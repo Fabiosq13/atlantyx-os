@@ -3,10 +3,79 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+// v3.10: tema claro/escuro — aplicado antes de desenhar a tela (sem "piscar")
+try { var _t = localStorage.getItem('atx_tema'); if (_t === 'light' || _t === 'dark') document.documentElement.setAttribute('data-theme', _t); } catch (e) {}
+// No tema claro, cores de TEXTO vindas de dados (hex claros: ciano, verde, lilás...) são escurecidas
+// na mesma família para manter leitura sobre fundo branco. var(--x) e o tema escuro passam direto.
+function _corTxt(c) {
+  if (typeof c !== 'string' || document.documentElement.getAttribute('data-theme') !== 'light') return c;
+  var m = c.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i); if (!m) return c;
+  var h = m[1]; if (h.length === 3) h = h.split('').map(function (x) { return x + x; }).join('');
+  var r = parseInt(h.substr(0, 2), 16), g = parseInt(h.substr(2, 2), 16), b = parseInt(h.substr(4, 2), 16);
+  var L = (0.299 * r + 0.587 * g + 0.114 * b) / 255; if (L <= 0.42) return c;
+  var k = 0.40 / L; return 'rgb(' + Math.round(r * k) + ',' + Math.round(g * k) + ',' + Math.round(b * k) + ')';
+}
+function _temaIcone() { var b = document.getElementById('btnTema'); if (!b) return; var claro = document.documentElement.getAttribute('data-theme') === 'light'; b.innerHTML = claro ? '&#9790;' : '&#9788;'; b.title = claro ? 'Mudar para o modo escuro' : 'Mudar para o modo claro'; }
+function alternarTema() {
+  var claro = document.documentElement.getAttribute('data-theme') !== 'light';
+  document.documentElement.setAttribute('data-theme', claro ? 'light' : 'dark');
+  try { localStorage.setItem('atx_tema', claro ? 'light' : 'dark'); } catch (e) {}
+  _temaIcone();
+  // redesenha a tela atual para as cores vindas de dados acompanharem o tema
+  try { var pg = document.querySelector('.page.active'); var sb = document.querySelector('.sbi.active'); if (pg && typeof nav === 'function') nav(pg.id.replace('page-', ''), sb); } catch (e) {}
+}
+document.addEventListener('DOMContentLoaded', _temaIcone);
+</script>
 <title>Atlantyx OS — Monitor de Agentes</title>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#07080f;--bg2:#0c0d18;--bg3:#101120;--bg4:#151628;--bd:rgba(255,255,255,0.065);--bd2:rgba(255,255,255,0.12);--t1:#eceefa;--t2:#7a7c9e;--t3:#42445a;--blue:#4f7cff;--b2:rgba(79,124,255,0.12);--green:#22d3a3;--g2:rgba(34,211,163,0.1);--red:#ff5b5b;--r2:rgba(255,91,91,0.1);--gold:#f5a623;--go2:rgba(245,166,35,0.1);--pu:#9c6dff;--pu2:rgba(156,109,255,0.1);--or:#f07030;--or2:rgba(240,112,48,0.12);--s7:#f03070;--s72:rgba(240,48,112,0.12);--H:Syne,sans-serif;--B:DM Sans,sans-serif;--M:DM Mono,monospace;--SB:222px;}
+:root{--bg:#07080f;--bg2:#0c0d18;--bg3:#101120;--bg4:#151628;--bd:rgba(255,255,255,0.065);--bd2:rgba(255,255,255,0.12);--t1:#eceefa;--t2:#7a7c9e;--t3:#42445a;--blue:#4f7cff;--b2:rgba(79,124,255,0.12);--green:#22d3a3;--g2:rgba(34,211,163,0.1);--red:#ff5b5b;--r2:rgba(255,91,91,0.1);--gold:#f5a623;--go2:rgba(245,166,35,0.1);--pu:#9c6dff;--pu2:rgba(156,109,255,0.1);--or:#f07030;--or2:rgba(240,112,48,0.12);--s7:#f03070;--s72:rgba(240,48,112,0.12);--H:Syne,sans-serif;--B:DM Sans,sans-serif;--M:DM Mono,monospace;--SB:222px;--s1c:#6b9fff;--ei:#00cfc8;color-scheme:dark;}
+/* ═══ v3.10 TEMA CLARO — identidade Atlantyx (Montserrat · preto/branco · ciano #00C4CC/#00C2E4 · verde #00FCA8) ═══
+   Texto em destaque usa tons ESCUROS da mesma família (petróleo #00708A, verde #047857, âmbar #A16207);
+   o ciano e o verde claros ficam só em barras, bordas e fundos. */
+html[data-theme="light"]{--bg:#EEEFF1;--bg2:#FFFFFF;--bg3:#FFFFFF;--bg4:#F4F5F7;--bd:rgba(0,0,0,0.09);--bd2:rgba(0,0,0,0.17);--t1:#0B0B0E;--t2:#4A5160;--t3:#858B97;
+  --blue:#00708A;--b2:rgba(0,196,204,0.12);--green:#047857;--g2:rgba(0,252,168,0.16);--red:#B42318;--r2:rgba(220,38,38,0.08);--gold:#A16207;--go2:rgba(245,166,35,0.14);
+  --pu:#6D28D9;--pu2:rgba(109,40,217,0.08);--or:#C2410C;--or2:rgba(234,88,12,0.10);--s7:#BE185D;--s72:rgba(190,24,93,0.08);--s1c:#00708A;--ei:#00708A;
+  --H:Montserrat,sans-serif;--B:Montserrat,sans-serif;--M:Montserrat,sans-serif;color-scheme:light;}
+html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;}
+html[data-theme="light"] body{font-size:12.5px;}
+html[data-theme="light"] .kv{font-variant-numeric:tabular-nums;letter-spacing:-.2px;}
+html[data-theme="light"] .kl{font-size:9px;font-weight:600;letter-spacing:.6px;}
+html[data-theme="light"] .fl{font-size:9px;font-weight:600;letter-spacing:.5px;}
+html[data-theme="light"] th{font-size:9px;font-weight:600;letter-spacing:.5px;color:#374151;background:#F4F5F7;}
+html[data-theme="light"] td{border-bottom-color:rgba(0,0,0,0.06);}
+html[data-theme="light"] .pt,html[data-theme="light"] .tb-t{font-weight:700;letter-spacing:-.1px;}
+html[data-theme="light"] .tag{font-weight:600;}
+html[data-theme="light"] .sg-divisor,html[data-theme="light"] .sg-sub,html[data-theme="light"] .sb-sec{font-size:10px;font-weight:600;letter-spacing:1px;}
+html[data-theme="light"] .sg-lbl,html[data-theme="light"] .sg-fundador .sg-lbl{font-weight:600;color:#0B0B0E;}
+html[data-theme="light"] .sbi{font-weight:500;}
+html[data-theme="light"] .sb-sec{background:#000;}
+html[data-theme="light"] .sb{box-shadow:1px 0 0 rgba(0,0,0,.04);}
+html[data-theme="light"] .panel,html[data-theme="light"] .kpi{box-shadow:0 1px 2px rgba(16,24,40,.05);}
+html[data-theme="light"] .sbi:hover{background:rgba(0,0,0,0.03);}
+html[data-theme="light"] .sbi.active,html[data-theme="light"] .sbi.s1.active,html[data-theme="light"] .sbi.s3.active,html[data-theme="light"] .sbi.ei.active{color:#00708A;border-left-color:#00C4CC;background:rgba(0,196,204,0.10);font-weight:600;}
+html[data-theme="light"] .btn-p{background:#000;color:#fff;}
+html[data-theme="light"] .btn-p:hover{background:#00708A;}
+html[data-theme="light"] .btn-gn{background:rgba(0,252,168,0.16);border-color:rgba(0,200,140,.55);color:#047857;}
+html[data-theme="light"] .btn-g{color:#374151;}
+html[data-theme="light"] .kpi.bl::after{background:#00C2E4;}
+html[data-theme="light"] .kpi.gn::after{background:#00FCA8;}
+html[data-theme="light"] .kpi.gd::after{background:#F5A623;}
+html[data-theme="light"] .tag.live{border-color:rgba(0,200,140,.45);}
+html[data-theme="light"] .tag.on{border-color:rgba(0,196,204,.45);}
+html[data-theme="light"] .live-badge{border-color:rgba(0,200,140,.45);}
+html[data-theme="light"] .sg-middle .sg-badge{color:#00708A;}
+html[data-theme="light"] .le.action{background:rgba(0,0,0,.03);}
+/* logo: modo escuro mantém o nome; modo claro usa a marca Atlantyx */
+.logo-escuro{display:flex;align-items:center;gap:7px;}
+.logo-claro{display:none;}
+html[data-theme="light"] .logo-claro{display:flex;align-items:center;gap:8px;white-space:nowrap;}
+html[data-theme="light"] .logo-escuro{display:none;}
+.logo-claro .lg-txt{font-family:Montserrat,sans-serif;font-weight:500;font-size:15px;letter-spacing:1.3px;color:#000;white-space:nowrap;}
+.logo-claro .lg-os{font-family:Montserrat,sans-serif;font-weight:600;font-size:9px;letter-spacing:1.5px;color:#00708A;border:1px solid #00C4CC;border-radius:3px;padding:1px 4px;margin-left:2px;}
+.btn-tema{min-width:34px;justify-content:center;}
+
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:var(--bg);color:var(--t1);font-family:var(--B);font-size:13px;display:flex;min-height:100vh;}
 @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.15;}}
@@ -23,7 +92,7 @@ body{background:var(--bg);color:var(--t1);font-family:var(--B);font-size:13px;di
 .sbi{display:flex;align-items:center;gap:7px;padding:7px 13px;cursor:pointer;color:var(--t1);font-size:11.5px;border-left:2px solid transparent;transition:all .1s;white-space:nowrap;}
 .sbi:hover{color:var(--t1);background:rgba(255,255,255,0.02);}
 .sbi.active{color:var(--blue);border-left-color:var(--blue);background:rgba(79,124,255,0.06);}
-.sbi.s1.active{color:#6b9fff;border-left-color:#6b9fff;background:rgba(26,58,143,0.18);}.sbi.ei.active{color:#00cfc8;border-left-color:#00cfc8;background:rgba(0,207,200,0.1);}.sbi.s2.active{color:var(--or);border-left-color:var(--or);background:var(--or2);}
+.sbi.s1.active{color:var(--s1c);border-left-color:var(--s1c);background:rgba(26,58,143,0.18);}.sbi.ei.active{color:var(--ei);border-left-color:var(--ei);background:rgba(0,207,200,0.1);}.sbi.s2.active{color:var(--or);border-left-color:var(--or);background:var(--or2);}
 .sbi.s7.active{color:var(--s7);border-left-color:var(--s7);background:var(--s72);}
 .nbx{margin-left:auto;font-family:var(--M);font-size:7.5px;padding:1px 5px;border-radius:3px;}
 .nbx.gn{background:var(--g2);color:var(--green);}
@@ -132,7 +201,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 .sg-hd:hover{background:var(--bg4);}
 .sg-badge{font-family:var(--M);font-size:7px;letter-spacing:.8px;padding:2px 5px;border-radius:3px;flex-shrink:0;}
 .sg-front .sg-badge{background:rgba(240,112,48,.15);color:var(--or);}
-.sg-middle .sg-badge{background:rgba(0,207,200,.12);color:#00cfc8;}
+.sg-middle .sg-badge{background:rgba(0,207,200,.12);color:var(--ei);}
 .sg-backoffice .sg-badge{background:rgba(79,124,255,.12);color:var(--blue);}
 .sg-lbl{font-size:11px;font-weight:500;color:var(--t1);flex:1;}
 .sg-arr{font-size:9px;color:var(--t2);transition:transform .2s;flex-shrink:0;}
@@ -140,7 +209,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 .sg-body{overflow:hidden;transition:max-height .3s ease;max-height:2000px;}
 .sg-body.closed{max-height:0;}
 .sg-body .sbi{padding:6px 10px 6px 22px;font-size:11px;margin:1px 6px;border-radius:5px;}
-.sbi.s3.active{color:#22d3a3;border-left-color:#22d3a3;background:rgba(34,211,163,.08);}
+.sbi.s3.active{color:var(--green);border-left-color:var(--green);background:rgba(34,211,163,.08);}
 .sbi.s3{color:var(--t1);}
 ::-webkit-scrollbar{width:2px;}
 ::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:2px;}
@@ -152,7 +221,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 .sg-divisor::before{content:'';display:block;height:1px;background:var(--bd);margin-bottom:8px;}
 .sg-sub{font-family:var(--M);font-size:7.5px;letter-spacing:1.2px;text-transform:uppercase;
   color:var(--t3);padding:7px 22px 2px;margin-top:2px;}
-.sg-fundador .sg-lbl{color:#9c6dff;}
+.sg-fundador .sg-lbl{color:var(--pu);}
 .sg-hd{padding:6px 10px;}
 .sg-body .sbi{padding:6px 10px 6px 28px;font-size:11px;margin:1px 5px;}
 
@@ -163,7 +232,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <body>
 <aside class="sb">
   <div class="sb-logo">
-    <div class="sb-name"><span class="sb-dot"></span>Atlantyx OS</div>
+    <div class="sb-name"><span class="logo-escuro"><span class="sb-dot"></span>Atlantyx OS</span><span class="logo-claro" title="Atlantyx OS"><svg width="22" height="30" viewBox="0 0 40 54" fill="none" stroke="#000" stroke-width="2.6" aria-hidden="true"><rect x="8.5" y="7.5" width="23" height="23" rx="4.5" transform="rotate(45 20 19)"/><rect x="8.5" y="23.5" width="23" height="23" rx="4.5" transform="rotate(45 20 35)"/></svg><span class="lg-txt">ATLANTYX.</span><span class="lg-os">OS</span></span></div>
     <div class="sb-sub">Monitor de Agentes · LIVE</div>
     <div style="font-family:var(--M);font-size:7px;color:var(--t3);margin-top:2px;" id="sidebarBuildId" title="Build atual — click para checar saúde">ATX-carregando...</div>
   </div>
@@ -387,11 +456,11 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <span class="sg-lbl">Dashboard Studio</span><span class="sg-arr" id="arr-gDash">&#9660;</span>
     </div>
     <div class="sg-body closed" id="gDash">
-      <div class="sbi" style="color:#9c6dff;" onclick="nav('s13hub',this)">&#128202; Hub de Dashboards</div>
-      <div class="sbi" style="color:#9c6dff;" onclick="nav('s13novo',this)">+ Nova Especificacao</div>
+      <div class="sbi" style="color:var(--pu);" onclick="nav('s13hub',this)">&#128202; Hub de Dashboards</div>
+      <div class="sbi" style="color:var(--pu);" onclick="nav('s13novo',this)">+ Nova Especificacao</div>
       <div class="sg-sub">RESULTADO</div>
-      <div class="sbi" style="color:#9c6dff;" onclick="nav('s13mockup',this)">&#9670; Mockup + Refinamento IA</div>
-      <div class="sbi" style="color:#9c6dff;" onclick="nav('s13codigo',this)">&#128196; Codigo Final</div>
+      <div class="sbi" style="color:var(--pu);" onclick="nav('s13mockup',this)">&#9670; Mockup + Refinamento IA</div>
+      <div class="sbi" style="color:var(--pu);" onclick="nav('s13codigo',this)">&#128196; Codigo Final</div>
     </div>
 
     <!-- S12 · DATA ENGINEERING -->
@@ -428,6 +497,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <span class="tb-t">Atlantyx OS</span>
     <span class="tb-bc" id="tbc">/ Dashboard ao Vivo</span>
     <div class="tb-r">
+      <button class="btn btn-g btn-tema" id="btnTema" onclick="alternarTema()" title="Alternar modo claro / escuro" style="font-size:12px;padding:5px 9px;">&#9788;</button>
       <div class="live-badge"><span class="live-dot"></span>AO VIVO</div>
       <button class="btn btn-g" style="font-size:10px;padding:5px 9px;" onclick="refreshAll()">&#8635; Atualizar</button>
     </div>
@@ -535,9 +605,9 @@ tr:hover td{background:rgba(79,124,255,.03);}
     </div>
     <!-- MODOS DE PROSPECÇÃO -->
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-      <button class="btn" id="modoUnico" onclick="setModoProspect('unico')" style="flex:1;border-color:#4f7cff;color:#4f7cff;">&#9670; Empresa + Decisor</button>
+      <button class="btn" id="modoUnico" onclick="setModoProspect('unico')" style="flex:1;border-color:var(--blue);color:var(--blue);">&#9670; Empresa + Decisor</button>
       <button class="btn btn-or" id="modoCadeia" onclick="setModoProspect('cadeia')" style="flex:1;">&#9670; Cadeia C-Level Completa</button>
-      <button class="btn" id="modoEvento" onclick="setModoProspect('evento')" style="flex:1;border-color:#22d3a3;color:#22d3a3;">&#127881; Por Evento</button>
+      <button class="btn" id="modoEvento" onclick="setModoProspect('evento')" style="flex:1;border-color:var(--green);color:var(--green);">&#127881; Por Evento</button>
       <button class="btn" id="modoLinkedin" onclick="setModoProspect('linkedin')" style="flex:1;border-color:#0a66c2;color:#0a66c2;">&#128101; LinkedIn + Apollo</button>
     </div>
 
@@ -1373,7 +1443,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div style="background:linear-gradient(135deg,rgba(26,58,143,.22),rgba(107,159,255,.08));border:1px solid rgba(107,159,255,.2);border-radius:9px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div style="font-family:var(--H);font-size:24px;font-weight:800;opacity:.12;">S1</div>
       <div style="flex:1;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">Planejamento Estratégico + Linha de Produtos</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px;">Captação · Viabilidade · Pesquisa · Financeiro · Comitê · Fundador · Handoff · GP · OKR · Relatórios</div></div>
-      <div style="background:rgba(26,58,143,.3);border:1px solid rgba(107,159,255,.25);padding:4px 10px;border-radius:5px;font-family:var(--M);font-size:8.5px;color:#6b9fff;">● 10 Agentes</div>
+      <div style="background:rgba(26,58,143,.3);border:1px solid rgba(107,159,255,.25);padding:4px 10px;border-radius:5px;font-family:var(--M);font-size:8.5px;color:var(--s1c);">● 10 Agentes</div>
     </div>
     <div class="kg k4" style="margin-bottom:13px;">
       <div class="kpi bl"><div class="kl">Ideias no Pipeline</div><div class="kv" id="s1_ideias">0</div><div class="ks">capturadas</div></div>
@@ -2392,12 +2462,12 @@ tr:hover td{background:rgba(79,124,255,.03);}
             <button class="btn" style="font-size:9px;color:var(--gold);border-color:var(--gold);" onclick="toggleDebugPreview()">&#9679; Debug Preview</button>
           </div>
           <!-- DEBUG PREVIEW -->
-          <div id="debugPreviewPanel" style="display:none;background:#0a0b14;border:1px solid var(--gold);border-radius:8px;padding:16px;margin-bottom:12px;">
+          <div id="debugPreviewPanel" style="display:none;background:var(--bg);border:1px solid var(--gold);border-radius:8px;padding:16px;margin-bottom:12px;">
             <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--gold);margin-bottom:12px;display:flex;align-items:center;gap:8px;">
               &#9679; DEBUG — PREVIEW POR CANAL
               <button onclick="toggleDebugPreview()" style="margin-left:auto;background:none;border:none;color:var(--t3);cursor:pointer;font-size:16px;">&#10005;</button>
             </div>
-            <div id="debugPreviewOutput" style="font-family:monospace;font-size:11px;line-height:1.9;color:#e0e0e0;"></div>
+            <div id="debugPreviewOutput" style="font-family:monospace;font-size:11px;line-height:1.9;color:var(--t1);"></div>
             <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
               <button class="btn btn-g" style="font-size:10px;" onclick="runDebugPreview()">&#8635; Re-rodar Debug</button>
               <button class="btn btn-p" style="font-size:10px;" onclick="gerarPreviewTodosCanais();toggleDebugPreview();">&#9670; Gerar + Fechar</button>
@@ -2453,12 +2523,12 @@ tr:hover td{background:rgba(79,124,255,.03);}
       </div>
 
       <!-- DEBUG CAMPANHAS -->
-      <div id="debugCampanhasPanel" style="display:none;margin-top:16px;background:#0a0b14;border:1px solid var(--gold);border-radius:8px;padding:16px;">
+      <div id="debugCampanhasPanel" style="display:none;margin-top:16px;background:var(--bg);border:1px solid var(--gold);border-radius:8px;padding:16px;">
         <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--gold);margin-bottom:12px;display:flex;align-items:center;gap:8px;">
           &#9679; DEBUG — SISTEMA DE CAMPANHAS
           <button onclick="toggleDebugCampanhas()" style="margin-left:auto;background:none;border:none;color:var(--t3);cursor:pointer;font-size:16px;">&#10005;</button>
         </div>
-        <div id="debugCampanhasOutput" style="font-family:monospace;font-size:11px;line-height:1.9;color:#e0e0e0;"></div>
+        <div id="debugCampanhasOutput" style="font-family:monospace;font-size:11px;line-height:1.9;color:var(--t1);"></div>
         <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
           <button class="btn btn-g" style="font-size:10px;" onclick="runDebugCampanhas()">&#8635; Re-rodar Debug</button>
           <button class="btn btn-or" style="font-size:10px;" onclick="forcarCarregarLocal()">&#9654; Forçar Local</button>
@@ -2508,10 +2578,10 @@ tr:hover td{background:rgba(79,124,255,.03);}
       </div>
       <div style="margin-top:14px;background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;font-size:11px;color:var(--t2);">
         <strong style="color:var(--t1);">Legenda:</strong>
-        <span style="margin-left:14px;color:#22d3a3;">&#9679; Ativa</span>
-        <span style="margin-left:14px;color:#f5a623;">&#9679; Pausada</span>
-        <span style="margin-left:14px;color:#7a7c9e;">&#9679; Encerrada</span>
-        <span style="margin-left:14px;color:#9c6dff;">&#9679; Rascunho</span>
+        <span style="margin-left:14px;color:var(--green);">&#9679; Ativa</span>
+        <span style="margin-left:14px;color:var(--gold);">&#9679; Pausada</span>
+        <span style="margin-left:14px;color:var(--t2);">&#9679; Encerrada</span>
+        <span style="margin-left:14px;color:var(--pu);">&#9679; Rascunho</span>
         <span style="margin-left:14px;">| Clique numa campanha para abrir</span>
       </div>
     </div> </div>
@@ -2596,7 +2666,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
         <!-- DIMENSAO ESPIRITUAL -->
         <div style="margin-bottom:16px;">
-          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;letter-spacing:1px;color:#9c6dff;margin-bottom:8px;">DIMENSAO ESPIRITUAL E DE PROPOSITO</div>
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;letter-spacing:1px;color:var(--pu);margin-bottom:8px;">DIMENSAO ESPIRITUAL E DE PROPOSITO</div>
           <div class="fg"><label class="fl">Qual e o seu proposito de vida? O que voce veio fazer no mundo?</label>
             <textarea class="fta" id="pPropVida" style="min-height:65px;" placeholder="Ex: Ser instrumento de transformacao, ajudar empresas a tomarem decisoes melhores e assim gerar empregos, renda e dignidade para mais pessoas..."></textarea></div>
           <div class="fg"><label class="fl">Qual bem voce quer praticar atraves da Atlantyx?</label>
@@ -2662,7 +2732,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
     <!-- DASHBOARD DE METAS INTEGRADAS -->
     <div id="propDashPanel" style="display:none;">
-      <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;letter-spacing:1px;color:#9c6dff;margin-bottom:10px;">DASHBOARD DE METAS — PESSOAL + EMPRESA</div>
+      <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;letter-spacing:1px;color:var(--pu);margin-bottom:10px;">DASHBOARD DE METAS — PESSOAL + EMPRESA</div>
       <div class="kg k3" id="propKPIs" style="margin-bottom:12px;"></div>
       <div class="kg k2" id="propMetas"></div>
     </div>
@@ -4383,7 +4453,7 @@ async function runBatch(){const btn=document.getElementById('btnBatch');const st
 async function meetAction(action){const st=document.getElementById('meetStatus');const res=document.getElementById('meetResult');st.textContent='Executando...';st.className='tag on';res.innerHTML='<span style="color:var(--blue);font-family:var(--M);">Processando...</span>';addLog('info','[S7-07/08] '+action+': '+document.getElementById('mComp').value);const data=await api('/api/meeting-schedule','POST',{action,lead_name:document.getElementById('mName').value,lead_company:document.getElementById('mComp').value,lead_cargo:document.getElementById('mCargo').value,lead_phone:document.getElementById('mPhone').value,lead_setor:document.getElementById('mSetor').value,data_hora:document.getElementById('mData').value,deal_id:document.getElementById('mDeal').value||null});if(data){st.textContent='Concluido';st.className='tag live';if(action==='gerar_briefing'&&data.briefing){res.textContent=data.briefing;_briefSalvar(data.briefing);}else{res.innerHTML='<div style="color:var(--green);font-size:12px;margin-bottom:8px;">OK '+(action==='propor_horarios'?'Horarios enviados via WA':action==='confirmar'?'Reuniao confirmada!':'Briefing gerado e enviado.')+'</div>'+(data.opcoes?'<div style="font-size:11px;color:var(--t2);">'+data.opcoes.join('<br>')+'</div>':'');}addLog('success','[S7-07] '+action+' - '+document.getElementById('mComp').value);toast('Concluido: '+action,'success');}else{st.textContent='Erro';st.className='tag hot';res.innerHTML='<span style="color:var(--red);">Erro - verifique variaveis de ambiente</span>';}}
 const S2A=[{n:'S2-01',nm:'Inteligencia de Mercado',d:'Varre portais e plataformas identificando RFPs e oportunidades aderentes ao portfolio.',on:true,ep:'/api/rfp-monitor'},{n:'S2-02',nm:'Mapeamento de Contas',d:'Mapeia empresas-alvo pelo ICP com score A/B/C, decisores e sinal de compra. Cria no HubSpot.',on:true,ep:'/api/prospect-scan'},{n:'S2-03',nm:'Cadastro em Portais',d:'Analisa e instrui cadastro da Atlantyx como fornecedora em portais de grandes empresas.',on:false,ep:'/api/portal-cadastro'},{n:'S2-04',nm:'Monitoramento de RFPs',d:'Cron automatico 6h. Varre ComprasNet, SAP Ariba, Beehive e portais proprietarios.',on:true,ep:'/api/rfp-monitor'},{n:'S2-05',nm:'Campanhas Pagas',d:'Cria e otimiza campanhas Google Ads e LinkedIn Ads com gestao autonoma de ROAS.',on:false,ep:null},{n:'S2-06',nm:'Conteudo e Autoridade',d:'Produz artigos, cases e whitepapers posicionando a Atlantyx nos setores do ICP.',on:false,ep:null},{n:'S2-07',nm:'SEO',d:'Audita posicionamento organico. Monitora Core Web Vitals, Domain Authority e backlinks.',on:false,ep:null},{n:'S2-08',nm:'Nutricao de Leads',d:'Executa sequencias de email personalizadas por cargo, setor e momento da jornada.',on:false,ep:null},{n:'S2-09',nm:'Analytics',d:'Monitora KPIs em tempo real e gera analise com insights acionaveis via Claude IA.',on:false,ep:'/api/analytics'}];
 const S7A=[{n:'S7-01',nm:'Prospeccao Ativa',d:'Recebe empresas do S2-02 e monta dossie de abordagem com perfil, dores e historico.',on:true,ep:'/api/prospect-scan'},{n:'S7-02',nm:'Identificacao de RFPs',d:'Analisa compatibilidade de RFPs e estima probabilidade de vitoria.',on:false,ep:null},{n:'S7-03',nm:'Resposta a RFPs',d:'Com aprovacao humana, elabora resposta tecnica e comercial completa ao edital.',on:false,ep:null},{n:'S7-04',nm:'Mapeamento de Decisores',d:'Identifica C-levels com cargo, LinkedIn, canal recomendado e melhor angulo.',on:true,ep:'/api/decisor-map'},{n:'S7-05',nm:'Outreach via WhatsApp',d:'Gera e envia mensagens personalizadas. Monitora resposta. Follow-up automatico 48h.',on:true,ep:'/api/outreach-batch'},{n:'S7-06',nm:'Outreach via Ligacao',d:'Gera scripts personalizados e agenda ligacoes com Voz IA.',on:false,ep:null},{n:'S7-07',nm:'Agendamento de Reunioes',d:'Propoe horarios, confirma reuniao, envia convite e registra no HubSpot.',on:true,ep:'/api/meeting-schedule'},{n:'S7-08',nm:'Preparacao de Reuniao',d:'24h antes gera dossie: perfil, dores, produtos aderentes, perguntas e objecoes.',on:false,ep:'/api/meeting-schedule'},{n:'S7-09',nm:'Pipeline',d:'Monitora deals parados e sugere acoes de desbloqueio.',on:false,ep:null},{n:'S7-10',nm:'Propostas',d:'Gera propostas comerciais com escopo, prazo e precificacao.',on:false,ep:null},{n:'S7-11',nm:'Forecast',d:'Calcula previsao semana/mes/trimestre com cenarios P/R/O.',on:false,ep:null},{n:'S7-12',nm:'Expansao',d:'Identifica upsell e cross-sell na carteira ativa.',on:false,ep:null}];
-function renderAg(ag,id){document.getElementById(id).innerHTML=ag.map((a,i)=>`<div class="ac ${a.on?'on':''}"><div class="ac-n">${a.n}</div><div class="ac-nm">${a.nm}</div><div class="ac-d">${a.d}</div><div class="ac-f"><div class="ac-st" style="color:${a.on?'var(--green)':'var(--gold)'}"><span style="width:5px;height:5px;border-radius:50%;background:${a.on?'var(--green)':'var(--gold)'};display:inline-block;${a.on?'animation:pulse 2s infinite':''}"></span>${a.on?'Ativo':'Standby'}</div><div style="display:flex;gap:4px;align-items:center;">${a.ep?`<button class="btn btn-g" style="font-size:8px;padding:2px 5px;" onclick="testEP('${a.ep}','${a.nm}')">&#9654;</button>`:''}<div class="tgl ${a.on?'on':''}" onclick="togAg('${id}',${i})"></div></div></div></div>`).join('');}
+function renderAg(ag,id){document.getElementById(id).innerHTML=ag.map((a,i)=>`<div class="ac ${a.on?'on':''}"><div class="ac-n">${a.n}</div><div class="ac-nm">${a.nm}</div><div class="ac-d">${a.d}</div><div class="ac-f"><div class="ac-st" style="color:${_corTxt(a.on?'var(--green)':'var(--gold)')}"><span style="width:5px;height:5px;border-radius:50%;background:${a.on?'var(--green)':'var(--gold)'};display:inline-block;${a.on?'animation:pulse 2s infinite':''}"></span>${a.on?'Ativo':'Standby'}</div><div style="display:flex;gap:4px;align-items:center;">${a.ep?`<button class="btn btn-g" style="font-size:8px;padding:2px 5px;" onclick="testEP('${a.ep}','${a.nm}')">&#9654;</button>`:''}<div class="tgl ${a.on?'on':''}" onclick="togAg('${id}',${i})"></div></div></div></div>`).join('');}
 function togAg(g,i){const ag=g==='s2-grid'?S2A:S7A;ag[i].on=!ag[i].on;renderAg(ag,g);addLog(ag[i].on?'success':'warn',(ag[i].on?'Ativado':'Pausado')+': '+ag[i].nm);toast((ag[i].on?'Ativado':'Pausado')+': '+ag[i].nm,ag[i].on?'success':'info');}
 async function testEP(ep,nome){addLog('info','[Teste] '+ep+'...');const r=await fetch(ep,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({test:true})});addLog(r.status===405||r.status<500?'success':'err','[Teste] '+nome+' HTTP '+r.status+(r.status!==500?' OK':' ERRO'));toast(nome+' '+(r.status!==500?'OK':'ERRO'),r.status!==500?'success':'error');}
 async function refreshAll(){addLog('info','[Sistema] Atualizando...');await Promise.all([loadPipeline(),loadKPIs()]);}
@@ -4574,8 +4644,8 @@ function renderBatchList() {
           <span style="font-size:10.5px;color:var(--t2);margin-left:6px;">${m.company || ''}</span>
           <span style="font-size:10px;color:var(--t3);margin-left:4px;">· ${m.job_title || ''}</span>
         </div>
-        <span style="font-family:var(--M);font-size:8px;padding:2px 6px;border-radius:3px;background:${m.score==='A'?'rgba(34,211,163,.12)':m.score==='B'?'rgba(79,124,255,.12)':'var(--bg4)'};color:${scoreColor};">${m.score || 'B'}</span>
-        <span style="font-family:var(--M);font-size:8.5px;color:${statusColor};">${statusTxt}</span>
+        <span style="font-family:var(--M);font-size:8px;padding:2px 6px;border-radius:3px;background:${m.score==='A'?'rgba(34,211,163,.12)':m.score==='B'?'rgba(79,124,255,.12)':'var(--bg4)'};color:${_corTxt(scoreColor)};">${m.score || 'B'}</span>
+        <span style="font-family:var(--M);font-size:8.5px;color:${_corTxt(statusColor)};">${statusTxt}</span>
         <div style="display:flex;gap:4px;">
           ${hasPhone && !m.enviado && !m.recusado ? `<button class="btn btn-gn" style="font-size:8.5px;padding:3px 7px;" onclick="aprovarUm(${i},event)">&#10003; Aprovar</button>` : ''}
           ${!m.enviado && !m.recusado ? `<button class="btn btn-rd" style="font-size:8.5px;padding:3px 7px;" onclick="recusarUm(${i},event)">&#10005;</button>` : ''}
@@ -4948,7 +5018,7 @@ async function rodarAnaliseCompleta(ideia) {
       html += `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--bd);">
         <span style="font-family:var(--M);font-size:9px;color:var(--t2);flex:1;">${step.label}</span>
         <span style="font-family:var(--M);font-size:12px;font-weight:700;">${nota}/10</span>
-        <span style="font-family:var(--M);font-size:9px;padding:2px 8px;border-radius:4px;color:${cor};background:${cor.replace(')',', 0.1)')};">${rec}</span>
+        <span style="font-family:var(--M);font-size:9px;padding:2px 8px;border-radius:4px;color:${_corTxt(cor)};background:${cor.replace(')',', 0.1)')};">${rec}</span>
       </div>`;
       addLog('success', '[' + step.label.split('·')[0].trim() + '] Nota: ' + nota + ' -- ' + rec);
     }
@@ -4968,7 +5038,7 @@ async function rodarAnaliseCompleta(ideia) {
 
     const corFinal = aprovado ? 'var(--green)' : parecer.parecer?.includes('Ressalvas') ? 'var(--gold)' : 'var(--red)';
     html += `<div style="background:${corFinal.replace(')',', 0.08)')};border:1px solid ${corFinal.replace(')',', 0.2)')};border-radius:7px;padding:14px;margin-top:10px;">
-      <div style="font-family:var(--H);font-size:14px;font-weight:700;color:${corFinal};margin-bottom:6px;">Parecer Final: ${parecer.parecer} -- ${parecer.nota_final_squad}/10</div>
+      <div style="font-family:var(--H);font-size:14px;font-weight:700;color:${_corTxt(corFinal)};margin-bottom:6px;">Parecer Final: ${parecer.parecer} -- ${parecer.nota_final_squad}/10</div>
       <div style="font-size:12px;color:var(--t1);line-height:1.7;margin-bottom:10px;">${parecer.resumo_executivo_fundador || ''}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;">
         <div><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:4px;">PONTOS FORTES</div>${(parecer.pontos_fortes||[]).map(p=>'- '+p).join('<br>')}</div>
@@ -5061,7 +5131,7 @@ async function loadOKR() {
 
     if (id === 's1OkrDash') {
       el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-        <span style="font-family:var(--M);font-size:11px;font-weight:600;color:${corSaude};">o ${okr.saude_geral}</span>
+        <span style="font-family:var(--M);font-size:11px;font-weight:600;color:${_corTxt(corSaude)};">o ${okr.saude_geral}</span>
         <span style="font-family:var(--M);font-size:9px;color:var(--t2);">${okr.trimestre}</span>
       </div>` + (okr.objetivos||[]).map(o => `<div style="padding:5px 0;border-bottom:1px solid var(--bd);">
         <div style="display:flex;justify-content:space-between;font-size:11px;">
@@ -5072,7 +5142,7 @@ async function loadOKR() {
       </div>`).join('');
     } else {
       el.innerHTML = `<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
-        <span style="font-family:var(--H);font-size:18px;font-weight:700;color:${corSaude};">o ${okr.saude_geral}</span>
+        <span style="font-family:var(--H);font-size:18px;font-weight:700;color:${_corTxt(corSaude)};">o ${okr.saude_geral}</span>
         <span style="font-size:11px;color:var(--t2);">${okr.trimestre}</span>
       </div>` + (okr.objetivos||[]).map(o => `
         <div style="background:var(--bg4);border-radius:7px;padding:12px;margin-bottom:8px;">
@@ -5085,7 +5155,7 @@ async function loadOKR() {
               <span style="font-size:12px;">${kr.semaforo==='verde'?' ':kr.semaforo==='amarelo'?' ':' '}</span>
               <span style="flex:1;">${kr.kr}</span>
               <span style="font-family:var(--M);font-size:9px;color:var(--t2);">${kr.atual||0} / ${kr.meta||0}</span>
-              <span style="font-family:var(--M);font-size:9px;color:${kr.progresso>60?'var(--green)':kr.progresso>30?'var(--gold)':'var(--red)'};">${kr.progresso||0}%</span>
+              <span style="font-family:var(--M);font-size:9px;color:${_corTxt(kr.progresso>60?'var(--green)':kr.progresso>30?'var(--gold)':'var(--red)')};">${kr.progresso||0}%</span>
             </div>
             ${kr.acao_recomendada?`<div style="font-size:10px;color:var(--blue);margin-left:20px;margin-top:2px;">-> ${kr.acao_recomendada}</div>`:''}
           </div>`).join('')}
@@ -5113,7 +5183,7 @@ async function loadRelatorio(periodo) {
   if (result) result.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
       <div style="flex:1;"><div style="font-family:var(--H);font-size:16px;font-weight:700;">${r.headline}</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px;">${r.periodo}</div></div>
-      <span style="font-family:var(--M);font-size:10px;padding:4px 10px;border-radius:5px;color:${corS};background:${corS.replace(')',', 0.1)')};">o ${saude}</span>
+      <span style="font-family:var(--M);font-size:10px;padding:4px 10px;border-radius:5px;color:${_corTxt(corS)};background:${corS.replace(')',', 0.1)')};">o ${saude}</span>
       <span style="font-family:var(--M);font-size:18px;font-weight:700;color:var(--t1);">${r.nota_semana || 0}/10</span>
     </div>
     <div class="kg k4" style="margin-bottom:12px;">
@@ -5190,7 +5260,7 @@ function semCor(s) { return s==='Verde'||s==='verde'||s==='green'?'var(--green)'
 function impCor(i) { return i==='Alto'?'var(--red)':i==='Médio'?'var(--gold)':'var(--t2)'; }
 function card(title, color, children) {
   return `<div style="background:var(--bg4);border:1px solid var(--bd);border-left:3px solid ${color};border-radius:7px;padding:12px;margin-bottom:8px;">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:${color};margin-bottom:7px;">${title}</div>
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:${_corTxt(color)};margin-bottom:7px;">${title}</div>
     ${children}
   </div>`;
 }
@@ -5201,14 +5271,14 @@ function renderDiagnostico(d, el) {
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--bd);">
       <div style="flex:1;"><div style="font-family:var(--H);font-size:18px;font-weight:700;">${d.headline||''}</div><div style="font-size:11px;color:var(--t2);margin-top:4px;">${d.momento||''}</div></div>
-      <div style="text-align:center;"><div style="font-family:var(--M);font-size:26px;font-weight:700;color:${sc};">${d.nota_geral||0}<span style="font-size:14px;">/10</span></div><div style="font-family:var(--M);font-size:9px;color:${sc};">o ${d.saude_geral}</div></div>
+      <div style="text-align:center;"><div style="font-family:var(--M);font-size:26px;font-weight:700;color:${_corTxt(sc)};">${d.nota_geral||0}<span style="font-size:14px;">/10</span></div><div style="font-family:var(--M);font-size:9px;color:${_corTxt(sc)};">o ${d.saude_geral}</div></div>
     </div>
     <div class="kg k2" style="margin-bottom:12px;">
       ${card('MAIOR OPORTUNIDADE AGORA','var(--green)',`<div style="font-size:12px;line-height:1.6;">${d.maior_oportunidade_agora||''}</div>`)}
       ${card('MAIOR RISCO AGORA','var(--red)',`<div style="font-size:12px;line-height:1.6;">${d.maior_risco_agora||''}</div>`)}
     </div>
     <div class="kg k2" style="margin-bottom:12px;">
-      ${card('FORÇAS','var(--green)',(d.swot?.forcas||[]).map(f=>`<div style="padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;display:flex;justify-content:space-between;align-items:center;"><span>${f.item||f}</span><span style="font-family:var(--M);font-size:8px;color:${impCor(f.impacto)};">${f.impacto||''}</span></div>`).join(''))}
+      ${card('FORÇAS','var(--green)',(d.swot?.forcas||[]).map(f=>`<div style="padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;display:flex;justify-content:space-between;align-items:center;"><span>${f.item||f}</span><span style="font-family:var(--M);font-size:8px;color:${_corTxt(impCor(f.impacto))};">${f.impacto||''}</span></div>`).join(''))}
       ${card('FRAQUEZAS','var(--red)',(d.swot?.fraquezas||[]).map(f=>`<div style="padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;"><div style="display:flex;justify-content:space-between;"><span>${f.item||f}</span><span style="font-family:var(--M);font-size:8px;color:var(--red);">${f.impacto||''}</span></div>${f.como_mitigar?`<div style="font-size:10px;color:var(--blue);margin-top:2px;">-> ${f.como_mitigar}</div>`:''}</div>`).join(''))}
     </div>
     <div class="kg k2" style="margin-bottom:12px;">
@@ -5216,7 +5286,7 @@ function renderDiagnostico(d, el) {
       ${card('AMEAÇAS','var(--gold)',(d.swot?.ameacas||[]).map(a=>`<div style="padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;"><div>${a.item||a}</div>${a.mitigacao?`<div style="font-size:10px;color:var(--gold);margin-top:2px;">  ${a.mitigacao}</div>`:''}</div>`).join(''))}
     </div>
     ${card('GARGALOS CRÍTICOS -- O QUE ESTÁ TRAVANDO CRESCIMENTO','var(--red)',(d.gargalos_criticos||[]).map(g=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;"><strong style="font-size:11.5px;">${g.gargalo}</strong><span style="font-family:var(--M);font-size:9px;color:var(--red);">${g.impacto_receita||''}</span></div><div style="font-size:11px;color:var(--blue);">  ${g.solucao} <span style="color:var(--t3);">· ${g.prazo} · ${g.responsavel}</span></div></div>`).join(''))}
-    ${card('ALAVANCAS DE CRESCIMENTO','var(--green)',(d.alavancas_de_crescimento||[]).map(a=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;align-items:center;"><strong style="font-size:11.5px;">${a.alavanca}</strong><span style="font-family:var(--M);font-size:9px;color:var(--green);">${a.potencial_receita||''}</span></div><div style="font-size:11px;color:var(--t2);margin-top:2px;">Esforço: <span style="color:${impCor(a.esforco)}">${a.esforco}</span> · ${a.prazo} · <span style="color:var(--blue);">${a.acao_imediata||''}</span></div></div>`).join(''))}
+    ${card('ALAVANCAS DE CRESCIMENTO','var(--green)',(d.alavancas_de_crescimento||[]).map(a=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;align-items:center;"><strong style="font-size:11.5px;">${a.alavanca}</strong><span style="font-family:var(--M);font-size:9px;color:var(--green);">${a.potencial_receita||''}</span></div><div style="font-size:11px;color:var(--t2);margin-top:2px;">Esforço: <span style="color:${_corTxt(impCor(a.esforco))}">${a.esforco}</span> · ${a.prazo} · <span style="color:var(--blue);">${a.acao_imediata||''}</span></div></div>`).join(''))}
     ${card('PRÓXIMOS 90 DIAS CRÍTICOS','var(--blue)',`<div style="font-size:12px;line-height:1.7;">${d.proximos_90_dias_criticos||''}</div>`)}`;
 }
 
@@ -5225,7 +5295,7 @@ function renderRiscos(d, el) {
   const sc = d.nivel_risco_geral === 'Alto' ? 'var(--red)' : d.nivel_risco_geral === 'Médio' ? 'var(--gold)' : 'var(--green)';
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
-      <div style="flex:1;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">Nível de Risco Geral: <span style="color:${sc};">o ${d.nivel_risco_geral}</span></div><div style="font-size:11px;color:var(--t2);margin-top:3px;">${d.riscos?.length||0} riscos mapeados</div></div>
+      <div style="flex:1;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">Nível de Risco Geral: <span style="color:${_corTxt(sc)};">o ${d.nivel_risco_geral}</span></div><div style="font-size:11px;color:var(--t2);margin-top:3px;">${d.riscos?.length||0} riscos mapeados</div></div>
     </div>
     ${card('RISCOS CRÍTICOS -- Alta Probabilidade + Alto Impacto','var(--red)',(d.matriz_risco?.criticos||[]).map(r=>`<div style="padding:4px 0;font-size:11px;border-bottom:1px solid var(--bd);">! ${r}</div>`).join('') || '<div style="font-size:11px;color:var(--t3);">Nenhum risco crítico identificado</div>')}
     <div style="margin-bottom:10px;">
@@ -5233,9 +5303,9 @@ function renderRiscos(d, el) {
         const cor = r.impacto==='Alto'?'var(--red)':r.impacto==='Médio'?'var(--gold)':'var(--t3)';
         return `<div style="background:var(--bg4);border:1px solid var(--bd);border-left:3px solid ${cor};border-radius:7px;padding:11px;margin-bottom:7px;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-            <span style="font-family:var(--M);font-size:8px;padding:1px 6px;border-radius:3px;background:${cor.replace(')',', 0.12)')};color:${cor};">${r.categoria}</span>
-            <span style="font-family:var(--M);font-size:8px;color:var(--t2);">Prob: <span style="color:${cor}">${r.probabilidade}</span></span>
-            <span style="font-family:var(--M);font-size:8px;color:var(--t2);">Impacto: <span style="color:${cor}">${r.impacto}</span></span>
+            <span style="font-family:var(--M);font-size:8px;padding:1px 6px;border-radius:3px;background:${cor.replace(')',', 0.12)')};color:${_corTxt(cor)};">${r.categoria}</span>
+            <span style="font-family:var(--M);font-size:8px;color:var(--t2);">Prob: <span style="color:${_corTxt(cor)}">${r.probabilidade}</span></span>
+            <span style="font-family:var(--M);font-size:8px;color:var(--t2);">Impacto: <span style="color:${_corTxt(cor)}">${r.impacto}</span></span>
             <span style="font-family:var(--M);font-size:9px;color:var(--gold);margin-left:auto;">${r.impacto_financeiro_estimado||''}</span>
           </div>
           <div style="font-size:12px;font-weight:600;margin-bottom:4px;">${r.risco}</div>
@@ -5261,14 +5331,14 @@ function renderFinanceiro(d, el) {
     </div>
     ${card('PROJEÇÃO DE RECEITA -- 3 Meses','var(--green)',`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">${['mes1','mes2','mes3'].map((m,i)=>`<div style="text-align:center;padding:8px;background:var(--bg3);border-radius:6px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);">MÊS ${i+1}</div><div style="font-family:var(--M);font-size:16px;font-weight:700;margin:4px 0;">${p[m]?.receita||'--'}</div><div style="font-size:9px;color:var(--t2);">${p[m]?.atingimento_meta||''} da meta</div></div>`).join('')}</div>`)}
     <div class="kg k3" style="margin-bottom:12px;">
-      ${['pessimista','realista','otimista'].map(c => {const ce = d.cenarios?.[c]||{}; const cor = c==='pessimista'?'var(--red)':c==='realista'?'var(--blue)':'var(--green)'; return `<div style="background:var(--bg4);border:1px solid ${cor.replace(')',', 0.25)')};border-radius:7px;padding:12px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:${cor};margin-bottom:5px;">${c} · ${ce.probabilidade||''}</div><div style="font-family:var(--M);font-size:18px;font-weight:700;color:${cor};margin-bottom:5px;">${ce.receita_90d||'--'}</div><div style="font-size:10px;color:var(--t2);">${ce.descricao||''}</div></div>`;}).join('')}
+      ${['pessimista','realista','otimista'].map(c => {const ce = d.cenarios?.[c]||{}; const cor = c==='pessimista'?'var(--red)':c==='realista'?'var(--blue)':'var(--green)'; return `<div style="background:var(--bg4);border:1px solid ${cor.replace(')',', 0.25)')};border-radius:7px;padding:12px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:${_corTxt(cor)};margin-bottom:5px;">${c} · ${ce.probabilidade||''}</div><div style="font-family:var(--M);font-size:18px;font-weight:700;color:${_corTxt(cor)};margin-bottom:5px;">${ce.receita_90d||'--'}</div><div style="font-size:10px;color:var(--t2);">${ce.descricao||''}</div></div>`;}).join('')}
     </div>
     ${card('MAXIMIZAÇÃO DE LUCRO -- Estratégias','var(--gold)',`
       <div style="margin-bottom:8px;"><div style="font-family:var(--M);font-size:8px;color:var(--gold);margin-bottom:3px;">PRICING</div><div style="font-size:11.5px;">${d.maximizacao_lucro?.estrategia_pricing||''}</div></div>
       <div style="margin-bottom:8px;"><div style="font-family:var(--M);font-size:8px;color:var(--gold);margin-bottom:3px;">CANAL MAIS RENTÁVEL</div><div style="font-size:11.5px;">${d.maximizacao_lucro?.canal_mais_rentavel||''}</div></div>
       <div style="margin-bottom:8px;"><div style="font-family:var(--M);font-size:8px;color:var(--red);margin-bottom:3px;">CORTES POSSÍVEIS</div>${(d.maximizacao_lucro?.cortes_custos_possiveis||[]).map(c=>`<div style="font-size:11px;">- ${c}</div>`).join('')}</div>
       <div><div style="font-family:var(--M);font-size:8px;color:var(--green);margin-bottom:3px;">ONDE INVESTIR</div>${(d.maximizacao_lucro?.investimentos_prioritarios||[]).map(i=>`<div style="font-size:11px;">-> ${i}</div>`).join('')}</div>`)}
-    ${card('ALAVANCAS FINANCEIRAS','var(--blue)',(d.alavancas_financeiras||[]).map(a=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;"><strong style="font-size:11.5px;">${a.alavanca}</strong><span style="font-family:var(--M);font-size:9px;color:var(--green);">${a.impacto_receita}</span></div><div style="font-size:10.5px;color:var(--t2);">ROI: ${a.roi} · Custo: ${a.custo_implementacao} · <span style="color:${impCor(a.prioridade)}">${a.prioridade}</span></div></div>`).join(''))}`;
+    ${card('ALAVANCAS FINANCEIRAS','var(--blue)',(d.alavancas_financeiras||[]).map(a=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;"><strong style="font-size:11.5px;">${a.alavanca}</strong><span style="font-family:var(--M);font-size:9px;color:var(--green);">${a.impacto_receita}</span></div><div style="font-size:10.5px;color:var(--t2);">ROI: ${a.roi} · Custo: ${a.custo_implementacao} · <span style="color:${_corTxt(impCor(a.prioridade))}">${a.prioridade}</span></div></div>`).join(''))}`;
 }
 
 function renderMercado(d, el) {
@@ -5291,9 +5361,9 @@ function renderPlano(d, el) {
   if (!d) { el.innerHTML = '<div style="color:var(--red);">Sem dados</div>'; return; }
   el.innerHTML = `
     <div class="kg k3" style="margin-bottom:12px;">
-      ${[['90 dias',d.visao_90_dias,'var(--green)'],['1 Ano',d.visao_1_ano,'var(--blue)'],['3 Anos',d.visao_3_anos,'var(--pu)']].map(([h,v,c])=>`<div style="background:var(--bg4);border:1px solid ${c.replace(')',', 0.25)')};border-radius:7px;padding:12px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:${c};margin-bottom:5px;">VISÃO ${h}</div><div style="font-size:11.5px;line-height:1.6;">${v||''}</div></div>`).join('')}
+      ${[['90 dias',d.visao_90_dias,'var(--green)'],['1 Ano',d.visao_1_ano,'var(--blue)'],['3 Anos',d.visao_3_anos,'var(--pu)']].map(([h,v,c])=>`<div style="background:var(--bg4);border:1px solid ${c.replace(')',', 0.25)')};border-radius:7px;padding:12px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:${_corTxt(c)};margin-bottom:5px;">VISÃO ${h}</div><div style="font-size:11.5px;line-height:1.6;">${v||''}</div></div>`).join('')}
     </div>
-    ${card('PRIORIDADES ESTRATÉGICAS','var(--blue)',(d.prioridades_estrategicas||[]).map((p,i)=>`<div style="padding:8px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><span style="font-family:var(--M);font-size:10px;color:var(--blue);font-weight:700;">${i+1}.</span><strong style="font-size:12px;">${p.prioridade}</strong><span style="font-family:var(--M);font-size:8px;padding:1px 6px;border-radius:3px;background:var(--b2);color:var(--blue);">${p.horizonte}</span><span style="font-family:var(--M);font-size:8px;padding:1px 6px;border-radius:3px;background:${impCor(p.esforco).replace(')',', 0.1)')};color:${impCor(p.esforco)};margin-left:auto;">Esforço ${p.esforco}</span></div><div style="font-size:11px;color:var(--t2);">${p.descricao}</div>${p.impacto_receita?`<div style="font-size:11px;color:var(--green);margin-top:3px;">^ ${p.impacto_receita}</div>`:''}</div>`).join(''))}
+    ${card('PRIORIDADES ESTRATÉGICAS','var(--blue)',(d.prioridades_estrategicas||[]).map((p,i)=>`<div style="padding:8px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><span style="font-family:var(--M);font-size:10px;color:var(--blue);font-weight:700;">${i+1}.</span><strong style="font-size:12px;">${p.prioridade}</strong><span style="font-family:var(--M);font-size:8px;padding:1px 6px;border-radius:3px;background:var(--b2);color:var(--blue);">${p.horizonte}</span><span style="font-family:var(--M);font-size:8px;padding:1px 6px;border-radius:3px;background:${impCor(p.esforco).replace(')',', 0.1)')};color:${_corTxt(impCor(p.esforco))};margin-left:auto;">Esforço ${p.esforco}</span></div><div style="font-size:11px;color:var(--t2);">${p.descricao}</div>${p.impacto_receita?`<div style="font-size:11px;color:var(--green);margin-top:3px;">^ ${p.impacto_receita}</div>`:''}</div>`).join(''))}
     ${card('GO-TO-MARKET -- 90 dias','var(--gold)',`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:11px;">
       <div><div style="font-family:var(--M);font-size:7.5px;color:var(--gold);margin-bottom:3px;">FOCO DE SETOR</div>${d.go_to_market_90d?.foco_setor||''}</div>
       <div><div style="font-family:var(--M);font-size:7.5px;color:var(--gold);margin-bottom:3px;">CANAL PRIMÁRIO</div>${d.go_to_market_90d?.canal_primario||''}</div>
@@ -5320,7 +5390,7 @@ function renderPlanoAcao(d, el) {
       <div style="${i===0?'':'display:none;'}padding:12px;">
         ${(s.acoes||[]).map(a=>`
         <div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);">
-          <span style="font-family:var(--M);font-size:8px;color:${priCor(a.prioridade)};padding:2px 5px;border-radius:3px;background:${priCor(a.prioridade).replace(')',', 0.1)')};flex-shrink:0;">${a.prioridade||''}</span>
+          <span style="font-family:var(--M);font-size:8px;color:${_corTxt(priCor(a.prioridade))};padding:2px 5px;border-radius:3px;background:${priCor(a.prioridade).replace(')',', 0.1)')};flex-shrink:0;">${a.prioridade||''}</span>
           <div style="flex:1;">
             <div style="font-size:11.5px;font-weight:500;">${a.acao}</div>
             <div style="font-size:10px;color:var(--t2);margin-top:2px;">${a.dia||''} · ${a.duracao||''} · KPI: ${a.kpi||''}</div>
@@ -5343,9 +5413,9 @@ function renderOkrGen(d, el) {
       const cor = cores[i % cores.length];
       return `<div style="background:var(--bg4);border:1px solid ${cor.replace(')',', 0.2)')};border-radius:8px;padding:13px;margin-bottom:10px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-          <span style="font-family:var(--M);font-size:10px;color:${cor};font-weight:700;">${o.id}</span>
+          <span style="font-family:var(--M);font-size:10px;color:${_corTxt(cor)};font-weight:700;">${o.id}</span>
           <div style="flex:1;"><div style="font-size:13px;font-weight:600;">${o.objetivo}</div><div style="font-size:10px;color:var(--t2);margin-top:2px;">${o.por_que_importa||''}</div></div>
-          <span style="font-family:var(--M);font-size:9px;color:${cor};">${o.peso||''} do foco</span>
+          <span style="font-family:var(--M);font-size:9px;color:${_corTxt(cor)};">${o.peso||''} do foco</span>
         </div>
         ${(o.krs||[]).map(kr=>`
         <div style="border:1px solid var(--bd);border-radius:6px;padding:10px;margin-bottom:6px;">
@@ -5370,7 +5440,7 @@ function renderReplano(d, el) {
   const sc = semCor(d.semaforo_geral);
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--bd);">
-      <div style="font-family:var(--M);font-size:22px;font-weight:700;color:${sc};">o ${d.semaforo_geral}</div>
+      <div style="font-family:var(--M);font-size:22px;font-weight:700;color:${_corTxt(sc)};">o ${d.semaforo_geral}</div>
       <div style="flex:1;"><div style="font-family:var(--H);font-size:14px;font-weight:600;">Replanejamento Estratégico</div><div style="font-size:11px;color:var(--t2);">Novo foco: ${d.novo_foco_semana||''}</div></div>
     </div>
     ${d.acoes_de_emergencia?.length?card('AÇÕES DE EMERGÊNCIA -- Próximas 48h','var(--red)',(d.acoes_de_emergencia||[]).map(a=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="font-size:12px;font-weight:600;">${a.acao}</div><div style="font-size:11px;color:var(--t2);">${a.responsavel} · ${a.prazo} -> ${a.resultado_esperado}</div></div>`).join('')):''}
@@ -5391,12 +5461,12 @@ function renderCenarios(d, el) {
         const cor = cores[nome] || 'var(--blue)';
         const emp = c.empresa_em_12_meses || {};
         return `<div style="background:var(--bg4);border:1px solid ${cor.replace(')',', 0.25)')};border-radius:8px;padding:13px;">
-          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:${cor};margin-bottom:3px;">${nome.toUpperCase()} · ${c.probabilidade||''}</div>
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:${_corTxt(cor)};margin-bottom:3px;">${nome.toUpperCase()} · ${c.probabilidade||''}</div>
           <div style="font-family:var(--H);font-size:14px;font-weight:700;margin-bottom:6px;">${c.nome||nome}</div>
-          <div style="font-family:var(--M);font-size:18px;font-weight:700;color:${cor};margin-bottom:8px;">${emp.receita_anual||'--'}</div>
+          <div style="font-family:var(--M);font-size:18px;font-weight:700;color:${_corTxt(cor)};margin-bottom:8px;">${emp.receita_anual||'--'}</div>
           <div style="font-size:10.5px;color:var(--t2);margin-bottom:8px;">${c.descricao||''}</div>
           <div style="font-size:10px;color:var(--t3);margin-bottom:4px;">${emp.clientes||0} clientes · ${emp.time||''}</div>
-          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:${cor};margin-top:8px;margin-bottom:4px;">COMO ${nome==='pessimista'?'EVITAR':'CHEGAR AQUI'}</div>
+          <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:${_corTxt(cor)};margin-top:8px;margin-bottom:4px;">COMO ${nome==='pessimista'?'EVITAR':'CHEGAR AQUI'}</div>
           ${(nome==='pessimista'?c.como_evitar:c.como_chegar_aqui||c.acelerador&&[c.acelerador]||[]).map?.(a=>`<div style="font-size:10.5px;margin-bottom:3px;">-> ${a}</div>`).join('')||''}
         </div>`;
       }).join('')}
@@ -5479,12 +5549,12 @@ function renderEmailList(emails) {
     const cat = e.categoria || 'OUTRO';
     return `<div style="border-bottom:1px solid var(--bd);overflow:hidden;" id="ei-${i}">
       <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;background:var(--bg3);" onclick="toggleEmail(${i})">
-        <span style="font-family:var(--M);font-size:8px;padding:2px 7px;border-radius:4px;background:${catBg(cat)};color:${catCor(cat)};white-space:nowrap;">${cat}</span>
+        <span style="font-family:var(--M);font-size:8px;padding:2px 7px;border-radius:4px;background:${catBg(cat)};color:${_corTxt(catCor(cat))};white-space:nowrap;">${cat}</span>
         <div style="flex:1;min-width:0;">
           <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${e.assunto || '(sem assunto)'}</div>
           <div style="font-size:10px;color:var(--t2);">${e.de || ''}</div>
         </div>
-        <span style="font-family:var(--M);font-size:8px;color:${urgCor};white-space:nowrap;">${e.urgencia || ''}</span>
+        <span style="font-family:var(--M);font-size:8px;color:${_corTxt(urgCor)};white-space:nowrap;">${e.urgencia || ''}</span>
         <span style="font-family:var(--M);font-size:8px;color:var(--blue);white-space:nowrap;">${e.agente_responsavel || ''}</span>
         <span style="color:var(--t3);font-size:10px;" id="ec-${i}"> </span>
       </div>
@@ -5741,7 +5811,7 @@ function renderKanban() {
     const pecas = kanbanPecas.filter(p => p.status === col && _pecaPassaFiltro(p));
     const corHead = col==='Aprovado'?'var(--green)':col==='Publicado'?'var(--blue)':col==='Revisão'?'var(--gold)':'var(--t2)';
     return `<div style="background:var(--bg4);border-radius:8px;padding:9px;min-height:200px;">
-      <div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:${corHead};margin-bottom:8px;display:flex;justify-content:space-between;">
+      <div style="font-family:var(--M);font-size:8px;letter-spacing:1px;text-transform:uppercase;color:${_corTxt(corHead)};margin-bottom:8px;display:flex;justify-content:space-between;">
         ${col}<span style="background:var(--bg);border-radius:3px;padding:1px 5px;font-size:8px;">${pecas.length}</span>
       </div>
       ${pecas.map(p => `
@@ -6656,7 +6726,7 @@ async function runRfpMonitorAtualizado() {
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
           <strong style="font-size:12px;flex:1;">${r.empresa}</strong>
           <span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:var(--go2);color:var(--gold);">${r.compatibilidade}% compat.</span>
-          <span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:${r.urgencia==='Alta'?'var(--r2)':'var(--bg)'};color:${r.urgencia==='Alta'?'var(--red)':'var(--t3)'};">${r.urgencia||'Media'}</span>
+          <span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:${r.urgencia==='Alta'?'var(--r2)':'var(--bg)'};color:${_corTxt(r.urgencia==='Alta'?'var(--red)':'var(--t3)')};">${r.urgencia||'Media'}</span>
         </div>
         <div style="font-size:11.5px;font-weight:600;margin-bottom:4px;">${r.titulo}</div>
         <div style="font-size:11px;color:var(--t2);margin-bottom:6px;">${r.descricao||''}</div>
@@ -7377,7 +7447,7 @@ async function loadContextoEstrategico() {
 
   if (result) result.innerHTML = `
     <div style="background:${semCor.replace(')',', 0.08)')};border:1px solid ${semCor.replace(')',', 0.2)')};border-radius:7px;padding:13px;margin-bottom:12px;">
-      <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:${semCor};margin-bottom:5px;">CONTEXTO EXECUTIVO</div>
+      <div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:${_corTxt(semCor)};margin-bottom:5px;">CONTEXTO EXECUTIVO</div>
       <div style="font-size:12px;line-height:1.7;">${ctx.contexto_executivo || ''}</div>
     </div>
     <div class="kg k3" style="margin-bottom:10px;">
@@ -7764,7 +7834,7 @@ function ideiaCampo(k, v) { if (!_ideiaEd) return; _ideiaEd[k] = v; if (k === 'c
 
 function _ideiaResumoHtml(x) {
   const a = x.analise_completa || x.analise || {}, r = x.resultados_s1 || {}, p = r.parecer || {}, pq = r.pesquisa || {}, bp = x.business_plan;
-  const chip = (rot, val, cor) => val == null || val === '' ? '' : '<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:7px 10px;min-width:110px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);text-transform:uppercase;">' + rot + '</div><div style="font-size:14px;font-weight:700;color:' + (cor || 'var(--t1)') + ';">' + _ie(val) + '</div></div>';
+  const chip = (rot, val, cor) => val == null || val === '' ? '' : '<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:7px 10px;min-width:110px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);text-transform:uppercase;">' + rot + '</div><div style="font-size:14px;font-weight:700;color:' + _corTxt((cor || 'var(--t1)')) + ';">' + _ie(val) + '</div></div>';
   const pct = v => v == null ? null : (v * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
   const brl = v => v == null ? null : 'R$ ' + Math.round(v).toLocaleString('pt-BR');
   const tem = a.score != null || p.parecer || pq.tam || bp;
@@ -7811,7 +7881,7 @@ function ideiaRender() {
     + '<div style="flex:1;"></div><button class="btn btn-g" onclick="ideiaFechar()">Fechar</button></div></div>';
 }
 
-function _ideiaMsg(t, cor) { const e = document.getElementById('ideiaMsg'); if (e) e.innerHTML = '<span style="color:' + (cor || 'var(--blue)') + ';">' + t + '</span>'; }
+function _ideiaMsg(t, cor) { const e = document.getElementById('ideiaMsg'); if (e) e.innerHTML = '<span style="color:' + _corTxt((cor || 'var(--blue)')) + ';">' + t + '</span>'; }
 
 async function ideiaSalvar() {
   const x = _ideiaEd; if (!x) return false;
@@ -8418,7 +8488,7 @@ function renderProspectResult(data) {
       const isNew = e.origem !== 'CRM';
       return `<div style="background:var(--bg4);border:1px solid ${e.score==='A'?'rgba(34,211,163,.25)':'var(--bd)'};border-left:3px solid ${scoreCor};border-radius:7px;padding:12px;margin-bottom:8px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-          <span style="font-family:var(--M);font-size:8px;font-weight:700;padding:2px 8px;border-radius:4px;background:${scoreBg};color:${scoreCor};">Score ${e.score||'B'}</span>
+          <span style="font-family:var(--M);font-size:8px;font-weight:700;padding:2px 8px;border-radius:4px;background:${scoreBg};color:${_corTxt(scoreCor)};">Score ${e.score||'B'}</span>
           <strong style="font-size:13px;flex:1;">${e.empresa}</strong>
           <span style="font-family:var(--M);font-size:8px;padding:2px 7px;border-radius:3px;background:var(--go2);color:var(--gold);">Novo Lead</span>
         </div>
@@ -8739,10 +8809,10 @@ async function analisarIdeia(modo) {
     const scoreCor = analise.score >= 8 ? 'var(--green)' : analise.score >= 6 ? 'var(--gold)' : 'var(--red)';
     result.innerHTML = `
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:12px;background:var(--bg4);border-radius:8px;">
-        <div style="text-align:center;min-width:60px;"><div style="font-size:28px;font-weight:700;color:${scoreCor};">${analise.score || '—'}</div><div style="font-family:var(--M);font-size:8px;color:var(--t2);">SCORE</div></div>
+        <div style="text-align:center;min-width:60px;"><div style="font-size:28px;font-weight:700;color:${_corTxt(scoreCor)};">${analise.score || '—'}</div><div style="font-family:var(--M);font-size:8px;color:var(--t2);">SCORE</div></div>
         <div style="flex:1;">
           <div style="font-size:13px;font-weight:600;margin-bottom:3px;">${titulo}</div>
-          <div style="font-size:12px;color:${scoreCor};font-weight:600;">${analise.recomendacao || ''} — ${analise.resumo_executivo || ''}</div>
+          <div style="font-size:12px;color:${_corTxt(scoreCor)};font-weight:600;">${analise.recomendacao || ''} — ${analise.resumo_executivo || ''}</div>
         </div>
       </div>
       ${analise.pontos_fortes?.length ? '<div style="margin-bottom:10px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--green);margin-bottom:5px;">PONTOS FORTES</div>' + analise.pontos_fortes.map(p => '<div style="font-size:11.5px;padding:2px 0;">&#10003; ' + p + '</div>').join('') + '</div>' : ''}
@@ -8754,7 +8824,7 @@ async function analisarIdeia(modo) {
       ${analise.analise_arquivos ? '<div style="margin-bottom:10px;background:var(--go2);border-radius:6px;padding:10px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">ANÁLISE DOS ARQUIVOS</div><div style="font-size:11.5px;">' + analise.analise_arquivos + '</div></div>' : ''}
       ${perguntas && analise.perguntas_respondidas ? '<div style="margin-bottom:10px;padding:12px;background:rgba(79,124,255,.10);border:1px solid rgba(79,124,255,.35);border-radius:8px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--blue);margin-bottom:5px;">RESPOSTA À SUA PERGUNTA</div><div style="font-size:12px;line-height:1.65;white-space:pre-wrap;">' + String(analise.perguntas_respondidas).replace(/</g,'&lt;') + '</div></div>' : ''}
       ${analise.fit_icp ? '<div style="margin-bottom:10px;font-size:11px;color:var(--t2);"><b>Fit com o ICP:</b> ' + String(analise.fit_icp).replace(/</g,'&lt;') + '</div>' : ''}
-      ${analise.parecer_final ? '<div style="padding:12px;background:var(--bg3);border-radius:8px;border-left:3px solid ' + scoreCor + ';"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:' + scoreCor + ';margin-bottom:5px;">PARECER FINAL — S1-03</div><div style="font-size:12px;line-height:1.7;">' + analise.parecer_final + '</div></div>' : ''}`;
+      ${analise.parecer_final ? '<div style="padding:12px;background:var(--bg3);border-radius:8px;border-left:3px solid ' + scoreCor + ';"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:' + _corTxt(scoreCor) + ';margin-bottom:5px;">PARECER FINAL — S1-03</div><div style="font-size:12px;line-height:1.7;">' + analise.parecer_final + '</div></div>' : ''}`;
 
     if (acoes) acoes.style.display = 'block';
     addLog('ok', '[S1-03] Análise concluída: score ' + analise.score + ' — ' + (analise.recomendacao || ''));
@@ -9039,7 +9109,7 @@ function _bpGrafico(res) {
   const barras = res.mensal.fcl.map((v, i) => { const y0 = y(0), y1 = y(v); return '<rect x="' + (x(i) - 4).toFixed(1) + '" y="' + Math.min(y0, y1).toFixed(1) + '" width="8" height="' + Math.max(1, Math.abs(y1 - y0)).toFixed(1) + '" fill="' + (v >= 0 ? 'rgba(0,200,120,.35)' : 'rgba(255,90,90,.35)') + '"/>'; }).join('');
   const rot = res.meses.map((m, i) => i % 6 === 0 ? '<text x="' + x(i).toFixed(1) + '" y="' + (H - 3) + '" font-size="9" fill="#8a93a8" text-anchor="middle">' + m + '</text>' : '').join('');
   return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;">' + '<line x1="' + P + '" x2="' + (W - P) + '" y1="' + y(0).toFixed(1) + '" y2="' + y(0).toFixed(1) + '" stroke="#555" stroke-dasharray="3,3"/>'
-    + barras + '<polyline points="' + pts + '" fill="none" stroke="#4f7cff" stroke-width="2"/>' + rot
+    + barras + '<polyline points="' + pts + '" fill="none" style="stroke:var(--blue)" stroke-width="2"/>' + rot
     + '<text x="' + P + '" y="11" font-size="9" fill="#8a93a8">Linha: saldo de caixa (' + _bpK(mn) + ' a ' + _bpK(mx) + ') · barras: fluxo livre do mês</text></svg>';
 }
 
@@ -9060,10 +9130,10 @@ function bpRender() {
       + (total ? '<td style="text-align:right;padding:4px 5px;">' + (pct || k === 'caixa_final' ? (k === 'caixa_final' ? _bpR(A[A.length - 1][k]) : '') : _bpR(A.reduce((s, a) => s + (a[k] || 0), 0) * (sinal || 1))) + '</td>' : '') + '</tr>').join('')
     + '</table></div>';
   const cen = res.cenarios ? '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">' + ['pessimista', 'base', 'otimista'].map(k => { const c = res.cenarios[k]; if (!c) return ''; const cor = k === 'pessimista' ? 'var(--red)' : k === 'base' ? 'var(--blue)' : 'var(--green)';
-      return '<div style="background:var(--bg4);border:1px solid var(--bd);border-top:3px solid ' + cor + ';border-radius:7px;padding:10px;font-size:10.5px;"><div style="font-family:var(--M);font-size:8.5px;text-transform:uppercase;color:' + cor + ';margin-bottom:4px;">' + k + '</div>'
+      return '<div style="background:var(--bg4);border:1px solid var(--bd);border-top:3px solid ' + cor + ';border-radius:7px;padding:10px;font-size:10.5px;"><div style="font-family:var(--M);font-size:8.5px;text-transform:uppercase;color:' + _corTxt(cor) + ';margin-bottom:4px;">' + k + '</div>'
         + '<div>TIR <b>' + _bpP(c.tir_anual) + '</b> · VPL <b>' + _bpK(c.vpl) + '</b></div><div style="color:var(--t2);">Payback ' + (c.payback_simples_meses ?? 'n/a') + ' m · exposição ' + _bpK(c.exposicao_maxima_caixa) + '</div>'
         + '<div style="color:var(--t3);font-size:9px;margin-top:3px;">volume ×' + c.fatores.fatorVolume + ' · preço ×' + c.fatores.fatorPreco + ' · custos ×' + c.fatores.fatorCusto + '</div></div>'; }).join('') + '</div>' : '';
-  const lista = (t, arr, cor) => Array.isArray(arr) && arr.length ? '<div style="margin-bottom:10px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:' + cor + ';margin-bottom:4px;">' + t + '</div>' + arr.map(x => '<div style="font-size:11px;padding:2px 0;">• ' + _bpE(x) + '</div>').join('') + '</div>' : '';
+  const lista = (t, arr, cor) => Array.isArray(arr) && arr.length ? '<div style="margin-bottom:10px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:' + _corTxt(cor) + ';margin-bottom:4px;">' + t + '</div>' + arr.map(x => '<div style="font-size:11px;padding:2px 0;">• ' + _bpE(x) + '</div>').join('') + '</div>' : '';
   const just = nar.justificativas ? Object.entries(nar.justificativas).map(([k, t]) => '<div style="font-size:11px;margin-bottom:5px;"><b style="text-transform:capitalize;">' + _bpE(k) + ':</b> ' + _bpE(t) + '</div>').join('') : '';
   v.innerHTML = ''
     + '<div class="panel" style="margin-bottom:12px;"><div class="ph" style="flex-wrap:wrap;gap:6px;">' + (vivo ? '<div class="pt">' + _bpE(b.titulo) + '</div>'
@@ -9318,12 +9388,12 @@ async function carregarKpiHistorico() {
         const corF = r.fechamentos > 0 ? 'var(--green)' : 'var(--t3)';
         return '<tr style="' + bgRow + '">'
           + '<td style="padding:7px 8px;font-weight:600;">' + dtFmt + '</td>'
-          + '<td style="text-align:center;padding:7px 4px;color:' + corC + ';font-weight:600;">' + (r.contatos||0) + '</td>'
+          + '<td style="text-align:center;padding:7px 4px;color:' + _corTxt(corC) + ';font-weight:600;">' + (r.contatos||0) + '</td>'
           + '<td style="text-align:center;padding:7px 4px;">' + taxa + '%</td>'
-          + '<td style="text-align:center;padding:7px 4px;color:' + corM + ';font-weight:600;">' + (r.reunioesMarcadas||0) + '</td>'
+          + '<td style="text-align:center;padding:7px 4px;color:' + _corTxt(corM) + ';font-weight:600;">' + (r.reunioesMarcadas||0) + '</td>'
           + '<td style="text-align:center;padding:7px 4px;">' + (r.reunioesFeitas||0) + '</td>'
           + '<td style="text-align:center;padding:7px 4px;">' + (r.propostas||0) + '</td>'
-          + '<td style="text-align:center;padding:7px 4px;font-weight:700;color:' + corF + ';font-size:14px;">' + (r.fechamentos||0) + '</td>'
+          + '<td style="text-align:center;padding:7px 4px;font-weight:700;color:' + _corTxt(corF) + ';font-size:14px;">' + (r.fechamentos||0) + '</td>'
           + '<td style="padding:7px 8px;color:var(--t2);font-size:10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.obs||'') + '</td>'
           + '</tr>';
       }).join('')
@@ -9878,7 +9948,7 @@ async function criarCampanhaCompleta() {
     { label: 'S2-Designer · Brief visual',             done: false },
     { label: 'Banco · Salvando campanha',              done: false },
   ];
-  const renderEt = () => { res.innerHTML = etapas.map(e => '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--bd);"><span style="font-size:14px;">' + (e.done ? '&#10003;' : '&#9702;') + '</span><span style="font-size:12px;color:' + (e.done?'var(--green)':'var(--blue)') + ';">' + e.label + '</span></div>').join(''); };
+  const renderEt = () => { res.innerHTML = etapas.map(e => '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--bd);"><span style="font-size:14px;">' + (e.done ? '&#10003;' : '&#9702;') + '</span><span style="font-size:12px;color:' + _corTxt((e.done?'var(--green)':'var(--blue)')) + ';">' + e.label + '</span></div>').join(''); };
   renderEt();
   addLog('info', '[S2-Campanha] ══════════════════════════════════');
   window._campanhaProcessando = { nome, iniciadoEm: Date.now() }; // v1.5.8
@@ -10441,26 +10511,26 @@ function filtrarCampanhas() {
         const periodoTxt = (dInicio || dFim) ? (dInicio + ' → ' + (dFim||'sem fim')) : 'sem período definido';
         // Badges de redes
         const badgeRede = (key, label, cor) =>
-          '<span style="font-size:9px;padding:2px 6px;border-radius:3px;background:' + (redes[key] ? cor : 'rgba(255,255,255,.05)') + ';color:' + (redes[key] ? '#fff' : 'var(--t3)') + ';opacity:' + (redes[key] ? '1' : '.4') + ';">' + label + '</span>';
+          '<span style="font-size:9px;padding:2px 6px;border-radius:3px;background:' + (redes[key] ? cor : 'rgba(255,255,255,.05)') + ';color:' + _corTxt((redes[key] ? '#fff' : 'var(--t3)')) + ';opacity:' + (redes[key] ? '1' : '.4') + ';">' + label + '</span>';
         const redesBadges =
           badgeRede('linkedin','LI','#0a66c2') + ' ' +
           badgeRede('instagram','IG','#dc2743') + ' ' +
           badgeRede('facebook','FB','#1877f2') + ' ' +
           badgeRede('whatsapp','WA','#25d366') + ' ' +
           badgeRede('email','EM','#ea4335');
-        return '<div style="background:#151628;border:1px solid ' + (ativa?'rgba(34,211,163,.4)':'rgba(255,255,255,.09)') + ';border-radius:9px;overflow:hidden;">'
+        return '<div style="background:var(--bg4);border:1px solid ' + (ativa?'rgba(34,211,163,.4)':'rgba(255,255,255,.09)') + ';border-radius:9px;overflow:hidden;">'
           + (imgUrl ? '<div style="height:100px;overflow:hidden;"><img src="'+imgUrl+'" style="width:100%;height:100%;object-fit:cover;"/></div>'
                     : '<div style="height:50px;background:linear-gradient(135deg,#1a3a8f,#4f7cff);display:flex;align-items:center;justify-content:center;font-size:16px;opacity:.5;">&#127912;</div>')
           + '<div style="padding:10px;">'
           + '<div style="display:flex;align-items:flex-start;gap:5px;margin-bottom:5px;">'
-          + '<span style="font-size:12px;font-weight:600;flex:1;color:#eceefa;">'+nome+'</span>'
-          + '<span style="font-size:7px;padding:2px 5px;border-radius:3px;white-space:nowrap;color:'+statusCor+';border:1px solid '+statusCor+';">'+(camp.status||'rascunho')+'</span>'
+          + '<span style="font-size:12px;font-weight:600;flex:1;color:var(--t1);">'+nome+'</span>'
+          + '<span style="font-size:7px;padding:2px 5px;border-radius:3px;white-space:nowrap;color:'+_corTxt(statusCor)+';border:1px solid '+statusCor+';">'+(camp.status||'rascunho')+'</span>'
           + '</div>'
-          + (canal||dt ? '<div style="font-size:10px;color:#7a7c9e;margin-bottom:3px;">'+[canal,dt].filter(Boolean).join(' · ')+'</div>' : '')
-          + '<div style="font-size:10px;color:#7a7c9e;margin-bottom:5px;">&#128197; '+periodoTxt+'</div>'
+          + (canal||dt ? '<div style="font-size:10px;color:var(--t2);margin-bottom:3px;">'+[canal,dt].filter(Boolean).join(' · ')+'</div>' : '')
+          + '<div style="font-size:10px;color:var(--t2);margin-bottom:5px;">&#128197; '+periodoTxt+'</div>'
           + '<div style="margin-bottom:6px;display:flex;gap:3px;flex-wrap:wrap;">'+redesBadges+'</div>'
-          + (headline ? '<div style="font-size:11px;font-weight:600;color:#4f7cff;margin-bottom:3px;">'+headline+'</div>' : '')
-          + (corpo ? '<div style="font-size:10px;color:#7a7c9e;line-height:1.4;">'+corpo+(corpo.length>=80?'...':'')+'</div>' : '')
+          + (headline ? '<div style="font-size:11px;font-weight:600;color:var(--blue);margin-bottom:3px;">'+headline+'</div>' : '')
+          + (corpo ? '<div style="font-size:10px;color:var(--t2);line-height:1.4;">'+corpo+(corpo.length>=80?'...':'')+'</div>' : '')
           + '</div>'
           + '<div style="display:flex;gap:5px;padding:0 10px 10px;">'
           + '<button class="btn ' + (ativa?'btn-or':'btn-gn') + '" style="font-size:9px;padding:5px 8px;" data-campid="'+campId+'" data-ativa="'+ativa+'" onclick="toggleCampanhaAtiva(this.dataset.campid, this.dataset.ativa)">' + (ativa ? '&#9209; Pausar' : '&#9654; Ativar') + '</button>'
@@ -10470,7 +10540,7 @@ function filtrarCampanhas() {
           + '</div>';
       } catch(cardErr) {
         addLog('err','[Campanhas] Card error: '+cardErr.message);
-        return '<div style="background:#151628;border:1px solid rgba(255,0,0,.3);border-radius:9px;padding:10px;color:#ff4d6d;font-size:11px;">Erro ao renderizar campanha</div>';
+        return '<div style="background:var(--bg4);border:1px solid rgba(255,0,0,.3);border-radius:9px;padding:10px;color:#ff4d6d;font-size:11px;">Erro ao renderizar campanha</div>';
       }
     }).join('');
 
@@ -10847,10 +10917,10 @@ async function runDebugCampanhas() {
   if (!out) return;
 
   const lines = [];
-  const ok  = (msg) => lines.push('<span style="color:#22d3a3;">&#10003; ' + msg + '</span>');
+  const ok  = (msg) => lines.push('<span style="color:var(--green);">&#10003; ' + msg + '</span>');
   const err = (msg) => lines.push('<span style="color:#ff4d6d;">&#10007; ' + msg + '</span>');
-  const inf = (msg) => lines.push('<span style="color:#4f7cff;">&#9432; ' + msg + '</span>');
-  const warn= (msg) => lines.push('<span style="color:#f5a623;">&#9888; ' + msg + '</span>');
+  const inf = (msg) => lines.push('<span style="color:var(--blue);">&#9432; ' + msg + '</span>');
+  const warn= (msg) => lines.push('<span style="color:var(--gold);">&#9888; ' + msg + '</span>');
 
   inf('=== DEBUG MINHAS CAMPANHAS ===');
 
@@ -10963,10 +11033,10 @@ function runDebugPreview() {
   if (!out) return;
 
   const lines = [];
-  const ok  = (msg) => lines.push('<span style="color:#22d3a3;">&#10003; ' + msg + '</span>');
+  const ok  = (msg) => lines.push('<span style="color:var(--green);">&#10003; ' + msg + '</span>');
   const err = (msg) => lines.push('<span style="color:#ff4d6d;">&#10007; ' + msg + '</span>');
-  const inf = (msg) => lines.push('<span style="color:#4f7cff;">&#9432; ' + msg + '</span>');
-  const warn= (msg) => lines.push('<span style="color:#f5a623;">&#9888; ' + msg + '</span>');
+  const inf = (msg) => lines.push('<span style="color:var(--blue);">&#9432; ' + msg + '</span>');
+  const warn= (msg) => lines.push('<span style="color:var(--gold);">&#9888; ' + msg + '</span>');
 
   inf('=== DEBUG PREVIEW POR CANAL ===');
 
@@ -11143,7 +11213,7 @@ async function analisarContratoIA() {
     const d = await r.json();
     const txt = d.content || d.resultado || d.analysis || 'Análise concluída.';
     if (saida) saida.innerHTML = '<div style="background:rgba(156,109,255,.06);border:1px solid rgba(156,109,255,.2);border-radius:6px;padding:12px;font-size:11px;line-height:1.7;">'
-      + '<div style="font-family:var(--M);font-size:8px;color:#9c6dff;margin-bottom:8px;text-transform:uppercase;">Análise Jurídica — ' + tipo + '</div>'
+      + '<div style="font-family:var(--M);font-size:8px;color:var(--pu);margin-bottom:8px;text-transform:uppercase;">Análise Jurídica — ' + tipo + '</div>'
       + txt.split('\n').join('<br/>') + '</div>';
   
     squadSalvar('s5', 'analise_contrato', tipo, '', { resultado:txt });} catch(e) {
@@ -11978,18 +12048,18 @@ async function chamarAgenteS13(tipo, spec, extra) {
   var d = await resp.json();
   return d.content || d.resultado || 'Sem resposta.';
 }
-function s13RenderMockup(texto, spec) { var cor = { powerbi:'#f2c811', looker:'#4285f4', streamlit:'#ff4b4b', plotly:'#636efa', superset:'#20a7c9', metabase:'#509ee3' }[spec.tecnologia] || '#9c6dff'; return '<div style="background:#0d0e1a;border-radius:8px;overflow:hidden;"><div style="background:#161728;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:8px;"><div style="width:10px;height:10px;border-radius:50%;background:#ff5f57;"></div><div style="width:10px;height:10px;border-radius:50%;background:#febc2e;"></div><div style="width:10px;height:10px;border-radius:50%;background:#28c840;"></div><span style="font-family:var(--M);font-size:9px;color:' + cor + ';margin-left:8px;">' + (S13_TECH_LABEL[spec.tecnologia]||spec.tecnologia) + ' -- ' + (spec.nome||'Dashboard') + '</span></div><div style="padding:16px;white-space:pre-wrap;font-size:11px;line-height:1.7;color:#e0e0e0;max-height:550px;overflow-y:auto;">' + texto + '</div></div>'; }
-async function gerarMockupDashboard() { var spec=coletarEspecificacaoS13(); if(!spec.objetivo&&!spec.kpis){toast('Preencha objetivo e KPIs','error');return;} Object.assign(s13Projeto,spec,{historico_chat:[],mockup:''}); var saida=document.getElementById('s13GerarSaida'); if(saida)saida.innerHTML='<div style="color:#9c6dff;font-size:11px;padding:10px;">Gerando mockup...</div>'; addLog('info','[S13] Gerando mockup: '+spec.nome); try { var r=await chamarAgenteS13('mockup',spec); s13Projeto.mockup=r; s13Projeto.historico_chat=[{role:'assistant',content:'Mockup gerado! Me diga o que ajustar.'}]; nav('s13mockup',null); var mo=document.getElementById('s13MockupOutput'); var ti=document.getElementById('s13MockupTitle'); var te=document.getElementById('s13MockupTech'); if(ti)ti.textContent=spec.nome.toUpperCase(); if(te)te.textContent=(S13_TECH_LABEL[spec.tecnologia]||spec.tecnologia)+' - '+(S13_BANCO_LABEL[spec.banco]||spec.banco); if(mo)mo.innerHTML=s13RenderMockup(r,spec); if(saida)saida.innerHTML='<div style="color:var(--green);font-size:11px;padding:8px;">Mockup gerado! Va para aba Mockup.</div>'; addLog('ok','[S13] Mockup: '+spec.nome); toast('Mockup gerado!','success'); s13SalvarProjeto(); } catch(e){if(saida)saida.innerHTML='<div style="color:var(--red);font-size:11px;">Erro: '+e.message+'</div>'; addLog('err','[S13] '+e.message);} }
-async function enviarMsgRefinamento() { var input=document.getElementById('s13ChatInput'); var msgs=document.getElementById('s13ChatMsgs'); var msg=input?input.value.trim():''; if(!msg)return; if(input)input.value=''; var ud=document.createElement('div'); ud.style.cssText='background:rgba(79,124,255,.15);border-radius:6px;padding:10px;font-size:11px;color:var(--t1);'; ud.textContent=msg; if(msgs){msgs.appendChild(ud);msgs.scrollTop=msgs.scrollHeight;} s13Projeto.historico_chat.push({role:'user',content:msg}); var td=document.createElement('div'); td.style.cssText='background:rgba(156,109,255,.1);border-radius:6px;padding:10px;font-size:11px;color:#9c6dff;'; td.textContent='Refinando...'; if(msgs){msgs.appendChild(td);msgs.scrollTop=msgs.scrollHeight;} try { var hist=s13Projeto.historico_chat.map(function(m){return m.role+': '+m.content;}).join(' | '); var extra='HISTORICO: '+hist+' | AJUSTE SOLICITADO: '+msg+' | MOCKUP ATUAL (primeiros 1000): '+(s13Projeto.mockup||'').substring(0,1000); var r=await chamarAgenteS13('mockup',s13Projeto,extra); s13Projeto.mockup=r; s13Projeto.historico_chat.push({role:'assistant',content:'Aplicado: '+msg.substring(0,60)}); var mo=document.getElementById('s13MockupOutput'); if(mo)mo.innerHTML=s13RenderMockup(r,s13Projeto); td.textContent='Aplicado: '+msg.substring(0,80); td.style.color='var(--t1)'; } catch(e){td.textContent='Erro: '+e.message; td.style.color='var(--red)';} if(msgs)msgs.scrollTop=msgs.scrollHeight; }
+function s13RenderMockup(texto, spec) { var cor = { powerbi:'#f2c811', looker:'#4285f4', streamlit:'#ff4b4b', plotly:'#636efa', superset:'#20a7c9', metabase:'#509ee3' }[spec.tecnologia] || '#9c6dff'; return '<div style="background:var(--bg2);border-radius:8px;overflow:hidden;"><div style="background:var(--bg4);padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:8px;"><div style="width:10px;height:10px;border-radius:50%;background:#ff5f57;"></div><div style="width:10px;height:10px;border-radius:50%;background:#febc2e;"></div><div style="width:10px;height:10px;border-radius:50%;background:#28c840;"></div><span style="font-family:var(--M);font-size:9px;color:' + _corTxt(cor) + ';margin-left:8px;">' + (S13_TECH_LABEL[spec.tecnologia]||spec.tecnologia) + ' -- ' + (spec.nome||'Dashboard') + '</span></div><div style="padding:16px;white-space:pre-wrap;font-size:11px;line-height:1.7;color:var(--t1);max-height:550px;overflow-y:auto;">' + texto + '</div></div>'; }
+async function gerarMockupDashboard() { var spec=coletarEspecificacaoS13(); if(!spec.objetivo&&!spec.kpis){toast('Preencha objetivo e KPIs','error');return;} Object.assign(s13Projeto,spec,{historico_chat:[],mockup:''}); var saida=document.getElementById('s13GerarSaida'); if(saida)saida.innerHTML='<div style="color:var(--pu);font-size:11px;padding:10px;">Gerando mockup...</div>'; addLog('info','[S13] Gerando mockup: '+spec.nome); try { var r=await chamarAgenteS13('mockup',spec); s13Projeto.mockup=r; s13Projeto.historico_chat=[{role:'assistant',content:'Mockup gerado! Me diga o que ajustar.'}]; nav('s13mockup',null); var mo=document.getElementById('s13MockupOutput'); var ti=document.getElementById('s13MockupTitle'); var te=document.getElementById('s13MockupTech'); if(ti)ti.textContent=spec.nome.toUpperCase(); if(te)te.textContent=(S13_TECH_LABEL[spec.tecnologia]||spec.tecnologia)+' - '+(S13_BANCO_LABEL[spec.banco]||spec.banco); if(mo)mo.innerHTML=s13RenderMockup(r,spec); if(saida)saida.innerHTML='<div style="color:var(--green);font-size:11px;padding:8px;">Mockup gerado! Va para aba Mockup.</div>'; addLog('ok','[S13] Mockup: '+spec.nome); toast('Mockup gerado!','success'); s13SalvarProjeto(); } catch(e){if(saida)saida.innerHTML='<div style="color:var(--red);font-size:11px;">Erro: '+e.message+'</div>'; addLog('err','[S13] '+e.message);} }
+async function enviarMsgRefinamento() { var input=document.getElementById('s13ChatInput'); var msgs=document.getElementById('s13ChatMsgs'); var msg=input?input.value.trim():''; if(!msg)return; if(input)input.value=''; var ud=document.createElement('div'); ud.style.cssText='background:rgba(79,124,255,.15);border-radius:6px;padding:10px;font-size:11px;color:var(--t1);'; ud.textContent=msg; if(msgs){msgs.appendChild(ud);msgs.scrollTop=msgs.scrollHeight;} s13Projeto.historico_chat.push({role:'user',content:msg}); var td=document.createElement('div'); td.style.cssText='background:rgba(156,109,255,.1);border-radius:6px;padding:10px;font-size:11px;color:var(--pu);'; td.textContent='Refinando...'; if(msgs){msgs.appendChild(td);msgs.scrollTop=msgs.scrollHeight;} try { var hist=s13Projeto.historico_chat.map(function(m){return m.role+': '+m.content;}).join(' | '); var extra='HISTORICO: '+hist+' | AJUSTE SOLICITADO: '+msg+' | MOCKUP ATUAL (primeiros 1000): '+(s13Projeto.mockup||'').substring(0,1000); var r=await chamarAgenteS13('mockup',s13Projeto,extra); s13Projeto.mockup=r; s13Projeto.historico_chat.push({role:'assistant',content:'Aplicado: '+msg.substring(0,60)}); var mo=document.getElementById('s13MockupOutput'); if(mo)mo.innerHTML=s13RenderMockup(r,s13Projeto); td.textContent='Aplicado: '+msg.substring(0,80); td.style.color='var(--t1)'; } catch(e){td.textContent='Erro: '+e.message; td.style.color='var(--red)';} if(msgs)msgs.scrollTop=msgs.scrollHeight; }
 function s13QuickMsg(msg){var i=document.getElementById('s13ChatInput'); if(i){i.value=msg;enviarMsgRefinamento();}}
 function aprovarMockup(){toast('Mockup aprovado! Gerando codigo...','success');addLog('ok','[S13] Mockup aprovado: '+s13Projeto.nome);gerarCodigoFinal();}
-async function gerarCodigoFinal() { var spec=s13Projeto.cliente?s13Projeto:coletarEspecificacaoS13(); if(!spec.objetivo&&!spec.kpis){toast('Configure o dashboard primeiro','error');return;} Object.assign(s13Projeto,spec); var saida=document.getElementById('s13GerarSaida'); if(saida)saida.innerHTML='<div style="color:#9c6dff;font-size:11px;padding:10px;">Gerando 4 modulos de codigo...</div>'; addLog('info','[S13] Gerando codigo: '+spec.nome); try { var rs=await Promise.all([chamarAgenteS13('query',spec),chamarAgenteS13('calc',spec),chamarAgenteS13('app',spec),chamarAgenteS13('deploy',spec)]); s13Projeto.codigo={query:rs[0],calc:rs[1],app:rs[2],deploy:rs[3]}; var ck=['Credenciais '+(S13_BANCO_LABEL[spec.banco]||spec.banco)+' configuradas','Tabelas acessiveis: '+spec.tabelas,'Queries validadas','Mockup aprovado: '+spec.cliente,'RLS: '+spec.publico,'Refresh: '+spec.refresh,'Deploy finalizado']; var ckEl=document.getElementById('s13Checklist'); if(ckEl)ckEl.innerHTML=ck.map(function(t){return '<div style="padding:3px 0;">&#9744; '+t+'</div>';}).join(''); nav('s13codigo',null); var lb=document.getElementById('s13CodigoLabel'); if(lb)lb.textContent=spec.cliente+' - '+(S13_TECH_LABEL[spec.tecnologia]||spec.tecnologia); mostrarAbaS13('query'); if(saida)saida.innerHTML='<div style="color:var(--green);font-size:11px;padding:8px;">Codigo completo gerado!</div>'; addLog('ok','[S13] Codigo: '+spec.nome+' - 4 modulos'); toast('Codigo completo!','success'); s13SalvarProjeto(); } catch(e){if(saida)saida.innerHTML='<div style="color:var(--red);font-size:11px;">Erro: '+e.message+'</div>'; addLog('err','[S13] '+e.message);} }
+async function gerarCodigoFinal() { var spec=s13Projeto.cliente?s13Projeto:coletarEspecificacaoS13(); if(!spec.objetivo&&!spec.kpis){toast('Configure o dashboard primeiro','error');return;} Object.assign(s13Projeto,spec); var saida=document.getElementById('s13GerarSaida'); if(saida)saida.innerHTML='<div style="color:var(--pu);font-size:11px;padding:10px;">Gerando 4 modulos de codigo...</div>'; addLog('info','[S13] Gerando codigo: '+spec.nome); try { var rs=await Promise.all([chamarAgenteS13('query',spec),chamarAgenteS13('calc',spec),chamarAgenteS13('app',spec),chamarAgenteS13('deploy',spec)]); s13Projeto.codigo={query:rs[0],calc:rs[1],app:rs[2],deploy:rs[3]}; var ck=['Credenciais '+(S13_BANCO_LABEL[spec.banco]||spec.banco)+' configuradas','Tabelas acessiveis: '+spec.tabelas,'Queries validadas','Mockup aprovado: '+spec.cliente,'RLS: '+spec.publico,'Refresh: '+spec.refresh,'Deploy finalizado']; var ckEl=document.getElementById('s13Checklist'); if(ckEl)ckEl.innerHTML=ck.map(function(t){return '<div style="padding:3px 0;">&#9744; '+t+'</div>';}).join(''); nav('s13codigo',null); var lb=document.getElementById('s13CodigoLabel'); if(lb)lb.textContent=spec.cliente+' - '+(S13_TECH_LABEL[spec.tecnologia]||spec.tecnologia); mostrarAbaS13('query'); if(saida)saida.innerHTML='<div style="color:var(--green);font-size:11px;padding:8px;">Codigo completo gerado!</div>'; addLog('ok','[S13] Codigo: '+spec.nome+' - 4 modulos'); toast('Codigo completo!','success'); s13SalvarProjeto(); } catch(e){if(saida)saida.innerHTML='<div style="color:var(--red);font-size:11px;">Erro: '+e.message+'</div>'; addLog('err','[S13] '+e.message);} }
 async function gerarTudoDashboard() {
   var spec = coletarEspecificacaoS13();
   if (!spec.objetivo) { toast('Preencha o objetivo', 'error'); return; }
   Object.assign(s13Projeto, spec);
   var saida = document.getElementById('s13GerarSaida');
-  if (saida) saida.innerHTML = '<div style="color:#9c6dff;font-size:11px;padding:12px;">Gerando tudo (pode levar 60s)...</div>';
+  if (saida) saida.innerHTML = '<div style="color:var(--pu);font-size:11px;padding:12px;">Gerando tudo (pode levar 60s)...</div>';
   addLog('info', '[S13] === GERAR TUDO: ' + spec.nome + ' ===');
   try {
     var rs = await Promise.all([
@@ -12010,7 +12080,7 @@ async function gerarTudoDashboard() {
     if (mo) mo.innerHTML = s13RenderMockup(rs[0], spec);
     s13SalvarProjeto();
     if (saida) {
-      saida.innerHTML = '<div style="background:rgba(156,109,255,.1);border:1px solid rgba(156,109,255,.3);border-radius:8px;padding:14px;"><div style="font-family:var(--M);font-size:9px;color:#9c6dff;margin-bottom:8px;">' + spec.nome.toUpperCase() + ' - COMPLETO</div><div style="font-size:11px;margin-bottom:10px;">Mockup + Queries + Metricas + App + Deploy prontos.</div><div id="s13CompBtns" style="display:flex;gap:8px;"></div></div>';
+      saida.innerHTML = '<div style="background:rgba(156,109,255,.1);border:1px solid rgba(156,109,255,.3);border-radius:8px;padding:14px;"><div style="font-family:var(--M);font-size:9px;color:var(--pu);margin-bottom:8px;">' + spec.nome.toUpperCase() + ' - COMPLETO</div><div style="font-size:11px;margin-bottom:10px;">Mockup + Queries + Metricas + App + Deploy prontos.</div><div id="s13CompBtns" style="display:flex;gap:8px;"></div></div>';
       var cb = document.getElementById('s13CompBtns');
       if (cb) {
         var bm = document.createElement('button'); bm.className = 'btn btn-p'; bm.style.flex = '1'; bm.textContent = 'Ver Mockup'; bm.onclick = function() { nav('s13mockup', null); }; cb.appendChild(bm);
@@ -12064,7 +12134,7 @@ function s13RenderizarHub(ps) {
     card.innerHTML = '<div style="font-size:13px;font-weight:600;color:var(--t1);margin-bottom:4px;">' + (p.nome||'Dashboard') + '</div>'
       + '<div style="font-size:10px;color:var(--t2);margin-bottom:6px;">' + (p.cliente||'') + ' - ' + dt + '</div>'
       + '<div style="display:flex;gap:5px;flex-wrap:wrap;">'
-      + '<span style="font-size:8px;padding:2px 7px;border-radius:3px;background:rgba(156,109,255,.12);color:#9c6dff;">' + (S13_TECH_LABEL[p.tecnologia]||p.tecnologia) + '</span>'
+      + '<span style="font-size:8px;padding:2px 7px;border-radius:3px;background:rgba(156,109,255,.12);color:var(--pu);">' + (S13_TECH_LABEL[p.tecnologia]||p.tecnologia) + '</span>'
       + '<span style="font-size:8px;padding:2px 7px;border-radius:3px;background:rgba(79,124,255,.1);color:var(--blue);">' + (S13_BANCO_LABEL[p.banco]||p.banco) + '</span>'
       + (p.mockup ? '<span style="font-size:8px;padding:2px 7px;border-radius:3px;background:rgba(34,211,163,.1);color:var(--green);">Mockup ok</span>' : '')
       + (p.codigo && p.codigo.app ? '<span style="font-size:8px;padding:2px 7px;border-radius:3px;background:rgba(240,112,48,.1);color:var(--or);">Codigo ok</span>' : '')
@@ -12075,7 +12145,7 @@ function s13RenderizarHub(ps) {
   });
   var addCard = document.createElement('div');
   addCard.style.cssText = 'background:var(--bg3);border:2px dashed rgba(156,109,255,.3);border-radius:9px;padding:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;';
-  addCard.innerHTML = '<div style="font-size:28px;color:#9c6dff;opacity:.5;">+</div><div style="font-size:11px;color:var(--t3);">Novo Dashboard</div>';
+  addCard.innerHTML = '<div style="font-size:28px;color:var(--pu);opacity:.5;">+</div><div style="font-size:11px;color:var(--t3);">Novo Dashboard</div>';
   addCard.onclick = function() { nav('s13novo', null); };
   grid.appendChild(addCard);
 }
@@ -12272,7 +12342,7 @@ function renderEventLeads(container, leads, oferta, nomeEvento) {
     info.innerHTML = '<div style="font-size:13px;font-weight:700;color:var(--t1);">' + (lead.empresa||'Empresa') + '</div>'
       + '<div style="font-size:10px;color:var(--t2);">' + (lead.setor||'') + ' | ' + (lead.faturamento_estimado||'') + '</div>';
     var badge = document.createElement('span');
-    badge.style.cssText = 'font-family:var(--M);font-size:10px;font-weight:700;color:' + scoreCor + ';background:rgba(0,0,0,.25);padding:2px 10px;border-radius:4px;white-space:nowrap;';
+    badge.style.cssText = 'font-family:var(--M);font-size:10px;font-weight:700;color:' + _corTxt(scoreCor) + ';background:rgba(0,0,0,.25);padding:2px 10px;border-radius:4px;white-space:nowrap;';
     badge.textContent = 'Score ' + (lead.score||'B');
     hdr.appendChild(info); hdr.appendChild(badge); card.appendChild(hdr);
 
@@ -12708,7 +12778,7 @@ function renderLeadsLI(container, leads) {
     info.innerHTML = '<div style="font-size:12px;font-weight:700;color:var(--t1);">' + (lead.nome||'—') + '</div>'
       + '<div style="font-size:10px;color:var(--t2);">' + (lead.cargo||'') + ' · ' + (lead.empresa||'') + (lead.cidade?' · '+lead.cidade:'') + '</div>';
     var badge = document.createElement('span');
-    badge.style.cssText = 'font-family:var(--M);font-size:10px;font-weight:700;color:'+scoreCor+';background:rgba(0,0,0,.25);padding:2px 8px;border-radius:4px;white-space:nowrap;';
+    badge.style.cssText = 'font-family:var(--M);font-size:10px;font-weight:700;color:'+_corTxt(scoreCor)+';background:rgba(0,0,0,.25);padding:2px 8px;border-radius:4px;white-space:nowrap;';
     badge.textContent = 'Score ' + lead.score;
     hdr.appendChild(cb); hdr.appendChild(info); hdr.appendChild(badge); card.appendChild(hdr);
 
@@ -13621,7 +13691,7 @@ function renderizarKanban() {
     if (!col) return;
     col.innerHTML = cols[step].slice(0,3).map(function(s) {
       var cor = s.seq_status==='pronto' ? 'var(--gold)' : 'var(--t2)';
-      return '<div style="font-size:9px;color:'+cor+';padding:2px 0;border-bottom:1px solid var(--bd);">'
+      return '<div style="font-size:9px;color:'+_corTxt(cor)+';padding:2px 0;border-bottom:1px solid var(--bd);">'
         + (s.seq_status==='pronto' ? '&#9888; ' : '') + (s.nome||'').split(' ')[0] + ' · ' + (s.empresa||'').substring(0,15)
         + '</div>';
     }).join('') + (cols[step].length > 3 ? '<div style="font-size:9px;color:var(--t3);">+' + (cols[step].length-3) + ' mais</div>' : '');
@@ -14011,7 +14081,7 @@ async function enriquecerLeads() {
 
   <!-- ═══ S5 · JURÍDICO ═══ -->
   <div class="page" id="page-s5juridico">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#9c6dff;margin-bottom:14px;">S5 · JURÍDICO + COMPLIANCE</div>
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--pu);margin-bottom:14px;">S5 · JURÍDICO + COMPLIANCE</div>
     <div class="kg k2">
       <div class="panel"><div class="ph"><div class="pt">Análise de Contrato</div><span class="tag on">IA</span></div>
         <div class="pb">
@@ -14070,7 +14140,7 @@ async function enriquecerLeads() {
 
   <!-- ═══ S8 · RH ═══ -->
   <div class="page" id="page-s8rh">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#4f7cff;margin-bottom:14px;">S8 · RH + DEPARTAMENTO PESSOAL</div>
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--blue);margin-bottom:14px;">S8 · RH + DEPARTAMENTO PESSOAL</div>
     <div class="kg k3" style="margin-bottom:12px;">
       <div class="kpi pk"><div class="kl">Headcount</div><div class="kv" id="s8_head">—</div><div class="ks">colaboradores ativos</div></div>
       <div class="kpi pk"><div class="kl">Turnover</div><div class="kv" id="s8_turn">—</div><div class="ks">mês atual</div></div>
@@ -14122,7 +14192,7 @@ async function enriquecerLeads() {
 
   <!-- ═══ S9 · GESTÃO DE PROJETOS ═══ -->
   <div class="page" id="page-s9projetos">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#22d3a3;margin-bottom:14px;">S9 · GESTÃO DE PROJETOS</div>
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--green);margin-bottom:14px;">S9 · GESTÃO DE PROJETOS</div>
     <div class="kg k3" style="margin-bottom:12px;">
       <div class="kpi pk"><div class="kl">Projetos Ativos</div><div class="kv" id="s9_ativos">—</div><div class="ks">em andamento</div></div>
       <div class="kpi pk"><div class="kl">No prazo</div><div class="kv" id="s9_prazo">—</div><div class="ks">verde</div></div>
@@ -14170,7 +14240,7 @@ async function enriquecerLeads() {
 
   <!-- ═══ S10 · ATENDIMENTO ═══ -->
   <div class="page" id="page-s10atend">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#4f7cff;margin-bottom:14px;">S10 · ATENDIMENTO OMNICHANNEL + TICKETS</div>
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--blue);margin-bottom:14px;">S10 · ATENDIMENTO OMNICHANNEL + TICKETS</div>
     <div class="kg k4" style="margin-bottom:12px;">
       <div class="kpi pk"><div class="kl">Tickets abertos</div><div class="kv" id="s10_abertos">—</div><div class="ks">aguardando</div></div>
       <div class="kpi pk"><div class="kl">Em SLA</div><div class="kv" id="s10_sla">—</div><div class="ks">no prazo</div></div>
@@ -14269,7 +14339,7 @@ async function enriquecerLeads() {
 
   <!-- ═══ S6 · DEV + QA ═══ -->
   <div class="page" id="page-s6dev">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#22d3a3;margin-bottom:14px;">S6 · DESENVOLVIMENTO + QA + VERSÕES</div>
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--green);margin-bottom:14px;">S6 · DESENVOLVIMENTO + QA + VERSÕES</div>
     <div class="kg k3" style="margin-bottom:12px;">
       <div class="kpi pk"><div class="kl">Versão atual</div><div class="kv" id="s6_versao">1.0.0</div><div class="ks">em produção</div></div>
       <div class="kpi pk"><div class="kl">Próxima versão</div><div class="kv" id="s6_proxima">—</div><div class="ks">em desenvolvimento</div></div>
@@ -14532,7 +14602,7 @@ async function enriquecerLeads() {
         <span id="s12AbaTitle" style="font-family:var(--M);font-size:9px;color:var(--blue);text-transform:uppercase;">DATA WAREHOUSE — Modelo Físico</span>
         <span id="s12AbaEnv" style="font-size:9px;color:var(--t3);"></span>
       </div>
-      <div id="s12AbaConteudo" style="padding:14px;font-family:monospace;font-size:11px;line-height:1.7;color:#e0e0e0;white-space:pre-wrap;max-height:600px;overflow-y:auto;">
+      <div id="s12AbaConteudo" style="padding:14px;font-family:monospace;font-size:11px;line-height:1.7;color:var(--t1);white-space:pre-wrap;max-height:600px;overflow-y:auto;">
         Configure o projeto na aba "Novo Projeto" e clique em Gerar.
       </div>
     </div>
@@ -14545,7 +14615,7 @@ async function enriquecerLeads() {
     <div style="background:linear-gradient(135deg,rgba(156,109,255,.18),rgba(79,124,255,.08));border:1px solid rgba(156,109,255,.3);border-radius:10px;padding:18px 22px;margin-bottom:16px;display:flex;align-items:center;gap:14px;">
       <div style="font-size:30px;">&#128202;</div>
       <div style="flex:1;">
-        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:#9c6dff;letter-spacing:2px;">S13 · DASHBOARD STUDIO</div>
+        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--pu);letter-spacing:2px;">S13 · DASHBOARD STUDIO</div>
         <div style="font-size:15px;font-weight:700;color:var(--t1);margin-top:3px;">Power BI · Looker Studio · Python (Plotly/Streamlit)</div>
         <div style="font-size:11px;color:var(--t2);margin-top:4px;">Especifique o dashboard, o cliente escolhe a tecnologia e o banco. A IA gera mockup interativo, refina por conversa e entrega o código final.</div>
       </div>
@@ -14561,20 +14631,20 @@ async function enriquecerLeads() {
     </div>
 
     <!-- PROJETOS -->
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#9c6dff;margin-bottom:10px;">DASHBOARDS SALVOS</div>
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--pu);margin-bottom:10px;">DASHBOARDS SALVOS</div>
     <div id="s13ProjetosGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:16px;">
       <div style="background:var(--bg3);border:2px dashed rgba(156,109,255,.3);border-radius:9px;padding:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;" onclick="nav('s13novo',null)">
-        <div style="font-size:28px;color:#9c6dff;opacity:.5;">+</div>
+        <div style="font-size:28px;color:var(--pu);opacity:.5;">+</div>
         <div style="font-size:11px;color:var(--t3);">Novo Dashboard</div>
       </div>
     </div>
 
     <!-- CAPACIDADES -->
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#9c6dff;margin-bottom:10px;">CAPACIDADES DO SQUAD S13</div>
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--pu);margin-bottom:10px;">CAPACIDADES DO SQUAD S13</div>
     <div class="kg k4">
       <div style="background:var(--bg4);border:1px solid rgba(156,109,255,.2);border-radius:8px;padding:13px;">
         <div style="font-size:20px;margin-bottom:6px;">&#128101;</div>
-        <div style="font-family:var(--M);font-size:9px;color:#9c6dff;margin-bottom:5px;">POWER BI</div>
+        <div style="font-family:var(--M);font-size:9px;color:var(--pu);margin-bottom:5px;">POWER BI</div>
         <div style="font-size:10px;color:var(--t2);line-height:1.6;">Gera modelo de dados DAX, medidas calculadas, relacionamentos e código M de transformação. Exporta .pbit template.</div>
       </div>
       <div style="background:var(--bg4);border:1px solid rgba(79,124,255,.2);border-radius:8px;padding:13px;">
@@ -14597,7 +14667,7 @@ async function enriquecerLeads() {
 
   <!-- NOVO DASHBOARD -->
   <div class="page" id="page-s13novo">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#9c6dff;margin-bottom:14px;">S13 · ESPECIFICAÇÃO DO DASHBOARD</div>
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--pu);margin-bottom:14px;">S13 · ESPECIFICAÇÃO DO DASHBOARD</div>
 
     <div class="kg k2">
       <!-- COLUNA ESQUERDA: CONFIG -->
@@ -14720,14 +14790,14 @@ async function enriquecerLeads() {
 
   <!-- MOCKUP + REFINAMENTO -->
   <div class="page" id="page-s13mockup">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#9c6dff;margin-bottom:12px;">S13 · MOCKUP INTERATIVO — REFINAR COM IA</div>
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--pu);margin-bottom:12px;">S13 · MOCKUP INTERATIVO — REFINAR COM IA</div>
 
     <div class="kg k2" style="gap:12px;">
       <!-- MOCKUP VISUAL -->
       <div style="flex:2;">
         <div style="background:var(--bg4);border:1px solid rgba(156,109,255,.3);border-radius:9px;overflow:hidden;">
           <div style="background:var(--bg3);border-bottom:1px solid var(--bd);padding:10px 14px;display:flex;align-items:center;gap:8px;">
-            <span id="s13MockupTitle" style="font-family:var(--M);font-size:9px;color:#9c6dff;text-transform:uppercase;">MOCKUP — Dashboard</span>
+            <span id="s13MockupTitle" style="font-family:var(--M);font-size:9px;color:var(--pu);text-transform:uppercase;">MOCKUP — Dashboard</span>
             <span id="s13MockupTech" style="font-size:9px;color:var(--t3);"></span>
             <div style="flex:1;"></div>
             <button class="btn btn-gn" style="font-size:9px;padding:3px 10px;" onclick="aprovarMockup()">&#10003; Aprovar Mockup</button>
@@ -14768,7 +14838,7 @@ async function enriquecerLeads() {
 
   <!-- CÓDIGO FINAL -->
   <div class="page" id="page-s13codigo">
-    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#9c6dff;margin-bottom:12px;">S13 · CÓDIGO FINAL DO DASHBOARD</div>
+    <div style="font-family:var(--M);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--pu);margin-bottom:12px;">S13 · CÓDIGO FINAL DO DASHBOARD</div>
 
     <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
       <button class="btn btn-p" id="s13codeBtnQuery"   onclick="mostrarAbaS13('query')"  style="font-size:10px;">&#128202; Queries SQL</button>
@@ -14782,10 +14852,10 @@ async function enriquecerLeads() {
 
     <div style="background:var(--bg4);border:1px solid rgba(156,109,255,.2);border-radius:8px;overflow:hidden;">
       <div style="background:var(--bg3);border-bottom:1px solid var(--bd);padding:8px 14px;display:flex;align-items:center;gap:8px;">
-        <span id="s13CodeAbaTitle" style="font-family:var(--M);font-size:9px;color:#9c6dff;text-transform:uppercase;">QUERIES SQL — Fonte de Dados</span>
+        <span id="s13CodeAbaTitle" style="font-family:var(--M);font-size:9px;color:var(--pu);text-transform:uppercase;">QUERIES SQL — Fonte de Dados</span>
         <span id="s13CodeInfo" style="font-size:9px;color:var(--t3);"></span>
       </div>
-      <div id="s13CodeOutput" style="padding:16px;font-family:monospace;font-size:11px;line-height:1.7;color:#e0e0e0;white-space:pre-wrap;max-height:600px;overflow-y:auto;background:#0d0e1a;">
+      <div id="s13CodeOutput" style="padding:16px;font-family:monospace;font-size:11px;line-height:1.7;color:var(--t1);white-space:pre-wrap;max-height:600px;overflow-y:auto;background:var(--bg2);">
         Gere o código na aba Novo Dashboard ou aprove o mockup.
       </div>
     </div>
@@ -14887,10 +14957,10 @@ async function pvSimular() {
           <table style="width:100%;font-size:10.5px;margin-top:5px;border-collapse:collapse;">${p.marcos.map(x => `<tr style="border-top:1px solid var(--bd);">
             <td style="padding:3px 4px;width:62px;font-weight:600;">${_pvMes(x.mes)}</td><td style="padding:3px 4px;">${x.descricao}</td>
             <td style="padding:3px 4px;width:175px;white-space:nowrap;"><span style="color:var(--t3);font-size:9.5px;">receb.</span>
-              <input type="date" value="${x.recebimento}" onchange="pvDataMarco('${x.marco_id}', this.value)" title="Mude a data só deste marco" style="font-size:10px;padding:1px 3px;background:var(--bg4);color:${x.data_manual ? 'var(--gold)' : 'var(--t1)'};border:1px solid ${x.data_manual ? 'var(--gold)' : 'var(--bd)'};border-radius:4px;"/>
+              <input type="date" value="${x.recebimento}" onchange="pvDataMarco('${x.marco_id}', this.value)" title="Mude a data só deste marco" style="font-size:10px;padding:1px 3px;background:var(--bg4);color:${_corTxt(x.data_manual ? 'var(--gold)' : 'var(--t1)')};border:1px solid ${x.data_manual ? 'var(--gold)' : 'var(--bd)'};border-radius:4px;"/>
               ${x.data_manual ? `<span onclick="pvDataMarco('${x.marco_id}', '')" title="Voltar à data calculada" style="cursor:pointer;color:var(--gold);font-size:11px;">↺</span>` : ''}</td>
             <td style="padding:3px 4px;text-align:right;width:110px;font-family:var(--M);">${_pvBRL(x.valor)}</td>
-            <td style="padding:3px 4px;width:70px;text-align:right;color:${ac[x.acao][1]};">${ac[x.acao][0]}</td></tr>`).join('')}</table></div>`).join('')}
+            <td style="padding:3px 4px;width:70px;text-align:right;color:${_corTxt(ac[x.acao][1])};">${ac[x.acao][0]}</td></tr>`).join('')}</table></div>`).join('')}
       </div>
       ${d.a_fechar.length ? `<div style="font-size:10.5px;color:var(--t2);margin-top:8px;">${d.a_fechar.length} estimativa(s) de marcos já faturados serão fechadas no QuickBooks.</div>` : ''}
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
@@ -15106,7 +15176,7 @@ function renderLancamentos(lancamentos) {
         <span style="color:var(--t2);width:78px;flex-shrink:0;font-family:var(--M);font-size:10px;">${l.data || ''}</span>
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${l.descricao || ''}</span>
         <span style="font-size:9px;color:var(--t3);padding:2px 6px;border:1px solid var(--bd);border-radius:3px;">${l.categoria || ''}</span>
-        <span style="font-weight:600;color:${cor};font-family:var(--M);">${sinal} ${fmtBRLcompleto(l.valor)}</span>
+        <span style="font-weight:600;color:${_corTxt(cor)};font-family:var(--M);">${sinal} ${fmtBRLcompleto(l.valor)}</span>
       </div>`;
   }).join('');
 }
@@ -15207,11 +15277,11 @@ function renderExtrato(d) {
               <td style="padding:7px 8px;">${l.descricao}${l.qb_txn_id ? `<span style="color:var(--t3);font-size:9px;margin-left:5px;font-family:var(--M);" title="Identificação no QuickBooks — use para localizar o lançamento lá">#${l.qb_txn_id}</span>` : ''}</td>
               <td style="padding:7px 8px;color:var(--t3);font-size:10px;">${l.categoria || '-'}</td>
               <td style="padding:7px 8px;text-align:center;">
-                <span style="font-size:9px;padding:2px 6px;border:1px solid ${corOrigem};color:${corOrigem};border-radius:3px;">${isSim ? 'SIM' : 'QB'}</span>
+                <span style="font-size:9px;padding:2px 6px;border:1px solid ${corOrigem};color:${_corTxt(corOrigem)};border-radius:3px;">${isSim ? 'SIM' : 'QB'}</span>
               </td>
-              <td style="padding:7px 8px;text-align:right;font-family:var(--M);color:${l.tipo==='entrada'?'var(--green)':'var(--t3)'};">${l.tipo==='entrada' ? fmtBRLcompleto(l.valor) : '-'}</td>
-              <td style="padding:7px 8px;text-align:right;font-family:var(--M);color:${l.tipo==='saida'?'var(--red)':'var(--t3)'};">${l.tipo==='saida' ? fmtBRLcompleto(l.valor) : '-'}</td>
-              <td style="padding:7px 8px;text-align:right;font-family:var(--M);font-weight:600;color:${corSaldo};">${fmtBRLcompleto(l.saldo_acumulado)}</td>
+              <td style="padding:7px 8px;text-align:right;font-family:var(--M);color:${_corTxt(l.tipo==='entrada'?'var(--green)':'var(--t3)')};">${l.tipo==='entrada' ? fmtBRLcompleto(l.valor) : '-'}</td>
+              <td style="padding:7px 8px;text-align:right;font-family:var(--M);color:${_corTxt(l.tipo==='saida'?'var(--red)':'var(--t3)')};">${l.tipo==='saida' ? fmtBRLcompleto(l.valor) : '-'}</td>
+              <td style="padding:7px 8px;text-align:right;font-family:var(--M);font-weight:600;color:${_corTxt(corSaldo)};">${fmtBRLcompleto(l.saldo_acumulado)}</td>
               <td style="text-align:center;">${acao}</td>
             </tr>`;
         }).join('')}
@@ -15368,7 +15438,7 @@ function renderDespesasLista() {
             <td style="padding:7px;text-align:right;font-family:var(--M);">${fmtBRLcompleto(d.valor)}</td>
             <td style="padding:7px;text-align:center;color:var(--t3);font-size:10px;">${d.data_inicio}</td>
             <td style="padding:7px;text-align:center;">
-              <span style="font-size:9px;padding:2px 6px;border-radius:3px;background:${d.ativa ? 'rgba(34,211,163,.1)' : 'rgba(255,79,79,.1)'};color:${d.ativa ? 'var(--green)' : 'var(--red)'};">
+              <span style="font-size:9px;padding:2px 6px;border-radius:3px;background:${d.ativa ? 'rgba(34,211,163,.1)' : 'rgba(255,79,79,.1)'};color:${_corTxt(d.ativa ? 'var(--green)' : 'var(--red)')};">
                 ${d.ativa ? 'ATIVA' : 'PAUSADA'}
               </span>
             </td>
@@ -15630,7 +15700,7 @@ function renderFluxoMatriz(d) {
             const subtotal = linhaSubtotal(linha);
             return `
               <tr style="${subtotal ? 'background:rgba(79,124,255,.04);font-weight:600;' : ''}border-bottom:1px solid rgba(255,255,255,.03);">
-                <td style="padding:7px 8px;color:${subtotal ? 'var(--blue)' : 'var(--t1)'};">${linha}</td>
+                <td style="padding:7px 8px;color:${_corTxt(subtotal ? 'var(--blue)' : 'var(--t1)')};">${linha}</td>
                 ${d.meses.map(mes => {
                   const v = d.linhas[linha][mes] || 0;
                   const negativo = v < 0 && linha === '= Saldo Final';
@@ -15642,7 +15712,7 @@ function renderFluxoMatriz(d) {
                         style="width:100%;background:transparent;border:1px solid rgba(79,124,255,.2);border-radius:3px;padding:3px 5px;color:var(--t1);font-family:var(--M);font-size:10px;text-align:right;"/>
                     </td>`;
                   }
-                  return `<td style="padding:7px 8px;text-align:right;font-family:var(--M);color:${cor};${negativo ? 'background:rgba(255,79,79,.08);' : ''}">${fmtBRLcompleto(v)}</td>`;
+                  return `<td style="padding:7px 8px;text-align:right;font-family:var(--M);color:${_corTxt(cor)};${negativo ? 'background:rgba(255,79,79,.08);' : ''}">${fmtBRLcompleto(v)}</td>`;
                 }).join('')}
               </tr>
             `;
@@ -15658,7 +15728,7 @@ function renderFluxoMatriz(d) {
     for (const a of d.alertas) {
       const cor = a.tipo === 'critico' ? 'var(--red)' : 'var(--gold)';
       const bg = a.tipo === 'critico' ? 'rgba(255,79,79,.08)' : 'rgba(245,166,35,.08)';
-      html += `<div style="background:${bg};border:1px solid ${cor};border-radius:6px;padding:10px 12px;margin-bottom:6px;font-size:11px;color:${cor};">
+      html += `<div style="background:${bg};border:1px solid ${cor};border-radius:6px;padding:10px 12px;margin-bottom:6px;font-size:11px;color:${_corTxt(cor)};">
         ⚠ ${a.mensagem}
       </div>`;
     }
@@ -15687,7 +15757,7 @@ function renderFluxoMatriz(d) {
       </div>
       <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;">
         <div style="font-family:var(--M);font-size:8px;color:var(--t2);text-transform:uppercase;">Menor Saldo no Horizonte</div>
-        <div style="font-family:var(--M);font-size:16px;font-weight:600;margin-top:3px;color:${d.menor_saldo_projetado < 0 ? 'var(--red)' : 'var(--t1)'};">${fmtBRLcompleto(d.menor_saldo_projetado)}</div>
+        <div style="font-family:var(--M);font-size:16px;font-weight:600;margin-top:3px;color:${_corTxt(d.menor_saldo_projetado < 0 ? 'var(--red)' : 'var(--t1)')};">${fmtBRLcompleto(d.menor_saldo_projetado)}</div>
         <div style="font-size:9px;color:var(--t3);margin-top:2px;">em ${label(d.mes_menor_saldo)}</div>
       </div>
       <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:10px;">
@@ -15884,10 +15954,10 @@ async function carregarExtratoDiario() {
           <tr style="border-bottom:1px solid rgba(255,255,255,.03);">
             <td style="padding:7px;font-family:var(--M);font-size:10px;color:var(--t2);">${x.data}</td>
             <td style="padding:7px;text-align:right;font-family:var(--M);color:var(--t2);">${fmtBRLcompleto(x.saldo_inicio)}</td>
-            <td style="padding:7px;text-align:right;font-family:var(--M);color:${x.entradas>0?'var(--green)':'var(--t3)'};">${x.entradas>0?'+'+fmtBRLcompleto(x.entradas):'-'}</td>
-            <td style="padding:7px;text-align:right;font-family:var(--M);color:${x.saidas>0?'var(--red)':'var(--t3)'};">${x.saidas>0?'-'+fmtBRLcompleto(x.saidas):'-'}</td>
-            <td style="padding:7px;text-align:right;font-family:var(--M);color:${x.resultado>=0?'var(--green)':'var(--red)'};font-weight:600;">${fmtBRLcompleto(x.resultado)}</td>
-            <td style="padding:7px;text-align:right;font-family:var(--M);color:${x.saldo_fim>=0?'var(--t1)':'var(--red)'};font-weight:600;">${fmtBRLcompleto(x.saldo_fim)}</td>
+            <td style="padding:7px;text-align:right;font-family:var(--M);color:${_corTxt(x.entradas>0?'var(--green)':'var(--t3)')};">${x.entradas>0?'+'+fmtBRLcompleto(x.entradas):'-'}</td>
+            <td style="padding:7px;text-align:right;font-family:var(--M);color:${_corTxt(x.saidas>0?'var(--red)':'var(--t3)')};">${x.saidas>0?'-'+fmtBRLcompleto(x.saidas):'-'}</td>
+            <td style="padding:7px;text-align:right;font-family:var(--M);color:${_corTxt(x.resultado>=0?'var(--green)':'var(--red)')};font-weight:600;">${fmtBRLcompleto(x.resultado)}</td>
+            <td style="padding:7px;text-align:right;font-family:var(--M);color:${_corTxt(x.saldo_fim>=0?'var(--t1)':'var(--red)')};font-weight:600;">${fmtBRLcompleto(x.saldo_fim)}</td>
             <td style="padding:7px;text-align:center;color:var(--t3);">${x.lancamentos_count}</td>
           </tr>`).join('')}
         </tbody></table>`;
@@ -15949,8 +16019,8 @@ async function carregarExtratoMensal() {
             <td style="padding:7px;text-align:right;font-family:var(--M);color:var(--t2);">${fmtBRLcompleto(x.saldo_inicio)}</td>
             <td style="padding:7px;text-align:right;font-family:var(--M);color:var(--green);">${x.entradas>0?'+'+fmtBRLcompleto(x.entradas):'-'}</td>
             <td style="padding:7px;text-align:right;font-family:var(--M);color:var(--red);">${x.saidas>0?'-'+fmtBRLcompleto(x.saidas):'-'}</td>
-            <td style="padding:7px;text-align:right;font-family:var(--M);color:${x.resultado>=0?'var(--green)':'var(--red)'};font-weight:600;">${fmtBRLcompleto(x.resultado)}</td>
-            <td style="padding:7px;text-align:right;font-family:var(--M);color:${x.saldo_fim>=0?'var(--t1)':'var(--red)'};font-weight:600;">${fmtBRLcompleto(x.saldo_fim)}</td>
+            <td style="padding:7px;text-align:right;font-family:var(--M);color:${_corTxt(x.resultado>=0?'var(--green)':'var(--red)')};font-weight:600;">${fmtBRLcompleto(x.resultado)}</td>
+            <td style="padding:7px;text-align:right;font-family:var(--M);color:${_corTxt(x.saldo_fim>=0?'var(--t1)':'var(--red)')};font-weight:600;">${fmtBRLcompleto(x.saldo_fim)}</td>
           </tr>`;
         }).join('')}</tbody></table>`;
     }
@@ -16005,11 +16075,11 @@ async function carregarConciliacao() {
           return `<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:12px;margin-bottom:8px;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <div style="flex:1;">
-                <div style="font-size:11px;color:var(--t2);">${s.real_data} · <span style="color:${corOrig};">${s.real_origem.toUpperCase()}</span></div>
+                <div style="font-size:11px;color:var(--t2);">${s.real_data} · <span style="color:${_corTxt(corOrig)};">${s.real_origem.toUpperCase()}</span></div>
                 <div style="font-size:12px;font-weight:600;margin-top:2px;">${s.real_descricao}</div>
                 <div style="font-size:10px;color:var(--t3);margin-top:2px;">Categoria: ${s.real_categoria || '-'}</div>
               </div>
-              <div style="font-family:var(--M);font-size:14px;font-weight:600;color:${corTipo};margin-right:14px;">${sinal} ${fmtBRLcompleto(s.real_valor)}</div>
+              <div style="font-family:var(--M);font-size:14px;font-weight:600;color:${_corTxt(corTipo)};margin-right:14px;">${sinal} ${fmtBRLcompleto(s.real_valor)}</div>
               <button class="btn btn-or" onclick="rejeitarConciliacao(${idx})" style="font-size:10px;padding:5px 10px;">Sem match</button>
             </div>
           </div>`;
@@ -16024,18 +16094,18 @@ async function carregarConciliacao() {
               <div style="font-family:var(--M);font-size:8px;color:var(--t2);text-transform:uppercase;">REAL (${s.real_origem})</div>
               <div style="font-size:11px;color:var(--t2);margin-top:2px;">${s.real_data}</div>
               <div style="font-size:12px;font-weight:600;margin-top:2px;">${s.real_descricao}</div>
-              <div style="font-family:var(--M);font-size:13px;font-weight:600;color:${corTipo};margin-top:3px;">${sinal} ${fmtBRLcompleto(s.real_valor)}</div>
+              <div style="font-family:var(--M);font-size:13px;font-weight:600;color:${_corTxt(corTipo)};margin-top:3px;">${sinal} ${fmtBRLcompleto(s.real_valor)}</div>
             </div>
             <div style="text-align:center;">
               <div style="font-family:var(--M);font-size:8px;color:var(--t2);">SCORE</div>
-              <div style="font-family:var(--M);font-size:18px;font-weight:600;color:${corScore};">${scorePct}%</div>
+              <div style="font-family:var(--M);font-size:18px;font-weight:600;color:${_corTxt(corScore)};">${scorePct}%</div>
               <div style="font-size:14px;color:var(--t3);">↔</div>
             </div>
             <div>
               <div style="font-family:var(--M);font-size:8px;color:var(--t2);text-transform:uppercase;">REFERÊNCIA (${s.sugestao.ref_tipo.replace('_', ' ')})</div>
               <div style="font-size:11px;color:var(--t2);margin-top:2px;">${s.sugestao.ref_data}</div>
               <div style="font-size:12px;font-weight:600;margin-top:2px;">${s.sugestao.ref_descricao}${s.sugestao.ref_detalhe ? `<br><span style="font-size:9px;color:var(--t3);">${s.sugestao.ref_detalhe}</span>` : ''}</div>
-              <div style="font-family:var(--M);font-size:13px;font-weight:600;color:var(--blue);margin-top:3px;">${fmtBRLcompleto(s.sugestao.ref_valor)}${dif !== null ? ` <span style="font-size:9px;color:${Math.abs(dif)<0.01?'var(--green)':'var(--gold)'};">(dif ${fmtBRLcompleto(dif)})</span>` : ''}</div>
+              <div style="font-family:var(--M);font-size:13px;font-weight:600;color:var(--blue);margin-top:3px;">${fmtBRLcompleto(s.sugestao.ref_valor)}${dif !== null ? ` <span style="font-size:9px;color:${_corTxt(Math.abs(dif)<0.01?'var(--green)':'var(--gold)')};">(dif ${fmtBRLcompleto(dif)})</span>` : ''}</div>
             </div>
             <div style="display:flex;flex-direction:column;gap:5px;">
               <button class="btn btn-gn" onclick="aprovarConciliacao(${idx})" style="font-size:10px;padding:5px 12px;">✓ Aprovar</button>
@@ -16129,7 +16199,7 @@ async function carregarOrcamento() {
           return `<div style="margin-bottom:14px;">
             <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:11px;">
               <span style="font-weight:600;">${cat.categoria}</span>
-              <span style="font-family:var(--M);"><span style="color:var(--blue);">${fmtBRL(cat.total_realizado)}</span> / <span style="color:var(--t2);">${fmtBRL(cat.total_orcado)}</span> <span style="color:${corBarra};font-weight:600;">${pct == null ? '-' : pct + '%'}</span></span>
+              <span style="font-family:var(--M);"><span style="color:var(--blue);">${fmtBRL(cat.total_realizado)}</span> / <span style="color:var(--t2);">${fmtBRL(cat.total_orcado)}</span> <span style="color:${_corTxt(corBarra)};font-weight:600;">${pct == null ? '-' : pct + '%'}</span></span>
             </div>
             <div style="background:var(--bg4);border-radius:4px;height:10px;overflow:hidden;position:relative;">
               <div style="height:100%;background:${corBarra};width:${widthPct}%;transition:width .5s;${pct > 100 ? 'background:repeating-linear-gradient(45deg,var(--red),var(--red) 4px,#aa3030 4px,#aa3030 8px);' : ''}"></div>
@@ -16160,7 +16230,7 @@ async function carregarOrcamento() {
               const cor = c.utilizacao_pct == null ? 'var(--t3)' :
                           c.utilizacao_pct < 80 ? 'var(--green)' :
                           c.utilizacao_pct < 100 ? 'var(--gold)' : 'var(--red)';
-              return `<td title="${tit}" style="padding:6px;text-align:right;font-family:var(--M);color:${cor};">${fmtBRL(c.realizado)}</td>`;
+              return `<td title="${tit}" style="padding:6px;text-align:right;font-family:var(--M);color:${_corTxt(cor)};">${fmtBRL(c.realizado)}</td>`;
             }).join('')}
             <td style="padding:6px;text-align:right;font-family:var(--M);font-weight:600;border-left:1px solid var(--bd);">${fmtBRL(cat.total_realizado)} / ${fmtBRL(cat.total_orcado)}</td>
           </tr>`).join('')}
@@ -16439,7 +16509,7 @@ function renderMarcosLista() {
         <td style="padding:7px;text-align:center;color:var(--t2);">${m.percentual != null ? m.percentual+'%' : '-'}</td>
         <td style="padding:7px;text-align:center;font-family:var(--M);font-size:10px;color:var(--t2);">${m.nota_fiscal || '-'}</td>
         <td style="padding:7px;text-align:center;font-family:var(--M);font-size:10px;color:var(--t2);">${m.data_pagamento || '-'}</td>
-        <td style="padding:7px;text-align:center;"><span style="font-size:9px;padding:2px 6px;border:1px solid ${k.c};color:${k.c};border-radius:3px;">${k.l}</span></td>
+        <td style="padding:7px;text-align:center;"><span style="font-size:9px;padding:2px 6px;border:1px solid ${k.c};color:${_corTxt(k.c)};border-radius:3px;">${k.l}</span></td>
         <td style="text-align:right;padding:7px;">
           <button class="btn" style="font-size:9px;padding:3px 8px;" onclick="abrirFormMarco('${m.id}')">Editar</button>
           <button class="btn" style="font-size:9px;padding:3px 8px;color:var(--red);" onclick="excluirMarco('${m.id}')">×</button>
@@ -16587,7 +16657,7 @@ function renderKanbanMarcos(d) {
     return `<div style="min-width:260px;flex:1;background:var(--bg4);border:1px solid var(--bd);border-radius:8px;display:flex;flex-direction:column;max-height:80vh;">
       <div style="padding:10px 12px;border-bottom:1px solid var(--bd);background:${col.cor}22;border-radius:8px 8px 0 0;">
         <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div style="font-family:var(--M);font-size:10px;color:${col.cor};text-transform:uppercase;font-weight:600;">${col.label}</div>
+          <div style="font-family:var(--M);font-size:10px;color:${_corTxt(col.cor)};text-transform:uppercase;font-weight:600;">${col.label}</div>
           <div style="font-size:10px;color:var(--t2);">${col.total_count}</div>
         </div>
         <div style="font-family:var(--M);font-size:11px;color:var(--t1);margin-top:2px;">${fmtBRL(col.total_valor)}</div>
@@ -16635,11 +16705,11 @@ function renderMarcoCard(m, colKey) {
   }
   acoes += voltar;
   return `<div draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${m.id}');event.dataTransfer.effectAllowed='move';this.style.opacity='.5'" ondragend="this.style.opacity=''" title="Arraste para outra etapa"
-    style="cursor:grab;background:#0f1024;border:1px solid ${urgente && colKey === 'aguardando_entrega' ? 'var(--gold)' : 'var(--bd)'};border-radius:6px;padding:8px;margin-bottom:6px;font-size:10px;">
+    style="cursor:grab;background:var(--bg3);border:1px solid ${urgente && colKey === 'aguardando_entrega' ? 'var(--gold)' : 'var(--bd)'};border-radius:6px;padding:8px;margin-bottom:6px;font-size:10px;">
     <div style="font-weight:600;font-size:11px;margin-bottom:3px;color:var(--t1);">${m.descricao}</div>
     <div style="font-size:9px;color:var(--t2);margin-bottom:4px;">${m.projeto_nome} · ${m.projeto_cliente || ''}</div>
     <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t2);">
-      <span>📅 ${m.data_entrega || '-'}${diasParaEntrega != null ? ` <span style="color:${urgente ? 'var(--gold)' : 'var(--t3)'};">(${diasParaEntrega >= 0 ? diasParaEntrega + 'd' : 'atrasado'})</span>` : ''}</span>
+      <span>📅 ${m.data_entrega || '-'}${diasParaEntrega != null ? ` <span style="color:${_corTxt(urgente ? 'var(--gold)' : 'var(--t3)')};">(${diasParaEntrega >= 0 ? diasParaEntrega + 'd' : 'atrasado'})</span>` : ''}</span>
       <span style="font-family:var(--M);font-weight:600;color:var(--t1);">${fmtBRL(m.valor)}</span>
     </div>
     ${m.nota_fiscal ? `<div style="font-size:9px;color:var(--t3);margin-top:3px;">NF: ${m.nota_fiscal}</div>` : ''}
@@ -16924,7 +16994,7 @@ async function diagnosticarEmail() {
     let html = `<div class="panel" style="width:640px;max-width:95vw;max-height:90vh;overflow:auto;">
       <div class="ph"><div class="pt">🔍 Diagnóstico de envio de e-mail</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('relPagModal').style.display='none'">✕</button></div>
       <div class="pb">
-        <div style="font-size:11px;line-height:1.9;">${d.etapas.map(t => `<div style="color:${cor(t)};">${t}</div>`).join('')}</div>
+        <div style="font-size:11px;line-height:1.9;">${d.etapas.map(t => `<div style="color:${_corTxt(cor(t))};">${t}</div>`).join('')}</div>
         <div style="margin-top:12px;padding:10px;background:var(--bg4);border-radius:8px;font-size:10.5px;line-height:1.7;">
           <b>Configuração atual:</b><br>
           Remetente (EMAIL_IMAP_USER): ${d.usuario}<br>
@@ -17025,7 +17095,7 @@ async function verRazaoConta() {
           <tbody>${r.linhas.map(l => `<tr style="border-bottom:1px solid var(--bd);">
             <td style="padding:5px;font-family:var(--M);">${l.data}</td><td style="padding:5px;color:var(--t2);">${l.tipo}</td>
             <td style="padding:5px;">${(l.nome||l.memo||'').substring(0,38)}</td>
-            <td style="padding:5px;text-align:right;font-family:var(--M);color:${(l.valor||0)<0?'var(--red)':'var(--green,#22d3a3)'};">${l.valor != null ? fmtBRLcompleto(l.valor) : '—'}</td>
+            <td style="padding:5px;text-align:right;font-family:var(--M);color:${_corTxt((l.valor||0)<0?'var(--red)':'var(--green,#22d3a3)')};">${l.valor != null ? fmtBRLcompleto(l.valor) : '—'}</td>
             <td style="padding:5px;text-align:right;font-family:var(--M);">${l.saldo != null ? fmtBRLcompleto(l.saldo) : '—'}</td></tr>`).join('')}</tbody></table>`
         : `<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Nenhuma linha no razão para este período.${r.erro_razao ? '<br>Erro: ' + r.erro_razao : ''}</div>`}
       </div></div>`;
@@ -17110,7 +17180,7 @@ async function compararSaldoPorConta() {
             <tr style="border-top:2px solid var(--bd);font-weight:700;">
               <td style="padding:7px;">TOTAL (o que o Atlantyx usa)</td>
               <td style="padding:7px;text-align:right;font-family:var(--M);">${r.saldo_total_na_data != null ? fmtBRLcompleto(r.saldo_total_na_data) : '—'}</td>
-              <td style="padding:7px;text-align:right;font-family:var(--M);color:${r.saldo_total_hoje<0?'var(--red)':'var(--green,#22d3a3)'};">${fmtBRLcompleto(r.saldo_total_hoje)}</td></tr>
+              <td style="padding:7px;text-align:right;font-family:var(--M);color:${_corTxt(r.saldo_total_hoje<0?'var(--red)':'var(--green,#22d3a3)')};">${fmtBRLcompleto(r.saldo_total_hoje)}</td></tr>
           </tbody></table>
         ${(r.observacoes||[]).map(o => `<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:7px;padding:9px 11px;font-size:10.5px;line-height:1.6;margin-top:10px;">💡 ${o}</div>`).join('')}
         ${r.erro ? `<div style="color:var(--red);font-size:10.5px;margin-top:8px;">Erro: ${r.erro}</div>` : ''}
@@ -17224,7 +17294,7 @@ async function _rastrearDuplicado(json) {
       <div class="pb">
         <div style="font-size:11px;color:var(--t2);margin-bottom:10px;">Procurando por <b>${fmtBRLcompleto(r.valor_procurado)}</b> em <b>${(r.data||'').split('-').reverse().join('/')}</b>${r.cliente_procurado ? ' · cliente contendo "' + r.cliente_procurado + '"' : ''}</div>
         <div style="background:${c.origem==='quickbooks'?'rgba(255,80,80,.1)':'var(--bg4)'};border:1px solid ${corConc};border-radius:8px;padding:12px;margin-bottom:12px;font-size:11.5px;line-height:1.6;">
-          <b style="color:${corConc};">${c.origem === 'quickbooks' ? '🔴 A duplicidade está NO QUICKBOOKS' : c.origem === 'unico' ? '🟡 Só existe 1 registro na origem' : c.origem === 'relacionados' ? '🟢 Registros vinculados (já tratado)' : c.origem === 'distintos' ? '🟢 Registros distintos' : 'Nada encontrado'}</b><br>
+          <b style="color:${_corTxt(corConc)};">${c.origem === 'quickbooks' ? '🔴 A duplicidade está NO QUICKBOOKS' : c.origem === 'unico' ? '🟡 Só existe 1 registro na origem' : c.origem === 'relacionados' ? '🟢 Registros vinculados (já tratado)' : c.origem === 'distintos' ? '🟢 Registros distintos' : 'Nada encontrado'}</b><br>
           ${c.texto || ''}<br>${c.acao ? '<span style="color:var(--gold);">→ ' + c.acao + '</span>' : ''}
         </div>
         <div style="font-size:11.5px;font-weight:600;margin-bottom:5px;">Registros encontrados (${(r.achados||[]).filter(a=>!a.erro).length})</div>
@@ -17261,7 +17331,7 @@ async function diagnosticarSaldoAbertura() {
       <div class="pb">
         <div style="background:var(--bg4);border-radius:8px;padding:12px;margin-bottom:12px;">
           <div style="font-size:10px;color:var(--t2);">SALDO DE PARTIDA DO FLUXO (soma das contas "Bank")</div>
-          <div style="font-size:22px;font-family:var(--M);color:${d.saldo_bank_total < 0 ? 'var(--red)' : 'var(--green,#22d3a3)'};">${fmtBRLcompleto(d.saldo_bank_total)}</div>
+          <div style="font-size:22px;font-family:var(--M);color:${_corTxt(d.saldo_bank_total < 0 ? 'var(--red)' : 'var(--green,#22d3a3)')};">${fmtBRLcompleto(d.saldo_bank_total)}</div>
           ${d.saldo_bank_se_corrigido != null ? `<div style="font-size:11px;color:var(--gold);margin-top:5px;">Se os cartões abaixo forem reclassificados: <b>${fmtBRLcompleto(d.saldo_bank_se_corrigido)}</b></div>` : ''}
         </div>
         ${d.suspeitas?.length ? `<div style="margin-bottom:12px;">${d.suspeitas.map(s => `
@@ -17330,7 +17400,7 @@ function _fdComQuebraMes(lista, corSaldo) {
           <span style="font-family:var(--M);display:flex;gap:12px;">
             <span style="color:var(--green,#22d3a3);">+${fmtBRLcompleto(ent)}</span>
             <span style="color:var(--red);">−${fmtBRLcompleto(sai)}</span>
-            <span style="color:${res>=0?'var(--green,#22d3a3)':'var(--red)'};font-weight:700;">= ${fmtBRLcompleto(res)}</span>
+            <span style="color:${_corTxt(res>=0?'var(--green,#22d3a3)':'var(--red)')};font-weight:700;">= ${fmtBRLcompleto(res)}</span>
           </span>
         </div>
       </td></tr>`);
@@ -17371,7 +17441,7 @@ function _fdLinha(l, corSaldo) {
     + '<td style="padding:6px;font-family:var(--M);color:var(--t2);white-space:nowrap;">' + (l.data || '') + '</td>'
     + '<td style="padding:6px;">' + (l.descricao || '') + venc + refTag + repTag + termoTag + '</td>'
     + '<td style="padding:6px;color:var(--t2);font-size:10px;">' + (l.categoria || '') + ' · ' + fonte + '</td>'
-    + '<td style="padding:6px;text-align:right;color:' + cor + ';font-family:var(--M);">' + (ehRef ? '' : (l.tipo === 'saida' ? '-' : '+')) + fmtBRLcompleto(l.valor) + '</td>'
+    + '<td style="padding:6px;text-align:right;color:' + _corTxt(cor) + ';font-family:var(--M);">' + (ehRef ? '' : (l.tipo === 'saida' ? '-' : '+')) + fmtBRLcompleto(l.valor) + '</td>'
     + '<td style="padding:6px;text-align:right;font-family:var(--M);font-weight:600;color:' + (l.saldo_acumulado < 0 ? 'var(--red)' : (corSaldo || 'var(--t1)')) + ';">' + fmtBRLcompleto(l.saldo_acumulado) + '</td>'
     + '<td style="padding:6px;text-align:center;">' + acao + '</td>'
     + '</tr>';
@@ -17642,7 +17712,7 @@ async function carregarFluxoDetalhado() {
       const vencidos = fut.filter(l => l.vencida);
       const noPer = fut.filter(l => !l.vencida && l.no_periodo !== false);
       const foraPer = fut.filter(l => !l.vencida && l.no_periodo === false);
-      const secao = (titulo, lista, cor, nota) => lista.length ? `<tr><td colspan="5" style="padding:7px 6px 4px;font-size:10px;color:${cor};font-weight:600;border-top:1px solid var(--bd);">${titulo} · ${lista.length} documento(s) · ${fmtBRLcompleto(lista.reduce((a,x)=>a+x.valor,0))}${nota?` <span style="font-weight:400;color:var(--t3);">${nota}</span>`:''}</td></tr>`
+      const secao = (titulo, lista, cor, nota) => lista.length ? `<tr><td colspan="5" style="padding:7px 6px 4px;font-size:10px;color:${_corTxt(cor)};font-weight:600;border-top:1px solid var(--bd);">${titulo} · ${lista.length} documento(s) · ${fmtBRLcompleto(lista.reduce((a,x)=>a+x.valor,0))}${nota?` <span style="font-weight:400;color:var(--t3);">${nota}</span>`:''}</td></tr>`
         + _fdComQuebraMes(lista, cor) : '';
       tbF.innerHTML = fut.length
         ? secao('⚠ VENCIDOS E NÃO PAGOS', vencidos, 'var(--red)', '— cobrar primeiro')
@@ -18009,7 +18079,7 @@ function _fatCard(t, col) {
         title="${t.cpfl_confirmado ? 'Confirmado por ' + (t.cpfl_confirmado_por || '—') + (t.cpfl_confirmado_em ? ' em ' + String(t.cpfl_confirmado_em).substring(0,10).split('-').reverse().join('/') : '') + ' — clique para desmarcar' : 'Marcar que as notas estão no sistema da CPFL, programadas para pagamento'}"
         style="cursor:pointer;font-size:9px;display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:5px;
           background:${t.cpfl_confirmado ? 'rgba(34,211,163,.15)' : 'rgba(255,80,80,.12)'};
-          color:${t.cpfl_confirmado ? 'var(--green,#22d3a3)' : 'var(--red)'};border:1px solid ${t.cpfl_confirmado ? 'rgba(34,211,163,.4)' : 'rgba(255,80,80,.35)'};">
+          color:${_corTxt(t.cpfl_confirmado ? 'var(--green,#22d3a3)' : 'var(--red)')};border:1px solid ${t.cpfl_confirmado ? 'rgba(34,211,163,.4)' : 'rgba(255,80,80,.35)'};">
         ${t.cpfl_confirmado ? '✅ CPFL confirmado' : '⬜ confirmar no sistema CPFL'}
       </span>
       ${t.cpfl_previsao_pagamento ? `<span style="font-size:8.5px;color:var(--t3);margin-left:5px;">prev. ${String(t.cpfl_previsao_pagamento).substring(0,10).split('-').reverse().join('/')}</span>` : ''}
@@ -18018,7 +18088,7 @@ function _fatCard(t, col) {
   const _dt = d => d ? d.split('-').reverse().slice(0,2).join('/') : null;
   const datasBadge = (t.data_emissao || t.data_pagamento) ? `<div style="display:flex;gap:8px;font-size:8.5px;margin-top:4px;padding-top:4px;border-top:1px solid var(--bd);">
       ${t.data_emissao ? `<span title="Data de emissão da nota fiscal${t.data_emissao_ultima ? ' (primeira; última em ' + _dt(t.data_emissao_ultima) + ')' : ''}" style="color:var(--t2);">🧾 ${_dt(t.data_emissao)}${t.data_emissao_ultima ? '+' : ''}</span>` : ''}
-      ${t.data_pagamento ? `<span title="${t.pagamento_completo ? 'Pagamento concluído' : 'Último pagamento recebido (parcial)'}" style="color:${t.pagamento_completo ? 'var(--green,#22d3a3)' : 'var(--gold)'};">💵 ${_dt(t.data_pagamento)}${t.pagamento_completo ? '' : '*'}</span>` : ''}
+      ${t.data_pagamento ? `<span title="${t.pagamento_completo ? 'Pagamento concluído' : 'Último pagamento recebido (parcial)'}" style="color:${_corTxt(t.pagamento_completo ? 'var(--green,#22d3a3)' : 'var(--gold)')};">💵 ${_dt(t.data_pagamento)}${t.pagamento_completo ? '' : '*'}</span>` : ''}
     </div>` : '';
   // v2.55: prazo de recebimento — 35 dias corridos a partir da CRIAÇÃO do termo.
   //   < 35 dias  → verde  "✓ em dia · N dias"
@@ -18170,7 +18240,7 @@ function _fatBarraProgressoNf(t) {
   return `<div style="margin-bottom:12px;">
     <div style="display:flex;justify-content:space-between;font-size:10.5px;margin-bottom:4px;">
       <span><b>${fmtBRLcompleto(carregado)}</b> carregado de ${fmtBRLcompleto(total)}</span>
-      <span style="color:${falta > 0 ? 'var(--gold)' : 'var(--green,#22d3a3)'};">${falta > 0 ? 'falta ' + fmtBRLcompleto(falta) : '✓ completo'}</span>
+      <span style="color:${_corTxt(falta > 0 ? 'var(--gold)' : 'var(--green,#22d3a3)')};">${falta > 0 ? 'falta ' + fmtBRLcompleto(falta) : '✓ completo'}</span>
     </div>
     <div style="height:8px;background:var(--bg4);border-radius:4px;overflow:hidden;"><div style="height:100%;width:${Math.min(100,pct)}%;background:${cor};transition:width .3s;"></div></div>
   </div>`;
@@ -18391,7 +18461,7 @@ async function _fatRastrearNotas(termoId) {
     const f = v => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     m.innerHTML = `<div class="panel" style="width:860px;max-width:96vw;"><div class="ph"><div class="pt">🔎 Termos nº ${d.numero} e suas notas</div>
         <button class="btn" style="font-size:10px;" onclick="document.getElementById('fatRastroModal').style.display='none'">✕</button></div>
-      <div class="pb"><div style="font-size:11.5px;margin-bottom:10px;color:${d.duplicado ? 'var(--gold)' : 'var(--t2)'};">${d.duplicado ? '⚠ ' : ''}${d.leitura}</div>
+      <div class="pb"><div style="font-size:11.5px;margin-bottom:10px;color:${_corTxt(d.duplicado ? 'var(--gold)' : 'var(--t2)')};">${d.duplicado ? '⚠ ' : ''}${d.leitura}</div>
       ${d.termos.map(t => `<div style="border:1px solid ${t.id === termoId ? 'var(--gold)' : 'var(--bd)'};border-radius:9px;padding:10px 12px;margin-bottom:10px;">
         <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:11.5px;">
           <span><b>${t.projeto || '(sem projeto)'}</b> · ${t.status} · período ${t.periodo || '—'} · criado ${t.criado_em || '—'} ${t.id === termoId ? '<span style="color:var(--gold);">← este</span>' : ''}</span>
@@ -18764,7 +18834,7 @@ async function carregarContratos() {
         <td style="padding:6px;color:var(--t2);">${c.data_inicio ? c.data_inicio.split('-').reverse().join('/') : '—'}</td>
         <td style="padding:6px;color:var(--t2);">${c.data_vencimento ? c.data_vencimento.split('-').reverse().join('/') : '—'}</td>
         <td style="padding:6px;color:var(--t2);">${c.prazo_texto||(c.prazo_meses?c.prazo_meses+' meses':'—')}</td>
-        <td style="padding:6px;color:${cor[c.status_calc]};">${lbl[c.status_calc]}${c.dias_restantes!=null && c.status_calc!=='vencido' ? ' ('+c.dias_restantes+'d)' : c.dias_restantes!=null ? ' ('+Math.abs(c.dias_restantes)+'d atrás)' : ''}</td>
+        <td style="padding:6px;color:${_corTxt(cor[c.status_calc])};">${lbl[c.status_calc]}${c.dias_restantes!=null && c.status_calc!=='vencido' ? ' ('+c.dias_restantes+'d)' : c.dias_restantes!=null ? ' ('+Math.abs(c.dias_restantes)+'d atrás)' : ''}</td>
         <td style="padding:6px;"><button class="btn" style="font-size:8px;padding:1px 5px;color:var(--red);" onclick="_ctrExcluir('${c.id}')">🗑</button></td>
         </tr>`).join('')}</tbody></table>` : '<div style="text-align:center;color:var(--t3);padding:20px;">Nenhum contrato cadastrado — importe uma planilha ou clique em + Novo Contrato.</div>';
   } catch (e) { box.innerHTML = '<div style="color:var(--red);text-align:center;padding:20px;">Erro: ' + e.message + '</div>'; }
@@ -18964,7 +19034,7 @@ async function carregarStatusReports() {
       ${d.ultimos.map(r => `<div style="background:var(--bg4);border-left:3px solid ${cor(r.farol)};border-radius:8px;padding:11px;cursor:pointer;" onclick="abrirReport('${r.id}')">
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <span style="font-size:12px;font-weight:600;">${ico(r.farol)} ${r.projeto_nome}</span>
-          <span style="font-size:11px;font-family:var(--M);color:${cor(r.farol)};">${r.pct_concluido}%</span>
+          <span style="font-size:11px;font-family:var(--M);color:${_corTxt(cor(r.farol))};">${r.pct_concluido}%</span>
         </div>
         <div style="height:5px;background:var(--bd);border-radius:3px;margin:6px 0;"><div style="height:100%;width:${Math.min(100,r.pct_concluido)}%;background:${cor(r.farol)};border-radius:3px;"></div></div>
         <div style="font-size:10px;color:var(--t2);line-height:1.5;">${(r.resumo||'').substring(0,110) || '<span style="color:var(--t3);">sem resumo</span>'}</div>
@@ -19190,7 +19260,7 @@ function _srHtmlApresentacao(r) {
       <div style="font-size:9.5px;color:#5a6478;">STATUS</div>
       <div style="display:inline-flex;align-items:center;gap:6px;border:1px solid ${farolCor};border-radius:14px;padding:3px 11px;margin-top:3px;">
         <span style="width:10px;height:10px;border-radius:50%;background:${farolCor};display:inline-block;"></span>
-        <b style="color:${farolCor};font-size:11.5px;">${farolTxt}</b>
+        <b style="color:${_corTxt(farolCor)};font-size:11.5px;">${farolTxt}</b>
       </div>
     </div>
   </div>
@@ -19555,9 +19625,9 @@ async function acDiagnostico() {
   try {
     const d = await mcApi('autocampanha_diagnostico', {});
     box.innerHTML = `<div class="panel"><div class="ph"><div class="pt">🩺 Diagnóstico da autocampanha</div>
-        <span style="font-size:11px;font-weight:700;color:${d.ok ? 'var(--green,#22d3a3)' : 'var(--red)'};">${d.resumo}</span></div>
+        <span style="font-size:11px;font-weight:700;color:${_corTxt(d.ok ? 'var(--green,#22d3a3)' : 'var(--red)')};">${d.resumo}</span></div>
       <div class="pb">${(d.itens || []).map(i => `<div style="padding:8px 0;border-bottom:1px solid var(--bd);">
-        <div style="font-size:11.5px;"><span style="color:${i.ok ? 'var(--green,#22d3a3)' : 'var(--red)'};font-weight:700;">${i.ok ? '✓' : '✗'}</span> <b>${i.peca}</b> <span style="color:var(--t3);font-size:10.5px;">— ${String(i.detalhe || '').replace(/</g,'&lt;')}</span></div>
+        <div style="font-size:11.5px;"><span style="color:${_corTxt(i.ok ? 'var(--green,#22d3a3)' : 'var(--red)')};font-weight:700;">${i.ok ? '✓' : '✗'}</span> <b>${i.peca}</b> <span style="color:var(--t3);font-size:10.5px;">— ${String(i.detalhe || '').replace(/</g,'&lt;')}</span></div>
         ${i.acao ? `<div style="font-size:10.5px;color:var(--gold);margin:3px 0 0 18px;">→ ${i.acao}</div>` : ''}</div>`).join('')}</div></div>`;
   } catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:14px;">${e.message}</div></div>`; }
 }
@@ -19737,8 +19807,8 @@ async function acAuditoria() {
     const cor = d.veredito === 'funil íntegro' ? 'var(--green,#22d3a3)' : d.veredito === 'funil com vazamento' ? 'var(--gold)' : 'var(--red)';
     box.innerHTML = `
       <div style="background:var(--bg4);border-left:4px solid ${cor};border-radius:9px;padding:13px 16px;margin-bottom:12px;">
-        <div style="font-size:13px;font-weight:700;color:${cor};text-transform:uppercase;">${d.veredito}</div>
-        ${(d.problemas||[]).map(x => `<div style="font-size:11px;line-height:1.6;margin-top:5px;color:${x.g==='alta'?'var(--red)':'var(--gold)'};">• ${x.txt}</div>`).join('') || '<div style="font-size:11px;color:var(--green,#22d3a3);margin-top:5px;">Nenhum problema encontrado.</div>'}
+        <div style="font-size:13px;font-weight:700;color:${_corTxt(cor)};text-transform:uppercase;">${d.veredito}</div>
+        ${(d.problemas||[]).map(x => `<div style="font-size:11px;line-height:1.6;margin-top:5px;color:${_corTxt(x.g==='alta'?'var(--red)':'var(--gold)')};">• ${x.txt}</div>`).join('') || '<div style="font-size:11px;color:var(--green,#22d3a3);margin-top:5px;">Nenhum problema encontrado.</div>'}
       </div>
       <div class="kg k4" style="margin-bottom:12px;">
         <div class="kpi bl"><div class="kl">Posts (30 dias)</div><div class="kv">${p.total ?? '—'}</div><div class="ks">${p.publicado ?? 0} publicado(s) · ${p.agendado ?? 0} agendado(s)</div></div>
@@ -19758,9 +19828,9 @@ async function acAuditoria() {
         ${(l.por_origem||[]).length ? `<div style="margin-top:6px;color:var(--t2);">Leads por origem: ${l.por_origem.map(o => `${o.origem} (${o.n})`).join(' · ')}</div>` : ''}
       </div></div>
       ${teste ? `<div class="panel" style="margin-bottom:12px;border-left:4px solid ${teste.veredito==='captura funciona'?'var(--green,#22d3a3)':'var(--red)'};"><div class="ph"><div class="pt">🧪 Teste ponta a ponta da captura</div>
-        <span style="font-size:11px;font-weight:700;color:${teste.veredito==='captura funciona'?'var(--green,#22d3a3)':'var(--red)'};text-transform:uppercase;">${teste.veredito}</span></div>
+        <span style="font-size:11px;font-weight:700;color:${_corTxt(teste.veredito==='captura funciona'?'var(--green,#22d3a3)':'var(--red)')};text-transform:uppercase;">${teste.veredito}</span></div>
         <div class="pb"><div style="font-size:10.5px;color:var(--t2);margin-bottom:8px;">Enviei um lead de teste pelo mesmo caminho do formulário e conferi cada etapa (depois removi):</div>
-          ${(teste.passos||[]).map(x => `<div style="font-size:10.5px;padding:3px 0;border-bottom:1px solid var(--bd);"><span style="color:${x.ok?'var(--green,#22d3a3)':'var(--red)'};">${x.ok?'✓':'✗'}</span> <b>${x.etapa}</b> <span style="color:var(--t3);">— ${String(x.detalhe||'').replace(/</g,'&lt;')}</span></div>`).join('')}
+          ${(teste.passos||[]).map(x => `<div style="font-size:10.5px;padding:3px 0;border-bottom:1px solid var(--bd);"><span style="color:${_corTxt(x.ok?'var(--green,#22d3a3)':'var(--red)')};">${x.ok?'✓':'✗'}</span> <b>${x.etapa}</b> <span style="color:var(--t3);">— ${String(x.detalhe||'').replace(/</g,'&lt;')}</span></div>`).join('')}
           ${(teste.falhas||[]).length ? `<div style="margin-top:8px;font-size:10.5px;color:var(--red);">Falhas que perdem lead: ${teste.falhas.length}. Etapas marcadas como "falha" NÃO derrubam mais a captura — o lead fica gravado mesmo assim.</div>` : ''}
         </div></div>` : ''}
       ${funil && (funil.campanhas||[]).length ? `<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">📊 Leads e reuniões por campanha (90 dias)</div>
@@ -19889,7 +19959,7 @@ function orgDesenhar() {
       background:var(--bg3,#151b2e);border:1px solid var(--bd);border-top:3px solid ${corTopo};border-radius:8px;padding:7px 9px;cursor:move;
       box-shadow:0 2px 8px rgba(0,0,0,.25);overflow:hidden;" onmousedown="_orgIniciarArrasto(event,'${n.id}')" ondblclick="orgEditarCaixa('${n.id}')">
       <div style="font-size:11px;font-weight:700;line-height:1.25;">${(n.titulo || n.cargo || n.nome || 'Cargo').substring(0,34)}</div>
-      <div style="font-size:9.5px;color:${temPessoa ? 'var(--t2)' : 'var(--gold)'};margin-top:2px;">${temPessoa ? '👤 ' + String(nome).substring(0,24) : '⚠ vago'}</div>
+      <div style="font-size:9.5px;color:${_corTxt(temPessoa ? 'var(--t2)' : 'var(--gold)')};margin-top:2px;">${temPessoa ? '👤 ' + String(nome).substring(0,24) : '⚠ vago'}</div>
       ${agente ? `<div style="font-size:9px;color:var(--purple,#9c6dff);margin-top:2px;">🤖 ${String(agente).substring(0,22)}</div>` : ''}
       <div style="position:absolute;top:4px;right:5px;display:flex;gap:3px;">
         <span onclick="event.stopPropagation();orgEditarCaixa('${n.id}')" title="Editar" style="cursor:pointer;font-size:10px;opacity:.6;">✎</span>
@@ -20005,7 +20075,7 @@ async function ceoCarregar() {
         <td style="padding:6px;font-weight:600;">${l.empresa}${l.setor?`<br><span style="font-size:9px;color:var(--t3);font-weight:400;">${l.setor}</span>`:''}</td>
         <td style="padding:6px;">${l.contato_nome||'—'}<br><span style="font-size:9px;color:var(--t3);">${l.cargo||''} ${l.email?'· '+l.email.substring(0,26):'· <span style="color:var(--red);">sem e-mail</span>'}</span></td>
         <td style="padding:6px;color:var(--t2);">${l.cidade||'—'}${l.uf?'/'+l.uf:''}</td>
-        <td style="padding:6px;"><span style="color:${cor(l.status)};font-size:10px;">● ${rot(l.status)}</span></td>
+        <td style="padding:6px;"><span style="color:${_corTxt(cor(l.status))};font-size:10px;">● ${rot(l.status)}</span></td>
         <td style="padding:6px;color:var(--t2);font-size:10px;">${(l.ultima_resposta||'').substring(0,44)||'—'}</td>
         <td style="padding:6px;text-align:right;white-space:nowrap;">
           ${l.email && ['novo','respondido'].includes(l.status) ? `<button class="btn btn-p" style="font-size:8.5px;padding:2px 6px;" onclick="ceoRedigir('${l.id}')" title="Escrever e-mail com IA">✉ escrever</button>` : ''}
@@ -20217,7 +20287,7 @@ async function carregarAgendaGP() {
     if (!itens.length) { box.innerHTML = '<div style="text-align:center;color:var(--t3);padding:22px;font-size:11px;">Nada com data no período.</div>'; return; }
     let diaAtual = null;
     box.innerHTML = itens.map(i => {
-      const cab = i.data !== diaAtual ? (diaAtual = i.data, `<div style="font-size:10px;font-weight:700;color:${i.atrasado?'var(--red)':'var(--t2)'};text-transform:uppercase;letter-spacing:.5px;margin:12px 0 5px;padding-bottom:3px;border-bottom:1px solid var(--bd);">
+      const cab = i.data !== diaAtual ? (diaAtual = i.data, `<div style="font-size:10px;font-weight:700;color:${_corTxt(i.atrasado?'var(--red)':'var(--t2)')};text-transform:uppercase;letter-spacing:.5px;margin:12px 0 5px;padding-bottom:3px;border-bottom:1px solid var(--bd);">
         ${i.atrasado ? '⚠ ATRASADO · ' : ''}${fmtData(i.data)} <span style="font-weight:400;">${['dom','seg','ter','qua','qui','sex','sáb'][new Date(i.data+'T12:00:00').getDay()]}</span></div>`) : '';
       return cab + `<div style="display:flex;gap:10px;align-items:flex-start;padding:7px 9px;margin-bottom:5px;background:var(--bg4);border-left:3px solid ${cor[i.tipo]||'var(--bd)'};border-radius:7px;font-size:11px;cursor:${i.acao?'pointer':'default'};" ${i.acao ? `onclick="nav('${i.acao}')"` : ''}>
         <span>${ico[i.tipo]||'•'}</span>
@@ -20477,7 +20547,7 @@ async function abrirBriefing(id) {
         <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:10.5px;color:var(--t2);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--bd);">
           ${b.cargo ? `<span>${b.cargo}</span>` : ''}${b.setor ? `<span>${b.setor}</span>` : ''}
           ${b.data_reuniao ? `<span>📅 ${b.data_reuniao}</span>` : ''}
-          <span style="color:${b.status==='realizada'?'var(--green,#22d3a3)':'var(--gold)'};">${b.status || 'agendada'}</span>
+          <span style="color:${_corTxt(b.status==='realizada'?'var(--green,#22d3a3)':'var(--gold)')};">${b.status || 'agendada'}</span>
           <span style="margin-left:auto;color:var(--t3);">gerado em ${String(b.criado_em||'').substring(0,10).split('-').reverse().join('/')}</span>
         </div>
         <pre style="white-space:pre-wrap;font-family:inherit;font-size:11.5px;line-height:1.7;background:var(--bg4);border-radius:8px;padding:12px;max-height:42vh;overflow-y:auto;">${String(b.briefing||'').replace(/</g,'&lt;')}</pre>
@@ -20811,7 +20881,7 @@ function _mpDesenhar() {
       <div style="font-size:9.5px;color:var(--t2);margin-top:2px;line-height:1.3;">${String(n.cargo||'').substring(0,30)}</div>
       ${n.area ? `<div style="font-size:9px;color:var(--t3);">${String(n.area).substring(0,26)}</div>` : ''}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
-        <span style="font-size:8.5px;color:${c.borda};">${c.rotulo}</span>
+        <span style="font-size:8.5px;color:${_corTxt(c.borda)};">${c.rotulo}</span>
         ${inf ? `<span style="font-size:8.5px;color:var(--t3);">${inf}</span>` : ''}
       </div>
       ${n.origem === 'ia' ? '<div style="position:absolute;bottom:3px;right:5px;font-size:8px;color:var(--purple,#9c6dff);" title="Sugerido pela IA — valide antes de prospectar">🧠</div>' : ''}
@@ -20934,7 +21004,7 @@ async function feedIncluir(enviar) {
       feedListar(); return feedEditor({ id: d.id, nome: d.contato.nome, empresa: d.contato.empresa, email: d.contato.email, contexto: d.contato.contexto,
         assunto: d.assunto, mensagem: d.mensagem, qb: d.etapas?.quickbooks, hs: d.etapas?.hubspot, anexo_padrao: d.anexo_padrao, analise: d.analise }); }
     const e = d.etapas || {};
-    const li = (k, v) => `<div style="font-size:10.5px;padding:2px 0;"><span style="color:${String(v).startsWith('falha') ? 'var(--red)' : 'var(--green,#22d3a3)'};">${String(v).startsWith('falha') ? '✗' : '✓'}</span> <b>${k}</b>: ${v}</div>`;
+    const li = (k, v) => `<div style="font-size:10.5px;padding:2px 0;"><span style="color:${_corTxt(String(v).startsWith('falha') ? 'var(--red)' : 'var(--green,#22d3a3)')};">${String(v).startsWith('falha') ? '✗' : '✓'}</span> <b>${k}</b>: ${v}</div>`;
     box.innerHTML = `<div style="background:var(--bg4);border-radius:8px;padding:10px 12px;">
       <div style="font-size:11.5px;font-weight:700;">${d.contato.nome}${d.contato.empresa ? ' · ' + d.contato.empresa : ''} <span style="font-weight:400;color:var(--t3);">${d.canal === 'email' ? '📧 ' + d.contato.email : '📲 +' + d.contato.telefone}</span></div>
       ${Object.entries(e).map(([k, v]) => li(k, v)).join('')}
@@ -20981,8 +21051,8 @@ function feedEditor(x) {
     <div class="pb">
       ${x.contexto ? `<div style="font-size:10.5px;color:var(--t2);margin-bottom:8px;">📍 Contexto: <b>${esc(x.contexto)}</b></div>` : ''}
       <div id="feEd_analise">${_feedAnaliseHtml(x.analise)}</div>
-      ${x.qb ? `<div style="font-size:10px;color:${String(x.qb).startsWith('falha') ? 'var(--red)' : 'var(--green,#22d3a3)'};margin-bottom:8px;">QuickBooks: ${esc(x.qb)}</div>` : ''}
-      ${x.hs ? `<div style="font-size:10px;color:${String(x.hs).startsWith('falha') ? 'var(--red)' : 'var(--green,#22d3a3)'};margin:-4px 0 8px;">HubSpot: ${esc(x.hs)}</div>` : ''}
+      ${x.qb ? `<div style="font-size:10px;color:${_corTxt(String(x.qb).startsWith('falha') ? 'var(--red)' : 'var(--green,#22d3a3)')};margin-bottom:8px;">QuickBooks: ${esc(x.qb)}</div>` : ''}
+      ${x.hs ? `<div style="font-size:10px;color:${_corTxt(String(x.hs).startsWith('falha') ? 'var(--red)' : 'var(--green,#22d3a3)')};margin:-4px 0 8px;">HubSpot: ${esc(x.hs)}</div>` : ''}
       <div class="fg" style="margin:0 0 8px;"><label class="fl">Para</label><input class="fi" id="feEd_para" value="${esc(x.email)}"/></div>
       <div class="fg" style="margin:0 0 8px;"><label class="fl">Assunto</label><input class="fi" id="feEd_assunto" value="${esc(x.assunto)}"/></div>
       <div class="fg" style="margin:0 0 8px;"><label class="fl">Mensagem <span style="font-weight:400;color:var(--t3);">— edite à vontade</span></label>
@@ -21103,7 +21173,7 @@ async function feedConfig() {
     m.innerHTML = `<div class="panel" style="width:600px;max-width:96vw;"><div class="ph"><div class="pt">⚙ Apresentação e textos</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('feedCfgModal').style.display='none'">✕</button></div>
       <div class="pb">
         <div class="fg"><label class="fl">Apresentação (PDF) — vai em anexo nos e-mails</label>
-          <div style="display:flex;gap:8px;align-items:center;"><input type="file" accept=".pdf,.pptx" id="feedCfgArq" style="font-size:10.5px;"/><span id="feedCfgArqInfo" style="font-size:10px;color:${c.apresentacao_media_id?'var(--green,#22d3a3)':'var(--gold)'};">${c.apresentacao_media_id ? '✓ ' + c.apresentacao_nome : '⚠ nenhuma apresentação — os e-mails saem sem anexo'}</span></div></div>
+          <div style="display:flex;gap:8px;align-items:center;"><input type="file" accept=".pdf,.pptx" id="feedCfgArq" style="font-size:10.5px;"/><span id="feedCfgArqInfo" style="font-size:10px;color:${_corTxt(c.apresentacao_media_id?'var(--green,#22d3a3)':'var(--gold)')};">${c.apresentacao_media_id ? '✓ ' + c.apresentacao_nome : '⚠ nenhuma apresentação — os e-mails saem sem anexo'}</span></div></div>
         <div class="fg"><label class="fl">Assunto do e-mail</label><input class="fi" id="feedCfgAssunto" value="${String(c.assunto||'').replace(/"/g,'&quot;')}"/></div>
         <div class="fg"><label class="fl">Assinatura</label><input class="fi" id="feedCfgAss" value="${String(c.assinatura||'').replace(/"/g,'&quot;')}"/></div>
         <div class="fg"><label class="fl">Link da apresentação para WhatsApp (opcional)</label><input class="fi" id="feedCfgUrl" value="${String(c.apresentacao_url||'').replace(/"/g,'&quot;')}" placeholder="https://... (se vazio, usa a página de captura)"/></div>
@@ -21326,7 +21396,7 @@ async function carregarClientes() {
       const cores = { hubspot:'rgba(255,122,0,.18)|#ff7a00', captura:'rgba(79,124,255,.18)|#4f7cff',
         'prospecção':'rgba(156,109,255,.18)|#9c6dff', faturamento:'rgba(34,211,163,.18)|#22d3a3' };
       const [bg, cor] = (cores[f] || 'var(--bg4)|var(--t2)').split('|');
-      return `<span style="font-size:8.5px;padding:1px 5px;border-radius:4px;background:${bg};color:${cor};">${f}</span>`;
+      return `<span style="font-size:8.5px;padding:1px 5px;border-radius:4px;background:${bg};color:${_corTxt(cor)};">${f}</span>`;
     };
     box.innerHTML = (d.clientes||[]).length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;">
       <thead><tr style="border-bottom:1px solid var(--bd);">
@@ -21402,9 +21472,9 @@ async function gerarRaioX() {
       <div style="background:var(--bg4);border-left:4px solid ${corV};border-radius:9px;padding:13px 16px;margin-bottom:12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
           <span style="font-size:14px;font-weight:700;">${proj}</span>
-          <span style="font-size:11px;color:${corV};font-weight:600;text-transform:uppercase;">${rx.veredito || '—'}</span>
+          <span style="font-size:11px;color:${_corTxt(corV)};font-weight:600;text-transform:uppercase;">${rx.veredito || '—'}</span>
         </div>
-        ${(rx.alertas||[]).map(a => `<div style="font-size:11px;line-height:1.6;margin-top:5px;color:${a.g==='alta'?'var(--red)':'var(--gold)'};">• ${a.txt}</div>`).join('')
+        ${(rx.alertas||[]).map(a => `<div style="font-size:11px;line-height:1.6;margin-top:5px;color:${_corTxt(a.g==='alta'?'var(--red)':'var(--gold)')};">• ${a.txt}</div>`).join('')
           || '<div style="font-size:11px;color:var(--green,#22d3a3);margin-top:5px;">Nenhum ponto crítico identificado.</div>'}
       </div>
 
@@ -21423,7 +21493,7 @@ async function gerarRaioX() {
             <div style="font-size:11px;margin-bottom:8px;">
               <div style="display:flex;justify-content:space-between;"><span>Executado</span><b>${c.avanco_real}%</b></div>${barra(c.avanco_real, 'var(--green,#22d3a3)')}
               <div style="display:flex;justify-content:space-between;margin-top:8px;"><span>Planejado até hoje</span><b>${c.avanco_planejado}%</b></div>${barra(c.avanco_planejado, 'var(--blue,#4f7cff)')}
-              <div style="margin-top:7px;color:${c.desvio < 0 ? 'var(--red)' : 'var(--green,#22d3a3)'};">Desvio: ${c.desvio > 0 ? '+' : ''}${c.desvio} pontos</div>
+              <div style="margin-top:7px;color:${_corTxt(c.desvio < 0 ? 'var(--red)' : 'var(--green,#22d3a3)')};">Desvio: ${c.desvio > 0 ? '+' : ''}${c.desvio} pontos</div>
             </div>
             <div style="display:flex;gap:12px;font-size:10.5px;color:var(--t2);padding-top:7px;border-top:1px solid var(--bd);">
               <span>✓ ${c.concluidas} concluída(s)</span><span>▶ ${c.em_andamento} em andamento</span><span>○ ${c.nao_iniciadas} não iniciada(s)</span>
@@ -21459,7 +21529,7 @@ async function gerarRaioX() {
           <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:11px;margin-bottom:10px;">
             <span>Receita: <b style="color:var(--green,#22d3a3);">${fmtBRLcompleto(f.receita_total)}</b> <span style="color:var(--t3);">(${fmtBRLcompleto(f.receita_recebida)} recebido)</span></span>
             <span>Despesa: <b style="color:var(--red);">${fmtBRLcompleto(f.despesa_total)}</b></span>
-            <span>Lucro: <b style="color:${(f.lucro||0)>=0?'var(--green,#22d3a3)':'var(--red)'};">${fmtBRLcompleto(f.lucro)}</b></span>
+            <span>Lucro: <b style="color:${_corTxt((f.lucro||0)>=0?'var(--green,#22d3a3)':'var(--red)')};">${fmtBRLcompleto(f.lucro)}</b></span>
           </div>
           ${(f.linha_tempo||[]).length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;">
             <thead><tr style="border-bottom:1px solid var(--bd);">${['MÊS','RECEITA','DESPESA','RESULTADO','ACUMULADO'].map(h=>`<th style="text-align:right;padding:5px;color:var(--t2);font-size:9px;${h==='MÊS'?'text-align:left;':''}">${h}</th>`).join('')}</tr></thead>
@@ -21468,7 +21538,7 @@ async function gerarRaioX() {
               <td style="padding:5px;text-align:right;font-family:var(--M);color:var(--green,#22d3a3);">${m.receita ? fmtBRLcompleto(m.receita) : '—'}</td>
               <td style="padding:5px;text-align:right;font-family:var(--M);color:var(--red);">${m.despesa ? fmtBRLcompleto(m.despesa) : '—'}</td>
               <td style="padding:5px;text-align:right;font-family:var(--M);">${fmtBRLcompleto(m.resultado)}</td>
-              <td style="padding:5px;text-align:right;font-family:var(--M);font-weight:600;color:${m.acumulado>=0?'var(--green,#22d3a3)':'var(--red)'};">${fmtBRLcompleto(m.acumulado)}</td></tr>`).join('')}</tbody></table>`
+              <td style="padding:5px;text-align:right;font-family:var(--M);font-weight:600;color:${_corTxt(m.acumulado>=0?'var(--green,#22d3a3)':'var(--red)')};">${fmtBRLcompleto(m.acumulado)}</td></tr>`).join('')}</tbody></table>`
           : `<div style="font-size:11px;color:var(--t3);text-align:center;padding:14px;">Sem lançamentos financeiros vinculados a este projeto.${f.erro ? '<br>' + f.erro : ''}</div>`}
         </div>
       </div>`;
@@ -21518,7 +21588,7 @@ function _cpFala(box, autor, texto, tipo) {
   const cores = { orion: 'var(--purple,#9c6dff)', conselheiro: 'var(--blue,#4f7cff)', fecho: 'var(--green,#22d3a3)' };
   const d = document.createElement('div');
   d.style.cssText = `margin-bottom:10px;padding:10px 12px;border-radius:9px;background:var(--bg4);border-left:3px solid ${cores[tipo]||'var(--bd)'};`;
-  d.innerHTML = `<div style="font-size:10px;color:${cores[tipo]||'var(--t2)'};font-weight:600;margin-bottom:4px;">${tipo==='orion'?'🤖':tipo==='fecho'?'✅':'🏛'} ${autor}</div>
+  d.innerHTML = `<div style="font-size:10px;color:${_corTxt(cores[tipo]||'var(--t2)')};font-weight:600;margin-bottom:4px;">${tipo==='orion'?'🤖':tipo==='fecho'?'✅':'🏛'} ${autor}</div>
     <div style="font-size:11.5px;line-height:1.7;white-space:pre-wrap;">${String(texto||'').replace(/</g,'&lt;')}</div>`;
   box.appendChild(d); box.scrollTop = box.scrollHeight;
 }
@@ -21800,11 +21870,11 @@ async function concRazao() {
     const d = await finApi('conc_razao', { conta_id: conta, data_inicio: ini || null, data_fim: fim || null });
     const S = d.saldos || {}, r = d.resumo || {};
     const ok = Math.abs(S.dif_final || 0) < 1;
-    const lista = (arr, titulo, cor, nota) => arr.length ? `<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt" style="color:${cor};">${titulo}</div><span style="font-size:10px;color:var(--t2);">${arr.length}</span></div>
+    const lista = (arr, titulo, cor, nota) => arr.length ? `<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt" style="color:${_corTxt(cor)};">${titulo}</div><span style="font-size:10px;color:var(--t2);">${arr.length}</span></div>
       <div class="pb" style="max-height:32vh;overflow-y:auto;"><div style="font-size:10px;color:var(--t3);margin-bottom:6px;">${nota}</div>
-      ${arr.map(l => `<div style="font-size:10.5px;padding:4px 0;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;gap:8px;"><span>${_dt(l.data)} · ${(l.descricao||'').substring(0,64)}${l.origem?' <span style="color:var(--t3);">['+l.origem+(l.qb_tipo?' '+l.qb_tipo:'')+']</span>':''}</span><span style="font-family:var(--M);color:${l.tipo==='entrada'?'var(--green,#22d3a3)':'var(--red)'};white-space:nowrap;">${l.tipo==='entrada'?'+':'−'}${fmtBRLcompleto(l.valor)}</span></div>`).join('')}</div></div>` : '';
+      ${arr.map(l => `<div style="font-size:10.5px;padding:4px 0;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;gap:8px;"><span>${_dt(l.data)} · ${(l.descricao||'').substring(0,64)}${l.origem?' <span style="color:var(--t3);">['+l.origem+(l.qb_tipo?' '+l.qb_tipo:'')+']</span>':''}</span><span style="font-family:var(--M);color:${_corTxt(l.tipo==='entrada'?'var(--green,#22d3a3)':'var(--red)')};white-space:nowrap;">${l.tipo==='entrada'?'+':'−'}${fmtBRLcompleto(l.valor)}</span></div>`).join('')}</div></div>` : '';
     _concBox(`<div style="background:var(--bg4);border-left:4px solid ${ok?'var(--green,#22d3a3)':'var(--red)'};border-radius:9px;padding:12px 15px;margin-bottom:12px;">
-        <div style="font-size:13px;font-weight:700;color:${ok?'var(--green,#22d3a3)':'var(--red)'};">${ok ? 'SISTEMA E RAZÃO BATEM' : 'DIFERENÇA DE ' + fmtBRLcompleto(Math.abs(S.dif_final||0)) + ' NO SALDO FINAL'}</div>
+        <div style="font-size:13px;font-weight:700;color:${_corTxt(ok?'var(--green,#22d3a3)':'var(--red)')};">${ok ? 'SISTEMA E RAZÃO BATEM' : 'DIFERENÇA DE ' + fmtBRLcompleto(Math.abs(S.dif_final||0)) + ' NO SALDO FINAL'}</div>
         <div style="font-size:10px;color:var(--t3);margin-top:2px;">${_dt(d.periodo?.de)} a ${_dt(d.periodo?.ate)} · ${d.sistema_linhas} linha(s) no sistema · ${d.razao_linhas} no razão${d.razao_erro ? ' · ⚠ ' + d.razao_erro : ''}</div>
         ${(d.leitura||[]).map(l => `<div style="font-size:11px;line-height:1.6;margin-top:5px;">• ${l}</div>`).join('')}</div>
       <div class="kg k4" style="margin-bottom:12px;">
@@ -21863,9 +21933,9 @@ async function concImportarOfx(input) {
     const r = d.resumo || {}, cor = d.veredito === 'conciliado' ? 'var(--green,#22d3a3)' : d.veredito === 'atenção' ? 'var(--gold)' : 'var(--red)';
     const lista = (arr, titulo, nota) => arr.length ? `<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">${titulo}</div><span style="font-size:10px;color:var(--t2);">${arr.length}</span></div>
       <div class="pb" style="max-height:30vh;overflow-y:auto;"><div style="font-size:10px;color:var(--t3);margin-bottom:6px;">${nota}</div>
-      ${arr.map(l => `<div style="font-size:10.5px;padding:4px 0;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;gap:8px;"><span>${_dt(l.data)} · ${(l.descricao||'').substring(0,60)}</span><span style="font-family:var(--M);color:${l.tipo==='entrada'?'var(--green,#22d3a3)':'var(--red)'};white-space:nowrap;">${l.tipo==='entrada'?'+':'−'}${fmtBRLcompleto(l.valor)}</span></div>`).join('')}</div></div>` : '';
+      ${arr.map(l => `<div style="font-size:10.5px;padding:4px 0;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;gap:8px;"><span>${_dt(l.data)} · ${(l.descricao||'').substring(0,60)}</span><span style="font-family:var(--M);color:${_corTxt(l.tipo==='entrada'?'var(--green,#22d3a3)':'var(--red)')};white-space:nowrap;">${l.tipo==='entrada'?'+':'−'}${fmtBRLcompleto(l.valor)}</span></div>`).join('')}</div></div>` : '';
     _concBox(`<div style="background:var(--bg4);border-left:4px solid ${cor};border-radius:9px;padding:12px 15px;margin-bottom:12px;">
-        <div style="font-size:13px;font-weight:700;color:${cor};text-transform:uppercase;">${d.veredito}</div>
+        <div style="font-size:13px;font-weight:700;color:${_corTxt(cor)};text-transform:uppercase;">${d.veredito}</div>
         <div style="font-size:10px;color:var(--t3);margin-top:2px;">${file.name} · banco ${d.ofx?.conta?.banco||'?'} ag ${d.ofx?.conta?.agencia||'?'} cc ${d.ofx?.conta?.conta||'?'} · ${_dt(d.ofx?.periodo?.de)} a ${_dt(d.ofx?.periodo?.ate)}</div>
         ${(d.leitura||[]).map(l => `<div style="font-size:11px;line-height:1.6;margin-top:5px;">• ${l}</div>`).join('')}</div>
       <div class="kg k4" style="margin-bottom:12px;">
@@ -21919,7 +21989,7 @@ async function conciliarRecebiveis() {
               ${t.emissao_referencia ? `<div style="font-size:10px;color:var(--t3);margin-top:4px;">Emissão ${t.emissao_referencia.split('-').reverse().join('/')} → vencimento esperado ${(t.vencimento_esperado||'').split('-').reverse().join('/')}</div>` : ''}
               ${(t.faturas||[]).length ? `<div style="font-size:10px;color:var(--t2);margin-top:5px;">Faturas: ${t.faturas.map(f => `${f.doc || '(s/nº)'} ${fmtBRLcompleto(f.valor)} venc. ${String(f.vencimento||'').substring(0,10).split('-').reverse().join('/')}`).join(' · ')}</div>` : ''}
               ${t.fatura_candidata ? `<div style="font-size:10px;color:var(--gold);margin-top:4px;background:rgba(245,185,75,.08);border-radius:5px;padding:5px 8px;">💡 Fatura candidata: ${t.fatura_candidata.doc || '(s/nº)'} de ${fmtBRLcompleto(t.fatura_candidata.valor)} — diferença de ${fmtBRLcompleto(t.fatura_candidata.diferenca)}</div>` : ''}
-              ${(t.problemas||[]).map(p => `<div style="font-size:10.5px;line-height:1.6;margin-top:4px;color:${p.g==='alta'?'var(--red)':'var(--gold)'};">• ${p.txt}</div>`).join('')}
+              ${(t.problemas||[]).map(p => `<div style="font-size:10.5px;line-height:1.6;margin-top:4px;color:${_corTxt(p.g==='alta'?'var(--red)':'var(--gold)')};">• ${p.txt}</div>`).join('')}
             </div>`).join('') || '<div style="text-align:center;color:var(--t3);padding:20px;">Nenhum termo aprovado para conciliar.</div>'}
         </div>
       </div>
@@ -22353,7 +22423,7 @@ function _qaRenderizar(segundos) {
         <div style="font-size:12px;font-weight:600;margin-bottom:5px;">${ico(t.gravidade)} ${t.titulo} <span style="color:var(--t3);font-weight:400;font-size:10px;">(${t.tela})</span>
           <button class="btn" style="font-size:8.5px;padding:1px 6px;margin-left:6px;" onclick="nav('${t.tela}')">abrir tela</button></div>
         ${t.problemas.map(p => `<div style="font-size:10.5px;line-height:1.6;margin-bottom:3px;">
-          <span style="color:${cor(p.gravidade)};">•</span> <b>${p.msg}</b>${p.detalhe ? `<br><span style="color:var(--t2);margin-left:11px;">${String(p.detalhe).replace(/</g,'&lt;')}</span>` : ''}
+          <span style="color:${_corTxt(cor(p.gravidade))};">•</span> <b>${p.msg}</b>${p.detalhe ? `<br><span style="color:var(--t2);margin-left:11px;">${String(p.detalhe).replace(/</g,'&lt;')}</span>` : ''}
           <span style="color:var(--t3);font-size:9px;margin-left:5px;">[${p.tipo}]</span></div>`).join('')}
       </div>`).join('')
     : '<div style="background:rgba(34,211,163,.08);border:1px solid var(--green,#22d3a3);border-radius:8px;padding:16px;font-size:12px;">✅ Nenhum problema encontrado nas ' + r.length + ' telas testadas.</div>'}
@@ -22432,7 +22502,7 @@ async function carregarPainelMestre() {
           <td style="padding:6px;font-weight:600;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${String(l.projeto||'').replace(/"/g,'')}">${l.projeto}</td>
           <td style="padding:6px;"><span style="font-size:9px;padding:1px 5px;border-radius:4px;background:${ehSust?'rgba(79,124,255,.15)':'rgba(156,109,255,.15)'};">${ehSust?'sustentação':'entrega'}</span></td>
           <td style="padding:6px;color:var(--t2);white-space:nowrap;">${l.gerente||'—'}</td>
-          <td style="padding:6px;color:${cor(l.farol)};white-space:nowrap;">${ico(l.farol)} ${l.farol||'sem report'}</td>
+          <td style="padding:6px;color:${_corTxt(cor(l.farol))};white-space:nowrap;">${ico(l.farol)} ${l.farol||'sem report'}</td>
           <td style="padding:6px;font-family:var(--M);">${avanco}${!ehSust && l.pct_planejado!=null ? `<span style="color:var(--t3);font-size:9px;"> / ${l.pct_planejado}%</span>` : ''}</td>
           <td style="padding:6px;font-family:var(--M);">${desvio}</td>
           <td style="padding:6px;color:var(--t2);font-size:10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${proxMarco ? String(typeof proxMarco==='string'?proxMarco:proxMarco.descricao||'').replace(/"/g,'') : ''}">${proxMarco ? (typeof proxMarco==='string'?proxMarco:proxMarco.descricao||'').substring(0,28) : '—'}</td>
@@ -22587,7 +22657,7 @@ function _addTranscPmo(autor, texto, tipo) {
   if (_transcricaoPmo.length === 1) box.innerHTML = '';
   const div = document.createElement('div');
   div.style.cssText = 'margin-bottom:7px;' + (tipo === 'agente' ? 'padding:7px;background:rgba(156,109,255,.12);border-radius:7px;' : '');
-  div.innerHTML = `<span style="font-size:9px;color:${tipo==='agente'?'var(--purple,#9c6dff)':'var(--t3)'};">${tipo==='agente'?'🤖':'👤'} ${autor}</span><br>${texto.replace(/</g,'&lt;')}`;
+  div.innerHTML = `<span style="font-size:9px;color:${_corTxt(tipo==='agente'?'var(--purple,#9c6dff)':'var(--t3)')};">${tipo==='agente'?'🤖':'👤'} ${autor}</span><br>${texto.replace(/</g,'&lt;')}`;
   box.appendChild(div); box.scrollTop = box.scrollHeight;
 }
 async function perguntarAgentePmo() {
@@ -22798,7 +22868,7 @@ function _addTranscricao(autor, texto, tipo) {
   if (_transcricao.length === 1) box.innerHTML = '';
   const div = document.createElement('div');
   div.style.cssText = 'margin-bottom:7px;' + (tipo === 'agente' ? 'padding:7px;background:rgba(156,109,255,.12);border-radius:7px;' : '');
-  div.innerHTML = `<span style="font-size:9px;color:${tipo==='agente'?'var(--purple,#9c6dff)':'var(--t3)'};">${tipo==='agente'?'🤖':'👤'} ${autor}</span><br>${texto.replace(/</g,'&lt;')}`;
+  div.innerHTML = `<span style="font-size:9px;color:${_corTxt(tipo==='agente'?'var(--purple,#9c6dff)':'var(--t3)')};">${tipo==='agente'?'🤖':'👤'} ${autor}</span><br>${texto.replace(/</g,'&lt;')}`;
   box.appendChild(div); box.scrollTop = box.scrollHeight;
 }
 // Detecta se chamaram um conselheiro pelo nome, ou se o modo "comentar sozinho" está ativo
@@ -23043,7 +23113,7 @@ async function auditarCampanhas() {
           <div style="border-left:3px solid ${cor(p.gravidade)};background:var(--bg4);border-radius:6px;padding:10px;margin-bottom:8px;">
             <div style="font-size:11.5px;font-weight:600;">${p.nome || '(sem nome)'}</div>
             <div style="font-size:10px;color:var(--t2);margin:3px 0;">canal: <b>${p.canal}</b> · status: ${p.status}${p.ativa?' · ATIVA':''}</div>
-            <div style="font-size:10.5px;color:${cor(p.gravidade)};">${p.problema}</div>
+            <div style="font-size:10.5px;color:${_corTxt(cor(p.gravidade))};">${p.problema}</div>
             <div style="display:flex;gap:6px;margin-top:6px;align-items:center;">
               <select class="fsel" id="fix_${p.id}" style="font-size:10px;width:auto;"><option value="">— escolher canal —</option>${opts}</select>
               <button class="btn btn-gn" style="font-size:9px;padding:2px 8px;" onclick="_corrigirCanal('${p.id}')">Corrigir</button>
@@ -23205,7 +23275,7 @@ async function carregarDashboardFinanceiro() {
     const fl = document.getElementById('df_fluxo');
     if (fl) { const ms = x.fluxo_6m || []; if (!ms.length) fl.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Sem projeção — cadastre despesas/marcos ou conecte o QuickBooks.</div>';
       else { const mx = Math.max(...ms.map(m => Math.max(Math.abs(m.entradas||0), Math.abs(m.saidas||0), 1)));
-        fl.innerHTML = '<div style="display:grid;grid-template-columns:repeat(' + ms.length + ',1fr);gap:8px;align-items:end;height:150px;">' + ms.map(m => { const he = Math.round((m.entradas||0)/mx*120), hs = Math.round((m.saidas||0)/mx*120); return '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;height:100%;justify-content:flex-end;" title="Entradas ' + brl(m.entradas) + ' · Saídas ' + brl(m.saidas) + ' · Saldo ' + brl(m.saldo) + '"><div style="display:flex;gap:2px;align-items:end;"><div style="width:14px;height:' + he + 'px;background:var(--green,#22d3a3);border-radius:2px 2px 0 0;"></div><div style="width:14px;height:' + hs + 'px;background:var(--red);border-radius:2px 2px 0 0;"></div></div><div style="font-size:8.5px;color:var(--t2);font-family:var(--M);">' + (m.mes||'') + '</div><div style="font-size:8.5px;color:' + ((m.saldo||0) < 0 ? 'var(--red)' : 'var(--t1)') + ';">' + brl(m.saldo) + '</div></div>'; }).join('') + '</div><div style="font-size:9px;color:var(--t3);margin-top:6px;">▮ entradas · ▮ saídas · valor = saldo final do mês</div>'; } }
+        fl.innerHTML = '<div style="display:grid;grid-template-columns:repeat(' + ms.length + ',1fr);gap:8px;align-items:end;height:150px;">' + ms.map(m => { const he = Math.round((m.entradas||0)/mx*120), hs = Math.round((m.saidas||0)/mx*120); return '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;height:100%;justify-content:flex-end;" title="Entradas ' + brl(m.entradas) + ' · Saídas ' + brl(m.saidas) + ' · Saldo ' + brl(m.saldo) + '"><div style="display:flex;gap:2px;align-items:end;"><div style="width:14px;height:' + he + 'px;background:var(--green,#22d3a3);border-radius:2px 2px 0 0;"></div><div style="width:14px;height:' + hs + 'px;background:var(--red);border-radius:2px 2px 0 0;"></div></div><div style="font-size:8.5px;color:var(--t2);font-family:var(--M);">' + (m.mes||'') + '</div><div style="font-size:8.5px;color:' + _corTxt(((m.saldo||0) < 0 ? 'var(--red)' : 'var(--t1)')) + ';">' + brl(m.saldo) + '</div></div>'; }).join('') + '</div><div style="font-size:9px;color:var(--t3);margin-top:6px;">▮ entradas · ▮ saídas · valor = saldo final do mês</div>'; } }
     const kp = document.getElementById('df_kpis');
     if (kp) { const ent = Object.entries(sd.kpis || {}).filter(([k, v]) => v != null && typeof v !== 'object'); kp.innerHTML = ent.length ? ent.map(([k, v]) => '<div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--bd);"><span style="color:var(--t2);">' + k.replace(/_/g,' ') + '</span><span style="font-family:var(--M);">' + (typeof v === 'number' ? (Math.abs(v) >= 1000 ? fmtBRL(v) : (Math.round(v*100)/100)) : v) + '</span></div>').join('') : '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Sem indicadores (QB desconectado?)</div>'; }
     const ln = document.getElementById('df_lanc');
@@ -23820,9 +23890,9 @@ function renderDesempenho() {
       ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">' +
         Object.entries(porRede).map(([rede,m]) =>
           `<div style="background:var(--bg4);border-left:3px solid ${cores[rede]||'var(--bd)'};border-radius:6px;padding:10px;">
-            <div style="font-size:12px;font-weight:700;text-transform:capitalize;color:${cores[rede]||'var(--t1)'};">${rede}</div>
+            <div style="font-size:12px;font-weight:700;text-transform:capitalize;color:${_corTxt(cores[rede]||'var(--t1)')};">${rede}</div>
             <div style="font-size:10px;color:var(--t2);margin-top:5px;">${m.pubs} publicações</div>
-            <div style="font-size:10px;color:${m.imp === 0 && m.pubs > 0 ? 'var(--gold)' : 'var(--t2)'};">${m.imp.toLocaleString('pt-BR')} impressões${m.imp === 0 && m.pubs > 0 ? ' ⚠' : ''} · ${m.cli} cliques</div>
+            <div style="font-size:10px;color:${_corTxt(m.imp === 0 && m.pubs > 0 ? 'var(--gold)' : 'var(--t2)')};">${m.imp.toLocaleString('pt-BR')} impressões${m.imp === 0 && m.pubs > 0 ? ' ⚠' : ''} · ${m.cli} cliques</div>
             <div style="font-size:10px;color:var(--t2);">${m.eng} interações${m.leadsAuto ? ' · <span style=\"color:var(--green);font-weight:700;\">' + m.leadsAuto + ' leads 🔗</span>' : (m.cli > 0 ? ' · <span style=\"color:var(--t3);\" title=\"Houve cliques mas nenhum lead identificado — veja a explicação abaixo\">0 leads</span>' : '')}</div>
           </div>`).join('') + '</div>' + _despAvisoMetricas(porRede)
       : '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Sem publicações no período.</div>';
@@ -23933,12 +24003,12 @@ function renderCalendarioKanban() {
         const pubs = pubsDia(d).sort((a,b) => new Date(a.agendado_para||a.data) - new Date(b.agendado_para||b.data));
         const ehHoje = d.getTime() === hoje.getTime();
         return '<div style="background:var(--bg4);border:1px solid ' + (ehHoje ? 'var(--blue)' : 'var(--bd)') + ';border-radius:7px;padding:7px;min-height:72px;">'
-          + '<div style="font-family:var(--M);font-size:8px;color:' + (ehHoje ? 'var(--blue)' : 'var(--t3)') + ';margin-bottom:5px;">' + nomesDia[d.getDay()] + ' ' + String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + (ehHoje ? ' · HOJE' : '') + '</div>'
+          + '<div style="font-family:var(--M);font-size:8px;color:' + _corTxt((ehHoje ? 'var(--blue)' : 'var(--t3)')) + ';margin-bottom:5px;">' + nomesDia[d.getDay()] + ' ' + String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + (ehHoje ? ' · HOJE' : '') + '</div>'
           + (pubs.length ? pubs.map(p => {
               const hh = new Date(p.agendado_para || p.data);
               return '<div style="background:var(--bg3);border-left:2px solid ' + (cores[p.rede] || 'var(--bd)') + ';border-radius:4px;padding:4px 5px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;gap:4px;">'
                 + '<div style="min-width:0;"><div style="font-size:9px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + (p.titulo||'') + '">' + String(hh.getHours()).padStart(2,'0') + ':' + String(hh.getMinutes()).padStart(2,'0') + ' ' + (p.titulo||'') + '</div>'
-                + '<div style="font-size:8px;color:' + (cores[p.rede]||'var(--t3)') + ';">' + (icone[p.rede]||p.rede) + ((p.texto||'').startsWith('[STORY]') ? ' · 📱' : (p.texto||'').startsWith('[REEL]') ? ' · 🎬' : (p.texto||'').startsWith('[CARROSSEL]') ? ' · 🖼' : '') + (p.metodo==='metricool' ? ' · 🚀' : ' · ✋') + '</div></div>'
+                + '<div style="font-size:8px;color:' + _corTxt((cores[p.rede]||'var(--t3)')) + ';">' + (icone[p.rede]||p.rede) + ((p.texto||'').startsWith('[STORY]') ? ' · 📱' : (p.texto||'').startsWith('[REEL]') ? ' · 🎬' : (p.texto||'').startsWith('[CARROSSEL]') ? ' · 🖼' : '') + (p.metodo==='metricool' ? ' · 🚀' : ' · ✋') + '</div></div>'
                 + '<button class="btn" style="font-size:8px;padding:1px 4px;color:var(--gold);flex-shrink:0;" onclick="reagendarPublicacao(\'' + p.id + '\')" title="Mudar data/hora (também no Metricool)">✎</button>'
                 + '<button class="btn" style="font-size:8px;padding:1px 5px;color:var(--red);flex-shrink:0;" onclick="excluirPublicacaoAgendada(\'' + p.id + '\')" title="Excluir (também do Metricool)">🗑</button>'
                 + '</div>';
@@ -24292,9 +24362,9 @@ function _statusPainel(prefix, estado, titulo, detalhe, pct) {
   bar.style.cssText = 'display:block;margin-bottom:12px;padding:12px 14px;border-radius:9px;border:1.5px solid ' + cor + ';background:' + bg + ';';
   bar.innerHTML = '<div style="display:flex;align-items:center;gap:10px;">'
     + (estado === 'run' ? '<div style="width:16px;height:16px;border:3px solid rgba(79,124,255,.25);border-top-color:var(--blue);border-radius:50%;animation:atxspin .8s linear infinite;flex-shrink:0;"></div>' : estado === 'ok' ? '<span style="font-size:18px;">✅</span>' : '<span style="font-size:18px;">⛔</span>')
-    + '<div style="flex:1;min-width:0;"><div style="font-size:' + (estado === 'err' ? '14px' : '13px') + ';font-weight:700;color:' + cor + ';">' + (titulo || '') + '</div>'
+    + '<div style="flex:1;min-width:0;"><div style="font-size:' + (estado === 'err' ? '14px' : '13px') + ';font-weight:700;color:' + _corTxt(cor) + ';">' + (titulo || '') + '</div>'
     + (detalhe ? '<div style="font-size:11.5px;color:var(--t1);margin-top:3px;line-height:1.45;word-break:break-word;">' + detalhe + '</div>' : '') + '</div>'
-    + (typeof pct === 'number' ? '<div style="font-family:var(--M);font-size:14px;font-weight:700;color:' + cor + ';">' + Math.round(pct) + '%</div>' : '') + '</div>'
+    + (typeof pct === 'number' ? '<div style="font-family:var(--M);font-size:14px;font-weight:700;color:' + _corTxt(cor) + ';">' + Math.round(pct) + '%</div>' : '') + '</div>'
     + (typeof pct === 'number' ? '<div style="height:6px;background:rgba(255,255,255,.08);border-radius:3px;margin-top:9px;overflow:hidden;"><div style="height:100%;width:' + Math.max(2, Math.min(100, pct)) + '%;background:' + cor + ';transition:width .3s;"></div></div>' : '');
   if (!document.getElementById('atxSpinStyle')) { const st = document.createElement('style'); st.id = 'atxSpinStyle'; st.textContent = '@keyframes atxspin{to{transform:rotate(360deg)}}'; document.head.appendChild(st); }
   try { if (estado === 'err') bar.scrollIntoView({ behavior:'smooth', block:'center' }); } catch(_) {}
@@ -25102,7 +25172,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.09] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.10] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -25118,7 +25188,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.09';
+window.__ATX_BUILD_ID__ = 'ATX-v3.10';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
