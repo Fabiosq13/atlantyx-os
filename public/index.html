@@ -1402,7 +1402,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <div style="grid-column:1/-1;"><button class="btn btn-p" style="width:100%;" id="btnCaptarIdeia" onclick="captarIdeia()">✦ Captar e Iniciar Análise Completa com IA</button></div>
       </div>
     </div>
-    <div class="panel"><div class="ph"><div class="pt">Pipeline de Ideias — Kanban</div><span class="tag live">Ao Vivo</span></div>
+    <div class="panel"><div class="ph"><div class="pt">Pipeline de Ideias — Kanban</div><span class="tag live">Ao Vivo</span><span style="font-size:10px;color:var(--t3);margin-left:8px;">duplo clique na ideia para abrir, editar e gerar o relatório em PDF</span></div>
       <div class="pb"><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:7px;" id="s1Kanban"><div style="font-size:9px;color:var(--t3);text-align:center;grid-column:1/-1;padding:20px;">Nenhuma ideia. Capture a primeira acima.</div></div></div>
     </div>
     <div class="panel" id="s1AnalisePanel" style="display:none;"><div class="ph"><div class="pt">Análise em Andamento</div><span class="tag live">IA</span></div><div class="pb" id="s1AnaliseResult"></div></div>
@@ -4879,7 +4879,8 @@ async function captarIdeia() {
     if (data?.success && data.ideia && !data.ideia.erro) estr = data.ideia;
     else addLog('warn', '[S1-01] Estruturação por IA indisponível (' + (data?.error || 'sem resposta') + ') — ideia registrada com os dados digitados');
 
-    const novaIdeia = { id: 'ideia_' + Date.now(), titulo, titulo_estruturado: estr.titulo_estruturado || '', stage: 'Recebida',
+    const _an = window._ideiaAnalisada && window._ideiaAnalisada.titulo === titulo ? window._ideiaAnalisada.analise : null;
+    const novaIdeia = { id: 'ideia_' + Date.now(), titulo, titulo_estruturado: estr.titulo_estruturado || '', stage: 'Recebida', ...(_an ? { analise_completa: _an, analise: { score: _an.score, recomendacao: _an.recomendacao, resumo_executivo: _an.resumo_executivo } } : {}),
       urgencia: estr.urgencia || '', categoria: cat, origem, desc, raw: estr, criado_em: new Date().toISOString() };
     const ok = await salvarIdeiaS1(novaIdeia);
     if (!ok) {
@@ -4954,6 +4955,7 @@ async function rodarAnaliseCompleta(ideia) {
   }
 
   // v3.05: guarda o resultado das análises junto com a ideia
+  if (resultados.analise) ideia.analise_completa = resultados.analise;
   if (resultados.analise) ideia.analise = { score: resultados.analise.score ?? resultados.analise.nota_geral, recomendacao: resultados.analise.recomendacao, resumo_executivo: resultados.analise.resumo_executivo };
   ideia.resultados_s1 = { pesquisa: resultados.pesquisa || null, modelo: resultados.modelo || null, parecer: resultados.parecer || null };
   // Final parecer
@@ -7731,11 +7733,296 @@ async function initS1() {
   }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// v3.09 — IDEIA EDITÁVEL (duplo clique no kanban) + RELATÓRIO PDF DA AVALIAÇÃO
+// ══════════════════════════════════════════════════════════════════════════════
+let _ideiaEd = null, _ideiaEdSujo = false;
+const _S1_ETAPAS = ['Recebida', 'Em Análise', 'Pesquisa', 'Viabilidade', 'Comitê', 'Aguardando Fundador', 'Em Desenvolvimento', 'Aprovada Squad', 'Arquivada'];
+const _ie = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+function ideiaAbrir(k) {
+  const x = (window._s1IdeiasCache || [])[k]; if (!x) return;
+  _ideiaEd = JSON.parse(JSON.stringify(x)); _ideiaEdSujo = false;
+  let m = document.getElementById('ideiaModal');
+  if (!m) {
+    m = document.createElement('div'); m.id = 'ideiaModal';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:30px 12px;';
+    m.addEventListener('click', e => { if (e.target === m) ideiaFechar(); });
+    document.body.appendChild(m);
+  }
+  m.style.display = 'flex';
+  ideiaRender();
+}
+
+function ideiaFechar(forcar) {
+  if (!forcar && _ideiaEdSujo && !confirm('Há alterações não salvas nesta ideia. Fechar mesmo assim?')) return;
+  const m = document.getElementById('ideiaModal'); if (m) m.style.display = 'none';
+  _ideiaEd = null; _ideiaEdSujo = false;
+}
+
+function ideiaCampo(k, v) { if (!_ideiaEd) return; _ideiaEd[k] = v; if (k === 'categoria') _ideiaEd.cat = v; _ideiaEdSujo = true; const t = document.getElementById('ideiaSujo'); if (t) t.textContent = '· alterações não salvas'; }
+
+function _ideiaResumoHtml(x) {
+  const a = x.analise_completa || x.analise || {}, r = x.resultados_s1 || {}, p = r.parecer || {}, pq = r.pesquisa || {}, bp = x.business_plan;
+  const chip = (rot, val, cor) => val == null || val === '' ? '' : '<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:6px;padding:7px 10px;min-width:110px;"><div style="font-family:var(--M);font-size:8px;color:var(--t2);text-transform:uppercase;">' + rot + '</div><div style="font-size:14px;font-weight:700;color:' + (cor || 'var(--t1)') + ';">' + _ie(val) + '</div></div>';
+  const pct = v => v == null ? null : (v * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+  const brl = v => v == null ? null : 'R$ ' + Math.round(v).toLocaleString('pt-BR');
+  const tem = a.score != null || p.parecer || pq.tam || bp;
+  return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">'
+    + chip('Score S1-03', a.score != null ? a.score + '/10' : null, 'var(--blue)')
+    + chip('Recomendação', a.recomendacao)
+    + chip('Parecer comitê', p.parecer ? p.parecer + (p.nota_final_squad != null ? ' · ' + p.nota_final_squad + '/10' : '') : null, /Aprovado/.test(p.parecer || '') ? 'var(--green)' : 'var(--gold)')
+    + chip('TAM', pq.tam) + chip('SOM (3 anos)', pq.som)
+    + (bp ? chip('TIR anual', pct(bp.tir_anual), 'var(--green)') + chip('VPL', brl(bp.vpl)) + chip('Payback', bp.payback_simples_meses != null ? bp.payback_simples_meses + ' meses' : null) : '')
+    + '</div>'
+    + (!tem ? '<div style="font-size:11px;color:var(--t3);">Esta ideia ainda não tem análise nem business plan. Use os botões abaixo — o relatório PDF sai mais completo com os dois.</div>' : '')
+    + (a.resumo_executivo || p.resumo_executivo_fundador ? '<div style="font-size:11.5px;line-height:1.6;color:var(--t2);margin-top:4px;">' + _ie(p.resumo_executivo_fundador || a.resumo_executivo) + '</div>' : '');
+}
+
+function ideiaRender() {
+  const m = document.getElementById('ideiaModal'); const x = _ideiaEd; if (!m || !x) return;
+  const sel = (k, opts, v) => '<select class="fsel" onchange="ideiaCampo(\'' + k + '\',this.value)">' + opts.map(o => '<option' + (o === v ? ' selected' : '') + '>' + _ie(o) + '</option>').join('') + (v && !opts.includes(v) ? '<option selected>' + _ie(v) + '</option>' : '') + '</select>';
+  const origens = ['Time interno', 'Cliente (feedback)', 'Cliente (feedback direto)', 'Mercado', 'RFP recebido', 'Fundador', 'Análise de mercado', 'Concorrente (benchmark)'];
+  const cats = ['Nova Funcionalidade', 'Novo Produto', 'Melhoria', 'Melhoria de Processo', 'Integração', 'Integração com Parceiro', 'Expansão de Mercado', 'Redução de Custo', 'Infraestrutura'];
+  m.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:12px;width:min(920px,100%);box-shadow:0 20px 60px rgba(0,0,0,.5);">'
+    + '<div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--bd);">'
+    + '<div style="font-size:18px;">&#9670;</div><div style="flex:1;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">' + _ie(x.titulo || 'Ideia') + '</div>'
+    + '<div style="font-size:10px;color:var(--t2);">' + (x.criado_em ? 'Captada em ' + new Date(x.criado_em).toLocaleDateString('pt-BR') + ' · ' : '') + 'Etapa: ' + _ie(x.stage || 'Recebida') + ' <span id="ideiaSujo" style="color:var(--gold);font-weight:600;">' + (_ideiaEdSujo ? '· alterações não salvas' : '') + '</span></div></div>'
+    + '<button class="btn btn-g" style="font-size:12px;padding:4px 10px;" onclick="ideiaFechar()">&#10005;</button></div>'
+    + '<div style="padding:16px 18px;">'
+    + '<div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-bottom:10px;">'
+    + '<div class="fg" style="margin:0;"><label class="fl">Título</label><input class="fi" value="' + _ie(x.titulo) + '" oninput="ideiaCampo(\'titulo\',this.value)"/></div>'
+    + '<div class="fg" style="margin:0;"><label class="fl">Origem</label>' + sel('origem', origens, x.origem) + '</div>'
+    + '<div class="fg" style="margin:0;"><label class="fl">Categoria</label>' + sel('categoria', cats, x.categoria || x.cat) + '</div>'
+    + '<div class="fg" style="margin:0;"><label class="fl">Etapa no pipeline</label>' + sel('stage', _S1_ETAPAS, x.stage || 'Recebida') + '</div>'
+    + '<div class="fg" style="margin:0;"><label class="fl">Urgência</label>' + sel('urgencia', ['', 'Alta', 'Média', 'Baixa'], x.urgencia || '') + '</div>'
+    + '<div class="fg" style="margin:0;"><label class="fl">Responsável</label><input class="fi" value="' + _ie(x.responsavel || '') + '" oninput="ideiaCampo(\'responsavel\',this.value)" placeholder="quem conduz"/></div>'
+    + '</div>'
+    + '<div class="fg"><label class="fl">Descrição completa</label><textarea class="fta" style="min-height:160px;font-size:12px;line-height:1.55;" oninput="ideiaCampo(\'desc\',this.value)">' + _ie(x.desc || x.descricao || '') + '</textarea></div>'
+    + '<div class="fg"><label class="fl">Notas do fundador / decisões</label><textarea class="fta" style="min-height:60px;font-size:12px;" oninput="ideiaCampo(\'notas\',this.value)" placeholder="Observações, condições, próximos passos combinados...">' + _ie(x.notas || '') + '</textarea></div>'
+    + '<div style="border-top:1px solid var(--bd);padding-top:12px;margin-top:4px;"><div style="font-family:var(--M);font-size:8.5px;text-transform:uppercase;color:var(--t2);margin-bottom:8px;">Avaliação da ideia</div>' + _ideiaResumoHtml(x) + '</div>'
+    + '<div id="ideiaMsg" style="font-size:11px;margin-top:10px;"></div>'
+    + '</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;padding:12px 18px;border-top:1px solid var(--bd);background:var(--bg3);border-radius:0 0 12px 12px;">'
+    + '<button class="btn btn-p" onclick="ideiaSalvar()">&#10003; Salvar</button>'
+    + '<button class="btn btn-gn" id="btnIdeiaPdf" onclick="ideiaPdf()">&#128196; Gerar PDF — relatório completo + resumo financeiro</button>'
+    + '<button class="btn btn-g" id="btnIdeiaAnalisar" onclick="ideiaAnalisar()">&#9670; ' + ((x.analise_completa || x.analise) ? 'Reanalisar' : 'Analisar') + ' com IA</button>'
+    + '<button class="btn btn-g" onclick="ideiaBP()">&#128202; ' + (x.business_plan ? 'Abrir' : 'Gerar') + ' Business Plan</button>'
+    + '<div style="flex:1;"></div><button class="btn btn-g" onclick="ideiaFechar()">Fechar</button></div></div>';
+}
+
+function _ideiaMsg(t, cor) { const e = document.getElementById('ideiaMsg'); if (e) e.innerHTML = '<span style="color:' + (cor || 'var(--blue)') + ';">' + t + '</span>'; }
+
+async function ideiaSalvar() {
+  const x = _ideiaEd; if (!x) return false;
+  if (!String(x.titulo || '').trim()) { toast('O título não pode ficar vazio', 'error'); return false; }
+  x.atualizado_em = new Date().toISOString();
+  const ok = await salvarIdeiaS1(x);
+  if (!ok) { _ideiaMsg('Não foi possível salvar — tente de novo.', 'var(--red)'); return false; }
+  const i = S1_PIPELINE.findIndex(y => String(y.id) === String(x.id));
+  if (i >= 0) S1_PIPELINE[i] = JSON.parse(JSON.stringify(x)); else S1_PIPELINE.unshift(JSON.parse(JSON.stringify(x)));
+  renderS1Kanban(); _ideiaEdSujo = false; ideiaRender(); toast('Ideia salva', 'success');
+  return true;
+}
+
+async function ideiaAnalisar() {
+  const x = _ideiaEd; if (!x) return;
+  const b = document.getElementById('btnIdeiaAnalisar'); if (b) { b.disabled = true; b.textContent = 'Analisando... (até 2 min)'; }
+  _ideiaMsg('Agente S1-03 analisando a ideia...');
+  try {
+    const r = await fetch('/api/s1-strategy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'analisar_ideia', titulo: x.titulo, desc: x.desc || '', origem: x.origem, cat: x.categoria || x.cat, modo: 'completa' }) });
+    const d = await r.json().catch(() => ({}));
+    const a = d.analise || {};
+    if (!d.success || a.erro || a.score == null) throw new Error(d.error || 'a IA não devolveu a análise completa');
+    x.analise_completa = a; x.analise = { score: a.score, recomendacao: a.recomendacao, resumo_executivo: a.resumo_executivo };
+    _ideiaEdSujo = true; await ideiaSalvar(); _ideiaMsg('Análise concluída e salva na ideia: score ' + a.score + '/10', 'var(--green)');
+  } catch (e) { _ideiaMsg('Erro na análise: ' + _ie(e.message), 'var(--red)'); if (b) { b.disabled = false; b.innerHTML = '&#9670; Analisar com IA'; } }
+}
+
+async function ideiaBP() {
+  const x = _ideiaEd; if (!x) return;
+  if (_ideiaEdSujo && !(await ideiaSalvar())) return;
+  const k = (window._s1IdeiasCache || []).findIndex(y => String(y.id) === String(x.id));
+  const cache = window._s1IdeiasCache || []; if (k < 0) { cache.push(x); }
+  const idx = k >= 0 ? k : cache.length - 1; cache[idx] = x;
+  ideiaFechar(true);
+  if (x.business_plan?.id) bpAbrirDaIdeia(idx); else bpGerarParaIdeia(idx);
+}
+
+// ── PDF (pdfmake) ─────────────────────────────────────────────────────────
+let _pdfMakeProm = null;
+function _carregarPdfMake() {
+  if (window.pdfMake && window.pdfMake.vfs) return Promise.resolve(window.pdfMake);
+  if (_pdfMakeProm) return _pdfMakeProm;
+  const script = src => new Promise((ok, err) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => err(new Error('não carregou ' + src)); document.head.appendChild(s); });
+  const bases = ['https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/', 'https://cdn.jsdelivr.net/npm/pdfmake@0.2.10/build/'];
+  _pdfMakeProm = (async () => {
+    let ultimo;
+    for (const b of bases) { try { await script(b + 'pdfmake.min.js'); await script(b + 'vfs_fonts.js'); if (window.pdfMake?.vfs) return window.pdfMake; } catch (e) { ultimo = e; } }
+    _pdfMakeProm = null; throw ultimo || new Error('biblioteca de PDF indisponível');
+  })();
+  return _pdfMakeProm;
+}
+
+const _pdfTxt = v => String(v ?? '').replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').trim();
+const _pdfRot = k => { const t = String(k).replace(/_/g, ' '); return t.charAt(0).toUpperCase() + t.slice(1); };
+function _pdfValor(v) {
+  if (v == null || v === '') return null;
+  if (Array.isArray(v)) {
+    if (!v.length) return null;
+    if (v.every(x => typeof x !== 'object' || x == null)) return { ul: v.map(x => _pdfTxt(x)), margin: [0, 0, 0, 4] };
+    return { stack: v.map(x => _pdfObj(x)), margin: [0, 0, 0, 4] };
+  }
+  if (typeof v === 'object') return _pdfObj(v);
+  return { text: _pdfTxt(v), margin: [0, 0, 0, 4] };
+}
+function _pdfObj(o) {
+  if (o == null || typeof o !== 'object') return { text: _pdfTxt(o) };
+  const linhas = Object.entries(o).filter(([, v]) => v != null && v !== '' && !(Array.isArray(v) && !v.length));
+  if (!linhas.length) return { text: '' };
+  if (linhas.every(([, v]) => typeof v !== 'object')) {
+    return { table: { widths: [150, '*'], body: linhas.map(([k, v]) => [{ text: _pdfRot(k), style: 'k' }, { text: _pdfTxt(v), style: 'v' }]) }, layout: 'lightHorizontalLines', margin: [0, 2, 0, 6] };
+  }
+  return { stack: linhas.map(([k, v]) => ({ stack: [{ text: _pdfRot(k), style: 'k', margin: [0, 3, 0, 1] }, _pdfValor(v)].filter(Boolean) })), margin: [0, 0, 0, 4] };
+}
+
+async function ideiaPdf() {
+  const x = _ideiaEd; if (!x) return;
+  const btn = document.getElementById('btnIdeiaPdf'); if (btn) { btn.disabled = true; btn.textContent = 'Gerando PDF...'; }
+  try {
+    if (_ideiaEdSujo) await ideiaSalvar();
+    const pdfMake = await _carregarPdfMake();
+    let bp = null;
+    if (x.business_plan?.id) { try { bp = (await bpApi('obter', { id: x.business_plan.id })).bp; } catch (e) { addLog('warn', '[PDF] business plan não carregou: ' + e.message); } }
+    const dd = _ideiaPdfDoc(x, bp);
+    const nome = 'Relatorio_Ideia_' + String(x.titulo || 'ideia').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w]+/g, '_').replace(/^_|_$/g, '').substring(0, 50) + '_' + new Date().toISOString().slice(0, 10) + '.pdf';
+    pdfMake.createPdf(dd).download(nome);
+    toast('PDF gerado', 'success'); _ideiaMsg('Relatório gerado: ' + _ie(nome), 'var(--green)');
+  } catch (e) { toast('Erro ao gerar o PDF: ' + e.message, 'error'); _ideiaMsg('Erro ao gerar o PDF: ' + _ie(e.message), 'var(--red)'); }
+  if (btn) { btn.disabled = false; btn.innerHTML = '&#128196; Gerar PDF — relatório completo + resumo financeiro'; }
+}
+
+function _ideiaPdfDoc(x, bp) {
+  const AZUL = '#1A3A8F', CINZA = '#6B7280';
+  const a = x.analise_completa || x.analise || {}, r = x.resultados_s1 || {}, pq = r.pesquisa || {}, mo = r.modelo || {}, pc = r.parecer || {};
+  const brl = v => v == null || isNaN(v) ? '—' : 'R$ ' + Math.round(v).toLocaleString('pt-BR');
+  const pct = v => v == null || isNaN(v) ? '—' : (v * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+  const c = [];
+  let nSec = 0;
+  const sec = t => { nSec++; c.push({ text: nSec + '. ' + t, style: 'h1', pageBreak: undefined }); };
+  const sub = t => c.push({ text: t, style: 'h2' });
+  const par = t => { if (t) String(t).split(/\n+/).map(s => s.trim()).filter(Boolean).forEach(s => c.push({ text: _pdfTxt(s), style: 'p' })); };
+  const lista = (t, arr) => { if (Array.isArray(arr) && arr.length) { sub(t); c.push({ ul: arr.map(_pdfTxt), style: 'p' }); } };
+  const kv = pares => { const body = pares.filter(([, v]) => v != null && v !== '' && v !== '—').map(([k, v]) => [{ text: k, style: 'k' }, { text: _pdfTxt(v), style: 'v' }]); if (body.length) c.push({ table: { widths: [170, '*'], body }, layout: 'lightHorizontalLines', margin: [0, 2, 0, 8] }); };
+  const cards = itens => { const cols = itens.filter(([, v]) => v != null && v !== '—');
+    for (let i = 0; i < cols.length; i += 4) c.push({ columns: cols.slice(i, i + 4).map(([k, v, cor]) => ({ stack: [{ text: k.toUpperCase(), fontSize: 7, color: CINZA, bold: true }, { text: _pdfTxt(v), fontSize: 13, bold: true, color: cor || AZUL }], margin: [0, 0, 6, 8] })), columnGap: 8 }); };
+  const usados = new Set();
+
+  // capa / identificação
+  c.push({ canvas: [{ type: 'rect', x: 0, y: 0, w: 515, h: 62, color: AZUL }] });
+  c.push({ text: 'RELATÓRIO DE AVALIAÇÃO DE IDEIA', color: '#C7D2F0', fontSize: 8, bold: true, margin: [12, -54, 0, 0] });
+  c.push({ text: _pdfTxt(x.titulo || 'Ideia'), color: 'white', fontSize: 16, bold: true, margin: [12, 2, 12, 0] });
+  c.push({ text: 'Atlantyx OS · gerado em ' + new Date().toLocaleString('pt-BR'), color: '#C7D2F0', fontSize: 8, margin: [12, 3, 0, 18] });
+  const destaque = [];
+  if (a.score != null) destaque.push(['Score da análise', a.score + '/10']);
+  if (pc.parecer) destaque.push(['Parecer do comitê', pc.parecer + (pc.nota_final_squad != null ? ' (' + pc.nota_final_squad + '/10)' : ''), /Aprovado/.test(pc.parecer) ? '#0A8F4A' : '#B7791F']);
+  if (a.recomendacao) destaque.push(['Recomendação', a.recomendacao]);
+  if (bp?.resultado?.indicadores) { const I = bp.resultado.indicadores; destaque.push(['TIR anual', pct(I.tir_anual), '#0A8F4A'], ['VPL', brl(I.vpl)], ['Payback', I.payback_simples_meses == null ? 'não se paga' : I.payback_simples_meses + ' meses'], ['Viabilidade', I.viavel ? 'VIÁVEL' : 'NÃO VIÁVEL', I.viavel ? '#0A8F4A' : '#C62828']); }
+  if (destaque.length) cards(destaque);
+
+  sec('Identificação');
+  kv([['Título', x.titulo], ['Origem', x.origem], ['Categoria', x.categoria || x.cat], ['Etapa no pipeline', x.stage], ['Urgência', x.urgencia], ['Responsável', x.responsavel], ['Captada em', x.criado_em ? new Date(x.criado_em).toLocaleDateString('pt-BR') : null], ['Última atualização', x.atualizado_em ? new Date(x.atualizado_em).toLocaleString('pt-BR') : null]]);
+  sec('Descrição da ideia'); par(x.desc || x.descricao || '(sem descrição)');
+  if (x.raw && (x.raw.problema_que_resolve || x.raw.cliente_alvo)) kv([['Problema que resolve', x.raw.problema_que_resolve], ['Cliente-alvo', x.raw.cliente_alvo], ['Resumo (captação)', x.raw.resumo_executivo]]);
+  if (x.notas) { sub('Notas do fundador'); par(x.notas); }
+
+  if (pc.parecer || pc.resumo_executivo_fundador) {
+    sec('Parecer consolidado do comitê');
+    kv([['Parecer', pc.parecer], ['Nota final do squad', pc.nota_final_squad != null ? pc.nota_final_squad + '/10' : null], ['Urgência da decisão', pc.urgencia_decisao]]);
+    if (pc.justificativa_parecer) { sub('Justificativa'); par(pc.justificativa_parecer); }
+    if (pc.resumo_executivo_fundador) { sub('Resumo executivo para o fundador'); par(pc.resumo_executivo_fundador); }
+    lista('Pontos fortes', pc.pontos_fortes); lista('Pontos de atenção', pc.pontos_de_atencao); lista('Riscos críticos', pc.riscos_criticos); lista('Condições (se aprovado com ressalvas)', pc.condicoes_se_aprovado_com_ressalvas);
+  }
+
+  if (Object.keys(a).length) {
+    sec('Análise de viabilidade (agente S1-03)');
+    kv([['Score', a.score != null ? a.score + '/10' : null], ['Recomendação', a.recomendacao], ['Prazo e esforço', a.prazo_desenvolvimento], ['Fit com o ICP', a.fit_icp]]);
+    ['score', 'recomendacao', 'prazo_desenvolvimento', 'fit_icp'].forEach(k => usados.add(k));
+    if (a.resumo_executivo) { sub('Resumo executivo'); par(a.resumo_executivo); usados.add('resumo_executivo'); }
+    if (a.mercado) { sub('Mercado'); par(a.mercado); usados.add('mercado'); }
+    if (a.viabilidade_financeira) { sub('Viabilidade financeira'); par(a.viabilidade_financeira); usados.add('viabilidade_financeira'); }
+    lista('Pontos fortes', a.pontos_fortes); lista('Riscos', a.riscos); lista('Próximos passos', a.proximos_passos);
+    ['pontos_fortes', 'riscos', 'proximos_passos'].forEach(k => usados.add(k));
+    if (a.perguntas_respondidas) { sub('Respostas às perguntas'); par(a.perguntas_respondidas); usados.add('perguntas_respondidas'); }
+    if (a.analise_arquivos) { sub('Análise dos documentos'); par(a.analise_arquivos); usados.add('analise_arquivos'); }
+    if (a.parecer_final) { sub('Parecer final do agente'); par(a.parecer_final); usados.add('parecer_final'); }
+    const resto = Object.fromEntries(Object.entries(a).filter(([k]) => !usados.has(k) && !['erro', 'raw'].includes(k)));
+    if (Object.keys(resto).length) { sub('Outros pontos da análise'); c.push(_pdfObj(resto)); }
+  }
+
+  if (Object.keys(pq).length && !pq.erro) {
+    sec('Pesquisa de mercado');
+    kv([['TAM — mercado total', pq.tam], ['SAM — endereçável pela Atlantyx', pq.sam], ['SOM — fatia realista em 3 anos', pq.som], ['Janela de oportunidade', pq.janela_de_oportunidade],
+      ['Preço de referência', pq.preco_referencia ? ['min', 'medio', 'max'].map(k => pq.preco_referencia[k] ? k.replace('medio', 'médio') + ': ' + pq.preco_referencia[k] : '').filter(Boolean).join(' · ') : null]]);
+    if (Array.isArray(pq.concorrentes) && pq.concorrentes.length) {
+      sub('Concorrentes');
+      c.push({ table: { headerRows: 1, widths: [110, '*', '*'], body: [[{ text: 'Concorrente', style: 'th' }, { text: 'Posicionamento', style: 'th' }, { text: 'Fraqueza', style: 'th' }], ...pq.concorrentes.map(k => [_pdfTxt(k.nome), _pdfTxt(k.posicionamento), _pdfTxt(k.fraqueza)].map(t => ({ text: t, style: 'v' })))] }, layout: 'lightHorizontalLines', margin: [0, 2, 0, 8] });
+    }
+    lista('Tendências', pq.tendencias); if (pq.validacao_icp) { sub('Validação com o ICP'); par(pq.validacao_icp); } lista('Evidências de demanda', pq.evidencias_demanda);
+  }
+
+  sec('Resumo financeiro');
+  if (bp?.resultado) {
+    const R = bp.resultado, I = R.indicadores, A = R.anos;
+    c.push({ text: 'Business plan: ' + _pdfTxt(bp.titulo) + (bp.atualizado_em ? ' · atualizado em ' + new Date(bp.atualizado_em).toLocaleDateString('pt-BR') : '') + ' · horizonte ' + R.meses.length + ' meses a partir de ' + R.meses[0], style: 'nota' });
+    cards([['TIR anual', pct(I.tir_anual), '#0A8F4A'], ['VPL (TMA ' + pct(I.taxa_desconto_anual) + ')', brl(I.vpl)], ['Payback', I.payback_simples_meses == null ? 'não se paga' : I.payback_simples_meses + ' meses'], ['Capital necessário', brl(I.exposicao_maxima_caixa)],
+      ['Receita no período', brl(I.receita_total)], ['Lucro líquido no período', brl(I.lucro_liquido_total)], ['Margem EBITDA último ano', pct(A[A.length - 1]?.margem_ebitda)], ['Break-even EBITDA', I.break_even_ebitda_label || 'não atinge']]);
+    const lin = [['Receita bruta', 'receita_bruta'], ['Receita líquida', 'receita_liquida'], ['Lucro bruto', 'lucro_bruto'], ['EBITDA', 'ebitda', 1], ['Lucro líquido', 'lucro_liquido', 1], ['Fluxo de caixa livre', 'fcl', 1], ['Saldo de caixa (fim do ano)', 'caixa_final']];
+    const hdr = [{ text: 'R$', style: 'th' }, ...A.map(y => ({ text: 'Ano ' + y.ano, style: 'th', alignment: 'right' })), { text: 'Total', style: 'th', alignment: 'right' }];
+    const body = lin.map(([rot, k, b]) => [{ text: rot, bold: !!b, fontSize: 8.5 }, ...A.map(y => ({ text: Math.round(y[k] || 0).toLocaleString('pt-BR'), alignment: 'right', fontSize: 8.5, bold: !!b, color: (y[k] || 0) < 0 ? '#C62828' : '#111' })),
+      { text: k === 'caixa_final' ? Math.round(A[A.length - 1][k] || 0).toLocaleString('pt-BR') : Math.round(A.reduce((s, y) => s + (y[k] || 0), 0)).toLocaleString('pt-BR'), alignment: 'right', fontSize: 8.5, bold: true }]);
+    ['margem_bruta', 'margem_ebitda', 'margem_liquida'].forEach(k => body.push([{ text: _pdfRot(k), italics: true, fontSize: 8, color: CINZA }, ...A.map(y => ({ text: pct(y[k]), alignment: 'right', italics: true, fontSize: 8, color: CINZA })), { text: '' }]));
+    sub('DRE e caixa por ano');
+    c.push({ table: { headerRows: 1, widths: ['*', ...A.map(() => 70), 75], body: [hdr, ...body] }, layout: 'lightHorizontalLines', margin: [0, 2, 0, 8] });
+    if (R.cenarios) {
+      sub('Cenários');
+      c.push({ table: { headerRows: 1, widths: ['*', 60, 80, 60, 80], body: [[{ text: 'Cenário', style: 'th' }, { text: 'TIR anual', style: 'th' }, { text: 'VPL', style: 'th' }, { text: 'Payback', style: 'th' }, { text: 'Capital nec.', style: 'th' }],
+        ...['pessimista', 'base', 'otimista'].filter(k => R.cenarios[k]).map(k => { const z = R.cenarios[k]; return [_pdfRot(k), pct(z.tir_anual), brl(z.vpl), z.payback_simples_meses == null ? '—' : z.payback_simples_meses + ' m', brl(z.exposicao_maxima_caixa)].map(t => ({ text: t, fontSize: 8.5 })); })] }, layout: 'lightHorizontalLines', margin: [0, 2, 0, 8] });
+    }
+    const pr = R.premissas || {};
+    sub('Principais premissas');
+    kv([['Receitas', (pr.receitas || []).map(l => l.tipo === 'serie' ? l.nome : l.nome + ' — ' + brl(l.preco) + (l.tipo === 'recorrente' ? '/mês' : ' por venda') + (Array.isArray(l.novos_mes) ? ' · novos/mês: ' + l.novos_mes.join(' / ') : '')).join('\n')],
+      ['Pessoal', (pr.pessoal || []).map(l => (l.qtd || 1) + '× ' + l.cargo + ' — ' + brl(l.salario)).join('\n')], ['Investimentos', (pr.investimentos || []).map(l => l.descricao + ' — ' + brl(l.valor) + ' (mês ' + (l.mes || 1) + ')').join('\n')],
+      ['Tributos', 'Deduções ' + (pr.deducoes_pct ?? '—') + '% · IR/CSLL ' + (pr.ir_csll_pct ?? 0) + '%'], ['TMA', (pr.taxa_desconto_anual ?? '—') + '% a.a.']]);
+    if (bp.narrativa?.riscos?.length) lista('Riscos do plano', bp.narrativa.riscos);
+  }
+  if (Object.keys(mo).length && !mo.erro) {
+    sub(bp ? 'Modelagem preliminar do agente S1-04' : 'Modelagem financeira (agente S1-04)');
+    kv([['Custo de desenvolvimento', mo.custo_desenvolvimento], ['Custo mensal de operação', mo.custo_mensal_operacao], ['ROI', mo.roi], ['Break-even', mo.break_even], ['Payback', mo.payback_period], ['Margem de contribuição', mo.margem_contribuicao], ['Recomendação financeira', mo.recomendacao_financeira],
+      ['Receita projetada', mo.receita_projetada ? ['ano1', 'ano2', 'ano3'].map((k, i) => mo.receita_projetada[k] ? 'Ano ' + (i + 1) + ': ' + mo.receita_projetada[k] : '').filter(Boolean).join(' · ') : null]]);
+    if (mo.premissas) c.push(_pdfObj(mo.premissas));
+  }
+  if (!bp && !(Object.keys(mo).length && !mo.erro)) c.push({ text: 'Esta ideia ainda não tem business plan. Gere pelo botão "Gerar Business Plan" para incluir DRE, fluxo de caixa de 3 anos, TIR, VPL e payback neste relatório.', style: 'nota' });
+
+  return {
+    pageSize: 'A4', pageMargins: [40, 40, 40, 50], content: c,
+    info: { title: 'Relatório de avaliação — ' + _pdfTxt(x.titulo), author: 'Atlantyx OS' },
+    footer: (pg, n) => ({ columns: [{ text: 'Atlantyx OS · Relatório de avaliação de ideia', fontSize: 7, color: CINZA }, { text: 'Página ' + pg + ' de ' + n, alignment: 'right', fontSize: 7, color: CINZA }], margin: [40, 15, 40, 0] }),
+    styles: {
+      h1: { fontSize: 12.5, bold: true, color: AZUL, margin: [0, 12, 0, 6] }, h2: { fontSize: 10, bold: true, color: '#111', margin: [0, 6, 0, 3] },
+      p: { fontSize: 9.5, lineHeight: 1.25, margin: [0, 0, 0, 5] }, k: { fontSize: 8.5, color: CINZA, bold: true }, v: { fontSize: 9 },
+      th: { fontSize: 8.5, bold: true, color: AZUL }, nota: { fontSize: 8.5, italics: true, color: CINZA, margin: [0, 0, 0, 6] },
+    },
+    defaultStyle: { fontSize: 9.5 },
+  };
+}
+
 function renderKanbanS1(ideias) {
   const kanban = document.getElementById('s1Kanban');
   if (!kanban || !ideias || !ideias.length) return;
   window._s1IdeiasCache = [];
   const stages = ['Recebida','Em Análise','Pesquisa','Viabilidade','Comitê','Aguardando Fundador','Em Desenvolvimento'];
+  ideias = (ideias || []).filter(i => (i.stage || i.status) !== 'Arquivada');
   const byStage = {};
   stages.forEach(s => byStage[s] = []);
   ideias.forEach(i => {
@@ -7750,8 +8037,8 @@ function renderKanbanS1(ideias) {
     return '<div style="min-width:120px;">'
       + '<div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:6px;padding:0 2px;">' + s + ' <span style="color:var(--blue);">(' + items.length + ')</span></div>'
       + items.map(i => { const k = (window._s1IdeiasCache = window._s1IdeiasCache || []).push(i) - 1; const bp = i.business_plan;
-          return '<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:5px;padding:7px;margin-bottom:4px;font-size:10px;">' + String(i.titulo || 'Sem título').replace(/</g,'&lt;')
-            + '<div style="margin-top:5px;"><span onclick="' + (bp ? 'bpAbrirDaIdeia(' + k + ')' : 'bpGerarParaIdeia(' + k + ')') + '" style="cursor:pointer;font-family:var(--M);font-size:8px;padding:1px 5px;border-radius:3px;background:' + (bp ? 'rgba(0,200,120,.15);color:var(--green)' : 'var(--bg3);color:var(--t2)') + ';">&#128202; ' + (bp ? 'BP' + (bp.tir_anual != null ? ' · TIR ' + Math.round(bp.tir_anual * 100) + '%' : '') : 'gerar BP') + '</span></div></div>'; }).join('')
+          return '<div ondblclick="ideiaAbrir(' + k + ')" title="Duplo clique para abrir e editar" style="background:var(--bg4);border:1px solid var(--bd);border-radius:5px;padding:7px;margin-bottom:4px;font-size:10px;cursor:pointer;user-select:none;">' + String(i.titulo || 'Sem título').replace(/</g,'&lt;')
+            + '<div style="margin-top:5px;"><span ondblclick="event.stopPropagation()" onclick="' + (bp ? 'bpAbrirDaIdeia(' + k + ')' : 'bpGerarParaIdeia(' + k + ')') + '" style="cursor:pointer;font-family:var(--M);font-size:8px;padding:1px 5px;border-radius:3px;background:' + (bp ? 'rgba(0,200,120,.15);color:var(--green)' : 'var(--bg3);color:var(--t2)') + ';">&#128202; ' + (bp ? 'BP' + (bp.tir_anual != null ? ' · TIR ' + Math.round(bp.tir_anual * 100) + '%' : '') : 'gerar BP') + '</span></div></div>'; }).join('')
       + '</div>';
   }).join('');
 }
@@ -24815,7 +25102,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.08] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.09] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -24831,7 +25118,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.08';
+window.__ATX_BUILD_ID__ = 'ATX-v3.09';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
