@@ -4844,6 +4844,24 @@ async function salvarIdeiaS1(ideia) {
   } catch (e) { addLog('err', '[S1] Não consegui salvar a ideia no banco: ' + e.message); toast('A ideia não foi salva no banco: ' + e.message, 'error'); return false; }
 }
 
+// v3.06: rascunho automático — o que é digitado nos formulários de ideia fica guardado no
+// navegador e volta sozinho se a página recarregar (deploy, queda, F5) antes de salvar.
+const _RASC = { s1captar: ['s1Titulo','s1Desc','s1Origem','s1Cat'], s1analise: ['anTitulo','anDesc','anOrigem','anCat','anPerguntas'] };
+function _rascunhoGravar(k) { try { const o = {}; _RASC[k].forEach(id => { const e = document.getElementById(id); if (e) o[id] = e.value; }); localStorage.setItem('atx_rasc_' + k, JSON.stringify({ o, em: Date.now() })); } catch (_) {} }
+function _rascunhoLimpar(k) { try { localStorage.removeItem('atx_rasc_' + k); } catch (_) {} }
+function _rascunhoRestaurar() {
+  for (const k of Object.keys(_RASC)) {
+    try {
+      const r = JSON.parse(localStorage.getItem('atx_rasc_' + k) || 'null'); if (!r?.o) continue;
+      let restaurou = false;
+      for (const [id, v] of Object.entries(r.o)) { const e = document.getElementById(id); if (e && v && !e.value) { e.value = v; restaurou = true; } }
+      if (restaurou && (r.o.s1Desc || r.o.anDesc || r.o.s1Titulo || r.o.anTitulo)) { addLog('info', '[S1] Rascunho de ideia não salvo foi restaurado (' + new Date(r.em).toLocaleString('pt-BR') + ')'); setTimeout(() => toast('Recuperei o rascunho da ideia que não tinha sido salva', 'success'), 1500); }
+    } catch (_) {}
+  }
+  for (const k of Object.keys(_RASC)) _RASC[k].forEach(id => { const e = document.getElementById(id); if (e) { e.addEventListener('input', () => _rascunhoGravar(k)); e.addEventListener('change', () => _rascunhoGravar(k)); } });
+}
+setTimeout(_rascunhoRestaurar, 300);
+
 async function captarIdeia() {
   const titulo = document.getElementById('s1Titulo')?.value?.trim();
   const desc = document.getElementById('s1Desc')?.value?.trim() || '';
@@ -4864,12 +4882,18 @@ async function captarIdeia() {
     const novaIdeia = { id: 'ideia_' + Date.now(), titulo, titulo_estruturado: estr.titulo_estruturado || '', stage: 'Recebida',
       urgencia: estr.urgencia || '', categoria: cat, origem, desc, raw: estr, criado_em: new Date().toISOString() };
     const ok = await salvarIdeiaS1(novaIdeia);
+    if (!ok) {
+      // v3.06: NÃO apaga o que foi digitado se o banco recusou — o rascunho continua na tela
+      toast('A ideia NÃO foi salva — o texto continua no formulário. Tente de novo em instantes.', 'error');
+      return;
+    }
     S1_PIPELINE.unshift(novaIdeia);
     renderS1Kanban();
-    addLog('success', '[S1-01] Ideia captada: ' + titulo + (estr.urgencia ? ' | Urgência: ' + estr.urgencia : ''));
-    if (ok) toast('Ideia salva no pipeline! Iniciando análise completa...', 'success');
+    addLog('success', '[S1-01] Ideia captada e salva: ' + titulo + (estr.urgencia ? ' | Urgência: ' + estr.urgencia : ''));
+    toast('Ideia salva no pipeline! Iniciando análise completa...', 'success');
     document.getElementById('s1Titulo').value = '';
     document.getElementById('s1Desc').value = '';
+    _rascunhoLimpar('s1captar');
     setTimeout(() => rodarAnaliseCompleta(novaIdeia), 800);
   } catch (e) {
     addLog('err', '[S1-01] Erro ao captar: ' + e.message);
@@ -7696,8 +7720,9 @@ async function initS1() {
       if (el3) { el3.textContent = emFundador; document.getElementById('s1DecCnt').textContent = emFundador; }
       if (el4) el4.textContent = emDev;
       // Renderizar kanban S1 (v3.05: alimenta S1_PIPELINE)
-      S1_PIPELINE = d.ideias;
-      renderKanbanS1(d.ideias);
+      const ids = new Set(d.ideias.map(x => String(x.id)));
+      S1_PIPELINE = [...S1_PIPELINE.filter(x => !ids.has(String(x.id))), ...d.ideias];
+      renderKanbanS1(S1_PIPELINE);
       try { const c = document.getElementById('s1PipeCnt'); if (c) c.textContent = d.ideias.length; } catch (_) {}
       addLog('ok', '[S1] Pipeline carregado: ' + d.ideias.length + ' ideias');
     }
@@ -8476,6 +8501,7 @@ function captarIdeiaFromAnalise() {
   if (!ia) { toast('Analise a ideia primeiro', 'error'); return; }
   document.getElementById('s1Titulo').value = ia.titulo;
   document.getElementById('s1Desc').value = ia.desc;
+  _rascunhoGravar('s1captar');
   nav('s1pipeline', document.querySelector('.sbi[onclick*="s1pipeline"]'));
   setTimeout(() => captarIdeia(), 300);
 }
@@ -24745,7 +24771,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.05] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.06] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -24761,7 +24787,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.05';
+window.__ATX_BUILD_ID__ = 'ATX-v3.06';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

@@ -255,7 +255,7 @@ export default async function handler(req, res) {
       const ideia = value;
       if (!ideia.id) ideia.id = 'ideia_' + Date.now();
       await sql`INSERT INTO ideias (id,titulo,status,data,atualizado_em)
-        VALUES (${ideia.id},${ideia.titulo||''},${ideia.stage||ideia.status||'Recebida'},${JSON.stringify(ideia)},NOW())
+        VALUES (${ideia.id},${ideia.titulo||''},${ideia.stage||ideia.status||'Recebida'},${jsonSeguro(ideia)},NOW())
         ON CONFLICT (id) DO UPDATE SET titulo=EXCLUDED.titulo, status=EXCLUDED.status, data=EXCLUDED.data, atualizado_em=NOW()`;
       return res.status(200).json({ success: true, id: ideia.id });
     }
