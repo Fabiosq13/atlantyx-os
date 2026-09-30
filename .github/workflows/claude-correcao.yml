@@ -1,0 +1,39 @@
+# Correção automática com o Claude (v3.16)
+# Disparo: o Atlantyx OS abre uma issue (label "correcao-automatica") começando com "@claude"
+# a partir do relatório aprovado do Agente de QA / Segurança, ou alguém comenta "@claude" numa issue/PR.
+# O Claude implementa as correções numa branch e abre um PULL REQUEST — nada vai para produção
+# sem o merge feito por uma pessoa (a Vercel publica ao fazer merge na main).
+#
+# Configuração única:
+#   1. Instalar o app do Claude no repositório: https://github.com/apps/claude
+#   2. Settings → Secrets and variables → Actions → New secret: ANTHROPIC_API_KEY
+#   3. No Vercel: GITHUB_TOKEN = token fine-grained (Issues: Read and write neste repositório).
+#      Issue criada com o GITHUB_TOKEN padrão do Actions não dispara workflows — por isso o token pessoal.
+name: Claude — correção automática
+on:
+  issues:
+    types: [opened, labeled]
+  issue_comment:
+    types: [created]
+concurrency:
+  group: claude-correcao-${{ github.event.issue.number }}
+  cancel-in-progress: false
+jobs:
+  claude:
+    if: contains(github.event.issue.body, '@claude') || contains(github.event.comment.body, '@claude')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          trigger_phrase: "@claude"
+          claude_args: "--max-turns 80"

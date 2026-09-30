@@ -73,6 +73,10 @@
     },
     "api/rfp-monitor.js": {
       "maxDuration": 90
+    },
+    "api/qa.js": {
+      "maxDuration": 120,
+      "includeFiles": "{api/**,lib/**,public/*.html,public/*.js}"
     }
   },
   "crons": [
