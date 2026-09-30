@@ -19844,6 +19844,17 @@ async function acAuditoria() {
           <div>${String(e.texto||'').replace(/</g,'&lt;')}…</div>
           <div style="color:var(--red);font-size:10px;margin-top:3px;">${String(e.motivo||'').replace(/</g,'&lt;')}</div></div>`).join('')}
       </div></div>` : ''}
+      ${d.funil_por_rede ? `<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">🔎 Funil por rede — onde o lead se perde (30 dias)</div></div><div class="pb" style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="border-bottom:1px solid var(--bd);">${['REDE','PUBLICAÇÕES','COM LINK','IMPRESSÕES','CLIQUES (rede)','VISITAS À PÁGINA','LEADS','GARGALO / O QUE FAZER'].map(h => `<th style="text-align:left;padding:6px;font-size:9px;">${h}</th>`).join('')}</tr></thead>
+        <tbody>${Object.entries(d.funil_por_rede).map(([r, f]) => `<tr style="border-bottom:1px solid var(--bd);vertical-align:top;">
+          <td style="padding:6px;font-weight:600;text-transform:capitalize;">${r}</td><td style="padding:6px;">${f.publicacoes}</td>
+          <td style="padding:6px;">${f.com_link}${f.link_so_no_comentario ? `<div style="font-size:9.5px;color:var(--t2);">${f.link_so_no_comentario} só no 1º comentário</div>` : ''}</td>
+          <td style="padding:6px;">${f.metricas_api ? Number(f.impressoes).toLocaleString('pt-BR') : '<span style="color:var(--red);" title="' + String((f.erros_api||[]).join(' | ')).replace(/"/g,'&quot;') + '">API recusou</span>'}</td>
+          <td style="padding:6px;">${f.metricas_api ? Number(f.cliques).toLocaleString('pt-BR') : '—'}</td>
+          <td style="padding:6px;">${f.visitas == null ? '<span style="color:var(--t3);">medindo a partir de hoje</span>' : f.visitas}</td>
+          <td style="padding:6px;font-weight:700;">${f.leads}</td>
+          <td style="padding:6px;"><div style="font-weight:600;color:${_corTxt(/gerando/.test(f.gargalo) ? 'var(--green)' : 'var(--gold)')};">${f.gargalo}</div><div style="color:var(--t2);font-size:10.5px;">${f.acao}</div></td></tr>`).join('')}</tbody></table>
+        <div style="font-size:10px;color:var(--t3);margin-top:6px;">Cliques (rede) = o que a rede informa ao Metricool; o Instagram não informa clique em link por post. Visitas à página = medidas pelo sistema na página de captura, pela UTM.</div></div></div>` : ''}
       <div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">🎯 Página de captura</div></div><div class="pb" style="font-size:11px;line-height:1.8;">
         <div>Endpoint: <span style="font-family:var(--M);">${c.endpoint||'—'}</span> ${c.endpoint_responde ? '<span style="color:var(--green,#22d3a3);">✓ responde</span>' : '<span style="color:var(--red);">✗ não responde</span>'}</div>
         <div>Página pública: <span style="font-family:var(--M);">${c.pagina_sugerida||'—'}</span> ${c.pagina_existe ? '<span style="color:var(--green,#22d3a3);">✓ existe</span>' : '<span style="color:var(--red);">✗ não existe — nesta versão ela foi criada, aparece após o deploy</span>'}</div>
@@ -23700,6 +23711,7 @@ function registrarPublicacao(peca, rede, texto, metodo, metricoolId, linkDestino
 
 // ---------- Painel de Desempenho -------------------------------------------
 async function carregarDesempenho() {
+  window._mcDiag = {}; _mcAvisoMetricas = null;
   await carregarPublicacoes();
   await verificarMetricool();
   // Popular select de campanhas
@@ -23732,9 +23744,14 @@ async function carregarDesempenho() {
       try {
         const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({ action:'metricas_posts', payload: { rede, inicio: ini } }) });
-        const d = await r.json();
+        const d = await r.json().catch(() => ({ success: false, error: 'resposta inválida (HTTP ' + r.status + ')' }));
+        // v3.13: erro da API não é mais ignorado — vira diagnóstico específico na tela
+        window._mcDiag = window._mcDiag || {};
+        if (!d.success) { window._mcDiag[rede] = { ok: false, erro: d.error || 'falha na consulta', hint: d.hint || '' }; addLog('err', `[Desempenho] ${rede}: Metricool recusou a consulta de métricas — ${d.error || ''}`); }
         if (d.success && d.posts) {
           const res = mesclarMetricasMc(rede, d.posts);
+          window._mcDiag[rede] = { ok: true, api_ok: d.diagnostico?.api_ok !== false, fonte: d.fonte, total_mc: d.total, totais: d.totais || {}, casados: res.casados, semCasar: res.semCasar, aviso: d.diagnostico?.aviso || null, tentativas: d.diagnostico?.tentativas || [] };
+          if (d.diagnostico?.aviso && !d.diagnostico?.sem_metricas) { _mcAvisoMetricas = _mcAvisoMetricas || {}; _mcAvisoMetricas[rede] = d.diagnostico.aviso; }
           // v1.42: se a API devolveu posts sem NENHUMA métrica, o problema é de permissão no Metricool
           if (d.diagnostico?.sem_metricas) {
             addLog('err', `[Desempenho] ${rede}: ${d.diagnostico.aviso}`);
@@ -23799,7 +23816,19 @@ function _despAvisoMetricas(porRede) {
   const avisos = [];
   const semImp = Object.entries(porRede).filter(([r, m]) => m.pubs > 0 && m.imp === 0).map(([r]) => r);
   if (semImp.length) {
-    const detalhe = _mcAvisoMetricas ? Object.values(_mcAvisoMetricas)[0] : null;
+    const esc = t => String(t || '').replace(/</g, '&lt;');
+    const D = window._mcDiag || {};
+    // v3.13: diagnóstico REAL por rede (o que o Metricool respondeu), antes da lista genérica
+    const linhas = semImp.map(r => { const x = D[r];
+      if (!x) return `<b>${r}</b>: métricas não consultadas (Metricool não configurado ou sem resposta).`;
+      if (!x.ok) return `<b>${r}</b>: o Metricool <b>recusou</b> a consulta — ${esc(x.erro)} ${esc(x.hint)}`;
+      if (x.api_ok === false) return `<b>${r}</b>: ${esc(x.aviso)}`;
+      if (!x.total_mc) return `<b>${r}</b>: o Metricool não tem publicações desta rede com métricas no período — ${esc(x.aviso || 'a rede pode não estar conectada ao mesmo perfil do Metricool usado pelo sistema.')}`;
+      if ((x.totais?.impressoes || 0) > 0 && !x.casados) return `<b>${r}</b>: o Metricool registrou <b>${Number(x.totais.impressoes).toLocaleString('pt-BR')} impressões</b> em ${x.total_mc} post(s), mas nenhum deles foi associado às publicações desta tela (texto diferente ou post feito fora do sistema). Os números da rede estão no painel abaixo.`;
+      if (x.aviso) return `<b>${r}</b>: ${esc(x.aviso)}`;
+      return `<b>${r}</b>: ${x.total_mc} post(s) no Metricool, ${x.casados} associado(s); as métricas vieram zeradas da rede.`; });
+    const totaisMc = Object.entries(D).filter(([, x]) => x.ok && x.total_mc).map(([r, x]) => `${r}: ${x.total_mc} posts · ${Number(x.totais?.impressoes || 0).toLocaleString('pt-BR')} impressões · ${Number(x.totais?.cliques || 0).toLocaleString('pt-BR')} cliques`);
+    const detalhe = linhas.join('<br>') + (totaisMc.length ? `<br><span style="color:var(--t2);">Totais direto do Metricool no período — ${totaisMc.join(' | ')}</span>` : '');
     avisos.push(`<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:8px;padding:10px 12px;font-size:10.5px;line-height:1.7;margin-top:10px;">
       <b>⚠ Sem impressões em: ${semImp.join(', ')}</b><br>
       ${detalhe ? detalhe + '<br>' : ''}
@@ -23813,6 +23842,7 @@ function _despAvisoMetricas(porRede) {
   if (cliqueSemLead.length) {
     avisos.push(`<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:10px 12px;font-size:10.5px;line-height:1.7;margin-top:8px;">
       <b>🔗 Houve cliques, mas nenhum lead registrado (${cliqueSemLead.map(([r, m]) => r + ': ' + m.cli).join(', ')})</b><br>
+      <span style="color:var(--t2);">Sobre a apuração: o clique vem da rede via Metricool — o LinkedIn só informa cliques de <b>página de empresa</b>; o Instagram <b>não informa</b> clique em link por post (e link na legenda nem é clicável). A medida confiável de "clique que chegou" passa a ser a <b>visita à página de captura</b>, registrada pelo sistema com a UTM (veja a Auditoria do Funil).</span><br>
       Um clique leva a pessoa ao site; ela só vira <b>lead</b> se preencher o formulário lá. Entre um e outro, o que costuma quebrar:<br>
       1. <b>Link sem UTM</b> — sem <code>utm_source</code>, o sistema não sabe que o lead veio daquela rede, e ele é contado como "origem desconhecida" em vez de aparecer aqui.<br>
       2. <b>Formulário não integrado</b> ao HubSpot/sistema — a pessoa preenche e o lead não chega.<br>
@@ -25194,7 +25224,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.12] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.13] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -25210,7 +25240,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.12';
+window.__ATX_BUILD_ID__ = 'ATX-v3.13';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

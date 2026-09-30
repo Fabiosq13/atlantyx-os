@@ -65,6 +65,10 @@
   // Título pode ser personalizado por campanha: ?t=Texto&s=Subtexto
   if (q.get('t')) document.getElementById('titulo').textContent = q.get('t');
   if (q.get('s')) document.getElementById('sub').textContent = q.get('s');
+  // v3.13: registra a VISITA (sem dados pessoais) para medir clique → página → lead
+  let whatsComercial = null;
+  fetch('/api/lead-capture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ evento: 'visita', utm, page: location.pathname + location.search }) })
+    .then(r => r.json()).then(d => { whatsComercial = d && d.whatsapp; }).catch(() => {});
 
   async function enviar() {
     const g = id => document.getElementById(id).value.trim();
@@ -85,7 +89,9 @@
       document.getElementById('form').style.display = 'none';
       document.getElementById('ok').style.display = 'block';
       const wa = document.getElementById('wa');
-      wa.href = 'https://wa.me/5521999999999?text=' + encodeURIComponent(`Olá, sou ${g('nome')} da ${g('empresa')}. Vi o post sobre ${utm.campaign || 'dados e IA'} e quero conversar.`);
+      const numero = (d && d.whatsapp) || whatsComercial;
+      if (numero) wa.href = 'https://wa.me/' + numero + '?text=' + encodeURIComponent(`Olá, sou ${g('nome')} da ${g('empresa')}. Vi o post sobre ${utm.campaign || 'dados e IA'} e quero conversar.`);
+      else wa.style.display = 'none'; // v3.13: sem número configurado, não mostra um link que não leva a lugar nenhum
     } catch (e) {
       erro.textContent = 'Não consegui enviar (' + e.message + '). Tente de novo ou fale pelo WhatsApp.'; erro.style.display = 'block';
       btn.disabled = false; btn.textContent = 'Quero conversar';

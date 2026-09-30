@@ -52,9 +52,59 @@ async function corrigirImagensAgendadas({ blog_id, dias = 60, aplicar = false } 
 // ═══ v2.15: AUDITORIA DO FUNIL — por que não há leads? ═══
 // Cruza três coisas: o que foi agendado no Metricool, o que de fato publicou, e quantos leads
 // chegaram. Sem isso a pergunta "cadê os leads" não tem resposta — só suposição.
+
+// ═══ v3.13: métricas por post — tenta a API nova de analytics e a antiga, e diz o que aconteceu ═══
+// Antes: um único endpoint legado (/stats/{rede}/posts). Se ele falhasse (404, permissão), a tela
+// ignorava o erro e mostrava tudo zerado com uma lista genérica de causas.
+const _pegaNum = (obj, nomes) => {
+  for (const n of nomes) {
+    const v = obj?.[n] ?? obj?.metrics?.[n] ?? obj?.insights?.[n] ?? obj?.statistics?.[n] ?? obj?.stats?.[n] ?? obj?.analytics?.[n];
+    if (v != null && v !== '' && typeof v !== 'object') { const num = parseFloat(v); if (!isNaN(num)) return num; }
+  }
+  return null;
+};
+function _normPostMetrica(p) {
+  return {
+    id: p.id || p.postId || p.mediaId || p.urn || null,
+    texto: String(p.text || p.content || p.caption || p.commentary || p.message || '').substring(0, 300),
+    data: p.date || p.publishedAt || p.publicationDate?.dateTime || p.publicationDate || p.created || p.timestamp || null,
+    url: p.url || p.link || p.permalink || p.postUrl || null,
+    impressoes: _pegaNum(p, ['impressions', 'impressionCount', 'impression_count', 'impressionsTotal', 'post_impressions', 'views', 'viewCount', 'videoViews', 'plays', 'reach', 'reachCount', 'organicImpressions']),
+    alcance: _pegaNum(p, ['reach', 'reachCount', 'post_impressions_unique', 'uniqueImpressions', 'uniqueImpressionsCount']),
+    cliques: _pegaNum(p, ['clicks', 'clickCount', 'click_count', 'post_clicks', 'linkClicks', 'totalClicks', 'websiteClicks']),
+    curtidas: _pegaNum(p, ['likes', 'likeCount', 'reactions', 'reactionCount', 'post_reactions']),
+    comentarios: _pegaNum(p, ['comments', 'commentCount', 'comment_count']),
+    compartilhamentos: _pegaNum(p, ['shares', 'shareCount', 'share_count', 'reposts', 'saved']),
+    engajamento: _pegaNum(p, ['engagement', 'engagementRate', 'engagement_rate', 'interactions']),
+  };
+}
+async function _postsMetricasRede(rede, ini, fim, { TOKEN, USERID, BLOGID }) {
+  const r = String(rede).toLowerCase(), f = d => d.replaceAll('-', '');
+  const base = `userId=${USERID}&blogId=${BLOGID}`;
+  const tentativas = [
+    { nome: 'analytics v2 (posts)', path: `/v2/analytics/posts/${r}?from=${ini}T00:00:00&to=${fim}T23:59:59&timezone=America%2FSao_Paulo&${base}` },
+    { nome: 'stats legado (posts)', path: `/stats/${r}/posts?start=${f(ini)}&end=${f(fim)}&${base}` },
+  ];
+  if (r === 'instagram') tentativas.splice(1, 0, { nome: 'analytics v2 (reels)', path: `/v2/analytics/reels/instagram?from=${ini}T00:00:00&to=${fim}T23:59:59&timezone=America%2FSao_Paulo&${base}`, soma: true });
+  const log = []; let posts = [], usado = null;
+  for (const t of tentativas) {
+    if (usado && !t.soma) continue;
+    try {
+      const d = await mc(t.path, TOKEN);
+      const lista = Array.isArray(d) ? d : (d?.data || d?.posts || d?.items || d?.reels || []);
+      log.push({ fonte: t.nome, ok: true, itens: lista.length, campos: lista[0] ? Object.keys(lista[0]).slice(0, 30) : [] });
+      if (lista.length || !usado) { posts = posts.concat(lista.map(_normPostMetrica)); if (!t.soma || !usado) usado = usado || t.nome; }
+    } catch (e) { log.push({ fonte: t.nome, ok: false, erro: String(e.message || e).substring(0, 200) }); }
+  }
+  const comMetrica = posts.filter(p => p.impressoes != null || p.cliques != null || p.curtidas != null).length;
+  const soma = k => posts.reduce((s2, p) => s2 + (p[k] || 0), 0);
+  return { posts, fonte: usado, tentativas: log, api_ok: log.some(x => x.ok), com_metrica: comMetrica,
+    totais: { posts: posts.length, impressoes: soma('impressoes'), cliques: soma('cliques'), curtidas: soma('curtidas'), comentarios: soma('comentarios'), compartilhamentos: soma('compartilhamentos') } };
+}
+
 async function auditoriaFunil({ dias = 30 } = {}) {
   const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = process.env.METRICOOL_BLOG_ID;
-  const out = { periodo_dias: dias, posts: {}, leads: {}, problemas: [], recomendacoes: [] };
+  const out = { periodo_dias: dias, posts: {}, leads: {}, problemas: [], recomendacoes: [], por_rede: {} };
 
   // 1. Posts no Metricool: agendados, publicados, com erro
   try {
@@ -77,8 +127,15 @@ async function auditoriaFunil({ dias = 30 } = {}) {
       else if (/draft/.test(st)) status.rascunho++;
       else if (/schedul|pending|queue/.test(st) || !st) status.agendado++;
       else status.outro++;
-      const txt = String(p.text || '');
-      if (/https?:\/\//i.test(txt) || (p.media && p.media.some(m => /http/.test(String(m))))) comLink.push(p.id); else semLink.push(p.id);
+      const txt = String(p.text || '') + ' ' + String(p.firstCommentText || p.firstComment || '');
+      const temLink = /https?:\/\//i.test(txt);
+      if (temLink) comLink.push(p.id); else semLink.push(p.id);
+      // v3.13: funil por rede — publicações e se levam link (no texto ou no 1º comentário)
+      const publicado = !errProv.length && !/error|fail|draft/.test(st);
+      providers.forEach(pv => { const rd = String(pv.network || '').toLowerCase(); if (!rd) return;
+        out.por_rede[rd] = out.por_rede[rd] || { posts: 0, com_link: 0, link_so_no_comentario: 0 };
+        if (publicado) { out.por_rede[rd].posts++; if (temLink) out.por_rede[rd].com_link++;
+          if (!/https?:\/\//i.test(String(p.text || '')) && /https?:\/\//i.test(String(p.firstCommentText || p.firstComment || ''))) out.por_rede[rd].link_so_no_comentario++; } });
     });
     out.posts = { total: lista.length, ...status, com_link: comLink.length, sem_link: semLink.length, erros: comErro.slice(0, 15) };
     if (comErro.length) out.problemas.push({ g: 'alta', txt: `${comErro.length} publicação(ões) FALHARAM no Metricool nos últimos ${dias} dias.` });
@@ -94,8 +151,13 @@ async function auditoriaFunil({ dias = 30 } = {}) {
     const ini = new Date(Date.now() - dias * 86400000).toISOString();
     const leads = await sql`SELECT COUNT(*)::int AS n, MAX(criado_em) AS ultimo FROM leads WHERE criado_em >= ${ini}`;
     const total = await sql`SELECT COUNT(*)::int AS n, MAX(criado_em) AS ultimo FROM leads`;
-    const porOrigem = await sql`SELECT COALESCE(data->>'source', data->>'origem', 'sem origem') AS origem, COUNT(*)::int AS n
-      FROM leads WHERE criado_em >= ${ini} GROUP BY 1 ORDER BY 2 DESC LIMIT 10`;
+    // v3.13: a origem fica na coluna "origem" (utm_source); data->>'source' ficava quase sempre vazio
+    const porOrigem = await sql`SELECT LOWER(COALESCE(NULLIF(origem, ''), data->'utm'->>'source', data->>'source', 'sem origem')) AS origem, COUNT(*)::int AS n
+      FROM leads WHERE criado_em >= ${ini} GROUP BY 1 ORDER BY 2 DESC LIMIT 15`.catch(async () => sql`SELECT COALESCE(data->>'source', 'sem origem') AS origem, COUNT(*)::int AS n FROM leads WHERE criado_em >= ${ini} GROUP BY 1 ORDER BY 2 DESC LIMIT 15`);
+    let visitas = [];
+    try { visitas = await sql`SELECT LOWER(COALESCE(origem, 'direto')) AS origem, COUNT(*)::int AS n FROM captura_visitas WHERE criado_em >= ${ini} GROUP BY 1`; out.visitas_medidas = true; }
+    catch (_) { out.visitas_medidas = false; }
+    out.visitas = Object.fromEntries(visitas.map(v => [v.origem, v.n]));
     out.leads = { no_periodo: leads[0]?.n || 0, ultimo_no_periodo: leads[0]?.ultimo ? String(leads[0].ultimo).substring(0,10) : null,
       total_historico: total[0]?.n || 0, ultimo_historico: total[0]?.ultimo ? String(total[0].ultimo).substring(0,10) : null,
       por_origem: porOrigem.map(o => ({ origem: o.origem, n: o.n })) };
@@ -117,6 +179,30 @@ async function auditoriaFunil({ dias = 30 } = {}) {
     out.captura.pagina_existe = r2.status === 200;
     if (r2.status !== 200) out.problemas.push({ g: 'alta', txt: 'Não existe uma página pública de captura de lead. Mesmo com link no post, o clique não teria onde cair.' });
   } catch (e) { out.captura.pagina_existe = false; }
+
+  // 3b. v3.13: métricas do Metricool por rede + gargalo de cada rede
+  const hoje2 = new Date().toISOString().substring(0, 10), ini2 = new Date(Date.now() - dias * 86400000).toISOString().substring(0, 10);
+  const leadsOrig = Object.fromEntries((out.leads.por_origem || []).map(o => [o.origem, o.n]));
+  out.funil_por_rede = {};
+  for (const rede of ['linkedin', 'instagram', 'facebook']) {
+    const pr = out.por_rede[rede] || { posts: 0, com_link: 0, link_so_no_comentario: 0 };
+    let m = null; try { m = await _postsMetricasRede(rede, ini2, hoje2, { TOKEN, USERID, BLOGID }); } catch (e) { m = { api_ok: false, tentativas: [{ erro: e.message }], totais: {} }; }
+    const imp = m.totais?.impressoes || 0, cli = m.totais?.cliques || 0;
+    const vis = out.visitas?.[rede] || 0, lds = leadsOrig[rede] || 0;
+    let gargalo, acao;
+    if (!pr.posts && !(m.totais?.posts)) { gargalo = 'Nenhuma publicação no período'; acao = 'Agendar a autocampanha desta rede.'; }
+    else if (pr.posts && !pr.com_link) { gargalo = 'Posts sem link de captura'; acao = rede === 'instagram' ? 'Colocar o link de captura na BIO do perfil e usar stories com link — link na legenda não é clicável.' : 'Incluir o link de captura com UTM (no texto ou no 1º comentário).'; }
+    else if (!m.api_ok) { gargalo = 'Métricas indisponíveis — o Metricool recusou a consulta de analytics'; acao = 'Conferir no Metricool se o plano inclui API/analytics e se a rede está conectada ao mesmo perfil (blogId) usado pelo sistema.'; }
+    else if (!imp) { gargalo = 'Sem impressões registradas'; acao = rede === 'linkedin' ? 'Confirmar que a página da empresa (não o perfil pessoal) está conectada no Metricool com permissão de estatísticas.' : 'Converter o perfil para conta Business/Creator e reconectar no Metricool aceitando as permissões de estatísticas.'; }
+    else if (!cli && !vis) { gargalo = 'Há alcance, mas ninguém clica'; acao = 'Oferta mais concreta e chamada direta (diagnóstico gratuito, checklist) com o link visível; testar horários com mais alcance.'; }
+    else if (cli && !vis && out.visitas_medidas) { gargalo = 'Cliques não chegam à página de captura'; acao = 'O link publicado não aponta para a página de captura com UTM desta rede — revisar o link do post/comentário/bio.'; }
+    else if (vis && !lds) { gargalo = 'Visitam a página, mas não preenchem'; acao = 'Encurtar o formulário, reforçar a oferta no topo da página e oferecer o WhatsApp como alternativa.'; }
+    else { gargalo = lds ? 'Funil gerando leads' : 'Poucos dados para concluir'; acao = lds ? 'Escalar o que funciona: repetir os ângulos e horários dos posts que trouxeram lead.' : 'Aguardar mais publicações/medições.'; }
+    out.funil_por_rede[rede] = { publicacoes: pr.posts || m.totais?.posts || 0, com_link: pr.com_link, link_so_no_comentario: pr.link_so_no_comentario,
+      impressoes: imp, cliques: cli, visitas: out.visitas_medidas ? vis : null, leads: lds, metricas_api: m.api_ok, fonte_metricas: m.fonte || null,
+      erros_api: (m.tentativas || []).filter(t => !t.ok).map(t => (t.fonte ? t.fonte + ': ' : '') + t.erro), gargalo, acao };
+  }
+  if (!out.visitas_medidas) out.problemas.push({ g: 'media', txt: 'As visitas à página de captura começam a ser medidas a partir de agora (v3.13) — em alguns dias o funil mostra onde o clique se perde.' });
 
   // 4. Recomendações
   out.recomendacoes = [
@@ -452,6 +538,7 @@ async function _autoCampanhaAgendarUmANTIGO({ post, blog_id, redes } = {}) {
     publicationDate: { dateTime: quando, timezone: 'America/Sao_Paulo' },
     autoPublish: true, shortener: false, draft: false,
     firstComment: redesAlvo.some(r => /linkedin|facebook/i.test(r)) ? post.comentario : undefined,
+    firstCommentText: redesAlvo.some(r => /linkedin|facebook/i.test(r)) ? post.comentario : undefined, // v3.13
   };
   if (post.imagem_url) { body.media = [post.imagem_url]; body.medias = [post.imagem_url]; }
   const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
@@ -681,6 +768,7 @@ Evite repetir o mesmo ângulo de outros posts da semana.`;
           // v2.15/v2.30: 1º comentário só onde faz sentido (LinkedIn/Facebook); no Instagram o link
           // fica na legenda + bio, porque comentário com link não é clicável lá
           firstComment: redesAlvo.some(r => /linkedin|facebook/i.test(r)) ? j.comentario : undefined,
+          firstCommentText: redesAlvo.some(r => /linkedin|facebook/i.test(r)) ? j.comentario : undefined, // v3.13: nome do campo na API
         };
         // v1.80: se a autocampanha passar a usar imagem, ela também precisa ser permanente
         if (Array.isArray(body.media) && body.media.length) {
@@ -998,46 +1086,17 @@ export default async function handler(req, res) {
       // Métricas dos POSTS individuais (melhor para funil por peça)
       metricas_posts: async () => {
         const { rede = 'linkedin' } = payload;
+        if (!['linkedin', 'instagram', 'facebook'].includes(String(rede).toLowerCase())) throw new Error('Rede não suportada: ' + rede);
         const fim = payload.fim || new Date().toISOString().substring(0, 10);
         const ini = payload.inicio || new Date(Date.now() - 30 * 864e5).toISOString().substring(0, 10);
-        const fmt = d => d.replaceAll('-', '');
-        const redeEp = {
-          linkedin:  `/stats/linkedin/posts?start=${fmt(ini)}&end=${fmt(fim)}&userId=${USERID}&blogId=${BLOGID}`,
-          instagram: `/stats/instagram/posts?start=${fmt(ini)}&end=${fmt(fim)}&userId=${USERID}&blogId=${BLOGID}`,
-          facebook:  `/stats/facebook/posts?start=${fmt(ini)}&end=${fmt(fim)}&userId=${USERID}&blogId=${BLOGID}`,
-        };
-        const ep = redeEp[rede.toLowerCase()];
-        if (!ep) throw new Error('Rede não suportada: ' + rede);
-        const r = await mc(ep, TOKEN);
-        const brutos = Array.isArray(r) ? r : (r?.data || []);
-        // v1.42 FIX: cada rede nomeia as métricas de um jeito. O código lia só "impressions",
-        // então LinkedIn (impressionCount) e Facebook (post_impressions) sempre davam ZERO.
-        // Agora procura em todos os nomes conhecidos e também dentro de sub-objetos comuns.
-        const pega = (obj, nomes) => {
-          for (const n of nomes) {
-            const v = obj?.[n] ?? obj?.metrics?.[n] ?? obj?.insights?.[n] ?? obj?.statistics?.[n] ?? obj?.stats?.[n];
-            if (v != null && v !== '') { const num = parseFloat(v); if (!isNaN(num)) return num; }
-          }
-          return null;
-        };
-        const posts = brutos.map(p => ({
-          id: p.id || p.postId,
-          texto: (p.text || p.content || '').substring(0, 120),
-          data: p.date || p.publicationDate || p.created,
-          impressoes: pega(p, ['impressions','impressionCount','impression_count','post_impressions','views','viewCount','reach','reachCount','organicImpressions']),
-          alcance:    pega(p, ['reach','reachCount','post_impressions_unique','uniqueImpressions']),
-          cliques:    pega(p, ['clicks','clickCount','click_count','post_clicks','linkClicks','totalClicks']),
-          curtidas:   pega(p, ['likes','likeCount','reactions','reactionCount','post_reactions']),
-          comentarios: pega(p, ['comments','commentCount','comment_count']),
-          compartilhamentos: pega(p, ['shares','shareCount','share_count','reposts']),
-          engajamento: pega(p, ['engagement','engagementRate','engagement_rate']),
-        }));
-        // Diagnóstico: se TODAS as métricas vierem nulas, o problema é de nome de campo ou permissão
-        const semMetrica = posts.length > 0 && posts.every(p => p.impressoes == null && p.cliques == null && p.curtidas == null);
-        const amostraCampos = brutos.length ? Object.keys(brutos[0]).slice(0, 25) : [];
-        return { rede, inicio: ini, fim, posts, total: posts.length,
-          diagnostico: { sem_metricas: semMetrica, campos_recebidos: amostraCampos,
-            aviso: semMetrica ? `A API do Metricool devolveu ${posts.length} publicação(ões) sem nenhuma métrica. Campos recebidos: ${amostraCampos.join(', ') || '(nenhum)'}. Normalmente é permissão/insights não liberado para o perfil no Metricool, ou o perfil não é uma conta business/creator.` : null } };
+        const m = await _postsMetricasRede(rede, ini, fim, { TOKEN, USERID, BLOGID });
+        const semMetrica = m.posts.length > 0 && m.com_metrica === 0;
+        let aviso = null;
+        if (!m.api_ok) aviso = `O Metricool recusou a consulta de métricas do ${rede} (${m.tentativas.map(t => t.fonte + ': ' + (t.erro || 'ok')).join(' · ')}). Sem acesso à API de analytics as impressões ficam zeradas — verifique se o plano do Metricool inclui API/analytics e se o ${rede} está conectado a este perfil (blogId ${BLOGID}).`;
+        else if (!m.posts.length) aviso = `O Metricool não tem publicações do ${rede} com métricas entre ${ini} e ${fim}. Se houve posts, a rede pode não estar conectada ao perfil do Metricool (blogId ${BLOGID}) ou as métricas ainda não foram processadas.`;
+        else if (semMetrica) aviso = `O Metricool devolveu ${m.posts.length} publicação(ões) do ${rede}, mas sem nenhuma métrica. Campos recebidos: ${(m.tentativas.find(t => t.ok && t.itens)?.campos || []).join(', ')}. Normalmente é permissão de estatísticas não concedida ao reconectar a rede, ou perfil pessoal (não Business/Creator).`;
+        return { rede, inicio: ini, fim, posts: m.posts, total: m.posts.length, totais: m.totais, fonte: m.fonte,
+          diagnostico: { sem_metricas: semMetrica, api_ok: m.api_ok, tentativas: m.tentativas, aviso } };
       },
     };
 

@@ -2,6 +2,8 @@
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
 // SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
 // Antes, toda chamada sql.query() falhava em silêncio: colunas novas nunca eram criadas.
+// v3.13: número real de WhatsApp comercial para a página de captura (antes era um número fictício)
+const _whatsComercial = () => String(process.env.WHATSAPP_COMERCIAL || process.env.FUNDADOR_WHATSAPP || '').replace(/\D/g, '') || null;
 const _q = (db, texto, params) => (typeof db.query === 'function' ? db.query(texto, params) : db(texto, params));
 
 // v2.81: servidor SMTP configurável — Gmail, HostGator (cPanel) ou outro.
@@ -26,6 +28,19 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Hub-Signature');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).end();
+
+  // v3.13: VISITA à página de captura (sem dados pessoais) — mede o passo clique → página → lead.
+  // Antes só o lead era registrado; sem a visita não dá para saber se o clique chega na página.
+  if (req.body && req.body.evento === 'visita') {
+    try {
+      const { neon } = await import('@neondatabase/serverless');
+      const sql = neon(process.env.DATABASE_URL);
+      await sql`CREATE TABLE IF NOT EXISTS captura_visitas (id BIGSERIAL PRIMARY KEY, criado_em TIMESTAMPTZ DEFAULT NOW(), origem TEXT, meio TEXT, campanha TEXT, conteudo TEXT, pagina TEXT)`;
+      const u = req.body.utm || {};
+      await sql`INSERT INTO captura_visitas (origem, meio, campanha, conteudo, pagina) VALUES (${String(u.source || 'direto').substring(0, 60)}, ${String(u.medium || '').substring(0, 60)}, ${String(u.campaign || '').substring(0, 120)}, ${String(u.content || '').substring(0, 120)}, ${String(req.body.page || '').substring(0, 300)})`;
+    } catch (e) { console.warn('[captura] visita:', e.message); }
+    return res.status(200).json({ success: true, whatsapp: _whatsComercial() });
+  }
 
   try {
     const body = req.body;
@@ -75,6 +90,7 @@ export default async function handler(req, res) {
     if (falhas.length) console.warn('[S2] etapas com falha:', falhas.map(([k, v]) => k + '=' + v).join(' | '));
 
     return res.status(200).json({
+      whatsapp: _whatsComercial(),
       success: true,
       lead: lead.name, company: lead.company, score: lead.score_label,
       origem: lead.origem, campanha: lead.campanha,
