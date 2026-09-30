@@ -64,6 +64,11 @@
     window.confirm = m => { ctx.dialogos.push({ tela: ctx.tela, tipo: 'confirm', msg: String(m).substring(0, 200) }); ctx.confirmou = true; return false; };
     window.prompt = m => { ctx.dialogos.push({ tela: ctx.tela, tipo: 'prompt', msg: String(m).substring(0, 200) }); ctx.confirmou = true; return null; };
     window.open = () => null;
+    // v3.17: nenhum clique pode tirar o navegador do sistema durante a varredura
+    ctx.onClick = e => { const a = e.target && e.target.closest && e.target.closest('a[href]'); if (a && !/^javascript:|^#/.test(a.getAttribute('href') || '')) { e.preventDefault(); e.stopPropagation(); ctx.dialogos.push({ tela: ctx.tela, tipo: 'link', msg: 'navegação bloqueada: ' + a.getAttribute('href').substring(0, 120) }); } };
+    document.addEventListener('click', ctx.onClick, true);
+    ctx.onUnload = e => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', ctx.onUnload);
     const doQA = m => /\[QA\]|bloqueada no modo seguro|qa_bloqueado/.test(m);
     console.error = function () { try { const m0 = [...arguments].map(a => a?.message || String(a)).join(' '); if (!doQA(m0)) ctx.erros.push({ tela: ctx.tela, tipo: 'console.error', msg: m0.substring(0, 400) }); } catch (_) {} return _orig.cerr.apply(console, arguments); };
     ctx.onErr = e => doQA(String(e.message || e.error?.message || '')) ? null : ctx.erros.push({ tela: ctx.tela, tipo: 'erro JS', msg: String(e.message || e.error?.message || e).substring(0, 400), onde: e.filename ? (e.filename.split('/').pop() + ':' + e.lineno) : '' });
@@ -74,6 +79,7 @@
     if (_orig.fetch) window.fetch = _orig.fetch; if (_orig.alert) window.alert = _orig.alert; if (_orig.confirm) window.confirm = _orig.confirm;
     if (_orig.prompt) window.prompt = _orig.prompt; if (_orig.open) window.open = _orig.open; if (_orig.cerr) console.error = _orig.cerr;
     window.removeEventListener('error', ctx.onErr); window.removeEventListener('unhandledrejection', ctx.onRej);
+    document.removeEventListener('click', ctx.onClick, true); window.removeEventListener('beforeunload', ctx.onUnload);
   }
   async function aguardarRede(ctx, maxMs) {
     const t0 = Date.now(); let quieto = 0;
@@ -164,7 +170,7 @@
   const disparar = el => { el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
   async function testarBotoes(page, t, ctx, opts) {
     const achados = []; const add = (sev, cat, titulo, evidencia, sugestao) => achados.push({ sev, cat, titulo, evidencia: String(evidencia || '').substring(0, 500), sugestao, tela: t.id, rotulo: t.rotulo });
-    const bts = [...page.querySelectorAll('button,.btn')].filter(visivel);
+    const bts = [...page.querySelectorAll('button')].filter(b => visivel(b) && !b.closest('a[href]'));
     // 1. botões de consulta
     if (opts.botoes) {
       const leitura = bts.filter(b => BOT_LEITURA.test(b.innerText) && !BOT_ARRISCADO.test(b.innerText) && !b.disabled).slice(0, 4);
@@ -222,7 +228,10 @@
 
   // ── Varredura ──────────────────────────────────────────────────────────
   async function varrer(opts) {
-    if (S.rodando) return; S.rodando = true; S.parar = false;
+    try { await _varrer(opts); } catch (e) { S.rodando = false; S.erro = 'A varredura parou com erro: ' + e.message; try { window.nav('qa', document.querySelector('.sbi[onclick*="\'qa\'"]')); } catch (_) {} render(); }
+  }
+  async function _varrer(opts) {
+    if (S.rodando) return; S.rodando = true; S.parar = false; S.erro = null; S.avisoSalvar = null;
     const telas = inventario().filter(t => !opts.filtro || t.id.includes(opts.filtro) || t.rotulo.toLowerCase().includes(opts.filtro.toLowerCase()));
     const ctx = { tela: null, fase: '', requisicoes: [], erros: [], dialogos: [], formsOk: [], pendentes: 0 };
     const lsAntes = {}; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); lsAntes[k] = localStorage.getItem(k); } } catch (_) {}
@@ -259,6 +268,7 @@
         a.forEach(x => { x.ganchos = t.ganchos; });
         achados = achados.concat(a);
         porTela.push({ id: t.id, rotulo: t.rotulo, ms: Date.now() - t0, requisicoes: reqs.length, bloqueadas: reqs.filter(r => r.bloqueado).length, achados: a.filter(x => x.sev !== 'info').length });
+        try { sessionStorage.setItem('qa_parcial', JSON.stringify({ em: Date.now(), ultima: t.rotulo, feitas: i + 1, total: telas.length, achados: achados.slice(-400), porTela })); } catch (_) {}
       }
     } finally {
       restaurar(ctx); fecharModais(); flutuante(false);
@@ -267,16 +277,19 @@
       S.rodando = false;
       try { window.nav('qa', document.querySelector('.sbi[onclick*="\'qa\'"]')); } catch (_) {}
     }
-    // deduplica achados iguais na mesma tela
+    try { sessionStorage.removeItem('qa_parcial'); } catch (_) {}
+    montarRelatorio(achados, porTela, ctx, opts, inicio);
+    try { await api('salvar_execucao', { tipo: 'qa', relatorio: { ...S.relatorio, bloqueadas: S.relatorio.bloqueadas.slice(0, 300), achados: S.relatorio.achados.slice(0, 600) } }); } catch (e) { S.avisoSalvar = 'O relatório não foi salvo no histórico: ' + e.message; }
+    render(); QA.historico();
+  }
+  function montarRelatorio(achados, porTela, ctx, opts, inicio, interrompido) {
     const vistos = new Set(); achados = achados.filter(a => { const k = a.tela + '|' + a.titulo + '|' + a.evidencia; if (vistos.has(k)) return false; vistos.add(k); return true; });
     const ordem = { 'crítica': 0, 'alta': 1, 'média': 2, 'baixa': 3, 'info': 4 };
     achados.sort((a, b) => ordem[a.sev] - ordem[b.sev]);
     achados.forEach((a, i) => { a.id = 'QA-' + String(i + 1).padStart(3, '0'); });
     const resumo = achados.reduce((o, a) => { o[a.sev] = (o[a.sev] || 0) + 1; return o; }, {});
-    S.relatorio = { tipo: 'qa', versao: document.getElementById('sidebarBuildId')?.textContent || '', inicio: new Date(inicio).toISOString(), duracao_s: Math.round((Date.now() - inicio) / 1000), interrompido: S.parar, opcoes: opts,
-      telas: porTela, total_telas: porTela.length, achados, resumo, formularios_ligados: ctx.formsOk, bloqueadas: ctx.requisicoes.filter(r => r.bloqueado).map(r => ({ tela: r.tela, rota: r.rota, action: r.action, fase: r.fase })), crud: S.crud, seguranca: S.seg };
-    try { await api('salvar_execucao', { tipo: 'qa', relatorio: { ...S.relatorio, bloqueadas: S.relatorio.bloqueadas.slice(0, 300) } }); } catch (_) {}
-    render();
+    S.relatorio = { tipo: 'qa', versao: document.getElementById('sidebarBuildId')?.textContent || '', inicio: new Date(inicio).toISOString(), duracao_s: Math.round((Date.now() - inicio) / 1000), interrompido: interrompido || S.parar, opcoes: opts || {},
+      telas: porTela, total_telas: porTela.length, achados, resumo, formularios_ligados: ctx?.formsOk || [], bloqueadas: (ctx?.requisicoes || []).filter(r => r.bloqueado).map(r => ({ tela: r.tela, rota: r.rota, action: r.action, fase: r.fase })), crud: S.crud, seguranca: S.seg };
   }
 
   // ── Relatório para o Claude ────────────────────────────────────────────
@@ -345,7 +358,11 @@
   function render() {
     const box = document.getElementById('qaResultado'); if (!box) return;
     const R = S.relatorio, SEG = S.seg, C = S.crud;
-    if (!R && !SEG && !C) { box.innerHTML = ''; return; }
+    let topo = '';
+    if (S.erro) topo += `<div class="panel" style="border-left:4px solid var(--red);"><div class="pb" style="color:var(--red);font-size:11.5px;">⚠ ${esc(S.erro)}</div></div>`;
+    if (S.avisoSalvar) topo += `<div class="panel" style="border-left:4px solid var(--gold);"><div class="pb" style="color:var(--gold);font-size:11px;">${esc(S.avisoSalvar)}</div></div>`;
+    if (S.parcial && !R) topo += `<div class="panel" style="border-left:4px solid var(--gold);"><div class="pb" style="font-size:11.5px;">A última varredura foi <b>interrompida</b> na tela "${esc(S.parcial.ultima)}" (${S.parcial.feitas} de ${S.parcial.total}). <button class="btn btn-g" style="font-size:10px;margin-left:8px;" onclick="QA.usarParcial()">Ver resultados parciais</button></div></div>`;
+    if (!R && !SEG && !C) { box.innerHTML = topo + `<div class="panel"><div class="ph"><div class="pt">📋 Relatório de correção para o Claude</div></div><div class="pb" style="font-size:11px;color:var(--t2);">Rode a varredura de telas, o CRUD real ou a varredura de segurança — o relatório detalhado e o botão <b>✅ Aprovar e enviar para correção automática</b> aparecem aqui. Também é possível abrir uma execução anterior no histórico abaixo.</div></div>`; return; }
     const cor = s => ({ 'crítica': 'var(--red)', 'alta': 'var(--red)', 'média': 'var(--gold)', 'baixa': 'var(--blue)', 'info': 'var(--t3)' }[s] || 'var(--t2)');
     let h = '';
     if (R) {
@@ -371,12 +388,15 @@
         <button class="btn btn-p" style="margin-left:auto;" onclick="QA.aprovar()">✅ Aprovar e enviar para correção automática</button></div>
       <div style="font-size:10px;color:var(--t3);margin-top:6px;line-height:1.5;">Aprovar abre uma tarefa no GitHub para o Claude. Ele corrige numa branch e abre um pull request; a nova versão só vai ao ar quando você aprovar (merge) o pull request. Alternativa: copie o relatório e cole no chat do Claude.</div>
       <div id="qaAprovMsg" style="font-size:11px;margin-top:6px;"></div></div></div>`;
-    box.innerHTML = h;
+    box.innerHTML = topo + h;
   }
 
   window.QA = {
     _filtro: '',
-    abrir() { const p = document.getElementById('qaApp'); if (p && !p.dataset.ok) { p.innerHTML = painelHtml(); p.dataset.ok = '1'; this.historico(); } render(); },
+    abrir() { const p = document.getElementById('qaApp'); if (p && !p.dataset.ok) { p.innerHTML = painelHtml(); p.dataset.ok = '1'; this.historico(true); }
+      try { const pc = JSON.parse(sessionStorage.getItem('qa_parcial') || 'null'); if (pc && !S.rodando) S.parcial = pc; } catch (_) {}
+      render(); },
+    usarParcial() { const pc = S.parcial; if (!pc) return; montarRelatorio(pc.achados || [], pc.porTela || [], null, null, pc.em - 1000, true); S.parcial = null; try { sessionStorage.removeItem('qa_parcial'); } catch (_) {} render(); },
     render,
     iniciar() {
       if (!confirm('Iniciar a varredura de todas as telas?\n\nO sistema vai navegar sozinho por alguns minutos. Gravações, envios e chamadas de IA ficam bloqueados (modo seguro). Não use o sistema durante a varredura.')) return;
@@ -385,11 +405,12 @@
     },
     parar() { S.parar = true; },
     async crud() { const b = document.getElementById('qaBtnCrud'); if (!confirm('Rodar o CRUD real?\n\nVai criar, alterar e excluir registros marcados "QA-TESTE" no banco de produção (com limpeza garantida no final).')) return;
-      b.disabled = true; b.textContent = 'Rodando...'; try { S.crud = (await api('crud_suite')); delete S.crud.success; toast(S.crud.ok ? 'CRUD real: todos os ciclos OK' : 'CRUD real: há falhas', S.crud.ok ? 'success' : 'error'); } catch (e) { toast('Erro: ' + e.message, 'error'); } b.disabled = false; b.textContent = '🧪 Rodar CRUD real'; render(); },
-    async seguranca() { const b = document.getElementById('qaBtnSeg'); b.disabled = true; b.textContent = 'Varrendo (até 1 min)...';
+      b.disabled = true; b.textContent = 'Rodando...'; S.erro = null; try { S.crud = (await api('crud_suite')); delete S.crud.success; toast(S.crud.ok ? 'CRUD real: todos os ciclos OK' : 'CRUD real: há falhas', S.crud.ok ? 'success' : 'error'); } catch (e) { S.erro = 'CRUD real não rodou: ' + e.message; toast('Erro: ' + e.message, 'error'); } b.disabled = false; b.textContent = '🧪 Rodar CRUD real'; render(); },
+    async seguranca() { const b = document.getElementById('qaBtnSeg'); b.disabled = true; b.textContent = 'Varrendo (até 1 min)...'; S.erro = null;
       try { const d = await api('seguranca'); delete d.success; d.versao = document.getElementById('sidebarBuildId')?.textContent || ''; S.seg = d; try { await api('salvar_execucao', { tipo: 'seguranca', relatorio: d }); } catch (_) {} toast('Varredura de segurança concluída', 'success'); }
-      catch (e) { toast('Erro: ' + e.message, 'error'); } b.disabled = false; b.textContent = '🛡 Rodar varredura de segurança'; render(); this.historico(); },
-    async historico() { const el = document.getElementById('qaHist'); if (!el) return; try { const d = await api('listar_execucoes'); el.innerHTML = (d.execucoes || []).map(x => `<div style="padding:4px 0;border-bottom:1px solid var(--bd);display:flex;gap:8px;"><span>${x.tipo === 'seguranca' ? '🛡' : '🧪'} ${new Date(x.em).toLocaleString('pt-BR')}</span><span style="color:var(--t2);">${x.resumo ? Object.entries(x.resumo).map(([k, v]) => k + ': ' + v).join(' · ') : ''}</span><a href="#" style="margin-left:auto;color:var(--blue);" onclick="QA.carregar('${x.id}','${x.tipo}');return false;">abrir</a></div>`).join('') || 'Nenhuma execução ainda.'; } catch (e) { el.textContent = 'Histórico indisponível: ' + e.message; } },
+      catch (e) { S.erro = 'Varredura de segurança não concluiu: ' + e.message; toast('Erro: ' + e.message, 'error'); } b.disabled = false; b.textContent = '🛡 Rodar varredura de segurança'; render(); this.historico(); },
+    async historico(abrirUltima) { const el = document.getElementById('qaHist'); if (!el) return; try { const d = await api('listar_execucoes');
+      if (abrirUltima && !S.relatorio && !S.seg && (d.execucoes || []).length) { const u = d.execucoes[0]; this.carregar(u.id, u.tipo); } el.innerHTML = (d.execucoes || []).map(x => `<div style="padding:4px 0;border-bottom:1px solid var(--bd);display:flex;gap:8px;"><span>${x.tipo === 'seguranca' ? '🛡' : '🧪'} ${new Date(x.em).toLocaleString('pt-BR')}</span><span style="color:var(--t2);">${x.resumo ? Object.entries(x.resumo).map(([k, v]) => k + ': ' + v).join(' · ') : ''}</span><a href="#" style="margin-left:auto;color:var(--blue);" onclick="QA.carregar('${x.id}','${x.tipo}');return false;">abrir</a></div>`).join('') || 'Nenhuma execução ainda.'; } catch (e) { el.textContent = 'Histórico indisponível: ' + e.message; } },
     async carregar(id, tipo) { try { const d = await api('obter_execucao', { id }); if (tipo === 'seguranca') S.seg = d.relatorio; else { S.relatorio = d.relatorio; if (d.relatorio?.seguranca) S.seg = d.relatorio.seguranca; if (d.relatorio?.crud) S.crud = d.relatorio.crud; } render(); } catch (e) { toast('Erro: ' + e.message, 'error'); } },
     baixarMd() { baixar('relatorio-correcao-atlantyx-' + new Date().toISOString().substring(0, 16).replace(/[:T]/g, '-') + '.md', document.getElementById('qaMd')?.value || markdown(), 'text/markdown'); },
     baixarJson() { baixar('relatorio-qa-atlantyx.json', JSON.stringify({ qa: S.relatorio, crud: S.crud, seguranca: S.seg }, null, 2), 'application/json'); },
