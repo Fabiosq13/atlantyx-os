@@ -18577,6 +18577,7 @@ async function abrirDetalheTermo(id) {
           ${t.status === 'pagamento' ? `<button class="btn btn-gn" onclick="_fatMarcarPago('${t.id}')" title="Confirmar manualmente que o pagamento entrou">💵 Marcar como PAGO</button>` : ''}
           ${t.status === 'pago' ? `<button class="btn btn-gn" onclick="_fatConcluir('${t.id}')" title="Fechar o termo — vai para a coluna Concluído">🏁 Concluir termo</button><button class="btn" onclick="_fatReabrir('${t.id}')" title="Voltar para Pagamento">↩ Voltar p/ Pagamento</button>` : ''}
           ${t.status === 'concluido' ? `<button class="btn" onclick="_fatAvancar('${t.id}','pago')" title="Reabrir — volta para Pago">↩ Voltar p/ Pago</button>` : ''}
+          <button class="btn btn-p" onclick="fatEnviarNfEmail('${t.id}')" title="Envia ao cliente, por e-mail, as notas fiscais anexadas a este termo">📧 Enviar notas fiscais</button>
           <button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="abrirEdicaoTermo('${t.id}')">✎ Editar termo</button>
           <button class="btn" style="color:var(--red);margin-left:auto;" onclick="_fatExcluir('${t.id}')">🗑 Excluir termo</button>
         </div>
@@ -18612,6 +18613,74 @@ async function abrirDetalheTermo(id) {
     </div>`;
   } catch (e) { box.innerHTML = '<div style="color:var(--red);text-align:center;padding:20px;">Erro: ' + e.message + '</div>'; }
 }
+// ══ v3.15: ENVIAR NOTAS FISCAIS DO TERMO POR E-MAIL ══
+let _nfMail = null;
+async function fatEnviarNfEmail(termoId) {
+  let m = document.getElementById('nfMailModal');
+  if (!m) { m = document.createElement('div'); m.id = 'nfMailModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9100;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:30px 12px;'; document.body.appendChild(m); }
+  m.style.display = 'flex';
+  m.innerHTML = '<div class="panel" style="width:min(820px,100%);"><div class="pb" style="text-align:center;padding:30px;color:var(--blue);">Preparando o e-mail — lendo as notas do termo e redigindo o texto com IA...</div></div>';
+  try {
+    const d = await fatApi('termo_nf_email_preparar', { termo_id: termoId });
+    let hist = []; try { hist = (await fatApi('termo_nf_email_historico', { termo_id: termoId })).envios || []; } catch (_) {}
+    _nfMail = { termoId, d, hist };
+    _nfMailRender();
+  } catch (e) { m.innerHTML = '<div class="panel" style="width:min(620px,100%);"><div class="pb" style="color:var(--red);padding:20px;">Erro ao preparar: ' + String(e.message).replace(/</g, '&lt;') + '<div style="margin-top:12px;"><button class="btn btn-g" onclick="document.getElementById(\'nfMailModal\').style.display=\'none\'">Fechar</button></div></div></div>'; }
+}
+function _nfMailRender() {
+  const m = document.getElementById('nfMailModal'); const { d, hist } = _nfMail; const s = d.sugestao; const t = d.termo;
+  const e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const brl = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const semAnexo = !d.anexaveis.length;
+  m.innerHTML = `<div class="panel" style="width:min(820px,100%);margin:0;">
+    <div class="ph"><div class="pt">📧 Enviar notas fiscais — Termo nº ${e(t.numero || '—')} · ${e(t.projeto || '')}</div>
+      <button class="btn btn-g" style="font-size:11px;" onclick="document.getElementById('nfMailModal').style.display='none'">✕</button></div>
+    <div class="pb">
+      <div style="font-size:10.5px;color:var(--t2);margin-bottom:10px;">Cliente: <b>${e(t.contratante || '—')}</b>${t.periodo ? ' · período ' + e(t.periodo) : ''} · valor do termo ${brl(t.valor)}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="fg" style="margin:0;"><label class="fl">E-mail do cliente (para) *</label><input class="fi" id="nfMailPara" value="${e(s.para)}" placeholder="financeiro@cliente.com.br; outro@cliente.com.br"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Cópia (CC)</label><input class="fi" id="nfMailCc" value="${e(s.cc)}" placeholder="opcional"/></div>
+        <div class="fg" style="margin:0;grid-column:1/-1;"><label class="fl">E-mail de envio (remetente)</label><input class="fi" id="nfMailRem" value="${e(s.remetente)}" placeholder="${e(d.smtp_conta || 'conta de envio não configurada')}"/>
+          <div style="font-size:9.5px;color:var(--t3);margin-top:3px;">A mensagem sai pela conta configurada no sistema (<b>${e(d.smtp_conta || 'não configurada')}</b>). Se você informar outro endereço, ele recebe as respostas do cliente.</div></div>
+      </div>
+      <div style="margin:12px 0 6px;font-family:var(--M);font-size:8.5px;text-transform:uppercase;color:var(--t2);">Notas anexadas ao termo — só estas podem ser enviadas</div>
+      ${semAnexo ? '<div style="font-size:11px;color:var(--red);padding:8px;border:1px solid var(--red);border-radius:6px;">Nenhuma nota fiscal com arquivo anexado a este termo. Carregue os PDF/XML das notas no termo antes de enviar.</div>' :
+        d.anexaveis.map(n => `<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--bd);border-radius:6px;margin-bottom:4px;font-size:11px;cursor:pointer;">
+          <input type="checkbox" class="nfMailChk" value="${e(n.id)}" checked/> 📎 <b>${e(n.nome)}</b> ${n.nf_numero ? '· NF ' + e(n.nf_numero) : ''} · ${brl(n.nf_valor)} ${n.empresa ? '· ' + e(n.empresa) : ''}
+          <a href="${e(n.url)}" target="_blank" rel="noopener" style="margin-left:auto;color:var(--blue);font-size:10px;" onclick="event.stopPropagation()">ver arquivo</a></label>`).join('')}
+      ${d.sem_arquivo.length ? `<div style="font-size:10px;color:var(--t3);margin-top:4px;">Não serão enviadas (sem arquivo guardado no sistema): ${d.sem_arquivo.map(n => e(n.nome) + (n.nf_numero ? ' NF ' + e(n.nf_numero) : '')).join(', ')}</div>` : ''}
+      <div class="fg" style="margin-top:12px;"><label class="fl">Assunto *</label><input class="fi" id="nfMailAssunto" value="${e(s.assunto)}"/></div>
+      <div class="fg"><label class="fl" style="display:flex;align-items:center;gap:8px;">Texto do e-mail * ${s.gerado_por_ia ? '<span class="tag on">sugerido pela IA — revise</span>' : '<span class="tag off">texto padrão</span>'}
+        <button class="btn btn-g" style="font-size:9px;padding:2px 8px;margin-left:auto;" onclick="fatEnviarNfEmail('${e(_nfMail.termoId)}')">↻ gerar novo texto</button></label>
+        <textarea class="fta" id="nfMailCorpo" style="min-height:220px;font-size:12px;line-height:1.55;">${e(s.corpo)}</textarea></div>
+      ${!d.smtp_configurado ? '<div style="font-size:10.5px;color:var(--red);margin-bottom:8px;">⚠ Conta de envio não configurada (EMAIL_SMTP_USER / EMAIL_SMTP_PASS no Vercel) — o envio vai falhar.</div>' : ''}
+      ${hist.length ? `<details style="margin-bottom:10px;"><summary style="cursor:pointer;font-size:10.5px;color:var(--t2);">Envios anteriores deste termo (${hist.length})</summary>${hist.map(h => `<div style="font-size:10.5px;padding:4px 0;border-bottom:1px solid var(--bd);">${new Date(h.enviado_em).toLocaleString('pt-BR')} → ${e(h.para)}${h.cc ? ' (cc ' + e(h.cc) + ')' : ''} · ${(h.anexos || []).map(a => e(a.nome)).join(', ')}</div>`).join('')}</details>` : ''}
+      <div id="nfMailMsg" style="font-size:11px;margin-bottom:8px;"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-g" onclick="document.getElementById('nfMailModal').style.display='none'">Cancelar</button>
+        <button class="btn btn-p" id="nfMailBtn" ${semAnexo ? 'disabled' : ''} onclick="_nfMailEnviar()">📧 Enviar e-mail com as notas selecionadas</button>
+      </div>
+    </div></div>`;
+}
+async function _nfMailEnviar() {
+  const g = id => document.getElementById(id)?.value?.trim() || '';
+  const ids = [...document.querySelectorAll('.nfMailChk:checked')].map(x => x.value);
+  const msg = document.getElementById('nfMailMsg');
+  const erro = t => { msg.innerHTML = '<span style="color:var(--red);">' + t + '</span>'; };
+  if (!g('nfMailPara')) return erro('Informe o e-mail do cliente.');
+  if (!ids.length) return erro('Selecione ao menos uma nota fiscal.');
+  if (!g('nfMailAssunto') || !g('nfMailCorpo')) return erro('Assunto e texto são obrigatórios.');
+  if (!confirm(`Enviar ${ids.length} nota(s) fiscal(is) para ${g('nfMailPara')}${g('nfMailCc') ? ' (cc ' + g('nfMailCc') + ')' : ''}?`)) return;
+  const btn = document.getElementById('nfMailBtn'); btn.disabled = true; btn.textContent = 'Enviando...';
+  try {
+    const r = await fatApi('termo_nf_email_enviar', { termo_id: _nfMail.termoId, para: g('nfMailPara'), cc: g('nfMailCc'), remetente: g('nfMailRem'), assunto: g('nfMailAssunto'), corpo: document.getElementById('nfMailCorpo').value, nota_ids: ids });
+    msg.innerHTML = '<span style="color:var(--green);">✓ Enviado para ' + r.para.join(', ') + ' com ' + r.anexos.length + ' anexo(s): ' + r.anexos.map(a => a.nome).join(', ') + (r.rejeitados?.length ? ' · <b style="color:var(--red);">recusados: ' + r.rejeitados.join(', ') + '</b>' : '') + '</span>';
+    toast('Notas fiscais enviadas por e-mail', 'success'); addLog('ok', '[Faturamento] NF(s) do termo enviadas para ' + r.para.join(', '));
+    btn.textContent = 'Enviado ✓';
+    try { if (typeof abrirDetalheTermo === 'function') await abrirDetalheTermo(_nfMail.termoId); } catch (_) {}
+  } catch (e) { erro('Não enviado: ' + String(e.message).replace(/</g, '&lt;')); btn.disabled = false; btn.textContent = '📧 Enviar e-mail com as notas selecionadas'; }
+}
+
 async function _fatVoltar(id, statusAnterior) {
   if (!confirm('Voltar este termo para a etapa "' + FAT_LABELS[statusAnterior] + '"?')) return;
   try { await fatApi('termo_mover', { id, status: statusAnterior }); toast('Voltou para: ' + FAT_LABELS[statusAnterior], 'success'); carregarKanbanFaturamento(); await abrirDetalheTermo(id); } catch (e) { toast('Erro: ' + e.message, 'error'); }
@@ -25232,7 +25301,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.14] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.15] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -25248,7 +25317,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.14';
+window.__ATX_BUILD_ID__ = 'ATX-v3.15';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

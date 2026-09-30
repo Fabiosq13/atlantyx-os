@@ -921,6 +921,133 @@ async function termoNfUpload({ termo_id, empresa_id, nf_numero, nf_valor, anexo_
   return { nota_id: notaId, nf_status: recalc.status, nf_soma: recalc.soma, nf_diferenca: recalc.diff,
     vinculada_a: vinculo ? vinculo.empresa : (empresa_id ? 'empresa escolhida' : null), sem_vinculo: !empresa_id };
 }
+
+// ═══ v3.15: ENVIO DAS NOTAS FISCAIS DO TERMO POR E-MAIL ═══
+// Só as notas ANEXADAS ao termo (com arquivo guardado no sistema) podem ser enviadas.
+// Destinatário, remetente e texto são confirmados pelo usuário; a IA só sugere o texto.
+const _smtpUser = () => (process.env.EMAIL_SMTP_USER || process.env.EMAIL_IMAP_USER || process.env.EMAIL_USER || '').trim();
+const _smtpPass = () => (process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS || process.env.EMAIL_PASS || '').replace(/\s+/g, '');
+function _smtpCfgFat(user, pass) {
+  const dom = String(user || '').split('@')[1] || '';
+  const host = process.env.EMAIL_SMTP_HOST || (/gmail\.com$/i.test(dom) ? 'smtp.gmail.com' : (dom ? 'mail.' + dom : 'smtp.gmail.com'));
+  const port = parseInt(process.env.EMAIL_SMTP_PORT || '465', 10);
+  return { host, port, secure: port === 465, auth: { user, pass }, connectionTimeout: 20000, greetingTimeout: 15000, socketTimeout: 45000,
+    ...(process.env.EMAIL_SMTP_TLS_RELAXADO === '1' ? { tls: { rejectUnauthorized: false } } : {}) };
+}
+const _emailValido = e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(e || '').trim());
+const _listaEmails = v => (Array.isArray(v) ? v : String(v || '').split(/[;,\s]+/)).map(x => String(x).trim()).filter(Boolean);
+const _absUrl = u => /^https?:\/\//i.test(u || '') ? u : (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '') + '/' + String(u || '').replace(/^\//, '');
+
+async function _termoComNotas(sql, termo_id) {
+  const t = (await sql`SELECT * FROM termos_faturamento WHERE id = ${termo_id} LIMIT 1`)[0];
+  if (!t) throw new Error('Termo não encontrado');
+  const emp = await sql`SELECT id, empresa, cnpj, valor_parcela, nf_numero, nf_valor FROM termos_empresas WHERE termo_id = ${termo_id} ORDER BY ordem`;
+  const notas = await sql`SELECT id, empresa_id, anexo_nome, nf_numero, nf_valor, tipo_arquivo, arquivo_url, origem, criado_em FROM termos_notas_encontradas WHERE termo_id = ${termo_id} ORDER BY criado_em`;
+  return { t, emp, notas };
+}
+async function _envioTabela(sql) {
+  try { await sql`CREATE TABLE IF NOT EXISTS termos_nf_envios (id TEXT PRIMARY KEY, termo_id TEXT, para TEXT, cc TEXT, remetente TEXT, assunto TEXT, corpo TEXT, anexos JSONB, via TEXT, message_id TEXT, enviado_em TIMESTAMPTZ DEFAULT NOW())`; return true; } catch (_) { return false; }
+}
+
+async function termoNfEmailPreparar({ termo_id } = {}) {
+  if (!termo_id) throw new Error('termo_id obrigatório');
+  const sql = await getSql();
+  const { t, emp, notas } = await _termoComNotas(sql, termo_id);
+  const anexaveis = notas.filter(n => n.arquivo_url).map(n => ({ id: n.id, nome: n.anexo_nome || ('NF ' + (n.nf_numero || '')), nf_numero: n.nf_numero, nf_valor: Number(n.nf_valor) || 0, tipo: n.tipo_arquivo || '', url: n.arquivo_url,
+    empresa: (emp.find(e => e.id === n.empresa_id) || {}).empresa || null }));
+  const semArquivo = notas.filter(n => !n.arquivo_url).map(n => ({ id: n.id, nome: n.anexo_nome || '(sem nome)', nf_numero: n.nf_numero, origem: n.origem }));
+  // último envio deste termo (para sugerir o mesmo destinatário)
+  let ultimo = null;
+  if (await _envioTabela(sql)) { try { ultimo = (await sql`SELECT para, cc, remetente, enviado_em FROM termos_nf_envios WHERE termo_id = ${termo_id} ORDER BY enviado_em DESC LIMIT 1`)[0] || null; } catch (_) {} }
+  if (!ultimo) { try { ultimo = (await sql`SELECT e.para, e.cc, e.remetente, e.enviado_em FROM termos_nf_envios e JOIN termos_faturamento f ON f.id = e.termo_id WHERE f.contratante = ${t.contratante || ''} ORDER BY e.enviado_em DESC LIMIT 1`)[0] || null; } catch (_) {} }
+  const brl = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const soma = anexaveis.reduce((s2, n) => s2 + n.nf_valor, 0);
+  const contexto = { termo: t.numero_termo, projeto: t.projeto, contratante: t.contratante, contratada: t.contratada || 'Atlantyx', periodo: t.periodo_medicao, parcela: t.parcela, marco: t.marco_projeto,
+    valor_termo: brl(t.valor_total_termo), notas: anexaveis.map(n => ({ numero: n.nf_numero, valor: brl(n.nf_valor), empresa: n.empresa })), total_notas: brl(soma) };
+  // texto padrão (sem IA) — garante que sempre haja um rascunho
+  let assunto = `Notas Fiscais — Termo ${t.numero_termo || ''} · ${t.projeto || ''}${t.periodo_medicao ? ' · ' + t.periodo_medicao : ''}`.replace(/\s+·\s*$/, '');
+  let corpo = `Prezados,\n\nEncaminhamos em anexo ${anexaveis.length === 1 ? 'a nota fiscal referente' : 'as notas fiscais referentes'} ao Termo de Aceite nº ${t.numero_termo || '—'} do projeto ${t.projeto || '—'}${t.periodo_medicao ? ', período de medição ' + t.periodo_medicao : ''}.\n\n${anexaveis.map(n => `• NF ${n.nf_numero || '—'}${n.empresa ? ' — ' + n.empresa : ''}: ${brl(n.nf_valor)}`).join('\n')}\n\nTotal: ${brl(soma)}\n\nFicamos à disposição para qualquer esclarecimento.\n\nAtenciosamente,\nEquipe Financeira — Atlantyx`;
+  let ia = false;
+  if (process.env.ANTHROPIC_API_KEY && anexaveis.length) {
+    try {
+      const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6', max_tokens: 900,
+          system: 'Você redige e-mails corporativos curtos e formais em português do Brasil para o financeiro da Atlantyx enviar notas fiscais a clientes (grandes empresas). Use SOMENTE os dados fornecidos — não invente números, datas, prazos de pagamento ou nomes. Responda apenas com JSON {"assunto":"...","corpo":"..."}; o corpo em texto simples, com saudação, lista das notas (número, empresa, valor), total e fecho "Atenciosamente,\\nEquipe Financeira — Atlantyx".',
+          messages: [{ role: 'user', content: 'Dados do termo e das notas anexadas:\n' + JSON.stringify(contexto) }] }) });
+      const d = await r.json();
+      const txt = (d.content || []).map(c => c.text || '').join('').replace(/```json|```/g, '').trim();
+      const j = JSON.parse(txt.substring(txt.indexOf('{'), txt.lastIndexOf('}') + 1));
+      if (j.assunto && j.corpo) { assunto = String(j.assunto).substring(0, 200); corpo = String(j.corpo); ia = true; }
+    } catch (e) { console.warn('[NF e-mail] IA indisponível, usando texto padrão:', e.message); }
+  }
+  return { termo: { id: t.id, numero: t.numero_termo, projeto: t.projeto, contratante: t.contratante, periodo: t.periodo_medicao, valor: Number(t.valor_total_termo) || 0 },
+    anexaveis, sem_arquivo: semArquivo, sugestao: { para: ultimo?.para || '', cc: ultimo?.cc || '', remetente: ultimo?.remetente || _smtpUser(), assunto, corpo, gerado_por_ia: ia },
+    smtp_conta: _smtpUser() || null, smtp_configurado: !!(_smtpUser() && _smtpPass()), ultimo_envio: ultimo };
+}
+
+async function termoNfEmailEnviar({ termo_id, para, cc, remetente, assunto, corpo, nota_ids } = {}) {
+  if (!termo_id) throw new Error('termo_id obrigatório');
+  const dest = _listaEmails(para), copia = _listaEmails(cc);
+  if (!dest.length) throw new Error('Informe o e-mail do cliente');
+  const invalidos = [...dest, ...copia].filter(e => !_emailValido(e));
+  if (invalidos.length) throw new Error('E-mail inválido: ' + invalidos.join(', '));
+  if (!String(assunto || '').trim() || !String(corpo || '').trim()) throw new Error('Assunto e texto do e-mail são obrigatórios');
+  const user = _smtpUser(), pass = _smtpPass();
+  if (!user || !pass) throw new Error('Conta de envio (SMTP) não configurada: defina EMAIL_SMTP_USER/EMAIL_IMAP_USER e EMAIL_SMTP_PASS no Vercel.');
+  const sql = await getSql();
+  const { t, notas } = await _termoComNotas(sql, termo_id);
+  // SÓ notas deste termo e com arquivo anexado
+  const ids = Array.isArray(nota_ids) && nota_ids.length ? nota_ids.map(String) : notas.filter(n => n.arquivo_url).map(n => n.id);
+  const escolhidas = notas.filter(n => ids.includes(String(n.id)));
+  const foraDoTermo = ids.filter(id => !notas.some(n => String(n.id) === id));
+  if (foraDoTermo.length) throw new Error('Nota(s) que não pertencem a este termo: ' + foraDoTermo.join(', '));
+  const semArq = escolhidas.filter(n => !n.arquivo_url);
+  if (semArq.length) throw new Error('Estas notas não têm arquivo anexado ao termo e não podem ser enviadas: ' + semArq.map(n => n.anexo_nome || n.nf_numero || n.id).join(', '));
+  if (!escolhidas.length) throw new Error('Nenhuma nota fiscal anexada ao termo para enviar. Carregue os PDF/XML das notas no termo primeiro.');
+  const anexos = [];
+  for (const n of escolhidas) {
+    const url = _absUrl(n.arquivo_url);
+    const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 15000);
+    try {
+      const r = await fetch(url, { signal: ac.signal });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (!buf.length) throw new Error('arquivo vazio');
+      let nome = n.anexo_nome || ('NF_' + (n.nf_numero || n.id));
+      if (!/\.(pdf|xml)$/i.test(nome)) nome += (/xml/i.test(n.tipo_arquivo || '') ? '.xml' : '.pdf');
+      anexos.push({ filename: nome, content: buf, contentType: r.headers.get('content-type') || (/\.xml$/i.test(nome) ? 'application/xml' : 'application/pdf') });
+    } catch (e) { throw new Error(`Não consegui baixar o arquivo da nota "${n.anexo_nome || n.nf_numero}" (${e.name === 'AbortError' ? 'tempo esgotado' : e.message}). Nada foi enviado.`); }
+    finally { clearTimeout(tm); }
+  }
+  const tamanho = anexos.reduce((s2, a) => s2 + a.content.length, 0);
+  if (tamanho > 20 * 1024 * 1024) throw new Error('Os anexos somam ' + (tamanho / 1048576).toFixed(1) + ' MB — acima do limite de 20 MB do e-mail. Envie em partes.');
+  const rem = String(remetente || '').trim();
+  if (rem && !_emailValido(rem)) throw new Error('E-mail de envio inválido: ' + rem);
+  const esc = x => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#111;">${esc(corpo).replace(/\n/g, '<br>')}</div>`;
+  const nodemailer = (await import('nodemailer')).default;
+  const tr = nodemailer.createTransport(_smtpCfgFat(user, pass));
+  // O envio sai pela conta SMTP configurada; se o remetente escolhido for outro, ele recebe as respostas (Reply-To)
+  const mesmoRemetente = !rem || rem.toLowerCase() === user.toLowerCase();
+  const info = await tr.sendMail({ from: `Atlantyx Financeiro <${user}>`, to: dest.join(', '), cc: copia.length ? copia.join(', ') : undefined,
+    replyTo: mesmoRemetente ? undefined : rem, subject: String(assunto).trim(), text: String(corpo), html, attachments: anexos });
+  const registro = { id: novoId('env'), termo_id, para: dest.join(', '), cc: copia.join(', '), remetente: rem || user, assunto: String(assunto).trim(), corpo: String(corpo),
+    anexos: anexos.map((a, i) => ({ nome: a.filename, bytes: a.content.length, nota_id: escolhidas[i].id, nf_numero: escolhidas[i].nf_numero })), via: 'smtp ' + user, message_id: info.messageId || null };
+  if (await _envioTabela(sql)) {
+    try { await sql`INSERT INTO termos_nf_envios (id, termo_id, para, cc, remetente, assunto, corpo, anexos, via, message_id)
+      VALUES (${registro.id}, ${termo_id}, ${registro.para}, ${registro.cc}, ${registro.remetente}, ${registro.assunto}, ${registro.corpo}, ${JSON.stringify(registro.anexos)}, ${registro.via}, ${registro.message_id})`; } catch (e) { console.warn('[NF e-mail] histórico:', e.message); }
+  }
+  try { await sql`UPDATE termos_faturamento SET observacoes = COALESCE(observacoes, '') || ${`\n[${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}] NF(s) enviada(s) por e-mail para ${registro.para}: ${registro.anexos.map(a => a.nome).join(', ')}`}, atualizado_em = NOW() WHERE id = ${termo_id}`; } catch (_) {}
+  return { enviado: true, para: dest, cc: copia, anexos: registro.anexos, aceitos: info.accepted || [], rejeitados: info.rejected || [], de: user, responder_para: mesmoRemetente ? null : rem, message_id: info.messageId };
+}
+
+async function termoNfEmailHistorico({ termo_id } = {}) {
+  const sql = await getSql();
+  if (!(await _envioTabela(sql))) return { envios: [] };
+  const envios = await sql`SELECT id, para, cc, remetente, assunto, anexos, enviado_em FROM termos_nf_envios WHERE termo_id = ${termo_id} ORDER BY enviado_em DESC LIMIT 20`;
+  return { envios };
+}
+
 async function termoNfExcluir({ nota_id } = {}) {
   if (!nota_id) throw new Error('nota_id obrigatório');
   const sql = await getSql();
@@ -1443,6 +1570,9 @@ export default async function handler(req, res) {
     termo_empresa_marcar_nf:   () => termoEmpresaMarcarNf(payload),
     termo_nf_upload:           () => termoNfUpload(payload),
     termo_nf_excluir:          () => termoNfExcluir(payload),
+    termo_nf_email_preparar:   () => termoNfEmailPreparar(payload), // v3.15
+    termo_nf_email_enviar:     () => termoNfEmailEnviar(payload),   // v3.15
+    termo_nf_email_historico:  () => termoNfEmailHistorico(payload), // v3.15
     termo_recomputar_notas:    () => termoRecomputarNotas(payload),
     termo_rastrear_notas:      () => termoRastrearNotas(payload),
     termo_mover_notas:         () => termoMoverNotas(payload),
