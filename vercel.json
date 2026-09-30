@@ -70,6 +70,9 @@
     },
     "api/business-plan.js": {
       "maxDuration": 120
+    },
+    "api/rfp-monitor.js": {
+      "maxDuration": 60
     }
   },
   "crons": [
