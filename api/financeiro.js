@@ -205,6 +205,8 @@ export default async function handler(req, res) {
 
       // ── Motor de fluxo futuro mês a mês ──────────────────────────────────
       fluxo_futuro:          () => fluxoFuturo(params),
+      // v3.04: DRE mensal real (QuickBooks) — base do Business Plan dinâmico da Atlantyx
+      dre_mensal:            () => dreMensal(params),
 
       // ── KPIs determinísticos de saúde ────────────────────────────────────
       kpis_saude:            () => kpisSaude(params),
@@ -5003,6 +5005,40 @@ function _mesDaColunaQB(titulo, anoRef, indiceColuna) {
   // Último recurso: se as colunas vierem em ordem (jan..dez), usa a posição
   if (indiceColuna >= 1 && indiceColuna <= 12) return `${anoRef}-${String(indiceColuna).padStart(2, '0')}`;
   return null;
+}
+
+// ═══ v3.04: DRE mensal do QuickBooks (últimos N meses FECHADOS) ═══
+// Devolve os totais por grupo (Income, COGS, Expenses, OtherIncome, OtherExpenses, NetIncome)
+// e cada conta com seus valores mês a mês — base do Business Plan dinâmico.
+async function dreMensal({ meses = 12 } = {}) {
+  if (!qbConfigurado()) return { disponivel: false, motivo: 'QuickBooks não conectado', meses: [], grupos: {}, contas: [] };
+  const n = Math.max(3, Math.min(24, Number(meses) || 12));
+  const hoje = new Date();
+  const fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0);
+  const ini = new Date(fim.getFullYear(), fim.getMonth() - n + 1, 1);
+  const ds = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const listaMeses = [];
+  for (let i = 0; i < n; i++) { const d = new Date(ini.getFullYear(), ini.getMonth() + i, 1); listaMeses.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); }
+  const token = await qbToken();
+  const data = await qbFetch(`/reports/ProfitAndLoss?start_date=${ds(ini)}&end_date=${ds(fim)}&summarize_column_by=Month`, token);
+  const colNames = (data?.Columns?.Column || []).map(c => c.ColTitle || c.MetaData?.[0]?.Value || '');
+  const colMes = colNames.map((t, i) => (i === 0 ? null : _mesDaColunaQB(t, ini.getFullYear(), i)));
+  const val = v => parseFloat(String(v || '0').replace(/[^\d.-]/g, '')) || 0;
+  const grupos = {}, contas = [];
+  const linhaParaMeses = cols => { const o = {}; for (let i = 1; i < cols.length; i++) { const mk = colMes[i]; if (mk && listaMeses.includes(mk)) o[mk] = round((o[mk] || 0) + val(cols[i]?.value)); } return o; };
+  function walk(row, topo) {
+    if (row.type === 'Section' || row.Rows || row.Summary) {
+      const g = topo || row.group || null;
+      if (row.group && row.Summary?.ColData) grupos[row.group] = linhaParaMeses(row.Summary.ColData);
+      (row.Rows?.Row || []).forEach(r => walk(r, g));
+    } else if (row.type === 'Data' || row.ColData) {
+      const cols = row.ColData || [];
+      const nome = cols[0]?.value;
+      if (nome) contas.push({ nome, grupo: topo || 'Outros', valores: linhaParaMeses(cols) });
+    }
+  }
+  (data?.Rows?.Row || []).forEach(r => walk(r, null));
+  return { disponivel: true, periodo: { inicio: ds(ini), fim: ds(fim) }, meses: listaMeses, grupos, contas };
 }
 
 async function orcamentoConsolidado({ ano } = {}) {
