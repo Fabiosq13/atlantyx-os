@@ -113,9 +113,67 @@
     }
     return baixos;
   }
+  // v3.19 — POSICIONAMENTO. O QA antigo só media elementos DENTRO da tela, relativo à própria tela;
+  // se a tela inteira estava fora do lugar (fora da área de conteúdo, por cima do topo, deslocada),
+  // tudo "batia" por dentro e nada era acusado. Agora a tela é medida contra o menu, o topo e a janela.
+  function posicoes(win, doc, page, t, sufixo) {
+    const out = [], suf = sufixo || '';
+    const add = (sev, titulo, evidencia, sugestao) => out.push({ sev, cat: 'posicionamento', titulo: titulo + suf, evidencia: String(evidencia || '').substring(0, 400), sugestao, tela: t.id, rotulo: t.rotulo });
+    const cs = e => win.getComputedStyle(e);
+    const vis = e => { if (!e || !e.isConnected) return false; const r = e.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; const c = cs(e); return c.visibility !== 'hidden' && c.display !== 'none'; };
+    const nome = e => (e.id ? '#' + e.id : e.tagName.toLowerCase() + (typeof e.className === 'string' && e.className.trim() ? '.' + e.className.trim().split(/\s+/)[0] : '')) + ' "' + (e.innerText || '').replace(/\s+/g, ' ').trim().substring(0, 28) + '"';
+    const main = doc.querySelector('.main'), cnt = doc.querySelector('.cnt'), top = doc.querySelector('.topbar');
+    const pr = page.getBoundingClientRect();
+    if (cnt && !cnt.contains(page)) add('alta', 'Tela fora da área de conteúdo', `page-${t.id} está em <${page.parentElement?.tagName.toLowerCase()}> e não dentro de .cnt`, 'A div da página foi declarada depois de </main> — mover o bloco para dentro de <div class="cnt">.');
+    else {
+      const mr = main ? main.getBoundingClientRect() : null, tr = top ? top.getBoundingClientRect() : null;
+      if (mr && pr.left < mr.left - 2) add('alta', 'Tela deslocada para trás do menu lateral', `tela começa em x=${Math.round(pr.left)}px, conteúdo em x=${Math.round(mr.left)}px`, 'Conferir margin/position da página.');
+      if (tr && pr.top < tr.bottom - 2 && win.scrollY < 5) add('alta', 'Tela por cima da barra do topo', `tela começa em y=${Math.round(pr.top)}px, topo termina em y=${Math.round(tr.bottom)}px`, 'Conferir position/margin negativa da página.');
+    }
+    const dw = doc.documentElement.scrollWidth, ww = win.innerWidth;
+    if (dw > ww + 3) add('média', 'A página inteira ganha rolagem horizontal', `conteúdo ${dw}px numa janela de ${ww}px`, 'Algum bloco largo (kanban, matriz, grid com minmax) está esticando o layout — ele deve rolar dentro do próprio contêiner (overflow-x:auto + min-width:0 no pai flex).');
+    const rolavel = e => { let x = e.parentElement; while (x && x !== page) { if (/(auto|scroll|hidden)/.test(cs(x).overflowX)) return true; x = x.parentElement; } return false; };
+    const est = []; for (const e of page.querySelectorAll('*')) { if (est.length > 5) break; if (!vis(e)) continue; const r = e.getBoundingClientRect(); if (r.right > pr.right + 4 && !rolavel(e) && (!e.parentElement || e.parentElement.getBoundingClientRect().right <= pr.right + 4)) est.push(nome(e) + ` +${Math.round(r.right - pr.right)}px`); }
+    if (est.length) add('média', 'Elementos saindo pela borda direita da tela', est.join(' | '), 'Largura fixa grande demais para a janela — usar minmax/auto-fit ou envolver em overflow-x:auto.');
+    const sob = [];
+    for (const c of page.querySelectorAll('*')) { if (sob.length > 3) break; const d = cs(c).display; if (!/flex|grid/.test(d) || !vis(c)) continue;
+      const f = [...c.children].filter(e => vis(e) && !/absolute|fixed/.test(cs(e).position));
+      for (let i = 0; i < f.length && sob.length < 4; i++) for (let j = i + 1; j < f.length; j++) { const a = f[i].getBoundingClientRect(), b = f[j].getBoundingClientRect(); if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 4 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 4) { sob.push(nome(f[i]) + ' × ' + nome(f[j])); break; } } }
+    if (sob.length) add('média', 'Blocos sobrepostos', sob.join(' | '), 'Revisar grid/flex do contêiner (larguras fixas, margens negativas, falta de flex-wrap).');
+    const kp = [...page.querySelectorAll('.kpi')].filter(vis).filter(k => k.getBoundingClientRect().width < 115).map(k => nome(k) + ' ' + Math.round(k.getBoundingClientRect().width) + 'px');
+    if (kp.length) add('baixa', 'Indicadores espremidos', kp.slice(0, 5).join(' | '), 'Usar grid-template-columns:repeat(auto-fit,minmax(150px,1fr)) nessa grade.');
+    return out;
+  }
+  // Mede as telas em larguras menores dentro de um iframe do próprio sistema (?qa_frame=1 = modo só-leitura)
+  async function varrerLarguras(telas, larguras, ctx) {
+    const achados = [];
+    for (const W of larguras) {
+      if (S.parar) break;
+      const fr = document.createElement('iframe');
+      fr.style.cssText = `position:fixed;left:-${W + 200}px;top:0;width:${W}px;height:768px;border:0;visibility:hidden;`;
+      fr.src = location.pathname + '?qa_frame=1';
+      document.body.appendChild(fr);
+      try {
+        await new Promise((ok, erro) => { fr.onload = ok; setTimeout(() => erro(new Error('iframe não carregou')), 20000); });
+        await sleep(1500);
+        const iw = fr.contentWindow, idoc = fr.contentDocument;
+        for (let i = 0; i < telas.length; i++) {
+          if (S.parar) break; const t = telas[i];
+          progresso(i, telas.length, `${t.rotulo} (largura ${W}px)`);
+          try { iw.nav(t.id); } catch (_) { continue; }
+          await sleep(650);
+          const pg = idoc.getElementById('page-' + t.id);
+          if (pg && pg.classList.contains('active')) achados.push(...posicoes(iw, idoc, pg, t, ` (em ${W}px)`));
+        }
+      } catch (e) { achados.push({ sev: 'info', cat: 'posicionamento', titulo: `Teste em ${W}px não rodou`, evidencia: e.message, sugestao: '', tela: 'qa', rotulo: 'QA' }); }
+      finally { fr.remove(); }
+    }
+    return achados;
+  }
   function analisarTela(page, t, ctx) {
     const achados = [];
     const add = (sev, cat, titulo, evidencia, sugestao) => achados.push({ sev, cat, titulo, evidencia: String(evidencia || '').substring(0, 400), sugestao, tela: t.id, rotulo: t.rotulo });
+    posicoes(window, document, page, t, '').forEach(x => achados.push(x));
     const txt = page.innerText || '';
     if (txt.replace(/\s+/g, '').length < 30) add('média', 'conteúdo', 'Tela vazia ou sem conteúdo após carregar', `innerText com ${txt.trim().length} caracteres`, 'Verificar se a tela carrega dados ao abrir (gancho no nav) e se mostra estado vazio explicativo.');
     // textos quebrados
@@ -270,6 +328,10 @@
         porTela.push({ id: t.id, rotulo: t.rotulo, ms: Date.now() - t0, requisicoes: reqs.length, bloqueadas: reqs.filter(r => r.bloqueado).length, achados: a.filter(x => x.sev !== 'info').length });
         try { sessionStorage.setItem('qa_parcial', JSON.stringify({ em: Date.now(), ultima: t.rotulo, feitas: i + 1, total: telas.length, achados: achados.slice(-400), porTela })); } catch (_) {}
       }
+      if (opts.larguras && !S.parar) {
+        const larg = [1024, 1366].filter(w => w < window.innerWidth - 40);
+        if (larg.length) { ctx.tela = 'larguras'; const al = await varrerLarguras(telas, larg, ctx); achados = achados.concat(al); }
+      }
     } finally {
       restaurar(ctx); fecharModais(); flutuante(false);
       try { const agora = []; for (let i = 0; i < localStorage.length; i++) agora.push(localStorage.key(i)); agora.forEach(k => { if (!(k in lsAntes)) localStorage.removeItem(k); }); Object.entries(lsAntes).forEach(([k, v]) => { if (localStorage.getItem(k) !== v) localStorage.setItem(k, v); }); } catch (_) {}
@@ -342,7 +404,8 @@
           <label style="display:block;margin-bottom:5px;"><input type="checkbox" id="qaOptBot" checked/> Clicar nos botões de consulta</label>
           <label style="display:block;margin-bottom:5px;"><input type="checkbox" id="qaOptForm" checked/> Testar formulários (vazio e preenchido, sem gravar)</label>
           <label style="display:block;margin-bottom:5px;"><input type="checkbox" id="qaOptCont" checked/> Verificar contraste</label>
-          <label style="display:block;margin-bottom:8px;"><input type="checkbox" id="qaOptTemas"/> Contraste nos dois temas</label>
+          <label style="display:block;margin-bottom:5px;"><input type="checkbox" id="qaOptTemas"/> Contraste nos dois temas</label>
+          <label style="display:block;margin-bottom:8px;"><input type="checkbox" id="qaOptLarg" checked/> Posição das telas também em 1024px e 1366px</label>
           <div style="display:flex;gap:6px;margin-bottom:8px;"><input class="fi" id="qaFiltro" placeholder="só telas com... (vazio = todas)" style="flex:1;"/><select class="fsel" id="qaEspera" style="width:110px;"><option value="5000">espera 5s</option><option value="8000" selected>espera 8s</option><option value="12000">espera 12s</option></select></div>
           <button class="btn btn-p" style="width:100%;" onclick="QA.iniciar()">▶ Iniciar varredura de telas</button></div></div>
         <div class="panel" style="margin:0;"><div class="ph"><div class="pt">CRUD real com limpeza</div></div><div class="pb" style="font-size:11px;color:var(--t2);line-height:1.6;">
@@ -392,6 +455,7 @@
   }
 
   window.QA = {
+    _classificar: (u, i) => classificar(u, i),
     _filtro: '',
     abrir() { const p = document.getElementById('qaApp'); if (p && !p.dataset.ok) { p.innerHTML = painelHtml(); p.dataset.ok = '1'; this.historico(true); }
       try { const pc = JSON.parse(sessionStorage.getItem('qa_parcial') || 'null'); if (pc && !S.rodando) S.parcial = pc; } catch (_) {}
@@ -400,7 +464,7 @@
     render,
     iniciar() {
       if (!confirm('Iniciar a varredura de todas as telas?\n\nO sistema vai navegar sozinho por alguns minutos. Gravações, envios e chamadas de IA ficam bloqueados (modo seguro). Não use o sistema durante a varredura.')) return;
-      const opts = { botoes: document.getElementById('qaOptBot').checked, formularios: document.getElementById('qaOptForm').checked, contraste: document.getElementById('qaOptCont').checked, doisTemas: document.getElementById('qaOptTemas').checked, filtro: document.getElementById('qaFiltro').value.trim(), espera: +document.getElementById('qaEspera').value };
+      const opts = { botoes: document.getElementById('qaOptBot').checked, formularios: document.getElementById('qaOptForm').checked, contraste: document.getElementById('qaOptCont').checked, doisTemas: document.getElementById('qaOptTemas').checked, larguras: !!document.getElementById('qaOptLarg')?.checked, filtro: document.getElementById('qaFiltro').value.trim(), espera: +document.getElementById('qaEspera').value };
       varrer(opts);
     },
     parar() { S.parar = true; },

@@ -4,6 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
+// v3.19 — ?qa_frame=1: cópia do sistema aberta pelo Agente de QA num iframe para medir as telas em
+// outras larguras. Modo SÓ-LEITURA: qualquer chamada que não seja consulta é respondida localmente.
+(function () {
+  if (!/[?&]qa_frame=1\b/.test(location.search) || window.parent === window) return;
+  var orig = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    var cl = null; try { cl = window.parent.QA && window.parent.QA._classificar ? window.parent.QA._classificar(typeof input === 'string' ? input : input.url, init) : null; } catch (e) {}
+    if (!cl || (!cl.leitura && !cl.interno)) return Promise.resolve(new Response('{"success":false,"qa_bloqueado":true,"error":"[QA] bloqueado no iframe"}', { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    return orig(input, init);
+  };
+  window.alert = function () {}; window.confirm = function () { return false; }; window.prompt = function () { return null; }; window.open = function () { return null; };
+  window.__QA_FRAME__ = true;
+})();
 // v3.10: tema claro/escuro — aplicado antes de desenhar a tela (sem "piscar")
 try { var _t = localStorage.getItem('atx_tema'); if (_t === 'light' || _t === 'dark') document.documentElement.setAttribute('data-theme', _t); } catch (e) {}
 // No tema claro, cores de TEXTO vindas de dados (hex claros: ciano, verde, lilás...) são escurecidas
@@ -9020,7 +9033,7 @@ function _ideiaPdfDoc(x, bp) {
 // v3.16: carrega o agente de QA sob demanda
 function qaAbrir() {
   if (window.QA) return QA.abrir();
-  const s = document.createElement('script'); s.src = '/qa-agent.js?v=3.17';
+  const s = document.createElement('script'); s.src = '/qa-agent.js?v=3.20';
   s.onload = () => window.QA && QA.abrir();
   s.onerror = () => { const a = document.getElementById('qaApp'); if (a) a.innerHTML = '<div style="color:var(--red);padding:20px;">Não consegui carregar /qa-agent.js</div>'; };
   document.head.appendChild(s);
@@ -22328,6 +22341,16 @@ function _qaAnalisar(tela) {
   } else if (texto.length < 25) add('alta','tela_vazia','Tela praticamente vazia — nada renderizou','Menos de 25 caracteres visíveis. Costuma ser erro no carregamento dos dados.');
   else if (visiveis.length < 3) add('alta','tela_vazia','Quase nenhum elemento visível na tela', visiveis.length + ' elemento(s) com dimensão > 0');
 
+  // v3.19 — POSIÇÃO DA TELA: antes só se media o que havia DENTRO da tela; uma tela inteira fora do
+  // lugar (fora de .cnt, por cima do topo, atrás do menu) passava como OK.
+  {
+    const cnt = document.querySelector('.cnt'), mr = document.querySelector('.main')?.getBoundingClientRect(), tr = document.querySelector('.topbar')?.getBoundingClientRect(), pr = p.getBoundingClientRect();
+    if (cnt && !cnt.contains(p)) add('alta','tela_fora_do_lugar','Tela fora da área de conteúdo — abre deslocada, por cima do topo', 'A div page-' + tela.id + ' está fora de <div class="cnt">.');
+    else if ((mr && pr.left < mr.left - 2) || (tr && pr.top < tr.bottom - 2 && window.scrollY < 5)) add('alta','tela_fora_do_lugar','Tela deslocada (atrás do menu ou por cima do topo)', `x=${Math.round(pr.left)} y=${Math.round(pr.top)}`);
+    const dw = document.documentElement.scrollWidth;
+    if (dw > window.innerWidth + 3) add('media','pagina_larga',`A página inteira ficou com ${dw}px numa janela de ${window.innerWidth}px`,'Um bloco largo está esticando o layout em vez de rolar dentro do próprio contêiner.');
+  }
+
   // 2. MENSAGEM DE ERRO NA TELA
   // v1.73 FIX: a regex antiga tinha /i e NaN sem delimitador — "fiNANceiro" disparava o alerta,
   // poluindo ~20 telas com falso positivo. Agora exige palavra inteira.
@@ -25415,7 +25438,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.19] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.20] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -25431,7 +25454,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.19';
+window.__ATX_BUILD_ID__ = 'ATX-v3.20';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
