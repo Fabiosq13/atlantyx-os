@@ -8530,8 +8530,8 @@ function bpTab(aba) {
   a.style.display = aba === 'atlantyx' ? '' : 'none';
   document.getElementById('bpTabIdeia').className = 'btn ' + (aba === 'ideia' ? 'btn-p' : 'btn-g');
   document.getElementById('bpTabAtx').className = 'btn ' + (aba === 'atlantyx' ? 'btn-p' : 'btn-g');
-  if (aba === 'atlantyx') { if (!_bpAtxCarregado) bpAtlantyx(); else if (_bpAtual?.tipo === 'atlantyx') bpRender(); }
-  else if (_bpAtual && _bpAtual.tipo === 'atlantyx') { _bpAtual = null; document.getElementById('bpView').innerHTML = ''; }
+  if (aba === 'atlantyx') { if (!_bpAtxCarregado || _bpAtual?.id) bpAtlantyx(); else if (_bpAtual?.tipo === 'atlantyx') bpRender(); }
+  else if (_bpAtual && _bpAtual.tipo === 'atlantyx' && !_bpAtual.id) { _bpAtual = null; document.getElementById('bpView').innerHTML = ''; }
 }
 
 async function bpInit() {
@@ -8656,8 +8656,40 @@ function _bpSet(path, valor) {
 }
 function bpCampo(el) {
   const v = el.type === 'number' ? (el.value === '' ? 0 : Number(el.value)) : el.value;
-  _bpSet(el.dataset.bp, v); _bpSujo = true;
+  _bpSet(el.dataset.bp, v); bpMarcarSujo();
   const b = document.getElementById('bpBtnRecalc'); if (b) b.style.boxShadow = '0 0 0 2px var(--gold)';
+}
+function bpMarcarSujo() { _bpSujo = true; const t = document.getElementById('bpSujoTag'); if (t) t.textContent = '· alterações não salvas'; }
+window.addEventListener('beforeunload', e => { if (_bpSujo && _bpAtual) { e.preventDefault(); e.returnValue = ''; } });
+function _bpNarrativaEditor(nar) {
+  const ta = (k, rot, v, h, lista) => '<div style="margin-bottom:8px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:3px;">' + rot + (lista ? ' — um por linha' : '') + '</div>'
+    + '<textarea class="fta" style="min-height:' + h + 'px;font-size:11.5px;" onchange="bpNarr(\'' + k + '\',this.value,' + (lista ? 1 : 0) + ')">' + _bpE(lista ? (v || []).join('\n') : (v || '')) + '</textarea></div>';
+  return '<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">Textos do plano — editáveis</div><span class="tag off">vão para o Resumo do Excel</span></div><div class="pb">'
+    + ta('resumo_executivo', 'Resumo executivo', nar.resumo_executivo, 70) + ta('modelo_negocio', 'Modelo de negócio', nar.modelo_negocio, 45)
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">' + ta('riscos', 'Riscos', nar.riscos, 80, 1) + ta('marcos', 'Marcos', nar.marcos, 80, 1) + '</div>'
+    + ta('kpis_acompanhamento', 'KPIs de acompanhamento', nar.kpis_acompanhamento, 50, 1) + '</div></div>';
+}
+function bpNarr(k, v, lista) { if (!_bpAtual) return; _bpAtual.narrativa = _bpAtual.narrativa || {}; _bpAtual.narrativa[k] = lista ? v.split('\n').map(x => x.trim()).filter(Boolean) : v; bpMarcarSujo(); }
+async function bpImportarExcel(input) {
+  const f = input.files?.[0]; input.value = ''; if (!f || !_bpAtual) return;
+  const b = _bpAtual;
+  if (_bpSujo && !confirm('Há alterações não salvas na tela. Importar o Excel vai substituir as premissas. Continuar?')) return;
+  toast('Lendo o Excel...', 'info');
+  try {
+    const base64 = await new Promise((ok, err) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = () => err(new Error('não consegui ler o arquivo')); r.readAsDataURL(f); });
+    const d = await bpApi('importar_excel', { id: b.id, base64, salvar: !!b.id, premissas: b.premissas, titulo: b.titulo, tipo: b.tipo, narrativa: b.narrativa, ideia: b.ideia });
+    if (d.bp) { _bpAtual = d.bp; _bpSujo = false; bpListar(); toast('Excel importado, recalculado e salvo', 'success'); }
+    else { _bpAtual.premissas = d.premissas; _bpAtual.resultado = d.resultado; bpMarcarSujo(); toast('Excel importado — clique em Salvar para gravar', 'success'); }
+    bpRender();
+  } catch (e) { toast('Erro ao importar: ' + e.message, 'error'); }
+}
+async function bpAtlantyxEditavel() {
+  const b = _bpAtual; if (!b) return;
+  try {
+    const d = await bpApi('salvar', { tipo: 'atlantyx', titulo: 'Business Plan Atlantyx — ' + new Date().toLocaleDateString('pt-BR'), premissas: b.premissas, narrativa: { diagnostico: b.diagnostico, avisos: b.avisos } });
+    _bpAtual = d.bp; _bpSujo = false; bpTab('ideia'); _bpAtual = d.bp; bpRender(); bpListar();
+    toast('Plano Atlantyx salvo — agora você pode editar premissas e textos', 'success');
+  } catch (e) { toast(e.message, 'error'); }
 }
 const _bpModelos = {
   receitas: { nome: 'Nova receita', tipo: 'recorrente', preco: 0, clientes_iniciais: 0, novos_mes: [0, 0, 0], churn_mensal_pct: 1, reajuste_anual_pct: 5, mes_inicio: 1 },
@@ -8676,8 +8708,9 @@ function _bpEditor(p) {
     return '<div style="margin-bottom:12px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;"><div style="font-family:var(--M);font-size:8.5px;text-transform:uppercase;color:var(--blue);">' + titulo + '</div>'
       + '<button class="btn btn-g" style="font-size:9px;padding:2px 7px;" onclick="bpLinhaAdd(\'' + sec + '\')">+ linha</button></div>'
       + '<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:10px;"><tr>' + cols.map(c => '<th style="text-align:left;padding:2px 4px;color:var(--t2);font-weight:500;white-space:nowrap;">' + c[0] + '</th>').join('') + '<th></th></tr>'
-      + linhas.map((l, i) => '<tr>' + cols.map(c => '<td style="padding:2px 3px;">' + c[1](l, sec + '.' + i) + '</td>').join('')
-        + '<td><button class="btn btn-g" style="font-size:9px;padding:2px 6px;color:var(--red);" onclick="bpLinhaDel(\'' + sec + '\',' + i + ')">&#10005;</button></td></tr>').join('')
+      + linhas.map((l, i) => { const serie = String(l.tipo || '').toLowerCase() === 'serie';
+          return '<tr>' + cols.map((c, ci) => '<td style="padding:2px 3px;">' + (serie && ci > 0 ? (ci === 1 ? '<span style="font-size:9.5px;color:var(--t3);white-space:nowrap;">série do sistema · total ' + _bpK((l.valores || []).reduce((a, v) => a + (Number(v) || 0), 0)) + '</span>' : '') : c[1](l, sec + '.' + i)) + '</td>').join('')
+        + '<td><button class="btn btn-g" style="font-size:9px;padding:2px 6px;color:var(--red);" onclick="bpLinhaDel(\'' + sec + '\',' + i + ')">&#10005;</button></td></tr>'; }).join('')
       + '</table></div></div>';
   };
   const sel = (path, v) => '<select class="fsel" style="padding:3px;font-size:10.5px;" data-bp="' + path + '" onchange="bpCampo(this)">' + ['recorrente', 'unico'].map(o => '<option' + (o === v ? ' selected' : '') + '>' + o + '</option>').join('') + '</select>';
@@ -8692,7 +8725,7 @@ function _bpEditor(p) {
     + tab('custos_variaveis', 'Custos variáveis (% da receita)', [['Nome', (l, b) => inp(b + '.nome', l.nome, 'text', 200)], ['% receita', (l, b) => inp(b + '.pct_receita', l.pct_receita, 'number', 70)]])
     + tab('pessoal', 'Pessoal', [['Cargo', (l, b) => inp(b + '.cargo', l.cargo, 'text', 160)], ['Qtd', (l, b) => inp(b + '.qtd', l.qtd, 'number', 50)], ['Salário/valor R$', (l, b) => inp(b + '.salario', l.salario, 'number', 90)],
       ['Encargos %', (l, b) => inp(b + '.encargos_pct', l.encargos_pct, 'number', 55)], ['Mês início', (l, b) => inp(b + '.mes_inicio', l.mes_inicio, 'number', 50)], ['Reajuste %', (l, b) => inp(b + '.reajuste_anual_pct', l.reajuste_anual_pct, 'number', 55)]])
-    + tab('despesas_fixas', 'Despesas fixas', [['Nome', (l, b) => inp(b + '.nome', l.nome, 'text', 180)], ['Valor/mês R$', (l, b) => inp(b + '.valor_mensal', l.valor_mensal, 'number', 90)], ['Mês início', (l, b) => inp(b + '.mes_inicio', l.mes_inicio, 'number', 50)], ['Reajuste %', (l, b) => inp(b + '.reajuste_anual_pct', l.reajuste_anual_pct, 'number', 55)]])
+    + tab('despesas_fixas', 'Despesas fixas', [['Nome', (l, b) => inp(b + '.nome', l.nome, 'text', 180)], ['Grupo', (l, b) => '<select class="fsel" style="padding:3px;font-size:10.5px;" data-bp="' + b + '.grupo" onchange="bpCampo(this)">' + ['geral', 'pessoal', 'marketing'].map(o => '<option' + (o === (l.grupo || 'geral') ? ' selected' : '') + '>' + o + '</option>').join('') + '</select>'], ['Valor/mês R$', (l, b) => inp(b + '.valor_mensal', l.valor_mensal, 'number', 90)], ['Mês início', (l, b) => inp(b + '.mes_inicio', l.mes_inicio, 'number', 50)], ['Reajuste %', (l, b) => inp(b + '.reajuste_anual_pct', l.reajuste_anual_pct, 'number', 55)]])
     + tab('investimentos', 'Investimentos (CAPEX)', [['Descrição', (l, b) => inp(b + '.descricao', l.descricao, 'text', 180)], ['Valor R$', (l, b) => inp(b + '.valor', l.valor, 'number', 100)], ['Mês', (l, b) => inp(b + '.mes', l.mes, 'number', 50)], ['Depreciação (meses)', (l, b) => inp(b + '.depreciacao_meses', l.depreciacao_meses, 'number', 60)]]);
 }
 
@@ -8701,10 +8734,12 @@ async function bpRecalcular() {
   try { const d = await bpApi('recalcular', { premissas: _bpAtual.premissas }); _bpAtual.resultado = d.resultado; bpRender(); toast('Recalculado — clique em Salvar para gravar', 'success'); }
   catch (e) { toast(e.message, 'error'); }
 }
-async function bpSalvar() {
+async function bpSalvar(copia) {
   const b = _bpAtual; if (!b) return;
-  try { const d = await bpApi('salvar', { id: b.id, tipo: b.tipo || 'ideia', titulo: b.titulo, premissas: b.premissas, narrativa: b.narrativa, ideia: b.ideia });
-    _bpAtual = d.bp; _bpSujo = false; bpRender(); bpListar(); toast('Business plan salvo', 'success'); }
+  try {
+    // recalcula antes de gravar, para o resumo da lista refletir as premissas editadas
+    const d = await bpApi('salvar', { id: b.id, copia: !!copia, tipo: b.tipo || 'ideia', titulo: b.titulo, premissas: b.premissas, narrativa: b.narrativa, ideia: b.ideia });
+    _bpAtual = d.bp; _bpSujo = false; bpRender(); bpListar(); toast(copia ? 'Cópia salva — você está editando a cópia' : 'Business plan salvo', 'success'); }
   catch (e) { toast(e.message, 'error'); }
 }
 
@@ -8724,7 +8759,7 @@ function _bpGrafico(res) {
 function bpRender() {
   const v = document.getElementById('bpView'); const b = _bpAtual;
   if (!v || !b?.resultado) return;
-  const res = b.resultado, I = res.indicadores, A = res.anos, nar = b.narrativa || {}, atx = b.tipo === 'atlantyx';
+  const res = b.resultado, I = res.indicadores, A = res.anos, nar = b.narrativa || {}, atx = b.tipo === 'atlantyx', vivo = atx && !b.id;
   const kpi = (cls, l, val, s) => '<div class="kpi ' + cls + '"><div class="kl">' + l + '</div><div class="kv" style="font-size:18px;">' + val + '</div><div class="ks">' + (s || '') + '</div></div>';
   const tirOk = I.tir_anual != null && I.tir_anual > I.taxa_desconto_anual;
   const linhasDRE = [['Receita bruta', 'receita_bruta', 1], ['(-) Deduções / impostos', 'deducoes'], ['= Receita líquida', 'receita_liquida', 1], ['(-) Custos variáveis', 'custos_variaveis'], ['= Lucro bruto', 'lucro_bruto', 1],
@@ -8744,14 +8779,22 @@ function bpRender() {
   const lista = (t, arr, cor) => Array.isArray(arr) && arr.length ? '<div style="margin-bottom:10px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:' + cor + ';margin-bottom:4px;">' + t + '</div>' + arr.map(x => '<div style="font-size:11px;padding:2px 0;">• ' + _bpE(x) + '</div>').join('') + '</div>' : '';
   const just = nar.justificativas ? Object.entries(nar.justificativas).map(([k, t]) => '<div style="font-size:11px;margin-bottom:5px;"><b style="text-transform:capitalize;">' + _bpE(k) + ':</b> ' + _bpE(t) + '</div>').join('') : '';
   v.innerHTML = ''
-    + '<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">' + _bpE(b.titulo) + '</div>'
+    + '<div class="panel" style="margin-bottom:12px;"><div class="ph" style="flex-wrap:wrap;gap:6px;">' + (vivo ? '<div class="pt">' + _bpE(b.titulo) + '</div>'
+      : '<input class="fi" style="font-weight:700;font-size:13px;max-width:420px;flex:1;min-width:200px;padding:5px 8px;" value="' + _bpE(b.titulo) + '" title="Título do plano — clique para editar" onchange="_bpAtual.titulo=this.value;bpMarcarSujo()"/>')
     + '<span class="tag ' + (I.viavel ? 'live' : 'hot') + '">' + (I.viavel ? 'VIÁVEL' : 'NÃO VIÁVEL') + '</span>'
     + '<div style="flex:1;"></div>'
     + '<button class="btn btn-gn" style="font-size:10px;" onclick="bpExcel()">&#11015; Baixar Excel</button>'
-    + (atx ? '' : '<button class="btn btn-g" id="bpBtnRecalc" style="font-size:10px;margin-left:5px;" onclick="bpRecalcular()">&#8635; Recalcular</button><button class="btn btn-p" style="font-size:10px;margin-left:5px;" onclick="bpSalvar()">&#10003; Salvar</button>')
+    + (vivo ? '<button class="btn btn-p" style="font-size:10px;margin-left:5px;" onclick="bpAtlantyxEditavel()" title="Congela os números de hoje num plano salvo que você pode editar">&#9998; Salvar como plano editável</button>'
+      : '<button class="btn btn-g" id="bpBtnRecalc" style="font-size:10px;margin-left:5px;" onclick="bpRecalcular()">&#8635; Recalcular</button>'
+      + '<button class="btn btn-p" style="font-size:10px;margin-left:5px;" onclick="bpSalvar()">&#10003; Salvar</button>'
+      + '<button class="btn btn-g" style="font-size:10px;margin-left:5px;" onclick="bpSalvar(true)" title="Grava uma nova versão sem alterar este plano">&#10697; Salvar como cópia</button>'
+      + '<button class="btn btn-g" style="font-size:10px;margin-left:5px;" onclick="document.getElementById(\'bpImpFile\').click()" title="Traz para o sistema as premissas alteradas no Excel baixado">&#11014; Importar Excel editado</button>'
+      + '<input type="file" id="bpImpFile" accept=".xlsx" style="display:none;" onchange="bpImportarExcel(this)"/>')
     + '</div><div class="pb">'
-    + (b.ideia?.id || b.ideia_id ? '<div style="font-size:10px;color:var(--t2);margin-bottom:8px;">&#128279; Vinculado à ideia do pipeline · atualizado ' + (b.atualizado_em ? new Date(b.atualizado_em).toLocaleString('pt-BR') : 'agora') + (_bpSujo ? ' · <span style="color:var(--gold);">alterações não salvas</span>' : '') + '</div>' : '')
-    + (atx ? '<div style="font-size:10px;color:var(--t2);margin-bottom:8px;">Recalculado com os dados do sistema em ' + new Date(b.atualizado_em || Date.now()).toLocaleString('pt-BR') + '</div>' : '')
+    + (vivo ? '' : '<div style="font-size:10px;color:var(--t2);margin-bottom:8px;">' + (b.id ? '&#128190; Salvo' + (b.atualizado_em ? ' em ' + new Date(b.atualizado_em).toLocaleString('pt-BR') : '') : '<span style="color:var(--gold);">Ainda não salvo</span>')
+      + ((b.ideia?.id || b.ideia_id) && !b.ideia?._copia ? ' · &#128279; vinculado à ideia do pipeline' : '') + (atx ? ' · plano Atlantyx congelado (edite livremente)' : '')
+      + ' <span id="bpSujoTag" style="color:var(--gold);font-weight:600;">' + (_bpSujo ? '· alterações não salvas' : '') + '</span></div>')
+    + (vivo ? '<div style="font-size:10px;color:var(--t2);margin-bottom:8px;">Recalculado com os dados do sistema em ' + new Date(b.atualizado_em || Date.now()).toLocaleString('pt-BR') + '</div>' : '')
     + '<div class="kg k4" style="margin-bottom:10px;">'
     + kpi(tirOk ? 'gn' : 'or', 'TIR anual', I.tir_anual == null ? 'n/a' : _bpP(I.tir_anual), I.tir_anual == null ? (atx ? 'informe o valor base p/ TIR' : 'sem troca de sinal') : 'TMA ' + _bpP(I.taxa_desconto_anual))
     + kpi(I.vpl > 0 ? 'gn' : 'rd', 'VPL (36 meses)', _bpK(I.vpl), I.vpl_com_perpetuidade != null ? 'c/ perpetuidade ' + _bpK(I.vpl_com_perpetuidade) : '')
@@ -8765,12 +8808,13 @@ function bpRender() {
     + '</div>'
     + '<div style="background:var(--bg4);border-radius:8px;padding:8px;margin-bottom:10px;">' + _bpGrafico(res) + '</div>'
     + cen + '</div></div>'
-    + (nar.resumo_executivo ? '<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">Resumo executivo</div></div><div class="pb"><div style="font-size:12px;line-height:1.7;margin-bottom:8px;">' + _bpE(nar.resumo_executivo) + '</div>'
+    + (!vivo ? _bpNarrativaEditor(nar) : '')
+    + (vivo && nar.resumo_executivo ? '<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">Resumo executivo</div></div><div class="pb"><div style="font-size:12px;line-height:1.7;margin-bottom:8px;">' + _bpE(nar.resumo_executivo) + '</div>'
       + (nar.modelo_negocio ? '<div style="font-size:11px;color:var(--t2);margin-bottom:10px;"><b>Modelo de negócio:</b> ' + _bpE(nar.modelo_negocio) + '</div>' : '')
       + lista('Riscos', nar.riscos, 'var(--red)') + lista('Marcos', nar.marcos, 'var(--blue)') + lista('KPIs de acompanhamento', nar.kpis_acompanhamento, 'var(--green)') + '</div></div>' : '')
     + '<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">DRE — por ano</div></div><div class="pb">' + tabela(linhasDRE, true) + '</div></div>'
     + '<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">Fluxo de caixa — por ano</div><span class="tag off">mês a mês no Excel</span></div><div class="pb">' + tabela(linhasFC, true) + '</div></div>'
-    + (atx ? '' : '<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">Premissas — edite e clique em Recalcular</div></div><div class="pb">' + _bpEditor(b.premissas) + (just ? '<div style="border-top:1px solid var(--bd);padding-top:8px;margin-top:4px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:5px;">Justificativas da IA</div>' + just + '</div>' : '') + '</div></div>');
+    + (vivo ? '' : '<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">Premissas — edite e clique em Recalcular</div></div><div class="pb">' + _bpEditor(b.premissas) + (just ? '<div style="border-top:1px solid var(--bd);padding-top:8px;margin-top:4px;"><div style="font-family:var(--M);font-size:8px;text-transform:uppercase;color:var(--t2);margin-bottom:5px;">Justificativas da IA</div>' + just + '</div>' : '') + '</div></div>');
 }
 
 // ── Atlantyx dinâmico ───────────────────────────────────────────────────
@@ -24771,7 +24815,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.06] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.07] JavaScript carregado com sucesso', 'color: #22d3a3; font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -24787,7 +24831,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.06';
+window.__ATX_BUILD_ID__ = 'ATX-v3.07';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
