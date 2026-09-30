@@ -209,6 +209,16 @@ Para CADA edital, devolva:
   return out.length ? out : null;
 }
 
+// v3.12: nome oficial do edital (como aparece no PNCP/portal) e link de acesso sempre presente
+function nomeEdital(e) {
+  const t = String(e.titulo_original || '').trim();
+  if (t && /\d/.test(t)) return t; // ex.: "Pregão Eletrônico nº 90007/2026" vindo do portal
+  const num = e.numero_compra ? ' nº ' + e.numero_compra : (e.seq && e.ano ? ' nº ' + Number(e.seq) + '/' + e.ano : '');
+  return ((e.modalidade || 'Edital') + num + (e.orgao ? ' — ' + e.orgao : '')).trim();
+}
+function linkAcesso(e) {
+  return e.link_pncp || e.link_origem || (e.numero_pncp ? `${PNCP}/app/editais?q=${encodeURIComponent(e.numero_pncp)}` : `${PNCP}/app/editais?q=${encodeURIComponent(String(e.objeto || '').substring(0, 80))}&status=recebendo_proposta`);
+}
 function formatarSaida(e) {
   const brl = v => v == null || isNaN(Number(v)) ? 'Não informado no edital' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const data = v => { if (!v) return 'Não informado'; const d = new Date(v); return isNaN(d) ? String(v) : d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
@@ -219,14 +229,15 @@ function formatarSaida(e) {
     modalidade: e.modalidade || '', numero_compra: e.numero_compra || '', processo: e.processo || '', situacao: e.situacao || '',
     compatibilidade: e.compatibilidade, urgencia: e.urgencia, justificativa: e.justificativa, decisor_provavel: e.decisor_provavel, acoes_sugeridas: e.acoes_sugeridas || [],
     // ORIGEM
-    fonte: e.fonte, portal: 'PNCP', numero_pncp: e.numero_pncp || '', link_pncp: e.link_pncp, link_origem: e.link_origem || null,
+    nome_edital: nomeEdital(e), link_acesso: linkAcesso(e),
+    fonte: e.fonte, portal: 'PNCP', numero_pncp: e.numero_pncp || '', link_pncp: e.link_pncp || linkAcesso(e), link_origem: e.link_origem || null,
     verificado: e.verificado === true, palavra_chave: e.keyword || '', publicado_em: e.publicado_em ? data(e.publicado_em) : null,
   };
 }
 
 async function notificarWhatsApp(rfp) {
   if (!process.env.FUNDADOR_WHATSAPP || !process.env.ZAPI_INSTANCE) return;
-  const msg = `[S2-04 · Edital real — PNCP]\n\n${rfp.empresa} (${rfp.uf})\n${rfp.titulo}\n\nValor estimado: ${rfp.valor}\nPropostas até: ${rfp.prazo_submissao}\nAderência: ${rfp.compatibilidade}%\nNº PNCP: ${rfp.numero_pncp}\n\n${rfp.justificativa}\n\nEdital: ${rfp.link_pncp}${rfp.link_origem ? '\nEnvio da proposta: ' + rfp.link_origem : ''}`;
+  const msg = `[S2-04 · Edital real — PNCP]\n\n${rfp.nome_edital}\n${rfp.empresa} (${rfp.uf})\n${rfp.titulo}\n\nValor estimado: ${rfp.valor}\nPropostas até: ${rfp.prazo_submissao}\nAderência: ${rfp.compatibilidade}%\nNº PNCP: ${rfp.numero_pncp}\n\n${rfp.justificativa}\n\nAcesso ao edital: ${rfp.link_acesso}${rfp.link_origem ? '\nEnvio da proposta: ' + rfp.link_origem : ''}`;
   try {
     await fetch(`https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-text`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'Client-Token': process.env.ZAPI_CLIENT_TOKEN },
