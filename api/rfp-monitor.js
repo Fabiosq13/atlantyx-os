@@ -20,6 +20,14 @@ const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 const PNCP = 'https://pncp.gov.br';
 const KEYWORDS_PADRAO = ['business intelligence', 'inteligência artificial', 'ciência de dados', 'engenharia de dados', 'data warehouse', 'analytics', 'painéis gerenciais', 'integração de dados', 'plataforma de dados', 'big data', 'power bi', 'machine learning'];
 
+// v3.14: ORÇAMENTO DE TEMPO. O PNCP é lento; somando consultas + IA + conferência a função
+// passava do limite da Vercel e a tela recebia "sem resposta". Agora tudo respeita um prazo total
+// e, se algo não couber, a resposta sai com o que já foi obtido (nunca inventado).
+let _prazo = 0;
+const restante = () => _prazo - Date.now();
+async function lerCache() { try { const { neon } = await import('@neondatabase/serverless'); const sql = neon(process.env.DATABASE_URL); const r = await sql`SELECT value, updated_at FROM kv_store WHERE key = 'rfp:ultima_varredura' LIMIT 1`; if (!r[0]) return null; const v = typeof r[0].value === 'string' ? JSON.parse(r[0].value) : r[0].value; return { ...v, cache_em: r[0].updated_at }; } catch (_) { return null; } }
+async function gravarCache(v) { try { const { neon } = await import('@neondatabase/serverless'); const sql = neon(process.env.DATABASE_URL); await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('rfp:ultima_varredura', ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {} }
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -28,6 +36,9 @@ export default async function handler(req, res) {
 
   try {
     const body = req.method === 'POST' ? (req.body || {}) : {};
+    // v3.14: a tela pode pedir só a última varredura guardada (abre instantâneo)
+    if (body.somente_cache) { const c = await lerCache(); return res.status(200).json(c ? { success: true, do_cache: true, ...c } : { success: true, do_cache: true, rfps: [], aviso: 'Ainda não há varredura guardada — clique em "Varrer RFPs Agora".' }); }
+    _prazo = Date.now() + 48000;
     const isCron = !!(process.env.CRON_SECRET && req.headers.authorization === `Bearer ${process.env.CRON_SECRET}`);
     const keywords = (Array.isArray(body.palavras_chave) && body.palavras_chave.length ? body.palavras_chave : KEYWORDS_PADRAO).map(String);
 
@@ -41,6 +52,8 @@ export default async function handler(req, res) {
 
     if (!todos.length) {
       const falhou = !fontes.busca_pncp.ok && !fontes.api_consulta_pncp.ok;
+      if (falhou) { const c = await lerCache(); if (c?.rfps?.length) return res.status(200).json({ ...c, success: true, do_cache: true, fontes,
+        aviso: 'O PNCP não respondeu agora (' + [fontes.busca_pncp.erro, fontes.api_consulta_pncp.erro].filter(Boolean).join(' · ') + '). Mostrando a última varredura bem-sucedida, de ' + new Date(c.cache_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + '.' }); }
       return res.status(200).json({
         success: true, rfps: [], fontes, total_encontrado: 0, total_relevante: 0,
         data_consulta: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
@@ -51,28 +64,30 @@ export default async function handler(req, res) {
     }
 
     // 2. Pré-seleção por aderência de palavras-chave e prazo
-    const pre = todos.map(e => ({ ...e, _score: scoreKeywords(e, keywords) })).sort((a, b) => b._score - a._score || (a.prazo || '').localeCompare(b.prazo || '')).slice(0, 25);
+    const pre = todos.map(e => ({ ...e, _score: scoreKeywords(e, keywords) })).sort((a, b) => b._score - a._score || (a.prazo || '').localeCompare(b.prazo || '')).slice(0, 18);
 
     // 3. IA avalia (sem criar dados)
-    let avaliados = await avaliarComClaude(pre, body.setor).catch(e => { console.warn('[S2-04] avaliação IA:', e.message); return null; });
+    let avaliados = restante() > 14000 ? await avaliarComClaude(pre, body.setor).catch(e => { console.warn('[S2-04] avaliação IA:', e.message); return null; }) : null;
     if (!avaliados) avaliados = pre.map(e => ({ ...e, compatibilidade: Math.min(90, 40 + e._score * 10), urgencia: urgenciaPorPrazo(e.prazo), justificativa: 'Selecionado por palavra-chave (análise por IA indisponível no momento).', acoes_sugeridas: [] }));
     let relevantes = avaliados.filter(e => e.compatibilidade >= 40).sort((a, b) => b.compatibilidade - a.compatibilidade).slice(0, 12);
     if (!relevantes.length) relevantes = avaliados.slice(0, 3);
 
     // 4. Conferência na API oficial (existência + link do portal de origem)
-    await Promise.all(relevantes.map(conferirNaApiOficial));
+    if (restante() > 5000) await Promise.all(relevantes.map(conferirNaApiOficial));
 
     const rfps = relevantes.map(formatarSaida);
 
     // 5. WhatsApp só para editais reais e aderentes (cron)
     if (isCron && process.env.ZAPI_INSTANCE) for (const r of rfps.filter(r => r.compatibilidade >= 75).slice(0, 3)) await notificarWhatsApp(r);
 
-    return res.status(200).json({
+    const saida = {
       success: true,
       fonte: 'PNCP — Portal Nacional de Contratações Públicas (dados reais)',
       data_consulta: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
       fontes, total_encontrado: todos.length, total_relevante: rfps.length, rfps,
-    });
+    };
+    if (rfps.length) await gravarCache(saida);
+    return res.status(200).json(saida);
   } catch (error) {
     console.error('[ERRO rfp-monitor]', error.message);
     return res.status(500).json({ success: false, error: error.message });
@@ -83,14 +98,16 @@ export default async function handler(req, res) {
 const inicioDoDia = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 const ymd = d => d.toISOString().slice(0, 10).replace(/-/g, '');
 const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-async function getJSON(url, ms = 12000) {
-  const ac = new AbortController(); const t = setTimeout(() => ac.abort(), ms);
+async function getJSON(url, ms = 9000) {
+  const lim = Math.max(1500, Math.min(ms, (_prazo ? restante() - 1000 : ms)));
+  const ac = new AbortController(); const t = setTimeout(() => ac.abort(), lim);
   try {
     const r = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'Atlantyx-OS/1.0 (monitor de editais)' }, signal: ac.signal });
     if (r.status === 204) return null;
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return await r.json();
-  } finally { clearTimeout(t); }
+  } catch (e) { if (e.name === 'AbortError') throw new Error('PNCP não respondeu em ' + Math.round(lim / 1000) + 's'); throw e; }
+  finally { clearTimeout(t); }
 }
 // "00394445000166-1-000123/2025" → { cnpj, ano, seq }
 function partesControle(num) {
@@ -112,7 +129,7 @@ function urgenciaPorPrazo(p) { if (!p) return 'Media'; const d = (new Date(p) - 
 // ── Fonte 1: busca do portal PNCP (palavra-chave) ─────────────────────────
 async function buscarPNCPSearch(keywords) {
   const out = []; let erros = 0, ultimoErro = null;
-  await Promise.all(keywords.slice(0, 8).map(async kw => {
+  await Promise.all(keywords.slice(0, 6).map(async kw => {
     try {
       const url = `${PNCP}/api/search/?q=${encodeURIComponent(kw)}&tipos_documento=edital&ordenacao=-data&pagina=1&tam_pagina=20&status=recebendo_proposta`;
       const d = await getJSON(url);
@@ -135,10 +152,10 @@ async function buscarPNCPSearch(keywords) {
 // ── Fonte 2: API oficial de consulta (propostas em aberto) + filtro local ─
 async function buscarPNCPConsulta(keywords) {
   const dataFinal = ymd(new Date(Date.now() + 120 * 86400000));
-  const modalidades = [6, 4, 2, 10, 5, 7, 11, 12]; // pregão/concorrência eletr., diálogo competitivo, manifestação de interesse, presenciais, pré-qualificação, credenciamento
+  const modalidades = [6, 4, 2, 10]; // pregão/concorrência eletr., diálogo competitivo, manifestação de interesse, presenciais, pré-qualificação, credenciamento
   const alvo = keywords.map(norm);
   const out = []; let erros = 0, ultimoErro = null;
-  await Promise.all(modalidades.flatMap(mod => [1, 2, 3].map(async pagina => {
+  await Promise.all(modalidades.flatMap(mod => [1, 2].map(async pagina => {
     if (pagina > 1 && ![6, 4].includes(mod)) return;
     try {
       const d = await getJSON(`${PNCP}/api/consulta/v1/contratacoes/proposta?dataFinal=${dataFinal}&codigoModalidadeContratacao=${mod}&pagina=${pagina}&tamanhoPagina=50`);
@@ -154,7 +171,7 @@ async function buscarPNCPConsulta(keywords) {
       }
     } catch (e) { erros++; ultimoErro = e.message; }
   })));
-  if (!out.length && erros >= 8) throw new Error('API de consulta: ' + ultimoErro);
+  if (!out.length && erros >= 4) throw new Error('API de consulta: ' + ultimoErro);
   return out;
 }
 
@@ -162,7 +179,7 @@ async function buscarPNCPConsulta(keywords) {
 async function conferirNaApiOficial(e) {
   if (!e.cnpj || !e.ano || !e.seq) { e.verificado = false; return; }
   try {
-    const c = await getJSON(`${PNCP}/api/consulta/v1/orgaos/${e.cnpj}/compras/${e.ano}/${Number(e.seq)}`, 8000);
+    const c = await getJSON(`${PNCP}/api/consulta/v1/orgaos/${e.cnpj}/compras/${e.ano}/${Number(e.seq)}`, 5000);
     if (!c) { e.verificado = false; return; }
     e.verificado = true;
     e.link_origem = e.link_origem || c.linkSistemaOrigem || null;
@@ -179,10 +196,11 @@ async function conferirNaApiOficial(e) {
 // ── IA: só avalia aderência (não cria dados) ──────────────────────────────
 async function avaliarComClaude(lista, setor) {
   if (!process.env.ANTHROPIC_API_KEY) return null;
-  const itens = lista.map((e, i) => ({ index: i, orgao: e.orgao, uf: e.uf, modalidade: e.modalidade, valor_estimado: e.valor, prazo_propostas: e.prazo, objeto: String(e.objeto).substring(0, 700) }));
+  const itens = lista.map((e, i) => ({ index: i, orgao: e.orgao, uf: e.uf, modalidade: e.modalidade, valor_estimado: e.valor, prazo_propostas: e.prazo, objeto: String(e.objeto).substring(0, 400) }));
+  const acIA = new AbortController(); const tIA = setTimeout(() => acIA.abort(), Math.max(5000, restante() - 7000));
   const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: MODEL, max_tokens: 4000,
+    method: 'POST', signal: acIA.signal, headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: MODEL, max_tokens: 2500,
       system: `Você é o Agente S2-04 da Atlantyx (BI, Engenharia de Dados, Analytics, IA, Dashboards, Integração de Sistemas; ticket mínimo R$200 mil; clientes de grande porte).
 Você recebe editais REAIS do PNCP. Sua tarefa é SOMENTE avaliar a aderência de cada um à Atlantyx.
 Regras: não invente nem altere órgão, valor, prazo, número ou link — esses dados vêm da fonte oficial. Não crie editais novos. Use apenas os índices recebidos.
@@ -195,7 +213,7 @@ Para CADA edital, devolva:
 {"index": n, "compatibilidade": 0-100, "urgencia": "Alta|Media|Baixa", "titulo": "objeto resumido em uma linha (fiel ao texto)", "justificativa": "por que é ou não aderente, citando o objeto", "decisor_provavel": "cargo que normalmente conduz este tipo de contratação", "acoes_sugeridas": ["ação 1", "ação 2"]}` }],
     }),
   });
-  const d = await r.json();
+  const d = await r.json(); clearTimeout(tIA);
   if (!r.ok) throw new Error(d.error?.message || 'Erro Claude');
   const text = (d.content || []).map(c => c.text || '').join('').replace(/```json|```/g, '').trim();
   let arr; try { arr = JSON.parse(text); } catch (_) { const m = text.match(/\[[\s\S]*\]/); arr = m ? JSON.parse(m[0]) : null; }

@@ -72,7 +72,7 @@
       "maxDuration": 120
     },
     "api/rfp-monitor.js": {
-      "maxDuration": 60
+      "maxDuration": 90
     }
   },
   "crons": [
