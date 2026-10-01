@@ -6895,9 +6895,10 @@ function renderKanban() {
           ${_kbRedes(p)}
           <div style="font-size:10px;color:var(--t2);margin-top:4px;">${({ 'Campanha Completa': 'Campanha', 'Aprovada': 'Campanha', 'S2-EmailMarketing': 'E-mail marketing (avulso)', 'S2-Designer': 'Imagem avulsa' })[p.agente] || p.agente}${_kbFormatos(p)}</div>
           ${p.data?`<div style="font-family:var(--M);font-size:9px;color:var(--t3);margin-top:3px;">🕓 ${p.data}</div>`:''}
-          ${(() => { const a = dataAgendadaDaPeca(p); const pubs = pubsDaPeca(p); return a ? `<div style="font-family:var(--M);font-size:8.5px;color:var(--gold);margin-top:2px;">📅 ${fmtDH(a)}${pubs.length ? ' · ' + [...new Set(pubs.map(x=>x.rede))].map(r=>({linkedin:'in',instagram:'ig',facebook:'fb',whatsapp:'wa',email:'@'}[r]||r)).join('/') : ''}</div>` : (col==='Agendado' ? '<div style="font-size:9px;color:var(--red);margin-top:2px;">⚠ sem publicação registrada</div>' : ''); })()}
+          ${(() => { const a = dataAgendadaDaPeca(p); const pubs = pubsDaPeca(p); return a ? `<div style="font-family:var(--M);font-size:8.5px;color:var(--gold);margin-top:2px;cursor:pointer;text-decoration:underline dotted;" title="Clique para mudar a data de publicação" onclick="abrirDatasPub('${p.campanhaId || ''}','${p.id}',event)">📅 ${fmtDH(a)}${pubs.length ? ' · ' + [...new Set(pubs.map(x=>x.rede))].map(r=>({linkedin:'in',instagram:'ig',facebook:'fb',whatsapp:'wa',email:'@'}[r]||r)).join('/') : ''}</div>` : (col==='Agendado' ? '<div style="font-size:9px;color:var(--red);margin-top:2px;">⚠ sem publicação registrada</div>' : ''); })()}
           <div style="display:flex;gap:4px;margin-top:6px;">
             <button class="btn" style="flex:1;font-size:8.5px;padding:2px 5px;color:var(--blue);" onclick="event.stopPropagation();editarPecaDoKanban('${p.id}')" title="Abrir campanha completa para edição">✎ Editar</button>
+            <button class="btn" style="font-size:8.5px;padding:2px 7px;" onclick="abrirDatasPub('${p.campanhaId || ''}','${p.id}',event)" title="Datas de publicação">📅</button>
             <button class="btn" style="font-size:8.5px;padding:2px 7px;color:var(--red);" onclick="excluirPecaKanban('${p.id}',event)" title="Excluir">🗑</button>
           </div>
           ${col==='Revisão'?`<div style="display:flex;gap:4px;margin-top:4px;"><button class="btn btn-gn" style="flex:1;font-size:8.5px;padding:2px 5px;" onclick="aprovarPeca('${p.id}',event)">OK</button><button class="btn btn-rd" style="flex:1;font-size:8.5px;padding:2px 5px;" onclick="recusarPeca('${p.id}',event)">x</button></div>`:''}
@@ -12401,6 +12402,7 @@ function renderizarListaCampanhas(campanhas) {
 }
 
 function filtrarCampanhas() {
+  if (!window._pubCarregadasLista && typeof carregarPublicacoes === 'function') { window._pubCarregadasLista = true; carregarPublicacoes().then(() => { try { filtrarCampanhas(); } catch (_) {} }).catch(() => {}); } // v3.41: datas no card
   try {
     const busca  = (document.getElementById('campBusca')?.value || '').toLowerCase();
     const status = document.getElementById('campFiltroStatus')?.value || '';
@@ -12462,7 +12464,8 @@ function filtrarCampanhas() {
           + '<span style="font-size:9px;padding:2px 5px;border-radius:3px;white-space:nowrap;color:'+_corTxt(statusCor)+';border:1px solid '+statusCor+';">'+(camp.status||'rascunho')+'</span>'
           + '</div>'
           + (canal||dt ? '<div style="font-size:10px;color:var(--t2);margin-bottom:3px;">'+[canal,dt].filter(Boolean).join(' · ')+'</div>' : '')
-          + '<div style="font-size:10px;color:var(--t2);margin-bottom:5px;">&#128197; '+periodoTxt+'</div>'
+          + '<div style="font-size:10px;color:var(--t2);margin-bottom:3px;">&#128197; '+periodoTxt+'</div>'
+          + (() => { const pr = _proximaPub(campId); return '<div style="font-size:10px;margin-bottom:5px;"><span style="cursor:pointer;color:' + (pr ? 'var(--gold)' : 'var(--t3)') + ';text-decoration:underline dotted;" title="Ver e mudar as datas de publicação" onclick="abrirDatasPub(\'' + campId + '\',null,event)">🚀 ' + (pr ? 'publica ' + fmtDH(pr.quando) + ' · ' + pr.redes.join('/') : 'sem publicação agendada') + ' ✎</span></div>'; })()
           + '<div style="margin-bottom:6px;display:flex;gap:3px;flex-wrap:wrap;">'+redesBadges+'</div>'
           + (headline ? '<div style="font-size:11px;font-weight:600;color:var(--blue);margin-bottom:3px;">'+headline+'</div>' : '')
           + (corpo ? '<div style="font-size:10px;color:var(--t2);line-height:1.4;">'+corpo+(corpo.length>=80?'...':'')+'</div>' : '')
@@ -25349,6 +25352,52 @@ async function reagendarPublicacao(pubId, novaData) {
   return true;
 }
 
+// v3.41: datas de publicação editáveis direto no card (Kanban e Minhas campanhas)
+function _gruposPub(pubs) {
+  const grupos = [], vistos = {};
+  (pubs || []).forEach(p => { const k = p.metricool_id || p.id; if (vistos[k]) { vistos[k].redes.push(p.rede); return; }
+    vistos[k] = { id: p.id, titulo: p.titulo, redes: [p.rede], quando: p.agendado_para || p.data, publicado: p.status === 'publicado' || (new Date(p.agendado_para || p.data) < new Date() && !!p.metricool_id) }; grupos.push(vistos[k]); });
+  return grupos.sort((a, b) => new Date(a.quando) - new Date(b.quando));
+}
+function _pubsDoCard(campanhaId, pecaId) {
+  const todas = typeof _publicacoes !== 'undefined' ? (_publicacoes || []) : [];
+  if (campanhaId) return todas.filter(p => p.campanhaId === campanhaId);
+  const pc = (typeof kanbanPecas !== 'undefined' ? kanbanPecas : []).find(x => x.id === pecaId); return pc ? pubsDaPeca(pc) : [];
+}
+function _proximaPub(campanhaId) { const g = _gruposPub(_pubsDoCard(campanhaId)).filter(x => !x.publicado); return g[0] || null; }
+async function abrirDatasPub(campanhaId, pecaId, ev) {
+  if (ev) { ev.stopPropagation(); ev.preventDefault(); }
+  try { if (typeof carregarPublicacoes === 'function' && !(_publicacoes || []).length) await carregarPublicacoes(); } catch (_) {}
+  const camp = campanhaId ? ((_todasCampanhas || []).find(c => c.id === campanhaId) || (campAtiva?.id === campanhaId ? campAtiva : null)) : null;
+  let m = document.getElementById('datasPubModal'); if (m) m.remove();
+  m = document.createElement('div'); m.id = 'datasPubModal';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9500;display:flex;align-items:flex-start;justify-content:center;padding:60px 12px;overflow-y:auto;';
+  m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+  document.body.appendChild(m);
+  const iso = d => { const x = new Date(d); return isNaN(x) ? '' : new Date(x.getTime() - x.getTimezoneOffset() * 60000).toISOString().substring(0, 16); };
+  const desenhar = () => {
+    const grupos = _gruposPub(_pubsDoCard(campanhaId, pecaId));
+    const e = v => String(v ?? '').replace(/</g, '&lt;');
+    m.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:12px;width:min(620px,100%);box-shadow:0 20px 60px rgba(0,0,0,.5);">'
+      + '<div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--bd);"><div style="flex:1;"><b style="font-size:13px;">📅 Datas de publicação</b><div style="font-size:10.5px;color:var(--t2);">' + e(camp?.nome || '') + ' · mudar aqui também muda no Metricool</div></div><button class="btn btn-g" style="font-size:12px;padding:3px 9px;" onclick="document.getElementById(\'datasPubModal\').remove()">✕</button></div>'
+      + '<div style="padding:10px 16px 14px;">'
+      + (grupos.length ? grupos.map(g => '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid var(--bd);font-size:11.5px;">'
+          + '<span style="flex:1;min-width:170px;">' + e(g.titulo || 'Publicação') + ' <span style="color:var(--t3);">· ' + e(g.redes.join(', ')) + '</span></span>'
+          + (g.publicado ? '<span style="color:var(--green);">publicado em ' + new Date(g.quando).toLocaleString('pt-BR') + '</span>'
+            : '<input type="datetime-local" class="fi" style="width:auto;font-size:11px;padding:4px 6px;" id="dpm_' + g.id + '" value="' + iso(g.quando) + '"/>'
+            + '<button class="btn btn-p" style="font-size:10px;padding:4px 10px;" data-id="' + g.id + '">Salvar</button>')
+          + '</div>').join('')
+        : '<div style="font-size:11.5px;color:var(--t2);padding:8px 0;">Nenhuma publicação agendada para esta campanha ainda. Aprove a campanha e use 🚀 Publicar no Kanban para agendar.</div>')
+      + '</div></div>';
+    m.querySelectorAll('button[data-id]').forEach(b => b.onclick = async () => {
+      const id = b.dataset.id; b.disabled = true; b.textContent = '...';
+      const ok = await reagendarPublicacao(id, document.getElementById('dpm_' + id).value);
+      if (ok) { desenhar(); try { filtrarCampanhas(); } catch (_) {} } else { b.disabled = false; b.textContent = 'Salvar'; }
+    });
+  };
+  desenhar();
+}
+
 // v3.34: DATAS DE PUBLICAÇÃO dentro da edição da campanha — antes só dava para mudar pelo Kanban/calendário
 function _renderDatasPublicacao() {
   const box = document.getElementById('campPubDatas'); if (!box) return;
@@ -26575,7 +26624,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.40] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.41] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -26591,7 +26640,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.40';
+window.__ATX_BUILD_ID__ = 'ATX-v3.41';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
