@@ -365,8 +365,39 @@ Devolva:
 }
 
 // ── v3.37: CONVERSA COM A IA sobre uma ideia (dados + análise + BP + documentos) ──
-async function chatIdeia({ ideia = {}, analise = null, proposta = null, bp = null, docs_texto = [], mensagens = [] }) {
+// v3.38: busca no banco TODO o material registrado no card da ideia (dados, análise, BP, documentos)
+async function materialDaIdeia(id) {
+  if (!id || !process.env.DATABASE_URL) return null;
+  const { neon } = await import('@neondatabase/serverless');
+  const sql = neon(process.env.DATABASE_URL);
+  const parse = v => { if (v == null) return null; if (typeof v === 'string') { try { return JSON.parse(v); } catch (_) { return null; } } return v; };
+  const out = { ideia: null, docs: [], bp: null };
+  try { const r = await sql`SELECT data FROM ideias WHERE id = ${String(id)} LIMIT 1`; out.ideia = parse(r[0]?.data); } catch (_) {}
+  try { const r = await sql`SELECT value FROM kv_store WHERE key = ${'atx:ideia:docs:' + id} LIMIT 1`; const d = parse(r[0]?.value); if (Array.isArray(d)) out.docs = d; } catch (_) {}
+  const bpId = out.ideia?.business_plan?.id;
+  try {
+    const r = bpId ? await sql`SELECT premissas, narrativa, resumo FROM business_plans WHERE id = ${bpId} LIMIT 1`
+                   : await sql`SELECT premissas, narrativa, resumo FROM business_plans WHERE ideia_id = ${String(id)} ORDER BY atualizado_em DESC LIMIT 1`;
+    if (r[0]) out.bp = { resumo: parse(r[0].resumo), premissas: parse(r[0].premissas), justificativas: parse(r[0].narrativa)?.justificativas || null, modelo_negocio: parse(r[0].narrativa)?.modelo_negocio || null, marcos: parse(r[0].narrativa)?.marcos || null };
+  } catch (_) {}
+  if (!out.bp && bpId) { try { const r = await sql`SELECT value FROM kv_store WHERE key = ${'bp:' + bpId} LIMIT 1`; const v = parse(r[0]?.value); if (v) out.bp = { resumo: v.resumo, premissas: v.premissas, justificativas: v.narrativa?.justificativas || null }; } catch (_) {} }
+  return out;
+}
+
+async function chatIdeia({ ideia_id = null, ideia = {}, analise = null, proposta = null, bp = null, docs_texto = [], mensagens = [] }) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
+  // junta o que está salvo no card (banco) com o que está na tela (edições ainda não salvas têm prioridade)
+  const mat = await materialDaIdeia(ideia_id).catch(() => null);
+  if (mat?.ideia) {
+    const salvo = mat.ideia;
+    ideia = { ...salvo, ...Object.fromEntries(Object.entries(ideia || {}).filter(([, v]) => v != null && v !== '')) };
+    analise = analise || salvo.analise_completa || salvo.analise || null;
+    proposta = proposta || salvo.proposta || null;
+    if (!ideia.resultados_s1 && salvo.resultados_s1) ideia.resultados_s1 = salvo.resultados_s1;
+  }
+  if (mat?.bp && (!bp || !bp.premissas)) bp = mat.bp;
+  const nomes = new Set((docs_texto || []).map(d => d && d.nome));
+  docs_texto = (docs_texto || []).concat((mat?.docs || []).filter(d => d && !nomes.has(d.nome)));
   const corta = (v, n) => String(v ?? '').substring(0, n);
   const js = (v, n) => v ? corta(JSON.stringify(v), n) : '';
   // documentos: até ~140 mil caracteres no total, divididos entre os arquivos
@@ -414,7 +445,7 @@ Estilo: português do Brasil, direto, de executivo para executivo. Use parágraf
   if (!r.ok) throw new Error(d?.error?.message || 'Erro Claude API ' + r.status);
   const resposta = (d.content || []).map(c => c.text || '').join('').trim();
   if (!resposta) throw new Error('A IA não respondeu. Tente de novo.');
-  return { success: true, resposta, docs_usados: docs.map(x => x.nome) };
+  return { success: true, resposta, docs_usados: docs.map(x => x.nome), material: { ideia: !!ideia.titulo, analise: !!analise, bp: !!bp, docs: docs.length } };
 }
 
 // ── S1-03: PESQUISA DE MERCADO ───────────────────────────────────────────────
