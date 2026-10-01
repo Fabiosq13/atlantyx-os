@@ -151,11 +151,18 @@ async function handler(req, res) {
   if (req.method === 'GET' && url.searchParams.get('proxy')) {
     const target = url.searchParams.get('proxy');
     if (!/^https?:\/\//i.test(target)) return res.status(400).json({ success: false, error: 'url inválida' });
+    // v3.29: o proxy é público (o canvas do Reel carrega imagens sem cookie), então só repassa IMAGEM/VÍDEO,
+    // de endereço público, até 10 MB — não serve para ler endereços internos nem hospedar outros arquivos
+    let alvo; try { alvo = new URL(target); } catch (_) { return res.status(400).json({ success: false, error: 'url inválida' }); }
+    if (/^(localhost|0\.|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[|metadata)/i.test(alvo.hostname) || /\.internal$|\.local$/i.test(alvo.hostname)) return res.status(400).json({ success: false, error: 'endereço não permitido' });
     try {
-      const r = await fetch(target, { headers: { 'User-Agent': 'AtlantyxOS/1.9' } });
+      const r = await fetch(target, { headers: { 'User-Agent': 'AtlantyxOS/1.9' }, redirect: 'follow' });
       if (!r.ok) return res.status(r.status).json({ success: false, error: 'origem respondeu ' + r.status });
+      if (+(r.headers.get('content-length') || 0) > 10 * 1048576) return res.status(413).json({ success: false, error: 'arquivo grande demais' });
       const buf = Buffer.from(await r.arrayBuffer());
-      res.setHeader('Content-Type', r.headers.get('content-type') || 'application/octet-stream');
+      const tipo = tipoReal(buf);
+      if (!tipo || !/^(image|video)\//.test(tipo) || buf.length > 10 * 1048576) return res.status(415).json({ success: false, error: 'o proxy só repassa imagens e vídeos' });
+      res.setHeader('Content-Type', tipo);
       res.setHeader('Cache-Control', 'public, max-age=3600');
       return res.status(200).send(buf);
     } catch (e) {
@@ -185,7 +192,8 @@ async function handler(req, res) {
         const r = await fetch(body.url, { headers: { 'User-Agent': 'AtlantyxOS/1.9' } });
         if (!r.ok) throw new Error('origem respondeu ' + r.status);
         const buf = Buffer.from(await r.arrayBuffer());
-        const ct = r.headers.get('content-type') || 'image/png';
+        if (!tipoReal(buf)) throw new Error('o conteúdo não é imagem/vídeo/PDF');
+        const ct = tipoReal(buf) || r.headers.get('content-type') || 'image/png';
         const ext = ct.includes('jpeg') ? 'jpg' : ct.includes('webp') ? 'webp' : ct.includes('mp4') ? 'mp4' : 'png';
         if (token && blob) {
           const name = 'atlantyx/' + (body.pasta || 'img') + '/' + Date.now() + '-' + Math.random().toString(36).slice(2, 7) + '.' + ext;
@@ -208,6 +216,8 @@ async function handler(req, res) {
     const buf = await readRaw(req);
     if (!buf.length) return res.status(400).json({ success: false, error: 'corpo vazio' });
     if (buf.length > 4.3 * 1024 * 1024) return res.status(413).json({ success: false, error: 'Arquivo acima de ~4,3 MB (limite da função). Reduza a duração/qualidade do vídeo ou envie manualmente ao Metricool.' });
+    // v3.29 (SEC-009): só imagem, vídeo, PDF e XML — conferido pelo CONTEÚDO, não pelo nome (evita hospedar HTML/JS no domínio)
+    if (!tipoReal(buf)) return res.status(415).json({ success: false, error: 'Tipo de arquivo não permitido (aceitos: JPG, PNG, WEBP, GIF, MP4, WEBM, MOV, PDF, XML).' });
     const nomeIn = url.searchParams.get('name') || req.headers['x-file-name'] || ('media-' + Date.now());
     const safe = String(nomeIn).replace(/[^a-zA-Z0-9._-]/g, '_');
     const pasta = url.searchParams.get('pasta') || 'reels';
@@ -229,4 +239,19 @@ async function handler(req, res) {
 }
 
 // v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
-export default comGuarda(handler);
+export default comGuarda(handler, 'media-upload');
+
+// v3.29: tipo real do arquivo pelos primeiros bytes
+function tipoReal(buf) {
+  if (!buf || buf.length < 12) return null;
+  const h = buf.subarray(0, 12), s4 = h.toString('latin1', 0, 4), s8 = h.toString('latin1', 4, 8);
+  if (h[0] === 0xFF && h[1] === 0xD8) return 'image/jpeg';
+  if (h[0] === 0x89 && s4.slice(1) === 'PNG') return 'image/png';
+  if (s4 === 'RIFF' && h.toString('latin1', 8, 12) === 'WEBP') return 'image/webp';
+  if (s4 === 'GIF8') return 'image/gif';
+  if (s8 === 'ftyp') return /qt/.test(h.toString('latin1', 8, 12)) ? 'video/quicktime' : 'video/mp4';
+  if (h[0] === 0x1A && h[1] === 0x45 && h[2] === 0xDF && h[3] === 0xA3) return 'video/webm';
+  if (s4 === '%PDF') return 'application/pdf';
+  if (/^\s*<\?xml/.test(buf.toString('utf8', 0, 64))) return 'application/xml';
+  return null;
+}

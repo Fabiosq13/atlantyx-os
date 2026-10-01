@@ -4,6 +4,53 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
+// v3.29 — LOGIN (SEC-001/003). As APIs exigem sessão quando ATX_USUARIOS e ATX_SESSAO_SEGREDO estão no
+// Vercel. O cookie de sessão é HttpOnly (o navegador manda sozinho em todas as chamadas). Se alguma API
+// responder 401 "exige_login", ou se a sessão não existir ao abrir, aparece a tela de login.
+(function () {
+  if (window.__atxAuth) return; window.__atxAuth = { logado: null };
+  var orig = window.fetch.bind(window), aberto = false;
+  function tela(msg) {
+    if (aberto) return; aberto = true;
+    var mk = function () {
+      var d = document.createElement('div'); d.id = 'atxLogin';
+      d.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(7,8,15,.94);display:flex;align-items:center;justify-content:center;font-family:DM Sans,Arial,sans-serif;padding:16px;';
+      d.innerHTML = '<form id="atxLoginF" style="background:#0c0d18;border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:28px;width:min(360px,100%);color:#eceefa;box-shadow:0 20px 60px rgba(0,0,0,.5);">'
+        + '<div style="font-size:20px;font-weight:800;letter-spacing:.5px;margin-bottom:4px;">Atlantyx OS</div>'
+        + '<div style="font-size:12px;color:#7a7c9e;margin-bottom:18px;">' + (msg || 'Entre para continuar') + '</div>'
+        + '<label style="font-size:11px;color:#7a7c9e;">E-mail</label><input id="atxLoginE" type="email" autocomplete="username" required style="width:100%;box-sizing:border-box;margin:4px 0 12px;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:#07080f;color:#eceefa;font-size:14px;"/>'
+        + '<label style="font-size:11px;color:#7a7c9e;">Senha</label><input id="atxLoginS" type="password" autocomplete="current-password" required style="width:100%;box-sizing:border-box;margin:4px 0 16px;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:#07080f;color:#eceefa;font-size:14px;"/>'
+        + '<button type="submit" id="atxLoginB" style="width:100%;padding:11px;border:0;border-radius:8px;background:#4f7cff;color:#fff;font-weight:700;font-size:14px;cursor:pointer;">Entrar</button>'
+        + '<div id="atxLoginM" style="font-size:12px;color:#ff5b5b;margin-top:10px;min-height:16px;"></div></form>';
+      document.body.appendChild(d);
+      setTimeout(function () { var e = document.getElementById('atxLoginE'); if (e) e.focus(); }, 50);
+      document.getElementById('atxLoginF').onsubmit = function (ev) {
+        ev.preventDefault(); var b = document.getElementById('atxLoginB'), m = document.getElementById('atxLoginM'); b.disabled = true; b.textContent = 'Entrando...'; m.textContent = '';
+        orig('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'login', email: document.getElementById('atxLoginE').value, senha: document.getElementById('atxLoginS').value }) })
+          .then(function (r) { return r.json(); }).then(function (j) { if (j.success) location.reload(); else { m.textContent = j.error || 'Não foi possível entrar'; b.disabled = false; b.textContent = 'Entrar'; } })
+          .catch(function (e) { m.textContent = 'Erro de rede: ' + e.message; b.disabled = false; b.textContent = 'Entrar'; });
+      };
+    };
+    if (document.body) mk(); else document.addEventListener('DOMContentLoaded', mk);
+  }
+  window.fetch = function (input, init) {
+    return orig(input, init).then(function (r) {
+      if (r.status === 401) { r.clone().json().then(function (j) { if (j && j.exige_login) tela('Sua sessão expirou — entre de novo'); }).catch(function () {}); }
+      return r;
+    });
+  };
+  window.atxSair = function () { orig('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"action":"sair"}' }).then(function () { location.reload(); }); };
+  orig('/api/auth').then(function (r) { return r.json(); }).then(function (j) {
+    window.__atxAuth = j;
+    if (j.ativa && !j.logado) tela();
+    var go = function () { var el = document.getElementById('atxUsuario'); if (!el) return;
+      if (j.ativa && j.usuario) { el.style.display = ''; el.innerHTML = '<span title="Conectado como ' + j.usuario + '">👤 ' + j.usuario.split('@')[0] + '</span> <a href="javascript:void(0)" onclick="atxSair()" style="color:var(--t2);margin-left:4px;">sair</a>'; }
+      else if (!j.ativa) { el.style.display = ''; el.innerHTML = '<span style="color:var(--gold);" title="Cadastre ATX_USUARIOS e ATX_SESSAO_SEGREDO no Vercel para exigir login">⚠ login desligado</span>'; } };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
+  }).catch(function () {});
+})();
+</script>
+<script>
 // v3.19 — ?qa_frame=1: cópia do sistema aberta pelo Agente de QA num iframe para medir as telas em
 // outras larguras. Modo SÓ-LEITURA: qualquer chamada que não seja consulta é respondida localmente.
 (function () {
@@ -578,6 +625,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <span class="tb-t">Atlantyx OS</span>
     <span class="tb-bc" id="tbc">/ Dashboard ao Vivo</span>
     <div class="tb-r">
+      <span id="atxUsuario" style="display:none;font-size:10.5px;color:var(--t2);"></span>
       <button class="btn btn-g btn-tema" id="btnTema" onclick="alternarTema()" title="Alternar modo claro / escuro" style="font-size:12px;padding:5px 9px;">&#9788;</button>
       <div class="live-badge"><span class="live-dot"></span>AO VIVO</div>
       <button class="btn btn-g" style="font-size:10px;padding:5px 9px;" onclick="refreshAll()">&#8635; Atualizar</button>
@@ -1344,7 +1392,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div style="background:linear-gradient(135deg,rgba(26,58,143,.18),rgba(26,58,143,.04));border:1px solid rgba(79,124,255,.3);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
     <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#128100; Meu Cartao Digital</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Seus dados, foto e QR do WhatsApp numa pagina publica para compartilhar</div></div>
     <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="navigator.clipboard.writeText(location.origin+'/cartao.html').then(()=>toast('Link do cartao copiado','success'))">&#128279; Copiar link</button>
-    <a class="btn" style="font-size:10px;text-decoration:none;" href="/cartao.html" target="_blank">&#128065; Abrir cartao</a>
+    <a class="btn" style="font-size:10px;text-decoration:none;" href="/cartao.html" target="_blank" rel="noopener noreferrer">&#128065; Abrir cartao</a>
     <button class="btn btn-gn" onclick="cartaoSalvar()">&#128190; Salvar</button>
   </div>
   <div style="display:grid;grid-template-columns:1fr 340px;gap:14px;align-items:start;">
@@ -7675,7 +7723,7 @@ async function runCadeiaCLevel() {
           <div style="font-size:11px;margin-bottom:6px;"><span style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--red);">Dores: </span>${(d.dores||[]).join(' · ')}</div>
           ${d.mensagem_wa ? `<div style="background:var(--bg3);border:1px solid rgba(34,211,163,.2);border-radius:5px;padding:9px;font-size:11px;line-height:1.6;margin-bottom:6px;white-space:pre-wrap;">${d.mensagem_wa}</div>` : ''}
           <div style="display:flex;gap:6px;">
-            ${d.linkedin ? `<a href="${d.linkedin}" target="_blank" class="btn" style="font-size:9px;padding:2px 8px;color:var(--blue);">LinkedIn</a>` : ''}
+            ${d.linkedin ? `<a href="${d.linkedin}" target="_blank" rel="noopener noreferrer" class="btn" style="font-size:9px;padding:2px 8px;color:var(--blue);">LinkedIn</a>` : ''}
             <button class="btn btn-gn" style="font-size:9px;padding:2px 8px;" onclick="adicionarAoKanbanWA('${d.nome||d.cargo}','${empresa}','${d.cargo}')">+ WA Batch</button>
           </div>
         </div>`).join('')}`;
@@ -8759,7 +8807,7 @@ function renderImgGaleria(imagens, containerId) {
         <span style="font-family:var(--M);font-size:9px;color:rgba(255,255,255,.7);">Variacão ${i+1}</span>
         <div style="display:flex;gap:5px;">
           <button class="btn btn-gn" style="font-size:9px;padding:2px 6px;" onclick="aprovarImagem('${img.url}', event)">Aprovar</button>
-          <a href="${img.url}" target="_blank" class="btn" style="font-size:9px;padding:2px 6px;color:#fff;border-color:rgba(255,255,255,.3);">Abrir</a>
+          <a href="${img.url}" target="_blank" rel="noopener noreferrer" class="btn" style="font-size:9px;padding:2px 6px;color:#fff;border-color:rgba(255,255,255,.3);">Abrir</a>
         </div>
       </div>
     </div>`).join('');
@@ -9339,7 +9387,7 @@ async function gerarImagemCampanha() {
             + '<img src="' + url + '" style="width:100%;display:block;"/>'
             + '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);padding:7px;display:flex;gap:5px;">'
             + '<button class="btn btn-gn" style="flex:1;font-size:9px;padding:3px;" data-url="' + url + '" data-idx="' + i + '" onclick="aprovarImagem(this.dataset.url, this.dataset.idx, event)">Aprovar no Kanban</button>'
-            + '<a href="' + url + '" target="_blank" class="btn" style="font-size:9px;padding:3px 7px;color:#fff;border-color:rgba(255,255,255,.3);">Abrir</a>'
+            + '<a href="' + url + '" target="_blank" rel="noopener noreferrer" class="btn" style="font-size:9px;padding:3px 7px;color:#fff;border-color:rgba(255,255,255,.3);">Abrir</a>'
             + '</div></div>';
         }).join('')
       + '</div>';
@@ -9362,7 +9410,7 @@ async function gerarImagemCampanha() {
     toast(imagens.length + ' imagens geradas! Clique Aprovar na preferida.', 'success');
 
   } catch(e) {
-    result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:14px;line-height:1.6;">Erro ao gerar a imagem: ' + e.message + '<br/><span style="color:var(--t2);">Diagnóstico da chave: abra <a href="/api/image-gen" target="_blank" style="color:var(--blue);">/api/image-gen</a> (mostra se a IDEOGRAM_API_KEY está configurada). Com OPENAI_API_KEY configurada, o sistema usa a reserva automaticamente.</span></div>';
+    result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:14px;line-height:1.6;">Erro ao gerar a imagem: ' + e.message + '<br/><span style="color:var(--t2);">Diagnóstico da chave: abra <a href="/api/image-gen" target="_blank" rel="noopener noreferrer" style="color:var(--blue);">/api/image-gen</a> (mostra se a IDEOGRAM_API_KEY está configurada). Com OPENAI_API_KEY configurada, o sistema usa a reserva automaticamente.</span></div>';
     addLog('err', '[Ideogram] Erro: ' + e.message);
   }
   if (btn) { btn.disabled = false; btn.textContent = '◆ Gerar no Ideogram'; }
@@ -9560,7 +9608,7 @@ async function gerarNovaImagem() {
           <img src="${img.url}" style="width:100%;display:block;" loading="lazy"/>
           <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);padding:5px;display:flex;gap:5px;">
             <button class="btn btn-gn" style="flex:1;font-size:9px;padding:2px;" onclick="aprovarImagem('${img.url}',event)">Aprovar</button>
-            <a href="${img.url}" target="_blank" class="btn" style="font-size:9px;padding:2px 5px;color:#fff;border-color:rgba(255,255,255,.3);">Abrir</a>
+            <a href="${img.url}" target="_blank" rel="noopener noreferrer" class="btn" style="font-size:9px;padding:2px 5px;color:#fff;border-color:rgba(255,255,255,.3);">Abrir</a>
           </div>
         </div>`).join('')}
       </div>`;
@@ -9635,7 +9683,7 @@ function renderProspectResult(data) {
           ${e.budget_ti_estimado ? `<div style="grid-column:1/-1;color:var(--t3);font-size:10px;">Budget TI estimado: ${e.budget_ti_estimado}</div>` : ''}
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          ${e.decisor_linkedin ? `<a href="${e.decisor_linkedin}" target="_blank" class="btn" style="font-size:9px;padding:2px 8px;color:var(--blue);">LinkedIn</a>` : ''}
+          ${e.decisor_linkedin ? `<a href="${e.decisor_linkedin}" target="_blank" rel="noopener noreferrer" class="btn" style="font-size:9px;padding:2px 8px;color:var(--blue);">LinkedIn</a>` : ''}
           ${e.decisor_email ? `<button class="btn" style="font-size:9px;padding:2px 8px;" onclick="navigator.clipboard.writeText('${e.decisor_email}');toast('E-mail copiado!','success')">E-mail</button>` : ''}
           ${e.decisor_phone ? `<button class="btn" style="font-size:9px;padding:2px 8px;" onclick="navigator.clipboard.writeText('${e.decisor_phone}');toast('Telefone copiado!','success')">${e.decisor_phone}</button>` : ''}
           <button class="btn btn-gn" style="font-size:9px;padding:2px 8px;" onclick="adicionarAoKanbanWA('${(e.decisor_nome||'').replace(/'/g,'')}','${(e.empresa||'').replace(/'/g,'')}','${(e.decisor_cargo||'').replace(/'/g,'')}')">+ WA Batch</button>
@@ -9801,7 +9849,7 @@ function regenerarSemTexto() {
             + '<img src="' + img.url + '" style="width:100%;display:block;" loading="lazy"/>'
             + '<div style="padding:6px;display:flex;gap:5px;background:var(--bg4);">'
             + '<button class="btn btn-gn" style="flex:1;font-size:9px;" data-url="' + img.url + '" onclick="aprovarImagem(this.dataset.url,event)">Aprovar</button>'
-            + '<a href="' + img.url + '" target="_blank" class="btn" style="font-size:9px;color:#fff;border-color:rgba(255,255,255,.3);">Abrir</a>'
+            + '<a href="' + img.url + '" target="_blank" rel="noopener noreferrer" class="btn" style="font-size:9px;color:#fff;border-color:rgba(255,255,255,.3);">Abrir</a>'
             + '</div></div>';
         });
         if (result) result.innerHTML = '<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;"><div style="font-family:var(--M);font-size:9px;color:var(--green);margin-bottom:8px;">IMAGENS SEM TEXTO (adicione texto no Canva)</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' + grid + '</div><div style="font-size:10px;color:var(--t3);margin-top:8px;">Dica: Imagens sem texto + Canva/Figma para adicionar texto = resultado profissional garantido</div></div>';
@@ -12081,7 +12129,7 @@ async function abrirCampanhaDB(id) {
               + '<img src="' + url + '" style="width:100%;display:block;"/>'
               + '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);padding:7px;display:flex;gap:5px;">'
               + '<button class="btn btn-gn" style="flex:1;font-size:9px;padding:3px;" data-url="' + url + '" data-idx="' + i + '" onclick="aprovarImagem(this.dataset.url,this.dataset.idx,event)">Aprovar</button>'
-              + '<a href="' + url + '" target="_blank" class="btn" style="font-size:9px;padding:3px 7px;color:#fff;border-color:rgba(255,255,255,.3);">Abrir</a>'
+              + '<a href="' + url + '" target="_blank" rel="noopener noreferrer" class="btn" style="font-size:9px;padding:3px 7px;color:#fff;border-color:rgba(255,255,255,.3);">Abrir</a>'
               + '</div></div>';
           }).join('')
         + '</div>';
@@ -13683,7 +13731,7 @@ function renderEventLeads(container, leads, oferta, nomeEvento) {
     decInfo.style.flex = '1';
     decInfo.innerHTML = '<div style="font-size:11px;font-weight:600;color:var(--t1);">'
       + (lead.decisor_nome||'A identificar') + ' — ' + (lead.decisor_cargo||'C-Level') + '</div>'
-      + (lead.decisor_linkedin ? '<a href="' + lead.decisor_linkedin + '" target="_blank" style="font-size:9px;color:var(--blue);">LinkedIn</a>' : '');
+      + (lead.decisor_linkedin ? '<a href="' + lead.decisor_linkedin + '" target="_blank" rel="noopener noreferrer" style="font-size:9px;color:var(--blue);">LinkedIn</a>' : '');
     var btnScript = document.createElement('button');
     btnScript.className = 'btn btn-g';
     btnScript.style.cssText = 'font-size:9px;padding:3px 8px;white-space:nowrap;';
@@ -14173,7 +14221,7 @@ function renderLeadsLI(container, leads) {
     urlBox.style.cssText = 'font-size:9px;margin-bottom:6px;background:var(--bg3);padding:6px 8px;border-radius:5px;border:1px solid var(--bd);display:flex;flex-direction:column;gap:3px;';
     urlBox.innerHTML = '<div><span style="color:var(--t2);">LinkedIn: </span>'
       + (lead.linkedin_url
-        ? '<a href="' + lead.linkedin_url + '" target="_blank" style="color:#0a66c2;">' + lead.linkedin_url + '</a>'
+        ? '<a href="' + lead.linkedin_url + '" target="_blank" rel="noopener noreferrer" style="color:#0a66c2;">' + lead.linkedin_url + '</a>'
         : '<span style="color:rgba(255,77,109,.7);">não retornado pelo Apollo</span>')
       + '</div>'
       + '<div><span style="color:var(--t2);">E-mail: </span>'
@@ -14181,8 +14229,8 @@ function renderLeadsLI(container, leads) {
         ? '<span style="color:var(--blue);">' + lead.email + '</span>'
         : '<span style="color:rgba(255,77,109,.7);">não retornado pelo Apollo</span>')
       + '</div>'
-      + (lead.linkedin_empresa ? '<div><span style="color:var(--t2);">LI Empresa: </span><a href="' + lead.linkedin_empresa + '" target="_blank" style="color:#0a66c2;">' + lead.linkedin_empresa + '</a></div>' : '')
-      + (lead.website_empresa  ? '<div><span style="color:var(--t2);">Site: </span><a href="' + lead.website_empresa  + '" target="_blank" style="color:var(--blue);">' + lead.website_empresa  + '</a></div>' : '');
+      + (lead.linkedin_empresa ? '<div><span style="color:var(--t2);">LI Empresa: </span><a href="' + lead.linkedin_empresa + '" target="_blank" rel="noopener noreferrer" style="color:#0a66c2;">' + lead.linkedin_empresa + '</a></div>' : '')
+      + (lead.website_empresa  ? '<div><span style="color:var(--t2);">Site: </span><a href="' + lead.website_empresa  + '" target="_blank" rel="noopener noreferrer" style="color:var(--blue);">' + lead.website_empresa  + '</a></div>' : '');
     card.appendChild(urlBox);
 
     // Status row + script button
@@ -19042,7 +19090,7 @@ async function abrirDetalheTermo(id) {
           <button class="btn" style="font-size:9px;padding:1px 7px;margin-left:6px;" onclick="_fatRecomputarNotas('${t.id}')" title="Vincula as notas soltas às empresas do rateio e recalcula o total">🔄 Recomputar notas</button>
           <button class="btn" style="font-size:9px;padding:1px 7px;margin-left:4px;color:var(--gold);" onclick="_fatRastrearNotas('${t.id}')" title="Procura outros termos com o mesmo número (duplicados) e onde estão as notas">🔎 Rastrear notas deste nº</button>
           <div style="margin-top:4px;max-height:120px;overflow-y:auto;">${notas.map(n => `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid var(--bd);">
-            <span>${n.origem === 'manual' ? '📎' : '📧'} ${n.anexo_nome || '(sem nome)'} ${n.nf_numero ? '· NF ' + n.nf_numero : ''} ${n.nf_valor != null ? '· ' + fmtBRLcompleto(n.nf_valor) : ''} ${n.arquivo_url ? `· <a href="${n.arquivo_url}" target="_blank" style="color:var(--blue);">ver arquivo</a>` : ''}</span>
+            <span>${n.origem === 'manual' ? '📎' : '📧'} ${n.anexo_nome || '(sem nome)'} ${n.nf_numero ? '· NF ' + n.nf_numero : ''} ${n.nf_valor != null ? '· ' + fmtBRLcompleto(n.nf_valor) : ''} ${n.arquivo_url ? `· <a href="${n.arquivo_url}" target="_blank" rel="noopener noreferrer" style="color:var(--blue);">ver arquivo</a>` : ''}</span>
             ${n.origem === 'manual' ? `<button class="btn" style="font-size:9px;padding:1px 5px;color:var(--red);" onclick="_fatNfExcluir('${n.id}','${t.id}')">🗑</button>` : ''}
           </div>`).join('')}</div>
         </div>` : ''}
@@ -21562,7 +21610,7 @@ async function feedIncluir(enviar) {
     box.innerHTML = `<div style="background:var(--bg4);border-radius:8px;padding:10px 12px;">
       <div style="font-size:11.5px;font-weight:700;">${d.contato.nome}${d.contato.empresa ? ' · ' + d.contato.empresa : ''} <span style="font-weight:400;color:var(--t3);">${d.canal === 'email' ? '📧 ' + d.contato.email : '📲 +' + d.contato.telefone}</span></div>
       ${Object.entries(e).map(([k, v]) => li(k, v)).join('')}
-      ${d.canal === 'whatsapp' && d.whatsapp_link ? `<a class="btn btn-gn" href="${d.whatsapp_link}" target="_blank" style="font-size:10px;margin-top:6px;text-decoration:none;">📲 Abrir no WhatsApp com a mensagem</a>` : ''}
+      ${d.canal === 'whatsapp' && d.whatsapp_link ? `<a class="btn btn-gn" href="${d.whatsapp_link}" target="_blank" rel="noopener noreferrer" style="font-size:10px;margin-top:6px;text-decoration:none;">📲 Abrir no WhatsApp com a mensagem</a>` : ''}
       <details style="margin-top:6px;"><summary style="font-size:10px;color:var(--t2);cursor:pointer;">ver a mensagem</summary><pre style="white-space:pre-wrap;font-size:10.5px;font-family:inherit;margin:6px 0 0;color:var(--t2);">${String(d.mensagem||'').replace(/</g,'&lt;')}</pre></details></div>`;
     document.getElementById('feedTexto').value = ''; document.getElementById('feedPreview').textContent = '';
     feedListar();
@@ -21586,7 +21634,7 @@ async function feedListar() {
         <span style="font-size:9.5px;padding:2px 7px;border-radius:4px;background:${/enviado$/.test(x.status)?'rgba(34,211,163,.15)':/falhou|pendente/.test(x.status)?'rgba(245,185,75,.15)':'var(--bg3,#151b2e)'};color:${/enviado$/.test(x.status)?'var(--green,#22d3a3)':/falhou|pendente/.test(x.status)?'var(--gold)':'var(--t3)'};">${st[x.status]||x.status}</span>
         ${x.hubspot_contato_id ? `<span title="No HubSpot (contato ${x.hubspot_contato_id})${x.hubspot_negocio_id ? ' com negócio no pipeline' : ''}" style="font-size:9.5px;padding:2px 6px;border-radius:4px;background:rgba(255,122,89,.15);color:#ff7a59;">HS ✓</span>`
           : `<button class="btn" style="font-size:9px;color:#ff7a59;border-color:#ff7a59;" onclick="feedHubspotUm('${x.id}')" title="${x.hubspot_erro ? 'Falhou: ' + String(x.hubspot_erro).replace(/"/g,'') : 'Enviar este contato ao HubSpot'}">↥ HubSpot${x.hubspot_erro ? ' ⚠' : ''}</button>`}
-        ${x.telefone ? `<a class="btn" href="${x.whatsapp_link}" target="_blank" style="font-size:9px;text-decoration:none;">📲</a>` : ''}
+        ${x.telefone ? `<a class="btn" href="${x.whatsapp_link}" target="_blank" rel="noopener noreferrer" style="font-size:9px;text-decoration:none;">📲</a>` : ''}
         ${x.email ? `<button class="btn" style="font-size:9px;${x.status !== 'email_enviado' ? 'color:var(--green,#22d3a3);border-color:var(--green,#22d3a3);' : ''}" onclick="feedAbrir('${x.id}')" title="${x.status === 'email_enviado' ? 'Abrir e reenviar' : 'Revisar e disparar o e-mail'}">✉ ${x.status === 'email_enviado' ? 'reenviar' : 'revisar e enviar'}</button>` : ''}
       </div></div>`).join('') : '<div style="text-align:center;color:var(--t3);padding:16px;">Nenhum contato ainda.</div>';
   } catch (e) { box.innerHTML = `<div style="color:var(--red);font-size:11px;padding:10px;">${e.message}</div>`; }
@@ -21645,7 +21693,7 @@ function _feedAnaliseHtml(a) {
       ${(a.sinais||[]).length ? `<div><b>Sinais:</b> ${a.sinais.map(esc).join(' · ')}</div>` : ''}
       ${(a.dores||[]).length ? `<div style="margin-top:4px;"><b>Dores prováveis:</b><ul style="margin:2px 0 0 16px;padding:0;">${a.dores.map(d => `<li>${esc(d)}</li>`).join('')}</ul></div>` : ''}
       ${(a.oportunidades||[]).length ? `<div style="margin-top:4px;"><b>Onde a Atlantyx ajuda:</b><ul style="margin:2px 0 0 16px;padding:0;">${a.oportunidades.map(o => `<li><b>${esc(o.solucao)}</b> — ${esc(o.como_ajuda)}${o.caso ? ` <span style="color:var(--t3);">(caso: ${esc(o.caso)})</span>` : ''}</li>`).join('')}</ul></div>` : ''}
-      ${(a.fontes||[]).length ? `<div style="margin-top:4px;font-size:9.5px;color:var(--t3);">Fontes: ${a.fontes.slice(0,4).map(u => `<a href="${esc(u)}" target="_blank" style="color:var(--t3);">${esc(String(u).replace(/^https?:\/\//,'').split('/')[0])}</a>`).join(' · ')}</div>` : ''}
+      ${(a.fontes||[]).length ? `<div style="margin-top:4px;font-size:9.5px;color:var(--t3);">Fontes: ${a.fontes.slice(0,4).map(u => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer" style="color:var(--t3);">${esc(String(u).replace(/^https?:\/\//,'').split('/')[0])}</a>`).join(' · ')}</div>` : ''}
     </div></details>`;
 }
 async function feedReescrever(id, refazer) {
@@ -21664,7 +21712,7 @@ async function feedPreview() {
 }
 function _feedAnexoRender() {
   const el = document.getElementById('feEd_anexoInfo'); if (!el) return;
-  el.innerHTML = _feedAnexo ? `<span style="color:var(--green,#22d3a3);">✓ ${_feedAnexo.nome || 'arquivo'}</span> <a href="/api/media?id=${_feedAnexo.media_id}" target="_blank" style="font-size:10px;color:var(--t2);margin-left:6px;">ver</a>`
+  el.innerHTML = _feedAnexo ? `<span style="color:var(--green,#22d3a3);">✓ ${_feedAnexo.nome || 'arquivo'}</span> <a href="/api/media?id=${_feedAnexo.media_id}" target="_blank" rel="noopener noreferrer" style="font-size:10px;color:var(--t2);margin-left:6px;">ver</a>`
     : '<span style="color:var(--gold);">nenhum anexo — o e-mail vai só com o texto</span>';
 }
 async function feedAnexar(input) {
@@ -23366,13 +23414,13 @@ function entrarSalaEmbutida() {
       });
       if (btn) { btn.disabled = false; btn.textContent = '🎥 Na sala'; }
       addLog('ok', '[Reunião] Entrou na sala ' + SALA_NOME);
-    } catch (e) { cont.innerHTML = '<div style="color:var(--red);padding:20px;font-size:12px;text-align:center;">Não foi possível abrir o vídeo: ' + e.message + '<br><a href="https://meet.jit.si/' + SALA_NOME + '" target="_blank" style="color:var(--blue);">Abrir em nova aba</a></div>'; if (btn) { btn.disabled = false; btn.textContent = '🎥 Entrar na sala'; } }
+    } catch (e) { cont.innerHTML = '<div style="color:var(--red);padding:20px;font-size:12px;text-align:center;">Não foi possível abrir o vídeo: ' + e.message + '<br><a href="https://meet.jit.si/' + SALA_NOME + '" target="_blank" rel="noopener noreferrer" style="color:var(--blue);">Abrir em nova aba</a></div>'; if (btn) { btn.disabled = false; btn.textContent = '🎥 Entrar na sala'; } }
   };
   if (window.JitsiMeetExternalAPI) return iniciar();
   const sc = document.createElement('script');
   sc.src = 'https://' + _jitsiDominio() + '/external_api.js';
   sc.onload = iniciar;
-  sc.onerror = () => { cont.innerHTML = '<div style="color:var(--red);padding:20px;font-size:12px;text-align:center;">Não consegui carregar o vídeo (rede bloqueada?).<br><a href="https://meet.jit.si/' + SALA_NOME + '" target="_blank" style="color:var(--blue);">Abrir a sala em nova aba</a></div>'; if (btn) { btn.disabled = false; btn.textContent = '🎥 Entrar na sala'; } };
+  sc.onerror = () => { cont.innerHTML = '<div style="color:var(--red);padding:20px;font-size:12px;text-align:center;">Não consegui carregar o vídeo (rede bloqueada?).<br><a href="https://meet.jit.si/' + SALA_NOME + '" target="_blank" rel="noopener noreferrer" style="color:var(--blue);">Abrir a sala em nova aba</a></div>'; if (btn) { btn.disabled = false; btn.textContent = '🎥 Entrar na sala'; } };
   document.head.appendChild(sc);
 }
 
@@ -24499,7 +24547,7 @@ function renderDesempenho() {
         `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--bd);">
           <div style="flex:1;min-width:0;">
             <div style="font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.titulo || '(sem título)'}</div>
-            <div style="font-size:9px;color:var(--t3);">${fmtDataHora(p.data)} · ${p.rede} · ${p.metodo === 'metricool' ? '🚀 auto' : '✋ manual'}${p.link_destino ? ' · <a href="'+p.link_destino+'" target="_blank" style="color:var(--blue);">link ↗</a>' : ''}</div>
+            <div style="font-size:9px;color:var(--t3);">${fmtDataHora(p.data)} · ${p.rede} · ${p.metodo === 'metricool' ? '🚀 auto' : '✋ manual'}${p.link_destino ? ' · <a href="'+p.link_destino+'" target="_blank" rel="noopener noreferrer" style="color:var(--blue);">link ↗</a>' : ''}</div>
           </div>
           <div style="font-size:9px;color:var(--t2);white-space:nowrap;">${(p.metricas?.imp||0)} imp · ${(p.metricas?.cli||0)} cli · ${(p.metricas?.leads||0)} leads${(p.metricas?.cli||0) >= _limiarImpulso() ? ' <span title="Alto nº de cliques orgânicos — vale impulsionar">⭐</span>' : ''}${p.impulso?.status ? ' · <span style=\"color:var(--gold);\">📣 ' + p.impulso.status + '</span>' : ''}</div>
           ${(p.metricas?.cli||0) >= _limiarImpulso() || p.impulso ? `<button class="btn btn-or" style="font-size:9px;padding:3px 8px;" onclick="abrirImpulso('${p.id}')">📣 Impulsionar</button>` : ''}
@@ -24538,7 +24586,7 @@ async function listarLandingPagesHS() {
           <div style="font-size:11.5px;font-weight:600;">${p.nome} ${p.publicada ? '<span style="color:var(--green);font-size:9px;">● publicada</span>' : '<span style="color:var(--t3);font-size:9px;">○ rascunho</span>'}</div>
           <div style="font-size:9.5px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.url || '(sem URL pública)'}</div>
         </div>
-        ${p.url ? `<a href="${p.url}" target="_blank" class="btn" style="font-size:9px;padding:3px 8px;">abrir ↗</a>
+        ${p.url ? `<a href="${p.url}" target="_blank" rel="noopener noreferrer" class="btn" style="font-size:9px;padding:3px 8px;">abrir ↗</a>
         <button class="btn btn-p" style="font-size:9px;padding:3px 8px;" onclick="usarLPComoLink('${p.url.replace(/'/g,"\\'")}')">usar como link</button>` : ''}
       </div>`).join('');
     addLog('ok', '[LP] ' + d.paginas.length + ' landing page(s) do HubSpot listadas');
@@ -25695,7 +25743,7 @@ async function abrirImpulso(pubId) {
         <div id="impPlano" style="margin-top:10px;"></div>
         <div style="display:flex;gap:8px;margin-top:12px;">
           <button class="btn btn-gn" style="flex:1;font-size:10.5px;" onclick="copiarPacoteImpulso('${pub.id}')">📋 Copiar pacote completo</button>
-          <a class="btn btn-or" style="flex:1;font-size:10.5px;text-align:center;text-decoration:none;" href="https://adsmanager.facebook.com/adsmanager/manage/campaigns" target="_blank" onclick="marcarImpulso('${pub.id}','preparada')">↗ Abrir Meta Ads Manager</a>
+          <a class="btn btn-or" style="flex:1;font-size:10.5px;text-align:center;text-decoration:none;" href="https://adsmanager.facebook.com/adsmanager/manage/campaigns" target="_blank" rel="noopener noreferrer" onclick="marcarImpulso('${pub.id}','preparada')">↗ Abrir Meta Ads Manager</a>
         </div>
         <div style="font-size:9px;color:var(--t3);margin-top:8px;">No Ads Manager: Impulsionar/criar anúncio → cole a copy e o link → CTA "Agendar horário" → aplique a segmentação sugerida. Os leads chegarão marcados como PAGOS no Desempenho (utm_medium=paid).</div>
       </div>
@@ -25800,7 +25848,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.28] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.29] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -25816,7 +25864,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.28';
+window.__ATX_BUILD_ID__ = 'ATX-v3.29';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

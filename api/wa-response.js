@@ -317,4 +317,4 @@ O agente S7-07 já enviou as opções de horário. Acompanhe no HubSpot.`;
 }
 
 // v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
-export default comGuarda(handler);
+export default comGuarda(handler, 'wa-response');

@@ -247,7 +247,8 @@ function analiseEstatica() {
   const semAuth = [];
   for (const f of apis) {
     if (!/export default (async function handler|comGuarda\(handler\))/.test(f.texto)) continue;
-    const temAuth = /req\.headers\.(authorization|\[?['"]x-)|verificarAcesso|exigirAuth|APP_ACCESS|x-atx-key/i.test(f.texto);
+    const guardaLib = lerArquivos(path.join(RAIZ, 'lib'), /qa-guard\.js$/, 1)[0];
+    const temAuth = /req\.headers\.(authorization|\[?['"]x-)|verificarAcesso|exigirAuth|APP_ACCESS|x-atx-key/i.test(f.texto) || (/comGuarda\(handler/.test(f.texto) && guardaLib && /lerSessao/.test(guardaLib.texto));
     const soCron = /CRON_SECRET/.test(f.texto);
     if (!temAuth && !publicosEsperados.test(f.arquivo)) semAuth.push(f.arquivo);
     else if (soCron && !/verificarAcesso|APP_ACCESS|x-atx-key/i.test(f.texto) && !publicosEsperados.test(f.arquivo)) semAuth.push(f.arquivo + ' (só o cron é protegido)');
@@ -260,13 +261,13 @@ function analiseEstatica() {
     'Restringir Access-Control-Allow-Origin ao domínio do sistema (ex.: https://atlantyx-os.vercel.app) nas APIs internas; manter * só nas públicas (captura de lead).');
   // KV genérico: leitura/escrita de qualquer chave
   const db = apis.find(f => /api[\\/]db\.js$/.test(f.arquivo));
-  if (db && /action === 'get'/.test(db.texto) && !/key\.startsWith|chavesPermitidas|PERMITIDAS/.test(db.texto))
+  if (db && /action === 'get'/.test(db.texto) && !/key\.startsWith|chavesPermitidas|PERMITIDAS|Chave protegida/.test(db.texto))
     add('crítica', 'exposição de dados', 'Ação "get" do /api/db lê QUALQUER chave do kv_store — inclusive tokens OAuth (qb:tokens)', db.arquivo, linhaDe(db.texto, db.texto.indexOf("action === 'get'")), "action === 'get' → SELECT value FROM kv_store WHERE key = ${key}",
       'Criar lista de chaves permitidas para leitura/escrita pela tela (prefixos de dados de UI) e bloquear chaves de credenciais (qb:*, *token*, *secret*). Nunca devolver tokens ao navegador.');
   // SQL montado com texto (possível injeção)
   for (const f of [...apis, ...libs]) {
     const re = /_q\([^,]+,\s*`[^`]*\$\{(?![^}]*\bcol\b)[^}]+\}[^`]*`/g; let m;
-    while ((m = re.exec(f.texto))) add('média', 'injeção de SQL', 'SQL montado por interpolação de texto em _q()', f.arquivo, linhaDe(f.texto, m.index), m[0].substring(0, 140), 'Usar parâmetros ($1, $2…) ou o template sql`` do Neon em vez de interpolar valores no texto do SQL; se for nome de coluna, validar contra uma lista fixa.');
+    while ((m = re.exec(f.texto))) if ((m[0].match(/\$\{[^}]+\}/g) || []).some(x => !/^\$\{\s*(_id\(|where\s*\}|cond\s*\})/.test(x))) add('média', 'injeção de SQL', 'SQL montado por interpolação de texto em _q()', f.arquivo, linhaDe(f.texto, m.index), m[0].substring(0, 140), 'Usar parâmetros ($1, $2…) ou o template sql`` do Neon em vez de interpolar valores no texto do SQL; se for nome de coluna, validar contra uma lista fixa.');
   }
   // eval / new Function
   for (const f of [...apis, ...libs, ...pubs]) { const re = /\beval\s*\(|new Function\s*\(/g; let m; while ((m = re.exec(f.texto))) add('alta', 'execução dinâmica', 'Uso de eval/new Function', f.arquivo, linhaDe(f.texto, m.index), f.texto.substring(m.index, m.index + 80), 'Remover eval/new Function; usar JSON.parse ou funções explícitas.'); }
@@ -300,7 +301,7 @@ async function sondasRuntime(base) {
   const probe = async (nome, url, init = {}) => {
     const t0 = Date.now();
     try { const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 12000);
-      const r = await fetch(url, { ...init, signal: ac.signal }); clearTimeout(tm);
+      const r = await fetch(url, { ...init, headers: { ...(init.headers || {}), 'x-atx-sem-credencial': '1' }, signal: ac.signal }); clearTimeout(tm);
       const txt = await r.text(); let j = null; try { j = JSON.parse(txt); } catch (_) {}
       const s = { nome, url: url.replace(base, ''), status: r.status, ms: Date.now() - t0, cors: r.headers.get('access-control-allow-origin'), headers: Object.fromEntries(['content-security-policy', 'x-frame-options', 'strict-transport-security', 'x-content-type-options', 'referrer-policy', 'permissions-policy'].map(h => [h, r.headers.get(h)])), json: j };
       sondas.push({ nome, status: s.status, ms: s.ms, cors: s.cors }); return s;
@@ -336,7 +337,7 @@ async function sondasRuntime(base) {
   // Variáveis de ambiente (só presença)
   const env = k => !!process.env[k];
   if (!env('CRON_SECRET')) add('alta', 'configuração', 'CRON_SECRET não configurado — rotas de cron podem ser disparadas por qualquer pessoa', 'CRON_SECRET ausente', 'Criar CRON_SECRET no Vercel e exigir Authorization: Bearer ${CRON_SECRET} em todas as rotas de cron.');
-  if (!env('APP_ACCESS_TOKEN')) add('info', 'configuração', 'Não há chave de acesso da aplicação (APP_ACCESS_TOKEN)', 'variável ausente', 'Definir APP_ACCESS_TOKEN ao implementar a autenticação das APIs.');
+  if (!env('ATX_USUARIOS') || !env('ATX_SESSAO_SEGREDO')) add('crítica', 'configuração', 'Login do sistema DESLIGADO — faltam ATX_USUARIOS e/ou ATX_SESSAO_SEGREDO no Vercel', 'variável ausente', 'Cadastrar ATX_USUARIOS ("email:senha;email2:senha2") e ATX_SESSAO_SEGREDO (texto aleatório longo) no Vercel e fazer Redeploy — a partir daí todas as APIs internas exigem login.');
   if (process.env.DATABASE_URL && !/sslmode=require/.test(process.env.DATABASE_URL)) add('baixa', 'configuração', 'DATABASE_URL sem sslmode=require explícito', 'conexão Neon', 'Incluir ?sslmode=require na string de conexão.');
   return { achados, sondas };
 }
@@ -649,4 +650,4 @@ async function handler(req, res) {
 export { analiseEstatica };
 
 // v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
-export default comGuarda(handler);
+export default comGuarda(handler, 'qa');

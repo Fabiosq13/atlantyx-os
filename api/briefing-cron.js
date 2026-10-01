@@ -108,4 +108,4 @@ async function verificarBriefingGerado(dealId) {
 }
 
 // v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
-export default comGuarda(handler);
+export default comGuarda(handler, 'briefing-cron');

@@ -4,6 +4,8 @@ import { comGuarda } from '../lib/qa-guard.js';
 // SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
 // Antes, toda chamada sql.query() falhava em silêncio: colunas novas nunca eram criadas.
 const _q = (db, texto, params) => (typeof db.query === 'function' ? db.query(texto, params) : db(texto, params));
+// v3.29 (SEC-012…020): nome de tabela/coluna vindo da configuração — só letras, números e _; sempre entre aspas
+const _id = n => { const v = String(n ?? ''); if (!/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(v)) throw new Error('nome de tabela/coluna inválido: ' + v.substring(0, 40)); return '"' + v + '"'; };
 // api/pmo.js — v1.62 · S9 · Projetos
 // Sala de reunião com os gerentes de projeto + Status Report (criação e visualização).
 // Os dados de projeto podem vir de um sistema EXTERNO (outro projeto no Vercel) — o conector
@@ -548,9 +550,9 @@ async function cronoSchema({ tabela } = {}) {
       WHERE table_schema = 'public' AND table_name = ${tabela}
       ORDER BY ordinal_position`;
     let amostra = [];
-    try { amostra = await _q(sql, `SELECT * FROM "${tabela}" LIMIT 3`); } catch (e) { /* tabela vazia ou sem permissão */ }
+    try { amostra = await _q(sql, `SELECT * FROM ${_id(tabela)} LIMIT 3`); } catch (e) { /* tabela vazia ou sem permissão */ }
     let total = null;
-    try { const c = await _q(sql, `SELECT COUNT(*)::int AS n FROM "${tabela}"`); total = c[0]?.n ?? null; } catch (_) {}
+    try { const c = await _q(sql, `SELECT COUNT(*)::int AS n FROM ${_id(tabela)}`); total = c[0]?.n ?? null; } catch (_) {}
     // v1.99: tabelas do tipo "store" (chave-valor com JSON) precisam ser abertas por dentro —
     // as colunas não dizem nada sobre o que está guardado.
     const nomes = cols.map(c => c.column_name.toLowerCase());
@@ -561,13 +563,13 @@ async function cronoSchema({ tabela } = {}) {
       const colChave = cols.find(c => ['key','chave','k'].includes(c.column_name.toLowerCase()))?.column_name;
       const colValor = cols.find(c => ['value','valor','v','data','payload','json'].includes(c.column_name.toLowerCase()))?.column_name;
       try {
-        const ks = await _q(sql, `SELECT "${colChave}" AS chave,
-          LEFT(("${colValor}")::text, 120) AS previa,
-          LENGTH(("${colValor}")::text) AS tamanho
-          FROM "${tabela}" ORDER BY LENGTH(("${colValor}")::text) DESC LIMIT 60`);
+        const ks = await _q(sql, `SELECT ${_id(colChave)} AS chave,
+          LEFT((${_id(colValor)})::text, 120) AS previa,
+          LENGTH((${_id(colValor)})::text) AS tamanho
+          FROM ${_id(tabela)} ORDER BY LENGTH((${_id(colValor)})::text) DESC LIMIT 60`);
         chaves = ks.map(k => ({ chave: k.chave, previa: k.previa, tamanho: k.tamanho }));
         if (ks[0]) {
-          const v = await _q(sql, `SELECT ("${colValor}")::text AS v FROM "${tabela}" WHERE "${colChave}" = $1 LIMIT 1`, [ks[0].chave]);
+          const v = await _q(sql, `SELECT (${_id(colValor)})::text AS v FROM ${_id(tabela)} WHERE ${_id(colChave)} = $1 LIMIT 1`, [ks[0].chave]);
           exemploValor = String(v[0]?.v || '').substring(0, 1500);
         }
       } catch (e) { chaves = [{ erro: e.message }]; }
@@ -599,7 +601,7 @@ async function cronoSchema({ tabela } = {}) {
   const comContagem = [];
   for (const t of tabelas) {
     let n = null;
-    try { const c = await _q(sql, `SELECT COUNT(*)::int AS n FROM "${t.table_name}"`); n = c[0]?.n ?? null; } catch (_) {}
+    try { const c = await _q(sql, `SELECT COUNT(*)::int AS n FROM ${_id(t.table_name)}`); n = c[0]?.n ?? null; } catch (_) {}
     comContagem.push({ tabela: t.table_name, colunas: t.n_colunas, registros: n });
   }
   return { tabelas: comContagem.sort((a, b) => (b.registros || 0) - (a.registros || 0)),
@@ -621,7 +623,7 @@ async function cronoSchema({ tabela } = {}) {
 async function cronoLerChave({ tabela, chave, coluna_chave = 'key', coluna_valor = 'value' } = {}) {
   if (!tabela || !chave) throw new Error('tabela e chave obrigatórias');
   const sql = await getSqlCrono();
-  const r = await _q(sql, `SELECT ("${coluna_valor}")::text AS valor FROM "${tabela}" WHERE "${coluna_chave}" = $1 LIMIT 1`, [chave]);
+  const r = await _q(sql, `SELECT (${_id(coluna_valor)})::text AS valor FROM ${_id(tabela)} WHERE ${_id(coluna_chave)} = $1 LIMIT 1`, [chave]);
   const bruto = r[0]?.valor || null;
   if (!bruto) return { chave, encontrado: false };
   let json = null, tipo = 'texto';
@@ -669,16 +671,17 @@ async function apontamentoHoras({ projeto, data_inicio, data_fim, tabela, col_pr
   const cD = col_data    || cfg.col_data    || 'data';
   const cH = col_horas   || cfg.col_horas   || 'horas';
 
-  const cond = [];
-  if (projeto) cond.push(`"${cP}"::text ILIKE '%${String(projeto).replace(/'/g, "''")}%'`);
-  if (data_inicio) cond.push(`"${cD}" >= '${data_inicio}'`);
-  if (data_fim) cond.push(`"${cD}" <= '${data_fim}'`);
+  // v3.29 (SEC-018): valores vão como parâmetros ($1…), nomes de coluna validados por _id()
+  const cond = [], prm = [];
+  if (projeto) { prm.push('%' + String(projeto) + '%'); cond.push(`${_id(cP)}::text ILIKE $${prm.length}`); }
+  if (data_inicio) { prm.push(String(data_inicio)); cond.push(`${_id(cD)} >= $${prm.length}`); }
+  if (data_fim) { prm.push(String(data_fim)); cond.push(`${_id(cD)} <= $${prm.length}`); }
   const where = cond.length ? 'WHERE ' + cond.join(' AND ') : '';
 
   try {
-    const linhas = await _q(sql, `SELECT "${cP}" AS projeto, "${cU}" AS pessoa, "${cD}" AS data,
-      SUM(("${cH}")::numeric) AS horas FROM "${T}" ${where}
-      GROUP BY 1,2,3 ORDER BY 3 DESC LIMIT 2000`);
+    const linhas = await _q(sql, `SELECT ${_id(cP)} AS projeto, ${_id(cU)} AS pessoa, ${_id(cD)} AS data,
+      SUM((${_id(cH)})::numeric) AS horas FROM ${_id(T)} ${where}
+      GROUP BY 1,2,3 ORDER BY 3 DESC LIMIT 2000`, prm);
 
     const porPessoa = {}, porProjeto = {}, porMes = {};
     let total = 0;
@@ -699,7 +702,7 @@ async function apontamentoHoras({ projeto, data_inicio, data_fim, tabela, col_pr
     };
   } catch (e) {
     const err = new Error(`Erro ao ler ${T}: ${e.message}`);
-    err.dica = `Confira os nomes das colunas. Mapeamento usado: projeto="${cP}", pessoa="${cU}", data="${cD}", horas="${cH}". Use "🔍 Explorar banco" para ver os nomes reais.`;
+    err.dica = `Confira os nomes das colunas. Mapeamento usado: projeto=${_id(cP)}, pessoa=${_id(cU)}, data=${_id(cD)}, horas=${_id(cH)}. Use "🔍 Explorar banco" para ver os nomes reais.`;
     throw err;
   }
 }
@@ -794,7 +797,7 @@ async function cronogramaBuscarBanco({ projeto } = {}) {
   if (cfg.chave) {
     // store chave-valor: o cronograma está dentro de um JSON
     const r = await _q(sql, 
-      `SELECT ("${cfg.col_valor || 'value'}")::text AS v FROM "${cfg.tabela}" WHERE "${cfg.col_chave || 'key'}" = $1 LIMIT 1`,
+      `SELECT (${_id(cfg.col_valor || 'value')})::text AS v FROM ${_id(cfg.tabela)} WHERE ${_id(cfg.col_chave || 'key')} = $1 LIMIT 1`,
       [cfg.chave]);
     const bruto = r[0]?.v;
     if (!bruto) return { tarefas: [], erro: `Chave "${cfg.chave}" não encontrada em ${cfg.tabela}` };
@@ -806,7 +809,7 @@ async function cronogramaBuscarBanco({ projeto } = {}) {
       if (cand) lista = cand;
     }
   } else {
-    lista = await _q(sql, `SELECT * FROM "${cfg.tabela}" LIMIT 5000`);
+    lista = await _q(sql, `SELECT * FROM ${_id(cfg.tabela)} LIMIT 5000`);
   }
 
   const pega = (o, ...ks) => { for (const k of ks) if (o?.[k] != null && o[k] !== '') return o[k]; return null; };
@@ -1341,4 +1344,4 @@ async function handler(req, res) {
 }
 
 // v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
-export default comGuarda(handler);
+export default comGuarda(handler, 'pmo');

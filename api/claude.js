@@ -31,10 +31,12 @@ async function handler(req, res) {
       return res.status(400).json({ error: 'Campo messages é obrigatório' });
     }
 
+    // v3.29 (SEC-008): limites contra abuso de custo — tamanho do pedido e da resposta
+    if (JSON.stringify(messages).length + String(system || '').length > 400000) return res.status(413).json({ error: 'Pedido grande demais para a IA (máx. ~400 mil caracteres).' });
     const body = {
       model: MODEL,
-      max_tokens,
-      messages,
+      max_tokens: Math.min(Math.max(1, parseInt(max_tokens) || 1000), 16000),
+      messages: messages.slice(-60),
     };
 
     // System prompt opcional
@@ -65,4 +67,4 @@ async function handler(req, res) {
 }
 
 // v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
-export default comGuarda(handler);
+export default comGuarda(handler, 'claude');
