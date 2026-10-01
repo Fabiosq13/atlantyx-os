@@ -40,6 +40,9 @@ document.addEventListener('error', function (e) {
   im.dataset.expirada = '1'; im.title = 'Imagem temporária do gerador expirou — gere a imagem novamente';
   im.src = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><rect width="100%" height="100%" fill="#1b1f2e"/><text x="50%" y="46%" fill="#9aa3c0" font-family="Arial" font-size="20" text-anchor="middle">Imagem expirada</text><text x="50%" y="56%" fill="#6b7394" font-family="Arial" font-size="15" text-anchor="middle">gere novamente</text></svg>');
 }, true);
+// v3.23: data/hora LOCAL (São Paulo) no formato do campo datetime-local. Antes usava toISOString() (UTC):
+// a sugestão aparecia 3h adiantada e os agendamentos automáticos de stories/reel/carrossel saíam 3h depois.
+function _localDT(d) { d = d instanceof Date ? d : new Date(d); const z = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) + 'T' + z(d.getHours()) + ':' + z(d.getMinutes()); }
 function _dia(v) {
   if (v == null || v === '') return '';
   if (v instanceof Date) return isNaN(v) ? '' : v.getFullYear() + '-' + String(v.getMonth() + 1).padStart(2, '0') + '-' + String(v.getDate()).padStart(2, '0');
@@ -142,6 +145,34 @@ body{background:var(--bg);color:var(--t1);font-family:var(--B);font-size:13px;di
 .cnt{min-width:0;}
 .page{max-width:100%;}
 .kg>*,.agrid>*{min-width:0;}
+/* v3.23 — telas de campanha: abas segmentadas, etapas e barra de ações */
+.seg{display:inline-flex;background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:3px;gap:2px;flex-wrap:wrap;}
+.seg button{background:none;border:0;color:var(--t2);font:600 11px var(--B);padding:6px 12px;border-radius:6px;cursor:pointer;white-space:nowrap;}
+.seg button:hover{color:var(--t1);}
+.seg button.on{background:var(--bg2);color:var(--blue);box-shadow:0 1px 3px rgba(0,0,0,.25);}
+.seg-wide{display:flex;}
+.cp-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--bd);}
+.cp-top .seg{margin-left:auto;}
+.cp-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px;}
+.cp-steps>div{background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;font-size:10.5px;color:var(--t2);display:flex;align-items:center;gap:7px;min-width:0;}
+.cp-steps>div b{display:inline-flex;width:20px;height:20px;border-radius:50%;align-items:center;justify-content:center;background:var(--bg4);color:var(--t2);font-size:10px;flex-shrink:0;}
+.cp-steps>div.ok b{background:var(--green);color:#fff;}
+.cp-steps>div.atual{border-color:var(--blue);color:var(--t1);font-weight:600;}
+.cp-steps>div.atual b{background:var(--blue);color:#fff;}
+.kb-cfg{position:relative;}
+.kb-cfg>summary{list-style:none;}
+.kb-cfg>summary::-webkit-details-marker{display:none;}
+.kb-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;background:var(--bg2);border:1px solid var(--bd2);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px;min-width:260px;box-shadow:0 10px 30px rgba(0,0,0,.35);}
+.kb-menu .btn{justify-content:flex-start;width:100%;}
+.st-grupo{font-family:var(--M);font-size:9.5px;letter-spacing:1px;text-transform:uppercase;color:var(--t2);margin:6px 0 7px;}
+.st-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-bottom:14px;}
+.st-card{background:var(--bg3);border:1px solid var(--bd);border-radius:9px;padding:13px;cursor:pointer;display:flex;gap:11px;align-items:flex-start;transition:border-color .12s,transform .12s;}
+.st-card:hover{border-color:var(--blue);transform:translateY(-1px);}
+.st-ic{font-size:18px;line-height:1;width:24px;text-align:center;flex-shrink:0;}
+.st-t{font-size:12.5px;font-weight:700;margin-bottom:3px;}
+.st-d{font-size:10.5px;color:var(--t2);line-height:1.45;}
+.cp-acoes{display:flex;gap:8px;margin-top:12px;padding:10px;background:var(--bg3);border:1px solid var(--bd);border-radius:8px;}
+@media (max-width:900px){.cp-steps{grid-template-columns:repeat(2,1fr);}.cp-top .seg{margin-left:0;}}
 @media (max-width:1280px){
   .k5{grid-template-columns:repeat(auto-fit,minmax(170px,1fr));}
   .k4{grid-template-columns:repeat(auto-fit,minmax(190px,1fr));}
@@ -1951,112 +1982,69 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
   <!-- STUDIO CRIATIVO -->
   <div class="page" id="page-s2studio">
-    <div style="background:linear-gradient(135deg,rgba(240,112,48,.18),rgba(240,112,48,.05));border:1px solid rgba(240,112,48,.18);border-radius:9px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <div style="font-family:var(--H);font-size:24px;font-weight:800;opacity:.12">S2</div>
-      <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Studio Criativo — Agentes de Marketing Digital</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Storyteller · Copywriter · Designer · Motion · Social Media · DM · Inbound · Outbound · FinOps</div></div>
-      <button class="btn btn-or" onclick="nav('s2campanha',null)" style="white-space:nowrap">&#9654; Nova Campanha</button>
-      <button class="btn btn-s7" onclick="nav('s2kanban',null)" style="white-space:nowrap">&#9632; Kanban</button>
+    <!-- v3.23: Studio reorganizado pelo que você quer fazer (antes: 10 cartões de "agentes" com selo "Ativo" fixo) -->
+    <div class="cp-top">
+      <div style="min-width:0;flex:1;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Studio criativo</div>
+        <div style="font-size:10.5px;color:var(--t2);margin-top:2px">Escolha o que fazer — os agentes (narrativa, copy, design, motion) trabalham dentro da campanha</div></div>
+      <button class="btn btn-p" onclick="nav('s2campanha',null);try{novaCampanhaLimpa();mostrarAbaCampanha('nova');}catch(_){}">＋ Nova campanha</button>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:13px;">
-      <!-- ROW 1 -->
-      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;cursor:pointer" onclick="nav('s2campanha',null)">
-        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--or);margin-bottom:5px">CRIAÇÃO</div>
-        <div style="font-size:13px;font-weight:600;margin-bottom:3px">Storyteller</div>
-        <div style="font-size:11px;color:var(--t2)">Cria a narrativa estratégica que guia toda a campanha</div>
-        <div style="margin-top:8px;font-family:var(--M);font-size:9px;color:var(--green)">● Ativo</div>
-      </div>
-      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;cursor:pointer" onclick="nav('s2campanha',null)">
-        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--or);margin-bottom:5px">CRIAÇÃO</div>
-        <div style="font-size:13px;font-weight:600;margin-bottom:3px">Copywriter</div>
-        <div style="font-size:11px;color:var(--t2)">Textos das campanhas — 3 versões para A/B test</div>
-        <div style="margin-top:8px;font-family:var(--M);font-size:9px;color:var(--green)">● Ativo</div>
-      </div>
-      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;cursor:pointer" onclick="nav('s2campanha',null)">
-        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--blue);margin-bottom:5px">DESIGN</div>
-        <div style="font-size:13px;font-weight:600;margin-bottom:3px">Designer</div>
-        <div style="font-size:11px;color:var(--t2)">Especificação visual completa + prompt para ferramentas</div>
-        <div style="margin-top:8px;font-family:var(--M);font-size:9px;color:var(--green)">● Ativo</div>
-      </div>
-      <!-- ROW 2 -->
-      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;cursor:pointer" onclick="nav('s2campanha',null)">
-        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--purple);margin-bottom:5px">VÍDEO</div>
-        <div style="font-size:13px;font-weight:600;margin-bottom:3px">Motion Designer</div>
-        <div style="font-size:11px;color:var(--t2)">Roteiro e spec de video — premium corporativo</div>
-        <div style="margin-top:8px;font-family:var(--M);font-size:9px;color:var(--green)">● Ativo</div>
-      </div>
-      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;cursor:pointer" onclick="nav('s2social',null)">
-        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--green);margin-bottom:5px">SOCIAL</div>
-        <div style="font-size:13px;font-weight:600;margin-bottom:3px">Social Media</div>
-        <div style="font-size:11px;color:var(--t2)">Posta, monitora resultados e alimenta métricas</div>
-        <div style="margin-top:8px;font-family:var(--M);font-size:9px;color:var(--green)">● Ativo</div>
-      </div>
-      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;cursor:pointer" onclick="runDMAgent()">
-        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--teal);margin-bottom:5px">DM</div>
-        <div style="font-size:13px;font-weight:600;margin-bottom:3px">DM Response</div>
-        <div style="font-size:11px;color:var(--t2)">Lê e responde direct messages em qualquer rede</div>
-        <div style="margin-top:8px;font-family:var(--M);font-size:9px;color:var(--green)">● Ativo</div>
-      </div>
-      <!-- ROW 3 -->
-      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;cursor:pointer;border-top:2px solid var(--green);" onclick="abrirGerarImagem()">
-        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--green);margin-bottom:5px">IMAGEM IA</div>
-        <div style="font-size:13px;font-weight:600;margin-bottom:3px">Gerar Imagem</div>
-        <div style="font-size:11px;color:var(--t2)">Ideogram API — imagens premium para campanhas B2B</div>
-        <div style="margin-top:8px;font-family:var(--M);font-size:9px;color:var(--green)">● Ideogram Conectado</div>
-      </div>
-      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;cursor:pointer" onclick="nav('s2inbound',null)">
-        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--gold);margin-bottom:5px">INBOUND</div>
-        <div style="font-size:13px;font-weight:600;margin-bottom:3px">Email Marketing</div>
-        <div style="font-size:11px;color:var(--t2)">Newsletters, e-mails e cadências automatizadas</div>
-        <div style="margin-top:8px;font-family:var(--M);font-size:9px;color:var(--green)">● Ativo</div>
-      </div>
-      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;cursor:pointer" onclick="nav('s2outbound',null)">
-        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--red);margin-bottom:5px">OUTBOUND</div>
-        <div style="font-size:13px;font-weight:600;margin-bottom:3px">Google + LinkedIn Ads</div>
-        <div style="font-size:11px;color:var(--t2)">Cria estrutura completa de campanhas pagas</div>
-        <div style="margin-top:8px;font-family:var(--M);font-size:9px;color:var(--green)">● Ativo</div>
-      </div>
-      <div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;cursor:pointer" onclick="nav('s2finops',null)">
-        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--s7c);margin-bottom:5px">FINOPS</div>
-        <div style="font-size:13px;font-weight:600;margin-bottom:3px">Marketing FinOps</div>
-        <div style="font-size:11px;color:var(--t2)">ROI por canal, budget otimizado, alertas de gasto</div>
-        <div style="margin-top:8px;font-family:var(--M);font-size:9px;color:var(--green)">● Ativo</div>
-      </div>
+    <div class="st-grupo">1 · Criar</div>
+    <div class="st-grid">
+        <div class="st-card" onclick="nav('s2campanha',null);try{mostrarAbaCampanha('nova');}catch(_){}"><div class="st-ic" style="color:var(--or);">◆</div><div style="min-width:0;"><div class="st-t">Campanha completa com IA</div><div class="st-d">Briefing → narrativa, copy por rede, imagem, Stories, Carrossel e Reel</div></div></div>
+        <div class="st-card" onclick="nav('s2auto',null)"><div class="st-ic" style="color:var(--pu);">🤖</div><div style="min-width:0;"><div class="st-t">Auto-campanha</div><div class="st-d">A IA lê as métricas do Metricool e agenda posts nos melhores horários</div></div></div>
+        <div class="st-card" onclick="abrirGerarImagem()"><div class="st-ic" style="color:var(--green);">🎨</div><div style="min-width:0;"><div class="st-t">Só uma imagem</div><div class="st-d">Gerador de imagens (Ideogram) para uma peça avulsa</div></div></div>
+    </div>
+    <div class="st-grupo">2 · Aprovar, publicar e medir</div>
+    <div class="st-grid">
+        <div class="st-card" onclick="nav('s2kanban',null)"><div class="st-ic" style="color:var(--blue);">■</div><div style="min-width:0;"><div class="st-t">Kanban de aprovação</div><div class="st-d">Revisar, aprovar e publicar as peças pelo Metricool</div></div></div>
+        <div class="st-card" onclick="nav('s2desempenho',null)"><div class="st-ic" style="color:var(--blue);">📈</div><div style="min-width:0;"><div class="st-t">Desempenho</div><div class="st-d">Funil por campanha: publicações → impressões → cliques → visitas → leads</div></div></div>
+        <div class="st-card" onclick="nav('s2social',null)"><div class="st-ic" style="color:var(--green);">💬</div><div style="min-width:0;"><div class="st-t">Social e DMs</div><div class="st-d">Monitor das redes e respostas a mensagens diretas</div></div></div>
+    </div>
+    <div class="st-grupo">3 · Outros canais</div>
+    <div class="st-grid">
+        <div class="st-card" onclick="nav('s2inbound',null)"><div class="st-ic" style="color:var(--gold);">✉</div><div style="min-width:0;"><div class="st-t">E-mail e cadências</div><div class="st-d">Newsletter, e-mail único ou sequência de nutrição</div></div></div>
+        <div class="st-card" onclick="nav('s2outbound',null)"><div class="st-ic" style="color:var(--red);">🎯</div><div style="min-width:0;"><div class="st-t">Anúncios (Google / LinkedIn Ads)</div><div class="st-d">Estrutura de campanha paga e palavras-chave</div></div></div>
+        <div class="st-card" onclick="nav('s2finops',null)"><div class="st-ic" style="color:var(--gold);">💰</div><div style="min-width:0;"><div class="st-t">FinOps de marketing</div><div class="st-d">Investimento x retorno por canal e alertas de gasto</div></div></div>
     </div>
   </div>
 
   <!-- KANBAN DE APROVAÇÃO -->
   <div class="page" id="page-s2kanban">
-    <div style="display:flex;justify-content:space-between;margin-bottom:8px;gap:8px;flex-wrap:wrap;">
-      <button class="btn btn-p" style="font-size:11px;padding:6px 14px;" onclick="gerarCampanhaAutomatica()" title="A IA analisa as métricas do Metricool + benchmarks e agenda 3 publicações otimizadas">&#129302; Auto-campanha IA (3 posts otimizados)</button>
-      <span style="font-size:9.5px;color:var(--t3);align-self:center;">📱 Stories e 🎬 Reels: abra uma campanha (✎ Editar no card ou Nova Campanha) → abas Stories / Reels</span>
-      <button class="btn" style="font-size:10px;" onclick="definirLinkReuniao()" title="Link padrão de reunião usado em publicações, stories, impulso e auto-campanha">🔗 Link de reunião padrão</button>
-      <button class="btn" style="font-size:10px;" onclick="definirTextoLinkBio()" title="Frase que explica o 'link na bio' do Instagram (leva ao seu site → cadastro de contato)">📲 Texto do link na bio</button>
-      <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="escolherMarcaMetricool()" title="Escolher em qual marca/página do Metricool publicar (ex.: outra página do LinkedIn)">🏢 <span id="marcaAtivaLabel">Página de publicação</span></button>
-      <button class="btn" style="font-size:10px;" onclick="reconstruirPecasDasCampanhas()" title="Recria no kanban as peças de campanhas salvas que sumiram">&#8635; Reconstruir peças das campanhas</button>
+    <!-- v3.23: cabeçalho enxuto — 1 ação principal, filtros em um seletor, configurações recolhidas -->
+    <div class="cp-top">
+      <div style="min-width:0;flex:1;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Kanban de aprovação</div>
+        <div style="font-size:10.5px;color:var(--t2);margin-top:2px">Gerado → Revisão → Aprovado → Agendado → Publicado · Stories e Reels ficam dentro da campanha (✎ no card)</div></div>
+      <button class="btn btn-g" onclick="gerarCampanhaAutomatica()" title="A IA analisa as métricas do Metricool e agenda 3 publicações otimizadas">🤖 Auto-campanha IA</button>
+      <details class="kb-cfg"><summary class="btn btn-g">⚙ Configurar</summary>
+        <div class="kb-menu">
+          <button class="btn btn-g" onclick="escolherMarcaMetricool()" title="Em qual marca/página do Metricool publicar">🏢 <span id="marcaAtivaLabel">Página de publicação</span></button>
+          <button class="btn btn-g" onclick="definirLinkReuniao()">🔗 Link de reunião (oferecido após o cadastro)</button>
+          <button class="btn btn-g" onclick="definirTextoLinkBio()">📲 Texto do link na bio (Instagram)</button>
+          <button class="btn btn-g" onclick="reconstruirPecasDasCampanhas()" title="Recria no kanban as peças de campanhas salvas que sumiram">↻ Reconstruir peças das campanhas</button>
+        </div></details>
+      <button class="btn btn-p" onclick="nav('s2campanha',null);try{novaCampanhaLimpa();mostrarAbaCampanha('nova');}catch(_){}">＋ Nova campanha</button>
     </div>
-    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px;background:var(--bg4);border:1px solid var(--bd);border-radius:7px;padding:6px 10px;">
-      <span style="font-size:9.5px;color:var(--t2);font-family:var(--M);">FILTRAR POR</span>
-      <select id="kbCampo" title="Filtrar por qual data" aria-label="Filtrar por qual data" class="fsel" style="font-size:10px;width:auto;" onchange="aplicarFiltroKanban()"><option value="criacao">data de criação</option><option value="agendamento">data de publicação agendada</option></select>
-      <input type="date" id="kbDe" title="Data inicial do filtro" aria-label="Data inicial do filtro" class="fsel" style="font-size:10px;width:auto;" onchange="aplicarFiltroKanban()"/>
-      <span style="font-size:10px;color:var(--t3);">até</span>
-      <input type="date" id="kbAte" title="Data final do filtro" aria-label="Data final do filtro" class="fsel" style="font-size:10px;width:auto;" onchange="aplicarFiltroKanban()"/>
-      <button class="btn" style="font-size:9px;" onclick="aplicarFiltroKanban('hoje')">Hoje</button>
-      <button class="btn" style="font-size:9px;" onclick="aplicarFiltroKanban('7')">7 dias</button>
-      <button class="btn" style="font-size:9px;" onclick="aplicarFiltroKanban('30')">30 dias</button>
-      <button class="btn" style="font-size:9px;color:var(--gold);" onclick="aplicarFiltroKanban('prox14')">📅 Próximos 14 dias</button>
-      <button class="btn" style="font-size:9px;" onclick="aplicarFiltroKanban('todos')">Todos</button>
-    </div>
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
-      <div style="flex:1;min-width:240px;">
-        <div style="font-family:var(--H);font-size:15px;font-weight:700">Kanban de Aprovação — Peças e Campanhas</div>
-        <div style="font-size:10.5px;color:var(--t2);margin-top:2px">Revisar → Aprovar → Agendar no HubSpot → Publicar</div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+      <div class="seg" id="kbPeriodoSeg">
+        <button onclick="aplicarFiltroKanban('hoje');_kbSeg(this)">Hoje</button>
+        <button onclick="aplicarFiltroKanban('7');_kbSeg(this)">7 dias</button>
+        <button onclick="aplicarFiltroKanban('30');_kbSeg(this)">30 dias</button>
+        <button onclick="aplicarFiltroKanban('prox14');_kbSeg(this)">Próximos 14 dias</button>
+        <button class="on" onclick="aplicarFiltroKanban('todos');_kbSeg(this)">Todos</button>
       </div>
-      <button class="btn btn-gn" onclick="aprovarTodosKanban()">&#10003; Aprovar Todas Pendentes</button>
-      <button class="btn btn-rd" onclick="recusarTodosKanban()">&#10005; Recusar Todas</button>
-      <button class="btn btn-or" onclick="nav('s2campanha',null)" style="font-size:11px">+ Nova Campanha</button>
+      <details class="kb-cfg"><summary style="font-size:10.5px;color:var(--t2);cursor:pointer;">período personalizado</summary>
+        <div class="kb-menu" style="flex-direction:row;align-items:center;gap:6px;left:0;right:auto;">
+          <select id="kbCampo" title="Filtrar por qual data" aria-label="Filtrar por qual data" class="fsel" style="font-size:10px;width:auto;" onchange="aplicarFiltroKanban()"><option value="criacao">data de criação</option><option value="agendamento">data de publicação agendada</option></select>
+          <input type="date" id="kbDe" title="Data inicial do filtro" aria-label="Data inicial do filtro" class="fsel" style="font-size:10px;width:auto;" onchange="aplicarFiltroKanban();_kbSeg(null)"/>
+          <span style="font-size:10px;color:var(--t3);">até</span>
+          <input type="date" id="kbAte" title="Data final do filtro" aria-label="Data final do filtro" class="fsel" style="font-size:10px;width:auto;" onchange="aplicarFiltroKanban();_kbSeg(null)"/>
+        </div></details>
+      <span style="margin-left:auto;font-size:10.5px;color:var(--t2);">Em revisão:
+        <a href="javascript:void(0)" onclick="aprovarTodosKanban()" style="color:var(--green);font-weight:600;">✓ aprovar todas</a> ·
+        <a href="javascript:void(0)" onclick="if(confirm('Recusar todas as peças em revisão?'))recusarTodosKanban()" style="color:var(--red);">✕ recusar todas</a></span>
     </div>
     <!-- KANBAN COLS -->
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;" id="kanbanBoard">
+    <div style="display:grid;grid-template-columns:repeat(5,minmax(170px,1fr));gap:8px;overflow-x:auto;" id="kanbanBoard">
       <!-- Gerado pelo JS -->
     </div>
     <!-- DETALHE DA PEÇA + LOOP DE REVISÃO -->
@@ -2197,21 +2185,26 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- NOVA CAMPANHA -->
   <div class="page" id="page-s2campanha">
 
-    <!-- HEADER COM ABAS -->
-    <div style="display:flex;gap:6px;margin-bottom:13px;border-bottom:1px solid rgba(79,124,255,.15);padding-bottom:10px;align-items:center;">
-      <button class="btn btn-p" id="abaNovaBtn" onclick="mostrarAbaCampanha('nova')" style="font-size:11px;padding:5px 14px;">+ Nova Campanha</button>
-      <button class="btn" id="btnLimparCampanha" onclick="novaCampanhaLimpa()" style="font-size:10px;padding:5px 10px;margin-left:6px;color:var(--t2);" title="Limpar formulário e começar do zero (a anterior fica salva no banco)">✕ Limpar (nova do zero)</button>
-      <button class="btn btn-g" id="abaListaBtn" onclick="mostrarAbaCampanha('lista')" style="font-size:11px;padding:5px 14px;">&#128193; Minhas Campanhas</button>
-      <button class="btn btn-g" id="abaCalBtn" onclick="mostrarAbaCampanha('calendario')" style="font-size:11px;padding:5px 14px;">&#128197; Calendário</button>
-      <div style="flex:1;min-width:0;"></div>
+    <!-- v3.23: cabeçalho enxuto — 3 abas + 1 ação -->
+    <div class="cp-top">
+      <div style="min-width:0;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">Campanhas</div><div style="font-size:10.5px;color:var(--t2);">Briefing → conteúdo com IA → formatos → aprovação no Kanban</div></div>
+      <div class="seg" role="tablist">
+        <button id="abaNovaBtn" class="on" onclick="mostrarAbaCampanha('nova')">Criar / editar</button>
+        <button id="abaListaBtn" onclick="mostrarAbaCampanha('lista')">Minhas campanhas</button>
+        <button id="abaCalBtn" onclick="mostrarAbaCampanha('calendario')">Calendário</button>
+      </div>
       <span style="font-size:10px;color:var(--t2);" id="campSalvoCnt"></span>
+      <button class="btn btn-p" id="btnLimparCampanha" onclick="novaCampanhaLimpa();mostrarAbaCampanha('nova')" title="Começa uma campanha do zero (a atual continua salva)">＋ Nova campanha</button>
     </div>
 
     <!-- ABA NOVA CAMPANHA -->
     <div id="abaNova">
+      <div class="cp-steps" id="campStepper">
+        <div data-s="1"><b>1</b> Briefing</div><div data-s="2"><b>2</b> Conteúdo (narrativa + copy)</div><div data-s="3"><b>3</b> Imagem e formatos</div><div data-s="4"><b>4</b> Revisar e aprovar</div>
+      </div>
       <div class="kg k2">
         <div class="panel">
-          <div class="ph"><div class="pt">Configurar Campanha</div><span class="tag on">Todos os Agentes</span></div>
+          <div class="ph"><div class="pt">① Briefing da campanha</div><span style="font-size:10px;color:var(--t2);">a IA escreve a partir daqui</span></div>
           <div class="pb">
             <div class="fg"><label class="fl">Nome da Campanha</label>
               <input class="fi" id="cNome" placeholder="Ex: Prospecção Energia Q2 2026"/>
@@ -2289,18 +2282,17 @@ tr:hover td{background:rgba(79,124,255,.03);}
             <div class="fg"><label class="fl">Contexto adicional</label>
               <textarea class="fta" id="cCtx" style="min-height:55px;" placeholder="Ex: Focar em empresas que anunciaram novo ERP..."></textarea>
             </div>
-            <div style="display:flex;gap:8px;">
-              <button class="btn btn-or" style="flex:1;" id="btnCampanha" onclick="criarCampanhaCompleta()">&#9670; Criar Campanha com IA</button>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button class="btn btn-or" style="flex:1;justify-content:center;font-weight:700;" id="btnCampanha" onclick="criarCampanhaCompleta()">&#9670; Criar campanha com IA</button>
               <button class="btn btn-gn" style="font-size:11px;" id="btnSalvarCampanha" onclick="salvarEdicoesCampanha(true)" title="Grava nome, objetivo, canal, redes, datas e contexto da campanha aberta (sem re-rodar a IA)">💾 Salvar</button>
-              <button class="btn btn-p" onclick="criarVideoMotion()" style="font-size:11px;">&#9654; Motion</button>
             </div>
           </div>
         </div>
         <div class="panel">
           <div class="ph">
-            <div class="pt">Pipeline da Campanha</div>
+            <div class="pt">② Conteúdo gerado</div>
             <span class="tag off" id="campTag">Aguardando</span>
-            <button class="btn btn-gn" id="btnSalvarCamp" style="display:none;font-size:9px;padding:3px 9px;" onclick="salvarCampanhaDB()">&#128190; Salvar</button>
+            <button class="btn btn-gn" id="btnSalvarCamp" style="display:none !important;" onclick="salvarCampanhaDB()">&#128190; Salvar</button>
           </div>
           <div class="pb" id="campResult">
             <div style="color:var(--t3);font-size:11px;text-align:center;padding:30px;">Configure e clique em Criar.</div>
@@ -2310,14 +2302,12 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
       <!-- EDITOR -->
       <div id="campEditorPanel" style="display:none;margin-top:12px;">
-        <div style="display:flex;gap:6px;margin-bottom:12px;border-bottom:1px solid rgba(79,124,255,.15);padding-bottom:8px;">
-          <button class="btn" id="edAbaStory"   onclick="mostrarEdAba('story')"   style="font-size:10px;padding:4px 10px;">&#128221; Narrativa</button>
-          <button class="btn" id="edAbaCopy"    onclick="mostrarEdAba('copy')"    style="font-size:10px;padding:4px 10px;">&#9997; Copy</button>
-          <button class="btn" id="edAbaImg"     onclick="mostrarEdAba('img')"     style="font-size:10px;padding:4px 10px;">&#127912; Imagem</button>
-          <button class="btn" id="edAbaStories" onclick="mostrarEdAba('img');setTimeout(()=>document.getElementById('storyTag')?.closest('.panel')?.scrollIntoView({behavior:'smooth',block:'start'}),120)" style="font-size:10px;padding:4px 10px;color:var(--gold);border-color:rgba(245,185,75,.5);" title="Sequência de 3 stories 9:16 com sticker de link (quem já te segue)">&#128241; Stories</button>
-          <button class="btn" id="edAbaCarr" onclick="mostrarEdAba('img');setTimeout(()=>document.getElementById('carrTag')?.closest('.panel')?.scrollIntoView({behavior:'smooth',block:'start'}),120)" style="font-size:10px;padding:4px 10px;color:var(--gold);border-color:rgba(245,185,75,.5);" title="Carrossel do feed 1:1 (post com várias imagens deslizáveis)">&#128444; Carrossel</button>
-          <button class="btn" id="edAbaReels" onclick="mostrarEdAba('img');setTimeout(()=>document.getElementById('reelTag')?.closest('.panel')?.scrollIntoView({behavior:'smooth',block:'start'}),120)" style="font-size:10px;padding:4px 10px;color:var(--gold);border-color:rgba(245,185,75,.5);" title="Reel em slideshow 9:16 gerado no navegador (topo de funil)">&#127916; Reels</button>
-          <button class="btn btn-p" id="edAbaPreview" onclick="mostrarEdAba('preview')" style="font-size:10px;padding:4px 10px;">&#128247; Preview por Canal</button>
+        <div class="seg seg-wide" style="margin-bottom:12px;">
+          <button id="edAbaStory" onclick="mostrarEdAba('story')">📝 Narrativa</button>
+          <button id="edAbaCopy" onclick="mostrarEdAba('copy')">✍ Copy</button>
+          <button id="edAbaImg" onclick="mostrarEdAba('img')">🎨 Imagem</button>
+          <button id="edAbaFormatos" onclick="mostrarEdAba('formatos')">📱 Stories · Carrossel · Reel</button>
+          <button id="edAbaPreview" onclick="mostrarEdAba('preview')">👁 Preview e aprovação</button>
         </div>
         <!-- ABA NARRATIVA -->
         <div id="edStory" style="display:none;">
@@ -2425,15 +2415,25 @@ tr:hover td{background:rgba(79,124,255,.03);}
               </div>
             </div>
           </div>
+        </div>
+        <!-- ABA FORMATOS (v3.23: um formato por vez) -->
+        <div id="edFormatos" style="display:none;">
+          <div class="seg" style="margin-bottom:10px;" id="fmtSeg">
+            <button data-f="stories" onclick="mostrarFormato('stories')">📱 Stories 9:16</button>
+            <button data-f="carr" onclick="mostrarFormato('carr')">🖼 Carrossel 1:1</button>
+            <button data-f="reel" onclick="mostrarFormato('reel')">🎬 Reel</button>
+            <button data-f="motion" onclick="mostrarFormato('motion')">▶ Motion</button>
+          </div>
+          <div class="panel fmt-motion" style="display:none;"><div class="ph"><div class="pt">▶ Vídeo motion da campanha</div></div><div class="pb" style="font-size:11px;color:var(--t2);">Gera o roteiro de um vídeo curto com movimento a partir da narrativa e da copy.<div style="margin-top:8px;"><button class="btn btn-p" onclick="criarVideoMotion()">▶ Criar motion</button></div></div></div>
           <!-- v1.8: STORIES 9:16 -->
-          <div class="panel" style="margin-top:14px;">
+          <div class="panel fmt-stories" style="margin-top:0;">
             <div class="ph"><div class="pt">📱 Stories (9:16) — sequência de 3 para quem já te segue</div><span class="tag off" id="storyTag">Aguardando</span></div>
             <div class="pb">
               <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
-                <button class="btn btn-p" style="font-size:10.5px;" onclick="gerarStoryPack()">🤖 Gerar roteiro de 3 stories</button>
-                <button class="btn btn-or" style="font-size:10.5px;" onclick="gerarArtesStories()" id="btnArtesStories" disabled>◆ Gerar artes 9:16 (Ideogram)</button>
-                <button class="btn" style="font-size:10.5px;color:var(--gold);border-color:var(--gold);" onclick="comporArtesStories()" id="btnComporStories" disabled>🖼 Compor artes com texto</button>
-                <button class="btn btn-gn" style="font-size:10.5px;" onclick="publicarStories()" id="btnPubStories" disabled>🚀 Agendar stories (Metricool)</button>
+                <button class="btn btn-p" style="font-size:10.5px;" onclick="gerarStoryPack()">① Roteiro (IA)</button>
+                <button class="btn btn-or" style="font-size:10.5px;" onclick="gerarArtesStories()" id="btnArtesStories" disabled>② Artes 9:16</button>
+                <button class="btn" style="font-size:10.5px;color:var(--gold);border-color:var(--gold);" onclick="comporArtesStories()" id="btnComporStories" disabled title="Grava o texto na imagem (é o que o Instagram mostra)">③ Texto na arte</button>
+                <button class="btn btn-gn" style="font-size:10.5px;" onclick="publicarStories()" id="btnPubStories" disabled>④ Agendar</button>
               </div>
               <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
                 <span style="font-size:10px;color:var(--gold);white-space:nowrap;">🔗 LINK DA REUNIÃO (sticker do 3º story):</span>
@@ -2446,14 +2446,14 @@ tr:hover td{background:rgba(79,124,255,.03);}
             </div>
           </div>
           <!-- v1.11: CARROSSEL DO FEED 1:1 -->
-          <div class="panel" style="margin-top:14px;">
+          <div class="panel fmt-carr" style="margin-top:0;display:none;">
             <div class="ph"><div class="pt">🖼 Carrossel do feed (1:1) — meio de funil, educa e converte no feed</div><span class="tag off" id="carrTag">Aguardando</span></div>
             <div class="pb">
               <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
-                <button class="btn btn-p" style="font-size:10.5px;" onclick="gerarCarrosselPack()">🤖 Gerar roteiro (5 slides + legendas)</button>
-                <button class="btn btn-or" style="font-size:10.5px;" onclick="gerarArtesCarrossel()" id="btnArtesCarr" disabled>◆ Gerar artes 1:1</button>
-                <button class="btn" style="font-size:10.5px;color:var(--gold);border-color:var(--gold);" onclick="comporArtesCarrossel()" id="btnComporCarr" disabled>🖼 Compor artes com texto</button>
-                <button class="btn btn-gn" style="font-size:10.5px;" onclick="publicarCarrossel()" id="btnPubCarr" disabled>🚀 Publicar carrossel</button>
+                <button class="btn btn-p" style="font-size:10.5px;" onclick="gerarCarrosselPack()">① Roteiro (IA)</button>
+                <button class="btn btn-or" style="font-size:10.5px;" onclick="gerarArtesCarrossel()" id="btnArtesCarr" disabled>② Artes 1:1</button>
+                <button class="btn" style="font-size:10.5px;color:var(--gold);border-color:var(--gold);" onclick="comporArtesCarrossel()" id="btnComporCarr" disabled>③ Texto na arte</button>
+                <button class="btn btn-gn" style="font-size:10.5px;" onclick="publicarCarrossel()" id="btnPubCarr" disabled>④ Publicar</button>
                 <span style="font-size:9px;color:var(--t3);">Um post com várias imagens deslizáveis · texto por rede: LinkedIn/FB com link, Instagram com a frase do link na bio</span>
               </div>
               <div id="carrSlides" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;">
@@ -2466,17 +2466,17 @@ tr:hover td{background:rgba(79,124,255,.03);}
             </div>
           </div>
           <!-- v1.9: REELS SLIDESHOW -->
-          <div class="panel" style="margin-top:14px;">
+          <div class="panel fmt-reel" style="margin-top:0;display:none;">
             <div class="ph"><div class="pt">🎬 Reel em slideshow (9:16) — topo de funil, alcança quem não te segue</div><span class="tag off" id="reelTag">Aguardando</span></div>
             <div class="pb">
               <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
-                <button class="btn btn-p" style="font-size:10.5px;" onclick="gerarReelPack()">🤖 Gerar roteiro (5 slides + legenda)</button>
-                <button class="btn btn-or" style="font-size:10.5px;" onclick="gerarArtesReel()" id="btnArtesReel" disabled>◆ Gerar artes 9:16</button>
-                <button class="btn" style="font-size:10.5px;color:var(--gold);border-color:var(--gold);" onclick="montarVideoReel()" id="btnMontarReel" disabled>🎬 Montar vídeo</button>
-                <button class="btn" style="font-size:10.5px;" onclick="hospedarReel()" id="btnHostReel" disabled>☁ Hospedar</button>
-                <button class="btn btn-gn" style="font-size:10.5px;" onclick="publicarReel()" id="btnPubReel" disabled>🚀 Agendar Reel</button>
+                <button class="btn btn-p" style="font-size:10.5px;" onclick="gerarReelPack()">① Roteiro (IA)</button>
+                <button class="btn btn-or" style="font-size:10.5px;" onclick="gerarArtesReel()" id="btnArtesReel" disabled>② Artes 9:16</button>
+                <button class="btn" style="font-size:10.5px;color:var(--gold);border-color:var(--gold);" onclick="montarVideoReel()" id="btnMontarReel" disabled>③ Montar vídeo</button>
+                <button class="btn" style="font-size:10.5px;display:none;" onclick="hospedarReel()" id="btnHostReel" disabled>☁ Hospedar</button>
+                <button class="btn btn-gn" style="font-size:10.5px;" onclick="publicarReel()" id="btnPubReel" disabled>④ Agendar</button>
                 <select id="reelDur" class="fsel" style="font-size:10px;width:auto;"><option value="2500">2,5 s/slide</option><option value="3000" selected>3 s/slide</option><option value="3500">3,5 s/slide</option></select>
-                <button class="btn" style="font-size:9.5px;" onclick="testarHospedagemMidia()" title="Sobe uma imagem de teste e confere se a URL pública responde com o tipo certo (o que o Metricool vê)">🔍 Testar hospedagem</button>
+                <button class="btn btn-g" style="font-size:9.5px;margin-left:auto;" onclick="testarHospedagemMidia()" title="Sobe uma imagem de teste e confere se a URL pública responde com o tipo certo (o que o Metricool vê)">🔍 Testar hospedagem</button>
               </div>
               <div style="display:grid;grid-template-columns:1fr 300px;gap:14px;align-items:start;">
                 <div>
@@ -2509,8 +2509,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <div style="background:linear-gradient(135deg,rgba(79,124,255,.12),rgba(156,109,255,.06));border:1px solid rgba(79,124,255,.2);border-radius:9px;padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <div style="font-size:13px;font-weight:600;flex:1;min-width:120px;">Preview por Canal</div>
             <button class="btn btn-or" style="font-size:10px;" onclick="gerarPreviewTodosCanais()">&#9670; Gerar Previews</button>
-            <button class="btn btn-gn" style="font-size:10px;" onclick="aprovarCampanhaFinal()">&#10003; Aprovar</button>
-            <button class="btn" style="font-size:9px;color:var(--gold);border-color:var(--gold);" onclick="toggleDebugPreview()">&#9679; Debug Preview</button>
+            <a href="javascript:void(0)" style="font-size:9.5px;color:var(--t3);" onclick="toggleDebugPreview()" title="Diagnóstico técnico do preview">diagnóstico</a>
           </div>
           <!-- DEBUG PREVIEW -->
           <div id="debugPreviewPanel" style="display:none;background:var(--bg);border:1px solid var(--gold);border-radius:8px;padding:16px;margin-bottom:12px;">
@@ -2536,11 +2535,10 @@ tr:hover td{background:rgba(79,124,255,.03);}
           </div>
         </div><!-- fim edPreview (v1.14.1: faltava este fechamento — todas as páginas seguintes ficavam aninhadas dentro da campanha e apareciam pretas) -->
         <!-- AÇÕES FINAIS -->
-        <div style="display:flex;gap:8px;margin-top:12px;padding:12px;background:var(--bg4);border-radius:8px;">
-          <button class="btn btn-gn" onclick="aprovarCampanhaFinal()" style="flex:1;">&#10003; Aprovar e Enviar ao Kanban</button>
-          <button class="btn btn-or" onclick="salvarCampanhaDB()" style="font-size:11px;">&#128190; Salvar Rascunho</button>
-          <button class="btn btn-p" onclick="mostrarEdAba('preview')" style="font-size:11px;">&#128247; Preview Final</button>
-          <button class="btn btn-g" onclick="duplicarCampanha()" style="font-size:11px;">&#10066; Duplicar</button>
+        <div class="cp-acoes">
+          <button class="btn btn-gn" onclick="aprovarCampanhaFinal()" style="flex:1;justify-content:center;font-weight:700;">④ Aprovar e enviar ao Kanban</button>
+          <button class="btn btn-g" onclick="salvarCampanhaDB()">💾 Salvar rascunho</button>
+          <button class="btn btn-g" onclick="duplicarCampanha()" title="Cria uma cópia desta campanha">⧉ Duplicar</button>
         </div>
       </div>
     </div>
@@ -2566,7 +2564,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <option value="email">Email</option>
         </select>
         <button class="btn btn-g" onclick="carregarCampanhasDB()" style="font-size:10px;">&#8635; Atualizar</button>
-        <button class="btn" onclick="toggleDebugCampanhas()" style="font-size:9px;color:var(--gold);border-color:var(--gold);">&#9679; Debug</button>
+        <a href="javascript:void(0)" onclick="toggleDebugCampanhas()" style="font-size:9.5px;color:var(--t3);white-space:nowrap;" title="Ferramentas de diagnóstico">diagnóstico</a>
       </div>
       <!-- GRID DE CAMPANHAS — renderizado via JS -->
       <div id="campListaGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px;min-height:100px;">
@@ -2586,6 +2584,33 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <button class="btn btn-p" style="font-size:10px;" onclick="forcarCarregarBanco()">&#9670; Forçar Banco</button>
           <button class="btn" style="font-size:10px;color:var(--red);" onclick="limparCampanhasLocal()">&#9888; Limpar Cache</button>
         </div>
+      </div>
+    </div>
+
+
+    <!-- v3.23: o calendário estava dentro da tela de Ads (s2outbound) e nunca aparecia na aba Calendário -->
+    <!-- ABA CALENDÁRIO -->
+    <div id="abaCalendario" style="display:none;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <button class="btn btn-g" onclick="mudarMesCalCamp(-1)" style="font-size:13px;padding:4px 14px;">&#8249;</button>
+        <div id="calCampTitulo" style="font-family:var(--H);font-size:15px;font-weight:600;min-width:180px;text-align:center;">--</div>
+        <button class="btn btn-g" onclick="mudarMesCalCamp(1)" style="font-size:13px;padding:4px 14px;">&#8250;</button>
+        <button class="btn" onclick="irHojeCalCamp()" style="font-size:10px;padding:4px 12px;">Hoje</button>
+        <div style="flex:1;min-width:0;"></div>
+        <span style="font-size:10px;color:var(--t2);" id="calCampStats">--</span>
+      </div>
+      <div class="panel">
+        <div class="pb" id="calCampGrid" style="padding:8px;">
+          <div style="color:var(--t3);font-size:11px;text-align:center;padding:30px;">Carregando calendário...</div>
+        </div>
+      </div>
+      <div style="margin-top:14px;background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;font-size:11px;color:var(--t2);">
+        <strong style="color:var(--t1);">Legenda:</strong>
+        <span style="margin-left:14px;color:var(--green);">&#9679; Ativa</span>
+        <span style="margin-left:14px;color:var(--gold);">&#9679; Pausada</span>
+        <span style="margin-left:14px;color:var(--t2);">&#9679; Encerrada</span>
+        <span style="margin-left:14px;color:var(--pu);">&#9679; Rascunho</span>
+        <span style="margin-left:14px;">| Clique numa campanha para abrir</span>
       </div>
     </div>
 
@@ -2612,30 +2637,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     </div>
  
 
-    <!-- ABA CALENDÁRIO -->
-    <div id="abaCalendario" style="display:none;">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-        <button class="btn btn-g" onclick="mudarMesCalCamp(-1)" style="font-size:13px;padding:4px 14px;">&#8249;</button>
-        <div id="calCampTitulo" style="font-family:var(--H);font-size:15px;font-weight:600;min-width:180px;text-align:center;">--</div>
-        <button class="btn btn-g" onclick="mudarMesCalCamp(1)" style="font-size:13px;padding:4px 14px;">&#8250;</button>
-        <button class="btn" onclick="irHojeCalCamp()" style="font-size:10px;padding:4px 12px;">Hoje</button>
-        <div style="flex:1;min-width:0;"></div>
-        <span style="font-size:10px;color:var(--t2);" id="calCampStats">--</span>
-      </div>
-      <div class="panel">
-        <div class="pb" id="calCampGrid" style="padding:8px;">
-          <div style="color:var(--t3);font-size:11px;text-align:center;padding:30px;">Carregando calendário...</div>
-        </div>
-      </div>
-      <div style="margin-top:14px;background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;font-size:11px;color:var(--t2);">
-        <strong style="color:var(--t1);">Legenda:</strong>
-        <span style="margin-left:14px;color:var(--green);">&#9679; Ativa</span>
-        <span style="margin-left:14px;color:var(--gold);">&#9679; Pausada</span>
-        <span style="margin-left:14px;color:var(--t2);">&#9679; Encerrada</span>
-        <span style="margin-left:14px;color:var(--pu);">&#9679; Rascunho</span>
-        <span style="margin-left:14px;">| Clique numa campanha para abrir</span>
-      </div>
-    </div> </div>
+  </div>
 
   <!-- INBOUND EMAIL -->
   <div class="page" id="page-s2inbound">
@@ -6602,6 +6604,17 @@ function renderEmailCategories(emails) {
 // stories, impulso e auto-campanha. Pode ser trocado em Configurações (localStorage atx:link_reuniao).
 const LINK_REUNIAO_PADRAO = 'https://meetings.hubspot.com/atlantyx?uuid=eca883eb-276d-45cb-bda8-d7d5d2ae9219';
 function linkReuniao() { try { return (localStorage.getItem('atx:link_reuniao') || '').trim() || LINK_REUNIAO_PADRAO; } catch(_) { return LINK_REUNIAO_PADRAO; } }
+// v3.23: DESTINO PADRÃO DAS CAMPANHAS = página de captura (captura.html) com UTM. Antes os posts levavam
+// direto ao HubSpot Meetings: quem clicava e não agendava sumia, e quem agendava não entrava em "leads"
+// nem na atribuição por campanha — por isso "cliques sem lead". A captura registra visita e lead, e depois
+// oferece o link de reunião (parâmetro r). Para voltar ao link direto: localStorage atx:destino_campanha = reuniao.
+function linkCaptura() { return location.origin + '/captura.html?r=' + encodeURIComponent(linkReuniao()); }
+function linkDestinoPadrao() { try { if (localStorage.getItem('atx:destino_campanha') === 'reuniao') return linkReuniao(); } catch (_) {} return linkCaptura(); }
+function comUtm(link, rede, campanhaId, conteudo) {
+  const slug = String(campanhaId || 'campanha').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9_]+/g, '_').substring(0, 60);
+  const u = 'utm_source=' + encodeURIComponent(rede || 'social') + '&utm_medium=social&utm_campaign=' + slug + (conteudo ? '&utm_content=' + encodeURIComponent(String(conteudo).substring(0, 40)) : '');
+  return /[?&]utm_campaign=/.test(link) ? link : link + (link.includes('?') ? '&' : '?') + u;
+}
 function definirLinkReuniao() {
   const atual = linkReuniao();
   const novo = prompt('Link padrão de reunião (usado nas publicações, stories, impulso e auto-campanha):', atual);
@@ -6930,7 +6943,8 @@ function aprovarPeca(id, evt) {
   if (evt) evt.stopPropagation();
   const p = kanbanPecas.find(x => x.id === id);
   if (!p) return;
-  p.status = 'Aprovado';
+  p.status = 'Aprovado'; p.atualizado_em = new Date().toISOString();
+  salvarKanbanNoBanco(); // v3.23: a aprovação se perdia ao recarregar a página
   addLog('ok', '[Kanban] Aprovado: ' + p.titulo);
   toast('Aprovado: ' + p.titulo, 'success');
   // Agendar no HubSpot
@@ -6947,7 +6961,8 @@ function recusarPeca(id, evt) {
   if (evt) evt.stopPropagation();
   const p = kanbanPecas.find(x => x.id === id);
   if (!p) return;
-  p.status = 'Gerado';
+  p.status = 'Gerado'; p.atualizado_em = new Date().toISOString();
+  salvarKanbanNoBanco();
   addLog('warn', '[Kanban] Recusado: ' + p.titulo);
   toast('Recusado -- voltou para Gerado', 'info');
   renderKanban();
@@ -6956,21 +6971,26 @@ function recusarPeca(id, evt) {
 function solicitarAjuste(id) {
   const p = kanbanPecas.find(x => x.id === id);
   if (!p) return;
-  p.status = 'Gerado';
+  p.status = 'Gerado'; p.atualizado_em = new Date().toISOString();
+  salvarKanbanNoBanco();
   addLog('info', '[Kanban] Ajuste solicitado: ' + p.titulo);
   toast('Solicitado ajuste -- voltou para Gerado', 'info');
   renderKanban();
 }
 
 function aprovarTodosKanban() {
-  kanbanPecas.filter(p => p.status === 'Revisão').forEach(p => { p.status = 'Aprovado'; });
+  const _ag = new Date().toISOString();
+  kanbanPecas.filter(p => p.status === 'Revisão').forEach(p => { p.status = 'Aprovado'; p.atualizado_em = _ag; });
+  salvarKanbanNoBanco();
   renderKanban();
   addLog('ok', '[Kanban] Todas peças aprovadas');
   toast('Todas aprovadas!', 'success');
 }
 
 function recusarTodosKanban() {
-  kanbanPecas.filter(p => p.status === 'Revisão').forEach(p => { p.status = 'Gerado'; });
+  const _ag = new Date().toISOString();
+  kanbanPecas.filter(p => p.status === 'Revisão').forEach(p => { p.status = 'Gerado'; p.atualizado_em = _ag; });
+  salvarKanbanNoBanco();
   renderKanban();
   addLog('warn', '[Kanban] Todas peças recusadas');
 }
@@ -7039,7 +7059,11 @@ async function carregarKanbanDoBanco() {
 
   // Merge por id: união banco + local + memória (nada se perde)
   const mapa = {};
-  [].concat(doBanco || [], doLocal || [], kanbanPecas || []).forEach(p => { if (p && p.id) mapa[p.id] = Object.assign({}, mapa[p.id] || {}, p); });
+  // v3.23: em conflito vence a versão alterada por último (atualizado_em) — antes a cópia local antiga
+  // sobrescrevia a do banco e devolvia peças aprovadas para "Revisão"
+  const _t = x => Date.parse(x && (x.atualizado_em || x.criado_em) || 0) || 0;
+  [].concat(doBanco || [], doLocal || [], kanbanPecas || []).forEach(p => { if (!p || !p.id) return; const a = mapa[p.id];
+    mapa[p.id] = !a ? Object.assign({}, p) : (_t(p) >= _t(a) ? Object.assign({}, a, p) : Object.assign({}, p, a)); });
   const unidas = Object.values(mapa);
   if (unidas.length) {
     kanbanPecas = unidas;
@@ -9045,7 +9069,7 @@ function _ideiaPdfDoc(x, bp) {
 // v3.16: carrega o agente de QA sob demanda
 function qaAbrir() {
   if (window.QA) return QA.abrir();
-  const s = document.createElement('script'); s.src = '/qa-agent.js?v=3.22';
+  const s = document.createElement('script'); s.src = '/qa-agent.js?v=3.23';
   s.onload = () => window.QA && QA.abrir();
   s.onerror = () => { const a = document.getElementById('qaApp'); if (a) a.innerHTML = '<div style="color:var(--red);padding:20px;">Não consegui carregar /qa-agent.js</div>'; };
   document.head.appendChild(s);
@@ -10523,10 +10547,11 @@ function mostrarAbaCampanha(aba) {
     if (nova)  nova.style.display  = aba === 'nova'  ? 'block' : 'none';
     if (lista) lista.style.display = aba === 'lista' ? 'block' : 'none';
     const cal = el('abaCalendario'); if (cal) cal.style.display = aba === 'calendario' ? 'block' : 'none';
-    const bcal = el('abaCalBtn'); if (bcal) bcal.style.borderColor = aba === 'calendario' ? 'var(--blue)' : '';
+    const bcal = el('abaCalBtn'); if (bcal) bcal.classList.toggle('on', aba === 'calendario');
     if (aba === 'calendario') setTimeout(() => { try { renderCalCampanhas(); } catch(e) { addLog('err','[Calendario] '+e.message); } }, 100);
-    const bn = el('abaNovaBtn'); if (bn) bn.style.borderColor  = aba === 'nova'  ? 'var(--blue)' : '';
-    const bl = el('abaListaBtn'); if (bl) bl.style.borderColor = aba === 'lista' ? 'var(--blue)' : '';
+    const bn = el('abaNovaBtn'); if (bn) bn.classList.toggle('on', aba === 'nova');
+    const bl = el('abaListaBtn'); if (bl) bl.classList.toggle('on', aba === 'lista');
+    try { _campStepper(); } catch (_) {}
     if (aba === 'lista') {
       // Placeholder imediato enquanto o banco responde
       const grid = el('campListaGrid');
@@ -10547,12 +10572,14 @@ function mostrarAbaCampanha(aba) {
 }
 
 function mostrarEdAba(aba) {
-  ['story','copy','img','preview'].forEach(a => {
+  ['story','copy','img','formatos','preview'].forEach(a => {
     const el  = document.getElementById('ed' + a.charAt(0).toUpperCase() + a.slice(1));
     const btn = document.getElementById('edAba' + a.charAt(0).toUpperCase() + a.slice(1));
     if (el)  el.style.display = a === aba ? 'block' : 'none';
-    if (btn) { btn.style.borderColor = a === aba ? 'var(--blue)' : ''; btn.style.color = a === aba ? 'var(--blue)' : ''; }
+    if (btn) btn.classList.toggle('on', a === aba);
   });
+  if (aba === 'formatos' && !document.querySelector('#fmtSeg button.on')) mostrarFormato('stories');
+  try { _campStepper(); } catch (_) {}
   if (aba === 'preview') {
     setTimeout(gerarPreviewTodosCanais, 80);
     // Scroll the preview section into view
@@ -10635,6 +10662,21 @@ async function restaurarUltimaCampanha() {
 }
 
 // FIX v1.4.4: limpar formulário e começar do zero (a campanha ativa foi salva no banco)
+if (typeof criarCampanhaCompleta === 'function') { const _origCriarCamp = criarCampanhaCompleta; criarCampanhaCompleta = async function () { const r = await _origCriarCamp.apply(this, arguments); try { _campStepper(); } catch (_) {} return r; }; }
+// v3.23: formatos um por vez (Stories / Carrossel / Reel / Motion)
+function _kbSeg(btn) { document.querySelectorAll('#kbPeriodoSeg button').forEach(b => b.classList.toggle('on', b === btn)); }
+function mostrarFormato(f) {
+  ['stories', 'carr', 'reel', 'motion'].forEach(x => document.querySelectorAll('#edFormatos .fmt-' + x).forEach(el => el.style.display = x === f ? '' : 'none'));
+  document.querySelectorAll('#fmtSeg button').forEach(b => b.classList.toggle('on', b.dataset.f === f));
+}
+// v3.23: indicador de etapas da campanha (1 briefing → 2 conteúdo → 3 formatos → 4 aprovação)
+function _campStepper() {
+  const box = document.getElementById('campStepper'); if (!box) return;
+  const c = (typeof campAtiva !== 'undefined' && campAtiva) || null;
+  const feito = { 1: !!c, 2: !!(c && c.data && (c.data.copy || c.data.narrativa)), 3: !!(c && ((c.imagens || []).length || c.stories || c.reel || c.carrossel)), 4: !!(c && /aprov|ativa|public/.test(String(c.status || ''))) };
+  let atual = [1, 2, 3, 4].find(n => !feito[n]) || 4;
+  box.querySelectorAll('[data-s]').forEach(d => { const n = +d.dataset.s; d.classList.toggle('ok', feito[n]); d.classList.toggle('atual', n === atual); });
+}
 function novaCampanhaLimpa() {
   if (campAtiva) {
     const ok = confirm('Limpar o formulário e criar uma NOVA campanha?\n\nA campanha atual "' + campAtiva.nome + '" foi salva no banco e continua acessível em Minhas Campanhas ou no Kanban.');
@@ -20023,7 +20065,7 @@ async function acGerarStory() {
             <a class="btn" download="story-atlantyx.png" href="${dataUrl}" style="font-size:10px;text-decoration:none;">⬇ Baixar imagem</a>
             <button class="btn" style="font-size:10px;" onclick="acGerarStory()">↻ Gerar outro</button>
           </div></div></div></div>`;
-    const q = document.getElementById('storyQuando'); if (q) { const d = new Date(Date.now() + 3600000); d.setMinutes(0); q.value = d.toISOString().substring(0,16); }
+    const q = document.getElementById('storyQuando'); if (q) { const d = new Date(Date.now() + 3600000); d.setMinutes(0); q.value = _localDT(d); }
   } catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:16px;font-size:11px;">Erro: ${e.message}</div></div>`; }
 }
 async function acAgendarStory() {
@@ -23746,12 +23788,12 @@ async function publicarPeca(pecaId) {
       // lista desatualizada? recarrega do banco e tenta de novo
       try { await carregarCampanhasDB(); const fresh = (_todasCampanhas || []).find(c => c.id === p.campanhaId); if (fresh?.imagens?.length) campL = fresh; } catch(_) {}
     }
-    linkCampanha = campL?.link_destino || linkReuniao(); // v1.9.3: default = link de reunião
+    linkCampanha = campL?.link_destino || linkDestinoPadrao(); // v3.23: default = página de captura
     imagemCampanha = campL?.imagens?.[0]?.url || '';
     if (imagemCampanha) addLog('info', '[Pub] Imagem da campanha localizada: ' + imagemCampanha.substring(0, 60) + '...');
     else addLog('warn', '[Pub] Campanha ' + p.campanhaId + ' sem imagem em imagens[] — cole a URL no modal');
   }
-  if (!linkCampanha) linkCampanha = linkReuniao(); // v1.9.3
+  if (!linkCampanha) linkCampanha = linkDestinoPadrao(); // v3.23
   if (!imagemCampanha && typeof p.design === 'string' && p.design.startsWith('http')) imagemCampanha = p.design;
 
   // Montar modal dinâmico de publicação
@@ -24449,7 +24491,7 @@ async function gerarCampanhaAutomatica(opts = {}) {
   const _autoNome = (_viaAc ? 'Autocampanha ' + _nPosts + ' posts · ' : 'Auto-campanha ') + new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR').substring(0,5);
   const _post0 = plano[0] || {};
   const campAuto = { id: _autoId, nome: _autoNome, obj: 'Gerar leads qualificados (reuniões)', canal: 'Todos', pub: 'Todos os C-Levels', orc: '', ctx: (document.getElementById('cCtx')?.value || 'captação de leads e reuniões') + ' | gerada automaticamente por métricas',
-    status: 'aprovada', ativa: true, redes_ativas: Object.fromEntries(_redes.map(r => [r, true])), link_destino: linkReuniao(),
+    status: 'aprovada', ativa: true, redes_ativas: Object.fromEntries(_redes.map(r => [r, true])), link_destino: linkDestinoPadrao(),
     data_inicio: _viaAc ? opts.slots[0].data : new Date().toISOString().substring(0,10), data_fim: _viaAc ? opts.slots[opts.slots.length - 1].data : new Date(Date.now()+14*864e5).toISOString().substring(0,10),
     criado_em: new Date().toISOString(), atualizado_em: new Date().toISOString(), imagens: [],
     data: { narrativa: { tema_central: _post0.titulo || 'Auto-campanha', gancho_principal: (_post0.texto||'').split(/[.!?]\s/)[0] || '', promessa_central: _post0.justificativa || '', call_to_action: 'Agende uma conversa' },
@@ -24504,8 +24546,8 @@ async function gerarCampanhaAutomatica(opts = {}) {
       const redesPost = (imgUrl ? ['linkedin','instagram','facebook'] : ['linkedin','facebook']).filter(r => _redes.includes(r));
       try {
         // v1.9.3: link de reunião com UTM no post (IG: "link na bio")
-        const _lr = linkReuniao(); const _slugAuto = 'auto_' + new Date().toISOString().substring(0,10).replace(/-/g,'');
-        const _linkPost = _lr + (_lr.includes('?') ? '&' : '?') + 'utm_source=' + (redesPost.find(r => r !== 'instagram') || 'social') + '&utm_medium=social&utm_campaign=' + _slugAuto;
+        // v3.23: utm_campaign = id da campanha (antes "auto_AAAAMMDD", que não casava com camp_auto_*)
+        const _linkPost = comUtm(linkDestinoPadrao(), redesPost.find(r => r !== 'instagram') || 'social', _autoId, 'post' + (_ix + 1));
         const _textoPost = post.texto + '\n\n👉 Agende uma conversa:\n' + _linkPost;
         const _textoIg = post.texto + '\n\n' + textoLinkBio();
         const _redesLink = redesPost.filter(r => r !== 'instagram');
@@ -24545,8 +24587,8 @@ async function gerarCampanhaAutomatica(opts = {}) {
       campAtiva = campAuto; window._campanhaAtual = campAtiva; window._reelBlob = null;
       try { nav('s2campanha'); } catch(_) {}
       try { mostrarAbaCampanha('nova'); } catch(_) {}
-      try { const c = document.getElementById('campEditorPanel'); if (c) c.style.display = 'block'; preencherEditorCampanha(campAtiva.data); mostrarEdAba('img'); } catch(_) {}
-      try { const lk = document.getElementById('storyLink'); if (lk) lk.value = linkReuniao(); } catch(_) {}
+      try { const c = document.getElementById('campEditorPanel'); if (c) c.style.display = 'block'; preencherEditorCampanha(campAtiva.data); mostrarEdAba('formatos'); mostrarFormato('stories'); } catch(_) {}
+      try { const lk = document.getElementById('storyLink'); if (lk) lk.value = linkDestinoPadrao(); } catch(_) {}
       const base = campAuto._primeiroSlot || (Date.now() + 3600000);
       // STORIES: 3 artes + texto gravado + agendar (mesmo dia do 1º post, às 18:00; se já passou, +1 dia)
       addLog('info', '[Auto-IA] ▶ Stories: roteiro → artes → compor → agendar');
@@ -24557,14 +24599,14 @@ async function gerarCampanhaAutomatica(opts = {}) {
           const okc = await comporArtesStories(true);
           if (okc && temMc2) {
             let dS = new Date(base); dS.setHours(18, 0, 0, 0); if (dS <= new Date()) dS.setDate(dS.getDate() + 1);
-            window._autoAgendaStories = dS.toISOString().substring(0,16);
+            window._autoAgendaStories = _localDT(dS);
             await publicarStories();
           } else if (!temMc2) addLog('info', '[Auto-IA] Stories prontos (Metricool off — publique manualmente com as artes compostas)');
         }
       }
       // REEL: roteiro → artes → montar vídeo (navegador) → hospedar → agendar (dia seguinte ao 1º post, 12:00)
       addLog('info', '[Auto-IA] ▶ Reel: roteiro → artes → montar → hospedar → agendar');
-      try { const bt = document.getElementById('edAbaReels'); if (bt) bt.click(); } catch(_) {}
+      try { mostrarEdAba('formatos'); mostrarFormato('reel'); } catch(_) {}
       await gerarReelPack();
       if (campAtiva.reel?.slides?.length) {
         await gerarArtesReel();
@@ -24574,7 +24616,7 @@ async function gerarCampanhaAutomatica(opts = {}) {
             await hospedarReel();
             if (campAtiva.reel.video_url && temMc2) {
               let dR = new Date(base + 864e5); dR.setHours(12, 0, 0, 0); if (dR <= new Date()) dR.setDate(dR.getDate() + 1);
-              window._autoAgendaReel = dR.toISOString().substring(0,16);
+              window._autoAgendaReel = _localDT(dR);
               await publicarReel();
             }
           }
@@ -24582,7 +24624,7 @@ async function gerarCampanhaAutomatica(opts = {}) {
       }
       // CARROSSEL (v1.11.1): roteiro → 5 artes 1:1 → texto gravado → publicar (dia seguinte ao reel, 12h; texto por rede)
       addLog('info', '[Auto-IA] ▶ Carrossel: roteiro → artes → compor → publicar');
-      try { const bt = document.getElementById('edAbaCarr'); if (bt) bt.click(); } catch(_) {}
+      try { mostrarEdAba('formatos'); mostrarFormato('carr'); } catch(_) {}
       try {
         await gerarCarrosselPack();
         if (campAtiva.carrossel?.slides?.length) {
@@ -24591,7 +24633,7 @@ async function gerarCampanhaAutomatica(opts = {}) {
             const okc = await comporArtesCarrossel();
             if (okc && temMc2) {
               let dC = new Date(base + 2 * 864e5); dC.setHours(12, 0, 0, 0); if (dC <= new Date()) dC.setDate(dC.getDate() + 1);
-              window._autoAgendaCarr = dC.toISOString().substring(0,16);
+              window._autoAgendaCarr = _localDT(dC);
               await publicarCarrossel();
             } else if (!temMc2) addLog('info', '[Auto-IA] Carrossel pronto (Metricool off — publique manualmente com as artes compostas)');
           }
@@ -24737,7 +24779,7 @@ async function _verificarMidiaPublica(url, esperado) {
   } catch (e) { return { ok: false, motivo: 'não acessível: ' + e.message + ' (' + url + ')' }; }
 }
 function _linkCurtoVisivel(url) { try { const u = new URL(url); return u.host.replace(/^www\./,'') + u.pathname.replace(/\/$/,''); } catch(_) { return url; } }
-function _linkStoriesReels() { return (campAtiva?.link_destino || linkReuniao()); }
+function _linkStoriesReels() { return (campAtiva?.link_destino || linkDestinoPadrao()); }
 
 // ---------- STORIES 9:16 (v1.8) ---------------------------------------------
 function _renderStoryPack() {
@@ -24775,7 +24817,7 @@ async function gerarStoryPack() {
   _statusPainel('story', 'run', 'Gerando roteiro dos 3 stories com IA...', 'Adaptando a narrativa e a copy da campanha "' + (campAtiva.nome||'') + '" (gancho → valor → CTA).', 15);
   addLog('info', '[Stories] Gerando roteiro para "' + campAtiva.nome + '"');
   try {
-    const link = campAtiva.link_destino || linkReuniao();
+    const link = campAtiva.link_destino || linkDestinoPadrao();
     const r = await fetch('/api/s2-creative', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ action:'story_pack', payload: { narrativa: campAtiva.data?.narrativa || {}, copy: campAtiva.data?.copy || {}, link, canal: campAtiva.canal } }) });
     const d = await r.json();
@@ -24890,10 +24932,10 @@ async function publicarStories() {
     if (!rs.chk.ok) { _statusPainel('story', 'err', 'Não vou agendar: a imagem do story ' + (i+1) + ' não está acessível publicamente', rs.chk.motivo + '<br>Sem isso o Metricool mostra "Sem imagem". Corrija e tente de novo (ou ⬇ baixe as artes compostas e publique manualmente).'); toast('Imagem do story não acessível — veja a barra vermelha', 'error'); return; }
     _urlsStory.push(rs.url);
   }
-  const inicio = window._autoAgendaStories || prompt('Data/hora do 1º story (os outros seguem a cada 2 min):', new Date(Date.now() + 10*60000).toISOString().substring(0,16));
+  const inicio = window._autoAgendaStories || prompt('Data/hora do 1º story (os outros seguem a cada 2 min):', _localDT(new Date(Date.now() + 10*60000)));
   window._autoAgendaStories = null;
   if (!inicio) return;
-  const linkBase = document.getElementById('storyLink')?.value?.trim() || campAtiva.link_destino || linkReuniao(); // v1.9.5
+  const linkBase = document.getElementById('storyLink')?.value?.trim() || campAtiva.link_destino || linkDestinoPadrao(); // v1.9.5
   const link = linkBase ? linkBase + (linkBase.includes('?') ? '&' : '?') + 'utm_source=instagram&utm_medium=story&utm_campaign=' + (typeof slugDe === 'function' ? slugDe(campAtiva.id) : String(campAtiva.id).toLowerCase().replace(/[^a-z0-9_-]/g,'')) : '';
   const redesSt = []; if (campAtiva.redes_ativas?.instagram !== false) redesSt.push('instagram'); if (campAtiva.redes_ativas?.facebook) redesSt.push('facebook');
   if (!redesSt.length) redesSt.push('instagram');
@@ -25013,7 +25055,7 @@ async function publicarCarrossel() {
   const c = campAtiva?.carrossel; const sl = c?.slides || [];
   if (!sl.length || !sl.every(x => x.imagem_composta)) { toast('Componha as artes antes', 'error'); return; }
   const temMc = await verificarMetricool(true); if (!temMc) { toast('Metricool não configurado — baixe as artes e publique pelo app', 'error'); return; }
-  const quando = window._autoAgendaCarr || prompt('Data/hora do carrossel:', new Date(Date.now() + 20*60000).toISOString().substring(0,16)); window._autoAgendaCarr = null; if (!quando) return;
+  const quando = window._autoAgendaCarr || prompt('Data/hora do carrossel:', _localDT(new Date(Date.now() + 20*60000))); window._autoAgendaCarr = null; if (!quando) return;
   const urls = []; for (const x of sl) { const rr = await _resolverUrlMidia(x.imagem_composta, 'jpg', 'image/'); if (!rr.chk.ok) { _statusPainel('carr', 'err', 'Não vou publicar: imagem não acessível', rr.chk.motivo); return; } urls.push(rr.url); }
   const legLi = document.getElementById('carrLegLi')?.value || c.legenda_linkedin || '', legIg = document.getElementById('carrLegIg')?.value || c.legenda_instagram || '';
   const redes = Object.entries(campAtiva.redes_ativas || { linkedin:true, instagram:true, facebook:true }).filter(([k,v]) => v && ['linkedin','instagram','facebook'].includes(k)).map(([k]) => k);
@@ -25315,7 +25357,7 @@ async function publicarReel() {
   const rv = await _resolverUrlMidia(r.video_url, (r.video_mime||'').includes('webm') ? 'webm' : 'mp4', 'video/');
   if (!rv.chk.ok) { _statusPainel('reel', 'err', 'Não vou agendar: o vídeo não está acessível publicamente', rv.chk.motivo + '<br>O Metricool ficaria "carregando" para sempre. Corrija o deploy ou monte/hospede de novo.'); toast('Vídeo não acessível — veja a barra vermelha', 'error'); return; }
   const _urlReel = rv.url;
-  const quando = window._autoAgendaReel || prompt('Data/hora do Reel:', new Date(Date.now() + 15*60000).toISOString().substring(0,16));
+  const quando = window._autoAgendaReel || prompt('Data/hora do Reel:', _localDT(new Date(Date.now() + 15*60000)));
   window._autoAgendaReel = null;
   if (!quando) return;
   const legenda = document.getElementById('reelLegenda')?.value || r.legenda || '';
@@ -25348,7 +25390,7 @@ async function abrirImpulso(pubId) {
   const pub = (_publicacoes || []).find(x => x.id === pubId);
   if (!pub) return;
   // link pago: troca utm_medium=social por paid (rastreio separado no HubSpot)
-  const _lb = pub.link_destino || linkReuniao(); // v1.9.3
+  const _lb = pub.link_destino || linkDestinoPadrao(); // v3.23
   const linkPago = _lb.includes('utm_medium=') ? _lb.replace(/utm_medium=[^&]*/, 'utm_medium=paid') : _lb + (_lb.includes('?') ? '&' : '?') + 'utm_source=meta&utm_medium=paid&utm_campaign=' + (pub.campanhaId || 'impulso');
   let modal = document.getElementById('impulsoModal');
   if (modal) modal.remove();
@@ -25474,7 +25516,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.22] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.23] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -25490,7 +25532,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.22';
+window.__ATX_BUILD_ID__ = 'ATX-v3.23';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

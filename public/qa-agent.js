@@ -17,7 +17,7 @@
   const TOKENS_RUINS = /\bundefined\b|\bNaN\b|\[object Object\]|Invalid Date|R\$\s*NaN|NaN%/;
   const CARREGANDO = /carregando|analisando\.\.\.|varrendo|consultando|aguarde|⏳/i;
 
-  const S = { rodando: false, parar: false, relatorio: null, seg: null, crud: null };
+  const S = { rodando: false, parar: false, relatorio: null, seg: null, crud: null, mkt: null };
   const _orig = {};
   const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -362,7 +362,7 @@
   function markdown() {
     const R = S.relatorio, SEG = S.seg, C = S.crud;
     const linhas = [];
-    linhas.push(`# Relatório de correção — Atlantyx OS (${R?.versao || SEG?.versao || ''})`, '');
+    linhas.push(`# Relatório de correção — Atlantyx OS (${R?.versao || SEG?.versao || document.getElementById('sidebarBuildId')?.textContent || ''})`, '');
     linhas.push(`Gerado pelos agentes de QA e Segurança do próprio sistema em ${new Date().toLocaleString('pt-BR')}.`, '');
     linhas.push('## Contexto do projeto', '- Repositório: `Fabiosq13/atlantyx-os` (branch `main`, deploy automático na Vercel).', '- Frontend: arquivo único `public/index.html` (cada tela é `<div class="page" id="page-<id>">`; a navegação é `nav(id)`; funções de carga ligadas no `nav`).', '- Backend: funções serverless em `api/*.js` (ESM), banco Neon Postgres (driver 0.10: use `sql```` ou `_q(db, texto, params)`), bibliotecas em `lib/`.', '- Ao terminar: validar sintaxe (`node --check` nas APIs e nos blocos `<script>` do index.html) e subir a versão `ATX-vX.YY` em `public/index.html`.', '');
     if (R) {
@@ -374,6 +374,16 @@
           const onde = [`\`page-${a.tela}\` em public/index.html`]; if (a.ganchos?.length) onde.push('funções: ' + a.ganchos.map(f => '`' + f + '`').join(', ')); if (a.api) onde.push(`\`${arquivoApi(a.api)}\`${a.action ? ' ação `' + a.action + '`' : ''}`);
           linhas.push(`- Onde olhar: ${onde.join(' · ')}`); linhas.push(`- Correção esperada: ${a.sugestao || '—'}`, ''); }); }
       const info = R.achados.filter(a => a.sev === 'info'); if (info.length) linhas.push(`### Informativos (${info.length})`, info.map(a => `- ${a.titulo}: \`${a.tela}\``).join('\n'), '');
+    }
+    const MK = S.mkt;
+    if (MK) {
+      linhas.push('## Marketing ponta a ponta (geração → publicação → link → captura → exclusão)', `- Executado em ${MK.em ? new Date(MK.em).toLocaleString('pt-BR') : '—'} · campanha de teste \`${MK.ctx?.campanha_id || '—'}\` · post Metricool \`${MK.ctx?.metricool_id || 'não publicado'}\`.`, '');
+      MK.passos.forEach(p => linhas.push(`- ${p.ok === false ? '✗' : '✓'} **${p.passo}**${p.ms ? ' (' + Math.round(p.ms / 1000) + 's)' : ''}${p.resumo ? ' — ' + p.resumo : ''}`)); linhas.push('');
+      (MK.achados || []).forEach((a, i) => { linhas.push(`**MKT-${String(i + 1).padStart(3, '0')} · [${a.sev}] ${a.titulo}**`); if (a.evidencia) linhas.push(`- Evidência: ${a.evidencia}`); if (a.onde) linhas.push(`- Onde olhar: ${a.onde}`); if (a.sugestao) linhas.push(`- Correção esperada: ${a.sugestao}`); linhas.push(''); });
+      if (MK.leads) { const L = MK.leads, F = L.funil || {};
+        linhas.push('## Por que as campanhas não geram leads', `- Últimos 30 dias: ${F.publicacoes_30d ?? '—'} publicações · ${F.impressoes ?? '—'} impressões · ${F.cliques ?? '—'} cliques · ${F.visitas_30d ?? '—'} visitas na captura · ${F.leads_30d ?? '—'} leads.`, `- Destino dos links: ${Object.entries(F.por_destino || {}).map(([k, v]) => k + ' ' + v).join(' · ') || '—'} · sem UTM: ${F.sem_utm ?? '—'}.`, '');
+        (L.causas || []).forEach((c, i) => linhas.push(`${i + 1}. **${c.causa}** — ${c.evidencia}. Ação: ${c.acao}`)); linhas.push('');
+        if (L.parecer) linhas.push('### Parecer', L.parecer, ''); }
     }
     if (C) {
       linhas.push('## CRUD real (incluir → consultar → alterar → excluir, com limpeza)', `Marca dos registros: \`${C.marca}\` · ${C.ok ? 'todos os ciclos OK' : 'HÁ FALHAS'}${C.sobras?.length ? ' · SOBRAS NO BANCO: ' + C.sobras.join(', ') : ''}`, '');
@@ -418,6 +428,17 @@
           Sondas somente-leitura sem credencial (o que um estranho vê?), cabeçalhos do site, variáveis de ambiente (só presença) e análise estática do código do backend e das páginas. Nenhum dado sensível entra no relatório.
           <button class="btn" style="width:100%;margin-top:8px;border-color:var(--red);color:var(--red);" id="qaBtnSeg" onclick="QA.seguranca()">🛡 Rodar varredura de segurança</button></div></div>
       </div>
+      <div class="panel"><div class="ph"><div class="pt">📣 Marketing ponta a ponta</div><span style="font-size:10px;color:var(--t2);">gera · publica · confere · apaga · analisa leads</span></div><div class="pb" style="font-size:11px;color:var(--t2);line-height:1.6;">
+        Gera uma campanha de teste (copy por rede, imagem, Stories e roteiro de Reel), testa o link e a página de captura (visita e lead em modo teste, sem e-mail/HubSpot/WhatsApp), <b>publica de verdade</b> um post marcado <b>[TESTE ATLANTYX]</b> pelo Metricool, confere o resultado nas redes e o link publicado, <b>apaga o post</b> e no fim analisa por que as campanhas não estão gerando leads. Usa IA (cerca de 8 chamadas) e 1 imagem.
+        <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:8px;">
+          <span>Publicar o teste em:</span>
+          <label><input type="checkbox" class="qaMktRede" value="linkedin" checked/> LinkedIn</label>
+          <label><input type="checkbox" class="qaMktRede" value="facebook" checked/> Facebook</label>
+          <label><input type="checkbox" class="qaMktRede" value="instagram"/> Instagram</label>
+          <label title="Só gera e testa links/captura; não publica nada"><input type="checkbox" id="qaMktSemPublicar"/> não publicar</label>
+          <button class="btn btn-or" style="margin-left:auto;" id="qaBtnMkt" onclick="QA.marketing()">▶ Rodar teste de marketing</button>
+          <button class="btn btn-g" id="qaBtnLeads" onclick="QA.analiseLeads()">🔎 Só a análise de leads</button></div>
+        <div id="qaMktPassos" style="margin-top:8px;"></div></div></div>
       <div id="qaResultado"></div>
       <div class="panel"><div class="ph"><div class="pt">Execuções anteriores</div><button class="btn btn-g" style="font-size:9px;padding:3px 8px;" onclick="QA.historico()">↻</button></div><div class="pb" id="qaHist" style="font-size:11px;color:var(--t3);">—</div></div>`;
   }
@@ -428,7 +449,8 @@
     if (S.erro) topo += `<div class="panel" style="border-left:4px solid var(--red);"><div class="pb" style="color:var(--red);font-size:11.5px;">⚠ ${esc(S.erro)}</div></div>`;
     if (S.avisoSalvar) topo += `<div class="panel" style="border-left:4px solid var(--gold);"><div class="pb" style="color:var(--gold);font-size:11px;">${esc(S.avisoSalvar)}</div></div>`;
     if (S.parcial && !R) topo += `<div class="panel" style="border-left:4px solid var(--gold);"><div class="pb" style="font-size:11.5px;">A última varredura foi <b>interrompida</b> na tela "${esc(S.parcial.ultima)}" (${S.parcial.feitas} de ${S.parcial.total}). <button class="btn btn-g" style="font-size:10px;margin-left:8px;" onclick="QA.usarParcial()">Ver resultados parciais</button></div></div>`;
-    if (!R && !SEG && !C) { box.innerHTML = topo + `<div class="panel"><div class="ph"><div class="pt">📋 Relatório de correção para o Claude</div></div><div class="pb" style="font-size:11px;color:var(--t2);">Rode a varredura de telas, o CRUD real ou a varredura de segurança — o relatório detalhado e o botão <b>✅ Aprovar e enviar para correção automática</b> aparecem aqui. Também é possível abrir uma execução anterior no histórico abaixo.</div></div>`; return; }
+    const MK = S.mkt;
+    if (!R && !SEG && !C && !MK) { box.innerHTML = topo + `<div class="panel"><div class="ph"><div class="pt">📋 Relatório de correção para o Claude</div></div><div class="pb" style="font-size:11px;color:var(--t2);">Rode a varredura de telas, o CRUD real ou a varredura de segurança — o relatório detalhado e o botão <b>✅ Aprovar e enviar para correção automática</b> aparecem aqui. Também é possível abrir uma execução anterior no histórico abaixo.</div></div>`; return; }
     const cor = s => ({ 'crítica': 'var(--red)', 'alta': 'var(--red)', 'média': 'var(--gold)', 'baixa': 'var(--blue)', 'info': 'var(--t3)' }[s] || 'var(--t2)');
     let h = '';
     if (R) {
@@ -441,6 +463,7 @@
           <div style="font-weight:600;margin:3px 0;">${esc(a.titulo)}</div>${a.evidencia ? `<div style="color:var(--t2);font-family:var(--M);font-size:10px;word-break:break-word;">${esc(a.evidencia)}</div>` : ''}${a.sugestao ? `<div style="color:var(--blue);font-size:10.5px;margin-top:3px;">→ ${esc(a.sugestao)}</div>` : ''}</div>`).join('') || '<div style="color:var(--t3);">Nenhum achado.</div>'}</div></div>
       ${R.formularios_ligados?.length ? `<details class="panel" style="padding:10px 14px;"><summary style="cursor:pointer;font-size:11px;">✓ ${R.formularios_ligados.length} formulário(s) ligados corretamente à API (gravação interceptada)</summary><div style="font-size:10.5px;color:var(--t2);margin-top:6px;">${R.formularios_ligados.map(f => `${esc(f.tela)} · "${esc(f.botao)}" → ${esc(f.chamadas)}`).join('<br>')}</div></details>` : ''}`;
     }
+    if (MK) h += mktHtml(MK, cor);
     if (C) h += `<div class="panel"><div class="ph"><div class="pt">CRUD real — ${C.ok ? '<span style="color:var(--green);">todos os ciclos OK</span>' : '<span style="color:var(--red);">há falhas</span>'}</div><span style="font-size:10px;color:var(--t2);">marca ${esc(C.marca)}${C.sobras?.length ? ' · <b style="color:var(--red);">sobras: ' + esc(C.sobras.join(', ')) + '</b>' : ' · nada sobrou no banco'}</span></div><div class="pb">${C.resultados.map(r => `<div style="font-size:11px;padding:5px 0;border-bottom:1px solid var(--bd);"><b style="color:${r.ok ? 'var(--green)' : 'var(--red)'};">${r.ok ? '✓' : '✗'}</b> <b>${esc(r.entidade)}</b> — ${r.passos.map(p => `<span style="color:${p.ok ? 'var(--t2)' : 'var(--red)'};">${esc(p.passo)} ${p.ok ? '✓' : '✗ ' + esc(p.erro || '')}</span>`).join(' · ')}</div>`).join('')}</div></div>`;
     if (SEG) h += `<div class="panel"><div class="ph"><div class="pt">🛡 Segurança — ${Object.entries(SEG.resumo || {}).map(([k, v]) => `${k}: ${v}`).join(' · ') || 'nenhum achado'}</div><span style="font-size:10px;color:var(--t2);">código analisado: ${SEG.cobertura_codigo ? Object.entries(SEG.cobertura_codigo).map(([k, v]) => `${k} ${v}`).join(', ') : '—'}</span></div><div class="pb" style="max-height:50vh;overflow-y:auto;">${(SEG.achados || []).map((a, i) => `<div style="border-left:3px solid ${cor(a.severidade)};background:var(--bg4);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:11px;">
       <div><b>SEC-${String(i + 1).padStart(3, '0')}</b> <span style="color:${cor(a.severidade)};font-weight:700;">${a.severidade}</span> <span style="color:var(--t2);">${esc(a.categoria)}</span> ${a.arquivo ? `<span style="color:var(--t2);font-family:var(--M);font-size:10px;">${esc(a.arquivo)}${a.linha ? ':' + a.linha : ''}</span>` : ''}</div>
@@ -457,6 +480,73 @@
     box.innerHTML = topo + h;
   }
 
+  // ── Marketing ponta a ponta ─────────────────────────────────────────────
+  function mktHtml(MK, cor) {
+    const F = MK.leads?.funil || {};
+    return `<div class="panel"><div class="ph"><div class="pt">📣 Marketing ponta a ponta ${MK.rodando ? '<span style="color:var(--gold);">em andamento…</span>' : ''}</div><span style="font-size:10px;color:var(--t2);">${MK.ctx?.campanha_id ? 'campanha ' + esc(MK.ctx.campanha_id) : ''}${MK.ctx?.metricool_id ? ' · post ' + esc(MK.ctx.metricool_id) : ''}</span></div><div class="pb">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px;margin-bottom:10px;">${MK.passos.map(p => `<div style="background:var(--bg4);border-radius:6px;padding:7px 9px;font-size:10.5px;border-left:3px solid ${p.ok === false ? 'var(--red)' : p.ok ? 'var(--green)' : 'var(--gold)'};"><b>${p.ok === false ? '✗' : p.ok ? '✓' : '…'} ${esc(p.passo)}</b>${p.ms ? ' <span style="color:var(--t3);">' + Math.round(p.ms / 1000) + 's</span>' : ''}<div style="color:var(--t2);margin-top:2px;word-break:break-word;">${esc(p.resumo || '')}</div></div>`).join('')}</div>
+      ${(MK.ctx?.urls_publicas || []).length ? `<div style="font-size:11px;margin-bottom:8px;">Post publicado: ${MK.ctx.urls_publicas.map(u => `<a href="${esc(u.url)}" target="_blank" rel="noopener" style="color:var(--blue);">${esc(u.rede)} ↗</a>`).join(' · ')}</div>` : ''}
+      ${(MK.achados || []).map((a, i) => `<div style="border-left:3px solid ${cor(a.sev)};background:var(--bg4);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:11px;"><b>MKT-${String(i + 1).padStart(3, '0')}</b> <span style="color:${cor(a.sev)};font-weight:700;">${a.sev}</span> <span style="color:var(--t2);">${esc(a.onde || '')}</span><div style="font-weight:600;margin:3px 0;">${esc(a.titulo)}</div>${a.evidencia ? `<div style="color:var(--t2);font-family:var(--M);font-size:10px;word-break:break-word;">${esc(a.evidencia)}</div>` : ''}${a.sugestao ? `<div style="color:var(--blue);font-size:10.5px;margin-top:3px;">→ ${esc(a.sugestao)}</div>` : ''}</div>`).join('')}
+      ${MK.leads ? `<div style="margin-top:10px;font-weight:700;font-size:12px;">🔎 Por que as campanhas não geram leads (30 dias)</div>
+        <div class="kg k5" style="margin:8px 0;">${[['Publicações', F.publicacoes_30d], ['Impressões', F.impressoes], ['Cliques', F.cliques], ['Visitas na captura', F.visitas_30d], ['Leads', F.leads_30d]].map(([k, v]) => `<div class="kpi bl"><div class="kl">${k}</div><div class="kv">${v ?? 'n/d'}</div></div>`).join('')}</div>
+        <div style="font-size:10.5px;color:var(--t2);margin-bottom:6px;">Destino dos links publicados: ${Object.entries(F.por_destino || {}).map(([k, v]) => `${esc(k)} <b>${v}</b>`).join(' · ') || '—'} · sem UTM: <b>${F.sem_utm ?? '—'}</b></div>
+        <ol style="font-size:11px;line-height:1.6;padding-left:18px;margin:0;">${(MK.leads.causas || []).map(c => `<li><b>${esc(c.causa)}</b> — <span style="color:var(--t2);">${esc(c.evidencia)}</span><br><span style="color:var(--blue);">→ ${esc(c.acao)}</span></li>`).join('')}</ol>
+        ${MK.leads.parecer ? `<div style="margin-top:8px;background:var(--bg4);border-radius:6px;padding:9px 11px;font-size:11px;white-space:pre-wrap;line-height:1.6;">${esc(MK.leads.parecer)}</div>` : ''}` : ''}
+    </div></div>`;
+  }
+  const _resumoPasso = r => {
+    const p = r.passo;
+    if (p === 'preflight') return `Metricool ${r.metricool?.configurado ? 'ok' : 'NÃO configurado'} · redes: ${(r.metricool?.redes || []).join(', ') || 'nenhuma'} · captura HTTP ${r.captura?.status}`;
+    if (p === 'campanha') return r.fase1?.ok ? 'narrativa + copy gerados' : 'falhou';
+    if (p === 'campanha_redes') return r.fase2?.ok ? `copy por rede: ${(r.amostra?.redes || []).join(', ')} · gravada no banco: ${r.persistencia?.ok ? 'sim' : 'NÃO'}` : 'falhou';
+    if (p === 'imagem') return r.gerador?.url ? `${r.gerador.provedor} · permanente: ${r.gerador.permanente ? 'sim' : 'NÃO'}` : 'falhou';
+    if (p === 'stories') return `${r.pack?.n || 0} stories · arte: ${r.arte?.url ? 'ok' : 'não'}`;
+    if (p === 'reel') return `${r.pack?.slides || 0} slides · legenda ${r.pack?.legenda ? 'ok' : 'não'}`;
+    if (p === 'link') return `formulário ${r.pagina?.tem_formulario ? 'ok' : 'NÃO'} · visita ${r.visita?.gravada ? 'gravada' : 'NÃO'} · lead ${r.lead?.gravado ? 'gravado (' + r.lead.origem + ' / ' + r.lead.campanha + ')' : 'NÃO'}`;
+    if (p === 'publicar') return r.publicacao?.metricool_id ? `enviado ao Metricool (${(r.publicacao.redes || []).join(', ')})` : 'não publicado';
+    if (p === 'verificar') return r.post ? `status ${r.post.status} · ${(r.post.providers || []).map(x => x.rede + ': ' + (x.status || '?')).join(' · ')}${r.link_destino ? ' · link → ' + (r.link_destino.final || '').substring(0, 60) : ''}` : `aguardando (${r.minutos_desde_publicacao} min)`;
+    if (p === 'apagar') return r.exclusao ? (r.exclusao.ok ? 'post apagado' : 'NÃO apagou') : 'nada a apagar';
+    if (p === 'limpar') return r.campanha_removida ? 'campanha de teste removida' : '—';
+    if (p === 'analise_leads') return `${(r.causas || []).length} causa(s) identificadas`;
+    return '';
+  };
+  async function rodarMarketing(soAnalise) {
+    if (S.rodando) return; S.rodando = true; S.erro = null;
+    const semPub = !!document.getElementById('qaMktSemPublicar')?.checked;
+    const redes = [...document.querySelectorAll('.qaMktRede:checked')].map(x => x.value);
+    let blog = null; try { blog = localStorage.getItem('atx:metricool_blog_id'); } catch (_) {}
+    const MK = S.mkt = { em: Date.now(), rodando: true, passos: [], achados: [], ctx: { blog_id: blog || null, redes_teste: redes }, leads: null };
+    const plano = soAnalise ? ['analise_leads'] : ['preflight', 'campanha', 'campanha_redes', 'imagem', 'stories', 'reel', 'link', ...(semPub ? [] : ['publicar', 'verificar', 'apagar']), 'limpar', 'analise_leads'];
+    const mostrar = () => { const box = document.getElementById('qaMktPassos'); if (box) box.innerHTML = `<div style="font-size:10.5px;color:var(--t2);">${MK.passos.map(p => `${p.ok === false ? '✗' : p.ok ? '✓' : '…'} ${esc(p.passo)}`).join(' → ')}</div>`; render(); };
+    try {
+      for (const passo of plano) {
+        if (passo === 'verificar' && !MK.ctx.metricool_id) continue;
+        if (passo === 'apagar' && !MK.ctx.metricool_id) continue;
+        const reg = { passo, ok: null }; MK.passos.push(reg); mostrar();
+        let r = null; const t0 = Date.now();
+        for (let tent = 0; tent < 20; tent++) {
+          r = await api('mkt_passo', { passo, ctx: MK.ctx });
+          MK.ctx = r.ctx || MK.ctx;
+          if (passo !== 'verificar' || r.pronto) break;
+          reg.resumo = _resumoPasso(r); mostrar();
+          await sleep(30000);   // espera a rede publicar (até ~10 min)
+        }
+        reg.ms = Date.now() - t0; reg.ok = r.ok !== false && !(r.achados || []).some(a => a.sev === 'crítica'); reg.resumo = _resumoPasso(r);
+        (r.achados || []).forEach(a => MK.achados.push({ ...a, passo }));
+        if (passo === 'analise_leads') MK.leads = { funil: r.funil, causas: r.causas, parecer: r.parecer, auditoria: r.auditoria };
+        mostrar();
+        if (r.ok === false && ['preflight', 'campanha'].includes(passo) && !soAnalise) { if (passo === 'campanha') continue; }
+      }
+    } catch (e) { S.erro = 'Teste de marketing parou: ' + e.message; MK.passos.push({ passo: 'erro', ok: false, resumo: e.message });
+      // garantia: se publicou e parou no meio, tenta apagar o post de teste
+      if (MK.ctx.metricool_id && !MK.passos.some(p => p.passo === 'apagar')) { try { const r = await api('mkt_passo', { passo: 'apagar', ctx: MK.ctx }); MK.passos.push({ passo: 'apagar', ok: !!r.exclusao?.ok, resumo: _resumoPasso(r) }); } catch (_) {} }
+    }
+    const ordem = { 'crítica': 0, 'alta': 1, 'média': 2, 'baixa': 3, 'info': 4 }; MK.achados.sort((a, b) => ordem[a.sev] - ordem[b.sev]);
+    MK.rodando = false; S.rodando = false; mostrar();
+    try { await api('salvar_execucao', { tipo: 'marketing', relatorio: { resumo: MK.achados.reduce((o, a) => { o[a.sev] = (o[a.sev] || 0) + 1; return o; }, {}), marketing: MK } }); QA.historico(); } catch (_) {}
+    toast(MK.achados.length ? `Marketing: ${MK.achados.length} achado(s)` : 'Marketing: tudo OK', MK.achados.some(a => a.sev === 'crítica' || a.sev === 'alta') ? 'error' : 'success');
+  }
+
   window.QA = {
     _classificar: (u, i) => classificar(u, i),
     _filtro: '',
@@ -471,6 +561,15 @@
       varrer(opts);
     },
     parar() { S.parar = true; },
+    marketing() {
+      const sem = !!document.getElementById('qaMktSemPublicar')?.checked;
+      const redes = [...document.querySelectorAll('.qaMktRede:checked')].map(x => x.value);
+      if (!sem && !redes.length) { toast('Marque ao menos uma rede (ou "não publicar")', 'error'); return; }
+      if (!confirm(sem ? 'Rodar o teste de marketing SEM publicar?\n\nGera campanha, imagem, Stories e Reel de teste (usa IA), testa link e captura em modo teste e analisa os leads.'
+        : `Rodar o teste de marketing COMPLETO?\n\nVai PUBLICAR DE VERDADE um post marcado [TESTE ATLANTYX] em: ${redes.join(', ')} — e apagá-lo logo depois de conferir.\nLeva de 5 a 15 minutos. Usa IA (~8 chamadas) e 1 imagem.`)) return;
+      document.getElementById('qaBtnMkt').disabled = true; rodarMarketing(false).finally(() => { const b = document.getElementById('qaBtnMkt'); if (b) b.disabled = false; });
+    },
+    analiseLeads() { const b = document.getElementById('qaBtnLeads'); if (b) b.disabled = true; rodarMarketing(true).finally(() => { if (b) b.disabled = false; }); },
     async crud() { const b = document.getElementById('qaBtnCrud'); if (!confirm('Rodar o CRUD real?\n\nVai criar, alterar e excluir registros marcados "QA-TESTE" no banco de produção (com limpeza garantida no final).')) return;
       b.disabled = true; b.textContent = 'Rodando...'; S.erro = null; try { S.crud = (await api('crud_suite')); delete S.crud.success; toast(S.crud.ok ? 'CRUD real: todos os ciclos OK' : 'CRUD real: há falhas', S.crud.ok ? 'success' : 'error'); } catch (e) { S.erro = 'CRUD real não rodou: ' + e.message; toast('Erro: ' + e.message, 'error'); } b.disabled = false; b.textContent = '🧪 Rodar CRUD real'; render(); },
     async seguranca() { const b = document.getElementById('qaBtnSeg'); b.disabled = true; b.textContent = 'Varrendo (até 1 min)...'; S.erro = null;
@@ -478,9 +577,9 @@
       catch (e) { S.erro = 'Varredura de segurança não concluiu: ' + e.message; toast('Erro: ' + e.message, 'error'); } b.disabled = false; b.textContent = '🛡 Rodar varredura de segurança'; render(); this.historico(); },
     async historico(abrirUltima) { const el = document.getElementById('qaHist'); if (!el) return; try { const d = await api('listar_execucoes');
       if (abrirUltima && !S.relatorio && !S.seg && (d.execucoes || []).length) { const u = d.execucoes[0]; this.carregar(u.id, u.tipo); } el.innerHTML = (d.execucoes || []).map(x => `<div style="padding:4px 0;border-bottom:1px solid var(--bd);display:flex;gap:8px;"><span>${x.tipo === 'seguranca' ? '🛡' : '🧪'} ${new Date(x.em).toLocaleString('pt-BR')}</span><span style="color:var(--t2);">${x.resumo ? Object.entries(x.resumo).map(([k, v]) => k + ': ' + v).join(' · ') : ''}</span><a href="#" style="margin-left:auto;color:var(--blue);" onclick="QA.carregar('${x.id}','${x.tipo}');return false;">abrir</a></div>`).join('') || 'Nenhuma execução ainda.'; } catch (e) { el.textContent = 'Histórico indisponível: ' + e.message; } },
-    async carregar(id, tipo) { try { const d = await api('obter_execucao', { id }); if (tipo === 'seguranca') S.seg = d.relatorio; else { S.relatorio = d.relatorio; if (d.relatorio?.seguranca) S.seg = d.relatorio.seguranca; if (d.relatorio?.crud) S.crud = d.relatorio.crud; } render(); } catch (e) { toast('Erro: ' + e.message, 'error'); } },
+    async carregar(id, tipo) { try { const d = await api('obter_execucao', { id }); if (tipo === 'seguranca') S.seg = d.relatorio; else if (tipo === 'marketing') S.mkt = d.relatorio?.marketing || null; else { S.relatorio = d.relatorio; if (d.relatorio?.seguranca) S.seg = d.relatorio.seguranca; if (d.relatorio?.crud) S.crud = d.relatorio.crud; } render(); } catch (e) { toast('Erro: ' + e.message, 'error'); } },
     baixarMd() { baixar('relatorio-correcao-atlantyx-' + new Date().toISOString().substring(0, 16).replace(/[:T]/g, '-') + '.md', document.getElementById('qaMd')?.value || markdown(), 'text/markdown'); },
-    baixarJson() { baixar('relatorio-qa-atlantyx.json', JSON.stringify({ qa: S.relatorio, crud: S.crud, seguranca: S.seg }, null, 2), 'application/json'); },
+    baixarJson() { baixar('relatorio-qa-atlantyx.json', JSON.stringify({ qa: S.relatorio, crud: S.crud, seguranca: S.seg, marketing: S.mkt }, null, 2), 'application/json'); },
     async aprovar() {
       const md = document.getElementById('qaMd')?.value || markdown(); const msg = document.getElementById('qaAprovMsg');
       if (!confirm('Aprovar este relatório e enviar para correção automática?\n\nSerá aberta uma tarefa no GitHub para o Claude corrigir. A nova versão só vai ao ar quando você aprovar o pull request.')) return;

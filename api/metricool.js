@@ -885,6 +885,14 @@ export default async function handler(req, res) {
 
         // Data: agora + 2min se não informada (Metricool exige futuro)
         const quando = data_hora ? new Date(data_hora) : new Date(Date.now() + 2 * 60 * 1000);
+        // v3.23 FIX FUSO: o Metricool recebe a hora "de parede" + timezone America/Sao_Paulo. Antes mandávamos
+        // a hora em UTC rotulada como São Paulo — um "publicar agora" saía 3h depois, e todo horário escolhido
+        // no navegador (enviado em UTC com "Z") era deslocado +3h. Hora sem fuso (ex.: "2026-10-01T09:00")
+        // continua sendo tratada como horário de São Paulo, como antes.
+        const _semFuso = data_hora && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(String(data_hora).trim());
+        const _spLocal = d => { const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(d).map(x => [x.type, x.value]));
+          return `${p.year}-${p.month}-${p.day}T${p.hour === '24' ? '00' : p.hour}:${p.minute}:${p.second}`; };
+        const dataHoraSP = _semFuso ? String(data_hora).trim().replace(' ', 'T').substring(0, 19).padEnd(19, ':00').substring(0, 19) : _spLocal(quando);
 
         const body = {
           // v1.8: Story do Instagram/Facebook — provider com data { postType: STORY }
@@ -894,9 +902,11 @@ export default async function handler(req, res) {
             return { network: p };
           }),
           publicationDate: {
-            dateTime: quando.toISOString().substring(0, 19),
+            dateTime: dataHoraSP,
             timezone: 'America/Sao_Paulo',
           },
+          // v3.23: primeiro comentário (LinkedIn: o link vai no comentário para não derrubar o alcance)
+          ...(payload.comentario ? { firstCommentText: String(payload.comentario).substring(0, 1200) } : {}),
           // v1.10: Stories NÃO aceitam texto ("Máximo de caracteres permitido 0") — o texto vai gravado na imagem
           text: tipo === 'STORY' ? '' : (texto || ''),
           ...(tipo === 'STORY' ? { instagramData: { type: 'STORY', ...(link_sticker ? { link: link_sticker } : {}) }, facebookData: { type: 'STORY' } } : {}),
@@ -979,7 +989,10 @@ export default async function handler(req, res) {
         const { metricool_id, data_hora, payload: orig } = payload;
         if (!metricool_id || !data_hora) throw new Error('metricool_id e data_hora obrigatórios');
         const quando = new Date(data_hora); if (isNaN(quando)) throw new Error('data_hora inválida');
-        const dt = { dateTime: quando.toISOString().substring(0, 19), timezone: 'America/Sao_Paulo' };
+        // v3.23: mesma correção de fuso do publicar
+        const _sem = !/[zZ]|[+-]\d{2}:?\d{2}$/.test(String(data_hora).trim());
+        const _p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(quando).map(x => [x.type, x.value]));
+        const dt = { dateTime: _sem ? String(data_hora).trim().replace(' ', 'T').substring(0, 19).padEnd(19, ':00').substring(0, 19) : `${_p.year}-${_p.month}-${_p.day}T${_p.hour === '24' ? '00' : _p.hour}:${_p.minute}:${_p.second}`, timezone: 'America/Sao_Paulo' };
 
         // v1.26.1 FIX: o Metricool rejeita PUT parcial ("text must not be null, providers must not be null").
         // Agora BUSCAMOS o post no Metricool primeiro e reenviamos o registro COMPLETO só com a data trocada —
@@ -1033,7 +1046,7 @@ export default async function handler(req, res) {
         }
         try { await mc(`/v2/scheduler/posts/${metricool_id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'DELETE'); }
         catch (e) { console.warn('[metricool reagendar] delete antigo falhou:', e.message); }
-        Object.assign(payload, dadosRecriar, { data_hora: quando.toISOString() });
+        Object.assign(payload, dadosRecriar, { data_hora: String(data_hora) });
         const novo = await acoes.publicar();
         return { reagendado: true, metodo: orig ? 'recriado' : 'recriado_do_metricool', antigo: metricool_id,
           metricool_id: novo.metricool_id, agendado_para: quando.toISOString(), detalhe: novo };
@@ -1058,6 +1071,9 @@ export default async function handler(req, res) {
           data: p.publicationDate?.dateTime || p.publicationDate,
           redes: (p.providers || []).map(x => x.network),
           status: p.published ? 'publicado' : (p.draft ? 'rascunho' : 'agendado'),
+          // v3.23: detalhe por rede (status, erro e link público) — usado pelo QA de marketing
+          ...(payload.detalhe ? { texto_completo: p.text || '', providers: (p.providers || []).map(x => ({ rede: x.network, status: x.status || x.detailedStatus || null,
+            erro: x.error || x.errorMessage || x.detailedStatus || null, url: x.publicUrl || x.url || x.postUrl || x.link || null })), bruto: JSON.stringify(p).substring(0, 1500) } : {}),
         }));
         return { posts, total: posts.length };
       },

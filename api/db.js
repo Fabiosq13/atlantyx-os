@@ -121,7 +121,7 @@ export default async function handler(req, res) {
       if (!camp?.id) return res.status(400).json({ error: 'id obrigatório' });
       // v1.43 (report DEV, itens 1 e 2): o canal era gravado como `camp.canal||''` sem validação —
       // campanha podia ser APROVADA e ATIVADA com canal vazio ou com lixo tipo "?".
-      const CANAIS_VALIDOS = ['LinkedIn', 'Instagram', 'Facebook', 'Google Ads', 'E-mail', 'WhatsApp', 'Todos os canais'];
+      const CANAIS_VALIDOS = ['LinkedIn', 'Instagram', 'Facebook', 'Google Ads', 'E-mail', 'WhatsApp', 'Todos os canais', 'Todos', 'LinkedIn + Instagram']; // v3.23: 'Todos' (auto-campanha) e 'LinkedIn + Instagram' eram recusados
       const canalNorm = String(camp.canal || '').trim();
       const canalOk = CANAIS_VALIDOS.find(c => c.toLowerCase() === canalNorm.toLowerCase()) || null;
       const vaiPublicar = ['aprovada', 'ativa', 'publicada'].includes(String(camp.status || '').toLowerCase()) || camp.ativa === true;
@@ -308,7 +308,7 @@ export default async function handler(req, res) {
 
     // v1.43 (report DEV, item 1/2/6): auditoria e saneamento de campanhas com canal inválido
     if (action === 'auditar_campanhas') {
-      const CANAIS_VALIDOS = ['LinkedIn', 'Instagram', 'Facebook', 'Google Ads', 'E-mail', 'WhatsApp', 'Todos os canais'];
+      const CANAIS_VALIDOS = ['LinkedIn', 'Instagram', 'Facebook', 'Google Ads', 'E-mail', 'WhatsApp', 'Todos os canais', 'Todos', 'LinkedIn + Instagram']; // v3.23: 'Todos' (auto-campanha) e 'LinkedIn + Instagram' eram recusados
       const rows = await sql`SELECT id, nome, canal, status, ativa, data_inicio, data_fim, atualizado_em FROM campanhas ORDER BY atualizado_em DESC`;
       const problemas = [];
       for (const c of rows) {

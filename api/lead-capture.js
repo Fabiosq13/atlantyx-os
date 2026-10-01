@@ -61,6 +61,15 @@ export default async function handler(req, res) {
     try { leadId = await gravarLeadLocal(lead); etapas.banco = 'ok'; }
     catch (e) { etapas.banco = 'falha: ' + e.message; console.error('[S2] gravar lead local:', e.message); }
 
+    // v3.23: MODO TESTE do agente de QA — grava o lead (para conferir banco e atribuição à campanha) mas
+    // NÃO dispara e-mail, IA, HubSpot nem WhatsApp. O próprio QA apaga o registro ao final.
+    if (body.qa_teste === true) {
+      try { if (leadId) { const { neon } = await import('@neondatabase/serverless'); const sq = neon(process.env.DATABASE_URL); await sq`UPDATE leads SET status = 'qa_teste' WHERE id = ${leadId}`; } } catch (_) {}
+      ['alerta', 'mensagem', 'hubspot', 'whatsapp', 'followup'].forEach(k => etapas[k] = 'pulado (teste QA)');
+      return res.status(200).json({ success: true, qa_teste: true, lead_id: leadId, origem: lead.origem, campanha: lead.campanha, utm: lead.utm, score: lead.score_label, etapas,
+        whatsapp: _whatsComercial(), agenda: process.env.LINK_REUNIAO || null });
+    }
+
     // ── 1c. ALERTA IMEDIATO por e-mail — "novo lead da campanha X" ──
     try { await alertarNovoLead(lead); etapas.alerta = 'ok'; } catch (e) { etapas.alerta = 'falha: ' + e.message; }
 
@@ -90,7 +99,7 @@ export default async function handler(req, res) {
     if (falhas.length) console.warn('[S2] etapas com falha:', falhas.map(([k, v]) => k + '=' + v).join(' | '));
 
     return res.status(200).json({
-      whatsapp: _whatsComercial(),
+      whatsapp: _whatsComercial(), agenda: process.env.LINK_REUNIAO || null,
       success: true,
       lead: lead.name, company: lead.company, score: lead.score_label,
       origem: lead.origem, campanha: lead.campanha,
@@ -342,24 +351,15 @@ async function atualizarDealHubSpot(dealId, etapa) {
 }
 
 async function agendarFollowUp(lead, dealId, mensagemOriginal) {
-  // Armazena no Vercel KV ou Edge Config para o cron buscar
-  // Por simplicidade, usamos a própria API do Vercel Edge Config
-  // O cron /api/followup-cron vai buscar esses registros
-  try {
-    await fetch(`${process.env.VERCEL_URL || 'https://' + process.env.VERCEL_PROJECT_PRODUCTION_URL}/api/followup-schedule`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-internal-key': process.env.INTERNAL_API_KEY },
-      body: JSON.stringify({
-        phone: lead.phone,
-        name: lead.name,
-        company: lead.company,
-        job_title: lead.job_title,
-        dealId,
-        mensagemOriginal,
-        sendAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
-      })
-    });
-  } catch(e) {
-    console.log('[Follow-up] Agendamento via KV não disponível ainda:', e.message);
-  }
+  // v3.23: o agendamento chamava /api/followup-schedule, que NÃO existe — nenhum follow-up era agendado.
+  // Agora grava na tabela followups; o cron /api/followup-cron (a cada hora) envia os vencidos.
+  if (!lead.phone) return;
+  const { neon } = await import('@neondatabase/serverless');
+  const sql = neon(process.env.DATABASE_URL);
+  await sql`CREATE TABLE IF NOT EXISTS followups (id TEXT PRIMARY KEY, phone TEXT, name TEXT, company TEXT, job_title TEXT, deal_id TEXT,
+    mensagem_original TEXT, send_at TIMESTAMPTZ, status TEXT DEFAULT 'pendente', enviado_em TIMESTAMPTZ, erro TEXT, criado_em TIMESTAMPTZ DEFAULT NOW())`;
+  await sql`INSERT INTO followups (id, phone, name, company, job_title, deal_id, mensagem_original, send_at)
+    VALUES (${'fu_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)}, ${lead.phone}, ${lead.name || null}, ${lead.company || null},
+      ${lead.job_title || lead.title || null}, ${dealId || null}, ${String(mensagemOriginal || '').substring(0, 2000)}, ${new Date(Date.now() + 48 * 3600 * 1000).toISOString()})`;
 }
+

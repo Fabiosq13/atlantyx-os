@@ -641,10 +641,10 @@ async function testarCaptura() {
   try {
     const r = await fetch(base + '/api/lead-capture', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'Lead de Teste ' + marca, company: 'Atlantyx (teste)', title: 'CEO', email: 'teste+' + marca + '@atlantyx.local',
-        source: 'teste', campaign_name: marca, utm: { source: 'teste', medium: 'auditoria', campaign: marca }, form_name: 'teste-ponta-a-ponta' }) });
+        source: 'teste', campaign_name: marca, utm: { source: 'teste', medium: 'auditoria', campaign: marca }, form_name: 'teste-ponta-a-ponta', qa_teste: true }) }); // v3.23: modo teste — sem e-mail, IA, HubSpot ou WhatsApp
     const d = await r.json().catch(() => ({}));
     out.passos.push({ etapa: 'POST /api/lead-capture', ok: r.ok && d.success, detalhe: r.ok ? `HTTP ${r.status}` : `HTTP ${r.status}: ${JSON.stringify(d).substring(0, 160)}` });
-    if (d.etapas) Object.entries(d.etapas).forEach(([k, v]) => out.passos.push({ etapa: k, ok: v === 'ok', detalhe: String(v) }));
+    if (d.etapas) Object.entries(d.etapas).forEach(([k, v]) => out.passos.push({ etapa: k, ok: v === 'ok' || /pulado/.test(String(v)), detalhe: String(v) }));
     out.lead_id = d.lead_id || null;
   } catch (e) { out.passos.push({ etapa: 'POST /api/lead-capture', ok: false, detalhe: e.message }); }
   // confere se ficou no banco

@@ -52,6 +52,7 @@
   <div class="card ok" id="ok" style="display:none;">
     <h2>Recebido.</h2>
     <p style="color:var(--cinza);line-height:1.6;">Retornamos em até um dia útil. Se preferir adiantar, <a id="wa" href="#" style="color:var(--azul);font-weight:600;">fale agora pelo WhatsApp</a>.</p>
+    <a id="agenda" href="#" style="display:none;margin-top:14px;text-align:center;background:var(--azul);color:#fff;padding:12px 16px;border-radius:8px;font-weight:700;text-decoration:none;">📅 Escolher um horário agora</a>
   </div>
 
   <div class="prova">
@@ -92,6 +93,9 @@
       const numero = (d && d.whatsapp) || whatsComercial;
       if (numero) wa.href = 'https://wa.me/' + numero + '?text=' + encodeURIComponent(`Olá, sou ${g('nome')} da ${g('empresa')}. Vi o post sobre ${utm.campaign || 'dados e IA'} e quero conversar.`);
       else wa.style.display = 'none'; // v3.13: sem número configurado, não mostra um link que não leva a lugar nenhum
+      // v3.23: link de agenda (vem no parâmetro r do link da campanha, ou configurado no servidor)
+      const ag = q.get('r') || (d && d.agenda) || '';
+      if (/^https:\/\//i.test(ag)) { const a = document.getElementById('agenda'); a.href = ag + (ag.includes('?') ? '&' : '?') + 'email=' + encodeURIComponent(g('email')) + '&firstName=' + encodeURIComponent(g('nome').split(' ')[0]); a.style.display = 'block'; a.target = '_blank'; a.rel = 'noopener'; }
     } catch (e) {
       erro.textContent = 'Não consegui enviar (' + e.message + '). Tente de novo ou fale pelo WhatsApp.'; erro.style.display = 'block';
       btn.disabled = false; btn.textContent = 'Quero conversar';

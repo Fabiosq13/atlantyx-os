@@ -21,14 +21,18 @@ export default async function handler(req, res) {
     // const keys = await kv.keys('followup:*');
     // for (const key of keys) { const data = await kv.get(key); ... }
 
-    // Verificar follow-ups agendados
-    for (const [id, followup] of pendingFollowUps.entries()) {
-      const sendAt = new Date(followup.sendAt);
-      if (agora >= sendAt) {
-        await enviarFollowUp(followup);
-        pendingFollowUps.delete(id);
-        enviados.push({ phone: followup.phone, name: followup.name });
-      }
+    // v3.23: follow-ups gravados pela captura na tabela followups (antes ficavam num Map em memória
+    // que nunca era preenchido — nenhum follow-up saía)
+    const { neon } = await import('@neondatabase/serverless');
+    const sql = neon(process.env.DATABASE_URL);
+    let devidos = [];
+    try { devidos = await sql`SELECT * FROM followups WHERE status = 'pendente' AND send_at <= NOW() ORDER BY send_at ASC LIMIT 20`; } catch (_) { devidos = []; }
+    for (const f of devidos) {
+      try {
+        await enviarFollowUp({ phone: f.phone, name: f.name, company: f.company, job_title: f.job_title, mensagemOriginal: f.mensagem_original });
+        await sql`UPDATE followups SET status = 'enviado', enviado_em = NOW() WHERE id = ${f.id}`;
+        enviados.push({ phone: f.phone, name: f.name });
+      } catch (e) { await sql`UPDATE followups SET status = 'erro', erro = ${String(e.message).substring(0, 300)} WHERE id = ${f.id}`; }
     }
 
     return res.status(200).json({
