@@ -1706,6 +1706,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
         </div>
         <!-- v3.35: proposta de negociação / contraproposta ao final da análise -->
         <div id="anProposta" style="display:none;padding:12px 14px;border-top:1px solid var(--bd);"></div>
+        <!-- v3.37: conversa com a IA sobre a ideia -->
+        <div id="anChat" style="display:none;padding:12px 14px;border-top:1px solid var(--bd);"></div>
         <!-- Ações após análise -->
         <div id="anAcoes" style="display:none;padding:10px 14px;border-top:1px solid var(--bd);display:none;">
           <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);margin-bottom:8px;">PRÓXIMOS PASSOS</div>
@@ -5915,6 +5917,7 @@ async function salvarIdeiaS1(ideia) {
     const r = await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save_ideia', value: ideia }) });
     const d = await r.json().catch(() => ({}));
     if (!d.success) throw new Error(d.error || ('Servidor retornou ' + r.status));
+    if (window._ichatPendente) _ichatLevarParaIdeia(ideia).catch(() => {}); // v3.37
     return true;
   } catch (e) { addLog('err', '[S1] Não consegui salvar a ideia no banco: ' + e.message); toast('A ideia não foi salva no banco: ' + e.message, 'error'); return false; }
 }
@@ -9073,6 +9076,7 @@ function ideiaAbrir(k) {
   }
   m.style.display = 'flex';
   ideiaRender();
+  ichatCarregarIdeia(_ideiaEd); // v3.37: documentos e conversa salvos desta ideia
 }
 
 function ideiaFechar(forcar) {
@@ -9122,6 +9126,7 @@ function ideiaRender() {
     + '<div class="fg"><label class="fl">Descrição completa</label><textarea class="fta" style="min-height:160px;font-size:12px;line-height:1.55;" oninput="ideiaCampo(\'desc\',this.value)">' + _ie(x.desc || x.descricao || '') + '</textarea></div>'
     + '<div class="fg"><label class="fl">Notas do fundador / decisões</label><textarea class="fta" style="min-height:60px;font-size:12px;" oninput="ideiaCampo(\'notas\',this.value)" placeholder="Observações, condições, próximos passos combinados...">' + _ie(x.notas || '') + '</textarea></div>'
     + '<div style="border-top:1px solid var(--bd);padding-top:12px;margin-top:4px;"><div style="font-family:var(--M);font-size:8.5px;text-transform:uppercase;color:var(--t2);margin-bottom:8px;">Avaliação da ideia</div>' + _ideiaResumoHtml(x) + '</div>'
+    + '<div style="margin-top:14px;">' + ichatHtml('ed') + '</div>'
     + '<div id="ideiaMsg" style="font-size:11px;margin-top:10px;"></div>'
     + '</div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;padding:12px 18px;border-top:1px solid var(--bd);background:var(--bg3);border-radius:0 0 12px 12px;">'
@@ -9130,6 +9135,7 @@ function ideiaRender() {
     + '<button class="btn btn-g" id="btnIdeiaAnalisar" onclick="ideiaAnalisar()">&#9670; ' + ((x.analise_completa || x.analise) ? 'Reanalisar' : 'Analisar') + ' com IA</button>'
     + '<button class="btn btn-g" onclick="ideiaBP()">&#128202; ' + (x.business_plan ? 'Abrir' : 'Gerar') + ' Business Plan</button>'
     + '<div style="flex:1;min-width:0;"></div><button class="btn btn-g" style="color:var(--red);" onclick="ideiaExcluirAberta()">&#128465; Excluir</button><button class="btn btn-g" onclick="ideiaFechar()">Fechar</button></div></div>';
+  try { ichatRender('ed'); } catch (_) {} // v3.37
 }
 // v3.36: excluir pela janela da ideia
 async function ideiaExcluirAberta() {
@@ -10122,6 +10128,12 @@ async function _anExtrairTexto(a) {
     const wb = window.XLSX.read(bytes, { type: 'array' });
     return wb.SheetNames.slice(0, 6).map(n => `[aba ${n}]\n` + window.XLSX.utils.sheet_to_csv(wb.Sheets[n]).substring(0, 15000)).join('\n');
   }
+  if (/wordprocessingml/i.test(a.tipo) || /\.docx$/i.test(a.nome)) { // v3.37: Word
+    if (!window.JSZip) await new Promise((ok, err) => { const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'; sc.onload = ok; sc.onerror = () => err(new Error('não carregou o leitor de Word')); document.head.appendChild(sc); });
+    const zip = await window.JSZip.loadAsync(bytes); const xml = await zip.file('word/document.xml')?.async('string');
+    if (!xml) return '(documento Word sem texto)';
+    return xml.replace(/<w:tab\/>/g, '\t').replace(/<\/w:p>/g, '\n').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/\n{3,}/g, '\n\n').trim().substring(0, 120000);
+  }
   if (/text|json|xml|markdown/i.test(a.tipo) || /\.(txt|md|csv|json)$/i.test(a.nome)) return new TextDecoder().decode(bytes).substring(0, 60000);
   return '(formato não lido automaticamente — converta para PDF para a IA ler o conteúdo)';
 }
@@ -10210,6 +10222,7 @@ async function analisarIdeia(modo) {
     // Salvar contexto para ações
     window._ideiaAnalisada = { titulo, desc, origem, cat, analise, docs_texto };
     try { _anPropostaUI(true); } catch (e) { addLog('warn', '[S1-03] proposta: ' + e.message); }
+    try { ichatSincronizarAnalise(); } catch (e) { addLog('warn', '[S1-03] chat: ' + e.message); }
 
   } catch(e) {
     if (tag) { tag.textContent = 'Erro'; tag.className = 'tag hot'; }
@@ -10264,6 +10277,167 @@ function _anPropostaRender(p) {
     + '</div>'
     + (p.mensagem_para_enviar ? '<div style="margin-top:8px;"><div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;"><b style="font-size:11px;flex:1;">Mensagem pronta para enviar</b><button class="btn btn-g" style="font-size:10px;padding:2px 8px;" onclick="navigator.clipboard.writeText(document.getElementById(\'anPropMsg\').value).then(()=>toast(\'Mensagem copiada\',\'success\'))">📋 Copiar</button></div><textarea class="fta" id="anPropMsg" style="min-height:150px;font-size:11.5px;">' + e(p.mensagem_para_enviar) + '</textarea></div>' : '');
 }
+// ═══ v3.37: CONVERSA COM A IA sobre a ideia (dados + análise + BP + documentos) ═══
+// k = 'an' (tela Análise Profunda) | 'ed' (janela de edição da ideia do pipeline)
+const _ICHAT = { an: { msgs: [], docs: [], carregado: true }, ed: { msgs: [], docs: [], carregado: false, ideiaId: null, bp: null } };
+const _ichatE = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+function _ichatMd(t) {
+  const linhas = _ichatE(t).split('\n'); let html = '', lista = null, tabela = [];
+  const inl = s => s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>').replace(/`([^`]+)`/g, '<code style="background:var(--bg4);padding:0 4px;border-radius:3px;">$1</code>');
+  const fechaLista = () => { if (lista) { html += '</' + lista + '>'; lista = null; } };
+  const fechaTabela = () => {
+    if (!tabela.length) return;
+    const rows = tabela.filter(r => !/^\s*\|?\s*:?-{2,}/.test(r)).map(r => r.replace(/^\s*\||\|\s*$/g, '').split('|').map(c => inl(c.trim())));
+    html += '<div style="overflow-x:auto;margin:6px 0;"><table style="border-collapse:collapse;font-size:11px;">' + rows.map((r, i) => '<tr>' + r.map(c => (i ? '<td' : '<th') + ' style="border:1px solid var(--bd);padding:4px 7px;text-align:left;' + (i ? '' : 'background:var(--bg4);') + '">' + c + (i ? '</td>' : '</th>')).join('') + '</tr>').join('') + '</table></div>';
+    tabela = [];
+  };
+  for (const l of linhas) {
+    if (/^\s*\|.*\|\s*$/.test(l)) { fechaLista(); tabela.push(l); continue; } else fechaTabela();
+    let m;
+    if ((m = l.match(/^\s*#{1,4}\s+(.*)/))) { fechaLista(); html += '<div style="font-weight:700;margin:8px 0 3px;">' + inl(m[1]) + '</div>'; }
+    else if ((m = l.match(/^\s*[-•*]\s+(.*)/))) { if (lista !== 'ul') { fechaLista(); html += '<ul style="margin:3px 0;padding-left:18px;">'; lista = 'ul'; } html += '<li>' + inl(m[1]) + '</li>'; }
+    else if ((m = l.match(/^\s*\d+[.)]\s+(.*)/))) { if (lista !== 'ol') { fechaLista(); html += '<ol style="margin:3px 0;padding-left:20px;">'; lista = 'ol'; } html += '<li>' + inl(m[1]) + '</li>'; }
+    else if (!l.trim()) { fechaLista(); html += '<div style="height:6px;"></div>'; }
+    else { fechaLista(); html += '<div>' + inl(l) + '</div>'; }
+  }
+  fechaLista(); fechaTabela();
+  return html;
+}
+const _ICHAT_SUG = ['Resuma os pontos-chave dos documentos', 'Quais pontos devo negociar e o que pedir em troca?', 'Monte uma contraproposta cláusula a cláusula', 'Simule a outra parte: eu proponho e você responde como ela', 'Os números do business plan batem com os documentos?'];
+
+function ichatHtml(k) {
+  return '<div id="ichat_' + k + '" style="border:1px solid var(--bd);border-radius:10px;background:var(--bg3);overflow:hidden;">'
+    + '<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--bd);flex-wrap:wrap;">'
+    + '<div style="flex:1;min-width:200px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--blue);font-weight:700;">&#128172; Conversar com a IA sobre esta ideia</div>'
+    + '<div style="font-size:10.5px;color:var(--t2);">tire dúvidas, ensaie a negociação e monte contrapropostas — a IA lê a ideia, a análise, o business plan e os documentos</div></div>'
+    + '<label class="btn btn-g" style="font-size:10px;padding:3px 9px;cursor:pointer;">&#128206; Anexar documento<input type="file" multiple accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.json" style="display:none;" onchange="ichatAnexar(\'' + k + '\',this)"/></label>'
+    + '<button class="btn btn-g" style="font-size:10px;padding:3px 9px;" onclick="ichatLimpar(\'' + k + '\')" title="Apaga a conversa (os documentos ficam)">&#8634; Nova conversa</button></div>'
+    + '<div id="ichatDocs_' + k + '" style="display:flex;flex-wrap:wrap;gap:5px;padding:7px 12px 0;"></div>'
+    + '<div id="ichatMsgs_' + k + '" style="max-height:420px;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px;"></div>'
+    + '<div style="display:flex;gap:6px;padding:9px 12px;border-top:1px solid var(--bd);align-items:flex-end;">'
+    + '<textarea id="ichatIn_' + k + '" class="fta" style="min-height:40px;max-height:160px;flex:1;font-size:12px;margin:0;" placeholder="Pergunte algo ou peça: “simule a TOVIX respondendo à minha contraproposta”… (Enter envia · Shift+Enter quebra linha)" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();ichatEnviar(\'' + k + '\');}"></textarea>'
+    + '<button class="btn btn-p" id="ichatBtn_' + k + '" style="font-size:11px;" onclick="ichatEnviar(\'' + k + '\')">Enviar</button></div></div>';
+}
+
+function ichatRender(k) {
+  const st = _ICHAT[k];
+  const dEl = document.getElementById('ichatDocs_' + k);
+  if (dEl) dEl.innerHTML = st.docs.length
+    ? st.docs.map((d, i) => '<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;background:var(--bg4);border:1px solid var(--bd);border-radius:999px;padding:2px 4px 2px 9px;">&#128196; ' + _ichatE(d.nome) + ' <span style="color:var(--t3);">' + Math.round(String(d.texto || '').length / 1000) + 'k</span>' + (d.daAnalise ? '' : '<button style="background:none;border:none;color:var(--red);cursor:pointer;font-size:12px;" title="Remover da conversa" onclick="ichatRemoverDoc(\'' + k + '\',' + i + ')">&times;</button>') + '</span>').join('')
+    : '<span style="font-size:10px;color:var(--t3);">Nenhum documento — anexe propostas, contratos ou planilhas para a IA usar na conversa.</span>';
+  const mEl = document.getElementById('ichatMsgs_' + k); if (!mEl) return;
+  if (!st.msgs.length) {
+    mEl.innerHTML = '<div style="font-size:11px;color:var(--t3);">Sugestões:</div><div style="display:flex;flex-wrap:wrap;gap:6px;">'
+      + _ICHAT_SUG.map(s => '<button class="btn btn-g" style="font-size:10.5px;padding:4px 9px;" onclick="ichatPerguntar(\'' + k + '\',' + JSON.stringify(s).replace(/"/g, '&quot;') + ')">' + _ichatE(s) + '</button>').join('') + '</div>';
+    return;
+  }
+  mEl.innerHTML = st.msgs.map((m, i) => m.role === 'user'
+    ? '<div style="align-self:flex-end;max-width:85%;background:rgba(79,124,255,.16);border:1px solid rgba(79,124,255,.35);border-radius:10px 10px 2px 10px;padding:7px 10px;font-size:12px;white-space:pre-wrap;">' + _ichatE(m.content) + '</div>'
+    : '<div style="align-self:flex-start;max-width:92%;background:var(--bg2);border:1px solid var(--bd);border-radius:10px 10px 10px 2px;padding:8px 11px;font-size:12px;line-height:1.6;">' + (m.erro ? '<span style="color:var(--red);">' + _ichatE(m.content) + '</span>' : _ichatMd(m.content))
+      + (m.erro ? '' : '<div style="margin-top:5px;text-align:right;"><button class="btn btn-g" style="font-size:9.5px;padding:1px 7px;" onclick="ichatCopiar(\'' + k + '\',' + i + ')">Copiar</button></div>') + '</div>').join('')
+    + (st.pensando ? '<div style="align-self:flex-start;font-size:11px;color:var(--blue);">A IA está pensando…</div>' : '');
+  mEl.scrollTop = mEl.scrollHeight;
+}
+
+function ichatCopiar(k, i) { const m = _ICHAT[k].msgs[i]; if (m) navigator.clipboard.writeText(m.content).then(() => toast('Resposta copiada', 'success')); }
+function ichatPerguntar(k, t) { const el = document.getElementById('ichatIn_' + k); if (el) { el.value = t; ichatEnviar(k); } }
+function ichatRemoverDoc(k, i) { _ICHAT[k].docs.splice(i, 1); ichatRender(k); _ichatPersistir(k); }
+function ichatLimpar(k) { if (_ICHAT[k].msgs.length && !confirm('Apagar esta conversa?')) return; _ICHAT[k].msgs = []; ichatRender(k); _ichatPersistir(k); }
+
+async function ichatAnexar(k, input) {
+  const files = Array.from(input.files || []); input.value = '';
+  for (const f of files) {
+    if (f.size > 15 * 1024 * 1024) { toast(f.name + ': arquivo acima de 15 MB', 'error'); continue; }
+    try {
+      const base64 = await new Promise((ok, err) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => err(new Error('não li o arquivo')); r.readAsDataURL(f); });
+      const texto = await _anExtrairTexto({ nome: f.name, tipo: f.type, base64 });
+      _ICHAT[k].docs = _ICHAT[k].docs.filter(d => d.nome !== f.name).concat([{ nome: f.name, texto: String(texto).substring(0, 120000) }]);
+      toast(f.name + ' anexado à conversa', 'success');
+    } catch (e) { toast(f.name + ': ' + e.message, 'error'); }
+  }
+  ichatRender(k); _ichatPersistir(k);
+}
+
+// contexto enviado à IA conforme a tela
+async function _ichatContexto(k) {
+  if (k === 'an') {
+    const ia = window._ideiaAnalisada;
+    const titulo = ia?.titulo || document.getElementById('anTitulo')?.value?.trim() || '';
+    const desc = ia?.desc || document.getElementById('anDesc')?.value?.trim() || '';
+    return { ideia: { titulo, desc, origem: ia?.origem || document.getElementById('anOrigem')?.value, cat: ia?.cat || document.getElementById('anCat')?.value }, analise: ia?.analise || null, proposta: ia?.proposta || null, bp: null };
+  }
+  const x = _ideiaEd || {}; const st = _ICHAT.ed;
+  if (x.business_plan?.id && (!st.bp || st.bp.id !== x.business_plan.id)) {
+    try { const d = await bpApi('obter', { id: x.business_plan.id }); const b = d.bp || {};
+      st.bp = { id: x.business_plan.id, resumo: b.resumo || x.business_plan, premissas: b.premissas || null, justificativas: b.narrativa?.justificativas || null, modelo_negocio: b.narrativa?.modelo_negocio || null };
+    } catch (_) { st.bp = { id: x.business_plan.id, resumo: x.business_plan }; }
+  }
+  return { ideia: { titulo: x.titulo, desc: x.desc || x.descricao, origem: x.origem, cat: x.categoria || x.cat, stage: x.stage, notas: x.notas, resultados_s1: x.resultados_s1 || null }, analise: x.analise_completa || x.analise || null, proposta: x.proposta || null, bp: st.bp };
+}
+
+async function ichatEnviar(k) {
+  const st = _ICHAT[k]; if (st.pensando) return;
+  const el = document.getElementById('ichatIn_' + k); const txt = (el?.value || '').trim(); if (!txt) return;
+  const ctx = await _ichatContexto(k);
+  if (!ctx.ideia.titulo && !ctx.ideia.desc && !st.docs.length) return toast('Preencha a ideia ou anexe um documento antes de conversar', 'error');
+  el.value = ''; st.msgs.push({ role: 'user', content: txt }); st.pensando = true; ichatRender(k);
+  const btn = document.getElementById('ichatBtn_' + k); if (btn) btn.disabled = true;
+  try {
+    const hist = st.msgs.filter(m => !m.erro).map(m => ({ role: m.role, content: m.content }));
+    const r = await fetch('/api/s1-strategy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'ideia_chat', ...ctx, docs_texto: st.docs.map(d => ({ nome: d.nome, texto: d.texto })), mensagens: hist }) });
+    const d = await r.json().catch(() => ({ success: false, error: r.status === 504 ? 'A IA demorou demais — tente uma pergunta mais curta' : 'Servidor retornou ' + r.status }));
+    if (!d.success) throw new Error(d.error || 'falha');
+    st.msgs.push({ role: 'assistant', content: d.resposta });
+  } catch (e) { st.msgs.push({ role: 'assistant', content: 'Não consegui responder: ' + e.message, erro: true }); }
+  st.pensando = false; if (btn) btn.disabled = false; ichatRender(k); _ichatPersistir(k);
+}
+
+// persistência: na ideia do pipeline (kv por id); na tela de análise, fica pendente até a ideia ir para o pipeline
+const _ichatKv = (id, t) => 'atx:ideia:' + t + ':' + id;
+async function _kvSet(key, value) { try { await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'set', key, value }) }); } catch (_) {} }
+async function _kvGet(key) { try { const r = await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'get', key }) }); const d = await r.json(); return d.value ?? null; } catch (_) { return null; } }
+const _kvParse = v => { if (v == null) return null; if (typeof v === 'string') { try { return JSON.parse(v); } catch (_) { return null; } } return v; };
+let _ichatTimer = {};
+function _ichatPersistir(k) {
+  if (k !== 'ed') return;
+  const st = _ICHAT.ed; const id = st.ideiaId; if (!id || !st.carregado) return;
+  clearTimeout(_ichatTimer[k]);
+  _ichatTimer[k] = setTimeout(() => {
+    _kvSet(_ichatKv(id, 'docs'), st.docs.map(d => ({ nome: d.nome, texto: d.texto })));
+    _kvSet(_ichatKv(id, 'chat'), st.msgs.filter(m => !m.erro).slice(-60));
+  }, 400);
+}
+async function ichatCarregarIdeia(x) {
+  const st = _ICHAT.ed; st.ideiaId = x?.id || null; st.msgs = []; st.docs = []; st.bp = null; st.carregado = false; st.pensando = false;
+  ichatRender('ed');
+  if (!st.ideiaId) { st.carregado = true; return; }
+  const id = st.ideiaId;
+  const [docs, chat] = await Promise.all([_kvGet(_ichatKv(id, 'docs')), _kvGet(_ichatKv(id, 'chat'))]);
+  if (st.ideiaId !== id) return;
+  st.docs = Array.isArray(_kvParse(docs)) ? _kvParse(docs) : [];
+  st.msgs = Array.isArray(_kvParse(chat)) ? _kvParse(chat) : [];
+  st.carregado = true; ichatRender('ed');
+}
+// tela de análise: documentos da análise entram na conversa automaticamente
+function ichatSincronizarAnalise() {
+  const st = _ICHAT.an; const ia = window._ideiaAnalisada;
+  const daAn = (ia?.docs_texto || []).filter(d => d && d.texto).map(d => ({ nome: d.nome, texto: d.texto, daAnalise: true }));
+  st.docs = daAn.concat(st.docs.filter(d => !d.daAnalise && !daAn.some(a => a.nome === d.nome)));
+  const box = document.getElementById('anChat'); if (box) { if (!box.innerHTML) box.innerHTML = ichatHtml('an'); box.style.display = 'block'; }
+  ichatRender('an');
+}
+// quando a ideia analisada vai para o pipeline, leva os documentos e a conversa
+async function _ichatLevarParaIdeia(ideia) {
+  const p = window._ichatPendente; if (!p || !ideia?.id) return;
+  if (_chaveTituloIdeia(p.titulo) !== _chaveTituloIdeia(ideia.titulo)) return;
+  window._ichatPendente = null;
+  const existentes = _kvParse(await _kvGet(_ichatKv(ideia.id, 'docs'))) || [];
+  const docs = existentes.concat(p.docs.filter(d => !existentes.some(e => e.nome === d.nome))).map(d => ({ nome: d.nome, texto: d.texto }));
+  if (docs.length) await _kvSet(_ichatKv(ideia.id, 'docs'), docs);
+  if (p.msgs.length) { const ant = _kvParse(await _kvGet(_ichatKv(ideia.id, 'chat'))) || []; await _kvSet(_ichatKv(ideia.id, 'chat'), ant.concat(p.msgs).slice(-60)); }
+  addLog('info', '[S1] Documentos e conversa da análise levados para a ideia "' + _limparTituloIdeia(ideia.titulo) + '"');
+}
+
 // v3.35: PDF da análise profunda da ideia (+ proposta de negociação, se houver)
 async function analisePdf() {
   const ia = window._ideiaAnalisada; if (!ia || !ia.analise) return toast('Analise a ideia primeiro', 'error');
@@ -10330,6 +10504,7 @@ function aprovarIdeiaAnalise() {
 function captarIdeiaFromAnalise() {
   const ia = window._ideiaAnalisada;
   if (!ia) { toast('Analise a ideia primeiro', 'error'); return; }
+  window._ichatPendente = { titulo: ia.titulo, docs: _ICHAT.an.docs.slice(), msgs: _ICHAT.an.msgs.filter(m => !m.erro) }; // v3.37
   document.getElementById('s1Titulo').value = ia.titulo;
   document.getElementById('s1Desc').value = ia.desc;
   _rascunhoGravar('s1captar');
@@ -26265,7 +26440,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.36] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.37] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -26281,7 +26456,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.36';
+window.__ATX_BUILD_ID__ = 'ATX-v3.37';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

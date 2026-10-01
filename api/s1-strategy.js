@@ -96,6 +96,7 @@ async function handler(req, res) {
 
       contrato_analisar:       () => analisarContrato(req.body), // v3.35
       ideia_proposta:          () => propostaNegociacaoIdeia(req.body), // v3.35
+      ideia_chat:              () => chatIdeia(req.body), // v3.37
       juridico_analise:        () => genericAgentCall(req.body, 'juridico'),
       juridico_gerar:          () => genericAgentCall(req.body, 'juridico'),
       juridico_compliance:     () => genericAgentCall(req.body, 'juridico'),
@@ -361,6 +362,59 @@ Devolva:
   const proposta = parseJSON(raw);
   if (proposta.erro) throw new Error('A IA não devolveu a proposta no formato esperado. Tente de novo.');
   return { success: true, proposta };
+}
+
+// ── v3.37: CONVERSA COM A IA sobre uma ideia (dados + análise + BP + documentos) ──
+async function chatIdeia({ ideia = {}, analise = null, proposta = null, bp = null, docs_texto = [], mensagens = [] }) {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
+  const corta = (v, n) => String(v ?? '').substring(0, n);
+  const js = (v, n) => v ? corta(JSON.stringify(v), n) : '';
+  // documentos: até ~140 mil caracteres no total, divididos entre os arquivos
+  const docs = (Array.isArray(docs_texto) ? docs_texto : []).filter(d => d && d.texto).slice(0, 8);
+  const porDoc = docs.length ? Math.floor(140000 / docs.length) : 0;
+  const docsTxt = docs.map(d => `=== DOCUMENTO: ${corta(d.nome, 160)} ===\n${corta(d.texto, porDoc)}`).join('\n\n');
+  const contexto = `IDEIA: ${corta(ideia.titulo, 300)}
+Origem: ${ideia.origem || '—'} · Categoria: ${ideia.cat || ideia.categoria || '—'} · Etapa: ${ideia.stage || '—'}
+Descrição:
+${corta(ideia.desc || ideia.descricao, 8000)}
+${ideia.notas ? '\nNotas do fundador / decisões:\n' + corta(ideia.notas, 3000) : ''}
+${analise ? '\nANÁLISE DA IA (S1-03):\n' + js(analise, 12000) : '\n(ainda sem análise da IA)'}
+${ideia.resultados_s1 ? '\nPESQUISA / MODELO / PARECER DO COMITÊ:\n' + js(ideia.resultados_s1, 8000) : ''}
+${proposta ? '\nPROPOSTA/CONTRAPROPOSTA JÁ GERADA:\n' + js(proposta, 6000) : ''}
+${bp ? '\nBUSINESS PLAN (valores em R$; premissas que alimentam o cálculo e resultado):\n' + js(bp, 14000) : ''}
+${docsTxt ? '\nDOCUMENTOS ANEXADOS (texto extraído):\n' + docsTxt : '\n(nenhum documento anexado)'}`;
+
+  const system = [
+    { type: 'text', text: `Você é o conselheiro de negócios do CEO da Atlantyx (empresa brasileira B2B de dados, BI, engenharia de dados e IA; 17 anos; clientes como CPFL Energia, Enel, Caixa Capitalização, Grupo Jelta). Você conversa com o fundador sobre UMA ideia/oportunidade específica, cujo material completo está abaixo.
+Seu papel:
+- Tirar dúvidas sobre a ideia, os documentos, a análise e o business plan — sempre ancorado no material. Ao usar um documento, cite-o ("Proposta Comercial, seção 9"). Se algo NÃO está no material, diga claramente que não está, em vez de supor.
+- Exercitar negociação: simular a outra parte quando pedido (responda no papel dela, de forma realista e dura), montar contrapropostas cláusula a cláusula, propor concessões e contrapartidas, apontar riscos e o que travar no contrato.
+- Fazer contas quando útil (câmbio, revenue share, payback) mostrando a conta. Valores em R$ quando falar do BP; se o documento estiver em outra moeda, mostre as duas.
+- Apontar inconsistências entre documentos, análise e BP.
+Estilo: português do Brasil, direto, de executivo para executivo. Use parágrafos curtos, listas e **negrito** quando ajudar; tabelas simples em markdown são permitidas. Não invente fatos, números ou cláusulas que não estejam no material — quando estimar, diga que é estimativa.` },
+    { type: 'text', text: 'MATERIAL DA IDEIA:\n' + contexto, cache_control: { type: 'ephemeral' } },
+  ];
+
+  // histórico: últimas 30 mensagens, alternando, começando pelo usuário
+  let msgs = (Array.isArray(mensagens) ? mensagens : [])
+    .filter(m => m && (m.role === 'user' || m.role === 'assistant') && String(m.content || '').trim())
+    .map(m => ({ role: m.role, content: corta(m.content, 12000) }))
+    .slice(-30);
+  while (msgs.length && msgs[0].role !== 'user') msgs.shift();
+  const limpo = [];
+  for (const m of msgs) { if (limpo.length && limpo[limpo.length - 1].role === m.role) limpo[limpo.length - 1].content += '\n\n' + m.content; else limpo.push(m); }
+  if (!limpo.length || limpo[limpo.length - 1].role !== 'user') throw new Error('Escreva uma pergunta');
+
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: MODEL, max_tokens: 4000, system, messages: limpo }),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d?.error?.message || 'Erro Claude API ' + r.status);
+  const resposta = (d.content || []).map(c => c.text || '').join('').trim();
+  if (!resposta) throw new Error('A IA não respondeu. Tente de novo.');
+  return { success: true, resposta, docs_usados: docs.map(x => x.nome) };
 }
 
 // ── S1-03: PESQUISA DE MERCADO ───────────────────────────────────────────────
