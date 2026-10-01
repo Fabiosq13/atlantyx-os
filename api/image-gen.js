@@ -60,8 +60,15 @@ Visual style: premium B2B tech corporate, dark navy blue (#1A3A8F) background, e
       fd.append('style_type', ['DESIGN', 'REALISTIC', 'GENERAL', 'AUTO', 'FICTION'].includes(estilo) ? estilo : 'GENERAL');
       if (negativo) fd.append('negative_prompt', negativo);
       fd.append('num_images', String(n));
-      const r3 = await fetch('https://api.ideogram.ai/v1/ideogram-v3/generate', { method: 'POST', headers: { 'Api-Key': apiKeyClean }, body: fd });
-      const t3 = await r3.text();
+      // v3.40: Ideogram limita chamadas simultâneas (429) e às vezes oscila (5xx) — tenta de novo antes de cair na arte de marca
+      let r3, t3; const t0 = Date.now();
+      for (let tent = 0; tent < 3; tent++) {
+        r3 = await fetch('https://api.ideogram.ai/v1/ideogram-v3/generate', { method: 'POST', headers: { 'Api-Key': apiKeyClean }, body: fd });
+        t3 = await r3.text();
+        if (r3.ok || ![429, 500, 502, 503, 504].includes(r3.status) || tent === 2 || Date.now() - t0 > 25000) break;
+        tentativas.push({ via: 'ideogram v3 (tentativa ' + (tent + 1) + ')', status: r3.status, erro: errTxt(t3).substring(0, 120), retry: true });
+        await new Promise(ok => setTimeout(ok, (tent + 1) * 3000 + Math.random() * 1500));
+      }
       if (r3.ok) { const d3 = JSON.parse(t3); imagens = (d3.data || []).filter(x => x.url).map(x => ({ url: x.url, prompt_usado: x.prompt, seed: x.seed })); provedor = 'ideogram-v3'; }
       tentativas.push({ via: 'ideogram v3', status: r3.status, erro: r3.ok ? null : errTxt(t3).substring(0, 200) });
     } catch (e) { tentativas.push({ via: 'ideogram v3', status: 0, erro: e.message }); }
@@ -115,7 +122,7 @@ Visual style: premium B2B tech corporate, dark navy blue (#1A3A8F) background, e
           } catch (e) { tentativas.push({ via: 'arte de marca', status: 0, erro: e.message }); }
         }
         if (lista.length) {
-          falhaIA = tentativas.filter(t => t.erro && t.via !== 'arte de marca');
+          falhaIA = tentativas.filter(t => t.erro && t.via !== 'arte de marca' && !t.retry);
           imagens = lista; provedor = 'arte-marca';
         }
       }
@@ -134,8 +141,8 @@ Visual style: premium B2B tech corporate, dark navy blue (#1A3A8F) background, e
     if (provedor === 'arte-marca') {
       const auth = falhaIA.some(t => t.status === 401 || t.status === 403);
       return res.status(200).json({ success: true, imagens, total: imagens.length, provedor, fallback: true,
-        aviso: 'O gerador de IA não respondeu (' + falhaIA.map(t => `${t.via} ${t.status || ''}`.trim()).join(' · ') + ') — entreguei uma ARTE DE MARCA Atlantyx para a campanha não parar. ' +
-          (auth ? 'A IDEOGRAM_API_KEY foi recusada: gere uma nova em ideogram.ai → API Keys, troque no Vercel e faça Redeploy.' : !apiKeyClean ? 'Configure IDEOGRAM_API_KEY no Vercel.' : 'Verifique crédito/limite do Ideogram.'),
+        aviso: 'O gerador de IA não respondeu (' + falhaIA.map(t => `${t.via} ${t.status || ''}${t.erro ? ': ' + String(t.erro).substring(0, 90) : ''}`.trim()).join(' · ') + ') — entreguei uma ARTE DE MARCA Atlantyx para a campanha não parar. ' +
+          (falhaIA.some(t => t.status === 429) ? 'Limite de chamadas simultâneas do Ideogram — use "Refazer com IA" em alguns minutos. ' : '') + (auth ? 'A IDEOGRAM_API_KEY foi recusada: gere uma nova em ideogram.ai → API Keys, troque no Vercel e faça Redeploy.' : !apiKeyClean ? 'Configure IDEOGRAM_API_KEY no Vercel.' : 'Verifique crédito/limite do Ideogram.'),
         tentativas });
     }
     return res.status(200).json({ success: true, imagens: [...imagens.filter(x => x.permanente), ...finais], total: imagens.length, provedor,

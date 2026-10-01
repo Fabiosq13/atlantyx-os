@@ -11407,9 +11407,50 @@ function _fmtStatus(k, est, txt) {
   const ic = { run: '◌', ok: '✓', err: '✕', wait: '·', warn: '!' };
   box.style.display = 'block';
   box.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><b style="font-size:11.5px;flex:1;">Formatos automáticos</b>'
+    + (_qtdArteMarca() ? '<button class="btn btn-or" style="font-size:9.5px;padding:2px 8px;" title="Gera com IA as artes que ficaram sem imagem (arte de marca) ou cuja imagem expirou, e regrava o texto" onclick="refazerArtesMarca()" ' + (window._fmtRodando ? 'disabled' : '') + '>🎨 Refazer com IA (' + _qtdArteMarca() + ')</button>' : '')
     + '<button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="gerarFormatosAutomaticos(true)" ' + (window._fmtRodando ? 'disabled' : '') + '>↻ Gerar o que falta</button></div>'
     + _FMT_ETAPAS.map(([id, nome]) => { const e = window._fmtAuto[id] || { est: 'wait', txt: 'aguardando' };
       return '<div style="display:flex;gap:8px;font-size:11px;padding:3px 0;"><span style="color:' + cor[e.est] + ';width:12px;font-weight:700;">' + ic[e.est] + '</span><span style="width:130px;">' + nome + '</span><span style="color:' + (e.est === 'err' ? 'var(--red)' : 'var(--t2)') + ';flex:1;min-width:0;">' + String(e.txt || '').replace(/</g, '&lt;') + '</span></div>'; }).join('');
+}
+// v3.40: artes de marca (o gerador de IA não respondeu) — conta e refaz com IA
+function _pecasCampanha(c) { c = c || (typeof campAtiva !== 'undefined' && campAtiva) || {}; return { stories: c.stories || [], carr: c.carrossel?.slides || [], reel: c.reel?.slides || [] }; }
+const _pecaRefazer = x => x && (x.arte_marca || x.imagem_expirada || (_ehEfemeraCli(x.imagem_url) && _urlFixada[x.imagem_url]?.expirada));
+function _qtdArteMarca(c) { c = c || (typeof campAtiva !== 'undefined' && campAtiva) || {}; const p = _pecasCampanha(c); return [...p.stories, ...p.carr, ...p.reel].filter(_pecaRefazer).length + (c.imagens || []).filter(x => x && (x.arte_marca || x.expirada)).length; }
+async function refazerArtesMarca() {
+  const c = campAtiva; if (!c) return toast('Abra a campanha primeiro', 'error');
+  if (window._fmtRodando) return toast('Os formatos já estão sendo gerados', 'info');
+  const p = _pecasCampanha(c); const total = _qtdArteMarca(c); if (!total) return toast('Esta campanha não tem artes de marca para refazer', 'info');
+  window._fmtRodando = true; window._fmtAuto = window._fmtAuto || {};
+  try { document.getElementById('campEditorPanel').style.display = 'block'; mostrarEdAba('formatos'); } catch (_) {}
+  addLog('info', '[Formatos] refazendo com IA ' + total + ' arte(s) de marca');
+  const am = l => l.some(x => x.arte_marca) ? ' (ainda há arte de marca: a IA não respondeu)' : '';
+  try {
+    // imagem principal
+    if ((c.imagens || []).length && c.imagens.every(x => x.arte_marca || x.expirada)) { _fmtStatus('img', 'run', 'gerando com IA...'); const ant = c.imagens; c.imagens = [];
+      try { await gerarImagemCampanha(); } catch (e) { addLog('err', '[Formatos] imagem: ' + e.message); }
+      if (!(c.imagens || []).length) c.imagens = ant;
+      _fmtStatus('img', c.imagens.some(x => !x.arte_marca) ? 'ok' : 'warn', c.imagens.some(x => !x.arte_marca) ? 'imagem gerada pela IA' : 'a IA ainda não respondeu'); }
+    const limpa = l => l.filter(_pecaRefazer).forEach(x => { x._antes = { imagem_url: x.imagem_url, imagem_composta: x.imagem_composta }; x.imagem_url = ''; x.imagem_composta = ''; });
+    const etapas = [['stories', p.stories, 'ASPECT_9_16', () => { try { _renderStoryPack(); } catch (_) {} }], ['carr', p.carr, 'ASPECT_1_1', () => { try { _renderCarrossel(); } catch (_) {} }], ['reel', p.reel, 'ASPECT_9_16', () => { try { _renderReel(); } catch (_) {} }]];
+    for (const [k, lista, fmt, render] of etapas) {
+      const alvo = lista.filter(_pecaRefazer); if (!alvo.length) continue;
+      _fmtStatus(k, 'run', 'gerando ' + alvo.length + ' arte(s) com IA...'); limpa(lista);
+      const falhas = await _artesParalelo(lista, fmt, render, 2);
+      lista.forEach(x => { if (!x.imagem_url && x._antes) { x.imagem_url = x._antes.imagem_url; x.imagem_composta = x._antes.imagem_composta; } else if (x._antes) delete x.imagem_expirada; delete x._antes; });
+      try { salvarCampanhaLocal(c); await salvarCampanhaNoBanco(c, 'refazer artes'); } catch (_) {}
+      if (k === 'reel') { if (c.reel) { delete c.reel.video_url; delete c.reel.video_url_publica; } window._reelBlob = null; _fmtStatus('reel', 'run', 'remontando o vídeo...');
+        try { mostrarFormato('reel'); await montarVideoReel(); } catch (e) { addLog('err', '[Formatos] vídeo: ' + e.message); }
+        _fmtStatus('reel', c.reel?.video_url_publica ? 'ok' : 'warn', c.reel?.video_url_publica ? 'vídeo refeito e hospedado' + am(lista) : 'artes refeitas; o vídeo não foi hospedado — use Gerar vídeo'); }
+      else await _comporEtapa(k, lista, falhas, am);
+    }
+  } finally {
+    window._fmtRodando = false;
+    try { await salvarCampanhaDB(true); } catch (_) {}
+    try { _kbSincronizarCampanha(c); } catch (_) {}
+  }
+  const resta = _qtdArteMarca(c);
+  toast(resta ? (total - resta) + ' de ' + total + ' artes refeitas com IA — ' + resta + ' continuam como arte de marca (veja o motivo no Log)' : 'Todas as ' + total + ' artes refeitas com IA', resta ? 'error' : 'success');
+  _fmtStatus('img', (window._fmtAuto.img || {}).est || 'ok', (window._fmtAuto.img || {}).txt || '');
 }
 // gera as artes que faltam, `conc` por vez; devolve a lista de falhas com o motivo real
 async function _artesParalelo(itens, formato, aoTerminar, conc = 3) {
@@ -11421,7 +11462,8 @@ async function _artesParalelo(itens, formato, aoTerminar, conc = 3) {
       const d = await r.json().catch(() => ({ error: 'HTTP ' + r.status }));
       it.imagem_url = d.imagens?.[0]?.url || d.imagens?.[0] || '';
       if (!it.imagem_url) falhas.push('arte ' + (i + 1) + ': ' + (d.error || 'sem retorno') + (d.dica ? ' — ' + d.dica : ''));
-      else if (d.fallback) it.arte_marca = true;
+      else if (d.fallback) { it.arte_marca = true; it.arte_motivo = String(d.aviso || '').substring(0, 300); if (!window._avisoArteMarca || Date.now() - window._avisoArteMarca > 60000) { window._avisoArteMarca = Date.now(); addLog('warn', '[Imagens] ' + it.arte_motivo); } }
+      else { delete it.arte_marca; delete it.arte_motivo; }
     } catch (e) { falhas.push('arte ' + (i + 1) + ': ' + e.message); }
     try { aoTerminar && aoTerminar(); } catch (_) {} } };
   await Promise.all(Array.from({ length: Math.min(conc, itens.length) }, um));
@@ -11448,7 +11490,7 @@ async function completarFormatos() {
   const c = (typeof campAtiva !== 'undefined' && campAtiva) || null; if (!c || window._fmtRodando || window._fmtCompletando) return;
   const st = c.stories || [], cs = c.carrossel?.slides || [], rs = c.reel?.slides || [];
   const fSt = st.some(x => x.imagem_url && !x.imagem_composta), fCs = cs.some(x => x.imagem_url && !x.imagem_composta), fRe = rs.length && rs.every(x => x.imagem_url) && !c.reel?.video_url;
-  if (!fSt && !fCs && !fRe) return;
+  if (!fSt && !fCs && !fRe) { try { const r = await _fixarUrlsCampanha(c); if (r.fixadas || r.expiradas) await salvarCampanhaNoBanco(c, 'fixar imagens'); } catch (_) {} _avisarArteMarca(c); return; }
   window._fmtCompletando = c.id; window._fmtAuto = window._fmtAuto || {};
   addLog('info', '[Formatos] completando a campanha: ' + [fSt && 'texto nos Stories', fCs && 'texto no Carrossel', fRe && 'vídeo do Reel'].filter(Boolean).join(', '));
   const am = l => l.some(x => x.arte_marca) ? ' (arte de marca)' : '';
@@ -11459,7 +11501,16 @@ async function completarFormatos() {
     if (rs.length) { if (fRe) { _fmtStatus('reel', 'run', 'montando o vídeo...'); mostrarFormato('reel'); await montarVideoReel(); }
       _fmtStatus('reel', c.reel?.video_url_publica || c.reel?.video_url ? 'ok' : 'warn', c.reel?.video_url ? 'vídeo pronto' : 'vídeo não gerado — clique em ③ Gerar vídeo'); }
     try { await salvarCampanhaDB(true); } catch (_) {}
-  } finally { window._fmtCompletando = null; }
+  } finally { window._fmtCompletando = null; _avisarArteMarca(c); }
+}
+// v3.40: ao abrir a campanha, avisa quais formatos ficaram com arte de marca (fundo sem imagem) e por quê
+function _avisarArteMarca(c) {
+  if (!c || !_qtdArteMarca(c) || window._fmtRodando) return;
+  const p = _pecasCampanha(c);
+  const motivo = [...p.stories, ...p.carr, ...p.reel].map(x => x.arte_motivo).find(Boolean);
+  [['stories', p.stories], ['carr', p.carr], ['reel', p.reel]].forEach(([k, l]) => { const n = l.filter(x => x.arte_marca).length, ex = l.filter(x => !x.arte_marca && _pecaRefazer(x)).length;
+    if (n || ex) _fmtStatus(k, 'warn', [n && n + ' sem imagem de IA (arte de marca)' + (motivo ? ' — ' + motivo.replace(/ — entreguei.*$/, '').substring(0, 120) : ''), ex && ex + ' com imagem expirada no gerador'].filter(Boolean).join(' · ') + ' — use 🎨 Refazer com IA'); });
+  if ((c.imagens || []).some(x => x.arte_marca || x.expirada)) _fmtStatus('img', 'warn', 'imagem principal ' + ((c.imagens || []).some(x => x.expirada) ? 'expirada' : 'é arte de marca') + ' · use 🎨 Refazer com IA');
 }
 async function gerarFormatosAutomaticos(manual) {
   const c = campAtiva; if (!c) { if (manual) toast('Abra ou crie uma campanha primeiro', 'error'); return; }
@@ -11489,9 +11540,9 @@ async function gerarFormatosAutomaticos(manual) {
     if (cs.length) _fmtStatus('carr', 'run', 'gerando ' + cs.filter(x => !x.imagem_url).length + ' arte(s) 1:1...');
     if (rs.length) _fmtStatus('reel', 'run', 'gerando ' + rs.filter(x => !x.imagem_url).length + ' arte(s) 9:16...');
     const [fS, fC, fR] = await Promise.all([
-      st.length ? _artesParalelo(st, 'ASPECT_9_16', () => { try { _renderStoryPack(); } catch (_) {} }, 2) : [],
-      cs.length ? _artesParalelo(cs, 'ASPECT_1_1', () => { try { _renderCarrossel(); } catch (_) {} }, 2) : [],
-      rs.length ? _artesParalelo(rs, 'ASPECT_9_16', () => { try { _renderReel(); } catch (_) {} }, 2) : []]);
+      st.length ? _artesParalelo(st, 'ASPECT_9_16', () => { try { _renderStoryPack(); } catch (_) {} }, 1) : [],
+      cs.length ? _artesParalelo(cs, 'ASPECT_1_1', () => { try { _renderCarrossel(); } catch (_) {} }, 1) : [],
+      rs.length ? _artesParalelo(rs, 'ASPECT_9_16', () => { try { _renderReel(); } catch (_) {} }, 1) : []]); // v3.40: 3 por vez no total (o Ideogram recusava 6 simultâneas)
     try { salvarCampanhaLocal(campAtiva); await salvarCampanhaNoBanco(campAtiva, 'formatos artes'); } catch (_) {}
     // composição (texto gravado na arte) e vídeo
     if (st.length) await _comporEtapa('stories', st, fS, arteMarca);
@@ -25606,7 +25657,40 @@ function _sanearCampanhaParaSave(c) {
   };
   return clean(c);
 }
+// v3.40: URLs do Ideogram/DALL·E expiram em horas — toda imagem da campanha é copiada para o nosso domínio
+// ao salvar (enquanto o link ainda vale). Se já expirou, a peça fica marcada para "Refazer com IA".
+const _ehEfemeraCli = u => typeof u === 'string' && /ideogram\.ai|oaidalleapiprodscus|blob\.core\.windows\.net.*(sig|se)=|[?&]exp=\d+.*sig=/i.test(u);
+const _urlFixada = {};
+async function _fixarUrl(u) {
+  if (!_ehEfemeraCli(u)) return { url: u };
+  if (_urlFixada[u]) return _urlFixada[u];
+  try {
+    const m = await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'salvar_de_url', payload: { url: u, origem: 'campanha', jpeg: true } }) }).then(x => x.json());
+    if (m.success && m.url) return (_urlFixada[u] = { url: m.url, fixada: true });
+    return (_urlFixada[u] = { url: u, expirada: true, erro: m.error || '' });
+  } catch (e) { return { url: u, erro: e.message }; }
+}
+async function _fixarUrlsCampanha(c) {
+  if (!c) return { fixadas: 0, expiradas: 0 };
+  let fixadas = 0, expiradas = 0;
+  const trata = async (obj, campo, ehPeca) => {
+    const u = obj && obj[campo]; if (!_ehEfemeraCli(u)) return;
+    const r = await _fixarUrl(u);
+    if (r.fixada) { obj[campo] = r.url; fixadas++; if (ehPeca) delete obj.imagem_expirada; }
+    else if (r.expirada) { expiradas++; if (ehPeca) obj.imagem_expirada = true; else obj.expirada = true; }
+  };
+  const tarefas = [];
+  (c.imagens || []).forEach(x => { if (x && typeof x === 'object') tarefas.push(trata(x, 'url', false)); });
+  const p = _pecasCampanha(c);
+  [...p.stories, ...p.carr, ...p.reel].forEach(x => { if (x) { tarefas.push(trata(x, 'imagem_url', true)); tarefas.push(trata(x, 'imagem_composta', true)); } });
+  await Promise.all(tarefas);
+  if (fixadas) addLog('ok', '[Campanha] ' + fixadas + ' imagem(ns) temporária(s) salvas de forma permanente');
+  if (expiradas) addLog('warn', '[Campanha] ' + expiradas + ' imagem(ns) já expiraram no gerador — use 🎨 Refazer com IA na aba Formatos');
+  return { fixadas, expiradas };
+}
+
 async function salvarCampanhaNoBanco(camp, origem) {
+  try { await _fixarUrlsCampanha(camp || campAtiva); } catch (_) {}
   const limpa = _sanearCampanhaParaSave(camp || campAtiva);
   if (!limpa?.id) return { success: false, error: 'campanha sem id' };
   const body = JSON.stringify({ action: 'save_campanha', value: limpa });
@@ -26491,7 +26575,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.39] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.40] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -26507,7 +26591,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.39';
+window.__ATX_BUILD_ID__ = 'ATX-v3.40';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
