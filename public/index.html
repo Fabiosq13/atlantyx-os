@@ -6905,7 +6905,8 @@ function _kbRedes(p) {
 function _kbSincronizarCampanha(camp) {
   try {
     if (!camp || !camp.id || typeof kanbanPecas === 'undefined') return;
-    const p = kanbanPecas.find(x => x.campanhaId === camp.id); if (!p) return;
+    if (/^camp_auto_/.test(camp.id)) return; // auto-campanha: um card por post, cada um com o próprio texto
+    const p = kanbanPecas.find(x => x.campanhaId === camp.id && _ehCardCampanha(x)); if (!p) return;
     const cp = camp.data?.copy?.versoes?.[0] || {};
     const novo = { titulo: camp.nome || p.titulo, canal: camp.canal || p.canal, redes: camp.redes_ativas ? Object.assign({}, camp.redes_ativas) : p.redes,
       copy: (cp.headline ? cp.headline + '\n\n' : '') + (cp.corpo || '') || p.copy, narrativa: camp.data?.narrativa?.tema_central || p.narrativa };
@@ -7158,11 +7159,13 @@ function recusarTodosKanban() {
 // atualizado e a aprovação o move para Aprovado. Cards criados pelo Agente de QA não são gravados.
 const _KB_ORDEM = { 'Gerado': 0, 'Revisão': 1, 'Aprovado': 2, 'Agendado': 3, 'Publicado': 4 };
 function _ehPecaQA(p) { return !!(p && (p.qa || /qa@teste\.com\.br|QA-TESTE/i.test(String(p.titulo || '') + ' ' + String(p.copy || '').substring(0, 300)))); }
+// v3.33: cards de POST da auto-campanha compartilham o campanhaId (um card por post) — não são o "card da campanha"
+function _ehCardCampanha(p) { return !!p && !(p.agente === '🤖 Auto-IA' || /^peca_auto_/.test(String(p.id || ''))); }
 function _kbQaAtivo() { try { return !!(window.QA && QA._rodando && QA._rodando()) || !!window.__QA_FRAME__ || (typeof _qaRodando !== 'undefined' && !!_qaRodando); } catch (_) { return false; } }
 function adicionarAoKanban(titulo, canal, agente, narrativa, copy, design, campanhaId) {
   const agoraIso = new Date().toISOString(), agoraBr = new Date().toLocaleString('pt-BR');
   const aprovando = agente === 'Aprovada';
-  const existente = campanhaId ? kanbanPecas.find(p => p.campanhaId === campanhaId) : null;
+  const existente = campanhaId ? kanbanPecas.find(p => p.campanhaId === campanhaId && _ehCardCampanha(p)) : null;
   if (existente) {
     Object.assign(existente, { titulo, canal, narrativa, copy, design, atualizado_em: agoraIso, atualizado: agoraBr });
     if (aprovando && (_KB_ORDEM[existente.status] ?? 0) < _KB_ORDEM['Aprovado']) { existente.status = 'Aprovado'; existente.aprovado_em = agoraIso; }
@@ -7247,7 +7250,7 @@ async function carregarKanbanDoBanco() {
   try {
     const antes = unidas.length; const semQA = unidas.filter(p => !_ehPecaQA(p)); const qaRem = antes - semQA.length;
     const porCamp = {}; const fim = [];
-    semQA.forEach(p => { if (!p.campanhaId) { fim.push(p); return; } (porCamp[p.campanhaId] = porCamp[p.campanhaId] || []).push(p); });
+    semQA.forEach(p => { if (!p.campanhaId || !_ehCardCampanha(p)) { fim.push(p); return; } (porCamp[p.campanhaId] = porCamp[p.campanhaId] || []).push(p); }); // v3.33: posts da auto-campanha não são unificados
     let juntados = 0;
     Object.values(porCamp).forEach(lista => {
       if (lista.length === 1) { fim.push(lista[0]); return; }
@@ -7274,9 +7277,34 @@ async function carregarKanbanDoBanco() {
     _kanbanCarregado = (doBanco !== null); // banco respondeu vazio de fato
   }
   renderKanban();
+  // v3.33: cards acompanham nome e redes das campanhas (inclui nomes corrigidos)
+  try { if (!(_todasCampanhas || []).length && typeof carregarCampanhasDB === 'function') await carregarCampanhasDB(); (_todasCampanhas || []).forEach(c => _kbSincronizarCampanha(c)); _kbRecuperarPostsAuto(); } catch (_) {}
 }
 
 // v1.5.8: recupera peças a partir das CAMPANHAS salvas (tabela campanhas nunca perdeu nada)
+// v3.33: a limpeza da v3.27 juntava os cards de POST de uma auto-campanha (mesmo campanhaId) num só.
+// Recria os posts que sumiram a partir da campanha (texto, imagem e agendamento registrados).
+function _kbRecuperarPostsAuto() {
+  let feitos = {}; try { feitos = JSON.parse(localStorage.getItem('atx:kb_rec_auto') || '{}'); } catch (_) {}
+  let novos = 0;
+  (_todasCampanhas || []).filter(c => /^camp_auto_/.test(c.id || '') && !feitos[c.id]).forEach(c => {
+    const vs = c.data?.copy?.versoes || [];
+    const cards = kanbanPecas.filter(p => p.campanhaId === c.id && !_ehCardCampanha(p));
+    if (!cards.length || cards.length >= vs.length) { feitos[c.id] = 1; return; }
+    const titulos = new Set(cards.map(p => String(p.titulo || '').trim()));
+    vs.forEach((v, i) => {
+      const t = String(v.headline || '').trim(); if (!t || titulos.has(t)) return;
+      const pubs = (_publicacoes || []).filter(x => x.campanhaId === c.id && x.titulo === t);
+      const img = (c.imagens || []).find(x => x.post === t)?.url || '';
+      kanbanPecas.push({ id: 'peca_auto_rec_' + c.id.slice(-8) + '_' + i, titulo: t, canal: 'Todos', agente: '🤖 Auto-IA', narrativa: '', copy: v.corpo || '', design: img,
+        campanhaId: c.id, status: pubs.length ? 'Agendado' : 'Aprovado', agendado_para: pubs[0]?.data || null, data: new Date(c.criado_em || Date.now()).toLocaleString('pt-BR'), criado_em: c.criado_em || new Date().toISOString() });
+      novos++;
+    });
+    feitos[c.id] = 1;
+  });
+  try { localStorage.setItem('atx:kb_rec_auto', JSON.stringify(feitos)); } catch (_) {}
+  if (novos) { renderKanban(); salvarKanbanNoBanco(); addLog('ok', '[Kanban] ' + novos + ' post(s) de auto-campanha recuperado(s)'); toast(novos + ' post(s) de auto-campanha recuperado(s) no Kanban', 'success'); }
+}
 async function reconstruirPecasDasCampanhas() {
   try {
     if (!_todasCampanhas || !_todasCampanhas.length) await carregarCampanhasDB();
@@ -10766,8 +10794,11 @@ function resetCampanhaState() {
   const editor = document.getElementById('campEditorPanel');
   if (editor) editor.style.display = 'none';
 
-  // Tenta restaurar a última salva
-  restaurarUltimaCampanha();
+  // v3.33: a tela de Nova Campanha abre LIMPA. Antes ela carregava a última campanha do banco
+  // (ex.: "Auto-campanha 25/09…") e quem só trocava o contexto e clicava em Criar ganhava uma
+  // campanha nova com o nome da antiga — e o salvamento automático do formulário podia editar a antiga.
+  try { ['cNome','cObj','cPublico','cOrc','cCtx','cDataInicio','cDataFim'].forEach(id => { const e = document.getElementById(id); if (e && e.tagName !== 'SELECT') e.value = ''; }); } catch (_) {}
+  _ofertarUltimaCampanha();
 
   // Resetar tags
   const tag = document.getElementById('campTag');
@@ -10916,6 +10947,34 @@ function restaurarFormularioCampanha(camp) {
 }
 
 // FIX v1.4.4: ao abrir a tela sem campanha em memória, tenta pegar a última do banco
+// v3.33: campanhas criadas na Nova Campanha (id camp_<n>) que herdaram o nome de uma Auto-campanha
+// pelo bug acima são renomeadas pelo tema que a IA escreveu + data de criação; o card do Kanban acompanha
+function _corrigirNomesHerdados() {
+  (_todasCampanhas || []).forEach(c => {
+    if (!c || !c.id || /^camp_auto_/.test(c.id) || !/^auto-?campanha\b/i.test(String(c.nome || '').trim()) || c._nomeCorrigido) return;
+    const tema = String(c.data?.narrativa?.tema_central || c.data?.copy?.versoes?.[0]?.headline || '').replace(/\s+/g, ' ').trim();
+    if (!tema) return;
+    const d = new Date(c.criado_em || c.atualizado_em || Date.now());
+    const novo = (tema.length > 55 ? tema.substring(0, 55).replace(/\s\S*$/, '') + '…' : tema) + ' · ' + d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ' ' + d.toTimeString().substring(0, 5);
+    addLog('info', '[Campanha] Nome corrigido: "' + c.nome + '" → "' + novo + '" (não era uma auto-campanha)');
+    c.nome = novo; c.atualizado_em = new Date().toISOString();
+    salvarCampanhaNoBanco(c, 'nome herdado corrigido').then(() => _kbSincronizarCampanha(c)).catch(() => {});
+  });
+}
+async function _ofertarUltimaCampanha() {
+  try {
+    if (!_todasCampanhas || !_todasCampanhas.length) await carregarCampanhasDB();
+    const ultima = (_todasCampanhas || []).slice().sort((a,b) => new Date(b.atualizado_em||b.criado_em||0) - new Date(a.atualizado_em||a.criado_em||0))[0];
+    let box = document.getElementById('campContinuar');
+    if (!ultima) { if (box) box.remove(); return; }
+    const alvo = document.getElementById('cNome')?.closest('.panel') || document.getElementById('abaNova');
+    if (!alvo) return;
+    if (!box) { box = document.createElement('div'); box.id = 'campContinuar'; alvo.parentNode.insertBefore(box, alvo); }
+    box.style.cssText = 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--bg3);border:1px solid var(--bd2);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:11px;color:var(--t2);';
+    box.innerHTML = 'Criando uma campanha <b style="color:var(--t1);">nova</b>. Última editada: <b style="color:var(--t1);">' + String(ultima.nome || '').replace(/</g, '&lt;') + '</b>'
+      + '<button class="btn btn-g" style="font-size:10px;padding:3px 9px;margin-left:auto;" onclick="abrirCampanhaDB(\'' + ultima.id + '\').then(()=>{const b=document.getElementById(\'campContinuar\');if(b)b.remove();})">Continuar editando a última</button>';
+  } catch (_) {}
+}
 async function restaurarUltimaCampanha() {
   try {
     // Ordena por atualizado_em desc — pega a última editada
@@ -11286,6 +11345,7 @@ async function carregarCampanhasDB() {
   }
 
   _todasCampanhas = campanhas;
+  try { _corrigirNomesHerdados(); } catch (_) {}
   filtrarCampanhas();
   atualizarContadorCampanhas(campanhas.length);
 }
@@ -25982,7 +26042,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.32] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.33] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -25998,7 +26058,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.32';
+window.__ATX_BUILD_ID__ = 'ATX-v3.33';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
