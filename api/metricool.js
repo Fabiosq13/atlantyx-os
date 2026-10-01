@@ -610,7 +610,7 @@ async function _slotsOcupados({ de, ate, blogId }) {
   } catch (e) { return { ocupados: new Set(), total: 0, erro: e.message }; }
 }
 
-async function autoCampanhaPlanejar({ dias, horarios, pular_fim_de_semana, blog_id } = {}) {
+async function autoCampanhaPlanejar({ dias, horarios, pular_fim_de_semana, blog_id, data_inicio } = {}) {
   const cfg = await autoCampanhaConfig();
   const hs = (Array.isArray(horarios) && horarios.length ? horarios : cfg.horarios)
     .map(h => String(h).trim()).filter(h => /^\d{2}:\d{2}$/.test(h));
@@ -618,18 +618,24 @@ async function autoCampanhaPlanejar({ dias, horarios, pular_fim_de_semana, blog_
   const nDias = parseInt(dias) || cfg.dias_a_frente;
   const pularFds = pular_fim_de_semana !== undefined ? !!pular_fim_de_semana : cfg.pular_fim_de_semana;
 
-  const hoje = new Date();
-  const de = new Date(hoje.getTime() + 86400000).toISOString().split('T')[0];
-  const ate = new Date(hoje.getTime() + nDias * 86400000).toISOString().split('T')[0];
+  // v3.41: data de início escolhida na tela (antes começava sempre amanhã). Datas no calendário de São Paulo.
+  const hojeSP = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+  const ini = /^\d{4}-\d{2}-\d{2}$/.test(String(data_inicio || '')) ? String(data_inicio) : null;
+  const base = new Date(((ini && ini >= hojeSP) ? ini : (ini ? hojeSP : new Date(Date.parse(hojeSP + 'T12:00:00Z') + 86400000).toISOString().split('T')[0])) + 'T12:00:00Z');
+  const diaDe = i => new Date(base.getTime() + i * 86400000);
+  const de = diaDe(0).toISOString().split('T')[0];
+  const ate = diaDe(nDias - 1).toISOString().split('T')[0];
   const { ocupados, total, erro } = await _slotsOcupados({ de, ate, blogId: blog_id });
+  const agoraMs = Date.now() + 30 * 60000; // não planeja horário que já passou (ou daqui a menos de 30 min)
 
   const vagos = [], jaAgendados = [];
-  for (let i = 1; i <= nDias; i++) {
-    const d = new Date(hoje.getTime() + i * 86400000);
-    const diaSemana = d.getDay();
+  for (let i = 0; i < nDias; i++) {
+    const d = diaDe(i);
+    const diaSemana = d.getUTCDay();
     if (pularFds && (diaSemana === 0 || diaSemana === 6)) continue;
     const dia = d.toISOString().split('T')[0];
     hs.forEach(h => {
+      if (Date.parse(dia + 'T' + h + ':00-03:00') < agoraMs) return;
       // v1.74: ocupado se houver post no mesmo dia a menos de 45 min do slot
       const [hh, mm] = h.split(':').map(Number);
       const alvoMin = hh * 60 + mm;
@@ -644,11 +650,11 @@ async function autoCampanhaPlanejar({ dias, horarios, pular_fim_de_semana, blog_
   return { plano: { vagos, ja_agendados: jaAgendados, periodo: { de, ate },
     horarios: hs, dias: nDias, pular_fim_de_semana: pularFds,
     posts_existentes: total, erro_consulta: erro,
-    resumo: `${vagos.length} horário(s) vago(s) e ${jaAgendados.length} já preenchido(s) nos próximos ${nDias} dias.` } };
+    resumo: `${vagos.length} horário(s) vago(s) e ${jaAgendados.length} já preenchido(s) em ${nDias} dia(s) a partir de ${de.split('-').reverse().join('/')}.` } };
 }
 
 // Gera o conteúdo e agenda, um slot por vez
-async function autoCampanhaExecutar({ dias, horarios, pular_fim_de_semana, tema, redes, blog_id, apenas_rascunho = false, limite = 21, slots = null, cta_instagram = '' } = {}) {
+async function autoCampanhaExecutar({ dias, horarios, pular_fim_de_semana, tema, redes, blog_id, apenas_rascunho = false, limite = 21, slots = null, cta_instagram = '', data_inicio = null } = {}) {
   const _t0 = Date.now();
   const cfg = await autoCampanhaConfig();
   // v2.16: quando o navegador manda `slots`, gera só esses (lote). Evita o "Failed to fetch":
@@ -658,7 +664,7 @@ async function autoCampanhaExecutar({ dias, horarios, pular_fim_de_semana, tema,
     plano = { vagos: slots, ja_agendados: [], resumo: `lote de ${slots.length}` };
     alvos = slots.slice(0, 5);
   } else {
-    ({ plano } = await autoCampanhaPlanejar({ dias, horarios, pular_fim_de_semana, blog_id }));
+    ({ plano } = await autoCampanhaPlanejar({ dias, horarios, pular_fim_de_semana, blog_id, data_inicio }));
     alvos = plano.vagos.slice(0, Math.min(parseInt(limite) || 21, 5));
   }
   if (!alvos.length) return { criados: 0, plano, aviso: 'Nenhum horário vago — a agenda já está completa no período.' };

@@ -3928,11 +3928,12 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div class="panel" style="margin-bottom:12px;">
     <div class="ph"><div class="pt">Configuracao</div></div>
     <div class="pb">
-      <div style="display:grid;grid-template-columns:repeat(3,1fr) 1fr 1fr;gap:9px;margin-bottom:10px;">
+      <div style="display:grid;grid-template-columns:1.2fr repeat(3,1fr) 1fr 1fr;gap:9px;margin-bottom:10px;">
+        <div class="fg" style="margin:0;"><label class="fl">Data de início</label><input type="date" class="fi" id="ac_inicio" title="A autocampanha gera os posts a partir desta data"/></div>
         <div class="fg" style="margin:0;"><label class="fl">Horario 1</label><input type="time" class="fi" id="ac_h1" value="08:30"/></div>
         <div class="fg" style="margin:0;"><label class="fl">Horario 2</label><input type="time" class="fi" id="ac_h2" value="12:15"/></div>
         <div class="fg" style="margin:0;"><label class="fl">Horario 3</label><input type="time" class="fi" id="ac_h3" value="17:30"/></div>
-        <div class="fg" style="margin:0;"><label class="fl">Dias a frente</label><input type="number" class="fi" id="ac_dias" value="7" min="1" max="30"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Quantos dias</label><input type="number" class="fi" id="ac_dias" value="7" min="1" max="30"/></div>
         <div class="fg" style="margin:0;"><label class="fl">Fim de semana</label>
           <select class="fsel" id="ac_fds" style="width:100%;"><option value="pular">Pular sab/dom</option><option value="incluir">Incluir</option></select></div>
       </div>
@@ -3977,6 +3978,12 @@ tr:hover td{background:rgba(79,124,255,.03);}
     </div>
   </div>
   <div id="acResultado"></div>
+  <!-- v3.41: lista das autocampanhas geradas -->
+  <div class="panel" style="margin-top:12px;">
+    <div class="ph"><div class="pt">📋 Autocampanhas geradas</div><span style="font-size:10px;color:var(--t2);" id="acListaResumo"></span>
+      <button class="btn btn-g" style="font-size:10px;margin-left:auto;" onclick="acListar(true)">↻ Atualizar</button></div>
+    <div class="pb" id="acLista"><div style="font-size:11px;color:var(--t3);padding:12px;text-align:center;">Carregando...</div></div>
+  </div>
 </div>
 
 <div class="page" id="page-s3extrato">
@@ -6996,9 +7003,40 @@ function selecionarPeca(id) {
           ${(() => { const pubs = pubsDaPeca(p); if (!pubs.length) return p.status === 'Agendado' ? '<div style="color:var(--red);margin-top:4px;">⚠ Nenhuma publicação registrada — o agendamento no Metricool pode ter falhado (veja o Log). Use 🚀 Publicar para reagendar.</div>' : ''; return '<div style="margin-top:6px;color:var(--gold);font-weight:600;">📅 Publicação agendada:</div>' + pubs.map(x => '<div style="padding-left:10px;display:flex;gap:6px;align-items:center;">' + fmtDH(x.agendado_para || x.data) + ' · ' + x.rede + (x.metodo==='metricool' ? ' 🚀 Metricool' : ' ✋ manual') + (x.metricool_id ? ' <span style="color:var(--t3);font-size:9px;">#' + x.metricool_id + '</span>' : '') + ' <button class="btn" style="font-size:9px;padding:0 5px;color:var(--gold);" onclick="reagendarPublicacao(\'' + x.id + '\')" title="Mudar data/hora (também no Metricool)">✎ data</button></div>').join(''); })()}
           ${p.campanhaId ? '<div style="margin-top:4px;color:var(--t3);font-size:10px;">Campanha ID: '+p.campanhaId+'</div>' : ''}
         </div>
+        <div id="kbDatasPeca" style="margin-top:8px;background:var(--bg4);padding:10px;border-radius:6px;">${_kbDatasPecaHtml(p)}</div>
         ${p.campanhaId ? `<button class="btn btn-p" style="margin-top:8px;width:100%;font-size:11px;padding:7px;" onclick="editarPecaDoKanban('${p.id}')">✎ Editar Campanha &amp; Re-rodar</button>` : ''}
       </div>
     </div>`;
+}
+
+// v3.42: editar a data de publicação DENTRO do card do Kanban (painel de detalhe)
+function _kbDatasPecaHtml(p) {
+  const iso = d => { const x = new Date(d); return isNaN(x) ? '' : new Date(x.getTime() - x.getTimezoneOffset() * 60000).toISOString().substring(0, 16); };
+  const e = v => String(v ?? '').replace(/</g, '&lt;');
+  const grupos = _gruposPub(pubsDaPeca(p));
+  let h = '<div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--gold);margin-bottom:6px;">📅 Data de publicação</div>';
+  if (grupos.length) h += grupos.map(g => '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:5px;font-size:11px;"><span style="flex:1;min-width:110px;color:var(--t2);">' + e(g.redes.join(', ')) + '</span>'
+    + (g.publicado ? '<span style="color:var(--green);">publicado ' + fmtDH(g.quando) + '</span>'
+      : '<input type="datetime-local" class="fi" style="width:auto;font-size:11px;padding:4px 6px;" id="kbdt_' + g.id + '" value="' + iso(g.quando) + '"/><button class="btn btn-p" style="font-size:10px;padding:4px 10px;" onclick="kbSalvarDataPub(\'' + p.id + '\',\'' + g.id + '\',this)">Salvar</button>') + '</div>').join('')
+      + '<div style="font-size:10px;color:var(--t3);">Salvar reagenda também no Metricool.</div>';
+  else h += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><input type="datetime-local" class="fi" style="width:auto;font-size:11px;padding:4px 6px;" id="kbdtPlan_' + p.id + '" value="' + iso(p.data_planejada || p.agendado_sugerido || '') + '"/><button class="btn btn-p" style="font-size:10px;padding:4px 10px;" onclick="kbSalvarDataPlanejada(\'' + p.id + '\')">Salvar</button></div>'
+      + '<div style="font-size:10px;color:var(--t3);margin-top:3px;">Ainda não agendada no Metricool — esta data vem preenchida ao clicar em 🚀 Publicar.</div>';
+  return h;
+}
+async function kbSalvarDataPub(pecaId, pubId, btn) {
+  const v = document.getElementById('kbdt_' + pubId)?.value; if (!v) return toast('Escolha a data e a hora', 'error');
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  const ok = await reagendarPublicacao(pubId, v);
+  if (ok) { const p = kanbanPecas.find(x => x.id === pecaId); if (p) selecionarPeca(pecaId); }
+  else if (btn) { btn.disabled = false; btn.textContent = 'Salvar'; }
+}
+async function kbSalvarDataPlanejada(pecaId) {
+  const p = kanbanPecas.find(x => x.id === pecaId); if (!p) return;
+  const v = document.getElementById('kbdtPlan_' + pecaId)?.value; if (!v) return toast('Escolha a data e a hora', 'error');
+  const d = new Date(v); if (isNaN(d) || d < new Date()) return toast('Escolha uma data/hora futura', 'error');
+  p.data_planejada = d.toISOString(); p.agendado_sugerido = d.toISOString();
+  renderKanban(); await salvarKanbanNoBanco(); selecionarPeca(pecaId);
+  toast('Data planejada: ' + d.toLocaleString('pt-BR') + ' — use 🚀 Publicar para agendar', 'success');
 }
 
 // FIX v1.4.4: leva o usuário à aba Nova Campanha COM a campanha carregada, pronta pra editar/re-rodar
@@ -20749,6 +20787,7 @@ async function mcApi(action, params = {}) {
 function _acCfg() {
   const h = ['ac_h1','ac_h2','ac_h3'].map(id => document.getElementById(id)?.value).filter(Boolean);
   return { horarios: h, dias: parseInt(document.getElementById('ac_dias')?.value) || 7,
+    data_inicio: document.getElementById('ac_inicio')?.value || null, // v3.41
     pular_fim_de_semana: document.getElementById('ac_fds')?.value !== 'incluir',
     tema: document.getElementById('ac_tema')?.value || null,
     redes: [...document.querySelectorAll('.acRede:checked')].map(c => c.value),   // v2.30
@@ -20758,6 +20797,70 @@ function _acCfg() {
 function _acCtaInit() { const c = ctaCfg(); const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
   set('acCtaDestino', c.destino); set('acCtaIg', c.ig); set('acCtaPalavra', c.palavra); set('acCtaWhats', c.whats); _ctaPreview(); const hb = document.getElementById('acBioHub'); if (hb) hb.textContent = location.origin + '/bio'; }
 document.addEventListener('DOMContentLoaded', () => setTimeout(_acCtaInit, 300));
+// v3.41: data de início (padrão amanhã) e lista das autocampanhas geradas, com editar e excluir
+document.addEventListener('DOMContentLoaded', () => setTimeout(() => {
+  const di = document.getElementById('ac_inicio'); if (di && !di.value) { const d = new Date(Date.now() + 864e5); di.value = _dia(d); di.min = _dia(new Date()); }
+  const pg = document.getElementById('page-s2auto');
+  if (pg) new MutationObserver(() => { if (pg.classList.contains('active')) acListar(); }).observe(pg, { attributes: true, attributeFilter: ['class'] });
+}, 400));
+const _ehAutocampanha = c => c && (String(c.id || '').startsWith('camp_auto_') || /^autocampanha/.test(c.origem || ''));
+async function acListar(forcar) {
+  const box = document.getElementById('acLista'); if (!box) return;
+  try {
+    if (forcar || !(_todasCampanhas || []).length) await carregarCampanhasDB();
+    if (typeof carregarPublicacoes === 'function' && (forcar || !(_publicacoes || []).length)) await carregarPublicacoes();
+  } catch (e) { addLog('warn', '[Autocampanha] lista: ' + e.message); }
+  const lista = (_todasCampanhas || []).filter(_ehAutocampanha).sort((a, b) => Date.parse(b.criado_em || 0) - Date.parse(a.criado_em || 0));
+  const res = document.getElementById('acListaResumo'); if (res) res.textContent = lista.length + ' autocampanha(s)';
+  if (!lista.length) { box.innerHTML = '<div style="font-size:11px;color:var(--t3);padding:12px;text-align:center;">Nenhuma autocampanha gerada ainda. Escolha a data de início e clique em Gerar rascunhos ou Gerar e agendar.</div>'; return; }
+  const e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const dm = v => { const x = _dia(v); return x ? x.substring(8, 10) + '/' + x.substring(5, 7) + '/' + x.substring(2, 4) : '—'; };
+  box.innerHTML = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;">'
+    + '<tr style="text-align:left;color:var(--t2);font-family:var(--M);font-size:9px;text-transform:uppercase;"><th style="padding:6px;">Autocampanha</th><th style="padding:6px;">Período</th><th style="padding:6px;">Posts</th><th style="padding:6px;">Próxima publicação</th><th style="padding:6px;">Status</th><th style="padding:6px;text-align:right;">Ações</th></tr>'
+    + lista.map(c => {
+      const pecas = (typeof kanbanPecas !== 'undefined' ? kanbanPecas : []).filter(p => p.campanhaId === c.id);
+      const grupos = _gruposPub(_pubsDoCard(c.id)); const futuros = grupos.filter(g => !g.publicado); const prox = futuros[0];
+      const nPosts = Math.max(pecas.length, (c.data?.copy?.versoes || []).length);
+      const formatos = [c.stories?.length && 'Stories', c.carrossel?.slides?.length && 'Carrossel', c.reel?.slides?.length && 'Reel'].filter(Boolean).join(' · ');
+      return '<tr style="border-top:1px solid var(--bd);">'
+        + '<td style="padding:7px 6px;"><b>' + e(c.nome || 'Autocampanha') + '</b><div style="font-size:10px;color:var(--t3);">criada ' + (c.criado_em ? new Date(c.criado_em).toLocaleString('pt-BR').substring(0, 16) : '—') + (formatos ? ' · ' + formatos : '') + (c.origem === 'autocampanha_kanban' ? ' · pelo Kanban' : '') + '</div></td>'
+        + '<td style="padding:7px 6px;white-space:nowrap;">' + dm(c.data_inicio) + ' → ' + dm(c.data_fim) + '</td>'
+        + '<td style="padding:7px 6px;">' + nPosts + (grupos.length ? ' <span style="color:var(--t3);">(' + grupos.length + ' agendada(s))</span>' : '') + '</td>'
+        + '<td style="padding:7px 6px;white-space:nowrap;">' + (prox ? '<span style="cursor:pointer;color:var(--gold);text-decoration:underline dotted;" onclick="abrirDatasPub(\'' + c.id + '\',null,event)" title="Mudar datas">' + fmtDH(prox.quando) + ' ✎</span>' : '<span style="color:var(--t3);">—</span>') + '</td>'
+        + '<td style="padding:7px 6px;">' + e(c.status || 'rascunho') + (c.ativa === false ? ' · pausada' : '') + '</td>'
+        + '<td style="padding:7px 6px;text-align:right;white-space:nowrap;">'
+        + '<button class="btn btn-p" style="font-size:9.5px;padding:3px 8px;" onclick="acEditar(\'' + c.id + '\')" title="Abre a campanha para editar textos, imagens, formatos e datas">✎ Editar</button> '
+        + '<button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;" onclick="abrirDatasPub(\'' + c.id + '\',null,event)" title="Datas de publicação">📅</button> '
+        + '<button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;color:var(--red);" onclick="acExcluir(\'' + c.id + '\')" title="Excluir a autocampanha">🗑</button></td></tr>';
+    }).join('') + '</table></div>';
+}
+async function acEditar(id) {
+  nav('s2campanha', document.querySelector('.sbi[onclick*="s2campanha"]'));
+  try { await abrirCampanhaDB(id); } catch (e) { toast('Não consegui abrir: ' + e.message, 'error'); }
+}
+async function acExcluir(id) {
+  const c = (_todasCampanhas || []).find(x => x.id === id); if (!c) return;
+  if (!confirm('Excluir a autocampanha "' + (c.nome || '') + '"? Não dá para desfazer.')) return;
+  const pecas = (typeof kanbanPecas !== 'undefined' ? kanbanPecas : []).filter(p => p.campanhaId === id);
+  const pubs = (_publicacoes || []).filter(p => p.campanhaId === id && p.metricool_id && !(p.status === 'publicado' || new Date(p.agendado_para || p.data) < new Date()));
+  const idsMc = [...new Set(pubs.map(p => p.metricool_id))];
+  const cancelar = idsMc.length && confirm(idsMc.length + ' post(s) desta autocampanha ainda estão AGENDADOS no Metricool.\n\nOK = cancelar também esses agendamentos\nCancelar = manter os agendamentos');
+  const tirarCards = pecas.length && confirm('Excluir também os ' + pecas.length + ' card(s) desta autocampanha no Kanban?');
+  let falhasMc = 0;
+  if (cancelar) for (const mid of idsMc) {
+    try { const r = await fetch('/api/metricool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'excluir', payload: { metricool_id: mid } }) }); const d = await r.json(); if (!d.success) falhasMc++; } catch (_) { falhasMc++; }
+  }
+  if (cancelar) { _publicacoes = _publicacoes.filter(p => !(p.campanhaId === id && idsMc.includes(p.metricool_id))); try { await salvarPublicacoes(); renderCalendarioKanban(); } catch (_) {} }
+  try { const r = await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ action: 'delete_campanha', key: id }) }); const d = await r.json().catch(() => ({})); if (d.success === false) throw new Error(d.error || 'falha'); }
+  catch (e) { return toast('Não consegui excluir a campanha: ' + e.message, 'error'); }
+  _todasCampanhas = (_todasCampanhas || []).filter(x => x.id !== id);
+  try { localStorage.setItem('atx:campanhas', JSON.stringify(_todasCampanhas)); } catch (_) {}
+  if (tirarCards) { kanbanPecas = kanbanPecas.filter(p => p.campanhaId !== id); try { renderKanban(); await salvarKanbanNoBanco(); } catch (_) {} }
+  if (campAtiva?.id === id) { campAtiva = null; window._campanhaAtual = null; }
+  addLog('info', '[Autocampanha] Excluída: ' + c.nome + (cancelar ? ' · ' + (idsMc.length - falhasMc) + ' agendamento(s) cancelado(s)' : '') + (tirarCards ? ' · ' + pecas.length + ' card(s)' : ''));
+  toast('Autocampanha excluída' + (falhasMc ? ' — ' + falhasMc + ' agendamento(s) não foram cancelados no Metricool (veja o calendário)' : ''), falhasMc ? 'error' : 'info');
+  acListar();
+}
 async function acPlanejar() {
   const btn = document.getElementById('btnAcPlan'); if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
   const box = document.getElementById('acResultado');
@@ -20913,7 +21016,7 @@ async function acExecutar(rascunho) {
     const vagos = (plano?.vagos || []).filter(v => v.data && v.hora);
     if (!vagos.length) { box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:20px;">Nenhum horário vago — a agenda já está completa no período.</div></div>'; return; }
     const minutos = Math.ceil(vagos.length * (comImagem ? 0.5 : 0.25) + vagos.length / 3 * 0.4);
-    if (!confirm(`${rascunho ? 'Gerar como RASCUNHO' : 'Gerar e AGENDAR no Metricool'}: ${vagos.length} post(s) nos horários vagos dos próximos ${c.dias} dias.\n\n`
+    if (!confirm(`${rascunho ? 'Gerar como RASCUNHO' : 'Gerar e AGENDAR no Metricool'}: ${vagos.length} post(s) nos horários vagos de ${c.dias} dia(s) a partir de ${(vagos[0]?.data || '').split('-').reverse().join('/')}.\n\n`
       + `Usa o mesmo processo do botão Auto-campanha do Kanban: plano da IA com as métricas do Metricool, ${comImagem ? 'imagem por post, ' : ''}campanha em "Minhas Campanhas" e peças no Kanban`
       + `${rascunho ? ' (em Gerado, para você revisar — nada vai ao Metricool)' : ' já agendadas'}.${formatos ? '\n+ Stories, Reel e Carrossel no final.' : ''}\n\nLeva cerca de ${minutos} min — mantenha a aba aberta. Continuar?`)) { box.innerHTML = ''; return; }
     const r = await gerarCampanhaAutomatica({ slots: vagos, rascunho: !!rascunho, tema: c.tema, redes: c.redes, comImagem, formatos, onProgress: prog });
@@ -20933,6 +21036,7 @@ async function acExecutar(rascunho) {
           ${/Metricool recusou/.test(p.narrativa || '') ? `<div style="font-size:10px;color:var(--red);margin-top:4px;">${String(p.narrativa).split(' · ').filter(x => /Metricool/.test(x)).join(' ').replace(/</g,'&lt;')}</div>` : ''}</div>`; }).join('')}
       </div></div>`;
     toast(`${pecas.length} post(s) ${rascunho ? 'gerados como rascunho' : 'gerados · ' + (r.agendados || 0) + ' agendados'}`, 'success');
+    try { acListar(); } catch (_) {}
   } catch (e) {
     box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:14px;font-size:11.5px;">Erro: ${String(e.message).replace(/</g,'&lt;')}${e.dica ? '<br><span style="color:var(--t3);">' + e.dica + '</span>' : ''}</div></div>`;
   } finally { if (btn) { btn.disabled = false; btn.textContent = txtBtn; } }
@@ -24788,7 +24892,7 @@ async function publicarPeca(pecaId) {
         <div style="font-size:9px;color:var(--t3);margin-top:3px;">Instagram: a legenda não aceita link clicável — o post vai com o CTA configurado em Autocampanha (link curto, palavra no Direct ou WhatsApp): "<span id="pubTextoBioPreview"></span>".</div>
         <div style="font-size:9px;color:var(--gold);margin-top:4px;">ℹ Botão "Agende uma reunião" (como em posts de concorrentes) só existe em post IMPULSIONADO (Meta Ads) — orgânico não tem botão. Este material (copy+imagem+link UTM) já sai pronto para impulsionar no Meta Business.</div>
         <div style="font-size:10px;color:var(--t2);margin:10px 0 4px;">AGENDAR PARA (vazio = publicar agora)</div>
-        <input type="datetime-local" id="pubQuando" class="fsel" style="width:100%;"/>
+        <input type="datetime-local" id="pubQuando" class="fsel" style="width:100%;" value="${(() => { const d = new Date(p.data_planejada || p.agendado_sugerido || ''); return (isNaN(d) || d < new Date()) ? '' : new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().substring(0, 16); })()}"/>
         <div style="display:flex;gap:8px;margin-top:14px;">
           ${temMc
             ? `<button class="btn btn-gn" style="flex:1;" onclick="executarPublicacao('${p.id}','metricool')">🚀 Publicar via Metricool (auto)</button>`
@@ -25514,7 +25618,7 @@ async function gerarCampanhaAutomatica(opts = {}) {
   const _autoNome = (_viaAc ? 'Autocampanha ' + _nPosts + ' posts · ' : 'Auto-campanha ') + new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR').substring(0,5);
   const _post0 = plano[0] || {};
   const campAuto = { id: _autoId, nome: _autoNome, obj: 'Gerar leads qualificados (reuniões)', canal: 'Todos', pub: 'Todos os C-Levels', orc: '', ctx: (document.getElementById('cCtx')?.value || 'captação de leads e reuniões') + ' | gerada automaticamente por métricas',
-    status: 'aprovada', ativa: true, redes_ativas: Object.fromEntries(_redes.map(r => [r, true])), link_destino: linkDestinoPadrao(),
+    status: 'aprovada', ativa: true, redes_ativas: Object.fromEntries(_redes.map(r => [r, true])), link_destino: linkDestinoPadrao(), origem: _viaAc ? 'autocampanha' : 'autocampanha_kanban',
     data_inicio: _viaAc ? opts.slots[0].data : new Date().toISOString().substring(0,10), data_fim: _viaAc ? opts.slots[opts.slots.length - 1].data : new Date(Date.now()+14*864e5).toISOString().substring(0,10),
     criado_em: new Date().toISOString(), atualizado_em: new Date().toISOString(), imagens: [],
     data: { narrativa: { tema_central: _post0.titulo || 'Auto-campanha', gancho_principal: (_post0.texto||'').split(/[.!?]\s/)[0] || '', promessa_central: _post0.justificativa || '', call_to_action: 'Agende uma conversa' },
@@ -26624,7 +26728,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.41] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.42] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -26640,7 +26744,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.41';
+window.__ATX_BUILD_ID__ = 'ATX-v3.42';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
