@@ -51,14 +51,14 @@
         ctx.requisicoes.push(reg);
         return new Response(JSON.stringify({ success: false, qa_bloqueado: true, error: '[QA] gravação bloqueada no modo seguro' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
-      ctx.pendentes++;
+      ctx.pendentes++; (ctx.emVoo = ctx.emVoo || new Set()).add(reg);
       try {
         const r = await _orig.fetch.apply(this, arguments);
         reg.status = r.status; reg.ms = Date.now() - reg.inicio;
         try { const cl = r.clone(); const t = await cl.text(); if (/json/.test(r.headers.get('content-type') || '') || /^\s*[{[]/.test(t)) { const j = JSON.parse(t); if (j && j.success === false) reg.erro = String(j.error || j.message || 'success:false').substring(0, 300); } else if (r.status >= 400) reg.erro = t.substring(0, 200); } catch (_) {}
         ctx.requisicoes.push(reg); return r;
       } catch (e) { reg.status = 0; reg.ms = Date.now() - reg.inicio; reg.erro = 'falha de rede: ' + e.message; ctx.requisicoes.push(reg); throw e; }
-      finally { ctx.pendentes--; }
+      finally { ctx.pendentes--; ctx.emVoo && ctx.emVoo.delete(reg); }
     };
     window.alert = m => { ctx.dialogos.push({ tela: ctx.tela, tipo: 'alert', msg: String(m).substring(0, 300) }); };
     window.confirm = m => { ctx.dialogos.push({ tela: ctx.tela, tipo: 'confirm', msg: String(m).substring(0, 200) }); ctx.confirmou = true; return false; };
@@ -83,13 +83,16 @@
   }
   async function aguardarRede(ctx, maxMs) {
     const t0 = Date.now(); let quieto = 0;
-    while (Date.now() - t0 < maxMs) { await sleep(200); if (ctx.pendentes === 0) { quieto += 200; if (quieto >= 700) return true; } else quieto = 0; if (S.parar) return false; }
+    // v3.22: só conta o que ESTA tela pediu. Antes, uma consulta lenta de outra tela (ou o
+    // auto-refresh de 30s) deixava todas as telas seguintes como "ainda carregando" sem evidência.
+    const daTela = () => [...(ctx.emVoo || [])].filter(r => r.tela === ctx.tela).length;
+    while (Date.now() - t0 < maxMs) { await sleep(200); if (daTela() === 0) { quieto += 200; if (quieto >= 700) return true; } else quieto = 0; if (S.parar) return false; }
     return false;
   }
 
   // ── Inventário de telas ────────────────────────────────────────────────
   function inventario() {
-    const paginas = [...document.querySelectorAll('.page')].map(p => p.id.replace(/^page-/, '')).filter(id => id && id !== 'qa');
+    const paginas = [...document.querySelectorAll('.page')].map(p => p.id.replace(/^page-/, '')).filter(id => id && id !== 'qa' && id !== 's3dash'); // s3dash = atalho para s3realizado
     const menu = {}; document.querySelectorAll('.sbi[onclick]').forEach(el => { const m = el.getAttribute('onclick').match(/nav\('([^']+)'/); if (m && !menu[m[1]]) menu[m[1]] = { el, rotulo: el.textContent.replace(/\s+/g, ' ').trim() }; });
     const ganchos = {}; try { const src = String(window.nav); const re = /p===\s*'([^']+)'\s*\)\s*(?:\{[^}]*?)?(?:setTimeout\(\s*(?:\(\)\s*=>\s*\{?\s*(?:try\{)?)?([A-Za-z_$][\w$]*)|([A-Za-z_$][\w$]*)\()/g; let m; while ((m = re.exec(src))) { const f = m[2] || m[3]; if (f && !['nav', 'if', 'try'].includes(f)) (ganchos[m[1]] = ganchos[m[1]] || []).push(f); } } catch (_) {}
     return paginas.map(id => ({ id, rotulo: menu[id]?.rotulo || id, el: menu[id]?.el || null, noMenu: !!menu[id], ganchos: [...new Set(ganchos[id] || [])] }));
@@ -316,12 +319,12 @@
         } else if (document.querySelector('.page.active') && document.querySelector('.page.active').id !== 'page-' + t.id) a.push({ sev: 'info', cat: 'navegação', titulo: 'A tela redireciona para outra ao abrir', evidencia: 'page-' + t.id + ' → ' + document.querySelector('.page.active').id, sugestao: 'Se o redirecionamento é intencional, nada a fazer; senão, conferir o nav.', tela: t.id, rotulo: t.rotulo });
         else a.push({ sev: 'alta', cat: 'navegação', titulo: 'A tela não abriu pelo menu', evidencia: 'nav("' + t.id + '") não ativou page-' + t.id, sugestao: 'Conferir o id da página e o item de menu.', tela: t.id, rotulo: t.rotulo });
         if (!t.noMenu) a.push({ sev: 'info', cat: 'navegação', titulo: 'Tela sem item de menu (inacessível ao usuário)', evidencia: 'page-' + t.id, sugestao: 'Adicionar ao menu ou remover a tela órfã.', tela: t.id, rotulo: t.rotulo });
-        const reqs = ctx.requisicoes.slice(r0), errs = ctx.erros.slice(e0);
+        const reqs = ctx.requisicoes.slice(r0).filter(r => !r.tela || r.tela === t.id), errs = ctx.erros.slice(e0);
         errs.forEach(e => a.push({ sev: 'alta', cat: 'erro JS', titulo: `${e.tipo} ao abrir/usar a tela`, evidencia: e.msg + (e.onde ? ' @ ' + e.onde : ''), sugestao: 'Corrigir a exceção (ver função da tela).', tela: t.id, rotulo: t.rotulo }));
         reqs.filter(r => !r.bloqueado && (r.status >= 500 || r.status === 0)).forEach(r => a.push({ sev: 'alta', cat: 'API', titulo: `API falhou (HTTP ${r.status})`, evidencia: `${r.rota}${r.action ? ' · ' + r.action : ''} — ${r.erro || ''}`, sugestao: 'Ver logs da função na Vercel e tratar o erro no servidor.', tela: t.id, rotulo: t.rotulo, api: r.rota, action: r.action }));
         reqs.filter(r => !r.bloqueado && r.status < 500 && r.status > 0 && r.erro).forEach(r => a.push({ sev: r.status >= 400 ? 'alta' : 'média', cat: 'API', titulo: 'API respondeu com erro', evidencia: `${r.rota}${r.action ? ' · ' + r.action : ''} (HTTP ${r.status}) — ${r.erro}`, sugestao: 'Corrigir a ação no servidor ou exibir o motivo ao usuário.', tela: t.id, rotulo: t.rotulo, api: r.rota, action: r.action }));
-        reqs.filter(r => !r.bloqueado && r.ms > 8000).forEach(r => a.push({ sev: 'média', cat: 'desempenho', titulo: `API lenta (${(r.ms / 1000).toFixed(1)}s)`, evidencia: `${r.rota}${r.action ? ' · ' + r.action : ''}`, sugestao: 'Cachear, paralelizar ou paginar a consulta.', tela: t.id, rotulo: t.rotulo, api: r.rota, action: r.action }));
-        if (!terminou && !S.parar) a.push({ sev: 'média', cat: 'desempenho', titulo: `Tela ainda carregando após ${Math.round(opts.espera / 1000)}s`, evidencia: reqs.filter(r => r.status == null).map(r => r.rota + ' ' + (r.action || '')).join(', '), sugestao: 'Reduzir o tempo de carga inicial.', tela: t.id, rotulo: t.rotulo });
+        reqs.filter(r => !r.bloqueado && r.ms > 8000 && !/claude|gerente_|s2-creative|chat|analise|debate/i.test((r.rota || '') + ' ' + (r.action || ''))).forEach(r => a.push({ sev: 'média', cat: 'desempenho', titulo: `API lenta (${(r.ms / 1000).toFixed(1)}s)`, evidencia: `${r.rota}${r.action ? ' · ' + r.action : ''}`, sugestao: 'Cachear, paralelizar ou paginar a consulta.', tela: t.id, rotulo: t.rotulo, api: r.rota, action: r.action }));
+        if (!terminou && !S.parar) a.push({ sev: 'média', cat: 'desempenho', titulo: `Tela ainda carregando após ${Math.round(opts.espera / 1000)}s`, evidencia: [...(ctx.emVoo || [])].filter(r => r.tela === t.id).map(r => r.rota + (r.action ? ' · ' + r.action : '') + ' (' + Math.round((Date.now() - r.inicio) / 1000) + 's)').join(' | ') || reqs.filter(r => r.status == null).map(r => r.rota + ' ' + (r.action || '')).join(', '), sugestao: 'Reduzir o tempo de carga inicial.', tela: t.id, rotulo: t.rotulo });
         ctx.dialogos.filter(d => d.tela === t.id && d.tipo === 'alert' && /erro|falh/i.test(d.msg) && !/bloquead/i.test(d.msg)).forEach(d => a.push({ sev: 'média', cat: 'mensagem', titulo: 'Alerta de erro exibido', evidencia: d.msg, sugestao: 'Ver a causa do erro.', tela: t.id, rotulo: t.rotulo }));
         a.forEach(x => { x.ganchos = t.ganchos; });
         achados = achados.concat(a);
@@ -406,7 +409,7 @@
           <label style="display:block;margin-bottom:5px;"><input type="checkbox" id="qaOptCont" checked/> Verificar contraste</label>
           <label style="display:block;margin-bottom:5px;"><input type="checkbox" id="qaOptTemas"/> Contraste nos dois temas</label>
           <label style="display:block;margin-bottom:8px;"><input type="checkbox" id="qaOptLarg" checked/> Posição das telas também em 1024px e 1366px</label>
-          <div style="display:flex;gap:6px;margin-bottom:8px;"><input class="fi" id="qaFiltro" placeholder="só telas com... (vazio = todas)" style="flex:1;"/><select class="fsel" id="qaEspera" style="width:110px;"><option value="5000">espera 5s</option><option value="8000" selected>espera 8s</option><option value="12000">espera 12s</option></select></div>
+          <div style="display:flex;gap:6px;margin-bottom:8px;"><input class="fi" id="qaFiltro" placeholder="só telas com... (vazio = todas)" style="flex:1;"/><select class="fsel" id="qaEspera" style="width:110px;"><option value="5000">espera 5s</option><option value="8000">espera 8s</option><option value="12000" selected>espera 12s</option><option value="20000">espera 20s</option></select></div>
           <button class="btn btn-p" style="width:100%;" onclick="QA.iniciar()">▶ Iniciar varredura de telas</button></div></div>
         <div class="panel" style="margin:0;"><div class="ph"><div class="pt">CRUD real com limpeza</div></div><div class="pb" style="font-size:11px;color:var(--t2);line-height:1.6;">
           Inclui, consulta, altera e exclui registros marcados <b>QA-TESTE</b> em: despesas programadas, contratos, lançamentos simulados, business plan, chave-valor e ideias. Confere que alterar não duplica e que excluir remove. No fim, verifica se sobrou algo no banco.

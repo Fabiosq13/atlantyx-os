@@ -179,3 +179,12 @@ Retorne JSON:
     return { insights: [], alertas: [], recomendacao_principal: 'Continue o outreach ativo', tendencia: 'NEUTRA' };
   }
 }
+
+// v3.22: cache de 5 min das consultas ao HubSpot (a tela de agentes levava ~18s a cada abertura)
+const _memoHS = new Map();
+function _memo(nome, fn, ms = 300000) {
+  return async (...a) => { const c = _memoHS.get(nome); if (c && Date.now() - c.em < ms) return c.p;
+    const p = fn(...a); _memoHS.set(nome, { em: Date.now(), p }); p.catch(() => _memoHS.delete(nome)); return p; };
+}
+fetchPipelineHubSpot = _memo('pipeline', fetchPipelineHubSpot);
+fetchKPIsHubSpot = _memo('kpis', fetchKPIsHubSpot);

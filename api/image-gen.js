@@ -89,7 +89,7 @@ Visual style: premium B2B tech corporate, dark navy blue (#1A3A8F) background, e
           const od = await ro.json().catch(() => ({}));
           if (ro.ok && od.data?.length) {
             console.log('[image-gen] Ideogram falhou (' + r.status + ') — usada a reserva DALL·E 3');
-            return res.status(200).json({ success: true, imagens: od.data.map(x => ({ url: x.url, prompt_usado: x.revised_prompt })), total: od.data.length, provedor: 'dall-e-3', aviso_ideogram: `Ideogram ${r.status}: ${String(errMsg).substring(0, 120)}` });
+            return res.status(200).json({ success: true, imagens: await _persistir(od.data.map(x => ({ url: x.url, prompt_usado: x.revised_prompt })), req), total: od.data.length, provedor: 'dall-e-3', aviso_ideogram: `Ideogram ${r.status}: ${String(errMsg).substring(0, 120)}` });
           }
           console.warn('[image-gen] reserva OpenAI também falhou:', JSON.stringify(od).substring(0, 200));
         } catch (e) { console.warn('[image-gen] reserva OpenAI erro:', e.message); }
@@ -114,7 +114,7 @@ Visual style: premium B2B tech corporate, dark navy blue (#1A3A8F) background, e
 
     return res.status(200).json({
       success: true,
-      imagens,
+      imagens: await _persistir(imagens, req),
       total: imagens.length,
     });
 
@@ -122,4 +122,24 @@ Visual style: premium B2B tech corporate, dark navy blue (#1A3A8F) background, e
     console.error('[ERRO image-gen]', error.message);
     return res.status(500).json({ error: error.message });
   }
+}
+
+// v3.22: as URLs do Ideogram/DALL·E são temporárias (expiram em horas) — eram gravadas assim nas campanhas
+// e no kanban, e depois apareciam como imagem quebrada. Agora cada imagem é copiada na hora para o
+// armazenamento permanente (/api/media → /m/<id>.jpg). Se a cópia falhar, devolve a original marcada.
+async function _persistir(imagens, req) {
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  const base = process.env.MEDIA_PUBLIC_BASE ? process.env.MEDIA_PUBLIC_BASE.replace(/\/$/, '') : (host ? `https://${host}` : null);
+  if (!base) return imagens;
+  return Promise.all(imagens.map(async img => {
+    try {
+      const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), 15000);
+      const r = await fetch(base + '/api/media', { method: 'POST', signal: ctrl.signal, headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'salvar_de_url', payload: { url: img.url, origem: 'image-gen', jpeg: true } }) });
+      clearTimeout(tm);
+      const m = await r.json().catch(() => ({}));
+      if (m.success && m.url) return { ...img, url: m.url, url_original: img.url, permanente: true };
+    } catch (_) {}
+    return { ...img, permanente: false };
+  }));
 }

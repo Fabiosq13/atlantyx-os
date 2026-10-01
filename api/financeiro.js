@@ -1066,8 +1066,27 @@ function _addMeses(data, n) {
 }
 const num = v => { const n = parseFloat(String(v).replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.')); return isNaN(n) ? 0 : Math.round(n * 100) / 100; };
 
+// v3.22: cache curto das CONSULTAS ao QuickBooks (GET). As telas do financeiro repetem as mesmas
+// consultas (contas, extrato, faturas em aberto) e cada uma leva segundos — por isso 10–20s por tela.
+// Qualquer gravação (POST) limpa o cache para nada ficar desatualizado depois de uma alteração.
+const _qbCache = new Map(); const QB_CACHE_MS = 60000;
+let _realmCache = null;
 async function qbFetch(endpoint, token, method = 'GET', body = null) {
-  const realmId = (await qbTokensLer())?.realm_id || process.env.QB_REALM_ID;
+  if (method !== 'GET') _qbCache.clear();
+  else {
+    const c = _qbCache.get(endpoint);
+    if (c && Date.now() - c.em < QB_CACHE_MS) return c.p;
+    const p = _qbFetchReal(endpoint, token, method, body);
+    _qbCache.set(endpoint, { em: Date.now(), p });
+    p.catch(() => _qbCache.delete(endpoint));
+    if (_qbCache.size > 300) _qbCache.delete(_qbCache.keys().next().value);
+    return p;
+  }
+  return _qbFetchReal(endpoint, token, method, body);
+}
+async function _qbFetchReal(endpoint, token, method = 'GET', body = null) {
+  if (!_realmCache || Date.now() - _realmCache.em > 300000) _realmCache = { em: Date.now(), v: (await qbTokensLer())?.realm_id || process.env.QB_REALM_ID };
+  const realmId = _realmCache.v;
   if (!realmId) throw new Error('QB_REALM_ID não configurado (ou reconecte pelo botão Conectar QuickBooks)');
   const sep = endpoint.includes('?') ? '&' : '?';
   const url = `${qbBase()}/v3/company/${realmId}${endpoint}${endpoint.includes('minorversion') ? '' : sep + 'minorversion=65'}`;

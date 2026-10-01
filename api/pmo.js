@@ -1064,6 +1064,24 @@ async function painelMestre({ semana } = {}) {
   const semanaAtual = semana || semanaDe(hoje);
   const porNome = {};
   ultimos.forEach(r => porNome[r.projeto_nome] = r);
+  // v3.22: sem status report, as colunas Gerente/Avanço/Desvio/Próximo marco ficavam vazias. Usamos o
+  // cadastro financeiro do projeto (gerente) e os marcos (avanço = % dos marcos concluídos; planejado =
+  // % dos marcos com entrega até hoje; próximo marco = o próximo não concluído).
+  const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+  const fin = {};
+  try {
+    const pf = await sql`SELECT id, nome, gerente_projeto_nome FROM projetos_financeiros`;
+    const mk = await sql`SELECT projeto_id, descricao, data_entrega, percentual, valor, status_kanban FROM projetos_marcos ORDER BY data_entrega ASC`;
+    pf.forEach(p => {
+      const ms = mk.filter(m => m.projeto_id === p.id).map(m => ({ ...m, data: String(m.data_entrega).substring(0, 10), conc: m.status_kanban === 'concluido' || ['termo_pronto'].includes(m.status_kanban) }));
+      const peso = m => num(m.percentual) || 0;
+      const totPeso = ms.reduce((a, m) => a + peso(m), 0);
+      const pctDe = lista => ms.length ? Math.round((totPeso > 0 ? lista.reduce((a, m) => a + peso(m), 0) / totPeso : lista.length / ms.length) * 1000) / 10 : null;
+      const prox = ms.find(m => !m.conc);
+      fin[norm(p.nome)] = { gerente: p.gerente_projeto_nome || null, pct_real: pctDe(ms.filter(m => m.conc)), pct_plan: pctDe(ms.filter(m => m.data <= hoje)),
+        proximo: prox ? { descricao: prox.descricao, data: prox.data, valor: num(prox.valor) } : null, marcos: ms.length };
+    });
+  } catch (_) {}
 
   // Une o que vem do sistema externo com o que só existe em report
   const nomes = new Set([...projetos.map(p => p.nome), ...ultimos.map(u => u.projeto_nome), ...cfg.map(c => c.projeto_nome)]);
@@ -1073,16 +1091,22 @@ async function painelMestre({ semana } = {}) {
     const c = cfgPorNome[nome] || {};
     const tipo = r?.tipo_projeto || c.tipo_projeto || 'entrega';
     const diasSemReport = r?.data_report ? Math.floor((new Date(hoje) - new Date(r.data_report)) / 86400000) : null;
-    const desvio = (r && r.pct_planejado != null) ? Math.round((r.pct_concluido - r.pct_planejado) * 10) / 10 : null;
+    const f = fin[norm(nome)] || {};
+    const pctReal = r?.pct_concluido ?? (p.pct || (f.pct_real ?? null));
+    const pctPlan = r?.pct_planejado ?? f.pct_plan ?? null;
+    const desvio = (pctReal != null && pctPlan != null) ? Math.round((pctReal - pctPlan) * 10) / 10 : null;
+    const proxRep = r?.marcos_proximos || [];
     return {
       projeto: nome,
       tipo,
-      gerente: r?.gerente || p.gerente || c.gerente || null,
+      gerente: r?.gerente || p.gerente || c.gerente || f.gerente || null,
       farol: r?.farol || null,
-      pct_concluido: r?.pct_concluido ?? (p.pct || null),
-      pct_planejado: r?.pct_planejado ?? null,
+      pct_concluido: pctReal,
+      pct_planejado: pctPlan,
       desvio_pct: desvio,
-      marcos_proximos: r?.marcos_proximos || [],
+      avanco_fonte: r?.pct_concluido != null ? 'status_report' : (f.pct_real != null ? 'marcos' : null),
+      marcos_proximos: proxRep.length ? proxRep : (f.proximo ? [{ descricao: f.proximo.descricao + ' (' + f.proximo.data.split('-').reverse().join('/') + ')', data: f.proximo.data }] : []),
+      tem_report: !!r,
       riscos: (r?.riscos || []).length,
       bloqueios: (r?.bloqueios || []).length,
       acoes_abertas: (r?.acoes || []).filter(a => !a.concluida).length,
