@@ -10770,6 +10770,7 @@ function mostrarEdAba(aba) {
     if (btn) btn.classList.toggle('on', a === aba);
   });
   if (aba === 'formatos' && !document.querySelector('#fmtSeg button.on')) mostrarFormato('stories');
+  if (aba === 'formatos') setTimeout(() => { try { completarFormatos(); } catch (_) {} }, 300); // v3.30
   try { _campStepper(); } catch (_) {}
   if (aba === 'preview') {
     setTimeout(gerarPreviewTodosCanais, 80);
@@ -10893,6 +10894,40 @@ async function _artesParalelo(itens, formato, aoTerminar, conc = 3) {
   await Promise.all(Array.from({ length: Math.min(conc, itens.length) }, um));
   return falhas;
 }
+// v3.30: grava o texto nas artes (Stories e Carrossel) e informa pelo resultado REAL (antes dizia "prontos"
+// mesmo quando a composição/hospedagem falhava, e não compunha nada se faltasse uma única arte)
+async function _comporEtapa(k, itens, falhasArte, arteMarca) {
+  const nome = k === 'stories' ? 'stories' : 'slides';
+  const comArte = () => itens.filter(x => x.imagem_url).length, comTexto = () => itens.filter(x => x.imagem_composta).length;
+  if (!comArte()) { _fmtStatus(k, 'err', (falhasArte || []).join(' · ').substring(0, 300) || 'nenhuma arte gerada'); return; }
+  _fmtStatus(k, 'run', 'gravando o texto nas artes (' + comArte() + ' de ' + itens.length + ')...');
+  const compor = () => k === 'stories' ? comporArtesStories(true, true) : comporArtesCarrossel(true, true);
+  try { mostrarFormato(k === 'stories' ? 'stories' : 'carr'); await compor(); if (comTexto() < comArte()) { await new Promise(r => setTimeout(r, 1500)); await compor(); } }
+  catch (e) { addLog('err', '[Formatos] texto na arte (' + k + '): ' + e.message); }
+  const n = comTexto(), erroHost = (itens.find(x => x._erro_host) || {})._erro_host;
+  if (n === itens.length) _fmtStatus(k, 'ok', n + ' ' + nome + ' com texto gravado na arte' + arteMarca(itens) + ' — revise e ' + (k === 'stories' ? 'agende' : 'publique'));
+  else if (n) _fmtStatus(k, 'warn', n + ' de ' + itens.length + ' com texto gravado' + (falhasArte?.length ? ' · faltou arte: ' + falhasArte.join(' · ').substring(0, 160) : '') + (erroHost ? ' · ' + erroHost : ''));
+  else _fmtStatus(k, 'err', 'artes geradas, mas o texto não foi gravado' + (erroHost ? ': ' + erroHost : ' — veja o Log') );
+}
+// v3.30: ao abrir uma campanha (aba Formatos) com artes sem texto gravado ou Reel sem vídeo, completa sozinho
+// — sem gerar nada novo com IA, só composição, vídeo e hospedagem
+async function completarFormatos() {
+  const c = (typeof campAtiva !== 'undefined' && campAtiva) || null; if (!c || window._fmtRodando || window._fmtCompletando) return;
+  const st = c.stories || [], cs = c.carrossel?.slides || [], rs = c.reel?.slides || [];
+  const fSt = st.some(x => x.imagem_url && !x.imagem_composta), fCs = cs.some(x => x.imagem_url && !x.imagem_composta), fRe = rs.length && rs.every(x => x.imagem_url) && !c.reel?.video_url;
+  if (!fSt && !fCs && !fRe) return;
+  window._fmtCompletando = c.id; window._fmtAuto = window._fmtAuto || {};
+  addLog('info', '[Formatos] completando a campanha: ' + [fSt && 'texto nos Stories', fCs && 'texto no Carrossel', fRe && 'vídeo do Reel'].filter(Boolean).join(', '));
+  const am = l => l.some(x => x.arte_marca) ? ' (arte de marca)' : '';
+  if (!(window._fmtAuto.img)) _fmtStatus('img', (c.imagens || []).length ? 'ok' : 'wait', (c.imagens || []).length ? 'já existe' : 'sem imagem — gere na aba Imagem');
+  try {
+    if (st.length) { if (fSt) await _comporEtapa('stories', st, [], am); else _fmtStatus('stories', st.every(x => x.imagem_composta) ? 'ok' : 'wait', st.every(x => x.imagem_composta) ? 'texto já gravado' : 'faltam artes — ↻ Gerar o que falta'); }
+    if (cs.length) { if (fCs) await _comporEtapa('carr', cs, [], am); else _fmtStatus('carr', cs.every(x => x.imagem_composta) ? 'ok' : 'wait', cs.every(x => x.imagem_composta) ? 'texto já gravado' : 'faltam artes — ↻ Gerar o que falta'); }
+    if (rs.length) { if (fRe) { _fmtStatus('reel', 'run', 'montando o vídeo...'); mostrarFormato('reel'); await montarVideoReel(); }
+      _fmtStatus('reel', c.reel?.video_url_publica || c.reel?.video_url ? 'ok' : 'warn', c.reel?.video_url ? 'vídeo pronto' : 'vídeo não gerado — clique em ③ Gerar vídeo'); }
+    try { await salvarCampanhaDB(true); } catch (_) {}
+  } finally { window._fmtCompletando = null; }
+}
 async function gerarFormatosAutomaticos(manual) {
   const c = campAtiva; if (!c) { if (manual) toast('Abra ou crie uma campanha primeiro', 'error'); return; }
   if (window._fmtRodando) { toast('Os formatos já estão sendo gerados', 'info'); return; }
@@ -10926,11 +10961,9 @@ async function gerarFormatosAutomaticos(manual) {
       rs.length ? _artesParalelo(rs, 'ASPECT_9_16', () => { try { _renderReel(); } catch (_) {} }, 2) : []]);
     try { salvarCampanhaLocal(campAtiva); await salvarCampanhaNoBanco(campAtiva, 'formatos artes'); } catch (_) {}
     // composição (texto gravado na arte) e vídeo
-    if (st.length) { if (st.every(x => x.imagem_url)) { _fmtStatus('stories', 'run', 'gravando texto e CTA nas artes...'); try { mostrarFormato('stories'); await comporArtesStories(true); _fmtStatus('stories', 'ok', st.length + ' stories prontos' + arteMarca(st) + ' — revise e agende'); } catch (e) { _fmtStatus('stories', 'warn', 'artes ok, composição falhou: ' + e.message); } }
-      else _fmtStatus('stories', 'err', fS.join(' · ').substring(0, 300)); }
-    if (cs.length) { if (cs.every(x => x.imagem_url)) { _fmtStatus('carr', 'run', 'gravando título e apoio nas artes...'); try { mostrarFormato('carr'); await comporArtesCarrossel(true); _fmtStatus('carr', 'ok', cs.length + ' slides prontos' + arteMarca(cs) + ' — revise e publique'); } catch (e) { _fmtStatus('carr', 'warn', 'artes ok, composição falhou: ' + e.message); } }
-      else _fmtStatus('carr', 'err', fC.join(' · ').substring(0, 300)); }
-    if (rs.length) { if (rs.every(x => x.imagem_url)) { _fmtStatus('reel', 'run', 'montando o vídeo...'); try { mostrarFormato('reel'); await montarVideoReel();
+    if (st.length) await _comporEtapa('stories', st, fS, arteMarca);
+    if (cs.length) await _comporEtapa('carr', cs, fC, arteMarca);
+    if (rs.length) { if (rs.some(x => x.imagem_url)) { _fmtStatus('reel', 'run', 'montando o vídeo com o texto de cada slide...'); try { // v3.30: o Gerar vídeo refaz as artes que faltaram mostrarFormato('reel'); await montarVideoReel();
           _fmtStatus('reel', campAtiva.reel?.video_url_publica ? 'ok' : 'warn', campAtiva.reel?.video_url_publica ? 'vídeo pronto e hospedado' + arteMarca(rs) : campAtiva.reel?.video_url ? 'vídeo montado e enviado, mas a URL pública não respondeu — veja o aviso no painel Reel (🔍 Testar hospedagem)' : (window._reelBlob ? 'vídeo montado, mas a hospedagem falhou — use ⬆ Hospedar no painel Reel' : 'artes prontas; o navegador não montou o vídeo — use Chrome/Edge e clique em Montar vídeo')); }
         catch (e) { _fmtStatus('reel', 'warn', 'artes ok, vídeo falhou: ' + e.message); } }
       else _fmtStatus('reel', 'err', fR.join(' · ').substring(0, 300)); }
@@ -25157,9 +25190,10 @@ async function gerarArtesStories() {
 }
 
 // v1.9.5: grava texto + CTA + link NA IMAGEM (canvas 720x1280) e hospeda → é isso que o Instagram exibe
-async function comporArtesStories(silencioso) {
+async function comporArtesStories(silencioso, soFaltantes) {
   const st = campAtiva?.stories || [];
-  if (!st.length || !st.every(x => x.imagem_url)) { toast('Gere as 3 artes antes', 'error'); return false; }
+  // v3.30: compõe as que têm arte (antes exigia TODAS — uma arte faltando = nenhum texto gravado)
+  if (!st.length || !st.some(x => x.imagem_url)) { if (!silencioso) toast('Gere as artes antes', 'error'); return false; }
   const link = document.getElementById('storyLink')?.value?.trim() || _linkStoriesReels();
   const W = 720, H = 1280;
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
@@ -25168,6 +25202,7 @@ async function comporArtesStories(silencioso) {
   const wrap = (text, maxW) => { const words = (text||'').split(/\s+/), lines = []; let cur = ''; words.forEach(w => { const t = cur ? cur + ' ' + w : w; if (ctx.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t; }); if (cur) lines.push(cur); return lines; };
   let hospedadas = 0, baixaveis = [];
   for (let i = 0; i < st.length; i++) {
+    if (!st[i].imagem_url || (soFaltantes && st[i].imagem_composta)) { if (st[i].imagem_composta) hospedadas++; continue; }
     _statusPainel('story', 'run', 'Compondo story ' + (i+1) + ' de ' + st.length + ' (texto na imagem)...', 'Gravando texto, marca e CTA sobre a arte.', (i / st.length) * 100);
     try {
       const im = await _reelLoadImg(st[i].imagem_url);
@@ -25202,8 +25237,8 @@ async function comporArtesStories(silencioso) {
   try { salvarCampanhaLocal(campAtiva); } catch(_) {}
   { const rs = await salvarCampanhaNoBanco(campAtiva, 'stories compostas'); if (!rs.success) addLog('warn', '[Stories] compostas não salvas no banco: ' + rs.error); }
   _renderStoryPack();
-  if (hospedadas === st.length) {
-    const res0 = await _resolverUrlMidia(st[0].imagem_composta, 'jpg', 'image/');
+  if (hospedadas && hospedadas === st.filter(x => x.imagem_url).length) {
+    const res0 = await _resolverUrlMidia(st.find(x => x.imagem_composta).imagem_composta, 'jpg', 'image/');
     if (!res0.chk.ok) { _statusPainel('story', 'err', 'Artes hospedadas, mas nenhuma URL pública está servindo a imagem', res0.chk.motivo + '<br>O Metricool vai mostrar "Sem imagem" até isso estar no ar.'); return false; }
     _statusPainel('story', 'ok', 'Artes compostas, hospedadas e verificadas (' + hospedadas + '/' + st.length + ')', 'Texto e CTA já estão gravados na imagem (' + res0.chk.ct + '). URL: ' + res0.url + '. Link do sticker: <b>' + link + '</b>. Pode 🚀 Agendar.'); return true; }
   const erro = (st.find(x => x._erro_host) || {})._erro_host || 'hospedagem indisponível';
@@ -25315,13 +25350,14 @@ async function gerarArtesCarrossel() {
   _renderCarrossel();
   _statusPainel('carr', sl.every(x => x.imagem_url) ? 'ok' : 'err', sl.every(x => x.imagem_url) ? 'Artes prontas' : 'Faltaram artes', sl.every(x => x.imagem_url) ? 'Agora 🖼 Compor artes com texto (título e apoio gravados na imagem).' : 'Cole a URL manualmente nos slides que faltaram.');
 }
-async function comporArtesCarrossel() {
-  const sl = campAtiva?.carrossel?.slides || []; if (!sl.length || !sl.every(x => x.imagem_url)) { toast('Gere as artes antes', 'error'); return false; }
+async function comporArtesCarrossel(silencioso, soFaltantes) {
+  const sl = campAtiva?.carrossel?.slides || []; if (!sl.length || !sl.some(x => x.imagem_url)) { if (!silencioso) toast('Gere as artes antes', 'error'); return false; }
   const W = 1080, H = 1080; const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const ctx = cv.getContext && cv.getContext('2d');
   if (!ctx) { _statusPainel('carr', 'err', 'Navegador sem canvas', 'Use Chrome/Edge.'); return false; }
   const wrap = (t, maxW) => { const w = (t||'').split(/\s+/), L = []; let cur = ''; w.forEach(x => { const s2 = cur ? cur + ' ' + x : x; if (ctx.measureText(s2).width > maxW && cur) { L.push(cur); cur = x; } else cur = s2; }); if (cur) L.push(cur); return L; };
   let okN = 0;
   for (let i = 0; i < sl.length; i++) {
+    if (!sl[i].imagem_url || (soFaltantes && sl[i].imagem_composta)) { if (sl[i].imagem_composta) okN++; continue; }
     _statusPainel('carr', 'run', 'Compondo slide ' + (i+1) + ' de ' + sl.length + '...', 'Título e apoio gravados na imagem.', (i / sl.length) * 100);
     try {
       const im = await _reelLoadImg(sl[i].imagem_url);
@@ -25345,7 +25381,7 @@ async function comporArtesCarrossel() {
     } catch (e) { addLog('warn', '[Carrossel] compor ' + (i+1) + ': ' + e.message); }
     _renderCarrossel();
   }
-  if (okN === sl.length) { const rr = await _resolverUrlMidia(sl[0].imagem_composta, 'jpg', 'image/'); if (!rr.chk.ok) { _statusPainel('carr', 'err', 'Compostas, mas a URL pública não serve a imagem', rr.chk.motivo); return false; } _statusPainel('carr', 'ok', 'Carrossel composto e verificado (' + okN + ' slides)', 'URL: ' + rr.url + '. Pode 🚀 Publicar.'); return true; }
+  if (okN && okN === sl.filter(x => x.imagem_url).length) { const rr = await _resolverUrlMidia(sl.find(x => x.imagem_composta).imagem_composta, 'jpg', 'image/'); if (!rr.chk.ok) { _statusPainel('carr', 'err', 'Compostas, mas a URL pública não serve a imagem', rr.chk.motivo); return false; } _statusPainel('carr', 'ok', 'Carrossel composto e verificado (' + okN + ' slides)', 'URL: ' + rr.url + '. Pode 🚀 Publicar.'); return true; }
   _statusPainel('carr', 'err', 'Compus ' + okN + ' de ' + sl.length, 'Veja o Log e tente de novo.'); return false;
 }
 async function publicarCarrossel() {
@@ -25395,8 +25431,9 @@ function _renderReel() {
       <div style="aspect-ratio:9/16;background:linear-gradient(160deg,#1A3A8F,#0B1226);border-radius:6px;position:relative;overflow:hidden;margin-bottom:6px;">
         ${x.imagem_url ? `<img src="${x.imagem_url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.85;"/>` : ''}
         <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:10px;text-align:center;">
-          <div style="font-size:10.5px;font-weight:800;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.9);line-height:1.3;">${(x.texto_tela||'').replace(/</g,'&lt;')}</div>
+          <div style="font-size:10.5px;font-weight:800;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.9);line-height:1.3;background:rgba(5,7,15,.45);border-radius:6px;padding:6px 7px;">${(x.texto_tela||'').replace(/</g,'&lt;')}</div>
         </div>
+        <div style="position:absolute;top:6px;right:6px;font-size:8.5px;font-weight:700;padding:2px 6px;border-radius:8px;${r.video_url ? 'background:#22d3a3;color:#052;' : 'background:rgba(0,0,0,.55);color:#fff;'}" title="No Reel o texto é gravado nos quadros do VÍDEO (com animação), não numa imagem separada">${r.video_url ? 'TEXTO GRAVADO NO VÍDEO' : 'texto entra no vídeo'}</div>
       </div>
       ${i===sl.length-1 ? `<div style="font-size:8.5px;color:var(--gold);margin-bottom:3px;">🔗 no vídeo: "Link na bio — ${textoLinkBioCurto()}"</div>` : ''}
       <textarea class="fsel" style="width:100%;height:46px;font-size:9.5px;" oninput="campAtiva.reel.slides[${i}].texto_tela=this.value">${(x.texto_tela||'').replace(/</g,'&lt;')}</textarea>
@@ -25576,9 +25613,12 @@ async function _montarVideoReelCore() {
     // texto central (entra com leve subida + fade)
     const ta = Math.min(1, tLocal / 350), ty = (1 - ta) * 24;
     ctx.globalAlpha = alpha * ta;
-    ctx.font = '800 50px Calibri, Arial, sans-serif'; ctx.textAlign = 'center';
-    const lines = _reelWrap(ctx, sl[i].texto_tela || '', W - 140); const lh = 62;
+    ctx.font = '800 54px Calibri, Arial, sans-serif'; ctx.textAlign = 'center';
+    const lines = _reelWrap(ctx, sl[i].texto_tela || '', W - 140); const lh = 66;
     let y = H / 2 - (lines.length - 1) * lh / 2 + ty + 40;
+    // v3.30: faixa translúcida atrás do texto — legível em qualquer arte (clara ou escura)
+    if (lines.length) { const bh = lines.length * lh + 44, by = y - lh + 4 - 22; ctx.fillStyle = 'rgba(5,7,15,0.5)'; if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(40, by, W - 80, bh, 22); ctx.fill(); } else ctx.fillRect(40, by, W - 80, bh);
+      ctx.fillStyle = 'rgba(79,124,255,0.95)'; ctx.fillRect(40, by, 8, bh); }
     lines.forEach(ln => { ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 18; ctx.fillStyle = '#fff'; ctx.fillText(ln, W / 2, y); y += lh; });
     ctx.shadowBlur = 0;
     // barra de progresso + contador
@@ -25848,7 +25888,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.29] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.30] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -25864,7 +25904,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.29';
+window.__ATX_BUILD_ID__ = 'ATX-v3.30';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
