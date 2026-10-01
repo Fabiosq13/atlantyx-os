@@ -94,6 +94,8 @@ async function handler(req, res) {
       fluxo_caixa:             () => genericAgentCall(req.body, 'financeiro'),
       plano_integrado_proposito: () => genericAgentCall(req.body, 'financeiro'),
 
+      contrato_analisar:       () => analisarContrato(req.body), // v3.35
+      ideia_proposta:          () => propostaNegociacaoIdeia(req.body), // v3.35
       juridico_analise:        () => genericAgentCall(req.body, 'juridico'),
       juridico_gerar:          () => genericAgentCall(req.body, 'juridico'),
       juridico_compliance:     () => genericAgentCall(req.body, 'juridico'),
@@ -253,6 +255,112 @@ Retorne JSON completo:
   if (analise.erro) throw new Error(d.stop_reason === 'max_tokens' ? 'A análise ficou longa demais e foi cortada. Tente "Análise Rápida" ou reduza a descrição.' : 'A IA não devolveu a análise no formato esperado. Tente de novo.');
   console.log(`[S1-03] Análise: ${tituloFinal} — score ${analise.score}/10 — ${analise.recomendacao}`);
   return { success: true, analise, pipeline_stage: 'Em Análise' };
+}
+
+// ── v3.35 JURÍDICO: ANÁLISE DE CONTRATO como advogado interno da Atlantyx ─────────────────
+// Recebe o texto do contrato (PDF/DOCX lido no navegador), os comentários do documento e os da equipe,
+// e devolve a análise de risco cláusula a cláusula + o roteiro e o resumo para a conversa com a contraparte.
+async function analisarContrato({ titulo, contraparte, tipo, papel, objetivos, comentarios_equipe, comentarios_documento = [], texto = '', valor, prazo, modo }) {
+  const corpo = String(texto || '').trim();
+  if (corpo.length < 200) throw new Error('Anexe o contrato (PDF, DOCX ou TXT) ou cole o texto — não recebi conteúdo suficiente para analisar.');
+  const LIM = 150000;
+  const textoEnviado = corpo.length > LIM ? corpo.substring(0, LIM) + '\n[... contrato truncado para análise ...]' : corpo;
+  const comDoc = (Array.isArray(comentarios_documento) ? comentarios_documento : []).slice(0, 80)
+    .map((c, i) => `${i + 1}. ${c.autor ? '[' + c.autor + '] ' : ''}${c.trecho ? '(sobre: "' + String(c.trecho).substring(0, 160) + '") ' : ''}${String(c.texto || '').substring(0, 600)}`).join('\n');
+  const system = `Você é o ADVOGADO CORPORATIVO INTERNO da Atlantyx (Atlanteam Soluções em TI), empresa brasileira B2B de dados, BI, engenharia de dados e IA, com três frentes: projetos sob medida, sustentação com SLA e alocação de profissionais, além de produtos de IA próprios. Clientes típicos: grandes empresas (energia, utilities, financeiro, automotivo) e, às vezes, órgãos públicos.
+Você analisa contratos DEFENDENDO OS INTERESSES DA ATLANTYX, com base na legislação brasileira (Código Civil, LGPD, Lei 13.429/2017 e riscos de vínculo trabalhista na alocação, Lei 14.133/2021 quando houver ente público, Lei de Software/PI, Código de Processo Civil quanto a foro e arbitragem).
+Seja concreto: cite a cláusula (número ou título) e um trecho curto; explique o risco prático para a Atlantyx (dinheiro, prazo, responsabilidade, PI, pessoas); proponha redação alternativa pronta para usar.
+Pontos que você SEMPRE verifica: objeto e escopo (aberto demais?), critérios de aceite, preço/reajuste/forma e prazo de pagamento, retenções e glosas, multas e penalidades (proporcionalidade, teto), limitação de responsabilidade (teto, exclusão de lucros cessantes/danos indiretos), indenizações, SLA e penalidade de SLA, propriedade intelectual (código, modelos de IA, know-how prévio da Atlantyx), confidencialidade, LGPD (papéis controlador/operador, incidentes), não aliciamento, subcontratação, vínculo trabalhista/ responsabilidade solidária na alocação, rescisão (aviso, multa, pagamento do executado), vigência e renovação, foro/arbitragem, garantias e seguros, exclusividade, cessão.
+Responda APENAS com JSON válido, em português do Brasil, sem markdown.`;
+  const user = `CONTRATO: ${titulo || '(sem título)'}
+Tipo: ${tipo || 'não informado'} · Papel da Atlantyx: ${papel || 'Contratada (fornecedora)'} · Contraparte: ${contraparte || 'não informada'}${valor ? ' · Valor: ' + valor : ''}${prazo ? ' · Prazo: ' + prazo : ''}
+Objetivos da Atlantyx nesta negociação: ${objetivos || 'proteger margem, limitar responsabilidade e garantir pagamento do que for executado'}
+${comentarios_equipe ? 'COMENTÁRIOS DA EQUIPE ATLANTYX:\n' + String(comentarios_equipe).substring(0, 6000) + '\n' : ''}${comDoc ? 'COMENTÁRIOS ENCONTRADOS NO DOCUMENTO (revisões/anotações):\n' + comDoc + '\n' : ''}
+TEXTO DO CONTRATO:
+"""
+${textoEnviado}
+"""
+
+Devolva este JSON (preencha tudo que o contrato permitir; use [] quando não houver):
+{
+ "resumo_executivo": "4-6 linhas para o CEO: o que é, principais riscos, recomendação",
+ "recomendacao": "ASSINAR | ASSINAR COM AJUSTES | NEGOCIAR ANTES DE ASSINAR | NÃO ASSINAR",
+ "nivel_risco": "baixo | medio | alto | critico",
+ "nota_risco": 0,
+ "dados_contrato": {"partes":"","objeto":"","valor":"","pagamento":"","prazo_vigencia":"","reajuste":"","renovacao":"","foro":""},
+ "clausulas_criticas": [{"clausula":"nº/título","tema":"","trecho":"citação curta","risco":"alto|medio|baixo","problema":"","impacto_para_atlantyx":"","redacao_sugerida":"","prioridade":1}],
+ "clausulas_ausentes": [{"tema":"","por_que_importa":"","redacao_sugerida":""}],
+ "obrigacoes_atlantyx": [{"obrigacao":"","prazo":"","penalidade":""}],
+ "financeiro": {"multas":"","limitacao_responsabilidade":"","retencoes_glosas":"","garantias":"","exposicao_maxima_estimada":""},
+ "comentarios_analisados": [{"comentario":"","autor":"","analise":"","posicao_recomendada":""}],
+ "conversa_contraparte": {
+   "objetivo": "o que precisamos sair da reunião tendo conseguido",
+   "tom": "como conduzir",
+   "abertura": "fala de abertura sugerida",
+   "pontos": [{"tema":"","nossa_posicao":"","argumento":"","proposta_redacao":"","alternativa_aceitavel":"","limite":"o que não aceitamos"}],
+   "concessoes_possiveis": [""],
+   "perguntas_para_contraparte": [""],
+   "resumo_para_enviar": "e-mail/mensagem cordial e profissional para a contraparte, em nome da Atlantyx, listando os ajustes pedidos e a justificativa, pronto para enviar"
+ },
+ "contraproposta": {
+   "titulo": "Contraproposta da Atlantyx — <contrato>",
+   "introducao": "parágrafo formal de abertura à contraparte",
+   "itens": [{"clausula":"nº/título","situacao_atual":"resumo do que está no contrato","texto_proposto":"redação completa proposta pela Atlantyx","justificativa":"por que é justo para as duas partes"}],
+   "condicoes_comerciais": ["condições de preço, pagamento, reajuste, prazo, SLA que a Atlantyx propõe"],
+   "pontos_aceitos": ["o que a Atlantyx aceita como está, para mostrar boa-fé"],
+   "validade": "prazo de validade da contraproposta",
+   "fechamento": "parágrafo final cordial propondo reunião para alinhamento"
+ },
+ "parecer_final": "parecer do advogado, objetivo, em 1-2 parágrafos"
+}
+${modo === 'rapida' ? 'MODO RÁPIDO: limite clausulas_criticas às 6 mais importantes e pontos da conversa aos 5 principais.' : 'Liste TODAS as cláusulas que merecem ajuste, ordenadas por prioridade.'}${comDoc || comentarios_equipe ? ' Responda CADA comentário em comentarios_analisados.' : ''}`;
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: MODEL, max_tokens: modo === 'rapida' ? 6000 : 14000, system, messages: [{ role: 'user', content: user }] })
+  });
+  const d = await resp.json();
+  if (!resp.ok) throw new Error(d.error?.message || 'Erro na IA');
+  const raw = (d.content || []).filter(x => x.type === 'text').map(x => x.text).join('');
+  const analise = parseJSON(raw);
+  if (analise.erro) throw new Error(d.stop_reason === 'max_tokens' ? 'A análise ficou longa demais e foi cortada — use "Análise rápida" ou anexe só o contrato principal.' : 'A IA não devolveu a análise no formato esperado. Tente de novo.');
+  return { success: true, analise, caracteres_analisados: textoEnviado.length, truncado: corpo.length > LIM };
+}
+
+// v3.35 — PROPOSTA DE NEGOCIAÇÃO a partir da análise da ideia: o que a Atlantyx propõe à outra parte
+// (cliente, parceiro, investidor ou fornecedor) — ou a CONTRAPROPOSTA, quando a ideia veio de uma oferta deles
+async function propostaNegociacaoIdeia({ titulo, desc, origem, cat, analise = {}, destinatario = 'Cliente', tipo = 'proposta', contexto_extra = '' }) {
+  if (!titulo) throw new Error('Analise a ideia antes de gerar a proposta');
+  const system = `Você é o diretor comercial e de parcerias da Atlantyx (empresa brasileira B2B de dados, BI, engenharia de dados e IA para grandes empresas; 17 anos; clientes como CPFL Energia, Enel, Caixa Capitalização, Grupo Jelta). Monte propostas de negociação claras, profissionais e defensáveis, que protejam a margem e o caixa da Atlantyx e sejam atraentes para a outra parte. Não invente números exatos sem base: quando estimar, use faixas e diga que são estimativas. Responda APENAS JSON válido em português do Brasil.`;
+  const user = `IDEIA: ${titulo}
+Descrição: ${String(desc || '').substring(0, 4000)}
+Origem: ${origem || '—'} · Categoria: ${cat || '—'}
+ANÁLISE JÁ FEITA (resumo): ${JSON.stringify({ score: analise.score, recomendacao: analise.recomendacao, resumo: analise.resumo_executivo, mercado: analise.mercado, viabilidade: analise.viabilidade_financeira, prazo: analise.prazo_desenvolvimento, riscos: analise.riscos, proximos_passos: analise.proximos_passos }).substring(0, 6000)}
+Destinatário da negociação: ${destinatario}
+Tipo: ${tipo === 'contraproposta' ? 'CONTRAPROPOSTA (a outra parte fez uma oferta; a Atlantyx responde com novas condições)' : 'PROPOSTA (a Atlantyx toma a iniciativa)'}
+${contexto_extra ? 'Contexto adicional / oferta recebida: ' + String(contexto_extra).substring(0, 3000) : ''}
+
+Devolva:
+{
+ "tipo": "proposta | contraproposta",
+ "destinatario": "",
+ "titulo": "",
+ "contexto": "por que estamos propondo isto agora (2-3 linhas)",
+ "proposta_de_valor": "o que a outra parte ganha",
+ "escopo": ["entregas/etapas"],
+ "modelo_comercial": {"formato":"ex.: projeto fechado, mensalidade, revenue share, piloto pago","valor_ou_faixa":"","condicoes_pagamento":"","prazo":"","reajuste":""},
+ "piloto": "proposta de piloto/prova de conceito se fizer sentido",
+ "contrapartidas_solicitadas": ["o que pedimos em troca: dados, sponsor, exclusividade, caso de sucesso..."],
+ "concessoes_possiveis": ["o que podemos ceder se necessário"],
+ "limites": ["o que não aceitamos"],
+ "riscos_e_mitigacoes": ["risco → como tratamos na proposta"],
+ "proximos_passos": ["passo com prazo"],
+ "mensagem_para_enviar": "e-mail profissional pronto para enviar ao destinatário em nome da Atlantyx"
+}`;
+  const raw = await claude(system, user, 5000);
+  const proposta = parseJSON(raw);
+  if (proposta.erro) throw new Error('A IA não devolveu a proposta no formato esperado. Tente de novo.');
+  return { success: true, proposta };
 }
 
 // ── S1-03: PESQUISA DE MERCADO ───────────────────────────────────────────────
