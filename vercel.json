@@ -80,6 +80,9 @@
     },
     "api/image-gen.js": {
       "maxDuration": 60
+    },
+    "api/vendas.js": {
+      "maxDuration": 120
     }
   },
   "crons": [
