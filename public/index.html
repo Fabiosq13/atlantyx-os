@@ -6818,7 +6818,7 @@ function renderKanban() {
           ${_ehPecaQA(p) ? '<div style="font-family:var(--M);font-size:8.5px;color:var(--gold);margin-bottom:3px;">TESTE DO QA — não é salvo</div>' : ''}
           <div style="font-size:10px;font-weight:600;margin-bottom:2px;">${String(p.titulo || '').replace(/</g, '&lt;')}</div>
           ${_kbResumo(p)}
-          <div style="font-family:var(--M);font-size:9px;padding:1px 6px;border-radius:3px;display:inline-block;background:${p.canal==='LinkedIn'?'var(--b2)':p.canal==='Instagram'?'rgba(240,48,112,.12)':'var(--bg4)'};color:${p.canal==='LinkedIn'?'var(--blue)':p.canal==='Instagram'?'var(--s7c)':'var(--t2)'};">${p.canal}</div>
+          ${_kbRedes(p)}
           <div style="font-size:10px;color:var(--t2);margin-top:4px;">${({ 'Campanha Completa': 'Campanha', 'Aprovada': 'Campanha', 'S2-EmailMarketing': 'E-mail marketing (avulso)', 'S2-Designer': 'Imagem avulsa' })[p.agente] || p.agente}${_kbFormatos(p)}</div>
           ${p.data?`<div style="font-family:var(--M);font-size:9px;color:var(--t3);margin-top:3px;">🕓 ${p.data}</div>`:''}
           ${(() => { const a = dataAgendadaDaPeca(p); const pubs = pubsDaPeca(p); return a ? `<div style="font-family:var(--M);font-size:8.5px;color:var(--gold);margin-top:2px;">📅 ${fmtDH(a)}${pubs.length ? ' · ' + [...new Set(pubs.map(x=>x.rede))].map(r=>({linkedin:'in',instagram:'ig',facebook:'fb',whatsapp:'wa',email:'@'}[r]||r)).join('/') : ''}</div>` : (col==='Agendado' ? '<div style="font-size:9px;color:var(--red);margin-top:2px;">⚠ sem publicação registrada</div>' : ''); })()}
@@ -6835,6 +6835,30 @@ function renderKanban() {
   }).join('');
 }
 
+// v3.31: o card mostra as REDES em que a campanha vai rodar (redes_ativas), não só o canal principal
+const _KB_REDES = { linkedin: ['LinkedIn', 'var(--blue)', 'var(--b2)'], instagram: ['Instagram', '#dc2743', 'rgba(240,48,112,.12)'], facebook: ['Facebook', '#1877f2', 'rgba(24,119,242,.12)'], whatsapp: ['WhatsApp', '#16a34a', 'rgba(37,211,102,.12)'], email: ['E-mail', '#ea4335', 'rgba(234,67,53,.1)'] };
+function _kbRedes(p) {
+  const c = p.campanhaId ? ((typeof _todasCampanhas !== 'undefined' && _todasCampanhas || []).find(x => x.id === p.campanhaId) || (typeof campAtiva !== 'undefined' && campAtiva && campAtiva.id === p.campanhaId ? campAtiva : null)) : null;
+  const ra = (c && c.redes_ativas) || p.redes || null;
+  const lista = ra ? Object.keys(_KB_REDES).filter(k => ra[k]) : [];
+  const chip = (txt, cor, bg) => `<span style="font-family:var(--M);font-size:9px;padding:1px 6px;border-radius:3px;display:inline-block;margin:0 3px 2px 0;background:${bg};color:${cor};">${txt}</span>`;
+  if (!lista.length) return chip(String(p.canal || '—').replace(/</g, '&lt;'), 'var(--t2)', 'var(--bg4)');
+  return '<div>' + lista.map(k => chip(_KB_REDES[k][0], _KB_REDES[k][1], _KB_REDES[k][2])).join('') + '</div>';
+}
+// v3.31: depois de salvar/editar a campanha, o card do Kanban acompanha (nome, canal, redes, conteúdo)
+function _kbSincronizarCampanha(camp) {
+  try {
+    if (!camp || !camp.id || typeof kanbanPecas === 'undefined') return;
+    const p = kanbanPecas.find(x => x.campanhaId === camp.id); if (!p) return;
+    const cp = camp.data?.copy?.versoes?.[0] || {};
+    const novo = { titulo: camp.nome || p.titulo, canal: camp.canal || p.canal, redes: camp.redes_ativas ? Object.assign({}, camp.redes_ativas) : p.redes,
+      copy: (cp.headline ? cp.headline + '\n\n' : '') + (cp.corpo || '') || p.copy, narrativa: camp.data?.narrativa?.tema_central || p.narrativa };
+    const mudou = ['titulo', 'canal', 'copy', 'narrativa'].some(k => novo[k] !== p[k]) || JSON.stringify(novo.redes || null) !== JSON.stringify(p.redes || null);
+    if (!mudou) return;
+    Object.assign(p, novo, { atualizado_em: new Date().toISOString() });
+    renderKanban(); salvarKanbanNoBanco();
+  } catch (_) {}
+}
 // v3.26: o que diferencia um card do outro — a headline da campanha e os formatos já prontos
 function _kbResumo(p) {
   const l = String(p.copy || '').split('\n').map(x => x.trim()).find(x => x && !/^https?:/.test(x)) || p.narrativa || '';
@@ -10634,7 +10658,7 @@ async function salvarEdicoesCampanha(manual) {
   const r = await salvarCampanhaNoBanco(campAtiva, manual ? 'salvar manual' : 'auto-save form');
   if (r.success) {
     try { const idx = (_todasCampanhas||[]).findIndex(c => c.id === campAtiva.id); if (idx >= 0) _todasCampanhas[idx] = campAtiva; } catch(_) {}
-    try { const p = (kanbanPecas||[]).find(x => x.campanhaId === campAtiva.id); if (p && p.titulo !== f.nome) { p.titulo = f.nome; renderKanban(); salvarKanbanNoBanco(); } } catch(_) {}
+    _kbSincronizarCampanha(campAtiva); // v3.31: nome, canal e REDES no card
     if (manual) { toast('Campanha salva ✓', 'success'); addLog('ok', '[Campanha] Edições salvas: ' + f.nome); }
     const b = document.getElementById('btnSalvarCampanha'); if (b) { b.textContent = '💾 Salvo'; setTimeout(() => b.textContent = '💾 Salvar', 1500); }
   }
@@ -10815,6 +10839,11 @@ function restaurarFormularioCampanha(camp) {
     const el = document.getElementById(id);
     if (el && val != null) el.value = val;
   });
+  // v3.31: as caixas de redes mostram as redes DESTA campanha (antes ficavam como estavam — e o salvar gravava errado)
+  if (camp.redes_ativas) { const m = { cRedeLI: 'linkedin', cRedeIG: 'instagram', cRedeFB: 'facebook', cRedeWA: 'whatsapp', cRedeEmail: 'email' };
+    Object.entries(m).forEach(([id, k]) => { const el = document.getElementById(id); if (el) el.checked = !!camp.redes_ativas[k]; });
+    try { _redesMarcadas = Object.assign({}, camp.redes_ativas); } catch (_) {} }
+  try { _kbSincronizarCampanha(camp); } catch (_) {}
   // Se tem dados dos agentes, mostra editor e re-render
   if (camp.data) {
     const edPanel = document.getElementById('campEditorPanel');
@@ -11135,6 +11164,8 @@ async function salvarCampanhaDB(skipColeta = false) {
     const d = await r.json();
     if (d.success) {
       atualizarContadorCampanhas();
+      try { const idx = (_todasCampanhas || []).findIndex(c => c.id === campAtiva.id); if (idx >= 0) _todasCampanhas[idx] = campAtiva; } catch (_) {}
+      _kbSincronizarCampanha(campAtiva); // v3.31
       addLog('ok', '[Campanha] Salva no Neon: "' + campAtiva.nome + '" (ID: ' + campAtiva.id + ')');
       toast('Campanha salva!', 'success');
       return true;
@@ -11213,6 +11244,8 @@ function coletarEdicoesAtuais(camp) {
   const nome = document.getElementById('cNome')?.value?.trim();
   if (nome) camp.nome = nome;
   camp.canal   = document.getElementById('cCanal')?.value  || camp.canal;
+  // v3.31: as redes marcadas no formulário também são gravadas pelo 💾 Salvar
+  if (document.getElementById('cRedeLI')) camp.redes_ativas = { linkedin: !!document.getElementById('cRedeLI')?.checked, instagram: !!document.getElementById('cRedeIG')?.checked, facebook: !!document.getElementById('cRedeFB')?.checked, whatsapp: !!document.getElementById('cRedeWA')?.checked, email: !!document.getElementById('cRedeEmail')?.checked };
   camp.publico = document.getElementById('cPublico')?.value || camp.publico;
   camp.objetivo= document.getElementById('cObj')?.value    || camp.objetivo;
 
@@ -25888,7 +25921,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.30] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.31] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -25904,7 +25937,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.30';
+window.__ATX_BUILD_ID__ = 'ATX-v3.31';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
