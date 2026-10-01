@@ -36,6 +36,8 @@ export default async function handler(req, res) {
 
   try {
     const body = req.method === 'POST' ? (req.body || {}) : {};
+    // v3.25: envia a lista de editais por e-mail (a da tela ou a última varredura guardada)
+    if (body.acao === 'enviar_email') return res.status(200).json({ success: true, ...(await enviarListaEmail(body)) });
     // v3.14: a tela pode pedir só a última varredura guardada (abre instantâneo)
     if (body.somente_cache) { const c = await lerCache(); return res.status(200).json(c ? { success: true, do_cache: true, ...c } : { success: true, do_cache: true, rfps: [], aviso: 'Ainda não há varredura guardada — clique em "Varrer RFPs Agora".' }); }
     _prazo = Date.now() + 48000;
@@ -265,3 +267,42 @@ async function notificarWhatsApp(rfp) {
 }
 
 export { partesControle, linkPNCP, formatarSaida };
+
+
+// ═══ v3.25: lista de RFPs por e-mail ═══
+async function enviarListaEmail({ para, assunto, mensagem, rfps } = {}) {
+  const dest = String(para || '').split(/[;,\s]+/).map(x => x.trim()).filter(x => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x));
+  if (!dest.length) throw new Error('Informe ao menos um e-mail válido');
+  let lista = Array.isArray(rfps) && rfps.length ? rfps : ((await lerCache())?.rfps || []);
+  if (!lista.length) throw new Error('Nenhum edital para enviar — rode a varredura primeiro');
+  lista = lista.slice(0, 60);
+  const user = process.env.EMAIL_SMTP_USER || process.env.EMAIL_IMAP_USER || process.env.EMAIL_USER || process.env.SMTP_USER || process.env.GMAIL_USER;
+  const pass = process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS || process.env.EMAIL_PASS || process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD;
+  if (!user || !pass) throw new Error('E-mail de envio não configurado (EMAIL_SMTP_USER / EMAIL_SMTP_PASS no Vercel)');
+  const dom = String(user).split('@')[1] || '';
+  const host = process.env.EMAIL_SMTP_HOST || (/gmail\.com$/i.test(dom) ? 'smtp.gmail.com' : (dom ? 'mail.' + dom : 'smtp.gmail.com'));
+  const port = parseInt(process.env.EMAIL_SMTP_PORT || '465', 10);
+  const nodemailer = (await import('nodemailer')).default;
+  const t = nodemailer.createTransport({ host, port, secure: port === 465, auth: { user, pass }, connectionTimeout: 20000, ...(process.env.EMAIL_SMTP_TLS_RELAXADO === '1' ? { tls: { rejectUnauthorized: false } } : {}) });
+  const e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const linhas = lista.map((r, i) => `<tr style="border-bottom:1px solid #e5e7ef;">
+    <td style="padding:8px 6px;vertical-align:top;color:#5a6478;">${i + 1}</td>
+    <td style="padding:8px 6px;vertical-align:top;"><a href="${e(r.link_acesso || r.link_pncp)}" style="color:#1A3A8F;font-weight:700;text-decoration:none;">${e(r.nome_edital || r.titulo)}</a><br>
+      <span style="color:#333;">${e(r.empresa)}${r.uf ? ' · ' + e(r.municipio ? r.municipio + '/' : '') + e(r.uf) : ''}</span><br>
+      <span style="color:#5a6478;font-size:12px;">${e(String(r.descricao || r.titulo || '').substring(0, 220))}</span></td>
+    <td style="padding:8px 6px;vertical-align:top;white-space:nowrap;">${e(r.valor || '—')}</td>
+    <td style="padding:8px 6px;vertical-align:top;white-space:nowrap;color:#A16207;font-weight:700;">${e(r.prazo_submissao || r.prazo || '—')}</td>
+    <td style="padding:8px 6px;vertical-align:top;white-space:nowrap;">${r.compatibilidade != null ? e(r.compatibilidade) + '%' : '—'}</td></tr>`).join('');
+  const html = `<div style="font-family:Arial,sans-serif;max-width:900px;">
+    <div style="color:#00708A;font-weight:700;letter-spacing:2px;font-size:12px;">ATLANTYX · MONITOR DE RFPs</div>
+    <h2 style="color:#0F2660;margin:6px 0 4px;">${e(assunto || 'Editais abertos — ' + hoje)}</h2>
+    ${mensagem ? `<p style="font-size:14px;color:#333;">${e(mensagem).replace(/\n/g, '<br>')}</p>` : ''}
+    <p style="font-size:12px;color:#5a6478;">${lista.length} edital(is) do PNCP, ordenados por aderência. Clique no nome para abrir o edital.</p>
+    <table style="border-collapse:collapse;width:100%;font-size:13px;"><thead><tr style="background:#F4F5F7;text-align:left;">
+      <th style="padding:8px 6px;">#</th><th style="padding:8px 6px;">Edital / órgão</th><th style="padding:8px 6px;">Valor estimado</th><th style="padding:8px 6px;">Propostas até</th><th style="padding:8px 6px;">Aderência</th></tr></thead>
+      <tbody>${linhas}</tbody></table>
+    <p style="font-size:11px;color:#8a93a8;margin-top:14px;">Fonte: Portal Nacional de Contratações Públicas (PNCP) · enviado pelo Atlantyx OS em ${hoje}.</p></div>`;
+  const info = await t.sendMail({ from: `Atlantyx OS <${user}>`, to: dest.join(', '), subject: assunto || `Editais abertos (${lista.length}) — ${hoje}`, html });
+  return { enviado: true, para: dest, total: lista.length, id: info.messageId, aceitos: info.accepted };
+}

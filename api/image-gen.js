@@ -50,73 +50,72 @@ export default async function handler(req, res) {
 
 Visual style: premium B2B tech corporate, dark navy blue (#1A3A8F) background, electric blue accent (#4F7CFF), bold clean typography, data visualization elements, professional consulting aesthetic, no clutter, high contrast`;
 
-    const body = {
-      image_request: {
-        prompt: promptFinal,
-        negative_prompt: negativo,
-        model: modelo,
-        num_images: Math.min(quantidade, 4),
-        aspect_ratio: formato,
-        style_type: estilo,
-        magic_prompt_option: magic_prompt ? 'AUTO' : 'OFF',
-      }
-    };
+    const n = Math.min(Math.max(1, parseInt(quantidade) || 1), 4);
+    const errTxt = t => { try { const j = JSON.parse(t); const m = j?.message || j?.error || j?.detail || j; return typeof m === 'string' ? m : JSON.stringify(m); } catch { return String(t || ''); } };
+    const tentativas = [];
 
-    console.log('[Ideogram] Sending request...', JSON.stringify(body).substring(0, 200));
+    // v3.25: 1) API Ideogram 3.0 (multipart) — a rota antiga /generate (V_2) pode recusar ou sair do ar
+    let imagens = null, provedor = null;
+    try {
+      const fd = new FormData();
+      fd.append('prompt', promptFinal);
+      fd.append('aspect_ratio', String(formato || 'ASPECT_1_1').replace(/^ASPECT_/, '').replace('_', 'x'));
+      fd.append('rendering_speed', 'DEFAULT');
+      fd.append('magic_prompt', magic_prompt ? 'AUTO' : 'OFF');
+      fd.append('style_type', ['DESIGN', 'REALISTIC', 'GENERAL', 'AUTO', 'FICTION'].includes(estilo) ? estilo : 'GENERAL');
+      if (negativo) fd.append('negative_prompt', negativo);
+      fd.append('num_images', String(n));
+      const r3 = await fetch('https://api.ideogram.ai/v1/ideogram-v3/generate', { method: 'POST', headers: { 'Api-Key': apiKeyClean }, body: fd });
+      const t3 = await r3.text();
+      if (r3.ok) { const d3 = JSON.parse(t3); imagens = (d3.data || []).filter(x => x.url).map(x => ({ url: x.url, prompt_usado: x.prompt, seed: x.seed })); provedor = 'ideogram-v3'; }
+      tentativas.push({ via: 'ideogram v3', status: r3.status, erro: r3.ok ? null : errTxt(t3).substring(0, 200) });
+    } catch (e) { tentativas.push({ via: 'ideogram v3', status: 0, erro: e.message }); }
 
-    const r = await fetch('https://api.ideogram.ai/generate', {
-      method: 'POST',
-      headers: {
-        'Api-Key': apiKeyClean,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body)
-    });
-
-    const responseText = await r.text();
-    console.log(`[Ideogram] Status: ${r.status} | Response: ${responseText.substring(0, 500)}`);
-
-    if (!r.ok) {
-      let errMsg = responseText;
-      try { errMsg = JSON.parse(responseText)?.message || JSON.parse(responseText)?.error || responseText; } catch {}
-      // v2.76: reserva — se o Ideogram recusar (chave, crédito, instabilidade) e houver OPENAI_API_KEY, usa DALL·E 3
-      if (process.env.OPENAI_API_KEY) {
-        try {
-          const tam = /9_16|10_16|2_3|3_4/.test(formato) ? '1024x1792' : /16_9|16_10|3_2|4_3/.test(formato) ? '1792x1024' : '1024x1024';
-          const ro = await fetch('https://api.openai.com/v1/images/generations', { method: 'POST',
-            headers: { Authorization: 'Bearer ' + process.env.OPENAI_API_KEY.trim(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model: 'dall-e-3', prompt: `${prompt}${negativo ? '\nDo NOT include: ' + negativo : ''}`.substring(0, 3900), size: tam, n: 1, quality: 'standard', style: 'natural' }) });
-          const od = await ro.json().catch(() => ({}));
-          if (ro.ok && od.data?.length) {
-            console.log('[image-gen] Ideogram falhou (' + r.status + ') — usada a reserva DALL·E 3');
-            return res.status(200).json({ success: true, imagens: await _persistir(od.data.map(x => ({ url: x.url, prompt_usado: x.revised_prompt })), req), total: od.data.length, provedor: 'dall-e-3', aviso_ideogram: `Ideogram ${r.status}: ${String(errMsg).substring(0, 120)}` });
-          }
-          console.warn('[image-gen] reserva OpenAI também falhou:', JSON.stringify(od).substring(0, 200));
-        } catch (e) { console.warn('[image-gen] reserva OpenAI erro:', e.message); }
-      }
-      return res.status(500).json({
-        success: false,
-        error: `Ideogram retornou ${r.status}: ${errMsg.substring(0, 300)}`,
-        status: r.status,
-        dica: r.status === 401 ? 'Chave do Ideogram recusada: gere uma nova em ideogram.ai → API, confira o crédito, atualize IDEOGRAM_API_KEY no Vercel e faça Redeploy. Ou configure OPENAI_API_KEY para usar DALL·E como reserva.' : undefined,
-        chave_prefixo: apiKeyClean.substring(0, 8) + '...',
-      });
+    // 2) rota antiga (V_2), se a v3 não respondeu
+    if (!imagens?.length) {
+      try {
+        const body = { image_request: { prompt: promptFinal, negative_prompt: negativo, model: modelo, num_images: n, aspect_ratio: formato, style_type: estilo, magic_prompt_option: magic_prompt ? 'AUTO' : 'OFF' } };
+        const r = await fetch('https://api.ideogram.ai/generate', { method: 'POST', headers: { 'Api-Key': apiKeyClean, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const t = await r.text();
+        if (r.ok) { const d = JSON.parse(t); imagens = (d.data || []).filter(x => x.url).map(x => ({ url: x.url, prompt_usado: x.prompt, seed: x.seed })); provedor = 'ideogram-v2'; }
+        tentativas.push({ via: 'ideogram v2', status: r.status, erro: r.ok ? null : errTxt(t).substring(0, 200) });
+      } catch (e) { tentativas.push({ via: 'ideogram v2', status: 0, erro: e.message }); }
     }
 
-    const data = JSON.parse(responseText);
-    const imagens = (data.data || []).map(img => ({
-      url: img.url,
-      prompt_usado: img.prompt,
-      seed: img.seed,
-    }));
+    // 3) reserva OpenAI (DALL·E 3; se o modelo não existir mais, gpt-image-1 em base64 salvo no /api/media)
+    if (!imagens?.length && process.env.OPENAI_API_KEY) {
+      const tam = /9_16|10_16|2_3|3_4/.test(formato) ? '1024x1792' : /16_9|16_10|3_2|4_3/.test(formato) ? '1792x1024' : '1024x1024';
+      for (const modeloOa of ['dall-e-3', 'gpt-image-1']) {
+        try {
+          const corpo = modeloOa === 'dall-e-3' ? { model: modeloOa, prompt: `${prompt}${negativo ? '\nDo NOT include: ' + negativo : ''}`.substring(0, 3900), size: tam, n: 1, quality: 'standard', style: 'natural' }
+            : { model: modeloOa, prompt: `${prompt}${negativo ? '\nDo NOT include: ' + negativo : ''}`.substring(0, 3900), size: tam === '1024x1792' ? '1024x1536' : tam === '1792x1024' ? '1536x1024' : '1024x1024', n: 1 };
+          const ro = await fetch('https://api.openai.com/v1/images/generations', { method: 'POST', headers: { Authorization: 'Bearer ' + process.env.OPENAI_API_KEY.trim(), 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+          const od = await ro.json().catch(() => ({}));
+          tentativas.push({ via: 'openai ' + modeloOa, status: ro.status, erro: ro.ok ? null : String(od?.error?.message || '').substring(0, 200) });
+          if (ro.ok && od.data?.length) {
+            const lista = [];
+            for (const x of od.data) {
+              if (x.url) lista.push({ url: x.url, prompt_usado: x.revised_prompt });
+              else if (x.b64_json) { const u = await _salvarB64(x.b64_json, req); if (u) lista.push({ url: u, prompt_usado: x.revised_prompt, permanente: true }); }
+            }
+            if (lista.length) { imagens = lista; provedor = modeloOa; break; }
+          }
+        } catch (e) { tentativas.push({ via: 'openai ' + modeloOa, status: 0, erro: e.message }); }
+      }
+    }
 
-    console.log(`[Ideogram] OK — ${imagens.length} imagem(ns)`);
-
-    return res.status(200).json({
-      success: true,
-      imagens: await _persistir(imagens, req),
-      total: imagens.length,
-    });
+    if (!imagens?.length) {
+      const auth = tentativas.some(t => t.status === 401 || t.status === 403);
+      const credito = tentativas.some(t => /credit|balance|payment|quota|insufficient/i.test(t.erro || ''));
+      return res.status(502).json({ success: false,
+        error: 'Nenhum gerador de imagem respondeu: ' + tentativas.map(t => `${t.via} ${t.status || ''}${t.erro ? ' (' + t.erro + ')' : ''}`).join(' · '),
+        dica: auth ? 'Chave recusada: gere uma nova em ideogram.ai → API Keys, atualize IDEOGRAM_API_KEY no Vercel e faça Redeploy.' : credito ? 'Sem crédito na conta do Ideogram — recarregue o saldo da API em ideogram.ai.' : (!process.env.OPENAI_API_KEY ? 'Configure OPENAI_API_KEY no Vercel para ter um gerador reserva.' : 'Tente de novo em instantes.'),
+        tentativas, chave_prefixo: apiKeyClean.substring(0, 6) + '...' });
+    }
+    console.log(`[image-gen] OK via ${provedor} — ${imagens.length} imagem(ns)`);
+    const finais = await _persistir(imagens.filter(x => !x.permanente), req);
+    return res.status(200).json({ success: true, imagens: [...imagens.filter(x => x.permanente), ...finais], total: imagens.length, provedor,
+      ...(tentativas.some(t => t.erro) ? { aviso: tentativas.filter(t => t.erro).map(t => `${t.via}: ${t.erro}`).join(' · ') } : {}) });
 
   } catch (error) {
     console.error('[ERRO image-gen]', error.message);
@@ -142,4 +141,12 @@ async function _persistir(imagens, req) {
     } catch (_) {}
     return { ...img, permanente: false };
   }));
+}
+
+async function _salvarB64(b64, req) {
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  const base = process.env.MEDIA_PUBLIC_BASE ? process.env.MEDIA_PUBLIC_BASE.replace(/\/$/, '') : (host ? `https://${host}` : null);
+  if (!base) return null;
+  try { const r = await fetch(base + '/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'salvar_base64', payload: { base64: b64, content_type: 'image/png', origem: 'image-gen' } }) });
+    const m = await r.json().catch(() => ({})); return m.url || null; } catch (_) { return null; }
 }

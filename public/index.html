@@ -401,11 +401,10 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div class="sg-body" id="gMarketing">
       <div class="sg-sub">INTELIGENCIA</div>
       <div class="sbi s2" onclick="nav('s2prospect',this)">&#9733; Prospeccao de Contas</div>
-      <div class="sbi s2" onclick="nav('s2prospect',this);setTimeout(function(){setModoProspect('linkedin');},300);" style="font-size:9px;padding-left:20px;color:#0a66c2;">&#128101; LinkedIn + Apollo</div>
+      <div class="sbi s2" onclick="nav('s2prospect',this);setTimeout(function(){setModoProspect('linkedin');},300);">&#128101; LinkedIn + Apollo</div>
       <div class="sbi s2" onclick="nav('s2rfps',this)">&#9634; Monitor RFPs <span class="nbx gd" id="rfpCnt">—</span></div>
       <div class="sg-sub">CRIACAO</div>
       <div class="sbi s2" onclick="nav('s2studio',this)">&#9670; Studio Criativo</div>
-      <div class="sbi s2" onclick="nav('s2img',this)">&#127912; Gerar Imagem <span class="nbx gn">Ideogram</span></div>
       <div class="sbi s2" onclick="nav('s2campanha',this)">&#9654; Nova Campanha</div>
       <div class="sbi s2" onclick="nav('s2auto',this)">&#128260; Autocampanha <span class="nbx gd">7 dias</span></div>
       <div class="sbi s2" onclick="nav('s2kanban',this)">&#9632; Kanban Aprovacao <span class="nbx gd" id="kanbanCnt">0</span></div>
@@ -421,6 +420,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sbi s2" onclick="nav('s2kpi',this)">&#8593; KPIs Marketing</div>
       <div class="sbi s2" onclick="nav('s2gerente',this)">&#129302; Gerente de Marketing IA <span class="nbx pu">chat</span></div>
       <div class="sbi s2" onclick="nav('s2ag',this)">&#9675; Todos Agentes S2</div>
+      <div class="sg-sub">OUTRAS OPÇÕES</div>
+      <div class="sbi s2" onclick="nav('s2img',this)">&#127912; Gerar Imagem avulsa <span class="nbx gn">IA</span></div>
     </div>
 
     <!-- S5 · JURIDICO -->
@@ -2286,6 +2287,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
             <div class="fg"><label class="fl">Contexto adicional</label>
               <textarea class="fta" id="cCtx" style="min-height:55px;" placeholder="Ex: Focar em empresas que anunciaram novo ERP..."></textarea>
             </div>
+            <label style="display:flex;gap:6px;align-items:center;font-size:11px;margin-bottom:8px;cursor:pointer;" title="Depois da narrativa e da copy, o sistema já monta o Carrossel (roteiro, artes e texto na arte) e o Reel (roteiro, artes, vídeo e hospedagem). Nada é publicado sem você agendar.">
+              <input type="checkbox" id="cAutoFormatos" checked/> Gerar automaticamente o <b>Carrossel</b> e o <b>Reel</b> ao criar (usa ~10 imagens)</label>
             <div style="display:flex;gap:8px;align-items:center;">
               <button class="btn btn-or" style="flex:1;justify-content:center;font-weight:700;" id="btnCampanha" onclick="criarCampanhaCompleta()">&#9670; Criar campanha com IA</button>
               <button class="btn btn-gn" style="font-size:11px;" id="btnSalvarCampanha" onclick="salvarEdicoesCampanha(true)" title="Grava nome, objetivo, canal, redes, datas e contexto da campanha aberta (sem re-rodar a IA)">💾 Salvar</button>
@@ -7649,6 +7652,36 @@ function adicionarAoKanbanWA(nome, empresa, cargo) {
 }
 
 // RFP Monitor atualizado - mostrar resultados em cards
+// v3.25: lista de RFPs → PDF e e-mail
+async function rfpBaixarPdf() {
+  const l = window._rfpUltimos || []; if (!l.length) { toast('Rode a varredura primeiro', 'error'); return; }
+  try {
+    const pdfMake = await _carregarPdfMake(); const hoje = new Date().toLocaleDateString('pt-BR');
+    const linhas = l.map((r, i) => [String(i + 1), { stack: [{ text: r.nome_edital || r.titulo || '', bold: true, color: '#1A3A8F', link: r.link_acesso || r.link_pncp || undefined },
+      { text: (r.empresa || '') + (r.uf ? ' · ' + (r.municipio ? r.municipio + '/' : '') + r.uf : ''), fontSize: 8.5 }, { text: String(r.descricao || '').substring(0, 220), fontSize: 8, color: '#555' },
+      { text: r.link_acesso || r.link_pncp || '', fontSize: 7, color: '#00708A', link: r.link_acesso || r.link_pncp || undefined }] },
+      r.valor || '—', { text: r.prazo_submissao || r.prazo || '—', color: '#A16207', bold: true }, r.compatibilidade != null ? r.compatibilidade + '%' : '—']);
+    pdfMake.createPdf({ pageOrientation: 'landscape', pageMargins: [30, 36, 30, 36], defaultStyle: { fontSize: 9 },
+      content: [{ text: 'ATLANTYX · MONITOR DE RFPs', color: '#00708A', bold: true, fontSize: 9, characterSpacing: 2 }, { text: 'Editais abertos — ' + hoje, fontSize: 16, bold: true, margin: [0, 4, 0, 2] },
+        { text: l.length + ' edital(is) do PNCP, ordenados por aderência. Clique no nome para abrir o edital.', fontSize: 9, color: '#555', margin: [0, 0, 0, 10] },
+        { table: { headerRows: 1, widths: [16, '*', 90, 80, 50], body: [[{ text: '#', bold: true }, { text: 'Edital / órgão', bold: true }, { text: 'Valor estimado', bold: true }, { text: 'Propostas até', bold: true }, { text: 'Aderência', bold: true }], ...linhas] }, layout: 'lightHorizontalLines' }],
+      footer: (p, t) => ({ text: 'Fonte: PNCP · Atlantyx OS · ' + p + '/' + t, alignment: 'right', fontSize: 7, color: '#999', margin: [0, 0, 30, 0] }) }).download('RFPs_' + new Date().toISOString().substring(0, 10) + '.pdf');
+  } catch (e) { toast('PDF: ' + e.message, 'error'); }
+}
+async function rfpEnviarEmail() {
+  const l = window._rfpUltimos || []; if (!l.length) { toast('Rode a varredura primeiro', 'error'); return; }
+  let padrao = ''; try { padrao = localStorage.getItem('atx:rfp_email_para') || ''; } catch (_) {}
+  const para = prompt('Enviar a lista de ' + l.length + ' edital(is) para (separe vários e-mails por vírgula):', padrao); if (!para) return;
+  const msg = prompt('Mensagem (opcional) no início do e-mail:', 'Segue a lista de editais abertos com aderência ao nosso portfólio. Avaliem quais vamos disputar.');
+  try { localStorage.setItem('atx:rfp_email_para', para); } catch (_) {}
+  toast('Enviando...', 'success');
+  try {
+    const r = await fetch('/api/rfp-monitor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'enviar_email', para, mensagem: msg || '', rfps: l }) });
+    const d = await r.json().catch(() => ({}));
+    if (!d.success) throw new Error(d.error || 'HTTP ' + r.status);
+    toast('Lista enviada para ' + d.para.join(', '), 'success'); addLog('ok', '[S2-04] Lista de ' + d.total + ' RFPs enviada por e-mail para ' + d.para.join(', '));
+  } catch (e) { toast('Não enviou: ' + e.message, 'error'); }
+}
 async function runRfpMonitorAtualizado() {
   const btn = document.getElementById('btnRfp');
   const res = document.getElementById('rfpResult');
@@ -7683,7 +7716,9 @@ async function runRfpMonitorAtualizado() {
     const avisoTopo = data.aviso ? '<div style="font-size:10.5px;color:var(--gold);margin-bottom:8px;text-align:left;">&#9888; ' + String(data.aviso).replace(/</g,'&lt;') + '</div>' : '';
     const e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
     const fontesTxt = data.fontes ? Object.entries(data.fontes).map(([k, f]) => (k === 'busca_pncp' ? 'Busca PNCP' : 'API oficial PNCP') + ': ' + (f.ok ? f.encontrados + ' encontrados' : 'indisponível')).join(' · ') : '';
-    res.innerHTML = avisoTopo + '<div style="font-size:10.5px;color:var(--t2);margin-bottom:10px;text-align:left;">&#128269; ' + (data.do_cache ? '<b>Última varredura guardada</b> · ' : '') + 'Fonte: <b>' + e(data.fonte || 'PNCP') + '</b> · consulta em ' + e(data.data_consulta || '') + (fontesTxt ? ' · ' + e(fontesTxt) : '') + ' · ' + (data.total_encontrado || 0) + ' editais em aberto analisados. Somente editais reais — a IA avalia a aderência, não cria editais.</div>'
+    window._rfpUltimos = rfps; // v3.25: base para e-mail e PDF
+    const barraRfp = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;"><b style="font-size:11.5px;">' + rfps.length + ' edital(is)</b><button class="btn btn-g" style="font-size:10px;margin-left:auto;" onclick="rfpBaixarPdf()">📄 Baixar PDF da lista</button><button class="btn btn-p" style="font-size:10px;" onclick="rfpEnviarEmail()">📧 Enviar lista por e-mail</button></div>';
+    res.innerHTML = avisoTopo + barraRfp + '<div style="font-size:10.5px;color:var(--t2);margin-bottom:10px;text-align:left;">&#128269; ' + (data.do_cache ? '<b>Última varredura guardada</b> · ' : '') + 'Fonte: <b>' + e(data.fonte || 'PNCP') + '</b> · consulta em ' + e(data.data_consulta || '') + (fontesTxt ? ' · ' + e(fontesTxt) : '') + ' · ' + (data.total_encontrado || 0) + ' editais em aberto analisados. Somente editais reais — a IA avalia a aderência, não cria editais.</div>'
     + rfps.map(r => `
       <div style="background:var(--bg4);border:1px solid var(--bd);border-left:3px solid ${r.urgencia==='Alta'?'var(--red)':r.urgencia==='Media'?'var(--gold)':'var(--blue)'};border-radius:7px;padding:12px;margin-bottom:8px;text-align:left;color:var(--t1);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
@@ -9145,6 +9180,17 @@ async function gerarImagemCampanha() {
   const qtd     = parseInt(document.getElementById('campImgQtd')?.value || '2');
   const canal   = campAtiva?.canal || window._campanhaAtual?.canal || 'LinkedIn';
 
+  // v3.25: o brief da imagem acompanha a narrativa e a copy ATUAIS. Se você mudou tema/gancho/headline/corpo
+  // depois do brief ter sido criado (e não editou o brief à mão), o Designer refaz o brief antes de gerar.
+  if (campAtiva) {
+    campAtiva.data = campAtiva.data || {}; const dz = campAtiva.data.design || {};
+    const briefTela = document.getElementById('edBriefVisual')?.value?.trim() || '';
+    const editadoAMao = briefTela && dz.prompt_ia_imagem && briefTela !== String(dz.prompt_ia_imagem).trim();
+    const sig = _assinaturaConteudoCamp();
+    if (!dz.prompt_ia_imagem && !briefTela) { toast('🎨 Criando o brief visual a partir da narrativa e da copy...', 'success'); await regerarBriefVisual(true); }
+    else if (dz._assinatura === undefined) { dz._assinatura = sig; campAtiva.data.design = dz; }
+    else if (dz._assinatura !== sig && !editadoAMao) { toast('🎨 Narrativa/copy mudaram — atualizando o brief visual antes de gerar...', 'success'); await regerarBriefVisual(true); }
+  }
   // Pegar brief visual do campo editável ou da campanha
   const briefField  = document.getElementById('edBriefVisual')?.value?.trim();
   const briefCamp   = campAtiva?.data?.design?.prompt_ia_imagem || campAtiva?.data?.design?.conceito_visual || '';
@@ -9190,8 +9236,9 @@ async function gerarImagemCampanha() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: promptFinal, formato, estilo, quantidade: qtd })
     });
-    if (!r.ok) throw new Error('Servidor ' + r.status);
-    const data = await r.json();
+    // v3.25: mostra o erro real do gerador (antes: "Servidor 500 — verifique a chave" para qualquer falha)
+    const data = await r.json().catch(() => ({ error: 'Servidor ' + r.status + ' sem resposta legível' }));
+    if (!r.ok || data.success === false) throw new Error((data.error || ('Servidor ' + r.status)) + (data.dica ? ' — ' + data.dica : ''));
     if (!data.success || !data.imagens?.length) throw new Error(data.error || 'Sem imagens');
 
     const imagens = data.imagens;
@@ -9238,7 +9285,7 @@ async function gerarImagemCampanha() {
     toast(imagens.length + ' imagens geradas! Clique Aprovar na preferida.', 'success');
 
   } catch(e) {
-    result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:14px;">Erro: ' + e.message + '<br/><br/>Verifique IDEOGRAM_API_KEY no Vercel.</div>';
+    result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:14px;line-height:1.6;">Erro ao gerar a imagem: ' + e.message + '<br/><span style="color:var(--t2);">Diagnóstico da chave: abra <a href="/api/image-gen" target="_blank" style="color:var(--blue);">/api/image-gen</a> (mostra se a IDEOGRAM_API_KEY está configurada). Com OPENAI_API_KEY configurada, o sistema usa a reserva automaticamente.</span></div>';
     addLog('err', '[Ideogram] Erro: ' + e.message);
   }
   if (btn) { btn.disabled = false; btn.textContent = '◆ Gerar no Ideogram'; }
@@ -9324,6 +9371,12 @@ setTimeout(() => {
   });
 }, 1100);
 // v1.9.8: regenera o brief visual (Designer) a partir do TEMA/COPY atuais da campanha
+function _assinaturaConteudoCamp() {
+  const g = id => document.getElementById(id)?.value || '';
+  const c = (typeof campAtiva !== 'undefined' && campAtiva) ? campAtiva.data || {} : {};
+  const t = [g('edTemaCentral') || c.narrativa?.tema_central || '', g('edGancho') || c.narrativa?.gancho_principal || '', g('edHeadline') || c.copy?.versoes?.[0]?.headline || '', (g('edCorpo') || c.copy?.versoes?.[0]?.corpo || '').substring(0, 400)].join('|');
+  let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return String(h);
+}
 async function regerarBriefVisual(silencioso) {
   if (!campAtiva) { toast('Abra ou crie uma campanha primeiro', 'error'); return; }
   const g = id => document.getElementById(id)?.value || '';
@@ -9368,6 +9421,7 @@ async function regerarBriefVisual(silencioso) {
     }
     campAtiva.data = campAtiva.data || {}; campAtiva.data.design = d.design;
     if (tema) campAtiva.data.narrativa = Object.assign({}, campAtiva.data.narrativa, { tema_central: tema });
+    campAtiva.data.design._assinatura = _assinaturaConteudoCamp(); // v3.25: brief amarrado a esta versão da narrativa/copy
     const brief = d.design.prompt_ia_imagem || d.design.conceito_visual || d.design.brief_visual || '';
     const el = document.getElementById('edBriefVisual'); if (el) el.value = brief;
     try { const kb = (kanbanPecas||[]).find(x => x.campanhaId === campAtiva.id); if (kb && !(typeof kb.design === 'string' && kb.design.startsWith('http'))) { kb.design = d.design.conceito_visual || brief; salvarKanbanNoBanco(); } } catch(_) {}
@@ -10674,7 +10728,31 @@ async function restaurarUltimaCampanha() {
 }
 
 // FIX v1.4.4: limpar formulário e começar do zero (a campanha ativa foi salva no banco)
-if (typeof criarCampanhaCompleta === 'function') { const _origCriarCamp = criarCampanhaCompleta; criarCampanhaCompleta = async function () { const r = await _origCriarCamp.apply(this, arguments); try { _campStepper(); } catch (_) {} return r; }; }
+if (typeof criarCampanhaCompleta === 'function') { const _origCriarCamp = criarCampanhaCompleta; criarCampanhaCompleta = async function () {
+  const auto = !!document.getElementById('cAutoFormatos')?.checked; const antes = (typeof campAtiva !== 'undefined' && campAtiva) ? campAtiva.data?.copy : null;
+  const r = await _origCriarCamp.apply(this, arguments); try { _campStepper(); } catch (_) {}
+  // v3.25: ao criar a campanha, já monta Carrossel e Reel (roteiro → artes → composição/vídeo → hospedagem). Publicar continua sendo decisão sua.
+  if (auto && typeof campAtiva !== 'undefined' && campAtiva && campAtiva.data?.copy && campAtiva.data.copy !== antes) { try { await gerarFormatosAutomaticos(); } catch (e) { addLog('err', '[Formatos] ' + e.message); } }
+  return r; }; }
+async function gerarFormatosAutomaticos() {
+  const c = campAtiva; if (!c) return;
+  try { document.getElementById('campEditorPanel').style.display = 'block'; mostrarEdAba('formatos'); } catch (_) {}
+  const passo = (t) => { addLog('info', '[Formatos] ' + t); toast(t, 'success'); };
+  // CARROSSEL
+  try { mostrarFormato('carr'); passo('🖼 Carrossel: roteiro...'); await gerarCarrosselPack();
+    if (campAtiva?.carrossel?.slides?.length) { passo('🖼 Carrossel: artes 1:1...'); await gerarArtesCarrossel();
+      if (campAtiva.carrossel.slides.every(x => x.imagem_url)) { passo('🖼 Carrossel: texto nas artes...'); await comporArtesCarrossel(true); } }
+  } catch (e) { addLog('err', '[Formatos] Carrossel: ' + e.message); }
+  // REEL
+  try { mostrarFormato('reel'); passo('🎬 Reel: roteiro...'); await gerarReelPack();
+    if (campAtiva?.reel?.slides?.length) { passo('🎬 Reel: artes 9:16...'); await gerarArtesReel();
+      if (campAtiva.reel.slides.every(x => x.imagem_url)) { passo('🎬 Reel: montando o vídeo...'); await montarVideoReel(); if (window._reelBlob) { passo('🎬 Reel: hospedando o vídeo...'); await hospedarReel(); } } }
+  } catch (e) { addLog('err', '[Formatos] Reel: ' + e.message); }
+  try { await salvarCampanhaDB(true); } catch (_) {}
+  try { _campStepper(); } catch (_) {}
+  const ok = [campAtiva?.carrossel?.slides?.length ? 'Carrossel ✓' : 'Carrossel ✗', campAtiva?.reel?.video_url ? 'Reel ✓' : (campAtiva?.reel?.slides?.length ? 'Reel (roteiro/artes) ✓' : 'Reel ✗')].join(' · ');
+  toast('Formatos prontos: ' + ok + ' — revise e agende em Stories · Carrossel · Reel', 'success');
+}
 // v3.23: formatos um por vez (Stories / Carrossel / Reel / Motion)
 function _kbSeg(btn) { document.querySelectorAll('#kbPeriodoSeg button').forEach(b => b.classList.toggle('on', b === btn)); }
 function mostrarFormato(f) {
@@ -25528,7 +25606,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.24] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.25] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -25544,7 +25622,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.24';
+window.__ATX_BUILD_ID__ = 'ATX-v3.25';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
