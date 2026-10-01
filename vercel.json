@@ -83,6 +83,9 @@
     },
     "api/vendas.js": {
       "maxDuration": 120
+    },
+    "api/campanha-disparo.js": {
+      "maxDuration": 120
     }
   },
   "crons": [
@@ -125,6 +128,10 @@
     {
       "path": "/api/metricool?cron=fila",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/campanha-disparo?cron=1",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

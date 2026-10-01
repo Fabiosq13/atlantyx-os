@@ -184,6 +184,51 @@ export default async function handler(req, res) {
       await sql`INSERT INTO media_arquivos (id, conteudo, content_type, tamanho, origem) VALUES (${id}, ${out.toString('base64')}, 'image/jpeg', ${out.length}, 'story-autocampanha')`;
       return { id, url: `${baseUrl(req)}/m/${id}.jpg`, tamanho: out.length };
     },
+    // v3.26: ARTE DE MARCA sem IA — último recurso do /api/image-gen quando Ideogram/OpenAI recusam
+    // (chave inválida, sem crédito). Fundo navy com grafismo, título, apoio e chamada, no formato pedido.
+    arte_marca:     async () => {
+      const { titulo = '', apoio = '', chamada = 'Fale com a Atlantyx', formato = 'ASPECT_1_1', variacao = 0 } = payload;
+      const path = await import('path'); const { fileURLToPath } = await import('url');
+      const dirFontes = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fonts');
+      process.env.FONTCONFIG_PATH = dirFontes; process.env.FONTCONFIG_FILE = path.join(dirFontes, 'fonts.conf');
+      const sharp = (await import('sharp')).default;
+      const f = String(formato).replace(/^ASPECT_/, '');
+      const [W, H] = /9_16|10_16|2_3/.test(f) ? [1080, 1920] : /4_5|3_4/.test(f) ? [1080, 1350] : /16_9|16_10|3_2|4_3/.test(f) ? [1920, 1080] : [1080, 1080];
+      const esc = t => String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const larg = W >= 1900 ? 1.25 : 1;
+      const quebrar = (t, max, n) => { const w = String(t || '').split(/\s+/).filter(Boolean), l = []; let c = ''; for (const x of w) { if ((c + ' ' + x).trim().length > max) { if (c) l.push(c); c = x; } else c = (c + ' ' + x).trim(); } if (c) l.push(c); return l.slice(0, n); };
+      const fsT = H >= 1900 ? 92 : W >= 1900 ? 84 : 78, fsA = Math.round(fsT * 0.46);
+      const soFundo = !String(titulo).trim() && !String(apoio).trim();
+      const tl = soFundo ? [] : quebrar(titulo, Math.round(20 * larg * (W / 1080) / (W >= 1900 ? 1.6 : 1)), 4);
+      const al = quebrar(apoio, Math.round(40 * larg * (W / 1080) / (W >= 1900 ? 1.6 : 1)), 3);
+      const v = (parseInt(variacao) || 0) % 3;
+      const acentos = ['#4F7CFF', '#E0A422', '#9C6DFF'];
+      const ac = acentos[v];
+      const x0 = Math.round(W * 0.074);
+      const blocoH = tl.length * fsT * 1.12 + (al.length ? 40 + al.length * fsA * 1.35 : 0);
+      let y = Math.round(H * 0.5 - blocoH / 2 + fsT * 0.8);
+      const circ = [[W * 0.86, H * 0.16, W * 0.32], [W * 0.92, H * 0.88, W * 0.22], [W * 0.08, H * 0.95, W * 0.12]];
+      const grade = Array.from({ length: 12 }, (_, i) => `<line x1="${(i + 1) * W / 12}" y1="0" x2="${(i + 1) * W / 12}" y2="${H}" stroke="#FFFFFF" stroke-opacity=".035"/>`).join('');
+      const barras = Array.from({ length: 7 }, (_, i) => { const bh = H * (0.05 + ((i * 37 + v * 13) % 23) / 100); return `<rect x="${W - x0 - (7 - i) * 34}" y="${H * 0.93 - bh}" width="20" height="${bh}" rx="4" fill="${ac}" fill-opacity="${0.25 + i * 0.08}"/>`; }).join('');
+      const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0B1D4D"/><stop offset=".55" stop-color="#132C72"/><stop offset="1" stop-color="#1A3A8F"/></linearGradient>
+        <radialGradient id="gl" cx=".85" cy=".15" r=".6"><stop offset="0" stop-color="${ac}" stop-opacity=".35"/><stop offset="1" stop-color="${ac}" stop-opacity="0"/></radialGradient></defs>
+        <rect width="${W}" height="${H}" fill="url(#bg)"/><rect width="${W}" height="${H}" fill="url(#gl)"/>${grade}
+        ${circ.map(([cx, cy, r]) => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${ac}" stroke-opacity=".22" stroke-width="2"/>`).join('')}
+        <rect x="0" y="0" width="${W}" height="12" fill="#E0A422"/>
+        <text x="${x0}" y="${Math.round(H * 0.09) + 20}" font-family="Roboto, Arial, sans-serif" font-size="${Math.round(fsT * 0.4)}" font-weight="700" fill="#E0A422" letter-spacing="5">ATLANTYX</text>
+        ${soFundo ? '' : `<rect x="${x0}" y="${y - fsT * 1.25}" width="90" height="8" rx="4" fill="${ac}"/>`}
+        ${tl.map((l, i) => `<text x="${x0}" y="${y + i * fsT * 1.12}" font-family="Roboto, Arial, sans-serif" font-size="${fsT}" font-weight="800" fill="#FFFFFF">${esc(l)}</text>`).join('')}
+        ${al.map((l, i) => `<text x="${x0}" y="${y + tl.length * fsT * 1.12 + 30 + i * fsA * 1.35}" font-family="Roboto, Arial, sans-serif" font-size="${fsA}" fill="#C9D3EE">${esc(l)}</text>`).join('')}
+        ${barras}
+        ${soFundo ? '' : `<rect x="${x0}" y="${H * 0.93 - fsA * 1.9}" width="${Math.min(W * 0.55, chamada.length * fsA * 0.6 + 70)}" height="${fsA * 1.9}" rx="${fsA * 0.95}" fill="#E0A422"/>
+        <text x="${x0 + 35}" y="${H * 0.93 - fsA * 0.62}" font-family="Roboto, Arial, sans-serif" font-size="${fsA}" font-weight="700" fill="#0B1D4D">${esc(chamada)}</text>`}
+      </svg>`;
+      const out = await sharp(Buffer.from(svg)).jpeg({ quality: 90, mozjpeg: true }).toBuffer();
+      const sql = await getSql(); const id = novoId();
+      await sql`INSERT INTO media_arquivos (id, conteudo, content_type, tamanho, origem) VALUES (${id}, ${out.toString('base64')}, 'image/jpeg', ${out.length}, 'arte-marca')`;
+      return { id, url: `${baseUrl(req)}/m/${id}.jpg`, tamanho: out.length, largura: W, altura: H };
+    },
     // v2.76: testa sharp (JPEG) e a fonte dos Stories no ambiente real
     diagnostico_imagem: async () => {
       const out = { jpeg: false, fonte: false };

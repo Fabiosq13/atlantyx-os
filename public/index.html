@@ -1163,6 +1163,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <div style="font-size:10.5px;color:var(--t2);" id="waAgentDesc">Busca leads do HubSpot automaticamente e gera mensagens personalizadas. Voce apenas revisa e aprova.</div>
       </div>
       <div style="display:flex;gap:7px;align-items:center;">
+        <button class="btn btn-gn" onclick="disparoAbrir('whatsapp')" title="Envia a mensagem de WhatsApp de uma campanha para uma lista">📣 Disparar campanha</button>
         <select class="fsel" id="wFiltro" style="width:170px;font-size:11px;">
           <option value="novos">Leads novos</option>
           <option value="score_a">Score A (quentes)</option>
@@ -2288,7 +2289,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
               <textarea class="fta" id="cCtx" style="min-height:55px;" placeholder="Ex: Focar em empresas que anunciaram novo ERP..."></textarea>
             </div>
             <label style="display:flex;gap:6px;align-items:center;font-size:11px;margin-bottom:8px;cursor:pointer;" title="Depois da narrativa e da copy, o sistema já monta o Carrossel (roteiro, artes e texto na arte) e o Reel (roteiro, artes, vídeo e hospedagem). Nada é publicado sem você agendar.">
-              <input type="checkbox" id="cAutoFormatos" checked/> Gerar automaticamente o <b>Carrossel</b> e o <b>Reel</b> ao criar (usa ~10 imagens)</label>
+              <input type="checkbox" id="cAutoFormatos" checked/> Gerar automaticamente <b>imagem</b>, <b>Stories</b>, <b>Carrossel</b> e <b>Reel</b> ao criar (~15 imagens)</label>
             <div style="display:flex;gap:8px;align-items:center;">
               <button class="btn btn-or" style="flex:1;justify-content:center;font-weight:700;" id="btnCampanha" onclick="criarCampanhaCompleta()">&#9670; Criar campanha com IA</button>
               <button class="btn btn-gn" style="font-size:11px;" id="btnSalvarCampanha" onclick="salvarEdicoesCampanha(true)" title="Grava nome, objetivo, canal, redes, datas e contexto da campanha aberta (sem re-rodar a IA)">💾 Salvar</button>
@@ -2425,6 +2426,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
         </div>
         <!-- ABA FORMATOS (v3.23: um formato por vez) -->
         <div id="edFormatos" style="display:none;">
+          <div id="fmtAutoStatus" style="display:none;background:var(--bg3);border:1px solid var(--bd2);border-radius:8px;padding:10px 12px;margin-bottom:10px;"></div>
           <div class="seg" style="margin-bottom:10px;" id="fmtSeg">
             <button data-f="stories" onclick="mostrarFormato('stories')">📱 Stories 9:16</button>
             <button data-f="carr" onclick="mostrarFormato('carr')">🖼 Carrossel 1:1</button>
@@ -2479,7 +2481,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
               <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
                 <button class="btn btn-p" style="font-size:10.5px;" onclick="gerarReelPack()">① Roteiro (IA)</button>
                 <button class="btn btn-or" style="font-size:10.5px;" onclick="gerarArtesReel()" id="btnArtesReel" disabled>② Artes 9:16</button>
-                <button class="btn" style="font-size:10.5px;color:var(--gold);border-color:var(--gold);" onclick="montarVideoReel()" id="btnMontarReel" disabled>③ Montar vídeo</button>
+                <button class="btn" style="font-size:10.5px;color:var(--gold);border-color:var(--gold);" onclick="montarVideoReel()" id="btnMontarReel" title="Gera as artes que faltarem, monta o MP4 e hospeda">③ Gerar vídeo</button>
                 <button class="btn" style="font-size:10.5px;display:none;" onclick="hospedarReel()" id="btnHostReel" disabled>☁ Hospedar</button>
                 <button class="btn btn-gn" style="font-size:10.5px;" onclick="publicarReel()" id="btnPubReel" disabled>④ Agendar</button>
                 <select id="reelDur" class="fsel" style="font-size:10px;width:auto;"><option value="2500">2,5 s/slide</option><option value="3000" selected>3 s/slide</option><option value="3500">3,5 s/slide</option></select>
@@ -2546,6 +2548,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <button class="btn btn-gn" onclick="aprovarCampanhaFinal()" style="flex:1;justify-content:center;font-weight:700;">④ Aprovar e enviar ao Kanban</button>
           <button class="btn btn-g" onclick="salvarCampanhaDB()">💾 Salvar rascunho</button>
           <button class="btn btn-g" onclick="duplicarCampanha()" title="Cria uma cópia desta campanha">⧉ Duplicar</button>
+          <button class="btn btn-g" onclick="disparoAbrir(document.getElementById('cRedeEmail')?.checked && !document.getElementById('cRedeWA')?.checked ? 'email' : 'whatsapp')" title="Envia o texto de WhatsApp/E-mail da campanha para a sua lista de leads">📣 Disparar WhatsApp / E-mail</button>
         </div>
       </div>
     </div>
@@ -2648,6 +2651,10 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
   <!-- INBOUND EMAIL -->
   <div class="page" id="page-s2inbound">
+    <div style="display:flex;align-items:center;gap:10px;background:var(--b2);border:1px solid rgba(79,124,255,.25);border-radius:9px;padding:10px 14px;margin-bottom:11px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:220px;font-size:11px;color:var(--t2);line-height:1.5;"><b style="color:var(--t1);">Enviar de verdade:</b> o e-mail da campanha (gerado na Nova Campanha com ✉ Email marcado) pode ser disparado para leads captados, base de prospecção, HubSpot ou uma lista colada — com descadastro, rastreio de abertura e clique.</div>
+      <button class="btn btn-gn" onclick="disparoAbrir('email')">📣 Disparar e-mail de campanha</button>
+    </div>
     <div class="kg k2">
       <div class="panel">
         <div class="ph"><div class="pt">Configurar E-mail / Cadência</div></div>
@@ -9114,6 +9121,15 @@ function vendasAbrir(p) {
   s.onerror = () => { const a = document.getElementById(p === 's7painel' ? 'vdPainel' : 'vdProp'); if (a) a.innerHTML = '<div style="color:var(--red);padding:20px;">Não consegui carregar /vendas-ui.js</div>'; };
   document.head.appendChild(s);
 }
+// v3.26: disparo da campanha por WhatsApp / E-mail (módulo carregado sob demanda)
+function disparoAbrir(canal, campanhaId) {
+  const ir = () => DISP.abrir({ canal, campanhaId: campanhaId || (typeof campAtiva !== 'undefined' && campAtiva ? campAtiva.id : null) });
+  if (window.DISP) return ir();
+  if (!window._todasCampanhas?.length && typeof carregarCampanhasDB === 'function') { try { carregarCampanhasDB(); } catch (_) {} }
+  const s = document.createElement('script'); s.src = '/disparo-ui.js?v=3.26'; s.onload = ir;
+  s.onerror = () => toast('Não consegui carregar /disparo-ui.js', 'error');
+  document.head.appendChild(s);
+}
 function qaAbrir() {
   if (window.QA) return QA.abrir();
   const s = document.createElement('script'); s.src = '/qa-agent.js?v=3.24';
@@ -9234,7 +9250,10 @@ async function gerarImagemCampanha() {
     const r = await fetch('/api/image-gen', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: promptFinal, formato, estilo, quantidade: qtd })
+      body: JSON.stringify({ prompt: promptFinal, formato, estilo, quantidade: qtd,
+        titulo: (document.getElementById('edHeadline')?.value || campAtiva?.data?.copy?.versoes?.[0]?.headline || '').substring(0, 90),
+        apoio: (document.getElementById('edSubheadline')?.value || campAtiva?.data?.copy?.versoes?.[0]?.subheadline || '').substring(0, 140),
+        chamada: (document.getElementById('edCtaCopy')?.value || campAtiva?.data?.copy?.versoes?.[0]?.cta || '').substring(0, 34) })
     });
     // v3.25: mostra o erro real do gerador (antes: "Servidor 500 — verifique a chave" para qualquer falha)
     const data = await r.json().catch(() => ({ error: 'Servidor ' + r.status + ' sem resposta legível' }));
@@ -9254,7 +9273,8 @@ async function gerarImagemCampanha() {
     if (tag) { tag.textContent = imagens.length + ' imagem(ns) gerada(s)'; tag.className = 'tag live'; }
 
     result.innerHTML = '<div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--green);margin-bottom:10px;">'
-      + imagens.length + ' IMAGEM(NS) GERADA(S) — IDEOGRAM</div>'
+      + imagens.length + ' IMAGEM(NS) GERADA(S) — ' + (data.provedor === 'arte-marca' ? 'ARTE DE MARCA (sem IA)' : String(data.provedor || 'ideogram').toUpperCase()) + '</div>'
+      + (data.fallback && data.aviso ? '<div style="background:rgba(224,164,34,.12);border:1px solid rgba(224,164,34,.4);border-radius:7px;padding:8px 10px;font-size:10.5px;color:var(--t1);line-height:1.5;margin-bottom:10px;">⚠ ' + data.aviso.replace(/</g, '&lt;') + '</div>' : '')
       + '<div style="display:grid;grid-template-columns:repeat(' + Math.min(imagens.length, 2) + ',1fr);gap:8px;">'
       + imagens.map((img, i) => {
           const url = img.url;
@@ -10495,7 +10515,7 @@ function _coletarFormCampanha() {
   const g = id => document.getElementById(id)?.value || '';
   return { nome: g('cNome'), obj: g('cObj'), canal: g('cCanal'), pub: g('cPublico'), orc: g('cOrc'), ctx: g('cCtx'),
     data_inicio: g('cDataInicio') || null, data_fim: g('cDataFim') || null,
-    redes_ativas: { linkedin: !!document.getElementById('cRedeLI')?.checked, instagram: !!document.getElementById('cRedeIG')?.checked, facebook: !!document.getElementById('cRedeFB')?.checked, whatsapp: !!document.getElementById('cRedeWA')?.checked, email: !!document.getElementById('cRedeEM')?.checked } };
+    redes_ativas: { linkedin: !!document.getElementById('cRedeLI')?.checked, instagram: !!document.getElementById('cRedeIG')?.checked, facebook: !!document.getElementById('cRedeFB')?.checked, whatsapp: !!document.getElementById('cRedeWA')?.checked, email: !!document.getElementById('cRedeEmail')?.checked } };
 }
 async function salvarEdicoesCampanha(manual) {
   if (!campAtiva) { if (manual) toast('Nenhuma campanha aberta — crie uma primeiro', 'error'); return; }
@@ -10516,7 +10536,7 @@ async function salvarEdicoesCampanha(manual) {
 }
 function _agendarAutoSaveForm() { clearTimeout(_salvarEdTimer); _salvarEdTimer = setTimeout(() => salvarEdicoesCampanha(false), 1500); }
 setTimeout(() => {
-  ['cNome','cObj','cCanal','cPublico','cOrc','cCtx','cDataInicio','cDataFim','cRedeLI','cRedeIG','cRedeFB','cRedeWA','cRedeEM'].forEach(id => {
+  ['cNome','cObj','cCanal','cPublico','cOrc','cCtx','cDataInicio','cDataFim','cRedeLI','cRedeIG','cRedeFB','cRedeWA','cRedeEmail'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
     el.addEventListener('change', _agendarAutoSaveForm); el.addEventListener('input', _agendarAutoSaveForm);
   });
@@ -10729,29 +10749,94 @@ async function restaurarUltimaCampanha() {
 
 // FIX v1.4.4: limpar formulário e começar do zero (a campanha ativa foi salva no banco)
 if (typeof criarCampanhaCompleta === 'function') { const _origCriarCamp = criarCampanhaCompleta; criarCampanhaCompleta = async function () {
-  const auto = !!document.getElementById('cAutoFormatos')?.checked; const antes = (typeof campAtiva !== 'undefined' && campAtiva) ? campAtiva.data?.copy : null;
+  const auto = !!document.getElementById('cAutoFormatos')?.checked; const antes = (typeof campAtiva !== 'undefined' && campAtiva) ? campAtiva.data?.copy : null; const idAntes = (typeof campAtiva !== 'undefined' && campAtiva) ? campAtiva.id : null;
   const r = await _origCriarCamp.apply(this, arguments); try { _campStepper(); } catch (_) {}
   // v3.25: ao criar a campanha, já monta Carrossel e Reel (roteiro → artes → composição/vídeo → hospedagem). Publicar continua sendo decisão sua.
-  if (auto && typeof campAtiva !== 'undefined' && campAtiva && campAtiva.data?.copy && campAtiva.data.copy !== antes) { try { await gerarFormatosAutomaticos(); } catch (e) { addLog('err', '[Formatos] ' + e.message); } }
+  if (auto && typeof campAtiva !== 'undefined' && campAtiva && campAtiva.data?.copy && (campAtiva.data.copy !== antes || campAtiva.id !== idAntes)) { try { await gerarFormatosAutomaticos(); } catch (e) { addLog('err', '[Formatos] ' + e.message); } }
+  // v3.26: WhatsApp/E-mail não passam pelo Metricool — avisa onde disparar
+  try { const ra = campAtiva?.redes_ativas || {}; if (campAtiva?.data?.copy && campAtiva.data.copy !== antes && (ra.whatsapp || ra.email || document.getElementById('cRedeWA')?.checked || document.getElementById('cRedeEmail')?.checked))
+    setTimeout(() => toast('Textos de ' + [(ra.whatsapp || document.getElementById('cRedeWA')?.checked) && 'WhatsApp', (ra.email || document.getElementById('cRedeEmail')?.checked) && 'E-mail'].filter(Boolean).join(' e ') + ' prontos — envie em "📣 Disparar WhatsApp / E-mail" no fim da campanha', 'success'), 3500); } catch (_) {}
   return r; }; }
-async function gerarFormatosAutomaticos() {
-  const c = campAtiva; if (!c) return;
+// v3.26: formatos automáticos — agora inclui a IMAGEM PRINCIPAL e os STORIES (antes só Carrossel e Reel),
+// gera as artes em PARALELO (3 por vez; antes 1 a 1, ~15 s cada → 3–4 min só de espera) e mostra um
+// checklist com o erro real de cada etapa no topo da aba Formatos (antes só toasts que sumiam em 3 s).
+const _FMT_ETAPAS = [['img', '🎨 Imagem principal'], ['stories', '📱 Stories 9:16'], ['carr', '🖼 Carrossel 1:1'], ['reel', '🎬 Reel']];
+function _fmtStatus(k, est, txt) {
+  window._fmtAuto = window._fmtAuto || {}; window._fmtAuto[k] = { est, txt };
+  const box = document.getElementById('fmtAutoStatus'); if (!box) return;
+  const cor = { run: 'var(--blue)', ok: 'var(--green)', err: 'var(--red)', wait: 'var(--t3)', warn: 'var(--gold)' };
+  const ic = { run: '◌', ok: '✓', err: '✕', wait: '·', warn: '!' };
+  box.style.display = 'block';
+  box.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><b style="font-size:11.5px;flex:1;">Formatos automáticos</b>'
+    + '<button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="gerarFormatosAutomaticos(true)" ' + (window._fmtRodando ? 'disabled' : '') + '>↻ Gerar o que falta</button></div>'
+    + _FMT_ETAPAS.map(([id, nome]) => { const e = window._fmtAuto[id] || { est: 'wait', txt: 'aguardando' };
+      return '<div style="display:flex;gap:8px;font-size:11px;padding:3px 0;"><span style="color:' + cor[e.est] + ';width:12px;font-weight:700;">' + ic[e.est] + '</span><span style="width:130px;">' + nome + '</span><span style="color:' + (e.est === 'err' ? 'var(--red)' : 'var(--t2)') + ';flex:1;min-width:0;">' + String(e.txt || '').replace(/</g, '&lt;') + '</span></div>'; }).join('');
+}
+// gera as artes que faltam, `conc` por vez; devolve a lista de falhas com o motivo real
+async function _artesParalelo(itens, formato, aoTerminar, conc = 3) {
+  const falhas = []; let prox = 0;
+  const um = async () => { while (prox < itens.length) { const i = prox++; const it = itens[i]; if (it.imagem_url) continue;
+    try {
+      const r = await fetch('/api/image-gen', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: it.prompt_imagem || (formato === 'ASPECT_9_16' ? 'vertical corporate scene, dark navy and electric blue, clean center' : 'square corporate abstract scene, dark navy and electric blue, clean bottom third'), formato, estilo: 'DESIGN', quantidade: 1 }) });
+      const d = await r.json().catch(() => ({ error: 'HTTP ' + r.status }));
+      it.imagem_url = d.imagens?.[0]?.url || d.imagens?.[0] || '';
+      if (!it.imagem_url) falhas.push('arte ' + (i + 1) + ': ' + (d.error || 'sem retorno') + (d.dica ? ' — ' + d.dica : ''));
+      else if (d.fallback) it.arte_marca = true;
+    } catch (e) { falhas.push('arte ' + (i + 1) + ': ' + e.message); }
+    try { aoTerminar && aoTerminar(); } catch (_) {} } };
+  await Promise.all(Array.from({ length: Math.min(conc, itens.length) }, um));
+  return falhas;
+}
+async function gerarFormatosAutomaticos(manual) {
+  const c = campAtiva; if (!c) { if (manual) toast('Abra ou crie uma campanha primeiro', 'error'); return; }
+  if (window._fmtRodando) { toast('Os formatos já estão sendo gerados', 'info'); return; }
+  window._fmtRodando = true; window._fmtAuto = {};
   try { document.getElementById('campEditorPanel').style.display = 'block'; mostrarEdAba('formatos'); } catch (_) {}
-  const passo = (t) => { addLog('info', '[Formatos] ' + t); toast(t, 'success'); };
-  // CARROSSEL
-  try { mostrarFormato('carr'); passo('🖼 Carrossel: roteiro...'); await gerarCarrosselPack();
-    if (campAtiva?.carrossel?.slides?.length) { passo('🖼 Carrossel: artes 1:1...'); await gerarArtesCarrossel();
-      if (campAtiva.carrossel.slides.every(x => x.imagem_url)) { passo('🖼 Carrossel: texto nas artes...'); await comporArtesCarrossel(true); } }
-  } catch (e) { addLog('err', '[Formatos] Carrossel: ' + e.message); }
-  // REEL
-  try { mostrarFormato('reel'); passo('🎬 Reel: roteiro...'); await gerarReelPack();
-    if (campAtiva?.reel?.slides?.length) { passo('🎬 Reel: artes 9:16...'); await gerarArtesReel();
-      if (campAtiva.reel.slides.every(x => x.imagem_url)) { passo('🎬 Reel: montando o vídeo...'); await montarVideoReel(); if (window._reelBlob) { passo('🎬 Reel: hospedando o vídeo...'); await hospedarReel(); } } }
-  } catch (e) { addLog('err', '[Formatos] Reel: ' + e.message); }
-  try { await salvarCampanhaDB(true); } catch (_) {}
-  try { _campStepper(); } catch (_) {}
-  const ok = [campAtiva?.carrossel?.slides?.length ? 'Carrossel ✓' : 'Carrossel ✗', campAtiva?.reel?.video_url ? 'Reel ✓' : (campAtiva?.reel?.slides?.length ? 'Reel (roteiro/artes) ✓' : 'Reel ✗')].join(' · ');
-  toast('Formatos prontos: ' + ok + ' — revise e agende em Stories · Carrossel · Reel', 'success');
+  _FMT_ETAPAS.forEach(([k]) => _fmtStatus(k, 'wait', 'na fila'));
+  const log = t => addLog('info', '[Formatos] ' + t);
+  const arteMarca = l => l.some(x => x.arte_marca) ? ' (arte de marca: o gerador de IA não respondeu)' : '';
+  try {
+    // 1) IMAGEM PRINCIPAL (posts de LinkedIn/Instagram/Facebook) — só se ainda não tem
+    if (!(campAtiva.imagens || []).length) {
+      _fmtStatus('img', 'run', 'gerando com o brief visual da campanha...'); log('imagem principal');
+      try { await gerarImagemCampanha(); } catch (e) { addLog('err', '[Formatos] imagem: ' + e.message); }
+      _fmtStatus('img', (campAtiva.imagens || []).length ? 'ok' : 'err', (campAtiva.imagens || []).length ? (campAtiva.imagens.length + ' imagem(ns) — a 1ª já está aprovada') : (document.getElementById('campImgResult')?.textContent || 'falhou').trim().substring(0, 220));
+    } else _fmtStatus('img', 'ok', 'já existia');
+    // 2+3+4) roteiros em paralelo (3 chamadas de IA independentes)
+    const precisa = { stories: !campAtiva.stories?.length, carr: !campAtiva.carrossel?.slides?.length, reel: !campAtiva.reel?.slides?.length };
+    ['stories', 'carr', 'reel'].forEach(k => _fmtStatus(k, 'run', precisa[k] ? 'escrevendo o roteiro...' : 'roteiro já existe'));
+    await Promise.all([precisa.stories && gerarStoryPack(), precisa.carr && gerarCarrosselPack(), precisa.reel && gerarReelPack()].filter(Boolean).map(p => p.catch(e => addLog('err', '[Formatos] roteiro: ' + e.message))));
+    const st = campAtiva.stories || [], cs = campAtiva.carrossel?.slides || [], rs = campAtiva.reel?.slides || [];
+    if (!st.length) _fmtStatus('stories', 'err', 'roteiro não foi gerado — veja o painel Stories');
+    if (!cs.length) _fmtStatus('carr', 'err', 'roteiro não foi gerado — veja o painel Carrossel');
+    if (!rs.length) _fmtStatus('reel', 'err', 'roteiro não foi gerado — veja o painel Reel');
+    // artes: todas as peças numa fila só, 3 por vez
+    if (st.length) _fmtStatus('stories', 'run', 'gerando ' + st.filter(x => !x.imagem_url).length + ' arte(s) 9:16...');
+    if (cs.length) _fmtStatus('carr', 'run', 'gerando ' + cs.filter(x => !x.imagem_url).length + ' arte(s) 1:1...');
+    if (rs.length) _fmtStatus('reel', 'run', 'gerando ' + rs.filter(x => !x.imagem_url).length + ' arte(s) 9:16...');
+    const [fS, fC, fR] = await Promise.all([
+      st.length ? _artesParalelo(st, 'ASPECT_9_16', () => { try { _renderStoryPack(); } catch (_) {} }, 2) : [],
+      cs.length ? _artesParalelo(cs, 'ASPECT_1_1', () => { try { _renderCarrossel(); } catch (_) {} }, 2) : [],
+      rs.length ? _artesParalelo(rs, 'ASPECT_9_16', () => { try { _renderReel(); } catch (_) {} }, 2) : []]);
+    try { salvarCampanhaLocal(campAtiva); await salvarCampanhaNoBanco(campAtiva, 'formatos artes'); } catch (_) {}
+    // composição (texto gravado na arte) e vídeo
+    if (st.length) { if (st.every(x => x.imagem_url)) { _fmtStatus('stories', 'run', 'gravando texto e CTA nas artes...'); try { mostrarFormato('stories'); await comporArtesStories(true); _fmtStatus('stories', 'ok', st.length + ' stories prontos' + arteMarca(st) + ' — revise e agende'); } catch (e) { _fmtStatus('stories', 'warn', 'artes ok, composição falhou: ' + e.message); } }
+      else _fmtStatus('stories', 'err', fS.join(' · ').substring(0, 300)); }
+    if (cs.length) { if (cs.every(x => x.imagem_url)) { _fmtStatus('carr', 'run', 'gravando título e apoio nas artes...'); try { mostrarFormato('carr'); await comporArtesCarrossel(true); _fmtStatus('carr', 'ok', cs.length + ' slides prontos' + arteMarca(cs) + ' — revise e publique'); } catch (e) { _fmtStatus('carr', 'warn', 'artes ok, composição falhou: ' + e.message); } }
+      else _fmtStatus('carr', 'err', fC.join(' · ').substring(0, 300)); }
+    if (rs.length) { if (rs.every(x => x.imagem_url)) { _fmtStatus('reel', 'run', 'montando o vídeo...'); try { mostrarFormato('reel'); await montarVideoReel();
+          _fmtStatus('reel', campAtiva.reel?.video_url_publica ? 'ok' : 'warn', campAtiva.reel?.video_url_publica ? 'vídeo pronto e hospedado' + arteMarca(rs) : campAtiva.reel?.video_url ? 'vídeo montado e enviado, mas a URL pública não respondeu — veja o aviso no painel Reel (🔍 Testar hospedagem)' : (window._reelBlob ? 'vídeo montado, mas a hospedagem falhou — use ⬆ Hospedar no painel Reel' : 'artes prontas; o navegador não montou o vídeo — use Chrome/Edge e clique em Montar vídeo')); }
+        catch (e) { _fmtStatus('reel', 'warn', 'artes ok, vídeo falhou: ' + e.message); } }
+      else _fmtStatus('reel', 'err', fR.join(' · ').substring(0, 300)); }
+  } finally {
+    window._fmtRodando = false;
+    try { await salvarCampanhaDB(true); } catch (_) {}
+    try { _campStepper(); } catch (_) {}
+    _fmtStatus('img', (window._fmtAuto.img || {}).est || 'wait', (window._fmtAuto.img || {}).txt);
+  }
+  const res = _FMT_ETAPAS.map(([k, n]) => (window._fmtAuto[k]?.est === 'ok' ? '✓ ' : '✕ ') + n.replace(/^\S+\s/, '')).join(' · ');
+  toast('Formatos: ' + res, Object.values(window._fmtAuto).some(e => e.est === 'err') ? 'error' : 'success');
 }
 // v3.23: formatos um por vez (Stories / Carrossel / Reel / Motion)
 function _kbSeg(btn) { document.querySelectorAll('#kbPeriodoSeg button').forEach(b => b.classList.toggle('on', b === btn)); }
@@ -10838,7 +10923,7 @@ async function rerodarCampanhaAtiva() {
   try {
     const r = await fetch('/api/s2-creative', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'campanha_completa', payload: { campanha: nome, objetivo: obj, canal, publico: pub, orcamento: orc, contexto: ctx, redes: Object.entries((typeof _redesMarcadas !== 'undefined' && _redesMarcadas) || (campAtiva?.redes_ativas) || { linkedin: document.getElementById('cRedeLI')?.checked, instagram: document.getElementById('cRedeIG')?.checked, facebook: document.getElementById('cRedeFB')?.checked, whatsapp: document.getElementById('cRedeWA')?.checked, email: document.getElementById('cRedeEM')?.checked }).filter(([k,v]) => v).map(([k]) => k) } })
+      body: JSON.stringify({ action: 'campanha_completa', payload: { campanha: nome, objetivo: obj, canal, publico: pub, orcamento: orc, contexto: ctx, redes: Object.entries((typeof _redesMarcadas !== 'undefined' && _redesMarcadas) || (campAtiva?.redes_ativas) || { linkedin: document.getElementById('cRedeLI')?.checked, instagram: document.getElementById('cRedeIG')?.checked, facebook: document.getElementById('cRedeFB')?.checked, whatsapp: document.getElementById('cRedeWA')?.checked, email: document.getElementById('cRedeEmail')?.checked }).filter(([k,v]) => v).map(([k]) => k) } })
     });
     if (!r.ok) {
       let detR = '';
@@ -24701,7 +24786,7 @@ async function gerarCampanhaAutomatica(opts = {}) {
       if (campAtiva.reel?.slides?.length) {
         await gerarArtesReel();
         if (campAtiva.reel.slides.every(x => x.imagem_url)) {
-          await montarVideoReel();
+          await montarVideoReel(true);
           if (window._reelBlob) {
             await hospedarReel();
             if (campAtiva.reel.video_url && temMc2) {
@@ -25198,7 +25283,7 @@ function _renderReel() {
   const leg = document.getElementById('reelLegenda'); if (leg && r.legenda != null && leg.value !== r.legenda) leg.value = r.legenda;
   const temArte = sl.every(x => x.imagem_url);
   const on = (id, v) => { const b = document.getElementById(id); if (b) b.disabled = !v; };
-  on('btnArtesReel', true); on('btnMontarReel', temArte); on('btnHostReel', !!r.video_blob_pronto); on('btnPubReel', !!r.video_url);
+  on('btnArtesReel', true); on('btnMontarReel', !!(r.slides || []).length); on('btnHostReel', !!r.video_blob_pronto); on('btnPubReel', !!r.video_url);
   if (r.video_url) {
     const vurl = r.video_url_publica || _urlMidiaPublica(r.video_url, (r.video_mime||'').includes('webm') ? 'webm' : 'mp4');
     const v = document.getElementById('reelVideo');
@@ -25299,7 +25384,39 @@ async function _carregarMp4Muxer() {
   }
   return false;
 }
-async function montarVideoReel() {
+// v3.26: "Montar vídeo" de um clique — antes o botão ficava desabilitado enquanto faltasse qualquer arte
+// (o clique não fazia nada) e qualquer erro no meio (imagem expirada, canvas bloqueado) sumia sem aviso.
+// Agora: gera roteiro e artes que faltam, monta, hospeda e mostra o erro real.
+async function montarVideoReel(semHospedar) {
+  if (!campAtiva) { toast('Abra ou crie uma campanha primeiro', 'error'); return; }
+  if (window._reelMontando) { toast('O vídeo já está sendo montado', 'info'); return; }
+  window._reelMontando = true;
+  const btn = document.getElementById('btnMontarReel'); const txt = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = 'Montando...'; }
+  try {
+    if (!campAtiva.reel?.slides?.length) { _reelSet('Sem roteiro — escrevendo o roteiro com IA...', 'Gerando'); await gerarReelPack(); }
+    const sl = campAtiva.reel?.slides || [];
+    if (!sl.length) throw new Error('não consegui gerar o roteiro do Reel (veja o log)');
+    const faltam = sl.filter(x => !x.imagem_url).length;
+    if (faltam) { _reelSet('Gerando ' + faltam + ' arte(s) 9:16 que faltam...', 'Artes');
+      const f = await _artesParalelo(sl, 'ASPECT_9_16', () => { try { _renderReel(); } catch (_) {} }, 3);
+      try { await _salvarReel(); } catch (_) {}
+      if (f.length) throw new Error('faltaram artes: ' + f.join(' · ')); }
+    await _montarVideoReelCore();
+    if (!window._reelBlob || !campAtiva.reel?.video_blob_pronto) throw new Error('o navegador não gerou o vídeo — use Chrome ou Edge atualizados');
+    if (!semHospedar) { await hospedarReel(); if (!campAtiva.reel?.video_url) addLog('warn', '[Reel] vídeo montado mas não hospedado — clique em ☁ Hospedar'); }
+    try { await _salvarReel(); } catch (_) {}
+    toast(campAtiva.reel?.video_url_publica ? '🎬 Reel pronto e hospedado' : campAtiva.reel?.video_url ? '🎬 Vídeo montado; a hospedagem não foi confirmada (veja o painel Reel)' : '🎬 Vídeo montado (baixe ou hospede)', campAtiva.reel?.video_url_publica ? 'success' : 'info');
+  } catch (e) {
+    const m = /SecurityError|tainted|insecure/i.test(e.message || e.name) ? 'o navegador bloqueou a gravação porque uma arte veio de outro site sem permissão — clique em "② Artes 9:16" para gerar de novo' : (e.message || String(e));
+    addLog('err', '[Reel] ' + m); _reelSet('Erro: ' + m, 'Erro'); toast('Vídeo não gerado: ' + m, 'error');
+  } finally {
+    window._reelMontando = false;
+    if (btn) { btn.innerHTML = txt; btn.disabled = false; }
+    try { _renderReel(); } catch (_) {}
+  }
+}
+async function _montarVideoReelCore() {
   const r = campAtiva?.reel; const sl = r?.slides || [];
   if (!sl.length || !sl.every(x => x.imagem_url)) { toast('Gere/cole as artes de todos os slides', 'error'); return; }
   const canvas = document.getElementById('reelCanvas');
@@ -25309,8 +25426,11 @@ async function montarVideoReel() {
   const ehMp4 = mime.startsWith('video/mp4');
   _reelSet('Carregando imagens...', 'Montando');
   let imgs;
-  try { imgs = await Promise.all(sl.map(x => _reelLoadImg(x.imagem_url))); }
-  catch (e) { toast(e.message, 'error'); _reelSet('Falha ao carregar imagens (CORS). Hospede as artes primeiro.', 'Erro'); return; }
+  // v3.26: arte que não carrega (link do Ideogram expirado, CORS) é gerada de novo, em vez de abortar o vídeo
+  imgs = await Promise.all(sl.map(async (x, i) => { try { return await _reelLoadImg(x.imagem_url); } catch (e1) {
+    addLog('warn', '[Reel] arte ' + (i + 1) + ' não carregou (' + e1.message + ') — gerando de novo'); x.imagem_url = '';
+    const f = await _artesParalelo([x], 'ASPECT_9_16', null, 1); if (!x.imagem_url) throw new Error('arte ' + (i + 1) + ' não carregou e não consegui gerar outra: ' + (f[0] || ''));
+    return await _reelLoadImg(x.imagem_url); } }));
 
   const W = 720, H = 1280, FPS = 30, DUR = parseInt(document.getElementById('reelDur')?.value || '3000'), FADE = 450;
   const total = sl.length * DUR;
@@ -25606,7 +25726,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.25] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.26] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -25622,7 +25742,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.25';
+window.__ATX_BUILD_ID__ = 'ATX-v3.26';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

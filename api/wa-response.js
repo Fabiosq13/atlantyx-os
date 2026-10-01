@@ -25,6 +25,23 @@ export default async function handler(req, res) {
       return res.status(200).json({ ignored: true, reason: 'Sem dados suficientes' });
     }
 
+    // v3.26: descadastro (LGPD) — campanhas por WhatsApp pedem "responda SAIR"
+    if (/^\s*(sair|parar|pare|stop|descadastrar|remover|nao quero|não quero)[\s.!]*$/i.test(mensagemRecebida)) {
+      try {
+        const { neon } = await import('@neondatabase/serverless');
+        const sql = neon(process.env.DATABASE_URL);
+        const { garantirTabelas, normTelefone } = await import('./campanha-disparo.js');
+        await garantirTabelas(sql);
+        const destino = normTelefone(phone) || String(phone).replace(/\D/g, '');
+        await sql`INSERT INTO disparo_optout (destino, canal, motivo) VALUES (${destino}, 'whatsapp', 'respondeu SAIR') ON CONFLICT (destino) DO NOTHING`;
+        await sql`UPDATE disparo_envios SET status = 'descadastrado' WHERE destino = ${destino} AND status = 'pendente'`;
+        if (process.env.ZAPI_INSTANCE) await fetch(`https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-text`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'Client-Token': process.env.ZAPI_CLIENT_TOKEN },
+          body: JSON.stringify({ phone: destino, message: 'Pronto, você não vai mais receber nossas mensagens. Obrigado!' }) });
+      } catch (e) { console.warn('[wa-response] optout falhou:', e.message); }
+      return res.status(200).json({ success: true, optout: true });
+    }
+
     console.log(`[S7-05] Resposta recebida de ${phone}: "${mensagemRecebida.substring(0, 50)}..."`);
 
     // ── 1. BUSCAR CONTATO NO HUBSPOT pelo telefone ──
