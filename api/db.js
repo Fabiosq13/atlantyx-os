@@ -263,6 +263,13 @@ async function handler(req, res) {
         ON CONFLICT (id) DO UPDATE SET titulo=EXCLUDED.titulo, status=EXCLUDED.status, data=EXCLUDED.data, atualizado_em=NOW()`;
       return res.status(200).json({ success: true, id: ideia.id });
     }
+    // v3.36: excluir ideia (antes não havia como — o card não tinha excluir)
+    if (action === 'delete_ideia') {
+      const ids = Array.isArray(value?.ids) ? value.ids : [key || value?.id].filter(Boolean);
+      if (!ids.length) return res.status(400).json({ success: false, error: 'id obrigatório' });
+      let n = 0; for (const id of ids.slice(0, 200)) { const r = await sql`DELETE FROM ideias WHERE id = ${String(id)} RETURNING id`; n += r.length; }
+      return res.status(200).json({ success: true, excluidas: n });
+    }
     if (action === 'list_ideias') {
       const r = await sql`SELECT data FROM ideias ORDER BY atualizado_em DESC`;
       return res.status(200).json({ success: true, ideias: r.map(x => x.data) });

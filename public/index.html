@@ -1608,10 +1608,10 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <div style="grid-column:1/-1;"><button class="btn btn-p" style="width:100%;" id="btnCaptarIdeia" onclick="captarIdeia()">✦ Captar e Iniciar Análise Completa com IA</button></div>
       </div>
     </div>
-    <div class="panel"><div class="ph"><div class="pt">Pipeline de Ideias — Kanban</div><span class="tag live">Ao Vivo</span><span style="font-size:10px;color:var(--t3);margin-left:8px;">duplo clique na ideia para abrir, editar e gerar o relatório em PDF</span></div>
+    <div class="panel"><div class="ph"><div class="pt">Pipeline de Ideias — Kanban</div><span class="tag live">Ao Vivo</span><span style="font-size:10px;color:var(--t3);margin-left:8px;">clique na ideia para abrir e editar · arraste o card para mudar de etapa · 🗑 exclui</span></div>
       <div class="pb"><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:7px;" id="s1Kanban"><div style="font-size:9px;color:var(--t3);text-align:center;grid-column:1/-1;padding:20px;">Nenhuma ideia. Capture a primeira acima.</div></div></div>
     </div>
-    <div class="panel" id="s1AnalisePanel" style="display:none;"><div class="ph"><div class="pt">Análise em Andamento</div><span class="tag live">IA</span></div><div class="pb" id="s1AnaliseResult"></div></div>
+    <div class="panel" id="s1AnalisePanel" style="display:none;"><div class="ph"><div class="pt">Análise em Andamento</div><span class="tag live">IA</span><button class="btn btn-g" style="font-size:10px;padding:2px 8px;margin-left:8px;" onclick="document.getElementById('s1AnalisePanel').style.display='none'" title="Fechar este painel">✕</button></div><div class="pb" id="s1AnaliseResult"></div></div>
   </div>
 
 
@@ -5907,8 +5907,11 @@ function fecharModal() {
 // cada ideia (e cada mudança de etapa) é salva em /api/db.
 let S1_PIPELINE = [];
 function renderS1Kanban() { renderKanbanS1(S1_PIPELINE); try { const c = document.getElementById('s1PipeCnt'); if (c) c.textContent = S1_PIPELINE.length; const e = document.getElementById('s1_ideias'); if (e) e.textContent = S1_PIPELINE.length; } catch (_) {} }
+const _limparTituloIdeia = t => String(t || '').replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+const _chaveTituloIdeia = t => _limparTituloIdeia(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 async function salvarIdeiaS1(ideia) {
   try {
+    if (ideia && ideia.titulo) ideia.titulo = _limparTituloIdeia(ideia.titulo); // v3.36: "<br/>" aparecia no título
     const r = await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save_ideia', value: ideia }) });
     const d = await r.json().catch(() => ({}));
     if (!d.success) throw new Error(d.error || ('Servidor retornou ' + r.status));
@@ -5940,6 +5943,9 @@ async function captarIdeia() {
   const origem = document.getElementById('s1Origem')?.value;
   const cat = document.getElementById('s1Cat')?.value;
   if (!titulo) { toast('Informe o título da ideia', 'error'); return; }
+  // v3.36: a mesma ideia era captada várias vezes (cada clique criava outra) — avisa e oferece abrir a existente
+  { const ja = S1_PIPELINE.find(x => _chaveTituloIdeia(x.titulo) === _chaveTituloIdeia(titulo) && (x.stage || x.status) !== 'Arquivada');
+    if (ja && !confirm('Já existe uma ideia com este título no pipeline (etapa: ' + (ja.stage || 'Recebida') + ').\n\nOK = criar outra mesmo assim · Cancelar = abrir a existente')) { const k = (window._s1IdeiasCache || []).indexOf(ja); if (k >= 0) ideiaAbrir(k); else { window._s1IdeiasCache = (window._s1IdeiasCache || []); ideiaAbrir(window._s1IdeiasCache.push(ja) - 1); } return; } }
 
   const btn = document.getElementById('btnCaptarIdeia');
   btn.disabled = true; btn.textContent = 'Captando...';
@@ -9101,12 +9107,12 @@ function ideiaRender() {
   const cats = ['Nova Funcionalidade', 'Novo Produto', 'Melhoria', 'Melhoria de Processo', 'Integração', 'Integração com Parceiro', 'Expansão de Mercado', 'Redução de Custo', 'Infraestrutura'];
   m.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:12px;width:min(920px,100%);box-shadow:0 20px 60px rgba(0,0,0,.5);">'
     + '<div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--bd);">'
-    + '<div style="font-size:18px;">&#9670;</div><div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">' + _ie(x.titulo || 'Ideia') + '</div>'
+    + '<div style="font-size:18px;">&#9670;</div><div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">' + _ie(_limparTituloIdeia(x.titulo) || 'Ideia') + '</div>'
     + '<div style="font-size:10px;color:var(--t2);">' + (x.criado_em ? 'Captada em ' + new Date(x.criado_em).toLocaleDateString('pt-BR') + ' · ' : '') + 'Etapa: ' + _ie(x.stage || 'Recebida') + ' <span id="ideiaSujo" style="color:var(--gold);font-weight:600;">' + (_ideiaEdSujo ? '· alterações não salvas' : '') + '</span></div></div>'
     + '<button class="btn btn-g" style="font-size:12px;padding:4px 10px;" onclick="ideiaFechar()">&#10005;</button></div>'
     + '<div style="padding:16px 18px;">'
     + '<div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-bottom:10px;">'
-    + '<div class="fg" style="margin:0;"><label class="fl">Título</label><input class="fi" value="' + _ie(x.titulo) + '" oninput="ideiaCampo(\'titulo\',this.value)"/></div>'
+    + '<div class="fg" style="margin:0;"><label class="fl">Título</label><input class="fi" value="' + _ie(_limparTituloIdeia(x.titulo)) + '" oninput="ideiaCampo(\'titulo\',this.value)"/></div>'
     + '<div class="fg" style="margin:0;"><label class="fl">Origem</label>' + sel('origem', origens, x.origem) + '</div>'
     + '<div class="fg" style="margin:0;"><label class="fl">Categoria</label>' + sel('categoria', cats, x.categoria || x.cat) + '</div>'
     + '<div class="fg" style="margin:0;"><label class="fl">Etapa no pipeline</label>' + sel('stage', _S1_ETAPAS, x.stage || 'Recebida') + '</div>'
@@ -9123,7 +9129,15 @@ function ideiaRender() {
     + '<button class="btn btn-gn" id="btnIdeiaPdf" onclick="ideiaPdf()">&#128196; Gerar PDF — relatório completo + resumo financeiro</button>'
     + '<button class="btn btn-g" id="btnIdeiaAnalisar" onclick="ideiaAnalisar()">&#9670; ' + ((x.analise_completa || x.analise) ? 'Reanalisar' : 'Analisar') + ' com IA</button>'
     + '<button class="btn btn-g" onclick="ideiaBP()">&#128202; ' + (x.business_plan ? 'Abrir' : 'Gerar') + ' Business Plan</button>'
-    + '<div style="flex:1;min-width:0;"></div><button class="btn btn-g" onclick="ideiaFechar()">Fechar</button></div></div>';
+    + '<div style="flex:1;min-width:0;"></div><button class="btn btn-g" style="color:var(--red);" onclick="ideiaExcluirAberta()">&#128465; Excluir</button><button class="btn btn-g" onclick="ideiaFechar()">Fechar</button></div></div>';
+}
+// v3.36: excluir pela janela da ideia
+async function ideiaExcluirAberta() {
+  const x = _ideiaEd; if (!x) return;
+  if (!confirm('Excluir a ideia "' + _limparTituloIdeia(x.titulo) + '"? Não dá para desfazer.')) return;
+  try { const r = await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete_ideia', value: { ids: [x.id] } }) }); const d = await r.json(); if (!d.success) throw new Error(d.error || 'falha');
+    S1_PIPELINE = S1_PIPELINE.filter(i => String(i.id) !== String(x.id)); ideiaFechar(true); renderS1Kanban(); toast('Ideia excluída', 'success'); }
+  catch (e) { toast('Não consegui excluir: ' + e.message, 'error'); }
 }
 
 function _ideiaMsg(t, cor) { const e = document.getElementById('ideiaMsg'); if (e) e.innerHTML = '<span style="color:' + _corTxt((cor || 'var(--blue)')) + ';">' + t + '</span>'; }
@@ -9364,8 +9378,57 @@ function qaAbrir() {
   s.onerror = () => { const a = document.getElementById('qaApp'); if (a) a.innerHTML = '<div style="color:var(--red);padding:20px;">Não consegui carregar /qa-agent.js</div>'; };
   document.head.appendChild(s);
 }
+// v3.36: card com ✎ editar e 🗑 excluir, arrastar entre etapas, selo de DUPLICADA e "Unificar duplicadas"
+const _S1_ORDEM = { 'Recebida': 0, 'Em Análise': 1, 'Análise': 1, 'Pesquisa': 2, 'Viabilidade': 3, 'Comitê': 4, 'Aprovada Squad': 4, 'Aguardando Fundador': 5, 'Fundador': 5, 'Em Desenvolvimento': 6, 'Aprovado': 6 };
+function _s1Duplicadas() {
+  const g = {}; S1_PIPELINE.filter(i => (i.stage || i.status) !== 'Arquivada').forEach(i => { const k = _chaveTituloIdeia(i.titulo); if (k) (g[k] = g[k] || []).push(i); });
+  return Object.values(g).filter(l => l.length > 1);
+}
+async function s1ExcluirIdeia(k, ev) {
+  if (ev) ev.stopPropagation();
+  const x = (window._s1IdeiasCache || [])[k]; if (!x) return;
+  if (!confirm('Excluir a ideia "' + _limparTituloIdeia(x.titulo) + '"?\n\nA análise e o vínculo com o business plan desta ideia somem do pipeline. Não dá para desfazer.')) return;
+  try {
+    const r = await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete_ideia', value: { ids: [x.id] } }) });
+    const d = await r.json(); if (!d.success) throw new Error(d.error || 'falha');
+    S1_PIPELINE = S1_PIPELINE.filter(i => String(i.id) !== String(x.id)); renderS1Kanban();
+    toast('Ideia excluída', 'success'); addLog('ok', '[S1] Ideia excluída: ' + _limparTituloIdeia(x.titulo));
+  } catch (e) { toast('Não consegui excluir: ' + e.message, 'error'); }
+}
+async function s1UnificarDuplicadas() {
+  const grupos = _s1Duplicadas(); if (!grupos.length) return toast('Não há ideias duplicadas', 'success');
+  const peso = i => (_S1_ORDEM[i.stage || i.status] ?? 0) * 100 + (i.business_plan ? 20 : 0) + (i.analise_completa || i.analise ? 10 : 0) + (i.resultados_s1 ? 5 : 0);
+  const plano = grupos.map(l => { const ord = l.slice().sort((a, b) => peso(b) - peso(a) || new Date(b.atualizado_em || b.criado_em || 0) - new Date(a.atualizado_em || a.criado_em || 0)); return { fica: ord[0], sai: ord.slice(1) }; });
+  const n = plano.reduce((s, p) => s + p.sai.length, 0);
+  if (!confirm('Unificar ' + grupos.length + ' ideia(s) repetida(s)?\n\n' + plano.map(p => '• "' + _limparTituloIdeia(p.fica.titulo).substring(0, 60) + '" — fica a de ' + (p.fica.stage || 'Recebida') + (p.fica.business_plan ? ' (com BP)' : '') + ', saem ' + p.sai.length).join('\n') + '\n\nFica a versão mais avançada (etapa, business plan, análise); as notas das outras são juntadas a ela. ' + n + ' card(s) serão excluídos.')) return;
+  try {
+    for (const p of plano) {
+      const notas = p.sai.map(x => x.notas).filter(Boolean);
+      if (notas.length) { p.fica.notas = [p.fica.notas, ...notas].filter(Boolean).join('\n— '); }
+      if (!p.fica.analise_completa) { const comA = p.sai.find(x => x.analise_completa); if (comA) { p.fica.analise_completa = comA.analise_completa; p.fica.analise = p.fica.analise || comA.analise; } }
+      if (!p.fica.business_plan) { const comBp = p.sai.find(x => x.business_plan); if (comBp) p.fica.business_plan = comBp.business_plan; }
+      await salvarIdeiaS1(p.fica);
+    }
+    const ids = plano.flatMap(p => p.sai.map(x => x.id));
+    const r = await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete_ideia', value: { ids } }) });
+    const d = await r.json(); if (!d.success) throw new Error(d.error || 'falha');
+    const sair = new Set(ids.map(String)); S1_PIPELINE = S1_PIPELINE.filter(i => !sair.has(String(i.id))); renderS1Kanban();
+    toast(d.excluidas + ' duplicada(s) removida(s)', 'success');
+  } catch (e) { toast('Não consegui unificar: ' + e.message, 'error'); }
+}
+function s1Arrastar(ev, k) { ev.dataTransfer.setData('text/plain', String(k)); ev.dataTransfer.effectAllowed = 'move'; ev.currentTarget.style.opacity = '.45'; }
+function s1Soltar(ev, etapa) {
+  ev.preventDefault(); ev.currentTarget.style.background = '';
+  const k = parseInt(ev.dataTransfer.getData('text/plain'), 10); const x = (window._s1IdeiasCache || [])[k]; if (!x) return;
+  if ((x.stage || 'Recebida') === etapa) { renderS1Kanban(); return; }
+  const antes = x.stage; x.stage = etapa; x.atualizado_em = new Date().toISOString();
+  const i = S1_PIPELINE.findIndex(y => String(y.id) === String(x.id)); if (i >= 0) S1_PIPELINE[i].stage = etapa;
+  renderS1Kanban();
+  salvarIdeiaS1(x).then(ok => { if (ok) { toast('"' + _limparTituloIdeia(x.titulo).substring(0, 40) + '" → ' + etapa, 'success'); addLog('ok', '[S1] Ideia movida: ' + (antes || 'Recebida') + ' → ' + etapa); } else { x.stage = antes; if (i >= 0) S1_PIPELINE[i].stage = antes; renderS1Kanban(); } });
+}
 function renderKanbanS1(ideias) {
   const kanban = document.getElementById('s1Kanban');
+  if (kanban && ideias && !ideias.length) { kanban.innerHTML = '<div style="font-size:9px;color:var(--t3);text-align:center;grid-column:1/-1;padding:20px;">Nenhuma ideia. Capture a primeira acima.</div>'; try { _s1DupBarra(); } catch (_) {} return; }
   if (!kanban || !ideias || !ideias.length) return;
   window._s1IdeiasCache = [];
   const stages = ['Recebida','Em Análise','Pesquisa','Viabilidade','Comitê','Aguardando Fundador','Em Desenvolvimento'];
@@ -9379,15 +9442,29 @@ function renderKanbanS1(ideias) {
     if (s2 && byStage[s2]) byStage[s2].push(i);
     else byStage['Recebida'].push(i);
   });
+  const dupKeys = new Set(_s1Duplicadas().map(l => _chaveTituloIdeia(l[0].titulo)));
   kanban.innerHTML = stages.map(s => {
     const items = byStage[s] || [];
-    return '<div style="min-width:120px;">'
+    return '<div style="min-width:120px;min-height:80px;border-radius:6px;transition:background .15s;" ondragover="event.preventDefault();this.style.background=\'var(--b2)\'" ondragleave="this.style.background=\'\'" ondrop="s1Soltar(event,\'' + s + '\')">'
       + '<div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);margin-bottom:6px;padding:0 2px;">' + s + ' <span style="color:var(--blue);">(' + items.length + ')</span></div>'
-      + items.map(i => { const k = (window._s1IdeiasCache = window._s1IdeiasCache || []).push(i) - 1; const bp = i.business_plan;
-          return '<div ondblclick="ideiaAbrir(' + k + ')" title="Duplo clique para abrir e editar" style="background:var(--bg4);border:1px solid var(--bd);border-radius:5px;padding:7px;margin-bottom:4px;font-size:10px;cursor:pointer;user-select:none;">' + String(i.titulo || 'Sem título').replace(/</g,'&lt;')
-            + '<div style="margin-top:5px;"><span ondblclick="event.stopPropagation()" onclick="' + (bp ? 'bpAbrirDaIdeia(' + k + ')' : 'bpGerarParaIdeia(' + k + ')') + '" style="cursor:pointer;font-family:var(--M);font-size:9px;padding:1px 5px;border-radius:3px;background:' + (bp ? 'rgba(0,200,120,.15);color:var(--green)' : 'var(--bg3);color:var(--t2)') + ';">&#128202; ' + (bp ? 'BP' + (bp.tir_anual != null ? ' · TIR ' + Math.round(bp.tir_anual * 100) + '%' : '') : 'gerar BP') + '</span></div></div>'; }).join('')
+      + items.map(i => { const k = (window._s1IdeiasCache = window._s1IdeiasCache || []).push(i) - 1; const bp = i.business_plan; const dup = dupKeys.has(_chaveTituloIdeia(i.titulo));
+          return '<div draggable="true" ondragstart="s1Arrastar(event,' + k + ')" ondragend="this.style.opacity=\'\'" onclick="ideiaAbrir(' + k + ')" title="Clique para abrir e editar · arraste para mudar de etapa" style="background:var(--bg4);border:1px solid ' + (dup ? 'var(--gold)' : 'var(--bd)') + ';border-radius:5px;padding:7px;margin-bottom:4px;font-size:10px;cursor:grab;user-select:none;">'
+            + (dup ? '<div style="font-family:var(--M);font-size:8.5px;color:var(--gold);font-weight:700;margin-bottom:3px;">DUPLICADA</div>' : '')
+            + _limparTituloIdeia(i.titulo || 'Sem título').replace(/</g,'&lt;')
+            + '<div style="margin-top:5px;display:flex;gap:4px;align-items:center;"><span onclick="event.stopPropagation();' + (bp ? 'bpAbrirDaIdeia(' + k + ')' : 'bpGerarParaIdeia(' + k + ')') + '" style="cursor:pointer;font-family:var(--M);font-size:9px;padding:1px 5px;border-radius:3px;background:' + (bp ? 'rgba(0,200,120,.15);color:var(--green)' : 'var(--bg3);color:var(--t2)') + ';">&#128202; ' + (bp ? 'BP' + (bp.tir_anual != null ? ' · TIR ' + Math.round(bp.tir_anual * 100) + '%' : '') : 'gerar BP') + '</span>'
+            + '<span style="flex:1;"></span><button onclick="event.stopPropagation();ideiaAbrir(' + k + ')" title="Editar" style="background:none;border:none;cursor:pointer;color:var(--blue);font-size:11px;padding:0 3px;">✎</button>'
+            + '<button onclick="s1ExcluirIdeia(' + k + ',event)" title="Excluir" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:11px;padding:0 3px;">🗑</button></div></div>'; }).join('')
       + '</div>';
   }).join('');
+  try { _s1DupBarra(); } catch (_) {}
+}
+function _s1DupBarra() {
+  const g = _s1Duplicadas(); let b = document.getElementById('s1DupBarra'); const kb = document.getElementById('s1Kanban'); if (!kb) return;
+  if (!g.length) { if (b) b.remove(); return; }
+  if (!b) { b = document.createElement('div'); b.id = 's1DupBarra'; kb.parentNode.insertBefore(b, kb); }
+  const n = g.reduce((s, l) => s + l.length - 1, 0);
+  b.style.cssText = 'display:flex;gap:10px;align-items:center;background:var(--go2);border:1px solid rgba(245,166,35,.35);border-radius:7px;padding:7px 11px;margin-bottom:9px;font-size:11px;';
+  b.innerHTML = '⚠ <span style="flex:1;">' + n + ' card(s) repetido(s) em ' + g.length + ' ideia(s) com o mesmo título.</span><button class="btn btn-g" style="font-size:10px;padding:3px 9px;" onclick="s1UnificarDuplicadas()">Unificar duplicadas</button>';
 }
 
 initS1();
@@ -26188,7 +26265,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.35] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.36] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -26204,7 +26281,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.35';
+window.__ATX_BUILD_ID__ = 'ATX-v3.36';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
