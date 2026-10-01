@@ -589,6 +589,6 @@
         msg.innerHTML = `<span style="color:var(--green);">✓ Tarefa #${d.issue} aberta: <a href="${esc(d.url)}" target="_blank" rel="noopener" style="color:var(--blue);">${esc(d.url)}</a>. O Claude vai abrir um pull request; aprove-o no GitHub para gerar a nova versão.</span>`; }
       catch (e) { msg.innerHTML = '<span style="color:var(--red);">Não foi possível abrir a tarefa: ' + esc(e.message) + '</span><div style="color:var(--t2);margin-top:4px;">Você pode copiar o relatório e colar no chat do Claude.</div>'; }
     },
-    _markdown: markdown, _classificar: classificar, _inventario: inventario,
+    _markdown: markdown, _classificar: classificar, _inventario: inventario, _rodando: () => !!S.rodando,
   };
 })();

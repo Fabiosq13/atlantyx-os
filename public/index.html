@@ -6757,17 +6757,21 @@ function renderKanban() {
   if (cnt) { cnt.textContent = pendentes || '0'; cnt.className = pendentes > 0 ? 'nbx rd' : 'nbx of'; }
 
   board.innerHTML = KANBAN_COLS.map(col => {
-    const pecas = kanbanPecas.filter(p => p.status === col && _pecaPassaFiltro(p));
+    const _tk = x => Date.parse(x.atualizado_em || x.criado_em || 0) || 0;
+    const pecas = kanbanPecas.filter(p => p.status === col && _pecaPassaFiltro(p)).sort((a, b) => _tk(b) - _tk(a)); // v3.26: mais recente no topo
     const corHead = col==='Aprovado'?'var(--green)':col==='Publicado'?'var(--blue)':col==='Revisão'?'var(--gold)':'var(--t2)';
     return `<div style="background:var(--bg4);border-radius:8px;padding:9px;min-height:200px;">
       <div style="font-family:var(--M);font-size:9px;letter-spacing:1px;text-transform:uppercase;color:${_corTxt(corHead)};margin-bottom:8px;display:flex;justify-content:space-between;">
         ${col}<span style="background:var(--bg);border-radius:3px;padding:1px 5px;font-size:9px;">${pecas.length}</span>
       </div>
       ${pecas.map(p => `
-        <div style="background:var(--bg3);border:1px solid var(--bd);border-radius:6px;padding:9px;margin-bottom:6px;cursor:pointer;" onclick="selecionarPeca('${p.id}')">
-          <div style="font-size:10px;font-weight:600;margin-bottom:2px;">${p.titulo}</div>
+        <div id="kbc_${p.id}" style="background:var(--bg3);border:1px solid ${p.id === window._kbUltimaPeca ? 'var(--blue)' : 'var(--bd)'};border-radius:6px;padding:9px;margin-bottom:6px;cursor:pointer;" onclick="selecionarPeca('${p.id}')">
+          ${p.id === window._kbUltimaPeca ? '<div style="font-family:var(--M);font-size:8.5px;color:var(--blue);font-weight:700;margin-bottom:3px;">● ACABOU DE CRIAR / ATUALIZAR</div>' : ''}
+          ${_ehPecaQA(p) ? '<div style="font-family:var(--M);font-size:8.5px;color:var(--gold);margin-bottom:3px;">TESTE DO QA — não é salvo</div>' : ''}
+          <div style="font-size:10px;font-weight:600;margin-bottom:2px;">${String(p.titulo || '').replace(/</g, '&lt;')}</div>
+          ${_kbResumo(p)}
           <div style="font-family:var(--M);font-size:9px;padding:1px 6px;border-radius:3px;display:inline-block;background:${p.canal==='LinkedIn'?'var(--b2)':p.canal==='Instagram'?'rgba(240,48,112,.12)':'var(--bg4)'};color:${p.canal==='LinkedIn'?'var(--blue)':p.canal==='Instagram'?'var(--s7c)':'var(--t2)'};">${p.canal}</div>
-          <div style="font-size:10px;color:var(--t2);margin-top:4px;">${p.agente}</div>
+          <div style="font-size:10px;color:var(--t2);margin-top:4px;">${({ 'Campanha Completa': 'Campanha', 'Aprovada': 'Campanha', 'S2-EmailMarketing': 'E-mail marketing (avulso)', 'S2-Designer': 'Imagem avulsa' })[p.agente] || p.agente}${_kbFormatos(p)}</div>
           ${p.data?`<div style="font-family:var(--M);font-size:9px;color:var(--t3);margin-top:3px;">🕓 ${p.data}</div>`:''}
           ${(() => { const a = dataAgendadaDaPeca(p); const pubs = pubsDaPeca(p); return a ? `<div style="font-family:var(--M);font-size:8.5px;color:var(--gold);margin-top:2px;">📅 ${fmtDH(a)}${pubs.length ? ' · ' + [...new Set(pubs.map(x=>x.rede))].map(r=>({linkedin:'in',instagram:'ig',facebook:'fb',whatsapp:'wa',email:'@'}[r]||r)).join('/') : ''}</div>` : (col==='Agendado' ? '<div style="font-size:9px;color:var(--red);margin-top:2px;">⚠ sem publicação registrada</div>' : ''); })()}
           <div style="display:flex;gap:4px;margin-top:6px;">
@@ -6783,6 +6787,18 @@ function renderKanban() {
   }).join('');
 }
 
+// v3.26: o que diferencia um card do outro — a headline da campanha e os formatos já prontos
+function _kbResumo(p) {
+  const l = String(p.copy || '').split('\n').map(x => x.trim()).find(x => x && !/^https?:/.test(x)) || p.narrativa || '';
+  return l ? '<div style="font-size:9.5px;color:var(--t1);opacity:.8;line-height:1.35;margin:2px 0 4px;">' + l.substring(0, 90).replace(/</g, '&lt;') + (l.length > 90 ? '…' : '') + '</div>' : '';
+}
+function _kbFormatos(p) {
+  if (!p.campanhaId) return '';
+  const c = (typeof _todasCampanhas !== 'undefined' && _todasCampanhas || []).find(x => x.id === p.campanhaId) || (typeof campAtiva !== 'undefined' && campAtiva && campAtiva.id === p.campanhaId ? campAtiva : null);
+  if (!c) return '';
+  const f = [(c.imagens || []).length && '🎨', (c.stories || []).length && '📱', c.carrossel?.slides?.length && '🖼', (c.reel?.video_url || c.reel?.slides?.length) && '🎬'].filter(Boolean);
+  return f.length ? ' · <span title="Imagem · Stories · Carrossel · Reel prontos">' + f.join(' ') + '</span>' : '';
+}
 function selecionarPeca(id) {
   const p = kanbanPecas.find(x => x.id === id);
   if (!p) return;
@@ -7009,11 +7025,31 @@ function recusarTodosKanban() {
   addLog('warn', '[Kanban] Todas peças recusadas');
 }
 
+// v3.26: UM card por campanha. Antes cada "Criar", "Re-rodar" e "Aprovar" empurrava um card novo
+// (a aprovação até caía de volta em Revisão com o agente "Aprovada"). Agora o card da campanha é
+// atualizado e a aprovação o move para Aprovado. Cards criados pelo Agente de QA não são gravados.
+const _KB_ORDEM = { 'Gerado': 0, 'Revisão': 1, 'Aprovado': 2, 'Agendado': 3, 'Publicado': 4 };
+function _ehPecaQA(p) { return !!(p && (p.qa || /qa@teste\.com\.br|QA-TESTE/i.test(String(p.titulo || '') + ' ' + String(p.copy || '').substring(0, 300)))); }
+function _kbQaAtivo() { try { return !!(window.QA && QA._rodando && QA._rodando()) || !!window.__QA_FRAME__ || (typeof _qaRodando !== 'undefined' && !!_qaRodando); } catch (_) { return false; } }
 function adicionarAoKanban(titulo, canal, agente, narrativa, copy, design, campanhaId) {
+  const agoraIso = new Date().toISOString(), agoraBr = new Date().toLocaleString('pt-BR');
+  const aprovando = agente === 'Aprovada';
+  const existente = campanhaId ? kanbanPecas.find(p => p.campanhaId === campanhaId) : null;
+  if (existente) {
+    Object.assign(existente, { titulo, canal, narrativa, copy, design, atualizado_em: agoraIso, atualizado: agoraBr });
+    if (aprovando && (_KB_ORDEM[existente.status] ?? 0) < _KB_ORDEM['Aprovado']) { existente.status = 'Aprovado'; existente.aprovado_em = agoraIso; }
+    window._kbUltimaPeca = existente.id;
+    renderKanban();
+    addLog('ok', '[Kanban] Card da campanha atualizado: ' + titulo + (aprovando ? ' → Aprovado' : ''));
+    salvarKanbanNoBanco();
+    return;
+  }
   const id = 'peca_' + Date.now() + '_' + Math.random().toString(36).substr(2,5);
   // FIX v1.4.4: peça vincula à campanha para permitir editar/re-rodar a partir do kanban
-  const peca = { id, titulo, canal, agente, narrativa, copy, design, campanhaId: campanhaId || null, status: 'Revisão', data: new Date().toLocaleString('pt-BR') };
+  const peca = { id, titulo, canal, agente: aprovando ? 'Campanha Completa' : agente, narrativa, copy, design, campanhaId: campanhaId || null,
+    status: aprovando ? 'Aprovado' : 'Revisão', data: agoraBr, criado_em: agoraIso, atualizado_em: agoraIso, ...(_kbQaAtivo() ? { qa: true } : {}) };
   kanbanPecas.push(peca);
+  window._kbUltimaPeca = id;
   renderKanban();
   addLog('ok', '[Kanban] Nova peça adicionada: ' + titulo + (campanhaId ? ' (camp: ' + campanhaId + ')' : ''));
   // FIX v1.4.4: persistir no banco para sobreviver reload
@@ -7046,10 +7082,10 @@ async function salvarKanbanNoBanco() {
     }
     await fetch('/api/db', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'set', key: 'atx:kanban:pecas', value: kanbanPecas })
+      body: JSON.stringify({ action: 'set', key: 'atx:kanban:pecas', value: kanbanPecas.filter(p => !_ehPecaQA(p)) })
     });
   } catch (e) { addLog('warn', '[Kanban] Não salvou no banco: ' + e.message); }
-  try { localStorage.setItem('atx:kanban:pecas', JSON.stringify(kanbanPecas)); } catch {}
+  try { localStorage.setItem('atx:kanban:pecas', JSON.stringify(kanbanPecas.filter(p => !_ehPecaQA(p)))); } catch {}
 }
 
 async function carregarKanbanDoBanco() {
@@ -7078,7 +7114,28 @@ async function carregarKanbanDoBanco() {
   const _t = x => Date.parse(x && (x.atualizado_em || x.criado_em) || 0) || 0;
   [].concat(doBanco || [], doLocal || [], kanbanPecas || []).forEach(p => { if (!p || !p.id) return; const a = mapa[p.id];
     mapa[p.id] = !a ? Object.assign({}, p) : (_t(p) >= _t(a) ? Object.assign({}, a, p) : Object.assign({}, p, a)); });
-  const unidas = Object.values(mapa);
+  let unidas = Object.values(mapa);
+  // v3.26: limpa cards de teste do QA e junta os cards repetidos de uma mesma campanha
+  try {
+    const antes = unidas.length; const semQA = unidas.filter(p => !_ehPecaQA(p)); const qaRem = antes - semQA.length;
+    const porCamp = {}; const fim = [];
+    semQA.forEach(p => { if (!p.campanhaId) { fim.push(p); return; } (porCamp[p.campanhaId] = porCamp[p.campanhaId] || []).push(p); });
+    let juntados = 0;
+    Object.values(porCamp).forEach(lista => {
+      if (lista.length === 1) { fim.push(lista[0]); return; }
+      juntados += lista.length - 1;
+      const t = x => Date.parse(x.atualizado_em || x.criado_em || 0) || 0;
+      const maisNovo = lista.slice().sort((a, b) => t(b) - t(a))[0];
+      const maisAvancado = lista.slice().sort((a, b) => (_KB_ORDEM[b.status] ?? 0) - (_KB_ORDEM[a.status] ?? 0))[0];
+      const maisAntigo = lista.slice().sort((a, b) => t(a) - t(b))[0];
+      const aprovada = lista.some(x => x.agente === 'Aprovada'); // card antigo de "Aprovar" = a campanha foi aprovada
+      const stFinal = aprovada && (_KB_ORDEM[maisAvancado.status] ?? 0) < _KB_ORDEM['Aprovado'] ? 'Aprovado' : maisAvancado.status;
+      fim.push(Object.assign({}, maisNovo, { id: maisAvancado.id, status: stFinal, agente: lista.find(x => x.agente !== 'Aprovada')?.agente || 'Campanha Completa',
+        data: maisAntigo.data, criado_em: maisAntigo.criado_em || maisAntigo.atualizado_em }));
+    });
+    if (qaRem || juntados) { unidas = fim; setTimeout(() => { try { salvarKanbanNoBanco(); } catch (_) {} }, 50);
+      addLog('ok', '[Kanban] Limpeza: ' + (juntados ? juntados + ' card(s) repetido(s) da mesma campanha unificado(s)' : '') + (juntados && qaRem ? ' · ' : '') + (qaRem ? qaRem + ' card(s) de teste do QA removido(s)' : '')); }
+  } catch (e) { addLog('warn', '[Kanban] limpeza: ' + e.message); }
   if (unidas.length) {
     kanbanPecas = unidas;
     _kanbanCarregado = true;
@@ -9132,7 +9189,7 @@ function disparoAbrir(canal, campanhaId) {
 }
 function qaAbrir() {
   if (window.QA) return QA.abrir();
-  const s = document.createElement('script'); s.src = '/qa-agent.js?v=3.24';
+  const s = document.createElement('script'); s.src = '/qa-agent.js?v=3.27';
   s.onload = () => window.QA && QA.abrir();
   s.onerror = () => { const a = document.getElementById('qaApp'); if (a) a.innerHTML = '<div style="color:var(--red);padding:20px;">Não consegui carregar /qa-agent.js</div>'; };
   document.head.appendChild(s);
@@ -11211,9 +11268,25 @@ async function criarCampanhaCompleta() {
     renderEt();
 
     // Criar objeto campanha
+    // v3.26: o formulário volta preenchido com a última campanha; clicar em Criar de novo gerava OUTRA
+    // campanha com o MESMO nome (ex.: vários "Auto-campanha 25/09…" no Kanban, impossível distinguir).
+    // Se o nome já existe, a nova campanha recebe o tema que a IA escreveu + data/hora.
+    let _nomeFinal = nome;
+    try {
+      const _jaExiste = (_todasCampanhas || []).some(c => String(c.nome || '').trim().toLowerCase() === nome.trim().toLowerCase())
+        || (typeof kanbanPecas !== 'undefined' && kanbanPecas.some(p => String(p.titulo || '').trim().toLowerCase() === nome.trim().toLowerCase()));
+      if (_jaExiste) {
+        const _tema = String(f1.narrativa?.tema_central || f1.copy?.versoes?.[0]?.headline || nome).replace(/\s+/g, ' ').trim();
+        const _agora = new Date();
+        _nomeFinal = (_tema.length > 55 ? _tema.substring(0, 55).replace(/\s\S*$/, '') + '…' : _tema) + ' · ' + _agora.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ' ' + _agora.toTimeString().substring(0, 5);
+        const _el = document.getElementById('cNome'); if (_el) _el.value = _nomeFinal;
+        addLog('info', '[S2-Campanha] Já existia uma campanha "' + nome + '" — esta nova se chama "' + _nomeFinal + '"');
+        toast('Já existia "' + nome + '" — a nova campanha se chama "' + _nomeFinal + '"', 'success');
+      }
+    } catch (_) {}
     campAtiva = {
       id:           'camp_' + Date.now(),
-      nome, obj, canal, pub, orc, ctx,
+      nome: _nomeFinal, obj, canal, pub, orc, ctx,
       status:       'rascunho',
       data_inicio:  _dataInicio,
       data_fim:     _dataFim,
@@ -11629,7 +11702,8 @@ async function aprovarCampanhaFinal() {
   toast('✓ Campanha aprovada e no Kanban!', 'success');
 
   // Ir para o Kanban
-  setTimeout(() => nav('s2kanban', document.querySelector('.sbi[onclick*="s2kanban"]')), 500);
+  setTimeout(() => { nav('s2kanban', document.querySelector('.sbi[onclick*="s2kanban"]'));
+    setTimeout(() => { const el = document.getElementById('kbc_' + window._kbUltimaPeca); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.style.boxShadow = '0 0 0 2px var(--blue)'; setTimeout(() => el.style.boxShadow = '', 2500); } }, 900); }, 500);
 }
 
 async function duplicarCampanha() {
@@ -25726,7 +25800,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.26] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.27] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -25742,7 +25816,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.26';
+window.__ATX_BUILD_ID__ = 'ATX-v3.27';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
