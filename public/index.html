@@ -2598,11 +2598,13 @@ tr:hover td{background:rgba(79,124,255,.03);}
         </div><!-- fim edPreview (v1.14.1: faltava este fechamento — todas as páginas seguintes ficavam aninhadas dentro da campanha e apareciam pretas) -->
         <div id="campPubDatas" style="display:none;background:var(--bg3);border:1px solid var(--bd2);border-radius:8px;padding:10px 12px;margin:10px 0;"></div>
         <!-- AÇÕES FINAIS -->
-        <div class="cp-acoes">
+        <div class="cp-acoes" style="flex-wrap:wrap;">
+          <button class="btn btn-g" onclick="campVoltar()" title="Salva as edições e volta para Minhas campanhas">← Voltar</button>
           <button class="btn btn-gn" onclick="aprovarCampanhaFinal()" style="flex:1;justify-content:center;font-weight:700;">④ Aprovar e enviar ao Kanban</button>
           <button class="btn btn-g" onclick="salvarCampanhaDB()">💾 Salvar rascunho</button>
           <button class="btn btn-g" onclick="duplicarCampanha()" title="Cria uma cópia desta campanha">⧉ Duplicar</button>
           <button class="btn btn-g" onclick="disparoAbrir(document.getElementById('cRedeEmail')?.checked && !document.getElementById('cRedeWA')?.checked ? 'email' : 'whatsapp')" title="Envia o texto de WhatsApp/E-mail da campanha para a sua lista de leads">📣 Disparar WhatsApp / E-mail</button>
+          <button class="btn btn-g" style="color:var(--red);" onclick="campExcluirAberta()" title="Exclui esta campanha (e, se quiser, os cards dela no Kanban)">🗑 Excluir</button>
         </div>
       </div>
     </div>
@@ -12721,6 +12723,34 @@ async function abrirCampanhaDB(id) {
   // FIX v1.4.4: mostrar botão de re-rodar após abrir campanha existente
   mostrarBotaoRerodar();
   toast('Campanha aberta: ' + camp.nome, 'success');
+}
+
+// v3.39: botões Voltar e Excluir na base do editor de campanha
+async function campVoltar() {
+  try { if (campAtiva) await salvarEdicoesCampanha(false); } catch (_) {}
+  mostrarAbaCampanha('lista');
+  try { document.getElementById('abaLista')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (_) {}
+}
+async function campExcluirAberta() {
+  const c = campAtiva; if (!c?.id) return toast('Nenhuma campanha salva aberta para excluir', 'error');
+  if (!confirm('Excluir a campanha "' + (c.nome || 'sem nome') + '"? Não dá para desfazer.')) return;
+  const cards = (typeof kanbanPecas !== 'undefined' ? kanbanPecas : []).filter(p => p.campanhaId === c.id);
+  const tiraCards = cards.length && confirm('Esta campanha tem ' + cards.length + ' card(s) no Kanban de aprovação.\n\nOK = excluir os cards também\nCancelar = manter os cards');
+  try {
+    const r = await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ action: 'delete_campanha', key: c.id }) });
+    const d = await r.json().catch(() => ({})); if (d.success === false) throw new Error(d.error || 'o banco recusou');
+  } catch (e) { return toast('Não consegui excluir: ' + e.message, 'error'); }
+  _todasCampanhas = (_todasCampanhas || []).filter(x => x.id !== c.id);
+  try { localStorage.setItem('atx:campanhas', JSON.stringify(_todasCampanhas)); } catch (_) {}
+  if (tiraCards) { kanbanPecas = kanbanPecas.filter(p => p.campanhaId !== c.id); try { renderKanban(); } catch (_) {} try { await salvarKanbanNoBanco(); } catch (_) {} }
+  campAtiva = null; window._campanhaAtual = null; campVersoesCopy = [];
+  try { ['cNome','cCanal','cPublico','cObj','cOrc','cCtx'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; }); } catch (_) {}
+  const ed = document.getElementById('campEditorPanel'); if (ed) ed.style.display = 'none';
+  const res = document.getElementById('campResult'); if (res) res.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:30px;">Configure e clique em Criar.</div>';
+  try { atualizarContadorCampanhas(_todasCampanhas.length); } catch (_) {}
+  addLog('info', '[Campanha] Excluída: ' + c.nome + (tiraCards ? ' (+ ' + cards.length + ' card(s) do Kanban)' : ''));
+  toast('Campanha excluída' + (tiraCards ? ' com os cards do Kanban' : ''), 'info');
+  mostrarAbaCampanha('lista');
 }
 
 async function excluirCampanha(id) {
@@ -26461,7 +26491,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.38] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.39] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -26477,7 +26507,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.38';
+window.__ATX_BUILD_ID__ = 'ATX-v3.39';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
