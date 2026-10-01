@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlantyx — Dados e IA aplicada</title>
+<meta name="description" content="Engenharia de dados, analytics e IA aplicada para grandes empresas. Agende uma conversa com um especialista.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --preto:#05080c; --ciano:#00C4CC; --verde:#00FCA8; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; font-family:Montserrat, "Segoe UI", Arial, sans-serif; color:#fff; background:var(--preto); display:flex; justify-content:center; }
+  body::before { content:""; position:fixed; inset:0; pointer-events:none; background:
+      radial-gradient(520px 340px at 90% 0%, rgba(0,196,204,.22), transparent 65%),
+      radial-gradient(420px 300px at 0% 100%, rgba(0,252,168,.12), transparent 65%); }
+  main { position:relative; width:100%; max-width:460px; padding:44px 20px 32px; }
+  .topo { text-align:center; margin-bottom:26px; }
+  .logo { width:76px; height:76px; margin:0 auto 14px; border-radius:22px; background:#0d141b; border:1px solid rgba(255,255,255,.1); display:flex; align-items:center; justify-content:center; }
+  .nome { font-weight:800; letter-spacing:4px; font-size:17px; }
+  .tag { color:rgba(255,255,255,.7); font-size:14px; margin-top:8px; line-height:1.5; }
+  .links { display:grid; gap:12px; }
+  .link { display:flex; align-items:center; gap:14px; text-decoration:none; color:#fff; padding:16px 18px; border-radius:14px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.04); transition:transform .12s, border-color .15s, background .15s; }
+  .link:hover { transform:translateY(-1px); border-color:rgba(0,196,204,.6); background:rgba(0,196,204,.08); }
+  .link.principal { background:#fff; color:var(--preto); border-color:#fff; }
+  .link.principal:hover { background:#eafffa; }
+  .link .ic { width:38px; height:38px; border-radius:11px; display:flex; align-items:center; justify-content:center; flex:0 0 38px; background:rgba(0,196,204,.14); }
+  .link.principal .ic { background:var(--preto); }
+  .link b { display:block; font-size:15px; }
+  .link span { font-size:12.5px; opacity:.72; }
+  .link .seta { margin-left:auto; font-weight:800; color:var(--verde); }
+  .link.principal .seta { color:#00708A; }
+  .bloco { margin-top:28px; padding-top:22px; border-top:1px solid rgba(255,255,255,.1); }
+  .rot { font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--ciano); font-weight:700; margin-bottom:12px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chips span { font-size:12.5px; font-weight:600; border:1px solid rgba(255,255,255,.14); border-radius:999px; padding:7px 12px; color:rgba(255,255,255,.85); }
+  footer { text-align:center; font-size:11.5px; color:rgba(255,255,255,.45); margin-top:30px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="topo">
+    <div class="logo"><svg width="42" height="42" viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect x="6" y="9" width="17" height="17" rx="5" transform="rotate(45 14.5 17.5)" stroke="#00C4CC" stroke-width="3"/><rect x="17" y="14" width="17" height="17" rx="5" transform="rotate(45 25.5 22.5)" stroke="#00FCA8" stroke-width="3"/></svg></div>
+    <div class="nome">ATLANTYX.</div>
+    <div class="tag">Engenharia de dados, analytics e IA aplicada para grandes empresas — há 17 anos.</div>
+  </div>
+
+  <div class="links">
+    <a class="link principal" id="lkConversa" href="/captura.html?utm_source=instagram&utm_medium=bio">
+      <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="3" stroke="#00FCA8" stroke-width="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke="#00FCA8" stroke-width="2" stroke-linecap="round"/></svg></div>
+      <div><b>Agendar conversa com especialista</b><span>Diagnóstico do seu cenário · sem custo</span></div><div class="seta">→</div></a>
+    <a class="link" id="lkWhats" href="#" style="display:none;" target="_blank" rel="noopener">
+      <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 20l1.3-3.8A8 8 0 1112 20a8 8 0 01-3.9-1L4 20z" stroke="#00C4CC" stroke-width="1.9" stroke-linejoin="round"/></svg></div>
+      <div><b>Falar no WhatsApp</b><span>Resposta em horário comercial</span></div><div class="seta">→</div></a>
+    <a class="link" href="/captura.html?utm_source=instagram&utm_medium=bio#servicos">
+      <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 20V10M10 20V4M16 20v-7M21 20H3" stroke="#00C4CC" stroke-width="1.9" stroke-linecap="round"/></svg></div>
+      <div><b>O que entregamos</b><span>Dados, BI, IA aplicada e sustentação</span></div><div class="seta">→</div></a>
+  </div>
+
+  <div class="bloco">
+    <div class="rot">Quem confia na Atlantyx</div>
+    <div class="chips"><span>CPFL Energia</span><span>Enel</span><span>Caixa Capitalização</span><span>Grupo Jelta</span></div>
+  </div>
+
+  <footer>Rio de Janeiro · São Paulo</footer>
+</main>
+<script>
+  // mantém a origem do post (se vier) e registra a visita
+  const q = new URLSearchParams(location.search);
+  const utm = { source: q.get('utm_source') || 'instagram', medium: q.get('utm_medium') || 'bio', campaign: q.get('utm_campaign') || '', content: q.get('utm_content') || '' };
+  const lk = document.getElementById('lkConversa');
+  lk.href = '/captura.html?utm_source=' + encodeURIComponent(utm.source) + '&utm_medium=' + encodeURIComponent(utm.medium) + (utm.campaign ? '&utm_campaign=' + encodeURIComponent(utm.campaign) : '');
+  fetch('/api/lead-capture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ evento: 'visita', utm, page: location.pathname + location.search }) })
+    .then(r => r.json()).then(d => { if (d && d.whatsapp) { const w = document.getElementById('lkWhats'); w.href = 'https://wa.me/' + d.whatsapp + '?text=' + encodeURIComponent('Olá! Vim pelo Instagram da Atlantyx e quero conversar.'); w.style.display = 'flex'; } }).catch(() => {});
+</script>
+</body>
+</html>

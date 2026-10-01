@@ -28,6 +28,18 @@ async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Hub-Signature');
   if (req.method === 'OPTIONS') return res.status(200).end();
+  // v3.32: LINK CURTO das campanhas — /agenda (cadastro → reunião) e /reuniao (agenda direto).
+  // É o que vai escrito no post/arte do Instagram, onde a rede não deixa link clicável: a pessoa digita
+  // um endereço curto em vez de ser mandada para a bio. ?c=<campanha> mantém a atribuição.
+  if (req.method === 'GET' && req.query?.atalho) {
+    const c = String(req.query.c || '').toLowerCase().replace(/[^a-z0-9_-]/g, '').substring(0, 60);
+    const fonte = String(req.query.f || 'instagram').toLowerCase().replace(/[^a-z0-9_-]/g, '').substring(0, 30) || 'instagram';
+    const utm = 'utm_source=' + fonte + '&utm_medium=link_curto' + (c ? '&utm_campaign=' + c : '');
+    const reuniao = (process.env.LINK_REUNIAO || 'https://meetings.hubspot.com/atlantyx?uuid=eca883eb-276d-45cb-bda8-d7d5d2ae9219').trim();
+    const destino = req.query.atalho === 'reuniao' ? reuniao + (reuniao.includes('?') ? '&' : '?') + utm : '/captura.html?' + utm;
+    res.setHeader('Cache-Control', 'no-store');
+    return res.redirect(302, destino);
+  }
   if (req.method !== 'POST') return res.status(405).end();
 
   // v3.13: VISITA à página de captura (sem dados pessoais) — mede o passo clique → página → lead.
@@ -173,6 +185,7 @@ function normalizeLead(body) {
     company:   body.company || body.company_name || body.empresa || body.field_data?.find(f => f.name === 'company_name')?.values?.[0] || '',
     job_title: body.job_title || body.cargo || body.title || body.field_data?.find(f => f.name === 'job_title')?.values?.[0] || '',
     source:    body.source || body.ad_name || body.campaign_name || body.form_name || 'Campanha Digital',
+    interesse: String(body.interesse || body.desafio || '').substring(0, 200) || null, // v3.32: desafio escolhido na página de captura
     timestamp: new Date().toISOString(),
   };
 
@@ -296,7 +309,7 @@ async function criarNoHubSpot(lead) {
     headers,
     body: JSON.stringify({
       properties: {
-        dealname: `${lead.company || lead.name} — ${lead.source}`,
+        dealname: `${lead.company || lead.name} — ${lead.source}${lead.interesse ? " · " + lead.interesse : ""}`,
         dealstage: process.env.HUBSPOT_STAGE_MAPEADO,
         pipeline: process.env.HUBSPOT_PIPELINE_ID,
         hs_priority: lead.score_label === 'A' ? 'high' : 'medium',

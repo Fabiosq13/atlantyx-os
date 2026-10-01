@@ -155,7 +155,7 @@ async function handler(req, res) {
     },
     // v2.73: compõe um STORY (1080x1920): imagem de fundo + faixa escura + título, apoio, oferta, chamada e link
     story_compor:   async () => {
-      const { url, titulo = '', apoio = '', oferta = '', chamada = 'Link na bio', link = '' } = payload;
+      const { url, titulo = '', apoio = '', oferta = '', chamada = 'Agende sua conversa', link = '' } = payload;
       if (!url) throw new Error('url obrigatória');
       // v2.73: o servidor da Vercel não tem fontes — aponta o fontconfig para a Roboto embutida em api/fonts,
       // senão o texto do Story sai em branco. Precisa estar definido ANTES de carregar o sharp.

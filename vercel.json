@@ -1,6 +1,26 @@
 {
   "rewrites": [
     {
+      "source": "/bio",
+      "destination": "/bio.html"
+    },
+    {
+      "source": "/agenda",
+      "destination": "/api/lead-capture?atalho=agenda"
+    },
+    {
+      "source": "/agenda/:c",
+      "destination": "/api/lead-capture?atalho=agenda&c=:c"
+    },
+    {
+      "source": "/reuniao",
+      "destination": "/api/lead-capture?atalho=reuniao"
+    },
+    {
+      "source": "/reuniao/:c",
+      "destination": "/api/lead-capture?atalho=reuniao&c=:c"
+    },
+    {
       "source": "/m/:id.:ext",
       "destination": "/api/media?id=:id"
     },

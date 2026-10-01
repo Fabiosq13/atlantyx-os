@@ -170,7 +170,7 @@ async function auditoriaFunil({ dias = 30 } = {}) {
   out.captura = { endpoint: base + '/api/lead-capture', pagina_sugerida: base + '/captura.html',
     link_bio_instagram: base + '/captura.html?utm_source=instagram&utm_medium=bio' };
   out.recomendacoes = out.recomendacoes || [];
-  out.recomendacoes.unshift('Instagram: link no post NÃO é clicável. Coloque o link da bio (abaixo) no perfil — sem isso, nenhum post do Instagram gera lead, por mais que diga "link na bio".');
+  out.recomendacoes.unshift('Instagram: link no post NÃO é clicável. Use o link curto (/agenda) escrito na legenda e na arte, ou "Comente AGENDA" com Direct automático — configure em Autocampanha → "No Instagram". Para clique de 1 toque, impulsione o post com botão "Agendar".');
   try {
     const r = await fetch(base + '/api/lead-capture', { method: 'OPTIONS' });
     out.captura.endpoint_responde = r.status < 500;
@@ -359,7 +359,7 @@ async function filaProcessar({ lote } = {}) {
         const d = await r.json().catch(() => ({}));
         if (!r.ok || !d.success || !d.imagens?.length) throw new Error(d.error || 'image-gen HTTP ' + r.status);
         const comp = await fetch(base + '/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'story_compor', payload: { url: d.imagens[0].url || d.imagens[0], titulo: st.titulo, apoio: st.apoio, oferta: st.oferta, chamada: st.chamada || 'Link na bio', link: st.link } }) }).then(x => x.json());
+          body: JSON.stringify({ action: 'story_compor', payload: { url: d.imagens[0].url || d.imagens[0], titulo: st.titulo, apoio: st.apoio, oferta: st.oferta, chamada: st.chamada || 'Agende sua conversa', link: st.link } }) }).then(x => x.json());
         if (!comp.success || !comp.url) throw new Error(comp.error || 'falha ao compor o story');
         const prox = it.apenas_rascunho ? 'fim' : 'agendar';
         await sql`UPDATE autocampanha_fila SET imagem_url = ${comp.url}, etapa = ${prox}, status = ${prox === 'fim' ? 'pronto' : 'pendente'}, erro = NULL, atualizado_em = NOW() WHERE id = ${it.id}`;
@@ -648,7 +648,7 @@ async function autoCampanhaPlanejar({ dias, horarios, pular_fim_de_semana, blog_
 }
 
 // Gera o conteúdo e agenda, um slot por vez
-async function autoCampanhaExecutar({ dias, horarios, pular_fim_de_semana, tema, redes, blog_id, apenas_rascunho = false, limite = 21, slots = null } = {}) {
+async function autoCampanhaExecutar({ dias, horarios, pular_fim_de_semana, tema, redes, blog_id, apenas_rascunho = false, limite = 21, slots = null, cta_instagram = '' } = {}) {
   const _t0 = Date.now();
   const cfg = await autoCampanhaConfig();
   // v2.16: quando o navegador manda `slots`, gera só esses (lote). Evita o "Failed to fetch":
@@ -748,7 +748,7 @@ Evite repetir o mesmo ângulo de outros posts da semana.`;
         const utmIg = new URLSearchParams({ ...Object.fromEntries(utm), utm_source: 'instagram' });
         j.link_instagram = `${base}/captura.html?${utmIg.toString()}`;
         j.texto = String(j.texto).replace(/o link est[áa] no primeiro coment[áa]rio\.?/i, '').trim()
-          + `\n\n👉 Link na bio para ${j.oferta || 'conversar'}.\n${j.link_instagram}`;
+          + `\n\n${cta_instagram || ('👉 ' + (j.oferta ? j.oferta.charAt(0).toUpperCase() + j.oferta.slice(1) : 'Agende uma conversa') + ': ' + String(j.link_instagram).replace(/^https?:\/\//, ''))}`; // v3.32: CTA configurado (sem "link na bio")
         j.link_bio = `${base}/captura.html?utm_source=instagram&utm_medium=bio`;
       } else if (temFb && !temLi) {
         j.texto = String(j.texto).replace(/o link est[áa] no primeiro coment[áa]rio\.?/i, '').trim() + `\n\n👉 ${j.link}`;

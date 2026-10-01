@@ -3,62 +3,236 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Atlantyx — Vamos conversar sobre dados e IA na sua operação</title>
-<meta name="description" content="17 anos de dados e IA para grandes empresas. Deixe seu contato e falamos sobre o seu caso.">
+<title>Atlantyx — Dados confiáveis e IA aplicada à sua operação</title>
+<meta name="description" content="Há 17 anos a Atlantyx estrutura engenharia de dados, analytics e IA para grandes empresas. Agende uma conversa com um especialista.">
+<meta property="og:title" content="Atlantyx — Dados confiáveis e IA aplicada à sua operação">
+<meta property="og:description" content="Agende uma conversa com um especialista e saia com um diagnóstico objetivo do seu cenário de dados.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  :root { --azul:#1A3A8F; --azul2:#0F2660; --dourado:#E0A422; --cinza:#5a6478; --bg:#f6f7fb; }
+  :root { --preto:#05080c; --preto2:#0b1117; --ciano:#00C4CC; --ciano2:#00C2E4; --verde:#00FCA8; --petroleo:#00708A;
+          --texto:#121a22; --cinza:#56626e; --linha:#e3e8ee; --fundo:#f5f7f9; }
   * { box-sizing:border-box; }
-  body { margin:0; font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif; background:var(--bg); color:#1c2333; }
-  .wrap { max-width:520px; margin:0 auto; padding:28px 18px 40px; }
-  .logo { font-weight:800; letter-spacing:2px; color:var(--azul); font-size:14px; margin-bottom:22px; }
-  h1 { font-size:24px; line-height:1.25; margin:0 0 10px; color:var(--azul2); }
-  .sub { color:var(--cinza); font-size:15px; line-height:1.6; margin:0 0 22px; }
-  .card { background:#fff; border-radius:14px; padding:22px 20px; box-shadow:0 6px 24px rgba(26,58,143,.08); }
-  label { display:block; font-size:12px; font-weight:600; color:var(--cinza); margin:12px 0 5px; text-transform:uppercase; letter-spacing:.4px; }
-  input, select { width:100%; padding:12px 13px; border:1.5px solid #d7dce8; border-radius:9px; font-size:15px; }
-  input:focus, select:focus { outline:none; border-color:var(--azul); }
-  button { width:100%; margin-top:18px; padding:14px; background:var(--azul); color:#fff; border:0; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer; }
-  button:disabled { opacity:.6; cursor:wait; }
-  .ok { text-align:center; padding:26px 10px; }
-  .ok h2 { color:var(--azul); margin:0 0 8px; }
-  .prova { display:flex; gap:14px; justify-content:center; flex-wrap:wrap; margin-top:20px; font-size:11px; color:var(--cinza); }
-  .prova span { background:#fff; border:1px solid #e3e7f0; border-radius:20px; padding:5px 11px; }
-  .erro { color:#D64545; font-size:13px; margin-top:8px; display:none; }
-  .fine { font-size:11px; color:#8a93a8; margin-top:14px; line-height:1.5; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; font-family:Montserrat, "Segoe UI", Arial, sans-serif; color:var(--texto); background:#fff; line-height:1.55; }
+  a { color:inherit; }
+  .container { max-width:1120px; margin:0 auto; padding:0 20px; }
+
+  /* topo */
+  header { position:absolute; top:0; left:0; right:0; z-index:2; }
+  header .container { display:flex; align-items:center; justify-content:space-between; height:72px; }
+  .marca { display:flex; align-items:center; gap:10px; color:#fff; text-decoration:none; font-weight:800; letter-spacing:3px; font-size:15px; }
+  .marca svg { width:30px; height:30px; }
+  .topo-info { color:rgba(255,255,255,.6); font-size:12px; font-weight:500; }
+
+  /* hero */
+  .hero { position:relative; background:var(--preto); color:#fff; overflow:hidden; padding:120px 0 72px; }
+  .hero::before { content:""; position:absolute; inset:0; background:
+      radial-gradient(700px 380px at 85% 10%, rgba(0,196,204,.20), transparent 60%),
+      radial-gradient(520px 320px at 5% 95%, rgba(0,252,168,.10), transparent 60%);
+    pointer-events:none; }
+  .hero::after { content:""; position:absolute; inset:0; opacity:.07; pointer-events:none;
+    background-image:linear-gradient(rgba(255,255,255,.6) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.6) 1px, transparent 1px);
+    background-size:56px 56px; mask-image:linear-gradient(180deg, #000 0%, transparent 85%); -webkit-mask-image:linear-gradient(180deg, #000 0%, transparent 85%); }
+  .hero .container { position:relative; z-index:1; display:grid; grid-template-columns:1.08fr .92fr; gap:56px; align-items:start; }
+  .selo { display:inline-flex; align-items:center; gap:8px; font-size:11.5px; font-weight:600; letter-spacing:1.4px; text-transform:uppercase; color:var(--ciano);
+          border:1px solid rgba(0,196,204,.35); border-radius:999px; padding:6px 12px; margin-bottom:22px; }
+  .selo i { width:7px; height:7px; border-radius:50%; background:var(--verde); box-shadow:0 0 10px var(--verde); }
+  h1 { font-size:44px; line-height:1.12; letter-spacing:-.6px; margin:0 0 18px; font-weight:800; }
+  h1 em { font-style:normal; background:linear-gradient(90deg, var(--ciano), var(--verde)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .sub { font-size:17px; color:rgba(255,255,255,.78); margin:0 0 28px; max-width:560px; }
+  .pontos { list-style:none; padding:0; margin:0 0 34px; display:grid; gap:12px; }
+  .pontos li { display:flex; gap:12px; align-items:flex-start; font-size:15px; color:rgba(255,255,255,.9); }
+  .pontos svg { flex:0 0 20px; margin-top:2px; }
+  .numeros { display:grid; grid-template-columns:auto 1fr auto; gap:28px; padding-top:24px; border-top:1px solid rgba(255,255,255,.12); }
+  .numeros b { display:block; font-size:20px; font-weight:800; color:#fff; }
+  .numeros span { font-size:12.5px; color:rgba(255,255,255,.6); }
+
+  /* formulário */
+  .card { background:#fff; color:var(--texto); border-radius:16px; padding:28px 26px; box-shadow:0 30px 70px rgba(0,0,0,.45); position:relative; }
+  .card::before { content:""; position:absolute; left:0; right:0; top:0; height:4px; border-radius:16px 16px 0 0; background:linear-gradient(90deg, var(--ciano), var(--verde)); }
+  .card h2 { font-size:21px; margin:2px 0 4px; font-weight:800; }
+  .card .ajuda { font-size:13px; color:var(--cinza); margin:0 0 18px; }
+  .linha2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  label { display:block; font-size:12px; font-weight:600; color:#2b3742; margin:12px 0 6px; }
+  label small { font-weight:500; color:#8692a0; }
+  input, select { width:100%; padding:12px 13px; border:1.5px solid #d5dce4; border-radius:10px; font:500 15px Montserrat, Arial, sans-serif; color:var(--texto); background:#fff; transition:border-color .15s, box-shadow .15s; }
+  input:focus, select:focus { outline:none; border-color:var(--ciano); box-shadow:0 0 0 4px rgba(0,196,204,.15); }
+  .btn { width:100%; margin-top:20px; padding:15px 18px; border:0; border-radius:11px; font:700 15.5px Montserrat, Arial, sans-serif; cursor:pointer;
+         background:var(--preto); color:#fff; display:flex; align-items:center; justify-content:center; gap:10px; transition:transform .1s, box-shadow .15s; }
+  .btn:hover { box-shadow:0 10px 24px rgba(0,0,0,.25); }
+  .btn:active { transform:translateY(1px); }
+  .btn:disabled { opacity:.6; cursor:wait; }
+  .btn .seta { color:var(--verde); }
+  .lgpd { display:flex; gap:8px; font-size:11.5px; color:#7a8692; margin-top:14px; line-height:1.45; }
+  .erro { color:#c62828; font-size:13px; margin-top:10px; display:none; }
+  .ok { display:none; }
+  .ok .check { width:52px; height:52px; border-radius:50%; background:rgba(0,252,168,.18); display:flex; align-items:center; justify-content:center; margin-bottom:12px; }
+  .ok p { color:var(--cinza); font-size:14px; margin:0 0 14px; }
+  .agenda-frame { width:100%; height:620px; border:1px solid var(--linha); border-radius:12px; display:none; }
+  .btn-sec { display:none; margin-top:10px; text-align:center; padding:12px; border-radius:10px; border:1.5px solid var(--linha); font-weight:700; font-size:14px; text-decoration:none; color:var(--texto); }
+
+  /* seções */
+  section.bloco { padding:76px 0; }
+  .titulo-sec { font-size:12px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--petroleo); margin:0 0 10px; }
+  h3.h { font-size:30px; line-height:1.2; margin:0 0 34px; font-weight:800; max-width:640px; }
+  .passos { display:grid; grid-template-columns:repeat(3, 1fr); gap:20px; }
+  .passo { border:1px solid var(--linha); border-radius:14px; padding:24px; background:#fff; }
+  .passo .n { width:34px; height:34px; border-radius:10px; background:var(--preto); color:var(--verde); font-weight:800; display:flex; align-items:center; justify-content:center; margin-bottom:14px; }
+  .passo h4 { margin:0 0 6px; font-size:16.5px; }
+  .passo p { margin:0; color:var(--cinza); font-size:14px; }
+  .cinza { background:var(--fundo); }
+  .ofertas { display:grid; grid-template-columns:repeat(4, 1fr); gap:18px; }
+  .oferta { background:#fff; border-radius:14px; padding:22px; border:1px solid var(--linha); }
+  .oferta .ic { width:40px; height:40px; border-radius:11px; background:rgba(0,196,204,.12); display:flex; align-items:center; justify-content:center; margin-bottom:14px; }
+  .oferta h4 { margin:0 0 6px; font-size:15.5px; }
+  .oferta p { margin:0; color:var(--cinza); font-size:13.5px; }
+  .clientes { display:flex; align-items:center; justify-content:space-between; gap:24px; flex-wrap:wrap; }
+  .clientes .lista { display:flex; gap:12px; flex-wrap:wrap; }
+  .clientes .lista span { font-weight:700; font-size:14px; color:#2b3742; border:1px solid var(--linha); border-radius:10px; padding:10px 16px; background:#fff; }
+  .final { background:var(--preto); color:#fff; text-align:center; padding:60px 0; position:relative; overflow:hidden; }
+  .final::before { content:""; position:absolute; inset:0; background:radial-gradient(600px 260px at 50% 0%, rgba(0,196,204,.22), transparent 70%); }
+  .final .container { position:relative; }
+  .final h3 { font-size:28px; margin:0 0 10px; }
+  .final p { color:rgba(255,255,255,.72); margin:0 0 24px; }
+  .final a { display:inline-flex; gap:10px; align-items:center; background:#fff; color:var(--preto); text-decoration:none; font-weight:800; padding:14px 26px; border-radius:11px; }
+  footer { background:var(--preto2); color:rgba(255,255,255,.55); font-size:12.5px; padding:22px 0; }
+  footer .container { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+
+  @media (max-width: 960px) {
+    .hero { padding:96px 0 48px; }
+    .hero .container { grid-template-columns:1fr; gap:30px; }
+    h1 { font-size:33px; }
+    .ofertas { grid-template-columns:1fr 1fr; }
+    .passos { grid-template-columns:1fr; }
+  }
+  @media (max-width: 560px) {
+    .container { padding:0 16px; }
+    h1 { font-size:28px; }
+    .sub { font-size:15.5px; }
+    .linha2 { grid-template-columns:1fr; gap:0; }
+    .ofertas { grid-template-columns:1fr; }
+    .topo-info { display:none; }
+    .numeros { gap:18px; grid-template-columns:1fr; }
+    h3.h { font-size:24px; }
+    section.bloco { padding:56px 0; }
+    .card { padding:24px 18px; }
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="logo">ATLANTYX</div>
-  <h1 id="titulo">Dados e IA que sua operação usa de verdade</h1>
-  <p class="sub" id="sub">17 anos entregando para CPFL, Enel, Caixa e outras grandes empresas. Deixe seu contato e conversamos sobre o seu caso — sem apresentação genérica.</p>
-
-  <div class="card" id="form">
-    <label for="nome">Seu nome</label>
-    <input id="nome" autocomplete="name" required>
-    <label for="empresa">Empresa</label>
-    <input id="empresa" autocomplete="organization" required>
-    <label for="cargo">Cargo</label>
-    <input id="cargo" autocomplete="organization-title" placeholder="Ex.: Gerente de TI, Diretor de Operações">
-    <label for="email">E-mail corporativo</label>
-    <input id="email" type="email" autocomplete="email" required>
-    <label for="telefone">WhatsApp (opcional)</label>
-    <input id="telefone" type="tel" autocomplete="tel" placeholder="(11) 99999-9999">
-    <button id="btn" onclick="enviar()">Quero conversar</button>
-    <div class="erro" id="erro"></div>
-    <div class="fine">Usamos seu contato só para retornar sobre este assunto. Nada de lista de e-mail.</div>
+<header>
+  <div class="container">
+    <a class="marca" href="#" aria-label="Atlantyx">
+      <svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect x="6" y="9" width="17" height="17" rx="5" transform="rotate(45 14.5 17.5)" stroke="#00C4CC" stroke-width="3"/><rect x="17" y="14" width="17" height="17" rx="5" transform="rotate(45 25.5 22.5)" stroke="#00FCA8" stroke-width="3"/></svg>
+      ATLANTYX.
+    </a>
+    <span class="topo-info">Engenharia de dados · Analytics · IA aplicada</span>
   </div>
+</header>
 
-  <div class="card ok" id="ok" style="display:none;">
-    <h2>Recebido.</h2>
-    <p style="color:var(--cinza);line-height:1.6;">Retornamos em até um dia útil. Se preferir adiantar, <a id="wa" href="#" style="color:var(--azul);font-weight:600;">fale agora pelo WhatsApp</a>.</p>
-    <a id="agenda" href="#" style="display:none;margin-top:14px;text-align:center;background:var(--azul);color:#fff;padding:12px 16px;border-radius:8px;font-weight:700;text-decoration:none;">📅 Escolher um horário agora</a>
-  </div>
+<div class="hero">
+  <div class="container">
+    <div>
+      <div class="selo"><i></i> Conversa com especialista · sem custo</div>
+      <h1 id="titulo">Dados confiáveis e <em>IA aplicada</em> para decidir mais rápido.</h1>
+      <p class="sub" id="sub">Há 17 anos a Atlantyx estrutura engenharia de dados, analytics e inteligência artificial para grandes empresas. Em uma conversa objetiva, mapeamos onde dados e IA geram resultado na sua operação.</p>
+      <ul class="pontos">
+        <li><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" stroke="#00FCA8" stroke-width="1.6"/><path d="M6 10.4l2.6 2.5L14 7.4" stroke="#00FCA8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Conversa técnica com quem executa projetos — não é uma apresentação comercial.</li>
+        <li><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" stroke="#00FCA8" stroke-width="1.6"/><path d="M6 10.4l2.6 2.5L14 7.4" stroke="#00FCA8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Você sai com oportunidades priorizadas por impacto e esforço.</li>
+        <li><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" stroke="#00FCA8" stroke-width="1.6"/><path d="M6 10.4l2.6 2.5L14 7.4" stroke="#00FCA8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Proposta só se fizer sentido para o seu momento.</li>
+      </ul>
+      <div class="numeros">
+        <div><b>17 anos</b><span>em dados e tecnologia</span></div>
+        <div><b>Energia, finanças, varejo</b><span>setores atendidos</span></div>
+        <div><b>RJ · SP</b><span>atuação em todo o Brasil</span></div>
+      </div>
+    </div>
 
-  <div class="prova">
-    <span>CPFL Energia</span><span>Enel</span><span>Caixa Capitalização</span><span>Jelta</span>
+    <div class="card" id="cardForm">
+      <div id="form">
+        <h2>Agende sua conversa</h2>
+        <p class="ajuda">Leva menos de um minuto. Em seguida você escolhe o horário.</p>
+        <div class="linha2">
+          <div><label for="nome">Nome</label><input id="nome" autocomplete="name" required></div>
+          <div><label for="cargo">Cargo</label><input id="cargo" autocomplete="organization-title" placeholder="Ex.: Diretor de TI"></div>
+        </div>
+        <label for="empresa">Empresa</label>
+        <input id="empresa" autocomplete="organization" required>
+        <label for="email">E-mail corporativo</label>
+        <input id="email" type="email" autocomplete="email" required placeholder="nome@empresa.com.br">
+        <div class="linha2">
+          <div><label for="telefone">WhatsApp <small>(opcional)</small></label><input id="telefone" type="tel" autocomplete="tel" placeholder="(11) 99999-9999"></div>
+          <div><label for="interesse">Principal desafio <small>(opcional)</small></label>
+            <select id="interesse">
+              <option value="">Selecione</option>
+              <option>Dados dispersos e relatórios manuais</option>
+              <option>Indicadores e painéis executivos (BI)</option>
+              <option>IA aplicada a processos</option>
+              <option>Engenharia de dados / Data Lake</option>
+              <option>Sustentação e especialistas</option>
+              <option>Outro</option>
+            </select></div>
+        </div>
+        <button class="btn" id="btn" onclick="enviar()">Solicitar conversa <span class="seta">→</span></button>
+        <div class="erro" id="erro" role="alert"></div>
+        <div class="lgpd"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" style="flex:0 0 14px;margin-top:1px"><rect x="4" y="9" width="12" height="9" rx="2" stroke="#7a8692" stroke-width="1.6"/><path d="M7 9V6.5a3 3 0 016 0V9" stroke="#7a8692" stroke-width="1.6"/></svg>
+          Seus dados são usados apenas para este contato, conforme a LGPD. Sem lista de e-mails.</div>
+      </div>
+      <div class="ok" id="ok">
+        <div class="check"><svg width="26" height="26" viewBox="0 0 20 20" fill="none"><path d="M5 10.5l3.2 3L15 6.5" stroke="#047857" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <h2 id="okTitulo">Recebemos seu contato.</h2>
+        <p id="okTexto">Escolha abaixo o melhor horário para a conversa. Se preferir, retornamos em até um dia útil.</p>
+        <iframe class="agenda-frame" id="agendaFrame" title="Agenda de reuniões Atlantyx" loading="lazy"></iframe>
+        <a class="btn-sec" id="agenda" href="#" target="_blank" rel="noopener">Abrir a agenda em nova aba</a>
+        <a class="btn-sec" id="wa" href="#" target="_blank" rel="noopener">Falar agora pelo WhatsApp</a>
+      </div>
+    </div>
   </div>
 </div>
+
+<section class="bloco" id="como">
+  <div class="container">
+    <div class="titulo-sec">Como funciona</div>
+    <h3 class="h">Uma conversa objetiva, com encaminhamento claro.</h3>
+    <div class="passos">
+      <div class="passo"><div class="n">1</div><h4>Você agenda</h4><p>Escolhe o horário que funciona para você, na hora, logo depois do cadastro.</p></div>
+      <div class="passo"><div class="n">2</div><h4>Diagnóstico do cenário</h4><p>Entendemos seus dados, sistemas, indicadores e metas — e onde estão os gargalos.</p></div>
+      <div class="passo"><div class="n">3</div><h4>Próximos passos</h4><p>Recomendações priorizadas por impacto. Proposta apenas se fizer sentido.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="bloco cinza" id="servicos">
+  <div class="container">
+    <div class="titulo-sec">O que entregamos</div>
+    <h3 class="h">Da base de dados à decisão, com operação contínua.</h3>
+    <div class="ofertas">
+      <div class="oferta"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="6" rx="7" ry="3" stroke="#00708A" stroke-width="1.8"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" stroke="#00708A" stroke-width="1.8"/></svg></div><h4>Engenharia de dados</h4><p>Integração de sistemas, pipelines e data lake/warehouse com dados confiáveis.</p></div>
+      <div class="oferta"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke="#00708A" stroke-width="1.8" stroke-linecap="round"/></svg></div><h4>BI e analytics</h4><p>Indicadores consistentes e painéis executivos que a liderança usa no dia a dia.</p></div>
+      <div class="oferta"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="5" y="7" width="14" height="11" rx="3" stroke="#00708A" stroke-width="1.8"/><path d="M9 12h.01M15 12h.01M12 3v4M9 21h6" stroke="#00708A" stroke-width="2" stroke-linecap="round"/></svg></div><h4>IA aplicada</h4><p>Agentes de IA, automação de processos e modelos de previsão integrados à operação.</p></div>
+      <div class="oferta"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="#00708A" stroke-width="1.8"/><path d="M3 19c.8-3 3.2-4.6 6-4.6s5.2 1.6 6 4.6M16 11l2 2 4-4" stroke="#00708A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div><h4>Sustentação e especialistas</h4><p>Operação contínua com SLA e profissionais alocados no seu time.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="bloco">
+  <div class="container clientes">
+    <div><div class="titulo-sec">Quem confia na Atlantyx</div><div style="font-size:14px;color:var(--cinza);max-width:360px;">Projetos e sustentação para empresas de grande porte.</div></div>
+    <div class="lista"><span>CPFL Energia</span><span>Enel</span><span>Caixa Capitalização</span><span>Grupo Jelta</span></div>
+  </div>
+</section>
+
+<div class="final">
+  <div class="container">
+    <h3>Vamos olhar o seu cenário?</h3>
+    <p>Uma conversa com especialista, sem custo e sem compromisso.</p>
+    <a href="#cardForm" onclick="setTimeout(()=>document.getElementById('nome').focus(),350)">Agendar conversa <span style="color:var(--petroleo)">→</span></a>
+  </div>
+</div>
+
+<footer><div class="container"><span>© Atlantyx — Rio de Janeiro · São Paulo</span><span>Dados tratados conforme a LGPD</span></div></footer>
+
 <script>
   // Origem da visita — vem da UTM do post. É o que permite saber QUAL campanha gerou o lead.
   const q = new URLSearchParams(location.search);
@@ -66,22 +240,22 @@
   // Título pode ser personalizado por campanha: ?t=Texto&s=Subtexto
   if (q.get('t')) document.getElementById('titulo').textContent = q.get('t');
   if (q.get('s')) document.getElementById('sub').textContent = q.get('s');
-  // v3.13: registra a VISITA (sem dados pessoais) para medir clique → página → lead
-  let whatsComercial = null;
+  // Registra a VISITA (sem dados pessoais) para medir clique → página → lead
+  let whatsComercial = null, agendaServidor = null;
   fetch('/api/lead-capture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ evento: 'visita', utm, page: location.pathname + location.search }) })
-    .then(r => r.json()).then(d => { whatsComercial = d && d.whatsapp; }).catch(() => {});
+    .then(r => r.json()).then(d => { whatsComercial = d && d.whatsapp; agendaServidor = d && d.agenda; }).catch(() => {});
 
   async function enviar() {
     const g = id => document.getElementById(id).value.trim();
     const erro = document.getElementById('erro');
     erro.style.display = 'none';
     if (!g('nome') || !g('empresa') || !g('email')) { erro.textContent = 'Preencha nome, empresa e e-mail.'; erro.style.display = 'block'; return; }
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(g('email'))) { erro.textContent = 'E-mail inválido.'; erro.style.display = 'block'; return; }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(g('email'))) { erro.textContent = 'Confira o e-mail informado.'; erro.style.display = 'block'; return; }
     const btn = document.getElementById('btn'); btn.disabled = true; btn.textContent = 'Enviando...';
     try {
       const r = await fetch('/api/lead-capture', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: g('nome'), company: g('empresa'), title: g('cargo'), email: g('email'), phone: g('telefone'),
+          name: g('nome'), company: g('empresa'), title: g('cargo'), email: g('email'), phone: g('telefone'), interesse: g('interesse'),
           source: utm.source, campaign_name: utm.campaign || 'captura', utm,
           page: location.href, form_name: 'captura-publica',
         }) });
@@ -89,16 +263,27 @@
       if (!r.ok || d.success === false) throw new Error(d.error || 'HTTP ' + r.status);
       document.getElementById('form').style.display = 'none';
       document.getElementById('ok').style.display = 'block';
-      const wa = document.getElementById('wa');
+      const primeiro = g('nome').split(' ')[0];
+      document.getElementById('okTitulo').textContent = 'Obrigado, ' + primeiro + '.';
+      // agenda: parâmetro r do link da campanha, ou configurada no servidor (LINK_REUNIAO) — abre embutida
+      const ag = q.get('r') || (d && d.agenda) || agendaServidor || '';
+      if (/^https:\/\//i.test(ag)) {
+        const sobrenome = g('nome').split(' ').slice(1).join(' ');
+        const url = ag + (ag.includes('?') ? '&' : '?') + 'email=' + encodeURIComponent(g('email')) + '&firstName=' + encodeURIComponent(primeiro) + (sobrenome ? '&lastName=' + encodeURIComponent(sobrenome) : '') + (g('empresa') ? '&company=' + encodeURIComponent(g('empresa')) : '');
+        const fr = document.getElementById('agendaFrame');
+        if (/meetings\.hubspot\.com/i.test(ag)) { fr.src = url + '&embed=true'; fr.style.display = 'block'; }
+        const a = document.getElementById('agenda'); a.href = url; a.style.display = 'block';
+        if (fr.style.display === 'block') a.textContent = 'Agenda não carregou? Abrir em nova aba';
+      } else {
+        document.getElementById('okTexto').textContent = 'Um especialista retorna em até um dia útil para combinar a conversa.';
+      }
       const numero = (d && d.whatsapp) || whatsComercial;
-      if (numero) wa.href = 'https://wa.me/' + numero + '?text=' + encodeURIComponent(`Olá, sou ${g('nome')} da ${g('empresa')}. Vi o post sobre ${utm.campaign || 'dados e IA'} e quero conversar.`);
-      else wa.style.display = 'none'; // v3.13: sem número configurado, não mostra um link que não leva a lugar nenhum
-      // v3.23: link de agenda (vem no parâmetro r do link da campanha, ou configurado no servidor)
-      const ag = q.get('r') || (d && d.agenda) || '';
-      if (/^https:\/\//i.test(ag)) { const a = document.getElementById('agenda'); a.href = ag + (ag.includes('?') ? '&' : '?') + 'email=' + encodeURIComponent(g('email')) + '&firstName=' + encodeURIComponent(g('nome').split(' ')[0]); a.style.display = 'block'; a.target = '_blank'; a.rel = 'noopener'; }
+      const wa = document.getElementById('wa');
+      if (numero) { wa.href = 'https://wa.me/' + numero + '?text=' + encodeURIComponent(`Olá, sou ${g('nome')}, da ${g('empresa')}. Acabei de solicitar uma conversa com a Atlantyx.`); wa.style.display = 'block'; }
+      document.getElementById('cardForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
-      erro.textContent = 'Não consegui enviar (' + e.message + '). Tente de novo ou fale pelo WhatsApp.'; erro.style.display = 'block';
-      btn.disabled = false; btn.textContent = 'Quero conversar';
+      erro.textContent = 'Não foi possível enviar agora (' + e.message + '). Tente novamente em instantes.'; erro.style.display = 'block';
+      btn.disabled = false; btn.innerHTML = 'Solicitar conversa <span class="seta">→</span>';
     }
   }
 </script>
