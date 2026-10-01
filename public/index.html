@@ -2591,6 +2591,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
             <div style="color:var(--t3);font-size:12px;text-align:center;padding:30px;">Clique em Gerar Previews para ver o preview do canal selecionado.</div>
           </div>
         </div><!-- fim edPreview (v1.14.1: faltava este fechamento — todas as páginas seguintes ficavam aninhadas dentro da campanha e apareciam pretas) -->
+        <div id="campPubDatas" style="display:none;background:var(--bg3);border:1px solid var(--bd2);border-radius:8px;padding:10px 12px;margin:10px 0;"></div>
         <!-- AÇÕES FINAIS -->
         <div class="cp-acoes">
           <button class="btn btn-gn" onclick="aprovarCampanhaFinal()" style="flex:1;justify-content:center;font-weight:700;">④ Aprovar e enviar ao Kanban</button>
@@ -10797,7 +10798,8 @@ function resetCampanhaState() {
   // v3.33: a tela de Nova Campanha abre LIMPA. Antes ela carregava a última campanha do banco
   // (ex.: "Auto-campanha 25/09…") e quem só trocava o contexto e clicava em Criar ganhava uma
   // campanha nova com o nome da antiga — e o salvamento automático do formulário podia editar a antiga.
-  try { ['cNome','cObj','cPublico','cOrc','cCtx','cDataInicio','cDataFim'].forEach(id => { const e = document.getElementById(id); if (e && e.tagName !== 'SELECT') e.value = ''; }); } catch (_) {}
+  try { ['cNome','cObj','cPublico','cOrc','cCtx','cDataInicio','cDataFim'].forEach(id => { const e = document.getElementById(id); if (e && e.tagName !== 'SELECT') e.value = ''; }); definirDatasPadraoCampanha(true); } catch (_) {}
+  try { const pd = document.getElementById('campPubDatas'); if (pd) pd.style.display = 'none'; } catch (_) {}
   _ofertarUltimaCampanha();
 
   // Resetar tags
@@ -10921,7 +10923,8 @@ function irParaAbaImagem() {
 function restaurarFormularioCampanha(camp) {
   if (!camp) return;
   // Preencher inputs
-  const map = { cNome: camp.nome, cCanal: camp.canal, cPublico: camp.pub, cObj: camp.obj, cOrc: camp.orc, cCtx: camp.ctx };
+  const map = { cNome: camp.nome, cCanal: camp.canal, cPublico: camp.pub, cObj: camp.obj, cOrc: camp.orc, cCtx: camp.ctx,
+    cDataInicio: camp.data_inicio ? String(camp.data_inicio).substring(0, 10) : null, cDataFim: camp.data_fim ? String(camp.data_fim).substring(0, 10) : null }; // v3.34: período da campanha
   Object.entries(map).forEach(([id, val]) => {
     const el = document.getElementById(id);
     if (el && val != null) el.value = val;
@@ -10931,6 +10934,7 @@ function restaurarFormularioCampanha(camp) {
     Object.entries(m).forEach(([id, k]) => { const el = document.getElementById(id); if (el) el.checked = !!camp.redes_ativas[k]; });
     try { _redesMarcadas = Object.assign({}, camp.redes_ativas); } catch (_) {} }
   try { _kbSincronizarCampanha(camp); } catch (_) {}
+  try { (typeof carregarPublicacoes === 'function' && !(_publicacoes || []).length ? carregarPublicacoes() : Promise.resolve()).then(_renderDatasPublicacao); } catch (_) {}
   // Se tem dados dos agentes, mostra editor e re-render
   if (camp.data) {
     const edPanel = document.getElementById('campEditorPanel');
@@ -11360,6 +11364,7 @@ function coletarEdicoesAtuais(camp) {
   const nome = document.getElementById('cNome')?.value?.trim();
   if (nome) camp.nome = nome;
   camp.canal   = document.getElementById('cCanal')?.value  || camp.canal;
+  { const di = document.getElementById('cDataInicio')?.value, df = document.getElementById('cDataFim')?.value; if (di) camp.data_inicio = di; if (df) camp.data_fim = df; } // v3.34
   // v3.31: as redes marcadas no formulário também são gravadas pelo 💾 Salvar
   if (document.getElementById('cRedeLI')) camp.redes_ativas = { linkedin: !!document.getElementById('cRedeLI')?.checked, instagram: !!document.getElementById('cRedeIG')?.checked, facebook: !!document.getElementById('cRedeFB')?.checked, whatsapp: !!document.getElementById('cRedeWA')?.checked, email: !!document.getElementById('cRedeEmail')?.checked };
   camp.publico = document.getElementById('cPublico')?.value || camp.publico;
@@ -12273,7 +12278,13 @@ async function abrirCampanhaDB(id) {
   if (savBtn) savBtn.style.display = 'inline-block';
   if (camp.data) preencherEditorCampanha(camp.data);
   // v1.9.3: período da campanha
-  try { const di = document.getElementById('cDataInicio'), df = document.getElementById('cDataFim'); if (di) di.value = camp.data_inicio || ''; if (df) df.value = camp.data_fim || ''; if (!camp.data_inicio) definirDatasPadraoCampanha(false); } catch(_) {}
+  // v3.34: o banco devolve a data com hora (2026-10-05T00:00:00Z) — o campo de data só aceita AAAA-MM-DD; antes ficava vazio
+  try { const di = document.getElementById('cDataInicio'), df = document.getElementById('cDataFim'); if (di) di.value = camp.data_inicio ? String(camp.data_inicio).substring(0, 10) : ''; if (df) df.value = camp.data_fim ? String(camp.data_fim).substring(0, 10) : ''; if (!camp.data_inicio) definirDatasPadraoCampanha(false); } catch(_) {}
+  // v3.34: redes da campanha nas caixas e datas de publicação no editor
+  try { if (camp.redes_ativas) { const m = { cRedeLI: 'linkedin', cRedeIG: 'instagram', cRedeFB: 'facebook', cRedeWA: 'whatsapp', cRedeEmail: 'email' };
+    Object.entries(m).forEach(([id, k]) => { const el = document.getElementById(id); if (el) el.checked = !!camp.redes_ativas[k]; }); _redesMarcadas = Object.assign({}, camp.redes_ativas); } } catch (_) {}
+  try { const b = document.getElementById('campContinuar'); if (b) b.remove(); } catch (_) {}
+  try { (typeof carregarPublicacoes === 'function' && !(_publicacoes || []).length ? carregarPublicacoes() : Promise.resolve()).then(_renderDatasPublicacao); } catch (_) {}
 
   // v1.6.6: se a campanha não tem imagens salvas mas a PEÇA vinculada tem
   // (URL colada no loop de revisão do kanban), adota a imagem da peça
@@ -24837,13 +24848,14 @@ function renderCalendarioKanban() {
 }
 
 // v1.11.2: mudar data/hora de uma publicação agendada (no Metricool também)
-async function reagendarPublicacao(pubId) {
-  const pub = (_publicacoes || []).find(p => p.id === pubId); if (!pub) return;
+async function reagendarPublicacao(pubId, novaData) {
+  const pub = (_publicacoes || []).find(p => p.id === pubId); if (!pub) return false;
   const atual = new Date(pub.agendado_para || pub.data);
   const iso = d => new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().substring(0,16);
-  const nova = prompt('Nova data/hora para "' + (pub.titulo||'') + '" (' + pub.rede + '):', iso(isNaN(atual) ? new Date() : atual));
-  if (!nova) return;
-  const quando = new Date(nova); if (isNaN(quando)) { toast('Data inválida', 'error'); return; }
+  const nova = novaData || prompt('Nova data/hora para "' + (pub.titulo||'') + '" (' + pub.rede + '):', iso(isNaN(atual) ? new Date() : atual));
+  if (!nova) return false;
+  const quando = new Date(nova); if (isNaN(quando)) { toast('Data inválida', 'error'); return false; }
+  if (quando < new Date(Date.now() - 60000)) { toast('Escolha uma data/hora futura', 'error'); return false; }
   const irmas = pub.metricool_id ? _publicacoes.filter(p => p.metricool_id === pub.metricool_id) : [pub];
   if (pub.metricool_id) {
     toast('Reagendando no Metricool...', 'success');
@@ -24857,7 +24869,7 @@ async function reagendarPublicacao(pubId) {
       irmas.forEach(p => { p.metricool_id = novoId; p.agendado_para = quando.toISOString(); if (payloadOrig) p.mc_payload = Object.assign({}, payloadOrig, { data_hora: quando.toISOString() }); });
       addLog('ok', '[Calendário] Reagendado (' + (d.metodo || 'ok') + ') → ' + quando.toLocaleString('pt-BR') + (d.antigo ? ' · Metricool #' + d.antigo + ' → #' + novoId : ''));
       toast('Reagendado para ' + quando.toLocaleString('pt-BR') + (d.metodo === 'recriado' ? ' (post recriado no Metricool)' : ''), 'success');
-    } catch (e) { addLog('err', '[Calendário] reagendar: ' + e.message); toast('Não foi possível reagendar no Metricool: ' + e.message, 'error'); return; }
+    } catch (e) { addLog('err', '[Calendário] reagendar: ' + e.message); toast('Não foi possível reagendar no Metricool: ' + e.message, 'error'); return false; }
   } else {
     irmas.forEach(p => { p.agendado_para = quando.toISOString(); });
     toast('Data atualizada (publicação manual)', 'success');
@@ -24869,6 +24881,30 @@ async function reagendarPublicacao(pubId) {
     if (c) { if ((pub.texto||'').startsWith('[REEL]') && c.reel) c.reel.agendado_em = quando.toISOString(); if ((pub.texto||'').startsWith('[CARROSSEL]') && c.carrossel) c.carrossel.publicado_em = quando.toISOString(); salvarCampanhaNoBanco(c, 'reagendar'); } } catch(_) {}
   await salvarPublicacoes();
   renderCalendarioKanban(); try { renderDesempenho(); } catch(_) {}
+  try { _renderDatasPublicacao(); } catch (_) {}
+  return true;
+}
+
+// v3.34: DATAS DE PUBLICAÇÃO dentro da edição da campanha — antes só dava para mudar pelo Kanban/calendário
+function _renderDatasPublicacao() {
+  const box = document.getElementById('campPubDatas'); if (!box) return;
+  const c = (typeof campAtiva !== 'undefined' && campAtiva) || null;
+  if (!c) { box.style.display = 'none'; return; }
+  const iso = d => { const x = new Date(d); return isNaN(x) ? '' : new Date(x.getTime() - x.getTimezoneOffset() * 60000).toISOString().substring(0, 16); };
+  const pubs = (typeof _publicacoes !== 'undefined' ? _publicacoes : []).filter(p => p.campanhaId === c.id);
+  // agrupa redes que são o mesmo post no Metricool
+  const grupos = []; const vistos = {};
+  pubs.forEach(p => { const k = p.metricool_id || p.id; if (vistos[k]) { vistos[k].redes.push(p.rede); return; } vistos[k] = { id: p.id, titulo: p.titulo, redes: [p.rede], quando: p.agendado_para || p.data, publicado: p.status === 'publicado' || (new Date(p.agendado_para || p.data) < new Date() && !!p.metricool_id) }; grupos.push(vistos[k]); });
+  grupos.sort((a, b) => new Date(a.quando) - new Date(b.quando));
+  box.style.display = 'block';
+  box.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><b style="font-size:12px;">📅 Datas de publicação</b><span style="font-size:10px;color:var(--t2);">mudar aqui também muda no Metricool</span></div>'
+    + (grupos.length ? grupos.map(g => '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:5px 0;border-top:1px solid var(--bd);font-size:11px;">'
+        + '<span style="flex:1;min-width:160px;">' + String(g.titulo || 'Publicação').replace(/</g, '&lt;') + ' <span style="color:var(--t3);">· ' + g.redes.join(', ') + '</span></span>'
+        + (g.publicado ? '<span style="color:var(--green);">publicado em ' + new Date(g.quando).toLocaleString('pt-BR') + '</span>'
+          : '<input type="datetime-local" class="fi" style="width:auto;font-size:11px;padding:4px 6px;" id="pubDt_' + g.id + '" value="' + iso(g.quando) + '" title="Nova data/hora"/>'
+          + '<button class="btn btn-g" style="font-size:10px;padding:3px 9px;" onclick="(async b=>{b.disabled=true;b.textContent=\'...\';const ok=await reagendarPublicacao(\'' + g.id + '\', document.getElementById(\'pubDt_' + g.id + '\').value);b.disabled=false;b.textContent=ok?\'✓ salvo\':\'Salvar data\';})(this)">Salvar data</button>')
+        + '</div>').join('')
+      : '<div style="font-size:11px;color:var(--t2);">Nenhuma publicação agendada ainda. O período da campanha (início e fim) fica no formulário acima; para agendar, aprove e use 🚀 Publicar no Kanban.</div>');
 }
 
 // v1.7: excluir publicação do calendário E do Metricool
@@ -26042,7 +26078,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.33] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.34] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -26058,7 +26094,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.33';
+window.__ATX_BUILD_ID__ = 'ATX-v3.34';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
