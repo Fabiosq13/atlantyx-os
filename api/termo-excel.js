@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/termo-excel.js — v2.52
 // Gera o Termo de Aceite de Faturamento no LAYOUT OFICIAL (modelo CPFL), preenchendo o
 // template real (api/modelos/termo_aceite.xlsx) em vez de montar uma planilha do zero.
@@ -117,7 +118,7 @@ export async function gerarTermoExcel({ cabecalho: c = {}, empresas = [] }) {
   return await wb.xlsx.writeBuffer();
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ success: false, error: 'método' });
   try {
     let dados;
@@ -135,3 +136,6 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: e.message });
   }
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

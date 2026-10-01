@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
 // SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
@@ -33,7 +34,7 @@ function _smtpConfig(user, pass) {
 // Padrão: POST /api/financeiro com { action, params }
 // ═══════════════════════════════════════════════════════════════════════════
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   // v1.91: cron diário do alerta de termos obrigatórios. A função decide se hoje é dia de
   // enviar (até o dia 10) e se há algo faltando — o cron só precisa chamar todo dia.
   // v1.94: cron diário das pendências do faturamento
@@ -6175,3 +6176,6 @@ function emailTplLembreteFinanceiro(m, tentativa) {
     <p style="color:#666;font-size:12px;">Atlantyx OS — lembrete automático a cada 3 dias até a conclusão.</p>
   </div>`;
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

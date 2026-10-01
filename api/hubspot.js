@@ -1,6 +1,7 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/hubspot.js — apenas propriedades nativas HubSpot
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -198,3 +199,6 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: e.message });
   }
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

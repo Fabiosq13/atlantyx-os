@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/rfp-monitor.js — v3.11
 // S2-01 + S2-04 — Monitor de RFPs/editais REAIS
 //
@@ -28,7 +29,7 @@ const restante = () => _prazo - Date.now();
 async function lerCache() { try { const { neon } = await import('@neondatabase/serverless'); const sql = neon(process.env.DATABASE_URL); const r = await sql`SELECT value, updated_at FROM kv_store WHERE key = 'rfp:ultima_varredura' LIMIT 1`; if (!r[0]) return null; const v = typeof r[0].value === 'string' ? JSON.parse(r[0].value) : r[0].value; return { ...v, cache_em: r[0].updated_at }; } catch (_) { return null; } }
 async function gravarCache(v) { try { const { neon } = await import('@neondatabase/serverless'); const sql = neon(process.env.DATABASE_URL); await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('rfp:ultima_varredura', ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {} }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -306,3 +307,6 @@ async function enviarListaEmail({ para, assunto, mensagem, rfps } = {}) {
   const info = await t.sendMail({ from: `Atlantyx OS <${user}>`, to: dest.join(', '), subject: assunto || `Editais abertos (${lista.length}) — ${hoje}`, html });
   return { enviado: true, para: dest, total: lista.length, id: info.messageId, aceitos: info.accepted };
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

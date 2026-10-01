@@ -1,9 +1,10 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/s1-data.js
 // Leitor de Dados para os Agentes S1 — QuickBooks + Google Drive
 // Alimenta o planejamento estratégico com dados reais da empresa
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -516,3 +517,6 @@ Retorne JSON:
     timestamp: new Date().toISOString()
   };
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // ═══════════════════════════════════════════════════════════════════════════
 // ATLANTYX OS — QuickBooks OAuth
 //
@@ -43,7 +44,7 @@ ol{padding-left:22px;} li{margin:7px 0;}
 </style></head><body>${corpo}</body></html>`;
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   const clientId = process.env.QB_CLIENT_ID;
   const clientSecret = process.env.QB_CLIENT_SECRET;
   const uri = redirectUri(req);
@@ -133,3 +134,6 @@ export default async function handler(req, res) {
       <a class="btn" href="/api/qb-oauth?start=1">Tentar de novo</a>`));
   }
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

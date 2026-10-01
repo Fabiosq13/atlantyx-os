@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/metricool.js
 // Integração Metricool — publicação automática + métricas de redes sociais
 // Env vars necessárias (Vercel):
@@ -786,7 +787,7 @@ Evite repetir o mesmo ângulo de outros posts da semana.`;
     resumo: `${criados.length} publicação(ões) ${apenas_rascunho ? 'em rascunho' : 'agendadas'} nos horários vagos.` };
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   // v2.68: cron da fila — um passo por minuto, em segundo plano
   if (req.method === 'GET' && req.query?.cron === 'fila') {
     try { const out = []; for (let i = 0; i < 2; i++) { const r = await filaProcessar({}); out.push(r); if (r.ocioso) break; }
@@ -1167,3 +1168,6 @@ function extrairRedes(marca) {
   if (marca.tiktok) redes.push('tiktok');
   return redes;
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

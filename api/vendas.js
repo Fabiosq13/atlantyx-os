@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/vendas.js — v3.24
 // ÁREA DE VENDAS (S7): Elaboração de Propostas com inteligência financeira + Painel de Vendas IA.
 //
@@ -367,7 +368,7 @@ async function propConverter(base, { id } = {}) {
   return { projeto_id: pid, marcos_criados: n };
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
   let body = {}; try { body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}); } catch { return res.status(400).json({ success: false, error: 'JSON inválido' }); }
@@ -422,3 +423,6 @@ export default async function handler(req, res) {
   catch (e) { console.error('[vendas]', action, e.message); return res.status(500).json({ success: false, error: e.message }); }
 }
 export { calcularFormatos, margens };
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/qa.js — v3.16
 // Backend dos agentes de QUALIDADE (QA) e SEGURANÇA do Atlantyx OS.
 //
@@ -129,6 +130,91 @@ async function crudSuite() {
   return { marca, resultados, sobras, ok: resultados.every(r => r.ok) && !sobras.length };
 }
 
+// ═══════════════════════ QA: EXECUÇÃO REAL — preparação e limpeza (v3.28) ═══════════════════════
+// real_inicio  → registra o início e tira uma cópia do kv_store (no próprio banco, sem tráfego)
+// real_limpar  → apaga em TODAS as tabelas as linhas com a marca QA-TESTE; devolve o kv_store ao estado
+//                anterior (tokens e caches ficam como estão); lista o que foi criado durante o teste sem
+//                marca (ex.: "Auto-campanha IA") para você decidir
+// real_apagar_janela → apaga, nas tabelas escolhidas, o que foi criado durante o teste
+const _qq = (db, texto, params = []) => (typeof db.query === 'function' ? db.query(texto, params) : db(texto, params));
+const KV_NAO_RESTAURAR = /token|oauth|refresh|cache|^qa:|lock|cron|heartbeat|ultim[ao]_?(sync|execu)/i;
+const COL_CRIACAO = ['criado_em', 'created_at', 'criado', 'inserido_em', 'data_criacao'];
+const contemMarca = v => JSON.stringify(v ?? null).includes(MARCA);
+async function realInicio() {
+  const sql = await getSql();
+  await sql`CREATE TABLE IF NOT EXISTS qa_runs (id TEXT PRIMARY KEY, inicio TIMESTAMPTZ DEFAULT NOW(), fim TIMESTAMPTZ, resumo JSONB)`;
+  const id = 'run_' + Date.now().toString(36);
+  await sql`DROP TABLE IF EXISTS qa_kv_snap`;
+  await sql`CREATE TABLE qa_kv_snap AS SELECT key, value FROM kv_store`;
+  const [r] = await sql`INSERT INTO qa_runs (id) VALUES (${id}) RETURNING inicio`;
+  const [{ n }] = await sql`SELECT COUNT(*)::int AS n FROM qa_kv_snap`;
+  return { run_id: id, inicio: r.inicio, kv_copiadas: n };
+}
+async function _tabelas(sql) {
+  const cols = await sql`SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema = 'public'`;
+  const t = {};
+  for (const c of cols) {
+    if (['kv_store', 'qa_kv_snap', 'qa_runs'].includes(c.table_name)) continue;
+    const x = t[c.table_name] = t[c.table_name] || { texto: [], criacao: null };
+    if (/text|character|json/.test(c.data_type) && !(c.table_name === 'media_arquivos' && c.column_name === 'conteudo') && !(c.table_name === 'media_store')) x.texto.push(c.column_name);
+    if (!x.criacao && COL_CRIACAO.includes(c.column_name)) x.criacao = c.column_name;
+  }
+  return t;
+}
+const _id = n => '"' + String(n).replace(/"/g, '""') + '"';
+async function realLimpar({ run_id }) {
+  const sql = await getSql();
+  const [run] = run_id ? await sql`SELECT * FROM qa_runs WHERE id = ${run_id}` : await sql`SELECT * FROM qa_runs ORDER BY inicio DESC LIMIT 1`;
+  if (!run) throw new Error('Execução real não encontrada (rode real_inicio antes)');
+  const tabs = await _tabelas(sql);
+  const apagadas = {}, criadasNaJanela = {};
+  for (const [tab, info] of Object.entries(tabs)) {
+    if (info.texto.length) {
+      try {
+        const cond = info.texto.map(c => `${_id(c)}::text LIKE $1`).join(' OR ');
+        const r = await _qq(sql, `DELETE FROM ${_id(tab)} WHERE ${cond} RETURNING 1`, ['%' + MARCA + '%']);
+        const n = Array.isArray(r) ? r.length : (r?.rowCount ?? 0); if (n) apagadas[tab] = n;
+      } catch (e) { apagadas[tab + ' (erro)'] = String(e.message).substring(0, 80); }
+    }
+    if (info.criacao) {
+      try { const r = await _qq(sql, `SELECT COUNT(*)::int AS n FROM ${_id(tab)} WHERE ${_id(info.criacao)} >= $1`, [run.inicio]); if (r[0]?.n) criadasNaJanela[tab] = r[0].n; } catch (_) {}
+    }
+  }
+  // kv_store: volta ao estado anterior (exceto tokens/caches); itens com a marca saem das listas
+  const kv = { restauradas: [], limpas: [], removidas: [], mantidas: [] };
+  let snapOk = true; try { await sql`SELECT 1 FROM qa_kv_snap LIMIT 1`; } catch (_) { snapOk = false; }
+  if (snapOk) {
+    const mudou = await sql`SELECT k.key, k.value AS atual, s.value AS antes, (s.key IS NOT NULL) AS existia FROM kv_store k LEFT JOIN qa_kv_snap s ON s.key = k.key
+      WHERE s.key IS NULL OR s.value::text IS DISTINCT FROM k.value::text`;
+    const parse = v => { try { return typeof v === 'string' ? JSON.parse(v) : v; } catch (_) { return v; } };
+    for (const m of mudou) {
+      const atual = parse(m.atual), antes = parse(m.antes);
+      if (/^qa:/.test(m.key)) continue;
+      if (!m.existia) { if (contemMarca(atual) || /QA-TESTE|^qa[_:-]/i.test(m.key)) { await sql`DELETE FROM kv_store WHERE key = ${m.key}`; kv.removidas.push(m.key); } else kv.mantidas.push(m.key); continue; }
+      if (KV_NAO_RESTAURAR.test(m.key)) { kv.mantidas.push(m.key); continue; }
+      let novo;
+      if (Array.isArray(atual) && Array.isArray(antes)) {
+        const velhos = new Map(antes.filter(x => x && x.id != null).map(x => [x.id, x]));
+        novo = atual.filter(x => !contemMarca(x)).map(x => (x && x.id != null && velhos.has(x.id)) ? velhos.get(x.id) : x);
+        const idsAtuais = new Set(atual.map(x => x?.id)); antes.forEach(x => { if (x && x.id != null && !idsAtuais.has(x.id)) novo.push(x); }); // itens apagados pelo teste voltam
+        kv.limpas.push(m.key);
+      } else { novo = antes; kv.restauradas.push(m.key); }
+      await sql`UPDATE kv_store SET value = ${JSON.stringify(novo)}, updated_at = NOW() WHERE key = ${m.key}`;
+    }
+  }
+  const resumo = { apagadas, criadas_na_janela: criadasNaJanela, kv };
+  await sql`UPDATE qa_runs SET fim = NOW(), resumo = ${JSON.stringify(resumo)} WHERE id = ${run.id}`;
+  return { run_id: run.id, inicio: run.inicio, ...resumo };
+}
+async function realApagarJanela({ run_id, tabelas = [] }) {
+  const sql = await getSql();
+  const [run] = await sql`SELECT * FROM qa_runs WHERE id = ${run_id}`; if (!run) throw new Error('execução não encontrada');
+  const tabs = await _tabelas(sql); const out = {};
+  for (const t of tabelas) { const info = tabs[t]; if (!info?.criacao) continue;
+    const r = await _qq(sql, `DELETE FROM ${_id(t)} WHERE ${_id(info.criacao)} >= $1 AND ${_id(info.criacao)} <= $2 RETURNING 1`, [run.inicio, run.fim || new Date().toISOString()]); out[t] = r.length; }
+  return { apagadas: out };
+}
+
 // ═══════════════════════ SEGURANÇA ═══════════════════════
 function lerArquivos(dir, filtro, max = 400) {
   const out = [];
@@ -160,7 +246,7 @@ function analiseEstatica() {
   const publicosEsperados = /lead-capture|qb-oauth|media\.js$|health|captura|cartao|portal-cadastro|cron/;
   const semAuth = [];
   for (const f of apis) {
-    if (!/export default async function handler/.test(f.texto)) continue;
+    if (!/export default (async function handler|comGuarda\(handler\))/.test(f.texto)) continue;
     const temAuth = /req\.headers\.(authorization|\[?['"]x-)|verificarAcesso|exigirAuth|APP_ACCESS|x-atx-key/i.test(f.texto);
     const soCron = /CRON_SECRET/.test(f.texto);
     if (!temAuth && !publicosEsperados.test(f.arquivo)) semAuth.push(f.arquivo);
@@ -514,7 +600,7 @@ async function analiseLeads(base, add) {
   return out;
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -523,6 +609,9 @@ export default async function handler(req, res) {
     const base = `https://${req.headers['x-forwarded-host'] || req.headers.host || 'atlantyx-os.vercel.app'}`;
     const acoes = {
       crud_suite: () => crudSuite(),
+      real_inicio: () => realInicio(),
+      real_limpar: () => realLimpar(b),
+      real_apagar_janela: () => realApagarJanela(b),
       mkt_passo: () => mktPasso(base, b.passo, b.ctx || {}),
       seguranca: () => seguranca(base),
       salvar_execucao: async () => {
@@ -558,3 +647,6 @@ export default async function handler(req, res) {
 }
 
 export { analiseEstatica };
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

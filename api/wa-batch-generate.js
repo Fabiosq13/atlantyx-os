@@ -1,9 +1,10 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/wa-batch-generate.js
 // S2-02 + S7-05 — Busca leads do HubSpot (gerados pela prospecção) e gera mensagens em lote
 // Retorna lista completa com mensagem principal + follow-up 48h prontos para revisar/enviar
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -201,3 +202,6 @@ async function atualizarHubSpot(dealId, contactId) {
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

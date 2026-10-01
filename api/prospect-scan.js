@@ -1,10 +1,11 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/prospect-scan.js
 // S2-02 Mapeamento de Contas — Prospecção de leads NOVOS com dados completos
 // Fonte: Claude com base em dados públicos (LinkedIn, sites, notícias, relatórios setoriais)
 // NÃO lê o HubSpot para buscar — apenas cria empresas/contatos novos no CRM
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -329,3 +330,6 @@ Para cada cargo retorne:
   const text = (d.content || []).filter(x => x.type === 'text').map(x => x.text).join('');
   return extrairObjetos(text);
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

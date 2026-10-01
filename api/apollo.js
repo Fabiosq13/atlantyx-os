@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/apollo.js — Enriquecimento via /people/bulk_match com details[{id}]
 // Hardened: try/catch em JSON.parse, action person_match adicionada
 
@@ -39,7 +40,7 @@ async function _gravarNoHubSpot(hubspotId, telefone) {
   } catch (e) { console.warn('[Apollo tel] HubSpot:', e.message); }
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   // Webhook do Apollo com o celular revelado
   if (req.query?.webhook === 'telefone') {
     try {
@@ -325,3 +326,6 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: e.message });
   }
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

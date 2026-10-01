@@ -1,9 +1,10 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/decisor-map.js
 // S7-04 Agente de Mapeamento de Decisores
 // Recebe empresa → busca decisores C-level → enriquece no HubSpot → prepara para outreach
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -152,3 +153,6 @@ async function criarDealParaDecisore(decisor, empresa, contactId) {
     });
   }
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

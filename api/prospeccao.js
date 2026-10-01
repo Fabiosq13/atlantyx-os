@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/prospeccao.js — v2.60
 // FEED DE PROSPECÇÃO (S7): você digita "Maria Silva, maria@empresa.com" ou "João 21 99876-5432 Enel"
 // e o sistema: interpreta nome/e-mail/telefone/empresa → cadastra o contato no QuickBooks →
@@ -443,7 +444,7 @@ function vcard(c) {
     c.site ? `URL:${c.site}` : '', c.linkedin ? `URL:${c.linkedin}` : '', c.endereco_rj ? `ADR;TYPE=WORK:;;${c.endereco_rj};;;;` : '', 'END:VCARD'].filter(Boolean).join('\r\n');
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   // v2.80: GET /api/prospeccao?teste_email=1 → testa o SMTP e diz o que falta (não mostra a senha)
   if (req.method === 'GET' && req.query?.teste_email) {
     const r = await testarSmtp(); res.setHeader('Content-Type', 'application/json; charset=utf-8'); return res.status(200).send(JSON.stringify(r, null, 2));
@@ -483,3 +484,6 @@ export default async function handler(req, res) {
   try { const r = await acoes[action](); return res.status(200).json({ success: true, ...r }); }
   catch (e) { console.error('[prospeccao]', action, e.message); return res.status(500).json({ success: false, error: e.message, dica: e.dica || null }); }
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

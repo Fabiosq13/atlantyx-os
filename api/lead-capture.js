@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
 // SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
@@ -22,7 +23,7 @@ function _smtpConfig(user, pass) {
 // Recebe lead do Meta Ads / LinkedIn → Claude gera mensagem → HubSpot → WhatsApp
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Hub-Signature');
@@ -363,3 +364,5 @@ async function agendarFollowUp(lead, dealId, mensagemOriginal) {
       ${lead.job_title || lead.title || null}, ${dealId || null}, ${String(mensagemOriginal || '').substring(0, 2000)}, ${new Date(Date.now() + 48 * 3600 * 1000).toISOString()})`;
 }
 
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 
 // v2.81: servidor SMTP configurável — Gmail, HostGator (cPanel) ou outro.
 //   EMAIL_SMTP_HOST  (padrão: smtp.gmail.com se o usuário for @gmail; senão mail.<domínio do e-mail>)
@@ -659,7 +660,7 @@ async function testarCaptura() {
   return out;
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -703,3 +704,6 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: e.message });
   }
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

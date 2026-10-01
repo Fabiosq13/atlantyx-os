@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/business-plan.js — v3.04
 // Business Plan completo (DRE, fluxo de caixa 36 meses, TIR, VPL, payback, margens, cenários)
 //
@@ -303,7 +304,7 @@ async function planoAtlantyx({ overrides } = {}) {
 // ── Excel: lib/bp-excel.js (modelo vivo com fórmulas + importação) ─────────
 
 // ── Handler ──────────────────────────────────────────────────────────────
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -374,3 +375,6 @@ export default async function handler(req, res) {
 }
 
 export { gerarExcel, planoAtlantyx };
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

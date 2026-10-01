@@ -1,8 +1,9 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/claude.js
 // Endpoint seguro — chave da API fica no servidor, nunca exposta no frontend
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
-export default async function handler(req, res) {
+async function handler(req, res) {
   // CORS — permite apenas seu domínio em produção
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -62,3 +63,6 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

@@ -1,9 +1,10 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/analytics.js
 // S2-09 Agente de Analytics + Dashboard de métricas consolidadas S2 e S7
 // Retorna KPIs em tempo real do HubSpot para o painel
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -188,3 +189,6 @@ function _memo(nome, fn, ms = 300000) {
 }
 fetchPipelineHubSpot = _memo('pipeline', fetchPipelineHubSpot);
 fetchKPIsHubSpot = _memo('kpis', fetchKPIsHubSpot);
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

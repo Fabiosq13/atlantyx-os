@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/followup-cron.js
 // Agente S7-05 — Follow-up automático 48h sem resposta
 // Chamado pelo Vercel Cron Jobs a cada hora
@@ -7,7 +8,7 @@
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 const pendingFollowUps = new Map();
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Não autorizado' });
   }
@@ -87,3 +88,6 @@ Retorne APENAS o texto do follow-up.`
 
   console.log(`[S7-05] Follow-up enviado para ${followup.phone} (${followup.name})`);
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

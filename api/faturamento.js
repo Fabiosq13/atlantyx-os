@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
 // SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
@@ -1505,7 +1506,7 @@ async function termoQbDiagnostico() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-export default async function handler(req, res) {
+async function handler(req, res) {
   // v2.13: rota de manutenção acessível pelo navegador, para executar e VER o resultado.
   // Criada porque o botão da tela "não funcionou" e não havia como saber o que aconteceu.
   //   /api/faturamento?manutencao=ver         → contagem por status (sem alterar nada)
@@ -1596,3 +1597,6 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: error.message, dica: error.dica || null, duplicado_de: error.duplicado_de || null });
   }
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

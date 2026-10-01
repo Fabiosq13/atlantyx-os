@@ -1,9 +1,10 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/wa-response.js
 // Agente S7-05 (Outreach WhatsApp) + S7-07 (Agendamento de Reuniões)
 // Recebe resposta do lead via Z-API → Claude analisa → HubSpot atualiza → agenda reunião
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -314,3 +315,6 @@ WhatsApp: +${phone}
 O agente S7-07 já enviou as opções de horário. Acompanhe no HubSpot.`;
   await enviarWhatsApp(fundadorPhone, msg);
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

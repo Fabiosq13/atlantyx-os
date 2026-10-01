@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/s1-strategy.js
 // S1 — Planejamento Estratégico + Linha de Produtos
 // 10 agentes: Captação → Viabilidade → Pesquisa → Financeiro → Comitê → Fundador → Handoff → GP → OKR → Relatórios
@@ -64,7 +65,7 @@ async function deAgentCall({ payload = {} }, tipoAgente) {
   return { success: true, content, agente: tipoAgente };
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -546,3 +547,6 @@ async function whatsapp(phone, message) {
     });
   } catch (e) { console.log('[WA] Erro notificação:', e.message); }
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

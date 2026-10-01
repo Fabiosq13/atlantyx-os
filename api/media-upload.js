@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/media-upload.js — v1.9
 // Mídia própria do Atlantyx: hospeda vídeos (Reels) e imagens em URL pública permanente.
 //
@@ -83,7 +84,7 @@ async function getBlob() {
   }
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   CORS(res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
@@ -226,3 +227,6 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: 'upload: ' + e.message });
   }
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

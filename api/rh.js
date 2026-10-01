@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/rh.js — v1.21
 // Cadastro de Funcionários (custo/hora + projetos que atua, pode ser mais de um)
 // + Gerente de RH IA (chat com contexto real de folha/alocação).
@@ -578,7 +579,7 @@ ${JSON.stringify(ctx).substring(0, 8000)}`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -622,3 +623,6 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: error.message });
   }
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

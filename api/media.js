@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/media.js — v1.80
 // Hospedagem permanente de imagens. Resolve o problema das URLs efêmeras:
 // o Ideogram devolve links com expiração (exp=...&sig=...), e o Metricool tenta baixar a
@@ -100,7 +101,7 @@ async function garantirPermanente({ url, req, forcar = false } = {}) {
     tamanho: r.tamanho, content_type: r.content_type, original: url };
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   // GET /api/media?id=xxx → serve o arquivo
   if (req.method === 'GET') {
     const id = req.query?.id;
@@ -275,3 +276,6 @@ export default async function handler(req, res) {
 }
 
 export { salvarDeUrl, garantirPermanente, ehEfemera, baseUrl };
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

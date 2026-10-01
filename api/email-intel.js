@@ -1,10 +1,11 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/email-intel.js
 // Agente de Inteligência de E-mail — lê Gmail, classifica e roteia para os agentes certos
 // Conecta com: S1 (estratégico), S2 (marketing/RFPs), S7 (vendas), S9 (projetos), S3 (financeiro)
 // Usa Gmail API via OAuth configurado no Google Cloud
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -557,3 +558,6 @@ async function whatsapp(phone, message) {
     });
   } catch (e) { console.log('[WA]', e.message); }
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

@@ -1,8 +1,9 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/briefing-cron.js
 // S7-08 Agente de Preparação de Reunião — Cron que verifica reuniões das próximas 24h
 // Chamado a cada hora pelo Vercel Cron
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Não autorizado' });
   }
@@ -105,3 +106,6 @@ async function verificarBriefingGerado(dealId) {
   // Se tiver alguma nota associada, assume briefing gerado
   return (d.results || []).length > 0;
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);

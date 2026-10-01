@@ -1,3 +1,4 @@
+import { comGuarda } from '../lib/qa-guard.js';
 // api/health.js
 // Healthcheck do Atlantyx OS
 // - GET  /api/health                              → status básico (público, sem IA)
@@ -18,7 +19,7 @@ const BUILD = {
   version: '1.4',
 };
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -122,3 +123,6 @@ async function testDb() {
     return { status: 'error', message: e.message.substring(0, 150) };
   }
 }
+
+// v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+export default comGuarda(handler);
