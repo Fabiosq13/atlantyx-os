@@ -26757,16 +26757,22 @@ async function publicarStories() {
     const quando = new Date(new Date(inicio).getTime() + i * 2 * 60000);
     const ehCta = (st[i].papel === 'cta') || i === st.length - 1;
     _statusPainel('story', 'run', 'Agendando story ' + (i+1) + ' de ' + st.length + ' no Metricool...', quando.toLocaleString('pt-BR') + ' · ' + redesSt.join(', ') + (ehCta ? ' · com sticker de link' : ''), (i / st.length) * 100);
-    try {
-      const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ action:'publicar', payload: { tipo:'STORY', texto: '', redes: redesSt, data_hora: quando.toISOString(), imagem_url: _urlsStory[i], encurtar_link: false, link_sticker: (ehCta && link) ? link : '' } }) });
-      const d = await r.json();
-      if (!d.success) throw new Error(d.error || 'falha');
-      okN++;
-      const pFake = { id: 'story_' + campAtiva.id + '_' + (i+1), campanhaId: campAtiva.id, titulo: campAtiva.nome + ' · Story ' + (i+1) };
-      redesSt.forEach(rd => registrarPublicacao(pFake, rd, '[STORY] ' + (st[i].texto_tela||''), 'metricool', d.metricool_id, ehCta ? link : '', quando.toISOString()));
-      addLog('ok', '[Stories] Story ' + (i+1) + ' agendado → ' + quando.toLocaleString('pt-BR') + (ehCta && link ? ' (com sticker de link)' : ''));
-    } catch (e) { addLog('err', '[Stories] Story ' + (i+1) + ': ' + e.message); errosPub.push('story ' + (i+1) + ': ' + e.message); }
+    // v3.65: UM post por rede — o Story pedido para Instagram + Facebook juntos ficava só no Facebook no Metricool
+    // (e o sistema registrava os dois). Agora cada rede tem o próprio post, id e resultado.
+    const pFake = { id: 'story_' + campAtiva.id + '_' + (i+1), campanhaId: campAtiva.id, titulo: campAtiva.nome + ' · Story ' + (i+1) };
+    let okRede = 0;
+    for (const rd of redesSt) {
+      try {
+        const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ action:'publicar', payload: { tipo:'STORY', texto: '', redes: [rd], data_hora: quando.toISOString(), imagem_url: _urlsStory[i], encurtar_link: false, link_sticker: (ehCta && link) ? link : '' } }) });
+        const d = await r.json().catch(() => ({ success: false, error: 'HTTP ' + r.status }));
+        if (!d.success) throw new Error(d.error || 'falha');
+        if ((d.redes_faltando || []).includes(rd)) throw new Error('o Metricool não aceitou o Story nesta rede');
+        registrarPublicacao(pFake, rd, '[STORY] ' + (st[i].texto_tela||''), 'metricool', d.metricool_id, ehCta ? link : '', quando.toISOString());
+        okRede++;
+      } catch (e) { addLog('err', '[Stories] Story ' + (i+1) + ' · ' + rd + ': ' + e.message); errosPub.push('story ' + (i+1) + ' (' + rd + '): ' + e.message); }
+    }
+    if (okRede) { okN++; addLog('ok', '[Stories] Story ' + (i+1) + ' agendado → ' + quando.toLocaleString('pt-BR') + ' · ' + okRede + '/' + redesSt.length + ' rede(s)' + (ehCta && link ? ' (com sticker de link)' : '')); }
   }
   await salvarPublicacoes();
   try { renderCalendarioKanban(); } catch(_) {}
@@ -26881,7 +26887,7 @@ async function publicarCarrossel() {
       const d = await r.json(); if (!d.success) throw new Error(d.error || 'falha');
       okN++; ids.push(d.metricool_id);
       const pFake = { id: 'carr_' + campAtiva.id, campanhaId: campAtiva.id, titulo: campAtiva.nome + ' · Carrossel' };
-      g.redes.forEach(rd => registrarPublicacao(pFake, rd, '[CARROSSEL] ' + g.texto, 'metricool', d.metricool_id, rd === 'instagram' ? '' : c.link, new Date(quando).toISOString()));
+      g.redes.filter(rd => !(d.redes_faltando || []).includes(rd)).forEach(rd => registrarPublicacao(pFake, rd, '[CARROSSEL] ' + g.texto, 'metricool', d.metricool_id, rd === 'instagram' ? '' : c.link, new Date(quando).toISOString()));
     } catch (e) { addLog('err', '[Carrossel] ' + g.redes.join(',') + ': ' + e.message); _statusPainel('carr', 'err', 'Falha ao publicar em ' + g.redes.join(', '), e.message); }
   }
   await salvarPublicacoes(); try { renderCalendarioKanban(); } catch(_) {}
@@ -27221,7 +27227,8 @@ async function publicarReel() {
     const d = await resp.json();
     if (!d.success) throw new Error(d.error || 'falha');
     const pFake = { id: 'reel_' + campAtiva.id, campanhaId: campAtiva.id, titulo: campAtiva.nome + ' · Reel' };
-    redes.forEach(rd => registrarPublicacao(pFake, rd, '[REEL] ' + legenda, 'metricool', d.metricool_id, '', new Date(quando).toISOString()));
+    if ((d.redes_faltando || []).length) { addLog('err', '[Reel] o Metricool não aceitou o Reel em: ' + d.redes_faltando.join(', ')); toast('Reel: o Metricool não aceitou em ' + d.redes_faltando.join(', '), 'error'); }
+    redes.filter(rd => !(d.redes_faltando || []).includes(rd)).forEach(rd => registrarPublicacao(pFake, rd, '[REEL] ' + legenda, 'metricool', d.metricool_id, '', new Date(quando).toISOString()));
     await salvarPublicacoes(); try { renderCalendarioKanban(); } catch(_) {}
     r.agendado_em = new Date(quando).toISOString(); await _salvarReel();
     _reelSet('Reel agendado para ' + fmtDataHora(quando), 'Agendado');
@@ -27369,7 +27376,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.64] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.65] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27385,7 +27392,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.64';
+window.__ATX_BUILD_ID__ = 'ATX-v3.65';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

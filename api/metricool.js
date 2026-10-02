@@ -1003,10 +1003,16 @@ async function handler(req, res) {
         }
 
         const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
+        // v3.65: confere quais redes o Metricool REALMENTE manteve no post (um Story pedido para Instagram + Facebook
+        // ficou só no Facebook e o sistema achava que estava nos dois)
+        const devolvidas = ((r?.data || r)?.providers || []).map(x => String(x.network || x).toUpperCase()).filter(Boolean);
+        const faltando = devolvidas.length ? providers.filter(p => !devolvidas.includes(p)) : [];
+        if (faltando.length && faltando.length === providers.length) throw new Error('O Metricool criou o post sem nenhuma das redes pedidas (' + providers.join(', ') + ')');
         return {
           publicado: true,
           agendado_para: quando.toISOString(),
-          redes: providers,
+          redes: providers.filter(p => !faltando.includes(p)),
+          redes_faltando: faltando.map(x => x.toLowerCase()),
           metricool_id: r?.data?.id || r?.id || null,
           resposta: r,
         };
