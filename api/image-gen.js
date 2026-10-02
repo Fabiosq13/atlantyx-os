@@ -183,7 +183,7 @@ async function _salvarB64(b64, req) {
   const host = req.headers['x-forwarded-host'] || req.headers.host;
   const base = process.env.MEDIA_PUBLIC_BASE ? process.env.MEDIA_PUBLIC_BASE.replace(/\/$/, '') : (host ? `https://${host}` : null);
   if (!base) return null;
-  try { const r = await fetch(base + '/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'salvar_base64', payload: { base64: b64, content_type: 'image/png', origem: 'image-gen' } }) });
+  try { const r = await fetch(base + '/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'salvar_base64', payload: { base64: b64, content_type: 'image/png', origem: 'image-gen', jpeg: true } }) });
     const m = await r.json().catch(() => ({})); return m.url || null; } catch (_) { return null; }
 }
 

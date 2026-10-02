@@ -233,7 +233,7 @@ Devolva SOMENTE JSON: {"titulo":"...","apoio":"...","chamada":"...","oferta":"o 
 async function storyAgendar({ imagem_url, quando, texto, link, blog_id } = {}) {
   // v2.76: Story pela ação "publicar" do S2 — sem texto (Metricool recusa), tipo dentro do provider
   if (!imagem_url) throw new Error('imagem_url obrigatória');
-  const d = await _publicarViaS2({ tipo: 'STORY', redes: ['instagram'], imagem_url, data_hora: String(quando).substring(0, 19), link_sticker: link || '' });
+  const d = await _publicarViaS2({ tipo: 'STORY', redes: ['instagram'], imagem_url, data_hora: String(quando).substring(0, 19), link_sticker: link || '', ...(blog_id ? { blog_id } : {}) }); // v3.46: marca escolhida
   return { agendado: true, metricool_id: d.metricool_id || null, quando,
     aviso: 'Story agendado. O sticker de link pode não ser aplicado pela API — confira no app ao publicar. O link também está escrito na imagem.', link };
 }
@@ -320,13 +320,18 @@ async function filaStatus({ lote, todos = false } = {}) {
 async function filaProcessar({ lote } = {}) {
   const sql = await _filaTabela();
   // libera itens travados há mais de 3 min (função cortada no meio)
-  await sql`UPDATE autocampanha_fila SET status = 'pendente' WHERE status = 'processando' AND atualizado_em < NOW() - INTERVAL '3 minutes'`;
+  // v3.46: se travou NO AGENDAMENTO, o post pode já ter ido ao Metricool — não reenvia sozinho (evita post duplicado)
+  await sql`UPDATE autocampanha_fila SET status = 'falhou', erro = 'interrompido durante o agendamento — confira no Metricool se o post foi criado antes de reenviar', atualizado_em = NOW()
+    WHERE status = 'processando' AND etapa = 'agendar' AND atualizado_em < NOW() - INTERVAL '3 minutes'`;
+  await sql`UPDATE autocampanha_fila SET status = 'pendente' WHERE status = 'processando' AND etapa <> 'agendar' AND atualizado_em < NOW() - INTERVAL '3 minutes'`;
+  // v3.46: pega o item de forma ATÔMICA — o cron (1/min) e a tela (a cada 2s) disputavam o mesmo item e
+  // o mesmo post podia ser agendado duas vezes no Metricool
   const cand = lote
-    ? await sql`SELECT * FROM autocampanha_fila WHERE lote = ${lote} AND status = 'pendente' ORDER BY data, hora LIMIT 1`
-    : await sql`SELECT * FROM autocampanha_fila WHERE status = 'pendente' ORDER BY criado_em DESC, data, hora LIMIT 1`;   // v2.77: mais recente primeiro
+    ? await sql`UPDATE autocampanha_fila SET status = 'processando', atualizado_em = NOW() WHERE id = (SELECT id FROM autocampanha_fila WHERE lote = ${lote} AND status = 'pendente' ORDER BY data, hora LIMIT 1 FOR UPDATE SKIP LOCKED) AND status = 'pendente' RETURNING *`
+    : await sql`UPDATE autocampanha_fila SET status = 'processando', atualizado_em = NOW() WHERE id = (SELECT id FROM autocampanha_fila WHERE status = 'pendente' ORDER BY criado_em DESC, data, hora LIMIT 1 FOR UPDATE SKIP LOCKED) AND status = 'pendente' RETURNING *`;   // v2.77: mais recente primeiro
   const it = cand[0];
   if (!it) return { ocioso: true };
-  await sql`UPDATE autocampanha_fila SET status = 'processando', atualizado_em = NOW() WHERE id = ${it.id}`;
+  if (it.etapa === 'agendar' && it.metricool_id) { await sql`UPDATE autocampanha_fila SET etapa = 'fim', status = 'pronto', atualizado_em = NOW() WHERE id = ${it.id}`; return { id: it.id, ok: true, ja_agendado: true }; }
   const falhar = async (msg) => {
     const t = (it.tentativas || 0) + 1;
     // v2.76: imagem falhou de vez → segue sem imagem (texto não se perde; Instagram é pulado no agendar)
@@ -523,7 +528,9 @@ async function autoCampanhaAgendarUm({ post, blog_id, redes } = {}) {
   // Instagram EXIGE imagem — sem imagem, publica só nas outras redes em vez de falhar tudo
   const redesOk = post.imagem_url ? redesAlvo : redesAlvo.filter(r => r !== 'instagram');
   if (!redesOk.length) throw new Error('Instagram exige imagem e este post ficou sem imagem');
-  const d = await _publicarViaS2({ texto: post.texto, redes: redesOk, data_hora: `${post.data}T${post.hora}:00`, imagem_url: post.imagem_url || undefined, tipo: 'POST', encurtar_link: false });
+  // v3.46: o texto promete "link no primeiro comentário" — o comentário não era enviado; e a marca escolhida se perdia
+  const d = await _publicarViaS2({ texto: post.texto, redes: redesOk, data_hora: `${post.data}T${post.hora}:00`, imagem_url: post.imagem_url || undefined, tipo: 'POST', encurtar_link: false,
+    ...(post.comentario ? { comentario: post.comentario } : {}), ...(blog_id ? { blog_id } : {}) });
   return { agendado: true, metricool_id: d.metricool_id || null, redes: d.redes, com_imagem: !!post.imagem_url, instagram_pulado: redesAlvo.length !== redesOk.length };
 }
 async function _autoCampanhaAgendarUmANTIGO({ post, blog_id, redes } = {}) {
@@ -1051,10 +1058,12 @@ async function handler(req, res) {
             + (erroGet ? ' e não foi possível ler o post original (' + erroGet.substring(0, 80) + ')' : '')
             + '. Exclua o post no Metricool e publique de novo pelo Atlantyx.');
         }
-        try { await mc(`/v2/scheduler/posts/${metricool_id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'DELETE'); }
-        catch (e) { console.warn('[metricool reagendar] delete antigo falhou:', e.message); }
+        // v3.46: cria o NOVO primeiro e só depois apaga o antigo — antes apagava primeiro e, se a recriação
+        // falhasse (ex.: imagem expirada no payload salvo), o post sumia
         Object.assign(payload, dadosRecriar, { data_hora: String(data_hora) });
         const novo = await acoes.publicar();
+        try { await mc(`/v2/scheduler/posts/${metricool_id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'DELETE'); }
+        catch (e) { console.warn('[metricool reagendar] delete antigo falhou:', e.message); novo.aviso_antigo = 'O post antigo (' + metricool_id + ') não foi apagado no Metricool — apague-o lá para não sair duplicado.'; }
         return { reagendado: true, metodo: orig ? 'recriado' : 'recriado_do_metricool', antigo: metricool_id,
           metricool_id: novo.metricool_id, agendado_para: quando.toISOString(), detalhe: novo };
       },

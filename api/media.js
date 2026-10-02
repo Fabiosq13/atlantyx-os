@@ -96,7 +96,7 @@ async function garantirPermanente({ url, req, forcar = false } = {}) {
   const base = baseUrl(req);
   if (String(url).startsWith(base + '/api/media')) return { url, convertida: false, motivo: 'já é permanente' };
   if (!forcar && !ehEfemera(url)) return { url, convertida: false, motivo: 'URL parece estável' };
-  const r = await salvarDeUrl({ url, origem: url });
+  const r = await salvarDeUrl({ url, origem: url, jpeg: true }); // v3.46: o Instagram via Metricool só aceita JPEG (vídeos não são convertidos)
   return { url: `${base}/api/media?id=${r.id}`, convertida: true, id: r.id,
     tamanho: r.tamanho, content_type: r.content_type, original: url };
 }
@@ -137,10 +137,11 @@ async function handler(req, res) {
   const acoes = {
     // v2.31: upload direto de imagem gerada no navegador (Story com QR)
     salvar_base64:  async () => {
-      const { base64, content_type = 'image/png', origem } = payload;
+      const { base64, content_type: ct0 = 'image/png', origem, jpeg = false } = payload;
       if (!base64) throw new Error('base64 obrigatório');
-      const limpo = String(base64).replace(/^data:[^;]+;base64,/, '');
-      const buf = Buffer.from(limpo, 'base64');
+      let limpo = String(base64).replace(/^data:[^;]+;base64,/, '');
+      let buf = Buffer.from(limpo, 'base64'); let content_type = ct0;
+      if (jpeg && /^image\//.test(ct0) && !/jpe?g/.test(ct0)) { ({ buf, ct: content_type } = await _paraJpeg(buf, ct0)); limpo = buf.toString('base64'); } // v3.46
       if (buf.length > 8 * 1024 * 1024) throw new Error('Imagem acima de 8 MB');
       const sql = await getSql();
       const id = novoId();

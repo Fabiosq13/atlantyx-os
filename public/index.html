@@ -6736,10 +6736,22 @@ const TEXTO_LINK_BIO_CURTO_PADRAO = 'acesse o site e deixe seu contato';
 function ctaCfg() { const pad = { ig: 'link_curto', destino: 'cadastro', palavra: 'AGENDA', whats: '' };
   try { return Object.assign(pad, JSON.parse(localStorage.getItem('atx:cta_cfg') || '{}')); } catch (_) { return pad; } }
 function salvarCtaCfg(parcial) { const c = Object.assign(ctaCfg(), parcial || {}); try { localStorage.setItem('atx:cta_cfg', JSON.stringify(c)); localStorage.setItem('atx:destino_campanha', c.destino === 'reuniao' ? 'reuniao' : 'captura'); } catch (_) {} try { _ctaPreview(); } catch (_) {} return c; }
-function linkCurtoCampanha() { const c = ctaCfg(); return location.host.replace(/^www\./, '') + '/' + (c.destino === 'reuniao' ? 'reuniao' : 'agenda'); }
-function textoLinkBio() {
+// v3.46: o link curto leva um CÓDIGO de 4 letras da campanha (/agenda/k3f9) — antes ia sem campanha e os
+// leads do Instagram não eram atribuídos a nenhuma campanha. O código é derivado do id (sempre o mesmo).
+function _codCurto(id) { const s = String(id || ''); if (!s) return ''; let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h.toString(36).slice(-4).padStart(4, '0'); }
+function _linkCurtoBase() { const c = ctaCfg(); return location.host.replace(/^www\./, '') + '/' + (c.destino === 'reuniao' ? 'reuniao' : 'agenda'); }
+function linkCurtoCampanha(campId) { const id = campId || (typeof campAtiva !== 'undefined' && campAtiva?.id) || ''; return _linkCurtoBase() + (id ? '/' + _codCurto(id) : ''); }
+// soma os leads de uma campanha vindos por qualquer chave (slug do utm_campaign, id ou código do link curto)
+function _leadsDaCampanha(campId) {
+  const slug = (campId || '').toString().replace(/[^a-z0-9_-]/gi, '-').toLowerCase().substring(0, 40);
+  const out = { total: 0, por_rede: {}, pagos: 0 }; const vistos = new Set();
+  [slug, campId, _codCurto(campId)].forEach(k => { const v = k && !vistos.has(k) && _leadsHubspot[k]; if (k) vistos.add(k); if (!v) return;
+    out.total += v.total || 0; out.pagos += v.pagos || 0; Object.entries(v.por_rede || {}).forEach(([r, n]) => { out.por_rede[r] = (out.por_rede[r] || 0) + n; }); });
+  return out;
+}
+function textoLinkBio(campId) {
   const c = ctaCfg();
-  if (c.ig === 'link_curto') return '📅 Agende uma conversa com um especialista: ' + linkCurtoCampanha();
+  if (c.ig === 'link_curto') return '📅 Agende uma conversa com um especialista: ' + linkCurtoCampanha(campId);
   if (c.ig === 'palavra') return '💬 Comente ' + (c.palavra || 'AGENDA') + ' aqui embaixo e receba no seu Direct o link para agendar uma conversa.';
   if (c.ig === 'whatsapp' && c.whats) return '📲 Fale com a gente no WhatsApp: ' + c.whats;
   try { return (localStorage.getItem('atx:texto_link_bio') || '').trim() || TEXTO_LINK_BIO_PADRAO; } catch(_) { return TEXTO_LINK_BIO_PADRAO; } }
@@ -6751,7 +6763,7 @@ function textoLinkBioCurto() {
   try { return (localStorage.getItem('atx:texto_link_bio_curto') || '').trim() || TEXTO_LINK_BIO_CURTO_PADRAO; } catch(_) { return TEXTO_LINK_BIO_CURTO_PADRAO; } }
 // tira frases de "link na bio" que a IA ainda escreva (quando o modo não é bio) e detecta se o CTA já está no texto
 function _semBio(t) { if (ctaCfg().ig === 'bio') return String(t || ''); return String(t || '').split('\n').filter(l => !/link na bio/i.test(l)).join('\n').replace(/\n{3,}/g, '\n\n').trim(); }
-function _temCta(t) { const x = String(t || ''); return x.includes(linkCurtoCampanha()) || (ctaCfg().ig === 'palavra' && x.includes('Comente ' + (ctaCfg().palavra || 'AGENDA'))) || (ctaCfg().ig === 'bio' && /link na bio/i.test(x)); }
+function _temCta(t) { const x = String(t || ''); return x.includes(_linkCurtoBase()) || (ctaCfg().ig === 'palavra' && x.includes('Comente ' + (ctaCfg().palavra || 'AGENDA'))) || (ctaCfg().ig === 'bio' && /link na bio/i.test(x)); }
 function ctaTituloArte() { const c = ctaCfg(); return c.ig === 'link_curto' ? '📅 Agende sua conversa' : c.ig === 'palavra' ? '💬 Comente ' + (c.palavra || 'AGENDA') : (c.ig === 'whatsapp' && c.whats) ? '📲 Chame no WhatsApp' : '🔗 Link na bio'; }
 function _ctaPreview() {
   const c = ctaCfg(), pv = document.getElementById('acCtaPrev'); if (!pv) return;
@@ -25005,10 +25017,11 @@ async function publicarPeca(pecaId) {
       <div class="pb">
         <div style="font-size:10px;color:var(--t2);margin-bottom:6px;">REDES DESTA PUBLICAÇÃO</div>
         <div style="display:flex;gap:12px;margin-bottom:12px;">
-          ${['linkedin','instagram','facebook'].map(r =>
-            `<label style="font-size:11px;display:flex;gap:4px;align-items:center;cursor:pointer;">
-              <input type="checkbox" class="pubRede" value="${r}" ${redes.includes(r)?'checked':''}/> ${r.charAt(0).toUpperCase()+r.slice(1)}
-            </label>`).join('')}
+          ${(() => { const ja = new Set(pubsDaPeca(p).filter(x => x.metricool_id && x.status !== 'erro').map(x => x.rede)); // v3.46: não agenda de novo a rede que já está agendada
+            return ['linkedin','instagram','facebook'].map(r =>
+            `<label style="font-size:11px;display:flex;gap:4px;align-items:center;cursor:pointer;" title="${ja.has(r) ? 'Esta rede já tem publicação agendada/feita para esta peça — marque só se quiser publicar de novo' : ''}">
+              <input type="checkbox" class="pubRede" value="${r}" ${redes.includes(r) && !ja.has(r) ? 'checked' : ''}/> ${r.charAt(0).toUpperCase()+r.slice(1)}${ja.has(r) ? ' <span style="color:var(--green);font-size:9.5px;">✓ já agendada</span>' : ''}
+            </label>`).join(''); })()}
         </div>
         <div style="font-size:10px;color:var(--t2);margin-bottom:4px;">TEXTO (editável)</div>
         <textarea id="pubTexto" class="fsel" style="width:100%;height:120px;font-size:11px;">${texto.replace(/</g,'&lt;')}</textarea>
@@ -25061,7 +25074,7 @@ async function executarPublicacao(pecaId, metodo) {
   // v1.6.9: bloco de CTA por rede — IG não linkifica caption, vai "Link na bio"
   const montarBlocoCta = (rede, link) => {
     if (!link) return '';
-    if (rede === 'instagram') return '\n\n' + textoLinkBio(); // v1.10.6: explica o que acontece no link da bio
+    if (rede === 'instagram') return '\n\n' + textoLinkBio(p.campanhaId); // v1.10.6 · v3.46: link curto com o código da campanha
     return '\n\n' + ctaTexto + '\n' + link;
   };
   const usarUtm = document.getElementById('pubUtm')?.checked !== false;
@@ -25080,55 +25093,43 @@ async function executarPublicacao(pecaId, metodo) {
 
   if (metodo === 'metricool') {
     try {
-      addLog('info', '[Pub] Enviando ao Metricool: ' + redes.join(','));
-      // Anexa o link (com UTM da primeira rede) ao fim do texto — Metricool publica texto como está
-      const linkMc = montarLink(redes[0]);
-      const soInstagram = redes.length === 1 && redes[0] === 'instagram';
-      const textoMc = linkMc ? (texto + montarBlocoCta(soInstagram ? 'instagram' : redes.find(r => r !== 'instagram') || redes[0], linkMc)) : texto;
-      // v1.11: TEXTO POR REDE — Instagram vai em request separado com a frase do link na bio; LinkedIn/FB com o link
-      const textoIg = _semBio(texto) + montarBlocoCta('instagram', linkMc || 'x');
-      const separarIg = redes.includes('instagram') && redes.length > 1;
+      // v3.46: UM post por rede no Metricool — cada rede com o próprio link (utm_source certo), o próprio
+      // metricool_id (excluir/reagendar uma rede não mexe nas outras) e o resultado real de cada uma.
       const encurtar = document.getElementById('pubEncurtar')?.checked !== false;
       const imgPub = document.getElementById('pubImagem')?.value?.trim() || null;
-      if (!imgPub && redes.includes('instagram')) {
-        if (!confirm('Instagram está marcado mas NÃO há imagem — o IG vai recusar.\n\nPublicar mesmo assim (nas outras redes)?')) return;
+      let redesUso = redes.slice();
+      if (!imgPub && redesUso.includes('instagram')) {
+        if (!confirm('Instagram está marcado mas NÃO há imagem — o IG vai recusar.\n\nOK = publicar só nas outras redes (o Instagram fica de fora)\nCancelar = voltar e colocar uma imagem')) return;
+        redesUso = redesUso.filter(r => r !== 'instagram');
+        if (!redesUso.length) { toast('Sem imagem, não há rede para publicar', 'error'); return; }
       }
-      // v1.7.1: Facebook como card de link → vai SEM imagem (num post separado)
-      const fbCard = document.getElementById('pubFbCard')?.checked && redes.includes('facebook') && !!linkMc;
-      let redesPrincipal = fbCard ? redes.filter(rd => rd !== 'facebook') : redes;
-      if (separarIg) redesPrincipal = redesPrincipal.filter(rd => rd !== 'instagram');
-      let d = { success: true, metricool_id: null };
-      if (redesPrincipal.length) {
-        const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ action:'publicar', payload: { texto: soInstagram ? textoIg : textoMc, redes: redesPrincipal, data_hora: quando ? new Date(quando).toISOString() : null, imagem_url: imgPub, encurtar_link: encurtar } }) });
-        d = await r.json();
-        if (!d.success) throw new Error(d.error || 'falha metricool');
+      addLog('info', '[Pub] Enviando ao Metricool: ' + redesUso.join(','));
+      const fbCard = document.getElementById('pubFbCard')?.checked && redesUso.includes('facebook') && !!montarLink('facebook');
+      const iso = quando ? new Date(quando).toISOString() : null;
+      const ok = [], falhas = []; let ultimo = null;
+      for (const rede of redesUso) {
+        const link = montarLink(rede);
+        let texto2, img = imgPub, enc = encurtar;
+        if (rede === 'instagram') { texto2 = _semBio(texto) + montarBlocoCta('instagram', link || 'x'); enc = false; }
+        else if (rede === 'facebook' && fbCard) { texto2 = texto + '\n\n' + ctaTexto + '\n' + link; img = null; enc = false; } // card de link clicável (sem imagem)
+        else { const base2 = (((_todasCampanhas || []).find(c => c.id === p.campanhaId) || (campAtiva?.id === p.campanhaId ? campAtiva : null))?.data?.copy_por_rede || {})[rede]?.texto || texto; texto2 = link ? base2 + montarBlocoCta(rede, link) : base2; } // copy própria da rede, se existir
+        try {
+          const r = await fetch('/api/metricool', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'publicar', payload: { texto: texto2, redes: [rede], data_hora: iso, imagem_url: img, encurtar_link: enc } }) });
+          const d = await r.json().catch(() => ({ success: false, error: 'HTTP ' + r.status }));
+          if (!d.success) throw new Error(d.error || 'falha metricool');
+          registrarPublicacao(p, rede, texto2, 'metricool', d.metricool_id, link, iso || new Date().toISOString());
+          ok.push(rede); ultimo = d;
+        } catch (e) { falhas.push(rede + ': ' + e.message); addLog('err', '[Pub] ' + rede + ' falhou: ' + e.message); }
       }
-      if (separarIg) {
-        const rIg = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ action:'publicar', payload: { texto: textoIg, redes: ['instagram'], data_hora: quando ? new Date(quando).toISOString() : null, imagem_url: imgPub, encurtar_link: false } }) });
-        const dIg = await rIg.json();
-        if (dIg.success) { registrarPublicacao(p, 'instagram', textoIg, 'metricool', dIg.metricool_id, '', quando ? new Date(quando).toISOString() : new Date().toISOString()); addLog('ok', '[Pub] Instagram publicado com texto próprio (link na bio explicado)'); }
-        else addLog('err', '[Pub] Instagram falhou: ' + (dIg.error || ''));
-      }
-      if (fbCard) {
-        // FB sem imagem e SEM encurtador (o card usa a URL real p/ puxar o preview OG)
-        const rFb = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ action:'publicar', payload: { texto: texto + '\n\n' + ctaTexto + '\n' + linkMc, redes: ['facebook'], data_hora: quando ? new Date(quando).toISOString() : null, imagem_url: null, encurtar_link: false } }) });
-        const dFb = await rFb.json();
-        if (dFb.success) {
-          registrarPublicacao(p, 'facebook', texto, 'metricool', dFb.metricool_id, linkMc, quando ? new Date(quando).toISOString() : new Date().toISOString());
-          addLog('ok', '[Pub] Facebook publicado como CARD DE LINK clicável');
-        } else {
-          addLog('err', '[Pub] FB card falhou: ' + (dFb.error || ''));
-        }
-      }
-      redesPrincipal.forEach(rede => registrarPublicacao(p, rede, textoMc, 'metricool', d.metricool_id, montarLink(rede), quando ? new Date(quando).toISOString() : new Date().toISOString()));
-      p.agendado_para = quando ? new Date(quando).toISOString() : new Date().toISOString(); // v1.9.2
+      if (!ok.length) throw new Error(falhas.join(' · '));
+      const d = ultimo || {};
+      p.agendado_para = iso || new Date().toISOString(); // v1.9.2
       p.status = (quando && new Date(quando) > new Date()) ? 'Agendado' : 'Publicado';
+      if (falhas.length) p.narrativa = (p.narrativa ? p.narrativa + ' · ' : '') + '⚠ Metricool recusou: ' + falhas.join(' · ').substring(0, 300);
       renderKanban(); salvarKanbanNoBanco(); salvarPublicacoes();
-      toast('Publicado via Metricool! (' + redes.join(', ') + ')', 'success');
-      addLog('ok', '[Pub] Metricool OK · agendado: ' + (d.agendado_para || 'agora'));
+      toast(falhas.length ? 'Publicado em ' + ok.join(', ') + ' — falhou: ' + falhas.join(' · ').substring(0, 160) : 'Publicado via Metricool! (' + ok.join(', ') + ')', falhas.length ? 'error' : 'success');
+      addLog('ok', '[Pub] Metricool OK (' + ok.join(', ') + ') · agendado: ' + (d.agendado_para || 'agora'));
     } catch (e) {
       addLog('err', '[Pub] Metricool falhou: ' + e.message);
       toast('Erro Metricool: ' + e.message, 'error');
@@ -25342,7 +25343,9 @@ function _despAvisoMetricas(porRede) {
 
 function renderDesempenho() {
   const campId = document.getElementById('despCampanhaSel')?.value || '';
-  const pubs = campId ? _publicacoes.filter(p => p.campanhaId === campId) : _publicacoes;
+  // v3.46: o filtro de período agora vale para os totais (antes só limitava a busca de métricas e somava todo o histórico)
+  const _diasP = parseInt(document.getElementById('despPeriodoSel')?.value || '0'); const _desdeP = _diasP ? Date.now() - _diasP * 864e5 : 0;
+  const pubs = (campId ? _publicacoes.filter(p => p.campanhaId === campId) : _publicacoes).filter(p => !_desdeP || Date.parse(p.agendado_para || p.data || 0) >= _desdeP);
 
   const tot = pubs.reduce((a,p) => ({
     imp: a.imp + (p.metricas?.imp||0), cli: a.cli + (p.metricas?.cli||0),
@@ -25357,10 +25360,10 @@ function renderDesempenho() {
   let leadsAuto = 0;
   if (campId) {
     const slug = slugDe(campId);
-    leadsAuto = _leadsHubspot[slug]?.total || _leadsHubspot[campId]?.total || 0;
+    leadsAuto = _leadsDaCampanha(campId).total; // v3.46: soma utm_campaign + código do link curto
   } else {
     // todas: soma apenas campanhas conhecidas (slug bate com alguma campanha do sistema)
-    const slugsConhecidos = new Set((_todasCampanhas||[]).map(c => slugDe(c.id)));
+    const slugsConhecidos = new Set((_todasCampanhas||[]).flatMap(c => [slugDe(c.id), _codCurto(c.id)]));
     leadsAuto = Object.entries(_leadsHubspot).reduce((a,[k,v]) => a + (slugsConhecidos.has(k) ? (v.total||0) : 0), 0);
   }
   const leadsTotal = Math.max(leadsAuto, tot.leads); // auto tem prioridade; manual serve de fallback
@@ -25371,7 +25374,7 @@ function renderDesempenho() {
   setT('despCli', tot.cli.toLocaleString('pt-BR'));
   setT('despEng', eng.toLocaleString('pt-BR'));
   let pagosTot = 0;
-  if (campId) { const slg = slugDe(campId); pagosTot = (_leadsHubspot[slg]?.pagos || _leadsHubspot[campId]?.pagos || 0); }
+  if (campId) pagosTot = _leadsDaCampanha(campId).pagos;
   else pagosTot = Object.values(_leadsHubspot).reduce((a,v) => a + (v.pagos||0), 0);
   setT('despLeads', leadsTotal + (leadsAuto > 0 ? ' 🔗' : '') + (pagosTot ? ' (' + pagosTot + ' 📣 pagos)' : ''));
 
@@ -25419,7 +25422,7 @@ function renderDesempenho() {
     // v1.5.4: leads por rede do HubSpot (se campanha selecionada)
     if (campId) {
       const slug = slugDe(campId);
-      const porRedeHS = (_leadsHubspot[slug] || _leadsHubspot[campId] || {}).por_rede || {};
+      const porRedeHS = _leadsDaCampanha(campId).por_rede;
       Object.entries(porRedeHS).forEach(([rede, n]) => {
         if (porRede[rede]) porRede[rede].leadsAuto = n;
         else porRede[rede] = { pubs:0, imp:0, cli:0, eng:0, leadsAuto:n };
@@ -25515,7 +25518,39 @@ async function usarLPComoLink(url) {
 }
 
 // ---------- CALENDÁRIO DE PUBLICAÇÕES no Kanban (v1.7) ----------------------
+// v3.46: STATUS REAL no Metricool — antes qualquer post com data passada aparecia como "publicado", mesmo
+// quando o Metricool tinha recusado (imagem, token da rede, texto). Lê o status/erro de cada rede e grava
+// em _publicacoes (status 'publicado' | 'erro'), no máximo a cada 10 min.
+function _pubPublicada(p) { if (p.status === 'publicado') return true; if (p.status === 'erro') return false; if (p.status_mc) return /PUBLISHED|SUCCESS/i.test(p.status_mc); return new Date(p.agendado_para || p.data) < new Date() && !!p.metricool_id; }
+let _syncMcEm = 0, _syncMcRodando = false;
+async function sincronizarStatusMetricool(forcar) {
+  if (_syncMcRodando || (!forcar && Date.now() - _syncMcEm < 600000) || typeof _mcConfigurado === 'undefined' || !_mcConfigurado) return { pulado: true };
+  const comId = (_publicacoes || []).filter(p => p.metricool_id && p.status !== 'publicado'); if (!comId.length) return { pulado: true };
+  _syncMcRodando = true; _syncMcEm = Date.now();
+  try {
+    const datas = comId.map(p => new Date(p.agendado_para || p.data)).filter(d => !isNaN(d));
+    const ini = new Date(Math.min(...datas) - 2 * 864e5).toISOString().substring(0, 10), fim = new Date(Math.max(...datas) + 2 * 864e5).toISOString().substring(0, 10);
+    const r = await fetch('/api/metricool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'listar_posts', payload: { inicio: ini, fim, detalhe: true } }) });
+    const d = await r.json().catch(() => ({})); if (!d.success) return { erro: d.error };
+    const mapa = {}; (d.posts || []).forEach(x => { mapa[String(x.id)] = x; });
+    let mudou = 0, erros = 0;
+    for (const p of comId) {
+      const x = mapa[String(p.metricool_id)]; if (!x) continue;
+      const prov = (x.providers || []).find(v => String(v.rede || '').toLowerCase() === String(p.rede || '').toLowerCase()) || (x.providers || [])[0]; if (!prov) continue;
+      const st = String(prov.status || (x.status === 'publicado' ? 'PUBLISHED' : '')).toUpperCase();
+      const ruim = /ERROR|FAIL|REJECT/.test(st);
+      const novo = /PUBLISHED|SUCCESS/.test(st) ? 'publicado' : ruim ? 'erro' : p.status;
+      if (st && st !== p.status_mc) { p.status_mc = st; mudou++; }
+      if (prov.url && prov.url !== p.url_publica) { p.url_publica = prov.url; mudou++; }
+      if (novo !== p.status) { p.status = novo; mudou++; if (ruim) { p.erro_mc = String(prov.erro || st).substring(0, 300); erros++; } }
+    }
+    if (mudou) { await salvarPublicacoes(); try { renderCalendarioKanban(); } catch (_) {} try { _renderDatasPublicacao(); } catch (_) {} try { renderDesempenho(); } catch (_) {} }
+    if (erros) { addLog('err', '[Metricool] ' + erros + ' publicação(ões) recusada(s) pelo Metricool — veja no calendário'); toast(erros + ' publicação(ões) falharam no Metricool — veja o calendário', 'error'); }
+    return { verificadas: comId.length, mudou, erros };
+  } catch (e) { return { erro: e.message }; } finally { _syncMcRodando = false; }
+}
 function renderCalendarioKanban() {
+  setTimeout(() => { sincronizarStatusMetricool().catch(() => {}); }, 1500); // v3.46
   const page = document.getElementById('page-s2kanban');
   if (!page) return;
   let cal = document.getElementById('kanbanCalendario');
@@ -25600,7 +25635,7 @@ async function reagendarPublicacao(pubId, novaData) {
 function _gruposPub(pubs) {
   const grupos = [], vistos = {};
   (pubs || []).forEach(p => { const k = p.metricool_id || p.id; if (vistos[k]) { vistos[k].redes.push(p.rede); return; }
-    vistos[k] = { id: p.id, titulo: p.titulo, redes: [p.rede], quando: p.agendado_para || p.data, publicado: p.status === 'publicado' || (new Date(p.agendado_para || p.data) < new Date() && !!p.metricool_id) }; grupos.push(vistos[k]); });
+    vistos[k] = { id: p.id, titulo: p.titulo, redes: [p.rede], quando: p.agendado_para || p.data, publicado: _pubPublicada(p), erro: p.status === 'erro' ? (p.erro_mc || 'falhou no Metricool') : null }; grupos.push(vistos[k]); });
   return grupos.sort((a, b) => new Date(a.quando) - new Date(b.quando));
 }
 function _pubsDoCard(campanhaId, pecaId) {
@@ -25627,7 +25662,8 @@ async function abrirDatasPub(campanhaId, pecaId, ev) {
       + '<div style="padding:10px 16px 14px;">'
       + (grupos.length ? grupos.map(g => '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid var(--bd);font-size:11.5px;">'
           + '<span style="flex:1;min-width:170px;">' + e(g.titulo || 'Publicação') + ' <span style="color:var(--t3);">· ' + e(g.redes.join(', ')) + '</span></span>'
-          + (g.publicado ? '<span style="color:var(--green);">publicado em ' + new Date(g.quando).toLocaleString('pt-BR') + '</span>'
+          + (g.erro ? '<span style="color:var(--red);" title="' + String(g.erro).replace(/"/g, '&quot;') + '">✕ falhou no Metricool: ' + String(g.erro).replace(/</g, '&lt;').substring(0, 90) + ' — escolha nova data abaixo para tentar de novo</span> ' : '')
+        + (g.publicado ? '<span style="color:var(--green);">publicado em ' + new Date(g.quando).toLocaleString('pt-BR') + '</span>'
             : '<input type="datetime-local" class="fi" style="width:auto;font-size:11px;padding:4px 6px;" id="dpm_' + g.id + '" value="' + iso(g.quando) + '"/>'
             + '<button class="btn btn-p" style="font-size:10px;padding:4px 10px;" data-id="' + g.id + '">Salvar</button>')
           + '</div>').join('')
@@ -25651,12 +25687,13 @@ function _renderDatasPublicacao() {
   const pubs = (typeof _publicacoes !== 'undefined' ? _publicacoes : []).filter(p => p.campanhaId === c.id);
   // agrupa redes que são o mesmo post no Metricool
   const grupos = []; const vistos = {};
-  pubs.forEach(p => { const k = p.metricool_id || p.id; if (vistos[k]) { vistos[k].redes.push(p.rede); return; } vistos[k] = { id: p.id, titulo: p.titulo, redes: [p.rede], quando: p.agendado_para || p.data, publicado: p.status === 'publicado' || (new Date(p.agendado_para || p.data) < new Date() && !!p.metricool_id) }; grupos.push(vistos[k]); });
+  pubs.forEach(p => { const k = p.metricool_id || p.id; if (vistos[k]) { vistos[k].redes.push(p.rede); return; } vistos[k] = { id: p.id, titulo: p.titulo, redes: [p.rede], quando: p.agendado_para || p.data, publicado: _pubPublicada(p), erro: p.status === 'erro' ? (p.erro_mc || 'falhou no Metricool') : null }; grupos.push(vistos[k]); });
   grupos.sort((a, b) => new Date(a.quando) - new Date(b.quando));
   box.style.display = 'block';
   box.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><b style="font-size:12px;">📅 Datas de publicação</b><span style="font-size:10px;color:var(--t2);">mudar aqui também muda no Metricool</span></div>'
     + (grupos.length ? grupos.map(g => '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:5px 0;border-top:1px solid var(--bd);font-size:11px;">'
         + '<span style="flex:1;min-width:160px;">' + String(g.titulo || 'Publicação').replace(/</g, '&lt;') + ' <span style="color:var(--t3);">· ' + g.redes.join(', ') + '</span></span>'
+        + (g.erro ? '<span style="color:var(--red);" title="' + String(g.erro).replace(/"/g, '&quot;') + '">✕ falhou no Metricool: ' + String(g.erro).replace(/</g, '&lt;').substring(0, 90) + ' — escolha nova data abaixo para tentar de novo</span> ' : '')
         + (g.publicado ? '<span style="color:var(--green);">publicado em ' + new Date(g.quando).toLocaleString('pt-BR') + '</span>'
           : '<input type="datetime-local" class="fi" style="width:auto;font-size:11px;padding:4px 6px;" id="pubDt_' + g.id + '" value="' + iso(g.quando) + '" title="Nova data/hora"/>'
           + '<button class="btn btn-g" style="font-size:10px;padding:3px 9px;" onclick="(async b=>{b.disabled=true;b.textContent=\'...\';const ok=await reagendarPublicacao(\'' + g.id + '\', document.getElementById(\'pubDt_' + g.id + '\').value);b.disabled=false;b.textContent=ok?\'✓ salvo\':\'Salvar data\';})(this)">Salvar data</button>')
@@ -25821,27 +25858,29 @@ async function gerarCampanhaAutomatica(opts = {}) {
       try {
         // v1.9.3: link de reunião com UTM no post (IG: "link na bio")
         // v3.23: utm_campaign = id da campanha (antes "auto_AAAAMMDD", que não casava com camp_auto_*)
-        const _linkPost = comUtm(linkDestinoPadrao(), redesPost.find(r => r !== 'instagram') || 'social', _autoId, 'post' + (_ix + 1));
-        const _textoPost = post.texto + '\n\n👉 Agende uma conversa:\n' + _linkPost;
-        const _textoIg = _semBio(post.texto) + '\n\n' + textoLinkBio(); // v3.32: CTA configurado (link curto/palavra/WhatsApp)
-        const _redesLink = redesPost.filter(r => r !== 'instagram');
-        let dp = { success: false, error: 'sem redes' };
-        if (_redesLink.length) { const rp = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'publicar', payload: { texto: _textoPost, redes: _redesLink, data_hora: quando.toISOString(), imagem_url: imgUrl || null, encurtar_link: true } }) }); dp = await rp.json(); }
-        if (redesPost.includes('instagram')) { // v1.11: texto por rede — IG com a frase do link na bio
-          try { const rIg = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'publicar', payload: { texto: _textoIg, redes: ['instagram'], data_hora: quando.toISOString(), imagem_url: imgUrl || null, encurtar_link: false } }) }); const dIg = await rIg.json();
-            if (dIg.success) { registrarPublicacao({ id: pecaId, campanhaId: _autoId, titulo: post.titulo }, 'instagram', _textoIg, 'metricool', dIg.metricool_id, '', quando.toISOString()); if (!_redesLink.length) dp = dIg; }
-            else addLog('warn', '[Auto-IA] Instagram recusou "' + post.titulo + '": ' + (dIg.error||'')); } catch(e) { addLog('warn', '[Auto-IA] IG: ' + e.message); }
+        // v3.46: um post por rede no Metricool — link com utm_source da própria rede, metricool_id próprio
+        // e resultado real de cada rede (antes LinkedIn+Facebook iam juntos com a UTM do LinkedIn)
+        const ok = [], falhas = []; let dp = null;
+        for (const rd of redesPost) {
+          const lk = rd === 'instagram' ? '' : comUtm(linkDestinoPadrao(), rd, _autoId, 'post' + (_ix + 1));
+          const tx = rd === 'instagram' ? _semBio(post.texto) + '\n\n' + textoLinkBio(_autoId) : post.texto + '\n\n👉 Agende uma conversa:\n' + lk;
+          try {
+            const rr = await fetch('/api/metricool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'publicar', payload: { texto: tx, redes: [rd], data_hora: quando.toISOString(), imagem_url: imgUrl || null, encurtar_link: rd !== 'instagram' } }) });
+            const dd = await rr.json().catch(() => ({ success: false, error: 'HTTP ' + rr.status }));
+            if (!dd.success) throw new Error(dd.error || 'sem detalhe');
+            registrarPublicacao({ id: pecaId, campanhaId: _autoId, titulo: post.titulo }, rd, tx, 'metricool', dd.metricool_id, lk, quando.toISOString());
+            ok.push(rd); dp = dp || dd;
+          } catch (e) { falhas.push(rd + ': ' + e.message); addLog('warn', '[Auto-IA] ' + rd + ' recusou "' + post.titulo + '": ' + e.message); }
         }
-        if (dp.success) {
+        if (ok.length) {
           agendados++;
-          pecaObj.status = 'Agendado'; pecaObj.agendado_para = quando.toISOString(); pecaObj.metricool_id = dp.metricool_id;
-          const pFake = { id: pecaId, campanhaId: _autoId, titulo: post.titulo };
-          _redesLink.forEach(rd => registrarPublicacao(pFake, rd, _textoPost, 'metricool', dp.metricool_id, _linkPost, quando.toISOString()));
+          pecaObj.status = 'Agendado'; pecaObj.agendado_para = quando.toISOString(); pecaObj.metricool_id = dp?.metricool_id || null; pecaObj.redes_agendadas = ok;
+          if (falhas.length) pecaObj.narrativa = (pecaObj.narrativa ? pecaObj.narrativa + ' · ' : '') + '⚠ Metricool recusou: ' + falhas.join(' · ').substring(0, 300);
           if (!campAuto._primeiroSlot) campAuto._primeiroSlot = quando.getTime();
-          addLog('ok', '[Auto-IA] Agendado: "' + post.titulo + '" → ' + quando.toLocaleString('pt-BR') + ' (' + redesPost.join(',') + ')');
+          addLog('ok', '[Auto-IA] Agendado: "' + post.titulo + '" → ' + quando.toLocaleString('pt-BR') + ' (' + ok.join(',') + ')' + (falhas.length ? ' · falhou: ' + falhas.join(' · ') : ''));
         } else {
-          pecaObj.narrativa = (pecaObj.narrativa ? pecaObj.narrativa + ' · ' : '') + '⚠ Metricool recusou: ' + (dp.error||'sem detalhe');
-          addLog('err', '[Auto-IA] Metricool recusou "' + post.titulo + '" (' + quando.toLocaleString('pt-BR') + '): ' + (dp.error||'') + ' — peça ficou em Aprovado; publique pelo card');
+          pecaObj.narrativa = (pecaObj.narrativa ? pecaObj.narrativa + ' · ' : '') + '⚠ Metricool recusou: ' + falhas.join(' · ').substring(0, 300);
+          addLog('err', '[Auto-IA] Metricool recusou "' + post.titulo + '" (' + quando.toLocaleString('pt-BR') + '): ' + falhas.join(' · ') + ' — peça ficou em Aprovado; publique pelo card');
           toast('Metricool recusou "' + post.titulo + '" — ficou em Aprovado', 'error');
         }
       } catch (e) { addLog('err', '[Auto-IA] Agendamento falhou (' + post.titulo + '): ' + e.message + ' — peça em Aprovado'); }
@@ -26868,7 +26907,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.45] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.46] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -26884,7 +26923,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.45';
+window.__ATX_BUILD_ID__ = 'ATX-v3.46';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
