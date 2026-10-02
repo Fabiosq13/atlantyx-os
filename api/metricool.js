@@ -19,9 +19,9 @@ async function corrigirImagensAgendadas({ blog_id, dias = 60, aplicar = false } 
   if (!TOKEN || !USERID || !BLOGID) throw new Error('Credenciais do Metricool ausentes');
 
   const hoje = new Date();
-  const ini = hoje.toISOString().substring(0,10).replace(/-/g,'') + '0000';
-  const fim = new Date(hoje.getTime() + dias*86400000).toISOString().substring(0,10).replace(/-/g,'') + '2359';
-  const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${ini}&end=${fim}`, TOKEN);
+  const ini = hoje.toISOString().substring(0,10) + 'T00:00:00'; // v3.54: formato ISO (o compacto podia vir vazio)
+  const fim = new Date(hoje.getTime() + dias*86400000).toISOString().substring(0,10) + 'T23:59:59';
+  const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${ini}&end=${fim}&timezone=America/Sao_Paulo`, TOKEN);
   const lista = Array.isArray(r) ? r : (r?.data || r?.posts || []);
 
   const { garantirPermanente, ehEfemera } = await import('./media.js');
@@ -110,8 +110,8 @@ async function auditoriaFunil({ dias = 30 } = {}) {
   // 1. Posts no Metricool: agendados, publicados, com erro
   try {
     const hoje = new Date(), ini = new Date(hoje.getTime() - dias * 86400000);
-    const f = d => d.toISOString().substring(0, 10).replace(/-/g, '');
-    const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${f(ini)}0000&end=${f(hoje)}2359`, TOKEN);
+    const f = d => d.toISOString().substring(0, 10);
+    const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${f(ini)}T00:00:00&end=${f(hoje)}T23:59:59&timezone=America/Sao_Paulo`, TOKEN);
     const lista = Array.isArray(r) ? r : (r?.data || r?.posts || []);
     const status = { publicado: 0, agendado: 0, erro: 0, rascunho: 0, outro: 0 };
     const comErro = [], semLink = [], comLink = [];
@@ -599,7 +599,9 @@ async function _slotsOcupados({ de, ate, blogId }) {
   try {
     const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID;
     const BLOGID = blogId || process.env.METRICOOL_BLOG_ID;
-    const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${de.replace(/-/g,'')}0000&end=${ate.replace(/-/g,'')}2359`, TOKEN);
+    // v3.54: mesmo formato de data do listar_posts (ISO + fuso de SP). O formato compacto AAAAMMDDHHMM podia
+    // não ser aceito — aí a lista vinha vazia e TODOS os horários pareciam vagos (posts duplicados no mesmo horário)
+    const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${de}T00:00:00&end=${ate}T23:59:59&timezone=America/Sao_Paulo`, TOKEN);
     const lista = Array.isArray(r) ? r : (r?.data || r?.posts || []);
     const ocupados = new Set();
     lista.forEach(p => {
@@ -633,6 +635,8 @@ async function autoCampanhaPlanejar({ dias, horarios, pular_fim_de_semana, blog_
   const de = diaDe(0).toISOString().split('T')[0];
   const ate = diaDe(nDias - 1).toISOString().split('T')[0];
   const { ocupados, total, erro } = await _slotsOcupados({ de, ate, blogId: blog_id });
+  // v3.54: sem conseguir ler a agenda do Metricool, não planeja às cegas (antes tudo virava "vago")
+  if (erro) { const e = new Error('Não consegui ler a agenda do Metricool para ver os horários ocupados: ' + String(erro).substring(0, 160)); e.dica = 'Tente de novo em alguns minutos. Nada foi gerado.'; throw e; }
   const agoraMs = Date.now() + 30 * 60000; // não planeja horário que já passou (ou daqui a menos de 30 min)
 
   const vagos = [], jaAgendados = [];
@@ -688,7 +692,7 @@ async function autoCampanhaExecutar({ dias, horarios, pular_fim_de_semana, tema,
       throw err;
     }
     try {
-      await mc(`/v2/scheduler/posts?userId=${U}&blogId=${B}&start=${new Date().toISOString().substring(0,10).replace(/-/g,'')}0000&end=${new Date().toISOString().substring(0,10).replace(/-/g,'')}2359`, T);
+      { const _h = new Date().toISOString().substring(0, 10); await mc(`/v2/scheduler/posts?userId=${U}&blogId=${B}&start=${_h}T00:00:00&end=${_h}T23:59:59&timezone=America/Sao_Paulo`, T); }
     } catch (e) {
       if (/401|Authentication/i.test(e.message)) {
         const err = new Error('O Metricool recusou a autenticação (401). Nada foi gerado.');
