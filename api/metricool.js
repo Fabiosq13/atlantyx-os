@@ -876,6 +876,10 @@ async function handler(req, res) {
     autocampanha_agendar_um:() => autoCampanhaAgendarUm(payload),
     fila_enfileirar:        () => filaEnfileirar(payload),
     fila_status:            () => filaStatus(payload),
+    // v3.52: posts que a FILA do servidor já agendou no Metricool — para entrarem no calendário e no desempenho
+    fila_agendados:         async () => { const sql = await _filaTabela(); const desde = new Date(Date.now() - 90 * 864e5).toISOString().substring(0, 10);
+      const rows = await sql`SELECT id, lote, data, hora, tipo, redes, texto, link, imagem_url, metricool_id FROM autocampanha_fila WHERE metricool_id IS NOT NULL AND data >= ${desde} ORDER BY data, hora LIMIT 500`;
+      return { itens: rows.map(r => ({ ...r, redes: Array.isArray(r.redes) ? r.redes : (() => { try { return JSON.parse(r.redes || '[]'); } catch (_) { return []; } })() })) }; },
     fila_processar:         () => filaProcessar(payload),
     fila_limpar:            () => filaLimpar(payload),
     fila_agendar_rascunhos: () => filaAgendarRascunhos(payload),

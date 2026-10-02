@@ -25283,6 +25283,7 @@ async function carregarDesempenho() {
 
   // Se Metricool configurado, puxar métricas de posts e mesclar
   if (_mcConfigurado) {
+    try { await sincronizarStatusMetricool(true); } catch (_) {} // v3.52: links públicos e posts da fila antes de casar as métricas
     const dias = parseInt(document.getElementById('despPeriodoSel')?.value || '30');
     const ini = new Date(Date.now() - dias * 864e5).toISOString().substring(0, 10);
     for (const rede of ['linkedin','instagram','facebook']) {
@@ -25326,34 +25327,47 @@ function _similaridade(a, b) {
   let inter = 0; A.forEach(w => { if (B.has(w)) inter++; });
   return inter / Math.min(A.size, B.size); // proporção de palavras em comum
 }
+// v3.52: casamento UM-PARA-UM e mais confiável. Ordem: id do Metricool → link público do post (lido do status
+// real) → texto parecido + data AGENDADA (antes usava a data de registro) → Stories/Reels pelo horário.
+// Cada post do Metricool só alimenta UMA publicação (antes podia somar em dobro).
+const _urlChave = u => { const x = String(u || '').toLowerCase(); if (!x) return ''; const m = x.match(/(?:activity|share|ugcpost)[:%3a]+(\d{10,})/) || x.match(/\/(?:p|reel|reels)\/([\w-]+)/) || x.match(/(\d{12,})/); return m ? m[1] : x.replace(/[?#].*$/, '').replace(/\/$/, ''); };
 function mesclarMetricasMc(rede, postsMc) {
-  let casados = 0, semCasar = 0;
-  _publicacoes.filter(p => p.rede === rede).forEach(pub => {
-    let alvo = null;
-    // 1) pelo id do Metricool, quando a publicação foi feita pelo sistema (mais confiável)
-    if (pub.metricool_id) alvo = postsMc.find(mp => String(mp.id) === String(pub.metricool_id));
-    // 2) por data + similaridade de texto
-    if (!alvo) {
-      const candidatos = postsMc.map(mp => ({ mp, sim: _similaridade(mp.texto, pub.texto),
-        mesmaData: mp.data && pub.data && String(mp.data).substring(0,10) === String(pub.data).substring(0,10) }))
-        .filter(c => c.sim >= 0.6 || (c.mesmaData && c.sim >= 0.35))
-        .sort((a, b) => (b.mesmaData - a.mesmaData) || (b.sim - a.sim));
-      alvo = candidatos[0]?.mp || null;
+  const pubs = _publicacoes.filter(p => p.rede === rede);
+  const diaLocal = v => { const d = new Date(v); return isNaN(d) ? String(v || '').substring(0, 10) : _dia(d); };
+  const pares = [];
+  pubs.forEach((pub, ip) => postsMc.forEach((mp, im) => {
+    let sc = 0;
+    if (pub.metricool_id && mp.id && String(mp.id) === String(pub.metricool_id)) sc = 100;
+    else if (pub.url_publica && mp.url && _urlChave(pub.url_publica) && _urlChave(pub.url_publica) === _urlChave(mp.url)) sc = 90;
+    else if (pub.url_publica && mp.id && String(pub.url_publica).includes(String(mp.id))) sc = 85;
+    else {
+      const quando = pub.agendado_para || pub.data; const mesmoDia = mp.data && quando && diaLocal(mp.data) === diaLocal(quando);
+      const sim = _similaridade(mp.texto, pub.texto);
+      if (sim >= 0.6) sc = 40 + sim * 30 + (mesmoDia ? 15 : 0);
+      else if (mesmoDia && sim >= 0.35) sc = 30 + sim * 30;
+      else if (mesmoDia && !_normTexto(String(pub.texto || '').replace(/^\[(STORY|REEL|CARROSSEL)\]\s*/, '')).length) { // story sem texto: pelo horário
+        const dt = Math.abs(new Date(mp.data) - new Date(quando)); if (dt <= 45 * 60000) sc = 25 - dt / 60000 / 10;
+      }
     }
-    if (alvo) {
-      casados++;
-      // v1.42: usar ?? em vez de || — antes um valor 0 legítimo era descartado como "falso"
-      if (alvo.impressoes != null) pub.metricas.imp = alvo.impressoes;
-      if (alvo.cliques != null) pub.metricas.cli = alvo.cliques;
-      if (alvo.curtidas != null) pub.metricas.cur = alvo.curtidas;
-      if (alvo.comentarios != null) pub.metricas.com = alvo.comentarios;
-      if (alvo.compartilhamentos != null) pub.metricas.sha = alvo.compartilhamentos;
-      pub.metricas_origem = 'metricool';
-      pub.metricas_atualizado = new Date().toISOString();
-    } else semCasar++;
-  });
-  if (semCasar) addLog('warn', `[Desempenho] ${rede}: ${casados} publicação(ões) casada(s) com o Metricool, ${semCasar} sem correspondência (métricas ficam zeradas nessas).`);
-  return { casados, semCasar };
+    if (sc > 0) pares.push({ ip, im, sc });
+  }));
+  pares.sort((a, b) => b.sc - a.sc);
+  const usadoP = new Set(), usadoM = new Set(); let casados = 0;
+  for (const { ip, im } of pares) {
+    if (usadoP.has(ip) || usadoM.has(im)) continue; usadoP.add(ip); usadoM.add(im);
+    const pub = pubs[ip], alvo = postsMc[im]; casados++;
+    pub.metricas = pub.metricas || {};
+    if (alvo.impressoes != null) pub.metricas.imp = alvo.impressoes;
+    if (alvo.cliques != null) pub.metricas.cli = alvo.cliques;
+    if (alvo.curtidas != null) pub.metricas.cur = alvo.curtidas;
+    if (alvo.comentarios != null) pub.metricas.com = alvo.comentarios;
+    if (alvo.compartilhamentos != null) pub.metricas.sha = alvo.compartilhamentos;
+    if (alvo.url && !pub.url_publica) pub.url_publica = alvo.url;
+    pub.metricas_origem = 'metricool'; pub.metricas_atualizado = new Date().toISOString();
+  }
+  const semCasar = pubs.filter(p => _pubPublicada(p)).length - casados;
+  if (semCasar > 0) addLog('warn', `[Desempenho] ${rede}: ${casados} publicação(ões) casada(s) com o Metricool, ${semCasar} publicada(s) sem correspondência (métricas ficam zeradas nessas).`);
+  return { casados, semCasar: Math.max(0, semCasar) };
 }
 
 // v1.42: explica zeros suspeitos — impressão zerada e clique sem lead
@@ -25579,7 +25593,31 @@ async function usarLPComoLink(url) {
 // em _publicacoes (status 'publicado' | 'erro'), no máximo a cada 10 min.
 function _pubPublicada(p) { if (p.status === 'publicado') return true; if (p.status === 'erro') return false; if (p.status_mc) return /PUBLISHED|SUCCESS/i.test(p.status_mc); return new Date(p.agendado_para || p.data) < new Date() && !!p.metricool_id; }
 let _syncMcEm = 0, _syncMcRodando = false;
+// v3.52: posts agendados pela FILA do servidor (Autocampanha) entram no calendário e no desempenho
+let _filaImportEm = 0;
+async function importarPostsDaFila(forcar) {
+  if (!forcar && Date.now() - _filaImportEm < 1800000) return 0; _filaImportEm = Date.now();
+  try {
+    const r = await fetch('/api/metricool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'fila_agendados' }) });
+    const d = await r.json().catch(() => ({})); if (!d.success) return 0;
+    let n = 0;
+    for (const it of d.itens || []) {
+      const redes = (it.tipo === 'story') ? ['instagram'] : (it.redes && it.redes.length ? it.redes : ['linkedin']);
+      for (const rd of redes) {
+        if ((_publicacoes || []).some(p => String(p.metricool_id) === String(it.metricool_id) && p.rede === rd)) continue;
+        const titulo = String(it.texto || '').split('\n').map(l => l.trim()).filter(Boolean)[0] || 'Post da Autocampanha';
+        _publicacoes.push({ id: 'pub_fila_' + it.id + '_' + rd, agendado_para: new Date(it.data + 'T' + (it.hora || '09:00') + ':00-03:00').toISOString(), campanhaId: null, pecaId: null,
+          titulo: (it.tipo === 'story' ? '[STORY] ' : '') + titulo.substring(0, 90), rede: rd, texto: String(it.texto || '').substring(0, 500), metodo: 'metricool', link_destino: it.link || '',
+          imagem_url: it.imagem_url || '', metricool_id: it.metricool_id, data: new Date().toISOString(), origem: 'fila_autocampanha', metricas: { imp: 0, cli: 0, cur: 0, com: 0, sha: 0, leads: 0 } });
+        n++;
+      }
+    }
+    if (n) { await salvarPublicacoes(); addLog('info', '[Calendário] ' + n + ' post(s) da fila da Autocampanha incluído(s) no calendário'); try { renderCalendarioKanban(); } catch (_) {} }
+    return n;
+  } catch (_) { return 0; }
+}
 async function sincronizarStatusMetricool(forcar) {
+  try { await importarPostsDaFila(forcar); } catch (_) {}
   if (_syncMcRodando || (!forcar && Date.now() - _syncMcEm < 600000) || typeof _mcConfigurado === 'undefined' || !_mcConfigurado) return { pulado: true };
   const comId = (_publicacoes || []).filter(p => p.metricool_id && p.status !== 'publicado'); if (!comId.length) return { pulado: true };
   _syncMcRodando = true; _syncMcEm = Date.now();
@@ -26964,7 +27002,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.51] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.52] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -26980,7 +27018,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.51';
+window.__ATX_BUILD_ID__ = 'ATX-v3.52';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
