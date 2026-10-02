@@ -6868,7 +6868,7 @@ function _proximaDataPubs(pubs) {
   return arr[0] || null;
 }
 function _pubsDoCardKanban(p) { return (_ehCardCampanha(p) && p.campanhaId) ? (_publicacoes || []).filter(x => x.campanhaId === p.campanhaId) : pubsDaPeca(p); }
-function dataAgendadaDaPeca(p) { return _proximaDataPubs(_pubsDoCardKanban(p)) || p.agendado_para || null; }
+function dataAgendadaDaPeca(p) { return _proximaDataPubs(_pubsDoCardKanban(p)) || p.agendado_para || p.data_planejada || null; } // v3.49: inclui a data planejada (ainda não enviada ao Metricool)
 // atualiza card(s) do Kanban e a campanha depois de mudar uma data de publicação
 async function _sincronizarDatasCampanha(cid, pecaId) {
   try {
@@ -6879,8 +6879,9 @@ async function _sincronizarDatasCampanha(cid, pecaId) {
   const alvos = [(_todasCampanhas || []).find(x => x.id === cid), (typeof campAtiva !== 'undefined' && campAtiva?.id === cid) ? campAtiva : null].filter(Boolean);
   if (!alvos.length) return;
   const pubs = (_publicacoes || []).filter(x => x.campanhaId === cid && x.status !== 'erro');
-  const dias = pubs.map(x => _dia(x.agendado_para || x.data)).filter(Boolean).sort();
-  const prox = _proximaDataPubs(pubs);
+  const planejadas = (kanbanPecas || []).filter(pc => pc.campanhaId === cid && pc.data_planejada && !pubsDaPeca(pc).length).map(pc => ({ agendado_para: pc.data_planejada }));
+  const dias = [...pubs, ...planejadas].map(x => _dia(x.agendado_para || x.data)).filter(Boolean).sort();
+  const prox = _proximaDataPubs(pubs) || _proximaDataPubs(planejadas);
   let salvar = null;
   for (const c of alvos) {
     // o período da campanha passa a cobrir as datas de publicação (só estende, nunca encurta)
@@ -6953,7 +6954,7 @@ function renderKanban() {
           ${_kbRedes(p)}
           <div style="font-size:10px;color:var(--t2);margin-top:4px;">${({ 'Campanha Completa': 'Campanha', 'Aprovada': 'Campanha', 'S2-EmailMarketing': 'E-mail marketing (avulso)', 'S2-Designer': 'Imagem avulsa' })[p.agente] || p.agente}${_kbFormatos(p)}</div>
           ${p.data?`<div style="font-family:var(--M);font-size:9px;color:var(--t3);margin-top:3px;">🕓 ${p.data}</div>`:''}
-          ${(() => { const a = dataAgendadaDaPeca(p); const pubs = pubsDaPeca(p); return a ? `<div style="font-family:var(--M);font-size:8.5px;color:var(--gold);margin-top:2px;cursor:pointer;text-decoration:underline dotted;" title="Clique para mudar a data de publicação" onclick="abrirDatasPub('${p.campanhaId || ''}','${p.id}',event)">📅 ${fmtDH(a)}${pubs.length ? ' · ' + [...new Set(pubs.map(x=>x.rede))].map(r=>({linkedin:'in',instagram:'ig',facebook:'fb',whatsapp:'wa',email:'@'}[r]||r)).join('/') : ''}</div>` : (col==='Agendado' ? '<div style="font-size:9px;color:var(--red);margin-top:2px;">⚠ sem publicação registrada</div>' : ''); })()}
+          ${(() => { const a = dataAgendadaDaPeca(p); const pubs = _pubsDoCardKanban(p); const plan = !pubs.length && !p.agendado_para && p.data_planejada; return a ? `<div style="font-family:var(--M);font-size:8.5px;color:var(--gold);margin-top:2px;cursor:pointer;text-decoration:underline dotted;" title="${plan ? 'Data planejada — ainda não enviada ao Metricool (vem preenchida no 🚀 Publicar)' : 'Clique para mudar a data de publicação'}" onclick="${plan ? `event.stopPropagation();selecionarPeca('${p.id}')` : `abrirDatasPub('${p.campanhaId || ''}','${p.id}',event)`}">📅 ${plan ? 'planejado ' : ''}${fmtDH(a)}${pubs.length ? ' · ' + [...new Set(pubs.map(x=>x.rede))].map(r=>({linkedin:'in',instagram:'ig',facebook:'fb',whatsapp:'wa',email:'@'}[r]||r)).join('/') : ''}</div>` : (col==='Agendado' ? '<div style="font-size:9px;color:var(--red);margin-top:2px;">⚠ sem publicação registrada</div>' : ''); })()}
           <div style="display:flex;gap:4px;margin-top:6px;">
             <button class="btn" style="flex:1;font-size:8.5px;padding:2px 5px;color:var(--blue);" onclick="event.stopPropagation();editarPecaDoKanban('${p.id}')" title="Abrir campanha completa para edição">✎ Editar</button>
             <button class="btn" style="font-size:8.5px;padding:2px 7px;" onclick="abrirDatasPub('${p.campanhaId || ''}','${p.id}',event)" title="Datas de publicação">📅</button>
@@ -7087,6 +7088,7 @@ async function kbSalvarDataPlanejada(pecaId) {
   const d = new Date(v); if (isNaN(d) || d < new Date()) return toast('Escolha uma data/hora futura', 'error');
   p.data_planejada = d.toISOString(); p.agendado_sugerido = d.toISOString();
   renderKanban(); await salvarKanbanNoBanco(); selecionarPeca(pecaId);
+  try { await _sincronizarDatasCampanha(p.campanhaId, p.id); } catch (_) {} // v3.49: campanha acompanha a data planejada
   toast('Data planejada: ' + d.toLocaleString('pt-BR') + ' — use 🚀 Publicar para agendar', 'success');
 }
 
@@ -26942,7 +26944,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.48] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.49] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -26958,7 +26960,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.48';
+window.__ATX_BUILD_ID__ = 'ATX-v3.49';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
