@@ -1,0 +1,32 @@
+# Varredura noturna do agente de QA (v3.45) — a ÚNICA parte autônoma da Esteira de Demandas.
+# 03:00 (Brasília): abre o Atlantyx OS em produção, roda o QA em modo seguro e manda os ERROS para a esteira,
+# que abre a tarefa "@claude" com o rótulo correcao-noturna. O Claude corrige; o claude-pr.yml valida e mescla.
+#
+# Configuração única (GitHub → Settings → Secrets and variables → Actions):
+#   secrets: CRON_SECRET (o mesmo do Vercel) · ATX_QA_EMAIL e ATX_QA_SENHA (um usuário de ATX_USUARIOS)
+#   variável (opcional): ATX_URL (padrão https://atlantyx-os.vercel.app)
+name: QA noturno — correção autônoma de erros
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+concurrency:
+  group: qa-noturno
+  cancel-in-progress: false
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm i --no-save --no-audit --no-fund playwright@1.48.2
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/qa-noturno.mjs
+        env:
+          ATX_URL: ${{ vars.ATX_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          ATX_QA_EMAIL: ${{ secrets.ATX_QA_EMAIL }}
+          ATX_QA_SENHA: ${{ secrets.ATX_QA_SENHA }}

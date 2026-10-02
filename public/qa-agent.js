@@ -734,6 +734,14 @@
       if (!tabs.length) return; if (!confirm('Apagar o que foi criado durante o teste em: ' + tabs.join(', ') + '?\n\nSó registros com data de criação dentro da janela do teste.')) return;
       try { const d = await api('real_apagar_janela', { run_id: S.relatorio?.run_id, tabelas: tabs }); m.innerHTML = '<span style="color:var(--green);">apagados: ' + esc(Object.entries(d.apagadas).map(([k, v]) => k + ' ' + v).join(', ')) + '</span>'; } catch (e) { m.innerHTML = '<span style="color:var(--red);">' + esc(e.message) + '</span>'; } },
     parar() { S.parar = true; },
+    // v3.45: varredura noturna sem pessoa (GitHub Actions, 03h): modo seguro — gravações, envios e IA bloqueados
+    async noturno(o = {}) {
+      if (S.rodando) throw new Error('já existe uma varredura em andamento');
+      await varrer({ botoes: true, formularios: true, contraste: false, doisTemas: false, larguras: false, filtro: '', espera: 10000, ...o });
+      const R = S.relatorio || {};
+      return { versao: R.versao, duracao_s: R.duracao_s, repouso_s: R.repouso_s, total_telas: R.total_telas, resumo: R.resumo, interrompido: !!R.interrompido, erro: S.erro || null,
+        achados: (R.achados || []).map(a => ({ id: a.id, sev: a.sev, cat: a.cat, titulo: a.titulo, evidencia: a.evidencia, sugestao: a.sugestao, tela: a.tela, rotulo: a.rotulo, ganchos: a.ganchos })) };
+    },
     marketing() {
       const sem = !!document.getElementById('qaMktSemPublicar')?.checked;
       const redes = [...document.querySelectorAll('.qaMktRede:checked')].map(x => x.value);

@@ -1,0 +1,76 @@
+# Depois que o Claude trabalha numa tarefa (v3.45):
+#   • abre o PULL REQUEST da branch claude/issue-N-* (se ainda não existir), com "Fixes #N"
+#   • tarefa "demanda-aprovada" (Esteira de Demandas): só abre o PR — o merge é SEMPRE do fundador
+#   • tarefa "correcao-noturna" (erros do QA da madrugada): valida (sintaxe + carga da página sem erro de JS,
+#     até 600 linhas alteradas) e MESCLA sozinho; se não passar, deixa o PR aberto com o rótulo precisa-revisao
+name: Claude — PR e merge das correções noturnas
+on:
+  workflow_run:
+    workflows: ['Claude — correção automática']
+    types: [completed]
+  schedule:
+    - cron: '30 */2 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+concurrency:
+  group: claude-pr
+  cancel-in-progress: false
+jobs:
+  pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Abrir PRs e mesclar correções noturnas validadas
+        run: |
+          set -u
+          git config user.name "atlantyx-os-bot"; git config user.email "bot@atlantyx.local"
+          PW_OK=0
+          cp scripts/validar.mjs .validar-main.mjs   # o validador vem da main (o PR não consegue afrouxar a própria validação)
+          for LABEL in correcao-noturna demanda-aprovada; do
+            for N in $(gh issue list -R "$REPO" --label "$LABEL" --state open --json number -q '.[].number'); do
+              BR=$(git ls-remote --heads origin "claude/issue-$N-*" | awk '{print $2}' | sed 's#refs/heads/##' | tail -1)
+              [ -z "$BR" ] && continue
+              AHEAD=$(git rev-list --count "origin/main..origin/$BR" 2>/dev/null || echo 0)
+              [ "$AHEAD" = "0" ] && continue
+              PR=$(gh pr list -R "$REPO" --head "$BR" --state open --json number -q '.[0].number')
+              if [ -z "$PR" ]; then
+                TIT=$(gh issue view "$N" -R "$REPO" --json title -q .title)
+                printf 'Fixes #%s\n\nPull request aberto automaticamente a partir do trabalho do Claude na branch `%s`.\n' "$N" "$BR" > /tmp/corpo.md
+                [ "$LABEL" = "demanda-aprovada" ] && printf '\n**Demanda aprovada na Esteira — revise e faça o merge quando estiver de acordo.**\n' >> /tmp/corpo.md
+                gh pr create -R "$REPO" --base main --head "$BR" --title "$TIT" --body-file /tmp/corpo.md || continue
+                PR=$(gh pr list -R "$REPO" --head "$BR" --state open --json number -q '.[0].number')
+                gh issue comment "$N" -R "$REPO" --body "Pull request #$PR aberto." || true
+              fi
+              [ "$LABEL" != "correcao-noturna" ] && continue
+              # correção noturna: valida e mescla
+              if gh pr view "$PR" -R "$REPO" --json labels -q '.labels[].name' | grep -qx 'precisa-revisao'; then continue; fi
+              LINHAS=$(gh pr view "$PR" -R "$REPO" --json additions,deletions -q '.additions + .deletions')
+              if [ "$LINHAS" -gt 600 ]; then
+                gh pr edit "$PR" -R "$REPO" --add-label precisa-revisao || true
+                gh pr comment "$PR" -R "$REPO" --body "Correção noturna grande demais para merge automático ($LINHAS linhas). Ficou para revisão do fundador." ; continue
+              fi
+              git checkout -q --detach "origin/$BR"
+              if [ "$PW_OK" = "0" ]; then npm i --no-save --no-audit --no-fund playwright@1.48.2 >/dev/null 2>&1 && npx playwright install --with-deps chromium >/dev/null 2>&1 && PW_OK=1; fi
+              if ATX_RAIZ=. node .validar-main.mjs > /tmp/val.txt 2>&1; then
+                gh pr merge "$PR" -R "$REPO" --squash --delete-branch && \
+                  gh issue comment "$N" -R "$REPO" --body "✅ Correção noturna validada (sintaxe + carga da página) e mesclada automaticamente no PR #$PR." || true
+              else
+                gh pr edit "$PR" -R "$REPO" --add-label precisa-revisao || true
+                { echo "❌ A validação falhou — o PR NÃO foi mesclado e ficou para revisão."; echo; echo '```'; tail -40 /tmp/val.txt; echo '```'; } > /tmp/falha.md
+                gh pr comment "$PR" -R "$REPO" --body-file /tmp/falha.md || true
+              fi
+              git checkout -q main
+            done
+          done
