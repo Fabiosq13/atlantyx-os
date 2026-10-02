@@ -364,12 +364,64 @@ async function handler(req, res) {
       ]);
       const funilTotais = kpiRows.reduce((s, k) => ({ contatos: s.contatos + (k.contatos||0), respostas: s.respostas + (k.respostas||0), reunioes_marcadas: s.reunioes_marcadas + (k.reunioes_marcadas||0), reunioes_feitas: s.reunioes_feitas + (k.reunioes_feitas||0), propostas: s.propostas + (k.propostas||0), fechamentos: s.fechamentos + (k.fechamentos||0) }), { contatos:0, respostas:0, reunioes_marcadas:0, reunioes_feitas:0, propostas:0, fechamentos:0 });
       const leadsPorScore = {}; leadRows.forEach(l => { leadsPorScore[l.score || 'sem score'] = (leadsPorScore[l.score || 'sem score'] || 0) + 1; });
+      // v3.68: o gerente via só nome/status das campanhas e um funil de outra tela (kpis_diarios, quase sempre
+      // vazio) — dizia "não tenho acesso". Agora recebe as PUBLICAÇÕES reais (com status e métricas do Metricool),
+      // visitas e leads por campanha/rede, a auditoria do funil e a configuração do clique.
+      const dias = 30, iniD = new Date(Date.now() - dias * 864e5);
       const ctx = {
-        campanhas: { total: campRows.length, ativas: campRows.filter(c => c.ativa).length, por_canal: campRows.reduce((a,c) => { a[c.canal||'?'] = (a[c.canal||'?']||0)+1; return a; }, {}), lista: campRows.slice(0,10).map(c => ({ nome: c.nome, canal: c.canal, status: c.status, ativa: c.ativa })) },
-        funil_ultimos_14_dias: funilTotais,
+        hoje: new Date().toISOString().substring(0, 10),
+        campanhas: { total: campRows.length, ativas: campRows.filter(c => c.ativa).length, por_canal: campRows.reduce((a,c) => { a[c.canal||'?'] = (a[c.canal||'?']||0)+1; return a; }, {}), lista: campRows.slice(0,15).map(c => ({ nome: c.nome, canal: c.canal, status: c.status, ativa: c.ativa, inicio: c.data_inicio, fim: c.data_fim })) },
+        funil_vendas_14_dias_kpis_diarios: funilTotais,
         leads_ultimos_100: { total: leadRows.length, por_score: leadsPorScore },
       };
-      const system = `Você é o GERENTE DE MARKETING IA da Atlantyx — direto, prático, português do Brasil. Dados REAIS abaixo (campanhas, funil de vendas dos últimos 14 dias, leads recentes). Responda com os dados quando existirem; se faltar dado, diga; ajude a pensar em estratégia (quais campanhas priorizar, gargalos do funil, qualidade dos leads); seja conciso (~200 palavras salvo pedido de detalhe); nunca invente número.\n\nCONTEXTO (JSON):\n${JSON.stringify(ctx).substring(0,8000)}`;
+      // publicações (o que foi e o que vai ser postado), com métricas
+      try {
+        const kv = await sql`SELECT value FROM kv_store WHERE key = 'atx:publicacoes' LIMIT 1`;
+        let pubs = kv[0]?.value; if (typeof pubs === 'string') pubs = JSON.parse(pubs); pubs = Array.isArray(pubs) ? pubs : [];
+        const q = p => new Date(p.agendado_para || p.data); const agora = Date.now();
+        const nomeCamp = {}; try { (await sql`SELECT id, nome FROM campanhas`).forEach(c => { nomeCamp[c.id] = c.nome; }); } catch (_) {}
+        const passadas = pubs.filter(p => q(p) >= iniD && q(p) <= agora), futuras = pubs.filter(p => q(p) > agora && q(p) < agora + 15 * 864e5);
+        const soma = (arr, k) => arr.reduce((s2, p) => s2 + (Number(p.metricas?.[k]) || 0), 0);
+        const porRede = {}; passadas.forEach(p => { const r = p.rede || '?'; const o = porRede[r] = porRede[r] || { posts: 0, publicados: 0, com_erro: 0, nao_estao_no_metricool: 0, impressoes: 0, cliques: 0, curtidas: 0, comentarios: 0, compartilhamentos: 0 };
+          o.posts++; if (p.status === 'publicado' || /PUBLISHED|SUCCESS/i.test(p.status_mc || '')) o.publicados++; if (p.status === 'erro') o.com_erro++; if (p.nao_encontrado) o.nao_estao_no_metricool++;
+          o.impressoes += Number(p.metricas?.imp) || 0; o.cliques += Number(p.metricas?.cli) || 0; o.curtidas += Number(p.metricas?.cur) || 0; o.comentarios += Number(p.metricas?.com) || 0; o.compartilhamentos += Number(p.metricas?.sha) || 0; });
+        const porCamp = {}; passadas.forEach(p => { const k = nomeCamp[p.campanhaId] || p.campanhaId || 'sem campanha'; const o = porCamp[k] = porCamp[k] || { posts: 0, impressoes: 0, cliques: 0, leads_registrados: 0 }; o.posts++; o.impressoes += Number(p.metricas?.imp) || 0; o.cliques += Number(p.metricas?.cli) || 0; o.leads_registrados += Number(p.metricas?.leads) || 0; });
+        const top = passadas.filter(p => p.metricas).sort((a, b) => ((b.metricas.cli || 0) * 10 + (b.metricas.imp || 0)) - ((a.metricas.cli || 0) * 10 + (a.metricas.imp || 0))).slice(0, 6)
+          .map(p => ({ data: q(p).toISOString().substring(0, 16), rede: p.rede, titulo: String(p.titulo || '').substring(0, 70), impressoes: p.metricas.imp || 0, cliques: p.metricas.cli || 0, curtidas: p.metricas.cur || 0, comentarios: p.metricas.com || 0 }));
+        const pior = passadas.filter(p => p.status === 'erro').slice(0, 5).map(p => ({ data: q(p).toISOString().substring(0, 16), rede: p.rede, titulo: String(p.titulo || '').substring(0, 60), erro: String(p.erro_mc || '').substring(0, 120) }));
+        const agenda = {}; futuras.forEach(p => { const d = q(p).toISOString().substring(0, 10); agenda[d] = agenda[d] || {}; agenda[d][p.rede] = (agenda[d][p.rede] || 0) + 1; });
+        ctx.publicacoes_ultimos_30_dias = { total: passadas.length, por_rede: porRede, por_campanha: porCamp, totais: { impressoes: soma(passadas, 'imp'), cliques: soma(passadas, 'cli'), curtidas: soma(passadas, 'cur'), comentarios: soma(passadas, 'com') }, melhores_posts: top, com_erro: pior,
+          observacao: 'métricas vêm do Metricool e são casadas por post; impressões/cliques zerados podem significar que a métrica ainda não foi sincronizada (tela Desempenho)' };
+        ctx.agenda_proximos_14_dias = { total: futuras.length, por_dia_e_rede: agenda };
+      } catch (e) { ctx.publicacoes_erro = e.message; }
+      // visitas à página de captura e leads, por origem e por campanha
+      try {
+        const vis = await sql`SELECT LOWER(COALESCE(origem,'direto')) AS origem, COALESCE(campanha,'') AS campanha, COUNT(*)::int AS n FROM captura_visitas WHERE criado_em >= ${iniD.toISOString()} GROUP BY 1,2 ORDER BY 3 DESC LIMIT 30`;
+        ctx.visitas_pagina_captura_30_dias = { total: vis.reduce((s2, v) => s2 + v.n, 0), detalhe: vis };
+      } catch (_) { ctx.visitas_pagina_captura_30_dias = 'não medido'; }
+      try {
+        const ld = await sql`SELECT LOWER(COALESCE(NULLIF(origem,''),'sem origem')) AS origem, COALESCE(campanha,'') AS campanha, COUNT(*)::int AS n, MAX(criado_em) AS ultimo FROM leads WHERE criado_em >= ${iniD.toISOString()} GROUP BY 1,2 ORDER BY 3 DESC LIMIT 30`;
+        const ult = await sql`SELECT MAX(criado_em) AS u, COUNT(*)::int AS n FROM leads`;
+        ctx.leads_30_dias = { total: ld.reduce((s2, v) => s2 + v.n, 0), por_origem_e_campanha: ld.map(x => ({ origem: x.origem, campanha: x.campanha, n: x.n })), ultimo_lead_historico: ult[0]?.u ? String(ult[0].u).substring(0, 10) : null, total_historico: ult[0]?.n || 0 };
+      } catch (_) {}
+      try { const fu = await sql`SELECT status, COUNT(*)::int AS n FROM followups GROUP BY 1`; ctx.followups = Object.fromEntries(fu.map(x => [x.status, x.n])); } catch (_) {}
+      // auditoria do funil por rede (Metricool: impressões, cliques, gargalo) — cache de 30 min
+      try {
+        const ck = await sql`SELECT value, updated_at FROM kv_store WHERE key = 'cache:mkt:auditoria' LIMIT 1`;
+        let aud = ck[0] && (Date.now() - new Date(ck[0].updated_at).getTime() < 30 * 60000) ? (typeof ck[0].value === 'string' ? JSON.parse(ck[0].value) : ck[0].value) : null;
+        if (!aud) {
+          const base = (process.env.MEDIA_PUBLIC_BASE || 'https://' + (req.headers.host || 'atlantyx-os.vercel.app')).replace(/\/$/, '');
+          const c = new AbortController(); const t = setTimeout(() => c.abort(), 30000);
+          const r = await fetch(base + '/api/metricool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'auditoria_funil', payload: { dias } }), signal: c.signal }).finally(() => clearTimeout(t));
+          const d = await r.json().catch(() => ({}));
+          if (d.success) { aud = { veredito: d.veredito, problemas: (d.problemas || []).slice(0, 8), funil_por_rede: d.funil_por_rede, posts_metricool: d.posts };
+            try { await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('cache:mkt:auditoria', ${JSON.stringify(aud)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {} }
+        }
+        if (aud) ctx.auditoria_funil_30_dias = aud;
+      } catch (e) { ctx.auditoria_funil_erro = 'não consegui rodar agora: ' + e.message; }
+      // configuração vinda da tela (para onde o clique leva, Instagram, etc.)
+      if (value?.config) ctx.configuracao_tela = value.config;
+      const system = `Você é o GERENTE DE MARKETING IA da Atlantyx — direto, prático, português do Brasil. Você TEM os dados reais do marketing abaixo: campanhas; PUBLICAÇÕES dos últimos 30 dias por rede e por campanha (status no Metricool, impressões, cliques, curtidas, comentários, melhores posts, posts com erro); agenda dos próximos 14 dias; visitas à página de captura e leads por origem/campanha; follow-ups; auditoria do funil por rede (gargalo e ação de cada rede); configuração do clique (para onde o link leva). Use ESSES números para responder — cite-os. Pense no funil post → impressão → clique → visita à página → lead → reunião e aponte onde perde mais. Se um dado está zerado ou ausente, diga exatamente qual e o provável motivo (ex.: métrica não sincronizada, rede sem API), sem dizer que "não tem acesso" ao que está no contexto. Seja concreto e acionável (~250 palavras salvo pedido de detalhe); nunca invente número.\n\nCONTEXTO (JSON):\n${JSON.stringify(ctx).substring(0,24000)}`;
       const msgs = [...historico.slice(-10).map(h => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content||'').substring(0,2000) })), { role: 'user', content: String(mensagem).substring(0,3000) }];
       if (!process.env.ANTHROPIC_API_KEY) return res.status(400).json({ success: false, error: 'ANTHROPIC_API_KEY não configurada' });
       const rr = await fetch('https://api.anthropic.com/v1/messages', { method:'POST', headers:{ 'Content-Type':'application/json', 'x-api-key':process.env.ANTHROPIC_API_KEY, 'anthropic-version':'2023-06-01' }, body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6', max_tokens: 1400, system, messages: msgs }) });

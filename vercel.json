@@ -38,6 +38,9 @@
     }
   ],
   "functions": {
+    "api/db.js": {
+      "maxDuration": 60
+    },
     "api/s2-creative.js": {
       "maxDuration": 60
     },

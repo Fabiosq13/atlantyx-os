@@ -24943,10 +24943,10 @@ async function perguntarMkt(textoFixo) {
   const msg = (textoFixo || inp?.value || '').trim(); if (!msg) return;
   if (inp && !textoFixo) inp.value = '';
   _mktBubble('user', msg);
-  const think = _mktBubble('assistant', '⏳ Analisando campanhas e funil...');
+  const think = _mktBubble('assistant', '⏳ Lendo publicações, métricas do Metricool, visitas e leads... (até 40s na primeira pergunta)');
   if (btn) btn.disabled = true;
   try {
-    const r = await fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()}, body: JSON.stringify({ action:'gerente_marketing', value: { mensagem: msg, historico: _mktHist } }) });
+    const r = await fetch('/api/db', { method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()}, body: JSON.stringify({ action:'gerente_marketing', value: { mensagem: msg, historico: _mktHist, config: (() => { try { const c = ctaCfg(); return { clique_leva_para: c.destino === 'reuniao' ? 'agenda de reunião direto (pula a página de captura — quem não agenda não vira lead)' : 'página de captura (cadastro) → agenda', instagram_cta: c.ig, oferta: 'diagnóstico gratuito de dados e IA', autocampanha_redes: JSON.parse(localStorage.getItem('atx:ac:redes') || 'null') }; } catch (_) { return null; } })() } }) }); // v3.68
     const d = await r.json();
     if (!d.success) throw new Error(d.error || 'falha');
     think.textContent = d.resposta;
@@ -27434,7 +27434,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.67] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.68] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27450,7 +27450,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.67';
+window.__ATX_BUILD_ID__ = 'ATX-v3.68';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
