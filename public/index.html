@@ -6859,21 +6859,55 @@ function pubsDaPeca(p) {
   const arr = (_publicacoes || []).filter(x => (x.pecaId && x.pecaId === p.id) || (!x.pecaId && x.titulo === p.titulo) || (p.campanhaId && x.campanhaId === p.campanhaId && x.titulo === p.titulo));
   return arr.sort((a, b) => new Date(a.agendado_para || a.data) - new Date(b.agendado_para || b.data));
 }
-function dataAgendadaDaPeca(p) {
-  if (p.agendado_para) return p.agendado_para;
-  const pubs = pubsDaPeca(p);
-  return pubs.length ? (pubs[0].agendado_para || pubs[0].data) : null;
+// v3.48: a data do card vem das PUBLICAÇÕES (fonte da verdade) — antes o card mostrava o agendado_para
+// gravado na aprovação e não mudava quando a data de postagem era alterada. Card de campanha = próxima
+// publicação de qualquer peça da campanha.
+function _proximaDataPubs(pubs) {
+  const ok = (pubs || []).filter(x => x.status !== 'erro'); const fut = ok.filter(x => { try { return !_pubPublicada(x); } catch (_) { return true; } });
+  const arr = (fut.length ? fut : ok).map(x => x.agendado_para || x.data).filter(Boolean).sort((a, b) => new Date(a) - new Date(b));
+  return arr[0] || null;
+}
+function _pubsDoCardKanban(p) { return (_ehCardCampanha(p) && p.campanhaId) ? (_publicacoes || []).filter(x => x.campanhaId === p.campanhaId) : pubsDaPeca(p); }
+function dataAgendadaDaPeca(p) { return _proximaDataPubs(_pubsDoCardKanban(p)) || p.agendado_para || null; }
+// atualiza card(s) do Kanban e a campanha depois de mudar uma data de publicação
+async function _sincronizarDatasCampanha(cid, pecaId) {
+  try {
+    (kanbanPecas || []).filter(pc => (cid && pc.campanhaId === cid) || (pecaId && pc.id === pecaId)).forEach(pc => { const d = _proximaDataPubs(_pubsDoCardKanban(pc)); if (d) pc.agendado_para = d; });
+    try { renderKanban(); } catch (_) {} try { await salvarKanbanNoBanco(); } catch (_) {}
+  } catch (e) { addLog('warn', '[Datas] kanban: ' + e.message); }
+  if (!cid) return;
+  const alvos = [(_todasCampanhas || []).find(x => x.id === cid), (typeof campAtiva !== 'undefined' && campAtiva?.id === cid) ? campAtiva : null].filter(Boolean);
+  if (!alvos.length) return;
+  const pubs = (_publicacoes || []).filter(x => x.campanhaId === cid && x.status !== 'erro');
+  const dias = pubs.map(x => _dia(x.agendado_para || x.data)).filter(Boolean).sort();
+  const prox = _proximaDataPubs(pubs);
+  let salvar = null;
+  for (const c of alvos) {
+    // o período da campanha passa a cobrir as datas de publicação (só estende, nunca encurta)
+    if (dias.length) {
+      if (!c.data_inicio || dias[0] < _dia(c.data_inicio)) c.data_inicio = dias[0];
+      if (!c.data_fim || dias[dias.length - 1] > _dia(c.data_fim)) c.data_fim = dias[dias.length - 1];
+    }
+    c.proxima_publicacao = prox; c.atualizado_em = new Date().toISOString(); salvar = c;
+  }
+  try { if (typeof campAtiva !== 'undefined' && campAtiva?.id === cid) { const di = document.getElementById('cDataInicio'), df = document.getElementById('cDataFim'); if (di) di.value = _dia(campAtiva.data_inicio) || ''; if (df) df.value = _dia(campAtiva.data_fim) || ''; } } catch (_) {}
+  try { salvarCampanhaLocal(salvar); await salvarCampanhaNoBanco(salvar, 'datas de publicação'); } catch (e) { addLog('warn', '[Datas] campanha: ' + e.message); }
+  try { if (document.getElementById('abaLista')?.style.display !== 'none') filtrarCampanhas(); } catch (_) {}
+  try { if (document.getElementById('acLista')) acListar(); } catch (_) {}
 }
 function fmtDH(iso) { try { const d = new Date(iso); return d.toLocaleDateString('pt-BR') + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); } catch(_) { return ''; } }
 // v1.9.2: filtro de data do kanban
 let _kbFiltro = { de: '', ate: '', campo: 'criacao' };
 function aplicarFiltroKanban(preset) {
   const de = document.getElementById('kbDe'), ate = document.getElementById('kbAte'), campo = document.getElementById('kbCampo');
-  const iso = d => d.toISOString().substring(0, 10);
+  // v3.48: datas no dia LOCAL (antes UTC — depois das 21h pulava para o dia seguinte) e "7 dias" = hoje + os 6
+  // dias anteriores (antes incluía o 8º dia: em 02/10 aparecia o que foi criado em 25/09). Os atalhos de
+  // período passado filtram pela CRIAÇÃO (o "Próximos 14 dias" filtra pelo agendamento).
+  const iso = d => _dia(d);
   const hoje = new Date();
-  if (preset === 'hoje') { de.value = iso(hoje); ate.value = iso(hoje); }
-  else if (preset === '7') { const d = new Date(hoje); d.setDate(d.getDate() - 7); de.value = iso(d); ate.value = iso(hoje); }
-  else if (preset === '30') { const d = new Date(hoje); d.setDate(d.getDate() - 30); de.value = iso(d); ate.value = iso(hoje); }
+  if (preset === 'hoje') { de.value = iso(hoje); ate.value = iso(hoje); if (campo) campo.value = 'criacao'; }
+  else if (preset === '7') { const d = new Date(hoje); d.setDate(d.getDate() - 6); de.value = iso(d); ate.value = iso(hoje); if (campo) campo.value = 'criacao'; }
+  else if (preset === '30') { const d = new Date(hoje); d.setDate(d.getDate() - 29); de.value = iso(d); ate.value = iso(hoje); if (campo) campo.value = 'criacao'; }
   else if (preset === 'prox14') { const d = new Date(hoje); d.setDate(d.getDate() + 14); de.value = iso(hoje); ate.value = iso(d); if (campo) campo.value = 'agendamento'; }
   else if (preset === 'todos') { de.value = ''; ate.value = ''; }
   _kbFiltro = { de: de?.value || '', ate: ate?.value || '', campo: campo?.value || 'criacao' };
@@ -6884,7 +6918,7 @@ function _pecaPassaFiltro(p) {
   let ref;
   if (_kbFiltro.campo === 'agendamento') { const a = dataAgendadaDaPeca(p); if (!a) return false; ref = new Date(a); }
   else { ref = p.data ? _parseDataBR(p.data) : null; if (!ref) return true; }
-  const dia = ref.toISOString ? new Date(ref.getTime() - ref.getTimezoneOffset()*60000).toISOString().substring(0,10) : '';
+  const dia = isNaN(ref) ? '' : _dia(ref);
   if (_kbFiltro.de && dia < _kbFiltro.de) return false;
   if (_kbFiltro.ate && dia > _kbFiltro.ate) return false;
   return true;
@@ -25620,12 +25654,13 @@ async function reagendarPublicacao(pubId, novaData) {
     irmas.forEach(p => { p.agendado_para = quando.toISOString(); });
     toast('Data atualizada (publicação manual)', 'success');
   }
-  // peça do kanban
-  try { const pc = (kanbanPecas||[]).find(x => x.id === pub.pecaId || (pub.titulo && x.titulo === pub.titulo)); if (pc) { pc.agendado_para = quando.toISOString(); renderKanban(); salvarKanbanNoBanco(); } } catch(_) {}
+  // v3.48: peça(s) do kanban e a campanha acompanham a nova data (card e "Minhas campanhas")
+  try { const pc = (kanbanPecas||[]).find(x => x.id === pub.pecaId) || (kanbanPecas||[]).find(x => pub.titulo && x.titulo === pub.titulo); if (pc && !pc.campanhaId && pub.campanhaId) pc.campanhaId = pub.campanhaId; } catch(_) {}
   // reel/stories/carrossel da campanha
   try { const c = (_todasCampanhas||[]).find(x => x.id === pub.campanhaId) || (campAtiva?.id === pub.campanhaId ? campAtiva : null);
     if (c) { if ((pub.texto||'').startsWith('[REEL]') && c.reel) c.reel.agendado_em = quando.toISOString(); if ((pub.texto||'').startsWith('[CARROSSEL]') && c.carrossel) c.carrossel.publicado_em = quando.toISOString(); salvarCampanhaNoBanco(c, 'reagendar'); } } catch(_) {}
   await salvarPublicacoes();
+  await _sincronizarDatasCampanha(pub.campanhaId, pub.pecaId);
   renderCalendarioKanban(); try { renderDesempenho(); } catch(_) {}
   try { _renderDatasPublicacao(); } catch (_) {}
   return true;
@@ -26907,7 +26942,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.47] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.48] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -26923,7 +26958,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.47';
+window.__ATX_BUILD_ID__ = 'ATX-v3.48';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
