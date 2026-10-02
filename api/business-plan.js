@@ -335,12 +335,13 @@ Objetivo:
 - Se o plano atual JÁ é viável: melhore o resultado da Atlantyx (VPL, TIR, payback, menor exposição de caixa) SEM tornar o acordo ruim para a outra parte.
 - Sempre busque o melhor para AMBAS as partes: cada pedido da Atlantyx deve vir com uma contrapartida ou um ganho claro para o outro lado. Nada de propostas que a outra parte não aceitaria.
 Alavancas típicas (use as que fazem sentido com a oferta e os documentos): % de revenue share; pagamentos de marco (tipo "marco" = pagamento único no mes_inicio) — sinal na assinatura, entrega do MVP, primeiro cliente; mínimo garantido mensal; mensalidade de manutenção/sustentação; antecipar o início da receita; reajuste; dividir custos de nuvem/infra; reduzir escopo/equipe do MVP (pessoal/investimentos); prazo de exclusividade; volume mínimo. NÃO invente volume de clientes otimista só para fechar a conta: mudanças em novos_mes, churn ou clientes precisam de justificativa concreta (ex.: compromisso de volume da outra parte).
+Em "premissas_alteradas" devolva SÓ as seções que mudam (cada seção que mudar vem COMPLETA, com todas as linhas, inclusive as que ficam iguais); as seções que você não incluir continuam como no plano atual. Seja conciso nos textos (listas com no máximo 6 itens, frases curtas, mensagem com no máximo 1.800 caracteres) — a resposta precisa caber inteira.
 Mantenha a mesma estrutura de premissas (mesmos campos), valores em R$, meses = ${p0.meses || 36}. Tipos de receita: "recorrente" (preço mensal × clientes ativos), "unico" (preço × novas vendas/mês), "marco" (preço pago UMA vez no mes_inicio).
 Responda SOMENTE com JSON válido:
 {
  "diagnostico_base": "por que o plano atual é (ou não) rentável, em 2-4 linhas com números",
  "estrategia": "a lógica da contraproposta em 2-3 linhas",
- "premissas": { ...premissas completas da contraproposta... },
+ "premissas_alteradas": { "receitas": [ ...lista COMPLETA de receitas da contraproposta... ], "pessoal": [ ...só se mudar... ], "investimentos": [ ...só se mudar... ], "despesas_fixas": [ ...só se mudar... ], "custos_variaveis": [ ...só se mudar... ], "marketing": {...só se mudar...}, "taxa_desconto_anual": 0 (só se mudar) },
  "alteracoes": [{"item":"o que muda","de":"valor atual","para":"valor proposto","por_que":"","efeito_atlantyx":"","efeito_contraparte":""}],
  "ganhos_contraparte": ["o que a outra parte ganha com esta contraproposta"],
  "ganhos_atlantyx": ["o que a Atlantyx ganha"],
@@ -366,21 +367,32 @@ INDICADORES ATUAIS (motor): ${JSON.stringify(i0)}
 Por ano: ${JSON.stringify(_anosResumo(base.resultado))}
 OBJETIVO: ${objetivo === 'TORNAR_VIAVEL' ? 'o plano atual NÃO é viável — torne-o viável' : 'o plano atual é viável — melhore para a Atlantyx mantendo-o bom para a outra parte'}
 ${docs ? '\nDOCUMENTOS DA NEGOCIAÇÃO:\n' + docs : ''}${extra ? '\n\n' + extra : ''}`;
+  // v3.47: a IA devolve só as seções alteradas (antes devolvia as premissas inteiras + a análise e a resposta
+  // era cortada no limite de tokens → "A IA não devolveu as premissas"). Se vier cortada, tenta de novo mais curta.
   const chamar = async (extra) => {
-    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: MODEL, max_tokens: 9000, system, messages: [{ role: 'user', content: montarUser(extra) }] }) });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error('IA: ' + (d?.error?.message || r.status));
-    const j = parseJSON((d.content || []).map(c => c.text || '').join(''));
-    if (!j?.premissas?.receitas?.length) throw new Error('A IA não devolveu as premissas da contraproposta');
-    return j;
+    let ultimoErro = null;
+    for (let t = 0; t < 2; t++) {
+      const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: MODEL, max_tokens: 16000, system, messages: [{ role: 'user', content: montarUser((extra || '') + (t ? '\n\nATENÇÃO: sua resposta anterior foi cortada por ser longa demais. Devolva o JSON completo e válido, bem mais curto: textos de 1 linha, listas com até 4 itens, mensagem com até 1.000 caracteres.' : '')) }] }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error('IA: ' + (d?.error?.message || r.status));
+      const txt = (d.content || []).map(c => c.text || '').join('');
+      const j = parseJSON(txt);
+      const alt = j && (j.premissas_alteradas || j.premissas || j.premissas_contraproposta || j.novas_premissas);
+      if (j && alt && typeof alt === 'object' && Object.keys(alt).length) { j.premissas_alteradas = alt; return j; }
+      ultimoErro = d.stop_reason === 'max_tokens' ? 'a resposta da IA foi cortada por ser longa demais' : (j ? 'a IA não indicou nenhuma alteração nas premissas' : 'a resposta da IA não veio em JSON válido');
+      console.warn('[BP contraproposta] tentativa', t + 1, ultimoErro, '| stop:', d.stop_reason, '| início:', txt.substring(0, 200));
+    }
+    throw new Error('Não consegui montar a contraproposta: ' + ultimoErro + '. Tente de novo; se persistir, cole uma oferta mais curta.');
   };
   const t0 = Date.now(); let melhor = null, extra = '', rodadas = 0;
   for (let k = 0; k < 3; k++) {
     if (k && Date.now() - t0 > 140000) break;
     let j; try { j = await chamar(extra); } catch (e) { if (!melhor) throw e; break; }
     rodadas++;
-    const premissas = { ...p0, ...j.premissas, inicio: p0.inicio, meses: p0.meses || 36, titulo: p0.titulo };
+    // mescla: só as seções devolvidas substituem as do plano atual
+    const alt = j.premissas_alteradas || {}; const permitidas = ['receitas', 'pessoal', 'investimentos', 'despesas_fixas', 'custos_variaveis', 'marketing', 'taxa_desconto_anual', 'deducoes_pct', 'ir_csll_pct', 'prazo_recebimento_dias', 'crescimento_perpetuidade_pct'];
+    const premissas = { ...p0, ...Object.fromEntries(Object.entries(alt).filter(([k, v]) => permitidas.includes(k) && v != null && !(Array.isArray(v) && !v.length))), inicio: p0.inicio, meses: p0.meses || 36, titulo: p0.titulo };
     const res = calcularBP(premissas); const ind = _ind(res);
     const cand = { j, premissas, res, ind };
     if (!melhor || _melhor(melhor.ind, ind)) melhor = cand;
