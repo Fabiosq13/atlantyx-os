@@ -19683,7 +19683,7 @@ async function abrirEdicaoTermo(id) {
     set('edProjeto', t.projeto); set('edContratante', t.contratante); set('edPeriodo', t.periodo_medicao);
     set('edDataTermo', t.data_termo ? String(t.data_termo).substring(0,10) : '');
     set('edNumTermo', t.numero_termo); set('edParcela', t.parcela); set('edFase', t.fase);
-    try { const ub = document.getElementById('edUploadNfBox'); if (ub) ub.innerHTML = (d.empresas || []).length ? _fatCardUploadNf(t, d.empresas) : '<div style="font-size:10px;color:var(--t3);">Salve o rateio antes de carregar as notas.</div>'; } catch (_) {}
+    try { const ub = document.getElementById('edUploadNfBox'); if (ub) ub.innerHTML = (d.empresas || []).length ? _fatCardUploadNf(t, d.empresas, 'ed') : '<div style="font-size:10px;color:var(--t3);">Salve o rateio antes de carregar as notas.</div>'; } catch (_) {}
     set('edContratada', t.contratada || t.cnpj_fornecedor); set('edMarco', t.marco_projeto);
     _edEmpresas = (d.empresas || []).map(e => ({ ...e }));
     // Marca quais empresas já têm nota (não podem ser removidas)
@@ -19777,6 +19777,9 @@ async function salvarEdicaoTermo() {
         numero_termo: v('edNumTermo'), parcela: v('edParcela'), fase: v('edFase'),
         contratada: v('edContratada'), marco_projeto: v('edMarco') },
       empresas: _edEmpresas });
+    // v3.66: notas escolhidas na edição e ainda não adicionadas entram junto com o "Salvar"
+    const pend = (_fatNfFila['ed_' + id] || []).length;
+    if (pend) { const n = await _fatNfAdicionarTodas('ed_' + id, true); if (n === -1) return; if (n) toast(n + ' nota(s) adicionada(s) ao termo', 'success'); }
     toast('Termo atualizado', 'success');
     document.getElementById('fatEditModal').style.display = 'none';
     await abrirDetalheTermo(id); carregarKanbanFaturamento();
@@ -19860,22 +19863,28 @@ async function _fatToggleCpfl(termoId, confirmar) {
   }
 }
 
-function _fatCardUploadNf(t, emp) {
+// v3.66: o quadro existe em DOIS lugares (detalhe do termo e edição do termo). Com os mesmos ids, os arquivos
+// escolhidos na EDIÇÃO eram processados e listados no detalhe (escondido atrás) — na edição nada aparecia e as
+// notas nunca eram gravadas. Agora cada lugar tem a sua chave (termo + escopo).
+window._fatNfTermo = window._fatNfTermo || {};
+function _fatCardUploadNf(t, emp, escopo) {
+  const k = (escopo ? escopo + '_' : '') + t.id; _fatNfTermo[k] = t.id;
   const pendentes0 = emp.filter(e => e.nf_status !== 'encontrada');
   const pendentes = pendentes0.length ? pendentes0 : emp;   // v2.71: sem pendentes, permite substituir qualquer nota
-  _fatEmpresasAtual[t.id] = pendentes; // p/ os detectores de empresa usarem ao processar os arquivos
-  if (!_fatNfFila[t.id]) _fatNfFila[t.id] = [];
+  _fatEmpresasAtual[k] = pendentes; _fatEmpresasTodas[k] = emp; // p/ os detectores de empresa usarem ao processar os arquivos
+  if (!_fatNfFila[k]) _fatNfFila[k] = [];
+  t = Object.assign({}, t, { id: k });
   return `<div class="panel" style="background:var(--bg4);border:1px dashed var(--gold);margin-bottom:12px;">
     <div class="ph"><div class="pt" style="font-size:12px;">📎 Carregar Notas Fiscais desta emissão</div></div>
     <div class="pb">
-      <div style="font-size:10px;color:var(--t2);margin-bottom:8px;">Envie um ou vários arquivos (PDF/XML) de uma vez. Em XML (NFe) e em PDF (DANFE), o sistema tenta ler número, valor e empresa sozinho — confira cada linha antes de confirmar.</div>
+      <div style="font-size:10px;color:var(--t2);margin-bottom:8px;">Envie um ou vários arquivos (PDF/XML) de uma vez. Em XML (NFe) e em PDF (DANFE), o sistema lê número, valor, empresa do rateio (pelo centro de custo, pelo destinatário ou pelo valor da parcela), data de emissão e vencimento — confira cada linha e clique em <b>Adicionar</b> (na edição, "Salvar alterações" também adiciona).</div>
       <input type="file" id="fatNfArquivo_${t.id}" accept=".pdf,.xml" multiple class="fi" style="width:100%;font-size:10px;padding:5px;margin-bottom:8px;" onchange="_fatNfArquivosSelecionados('${t.id}', this)"/>
       <div id="fatNfFilaBox_${t.id}"></div>
       <div id="fatNfUploadMsg_${t.id}" style="font-size:9.5px;margin-top:6px;"></div>
     </div>
   </div>`;
 }
-window._fatEmpresasAtual = window._fatEmpresasAtual || {};
+window._fatEmpresasAtual = window._fatEmpresasAtual || {}; window._fatEmpresasTodas = window._fatEmpresasTodas || {}; var _fatEmpresasTodas = window._fatEmpresasTodas;
 window._fatNfFila = window._fatNfFila || {};
 var _fatEmpresasAtual = window._fatEmpresasAtual, _fatNfFila = window._fatNfFila;
 
@@ -19887,7 +19896,9 @@ function _fatExtrairXmlNFe(xmlTexto) {
     const vNF = get('vNF') || get('vFatur');
     const nNF = get('nNF');
     if (!vNF && !nNF) return null;
-    return { nf_numero: nNF, nf_valor: vNF ? parseFloat(vNF) : null, dest_nome: getIn('xNome', 'dest'), emit_nome: getIn('xNome', 'emit') };
+    const dEmi = (get('dhEmi') || get('dEmi') || '').substring(0, 10) || null;
+    const dVenc = (getIn('dVenc', 'dup') || get('dVenc') || '').substring(0, 10) || null;
+    return { nf_numero: nNF, nf_valor: vNF ? parseFloat(vNF) : null, dest_nome: getIn('xNome', 'dest'), emit_nome: getIn('xNome', 'emit'), dest_cnpj: getIn('CNPJ', 'dest'), nf_emissao: dEmi, nf_vencimento: dVenc, texto: xmlTexto };
   } catch (_) { return null; }
 }
 
@@ -19913,10 +19924,10 @@ async function _fatExtrairTextoPdf(file) {
 }
 // v1.20.5: heurística de leitura do texto do PDF — só preenche o que achar com razoável confiança;
 // não "chuta" o maior número do documento (evita preencher valor errado silenciosamente)
-function _fatParsePdfNF(texto, empresasPendentes) {
-  const norm = t => String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9., ]/g,' ').replace(/\s+/g,' ');
+function _fatParsePdfNF(texto, empresasPendentes, extra) {
+  const norm = t => String(t||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9., ]/g,' ').replace(/\s+/g,' ');
   const txt = norm(texto);
-  let nf_valor = null, nf_numero = null, empresa_id = null;
+  let nf_valor = null, nf_numero = null, empresa_id = null, via = null;
   // valor: procura rótulos típicos de DANFE seguidos de um número em formato BR
   const rotulosValor = ['valor total da nota', 'valor total da nf', 'valor total nf-e', 'valor total', 'total da nota', 'total geral'];
   for (const rot of rotulosValor) {
@@ -19925,16 +19936,33 @@ function _fatParsePdfNF(texto, empresasPendentes) {
     const m = trecho.match(/(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/);
     if (m) { nf_valor = _pmParseValorBR(m[1]); break; }
   }
+  if (extra && extra.nf_valor != null) nf_valor = extra.nf_valor;
   // número da NF: padrões comuns em DANFE ("NF-e Nº 12345", "Número 12345", "N. 12345")
-  const mNum = texto.match(/N[ºo°.]?\s*(?:DA\s*)?(?:NF-?E)?\s*[:.]?\s*(\d{2,9})\b/i) || texto.match(/N[uú]mero\s*[:.]?\s*(\d{2,9})\b/i);
-  if (mNum) nf_numero = mNum[1];
-  // empresa: procura o nome de cada empresa pendente (sem código tipo "D001 - ") dentro do texto
-  for (const e of (empresasPendentes || [])) {
-    const nomeBase = String(e.empresa || '').replace(/^[A-Za-z0-9]+\s*-\s*/, '').trim();
-    const n1 = norm(nomeBase), n2 = norm(e.empresa);
-    if ((n1 && txt.includes(n1)) || (n2 && txt.includes(n2))) { empresa_id = e.id; break; }
+  // v3.66: aceita o formato do DANFE com pontos (Nº 000.004.530 → 4530)
+  const mNum = texto.match(/N[ºo°]\.?\s*(?:DA\s*)?(?:NF-?E)?\s*[:.]?\s*((?:\d{1,3}\.)+\d{3}|\d{2,9})\b/i) || texto.match(/N[uú]mero\s*[:.]?\s*((?:\d{1,3}\.)+\d{3}|\d{2,9})\b/i);
+  if (mNum) nf_numero = mNum[1].replace(/\./g, '').replace(/^0+(?=\d)/, '');
+  // v3.66: EMPRESA do rateio — 1º centro de custo / contrato escrito na nota; 2º nome do DESTINATÁRIO
+  // (palavras próprias da empresa: "Renováveis", "Paulista", "Piratininga", "RGE"…); 3º valor igual ao da parcela
+  const emp = empresasPendentes || [];
+  const comCc = emp.filter(e => e.centro_custo && String(e.centro_custo).length >= 5 && txt.includes(norm(e.centro_custo).trim()));
+  if (comCc.length === 1) { empresa_id = comCc[0].id; via = 'centro de custo'; }
+  if (!empresa_id) {
+    const ini = txt.search(/destinatario|tomador|razao social/); const bloco = ini >= 0 ? txt.substring(ini, ini + 260) : '';
+    const destNome = norm((extra && extra.dest_nome) || '') || bloco;
+    const genericas = new Set(['cpfl','companhia','cia','de','da','do','e','energia','energias','s.a.','s.a','sa','ltda','grupo','eletrica','forca','luz','distribuidora','sul','brasil.','the']);
+    const pontos = emp.map(e => { const toks = norm(String(e.empresa || '').replace(/^[A-Za-z0-9]+\s*-\s*/, '')).split(' ').filter(w => w.length >= 3 && !genericas.has(w));
+      return { e, n: toks.filter(w => new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '') + '\\b').test(destNome)).length, total: toks.length }; }).filter(x => x.n > 0).sort((a, b) => b.n - a.n);
+    if (pontos.length && (pontos.length === 1 || pontos[0].n > pontos[1].n)) { empresa_id = pontos[0].e.id; via = 'destinatário'; }
   }
-  return { nf_valor, nf_numero, empresa_id, detectado: nf_valor != null || empresa_id != null };
+  if (!empresa_id && nf_valor) {
+    const porValor = emp.filter(e => Math.abs((parseFloat(e.valor_parcela) || 0) - nf_valor) <= 0.05);
+    if (porValor.length === 1) { empresa_id = porValor[0].id; via = 'valor da parcela'; }
+  }
+  // datas: emissão e vencimento (duplicata / fatura)
+  const dt = re => { const m = texto.match(re); if (!m) return null; const [d, mo, y] = m[1].split('/'); return y && y.length === 4 ? y + '-' + mo + '-' + d : null; };
+  const nf_emissao = (extra && extra.nf_emissao) || dt(/DATA\s+(?:DA\s+)?EMISS[AÃ]O\s*[:\-]?\s*(\d{2}\/\d{2}\/\d{4})/i) || dt(/EMISS[AÃ]O\s*[:\-]?\s*(\d{2}\/\d{2}\/\d{4})/i);
+  const nf_vencimento = (extra && extra.nf_vencimento) || dt(/VENC(?:IMENTO|TO|\.)?\s*[:\-]?\s*(\d{2}\/\d{2}\/\d{4})/i) || dt(/DUPLICATA[\s\S]{0,80}?(\d{2}\/\d{2}\/\d{4})/i);
+  return { nf_valor, nf_numero, empresa_id, via, nf_emissao, nf_vencimento, detectado: nf_valor != null || empresa_id != null };
 }
 
 async function _fatNfArquivosSelecionados(termoId, input) {
@@ -19950,10 +19978,8 @@ async function _fatNfArquivosSelecionados(termoId, input) {
         const texto = await file.text();
         const d = _fatExtrairXmlNFe(texto);
         if (d) {
-          detectado.nf_numero = d.nf_numero; detectado.nf_valor = d.nf_valor;
-          const alvo = (d.dest_nome || d.emit_nome || '');
-          const p = _fatParsePdfNF(alvo, pendentes); // reaproveita o mesmo casador de empresa por nome
-          detectado.empresa_id = p.empresa_id;
+          const p = _fatParsePdfNF(d.texto || '', pendentes, d); // mesmo casador (centro de custo, destinatário, valor)
+          detectado = Object.assign(p, { nf_numero: d.nf_numero || p.nf_numero, nf_valor: d.nf_valor });
         }
       } else if (/\.pdf$/i.test(file.name)) {
         try { const texto = await _fatExtrairTextoPdf(file); const d = _fatParsePdfNF(texto, pendentes); detectado = d; }
@@ -19962,7 +19988,12 @@ async function _fatNfArquivosSelecionados(termoId, input) {
       const resp = await fetch('/api/media-upload?name=' + encodeURIComponent(file.name) + '&pasta=notas_fiscais', { method:'POST', headers:{ 'Content-Type': file.type || (isXml ? 'application/xml' : 'application/pdf') }, body: file });
       const dUp = await resp.json();
       if (!dUp.success) throw new Error(dUp.error + (dUp.hint ? ' — ' + dUp.hint : ''));
-      _fatNfFila[termoId].push({ url: dUp.url, tipo: isXml ? 'xml' : 'pdf', nome: file.name, nf_numero: detectado.nf_numero || '', nf_valor: detectado.nf_valor, empresa_id: detectado.empresa_id || '', auto: !!(detectado.nf_valor != null || detectado.empresa_id) });
+      // v3.66: PDF e XML da MESMA nota (mesmo número) viram uma linha só — o PDF fica como arquivo principal
+      const jaTem = detectado.nf_numero && _fatNfFila[termoId].find(f => f.nf_numero && String(f.nf_numero) === String(detectado.nf_numero));
+      if (jaTem) { if (!isXml) { jaTem.url_xml = jaTem.tipo === 'xml' ? jaTem.url : jaTem.url_xml; jaTem.url = dUp.url; jaTem.tipo = 'pdf'; jaTem.nome = file.name; } else jaTem.url_xml = dUp.url;
+        ['nf_valor','empresa_id','via','nf_emissao','nf_vencimento'].forEach(c => { if (!jaTem[c] && detectado[c]) jaTem[c] = detectado[c]; }); }
+      else _fatNfFila[termoId].push({ url: dUp.url, tipo: isXml ? 'xml' : 'pdf', nome: file.name, nf_numero: detectado.nf_numero || '', nf_valor: detectado.nf_valor, empresa_id: detectado.empresa_id || '', via: detectado.via || '',
+        nf_emissao: detectado.nf_emissao || '', nf_vencimento: detectado.nf_vencimento || '', auto: !!(detectado.nf_valor != null || detectado.empresa_id) });
     } catch (e) { if (msg) { msg.style.color = 'var(--red)'; msg.textContent = '⛔ ' + file.name + ': ' + e.message; } }
   }
   if (msg) { msg.style.color = 'var(--t2)'; msg.textContent = files.length + ' arquivo(s) processado(s) — confira as linhas abaixo antes de adicionar.'; }
@@ -19977,14 +20008,17 @@ function _fatRenderFilaNf(termoId) {
   if (!fila.length) { box.innerHTML = ''; return; }
   const somaFila = fila.reduce((s, f) => s + (parseFloat(f.nf_valor) || 0), 0);
   box.innerHTML = `<div style="margin-top:4px;">
-    ${fila.map((f, i) => `<div style="display:grid;grid-template-columns:1fr 110px 120px 1fr auto;gap:6px;align-items:center;padding:5px 0;border-bottom:1px solid var(--bd);">
-      <div style="font-size:9.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${f.nome}">${f.tipo==='xml'?'📄':'📕'} ${f.nome} ${f.auto ? '<span style="color:var(--green,#22d3a3);font-size:9px;">🤖 detectado</span>' : '<span style="color:var(--gold);font-size:9px;">confira</span>'}</div>
+    <div style="display:grid;grid-template-columns:1fr 90px 105px 1fr 118px 118px auto;gap:6px;font-size:8.5px;color:var(--t3);font-family:var(--M);text-transform:uppercase;"><span>Arquivo</span><span>Nº NF</span><span>Valor</span><span>Empresa do rateio</span><span>Emissão</span><span>Vencimento</span><span></span></div>
+    ${fila.map((f, i) => `<div style="display:grid;grid-template-columns:1fr 90px 105px 1fr 118px 118px auto;gap:6px;align-items:center;padding:5px 0;border-bottom:1px solid var(--bd);">
+      <div style="font-size:9.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${f.nome}${f.url_xml?' + XML':''}">${f.tipo==='xml'?'📄':'📕'} ${f.nome}${f.url_xml?' <span style="color:var(--t3);">+XML</span>':''} ${f.empresa_id ? '<span style="color:var(--green,#22d3a3);font-size:9px;">🤖 empresa pelo ' + (f.via || 'arquivo') + '</span>' : '<span style="color:var(--gold);font-size:9px;">escolha a empresa</span>'}</div>
       <input class="fi" style="font-size:9.5px;" placeholder="Nº NF" value="${f.nf_numero||''}" oninput="_fatNfFila['${termoId}'][${i}].nf_numero=this.value"/>
       <input class="fi" style="font-size:9.5px;" placeholder="Valor R$" value="${f.nf_valor!=null?String(f.nf_valor).replace('.',','):''}" oninput="_fatNfFila['${termoId}'][${i}].nf_valor=parseFloat((this.value||'0').replace(/\\./g,'').replace(',','.'))||0"/>
       <select class="fsel" style="width:100%;font-size:9.5px;" onchange="_fatNfFila['${termoId}'][${i}].empresa_id=this.value">
         <option value="">— sem vínculo —</option>
-        ${pendentes.map(e => `<option value="${e.id}" ${f.empresa_id===e.id?'selected':''}>${e.empresa} · ${fmtBRLcompleto(e.valor_parcela)}</option>`).join('')}
+        ${(_fatEmpresasTodas[termoId] || pendentes).map(e => `<option value="${e.id}" ${f.empresa_id===e.id?'selected':''}>${e.empresa} · ${fmtBRLcompleto(e.valor_parcela)}${e.nf_status==='encontrada'?' (já tem nota)':''}</option>`).join('')}
       </select>
+      <input type="date" class="fi" style="font-size:9.5px;" title="Data de emissão da nota" value="${f.nf_emissao||''}" onchange="_fatNfFila['${termoId}'][${i}].nf_emissao=this.value"/>
+      <input type="date" class="fi" style="font-size:9.5px;" title="Vencimento (previsão de pagamento)" value="${f.nf_vencimento||''}" onchange="_fatNfFila['${termoId}'][${i}].nf_vencimento=this.value"/>
       <button class="btn" style="font-size:9px;padding:2px 6px;color:var(--red);" onclick="_fatNfRemoverDaFila('${termoId}', ${i})">✕</button>
     </div>`).join('')}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
@@ -20036,21 +20070,27 @@ async function _fatMoverNotas(de, para) {
     await abrirDetalheTermo(para); carregarKanbanFaturamento();
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
-async function _fatNfAdicionarTodas(termoId) {
-  const fila = _fatNfFila[termoId] || []; if (!fila.length) return;
+async function _fatNfAdicionarTodas(chave, silencioso) {
+  const termoId = _fatNfTermo[chave] || chave;
+  const fila = _fatNfFila[chave] || []; if (!fila.length) return 0;
   const semValor = fila.findIndex(f => !f.nf_valor || f.nf_valor <= 0);
-  if (semValor >= 0) { toast('Preencha o valor da nota "' + fila[semValor].nome + '" antes de adicionar', 'error'); return; }
-  const btn = document.getElementById('fatNfBtnLote_' + termoId); if (btn) { btn.disabled = true; btn.textContent = '⏳ Adicionando...'; }
+  if (semValor >= 0) { toast('Preencha o valor da nota "' + fila[semValor].nome + '" antes de adicionar', 'error'); return -1; }
+  const btn = document.getElementById('fatNfBtnLote_' + chave); if (btn) { btn.disabled = true; btn.textContent = '⏳ Adicionando...'; }
   let ok = 0, erros = [];
   for (const f of fila) {
-    try { const rr = await fatApi('termo_nf_upload', { termo_id: termoId, empresa_id: f.empresa_id || null, nf_numero: f.nf_numero || null, nf_valor: f.nf_valor, anexo_nome: f.nome, arquivo_url: f.url, tipo_arquivo: f.tipo }); ok++;
+    try { const rr = await fatApi('termo_nf_upload', { termo_id: termoId, empresa_id: f.empresa_id || null, nf_numero: f.nf_numero || null, nf_valor: f.nf_valor, anexo_nome: f.nome, arquivo_url: f.url, tipo_arquivo: f.tipo,
+        arquivo_xml_url: f.url_xml || null, nf_emissao: f.nf_emissao || null, nf_vencimento: f.nf_vencimento || null }); ok++;
       if (rr && rr.sem_vinculo) erros.push(f.nome + ': gravada, mas sem empresa do rateio (valor não bate com nenhuma parcela) — confira o rateio e use 🔄 Recomputar notas'); }
     catch (e) { erros.push(f.nome + ': ' + e.message); }
   }
   toast(ok + ' nota(s) adicionada(s)' + (erros.length ? ' · ' + erros.length + ' erro(s)' : ''), erros.length ? 'error' : 'success');
   if (erros.length) addLog('err', '[Faturamento] carga em lote: ' + erros.join(' | '));
-  _fatNfFila[termoId] = [];
-  await abrirDetalheTermo(termoId); carregarKanbanFaturamento();
+  _fatNfFila[chave] = [];
+  if (silencioso) return ok;
+  if (/^ed_/.test(chave) && document.getElementById('fatEditModal')?.style.display !== 'none') { await abrirEdicaoTermo(termoId); } // v3.66: continua na edição
+  else await abrirDetalheTermo(termoId);
+  carregarKanbanFaturamento();
+  return ok;
 }
 async function _fatNfExcluir(notaId, termoId) {
   if (!confirm('Remover esta nota fiscal carregada?')) return;
@@ -20120,6 +20160,7 @@ async function abrirDetalheTermo(id) {
               <div style="font-size:8.5px;color:var(--t3);margin-top:2px;">🧾 ${e.nf_data ? e.nf_data.split('-').reverse().join('/') : '<span style="color:var(--t3);">sem data</span>'} <button class="btn" style="font-size:9px;padding:0 4px;" onclick="_fatEditarData('${e.id}','nf')" title="Ajustar data de emissão">✎</button></div></td>
             <td style="padding:6px;">${e.qb_invoice_id ? '✅ Fatura #'+(e.qb_invoice_doc||e.qb_invoice_id) : e.nf_status==='encontrada' ? `<button class="btn" style="font-size:9px;padding:1px 6px;color:var(--gold);" onclick="_fatLancarQb('${e.id}')" id="btnQb_${e.id}">📤 Lançar</button>` : '<span style="color:var(--t3);">—</span>'}${e.qb_erro ? '<div style="color:var(--red);font-size:8.5px;margin-top:2px;">⚠ '+e.qb_erro+'</div>' : ''}</td>
             <td style="padding:6px;">${e.pagamento_status==='pago' ? '<span style="color:var(--green,#22d3a3);">✅ pago</span>' : '<span style="color:var(--t3);">pendente</span>'} <button class="btn" style="font-size:9px;padding:1px 5px;margin-left:4px;" onclick="_fatMarcarPagoManual('${e.id}')" title="Marcar como pago manualmente">✎</button>
+              ${e.nf_vencimento && e.pagamento_status !== 'pago' ? `<div style="font-size:8.5px;margin-top:2px;color:${new Date(String(e.nf_vencimento).substring(0,10) + 'T23:59:59') < new Date() ? 'var(--red)' : 'var(--gold)'};" title="Vencimento lido da nota fiscal (previsão de pagamento)">📅 vence ${String(e.nf_vencimento).substring(0,10).split('-').reverse().join('/')}</div>` : ''}
               <div style="font-size:8.5px;color:var(--t3);margin-top:2px;">💵 ${e.pagamento_data ? e.pagamento_data.split('-').reverse().join('/') : '<span style="color:var(--t3);">sem data</span>'} <button class="btn" style="font-size:9px;padding:0 4px;" onclick="_fatEditarData('${e.id}','pag')" title="Ajustar data de pagamento">✎</button>${(e.pagamento_status === 'pago' || e.pagamento_data) ? `<button class="btn" style="font-size:9px;padding:0 4px;color:var(--red);border-color:var(--red);" onclick="_fatDesmarcarPago('${e.id}','${String(e.empresa||'').replace(/'/g,'')}')" title="Este pagamento NÃO aconteceu — desmarcar">✕</button>` : ''}${e.pagamento_origem === 'extrato' ? ' <span title="Encontrado no extrato — a fatura ainda não foi baixada no QuickBooks" style="color:var(--gold);">🏦</span>' : e.pagamento_origem === 'fatura_baixada' ? ' <span title="Fatura baixada no QuickBooks" style="color:var(--green,#22d3a3);">✓</span>' : ''}</div></td>
             </tr>`).join('')}</tbody>
         </table>
@@ -27376,7 +27417,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.65] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.66] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27392,7 +27433,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.65';
+window.__ATX_BUILD_ID__ = 'ATX-v3.66';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

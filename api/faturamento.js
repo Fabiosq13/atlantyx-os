@@ -905,17 +905,25 @@ async function termoMoverNotas({ de_termo_id, para_termo_id, arquivar_origem = f
   return { movidas: r.length, destino: rec };
 }
 
-async function termoNfUpload({ termo_id, empresa_id, nf_numero, nf_valor, anexo_nome, arquivo_url, tipo_arquivo } = {}) {
+async function termoNfUpload({ termo_id, empresa_id, nf_numero, nf_valor, anexo_nome, arquivo_url, tipo_arquivo, arquivo_xml_url, nf_emissao, nf_vencimento } = {}) {
   if (!termo_id) throw new Error('termo_id obrigatório');
   if (!nf_valor || num(nf_valor) <= 0) throw new Error('valor da nota fiscal obrigatório');
   const sql = await getSql();
+  // v3.66: data de emissão e vencimento lidas da nota; XML guardado junto do PDF
+  const dOk = d => (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) ? d : null;
+  try { await sql`ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS nf_vencimento DATE`; } catch (_) {}
+  try { await sql`ALTER TABLE termos_notas_encontradas ADD COLUMN IF NOT EXISTS arquivo_xml_url TEXT`; } catch (_) {}
+  try { await sql`ALTER TABLE termos_notas_encontradas ADD COLUMN IF NOT EXISTS nf_emissao DATE`; } catch (_) {}
+  try { await sql`ALTER TABLE termos_notas_encontradas ADD COLUMN IF NOT EXISTS nf_vencimento DATE`; } catch (_) {}
   const notaId = novoId('nota');
   let vinculo = null;
   if (!empresa_id) { vinculo = await _vincularEmpresaNota(sql, termo_id, nf_valor); if (vinculo) empresa_id = vinculo.id; }
   await sql`INSERT INTO termos_notas_encontradas (id, termo_id, empresa_id, email_assunto, email_remetente, anexo_nome, nf_numero, nf_valor, tipo_arquivo, arquivo_url, origem)
     VALUES (${notaId}, ${termo_id}, ${empresa_id || null}, 'Carga manual', 'manual', ${anexo_nome || null}, ${nf_numero || null}, ${num(nf_valor)}, ${tipo_arquivo || null}, ${arquivo_url || null}, 'manual')`;
+  try { await sql`UPDATE termos_notas_encontradas SET arquivo_xml_url = ${arquivo_xml_url || null}, nf_emissao = ${dOk(nf_emissao)}, nf_vencimento = ${dOk(nf_vencimento)} WHERE id = ${notaId}`; } catch (_) {}
   if (empresa_id) {
-    await sql`UPDATE termos_empresas SET nf_numero = ${nf_numero || null}, nf_valor = ${num(nf_valor)}, nf_data = ${new Date().toISOString().substring(0,10)}, nf_status = 'encontrada' WHERE id = ${empresa_id}`;
+    await sql`UPDATE termos_empresas SET nf_numero = ${nf_numero || null}, nf_valor = ${num(nf_valor)}, nf_data = ${dOk(nf_emissao) || new Date().toISOString().substring(0,10)}, nf_status = 'encontrada' WHERE id = ${empresa_id}`;
+    if (dOk(nf_vencimento)) { try { await sql`UPDATE termos_empresas SET nf_vencimento = ${dOk(nf_vencimento)} WHERE id = ${empresa_id}`; } catch (_) {} }
   }
   const recalc = await recalcularNf(termo_id);
   console.log(`[Faturamento] NF carregada manualmente: termo=${termo_id} valor=${num(nf_valor)} empresa=${empresa_id || '(sem vínculo)'}`);
