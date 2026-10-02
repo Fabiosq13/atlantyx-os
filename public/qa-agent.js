@@ -43,6 +43,15 @@
     if (rota === '/api/db') return { leitura: /^(list_|get$|status$)/.test(action || ''), rota, action, body, metodo };
     return { leitura: !!(action && READ_RE.test(action)), rota, action, body, metodo };
   }
+  // v3.43: o computador dormiu / a aba congelou no meio do teste? (relatório trazia "API lenta 24.000s" e
+  // "Failed to fetch" que eram só a máquina em repouso). Um relógio a cada 2s detecta saltos > 90s.
+  S.pausas = S.pausas || [];
+  function _suspenso(ini, fim) { return (S.pausas || []).some(([a, b]) => a < fim && b > ini) || (fim - ini > 30 * 60000); }
+  function _relogio(ligar) {
+    clearInterval(S._hb); if (!ligar) return;
+    S.pausas = []; let ult = Date.now();
+    S._hb = setInterval(() => { const n = Date.now(); if (n - ult > 90000) S.pausas.push([ult, n]); ult = n; }, 2000);
+  }
   function instrumentar(ctx) {
     _orig.fetch = window.fetch; _orig.alert = window.alert; _orig.confirm = window.confirm; _orig.prompt = window.prompt; _orig.open = window.open; _orig.cerr = console.error;
     ctx.pendentes = 0;
@@ -64,11 +73,11 @@
         ctx.pendentes++; (ctx.emVoo = ctx.emVoo || new Set()).add(reg);
         try {
           const r = await _orig.fetch.call(window, alvo, typeof input === 'string' ? ini2 : undefined);
-          reg.status = r.status; reg.ms = Date.now() - reg.inicio;
+          reg.status = r.status; reg.ms = Date.now() - reg.inicio; reg.suspenso = _suspenso(reg.inicio, Date.now());
           try { const sim = r.headers.get('x-qa-simulado'); if (sim) reg.simulado = JSON.parse(decodeURIComponent(sim)); } catch (_) {}
           try { const cl = r.clone(); const t = await cl.text(); if (/json/.test(r.headers.get('content-type') || '') || /^\s*[{[]/.test(t)) { const j = JSON.parse(t); if (j && j.success === false) reg.erro = String(j.error || j.message || 'success:false').substring(0, 300); } else if (r.status >= 400) reg.erro = t.substring(0, 200); } catch (_) {}
           ctx.requisicoes.push(reg); return r;
-        } catch (e) { reg.status = 0; reg.ms = Date.now() - reg.inicio; reg.erro = 'falha de rede: ' + e.message; ctx.requisicoes.push(reg); throw e; }
+        } catch (e) { reg.status = 0; reg.ms = Date.now() - reg.inicio; reg.suspenso = _suspenso(reg.inicio, Date.now()); reg.erro = 'falha de rede: ' + e.message; ctx.requisicoes.push(reg); throw e; }
         finally { ctx.pendentes--; ctx.emVoo && ctx.emVoo.delete(reg); }
       }
       if (!c.leitura) {
@@ -79,10 +88,10 @@
       ctx.pendentes++; (ctx.emVoo = ctx.emVoo || new Set()).add(reg);
       try {
         const r = await _orig.fetch.apply(this, arguments);
-        reg.status = r.status; reg.ms = Date.now() - reg.inicio;
+        reg.status = r.status; reg.ms = Date.now() - reg.inicio; reg.suspenso = _suspenso(reg.inicio, Date.now());
         try { const cl = r.clone(); const t = await cl.text(); if (/json/.test(r.headers.get('content-type') || '') || /^\s*[{[]/.test(t)) { const j = JSON.parse(t); if (j && j.success === false) reg.erro = String(j.error || j.message || 'success:false').substring(0, 300); } else if (r.status >= 400) reg.erro = t.substring(0, 200); } catch (_) {}
         ctx.requisicoes.push(reg); return r;
-      } catch (e) { reg.status = 0; reg.ms = Date.now() - reg.inicio; reg.erro = 'falha de rede: ' + e.message; ctx.requisicoes.push(reg); throw e; }
+      } catch (e) { reg.status = 0; reg.ms = Date.now() - reg.inicio; reg.suspenso = _suspenso(reg.inicio, Date.now()); reg.erro = 'falha de rede: ' + e.message; ctx.requisicoes.push(reg); throw e; }
       finally { ctx.pendentes--; ctx.emVoo && ctx.emVoo.delete(reg); }
     };
     window.alert = m => { ctx.dialogos.push({ tela: ctx.tela, tipo: 'alert', msg: String(m).substring(0, 300) }); };
@@ -360,6 +369,8 @@
       const simulados = reqs.flatMap(x => x.simulado || []);
       const falhas = reqs.filter(x => x.erro && !x.bloqueado);
       const ms = Date.now() - linha.inicio;
+      if (_suspenso(linha.inicio, Date.now())) { reg.push({ ...linha, resultado: 'interrompido', detalhe: 'o computador entrou em repouso (ou a aba congelou) durante a ação — resultado descartado', ms });
+        try { mo.disconnect(); } catch (_) {} if (nivel === 0) fecharModais(); continue; }
       const chamadas = reqs.map(x => `${x.rota}${x.action ? '·' + x.action : ''} ${x.bloqueado ? 'bloqueada' : (x.status ?? '…')}${x.erro ? ' ✕' : ''}`).slice(0, 8).join(', ');
       const pagina = document.querySelector('.page.active')?.id;
       const novos = overlays().filter(o => !ov0.has(o));
@@ -406,6 +417,7 @@
     const lsAntes = {}; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); lsAntes[k] = localStorage.getItem(k); } } catch (_) {}
     const temaAntes = document.documentElement.getAttribute('data-theme');
     const inicio = Date.now(); const porTela = []; let achados = [];
+    _relogio(true);
     flutuante(true);
     if (opts.real) { const fm = document.getElementById('qaFlutModo'); if (fm) fm.innerHTML = '<b style="color:var(--gold);">EXECUÇÃO REAL</b>: as ações rodam de verdade; envios só para os contatos de teste; QuickBooks/HubSpot/Metricool simulados.'; }
     instrumentar(ctx);
@@ -428,12 +440,14 @@
         } else if (document.querySelector('.page.active') && document.querySelector('.page.active').id !== 'page-' + t.id) a.push({ sev: 'info', cat: 'navegação', titulo: 'A tela redireciona para outra ao abrir', evidencia: 'page-' + t.id + ' → ' + document.querySelector('.page.active').id, sugestao: 'Se o redirecionamento é intencional, nada a fazer; senão, conferir o nav.', tela: t.id, rotulo: t.rotulo });
         else a.push({ sev: 'alta', cat: 'navegação', titulo: 'A tela não abriu pelo menu', evidencia: 'nav("' + t.id + '") não ativou page-' + t.id, sugestao: 'Conferir o id da página e o item de menu.', tela: t.id, rotulo: t.rotulo });
         if (!t.noMenu) a.push({ sev: 'info', cat: 'navegação', titulo: 'Tela sem item de menu (inacessível ao usuário)', evidencia: 'page-' + t.id, sugestao: 'Adicionar ao menu ou remover a tela órfã.', tela: t.id, rotulo: t.rotulo });
-        const reqs = ctx.requisicoes.slice(r0).filter(r => !r.tela || r.tela === t.id), errs = ctx.erros.slice(e0);
+        const reqsTodas = ctx.requisicoes.slice(r0).filter(r => !r.tela || r.tela === t.id), errs = ctx.erros.slice(e0);
+        const reqs = reqsTodas.filter(r => !r.suspenso);
+        if (reqsTodas.length > reqs.length) a.push({ sev: 'info', cat: 'execução', titulo: 'Computador em repouso durante o teste desta tela', evidencia: `${reqsTodas.length - reqs.length} chamada(s) descartada(s) (falha de rede/lentidão causadas pela pausa, não pelo sistema)`, sugestao: 'Rodar de novo com o computador ligado (desative o repouso durante a varredura).', tela: t.id, rotulo: t.rotulo });
         errs.forEach(e => a.push({ sev: 'alta', cat: 'erro JS', titulo: `${e.tipo} ao abrir/usar a tela`, evidencia: e.msg + (e.onde ? ' @ ' + e.onde : ''), sugestao: 'Corrigir a exceção (ver função da tela).', tela: t.id, rotulo: t.rotulo }));
         reqs.filter(r => !r.bloqueado && (r.status >= 500 || r.status === 0)).forEach(r => a.push({ sev: 'alta', cat: 'API', titulo: `API falhou (HTTP ${r.status})`, evidencia: `${r.rota}${r.action ? ' · ' + r.action : ''} — ${r.erro || ''}`, sugestao: 'Ver logs da função na Vercel e tratar o erro no servidor.', tela: t.id, rotulo: t.rotulo, api: r.rota, action: r.action }));
         reqs.filter(r => !r.bloqueado && r.status < 500 && r.status > 0 && r.erro).forEach(r => a.push({ sev: r.status >= 400 ? 'alta' : 'média', cat: 'API', titulo: 'API respondeu com erro', evidencia: `${r.rota}${r.action ? ' · ' + r.action : ''} (HTTP ${r.status}) — ${r.erro}`, sugestao: 'Corrigir a ação no servidor ou exibir o motivo ao usuário.', tela: t.id, rotulo: t.rotulo, api: r.rota, action: r.action }));
         reqs.filter(r => !r.bloqueado && r.ms > 8000 && !/claude|gerente_|s2-creative|chat|analise|debate/i.test((r.rota || '') + ' ' + (r.action || ''))).forEach(r => a.push({ sev: 'média', cat: 'desempenho', titulo: `API lenta (${(r.ms / 1000).toFixed(1)}s)`, evidencia: `${r.rota}${r.action ? ' · ' + r.action : ''}`, sugestao: 'Cachear, paralelizar ou paginar a consulta.', tela: t.id, rotulo: t.rotulo, api: r.rota, action: r.action }));
-        if (!terminou && !S.parar) a.push({ sev: 'média', cat: 'desempenho', titulo: `Tela ainda carregando após ${Math.round(opts.espera / 1000)}s`, evidencia: [...(ctx.emVoo || [])].filter(r => r.tela === t.id).map(r => r.rota + (r.action ? ' · ' + r.action : '') + ' (' + Math.round((Date.now() - r.inicio) / 1000) + 's)').join(' | ') || reqs.filter(r => r.status == null).map(r => r.rota + ' ' + (r.action || '')).join(', '), sugestao: 'Reduzir o tempo de carga inicial.', tela: t.id, rotulo: t.rotulo });
+        if (!terminou && !S.parar && !_suspenso(t0, Date.now())) a.push({ sev: 'média', cat: 'desempenho', titulo: `Tela ainda carregando após ${Math.round(opts.espera / 1000)}s`, evidencia: [...(ctx.emVoo || [])].filter(r => r.tela === t.id).map(r => r.rota + (r.action ? ' · ' + r.action : '') + ' (' + Math.round((Date.now() - r.inicio) / 1000) + 's)').join(' | ') || reqs.filter(r => r.status == null).map(r => r.rota + ' ' + (r.action || '')).join(', '), sugestao: 'Reduzir o tempo de carga inicial.', tela: t.id, rotulo: t.rotulo });
         ctx.dialogos.filter(d => d.tela === t.id && d.tipo === 'alert' && /erro|falh/i.test(d.msg) && !/bloquead/i.test(d.msg)).forEach(d => a.push({ sev: 'média', cat: 'mensagem', titulo: 'Alerta de erro exibido', evidencia: d.msg, sugestao: 'Ver a causa do erro.', tela: t.id, rotulo: t.rotulo }));
         a.forEach(x => { x.ganchos = t.ganchos; });
         achados = achados.concat(a);
@@ -464,7 +478,8 @@
     achados.sort((a, b) => ordem[a.sev] - ordem[b.sev]);
     achados.forEach((a, i) => { a.id = 'QA-' + String(i + 1).padStart(3, '0'); });
     const resumo = achados.reduce((o, a) => { o[a.sev] = (o[a.sev] || 0) + 1; return o; }, {});
-    S.relatorio = { tipo: 'qa', versao: document.getElementById('sidebarBuildId')?.textContent || '', inicio: new Date(inicio).toISOString(), duracao_s: Math.round((Date.now() - inicio) / 1000), interrompido: interrompido || S.parar, opcoes: opts || {},
+    _relogio(false);
+    S.relatorio = { tipo: 'qa', versao: document.getElementById('sidebarBuildId')?.textContent || '', inicio: new Date(inicio).toISOString(), duracao_s: Math.round((Date.now() - inicio) / 1000), repouso_s: Math.round((S.pausas || []).reduce((t, [x, y]) => t + (y - x), 0) / 1000), interrompido: interrompido || S.parar, opcoes: opts || {},
       telas: porTela, total_telas: porTela.length, achados, resumo, formularios_ligados: ctx?.formsOk || [], acoes: (ctx?.acoes || []).slice(0, 2500), real: !!opts?.real, limpeza: opts?.real ? S.realLimpeza : null, run_id: opts?.real ? S.realRun?.run_id : null, bloqueadas: (ctx?.requisicoes || []).filter(r => r.bloqueado).map(r => ({ tela: r.tela, rota: r.rota, action: r.action, fase: r.fase })), crud: S.crud, seguranca: S.seg };
   }
 
@@ -477,7 +492,7 @@
     linhas.push(`Gerado pelos agentes de QA e Segurança do próprio sistema em ${new Date().toLocaleString('pt-BR')}.`, '');
     linhas.push('## Contexto do projeto', '- Repositório: `Fabiosq13/atlantyx-os` (branch `main`, deploy automático na Vercel).', '- Frontend: arquivo único `public/index.html` (cada tela é `<div class="page" id="page-<id>">`; a navegação é `nav(id)`; funções de carga ligadas no `nav`).', '- Backend: funções serverless em `api/*.js` (ESM), banco Neon Postgres (driver 0.10: use `sql```` ou `_q(db, texto, params)`), bibliotecas em `lib/`.', '- Ao terminar: validar sintaxe (`node --check` nas APIs e nos blocos `<script>` do index.html) e subir a versão `ATX-vX.YY` em `public/index.html`.', '');
     if (R) {
-      linhas.push('## Resultado da varredura de telas (QA)', `- Telas analisadas: ${R.total_telas}${R.interrompido ? ' (interrompida)' : ''} · duração ${R.duracao_s}s · modo seguro (gravações interceptadas: ${R.bloqueadas.length}).`, `- Achados: ${Object.entries(R.resumo).map(([k, v]) => `${k}: ${v}`).join(' · ') || 'nenhum'}.`, '');
+      linhas.push('## Resultado da varredura de telas (QA)', `- Telas analisadas: ${R.total_telas}${R.interrompido ? ' (interrompida)' : ''} · duração ${R.duracao_s}s${R.repouso_s ? ` (dos quais ${R.repouso_s}s com o computador em repouso — chamadas desse período descartadas)` : ''} · modo seguro (gravações interceptadas: ${R.bloqueadas.length}).`, `- Achados: ${Object.entries(R.resumo).map(([k, v]) => `${k}: ${v}`).join(' · ') || 'nenhum'}.`, '');
       const grupos = {}; R.achados.filter(a => a.sev !== 'info').forEach(a => { (grupos[a.sev] = grupos[a.sev] || []).push(a); });
       for (const sev of ['crítica', 'alta', 'média', 'baixa']) { if (!grupos[sev]) continue; linhas.push(`### Severidade ${sev} (${grupos[sev].length})`, '');
         grupos[sev].forEach(a => { linhas.push(`**${a.id} · ${a.titulo}** — tela \`${a.tela}\` (${a.rotulo}) · ${a.cat}`);
@@ -586,7 +601,7 @@
     if (R) {
       const r = R.resumo;
       h += `<div class="kg k5" style="margin-bottom:10px;">${['crítica', 'alta', 'média', 'baixa', 'info'].map(s => `<div class="kpi ${s === 'alta' || s === 'crítica' ? 'or' : s === 'média' ? 'gd' : 'bl'}"><div class="kl">${s}</div><div class="kv">${r[s] || 0}</div></div>`).join('')}</div>
-      <div class="panel"><div class="ph"><div class="pt">Achados da varredura — ${R.total_telas} telas em ${R.duracao_s}s${R.interrompido ? ' (interrompida)' : ''}</div>
+      <div class="panel"><div class="ph"><div class="pt">Achados da varredura — ${R.total_telas} telas em ${R.duracao_s}s${R.repouso_s ? ' (' + R.repouso_s + 's em repouso)' : ''}${R.interrompido ? ' (interrompida)' : ''}</div>
         <select class="fsel" style="width:150px;" onchange="QA._filtro=this.value;QA.render()"><option value="">todas as severidades</option>${['crítica', 'alta', 'média', 'baixa', 'info'].map(s => `<option ${QA._filtro === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
         <div class="pb" style="max-height:55vh;overflow-y:auto;">${R.achados.filter(a => !QA._filtro || a.sev === QA._filtro).map(a => `<div style="border-left:3px solid ${cor(a.sev)};background:var(--bg4);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:11px;">
           <div style="display:flex;gap:8px;flex-wrap:wrap;"><b>${a.id}</b><span style="color:${cor(a.sev)};font-weight:700;">${a.sev}</span><span style="color:var(--t2);">${esc(a.cat)}</span><span style="margin-left:auto;color:var(--t2);cursor:pointer;text-decoration:underline;" onclick="nav('${esc(a.tela)}',document.querySelector('.sbi[onclick*=&quot;\\'${esc(a.tela)}\\'&quot;]'))">${esc(a.rotulo)}</span></div>

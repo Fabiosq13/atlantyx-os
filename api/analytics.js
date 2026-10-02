@@ -62,7 +62,7 @@ async function fetchPipelineHubSpot() {
   const token = process.env.HUBSPOT_TOKEN;
   if (!token) return { etapas: [], total_valor: 0, total_deals: 0 };
 
-  const r = await fetch('https://api.hubapi.com/crm/v3/objects/deals/search', {
+  const r = await _fetchHS('https://api.hubapi.com/crm/v3/objects/deals/search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
     body: JSON.stringify({
@@ -106,7 +106,7 @@ async function fetchKPIsHubSpot() {
   const trintaDiasAtras = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
   const [contatosRes, dealsRes] = await Promise.all([
-    fetch('https://api.hubapi.com/crm/v3/objects/contacts/search', {
+    _fetchHS('https://api.hubapi.com/crm/v3/objects/contacts/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({
@@ -115,7 +115,7 @@ async function fetchKPIsHubSpot() {
         limit: 200,
       })
     }),
-    fetch('https://api.hubapi.com/crm/v3/objects/deals/search', {
+    _fetchHS('https://api.hubapi.com/crm/v3/objects/deals/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({
@@ -182,11 +182,27 @@ Retorne JSON:
 }
 
 // v3.22: cache de 5 min das consultas ao HubSpot (a tela de agentes levava ~18s a cada abertura)
+// v3.43: o cache em memória se perde a cada instância nova da Vercel (o Dashboard ainda levava 17s) —
+// agora também fica no banco (kv_store) por 5 min, e um resultado de até 1h é devolvido na hora
+// enquanto a atualização roda em segundo plano.
 const _memoHS = new Map();
+let _sqlA = null;
+async function _sql() { if (_sqlA) return _sqlA; if (!process.env.DATABASE_URL) return null; const { neon } = await import('@neondatabase/serverless'); _sqlA = neon(process.env.DATABASE_URL); return _sqlA; }
+async function _cacheLer(nome) { try { const sql = await _sql(); if (!sql) return null; const r = await sql`SELECT value, updated_at FROM kv_store WHERE key = ${'cache:analytics:' + nome} LIMIT 1`; if (!r[0]) return null;
+  const v = typeof r[0].value === 'string' ? JSON.parse(r[0].value) : r[0].value; return { v, em: new Date(r[0].updated_at).getTime() }; } catch (_) { return null; } }
+async function _cacheGravar(nome, v) { try { const sql = await _sql(); if (!sql) return; await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${'cache:analytics:' + nome}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {} }
 function _memo(nome, fn, ms = 300000) {
-  return async (...a) => { const c = _memoHS.get(nome); if (c && Date.now() - c.em < ms) return c.p;
-    const p = fn(...a); _memoHS.set(nome, { em: Date.now(), p }); p.catch(() => _memoHS.delete(nome)); return p; };
+  return async (...a) => {
+    const c = _memoHS.get(nome); if (c && Date.now() - c.em < ms) return c.p;
+    const buscar = () => { const p = fn(...a).then(v => { if (v && (v.total_deals || v.leads_30_dias != null || Object.keys(v).length)) _cacheGravar(nome, v); return v; }); _memoHS.set(nome, { em: Date.now(), p }); p.catch(() => _memoHS.delete(nome)); return p; };
+    const db = await _cacheLer(nome);
+    if (db && Date.now() - db.em < ms) { const p = Promise.resolve(db.v); _memoHS.set(nome, { em: db.em, p }); return p; }
+    if (db && Date.now() - db.em < 3600000) { buscar().catch(() => {}); return db.v; } // devolve o recente e atualiza em segundo plano
+    return buscar();
+  };
 }
+// limite de 12s por chamada ao HubSpot (antes podia ficar pendurada até o fim da função)
+const _fetchHS = (url, opt) => { const c = new AbortController(); const t = setTimeout(() => c.abort(), 12000); return fetch(url, { ...opt, signal: c.signal }).finally(() => clearTimeout(t)); };
 fetchPipelineHubSpot = _memo('pipeline', fetchPipelineHubSpot);
 fetchKPIsHubSpot = _memo('kpis', fetchKPIsHubSpot);
 

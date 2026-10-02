@@ -28,13 +28,14 @@
   function painelEsqueleto() {
     return `<div class="cp-top"><div style="flex:1;min-width:0;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">Painel de Vendas IA</div>
         <div style="font-size:10.5px;color:var(--t2);">Quanto falta, quantas vendas você precisa, como estão as margens — e o que fazer hoje</div></div>
-      <button class="btn btn-g" onclick="VD.painelCarregar()">↻ Atualizar</button>
+      <button class="btn btn-g" onclick="VD.painelCarregar(true)">↻ Atualizar</button>
       <button class="btn btn-p" id="vdBtnCoach" onclick="VD.coach()">🤖 O que fazer hoje</button></div>
       <div id="vdCoach"></div><div id="vdPnCorpo"><div style="padding:30px;text-align:center;color:var(--t3);font-size:11px;">Calculando metas, funil e margens...</div></div>`;
   }
-  async function painelCarregar() {
+  async function painelCarregar(forcar) {
     const c = $('vdPnCorpo'); if (!c) return;
-    try { PN = await api('painel'); c.innerHTML = painelHtml(PN); estrategiaListar(); }
+    if (forcar === true) c.innerHTML = '<div style="padding:30px;text-align:center;color:var(--t3);font-size:11px;">Recalculando metas, funil e margens (QuickBooks + HubSpot)...</div>';
+    try { PN = await api('painel', forcar === true ? { forcar: true } : {}); c.innerHTML = painelHtml(PN); estrategiaListar(); }
     catch (e) { c.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);">Erro ao montar o painel: ${esc(e.message)}</div></div>`; }
   }
   function painelHtml(d) {
@@ -119,6 +120,7 @@
   }
   async function coach() {
     const fim = ocupado($('vdBtnCoach'), '🤖 Analisando...'); const box = $('vdCoach');
+    if (box) box.innerHTML = '<div class="panel"><div class="pb" style="font-size:11px;color:var(--blue);">🤖 O diretor comercial IA está lendo metas, funil, propostas e margens e montando o plano do dia (cerca de 30 segundos)...</div></div>';
     try { const r = await api('coach'); box.innerHTML = `<div class="panel" style="border-left:4px solid var(--blue);"><div class="ph"><div class="pt">🤖 Diretor comercial IA</div><button class="btn btn-g" style="font-size:9px;padding:3px 8px;" onclick="document.getElementById('vdCoach').innerHTML=''">✕</button></div><div class="pb" style="white-space:pre-wrap;font-size:12px;line-height:1.7;">${esc(r.resposta)}</div></div>`; }
     catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);">${esc(e.message)}</div></div>`; } fim();
   }
@@ -315,7 +317,7 @@
   async function carregarPadrao() {
     try { const d = await api('padrao'); const p = d.padrao; const box = $('vdPadrao'); if (!box) return;
       const wr = Object.entries(d.estatistica || {}).map(([f, v]) => `${esc(FMT[f] || f)}: ${v.ganhas} ganha(s) / ${v.perdidas} perdida(s)`).join(' · ');
-      box.innerHTML = !p ? '<span style="color:var(--t3);">Ainda sem padrão — suba as primeiras propostas.</span>' : `
+      box.innerHTML = !p ? (d.precisa_consolidar ? '<span style="color:var(--gold);">Há ' + d.exemplos + ' documento(s) aprendido(s) mas o padrão ainda não foi consolidado — clique em ↻ Reconsolidar (leva ~1 min).</span>' : '<span style="color:var(--t3);">Ainda sem padrão — suba as primeiras propostas.</span>') : `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;line-height:1.6;">
           <div><b>Seções</b><ol style="padding-left:18px;margin:4px 0;">${(p.secoes || []).map(s => `<li>${esc(s.titulo)} <span style="color:var(--t3);">— ${esc(s.objetivo || '')}</span></li>`).join('')}</ol></div>
           <div><b>Tom:</b> ${esc(p.tom || '')}<br><b>Preço:</b> ${esc(p.estrutura_preco || '')}<br><b>O que ganha:</b> ${esc(p.o_que_ganha || '')}<br>${p.o_que_perde ? '<b>O que perde:</b> ' + esc(p.o_que_perde) : ''}</div>

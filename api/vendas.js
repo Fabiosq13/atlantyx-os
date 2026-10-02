@@ -145,7 +145,9 @@ async function padrao({ regerar = false } = {}) {
     .forEach(x => { if (!x.f) return; est[x.f] = est[x.f] || { ganhas: 0, perdidas: 0 }; est[x.f][x.r === 'ganha' ? 'ganhas' : 'perdidas']++; });
   const win = {}; Object.entries(est).forEach(([f, v]) => { if (v.ganhas + v.perdidas >= 2) win[f] = r2(v.ganhas / (v.ganhas + v.perdidas)); });
   let salvo = await cfgGet('propostas_padrao');
-  if ((regerar || !salvo) && base.length) {
+  // v3.43: abrir a aba Aprendizado não dispara mais a consolidação por IA (levava >60s) — só o botão
+  // "Reconsolidar" e o fim do "Aprender com os arquivos" (padrao_regerar) chamam a IA.
+  if (regerar && base.length) {
     const resumo = base.map(b => ({ arquivo: b.arquivo, resultado: b.resultado, ...['tipo_documento', 'formato_comercial', 'secoes', 'tom', 'estrutura_preco', 'condicoes', 'premissas', 'exclusoes', 'sla', 'diferenciais', 'licoes'].reduce((o, k) => (o[k] = b.extraido?.[k], o), {}) }));
     const { instrucoes } = await propConfig();
     salvo = json(await claude('Você consolida o padrão de propostas comerciais da Atlantyx a partir de exemplos reais. Dê mais peso às propostas GANHAS. Responda APENAS JSON.',
@@ -153,7 +155,7 @@ async function padrao({ regerar = false } = {}) {
     salvo.atualizado_em = new Date().toISOString(); salvo.n_exemplos = base.length;
     await cfgSet('propostas_padrao', salvo);
   }
-  return { padrao: salvo, win_rate: win, estatistica: est, exemplos: base.length };
+  return { padrao: salvo, win_rate: win, estatistica: est, exemplos: base.length, precisa_consolidar: !salvo && base.length > 0 };
 }
 
 // ═══════════════════════ METAS (fonte para propostas e painel) ═══════════════════════
@@ -176,10 +178,9 @@ async function premissas() {
 async function contextoMetas(base) {
   const metas = (await kvGet('atx:metas')) || {};
   const anual = num(metas.anual, 18000000), mensal = num(metas.mensal, anual / 12);
-  const fin = await _api(base, '/api/financeiro', { action: 'kpis_saude', params: {} });
+  // v3.43: QuickBooks e HubSpot em paralelo, com limite de 20s cada (antes em sequência, até 50s cada)
+  const [fin, pipe, P] = await Promise.all([_api(base, '/api/financeiro', { action: 'kpis_saude', params: {} }, 20000), _api(base, '/api/analytics?tipo=pipeline', null, 20000), premissas()]);
   const k = fin.kpis || {};
-  const pipe = await _api(base, '/api/analytics?tipo=pipeline');
-  const P = await premissas();
   const pipelineTotal = num(pipe?.pipeline?.total_valor);
   return { meta_anual: anual, meta_mensal: mensal, realizado_ano: num(k.receita_ano), realizado_mes: num(k.receita_mes),
     pipeline_total: pipelineTotal, pipeline_ponderado: r2(pipelineTotal * P.peso_pipeline / 100), deals_abertos: num(pipe?.pipeline?.total_deals),
@@ -223,7 +224,14 @@ async function margens() {
 
 // ═══════════════════════ PAINEL DE VENDAS ═══════════════════════
 function _diasUteisRestantes(ate) { let d = new Date(); d.setHours(12); let n = 0; while (d <= ate) { const w = d.getDay(); if (w && w < 6) n++; d.setDate(d.getDate() + 1); } return n; }
-async function painel(base) {
+// v3.43: o "O que fazer hoje" e a estratégia recalculavam o painel inteiro logo depois de abri-lo — reaproveita por 2 min
+let _painelMemo = null;
+async function painel(base, { forcar = false } = {}) {
+  if (!forcar && _painelMemo && Date.now() - _painelMemo.em < 120000) return _painelMemo.p;
+  const p = _painelCalc(base); _painelMemo = { em: Date.now(), p }; p.catch(() => { _painelMemo = null; });
+  return p;
+}
+async function _painelCalc(base) {
   await tabelas(); const sql = await getSql();
   const [M, mg, P] = await Promise.all([contextoMetas(base), margens(), premissas()]);
   const props = await sql`SELECT id, cliente, titulo, status, formato, valor_total, valor_mensal, meses, criado_em, enviada_em, fechada_em, atualizado_em FROM propostas ORDER BY atualizado_em DESC LIMIT 300`;
@@ -392,7 +400,9 @@ async function handler(req, res) {
       const lista = Object.values(mapa); await cfgSet('propostas_rate_card', lista); return { rate_card: lista, importados: (r.rate_card || []).length };
     },
     aprender: () => aprender(payload),
-    base_listar: () => sqlRun(async sql => ({ base: await sql`SELECT id, arquivo, cliente, data_ref, resultado, formato, valor_total, extraido, criado_em FROM propostas_base ORDER BY criado_em DESC` })),
+    base_listar: () => sqlRun(async sql => ({ base: (await sql`SELECT id, arquivo, cliente, data_ref, resultado, formato, valor_total, extraido, criado_em FROM propostas_base ORDER BY criado_em DESC LIMIT 200`)
+      .map(b => { let x = b.extraido; if (typeof x === 'string') { try { x = JSON.parse(x); } catch (_) { x = {}; } } x = x || {}; // v3.43: lista leve (só o que a tabela mostra)
+        return { ...b, extraido: { tipo_documento: x.tipo_documento || '', secoes: (x.secoes || []).slice(0, 30), rate_card: (x.rate_card || []).map(r => ({ perfil: r.perfil })), licoes: String(x.licoes || '').substring(0, 300) } }; }) })),
     base_resultado: () => sqlRun(async sql => { await sql`UPDATE propostas_base SET resultado = ${payload.resultado} WHERE id = ${payload.id}`; return { ok: true }; }),
     base_excluir: () => sqlRun(async sql => { await sql`DELETE FROM propostas_base WHERE id = ${payload.id}`; return { ok: true }; }),
     padrao: () => padrao({}),
@@ -406,7 +416,7 @@ async function handler(req, res) {
     prop_excluir: () => sqlRun(async sql => { await sql`DELETE FROM propostas WHERE id = ${payload.id}`; return { ok: true }; }),
     prop_status: () => propStatus(payload),
     prop_converter: () => propConverter(base, payload),
-    painel: () => painel(base),
+    painel: () => painel(base, { forcar: !!payload.forcar }),
     margens: () => margens(),
     coach: () => coach(base, payload),
     premissas: () => premissas(),

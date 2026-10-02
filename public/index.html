@@ -617,7 +617,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div class="sf"><span class="dot off" id="dotMC"></span><span id="statMC">Metricool · Verificando</span></div>
     <div class="sf"><span class="dot off" id="dotWA"></span><span id="statWA">Z-API · Configurar</span></div>
     <div class="sf"><span class="dot" id="dotDB"></span><span id="statDB">DB · Conectando...</span></div>
-    <div class="sf"><span class="dot on"></span>Auto-refresh 30s</div>
+    <div class="sf"><span class="dot on"></span>Auto-refresh 2 min</div>
   </div>
 </aside>
 <main class="main">
@@ -9398,7 +9398,7 @@ function _ideiaPdfDoc(x, bp) {
 function vendasAbrir(p) {
   const ir = () => p === 's7painel' ? VD.painelAbrir() : VD.propAbrir();
   if (window.VD) return ir();
-  const s = document.createElement('script'); s.src = '/vendas-ui.js?v=3.24'; s.onload = ir;
+  const s = document.createElement('script'); s.src = '/vendas-ui.js?v=' + encodeURIComponent(window.__ATX_BUILD_ID__ || Date.now()); /* v3.43: versão acompanha o build */ s.onload = ir;
   s.onerror = () => { const a = document.getElementById(p === 's7painel' ? 'vdPainel' : 'vdProp'); if (a) a.innerHTML = '<div style="color:var(--red);padding:20px;">Não consegui carregar /vendas-ui.js</div>'; };
   document.head.appendChild(s);
 }
@@ -9407,20 +9407,20 @@ function disparoAbrir(canal, campanhaId) {
   const ir = () => DISP.abrir({ canal, campanhaId: campanhaId || (typeof campAtiva !== 'undefined' && campAtiva ? campAtiva.id : null) });
   if (window.DISP) return ir();
   if (!window._todasCampanhas?.length && typeof carregarCampanhasDB === 'function') { try { carregarCampanhasDB(); } catch (_) {} }
-  const s = document.createElement('script'); s.src = '/disparo-ui.js?v=3.26'; s.onload = ir;
+  const s = document.createElement('script'); s.src = '/disparo-ui.js?v=' + encodeURIComponent(window.__ATX_BUILD_ID__ || Date.now()); /* v3.43: versão acompanha o build */ s.onload = ir;
   s.onerror = () => toast('Não consegui carregar /disparo-ui.js', 'error');
   document.head.appendChild(s);
 }
 // v3.35: Análise de Contratos (módulo carregado sob demanda)
 function juridicoAbrir() {
   if (window.JUR) return JUR.abrir();
-  const s = document.createElement('script'); s.src = '/juridico-ui.js?v=3.35'; s.onload = () => window.JUR && JUR.abrir();
+  const s = document.createElement('script'); s.src = '/juridico-ui.js?v=' + encodeURIComponent(window.__ATX_BUILD_ID__ || Date.now()); /* v3.43: versão acompanha o build */ s.onload = () => window.JUR && JUR.abrir();
   s.onerror = () => { const a = document.getElementById('jcApp'); if (a) a.innerHTML = '<div style="color:var(--red);padding:20px;">Não consegui carregar /juridico-ui.js</div>'; };
   document.head.appendChild(s);
 }
 function qaAbrir() {
   if (window.QA) return QA.abrir();
-  const s = document.createElement('script'); s.src = '/qa-agent.js?v=3.28';
+  const s = document.createElement('script'); s.src = '/qa-agent.js?v=' + encodeURIComponent(window.__ATX_BUILD_ID__ || Date.now()); /* v3.43: versão acompanha o build */
   s.onload = () => window.QA && QA.abrir();
   s.onerror = () => { const a = document.getElementById('qaApp'); if (a) a.innerHTML = '<div style="color:var(--red);padding:20px;">Não consegui carregar /qa-agent.js</div>'; };
   document.head.appendChild(s);
@@ -9523,7 +9523,10 @@ initMenu();
   await initS3();
   await carregarMetas();
   setTimeout(refreshAll, 1000);
-  setInterval(refreshAll, 30000);
+  // v3.43: atualiza só com a aba visível e no máximo a cada 2 min (o HubSpot fica em cache de 5 min no servidor).
+  // Antes rodava a cada 30s em qualquer tela, inclusive com o computador "esquecido" ligado, e misturava
+  // chamadas do Dashboard nos testes das outras telas.
+  setInterval(() => { if (document.visibilityState === 'visible' && !(window.QA && QA._rodando && QA._rodando())) refreshAll(); }, 120000);
 })();
 // Auto-gerar mensagens na primeira visita a pagina WA
 setTimeout(()=>{
@@ -26728,7 +26731,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.42] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.43] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -26744,7 +26747,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.42';
+window.__ATX_BUILD_ID__ = 'ATX-v3.43';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
