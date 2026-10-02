@@ -322,11 +322,16 @@ async function _bpBaseDaIdeia({ bp_id, ideia }) {
   return null;
 }
 
-async function contrapropostaBP({ ideia = {}, bp_id = null, oferta = '', docs_texto = [], instrucoes = '', destinatario = 'Parceiro' }) {
+async function contrapropostaBP({ ideia = {}, bp_id = null, oferta = '', docs_texto = [], instrucoes = '', destinatario = 'Parceiro', partir_de_id = null, cambio_eur = null }) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
   const base = await _bpBaseDaIdeia({ bp_id, ideia });
   if (!base?.premissas) throw new Error('Esta ideia ainda não tem business plan — gere o business plan primeiro (a contraproposta parte dele).');
   const p0 = base.premissas; const i0 = _ind(base.resultado);
+  // v3.62: AJUSTE de uma contraproposta já gerada — parte dela (e não do zero), aplicando as orientações do fundador
+  let anterior = null;
+  if (partir_de_id) { try { const a = await obterBP(partir_de_id); if (a?.premissas) anterior = a; } catch (_) {} }
+  const instr = String(instrucoes || '').trim();
+  const cambio = parseFloat(String(cambio_eur || '').replace(',', '.')) || null;
   const objetivo = i0.viavel ? 'MELHORAR' : 'TORNAR_VIAVEL';
   const docs = (Array.isArray(docs_texto) ? docs_texto : []).map(d => `--- ${d.nome} ---\n${String(d.texto || '').substring(0, 15000)}`).join('\n\n').substring(0, 40000);
   const system = `Você é o CFO e o negociador-chefe da Atlantyx (empresa brasileira B2B de dados, BI e IA). Você recebe o BUSINESS PLAN atual de uma oportunidade (premissas que um motor determinístico usa para calcular DRE, fluxo de caixa de 36 meses, TIR, VPL e payback) e monta a CONTRAPROPOSTA: um novo conjunto de premissas que reflete as condições que a Atlantyx vai propor à outra parte.
@@ -335,6 +340,8 @@ Objetivo:
 - Se o plano atual JÁ é viável: melhore o resultado da Atlantyx (VPL, TIR, payback, menor exposição de caixa) SEM tornar o acordo ruim para a outra parte.
 - Sempre busque o melhor para AMBAS as partes: cada pedido da Atlantyx deve vir com uma contrapartida ou um ganho claro para o outro lado. Nada de propostas que a outra parte não aceitaria.
 Alavancas típicas (use as que fazem sentido com a oferta e os documentos): % de revenue share; pagamentos de marco (tipo "marco" = pagamento único no mes_inicio) — sinal na assinatura, entrega do MVP, primeiro cliente; mínimo garantido mensal; mensalidade de manutenção/sustentação; antecipar o início da receita; reajuste; dividir custos de nuvem/infra; reduzir escopo/equipe do MVP (pessoal/investimentos); prazo de exclusividade; volume mínimo. NÃO invente volume de clientes otimista só para fechar a conta: mudanças em novos_mes, churn ou clientes precisam de justificativa concreta (ex.: compromisso de volume da outra parte).
+ORIENTAÇÕES DO FUNDADOR (quando houver) são CONDIÇÕES OBRIGATÓRIAS, não sugestões: cada uma TEM de aparecer nas premissas (ex.: "na fase de desenvolvimento recebemos só 300 euros/mês referentes a 50% da infra" = uma linha de receita recorrente/fixa com esse valor convertido em R$, só nos meses dessa fase, e nenhuma outra receita da outra parte nesse período além do que o fundador disse). Nunca troque, aumente ou remova uma orientação do fundador para fechar a conta; se com ela o plano não fica viável, ajuste OUTRAS alavancas e, se ainda assim não fechar, diga isso no diagnóstico. Em "alteracoes" inclua uma linha para cada orientação do fundador mostrando como foi aplicada.
+Valores em outra moeda (euro, dólar) são convertidos para R$ — use o câmbio informado; sem câmbio informado, use um câmbio conservador e diga qual em "alteracoes".
 Em "premissas_alteradas" devolva SÓ as seções que mudam (cada seção que mudar vem COMPLETA, com todas as linhas, inclusive as que ficam iguais); as seções que você não incluir continuam como no plano atual. Seja conciso nos textos (listas com no máximo 6 itens, frases curtas, mensagem com no máximo 1.800 caracteres) — a resposta precisa caber inteira.
 Mantenha a mesma estrutura de premissas (mesmos campos), valores em R$, meses = ${p0.meses || 36}. Tipos de receita: "recorrente" (preço mensal × clientes ativos), "unico" (preço × novas vendas/mês), "marco" (preço pago UMA vez no mes_inicio).
 Responda SOMENTE com JSON válido:
@@ -359,7 +366,9 @@ ${ideia.desc ? 'Descrição: ' + String(ideia.desc).substring(0, 4000) : ''}
 ${ideia.analise ? 'Análise da IA: ' + JSON.stringify(ideia.analise).substring(0, 3000) : ''}
 Com quem é a negociação: ${destinatario}
 ${oferta ? 'OFERTA / CONDIÇÕES RECEBIDAS DA OUTRA PARTE:\n' + String(oferta).substring(0, 6000) : '(sem oferta colada — use os documentos e o business plan)'}
-${instrucoes ? 'ORIENTAÇÕES DO FUNDADOR: ' + String(instrucoes).substring(0, 2000) : ''}
+${instr ? '══ ORIENTAÇÕES DO FUNDADOR (OBRIGATÓRIAS — aplicar todas nas premissas) ══\n' + instr.substring(0, 3000) + '\n══════' : ''}
+${cambio ? 'CÂMBIO A USAR: 1 EUR = R$ ' + cambio.toFixed(2) : ''}
+${anterior ? 'CONTRAPROPOSTA ANTERIOR (ponto de partida — ajuste ESTA, aplicando as orientações do fundador; "premissas_alteradas" é relativo ao PLANO ATUAL abaixo, então devolva completas as seções que diferem dele):\n' + JSON.stringify(anterior.premissas).substring(0, 15000) + '\nResumo anterior: ' + String(anterior.narrativa?.estrategia || '').substring(0, 600) : ''}
 BUSINESS PLAN ATUAL — premissas:
 ${JSON.stringify(p0).substring(0, 20000)}
 Justificativas do plano atual: ${JSON.stringify(base.narrativa?.justificativas || {}).substring(0, 3000)}
@@ -398,10 +407,10 @@ ${docs ? '\nDOCUMENTOS DA NEGOCIAÇÃO:\n' + docs : ''}${extra ? '\n\n' + extra 
     if (!melhor || _melhor(melhor.ind, ind)) melhor = cand;
     const ok = objetivo === 'TORNAR_VIAVEL' ? ind.viavel : (ind.viavel && (ind.vpl || 0) > (i0.vpl || 0));
     if (ok) break;
-    extra = `RESULTADO DA SUA PROPOSTA ANTERIOR NO MOTOR: ${JSON.stringify(ind)} — ${objetivo === 'TORNAR_VIAVEL' ? 'AINDA NÃO É VIÁVEL' : 'NÃO MELHOROU o VPL da Atlantyx'}. Ajuste as alavancas (com justificativa realista) e devolva o JSON completo de novo.`;
+    extra = `RESULTADO DA SUA PROPOSTA ANTERIOR NO MOTOR: ${JSON.stringify(ind)} — ${objetivo === 'TORNAR_VIAVEL' ? 'AINDA NÃO É VIÁVEL' : 'NÃO MELHOROU o VPL da Atlantyx'}. Ajuste as alavancas (com justificativa realista) e devolva o JSON completo de novo.${instr ? ' MANTENHA todas as ORIENTAÇÕES DO FUNDADOR exatamente como pedidas — mexa só nas outras alavancas.' : ''}`;
   }
   const { j, premissas, res, ind } = melhor;
-  const narrativa = { contraproposta: true, base_bp_id: base.id, base_titulo: base.titulo, objetivo, rodadas, destinatario, oferta: String(oferta || '').substring(0, 6000),
+  const narrativa = { contraproposta: true, base_bp_id: base.id, base_titulo: base.titulo, objetivo, rodadas, destinatario, oferta: String(oferta || '').substring(0, 6000), instrucoes: instr.substring(0, 3000), cambio_eur: cambio, ajuste_de: anterior?.id || null,
     antes: i0, depois: ind, anos_antes: _anosResumo(base.resultado), anos_depois: _anosResumo(res),
     diagnostico_base: j.diagnostico_base, estrategia: j.estrategia, alteracoes: j.alteracoes || [], ganhos_contraparte: j.ganhos_contraparte || [], ganhos_atlantyx: j.ganhos_atlantyx || [],
     contrapartidas_oferecidas: j.contrapartidas_oferecidas || [], concessoes_possiveis: j.concessoes_possiveis || [], limites: j.limites || [], clausulas: j.clausulas || [], riscos: j.riscos || [],

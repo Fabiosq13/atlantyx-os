@@ -10650,7 +10650,10 @@ function cpHtml(k) {
     + '<div style="font-size:10.5px;color:var(--t2);">a IA lê o último business plan desta ideia e monta um novo: rentável se hoje não é, ou melhor para a Atlantyx se já é — sempre bom para as duas partes</div></div>'
     + '<div><label class="fl">Com quem</label><select class="fsel" id="cpDest_' + k + '" style="width:auto;">' + ['Parceiro', 'Cliente', 'Investidor', 'Fornecedor'].map(x => '<option>' + x + '</option>').join('') + '</select></div>'
     + '<button class="btn btn-or" style="font-size:11px;" id="cpBtn_' + k + '" onclick="cpGerar(\'' + k + '\')">🤝 Gerar contraproposta</button></div>'
-    + '<textarea class="fta" id="cpOferta_' + k + '" style="min-height:55px;font-size:11.5px;" placeholder="Cole a oferta / condições que a outra parte propôs (opcional — os documentos da ideia também são lidos)"></textarea>'
+    + '<label class="fl">O que a outra parte propôs</label><textarea class="fta" id="cpOferta_' + k + '" style="min-height:45px;font-size:11.5px;" placeholder="Cole a oferta / condições que a outra parte propôs (opcional — os documentos da ideia também são lidos)"></textarea>'
+    // v3.62: as condições do fundador vão num campo PRÓPRIO e são obrigatórias para a IA (antes iam misturadas com a oferta da outra parte e eram ignoradas)
+    + '<label class="fl" style="margin-top:6px;color:var(--gold);">Suas condições / ajustes (obrigatórios)</label><textarea class="fta" id="cpInstr_' + k + '" style="min-height:45px;font-size:11.5px;" placeholder="Ex.: durante a fase de desenvolvimento recebemos só 300 euros/mês, referentes a 50% dos custos de infra. A IA aplica cada condição nas premissas e não troca para fechar a conta."></textarea>'
+    + '<div style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:10.5px;color:var(--t2);">Câmbio (se houver valores em euro): 1 € = R$ <input class="fi" id="cpCambio_' + k + '" style="width:70px;margin:0;font-size:11px;" placeholder="ex.: 6,20"/></div>'
     + '<div id="cpOut_' + k + '" style="margin-top:8px;"></div></div>';
 }
 function _cpCtx(k) {
@@ -10664,13 +10667,19 @@ function _cpCtx(k) {
   return { ideia: { id: x.id, titulo: x.titulo, desc: x.desc || x.descricao, analise: a ? { score: a.score, recomendacao: a.recomendacao, resumo: a.resumo_executivo, viabilidade: a.viabilidade_financeira } : null },
     bp_id: x.business_plan?.id || null, docs: (_ICHAT.ed.ideiaId === x.id ? _ICHAT.ed.docs : []), oferta: document.getElementById('cpOferta_ed')?.value || '' };
 }
-async function cpGerar(k) {
+async function cpGerar(k, ajustar) {
   const c = _cpCtx(k); const out = document.getElementById('cpOut_' + k), btn = document.getElementById('cpBtn_' + k);
   if (!c.ideia.titulo) return toast('Abra ou analise uma ideia primeiro', 'error');
   if (btn) { btn.disabled = true; btn.textContent = 'Montando…'; }
   if (out) out.innerHTML = '<div style="font-size:11px;color:var(--blue);padding:6px 0;">Lendo o business plan, a oferta e ' + c.docs.length + ' documento(s), montando a contraproposta e recalculando DRE, fluxo de caixa, TIR e VPL… (1 a 3 minutos)</div>';
   try {
-    const d = await bpApi('contraproposta', { ideia: c.ideia, bp_id: c.bp_id, oferta: c.oferta, destinatario: document.getElementById('cpDest_' + k)?.value || 'Parceiro', docs_texto: c.docs.map(x => ({ nome: x.nome, texto: x.texto })) });
+    // v3.62: "Ajustar" parte da contraproposta atual (e mantém o plano original como comparação)
+    const ant = ajustar ? window._cp[k]?.bp : null;
+    const instr = ajustar ? (document.getElementById('cpAjuste_' + k)?.value || '').trim() : (document.getElementById('cpInstr_' + k)?.value || '').trim();
+    if (ajustar && !instr) { if (btn) { btn.disabled = false; btn.textContent = '🤝 Gerar de novo'; } return toast('Escreva o ajuste que você quer', 'error'); }
+    const instrTodas = [ant?.narrativa?.instrucoes, instr].filter(Boolean).join('\n'); // ajustes anteriores continuam valendo
+    const d = await bpApi('contraproposta', { ideia: c.ideia, bp_id: ant?.narrativa?.base_bp_id || c.bp_id, oferta: c.oferta || ant?.narrativa?.oferta || '', destinatario: document.getElementById('cpDest_' + k)?.value || 'Parceiro', docs_texto: c.docs.map(x => ({ nome: x.nome, texto: x.texto })),
+      instrucoes: instrTodas, cambio_eur: document.getElementById('cpCambio_' + k)?.value || ant?.narrativa?.cambio_eur || null, partir_de_id: ant?.id || null });
     window._cp[k] = { bp: d.bp, base: d.base, titulo: c.ideia.titulo };
     if (k === 'ed' && _ideiaEd) { _ideiaEd.contraproposta_bp = { id: d.bp.id, base_bp_id: d.base.id, atualizado_em: new Date().toISOString() }; const i = S1_PIPELINE.findIndex(y => String(y.id) === String(_ideiaEd.id)); if (i >= 0) S1_PIPELINE[i].contraproposta_bp = _ideiaEd.contraproposta_bp; }
     cpRender(k); toast('Contraproposta pronta — ' + (d.bp.narrativa?.depois?.viavel ? 'plano rentável' : 'ainda não ficou rentável, veja os pontos'), d.bp.narrativa?.depois?.viavel ? 'success' : 'error');
@@ -10701,6 +10710,10 @@ function cpRender(k) {
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:4px 14px;">' + lista('Ganhos para a outra parte', n.ganhos_contraparte, 'var(--blue)') + lista('Ganhos para a Atlantyx', n.ganhos_atlantyx, 'var(--green)')
     + lista('O que oferecemos em troca', n.contrapartidas_oferecidas) + lista('Onde ainda dá para ceder', n.concessoes_possiveis, 'var(--gold)') + lista('Não aceitamos', n.limites, 'var(--red)') + lista('Cláusulas de proteção', n.clausulas) + lista('Riscos e mitigação', n.riscos) + lista('Próximos passos', n.proximos_passos, 'var(--blue)') + '</div>'
     + (n.mensagem_para_enviar ? '<div style="margin-top:8px;"><div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;"><b style="font-size:11px;flex:1;">Mensagem para enviar</b><button class="btn btn-g" style="font-size:10px;padding:2px 8px;" onclick="navigator.clipboard.writeText(document.getElementById(\'cpMsg_' + k + '\').value).then(()=>toast(\'Mensagem copiada\',\'success\'))">Copiar</button></div><textarea class="fta" id="cpMsg_' + k + '" style="min-height:120px;font-size:11.5px;">' + _cpE(n.mensagem_para_enviar) + '</textarea></div>' : '')
+    + (n.instrucoes ? '<div style="margin-top:8px;font-size:10.5px;color:var(--t2);"><b style="color:var(--gold);">Suas condições aplicadas:</b> ' + _cpE(n.instrucoes).replace(/\n/g, '<br>') + (n.cambio_eur ? ' · câmbio 1 € = R$ ' + Number(n.cambio_eur).toFixed(2) : '') + '</div>' : '')
+    + '<div style="margin-top:8px;border:1px dashed rgba(245,166,35,.5);border-radius:8px;padding:8px;"><b style="font-size:11px;">✎ Ajustar esta contraproposta</b><div style="font-size:10px;color:var(--t3);margin-bottom:4px;">Escreva o que mudar — a IA parte desta contraproposta, aplica o ajuste como condição obrigatória e recalcula tudo.</div>'
+    + '<textarea class="fta" id="cpAjuste_' + k + '" style="min-height:42px;font-size:11.5px;" placeholder="Ex.: na fase de desenvolvimento recebemos só 300 euros/mês (50% da infra); o resto da receita só começa depois do MVP."></textarea>'
+    + '<button class="btn btn-or" style="font-size:10.5px;margin-top:4px;" onclick="cpGerar(\'' + k + '\', true)">↻ Refazer com este ajuste</button></div>'
     + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"><button class="btn btn-p" style="font-size:10.5px;" id="cpPdfBtn_' + k + '" onclick="cpPdf(\'' + k + '\')">📄 PDF da contraproposta</button>'
     + '<button class="btn btn-g" style="font-size:10.5px;" onclick="cpAbrirBP(\'' + C.bp.id + '\')" title="Abre o business plan da contraproposta (DRE, fluxo, Excel)">📊 Abrir business plan da contraproposta</button>'
     + (C.base?.id ? '<button class="btn btn-g" style="font-size:10.5px;" onclick="cpAbrirBP(\'' + C.base.id + '\')">📊 Plano atual</button>' : '') + '</div>'
@@ -27295,7 +27308,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.61] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.62] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27311,7 +27324,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.61';
+window.__ATX_BUILD_ID__ = 'ATX-v3.62';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
