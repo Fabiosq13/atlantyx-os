@@ -3026,7 +3026,12 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="compararSaldoPorConta()" title="Compara o saldo do Atlantyx com o saldo de cada conta no QuickBooks">&#9878; Comparar por conta</button>
     <button class="btn" style="font-size:10px;" onclick="verRazaoConta()" title="Razão contábil da conta no QuickBooks, com saldo inicial e final do período">&#128220; Razão da conta</button>
     <button class="btn btn-gn" onclick="carregarFluxoDetalhado()">&#8635; Atualizar</button>
+    <div style="flex-basis:100%;display:flex;gap:6px;align-items:center;">
+      <input type="search" id="fd_busca" class="fi" style="font-size:11px;max-width:380px;margin:0;" placeholder="🔎 Filtrar pela descrição do lançamento (ex.: aluguel, CPFL, imposto)" oninput="_fdBuscaMudou()" title="Mostra só os lançamentos cuja descrição contém todas as palavras digitadas (sem diferenciar acentos e maiúsculas)"/>
+      <button class="btn" style="font-size:9px;" onclick="_fdBuscaLimpar()" title="Limpar o filtro">✕</button>
+    </div>
   </div>
+  <div id="fd_buscaResumo" style="display:none;margin-bottom:10px;background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:8px 12px;font-size:10.5px;line-height:1.6;"></div>
   <div id="fdStatus" style="display:none;margin-bottom:10px;"></div>
   <div class="kg k4" style="margin-bottom:12px;">
     <div class="kpi bl"><div class="kl" id="fd_saldoHojeLabel">Saldo inicial</div><div class="kv" id="fd_saldoHoje">—</div><div class="ks" id="fd_saldoHojeSub">saldo contabil na data inicial</div></div>
@@ -19040,6 +19045,55 @@ async function _fdPopularContas() {
     sel.value = atual;
   } catch (e) { addLog('warn', '[Fluxo] contas: ' + e.message); }
 }
+// v3.59: filtro por descrição do lançamento (sem acento, todas as palavras digitadas precisam aparecer)
+let _fdDados = null, _fdBuscaT = null;
+const _fdNorm = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+function _fdBuscaMudou() { clearTimeout(_fdBuscaT); _fdBuscaT = setTimeout(_fdRenderTabelas, 200); }
+function _fdBuscaLimpar() { const e = document.getElementById('fd_busca'); if (e) e.value = ''; _fdRenderTabelas(); }
+function _fdFiltrar(lista) {
+  const termos = _fdNorm(document.getElementById('fd_busca')?.value).split(/\s+/).filter(Boolean);
+  if (!termos.length) return lista;
+  return (lista || []).filter(l => { const alvo = _fdNorm([l.descricao, l.cliente, l.fornecedor, l.contraparte, l.categoria, l.memo].filter(Boolean).join(' ')); return termos.every(t => alvo.includes(t)); });
+}
+function _fdRenderTabelas() {
+  const d = _fdDados; if (!d) return;
+  const tbP = document.getElementById('fd_tbodyPassado'), tbF = document.getElementById('fd_tbodyFuturo');
+  const busca = (document.getElementById('fd_busca')?.value || '').trim();
+  const pasTodos = d.passado.lancamentos || [], futTodos = d.futuro.lancamentos || [];
+  const pas = _fdFiltrar(pasTodos), fut = _fdFiltrar(futTodos);
+  const semNada = (txt) => '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">' + txt + '</td></tr>';
+  if (tbP) tbP.innerHTML = pas.length ? _fdComQuebraMes(pas) : (busca ? semNada('Nenhum lançamento realizado com "' + busca.replace(/</g, '&lt;') + '" na descrição.') : semNada('Nenhum lançamento realizado nos últimos 60 dias' + (d.passado.qb_erro ? ' · ⚠ QuickBooks: ' + d.passado.qb_erro : '') + '.'));
+  // v2.04: separa o que vence no período do que está em aberto fora dele — os dois importam,
+  // mas por motivos diferentes. Vencido e não pago é o mais urgente e vinha sumindo.
+  if (tbF) {
+    const vencidos = fut.filter(l => l.vencida);
+    const noPer = fut.filter(l => !l.vencida && l.no_periodo !== false);
+    const foraPer = fut.filter(l => !l.vencida && l.no_periodo === false);
+    const secao = (titulo, lista, cor, nota) => lista.length ? `<tr><td colspan="5" style="padding:7px 6px 4px;font-size:10px;color:${_corTxt(cor)};font-weight:600;border-top:1px solid var(--bd);">${titulo} · ${lista.length} documento(s) · ${fmtBRLcompleto(lista.reduce((a,x)=>a+x.valor,0))}${nota?` <span style="font-weight:400;color:var(--t3);">${nota}</span>`:''}</td></tr>`
+      + _fdComQuebraMes(lista, cor) : '';
+    tbF.innerHTML = fut.length
+      ? secao('⚠ VENCIDOS E NÃO PAGOS', vencidos, 'var(--red)', '— cobrar primeiro')
+        + secao('NO PERÍODO CONSULTADO', noPer, 'var(--blue,#4f7cff)')
+        + secao('EM ABERTO, FORA DO PERÍODO', foraPer, 'var(--t3)', '— aparecem porque continuam a receber/pagar')
+      : (busca ? semNada('Nenhum lançamento futuro com "' + busca.replace(/</g, '&lt;') + '" na descrição.')
+        : semNada('Nenhum recebível/pagável futuro encontrado no QuickBooks' + (d.futuro.qb_erro ? ' · ⚠ ' + d.futuro.qb_erro : ' (sem faturas/contas em aberto, sem despesas programadas futuras e sem simulados futuros)') + '.'));
+  }
+  const tg1 = document.getElementById('fd_tagPassado'); if (tg1) { tg1.textContent = (busca ? pas.length + ' de ' + pasTodos.length : pas.length) + ' lançamento(s)'; tg1.className = 'tag on'; }
+  const tg2 = document.getElementById('fd_tagFuturo'); if (tg2) { tg2.textContent = (busca ? fut.length + ' de ' + futTodos.length : fut.length) + ' lançamento(s)'; tg2.className = 'tag ' + (fut.length ? 'on' : 'off'); }
+  // resumo do que o filtro encontrou (realizado + projetado)
+  const res = document.getElementById('fd_buscaResumo');
+  if (res) {
+    if (!busca) { res.style.display = 'none'; res.innerHTML = ''; }
+    else {
+      const todos = pas.concat(fut).filter(l => l.tipo !== 'referencia');
+      const ent = todos.filter(l => l.tipo === 'entrada').reduce((a, l) => a + (l.valor || 0), 0), sai = todos.filter(l => l.tipo === 'saida').reduce((a, l) => a + (l.valor || 0), 0);
+      res.style.display = 'block';
+      res.innerHTML = '🔎 <b>' + todos.length + '</b> lançamento(s) com "<b>' + busca.replace(/</g, '&lt;') + '</b>" · realizados: ' + pas.length + ' · projetados: ' + fut.length
+        + ' · <span style="color:var(--green,#22d3a3);">entradas ' + fmtBRLcompleto(ent) + '</span> · <span style="color:var(--red);">saídas ' + fmtBRLcompleto(sai) + '</span> · <b>líquido ' + fmtBRLcompleto(ent - sai) + '</b>'
+        + ' <span style="color:var(--t3);">(a coluna de saldo continua sendo o saldo da conta com todos os lançamentos)</span>';
+    }
+  }
+}
 async function carregarFluxoDetalhado() {
   // v1.16.1: datas padrão (60 dias atrás → sem limite futuro) na primeira carga
   const iEl = document.getElementById('fd_dataInicio'), fEl = document.getElementById('fd_dataFim');
@@ -19204,25 +19258,8 @@ async function carregarFluxoDetalhado() {
       else ms.style.display = 'none';
     }
 
-    const pas = d.passado.lancamentos || [];
-    if (tbP) tbP.innerHTML = pas.length ? _fdComQuebraMes(pas) : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Nenhum lançamento realizado nos últimos 60 dias' + (d.passado.qb_erro ? ' · ⚠ QuickBooks: ' + d.passado.qb_erro : '') + '.</td></tr>';
-    const fut = d.futuro.lancamentos || [];
-    // v2.04: separa o que vence no período do que está em aberto fora dele — os dois importam,
-    // mas por motivos diferentes. Vencido e não pago é o mais urgente e vinha sumindo.
-    if (tbF) {
-      const vencidos = fut.filter(l => l.vencida);
-      const noPer = fut.filter(l => !l.vencida && l.no_periodo !== false);
-      const foraPer = fut.filter(l => !l.vencida && l.no_periodo === false);
-      const secao = (titulo, lista, cor, nota) => lista.length ? `<tr><td colspan="5" style="padding:7px 6px 4px;font-size:10px;color:${_corTxt(cor)};font-weight:600;border-top:1px solid var(--bd);">${titulo} · ${lista.length} documento(s) · ${fmtBRLcompleto(lista.reduce((a,x)=>a+x.valor,0))}${nota?` <span style="font-weight:400;color:var(--t3);">${nota}</span>`:''}</td></tr>`
-        + _fdComQuebraMes(lista, cor) : '';
-      tbF.innerHTML = fut.length
-        ? secao('⚠ VENCIDOS E NÃO PAGOS', vencidos, 'var(--red)', '— cobrar primeiro')
-          + secao('NO PERÍODO CONSULTADO', noPer, 'var(--blue,#4f7cff)')
-          + secao('EM ABERTO, FORA DO PERÍODO', foraPer, 'var(--t3)', '— aparecem porque continuam a receber/pagar')
-        : '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Nenhum recebível/pagável futuro encontrado no QuickBooks' + (d.futuro.qb_erro ? ' · ⚠ ' + d.futuro.qb_erro : ' (sem faturas/contas em aberto, sem despesas programadas futuras e sem simulados futuros)') + '.</td></tr>'; }
-
-    const tg1 = document.getElementById('fd_tagPassado'); if (tg1) { tg1.textContent = pas.length + ' lançamento(s)'; tg1.className = 'tag on'; }
-    const tg2 = document.getElementById('fd_tagFuturo'); if (tg2) { tg2.textContent = fut.length + ' lançamento(s)'; tg2.className = 'tag ' + (fut.length ? 'on' : 'off'); }
+    _fdDados = d; _fdRenderTabelas(); // v3.59: tabelas renderizadas à parte, para o filtro por descrição
+    const pas = d.passado.lancamentos || [], fut = d.futuro.lancamentos || [];
 
     if (d.passado.qb_erro || d.futuro.qb_erro) { if (st) { st.style.display = 'block'; st.innerHTML = '<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:10px;font-size:11px;">⚠ QuickBooks: ' + (d.passado.qb_erro || d.futuro.qb_erro) + ' — <a style="color:var(--blue);cursor:pointer;" onclick="conectarQuickBooks()">reconectar</a></div>'; } }
     addLog('ok', '[Fluxo Detalhado] ' + pas.length + ' realizados + ' + fut.length + ' futuros · saldo hoje ' + fmtBRLcompleto(d.saldo_hoje) + ' → projetado ' + fmtBRLcompleto(d.saldo_projetado_final));
@@ -27250,7 +27287,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.58] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.59] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27266,7 +27303,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.58';
+window.__ATX_BUILD_ID__ = 'ATX-v3.59';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
