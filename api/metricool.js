@@ -486,10 +486,16 @@ async function autoCampanhaDiagnostico() {
   const temIdeo = !!process.env.IDEOGRAM_API_KEY, temOai = !!process.env.OPENAI_API_KEY;
   add('Imagem — chaves', temIdeo || temOai, `Ideogram ${temIdeo ? 'presente' : 'ausente'} · OpenAI ${temOai ? 'presente (reserva)' : 'ausente'}`, 'Configure IDEOGRAM_API_KEY (ou OPENAI_API_KEY como reserva)');
   if (temIdeo) {
-    try { const r = await fetch('https://api.ideogram.ai/manage/api/api_keys', { headers: { 'Api-Key': process.env.IDEOGRAM_API_KEY.trim() } });
-      // qualquer resposta ≠ 401/403 significa que a chave é aceita
-      const ok = r.status !== 401 && r.status !== 403;
-      add('Imagem — chave do Ideogram aceita', ok, `HTTP ${r.status}`, 'A chave do Ideogram foi recusada (401). Gere uma nova em ideogram.ai → API, confira se há crédito, atualize IDEOGRAM_API_KEY no Vercel e faça Redeploy');
+    // v3.57: antes testava /manage/api/api_keys — rota de GERENCIAMENTO, que recusa (401) chaves normais de
+    // geração mesmo quando elas funcionam. Agora testa a MESMA rota que gera as imagens, mas sem prompt: a chave
+    // é validada (401/403 se for recusada) e o pedido para na validação (400/422), sem gastar crédito.
+    try { const fd = new FormData(); fd.append('rendering_speed', 'TURBO');
+      const r = await fetch('https://api.ideogram.ai/v1/ideogram-v3/generate', { method: 'POST', headers: { 'Api-Key': process.env.IDEOGRAM_API_KEY.trim().replace(/\s+/g, '') }, body: fd });
+      const corpo = (await r.text().catch(() => '')).substring(0, 160);
+      const recusada = r.status === 401 || r.status === 403, semCredito = r.status === 402 || /credit|balance|payment/i.test(corpo);
+      add('Imagem — chave do Ideogram aceita', !recusada && !semCredito, `HTTP ${r.status}` + (corpo && (recusada || semCredito) ? ' · ' + corpo : ''),
+        recusada ? 'A chave do Ideogram foi recusada. Gere uma nova em ideogram.ai → API, atualize IDEOGRAM_API_KEY no Vercel e faça Redeploy'
+          : 'A conta do Ideogram está sem crédito de API — recarregue em ideogram.ai → API');
     } catch (e) { add('Imagem — chave do Ideogram', false, e.message, 'Verifique a rede/chave do Ideogram'); }
   }
   // Conversão JPEG e fontes (Stories)
