@@ -1,8 +1,10 @@
 import { comGuarda } from '../lib/qa-guard.js';
 
 // v3.32: o CTA do Instagram vem da configuração da campanha (link curto, palavra no Direct, WhatsApp ou bio)
-const ctaIgDe = p => String((p && p.cta_instagram) || '').trim() || 'Agende uma conversa com um especialista da Atlantyx';
-const ctaCurtoIg = p => String((p && p.cta_curto) || '').trim() || 'Agende sua conversa';
+const ctaIgDe = p => String((p && p.cta_instagram) || '').trim() || 'Peça seu diagnóstico gratuito de dados e IA com um especialista da Atlantyx';
+// v3.60: OFERTA padrão dos posts — post de opinião gera engajamento, não lead; o post precisa oferecer algo em troca do contato
+const OFERTA = p => String((p && p.oferta) || '').trim() || 'Diagnóstico gratuito de dados e IA: um especialista da Atlantyx conversa com o time do cliente, mapeia onde dados e IA geram resultado na operação e entrega as oportunidades priorizadas por impacto e esforço — sem custo e sem compromisso';
+const ctaCurtoIg = p => String((p && p.cta_curto) || '').trim() || 'Diagnóstico gratuito';
 const regraCtaIg = p => `REGRA DO CTA NO INSTAGRAM: a legenda do Instagram não tem link clicável e NÃO se deve mandar a pessoa para a bio. Não escreva "link na bio". Termine o texto do Instagram com este CTA, exatamente: "${ctaIgDe(p)}". No LinkedIn e no Facebook o link vai clicável no próprio post.`;
 // api/s2-creative.js
 // S2 · Agentes de Marketing Digital Criativo
@@ -57,7 +59,9 @@ async function handler(req, res) {
 Sua tarefa: planejar 3 publicações de MÁXIMA CONVERSÃO (gerar cliques e reuniões agendadas), combinando:
 (a) benchmarks de mercado B2B (LinkedIn: ter-qui 9h-11h30 e 17h; Instagram: ter/qui 11h-13h e 18h-19h; Facebook: qua-qui 9h-12h; evitar seg cedo e sex tarde),
 (b) as MÉTRICAS REAIS da conta fornecidas abaixo (dias/horários e temas que mais performaram têm prioridade sobre o benchmark).
-Cada copy: max 110 palavras, específica da Atlantyx, com dado concreto, SEM clichês (proibido: revolucionar, disruptivo, game-changer), terminando com CTA de reunião. ${regraCtaIg(typeof payload !== 'undefined' ? payload : {})}
+Cada copy: max 110 palavras, específica da Atlantyx, com dado concreto, SEM clichês (proibido: revolucionar, disruptivo, game-changer), terminando com a OFERTA DO DIAGNÓSTICO GRATUITO (abaixo). ${regraCtaIg(typeof payload !== 'undefined' ? payload : {})}
+OFERTA (obrigatória em TODO post): ${OFERTA(payload)}.
+Como usar a oferta: o post apresenta uma dor ou um dado concreto e FECHA convidando para o diagnóstico gratuito, dizendo em 1 frase o que a pessoa ganha (ex.: "você sai com as oportunidades priorizadas"). Não feche com "agende uma reunião" genérico nem só com opinião. Não prometa prazo, preço nem entregável que não esteja na oferta.
 Responda APENAS JSON válido.`;
         const usr = `MÉTRICAS DA CONTA (Metricool, últimos 30 dias):
 ${metricas_resumo || '(sem dados suficientes — use apenas benchmarks de mercado B2B)'}
@@ -66,8 +70,8 @@ CONTEXTO ADICIONAL: ${contexto || 'captação de leads e reuniões para a Atlant
 REDES-ALVO: ${redes.join(', ')}
 
 Gere exatamente este JSON:
-{"posts":[{"titulo":"nome curto da publicação","texto":"copy completa pronta para publicar (max 110 palavras, com CTA de reunião no fim)","dia_semana":"segunda|terca|quarta|quinta|sexta","hora":"HH:MM","justificativa":"1 frase: por que este slot/tema converte (cite a métrica ou benchmark)","prompt_imagem":"cena visual em inglês 40-60 palavras, SEM texto na imagem, dark navy #1A3A8F + electric blue #4F7CFF, ambiente corporativo com dados/dashboards"}]}
-Regras: 3 posts, dias/horários DIFERENTES entre si, temas complementares (dor → prova/case → oferta de reunião).`;
+{"posts":[{"titulo":"nome curto da publicação","texto":"copy completa pronta para publicar (max 110 palavras, terminando com o convite para o diagnóstico gratuito)","dia_semana":"segunda|terca|quarta|quinta|sexta","hora":"HH:MM","justificativa":"1 frase: por que este slot/tema converte (cite a métrica ou benchmark)","prompt_imagem":"cena visual em inglês 40-60 palavras, SEM texto na imagem, dark navy #1A3A8F + electric blue #4F7CFF, ambiente corporativo com dados/dashboards"}]}
+Regras: 3 posts, dias/horários DIFERENTES entre si, temas complementares (dor → prova/case → convite direto ao diagnóstico gratuito), e TODOS terminam com a oferta do diagnóstico gratuito.`;
         const rr = await claude(sys, usr, 2400);
         const plano = parseJSON(rr);
         if (!plano.posts?.length) throw new Error('IA não retornou posts válidos' + (plano.raw ? ' (resposta truncada)' : ''));
@@ -81,7 +85,7 @@ Regras: 3 posts, dias/horários DIFERENTES entre si, temas complementares (dor �
         const base = (v0.headline ? v0.headline + '\n' : '') + (v0.corpo || copy.raw || '').substring(0, 900);
         const n = Math.max(3, Math.min(8, parseInt(n_slides) || 5));
         const sys = `Você é o Social Media da Atlantyx (${BRAND.proposta_valor}). Tom: ${BRAND.tom_de_voz}. ICP: ${BRAND.icp}. Carrossel de feed = MEIO de funil: educa quem já te viu; cada slide é uma ideia; o último converte. ${regraCtaIg(typeof payload !== 'undefined' ? payload : {})} Responda APENAS JSON válido.`;
-        const usr = `NARRATIVA: ${narrativa.tema_central || ''} | Gancho: ${narrativa.gancho_principal || ''}\nCOPY BASE:\n${base}\n\nCrie um CARROSSEL de ${n} slides quadrados. Regras: slide 1 = capa com título forte (máx 8 palavras) + subtítulo (máx 12); slides do meio = 1 ideia cada, título (máx 7 palavras) + 1 frase de apoio (máx 20 palavras); último = CTA. Sem clichês. Legenda: até 150 palavras, começa com o gancho, lista o que o carrossel entrega, termina com CTA; + 5-8 hashtags B2B.\nJSON: {"slides":[{"ordem":1,"titulo":"...","apoio":"...","prompt_imagem":"cena quadrada 1:1 em inglês, 35-55 palavras, SEM texto, dark navy #1A3A8F + electric blue #4F7CFF, área limpa no terço inferior para texto"}],"legenda":"...","legenda_instagram":"mesma legenda terminando com o CTA: ${ctaIgDe(payload).replace(/"/g, "'")}","legenda_linkedin":"mesma legenda com CTA 'Agende uma conversa: {LINK}'","hashtags":["#..."]}`;
+        const usr = `NARRATIVA: ${narrativa.tema_central || ''} | Gancho: ${narrativa.gancho_principal || ''}\nCOPY BASE:\n${base}\n\nCrie um CARROSSEL de ${n} slides quadrados. Regras: slide 1 = capa com título forte (máx 8 palavras) + subtítulo (máx 12); slides do meio = 1 ideia cada, título (máx 7 palavras) + 1 frase de apoio (máx 20 palavras); último = convite ao diagnóstico gratuito (título curto + o que a pessoa ganha). Sem clichês. Legenda: até 150 palavras, começa com o gancho, lista o que o carrossel entrega, termina convidando para o diagnóstico gratuito; + 5-8 hashtags B2B.\nJSON: {"slides":[{"ordem":1,"titulo":"...","apoio":"...","prompt_imagem":"cena quadrada 1:1 em inglês, 35-55 palavras, SEM texto, dark navy #1A3A8F + electric blue #4F7CFF, área limpa no terço inferior para texto"}],"legenda":"...","legenda_instagram":"mesma legenda terminando com o CTA: ${ctaIgDe(payload).replace(/"/g, "'")}","legenda_linkedin":"mesma legenda com CTA 'Peça seu diagnóstico gratuito: {LINK}'","hashtags":["#..."]}`;
         const rr = await claude(sys, usr, 2200);
         const pk = parseJSON(rr);
         if (!pk.slides?.length) throw new Error('Carrossel inválido' + (pk.raw ? ' (truncado)' : ''));
@@ -98,7 +102,7 @@ Regras: 3 posts, dias/horários DIFERENTES entre si, temas complementares (dor �
         const usr = `NARRATIVA: ${narrativa.tema_central || ''} | Gancho: ${narrativa.gancho_principal || ''}
 COPY BASE:\n${base}
 
-Crie um Reel em SLIDESHOW de ${n} slides (9:16, ~3s cada). Regras: cada slide tem no MÁXIMO 12 palavras na tela, ideia única, linguagem direta; slide 1 = gancho forte (pergunta/dado/contraste), slides do meio = insight/prova, último = CTA curto de agendamento (${ctaCurtoIg(payload)}). Sem clichês (proibido: revolucionar, disruptivo, game-changer). Legenda: até 120 palavras, começa com o gancho, termina com "${ctaIgDe(payload)}", + 5-8 hashtags B2B relevantes no fim. ${regraCtaIg(typeof payload !== 'undefined' ? payload : {})}
+Crie um Reel em SLIDESHOW de ${n} slides (9:16, ~3s cada). Regras: cada slide tem no MÁXIMO 12 palavras na tela, ideia única, linguagem direta; slide 1 = gancho forte (pergunta/dado/contraste), slides do meio = insight/prova, último = CTA curto do diagnóstico gratuito (${ctaCurtoIg(payload)}). Sem clichês (proibido: revolucionar, disruptivo, game-changer). Legenda: até 120 palavras, começa com o gancho, termina com "${ctaIgDe(payload)}", + 5-8 hashtags B2B relevantes no fim. ${regraCtaIg(typeof payload !== 'undefined' ? payload : {})}
 JSON: {"slides":[{"ordem":1,"texto_tela":"...","destaque":"palavra ou número a destacar (opcional)","prompt_imagem":"cena vertical 9:16 em inglês, 35-55 palavras, SEM texto na imagem, dark navy #1A3A8F + electric blue #4F7CFF, área central limpa"}],"legenda":"...","hashtags":["#..."],"trilha_sugerida":"tipo de música/ritmo em 5 palavras"}`;
         const rr = await claude(sys, usr, 1900);
         const pk = parseJSON(rr);

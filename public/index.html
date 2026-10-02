@@ -6750,6 +6750,8 @@ const TEXTO_LINK_BIO_CURTO_PADRAO = 'acesse o site e deixe seu contato';
 //   whatsapp   → número do WhatsApp comercial escrito na legenda e na arte
 //   bio        → o comportamento antigo (link na bio)
 // LinkedIn e Facebook continuam com o link CLICÁVEL direto no post.
+// v3.60: OFERTA dos posts = diagnóstico gratuito (post de opinião gera curtida; oferta concreta gera lead)
+const CTA_OFERTA = '🎁 Peça seu diagnóstico gratuito de dados e IA:';
 function ctaCfg() { const pad = { ig: 'link_curto', destino: 'cadastro', palavra: 'AGENDA', whats: '' };
   try { return Object.assign(pad, JSON.parse(localStorage.getItem('atx:cta_cfg') || '{}')); } catch (_) { return pad; } }
 function salvarCtaCfg(parcial) { const c = Object.assign(ctaCfg(), parcial || {}); try { localStorage.setItem('atx:cta_cfg', JSON.stringify(c)); localStorage.setItem('atx:destino_campanha', c.destino === 'reuniao' ? 'reuniao' : 'captura'); } catch (_) {} try { _ctaPreview(); } catch (_) {} return c; }
@@ -6768,8 +6770,8 @@ function _leadsDaCampanha(campId) {
 }
 function textoLinkBio(campId) {
   const c = ctaCfg();
-  if (c.ig === 'link_curto') return '📅 Agende uma conversa com um especialista: ' + linkCurtoCampanha(campId);
-  if (c.ig === 'palavra') return '💬 Comente ' + (c.palavra || 'AGENDA') + ' aqui embaixo e receba no seu Direct o link para agendar uma conversa.';
+  if (c.ig === 'link_curto') return '🎁 Peça seu diagnóstico gratuito de dados e IA: ' + linkCurtoCampanha(campId); // v3.60: oferta = diagnóstico gratuito
+  if (c.ig === 'palavra') return '💬 Comente ' + (c.palavra || 'AGENDA') + ' aqui embaixo e receba no seu Direct o link para pedir seu diagnóstico gratuito.';
   if (c.ig === 'whatsapp' && c.whats) return '📲 Fale com a gente no WhatsApp: ' + c.whats;
   try { return (localStorage.getItem('atx:texto_link_bio') || '').trim() || TEXTO_LINK_BIO_PADRAO; } catch(_) { return TEXTO_LINK_BIO_PADRAO; } }
 function textoLinkBioCurto() {
@@ -6781,7 +6783,7 @@ function textoLinkBioCurto() {
 // tira frases de "link na bio" que a IA ainda escreva (quando o modo não é bio) e detecta se o CTA já está no texto
 function _semBio(t) { if (ctaCfg().ig === 'bio') return String(t || ''); return String(t || '').split('\n').filter(l => !/link na bio/i.test(l)).join('\n').replace(/\n{3,}/g, '\n\n').trim(); }
 function _temCta(t) { const x = String(t || ''); return x.includes(_linkCurtoBase()) || (ctaCfg().ig === 'palavra' && x.includes('Comente ' + (ctaCfg().palavra || 'AGENDA'))) || (ctaCfg().ig === 'bio' && /link na bio/i.test(x)); }
-function ctaTituloArte() { const c = ctaCfg(); return c.ig === 'link_curto' ? '📅 Agende sua conversa' : c.ig === 'palavra' ? '💬 Comente ' + (c.palavra || 'AGENDA') : (c.ig === 'whatsapp' && c.whats) ? '📲 Chame no WhatsApp' : '🔗 Link na bio'; }
+function ctaTituloArte() { const c = ctaCfg(); return c.ig === 'link_curto' ? '🎁 Diagnóstico gratuito' : c.ig === 'palavra' ? '💬 Comente ' + (c.palavra || 'AGENDA') : (c.ig === 'whatsapp' && c.whats) ? '📲 Chame no WhatsApp' : '🔗 Link na bio'; }
 function _ctaPreview() {
   const c = ctaCfg(), pv = document.getElementById('acCtaPrev'); if (!pv) return;
   pv.innerHTML = '<b>Instagram (legenda):</b> ' + textoLinkBio().replace(/</g, '&lt;') + '<br><b>Na arte/vídeo:</b> ' + ctaTituloArte() + ' — ' + textoLinkBioCurto().replace(/</g, '&lt;')
@@ -21433,7 +21435,7 @@ async function acCompletarRedes() {
       toast(`Agendando ${i + 1}/${tarefas.length}...`, 'success');
       const camp = t.pc.campanhaId || t.li.campanhaId || null;
       const lk = t.rd === 'instagram' ? '' : comUtm(linkDestinoPadrao(), t.rd, camp, 'post');
-      const tx = t.rd === 'instagram' ? _semBio(t.pc.copy) + '\n\n' + textoLinkBio(camp) : t.pc.copy + '\n\n👉 Agende uma conversa:\n' + lk;
+      const tx = t.rd === 'instagram' ? _semBio(t.pc.copy) + '\n\n' + textoLinkBio(camp) : t.pc.copy + '\n\n' + CTA_OFERTA + '\n' + lk;
       try {
         const r = await fetch('/api/metricool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'publicar', payload: { texto: tx, redes: [t.rd], data_hora: t.li.agendado_para, imagem_url: t.img, encurtar_link: t.rd !== 'instagram' } }) });
         const d = await r.json().catch(() => ({ success: false, error: 'HTTP ' + r.status }));
@@ -25291,7 +25293,7 @@ async function publicarPeca(pecaId) {
           <input type="checkbox" id="pubUtm" checked/> Adicionar UTMs de rastreio (utm_source=rede, utm_campaign=campanha)
         </label>
         <div style="font-size:10px;color:var(--t2);margin:8px 0 4px;">TEXTO DO CTA (aparece antes do link — posts não suportam "clique aqui" clicável)</div>
-        <input type="text" id="pubCta" class="fsel" style="width:100%;" value="👉 Agende uma conversa:"/>
+        <input type="text" id="pubCta" class="fsel" style="width:100%;" value="🎁 Peça seu diagnóstico gratuito de dados e IA:"/>
         <label style="font-size:10px;color:var(--t2);display:flex;gap:5px;align-items:center;margin-top:5px;cursor:pointer;">
           <input type="checkbox" id="pubEncurtar" checked/> Encurtar link via Metricool (recomendado — URL longa vira link curto rastreável)
         </label>
@@ -26178,7 +26180,7 @@ async function gerarCampanhaAutomatica(opts = {}) {
     data_inicio: _viaAc ? opts.slots[0].data : new Date().toISOString().substring(0,10), data_fim: _viaAc ? opts.slots[opts.slots.length - 1].data : new Date(Date.now()+14*864e5).toISOString().substring(0,10),
     criado_em: new Date().toISOString(), atualizado_em: new Date().toISOString(), imagens: [],
     data: { narrativa: { tema_central: _post0.titulo || 'Auto-campanha', gancho_principal: (_post0.texto||'').split(/[.!?]\s/)[0] || '', promessa_central: _post0.justificativa || '', call_to_action: 'Agende uma conversa' },
-            copy: { versoes: plano.map((p, i) => ({ versao: i+1, headline: p.titulo, corpo: p.texto, cta: 'Agende uma conversa', hashtags: [] })) }, design: {}, copy_por_rede: {} } };
+            copy: { versoes: plano.map((p, i) => ({ versao: i+1, headline: p.titulo, corpo: p.texto, cta: 'Peça seu diagnóstico gratuito', hashtags: [] })) }, design: {}, copy_por_rede: {} } };
   (_todasCampanhas = _todasCampanhas || []).push(campAuto);
   try { salvarCampanhaLocal(campAuto); } catch(_) {}
   await salvarCampanhaNoBanco(campAuto, 'auto-campanha');
@@ -26242,7 +26244,7 @@ async function gerarCampanhaAutomatica(opts = {}) {
         const ok = [], falhas = []; let dp = null;
         for (const rd of redesPost) {
           const lk = rd === 'instagram' ? '' : comUtm(linkDestinoPadrao(), rd, _autoId, 'post' + (_ix + 1));
-          const tx = rd === 'instagram' ? _semBio(post.texto) + '\n\n' + textoLinkBio(_autoId) : post.texto + '\n\n👉 Agende uma conversa:\n' + lk;
+          const tx = rd === 'instagram' ? _semBio(post.texto) + '\n\n' + textoLinkBio(_autoId) : post.texto + '\n\n' + CTA_OFERTA + '\n' + lk;
           try {
             const rr = await fetch('/api/metricool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'publicar', payload: { texto: tx, redes: [rd], data_hora: quando.toISOString(), imagem_url: imgUrl || null, encurtar_link: rd !== 'instagram' } }) });
             const dd = await rr.json().catch(() => ({ success: false, error: 'HTTP ' + rr.status }));
@@ -26616,7 +26618,7 @@ async function comporArtesStories(silencioso, soFaltantes) {
       lines.forEach(ln => { ctx.fillText(ln, W / 2, y); y += lh; }); ctx.shadowBlur = 0;
       const ehCta = (st[i].papel === 'cta') || i === st.length - 1;
       if (ehCta) {
-        const cta = st[i].cta_sticker || 'Agende sua conversa';
+        const cta = st[i].cta_sticker || 'Diagnóstico gratuito';
         ctx.font = '700 28px Calibri, Arial, sans-serif'; const tw = ctx.measureText(cta).width + 70;
         const px = (W - tw) / 2, py = H - 250; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(px, py, tw, 60, 30) : ctx.rect(px, py, tw, 60); ctx.fill();
         ctx.fillStyle = '#0B1226'; ctx.fillText('🔗 ' + cta, W / 2, py + 41);
@@ -26729,7 +26731,7 @@ async function gerarCarrosselPack() {
     const link = _linkStoriesReels(); const linkUtm = link + (link.includes('?') ? '&' : '?') + 'utm_source=linkedin&utm_medium=social&utm_campaign=' + (campAtiva.id || 'carrossel');
     const hs = d.hashtags?.length ? '\n\n' + d.hashtags.join(' ') : '';
     campAtiva.carrossel = { slides: d.slides.map(x => Object.assign({ imagem_url: '' }, x)),
-      legenda_linkedin: ((d.legenda_linkedin || d.legenda || '').replace('{LINK}', linkUtm) + (/(https?:\/\/)/.test(d.legenda_linkedin || '') ? '' : '\n\n👉 Agende uma conversa:\n' + linkUtm) + hs).trim(),
+      legenda_linkedin: ((d.legenda_linkedin || d.legenda || '').replace('{LINK}', linkUtm) + (/(https?:\/\/)/.test(d.legenda_linkedin || '') ? '' : '\n\n' + CTA_OFERTA + '\n' + linkUtm) + hs).trim(),
       legenda_instagram: (_semBio(d.legenda_instagram || d.legenda || '') + (_temCta(d.legenda_instagram || d.legenda || '') ? '' : '\n\n' + textoLinkBio()) + hs).trim(),
       link: linkUtm };
     await salvarCampanhaNoBanco(campAtiva, 'carrossel roteiro'); _renderCarrossel();
@@ -27287,7 +27289,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.59] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.60] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27303,7 +27305,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.59';
+window.__ATX_BUILD_ID__ = 'ATX-v3.60';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

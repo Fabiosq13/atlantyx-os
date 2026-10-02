@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Atlantyx — Dados confiáveis e IA aplicada à sua operação</title>
+<title>Atlantyx — Diagnóstico gratuito de dados e IA</title>
 <meta name="description" content="Há 17 anos a Atlantyx estrutura engenharia de dados, analytics e IA para grandes empresas. Agende uma conversa com um especialista.">
 <!-- v3.51: prévia do link no LinkedIn/WhatsApp/Facebook ("Não é possível extrair a imagem do link") -->
 <meta property="og:type" content="website">
@@ -18,8 +18,8 @@
 <meta property="og:image:alt" content="Atlantyx — decisões com dados de hoje, não de ontem. Agende uma conversa.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://atlantyx-os.vercel.app/og-atlantyx.jpg">
-<meta property="og:title" content="Atlantyx — Dados confiáveis e IA aplicada à sua operação">
-<meta property="og:description" content="Agende uma conversa com um especialista e saia com um diagnóstico objetivo do seu cenário de dados.">
+<meta property="og:title" content="Atlantyx — Diagnóstico gratuito de dados e IA">
+<meta property="og:description" content="Peça seu diagnóstico gratuito: um especialista mapeia onde dados e IA geram resultado na sua operação.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -147,9 +147,9 @@
 <div class="hero">
   <div class="container">
     <div>
-      <div class="selo"><i></i> Conversa com especialista · sem custo</div>
-      <h1 id="titulo">Dados confiáveis e <em>IA aplicada</em> para decidir mais rápido.</h1>
-      <p class="sub" id="sub">Há 17 anos a Atlantyx estrutura engenharia de dados, analytics e inteligência artificial para grandes empresas. Em uma conversa objetiva, mapeamos onde dados e IA geram resultado na sua operação.</p>
+      <div class="selo"><i></i> Diagnóstico gratuito · sem compromisso</div>
+      <h1 id="titulo">Diagnóstico gratuito de <em>dados e IA</em> da sua operação.</h1>
+      <p class="sub" id="sub">Há 17 anos a Atlantyx estrutura engenharia de dados, analytics e inteligência artificial para grandes empresas. No diagnóstico gratuito, um especialista mapeia com você onde dados e IA geram resultado na sua operação.</p>
       <ul class="pontos">
         <li><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" stroke="#00FCA8" stroke-width="1.6"/><path d="M6 10.4l2.6 2.5L14 7.4" stroke="#00FCA8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Conversa técnica com quem executa projetos — não é uma apresentação comercial.</li>
         <li><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" stroke="#00FCA8" stroke-width="1.6"/><path d="M6 10.4l2.6 2.5L14 7.4" stroke="#00FCA8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Você sai com oportunidades priorizadas por impacto e esforço.</li>
@@ -164,7 +164,7 @@
 
     <div class="card" id="cardForm">
       <div id="form">
-        <h2>Agende sua conversa</h2>
+        <h2>Peça seu diagnóstico gratuito</h2>
         <p class="ajuda">Leva menos de um minuto. Em seguida você escolhe o horário.</p>
         <div class="linha2">
           <div><label for="nome">Nome</label><input id="nome" autocomplete="name" required></div>
@@ -187,7 +187,7 @@
               <option>Outro</option>
             </select></div>
         </div>
-        <button class="btn" id="btn" onclick="enviar()">Solicitar conversa <span class="seta">→</span></button>
+        <button class="btn" id="btn" onclick="enviar()">Quero meu diagnóstico <span class="seta">→</span></button>
         <div class="erro" id="erro" role="alert"></div>
         <div class="lgpd"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" style="flex:0 0 14px;margin-top:1px"><rect x="4" y="9" width="12" height="9" rx="2" stroke="#7a8692" stroke-width="1.6"/><path d="M7 9V6.5a3 3 0 016 0V9" stroke="#7a8692" stroke-width="1.6"/></svg>
           Seus dados são usados apenas para este contato, conforme a LGPD. Sem lista de e-mails.</div>
@@ -195,7 +195,7 @@
       <div class="ok" id="ok">
         <div class="check"><svg width="26" height="26" viewBox="0 0 20 20" fill="none"><path d="M5 10.5l3.2 3L15 6.5" stroke="#047857" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <h2 id="okTitulo">Recebemos seu contato.</h2>
-        <p id="okTexto">Escolha abaixo o melhor horário para a conversa. Se preferir, retornamos em até um dia útil.</p>
+        <p id="okTexto">Escolha abaixo o melhor horário para o seu diagnóstico. Se preferir, retornamos em até um dia útil.</p>
         <iframe class="agenda-frame" id="agendaFrame" title="Agenda de reuniões Atlantyx" loading="lazy"></iframe>
         <a class="btn-sec" id="agenda" href="#" target="_blank" rel="noopener">Abrir a agenda em nova aba</a>
         <a class="btn-sec" id="wa" href="#" target="_blank" rel="noopener">Falar agora pelo WhatsApp</a>
@@ -270,7 +270,7 @@
         body: JSON.stringify({
           name: g('nome'), company: g('empresa'), title: g('cargo'), email: g('email'), phone: g('telefone'), interesse: g('interesse'),
           source: utm.source, campaign_name: utm.campaign || 'captura', utm,
-          page: location.href, form_name: 'captura-publica',
+          page: location.href, form_name: 'captura-publica', oferta: 'diagnostico_gratuito', // v3.60
         }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || d.success === false) throw new Error(d.error || 'HTTP ' + r.status);
@@ -288,7 +288,7 @@
         const a = document.getElementById('agenda'); a.href = url; a.style.display = 'block';
         if (fr.style.display === 'block') a.textContent = 'Agenda não carregou? Abrir em nova aba';
       } else {
-        document.getElementById('okTexto').textContent = 'Um especialista retorna em até um dia útil para combinar a conversa.';
+        document.getElementById('okTexto').textContent = 'Um especialista retorna em até um dia útil para combinar o seu diagnóstico.';
       }
       const numero = (d && d.whatsapp) || whatsComercial;
       const wa = document.getElementById('wa');
@@ -296,7 +296,7 @@
       document.getElementById('cardForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
       erro.textContent = 'Não foi possível enviar agora (' + e.message + '). Tente novamente em instantes.'; erro.style.display = 'block';
-      btn.disabled = false; btn.innerHTML = 'Solicitar conversa <span class="seta">→</span>';
+      btn.disabled = false; btn.innerHTML = 'Quero meu diagnóstico <span class="seta">→</span>';
     }
   }
 </script>

@@ -185,7 +185,8 @@ function normalizeLead(body) {
     company:   body.company || body.company_name || body.empresa || body.field_data?.find(f => f.name === 'company_name')?.values?.[0] || '',
     job_title: body.job_title || body.cargo || body.title || body.field_data?.find(f => f.name === 'job_title')?.values?.[0] || '',
     source:    body.source || body.ad_name || body.campaign_name || body.form_name || 'Campanha Digital',
-    interesse: String(body.interesse || body.desafio || '').substring(0, 200) || null, // v3.32: desafio escolhido na página de captura
+    // v3.60: a oferta que trouxe o lead (diagnóstico gratuito) vai junto do desafio — aparece no nome do negócio no HubSpot
+    interesse: ([body.oferta === 'diagnostico_gratuito' ? 'Diagnóstico gratuito' : '', String(body.interesse || body.desafio || '')].filter(Boolean).join(' · ')).substring(0, 200) || null, // v3.32: desafio escolhido na página de captura
     timestamp: new Date().toISOString(),
   };
 
