@@ -72,7 +72,9 @@ REDES-ALVO: ${redes.join(', ')}
 Gere exatamente este JSON:
 {"posts":[{"titulo":"nome curto da publicação","texto":"copy completa pronta para publicar (max 110 palavras, terminando com o convite para o diagnóstico gratuito)","dia_semana":"segunda|terca|quarta|quinta|sexta","hora":"HH:MM","justificativa":"1 frase: por que este slot/tema converte (cite a métrica ou benchmark)","prompt_imagem":"cena visual em inglês 40-60 palavras, SEM texto na imagem, dark navy #1A3A8F + electric blue #4F7CFF, ambiente corporativo com dados/dashboards"}]}
 Regras: 3 posts, dias/horários DIFERENTES entre si, temas complementares (dor → prova/case → convite direto ao diagnóstico gratuito), e TODOS terminam com a oferta do diagnóstico gratuito.`;
-        const rr = await claude(sys, usr, 2400);
+        // v3.64: 3 posts completos + oferta levam ~30s — com o limite antigo de 25s o 2º lote caía e a autocampanha
+        // de 7 dias gerava só os 3 primeiros posts (1 dia). Agora 52s (a função tem 60s).
+        const rr = await claude(sys, usr, 3000, 52000);
         const plano = parseJSON(rr);
         if (!plano.posts?.length) throw new Error('IA não retornou posts válidos' + (plano.raw ? ' (resposta truncada)' : ''));
         return { posts: plano.posts.slice(0, 3) };
@@ -909,13 +911,13 @@ async function agendarHubSpot({ tipo, titulo, data, responsavel, descricao }) {
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
-async function claude(system, user, maxTokens = 1000) {
+async function claude(system, user, maxTokens = 1000, limiteMs = 25000) {
   const t0 = Date.now();
   let r, d;
   // v1.6.1: timeout de 25s por chamada — se a Anthropic pendurar, falha COM MENSAGEM
   // em vez de segurar a função até o Vercel matar em 60s (504 mudo)
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 25000);
+  const timer = setTimeout(() => ctrl.abort(), limiteMs); // v3.64: limite por chamada (o plano de posts precisa de mais tempo)
   try {
     r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -927,8 +929,8 @@ async function claude(system, user, maxTokens = 1000) {
     clearTimeout(timer);
     const ms = Date.now() - t0;
     if (fetchErr.name === 'AbortError') {
-      console.error('[claude TIMEOUT 25s]', { model: MODEL, ms });
-      throw new Error(`Anthropic não respondeu em 25s (modelo: ${MODEL}). API lenta ou modelo pesado — verifique a envvar CLAUDE_MODEL no Vercel (recomendado: claude-sonnet-4-6 ou vazio).`);
+      console.error('[claude TIMEOUT]', { model: MODEL, ms, limiteMs });
+      throw new Error(`Anthropic não respondeu em ${Math.round(limiteMs / 1000)}s (modelo: ${MODEL}). API lenta ou modelo pesado — verifique a envvar CLAUDE_MODEL no Vercel (recomendado: claude-sonnet-4-6 ou vazio).`);
     }
     console.error('[claude fetch fail]', fetchErr.message);
     throw new Error('Falha ao conectar à API Anthropic: ' + fetchErr.message);
