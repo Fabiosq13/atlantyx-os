@@ -123,6 +123,10 @@ async function handler(req, res) {
     if (action === 'save_campanha') {
       const camp = value;
       if (!camp?.id) return res.status(400).json({ error: 'id obrigatório' });
+      // v3.58: campanha excluída não volta — antes outra aba/navegador com cópia local re-gravava a campanha
+      // ("re-sincronizada") e o rascunho apagado reaparecia
+      if (!camp._restaurar) { const ex = await sql`SELECT 1 FROM kv_store WHERE key = ${'campanha_excluida:' + camp.id} LIMIT 1`;
+        if (ex.length) return res.status(200).json({ success: true, id: camp.id, ignorada: 'campanha excluída' }); }
       // v1.43 (report DEV, itens 1 e 2): o canal era gravado como `camp.canal||''` sem validação —
       // campanha podia ser APROVADA e ATIVADA com canal vazio ou com lixo tipo "?".
       const CANAIS_VALIDOS = ['LinkedIn', 'Instagram', 'Facebook', 'Google Ads', 'E-mail', 'WhatsApp', 'Todos os canais', 'Todos', 'LinkedIn + Instagram']; // v3.23: 'Todos' (auto-campanha) e 'LinkedIn + Instagram' eram recusados
@@ -158,7 +162,8 @@ async function handler(req, res) {
     if (action === 'list_campanhas') {
       const r = await sql`SELECT data, data_inicio, data_fim, ativa, redes_ativas, atualizado_em
         FROM campanhas ORDER BY atualizado_em DESC`;
-      return res.status(200).json({ success: true, campanhas: r.map(x => Object.assign({}, x.data || {}, {
+      let exc = []; try { exc = await sql`SELECT key FROM kv_store WHERE key LIKE 'campanha_excluida:%' AND updated_at > NOW() - INTERVAL '180 days'`; } catch (_) {}
+      return res.status(200).json({ success: true, excluidas: exc.map(x => String(x.key).substring(18)), campanhas: r.map(x => Object.assign({}, x.data || {}, {
         data_inicio: x.data_inicio ? String(x.data_inicio).split('T')[0] : null,
         data_fim: x.data_fim ? String(x.data_fim).split('T')[0] : null,
         ativa: x.ativa,
@@ -168,6 +173,7 @@ async function handler(req, res) {
     }
     if (action === 'delete_campanha') {
       await sql`DELETE FROM campanhas WHERE id = ${key}`;
+      await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${'campanha_excluida:' + key}, ${JSON.stringify({ em: new Date().toISOString() })}, NOW()) ON CONFLICT (key) DO UPDATE SET updated_at = NOW()`;
       return res.status(200).json({ success: true });
     }
     // Liga/desliga campanha mantendo histórico

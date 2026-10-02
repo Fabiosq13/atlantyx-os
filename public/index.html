@@ -3974,15 +3974,22 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <input class="fi" id="ac_tema" value="dados, IA aplicada e eficiencia operacional para grandes empresas"/></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn" onclick="acPlanejar()" id="btnAcPlan">&#128269; Ver horarios vagos</button>
-        <button class="btn btn-p" onclick="acExecutar(true)" id="btnAcRasc">&#9998; Gerar rascunhos</button>
-        <button class="btn btn-gn" onclick="acExecutar(false)" id="btnAcExec">&#128228; Gerar e agendar</button>
-        <button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red);" onclick="acCorrigirImagens()" title="Corrige posts agendados cuja imagem vai expirar antes da publicacao">&#128295; Corrigir imagens agendadas</button>
-    <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="acAuditoria()" title="Por que nao ha leads? Cruza publicacoes, erros e capturas">&#128269; Auditoria do funil</button>
-    <button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red);" onclick="acDiagnostico()" title="Testa Metricool, IA, gerador de imagem, JPEG, fontes e a fila — e diz o que corrigir">&#129658; Diagnostico</button>
-    <button class="btn" style="font-size:10px;" onclick="acVerFila()" title="Andamento e resultado da fila em segundo plano">&#128203; Ver fila</button>
-    <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="acCriarCampanhas()" title="Salva os posts prontos da fila como campanhas em rascunho — nao posta no Metricool">&#128190; Criar campanhas (sem postar)</button>
-    <button class="btn" style="font-size:10px;color:#e1306c;border-color:#e1306c;" onclick="acGerarStory()" title="Gera um Story do Instagram com oferta, QR code e link de captura">&#128247; Story com link</button>
-    <button class="btn" style="font-size:10px;margin-left:auto;" onclick="acSugerirHorarios()">&#128161; Sugerir horarios pelos meus dados</button>
+        <button class="btn btn-p" onclick="acExecutar(true)" id="btnAcRasc" title="Gera os posts e deixa no Kanban em Gerado para revisar — nada vai ao Metricool">&#9998; Gerar rascunhos</button>
+        <button class="btn btn-gn" onclick="acExecutar(false)" id="btnAcExec" title="Gera e já agenda no Metricool nas redes marcadas">&#128228; Gerar e agendar</button>
+        <button class="btn" style="font-size:10px;margin-left:auto;" onclick="acSugerirHorarios()">&#128161; Sugerir horarios pelos meus dados</button>
+      </div>
+      <!-- v3.58: ferramentas separadas das ações principais -->
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);">
+        <span style="font-size:9.5px;color:var(--t3);font-family:var(--M);text-transform:uppercase;margin-right:4px;">Ferramentas</span>
+        <button class="btn" style="font-size:10px;" onclick="acDiagnostico()" title="Testa Metricool, IA, gerador de imagem, JPEG, fontes e a fila — e diz o que corrigir">&#129658; Diagnostico</button>
+        <button class="btn" style="font-size:10px;" onclick="acAuditoria()" title="Por que nao ha leads? Cruza publicacoes, erros e capturas">&#128269; Auditoria do funil</button>
+        <button class="btn" style="font-size:10px;" onclick="acCorrigirImagens()" title="Corrige posts agendados cuja imagem vai expirar antes da publicacao">&#128295; Corrigir imagens agendadas</button>
+        <button class="btn" style="font-size:10px;color:#e1306c;border-color:#e1306c;" onclick="acGerarStory()" title="Gera um Story do Instagram com oferta, QR code e link de captura">&#128247; Story com link</button>
+        <details style="margin-left:auto;font-size:10px;"><summary style="cursor:pointer;color:var(--t3);" title="Modo antigo, em que o servidor gerava os posts numa fila">Fila do servidor (modo antigo)</summary>
+          <div style="display:flex;gap:6px;margin-top:6px;">
+            <button class="btn" style="font-size:10px;" onclick="acVerFila()" title="Andamento e resultado da fila em segundo plano">&#128203; Ver fila</button>
+            <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="acCriarCampanhas()" title="Salva os posts prontos da fila como campanhas em rascunho — nao posta no Metricool">&#128190; Criar campanhas (sem postar)</button>
+          </div></details>
       </div>
     </div>
   </div>
@@ -3990,7 +3997,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- v3.41: lista das autocampanhas geradas -->
   <div class="panel" style="margin-top:12px;">
     <div class="ph"><div class="pt">📋 Autocampanhas geradas</div><span style="font-size:10px;color:var(--t2);" id="acListaResumo"></span>
-      <button class="btn btn-g" style="font-size:10px;margin-left:auto;" onclick="acListar(true)">↻ Atualizar</button></div>
+      <button class="btn" style="font-size:10px;margin-left:auto;color:var(--red);border-color:var(--red);" onclick="acLimparRascunhos()" title="Apaga as autocampanhas que não têm nada agendado no Metricool, os cards delas no Kanban e os rascunhos da fila">🧹 Limpar rascunhos</button>
+      <button class="btn btn-g" style="font-size:10px;" onclick="acListar(true)">↻ Atualizar</button></div>
     <div class="pb" id="acLista"><div style="font-size:11px;color:var(--t3);padding:12px;text-align:center;">Carregando...</div></div>
   </div>
 </div>
@@ -12033,8 +12041,9 @@ function getCampanhasLocal() {
   try { return JSON.parse(localStorage.getItem('atx:campanhas') || '[]'); } catch { return []; }
 }
 
+let _bancoCampanhasOk = false;
 async function carregarCampanhasDB() {
-  let campanhas = [];
+  let campanhas = []; _bancoCampanhasOk = false;
   try {
     const r = await fetch('/api/db', {
       method: 'POST',
@@ -12042,12 +12051,16 @@ async function carregarCampanhasDB() {
       body: JSON.stringify({ action: 'list_campanhas' })
     });
     const d = await r.json();
-    if (d.success && Array.isArray(d.campanhas) && d.campanhas.length) {
+    if (d.success && Array.isArray(d.campanhas)) {
       // v1.6.7: MERGE banco + localStorage por id — campanhas que só existem
       // localmente (save falhou num 504 etc.) NÃO são mais descartadas
-      const locais = getCampanhasLocal();
+      // v3.58: …exceto as EXCLUÍDAS (antes voltavam da cópia local e eram re-gravadas no banco), e banco vazio
+      // agora é resposta válida (antes caía no cache local e ressuscitava tudo)
+      const excl = new Set(d.excluidas || []);
+      const locais = getCampanhasLocal().filter(c => c && c.id && !excl.has(c.id));
       const idsBanco = new Set(d.campanhas.map(c => c.id));
       const orfas = locais.filter(c => c && c.id && !idsBanco.has(c.id));
+      _bancoCampanhasOk = true;
       campanhas = d.campanhas.concat(orfas);
       try { localStorage.setItem('atx:campanhas', JSON.stringify(campanhas)); } catch(e) {}
       addLog('ok', '[Campanhas] ' + d.campanhas.length + ' do Neon' + (orfas.length ? ' + ' + orfas.length + ' local(is) não sincronizada(s)' : ''));
@@ -12063,8 +12076,8 @@ async function carregarCampanhasDB() {
     addLog('warn', '[Campanhas] Banco offline: ' + e.message + ' — verifique DATABASE_URL/Neon no Vercel');
   }
 
-  // Sempre garante fallback do localStorage
-  if (!campanhas.length) {
+  // Sempre garante fallback do localStorage (só se o banco NÃO respondeu)
+  if (!campanhas.length && !_bancoCampanhasOk) {
     campanhas = getCampanhasLocal();
     addLog('info', '[Campanhas] Usando cache local: ' + campanhas.length + ' campanhas');
   }
@@ -21112,6 +21125,34 @@ async function acListar(forcar) {
         + '<button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;color:var(--red);" onclick="acExcluir(\'' + c.id + '\')" title="Excluir a autocampanha">🗑</button></td></tr>';
     }).join('') + '</table></div>';
 }
+// v3.58: limpa de uma vez os rascunhos — autocampanhas sem nada agendado no Metricool, os cards delas no Kanban
+// e os rascunhos da fila do servidor. O que está agendado ou já publicado não é tocado.
+async function acLimparRascunhos() {
+  try { await carregarCampanhasDB(); await carregarPublicacoes(); if (!(kanbanPecas || []).length && typeof carregarKanbanDoBanco === 'function') await carregarKanbanDoBanco(); } catch (_) {}
+  const temAgenda = id => (_publicacoes || []).some(p => p.campanhaId === id && p.metodo === 'metricool' && p.metricool_id && !p.nao_encontrado);
+  const alvo = (_todasCampanhas || []).filter(_ehAutocampanha).filter(c => !temAgenda(c.id));
+  const pecasAlvo = (kanbanPecas || []).filter(p => alvo.some(c => c.id === p.campanhaId) && !/Publicado|Agendado/i.test(p.status || ''));
+  let filaN = 0; try { const st = await mcApi('fila_status', { todos: true }); filaN = (st.itens || []).filter(x => !x.metricool_id).length; } catch (_) {}
+  if (!alvo.length && !pecasAlvo.length && !filaN) { toast('Não há rascunhos para limpar', 'success'); return; }
+  if (!confirm('Limpar rascunhos:\n\n• ' + alvo.length + ' autocampanha(s) sem nada agendado no Metricool\n• ' + pecasAlvo.length + ' card(s) delas no Kanban\n• ' + filaN + ' rascunho(s)/pendente(s) da fila do servidor\n\n' + alvo.slice(0, 8).map(c => '– ' + (c.nome || c.id)).join('\n') + (alvo.length > 8 ? '\n(e mais ' + (alvo.length - 8) + ')' : '') + '\n\nO que está agendado ou publicado não é tocado. Continuar?')) return;
+  let ok = 0; const falhas = [];
+  for (const c of alvo) {
+    try { const r = await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ action: 'delete_campanha', key: c.id }) }); const d = await r.json().catch(() => ({})); if (d.success === false) throw new Error(d.error || 'falha'); ok++; }
+    catch (e) { falhas.push((c.nome || c.id) + ': ' + e.message); }
+  }
+  const apagadas = new Set(alvo.filter(c => !falhas.some(f => f.startsWith((c.nome || c.id) + ':'))).map(c => c.id));
+  _todasCampanhas = (_todasCampanhas || []).filter(c => !apagadas.has(c.id));
+  try { localStorage.setItem('atx:campanhas', JSON.stringify(_todasCampanhas)); } catch (_) {}
+  if (pecasAlvo.length) { const ids = new Set(pecasAlvo.filter(p => apagadas.has(p.campanhaId)).map(p => p.id)); kanbanPecas = kanbanPecas.filter(p => !ids.has(p.id)); try { renderKanban(); await salvarKanbanNoBanco(); } catch (_) {} }
+  if (filaN) { try { await mcApi('fila_limpar', { modo: 'nao_agendados' }); } catch (e) { falhas.push('fila: ' + e.message); } }
+  if (campAtiva && apagadas.has(campAtiva.id)) { campAtiva = null; window._campanhaAtual = null; }
+  try { filtrarCampanhas(); } catch (_) {}
+  addLog('info', '[Autocampanha] Rascunhos limpos: ' + ok + ' autocampanha(s), ' + pecasAlvo.length + ' card(s), fila ' + filaN);
+  toast(ok + ' autocampanha(s) e ' + pecasAlvo.length + ' card(s) removidos' + (falhas.length ? ' · ' + falhas.length + ' falha(s)' : ''), falhas.length ? 'error' : 'success');
+  if (falhas.length) alert('Não removidos:\n' + falhas.join('\n'));
+  const box = document.getElementById('acResultado'); if (box) box.innerHTML = '';
+  acListar();
+}
 async function acEditar(id) {
   window._campVoltarPara = { pagina: 's2auto' }; // v3.50: "← Voltar" volta para a Autocampanha
   nav('s2campanha', document.querySelector('.sbi[onclick*="s2campanha"]'));
@@ -21122,15 +21163,12 @@ async function acExcluir(id) {
   const c = (_todasCampanhas || []).find(x => x.id === id); if (!c) return;
   if (!confirm('Excluir a autocampanha "' + (c.nome || '') + '"? Não dá para desfazer.')) return;
   const pecas = (typeof kanbanPecas !== 'undefined' ? kanbanPecas : []).filter(p => p.campanhaId === id);
-  const pubs = (_publicacoes || []).filter(p => p.campanhaId === id && p.metricool_id && !(p.status === 'publicado' || new Date(p.agendado_para || p.data) < new Date()));
+  const pubs = (_publicacoes || []).filter(p => p.campanhaId === id && _pubCancelavel(p));
   const idsMc = [...new Set(pubs.map(p => p.metricool_id))];
   const cancelar = idsMc.length && confirm(idsMc.length + ' post(s) desta autocampanha ainda estão AGENDADOS no Metricool.\n\nOK = cancelar também esses agendamentos\nCancelar = manter os agendamentos');
   const tirarCards = pecas.length && confirm('Excluir também os ' + pecas.length + ' card(s) desta autocampanha no Kanban?');
   let falhasMc = 0;
-  if (cancelar) for (const mid of idsMc) {
-    try { const r = await fetch('/api/metricool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'excluir', payload: { metricool_id: mid } }) }); const d = await r.json(); if (!d.success) falhasMc++; } catch (_) { falhasMc++; }
-  }
-  if (cancelar) { _publicacoes.filter(p => p.campanhaId === id && idsMc.includes(p.metricool_id)).forEach(p => _pubMarcarExcluida(p.id)); _publicacoes = _publicacoes.filter(p => !(p.campanhaId === id && idsMc.includes(p.metricool_id))); try { await salvarPublicacoes(); renderCalendarioKanban(); } catch (_) {} }
+  if (cancelar) { const rc = await cancelarPubsNoMetricool(pubs); falhasMc = rc.falhas.length; } // v3.58: mesma rotina do Kanban
   try { const r = await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ action: 'delete_campanha', key: id }) }); const d = await r.json().catch(() => ({})); if (d.success === false) throw new Error(d.error || 'falha'); }
   catch (e) { return toast('Não consegui excluir a campanha: ' + e.message, 'error'); }
   _todasCampanhas = (_todasCampanhas || []).filter(x => x.id !== id);
@@ -27212,7 +27250,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.57] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.58] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27228,7 +27266,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.57';
+window.__ATX_BUILD_ID__ = 'ATX-v3.58';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
