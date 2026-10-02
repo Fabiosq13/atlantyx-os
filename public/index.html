@@ -3950,8 +3950,9 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;margin-right:8px;" title="Gera também Stories (texto gravado na arte), Reel (vídeo) e Carrossel, com imagens, e agenda"><input type="checkbox" id="ac_stories" checked/> <b>+ Stories, Reel e Carrossel</b></label>
         <span style="font-weight:600;">Redes:</span>
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" class="acRede" value="linkedin" checked/> LinkedIn</label>
-        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" class="acRede" value="instagram"/> Instagram</label>
-        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" class="acRede" value="facebook"/> Facebook</label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" class="acRede" value="instagram" checked/> Instagram</label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" class="acRede" value="facebook" checked/> Facebook</label>
+        <button class="btn" style="font-size:10px;margin-left:6px;" onclick="acCompletarRedes()" title="Para os posts já agendados só no LinkedIn: agenda o mesmo post no Instagram (se tiver imagem) e no Facebook, no mesmo horário">➕ Completar redes nos já agendados</button>
       </div>
       <!-- v3.32: para onde o clique vai — sem depender do link na bio -->
       <div style="background:var(--bg3);border:1px solid var(--bd2);border-radius:8px;padding:10px 12px;margin:0 0 10px;font-size:10.5px;line-height:1.6;">
@@ -21020,7 +21021,10 @@ function _acCfg() {
     blog_id: localStorage.getItem('atx:metricool_blog_id') || null };
 }
 // v3.32: preenche a configuração de chamada para ação ao abrir a Autocampanha
-function _acCtaInit() { const c = ctaCfg(); const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+// v3.55: padrão = as três redes; a escolha fica salva neste navegador
+document.addEventListener('change', e => { if (e.target && e.target.classList && e.target.classList.contains('acRede')) { try { localStorage.setItem('atx:ac:redes', JSON.stringify([...document.querySelectorAll('.acRede:checked')].map(c => c.value))); } catch (_) {} } });
+function _acRedesInit() { try { const v = JSON.parse(localStorage.getItem('atx:ac:redes') || 'null'); if (Array.isArray(v) && v.length) document.querySelectorAll('.acRede').forEach(c => { c.checked = v.includes(c.value); }); } catch (_) {} }
+function _acCtaInit() { _acRedesInit(); const c = ctaCfg(); const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
   set('acCtaDestino', c.destino); set('acCtaIg', c.ig); set('acCtaPalavra', c.palavra); set('acCtaWhats', c.whats); _ctaPreview(); const hb = document.getElementById('acBioHub'); if (hb) hb.textContent = location.origin + '/bio'; }
 document.addEventListener('DOMContentLoaded', () => setTimeout(_acCtaInit, 300));
 // v3.41: data de início (padrão amanhã) e lista das autocampanhas geradas, com editar e excluir
@@ -21255,7 +21259,7 @@ async function acExecutar(rascunho) {
     if (!confirm(`${rascunho ? 'Gerar como RASCUNHO' : 'Gerar e AGENDAR no Metricool'}: ${vagos.length} post(s) nos horários vagos de ${c.dias} dia(s) a partir de ${(vagos[0]?.data || '').split('-').reverse().join('/')}.\n\n`
       + `Usa o mesmo processo do botão Auto-campanha do Kanban: plano da IA com as métricas do Metricool, ${comImagem ? 'imagem por post, ' : ''}campanha em "Minhas Campanhas" e peças no Kanban`
       + `${rascunho ? ' (em Gerado, para você revisar — nada vai ao Metricool)' : ' já agendadas'}.${formatos ? '\n+ Stories, Reel e Carrossel no final.' : ''}\n\nLeva cerca de ${minutos} min — mantenha a aba aberta. Continuar?`)) { box.innerHTML = ''; return; }
-    const r = await gerarCampanhaAutomatica({ slots: vagos, rascunho: !!rascunho, tema: c.tema, redes: c.redes, comImagem, formatos, onProgress: prog });
+    const r = await gerarCampanhaAutomatica({ slots: vagos, rascunho: !!rascunho, tema: c.tema, redes: c.redes, comImagem, formatos, onProgress: prog, pularFds: c.pular_fim_de_semana });
     if (!r) throw new Error('a geração foi interrompida');
     const pecas = r.pecas || [];
     const semImg = pecas.filter(p => !/^https?:/.test(p.design || '')).length;
@@ -21276,6 +21280,51 @@ async function acExecutar(rascunho) {
   } catch (e) {
     box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);padding:14px;font-size:11.5px;">Erro: ${String(e.message).replace(/</g,'&lt;')}${e.dica ? '<br><span style="color:var(--t3);">' + e.dica + '</span>' : ''}</div></div>`;
   } finally { if (btn) { btn.disabled = false; btn.textContent = txtBtn; } window._acRodando = false; try { localStorage.removeItem('atx:ac:rodando'); } catch (_) {} }
+}
+// v3.55: completa Instagram (com imagem) e Facebook nos posts que já estão agendados só no LinkedIn —
+// mesmo texto, mesma imagem e mesmo horário; cada rede com o próprio link/UTM e o próprio id no Metricool
+async function acCompletarRedes() {
+  try {
+    await carregarPublicacoes();
+    if (!(kanbanPecas || []).length && typeof carregarKanbanDoBanco === 'function') { try { await carregarKanbanDoBanco(); } catch (_) {} }
+    const alvoRedes = [...document.querySelectorAll('.acRede:checked')].map(c => c.value).filter(r => r !== 'linkedin');
+    if (!alvoRedes.length) { toast('Marque Instagram e/ou Facebook nas redes', 'error'); return; }
+    const limite = Date.now() + 20 * 60000;
+    const ativos = (_publicacoes || []).filter(p => p.metodo === 'metricool' && !p.nao_encontrado && p.status !== 'erro' && new Date(p.agendado_para || p.data).getTime() > limite);
+    const ehFormato = p => /^\[(STORY|REEL|CARROSSEL)\]/.test(p.texto || '');
+    const grupos = new Map();
+    ativos.filter(p => !ehFormato(p)).forEach(p => { const k = (p.pecaId || p.metricool_id) + '|' + new Date(p.agendado_para || p.data).toISOString().substring(0, 16); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(p); });
+    const tarefas = [], semPeca = [];
+    for (const lista of grupos.values()) {
+      const li = lista.find(p => p.rede === 'linkedin'); if (!li) continue;
+      const pc = (kanbanPecas || []).find(k => k.id === li.pecaId);
+      if (!pc || !pc.copy) { semPeca.push(li); continue; }
+      const img = /^https?:/.test(pc.design || '') ? pc.design : (/^https?:/.test(li.imagem_url || '') ? li.imagem_url : null);
+      alvoRedes.forEach(rd => { if (lista.some(p => p.rede === rd)) return; if (rd === 'instagram' && !img) return; tarefas.push({ rd, li, pc, img }); });
+    }
+    if (!tarefas.length) { alert('Nada para completar: os posts agendados já estão nas redes marcadas' + (semPeca.length ? ` (${semPeca.length} post(s) sem a peça no Kanban ficaram de fora)` : '') + '.'); return; }
+    const resumo = tarefas.slice(0, 12).map(t => '• ' + new Date(t.li.agendado_para).toLocaleString('pt-BR').substring(0, 17) + ' ' + t.rd + ' — ' + (t.pc.titulo || '').substring(0, 45)).join('\n');
+    if (!confirm(`Agendar ${tarefas.length} post(s) no Metricool, no mesmo horário dos posts do LinkedIn:\n\n${resumo}${tarefas.length > 12 ? '\n(e mais ' + (tarefas.length - 12) + ')' : ''}${semPeca.length ? `\n\n${semPeca.length} post(s) sem a peça no Kanban ficam de fora.` : ''}\n\nContinuar?`)) return;
+    let ok = 0; const falhas = [];
+    for (const [i, t] of tarefas.entries()) {
+      toast(`Agendando ${i + 1}/${tarefas.length}...`, 'success');
+      const camp = t.pc.campanhaId || t.li.campanhaId || null;
+      const lk = t.rd === 'instagram' ? '' : comUtm(linkDestinoPadrao(), t.rd, camp, 'post');
+      const tx = t.rd === 'instagram' ? _semBio(t.pc.copy) + '\n\n' + textoLinkBio(camp) : t.pc.copy + '\n\n👉 Agende uma conversa:\n' + lk;
+      try {
+        const r = await fetch('/api/metricool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'publicar', payload: { texto: tx, redes: [t.rd], data_hora: t.li.agendado_para, imagem_url: t.img, encurtar_link: t.rd !== 'instagram' } }) });
+        const d = await r.json().catch(() => ({ success: false, error: 'HTTP ' + r.status }));
+        if (!d.success) throw new Error(d.error || 'falha');
+        registrarPublicacao({ id: t.pc.id, campanhaId: camp, titulo: t.pc.titulo }, t.rd, tx, 'metricool', d.metricool_id, lk, t.li.agendado_para);
+        const reg = _publicacoes[_publicacoes.length - 1]; if (reg && t.img) reg.imagem_url = t.img;
+        t.pc.redes_agendadas = [...new Set([...(t.pc.redes_agendadas || ['linkedin']), t.rd])];
+        ok++; await salvarPublicacoes();
+      } catch (e) { falhas.push(t.rd + ' ' + new Date(t.li.agendado_para).toLocaleString('pt-BR').substring(0, 17) + ': ' + e.message); }
+    }
+    try { salvarKanbanNoBanco(); } catch (_) {} try { renderCalendarioKanban(); } catch (_) {}
+    toast(`${ok} post(s) agendado(s)` + (falhas.length ? ` · ${falhas.length} falha(s)` : ''), falhas.length ? 'error' : 'success');
+    if (falhas.length) alert('Não agendados:\n' + falhas.join('\n'));
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
 async function acCorrigirImagens() {
   try {
@@ -25922,7 +25971,10 @@ async function limparPubsForaDoMetricool() {
 }
 
 // ---------- AUTO-CAMPANHA IA (v1.7) -----------------------------------------
+// v3.55: Stories/Reel/Carrossel respeitam "pular sáb/dom" (antes o Reel caía no sábado e o Carrossel no domingo)
+function _fdsPular(d, pular) { const x = new Date(d); if (!pular) return x; while (x.getDay() === 0 || x.getDay() === 6) x.setDate(x.getDate() + 1); return x; }
 async function gerarCampanhaAutomatica(opts = {}) {
+  window._acDiaReel = null; window._acDiaStories = null;
   // v2.94: a Autocampanha (7 dias) usa ESTA mesma função, passando os horários vagos do período.
   // Sem opts, o comportamento é o do botão do Kanban (3 posts), idêntico ao de antes.
   const _viaAc = Array.isArray(opts.slots) && opts.slots.length > 0;
@@ -26113,7 +26165,7 @@ async function gerarCampanhaAutomatica(opts = {}) {
         if (campAtiva.stories.every(x => x.imagem_composta)) {
           const okc = true;
           if (okc && temMc2) {
-            let dS = new Date(base); dS.setHours(18, 0, 0, 0); if (dS <= new Date()) dS.setDate(dS.getDate() + 1);
+            let dS = new Date(base); dS.setHours(18, 0, 0, 0); if (dS <= new Date()) dS.setDate(dS.getDate() + 1); dS = _fdsPular(dS, opts.pularFds); window._acDiaStories = dS.getTime();
             window._autoAgendaStories = _localDT(dS);
             await publicarStories();
           } else if (!temMc2) addLog('info', '[Auto-IA] Stories prontos (Metricool off — publique manualmente com as artes compostas)');
@@ -26130,7 +26182,7 @@ async function gerarCampanhaAutomatica(opts = {}) {
           if (window._reelBlob) {
             await hospedarReel();
             if (campAtiva.reel.video_url && temMc2) {
-              let dR = new Date(base + 864e5); dR.setHours(12, 0, 0, 0); if (dR <= new Date()) dR.setDate(dR.getDate() + 1);
+              let dR = new Date(base + 864e5); dR.setHours(12, 0, 0, 0); if (dR <= new Date()) dR.setDate(dR.getDate() + 1); dR = _fdsPular(dR, opts.pularFds); window._acDiaReel = dR.getTime();
               window._autoAgendaReel = _localDT(dR);
               await publicarReel();
             }
@@ -26148,7 +26200,7 @@ async function gerarCampanhaAutomatica(opts = {}) {
           if (campAtiva.carrossel.slides.every(x => x.imagem_composta)) {
             const okc = true;
             if (okc && temMc2) {
-              let dC = new Date(base + 2 * 864e5); dC.setHours(12, 0, 0, 0); if (dC <= new Date()) dC.setDate(dC.getDate() + 1);
+              let dC = new Date(base + 2 * 864e5); dC.setHours(12, 0, 0, 0); if (dC <= new Date()) dC.setDate(dC.getDate() + 1); dC = _fdsPular(dC, opts.pularFds); if (window._acDiaReel && dC.getTime() <= window._acDiaReel) { dC = new Date(window._acDiaReel + 864e5); dC = _fdsPular(dC, opts.pularFds); }
               window._autoAgendaCarr = _localDT(dC);
               await publicarCarrossel();
             } else if (!temMc2) addLog('info', '[Auto-IA] Carrossel pronto (Metricool off — publique manualmente com as artes compostas)');
@@ -27107,7 +27159,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.54] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.55] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27123,7 +27175,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.54';
+window.__ATX_BUILD_ID__ = 'ATX-v3.55';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

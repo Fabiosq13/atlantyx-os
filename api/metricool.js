@@ -588,7 +588,7 @@ async function autoCampanhaConfig({ salvar } = {}) {
     horarios: (salvar?.horarios && Array.isArray(salvar.horarios) && salvar.horarios.length) ? salvar.horarios : HORARIOS_PADRAO,
     dias_a_frente: parseInt(salvar?.dias_a_frente) || 7,
     pular_fim_de_semana: salvar?.pular_fim_de_semana !== false,
-    redes: salvar?.redes?.length ? salvar.redes : ['linkedin'],
+    redes: salvar?.redes?.length ? salvar.redes : ['linkedin', 'instagram', 'facebook'], // v3.55: padrão = três redes
     tema_base: salvar?.tema_base || 'dados, IA aplicada e eficiência operacional para grandes empresas',
     padrao: HORARIOS_PADRAO,
   };
