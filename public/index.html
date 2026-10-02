@@ -21146,18 +21146,24 @@ async function acListar(forcar) {
   const e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const dm = v => { const x = _dia(v); return x ? x.substring(8, 10) + '/' + x.substring(5, 7) + '/' + x.substring(2, 4) : '—'; };
   box.innerHTML = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;">'
-    + '<tr style="text-align:left;color:var(--t2);font-family:var(--M);font-size:9px;text-transform:uppercase;"><th style="padding:6px;">Autocampanha</th><th style="padding:6px;">Período</th><th style="padding:6px;">Posts</th><th style="padding:6px;">Próxima publicação</th><th style="padding:6px;">Status</th><th style="padding:6px;text-align:right;">Ações</th></tr>'
+    + '<tr style="text-align:left;color:var(--t2);font-family:var(--M);font-size:9px;text-transform:uppercase;"><th style="padding:6px;">Autocampanha</th><th style="padding:6px;">Período</th><th style="padding:6px;">Posts</th><th style="padding:6px;">Próxima publicação</th><th style="padding:6px;">Situação</th><th style="padding:6px;text-align:right;">Ações</th></tr>'
     + lista.map(c => {
       const pecas = (typeof kanbanPecas !== 'undefined' ? kanbanPecas : []).filter(p => p.campanhaId === c.id);
-      const grupos = _gruposPub(_pubsDoCard(c.id)); const futuros = grupos.filter(g => !g.publicado); const prox = futuros[0];
+      // v3.61: "próxima" só o que ainda vai sair (antes mostrava data passada); período e situação vêm das publicações
+      const grupos = _gruposPub(_pubsDoCard(c.id)), agora = Date.now();
+      const futuros = grupos.filter(g => !g.publicado && !g.erro && new Date(g.quando).getTime() > agora); const prox = futuros[0];
+      const saidas = grupos.filter(g => new Date(g.quando).getTime() <= agora && !g.erro).length, falhas = grupos.filter(g => g.erro).length;
+      const datasPub = grupos.map(g => _dia(new Date(g.quando))).filter(Boolean).sort();
+      const pIni = c.data_inicio || datasPub[0] || null, pFim = c.data_fim || datasPub[datasPub.length - 1] || null;
+      const situacao = futuros.length ? '<span style="color:var(--green,#22d3a3);">em andamento</span>' : grupos.length ? '<span style="color:var(--t2);">concluída</span>' : '<span style="color:var(--gold);">' + e(c.status === 'aprovada' ? 'sem publicações' : (c.status || 'rascunho')) + '</span>';
       const nPosts = Math.max(pecas.length, (c.data?.copy?.versoes || []).length);
       const formatos = [c.stories?.length && 'Stories', c.carrossel?.slides?.length && 'Carrossel', c.reel?.slides?.length && 'Reel'].filter(Boolean).join(' · ');
       return '<tr style="border-top:1px solid var(--bd);">'
-        + '<td style="padding:7px 6px;"><b>' + e(c.nome || 'Autocampanha') + '</b><div style="font-size:10px;color:var(--t3);">criada ' + (c.criado_em ? new Date(c.criado_em).toLocaleString('pt-BR').substring(0, 16) : '—') + (formatos ? ' · ' + formatos : '') + (c.origem === 'autocampanha_kanban' ? ' · pelo Kanban' : '') + '</div></td>'
-        + '<td style="padding:7px 6px;white-space:nowrap;">' + dm(c.data_inicio) + ' → ' + dm(c.data_fim) + '</td>'
-        + '<td style="padding:7px 6px;">' + nPosts + (grupos.length ? ' <span style="color:var(--t3);">(' + grupos.length + ' agendada(s))</span>' : '') + '</td>'
+        + '<td style="padding:7px 6px;"><b>' + e(c.nome || 'Autocampanha') + '</b><div style="font-size:10px;color:var(--t3);">criada ' + (c.criado_em ? fmtDH(c.criado_em) : '—') + (formatos ? ' · ' + formatos : '') + (c.origem === 'autocampanha_kanban' ? ' · pelo Kanban' : '') + '</div></td>'
+        + '<td style="padding:7px 6px;white-space:nowrap;">' + (pIni ? dm(pIni) + ' → ' + dm(pFim) : '—') + '</td>'
+        + '<td style="padding:7px 6px;">' + nPosts + ' post(s)' + (grupos.length ? '<div style="font-size:10px;color:var(--t3);">' + grupos.length + ' publicação(ões) nas redes · ' + saidas + ' já saíram' + (futuros.length ? ' · <b style="color:var(--t2);">' + futuros.length + ' agendada(s)</b>' : '') + (falhas ? ' · <span style="color:var(--red);">' + falhas + ' com falha</span>' : '') + '</div>' : '') + '</td>'
         + '<td style="padding:7px 6px;white-space:nowrap;">' + (prox ? '<span style="cursor:pointer;color:var(--gold);text-decoration:underline dotted;" onclick="abrirDatasPub(\'' + c.id + '\',null,event)" title="Mudar datas">' + fmtDH(prox.quando) + ' ✎</span>' : '<span style="color:var(--t3);">—</span>') + '</td>'
-        + '<td style="padding:7px 6px;">' + e(c.status || 'rascunho') + (c.ativa === false ? ' · pausada' : '') + '</td>'
+        + '<td style="padding:7px 6px;">' + situacao + (c.ativa === false ? ' · pausada' : '') + '</td>'
         + '<td style="padding:7px 6px;text-align:right;white-space:nowrap;">'
         + '<button class="btn btn-p" style="font-size:9.5px;padding:3px 8px;" onclick="acEditar(\'' + c.id + '\')" title="Abre a campanha para editar textos, imagens, formatos e datas">✎ Editar</button> '
         + '<button class="btn btn-g" style="font-size:9.5px;padding:3px 8px;" onclick="abrirDatasPub(\'' + c.id + '\',null,event)" title="Datas de publicação">📅</button> '
@@ -27289,7 +27295,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.60] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.61] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27305,7 +27311,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.60';
+window.__ATX_BUILD_ID__ = 'ATX-v3.61';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
