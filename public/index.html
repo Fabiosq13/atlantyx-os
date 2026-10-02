@@ -7161,12 +7161,60 @@ async function editarPecaDoKanban(pecaId) {
   }
 }
 
+// v3.56: agendamento que ainda pode ser cancelado no Metricool
+function _pubCancelavel(x) { return !!x && x.metodo === 'metricool' && !!x.metricool_id && !x.nao_encontrado && x.status !== 'publicado' && x.status !== 'erro' && new Date(x.agendado_para || x.data).getTime() > Date.now() + 2 * 60000; }
+async function cancelarPubsNoMetricool(lista) {
+  const ids = [...new Set((lista || []).map(x => String(x.metricool_id)).filter(Boolean))];
+  let cancelados = 0; const falhas = [], fora = new Set();
+  for (const id of ids) {
+    try {
+      const r = await fetch('/api/metricool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'excluir', payload: { metricool_id: id } }) });
+      const d = await r.json().catch(() => ({ success: false, error: 'HTTP ' + r.status }));
+      if (!d.success && !/404|not found|não encontrad/i.test(d.error || '')) throw new Error(d.error || 'falha');
+      cancelados++; (_publicacoes || []).filter(x => String(x.metricool_id) === id).forEach(x => fora.add(x.id));
+    } catch (e) { const x = lista.find(y => String(y.metricool_id) === id); falhas.push((x ? new Date(x.agendado_para || x.data).toLocaleString('pt-BR').substring(0, 17) + ' ' + x.rede + ' — ' + (x.titulo || '').substring(0, 40) : id) + ': ' + e.message); }
+  }
+  if (fora.size) { fora.forEach(_pubMarcarExcluida); _publicacoes = _publicacoes.filter(x => !fora.has(x.id)); await salvarPublicacoes(); try { renderCalendarioKanban(); } catch (_) {} try { _renderDatasPublicacao(); } catch (_) {} }
+  addLog(falhas.length ? 'warn' : 'ok', '[Metricool] ' + cancelados + ' agendamento(s) cancelado(s)' + (falhas.length ? ' · falhas: ' + falhas.join(' | ') : ''));
+  return { cancelados, falhas };
+}
+// v3.56: agendamentos cuja peça foi excluída do Kanban (continuam no Metricool e seriam publicados)
+function _pubsOrfas() {
+  const pecas = (typeof kanbanPecas !== 'undefined' ? kanbanPecas : []) || []; if (!pecas.length) return [];
+  const ids = new Set(pecas.map(k => k.id)), camps = new Set(pecas.map(k => k.campanhaId).filter(Boolean));
+  return (_publicacoes || []).filter(x => {
+    if (!_pubCancelavel(x) || !x.pecaId) return false;
+    const pid = String(x.pecaId);
+    if (/^(story|carr|reel)_/.test(pid)) return !!x.campanhaId && !camps.has(x.campanhaId);
+    if (ids.has(pid)) return false;
+    if (/^peca_auto_/.test(pid)) return true;
+    return !(x.campanhaId && camps.has(x.campanhaId));
+  });
+}
+async function cancelarOrfasNoMetricool() {
+  const orf = _pubsOrfas(); if (!orf.length) { toast('Nenhum agendamento de peça excluída', 'success'); return; }
+  if (!confirm('Cancelar no Metricool ' + orf.length + ' publicação(ões) de peças que você excluiu do Kanban?\n\n' + orf.slice(0, 12).map(x => '• ' + new Date(x.agendado_para || x.data).toLocaleString('pt-BR').substring(0, 17) + ' ' + x.rede + ' — ' + (x.titulo || '').substring(0, 45)).join('\n') + (orf.length > 12 ? '\n(e mais ' + (orf.length - 12) + ')' : ''))) return;
+  const r = await cancelarPubsNoMetricool(orf);
+  toast(r.cancelados + ' agendamento(s) cancelado(s) no Metricool' + (r.falhas.length ? ' · ' + r.falhas.length + ' falha(s)' : ''), r.falhas.length ? 'error' : 'success');
+  if (r.falhas.length) alert('Não consegui cancelar:\n' + r.falhas.join('\n'));
+}
 // v1.6.4: excluir peça do kanban (e opcionalmente a campanha do banco)
 async function excluirPecaKanban(pecaId, evt) {
   if (evt) evt.stopPropagation();
   const p = kanbanPecas.find(x => x.id === pecaId);
   if (!p) return;
   if (!confirm('Excluir a peça "' + p.titulo + '" do kanban?')) return;
+  // v3.56: excluir a peça também cancela os agendamentos dela no Metricool (antes ficavam lá e eram publicados)
+  let _agend = [];
+  try { _agend = (_ehCardCampanha(p) && p.campanhaId ? (_publicacoes || []).filter(x => x.campanhaId === p.campanhaId) : pubsDaPeca(p)).filter(_pubCancelavel); } catch (_) {}
+  if (_agend.length) {
+    const qtd = new Set(_agend.map(x => x.metricool_id)).size;
+    if (confirm('Esta peça tem ' + _agend.length + ' publicação(ões) agendada(s) no Metricool:\n\n' + _agend.slice(0, 8).map(x => '• ' + new Date(x.agendado_para || x.data).toLocaleString('pt-BR').substring(0, 17) + ' ' + x.rede).join('\n') + '\n\nOK = cancelar no Metricool também (' + qtd + ' post' + (qtd > 1 ? 's' : '') + ')\nCancelar = manter agendado (vai ser publicado)')) {
+      const r = await cancelarPubsNoMetricool(_agend);
+      toast(r.cancelados + ' agendamento(s) cancelado(s) no Metricool' + (r.falhas.length ? ' · ' + r.falhas.length + ' falha(s)' : ''), r.falhas.length ? 'error' : 'success');
+      if (r.falhas.length) alert('Não consegui cancelar no Metricool:\n' + r.falhas.join('\n') + '\n\nApague esses posts direto no Metricool.');
+    }
+  }
   kanbanPecas = kanbanPecas.filter(x => x.id !== pecaId);
   const det = document.getElementById('kanbanDetalhe');
   if (det && kanbanPecaSelecionada === pecaId) det.style.display = 'none';
@@ -25792,8 +25840,12 @@ function renderCalendarioKanban() {
   const icone = { linkedin: 'in', instagram: 'ig', facebook: 'fb', whatsapp: 'wa', email: '@' };
   const cores = { linkedin: '#0a66c2', instagram: '#e1306c', facebook: '#1877f2', whatsapp: '#25d366', email: 'var(--gold)' };
   const nomesDia = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const _orfIds = new Set(_pubsOrfas().map(x => x.id));
   cal.innerHTML = '<div class="ph"><div class="pt">📅 Calendário de Publicações — próximos 14 dias</div>'
     + '<button class="btn" style="font-size:10px;" onclick="carregarPublicacoes().then(()=>{renderCalendarioKanban();return sincronizarStatusMetricool(true);})">↻ Atualizar</button></div>'
+    + (() => { const o = _pubsOrfas().length; return o ? '<div style="margin:0 12px 8px;padding:7px 10px;border:1px solid var(--gold);border-radius:6px;font-size:10px;display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+          + '<span>🗑 ' + o + ' publicação(ões) de <b>peças que você excluiu do Kanban</b> ainda estão agendadas no Metricool e <b>vão ser publicadas</b>.</span>'
+          + '<button class="btn" style="font-size:10px;white-space:nowrap;color:var(--red);" onclick="cancelarOrfasNoMetricool()">Cancelar no Metricool</button></div>' : ''; })()
     + (() => { const n = (_publicacoes || []).filter(p => p.nao_encontrado && new Date(p.agendado_para || p.data) >= hoje).length;
         return n ? '<div style="margin:0 12px 8px;padding:7px 10px;border:1px solid var(--red);border-radius:6px;font-size:10px;display:flex;justify-content:space-between;align-items:center;gap:8px;">'
           + '<span>⚠ ' + n + ' item(ns) marcados abaixo <b>não estão no Metricool</b> (excluídos, recusados ou sem a rede) e <b>não vão ser publicados</b>. Para sair, publique a peça de novo pelo card do Kanban.</span>'
@@ -25806,11 +25858,12 @@ function renderCalendarioKanban() {
           + '<div style="font-family:var(--M);font-size:9px;color:' + _corTxt((ehHoje ? 'var(--blue)' : 'var(--t3)')) + ';margin-bottom:5px;">' + nomesDia[d.getDay()] + ' ' + String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + (ehHoje ? ' · HOJE' : '') + '</div>'
           + (pubs.length ? pubs.map(p => {
               const hh = new Date(p.agendado_para || p.data);
+              const orfa = _orfIds.has(p.id);
               const sumiu = !!p.nao_encontrado, falhou = p.status === 'erro', foi = !sumiu && !falhou && _pubPublicada(p);
               const motivo = p.nao_encontrado === 'rede' ? 'O post existe no Metricool, mas SEM esta rede — não vai sair aqui'
                 : p.nao_encontrado === 'sem_id' ? 'O envio ao Metricool não foi concluído — não vai sair'
                 : sumiu ? 'Este post não está no Metricool (foi excluído ou recusado) — não vai sair' : falhou ? ('O Metricool recusou: ' + (p.erro_mc || '')) : '';
-              const sit = (sumiu ? ' · <b style="color:var(--red);">⚠ não está no Metricool</b>' : falhou ? ' · <b style="color:var(--red);">✕ falhou</b>' : foi ? ' · <span style="color:var(--green);">✓ publicado</span>' : (p.hora_corrigida_mc ? ' · <span title="Horário acertado pelo que está no Metricool">⏱</span>' : '')) + (p.origem === 'metricool' ? ' · <span style="color:var(--gold);" title="Estava no Metricool sem registro no sistema — incluído automaticamente">↧ do Metricool</span>' : '');
+              const sit = (sumiu ? ' · <b style="color:var(--red);">⚠ não está no Metricool</b>' : falhou ? ' · <b style="color:var(--red);">✕ falhou</b>' : foi ? ' · <span style="color:var(--green);">✓ publicado</span>' : (p.hora_corrigida_mc ? ' · <span title="Horário acertado pelo que está no Metricool">⏱</span>' : '')) + (orfa ? ' · <b style="color:var(--gold);" title="A peça foi excluída do Kanban, mas o post continua agendado no Metricool">🗑 peça excluída</b>' : '') + (p.origem === 'metricool' ? ' · <span style="color:var(--gold);" title="Estava no Metricool sem registro no sistema — incluído automaticamente">↧ do Metricool</span>' : '');
               return '<div style="background:var(--bg3);border-left:2px solid ' + (cores[p.rede] || 'var(--bd)') + ';border-radius:4px;padding:4px 5px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;gap:4px;' + (sumiu || falhou ? 'opacity:.75;outline:1px dashed var(--red);' : '') + '"' + (motivo ? ' title="' + _escCal(motivo) + '"' : '') + '>'
                 + '<div style="min-width:0;"><div style="font-size:9px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' + (sumiu ? 'text-decoration:line-through;' : '') + '" title="' + _escCal(p.titulo||'') + '">' + String(hh.getHours()).padStart(2,'0') + ':' + String(hh.getMinutes()).padStart(2,'0') + ' ' + _escCal(p.titulo||'') + '</div>'
                 + '<div style="font-size:9px;color:' + _corTxt((cores[p.rede]||'var(--t3)')) + ';">' + (icone[p.rede]||p.rede) + ((p.texto||'').startsWith('[STORY]') ? ' · 📱' : (p.texto||'').startsWith('[REEL]') ? ' · 🎬' : (p.texto||'').startsWith('[CARROSSEL]') ? ' · 🖼' : '') + (p.metodo==='metricool' ? ' · 🚀' : ' · ✋') + sit + '</div></div>'
@@ -27159,7 +27212,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.55] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.56] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27175,7 +27228,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.55';
+window.__ATX_BUILD_ID__ = 'ATX-v3.56';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
