@@ -1706,6 +1706,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
         </div>
         <!-- v3.35: proposta de negociação / contraproposta ao final da análise -->
         <div id="anProposta" style="display:none;padding:12px 14px;border-top:1px solid var(--bd);"></div>
+        <!-- v3.44: contraproposta com business plan -->
+        <div id="anContra" style="display:none;padding:12px 14px;border-top:1px solid var(--bd);"></div>
         <!-- v3.37: conversa com a IA sobre a ideia -->
         <div id="anChat" style="display:none;padding:12px 14px;border-top:1px solid var(--bd);"></div>
         <!-- Ações após análise -->
@@ -9167,6 +9169,7 @@ function ideiaRender() {
     + '<div class="fg"><label class="fl">Descrição completa</label><textarea class="fta" style="min-height:160px;font-size:12px;line-height:1.55;" oninput="ideiaCampo(\'desc\',this.value)">' + _ie(x.desc || x.descricao || '') + '</textarea></div>'
     + '<div class="fg"><label class="fl">Notas do fundador / decisões</label><textarea class="fta" style="min-height:60px;font-size:12px;" oninput="ideiaCampo(\'notas\',this.value)" placeholder="Observações, condições, próximos passos combinados...">' + _ie(x.notas || '') + '</textarea></div>'
     + '<div style="border-top:1px solid var(--bd);padding-top:12px;margin-top:4px;"><div style="font-family:var(--M);font-size:8.5px;text-transform:uppercase;color:var(--t2);margin-bottom:8px;">Avaliação da ideia</div>' + _ideiaResumoHtml(x) + '</div>'
+    + '<div style="margin-top:14px;">' + cpHtml('ed') + '</div>'
     + '<div style="margin-top:14px;">' + ichatHtml('ed') + '</div>'
     + '<div id="ideiaMsg" style="font-size:11px;margin-top:10px;"></div>'
     + '</div>'
@@ -9177,6 +9180,7 @@ function ideiaRender() {
     + '<button class="btn btn-g" onclick="ideiaBP()">&#128202; ' + (x.business_plan ? 'Abrir' : 'Gerar') + ' Business Plan</button>'
     + '<div style="flex:1;min-width:0;"></div><button class="btn btn-g" style="color:var(--red);" onclick="ideiaExcluirAberta()">&#128465; Excluir</button><button class="btn btn-g" onclick="ideiaFechar()">Fechar</button></div></div>';
   try { ichatRender('ed'); } catch (_) {} // v3.37
+  try { if (window._cp.ed?.bp && window._cp.ed.bp.id === x.contraproposta_bp?.id) cpRender('ed'); else if (x.contraproposta_bp?.id) cpCarregarSalva('ed', x.contraproposta_bp.id); else window._cp.ed = null; } catch (_) {} // v3.44
 }
 // v3.36: excluir pela janela da ideia
 async function ideiaExcluirAberta() {
@@ -10267,6 +10271,7 @@ async function analisarIdeia(modo) {
     window._ideiaAnalisada = { titulo, desc, origem, cat, analise, docs_texto };
     try { _anPropostaUI(true); } catch (e) { addLog('warn', '[S1-03] proposta: ' + e.message); }
     try { ichatSincronizarAnalise(); } catch (e) { addLog('warn', '[S1-03] chat: ' + e.message); }
+    try { const bx = document.getElementById('anContra'); if (bx) { bx.innerHTML = cpHtml('an'); bx.style.display = 'block'; const o = document.getElementById('cpOferta_an'); if (o && window._ideiaAnalisada?.proposta_oferta) o.value = window._ideiaAnalisada.proposta_oferta; } } catch (_) {}
 
   } catch(e) {
     if (tag) { tag.textContent = 'Erro'; tag.className = 'tag hot'; }
@@ -10500,6 +10505,128 @@ async function _ichatLevarParaIdeia(ideia) {
   if (docs.length) await _kvSet(_ichatKv(ideia.id, 'docs'), docs);
   if (p.msgs.length) { const ant = _kvParse(await _kvGet(_ichatKv(ideia.id, 'chat'))) || []; await _kvSet(_ichatKv(ideia.id, 'chat'), ant.concat(p.msgs).slice(-60)); }
   addLog('info', '[S1] Documentos e conversa da análise levados para a ideia "' + _limparTituloIdeia(ideia.titulo) + '"');
+}
+
+// ═══ v3.44: CONTRAPROPOSTA COM BUSINESS PLAN (análise da ideia e edição da ideia) ═══
+// Parte do último business plan da ideia: se não é rentável, a IA monta um novo plano que fique rentável;
+// se já é, melhora para a Atlantyx sem piorar para a outra parte. Gera relatório em PDF.
+window._cp = window._cp || {};
+const _cpE = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+const _cpR = v => v == null || isNaN(v) ? '—' : 'R$ ' + Math.round(v).toLocaleString('pt-BR');
+const _cpP = v => v == null || isNaN(v) ? '—' : (v * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+function cpHtml(k) {
+  return '<div style="border:1px solid rgba(245,166,35,.35);border-radius:10px;background:var(--bg3);padding:10px 12px;">'
+    + '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:8px;"><div style="flex:1;min-width:220px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--gold);font-weight:700;">🤝 Contraproposta com business plan</div>'
+    + '<div style="font-size:10.5px;color:var(--t2);">a IA lê o último business plan desta ideia e monta um novo: rentável se hoje não é, ou melhor para a Atlantyx se já é — sempre bom para as duas partes</div></div>'
+    + '<div><label class="fl">Com quem</label><select class="fsel" id="cpDest_' + k + '" style="width:auto;">' + ['Parceiro', 'Cliente', 'Investidor', 'Fornecedor'].map(x => '<option>' + x + '</option>').join('') + '</select></div>'
+    + '<button class="btn btn-or" style="font-size:11px;" id="cpBtn_' + k + '" onclick="cpGerar(\'' + k + '\')">🤝 Gerar contraproposta</button></div>'
+    + '<textarea class="fta" id="cpOferta_' + k + '" style="min-height:55px;font-size:11.5px;" placeholder="Cole a oferta / condições que a outra parte propôs (opcional — os documentos da ideia também são lidos)"></textarea>'
+    + '<div id="cpOut_' + k + '" style="margin-top:8px;"></div></div>';
+}
+function _cpCtx(k) {
+  if (k === 'an') {
+    const ia = window._ideiaAnalisada || {};
+    const card = (typeof S1_PIPELINE !== 'undefined' ? S1_PIPELINE : []).find(x => ia.titulo && _chaveTituloIdeia(x.titulo) === _chaveTituloIdeia(ia.titulo) && (x.stage || x.status) !== 'Arquivada');
+    return { ideia: { id: card?.id || null, titulo: ia.titulo, desc: ia.desc, analise: ia.analise ? { score: ia.analise.score, recomendacao: ia.analise.recomendacao, resumo: ia.analise.resumo_executivo, viabilidade: ia.analise.viabilidade_financeira } : null },
+      bp_id: card?.business_plan?.id || null, docs: (_ICHAT.an.docs || []), oferta: document.getElementById('cpOferta_an')?.value || ia.proposta_oferta || '' };
+  }
+  const x = _ideiaEd || {}; const a = x.analise_completa || x.analise || null;
+  return { ideia: { id: x.id, titulo: x.titulo, desc: x.desc || x.descricao, analise: a ? { score: a.score, recomendacao: a.recomendacao, resumo: a.resumo_executivo, viabilidade: a.viabilidade_financeira } : null },
+    bp_id: x.business_plan?.id || null, docs: (_ICHAT.ed.ideiaId === x.id ? _ICHAT.ed.docs : []), oferta: document.getElementById('cpOferta_ed')?.value || '' };
+}
+async function cpGerar(k) {
+  const c = _cpCtx(k); const out = document.getElementById('cpOut_' + k), btn = document.getElementById('cpBtn_' + k);
+  if (!c.ideia.titulo) return toast('Abra ou analise uma ideia primeiro', 'error');
+  if (btn) { btn.disabled = true; btn.textContent = 'Montando…'; }
+  if (out) out.innerHTML = '<div style="font-size:11px;color:var(--blue);padding:6px 0;">Lendo o business plan, a oferta e ' + c.docs.length + ' documento(s), montando a contraproposta e recalculando DRE, fluxo de caixa, TIR e VPL… (1 a 3 minutos)</div>';
+  try {
+    const d = await bpApi('contraproposta', { ideia: c.ideia, bp_id: c.bp_id, oferta: c.oferta, destinatario: document.getElementById('cpDest_' + k)?.value || 'Parceiro', docs_texto: c.docs.map(x => ({ nome: x.nome, texto: x.texto })) });
+    window._cp[k] = { bp: d.bp, base: d.base, titulo: c.ideia.titulo };
+    if (k === 'ed' && _ideiaEd) { _ideiaEd.contraproposta_bp = { id: d.bp.id, base_bp_id: d.base.id, atualizado_em: new Date().toISOString() }; const i = S1_PIPELINE.findIndex(y => String(y.id) === String(_ideiaEd.id)); if (i >= 0) S1_PIPELINE[i].contraproposta_bp = _ideiaEd.contraproposta_bp; }
+    cpRender(k); toast('Contraproposta pronta — ' + (d.bp.narrativa?.depois?.viavel ? 'plano rentável' : 'ainda não ficou rentável, veja os pontos'), d.bp.narrativa?.depois?.viavel ? 'success' : 'error');
+  } catch (e) { if (out) out.innerHTML = '<div style="color:var(--red);font-size:11px;">Não consegui montar a contraproposta: ' + _cpE(e.message) + '</div>'; }
+  if (btn) { btn.disabled = false; btn.textContent = '🤝 Gerar de novo'; }
+}
+async function cpCarregarSalva(k, id) {
+  if (!id) return; try { const d = await bpApi('obter', { id }); window._cp[k] = { bp: d.bp, base: { id: d.bp.narrativa?.base_bp_id, titulo: d.bp.narrativa?.base_titulo, indicadores: d.bp.narrativa?.antes }, titulo: (d.bp.titulo || '').replace(/^Contraproposta — /, '') }; cpRender(k); } catch (_) {}
+}
+function cpRender(k) {
+  const out = document.getElementById('cpOut_' + k); const C = window._cp[k]; if (!out || !C?.bp) return;
+  const n = C.bp.narrativa || {}; const A = n.antes || {}, D = n.depois || {};
+  const lin = (rot, a, d, fmt, melhorMaior = true) => { const sa = fmt(a), sd = fmt(d); const mel = a != null && d != null && (melhorMaior ? d > a : d < a);
+    return '<tr><td style="padding:4px 6px;">' + rot + '</td><td style="padding:4px 6px;text-align:right;">' + sa + '</td><td style="padding:4px 6px;text-align:right;font-weight:700;color:' + (mel ? 'var(--green)' : 'var(--t1)') + ';">' + sd + '</td></tr>'; };
+  const lista = (t, arr, cor) => (arr || []).length ? '<div style="margin-top:6px;"><b style="color:' + (cor || 'var(--t1)') + ';">' + t + '</b>' + arr.map(x => '<div>• ' + _cpE(x) + '</div>').join('') + '</div>' : '';
+  out.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:10px 12px;font-size:11.5px;line-height:1.55;">'
+    + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;"><b style="flex:1;">' + (n.objetivo === 'TORNAR_VIAVEL' ? 'O plano atual não era rentável — contraproposta para torná-lo rentável' : 'O plano atual já era rentável — contraproposta para melhorar para a Atlantyx') + '</b>'
+    + '<span style="font-size:10px;padding:2px 8px;border-radius:999px;background:' + (D.viavel ? 'rgba(34,211,163,.15);color:var(--green)' : 'rgba(255,77,109,.15);color:var(--red)') + ';">' + (D.viavel ? '✓ rentável' : '✕ ainda não rentável') + '</span></div>'
+    + (n.resumo_executivo ? '<div style="color:var(--t2);margin-bottom:8px;">' + _cpE(n.resumo_executivo) + '</div>' : '')
+    + '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:6px;"><tr style="color:var(--t2);font-size:9.5px;text-transform:uppercase;"><th style="text-align:left;padding:4px 6px;">Indicador (36 meses)</th><th style="text-align:right;padding:4px 6px;">Plano atual</th><th style="text-align:right;padding:4px 6px;">Contraproposta</th></tr>'
+    + lin('VPL', A.vpl, D.vpl, _cpR) + lin('TIR anual', A.tir_anual, D.tir_anual, _cpP) + lin('Payback (meses)', A.payback_meses, D.payback_meses, v => v == null ? 'não paga' : v, false)
+    + lin('Exposição máxima de caixa', A.exposicao_maxima_caixa, D.exposicao_maxima_caixa, _cpR, false) + lin('Receita total', A.receita_total, D.receita_total, _cpR) + lin('Lucro líquido total', A.lucro_liquido_total, D.lucro_liquido_total, _cpR)
+    + '<tr><td style="padding:4px 6px;">Rentável?</td><td style="padding:4px 6px;text-align:right;">' + (A.viavel ? 'sim' : 'não') + '</td><td style="padding:4px 6px;text-align:right;font-weight:700;">' + (D.viavel ? 'sim' : 'não') + '</td></tr></table>'
+    + (n.diagnostico_base ? '<div><b>Diagnóstico do plano atual:</b> ' + _cpE(n.diagnostico_base) + '</div>' : '')
+    + (n.estrategia ? '<div style="margin-top:4px;"><b>Estratégia:</b> ' + _cpE(n.estrategia) + '</div>' : '')
+    + ((n.alteracoes || []).length ? '<div style="margin-top:8px;overflow-x:auto;"><b>O que muda</b><table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-top:3px;"><tr style="color:var(--t2);font-size:9.5px;text-transform:uppercase;"><th style="text-align:left;padding:3px 5px;">Item</th><th style="text-align:left;padding:3px 5px;">De</th><th style="text-align:left;padding:3px 5px;">Para</th><th style="text-align:left;padding:3px 5px;">Por quê / efeito</th></tr>'
+      + n.alteracoes.map(a => '<tr style="border-top:1px solid var(--bd);"><td style="padding:3px 5px;font-weight:600;">' + _cpE(a.item) + '</td><td style="padding:3px 5px;">' + _cpE(a.de) + '</td><td style="padding:3px 5px;color:var(--green);">' + _cpE(a.para) + '</td><td style="padding:3px 5px;color:var(--t2);">' + _cpE(a.por_que) + (a.efeito_contraparte ? '<br><i>Outra parte: ' + _cpE(a.efeito_contraparte) + '</i>' : '') + '</td></tr>').join('') + '</table></div>' : '')
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:4px 14px;">' + lista('Ganhos para a outra parte', n.ganhos_contraparte, 'var(--blue)') + lista('Ganhos para a Atlantyx', n.ganhos_atlantyx, 'var(--green)')
+    + lista('O que oferecemos em troca', n.contrapartidas_oferecidas) + lista('Onde ainda dá para ceder', n.concessoes_possiveis, 'var(--gold)') + lista('Não aceitamos', n.limites, 'var(--red)') + lista('Cláusulas de proteção', n.clausulas) + lista('Riscos e mitigação', n.riscos) + lista('Próximos passos', n.proximos_passos, 'var(--blue)') + '</div>'
+    + (n.mensagem_para_enviar ? '<div style="margin-top:8px;"><div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;"><b style="font-size:11px;flex:1;">Mensagem para enviar</b><button class="btn btn-g" style="font-size:10px;padding:2px 8px;" onclick="navigator.clipboard.writeText(document.getElementById(\'cpMsg_' + k + '\').value).then(()=>toast(\'Mensagem copiada\',\'success\'))">Copiar</button></div><textarea class="fta" id="cpMsg_' + k + '" style="min-height:120px;font-size:11.5px;">' + _cpE(n.mensagem_para_enviar) + '</textarea></div>' : '')
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"><button class="btn btn-p" style="font-size:10.5px;" id="cpPdfBtn_' + k + '" onclick="cpPdf(\'' + k + '\')">📄 PDF da contraproposta</button>'
+    + '<button class="btn btn-g" style="font-size:10.5px;" onclick="cpAbrirBP(\'' + C.bp.id + '\')" title="Abre o business plan da contraproposta (DRE, fluxo, Excel)">📊 Abrir business plan da contraproposta</button>'
+    + (C.base?.id ? '<button class="btn btn-g" style="font-size:10.5px;" onclick="cpAbrirBP(\'' + C.base.id + '\')">📊 Plano atual</button>' : '') + '</div>'
+    + '<div style="font-size:9.5px;color:var(--t3);margin-top:5px;">Gerada em ' + (n.gerado_em ? new Date(n.gerado_em).toLocaleString('pt-BR') : '') + (n.rodadas ? ' · ' + n.rodadas + ' rodada(s) de ajuste conferidas pelo motor financeiro' : '') + ' · o plano atual não foi alterado</div></div>';
+}
+function cpAbrirBP(id) { try { if (typeof ideiaFechar === 'function' && document.getElementById('ideiaModal')?.style.display !== 'none') ideiaFechar(); } catch (_) {} nav('s1bp', document.querySelector('.sbi[onclick*="s1bp"]')); try { bpTab('ideia'); } catch (_) {} bpAbrir(id); }
+async function cpPdf(k) {
+  const C = window._cp[k]; if (!C?.bp) return toast('Gere a contraproposta primeiro', 'error');
+  const btn = document.getElementById('cpPdfBtn_' + k); if (btn) { btn.disabled = true; btn.textContent = 'Gerando PDF...'; }
+  try {
+    const pdfMake = await _carregarPdfMake(); const n = C.bp.narrativa || {}; const A = n.antes || {}, D = n.depois || {}; const AZUL = '#0B1D4D', CIANO = '#00708A';
+    const c = []; let sn = 0; const sec = t => { sn++; c.push({ text: sn + '. ' + t, style: 'h1' }); };
+    const par = t => { if (t) String(t).split(/\n+/).map(x => x.trim()).filter(Boolean).forEach(x => c.push({ text: _pdfTxt(x), style: 'p' })); };
+    const ul = arr => { if ((arr || []).length) c.push({ ul: arr.map(x => _pdfTxt(typeof x === 'string' ? x : JSON.stringify(x))), style: 'p' }); };
+    const R = v => v == null || isNaN(v) ? '—' : 'R$ ' + Math.round(v).toLocaleString('pt-BR'), P = v => v == null || isNaN(v) ? '—' : (v * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+    c.push({ canvas: [{ type: 'rect', x: 0, y: 0, w: 515, h: 64, color: AZUL }] });
+    c.push({ text: 'CONTRAPROPOSTA — ANÁLISE FINANCEIRA', color: '#9FE7EA', fontSize: 8, bold: true, margin: [12, -56, 0, 0] });
+    c.push({ text: _pdfTxt(C.titulo || ''), color: 'white', fontSize: 15, bold: true, margin: [12, 3, 12, 0] });
+    c.push({ text: 'Atlantyx · ' + new Date().toLocaleString('pt-BR') + (n.destinatario ? ' · negociação com: ' + _pdfTxt(n.destinatario) : ''), color: '#C7D2F0', fontSize: 8, margin: [12, 3, 0, 16] });
+    c.push({ table: { widths: ['*'], body: [[{ text: (D.viavel ? 'A contraproposta torna o plano RENTÁVEL para a Atlantyx' : 'Atenção: mesmo com a contraproposta o plano ainda não fica rentável') + (n.objetivo === 'MELHORAR' ? ' (o plano atual já era rentável; a contraproposta melhora o resultado)' : ''), bold: true, fontSize: 9.5, color: D.viavel ? '#047857' : '#B91C1C', margin: [6, 5, 6, 5] }]] }, layout: { hLineColor: () => D.viavel ? '#10B981' : '#EF4444', vLineColor: () => D.viavel ? '#10B981' : '#EF4444' }, margin: [0, 0, 0, 8] });
+    sec('Resumo executivo'); par(n.resumo_executivo);
+    sec('Antes x depois (horizonte de 36 meses)');
+    c.push({ table: { headerRows: 1, widths: ['*', 110, 110], body: [[{ text: 'Indicador', style: 'th' }, { text: 'Plano atual', style: 'th', alignment: 'right' }, { text: 'Contraproposta', style: 'th', alignment: 'right' }],
+      ...[['VPL', R(A.vpl), R(D.vpl)], ['TIR anual', P(A.tir_anual), P(D.tir_anual)], ['Payback (meses)', A.payback_meses ?? 'não paga', D.payback_meses ?? 'não paga'], ['Exposição máxima de caixa', R(A.exposicao_maxima_caixa), R(D.exposicao_maxima_caixa)],
+        ['Receita total', R(A.receita_total), R(D.receita_total)], ['EBITDA total', R(A.ebitda_total), R(D.ebitda_total)], ['Lucro líquido total', R(A.lucro_liquido_total), R(D.lucro_liquido_total)], ['Rentável', A.viavel ? 'sim' : 'não', D.viavel ? 'sim' : 'não']]
+        .map(([k1, a, d]) => [{ text: k1, style: 'v' }, { text: String(a), style: 'v', alignment: 'right' }, { text: String(d), style: 'v', alignment: 'right', bold: true }])] }, layout: 'lightHorizontalLines' });
+    const anos = (n.anos_depois || []).map((d, i) => [d, (n.anos_antes || [])[i] || {}]);
+    if (anos.length) { c.push({ text: 'Por ano', style: 'h2' });
+      c.push({ table: { headerRows: 1, widths: [40, '*', '*', '*', '*'], body: [[{ text: 'Ano', style: 'th' }, { text: 'Receita (atual » contraproposta)', style: 'th' }, { text: 'EBITDA', style: 'th' }, { text: 'Lucro líquido', style: 'th' }, { text: 'Caixa no fim do ano', style: 'th' }],
+        ...anos.map(([d, a]) => [{ text: String(d.ano), style: 'v' }, ...['receita_bruta', 'ebitda', 'lucro_liquido', 'caixa_final'].map(f => ({ text: R(a[f]) + ' » ' + R(d[f]), style: 'v', fontSize: 8 }))])] }, layout: 'lightHorizontalLines' }); }
+    if (n.diagnostico_base) { sec('Diagnóstico do plano atual'); par(n.diagnostico_base); }
+    if (n.estrategia) { sec('Estratégia da contraproposta'); par(n.estrategia); }
+    if ((n.alteracoes || []).length) { sec('O que muda');
+      c.push({ table: { headerRows: 1, widths: [90, 70, 70, '*'], body: [[{ text: 'Item', style: 'th' }, { text: 'De', style: 'th' }, { text: 'Para', style: 'th' }, { text: 'Por quê / efeito para cada parte', style: 'th' }],
+        ...n.alteracoes.map(a => [{ text: _pdfTxt(a.item), style: 'v', bold: true }, { text: _pdfTxt(a.de), style: 'v' }, { text: _pdfTxt(a.para), style: 'v', color: '#047857' }, { text: _pdfTxt([a.por_que, a.efeito_atlantyx && 'Atlantyx: ' + a.efeito_atlantyx, a.efeito_contraparte && 'Outra parte: ' + a.efeito_contraparte].filter(Boolean).join('\n')), style: 'v', fontSize: 8 }])] }, layout: 'lightHorizontalLines' }); }
+    sec('Bom para as duas partes');
+    if ((n.ganhos_contraparte || []).length) { c.push({ text: 'Ganhos para a outra parte', style: 'h2' }); ul(n.ganhos_contraparte); }
+    if ((n.ganhos_atlantyx || []).length) { c.push({ text: 'Ganhos para a Atlantyx', style: 'h2' }); ul(n.ganhos_atlantyx); }
+    if ((n.contrapartidas_oferecidas || []).length) { c.push({ text: 'O que oferecemos em troca', style: 'h2' }); ul(n.contrapartidas_oferecidas); }
+    sec('Margem de negociação');
+    if ((n.concessoes_possiveis || []).length) { c.push({ text: 'Onde ainda dá para ceder', style: 'h2' }); ul(n.concessoes_possiveis); }
+    if ((n.limites || []).length) { c.push({ text: 'Não aceitamos (piso)', style: 'h2' }); ul(n.limites); }
+    if ((n.clausulas || []).length) { sec('Cláusulas de proteção para o contrato'); ul(n.clausulas); }
+    if ((n.riscos || []).length) { sec('Riscos e mitigação'); ul(n.riscos); }
+    if ((n.proximos_passos || []).length) { sec('Próximos passos'); ul(n.proximos_passos); }
+    if (n.oferta) { sec('Oferta recebida (referência)'); par(n.oferta); }
+    const msg = document.getElementById('cpMsg_' + k)?.value || n.mensagem_para_enviar;
+    if (msg) { sec('Mensagem para enviar'); c.push({ table: { widths: ['*'], body: [[{ text: _pdfTxt(msg), style: 'p', margin: [6, 6, 6, 6] }]] }, layout: { hLineColor: () => '#CBD5E1', vLineColor: () => '#CBD5E1' } }); }
+    c.push({ text: 'Valores em R$ calculados pelo motor financeiro do Atlantyx OS (DRE e fluxo de caixa de 36 meses) a partir das premissas do business plan da contraproposta. O plano original não foi alterado.', fontSize: 7.5, color: '#6B7280', margin: [0, 14, 0, 0] });
+    const dd = { pageSize: 'A4', pageMargins: [40, 40, 40, 50], content: c,
+      footer: (pg, t) => ({ text: 'Atlantyx · Contraproposta · ' + pg + '/' + t, alignment: 'center', fontSize: 7, color: '#999', margin: [0, 20, 0, 0] }),
+      styles: { h1: { fontSize: 12.5, bold: true, color: AZUL, margin: [0, 12, 0, 6] }, h2: { fontSize: 10.5, bold: true, color: CIANO, margin: [0, 8, 0, 3] }, p: { fontSize: 9.5, lineHeight: 1.3, margin: [0, 0, 0, 5] }, th: { fontSize: 8, bold: true, color: '#374151' }, v: { fontSize: 9 } }, defaultStyle: { fontSize: 9.5 } };
+    const nome = 'Contraproposta_' + String(C.titulo || 'ideia').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w]+/g, '_').replace(/^_|_$/g, '').substring(0, 50) + '_' + new Date().toISOString().slice(0, 10) + '.pdf';
+    pdfMake.createPdf(dd).download(nome); toast('PDF gerado: ' + nome, 'success');
+  } catch (e) { toast('Erro ao gerar o PDF: ' + e.message, 'error'); }
+  if (btn) { btn.disabled = false; btn.textContent = '📄 PDF da contraproposta'; }
 }
 
 // v3.35: PDF da análise profunda da ideia (+ proposta de negociação, se houver)
@@ -10784,7 +10911,7 @@ function _bpEditor(p) {
         + '<td><button class="btn btn-g" style="font-size:9px;padding:2px 6px;color:var(--red);" onclick="bpLinhaDel(\'' + sec + '\',' + i + ')">&#10005;</button></td></tr>'; }).join('')
       + '</table></div></div>';
   };
-  const sel = (path, v) => '<select class="fsel" style="padding:3px;font-size:10.5px;" data-bp="' + path + '" onchange="bpCampo(this)">' + ['recorrente', 'unico'].map(o => '<option' + (o === v ? ' selected' : '') + '>' + o + '</option>').join('') + '</select>';
+  const sel = (path, v) => '<select class="fsel" style="padding:3px;font-size:10.5px;" data-bp="' + path + '" onchange="bpCampo(this)">' + ['recorrente', 'unico', 'marco'].map(o => '<option' + (o === v ? ' selected' : '') + ' title="' + ({ recorrente: 'mensalidade × clientes ativos', unico: 'preço × novas vendas a cada mês', marco: 'pagamento único no mês de início (ex.: marco de entrega)' })[o] + '">' + o + '</option>').join('') + '</select>';
   const g = [['taxa_desconto_anual', 'TMA (% a.a.)'], ['deducoes_pct', 'Deduções (%)'], ['ir_csll_pct', 'IR/CSLL (%)'], ['prazo_recebimento_dias', 'Prazo receb. (dias)'], ['crescimento_perpetuidade_pct', 'Perpetuidade (%)'], ['saldo_inicial', 'Caixa inicial (R$)']];
   return '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">' + g.map(([k, l]) => '<div><div style="font-size:9px;color:var(--t2);margin-bottom:2px;">' + l + '</div>' + inp(k, p[k], 'number', 100) + '</div>').join('')
     + '<div><div style="font-size:9px;color:var(--t2);margin-bottom:2px;">Marketing (% receita)</div>' + inp('marketing.pct_receita', p.marketing?.pct_receita, 'number', 90) + '</div>'
@@ -26731,7 +26858,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.43] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.44] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -26747,7 +26874,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.43';
+window.__ATX_BUILD_ID__ = 'ATX-v3.44';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

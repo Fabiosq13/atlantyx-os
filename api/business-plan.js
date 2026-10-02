@@ -150,7 +150,7 @@ Responda SOMENTE com um JSON válido, sem texto antes ou depois, neste formato:
  "kpis_acompanhamento": ["..."]
 }
 Regras:
-- Valores em R$. "preco" é MENSAL para tipo "recorrente" e por venda para "unico" (setup, licença, projeto fechado).
+- Valores em R$. "preco" é MENSAL para tipo "recorrente", por venda para "unico" (setup, licença, projeto fechado) e o valor do pagamento para "marco" (pagamento único contratual, cobrado UMA vez no mes_inicio — use para marcos de entrega, sinal, bônus de primeiro cliente). Se houver moeda estrangeira, converta para R$ e diga a cotação na justificativa.
 - "novos_mes" = novos clientes POR MÊS em cada ano [ano1, ano2, ano3] (pode ser fracionado, ex.: 0.5 = um a cada 2 meses). "mes_inicio" = mês em que começa a vender (depois do desenvolvimento).
 - Tributos: Lucro Presumido serviços → deducoes_pct ≈ 16.33 (PIS 0,65 + COFINS 3 + ISS 5 + IRPJ 4,8 + CSLL 2,88) e ir_csll_pct 0. Se fizer mais sentido Lucro Real → deducoes_pct ≈ 14.25 e ir_csll_pct 34.
 - Pessoal PJ: encargos_pct 0; CLT: encargos_pct ≈ 70. Inclua o custo do time que vai construir e operar (dev, dados, CS, vendas), mesmo que parcial.
@@ -301,6 +301,109 @@ async function planoAtlantyx({ overrides } = {}) {
   };
 }
 
+// ── v3.44: CONTRAPROPOSTA com business plan ─────────────────────────────
+// Lê o último BP da ideia, entende se é viável e monta um NOVO plano (a contraproposta): se o BP não é
+// rentável, a IA muda as alavancas comerciais até ele ficar rentável; se já é, melhora para a Atlantyx sem
+// tornar o acordo ruim para a outra parte. O motor determinístico recalcula e confere — até 3 rodadas.
+const _ind = r => { const i = r.indicadores || {}; return { tir_anual: i.tir_anual, vpl: i.vpl, payback_meses: i.payback_simples_meses, exposicao_maxima_caixa: i.exposicao_maxima_caixa,
+  receita_total: i.receita_total, lucro_liquido_total: i.lucro_liquido_total, ebitda_total: i.ebitda_total, break_even_ebitda_mes: i.break_even_ebitda_mes, viavel: !!i.viavel, taxa_desconto_anual: i.taxa_desconto_anual }; };
+const _anosResumo = r => (r.anos || []).map(a => ({ ano: a.ano, receita_bruta: a.receita_bruta, ebitda: a.ebitda, lucro_liquido: a.lucro_liquido, fcl: a.fcl, caixa_final: a.caixa_final, margem_ebitda: a.margem_ebitda == null ? null : Math.round(a.margem_ebitda * 1000) / 10 }));
+const _melhor = (a, b) => (b.viavel && !a.viavel) || (b.viavel === a.viavel && (b.vpl || -Infinity) > (a.vpl || -Infinity));
+
+async function _bpBaseDaIdeia({ bp_id, ideia }) {
+  const sql = await getSql();
+  if (bp_id) return obterBP(bp_id);
+  const iid = ideia?.id ? String(ideia.id) : null;
+  if (iid) {
+    try { const r = await sql`SELECT data FROM ideias WHERE id = ${iid} LIMIT 1`; const d = r[0]?.data; const id = (typeof d === 'string' ? JSON.parse(d) : d)?.business_plan?.id; if (id) return obterBP(id); } catch (_) {}
+    if (_temTabela) { const r = await sql`SELECT id FROM business_plans WHERE ideia_id = ${iid} AND COALESCE(tipo,'ideia') <> 'contraproposta' ORDER BY atualizado_em DESC LIMIT 1`; if (r[0]) return obterBP(r[0].id); }
+  }
+  if (ideia?.titulo && _temTabela) { const r = await sql`SELECT id FROM business_plans WHERE lower(titulo) = lower(${String(ideia.titulo)}) AND COALESCE(tipo,'ideia') <> 'contraproposta' ORDER BY atualizado_em DESC LIMIT 1`; if (r[0]) return obterBP(r[0].id); }
+  return null;
+}
+
+async function contrapropostaBP({ ideia = {}, bp_id = null, oferta = '', docs_texto = [], instrucoes = '', destinatario = 'Parceiro' }) {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
+  const base = await _bpBaseDaIdeia({ bp_id, ideia });
+  if (!base?.premissas) throw new Error('Esta ideia ainda não tem business plan — gere o business plan primeiro (a contraproposta parte dele).');
+  const p0 = base.premissas; const i0 = _ind(base.resultado);
+  const objetivo = i0.viavel ? 'MELHORAR' : 'TORNAR_VIAVEL';
+  const docs = (Array.isArray(docs_texto) ? docs_texto : []).map(d => `--- ${d.nome} ---\n${String(d.texto || '').substring(0, 15000)}`).join('\n\n').substring(0, 40000);
+  const system = `Você é o CFO e o negociador-chefe da Atlantyx (empresa brasileira B2B de dados, BI e IA). Você recebe o BUSINESS PLAN atual de uma oportunidade (premissas que um motor determinístico usa para calcular DRE, fluxo de caixa de 36 meses, TIR, VPL e payback) e monta a CONTRAPROPOSTA: um novo conjunto de premissas que reflete as condições que a Atlantyx vai propor à outra parte.
+Objetivo:
+- Se o plano atual NÃO é viável (VPL <= 0 ou TIR abaixo da taxa de desconto): mude as alavancas até ficar viável para a Atlantyx, com folga (VPL claramente positivo e payback dentro do horizonte).
+- Se o plano atual JÁ é viável: melhore o resultado da Atlantyx (VPL, TIR, payback, menor exposição de caixa) SEM tornar o acordo ruim para a outra parte.
+- Sempre busque o melhor para AMBAS as partes: cada pedido da Atlantyx deve vir com uma contrapartida ou um ganho claro para o outro lado. Nada de propostas que a outra parte não aceitaria.
+Alavancas típicas (use as que fazem sentido com a oferta e os documentos): % de revenue share; pagamentos de marco (tipo "marco" = pagamento único no mes_inicio) — sinal na assinatura, entrega do MVP, primeiro cliente; mínimo garantido mensal; mensalidade de manutenção/sustentação; antecipar o início da receita; reajuste; dividir custos de nuvem/infra; reduzir escopo/equipe do MVP (pessoal/investimentos); prazo de exclusividade; volume mínimo. NÃO invente volume de clientes otimista só para fechar a conta: mudanças em novos_mes, churn ou clientes precisam de justificativa concreta (ex.: compromisso de volume da outra parte).
+Mantenha a mesma estrutura de premissas (mesmos campos), valores em R$, meses = ${p0.meses || 36}. Tipos de receita: "recorrente" (preço mensal × clientes ativos), "unico" (preço × novas vendas/mês), "marco" (preço pago UMA vez no mes_inicio).
+Responda SOMENTE com JSON válido:
+{
+ "diagnostico_base": "por que o plano atual é (ou não) rentável, em 2-4 linhas com números",
+ "estrategia": "a lógica da contraproposta em 2-3 linhas",
+ "premissas": { ...premissas completas da contraproposta... },
+ "alteracoes": [{"item":"o que muda","de":"valor atual","para":"valor proposto","por_que":"","efeito_atlantyx":"","efeito_contraparte":""}],
+ "ganhos_contraparte": ["o que a outra parte ganha com esta contraproposta"],
+ "ganhos_atlantyx": ["o que a Atlantyx ganha"],
+ "contrapartidas_oferecidas": ["o que a Atlantyx dá em troca"],
+ "concessoes_possiveis": ["onde ainda dá para ceder na negociação, com o limite"],
+ "limites": ["o que a Atlantyx não aceita (piso)"],
+ "clausulas": ["cláusulas a colocar no contrato para proteger o acordo"],
+ "riscos": ["risco → mitigação"],
+ "proximos_passos": ["passo com prazo"],
+ "mensagem_para_enviar": "e-mail/mensagem profissional para ${destinatario.toLowerCase()} apresentando a contraproposta (em nome da Atlantyx, assinado por Fabio Quintanilha / CEO – Atlantyx)",
+ "resumo_executivo": "5-7 linhas para o CEO: antes x depois e por que é bom para os dois lados"
+}`;
+  const montarUser = (extra) => `IDEIA / OPORTUNIDADE: ${ideia.titulo || base.titulo || ''}
+${ideia.desc ? 'Descrição: ' + String(ideia.desc).substring(0, 4000) : ''}
+${ideia.analise ? 'Análise da IA: ' + JSON.stringify(ideia.analise).substring(0, 3000) : ''}
+Com quem é a negociação: ${destinatario}
+${oferta ? 'OFERTA / CONDIÇÕES RECEBIDAS DA OUTRA PARTE:\n' + String(oferta).substring(0, 6000) : '(sem oferta colada — use os documentos e o business plan)'}
+${instrucoes ? 'ORIENTAÇÕES DO FUNDADOR: ' + String(instrucoes).substring(0, 2000) : ''}
+BUSINESS PLAN ATUAL — premissas:
+${JSON.stringify(p0).substring(0, 20000)}
+Justificativas do plano atual: ${JSON.stringify(base.narrativa?.justificativas || {}).substring(0, 3000)}
+INDICADORES ATUAIS (motor): ${JSON.stringify(i0)}
+Por ano: ${JSON.stringify(_anosResumo(base.resultado))}
+OBJETIVO: ${objetivo === 'TORNAR_VIAVEL' ? 'o plano atual NÃO é viável — torne-o viável' : 'o plano atual é viável — melhore para a Atlantyx mantendo-o bom para a outra parte'}
+${docs ? '\nDOCUMENTOS DA NEGOCIAÇÃO:\n' + docs : ''}${extra ? '\n\n' + extra : ''}`;
+  const chamar = async (extra) => {
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: MODEL, max_tokens: 9000, system, messages: [{ role: 'user', content: montarUser(extra) }] }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error('IA: ' + (d?.error?.message || r.status));
+    const j = parseJSON((d.content || []).map(c => c.text || '').join(''));
+    if (!j?.premissas?.receitas?.length) throw new Error('A IA não devolveu as premissas da contraproposta');
+    return j;
+  };
+  const t0 = Date.now(); let melhor = null, extra = '', rodadas = 0;
+  for (let k = 0; k < 3; k++) {
+    if (k && Date.now() - t0 > 140000) break;
+    let j; try { j = await chamar(extra); } catch (e) { if (!melhor) throw e; break; }
+    rodadas++;
+    const premissas = { ...p0, ...j.premissas, inicio: p0.inicio, meses: p0.meses || 36, titulo: p0.titulo };
+    const res = calcularBP(premissas); const ind = _ind(res);
+    const cand = { j, premissas, res, ind };
+    if (!melhor || _melhor(melhor.ind, ind)) melhor = cand;
+    const ok = objetivo === 'TORNAR_VIAVEL' ? ind.viavel : (ind.viavel && (ind.vpl || 0) > (i0.vpl || 0));
+    if (ok) break;
+    extra = `RESULTADO DA SUA PROPOSTA ANTERIOR NO MOTOR: ${JSON.stringify(ind)} — ${objetivo === 'TORNAR_VIAVEL' ? 'AINDA NÃO É VIÁVEL' : 'NÃO MELHOROU o VPL da Atlantyx'}. Ajuste as alavancas (com justificativa realista) e devolva o JSON completo de novo.`;
+  }
+  const { j, premissas, res, ind } = melhor;
+  const narrativa = { contraproposta: true, base_bp_id: base.id, base_titulo: base.titulo, objetivo, rodadas, destinatario, oferta: String(oferta || '').substring(0, 6000),
+    antes: i0, depois: ind, anos_antes: _anosResumo(base.resultado), anos_depois: _anosResumo(res),
+    diagnostico_base: j.diagnostico_base, estrategia: j.estrategia, alteracoes: j.alteracoes || [], ganhos_contraparte: j.ganhos_contraparte || [], ganhos_atlantyx: j.ganhos_atlantyx || [],
+    contrapartidas_oferecidas: j.contrapartidas_oferecidas || [], concessoes_possiveis: j.concessoes_possiveis || [], limites: j.limites || [], clausulas: j.clausulas || [], riscos: j.riscos || [],
+    proximos_passos: j.proximos_passos || [], mensagem_para_enviar: j.mensagem_para_enviar || '', resumo_executivo: j.resumo_executivo || '',
+    justificativas: base.narrativa?.justificativas || {}, modelo_ia: MODEL, gerado_em: new Date().toISOString() };
+  const ideiaRef = { id: ideia.id || base.ideia_id || null, titulo: ideia.titulo || base.titulo };
+  const bp = await salvarBP({ tipo: 'contraproposta', titulo: 'Contraproposta — ' + (ideiaRef.titulo || 'ideia'), premissas, narrativa, ideia: ideiaRef, vincularIdeia: false });
+  // registra a contraproposta no card da ideia (sem trocar o business plan principal)
+  if (ideiaRef.id) { try { const sql = await getSql(); const r = await sql`SELECT data FROM ideias WHERE id = ${String(ideiaRef.id)} LIMIT 1`; const d = r[0]?.data; if (d) { const o = typeof d === 'string' ? JSON.parse(d) : d;
+    o.contraproposta_bp = { id: bp.id, base_bp_id: base.id, atualizado_em: new Date().toISOString(), viavel_antes: i0.viavel, viavel_depois: ind.viavel, vpl_antes: i0.vpl, vpl_depois: ind.vpl, tir_antes: i0.tir_anual, tir_depois: ind.tir_anual };
+    await sql`UPDATE ideias SET data = ${JSON.stringify(o)}, atualizado_em = NOW() WHERE id = ${String(ideiaRef.id)}`; } } catch (e) { console.warn('[BP] vínculo da contraproposta:', e.message); } }
+  return { bp, base: { id: base.id, titulo: base.titulo, indicadores: i0 }, objetivo, rodadas };
+}
+
 // ── Excel: lib/bp-excel.js (modelo vivo com fórmulas + importação) ─────────
 
 // ── Handler ──────────────────────────────────────────────────────────────
@@ -343,6 +446,7 @@ async function handler(req, res) {
       },
       listar: async () => ({ lista: await listarBP({ tipo: b.tipo }) }),
       obter: async () => ({ bp: await obterBP(b.id) }),
+      contraproposta: async () => contrapropostaBP(b), // v3.44
       excluir: async () => excluirBP(b.id),
       excel: async () => {
         let bp = b.bp;

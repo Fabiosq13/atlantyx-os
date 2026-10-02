@@ -89,7 +89,7 @@
       "maxDuration": 180
     },
     "api/business-plan.js": {
-      "maxDuration": 120
+      "maxDuration": 300
     },
     "api/rfp-monitor.js": {
       "maxDuration": 90
