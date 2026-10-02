@@ -12982,6 +12982,7 @@ async function definirPeriodoRapido(id) {
 }
 
 async function abrirCampanhaDB(id) {
+  if (window._autoGerando && !window._autoAbrindo && !confirm('A autocampanha ainda está gerando Stories/Reel/Carrossel usando o editor de campanhas.\n\nAbrir outra campanha agora pode misturar os formatos com a campanha errada. Abrir mesmo assim?')) return;
   let camp = (_todasCampanhas || []).find(c => c.id === id);
   if (!camp) {
     // FIX v1.5.7: campanhas moram na TABELA campanhas (list_campanhas) — recarregar a lista
@@ -26122,7 +26123,20 @@ async function limparPubsForaDoMetricool() {
 // ---------- AUTO-CAMPANHA IA (v1.7) -----------------------------------------
 // v3.55: Stories/Reel/Carrossel respeitam "pular sáb/dom" (antes o Reel caía no sábado e o Carrossel no domingo)
 function _fdsPular(d, pular) { const x = new Date(d); if (!pular) return x; while (x.getDay() === 0 || x.getDay() === 6) x.setDate(x.getDate() + 1); return x; }
+// v3.63: a geração roda NESTA aba — trocar de tela continua, mas fechar/recarregar interrompe. Aviso ao sair,
+// selo no topo durante a geração e proteção para não abrir outra campanha no editor no meio (os Stories/Reel/
+// Carrossel usam a campanha aberta no editor)
 async function gerarCampanhaAutomatica(opts = {}) {
+  window._autoGerando = true; _autoSelo(true);
+  try { return await _gerarCampanhaAutomaticaImpl(opts); }
+  finally { window._autoGerando = false; _autoSelo(false); }
+}
+function _autoSelo(on) { try { let el = document.getElementById('autoSelo');
+  if (!on) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id = 'autoSelo'; el.style.cssText = 'position:fixed;right:14px;bottom:14px;z-index:9999;background:var(--bg2);border:1px solid var(--gold);color:var(--t1);border-radius:8px;padding:8px 12px;font-size:11px;box-shadow:0 4px 16px rgba(0,0,0,.3);cursor:pointer;';
+    el.innerHTML = '⏳ <b>Autocampanha gerando</b> — pode trocar de tela, mas <b>não feche nem recarregue</b> esta aba'; el.onclick = () => nav('s2auto', document.querySelector('.sbi[onclick*="s2auto"]')); document.body.appendChild(el); } } catch (_) {} }
+window.addEventListener('beforeunload', e => { if (window._autoGerando) { e.preventDefault(); e.returnValue = 'A autocampanha ainda está sendo gerada — se sair agora, ela para no meio.'; } });
+async function _gerarCampanhaAutomaticaImpl(opts = {}) {
   window._acDiaReel = null; window._acDiaStories = null;
   // v2.94: a Autocampanha (7 dias) usa ESTA mesma função, passando os horários vagos do período.
   // Sem opts, o comportamento é o do botão do Kanban (3 posts), idêntico ao de antes.
@@ -27308,7 +27322,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.62] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.63] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27324,7 +27338,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.62';
+window.__ATX_BUILD_ID__ = 'ATX-v3.63';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
