@@ -1038,8 +1038,13 @@ async function handler(req, res) {
           try {
             const r = await mc(`/v2/scheduler/posts/${metricool_id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'PUT', corpo);
             if (r && (r.id || r.data || r.success || r.status === 'ok' || (typeof r === 'object' && !r.error))) {
-              return { reagendado: true, metodo: 'atualizado', metricool_id, agendado_para: quando.toISOString(),
-                detalhe: 'post completo reenviado com a nova data' };
+              // v3.53: o Metricool às vezes responde OK ao PUT e mantém a data antiga — confere lendo o post de novo
+              let conferido = null;
+              try { const g2 = await mc(`/v2/scheduler/posts/${metricool_id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN); const p2 = g2?.data || g2?.post || g2;
+                const dt2 = String(p2?.publicationDate?.dateTime || p2?.publicationDate || ''); if (dt2) conferido = dt2.substring(0, 16) === dt.dateTime.substring(0, 16); } catch (_) {}
+              if (conferido !== false) return { reagendado: true, metodo: 'atualizado', metricool_id, agendado_para: quando.toISOString(),
+                detalhe: 'post completo reenviado com a nova data' + (conferido ? ' (conferido)' : '') };
+              erroPut = 'o Metricool aceitou a alteração mas manteve a data antiga';
             }
           } catch (e) { erroPut = e.message; }
         }

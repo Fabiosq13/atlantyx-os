@@ -6866,7 +6866,7 @@ function pubsDaPeca(p) {
 // gravado na aprovação e não mudava quando a data de postagem era alterada. Card de campanha = próxima
 // publicação de qualquer peça da campanha.
 function _proximaDataPubs(pubs) {
-  const ok = (pubs || []).filter(x => x.status !== 'erro'); const fut = ok.filter(x => { try { return !_pubPublicada(x); } catch (_) { return true; } });
+  const ok = (pubs || []).filter(x => x.status !== 'erro' && !x.nao_encontrado); const fut = ok.filter(x => { try { return !_pubPublicada(x); } catch (_) { return true; } });
   const arr = (fut.length ? fut : ok).map(x => x.agendado_para || x.data).filter(Boolean).sort((a, b) => new Date(a) - new Date(b));
   return arr[0] || null;
 }
@@ -25593,6 +25593,7 @@ async function usarLPComoLink(url) {
 // em _publicacoes (status 'publicado' | 'erro'), no máximo a cada 10 min.
 function _pubPublicada(p) { if (p.status === 'publicado') return true; if (p.status === 'erro') return false; if (p.status_mc) return /PUBLISHED|SUCCESS/i.test(p.status_mc); return new Date(p.agendado_para || p.data) < new Date() && !!p.metricool_id; }
 let _syncMcEm = 0, _syncMcRodando = false;
+function _escCal(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 // v3.52: posts agendados pela FILA do servidor (Autocampanha) entram no calendário e no desempenho
 let _filaImportEm = 0;
 async function importarPostsDaFila(forcar) {
@@ -25619,6 +25620,9 @@ async function importarPostsDaFila(forcar) {
 async function sincronizarStatusMetricool(forcar) {
   try { await importarPostsDaFila(forcar); } catch (_) {}
   if (_syncMcRodando || (!forcar && Date.now() - _syncMcEm < 600000) || typeof _mcConfigurado === 'undefined' || !_mcConfigurado) return { pulado: true };
+  // v3.53: "via Metricool" mas sem id do Metricool = o envio não chegou lá
+  let semId = 0; (_publicacoes || []).forEach(p => { if (p.metodo === 'metricool' && !p.metricool_id && !p.nao_encontrado && new Date(p.agendado_para || p.data) > new Date(Date.now() - 864e5)) { p.nao_encontrado = 'sem_id'; semId++; } });
+  if (semId) { try { await salvarPublicacoes(); } catch (_) {} }
   const comId = (_publicacoes || []).filter(p => p.metricool_id && p.status !== 'publicado'); if (!comId.length) return { pulado: true };
   _syncMcRodando = true; _syncMcEm = Date.now();
   try {
@@ -25627,10 +25631,24 @@ async function sincronizarStatusMetricool(forcar) {
     const r = await fetch('/api/metricool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'listar_posts', payload: { inicio: ini, fim, detalhe: true } }) });
     const d = await r.json().catch(() => ({})); if (!d.success) return { erro: d.error };
     const mapa = {}; (d.posts || []).forEach(x => { mapa[String(x.id)] = x; });
-    let mudou = 0, erros = 0;
+    let mudou = 0, erros = 0, sumidos = 0;
+    const agora = Date.now();
     for (const p of comId) {
-      const x = mapa[String(p.metricool_id)]; if (!x) continue;
-      const prov = (x.providers || []).find(v => String(v.rede || '').toLowerCase() === String(p.rede || '').toLowerCase()) || (x.providers || [])[0]; if (!prov) continue;
+      const x = mapa[String(p.metricool_id)];
+      // v3.53: o calendário só mostra o que está de fato no Metricool — registro sem post lá (excluído,
+      // recusado ou nunca criado) fica marcado como "não está no Metricool" em vez de parecer agendado
+      if (!x) {
+        const quando = new Date(p.agendado_para || p.data).getTime();
+        if (!p.nao_encontrado && quando > agora - 864e5) { p.nao_encontrado = 'post'; mudou++; sumidos++; }
+        continue;
+      }
+      const provRede = (x.providers || []).find(v => String(v.rede || '').toLowerCase() === String(p.rede || '').toLowerCase());
+      if (!provRede && (x.providers || []).length) { if (p.nao_encontrado !== 'rede') { p.nao_encontrado = 'rede'; mudou++; sumidos++; } continue; }
+      if (p.nao_encontrado) { delete p.nao_encontrado; mudou++; }
+      // horário real do Metricool (o dateTime vem no fuso de São Paulo, sem offset)
+      if (x.data) { const dm = new Date(/[zZ]|[+-]\d{2}:?\d{2}$/.test(String(x.data)) ? x.data : String(x.data).substring(0, 19) + '-03:00');
+        if (!isNaN(dm) && Math.abs(dm - new Date(p.agendado_para || p.data)) > 120000) { p.agendado_para = dm.toISOString(); p.hora_corrigida_mc = true; mudou++; } }
+      const prov = provRede || (x.providers || [])[0]; if (!prov) continue;
       const st = String(prov.status || (x.status === 'publicado' ? 'PUBLISHED' : '')).toUpperCase();
       const ruim = /ERROR|FAIL|REJECT/.test(st);
       const novo = /PUBLISHED|SUCCESS/.test(st) ? 'publicado' : ruim ? 'erro' : p.status;
@@ -25640,7 +25658,8 @@ async function sincronizarStatusMetricool(forcar) {
     }
     if (mudou) { await salvarPublicacoes(); try { renderCalendarioKanban(); } catch (_) {} try { _renderDatasPublicacao(); } catch (_) {} try { renderDesempenho(); } catch (_) {} }
     if (erros) { addLog('err', '[Metricool] ' + erros + ' publicação(ões) recusada(s) pelo Metricool — veja no calendário'); toast(erros + ' publicação(ões) falharam no Metricool — veja o calendário', 'error'); }
-    return { verificadas: comId.length, mudou, erros };
+    if (sumidos) addLog('warn', '[Metricool] ' + sumidos + ' item(ns) do calendário não estão no Metricool — marcados com ⚠ no calendário');
+    return { verificadas: comId.length, mudou, erros, sumidos };
   } catch (e) { return { erro: e.message }; } finally { _syncMcRodando = false; }
 }
 function renderCalendarioKanban() {
@@ -25666,7 +25685,11 @@ function renderCalendarioKanban() {
   const cores = { linkedin: '#0a66c2', instagram: '#e1306c', facebook: '#1877f2', whatsapp: '#25d366', email: 'var(--gold)' };
   const nomesDia = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
   cal.innerHTML = '<div class="ph"><div class="pt">📅 Calendário de Publicações — próximos 14 dias</div>'
-    + '<button class="btn" style="font-size:10px;" onclick="carregarPublicacoes().then(renderCalendarioKanban)">↻ Atualizar</button></div>'
+    + '<button class="btn" style="font-size:10px;" onclick="carregarPublicacoes().then(()=>{renderCalendarioKanban();return sincronizarStatusMetricool(true);})">↻ Atualizar</button></div>'
+    + (() => { const n = (_publicacoes || []).filter(p => p.nao_encontrado && new Date(p.agendado_para || p.data) >= hoje).length;
+        return n ? '<div style="margin:0 12px 8px;padding:7px 10px;border:1px solid var(--red);border-radius:6px;font-size:10px;display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+          + '<span>⚠ ' + n + ' item(ns) marcados abaixo <b>não estão no Metricool</b> (excluídos, recusados ou sem a rede) e <b>não vão ser publicados</b>. Para sair, publique a peça de novo pelo card do Kanban.</span>'
+          + '<button class="btn" style="font-size:10px;white-space:nowrap;" onclick="limparPubsForaDoMetricool()">Remover do calendário</button></div>' : ''; })()
     + '<div class="pb"><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;">'
     + dias.map(d => {
         const pubs = pubsDia(d).sort((a,b) => new Date(a.agendado_para||a.data) - new Date(b.agendado_para||b.data));
@@ -25675,10 +25698,15 @@ function renderCalendarioKanban() {
           + '<div style="font-family:var(--M);font-size:9px;color:' + _corTxt((ehHoje ? 'var(--blue)' : 'var(--t3)')) + ';margin-bottom:5px;">' + nomesDia[d.getDay()] + ' ' + String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + (ehHoje ? ' · HOJE' : '') + '</div>'
           + (pubs.length ? pubs.map(p => {
               const hh = new Date(p.agendado_para || p.data);
-              return '<div style="background:var(--bg3);border-left:2px solid ' + (cores[p.rede] || 'var(--bd)') + ';border-radius:4px;padding:4px 5px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;gap:4px;">'
-                + '<div style="min-width:0;"><div style="font-size:9px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + (p.titulo||'') + '">' + String(hh.getHours()).padStart(2,'0') + ':' + String(hh.getMinutes()).padStart(2,'0') + ' ' + (p.titulo||'') + '</div>'
-                + '<div style="font-size:9px;color:' + _corTxt((cores[p.rede]||'var(--t3)')) + ';">' + (icone[p.rede]||p.rede) + ((p.texto||'').startsWith('[STORY]') ? ' · 📱' : (p.texto||'').startsWith('[REEL]') ? ' · 🎬' : (p.texto||'').startsWith('[CARROSSEL]') ? ' · 🖼' : '') + (p.metodo==='metricool' ? ' · 🚀' : ' · ✋') + '</div></div>'
-                + '<button class="btn" style="font-size:9px;padding:1px 4px;color:var(--gold);flex-shrink:0;" onclick="reagendarPublicacao(\'' + p.id + '\')" title="Mudar data/hora (também no Metricool)">✎</button>'
+              const sumiu = !!p.nao_encontrado, falhou = p.status === 'erro', foi = !sumiu && !falhou && _pubPublicada(p);
+              const motivo = p.nao_encontrado === 'rede' ? 'O post existe no Metricool, mas SEM esta rede — não vai sair aqui'
+                : p.nao_encontrado === 'sem_id' ? 'O envio ao Metricool não foi concluído — não vai sair'
+                : sumiu ? 'Este post não está no Metricool (foi excluído ou recusado) — não vai sair' : falhou ? ('O Metricool recusou: ' + (p.erro_mc || '')) : '';
+              const sit = sumiu ? ' · <b style="color:var(--red);">⚠ não está no Metricool</b>' : falhou ? ' · <b style="color:var(--red);">✕ falhou</b>' : foi ? ' · <span style="color:var(--green);">✓ publicado</span>' : (p.hora_corrigida_mc ? ' · <span title="Horário acertado pelo que está no Metricool">⏱</span>' : '');
+              return '<div style="background:var(--bg3);border-left:2px solid ' + (cores[p.rede] || 'var(--bd)') + ';border-radius:4px;padding:4px 5px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;gap:4px;' + (sumiu || falhou ? 'opacity:.75;outline:1px dashed var(--red);' : '') + '"' + (motivo ? ' title="' + _escCal(motivo) + '"' : '') + '>'
+                + '<div style="min-width:0;"><div style="font-size:9px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' + (sumiu ? 'text-decoration:line-through;' : '') + '" title="' + _escCal(p.titulo||'') + '">' + String(hh.getHours()).padStart(2,'0') + ':' + String(hh.getMinutes()).padStart(2,'0') + ' ' + _escCal(p.titulo||'') + '</div>'
+                + '<div style="font-size:9px;color:' + _corTxt((cores[p.rede]||'var(--t3)')) + ';">' + (icone[p.rede]||p.rede) + ((p.texto||'').startsWith('[STORY]') ? ' · 📱' : (p.texto||'').startsWith('[REEL]') ? ' · 🎬' : (p.texto||'').startsWith('[CARROSSEL]') ? ' · 🖼' : '') + (p.metodo==='metricool' ? ' · 🚀' : ' · ✋') + sit + '</div></div>'
+                + (sumiu ? '' : '<button class="btn" style="font-size:9px;padding:1px 4px;color:var(--gold);flex-shrink:0;" onclick="reagendarPublicacao(\'' + p.id + '\')" title="Mudar data/hora (também no Metricool)">✎</button>')
                 + '<button class="btn" style="font-size:9px;padding:1px 5px;color:var(--red);flex-shrink:0;" onclick="excluirPublicacaoAgendada(\'' + p.id + '\')" title="Excluir (também do Metricool)">🗑</button>'
                 + '</div>';
             }).join('') : '<div style="font-size:9px;color:var(--t3);text-align:center;padding:6px 0;">—</div>')
@@ -25729,8 +25757,8 @@ async function reagendarPublicacao(pubId, novaData) {
 // v3.41: datas de publicação editáveis direto no card (Kanban e Minhas campanhas)
 function _gruposPub(pubs) {
   const grupos = [], vistos = {};
-  (pubs || []).forEach(p => { const k = p.metricool_id || p.id; if (vistos[k]) { vistos[k].redes.push(p.rede); return; }
-    vistos[k] = { id: p.id, titulo: p.titulo, redes: [p.rede], quando: p.agendado_para || p.data, publicado: _pubPublicada(p), erro: p.status === 'erro' ? (p.erro_mc || 'falhou no Metricool') : null }; grupos.push(vistos[k]); });
+  (pubs || []).forEach(p => { const k = p.nao_encontrado ? 'x_' + p.id : (p.metricool_id || p.id); if (vistos[k]) { vistos[k].redes.push(p.rede); return; }
+    vistos[k] = { id: p.id, titulo: p.titulo, redes: [p.rede], quando: p.agendado_para || p.data, publicado: !p.nao_encontrado && _pubPublicada(p), erro: p.nao_encontrado ? 'não está no Metricool — não vai sair' : p.status === 'erro' ? (p.erro_mc || 'falhou no Metricool') : null }; grupos.push(vistos[k]); });
   return grupos.sort((a, b) => new Date(a.quando) - new Date(b.quando));
 }
 function _pubsDoCard(campanhaId, pecaId) {
@@ -25782,7 +25810,7 @@ function _renderDatasPublicacao() {
   const pubs = (typeof _publicacoes !== 'undefined' ? _publicacoes : []).filter(p => p.campanhaId === c.id);
   // agrupa redes que são o mesmo post no Metricool
   const grupos = []; const vistos = {};
-  pubs.forEach(p => { const k = p.metricool_id || p.id; if (vistos[k]) { vistos[k].redes.push(p.rede); return; } vistos[k] = { id: p.id, titulo: p.titulo, redes: [p.rede], quando: p.agendado_para || p.data, publicado: _pubPublicada(p), erro: p.status === 'erro' ? (p.erro_mc || 'falhou no Metricool') : null }; grupos.push(vistos[k]); });
+  pubs.forEach(p => { const k = p.nao_encontrado ? 'x_' + p.id : (p.metricool_id || p.id); if (vistos[k]) { vistos[k].redes.push(p.rede); return; } vistos[k] = { id: p.id, titulo: p.titulo, redes: [p.rede], quando: p.agendado_para || p.data, publicado: !p.nao_encontrado && _pubPublicada(p), erro: p.nao_encontrado ? 'não está no Metricool — não vai sair' : p.status === 'erro' ? (p.erro_mc || 'falhou no Metricool') : null }; grupos.push(vistos[k]); });
   grupos.sort((a, b) => new Date(a.quando) - new Date(b.quando));
   box.style.display = 'block';
   box.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><b style="font-size:12px;">📅 Datas de publicação</b><span style="font-size:10px;color:var(--t2);">mudar aqui também muda no Metricool</span></div>'
@@ -25800,8 +25828,12 @@ function _renderDatasPublicacao() {
 async function excluirPublicacaoAgendada(pubId) {
   const pub = (_publicacoes || []).find(p => p.id === pubId);
   if (!pub) return;
-  if (!confirm('Excluir a publicação "' + (pub.titulo||'') + '" (' + pub.rede + ')' + (pub.metricool_id ? '\n\nEla também será removida do agendamento no Metricool.' : '') + '?')) return;
-  if (pub.metricool_id) {
+  // v3.53: registro marcado como "não está no Metricool" sai só do calendário — o id pode ser de um post
+  // que ainda existe com OUTRA rede (posts antigos com várias redes juntas) e não pode ser apagado lá
+  const soLocal = !!pub.nao_encontrado || !pub.metricool_id;
+  const irmas = soLocal ? [] : (_publicacoes || []).filter(p => p.id !== pub.id && String(p.metricool_id) === String(pub.metricool_id) && !p.nao_encontrado);
+  if (!confirm('Excluir a publicação "' + (pub.titulo||'') + '" (' + pub.rede + ')' + (soLocal ? '\n\n(Sai só do calendário — ela não está no Metricool.)' : '\n\nEla também será removida do agendamento no Metricool.' + (irmas.length ? '\nATENÇÃO: no Metricool é o mesmo post de ' + irmas.map(x => x.rede).join(', ') + ' — essas redes também serão removidas.' : '')) + '?')) return;
+  if (!soLocal) {
     try {
       const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ action:'excluir', payload: { metricool_id: pub.metricool_id } }) });
@@ -25810,11 +25842,24 @@ async function excluirPublicacaoAgendada(pubId) {
       else addLog('warn', '[Calendário] Metricool não removeu: ' + (d.error||''));
     } catch (e) { addLog('warn', '[Calendário] Falha ao remover do Metricool: ' + e.message); }
   }
-  _publicacoes = _publicacoes.filter(p => p.id !== pubId);
+  const fora = new Set([pubId, ...irmas.map(x => x.id)]);
+  _publicacoes = _publicacoes.filter(p => !fora.has(p.id));
   await salvarPublicacoes();
   renderCalendarioKanban();
   try { renderDesempenho(); } catch(_) {}
+  try { _renderDatasPublicacao(); } catch (_) {}
   toast('Publicação excluída', 'info');
+}
+// v3.53: tira do calendário os registros que não estão no Metricool (não mexe no Metricool)
+async function limparPubsForaDoMetricool() {
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const alvo = (_publicacoes || []).filter(p => p.nao_encontrado && new Date(p.agendado_para || p.data) >= hoje);
+  if (!alvo.length) return;
+  if (!confirm('Remover do calendário ' + alvo.length + ' item(ns) que não estão no Metricool?\n\n' + alvo.slice(0, 8).map(p => '• ' + new Date(p.agendado_para || p.data).toLocaleString('pt-BR').substring(0, 17) + ' ' + p.rede + ' — ' + (p.titulo || '').substring(0, 50)).join('\n') + '\n\nNada é apagado no Metricool.')) return;
+  const ids = new Set(alvo.map(p => p.id));
+  _publicacoes = _publicacoes.filter(p => !ids.has(p.id));
+  await salvarPublicacoes(); renderCalendarioKanban(); try { renderDesempenho(); } catch (_) {} try { _renderDatasPublicacao(); } catch (_) {}
+  toast(alvo.length + ' item(ns) removido(s) do calendário', 'success');
 }
 
 // ---------- AUTO-CAMPANHA IA (v1.7) -----------------------------------------
@@ -27002,7 +27047,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.52] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.53] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27018,7 +27063,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.52';
+window.__ATX_BUILD_ID__ = 'ATX-v3.53';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
