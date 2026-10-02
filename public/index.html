@@ -2113,16 +2113,18 @@ tr:hover td{background:rgba(79,124,255,.03);}
     </div>
     <!-- DETALHE DA PEÇA + LOOP DE REVISÃO -->
     <div class="panel" id="kanbanDetalhe" style="margin-top:12px;display:none;">
-      <div class="ph">
-        <div class="pt" id="kanbanDetTit">Detalhe da Peça</div>
-        <button class="btn btn-gn" style="font-size:9px;padding:3px 9px;" onclick="aprovarPeca(kanbanPecaSelecionada)">&#10003; Aprovar e Agendar</button>
-        <button class="btn btn-rd" style="font-size:9px;padding:3px 9px;" onclick="recusarPeca(kanbanPecaSelecionada)">&#10005; Recusar</button>
+      <!-- v3.50: cabeçalho com as ações da etapa (antes: botões soltos no meio da tela) -->
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--bd);">
+        <div style="flex:1;min-width:260px;" id="kanbanDetTit">Detalhe da Peça</div>
+        <div id="kanbanDetAcoes" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"></div>
+        <button class="btn btn-g" style="font-size:12px;padding:3px 10px;" title="Fechar" onclick="document.getElementById('kanbanDetalhe').style.display='none'">✕</button>
       </div>
       <div class="pb" id="kanbanDetBody"></div>
 
-      <!-- ÁREA DE REVISÃO ITERATIVA -->
-      <div style="border-top:1px solid var(--bd);padding:14px;">
-        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--or);margin-bottom:8px;letter-spacing:1px;">LOOP DE REVISÃO — Ajuste e Regenere</div>
+      <!-- ÁREA DE REVISÃO ITERATIVA (v3.50: recolhida — é opcional) -->
+      <details id="kbAjusteImg" style="border-top:1px solid var(--bd);padding:10px 16px;">
+        <summary style="cursor:pointer;font-size:11.5px;font-weight:600;color:var(--t2);padding:4px 0;">🎨 Ajustar a imagem com IA <span style="font-weight:400;color:var(--t3);">— gerar outra versão a partir de um comentário (opcional)</span></summary>
+        <div style="padding-top:10px;">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
           <div>
             <div style="font-size:10px;color:var(--t2);margin-bottom:4px;">Imagem gerada no Ideogram — cole a URL aqui:</div>
@@ -2167,7 +2169,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <div style="margin-top:8px;font-size:11px;color:var(--t2);" id="ajusteExplicacao"></div>
           <button class="btn btn-gn" style="margin-top:8px;font-size:10px;" onclick="aplicarPromptAjustado()">Usar este prompt — substituir atual</button>
         </div>
-      </div>
+        </div>
+      </details>
     </div>
   </div>
 
@@ -2604,7 +2607,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <div id="campPubDatas" style="display:none;background:var(--bg3);border:1px solid var(--bd2);border-radius:8px;padding:10px 12px;margin:10px 0;"></div>
         <!-- AÇÕES FINAIS -->
         <div class="cp-acoes" style="flex-wrap:wrap;">
-          <button class="btn btn-g" onclick="campVoltar()" title="Salva as edições e volta para Minhas campanhas">← Voltar</button>
+          <button class="btn btn-g" id="btnCampVoltar" onclick="campVoltar()" title="Salva as edições e volta para a tela de onde você veio">← Voltar</button>
           <button class="btn btn-gn" onclick="aprovarCampanhaFinal()" style="flex:1;justify-content:center;font-weight:700;">④ Aprovar e enviar ao Kanban</button>
           <button class="btn btn-g" onclick="salvarCampanhaDB()">💾 Salvar rascunho</button>
           <button class="btn btn-g" onclick="duplicarCampanha()" title="Cria uma cópia desta campanha">⧉ Duplicar</button>
@@ -6949,20 +6952,22 @@ function renderKanban() {
         <div id="kbc_${p.id}" style="background:var(--bg3);border:1px solid ${p.id === window._kbUltimaPeca ? 'var(--blue)' : 'var(--bd)'};border-radius:6px;padding:9px;margin-bottom:6px;cursor:pointer;" onclick="selecionarPeca('${p.id}')">
           ${p.id === window._kbUltimaPeca ? '<div style="font-family:var(--M);font-size:8.5px;color:var(--blue);font-weight:700;margin-bottom:3px;">● ACABOU DE CRIAR / ATUALIZAR</div>' : ''}
           ${_ehPecaQA(p) ? '<div style="font-family:var(--M);font-size:8.5px;color:var(--gold);margin-bottom:3px;">TESTE DO QA — não é salvo</div>' : ''}
+          ${typeof p.design === 'string' && /^https?:/.test(p.design) ? `<img src="${p.design.replace(/"/g, '&quot;')}" loading="lazy" style="width:100%;height:70px;object-fit:cover;border-radius:4px;margin-bottom:6px;display:block;background:#0b0d16;" alt=""/>` : ''}
           <div style="font-size:10px;font-weight:600;margin-bottom:2px;">${String(p.titulo || '').replace(/</g, '&lt;')}</div>
           ${_kbResumo(p)}
           ${_kbRedes(p)}
           <div style="font-size:10px;color:var(--t2);margin-top:4px;">${({ 'Campanha Completa': 'Campanha', 'Aprovada': 'Campanha', 'S2-EmailMarketing': 'E-mail marketing (avulso)', 'S2-Designer': 'Imagem avulsa' })[p.agente] || p.agente}${_kbFormatos(p)}</div>
           ${p.data?`<div style="font-family:var(--M);font-size:9px;color:var(--t3);margin-top:3px;">🕓 ${p.data}</div>`:''}
           ${(() => { const a = dataAgendadaDaPeca(p); const pubs = _pubsDoCardKanban(p); const plan = !pubs.length && !p.agendado_para && p.data_planejada; return a ? `<div style="font-family:var(--M);font-size:8.5px;color:var(--gold);margin-top:2px;cursor:pointer;text-decoration:underline dotted;" title="${plan ? 'Data planejada — ainda não enviada ao Metricool (vem preenchida no 🚀 Publicar)' : 'Clique para mudar a data de publicação'}" onclick="${plan ? `event.stopPropagation();selecionarPeca('${p.id}')` : `abrirDatasPub('${p.campanhaId || ''}','${p.id}',event)`}">📅 ${plan ? 'planejado ' : ''}${fmtDH(a)}${pubs.length ? ' · ' + [...new Set(pubs.map(x=>x.rede))].map(r=>({linkedin:'in',instagram:'ig',facebook:'fb',whatsapp:'wa',email:'@'}[r]||r)).join('/') : ''}</div>` : (col==='Agendado' ? '<div style="font-size:9px;color:var(--red);margin-top:2px;">⚠ sem publicação registrada</div>' : ''); })()}
-          <div style="display:flex;gap:4px;margin-top:6px;">
-            <button class="btn" style="flex:1;font-size:8.5px;padding:2px 5px;color:var(--blue);" onclick="event.stopPropagation();editarPecaDoKanban('${p.id}')" title="Abrir campanha completa para edição">✎ Editar</button>
-            <button class="btn" style="font-size:8.5px;padding:2px 7px;" onclick="abrirDatasPub('${p.campanhaId || ''}','${p.id}',event)" title="Datas de publicação">📅</button>
-            <button class="btn" style="font-size:8.5px;padding:2px 7px;color:var(--red);" onclick="excluirPecaKanban('${p.id}',event)" title="Excluir">🗑</button>
+          <div style="display:flex;gap:4px;margin-top:7px;align-items:center;" onclick="event.stopPropagation()">
+            ${col === 'Revisão' || col === 'Gerado' ? `<button class="btn btn-gn" style="flex:1;font-size:9px;padding:3px 5px;" onclick="aprovarPeca('${p.id}',event)" title="Aprovar">✓ Aprovar</button>` : ''}
+            ${col === 'Aprovado' ? `<button class="btn btn-p" style="flex:1;font-size:9px;padding:3px 5px;" onclick="publicarPeca('${p.id}')">🚀 Publicar</button>` : ''}
+            ${col === 'Agendado' ? `<button class="btn btn-g" style="flex:1;font-size:9px;padding:3px 5px;" onclick="abrirDatasPub('${p.campanhaId || ''}','${p.id}',event)">📅 Mudar data</button>` : ''}
+            ${col === 'Publicado' ? `<span style="flex:1;font-size:9.5px;color:var(--green);">✓ publicada</span>` : ''}
+            <button class="btn btn-g" style="font-size:9px;padding:3px 7px;" onclick="selecionarPeca('${p.id}')" title="Ver detalhes">👁</button>
+            ${p.campanhaId ? `<button class="btn btn-g" style="font-size:9px;padding:3px 7px;" onclick="editarPecaDoKanban('${p.id}')" title="Abrir na campanha (editar)">✎</button>` : ''}
+            <button class="btn btn-g" style="font-size:9px;padding:3px 7px;color:var(--red);" onclick="excluirPecaKanban('${p.id}',event)" title="Excluir">🗑</button>
           </div>
-          ${col==='Revisão'?`<div style="display:flex;gap:4px;margin-top:4px;"><button class="btn btn-gn" style="flex:1;font-size:8.5px;padding:2px 5px;" onclick="aprovarPeca('${p.id}',event)">OK</button><button class="btn btn-rd" style="flex:1;font-size:8.5px;padding:2px 5px;" onclick="recusarPeca('${p.id}',event)">x</button></div>`:''}
-          ${col==='Aprovado'?`<button class="btn btn-p" style="width:100%;font-size:8.5px;padding:3px 5px;margin-top:6px;" onclick="event.stopPropagation();publicarPeca('${p.id}')">🚀 Publicar</button>`:''}
-          ${col==='Publicado'?`<div style="font-size:9px;color:var(--green);margin-top:5px;">✓ publicada</div>`:''}
         </div>`).join('')}
       ${!pecas.length?`<div style="font-size:9px;color:var(--t3);padding:8px 0;text-align:center">--</div>`:''}
     </div>`;
@@ -7018,47 +7023,48 @@ function selecionarPeca(id) {
   // v1.6.4: rolar até o painel — antes abria fora da viewport e parecia que "não abria"
   setTimeout(() => { try { det.scrollIntoView({ behavior:'smooth', block:'start' }); det.style.boxShadow='0 0 0 2px var(--blue)'; setTimeout(()=>det.style.boxShadow='',1800); } catch(_){} }, 60);
   const _ag = dataAgendadaDaPeca(p);
-  tit.textContent = p.titulo + ' -- ' + p.canal + ' -- ' + p.status + (p.data ? '  ·  🕓 ' + p.data : '') + (_ag ? '  ·  📅 publica ' + fmtDH(_ag) : '');
+  const E = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const corSt = { 'Gerado': 'var(--t2)', 'Revisão': 'var(--gold)', 'Aprovado': 'var(--green)', 'Agendado': 'var(--blue)', 'Publicado': 'var(--green)' }[p.status] || 'var(--t2)';
+  const chip = (t, c) => `<span style="font-size:10px;padding:2px 8px;border-radius:999px;border:1px solid ${c || 'var(--bd2)'};color:${c || 'var(--t2)'};white-space:nowrap;">${t}</span>`;
+  const camp = ((_todasCampanhas || []).find(c => c.id === p.campanhaId) || (campAtiva?.id === p.campanhaId ? campAtiva : null));
+  // v3.50: cabeçalho limpo (título + etiquetas) e as ações da ETAPA no canto direito
+  tit.innerHTML = `<div style="font-family:var(--H);font-size:14.5px;font-weight:700;line-height:1.3;">${E(p.titulo)}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px;">${chip(E(p.status), corSt)}${chip(E(p.canal || 'Todos'))}${p.data ? chip('🕓 criado ' + E(String(p.data).substring(0, 17))) : ''}${_ag ? chip('📅 ' + (!_pubsDoCardKanban(p).length && !p.agendado_para && p.data_planejada ? 'planejado ' : 'publica ') + fmtDH(_ag), 'var(--gold)') : ''}${camp ? chip('Campanha: ' + E(String(camp.nome || '').substring(0, 40))) : ''}</div>`;
+  const ac = document.getElementById('kanbanDetAcoes');
+  if (ac) {
+    const prim = (p.status === 'Gerado' || p.status === 'Revisão')
+      ? `<button class="btn btn-gn" style="font-size:11px;" onclick="aprovarPeca('${p.id}')">✓ Aprovar</button><button class="btn btn-g" style="font-size:11px;color:var(--red);" onclick="recusarPeca('${p.id}');selecionarPeca('${p.id}')">✕ Recusar</button>`
+      : p.status === 'Aprovado' ? `<button class="btn btn-p" style="font-size:11px;" onclick="publicarPeca('${p.id}')">🚀 Publicar / agendar</button>`
+      : p.status === 'Agendado' ? `<button class="btn btn-p" style="font-size:11px;" onclick="abrirDatasPub('${p.campanhaId || ''}','${p.id}',event)">📅 Mudar data</button>`
+      : '';
+    ac.innerHTML = prim + `<span style="width:1px;height:20px;background:var(--bd);margin:0 2px;"></span>`
+      + (p.campanhaId ? `<button class="btn btn-g" style="font-size:11px;" onclick="editarPecaDoKanban('${p.id}')" title="Abre a campanha completa no editor (textos, imagens, formatos e nova geração com IA)">✎ Abrir na campanha</button>` : '')
+      + `<button class="btn btn-g" style="font-size:11px;color:var(--red);" onclick="excluirPecaKanban('${p.id}',event)" title="Excluir este card">🗑</button>`;
+  }
+  // prévia do post: imagem + texto, com abas por rede quando houver copy por rede
+  const img = typeof p.design === 'string' && /^https?:/.test(p.design) ? p.design : (camp?.imagens?.[0]?.url || '');
+  const cpr = camp?.data?.copy_por_rede || {};
+  const abas = [['principal', 'Texto principal', p.copy || p.narrativa || '']].concat(Object.entries(cpr).filter(([, v]) => v?.texto).map(([r, v]) => [r, ({ linkedin: 'LinkedIn', instagram: 'Instagram', facebook: 'Facebook', whatsapp: 'WhatsApp', email: 'E-mail' })[r] || r, (v.assunto ? 'Assunto: ' + v.assunto + '\n\n' : '') + v.texto]));
+  window._kbAbas = abas;
+  const pubs = _pubsDoCardKanban(p);
+  const linhaPub = x => `<div style="display:flex;gap:6px;align-items:center;font-size:11px;padding:3px 0;"><b style="min-width:70px;">${E(x.rede)}</b><span style="color:var(--t2);">${fmtDH(x.agendado_para || x.data)}</span>
+      <span style="margin-left:auto;color:${x.status === 'erro' ? 'var(--red)' : _pubPublicada(x) ? 'var(--green)' : 'var(--blue)'};" title="${E(x.erro_mc || '')}">${x.status === 'erro' ? '✕ falhou' : _pubPublicada(x) ? '✓ publicado' : '◷ agendado'}</span>${x.url_publica ? `<a href="${E(x.url_publica)}" target="_blank" rel="noopener" style="font-size:10px;">ver</a>` : ''}</div>`;
+  const card = (t, html, extra) => `<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:10px 12px;margin-bottom:10px;${extra || ''}"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);margin-bottom:6px;letter-spacing:.5px;">${t}</div>${html}</div>`;
   body.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+    <div style="display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr);gap:14px;align-items:start;">
       <div>
-        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--or);margin-bottom:5px">NARRATIVA (Storyteller)</div>
-        <div style="font-size:11.5px;line-height:1.7;background:var(--bg4);padding:10px;border-radius:6px;">${p.narrativa || '--'}</div>
+        ${card('Prévia do post', `
+          ${img ? `<a href="${E(img)}" target="_blank" rel="noopener"><img src="${E(img)}" style="width:100%;max-height:340px;object-fit:contain;background:#0b0d16;border-radius:6px;display:block;margin-bottom:10px;" alt="Imagem do post"/></a>` : `<div style="font-size:11px;color:var(--t3);padding:16px;text-align:center;border:1px dashed var(--bd2);border-radius:6px;margin-bottom:10px;">Sem imagem${p.design ? ' — brief: ' + E(String(p.design).substring(0, 160)) : ''}</div>`}
+          ${abas.length > 1 ? `<div class="seg" id="kbAbasSeg" style="margin-bottom:8px;">${abas.map((a, i) => `<button class="${i ? '' : 'on'}" onclick="document.querySelectorAll('#kbAbasSeg button').forEach((b,j)=>b.classList.toggle('on',j===${i}));document.getElementById('kbCopyTxt').textContent=window._kbAbas[${i}][2]">${E(a[1])}</button>`).join('')}</div>` : ''}
+          <div id="kbCopyTxt" style="font-size:12px;line-height:1.7;white-space:pre-wrap;max-height:420px;overflow-y:auto;">${E(abas[0][2] || '(copy não gerada — abra na campanha e gere de novo)')}</div>`)}
       </div>
       <div>
-        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--blue);margin-bottom:5px">COPY PRINCIPAL (Copywriter)</div>
-        <div style="font-size:11.5px;line-height:1.7;background:var(--bg4);padding:10px;border-radius:6px;white-space:pre-wrap;">${p.copy || p.narrativa || '(copy não gerada — abra a campanha e re-rode)'}</div>
-        ${(() => { /* v1.5.7: copy por rede da campanha vinculada */
-          try {
-            const cpr = ((_todasCampanhas||[]).find(c => c.id === p.campanhaId) || (campAtiva?.id === p.campanhaId ? campAtiva : null))?.data?.copy_por_rede;
-            if (!cpr || !Object.keys(cpr).length) return '';
-            const nomes = { linkedin:'LinkedIn', instagram:'Instagram', facebook:'Facebook', whatsapp:'WhatsApp', email:'E-mail' };
-            return '<div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--green);margin:10px 0 5px">COPY POR REDE</div>' +
-              Object.entries(cpr).map(([rd, v]) =>
-                '<details style="margin-bottom:6px;"><summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--blue);">' + (nomes[rd]||rd) + '</summary>' +
-                '<div style="font-size:11px;line-height:1.6;background:var(--bg4);padding:9px;border-radius:6px;white-space:pre-wrap;margin-top:4px;">' +
-                (v?.assunto ? 'Assunto: ' + v.assunto + '\n\n' : '') + (v?.texto || '') + '</div></details>').join('');
-          } catch(_) { return ''; }
-        })()}
-      </div>
-      <div>
-        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--green);margin-bottom:5px">BRIEF VISUAL (Designer)</div>
-        <div style="font-size:11.5px;line-height:1.7;background:var(--bg4);padding:10px;border-radius:6px;">${p.design || '--'}</div>
-      </div>
-      <div>
-        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--gold);margin-bottom:5px">AGENDAMENTO</div>
-        <div style="font-size:11.5px;background:var(--bg4);padding:10px;border-radius:6px;">
-          <div>Canal: ${p.canal}</div>
-          <div>Agente: ${p.agente}</div>
-          <div>Status: ${p.status}</div>
-          ${p.data ? '<div>Criada em: '+p.data+'</div>' : ''}
-          ${(() => { const pubs = pubsDaPeca(p); if (!pubs.length) return p.status === 'Agendado' ? '<div style="color:var(--red);margin-top:4px;">⚠ Nenhuma publicação registrada — o agendamento no Metricool pode ter falhado (veja o Log). Use 🚀 Publicar para reagendar.</div>' : ''; return '<div style="margin-top:6px;color:var(--gold);font-weight:600;">📅 Publicação agendada:</div>' + pubs.map(x => '<div style="padding-left:10px;display:flex;gap:6px;align-items:center;">' + fmtDH(x.agendado_para || x.data) + ' · ' + x.rede + (x.metodo==='metricool' ? ' 🚀 Metricool' : ' ✋ manual') + (x.metricool_id ? ' <span style="color:var(--t3);font-size:9px;">#' + x.metricool_id + '</span>' : '') + ' <button class="btn" style="font-size:9px;padding:0 5px;color:var(--gold);" onclick="reagendarPublicacao(\'' + x.id + '\')" title="Mudar data/hora (também no Metricool)">✎ data</button></div>').join(''); })()}
-          ${p.campanhaId ? '<div style="margin-top:4px;color:var(--t3);font-size:10px;">Campanha ID: '+p.campanhaId+'</div>' : ''}
-        </div>
-        <div id="kbDatasPeca" style="margin-top:8px;background:var(--bg4);padding:10px;border-radius:6px;">${_kbDatasPecaHtml(p)}</div>
-        ${p.campanhaId ? `<button class="btn btn-p" style="margin-top:8px;width:100%;font-size:11px;padding:7px;" onclick="editarPecaDoKanban('${p.id}')">✎ Editar Campanha &amp; Re-rodar</button>` : ''}
+        ${card('📅 Publicação', `<div id="kbDatasPeca">${_kbDatasPecaHtml(p)}</div>${pubs.length ? '<div style="border-top:1px solid var(--bd);margin-top:8px;padding-top:6px;">' + pubs.map(linhaPub).join('') + '</div>' : (p.status === 'Agendado' ? '<div style="color:var(--red);font-size:11px;margin-top:6px;">⚠ Nenhuma publicação registrada — o agendamento no Metricool pode ter falhado (veja o Log). Use 🚀 Publicar de novo.</div>' : '')}`)}
+        ${card('Detalhes', `<div style="font-size:11.5px;line-height:1.9;"><div><span style="color:var(--t2);">Canal:</span> ${E(p.canal || '-')}</div><div><span style="color:var(--t2);">Origem:</span> ${E(p.agente || '-')}</div><div><span style="color:var(--t2);">Criado em:</span> ${E(p.data || '-')}</div>${camp ? `<div><span style="color:var(--t2);">Campanha:</span> <a href="#" onclick="editarPecaDoKanban('${p.id}');return false;">${E(camp.nome || p.campanhaId)}</a></div>` : ''}</div>`)}
+        ${p.narrativa && p.narrativa !== p.copy ? card('Narrativa e observações', `<div style="font-size:11.5px;line-height:1.6;color:var(--t2);white-space:pre-wrap;max-height:180px;overflow-y:auto;">${E(p.narrativa)}</div>`) : ''}
       </div>
     </div>`;
+  try { const d = document.getElementById('kbAjusteImg'); if (d) d.open = false; } catch (_) {}
 }
 
 // v3.42: editar a data de publicação DENTRO do card do Kanban (painel de detalhe)
@@ -7115,6 +7121,8 @@ async function editarPecaDoKanban(pecaId) {
     toast('Esta peça não tem campanha vinculada (criada em versão antiga). Use "↻ Reconstruir peças das campanhas" ou abra a campanha por Minhas Campanhas.', 'error');
     return;
   }
+  window._campVoltarPara = { pagina: 's2kanban', peca: pecaId }; // v3.50: o "← Voltar" do editor volta para o Kanban
+  try { const bv = document.getElementById('btnCampVoltar'); if (bv) bv.textContent = '← Voltar ao Kanban'; } catch (_) {}
   try {
     await editarCampanhaDaPeca(campId);
   } catch (e) {
@@ -11802,6 +11810,7 @@ function _campStepper() {
   box.querySelectorAll('[data-s]').forEach(d => { const n = +d.dataset.s; d.classList.toggle('ok', feito[n]); d.classList.toggle('atual', n === atual); });
 }
 function novaCampanhaLimpa() {
+  window._campVoltarPara = null; try { const bv = document.getElementById('btnCampVoltar'); if (bv) bv.textContent = '← Voltar'; } catch (_) {}
   if (campAtiva) {
     const ok = confirm('Limpar o formulário e criar uma NOVA campanha?\n\nA campanha atual "' + campAtiva.nome + '" foi salva no banco e continua acessível em Minhas Campanhas ou no Kanban.');
     if (!ok) return;
@@ -12698,7 +12707,7 @@ function filtrarCampanhas() {
           + '</div>'
           + '<div style="display:flex;gap:5px;padding:0 10px 10px;">'
           + '<button class="btn ' + (ativa?'btn-or':'btn-gn') + '" style="font-size:9px;padding:5px 8px;" data-campid="'+campId+'" data-ativa="'+ativa+'" onclick="toggleCampanhaAtiva(this.dataset.campid, this.dataset.ativa)">' + (ativa ? '&#9209; Pausar' : '&#9654; Ativar') + '</button>'
-          + '<button class="btn btn-p" style="flex:1;font-size:9px;padding:5px;" data-campid="'+campId+'" onclick="abrirCampanhaDB(this.dataset.campid)">Abrir e Editar</button>'
+          + '<button class="btn btn-p" style="flex:1;font-size:9px;padding:5px;" data-campid="'+campId+'" onclick="window._campVoltarPara=null;abrirCampanhaDB(this.dataset.campid)">Abrir e Editar</button>'
           + '<button class="btn" style="font-size:9px;padding:5px;color:#ff4d6d;" data-campid="'+campId+'" onclick="excluirCampanha(this.dataset.campid)">&#10005;</button>'
           + '</div>'
           + '</div>';
@@ -13008,6 +13017,15 @@ async function abrirCampanhaDB(id) {
 // v3.39: botões Voltar e Excluir na base do editor de campanha
 async function campVoltar() {
   try { if (campAtiva) await salvarEdicoesCampanha(false); } catch (_) {}
+  // v3.50: veio do Kanban → volta para o Kanban, com o card aberto
+  const vp = window._campVoltarPara; window._campVoltarPara = null;
+  try { const bv = document.getElementById('btnCampVoltar'); if (bv) bv.textContent = '← Voltar'; } catch (_) {}
+  if (vp?.pagina === 's2kanban') {
+    nav('s2kanban', document.querySelector('.sbi[onclick*="s2kanban"]'));
+    setTimeout(() => { try { renderKanban(); if (vp.peca && kanbanPecas.some(x => x.id === vp.peca)) selecionarPeca(vp.peca); else window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (_) {} }, 150);
+    return;
+  }
+  if (vp?.pagina) { nav(vp.pagina, document.querySelector('.sbi[onclick*="' + vp.pagina + '"]')); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
   mostrarAbaCampanha('lista');
   try { document.getElementById('abaLista')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (_) {}
 }
@@ -21023,7 +21041,9 @@ async function acListar(forcar) {
     }).join('') + '</table></div>';
 }
 async function acEditar(id) {
+  window._campVoltarPara = { pagina: 's2auto' }; // v3.50: "← Voltar" volta para a Autocampanha
   nav('s2campanha', document.querySelector('.sbi[onclick*="s2campanha"]'));
+  setTimeout(() => { const bv = document.getElementById('btnCampVoltar'); if (bv) bv.textContent = '← Voltar à Autocampanha'; }, 50);
   try { await abrirCampanhaDB(id); } catch (e) { toast('Não consegui abrir: ' + e.message, 'error'); }
 }
 async function acExcluir(id) {
@@ -26944,7 +26964,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.49] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.50] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -26960,7 +26980,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.49';
+window.__ATX_BUILD_ID__ = 'ATX-v3.50';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
