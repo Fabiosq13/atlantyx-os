@@ -413,8 +413,20 @@
   async function varrer(opts) {
     try { await _varrer(opts); } catch (e) { S.rodando = false; S.erro = 'A varredura parou com erro: ' + e.message; try { window.nav('qa', document.querySelector('.sbi[onclick*="\'qa\'"]')); } catch (_) {} render(); }
   }
+  // v3.82: a varredura testa o código carregado NESTA aba. Se a aba foi aberta antes do último deploy,
+  // o relatório sai de uma versão velha (ex.: relatório "v3.68" com tudo já corrigido) — confere antes.
+  async function versaoPublicada() {
+    try { const r = await fetch('/?_v=' + Date.now(), { cache: 'no-store' }); const m = (await r.text()).match(/__ATX_BUILD_ID__\s*=\s*'([^']+)'/); return m ? m[1] : null; } catch (_) { return null; }
+  }
   async function _varrer(opts) {
-    if (S.rodando) return; S.rodando = true; S.parar = false; S.erro = null; S.avisoSalvar = null;
+    if (S.rodando) return;
+    const aqui = window.__ATX_BUILD_ID__ || document.getElementById('sidebarBuildId')?.textContent || '';
+    const pub = await versaoPublicada();
+    if (pub && aqui && pub !== aqui) {
+      if (!opts.semConfirmar && confirm('Esta aba está com a versão ' + aqui + ', mas o sistema publicado já está na ' + pub + '.\n\nA varredura testaria o código antigo e acusaria problemas já corrigidos.\n\nOK = recarregar a página agora (depois rode a varredura de novo)\nCancelar = varrer assim mesmo')) { location.reload(); return; }
+      S.versaoDesatualizada = { aba: aqui, publicada: pub };
+    } else S.versaoDesatualizada = null;
+    S.rodando = true; S.parar = false; S.erro = null; S.avisoSalvar = null;
     const telas = inventario().filter(t => !opts.filtro || t.id.includes(opts.filtro) || t.rotulo.toLowerCase().includes(opts.filtro.toLowerCase()));
     const ctx = { tela: null, fase: '', requisicoes: [], erros: [], dialogos: [], formsOk: [], pendentes: 0, real: !!opts.real, fone: opts.fone || '', email: opts.email || '', semIA: opts.real && opts.ia === false, acoes: [] };
     if (opts.real) { try { S.realRun = await api('real_inicio'); } catch (e) { S.rodando = false; S.erro = 'Não consegui preparar a execução real: ' + e.message; render(); return; } }
@@ -483,7 +495,7 @@
     achados.forEach((a, i) => { a.id = 'QA-' + String(i + 1).padStart(3, '0'); });
     const resumo = achados.reduce((o, a) => { o[a.sev] = (o[a.sev] || 0) + 1; return o; }, {});
     _relogio(false);
-    S.relatorio = { tipo: 'qa', versao: document.getElementById('sidebarBuildId')?.textContent || '', inicio: new Date(inicio).toISOString(), duracao_s: Math.round((Date.now() - inicio) / 1000), repouso_s: Math.round((S.pausas || []).reduce((t, [x, y]) => t + (y - x), 0) / 1000), interrompido: interrompido || S.parar, opcoes: opts || {},
+    S.relatorio = { tipo: 'qa', versao: document.getElementById('sidebarBuildId')?.textContent || '', versao_desatualizada: S.versaoDesatualizada || null, inicio: new Date(inicio).toISOString(), duracao_s: Math.round((Date.now() - inicio) / 1000), repouso_s: Math.round((S.pausas || []).reduce((t, [x, y]) => t + (y - x), 0) / 1000), interrompido: interrompido || S.parar, opcoes: opts || {},
       telas: porTela, total_telas: porTela.length, achados, resumo, formularios_ligados: ctx?.formsOk || [], acoes: (ctx?.acoes || []).slice(0, 2500), real: !!opts?.real, limpeza: opts?.real ? S.realLimpeza : null, run_id: opts?.real ? S.realRun?.run_id : null, bloqueadas: (ctx?.requisicoes || []).filter(r => r.bloqueado).map(r => ({ tela: r.tela, rota: r.rota, action: r.action, fase: r.fase })), crud: S.crud, seguranca: S.seg };
   }
 
@@ -493,6 +505,7 @@
     const R = S.relatorio, SEG = S.seg, C = S.crud;
     const linhas = [];
     linhas.push(`# Relatório de correção — Atlantyx OS (${R?.versao || SEG?.versao || document.getElementById('sidebarBuildId')?.textContent || ''})`, '');
+    if (R?.versao_desatualizada) linhas.push(`> ⚠ ATENÇÃO: esta varredura rodou numa aba com a versão ${R.versao_desatualizada.aba}, mas o sistema publicado já estava na ${R.versao_desatualizada.publicada}. Vários achados podem já estar corrigidos — recarregue a página e rode de novo antes de corrigir.`, '');
     linhas.push(`Gerado pelos agentes de QA e Segurança do próprio sistema em ${new Date().toLocaleString('pt-BR')}.`, '');
     linhas.push('## Contexto do projeto', '- Repositório: `Fabiosq13/atlantyx-os` (branch `main`, deploy automático na Vercel).', '- Frontend: arquivo único `public/index.html` (cada tela é `<div class="page" id="page-<id>">`; a navegação é `nav(id)`; funções de carga ligadas no `nav`).', '- Backend: funções serverless em `api/*.js` (ESM), banco Neon Postgres (driver 0.10: use `sql```` ou `_q(db, texto, params)`), bibliotecas em `lib/`.', '- Ao terminar: validar sintaxe (`node --check` nas APIs e nos blocos `<script>` do index.html) e subir a versão `ATX-vX.YY` em `public/index.html`.', '');
     if (R) {
@@ -595,6 +608,7 @@
     const box = document.getElementById('qaResultado'); if (!box) return;
     const R = S.relatorio, SEG = S.seg, C = S.crud;
     let topo = '';
+    if (S.relatorio?.versao_desatualizada) topo += `<div class="panel" style="border-left:4px solid var(--gold);"><div class="pb" style="color:var(--gold);font-size:11.5px;">⚠ Esta varredura rodou com a versão ${esc(S.relatorio.versao_desatualizada.aba)} carregada nesta aba, mas o sistema publicado está na ${esc(S.relatorio.versao_desatualizada.publicada)}. Recarregue a página (Ctrl+Shift+R) e rode de novo — vários achados podem já estar corrigidos.</div></div>`;
     if (S.erro) topo += `<div class="panel" style="border-left:4px solid var(--red);"><div class="pb" style="color:var(--red);font-size:11.5px;">⚠ ${esc(S.erro)}</div></div>`;
     if (S.avisoSalvar) topo += `<div class="panel" style="border-left:4px solid var(--gold);"><div class="pb" style="color:var(--gold);font-size:11px;">${esc(S.avisoSalvar)}</div></div>`;
     if (S.parcial && !R) topo += `<div class="panel" style="border-left:4px solid var(--gold);"><div class="pb" style="font-size:11.5px;">A última varredura foi <b>interrompida</b> na tela "${esc(S.parcial.ultima)}" (${S.parcial.feitas} de ${S.parcial.total}). <button class="btn btn-g" style="font-size:10px;margin-left:8px;" onclick="QA.usarParcial()">Ver resultados parciais</button></div></div>`;
@@ -741,7 +755,7 @@
     // v3.45: varredura noturna sem pessoa (GitHub Actions, 03h): modo seguro — gravações, envios e IA bloqueados
     async noturno(o = {}) {
       if (S.rodando) throw new Error('já existe uma varredura em andamento');
-      await varrer({ botoes: true, formularios: true, contraste: false, doisTemas: false, larguras: false, filtro: '', espera: 10000, ...o });
+      await varrer({ botoes: true, formularios: true, contraste: false, doisTemas: false, larguras: false, filtro: '', espera: 10000, semConfirmar: true, ...o });
       const R = S.relatorio || {};
       return { versao: R.versao, duracao_s: R.duracao_s, repouso_s: R.repouso_s, total_telas: R.total_telas, resumo: R.resumo, interrompido: !!R.interrompido, erro: S.erro || null,
         achados: (R.achados || []).map(a => ({ id: a.id, sev: a.sev, cat: a.cat, titulo: a.titulo, evidencia: a.evidencia, sugestao: a.sugestao, tela: a.tela, rotulo: a.rotulo, ganchos: a.ganchos })) };
