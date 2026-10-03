@@ -21697,6 +21697,19 @@ async function acApagarFalhas() {
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
 async function sqlCacheLimparAud() { await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', key: 'cache:mkt:auditoria' }) }); }
+// v3.77: adiciona a chamada com o link da captura nos posts agendados que não têm link nenhum
+async function acAdicionarLinkAgendados() {
+  try {
+    const d = await mcApi('trocar_link_agendados', { aplicar: false, adicionar: true });
+    if (!d.com_link_antigo) { alert('Nenhum post agendado sem link.'); return; }
+    if (!confirm(`Adicionar no fim de ${d.com_link_antigo} post(s) agendado(s) a chamada:\n"🎁 Peça seu diagnóstico gratuito de dados e IA:" + link da página de captura?\n\n${d.itens.slice(0, 12).map(i => '• ' + i.data.replace('T', ' ') + ' ' + i.redes.join(',') + ' — ' + i.texto.substring(0, 45)).join('\n')}`)) return;
+    const ids = d.itens.map(i => i.id); let feitos = [], falhas = [];
+    for (let k = 0; k < ids.length; k += 5) { try { const r = await mcApi('trocar_link_agendados', { aplicar: true, adicionar: true, ids: ids.slice(k, k + 5) }); feitos = feitos.concat(r.feitos || []); falhas = falhas.concat(r.falhas || []); } catch (e) { falhas.push({ erro: e.message }); } }
+    try { let mud = 0; feitos.filter(f => String(f.id_novo) !== String(f.id_antigo)).forEach(f => (_publicacoes || []).forEach(p => { if (String(p.metricool_id) === String(f.id_antigo)) { p.metricool_id = f.id_novo; mud++; } })); if (mud) await salvarPublicacoes(); } catch (_) {}
+    alert(feitos.length + ' post(s) com o link adicionado.' + (falhas.length ? '\n' + falhas.length + ' falha(s): ' + falhas.slice(0, 5).map(f => f.erro).join(' | ') : ''));
+    acAuditoria();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
 async function acRepublicarFalhas() {
   try {
     toast('Lendo os posts que falharam no Metricool...', 'info');
@@ -21739,10 +21752,12 @@ async function acAuditoria() {
         <div class="kpi ${(p.sem_link||0)>0?'gd':'gn'}"><div class="kl">Sem link</div><div class="kv">${p.sem_link ?? '—'}</div><div class="ks">de ${p.total ?? 0} — sem caminho até o formulário</div></div>
         <div class="kpi ${(l.no_periodo||0)>0?'gn':'rd'}"><div class="kl">Leads (30 dias)</div><div class="kv">${l.no_periodo ?? '—'}</div><div class="ks">${l.total_historico ?? 0} no histórico${l.ultimo_historico ? ' · último ' + l.ultimo_historico.split('-').reverse().join('/') : ''}</div></div>
       </div>
+      ${d.historico ? `<div style="font-size:10.5px;color:var(--t3);margin:-4px 0 10px;">Histórico (já publicados nos últimos 30 dias, não alteráveis): ${d.historico.publicados} post(s) · ${d.historico.captura} com página de captura · ${d.historico.agenda_direto} direto para a agenda · ${d.historico.sem_link} sem link.</div>` : ''}
       ${d.proximos && d.proximos.total != null ? `<div class="panel" style="margin-bottom:12px;border:1px solid ${d.proximos.agenda_direto || d.proximos.sem_link ? 'var(--gold)' : 'var(--green,#22d3a3)'};"><div class="ph"><div class="pt">📅 Próximos posts agendados (30 dias) — para onde o clique vai</div></div><div class="pb" style="font-size:11.5px;line-height:1.7;">
         <b>${d.proximos.total}</b> agendado(s): <span style="color:var(--green,#22d3a3);">✓ ${d.proximos.captura} com página de captura</span> · <span style="color:${d.proximos.agenda_direto ? 'var(--red)' : 'var(--t3)'};">${d.proximos.agenda_direto} direto para a agenda</span> · <span style="color:${d.proximos.sem_link ? 'var(--gold)' : 'var(--t3)'};">${d.proximos.sem_link} sem link</span> · ${d.proximos.stories} stories (link no adesivo)${d.proximos.outro ? ' · ' + d.proximos.outro + ' com outro link' : ''}
         <div style="font-size:10.5px;color:var(--t2);">${Object.entries(d.proximos.por_rede || {}).map(([r, o]) => r + ': ' + o.captura + '/' + o.total + ' com captura' + (o.agenda_direto ? ', ' + o.agenda_direto + ' agenda direto' : '') + (o.sem_link ? ', ' + o.sem_link + ' sem link' : '')).join(' · ')}</div>
         ${d.proximos.agenda_direto ? '<button class="btn btn-or" style="font-size:10.5px;margin-top:6px;" onclick="acTrocarLinkAgendados()">🔁 Trocar link dos já agendados</button>' : ''}
+        ${(d.proximos.sem_link_lista || []).length ? '<div style="margin-top:8px;font-size:10.5px;"><b style="color:var(--gold);">Agendados sem link nenhum:</b>' + d.proximos.sem_link_lista.map(x => '<div>• ' + x.data.replace('T', ' ') + ' · ' + x.redes.join(', ') + ' · ' + x.tipo + ' — ' + String(x.texto || '').replace(/</g, '&lt;') + '</div>').join('') + '<button class="btn btn-or" style="font-size:10.5px;margin-top:6px;" onclick="acAdicionarLinkAgendados()">➕ Adicionar link da captura nesses ' + d.proximos.sem_link_lista.length + '</button></div>' : ''}
         <div style="font-size:10px;color:var(--t3);margin-top:4px;">Os números de cima (30 dias) são dos posts que JÁ saíram — esses não dá para mudar. Esta caixa mostra o que ainda vai sair.</div></div></div>` : ''}
       ${(p.erros||[]).length ? `<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">❌ Publicações que falharam</div></div><div class="pb" style="max-height:30vh;overflow-y:auto;">
         ${p.erros.map(e => `<div style="border-left:3px solid var(--red);background:var(--bg4);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:10.5px;">
@@ -27532,7 +27547,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.76] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.77] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27548,7 +27563,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.76';
+window.__ATX_BUILD_ID__ = 'ATX-v3.77';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

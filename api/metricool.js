@@ -184,7 +184,7 @@ function _corpoPostMc(fonte, extra) {
   c.text = c.text ?? ''; c.draft = false; if (c.autoPublish === undefined) c.autoPublish = true;
   return Object.assign(c, extra || {});
 }
-async function trocarLinkAgendados({ aplicar = false, ids = null, blog_id, dias = 60 } = {}, req) {
+async function trocarLinkAgendados({ aplicar = false, ids = null, blog_id, dias = 60, adicionar = false } = {}, req) {
   const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
   if (!TOKEN || !USERID || !BLOGID) throw new Error('Credenciais do Metricool ausentes');
   const base = (process.env.MEDIA_PUBLIC_BASE || ('https://' + (req?.headers?.host || 'atlantyx-os.vercel.app'))).replace(/\/$/, '');
@@ -214,19 +214,31 @@ async function trocarLinkAgendados({ aplicar = false, ids = null, blog_id, dias 
     return { texto: t, n };
   };
   const itens = [];
-  for (const p of lista) {
+  // v3.77: adicionar:true → posts agendados SEM link nenhum (não Story) recebem a chamada com o link da captura
+  const temAlgumLink = t => /(https?:\/\/|\b[a-z0-9-]+\.(?:app|com|cool|ly|io)\/)/i.test(t);
+  if (adicionar) {
+    for (const p of lista) { const provs = p.providers || []; if (provs.some(x => x?.data?.postType === 'STORY')) continue;
+      if (temAlgumLink(String(p.text || '') + ' ' + String(p.firstCommentText || ''))) continue;
+      const redes = provs.map(x => String(x.network || '').toLowerCase()); const soIg = redes.length && redes.every(r => r === 'instagram');
+      const redeUtm = redes.find(r => r !== 'instagram') || 'instagram';
+      const link = soIg ? base.replace(/^https?:\/\//, '') + '/agenda' : base + '/captura.html?r=' + encodeURIComponent(reuniao) + '&utm_source=' + redeUtm + '&utm_medium=social&utm_campaign=agendado_sem_link';
+      const novoTxt = String(p.text || '').replace(/\s+$/, '') + '\n\n🎁 Peça seu diagnóstico gratuito de dados e IA:' + (soIg ? ' ' : '\n') + link;
+      itens.push({ id: p.id, data: String(p.publicationDate?.dateTime || p.publicationDate).substring(0, 16), redes, trocas: 1, texto: String(p.text || '').substring(0, 80), _p: p, _novo: novoTxt }); }
+  }
+  for (const p of (adicionar ? [] : lista)) {
     const rede = String((p.providers || [])[0]?.network || '').toLowerCase();
     const a = trocar(p.text, rede), c = trocar(p.firstCommentText || '', rede);
     if (a.n || c.n) itens.push({ id: p.id, data: String(p.publicationDate?.dateTime || p.publicationDate).substring(0, 16), redes: (p.providers || []).map(x => String(x.network).toLowerCase()), trocas: a.n + c.n, texto: String(p.text || '').substring(0, 80), _p: p, _t: a.texto, _c: c.n ? c.texto : null });
   }
   const alvo = Array.isArray(ids) && ids.length ? itens.filter(i => ids.map(String).includes(String(i.id))) : itens;
-  if (!aplicar) return { total_agendados: lista.length, com_link_antigo: itens.length, itens: itens.map(({ _p, _t, _c, ...x }) => x) };
+  if (!aplicar) return { total_agendados: lista.length, com_link_antigo: itens.length, itens: itens.map(({ _p, _t, _c, _novo, ...x }) => x) };
   const feitos = [], falhas = [];
   for (const it of alvo) {
     try {
       let atual = null; try { const g = await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN); atual = g?.data || g?.post || g; if (!atual?.providers) atual = null; } catch (_) {}
       const fonte = atual || it._p;
-      const corpo = _corpoPostMc(fonte, { text: trocar(fonte.text, it.redes[0]).texto, ...(fonte.firstCommentText ? { firstCommentText: trocar(fonte.firstCommentText, it.redes[0]).texto } : {}), shortener: false });
+      const corpo = it._novo ? _corpoPostMc(fonte, { text: it._novo, shortener: false })
+        : _corpoPostMc(fonte, { text: trocar(fonte.text, it.redes[0]).texto, ...(fonte.firstCommentText ? { firstCommentText: trocar(fonte.firstCommentText, it.redes[0]).texto } : {}), shortener: false });
       let ok = false;
       try { await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'PUT', corpo);
         const g2 = await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN); const p2 = g2?.data || g2?.post || g2;
@@ -284,9 +296,8 @@ async function auditoriaFunil({ dias = 30 } = {}) {
     });
     out.posts = { total: lista.length, ...status, com_link: comLink.length, sem_link: semLink.length, erros: comErro.slice(0, 40), erros_por_categoria: comErro.reduce((a, e) => { a[e.categoria] = (a[e.categoria] || 0) + 1; return a; }, {}) };
     if (comErro.length) out.problemas.push({ g: 'alta', txt: `${comErro.length} publicação(ões) FALHARAM no Metricool nos últimos ${dias} dias.` });
-    if (lista.length && semLink.length === lista.length) out.problemas.push({ g: 'alta', txt: `NENHUM dos ${lista.length} posts tem link. O leitor não tem para onde ir — não existe caminho até o formulário.` });
-    else if (semLink.length > comLink.length) out.problemas.push({ g: 'media', txt: `${semLink.length} de ${lista.length} posts sem nenhum link.` });
-    if (out.tipos_link?.agenda_direto) out.problemas.push({ g: 'media', txt: `${out.tipos_link.agenda_direto} post(s) JÁ PUBLICADOS nos últimos ${dias} dias levaram direto para a agenda (HubSpot / /reuniao) — publicados antes da correção, não dá para mudar. Os agendados estão na caixa "Próximos posts".` }); // v3.76
+    // v3.77: o que JÁ SAIU vira histórico (informativo) — não dá para mudar post publicado; problema é só o que ainda vai sair
+    out.historico = { publicados: status.publicado, sem_link: semLink.length, com_link: comLink.length, agenda_direto: out.tipos_link?.agenda_direto || 0, captura: out.tipos_link?.captura || 0 };
     if (!lista.length) out.problemas.push({ g: 'alta', txt: `Nenhum post encontrado no Metricool nos últimos ${dias} dias.` });
   } catch (e) { out.posts = { erro: e.message }; out.problemas.push({ g: 'alta', txt: 'Não consegui ler o Metricool: ' + e.message }); }
 
@@ -298,10 +309,12 @@ async function auditoriaFunil({ dias = 30 } = {}) {
     const prox = { total: fut.length, captura: 0, agenda_direto: 0, sem_link: 0, stories: 0, outro: 0, por_rede: {} };
     fut.forEach(p => { const provs = p.providers || []; const story = provs.some(x => x?.data?.postType === 'STORY'); const txt = String(p.text || '') + ' ' + String(p.firstCommentText || '');
       const tipo = story ? 'stories' : /captura\.html|\/agenda\b/i.test(txt) ? 'captura' : /meetings\.hubspot\.com|\/reuniao\b/i.test(txt) ? 'agenda_direto' : /(https?:\/\/|\b[a-z0-9-]+\.(?:app|com|cool|ly|io)\/)/i.test(txt) ? 'outro' : 'sem_link';
+      if (tipo === 'sem_link') (prox.sem_link_lista = prox.sem_link_lista || []).push({ id: p.id, data: String(p.publicationDate?.dateTime || p.publicationDate || '').substring(0, 16), redes: provs.map(x => String(x.network || '').toLowerCase()),
+        tipo: provs.some(x => x?.data?.postType === 'REEL') ? 'reel' : (p.media || p.medias || []).length > 1 ? 'carrossel' : 'post', texto: String(p.text || '').substring(0, 80) });
       prox[tipo]++; provs.forEach(x => { const rd = String(x.network || '').toLowerCase(); const o = prox.por_rede[rd] = prox.por_rede[rd] || { total: 0, captura: 0, agenda_direto: 0, sem_link: 0 }; o.total++; if (o[tipo] != null) o[tipo]++; }); });
     out.proximos = prox;
     if (prox.agenda_direto) out.problemas.push({ g: 'alta', txt: `${prox.agenda_direto} post(s) AGENDADOS ainda levam direto para a agenda — rode "Trocar link dos já agendados".` });
-    if (prox.sem_link) out.problemas.push({ g: 'media', txt: `${prox.sem_link} post(s) agendados sem nenhum link.` });
+    if (prox.sem_link) out.problemas.push({ g: 'media', txt: `${prox.sem_link} post(s) AGENDADOS não têm link nenhum — quem se interessar não tem para onde clicar. Veja a lista na caixa "Próximos posts" e use "Adicionar link".` });
   } catch (e) { out.proximos = { erro: e.message }; }
 
   // 2. Leads capturados no período
