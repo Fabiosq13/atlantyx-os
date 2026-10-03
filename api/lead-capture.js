@@ -34,7 +34,9 @@ async function handler(req, res) {
   if (req.method === 'GET' && req.query?.atalho) {
     const c = String(req.query.c || '').toLowerCase().replace(/[^a-z0-9_-]/g, '').substring(0, 60);
     const fonte = String(req.query.f || 'instagram').toLowerCase().replace(/[^a-z0-9_-]/g, '').substring(0, 30) || 'instagram';
-    const utm = 'utm_source=' + fonte + '&utm_medium=link_curto' + (c ? '&utm_campaign=' + c : '');
+    // v3.78: link curto também no LinkedIn/Facebook (?f=linkedin&p=post2) — antes o link da captura tinha ~250 caracteres
+    const conteudo = String(req.query.p || '').replace(/[^a-z0-9_-]/gi, '').substring(0, 40);
+    const utm = 'utm_source=' + fonte + '&utm_medium=' + (fonte === 'instagram' ? 'link_curto' : 'social') + (c ? '&utm_campaign=' + c : '') + (conteudo ? '&utm_content=' + conteudo : '');
     const reuniao = (process.env.LINK_REUNIAO || 'https://meetings.hubspot.com/atlantyx?uuid=eca883eb-276d-45cb-bda8-d7d5d2ae9219').trim();
     const destino = req.query.atalho === 'reuniao' ? reuniao + (reuniao.includes('?') ? '&' : '?') + utm : '/captura.html?' + utm;
     res.setHeader('Cache-Control', 'no-store');
@@ -80,7 +82,7 @@ async function handler(req, res) {
       try { if (leadId) { const { neon } = await import('@neondatabase/serverless'); const sq = neon(process.env.DATABASE_URL); await sq`UPDATE leads SET status = 'qa_teste' WHERE id = ${leadId}`; } } catch (_) {}
       ['alerta', 'mensagem', 'hubspot', 'whatsapp', 'followup'].forEach(k => etapas[k] = 'pulado (teste QA)');
       return res.status(200).json({ success: true, qa_teste: true, lead_id: leadId, origem: lead.origem, campanha: lead.campanha, utm: lead.utm, score: lead.score_label, etapas,
-        whatsapp: _whatsComercial(), agenda: process.env.LINK_REUNIAO || null });
+        whatsapp: _whatsComercial(), agenda: (process.env.LINK_REUNIAO || 'https://meetings.hubspot.com/atlantyx?uuid=eca883eb-276d-45cb-bda8-d7d5d2ae9219').trim() });
     }
 
     // ── 1c. ALERTA IMEDIATO por e-mail — "novo lead da campanha X" ──
@@ -112,7 +114,7 @@ async function handler(req, res) {
     if (falhas.length) console.warn('[S2] etapas com falha:', falhas.map(([k, v]) => k + '=' + v).join(' | '));
 
     return res.status(200).json({
-      whatsapp: _whatsComercial(), agenda: process.env.LINK_REUNIAO || null,
+      whatsapp: _whatsComercial(), agenda: (process.env.LINK_REUNIAO || 'https://meetings.hubspot.com/atlantyx?uuid=eca883eb-276d-45cb-bda8-d7d5d2ae9219').trim(),
       success: true,
       lead: lead.name, company: lead.company, score: lead.score_label,
       origem: lead.origem, campanha: lead.campanha,

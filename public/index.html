@@ -6779,6 +6779,10 @@ function salvarCtaCfg(parcial) { const c = Object.assign(ctaCfg(), parcial || {}
 // leads do Instagram não eram atribuídos a nenhuma campanha. O código é derivado do id (sempre o mesmo).
 function _codCurto(id) { const s = String(id || ''); if (!s) return ''; let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h.toString(36).slice(-4).padStart(4, '0'); }
 function _linkCurtoBase() { const c = ctaCfg(); return location.host.replace(/^www\./, '') + '/' + (c.destino === 'reuniao' ? 'reuniao' : 'agenda'); }
+// v3.78: link CURTO e clicável para LinkedIn/Facebook — https://host/agenda/<código>?f=<rede>&p=<post>. O servidor
+// redireciona para a página de captura com a mesma UTM (rede, campanha pelo código, post). Antes ia o endereço
+// completo com o link da agenda codificado (~250 caracteres) no meio do texto.
+function linkCurtoRede(campId, rede, conteudo) { const c = ctaCfg(); const id = campId || ''; return location.origin.replace(/^http:\/\/(?!localhost)/, 'https://') + '/' + (c.destino === 'reuniao' ? 'reuniao' : 'agenda') + (id ? '/' + _codCurto(id) : '') + '?f=' + encodeURIComponent(rede || 'linkedin') + (conteudo ? '&p=' + encodeURIComponent(String(conteudo).replace(/[^a-z0-9_-]/gi, '').substring(0, 30)) : ''); }
 function linkCurtoCampanha(campId) { const id = campId || (typeof campAtiva !== 'undefined' && campAtiva?.id) || ''; return _linkCurtoBase() + (id ? '/' + _codCurto(id) : ''); }
 // soma os leads de uma campanha vindos por qualquer chave (slug do utm_campaign, id ou código do link curto)
 function _leadsDaCampanha(campId) {
@@ -21548,7 +21552,7 @@ async function acCompletarRedes() {
     for (const [i, t] of tarefas.entries()) {
       toast(`Agendando ${i + 1}/${tarefas.length}...`, 'success');
       const camp = t.pc.campanhaId || t.li.campanhaId || null;
-      const lk = t.rd === 'instagram' ? '' : comUtm(linkDestinoPadrao(), t.rd, camp, 'post');
+      const lk = t.rd === 'instagram' ? '' : linkCurtoRede(camp, t.rd, 'post');
       const tx = t.rd === 'instagram' ? _textoInstagram(t.pc.copy, camp) : _textoComLink(t.pc.copy, lk);
       try {
         const r = await fetch('/api/metricool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'publicar', payload: { texto: tx, redes: [t.rd], data_hora: t.li.agendado_para, imagem_url: t.img, encurtar_link: t.rd !== 'instagram' } }) });
@@ -26494,7 +26498,7 @@ async function _gerarCampanhaAutomaticaImpl(opts = {}) {
         // e resultado real de cada rede (antes LinkedIn+Facebook iam juntos com a UTM do LinkedIn)
         const ok = [], falhas = []; let dp = null;
         for (const rd of redesPost) {
-          const lk = rd === 'instagram' ? '' : comUtm(linkDestinoPadrao(), rd, _autoId, 'post' + (_ix + 1));
+          const lk = rd === 'instagram' ? '' : linkCurtoRede(_autoId, rd, 'post' + (_ix + 1));
           const tx = rd === 'instagram' ? _textoInstagram(post.texto, _autoId) : _textoComLink(post.texto, lk);
           try {
             const rr = await fetch('/api/metricool', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'publicar', payload: { texto: tx, redes: [rd], data_hora: quando.toISOString(), imagem_url: imgUrl || null, encurtar_link: rd !== 'instagram' } }) });
@@ -26985,7 +26989,7 @@ async function gerarCarrosselPack() {
   try {
     const r = await fetch('/api/s2-creative', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'carrossel_pack', payload: { narrativa: campAtiva.data?.narrativa || {}, copy: campAtiva.data?.copy || {}, n_slides: 5 } }) });
     const d = await r.json(); if (!d.success || !d.slides?.length) throw new Error(d.error || 'sem slides');
-    const link = _linkStoriesReels(); const linkUtm = link + (link.includes('?') ? '&' : '?') + 'utm_source=linkedin&utm_medium=social&utm_campaign=' + (campAtiva.id || 'carrossel');
+    const link = _linkStoriesReels(); const linkUtm = campAtiva?.id ? linkCurtoRede(campAtiva.id, 'linkedin', 'carrossel') : link + (link.includes('?') ? '&' : '?') + 'utm_source=linkedin&utm_medium=social&utm_campaign=carrossel'; // v3.78
     const hs = d.hashtags?.length ? '\n\n' + d.hashtags.join(' ') : '';
     campAtiva.carrossel = { slides: d.slides.map(x => Object.assign({ imagem_url: '' }, x)),
       legenda_linkedin: (_textoComLink(String(d.legenda_linkedin || d.legenda || '').replace(/[^\n]*\{LINK\}[^\n]*/g, ''), linkUtm) + hs).trim(), // v3.73
@@ -27547,7 +27551,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.77] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.78] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27563,7 +27567,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.77';
+window.__ATX_BUILD_ID__ = 'ATX-v3.78';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

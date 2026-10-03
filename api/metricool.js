@@ -193,20 +193,23 @@ async function trocarLinkAgendados({ aplicar = false, ids = null, blog_id, dias 
   const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${f(agora)}T00:00:00&end=${f(fim)}T23:59:59&timezone=America/Sao_Paulo`, TOKEN);
   const lista = (Array.isArray(r) ? r : (r?.data || [])).filter(p => { const dt = new Date(String(p.publicationDate?.dateTime || p.publicationDate || '').substring(0, 19) + '-03:00'); return !isNaN(dt) && dt > agora && !p.published; });
   const reHub = /https?:\/\/meetings\.hubspot\.com\/[^\s)"'<>]+/gi;
+  // v3.78: endereço longo da captura (captura.html?r=<agenda>&utm...) → link curto /agenda/<código>?f=<rede>&p=<post>
+  const _cod = id => { const t = String(id || ''); if (!t) return ''; let h = 2166136261; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h.toString(36).slice(-4).padStart(4, '0'); };
+  const curto = (q, rede) => base + '/agenda' + (q.utm_campaign ? '/' + _cod(q.utm_campaign) : '') + '?f=' + encodeURIComponent(q.utm_source || rede || 'linkedin') + (q.utm_content ? '&p=' + encodeURIComponent(q.utm_content) : '');
+  const reLongo = new RegExp('https?:\\/\\/' + base.replace(/^https?:\/\//, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\/captura\\.html\\?[^\\s)"\'<>]+', 'gi');
   const hostEsc = base.replace(/^https?:\/\//, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const reCurto = new RegExp('((?:https?:\\/\\/)?' + hostEsc + ')\\/reuniao(\\/[a-z0-9]{2,8})?', 'gi');
   const trocar = (txt, rede) => {
     let n = 0;
-    let t = String(txt || '').replace(reHub, u => { n++; let q = {}; try { q = Object.fromEntries(new URL(u).searchParams); } catch (_) {}
-      const utm = 'utm_source=' + encodeURIComponent(q.utm_source || rede || 'social') + '&utm_medium=' + encodeURIComponent(q.utm_medium || 'social') + (q.utm_campaign ? '&utm_campaign=' + encodeURIComponent(q.utm_campaign) : '') + (q.utm_content ? '&utm_content=' + encodeURIComponent(q.utm_content) : '');
-      return base + '/captura.html?r=' + encodeURIComponent(reuniao) + '&' + utm; });
+    let t = String(txt || '').replace(reHub, u => { n++; let q = {}; try { q = Object.fromEntries(new URL(u).searchParams); } catch (_) {} return curto(q, rede); });
+    t = t.replace(reLongo, u => { if (u.length < 120) return u; n++; let q = {}; try { q = Object.fromEntries(new URL(u).searchParams); } catch (_) {} return curto(q, rede); });
     if (rede === 'instagram') t = t.replace(reCurto, (m, h, cod) => { n++; return h + '/agenda' + (cod || ''); });
     else {
       // v3.73: no LinkedIn/Facebook o link curto (chamada do Instagram que a IA copiou para o texto) não deve existir —
       // remove essa linha e a chamada repetida, deixando UMA chamada com o link completo da página de captura
       const linhas = t.split('\n'); const out = []; let viuCta = false;
       for (let i = 0; i < linhas.length; i++) { const x = linhas[i].trim();
-        if (new RegExp(hostEsc + '\\/(agenda|reuniao)\\b', 'i').test(x) && !/captura\.html/i.test(x)) { n++; continue; }
+        if (new RegExp(hostEsc + '\\/(agenda|reuniao)\\b', 'i').test(x) && !/captura\.html|[?&]f=/i.test(x)) { n++; continue; }
         if (/^🎁\s*Peça seu diagnóstico/i.test(x)) { if (viuCta) { n++; continue; } viuCta = true; }
         out.push(linhas[i]); }
       t = out.join('\n').replace(/\n{3,}/g, '\n\n');
