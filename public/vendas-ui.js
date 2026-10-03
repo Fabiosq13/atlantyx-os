@@ -35,7 +35,9 @@
   async function painelCarregar(forcar) {
     const c = $('vdPnCorpo'); if (!c) return;
     if (forcar === true) c.innerHTML = '<div style="padding:30px;text-align:center;color:var(--t3);font-size:11px;">Recalculando metas, funil e margens (QuickBooks + HubSpot)...</div>';
-    try { PN = await api('painel', forcar === true ? { forcar: true } : {}); c.innerHTML = painelHtml(PN); estrategiaListar(); }
+    try { PN = await api('painel', forcar === true ? { forcar: true } : {}); c.innerHTML = painelHtml(PN); estrategiaListar();
+      // v3.69: veio do cache e está desatualizado → mostra já e recalcula em segundo plano
+      if (PN && PN._cache && PN._cache.stale && forcar !== true) { const ant = PN; api('painel', { forcar: true }).then(n => { if (PN === ant && $('vdPnCorpo')) { PN = n; $('vdPnCorpo').innerHTML = painelHtml(PN); estrategiaListar(); } }).catch(() => {}); } }
     catch (e) { c.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);">Erro ao montar o painel: ${esc(e.message)}</div></div>`; }
   }
   function painelHtml(d) {
@@ -71,21 +73,21 @@
         Para o mês: ${k.vendas_mes ? `seriam necessárias ${k.vendas_mes} vendas já faturando — o mês se fecha com o que já está contratado e com antecipações.` : 'meta do mês coberta.'}<br>
         Fontes: receita ${esc(m.fonte?.receita)} · pipeline ${esc(m.fonte?.pipeline)} (peso ${k.premissas.peso_pipeline}% no ponderado).</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:10px;font-size:10.5px;">
-        <label>Lead → reunião (%)<br><input class="fi" id="vdTxLR" style="width:110px;" value="${k.premissas.taxa_lead_reuniao}"/></label>
-        <label>Reunião → proposta (%)<br><input class="fi" id="vdTxRP" style="width:110px;" value="${k.premissas.taxa_reuniao_proposta}"/></label>
-        <label>Peso do pipeline (%)<br><input class="fi" id="vdTxPP" style="width:110px;" value="${k.premissas.peso_pipeline}"/></label>
+        <label>Lead → reunião (%)<br><input class="fi" id="vdTxLR" title="Taxa de conversão de lead em reunião (%)" style="width:110px;" value="${k.premissas.taxa_lead_reuniao}"/></label>
+        <label>Reunião → proposta (%)<br><input class="fi" id="vdTxRP" title="Taxa de conversão de reunião em proposta (%)" style="width:110px;" value="${k.premissas.taxa_reuniao_proposta}"/></label>
+        <label>Peso do pipeline (%)<br><input class="fi" id="vdTxPP" title="Peso do pipeline na projeção (%)" style="width:110px;" value="${k.premissas.peso_pipeline}"/></label>
         <button class="btn btn-g" onclick="VD.premissasSalvar()">💾 Salvar premissas</button></div></details>
     <div class="panel"><div class="ph"><div class="pt">📈 Margens — projetos, sustentação e geral x mercado</div><span style="font-size:10px;color:var(--t2);">margem bruta = receita líquida − custo da equipe alocada (RH)</span></div><div class="pb">
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:12px;">
         ${blocoMargem('Geral', mg.geral)}${Object.entries(mg.por_tipo || {}).map(([t, x]) => blocoMargem(tipoNome[t] || t, x)).join('')}</div>
       <div class="tw"><table style="min-width:760px;"><thead><tr><th>Projeto</th><th>Tipo</th><th style="text-align:right;">Receita/mês</th><th style="text-align:right;">Custo equipe/mês</th><th style="text-align:right;">Margem bruta</th><th>Mercado</th><th>Situação</th></tr></thead><tbody>
-        ${(mg.linhas || []).map(l => `<tr><td><b>${esc(l.projeto)}</b><div style="font-size:9.5px;color:var(--t3);">${esc(l.cliente || '')}</div></td><td>${esc(tipoNome[l.tipo] || l.tipo)}</td><td style="text-align:right;font-family:var(--M);">${R(l.receita_mensal)}</td><td style="text-align:right;font-family:var(--M);">${l.custo_mensal ? R(l.custo_mensal) : '—'}</td>
-          <td style="text-align:right;font-family:var(--M);font-weight:700;color:${corSit(l.situacao)};">${P(l.margem_bruta_pct)}</td><td style="font-size:10px;color:var(--t2);">${l.benchmark.min}–${l.benchmark.max}%</td><td style="font-size:10.5px;color:${corSit(l.situacao)};">${esc(l.situacao)}</td></tr>`).join('') || '<tr><td colspan="7" style="color:var(--t3);text-align:center;">Sem projetos cadastrados no financeiro.</td></tr>'}</tbody></table></div>
+        ${(mg.linhas || []).map(l => `<tr><td><b>${esc(l.projeto)}</b><div style="font-size:9.5px;color:var(--t3);">${esc(l.cliente || '')}</div></td><td>${esc(tipoNome[l.tipo] || l.tipo)}</td><td style="text-align:right;font-family:var(--M);">${R(l.receita_mensal)}</td><td style="text-align:right;font-family:var(--M);">${l.custo_mensal ? R(l.custo_mensal) : '<span style="color:var(--gold);font-size:10px;" title="Aloque a equipe deste projeto em RH → Cadastro de Funcionários">sem equipe alocada</span>'}</td>
+          <td style="text-align:right;font-family:var(--M);font-weight:700;color:${corSit(l.situacao)};">${l.margem_bruta_pct != null ? P(l.margem_bruta_pct) : '<span style="color:var(--t3);font-weight:400;font-size:10px;">sem custo para calcular</span>'}</td><td style="font-size:10px;color:var(--t2);">${l.benchmark.min}–${l.benchmark.max}%</td><td style="font-size:10.5px;color:${corSit(l.situacao)};">${esc(l.situacao)}</td></tr>`).join('') || '<tr><td colspan="7" style="color:var(--t3);text-align:center;">Sem projetos cadastrados no financeiro.</td></tr>'}</tbody></table></div>
       ${(mg.sem_dados || []).length ? `<div style="font-size:10px;color:var(--gold);margin-top:6px;">Sem margem calculável (aloque a equipe no RH → Cadastro de Funcionários): ${esc(mg.sem_dados.join(', '))}</div>` : ''}
       <div style="font-size:9.5px;color:var(--t3);margin-top:6px;line-height:1.5;">${esc(mg.nota)} Referências: ${esc(mg.geral.benchmark.ref)} · ${Object.values(mg.por_tipo || {}).map(x => esc(x.benchmark.ref)).join(' · ')}. Benchmarks de mercado (estudos de serviços profissionais e serviços gerenciados) — ajustáveis.</div></div></div>
     <div class="panel"><div class="ph"><div class="pt">🧭 Estratégia para bater a meta</div><span style="font-size:10px;color:var(--t2);">período sugerido pela natureza da sua venda (ciclo de ${k.ciclo_dias} dias): <b>${esc(d.periodo_sugerido)}</b></span></div><div class="pb">
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
-        <select class="fsel" id="vdEstTipo" style="width:150px;" onchange="VD.estRef()">${['mensal', 'trimestral', 'semestral', 'anual'].map(t => `<option ${t === d.periodo_sugerido ? 'selected' : ''}>${t}</option>`).join('')}</select>
+        <select class="fsel" id="vdEstTipo" title="Período da estratégia" style="width:150px;" onchange="VD.estRef()">${['mensal', 'trimestral', 'semestral', 'anual'].map(t => `<option ${t === d.periodo_sugerido ? 'selected' : ''}>${t}</option>`).join('')}</select>
         <input class="fi" id="vdEstRef" style="width:140px;" title="Período (ex.: 2026-10, 2026-T4)" aria-label="Período"/>
         <input class="fi" id="vdEstTit" style="flex:1;min-width:200px;" placeholder="Título (ex.: Fechar Q4 com 3 contratos de sustentação)"/>
         <button class="btn btn-g" id="vdBtnEstIA" onclick="VD.estSugerir()">🤖 Rascunho com IA</button>

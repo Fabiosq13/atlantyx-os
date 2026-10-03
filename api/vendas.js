@@ -228,7 +228,12 @@ function _diasUteisRestantes(ate) { let d = new Date(); d.setHours(12); let n = 
 let _painelMemo = null;
 async function painel(base, { forcar = false } = {}) {
   if (!forcar && _painelMemo && Date.now() - _painelMemo.em < 120000) return _painelMemo.p;
-  const p = _painelCalc(base); _painelMemo = { em: Date.now(), p }; p.catch(() => { _painelMemo = null; });
+  // v3.69 (QA-001/002): o memo em memória se perde a cada instância nova — guarda também no banco. Até 5 min
+  // devolve na hora; até 12h devolve o último marcado como desatualizado e a tela pede o novo em seguida.
+  if (!forcar) { try { const sql = await getSql(); const r = await sql`SELECT valor, atualizado_em FROM app_config WHERE chave = 'cache:vendas:painel' LIMIT 1`;
+    if (r[0]) { const idade = (Date.now() - new Date(r[0].atualizado_em).getTime()) / 1000; const v = typeof r[0].valor === 'string' ? JSON.parse(r[0].valor) : r[0].valor;
+      if (v && idade < 12 * 3600) return Object.assign({}, v, { _cache: { idade_s: Math.round(idade), stale: idade > 300 } }); } } catch (_) {} }
+  const p = _painelCalc(base).then(v => { cfgSet('cache:vendas:painel', v).catch(() => {}); return v; }); _painelMemo = { em: Date.now(), p }; p.catch(() => { _painelMemo = null; });
   return p;
 }
 async function _painelCalc(base) {

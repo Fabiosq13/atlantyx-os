@@ -283,6 +283,23 @@ async function handler(req, res) {
       });
     }
 
+    // v3.69: telas que consultam o QuickBooks levavam ~10s a cada abertura (QA-001/006/009/016/019/021).
+    // Resultado guardado no banco: até 3 min devolve na hora; até 12h devolve o último na hora marcado como
+    // "desatualizado" e a tela pede a versão nova em seguida (params._forcar). Botão Atualizar força.
+    const CACHE_FIN = { dashboard_financeiro: 1, fluxo_detalhado: 1, extrato_diario: 1, extrato_mensal: 1, painel_resumo: 1 };
+    if (CACHE_FIN[action]) {
+      const { _forcar, ...pChave } = params || {};
+      const chave = 'cache:fin:' + action + ':' + JSON.stringify(pChave).substring(0, 400);
+      let sqlC = null; try { sqlC = await getSql(); } catch (_) {}
+      if (sqlC && !_forcar) {
+        try { const c = await sqlC`SELECT value, updated_at FROM kv_store WHERE key = ${chave} LIMIT 1`;
+          if (c[0]) { const idade = (Date.now() - new Date(c[0].updated_at).getTime()) / 1000; const v = typeof c[0].value === 'string' ? JSON.parse(c[0].value) : c[0].value;
+            if (idade < 12 * 3600 && v) return res.status(200).json({ success: true, action, ...v, _cache: { idade_s: Math.round(idade), stale: idade > 180 } }); } } catch (_) {}
+      }
+      const resultado = await acoes[action]();
+      if (sqlC) { try { await sqlC`INSERT INTO kv_store (key, value, updated_at) VALUES (${chave}, ${JSON.stringify(resultado)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {} }
+      return res.status(200).json({ success: true, action, ...resultado, _cache: { idade_s: 0, stale: false } });
+    }
     const resultado = await acoes[action]();
     return res.status(200).json({ success: true, action, ...resultado });
 

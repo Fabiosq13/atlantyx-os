@@ -262,7 +262,8 @@
     if (t === 'number') return '123';
     if (t === 'date') return new Date().toISOString().substring(0, 10);
     if (t === 'month') return new Date().toISOString().substring(0, 7);
-    if (t === 'email' || /email/i.test(el.id + el.name + el.placeholder)) return 'qa@teste.com.br';
+    // v3.69: só campo de ENDEREÇO de e-mail (antes "emailAssunto" recebia um e-mail e o achado dizia que os dados não foram enviados)
+    if (t === 'email' || /@/.test(el.placeholder || '') || /(^|[^a-z])e-?mail$/i.test(el.id || '') || /^e-?mail$/i.test(el.name || '')) return 'qa@teste.com.br';
     if (t === 'tel' || /telefone|whats|celular/i.test(el.id + el.placeholder)) return '21999990000';
     if (/valor|preco|preço|r\$/i.test(el.id + el.placeholder)) return '123,45';
     return MARCA + ' ' + (el.id || el.name || 'campo');
@@ -286,7 +287,8 @@
     }
     // 2. formulários de inclusão/alteração (modo seguro: a gravação é interceptada)
     if (opts.formularios) {
-      const salvar = bts.filter(b => BOT_FORM.test(b.innerText) && !/excluir|apagar|remover/i.test(b.innerText) && !b.disabled).slice(0, 3);
+      // v3.69: fora do teste de formulário: botão que só abre o seletor de arquivos (.click()) e botão de aba
+      const salvar = bts.filter(b => BOT_FORM.test(b.innerText) && !/excluir|apagar|remover/i.test(b.innerText) && !b.disabled && !/\.click\(\)|mostrarAba|Aba\(|Tab\(/.test(b.getAttribute('onclick') || '')).slice(0, 3);
       for (const b of salvar) {
         if (S.parar || !b.isConnected) break;
         const cont = b.closest('[id$="Modal"],.panel,.pb,form') || page;
@@ -294,9 +296,11 @@
         if (!campos.length) continue;
         const orig = campos.map(c => c.value); const rot = rotuloEl(b);
         const tentar = async (fase) => { ctx.fase = fase + ': ' + rot; ctx.confirmou = false; const antes = ctx.requisicoes.length, antesErr = ctx.erros.length, antesDlg = ctx.dialogos.length, html0 = cont.innerHTML.length;
+          const tEl = document.getElementById('toastEl'); const toast0 = tEl ? tEl.textContent : ''; if (tEl) tEl.textContent = ''; // v3.69: mensagem (toast) também é efeito visível
           try { b.click(); } catch (e) { ctx.erros.push({ tela: t.id, tipo: 'erro JS', msg: 'clique em "' + rot + '": ' + e.message }); }
           await aguardarRede(ctx, Math.min(opts.espera, 4000));
-          return { reqs: ctx.requisicoes.slice(antes), erros: ctx.erros.slice(antesErr), dlg: ctx.dialogos.slice(antesDlg), mudou: Math.abs(cont.innerHTML.length - html0) > 20, confirmou: ctx.confirmou }; };
+          const tNovo = tEl && tEl.textContent.trim() ? tEl.textContent.trim() : ''; if (tEl && !tNovo) tEl.textContent = toast0;
+          return { reqs: ctx.requisicoes.slice(antes), erros: ctx.erros.slice(antesErr), dlg: ctx.dialogos.slice(antesDlg), mudou: Math.abs(cont.innerHTML.length - html0) > 20 || !!tNovo || !!document.querySelector('input[type=file]:focus'), confirmou: ctx.confirmou, toast: tNovo }; };
         try {
           // a) vazio: deve validar e NÃO enviar
           campos.forEach(c => { if (c.tagName !== 'SELECT') { c.value = ''; disparar(c); } });
@@ -310,7 +314,7 @@
             const p = await tentar('formulário preenchido');
             const env = p.reqs.filter(r => r.bloqueado);
             if (p.erros.length) add('alta', 'ação', `Formulário "${rot}" gera erro de JavaScript ao salvar`, p.erros.map(e => e.msg).join(' | '), 'Corrigir a função de salvar.');
-            if (env.length && !env.some(r => (r.payload || '').includes(MARCA) || (r.payload || '').includes('123'))) add('média', 'formulário', `Formulário "${rot}" chama a API sem os dados digitados`, env.map(r => `${r.rota} · ${r.action}: ${r.payload}`).join(' | '), 'Conferir os ids dos campos lidos pela função de salvar.');
+            if (env.length && !env.some(r => (r.payload || '').includes(MARCA) || (r.payload || '').includes('123') || (r.payload || '').includes('qa@teste.com.br'))) add('média', 'formulário', `Formulário "${rot}" chama a API sem os dados digitados`, env.map(r => `${r.rota} · ${r.action}: ${r.payload}`).join(' | '), 'Conferir os ids dos campos lidos pela função de salvar.');
             if (!env.length && !p.reqs.length && !p.dlg.length && !p.mudou && !p.confirmou && !p.erros.length) add('baixa', 'formulário', `Botão "${rot}" não teve efeito visível com o formulário preenchido`, `${campos.length} campo(s) preenchidos`, 'Verificar se o botão está ligado à função certa ou se falta mensagem de retorno.');
             if (env.length) ctx.formsOk.push({ tela: t.id, botao: rot, chamadas: env.map(r => `${r.rota} · ${r.action}`).join(', ') });
             const alerta = p.dlg.find(d => /erro|falh|inválid|invalid/i.test(d.msg) && !/bloquead/i.test(d.msg)); if (alerta) add('média', 'formulário', `Formulário "${rot}" mostrou aviso de erro`, alerta.msg, 'Ver a validação/erro exibido.');
