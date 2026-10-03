@@ -203,7 +203,16 @@ async function trocarLinkAgendados({ aplicar = false, ids = null, blog_id, dias 
     let n = 0;
     let t = String(txt || '').replace(reHub, u => { n++; let q = {}; try { q = Object.fromEntries(new URL(u).searchParams); } catch (_) {} return curto(q, rede); });
     t = t.replace(reLongo, u => { if (u.length < 120) return u; n++; let q = {}; try { q = Object.fromEntries(new URL(u).searchParams); } catch (_) {} return curto(q, rede); });
-    if (rede === 'instagram') t = t.replace(reCurto, (m, h, cod) => { n++; return h + '/agenda' + (cod || ''); });
+    if (rede === 'instagram') {
+      t = t.replace(reCurto, (m, h, cod) => { n++; return h + '/agenda' + (cod || ''); });
+      // v3.79: Instagram com DUAS chamadas ("👉 …/agenda" sem código + "🎁 Peça… /agenda/código") — fica só uma,
+      // a que tem o código da campanha (é ele que liga o lead à campanha)
+      const reLinha = new RegExp(hostEsc + '\\/agenda(\\/[a-z0-9]{2,8})?', 'i');
+      const linhas = t.split('\n'); const comLink = linhas.map((l, i) => ({ i, cod: (l.match(reLinha) || [])[1] || '', tem: reLinha.test(l) })).filter(x => x.tem);
+      if (comLink.length > 1) { const fica = (comLink.filter(x => x.cod).pop() || comLink[comLink.length - 1]).i;
+        const fora = new Set(comLink.filter(x => x.i !== fica).map(x => x.i)); n += fora.size;
+        t = linhas.filter((l, i) => !fora.has(i)).join('\n').replace(/\n{3,}/g, '\n\n'); }
+    }
     else {
       // v3.73: no LinkedIn/Facebook o link curto (chamada do Instagram que a IA copiou para o texto) não deve existir —
       // remove essa linha e a chamada repetida, deixando UMA chamada com o link completo da página de captura
