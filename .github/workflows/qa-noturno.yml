@@ -3,7 +3,7 @@
 # que abre a tarefa "@claude" com o rótulo correcao-noturna. O Claude corrige; o claude-pr.yml valida e mescla.
 #
 # Configuração única (GitHub → Settings → Secrets and variables → Actions):
-#   secrets: CRON_SECRET (o mesmo do Vercel) · ATX_QA_EMAIL e ATX_QA_SENHA (um usuário de ATX_USUARIOS)
+#   secrets: CRON_SECRET (o mesmo do Vercel) · ATX_QA_EMAIL e ATX_QA_SENHA (login ou e-mail de um usuário criado em Acesso › Usuários)
 #   variável (opcional): ATX_URL (padrão https://atlantyx-os.vercel.app)
 name: QA noturno — correção autônoma de erros
 on:

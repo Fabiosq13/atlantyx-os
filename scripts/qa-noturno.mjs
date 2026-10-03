@@ -12,7 +12,7 @@ const b = await chromium.launch();
 const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
 if (ATX_QA_EMAIL && ATX_QA_SENHA) {
   const r = await ctx.request.post(URL_ + '/api/auth', { data: { email: ATX_QA_EMAIL, senha: ATX_QA_SENHA } });
-  if (!r.ok()) { console.error('Login do QA recusado (HTTP ' + r.status() + '). Confira ATX_QA_EMAIL/ATX_QA_SENHA (um usuário de ATX_USUARIOS).'); process.exit(1); }
+  if (!r.ok()) { console.error('Login do QA recusado (HTTP ' + r.status() + '). Confira ATX_QA_EMAIL/ATX_QA_SENHA (login ou e-mail de um usuário criado em Acesso › Usuários).'); process.exit(1); }
 }
 const pg = await ctx.newPage();
 pg.on('dialog', d => d.dismiss().catch(() => {}));
