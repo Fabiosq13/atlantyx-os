@@ -188,7 +188,17 @@ async function trocarLinkAgendados({ aplicar = false, ids = null, blog_id, dias 
     let t = String(txt || '').replace(reHub, u => { n++; let q = {}; try { q = Object.fromEntries(new URL(u).searchParams); } catch (_) {}
       const utm = 'utm_source=' + encodeURIComponent(q.utm_source || rede || 'social') + '&utm_medium=' + encodeURIComponent(q.utm_medium || 'social') + (q.utm_campaign ? '&utm_campaign=' + encodeURIComponent(q.utm_campaign) : '') + (q.utm_content ? '&utm_content=' + encodeURIComponent(q.utm_content) : '');
       return base + '/captura.html?r=' + encodeURIComponent(reuniao) + '&' + utm; });
-    t = t.replace(reCurto, (m, h, cod) => { n++; return h + '/agenda' + (cod || ''); });
+    if (rede === 'instagram') t = t.replace(reCurto, (m, h, cod) => { n++; return h + '/agenda' + (cod || ''); });
+    else {
+      // v3.73: no LinkedIn/Facebook o link curto (chamada do Instagram que a IA copiou para o texto) não deve existir —
+      // remove essa linha e a chamada repetida, deixando UMA chamada com o link completo da página de captura
+      const linhas = t.split('\n'); const out = []; let viuCta = false;
+      for (let i = 0; i < linhas.length; i++) { const x = linhas[i].trim();
+        if (new RegExp(hostEsc + '\\/(agenda|reuniao)\\b', 'i').test(x) && !/captura\.html/i.test(x)) { n++; continue; }
+        if (/^🎁\s*Peça seu diagnóstico/i.test(x)) { if (viuCta) { n++; continue; } viuCta = true; }
+        out.push(linhas[i]); }
+      t = out.join('\n').replace(/\n{3,}/g, '\n\n');
+    }
     return { texto: t, n };
   };
   const itens = [];
