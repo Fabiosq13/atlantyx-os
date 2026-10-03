@@ -21666,6 +21666,22 @@ async function acTrocarLinkAgendados() {
     try { await sincronizarStatusMetricool(true); } catch (_) {}
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
+// v3.72: apaga do Metricool os posts com erro (já corrigidos de outro jeito) — limpa a auditoria
+async function acApagarFalhas() {
+  try {
+    const d = await mcApi('republicar_falhas', { dias: 30, aplicar: false });
+    if (!d.total) { alert('Nenhum post com erro nos últimos 30 dias.'); return; }
+    if (!confirm(`Apagar do Metricool ${d.total} post(s) com erro dos últimos 30 dias?\n\n${d.itens.slice(0, 12).map(i => '• ' + i.data.replace('T', ' ') + ' ' + i.redes.join(',') + ' — ' + i.texto.substring(0, 45)).join('\n')}${d.total > 12 ? '\n(e mais ' + (d.total - 12) + ')' : ''}\n\nEles NÃO serão republicados. Use quando o conteúdo já foi publicado/corrigido de outro jeito.`)) return;
+    const ids = d.itens.map(i => i.id); let ap = 0, falhas = [];
+    for (let k = 0; k < ids.length; k += 10) { try { const r = await mcApi('republicar_falhas', { dias: 30, aplicar: 'apagar', ids: ids.slice(k, k + 10) }); ap += r.apagados || 0; falhas = falhas.concat(r.falhas || []); } catch (e) { falhas.push({ erro: e.message }); } }
+    // tira do calendário os registros desses posts
+    try { const set = new Set(ids.map(String)); const fora = (_publicacoes || []).filter(p => set.has(String(p.metricool_id))).map(p => p.id); if (fora.length) { fora.forEach(_pubMarcarExcluida); _publicacoes = _publicacoes.filter(p => !fora.includes(p.id)); await salvarPublicacoes(); } } catch (_) {}
+    try { await sqlCacheLimparAud(); } catch (_) {}
+    alert(ap + ' post(s) com erro apagado(s) do Metricool.' + (falhas.length ? '\n' + falhas.length + ' não apagado(s): ' + falhas.slice(0, 5).map(f => f.erro).join(' | ') : ''));
+    acAuditoria();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+async function sqlCacheLimparAud() { await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', key: 'cache:mkt:auditoria' }) }); }
 async function acRepublicarFalhas() {
   try {
     toast('Lendo os posts que falharam no Metricool...', 'info');
@@ -21714,7 +21730,8 @@ async function acAuditoria() {
           <div>${String(e.texto||'').replace(/</g,'&lt;')}…</div>
           <div style="color:var(--red);font-size:10px;margin-top:3px;">${e.categoria ? '<b>[' + e.categoria + ']</b> ' : ''}${String(e.motivo||'').replace(/</g,'&lt;')}</div></div>`).join('')}
         <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">${Object.entries(p.erros_por_categoria || {}).map(([k, n]) => '<span class="tag off">' + k + ': ' + n + '</span>').join('')}
-          <button class="btn btn-or" style="font-size:10.5px;margin-left:auto;" onclick="acRepublicarFalhas()" title="Revisa os posts que falharam e publica de novo nos próximos horários vagos, com as imagens copiadas para endereço permanente">♻ Revisar e republicar os que falharam</button></div>
+          <button class="btn" style="font-size:10.5px;margin-left:auto;color:var(--red);border-color:var(--red);" onclick="acApagarFalhas()" title="Apaga do Metricool os posts com erro que você já corrigiu/publicou de outro jeito — não republica">🗑 Apagar os que falharam (já corrigidos)</button>
+          <button class="btn btn-or" style="font-size:10.5px;" onclick="acRepublicarFalhas()" title="Revisa os posts que falharam e publica de novo nos próximos horários vagos, com as imagens copiadas para endereço permanente">♻ Revisar e republicar os que falharam</button></div>
       </div></div>` : ''}
       ${d.funil_por_rede ? `<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">🔎 Funil por rede — onde o lead se perde (30 dias)</div></div><div class="pb" style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="border-bottom:1px solid var(--bd);">${['REDE','PUBLICAÇÕES','COM LINK','IMPRESSÕES','CLIQUES (rede)','VISITAS À PÁGINA','LEADS','GARGALO / O QUE FAZER'].map(h => `<th style="text-align:left;padding:6px;font-size:9px;">${h}</th>`).join('')}</tr></thead>
@@ -27495,7 +27512,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.71] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.72] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27511,7 +27528,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.71';
+window.__ATX_BUILD_ID__ = 'ATX-v3.72';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

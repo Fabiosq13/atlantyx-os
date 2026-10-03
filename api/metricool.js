@@ -140,6 +140,12 @@ async function republicarFalhas({ dias = 30, aplicar = false, ids = null, blog_i
   const conexao = itens.filter(i => i.categoria === 'conexão da rede');
   if (!aplicar) return { total: itens.length, itens: itens.map(({ _p, _prov, ...x }) => x), por_categoria: itens.reduce((a, i) => { a[i.categoria] = (a[i.categoria] || 0) + 1; return a; }, {}),
     aviso: conexao.length ? conexao.length + ' falharam por conexão da rede (token/permissão) — reconecte a rede no Metricool antes de republicar, senão vão falhar de novo.' : null };
+  // v3.72: só apagar (os que já foram corrigidos/publicados de outro jeito) — não republica
+  if (aplicar === 'apagar') {
+    const apagados = [], falhasA = [];
+    for (const it of itens) { try { await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'DELETE'); apagados.push(it.id); } catch (e) { falhasA.push({ id: it.id, erro: e.message.substring(0, 160) }); } }
+    return { apagados: apagados.length, ids: apagados, falhas: falhasA };
+  }
   // horários vagos (mesma regra da autocampanha) para não empilhar posts
   const { plano } = await autoCampanhaPlanejar({ dias: 14, blog_id: BLOGID });
   const vagos = (plano.vagos || []).slice();
