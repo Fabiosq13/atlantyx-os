@@ -38,8 +38,8 @@ async function corrigirImagensAgendadas({ blog_id, dias = 60, aplicar = false } 
     try {
       const novas = [];
       for (const u of midias) novas.push((await garantirPermanente({ url: u })).url);
-      const corpo = { ...p, media: novas, medias: novas };
-      await mc(`/v2/scheduler/posts/${p.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'PUT', corpo);
+      const corpo = _corpoPostMc(p, { media: novas, medias: novas }); // v3.80: corpo limpo e recriação sem duplicar
+      await _recriarSemDuplicar(p.id, corpo, { USERID, BLOGID, TOKEN });
       corrigidos.push(p.id);
     } catch (e) { erros.push(`${p.id}: ${e.message}`); }
   }
@@ -172,6 +172,46 @@ async function republicarFalhas({ dias = 30, aplicar = false, ids = null, blog_i
 
 // v3.71: TROCA O LINK dos posts JÁ AGENDADOS — de "agenda direto" (HubSpot / /reuniao) para a página de captura
 // (/captura.html ou /agenda no Instagram), mantendo a campanha e o conteúdo da UTM. aplicar:false só lista.
+async function _recriarSemDuplicar(idAntigo, corpo, { USERID, BLOGID, TOKEN }) {
+  const novo = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', corpo);
+  const novoId = novo?.data?.id || novo?.id || null; if (!novoId) throw new Error('o Metricool não devolveu o post novo');
+  let apagou = false;
+  try { await mc(`/v2/scheduler/posts/${idAntigo}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'DELETE'); apagou = true; } catch (_) {}
+  if (apagou) { try { const g = await mc(`/v2/scheduler/posts/${idAntigo}?userId=${USERID}&blogId=${BLOGID}`, TOKEN); const p = g?.data || g?.post || g; if (p && (p.id || p.providers)) apagou = false; } catch (_) { /* 404 = apagado */ } }
+  if (!apagou) { try { await mc(`/v2/scheduler/posts/${novoId}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'DELETE'); } catch (_) {} throw new Error('não consegui apagar o post antigo — nada foi alterado para não duplicar'); }
+  return novoId;
+}
+
+// v3.80: REMOVE DUPLICADOS dos posts agendados — mesmo horário, mesmas redes e mesmo texto (sem os links) e
+// mesma imagem. Fica um por grupo: o que já tem o link novo (curto/captura); empate → o mais recente.
+async function removerDuplicados({ aplicar = false, dias = 60, blog_id, ids = null } = {}) {
+  const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
+  if (!TOKEN || !USERID || !BLOGID) throw new Error('Credenciais do Metricool ausentes');
+  const ag = new Date(), fim = new Date(Date.now() + dias * 864e5), f = d => d.toISOString().substring(0, 10);
+  const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${f(ag)}T00:00:00&end=${f(fim)}T23:59:59&timezone=America/Sao_Paulo`, TOKEN);
+  const lista = (Array.isArray(r) ? r : (r?.data || [])).filter(p => !p.published && new Date(String(p.publicationDate?.dateTime || p.publicationDate || '').substring(0, 19) + '-03:00') > ag);
+  const norm = t => String(t || '').replace(/(https?:\/\/)?[a-z0-9.-]+\.[a-z]{2,}(\/[^\s]*)?/gi, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().toLowerCase().substring(0, 300);
+  const grupos = new Map();
+  for (const p of lista) {
+    const quando = String(p.publicationDate?.dateTime || p.publicationDate || '').substring(0, 16);
+    const redes = (p.providers || []).map(x => String(x.network || '').toLowerCase() + ':' + (x?.data?.postType || '')).sort().join(',');
+    const m0 = (p.media || p.medias || [])[0]; const midia = typeof m0 === 'string' ? m0.split('?')[0].split('/').pop() : '';
+    const k = quando + '|' + redes + '|' + norm(p.text) + '|' + (norm(p.text) ? '' : midia);
+    if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(p);
+  }
+  const nota = p => { const t = String(p.text || ''); return (/[?&]f=|\/agenda\/[a-z0-9]{3,8}/i.test(t) ? 4 : 0) + (/captura\.html/i.test(t) ? 2 : 0) + (/meetings\.hubspot|\/reuniao/i.test(t) ? -4 : 0); };
+  const apagar = [], resumo = [];
+  for (const g of grupos.values()) { if (g.length < 2) continue;
+    g.sort((a, b) => (nota(b) - nota(a)) || (Number(b.id) - Number(a.id)));
+    const fica = g[0]; g.slice(1).forEach(p => apagar.push(p.id));
+    resumo.push({ quando: String(fica.publicationDate?.dateTime || fica.publicationDate).substring(0, 16), redes: (fica.providers || []).map(x => String(x.network).toLowerCase()), copias: g.length, fica: fica.id, texto: String(fica.text || '').substring(0, 70) }); }
+  const alvo = Array.isArray(ids) && ids.length ? apagar.filter(id => ids.map(String).includes(String(id))) : apagar;
+  if (!aplicar) return { agendados: lista.length, grupos_duplicados: resumo.length, a_apagar: apagar.length, ids: apagar, resumo: resumo.sort((a, b) => a.quando.localeCompare(b.quando)) };
+  let ok = 0; const falhas = [];
+  for (const id of alvo) { try { await mc(`/v2/scheduler/posts/${id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'DELETE'); ok++; } catch (e) { falhas.push({ id, erro: e.message.substring(0, 160) }); } }
+  return { apagados: ok, ids_apagados: alvo.filter(id => !falhas.some(f => String(f.id) === String(id))), falhas };
+}
+
 // v3.74: corpo LIMPO para reenviar um post ao Metricool. O GET devolve campos só de leitura (status por rede,
 // datas, ids, links públicos) que o PUT/POST recusam com "Type definition error ... PublicationStatusCode".
 function _corpoPostMc(fonte, extra) {
@@ -251,17 +291,10 @@ async function trocarLinkAgendados({ aplicar = false, ids = null, blog_id, dias 
       const fonte = atual || it._p;
       const corpo = it._novo ? _corpoPostMc(fonte, { text: it._novo, shortener: false })
         : _corpoPostMc(fonte, { text: trocar(fonte.text, it.redes[0]).texto, ...(fonte.firstCommentText ? { firstCommentText: trocar(fonte.firstCommentText, it.redes[0]).texto } : {}), shortener: false });
-      let ok = false;
-      try { await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'PUT', corpo);
-        const g2 = await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN); const p2 = g2?.data || g2?.post || g2;
-        const nz = x => String(x || '').replace(/\s+/g, ' ').trim(); ok = !!p2 && nz(p2.text) === nz(corpo.text); } catch (_) {}
-      let novoId = it.id;
-      if (!ok) { // o Metricool não aceitou a edição: recria igual (mesma data) com o link novo e apaga o antigo
-        const novo = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', corpo);
-        novoId = novo?.data?.id || novo?.id || null; if (!novoId) throw new Error('o Metricool não devolveu o post recriado');
-        try { await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'DELETE'); } catch (_) {}
-      }
-      feitos.push({ id_antigo: it.id, id_novo: novoId, metodo: ok ? 'editado' : 'recriado', data: it.data, redes: it.redes, trocas: it.trocas });
+      // v3.80: SEM PUT — a edição do Metricool gerava cópias (a cada rodada o post duplicava). Agora recria com o
+      // texto novo e só considera feito se o antigo foi realmente apagado; se não apagou, desfaz (apaga o novo).
+      const novoId = await _recriarSemDuplicar(it.id, corpo, { USERID, BLOGID, TOKEN });
+      feitos.push({ id_antigo: it.id, id_novo: novoId, metodo: 'recriado', data: it.data, redes: it.redes, trocas: it.trocas });
     } catch (e) { falhas.push({ id: it.id, data: it.data, erro: e.message.substring(0, 200) }); }
   }
   return { trocados: feitos.length, feitos, falhas };
@@ -1068,6 +1101,7 @@ async function handler(req, res) {
     auditoria_funil:        () => auditoriaFunil(payload),
     republicar_falhas:      () => republicarFalhas(payload, req), // v3.70
     trocar_link_agendados:  () => trocarLinkAgendados(payload, req), // v3.71
+    remover_duplicados:     () => removerDuplicados(payload), // v3.80
     story_texto:            () => storyTexto(payload),
     autocampanha_agendar_um:() => autoCampanhaAgendarUm(payload),
     fila_enfileirar:        () => filaEnfileirar(payload),
@@ -1227,19 +1261,11 @@ async function handler(req, res) {
         let erroPut = '';
         if (postAtual) {
           // Reenvia o post inteiro, trocando apenas a data (mantém texto, redes, mídia, tipo de post)
-          const corpo = _corpoPostMc(postAtual, { publicationDate: dt }); // v3.74: corpo limpo (sem campos só de leitura)
-          try {
-            const r = await mc(`/v2/scheduler/posts/${metricool_id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'PUT', corpo);
-            if (r && (r.id || r.data || r.success || r.status === 'ok' || (typeof r === 'object' && !r.error))) {
-              // v3.53: o Metricool às vezes responde OK ao PUT e mantém a data antiga — confere lendo o post de novo
-              let conferido = null;
-              try { const g2 = await mc(`/v2/scheduler/posts/${metricool_id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN); const p2 = g2?.data || g2?.post || g2;
-                const dt2 = String(p2?.publicationDate?.dateTime || p2?.publicationDate || ''); if (dt2) conferido = dt2.substring(0, 16) === dt.dateTime.substring(0, 16); } catch (_) {}
-              if (conferido !== false) return { reagendado: true, metodo: 'atualizado', metricool_id, agendado_para: quando.toISOString(),
-                detalhe: 'post completo reenviado com a nova data' + (conferido ? ' (conferido)' : '') };
-              erroPut = 'o Metricool aceitou a alteração mas manteve a data antiga';
-            }
-          } catch (e) { erroPut = e.message; }
+          // v3.80: sem PUT (o Metricool gerava cópias) — recria na nova data e só conclui se o antigo foi apagado
+          const corpo = _corpoPostMc(postAtual, { publicationDate: dt });
+          try { const novoId = await _recriarSemDuplicar(metricool_id, corpo, { USERID, BLOGID, TOKEN });
+            return { reagendado: true, metodo: 'recriado_do_metricool', antigo: metricool_id, metricool_id: novoId, agendado_para: quando.toISOString(), detalhe: 'recriado na nova data' };
+          } catch (e) { throw new Error('Não consegui reagendar no Metricool: ' + e.message); } // não cai no plano B (evita cópia)
         }
 
         // Plano B: recriar. Usa o payload original salvo OU reconstrói a partir do post buscado no Metricool.
