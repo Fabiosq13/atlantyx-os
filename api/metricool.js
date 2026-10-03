@@ -286,7 +286,7 @@ async function auditoriaFunil({ dias = 30 } = {}) {
     if (comErro.length) out.problemas.push({ g: 'alta', txt: `${comErro.length} publicação(ões) FALHARAM no Metricool nos últimos ${dias} dias.` });
     if (lista.length && semLink.length === lista.length) out.problemas.push({ g: 'alta', txt: `NENHUM dos ${lista.length} posts tem link. O leitor não tem para onde ir — não existe caminho até o formulário.` });
     else if (semLink.length > comLink.length) out.problemas.push({ g: 'media', txt: `${semLink.length} de ${lista.length} posts sem nenhum link.` });
-    if (out.tipos_link?.agenda_direto) out.problemas.push({ g: 'alta', txt: `${out.tipos_link.agenda_direto} post(s) levam DIRETO para a agenda (HubSpot / /reuniao) — o clique não passa pela página de captura e não vira lead. Use "Trocar link dos já agendados" para os futuros.` });
+    if (out.tipos_link?.agenda_direto) out.problemas.push({ g: 'media', txt: `${out.tipos_link.agenda_direto} post(s) JÁ PUBLICADOS nos últimos ${dias} dias levaram direto para a agenda (HubSpot / /reuniao) — publicados antes da correção, não dá para mudar. Os agendados estão na caixa "Próximos posts".` }); // v3.76
     if (!lista.length) out.problemas.push({ g: 'alta', txt: `Nenhum post encontrado no Metricool nos últimos ${dias} dias.` });
   } catch (e) { out.posts = { erro: e.message }; out.problemas.push({ g: 'alta', txt: 'Não consegui ler o Metricool: ' + e.message }); }
 
