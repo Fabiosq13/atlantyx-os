@@ -3989,6 +3989,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <button class="btn" style="font-size:10px;" onclick="acDiagnostico()" title="Testa Metricool, IA, gerador de imagem, JPEG, fontes e a fila — e diz o que corrigir">&#129658; Diagnostico</button>
         <button class="btn" style="font-size:10px;" onclick="acAuditoria()" title="Por que nao ha leads? Cruza publicacoes, erros e capturas">&#128269; Auditoria do funil</button>
         <button class="btn" style="font-size:10px;" onclick="acCorrigirImagens()" title="Corrige posts agendados cuja imagem vai expirar antes da publicacao">&#128295; Corrigir imagens agendadas</button>
+        <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="acTrocarLinkAgendados()" title="Troca o link 'agenda direto' dos posts já agendados pela página de captura (cadastro → agenda), mantendo a campanha da UTM">&#128257; Trocar link dos já agendados</button>
         <button class="btn" style="font-size:10px;color:#e1306c;border-color:#e1306c;" onclick="acGerarStory()" title="Gera um Story do Instagram com oferta, QR code e link de captura">&#128247; Story com link</button>
         <button class="btn" style="font-size:10px;margin-left:auto;color:var(--t3);" title="Modo antigo, em que o servidor gerava os posts numa fila" onclick="const x=document.getElementById('acFilaAntiga');x.style.display=x.style.display==='none'?'flex':'none';">Fila do servidor (modo antigo) ▾</button>
         <div id="acFilaAntiga" style="display:none;flex-basis:100%;justify-content:flex-end;gap:6px;"><!-- v3.69: sem <details> (os botões escondidos contavam como sobrepostos — QA-014) -->
@@ -21646,6 +21647,25 @@ async function acAgendarStory() {
 
 // v2.15: auditoria do funil — publicação → clique → captura
 // v3.70: republicar posts que falharam no Metricool (motivo real, imagens permanentes, horários vagos)
+// v3.71: troca o link dos posts já agendados para a página de captura
+async function acTrocarLinkAgendados() {
+  try {
+    toast('Procurando posts agendados com o link antigo...', 'info');
+    const d = await mcApi('trocar_link_agendados', { aplicar: false });
+    if (!d.com_link_antigo) { alert('Nenhum post agendado usa o link antigo (agenda direto). ' + d.total_agendados + ' post(s) agendado(s) conferidos.'); return; }
+    if (!confirm(`${d.com_link_antigo} de ${d.total_agendados} post(s) agendado(s) levam direto para a agenda:\n\n${d.itens.slice(0, 12).map(i => '• ' + i.data.replace('T', ' ') + ' ' + i.redes.join(',') + ' — ' + i.texto.substring(0, 45)).join('\n')}${d.itens.length > 12 ? '\n(e mais ' + (d.itens.length - 12) + ')' : ''}\n\nTrocar o link pela página de captura (cadastro → agenda)? A data e o texto continuam iguais; a campanha da UTM é mantida.`)) return;
+    const ids = d.itens.map(i => i.id); let feitos = [], falhas = [];
+    for (let k = 0; k < ids.length; k += 5) {
+      toast(`Trocando ${Math.min(k + 5, ids.length)} de ${ids.length}...`, 'info');
+      try { const r = await mcApi('trocar_link_agendados', { aplicar: true, ids: ids.slice(k, k + 5) }); feitos = feitos.concat(r.feitos || []); falhas = falhas.concat(r.falhas || []); }
+      catch (e) { falhas.push({ data: '(lote)', erro: e.message }); }
+    }
+    // registros do calendário acompanham o id novo quando o post precisou ser recriado
+    try { let mud = 0; feitos.filter(f => String(f.id_novo) !== String(f.id_antigo)).forEach(f => (_publicacoes || []).forEach(p => { if (String(p.metricool_id) === String(f.id_antigo)) { p.metricool_id = f.id_novo; mud++; } })); if (mud) await salvarPublicacoes(); } catch (_) {}
+    alert(`${feitos.length} post(s) com o link trocado (${feitos.filter(f => f.metodo === 'editado').length} editados, ${feitos.filter(f => f.metodo === 'recriado').length} recriados na mesma data).${falhas.length ? '\n\n' + falhas.length + ' não trocado(s):\n' + falhas.slice(0, 8).map(f => '• ' + (f.data || '') + ' ' + f.erro).join('\n') : ''}`);
+    try { await sincronizarStatusMetricool(true); } catch (_) {}
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
 async function acRepublicarFalhas() {
   try {
     toast('Lendo os posts que falharam no Metricool...', 'info');
@@ -27475,7 +27495,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.70] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.71] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27491,7 +27511,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.70';
+window.__ATX_BUILD_ID__ = 'ATX-v3.71';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

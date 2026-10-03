@@ -164,6 +164,58 @@ async function republicarFalhas({ dias = 30, aplicar = false, ids = null, blog_i
   return { republicados: feitos.length, feitos, falhas };
 }
 
+// v3.71: TROCA O LINK dos posts JÁ AGENDADOS — de "agenda direto" (HubSpot / /reuniao) para a página de captura
+// (/captura.html ou /agenda no Instagram), mantendo a campanha e o conteúdo da UTM. aplicar:false só lista.
+async function trocarLinkAgendados({ aplicar = false, ids = null, blog_id, dias = 60 } = {}, req) {
+  const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
+  if (!TOKEN || !USERID || !BLOGID) throw new Error('Credenciais do Metricool ausentes');
+  const base = (process.env.MEDIA_PUBLIC_BASE || ('https://' + (req?.headers?.host || 'atlantyx-os.vercel.app'))).replace(/\/$/, '');
+  const reuniao = (process.env.LINK_REUNIAO || 'https://meetings.hubspot.com/atlantyx?uuid=eca883eb-276d-45cb-bda8-d7d5d2ae9219').trim();
+  const agora = new Date(Date.now() + 10 * 60000), fim = new Date(Date.now() + dias * 864e5), f = d => d.toISOString().substring(0, 10);
+  const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${f(agora)}T00:00:00&end=${f(fim)}T23:59:59&timezone=America/Sao_Paulo`, TOKEN);
+  const lista = (Array.isArray(r) ? r : (r?.data || [])).filter(p => { const dt = new Date(String(p.publicationDate?.dateTime || p.publicationDate || '').substring(0, 19) + '-03:00'); return !isNaN(dt) && dt > agora && !p.published; });
+  const reHub = /https?:\/\/meetings\.hubspot\.com\/[^\s)"'<>]+/gi;
+  const hostEsc = base.replace(/^https?:\/\//, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const reCurto = new RegExp('((?:https?:\\/\\/)?' + hostEsc + ')\\/reuniao(\\/[a-z0-9]{2,8})?', 'gi');
+  const trocar = (txt, rede) => {
+    let n = 0;
+    let t = String(txt || '').replace(reHub, u => { n++; let q = {}; try { q = Object.fromEntries(new URL(u).searchParams); } catch (_) {}
+      const utm = 'utm_source=' + encodeURIComponent(q.utm_source || rede || 'social') + '&utm_medium=' + encodeURIComponent(q.utm_medium || 'social') + (q.utm_campaign ? '&utm_campaign=' + encodeURIComponent(q.utm_campaign) : '') + (q.utm_content ? '&utm_content=' + encodeURIComponent(q.utm_content) : '');
+      return base + '/captura.html?r=' + encodeURIComponent(reuniao) + '&' + utm; });
+    t = t.replace(reCurto, (m, h, cod) => { n++; return h + '/agenda' + (cod || ''); });
+    return { texto: t, n };
+  };
+  const itens = [];
+  for (const p of lista) {
+    const rede = String((p.providers || [])[0]?.network || '').toLowerCase();
+    const a = trocar(p.text, rede), c = trocar(p.firstCommentText || '', rede);
+    if (a.n || c.n) itens.push({ id: p.id, data: String(p.publicationDate?.dateTime || p.publicationDate).substring(0, 16), redes: (p.providers || []).map(x => String(x.network).toLowerCase()), trocas: a.n + c.n, texto: String(p.text || '').substring(0, 80), _p: p, _t: a.texto, _c: c.n ? c.texto : null });
+  }
+  const alvo = Array.isArray(ids) && ids.length ? itens.filter(i => ids.map(String).includes(String(i.id))) : itens;
+  if (!aplicar) return { total_agendados: lista.length, com_link_antigo: itens.length, itens: itens.map(({ _p, _t, _c, ...x }) => x) };
+  const feitos = [], falhas = [];
+  for (const it of alvo) {
+    try {
+      let atual = null; try { const g = await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN); atual = g?.data || g?.post || g; if (!atual?.providers) atual = null; } catch (_) {}
+      const fonte = atual || it._p;
+      const corpo = { ...fonte, text: trocar(fonte.text, it.redes[0]).texto, ...(fonte.firstCommentText ? { firstCommentText: trocar(fonte.firstCommentText, it.redes[0]).texto } : {}), shortener: false, draft: false };
+      delete corpo.id; delete corpo.uuid; delete corpo.creationDate; delete corpo.publishedDate; delete corpo.status;
+      let ok = false;
+      try { await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'PUT', corpo);
+        const g2 = await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN); const p2 = g2?.data || g2?.post || g2;
+        ok = !!p2 && !reHub.test(String(p2.text || '')); reHub.lastIndex = 0; } catch (_) {}
+      let novoId = it.id;
+      if (!ok) { // o Metricool não aceitou a edição: recria igual (mesma data) com o link novo e apaga o antigo
+        const novo = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', corpo);
+        novoId = novo?.data?.id || novo?.id || null; if (!novoId) throw new Error('o Metricool não devolveu o post recriado');
+        try { await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'DELETE'); } catch (_) {}
+      }
+      feitos.push({ id_antigo: it.id, id_novo: novoId, metodo: ok ? 'editado' : 'recriado', data: it.data, redes: it.redes, trocas: it.trocas });
+    } catch (e) { falhas.push({ id: it.id, data: it.data, erro: e.message.substring(0, 200) }); }
+  }
+  return { trocados: feitos.length, feitos, falhas };
+}
+
 async function auditoriaFunil({ dias = 30 } = {}) {
   const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = process.env.METRICOOL_BLOG_ID;
   const out = { periodo_dias: dias, posts: {}, leads: {}, problemas: [], recomendacoes: [], por_rede: {} };
@@ -944,6 +996,7 @@ async function handler(req, res) {
     corrigir_imagens:       () => corrigirImagensAgendadas(payload),
     auditoria_funil:        () => auditoriaFunil(payload),
     republicar_falhas:      () => republicarFalhas(payload, req), // v3.70
+    trocar_link_agendados:  () => trocarLinkAgendados(payload, req), // v3.71
     story_texto:            () => storyTexto(payload),
     autocampanha_agendar_um:() => autoCampanhaAgendarUm(payload),
     fila_enfileirar:        () => filaEnfileirar(payload),
