@@ -290,6 +290,20 @@ async function auditoriaFunil({ dias = 30 } = {}) {
     if (!lista.length) out.problemas.push({ g: 'alta', txt: `Nenhum post encontrado no Metricool nos últimos ${dias} dias.` });
   } catch (e) { out.posts = { erro: e.message }; out.problemas.push({ g: 'alta', txt: 'Não consegui ler o Metricool: ' + e.message }); }
 
+  // v3.75: PRÓXIMOS agendados — confere se o que ainda vai sair já leva para a página de captura
+  try {
+    const ag = new Date(), fimP = new Date(Date.now() + 30 * 864e5), fP = d => d.toISOString().substring(0, 10);
+    const rP = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${fP(ag)}T00:00:00&end=${fP(fimP)}T23:59:59&timezone=America/Sao_Paulo`, TOKEN);
+    const fut = (Array.isArray(rP) ? rP : (rP?.data || [])).filter(p => new Date(String(p.publicationDate?.dateTime || p.publicationDate || '').substring(0, 19) + '-03:00') > ag && !p.published);
+    const prox = { total: fut.length, captura: 0, agenda_direto: 0, sem_link: 0, stories: 0, outro: 0, por_rede: {} };
+    fut.forEach(p => { const provs = p.providers || []; const story = provs.some(x => x?.data?.postType === 'STORY'); const txt = String(p.text || '') + ' ' + String(p.firstCommentText || '');
+      const tipo = story ? 'stories' : /captura\.html|\/agenda\b/i.test(txt) ? 'captura' : /meetings\.hubspot\.com|\/reuniao\b/i.test(txt) ? 'agenda_direto' : /(https?:\/\/|\b[a-z0-9-]+\.(?:app|com|cool|ly|io)\/)/i.test(txt) ? 'outro' : 'sem_link';
+      prox[tipo]++; provs.forEach(x => { const rd = String(x.network || '').toLowerCase(); const o = prox.por_rede[rd] = prox.por_rede[rd] || { total: 0, captura: 0, agenda_direto: 0, sem_link: 0 }; o.total++; if (o[tipo] != null) o[tipo]++; }); });
+    out.proximos = prox;
+    if (prox.agenda_direto) out.problemas.push({ g: 'alta', txt: `${prox.agenda_direto} post(s) AGENDADOS ainda levam direto para a agenda — rode "Trocar link dos já agendados".` });
+    if (prox.sem_link) out.problemas.push({ g: 'media', txt: `${prox.sem_link} post(s) agendados sem nenhum link.` });
+  } catch (e) { out.proximos = { erro: e.message }; }
+
   // 2. Leads capturados no período
   try {
     const { neon } = await import('@neondatabase/serverless');
