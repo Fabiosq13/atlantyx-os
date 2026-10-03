@@ -103,6 +103,67 @@ async function _postsMetricasRede(rede, ini, fim, { TOKEN, USERID, BLOGID }) {
     totais: { posts: posts.length, impressoes: soma('impressoes'), cliques: soma('cliques'), curtidas: soma('curtidas'), comentarios: soma('comentarios'), compartilhamentos: soma('compartilhamentos') } };
 }
 
+// v3.70: o motivo do erro vinha "sem detalhe" porque o Metricool guarda o texto em campos variados —
+// procura em qualquer campo do provider/post com nome de erro/mensagem/motivo
+function _motivoErroMc(p, provs) {
+  const achados = new Set();
+  const varrer = (o, prof) => { if (!o || typeof o !== 'object' || prof > 3) return;
+    for (const [k, v] of Object.entries(o)) {
+      if (typeof v === 'string' && v.trim() && /error|erro|message|reason|detail|fail|motivo/i.test(k) && !/^(ERROR|FAILED|FAIL|PENDING|PUBLISHED)$/i.test(v.trim())) achados.add(v.trim().substring(0, 160));
+      else if (v && typeof v === 'object') varrer(v, prof + 1); } };
+  (provs || []).forEach(x => varrer(x, 0)); if (!achados.size) varrer(p, 0);
+  const st = (provs || []).map(x => x.detailedStatus || x.status).filter(Boolean).join(', ');
+  return achados.size ? [...achados].slice(0, 3).join(' · ') : ('o Metricool não informou o motivo' + (st ? ' (status: ' + st + ')' : ''));
+}
+function _categoriaErroMc(m) {
+  const t = String(m || '').toLowerCase();
+  if (/image|imagem|media|mídia|download|url|jpeg|png|aspect|resolution|size|video|vídeo/.test(t)) return 'imagem';
+  if (/token|auth|permission|permiss|expired|expirad|reconnect|reconect|unauthor|login|access/.test(t)) return 'conexão da rede';
+  if (/text|caracter|character|length|hashtag|duplicate|duplicad/.test(t)) return 'texto';
+  if (/não informou/.test(t)) return 'sem motivo informado';
+  return 'outro';
+}
+
+// v3.70: REPUBLICAR posts que falharam — mesma copy, imagens copiadas para endereço permanente, nos próximos
+// horários vagos da autocampanha (sem empilhar). aplicar:false só lista o que faria.
+async function republicarFalhas({ dias = 30, aplicar = false, ids = null, blog_id } = {}, req) {
+  const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
+  if (!TOKEN || !USERID || !BLOGID) throw new Error('Credenciais do Metricool ausentes');
+  const hoje = new Date(), ini = new Date(hoje.getTime() - dias * 864e5), f = d => d.toISOString().substring(0, 10);
+  const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${f(ini)}T00:00:00&end=${f(hoje)}T23:59:59&timezone=America/Sao_Paulo`, TOKEN);
+  const lista = (Array.isArray(r) ? r : (r?.data || r?.posts || [])).filter(p => (p.providers || []).some(x => /error|fail|reject/i.test(String(x.status || x.publishStatus || ''))));
+  const alvo = Array.isArray(ids) && ids.length ? lista.filter(p => ids.map(String).includes(String(p.id))) : lista;
+  const itens = alvo.map(p => { const prov = (p.providers || []).filter(x => /error|fail|reject/i.test(String(x.status || x.publishStatus || '')));
+    const motivo = _motivoErroMc(p, prov);
+    return { id: p.id, data: String(p.publicationDate?.dateTime || p.publicationDate || '').substring(0, 16), redes: prov.map(x => String(x.network).toLowerCase()), texto: String(p.text || '').substring(0, 90), motivo, categoria: _categoriaErroMc(motivo),
+      tipo: prov.some(x => x?.data?.postType === 'STORY') ? 'STORY' : prov.some(x => x?.data?.postType === 'REEL') ? 'REEL' : 'POST', midias: (p.media || p.medias || []).length, _p: p, _prov: prov }; });
+  const conexao = itens.filter(i => i.categoria === 'conexão da rede');
+  if (!aplicar) return { total: itens.length, itens: itens.map(({ _p, _prov, ...x }) => x), por_categoria: itens.reduce((a, i) => { a[i.categoria] = (a[i.categoria] || 0) + 1; return a; }, {}),
+    aviso: conexao.length ? conexao.length + ' falharam por conexão da rede (token/permissão) — reconecte a rede no Metricool antes de republicar, senão vão falhar de novo.' : null };
+  // horários vagos (mesma regra da autocampanha) para não empilhar posts
+  const { plano } = await autoCampanhaPlanejar({ dias: 14, blog_id: BLOGID });
+  const vagos = (plano.vagos || []).slice();
+  const { garantirPermanente } = await import('./media.js');
+  const feitos = [], falhas = [];
+  for (const it of itens) {
+    if (!vagos.length) { falhas.push({ id: it.id, erro: 'sem horário vago nos próximos 14 dias' }); continue; }
+    const slot = vagos.shift();
+    try {
+      let midias = it._p.media || it._p.medias || [];
+      midias = await Promise.all(midias.map(async u => { try { return (await garantirPermanente({ url: typeof u === 'string' ? u : (u.url || u), req })).url; } catch (_) { return typeof u === 'string' ? u : (u.url || u); } }));
+      const body = { providers: it._prov.map(x => ({ network: x.network, ...(x.data ? { data: x.data } : {}) })), publicationDate: { dateTime: slot.data + 'T' + slot.hora + ':00', timezone: 'America/Sao_Paulo' },
+        text: it.tipo === 'STORY' ? '' : (it._p.text || ''), autoPublish: true, draft: false, shortener: false,
+        ...(it._p.firstCommentText ? { firstCommentText: it._p.firstCommentText } : {}), ...(it._p.instagramData ? { instagramData: it._p.instagramData } : {}), ...(it._p.facebookData ? { facebookData: it._p.facebookData } : {}),
+        ...(midias.length ? { media: midias, medias: midias } : {}) };
+      const novo = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
+      const novoId = novo?.data?.id || novo?.id || null;
+      try { await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'DELETE'); } catch (_) {}
+      feitos.push({ id_antigo: it.id, id_novo: novoId, redes: it.redes, quando: slot.data + ' ' + slot.hora, texto: it.texto });
+    } catch (e) { vagos.unshift(slot); falhas.push({ id: it.id, erro: e.message.substring(0, 200) }); }
+  }
+  return { republicados: feitos.length, feitos, falhas };
+}
+
 async function auditoriaFunil({ dias = 30 } = {}) {
   const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = process.env.METRICOOL_BLOG_ID;
   const out = { periodo_dias: dias, posts: {}, leads: {}, problemas: [], recomendacoes: [], por_rede: {} };
@@ -123,7 +184,7 @@ async function auditoriaFunil({ dias = 30 } = {}) {
         status.erro++;
         comErro.push({ id: p.id, data: String(p.publicationDate?.dateTime || p.publicationDate || '').substring(0,16),
           texto: String(p.text || '').substring(0, 60), redes: errProv.map(x => x.network),
-          motivo: errProv.map(x => x.error || x.message || x.errorMessage || 'sem detalhe').join('; ').substring(0, 200) });
+          motivo: _motivoErroMc(p, errProv), categoria: _categoriaErroMc(_motivoErroMc(p, errProv)), midias: (p.media || p.medias || []).length });
       } else if (/publish|sent|done/.test(st)) status.publicado++;
       else if (/draft/.test(st)) status.rascunho++;
       else if (/schedul|pending|queue/.test(st) || !st) status.agendado++;
@@ -138,7 +199,7 @@ async function auditoriaFunil({ dias = 30 } = {}) {
         if (publicado) { out.por_rede[rd].posts++; if (temLink) out.por_rede[rd].com_link++;
           if (!/https?:\/\//i.test(String(p.text || '')) && /https?:\/\//i.test(String(p.firstCommentText || p.firstComment || ''))) out.por_rede[rd].link_so_no_comentario++; } });
     });
-    out.posts = { total: lista.length, ...status, com_link: comLink.length, sem_link: semLink.length, erros: comErro.slice(0, 15) };
+    out.posts = { total: lista.length, ...status, com_link: comLink.length, sem_link: semLink.length, erros: comErro.slice(0, 40), erros_por_categoria: comErro.reduce((a, e) => { a[e.categoria] = (a[e.categoria] || 0) + 1; return a; }, {}) };
     if (comErro.length) out.problemas.push({ g: 'alta', txt: `${comErro.length} publicação(ões) FALHARAM no Metricool nos últimos ${dias} dias.` });
     if (lista.length && semLink.length === lista.length) out.problemas.push({ g: 'alta', txt: `NENHUM dos ${lista.length} posts tem link. O leitor não tem para onde ir — não existe caminho até o formulário.` });
     else if (semLink.length > comLink.length) out.problemas.push({ g: 'media', txt: `${semLink.length} de ${lista.length} posts sem link de captura.` });
@@ -882,6 +943,7 @@ async function handler(req, res) {
     autocampanha_config:    () => autoCampanhaConfig(payload),
     corrigir_imagens:       () => corrigirImagensAgendadas(payload),
     auditoria_funil:        () => auditoriaFunil(payload),
+    republicar_falhas:      () => republicarFalhas(payload, req), // v3.70
     story_texto:            () => storyTexto(payload),
     autocampanha_agendar_um:() => autoCampanhaAgendarUm(payload),
     fila_enfileirar:        () => filaEnfileirar(payload),

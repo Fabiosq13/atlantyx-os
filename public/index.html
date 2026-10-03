@@ -6752,6 +6752,10 @@ const TEXTO_LINK_BIO_CURTO_PADRAO = 'acesse o site e deixe seu contato';
 // LinkedIn e Facebook continuam com o link CLICÁVEL direto no post.
 // v3.60: OFERTA dos posts = diagnóstico gratuito (post de opinião gera curtida; oferta concreta gera lead)
 const CTA_OFERTA = '🎁 Peça seu diagnóstico gratuito de dados e IA:';
+// v3.70: destino padrão = PÁGINA DE CAPTURA (cadastro → agenda). "Agenda direto" pulava a captura: quem não
+// agendava não virava lead e a visita nem era registrada. Migra quem estava em "agenda direto" uma vez.
+try { if (!localStorage.getItem('atx:cta_mig_v370')) { const c0 = JSON.parse(localStorage.getItem('atx:cta_cfg') || '{}'); if (c0.destino === 'reuniao') { c0.destino = 'cadastro'; localStorage.setItem('atx:cta_cfg', JSON.stringify(c0)); }
+  if (localStorage.getItem('atx:destino_campanha') === 'reuniao') localStorage.setItem('atx:destino_campanha', 'captura'); localStorage.setItem('atx:cta_mig_v370', '1'); } } catch (_) {}
 function ctaCfg() { const pad = { ig: 'link_curto', destino: 'cadastro', palavra: 'AGENDA', whats: '' };
   try { return Object.assign(pad, JSON.parse(localStorage.getItem('atx:cta_cfg') || '{}')); } catch (_) { return pad; } }
 function salvarCtaCfg(parcial) { const c = Object.assign(ctaCfg(), parcial || {}); try { localStorage.setItem('atx:cta_cfg', JSON.stringify(c)); localStorage.setItem('atx:destino_campanha', c.destino === 'reuniao' ? 'reuniao' : 'captura'); } catch (_) {} try { _ctaPreview(); } catch (_) {} return c; }
@@ -6788,6 +6792,7 @@ function _ctaPreview() {
   const c = ctaCfg(), pv = document.getElementById('acCtaPrev'); if (!pv) return;
   pv.innerHTML = '<b>Instagram (legenda):</b> ' + textoLinkBio().replace(/</g, '&lt;') + '<br><b>Na arte/vídeo:</b> ' + ctaTituloArte() + ' — ' + textoLinkBioCurto().replace(/</g, '&lt;')
     + '<br><b>LinkedIn e Facebook:</b> link clicável direto para ' + (c.destino === 'reuniao' ? 'a agenda de reunião' : 'o cadastro (e em seguida a agenda)')
+    + (c.destino === 'reuniao' ? '<br><span style="color:var(--red);font-weight:600;">⚠ "Agenda direto" pula a página de captura: quem clica e não agenda não vira lead e a visita não é medida. Recomendado: Cadastro → agenda.</span>' : '')
     + (c.ig === 'palavra' ? '<br><span style="color:var(--gold);">Para o Direct automático funcionar, ligue no Instagram uma automação de comentário→Direct (ex.: ManyChat, gratuito) com a palavra <b>' + (c.palavra || 'AGENDA') + '</b> enviando o link <b>' + location.origin + '/' + (c.destino === 'reuniao' ? 'reuniao' : 'agenda') + '</b>.</span>' : '');
   const fw = document.getElementById('acCtaWhatsWrap'); if (fw) fw.style.display = c.ig === 'whatsapp' ? '' : 'none';
   const fp = document.getElementById('acCtaPalavraWrap'); if (fp) fp.style.display = c.ig === 'palavra' ? '' : 'none';
@@ -21640,6 +21645,27 @@ async function acAgendarStory() {
 }
 
 // v2.15: auditoria do funil — publicação → clique → captura
+// v3.70: republicar posts que falharam no Metricool (motivo real, imagens permanentes, horários vagos)
+async function acRepublicarFalhas() {
+  try {
+    toast('Lendo os posts que falharam no Metricool...', 'info');
+    const d = await mcApi('republicar_falhas', { dias: 30, aplicar: false });
+    if (!d.total) { alert('Nenhum post com erro nos últimos 30 dias.'); return; }
+    const lista = d.itens.slice(0, 15).map(i => '• ' + i.data.replace('T', ' ') + ' ' + i.redes.join(',') + ' [' + i.categoria + '] ' + i.texto.substring(0, 45) + '\n   motivo: ' + i.motivo.substring(0, 110)).join('\n');
+    if (!confirm(`${d.total} post(s) falharam nos últimos 30 dias:\n${Object.entries(d.por_categoria).map(([k, n]) => '  ' + k + ': ' + n).join('\n')}\n\n${lista}${d.total > 15 ? '\n(e mais ' + (d.total - 15) + ')' : ''}\n\n${d.aviso ? '⚠ ' + d.aviso + '\n\n' : ''}Republicar agora? Cada um vai para o próximo horário VAGO da autocampanha (sem empilhar), com as imagens copiadas para endereço permanente. O post com erro é apagado do Metricool.`)) return;
+    const ids = d.itens.filter(i => i.categoria !== 'conexão da rede').map(i => i.id);
+    if (!ids.length) { alert('Todos falharam por conexão da rede — reconecte a rede no Metricool e tente de novo.'); return; }
+    let feitos = [], falhas = [];
+    for (let k = 0; k < ids.length; k += 4) {
+      toast(`Republicando ${Math.min(k + 4, ids.length)} de ${ids.length}...`, 'info');
+      try { const r = await mcApi('republicar_falhas', { dias: 30, aplicar: true, ids: ids.slice(k, k + 4) }); feitos = feitos.concat(r.feitos || []); falhas = falhas.concat(r.falhas || []); }
+      catch (e) { falhas.push({ id: '(lote)', erro: e.message }); }
+    }
+    alert(`${feitos.length} post(s) republicado(s):\n${feitos.slice(0, 12).map(f => '• ' + f.quando + ' ' + f.redes.join(',') + ' — ' + f.texto.substring(0, 40)).join('\n')}${falhas.length ? '\n\n' + falhas.length + ' não republicado(s):\n' + falhas.slice(0, 8).map(f => '• ' + f.erro).join('\n') : ''}`);
+    try { await sincronizarStatusMetricool(true); } catch (_) {}
+    acAuditoria();
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
 async function acAuditoria() {
   const box = document.getElementById('acResultado');
   box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ Cruzando Metricool, leads e página de captura...</div></div>';
@@ -21666,7 +21692,9 @@ async function acAuditoria() {
         ${p.erros.map(e => `<div style="border-left:3px solid var(--red);background:var(--bg4);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:10.5px;">
           <div style="color:var(--t2);">${(e.data||'').replace('T',' ')} · ${(e.redes||[]).join(', ')}</div>
           <div>${String(e.texto||'').replace(/</g,'&lt;')}…</div>
-          <div style="color:var(--red);font-size:10px;margin-top:3px;">${String(e.motivo||'').replace(/</g,'&lt;')}</div></div>`).join('')}
+          <div style="color:var(--red);font-size:10px;margin-top:3px;">${e.categoria ? '<b>[' + e.categoria + ']</b> ' : ''}${String(e.motivo||'').replace(/</g,'&lt;')}</div></div>`).join('')}
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">${Object.entries(p.erros_por_categoria || {}).map(([k, n]) => '<span class="tag off">' + k + ': ' + n + '</span>').join('')}
+          <button class="btn btn-or" style="font-size:10.5px;margin-left:auto;" onclick="acRepublicarFalhas()" title="Revisa os posts que falharam e publica de novo nos próximos horários vagos, com as imagens copiadas para endereço permanente">♻ Revisar e republicar os que falharam</button></div>
       </div></div>` : ''}
       ${d.funil_por_rede ? `<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">🔎 Funil por rede — onde o lead se perde (30 dias)</div></div><div class="pb" style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="border-bottom:1px solid var(--bd);">${['REDE','PUBLICAÇÕES','COM LINK','IMPRESSÕES','CLIQUES (rede)','VISITAS À PÁGINA','LEADS','GARGALO / O QUE FAZER'].map(h => `<th style="text-align:left;padding:6px;font-size:9px;">${h}</th>`).join('')}</tr></thead>
@@ -27447,7 +27475,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.69] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.70] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27463,7 +27491,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.69';
+window.__ATX_BUILD_ID__ = 'ATX-v3.70';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
