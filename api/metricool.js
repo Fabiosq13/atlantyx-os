@@ -172,6 +172,18 @@ async function republicarFalhas({ dias = 30, aplicar = false, ids = null, blog_i
 
 // v3.71: TROCA O LINK dos posts JÁ AGENDADOS — de "agenda direto" (HubSpot / /reuniao) para a página de captura
 // (/captura.html ou /agenda no Instagram), mantendo a campanha e o conteúdo da UTM. aplicar:false só lista.
+// v3.74: corpo LIMPO para reenviar um post ao Metricool. O GET devolve campos só de leitura (status por rede,
+// datas, ids, links públicos) que o PUT/POST recusam com "Type definition error ... PublicationStatusCode".
+function _corpoPostMc(fonte, extra) {
+  const ok = ['text', 'firstCommentText', 'publicationDate', 'autoPublish', 'draft', 'shortener', 'mediaAltText', 'videoThumbnailMilliseconds', 'instagramData', 'facebookData', 'linkedinData', 'twitterData', 'pinterestData', 'youtubeData', 'tiktokData', 'gmbData', 'smartLinkData', 'saveExternalMediaFiles'];
+  const c = {}; ok.forEach(k => { if (fonte[k] !== undefined && fonte[k] !== null) c[k] = fonte[k]; });
+  c.providers = (fonte.providers || []).map(x => { const pr = { network: x.network }; if (x.data && typeof x.data === 'object') pr.data = x.data; return pr; });
+  const m = (fonte.media || fonte.medias || []).map(u => typeof u === 'string' ? u : (u && (u.url || u.mediaUrl || u.link))).filter(Boolean);
+  if (m.length) { c.media = m; c.medias = m; }
+  if (c.publicationDate && typeof c.publicationDate === 'object') c.publicationDate = { dateTime: String(c.publicationDate.dateTime || '').substring(0, 19), timezone: c.publicationDate.timezone || 'America/Sao_Paulo' };
+  c.text = c.text ?? ''; c.draft = false; if (c.autoPublish === undefined) c.autoPublish = true;
+  return Object.assign(c, extra || {});
+}
 async function trocarLinkAgendados({ aplicar = false, ids = null, blog_id, dias = 60 } = {}, req) {
   const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
   if (!TOKEN || !USERID || !BLOGID) throw new Error('Credenciais do Metricool ausentes');
@@ -214,12 +226,11 @@ async function trocarLinkAgendados({ aplicar = false, ids = null, blog_id, dias 
     try {
       let atual = null; try { const g = await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN); atual = g?.data || g?.post || g; if (!atual?.providers) atual = null; } catch (_) {}
       const fonte = atual || it._p;
-      const corpo = { ...fonte, text: trocar(fonte.text, it.redes[0]).texto, ...(fonte.firstCommentText ? { firstCommentText: trocar(fonte.firstCommentText, it.redes[0]).texto } : {}), shortener: false, draft: false };
-      delete corpo.id; delete corpo.uuid; delete corpo.creationDate; delete corpo.publishedDate; delete corpo.status;
+      const corpo = _corpoPostMc(fonte, { text: trocar(fonte.text, it.redes[0]).texto, ...(fonte.firstCommentText ? { firstCommentText: trocar(fonte.firstCommentText, it.redes[0]).texto } : {}), shortener: false });
       let ok = false;
       try { await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'PUT', corpo);
         const g2 = await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN); const p2 = g2?.data || g2?.post || g2;
-        ok = !!p2 && !reHub.test(String(p2.text || '')); reHub.lastIndex = 0; } catch (_) {}
+        const nz = x => String(x || '').replace(/\s+/g, ' ').trim(); ok = !!p2 && nz(p2.text) === nz(corpo.text); } catch (_) {}
       let novoId = it.id;
       if (!ok) { // o Metricool não aceitou a edição: recria igual (mesma data) com o link novo e apaga o antigo
         const novo = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', corpo);
@@ -253,24 +264,29 @@ async function auditoriaFunil({ dias = 30 } = {}) {
         comErro.push({ id: p.id, data: String(p.publicationDate?.dateTime || p.publicationDate || '').substring(0,16),
           texto: String(p.text || '').substring(0, 60), redes: errProv.map(x => x.network),
           motivo: _motivoErroMc(p, errProv), categoria: _categoriaErroMc(_motivoErroMc(p, errProv)), midias: (p.media || p.medias || []).length });
-      } else if (/publish|sent|done/.test(st)) status.publicado++;
-      else if (/draft/.test(st)) status.rascunho++;
-      else if (/schedul|pending|queue/.test(st) || !st) status.agendado++;
-      else status.outro++;
+      } else if (p.published === true || /publish|sent|done/.test(st) || providers.some(x => /PUBLISHED|SUCCESS/i.test(String(x.status || x.publishStatus || '')))
+        || (!/draft|schedul|pending|queue/.test(st) && !p.draft && new Date(String(p.publicationDate?.dateTime || p.publicationDate || '').substring(0, 19) + '-03:00') < new Date())) status.publicado++; // v3.74: status vem por rede; antes tudo virava "agendado"
+      else if (/draft/.test(st) || p.draft) status.rascunho++;
+      else status.agendado++;
       const txt = String(p.text || '') + ' ' + String(p.firstCommentText || p.firstComment || '');
-      const temLink = /https?:\/\//i.test(txt);
-      if (temLink) comLink.push(p.id); else semLink.push(p.id);
+      // v3.74: link sem "https://" (o link curto do Instagram, encurtadores) também conta; Story leva o link no adesivo
+      const ehStory = providers.some(x => x?.data?.postType === 'STORY');
+      const temLink = ehStory ? !!(providers.find(x => x?.data?.linkSticker) || p.instagramData?.link) : /(https?:\/\/|www\.|\b[a-z0-9-]+\.(?:app|com|com\.br|cool|ly|io|me|link)\/[^\s]*)/i.test(txt);
+      const tipoLink = /captura\.html|\/agenda\b/i.test(txt) ? 'captura' : /meetings\.hubspot\.com|\/reuniao\b/i.test(txt) ? 'agenda_direto' : temLink ? 'outro' : 'sem_link';
+      out.tipos_link = out.tipos_link || { captura: 0, agenda_direto: 0, outro: 0, sem_link: 0, stories: 0 }; if (ehStory) out.tipos_link.stories++; else out.tipos_link[tipoLink]++;
+      if (temLink || ehStory) comLink.push(p.id); else semLink.push(p.id);
       // v3.13: funil por rede — publicações e se levam link (no texto ou no 1º comentário)
       const publicado = !errProv.length && !/error|fail|draft/.test(st);
       providers.forEach(pv => { const rd = String(pv.network || '').toLowerCase(); if (!rd) return;
         out.por_rede[rd] = out.por_rede[rd] || { posts: 0, com_link: 0, link_so_no_comentario: 0 };
-        if (publicado) { out.por_rede[rd].posts++; if (temLink) out.por_rede[rd].com_link++;
+        if (publicado) { out.por_rede[rd].posts++; if (temLink) out.por_rede[rd].com_link++; if (tipoLink === 'captura') out.por_rede[rd].com_captura = (out.por_rede[rd].com_captura || 0) + 1; if (tipoLink === 'agenda_direto') out.por_rede[rd].agenda_direto = (out.por_rede[rd].agenda_direto || 0) + 1;
           if (!/https?:\/\//i.test(String(p.text || '')) && /https?:\/\//i.test(String(p.firstCommentText || p.firstComment || ''))) out.por_rede[rd].link_so_no_comentario++; } });
     });
     out.posts = { total: lista.length, ...status, com_link: comLink.length, sem_link: semLink.length, erros: comErro.slice(0, 40), erros_por_categoria: comErro.reduce((a, e) => { a[e.categoria] = (a[e.categoria] || 0) + 1; return a; }, {}) };
     if (comErro.length) out.problemas.push({ g: 'alta', txt: `${comErro.length} publicação(ões) FALHARAM no Metricool nos últimos ${dias} dias.` });
     if (lista.length && semLink.length === lista.length) out.problemas.push({ g: 'alta', txt: `NENHUM dos ${lista.length} posts tem link. O leitor não tem para onde ir — não existe caminho até o formulário.` });
-    else if (semLink.length > comLink.length) out.problemas.push({ g: 'media', txt: `${semLink.length} de ${lista.length} posts sem link de captura.` });
+    else if (semLink.length > comLink.length) out.problemas.push({ g: 'media', txt: `${semLink.length} de ${lista.length} posts sem nenhum link.` });
+    if (out.tipos_link?.agenda_direto) out.problemas.push({ g: 'alta', txt: `${out.tipos_link.agenda_direto} post(s) levam DIRETO para a agenda (HubSpot / /reuniao) — o clique não passa pela página de captura e não vira lead. Use "Trocar link dos já agendados" para os futuros.` });
     if (!lista.length) out.problemas.push({ g: 'alta', txt: `Nenhum post encontrado no Metricool nos últimos ${dias} dias.` });
   } catch (e) { out.posts = { erro: e.message }; out.problemas.push({ g: 'alta', txt: 'Não consegui ler o Metricool: ' + e.message }); }
 
@@ -1172,16 +1188,7 @@ async function handler(req, res) {
         let erroPut = '';
         if (postAtual) {
           // Reenvia o post inteiro, trocando apenas a data (mantém texto, redes, mídia, tipo de post)
-          const corpo = {
-            ...postAtual,
-            publicationDate: dt,
-            text: postAtual.text ?? '',
-            providers: postAtual.providers || [],
-            ...(postAtual.media ? { media: postAtual.media } : {}),
-            ...(postAtual.medias ? { medias: postAtual.medias } : {}),
-            draft: false,
-          };
-          delete corpo.id; delete corpo.uuid; delete corpo.creationDate; delete corpo.publishedDate; delete corpo.status;
+          const corpo = _corpoPostMc(postAtual, { publicationDate: dt }); // v3.74: corpo limpo (sem campos só de leitura)
           try {
             const r = await mc(`/v2/scheduler/posts/${metricool_id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'PUT', corpo);
             if (r && (r.id || r.data || r.success || r.status === 'ok' || (typeof r === 'object' && !r.error))) {
