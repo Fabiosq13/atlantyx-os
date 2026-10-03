@@ -337,7 +337,8 @@ async function sondasRuntime(base) {
   // Variáveis de ambiente (só presença)
   const env = k => !!process.env[k];
   if (!env('CRON_SECRET')) add('alta', 'configuração', 'CRON_SECRET não configurado — rotas de cron podem ser disparadas por qualquer pessoa', 'CRON_SECRET ausente', 'Criar CRON_SECRET no Vercel e exigir Authorization: Bearer ${CRON_SECRET} em todas as rotas de cron.');
-  if (!env('ATX_USUARIOS') || !env('ATX_SESSAO_SEGREDO')) add('crítica', 'configuração', 'Login do sistema DESLIGADO — faltam ATX_USUARIOS e/ou ATX_SESSAO_SEGREDO no Vercel', 'variável ausente', 'Cadastrar ATX_USUARIOS ("email:senha;email2:senha2") e ATX_SESSAO_SEGREDO (texto aleatório longo) no Vercel e fazer Redeploy — a partir daí todas as APIs internas exigem login.');
+  { let ativa = false; try { const { authAtiva } = await import('../lib/acesso.js'); ativa = await authAtiva(); } catch (_) {}
+    if (!ativa) add('crítica', 'configuração', 'Login do sistema DESLIGADO — ainda não há usuário cadastrado', 'sem usuários', 'Abra o sistema e crie o administrador na tela de Primeiro acesso (login adm) — a partir daí todas as APIs internas exigem login. Depois cadastre os demais em Acesso › Usuários × Perfil.'); }
   if (process.env.DATABASE_URL && !/sslmode=require/.test(process.env.DATABASE_URL)) add('baixa', 'configuração', 'DATABASE_URL sem sslmode=require explícito', 'conexão Neon', 'Incluir ?sslmode=require na string de conexão.');
   return { achados, sondas };
 }

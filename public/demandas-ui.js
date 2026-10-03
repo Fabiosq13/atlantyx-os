@@ -61,7 +61,7 @@
         ${D.github ? '' : '<br><b style="color:var(--red);">GITHUB_TOKEN não configurado no Vercel</b> — sem ele as demandas aprovadas não viram tarefa para o Claude.'}
         <details style="margin-top:4px;"><summary style="cursor:pointer;color:var(--blue);">Configuração única (GitHub)</summary>
           <div style="padding:6px 0 0 12px;">1) App do Claude instalado no repositório e secret <b>ANTHROPIC_API_KEY</b> no GitHub Actions · 2) No Vercel: <b>GITHUB_TOKEN</b> (fine-grained, Issues: Read and write) e <b>CRON_SECRET</b> ·
-          3) No GitHub Actions: secrets <b>CRON_SECRET</b> (mesmo valor do Vercel), <b>ATX_QA_EMAIL</b> e <b>ATX_QA_SENHA</b> (um usuário de ATX_USUARIOS) · 4) Criar os rótulos <b>demanda-aprovada</b>, <b>correcao-noturna</b> e <b>precisa-revisao</b> (ou deixar que sejam criados na primeira tarefa).</div></details></div>`;
+          3) No GitHub Actions: secrets <b>CRON_SECRET</b> (mesmo valor do Vercel), <b>ATX_QA_EMAIL</b> e <b>ATX_QA_SENHA</b> (login e senha de um usuário criado em Acesso › Usuários × Perfil) · 4) Criar os rótulos <b>demanda-aprovada</b>, <b>correcao-noturna</b> e <b>precisa-revisao</b> (ou deixar que sejam criados na primeira tarefa).</div></details></div>`;
     const lista = (D.demandas || []).filter(d => filtro === 'todas' || (filtro === 'fundador' ? d.dados?.origem === 'fundador' : d.squad === filtro));
     const k = $('demKanban'); if (!k) return;
     k.innerHTML = COLS.map(([st, rot, cor]) => {
