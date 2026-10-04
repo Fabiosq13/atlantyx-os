@@ -247,7 +247,10 @@ async function sincronizar() {
       const d = { ...ant, pr, claude, issue_estado: iss.state };
       const implementada = iss.state === 'closed' && iss.state_reason !== 'not_planned' || (pr && pr.merged);
       if (implementada) d.implementada_em = pr?.merged_em || iss.closed_at || new Date().toISOString();
-      await sql`UPDATE agente_demandas SET dados = ${JSON.stringify(d)}, status = ${implementada ? 'implementada' : 'em_execucao'}, atualizado_em = NOW() WHERE id = ${r.id}`;
+      // v3.87: tarefa fechada SEM implementar (PR fechado sem merge / "not planned") → arquivada, não fica parada em implementação
+      const descartada = !implementada && iss.state === 'closed' && (iss.state_reason === 'not_planned' || (pr && pr.estado === 'closed' && !pr.merged));
+      if (descartada) d.arquivada_em = iss.closed_at || new Date().toISOString();
+      await sql`UPDATE agente_demandas SET dados = ${JSON.stringify(d)}, status = ${implementada ? 'implementada' : descartada ? 'arquivada' : 'em_execucao'}, atualizado_em = NOW() WHERE id = ${r.id}`;
       if (implementada) mudou++;
     } catch (_) {}
   }
