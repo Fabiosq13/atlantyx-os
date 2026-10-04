@@ -325,7 +325,7 @@ async function _bpBaseDaIdeia({ bp_id, ideia }) {
 async function contrapropostaBP({ ideia = {}, bp_id = null, oferta = '', docs_texto = [], instrucoes = '', destinatario = 'Parceiro', partir_de_id = null, cambio_eur = null }) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
   const base = await _bpBaseDaIdeia({ bp_id, ideia });
-  if (!base?.premissas) throw new Error('Esta ideia ainda não tem business plan — gere o business plan primeiro (a contraproposta parte dele).');
+  if (!base?.premissas) { const e = new Error('Esta ideia ainda não tem business plan — gere o business plan primeiro (a contraproposta parte dele).'); e.status = 409; throw e; }
   const p0 = base.premissas; const i0 = _ind(base.resultado);
   // v3.62: AJUSTE de uma contraproposta já gerada — parte dela (e não do zero), aplicando as orientações do fundador
   let anterior = null;
@@ -495,7 +495,7 @@ async function handler(req, res) {
     return res.status(200).json({ success: true, ...out });
   } catch (e) {
     console.error('[business-plan]', b.action, e.message);
-    return res.status(500).json({ success: false, error: e.message });
+    return res.status(e.status || 500).json({ success: false, error: e.message });
   }
 }
 

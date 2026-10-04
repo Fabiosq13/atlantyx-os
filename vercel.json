@@ -116,6 +116,45 @@
     "api/agente-ideias.js": {
       "maxDuration": 180,
       "includeFiles": "public/index.html"
+    },
+    "api/analytics.js": {
+      "maxDuration": 60
+    },
+    "api/claude.js": {
+      "maxDuration": 60
+    },
+    "api/decisor-map.js": {
+      "maxDuration": 60
+    },
+    "api/s1-data.js": {
+      "maxDuration": 60
+    },
+    "api/s1-intel.js": {
+      "maxDuration": 60
+    },
+    "api/meeting-schedule.js": {
+      "maxDuration": 60
+    },
+    "api/outreach-batch.js": {
+      "maxDuration": 60
+    },
+    "api/vendas-outbound.js": {
+      "maxDuration": 60
+    },
+    "api/wa-batch-generate.js": {
+      "maxDuration": 60
+    },
+    "api/wa-response.js": {
+      "maxDuration": 60
+    },
+    "api/followup-cron.js": {
+      "maxDuration": 60
+    },
+    "api/portal-cadastro.js": {
+      "maxDuration": 60
+    },
+    "api/health.js": {
+      "maxDuration": 60
     }
   },
   "crons": [

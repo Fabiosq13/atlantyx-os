@@ -4,6 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
+// v3.84: "Copiar" nunca quebra — se o navegador recusar a área de transferência (aba sem foco, permissão),
+// copia pelo método antigo; se nem assim der, avisa em vez de gerar erro de JavaScript.
+(function () {
+  var cb = navigator.clipboard; if (!cb || !cb.writeText) return;
+  var orig = cb.writeText.bind(cb);
+  var antigo = function (t) {
+    try { var a = document.createElement('textarea'); a.value = String(t); a.setAttribute('readonly', ''); a.style.cssText = 'position:fixed;top:-1000px;opacity:0;';
+      document.body.appendChild(a); a.select(); var ok = document.execCommand('copy'); a.remove(); return ok; } catch (_) { return false; }
+  };
+  try { cb.writeText = function (t) { return orig(t).catch(function () { if (!antigo(t)) { try { (window.toast || alert)('Não consegui copiar automaticamente — selecione o texto e copie com Ctrl+C.', 'error'); } catch (_) {} } }); }; } catch (_) {}
+})();
 // v3.81 — LOGIN com usuários, perfis e telas (no banco). Primeiro acesso cria o administrador master.
 // O cookie de sessão é HttpOnly. Se alguma API responder 401 "exige_login", aparece a tela de login.
 (function () {
@@ -4510,6 +4521,9 @@ tr:hover td{background:rgba(79,124,255,.03);}
       </div>
     </div>
 
+    <!-- v3.84: resultado do diagnóstico com dados reais -->
+    <div class="panel" id="s1DadosDiagPanel" style="display:none;margin-bottom:12px;"><div class="ph"><div class="pt">◆ Diagnóstico com Dados Reais</div></div><div class="pb" id="s1DadosDiagResult"></div></div>
+
     <!-- RESULTADO CONTEXTO -->
     <div class="kg k2">
       <div class="panel">
@@ -6228,7 +6242,8 @@ async function loadOKR() {
     const el = document.getElementById(id);
     if (!el) return;
     if (!data?.success) { el.innerHTML = '<div style="color:var(--red);font-size:11px;">Erro ao carregar OKRs</div>'; return; }
-    const okr = data.okr;
+    const okr = data.okr || {}; okr.saude_geral = okr.saude_geral || 'sem avaliação'; okr.trimestre = okr.trimestre || 'Q2 2026';
+    setTimeout(() => _semUndef(el), 0);
     const corSaude = okr.saude_geral === 'Verde' ? 'var(--green)' : okr.saude_geral === 'Amarelo' ? 'var(--gold)' : 'var(--red)';
 
     if (id === 's1OkrDash') {
@@ -6315,13 +6330,20 @@ async function loadRelatorio(periodo) {
 //    S1 INTELIGÊNCIA ESTRATÉGICA                                               
 
 // Executor genérico para todos os módulos de inteligência
+// v3.84: respostas da IA às vezes vêm sem um campo — em vez de "undefined"/"NaN" na tela, mostra "—"
+function _semUndef(el) {
+  if (!el) return;
+  const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); const ns = [];
+  while (w.nextNode()) if (/\bundefined\b|\bNaN\b|\[object Object\]/.test(w.currentNode.nodeValue)) ns.push(w.currentNode);
+  ns.forEach(n => { n.nodeValue = n.nodeValue.replace(/\bundefined\b|\bNaN\b|\[object Object\]/g, '—'); });
+}
 async function runIntel(action, resultId, btnId, extraCtx = {}) {
   const btn = document.getElementById(btnId);
   const result = document.getElementById(resultId);
   const panelId = resultId.replace('Result','Panel');
   const panel = document.getElementById(panelId);
 
-  if (btn) { btn.disabled = true; btn.textContent = '  Analisando...'; }
+  if (btn) { if (!btn.dataset.rotulo) btn.dataset.rotulo = btn.textContent; btn.disabled = true; btn.textContent = '  Analisando...'; }
   if (result) result.innerHTML = '<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:20px;text-align:center;"><span style="display:inline-block;animation:spin 1s linear infinite;"> </span>  Agente de Inteligência Estratégica analisando a Atlantyx...</div>';
   if (panel) panel.style.display = 'block';
 
@@ -6329,7 +6351,7 @@ async function runIntel(action, resultId, btnId, extraCtx = {}) {
 
   const data = await api('/api/s1-intel', 'POST', { action, contexto: extraCtx });
 
-  if (btn) { btn.disabled = false; btn.textContent = btn.textContent.replace('  Analisando...', 'refresh Atualizar'); }
+  if (btn) { btn.disabled = false; btn.textContent = btn.dataset.rotulo || btn.textContent.replace('  Analisando...', '↻ Atualizar'); }
 
   if (!data?.success) {
     if (result) result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:20px;">Erro ao executar análise. Verifique ANTHROPIC_API_KEY.</div>';
@@ -6339,6 +6361,7 @@ async function runIntel(action, resultId, btnId, extraCtx = {}) {
 
   addLog('success', '[S1-Intel] Concluído: ' + action);
   renderIntelResult(action, data, resultId);
+  _semUndef(document.getElementById(resultId));
   return data;
 }
 
@@ -9047,8 +9070,10 @@ async function runDiagComDados() {
   addLog('info', '[S1-Intel] Diagnostico com dados reais QB + Drive...');
   // Primeiro carregar contexto, depois rodar diagnostico
   await loadContextoEstrategico();
-  await runDiag();
-  toast('Diagnostico com dados reais concluido!', 'success');
+  // v3.84: runDiag nunca existiu — roda o diagnóstico completo (que já lê QB + Drive no servidor) e mostra aqui
+  const r = await runIntel('diagnostico_completo', 's1DadosDiagResult', 'btnDiagReal');
+  if (r) toast('Diagnóstico com dados reais concluído', 'success');
+  else toast('O diagnóstico não concluiu — veja a mensagem na tela', 'error');
 }
 
 
@@ -14514,7 +14539,7 @@ async function gerarTudoDashboard() {
 }
 
 
-function mostrarAbaS13(aba) { ['query','calc','app','deploy'].forEach(function(a){var btn=document.getElementById('s13codeBtn'+a.charAt(0).toUpperCase()+a.slice(1)); if(btn){btn.style.borderColor=a===aba?'var(--blue)':'';btn.style.color=a===aba?'var(--blue)':'';};}); var out=document.getElementById('s13CodeOutput'); var title=document.getElementById('s13CodeAbaTitle'); var info=document.getElementById('s13CodeInfo'); if(title)title.textContent=(abas[aba]||aba).toUpperCase(); if(info)info.textContent=s13Projeto.nome?(s13Projeto.nome+' - '+(S13_TECH_LABEL[s13Projeto.tecnologia]||s13Projeto.tecnologia)):''; if(out)out.textContent=s13Projeto.codigo[aba]||'Gere o codigo na aba Novo Dashboard.'; }
+function mostrarAbaS13(aba) { ['query','calc','app','deploy'].forEach(function(a){var btn=document.getElementById('s13codeBtn'+a.charAt(0).toUpperCase()+a.slice(1)); if(btn){btn.style.borderColor=a===aba?'var(--blue)':'';btn.style.color=a===aba?'var(--blue)':'';};}); var out=document.getElementById('s13CodeOutput'); var title=document.getElementById('s13CodeAbaTitle'); var info=document.getElementById('s13CodeInfo'); var abas={query:'Queries SQL',calc:'Métricas/DAX',app:'Código App',deploy:'Deploy Guide'}; if(title)title.textContent=(abas[aba]||aba).toUpperCase(); if(info)info.textContent=s13Projeto.nome?(s13Projeto.nome+' - '+(S13_TECH_LABEL[s13Projeto.tecnologia]||s13Projeto.tecnologia)):''; if(out)out.textContent=s13Projeto.codigo[aba]||'Gere o codigo na aba Novo Dashboard.'; }
 function copiarCodigoS13(){var out=document.getElementById('s13CodeOutput'); if(out&&out.textContent){navigator.clipboard.writeText(out.textContent);toast('Copiado!','success');}}
 async function s13SalvarProjeto(){
   if(!s13Projeto.id) s13Projeto.id = 's13_' + Date.now();
@@ -22373,6 +22398,8 @@ async function agNovoCompromisso() {
   const r = prompt('Novo compromisso — separe por | :\ntítulo | data (AAAA-MM-DD) | hora | projeto | notas', ' | ' + new Date().toISOString().split('T')[0] + ' | 10:00 |  | ');
   if (!r) return;
   const [titulo, data, hora, projeto, notas] = r.split('|').map(x => x.trim());
+  if (!titulo) { toast('Informe o título do compromisso (antes do primeiro |)', 'warn'); return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data || '')) { toast('Data inválida — use AAAA-MM-DD', 'warn'); return; }
   try { await pmoApi('compromisso_salvar', { titulo, data, hora, projeto, notas }); toast('Compromisso salvo', 'success'); carregarAgendaGP(); }
   catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
@@ -23070,7 +23097,7 @@ function feedPreview() {
   }, 300);
 }
 async function feedIncluir(enviar) {
-  const t = document.getElementById('feedTexto').value.trim(); if (!t) return;
+  const t = document.getElementById('feedTexto').value.trim(); if (!t) { document.getElementById('feedTexto').focus(); return toast('Cole primeiro o contato/oportunidade no campo de texto', 'warn'); }
   const box = document.getElementById('feedResultado');
   box.innerHTML = '<div style="font-size:11px;color:var(--t3);">⏳ Interpretando, cadastrando no QuickBooks e preparando a mensagem...</div>';
   try {
@@ -25166,7 +25193,7 @@ function _mktBubble(role, text) {
 }
 async function perguntarMkt(textoFixo) {
   const inp = document.getElementById('mktInput'); const btn = document.getElementById('mktBtn');
-  const msg = (textoFixo || inp?.value || '').trim(); if (!msg) return;
+  const msg = (textoFixo || inp?.value || '').trim(); if (!msg) { inp?.focus(); return toast('Escreva a sua pergunta antes de enviar', 'warn'); }
   if (inp && !textoFixo) inp.value = '';
   _mktBubble('user', msg);
   const think = _mktBubble('assistant', '⏳ Lendo publicações, métricas do Metricool, visitas e leads... (até 40s na primeira pergunta)');
@@ -25321,7 +25348,7 @@ function _rhBubble(role, text) {
 }
 async function perguntarRh(textoFixo) {
   const inp = document.getElementById('rhInput'); const btn = document.getElementById('rhBtn');
-  const msg = (textoFixo || inp?.value || '').trim(); if (!msg) return;
+  const msg = (textoFixo || inp?.value || '').trim(); if (!msg) { inp?.focus(); return toast('Escreva a sua pergunta antes de enviar', 'warn'); }
   if (inp && !textoFixo) inp.value = '';
   _rhBubble('user', msg);
   const think = _rhBubble('assistant', '⏳ Analisando a equipe...');
@@ -25392,7 +25419,7 @@ function _gfBubble(role, text) {
 }
 async function perguntarGerente(textoFixo) {
   const inp = document.getElementById('gfInput'); const btn = document.getElementById('gfBtn');
-  const msg = (textoFixo || inp?.value || '').trim(); if (!msg) return;
+  const msg = (textoFixo || inp?.value || '').trim(); if (!msg) { inp?.focus(); return toast('Escreva a sua pergunta antes de enviar', 'warn'); }
   if (inp && !textoFixo) inp.value = '';
   _gfBubble('user', msg);
   const think = _gfBubble('assistant', '⏳ Analisando seus dados financeiros...');
@@ -27660,7 +27687,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.83] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.84] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27676,7 +27703,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.83';
+window.__ATX_BUILD_ID__ = 'ATX-v3.84';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

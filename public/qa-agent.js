@@ -46,12 +46,20 @@
   // v3.43: o computador dormiu / a aba congelou no meio do teste? (relatório trazia "API lenta 24.000s" e
   // "Failed to fetch" que eram só a máquina em repouso). Um relógio a cada 2s detecta saltos > 90s.
   S.pausas = S.pausas || [];
-  function _suspenso(ini, fim) { return (S.pausas || []).some(([a, b]) => a < fim && b > ini) || (fim - ini > 30 * 60000); }
+  // v3.84: aba em SEGUNDO PLANO também conta. O Chrome passa a acordar os timers só 1x por minuto numa aba
+  // escondida — o relatório da madrugada saiu com centenas de "levou 180s"/"não terminou" que eram só isso.
+  // Enquanto a aba está escondida a varredura PAUSA (_esperarVisivel) e os tempos desse trecho são descartados.
+  function _suspenso(ini, fim) { return (S.pausas || []).some(([a, b]) => a < fim && b > ini) || (S._ocultoIni != null && S._ocultoIni < fim) || (fim - ini > 30 * 60000); }
   function _relogio(ligar) {
-    clearInterval(S._hb); if (!ligar) return;
-    S.pausas = []; let ult = Date.now();
+    clearInterval(S._hb); if (S._vis) { document.removeEventListener('visibilitychange', S._vis); S._vis = null; } S._ocultoIni = null;
+    if (!ligar) return;
+    S.pausas = []; S.ocultoMs = 0; let ult = Date.now();
     S._hb = setInterval(() => { const n = Date.now(); if (n - ult > 90000) S.pausas.push([ult, n]); ult = n; }, 2000);
+    S._ocultoIni = document.hidden ? Date.now() : null;
+    S._vis = () => { if (document.hidden) { if (S._ocultoIni == null) S._ocultoIni = Date.now(); } else if (S._ocultoIni != null) { const n = Date.now(); S.pausas.push([S._ocultoIni, n]); S.ocultoMs += n - S._ocultoIni; S._ocultoIni = null; } };
+    document.addEventListener('visibilitychange', S._vis);
   }
+  async function _esperarVisivel() { while (document.hidden && !S.parar) await sleep(1000); }
   function instrumentar(ctx) {
     _orig.fetch = window.fetch; _orig.alert = window.alert; _orig.confirm = window.confirm; _orig.prompt = window.prompt; _orig.open = window.open; _orig.cerr = console.error;
     ctx.pendentes = 0;
@@ -75,7 +83,7 @@
           const r = await _orig.fetch.call(window, alvo, typeof input === 'string' ? ini2 : undefined);
           reg.status = r.status; reg.ms = Date.now() - reg.inicio; reg.suspenso = _suspenso(reg.inicio, Date.now());
           try { const sim = r.headers.get('x-qa-simulado'); if (sim) reg.simulado = JSON.parse(decodeURIComponent(sim)); } catch (_) {}
-          try { const cl = r.clone(); const t = await cl.text(); if (/json/.test(r.headers.get('content-type') || '') || /^\s*[{[]/.test(t)) { const j = JSON.parse(t); if (j && j.success === false) reg.erro = String(j.error || j.message || 'success:false').substring(0, 300); } else if (r.status >= 400) reg.erro = t.substring(0, 200); } catch (_) {}
+          try { const cl = r.clone(); const t = await cl.text(); if (/json/.test(r.headers.get('content-type') || '') || /^\s*[{[]/.test(t)) { const j = JSON.parse(t); if (j && (j.success === false || r.status >= 400)) reg.erro = String(j.error || j.message || (j.success === false ? 'success:false' : 'HTTP ' + r.status)).substring(0, 300) + (j.hint || j.dica ? ' — ' + String(j.hint || j.dica).substring(0, 160) : ''); } else if (r.status >= 400) reg.erro = t.substring(0, 200); } catch (_) {}
           ctx.requisicoes.push(reg); return r;
         } catch (e) { reg.status = 0; reg.ms = Date.now() - reg.inicio; reg.suspenso = _suspenso(reg.inicio, Date.now()); reg.erro = 'falha de rede: ' + e.message; ctx.requisicoes.push(reg); throw e; }
         finally { ctx.pendentes--; ctx.emVoo && ctx.emVoo.delete(reg); }
@@ -89,7 +97,7 @@
       try {
         const r = await _orig.fetch.apply(this, arguments);
         reg.status = r.status; reg.ms = Date.now() - reg.inicio; reg.suspenso = _suspenso(reg.inicio, Date.now());
-        try { const cl = r.clone(); const t = await cl.text(); if (/json/.test(r.headers.get('content-type') || '') || /^\s*[{[]/.test(t)) { const j = JSON.parse(t); if (j && j.success === false) reg.erro = String(j.error || j.message || 'success:false').substring(0, 300); } else if (r.status >= 400) reg.erro = t.substring(0, 200); } catch (_) {}
+        try { const cl = r.clone(); const t = await cl.text(); if (/json/.test(r.headers.get('content-type') || '') || /^\s*[{[]/.test(t)) { const j = JSON.parse(t); if (j && (j.success === false || r.status >= 400)) reg.erro = String(j.error || j.message || (j.success === false ? 'success:false' : 'HTTP ' + r.status)).substring(0, 300) + (j.hint || j.dica ? ' — ' + String(j.hint || j.dica).substring(0, 160) : ''); } else if (r.status >= 400) reg.erro = t.substring(0, 200); } catch (_) {}
         ctx.requisicoes.push(reg); return r;
       } catch (e) { reg.status = 0; reg.ms = Date.now() - reg.inicio; reg.suspenso = _suspenso(reg.inicio, Date.now()); reg.erro = 'falha de rede: ' + e.message; ctx.requisicoes.push(reg); throw e; }
       finally { ctx.pendentes--; ctx.emVoo && ctx.emVoo.delete(reg); }
@@ -248,9 +256,13 @@
     // tabelas (telas de consulta)
     [...page.querySelectorAll('table')].filter(visivel).slice(0, 8).forEach((tb, k) => {
       const linhas = [...tb.querySelectorAll('tbody tr')]; if (!linhas.length) return;
-      const textos = linhas.map(r => r.innerText.replace(/\s+/g, ' ').trim()); const dup = textos.length - new Set(textos).size;
+      // v3.84: célula com campo (input/select) vale pelo VALOR do campo — antes a tabela editável da Política
+      // Comercial e do Business Plan saía como "coluna sempre vazia" e "linhas repetidas" (só o texto do ✕ igual)
+      const txtCel = el => { if (!el) return ''; let t = el.innerText || ''; el.querySelectorAll('input:not([type=hidden]),select,textarea').forEach(f => { t += ' ' + (f.tagName === 'SELECT' ? (f.selectedOptions[0]?.text || '') : (f.type === 'checkbox' ? (f.checked ? '☑' : '☐') : f.value)); }); return t.replace(/\s+/g, ' ').trim(); };
+      // linhas que o próprio sistema já marca como repetidas (ex.: lançamento duplicado no QuickBooks) são aviso de dado, não falha da tela
+      const textos = linhas.filter(r => !/repetid|duplicad/i.test(r.innerText)).map(txtCel); const dup = textos.length - new Set(textos).size;
       if (dup > 0 && textos.length > 2) add('média', 'dados', `Tabela ${k + 1}: ${dup} linha(s) repetida(s)`, textos.find((x, i) => textos.indexOf(x) !== i)?.substring(0, 160), 'Verificar duplicidade na consulta (JOIN/merge) ou chave de deduplicação.');
-      const cols = linhas[0].children.length; for (let c = 0; c < cols; c++) { const vals = linhas.map(r => (r.children[c]?.innerText || '').trim()); if (linhas.length >= 3 && vals.every(v => !v || v === '—' || v === '-')) { const th = tb.querySelectorAll('thead th')[c]?.innerText || ('coluna ' + (c + 1)); add('baixa', 'dados', `Tabela ${k + 1}: coluna "${th.trim()}" sempre vazia`, `${linhas.length} linhas`, 'Conferir o campo lido da API para essa coluna.'); } }
+      const cols = linhas[0].children.length; for (let c = 0; c < cols; c++) { const vals = linhas.map(r => txtCel(r.children[c])); if (linhas.length >= 3 && vals.every(v => !v || v === '—' || v === '-')) { const th = tb.querySelectorAll('thead th')[c]?.innerText || ('coluna ' + (c + 1)); add('baixa', 'dados', `Tabela ${k + 1}: coluna "${th.trim()}" sempre vazia`, `${linhas.length} linhas`, 'Conferir o campo lido da API para essa coluna.'); } }
     });
     return achados;
   }
@@ -344,6 +356,7 @@
     const feitos = ctx._feitos = ctx._feitos || new Set();
     const max = nivel ? 15 : (opts.maxAcoes || 40); let n = 0;
     while (n < max && !S.parar) {
+      await _esperarVisivel(); if (S.parar) break;
       const b = clicaveis(root).find(x => !feitos.has(t.id + '#' + assinatura(x)));
       if (!b) break;
       const sig = t.id + '#' + assinatura(b); feitos.add(sig); n++;
@@ -439,7 +452,7 @@
     instrumentar(ctx);
     try {
       for (let i = 0; i < telas.length; i++) {
-        if (S.parar) break;
+        await _esperarVisivel(); if (S.parar) break;
         const t = telas[i]; ctx.tela = t.id; ctx.fase = 'abrindo'; progresso(i, telas.length, t.rotulo);
         fecharModais(); const e0 = ctx.erros.length, r0 = ctx.requisicoes.length, t0 = Date.now();
         try { window.nav(t.id, t.el); } catch (e) { ctx.erros.push({ tela: t.id, tipo: 'erro JS', msg: 'nav: ' + e.message }); }
@@ -462,7 +475,7 @@
         errs.forEach(e => a.push({ sev: 'alta', cat: 'erro JS', titulo: `${e.tipo} ao abrir/usar a tela`, evidencia: e.msg + (e.onde ? ' @ ' + e.onde : ''), sugestao: 'Corrigir a exceção (ver função da tela).', tela: t.id, rotulo: t.rotulo }));
         reqs.filter(r => !r.bloqueado && (r.status >= 500 || r.status === 0)).forEach(r => a.push({ sev: 'alta', cat: 'API', titulo: `API falhou (HTTP ${r.status})`, evidencia: `${r.rota}${r.action ? ' · ' + r.action : ''} — ${r.erro || ''}`, sugestao: 'Ver logs da função na Vercel e tratar o erro no servidor.', tela: t.id, rotulo: t.rotulo, api: r.rota, action: r.action }));
         reqs.filter(r => !r.bloqueado && r.status < 500 && r.status > 0 && r.erro).forEach(r => a.push({ sev: r.status >= 400 ? 'alta' : 'média', cat: 'API', titulo: 'API respondeu com erro', evidencia: `${r.rota}${r.action ? ' · ' + r.action : ''} (HTTP ${r.status}) — ${r.erro}`, sugestao: 'Corrigir a ação no servidor ou exibir o motivo ao usuário.', tela: t.id, rotulo: t.rotulo, api: r.rota, action: r.action }));
-        reqs.filter(r => !r.bloqueado && r.ms > 8000 && !/claude|gerente_|s2-creative|chat|analise|debate/i.test((r.rota || '') + ' ' + (r.action || ''))).forEach(r => a.push({ sev: 'média', cat: 'desempenho', titulo: `API lenta (${(r.ms / 1000).toFixed(1)}s)`, evidencia: `${r.rota}${r.action ? ' · ' + r.action : ''}`, sugestao: 'Cachear, paralelizar ou paginar a consulta.', tela: t.id, rotulo: t.rotulo, api: r.rota, action: r.action }));
+        reqs.filter(r => !r.bloqueado && !r.suspenso && r.ms > 8000 && !/claude|gerente_|s2-creative|chat|analise|debate/i.test((r.rota || '') + ' ' + (r.action || ''))).forEach(r => a.push({ sev: 'média', cat: 'desempenho', titulo: `API lenta (${(r.ms / 1000).toFixed(1)}s)`, evidencia: `${r.rota}${r.action ? ' · ' + r.action : ''}`, sugestao: 'Cachear, paralelizar ou paginar a consulta.', tela: t.id, rotulo: t.rotulo, api: r.rota, action: r.action }));
         if (!terminou && !S.parar && !_suspenso(t0, Date.now())) a.push({ sev: 'média', cat: 'desempenho', titulo: `Tela ainda carregando após ${Math.round(opts.espera / 1000)}s`, evidencia: [...(ctx.emVoo || [])].filter(r => r.tela === t.id).map(r => r.rota + (r.action ? ' · ' + r.action : '') + ' (' + Math.round((Date.now() - r.inicio) / 1000) + 's)').join(' | ') || reqs.filter(r => r.status == null).map(r => r.rota + ' ' + (r.action || '')).join(', '), sugestao: 'Reduzir o tempo de carga inicial.', tela: t.id, rotulo: t.rotulo });
         ctx.dialogos.filter(d => d.tela === t.id && d.tipo === 'alert' && /erro|falh/i.test(d.msg) && !/bloquead/i.test(d.msg)).forEach(d => a.push({ sev: 'média', cat: 'mensagem', titulo: 'Alerta de erro exibido', evidencia: d.msg, sugestao: 'Ver a causa do erro.', tela: t.id, rotulo: t.rotulo }));
         a.forEach(x => { x.ganchos = t.ganchos; });
@@ -495,7 +508,7 @@
     achados.forEach((a, i) => { a.id = 'QA-' + String(i + 1).padStart(3, '0'); });
     const resumo = achados.reduce((o, a) => { o[a.sev] = (o[a.sev] || 0) + 1; return o; }, {});
     _relogio(false);
-    S.relatorio = { tipo: 'qa', versao: document.getElementById('sidebarBuildId')?.textContent || '', versao_desatualizada: S.versaoDesatualizada || null, inicio: new Date(inicio).toISOString(), duracao_s: Math.round((Date.now() - inicio) / 1000), repouso_s: Math.round((S.pausas || []).reduce((t, [x, y]) => t + (y - x), 0) / 1000), interrompido: interrompido || S.parar, opcoes: opts || {},
+    S.relatorio = { tipo: 'qa', versao: document.getElementById('sidebarBuildId')?.textContent || '', versao_desatualizada: S.versaoDesatualizada || null, inicio: new Date(inicio).toISOString(), duracao_s: Math.round((Date.now() - inicio) / 1000), repouso_s: Math.round((S.pausas || []).reduce((t, [x, y]) => t + (y - x), 0) / 1000), segundo_plano_s: Math.round((S.ocultoMs || 0) / 1000), interrompido: interrompido || S.parar, opcoes: opts || {},
       telas: porTela, total_telas: porTela.length, achados, resumo, formularios_ligados: ctx?.formsOk || [], acoes: (ctx?.acoes || []).slice(0, 2500), real: !!opts?.real, limpeza: opts?.real ? S.realLimpeza : null, run_id: opts?.real ? S.realRun?.run_id : null, bloqueadas: (ctx?.requisicoes || []).filter(r => r.bloqueado).map(r => ({ tela: r.tela, rota: r.rota, action: r.action, fase: r.fase })), crud: S.crud, seguranca: S.seg };
   }
 
@@ -505,11 +518,12 @@
     const R = S.relatorio, SEG = S.seg, C = S.crud;
     const linhas = [];
     linhas.push(`# Relatório de correção — Atlantyx OS (${R?.versao || SEG?.versao || document.getElementById('sidebarBuildId')?.textContent || ''})`, '');
+    if (R?.segundo_plano_s > 60) linhas.push(`> ℹ A aba do sistema ficou ${Math.round(R.segundo_plano_s / 60)} min em segundo plano durante a varredura. Nesse tempo ela ficou pausada e os tempos medidos foram descartados (o navegador desacelera abas escondidas).`, '');
     if (R?.versao_desatualizada) linhas.push(`> ⚠ ATENÇÃO: esta varredura rodou numa aba com a versão ${R.versao_desatualizada.aba}, mas o sistema publicado já estava na ${R.versao_desatualizada.publicada}. Vários achados podem já estar corrigidos — recarregue a página e rode de novo antes de corrigir.`, '');
     linhas.push(`Gerado pelos agentes de QA e Segurança do próprio sistema em ${new Date().toLocaleString('pt-BR')}.`, '');
     linhas.push('## Contexto do projeto', '- Repositório: `Fabiosq13/atlantyx-os` (branch `main`, deploy automático na Vercel).', '- Frontend: arquivo único `public/index.html` (cada tela é `<div class="page" id="page-<id>">`; a navegação é `nav(id)`; funções de carga ligadas no `nav`).', '- Backend: funções serverless em `api/*.js` (ESM), banco Neon Postgres (driver 0.10: use `sql```` ou `_q(db, texto, params)`), bibliotecas em `lib/`.', '- Ao terminar: validar sintaxe (`node --check` nas APIs e nos blocos `<script>` do index.html) e subir a versão `ATX-vX.YY` em `public/index.html`.', '');
     if (R) {
-      linhas.push('## Resultado da varredura de telas (QA)', `- Telas analisadas: ${R.total_telas}${R.interrompido ? ' (interrompida)' : ''} · duração ${R.duracao_s}s${R.repouso_s ? ` (dos quais ${R.repouso_s}s com o computador em repouso — chamadas desse período descartadas)` : ''} · modo seguro (gravações interceptadas: ${R.bloqueadas.length}).`, `- Achados: ${Object.entries(R.resumo).map(([k, v]) => `${k}: ${v}`).join(' · ') || 'nenhum'}.`, '');
+      linhas.push('## Resultado da varredura de telas (QA)', `- Telas analisadas: ${R.total_telas}${R.interrompido ? ' (interrompida)' : ''} · duração ${R.duracao_s}s${R.repouso_s ? ` (dos quais ${R.repouso_s}s com o computador em repouso — chamadas desse período descartadas)` : ''} · ${R.real ? 'EXECUÇÃO REAL (ações executadas de verdade; envios só para os contatos de teste)' : 'modo seguro (gravações interceptadas: ' + R.bloqueadas.length + ')'}.`, `- Achados: ${Object.entries(R.resumo).map(([k, v]) => `${k}: ${v}`).join(' · ') || 'nenhum'}.`, '');
       const grupos = {}; R.achados.filter(a => a.sev !== 'info').forEach(a => { (grupos[a.sev] = grupos[a.sev] || []).push(a); });
       for (const sev of ['crítica', 'alta', 'média', 'baixa']) { if (!grupos[sev]) continue; linhas.push(`### Severidade ${sev} (${grupos[sev].length})`, '');
         grupos[sev].forEach(a => { linhas.push(`**${a.id} · ${a.titulo}** — tela \`${a.tela}\` (${a.rotulo}) · ${a.cat}`);

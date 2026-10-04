@@ -911,7 +911,7 @@ async function agendarHubSpot({ tipo, titulo, data, responsavel, descricao }) {
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
-async function claude(system, user, maxTokens = 1000, limiteMs = 25000) {
+async function claude(system, user, maxTokens = 1000, limiteMs = 50000) { // v3.84: 25s cortava respostas longas (google_ads 2500 tokens) — a função tem 60s
   const t0 = Date.now();
   let r, d;
   // v1.6.1: timeout de 25s por chamada — se a Anthropic pendurar, falha COM MENSAGEM

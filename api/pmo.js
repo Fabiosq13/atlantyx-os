@@ -1339,7 +1339,8 @@ async function handler(req, res) {
     return res.status(200).json({ success: true, action, ...r });
   } catch (e) {
     console.error('[ERRO pmo]', action, e.message);
-    return res.status(500).json({ success: false, error: e.message });
+    // v3.84: dado faltando/inválido é erro de quem chamou (400), não falha do servidor (500)
+    return res.status(e.status || (/obrigat|inválid|informe/i.test(e.message) ? 400 : 500)).json({ success: false, error: e.message, dica: e.dica });
   }
 }
 

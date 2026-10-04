@@ -3820,6 +3820,7 @@ async function verificarTermosDoMes({ mes, ano, nomes, dia_inicio = 5, limite_di
   // e o aviso diário viraria ruído.
   const diaHoje = hoje.getDate();
   const naJanela = diaHoje >= dia_inicio && diaHoje <= limite_dia;
+  const prazoVencido = diaHoje > limite_dia; // v3.84: era usado sem existir (termos_verificar dava 500)
   return {
     periodo: { mes: m, ano: a, de: ini, ate: fim },
     obrigatorios, total: obrigatorios.length,
