@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { salvarHistorico } from '../lib/historico-s1.js';
 // api/business-plan.js — v3.04
 // Business Plan completo (DRE, fluxo de caixa 36 meses, TIR, VPL, payback, margens, cenários)
 //
@@ -428,6 +429,73 @@ ${docs ? '\nDOCUMENTOS DA NEGOCIAÇÃO:\n' + docs : ''}${extra ? '\n\n' + extra 
 // ── Excel: lib/bp-excel.js (modelo vivo com fórmulas + importação) ─────────
 
 // ── Handler ──────────────────────────────────────────────────────────────
+// ═══ v3.92: ANÁLISE E CONVERSA COM A IA sobre o Business Plan ═══
+// O plano dinâmico da Atlantyx é recalculado na hora (QuickBooks + carteira + caixa) antes de a IA ler —
+// ela sempre enxerga os números do momento. Planos salvos são lidos do banco.
+async function _bpParaIA({ id, overrides } = {}) {
+  const bp = id ? await obterBP(id) : await planoAtlantyx({ overrides });
+  if (!bp?.resultado) throw new Error('Plano sem resultado calculado');
+  const R = bp.resultado, I = R.indicadores || {};
+  const anos = (R.anos || []).map(a => ({ ano: a.ano, periodo: a.periodo, receita_bruta: r2(a.receita_bruta), receita_liquida: r2(a.receita_liquida), ebitda: r2(a.ebitda), lucro_liquido: r2(a.lucro_liquido), margem_bruta: a.margem_bruta, margem_ebitda: a.margem_ebitda, margem_liquida: a.margem_liquida, pessoal: r2(a.pessoal), marketing: r2(a.marketing), despesas_fixas: r2(a.despesas_fixas), fcl: r2(a.fcl), caixa_final: r2(a.caixa_final) }));
+  const cen = R.cenarios ? Object.fromEntries(Object.entries(R.cenarios).map(([k, c]) => [k, { tir_anual: c.tir_anual, vpl: r2(c.vpl), payback_meses: c.payback_simples_meses, exposicao: r2(c.exposicao_maxima_caixa) }])) : null;
+  const ctx = { titulo: bp.titulo, tipo: bp.tipo, atualizado_em: bp.atualizado_em, indicadores: I, anos, cenarios: cen,
+    premissas_resumo: { inicio: bp.premissas?.inicio, meses: bp.premissas?.meses, crescimento: bp.premissas?.crescimento || bp.ajustes, deducoes_pct: bp.premissas?.deducoes_pct, taxa_desconto: bp.premissas?.taxa_desconto_anual,
+      receitas: (bp.premissas?.receitas || []).slice(0, 12).map(x => ({ nome: x.nome, tipo: x.tipo, valor: x.valor || x.preco, volume: x.volume })), despesas_fixas: (bp.premissas?.despesas_fixas || []).slice(0, 25).map(x => ({ nome: x.nome, valor: x.valor_mensal || x.valor })) },
+    diagnostico_dados_reais: bp.diagnostico || null, avisos: bp.avisos || [], historico_12m: bp.historico || null, narrativa: bp.narrativa ? { resumo_executivo: bp.narrativa.resumo_executivo, riscos: bp.narrativa.riscos } : null };
+  return { bp, ctx, chave: id || 'atlantyx' };
+}
+async function _iaBP(system, messages, maxTokens = 3500) {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 110000);
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ctrl.signal, headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages }) });
+    const d = await r.json(); if (!r.ok) throw new Error('IA: ' + (d.error?.message || r.status));
+    return (d.content || []).map(c => c.text || '').join('');
+  } catch (e) { if (e.name === 'AbortError') throw new Error('A IA demorou demais — tente de novo'); throw e; } finally { clearTimeout(t); }
+}
+const SYS_BP = `Você é o CFO e estrategista da Atlantyx (B2B de dados, IA e engenharia de dados no Brasil; fundador e CEO: Fabio Quintanilha).
+Analise o business plan com os NÚMEROS do contexto (JSON). Seja direto, quantitativo e honesto — aponte o que não fecha. Português do Brasil.
+Valores em R$. Não invente dados que não estão no contexto; quando faltar dado (ex.: QuickBooks indisponível), diga qual e o impacto na análise.`;
+async function analiseBP({ id, overrides } = {}, usuario) {
+  const { ctx, chave } = await _bpParaIA({ id, overrides });
+  const txt = await _iaBP(SYS_BP + `
+Devolva SOMENTE JSON:
+{"titulo":"…","nota_geral":0-10,"veredito":"viável|viável com ressalvas|inviável hoje","resumo_executivo":"5-8 linhas",
+"leitura_dos_numeros":[{"indicador":"…","valor":"…","leitura":"…"}],
+"pontos_fortes":["…"],"riscos":[{"risco":"…","impacto":"alto|médio|baixo","mitigacao":"…"}],
+"premissas_frageis":[{"premissa":"…","por_que":"…","teste_sugerido":"…"}],
+"alavancas":[{"alavanca":"…","efeito_estimado":"…"}],
+"recomendacoes":[{"acao":"…","prazo":"…","responsavel":"…"}],
+"cenario_minimo_para_viabilidade":"…","perguntas_para_o_fundador":["…"],"qualidade_dos_dados":"…"}`,
+    [{ role: 'user', content: 'CONTEXTO DO BUSINESS PLAN:\n' + JSON.stringify(ctx).substring(0, 60000) }], 4000);
+  const analise = parseJSON(txt) || { resumo_executivo: txt };
+  analise.gerado_em = new Date().toISOString(); analise.plano = ctx.titulo; analise.base_atualizada_em = ctx.atualizado_em;
+  await salvarHistorico('bp_analise', { analise, chave }, usuario);
+  try { const sql = await getSql(); await sql`INSERT INTO app_config (chave, valor, atualizado_em) VALUES (${'bp_analise:' + chave}, ${JSON.stringify(analise)}, NOW()) ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = NOW()`; } catch (_) {}
+  return { analise };
+}
+async function chatBP({ id, overrides, mensagem, historico = [] } = {}) {
+  if (!String(mensagem || '').trim()) throw new Error('Escreva a pergunta');
+  const { ctx, chave } = await _bpParaIA({ id, overrides });
+  let ultimaAnalise = null; try { const sql = await getSql(); const r = await sql`SELECT valor FROM app_config WHERE chave = ${'bp_analise:' + chave} LIMIT 1`; ultimaAnalise = r[0]?.valor || null; } catch (_) {}
+  const msgs = [...(historico || []).slice(-16).map(h => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content || '').substring(0, 4000) })), { role: 'user', content: String(mensagem).substring(0, 4000) }];
+  const resposta = await _iaBP(SYS_BP + `
+Você está CONVERSANDO com o fundador sobre este plano. Responda em até 250 palavras (a menos que ele peça detalhe), cite os números,
+e quando ele propuser uma mudança ("e se crescermos 30%?"), estime o efeito com base nos números e diga qual ajuste fazer na tela (campo de premissa).
+CONTEXTO ATUAL DO PLANO (recalculado agora): ${JSON.stringify(ctx).substring(0, 50000)}
+${ultimaAnalise ? 'ÚLTIMA ANÁLISE GERADA: ' + JSON.stringify(ultimaAnalise).substring(0, 8000) : ''}`, msgs, 1800);
+  const conversa = [...msgs, { role: 'assistant', content: resposta }].slice(-40);
+  try { const sql = await getSql(); await sql`INSERT INTO app_config (chave, valor, atualizado_em) VALUES (${'bp_chat:' + chave}, ${JSON.stringify(conversa)}, NOW()) ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = NOW()`; } catch (_) {}
+  return { resposta, conversa };
+}
+async function bpIaEstado({ id } = {}) {
+  const chave = id || 'atlantyx'; const out = { analise: null, conversa: [] };
+  try { const sql = await getSql(); const r = await sql`SELECT chave, valor FROM app_config WHERE chave IN (${'bp_analise:' + chave}, ${'bp_chat:' + chave})`;
+    r.forEach(x => { const v = typeof x.valor === 'string' ? JSON.parse(x.valor) : x.valor; if (x.chave.startsWith('bp_analise:')) out.analise = v; else out.conversa = Array.isArray(v) ? v : []; }); } catch (_) {}
+  return out;
+}
+
 async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -468,6 +536,10 @@ async function handler(req, res) {
       listar: async () => ({ lista: await listarBP({ tipo: b.tipo }) }),
       obter: async () => ({ bp: await obterBP(b.id) }),
       contraproposta: async () => contrapropostaBP(b), // v3.44
+      analise: async () => analiseBP({ id: b.id || null, overrides: b.overrides }, req.sessao?.login), // v3.92
+      chat: async () => chatBP({ id: b.id || null, overrides: b.overrides, mensagem: b.mensagem, historico: b.historico }),
+      ia_estado: async () => bpIaEstado({ id: b.id || null }),
+      chat_limpar: async () => { const sql = await getSql(); await sql`DELETE FROM app_config WHERE chave = ${'bp_chat:' + (b.id || 'atlantyx')}`; return { ok: true }; },
       excluir: async () => excluirBP(b.id),
       excel: async () => {
         let bp = b.bp;
