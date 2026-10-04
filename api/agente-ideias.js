@@ -165,7 +165,7 @@ function corpoIssue(r) {
   const d = r.dados || {};
   const lista = a => (Array.isArray(a) && a.length ? a.map(x => '- ' + x).join('\n') : '-');
   return `@claude implemente esta demanda APROVADA pelo fundador na Esteira de Demandas do Atlantyx OS e abra um pull request para revisão.
-Regras: não altere o que não estiver relacionado; mantenha o comportamento das telas que funcionam; valide a sintaxe (node --check nas APIs e nos blocos <script> de public/index.html); suba a versão ATX-vX.YY / ATLANTYX vX.YY em public/index.html; descreva no PR o que mudou e como testar. Nada vai para produção sem o merge do fundador.
+Regras: não altere o que não estiver relacionado; mantenha o comportamento das telas que funcionam; valide a sintaxe (node --check nas APIs e nos blocos <script> de public/index.html); NÃO altere a versão ATX-vX.YY / ATLANTYX vX.YY (o merge pela Esteira sobe a versão — mudar aqui gera conflito entre PRs); descreva no PR o que mudou e como testar. Nada vai para produção sem o merge do fundador.
 
 ## ${r.titulo}
 **Área:** ${d.area || '-'} · **Impacto:** ${d.impacto || '-'}/5 · **Esforço:** ${d.esforco || '-'} · **Risco:** ${d.risco || '-'}
@@ -235,7 +235,7 @@ async function sincronizar() {
       // PR que menciona a tarefa (aberto pelo Claude)
       let pr = null;
       try { const s = await (await fetch(`https://api.github.com/search/issues?q=${encodeURIComponent(`repo:${repo} is:pr ${r.issue_numero} in:body`)}`, { headers: H })).json();
-        const p = (s.items || [])[0]; if (p) pr = { numero: p.number, url: p.html_url, estado: p.state, merged: !!p.pull_request?.merged_at, criado_em: p.created_at, merged_em: p.pull_request?.merged_at || null, fechado_em: p.closed_at || null }; } catch (_) {}
+        const p = (s.items || [])[0]; if (p) pr = { numero: p.number, url: p.html_url, estado: p.state, merged: !!p.pull_request?.merged_at, criado_em: p.created_at, merged_em: p.pull_request?.merged_at || null, fechado_em: p.closed_at || null, rotulos: (p.labels || []).map(l => l.name) }; } catch (_) {}
       // v3.85: andamento do Claude, lido do comentário que ele mantém atualizado na tarefa
       let claude = null;
       try { const cs = await (await fetch(`https://api.github.com/repos/${repo}/issues/${r.issue_numero}/comments?per_page=100`, { headers: H })).json();
@@ -245,6 +245,12 @@ async function sincronizar() {
           claude = { estado, inicio: c.created_at, atualizado: c.updated_at, duracao: (t.match(/task in ((?:\d+h )?(?:\d+m )?\d+s)/) || [])[1] || null, url: c.html_url }; } } catch (_) {}
       const ant = parse(r.dados) || {};
       const d = { ...ant, pr, claude, issue_estado: iss.state };
+      // v3.88: o robô de merge achou conflito de verdade → pede ao Claude (com o token do fundador, para disparar o GitHub Actions)
+      if (pr && pr.estado === 'open' && (pr.rotulos || []).includes('conflito') && (!ant.conflito_pedido_em || Date.now() - Date.parse(ant.conflito_pedido_em) > 3 * 3600000)) {
+        try { await fetch(`https://api.github.com/repos/${repo}/issues/${pr.numero}/comments`, { method: 'POST', headers: { ...H, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body: '@claude esta branch está em conflito com a main. Faça `git merge origin/main` NESTA branch, resolva os conflitos mantendo as duas mudanças (a da main e a deste PR), NÃO altere a versão ATX-vX.YY, valide (node --check nas APIs e nos <script> de public/index.html) e faça push nesta mesma branch. Não abra outro PR.' }) });
+          d.conflito_pedido_em = new Date().toISOString(); } catch (_) {}
+      }
       const implementada = iss.state === 'closed' && iss.state_reason !== 'not_planned' || (pr && pr.merged);
       if (implementada) d.implementada_em = pr?.merged_em || iss.closed_at || new Date().toISOString();
       // v3.87: tarefa fechada SEM implementar (PR fechado sem merge / "not planned") → arquivada, não fica parada em implementação
@@ -290,7 +296,7 @@ async function qaNoturno(req, { qa = {} } = {}) {
 Regras desta correção autônoma (correcao-noturna):
 - Corrija SÓ os erros listados. Não crie funcionalidades, não mude layout nem comportamento que funciona.
 - Confirme a causa no código antes de mudar. Se um item for falso positivo (ex.: depende de configuração no Vercel, de serviço externo fora do ar ou do computador em repouso), NÃO altere nada para ele e explique no PR.
-- Valide: node --check em api/*.js e lib/*.js e nos blocos <script> de public/index.html. Suba a versão ATX-vX.YY / ATLANTYX vX.YY em public/index.html.
+- Valide: node --check em api/*.js e lib/*.js e nos blocos <script> de public/index.html. NÃO altere a versão ATX-vX.YY (o merge automático sobe a versão).
 - No corpo do PR escreva "Corrige #NUMERO_DESTA_TAREFA" e liste cada item: corrigido / falso positivo (motivo).
 - Este PR será validado automaticamente (sintaxe + carga da página sem erro de JavaScript) e mesclado sem revisão humana — por isso, na dúvida, não altere.
 
@@ -368,6 +374,21 @@ async function handler(req, res) {
         return { id };
       },
       sincronizar: () => sincronizar(),
+      // v3.88: "✅ Aprovar e mesclar" — marca o PR; o claude-pr.yml atualiza com a main, valida, mescla e sobe a versão
+      mesclar: async () => {
+        const token = process.env.GITHUB_TOKEN, repo = process.env.GITHUB_REPO || 'Fabiosq13/atlantyx-os';
+        if (!token) throw new Error('GITHUB_TOKEN não configurado no Vercel');
+        const [row] = await sql`SELECT id, dados FROM agente_demandas WHERE id = ${b.id} LIMIT 1`; if (!row) throw new Error('Demanda não encontrada');
+        const d = parse(row.dados) || {}; const pr = d.pr;
+        if (!pr?.numero || pr.estado !== 'open') throw new Error('Esta demanda não tem um PR aberto para mesclar');
+        if (d.claude?.estado === 'erro' && !b.mesmo_assim) throw new Error('O Claude parou com erro nesta tarefa — o PR pode estar incompleto. Revise no GitHub antes.');
+        const H = { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'User-Agent': 'atlantyx-os-agente', 'Content-Type': 'application/json' };
+        const r = await fetch(`https://api.github.com/repos/${repo}/issues/${pr.numero}/labels`, { method: 'POST', headers: H, body: JSON.stringify({ labels: ['aprovado-merge'] }) });
+        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error('GitHub recusou (' + r.status + '): ' + (e.message || '') + (r.status === 403 ? ' — no token do GitHub (Vercel → GITHUB_TOKEN) acrescente a permissão "Pull requests: Read and write".' : '')); }
+        d.merge_pedido_em = new Date().toISOString(); d.merge_pedido_por = req.sessao?.login || req.usuario || null;
+        await sql`UPDATE agente_demandas SET dados = ${JSON.stringify(d)}, atualizado_em = NOW() WHERE id = ${row.id}`;
+        return { ok: true, pr: pr.numero };
+      },
       qa_noturno: () => qaNoturno(req, b), // v3.45 — chamado pelo GitHub Actions (Authorization: Bearer CRON_SECRET)
       config: async () => ({ config: await config() }),
       config_salvar: async () => {

@@ -1,10 +1,14 @@
 # Depois que o Claude trabalha numa tarefa (v3.45):
 #   • abre o PULL REQUEST da branch claude/issue-N-* (se ainda não existir), com "Fixes #N"
-#   • tarefa "demanda-aprovada" (Esteira de Demandas): só abre o PR — o merge é SEMPRE do fundador
+#   • tarefa "demanda-aprovada" (Esteira de Demandas): abre o PR; o merge só acontece quando o fundador clica
+#     "✅ Aprovar e mesclar" na Esteira (rótulo aprovado-merge) — aí o robô atualiza com a main, valida, mescla e sobe a versão
 #   • tarefa "correcao-noturna" (erros do QA da madrugada): valida (sintaxe + carga da página sem erro de JS,
 #     até 600 linhas alteradas) e MESCLA sozinho; se não passar, deixa o PR aberto com o rótulo precisa-revisao
 name: Claude — PR e merge das correções noturnas
 on:
+  # v3.88: pull_request_target roda o workflow da MAIN (não o da branch do PR) — o validador e o script de merge não podem vir do PR
+  pull_request_target:
+    types: [labeled]
   workflow_run:
     workflows: ['Claude — correção automática']
     types: [completed]
@@ -28,6 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
@@ -45,6 +50,49 @@ jobs:
           gh label create precisa-revisao -R "$REPO" --color ff4d6d --description "Correção automática que não passou na validação" 2>/dev/null || true
           for N in $(gh issue list -R "$REPO" --state open --limit 100 --json number,title,labels -q '.[] | select((.title|startswith("[Demanda aprovada]")) and ((.labels|map(.name)|index("demanda-aprovada"))|not)) | .number'); do gh issue edit "$N" -R "$REPO" --add-label demanda-aprovada || true; done
           for N in $(gh issue list -R "$REPO" --state open --limit 100 --json number,title,labels -q '.[] | select((.title|startswith("[Correção noturna]")) and ((.labels|map(.name)|index("correcao-noturna"))|not)) | .number'); do gh issue edit "$N" -R "$REPO" --add-label correcao-noturna || true; done
+          cp scripts/resolver-versao.py .resolver-main.py   # v3.88: resolve sozinho conflito que é SÓ a linha de versão
+          gh label create aprovado-merge -R "$REPO" --color 4f7cff --description "Fundador aprovou na Esteira — o robô atualiza, valida e mescla" 2>/dev/null || true
+          gh label create conflito -R "$REPO" --color f5a623 --description "Conflito com a main que não é só a versão — a Esteira pede ao Claude para resolver" 2>/dev/null || true
+          # mesclar PR BRANCH TAREFA TIPO — atualiza a branch com a main (resolvendo conflito de versão), valida,
+          # mescla e sobe a versão na main. Conflito de verdade → rótulo "conflito" (a Esteira pede ao Claude).
+          mesclar() {
+            local PR="$1" BR="$2" N="$3" TIPO="$4"
+            git fetch -q origin main "$BR" || return 1
+            local VB; VB=$(git show origin/main:public/index.html | grep -o "ATX-v[0-9]*\.[0-9]*" | head -1 | sed "s/ATX-v//")
+            git checkout -q -B _mesclar "origin/$BR"
+            if ! git merge -q --no-edit origin/main >/tmp/merge.txt 2>&1; then
+              local OK=1
+              for F in $(git diff --name-only --diff-filter=U); do python3 .resolver-main.py "$F" >>/tmp/merge.txt 2>&1 || OK=0; git add "$F"; done
+              if [ "$OK" = "1" ]; then git commit -q --no-edit || OK=0; fi
+              if [ "$OK" != "1" ]; then
+                git merge --abort 2>/dev/null || true; git checkout -q main
+                gh pr edit "$PR" -R "$REPO" --add-label conflito || true
+                gh pr comment "$PR" -R "$REPO" --body "⚠ Este PR tem conflito com a main que não é só a linha de versão — pedi ao Claude para atualizar a branch. Assim que ele terminar, o merge é tentado de novo sozinho." || true
+                return 1
+              fi
+            fi
+            if [ "$PW_OK" = "0" ]; then npm i --no-save --no-audit --no-fund playwright@1.48.2 >/dev/null 2>&1 && npx playwright install --with-deps chromium >/dev/null 2>&1 && PW_OK=1; fi
+            if ! ATX_RAIZ=. node .validar-main.mjs > /tmp/val.txt 2>&1; then
+              git checkout -q main
+              gh pr edit "$PR" -R "$REPO" --add-label precisa-revisao --remove-label aprovado-merge || true
+              { echo "❌ A validação falhou — o PR NÃO foi mesclado e ficou para revisão."; echo; echo '```'; tail -40 /tmp/val.txt; echo '```'; } > /tmp/falha.md
+              gh pr comment "$PR" -R "$REPO" --body-file /tmp/falha.md || true
+              return 1
+            fi
+            git push -q origin "HEAD:$BR" || { git checkout -q main; return 1; }
+            gh pr edit "$PR" -R "$REPO" --remove-label conflito >/dev/null 2>&1 || true
+            if ! gh pr merge "$PR" -R "$REPO" --merge --delete-branch; then git checkout -q main; return 1; fi
+            # sobe a versão na main (os PRs não mexem mais nela — é o que evitava os conflitos)
+            git fetch -q origin main && git checkout -q -B _versao origin/main
+            local V; V=$(grep -o "ATX-v[0-9]*\.[0-9]*" public/index.html | head -1 | sed 's/ATX-v//')
+            # parte da MAIOR versão entre a main de antes e a de agora (a versão nunca volta)
+            local NV; NV=$(python3 -c "v=max(['$V','$VB'],key=lambda x:tuple(map(int,x.split('.'))));a,b=v.split('.');print(f'{a}.{int(b)+1:02d}')")
+            sed -i "s/ATX-v$V/ATX-v$NV/g; s/ATLANTYX v$V/ATLANTYX v$NV/g" public/index.html
+            git commit -q -am "v$NV: $TIPO — PR #$PR mesclado pela Esteira" && git push -q origin HEAD:main || true
+            [ -n "$N" ] && gh issue comment "$N" -R "$REPO" --body "✅ $TIPO: PR #$PR atualizado com a main, validado (sintaxe + carga da página) e mesclado — no ar como v$NV." || true
+            git checkout -q main; git reset -q --hard origin/main
+            return 0
+          }
           for LABEL in correcao-noturna demanda-aprovada; do
             for N in $(gh issue list -R "$REPO" --label "$LABEL" --state open --json number -q '.[].number'); do
               BR=$(git ls-remote --heads origin "claude/issue-$N-*" | awk '{print $2}' | sed 's#refs/heads/##' | tail -1)
@@ -61,23 +109,19 @@ jobs:
                 gh issue comment "$N" -R "$REPO" --body "Pull request #$PR aberto." || true
               fi
               [ "$LABEL" != "correcao-noturna" ] && continue
-              # correção noturna: valida e mescla
+              # correção noturna: valida e mescla sozinha (sem revisão humana)
               if gh pr view "$PR" -R "$REPO" --json labels -q '.labels[].name' | grep -qx 'precisa-revisao'; then continue; fi
               LINHAS=$(gh pr view "$PR" -R "$REPO" --json additions,deletions -q '.additions + .deletions')
               if [ "$LINHAS" -gt 600 ]; then
                 gh pr edit "$PR" -R "$REPO" --add-label precisa-revisao || true
                 gh pr comment "$PR" -R "$REPO" --body "Correção noturna grande demais para merge automático ($LINHAS linhas). Ficou para revisão do fundador." ; continue
               fi
-              git checkout -q --detach "origin/$BR"
-              if [ "$PW_OK" = "0" ]; then npm i --no-save --no-audit --no-fund playwright@1.48.2 >/dev/null 2>&1 && npx playwright install --with-deps chromium >/dev/null 2>&1 && PW_OK=1; fi
-              if ATX_RAIZ=. node .validar-main.mjs > /tmp/val.txt 2>&1; then
-                gh pr merge "$PR" -R "$REPO" --squash --delete-branch && \
-                  gh issue comment "$N" -R "$REPO" --body "✅ Correção noturna validada (sintaxe + carga da página) e mesclada automaticamente no PR #$PR." || true
-              else
-                gh pr edit "$PR" -R "$REPO" --add-label precisa-revisao || true
-                { echo "❌ A validação falhou — o PR NÃO foi mesclado e ficou para revisão."; echo; echo '```'; tail -40 /tmp/val.txt; echo '```'; } > /tmp/falha.md
-                gh pr comment "$PR" -R "$REPO" --body-file /tmp/falha.md || true
-              fi
-              git checkout -q main
+              mesclar "$PR" "$BR" "$N" "Correção noturna" || true
             done
+          done
+          # v3.88: demandas que o fundador APROVOU NA ESTEIRA ("✅ Aprovar e mesclar" → rótulo aprovado-merge)
+          for PR in $(gh pr list -R "$REPO" --state open --label aprovado-merge --json number -q '.[].number'); do
+            BR=$(gh pr view "$PR" -R "$REPO" --json headRefName -q .headRefName)
+            N=$(echo "$BR" | sed -n 's#^claude/issue-\([0-9]*\)-.*#\1#p')
+            mesclar "$PR" "$BR" "${N:-}" "Demanda aprovada na Esteira" || true
           done
