@@ -226,15 +226,29 @@ async function margens() {
 function _diasUteisRestantes(ate) { let d = new Date(); d.setHours(12); let n = 0; while (d <= ate) { const w = d.getDay(); if (w && w < 6) n++; d.setDate(d.getDate() + 1); } return n; }
 // v3.43: o "O que fazer hoje" e a estratégia recalculavam o painel inteiro logo depois de abri-lo — reaproveita por 2 min
 let _painelMemo = null;
+// v3.85 (QA 02/10 — HTTP 0 / tela carregando sem fim): o cálculo nunca segura a resposta além deste limite;
+// passou disso (ou falhou), devolve o último cálculo salvo marcado como desatualizado em vez de pendurar a tela.
+const PAINEL_LIMITE_MS = 25000;
+async function _painelCache() {
+  try { const sql = await getSql(); const r = await sql`SELECT valor, atualizado_em FROM app_config WHERE chave = 'cache:vendas:painel' LIMIT 1`;
+    if (!r[0]) return null; const v = typeof r[0].valor === 'string' ? JSON.parse(r[0].valor) : r[0].valor;
+    return v ? { v, idade: (Date.now() - new Date(r[0].atualizado_em).getTime()) / 1000 } : null; } catch (_) { return null; }
+}
 async function painel(base, { forcar = false } = {}) {
-  if (!forcar && _painelMemo && Date.now() - _painelMemo.em < 120000) return _painelMemo.p;
+  const memo = !forcar && _painelMemo && Date.now() - _painelMemo.em < 120000 ? _painelMemo.p : null;
   // v3.69 (QA-001/002): o memo em memória se perde a cada instância nova — guarda também no banco. Até 5 min
   // devolve na hora; até 12h devolve o último marcado como desatualizado e a tela pede o novo em seguida.
-  if (!forcar) { try { const sql = await getSql(); const r = await sql`SELECT valor, atualizado_em FROM app_config WHERE chave = 'cache:vendas:painel' LIMIT 1`;
-    if (r[0]) { const idade = (Date.now() - new Date(r[0].atualizado_em).getTime()) / 1000; const v = typeof r[0].valor === 'string' ? JSON.parse(r[0].valor) : r[0].valor;
-      if (v && idade < 12 * 3600) return Object.assign({}, v, { _cache: { idade_s: Math.round(idade), stale: idade > 300 } }); } } catch (_) {} }
-  const p = _painelCalc(base).then(v => { cfgSet('cache:vendas:painel', v).catch(() => {}); return v; }); _painelMemo = { em: Date.now(), p }; p.catch(() => { _painelMemo = null; });
-  return p;
+  const cache = memo ? null : await _painelCache();
+  if (!memo && !forcar && cache && cache.idade < 12 * 3600) return Object.assign({}, cache.v, { _cache: { idade_s: Math.round(cache.idade), stale: cache.idade > 300 } });
+  let p = memo;
+  if (!p) { p = _painelCalc(base).then(v => { cfgSet('cache:vendas:painel', v).catch(() => {}); return v; }); _painelMemo = { em: Date.now(), p }; p.catch(() => { _painelMemo = null; }); }
+  let tm, erro = null;
+  const v = await Promise.race([p.catch(e => { erro = e; return null; }), new Promise(r => { tm = setTimeout(() => r(null), PAINEL_LIMITE_MS); })]).finally(() => clearTimeout(tm));
+  if (v) return v;
+  const motivo = erro ? erro.message : `o cálculo passou de ${PAINEL_LIMITE_MS / 1000}s (QuickBooks/HubSpot lentos)`;
+  const c = cache || await _painelCache();
+  if (c) return Object.assign({}, c.v, { _cache: { idade_s: Math.round(c.idade), stale: true, aviso: 'Não consegui recalcular agora — ' + motivo + '. Mostrando o último cálculo salvo.' } });
+  throw new Error('Não consegui montar o painel: ' + motivo + '. Tente novamente em instantes.');
 }
 async function _painelCalc(base) {
   await tabelas(); const sql = await getSql();
@@ -291,15 +305,17 @@ async function _painelCalc(base) {
 }
 const fmt = v => 'R$ ' + Math.round(+v || 0).toLocaleString('pt-BR');
 
+// v3.85: as chamadas de IA do painel respondem dentro de ~27s no total (a tela desiste em 30s)
+const _iaPrazo = t0 => Math.max(8000, 27000 - (Date.now() - t0));
 async function coach(base, { pergunta } = {}) {
-  const p = await painel(base);
+  const t0 = Date.now(); const p = await painel(base);
   const sys = `Você é o DIRETOR COMERCIAL IA da Atlantyx — cobrador, direto e insistente (um "CRM pulguento"), em português do Brasil. Use SÓ os números do contexto. Formato: 1) Situação em 2 linhas com números; 2) "Hoje" — 3 ações concretas com quem/quanto; 3) "Esta semana" — metas de reuniões/propostas; 4) Um alerta de margem ou formato se houver. Sem rodeios, sem elogios.`;
-  return { resposta: await claude(sys, `CONTEXTO:\n${JSON.stringify({ metas: p.metas, calculo: p.calculo, propostas: p.propostas, margens: { geral: p.margens.geral, por_tipo: p.margens.por_tipo }, recorrencia: p.recorrencia, cobrancas: p.cobrancas }).substring(0, 12000)}\n\n${pergunta ? 'PERGUNTA: ' + pergunta : 'Dê o direcionamento de hoje.'}`, 1200) };
+  return { resposta: await claude(sys, `CONTEXTO:\n${JSON.stringify({ metas: p.metas, calculo: p.calculo, propostas: p.propostas, margens: { geral: p.margens.geral, por_tipo: p.margens.por_tipo }, recorrencia: p.recorrencia, cobrancas: p.cobrancas }).substring(0, 12000)}\n\n${pergunta ? 'PERGUNTA: ' + pergunta : 'Dê o direcionamento de hoje.'}`, 1200, _iaPrazo(t0)) };
 }
 async function estrategiaSugerir(base, { periodo_tipo, periodo_ref } = {}) {
-  const p = await painel(base);
+  const t0 = Date.now(); const p = await painel(base);
   const sys = 'Você escreve o PLANO COMERCIAL do período para a Atlantyx (B2B, venda consultiva de dados/IA, ciclo longo). Português do Brasil, prático, em markdown curto: Meta do período e gap · Matemática do funil (vendas, propostas, reuniões, leads) · Contas-alvo e ofertas prioritárias (use formatos com recorrência quando ajudar a meta) · Cadência semanal · Riscos e plano B · Indicadores de acompanhamento.';
-  return { texto: await claude(sys, `Período: ${periodo_tipo || p.periodo_sugerido} ${periodo_ref || ''}\nDADOS:\n${JSON.stringify({ metas: p.metas, calculo: p.calculo, propostas: p.propostas, margens: { geral: p.margens.geral, por_tipo: p.margens.por_tipo }, recorrencia: p.recorrencia }).substring(0, 12000)}`, 2200) };
+  return { texto: await claude(sys, `Período: ${periodo_tipo || p.periodo_sugerido} ${periodo_ref || ''}\nDADOS:\n${JSON.stringify({ metas: p.metas, calculo: p.calculo, propostas: p.propostas, margens: { geral: p.margens.geral, por_tipo: p.margens.por_tipo }, recorrencia: p.recorrencia }).substring(0, 12000)}`, 1600, _iaPrazo(t0)) };
 }
 
 // ═══════════════════════ PROPOSTA: ESTIMAR, ANALISAR, REDIGIR ═══════════════════════
