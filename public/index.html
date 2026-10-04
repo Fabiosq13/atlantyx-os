@@ -276,6 +276,20 @@ body{background:var(--bg);color:var(--t1);font-family:var(--B);font-size:13px;di
 .st-d{font-size:10.5px;color:var(--t2);line-height:1.45;}
 .cp-acoes{display:flex;gap:8px;margin-top:12px;padding:10px;background:var(--bg3);border:1px solid var(--bd);border-radius:8px;}
 @media (max-width:900px){.cp-steps{grid-template-columns:repeat(2,1fr);}.cp-top .seg{margin-left:0;}}
+/* v3.85 — Kanban de Faturamento: em >=1280px as 7 colunas dividem a largura (sem rolagem lateral), cada coluna rola na vertical
+   e card/valor nunca passam da coluna; abaixo de 1280px volta a rolar só dentro do quadro */
+.fat-totais{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px;}
+.fat-totais .kv{overflow-wrap:anywhere;}
+.fat-board{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;align-items:start;width:100%;max-width:100%;overflow-x:hidden;}
+.fat-board>div{min-width:0;}
+.fat-col-cards{display:flex;flex-direction:column;gap:8px;min-height:60px;max-height:calc(100vh - 200px);overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;}
+.fat-card{min-width:0;max-width:100%;flex-shrink:0;overflow-wrap:anywhere;}
+@media (max-width:1279.98px){.fat-board{grid-template-columns:repeat(7,minmax(150px,1fr));overflow-x:auto;}}
+/* v3.85 — Autocampanha: campos e grupos de botões quebram linha em vez de se sobrepor */
+.ac-cfg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:9px;margin-bottom:10px;}
+.ac-cfg-grid>*{min-width:0;}
+.ac-acoes{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+.ac-acoes>.btn{flex-shrink:0;max-width:100%;}
 @media (max-width:1280px){
   .k5{grid-template-columns:repeat(auto-fit,minmax(170px,1fr));}
   .k4{grid-template-columns:repeat(auto-fit,minmax(190px,1fr));}
@@ -3165,8 +3179,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </div>
   <div id="fatKbStatus" style="display:none;margin-bottom:10px;"></div>
   <div id="fatDiagLinha" style="font-size:9.5px;color:var(--t3);font-family:var(--M);margin-bottom:6px;"></div>
-  <div id="fatKbTotais" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:8px;margin-bottom:12px;"></div>
-  <div id="fatKanbanBoard" style="display:grid;grid-template-columns:repeat(7,minmax(150px,1fr));gap:10px;align-items:start;overflow-x:auto;max-width:100%;"><!-- v3.69: colunas com mínimo e rolagem só no quadro (QA-011/012/013) -->
+  <div id="fatKbTotais" class="fat-totais"></div>
+  <div id="fatKanbanBoard" class="fat-board"><!-- v3.85: em >=1280px as 7 colunas dividem a largura (sem rolagem lateral) e cada coluna rola na vertical -->
     <div style="grid-column:1/-1;text-align:center;color:var(--t3);font-size:11px;padding:24px;">Carregando...</div>
   </div>
   <!-- v2.11: concluídos ficavam sem coluna — nunca apareciam. Agora têm uma seção própria. -->
@@ -4010,7 +4024,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div class="panel" style="margin-bottom:12px;">
     <div class="ph"><div class="pt">Configuracao</div></div>
     <div class="pb">
-      <div style="display:grid;grid-template-columns:1.2fr repeat(3,1fr) 1fr 1fr;gap:9px;margin-bottom:10px;">
+      <div class="ac-cfg-grid">
         <div class="fg" style="margin:0;"><label class="fl">Data de início</label><input type="date" class="fi" id="ac_inicio" title="A autocampanha gera os posts a partir desta data"/></div>
         <div class="fg" style="margin:0;"><label class="fl">Horario 1</label><input type="time" class="fi" id="ac_h1" value="08:30"/></div>
         <div class="fg" style="margin:0;"><label class="fl">Horario 2</label><input type="time" class="fi" id="ac_h2" value="12:15"/></div>
@@ -4046,14 +4060,14 @@ tr:hover td{background:rgba(79,124,255,.03);}
       </div>
       <div class="fg" style="margin:0 0 10px;"><label class="fl">Tema base dos posts</label>
         <input class="fi" id="ac_tema" value="dados, IA aplicada e eficiencia operacional para grandes empresas"/></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <div class="ac-acoes">
         <button class="btn" onclick="acPlanejar()" id="btnAcPlan">&#128269; Ver horarios vagos</button>
         <button class="btn btn-p" onclick="acExecutar(true)" id="btnAcRasc" title="Gera os posts e deixa no Kanban em Gerado para revisar — nada vai ao Metricool">&#9998; Gerar rascunhos</button>
         <button class="btn btn-gn" onclick="acExecutar(false)" id="btnAcExec" title="Gera e já agenda no Metricool nas redes marcadas">&#128228; Gerar e agendar</button>
         <button class="btn" style="font-size:10px;margin-left:auto;" onclick="acSugerirHorarios()">&#128161; Sugerir horarios pelos meus dados</button>
       </div>
       <!-- v3.58: ferramentas separadas das ações principais -->
-      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);">
+      <div class="ac-acoes" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);">
         <span style="font-size:9.5px;color:var(--t3);font-family:var(--M);text-transform:uppercase;margin-right:4px;">Ferramentas</span>
         <button class="btn" style="font-size:10px;" onclick="acDiagnostico()" title="Testa Metricool, IA, gerador de imagem, JPEG, fontes e a fila — e diz o que corrigir">&#129658; Diagnostico</button>
         <button class="btn" style="font-size:10px;" onclick="acAuditoria()" title="Por que nao ha leads? Cruza publicacoes, erros e capturas">&#128269; Auditoria do funil</button>
@@ -4062,7 +4076,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="acTrocarLinkAgendados()" title="Troca o link 'agenda direto' dos posts já agendados pela página de captura (cadastro → agenda), mantendo a campanha da UTM">&#128257; Trocar link dos já agendados</button>
         <button class="btn" style="font-size:10px;color:#e1306c;border-color:#e1306c;" onclick="acGerarStory()" title="Gera um Story do Instagram com oferta, QR code e link de captura">&#128247; Story com link</button>
         <button class="btn" style="font-size:10px;margin-left:auto;color:var(--t3);" title="Modo antigo, em que o servidor gerava os posts numa fila" onclick="const x=document.getElementById('acFilaAntiga');x.style.display=x.style.display==='none'?'flex':'none';">Fila do servidor (modo antigo) ▾</button>
-        <div id="acFilaAntiga" style="display:none;flex-basis:100%;justify-content:flex-end;gap:6px;"><!-- v3.69: sem <details> (os botões escondidos contavam como sobrepostos — QA-014) -->
+        <div id="acFilaAntiga" style="display:none;flex-basis:100%;flex-wrap:wrap;justify-content:flex-end;gap:8px;"><!-- v3.69: sem <details> (os botões escondidos contavam como sobrepostos — QA-014) -->
             <button class="btn" style="font-size:10px;" onclick="acVerFila()" title="Andamento e resultado da fila em segundo plano">&#128203; Ver fila</button>
             <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="acCriarCampanhas()" title="Salva os posts prontos da fila como campanhas em rascunho — nao posta no Metricool">&#128190; Criar campanhas (sem postar)</button>
         </div>
@@ -4072,7 +4086,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div id="acResultado"></div>
   <!-- v3.41: lista das autocampanhas geradas -->
   <div class="panel" style="margin-top:12px;">
-    <div class="ph"><div class="pt">📋 Autocampanhas geradas</div><span style="font-size:10px;color:var(--t2);" id="acListaResumo"></span>
+    <div class="ph" style="flex-wrap:wrap;"><div class="pt">📋 Autocampanhas geradas</div><span style="font-size:10px;color:var(--t2);" id="acListaResumo"></span>
       <button class="btn" style="font-size:10px;margin-left:auto;color:var(--red);border-color:var(--red);" onclick="acLimparRascunhos()" title="Apaga as autocampanhas que não têm nada agendado no Metricool, os cards delas no Kanban e os rascunhos da fila">🧹 Limpar rascunhos</button>
       <button class="btn btn-g" style="font-size:10px;" onclick="acListar(true)">↻ Atualizar</button></div>
     <div class="pb" id="acLista"><div style="font-size:11px;color:var(--t3);padding:12px;text-align:center;">Carregando...</div></div>
@@ -19725,8 +19739,8 @@ async function carregarKanbanFaturamento() {
     board.innerHTML = FAT_COLS.map(col => {
       const termos = _fatColunas[col] || [];
       return `<div style="min-width:0;">
-        <div style="font-family:var(--M);font-size:10px;color:var(--t2);margin-bottom:6px;display:flex;justify-content:space-between;">${FAT_LABELS[col]}<span style="color:var(--t3);">${termos.length}</span></div>
-        <div style="display:flex;flex-direction:column;gap:8px;min-height:60px;">
+        <div style="font-family:var(--M);font-size:10px;color:var(--t2);margin-bottom:6px;display:flex;justify-content:space-between;gap:4px;">${FAT_LABELS[col]}<span style="color:var(--t3);">${termos.length}</span></div>
+        <div class="fat-col-cards">
         ${termos.map(t => _fatCard(t, col)).join('') || '<div style="text-align:center;color:var(--t3);font-size:10px;padding:14px;background:var(--bg4);border-radius:8px;">—</div>'}
         </div>
       </div>`;
@@ -19817,10 +19831,10 @@ function _fatCard(t, col) {
   const prazoBadge = diasDecorridos != null && naoPago ? `<div style="font-size:9.5px;margin-top:4px;padding:2px 7px;border-radius:4px;display:inline-block;font-weight:700;${estourou ? 'background:rgba(255,80,80,.18);color:var(--red);' : 'background:rgba(34,211,163,.15);color:var(--green,#22d3a3);'}" title="Base: ${dataBase.split('-').reverse().join('/')} (${origemBase}) · prazo de ${PRAZO_DIAS} dias corridos para receber">
       ${estourou ? '⚠ em atraso · ' + diasDecorridos + ' dias' : '✓ em dia · ' + diasDecorridos + ' dias'}</div>` : '';
   const cardStyle = estourou ? 'background:rgba(255,80,80,.08);border:1.5px solid var(--red);box-shadow:0 0 0 1px rgba(255,80,80,.25);' : 'background:var(--bg4);border:1px solid var(--bd);';
-  return `<div style="${cardStyle}border-radius:8px;padding:9px;cursor:pointer;" onclick="abrirDetalheTermo('${t.id}')">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
-      <div style="font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;">${(t.projeto||'Termo').replace(/</g,'&lt;')}</div>
-      ${t.numero_termo ? `<span style="font-family:var(--M);font-size:10px;font-weight:700;color:var(--gold);background:rgba(245,185,75,.15);border:1px solid rgba(245,185,75,.4);border-radius:5px;padding:1px 6px;white-space:nowrap;flex-shrink:0;" title="Número do termo">Nº ${String(t.numero_termo).replace(/</g,'&lt;')}</span>` : ''}
+  return `<div class="fat-card" style="${cardStyle}border-radius:8px;padding:9px;cursor:pointer;" onclick="abrirDetalheTermo('${t.id}')">
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:4px 6px;">
+      <div style="flex:1 1 60px;font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;">${(t.projeto||'Termo').replace(/</g,'&lt;')}</div>
+      ${t.numero_termo ? `<span style="font-family:var(--M);font-size:10px;font-weight:700;color:var(--gold);background:rgba(245,185,75,.15);border:1px solid rgba(245,185,75,.4);border-radius:5px;padding:1px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;flex-shrink:0;" title="Número do termo">Nº ${String(t.numero_termo).replace(/</g,'&lt;')}</span>` : ''}
     </div>
     <div style="font-size:9px;color:var(--t2);margin-top:2px;">${t.contratante||''} · ${t.periodo_medicao||''}</div>
     <div style="font-size:11px;font-family:var(--M);color:var(--gold);margin-top:4px;">${fmtBRLcompleto(t.valor_total_termo)}</div>
@@ -27687,7 +27701,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.84] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.85] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27703,7 +27717,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.84';
+window.__ATX_BUILD_ID__ = 'ATX-v3.85';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
