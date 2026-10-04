@@ -2177,6 +2177,8 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
     entradas_mes: ext._erro ? null : round(ext.total_entradas), saidas_mes: ext._erro ? null : round(ext.total_saidas),
     a_receber: soma(reais), a_receber_vencido: soma(reais, r => r.vencida), a_receber_30d: soma(reais, r => !r.vencida && r.data <= em30),
     qtd_receber: reais.length, receita_prevista_marcos: soma(prev),
+    // v3.85: faturas em aberto, uma a uma — alimenta os alertas de vencimento (A Receber + Dashboard LIVE)
+    recebiveis_itens: reais.map(r => ({ id: r.id, cliente: r.cliente || String(r.descricao || '').split(' · ')[0], doc: r.doc || '', valor: round(r.valor || 0), vencimento: r.data, vencida: !!r.vencida })),
     a_pagar: soma(fut.pagaveis || []), a_pagar_vencido: soma(fut.pagaveis || [], p => p.vencida), a_pagar_30d: soma(fut.pagaveis || [], p => !p.vencida && p.data <= em30),
     qtd_pagar: (fut.pagaveis || []).length,
     erro: [ext._erro, ext.qb_erro, fut.erro].filter(Boolean).join(' | ') || null,
@@ -2269,7 +2271,7 @@ async function painelResumo({ mes, ano } = {}) {
     if (b.saldo_hoje != null) { resp.saldoCaixa = b.saldo_hoje; resp.saldoCaixaFonte = b.fonte; }
     resp.aReceber = b.a_receber; resp.aPagar = b.a_pagar;
     resp.projetado = round(b.a_receber + b.receita_prevista_marcos);
-    resp.contasReceber = { total: b.a_receber, vencido: b.a_receber_vencido, a_vencer_30d: b.a_receber_30d, qtd: b.qtd_receber, previsto_marcos: b.receita_prevista_marcos };
+    resp.contasReceber = { total: b.a_receber, vencido: b.a_receber_vencido, a_vencer_30d: b.a_receber_30d, qtd: b.qtd_receber, previsto_marcos: b.receita_prevista_marcos, itens: b.recebiveis_itens || [] };
     resp.contasPagar = { total: b.a_pagar, vencido: b.a_pagar_vencido, a_vencer_30d: b.a_pagar_30d, qtd: b.qtd_pagar };
     if (b.erro) resp.erros.push('Base de caixa: ' + b.erro);
   } catch (e) { resp.erros.push('Base de caixa: ' + e.message); }
@@ -2582,6 +2584,7 @@ async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
       // v2.04: diz se cai no período consultado, sem excluir o que está fora
       no_periodo: (!data_inicio || (i.DueDate || i.TxnDate) >= data_inicio) && (!data_fim || (i.DueDate || i.TxnDate) <= data_fim),
       emissao: i.TxnDate,
+      cliente: i.CustomerRef?.name || '', doc: i.DocNumber || '',   // v3.85: alerta de vencimento / cobrança por WhatsApp
     }));
     // v2.95: receita prevista dos marcos (estimativas do QuickBooks geradas pelo Atlantyx)
     // v3.02: previsão de marco já faturado (termo virou fatura mas o marco não foi concluído) não conta de novo
