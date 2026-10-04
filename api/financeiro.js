@@ -173,6 +173,8 @@ async function handler(req, res) {
       qb_saldo_por_conta:    () => qbSaldoPorContaNaData(params),
       gerente_financeiro:    () => gerenteFinanceiro(params),
       dashboard_financeiro:  () => dashboardFinanceiro(params),
+      indicador_social:      () => indicadorSocial(params), // v3.93
+      social_pct_salvar:     async () => { const v = Number(params.pct); if (isNaN(v) || v < 0 || v > 50) throw new Error('Percentual inválido (0 a 50)'); return configAppSalvar({ chave: 'social_pct', valor: v }); },
       qb_auth_url:           () => qbAuthUrl(req),
       qb_desconectar:        async () => { const sql = await getSql(); await sql`DELETE FROM kv_store WHERE key = 'qb:tokens'`; _qbTokCache = null; return { desconectado: true }; },
 
@@ -796,6 +798,38 @@ async function planejadoVsReal({ data_inicio, data_fim, conta_id = null } = {}) 
     totais: { receita_planejada: soma('receita_planejada'), receita_real: soma('receita_real'), despesa_planejada: soma('despesa_planejada'), despesa_real: soma('despesa_real') } };
 }
 
+// v3.93: INDICADOR SOCIAL — % do faturamento destinado a ações sociais (política da Atlantyx: 5%)
+//  meta      = faturamento do período (receita da DRE do QuickBooks) × %
+//  destinado = despesas do período em contas de doação/social/filantropia/patrocínio social (DRE)
+//              + despesas programadas do Atlantyx com categoria/descrição social já pagas no período
+const RX_SOCIAL = /social|doa[cç][aã]o|doa[cç][oõ]es|filantrop|benefic[eê]n|instituto|\bong\b|terceiro setor|responsabilidade social|patroc[ií]nio social|caridade|voluntari/i;
+async function indicadorSocial({ data_inicio, data_fim } = {}) {
+  const hoje = new Date().toISOString().split('T')[0];
+  const ini = data_inicio || hoje.substring(0, 8) + '01', fim = data_fim || hoje;
+  const fimReal = fim > hoje ? hoje : fim;
+  let pct = 5; try { const c = await configAppGet({ chave: 'social_pct' }); if (c.valor != null && !isNaN(Number(c.valor))) pct = Number(c.valor); } catch (_) {}
+  const out = { pct, de: ini, ate: fim, faturamento: null, meta: null, destinado: 0, contas_sociais: [], programado: 0, erro: null };
+  if (ini <= fimReal && qbConfigurado()) {
+    try {
+      const token = await qbToken();
+      const dre = await qbFetch(`/reports/ProfitAndLoss?start_date=${ini}&end_date=${fimReal}`, token);
+      const L = extrairLinhasRelatorio(dre);
+      out.faturamento = round(L.find(l => l.tipo === 'total' && /receita|income|revenue|total income/i.test(l.label))?.valor || 0); // mesmo critério do painel
+      // contas de despesa com nome social (linhas de dados — não os totais)
+      L.filter(l => l.tipo === 'linha' && RX_SOCIAL.test(l.label || '') && Number(l.valor)).forEach(l => { out.destinado += Math.abs(Number(l.valor)); out.contas_sociais.push({ conta: l.label, valor: round(Math.abs(Number(l.valor))) }); });
+    } catch (e) { out.erro = 'QuickBooks: ' + e.message; }
+  } else if (!qbConfigurado()) out.erro = 'QuickBooks não conectado';
+  try {
+    const sql = await getSql();
+    const rows = await sql`SELECT o.valor, o.status, o.data_prevista, d.descricao, d.categoria FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id WHERE o.data_prevista >= ${ini} AND o.data_prevista <= ${fim}`;
+    rows.filter(r => RX_SOCIAL.test(`${r.descricao || ''} ${r.categoria || ''}`)).forEach(r => { const v = Math.abs(parseFloat(r.valor) || 0);
+      if (r.status === 'paga' && !out.contas_sociais.length) out.destinado += v; else if (r.status !== 'paga') out.programado += v; });
+  } catch (_) {}
+  out.destinado = round(out.destinado); out.programado = round(out.programado);
+  if (out.faturamento != null) { out.meta = round(out.faturamento * pct / 100); out.saldo_a_destinar = round(Math.max(0, out.meta - out.destinado)); out.atingido_pct = out.meta > 0 ? Math.round(out.destinado / out.meta * 100) : null; out.realizado_pct_faturamento = out.faturamento > 0 ? round(out.destinado / out.faturamento * 100, 2) : null; }
+  return out;
+}
+
 async function dashboardFinanceiro({ mes, ano, conta_id = null, data_inicio = null, data_fim = null } = {}) {
   // v3.91: período livre (de/até). Sem ele, o mês/ano escolhido.
   const hoje = new Date();
@@ -808,13 +842,16 @@ async function dashboardFinanceiro({ mes, ano, conta_id = null, data_inicio = nu
   const i6 = f(new Date(b.getFullYear(), b.getMonth() - 2, 1)), f6 = f(new Date(b.getFullYear(), b.getMonth() + 4, 0));
   const fimDoMes = fim === f(new Date(parseInt(fim.substring(0, 4)), parseInt(fim.substring(5, 7)), 0));
   const dentro = ini >= i6 && fim <= f6 && ini.endsWith('-01') && fimDoMes; // período de meses inteiros dentro da janela → reaproveita o cálculo
-  const [ctxR, pvr6R, pvrR] = await Promise.allSettled([
+  const [ctxR, pvr6R, pvrR, socR] = await Promise.allSettled([
     contextoFinanceiro({ mes: parseInt(fim.substring(5, 7)), ano: parseInt(fim.substring(0, 4)), conta_id }),
     planejadoVsReal({ data_inicio: i6, data_fim: f6, conta_id }),
     dentro ? Promise.resolve(null) : planejadoVsReal({ data_inicio: ini, data_fim: fim, conta_id }),
+    indicadorSocial({ data_inicio: ini, data_fim: fim }),
   ]);
+  const _social = socR.status === 'fulfilled' ? socR.value : { erro: socR.reason?.message };
   const ctx = ctxR.status === 'fulfilled' ? ctxR.value : { erro: ctxR.reason?.message };
   ctx.grafico_6m = pvr6R.status === 'fulfilled' ? pvr6R.value : { erro: pvr6R.reason?.message };
+  ctx.social = _social;
   if (dentro && ctx.grafico_6m.meses) {
     const ms = ctx.grafico_6m.meses.filter(m => m.mes >= ini.substring(0, 7) && m.mes <= fim.substring(0, 7));
     const soma = c => round(ms.reduce((a, m) => a + (m[c] || 0), 0));

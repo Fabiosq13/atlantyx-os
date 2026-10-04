@@ -1900,6 +1900,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
             <div class="fg" style="margin:0;"><label class="fl">Custo variável (%)</label><input class="fi" type="number" step="0.1" id="bpAx_cv"/></div>
             <div class="fg" style="margin:0;"><label class="fl">IR/CSLL s/ lucro (%)</label><input class="fi" type="number" step="1" id="bpAx_ir"/></div>
             <div class="fg" style="margin:0;"><label class="fl">Marketing (% receita)</label><input class="fi" type="number" step="0.5" id="bpAx_mkt"/></div>
+            <div class="fg" style="margin:0;"><label class="fl" title="Indicador social: % do faturamento destinado a ações sociais">Ações sociais (% faturamento)</label><input class="fi" type="number" step="0.5" id="bpAx_social" placeholder="5"/></div>
             <div class="fg" style="margin:0;"><label class="fl">Valor base p/ TIR (R$)</label><input class="fi" type="number" step="10000" id="bpAx_inv" placeholder="capital investido"/></div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">
@@ -3088,6 +3089,9 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div class="kpi gn"><div class="kl">Conciliação</div><div class="kv" id="df_conc">—</div><div class="ks" id="df_conc_sub">lançamentos batidos</div></div>
     <div class="kpi pu"><div class="kl">Marcos em fluxo</div><div class="kv" id="df_marcos">—</div><div class="ks" id="df_marcos_sub">valor aguardando pagamento</div></div>
   </div>
+  <!-- v3.93: INDICADOR SOCIAL -->
+  <div class="panel" style="margin-bottom:12px;border-color:rgba(34,211,163,.35);"><div class="ph"><div class="pt">🤝 Indicador social · <span id="df_soc_pct">5</span>% do faturamento para ações sociais</div><span style="flex:1;"></span><button class="btn btn-g" style="font-size:10px;" onclick="dfSocialPct()" title="Mudar o percentual do indicador social">% ajustar</button></div>
+    <div class="pb" id="df_social"><div style="color:var(--t3);font-size:11px;text-align:center;padding:12px;">Carregando...</div></div></div>
   <!-- v3.91: planejado × real no período -->
   <div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">Planejado × Real · <span id="df_pr_periodo" style="color:var(--t2);font-weight:400;"></span></div><span style="font-size:9.5px;color:var(--t3);margin-left:auto;" title="Real = o que passou no banco. Planejado = faturas e contas do QuickBooks pelo vencimento (pagas ou não) + despesas programadas; dias futuros = previsto do Fluxo Detalhado.">base caixa ⓘ</span></div>
     <div class="pb" id="df_pr"><div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Carregando...</div></div></div>
@@ -11501,7 +11505,8 @@ function _bpEditor(p) {
       + '</table></div></div>';
   };
   const sel = (path, v) => '<select class="fsel" style="padding:3px;font-size:10.5px;" data-bp="' + path + '" onchange="bpCampo(this)">' + ['recorrente', 'unico', 'marco'].map(o => '<option' + (o === v ? ' selected' : '') + ' title="' + ({ recorrente: 'mensalidade × clientes ativos', unico: 'preço × novas vendas a cada mês', marco: 'pagamento único no mês de início (ex.: marco de entrega)' })[o] + '">' + o + '</option>').join('') + '</select>';
-  const g = [['taxa_desconto_anual', 'TMA (% a.a.)'], ['deducoes_pct', 'Deduções (%)'], ['ir_csll_pct', 'IR/CSLL (%)'], ['prazo_recebimento_dias', 'Prazo receb. (dias)'], ['crescimento_perpetuidade_pct', 'Perpetuidade (%)'], ['saldo_inicial', 'Caixa inicial (R$)']];
+  if (p.social_pct == null) p.social_pct = 5; // v3.93: indicador social (padrão 5% do faturamento)
+  const g = [['taxa_desconto_anual', 'TMA (% a.a.)'], ['deducoes_pct', 'Deduções (%)'], ['ir_csll_pct', 'IR/CSLL (%)'], ['prazo_recebimento_dias', 'Prazo receb. (dias)'], ['crescimento_perpetuidade_pct', 'Perpetuidade (%)'], ['saldo_inicial', 'Caixa inicial (R$)'], ['social_pct', 'Ações sociais (% faturamento)']];
   return '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">' + g.map(([k, l]) => '<div><div style="font-size:9px;color:var(--t2);margin-bottom:2px;">' + l + '</div>' + inp(k, p[k], 'number', 100) + '</div>').join('')
     + '<div><div style="font-size:9px;color:var(--t2);margin-bottom:2px;">Marketing (% receita)</div>' + inp('marketing.pct_receita', p.marketing?.pct_receita, 'number', 90) + '</div>'
     + '<div><div style="font-size:9px;color:var(--t2);margin-bottom:2px;">Marketing fixo/mês</div>' + inp('marketing.fixo_mensal', p.marketing?.fixo_mensal, 'number', 100) + '</div></div>'
@@ -11551,7 +11556,7 @@ function bpRender() {
   const kpi = (cls, l, val, s) => '<div class="kpi ' + cls + '"><div class="kl">' + l + '</div><div class="kv" style="font-size:18px;">' + val + '</div><div class="ks">' + (s || '') + '</div></div>';
   const tirOk = I.tir_anual != null && I.tir_anual > I.taxa_desconto_anual;
   const linhasDRE = [['Receita bruta', 'receita_bruta', 1], ['(-) Deduções / impostos', 'deducoes'], ['= Receita líquida', 'receita_liquida', 1], ['(-) Custos variáveis', 'custos_variaveis'], ['= Lucro bruto', 'lucro_bruto', 1],
-    ['(-) Pessoal', 'pessoal'], ['(-) Marketing e vendas', 'marketing'], ['(-) Despesas gerais', 'despesas_fixas'], ['= EBITDA', 'ebitda', 1], ['(-) Depreciação', 'depreciacao'], ['(-) IR/CSLL', 'ir_csll'], ['= Lucro líquido', 'lucro_liquido', 1],
+    ['(-) Pessoal', 'pessoal'], ['(-) Marketing e vendas', 'marketing'], ['(-) Despesas gerais', 'despesas_fixas'], ['(-) Ações sociais (indicador social)', 'social'], ['= EBITDA', 'ebitda', 1], ['(-) Depreciação', 'depreciacao'], ['(-) IR/CSLL', 'ir_csll'], ['= Lucro líquido', 'lucro_liquido', 1],
     ['Margem bruta', 'margem_bruta', 0, 1], ['Margem EBITDA', 'margem_ebitda', 0, 1], ['Margem líquida', 'margem_liquida', 0, 1]];
   const linhasFC = [['Lucro líquido', 'lucro_liquido'], ['(+) Depreciação', 'depreciacao', 0, 0, -1], ['(-) Capital de giro', 'var_capital_giro'], ['= Fluxo operacional', 'fco', 1], ['(-) Investimentos', 'investimentos'], ['= Fluxo de caixa livre', 'fcl', 1], ['Saldo de caixa (fim do ano)', 'caixa_final', 1]];
   const tabela = (linhas, total) => '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;"><tr><th style="text-align:left;padding:5px;color:var(--t2);font-weight:500;">R$</th>'
@@ -11594,6 +11599,13 @@ function bpRender() {
     + kpi('pu', 'Lucro líquido 3 anos', _bpK(I.lucro_liquido_total), 'ROI ' + _bpP(I.roi_periodo))
     + kpi('bl', atx ? 'Ponto de equilíbrio' : 'LTV / CAC', atx ? _bpK(I.ponto_equilibrio_receita_mensal) + '/mês' : (I.ltv_cac == null ? '—' : I.ltv_cac.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'x'), atx ? 'receita mínima mensal' : 'CAC ' + _bpK(I.cac) + ' · LTV ' + _bpK(I.ltv))
     + '</div>'
+    // v3.93: INDICADOR SOCIAL — % do faturamento destinado a ações sociais
+    + '<div style="background:linear-gradient(135deg,rgba(34,211,163,.10),rgba(34,211,163,.02));border:1px solid rgba(34,211,163,.3);border-radius:8px;padding:9px 12px;margin-bottom:10px;display:flex;gap:18px;align-items:center;flex-wrap:wrap;">'
+    + '<div style="font-size:18px;">🤝</div><div><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--green);">Indicador social · ' + (I.social_pct ?? 5) + '% do faturamento para ações sociais</div>'
+    + '<div style="font-size:10.5px;color:var(--t2);">compromisso da Atlantyx — já descontado do EBITDA e do lucro deste plano' + (vivo ? '' : ' · ajuste o % em Premissas') + '</div></div>'
+    + '<div><div style="font-size:9.5px;color:var(--t3);">ano 1</div><b style="font-family:var(--M);font-size:14px;">' + _bpK(I.social_ano1) + '</b></div>'
+    + '<div><div style="font-size:9.5px;color:var(--t3);">média por mês</div><b style="font-family:var(--M);font-size:14px;">' + _bpK(I.social_mensal_medio) + '</b></div>'
+    + '<div><div style="font-size:9.5px;color:var(--t3);">total 3 anos</div><b style="font-family:var(--M);font-size:14px;color:var(--green);">' + _bpK(I.social_total) + '</b></div></div>'
     // v3.92: dados reais que alimentam o plano (lidos agora das fontes)
     + (vivo && b.diagnostico ? (() => { const g = b.diagnostico; return '<div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);margin:2px 0 6px;">Dados reais agora · QuickBooks + carteira + caixa</div><div class="kg k4" style="margin-bottom:10px;">'
       + kpi('gn', 'Receita 12 meses (real)', _bpK(g.receita_12m), 'média 6m ' + _bpK(g.receita_media_6m) + '/mês')
@@ -11700,7 +11712,7 @@ function _bpAjustesTela() {
   const ov = {};
   const g = [n('bpAx_g1'), n('bpAx_g2'), n('bpAx_g3')];
   if (g.some(x => x !== undefined)) ov.crescimento_pct = g.map((x, i) => x ?? g.slice(0, i).reverse().find(y => y !== undefined) ?? 20);
-  const m = { receita_base_mensal: 'bpAx_base', taxa_desconto_anual: 'bpAx_tma', inflacao_pct: 'bpAx_inf', deducoes_pct: 'bpAx_ded', custo_variavel_pct: 'bpAx_cv', ir_csll_pct: 'bpAx_ir', marketing_pct_receita: 'bpAx_mkt' };
+  const m = { receita_base_mensal: 'bpAx_base', taxa_desconto_anual: 'bpAx_tma', inflacao_pct: 'bpAx_inf', deducoes_pct: 'bpAx_ded', custo_variavel_pct: 'bpAx_cv', ir_csll_pct: 'bpAx_ir', marketing_pct_receita: 'bpAx_mkt', social_pct: 'bpAx_social' };
   for (const [k, id] of Object.entries(m)) { const v = n(id); if (v !== undefined) ov[k] = v; }
   const inv = n('bpAx_inv'); if (inv) ov.investimentos = [{ descricao: 'Valor base (capital investido / valuation de entrada)', valor: inv, mes: 1, depreciacao_meses: 0 }];
   return ov;
@@ -11711,7 +11723,7 @@ function _bpPreencherAjustes(b) {
   const g = dg.crescimento_usado_pct || [];
   set('bpAx_g1', g[0]); set('bpAx_g2', g[1]); set('bpAx_g3', g[2]);
   set('bpAx_base', aj.receita_base_mensal ?? dg.receita_media_6m); set('bpAx_tma', p.taxa_desconto_anual); set('bpAx_inf', aj.inflacao_pct ?? 5);
-  set('bpAx_ded', p.deducoes_pct); set('bpAx_cv', p.custos_variaveis?.[0]?.pct_receita); set('bpAx_ir', p.ir_csll_pct); set('bpAx_mkt', p.marketing?.pct_receita);
+  set('bpAx_ded', p.deducoes_pct); set('bpAx_cv', p.custos_variaveis?.[0]?.pct_receita); set('bpAx_ir', p.ir_csll_pct); set('bpAx_mkt', p.marketing?.pct_receita); set('bpAx_social', p.social_pct ?? 5);
   const inv = (p.investimentos || []).find(x => /valor base/i.test(x.descricao || '')); set('bpAx_inv', inv?.valor);
 }
 async function bpAtlantyx(salvar) {
@@ -11738,7 +11750,7 @@ async function bpAtlantyx(salvar) {
 }
 async function bpAtlantyxLimpar() {
   if (!confirm('Voltar todos os parâmetros ao cálculo automático (histórico do QuickBooks)?')) return;
-  try { await bpApi('atlantyx_salvar_ajustes', { overrides: {} }); _bpAtxCarregado = false; ['bpAx_g1','bpAx_g2','bpAx_g3','bpAx_base','bpAx_tma','bpAx_inf','bpAx_ded','bpAx_cv','bpAx_ir','bpAx_mkt','bpAx_inv'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; }); bpAtlantyx(); }
+  try { await bpApi('atlantyx_salvar_ajustes', { overrides: {} }); _bpAtxCarregado = false; ['bpAx_g1','bpAx_g2','bpAx_g3','bpAx_base','bpAx_tma','bpAx_inf','bpAx_ded','bpAx_cv','bpAx_ir','bpAx_mkt','bpAx_social','bpAx_inv'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; }); bpAtlantyx(); }
   catch (e) { toast(e.message, 'error'); }
 }
 async function bpAtlantyxSnapshot() {
@@ -25834,6 +25846,13 @@ function _dashMesAtual() {
   if (a) a.value = String(new Date().getFullYear());
   carregarDashboardFinanceiro();
 }
+// v3.93: percentual do indicador social (padrão 5%)
+async function dfSocialPct() {
+  const atual = document.getElementById('df_soc_pct')?.textContent || '5';
+  const v = prompt('Percentual do faturamento destinado a ações sociais (indicador social):', atual); if (v == null) return;
+  const n = parseFloat(String(v).replace(',', '.')); if (isNaN(n) || n < 0 || n > 50) return toast('Informe um percentual entre 0 e 50', 'warn');
+  try { await finApi('social_pct_salvar', { pct: n }); toast('Indicador social: ' + n + '% do faturamento', 'success'); window._dfForcar = true; carregarDashboardFinanceiro(); } catch (e) { toast(e.message, 'error'); }
+}
 // v3.91: período do Dashboard — mês, trimestre, ano ou de/até
 function _dashPeriodoTipo(semCarregar) {
   const t = document.getElementById('dashPeriodoTipo')?.value || 'mes';
@@ -25868,7 +25887,7 @@ async function carregarDashboardFinanceiro() {
     }
     // v3.85: timeout de 12s; se falhar, usa a última carga boa salva no navegador
     const _iv = _dashIntervalo(); // v3.91: período de/até
-    const { d, cache } = await _finCarregarComFallback('s3dashboard', 'dashboard_financeiro', { mes: selMes?.value || null, ano: selAno?.value || null, conta_id: document.getElementById('dash_conta')?.value || null, data_inicio: _iv.de, data_fim: _iv.ate });
+    const { d, cache } = await _finCarregarComFallback('s3dashboard', 'dashboard_financeiro', { mes: selMes?.value || null, ano: selAno?.value || null, conta_id: document.getElementById('dash_conta')?.value || null, data_inicio: _iv.de, data_fim: _iv.ate, ...(window._dfForcar ? { _forcar: true } : {}) }); window._dfForcar = false;
     const lbl = document.getElementById('dashPeriodoLabel');
     if (lbl) { const p = d.periodo || d.dashboard?.periodo;
       lbl.textContent = p ? ` · período: ${p.de.split('-').reverse().join('/')} a ${p.ate.split('-').reverse().join('/')}${p.atual ? ' (em curso)' : ''}` : ''; } const x = d.dashboard || {};
@@ -25890,6 +25909,19 @@ async function carregarDashboardFinanceiro() {
     { const ab = Object.entries(mk).filter(([k]) => k !== 'concluido'); const val = ab.reduce((a, [, v]) => a + (v.valor || 0), 0), qtd = ab.reduce((a, [, v]) => a + (v.qtd || 0), 0);
       const top = ab.filter(([, v]) => v.qtd).sort((a, b) => (b[1].valor || 0) - (a[1].valor || 0)).slice(0, 2).map(([k, v]) => (v.label || k) + ' ' + brl(v.valor)).join(' · ');
       u('df_marcos', brl(val)); u('df_marcos_sub', qtd + ' marco(s) em fluxo' + (top ? ' · ' + top : '')); }
+    // v3.93: INDICADOR SOCIAL no período
+    { const so = x.social || {}, box = document.getElementById('df_social'); u('df_soc_pct', String(so.pct ?? 5).replace('.', ','));
+      if (box) { if (so.faturamento == null) box.innerHTML = '<div style="color:var(--t3);font-size:11px;">Sem faturamento do período' + (so.erro ? ' — ' + String(so.erro).replace(/</g, '&lt;') : '') + '.</div>';
+        else { const at = so.atingido_pct ?? 0, cor = at >= 100 ? 'var(--green)' : at >= 50 ? 'var(--gold)' : 'var(--red)';
+          const t = (l, v, c, sub) => '<div><div style="font-size:9.5px;color:var(--t3);">' + l + '</div><div style="font-size:16px;font-weight:700;font-family:var(--M);' + (c ? 'color:' + c + ';' : '') + '">' + v + '</div>' + (sub ? '<div style="font-size:9.5px;color:var(--t3);">' + sub + '</div>' : '') + '</div>';
+          box.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;align-items:end;">'
+            + t('Faturamento do período', brl(so.faturamento), '', 'receita da DRE (QuickBooks)')
+            + t('Meta social (' + String(so.pct).replace('.', ',') + '%)', brl(so.meta), 'var(--green)', 'a destinar a ações sociais')
+            + t('Destinado', brl(so.destinado), cor, (so.realizado_pct_faturamento ?? 0).toString().replace('.', ',') + '% do faturamento')
+            + t('Saldo a destinar', brl(so.saldo_a_destinar), so.saldo_a_destinar > 0 ? 'var(--gold)' : 'var(--green)', so.programado ? brl(so.programado) + ' já programado' : '')
+            + '</div><div style="background:var(--bg4);border-radius:5px;height:8px;margin-top:10px;overflow:hidden;"><div style="height:100%;width:' + Math.min(100, at) + '%;background:' + cor + ';"></div></div>'
+            + '<div style="font-size:10px;color:var(--t2);margin-top:5px;">' + at + '% da meta cumprida' + ((so.contas_sociais || []).length ? ' · contas: ' + so.contas_sociais.map(c => String(c.conta).replace(/</g, '&lt;') + ' ' + brl(c.valor)).join(' · ') : ' · nenhuma conta de doação/ação social encontrada na DRE — lance as doações numa conta com "social", "doação" ou "filantropia" no nome (QuickBooks) ou como despesa programada com categoria "Ações sociais"') + '</div>'
+            + (so.erro ? '<div style="font-size:9.5px;color:var(--gold);margin-top:3px;">⚠ ' + String(so.erro).replace(/</g, '&lt;') + '</div>' : ''); } } }
     // v3.91: PLANEJADO × REAL no período
     { const box = document.getElementById('df_pr'), pr = x.planejado_real || {}, T = pr.totais;
       const fdt = v => String(v || '').split('-').reverse().join('/'); u('df_pr_periodo', pr.de ? fdt(pr.de) + ' a ' + fdt(pr.ate) : '');
@@ -28247,7 +28279,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.92] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.93] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -28263,7 +28295,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.92';
+window.__ATX_BUILD_ID__ = 'ATX-v3.93';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

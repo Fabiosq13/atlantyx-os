@@ -281,6 +281,7 @@ async function planoAtlantyx({ overrides } = {}) {
     pessoal: Array.isArray(ov.contratacoes) ? ov.contratacoes : [],
     despesas_fixas: despesas,
     marketing: { pct_receita: Number(ov.marketing_pct_receita ?? 0), fixo_mensal: 0 },
+    social_pct: Number(ov.social_pct ?? 5), // v3.93: indicador social (5% do faturamento)
     investimentos: Array.isArray(ov.investimentos) ? ov.investimentos : [],
   };
   const resultado = { ...calcularBP(premissas), cenarios: cenariosBP(premissas) };
