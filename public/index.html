@@ -9635,7 +9635,7 @@ function vendasAbrir(p) {
   const ir = () => p === 's7painel' ? VD.painelAbrir() : VD.propAbrir();
   if (window.VD) return ir();
   const s = document.createElement('script'); s.src = '/vendas-ui.js?v=' + encodeURIComponent(window.__ATX_BUILD_ID__ || Date.now()); /* v3.43: versão acompanha o build */ s.onload = ir;
-  s.onerror = () => { const a = document.getElementById(p === 's7painel' ? 'vdPainel' : 'vdProp'); if (a) a.innerHTML = '<div style="color:var(--red);padding:20px;">Não consegui carregar /vendas-ui.js</div>'; };
+  s.onerror = () => { s.remove(); const a = document.getElementById(p === 's7painel' ? 'vdPainel' : 'vdProp'); if (a) a.innerHTML = '<div id="painel-erro" style="color:var(--red);padding:20px;">Não consegui carregar /vendas-ui.js (falha de rede). <button class="btn btn-g" onclick="vendasAbrir(\'' + p + '\')">↻ Tentar novamente</button></div>'; }; /* v3.85 */
   document.head.appendChild(s);
 }
 // v3.26: disparo da campanha por WhatsApp / E-mail (módulo carregado sob demanda)
@@ -27687,7 +27687,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.84] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.85] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27703,7 +27703,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.84';
+window.__ATX_BUILD_ID__ = 'ATX-v3.85';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

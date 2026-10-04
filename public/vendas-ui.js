@@ -6,11 +6,17 @@
   const P = v => (v == null || isNaN(v)) ? '—' : (+v).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
   const N = v => (v == null || isNaN(v)) ? '—' : (+v).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
   const nota = (t, c) => (window.toast ? toast(t, c || 'success') : alert(t));
-  async function api(action, payload = {}) {
-    const r = await fetch('/api/vendas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, payload }) });
-    const d = await r.json().catch(() => ({ success: false, error: 'HTTP ' + r.status }));
+  // v3.85: ms > 0 → timeout explícito (AbortController) e erro legível em vez de "HTTP 0" / espera sem fim
+  async function api(action, payload = {}, ms) {
+    const ctrl = ms ? new AbortController() : null; const tm = ctrl ? setTimeout(() => ctrl.abort(), ms) : null;
+    let d;
+    try { const r = await fetch('/api/vendas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, payload }), signal: ctrl ? ctrl.signal : undefined });
+      d = await r.json().catch(e => { if (e.name === 'AbortError') throw e; return { success: false, error: r.status === 504 ? 'O servidor demorou demais para responder (HTTP 504).' : 'O servidor respondeu HTTP ' + r.status + ' sem dados.' }; }); }
+    catch (e) { throw new Error(e.name === 'AbortError' ? `O servidor não respondeu em ${Math.round(ms / 1000)}s — tente novamente em instantes.` : 'Sem resposta do servidor (falha de rede ou conexão interrompida). Verifique a internet e tente novamente.'); }
+    finally { if (tm) clearTimeout(tm); }
     if (!d.success) throw new Error(d.error || 'falha'); return d;
   }
+  const PN_MS = 30000; // nenhum fetch do Painel de Vendas fica pendente além disso
   const ocupado = (btn, txt) => { if (!btn) return () => {}; const o = btn.innerHTML; btn.disabled = true; btn.innerHTML = txt || 'Processando...'; return () => { btn.disabled = false; btn.innerHTML = o; }; };
   const FMT = { tm: 'Alocação por hora (T&M)', fechado: 'Escopo fechado', mensal: 'Mensalidade recorrente', hibrido: 'Híbrido: setup + mensalidade' };
   const TIPOS = { escopo_fechado: 'Projeto com escopo claro', evolucao: 'Evolução contínua / backlog', sustentacao: 'Sustentação / SLA', alocacao: 'Alocação de profissionais', produto: 'Produto / plataforma + serviço', indefinido: 'Ainda indefinido' };
@@ -19,7 +25,7 @@
   const barra = (v, max, cor) => `<div style="background:var(--bg4);height:6px;border-radius:4px;overflow:hidden;"><div style="width:${Math.max(0, Math.min(100, (v || 0) / (max || 1) * 100))}%;height:100%;background:${cor};"></div></div>`;
 
   // ═══════════════════════════ PAINEL DE VENDAS IA ═══════════════════════════
-  let PN = null;
+  let PN = null, PN_SEQ = 0;
   async function painelAbrir() {
     const box = $('vdPainel'); if (!box) return;
     if (!box.dataset.ok) { box.dataset.ok = '1'; box.innerHTML = painelEsqueleto(); }
@@ -28,17 +34,47 @@
   function painelEsqueleto() {
     return `<div class="cp-top"><div style="flex:1;min-width:0;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">Painel de Vendas IA</div>
         <div style="font-size:10.5px;color:var(--t2);">Quanto falta, quantas vendas você precisa, como estão as margens — e o que fazer hoje</div></div>
-      <button class="btn btn-g" onclick="VD.painelCarregar(true)">↻ Atualizar</button>
+      <button class="btn btn-g" id="vdBtnAtualizar" onclick="VD.painelCarregar(true)">↻ Atualizar</button>
       <button class="btn btn-p" id="vdBtnCoach" onclick="VD.coach()">🤖 O que fazer hoje</button></div>
-      <div id="vdCoach"></div><div id="vdPnCorpo"><div style="padding:30px;text-align:center;color:var(--t3);font-size:11px;">Calculando metas, funil e margens...</div></div>`;
+      <div id="painel-erro"></div><div id="vdPnStatus"></div><div id="vdCoach"></div><div id="vdPnCorpo">${painelSkeleton()}</div>`;
   }
+  // v3.85: skeleton dos KPIs enquanto o painel carrega (antes: texto "Calculando..." sem prazo)
+  function painelSkeleton() {
+    const b = (w, h) => `<div style="background:var(--bg4);border-radius:4px;height:${h}px;width:${w};margin:6px 0;animation:pulse 1.8s ease-in-out infinite;opacity:.6;"></div>`;
+    const k = `<div class="kpi">${b('55%', 9)}${b('70%', 20)}${b('85%', 8)}</div>`;
+    return `<div class="panel"><div class="pb">${b('35%', 10)}${b('90%', 8)}${b('75%', 8)}</div></div><div class="kg k4">${k + k + k + k}</div><div class="kg k4">${k + k + k + k}</div>
+      <div style="font-size:10.5px;color:var(--t3);text-align:center;padding:6px;">Calculando metas, funil e margens (QuickBooks + HubSpot)...</div>`;
+  }
+  function painelErro(msg, forcar) {
+    const e = $('painel-erro'); if (!e) return;
+    e.innerHTML = msg ? `<div class="panel" style="border-left:4px solid var(--red);"><div class="pb" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <span style="color:var(--red);flex:1;min-width:220px;font-size:11.5px;">⚠ ${esc(msg)}</span><button class="btn btn-g" onclick="VD.painelCarregar(${forcar === true})">↻ Tentar novamente</button></div></div>` : '';
+  }
+  function painelStatus(txt, alerta) { const s = $('vdPnStatus'); if (s) s.innerHTML = txt ? `<div style="font-size:10.5px;color:${alerta ? 'var(--gold)' : 'var(--t2)'};padding:0 2px 8px;">${esc(txt)}</div>` : ''; }
+  const idadeTxt = s => { const m = Math.max(1, Math.round((s || 0) / 60)); return m >= 60 ? Math.round(m / 60) + ' h' : m + ' min'; };
+  function painelStatusCache(d) {
+    const k = d && d._cache; if (!k) return painelStatus(null);
+    if (k.aviso) return painelStatus(`${k.aviso} (calculado há ${idadeTxt(k.idade_s)})`, true);
+    painelStatus(k.stale ? `Dados calculados há ${idadeTxt(k.idade_s)} — atualizando em segundo plano...` : null);
+  }
+  // v3.85 (QA 02/10): KPIs com timeout de 30s; erro legível em #painel-erro com "Tentar novamente";
+  // o "↻ Atualizar" mantém os dados já exibidos e mostra o erro real em vez de travar
   async function painelCarregar(forcar) {
     const c = $('vdPnCorpo'); if (!c) return;
-    if (forcar === true) c.innerHTML = '<div style="padding:30px;text-align:center;color:var(--t3);font-size:11px;">Recalculando metas, funil e margens (QuickBooks + HubSpot)...</div>';
-    try { PN = await api('painel', forcar === true ? { forcar: true } : {}); c.innerHTML = painelHtml(PN); estrategiaListar();
+    const seq = ++PN_SEQ, btn = $('vdBtnAtualizar');
+    if (btn) { btn.disabled = true; btn.innerHTML = '↻ Atualizando...'; }
+    painelErro(''); if (!PN) c.innerHTML = painelSkeleton();
+    if (forcar === true) painelStatus('Recalculando metas, funil e margens (QuickBooks + HubSpot)...');
+    try { const d = await api('painel', forcar === true ? { forcar: true } : {}, PN_MS); if (seq !== PN_SEQ) return;
+      c.innerHTML = painelHtml(d); PN = d; painelStatusCache(PN); estrategiaListar();
       // v3.69: veio do cache e está desatualizado → mostra já e recalcula em segundo plano
-      if (PN && PN._cache && PN._cache.stale && forcar !== true) { const ant = PN; api('painel', { forcar: true }).then(n => { if (PN === ant && $('vdPnCorpo')) { PN = n; $('vdPnCorpo').innerHTML = painelHtml(PN); estrategiaListar(); } }).catch(() => {}); } }
-    catch (e) { c.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);">Erro ao montar o painel: ${esc(e.message)}</div></div>`; }
+      if (PN._cache && PN._cache.stale && !PN._cache.aviso && forcar !== true) { const ant = PN;
+        api('painel', { forcar: true }, PN_MS).then(n => { if (PN === ant && $('vdPnCorpo')) { $('vdPnCorpo').innerHTML = painelHtml(n); PN = n; painelStatusCache(PN); estrategiaListar(); } })
+          .catch(e => { if (PN === ant) painelStatus(`Dados calculados há ${idadeTxt(ant._cache.idade_s)} — não consegui recalcular agora: ${e.message}`, true); }); } }
+    catch (e) { if (seq !== PN_SEQ) return; painelStatus(null);
+      if (!PN) c.innerHTML = '<div style="padding:20px;text-align:center;color:var(--t3);font-size:11px;">Os indicadores aparecem aqui assim que o servidor responder.</div>';
+      painelErro((forcar === true ? 'Não consegui atualizar o painel: ' : 'Erro ao montar o painel: ') + e.message + (PN ? ' Mostrando os últimos dados carregados.' : ''), forcar); }
+    finally { if (seq === PN_SEQ && btn) { btn.disabled = false; btn.innerHTML = '↻ Atualizar'; } }
   }
   function painelHtml(d) {
     const m = d.metas, k = d.calculo, mg = d.margens, f = k.funil_ano || {};
@@ -102,7 +138,7 @@
   }
   async function estrategiaListar() {
     estRef();
-    try { const d = await api('estrategia_listar'); const box = $('vdEstLista'); if (!box) return; window._vdEst = d.estrategias;
+    try { const d = await api('estrategia_listar', {}, PN_MS); const box = $('vdEstLista'); if (!box) return; window._vdEst = d.estrategias;
       if (d.estrategias[0] && !$('vdEstTexto').value) estAbrir(d.estrategias[0].id);
       box.innerHTML = d.estrategias.length ? '<div style="color:var(--t2);margin-bottom:4px;">Estratégias salvas:</div>' + d.estrategias.map(e => `<span style="display:inline-flex;gap:6px;align-items:center;background:var(--bg4);border-radius:6px;padding:4px 8px;margin:0 6px 6px 0;"><a href="javascript:void(0)" onclick="VD.estAbrir('${e.id}')" style="color:var(--blue);">${esc(e.periodo_tipo)} ${esc(e.periodo_ref || '')} — ${esc((e.titulo || '').substring(0, 40) || 'sem título')}</a><a href="javascript:void(0)" title="Excluir" onclick="VD.estExcluir('${e.id}')" style="color:var(--t3);">✕</a></span>`).join('') : '';
     } catch (_) {}
@@ -110,24 +146,25 @@
   function estAbrir(id) { const e = (window._vdEst || []).find(x => x.id === id); if (!e) return; $('vdEstId').value = e.id; $('vdEstTipo').value = e.periodo_tipo; $('vdEstRef').value = e.periodo_ref || ''; $('vdEstTit').value = e.titulo || ''; $('vdEstTexto').value = e.texto || ''; }
   async function estSalvar() {
     const texto = $('vdEstTexto').value.trim(); if (!texto) return nota('Escreva a estratégia antes de salvar', 'error');
-    try { const r = await api('estrategia_salvar', { id: $('vdEstId').value || null, periodo_tipo: $('vdEstTipo').value, periodo_ref: $('vdEstRef').value, titulo: $('vdEstTit').value, texto, metas: PN ? { metas: PN.metas, vendas_ano: PN.calculo.vendas_ano } : {} });
+    try { const r = await api('estrategia_salvar', { id: $('vdEstId').value || null, periodo_tipo: $('vdEstTipo').value, periodo_ref: $('vdEstRef').value, titulo: $('vdEstTit').value, texto, metas: PN ? { metas: PN.metas, vendas_ano: PN.calculo.vendas_ano } : {} }, PN_MS);
       $('vdEstId').value = r.id; nota('Estratégia salva'); estrategiaListar(); } catch (e) { nota('Erro: ' + e.message, 'error'); }
   }
-  async function estExcluir(id) { if (!confirm('Excluir esta estratégia?')) return; await api('estrategia_excluir', { id }); if ($('vdEstId').value === id) { $('vdEstId').value = ''; $('vdEstTexto').value = ''; } estrategiaListar(); }
+  async function estExcluir(id) { if (!confirm('Excluir esta estratégia?')) return; try { await api('estrategia_excluir', { id }, PN_MS); } catch (e) { return nota('Erro: ' + e.message, 'error'); } if ($('vdEstId').value === id) { $('vdEstId').value = ''; $('vdEstTexto').value = ''; } estrategiaListar(); }
   async function estSugerir() {
     const fim = ocupado($('vdBtnEstIA'), '🤖 Escrevendo...');
-    try { const r = await api('estrategia_sugerir', { periodo_tipo: $('vdEstTipo').value, periodo_ref: $('vdEstRef').value });
+    try { const r = await api('estrategia_sugerir', { periodo_tipo: $('vdEstTipo').value, periodo_ref: $('vdEstRef').value }, PN_MS);
       const t = $('vdEstTexto'); if (t.value.trim() && !confirm('Substituir o texto atual pelo rascunho da IA?')) { fim(); return; } t.value = r.texto; $('vdEstId').value = ''; nota('Rascunho pronto — revise e salve'); }
     catch (e) { nota('Erro: ' + e.message, 'error'); } fim();
   }
+  // v3.85: a IA roda à parte — não bloqueia nem apaga os KPIs; timeout de 30s com erro legível e "Tentar novamente"
   async function coach() {
     const fim = ocupado($('vdBtnCoach'), '🤖 Analisando...'); const box = $('vdCoach');
-    if (box) box.innerHTML = '<div class="panel"><div class="pb" style="font-size:11px;color:var(--blue);">🤖 O diretor comercial IA está lendo metas, funil, propostas e margens e montando o plano do dia (cerca de 30 segundos)...</div></div>';
-    try { const r = await api('coach'); box.innerHTML = `<div class="panel" style="border-left:4px solid var(--blue);"><div class="ph"><div class="pt">🤖 Diretor comercial IA</div><button class="btn btn-g" style="font-size:9px;padding:3px 8px;" onclick="document.getElementById('vdCoach').innerHTML=''">✕</button></div><div class="pb" style="white-space:pre-wrap;font-size:12px;line-height:1.7;">${esc(r.resposta)}</div></div>`; }
-    catch (e) { box.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);">${esc(e.message)}</div></div>`; } fim();
+    if (box) box.innerHTML = '<div class="panel"><div class="pb" style="font-size:11px;color:var(--blue);">🤖 O diretor comercial IA está lendo metas, funil, propostas e margens e montando o plano do dia (até 30 segundos)...</div></div>';
+    try { const r = await api('coach', {}, PN_MS); if (box) box.innerHTML = `<div class="panel" style="border-left:4px solid var(--blue);"><div class="ph"><div class="pt">🤖 Diretor comercial IA</div><button class="btn btn-g" style="font-size:9px;padding:3px 8px;" onclick="document.getElementById('vdCoach').innerHTML=''">✕</button></div><div class="pb" style="white-space:pre-wrap;font-size:12px;line-height:1.7;">${esc(r.resposta)}</div></div>`; }
+    catch (e) { if (box) box.innerHTML = `<div class="panel" style="border-left:4px solid var(--red);"><div class="pb" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><span style="color:var(--red);flex:1;min-width:220px;font-size:11.5px;">⚠ O que fazer hoje: ${esc(e.message)}</span><button class="btn btn-g" onclick="VD.coach()">↻ Tentar novamente</button></div></div>`; } fim();
   }
   async function premissasSalvar() {
-    try { await api('premissas_salvar', { premissas: { taxa_lead_reuniao: +$('vdTxLR').value || 20, taxa_reuniao_proposta: +$('vdTxRP').value || 50, peso_pipeline: +$('vdTxPP').value || 30 } }); nota('Premissas salvas'); painelCarregar(); }
+    try { await api('premissas_salvar', { premissas: { taxa_lead_reuniao: +$('vdTxLR').value || 20, taxa_reuniao_proposta: +$('vdTxRP').value || 50, peso_pipeline: +$('vdTxPP').value || 30 } }, PN_MS); nota('Premissas salvas'); painelCarregar(); }
     catch (e) { nota('Erro: ' + e.message, 'error'); }
   }
 
