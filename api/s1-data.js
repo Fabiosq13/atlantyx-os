@@ -16,6 +16,13 @@ async function handler(req, res) {
 
     const acoes = {
       // QuickBooks
+      // v3.89: estado real das conexões, para a tela não ficar em "Verificando..."
+      status: async () => {
+        let qb = { conectado: false };
+        try { const f = await import('./financeiro.js'); await f.qbTokenCompartilhado(); qb = { conectado: true, realm: !!(await f.qbRealmCompartilhado()) }; } catch (e) { qb = { conectado: false, erro: e.message }; }
+        const drive = { configurado: !!(process.env.DRIVE_ACCESS_TOKEN || process.env.GMAIL_ACCESS_TOKEN), pasta: !!process.env.DRIVE_FOLDER_ID };
+        return { qb, drive };
+      },
       qb_relatorio_completo:   () => qbRelatorioCompleto(),
       qb_dre:                  () => qbDRE(params),
       qb_fluxo_caixa:          () => qbFluxoCaixa(params),
@@ -50,38 +57,15 @@ async function handler(req, res) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async function qbToken() {
-  // QuickBooks usa OAuth2 — o Access Token expira em 1h
-  // Refresh automaticamente usando o Refresh Token
-  const refreshToken = process.env.QB_REFRESH_TOKEN;
-  const clientId     = process.env.QB_CLIENT_ID;
-  const clientSecret = process.env.QB_CLIENT_SECRET;
-
-  if (!refreshToken || !clientId || !clientSecret) {
-    throw new Error('QuickBooks nao configurado. Configure QB_CLIENT_ID, QB_CLIENT_SECRET e QB_REFRESH_TOKEN no Vercel.');
-  }
-
-  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const r = await fetch('https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json',
-    },
-    body: `grant_type=refresh_token&refresh_token=${refreshToken}`,
-  });
-
-  const d = await r.json();
-  if (!r.ok || !d.access_token) {
-    throw new Error(`QuickBooks OAuth erro: ${d.error_description || d.error || 'Token invalido'}`);
-  }
-
-  return d.access_token;
+  // v3.89: usa o token do QuickBooks conectado pelo OAuth (guardado no banco e renovado pelo Financeiro)
+  const { qbTokenCompartilhado } = await import('./financeiro.js');
+  return qbTokenCompartilhado();
 }
 
 async function qbFetch(endpoint, token) {
-  const realmId = process.env.QB_REALM_ID;
-  if (!realmId) throw new Error('QB_REALM_ID nao configurado');
+  const { qbRealmCompartilhado } = await import('./financeiro.js');
+  const realmId = await qbRealmCompartilhado();
+  if (!realmId) throw new Error('QuickBooks sem empresa (realm) — reconecte em Financeiro → "Conectar QuickBooks"');
 
   const base = process.env.QB_SANDBOX === 'true'
     ? 'https://sandbox-quickbooks.api.intuit.com'

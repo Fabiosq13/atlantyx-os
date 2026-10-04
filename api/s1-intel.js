@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { salvarHistorico, listarHistorico, obterHistorico } from '../lib/historico-s1.js';
 // api/s1-intel.js
 // S1 · Inteligência Estratégica Contínua da Atlantyx
 // Os agentes analisam a própria empresa — riscos, finanças, mercado, posicionamento
@@ -14,6 +15,9 @@ async function handler(req, res) {
 
   try {
     const { action, contexto } = req.body;
+    // v3.90: histórico do planejamento (todas as telas S1)
+    if (action === 'historico_listar') return res.status(200).json({ success: true, itens: await listarHistorico(req.body.tipos || req.body.tipo, req.body.limite) });
+    if (action === 'historico_obter') { const h = await obterHistorico(req.body.id); return h ? res.status(200).json({ success: true, item: h }) : res.status(404).json({ success: false, error: 'Versão não encontrada' }); }
 
     const acoes = {
       diagnostico_completo:    () => diagnosticoCompleto(contexto),
@@ -31,7 +35,8 @@ async function handler(req, res) {
     if (!acoes[action]) return res.status(400).json({ error: `Ação inválida: ${Object.keys(acoes).join(', ')}` });
 
     const resultado = await acoes[action]();
-    return res.status(200).json({ success: true, action, ...resultado });
+    const historico_id = await salvarHistorico(action, resultado, req.sessao?.login); // v3.90
+    return res.status(200).json({ success: true, action, historico_id, ...resultado });
 
   } catch (error) {
     console.error('[ERRO s1-intel]', error.message);

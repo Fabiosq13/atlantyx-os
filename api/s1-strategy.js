@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { salvarHistorico } from '../lib/historico-s1.js';
 // api/s1-strategy.js
 // S1 — Planejamento Estratégico + Linha de Produtos
 // 10 agentes: Captação → Viabilidade → Pesquisa → Financeiro → Comitê → Fundador → Handoff → GP → OKR → Relatórios
@@ -136,7 +137,9 @@ async function handler(req, res) {
     if (!acoes[action]) return res.status(400).json({ error: `Ação inválida. Disponíveis: ${Object.keys(acoes).join(', ')}` });
 
     const resultado = await acoes[action]();
-    return res.status(200).json({ success: true, action, ...resultado });
+    // v3.90: guarda as análises de planejamento para consulta posterior (botão "🕘 Histórico" nas telas)
+    const historico_id = ['status_okr', 'relatorio_executivo'].includes(action) ? await salvarHistorico(action, resultado, req.sessao?.login) : null;
+    return res.status(200).json({ success: true, action, historico_id, ...resultado });
 
   } catch (error) {
     console.error('[ERRO s1-strategy]', error.message);

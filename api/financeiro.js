@@ -1042,6 +1042,10 @@ async function qbToken() {
   return novo.access_token;
 }
 function qbRealmId() { return process.env.QB_REALM_ID; }
+// v3.89: outras APIs (ex.: s1-data, tela "Dados Reais QB") usam o MESMO token do banco — antes elas só liam
+// QB_REFRESH_TOKEN do Vercel e diziam "não configurado" com o QuickBooks conectado pelo OAuth
+export async function qbTokenCompartilhado() { return qbToken(); }
+export async function qbRealmCompartilhado() { return (await qbTokensLer())?.realm_id || process.env.QB_REALM_ID || null; }
 // OAuth: URL de autorização (o usuário clica, autoriza no Intuit, volta para /api/financeiro?qb_callback=1)
 function qbRedirectUri(req) {
   const env = (process.env.QB_REDIRECT_URI || '').trim(); if (env) return env;
