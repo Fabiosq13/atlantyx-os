@@ -2614,14 +2614,20 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   const fimPassado = fim && fim < hoje ? fim : hoje;
   const iniFuturo = ini > hoje ? ini : hoje;
 
+  // v3.85: tempo de cada segmento (realizado QB × futuro QB × Atlantyx), para saber qual parte está lenta
+  const _t = { ini: Date.now() }; const tempos = {};
+  const _marca = (k) => { const agora = Date.now(); tempos[k] = agora - (_t.ult || _t.ini); _t.ult = agora; };
+
   // 1. Passado até hoje (ou até "fim", se o período pedido for todo no passado): extrato consolidado
   const extrato = await extratoConsolidado({ data_inicio: ini, data_fim: fimPassado, incluir_simulados, conta_id });
+  _marca('realizado_qb');
 
   // 2. Futuro: recebíveis/pagáveis reais do QB, respeitando o fim do período (se houver)
   // v1.61: Invoice e Bill não pertencem a uma conta bancária (só sabem em qual conta serão
   // liquidados quando o pagamento acontecer). Por isso o filtro de conta NÃO se aplica a eles —
   // a tela avisa isso para o número não parecer inconsistente com o extrato filtrado.
   const fut = (fim && fim < hoje) ? { recebiveis: [], pagaveis: [], erro: null } : await qbFuturosDetalhado({ data_inicio: iniFuturo, data_fim: fim });
+  _marca('futuro_qb');
 
   // 3. Despesas programadas do Atlantyx com ocorrência futura (não vinculadas a Bill do QB, para não duplicar)
   let despFuturas = [];
@@ -2646,6 +2652,7 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
       : await sql`SELECT * FROM lancamentos_simulados WHERE excluido = false AND data > ${hoje} ORDER BY data ASC`;
     simFuturos = rows.map(r => ({ id: 'sim_' + r.id, data: String(r.data).split('T')[0], descricao: r.descricao, categoria: r.categoria, valor: parseFloat(r.valor), tipo: r.tipo, origem: 'simulado_futuro' }));
   } catch (e) { console.warn('[FluxoDetalhado] simulados futuros:', e.message); }
+  _marca('futuro_atlantyx');
 
   // 5. Montar linha do tempo futura ordenada, calculando saldo em cascata a partir do saldo de hoje
   // v3.00: (a) lançamentos JÁ REGISTRADOS no QuickBooks com data futura (despesas agendadas, pagamentos
@@ -2673,6 +2680,7 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
         !baseSaida.some(b => String(b.data).substring(0, 7) === l.data.substring(0, 7) && Math.abs(Math.abs(b.valor) - l.valor) <= Math.max(1, l.valor * 0.01)));
     } catch (e) { qbExtraErro = (qbExtraErro ? qbExtraErro + ' | ' : '') + 'Recorrentes: ' + e.message; }
   }
+  _marca('futuro_qb_lancados_recorrentes');
   if (qbExtraErro) fut.erro = (fut.erro ? fut.erro + ' | ' : '') + qbExtraErro;
   const futTodos = [...fut.recebiveis, ...fut.pagaveis, ...despFuturas, ...simFuturos, ...qbLancFuturos, ...qbRecorrentes]
     .filter(l => l.data && l.data > hoje)
@@ -2707,6 +2715,9 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
       if (conta_id) contasBanco = contasBanco.filter(c => String(c.id) === String(conta_id));
     }
   } catch (_) {}
+  _marca('saldo_contas_qb');
+  tempos.total = Date.now() - _t.ini;
+  if (tempos.total >= 8000) console.warn('[FluxoDetalhado] lento:', JSON.stringify(tempos));
   const saldoCalculado = extrato.saldo_final || 0;
   const divergencia = saldoRealBanco != null ? round(saldoCalculado - saldoRealBanco) : null;
 
@@ -2732,6 +2743,7 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   return {
     hoje,
     periodo: { data_inicio: ini, data_fim: fim },
+    tempos_ms: tempos, // v3.85
     // v1.76
     saldo_inicial: saldoInicialPer,
     saldo_inicial_data: ini,

@@ -16668,22 +16668,31 @@ async function pvRemover() {
   catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
 
-async function finApi(action, params = {}) {
-  let r;
+async function finApi(action, params = {}, opts = {}) {
+  // v3.85: opts.timeoutMs cancela a requisição (AbortController) se o servidor não responder a tempo
+  const ctrl = opts.timeoutMs ? new AbortController() : null;
+  const tm = ctrl ? setTimeout(() => ctrl.abort(), opts.timeoutMs) : null;
+  const _erroTimeout = () => { const e = new Error('Tempo esgotado: o servidor não respondeu em ' + Math.round(opts.timeoutMs / 1000) + 's (QuickBooks lento ou conexão instável)'); e.timeout = true; return e; };
+  let r, raw;
   try {
-    r = await fetch('/api/financeiro', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, params }),
-    });
-  } catch (netErr) {
-    throw new Error('Rede: não conectou em /api/financeiro — ' + netErr.message);
-  }
-  // FIX v1.5.2: diagnóstico claro por status HTTP
-  if (r.status === 404) {
-    throw new Error('ENDPOINT AUSENTE: /api/financeiro retornou 404. O arquivo api/financeiro.js não está no deploy — confirme que ele existe no repositório e faça novo deploy.');
-  }
-  const raw = await r.text();
+    try {
+      r = await fetch('/api/financeiro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, params }),
+        signal: ctrl ? ctrl.signal : undefined,
+      });
+    } catch (netErr) {
+      if (ctrl && ctrl.signal.aborted) throw _erroTimeout();
+      throw new Error('Rede: não conectou em /api/financeiro — ' + netErr.message);
+    }
+    // FIX v1.5.2: diagnóstico claro por status HTTP
+    if (r.status === 404) {
+      throw new Error('ENDPOINT AUSENTE: /api/financeiro retornou 404. O arquivo api/financeiro.js não está no deploy — confirme que ele existe no repositório e faça novo deploy.');
+    }
+    try { raw = await r.text(); }
+    catch (lerErr) { if (ctrl && ctrl.signal.aborted) throw _erroTimeout(); throw lerErr; }
+  } finally { if (tm) clearTimeout(tm); }
   let d;
   try { d = JSON.parse(raw); }
   catch { throw new Error('Resposta não-JSON de /api/financeiro (HTTP ' + r.status + '): ' + raw.substring(0, 150)); }
@@ -16714,6 +16723,59 @@ function _finAtualizarFundo(action, params) {
     const alvo = _FIN_RECARREGA[action]; const pg = alvo && document.getElementById('page-' + alvo[0]);
     if (alvo && pg && pg.classList.contains('active')) { try { alvo[1](); } catch (_) {} }
   }).catch(() => {}).finally(() => { setTimeout(() => { delete _finFundo[k]; }, 60000); });
+}
+
+// ═══ v3.85: timeout de 12s + cache local da última carga boa + retry visível (dem_muscck97w2s0) ═══
+// Usado no Dashboard Financeiro (s3dashboard) e no Fluxo Detalhado (s3fluxodet). Se a API demorar
+// mais que 12s ou falhar, a tela mostra a última carga bem-sucedida (localStorage) com o aviso
+// "⚠ Dados de [data/hora]" e um botão "↻ Tentar novamente" — nunca fica girando para sempre.
+const _FIN_TIMEOUT_MS = 12000;
+const _FIN_CACHE_MAX = 3; // até 3 combinações de filtro por tela (o fluxo detalhado pode ser grande)
+function _finCacheLerTudo(tela) { try { return JSON.parse(localStorage.getItem('cache_' + tela) || '{}') || {}; } catch (_) { return {}; } }
+function _finCacheSalvar(tela, chave, dados) {
+  const tudo = _finCacheLerTudo(tela); tudo[chave] = { ts: Date.now(), dados };
+  const chaves = Object.keys(tudo).sort((a, b) => tudo[b].ts - tudo[a].ts);
+  chaves.slice(_FIN_CACHE_MAX).forEach(k => delete tudo[k]);
+  try { localStorage.setItem('cache_' + tela, JSON.stringify(tudo)); }
+  catch (_) { try { localStorage.setItem('cache_' + tela, JSON.stringify({ [chave]: tudo[chave] })); } catch (_) {} } // sem espaço: guarda só a atual
+}
+// Mesmo filtro, se houver; senão a carga mais recente (o aviso deixa claro que o filtro era outro)
+function _finCacheLer(tela, chave) {
+  const tudo = _finCacheLerTudo(tela);
+  if (tudo[chave]?.dados) return { ...tudo[chave], chave, outroFiltro: false };
+  const k = Object.keys(tudo).filter(x => tudo[x]?.dados).sort((a, b) => tudo[b].ts - tudo[a].ts)[0];
+  return k ? { ...tudo[k], chave: k, outroFiltro: true } : null;
+}
+// Busca com timeout; em falha devolve o cache (ou relança o erro se não houver cache)
+async function _finCarregarComFallback(tela, action, params) {
+  const chave = JSON.stringify(params);
+  try {
+    const d = await finApi(action, params, { timeoutMs: _FIN_TIMEOUT_MS });
+    _finCacheSalvar(tela, chave, d);
+    return { d, cache: null };
+  } catch (e) {
+    const c = _finCacheLer(tela, chave);
+    addLog(e.timeout ? 'warn' : 'err', '[' + tela + '] ' + e.message + (c ? ' — exibindo dados salvos de ' + _finFmtTs(c.ts) : ' — sem cache local'));
+    if (!c) throw e;
+    return { d: c.dados, cache: { ts: c.ts, outroFiltro: c.outroFiltro, erro: e } };
+  }
+}
+function _finFmtTs(ts) { const d = new Date(ts); return d.toLocaleDateString('pt-BR').substring(0, 5) + ' ' + d.toLocaleTimeString('pt-BR').substring(0, 5); }
+// Aviso de falha num bloco próprio (acima do status da tela, para não brigar com os avisos do QuickBooks)
+function _finAvisoFalha(statusId, fnRetry, e, cache) {
+  const st = document.getElementById(statusId); if (!st) return;
+  let box = document.getElementById(statusId + 'Falha');
+  if (!e) { if (box) box.remove(); return; }
+  if (!box) { box = document.createElement('div'); box.id = statusId + 'Falha'; st.parentElement?.insertBefore(box, st); }
+  const msg = String(e.message || e).replace(/</g, '&lt;');
+  const btn = '<button class="btn btn-gn" style="font-size:10.5px;margin-left:8px;" onclick="this.disabled=true;this.textContent=\'⏳ Tentando...\';' + fnRetry + '()">↻ Tentar novamente</button>';
+  box.style.cssText = 'margin-bottom:10px;border-radius:8px;padding:10px 13px;font-size:11px;line-height:1.6;' + (cache
+    ? 'background:rgba(245,185,75,.1);border:1px solid var(--gold);'
+    : 'background:rgba(255,80,80,.1);border:1px solid var(--red);');
+  box.innerHTML = cache
+    ? '<b style="color:' + _corTxt('var(--gold)') + ';">⚠ Dados de ' + _finFmtTs(cache.ts) + '</b> — não foi possível atualizar agora (' + msg + '). Mostrando a última carga bem-sucedida'
+      + (cache.outroFiltro ? ', <b>feita com outro filtro</b> (período/conta diferentes dos selecionados)' : '') + '.' + btn
+    : '<b>⛔ Não foi possível carregar os dados</b> — ' + msg + '.' + btn;
 }
 
 // Formatador BRL
@@ -19300,7 +19362,7 @@ async function carregarFluxoDetalhado() {
   if (iEl && !iEl.value) { const d = new Date(); d.setDate(d.getDate() - 60); iEl.value = _fdIso(d); }
   const st = document.getElementById('fdStatus');
   const tbP = document.getElementById('fd_tbodyPassado'), tbF = document.getElementById('fd_tbodyFuturo');
-  if (tbP) tbP.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Carregando... <span style="color:var(--t3);font-size:9px;">(consultando QuickBooks, pode levar até 60s)</span></td></tr>';
+  if (tbP) tbP.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Carregando... <span style="color:var(--t3);font-size:9px;">(consultando QuickBooks — limite de 12s)</span></td></tr>';
   if (tbF) tbF.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Carregando...</td></tr>';
   if (st) st.style.display = 'none';
   try {
@@ -19308,7 +19370,11 @@ async function carregarFluxoDetalhado() {
     const dIni = document.getElementById('fd_dataInicio')?.value || null;
     const dFim = document.getElementById('fd_dataFim')?.value || null;
     const contaSel = document.getElementById('fd_conta')?.value || null;
-    const d = await finApi('fluxo_detalhado', { data_inicio: dIni, data_fim: dFim, incluir_simulados: incluirSim, conta_id: contaSel });
+    // v3.85: timeout de 12s; se falhar, usa a última carga boa salva no navegador
+    const { d, cache } = await _finCarregarComFallback('s3fluxodet', 'fluxo_detalhado', { data_inicio: dIni, data_fim: dFim, incluir_simulados: incluirSim, conta_id: contaSel });
+    _finAvisoFalha('fdStatus', 'carregarFluxoDetalhado', cache && cache.erro, cache);
+    // v3.85: tempo de cada parte medido no servidor (realizado QB × futuro QB × Atlantyx) — aponta qual segmento está lento
+    if (!cache && !(d._cache && d._cache.idade_s > 0) && d.tempos_ms && d.tempos_ms.total >= 8000) addLog('warn', '[Fluxo Detalhado] lento: ' + Object.entries(d.tempos_ms).map(([k, v]) => k + ' ' + (v / 1000).toFixed(1) + 's').join(' · '));
     _fdPopularContas(); // v1.53: popula o combo na primeira carga
     const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
     // v1.49: avisa quando o QuickBooks limitou as consultas (dados incompletos = saldo errado)
@@ -19459,13 +19525,17 @@ async function carregarFluxoDetalhado() {
     }
 
     _fdDados = d; _fdRenderTabelas(); // v3.59: tabelas renderizadas à parte, para o filtro por descrição
+    if (cache) ['fd_tagPassado', 'fd_tagFuturo'].forEach(id => { const tg = document.getElementById(id); if (tg) { tg.textContent = '⚠ Dados de ' + _finFmtTs(cache.ts); tg.className = 'tag off'; } });
     const pas = d.passado.lancamentos || [], fut = d.futuro.lancamentos || [];
 
     if (d.passado.qb_erro || d.futuro.qb_erro) { if (st) { st.style.display = 'block'; st.innerHTML = '<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:10px;font-size:11px;">⚠ QuickBooks: ' + (d.passado.qb_erro || d.futuro.qb_erro) + ' — <a style="color:var(--blue);cursor:pointer;" onclick="conectarQuickBooks()">reconectar</a></div>'; } }
     addLog('ok', '[Fluxo Detalhado] ' + pas.length + ' realizados + ' + fut.length + ' futuros · saldo hoje ' + fmtBRLcompleto(d.saldo_hoje) + ' → projetado ' + fmtBRLcompleto(d.saldo_projetado_final));
   } catch (e) {
-    if (tbP) tbP.innerHTML = '<tr><td colspan="5" style="color:var(--red);text-align:center;padding:20px;">Erro: ' + e.message + '</td></tr>';
-    if (tbF) tbF.innerHTML = '';
+    // v3.85: sem cache local — o "Carregando..." dá lugar ao erro com botão de retry
+    _finAvisoFalha('fdStatus', 'carregarFluxoDetalhado', e, null);
+    if (tbP) tbP.innerHTML = '<tr><td colspan="5" style="color:var(--red);text-align:center;padding:20px;">Erro: ' + String(e.message).replace(/</g, '&lt;') + ' <button class="btn btn-gn" style="font-size:10px;margin-left:6px;" onclick="carregarFluxoDetalhado()">↻ Tentar novamente</button></td></tr>';
+    if (tbF) tbF.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Não carregado.</td></tr>';
+    ['fd_tagPassado', 'fd_tagFuturo'].forEach(id => { const tg = document.getElementById(id); if (tg) { tg.textContent = 'Erro'; tg.className = 'tag off'; } });
     addLog('err', '[Fluxo Detalhado] ' + e.message);
   }
 }
@@ -25408,7 +25478,8 @@ async function carregarDashboardFinanceiro() {
       selAno.value = anoAtual;
       if (selMes && !selMes.value) selMes.value = String(new Date().getMonth()+1);
     }
-    const d = await finApi('dashboard_financeiro', { mes: selMes?.value || null, ano: selAno?.value || null, conta_id: document.getElementById('dash_conta')?.value || null });
+    // v3.85: timeout de 12s; se falhar, usa a última carga boa salva no navegador
+    const { d, cache } = await _finCarregarComFallback('s3dashboard', 'dashboard_financeiro', { mes: selMes?.value || null, ano: selAno?.value || null, conta_id: document.getElementById('dash_conta')?.value || null });
     const lbl = document.getElementById('dashPeriodoLabel');
     if (lbl) { const p = d.periodo || d.dashboard?.periodo;
       lbl.textContent = p ? ` · período: ${p.de.split('-').reverse().join('/')} a ${p.ate.split('-').reverse().join('/')}${p.atual ? ' (em curso)' : ''}` : ''; } const x = d.dashboard || {};
@@ -25431,9 +25502,18 @@ async function carregarDashboardFinanceiro() {
     if (kp) { const ent = Object.entries(sd.kpis || {}).filter(([k, v]) => v != null && typeof v !== 'object'); kp.innerHTML = ent.length ? ent.map(([k, v]) => '<div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--bd);"><span style="color:var(--t2);">' + k.replace(/_/g,' ') + '</span><span style="font-family:var(--M);">' + (typeof v === 'number' ? (Math.abs(v) >= 1000 ? fmtBRL(v) : (Math.round(v*100)/100)) : v) + '</span></div>').join('') : '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Sem indicadores (QB desconectado?)</div>'; }
     const ln = document.getElementById('df_lanc');
     if (ln) { const ls = x.ultimos_lancamentos || []; ln.innerHTML = ls.length ? '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + ls.map(l => '<tr style="border-bottom:1px solid var(--bd);"><td style="padding:5px;color:var(--t2);font-family:var(--M);font-size:10px;">' + (l.data||'') + '</td><td style="padding:5px;">' + (l.desc||'') + '</td><td style="padding:5px;text-align:right;color:' + ((l.tipo||'').match(/sa[ií]da|despesa|expense/i) || (l.valor||0) < 0 ? 'var(--red)' : 'var(--green,#22d3a3)') + ';font-family:var(--M);">' + brl(l.valor) + '</td></tr>').join('') + '</table>' : '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Sem lançamentos (QB desconectado?)</div>'; }
-    u('dfAtualizado', 'atualizado ' + new Date().toLocaleTimeString('pt-BR').substring(0,5) + (x.quickbooks?.conectado ? ' · QB ok' : ' · QB sem dados'));
+    u('dfAtualizado', cache ? '⚠ Dados de ' + _finFmtTs(cache.ts) : 'atualizado ' + new Date().toLocaleTimeString('pt-BR').substring(0,5) + (x.quickbooks?.conectado ? ' · QB ok' : ' · QB sem dados'));
+    { const at = document.getElementById('dfAtualizado'); if (at) at.style.color = cache ? 'var(--gold)' : ''; }
+    _finAvisoFalha('dfStatus', 'carregarDashboardFinanceiro', cache && cache.erro, cache);
     if (st) { if (x.quickbooks && !x.quickbooks.conectado && x.quickbooks.erros?.length) { st.style.display = 'block'; st.innerHTML = '<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:10px;font-size:11px;color:var(--t1);">⚠ QuickBooks: ' + x.quickbooks.erros[0] + ' — <a style="color:var(--blue);cursor:pointer;" onclick="conectarQuickBooks()">reconectar</a></div>'; } else st.style.display = 'none'; }
-  } catch (e) { if (st) { st.style.display = 'block'; st.innerHTML = '<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:10px;font-size:11px;">Erro ao carregar dashboard: ' + e.message + '</div>'; } addLog('err', '[Dashboard Fin] ' + e.message); }
+  } catch (e) {
+    // v3.85: sem cache local — o "Carregando..." dá lugar ao erro com botão de retry
+    if (st) st.style.display = 'none';
+    _finAvisoFalha('dfStatus', 'carregarDashboardFinanceiro', e, null);
+    ['df_fluxo', 'df_kpis', 'df_lanc'].forEach(id => { const el = document.getElementById(id); if (el && /Carregando/.test(el.textContent)) el.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Não carregado — use ↻ Tentar novamente acima.</div>'; });
+    u('dfAtualizado', '⛔ falha ao carregar');
+    addLog('err', '[Dashboard Fin] ' + e.message);
+  }
 }
 
 // ═══ v1.14: GERENTE FINANCEIRO IA (chat) ═══
