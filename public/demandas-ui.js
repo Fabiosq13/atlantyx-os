@@ -29,6 +29,7 @@
     if (d.status === 'implementada') return chip('var(--green)', '🚀 No ar' + (x.implementada_em ? ' desde ' + quando(x.implementada_em) : ''), pr?.url);
     if (d.status !== 'em_execucao') return '';
     if (pr && pr.estado === 'closed' && !pr.merged) return chip('var(--red)', `✕ PR #${pr.numero} fechado sem merge — reabra ou mova a demanda`, pr.url);
+    if (pr && c?.estado === 'erro') return chip('var(--red)', `❌ Claude parou com ERRO às ${quando(c.atualizado)} — o PR #${pr.numero} tem trabalho INCOMPLETO: não faça o merge sem revisar`, pr.url);
     if (pr) return chip('var(--gold)', `📬 Claude terminou${c?.atualizado ? ' às ' + quando(c.atualizado) : ''}${c?.duracao ? ' (' + c.duracao + ')' : ''} — PR #${pr.numero} ${qa ? 'em validação automática' : 'aguarda o SEU merge'}`, pr.url);
     if (!c) return chip('var(--t3)', '⏳ Na fila do GitHub — o Claude ainda não começou', d.issue_url);
     if (c.estado === 'trabalhando') { const parado = Date.now() - Date.parse(c.atualizado) > 70 * 60000;
