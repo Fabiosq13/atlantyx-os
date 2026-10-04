@@ -536,15 +536,20 @@ async function contextoFinanceiro({ mes, ano, conta_id = null } = {}) {
     quickbooks: { conectado: !R.erros?.length || (R.saldoCaixa !== undefined && R.saldoCaixa !== 0), erros: (R.erros || []).slice(0, 3) },
     periodo: R.periodo || null,
     caixa: { saldo: R.saldoCaixa ?? null, a_receber: R.aReceber ?? null, a_pagar: R.aPagar ?? null, receita_mes: R.realMes ?? null, receita_ano: R.realAnual ?? null },
-    saude: { semaforo: K.semaforo, motivos: K.semaforo_motivos, kpis: Object.fromEntries(Object.entries(K).filter(([k]) => !/semaforo|erro/.test(k)).slice(0, 14)) },
-    fluxo_6m: (F.meses || F.linhas || []).slice(0, 6).map(m => ({ mes: m.mes || m.label || m.ref, entradas: m.entradas ?? m.receitas, saidas: m.saidas ?? m.despesas, saldo: m.saldo_final ?? m.saldo })),
+    saude: { semaforo: K.semaforo, motivos: K.semaforo_motivos, erro: K.erro || null, fonte: K.fonte || null, kpis: Object.fromEntries(Object.entries(K).filter(([k, v]) => !/semaforo|erro|fonte|timestamp/.test(k) && v != null && typeof v !== 'object')) },
+    // v3.91 FIX: fluxoFuturo devolve meses como texto ("2026-10") e os valores em linhas[rótulo][mês] — antes o
+    // mapeamento lia m.entradas de uma string e o gráfico do Dashboard saía vazio
+    fluxo_6m: (F.meses || []).slice(0, 6).map(k => ({ mes: k, entradas: F.linhas?.['= Total Entradas']?.[k] ?? 0, saidas: F.linhas?.['= Total Saídas']?.[k] ?? 0, saldo: F.linhas?.['= Saldo Final']?.[k] ?? null })),
+    fluxo_erro: F.erro || null,
     // v3.18 FIX: conciliacaoStatus devolve aprovadas/rejeitadas — os nomes antigos (conciliados/taxa) nunca
     // existiam, por isso o card "Conciliação" do Dashboard ficava sempre vazio.
     conciliacao: (() => { const ok = C.conciliados ?? C.aprovados ?? C.aprovadas ?? 0, rej = C.rejeitadas ?? 0, pend = C.pendentes ?? C.com_sugestao ?? rej;
       const tot = ok + rej; return { conciliados: ok, pendentes: pend, rejeitadas: rej, sem_sugestao: C.sem_sugestao, total_aprovado: C.total_aprovado ?? null,
         taxa: C.taxa ?? C.taxa_pct ?? (tot > 0 ? Math.round(ok / tot * 100) : null), janela_dias: 60, erro: C.erro || null }; })(),
-    marcos: Object.fromEntries(Object.entries(M.colunas || {}).map(([k, c]) => [k, { qtd: c.total_count, valor: c.total_valor }])),
+    marcos: Object.fromEntries(Object.entries(M.colunas || {}).map(([k, c]) => [k, { qtd: c.total_count, valor: c.total_valor, label: c.label }])),
+    marcos_erro: M.erro || null,
     orcamento: O.total_geral || null,
+    orcamento_por_tipo: O.por_tipo || null, orcamento_nome: O.budget_nome || null,
     ultimos_lancamentos: (R.lancamentos || []).slice(0, 12).map(l => ({ data: l.data, desc: (l.descricao || l.nome || '').substring(0, 50), valor: l.valor, tipo: l.tipo })),
   };
 }
@@ -746,9 +751,76 @@ Regras:
   return { resposta, tarefa: tarefaExecutada,
     contexto_resumo: { saldo: ctx.caixa.saldo, a_receber: ctx.caixa.a_receber, a_pagar: ctx.caixa.a_pagar, semaforo: ctx.saude.semaforo, qb: ctx.quickbooks.conectado } };
 }
-async function dashboardFinanceiro({ mes, ano, conta_id = null } = {}) {
-  const ctx = await contextoFinanceiro({ mes, ano, conta_id });
-  return { dashboard: ctx, gerado_em: new Date().toISOString(), periodo: ctx.periodo || null };
+// v3.91: PLANEJADO × REAL por mês (base caixa).
+//  • REAL      = o que passou no banco (extrato consolidado do Fluxo Detalhado) até hoje.
+//  • PLANEJADO = o que estava previsto para vencer no mês: faturas (Invoice) e contas (Bill) do QuickBooks pelo
+//    VENCIMENTO, pagas ou não (valor total), + despesas programadas do Atlantyx (sem conta no QB) + simulados.
+//    Para dias futuros usa o previsto do Fluxo Detalhado (em aberto + programado + recorrente).
+async function planejadoVsReal({ data_inicio, data_fim, conta_id = null } = {}) {
+  const hoje = new Date().toISOString().split('T')[0];
+  const ini = data_inicio, fim = data_fim;
+  const meses = []; { let [a, m] = ini.split('-').map(Number); const [af, mf] = fim.split('-').map(Number);
+    while (a < af || (a === af && m <= mf)) { meses.push(`${a}-${String(m).padStart(2, '0')}`); m++; if (m > 12) { m = 1; a++; } if (meses.length > 24) break; } }
+  const M = {}; meses.forEach(k => { M[k] = { mes: k, receita_planejada: 0, receita_real: 0, despesa_planejada: 0, despesa_real: 0, situacao: k < hoje.substring(0, 7) ? 'passado' : k === hoje.substring(0, 7) ? 'atual' : 'futuro' }; });
+  const add = (data, campo, v) => { const r = M[String(data).substring(0, 7)]; if (r && v) r[campo] += v; };
+  const erros = [];
+  const fd = await fluxoDetalhado({ data_inicio: ini, data_fim: fim, conta_id });
+  (fd.passado?.lancamentos || []).forEach(l => { if (l.data > hoje) return; if (l.tipo === 'entrada') add(l.data, 'receita_real', l.valor); else if (l.tipo === 'saida') add(l.data, 'despesa_real', l.valor); });
+  (fd.futuro?.lancamentos || []).forEach(l => { if (l.data <= hoje) return; if (l.tipo === 'entrada') add(l.data, 'receita_planejada', l.valor); else if (l.tipo === 'saida') add(l.data, 'despesa_planejada', l.valor); });
+  // planejado do que já venceu (de ini até hoje): documentos do QuickBooks pelo vencimento + despesas programadas
+  const fimPassado = fim < hoje ? fim : hoje;
+  if (ini <= fimPassado) {
+    if (qbConfigurado()) {
+      try {
+        const token = await qbToken();
+        for (const [ent, campo] of [['Invoice', 'receita_planejada'], ['Bill', 'despesa_planejada']]) {
+          let pos = 1;
+          for (let pag = 0; pag < 5; pag++) {
+            const d = await qbQuery(`select * from ${ent} where DueDate >= '${ini}' and DueDate <= '${fimPassado}' startposition ${pos} maxresults 500`, token);
+            const arr = d?.QueryResponse?.[ent] || []; arr.forEach(x => add(x.DueDate || x.TxnDate, campo, parseFloat(x.TotalAmt || 0)));
+            if (arr.length < 500) break; pos += 500;
+          }
+        }
+      } catch (e) { erros.push('QuickBooks: ' + e.message); }
+    }
+    try {
+      const sql = await getSql();
+      const rows = await sql`SELECT o.data_prevista, o.valor FROM despesas_ocorrencias o WHERE o.data_prevista >= ${ini} AND o.data_prevista <= ${fimPassado}`;
+      rows.forEach(r => add(String(r.data_prevista).split('T')[0], 'despesa_planejada', parseFloat(r.valor) || 0));
+    } catch (e) { erros.push('despesas programadas: ' + e.message); }
+  }
+  const lista = meses.map(k => { const r = M[k]; ['receita_planejada', 'receita_real', 'despesa_planejada', 'despesa_real'].forEach(c => r[c] = round(r[c]));
+    r.resultado_real = round(r.receita_real - r.despesa_real); r.resultado_planejado = round(r.receita_planejada - r.despesa_planejada); return r; });
+  const soma = c => round(lista.reduce((a, r) => a + r[c], 0));
+  return { de: ini, ate: fim, meses: lista, erros, saldo_hoje: fd.saldo_hoje ?? null,
+    totais: { receita_planejada: soma('receita_planejada'), receita_real: soma('receita_real'), despesa_planejada: soma('despesa_planejada'), despesa_real: soma('despesa_real') } };
+}
+
+async function dashboardFinanceiro({ mes, ano, conta_id = null, data_inicio = null, data_fim = null } = {}) {
+  // v3.91: período livre (de/até). Sem ele, o mês/ano escolhido.
+  const hoje = new Date();
+  const a = parseInt(ano) || hoje.getFullYear(), m = parseInt(mes) || (hoje.getMonth() + 1);
+  const ini = data_inicio || `${a}-${String(m).padStart(2, '0')}-01`;
+  const fim = data_fim || new Date(a, m, 0).toISOString().split('T')[0];
+  // gráfico: 2 meses antes do fim do período + o mês + 3 à frente (real de um lado, planejado do outro)
+  const f = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const b = new Date(parseInt(fim.substring(0, 4)), parseInt(fim.substring(5, 7)) - 1, 1);
+  const i6 = f(new Date(b.getFullYear(), b.getMonth() - 2, 1)), f6 = f(new Date(b.getFullYear(), b.getMonth() + 4, 0));
+  const fimDoMes = fim === f(new Date(parseInt(fim.substring(0, 4)), parseInt(fim.substring(5, 7)), 0));
+  const dentro = ini >= i6 && fim <= f6 && ini.endsWith('-01') && fimDoMes; // período de meses inteiros dentro da janela → reaproveita o cálculo
+  const [ctxR, pvr6R, pvrR] = await Promise.allSettled([
+    contextoFinanceiro({ mes: parseInt(fim.substring(5, 7)), ano: parseInt(fim.substring(0, 4)), conta_id }),
+    planejadoVsReal({ data_inicio: i6, data_fim: f6, conta_id }),
+    dentro ? Promise.resolve(null) : planejadoVsReal({ data_inicio: ini, data_fim: fim, conta_id }),
+  ]);
+  const ctx = ctxR.status === 'fulfilled' ? ctxR.value : { erro: ctxR.reason?.message };
+  ctx.grafico_6m = pvr6R.status === 'fulfilled' ? pvr6R.value : { erro: pvr6R.reason?.message };
+  if (dentro && ctx.grafico_6m.meses) {
+    const ms = ctx.grafico_6m.meses.filter(m => m.mes >= ini.substring(0, 7) && m.mes <= fim.substring(0, 7));
+    const soma = c => round(ms.reduce((a, m) => a + (m[c] || 0), 0));
+    ctx.planejado_real = { de: ini, ate: fim, meses: ms, erros: ctx.grafico_6m.erros || [], totais: { receita_planejada: soma('receita_planejada'), receita_real: soma('receita_real'), despesa_planejada: soma('despesa_planejada'), despesa_real: soma('despesa_real') } };
+  } else ctx.planejado_real = pvrR.status === 'fulfilled' && pvrR.value ? pvrR.value : { erro: pvrR.reason?.message || ctx.grafico_6m.erro || 'sem dados' };
+  return { dashboard: ctx, gerado_em: new Date().toISOString(), periodo: { de: ini, ate: fim, atual: fim >= hoje.toISOString().split('T')[0] && ini <= hoje.toISOString().split('T')[0] } };
 }
 
 // v1.15: diagnóstico do QuickBooks — empresa, realm, contagens e INTERVALO DE DATAS com dados (sandbox costuma ter
@@ -3322,6 +3394,8 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
       const fimHorizonte = `${aaF}-${String(mmF).padStart(2,'0')}-${String(new Date(aaF, mmF, 0).getDate()).padStart(2,'0')}`;
       const amanha = new Date(Date.now() + 86400000).toISOString().split('T')[0];
       const futuros = await qbLancamentos({ data_inicio: amanha, data_fim: fimHorizonte, limite: 1000, conta_id });
+      // v3.91 FIX: 'fut' não existia aqui (copiado do Fluxo Detalhado) — o erro descartava os lançados no futuro e os recorrentes
+      const fut = await qbFuturosDetalhado({ data_inicio: amanha, data_fim: fimHorizonte }).catch(() => ({ recebiveis: [], pagaveis: [] }));
       // v1.86: proteção contra DUPLA CONTAGEM. Um Bill em aberto já entra como "a pagar";
       // se o BillPayment dele também estiver lançado no futuro, contaríamos duas vezes.
       // Guardamos os valores já previstos para não somar de novo.
@@ -5190,7 +5264,13 @@ async function orcamentoConsolidado({ ano } = {}) {
   }
 
   // 2. Realizado QB por categoria × mês (DRE mensais)
-  const realizado = {};
+  const realizado = {}; const _classeCat = {};
+  // v3.91: tipo de cada conta (receita × despesa) — o total do orçamento somava as duas coisas (ex.: "135% utilizado")
+  if (qbConfigurado()) {
+    try { const tk = await qbToken(); const ac = await qbQuery(`select * from Account maxresults 1000`, tk);
+      (ac?.QueryResponse?.Account || []).forEach(a => { const c = /^Revenue$/i.test(a.Classification || '') || /Income/i.test(a.AccountType || '') ? 'receita' : /^Expense$/i.test(a.Classification || '') || /Expense|Cost of Goods/i.test(a.AccountType || '') ? 'despesa' : 'outro';
+        [a.Name, a.FullyQualifiedName].filter(Boolean).forEach(n => { _classeCat[n] = c; }); }); } catch (e) { console.log('[Orçamento] contas:', e.message); }
+  }
   if (qbConfigurado()) {
     try {
       const token = await qbToken();
@@ -5199,14 +5279,16 @@ async function orcamentoConsolidado({ ano } = {}) {
       const rows = data?.Rows?.Row || [];
       const colNames = (data?.Columns?.Column || []).map(c => c.ColTitle || c.MetaData?.[0]?.Value || '');
 
-      function walk(row, parent = '') {
+      function walk(row, parent = '', grupo = '') {
         if (row.type === 'Section') {
           const header = row.Header?.ColData?.[0]?.value || parent;
-          (row.Rows?.Row || []).forEach(r => walk(r, header));
+          const g = grupo || row.group || ''; // v3.91: Income / COGS / Expenses / OtherIncome / OtherExpenses
+          (row.Rows?.Row || []).forEach(r => walk(r, header, g));
         } else if (row.type === 'Data') {
           const cols = row.ColData || [];
           const cat = cols[0]?.value;
           if (!cat) return;
+          if (grupo) _classeCat[cat] = /income/i.test(grupo) ? 'receita' : /expense|cogs|cost/i.test(grupo) ? 'despesa' : 'outro';
           if (!realizado[cat]) realizado[cat] = {};
           for (let i = 1; i < cols.length - 1; i++) {
             // v1.38 FIX: o QuickBooks devolve o título da coluna como "Aug 2026", "Ago 2026" ou
@@ -5240,7 +5322,7 @@ async function orcamentoConsolidado({ ano } = {}) {
   // 5. Construir matriz consolidada
   const matriz = [];
   for (const cat of todasCategorias) {
-    const linha = { categoria: cat, total_orcado: 0, total_realizado: 0, meses: {} };
+    const linha = { categoria: cat, classe: _classeCat[cat] || _classeCat[String(cat).split(':').pop()] || 'outro', total_orcado: 0, total_realizado: 0, meses: {} };
     for (const mes of meses) {
       const orcado = (budget.matriz?.[cat]?.[mes]) || 0;
       const real = realizado[cat]?.[mes] || 0;
@@ -5289,7 +5371,17 @@ async function orcamentoConsolidado({ ano } = {}) {
     ? Math.round((totalGeral.realizado / totalGeral.orcado) * 100)
     : null;
 
+  // v3.91: receita e despesa separadas (orçado × realizado no ano e até o mês corrente)
+  const mesHoje = hoje.substring(0, 7);
+  const porTipo = {}; for (const t of ['receita', 'despesa']) {
+    const ls = matriz.filter(l => l.classe === t);
+    const o = ls.reduce((a, l) => a + l.total_orcado, 0), r = ls.reduce((a, l) => a + l.total_realizado, 0);
+    const oAte = ls.reduce((a, l) => a + Object.entries(l.meses).filter(([k]) => k <= mesHoje).reduce((x, [, v]) => x + v.orcado, 0), 0);
+    porTipo[t] = { categorias: ls.length, orcado_ano: round(o), realizado: round(r), orcado_ate_hoje: round(oAte), utilizacao_pct: oAte > 0 ? Math.round(r / oAte * 100) : null,
+      meses: Object.fromEntries(meses.map(k => [k, { orcado: round(ls.reduce((a, l) => a + l.meses[k].orcado, 0)), realizado: round(ls.reduce((a, l) => a + l.meses[k].realizado, 0)) }])) };
+  }
   return {
+    por_tipo: porTipo,
     ano: anoRef,
     budget_nome: budget.nome || 'Sem orçamento',
     qb_configurado: qbConfigurado(),

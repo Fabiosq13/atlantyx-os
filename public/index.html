@@ -3056,6 +3056,11 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div style="background:linear-gradient(135deg,rgba(79,124,255,.14),rgba(79,124,255,.03));border:1px solid rgba(79,124,255,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
     <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Dashboard Financeiro</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Todos os KPIs financeiros num só lugar · QuickBooks + fluxo + projetos + conciliação<span id="dashPeriodoLabel" style="color:var(--gold);"></span></div></div>
     <span id="dfAtualizado" style="font-size:9.5px;color:var(--t3);"></span>
+    <!-- v3.91: período livre -->
+    <select class="fsel" id="dashPeriodoTipo" title="Tipo de período" aria-label="Tipo de período" style="font-size:11px;width:auto;" onchange="_dashPeriodoTipo()">
+      <option value="mes">Mês</option><option value="tri">Trimestre</option><option value="ano">Ano</option><option value="custom">Personalizado (de/até)</option>
+    </select>
+    <span id="dashPeriodoCustom" style="display:none;align-items:center;gap:4px;font-size:10.5px;color:var(--t2);">de <input type="date" class="fi" id="dashDe" style="width:auto;margin:0;font-size:11px;padding:4px 6px;" onchange="carregarDashboardFinanceiro()"/> até <input type="date" class="fi" id="dashAte" style="width:auto;margin:0;font-size:11px;padding:4px 6px;" onchange="carregarDashboardFinanceiro()"/></span>
     <select class="fsel" id="dashFiltroMes" title="Mês do período" aria-label="Mês do período" style="font-size:11px;width:auto;" onchange="carregarDashboardFinanceiro()">
       <option value="">Ano inteiro</option>
       <option value="1">Janeiro</option><option value="2">Fevereiro</option><option value="3">Março</option>
@@ -3079,12 +3084,15 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </div>
   <div class="kg k4" style="margin-bottom:12px;">
     <div class="kpi gd"><div class="kl">Saúde financeira</div><div class="kv" id="df_semaforo">—</div><div class="ks" id="df_semaforo_sub">semáforo automático</div></div>
-    <div class="kpi bl"><div class="kl">Orçamento utilizado</div><div class="kv" id="df_orc">—</div><div class="ks" id="df_orc_sub">orçado vs realizado</div></div>
+    <div class="kpi bl"><div class="kl">Despesa × orçamento (ano)</div><div class="kv" id="df_orc">—</div><div class="ks" id="df_orc_sub">orçado vs realizado</div></div>
     <div class="kpi gn"><div class="kl">Conciliação</div><div class="kv" id="df_conc">—</div><div class="ks" id="df_conc_sub">lançamentos batidos</div></div>
     <div class="kpi pu"><div class="kl">Marcos em fluxo</div><div class="kv" id="df_marcos">—</div><div class="ks" id="df_marcos_sub">valor aguardando pagamento</div></div>
   </div>
+  <!-- v3.91: planejado × real no período -->
+  <div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">Planejado × Real · <span id="df_pr_periodo" style="color:var(--t2);font-weight:400;"></span></div><span style="font-size:9.5px;color:var(--t3);margin-left:auto;" title="Real = o que passou no banco. Planejado = faturas e contas do QuickBooks pelo vencimento (pagas ou não) + despesas programadas; dias futuros = previsto do Fluxo Detalhado.">base caixa ⓘ</span></div>
+    <div class="pb" id="df_pr"><div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Carregando...</div></div></div>
   <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:12px;">
-    <div class="panel"><div class="ph"><div class="pt">Fluxo de caixa · próximos 6 meses</div></div><div class="pb" id="df_fluxo"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando...</div></div></div>
+    <div class="panel"><div class="ph"><div class="pt">Fluxo de caixa · 6 meses (planejado × real)</div></div><div class="pb" id="df_fluxo"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando...</div></div></div>
     <div class="panel"><div class="ph"><div class="pt">Indicadores de saúde</div></div><div class="pb" id="df_kpis"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando...</div></div></div>
   </div>
   <div class="panel" style="margin-top:12px;"><div class="ph"><div class="pt">Últimos lançamentos (QuickBooks)</div></div><div class="pb" id="df_lanc"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando...</div></div></div>
@@ -25729,10 +25737,31 @@ function limparChatRh() { _rhHist = []; const box = document.getElementById('rhC
 
 // ═══ v1.14: DASHBOARD FINANCEIRO ═══
 function _dashMesAtual() {
-  const m = document.getElementById('dashFiltroMes'), a = document.getElementById('dashFiltroAno');
+  const m = document.getElementById('dashFiltroMes'), a = document.getElementById('dashFiltroAno'), t = document.getElementById('dashPeriodoTipo');
+  if (t) t.value = 'mes'; _dashPeriodoTipo(true);
   if (m) m.value = String(new Date().getMonth()+1);
   if (a) a.value = String(new Date().getFullYear());
   carregarDashboardFinanceiro();
+}
+// v3.91: período do Dashboard — mês, trimestre, ano ou de/até
+function _dashPeriodoTipo(semCarregar) {
+  const t = document.getElementById('dashPeriodoTipo')?.value || 'mes';
+  const c = document.getElementById('dashPeriodoCustom'), m = document.getElementById('dashFiltroMes'), a = document.getElementById('dashFiltroAno');
+  if (c) c.style.display = t === 'custom' ? 'inline-flex' : 'none';
+  if (m) m.style.display = t === 'mes' || t === 'tri' ? '' : 'none'; if (a) a.style.display = t === 'custom' ? 'none' : '';
+  if (t === 'custom') { const de = document.getElementById('dashDe'), ate = document.getElementById('dashAte'); const h = new Date();
+    if (de && !de.value) de.value = new Date(h.getFullYear(), h.getMonth() - 2, 1).toISOString().slice(0, 10); if (ate && !ate.value) ate.value = h.toISOString().slice(0, 10); }
+  if (!semCarregar) carregarDashboardFinanceiro();
+}
+function _dashIntervalo() {
+  const t = document.getElementById('dashPeriodoTipo')?.value || 'mes';
+  const ano = parseInt(document.getElementById('dashFiltroAno')?.value) || new Date().getFullYear();
+  const mes = parseInt(document.getElementById('dashFiltroMes')?.value) || 0;
+  const f = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  if (t === 'custom') { const de = document.getElementById('dashDe')?.value, ate = document.getElementById('dashAte')?.value; if (de && ate) return de <= ate ? { de, ate } : { de: ate, ate: de }; }
+  if (t === 'ano' || (t === 'mes' && !mes)) return { de: `${ano}-01-01`, ate: `${ano}-12-31` };
+  if (t === 'tri') { const q = Math.floor(((mes || new Date().getMonth() + 1) - 1) / 3); return { de: f(new Date(ano, q * 3, 1)), ate: f(new Date(ano, q * 3 + 3, 0)) }; }
+  return { de: f(new Date(ano, mes - 1, 1)), ate: f(new Date(ano, mes, 0)) };
 }
 async function carregarDashboardFinanceiro() {
   popularSeletoresConta(); // v1.67
@@ -25747,7 +25776,8 @@ async function carregarDashboardFinanceiro() {
       if (selMes && !selMes.value) selMes.value = String(new Date().getMonth()+1);
     }
     // v3.85: timeout de 12s; se falhar, usa a última carga boa salva no navegador
-    const { d, cache } = await _finCarregarComFallback('s3dashboard', 'dashboard_financeiro', { mes: selMes?.value || null, ano: selAno?.value || null, conta_id: document.getElementById('dash_conta')?.value || null });
+    const _iv = _dashIntervalo(); // v3.91: período de/até
+    const { d, cache } = await _finCarregarComFallback('s3dashboard', 'dashboard_financeiro', { mes: selMes?.value || null, ano: selAno?.value || null, conta_id: document.getElementById('dash_conta')?.value || null, data_inicio: _iv.de, data_fim: _iv.ate });
     const lbl = document.getElementById('dashPeriodoLabel');
     if (lbl) { const p = d.periodo || d.dashboard?.periodo;
       lbl.textContent = p ? ` · período: ${p.de.split('-').reverse().join('/')} a ${p.ate.split('-').reverse().join('/')}${p.atual ? ' (em curso)' : ''}` : ''; } const x = d.dashboard || {};
@@ -25755,19 +25785,57 @@ async function carregarDashboardFinanceiro() {
     const brl = v => (v == null || isNaN(v)) ? '—' : fmtBRL(v);
     u('df_saldo', brl(c.saldo)); u('df_receber', brl(c.a_receber)); u('df_pagar', brl(c.a_pagar)); u('df_recmes', brl(c.receita_mes)); u('df_recano', 'ano: ' + brl(c.receita_ano));
     const semCor = { verde: '🟢 Saudável', amarelo: '🟡 Atenção', vermelho: '🔴 Crítico', cinza: '⚪ Sem dados' };
-    u('df_semaforo', semCor[sd.semaforo] || semCor.cinza); u('df_semaforo_sub', (sd.motivos || []).slice(0, 2).join(' · ') || (sd.semaforo ? 'semáforo automático' : 'KPIs de saúde indisponíveis (QuickBooks)'));
-    u('df_orc', o ? ((o.utilizacao_pct ?? 0) + '%') : '—'); u('df_orc_sub', o ? (brl(o.realizado) + ' de ' + brl(o.orcado)) : 'orçado vs realizado');
+    // v3.91: quando a saúde não vem, diz POR QUÊ (antes só "KPIs de saúde indisponíveis")
+    u('df_semaforo', semCor[sd.semaforo] || semCor.cinza);
+    u('df_semaforo_sub', sd.erro ? 'erro ao calcular: ' + String(sd.erro).substring(0, 70) : (sd.motivos || []).slice(0, 2).join(' · ') || (sd.semaforo === 'cinza' ? 'sem dados suficientes (runway, margem e liquidez vazios)' : 'semáforo automático'));
+    // v3.91: orçamento separado — despesa realizada × orçada até o mês corrente (antes somava receita + despesa: "135%")
+    { const pt = x.orcamento_por_tipo || {}, dsp = pt.despesa || {}, rec = pt.receita || {};
+      if (!dsp.categorias && !rec.categorias) { u('df_orc', 'sem orçamento'); u('df_orc_sub', x.orcamento_nome && !/sem/i.test(x.orcamento_nome) ? 'orçamento "' + x.orcamento_nome + '" sem contas classificadas' : 'cadastre um Budget no QuickBooks'); }
+      else { u('df_orc', dsp.utilizacao_pct != null ? dsp.utilizacao_pct + '%' : '—');
+        u('df_orc_sub', 'despesa ' + brl(dsp.realizado) + ' de ' + brl(dsp.orcado_ate_hoje) + ' orçados até hoje' + (rec.orcado_ate_hoje ? ' · receita ' + (rec.utilizacao_pct ?? '—') + '% da meta' : '')); } }
     u('df_conc', cc.taxa != null ? (String(cc.taxa).replace('%','') + '%') : (cc.erro ? 'n/d' : '0'));
     u('df_conc_sub', cc.erro ? ('indisponível: ' + String(cc.erro).substring(0, 60)) : (cc.taxa != null ? (cc.conciliados ?? 0) + ' batidos · ' + (cc.rejeitadas ?? cc.pendentes ?? 0) + ' rejeitados (60d)' : 'nenhuma conciliação nos últimos 60 dias'));
-    const aguard = (mk.nf_emitida?.valor || 0) + (mk.aguardando_pagamento?.valor || 0); const emFluxo = Object.entries(mk).filter(([k]) => !/concluido/.test(k)).reduce((a, [, v]) => a + (v.qtd || 0), 0);
-    u('df_marcos', brl(aguard)); u('df_marcos_sub', emFluxo + ' marco(s) em fluxo');
-    // fluxo 6m
+    // v3.91 FIX: somava colunas antigas do Kanban (nf_emitida/aguardando_pagamento) — os marcos estão nas colunas novas
+    { const ab = Object.entries(mk).filter(([k]) => k !== 'concluido'); const val = ab.reduce((a, [, v]) => a + (v.valor || 0), 0), qtd = ab.reduce((a, [, v]) => a + (v.qtd || 0), 0);
+      const top = ab.filter(([, v]) => v.qtd).sort((a, b) => (b[1].valor || 0) - (a[1].valor || 0)).slice(0, 2).map(([k, v]) => (v.label || k) + ' ' + brl(v.valor)).join(' · ');
+      u('df_marcos', brl(val)); u('df_marcos_sub', qtd + ' marco(s) em fluxo' + (top ? ' · ' + top : '')); }
+    // v3.91: PLANEJADO × REAL no período
+    { const box = document.getElementById('df_pr'), pr = x.planejado_real || {}, T = pr.totais;
+      const fdt = v => String(v || '').split('-').reverse().join('/'); u('df_pr_periodo', pr.de ? fdt(pr.de) + ' a ' + fdt(pr.ate) : '');
+      if (box) { if (!T) box.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Não consegui calcular: ' + String(pr.erro || 'sem dados').replace(/</g, '&lt;') + '</div>';
+        else { const pct = (r, p) => p > 0 && r >= 0 ? Math.round(r / p * 100) + '%' : '—';
+          const bloco = (tit, pl, re, corR, inv) => { const dif = re - pl; const bom = inv ? dif <= 0 : dif >= 0;
+            return `<div style="background:var(--bg4);border-radius:8px;padding:10px 12px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">${tit}</div>
+              <div style="display:flex;gap:14px;margin-top:6px;flex-wrap:wrap;"><div><div style="font-size:9.5px;color:var(--t3);">planejado</div><div style="font-size:16px;font-weight:700;">${brl(pl)}</div></div>
+              <div><div style="font-size:9.5px;color:var(--t3);">real</div><div style="font-size:16px;font-weight:700;color:${corR};">${brl(re)}</div></div>
+              <div><div style="font-size:9.5px;color:var(--t3);">real ÷ planejado</div><div style="font-size:16px;font-weight:700;color:${bom ? 'var(--green)' : 'var(--gold)'};">${pct(re, pl)}</div></div></div>
+              <div style="font-size:9.5px;color:${bom ? 'var(--green)' : 'var(--gold)'};margin-top:4px;">${dif >= 0 ? '+' : '−'} ${brl(Math.abs(dif))} ${inv ? (dif > 0 ? 'acima do planejado' : 'abaixo do planejado') : (dif >= 0 ? 'acima do planejado' : 'abaixo do planejado')}</div></div>`; };
+          const resPl = T.receita_planejada - T.despesa_planejada, resRe = T.receita_real - T.despesa_real;
+          box.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;">' + bloco('Receita', T.receita_planejada, T.receita_real, 'var(--green)') + bloco('Despesa', T.despesa_planejada, T.despesa_real, 'var(--red)', true) + bloco('Resultado (receita − despesa)', resPl, resRe, resRe >= 0 ? 'var(--green)' : 'var(--red)') + '</div>'
+            + ((pr.meses || []).some(m => m.situacao === 'futuro') ? '<div style="font-size:9.5px;color:var(--t3);margin-top:6px;">O período inclui dias futuros: neles só existe o planejado (o real ainda não aconteceu).</div>' : '')
+            + ((pr.erros || []).length ? '<div style="font-size:9.5px;color:var(--gold);margin-top:4px;">⚠ ' + pr.erros.join(' · ').replace(/</g, '&lt;') + '</div>' : ''); } } }
+    // v3.91: gráfico de 6 meses — receita e despesa, planejado (contorno) × real (cheio); meses futuros só planejado
     const fl = document.getElementById('df_fluxo');
-    if (fl) { const ms = x.fluxo_6m || []; if (!ms.length) fl.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Sem projeção — cadastre despesas/marcos ou conecte o QuickBooks.</div>';
-      else { const mx = Math.max(...ms.map(m => Math.max(Math.abs(m.entradas||0), Math.abs(m.saidas||0), 1)));
-        fl.innerHTML = '<div style="display:grid;grid-template-columns:repeat(' + ms.length + ',1fr);gap:8px;align-items:end;height:150px;">' + ms.map(m => { const he = Math.round((m.entradas||0)/mx*120), hs = Math.round((m.saidas||0)/mx*120); return '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;height:100%;justify-content:flex-end;" title="Entradas ' + brl(m.entradas) + ' · Saídas ' + brl(m.saidas) + ' · Saldo ' + brl(m.saldo) + '"><div style="display:flex;gap:2px;align-items:end;"><div style="width:14px;height:' + he + 'px;background:var(--green,#22d3a3);border-radius:2px 2px 0 0;"></div><div style="width:14px;height:' + hs + 'px;background:var(--red);border-radius:2px 2px 0 0;"></div></div><div style="font-size:8.5px;color:var(--t2);font-family:var(--M);">' + (m.mes||'') + '</div><div style="font-size:8.5px;color:' + _corTxt(((m.saldo||0) < 0 ? 'var(--red)' : 'var(--t1)')) + ';">' + brl(m.saldo) + '</div></div>'; }).join('') + '</div><div style="font-size:9px;color:var(--t3);margin-top:6px;">▮ entradas · ▮ saídas · valor = saldo final do mês</div>'; } }
+    if (fl) { const g = x.grafico_6m || {}; const ms = g.meses || [];
+      if (!ms.length) fl.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">' + (g.erro ? 'Não consegui montar o gráfico: ' + String(g.erro).replace(/</g, '&lt;') : 'Sem dados para o gráfico.') + '</div>';
+      else { const mx = Math.max(1, ...ms.flatMap(m => [m.receita_planejada, m.receita_real, m.despesa_planejada, m.despesa_real]));
+        const nomeMes = k => { const [a, mm] = k.split('-'); return ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][+mm - 1] + '/' + a.slice(2); };
+        const k = v => v >= 1e6 ? (v / 1e6).toFixed(1).replace('.', ',') + 'M' : v >= 1e3 ? Math.round(v / 1e3) + 'k' : Math.round(v);
+        const barra = (v, cor, cheio, tit) => `<div title="${tit}: ${brl(v)}" style="width:9px;height:${Math.max(2, Math.round(v / mx * 130))}px;border-radius:2px 2px 0 0;${cheio ? 'background:' + cor + ';' : 'border:1.5px dashed ' + cor + ';border-bottom:none;'}"></div>`;
+        fl.innerHTML = '<div style="display:grid;grid-template-columns:repeat(' + ms.length + ',1fr);gap:6px;align-items:end;height:170px;">' + ms.map(m => {
+          const fut = m.situacao === 'futuro';
+          return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;${m.situacao === 'atual' ? 'background:rgba(79,124,255,.06);border-radius:6px;' : ''}">
+            <div style="display:flex;gap:2px;align-items:flex-end;">${barra(m.receita_planejada, 'var(--green)', false, 'Receita planejada')}${fut ? '' : barra(m.receita_real, 'var(--green)', true, 'Receita real')}<span style="width:4px;"></span>${barra(m.despesa_planejada, 'var(--red)', false, 'Despesa planejada')}${fut ? '' : barra(m.despesa_real, 'var(--red)', true, 'Despesa real')}</div>
+            <div style="font-size:9.5px;color:var(--t2);margin-top:4px;font-family:var(--M);">${nomeMes(m.mes)}${m.situacao === 'atual' ? ' •' : ''}</div>
+            <div style="font-size:8.5px;color:${(fut ? m.resultado_planejado : m.resultado_real) >= 0 ? 'var(--green)' : 'var(--red)'};">${(fut ? m.resultado_planejado : m.resultado_real) >= 0 ? '+' : '−'}${k(Math.abs(fut ? m.resultado_planejado : m.resultado_real))}</div></div>`; }).join('') + '</div>'
+          + '<div style="font-size:9.5px;color:var(--t3);margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;"><span><span style="display:inline-block;width:9px;height:9px;background:var(--green);border-radius:2px;"></span> receita real</span><span><span style="display:inline-block;width:9px;height:9px;border:1.5px dashed var(--green);"></span> receita planejada</span><span><span style="display:inline-block;width:9px;height:9px;background:var(--red);border-radius:2px;"></span> despesa real</span><span><span style="display:inline-block;width:9px;height:9px;border:1.5px dashed var(--red);"></span> despesa planejada</span><span>· número = resultado do mês (real; planejado nos meses futuros)</span></div>'; } }
+    // v3.91: indicadores de saúde com nomes legíveis; sem dados → diz o motivo
     const kp = document.getElementById('df_kpis');
-    if (kp) { const ent = Object.entries(sd.kpis || {}).filter(([k, v]) => v != null && typeof v !== 'object'); kp.innerHTML = ent.length ? ent.map(([k, v]) => '<div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--bd);"><span style="color:var(--t2);">' + k.replace(/_/g,' ') + '</span><span style="font-family:var(--M);">' + (typeof v === 'number' ? (Math.abs(v) >= 1000 ? fmtBRL(v) : (Math.round(v*100)/100)) : v) + '</span></div>').join('') : '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Sem indicadores (QB desconectado?)</div>'; }
+    if (kp) { const NOMES = { saldo_caixa: 'Saldo em caixa', receita_mes: 'Receita do mês', receita_ano: 'Receita do ano', despesa_mes: 'Despesa do mês', despesa_ano: 'Despesa do ano', margem_liquida_pct: 'Margem líquida', ebitda_mes: 'EBITDA do mês', ebitda_margem_pct: 'Margem EBITDA', burn_rate_mensal: 'Queima mensal', runway_meses: 'Fôlego de caixa (meses)', liquidez_corrente: 'Liquidez corrente', contas_receber: 'Contas a receber', contas_pagar: 'Contas a pagar', working_capital: 'Capital de giro', cobertura_despesas_fixas: 'Cobertura de despesas fixas (x)', roi_pct: 'ROI do mês', patrimonio_liquido: 'Patrimônio líquido', contas_receber_vencido: 'A receber vencido', contas_pagar_vencido: 'A pagar vencido' };
+      const fmtK = (k, v) => /_pct$/.test(k) ? v + '%' : /runway|liquidez|cobertura/.test(k) ? (v >= 999 ? '∞ (sem queima)' : String(v).replace('.', ',')) : brl(v);
+      const ent = Object.entries(sd.kpis || {}).filter(([k, v]) => NOMES[k] && v != null && typeof v === 'number');
+      kp.innerHTML = ent.length ? ent.map(([k, v]) => '<div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--bd);"><span style="color:var(--t2);">' + NOMES[k] + '</span><b style="font-family:var(--M);' + (v < 0 ? 'color:var(--red);' : '') + '">' + fmtK(k, v) + '</b></div>').join('') + ((sd.motivos || []).length ? '<div style="font-size:10px;color:var(--t2);margin-top:6px;">' + sd.motivos.join(' · ') + '</div>' : '')
+        : '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">' + (sd.erro ? 'Erro ao calcular os indicadores: ' + String(sd.erro).replace(/</g, '&lt;') : 'Sem indicadores — o cálculo não retornou dados.') + '</div>'; }
     const ln = document.getElementById('df_lanc');
     if (ln) { const ls = x.ultimos_lancamentos || []; ln.innerHTML = ls.length ? '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + ls.map(l => '<tr style="border-bottom:1px solid var(--bd);"><td style="padding:5px;color:var(--t2);font-family:var(--M);font-size:10px;">' + (l.data||'') + '</td><td style="padding:5px;">' + (l.desc||'') + '</td><td style="padding:5px;text-align:right;color:' + ((l.tipo||'').match(/sa[ií]da|despesa|expense/i) || (l.valor||0) < 0 ? 'var(--red)' : 'var(--green,#22d3a3)') + ';font-family:var(--M);">' + brl(l.valor) + '</td></tr>').join('') + '</table>' : '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Sem lançamentos (QB desconectado?)</div>'; }
     u('dfAtualizado', cache ? '⚠ Dados de ' + _finFmtTs(cache.ts) : 'atualizado ' + new Date().toLocaleTimeString('pt-BR').substring(0,5) + (x.quickbooks?.conectado ? ' · QB ok' : ' · QB sem dados'));
@@ -28088,7 +28156,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.90] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.91] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -28104,7 +28172,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.90';
+window.__ATX_BUILD_ID__ = 'ATX-v3.91';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
