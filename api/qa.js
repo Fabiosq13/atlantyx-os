@@ -255,8 +255,13 @@ function analiseEstatica() {
   }
   if (semAuth.length) add('crítica', 'autenticação', `${semAuth.length} APIs aceitam chamadas sem nenhuma credencial`, 'api/*.js', null, semAuth.slice(0, 40).join(', '),
     'Criar lib/auth.js com verificação de uma chave/sessão (ex.: cabeçalho X-Atx-Key comparado a APP_ACCESS_TOKEN, ou login com sessão assinada) e exigir em todos os handlers, exceto os públicos por natureza (lead-capture, captura.html, cartão digital, callback OAuth do QuickBooks, crons com CRON_SECRET). Na tela, pedir a chave/login uma vez e enviar em todas as chamadas.');
+  // v3.91: API exportada com comGuarda → o guarda exige login e troca o CORS "*" pela origem do próprio site
+  // (só as rotas públicas por natureza mantêm "*"). Sem isto, a varredura estática acusava falsos positivos.
+  const guarda = lerArquivos(path.join(RAIZ, 'lib'), /qa-guard\.js$/, 1)[0];
+  const guardaAuth = !!(guarda && /lerSessao/.test(guarda.texto)), guardaCors = !!(guarda && /access-control-allow-origin/.test(guarda.texto));
+  const protegida = f => /export default comGuarda\(handler/.test(f.texto);
   // CORS aberto
-  const cors = apis.filter(f => /Access-Control-Allow-Origin['"],\s*['"]\*['"]/.test(f.texto)).map(f => f.arquivo);
+  const cors = apis.filter(f => /Access-Control-Allow-Origin['"],\s*['"]\*['"]/.test(f.texto) && !(guardaCors && protegida(f))).map(f => f.arquivo);
   if (cors.length) add('alta', 'CORS', `${cors.length} APIs liberam CORS para qualquer site (*)`, 'api/*.js', null, cors.slice(0, 30).join(', '),
     'Restringir Access-Control-Allow-Origin ao domínio do sistema (ex.: https://atlantyx-os.vercel.app) nas APIs internas; manter * só nas públicas (captura de lead).');
   // KV genérico: leitura/escrita de qualquer chave
@@ -273,10 +278,10 @@ function analiseEstatica() {
   for (const f of [...apis, ...libs, ...pubs]) { const re = /\beval\s*\(|new Function\s*\(/g; let m; while ((m = re.exec(f.texto))) add('alta', 'execução dinâmica', 'Uso de eval/new Function', f.arquivo, linhaDe(f.texto, m.index), f.texto.substring(m.index, m.index + 80), 'Remover eval/new Function; usar JSON.parse ou funções explícitas.'); }
   // Proxy aberto para a IA (custo)
   const claude = apis.find(f => /api[\\/]claude\.js$/.test(f.arquivo));
-  if (claude && !/verificarAcesso|APP_ACCESS|x-atx-key|authorization/i.test(claude.texto)) add('alta', 'abuso de custo', '/api/claude repassa pedidos à Anthropic sem autenticação — qualquer pessoa pode usar a chave da empresa', claude.arquivo, null, 'handler sem verificação de credencial', 'Exigir autenticação e limitar tamanho/quantidade de pedidos (rate limit por IP/sessão).');
+  if (claude && !(guardaAuth && protegida(claude)) && !/verificarAcesso|APP_ACCESS|x-atx-key|authorization/i.test(claude.texto)) add('alta', 'abuso de custo', '/api/claude repassa pedidos à Anthropic sem autenticação — qualquer pessoa pode usar a chave da empresa', claude.arquivo, null, 'handler sem verificação de credencial', 'Exigir autenticação e limitar tamanho/quantidade de pedidos (rate limit por IP/sessão).');
   // Upload aberto
   const up = apis.find(f => /media-upload\.js$/.test(f.arquivo));
-  if (up && !/verificarAcesso|APP_ACCESS|x-atx-key/i.test(up.texto)) add('alta', 'upload aberto', 'Upload de arquivos sem autenticação — o domínio pode ser usado para hospedar arquivos de terceiros', up.arquivo, null, 'POST /api/media-upload aceita qualquer arquivo', 'Exigir autenticação; restringir tipos (imagem/PDF/XML) e tamanho; validar content-type pelo conteúdo.');
+  if (up && !(guardaAuth && protegida(up) && /tipoReal/.test(up.texto)) && !/verificarAcesso|APP_ACCESS|x-atx-key/i.test(up.texto)) add('alta', 'upload aberto', 'Upload de arquivos sem autenticação — o domínio pode ser usado para hospedar arquivos de terceiros', up.arquivo, null, 'POST /api/media-upload aceita qualquer arquivo', 'Exigir autenticação; restringir tipos (imagem/PDF/XML) e tamanho; validar content-type pelo conteúdo.');
   // Frontend: innerHTML com dados sem escape (contagem) e links sem noopener
   const idx = pubs.find(f => /index\.html$/.test(f.arquivo));
   if (idx) {
@@ -301,10 +306,14 @@ async function sondasRuntime(base) {
   const probe = async (nome, url, init = {}) => {
     const t0 = Date.now();
     try { const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 12000);
-      const r = await fetch(url, { ...init, headers: { ...(init.headers || {}), 'x-atx-sem-credencial': '1' }, signal: ac.signal }); clearTimeout(tm);
+      // v3.91: sem seguir redirecionamento — numa URL de deployment protegida, a Vercel redireciona para a tela de login
+      // dela (200, HTML, sem os nossos cabeçalhos) e a sonda acusava SEC-004/SEC-005 que não existem no sistema
+      const r = await fetch(url, { ...init, redirect: 'manual', headers: { ...(init.headers || {}), 'x-atx-sem-credencial': '1' }, signal: ac.signal }); clearTimeout(tm);
       const txt = await r.text(); let j = null; try { j = JSON.parse(txt); } catch (_) {}
-      const s = { nome, url: url.replace(base, ''), status: r.status, ms: Date.now() - t0, cors: r.headers.get('access-control-allow-origin'), headers: Object.fromEntries(['content-security-policy', 'x-frame-options', 'strict-transport-security', 'x-content-type-options', 'referrer-policy', 'permissions-policy'].map(h => [h, r.headers.get(h)])), json: j };
-      sondas.push({ nome, status: s.status, ms: s.ms, cors: s.cors }); return s;
+      const loc = r.headers.get('location') || '';
+      const protegido = (r.status >= 300 && r.status < 400 && /vercel\.com|_vercel_sso|sso-api/i.test(loc)) || (r.status === 401 && !j && /vercel/i.test(txt.substring(0, 3000)));
+      const s = { nome, url: url.replace(base, ''), status: r.status, ms: Date.now() - t0, cors: r.headers.get('access-control-allow-origin'), headers: Object.fromEntries(['content-security-policy', 'x-frame-options', 'strict-transport-security', 'x-content-type-options', 'referrer-policy', 'permissions-policy'].map(h => [h, r.headers.get(h)])), json: j, protegido };
+      sondas.push({ nome, status: s.status, ms: s.ms, cors: s.cors, ...(protegido ? { protecao_vercel: true } : {}) }); return s;
     } catch (e) { sondas.push({ nome, erro: e.message }); return null; }
   };
   const post = (b) => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
@@ -324,7 +333,9 @@ async function sondasRuntime(base) {
     'Bloquear imediatamente chaves de credencial no /api/db (lista de chaves permitidas) e, após corrigir, revogar/renovar a conexão do QuickBooks (os tokens podem ter sido lidos).', 'api/db.js');
   // Cabeçalhos de segurança do site
   const home = await probe('Página inicial', base + '/');
-  if (home) {
+  if (home && home.protegido) add('info', 'configuração', 'Sondas barradas pela proteção de deployment da Vercel — cabeçalhos e rotas não puderam ser conferidos nesta URL', base,
+    'Rode a varredura de segurança a partir do domínio de produção (ex.: https://atlantyx-os.vercel.app), que é o endereço público do sistema.');
+  else if (home) {
     const falta = Object.entries(home.headers).filter(([, v]) => !v).map(([k]) => k);
     if (falta.length) add('média', 'cabeçalhos', 'Cabeçalhos de segurança ausentes no site', falta.join(', '),
       'Adicionar em vercel.json → "headers": Content-Security-Policy (fontes/scripts permitidos: self, fonts.googleapis.com, fonts.gstatic.com, cdnjs.cloudflare.com, cdn.jsdelivr.net), X-Frame-Options: DENY, X-Content-Type-Options: nosniff, Referrer-Policy: strict-origin-when-cross-origin, Permissions-Policy mínimo. HSTS a Vercel já aplica no domínio .vercel.app.', 'vercel.json');
@@ -332,7 +343,7 @@ async function sondasRuntime(base) {
   const dbCors = sondas.find(s => s.nome.startsWith('Leads (/api/db') && s.cors === '*');
   if (dbCors) add('alta', 'CORS', 'APIs de dados respondem com Access-Control-Allow-Origin: * — qualquer site pode ler os dados a partir do navegador de um usuário', 'CORS * em /api/db', 'Restringir a origem ao domínio do sistema.', 'api/db.js');
   const schema = await probe('Diagnóstico de schema (/api/financeiro?manutencao=schema)', base + '/api/financeiro?manutencao=schema');
-  if (schema && schema.status === 200) add('média', 'exposição de estrutura', 'Rota de manutenção expõe a estrutura do banco sem autenticação', '/api/financeiro?manutencao=schema → 200', 'Proteger rotas de manutenção/diagnóstico com autenticação de administrador.', 'api/financeiro.js');
+  if (schema && schema.status === 200 && schema.json && !schema.protegido) add('média', 'exposição de estrutura', 'Rota de manutenção expõe a estrutura do banco sem autenticação', '/api/financeiro?manutencao=schema → 200', 'Proteger rotas de manutenção/diagnóstico com autenticação de administrador.', 'api/financeiro.js');
   const up = await probe('Upload (/api/media-upload?status=1)', base + '/api/media-upload?status=1');
   // Variáveis de ambiente (só presença)
   const env = k => !!process.env[k];

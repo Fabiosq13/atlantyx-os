@@ -3,6 +3,23 @@ import { comGuarda } from '../lib/qa-guard.js';
 // Endpoint seguro — chave da API fica no servidor, nunca exposta no frontend
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
+
+// v3.91 (SEC-002): o login já é exigido pelo comGuarda; aqui, limite de pedidos por usuário (ou IP)
+// para conter abuso de custo. Contagem em memória da instância; chamadas internas e crons não contam.
+const LIMITE_MIN = 20, LIMITE_HORA = 200;
+const _uso = new Map();
+function excedeuLimite(req) {
+  if (req.credencial === 'interna' || req.credencial === 'cron') return null;
+  const h = req.headers || {};
+  const quem = req.sessao?.login || String(h['x-forwarded-for'] || h['x-real-ip'] || '').split(',')[0].trim() || 'anonimo';
+  const agora = Date.now(), lista = (_uso.get(quem) || []).filter(t => agora - t < 3600000);
+  if (lista.filter(t => agora - t < 60000).length >= LIMITE_MIN) return `Limite de ${LIMITE_MIN} pedidos por minuto à IA atingido — aguarde um instante.`;
+  if (lista.length >= LIMITE_HORA) return `Limite de ${LIMITE_HORA} pedidos por hora à IA atingido.`;
+  lista.push(agora); _uso.set(quem, lista);
+  if (_uso.size > 5000) for (const [k, v] of _uso) if (!v.length || agora - v[v.length - 1] > 3600000) _uso.delete(k);
+  return null;
+}
+
 async function handler(req, res) {
   // CORS — permite apenas seu domínio em produção
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -17,6 +34,9 @@ async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Método não permitido' });
   }
+
+  const limite = excedeuLimite(req);
+  if (limite) { res.setHeader('Retry-After', '60'); return res.status(429).json({ error: limite }); }
 
   // Chave da API vem da variável de ambiente do Vercel — nunca do frontend
   const apiKey = process.env.ANTHROPIC_API_KEY;

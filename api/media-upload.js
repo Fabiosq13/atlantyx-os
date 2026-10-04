@@ -127,6 +127,8 @@ async function handler(req, res) {
       const nome = (rows[0].nome || ('media.' + extDe(ct))).replace(/[^\w.\-]/g, '_');
       res.setHeader('Content-Type', ct);
       res.setHeader('Content-Disposition', 'inline; filename="' + nome + '"');
+      // v3.91 (SEC-003): fora imagem/vídeo/PDF (ex.: XML, ou arquivos antigos gravados com tipo do cliente), nada executa
+      if (!/^(image\/(jpeg|png|webp|gif)|video\/(mp4|quicktime|webm)|application\/pdf)$/i.test(ct)) res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'");
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       res.setHeader('Accept-Ranges', 'bytes');
       // v1.10: Range (players/validadores de vídeo pedem trechos) + HEAD (checagem de tamanho/tipo)
@@ -217,19 +219,22 @@ async function handler(req, res) {
     if (!buf.length) return res.status(400).json({ success: false, error: 'corpo vazio' });
     if (buf.length > 4.3 * 1024 * 1024) return res.status(413).json({ success: false, error: 'Arquivo acima de ~4,3 MB (limite da função). Reduza a duração/qualidade do vídeo ou envie manualmente ao Metricool.' });
     // v3.29 (SEC-009): só imagem, vídeo, PDF e XML — conferido pelo CONTEÚDO, não pelo nome (evita hospedar HTML/JS no domínio)
-    if (!tipoReal(buf)) return res.status(415).json({ success: false, error: 'Tipo de arquivo não permitido (aceitos: JPG, PNG, WEBP, GIF, MP4, WEBM, MOV, PDF, XML).' });
+    // v3.91 (SEC-003): grava com o tipo detectado pelo conteúdo — o Content-Type informado pelo cliente não vale
+    // (antes um XML podia ser gravado como text/html e servido como página no domínio do sistema)
+    const tipo = tipoReal(buf);
+    if (!tipo) return res.status(415).json({ success: false, error: 'Tipo de arquivo não permitido (aceitos: JPG, PNG, WEBP, GIF, MP4, WEBM, MOV, PDF, XML).' });
     const nomeIn = url.searchParams.get('name') || req.headers['x-file-name'] || ('media-' + Date.now());
     const safe = String(nomeIn).replace(/[^a-zA-Z0-9._-]/g, '_');
     const pasta = url.searchParams.get('pasta') || 'reels';
     if (token && blob) {
       const name = 'atlantyx/' + pasta + '/' + Date.now() + '-' + safe;
-      const out = await blob.put(name, buf, { access: 'public', contentType: ctype || 'application/octet-stream', token, addRandomSuffix: false });
+      const out = await blob.put(name, buf, { access: 'public', contentType: tipo, token, addRandomSuffix: false });
       console.log('[media-upload] blob ok', name, buf.length, 'bytes');
       return res.status(200).json({ success: true, url: out.url, bytes: buf.length, hospedagem: 'vercel-blob' });
     }
     const sql = await getNeon();
     if (!sql) return semBlob();
-    const out = await salvarNeon(req, sql, buf, ctype || 'application/octet-stream', safe, pasta);
+    const out = await salvarNeon(req, sql, buf, tipo, safe, pasta);
     console.log('[media-upload] neon ok', out.id, buf.length, 'bytes');
     return res.status(200).json({ success: true, url: out.url, bytes: buf.length, hospedagem: 'neon' });
   } catch (e) {

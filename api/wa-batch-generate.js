@@ -11,8 +11,16 @@ async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
+    const { filtro = 'novos', enviar = false, tom = 'Direto e objetivo', ultimo } = req.query;
+    const chaveLote = 'wa:ultimo_lote:' + String(filtro).substring(0, 20) + ':' + String(tom).substring(0, 40);
+    // v3.91 (QA-003): ao abrir a tela, devolve o último lote gerado (na hora) em vez de buscar no HubSpot e
+    // chamar a IA para cada lead (10s+ e custo a cada abertura). "↻ Atualizar" gera um lote novo.
+    if (ultimo) {
+      const l = await kvGet(chaveLote);
+      return res.status(200).json(l ? { success: true, ...l.value, salvo_em: l.em } : { success: true, vazio: true, mensagens: [] });
+    }
+
     // ── 1. BUSCAR LEADS DO HUBSPOT gerados pela prospecção ──
-    const { filtro = 'novos', enviar = false, tom = 'Direto e objetivo' } = req.query;
     console.log(`[S2-02+S7-05] Buscando leads HubSpot, filtro: ${filtro}`);
 
     const leads = await buscarLeadsHubSpot(filtro);
@@ -45,13 +53,14 @@ async function handler(req, res) {
       }
     }
 
-    return res.status(200).json({
-      success: true,
+    const lote = {
       total: leads.length,
       enviados: enviar === 'true' ? enviados : 0,
       pendentes_aprovacao: enviar !== 'true' ? leads.length : 0,
       mensagens,
-    });
+    };
+    if (enviar !== 'true') await kvSet(chaveLote, lote);
+    return res.status(200).json({ success: true, ...lote });
 
   } catch (error) {
     console.error('[ERRO wa-batch-generate]', error.message);
@@ -60,6 +69,29 @@ async function handler(req, res) {
 }
 
 // ── FUNÇÕES ──────────────────────────────────────────────────────────────────
+
+// v3.91: último lote gerado fica no kv_store (Neon) — sem banco, só não guarda
+let _sql = null;
+async function getSql() {
+  if (_sql) return _sql;
+  if (!process.env.DATABASE_URL) return null;
+  const { neon } = await import('@neondatabase/serverless');
+  _sql = neon(process.env.DATABASE_URL);
+  await _sql`CREATE TABLE IF NOT EXISTS kv_store (key TEXT PRIMARY KEY, value JSONB, updated_at TIMESTAMPTZ DEFAULT NOW())`;
+  return _sql;
+}
+async function kvGet(key) {
+  try { const sql = await getSql(); if (!sql) return null;
+    const r = await sql`SELECT value, updated_at FROM kv_store WHERE key = ${key} LIMIT 1`;
+    if (!r[0] || !r[0].value) return null;
+    return { value: typeof r[0].value === 'string' ? JSON.parse(r[0].value) : r[0].value, em: r[0].updated_at };
+  } catch (_) { return null; }
+}
+async function kvSet(key, value) {
+  try { const sql = await getSql(); if (!sql) return;
+    await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${key}, ${JSON.stringify(value)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
+  } catch (e) { console.error('[wa-batch-generate] não salvou o lote:', e.message); }
+}
 
 async function buscarLeadsHubSpot(filtro) {
   const token = process.env.HUBSPOT_TOKEN;

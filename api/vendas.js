@@ -403,6 +403,13 @@ async function handler(req, res) {
   let body = {}; try { body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}); } catch { return res.status(400).json({ success: false, error: 'JSON inválido' }); }
   const { action, payload = {} } = body;
   const base = `https://${req.headers['x-forwarded-host'] || req.headers.host || 'atlantyx-os.vercel.app'}`;
+  // v3.91 (QA-001/002): cron a cada 4 min recalcula o painel e grava no cache — a tela abre na hora
+  // (antes, quando o cache tinha passado de 12h ou a instância era nova, a primeira abertura levava 10s+)
+  if (req.method === 'GET' && req.query?.cron === 'painel') {
+    try { const t0 = Date.now(); const v = await _painelCalc(base); await cfgSet('cache:vendas:painel', v); _painelMemo = { em: Date.now(), p: Promise.resolve(v) };
+      return res.status(200).json({ success: true, cron: 'painel', ms: Date.now() - t0 }); }
+    catch (e) { console.error('[cron painel]', e.message); return res.status(500).json({ success: false, error: e.message }); }
+  }
   const sqlRun = async f => { await tabelas(); return f(await getSql()); };
   const acoes = {
     prop_config: () => propConfig(),

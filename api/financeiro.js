@@ -34,6 +34,49 @@ function _smtpConfig(user, pass) {
 // Padrão: POST /api/financeiro com { action, params }
 // ═══════════════════════════════════════════════════════════════════════════
 
+// v3.69/v3.91: telas que consultam o QuickBooks — resultado guardado no kv_store (ver bloco CACHE_FIN no handler)
+const CACHE_FIN = { dashboard_financeiro: 1, fluxo_detalhado: 1, extrato_diario: 1, extrato_mensal: 1, painel_resumo: 1 };
+const CACHE_FIN_FRESCO_S = 900;
+// ações que gravam algo que aparece nessas telas → o cache vira "desatualizado" (a tela mostra e recarrega em seguida)
+const MUTA_FIN = /_save$|_delete$|_salvar$|ocultar_qb$|_marcar_paga$|_lancar_qb$|_gerar_ocorrencias$|_criar|_replicar$|^conc_(aprovar|rejeitar|excluir_)|_mover_status$|_importar$|^marcos_previsao_(planejar|gerar|remover|dedup|data)$|^qb_excluir_lancamento$|^qb_desconectar$/;
+async function envelhecerCacheFin() {
+  try { const sql = await getSql(); await sql`UPDATE kv_store SET updated_at = NOW() - INTERVAL '1 hour' WHERE key LIKE 'cache:fin:%' AND updated_at > NOW() - INTERVAL '1 hour'`; } catch (_) {}
+}
+// v3.91 (QA-005/008/011/014/016): cron a cada 10 min — refaz as consultas abertas nas últimas 24h (cada uma numa
+// chamada própria à API, com _forcar, 3 por vez) e prepara a do dia nas telas de período móvel (Saldo Diário e
+// Fluxo Detalhado, cujo período padrão termina/começa em "hoje"). Assim a tela abre na hora em vez de esperar 10-17s.
+async function aquecerCacheFin(req) {
+  const t0 = Date.now(), sql = await getSql();
+  const usos = await sql`SELECT key, updated_at FROM kv_store WHERE key LIKE 'uso:fin:%' AND updated_at > NOW() - INTERVAL '1 day' ORDER BY updated_at DESC LIMIT 8`;
+  const dia = d => new Date(d).toISOString().substring(0, 10), hoje = dia(Date.now());
+  const somaDias = (iso, n) => dia(Date.parse(iso) + n * 864e5);
+  const alvos = new Map();
+  for (const u of usos) {
+    const resto = u.key.substring(8), i = resto.indexOf(':'); if (i < 0) continue;
+    const action = resto.substring(0, i); let params; try { params = JSON.parse(resto.substring(i + 1)); } catch (_) { continue; } // chave truncada: ignora
+    if (!CACHE_FIN[action] || !params || typeof params !== 'object') continue;
+    alvos.set(action + JSON.stringify(params), { action, params });
+    const usadoEm = dia(u.updated_at), n = Math.round((Date.parse(hoje) - Date.parse(usadoEm)) / 864e5);
+    if (n > 0 && action === 'extrato_diario' && params.data_fim === usadoEm && /^\d{4}-\d{2}-\d{2}$/.test(params.data_inicio || '')) {
+      const p2 = { ...params, data_inicio: somaDias(params.data_inicio, n), data_fim: somaDias(params.data_fim, n) }; alvos.set(action + JSON.stringify(p2), { action, params: p2 });
+    }
+    if (n > 0 && action === 'fluxo_detalhado' && !params.data_fim && /^\d{4}-\d{2}-\d{2}$/.test(params.data_inicio || '')) {
+      const p2 = { ...params, data_inicio: somaDias(params.data_inicio, n) }; alvos.set(action + JSON.stringify(p2), { action, params: p2 });
+    }
+  }
+  const base = `https://${req.headers['x-forwarded-host'] || req.headers.host}`;
+  const fila = [...alvos.values()].slice(0, 9), feitos = [], falhas = [];
+  const uma = async a => {
+    const ac = new AbortController(), tm = setTimeout(() => ac.abort(), 50000 - (Date.now() - t0));
+    try { const r = await fetch(base + '/api/financeiro', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: a.action, params: { ...a.params, _forcar: true } }), signal: ac.signal });
+      const j = await r.json().catch(() => ({})); if (!r.ok || j.success === false) throw new Error(j.error || 'HTTP ' + r.status); feitos.push(a.action); }
+    catch (e) { falhas.push(a.action + ': ' + e.message); } finally { clearTimeout(tm); }
+  };
+  // 3 por vez (o QuickBooks limita requisições simultâneas); não começa lote novo depois de 30s
+  while (fila.length && Date.now() - t0 < 30000) await Promise.all(fila.splice(0, 3).map(uma));
+  return { aquecidos: feitos.length, falhas, pulados: fila.length, ms: Date.now() - t0 };
+}
+
 async function handler(req, res) {
   // v1.91: cron diário do alerta de termos obrigatórios. A função decide se hoje é dia de
   // enviar (até o dia 10) e se há algo faltando — o cron só precisa chamar todo dia.
@@ -48,11 +91,18 @@ async function handler(req, res) {
       return res.status(500).json({ success: false, error: e.message });
     }
   }
+  if (req.query?.cron === 'aquecer_cache') {
+    try { const r = await aquecerCacheFin(req); console.log('[cron aquecer_cache]', JSON.stringify(r)); return res.status(200).json({ success: true, cron: 'aquecer_cache', ...r }); }
+    catch (e) { console.error('[cron aquecer_cache] erro:', e.message); return res.status(500).json({ success: false, error: e.message }); }
+  }
   // v2.35: diagnóstico de schema — lista as colunas que o sistema precisa e que NÃO existem no banco.
   // Existe porque o usuário do Neon não tem permissão de ALTER TABLE: as migrações do código falham
   // em silêncio (CNAB, cpfl_*, conciliado_em...). Esta rota gera o script para rodar no console.
   //   /api/financeiro?manutencao=schema
   if (req.method === 'GET' && req.query?.manutencao === 'schema') {
+    // v3.91 (SEC-005): diagnóstico de estrutura só para administrador (ou chamada interna/cron) quando o login está ligado
+    if (req.credencial && req.credencial !== 'aberta' && !req.sessao?.admin && !['interna', 'cron'].includes(req.credencial))
+      return res.status(req.sessao ? 403 : 401).json({ success: false, error: 'Rota de manutenção restrita a administradores.' });
     try {
       const sql = await getSql();
       const ESPERADO = {
@@ -286,21 +336,26 @@ async function handler(req, res) {
     // v3.69: telas que consultam o QuickBooks levavam ~10s a cada abertura (QA-001/006/009/016/019/021).
     // Resultado guardado no banco: até 3 min devolve na hora; até 12h devolve o último na hora marcado como
     // "desatualizado" e a tela pede a versão nova em seguida (params._forcar). Botão Atualizar força.
-    const CACHE_FIN = { dashboard_financeiro: 1, fluxo_detalhado: 1, extrato_diario: 1, extrato_mensal: 1, painel_resumo: 1 };
+    // v3.91 (QA-005/008/011/014/016): o cron aquecer_cache refaz estas consultas a cada 10 min, então o
+    // resultado só é tratado como desatualizado depois de 15 min; gravações no financeiro envelhecem o cache na hora.
     if (CACHE_FIN[action]) {
       const { _forcar, ...pChave } = params || {};
-      const chave = 'cache:fin:' + action + ':' + JSON.stringify(pChave).substring(0, 400);
+      const sufixo = action + ':' + JSON.stringify(pChave).substring(0, 400);
+      const chave = 'cache:fin:' + sufixo;
       let sqlC = null; try { sqlC = await getSql(); } catch (_) {}
       if (sqlC && !_forcar) {
-        try { const c = await sqlC`SELECT value, updated_at FROM kv_store WHERE key = ${chave} LIMIT 1`;
+        // marca o uso (o cron só aquece o que foi aberto nas últimas 24h)
+        const uso = Promise.resolve(sqlC`INSERT INTO kv_store (key, value, updated_at) VALUES (${'uso:fin:' + sufixo}, ${'1'}, NOW()) ON CONFLICT (key) DO UPDATE SET updated_at = NOW()`).catch(() => {});
+        try { const [c] = await Promise.all([sqlC`SELECT value, updated_at FROM kv_store WHERE key = ${chave} LIMIT 1`, uso]);
           if (c[0]) { const idade = (Date.now() - new Date(c[0].updated_at).getTime()) / 1000; const v = typeof c[0].value === 'string' ? JSON.parse(c[0].value) : c[0].value;
-            if (idade < 12 * 3600 && v) return res.status(200).json({ success: true, action, ...v, _cache: { idade_s: Math.round(idade), stale: idade > 180 } }); } } catch (_) {}
+            if (idade < 12 * 3600 && v) return res.status(200).json({ success: true, action, ...v, _cache: { idade_s: Math.round(idade), stale: idade > CACHE_FIN_FRESCO_S } }); } } catch (_) {}
       }
       const resultado = await acoes[action]();
       if (sqlC) { try { await sqlC`INSERT INTO kv_store (key, value, updated_at) VALUES (${chave}, ${JSON.stringify(resultado)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {} }
       return res.status(200).json({ success: true, action, ...resultado, _cache: { idade_s: 0, stale: false } });
     }
     const resultado = await acoes[action]();
+    if (MUTA_FIN.test(action)) await envelhecerCacheFin();
     return res.status(200).json({ success: true, action, ...resultado });
 
   } catch (error) {
