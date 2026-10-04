@@ -2308,11 +2308,11 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
     <!-- KPIs topo -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px;">
-      <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">Publicações</div><div style="font-size:22px;font-weight:700;" id="despPub">—</div></div>
+      <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">Publicações</div><div style="font-size:22px;font-weight:700;" id="despPub">—</div><div style="font-size:9px;color:var(--t3);margin-top:2px;line-height:1.35;" id="despPubSub"></div></div>
       <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">Impressões</div><div style="font-size:22px;font-weight:700;color:var(--blue);" id="despImp">—</div></div>
-      <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">Cliques</div><div style="font-size:22px;font-weight:700;color:var(--gold);" id="despCli">—</div></div>
+      <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">Cliques</div><div style="font-size:22px;font-weight:700;color:var(--gold);" id="despCli">—</div><div style="font-size:9px;color:var(--t3);margin-top:2px;line-height:1.35;" id="despCliSub"></div></div>
       <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">Engajamento</div><div style="font-size:22px;font-weight:700;color:var(--green);" id="despEng">—</div></div>
-      <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">Leads (HubSpot)</div><div style="font-size:22px;font-weight:700;color:var(--s7c);" id="despLeads">—</div></div>
+      <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">Leads</div><div style="font-size:22px;font-weight:700;color:var(--s7c);" id="despLeads">—</div><div style="font-size:9px;color:var(--t3);margin-top:2px;line-height:1.35;" id="despLeadsSub"></div></div>
       <div class="panel" style="padding:12px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">Custo / Lead</div><div style="font-size:22px;font-weight:700;" id="despCPL">—</div></div>
     </div>
 
@@ -26106,10 +26106,11 @@ async function carregarDesempenho() {
   try {
     const dias = parseInt(document.getElementById('despPeriodoSel')?.value || '30');
     const r = await fetch('/api/hubspot', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ action:'leads_por_campanha', properties: { dias: Math.max(dias, 90) } }) });
+      body: JSON.stringify({ action:'leads_por_campanha', properties: { dias } }) }); // v3.89: o período escolhido (antes era sempre ≥ 90 dias)
     const d = await r.json();
+    _leadsHubspot = {}; window._despLeadsInfo = null;
     if (d.success && d.leads_por_campanha) {
-      _leadsHubspot = d.leads_por_campanha;
+      _leadsHubspot = d.leads_por_campanha; window._despLeadsInfo = d;
       addLog('ok', '[Desemp] HubSpot: ' + Object.keys(_leadsHubspot).length + ' campanha(s) com leads via UTM (' + d.contatos_analisados + ' contatos analisados)');
     } else if (d.error) {
       addLog('warn', '[Desemp] HubSpot leads: ' + d.error);
@@ -26192,11 +26193,10 @@ function mesclarMetricasMc(rede, postsMc) {
     if (usadoP.has(ip) || usadoM.has(im)) continue; usadoP.add(ip); usadoM.add(im);
     const pub = pubs[ip], alvo = postsMc[im]; casados++;
     pub.metricas = pub.metricas || {};
-    if (alvo.impressoes != null) pub.metricas.imp = alvo.impressoes;
-    if (alvo.cliques != null) pub.metricas.cli = alvo.cliques;
-    if (alvo.curtidas != null) pub.metricas.cur = alvo.curtidas;
-    if (alvo.comentarios != null) pub.metricas.com = alvo.comentarios;
-    if (alvo.compartilhamentos != null) pub.metricas.sha = alvo.compartilhamentos;
+    // v3.89: o Metricool é a fonte da verdade do post casado — campo ausente vira 0 (antes ficava o valor antigo:
+    // o Instagram, que não informa clique em link, mostrava 123 cliques de uma leitura antiga)
+    pub.metricas.imp = alvo.impressoes || 0; pub.metricas.cli = alvo.cliques || 0; pub.metricas.cur = alvo.curtidas || 0;
+    pub.metricas.com = alvo.comentarios || 0; pub.metricas.sha = alvo.compartilhamentos || 0;
     if (alvo.url && !pub.url_publica) pub.url_publica = alvo.url;
     pub.metricas_origem = 'metricool'; pub.metricas_atualizado = new Date().toISOString();
   }
@@ -26220,7 +26220,7 @@ function _despAvisoMetricas(porRede) {
       if (!x.total_mc) return `<b>${r}</b>: o Metricool não tem publicações desta rede com métricas no período — ${esc(x.aviso || 'a rede pode não estar conectada ao mesmo perfil do Metricool usado pelo sistema.')}`;
       if ((x.totais?.impressoes || 0) > 0 && !x.casados) return `<b>${r}</b>: o Metricool registrou <b>${Number(x.totais.impressoes).toLocaleString('pt-BR')} impressões</b> em ${x.total_mc} post(s), mas nenhum deles foi associado às publicações desta tela (texto diferente ou post feito fora do sistema). Os números da rede estão no painel abaixo.`;
       if (x.aviso) return `<b>${r}</b>: ${esc(x.aviso)}`;
-      return `<b>${r}</b>: ${x.total_mc} post(s) no Metricool, ${x.casados} associado(s); as métricas vieram zeradas da rede.`; });
+      return `<b>${r}</b>: o Metricool tem ${x.total_mc} post(s) desta rede no período, mas a rede devolveu <b>todas as estatísticas zeradas</b>.` + (r === 'facebook' ? ' Como o Instagram (mesma conta Meta) devolve números, o mais provável é a <b>Página do Facebook conectada sem a permissão de estatísticas</b>: no Metricool, vá em Conexões › Facebook › reconectar e aceite todas as permissões (inclusive "ver insights da Página").' : ''); });
     const totaisMc = Object.entries(D).filter(([, x]) => x.ok && x.total_mc).map(([r, x]) => `${r}: ${x.total_mc} posts · ${Number(x.totais?.impressoes || 0).toLocaleString('pt-BR')} impressões · ${Number(x.totais?.cliques || 0).toLocaleString('pt-BR')} cliques`);
     const detalhe = linhas.join('<br>') + (totaisMc.length ? `<br><span style="color:var(--t2);">Totais direto do Metricool no período — ${totaisMc.join(' | ')}</span>` : '');
     avisos.push(`<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:8px;padding:10px 12px;font-size:10.5px;line-height:1.7;margin-top:10px;">
@@ -26235,7 +26235,7 @@ function _despAvisoMetricas(porRede) {
   const cliqueSemLead = Object.entries(porRede).filter(([r, m]) => m.cli > 0 && !m.leadsAuto);
   if (cliqueSemLead.length) {
     avisos.push(`<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:10px 12px;font-size:10.5px;line-height:1.7;margin-top:8px;">
-      <b>🔗 Houve cliques, mas nenhum lead registrado (${cliqueSemLead.map(([r, m]) => r + ': ' + m.cli).join(', ')})</b><br>
+      <b>🔗 Houve cliques, mas nenhum lead registrado (${cliqueSemLead.map(([r, m]) => r + ': ' + m.cli + ' clique(s) · ' + (m.visitas || 0) + ' visita(s) à captura').join(' | ')})</b><br>
       <span style="color:var(--t2);">Sobre a apuração: o clique vem da rede via Metricool — o LinkedIn só informa cliques de <b>página de empresa</b>; o Instagram <b>não informa</b> clique em link por post (e link na legenda nem é clicável). A medida confiável de "clique que chegou" passa a ser a <b>visita à página de captura</b>, registrada pelo sistema com a UTM (veja a Auditoria do Funil).</span><br>
       Um clique leva a pessoa ao site; ela só vira <b>lead</b> se preencher o formulário lá. Entre um e outro, o que costuma quebrar:<br>
       1. <b>Link sem UTM</b> — sem <code>utm_source</code>, o sistema não sabe que o lead veio daquela rede, e ele é contado como "origem desconhecida" em vez de aparecer aqui.<br>
@@ -26248,9 +26248,17 @@ function _despAvisoMetricas(porRede) {
 
 function renderDesempenho() {
   const campId = document.getElementById('despCampanhaSel')?.value || '';
+  const slugDe0 = id => (id || '').toString().replace(/[^a-z0-9_-]/gi,'-').toLowerCase().substring(0,40);
   // v3.46: o filtro de período agora vale para os totais (antes só limitava a busca de métricas e somava todo o histórico)
   const _diasP = parseInt(document.getElementById('despPeriodoSel')?.value || '0'); const _desdeP = _diasP ? Date.now() - _diasP * 864e5 : 0;
-  const pubs = (campId ? _publicacoes.filter(p => p.campanhaId === campId) : _publicacoes).filter(p => !_desdeP || Date.parse(p.agendado_para || p.data || 0) >= _desdeP);
+  // v3.89: só o que JÁ FOI publicado dentro da janela [início, agora]. Antes os agendados para o futuro entravam em
+  // qualquer período — por isso trocar 30 → 7 dias quase não mudava nada.
+  const _agora = Date.now(); const _tPub = p => Date.parse(p.agendado_para || p.data || 0);
+  const _base = (campId ? _publicacoes.filter(p => p.campanhaId === campId) : _publicacoes).filter(p => !p.nao_encontrado && !/erro|error|fail/i.test(String(p.status || '')));
+  const pubs = _base.filter(p => { const t = _tPub(p); return t && t <= _agora && (!_desdeP || t >= _desdeP); });
+  const _futuras = _base.filter(p => _tPub(p) > _agora).length;
+  const _rede = r => { r = String(r || '').toLowerCase(); return /insta|^ig$/.test(r) ? 'instagram' : /linked|^li$|lnkd/.test(r) ? 'linkedin' : /face|^fb$/.test(r) ? 'facebook' : 'outras'; };
+  const _mc = window._mcDiag || {}; const _usaMc = !campId && ['linkedin','instagram','facebook'].some(r => _mc[r]?.ok && _mc[r].totais);
 
   const tot = pubs.reduce((a,p) => ({
     imp: a.imp + (p.metricas?.imp||0), cli: a.cli + (p.metricas?.cli||0),
@@ -26258,7 +26266,15 @@ function renderDesempenho() {
     sha: a.sha + (p.metricas?.sha||0), leads: a.leads + (p.metricas?.leads||0),
   }), { imp:0, cli:0, cur:0, com:0, sha:0, leads:0 });
 
+  if (_usaMc) { // v3.89: todas as campanhas → números do próprio Metricool no período (batem com o que ele mostra)
+    ['imp','cli','cur','com','sha'].forEach(k => tot[k] = 0);
+    Object.values(_mc).forEach(x => { if (!x?.ok || !x.totais) return; const t = x.totais; tot.imp += t.impressoes || 0; tot.cli += t.cliques || 0; tot.cur += t.curtidas || 0; tot.com += t.comentarios || 0; tot.sha += t.compartilhamentos || 0; });
+  }
   const eng = tot.cur + tot.com + tot.sha;
+  // v3.89: visitas à página de captura no período (o clique que de fato chegou, pela UTM)
+  const _info = window._despLeadsInfo || {}; const _codsCamp = campId ? new Set([slugDe0(campId), _codCurto(campId), campId]) : null;
+  const _visitas = (_info.visitas || []).filter(v => !_codsCamp || _codsCamp.has(v.campanha));
+  const visitasTot = _visitas.reduce((a, v) => a + (v.n || 0), 0);
 
   // v1.5.4: leads automáticos HubSpot via UTM — o utm_campaign usa o slug do campanhaId
   const slugDe = id => (id || '').toString().replace(/[^a-z0-9_-]/gi,'-').toLowerCase().substring(0,40);
@@ -26274,7 +26290,9 @@ function renderDesempenho() {
   const leadsTotal = Math.max(leadsAuto, tot.leads); // auto tem prioridade; manual serve de fallback
 
   const setT = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
-  setT('despPub', pubs.length);
+  const pubsMc = _usaMc ? Object.values(_mc).reduce((a, x) => a + (x?.ok ? (x.totais?.posts || x.total_mc || 0) : 0), 0) : 0;
+  setT('despPub', _usaMc ? pubsMc : pubs.length);
+  { const e = document.getElementById('despPub'); if (e) e.title = (_usaMc ? 'Publicações no Metricool no período (todas as campanhas). ' + pubs.length + ' registradas no sistema' : pubs.length + ' publicações desta campanha no período') + (_futuras ? ' · ' + _futuras + ' agendadas para depois de hoje (não entram)' : ''); }
   setT('despImp', tot.imp.toLocaleString('pt-BR'));
   setT('despCli', tot.cli.toLocaleString('pt-BR'));
   setT('despEng', eng.toLocaleString('pt-BR'));
@@ -26282,6 +26300,10 @@ function renderDesempenho() {
   if (campId) pagosTot = _leadsDaCampanha(campId).pagos;
   else pagosTot = Object.values(_leadsHubspot).reduce((a,v) => a + (v.pagos||0), 0);
   setT('despLeads', leadsTotal + (leadsAuto > 0 ? ' 🔗' : '') + (pagosTot ? ' (' + pagosTot + ' 📣 pagos)' : ''));
+  // v3.89: de onde vem cada número
+  setT('despPubSub', (_usaMc ? 'no Metricool · ' + pubs.length + ' registradas no sistema' : 'publicadas no período') + (_futuras ? ' · ' + _futuras + ' agendadas (futuro, não contam)' : ''));
+  setT('despCliSub', (_usaMc ? 'cliques informados pelo Metricool' : 'cliques nos posts') + ' · ' + visitasTot.toLocaleString('pt-BR') + ' visitas à captura');
+  { const f = _info.fontes || {}; setT('despLeadsSub', _info.success === false || !window._despLeadsInfo ? 'sem resposta do HubSpot/sistema' : `${f.sistema || 0} pela página de captura · ${f.hubspot_utm || 0} pelo HubSpot (UTM)` + (_info.leads_sem_campanha ? ` · ${_info.leads_sem_campanha} sem campanha (não contam)` : '') + (_info.excluidos_teste ? ` · ${_info.excluidos_teste} de teste excluídos` : '')); }
 
   // Custo por lead — pega orçamento da campanha
   let cpl = '—';
@@ -26296,10 +26318,11 @@ function renderDesempenho() {
   const funil = document.getElementById('despFunil');
   if (funil) {
     const etapas = [
-      { label: 'Publicações', v: pubs.length, cor: 'var(--t1)' },
+      { label: 'Publicações', v: _usaMc ? pubsMc : pubs.length, cor: 'var(--t1)' },
       { label: 'Impressões', v: tot.imp, cor: 'var(--blue)' },
       { label: 'Cliques', v: tot.cli, cor: 'var(--gold)' },
       { label: 'Engajamento', v: eng, cor: 'var(--green)' },
+      { label: 'Visitas à captura', v: visitasTot, cor: 'var(--blue)' },
       { label: 'Leads', v: leadsTotal, cor: 'var(--s7c)' },
     ];
     const max = Math.max(...etapas.map(e => e.v), 1);
@@ -26324,22 +26347,25 @@ function renderDesempenho() {
       porRede[p.rede].cli += p.metricas?.cli||0;
       porRede[p.rede].eng += (p.metricas?.cur||0)+(p.metricas?.com||0)+(p.metricas?.sha||0);
     });
-    // v1.5.4: leads por rede do HubSpot (se campanha selecionada)
-    if (campId) {
-      const slug = slugDe(campId);
-      const porRedeHS = _leadsDaCampanha(campId).por_rede;
-      Object.entries(porRedeHS).forEach(([rede, n]) => {
-        if (porRede[rede]) porRede[rede].leadsAuto = n;
-        else porRede[rede] = { pubs:0, imp:0, cli:0, eng:0, leadsAuto:n };
-      });
-    }
+    // v3.89: todas as campanhas → cada rede com os números do Metricool no período (os do sistema ficam como referência)
+    if (_usaMc) ['linkedin','instagram','facebook'].forEach(r => { const x = _mc[r]; if (!x?.ok || !x.totais) return; const t = x.totais;
+      porRede[r] = { pubs: t.posts || x.total_mc || 0, imp: t.impressoes || 0, cli: t.cliques || 0, eng: (t.curtidas || 0) + (t.comentarios || 0) + (t.compartilhamentos || 0), sis: (porRede[r]?.pubs || 0) }; });
+    // leads e visitas por rede (nomes de origem normalizados: ig → instagram, li → linkedin, fb → facebook)
+    const _lpr = {};
+    if (campId) Object.entries(_leadsDaCampanha(campId).por_rede).forEach(([r, n]) => { _lpr[_rede(r)] = (_lpr[_rede(r)] || 0) + n; });
+    else { const conhec = new Set((_todasCampanhas||[]).flatMap(c => [slugDe(c.id), _codCurto(c.id)]));
+      Object.entries(_leadsHubspot).forEach(([k, v]) => { if (!conhec.has(k)) return; Object.entries(v.por_rede || {}).forEach(([r, n]) => { _lpr[_rede(r)] = (_lpr[_rede(r)] || 0) + n; }); }); }
+    const _vpr = {}; _visitas.forEach(v => { const r = _rede(v.origem); _vpr[r] = (_vpr[r] || 0) + (v.n || 0); });
+    Object.keys({ ..._lpr, ..._vpr }).forEach(r => { if (!porRede[r]) porRede[r] = { pubs:0, imp:0, cli:0, eng:0 }; });
+    Object.entries(porRede).forEach(([r, m]) => { m.leadsAuto = _lpr[r] || 0; m.visitas = _vpr[r] || 0; });
     const cores = { linkedin:'#0a66c2', instagram:'#e1306c', facebook:'#1877f2' };
     redesEl.innerHTML = Object.keys(porRede).length
       ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">' +
         Object.entries(porRede).map(([rede,m]) =>
           `<div style="background:var(--bg4);border-left:3px solid ${cores[rede]||'var(--bd)'};border-radius:6px;padding:10px;">
             <div style="font-size:12px;font-weight:700;text-transform:capitalize;color:${_corTxt(cores[rede]||'var(--t1)')};">${rede}</div>
-            <div style="font-size:10px;color:var(--t2);margin-top:5px;">${m.pubs} publicações</div>
+            <div style="font-size:10px;color:var(--t2);margin-top:5px;">${m.pubs} publicações${m.sis != null ? ' <span style="color:var(--t3);" title="registradas pelo sistema no período">(' + m.sis + ' no sistema)</span>' : ''}</div>
+            <div style="font-size:10px;color:var(--t2);">${(m.visitas || 0).toLocaleString('pt-BR')} visitas à captura</div>
             <div style="font-size:10px;color:${_corTxt(m.imp === 0 && m.pubs > 0 ? 'var(--gold)' : 'var(--t2)')};">${m.imp.toLocaleString('pt-BR')} impressões${m.imp === 0 && m.pubs > 0 ? ' ⚠' : ''} · ${m.cli} cliques</div>
             <div style="font-size:10px;color:var(--t2);">${m.eng} interações${m.leadsAuto ? ' · <span style=\"color:var(--green);font-weight:700;\">' + m.leadsAuto + ' leads 🔗</span>' : (m.cli > 0 ? ' · <span style=\"color:var(--t3);\" title=\"Houve cliques mas nenhum lead identificado — veja a explicação abaixo\">0 leads</span>' : '')}</div>
           </div>`).join('') + '</div>' + _despAvisoMetricas(porRede)
@@ -27986,7 +28012,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.88] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.89] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -28002,7 +28028,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.88';
+window.__ATX_BUILD_ID__ = 'ATX-v3.89';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

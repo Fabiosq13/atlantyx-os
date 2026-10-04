@@ -145,7 +145,11 @@ async function handler(req, res) {
       // Extrair utm_campaign da URL de origem
       const porCampanha = {};   // { camp_xxx: { total, por_rede: {linkedin: n, ...} } }
       let sem_utm = 0;
+      // v3.89: e-mails de teste (QA, @atlantyx.local, example/teste) não contam como lead
+      const ehTeste = em => /^qa[+@._-]|@atlantyx\.local$|@(teste|test|example)\.|\+qa@/i.test(String(em || ''));
+      let excluidos_teste = 0, fonte_hubspot = 0;
       for (const c of contatos) {
+        if (ehTeste(c.properties?.email)) { excluidos_teste++; continue; }
         const url = c.properties?.hs_analytics_first_url || '';
         const mCamp = url.match(/utm_campaign=([^&\s]+)/i);
         const mSrc  = url.match(/utm_source=([^&\s]+)/i);
@@ -155,7 +159,7 @@ async function handler(req, res) {
         const rede = mSrc ? decodeURIComponent(mSrc[1]).toLowerCase() : 'desconhecida';
         const medium = mMed ? decodeURIComponent(mMed[1]).toLowerCase() : 'social';
         if (!porCampanha[camp]) porCampanha[camp] = { total: 0, por_rede: {}, pagos: 0 };
-        porCampanha[camp].total++;
+        porCampanha[camp].total++; fonte_hubspot++;
         porCampanha[camp].por_rede[rede] = (porCampanha[camp].por_rede[rede] || 0) + 1;
         if (medium === 'paid' || medium === 'cpc' || medium === 'ads') porCampanha[camp].pagos++;
       }
@@ -171,7 +175,7 @@ async function handler(req, res) {
           const vistos = new Set(contatos.filter(c => (c.properties?.hs_analytics_first_url || '').match(/utm_campaign=/i)).map(c => String(c.properties?.email || '').toLowerCase()).filter(Boolean));
           const rows = await sql`SELECT email, origem, campanha, utm FROM leads WHERE criado_em >= ${new Date(desde).toISOString()} AND COALESCE(status,'') <> 'qa_teste' AND campanha IS NOT NULL AND campanha <> ''`;
           for (const l of rows) {
-            const em = String(l.email || '').toLowerCase(); if (em && vistos.has(em)) continue; if (em) vistos.add(em);
+            const em = String(l.email || '').toLowerCase(); if (ehTeste(em)) { excluidos_teste++; continue; } if (em && vistos.has(em)) continue; if (em) vistos.add(em);
             let u = l.utm; if (typeof u === 'string') { try { u = JSON.parse(u); } catch (_) { u = {}; } }
             const camp = String(l.campanha), rede = String((u && u.source) || l.origem || 'desconhecida').toLowerCase(), medium = String((u && u.medium) || '').toLowerCase();
             if (!porCampanha[camp]) porCampanha[camp] = { total: 0, por_rede: {}, pagos: 0 };
@@ -181,8 +185,18 @@ async function handler(req, res) {
           }
         }
       } catch (e) { console.warn('[hubspot leads_por_campanha] leads do sistema:', e.message); }
+      // v3.89: visitas à página de captura no período (o clique que CHEGOU, medido pela UTM) e leads sem campanha
+      let visitas = [], leads_sem_campanha = 0;
+      try {
+        if (process.env.DATABASE_URL) {
+          const { neon: neonFn } = await import('@neondatabase/serverless'); const sql = neonFn(process.env.DATABASE_URL);
+          try { visitas = await sql`SELECT LOWER(COALESCE(origem,'direto')) AS origem, COALESCE(campanha,'') AS campanha, COUNT(*)::int AS n FROM captura_visitas WHERE criado_em >= ${new Date(desde).toISOString()} AND COALESCE(campanha,'') NOT LIKE 'qa%' GROUP BY 1, 2`; } catch (_) {}
+          try { const r2 = await sql`SELECT email FROM leads WHERE criado_em >= ${new Date(desde).toISOString()} AND COALESCE(status,'') <> 'qa_teste' AND (campanha IS NULL OR campanha = '')`; leads_sem_campanha = r2.filter(x => !ehTeste(x.email)).length; } catch (_) {}
+        }
+      } catch (_) {}
 
       return res.status(200).json({
+        fontes: { hubspot_utm: fonte_hubspot, sistema: neon }, excluidos_teste, visitas, leads_sem_campanha,
         success: true,
         periodo_dias: dias,
         contatos_analisados: contatos.length,
