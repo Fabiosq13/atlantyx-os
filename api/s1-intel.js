@@ -1,4 +1,4 @@
-import { comGuarda } from '../lib/qa-guard.js';
+import { comGuarda, origemApp } from '../lib/qa-guard.js';
 // api/s1-intel.js
 // S1 · Inteligência Estratégica Contínua da Atlantyx
 // Os agentes analisam a própria empresa — riscos, finanças, mercado, posicionamento
@@ -6,7 +6,7 @@ import { comGuarda } from '../lib/qa-guard.js';
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', origemApp(req));
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();

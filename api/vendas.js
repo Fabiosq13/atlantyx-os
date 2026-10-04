@@ -1,4 +1,4 @@
-import { comGuarda } from '../lib/qa-guard.js';
+import { comGuarda, origemApp } from '../lib/qa-guard.js';
 // api/vendas.js — v3.24
 // ÁREA DE VENDAS (S7): Elaboração de Propostas com inteligência financeira + Painel de Vendas IA.
 //
@@ -382,7 +382,7 @@ async function propConverter(base, { id } = {}) {
 }
 
 async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Origin', origemApp(req)); res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
   let body = {}; try { body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}); } catch { return res.status(400).json({ success: false, error: 'JSON inválido' }); }
   const { action, payload = {} } = body;

@@ -1,15 +1,17 @@
-import { comGuarda } from '../lib/qa-guard.js';
+import { comGuarda, origemApp } from '../lib/qa-guard.js';
 // api/db.js
 // Base de Dados Central — Neon Postgres
 // Usa @neondatabase/serverless que é instalado automaticamente pelo Vercel
 
 async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', origemApp(req));
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();
   // v3.29 (SEC-002/004): chaves de credencial (tokens OAuth do QuickBooks etc.) nunca saem nem entram pelo navegador
-  { const b0 = req.body || {}; if (['get', 'set', 'delete', 'del'].includes(b0.action) && /^qb:|token|secret|senha|password|oauth|credencia|api[_-]?key/i.test(String(b0.key || '')))
+  // v3.85: vale também para action/key enviados na query string (ex.: ?action=get&key=qb:tokens) → 403 mesmo logado
+  { const b0 = { ...(req.query || {}), ...(req.body && typeof req.body === 'object' ? req.body : {}) };
+    if (['get', 'set', 'delete', 'del'].includes(b0.action) && /^qb:|token|secret|senha|password|oauth|credencia|api[_-]?key/i.test(String(b0.key || '')))
     return res.status(403).json({ success: false, error: 'Chave protegida — credenciais não são acessíveis por esta rota.' }); }
 
   const DATABASE_URL = process.env.DATABASE_URL;

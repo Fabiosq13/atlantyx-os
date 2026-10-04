@@ -1,4 +1,4 @@
-import { comGuarda } from '../lib/qa-guard.js';
+import { comGuarda, origemApp } from '../lib/qa-guard.js';
 // api/rh.js — v1.21
 // Cadastro de Funcionários (custo/hora + projetos que atua, pode ser mais de um)
 // + Gerente de RH IA (chat com contexto real de folha/alocação).
@@ -580,7 +580,7 @@ ${JSON.stringify(ctx).substring(0, 8000)}`;
 
 // ═══════════════════════════════════════════════════════════════════════════
 async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', origemApp(req));
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();

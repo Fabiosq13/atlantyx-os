@@ -1,11 +1,11 @@
-import { comGuarda } from '../lib/qa-guard.js';
+import { comGuarda, origemApp } from '../lib/qa-guard.js';
 // api/claude.js
 // Endpoint seguro — chave da API fica no servidor, nunca exposta no frontend
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 async function handler(req, res) {
-  // CORS — permite apenas seu domínio em produção
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS — só o domínio da aplicação (v3.85); a autenticação é feita antes, em comGuarda → lib/auth.js
+  res.setHeader('Access-Control-Allow-Origin', origemApp(req));
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 

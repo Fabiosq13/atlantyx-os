@@ -1,11 +1,11 @@
-import { comGuarda } from '../lib/qa-guard.js';
+import { comGuarda, origemApp } from '../lib/qa-guard.js';
 // api/decisor-map.js
 // S7-04 Agente de Mapeamento de Decisores
 // Recebe empresa → busca decisores C-level → enriquece no HubSpot → prepara para outreach
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', origemApp(req));
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();

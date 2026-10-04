@@ -1,4 +1,4 @@
-import { comGuarda } from '../lib/qa-guard.js';
+import { comGuarda, origemApp } from '../lib/qa-guard.js';
 // api/dev-pipeline.js — v1.23
 // Kanban de Linha de Produção de Sistemas — da ideia à documentação.
 // Cada fase tem um agente de IA especialista que GERA o artefato daquela etapa
@@ -225,7 +225,7 @@ Agora produza o artefato da sua fase (${info.label} — ${info.papel}).`;
 
 // ═══════════════════════════════════════════════════════════════════════════
 async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', origemApp(req));
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();

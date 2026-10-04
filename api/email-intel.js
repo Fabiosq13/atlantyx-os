@@ -1,4 +1,4 @@
-import { comGuarda } from '../lib/qa-guard.js';
+import { comGuarda, origemApp } from '../lib/qa-guard.js';
 // api/email-intel.js
 // Agente de Inteligência de E-mail — lê Gmail, classifica e roteia para os agentes certos
 // Conecta com: S1 (estratégico), S2 (marketing/RFPs), S7 (vendas), S9 (projetos), S3 (financeiro)
@@ -6,7 +6,7 @@ import { comGuarda } from '../lib/qa-guard.js';
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', origemApp(req));
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();

@@ -1,4 +1,4 @@
-import { comGuarda } from '../lib/qa-guard.js';
+import { comGuarda, origemApp } from '../lib/qa-guard.js';
 // api/s1-strategy.js
 // S1 — Planejamento Estratégico + Linha de Produtos
 // 10 agentes: Captação → Viabilidade → Pesquisa → Financeiro → Comitê → Fundador → Handoff → GP → OKR → Relatórios
@@ -66,7 +66,7 @@ async function deAgentCall({ payload = {} }, tipoAgente) {
 }
 
 async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', origemApp(req));
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();

@@ -1,4 +1,4 @@
-import { comGuarda } from '../lib/qa-guard.js';
+import { comGuarda, origemApp } from '../lib/qa-guard.js';
 // api/apollo.js — Enriquecimento via /people/bulk_match com details[{id}]
 // Hardened: try/catch em JSON.parse, action person_match adicionada
 
@@ -60,7 +60,7 @@ async function handler(req, res) {
     } catch (e) { console.error('[Apollo webhook]', e.message); return res.status(200).json({ ok: false, erro: e.message }); }
   }
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', origemApp(req));
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();

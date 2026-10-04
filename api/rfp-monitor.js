@@ -1,4 +1,4 @@
-import { comGuarda } from '../lib/qa-guard.js';
+import { comGuarda, origemApp } from '../lib/qa-guard.js';
 // api/rfp-monitor.js — v3.11
 // S2-01 + S2-04 — Monitor de RFPs/editais REAIS
 //
@@ -30,7 +30,7 @@ async function lerCache() { try { const { neon } = await import('@neondatabase/s
 async function gravarCache(v) { try { const { neon } = await import('@neondatabase/serverless'); const sql = neon(process.env.DATABASE_URL); await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('rfp:ultima_varredura', ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {} }
 
 async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', origemApp(req));
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();

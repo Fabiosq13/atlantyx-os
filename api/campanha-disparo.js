@@ -1,4 +1,4 @@
-import { comGuarda } from '../lib/qa-guard.js';
+import { comGuarda, origemApp } from '../lib/qa-guard.js';
 // api/campanha-disparo.js — v3.26
 // Disparo das campanhas por WhatsApp (Z-API) e E-mail (SMTP).
 // Antes: marcar WhatsApp/E-mail na Nova Campanha só gerava o texto (copy_por_rede) — nada era enviado,
@@ -315,7 +315,7 @@ async function status({ campanha_id = null }) {
 
 // ── handler ────────────────────────────────────────────────────────────────────
 async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', origemApp(req));
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();

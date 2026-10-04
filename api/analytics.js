@@ -1,11 +1,11 @@
-import { comGuarda } from '../lib/qa-guard.js';
+import { comGuarda, origemApp } from '../lib/qa-guard.js';
 // api/analytics.js
 // S2-09 Agente de Analytics + Dashboard de métricas consolidadas S2 e S7
 // Retorna KPIs em tempo real do HubSpot para o painel
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', origemApp(req));
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();

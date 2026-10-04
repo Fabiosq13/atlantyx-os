@@ -1,4 +1,4 @@
-import { comGuarda } from '../lib/qa-guard.js';
+import { comGuarda, origemApp } from '../lib/qa-guard.js';
 // api/qa.js — v3.16
 // Backend dos agentes de QUALIDADE (QA) e SEGURANÇA do Atlantyx OS.
 //
@@ -245,18 +245,25 @@ function analiseEstatica() {
   // Autenticação: handlers de API sem nenhuma verificação de credencial
   const publicosEsperados = /lead-capture|qb-oauth|media\.js$|health|captura|cartao|portal-cadastro|cron/;
   const semAuth = [];
+  // v3.85: a guarda central (comGuarda → lib/auth.js requireAuth) conta como autenticação quando a lib
+  // valida a sessão e falha fechada (não devolve 'aberta' sem login configurado)
+  const authLib = libs.find(f => /lib[\\/]auth\.js$/.test(f.arquivo)), guardaLib = libs.find(f => /lib[\\/]qa-guard\.js$/.test(f.arquivo));
+  const guardaCentral = !!(authLib && guardaLib && /export async function requireAuth/.test(authLib.texto) && /lerSessao/.test(authLib.texto) && !/return 'aberta'/.test(authLib.texto) && /requireAuth\(req, res, nome\)/.test(guardaLib.texto));
+  const temGuarda = f => guardaCentral && /export default comGuarda\(handler[,)]/.test(f.texto);
   for (const f of apis) {
-    if (!/export default (async function handler|comGuarda\(handler\))/.test(f.texto)) continue;
-    const guardaLib = lerArquivos(path.join(RAIZ, 'lib'), /qa-guard\.js$/, 1)[0];
-    const temAuth = /req\.headers\.(authorization|\[?['"]x-)|verificarAcesso|exigirAuth|APP_ACCESS|x-atx-key/i.test(f.texto) || (/comGuarda\(handler/.test(f.texto) && guardaLib && /lerSessao/.test(guardaLib.texto));
+    if (!/export default (async function handler|comGuarda\(handler[,)])/.test(f.texto)) continue;
+    const temAuth = /req\.headers\.(authorization|\[?['"]x-)|verificarAcesso|exigirAuth|requireAuth|APP_ACCESS|x-atx-key/i.test(f.texto) || temGuarda(f);
     const soCron = /CRON_SECRET/.test(f.texto);
     if (!temAuth && !publicosEsperados.test(f.arquivo)) semAuth.push(f.arquivo);
-    else if (soCron && !/verificarAcesso|APP_ACCESS|x-atx-key/i.test(f.texto) && !publicosEsperados.test(f.arquivo)) semAuth.push(f.arquivo + ' (só o cron é protegido)');
+    else if (soCron && !temGuarda(f) && !/verificarAcesso|APP_ACCESS|x-atx-key/i.test(f.texto) && !publicosEsperados.test(f.arquivo)) semAuth.push(f.arquivo + ' (só o cron é protegido)');
   }
   if (semAuth.length) add('crítica', 'autenticação', `${semAuth.length} APIs aceitam chamadas sem nenhuma credencial`, 'api/*.js', null, semAuth.slice(0, 40).join(', '),
     'Criar lib/auth.js com verificação de uma chave/sessão (ex.: cabeçalho X-Atx-Key comparado a APP_ACCESS_TOKEN, ou login com sessão assinada) e exigir em todos os handlers, exceto os públicos por natureza (lead-capture, captura.html, cartão digital, callback OAuth do QuickBooks, crons com CRON_SECRET). Na tela, pedir a chave/login uma vez e enviar em todas as chamadas.');
   // CORS aberto
-  const cors = apis.filter(f => /Access-Control-Allow-Origin['"],\s*['"]\*['"]/.test(f.texto)).map(f => f.arquivo);
+  // v3.85: * só é aceito nas rotas que servem conteúdo público (captura de lead e mídia publicada); nelas,
+  // a guarda central troca o * pelo domínio da aplicação em toda requisição que não seja pública
+  const corsPublico = /lead-capture\.js$|api[\\/]media\.js$|media-upload(-v[\d.]+)?\.js$/;
+  const cors = apis.filter(f => /Access-Control-Allow-Origin['"],\s*['"]\*['"]/.test(f.texto) && !(corsPublico.test(f.arquivo) && temGuarda(f))).map(f => f.arquivo);
   if (cors.length) add('alta', 'CORS', `${cors.length} APIs liberam CORS para qualquer site (*)`, 'api/*.js', null, cors.slice(0, 30).join(', '),
     'Restringir Access-Control-Allow-Origin ao domínio do sistema (ex.: https://atlantyx-os.vercel.app) nas APIs internas; manter * só nas públicas (captura de lead).');
   // KV genérico: leitura/escrita de qualquer chave
@@ -273,10 +280,10 @@ function analiseEstatica() {
   for (const f of [...apis, ...libs, ...pubs]) { const re = /\beval\s*\(|new Function\s*\(/g; let m; while ((m = re.exec(f.texto))) add('alta', 'execução dinâmica', 'Uso de eval/new Function', f.arquivo, linhaDe(f.texto, m.index), f.texto.substring(m.index, m.index + 80), 'Remover eval/new Function; usar JSON.parse ou funções explícitas.'); }
   // Proxy aberto para a IA (custo)
   const claude = apis.find(f => /api[\\/]claude\.js$/.test(f.arquivo));
-  if (claude && !/verificarAcesso|APP_ACCESS|x-atx-key|authorization/i.test(claude.texto)) add('alta', 'abuso de custo', '/api/claude repassa pedidos à Anthropic sem autenticação — qualquer pessoa pode usar a chave da empresa', claude.arquivo, null, 'handler sem verificação de credencial', 'Exigir autenticação e limitar tamanho/quantidade de pedidos (rate limit por IP/sessão).');
+  if (claude && !temGuarda(claude) && !/verificarAcesso|requireAuth|APP_ACCESS|x-atx-key|authorization/i.test(claude.texto)) add('alta', 'abuso de custo', '/api/claude repassa pedidos à Anthropic sem autenticação — qualquer pessoa pode usar a chave da empresa', claude.arquivo, null, 'handler sem verificação de credencial', 'Exigir autenticação e limitar tamanho/quantidade de pedidos (rate limit por IP/sessão).');
   // Upload aberto
   const up = apis.find(f => /media-upload\.js$/.test(f.arquivo));
-  if (up && !/verificarAcesso|APP_ACCESS|x-atx-key/i.test(up.texto)) add('alta', 'upload aberto', 'Upload de arquivos sem autenticação — o domínio pode ser usado para hospedar arquivos de terceiros', up.arquivo, null, 'POST /api/media-upload aceita qualquer arquivo', 'Exigir autenticação; restringir tipos (imagem/PDF/XML) e tamanho; validar content-type pelo conteúdo.');
+  if (up && !temGuarda(up) && !/verificarAcesso|requireAuth|APP_ACCESS|x-atx-key/i.test(up.texto)) add('alta', 'upload aberto', 'Upload de arquivos sem autenticação — o domínio pode ser usado para hospedar arquivos de terceiros', up.arquivo, null, 'POST /api/media-upload aceita qualquer arquivo', 'Exigir autenticação; restringir tipos (imagem/PDF/XML) e tamanho; validar content-type pelo conteúdo.');
   // Frontend: innerHTML com dados sem escape (contagem) e links sem noopener
   const idx = pubs.find(f => /index\.html$/.test(f.arquivo));
   if (idx) {
@@ -334,11 +341,20 @@ async function sondasRuntime(base) {
   const schema = await probe('Diagnóstico de schema (/api/financeiro?manutencao=schema)', base + '/api/financeiro?manutencao=schema');
   if (schema && schema.status === 200) add('média', 'exposição de estrutura', 'Rota de manutenção expõe a estrutura do banco sem autenticação', '/api/financeiro?manutencao=schema → 200', 'Proteger rotas de manutenção/diagnóstico com autenticação de administrador.', 'api/financeiro.js');
   const up = await probe('Upload (/api/media-upload?status=1)', base + '/api/media-upload?status=1');
+  // v3.85: rotas sensíveis precisam responder 401 a quem não tem credencial (corpo vazio → nada é executado)
+  const semLogin = [];
+  const ia = await probe('IA sem login (/api/claude)', base + '/api/claude', post({}));
+  if (ia && ia.status !== 401) semLogin.push(`/api/claude → HTTP ${ia.status}`);
+  if (up && up.status !== 401) semLogin.push(`/api/media-upload?status=1 → HTTP ${up.status}`);
+  const upPost = await probe('Upload sem login (POST /api/media-upload)', base + '/api/media-upload', post({}));
+  if (upPost && upPost.status !== 401) semLogin.push(`POST /api/media-upload → HTTP ${upPost.status}`);
+  if (semLogin.length) add('crítica', 'autenticação', 'APIs sensíveis respondem sem login (deveriam devolver 401)', semLogin.join(' · '),
+    'Confirmar que o login está ativo (usuário criado) e que a rota passa por comGuarda → lib/auth.js requireAuth.', 'lib/auth.js');
   // Variáveis de ambiente (só presença)
   const env = k => !!process.env[k];
   if (!env('CRON_SECRET')) add('alta', 'configuração', 'CRON_SECRET não configurado — rotas de cron podem ser disparadas por qualquer pessoa', 'CRON_SECRET ausente', 'Criar CRON_SECRET no Vercel e exigir Authorization: Bearer ${CRON_SECRET} em todas as rotas de cron.');
   { let ativa = false; try { const { authAtiva } = await import('../lib/acesso.js'); ativa = await authAtiva(); } catch (_) {}
-    if (!ativa) add('crítica', 'configuração', 'Login do sistema DESLIGADO — ainda não há usuário cadastrado', 'sem usuários', 'Abra o sistema e crie o administrador na tela de Primeiro acesso (login adm) — a partir daí todas as APIs internas exigem login. Depois cadastre os demais em Acesso › Usuários × Perfil.'); }
+    if (!ativa) add('crítica', 'configuração', 'Login do sistema não configurado — ainda não há usuário cadastrado (as APIs internas ficam bloqueadas com 401 até criar o administrador)', 'sem usuários', 'Abra o sistema e crie o administrador na tela de Primeiro acesso (login adm). Depois cadastre os demais em Acesso › Usuários × Perfil.'); }
   if (process.env.DATABASE_URL && !/sslmode=require/.test(process.env.DATABASE_URL)) add('baixa', 'configuração', 'DATABASE_URL sem sslmode=require explícito', 'conexão Neon', 'Incluir ?sslmode=require na string de conexão.');
   return { achados, sondas };
 }
@@ -603,7 +619,7 @@ async function analiseLeads(base, add) {
 }
 
 async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', origemApp(req));
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
   const b = req.body || {};

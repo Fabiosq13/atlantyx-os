@@ -1,4 +1,4 @@
-import { comGuarda } from '../lib/qa-guard.js';
+import { comGuarda, origemApp } from '../lib/qa-guard.js';
 // api/metricool.js
 // Integração Metricool — publicação automática + métricas de redes sociais
 // Env vars necessárias (Vercel):
@@ -1034,7 +1034,7 @@ async function handler(req, res) {
       return res.status(200).json({ success: true, passos: out }); }
     catch (e) { return res.status(500).json({ success: false, error: e.message }); }
   }
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', origemApp(req));
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
