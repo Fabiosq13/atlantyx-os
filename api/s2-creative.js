@@ -169,6 +169,12 @@ Gere o plano de impulsionamento em JSON:
 
     if (!acoes[action]) return res.status(400).json({ error: `Ação inválida. Disponíveis: ${Object.keys(acoes).join(', ')}` });
 
+    // v3.85: e-mail/cadência só gera com o briefing digitado — sem ele a IA devolvia conteúdo genérico
+    if (action === 'email_marketing' || action === 'email_cadencia') {
+      console.log(`[s2-creative] ${action} payload:`, JSON.stringify(payload).substring(0, 500));
+      if (!String(payload.assunto || '').trim()) return res.status(400).json({ success: false, error: 'Preencha o Assunto / Tema do e-mail' });
+    }
+
     const t0 = Date.now();
     const resultado = await acoes[action]();
     console.log(`[s2-creative] ${action} OK em ${Date.now()-t0}ms`);
@@ -551,13 +557,14 @@ Retorne:
 }
 
 // ── S2 EMAIL CADÊNCIA ─────────────────────────────────────────────────────────
-async function agEmailCadencia({ objetivo, segmento, num_emails = 5, intervalo_dias = 3 }) {
+async function agEmailCadencia({ assunto, objetivo, segmento, num_emails = 5, intervalo_dias = 3 }) {
   const system = `Você é o Agente de Cadência de E-mails da Atlantyx.
 Crie sequências de e-mail que nutrem o lead até a reunião.
 Tom: consultivo, nunca agressivo. Cada e-mail tem um único objetivo.
 Retorne APENAS JSON válido.`;
 
   const user = `Crie uma cadência de ${num_emails} e-mails:
+Tema / briefing: ${assunto} (toda a cadência deve desenvolver este tema)
 Objetivo: ${objetivo || 'Converter lead frio em reunião comercial'}
 Segmento: ${segmento || 'CIO/CTO de empresa de energia'}
 Intervalo: ${intervalo_dias} dias entre e-mails

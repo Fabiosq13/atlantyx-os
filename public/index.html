@@ -2797,6 +2797,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <div class="fg"><label class="fl">Segmento</label><select class="fsel" id="emailSeg"><option>CIO/CTO — Energia</option><option>CIO/CTO — Automotivo</option><option>CFO — Grandes Empresas</option><option>Leads frios no pipeline</option><option>Clientes ativos</option></select></div>
           <div class="fg"><label class="fl">Objetivo</label><select class="fsel" id="emailObj"><option>Gerar reunião comercial</option><option>Nutrir lead no funil</option><option>Reativar lead frio</option><option>Upsell em cliente ativo</option></select></div>
           <div class="fg"><label class="fl">Nº de e-mails (cadência)</label><select class="fsel" id="emailNum"><option value="1">1 e-mail</option><option value="3">3 e-mails</option><option value="5" selected>5 e-mails</option><option value="7">7 e-mails</option></select></div>
+          <div id="emailErro" style="display:none;color:var(--red);font-size:11px;margin:-2px 0 8px;"></div>
           <button class="btn btn-or" style="width:100%;" id="btnEmail" onclick="runEmail()">&#9670; Criar com IA</button>
         </div>
       </div>
@@ -7675,12 +7676,23 @@ async function runAds() {
 
 // INBOUND EMAIL
 async function runEmail() {
+  // v3.85: lê os campos no clique, valida antes de chamar a IA e mostra o erro ao lado do botão
   const tipo = document.getElementById('emailTipo')?.value || 'email_marketing';
-  const assunto = document.getElementById('emailAssunto')?.value || '';
-  const seg = document.getElementById('emailSeg')?.value || '';
-  const obj = document.getElementById('emailObj')?.value || '';
-  const num = parseInt(document.getElementById('emailNum')?.value || '5');
-  if (assunto.trim().length < 5) { toast('Escreva o Assunto / Tema do e-mail', 'error'); document.getElementById('emailAssunto')?.focus(); return; }
+  const assunto = (document.getElementById('emailAssunto')?.value || '').trim();
+  const seg = (document.getElementById('emailSeg')?.value || '').trim();
+  const obj = (document.getElementById('emailObj')?.value || '').trim();
+  const num = parseInt(document.getElementById('emailNum')?.value || '5') || 5;
+  const erroEl = document.getElementById('emailErro');
+  const erroCampo = (msg, id) => {
+    if (erroEl) { erroEl.textContent = msg; erroEl.style.display = 'block'; }
+    toast(msg, 'error'); document.getElementById(id)?.focus();
+  };
+  if (erroEl) { erroEl.textContent = ''; erroEl.style.display = 'none'; }
+  if (assunto.length < 5) return erroCampo('Preencha o Assunto / Tema do e-mail (mín. 5 caracteres)', 'emailAssunto');
+  if (!seg) return erroCampo('Escolha o Segmento', 'emailSeg');
+  if (!obj) return erroCampo('Escolha o Objetivo', 'emailObj');
+  const payload = { assunto, segmento: seg, objetivo: obj, num_emails: num };
+  console.log('[S2-Email] Enviando para /api/s2-creative', { action: tipo, payload });
   const btn = document.getElementById('btnEmail');
   const tag = document.getElementById('emailTag');
   const res = document.getElementById('emailResult');
@@ -7690,8 +7702,9 @@ async function runEmail() {
   addLog('info', '[S2-Email] ' + tipo + ': ' + assunto);
   try {
     const r = await fetch('/api/s2-creative', {method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({action:tipo,payload:{assunto,segmento:seg,objetivo:obj,num_emails:num}})});
-    const data = await r.json();
+      body:JSON.stringify({action:tipo,payload})});
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || data.success === false || data.error) throw new Error(data.error || ('HTTP ' + r.status));
     const out = data.email || data.cadencia || {};
     if (tipo === 'email_cadencia' && out.cadencia) {
       res.innerHTML = (out.cadencia||[]).map(e => `
@@ -7719,8 +7732,8 @@ async function runEmail() {
     addLog('ok', '[S2-Email] Criado: ' + (out.assunto_principal||assunto));
     // Adicionar ao Kanban
     adicionarAoKanban('E-mail: ' + (out.assunto_principal||assunto), 'E-mail', 'S2-EmailMarketing', '', (out.estrutura?.corpo||out.cadencia?.[0]?.texto_completo||''), '');
-  } catch(e) { res.innerHTML = '<div style="color:var(--red)">Erro: '+e.message+'</div>'; addLog('err','[S2-Email] Erro'); }
-  btn.disabled = false; btn.textContent = '* Criar com IA';
+  } catch(e) { res.innerHTML = '<div style="color:var(--red)">Erro: '+e.message+'</div>'; tag.textContent = 'Erro'; tag.className = 'tag off'; addLog('err','[S2-Email] Erro: ' + e.message); }
+  btn.disabled = false; btn.textContent = '◆ Criar com IA';
 }
 
 // SOCIAL DM
@@ -27687,7 +27700,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.84] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.85] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -27703,7 +27716,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.84';
+window.__ATX_BUILD_ID__ = 'ATX-v3.85';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
