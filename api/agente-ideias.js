@@ -235,9 +235,18 @@ async function sincronizar() {
       // PR que menciona a tarefa (aberto pelo Claude)
       let pr = null;
       try { const s = await (await fetch(`https://api.github.com/search/issues?q=${encodeURIComponent(`repo:${repo} is:pr ${r.issue_numero} in:body`)}`, { headers: H })).json();
-        const p = (s.items || [])[0]; if (p) pr = { numero: p.number, url: p.html_url, estado: p.state, merged: !!p.pull_request?.merged_at }; } catch (_) {}
-      const d = { ...(parse(r.dados) || {}), pr, issue_estado: iss.state };
+        const p = (s.items || [])[0]; if (p) pr = { numero: p.number, url: p.html_url, estado: p.state, merged: !!p.pull_request?.merged_at, criado_em: p.created_at, merged_em: p.pull_request?.merged_at || null, fechado_em: p.closed_at || null }; } catch (_) {}
+      // v3.85: andamento do Claude, lido do comentário que ele mantém atualizado na tarefa
+      let claude = null;
+      try { const cs = await (await fetch(`https://api.github.com/repos/${repo}/issues/${r.issue_numero}/comments?per_page=100`, { headers: H })).json();
+        const c = (Array.isArray(cs) ? cs : []).filter(x => /claude/i.test(x.user?.login || '')).pop();
+        if (c) { const t = String(c.body || ''); const girando = /user-attachments\/assets\/5ac382c7/.test(t);
+          const estado = girando ? 'trabalhando' : /encountered an error|encontrou um erro|falhou/i.test(t) ? 'erro' : 'concluiu';
+          claude = { estado, inicio: c.created_at, atualizado: c.updated_at, duracao: (t.match(/task in ((?:\d+h )?(?:\d+m )?\d+s)/) || [])[1] || null, url: c.html_url }; } } catch (_) {}
+      const ant = parse(r.dados) || {};
+      const d = { ...ant, pr, claude, issue_estado: iss.state };
       const implementada = iss.state === 'closed' && iss.state_reason !== 'not_planned' || (pr && pr.merged);
+      if (implementada) d.implementada_em = pr?.merged_em || iss.closed_at || new Date().toISOString();
       await sql`UPDATE agente_demandas SET dados = ${JSON.stringify(d)}, status = ${implementada ? 'implementada' : 'em_execucao'}, atualizado_em = NOW() WHERE id = ${r.id}`;
       if (implementada) mudou++;
     } catch (_) {}
@@ -326,8 +335,8 @@ async function handler(req, res) {
     const b = req.body || {}; const sql = await getSql();
     const acoes = {
       listar: async () => {
-        // sincroniza com o GitHub no máximo a cada 10 min (PR mesclado → card vai para Implementadas)
-        const us = await kvGet('agente:ideias:ultima_sync'); if (!us || Date.now() - Date.parse(us.em) > 600000) { await kvSet('agente:ideias:ultima_sync', { em: new Date().toISOString() }); try { await sincronizar(); } catch (_) {} }
+        // sincroniza com o GitHub no máximo a cada 3 min, ou na hora com { sync: true } (PR mesclado → card vai para Implementadas)
+        const us = await kvGet('agente:ideias:ultima_sync'); if (b.sync || !us || Date.now() - Date.parse(us.em) > 180000) { await kvSet('agente:ideias:ultima_sync', { em: new Date().toISOString() }); try { await sincronizar(); } catch (_) {} }
         const rows = (await sql`SELECT * FROM agente_demandas ORDER BY CASE status WHEN 'sugerida' THEN 0 WHEN 'aprovada' THEN 1 WHEN 'em_execucao' THEN 2 ELSE 3 END, prioridade DESC, criado_em DESC LIMIT 400`).map(linha);
         return { demandas: rows, config: await config(), ultimo_ciclo: await kvGet('agente:ideias:ultimo_ciclo'), ultima_noite: await kvGet('agente:qa:ultima_noite'), github: !!process.env.GITHUB_TOKEN };
       },

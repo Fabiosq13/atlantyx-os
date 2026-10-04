@@ -38,6 +38,13 @@ jobs:
           git config user.name "atlantyx-os-bot"; git config user.email "bot@atlantyx.local"
           PW_OK=0
           cp scripts/validar.mjs .validar-main.mjs   # o validador vem da main (o PR não consegue afrouxar a própria validação)
+          # v3.85: garante os rótulos e marca tarefas que nasceram sem eles (o GitHub descarta o rótulo sem avisar
+          # quando ele ainda não existe no repositório — e sem rótulo o PR nunca era aberto)
+          gh label create demanda-aprovada -R "$REPO" --color 22d3a3 --description "Demanda aprovada na Esteira — o PR espera o merge do fundador" 2>/dev/null || true
+          gh label create correcao-noturna -R "$REPO" --color 9c6dff --description "Erros do QA da madrugada — mescla sozinho se a validação passar" 2>/dev/null || true
+          gh label create precisa-revisao -R "$REPO" --color ff4d6d --description "Correção automática que não passou na validação" 2>/dev/null || true
+          for N in $(gh issue list -R "$REPO" --state open --limit 100 --json number,title,labels -q '.[] | select((.title|startswith("[Demanda aprovada]")) and ((.labels|map(.name)|index("demanda-aprovada"))|not)) | .number'); do gh issue edit "$N" -R "$REPO" --add-label demanda-aprovada || true; done
+          for N in $(gh issue list -R "$REPO" --state open --limit 100 --json number,title,labels -q '.[] | select((.title|startswith("[Correção noturna]")) and ((.labels|map(.name)|index("correcao-noturna"))|not)) | .number'); do gh issue edit "$N" -R "$REPO" --add-label correcao-noturna || true; done
           for LABEL in correcao-noturna demanda-aprovada; do
             for N in $(gh issue list -R "$REPO" --label "$LABEL" --state open --json number -q '.[].number'); do
               BR=$(git ls-remote --heads origin "claude/issue-$N-*" | awk '{print $2}' | sed 's#refs/heads/##' | tail -1)

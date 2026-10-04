@@ -20,6 +20,22 @@
     ['recusada', '✕ Recusadas e arquivadas', 'var(--t3)'],
   ];
   const quando = v => v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+  const ha = v => { const m = Math.round((Date.now() - Date.parse(v)) / 60000); return m < 1 ? 'agora' : m < 60 ? 'há ' + m + ' min' : m < 1440 ? 'há ' + Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') : 'há ' + Math.floor(m / 1440) + ' dia(s)'; };
+  // v3.85: andamento da implementação — o que o Claude está fazendo e quando terminou
+  function andamento(d) {
+    const x = d.dados || {}, c = x.claude, pr = x.pr, qa = d.squad === 'qa';
+    const FUNDO = { 'var(--green)': 'rgba(34,211,163,.13)', 'var(--blue)': 'rgba(79,124,255,.13)', 'var(--gold)': 'rgba(245,166,35,.13)', 'var(--red)': 'rgba(255,77,109,.13)' };
+    const chip = (cor, txt, url) => `<div style="font-size:9.5px;margin-top:4px;padding:3px 6px;border-radius:4px;background:${FUNDO[cor] || 'rgba(255,255,255,.05)'};color:${cor};line-height:1.4;">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:inherit;">${txt}</a>` : txt}</div>`;
+    if (d.status === 'implementada') return chip('var(--green)', '🚀 No ar' + (x.implementada_em ? ' desde ' + quando(x.implementada_em) : ''), pr?.url);
+    if (d.status !== 'em_execucao') return '';
+    if (pr && pr.estado === 'closed' && !pr.merged) return chip('var(--red)', `✕ PR #${pr.numero} fechado sem merge — reabra ou mova a demanda`, pr.url);
+    if (pr) return chip('var(--gold)', `📬 Claude terminou${c?.atualizado ? ' às ' + quando(c.atualizado) : ''}${c?.duracao ? ' (' + c.duracao + ')' : ''} — PR #${pr.numero} ${qa ? 'em validação automática' : 'aguarda o SEU merge'}`, pr.url);
+    if (!c) return chip('var(--t3)', '⏳ Na fila do GitHub — o Claude ainda não começou', d.issue_url);
+    if (c.estado === 'trabalhando') { const parado = Date.now() - Date.parse(c.atualizado) > 70 * 60000;
+      return parado ? chip('var(--red)', `⚠ Sem sinal do Claude ${ha(c.atualizado)} — abra a tarefa`, c.url) : chip('var(--blue)', `⚙ Claude trabalhando desde ${quando(c.inicio)} · última atualização ${ha(c.atualizado)}`, c.url); }
+    if (c.estado === 'erro') return chip('var(--red)', `❌ Claude parou com erro às ${quando(c.atualizado)} — abra a tarefa`, c.url);
+    return chip('var(--gold)', `✅ Claude terminou às ${quando(c.atualizado)}${c.duracao ? ' (' + c.duracao + ')' : ''} — abrindo o PR (até alguns minutos)`, c.url);
+  }
   const estrelas = n => '★'.repeat(Math.max(0, Math.min(5, +n || 0))) + '☆'.repeat(5 - Math.max(0, Math.min(5, +n || 0)));
 
   function abrir() {
@@ -43,7 +59,9 @@
   }
 
   async function carregar(manual) {
-    try { D = await api('listar'); render(); if (manual) nota('Esteira atualizada'); }
+    try { D = await api('listar', manual ? { sync: true } : {}); render(); if (manual) nota('Esteira atualizada com o GitHub');
+      // v3.85: com tarefa em implementação e a tela aberta, confere de novo a cada 1 min
+      clearTimeout(window._demAuto); if ((D.demandas || []).some(d => d.status === 'em_execucao')) window._demAuto = setTimeout(() => { if (document.getElementById('page-s0demandas')?.classList.contains('active')) carregar(); }, 60000); }
     catch (e) { const k = $('demKanban'); if (k) k.innerHTML = `<div style="color:var(--red);font-size:11px;padding:12px;">${esc(e.message)}</div>`; }
   }
   function render() {
@@ -81,6 +99,7 @@
       <div style="font-size:11px;font-weight:600;line-height:1.35;">${esc(d.titulo)}</div>
       <div style="font-size:9.5px;color:var(--t2);margin-top:3px;">${qa ? n + ' erro(s)' : `<span style="color:var(--gold);" title="impacto">${estrelas(x.impacto || d.prioridade)}</span> · esforço ${esc(x.esforco || '?')} · risco ${esc(x.risco || '?')}`}</div>
       ${d.issue_numero ? `<div style="font-size:9.5px;margin-top:3px;"><a href="${esc(d.issue_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--blue);">tarefa #${d.issue_numero}</a>${x.pr ? ` · <a href="${esc(x.pr.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--blue);">PR #${x.pr.numero}${x.pr.merged ? ' ✓ no ar' : ''}</a>` : ''}</div>` : ''}
+      ${andamento(d)}
       ${x.aviso ? `<div style="font-size:9.5px;color:var(--red);margin-top:3px;">${esc(x.aviso).substring(0, 140)}</div>` : ''}
     </div>`;
   }
