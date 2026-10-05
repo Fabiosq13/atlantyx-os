@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { createHash } from 'crypto';
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
 // SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
@@ -288,15 +289,19 @@ async function handler(req, res) {
     // v3.69: telas que consultam o QuickBooks levavam ~10s a cada abertura (QA-001/006/009/016/019/021).
     // Resultado guardado no banco: até 3 min devolve na hora; até 12h devolve o último na hora marcado como
     // "desatualizado" e a tela pede a versão nova em seguida (params._forcar). Botão Atualizar força.
-    const CACHE_FIN = { dashboard_financeiro: 1, fluxo_detalhado: 1, extrato_diario: 1, extrato_mensal: 1, painel_resumo: 1 };
+    // v3.99 (QA-005/007/009/011/014): fluxo_futuro também entra no cache; o "desatualizado" vale por 7 dias (antes 12h) —
+    // a tela mostra na hora e pede a versão nova em segundo plano, em vez de esperar 10s+ pelo QuickBooks.
+    const CACHE_FIN = { dashboard_financeiro: 1, fluxo_detalhado: 1, extrato_diario: 1, extrato_mensal: 1, painel_resumo: 1, fluxo_futuro: 1 };
     if (CACHE_FIN[action]) {
       const { _forcar, ...pChave } = params || {};
-      const chave = 'cache:fin:' + action + ':' + JSON.stringify(pChave).substring(0, 400);
+      // v3.99: parâmetros longos (overrides do fluxo_futuro) ganham hash — cortar em 400 caracteres misturava filtros diferentes
+      const pj = JSON.stringify(pChave);
+      const chave = 'cache:fin:' + action + ':' + (pj.length <= 400 ? pj : pj.substring(0, 300) + '#' + createHash('sha1').update(pj).digest('hex'));
       let sqlC = null; try { sqlC = await getSql(); } catch (_) {}
       if (sqlC && !_forcar) {
         try { const c = await sqlC`SELECT value, updated_at FROM kv_store WHERE key = ${chave} LIMIT 1`;
           if (c[0]) { const idade = (Date.now() - new Date(c[0].updated_at).getTime()) / 1000; const v = typeof c[0].value === 'string' ? JSON.parse(c[0].value) : c[0].value;
-            if (idade < 12 * 3600 && v) return res.status(200).json({ success: true, action, ...v, _cache: { idade_s: Math.round(idade), stale: idade > 180 } }); } } catch (_) {}
+            if (idade < 7 * 86400 && v) return res.status(200).json({ success: true, action, ...v, _cache: { idade_s: Math.round(idade), stale: idade > 180 } }); } } catch (_) {}
       }
       const resultado = await acoes[action]();
       if (sqlC) { try { await sqlC`INSERT INTO kv_store (key, value, updated_at) VALUES (${chave}, ${JSON.stringify(resultado)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {} }
@@ -316,13 +321,22 @@ async function handler(req, res) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 let _sqlCache = null;
+// v3.99: ensureTabelas são ~35 comandos em sequência (1 ida ao Neon cada) e rodava em TODO cold start, antes até
+// da leitura do cache — somava segundos às telas do financeiro. Agora roda só quando esta marca muda.
+// AO ALTERAR ensureTabelas (tabela/coluna/índice novo), TROQUE A MARCA para a migração rodar de novo.
+const _FIN_SCHEMA_VER = 'fin-schema-2026-10-05';
 async function getSql() {
   if (_sqlCache) return _sqlCache;
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL não configurada');
   const { neon } = await import('@neondatabase/serverless');
   _sqlCache = neon(url);
-  await ensureTabelas(_sqlCache);
+  let emDia = false;
+  try { const r = await _sqlCache`SELECT value FROM kv_store WHERE key = 'schema:financeiro' LIMIT 1`; emDia = r[0]?.value === _FIN_SCHEMA_VER; } catch (_) {}
+  if (!emDia) {
+    await ensureTabelas(_sqlCache);
+    try { await _sqlCache`INSERT INTO kv_store (key, value, updated_at) VALUES ('schema:financeiro', ${JSON.stringify(_FIN_SCHEMA_VER)}::jsonb, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {}
+  }
   return _sqlCache;
 }
 

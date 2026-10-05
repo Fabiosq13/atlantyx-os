@@ -611,6 +611,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="sbi s7" onclick="nav('s7propostas',this)">&#128221; Elaboração de Propostas <span class="nbx gn">IA</span></div>
       <div class="sbi s7" onclick="nav('s7pipe',this)">&#9647; Pipeline HubSpot <span class="nbx bl" id="dealCnt">—</span></div>
       <div class="sbi s7" onclick="nav('s7kpi',this)">&#9711; Metas + KPIs</div>
+      <div class="sbi s7" onclick="nav('s4crm',this)">&#9636; Vendas CRM · Forecast</div>
       <div class="sbi s7" onclick="nav('s7feed',this)">&#9889; Feed de Prospeccao <span class="nbx gn">novo</span></div>
       <div class="sbi s7" onclick="nav('s7cartao',this)">&#128100; Meu Cartao Digital <span class="nbx gn">novo</span></div>
       <div class="sg-sub">OUTREACH</div>
@@ -4537,7 +4538,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <button class="btn" style="font-size:10px;padding:5px 10px;color:var(--gold);border-color:var(--gold);" onclick="diagnosticarSaldoAbertura()" title="Ver de onde vem o saldo inicial, conta a conta">&#128269; Saldo de abertura</button>
       <button class="btn" style="font-size:10px;padding:5px 10px;color:var(--red);border-color:var(--red);" onclick="varrerDuplicados()" title="Procura lançamentos duplicados no QuickBooks num período inteiro">&#9888; Procurar duplicados</button>
       <button class="btn btn-g" onclick="limparOverridesFluxo()" style="font-size:10px;padding:5px 10px;">Limpar overrides</button>
-      <button class="btn btn-gn" id="btnFluxo" onclick="gerarFluxoMatriz()">&#9670; Recalcular Fluxo</button>
+      <button class="btn btn-gn" id="btnFluxo" onclick="gerarFluxoMatriz(true)">&#9670; Recalcular Fluxo</button>
     </div>
     <div class="panel">
       <div class="ph"><div class="pt">Matriz Categoria x Mes</div><span class="tag on">Saldo recalculado em cascata</span></div>
@@ -17194,15 +17195,18 @@ async function finApi(action, params = {}, opts = {}) {
     throw err;
   }
   // v3.69: resposta veio do cache e está desatualizada → busca a versão nova em segundo plano e recarrega a tela
-  if (d._cache && d._cache.stale && !params._forcar) _finAtualizarFundo(action, params);
+  if (d._cache && d._cache.stale && !params._forcar) _finAtualizarFundo(action, params, d._cache.idade_s);
   return d;
 }
 const _FIN_RECARREGA = { fluxo_detalhado: ['s3fluxodet', () => carregarFluxoDetalhado()], dashboard_financeiro: ['s3dashboard', () => carregarDashboardFinanceiro()],
-  extrato_diario: ['s3diario', () => carregarExtratoDiario()], extrato_mensal: ['s3mensal', () => carregarExtratoMensal()], painel_resumo: ['s3realizado', () => syncQuickBooks()] };
+  extrato_diario: ['s3diario', () => carregarExtratoDiario()], extrato_mensal: ['s3mensal', () => carregarExtratoMensal()], painel_resumo: ['s3realizado', () => syncQuickBooks()],
+  fluxo_futuro: ['s3fluxo', () => gerarFluxoMatriz()] }; // v3.99
 const _finFundo = {};
-function _finAtualizarFundo(action, params) {
+function _finAtualizarFundo(action, params, idadeS) {
   const k = action + JSON.stringify(params); if (_finFundo[k]) return; _finFundo[k] = 1;
-  try { toast('Mostrando os dados de alguns minutos atrás — atualizando com o QuickBooks…', 'info'); } catch (_) {}
+  // v3.99: o cache do servidor pode ter até 7 dias — o aviso diz a idade real
+  const idade = idadeS >= 86400 ? Math.round(idadeS / 86400) + ' dia(s)' : idadeS >= 3600 ? Math.round(idadeS / 3600) + 'h' : 'alguns minutos';
+  try { toast('Mostrando os dados de ' + idade + ' atrás — atualizando com o QuickBooks…', 'info'); } catch (_) {}
   finApi(action, Object.assign({}, params, { _forcar: true })).then(() => {
     const alvo = _FIN_RECARREGA[action]; const pg = alvo && document.getElementById('page-' + alvo[0]);
     if (alvo && pg && pg.classList.contains('active')) { try { alvo[1](); } catch (_) {} }
@@ -17213,7 +17217,12 @@ function _finAtualizarFundo(action, params) {
 // Usado no Dashboard Financeiro (s3dashboard) e no Fluxo Detalhado (s3fluxodet). Se a API demorar
 // mais que 12s ou falhar, a tela mostra a última carga bem-sucedida (localStorage) com o aviso
 // "⚠ Dados de [data/hora]" e um botão "↻ Tentar novamente" — nunca fica girando para sempre.
-const _FIN_TIMEOUT_MS = 12000;
+// v3.99 (QA-001/002/004): o limite de 12s ABORTAVA a requisição ("signal is aborted") mesmo com o servidor ainda
+// trabalhando — sem cache local a tela só mostrava erro. Agora: após _FIN_TIMEOUT_MS, se houver carga salva do
+// MESMO filtro, ela aparece e a resposta nova substitui sozinha quando chegar; sem ela, espera até o limite real
+// da função na Vercel (60s) em vez de desistir.
+const _FIN_TIMEOUT_MS = 8000;
+const _FIN_TIMEOUT_DURO_MS = 58000;
 const _FIN_CACHE_MAX = 3; // até 3 combinações de filtro por tela (o fluxo detalhado pode ser grande)
 function _finCacheLerTudo(tela) { try { return JSON.parse(localStorage.getItem('cache_' + tela) || '{}') || {}; } catch (_) { return {}; } }
 function _finCacheSalvar(tela, chave, dados) {
@@ -17231,18 +17240,31 @@ function _finCacheLer(tela, chave) {
   return k ? { ...tudo[k], chave: k, outroFiltro: true } : null;
 }
 // Busca com timeout; em falha devolve o cache (ou relança o erro se não houver cache)
-async function _finCarregarComFallback(tela, action, params, timeoutMs) { // v3.94: timeoutMs opcional (padrão 12s)
-  const chave = JSON.stringify(params);
+const _finFresco = {}; // v3.99: resposta que chegou depois do tempo-limite → a recarga da tela usa direto (sem nova chamada)
+async function _finCarregarComFallback(tela, action, params, timeoutMs) { // timeoutMs = espera antes de mostrar a carga salva
+  const { _forcar, ...pChave } = params || {}; // "_forcar" não muda o resultado: mesma chave de cache
+  const chave = JSON.stringify(pChave), kF = tela + '|' + chave;
+  const fr = _finFresco[kF]; delete _finFresco[kF];
+  if (fr && Date.now() - fr.ts < 60000) return { d: fr.d, cache: null };
+  const c0 = _finCacheLer(tela, chave), mesmo = c0 && !c0.outroFiltro ? c0 : null;
+  const req = finApi(action, params, { timeoutMs: _FIN_TIMEOUT_DURO_MS }).then(d => { _finCacheSalvar(tela, chave, d); return d; });
+  const LENTO = {}; let tm = null;
   try {
-    const d = await finApi(action, params, { timeoutMs: timeoutMs || _FIN_TIMEOUT_MS });
-    _finCacheSalvar(tela, chave, d);
-    return { d, cache: null };
+    const d = mesmo ? await Promise.race([req, new Promise(r => { tm = setTimeout(() => r(LENTO), timeoutMs || _FIN_TIMEOUT_MS); })]) : await req;
+    if (d !== LENTO) return { d, cache: null };
+    // demorou: mostra a última carga deste filtro e troca pela nova quando ela chegar (se a tela ainda estiver aberta)
+    req.then(dn => { const alvo = _FIN_RECARREGA[action], pg = alvo && document.getElementById('page-' + alvo[0]);
+      if (alvo && pg && pg.classList.contains('active')) { _finFresco[kF] = { d: dn, ts: Date.now() }; try { alvo[1](); } catch (_) {} } })
+      .catch(e => addLog('err', '[' + tela + '] atualização em segundo plano falhou: ' + e.message));
+    const e = new Error('o QuickBooks está demorando — atualizando em segundo plano, a tela troca sozinha quando terminar'); e.timeout = true;
+    addLog('warn', '[' + tela + '] resposta lenta — exibindo dados salvos de ' + _finFmtTs(mesmo.ts) + ' enquanto atualiza');
+    return { d: mesmo.dados, cache: { ts: mesmo.ts, outroFiltro: false, erro: e } };
   } catch (e) {
-    const c = _finCacheLer(tela, chave);
+    const c = c0;
     addLog(e.timeout ? 'warn' : 'err', '[' + tela + '] ' + e.message + (c ? ' — exibindo dados salvos de ' + _finFmtTs(c.ts) : ' — sem cache local'));
     if (!c) throw e;
     return { d: c.dados, cache: { ts: c.ts, outroFiltro: c.outroFiltro, erro: e } };
-  }
+  } finally { if (tm) clearTimeout(tm); }
 }
 function _finFmtTs(ts) { const d = new Date(ts); return d.toLocaleDateString('pt-BR').substring(0, 5) + ' ' + d.toLocaleTimeString('pt-BR').substring(0, 5); }
 // Aviso de falha num bloco próprio (acima do status da tela, para não brigar com os avisos do QuickBooks)
@@ -17295,7 +17317,8 @@ async function syncQuickBooks() {
   if (typeof addLog === 'function') addLog('info', '[S3] Sincronizando QuickBooks...');
 
   try {
-    const d = await finApi('painel_resumo');
+    // v3.99 (QA-013): cache local + espera sem desistir, como nas outras telas do QuickBooks
+    const { d, cache } = await _finCarregarComFallback('s3realizado', 'painel_resumo', {});
 
     if (!d.qb_configurado) {
       document.getElementById('f_lancamentos').innerHTML = `
@@ -17321,7 +17344,7 @@ async function syncQuickBooks() {
         if (Array.isArray(cr.itens)) { receberQBItems = cr.itens; _recQBCarregado = true; _recQBErro = ''; _recDashEm = Date.now(); try { renderReceberTable(); } catch (_) {} }
         const sc = document.getElementById('f_saldoCaixa'); const ks = sc && sc.parentElement && sc.parentElement.querySelector('.ks'); if (ks && d.saldoCaixaFonte) ks.textContent = 'saldo de hoje · igual ao Fluxo Detalhado'; }
       const tag = document.getElementById('qbTag');
-      if (tag) { tag.className = 'tag on'; tag.textContent = 'Sincronizado ' + new Date().toLocaleTimeString('pt-BR'); }
+      if (tag) { tag.className = cache ? 'tag hot' : 'tag on'; tag.textContent = cache ? '⚠ Dados de ' + _finFmtTs(cache.ts) : 'Sincronizado ' + new Date().toLocaleTimeString('pt-BR'); tag.title = cache ? String(cache.erro?.message || '') : ''; }
       if (typeof addLog === 'function') addLog('ok', `[S3] QB OK — ${d.lancamentos?.length || 0} lançamentos · saldo ${fmtBRL(d.saldoCaixa)}`);
     }
 
@@ -17870,17 +17893,20 @@ async function gerarOcorrenciasFuturas() {
 
 let _fluxoOverrides = {};
 
-async function gerarFluxoMatriz() {
+async function gerarFluxoMatriz(forcar) {
   popularSeletoresConta(); // v1.67
   const btn = document.getElementById('btnFluxo');
   if (btn) { btn.disabled = true; btn.textContent = 'Calculando...'; }
   try {
-    const d = await finApi('fluxo_futuro', { meses: 12, overrides: _fluxoOverrides, conta_id: document.getElementById('fluxo_conta')?.value || null });
+    // v3.99 (QA-014/015): cache (servidor + navegador) ao abrir; o botão "Recalcular" força o cálculo novo
+    const { d, cache } = await _finCarregarComFallback('s3fluxo', 'fluxo_futuro', { meses: 12, overrides: _fluxoOverrides, conta_id: document.getElementById('fluxo_conta')?.value || null, ...(forcar === true ? { _forcar: true } : {}) });
     renderFluxoMatriz(d);
-    if (typeof addLog === 'function') addLog('ok', '[S3] Fluxo futuro calculado');
+    _finAvisoFalha('f_fluxoResult', 'gerarFluxoMatriz', cache && cache.erro, cache);
+    if (typeof addLog === 'function') addLog('ok', '[S3] Fluxo futuro ' + (cache ? 'exibido do cache local' : 'calculado'));
   } catch (e) {
     if (typeof addLog === 'function') addLog('err', '[S3] ' + e.message);
     if (typeof toast === 'function') toast('Erro: ' + e.message, 'error');
+    _finAvisoFalha('f_fluxoResult', 'gerarFluxoMatriz', e, null);
   }
   if (btn) { btn.disabled = false; btn.textContent = '◇ Recalcular Fluxo'; }
 }
@@ -18156,7 +18182,7 @@ function renderKpisSaude(k) {
 // ═══════════════════════════════════════════════════════════════════════════
 // SALDO DIÁRIO
 // ═══════════════════════════════════════════════════════════════════════════
-const _DIARIO_TIMEOUT_MS = 15000; // v3.94: a API leva ~10s no QA; 15s antes de desistir
+const _DIARIO_TIMEOUT_MS = _FIN_TIMEOUT_MS; // v3.99: não desiste mais — após 8s mostra a carga salva e atualiza em segundo plano (QA-009/010)
 let _diarioSeq = 0, _diarioFalhas = 0;
 async function carregarExtratoDiario() {
   // Default: últimos 30 dias
@@ -18228,7 +18254,7 @@ async function carregarExtratoDiario() {
 // ═══════════════════════════════════════════════════════════════════════════
 // SALDO MENSAL
 // ═══════════════════════════════════════════════════════════════════════════
-const _MENSAL_TIMEOUT_MS = 20000;   // v3.94: a API chega a 17s no QA; 20s antes de desistir
+const _MENSAL_TIMEOUT_MS = _FIN_TIMEOUT_MS; // v3.99: não desiste mais — após 8s mostra a carga salva e atualiza em segundo plano (QA-011/012)
 const _MENSAL_CACHE_FRESCO_MIN = 5; // v3.94: dado salvo há menos de 5 min aparece como "salvo há X min"; acima disso, "desatualizado"
 let _mensalSeq = 0, _mensalFalhas = 0;
 async function carregarExtratoMensal() {
@@ -18248,7 +18274,7 @@ async function carregarExtratoMensal() {
   const seq = ++_mensalSeq;
   const st = document.getElementById('mensalStatus');
   // v3.94: mostra na hora a última carga boa deste ano/conta (localStorage) e atualiza em segundo plano;
-  // sem dado salvo, mostra o skeleton. Timeout de 20s (a API chega a 17s).
+  // sem dado salvo, mostra o skeleton. v3.99: sem desistência aos 20s — espera a resposta (até o limite da Vercel).
   const salvo = _finCacheLerTudo('s3mensal')[JSON.stringify(params)];
   let mostrouSalvo = false;
   if (salvo && salvo.dados) { try { _mensalRender(salvo.dados); mostrouSalvo = true; } catch (_) {} }
@@ -19903,7 +19929,7 @@ async function carregarFluxoDetalhado() {
   if (iEl && !iEl.value) { const d = new Date(); d.setDate(d.getDate() - 60); iEl.value = _fdIso(d); }
   const st = document.getElementById('fdStatus');
   const tbP = document.getElementById('fd_tbodyPassado'), tbF = document.getElementById('fd_tbodyFuturo');
-  if (tbP) tbP.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Carregando... <span style="color:var(--t3);font-size:9px;">(consultando QuickBooks — limite de 12s)</span></td></tr>';
+  if (tbP) tbP.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Carregando... <span style="color:var(--t3);font-size:9px;">(consultando QuickBooks)</span></td></tr>';
   if (tbF) tbF.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Carregando...</td></tr>';
   if (st) st.style.display = 'none';
   try {
@@ -19911,7 +19937,7 @@ async function carregarFluxoDetalhado() {
     const dIni = document.getElementById('fd_dataInicio')?.value || null;
     const dFim = document.getElementById('fd_dataFim')?.value || null;
     const contaSel = document.getElementById('fd_conta')?.value || null;
-    // v3.85: timeout de 12s; se falhar, usa a última carga boa salva no navegador
+    // v3.85/v3.99: após 8s mostra a última carga boa salva no navegador e atualiza em segundo plano
     const { d, cache } = await _finCarregarComFallback('s3fluxodet', 'fluxo_detalhado', { data_inicio: dIni, data_fim: dFim, incluir_simulados: incluirSim, conta_id: contaSel });
     _finAvisoFalha('fdStatus', 'carregarFluxoDetalhado', cache && cache.erro, cache);
     // v3.85: tempo de cada parte medido no servidor (realizado QB × futuro QB × Atlantyx) — aponta qual segmento está lento
@@ -26048,7 +26074,7 @@ async function carregarDashboardFinanceiro() {
       selAno.value = anoAtual;
       if (selMes && !selMes.value) selMes.value = String(new Date().getMonth()+1);
     }
-    // v3.85: timeout de 12s; se falhar, usa a última carga boa salva no navegador
+    // v3.85/v3.99: após 8s mostra a última carga boa salva no navegador e atualiza em segundo plano
     const _iv = _dashIntervalo(); // v3.91: período de/até
     const { d, cache } = await _finCarregarComFallback('s3dashboard', 'dashboard_financeiro', { mes: selMes?.value || null, ano: selAno?.value || null, conta_id: document.getElementById('dash_conta')?.value || null, data_inicio: _iv.de, data_fim: _iv.ate, ...(window._dfForcar ? { _forcar: true } : {}) }); window._dfForcar = false;
     const lbl = document.getElementById('dashPeriodoLabel');
@@ -26132,7 +26158,8 @@ async function carregarDashboardFinanceiro() {
     // v3.85: sem cache local — o "Carregando..." dá lugar ao erro com botão de retry
     if (st) st.style.display = 'none';
     _finAvisoFalha('dfStatus', 'carregarDashboardFinanceiro', e, null);
-    ['df_fluxo', 'df_kpis', 'df_lanc'].forEach(id => { const el = document.getElementById(id); if (el && /Carregando/.test(el.textContent)) el.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Não carregado — use ↻ Tentar novamente acima.</div>'; });
+    // v3.99 (QA-004): social e planejado×real também ficavam em "Carregando..."
+    ['df_social', 'df_pr', 'df_fluxo', 'df_kpis', 'df_lanc'].forEach(id => { const el = document.getElementById(id); if (el && /Carregando/.test(el.textContent)) el.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Não carregado — use ↻ Tentar novamente acima.</div>'; });
     u('dfAtualizado', '⛔ falha ao carregar');
     addLog('err', '[Dashboard Fin] ' + e.message);
   }
@@ -26522,8 +26549,7 @@ function _pubNova(p) { _pubMarcarNova(p); return p; }
 // ---------- Painel de Desempenho -------------------------------------------
 async function carregarDesempenho() {
   window._mcDiag = {}; _mcAvisoMetricas = null;
-  await carregarPublicacoes();
-  await verificarMetricool();
+  await Promise.all([carregarPublicacoes(), verificarMetricool()]); // v3.99: independentes — em paralelo
   // Popular select de campanhas
   const sel = document.getElementById('despCampanhaSel');
   if (sel) {
@@ -26532,6 +26558,13 @@ async function carregarDesempenho() {
     sel.innerHTML = '<option value="">Todas as campanhas</option>' +
       (_todasCampanhas || []).map(c => `<option value="${c.id}" ${c.id===atual?'selected':''}>${(c.nome||c.id).substring(0,40)}</option>`).join('');
   }
+  // v3.99 (QA-003): desenha já com as publicações do banco; HubSpot e Metricool vêm em paralelo e redesenham ao final
+  // (antes eram ~8 chamadas em fila e a tela ficava em "Carregando..." por 10s+)
+  try { renderDesempenho(); } catch (_) {}
+  await Promise.all([_despLeadsHubspot(), _despMetricasMc()]);
+  renderDesempenho();
+}
+async function _despLeadsHubspot() {
   // v1.5.4: leads automáticos do HubSpot via UTM (não bloqueia o resto se falhar)
   try {
     const dias = parseInt(document.getElementById('despPeriodoSel')?.value || '30');
@@ -26546,13 +26579,14 @@ async function carregarDesempenho() {
       addLog('warn', '[Desemp] HubSpot leads: ' + d.error);
     }
   } catch (e) { addLog('warn', '[Desemp] HubSpot leads: ' + e.message); }
-
+}
+async function _despMetricasMc() {
   // Se Metricool configurado, puxar métricas de posts e mesclar
   if (_mcConfigurado) {
     try { await sincronizarStatusMetricool(true); } catch (_) {} // v3.52: links públicos e posts da fila antes de casar as métricas
     const dias = parseInt(document.getElementById('despPeriodoSel')?.value || '30');
     const ini = new Date(Date.now() - dias * 864e5).toISOString().substring(0, 10);
-    for (const rede of ['linkedin','instagram','facebook']) {
+    await Promise.all(['linkedin','instagram','facebook'].map(async rede => { // v3.99: as 3 redes em paralelo
       try {
         const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({ action:'metricas_posts', payload: { rede, inicio: ini } }) });
@@ -26571,10 +26605,9 @@ async function carregarDesempenho() {
           }
         }
       } catch (e) { addLog('warn', '[Desemp] ' + rede + ': ' + e.message); }
-    }
+    }));
     salvarPublicacoes();
   }
-  renderDesempenho();
 }
 
 // v1.42: casamento robusto entre a publicação registrada e o post do Metricool.
@@ -28442,7 +28475,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.98] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.99] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -28458,7 +28491,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.98';
+window.__ATX_BUILD_ID__ = 'ATX-v3.99';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
