@@ -8343,9 +8343,9 @@ async function rfpBaixarPdf() {
       r.valor || '—', { text: r.prazo_submissao || r.prazo || '—', color: '#A16207', bold: true }, r.compatibilidade != null ? r.compatibilidade + '%' : '—']);
     pdfMake.createPdf({ pageOrientation: 'landscape', pageMargins: [30, 36, 30, 36], defaultStyle: { fontSize: 9 },
       content: [{ text: 'ATLANTYX · MONITOR DE RFPs', color: '#00708A', bold: true, fontSize: 9, characterSpacing: 2 }, { text: 'Editais abertos — ' + hoje, fontSize: 16, bold: true, margin: [0, 4, 0, 2] },
-        { text: l.length + ' edital(is) do PNCP, ordenados por aderência. Clique no nome para abrir o edital.', fontSize: 9, color: '#555', margin: [0, 0, 0, 10] },
+        { text: l.length + ' edital(is) do PNCP e oportunidades Petrobras (Petronect), ordenados por aderência. Clique no nome para abrir o edital.', fontSize: 9, color: '#555', margin: [0, 0, 0, 10] },
         { table: { headerRows: 1, widths: [16, '*', 90, 80, 50], body: [[{ text: '#', bold: true }, { text: 'Edital / órgão', bold: true }, { text: 'Valor estimado', bold: true }, { text: 'Propostas até', bold: true }, { text: 'Aderência', bold: true }], ...linhas] }, layout: 'lightHorizontalLines' }],
-      footer: (p, t) => ({ text: 'Fonte: PNCP · Atlantyx OS · ' + p + '/' + t, alignment: 'right', fontSize: 7, color: '#999', margin: [0, 0, 30, 0] }) }).download('RFPs_' + new Date().toISOString().substring(0, 10) + '.pdf');
+      footer: (p, t) => ({ text: 'Fontes: PNCP e Petronect (e-mail) · Atlantyx OS · ' + p + '/' + t, alignment: 'right', fontSize: 7, color: '#999', margin: [0, 0, 30, 0] }) }).download('RFPs_' + new Date().toISOString().substring(0, 10) + '.pdf');
   } catch (e) { toast('PDF: ' + e.message, 'error'); }
 }
 async function rfpEnviarEmail() {
@@ -8361,6 +8361,49 @@ async function rfpEnviarEmail() {
     if (!d.success) throw new Error(d.error || 'HTTP ' + r.status);
     toast('Lista enviada para ' + d.para.join(', '), 'success'); addLog('ok', '[S2-04] Lista de ' + d.total + ' RFPs enviada por e-mail para ' + d.para.join(', '));
   } catch (e) { toast('Não enviou: ' + e.message, 'error'); }
+}
+// v3.97: oportunidades da Petrobras lidas dos e-mails do Serviço de Notificação Petronect
+function rfpPetronectBarra(p) {
+  const e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  p = p || {};
+  const quando = p.atualizado_em ? new Date(p.atualizado_em).toLocaleString('pt-BR') : null;
+  const st = window._petroLendo ? '<span style="color:var(--blue);">' + e(window._petroLendo) + '</span>'
+    : p.erro ? '<span style="color:var(--red);">&#9888; ' + e(p.erro) + '</span>'
+    : quando ? 'Caixa <b>' + e(p.conta || '') + '</b> · ' + (p.emails_avaliados || 0) + ' e-mail(s) avaliados · <b>' + (p.aderentes_abertas || 0) + '</b> oportunidade(s) aderentes em aberto · última leitura ' + e(quando)
+    : 'Ainda não lido — clique para ler os e-mails dos últimos 3 meses.';
+  return '<div id="rfpPetroBox" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;text-align:left;font-size:10.5px;color:var(--t2);background:var(--bg3);border:1px solid var(--bd);border-radius:6px;padding:8px 10px;margin-bottom:10px;">'
+    + '<b style="color:var(--t1);">&#128231; Petronect (Petrobras)</b><span id="rfpPetroSt" style="flex:1;min-width:200px;">' + st + '</span>'
+    + '<button class="btn btn-g" style="font-size:10px;" id="btnPetro" ' + (window._petroLendo ? 'disabled ' : '') + 'onclick="rfpLerPetronect()">Ler e-mails (3 meses)</button></div>';
+}
+function rfpPetronectAuto(p, eraCache) {
+  // ao abrir a tela: lê os e-mails novos se a última leitura tem mais de 6h (ou nunca foi feita)
+  if (!eraCache || window._petroLendo || window._petroAutoFeito) return;
+  const ult = p?.atualizado_em ? new Date(p.atualizado_em).getTime() : 0;
+  if (Date.now() - ult < 6 * 3600e3) return;
+  window._petroAutoFeito = true; rfpLerPetronect(true);
+}
+async function rfpLerPetronect(auto) {
+  if (window._petroLendo) return;
+  const set = t => { window._petroLendo = t; const el = document.getElementById('rfpPetroSt'); if (el) el.innerHTML = '<span style="color:var(--blue);">' + String(t).replace(/</g, '&lt;') + '</span>'; const b = document.getElementById('btnPetro'); if (b) b.disabled = true; };
+  let avaliados = 0, aderentes = 0, erro = null, d = null;
+  try {
+    for (let i = 0; i < 10; i++) {
+      set('Lendo e-mails da Petronect' + (i ? ' (parte ' + (i + 1) + ')' : '') + '… ' + (avaliados ? avaliados + ' avaliados até agora' : 'pode levar até 1 minuto'));
+      const r = await fetch('/api/rfp-monitor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'petronect', dias: 90 }) });
+      const txt = await r.text(); try { d = JSON.parse(txt); } catch (_) { throw new Error(r.status === 504 ? 'tempo limite do servidor (HTTP 504)' : 'HTTP ' + r.status); }
+      if (!d.success) throw new Error(d.error || 'HTTP ' + r.status);
+      avaliados += d.diag?.avaliados_agora || 0; aderentes += d.diag?.aderentes_novas || 0;
+      if (d.erro) { erro = d.erro; break; }
+      if (!(d.diag?.faltam > 0) || !(d.diag?.avaliados_agora > 0)) break;
+    }
+  } catch (e) { erro = e.message; }
+  window._petroLendo = null;
+  if (erro) { toast('Petronect: ' + erro, 'error'); addLog('err', '[S2-04] Petronect: ' + erro); }
+  else { addLog('success', '[S2-04] Petronect: ' + avaliados + ' e-mail(s) avaliados, ' + aderentes + ' oportunidade(s) aderente(s) nova(s)' + (d?.diag ? ' · ' + d.diag.encontrados + ' e-mail(s) da Petronect nos últimos 90 dias em ' + (d.diag.conta || '') : ''));
+    if (!auto || aderentes) toast('Petronect: ' + avaliados + ' e-mail(s) lidos · ' + aderentes + ' oportunidade(s) aderente(s) nova(s)', 'success'); }
+  // recarrega a lista (última varredura do PNCP + Petronect) sem refazer a busca no PNCP
+  if (!document.getElementById('btnRfp')?.disabled) { window._rfpSoCache = true; runRfpMonitorAtualizado(); }
+  else { const box = document.getElementById('rfpPetroBox'); if (box) box.outerHTML = rfpPetronectBarra(d?.petronect ? { ...d.petronect, erro: erro || d.petronect.erro } : { erro }); }
 }
 async function runRfpMonitorAtualizado() {
   const btn = document.getElementById('btnRfp');
@@ -8387,9 +8430,12 @@ async function runRfpMonitorAtualizado() {
       return;
     }
     const rfps = data.rfps || [];
+    const _eraCache = !!data.do_cache;
+    setTimeout(() => rfpPetronectAuto(data.petronect, _eraCache), 300);
     if (!rfps.length) {
-      res.innerHTML = '<div style="color:var(--t3);font-size:11px;padding:16px;text-align:center;">' + String(data.aviso || 'Nenhum edital aberto encontrado no PNCP agora.').replace(/</g,'&lt;') + '</div>';
+      res.innerHTML = rfpPetronectBarra(data.petronect) + '<div style="color:var(--t3);font-size:11px;padding:16px;text-align:center;">' + String(data.aviso || 'Nenhum edital aberto encontrado no PNCP agora.').replace(/</g,'&lt;') + '</div>';
       if (st) { st.textContent = 'Sem resultados'; st.className = 'tag off'; }
+      btn.disabled = false; btn.textContent = 'Varrer RFPs Agora';
       return;
     }
     if (st) { st.textContent = rfps.length + ' editais'; st.className = 'tag live'; }
@@ -8397,13 +8443,14 @@ async function runRfpMonitorAtualizado() {
     const e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
     const fontesTxt = data.fontes ? Object.entries(data.fontes).map(([k, f]) => (k === 'busca_pncp' ? 'Busca PNCP' : 'API oficial PNCP') + ': ' + (f.ok ? f.encontrados + ' encontrados' : 'indisponível')).join(' · ') : '';
     window._rfpUltimos = rfps; // v3.25: base para e-mail e PDF
+    const petro = rfpPetronectBarra(data.petronect);
     const barraRfp = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;"><b style="font-size:11.5px;">' + rfps.length + ' edital(is)</b><button class="btn btn-g" style="font-size:10px;margin-left:auto;" onclick="rfpBaixarPdf()">📄 Baixar PDF da lista</button><button class="btn btn-p" style="font-size:10px;" onclick="rfpEnviarEmail()">📧 Enviar lista por e-mail</button></div>';
-    res.innerHTML = avisoTopo + barraRfp + '<div style="font-size:10.5px;color:var(--t2);margin-bottom:10px;text-align:left;">&#128269; ' + (data.do_cache ? '<b>Última varredura guardada</b> · ' : '') + 'Fonte: <b>' + e(data.fonte || 'PNCP') + '</b> · consulta em ' + e(data.data_consulta || '') + (fontesTxt ? ' · ' + e(fontesTxt) : '') + ' · ' + (data.total_encontrado || 0) + ' editais em aberto analisados. Somente editais reais — a IA avalia a aderência, não cria editais.</div>'
+    res.innerHTML = avisoTopo + petro + barraRfp + '<div style="font-size:10.5px;color:var(--t2);margin-bottom:10px;text-align:left;">&#128269; ' + (data.do_cache ? '<b>Última varredura guardada</b> · ' : '') + 'Fonte: <b>' + e(data.fonte || 'PNCP') + '</b> · consulta em ' + e(data.data_consulta || '') + (fontesTxt ? ' · ' + e(fontesTxt) : '') + ' · ' + (data.total_encontrado || 0) + ' editais em aberto analisados' + (data.petronect ? ' + ' + (data.petronect.aderentes_abertas || 0) + ' oportunidade(s) Petrobras aderentes lidas do e-mail Petronect' : '') + '. Somente editais reais — a IA avalia a aderência, não cria editais.</div>'
     + rfps.map(r => `
       <div style="background:var(--bg4);border:1px solid var(--bd);border-left:3px solid ${r.urgencia==='Alta'?'var(--red)':r.urgencia==='Media'?'var(--gold)':'var(--blue)'};border-radius:7px;padding:12px;margin-bottom:8px;text-align:left;color:var(--t1);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
           <strong style="font-size:12px;flex:1;min-width:200px;">${e(r.empresa)}${r.uf ? ' <span style="font-weight:400;color:var(--t2);">· ' + e(r.municipio ? r.municipio + '/' : '') + e(r.uf) + '</span>' : ''}</strong>
-          ${r.verificado ? '<span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:var(--g2);color:var(--green);" title="Conferido na API oficial do PNCP">&#10003; verificado no PNCP</span>' : ''}
+          ${r.origem_email ? '<span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:var(--b2,var(--bg3));color:var(--blue);" title="Lida do e-mail do Serviço de Notificação Petronect">&#128231; e-mail Petronect</span>' : r.verificado ? '<span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:var(--g2);color:var(--green);" title="Conferido na API oficial do PNCP">&#10003; verificado no PNCP</span>' : ''}
           <span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:var(--go2);color:var(--gold);">${r.compatibilidade}% aderência</span>
           <span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:${r.urgencia==='Alta'?'var(--r2)':'var(--bg)'};color:${_corTxt(r.urgencia==='Alta'?'var(--red)':'var(--t3)')};">${e(r.urgencia||'Media')}</span>
         </div>
@@ -8425,11 +8472,11 @@ async function runRfpMonitorAtualizado() {
         </div>
         <div style="margin-top:8px;padding:8px 10px;background:var(--bg3);border:1px solid var(--bd);border-radius:6px;font-size:10.5px;">
           <div style="font-family:var(--M);font-size:8.5px;text-transform:uppercase;color:var(--t2);margin-bottom:4px;">Origem do edital</div>
-          <div style="color:var(--t1);margin-bottom:6px;">${e(r.fonte || 'PNCP')}${r.numero_pncp ? ' · Nº de controle PNCP <b>' + e(r.numero_pncp) + '</b>' : ''}${r.orgao_cnpj ? ' · CNPJ do órgão ' + e(r.orgao_cnpj) : ''}${r.processo ? ' · Processo ' + e(r.processo) : ''}${r.publicado_em ? ' · publicado em ' + e(r.publicado_em) : ''}</div>
+          <div style="color:var(--t1);margin-bottom:6px;">${e(r.fonte || 'PNCP')}${r.email_assunto ? ' · Assunto do e-mail: <i>' + e(r.email_assunto) + '</i>' : ''}${r.numero_pncp ? ' · Nº de controle PNCP <b>' + e(r.numero_pncp) + '</b>' : ''}${r.orgao_cnpj ? ' · CNPJ do órgão ' + e(r.orgao_cnpj) : ''}${r.processo ? ' · Processo ' + e(r.processo) : ''}${r.publicado_em ? ' · publicado em ' + e(r.publicado_em) : ''}</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${r.link_pncp ? '<a class="btn btn-p" style="font-size:10px;padding:4px 10px;text-decoration:none;" href="' + e(r.link_pncp) + '" target="_blank" rel="noopener">&#128196; Abrir edital no PNCP</a>' : ''}
+            ${r.origem_email ? '<a class="btn btn-p" style="font-size:10px;padding:4px 10px;text-decoration:none;" href="' + e(r.link_acesso) + '" target="_blank" rel="noopener">&#128196; Abrir no Petronect</a>' + (r.numero_compra ? '<button class="btn btn-g" style="font-size:10px;padding:4px 10px;" data-copiar="' + e(r.numero_compra) + '" onclick="atxCopiar(this.dataset.copiar,\'Nº copiado\')">Copiar nº da oportunidade</button>' : '') : `${r.link_pncp ? '<a class="btn btn-p" style="font-size:10px;padding:4px 10px;text-decoration:none;" href="' + e(r.link_pncp) + '" target="_blank" rel="noopener">&#128196; Abrir edital no PNCP</a>' : ''}
             ${r.link_origem ? '<a class="btn btn-g" style="font-size:10px;padding:4px 10px;text-decoration:none;" href="' + e(r.link_origem) + '" target="_blank" rel="noopener">&#8599; Portal de origem (envio da proposta)</a>' : '<span style="font-size:10px;color:var(--t3);align-self:center;">Portal de origem: consulte a página do edital no PNCP</span>'}
-            ${r.numero_pncp ? '<button class="btn btn-g" style="font-size:10px;padding:4px 10px;" data-copiar="' + e(r.numero_pncp) + '" onclick="atxCopiar(this.dataset.copiar,\'Nº PNCP copiado\')">Copiar nº PNCP</button>' : ''}
+            ${r.numero_pncp ? '<button class="btn btn-g" style="font-size:10px;padding:4px 10px;" data-copiar="' + e(r.numero_pncp) + '" onclick="atxCopiar(this.dataset.copiar,\'Nº PNCP copiado\')">Copiar nº PNCP</button>' : ''}`}
           </div>
         </div>
         ${r.justificativa ? `<div style="font-size:11px;color:var(--blue);margin-top:6px;">-> ${e(r.justificativa)}</div>` : ''}
@@ -28395,7 +28442,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.96] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.97] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -28411,7 +28458,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.96';
+window.__ATX_BUILD_ID__ = 'ATX-v3.97';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
