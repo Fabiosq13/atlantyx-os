@@ -3,6 +3,97 @@ import { comGuarda } from '../lib/qa-guard.js';
 // Base de Dados Central — Neon Postgres
 // Usa @neondatabase/serverless que é instalado automaticamente pelo Vercel
 
+// Deduplicação de ideias (demanda dem_muv797dhe87d): título normalizado + similaridade ≥ 85%
+const _limparTituloIdeia = t => String(t || '').replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+const _chaveIdeia = t => _limparTituloIdeia(t).toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/[^a-z0-9]+/g, ' ').trim();
+const _ideiaAtiva = i => i && (i.stage || i.status) !== 'Arquivada';
+function _similaridadeTitulo(a, b) {
+  const x = _chaveIdeia(a).replace(/ /g, ''), y = _chaveIdeia(b).replace(/ /g, '');
+  if (!x || !y) return 0;
+  if (x === y) return 1;
+  let ant = Array.from({ length: y.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= x.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= y.length; j++) cur[j] = Math.min(ant[j] + 1, cur[j - 1] + 1, ant[j - 1] + (x[i - 1] === y[j - 1] ? 0 : 1));
+    ant = cur;
+  }
+  return 1 - ant[y.length] / Math.max(x.length, y.length);
+}
+const _dataIdeia = i => new Date(i.criado_em || i.atualizado_em || 0).getTime() || 0;
+// marca (só na resposta, não grava) as ideias ativas cujo título é ≥ 85% igual ao de uma ideia mais antiga
+function _marcarDuplicadas(ideias) {
+  const ativas = ideias.filter(_ideiaAtiva).sort((a, b) => _dataIdeia(a) - _dataIdeia(b));
+  const raiz = new Map();
+  ativas.forEach((i, n) => {
+    for (let m = 0; m < n; m++) {
+      const o = ativas[m]; const s = _similaridadeTitulo(i.titulo, o.titulo);
+      if (s >= 0.85) { const r = raiz.get(String(o.id)) || o; raiz.set(String(i.id), r); i.isDuplicate = true; i.duplicataDe = { id: r.id, titulo: _limparTituloIdeia(r.titulo), stage: r.stage || r.status || 'Recebida' }; i.similaridade = Math.round(s * 100) / 100; break; }
+    }
+  });
+  return ideias;
+}
+const _ETAPA_PESO = { 'Recebida': 0, 'Em Análise': 1, 'Análise': 1, 'Pesquisa': 2, 'Viabilidade': 3, 'Comitê': 4, 'Aprovada Squad': 4, 'Aguardando Fundador': 5, 'Fundador': 5, 'Em Desenvolvimento': 6, 'Aprovado': 6 };
+const _pesoIdeia = i => (_ETAPA_PESO[i.stage || i.status] ?? 0) * 100 + (i.business_plan ? 20 : 0) + (i.analise_completa || i.analise ? 10 : 0) + (i.resultados_s1 ? 5 : 0) + Math.min(9, Math.floor(JSON.stringify(i).length / 4000));
+const _semFlagsDup = i => { if (i && typeof i === 'object') { delete i.isDuplicate; delete i.duplicataDe; delete i.similaridade; } return i; };
+const _parseJson = v => { if (v == null) return null; if (typeof v === 'string') { try { return JSON.parse(v); } catch (_) { return null; } } return v; };
+
+// consolida as cópias na ideia-mãe e arquiva as cópias (nada é apagado)
+async function mesclarIdeias(sql, jsonSeguro, idManter, idArquivar) {
+  const ids = [...new Set((idArquivar || []).map(String))].filter(x => x && x !== String(idManter)).slice(0, 50);
+  if (!idManter || !ids.length) throw new Error('idManter e idArquivar[] são obrigatórios');
+  const r0 = await sql`SELECT data FROM ideias WHERE id = ${String(idManter)} LIMIT 1`;
+  const mae = _parseJson(r0[0]?.data); if (!mae) throw new Error('ideia a manter não encontrada');
+  _semFlagsDup(mae);
+  const copias = [];
+  for (const id of ids) { const r = await sql`SELECT data FROM ideias WHERE id = ${id} LIMIT 1`; const d = _parseJson(r[0]?.data); if (d) copias.push(_semFlagsDup(d)); }
+  if (!copias.length) throw new Error('nenhuma cópia encontrada');
+  const agora = new Date().toISOString();
+  const notas = copias.map(x => x.notas).filter(Boolean);
+  if (notas.length) mae.notas = [mae.notas, ...notas].filter(Boolean).join('\n— ');
+  if (!mae.analise_completa) { const c = copias.find(x => x.analise_completa); if (c) { mae.analise_completa = c.analise_completa; mae.analise = mae.analise || c.analise; } }
+  if (!mae.analise) { const c = copias.find(x => x.analise); if (c) mae.analise = c.analise; }
+  if (!mae.business_plan) { const c = copias.find(x => x.business_plan); if (c) mae.business_plan = c.business_plan; }
+  if (!mae.resultados_s1) { const c = copias.find(x => x.resultados_s1); if (c) mae.resultados_s1 = c.resultados_s1; }
+  if (!mae.desc) { const c = copias.find(x => x.desc); if (c) mae.desc = c.desc; }
+  // histórico completo de cada cópia (análises, notas, BP, chat) fica preservado na ideia-mãe
+  mae.mescladas = [...(Array.isArray(mae.mescladas) ? mae.mescladas : []), ...copias.map(x => ({ id: x.id, titulo: x.titulo, stage: x.stage || x.status || 'Recebida', criado_em: x.criado_em || null, mesclada_em: agora,
+    analise: x.analise || null, analise_completa: x.analise_completa || null, business_plan: x.business_plan || null, resultados_s1: x.resultados_s1 || null, notas: x.notas || null, desc: x.desc || null, chat: x.chat || x.ichat || null }))];
+  mae.atualizado_em = agora;
+  await sql`UPDATE ideias SET data = ${jsonSeguro(mae)}, atualizado_em = NOW() WHERE id = ${String(mae.id)}`;
+  // documentos anexados às cópias passam para a ideia-mãe
+  try {
+    const kMae = 'atx:ideia:docs:' + mae.id; const rd = await sql`SELECT value FROM kv_store WHERE key = ${kMae} LIMIT 1`;
+    let docs = _parseJson(rd[0]?.value); if (!Array.isArray(docs)) docs = []; const antes = docs.length;
+    for (const x of copias) { const r = await sql`SELECT value FROM kv_store WHERE key = ${'atx:ideia:docs:' + x.id} LIMIT 1`; const d = _parseJson(r[0]?.value); if (Array.isArray(d)) d.forEach(doc => { if (!docs.some(y => y && doc && y.nome === doc.nome && (y.texto || '').length === (doc.texto || '').length)) docs.push(doc); }); }
+    if (docs.length > antes) await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${kMae}, ${jsonSeguro(docs)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
+  } catch (_) {}
+  for (const x of copias) {
+    x.stage_antes_arquivar = x.stage || x.status || 'Recebida'; x.stage = 'Arquivada'; x.status = 'Arquivada'; x.arquivada_em = agora; x.mesclada_em_id = mae.id;
+    await sql`UPDATE ideias SET status = 'Arquivada', data = ${jsonSeguro(x)}, atualizado_em = NOW() WHERE id = ${String(x.id)}`;
+  }
+  return { ideia: mae, arquivadas: copias.map(x => x.id) };
+}
+
+// migração única: as 4 entradas TOVIX NORBEN viram 1 (fica a mais completa), roda na 1ª listagem após o deploy
+async function migrarDedupTovix(sql, jsonSeguro) {
+  const flag = 'migracao:dedup_tovix_norben';
+  // reserva a flag antes de mexer (duas listagens simultâneas não mesclam duas vezes)
+  const pega = await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${flag}, ${jsonSeguro({ rodando: true })}, NOW()) ON CONFLICT (key) DO NOTHING RETURNING key`;
+  if (!pega.length) return null;
+  try {
+    const r = await sql`SELECT data FROM ideias`;
+    const grupo = r.map(x => _parseJson(x.data)).filter(i => _ideiaAtiva(i) && /tovix ?norben/.test(_chaveIdeia(i.titulo)));
+    let res = { mescladas: 0 };
+    if (grupo.length > 1) {
+      const ord = grupo.slice().sort((a, b) => _pesoIdeia(b) - _pesoIdeia(a) || _dataIdeia(a) - _dataIdeia(b));
+      const m = await mesclarIdeias(sql, jsonSeguro, ord[0].id, ord.slice(1).map(x => x.id));
+      res = { manteve: ord[0].id, mescladas: m.arquivadas.length, arquivadas: m.arquivadas };
+    }
+    await sql`UPDATE kv_store SET value = ${jsonSeguro({ ...res, em: new Date().toISOString() })}, updated_at = NOW() WHERE key = ${flag}`;
+    return res;
+  } catch (e) { try { await sql`DELETE FROM kv_store WHERE key = ${flag}`; } catch (_) {} throw e; }
+}
+
 async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
@@ -262,7 +353,7 @@ async function handler(req, res) {
 
     // IDEIAS
     if (action === 'save_ideia') {
-      const ideia = value;
+      const ideia = _semFlagsDup(value); // flags de duplicata são calculadas na listagem, não gravadas
       if (!ideia.id) ideia.id = 'ideia_' + Date.now();
       await sql`INSERT INTO ideias (id,titulo,status,data,atualizado_em)
         VALUES (${ideia.id},${ideia.titulo||''},${ideia.stage||ideia.status||'Recebida'},${jsonSeguro(ideia)},NOW())
@@ -276,9 +367,17 @@ async function handler(req, res) {
       let n = 0; for (const id of ids.slice(0, 200)) { const r = await sql`DELETE FROM ideias WHERE id = ${String(id)} RETURNING id`; n += r.length; }
       return res.status(200).json({ success: true, excluidas: n });
     }
+    // dem_muv797dhe87d: mescla as duplicatas na ideia-mãe e arquiva as cópias (sem apagar dados)
+    if (action === 'mesclar_ideias') {
+      const v = value || {};
+      try { const m = await mesclarIdeias(sql, jsonSeguro, v.idManter, v.idArquivar); return res.status(200).json({ success: true, ...m }); }
+      catch (e) { return res.status(400).json({ success: false, error: e.message }); }
+    }
     if (action === 'list_ideias') {
+      let migracao = null; try { migracao = await migrarDedupTovix(sql, jsonSeguro); } catch (e) { console.error('[db] dedup TOVIX NORBEN:', e.message); }
       const r = await sql`SELECT data FROM ideias ORDER BY atualizado_em DESC`;
-      return res.status(200).json({ success: true, ideias: r.map(x => x.data) });
+      const ideias = _marcarDuplicadas(r.map(x => _parseJson(x.data)).filter(Boolean));
+      return res.status(200).json({ success: true, ideias, ...(migracao ? { migracao } : {}) });
     }
 
     // ── S13 DASHBOARD PROJETOS ──────────────────────────────────────────────────

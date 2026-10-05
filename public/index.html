@@ -6108,9 +6108,20 @@ function fecharModal() {
 // em "Captando..." e a ideia nunca era gravada. Agora a lista existe, é carregada do banco e
 // cada ideia (e cada mudança de etapa) é salva em /api/db.
 let S1_PIPELINE = [];
-function renderS1Kanban() { renderKanbanS1(S1_PIPELINE); try { const c = document.getElementById('s1PipeCnt'); if (c) c.textContent = S1_PIPELINE.length; const e = document.getElementById('s1_ideias'); if (e) e.textContent = S1_PIPELINE.length; } catch (_) {} }
+function renderS1Kanban() { renderKanbanS1(S1_PIPELINE); try { const n = S1_PIPELINE.filter(_ideiaAtivaS1).length; const c = document.getElementById('s1PipeCnt'); if (c) c.textContent = n; const e = document.getElementById('s1_ideias'); if (e) e.textContent = n; } catch (_) {} }
 const _limparTituloIdeia = t => String(t || '').replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
 const _chaveTituloIdeia = t => _limparTituloIdeia(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+// dem_muv797dhe87d: similaridade de titulo (0 a 1, Levenshtein sobre o titulo normalizado sem espacos); a partir de 0,85 = possivel duplicata
+function _similaridadeTituloIdeia(a, b) {
+  const x = _chaveTituloIdeia(a).replace(/ /g, ''), y = _chaveTituloIdeia(b).replace(/ /g, '');
+  if (!x || !y) return 0; if (x === y) return 1;
+  let ant = Array.from({ length: y.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= x.length; i++) { const cur = [i]; for (let j = 1; j <= y.length; j++) cur[j] = Math.min(ant[j] + 1, cur[j - 1] + 1, ant[j - 1] + (x[i - 1] === y[j - 1] ? 0 : 1)); ant = cur; }
+  return 1 - ant[y.length] / Math.max(x.length, y.length);
+}
+const _S1_SIMILAR = 0.85;
+const _ideiaAtivaS1 = i => i && (i.stage || i.status) !== 'Arquivada';
+const _s1IdeiaParecida = (titulo, excetoId) => S1_PIPELINE.filter(x => _ideiaAtivaS1(x) && String(x.id) !== String(excetoId)).map(x => ({ x, s: _similaridadeTituloIdeia(x.titulo, titulo) })).filter(o => o.s >= _S1_SIMILAR).sort((a, b) => b.s - a.s)[0]?.x || null;
 async function salvarIdeiaS1(ideia) {
   try {
     if (ideia && ideia.titulo) ideia.titulo = _limparTituloIdeia(ideia.titulo); // v3.36: "<br/>" aparecia no título
@@ -6147,8 +6158,8 @@ async function captarIdeia() {
   const cat = document.getElementById('s1Cat')?.value;
   if (!titulo) { toast('Informe o título da ideia', 'error'); return; }
   // v3.36: a mesma ideia era captada várias vezes (cada clique criava outra) — avisa e oferece abrir a existente
-  { const ja = S1_PIPELINE.find(x => _chaveTituloIdeia(x.titulo) === _chaveTituloIdeia(titulo) && (x.stage || x.status) !== 'Arquivada');
-    if (ja && !confirm('Já existe uma ideia com este título no pipeline (etapa: ' + (ja.stage || 'Recebida') + ').\n\nOK = criar outra mesmo assim · Cancelar = abrir a existente')) { const k = (window._s1IdeiasCache || []).indexOf(ja); if (k >= 0) ideiaAbrir(k); else { window._s1IdeiasCache = (window._s1IdeiasCache || []); ideiaAbrir(window._s1IdeiasCache.push(ja) - 1); } return; } }
+  { const ja = _s1IdeiaParecida(titulo); // dem_muv797dhe87d: título ≥ 85% parecido (antes só o idêntico)
+    if (ja && !confirm('Já existe uma ideia com título igual ou muito parecido no pipeline: "' + _limparTituloIdeia(ja.titulo).substring(0, 80) + '" (etapa: ' + (ja.stage || 'Recebida') + ').\n\nOK = criar outra mesmo assim · Cancelar = abrir a existente')) { const k = (window._s1IdeiasCache || []).indexOf(ja); if (k >= 0) ideiaAbrir(k); else { window._s1IdeiasCache = (window._s1IdeiasCache || []); ideiaAbrir(window._s1IdeiasCache.push(ja) - 1); } return; } }
 
   const btn = document.getElementById('btnCaptarIdeia');
   btn.disabled = true; btn.textContent = 'Captando...';
@@ -9659,7 +9670,9 @@ async function initS1() {
       const el2 = document.getElementById('s1_analise');
       const el3 = document.getElementById('s1_fundador');
       const el4 = document.getElementById('s1_dev');
-      if (el1) el1.textContent = d.ideias.length;
+      const nAtivas = d.ideias.filter(i => (i.stage || i.status) !== 'Arquivada').length; // arquivadas (ex.: duplicatas mescladas) não contam
+      if (el1) el1.textContent = nAtivas;
+      if (d.migracao?.mescladas) addLog('ok', '[S1] Duplicatas TOVIX NORBEN mescladas: ' + d.migracao.mescladas + ' arquivada(s)');
       const emAnalise = d.ideias.filter(i => i.stage === 'Em Análise' || i.stage === 'Análise').length;
       const emFundador = d.ideias.filter(i => i.stage === 'Aguardando Fundador' || i.stage === 'Fundador').length;
       const emDev = d.ideias.filter(i => i.stage === 'Em Desenvolvimento' || i.stage === 'Aprovado').length;
@@ -9670,7 +9683,7 @@ async function initS1() {
       const ids = new Set(d.ideias.map(x => String(x.id)));
       S1_PIPELINE = [...S1_PIPELINE.filter(x => !ids.has(String(x.id))), ...d.ideias];
       renderKanbanS1(S1_PIPELINE);
-      try { const c = document.getElementById('s1PipeCnt'); if (c) c.textContent = d.ideias.length; } catch (_) {}
+      try { const c = document.getElementById('s1PipeCnt'); if (c) c.textContent = nAtivas; } catch (_) {}
       addLog('ok', '[S1] Pipeline carregado: ' + d.ideias.length + ' ideias');
     }
   } catch(e) {
@@ -10051,9 +10064,40 @@ function qaAbrir() {
 }
 // v3.36: card com ✎ editar e 🗑 excluir, arrastar entre etapas, selo de DUPLICADA e "Unificar duplicadas"
 const _S1_ORDEM = { 'Recebida': 0, 'Em Análise': 1, 'Análise': 1, 'Pesquisa': 2, 'Viabilidade': 3, 'Comitê': 4, 'Aprovada Squad': 4, 'Aguardando Fundador': 5, 'Fundador': 5, 'Em Desenvolvimento': 6, 'Aprovado': 6 };
+// dem_muv797dhe87d: grupos de títulos ≥ 85% parecidos; o 1º de cada grupo é a ideia mais antiga (a "original")
+const _s1DataIdeia = i => new Date(i.criado_em || i.atualizado_em || 0).getTime() || 0;
 function _s1Duplicadas() {
-  const g = {}; S1_PIPELINE.filter(i => (i.stage || i.status) !== 'Arquivada').forEach(i => { const k = _chaveTituloIdeia(i.titulo); if (k) (g[k] = g[k] || []).push(i); });
-  return Object.values(g).filter(l => l.length > 1);
+  const ativas = S1_PIPELINE.filter(_ideiaAtivaS1).sort((a, b) => _s1DataIdeia(a) - _s1DataIdeia(b));
+  const raiz = new Map(), grupos = new Map();
+  ativas.forEach((i, n) => {
+    let r = null;
+    for (let m = 0; m < n; m++) if (_similaridadeTituloIdeia(i.titulo, ativas[m].titulo) >= _S1_SIMILAR) { r = raiz.get(ativas[m]) || ativas[m]; break; }
+    if (r) { raiz.set(i, r); grupos.get(r).push(i); } else grupos.set(i, [i]);
+  });
+  return Array.from(grupos.values()).filter(l => l.length > 1);
+}
+// botão "Mesclar com original" do card: consolida esta cópia na ideia mais antiga e arquiva a cópia
+async function s1MesclarComOriginal(k, ev) {
+  if (ev) ev.stopPropagation();
+  const x = (window._s1IdeiasCache || [])[k]; if (!x) return;
+  const g = _s1Duplicadas().find(l => l.includes(x)); const orig = g && g[0];
+  if (!orig || orig === x) return toast('Não há original para mesclar', 'error');
+  if (!confirm('Mesclar "' + _limparTituloIdeia(x.titulo).substring(0, 60) + '" (' + (x.stage || 'Recebida') + ') com a original "' + _limparTituloIdeia(orig.titulo).substring(0, 60) + '" (' + (orig.stage || 'Recebida') + ')?\n\nAnálises, notas, business plan e documentos desta cópia vão para a original; a cópia é ARQUIVADA (nada é apagado).')) return;
+  try { await _s1Mesclar(orig, [x]); } catch (e) { toast('Não consegui mesclar: ' + e.message, 'error'); }
+}
+async function _s1Mesclar(fica, sai) {
+  const r = await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'mesclar_ideias', value: { idManter: fica.id, idArquivar: sai.map(x => x.id) } }) });
+  const d = await r.json().catch(() => ({})); if (!d.success) throw new Error(d.error || ('Servidor retornou ' + r.status));
+  const arq = new Set((d.arquivadas || []).map(String));
+  S1_PIPELINE = S1_PIPELINE.map(i => String(i.id) === String(fica.id) ? d.ideia : arq.has(String(i.id)) ? { ...i, stage: 'Arquivada', status: 'Arquivada', mesclada_em_id: fica.id } : i);
+  renderS1Kanban();
+  toast(arq.size + ' cópia(s) mesclada(s) e arquivada(s)', 'success'); addLog('ok', '[S1] Mescladas em "' + _limparTituloIdeia(fica.titulo) + '": ' + arq.size + ' cópia(s) arquivada(s)');
+  return d;
+}
+function s1AbrirOriginal(id, ev) {
+  if (ev) ev.stopPropagation();
+  const x = S1_PIPELINE.find(i => String(i.id) === String(id)); if (!x) return;
+  const c = (window._s1IdeiasCache = window._s1IdeiasCache || []); const k = c.indexOf(x); ideiaAbrir(k >= 0 ? k : c.push(x) - 1);
 }
 async function s1ExcluirIdeia(k, ev) {
   if (ev) ev.stopPropagation();
@@ -10071,21 +10115,10 @@ async function s1UnificarDuplicadas() {
   const peso = i => (_S1_ORDEM[i.stage || i.status] ?? 0) * 100 + (i.business_plan ? 20 : 0) + (i.analise_completa || i.analise ? 10 : 0) + (i.resultados_s1 ? 5 : 0);
   const plano = grupos.map(l => { const ord = l.slice().sort((a, b) => peso(b) - peso(a) || new Date(b.atualizado_em || b.criado_em || 0) - new Date(a.atualizado_em || a.criado_em || 0)); return { fica: ord[0], sai: ord.slice(1) }; });
   const n = plano.reduce((s, p) => s + p.sai.length, 0);
-  if (!confirm('Unificar ' + grupos.length + ' ideia(s) repetida(s)?\n\n' + plano.map(p => '• "' + _limparTituloIdeia(p.fica.titulo).substring(0, 60) + '" — fica a de ' + (p.fica.stage || 'Recebida') + (p.fica.business_plan ? ' (com BP)' : '') + ', saem ' + p.sai.length).join('\n') + '\n\nFica a versão mais avançada (etapa, business plan, análise); as notas das outras são juntadas a ela. ' + n + ' card(s) serão excluídos.')) return;
-  try {
-    for (const p of plano) {
-      const notas = p.sai.map(x => x.notas).filter(Boolean);
-      if (notas.length) { p.fica.notas = [p.fica.notas, ...notas].filter(Boolean).join('\n— '); }
-      if (!p.fica.analise_completa) { const comA = p.sai.find(x => x.analise_completa); if (comA) { p.fica.analise_completa = comA.analise_completa; p.fica.analise = p.fica.analise || comA.analise; } }
-      if (!p.fica.business_plan) { const comBp = p.sai.find(x => x.business_plan); if (comBp) p.fica.business_plan = comBp.business_plan; }
-      await salvarIdeiaS1(p.fica);
-    }
-    const ids = plano.flatMap(p => p.sai.map(x => x.id));
-    const r = await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete_ideia', value: { ids } }) });
-    const d = await r.json(); if (!d.success) throw new Error(d.error || 'falha');
-    const sair = new Set(ids.map(String)); S1_PIPELINE = S1_PIPELINE.filter(i => !sair.has(String(i.id))); renderS1Kanban();
-    toast(d.excluidas + ' duplicada(s) removida(s)', 'success');
-  } catch (e) { toast('Não consegui unificar: ' + e.message, 'error'); }
+  if (!confirm('Unificar ' + grupos.length + ' ideia(s) repetida(s)?\n\n' + plano.map(p => '• "' + _limparTituloIdeia(p.fica.titulo).substring(0, 60) + '" — fica a de ' + (p.fica.stage || 'Recebida') + (p.fica.business_plan ? ' (com BP)' : '') + ', saem ' + p.sai.length).join('\n') + '\n\nFica a versão mais avançada (etapa, business plan, análise); análises, notas e documentos das outras são juntados a ela. ' + n + ' card(s) serão ARQUIVADOS (nada é apagado).')) return;
+  // dem_muv797dhe87d: antes excluía as cópias; agora mescla no servidor e arquiva
+  try { for (const p of plano) await _s1Mesclar(p.fica, p.sai); }
+  catch (e) { toast('Não consegui unificar: ' + e.message, 'error'); }
 }
 function s1Arrastar(ev, k) { ev.dataTransfer.setData('text/plain', String(k)); ev.dataTransfer.effectAllowed = 'move'; ev.currentTarget.style.opacity = '.45'; }
 function s1Soltar(ev, etapa) {
@@ -10113,14 +10146,16 @@ function renderKanbanS1(ideias) {
     if (s2 && byStage[s2]) byStage[s2].push(i);
     else byStage['Recebida'].push(i);
   });
-  const dupKeys = new Set(_s1Duplicadas().map(l => _chaveTituloIdeia(l[0].titulo)));
+  const dupOrig = new Map(); _s1Duplicadas().forEach(l => l.slice(1).forEach(i => dupOrig.set(i, l[0]))); // cópia → original (mais antiga)
   kanban.innerHTML = stages.map(s => {
     const items = byStage[s] || [];
     return '<div style="min-width:120px;min-height:80px;border-radius:6px;transition:background .15s;" ondragover="event.preventDefault();this.style.background=\'var(--b2)\'" ondragleave="this.style.background=\'\'" ondrop="s1Soltar(event,\'' + s + '\')">'
       + '<div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);margin-bottom:6px;padding:0 2px;">' + s + ' <span style="color:var(--blue);">(' + items.length + ')</span></div>'
-      + items.map(i => { const k = (window._s1IdeiasCache = window._s1IdeiasCache || []).push(i) - 1; const bp = i.business_plan; const dup = dupKeys.has(_chaveTituloIdeia(i.titulo));
-          return '<div draggable="true" ondragstart="s1Arrastar(event,' + k + ')" ondragend="this.style.opacity=\'\'" onclick="ideiaAbrir(' + k + ')" title="Clique para abrir e editar · arraste para mudar de etapa" style="background:var(--bg4);border:1px solid ' + (dup ? 'var(--gold)' : 'var(--bd)') + ';border-radius:5px;padding:7px;margin-bottom:4px;font-size:10px;cursor:grab;user-select:none;">'
-            + (dup ? '<div style="font-family:var(--M);font-size:8.5px;color:var(--gold);font-weight:700;margin-bottom:3px;">DUPLICADA</div>' : '')
+      + items.map(i => { const k = (window._s1IdeiasCache = window._s1IdeiasCache || []).push(i) - 1; const bp = i.business_plan; const orig = dupOrig.get(i); const dup = !!orig;
+          return '<div draggable="true" ondragstart="s1Arrastar(event,' + k + ')" ondragend="this.style.opacity=\'\'" onclick="ideiaAbrir(' + k + ')" title="Clique para abrir e editar · arraste para mudar de etapa" style="background:var(--bg4);border:1px solid ' + (dup ? 'var(--orange,#ff8c42)' : 'var(--bd)') + ';border-radius:5px;padding:7px;margin-bottom:4px;font-size:10px;cursor:grab;user-select:none;">'
+            + (dup ? '<div style="margin-bottom:4px;"><span style="font-family:var(--M);font-size:8.5px;color:#fff;background:var(--orange,#ff8c42);font-weight:700;padding:1px 5px;border-radius:3px;">POSSÍVEL DUPLICATA</span>'
+              + '<div onclick="s1AbrirOriginal(\'' + String(orig.id).replace(/[\\'"<>]/g, '') + '\',event)" title="Abrir a entrada original (mais antiga)" style="cursor:pointer;font-size:9px;color:var(--orange,#ff8c42);margin-top:3px;text-decoration:underline;">↪ original: ' + _limparTituloIdeia(orig.titulo).substring(0, 40).replace(/</g, '&lt;') + ' (' + (orig.stage || 'Recebida') + ')</div>'
+              + '<button onclick="s1MesclarComOriginal(' + k + ',event)" title="Junta análises, notas, BP e documentos na original e arquiva esta cópia" style="margin-top:3px;background:var(--orange,#ff8c42);color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:9px;padding:2px 6px;">⤵ Mesclar com original</button></div>' : '')
             + _limparTituloIdeia(i.titulo || 'Sem título').replace(/</g,'&lt;')
             + '<div style="margin-top:5px;display:flex;gap:4px;align-items:center;"><span onclick="event.stopPropagation();' + (bp ? 'bpAbrirDaIdeia(' + k + ')' : 'bpGerarParaIdeia(' + k + ')') + '" style="cursor:pointer;font-family:var(--M);font-size:9px;padding:1px 5px;border-radius:3px;background:' + (bp ? 'rgba(0,200,120,.15);color:var(--green)' : 'var(--bg3);color:var(--t2)') + ';">&#128202; ' + (bp ? 'BP' + (bp.tir_anual != null ? ' · TIR ' + Math.round(bp.tir_anual * 100) + '%' : '') : 'gerar BP') + '</span>'
             + '<span style="flex:1;"></span><button onclick="ideiaChatAbrir(' + k + ',event)" title="Conversar com a IA sobre esta ideia (lê todo o material do card)" style="background:none;border:none;cursor:pointer;font-size:11px;padding:0 3px;">💬</button><button onclick="event.stopPropagation();ideiaAbrir(' + k + ')" title="Editar" style="background:none;border:none;cursor:pointer;color:var(--blue);font-size:11px;padding:0 3px;">✎</button>'
@@ -10135,7 +10170,7 @@ function _s1DupBarra() {
   if (!b) { b = document.createElement('div'); b.id = 's1DupBarra'; kb.parentNode.insertBefore(b, kb); }
   const n = g.reduce((s, l) => s + l.length - 1, 0);
   b.style.cssText = 'display:flex;gap:10px;align-items:center;background:var(--go2);border:1px solid rgba(245,166,35,.35);border-radius:7px;padding:7px 11px;margin-bottom:9px;font-size:11px;';
-  b.innerHTML = '⚠ <span style="flex:1;">' + n + ' card(s) repetido(s) em ' + g.length + ' ideia(s) com o mesmo título.</span><button class="btn btn-g" style="font-size:10px;padding:3px 9px;" onclick="s1UnificarDuplicadas()">Unificar duplicadas</button>';
+  b.innerHTML = '⚠ <span style="flex:1;">' + n + ' possível(is) duplicata(s) em ' + g.length + ' ideia(s) com título igual ou ≥ 85% parecido.</span><button class="btn btn-g" style="font-size:10px;padding:3px 9px;" onclick="s1UnificarDuplicadas()">Unificar duplicadas</button>';
 }
 
 initS1();
@@ -10811,6 +10846,10 @@ async function analisarIdeia(modo) {
   const acoes     = document.getElementById('anAcoes');
 
   if (!titulo || !desc) { toast('Preencha o título e a descrição da ideia', 'error'); return; }
+  // dem_muv797dhe87d: evita gastar crédito de IA analisando de novo uma ideia que já está no pipeline com análise
+  { const ja = typeof _s1IdeiaParecida === 'function' ? _s1IdeiaParecida(titulo) : null;
+    if (ja && (ja.analise_completa || ja.analise) && !confirm('Possível duplicata: "' + _limparTituloIdeia(ja.titulo).substring(0, 80) + '" já está no pipeline (etapa: ' + (ja.stage || 'Recebida') + ') e já tem análise.\n\nOK = analisar de novo mesmo assim · Cancelar = abrir a ideia existente')) {
+      const k = (window._s1IdeiasCache || []).indexOf(ja); if (k >= 0) ideiaAbrir(k); else { window._s1IdeiasCache = (window._s1IdeiasCache || []); ideiaAbrir(window._s1IdeiasCache.push(ja) - 1); } return; } }
 
   btn.disabled = true; btn.textContent = 'Analisando...';
   if (tag) { tag.textContent = 'Analisando...'; tag.className = 'tag on'; }
