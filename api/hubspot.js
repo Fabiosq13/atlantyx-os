@@ -214,6 +214,11 @@ async function handler(req, res) {
       const d = await r.json();
       if (!r.ok) {
         const precisaEscopo = r.status === 403;
+        // v3.95: sem escopo/plano de CMS no HubSpot não é falha do sistema — é recurso indisponível na conta.
+        // Responde sucesso com lista vazia e o motivo (a tela mostra um aviso e o link pode ser colado à mão).
+        if (precisaEscopo) return res.status(200).json({ success: true, indisponivel: true, total: 0, paginas: [],
+          aviso: d.message || 'A conta HubSpot não libera a API de landing pages',
+          hint: 'A API de landing pages exige o HubSpot CMS (Content Hub) e o escopo "content" no Private App. Se o seu plano não tiver CMS, cole o link da página de destino manualmente. Se tiver: HubSpot → Settings → Integrations → Private Apps → seu app → Scopes → marque "content" → salve → copie o NOVO token → atualize HUBSPOT_TOKEN no Vercel → Redeploy.' });
         return res.status(200).json({
           success: false, status: r.status,
           error: d.message || 'erro ao listar landing pages',

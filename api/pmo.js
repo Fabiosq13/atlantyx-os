@@ -540,6 +540,7 @@ async function cronoSchema({ tabela } = {}) {
         ? `O banco na URL (${lista.banco_na_url}) não existe. Bancos disponíveis neste servidor: ${lista.bancos.map(b => b.nome + ' (' + b.tamanho + ')').join(', ')}. Troque o nome no fim da CRONOGRAMA_DATABASE_URL.`
         : 'Confira o nome do banco no fim da CRONOGRAMA_DATABASE_URL (atenção a hífen vs underscore).';
       err.bancos = lista?.bancos || null;
+      err.status = 424; // v3.95: configuração (CRONOGRAMA_DATABASE_URL aponta para banco inexistente), não falha do servidor
       throw err;
     }
     throw e;

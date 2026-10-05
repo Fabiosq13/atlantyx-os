@@ -28,12 +28,18 @@ async function handler(req, res) {
 
   } catch (error) {
     console.error('[ERRO email-intel]', error.message);
-    return res.status(500).json({ error: error.message });
+    return res.status(error.status || 500).json({ success: false, error: error.message || 'Erro ao processar e-mails' });
   }
 }
 
 // ── SCAN PRINCIPAL — lê e classifica todos os e-mails relevantes ─────────────
 async function scanEmails(limite, filtro) {
+  // v3.95: a função tem 60s — classificar + rotear + HubSpot em sequência estourava e o Vercel derrubava
+  // a requisição (500 sem mensagem). Agora há um orçamento de tempo e as etapas lentas rodam em paralelo.
+  const t0 = Date.now();
+  const restante = (folga = 5000) => Math.max(0, 52000 - (Date.now() - t0) - folga);
+  if (!process.env.GMAIL_ACCESS_TOKEN) { const e = new Error('Gmail não configurado — defina GMAIL_ACCESS_TOKEN no Vercel.'); e.status = 400; throw e; }
+  limite = Math.min(Math.max(parseInt(limite, 10) || 50, 1), 50);
   // 1. Buscar e-mails via Gmail API
   const emails = await fetchGmailEmails(limite);
   if (!emails.length) return { total: 0, classificados: [], resumo: 'Nenhum e-mail novo encontrado' };
@@ -66,22 +72,20 @@ async function scanEmails(limite, filtro) {
   console.log(`[Email-Intel] ${emails.length} e-mails para classificar`);
 
   // 2. Claude classifica todos em lote (uma única chamada — mais eficiente)
-  const classificados = await classificarEmailsEmLote(emails);
+  const classificados = await classificarEmailsEmLote(emails, restante(20000));
 
-  // 3. Rotear para os agentes certos
-  const acoes = await rotearParaAgentes(classificados);
-
-  // 4. Salvar no HubSpot os e-mails de venda
+  // 3-5. Rotear para os agentes, salvar no HubSpot os de venda/RFP e notificar urgentes — em paralelo, até o limite de tempo
   const vendasEmails = classificados.filter(e => e.categoria === 'VENDA' || e.categoria === 'RFP');
-  for (const email of vendasEmails) {
-    await salvarAtividadeHubSpot(email);
-  }
-
-  // 5. Notificar o fundador sobre itens urgentes
   const urgentes = classificados.filter(e => e.urgencia === 'ALTA');
-  if (urgentes.length > 0) {
-    await notificarFundador(urgentes);
-  }
+  const acoes = [];
+  const etapas = Promise.allSettled([
+    rotearParaAgentes(classificados, acoes),
+    Promise.allSettled(vendasEmails.map(email => salvarAtividadeHubSpot(email))),
+    urgentes.length ? notificarFundador(urgentes) : null,
+  ]);
+  let parcial = false, tPrazo;
+  await Promise.race([etapas, new Promise(ok => { tPrazo = setTimeout(() => { parcial = true; ok(); }, restante()); })]);
+  clearTimeout(tPrazo);
 
   // Resumo por categoria
   const resumo = {};
@@ -93,6 +97,7 @@ async function scanEmails(limite, filtro) {
     classificados,
     resumo_categorias: resumo,
     acoes_tomadas: acoes,
+    ...(parcial ? { aviso: 'Parte do roteamento ainda não terminou dentro do tempo da função — rode o scan de novo para completar.' } : {}),
   };
 }
 
@@ -192,7 +197,7 @@ async function fetchEmailDetail(id, token) {
 }
 
 // ── CLASSIFICAR E-MAILS EM LOTE — Claude analisa todos de uma vez ─────────────
-async function classificarEmailsEmLote(emails) {
+async function classificarEmailsEmLote(emails, limiteMs = 35000) {
   const system = `Você é o Agente de Inteligência de E-mail da Atlantyx.
 Classifique cada e-mail e extraia informações relevantes para os agentes da empresa.
 
@@ -253,13 +258,22 @@ Para cada um retorne:
   "prazo": "prazo mencionado se houver ou null"
 }`;
 
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: MODEL, max_tokens: 4000, system, messages: [{ role: 'user', content: user }] })
-  });
-
-  const d = await r.json();
+  // v3.95: com limite de tempo — se a IA demorar, segue com a classificação básica em vez de derrubar a função
+  const semClassificar = () => emails.map((e, i) => ({ ...e, index: i, categoria: 'OUTRO', urgencia: 'BAIXA', resumo: e.snippet }));
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), Math.max(limiteMs, 5000));
+  let d;
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST', signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: MODEL, max_tokens: 4000, system, messages: [{ role: 'user', content: user }] })
+    });
+    d = await r.json();
+  } catch (e) {
+    console.error('[Email] Classificação pela IA falhou/expirou:', e.message);
+    return semClassificar();
+  } finally { clearTimeout(timer); }
   let classificacoes = [];
   try {
     const text = d.content[0].text.replace(/```json|```/g, '').trim();
@@ -277,10 +291,10 @@ Para cada um retorne:
 }
 
 // ── ROTEAR PARA OS AGENTES ────────────────────────────────────────────────────
-async function rotearParaAgentes(emails) {
-  const acoes = [];
-
-  for (const email of emails) {
+async function rotearParaAgentes(emails, acoes = []) {
+  // v3.95: em paralelo (antes, uma chamada de IA por e-mail em sequência estourava o tempo da função);
+  // as ações vão entrando em `acoes` à medida que terminam
+  await Promise.all(emails.map(async email => {
     try {
       switch (email.categoria) {
 
@@ -325,7 +339,7 @@ async function rotearParaAgentes(emails) {
     } catch (e) {
       console.error(`[Email] Erro ao rotear ${email.id}:`, e.message);
     }
-  }
+  }));
 
   return acoes;
 }

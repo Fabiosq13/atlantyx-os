@@ -302,17 +302,26 @@ async function driveResumirPasta({ folder_id, folder_name, pergunta } = {}) {
                   'text/plain'].includes(f.mimeType))
     .slice(0, 5);
 
-  for (const doc of docsParaLer) {
+  // v3.95: leitura em paralelo — em sequência, 5 documentos + IA estouravam os 60s da função (500 sem mensagem)
+  const lidos = await Promise.all(docsParaLer.map(async doc => {
     try {
       const { conteudo } = await driveDocument({ file_id: doc.id });
-      documentos_lidos.push({ nome: doc.nome || doc.name, conteudo: conteudo.substring(0, 3000) });
+      return { nome: doc.nome || doc.name, conteudo: String(conteudo || '').substring(0, 3000) };
     } catch (e) {
       console.log(`[Drive] Erro ao ler ${doc.name}:`, e.message);
+      return null;
     }
-  }
+  }));
+  documentos_lidos.push(...lidos.filter(Boolean));
+  if (!documentos_lidos.length) return { pasta: folder_name || folder_id || 'Pasta Drive', total_arquivos: arquivos.length, documentos_analisados: 0,
+    analise: { resumo_executivo: 'Nenhum documento legível (Google Docs, Planilhas ou texto) nesta pasta.' }, fonte: 'Google Drive' };
 
-  // 3. Claude analisa e resume
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
+  // 3. Claude analisa e resume (com limite de tempo — falha com mensagem em vez de a função ser derrubada)
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 40000);
+  let r;
+  try { r = await fetch('https://api.anthropic.com/v1/messages', {
+    signal: ctrl.signal,
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -341,9 +350,12 @@ Retorne JSON:
 }`
       }]
     })
-  });
+  }); } catch (e) {
+    throw new Error(e.name === 'AbortError' ? 'A IA não respondeu em 40s ao resumir a pasta — tente de novo ou use uma pasta com menos documentos.' : 'Falha ao chamar a IA: ' + e.message);
+  } finally { clearTimeout(timer); }
 
-  const d = await r.json();
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.content?.[0]?.text) throw new Error('IA respondeu erro ao resumir a pasta: ' + (d.error?.message || 'HTTP ' + r.status));
   const text = d.content[0].text.replace(/```json|```/g, '').trim();
   let analise = {};
   try { analise = JSON.parse(text); } catch { analise = { resumo_executivo: text.substring(0, 500) }; }

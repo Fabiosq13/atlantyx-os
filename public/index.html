@@ -6753,13 +6753,14 @@ async function scanEmails(limite = 50) {
   btn.disabled = false; btn.textContent = '  Escanear E-mails';
 
   if (!data?.success) {
-    toast('Erro ao ler Gmail. Configure GMAIL_ACCESS_TOKEN no Vercel.', 'error');
+    toast('Erro ao ler Gmail: ' + (data?.error || 'configure GMAIL_ACCESS_TOKEN no Vercel'), 'error');
     addLog('err', '[Email-Intel] Erro: ' + (data?.error || 'sem acesso ao Gmail'));
     return;
   }
 
   emailsCache = data.classificados || [];
   const stats = data.resumo_categorias || {};
+  if (data.aviso) toast(data.aviso, 'warn');
 
   // Mostrar stats
   if (empty) empty.style.display = 'none';
@@ -21299,7 +21300,7 @@ async function pmoApi(action, params = {}) {
   const r = await fetch('/api/pmo', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action, payload: params }) });
   const raw = await r.text(); let d;
   try { d = JSON.parse(raw); } catch { throw new Error('Resposta não-JSON (HTTP ' + r.status + ')'); }
-  if (!d.success) throw new Error(d.error || 'falha');
+  if (!d.success) { const e = new Error(d.error || 'falha'); if (d.dica) e.dica = d.dica; throw e; } // v3.95: leva a dica do servidor para a tela
   return d;
 }
 let _pmoProjetos = [];
@@ -26681,6 +26682,15 @@ async function listarLandingPagesHS() {
       addLog('warn', '[LP] ' + (d.error || 'erro'));
       return;
     }
+    if (d.indisponivel) { // v3.95: conta HubSpot sem CMS/escopo — aviso, não erro
+      lista.innerHTML = '<div style="border:1px solid var(--gold);border-radius:6px;padding:12px;font-size:11px;">'
+        + '<div style="color:var(--gold);font-weight:700;margin-bottom:5px;">Landing pages do HubSpot indisponíveis nesta conta</div>'
+        + '<div style="color:var(--t1);font-size:10px;margin-bottom:6px;">' + String(d.aviso || '').replace(/</g, '&lt;') + '</div>'
+        + (d.hint ? '<div style="color:var(--t2);font-size:10px;line-height:1.6;">💡 ' + d.hint + '</div>' : '')
+        + '</div>';
+      addLog('warn', '[LP] ' + (d.aviso || 'indisponível'));
+      return;
+    }
     if (!d.paginas?.length) {
       lista.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Nenhuma landing page encontrada no HubSpot.</div>';
       return;
@@ -28284,7 +28294,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.94] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.95] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -28300,7 +28310,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.94';
+window.__ATX_BUILD_ID__ = 'ATX-v3.95';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
