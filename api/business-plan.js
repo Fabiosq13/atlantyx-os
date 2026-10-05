@@ -314,7 +314,8 @@ const _melhor = (a, b) => (b.viavel && !a.viavel) || (b.viavel === a.viavel && (
 
 async function _bpBaseDaIdeia({ bp_id, ideia }) {
   const sql = await getSql();
-  if (bp_id) return obterBP(bp_id);
+  // v3.94: bp_id apagado/inválido não derruba mais com 500 — cai na busca pela ideia
+  if (bp_id) { try { return await obterBP(bp_id); } catch (e) { console.warn('[BP contraproposta] bp_id', bp_id, 'indisponível:', e.message); } }
   const iid = ideia?.id ? String(ideia.id) : null;
   if (iid) {
     try { const r = await sql`SELECT data FROM ideias WHERE id = ${iid} LIMIT 1`; const d = r[0]?.data; const id = (typeof d === 'string' ? JSON.parse(d) : d)?.business_plan?.id; if (id) return obterBP(id); } catch (_) {}
@@ -324,14 +325,21 @@ async function _bpBaseDaIdeia({ bp_id, ideia }) {
   return null;
 }
 
-async function contrapropostaBP({ ideia = {}, bp_id = null, oferta = '', docs_texto = [], instrucoes = '', destinatario = 'Parceiro', partir_de_id = null, cambio_eur = null }) {
-  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
+const _erro = (msg, status) => Object.assign(new Error(msg), { status });
+async function contrapropostaBP({ ideia, bp_id = null, oferta = '', docs_texto = [], instrucoes = '', destinatario = 'Parceiro', partir_de_id = null, cambio_eur = null }) {
+  // v3.94: validação de entrada — antes ideia nula / documento malformado viravam HTTP 500 sem explicação
+  if (!ideia || typeof ideia !== 'object' || Array.isArray(ideia)) ideia = {};
+  if (!ideia.titulo && !bp_id) throw _erro('Abra ou analise uma ideia antes de gerar a contraproposta.', 400);
+  destinatario = String(destinatario || 'Parceiro').substring(0, 60);
+  docs_texto = (Array.isArray(docs_texto) ? docs_texto : []).filter(d => d && typeof d === 'object').map(d => ({ nome: String(d.nome || 'documento').substring(0, 200), texto: d.texto }));
+  if (!process.env.ANTHROPIC_API_KEY) throw _erro('ANTHROPIC_API_KEY não configurada', 503);
   const base = await _bpBaseDaIdeia({ bp_id, ideia });
   if (!base?.premissas) { const e = new Error('Esta ideia ainda não tem business plan — gere o business plan primeiro (a contraproposta parte dele).'); e.status = 409; throw e; }
   const p0 = base.premissas; const i0 = _ind(base.resultado);
   // v3.62: AJUSTE de uma contraproposta já gerada — parte dela (e não do zero), aplicando as orientações do fundador
   let anterior = null;
   if (partir_de_id) { try { const a = await obterBP(partir_de_id); if (a?.premissas) anterior = a; } catch (_) {} }
+  const t0 = Date.now();
   const instr = String(instrucoes || '').trim();
   const cambio = parseFloat(String(cambio_eur || '').replace(',', '.')) || null;
   const objetivo = i0.viavel ? 'MELHORAR' : 'TORNAR_VIAVEL';
@@ -380,13 +388,24 @@ OBJETIVO: ${objetivo === 'TORNAR_VIAVEL' ? 'o plano atual NÃO é viável — to
 ${docs ? '\nDOCUMENTOS DA NEGOCIAÇÃO:\n' + docs : ''}${extra ? '\n\n' + extra : ''}`;
   // v3.47: a IA devolve só as seções alteradas (antes devolvia as premissas inteiras + a análise e a resposta
   // era cortada no limite de tokens → "A IA não devolveu as premissas"). Se vier cortada, tenta de novo mais curta.
+  // v3.94: cada chamada à IA tem prazo (a função tem 300s na Vercel) — estourar vira erro JSON legível (504), não queda da função
+  const LIMITE_MS = 270000;
   const chamar = async (extra) => {
     let ultimoErro = null;
     for (let t = 0; t < 2; t++) {
-      const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: MODEL, max_tokens: 16000, system, messages: [{ role: 'user', content: montarUser((extra || '') + (t ? '\n\nATENÇÃO: sua resposta anterior foi cortada por ser longa demais. Devolva o JSON completo e válido, bem mais curto: textos de 1 linha, listas com até 4 itens, mensagem com até 1.000 caracteres.' : '')) }] }) });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error('IA: ' + (d?.error?.message || r.status));
+      const resta = LIMITE_MS - (Date.now() - t0);
+      if (resta < 20000) throw _erro('A IA demorou demais para montar a contraproposta — tente de novo (se persistir, cole uma oferta mais curta).', 504);
+      const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), resta);
+      let r, d;
+      try {
+        r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ctrl.signal, headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+          body: JSON.stringify({ model: MODEL, max_tokens: 16000, system, messages: [{ role: 'user', content: montarUser((extra || '') + (t ? '\n\nATENÇÃO: sua resposta anterior foi cortada por ser longa demais. Devolva o JSON completo e válido, bem mais curto: textos de 1 linha, listas com até 4 itens, mensagem com até 1.000 caracteres.' : '')) }] }) });
+        d = await r.json().catch(() => ({}));
+      } catch (e) {
+        if (e.name === 'AbortError') throw _erro('A IA demorou demais para montar a contraproposta — tente de novo (se persistir, cole uma oferta mais curta).', 504);
+        throw _erro('Não consegui falar com a IA: ' + e.message, 502);
+      } finally { clearTimeout(tm); }
+      if (!r.ok) throw _erro('A IA recusou o pedido: ' + (d?.error?.message || 'HTTP ' + r.status) + (r.status === 400 ? ' — tente com uma oferta/documentos mais curtos.' : ''), 502);
       const txt = (d.content || []).map(c => c.text || '').join('');
       const j = parseJSON(txt);
       const alt = j && (j.premissas_alteradas || j.premissas || j.premissas_contraproposta || j.novas_premissas);
@@ -394,9 +413,9 @@ ${docs ? '\nDOCUMENTOS DA NEGOCIAÇÃO:\n' + docs : ''}${extra ? '\n\n' + extra 
       ultimoErro = d.stop_reason === 'max_tokens' ? 'a resposta da IA foi cortada por ser longa demais' : (j ? 'a IA não indicou nenhuma alteração nas premissas' : 'a resposta da IA não veio em JSON válido');
       console.warn('[BP contraproposta] tentativa', t + 1, ultimoErro, '| stop:', d.stop_reason, '| início:', txt.substring(0, 200));
     }
-    throw new Error('Não consegui montar a contraproposta: ' + ultimoErro + '. Tente de novo; se persistir, cole uma oferta mais curta.');
+    throw _erro('A IA não devolveu uma contraproposta utilizável (' + ultimoErro + '). Tente de novo; se persistir, cole uma oferta mais curta.', 502);
   };
-  const t0 = Date.now(); let melhor = null, extra = '', rodadas = 0;
+  let melhor = null, extra = '', rodadas = 0;
   for (let k = 0; k < 3; k++) {
     if (k && Date.now() - t0 > 140000) break;
     let j; try { j = await chamar(extra); } catch (e) { if (!melhor) throw e; break; }
@@ -404,13 +423,16 @@ ${docs ? '\nDOCUMENTOS DA NEGOCIAÇÃO:\n' + docs : ''}${extra ? '\n\n' + extra 
     // mescla: só as seções devolvidas substituem as do plano atual
     const alt = j.premissas_alteradas || {}; const permitidas = ['receitas', 'pessoal', 'investimentos', 'despesas_fixas', 'custos_variaveis', 'marketing', 'taxa_desconto_anual', 'deducoes_pct', 'ir_csll_pct', 'prazo_recebimento_dias', 'crescimento_perpetuidade_pct'];
     const premissas = { ...p0, ...Object.fromEntries(Object.entries(alt).filter(([k, v]) => permitidas.includes(k) && v != null && !(Array.isArray(v) && !v.length))), inicio: p0.inicio, meses: p0.meses || 36, titulo: p0.titulo };
-    const res = calcularBP(premissas); const ind = _ind(res);
+    // v3.94: premissas malformadas da IA não derrubam a rota — pede de novo na próxima rodada
+    let res; try { res = calcularBP(premissas); } catch (e) { console.warn('[BP contraproposta] premissas da IA inválidas:', e.message); extra = 'As premissas_alteradas que você devolveu não puderam ser calculadas (' + e.message + '). Devolva o JSON de novo respeitando exatamente a estrutura das premissas do plano atual.'; continue; }
+    const ind = _ind(res);
     const cand = { j, premissas, res, ind };
     if (!melhor || _melhor(melhor.ind, ind)) melhor = cand;
     const ok = objetivo === 'TORNAR_VIAVEL' ? ind.viavel : (ind.viavel && (ind.vpl || 0) > (i0.vpl || 0));
     if (ok) break;
     extra = `RESULTADO DA SUA PROPOSTA ANTERIOR NO MOTOR: ${JSON.stringify(ind)} — ${objetivo === 'TORNAR_VIAVEL' ? 'AINDA NÃO É VIÁVEL' : 'NÃO MELHOROU o VPL da Atlantyx'}. Ajuste as alavancas (com justificativa realista) e devolva o JSON completo de novo.${instr ? ' MANTENHA todas as ORIENTAÇÕES DO FUNDADOR exatamente como pedidas — mexa só nas outras alavancas.' : ''}`;
   }
+  if (!melhor) throw _erro('A IA devolveu premissas que o motor financeiro não conseguiu calcular. Tente de novo.', 502);
   const { j, premissas, res, ind } = melhor;
   const narrativa = { contraproposta: true, base_bp_id: base.id, base_titulo: base.titulo, objetivo, rodadas, destinatario, oferta: String(oferta || '').substring(0, 6000), instrucoes: instr.substring(0, 3000), cambio_eur: cambio, ajuste_de: anterior?.id || null,
     antes: i0, depois: ind, anos_antes: _anosResumo(base.resultado), anos_depois: _anosResumo(res),
