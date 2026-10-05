@@ -35,8 +35,11 @@ async function handler(req, res) {
     if (!acoes[action]) return res.status(400).json({ error: `Ação inválida: ${Object.keys(acoes).join(', ')}` });
 
     const resultado = await acoes[action]();
+    // v3.94: resposta da IA ilegível → erro claro (antes ia {erro} para a tela, que desenhava tudo vazio)
+    const corpo = Object.values(resultado || {}).find(v => v && typeof v === 'object');
+    if (corpo?.erro === 'JSON inválido') return res.status(502).json({ success: false, error: 'A IA devolveu uma resposta que não deu para ler — clique de novo em gerar.' });
     const historico_id = await salvarHistorico(action, resultado, req.sessao?.login); // v3.90
-    return res.status(200).json({ success: true, action, historico_id, ...resultado });
+    return res.status(200).json({ success: true, action, historico_id, fontes_dados: _ultimasFontes, ...resultado });
 
   } catch (error) {
     console.error('[ERRO s1-intel]', error.message);
@@ -44,51 +47,65 @@ async function handler(req, res) {
   }
 }
 
-// ── CONTEXTO BASE DA ATLANTYX ─────────────────────────────────────────────────
+// ── CONTEXTO DA ATLANTYX — v3.94: DADOS REAIS ────────────────────────────────
+// Antes o contexto era fixo no código ("receita 0", "semana 1 de operação", pipeline inventado) e a IA analisava
+// uma empresa que não existe. Agora junta, na hora: financeiro (QuickBooks + sistema), painel de vendas, leads.
 function ctxAtlantyx(extra = {}) {
   return {
-    empresa: 'Atlantyx',
-    segmento: 'BI, Engenharia de Dados e IA para grandes empresas',
-    missao: 'Transformar dados complexos em inteligência acionável, entregando Quick Wins em semanas com ROI mensurável',
-    stage: 'Early-stage / go-to-market — semana 1 de operação comercial ativa',
-    time: { fundador: 1, marketing: 1, closer_freelancer: 1, dev_part_time: '1h/dia' },
-    financeiro: {
-      receita_atual: 0,
-      meta_3_meses: 5000000,
-      meta_semana: 500000,
-      meta_mes: 1500000,
-      caixa_estimado: 'não informado',
-      burn_rate: 'baixo — time enxuto',
-      investimento_marketing: 'R$5k/mês (LinkedIn Ads + Google)',
-    },
-    pipeline: {
-      leads: 12,
-      score_a: 9,
-      reunioes: 3,
-      pipeline_valor: 7600000,
-      win_rate_historico: '28%',
-    },
-    icp: {
-      setores: ['Energia', 'Automotivo', 'Varejo', 'Indústria'],
-      porte: 'R$100M–R$5B',
-      decisores: 'CIO, CTO, CFO, Dir. Transformação Digital',
-    },
-    produtos: ['Atlantyx Financial OS', 'BI Analytics', 'Engenharia de Dados', 'IA aplicada'],
-    diferenciais: ['Quick Wins em semanas', 'Integra com sistemas existentes', 'ROI mensurável', 'Foco em grandes empresas'],
-    riscos_conhecidos: ['Dev com 1h/dia limita velocidade', 'Dependência do fundador', 'Ciclo de venda longo (47 dias)'],
+    empresa: 'Atlantyx (antiga Atlanteam Soluções em TI)',
+    historia: '17 anos de mercado; fundador e CEO: Fabio Quintanilha; escritórios no Rio de Janeiro e em São Paulo',
+    segmento: 'B2B — IA, analytics, BI e engenharia de dados para grandes empresas',
+    motores_de_negocio: ['Alocação de profissionais (pessoas)', 'Projetos sob medida (dados, BI, IA)', 'Suíte própria de produtos de IA (Atlantyx OS)'],
+    clientes_chave: ['CPFL Energia', 'Enel', 'Grupo Jelta Veículos', 'Caixa Capitalização'],
+    icp: { setores: ['Energia', 'Automotivo', 'Financeiro/seguros', 'Varejo', 'Indústria'], porte: 'grandes empresas', decisores: 'CIO, CTO, CFO, Dir. de Dados/Transformação Digital' },
+    diferenciais: ['Quick wins em semanas', 'Integra com os sistemas existentes', 'ROI mensurável', 'Experiência em energia'],
     ...extra,
   };
 }
+const _comPrazo = (p, ms) => Promise.race([p, new Promise((_, rj) => setTimeout(() => rj(new Error('tempo esgotado')), ms))]);
+async function _sqlS1() { if (!process.env.DATABASE_URL) return null; const { neon } = await import('@neondatabase/serverless'); return neon(process.env.DATABASE_URL); }
+async function _finS1(action, params = {}) { // chama o Financeiro no mesmo processo (herda o login — v3.91)
+  const mod = await import('./financeiro.js'); let out = null;
+  const res = { statusCode: 200, status(c) { this.statusCode = c; return this; }, json(o) { out = o; return this; }, send(b) { try { out = JSON.parse(b); } catch (_) { out = { raw: b }; } return this; }, setHeader() {}, end() { return this; } };
+  await mod.default({ method: 'POST', body: { action, params }, query: {}, headers: {} }, res);
+  if (!out?.success) throw new Error(out?.error || 'falha em ' + action); return out;
+}
+async function ctxReal(extra = {}) {
+  const fontes = [], faltou = [];
+  const [finR, vendR, leadsR] = await Promise.allSettled([
+    _comPrazo(_finS1('dashboard_financeiro', {}), 30000),
+    _comPrazo((async () => { const sql = await _sqlS1(); if (!sql) return null; const r = await sql`SELECT valor, atualizado_em FROM app_config WHERE chave = 'cache:vendas:painel' LIMIT 1`; if (!r[0]) return null; const v = typeof r[0].valor === 'string' ? JSON.parse(r[0].valor) : r[0].valor; return { v, em: r[0].atualizado_em }; })(), 8000),
+    _comPrazo((async () => { const sql = await _sqlS1(); if (!sql) return null;
+      const t = await sql`SELECT COUNT(*)::int n, COUNT(*) FILTER (WHERE criado_em > NOW() - INTERVAL '30 days')::int n30 FROM leads WHERE criado_em > NOW() - INTERVAL '90 days' AND COALESCE(status,'') <> 'qa_teste'`;
+      const o = await sql`SELECT COALESCE(origem,'?') origem, COUNT(*)::int n FROM leads WHERE criado_em > NOW() - INTERVAL '90 days' AND COALESCE(status,'') <> 'qa_teste' GROUP BY 1 ORDER BY 2 DESC LIMIT 8`;
+      return { total_90d: t[0]?.n || 0, total_30d: t[0]?.n30 || 0, por_origem: o }; })(), 8000),
+  ]);
+  const real = {};
+  if (finR.status === 'fulfilled') { const x = finR.value.dashboard || {}; fontes.push('Financeiro (QuickBooks + sistema)');
+    real.financeiro = { caixa: x.caixa, saude: { semaforo: x.saude?.semaforo, motivos: x.saude?.motivos, kpis: x.saude?.kpis }, planejado_x_real_mes: x.planejado_real?.totais, fluxo_6_meses: (x.grafico_6m?.meses || []).map(m => ({ mes: m.mes, receita_planejada: m.receita_planejada, receita_real: m.receita_real, despesa_planejada: m.despesa_planejada, despesa_real: m.despesa_real })),
+      marcos_em_fluxo: x.marcos, orcamento: x.orcamento_por_tipo, conciliacao: x.conciliacao, indicador_social: x.social ? { pct: x.social.pct, meta: x.social.meta, destinado: x.social.destinado } : null }; }
+  else faltou.push('financeiro: ' + (finR.reason?.message || ''));
+  if (vendR.status === 'fulfilled' && vendR.value) { fontes.push('Painel de Vendas'); const v = vendR.value.v || {};
+    const vv = { metas: v.metas, propostas: v.propostas, margens: v.margens ? { geral: v.margens.geral } : undefined, calculo: v.calculo, atualizado_em: vendR.value.em };
+    for (const k of ['calculo', 'margens', 'propostas']) if (JSON.stringify(vv).length > 6000) delete vv[k]; // cabe no contexto sem cortar JSON
+    real.vendas = vv; }
+  else faltou.push('vendas: ' + (vendR.reason?.message || 'sem cálculo salvo'));
+  if (leadsR.status === 'fulfilled' && leadsR.value) { fontes.push('Leads (captura)'); real.leads = leadsR.value; } else faltou.push('leads: ' + (leadsR.reason?.message || ''));
+  _ultimasFontes = { fontes, faltou };
+  return { ctx: ctxAtlantyx({ dados_reais: real, data_de_hoje: new Date().toISOString().slice(0, 10), ...extra }), fontes, faltou };
+}
+let _ultimasFontes = null;
+const CONCISO = '\nSeja conciso: no máximo 4 itens por lista, frases curtas, valores em R$. Use os DADOS REAIS do contexto (dados_reais); se faltar um dado, diga que faltou — não invente números.';
 
 // ── DIAGNÓSTICO COMPLETO ──────────────────────────────────────────────────────
 async function diagnosticoCompleto(extra) {
-  const ctx = ctxAtlantyx(extra);
+  const ctx = (await ctxReal(extra)).ctx;
 
   const system = `Você é o sistema de Inteligência Estratégica da Atlantyx — uma consultoria de estratégia interna de nível McKinsey.
 Seu papel: analisar a empresa de forma completa, identificar o que está funcionando, o que está bloqueando crescimento e o que pode ser otimizado para maximizar lucro.
 Use frameworks reais: SWOT, PESTEL, Porter, Canvas, BCG, Ansoff.
 Seja direto, honesto e acionável. Não suavize problemas reais.
-Retorne APENAS JSON válido.`;
+Retorne APENAS JSON válido.` + CONCISO;
 
   const user = `Faça um DIAGNÓSTICO COMPLETO da empresa:
 ${JSON.stringify(ctx, null, 2)}
@@ -126,12 +143,12 @@ Retorne:
 
 // ── ANÁLISE DE RISCOS ─────────────────────────────────────────────────────────
 async function analiseRiscos(extra) {
-  const ctx = ctxAtlantyx(extra);
+  const ctx = (await ctxReal(extra)).ctx;
 
   const system = `Você é o Agente de Gestão de Riscos da Atlantyx.
 Mapeie TODOS os riscos reais — internos, externos, financeiros, operacionais, de mercado, jurídicos e de pessoas.
 Para cada risco: quantifique o impacto, defina a probabilidade e proponha uma ação de mitigação concreta.
-Retorne APENAS JSON válido.`;
+Retorne APENAS JSON válido.` + CONCISO;
 
   const user = `Analise os riscos completos da Atlantyx:
 ${JSON.stringify(ctx, null, 2)}
@@ -170,12 +187,12 @@ Retorne:
 
 // ── ANÁLISE FINANCEIRA ────────────────────────────────────────────────────────
 async function analiseFinanceira(extra) {
-  const ctx = ctxAtlantyx(extra);
+  const ctx = (await ctxReal(extra)).ctx;
 
   const system = `Você é o CFO-Agente da Atlantyx — modelo financeiro real para maximizar lucro e sustentabilidade.
 Pense como um CFO experiente de startup B2B SaaS/serviços.
 Modele os números com realismo: sem otimismo injustificado.
-Retorne APENAS JSON válido.`;
+Retorne APENAS JSON válido.` + CONCISO;
 
   const user = `Análise financeira completa da Atlantyx:
 ${JSON.stringify(ctx, null, 2)}
@@ -229,12 +246,12 @@ Retorne:
 
 // ── ANÁLISE DE MERCADO ────────────────────────────────────────────────────────
 async function analiseMercado(extra) {
-  const ctx = ctxAtlantyx(extra);
+  const ctx = (await ctxReal(extra)).ctx;
 
   const system = `Você é o Agente de Inteligência de Mercado da Atlantyx.
 Analise o mercado externo com profundidade: concorrência, tendências, PESTEL, forças de Porter.
 Identifique onde estão as maiores oportunidades e ameaças de mercado.
-Retorne APENAS JSON válido.`;
+Retorne APENAS JSON válido.` + CONCISO;
 
   const user = `Análise completa do mercado para a Atlantyx:
 ${JSON.stringify(ctx, null, 2)}
@@ -290,13 +307,13 @@ Retorne:
 
 // ── PLANEJAMENTO ESTRATÉGICO ──────────────────────────────────────────────────
 async function planejamentoEstrategico(extra) {
-  const ctx = ctxAtlantyx(extra);
+  const ctx = (await ctxReal(extra)).ctx;
 
   const system = `Você é o Diretor de Estratégia da Atlantyx — nível McKinsey/Bain.
 Crie um planejamento estratégico real, acionável e com foco em maximização de lucro.
 Pense em 3 horizontes: 90 dias (execução), 1 ano (crescimento), 3 anos (escala).
 Cada ação deve ter: o QUÊ fazer, POR QUÊ, COMO, QUANDO e QUEM.
-Retorne APENAS JSON válido.`;
+Retorne APENAS JSON válido.` + CONCISO;
 
   const user = `Crie o Planejamento Estratégico completo da Atlantyx:
 ${JSON.stringify(ctx, null, 2)}
@@ -349,13 +366,13 @@ Retorne:
 
 // ── PLANO DE AÇÃO COMPLETO ────────────────────────────────────────────────────
 async function planoAcao(extra) {
-  const ctx = ctxAtlantyx(extra);
+  const ctx = (await ctxReal(extra)).ctx;
 
   const system = `Você é o COO-Agente da Atlantyx — responsável por transformar estratégia em ação.
 Crie um plano de ação COMPLETO, semana a semana, para os próximos 90 dias.
 Cada ação deve ser específica o suficiente para ser executada sem dúvida.
 Priorize pelo impacto na receita. Respeite a capacidade do time (pequeno).
-Retorne APENAS JSON válido.`;
+Retorne APENAS JSON válido.` + CONCISO;
 
   const user = `Crie o Plano de Ação completo dos próximos 90 dias da Atlantyx:
 ${JSON.stringify(ctx, null, 2)}
@@ -406,12 +423,12 @@ Retorne:
 
 // ── REPLANEJAMENTO CONTÍNUO ───────────────────────────────────────────────────
 async function replanejamento(extra) {
-  const ctx = ctxAtlantyx(extra);
+  const ctx = (await ctxReal(extra)).ctx;
 
   const system = `Você é o sistema de Replanejamento Contínuo da Atlantyx.
 Com base nos dados atuais vs. o que foi planejado, identifique desvios e replaneie.
 Seja direto sobre o que não está funcionando. Ajuste o plano com base na realidade.
-Retorne APENAS JSON válido.`;
+Retorne APENAS JSON válido.` + CONCISO;
 
   const user = `Faça o REPLANEJAMENTO com base na situação atual:
 ${JSON.stringify(ctx, null, 2)}
@@ -469,13 +486,13 @@ Retorne:
 
 // ── GERADOR DE OKRs INTELIGENTE ───────────────────────────────────────────────
 async function okrGerador(extra) {
-  const ctx = ctxAtlantyx(extra);
+  const ctx = (await ctxReal(extra)).ctx;
 
   const system = `Você é o Agente de OKR da Atlantyx — especialista em definir objetivos ambiciosos e mensuráveis.
 Gere OKRs reais para a Atlantyx com base na situação atual.
 Cada KR deve ser específico, mensurável, com prazo e responsável definido.
 Os OKRs devem ser ambiciosos mas atingíveis — stretch goals de 70% de confiança.
-Retorne APENAS JSON válido.`;
+Retorne APENAS JSON válido.` + CONCISO;
 
   const user = `Gere os OKRs completos para a Atlantyx:
 ${JSON.stringify(ctx, null, 2)}
@@ -523,12 +540,12 @@ Retorne:
 
 // ── CENÁRIOS DE FUTURO ────────────────────────────────────────────────────────
 async function cenariosFuturo(extra) {
-  const ctx = ctxAtlantyx(extra);
+  const ctx = (await ctxReal(extra)).ctx;
 
   const system = `Você é o Agente de Cenários Estratégicos da Atlantyx.
 Projete 3 futuros possíveis para a empresa — pessimista, realista e otimista.
 Para cada cenário: o que precisaria acontecer, onde a empresa estaria e o que fazer hoje para se preparar.
-Retorne APENAS JSON válido.`;
+Retorne APENAS JSON válido.` + CONCISO;
 
   const user = `Projete os cenários de futuro da Atlantyx:
 ${JSON.stringify(ctx, null, 2)}
@@ -600,23 +617,38 @@ async function analiseSwot(extra) {
 
 // ── HELPERS ──────────────────────────────────────────────────────────────────
 async function claude(system, user, maxTokens = 2000) {
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] })
-  });
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.error?.message || 'Erro Claude API');
-  return d.content[0].text;
+  // v3.94: mais espaço (as respostas eram cortadas em 3.000 tokens → JSON inválido → tela vazia) e prazo explícito
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 150000);
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: MODEL, max_tokens: Math.max(maxTokens, 6000), system, messages: [{ role: 'user', content: user }] }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error?.message || 'Erro Claude API');
+    return (d.content || []).map(c => c.text || '').join('');
+  } catch (e) { if (e.name === 'AbortError') throw new Error('A IA não respondeu em 150s — tente de novo'); throw e; } finally { clearTimeout(t); }
 }
 
-function parseJSON(text) {
-  try { return JSON.parse(text.replace(/```json|```/g, '').trim()); }
-  catch (e) {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (match) { try { return JSON.parse(match[0]); } catch {} }
-    return { erro: 'JSON inválido', raw: text.substring(0, 300) };
+// v3.94: JSON cortado no meio é consertado (fecha strings/listas/objetos abertos) em vez de virar {erro}
+function _consertarJSON(t) {
+  let s = t, i0 = s.indexOf('{'); if (i0 < 0) return null; s = s.slice(i0);
+  for (let corte = 0; corte < 400 && s.length > 2; corte++) {
+    const pilha = []; let str = false, esc = false;
+    for (const ch of s) { if (str) { if (esc) esc = false; else if (ch === '\\') esc = true; else if (ch === '"') str = false; continue; }
+      if (ch === '"') str = true; else if (ch === '{' || ch === '[') pilha.push(ch); else if (ch === '}' || ch === ']') pilha.pop(); }
+    let x = s + (str ? '"' : ''); x = x.replace(/[,:\s]+$/, '').replace(/,\s*"[^"]*"\s*$/, '');
+    x += pilha.reverse().map(c => c === '{' ? '}' : ']').join('');
+    try { return JSON.parse(x); } catch (_) {}
+    s = s.replace(/[,{[]?[^,{[\]}]*$/, ''); // recua até o último elemento completo
   }
+  return null;
+}
+function parseJSON(text) {
+  const t = String(text || '').replace(/```json|```/g, '').trim();
+  try { return JSON.parse(t); } catch (_) {}
+  const match = t.match(/\{[\s\S]*\}/); if (match) { try { return JSON.parse(match[0]); } catch (_) {} }
+  const c = _consertarJSON(t); if (c) { c._incompleto = true; return c; }
+  return { erro: 'JSON inválido', raw: t.substring(0, 300) };
 }
 
 async function whatsapp(phone, message) {

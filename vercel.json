@@ -130,7 +130,7 @@
       "maxDuration": 60
     },
     "api/s1-intel.js": {
-      "maxDuration": 60
+      "maxDuration": 180
     },
     "api/meeting-schedule.js": {
       "maxDuration": 60

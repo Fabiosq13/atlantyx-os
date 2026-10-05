@@ -6308,7 +6308,7 @@ async function loadOKR(salvo) {
 
     if (id === 's1OkrDash') {
       el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-        <span style="font-family:var(--M);font-size:11px;font-weight:600;color:${_corTxt(corSaude)};">o ${okr.saude_geral}</span>
+        <span style="font-family:var(--M);font-size:11px;font-weight:600;color:${_corTxt(corSaude)};">● ${(okr.saude_geral) || '—'}</span>
         <span style="font-family:var(--M);font-size:9px;color:var(--t2);">${okr.trimestre}</span>
       </div>` + (okr.objetivos||[]).map(o => `<div style="padding:5px 0;border-bottom:1px solid var(--bd);">
         <div style="display:flex;justify-content:space-between;font-size:11px;">
@@ -6319,7 +6319,7 @@ async function loadOKR(salvo) {
       </div>`).join('');
     } else {
       el.innerHTML = `<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
-        <span style="font-family:var(--H);font-size:18px;font-weight:700;color:${_corTxt(corSaude)};">o ${okr.saude_geral}</span>
+        <span style="font-family:var(--H);font-size:18px;font-weight:700;color:${_corTxt(corSaude)};">● ${(okr.saude_geral) || '—'}</span>
         <span style="font-size:11px;color:var(--t2);">${okr.trimestre}</span>
       </div>` + (okr.objetivos||[]).map(o => `
         <div style="background:var(--bg4);border-radius:7px;padding:12px;margin-bottom:8px;">
@@ -6360,7 +6360,7 @@ async function loadRelatorio(periodo, salvo) {
   if (result) result.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
       <div style="flex:1;"><div style="font-family:var(--H);font-size:16px;font-weight:700;">${r.headline}</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px;">${r.periodo}</div></div>
-      <span style="font-family:var(--M);font-size:10px;padding:4px 10px;border-radius:5px;color:${_corTxt(corS)};background:${corS.replace(')',', 0.1)')};">o ${saude}</span>
+      <span style="font-family:var(--M);font-size:10px;padding:4px 10px;border-radius:5px;color:${_corTxt(corS)};background:${corS.replace(')',', 0.1)')};">● ${(saude) || '—'}</span>
       <span style="font-family:var(--M);font-size:18px;font-weight:700;color:var(--t1);">${r.nota_semana || 0}/10</span>
     </div>
     <div class="kg k4" style="margin-bottom:12px;">
@@ -6414,7 +6414,7 @@ async function runIntel(action, resultId, btnId, extraCtx = {}) {
   if (btn) { btn.disabled = false; btn.textContent = btn.dataset.rotulo || btn.textContent.replace('  Analisando...', '↻ Atualizar'); }
 
   if (!data?.success) {
-    if (result) result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:20px;">Erro ao executar análise. Verifique ANTHROPIC_API_KEY.</div>';
+    if (result) result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:20px;">⛔ Não consegui gerar a análise: ' + String(data?.error || 'sem resposta do servidor').replace(/</g, '&lt;') + '<br><button class="btn btn-g" style="margin-top:8px;font-size:10.5px;" onclick="runIntel(\'' + action + '\',\'' + resultId + '\',\'' + btnId + '\')">↻ Tentar de novo</button></div>';
     addLog('err', '[S1-Intel] Erro: ' + action);
     return null;
   }
@@ -6422,6 +6422,11 @@ async function runIntel(action, resultId, btnId, extraCtx = {}) {
   addLog('success', '[S1-Intel] Concluído: ' + action);
   renderIntelResult(action, data, resultId);
   _semUndef(document.getElementById(resultId));
+  // v3.94: de onde vieram os dados (e se a resposta da IA veio incompleta)
+  { const el = document.getElementById(resultId), f = data.fontes_dados || {}; const corpo = Object.values(data).find(v => v && typeof v === 'object' && !Array.isArray(v) && v !== f) || {};
+    if (el && (f.fontes || corpo._incompleto)) { const n = document.createElement('div'); n.style.cssText = 'font-size:10px;color:var(--t3);margin-top:10px;border-top:1px solid var(--bd);padding-top:6px;';
+      n.innerHTML = (f.fontes?.length ? '📊 Dados reais usados: ' + f.fontes.join(' · ') : '⚠ Sem dados reais nesta análise') + ((f.faltou || []).length ? ' · <span style="color:var(--gold);">não disponível: ' + f.faltou.join(' · ').replace(/</g, '&lt;') + '</span>' : '') + (corpo._incompleto ? ' · <span style="color:var(--gold);">a resposta da IA veio incompleta (parte final cortada) — gere de novo para a versão completa</span>' : '') + ' · gerado ' + new Date().toLocaleString('pt-BR');
+      el.appendChild(n); } }
   return data;
 }
 
@@ -6515,7 +6520,7 @@ function renderDiagnostico(d, el) {
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--bd);">
       <div style="flex:1;"><div style="font-family:var(--H);font-size:18px;font-weight:700;">${d.headline||''}</div><div style="font-size:11px;color:var(--t2);margin-top:4px;">${d.momento||''}</div></div>
-      <div style="text-align:center;"><div style="font-family:var(--M);font-size:26px;font-weight:700;color:${_corTxt(sc)};">${d.nota_geral||0}<span style="font-size:14px;">/10</span></div><div style="font-family:var(--M);font-size:9px;color:${_corTxt(sc)};">o ${d.saude_geral}</div></div>
+      <div style="text-align:center;"><div style="font-family:var(--M);font-size:26px;font-weight:700;color:${_corTxt(sc)};">${d.nota_geral||0}<span style="font-size:14px;">/10</span></div><div style="font-family:var(--M);font-size:9px;color:${_corTxt(sc)};">● ${(d.saude_geral) || '—'}</div></div>
     </div>
     <div class="kg k2" style="margin-bottom:12px;">
       ${card('MAIOR OPORTUNIDADE AGORA','var(--green)',`<div style="font-size:12px;line-height:1.6;">${d.maior_oportunidade_agora||''}</div>`)}
@@ -6539,7 +6544,7 @@ function renderRiscos(d, el) {
   const sc = d.nivel_risco_geral === 'Alto' ? 'var(--red)' : d.nivel_risco_geral === 'Médio' ? 'var(--gold)' : 'var(--green)';
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
-      <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">Nível de Risco Geral: <span style="color:${_corTxt(sc)};">o ${d.nivel_risco_geral}</span></div><div style="font-size:11px;color:var(--t2);margin-top:3px;">${d.riscos?.length||0} riscos mapeados</div></div>
+      <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">Nível de Risco Geral: <span style="color:${_corTxt(sc)};">● ${(d.nivel_risco_geral) || '—'}</span></div><div style="font-size:11px;color:var(--t2);margin-top:3px;">${d.riscos?.length||0} riscos mapeados</div></div>
     </div>
     ${card('RISCOS CRÍTICOS -- Alta Probabilidade + Alto Impacto','var(--red)',(d.matriz_risco?.criticos||[]).map(r=>`<div style="padding:4px 0;font-size:11px;border-bottom:1px solid var(--bd);">! ${r}</div>`).join('') || '<div style="font-size:11px;color:var(--t3);">Nenhum risco crítico identificado</div>')}
     <div style="margin-bottom:10px;">
@@ -6684,7 +6689,7 @@ function renderReplano(d, el) {
   const sc = semCor(d.semaforo_geral);
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--bd);">
-      <div style="font-family:var(--M);font-size:22px;font-weight:700;color:${_corTxt(sc)};">o ${d.semaforo_geral}</div>
+      <div style="font-family:var(--M);font-size:22px;font-weight:700;color:${_corTxt(sc)};">● ${(d.semaforo_geral) || '—'}</div>
       <div style="flex:1;"><div style="font-family:var(--H);font-size:14px;font-weight:600;">Replanejamento Estratégico</div><div style="font-size:11px;color:var(--t2);">Novo foco: ${d.novo_foco_semana||''}</div></div>
     </div>
     ${d.acoes_de_emergencia?.length?card('AÇÕES DE EMERGÊNCIA -- Próximas 48h','var(--red)',(d.acoes_de_emergencia||[]).map(a=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="font-size:12px;font-weight:600;">${a.acao}</div><div style="font-size:11px;color:var(--t2);">${a.responsavel} · ${a.prazo} -> ${a.resultado_esperado}</div></div>`).join('')):''}
@@ -28279,7 +28284,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.93] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.94] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -28295,7 +28300,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.93';
+window.__ATX_BUILD_ID__ = 'ATX-v3.94';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
