@@ -219,6 +219,9 @@ body{background:var(--bg);color:var(--t1);font-family:var(--B);font-size:13px;di
 @keyframes spin{to{transform:rotate(360deg);}}
 @keyframes fi{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
 @keyframes blink{0%,100%{opacity:1;}50%{opacity:0;}}
+/* v3.94: skeleton de carregamento (Saldo Diário / Saldo Mensal) */
+.skel{background:linear-gradient(90deg,var(--bg4) 25%,rgba(255,255,255,.08) 50%,var(--bg4) 75%);background-size:200% 100%;animation:skel 1.2s ease-in-out infinite;border-radius:5px;}
+@keyframes skel{from{background-position:200% 0;}to{background-position:-200% 0;}}
 .sb{width:var(--SB);background:var(--bg2);border-right:1px solid var(--bd);position:fixed;top:0;left:0;bottom:0;z-index:100;display:flex;flex-direction:column;}
 .sb-logo{padding:16px 14px 13px;border-bottom:1px solid var(--bd);}
 .sb-name{font-family:var(--H);font-size:16px;font-weight:800;display:flex;align-items:center;gap:7px;letter-spacing:-.4px;}
@@ -1305,7 +1308,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div style="width:8px;height:8px;border-radius:50%;background:var(--or);animation:pulse 1.5s infinite;flex-shrink:0;" id="waAgentDot"></div>
       <div style="flex:1;">
         <div style="font-family:var(--H);font-size:13px;font-weight:600;" id="waAgentTitle">Agente S2-02 + S7-05 · Gerador de Mensagens</div>
-        <div style="font-size:10.5px;color:var(--t2);" id="waAgentDesc">Busca leads do HubSpot automaticamente e gera mensagens personalizadas. Voce apenas revisa e aprova.</div>
+        <div style="font-size:10.5px;color:var(--t2);" id="waAgentDesc">Busca leads do HubSpot e gera mensagens personalizadas. Clique em &#9654; Gerar mensagens para o agente começar — voce apenas revisa e aprova.</div>
       </div>
       <div style="display:flex;gap:7px;align-items:center;">
         <button class="btn btn-gn" onclick="disparoAbrir('whatsapp')" title="Envia a mensagem de WhatsApp de uma campanha para uma lista">📣 Disparar campanha</button>
@@ -1319,9 +1322,9 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <option>Consultivo</option>
           <option>Provocativo</option>
         </select>
-        <button class="btn btn-or" id="btnGerarLote" onclick="gerarLote(false)" style="white-space:nowrap;font-size:11px;">&#8635; Atualizar</button>
+        <button class="btn btn-or" id="btnGerarLote" onclick="gerarLote(false)" style="white-space:nowrap;font-size:11px;">&#9654; Gerar mensagens</button><!-- v3.94: o agente só roda neste clique (lazy init) -->
       </div>
-      <span style="font-family:var(--M);font-size:9px;padding:3px 9px;border-radius:4px;white-space:nowrap;" id="waLoteStatus" style="background:var(--go2);color:var(--gold);">Iniciando...</span>
+      <span style="font-family:var(--M);font-size:9px;padding:3px 9px;border-radius:4px;white-space:nowrap;" id="waLoteStatus" style="background:var(--go2);color:var(--gold);">Pronto</span>
     </div>
 
     <!-- v3.85: COBRANÇA DE RECEBÍVEL — preenchido pelo botão "Cobrar via WhatsApp" da tela A Receber -->
@@ -4242,6 +4245,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <select class="fsel contaFiltro" id="diario_conta" title="Conta bancária" aria-label="Conta bancária" style="font-size:11px;width:auto;max-width:200px;" onchange="carregarExtratoDiario()"><option value="">Todas as contas</option></select>
       <button class="btn btn-gn" onclick="carregarExtratoDiario()">&#8635; Atualizar</button>
     </div>
+    <div id="diarioStatus"></div><!-- v3.94: aviso de timeout/erro com retry -->
     <div class="kg k4" style="margin-bottom:12px;">
       <div class="kpi bl"><div class="kl">Saldo Inicial</div><div class="kv" id="diario_si">R$0</div></div>
       <div class="kpi gn"><div class="kl">Entradas</div><div class="kv" id="diario_ent">R$0</div></div>
@@ -4268,6 +4272,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <select class="fsel contaFiltro" id="mensal_conta" style="font-size:11px;width:auto;max-width:200px;" onchange="carregarExtratoMensal()"><option value="">Todas as contas</option></select>
       <button class="btn btn-gn" onclick="carregarExtratoMensal()">&#8635; Atualizar</button>
     </div>
+    <div id="mensalStatus"></div><!-- v3.94: badge "dados salvos / atualizando" + aviso de timeout/erro com retry -->
     <div class="kg k4" style="margin-bottom:12px;">
       <div class="kpi bl"><div class="kl">Saldo Inicial Ano</div><div class="kv" id="mensal_si">R$0</div></div>
       <div class="kpi gn"><div class="kl">Total Entradas</div><div class="kv" id="mensal_ent">R$0</div></div>
@@ -5601,7 +5606,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   } catch (_) {}
 });
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s0usuarios:'/ Acesso · Usuários × Perfil',s0perfis:'/ Acesso · Perfis',s0telas:'/ Acesso · Telas',s0perfiltelas:'/ Acesso · Perfil × Telas',s0demandas:'/ S0 · Esteira de Demandas IA',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9agenda:'/ S9 · Agenda do GP',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1bp:'/ S1 · Business Plan',qa:'/ Agente de QA e Segurança',s1fundador:'/ S1 · Inbox do Fundador',s1comercial:'/ S1 · Politica Comercial',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7clientes:'/ S7 · Clientes do CRM',s7mapa:'/ S7 · Mapa de Atuacao Comercial',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7feed:'/ S7 · Feed de Prospeccao',s7cartao:'/ S7 · Meu Cartao Digital',s7kpi:'/ S7 Metas',s7painel:'/ S7 · Painel de Vendas IA',s7propostas:'/ S7 · Elaboração de Propostas',s5contratos:'/ S5 · Análise de Contratos',s3kpis:'/ S3 · KPIs de Saúde Financeira',s4crm:'/ S4 · Vendas CRM — Metas e Pipeline',s5juridico:'/ S5 · Jurídico e Compliance',s6dev:'/ S6 · Desenvolvimento, QA e Versões',s6qa:'/ S6 · Agente de QA Visual',s8rh:'/ S8 · Departamento Pessoal',s9projetos:'/ S9 · Gestão de Projetos',s10atend:'/ S10 · Atendimento Omnichannel',s11sales:'/ S11 · Inside Sales + SDR',s12hub:'/ S12 · Engenharia de Dados',s12novo:'/ S12 · Novo Projeto de Dados',s12modelagem:'/ S12 · Modelagem DW + Data Marts',s13hub:'/ S13 · Dashboard Studio',s13novo:'/ S13 · Novo Dashboard',s13mockup:'/ S13 · Mockup Interativo',s13codigo:'/ S13 · Código do Dashboard'};document.getElementById('tbc').textContent=lb[p]||(pg?'/ '+((pg.querySelector('[style*="font-family:var(--H)"]')||pg.querySelector('.pt')||{}).textContent||'').trim().substring(0,60):'');if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7pipe'||p==='dash')loadKPIs();if(p==='dash')setTimeout(_dashRfpCache,200);if(p==='dash')setTimeout(()=>{try{carregarRecAlertaDash();}catch(_){}},250);if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7clientes')setTimeout(carregarClientes,150);if(p==='s1comercial')setTimeout(comCarregar,150);if(p==='s7kpi')setTimeout(carregarSemaforoComercial,150);if(p==='s7feed')setTimeout(feedListar,150);if(p==='s7cartao')setTimeout(cartaoCarregar,150);if(p==='s7meet')setTimeout(carregarBriefings,150);if(p==='s7mapa')setTimeout(_mpPopularClientes,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();if(p==='s2wa'){setTimeout(()=>{if(batchMensagens.length===0&&!window._recCobrancaWA)gerarLote(false);},200);}if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s2social')setTimeout(_smCarregarMetricas,150);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9agenda')setTimeout(carregarAgendaGP,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);if(p==='s1bp'){setTimeout(bpInit,150);if(_bpAba==='atlantyx')setTimeout(()=>{_bpAtxCarregado=_bpAtxCarregado&&!!_bpAtual;bpAtlantyx();},200);}if(p==='qa')setTimeout(qaAbrir,50);if(p==='s0demandas')setTimeout(demandasAbrir,50);if(/^s0(usuarios|perfis|telas|perfiltelas)$/.test(p))setTimeout(()=>acessoAbrir(p),30);if(p==='s7painel'||p==='s7propostas')setTimeout(()=>vendasAbrir(p),50);if(p==='s2auto')setTimeout(_acCtaInit,80);if(p==='s5contratos')setTimeout(juridicoAbrir,50);if(p==='s1dados')setTimeout(s1DadosStatus,80);if(/^s1(dash|intel|plano|acoes|cenarios|okr|relatorio|riscos|financeiro|mercado|dados)$/.test(p))setTimeout(s1HistBotoes,60);if(p==='s2rfps'){window._rfpSoCache=true;setTimeout(runRfpMonitorAtualizado,150);}}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s0usuarios:'/ Acesso · Usuários × Perfil',s0perfis:'/ Acesso · Perfis',s0telas:'/ Acesso · Telas',s0perfiltelas:'/ Acesso · Perfil × Telas',s0demandas:'/ S0 · Esteira de Demandas IA',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9agenda:'/ S9 · Agenda do GP',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1bp:'/ S1 · Business Plan',qa:'/ Agente de QA e Segurança',s1fundador:'/ S1 · Inbox do Fundador',s1comercial:'/ S1 · Politica Comercial',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7clientes:'/ S7 · Clientes do CRM',s7mapa:'/ S7 · Mapa de Atuacao Comercial',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7feed:'/ S7 · Feed de Prospeccao',s7cartao:'/ S7 · Meu Cartao Digital',s7kpi:'/ S7 Metas',s7painel:'/ S7 · Painel de Vendas IA',s7propostas:'/ S7 · Elaboração de Propostas',s5contratos:'/ S5 · Análise de Contratos',s3kpis:'/ S3 · KPIs de Saúde Financeira',s4crm:'/ S4 · Vendas CRM — Metas e Pipeline',s5juridico:'/ S5 · Jurídico e Compliance',s6dev:'/ S6 · Desenvolvimento, QA e Versões',s6qa:'/ S6 · Agente de QA Visual',s8rh:'/ S8 · Departamento Pessoal',s9projetos:'/ S9 · Gestão de Projetos',s10atend:'/ S10 · Atendimento Omnichannel',s11sales:'/ S11 · Inside Sales + SDR',s12hub:'/ S12 · Engenharia de Dados',s12novo:'/ S12 · Novo Projeto de Dados',s12modelagem:'/ S12 · Modelagem DW + Data Marts',s13hub:'/ S13 · Dashboard Studio',s13novo:'/ S13 · Novo Dashboard',s13mockup:'/ S13 · Mockup Interativo',s13codigo:'/ S13 · Código do Dashboard'};document.getElementById('tbc').textContent=lb[p]||(pg?'/ '+((pg.querySelector('[style*="font-family:var(--H)"]')||pg.querySelector('.pt')||{}).textContent||'').trim().substring(0,60):'');if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7pipe'||p==='dash')loadKPIs();if(p==='dash')setTimeout(_dashRfpCache,200);if(p==='dash')setTimeout(()=>{try{carregarRecAlertaDash();}catch(_){}},250);if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7clientes')setTimeout(carregarClientes,150);if(p==='s1comercial')setTimeout(comCarregar,150);if(p==='s7kpi')setTimeout(carregarSemaforoComercial,150);if(p==='s7feed')setTimeout(feedListar,150);if(p==='s7cartao')setTimeout(cartaoCarregar,150);if(p==='s7meet')setTimeout(carregarBriefings,150);if(p==='s7mapa')setTimeout(_mpPopularClientes,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();/* v3.94: s2wa não chama mais o agente ao abrir (10s+); só no clique em "Gerar mensagens" */if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s2social')setTimeout(_smCarregarMetricas,150);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9agenda')setTimeout(carregarAgendaGP,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);if(p==='s1bp'){setTimeout(bpInit,150);if(_bpAba==='atlantyx')setTimeout(()=>{_bpAtxCarregado=_bpAtxCarregado&&!!_bpAtual;bpAtlantyx();},200);}if(p==='qa')setTimeout(qaAbrir,50);if(p==='s0demandas')setTimeout(demandasAbrir,50);if(/^s0(usuarios|perfis|telas|perfiltelas)$/.test(p))setTimeout(()=>acessoAbrir(p),30);if(p==='s7painel'||p==='s7propostas')setTimeout(()=>vendasAbrir(p),50);if(p==='s2auto')setTimeout(_acCtaInit,80);if(p==='s5contratos')setTimeout(juridicoAbrir,50);if(p==='s1dados')setTimeout(s1DadosStatus,80);if(/^s1(dash|intel|plano|acoes|cenarios|okr|relatorio|riscos|financeiro|mercado|dados)$/.test(p))setTimeout(s1HistBotoes,60);if(p==='s2rfps'){window._rfpSoCache=true;setTimeout(runRfpMonitorAtualizado,150);}}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -5630,8 +5635,10 @@ async function refreshAll(){addLog('info','[Sistema] Atualizando...');await Prom
 //    WA BATCH GENERATOR -- TOTALMENTE AUTONOMO                                  
 let batchMensagens = [];
 let batchLoading = false;
+const _WA_TIMEOUT_MS = 65000; // v3.94: um pouco acima do maxDuration (60s) de api/wa-batch-generate.js
+let _waFalhas = 0;            // v3.94: contador de tentativas sem sucesso (mostrado no status)
 
-// Funcao principal: chamada automaticamente ao entrar na pagina, apos prospeccao e ao atualizar
+// Funcao principal: chamada no clique em "Gerar mensagens"/"Atualizar" e apos prospeccao (v3.94: nao roda mais ao entrar na pagina)
 async function gerarLote(enviar = false, filtroOverride = null) {
   if (batchLoading) return;
   batchLoading = true;
@@ -5655,20 +5662,31 @@ async function gerarLote(enviar = false, filtroOverride = null) {
   addLog('info', '[S2-02+S7-05] Buscando leads HubSpot automaticamente (filtro: ' + filtro + ')...');
 
   const url = '/api/wa-batch-generate?filtro=' + filtro + '&tom=' + encodeURIComponent(tom) + '&enviar=' + enviar;
-  const data = await api(url, 'GET');
+  // v3.94: timeout na geração (o servidor corta em 60s) — nunca fica em "Buscando leads..." para sempre.
+  // O envio (enviar=true) não tem timeout: abortar no navegador não para o envio no servidor.
+  const ctrl = enviar ? null : new AbortController();
+  const tm = ctrl ? setTimeout(() => ctrl.abort(), _WA_TIMEOUT_MS) : null;
+  let data = null;
+  try { const r = await fetch(url, { method: 'GET', headers: { 'Content-Type': 'application/json' }, signal: ctrl ? ctrl.signal : undefined }); data = await r.json(); }
+  catch (e) { addLog('err', 'Erro ' + url + ': ' + (ctrl && ctrl.signal.aborted ? 'tempo esgotado (' + (_WA_TIMEOUT_MS / 1000) + 's)' : e.message)); }
+  finally { if (tm) clearTimeout(tm); }
+  const tempoEsgotado = !!(ctrl && ctrl.signal.aborted);
 
   batchLoading = false;
   if (btn) { btn.disabled = false; btn.textContent = '\u21bb Atualizar'; }
   if (dot) dot.style.background = 'var(--or)';
 
   if (!data) {
-    if (st) { st.textContent = 'Erro de conexao'; st.style.background = 'var(--r2)'; st.style.color = 'var(--red)'; }
+    _waFalhas++;
+    if (btn) btn.textContent = '↻ Tentar novamente';
+    if (st) { st.textContent = (tempoEsgotado ? 'Tempo esgotado' : 'Erro de conexao') + ' · ' + _waFalhas + 'x'; st.style.background = 'var(--r2)'; st.style.color = 'var(--red)'; }
     if (title) title.textContent = 'Agente S2-02 + S7-05 · Gerador de Mensagens';
-    if (desc) desc.textContent = 'Erro ao conectar. Verifique HUBSPOT_TOKEN e ANTHROPIC_API_KEY no Vercel.';
-    addLog('err', '[S2-02+S7-05] Erro ao buscar leads');
-    toast('Erro ao buscar leads. Verifique as variaveis de ambiente.', 'error');
+    if (desc) desc.textContent = (tempoEsgotado ? 'O agente não respondeu em ' + (_WA_TIMEOUT_MS / 1000) + 's (HubSpot ou IA lentos).' : 'Erro ao conectar. Verifique HUBSPOT_TOKEN e ANTHROPIC_API_KEY no Vercel.') + ' Clique em ↻ Tentar novamente (tentativas sem sucesso: ' + _waFalhas + ').';
+    addLog('err', '[S2-02+S7-05] Erro ao buscar leads' + (tempoEsgotado ? ' — tempo esgotado' : ''));
+    toast(tempoEsgotado ? 'O agente demorou demais. Tente novamente.' : 'Erro ao buscar leads. Verifique as variaveis de ambiente.', 'error');
     return;
   }
+  _waFalhas = 0;
 
   if (data.aviso) {
     if (st) { st.textContent = 'Sem leads'; st.style.background = 'var(--go2)'; st.style.color = 'var(--gold)'; }
@@ -10117,14 +10135,8 @@ initMenu();
   // chamadas do Dashboard nos testes das outras telas.
   setInterval(() => { if (document.visibilityState === 'visible' && !(window.QA && QA._rodando && QA._rodando())) refreshAll(); }, 120000);
 })();
-// Auto-gerar mensagens na primeira visita a pagina WA
-setTimeout(()=>{
-  // Se o usuario esta na pagina WA, gerar automaticamente
-  const waPage = document.getElementById('page-s2wa');
-  if(waPage && waPage.classList.contains('active') && batchMensagens.length===0) {
-    gerarLote(false);
-  }
-},2000);
+// v3.94: removida a geração automática ao abrir a página WA — o agente (HubSpot + IA, 10s+) só roda
+// quando o usuário clica em "▶ Gerar mensagens" (lazy init), então a tela abre na hora.
 
 // ── REVISAO DE COPY E IMAGEM ─────────────────────────────────────────────────
 let copyVersoesList = [];
@@ -17129,10 +17141,10 @@ function _finCacheLer(tela, chave) {
   return k ? { ...tudo[k], chave: k, outroFiltro: true } : null;
 }
 // Busca com timeout; em falha devolve o cache (ou relança o erro se não houver cache)
-async function _finCarregarComFallback(tela, action, params) {
+async function _finCarregarComFallback(tela, action, params, timeoutMs) { // v3.94: timeoutMs opcional (padrão 12s)
   const chave = JSON.stringify(params);
   try {
-    const d = await finApi(action, params, { timeoutMs: _FIN_TIMEOUT_MS });
+    const d = await finApi(action, params, { timeoutMs: timeoutMs || _FIN_TIMEOUT_MS });
     _finCacheSalvar(tela, chave, d);
     return { d, cache: null };
   } catch (e) {
@@ -17144,13 +17156,14 @@ async function _finCarregarComFallback(tela, action, params) {
 }
 function _finFmtTs(ts) { const d = new Date(ts); return d.toLocaleDateString('pt-BR').substring(0, 5) + ' ' + d.toLocaleTimeString('pt-BR').substring(0, 5); }
 // Aviso de falha num bloco próprio (acima do status da tela, para não brigar com os avisos do QuickBooks)
-function _finAvisoFalha(statusId, fnRetry, e, cache) {
+function _finAvisoFalha(statusId, fnRetry, e, cache, falhas) { // v3.94: falhas = contador de retry visível (opcional)
   const st = document.getElementById(statusId); if (!st) return;
   let box = document.getElementById(statusId + 'Falha');
   if (!e) { if (box) box.remove(); return; }
   if (!box) { box = document.createElement('div'); box.id = statusId + 'Falha'; st.parentElement?.insertBefore(box, st); }
   const msg = String(e.message || e).replace(/</g, '&lt;');
-  const btn = '<button class="btn btn-gn" style="font-size:10.5px;margin-left:8px;" onclick="this.disabled=true;this.textContent=\'⏳ Tentando...\';' + fnRetry + '()">↻ Tentar novamente</button>';
+  const btn = '<button class="btn btn-gn" style="font-size:10.5px;margin-left:8px;" onclick="this.disabled=true;this.textContent=\'⏳ Tentando...\';' + fnRetry + '()">↻ Tentar novamente</button>'
+    + (falhas ? '<span style="margin-left:8px;font-size:10px;color:var(--t2);">tentativas sem sucesso: ' + falhas + '</span>' : '');
   box.style.cssText = 'margin-bottom:10px;border-radius:8px;padding:10px 13px;font-size:11px;line-height:1.6;' + (cache
     ? 'background:rgba(245,185,75,.1);border:1px solid var(--gold);'
     : 'background:rgba(255,80,80,.1);border:1px solid var(--red);');
@@ -17158,6 +17171,18 @@ function _finAvisoFalha(statusId, fnRetry, e, cache) {
     ? '<b style="color:' + _corTxt('var(--gold)') + ';">⚠ Dados de ' + _finFmtTs(cache.ts) + '</b> — não foi possível atualizar agora (' + msg + '). Mostrando a última carga bem-sucedida'
       + (cache.outroFiltro ? ', <b>feita com outro filtro</b> (período/conta diferentes dos selecionados)' : '') + '.' + btn
     : '<b>⛔ Não foi possível carregar os dados</b> — ' + msg + '.' + btn;
+}
+// v3.94: skeleton (blocos cinzas animados) enquanto a API responde — Saldo Diário / Saldo Mensal
+function _finSkeleton(kpiIds, chartId, tabId, linhas) {
+  kpiIds.forEach(id => { const e = document.getElementById(id); if (e) e.innerHTML = '<span class="skel" style="display:inline-block;width:110px;height:20px;vertical-align:middle;"></span>'; });
+  const ch = document.getElementById(chartId); if (ch) ch.innerHTML = '<div class="skel" style="width:100%;height:100%;"></div>';
+  const tb = document.getElementById(tabId); if (tb) tb.innerHTML = Array.from({ length: linhas || 6 }, () => '<div class="skel" style="height:22px;margin:7px 0;"></div>').join('');
+}
+// Falha sem cache: tira o skeleton que sobrou (a tela nunca fica "carregando" para sempre)
+function _finSkeletonLimpar(kpiIds, chartId, tabId) {
+  kpiIds.forEach(id => { const e = document.getElementById(id); if (e && e.querySelector('.skel')) e.textContent = '—'; });
+  const ch = document.getElementById(chartId); if (ch && ch.querySelector('.skel')) ch.innerHTML = '';
+  const tb = document.getElementById(tabId); if (tb && tb.querySelector('.skel')) tb.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Não carregado — use ↻ Tentar novamente acima.</div>';
 }
 
 // Formatador BRL
@@ -18041,6 +18066,8 @@ function renderKpisSaude(k) {
 // ═══════════════════════════════════════════════════════════════════════════
 // SALDO DIÁRIO
 // ═══════════════════════════════════════════════════════════════════════════
+const _DIARIO_TIMEOUT_MS = 15000; // v3.94: a API leva ~10s no QA; 15s antes de desistir
+let _diarioSeq = 0, _diarioFalhas = 0;
 async function carregarExtratoDiario() {
   // Default: últimos 30 dias
   let ini = document.getElementById('diario_ini')?.value;
@@ -18054,11 +18081,18 @@ async function carregarExtratoDiario() {
   }
 
   const tab = document.getElementById('diario_tabela');
-  if (tab) tab.innerHTML = '<div style="text-align:center;padding:24px;color:var(--t2);font-size:11px;">Carregando...</div>';
+  // v3.94: skeleton no lugar do "Carregando..." + timeout de 15s com cache da última carga boa e retry visível
+  const KPIS = ['diario_si', 'diario_ent', 'diario_sai', 'diario_sf'];
+  const seq = ++_diarioSeq;
+  _finSkeleton(KPIS, 'diario_chart', 'diario_tabela');
 
   try {
     popularSeletoresConta();
-    const d = await finApi('extrato_diario', { data_inicio: ini, data_fim: fim, conta_id: document.getElementById('diario_conta')?.value || null });
+    const { d, cache } = await _finCarregarComFallback('s3diario', 'extrato_diario', { data_inicio: ini, data_fim: fim, conta_id: document.getElementById('diario_conta')?.value || null }, _DIARIO_TIMEOUT_MS);
+    if (seq !== _diarioSeq) return; // filtro mudou durante a espera: a chamada mais nova é que desenha a tela
+    _diarioFalhas = cache ? _diarioFalhas + 1 : 0;
+    _finAvisoFalha('diarioStatus', 'carregarExtratoDiario', cache && cache.erro, cache, _diarioFalhas);
+    { const ch = document.getElementById('diario_chart'); if (ch) ch.innerHTML = ''; }
     const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
     u('diario_si', fmtBRLcompleto(d.saldo_inicial));
     u('diario_ent', fmtBRLcompleto(d.total_entradas));
@@ -18093,13 +18127,20 @@ async function carregarExtratoDiario() {
         </tbody></table>`;
     }
   } catch (e) {
-    if (tab) tab.innerHTML = `<div style="color:var(--red);font-size:11px;padding:14px;">Erro: ${e.message}</div>`;
+    if (seq !== _diarioSeq) return;
+    // v3.94: sem cache local — o skeleton dá lugar ao erro com botão de retry
+    _diarioFalhas++;
+    _finSkeletonLimpar(KPIS, 'diario_chart', 'diario_tabela');
+    _finAvisoFalha('diarioStatus', 'carregarExtratoDiario', e, null, _diarioFalhas);
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SALDO MENSAL
 // ═══════════════════════════════════════════════════════════════════════════
+const _MENSAL_TIMEOUT_MS = 20000;   // v3.94: a API chega a 17s no QA; 20s antes de desistir
+const _MENSAL_CACHE_FRESCO_MIN = 5; // v3.94: dado salvo há menos de 5 min aparece como "salvo há X min"; acima disso, "desatualizado"
+let _mensalSeq = 0, _mensalFalhas = 0;
 async function carregarExtratoMensal() {
   const sel = document.getElementById('mensal_ano');
   if (sel && sel.options.length === 0) {
@@ -18111,11 +18152,40 @@ async function carregarExtratoMensal() {
     }
   }
   const ano = sel ? parseInt(sel.value) : new Date().getFullYear();
-  const tab = document.getElementById('mensal_tabela');
-  if (tab) tab.innerHTML = '<div style="text-align:center;padding:24px;color:var(--t2);font-size:11px;">Carregando...</div>';
+  popularSeletoresConta();
+  const params = { ano, conta_id: document.getElementById('mensal_conta')?.value || null };
+  const KPIS = ['mensal_si', 'mensal_ent', 'mensal_sai', 'mensal_sf'];
+  const seq = ++_mensalSeq;
+  const st = document.getElementById('mensalStatus');
+  // v3.94: mostra na hora a última carga boa deste ano/conta (localStorage) e atualiza em segundo plano;
+  // sem dado salvo, mostra o skeleton. Timeout de 20s (a API chega a 17s).
+  const salvo = _finCacheLerTudo('s3mensal')[JSON.stringify(params)];
+  let mostrouSalvo = false;
+  if (salvo && salvo.dados) { try { _mensalRender(salvo.dados); mostrouSalvo = true; } catch (_) {} }
+  if (mostrouSalvo) {
+    const min = Math.floor((Date.now() - salvo.ts) / 60000);
+    if (st) st.innerHTML = '<div style="margin-bottom:10px;border-radius:8px;padding:8px 13px;font-size:11px;background:rgba(245,185,75,.1);border:1px solid var(--gold);">'
+      + '<span class="skel" style="display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:middle;margin-right:6px;"></span>'
+      + '<b style="color:' + _corTxt('var(--gold)') + ';">' + (min < _MENSAL_CACHE_FRESCO_MIN ? 'Dados salvos há ' + (min < 1 ? 'menos de 1 min' : min + ' min') : '⚠ Desatualizado — dados de ' + _finFmtTs(salvo.ts)) + '</b> · atualizando com o QuickBooks…</div>';
+  } else { if (st) st.innerHTML = ''; _finSkeleton(KPIS, 'mensal_chart', 'mensal_tabela', 12); }
   try {
-    popularSeletoresConta();
-    const d = await finApi('extrato_mensal', { ano, conta_id: document.getElementById('mensal_conta')?.value || null });
+    const { d, cache } = await _finCarregarComFallback('s3mensal', 'extrato_mensal', params, _MENSAL_TIMEOUT_MS);
+    if (seq !== _mensalSeq) return; // ano/conta mudou durante a espera: a chamada mais nova é que desenha a tela
+    _mensalFalhas = cache ? _mensalFalhas + 1 : 0;
+    if (st) st.innerHTML = '';
+    _finAvisoFalha('mensalStatus', 'carregarExtratoMensal', cache && cache.erro, cache, _mensalFalhas);
+    _mensalRender(d);
+  } catch (e) {
+    if (seq !== _mensalSeq) return;
+    // v3.94: sem cache local — o skeleton dá lugar ao erro com botão de retry
+    _mensalFalhas++;
+    if (st) st.innerHTML = '';
+    _finSkeletonLimpar(KPIS, 'mensal_chart', 'mensal_tabela');
+    _finAvisoFalha('mensalStatus', 'carregarExtratoMensal', e, null, _mensalFalhas);
+  }
+}
+function _mensalRender(d) {
+    const tab = document.getElementById('mensal_tabela');
     const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
     u('mensal_si', fmtBRLcompleto(d.saldo_inicial));
     u('mensal_ent', fmtBRLcompleto(d.total_entradas));
@@ -18156,9 +18226,6 @@ async function carregarExtratoMensal() {
           </tr>`;
         }).join('')}</tbody></table>`;
     }
-  } catch (e) {
-    if (tab) tab.innerHTML = `<div style="color:var(--red);font-size:11px;padding:14px;">Erro: ${e.message}</div>`;
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
