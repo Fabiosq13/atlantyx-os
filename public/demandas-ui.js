@@ -103,6 +103,7 @@
         💡 Último ciclo do agente: ${uc ? quando(uc.em) + (uc.pulado ? ' · pulado: ' + esc(uc.pulado) : ' · ' + (uc.criadas ?? 0) + ' sugestão(ões)') : 'ainda não rodou'} · o agente pausa sozinho se houver 12 sugestões esperando sua decisão.<br>
         🌙 Última madrugada: ${un ? quando(un.em) + ' · ' + (un.telas || 0) + ' telas · ' + esc(un.resultado || '') + (un.issue ? ' (tarefa #' + un.issue + ')' : '') : 'ainda não rodou — configure o GitHub (veja abaixo)'}
         ${D.github ? '' : '<br><b style="color:var(--red);">GITHUB_TOKEN não configurado no Vercel</b> — sem ele as demandas aprovadas não viram tarefa para o Claude.'}
+        <div style="margin-top:4px;"><button class="btn btn-g" style="font-size:10px;" onclick="DEM.testarGithub()">🔑 Testar conexão com o GitHub</button> <span id="demGhTeste" style="font-size:10.5px;"></span></div>
         <details style="margin-top:4px;"><summary style="cursor:pointer;color:var(--blue);">Configuração única (GitHub)</summary>
           <div style="padding:6px 0 0 12px;">1) App do Claude instalado no repositório e secret <b>ANTHROPIC_API_KEY</b> no GitHub Actions · 2) No Vercel: <b>GITHUB_TOKEN</b> (fine-grained, Issues: Read and write) e <b>CRON_SECRET</b> ·
           3) No GitHub Actions: secrets <b>CRON_SECRET</b> (mesmo valor do Vercel), <b>ATX_QA_EMAIL</b> e <b>ATX_QA_SENHA</b> (login e senha de um usuário criado em Acesso › Usuários × Perfil) · 4) Criar os rótulos <b>demanda-aprovada</b>, <b>correcao-noturna</b> e <b>precisa-revisao</b> (ou deixar que sejam criados na primeira tarefa).</div></details></div>`;
@@ -170,6 +171,7 @@
     if (decisao === 'recusar' && !obs) return nota('Escreva o motivo da recusa — o agente usa para não repetir', 'error');
     if (decisao === 'aprovar' && !confirm('Aprovar esta demanda?\n\nEla vira uma tarefa para o Claude no GitHub. Ele implementa numa branch e abre um pull request — que só vai para o ar quando VOCÊ fizer o merge.')) return;
     try { const r = await api('decidir', { id, decisao, obs }); $('demModal')?.remove();
+      if (r.aviso && /GitHub|token/i.test(r.aviso)) { await carregar(); return erroGithub(new Error('A demanda ficou APROVADA, mas não virou tarefa para o Claude: ' + r.aviso + '\n\nDepois de resolver, use "⚙ Enviar para implementação" no card.')); }
       nota(decisao === 'recusar' ? 'Demanda recusada — o agente vai levar o motivo em conta' : r.issue ? 'Aprovada — tarefa #' + r.issue + ' aberta para o Claude' : (r.aviso || 'Aprovada'), r.aviso ? 'error' : 'success'); await carregar(); }
     catch (e) { nota(e.message, 'error'); }
   }
@@ -179,8 +181,8 @@
     let mesmo = false;
     if (x.claude?.estado === 'erro') { if (!confirm('ATENÇÃO: o Claude parou com ERRO nesta tarefa e o PR pode estar incompleto.\n\nMesclar mesmo assim?')) return; mesmo = true; }
     else if (!confirm('Aprovar e mesclar ' + (x.pr?.estado === 'open' ? 'o PR #' + x.pr.numero : 'o trabalho do Claude (o PR é aberto agora)') + '?\n\nO robô do GitHub atualiza o PR com a versão atual do sistema (resolve sozinho o conflito de versão), valida (sintaxe + carga da página) e só então mescla e publica. Se houver conflito de verdade, ele pede ao Claude para resolver e tenta de novo.')) return;
-    try { await api('mesclar', { id, mesmo_assim: mesmo }); $('demModal')?.remove(); nota('Aprovado — o merge começa em instantes (acompanhe no card)'); await carregar(); }
-    catch (e) { nota(e.message, 'error'); }
+    try { const r = await api('mesclar', { id, mesmo_assim: mesmo }); $('demModal')?.remove(); nota(r.via === 'comando' ? 'Aprovado — pedido enviado ao robô do GitHub (abre o PR, valida e publica em alguns minutos)' : 'Aprovado — o merge começa em instantes (acompanhe no card)'); await carregar(); }
+    catch (e) { erroGithub(e); }
   }
   async function mover(id, status) { try { await api('mover', { id, status }); $('demModal')?.remove(); await carregar(); } catch (e) { nota(e.message, 'error'); } }
   async function excluir(id) { if (!confirm('Excluir esta demanda da esteira?')) return; try { await api('excluir', { id }); $('demModal')?.remove(); await carregar(); } catch (e) { nota(e.message, 'error'); } }
@@ -231,7 +233,21 @@
     if (op === 'reenviar' || op === 'corrigir') obs = prompt('Alguma orientação extra para o Claude? (opcional)', '') || '';
     if (op === 'cancelar') obs = prompt('Motivo (opcional)', '') || '';
     try { const r = await api('tarefa', { id, op, obs }); $('demModal')?.remove(); nota(r.msg || 'Feito'); await carregar(); }
-    catch (e) { nota(e.message, 'error'); }
+    catch (e) { erroGithub(e); }
   }
-  window.DEM = { abrir, tarefa, carregar, filtrar, detalhe, decidir, mesclar, mover, excluir, editar, salvarEdicao, nova, salvarNova, pensar, salvarCfg, _render: render, _estado: () => D };
+  // v3.99: erro do GitHub → mostra a mensagem completa e já roda o teste do token
+  function erroGithub(e) {
+    const m = String(e.message || e);
+    if (/GitHub|token/i.test(m)) { alert(m + '\n\nVou testar agora o que o token do GitHub consegue fazer (resultado no topo da Esteira).'); testarGithub(); }
+    else nota(m, 'error');
+  }
+  async function testarGithub() {
+    const el = $('demGhTeste'); if (el) el.innerHTML = '<span style="color:var(--blue);">testando…</span>';
+    try { const r = await api('github_teste'); const N = { ler_repositorio: 'ler o repositório', tarefas_escrever: 'tarefas (issues)', pull_requests_escrever: 'pull requests' };
+      const falhas = Object.entries(r.teste).filter(([, v]) => v.ok === false);
+      const txt = Object.entries(r.teste).map(([k, v]) => (v.ok ? '✅ ' : v.ok === false ? '❌ ' : '— ') + N[k] + (v.ok === false ? ' (' + esc(v.erro) + ')' : '')).join(' · ');
+      if (el) el.innerHTML = txt + (falhas.length ? '<br><b style="color:var(--gold);">Como resolver:</b> em github.com → Settings → Developer settings → Fine-grained tokens, edite o token do Atlantyx OS (repositório ' + esc(r.repo) + ') e marque <b>Issues: Read and write</b>' + (r.teste.pull_requests_escrever?.ok === false ? ', <b>Pull requests: Read and write</b> e <b>Contents: Read</b>' : '') + '. Se o erro for 401, gere um token novo e troque o <b>GITHUB_TOKEN</b> no Vercel (e faça Redeploy). Enquanto isso, o merge funciona pelo robô do GitHub desde que "tarefas" esteja ✅.' : ''); }
+    catch (e) { if (el) el.innerHTML = '<span style="color:var(--red);">' + esc(e.message) + '</span>'; }
+  }
+  window.DEM = { abrir, tarefa, testarGithub, carregar, filtrar, detalhe, decidir, mesclar, mover, excluir, editar, salvarEdicao, nova, salvarNova, pensar, salvarCfg, _render: render, _estado: () => D };
 })();

@@ -20,7 +20,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   claude:
-    if: contains(github.event.issue.body, '@claude') || contains(github.event.comment.body, '@claude')
+    # v3.99: em comentário, só dispara quando o COMENTÁRIO chama o @claude (antes qualquer comentário numa tarefa
+    # com @claude no corpo — ex.: os comandos /atx- da Esteira — ocupava um robô à toa)
+    if: (github.event_name == 'issues' && contains(github.event.issue.body, '@claude')) || (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude') && !startsWith(github.event.comment.body, '/atx-'))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:

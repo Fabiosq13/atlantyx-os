@@ -196,7 +196,8 @@ async function abrirIssue(r) {
     headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', 'User-Agent': 'atlantyx-os-agente' },
     body: JSON.stringify({ title: '[Demanda aprovada] ' + String(r.titulo).substring(0, 180), body: corpoIssue(r), labels: ['demanda-aprovada'] }) });
   const d = await resp.json().catch(() => ({}));
-  if (!resp.ok) return { erro: 'GitHub recusou (' + resp.status + '): ' + (d.message || '') };
+  if (!resp.ok) { const perm = resp.headers.get('x-accepted-github-permissions');
+    return { erro: 'GitHub recusou (' + resp.status + '): ' + (d.message || '') + (perm ? ' · permissão exigida: ' + perm : '') + (d.errors?.[0]?.message ? ' · ' + d.errors[0].message : '') + (resp.status === 401 ? ' — o token do GitHub no Vercel venceu ou foi revogado: gere outro e troque o GITHUB_TOKEN' : '') }; }
   return { numero: d.number, url: d.html_url };
 }
 
@@ -350,9 +351,20 @@ function _gh() {
   return async (caminho, metodo = 'GET', corpo) => {
     const r = await fetch(`https://api.github.com/repos/${repo}${caminho}`, { method: metodo, headers: H, body: corpo ? JSON.stringify(corpo) : undefined });
     const j = r.status === 204 ? {} : await r.json().catch(() => ({}));
-    if (!r.ok && !(metodo === 'DELETE' && r.status === 404)) throw new Error('GitHub recusou (' + r.status + '): ' + (j.message || '') + (r.status === 403 || r.status === 404 && /pulls/.test(caminho) ? ' — no token do GitHub (Vercel → GITHUB_TOKEN) acrescente "Pull requests: Read and write" e "Contents: Read".' : ''));
+    if (!r.ok && !(metodo === 'DELETE' && r.status === 404)) {
+      // v3.99: diz QUAL permissão faltou (o GitHub informa no cabeçalho x-accepted-github-permissions)
+      const perm = r.headers.get('x-accepted-github-permissions') || '';
+      const e = new Error('GitHub recusou (' + r.status + '): ' + (j.message || '') + (perm ? ' · permissão exigida: ' + perm : '') + (j.errors?.[0]?.message ? ' · ' + j.errors[0].message : ''));
+      e.status = r.status; e.perm = perm; throw e;
+    }
     return j;
   };
+}
+// v3.99: sem permissão de PR no token → manda o pedido como comentário "/atx-…" na tarefa; o robô do GitHub
+// (esteira-comandos.yml, que tem permissão de PR pelo próprio Actions) abre o PR, marca e dispara o merge.
+const _semPermissao = e => [401, 403, 404].includes(e?.status) || /Resource not accessible|not accessible by/i.test(e?.message || '');
+async function _comando(gh, N, cmd, quem) {
+  await gh('/issues/' + N + '/comments', 'POST', { body: '/atx-' + cmd + '\n\n_Pedido na Esteira de Demandas por ' + (quem || 'fundador') + '._' });
 }
 async function abrirPR(id, d, titulo) {
   const gh = _gh();
@@ -383,15 +395,19 @@ async function acaoTarefa(sql, b, req) {
     case 'abrir_pr': {
       if (pr?.estado === 'open') return { ok: true, msg: 'O PR #' + pr.numero + ' já está aberto' };
       if (!d.branch) throw new Error('O Claude ainda não deixou uma branch com o trabalho');
-      const p = await abrirPR(row.id, d, row.titulo); await salvar({ pr: p });
-      return { ok: true, msg: 'PR #' + p.numero + ' aberto — agora é só aprovar o merge', pr: p.numero };
+      try { const p = await abrirPR(row.id, d, row.titulo); await salvar({ pr: p });
+        return { ok: true, msg: 'PR #' + p.numero + ' aberto — agora é só aprovar o merge', pr: p.numero }; }
+      catch (e) { if (!_semPermissao(e) || !N) throw e; await _comando(gh, N, 'mesclar', quem); await salvar({ merge_pedido_em: new Date().toISOString(), merge_pedido_por: quem, merge_via: 'comando' });
+        return { ok: true, msg: 'Pedido enviado ao robô do GitHub — ele abre o PR e faz o merge validado' }; }
     }
     case 'refazer_merge': { // validação falhou ou o robô não rodou → tira e põe o rótulo de novo (dispara o robô)
       if (!pr?.numero || pr.estado !== 'open') throw new Error('Sem PR aberto');
-      await gh('/issues/' + pr.numero + '/labels/precisa-revisao', 'DELETE').catch(() => {});
-      await gh('/issues/' + pr.numero + '/labels/conflito', 'DELETE').catch(() => {});
-      await gh('/issues/' + pr.numero + '/labels/aprovado-merge', 'DELETE').catch(() => {});
-      await gh('/issues/' + pr.numero + '/labels', 'POST', { labels: ['aprovado-merge'] });
+      try {
+        await gh('/issues/' + pr.numero + '/labels/precisa-revisao', 'DELETE').catch(() => {});
+        await gh('/issues/' + pr.numero + '/labels/conflito', 'DELETE').catch(() => {});
+        await gh('/issues/' + pr.numero + '/labels/aprovado-merge', 'DELETE').catch(() => {});
+        await gh('/issues/' + pr.numero + '/labels', 'POST', { labels: ['aprovado-merge'] });
+      } catch (e) { if (!_semPermissao(e) || !N) throw e; await _comando(gh, N, 'mesclar-de-novo', quem); }
       await salvar({ pr: { ...pr, rotulos: (pr.rotulos || []).filter(r => !['precisa-revisao', 'conflito'].includes(r)).concat('aprovado-merge') }, merge_pedido_em: new Date().toISOString(), merge_pedido_por: quem });
       return { ok: true, msg: 'Merge pedido de novo — o robô atualiza, valida e publica' };
     }
@@ -404,7 +420,8 @@ async function acaoTarefa(sql, b, req) {
       return { ok: true, msg: 'Pedido de correção enviado ao Claude no PR #' + pr.numero + ' — quando ele terminar, clique em "Mesclar de novo"' };
     }
     case 'cancelar': {
-      if (pr?.numero && pr.estado === 'open') await gh('/pulls/' + pr.numero, 'PATCH', { state: 'closed' });
+      if (pr?.numero && pr.estado === 'open') { try { await gh('/pulls/' + pr.numero, 'PATCH', { state: 'closed' }); }
+        catch (e) { if (!_semPermissao(e) || !N) throw e; await _comando(gh, N, 'cancelar', quem); } }
       if (N) { try { await gh('/issues/' + N + '/comments', 'POST', { body: 'Cancelada pelo fundador na Esteira de Demandas' + (b.obs ? ': ' + String(b.obs).substring(0, 500) : '.') }); } catch (_) {}
         await gh('/issues/' + N, 'PATCH', { state: 'closed', state_reason: 'not_planned' }); }
       await salvar({ arquivada_em: new Date().toISOString(), cancelada_por: quem }, 'arquivada');
@@ -460,20 +477,37 @@ async function handler(req, res) {
         if (!token) throw new Error('GITHUB_TOKEN não configurado no Vercel');
         const [row] = await sql`SELECT id, titulo, dados FROM agente_demandas WHERE id = ${b.id} LIMIT 1`; if (!row) throw new Error('Demanda não encontrada');
         const d = parse(row.dados) || {}; let pr = d.pr;
-        // v3.98: o Claude terminou e deixou a branch, mas o robô ainda não abriu o PR → abre agora
-        if ((!pr?.numero || pr.estado !== 'open') && d.branch) { pr = await abrirPR(row.id, d, row.titulo); }
-        if (!pr?.numero || pr.estado !== 'open') throw new Error('Esta demanda não tem um PR aberto para mesclar');
+        const [rr] = await sql`SELECT issue_numero FROM agente_demandas WHERE id = ${b.id}`; const N = rr?.issue_numero;
         if (d.claude?.estado === 'erro' && !b.mesmo_assim) throw new Error('O Claude parou com erro nesta tarefa — o PR pode estar incompleto. Revise no GitHub antes.');
-        const H = { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'User-Agent': 'atlantyx-os-agente', 'Content-Type': 'application/json' };
-        const r = await fetch(`https://api.github.com/repos/${repo}/issues/${pr.numero}/labels`, { method: 'POST', headers: H, body: JSON.stringify({ labels: ['aprovado-merge'] }) });
-        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error('GitHub recusou (' + r.status + '): ' + (e.message || '') + (r.status === 403 ? ' — no token do GitHub (Vercel → GITHUB_TOKEN) acrescente a permissão "Pull requests: Read and write".' : '')); }
-        d.pr = { ...pr, rotulos: [...new Set([...(pr.rotulos || []), 'aprovado-merge'])] };
+        if ((!pr?.numero || pr.estado !== 'open') && !d.branch) throw new Error('Esta demanda ainda não tem trabalho do Claude para mesclar');
+        const gh = _gh(); let via = 'api';
+        try {
+          // v3.98: o Claude terminou e deixou a branch, mas o robô ainda não abriu o PR → abre agora
+          if (!pr?.numero || pr.estado !== 'open') pr = await abrirPR(row.id, d, row.titulo);
+          await gh('/issues/' + pr.numero + '/labels', 'POST', { labels: ['aprovado-merge'] });
+          d.pr = { ...pr, rotulos: [...new Set([...(pr.rotulos || []), 'aprovado-merge'])] };
+        } catch (e) {
+          if (!_semPermissao(e) || !N) throw e;
+          await _comando(gh, N, 'mesclar', req.sessao?.login || req.usuario); via = 'comando'; // o robô do GitHub faz com a permissão dele
+        }
+        d.merge_via = via;
         d.merge_pedido_em = new Date().toISOString(); d.merge_pedido_por = req.sessao?.login || req.usuario || null;
         await sql`UPDATE agente_demandas SET dados = ${JSON.stringify(d)}, atualizado_em = NOW() WHERE id = ${row.id}`;
-        return { ok: true, pr: pr.numero };
+        return { ok: true, pr: pr?.numero || null, via };
       },
       // v3.98: ações direto no card da Esteira — reenviar ao Claude, abrir PR, refazer o merge, pedir correção, cancelar
       tarefa: () => acaoTarefa(sql, b, req),
+      // v3.99: testa o que o token do GitHub (Vercel) consegue fazer — sem alterar nada (PATCH vazio)
+      github_teste: async () => {
+        const gh = _gh(); const out = {};
+        const t = async (k, f) => { try { await f(); out[k] = { ok: true }; } catch (e) { out[k] = { ok: false, erro: e.message, perm: e.perm || null }; } };
+        await t('ler_repositorio', () => gh(''));
+        const iss = await gh('/issues?state=open&per_page=30').catch(() => []);
+        const i = (Array.isArray(iss) ? iss : []).find(x => !x.pull_request), p = (Array.isArray(iss) ? iss : []).find(x => x.pull_request);
+        if (i) await t('tarefas_escrever', () => gh('/issues/' + i.number, 'PATCH', {})); else out.tarefas_escrever = { ok: null, erro: 'nenhuma tarefa aberta para testar' };
+        if (p) await t('pull_requests_escrever', () => gh('/pulls/' + p.number, 'PATCH', {})); else out.pull_requests_escrever = { ok: null, erro: 'nenhum PR aberto para testar' };
+        return { teste: out, repo: process.env.GITHUB_REPO || 'Fabiosq13/atlantyx-os' };
+      },
       qa_noturno: () => qaNoturno(req, b), // v3.45 — chamado pelo GitHub Actions (Authorization: Bearer CRON_SECRET)
       config: async () => ({ config: await config() }),
       config_salvar: async () => {
