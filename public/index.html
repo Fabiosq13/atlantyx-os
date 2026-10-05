@@ -6,14 +6,31 @@
 <script>
 // v3.84: "Copiar" nunca quebra — se o navegador recusar a área de transferência (aba sem foco, permissão),
 // copia pelo método antigo; se nem assim der, avisa em vez de gerar erro de JavaScript.
+// v3.94: também cobre navegador sem Clipboard API (http, aba embutida) e erro síncrono do writeText, e expõe
+// atxCopiar(texto, msg) — copia, mostra o toast de confirmação e nunca lança exceção nem deixa promessa rejeitada.
 (function () {
-  var cb = navigator.clipboard; if (!cb || !cb.writeText) return;
-  var orig = cb.writeText.bind(cb);
   var antigo = function (t) {
+    var foco = document.activeElement;
     try { var a = document.createElement('textarea'); a.value = String(t); a.setAttribute('readonly', ''); a.style.cssText = 'position:fixed;top:-1000px;opacity:0;';
-      document.body.appendChild(a); a.select(); var ok = document.execCommand('copy'); a.remove(); return ok; } catch (_) { return false; }
+      document.body.appendChild(a); a.select(); var ok = document.execCommand('copy'); a.remove(); try { if (foco && foco.focus) foco.focus(); } catch (_) {} return !!ok; } catch (_) { return false; }
   };
-  try { cb.writeText = function (t) { return orig(t).catch(function () { if (!antigo(t)) { try { (window.toast || alert)('Não consegui copiar automaticamente — selecione o texto e copie com Ctrl+C.', 'error'); } catch (_) {} } }); }; } catch (_) {}
+  var aviso = function () { try { (window.toast || alert)('Não consegui copiar automaticamente — selecione o texto e copie com Ctrl+C.', 'error'); } catch (_) {} };
+  var cb = navigator.clipboard, orig = null;
+  if (cb && cb.writeText) {
+    orig = cb.writeText.bind(cb);
+    try { cb.writeText = function (t) { var p; try { p = orig(t); } catch (e) { p = Promise.reject(e); } return Promise.resolve(p).catch(function () { if (!antigo(t)) aviso(); }); }; } catch (_) {}
+  } else {
+    try { Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: function (t) { if (!antigo(t)) aviso(); return Promise.resolve(); } } }); } catch (_) {}
+  }
+  window.atxCopiar = function (texto, msgOk) {
+    var t = texto == null ? '' : String(texto);
+    var ok = function () { try { if (window.toast) window.toast(msgOk || 'Copiado!', 'success'); } catch (_) {} return true; };
+    if (!t) { try { if (window.toast) window.toast('Nada para copiar', 'error'); } catch (_) {} return Promise.resolve(false); }
+    if (antigo(t)) return Promise.resolve(ok()); // dentro do clique: método síncrono funciona mesmo sem foco/permissão
+    if (!orig) { aviso(); return Promise.resolve(false); }
+    var p; try { p = orig(t); } catch (e) { p = Promise.reject(e); }
+    return Promise.resolve(p).then(ok, function () { aviso(); return false; });
+  };
 })();
 // v3.81 — LOGIN com usuários, perfis e telas (no banco). Primeiro acesso cria o administrador master.
 // O cookie de sessão é HttpOnly. Se alguma API responder 401 "exige_login", aparece a tela de login.
@@ -1511,7 +1528,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 <div class="page" id="page-s7cartao">
   <div style="background:linear-gradient(135deg,rgba(26,58,143,.18),rgba(26,58,143,.04));border:1px solid rgba(79,124,255,.3);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
     <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">&#128100; Meu Cartao Digital</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Seus dados, foto e QR do WhatsApp numa pagina publica para compartilhar</div></div>
-    <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="navigator.clipboard.writeText(location.origin+'/cartao.html').then(()=>toast('Link do cartao copiado','success'))">&#128279; Copiar link</button>
+    <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="atxCopiar(location.origin+'/cartao.html','Link do cartao copiado')">&#128279; Copiar link</button>
     <a class="btn" style="font-size:10px;text-decoration:none;" href="/cartao.html" target="_blank" rel="noopener noreferrer">&#128065; Abrir cartao</a>
     <button class="btn btn-gn" onclick="cartaoSalvar()">&#128190; Salvar</button>
   </div>
@@ -8395,7 +8412,7 @@ async function runRfpMonitorAtualizado() {
           <a href="${e(r.link_acesso || r.link_pncp)}" target="_blank" rel="noopener" style="font-size:13px;font-weight:700;color:var(--blue);text-decoration:none;">${e(r.nome_edital || r.titulo)} &#8599;</a>
           <div style="margin-top:4px;font-size:10.5px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span style="color:var(--t2);">Link de acesso:</span>
             <a href="${e(r.link_acesso || r.link_pncp)}" target="_blank" rel="noopener" style="color:var(--blue);word-break:break-all;">${e(r.link_acesso || r.link_pncp)}</a>
-            <button class="btn btn-g" style="font-size:9px;padding:2px 7px;" onclick="navigator.clipboard.writeText('${e(r.link_acesso || r.link_pncp)}');toast('Link copiado','success')">copiar link</button></div>
+            <button class="btn btn-g" style="font-size:9px;padding:2px 7px;" data-copiar="${e(r.link_acesso || r.link_pncp)}" onclick="atxCopiar(this.dataset.copiar,'Link copiado')">copiar link</button></div>
           ${r.link_origem ? `<div style="margin-top:3px;font-size:10.5px;"><span style="color:var(--t2);">Envio da proposta (portal de origem):</span> <a href="${e(r.link_origem)}" target="_blank" rel="noopener" style="color:var(--blue);word-break:break-all;">${e(r.link_origem)}</a></div>` : ''}
         </div>
         <div style="font-size:11.5px;font-weight:600;margin-bottom:4px;">${e(r.titulo)}</div>
@@ -8412,7 +8429,7 @@ async function runRfpMonitorAtualizado() {
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
             ${r.link_pncp ? '<a class="btn btn-p" style="font-size:10px;padding:4px 10px;text-decoration:none;" href="' + e(r.link_pncp) + '" target="_blank" rel="noopener">&#128196; Abrir edital no PNCP</a>' : ''}
             ${r.link_origem ? '<a class="btn btn-g" style="font-size:10px;padding:4px 10px;text-decoration:none;" href="' + e(r.link_origem) + '" target="_blank" rel="noopener">&#8599; Portal de origem (envio da proposta)</a>' : '<span style="font-size:10px;color:var(--t3);align-self:center;">Portal de origem: consulte a página do edital no PNCP</span>'}
-            ${r.numero_pncp ? '<button class="btn btn-g" style="font-size:10px;padding:4px 10px;" onclick="navigator.clipboard.writeText(\'' + e(r.numero_pncp) + '\');toast(\'Nº PNCP copiado\',\'success\')">Copiar nº PNCP</button>' : ''}
+            ${r.numero_pncp ? '<button class="btn btn-g" style="font-size:10px;padding:4px 10px;" data-copiar="' + e(r.numero_pncp) + '" onclick="atxCopiar(this.dataset.copiar,\'Nº PNCP copiado\')">Copiar nº PNCP</button>' : ''}
           </div>
         </div>
         ${r.justificativa ? `<div style="font-size:11px;color:var(--blue);margin-top:6px;">-> ${e(r.justificativa)}</div>` : ''}
@@ -10921,7 +10938,7 @@ function _anPropostaRender(p) {
     + lista('Pedimos em troca', p.contrapartidas_solicitadas) + lista('Podemos ceder', p.concessoes_possiveis, 'var(--gold)') + lista('Não aceitamos', p.limites, 'var(--red)')
     + lista('Riscos e como tratamos', p.riscos_e_mitigacoes) + lista('Próximos passos', p.proximos_passos, 'var(--blue)')
     + '</div>'
-    + (p.mensagem_para_enviar ? '<div style="margin-top:8px;"><div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;"><b style="font-size:11px;flex:1;">Mensagem pronta para enviar</b><button class="btn btn-g" style="font-size:10px;padding:2px 8px;" onclick="navigator.clipboard.writeText(document.getElementById(\'anPropMsg\').value).then(()=>toast(\'Mensagem copiada\',\'success\'))">📋 Copiar</button></div><textarea class="fta" id="anPropMsg" style="min-height:150px;font-size:11.5px;">' + e(p.mensagem_para_enviar) + '</textarea></div>' : '');
+    + (p.mensagem_para_enviar ? '<div style="margin-top:8px;"><div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;"><b style="font-size:11px;flex:1;">Mensagem pronta para enviar</b><button class="btn btn-g" style="font-size:10px;padding:2px 8px;" onclick="atxCopiar((document.getElementById(\'anPropMsg\')||{}).value,\'Mensagem copiada\')">📋 Copiar</button></div><textarea class="fta" id="anPropMsg" style="min-height:150px;font-size:11.5px;">' + e(p.mensagem_para_enviar) + '</textarea></div>' : '');
 }
 // ═══ v3.37: CONVERSA COM A IA sobre a ideia (dados + análise + BP + documentos) ═══
 // k = 'an' (tela Análise Profunda) | 'ed' (janela de edição da ideia do pipeline)
@@ -10992,7 +11009,7 @@ function _ichatFontes(k) {
   const ok = (t, v) => '<span style="color:' + (v ? 'var(--green)' : 'var(--t3)') + ';">' + (v ? '✓ ' : '— ') + t + '</span>';
   return [ok('dados da ideia', x.titulo), ok('análise', x.analise_completa || x.analise), ok('business plan', x.business_plan || st.card?.business_plan || st.material?.bp), ok(st.docs.length + ' documento(s)', st.docs.length), ok('card salvo no pipeline', st.ideiaId)].join(' · ');
 }
-function ichatCopiar(k, i) { const m = _ICHAT[k].msgs[i]; if (m) navigator.clipboard.writeText(m.content).then(() => toast('Resposta copiada', 'success')); }
+function ichatCopiar(k, i) { const m = _ICHAT[k]?.msgs?.[i]; if (m) atxCopiar(m.content, 'Resposta copiada'); }
 function ichatPerguntar(k, t) { const el = document.getElementById('ichatIn_' + k); if (el) { el.value = t; ichatEnviar(k); } }
 function ichatRemoverDoc(k, i) { _ICHAT[k].docs.splice(i, 1); ichatRender(k); _ichatPersistir(k); }
 function ichatLimpar(k) { if (_ICHAT[k].msgs.length && !confirm('Apagar esta conversa?')) return; _ICHAT[k].msgs = []; ichatRender(k); _ichatPersistir(k); }
@@ -11135,8 +11152,10 @@ function _cpCtx(k) {
     bp_id: x.business_plan?.id || null, docs: (_ICHAT.ed.ideiaId === x.id ? _ICHAT.ed.docs : []), oferta: document.getElementById('cpOferta_ed')?.value || '' };
 }
 async function cpGerar(k, ajustar) {
-  const c = _cpCtx(k); const out = document.getElementById('cpOut_' + k), btn = document.getElementById('cpBtn_' + k);
-  if (!c.ideia.titulo) return toast('Abra ou analise uma ideia primeiro', 'error');
+  const out = document.getElementById('cpOut_' + k), btn = document.getElementById('cpBtn_' + k);
+  // v3.94: o contexto é montado dentro do try — antes uma falha aqui virava "promessa rejeitada" sem aviso
+  let c; try { c = _cpCtx(k); c.docs = Array.isArray(c.docs) ? c.docs : []; } catch (e) { return toast('Não consegui ler a ideia aberta — reabra a ideia e tente de novo', 'error'); }
+  if (!c.ideia?.titulo) return toast('Abra ou analise uma ideia primeiro', 'error');
   if (btn) { btn.disabled = true; btn.textContent = 'Montando…'; }
   if (out) out.innerHTML = '<div style="font-size:11px;color:var(--blue);padding:6px 0;">Lendo o business plan, a oferta e ' + c.docs.length + ' documento(s), montando a contraproposta e recalculando DRE, fluxo de caixa, TIR e VPL… (1 a 3 minutos)</div>';
   try {
@@ -11150,7 +11169,7 @@ async function cpGerar(k, ajustar) {
     window._cp[k] = { bp: d.bp, base: d.base, titulo: c.ideia.titulo };
     if (k === 'ed' && _ideiaEd) { _ideiaEd.contraproposta_bp = { id: d.bp.id, base_bp_id: d.base.id, atualizado_em: new Date().toISOString() }; const i = S1_PIPELINE.findIndex(y => String(y.id) === String(_ideiaEd.id)); if (i >= 0) S1_PIPELINE[i].contraproposta_bp = _ideiaEd.contraproposta_bp; }
     cpRender(k); toast('Contraproposta pronta — ' + (d.bp.narrativa?.depois?.viavel ? 'plano rentável' : 'ainda não ficou rentável, veja os pontos'), d.bp.narrativa?.depois?.viavel ? 'success' : 'error');
-  } catch (e) { if (out) out.innerHTML = '<div style="color:var(--red);font-size:11px;">Não consegui montar a contraproposta: ' + _cpE(e.message) + '</div>'; }
+  } catch (e) { const msg = 'Não consegui montar a contraproposta: ' + (e?.message || 'erro inesperado'); if (out) out.innerHTML = '<div style="color:var(--red);font-size:11px;">' + _cpE(msg) + '</div>'; else toast(msg, 'error'); }
   if (btn) { btn.disabled = false; btn.textContent = '🤝 Gerar de novo'; }
 }
 async function cpCarregarSalva(k, id) {
@@ -11176,7 +11195,7 @@ function cpRender(k) {
       + n.alteracoes.map(a => '<tr style="border-top:1px solid var(--bd);"><td style="padding:3px 5px;font-weight:600;">' + _cpE(a.item) + '</td><td style="padding:3px 5px;">' + _cpE(a.de) + '</td><td style="padding:3px 5px;color:var(--green);">' + _cpE(a.para) + '</td><td style="padding:3px 5px;color:var(--t2);">' + _cpE(a.por_que) + (a.efeito_contraparte ? '<br><i>Outra parte: ' + _cpE(a.efeito_contraparte) + '</i>' : '') + '</td></tr>').join('') + '</table></div>' : '')
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:4px 14px;">' + lista('Ganhos para a outra parte', n.ganhos_contraparte, 'var(--blue)') + lista('Ganhos para a Atlantyx', n.ganhos_atlantyx, 'var(--green)')
     + lista('O que oferecemos em troca', n.contrapartidas_oferecidas) + lista('Onde ainda dá para ceder', n.concessoes_possiveis, 'var(--gold)') + lista('Não aceitamos', n.limites, 'var(--red)') + lista('Cláusulas de proteção', n.clausulas) + lista('Riscos e mitigação', n.riscos) + lista('Próximos passos', n.proximos_passos, 'var(--blue)') + '</div>'
-    + (n.mensagem_para_enviar ? '<div style="margin-top:8px;"><div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;"><b style="font-size:11px;flex:1;">Mensagem para enviar</b><button class="btn btn-g" style="font-size:10px;padding:2px 8px;" onclick="navigator.clipboard.writeText(document.getElementById(\'cpMsg_' + k + '\').value).then(()=>toast(\'Mensagem copiada\',\'success\'))">Copiar</button></div><textarea class="fta" id="cpMsg_' + k + '" style="min-height:120px;font-size:11.5px;">' + _cpE(n.mensagem_para_enviar) + '</textarea></div>' : '')
+    + (n.mensagem_para_enviar ? '<div style="margin-top:8px;"><div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;"><b style="font-size:11px;flex:1;">Mensagem para enviar</b><button class="btn btn-g" style="font-size:10px;padding:2px 8px;" onclick="atxCopiar((document.getElementById(\'cpMsg_' + k + '\')||{}).value,\'Mensagem copiada\')">Copiar</button></div><textarea class="fta" id="cpMsg_' + k + '" style="min-height:120px;font-size:11.5px;">' + _cpE(n.mensagem_para_enviar) + '</textarea></div>' : '')
     + (n.instrucoes ? '<div style="margin-top:8px;font-size:10.5px;color:var(--t2);"><b style="color:var(--gold);">Suas condições aplicadas:</b> ' + _cpE(n.instrucoes).replace(/\n/g, '<br>') + (n.cambio_eur ? ' · câmbio 1 € = R$ ' + Number(n.cambio_eur).toFixed(2) : '') + '</div>' : '')
     + '<div style="margin-top:8px;border:1px dashed rgba(245,166,35,.5);border-radius:8px;padding:8px;"><b style="font-size:11px;">✎ Ajustar esta contraproposta</b><div style="font-size:10px;color:var(--t3);margin-bottom:4px;">Escreva o que mudar — a IA parte desta contraproposta, aplica o ajuste como condição obrigatória e recalcula tudo.</div>'
     + '<textarea class="fta" id="cpAjuste_' + k + '" style="min-height:42px;font-size:11.5px;" placeholder="Ex.: na fase de desenvolvimento recebemos só 300 euros/mês (50% da infra); o resto da receita só começa depois do MVP."></textarea>'
@@ -23855,7 +23874,8 @@ async function feedConfigSalvar() {
 const CT_CAMPOS = ['nome','cargo','empresa','tagline','email','telefone','whatsapp','linkedin','site','clientes','endereco_rj','endereco_sp'];
 async function cartaoCarregar() {
   try {
-    const d = await prospApi('cartao_get');
+    // v3.94: se a leitura dos dados falhar, o link e o QR continuam aparecendo (só os campos ficam vazios)
+    const d = await prospApi('cartao_get').catch(e => { toast('Não consegui carregar os dados do cartão: ' + e.message, 'error'); return {}; });
     CT_CAMPOS.forEach(k => { const e = document.getElementById('ct_' + k); if (e) e.value = d[k] || ''; });
     const fi = document.getElementById('ct_fotoInfo'); if (fi) fi.innerHTML = d.foto_media_id ? `<img src="/api/media?id=${d.foto_media_id}&t=${Date.now()}" style="width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid var(--green,#22d3a3);flex-shrink:0;"><span>✓ foto carregada</span>` : 'sem foto — o cartão mostra as iniciais';
     const url = location.origin + '/cartao.html'; document.getElementById('ct_url').textContent = url;
