@@ -29,6 +29,18 @@ const restante = () => _prazo - Date.now();
 async function lerCache() { try { const { neon } = await import('@neondatabase/serverless'); const sql = neon(process.env.DATABASE_URL); const r = await sql`SELECT value, updated_at FROM kv_store WHERE key = 'rfp:ultima_varredura' LIMIT 1`; if (!r[0]) return null; const v = typeof r[0].value === 'string' ? JSON.parse(r[0].value) : r[0].value; return { ...v, cache_em: r[0].updated_at }; } catch (_) { return null; } }
 async function gravarCache(v) { try { const { neon } = await import('@neondatabase/serverless'); const sql = neon(process.env.DATABASE_URL); await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('rfp:ultima_varredura', ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {} }
 
+// Demanda #21: prazo editável por RFP (sobrevive a novas varreduras) + consulta de RFPs urgentes para o Dashboard.
+// O prazo editado fica em kv_store 'rfp:prazos' = { chave_da_rfp: 'AAAA-MM-DD' }; sem edição vale a data do PNCP.
+const chaveRfp = r => String(r?.numero_pncp || r?.link_acesso || r?.link_pncp || r?.nome_edital || '').substring(0, 300);
+async function lerPrazos() { try { const { neon } = await import('@neondatabase/serverless'); const sql = neon(process.env.DATABASE_URL); const r = await sql`SELECT value FROM kv_store WHERE key = 'rfp:prazos' LIMIT 1`; if (!r[0]) return {}; const v = typeof r[0].value === 'string' ? JSON.parse(r[0].value) : r[0].value; return v && typeof v === 'object' ? v : {}; } catch (_) { return {}; } }
+async function gravarPrazos(m) { const { neon } = await import('@neondatabase/serverless'); const sql = neon(process.env.DATABASE_URL); await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('rfp:prazos', ${JSON.stringify(m)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; }
+function aplicarPrazos(rfps, mapa) {
+  return (Array.isArray(rfps) ? rfps : []).map(r => { const chave = chaveRfp(r); const ed = chave && mapa[chave]; const pncp = r.prazo_iso ? String(r.prazo_iso).slice(0, 10) : ''; return { ...r, chave, prazo: ed || (/^\d{4}-\d{2}-\d{2}$/.test(pncp) ? pncp : null), prazo_editado: !!ed }; });
+}
+const hojeSP = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }); // AAAA-MM-DD
+const diasAte = p => Math.round((Date.parse(p + 'T00:00:00Z') - Date.parse(hojeSP() + 'T00:00:00Z')) / 86400000);
+async function comPrazos(v) { return v && Array.isArray(v.rfps) ? { ...v, rfps: aplicarPrazos(v.rfps, await lerPrazos()) } : v; }
+
 async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -37,10 +49,27 @@ async function handler(req, res) {
 
   try {
     const body = req.method === 'POST' ? (req.body || {}) : {};
+    // Demanda #21: GET ?urgente=true → RFPs da última varredura com prazo em até 3 dias (Dashboard LIVE)
+    let urgente = req.query?.urgente; try { urgente = urgente || new URL(req.url || '/', 'http://x').searchParams.get('urgente'); } catch (_) {}
+    if (req.method === 'GET' && urgente) {
+      const c = await comPrazos(await lerCache());
+      const rfps = (c?.rfps || []).filter(r => r.prazo).map(r => ({ chave: r.chave, titulo: r.titulo, empresa: r.empresa, prazo: r.prazo, dias: diasAte(r.prazo), link_acesso: r.link_acesso || r.link_pncp || '' }))
+        .filter(r => r.dias >= 0 && r.dias <= 3).sort((a, b) => a.dias - b.dias);
+      return res.status(200).json({ success: true, count: rfps.length, rfps });
+    }
+    // Demanda #21: edição inline do prazo de uma RFP (prazo vazio = volta a usar a data do PNCP)
+    if (body.acao === 'salvar_prazo') {
+      const chave = String(body.chave || '').substring(0, 300); const prazo = String(body.prazo || '').trim();
+      if (!chave) return res.status(400).json({ success: false, error: 'RFP sem identificação' });
+      if (prazo && !/^\d{4}-\d{2}-\d{2}$/.test(prazo)) return res.status(400).json({ success: false, error: 'Prazo inválido (use AAAA-MM-DD)' });
+      const mapa = await lerPrazos(); if (prazo) mapa[chave] = prazo; else delete mapa[chave];
+      await gravarPrazos(mapa);
+      return res.status(200).json({ success: true, chave, prazo: prazo || null });
+    }
     // v3.25: envia a lista de editais por e-mail (a da tela ou a última varredura guardada)
     if (body.acao === 'enviar_email') return res.status(200).json({ success: true, ...(await enviarListaEmail(body)) });
     // v3.14: a tela pode pedir só a última varredura guardada (abre instantâneo)
-    if (body.somente_cache) { const c = await lerCache(); return res.status(200).json(c ? { success: true, do_cache: true, ...c } : { success: true, do_cache: true, rfps: [], aviso: 'Ainda não há varredura guardada — clique em "Varrer RFPs Agora".' }); }
+    if (body.somente_cache) { const c = await comPrazos(await lerCache()); return res.status(200).json(c ? { success: true, do_cache: true, ...c } : { success: true, do_cache: true, rfps: [], aviso: 'Ainda não há varredura guardada — clique em "Varrer RFPs Agora".' }); }
     _prazo = Date.now() + 48000;
     const isCron = !!(process.env.CRON_SECRET && req.headers.authorization === `Bearer ${process.env.CRON_SECRET}`);
     const keywords = (Array.isArray(body.palavras_chave) && body.palavras_chave.length ? body.palavras_chave : KEYWORDS_PADRAO).map(String);
@@ -55,7 +84,7 @@ async function handler(req, res) {
 
     if (!todos.length) {
       const falhou = !fontes.busca_pncp.ok && !fontes.api_consulta_pncp.ok;
-      if (falhou) { const c = await lerCache(); if (c?.rfps?.length) return res.status(200).json({ ...c, success: true, do_cache: true, fontes,
+      if (falhou) { const c = await comPrazos(await lerCache()); if (c?.rfps?.length) return res.status(200).json({ ...c, success: true, do_cache: true, fontes,
         aviso: 'O PNCP não respondeu agora (' + [fontes.busca_pncp.erro, fontes.api_consulta_pncp.erro].filter(Boolean).join(' · ') + '). Mostrando a última varredura bem-sucedida, de ' + new Date(c.cache_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + '.' }); }
       return res.status(200).json({
         success: true, rfps: [], fontes, total_encontrado: 0, total_relevante: 0,
@@ -90,7 +119,7 @@ async function handler(req, res) {
       fontes, total_encontrado: todos.length, total_relevante: rfps.length, rfps,
     };
     if (rfps.length) await gravarCache(saida);
-    return res.status(200).json(saida);
+    return res.status(200).json(await comPrazos(saida));
   } catch (error) {
     console.error('[ERRO rfp-monitor]', error.message);
     return res.status(500).json({ success: false, error: error.message });

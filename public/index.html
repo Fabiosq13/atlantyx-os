@@ -748,6 +748,9 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <!-- v3.85: widget de recebíveis em risco (vencidos / vencendo em ≤7 dias) -->
     <div id="recAlertaDashWidget"></div>
 
+    <!-- Demanda #21: alerta de RFPs com prazo em ≤ 3 dias -->
+    <div id="rfpUrgDashWidget"></div>
+
     <!-- META FINANCEIRA UNICA DA EMPRESA -->
     <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(79,124,255,.08));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;">
       <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
@@ -8362,6 +8365,42 @@ async function rfpEnviarEmail() {
     toast('Lista enviada para ' + d.para.join(', '), 'success'); addLog('ok', '[S2-04] Lista de ' + d.total + ' RFPs enviada por e-mail para ' + d.para.join(', '));
   } catch (e) { toast('Não enviou: ' + e.message, 'error'); }
 }
+// Demanda #21: prazo editável, badge de urgência e atalho para a Elaboração de Propostas
+function _rfpDiasRestantes(prazo) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(prazo || ''))) return null;
+  const h = new Date(), hoje = Date.UTC(h.getFullYear(), h.getMonth(), h.getDate());
+  return Math.round((Date.parse(prazo + 'T00:00:00Z') - hoje) / 86400000);
+}
+function _rfpBadge(prazo) {
+  const d = _rfpDiasRestantes(prazo); if (d == null) return '';
+  const est = 'font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;';
+  if (d < 0) return '<span class="rfp-urg rfp-urg-enc" style="' + est + 'background:var(--bg);color:var(--t3);">encerrado</span>';
+  const txt = d === 0 ? 'vence hoje' : d === 1 ? 'falta 1 dia' : 'faltam ' + d + ' dias';
+  if (d <= 3) return '<span class="rfp-urg rfp-urg-alta" style="' + est + 'background:var(--r2);color:var(--red);font-weight:700;">&#9888; ' + txt + '</span>';
+  if (d <= 7) return '<span class="rfp-urg rfp-urg-media" style="' + est + 'background:var(--go2);color:var(--gold);font-weight:700;">' + txt + '</span>';
+  return '<span class="rfp-urg" style="' + est + 'background:var(--bg);color:var(--t2);">' + txt + '</span>';
+}
+async function rfpSalvarPrazo(i, prazo) {
+  const r = (window._rfpUltimos || [])[i]; if (!r) return;
+  if (!r.chave) return toast('Rode a varredura novamente para editar o prazo desta RFP', 'error');
+  try {
+    const rr = await fetch('/api/rfp-monitor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'salvar_prazo', chave: r.chave, prazo: prazo || '' }) });
+    const d = await rr.json().catch(() => ({}));
+    if (!d.success) throw new Error(d.error || 'HTTP ' + rr.status);
+    r.prazo = d.prazo || (r.prazo_iso ? String(r.prazo_iso).slice(0, 10) : null); r.prazo_editado = !!d.prazo;
+    const b = document.getElementById('rfpBadge' + i); if (b) b.innerHTML = _rfpBadge(r.prazo);
+    toast(d.prazo ? 'Prazo salvo' : 'Prazo voltou para a data do PNCP', 'success');
+  } catch (e) { toast('Não salvou o prazo: ' + e.message, 'error'); }
+}
+function rfpGerarProposta(i) {
+  const r = (window._rfpUltimos || [])[i]; if (!r) return;
+  const prazoBR = r.prazo ? r.prazo.split('-').reverse().join('/') : '';
+  const escopo = [r.descricao || r.titulo, '', 'Edital: ' + (r.nome_edital || r.titulo || ''), r.numero_pncp ? 'Nº de controle PNCP: ' + r.numero_pncp : '', r.valor ? 'Valor estimado: ' + r.valor : '', prazoBR ? 'Prazo para envio da proposta: ' + prazoBR : '', (r.link_acesso || r.link_pncp) ? 'Link do edital: ' + (r.link_acesso || r.link_pncp) : ''].filter((x, k) => k === 1 || x).join('\n');
+  try { localStorage.setItem('proposta_prefill', JSON.stringify({ titulo: r.titulo || r.nome_edital || '', cliente: r.empresa || '', escopo, prazo: r.prazo || '', origem: 'rfp', chave: r.chave || '' })); }
+  catch (e) { return toast('Não consegui passar os dados para a proposta: ' + e.message, 'error'); }
+  addLog('info', '[S2-04] Gerando proposta a partir da RFP: ' + (r.titulo || r.nome_edital || ''));
+  nav('s7propostas', document.querySelector('.sbi[onclick*="s7propostas"]'));
+}
 async function runRfpMonitorAtualizado() {
   const btn = document.getElementById('btnRfp');
   const res = document.getElementById('rfpResult');
@@ -8399,7 +8438,7 @@ async function runRfpMonitorAtualizado() {
     window._rfpUltimos = rfps; // v3.25: base para e-mail e PDF
     const barraRfp = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;"><b style="font-size:11.5px;">' + rfps.length + ' edital(is)</b><button class="btn btn-g" style="font-size:10px;margin-left:auto;" onclick="rfpBaixarPdf()">📄 Baixar PDF da lista</button><button class="btn btn-p" style="font-size:10px;" onclick="rfpEnviarEmail()">📧 Enviar lista por e-mail</button></div>';
     res.innerHTML = avisoTopo + barraRfp + '<div style="font-size:10.5px;color:var(--t2);margin-bottom:10px;text-align:left;">&#128269; ' + (data.do_cache ? '<b>Última varredura guardada</b> · ' : '') + 'Fonte: <b>' + e(data.fonte || 'PNCP') + '</b> · consulta em ' + e(data.data_consulta || '') + (fontesTxt ? ' · ' + e(fontesTxt) : '') + ' · ' + (data.total_encontrado || 0) + ' editais em aberto analisados. Somente editais reais — a IA avalia a aderência, não cria editais.</div>'
-    + rfps.map(r => `
+    + rfps.map((r, i) => `
       <div style="background:var(--bg4);border:1px solid var(--bd);border-left:3px solid ${r.urgencia==='Alta'?'var(--red)':r.urgencia==='Media'?'var(--gold)':'var(--blue)'};border-radius:7px;padding:12px;margin-bottom:8px;text-align:left;color:var(--t1);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
           <strong style="font-size:12px;flex:1;min-width:200px;">${e(r.empresa)}${r.uf ? ' <span style="font-weight:400;color:var(--t2);">· ' + e(r.municipio ? r.municipio + '/' : '') + e(r.uf) + '</span>' : ''}</strong>
@@ -8422,6 +8461,13 @@ async function runRfpMonitorAtualizado() {
           <span>Propostas até: <strong style="color:var(--gold);">${e(r.prazo_submissao)}</strong></span>
           ${r.modalidade ? '<span>Modalidade: ' + e(r.modalidade) + (r.numero_compra ? ' nº ' + e(r.numero_compra) : '') + '</span>' : ''}
           ${r.decisor_provavel ? '<span>Decisor provável: ' + e(r.decisor_provavel) + '</span>' : ''}
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:10.5px;">
+          <span style="font-family:var(--M);font-size:8.5px;text-transform:uppercase;color:var(--t2);">Prazo</span>
+          <input type="date" class="fi" style="width:140px;padding:3px 6px;font-size:10.5px;" value="${e(r.prazo || '')}" title="Prazo para envio da proposta — editável (vazio = data do PNCP)" onchange="rfpSalvarPrazo(${i}, this.value)"/>
+          <span id="rfpBadge${i}">${_rfpBadge(r.prazo)}</span>
+          ${r.prazo_editado ? '<span style="font-size:9px;color:var(--t3);">editado</span>' : ''}
+          <button class="btn btn-or" style="font-size:10px;padding:4px 10px;margin-left:auto;" onclick="rfpGerarProposta(${i})">&#8594; Gerar Proposta</button>
         </div>
         <div style="margin-top:8px;padding:8px 10px;background:var(--bg3);border:1px solid var(--bd);border-radius:6px;font-size:10.5px;">
           <div style="font-family:var(--M);font-size:8.5px;text-transform:uppercase;color:var(--t2);margin-bottom:4px;">Origem do edital</div>
@@ -9268,7 +9314,7 @@ async function waCobrancaEnviar() {
 // Dashboard LIVE é a tela inicial: carrega o widget ao abrir o sistema
 window.addEventListener('DOMContentLoaded', () => setTimeout(() => {
   const pg = document.getElementById('page-dash');
-  if (pg && pg.classList.contains('active')) { try { carregarRecAlertaDash(); } catch (_) {} }
+  if (pg && pg.classList.contains('active')) { try { carregarRecAlertaDash(); } catch (_) {} try { _dashRfpUrgentes(); } catch (_) {} }
 }, 2500));
 
 
@@ -15099,6 +15145,24 @@ async function _dashRfpCache() {
     const ks = el.parentElement && el.parentElement.querySelector('.ks');
     if (ks) ks.textContent = d.rfps && d.rfps.length ? 'na última varredura' : (d.aviso ? 'sem varredura ainda' : 'identificados');
   } catch (e) { el.textContent = 'n/d'; }
+  _dashRfpUrgentes();
+}
+// Demanda #21: alerta no Dashboard LIVE quando há RFP com prazo em até 3 dias
+async function _dashRfpUrgentes() {
+  const box = document.getElementById('rfpUrgDashWidget'); if (!box) return;
+  try {
+    const r = await fetch('/api/rfp-monitor?urgente=true');
+    const d = await r.json().catch(() => ({}));
+    if (!d.success || !d.count) { box.innerHTML = ''; return; }
+    const e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const quando = n => n === 0 ? 'vence hoje' : n === 1 ? 'falta 1 dia' : 'faltam ' + n + ' dias';
+    box.innerHTML = '<div style="background:var(--r2);border:1px solid rgba(255,77,106,.35);border-left:3px solid var(--red);border-radius:9px;padding:11px 14px;margin-bottom:13px;">'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><b style="font-size:12px;color:var(--red);">&#9888; ' + d.count + ' RFP' + (d.count > 1 ? 's' : '') + ' com prazo em até 3 dias</b>'
+      + '<button class="btn btn-or" style="font-size:9.5px;padding:3px 9px;margin-left:auto;" onclick="nav(\'s2rfps\', document.querySelector(\'.sbi[onclick*=&quot;s2rfps&quot;]\'))">Abrir Monitor RFPs</button></div>'
+      + d.rfps.slice(0, 5).map(x => '<div style="font-size:11px;color:var(--t1);margin-top:2px;">• <b>' + e(x.empresa) + '</b> — ' + e(x.titulo) + ' <span style="font-family:var(--M);font-size:9.5px;color:var(--red);">(' + quando(x.dias) + ')</span></div>').join('')
+      + (d.count > 5 ? '<div style="font-size:10px;color:var(--t2);margin-top:3px;">+ ' + (d.count - 5) + ' outra(s)</div>' : '')
+      + '</div>';
+  } catch (_) { box.innerHTML = ''; }
 }
 // S2 Social: impressões e engajamento reais do Metricool (últimos 30 dias, LinkedIn + Instagram)
 async function _smCarregarMetricas() {
