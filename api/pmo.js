@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { lerSessao } from '../lib/acesso.js';
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
 // SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
@@ -75,6 +76,17 @@ async function ensureTabelas(sql) {
   )`;
   await sql`CREATE TABLE IF NOT EXISTS pmo_config (
     chave TEXT PRIMARY KEY, valor TEXT, atualizado_em TIMESTAMPTZ DEFAULT NOW()
+  )`;
+  // Demanda dem_muv797nfaolq: registro de auditoria das exportações do status report (quem, quando, projeto)
+  await sql`CREATE TABLE IF NOT EXISTS pmo_exportacoes (
+    id TEXT PRIMARY KEY,
+    acao TEXT NOT NULL,
+    formato TEXT,
+    projeto TEXT,
+    report_id TEXT,
+    arquivo TEXT,
+    usuario TEXT,
+    ts TIMESTAMPTZ DEFAULT NOW()
   )`;
   await sql`CREATE TABLE IF NOT EXISTS pmo_reunioes (
     id TEXT PRIMARY KEY,
@@ -320,6 +332,28 @@ async function reportExcluir({ id }) {
   const sql = await getSql();
   await sql`DELETE FROM status_reports WHERE id = ${id}`;
   return { excluido: true };
+}
+
+// Demanda dem_muv797nfaolq: auditoria das exportações do status report (PDF / e-mail).
+// O usuário vem da sessão (cookie assinado), não do navegador.
+async function exportRegistrar(payload = {}, req) {
+  let usuario = null;
+  try { const s = await lerSessao(req); if (s) usuario = s.nome || s.login; } catch (_) {}
+  const t = v => (v == null || v === '') ? null : String(v).substring(0, 300);
+  const sql = await getSql();
+  const id = novoId('exp');
+  await sql`INSERT INTO pmo_exportacoes (id, acao, formato, projeto, report_id, arquivo, usuario)
+    VALUES (${id}, ${t(payload.acao) || 'export_status'}, ${t(payload.formato)}, ${t(payload.projeto)}, ${t(payload.report_id)}, ${t(payload.arquivo)}, ${usuario})`;
+  const [c] = await sql`SELECT COUNT(*)::int AS n FROM pmo_exportacoes WHERE ts >= NOW() - INTERVAL '7 days'`;
+  return { registrado: true, id, usuario: usuario || 'anônimo', ultimos_7_dias: c?.n || 0 };
+}
+// métrica de sucesso da demanda: exportações por semana
+async function exportResumo() {
+  const sql = await getSql();
+  const semanas = await sql`SELECT to_char(date_trunc('week', ts), 'YYYY-MM-DD') AS semana, COUNT(*)::int AS total
+    FROM pmo_exportacoes WHERE ts >= NOW() - INTERVAL '8 weeks' GROUP BY 1 ORDER BY 1 DESC`;
+  const ultimas = await sql`SELECT acao, formato, projeto, usuario, ts FROM pmo_exportacoes ORDER BY ts DESC LIMIT 20`;
+  return { semanas, ultimas };
 }
 
 // Rascunho gerado por IA a partir dos dados do projeto + report anterior
@@ -1309,6 +1343,8 @@ async function handler(req, res) {
     report_get:        () => reportGet(payload),
     report_excluir:    () => reportExcluir(payload),
     report_rascunho:   () => reportRascunho(payload),
+    export_registrar:  () => exportRegistrar(payload, req),
+    export_resumo:     () => exportResumo(),
     reuniao_salvar:    () => reuniaoSalvar(payload),
     reuniao_list:      () => reuniaoList(),
     reuniao_ata:       () => reuniaoAta(payload),

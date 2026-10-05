@@ -3774,6 +3774,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Status Report de Projetos</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Acompanhamento por farol · riscos e bloqueios · histórico por projeto</div></div>
     <button class="btn" style="font-size:10px;" onclick="configurarFontePmo()" title="Conectar ao sistema de projetos externo">&#9881; Fonte de dados</button>
     <button class="btn btn-gn" onclick="abrirNovoReport()">+ Novo Status Report</button>
+    <button class="btn" onclick="exportarStatusPDF()" title="Baixa o último status report do projeto em PDF (logo, farol RAG, marcos e riscos)">&#128196; Exportar PDF</button>
+    <button class="btn" onclick="enviarStatusEmail()" title="Baixa o PDF e abre seu e-mail com assunto e resumo preenchidos — anexe o PDF baixado">&#9993; Enviar por E-mail</button>
     <button class="btn" onclick="carregarStatusReports()">&#8635; Atualizar</button>
   </div>
   <div id="pmoAvisoFonte" style="display:none;margin-bottom:10px;"></div>
@@ -21617,6 +21619,7 @@ async function pmoApi(action, params = {}) {
   return d;
 }
 let _pmoProjetos = [];
+let _srUltimos = [];   // último report de cada projeto (usado pelos botões de exportação)
 // ── Fonte de dados (sistema externo de projetos) ──
 async function configurarFontePmo() {
   try {
@@ -21650,6 +21653,7 @@ async function carregarStatusReports() {
   try {
     const [d, proj] = await Promise.all([pmoApi('report_list', { limite: 200 }), pmoApi('projetos_listar')]);
     _pmoProjetos = proj.projetos || [];
+    _srUltimos = d.ultimos || [];
     const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
     u('sr_projetos', d.resumo.projetos); u('sr_verde', d.resumo.verde);
     u('sr_amarelo', d.resumo.amarelo); u('sr_vermelho', d.resumo.vermelho);
@@ -21685,6 +21689,8 @@ async function carregarStatusReports() {
         <td style="padding:5px;text-align:right;white-space:nowrap;">
           <button class="btn" style="font-size:9px;padding:1px 5px;" onclick="abrirReport('${r.id}')">✎</button>
           <button class="btn" style="font-size:9px;padding:1px 5px;color:var(--gold);" onclick="apresentarStatusReport('${r.id}')" title="Ver no layout de apresentação / exportar PDF">📄</button>
+          <button class="btn" style="font-size:9px;padding:1px 5px;" onclick="exportarStatusPDF('${r.id}')" title="Baixar PDF">⬇</button>
+          <button class="btn" style="font-size:9px;padding:1px 5px;" onclick="enviarStatusEmail('${r.id}')" title="Enviar por e-mail">✉</button>
           <button class="btn" style="font-size:9px;padding:1px 5px;color:var(--red);" onclick="excluirReport('${r.id}')">🗑</button></td></tr>`).join('')}</tbody></table>`
       : '<div style="text-align:center;color:var(--t3);padding:16px;">—</div>';
   } catch (e) { box.innerHTML = '<div style="color:var(--red);text-align:center;padding:20px;font-size:11px;">Erro: ' + e.message + '</div>'; }
@@ -22104,7 +22110,8 @@ async function apresentarStatusReport(id) {
       <div style="display:flex;gap:8px;margin-bottom:10px;">
         <button class="btn btn-p" onclick="_srEditar('${id}')">✎ Editar</button>
         <button class="btn btn-gn" onclick="_srExportarPptx('${id}')">📊 Exportar PPT</button>
-        <button class="btn" onclick="_srExportarPdf()">📄 PDF</button>
+        <button class="btn" onclick="exportarStatusPDF('${id}')">📄 Exportar PDF</button>
+        <button class="btn" onclick="enviarStatusEmail('${id}')">✉ Enviar por E-mail</button>
         <button class="btn" onclick="_srImprimir()">🖨 Imprimir</button>
         <button class="btn" style="margin-left:auto;" onclick="document.getElementById('srApresModal').style.display='none'">✕ Fechar</button>
       </div>
@@ -22125,6 +22132,203 @@ function _srExportarPdf() {
   // Usa a impressão do navegador com "Salvar como PDF" — sem dependência externa
   toast('Na janela de impressão, escolha "Salvar como PDF"', 'success');
   _srImprimir();
+}
+
+// ═══ Demanda dem_muv797nfaolq: STATUS REPORT EM PDF (jsPDF) + ENVIO POR E-MAIL + AUDITORIA NO LOG ═══
+async function _srCarregarJsPdf() {
+  if (window.jspdf?.jsPDF) return window.jspdf.jsPDF;
+  for (const src of ['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js']) {
+    await new Promise(res => { const sc = document.createElement('script'); sc.src = src; sc.onload = res; sc.onerror = res; document.head.appendChild(sc); });
+    if (window.jspdf?.jsPDF) return window.jspdf.jsPDF;
+  }
+  throw new Error('não consegui carregar o gerador de PDF (jsPDF)');
+}
+// sem id (botões do topo da tela): usa o último report do projeto; com vários projetos, pergunta qual
+async function _srEscolherReport(id) {
+  if (id) return id;
+  if (!_srUltimos.length) await carregarStatusReports();
+  if (!_srUltimos.length) { toast('Nenhum status report para exportar — crie um em + Novo Status Report', 'error'); return null; }
+  if (_srUltimos.length === 1) return _srUltimos[0].id;
+  const op = prompt('Qual projeto exportar? (último status report de cada projeto)\n\n'
+    + _srUltimos.map((r, i) => `${i + 1}. ${r.projeto_nome}${r.data_report ? ' · ' + String(r.data_report).substring(0, 10).split('-').reverse().join('/') : ''}`).join('\n')
+    + '\n\nDigite o número:', '1');
+  if (op === null) return null;
+  const r = _srUltimos[parseInt(op, 10) - 1];
+  if (!r) { toast('Número inválido', 'error'); return null; }
+  return r.id;
+}
+// fonte padrão do jsPDF só tem Latin-1: troca aspas/traços tipográficos e descarta emojis
+const _srPdfTxt = v => String(v ?? '').replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-')
+  .replace(/•/g, '-').replace(/…/g, '...').replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, '').trim();
+const _srItens = arr => (Array.isArray(arr) ? arr : (arr ? String(arr).split('\n') : []))
+  .map(x => typeof x === 'string' ? x : [x.descricao || x.titulo || x.texto || x.acao || '', x.responsavel ? '(' + x.responsavel + ')' : '', (x.prazo || x.data) ? '- ' + (x.prazo || x.data) : ''].filter(Boolean).join(' '))
+  .map(s => String(s).trim()).filter(Boolean);
+const _srProximos = r => [r.marcos_proximos, r.marcos, r.proximas_atividades, r.proximos_passos].map(_srItens).find(a => a.length) || [];
+// farol por dimensão (RAG) a partir dos campos do report
+function _srRag(r) {
+  const n = v => (v === null || v === undefined || v === '' || isNaN(Number(v))) ? null : Number(v);
+  const linhas = [['Geral', r.farol || null, `${n(r.pct_concluido) ?? 0}% concluído`]];
+  const spi = n(r.spi), plan = n(r.pct_previsto) ?? n(r.pct_planejado), real = n(r.pct_concluido);
+  if (spi != null) linhas.push(['Prazo', spi >= 0.95 ? 'verde' : spi >= 0.85 ? 'amarelo' : 'vermelho', 'SPI ' + spi.toFixed(2).replace('.', ',')]);
+  else if (plan != null && real != null) { const dif = real - plan; linhas.push(['Prazo', dif >= -5 ? 'verde' : dif >= -15 ? 'amarelo' : 'vermelho', `previsto ${plan}% / realizado ${real}%`]); }
+  const atr = _srItens(r.atividades_atrasadas).length;
+  linhas.push(['Cronograma (atividades)', atr === 0 ? 'verde' : atr <= 2 ? 'amarelo' : 'vermelho', atr ? atr + ' atividade(s) atrasada(s)' : 'nenhuma atividade atrasada']);
+  const orcP = n(r.orcamento_previsto), orcR = n(r.orcamento_realizado);
+  if (orcP && orcR != null) { const x = orcR / orcP; linhas.push(['Custo', x <= 1 ? 'verde' : x <= 1.1 ? 'amarelo' : 'vermelho', `${Math.round(x * 100)}% do orçamento previsto`]); }
+  if (r.tipo_projeto === 'sustentacao' && n(r.sla_cumprido_pct) != null) {
+    const s = n(r.sla_cumprido_pct);
+    linhas.push(['SLA', s >= 95 ? 'verde' : s >= 85 ? 'amarelo' : 'vermelho', s + '% cumprido' + (n(r.sla_violacoes) ? ' · ' + n(r.sla_violacoes) + ' violação(ões)' : '')]);
+  }
+  const bl = _srItens(r.bloqueios).length, rc = _srItens(r.riscos).length + _srItens(r.riscos_projeto).length;
+  linhas.push(['Riscos e bloqueios', bl ? 'vermelho' : rc ? 'amarelo' : 'verde', [bl ? bl + ' bloqueio(s)' : '', rc ? rc + ' risco(s)' : ''].filter(Boolean).join(' · ') || 'sem riscos registrados']);
+  return linhas;
+}
+async function _srGerarPdf(id) {
+  const JsPDF = await _srCarregarJsPdf();
+  const r = (await pmoApi('report_get', { id })).report;
+  const pdf = new JsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+  const W = 210, H = 297, M = 14, CW = W - 2 * M;
+  const AZUL = [0, 51, 102], CINZA = [90, 100, 120], TXT = [28, 35, 51], LINHA = [215, 220, 232], BRANCO = [255, 255, 255];
+  const RAG = { verde: [31, 178, 135], amarelo: [224, 164, 34], vermelho: [214, 69, 69] };
+  const RAGNOME = { verde: 'Verde', amarelo: 'Amarelo', vermelho: 'Vermelho' };
+  const RAGTXT = { verde: 'Verde - no rumo', amarelo: 'Amarelo - requer atenção', vermelho: 'Vermelho - crítico' };
+  const dataISO = String(r.data_report || '').substring(0, 10) || new Date().toISOString().split('T')[0];
+  const dataBR = dataISO.split('-').reverse().join('/');
+  let y = 0, _est = ['normal', 10, TXT];
+  const est = (f, s, c) => { _est = [f, s, c]; pdf.setFont('helvetica', f); pdf.setFontSize(s); pdf.setTextColor(...c); };
+  const cabecalho = () => {
+    pdf.setFillColor(...AZUL); pdf.rect(0, 0, W, 24, 'F');
+    // logo Atlantyx: dois losangos sobrepostos, em branco
+    pdf.setDrawColor(...BRANCO); pdf.setLineWidth(0.7);
+    const losango = (cx, cy, s) => pdf.lines([[s, s], [-s, s], [-s, -s], [s, -s]], cx, cy - s, [1, 1], 'S', true);
+    losango(M + 4, 9, 4); losango(M + 4, 15, 4);
+    pdf.setTextColor(...BRANCO); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(14); pdf.text('ATLANTYX', M + 11, 11.5);
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); pdf.text('STATUS REPORT DE PROJETO', M + 11, 16.5);
+    pdf.setFontSize(9); pdf.text(dataBR, W - M, 11.5, { align: 'right' });
+    pdf.text(_srPdfTxt(r.projeto_nome).substring(0, 60), W - M, 16.5, { align: 'right' });
+    y = 32;
+  };
+  const garantir = h => { if (y + h > H - 16) { pdf.addPage(); cabecalho(); est(..._est); } };
+  const titulo = t => { garantir(16); est('bold', 11.5, AZUL); pdf.text(t, M, y); pdf.setDrawColor(...AZUL); pdf.setLineWidth(0.4); pdf.line(M, y + 1.6, W - M, y + 1.6); y += 7.5; };
+  const paragrafo = t => { est('normal', 10, TXT); pdf.splitTextToSize(_srPdfTxt(t), CW).forEach(l => { garantir(5); pdf.text(l, M, y); y += 5; }); y += 3; };
+  const lista = (itens, vazio) => {
+    if (!itens.length) { est('italic', 10, CINZA); garantir(5); pdf.text(vazio, M, y); y += 8; return; }
+    est('normal', 10, TXT);
+    itens.forEach((it, i) => {
+      const ls = pdf.splitTextToSize(_srPdfTxt(it), CW - 7); garantir(ls.length * 5);
+      pdf.text((i + 1) + '.', M + 1, y); ls.forEach(l => { pdf.text(l, M + 7, y); y += 5; }); y += 0.8;
+    });
+    y += 3;
+  };
+
+  cabecalho();
+  est('bold', 17, AZUL); pdf.splitTextToSize(_srPdfTxt(r.projeto_nome || 'Projeto'), CW).forEach(l => { pdf.text(l, M, y); y += 7; });
+  est('normal', 9.5, CINZA);
+  const meta = [r.cliente ? 'Cliente: ' + r.cliente : '', 'Data: ' + dataBR, r.periodo ? 'Período: ' + r.periodo : '', r.gerente ? 'GP: ' + r.gerente : '', r.tipo_projeto === 'sustentacao' ? 'Sustentação' : ''].filter(Boolean).join('   |   ');
+  pdf.splitTextToSize(_srPdfTxt(meta), CW).forEach(l => { pdf.text(l, M, y); y += 5; });
+  y += 2;
+  // faixa do status geral + barra de progresso
+  const fc = RAG[r.farol] || CINZA, pct = Math.max(0, Math.min(100, Number(r.pct_concluido) || 0));
+  pdf.setFillColor(238, 243, 250); pdf.setDrawColor(...LINHA); pdf.setLineWidth(0.3); pdf.roundedRect(M, y, CW, 16, 2, 2, 'FD');
+  pdf.setFillColor(...fc); pdf.circle(M + 7, y + 8, 3.2, 'F');
+  est('bold', 11, TXT); pdf.text('Status geral: ' + _srPdfTxt(RAGTXT[r.farol] || '-'), M + 13, y + 6.8);
+  const prev = r.pct_previsto ?? r.pct_planejado;
+  est('normal', 9, CINZA); pdf.text(_srPdfTxt(`Concluído: ${pct}%` + (prev != null && prev !== '' ? `   |   Previsto: ${prev}%` : '')), M + 13, y + 11.8);
+  const bx = M + CW - 60, bw = 54;
+  pdf.setFillColor(...LINHA); pdf.rect(bx, y + 6.3, bw, 3.4, 'F');
+  if (pct) { pdf.setFillColor(...fc); pdf.rect(bx, y + 6.3, bw * pct / 100, 3.4, 'F'); }
+  y += 23;
+
+  // tabela RAG por dimensão
+  garantir(30);
+  titulo('Status por dimensão (RAG)');
+  const c1 = 58, c2 = 40;
+  pdf.setFillColor(...AZUL); pdf.rect(M, y - 4.8, CW, 7, 'F');
+  est('bold', 9.5, BRANCO); pdf.text('Dimensão', M + 2, y); pdf.text('Status', M + c1 + 2, y); pdf.text('Indicador', M + c1 + c2 + 2, y);
+  y += 2.2;
+  _srRag(r).forEach(([dim, f, ind], i) => {
+    est('normal', 9.5, TXT);
+    const ls = pdf.splitTextToSize(_srPdfTxt(ind), CW - c1 - c2 - 4), h = Math.max(7.5, ls.length * 4.6 + 2.9);
+    garantir(h);
+    if (i % 2) { pdf.setFillColor(246, 248, 252); pdf.rect(M, y, CW, h, 'F'); }
+    pdf.setDrawColor(...LINHA); pdf.setLineWidth(0.2); pdf.line(M, y + h, W - M, y + h);
+    pdf.text(_srPdfTxt(dim), M + 2, y + 5);
+    pdf.setFillColor(...(RAG[f] || CINZA)); pdf.circle(M + c1 + 4, y + 3.8, 1.9, 'F');
+    pdf.text(RAGNOME[f] || '-', M + c1 + 8, y + 5);
+    ls.forEach((l, k) => pdf.text(l, M + c1 + c2 + 2, y + 5 + k * 4.6));
+    y += h;
+  });
+  y += 7;
+
+  if (r.resumo) { titulo('Resumo executivo'); paragrafo(r.resumo); }
+  titulo('Realizações do período');
+  lista(_srItens((r.marcos_entregues || []).length ? r.marcos_entregues : r.realizado), 'Nenhuma realização registrada');
+  titulo('Próximos marcos');
+  lista(_srProximos(r), 'Nenhum marco previsto');
+  const atencao = _srItens(r.pontos_atencao).concat(_srItens(r.bloqueios).map(b => 'Bloqueio: ' + b));
+  if (atencao.length) { titulo('Pontos de atenção e bloqueios'); lista(atencao, ''); }
+  titulo('Riscos');
+  const riscos = (r.riscos_projeto || []).length
+    ? r.riscos_projeto.map(x => [x.descricao, x.acao ? 'Ação: ' + x.acao : '', x.responsavel ? 'Resp.: ' + x.responsavel : '', x.probabilidade ? 'Prob.: ' + x.probabilidade : ''].filter(Boolean).join(' | '))
+    : (r.riscos || []).map(x => typeof x === 'string' ? x : [x.descricao, x.mitigacao ? 'Mitigação: ' + x.mitigacao : '', x.impacto ? 'Impacto: ' + x.impacto : '', x.probabilidade ? 'Prob.: ' + x.probabilidade : ''].filter(Boolean).join(' | '));
+  lista(riscos.filter(Boolean), 'Nenhum risco registrado');
+
+  // rodapé em todas as páginas
+  const total = pdf.getNumberOfPages(), geradoEm = new Date().toLocaleString('pt-BR');
+  for (let p = 1; p <= total; p++) {
+    pdf.setPage(p); pdf.setDrawColor(...LINHA); pdf.setLineWidth(0.3); pdf.line(M, H - 11, W - M, H - 11);
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); pdf.setTextColor(...CINZA);
+    pdf.text(_srPdfTxt('Atlantyx · gerado pelo Atlantyx OS em ' + geradoEm), M, H - 6.5);
+    pdf.text(`Página ${p} de ${total}`, W - M, H - 6.5, { align: 'right' });
+  }
+  const slug = String(r.projeto_nome || 'projeto').normalize('NFD').replace(/[^\x00-\x7F]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').substring(0, 50) || 'projeto';
+  const arquivo = `status-report-${slug}-${dataISO}.pdf`;
+  pdf.setProperties({ title: 'Status Report - ' + _srPdfTxt(r.projeto_nome), author: 'Atlantyx', creator: 'Atlantyx OS' });
+  pdf.save(arquivo);
+  return { r, arquivo, dataBR };
+}
+// auditoria: registra no banco (quem/quando/projeto, usuário vem da sessão) e na tela Log
+async function _srRegistrarExport(r, formato, arquivo) {
+  let quem = '', extra = '';
+  try {
+    const d = await pmoApi('export_registrar', { acao: 'export_status', formato, projeto: r.projeto_nome, report_id: r.id, arquivo });
+    quem = d.usuario; extra = ` · ${d.ultimos_7_dias} exportação(ões) nos últimos 7 dias`;
+  } catch (e) { extra = ' · (registro no banco falhou: ' + e.message + ')'; }
+  const esc = s => String(s ?? '').replace(/</g, '&lt;');
+  addLog('success', `[S9 · Status Report] ${formato === 'email' ? 'Enviado por e-mail' : 'Exportado em PDF'}: ${esc(r.projeto_nome)} (${esc(arquivo)})${quem ? ' · por ' + esc(quem) : ''}${esc(extra)}`);
+}
+async function exportarStatusPDF(id) {
+  try {
+    id = await _srEscolherReport(id); if (!id) return;
+    toast('Gerando PDF...', 'success');
+    const { r, arquivo } = await _srGerarPdf(id);
+    toast('PDF gerado: ' + arquivo, 'success');
+    _srRegistrarExport(r, 'pdf', arquivo);
+  } catch (e) { toast('Erro ao gerar PDF: ' + e.message, 'error'); console.error(e); }
+}
+// mailto não aceita anexo: baixa o PDF e abre o e-mail com assunto e resumo — o usuário anexa o arquivo
+async function enviarStatusEmail(id) {
+  try {
+    id = await _srEscolherReport(id); if (!id) return;
+    toast('Gerando PDF para o e-mail...', 'success');
+    const { r, arquivo, dataBR } = await _srGerarPdf(id);
+    const farol = { verde: 'Verde (no rumo)', amarelo: 'Amarelo (requer atenção)', vermelho: 'Vermelho (crítico)' }[r.farol] || '-';
+    const prox = _srProximos(r);
+    const assunto = `Status Report - ${r.projeto_nome} - ${dataBR}`;
+    const corpo = ['Olá,', '', `Segue o status report do projeto ${r.projeto_nome}${r.cliente ? ' (' + r.cliente + ')' : ''} referente a ${dataBR}.`, '',
+      `Status geral: ${farol}`, `Concluído: ${r.pct_concluido ?? 0}%`];
+    if (r.resumo) corpo.push('', 'Resumo: ' + String(r.resumo).substring(0, 500));
+    if (prox.length) corpo.push('', 'Próximos marcos:', ...prox.slice(0, 5).map(x => '- ' + x));
+    corpo.push('', `O relatório completo segue no PDF anexo (${arquivo}).`, '', 'Atenciosamente,');
+    if (r.gerente) corpo.push(r.gerente);
+    setTimeout(() => {
+      const a = document.createElement('a');
+      a.href = 'mailto:?subject=' + encodeURIComponent(assunto) + '&body=' + encodeURIComponent(corpo.join('\n'));
+      document.body.appendChild(a); a.click(); a.remove();
+    }, 500);
+    toast('PDF baixado (' + arquivo + '). Anexe-o ao e-mail que foi aberto antes de enviar.', 'success');
+    _srRegistrarExport(r, 'email', arquivo);
+  } catch (e) { toast('Erro ao preparar o e-mail: ' + e.message, 'error'); console.error(e); }
 }
 
 // ═══ v1.74: AUTOCAMPANHA ═══
