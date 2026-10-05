@@ -163,6 +163,10 @@
       "schedule": "0 */6 * * *"
     },
     {
+      "path": "/api/rfp-monitor?acao=petronect",
+      "schedule": "30 */6 * * *"
+    },
+    {
       "path": "/api/followup-cron",
       "schedule": "0 * * * *"
     },
