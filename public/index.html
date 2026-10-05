@@ -1724,6 +1724,9 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="kpi gd"><div class="kl">Aguardando Fundador</div><div class="kv" id="s1_fundador">0</div><div class="ks up">decisão pendente</div></div>
       <div class="kpi gn"><div class="kl">Aprovadas / Em Dev</div><div class="kv" id="s1_dev">0</div><div class="ks">em desenvolvimento</div></div>
     </div>
+    <div class="panel"><div class="ph"><div class="pt">Semáforo de Riscos</div><span class="tag live">Ao Vivo</span><button class="btn btn-g" style="font-size:9px;padding:3px 8px;margin-left:auto;" onclick="_rskIr('s1riscos')">Abrir Gestão de Riscos &#8594;</button></div>
+      <div class="pb" id="s1RiscosSemaforoDash"><div style="color:var(--t3);font-size:11px;text-align:center;padding:10px;">Carregando semáforo de riscos…</div></div>
+    </div>
     <div class="kg k2">
       <div class="panel"><div class="ph"><div class="pt">Agentes S1</div><span class="tag live">10 Ativos</span></div><div class="pb" id="s1AgentList"></div></div>
       <div class="panel"><div class="ph"><div class="pt">OKRs — Saúde Geral</div><span class="tag on">Q2 2026</span><button class="btn btn-g" style="font-size:9px;padding:3px 8px;" onclick="loadOKR()">↻</button></div><div class="pb" id="s1OkrDash"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Clique ↻ para carregar</div></div></div>
@@ -2024,6 +2027,10 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
   <!-- S1 RISCOS -->
   <div class="page" id="page-s1riscos">
+    <!-- Sinais de Alerta Automáticos: semáforo ao vivo com dados de A Receber, Marcos de Projeto e QuickBooks (sem IA) -->
+    <div class="panel" id="alertas-automaticos"><div class="ph"><div class="pt">Sinais de Alerta Automáticos</div><span class="tag live">Ao Vivo</span><span id="rskAtualizado" style="font-family:var(--M);font-size:9px;color:var(--t3);margin-left:6px;"></span><button class="btn btn-g" style="font-size:9px;padding:3px 8px;margin-left:auto;" onclick="carregarSinaisRisco(true)">↻ Atualizar</button></div>
+      <div class="pb" id="rskSinais"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando sinais de alerta…</div></div>
+    </div>
     <div class="panel"><div class="ph"><div class="pt">Gestão de Riscos — Atlantyx</div><span class="tag on">Claude IA</span><button class="btn btn-rd" id="btnRiscos" style="font-size:9px;padding:4px 9px;" onclick="runIntel('analise_riscos','s1RiscosResult','btnRiscos')">&#9670; Analisar Riscos</button></div>
       <div class="pb" id="s1RiscosResult"><div style="color:var(--t3);font-size:11px;text-align:center;padding:30px;">Clique em "Analisar Riscos" para mapear todos os riscos da empresa com IA</div></div>
     </div>
@@ -8345,9 +8352,9 @@ async function rfpBaixarPdf() {
       r.valor || '—', { text: r.prazo_submissao || r.prazo || '—', color: '#A16207', bold: true }, r.compatibilidade != null ? r.compatibilidade + '%' : '—']);
     pdfMake.createPdf({ pageOrientation: 'landscape', pageMargins: [30, 36, 30, 36], defaultStyle: { fontSize: 9 },
       content: [{ text: 'ATLANTYX · MONITOR DE RFPs', color: '#00708A', bold: true, fontSize: 9, characterSpacing: 2 }, { text: 'Editais abertos — ' + hoje, fontSize: 16, bold: true, margin: [0, 4, 0, 2] },
-        { text: l.length + ' edital(is) do PNCP, ordenados por aderência. Clique no nome para abrir o edital.', fontSize: 9, color: '#555', margin: [0, 0, 0, 10] },
+        { text: l.length + ' edital(is) do PNCP e oportunidades Petrobras (Petronect), ordenados por aderência. Clique no nome para abrir o edital.', fontSize: 9, color: '#555', margin: [0, 0, 0, 10] },
         { table: { headerRows: 1, widths: [16, '*', 90, 80, 50], body: [[{ text: '#', bold: true }, { text: 'Edital / órgão', bold: true }, { text: 'Valor estimado', bold: true }, { text: 'Propostas até', bold: true }, { text: 'Aderência', bold: true }], ...linhas] }, layout: 'lightHorizontalLines' }],
-      footer: (p, t) => ({ text: 'Fonte: PNCP · Atlantyx OS · ' + p + '/' + t, alignment: 'right', fontSize: 7, color: '#999', margin: [0, 0, 30, 0] }) }).download('RFPs_' + new Date().toISOString().substring(0, 10) + '.pdf');
+      footer: (p, t) => ({ text: 'Fontes: PNCP e Petronect (e-mail) · Atlantyx OS · ' + p + '/' + t, alignment: 'right', fontSize: 7, color: '#999', margin: [0, 0, 30, 0] }) }).download('RFPs_' + new Date().toISOString().substring(0, 10) + '.pdf');
   } catch (e) { toast('PDF: ' + e.message, 'error'); }
 }
 async function rfpEnviarEmail() {
@@ -8363,6 +8370,49 @@ async function rfpEnviarEmail() {
     if (!d.success) throw new Error(d.error || 'HTTP ' + r.status);
     toast('Lista enviada para ' + d.para.join(', '), 'success'); addLog('ok', '[S2-04] Lista de ' + d.total + ' RFPs enviada por e-mail para ' + d.para.join(', '));
   } catch (e) { toast('Não enviou: ' + e.message, 'error'); }
+}
+// v3.97: oportunidades da Petrobras lidas dos e-mails do Serviço de Notificação Petronect
+function rfpPetronectBarra(p) {
+  const e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  p = p || {};
+  const quando = p.atualizado_em ? new Date(p.atualizado_em).toLocaleString('pt-BR') : null;
+  const st = window._petroLendo ? '<span style="color:var(--blue);">' + e(window._petroLendo) + '</span>'
+    : p.erro ? '<span style="color:var(--red);">&#9888; ' + e(p.erro) + '</span>'
+    : quando ? 'Caixa <b>' + e(p.conta || '') + '</b> · ' + (p.emails_avaliados || 0) + ' e-mail(s) avaliados · <b>' + (p.aderentes_abertas || 0) + '</b> oportunidade(s) aderentes em aberto · última leitura ' + e(quando)
+    : 'Ainda não lido — clique para ler os e-mails dos últimos 3 meses.';
+  return '<div id="rfpPetroBox" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;text-align:left;font-size:10.5px;color:var(--t2);background:var(--bg3);border:1px solid var(--bd);border-radius:6px;padding:8px 10px;margin-bottom:10px;">'
+    + '<b style="color:var(--t1);">&#128231; Petronect (Petrobras)</b><span id="rfpPetroSt" style="flex:1;min-width:200px;">' + st + '</span>'
+    + '<button class="btn btn-g" style="font-size:10px;" id="btnPetro" ' + (window._petroLendo ? 'disabled ' : '') + 'onclick="rfpLerPetronect()">Ler e-mails (3 meses)</button></div>';
+}
+function rfpPetronectAuto(p, eraCache) {
+  // ao abrir a tela: lê os e-mails novos se a última leitura tem mais de 6h (ou nunca foi feita)
+  if (!eraCache || window._petroLendo || window._petroAutoFeito) return;
+  const ult = p?.atualizado_em ? new Date(p.atualizado_em).getTime() : 0;
+  if (Date.now() - ult < 6 * 3600e3) return;
+  window._petroAutoFeito = true; rfpLerPetronect(true);
+}
+async function rfpLerPetronect(auto) {
+  if (window._petroLendo) return;
+  const set = t => { window._petroLendo = t; const el = document.getElementById('rfpPetroSt'); if (el) el.innerHTML = '<span style="color:var(--blue);">' + String(t).replace(/</g, '&lt;') + '</span>'; const b = document.getElementById('btnPetro'); if (b) b.disabled = true; };
+  let avaliados = 0, aderentes = 0, erro = null, d = null;
+  try {
+    for (let i = 0; i < 10; i++) {
+      set('Lendo e-mails da Petronect' + (i ? ' (parte ' + (i + 1) + ')' : '') + '… ' + (avaliados ? avaliados + ' avaliados até agora' : 'pode levar até 1 minuto'));
+      const r = await fetch('/api/rfp-monitor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'petronect', dias: 90 }) });
+      const txt = await r.text(); try { d = JSON.parse(txt); } catch (_) { throw new Error(r.status === 504 ? 'tempo limite do servidor (HTTP 504)' : 'HTTP ' + r.status); }
+      if (!d.success) throw new Error(d.error || 'HTTP ' + r.status);
+      avaliados += d.diag?.avaliados_agora || 0; aderentes += d.diag?.aderentes_novas || 0;
+      if (d.erro) { erro = d.erro; break; }
+      if (!(d.diag?.faltam > 0) || !(d.diag?.avaliados_agora > 0)) break;
+    }
+  } catch (e) { erro = e.message; }
+  window._petroLendo = null;
+  if (erro) { toast('Petronect: ' + erro, 'error'); addLog('err', '[S2-04] Petronect: ' + erro); }
+  else { addLog('success', '[S2-04] Petronect: ' + avaliados + ' e-mail(s) avaliados, ' + aderentes + ' oportunidade(s) aderente(s) nova(s)' + (d?.diag ? ' · ' + d.diag.encontrados + ' e-mail(s) da Petronect nos últimos 90 dias em ' + (d.diag.conta || '') : ''));
+    if (!auto || aderentes) toast('Petronect: ' + avaliados + ' e-mail(s) lidos · ' + aderentes + ' oportunidade(s) aderente(s) nova(s)', 'success'); }
+  // recarrega a lista (última varredura do PNCP + Petronect) sem refazer a busca no PNCP
+  if (!document.getElementById('btnRfp')?.disabled) { window._rfpSoCache = true; runRfpMonitorAtualizado(); }
+  else { const box = document.getElementById('rfpPetroBox'); if (box) box.outerHTML = rfpPetronectBarra(d?.petronect ? { ...d.petronect, erro: erro || d.petronect.erro } : { erro }); }
 }
 async function runRfpMonitorAtualizado() {
   const btn = document.getElementById('btnRfp');
@@ -8389,9 +8439,12 @@ async function runRfpMonitorAtualizado() {
       return;
     }
     const rfps = data.rfps || [];
+    const _eraCache = !!data.do_cache;
+    setTimeout(() => rfpPetronectAuto(data.petronect, _eraCache), 300);
     if (!rfps.length) {
-      res.innerHTML = '<div style="color:var(--t3);font-size:11px;padding:16px;text-align:center;">' + String(data.aviso || 'Nenhum edital aberto encontrado no PNCP agora.').replace(/</g,'&lt;') + '</div>';
+      res.innerHTML = rfpPetronectBarra(data.petronect) + '<div style="color:var(--t3);font-size:11px;padding:16px;text-align:center;">' + String(data.aviso || 'Nenhum edital aberto encontrado no PNCP agora.').replace(/</g,'&lt;') + '</div>';
       if (st) { st.textContent = 'Sem resultados'; st.className = 'tag off'; }
+      btn.disabled = false; btn.textContent = 'Varrer RFPs Agora';
       return;
     }
     if (st) { st.textContent = rfps.length + ' editais'; st.className = 'tag live'; }
@@ -8399,13 +8452,14 @@ async function runRfpMonitorAtualizado() {
     const e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
     const fontesTxt = data.fontes ? Object.entries(data.fontes).map(([k, f]) => (k === 'busca_pncp' ? 'Busca PNCP' : 'API oficial PNCP') + ': ' + (f.ok ? f.encontrados + ' encontrados' : 'indisponível')).join(' · ') : '';
     window._rfpUltimos = rfps; // v3.25: base para e-mail e PDF
+    const petro = rfpPetronectBarra(data.petronect);
     const barraRfp = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;"><b style="font-size:11.5px;">' + rfps.length + ' edital(is)</b><button class="btn btn-g" style="font-size:10px;margin-left:auto;" onclick="rfpBaixarPdf()">📄 Baixar PDF da lista</button><button class="btn btn-p" style="font-size:10px;" onclick="rfpEnviarEmail()">📧 Enviar lista por e-mail</button></div>';
-    res.innerHTML = avisoTopo + barraRfp + '<div style="font-size:10.5px;color:var(--t2);margin-bottom:10px;text-align:left;">&#128269; ' + (data.do_cache ? '<b>Última varredura guardada</b> · ' : '') + 'Fonte: <b>' + e(data.fonte || 'PNCP') + '</b> · consulta em ' + e(data.data_consulta || '') + (fontesTxt ? ' · ' + e(fontesTxt) : '') + ' · ' + (data.total_encontrado || 0) + ' editais em aberto analisados. Somente editais reais — a IA avalia a aderência, não cria editais.</div>'
+    res.innerHTML = avisoTopo + petro + barraRfp + '<div style="font-size:10.5px;color:var(--t2);margin-bottom:10px;text-align:left;">&#128269; ' + (data.do_cache ? '<b>Última varredura guardada</b> · ' : '') + 'Fonte: <b>' + e(data.fonte || 'PNCP') + '</b> · consulta em ' + e(data.data_consulta || '') + (fontesTxt ? ' · ' + e(fontesTxt) : '') + ' · ' + (data.total_encontrado || 0) + ' editais em aberto analisados' + (data.petronect ? ' + ' + (data.petronect.aderentes_abertas || 0) + ' oportunidade(s) Petrobras aderentes lidas do e-mail Petronect' : '') + '. Somente editais reais — a IA avalia a aderência, não cria editais.</div>'
     + rfps.map(r => `
       <div style="background:var(--bg4);border:1px solid var(--bd);border-left:3px solid ${r.urgencia==='Alta'?'var(--red)':r.urgencia==='Media'?'var(--gold)':'var(--blue)'};border-radius:7px;padding:12px;margin-bottom:8px;text-align:left;color:var(--t1);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
           <strong style="font-size:12px;flex:1;min-width:200px;">${e(r.empresa)}${r.uf ? ' <span style="font-weight:400;color:var(--t2);">· ' + e(r.municipio ? r.municipio + '/' : '') + e(r.uf) + '</span>' : ''}</strong>
-          ${r.verificado ? '<span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:var(--g2);color:var(--green);" title="Conferido na API oficial do PNCP">&#10003; verificado no PNCP</span>' : ''}
+          ${r.origem_email ? '<span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:var(--b2,var(--bg3));color:var(--blue);" title="Lida do e-mail do Serviço de Notificação Petronect">&#128231; e-mail Petronect</span>' : r.verificado ? '<span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:var(--g2);color:var(--green);" title="Conferido na API oficial do PNCP">&#10003; verificado no PNCP</span>' : ''}
           <span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:var(--go2);color:var(--gold);">${r.compatibilidade}% aderência</span>
           <span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:${r.urgencia==='Alta'?'var(--r2)':'var(--bg)'};color:${_corTxt(r.urgencia==='Alta'?'var(--red)':'var(--t3)')};">${e(r.urgencia||'Media')}</span>
         </div>
@@ -8427,11 +8481,11 @@ async function runRfpMonitorAtualizado() {
         </div>
         <div style="margin-top:8px;padding:8px 10px;background:var(--bg3);border:1px solid var(--bd);border-radius:6px;font-size:10.5px;">
           <div style="font-family:var(--M);font-size:8.5px;text-transform:uppercase;color:var(--t2);margin-bottom:4px;">Origem do edital</div>
-          <div style="color:var(--t1);margin-bottom:6px;">${e(r.fonte || 'PNCP')}${r.numero_pncp ? ' · Nº de controle PNCP <b>' + e(r.numero_pncp) + '</b>' : ''}${r.orgao_cnpj ? ' · CNPJ do órgão ' + e(r.orgao_cnpj) : ''}${r.processo ? ' · Processo ' + e(r.processo) : ''}${r.publicado_em ? ' · publicado em ' + e(r.publicado_em) : ''}</div>
+          <div style="color:var(--t1);margin-bottom:6px;">${e(r.fonte || 'PNCP')}${r.email_assunto ? ' · Assunto do e-mail: <i>' + e(r.email_assunto) + '</i>' : ''}${r.numero_pncp ? ' · Nº de controle PNCP <b>' + e(r.numero_pncp) + '</b>' : ''}${r.orgao_cnpj ? ' · CNPJ do órgão ' + e(r.orgao_cnpj) : ''}${r.processo ? ' · Processo ' + e(r.processo) : ''}${r.publicado_em ? ' · publicado em ' + e(r.publicado_em) : ''}</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${r.link_pncp ? '<a class="btn btn-p" style="font-size:10px;padding:4px 10px;text-decoration:none;" href="' + e(r.link_pncp) + '" target="_blank" rel="noopener">&#128196; Abrir edital no PNCP</a>' : ''}
+            ${r.origem_email ? '<a class="btn btn-p" style="font-size:10px;padding:4px 10px;text-decoration:none;" href="' + e(r.link_acesso) + '" target="_blank" rel="noopener">&#128196; Abrir no Petronect</a>' + (r.numero_compra ? '<button class="btn btn-g" style="font-size:10px;padding:4px 10px;" data-copiar="' + e(r.numero_compra) + '" onclick="atxCopiar(this.dataset.copiar,\'Nº copiado\')">Copiar nº da oportunidade</button>' : '') : `${r.link_pncp ? '<a class="btn btn-p" style="font-size:10px;padding:4px 10px;text-decoration:none;" href="' + e(r.link_pncp) + '" target="_blank" rel="noopener">&#128196; Abrir edital no PNCP</a>' : ''}
             ${r.link_origem ? '<a class="btn btn-g" style="font-size:10px;padding:4px 10px;text-decoration:none;" href="' + e(r.link_origem) + '" target="_blank" rel="noopener">&#8599; Portal de origem (envio da proposta)</a>' : '<span style="font-size:10px;color:var(--t3);align-self:center;">Portal de origem: consulte a página do edital no PNCP</span>'}
-            ${r.numero_pncp ? '<button class="btn btn-g" style="font-size:10px;padding:4px 10px;" data-copiar="' + e(r.numero_pncp) + '" onclick="atxCopiar(this.dataset.copiar,\'Nº PNCP copiado\')">Copiar nº PNCP</button>' : ''}
+            ${r.numero_pncp ? '<button class="btn btn-g" style="font-size:10px;padding:4px 10px;" data-copiar="' + e(r.numero_pncp) + '" onclick="atxCopiar(this.dataset.copiar,\'Nº PNCP copiado\')">Copiar nº PNCP</button>' : ''}`}
           </div>
         </div>
         ${r.justificativa ? `<div style="font-size:11px;color:var(--blue);margin-top:6px;">-> ${e(r.justificativa)}</div>` : ''}
@@ -12011,6 +12065,156 @@ const _origNavKpi = nav;
 nav = function(p, el) {
   _origNavKpi(p, el);
   if (p === 's7kpi') setTimeout(initKpiDashboard, 100);
+};
+
+// ═══ PAINEL DE RISCOS COM SEMÁFORO AO VIVO (s1riscos + resumo no s1dash) ═══
+// Só leitura de dados que já existem, sem IA: A Receber (painel_resumo), Kanban de Marcos (marcos_kanban),
+// margem do mês no QuickBooks (kpis_saude) e meta de margem do Orçamento Anual (orcamento_consolidado).
+// Regras: recebível vencido >15d = vermelho (vencido até 15d = amarelo) · marco atrasado = amarelo, >15d = vermelho
+//         margem < 0 = vermelho · margem < meta do orçamento (padrão 20%) = amarelo · API sem resposta em 8s = cinza
+const RSK_TIMEOUT_MS = 8000, RSK_DIAS_CRITICO = 15, RSK_MARGEM_PADRAO = 20;
+const RSK_COR = { verde: 'var(--green)', amarelo: 'var(--gold)', vermelho: 'var(--red)', cinza: 'var(--t3)' };
+const RSK_FUNDO = { verde: 'var(--g2)', amarelo: 'var(--go2)', vermelho: 'var(--r2)', cinza: 'var(--bg3)' };
+const RSK_ROTULO = { verde: 'Verde', amarelo: 'Amarelo', vermelho: 'Vermelho', cinza: 'Dado indisponível' };
+let _rskSinais = null, _rskEm = 0, _rskCarregando = null;
+
+function _rskIr(tela) { nav(tela, document.querySelector(`.sbi[onclick*="'${tela}'"]`)); }
+function _rskMotivo(res) { const m = (res && res.reason && res.reason.message) || 'sem resposta'; return _recEsc(m.substring(0, 140)); }
+function _rskPlural(n, s, p) { return n + ' ' + (n === 1 ? s : p); }
+
+function _rskLiquidez(res) {
+  const s = { chave: 'liquidez', titulo: 'Risco de liquidez', origem: 'A Receber', tela: 's3receber', itens: [] };
+  if (res.status === 'fulfilled') {
+    const it = res.value && res.value.contasReceber && res.value.contasReceber.itens;
+    if (Array.isArray(it)) { receberQBItems = it; _recQBCarregado = true; _recQBErro = ''; }
+    else if (res.value && !res.value.qb_configurado) _recQBCarregado = true;
+  } else if (!_recQBCarregado) {
+    return { ...s, nivel: 'cinza', resumo: 'Dado indisponível — ' + _rskMotivo(res) };
+  }
+  const venc = _recLinhas().filter(l => l.dias != null && l.dias < 0).sort((a, b) => a.dias - b.dias);
+  const crit = venc.filter(l => -l.dias > RSK_DIAS_CRITICO);
+  const total = venc.reduce((a, l) => a + l.valor, 0);
+  s.nivel = crit.length ? 'vermelho' : venc.length ? 'amarelo' : 'verde';
+  s.resumo = !venc.length ? 'Nenhum recebível vencido.'
+    : `${_rskPlural(venc.length, 'recebível vencido', 'recebíveis vencidos')} · ${_recFmt(total)}` + (crit.length ? ` · ${crit.length} há mais de ${RSK_DIAS_CRITICO} dias (${_recFmt(crit.reduce((a, l) => a + l.valor, 0))})` : '');
+  s.itens = venc.slice(0, 5).map(l => `${_recEsc(l.cliente)}${l.doc ? ' · ' + _recEsc(l.doc) : ''} — ${_recFmt(l.valor)} · vencido há ${-l.dias}d`);
+  if (res.status !== 'fulfilled') s.resumo += ' (QuickBooks não respondeu — última leitura)';
+  return s;
+}
+
+function _rskEntrega(res) {
+  const s = { chave: 'entrega', titulo: 'Risco de entrega', origem: 'Kanban de Marcos', tela: 's3marcoskanban', extra: ['s3projetos', 'Projetos &amp; Marcos'], itens: [] };
+  if (res.status !== 'fulfilled') return { ...s, nivel: 'cinza', resumo: 'Dado indisponível — ' + _rskMotivo(res) };
+  const col = (res.value && res.value.colunas) || {};
+  const marcos = (col.aguardando_entrega && col.aguardando_entrega.marcos) || [];
+  const atras = marcos.map(m => ({ m, dias: _recDias(m.data_entrega) })).filter(x => x.dias != null && x.dias < 0).sort((a, b) => a.dias - b.dias);
+  const crit = atras.filter(x => -x.dias > RSK_DIAS_CRITICO);
+  s.nivel = crit.length ? 'vermelho' : atras.length ? 'amarelo' : 'verde';
+  s.resumo = !atras.length ? 'Nenhum marco de projeto atrasado.'
+    : `${_rskPlural(atras.length, 'marco atrasado', 'marcos atrasados')} · ${_recFmt(atras.reduce((a, x) => a + (Number(x.m.valor) || 0), 0))} a faturar` + (crit.length ? ` · ${crit.length} com mais de ${RSK_DIAS_CRITICO} dias` : '');
+  s.itens = atras.slice(0, 5).map(x => `${_recEsc(x.m.descricao || 'Marco')} — ${_recEsc(x.m.projeto_nome || '')}${x.m.projeto_cliente ? ' · ' + _recEsc(x.m.projeto_cliente) : ''} · atrasado ${-x.dias}d`);
+  return s;
+}
+
+// Meta de margem: margem orçada do mês corrente no Orçamento Anual (receita − despesa) / receita; sem orçamento, 20%
+function _rskMetaMargem(res) {
+  const h = new Date(), mes = h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0');
+  const pt = res.status === 'fulfilled' && res.value && res.value.por_tipo;
+  if (pt && pt.receita) {
+    const rm = pt.receita.meses && pt.receita.meses[mes], dm = pt.despesa && pt.despesa.meses && pt.despesa.meses[mes];
+    let R = rm ? rm.orcado : 0, D = dm ? Math.abs(dm.orcado) : 0, fonte = 'Orçamento Anual · mês atual';
+    if (!(R > 0)) { R = pt.receita.orcado_ano || 0; D = Math.abs((pt.despesa && pt.despesa.orcado_ano) || 0); fonte = 'Orçamento Anual · ano'; }
+    if (R > 0) {
+      const meta = Math.round((R - D) / R * 1000) / 10;
+      try { localStorage.setItem('atx:riscos_meta_margem', JSON.stringify({ meta, fonte, em: Date.now() })); } catch (_) {}
+      return { meta, fonte };
+    }
+  }
+  try { const s = JSON.parse(localStorage.getItem('atx:riscos_meta_margem') || 'null'); if (s && typeof s.meta === 'number') return { meta: s.meta, fonte: s.fonte + ' (última leitura)' }; } catch (_) {}
+  return { meta: RSK_MARGEM_PADRAO, fonte: 'meta padrão — sem orçamento disponível' };
+}
+
+function _rskFinanceiro(kpi, orc) {
+  const s = { chave: 'financeiro', titulo: 'Risco financeiro', origem: 'KPIs QuickBooks', tela: 's3kpis', extra: ['s3orcamento', 'Orçamento Anual'], itens: [] };
+  if (kpi.status !== 'fulfilled') return { ...s, nivel: 'cinza', resumo: 'Dado indisponível — ' + _rskMotivo(kpi) };
+  const k = (kpi.value && kpi.value.kpis) || {}, m = k.margem_liquida_pct;
+  const { meta, fonte } = _rskMetaMargem(orc);
+  if (m == null || !isFinite(m)) return { ...s, nivel: 'cinza', resumo: 'Margem do mês indisponível (sem receita lançada no QuickBooks).', itens: [`Meta de margem: ${meta}% (${_recEsc(fonte)})`] };
+  s.nivel = m < 0 ? 'vermelho' : m < meta ? 'amarelo' : 'verde';
+  s.resumo = `Margem líquida do mês ${m}% · meta ${meta}%` + (m < meta ? ` · ${Math.round((meta - m) * 10) / 10} p.p. abaixo` : '');
+  s.itens = [`Meta: ${_recEsc(fonte)}`];
+  if (k.receita_mes != null) s.itens.push(`Receita do mês ${_recFmt(k.receita_mes)} · despesa ${_recFmt(k.despesa_mes || 0)}`);
+  return s;
+}
+
+function _rskGeral(sinais) {
+  const n = (sinais || []).map(x => x.nivel);
+  return n.includes('vermelho') ? 'vermelho' : n.includes('amarelo') ? 'amarelo' : n.includes('verde') ? 'verde' : 'cinza';
+}
+function _rskLink(tela, txt) { return `<a href="#${tela}" onclick="_rskIr('${tela}');return false;" style="color:var(--blue);text-decoration:none;font-size:10px;">${txt} &#8594;</a>`; }
+
+function _rskCardHtml(s) {
+  const cor = RSK_COR[s.nivel], fundo = RSK_FUNDO[s.nivel];
+  const itens = s.itens.length ? `<div style="margin-top:7px;display:flex;flex-direction:column;gap:3px;">${s.itens.map(t => `<a href="#${s.tela}" onclick="_rskIr('${s.tela}');return false;" style="font-family:var(--M);font-size:9.5px;color:var(--t2);text-decoration:none;">• ${t}</a>`).join('')}</div>` : '';
+  return `<div style="background:${fundo};border:1px solid ${cor};border-radius:8px;padding:11px 13px;display:flex;flex-direction:column;">
+    <a href="#${s.tela}" onclick="_rskIr('${s.tela}');return false;" title="Abrir ${_recEsc(s.origem)}" style="text-decoration:none;color:inherit;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="width:12px;height:12px;border-radius:50%;background:${cor};box-shadow:0 0 8px ${cor};flex-shrink:0;"></span>
+        <span style="font-family:var(--H);font-size:12.5px;font-weight:700;flex:1;">${s.titulo}</span>
+        <span style="font-family:var(--M);font-size:9px;color:${cor};text-transform:uppercase;">${RSK_ROTULO[s.nivel]}</span>
+      </div>
+      <div style="font-size:11px;color:var(--t1);margin-top:6px;">${s.resumo}</div>
+    </a>${itens}
+    <div style="margin-top:auto;padding-top:8px;display:flex;gap:12px;flex-wrap:wrap;">${_rskLink(s.tela, 'Abrir ' + s.origem)}${s.extra ? _rskLink(s.extra[0], s.extra[1]) : ''}</div>
+  </div>`;
+}
+
+function _rskRender() {
+  const box = document.getElementById('rskSinais'), dash = document.getElementById('s1RiscosSemaforoDash'), at = document.getElementById('rskAtualizado');
+  const sinais = _rskSinais;
+  if (!sinais) {
+    const msg = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:14px;">Carregando sinais de alerta…</div>';
+    if (box) box.innerHTML = msg; if (dash) dash.innerHTML = msg; return;
+  }
+  const g = _rskGeral(sinais);
+  if (at) at.textContent = 'atualizado ' + new Date(_rskEm).toLocaleTimeString('pt-BR');
+  if (box) box.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px;color:var(--t2);">
+      <span style="width:10px;height:10px;border-radius:50%;background:${RSK_COR[g]};"></span>
+      Semáforo geral: <strong style="color:${RSK_COR[g]};">${RSK_ROTULO[g]}</strong>
+      <span style="color:var(--t3);font-size:10px;">· clique num sinal para abrir a tela de origem</span></div>
+    <div class="kg k3" style="gap:10px;">${sinais.map(_rskCardHtml).join('')}</div>`;
+  if (dash) dash.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;">${sinais.map(s => `<a href="#${s.tela}" onclick="_rskIr('${s.tela}');return false;" title="${_recEsc(String(s.resumo).replace(/<[^>]*>/g, ''))}"
+      style="flex:1;min-width:200px;display:flex;align-items:center;gap:8px;background:${RSK_FUNDO[s.nivel]};border:1px solid ${RSK_COR[s.nivel]};border-radius:7px;padding:8px 11px;text-decoration:none;color:inherit;">
+      <span style="width:11px;height:11px;border-radius:50%;background:${RSK_COR[s.nivel]};flex-shrink:0;"></span>
+      <span style="flex:1;min-width:0;"><span style="font-family:var(--H);font-size:11.5px;font-weight:700;">${s.titulo}</span><br><span style="font-size:10px;color:var(--t2);">${s.resumo}</span></span></a>`).join('')}</div>`;
+}
+
+async function carregarSinaisRisco(forcar) {
+  if (!forcar && _rskSinais && Date.now() - _rskEm < 60000) { _rskRender(); return _rskSinais; }
+  if (_rskCarregando) return _rskCarregando;
+  if (!_rskSinais) _rskRender();
+  const o = { timeoutMs: RSK_TIMEOUT_MS };
+  _rskCarregando = (async () => {
+    // 4 leituras em paralelo, cada uma com timeout de 8s; a que falhar vira "dado indisponível" sem travar as outras
+    const [rec, mar, kpi, orc] = await Promise.allSettled([
+      finApi('painel_resumo', {}, o), finApi('marcos_kanban', {}, o), finApi('kpis_saude', {}, o), finApi('orcamento_consolidado', { ano: new Date().getFullYear() }, o)]);
+    const seguro = (fn, titulo, tela) => { try { return fn(); } catch (e) { return { chave: tela, titulo, origem: tela, tela, itens: [], nivel: 'cinza', resumo: 'Dado indisponível — ' + _recEsc(e.message) }; } };
+    _rskSinais = [seguro(() => _rskLiquidez(rec), 'Risco de liquidez', 's3receber'), seguro(() => _rskEntrega(mar), 'Risco de entrega', 's3marcoskanban'), seguro(() => _rskFinanceiro(kpi, orc), 'Risco financeiro', 's3kpis')];
+    _rskEm = Date.now();
+    try { renderRecAlertaDash(); } catch (_) {}
+    return _rskSinais;
+  })();
+  try { await _rskCarregando; } finally { _rskCarregando = null; }
+  _rskRender();
+  return _rskSinais;
+}
+
+// Carrega o semáforo ao abrir Gestão de Riscos ou o Painel Estratégico
+const _origNavRiscos = nav;
+nav = function(p, el) {
+  const r = _origNavRiscos(p, el);
+  if (p === 's1riscos' || p === 's1dash') { const pg = document.getElementById('page-' + p); if (pg && pg.classList.contains('active')) setTimeout(() => carregarSinaisRisco(false), 120); }
+  return r;
 };
 
 
@@ -28599,7 +28803,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.96] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.100] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -28615,7 +28819,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.96';
+window.__ATX_BUILD_ID__ = 'ATX-v3.100';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

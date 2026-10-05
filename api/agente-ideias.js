@@ -196,7 +196,8 @@ async function abrirIssue(r) {
     headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', 'User-Agent': 'atlantyx-os-agente' },
     body: JSON.stringify({ title: '[Demanda aprovada] ' + String(r.titulo).substring(0, 180), body: corpoIssue(r), labels: ['demanda-aprovada'] }) });
   const d = await resp.json().catch(() => ({}));
-  if (!resp.ok) return { erro: 'GitHub recusou (' + resp.status + '): ' + (d.message || '') };
+  if (!resp.ok) { const perm = resp.headers.get('x-accepted-github-permissions');
+    return { erro: 'GitHub recusou (' + resp.status + '): ' + (d.message || '') + (perm ? ' · permissão exigida: ' + perm : '') + (d.errors?.[0]?.message ? ' · ' + d.errors[0].message : '') + (resp.status === 401 ? ' — o token do GitHub no Vercel venceu ou foi revogado: gere outro e troque o GITHUB_TOKEN' : '') }; }
   return { numero: d.number, url: d.html_url };
 }
 
@@ -229,22 +230,30 @@ async function sincronizar() {
   if (!rows.length || !token) return { verificadas: 0 };
   const H = { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'User-Agent': 'atlantyx-os-agente' };
   let mudou = 0;
+  // v3.98: PRs do repositório (uma chamada) — liga o PR à tarefa pela branch claude/issue-N-* (a busca por número no texto confundia tarefas)
+  let prs = [];
+  try { const l = await (await fetch(`https://api.github.com/repos/${repo}/pulls?state=all&per_page=100&sort=created&direction=desc`, { headers: H })).json(); if (Array.isArray(l)) prs = l; } catch (_) {}
+  const prDe = p => ({ numero: p.number, url: p.html_url, estado: p.state, merged: !!(p.merged_at || p.pull_request?.merged_at), criado_em: p.created_at, merged_em: p.merged_at || p.pull_request?.merged_at || null, fechado_em: p.closed_at || null, rotulos: (p.labels || []).map(l => l.name), branch: p.head?.ref || null });
   for (const r of rows) {
     try {
       const iss = await (await fetch(`https://api.github.com/repos/${repo}/issues/${r.issue_numero}`, { headers: H })).json();
       // PR que menciona a tarefa (aberto pelo Claude)
       let pr = null;
-      try { const s = await (await fetch(`https://api.github.com/search/issues?q=${encodeURIComponent(`repo:${repo} is:pr ${r.issue_numero} in:body`)}`, { headers: H })).json();
-        const p = (s.items || [])[0]; if (p) pr = { numero: p.number, url: p.html_url, estado: p.state, merged: !!p.pull_request?.merged_at, criado_em: p.created_at, merged_em: p.pull_request?.merged_at || null, fechado_em: p.closed_at || null, rotulos: (p.labels || []).map(l => l.name) }; } catch (_) {}
+      const daTarefa = prs.filter(p => String(p.head?.ref || '').startsWith(`claude/issue-${r.issue_numero}-`));
+      const pp = daTarefa.find(p => p.state === 'open') || daTarefa.find(p => p.merged_at) || daTarefa[0];
+      if (pp) pr = prDe(pp);
+      else try { const s = await (await fetch(`https://api.github.com/search/issues?q=${encodeURIComponent(`repo:${repo} is:pr "#${r.issue_numero}" in:body`)}`, { headers: H })).json();
+        const p = (s.items || []).find(p => new RegExp('#' + r.issue_numero + '\\b').test(p.body || '')); if (p) pr = prDe(p); } catch (_) {}
       // v3.85: andamento do Claude, lido do comentário que ele mantém atualizado na tarefa
       let claude = null;
       try { const cs = await (await fetch(`https://api.github.com/repos/${repo}/issues/${r.issue_numero}/comments?per_page=100`, { headers: H })).json();
         const c = (Array.isArray(cs) ? cs : []).filter(x => /claude/i.test(x.user?.login || '')).pop();
         if (c) { const t = String(c.body || ''); const girando = /user-attachments\/assets\/5ac382c7/.test(t);
           const estado = girando ? 'trabalhando' : /encountered an error|encontrou um erro|falhou/i.test(t) ? 'erro' : 'concluiu';
-          claude = { estado, inicio: c.created_at, atualizado: c.updated_at, duracao: (t.match(/task in ((?:\d+h )?(?:\d+m )?\d+s)/) || [])[1] || null, url: c.html_url }; } } catch (_) {}
+          claude = { estado, inicio: c.created_at, atualizado: c.updated_at, duracao: (t.match(/task in ((?:\d+h )?(?:\d+m )?\d+s)/) || [])[1] || null, url: c.html_url,
+            branch: (t.match(/\/tree\/(claude\/issue-\d+-[\w.-]+)/) || [])[1] || null }; } } catch (_) {}
       const ant = parse(r.dados) || {};
-      const d = { ...ant, pr, claude, issue_estado: iss.state };
+      const d = { ...ant, pr, claude, issue_estado: iss.state, issue_criada_em: iss.created_at || ant.issue_criada_em || null, branch: pr?.branch || claude?.branch || ant.branch || null };
       // v3.88: o robô de merge achou conflito de verdade → pede ao Claude (com o token do fundador, para disparar o GitHub Actions)
       if (pr && pr.estado === 'open' && (pr.rotulos || []).includes('conflito') && (!ant.conflito_pedido_em || Date.now() - Date.parse(ant.conflito_pedido_em) > 3 * 3600000)) {
         try { await fetch(`https://api.github.com/repos/${repo}/issues/${pr.numero}/comments`, { method: 'POST', headers: { ...H, 'Content-Type': 'application/json' },
@@ -334,6 +343,94 @@ async function ciclo() {
   return { ...out, sync };
 }
 
+// ── v3.98: ações da tarefa no GitHub a partir do card ──
+function _gh() {
+  const token = process.env.GITHUB_TOKEN, repo = process.env.GITHUB_REPO || 'Fabiosq13/atlantyx-os';
+  if (!token) throw new Error('GITHUB_TOKEN não configurado no Vercel');
+  const H = { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'User-Agent': 'atlantyx-os-agente', 'Content-Type': 'application/json' };
+  return async (caminho, metodo = 'GET', corpo) => {
+    const r = await fetch(`https://api.github.com/repos/${repo}${caminho}`, { method: metodo, headers: H, body: corpo ? JSON.stringify(corpo) : undefined });
+    const j = r.status === 204 ? {} : await r.json().catch(() => ({}));
+    if (!r.ok && !(metodo === 'DELETE' && r.status === 404)) {
+      // v3.99: diz QUAL permissão faltou (o GitHub informa no cabeçalho x-accepted-github-permissions)
+      const perm = r.headers.get('x-accepted-github-permissions') || '';
+      const e = new Error('GitHub recusou (' + r.status + '): ' + (j.message || '') + (perm ? ' · permissão exigida: ' + perm : '') + (j.errors?.[0]?.message ? ' · ' + j.errors[0].message : ''));
+      e.status = r.status; e.perm = perm; throw e;
+    }
+    return j;
+  };
+}
+// v3.99: sem permissão de PR no token → manda o pedido como comentário "/atx-…" na tarefa; o robô do GitHub
+// (esteira-comandos.yml, que tem permissão de PR pelo próprio Actions) abre o PR, marca e dispara o merge.
+const _semPermissao = e => [401, 403, 404].includes(e?.status) || /Resource not accessible|not accessible by/i.test(e?.message || '');
+async function _comando(gh, N, cmd, quem) {
+  await gh('/issues/' + N + '/comments', 'POST', { body: '/atx-' + cmd + '\n\n_Pedido na Esteira de Demandas por ' + (quem || 'fundador') + '._' });
+}
+async function abrirPR(id, d, titulo) {
+  const gh = _gh();
+  const n = (String(d.branch).match(/issue-(\d+)-/) || [])[1];
+  let p;
+  try { p = await gh('/pulls', 'POST', { title: 'Tarefa #' + n + ' — ' + String(titulo || 'implementação da demanda').substring(0, 150), head: d.branch, base: 'main',
+    body: 'Closes #' + n + ' · Demanda ' + id + '\n\nAberto pela Esteira de Demandas do Atlantyx OS a partir da branch do Claude.' }); }
+  catch (e) { // já existe PR dessa branch → usa o existente
+    const l = await gh('/pulls?state=open&head=' + encodeURIComponent((process.env.GITHUB_REPO || 'Fabiosq13/atlantyx-os').split('/')[0] + ':' + d.branch));
+    if (!Array.isArray(l) || !l[0]) throw e; p = l[0]; }
+  try { await gh('/issues/' + p.number + '/labels', 'POST', { labels: ['demanda-aprovada'] }); } catch (_) {}
+  return { numero: p.number, url: p.html_url, estado: 'open', merged: false, criado_em: p.created_at, rotulos: ['demanda-aprovada'], branch: d.branch };
+}
+async function acaoTarefa(sql, b, req) {
+  const [row] = await sql`SELECT * FROM agente_demandas WHERE id = ${b.id} LIMIT 1`; if (!row) throw new Error('Demanda não encontrada');
+  if (row.status !== 'em_execucao') throw new Error('Esta demanda não está em implementação');
+  const d = parse(row.dados) || {}; const gh = _gh(); const N = row.issue_numero; const pr = d.pr; const quem = req.sessao?.login || req.usuario || 'fundador';
+  const salvar = async (extra, status) => { const nd = { ...d, ...extra, ultima_acao: { op: b.op, em: new Date().toISOString(), por: quem } };
+    await sql`UPDATE agente_demandas SET dados = ${JSON.stringify(nd)}, status = ${status || 'em_execucao'}, atualizado_em = NOW() WHERE id = ${row.id}`; return nd; };
+  switch (b.op) {
+    case 'reenviar': { // o Claude não começou, parou com erro ou ficou sem sinal → novo pedido na tarefa
+      if (!N) throw new Error('Demanda sem tarefa no GitHub — use "Enviar para implementação"');
+      const extra = String(b.obs || '').trim();
+      await gh('/issues/' + N + '/comments', 'POST', { body: '@claude retome esta tarefa do começo: implemente o que está descrito no corpo desta issue' + (d.branch ? ' (se a branch ' + d.branch + ' já tiver parte do trabalho, continue nela)' : '') + ', valide (node --check nas APIs e nos <script> de public/index.html), NÃO altere a versão ATX-vX.YY e faça push.' + (extra ? '\n\nObservação do fundador: ' + extra.substring(0, 1500) : '') });
+      await salvar({ reenviado_em: new Date().toISOString(), claude: null });
+      return { ok: true, msg: 'Pedido reenviado ao Claude (tarefa #' + N + ')' };
+    }
+    case 'abrir_pr': {
+      if (pr?.estado === 'open') return { ok: true, msg: 'O PR #' + pr.numero + ' já está aberto' };
+      if (!d.branch) throw new Error('O Claude ainda não deixou uma branch com o trabalho');
+      try { const p = await abrirPR(row.id, d, row.titulo); await salvar({ pr: p });
+        return { ok: true, msg: 'PR #' + p.numero + ' aberto — agora é só aprovar o merge', pr: p.numero }; }
+      catch (e) { if (!_semPermissao(e) || !N) throw e; await _comando(gh, N, 'mesclar', quem); await salvar({ merge_pedido_em: new Date().toISOString(), merge_pedido_por: quem, merge_via: 'comando' });
+        return { ok: true, msg: 'Pedido enviado ao robô do GitHub — ele abre o PR e faz o merge validado' }; }
+    }
+    case 'refazer_merge': { // validação falhou ou o robô não rodou → tira e põe o rótulo de novo (dispara o robô)
+      if (!pr?.numero || pr.estado !== 'open') throw new Error('Sem PR aberto');
+      try {
+        await gh('/issues/' + pr.numero + '/labels/precisa-revisao', 'DELETE').catch(() => {});
+        await gh('/issues/' + pr.numero + '/labels/conflito', 'DELETE').catch(() => {});
+        await gh('/issues/' + pr.numero + '/labels/aprovado-merge', 'DELETE').catch(() => {});
+        await gh('/issues/' + pr.numero + '/labels', 'POST', { labels: ['aprovado-merge'] });
+      } catch (e) { if (!_semPermissao(e) || !N) throw e; await _comando(gh, N, 'mesclar-de-novo', quem); }
+      await salvar({ pr: { ...pr, rotulos: (pr.rotulos || []).filter(r => !['precisa-revisao', 'conflito'].includes(r)).concat('aprovado-merge') }, merge_pedido_em: new Date().toISOString(), merge_pedido_por: quem });
+      return { ok: true, msg: 'Merge pedido de novo — o robô atualiza, valida e publica' };
+    }
+    case 'corrigir': { // validação falhou / conflito → o Claude corrige na mesma branch
+      if (!pr?.numero || pr.estado !== 'open') throw new Error('Sem PR aberto');
+      const motivo = (pr.rotulos || []).includes('conflito') ? 'esta branch está em conflito com a main. Faça `git merge origin/main` NESTA branch e resolva os conflitos mantendo as duas mudanças'
+        : 'a validação automática deste PR falhou (veja o comentário do robô acima). Corrija a causa NESTA branch';
+      await gh('/issues/' + pr.numero + '/comments', 'POST', { body: '@claude ' + motivo + '. NÃO altere a versão ATX-vX.YY, valide (node --check nas APIs e nos <script> de public/index.html) e faça push nesta mesma branch. Não abra outro PR.' + (b.obs ? '\n\nObservação do fundador: ' + String(b.obs).substring(0, 1500) : '') });
+      await salvar({ correcao_pedida_em: new Date().toISOString(), conflito_pedido_em: (pr.rotulos || []).includes('conflito') ? new Date().toISOString() : d.conflito_pedido_em });
+      return { ok: true, msg: 'Pedido de correção enviado ao Claude no PR #' + pr.numero + ' — quando ele terminar, clique em "Mesclar de novo"' };
+    }
+    case 'cancelar': {
+      if (pr?.numero && pr.estado === 'open') { try { await gh('/pulls/' + pr.numero, 'PATCH', { state: 'closed' }); }
+        catch (e) { if (!_semPermissao(e) || !N) throw e; await _comando(gh, N, 'cancelar', quem); } }
+      if (N) { try { await gh('/issues/' + N + '/comments', 'POST', { body: 'Cancelada pelo fundador na Esteira de Demandas' + (b.obs ? ': ' + String(b.obs).substring(0, 500) : '.') }); } catch (_) {}
+        await gh('/issues/' + N, 'PATCH', { state: 'closed', state_reason: 'not_planned' }); }
+      await salvar({ arquivada_em: new Date().toISOString(), cancelada_por: quem }, 'arquivada');
+      return { ok: true, msg: 'Tarefa cancelada e arquivada' };
+    }
+    default: throw new Error('Ação inválida');
+  }
+}
+
 async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   try {
@@ -378,16 +475,38 @@ async function handler(req, res) {
       mesclar: async () => {
         const token = process.env.GITHUB_TOKEN, repo = process.env.GITHUB_REPO || 'Fabiosq13/atlantyx-os';
         if (!token) throw new Error('GITHUB_TOKEN não configurado no Vercel');
-        const [row] = await sql`SELECT id, dados FROM agente_demandas WHERE id = ${b.id} LIMIT 1`; if (!row) throw new Error('Demanda não encontrada');
-        const d = parse(row.dados) || {}; const pr = d.pr;
-        if (!pr?.numero || pr.estado !== 'open') throw new Error('Esta demanda não tem um PR aberto para mesclar');
+        const [row] = await sql`SELECT id, titulo, dados FROM agente_demandas WHERE id = ${b.id} LIMIT 1`; if (!row) throw new Error('Demanda não encontrada');
+        const d = parse(row.dados) || {}; let pr = d.pr;
+        const [rr] = await sql`SELECT issue_numero FROM agente_demandas WHERE id = ${b.id}`; const N = rr?.issue_numero;
         if (d.claude?.estado === 'erro' && !b.mesmo_assim) throw new Error('O Claude parou com erro nesta tarefa — o PR pode estar incompleto. Revise no GitHub antes.');
-        const H = { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'User-Agent': 'atlantyx-os-agente', 'Content-Type': 'application/json' };
-        const r = await fetch(`https://api.github.com/repos/${repo}/issues/${pr.numero}/labels`, { method: 'POST', headers: H, body: JSON.stringify({ labels: ['aprovado-merge'] }) });
-        if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error('GitHub recusou (' + r.status + '): ' + (e.message || '') + (r.status === 403 ? ' — no token do GitHub (Vercel → GITHUB_TOKEN) acrescente a permissão "Pull requests: Read and write".' : '')); }
+        if ((!pr?.numero || pr.estado !== 'open') && !d.branch) throw new Error('Esta demanda ainda não tem trabalho do Claude para mesclar');
+        const gh = _gh(); let via = 'api';
+        try {
+          // v3.98: o Claude terminou e deixou a branch, mas o robô ainda não abriu o PR → abre agora
+          if (!pr?.numero || pr.estado !== 'open') pr = await abrirPR(row.id, d, row.titulo);
+          await gh('/issues/' + pr.numero + '/labels', 'POST', { labels: ['aprovado-merge'] });
+          d.pr = { ...pr, rotulos: [...new Set([...(pr.rotulos || []), 'aprovado-merge'])] };
+        } catch (e) {
+          if (!_semPermissao(e) || !N) throw e;
+          await _comando(gh, N, 'mesclar', req.sessao?.login || req.usuario); via = 'comando'; // o robô do GitHub faz com a permissão dele
+        }
+        d.merge_via = via;
         d.merge_pedido_em = new Date().toISOString(); d.merge_pedido_por = req.sessao?.login || req.usuario || null;
         await sql`UPDATE agente_demandas SET dados = ${JSON.stringify(d)}, atualizado_em = NOW() WHERE id = ${row.id}`;
-        return { ok: true, pr: pr.numero };
+        return { ok: true, pr: pr?.numero || null, via };
+      },
+      // v3.98: ações direto no card da Esteira — reenviar ao Claude, abrir PR, refazer o merge, pedir correção, cancelar
+      tarefa: () => acaoTarefa(sql, b, req),
+      // v3.99: testa o que o token do GitHub (Vercel) consegue fazer — sem alterar nada (PATCH vazio)
+      github_teste: async () => {
+        const gh = _gh(); const out = {};
+        const t = async (k, f) => { try { await f(); out[k] = { ok: true }; } catch (e) { out[k] = { ok: false, erro: e.message, perm: e.perm || null }; } };
+        await t('ler_repositorio', () => gh(''));
+        const iss = await gh('/issues?state=open&per_page=30').catch(() => []);
+        const i = (Array.isArray(iss) ? iss : []).find(x => !x.pull_request), p = (Array.isArray(iss) ? iss : []).find(x => x.pull_request);
+        if (i) await t('tarefas_escrever', () => gh('/issues/' + i.number, 'PATCH', {})); else out.tarefas_escrever = { ok: null, erro: 'nenhuma tarefa aberta para testar' };
+        if (p) await t('pull_requests_escrever', () => gh('/pulls/' + p.number, 'PATCH', {})); else out.pull_requests_escrever = { ok: null, erro: 'nenhum PR aberto para testar' };
+        return { teste: out, repo: process.env.GITHUB_REPO || 'Fabiosq13/atlantyx-os' };
       },
       qa_noturno: () => qaNoturno(req, b), // v3.45 — chamado pelo GitHub Actions (Authorization: Bearer CRON_SECRET)
       config: async () => ({ config: await config() }),
