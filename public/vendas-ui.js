@@ -43,7 +43,7 @@
     const b = (w, h) => `<div style="background:var(--bg4);border-radius:4px;height:${h}px;width:${w};margin:6px 0;animation:pulse 1.8s ease-in-out infinite;opacity:.6;"></div>`;
     const k = `<div class="kpi">${b('55%', 9)}${b('70%', 20)}${b('85%', 8)}</div>`;
     return `<div class="panel"><div class="pb">${b('35%', 10)}${b('90%', 8)}${b('75%', 8)}</div></div><div class="kg k4">${k + k + k + k}</div><div class="kg k4">${k + k + k + k}</div>
-      <div style="font-size:10.5px;color:var(--t3);text-align:center;padding:6px;">Calculando metas, funil e margens (QuickBooks + HubSpot)...</div>`;
+      <div style="font-size:10.5px;color:var(--t3);text-align:center;padding:6px;">Calculando metas, funil e margens (QuickBooks + HubSpot)...</div><div id="vdRF">${rfHtml()}</div>`;
   }
   function painelErro(msg, forcar) {
     const e = $('painel-erro'); if (!e) return;
@@ -64,6 +64,7 @@
     const seq = ++PN_SEQ, btn = $('vdBtnAtualizar');
     if (btn) { btn.disabled = true; btn.innerHTML = '↻ Atualizando...'; }
     painelErro(''); if (!PN) c.innerHTML = painelSkeleton();
+    rfCarregar(forcar === true); // v3.94: Receita Futura 60 dias carrega em paralelo, independente dos KPIs
     if (forcar === true) painelStatus('Recalculando metas, funil e margens (QuickBooks + HubSpot)...');
     try { const d = await api('painel', forcar === true ? { forcar: true } : {}, PN_MS); if (seq !== PN_SEQ) return;
       c.innerHTML = painelHtml(d); PN = d; painelStatusCache(PN); estrategiaListar();
@@ -72,7 +73,7 @@
         api('painel', { forcar: true }, PN_MS).then(n => { if (PN === ant && $('vdPnCorpo')) { $('vdPnCorpo').innerHTML = painelHtml(n); PN = n; painelStatusCache(PN); estrategiaListar(); } })
           .catch(e => { if (PN === ant) painelStatus(`Dados calculados há ${idadeTxt(ant._cache.idade_s)} — não consegui recalcular agora: ${e.message}`, true); }); } }
     catch (e) { if (seq !== PN_SEQ) return; painelStatus(null);
-      if (!PN) c.innerHTML = '<div style="padding:20px;text-align:center;color:var(--t3);font-size:11px;">Os indicadores aparecem aqui assim que o servidor responder.</div>';
+      if (!PN) c.innerHTML = '<div style="padding:20px;text-align:center;color:var(--t3);font-size:11px;">Os indicadores aparecem aqui assim que o servidor responder.</div><div id="vdRF">' + rfHtml() + '</div>';
       painelErro((forcar === true ? 'Não consegui atualizar o painel: ' : 'Erro ao montar o painel: ') + e.message + (PN ? ' Mostrando os últimos dados carregados.' : ''), forcar); }
     finally { if (seq === PN_SEQ && btn) { btn.disabled = false; btn.innerHTML = '↻ Atualizar'; } }
   }
@@ -102,6 +103,7 @@
       ${kpi('gd', 'Propostas em aberto', d.propostas.abertas, `${R(d.propostas.valor_aberto)} · ${d.propostas.paradas} parada(s) > 7 dias`)}
       ${kpi('or', 'Ganhas / perdidas', `${d.propostas.ganhas} / ${d.propostas.perdidas}`, `win rate usado: ${P(k.win_rate_pct)}`)}
     </div>
+    <div id="vdRF">${rfHtml(m)}</div>
     <details class="panel" style="padding:10px 14px;"><summary style="cursor:pointer;font-size:11.5px;font-weight:600;">Como o sistema calculou "quantas vendas" (premissas editáveis)</summary>
       <div style="font-size:11px;color:var(--t2);line-height:1.8;margin-top:8px;">
         Ticket médio <b>${R(k.ticket_medio)}</b> (${esc(k.ticket_fonte)}) · duração média <b>${N(k.duracao_media_meses)} meses</b> · ciclo de venda <b>${k.ciclo_dias} dias</b> · win rate <b>${P(k.win_rate_pct)}</b> (${esc(k.win_fonte)}).<br>
@@ -132,6 +134,87 @@
       <textarea class="fta" id="vdEstTexto" style="min-height:220px;font-size:12px;line-height:1.7;" placeholder="Escreva aqui a estratégia do período: metas, contas-alvo, ofertas, cadência, quem faz o quê..."></textarea>
       <div id="vdEstLista" style="margin-top:10px;font-size:11px;"></div></div></div>`;
   }
+  // ═══════════════ v3.94: RECEITA FUTURA 60 DIAS (Propostas + A Receber + meta) ═══════════════
+  // Propostas: mesma API de s7propostas (prop_listar); "em aberto" = enviada + negociacao (mesmo critério do KPI "Propostas em aberto").
+  // Recebíveis: mesmas linhas de s3receber (_recLinhas = lançamentos manuais + faturas QB de painel_resumo), mesmo critério de vencido.
+  const RF_DIAS = 60, RF_MS = 15000;
+  const RF_ESTAGIOS = { negociacao: { nome: 'Em negociação', prob: 60 }, enviada: { nome: 'Aguardando aprovação', prob: 30 } }; // probabilidade por estágio (premissa temporária)
+  let RF = null, RF_SEQ = 0;
+  const rfTentar = async fn => { try { return await fn(); } catch (_) { return await fn(); } }; // timeout de 15s + 1 nova tentativa
+  async function rfPropostas() {
+    const d = await rfTentar(() => api('prop_listar', {}, RF_MS));
+    const est = {}; let total = 0, ponderado = 0, qtd = 0;
+    (d.propostas || []).forEach(p => { const e = RF_ESTAGIOS[p.status]; if (!e) return; const v = +p.valor_total || 0;
+      const g = est[p.status] || (est[p.status] = { nome: e.nome, prob: e.prob, qtd: 0, valor: 0 });
+      g.qtd++; g.valor += v; total += v; ponderado += v * e.prob / 100; qtd++; });
+    return { total, ponderado, qtd, estagios: est };
+  }
+  async function rfRecebiveis(forcar) {
+    if (typeof _recLinhas !== 'function') throw new Error('módulo A Receber indisponível');
+    let erro = '';
+    try { if (!receberItems.length) { const s = localStorage.getItem('atx:receber'); const v = s ? JSON.parse(s) : null; if (Array.isArray(v)) receberItems = v; } } catch (_) {}
+    if (forcar || !_recQBCarregado) {
+      try { const d = await rfTentar(() => finApi('painel_resumo', {}, { timeoutMs: RF_MS }));
+        const it = d && d.contasReceber && d.contasReceber.itens;
+        if (Array.isArray(it)) { receberQBItems = it; _recQBCarregado = true; _recQBErro = ''; } else if (d && !d.qb_configurado) _recQBCarregado = true; }
+      catch (e) { erro = e.message || String(e); }
+    }
+    const r = { aVencer: 0, qtdAVencer: 0, alerta: 0, qtdAlerta: 0, vencido: 0, qtdVencido: 0, linhas: [], erro };
+    _recLinhas().forEach(l => {
+      if (l.dias == null) return;
+      if (l.status === 'vencido') { r.vencido += l.valor; r.qtdVencido++; r.linhas.push(l); }
+      else if (l.dias <= RF_DIAS) { r.aVencer += l.valor; r.qtdAVencer++; if (l.status === 'alerta') { r.alerta += l.valor; r.qtdAlerta++; } r.linhas.push(l); }
+    });
+    r.linhas.sort((a, b) => a.dias - b.dias);
+    return r;
+  }
+  async function rfCarregar(forcar) {
+    const seq = ++RF_SEQ; RF = null; rfRender();
+    const [p, r] = await Promise.allSettled([rfPropostas(), rfRecebiveis(forcar === true)]);
+    if (seq !== RF_SEQ) return;
+    const msg = x => (x && x.message) || 'falha';
+    RF = { prop: p.status === 'fulfilled' ? p.value : null, propErro: p.status === 'rejected' ? msg(p.reason) : '',
+      rec: r.status === 'fulfilled' ? r.value : null, recErro: r.status === 'rejected' ? msg(r.reason) : r.value.erro };
+    rfRender();
+  }
+  function rfRender() { const el = $('vdRF'); if (el) el.innerHTML = rfHtml(); }
+  function rfHtml(metas) {
+    const mt = metas || (PN && PN.metas) || {};
+    const cab = `<div class="ph"><div class="pt">💰 Receita Futura ${RF_DIAS} dias</div><span style="font-size:10px;color:var(--t2);flex:1;">propostas em aberto + parcelas a receber até ${new Date(Date.now() + RF_DIAS * 864e5).toLocaleDateString('pt-BR')}</span>
+      <button class="btn btn-g" style="font-size:9.5px;padding:3px 9px;" onclick="VD.rfIr('s7propostas')">Ver propostas →</button>
+      <button class="btn btn-g" style="font-size:9.5px;padding:3px 9px;" onclick="VD.rfIr('s3receber')">Ver recebíveis →</button></div>`;
+    const card = (cor, t, v, s) => `<div class="kpi" style="border-left:3px solid ${cor};"><div class="kl">${t}</div><div class="kv" style="color:${cor};">${v}</div><div class="ks">${s || ''}</div></div>`;
+    if (!RF) {
+      const b = (w, h) => `<div style="background:var(--bg4);border-radius:4px;height:${h}px;width:${w};margin:6px 0;animation:pulse 1.8s ease-in-out infinite;opacity:.6;"></div>`;
+      const k = `<div class="kpi">${b('55%', 9)}${b('70%', 20)}${b('85%', 8)}</div>`;
+      return `<div class="panel">${cab}<div class="pb"><div class="kg k4" style="margin:0;">${k + k + k + k}</div></div></div>`;
+    }
+    const pr = RF.prop, rc = RF.rec, erroTxt = t => `<span style="color:var(--red);">${esc(t)}</span>`;
+    const cProp = pr ? card('var(--blue)', 'Proposto (ponderado)', R(pr.ponderado), `${pr.qtd} proposta(s) em aberto · total ${R(pr.total)}<br>${Object.values(pr.estagios).map(g => `${esc(g.nome)}: ${g.qtd} · ${R(g.valor)} × ${g.prob}%`).join('<br>') || 'nenhuma enviada ou em negociação'}`)
+      : card('var(--t3)', 'Proposto (ponderado)', '—', erroTxt(RF.propErro));
+    const cRec = rc ? card(rc.qtdAlerta ? 'var(--gold)' : 'var(--green)', 'Contratado a receber', R(rc.aVencer), `${rc.qtdAVencer} parcela(s) a vencer em ${RF_DIAS} dias<br>${rc.qtdAlerta ? `<span style="color:var(--gold);">● ${rc.qtdAlerta} vence(m) em até 7 dias · ${R(rc.alerta)}</span>` : '<span style="color:var(--green);">● todas no prazo</span>'}`)
+      : card('var(--t3)', 'Contratado a receber', '—', erroTxt(RF.recErro));
+    const cRisco = rc ? card(rc.qtdVencido ? 'var(--red)' : 'var(--green)', 'Em risco (vencido)', R(rc.vencido), rc.qtdVencido ? `${rc.qtdVencido} parcela(s) vencida(s) ou vencendo hoje` : 'nenhuma parcela vencida')
+      : card('var(--t3)', 'Em risco (vencido)', '—', erroTxt(RF.recErro));
+    const metaPer = mt.meta_mensal ? mt.meta_mensal * RF_DIAS / 30 : null;
+    const proj = (pr ? pr.ponderado : 0) + (rc ? rc.aVencer : 0);
+    const pct = metaPer ? proj / metaPer * 100 : null;
+    const corPct = pct == null ? 'var(--t3)' : pct >= 100 ? 'var(--green)' : pct >= 60 ? 'var(--gold)' : 'var(--red)';
+    const cMeta = card(corPct, '% da meta coberto', pct == null ? '—' : P(pct),
+      metaPer ? `${R(proj)} projetado de ${R(metaPer)} (meta mensal ${R(mt.meta_mensal)} × ${RF_DIAS / 30})${barra(pct, 100, corPct)}` : 'meta mensal ainda não carregada (KPIs acima)');
+    const lin = rc && rc.linhas.length ? `<div style="margin-top:10px;font-size:11px;">${rc.linhas.slice(0, 8).map(l => `<div style="display:flex;gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid var(--bd);">
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><b>${esc(l.cliente)}</b>${l.doc ? ` <span style="color:var(--t3);font-size:10px;">${esc(l.doc)}</span>` : ''}</span>
+        <span style="font-family:var(--M);">${R(l.valor)}</span><span style="color:var(--t2);font-size:10.5px;">${esc(_recDataBR(l.vencimento))}</span><span>${_recBadge(l.dias)}</span></div>`).join('')}
+      ${rc.linhas.length > 8 ? `<div style="font-size:10px;color:var(--t3);padding-top:5px;">+ ${rc.linhas.length - 8} parcela(s) — veja todas em A Receber</div>` : ''}</div>` : '';
+    const aviso = rc && RF.recErro ? `<div style="font-size:10px;color:var(--gold);margin-top:6px;">QuickBooks indisponível agora (${esc(RF.recErro.substring(0, 140))}) — mostrando só os lançamentos manuais.</div>` : '';
+    return `<div class="panel">${cab}<div class="pb"><div class="kg k4" style="margin:0;">${cProp + cRec + cRisco + cMeta}</div>${lin}${aviso}
+      <div style="font-size:9.5px;color:var(--t3);margin-top:6px;">Ponderação por estágio: ${Object.values(RF_ESTAGIOS).map(e => `${e.nome} ${e.prob}%`).join(' · ')}. Vencido = vence hoje ou já venceu (mesmo critério de A Receber).</div></div></div>`;
+  }
+  function rfIr(p) {
+    if (p === 's7propostas') { const b = $('vdProp'); if (b) b.dataset.aba = 'lista'; } // abre direto na lista, onde estão os mesmos valores
+    nav(p, document.querySelector(`.sbi[onclick*="'${p}'"]`));
+  }
+
   function estRef() {
     const t = $('vdEstTipo')?.value, d = new Date(), el = $('vdEstRef'); if (!el) return;
     el.value = t === 'mensal' ? d.toISOString().substring(0, 7) : t === 'trimestral' ? `${d.getFullYear()}-T${Math.floor(d.getMonth() / 3) + 1}` : t === 'semestral' ? `${d.getFullYear()}-S${d.getMonth() < 6 ? 1 : 2}` : String(d.getFullYear());
@@ -420,7 +503,7 @@
     try { CFG = await api('prop_config_salvar', { params }); nota('Parâmetros salvos'); } catch (e) { nota('Erro: ' + e.message, 'error'); }
   }
 
-  window.VD = { painelAbrir, painelCarregar, coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
+  window.VD = { painelAbrir, painelCarregar, rfCarregar, rfIr,coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
     propAbrir, aba, nova, estimar, analisar, escolher, redigir, salvar, baixarPdf, baixarWord, mudarStatus, converter, abrirProp, excluir, addPerfil, perfilRC,
     aprender, salvarInstrucoes, regerarPadrao, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar };
 })();
