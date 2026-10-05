@@ -427,6 +427,14 @@ Seu papel:
 - Apontar inconsistências entre documentos, análise e BP.
 Estilo: português do Brasil, direto, de executivo para executivo. Use parágrafos curtos, listas e **negrito** quando ajudar; tabelas simples em markdown são permitidas. Não invente fatos, números ou cláusulas que não estejam no material — quando estimar, diga que é estimativa.` },
     { type: 'text', text: 'MATERIAL DA IDEIA:\n' + contexto, cache_control: { type: 'ephemeral' } },
+    // v3.95: ação automática — o chat dispara o recálculo da contraproposta com o que foi conversado
+    { type: 'text', text: `AÇÃO AUTOMÁTICA (RECALCULAR / CONTRAPROPOSTA):
+Quando o fundador PEDIR para recalcular, refazer, gerar ou aplicar a contraproposta / o business plan com o que foi conversado (ex.: "recalcula", "refaz a contraproposta com isso", "aplica no plano", "gera a contraproposta"):
+1) responda em até 6 linhas dizendo exatamente o que será aplicado (as condições, com números);
+2) termine a resposta com UMA linha exatamente neste formato (JSON válido numa linha só, sem markdown):
+<<<ACAO {"tipo":"contraproposta","oferta":"o que a OUTRA PARTE propôs/aceitou, com números","instrucoes":"as condições e ajustes do fundador, objetivas e com números (setup, marcos, recorrência, prazos, percentuais, quem paga o quê)","cambio_eur":6.2 ou null,"destinatario":"Parceiro|Cliente|Investidor|Fornecedor"}>>>
+Consolide TUDO o que foi combinado ao longo da conversa — não só a última mensagem — e mantenha as condições anteriores que continuam valendo. Converta valores em euro para o campo cambio_eur quando o fundador informar o câmbio.
+NÃO emita a linha <<<ACAO>>> se ele só estiver perguntando, discutindo ou simulando.` },
   ];
 
   // histórico: últimas 30 mensagens, alternando, começando pelo usuário
@@ -448,7 +456,12 @@ Estilo: português do Brasil, direto, de executivo para executivo. Use parágraf
   if (!r.ok) throw new Error(d?.error?.message || 'Erro Claude API ' + r.status);
   const resposta = (d.content || []).map(c => c.text || '').join('').trim();
   if (!resposta) throw new Error('A IA não respondeu. Tente de novo.');
-  return { success: true, resposta, docs_usados: docs.map(x => x.nome), material: { ideia: !!ideia.titulo, analise: !!analise, bp: !!bp, docs: docs.length } };
+  // v3.95: extrai a ação automática (se houver) e tira a linha técnica do texto
+  let acao = null, texto = resposta;
+  const mA = resposta.match(/<<<\s*ACAO\s*(\{[\s\S]*?\})\s*>>>/);
+  if (mA) { try { acao = JSON.parse(mA[1]); } catch (_) { acao = null; } texto = resposta.replace(mA[0], '').trim(); }
+  if (acao && acao.tipo !== 'contraproposta') acao = null;
+  return { success: true, resposta: texto, acao, docs_usados: docs.map(x => x.nome), material: { ideia: !!ideia.titulo, analise: !!analise, bp: !!bp, docs: docs.length } };
 }
 
 // ── S1-03: PESQUISA DE MERCADO ───────────────────────────────────────────────

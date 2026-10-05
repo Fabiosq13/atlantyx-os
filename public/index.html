@@ -10945,6 +10945,7 @@ function ichatHtml(k) {
     + '<div style="flex:1;min-width:200px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--blue);font-weight:700;">&#128172; Conversar com a IA sobre esta ideia</div>'
     + '<div style="font-size:10.5px;color:var(--t2);">tire dúvidas, ensaie a negociação e monte contrapropostas — a IA lê a ideia, a análise, o business plan e os documentos</div></div>'
     + '<label class="btn btn-g" style="font-size:10px;padding:3px 9px;cursor:pointer;">&#128206; Anexar documento<input type="file" multiple accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.json" style="display:none;" onchange="ichatAnexar(\'' + k + '\',this)"/></label>'
+    + '<button class="btn btn-or" style="font-size:10px;padding:3px 9px;" onclick="ichatPerguntar(\'' + k + '\',\'Recalcule a contraproposta aplicando tudo o que combinamos nesta conversa.\')" title="A IA consolida o que foi conversado, preenche a contraproposta e recalcula DRE, fluxo, TIR e VPL">&#128260; Recalcular com o que conversamos</button>'
     + '<button class="btn btn-g" style="font-size:10px;padding:3px 9px;" onclick="ichatLimpar(\'' + k + '\')" title="Apaga a conversa (os documentos ficam)">&#8634; Nova conversa</button></div>'
     + '<div id="ichatDocs_' + k + '" style="display:flex;flex-wrap:wrap;gap:5px;padding:7px 12px 0;"></div>'
     + '<div id="ichatMsgs_' + k + '" style="max-height:420px;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px;"></div>'
@@ -11029,8 +11030,31 @@ async function ichatEnviar(k) {
     const d = await r.json().catch(() => ({ success: false, error: r.status === 504 ? 'A IA demorou demais — tente uma pergunta mais curta' : 'Servidor retornou ' + r.status }));
     if (!d.success) throw new Error(d.error || 'falha');
     st.msgs.push({ role: 'assistant', content: d.resposta }); if (d.material) st.material = d.material;
+    if (d.acao) { st.pensando = false; if (btn) btn.disabled = false; ichatRender(k); _ichatPersistir(k); await _ichatAplicarAcao(k, d.acao); return; } // v3.95
   } catch (e) { st.msgs.push({ role: 'assistant', content: 'Não consegui responder: ' + e.message, erro: true }); }
   st.pensando = false; if (btn) btn.disabled = false; ichatRender(k); _ichatPersistir(k);
+}
+// v3.95: o chat pediu para recalcular → preenche a contraproposta com o que foi conversado, recalcula e conta o resultado
+async function _ichatAplicarAcao(k, acao) {
+  const st = _ICHAT[k]; const set = (id, v) => { const e = document.getElementById(id); if (e && v != null && String(v).trim() !== '') e.value = v; };
+  if (!document.getElementById('cpBtn_' + k)) { st.msgs.push({ role: 'assistant', content: '⚠ Abra a ideia com o business plan para eu aplicar a contraproposta — o bloco de contraproposta não está nesta tela.' }); ichatRender(k); return; }
+  set('cpOferta_' + k, acao.oferta); set('cpInstr_' + k, acao.instrucoes); if (acao.cambio_eur) set('cpCambio_' + k, String(acao.cambio_eur).replace('.', ','));
+  const dest = document.getElementById('cpDest_' + k); if (dest && acao.destinatario && [...dest.options].some(o => o.value === acao.destinatario || o.text === acao.destinatario)) dest.value = acao.destinatario;
+  document.getElementById('cpBtn_' + k)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  st.msgs.push({ role: 'assistant', content: '⚙ **Recalculando a contraproposta** com o que conversamos (DRE, fluxo de caixa, TIR e VPL)… leva de 1 a 3 minutos.' }); st.pensando = true; ichatRender(k);
+  const antes = window._cp?.[k]?.bp?.id;
+  try { await cpGerar(k); } catch (_) {}
+  st.pensando = false;
+  const C = window._cp?.[k], n = C?.bp?.narrativa || {}, A = n.antes || {}, D = n.depois || {};
+  if (!C?.bp || C.bp.id === antes) { st.msgs.push({ role: 'assistant', content: '⛔ Não consegui recalcular a contraproposta — veja a mensagem no bloco de contraproposta acima e me diga se quer tentar de novo.', erro: true }); ichatRender(k); _ichatPersistir(k); return; }
+  const R = v => v == null || isNaN(v) ? '—' : 'R$ ' + Math.round(v).toLocaleString('pt-BR'), P = v => v == null || isNaN(v) ? '—' : (v * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+  st.msgs.push({ role: 'assistant', content: '✅ **Contraproposta recalculada** — ' + (D.viavel ? '**plano rentável**' : '**ainda não ficou rentável**') + '\n\n'
+    + '| Indicador (36 meses) | Antes | Depois |\n|---|---|---|\n'
+    + '| VPL | ' + R(A.vpl) + ' | **' + R(D.vpl) + '** |\n| TIR anual | ' + P(A.tir_anual) + ' | **' + P(D.tir_anual) + '** |\n'
+    + '| Payback | ' + (A.payback_meses ?? 'não paga') + ' | **' + (D.payback_meses ?? 'não paga') + '** |\n| Exposição máx. de caixa | ' + R(A.exposicao_maxima_caixa) + ' | **' + R(D.exposicao_maxima_caixa) + '** |\n'
+    + '| Receita total | ' + R(A.receita_total) + ' | **' + R(D.receita_total) + '** |\n\n'
+    + (n.resumo_executivo ? n.resumo_executivo + '\n\n' : '') + 'O detalhe completo (DRE, fluxo e PDF) está no bloco **Contraproposta** acima. Quer ajustar mais alguma condição? É só pedir e mandar recalcular de novo.' });
+  ichatRender(k); _ichatPersistir(k);
 }
 
 // persistência: na ideia do pipeline (kv por id); na tela de análise, fica pendente até a ideia ir para o pipeline
@@ -28284,7 +28308,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.94] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.95] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -28300,7 +28324,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.94';
+window.__ATX_BUILD_ID__ = 'ATX-v3.95';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
