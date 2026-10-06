@@ -11099,7 +11099,10 @@ async function _ichatContexto(k) {
       st.bp = { id: x.business_plan.id, resumo: b.resumo || x.business_plan, premissas: b.premissas || null, justificativas: b.narrativa?.justificativas || null, modelo_negocio: b.narrativa?.modelo_negocio || null };
     } catch (_) { st.bp = { id: x.business_plan.id, resumo: x.business_plan }; }
   }
-  return { ideia: { titulo: x.titulo, desc: x.desc || x.descricao, origem: x.origem, cat: x.categoria || x.cat, stage: x.stage, notas: x.notas, resultados_s1: x.resultados_s1 || null }, analise: x.analise_completa || x.analise || null, proposta: x.proposta || null, bp: st.bp };
+  const cpb = window._cp?.[k]?.bp; const cn = cpb?.narrativa || {};
+  const contraproposta = cpb ? { id: cpb.id, premissas: cpb.premissas || null, indicadores_plano_original: cn.antes || null, indicadores_contraproposta_anterior: cn.anterior || null, indicadores_contraproposta_atual: cn.depois || null,
+    o_que_mudou_no_ultimo_recalculo: cn.diff_premissas || [], ajuste_aplicado: cn.ajuste_aplicado || null, condicoes_do_fundador: cn.instrucoes || null, estrategia: cn.estrategia || null, alteracoes: cn.alteracoes || [] } : null;
+  return { ideia: { titulo: x.titulo, desc: x.desc || x.descricao, origem: x.origem, cat: x.categoria || x.cat, stage: x.stage, notas: x.notas, resultados_s1: x.resultados_s1 || null }, analise: x.analise_completa || x.analise || null, proposta: x.proposta || null, bp: st.bp, contraproposta };
 }
 
 async function ichatEnviar(k) {
@@ -11128,17 +11131,23 @@ async function _ichatAplicarAcao(k, acao) {
   document.getElementById('cpBtn_' + k)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   st.msgs.push({ role: 'assistant', content: '⚙ **Recalculando a contraproposta** com o que conversamos (DRE, fluxo de caixa, TIR e VPL)… leva de 1 a 3 minutos.' }); st.pensando = true; ichatRender(k);
   const antes = window._cp?.[k]?.bp?.id;
-  try { await cpGerar(k); } catch (_) {}
+  // v3.103: se já existe contraproposta, o recálculo AJUSTA ela (parte dela, aplica só o que foi pedido) — antes recomeçava do plano original
+  try { if (antes) await cpGerar(k, true, acao.instrucoes || acao.oferta || ''); else await cpGerar(k); } catch (_) {}
   st.pensando = false;
   const C = window._cp?.[k], n = C?.bp?.narrativa || {}, A = n.antes || {}, D = n.depois || {};
   if (!C?.bp || C.bp.id === antes) { st.msgs.push({ role: 'assistant', content: '⛔ Não consegui recalcular a contraproposta — veja a mensagem no bloco de contraproposta acima e me diga se quer tentar de novo.', erro: true }); ichatRender(k); _ichatPersistir(k); return; }
   const R = v => v == null || isNaN(v) ? '—' : 'R$ ' + Math.round(v).toLocaleString('pt-BR'), P = v => v == null || isNaN(v) ? '—' : (v * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
-  st.msgs.push({ role: 'assistant', content: '✅ **Contraproposta recalculada** — ' + (D.viavel ? '**plano rentável**' : '**ainda não ficou rentável**') + '\n\n'
-    + '| Indicador (36 meses) | Antes | Depois |\n|---|---|---|\n'
-    + '| VPL | ' + R(A.vpl) + ' | **' + R(D.vpl) + '** |\n| TIR anual | ' + P(A.tir_anual) + ' | **' + P(D.tir_anual) + '** |\n'
-    + '| Payback | ' + (A.payback_meses ?? 'não paga') + ' | **' + (D.payback_meses ?? 'não paga') + '** |\n| Exposição máx. de caixa | ' + R(A.exposicao_maxima_caixa) + ' | **' + R(D.exposicao_maxima_caixa) + '** |\n'
-    + '| Receita total | ' + R(A.receita_total) + ' | **' + R(D.receita_total) + '** |\n\n'
-    + (n.resumo_executivo ? n.resumo_executivo + '\n\n' : '') + 'O detalhe completo (DRE, fluxo e PDF) está no bloco **Contraproposta** acima. Quer ajustar mais alguma condição? É só pedir e mandar recalcular de novo.' });
+  // v3.103: três colunas — plano original, contraproposta anterior e a nova — e o que mudou de fato nas premissas (calculado)
+  const B = n.anterior;
+  const linha = (rot, f, campo, alt) => '| ' + rot + ' | ' + (alt ? alt(A) : f(A[campo])) + (B ? ' | ' + (alt ? alt(B) : f(B[campo])) : '') + ' | **' + (alt ? alt(D) : f(D[campo])) + '** |\n';
+  const pb = x => x.payback_meses ?? 'não paga';
+  const mud = cpMudancasTexto(n.diff_premissas || [], 8);
+  st.msgs.push({ role: 'assistant', content: (n.alerta_consistencia ? '⚠ **' + n.alerta_consistencia + '**\n\n' : '') + '✅ **Contraproposta recalculada pelo motor financeiro** — ' + (D.viavel ? '**plano rentável**' : '**ainda não ficou rentável**') + '\n\n'
+    + '| Indicador (36 meses) | Plano original' + (B ? ' | Contraproposta anterior' : '') + ' | Nova |\n|---|---|' + (B ? '---|' : '') + '---|\n'
+    + linha('VPL', R, 'vpl') + linha('TIR anual', P, 'tir_anual') + linha('Payback (meses)', null, null, pb) + linha('Exposição máx. de caixa', R, 'exposicao_maxima_caixa') + linha('Receita total', R, 'receita_total') + linha('Lucro líquido total', R, 'lucro_liquido_total') + '\n'
+    + (mud ? '**O que mudou nas premissas' + (B ? ' em relação à contraproposta anterior' : '') + '** (é só isto que o motor recalculou):\n' + mud + '\n\n' : '')
+    + (B && D.vpl != null && B.vpl != null ? (D.vpl >= B.vpl ? 'O VPL subiu ' + R(D.vpl - B.vpl) + ' em relação à contraproposta anterior.' : 'O VPL caiu ' + R(B.vpl - D.vpl) + ' em relação à contraproposta anterior — veja acima o que mudou.') + '\n\n' : '')
+    + 'O detalhe completo (DRE, fluxo e PDF) está no bloco **Contraproposta** acima. Quer ajustar mais alguma condição? É só pedir e mandar recalcular de novo.' });
   ichatRender(k); _ichatPersistir(k);
 }
 
@@ -11231,7 +11240,14 @@ function _cpCtx(k) {
   return { ideia: { id: x.id, titulo: x.titulo, desc: x.desc || x.descricao, analise: a ? { score: a.score, recomendacao: a.recomendacao, resumo: a.resumo_executivo, viabilidade: a.viabilidade_financeira } : null },
     bp_id: x.business_plan?.id || null, docs: (_ICHAT.ed.ideiaId === x.id ? _ICHAT.ed.docs : []), oferta: document.getElementById('cpOferta_ed')?.value || '' };
 }
-async function cpGerar(k, ajustar) {
+function cpMudancasTexto(diff, max) {
+  const R = v => typeof v === 'number' ? (Math.abs(v) >= 100 ? 'R$ ' + Math.round(v).toLocaleString('pt-BR') : v.toLocaleString('pt-BR')) : Array.isArray(v) ? v.map(x => Math.round(x).toLocaleString('pt-BR')).join(' / ') : v == null ? '—' : String(v);
+  const CAMPO = { valor: 'valor mensal', valor_mensal: 'valor mensal', preco: 'preço', salario: 'salário', quantidade: 'quantidade', novos_mes: 'novos clientes/mês', mes_inicio: 'mês de início', mes_fim: 'mês de fim', pct: '%', churn_mensal_pct: 'churn mensal %', reajuste_anual_pct: 'reajuste anual %', clientes_iniciais: 'clientes iniciais' };
+  const l = (diff || []).slice(0, max || 12).map(d => '- ' + d.rotulo + ' · **' + d.item + '**' + (d.tipo === 'incluida' ? ': linha incluída' : d.tipo === 'removida' ? ': linha removida' : ' — ' + (CAMPO[d.campo] || d.campo) + ': ' + R(d.de) + ' → **' + R(d.para) + '**'));
+  if ((diff || []).length > (max || 12)) l.push('- … e mais ' + (diff.length - (max || 12)) + ' alteração(ões) — veja no bloco Contraproposta');
+  return l.join('\n');
+}
+async function cpGerar(k, ajustar, instrForcada) {
   const out = document.getElementById('cpOut_' + k), btn = document.getElementById('cpBtn_' + k);
   // v3.94: o contexto é montado dentro do try — antes uma falha aqui virava "promessa rejeitada" sem aviso
   let c; try { c = _cpCtx(k); c.docs = Array.isArray(c.docs) ? c.docs : []; } catch (e) { return toast('Não consegui ler a ideia aberta — reabra a ideia e tente de novo', 'error'); }
@@ -11241,11 +11257,11 @@ async function cpGerar(k, ajustar) {
   try {
     // v3.62: "Ajustar" parte da contraproposta atual (e mantém o plano original como comparação)
     const ant = ajustar ? window._cp[k]?.bp : null;
-    const instr = ajustar ? (document.getElementById('cpAjuste_' + k)?.value || '').trim() : (document.getElementById('cpInstr_' + k)?.value || '').trim();
+    const instr = instrForcada ? String(instrForcada).trim() : ajustar ? (document.getElementById('cpAjuste_' + k)?.value || '').trim() : (document.getElementById('cpInstr_' + k)?.value || '').trim();
     if (ajustar && !instr) { if (btn) { btn.disabled = false; btn.textContent = '🤝 Gerar de novo'; } return toast('Escreva o ajuste que você quer', 'error'); }
     const instrTodas = [ant?.narrativa?.instrucoes, instr].filter(Boolean).join('\n'); // ajustes anteriores continuam valendo
     const d = await bpApi('contraproposta', { ideia: c.ideia, bp_id: ant?.narrativa?.base_bp_id || c.bp_id, oferta: c.oferta || ant?.narrativa?.oferta || '', destinatario: document.getElementById('cpDest_' + k)?.value || 'Parceiro', docs_texto: c.docs.map(x => ({ nome: x.nome, texto: x.texto })),
-      instrucoes: instrTodas, cambio_eur: document.getElementById('cpCambio_' + k)?.value || ant?.narrativa?.cambio_eur || null, partir_de_id: ant?.id || null });
+      instrucoes: instrTodas, instrucoes_novas: ajustar ? instr : '', cambio_eur: document.getElementById('cpCambio_' + k)?.value || ant?.narrativa?.cambio_eur || null, partir_de_id: ant?.id || null });
     window._cp[k] = { bp: d.bp, base: d.base, titulo: c.ideia.titulo };
     if (k === 'ed' && _ideiaEd) { _ideiaEd.contraproposta_bp = { id: d.bp.id, base_bp_id: d.base.id, atualizado_em: new Date().toISOString() }; const i = S1_PIPELINE.findIndex(y => String(y.id) === String(_ideiaEd.id)); if (i >= 0) S1_PIPELINE[i].contraproposta_bp = _ideiaEd.contraproposta_bp; }
     cpRender(k); toast('Contraproposta pronta — ' + (d.bp.narrativa?.depois?.viavel ? 'plano rentável' : 'ainda não ficou rentável, veja os pontos'), d.bp.narrativa?.depois?.viavel ? 'success' : 'error');
@@ -11269,6 +11285,10 @@ function cpRender(k) {
     + lin('VPL', A.vpl, D.vpl, _cpR) + lin('TIR anual', A.tir_anual, D.tir_anual, _cpP) + lin('Payback (meses)', A.payback_meses, D.payback_meses, v => v == null ? 'não paga' : v, false)
     + lin('Exposição máxima de caixa', A.exposicao_maxima_caixa, D.exposicao_maxima_caixa, _cpR, false) + lin('Receita total', A.receita_total, D.receita_total, _cpR) + lin('Lucro líquido total', A.lucro_liquido_total, D.lucro_liquido_total, _cpR)
     + '<tr><td style="padding:4px 6px;">Rentável?</td><td style="padding:4px 6px;text-align:right;">' + (A.viavel ? 'sim' : 'não') + '</td><td style="padding:4px 6px;text-align:right;font-weight:700;">' + (D.viavel ? 'sim' : 'não') + '</td></tr></table>'
+    + (n.alerta_consistencia ? '<div style="color:var(--red);font-weight:700;margin:4px 0;">⚠ ' + _cpE(n.alerta_consistencia) + '</div>' : '')
+    + (n.anterior ? '<div style="font-size:10.5px;color:var(--t2);margin-bottom:6px;">Contraproposta anterior: VPL <b>' + _cpR(n.anterior.vpl) + '</b> · TIR <b>' + _cpP(n.anterior.tir_anual) + '</b> → esta: VPL <b>' + _cpR(D.vpl) + '</b> · TIR <b>' + _cpP(D.tir_anual) + '</b>' + (n.ajuste_aplicado ? ' · ajuste aplicado: <i>' + _cpE(n.ajuste_aplicado) + '</i>' : '') + '</div>' : '')
+    + ((n.diff_premissas || []).length ? '<details style="margin:4px 0 6px;"' + (n.anterior ? ' open' : '') + '><summary style="cursor:pointer;font-weight:700;">O que mudou de fato nas premissas' + (n.anterior ? ' (vs. contraproposta anterior)' : ' (vs. plano atual)') + ' — ' + n.diff_premissas.length + ' item(ns)</summary><div style="font-size:10.5px;margin-top:3px;">'
+      + n.diff_premissas.map(d => '<div>• ' + _cpE(d.rotulo) + ' · <b>' + _cpE(d.item) + '</b>' + (d.tipo === 'incluida' ? ': linha incluída' : d.tipo === 'removida' ? ': linha removida' : ' — ' + _cpE(d.campo) + ': ' + _cpE(Array.isArray(d.de) ? d.de.join(' / ') : d.de) + ' → <b>' + _cpE(Array.isArray(d.para) ? d.para.join(' / ') : d.para) + '</b>') + '</div>').join('') + '</div></details>' : '')
     + (n.diagnostico_base ? '<div><b>Diagnóstico do plano atual:</b> ' + _cpE(n.diagnostico_base) + '</div>' : '')
     + (n.estrategia ? '<div style="margin-top:4px;"><b>Estratégia:</b> ' + _cpE(n.estrategia) + '</div>' : '')
     + ((n.alteracoes || []).length ? '<div style="margin-top:8px;overflow-x:auto;"><b>O que muda</b><table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-top:3px;"><tr style="color:var(--t2);font-size:9.5px;text-transform:uppercase;"><th style="text-align:left;padding:3px 5px;">Item</th><th style="text-align:left;padding:3px 5px;">De</th><th style="text-align:left;padding:3px 5px;">Para</th><th style="text-align:left;padding:3px 5px;">Por quê / efeito</th></tr>'
@@ -28827,7 +28847,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.102] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.103] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -28843,7 +28863,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.102';
+window.__ATX_BUILD_ID__ = 'ATX-v3.103';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

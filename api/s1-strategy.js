@@ -387,7 +387,7 @@ async function materialDaIdeia(id) {
   return out;
 }
 
-async function chatIdeia({ ideia_id = null, ideia = {}, analise = null, proposta = null, bp = null, docs_texto = [], mensagens = [] }) {
+async function chatIdeia({ ideia_id = null, ideia = {}, analise = null, proposta = null, bp = null, contraproposta = null, docs_texto = [], mensagens = [] }) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
   // junta o que está salvo no card (banco) com o que está na tela (edições ainda não salvas têm prioridade)
   const mat = await materialDaIdeia(ideia_id).catch(() => null);
@@ -416,6 +416,7 @@ ${analise ? '\nANÁLISE DA IA (S1-03):\n' + js(analise, 12000) : '\n(ainda sem a
 ${ideia.resultados_s1 ? '\nPESQUISA / MODELO / PARECER DO COMITÊ:\n' + js(ideia.resultados_s1, 8000) : ''}
 ${proposta ? '\nPROPOSTA/CONTRAPROPOSTA JÁ GERADA:\n' + js(proposta, 6000) : ''}
 ${bp ? '\nBUSINESS PLAN (valores em R$; premissas que alimentam o cálculo e resultado):\n' + js(bp, 14000) : ''}
+${contraproposta ? '\nCONTRAPROPOSTA ATUAL (calculada pelo motor financeiro do sistema — DRE, fluxo de 36 meses, TIR e VPL; os indicadores abaixo são o resultado desse cálculo e a lista "o_que_mudou_no_ultimo_recalculo" é a diferença real entre as premissas):\n' + js(contraproposta, 14000) : ''}
 ${docsTxt ? '\nDOCUMENTOS ANEXADOS (texto extraído):\n' + docsTxt : '\n(nenhum documento anexado)'}`;
 
   const system = [
@@ -425,6 +426,7 @@ Seu papel:
 - Exercitar negociação: simular a outra parte quando pedido (responda no papel dela, de forma realista e dura), montar contrapropostas cláusula a cláusula, propor concessões e contrapartidas, apontar riscos e o que travar no contrato.
 - Fazer contas quando útil (câmbio, revenue share, payback) mostrando a conta. Valores em R$ quando falar do BP; se o documento estiver em outra moeda, mostre as duas.
 - Apontar inconsistências entre documentos, análise e BP.
+Números: os indicadores do business plan e da contraproposta vêm do MOTOR FINANCEIRO determinístico do sistema (não de você). Para explicar um resultado, use as premissas e a lista de mudanças do material. Nunca diga que "não tem acesso a uma calculadora" nem invente um VPL consolidado "à mão" — se precisar de um número novo, peça para recalcular (ação automática abaixo). Se o fundador estranhar um número, compare os indicadores (plano original × contraproposta anterior × atual) e aponte exatamente quais premissas mudaram.
 Estilo: português do Brasil, direto, de executivo para executivo. Use parágrafos curtos, listas e **negrito** quando ajudar; tabelas simples em markdown são permitidas. Não invente fatos, números ou cláusulas que não estejam no material — quando estimar, diga que é estimativa.` },
     { type: 'text', text: 'MATERIAL DA IDEIA:\n' + contexto, cache_control: { type: 'ephemeral' } },
     // v3.95: ação automática — o chat dispara o recálculo da contraproposta com o que foi conversado
@@ -433,7 +435,7 @@ Quando o fundador PEDIR para recalcular, refazer, gerar ou aplicar a contrapropo
 1) responda em até 6 linhas dizendo exatamente o que será aplicado (as condições, com números);
 2) termine a resposta com UMA linha exatamente neste formato (JSON válido numa linha só, sem markdown):
 <<<ACAO {"tipo":"contraproposta","oferta":"o que a OUTRA PARTE propôs/aceitou, com números","instrucoes":"as condições e ajustes do fundador, objetivas e com números (setup, marcos, recorrência, prazos, percentuais, quem paga o quê)","cambio_eur":6.2 ou null,"destinatario":"Parceiro|Cliente|Investidor|Fornecedor"}>>>
-Consolide TUDO o que foi combinado ao longo da conversa — não só a última mensagem — e mantenha as condições anteriores que continuam valendo. Converta valores em euro para o campo cambio_eur quando o fundador informar o câmbio.
+Em "instrucoes" escreva SÓ o que muda AGORA em relação à CONTRAPROPOSTA ATUAL (ela já contém tudo o que foi aplicado antes e continua valendo), sempre com o VALOR FINAL de cada linha (ex.: "Licenças ERP: despesa fixa de R$ 2.200 para R$ 1.200/mês"; "Setup fee por cliente: R$ 35.000 para R$ 42.000"). Se ainda não existe contraproposta, consolide tudo o que foi combinado na conversa. Converta valores em euro para o campo cambio_eur quando o fundador informar o câmbio.
 NÃO emita a linha <<<ACAO>>> se ele só estiver perguntando, discutindo ou simulando.` },
   ];
 

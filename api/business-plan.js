@@ -326,7 +326,41 @@ async function _bpBaseDaIdeia({ bp_id, ideia }) {
 }
 
 const _erro = (msg, status) => Object.assign(new Error(msg), { status });
-async function contrapropostaBP({ ideia, bp_id = null, oferta = '', docs_texto = [], instrucoes = '', destinatario = 'Parceiro', partir_de_id = null, cambio_eur = null }) {
+// v3.103: o que mudou de VERDADE nas premissas (calculado, não descrito pela IA) — linha a linha, por nome
+const _SECOES_LISTA = { receitas: 'Receitas', pessoal: 'Pessoal', despesas_fixas: 'Despesas fixas', custos_variaveis: 'Custos variáveis', investimentos: 'Investimentos' };
+const _ESCALARES = { taxa_desconto_anual: 'Taxa de desconto anual (%)', deducoes_pct: 'Impostos sobre a receita (%)', ir_csll_pct: 'IR/CSLL (%)', prazo_recebimento_dias: 'Prazo de recebimento (dias)', social_pct: 'Ações sociais (% do faturamento)' };
+const _CUSTOS = new Set(['pessoal', 'despesas_fixas', 'custos_variaveis', 'investimentos', 'marketing']);
+function _diffPremissas(a = {}, b = {}) {
+  const out = []; const norm = v => String(v || '').trim().toLowerCase();
+  const val = v => Array.isArray(v) ? (v.every(x => typeof x === 'number' || !isNaN(+x)) ? v.map(Number) : null) : (typeof v === 'number' || (v !== '' && v != null && !isNaN(+v) && typeof v !== 'boolean')) ? Number(v) : null;
+  const igual = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+  for (const [sec, rot] of Object.entries(_SECOES_LISTA)) {
+    const la = Array.isArray(a[sec]) ? a[sec] : [], lb = Array.isArray(b[sec]) ? b[sec] : [];
+    const chave = (x, i) => norm(x?.nome || x?.cargo || x?.descricao) || '#' + i;
+    const ma = new Map(la.map((x, i) => [chave(x, i), x])), mb = new Map(lb.map((x, i) => [chave(x, i), x]));
+    for (const [k, xb] of mb) {
+      const xa = ma.get(k); const nome = xb?.nome || xb?.cargo || xb?.descricao || k;
+      if (!xa) { out.push({ secao: sec, rotulo: rot, item: nome, campo: 'linha', de: null, para: 'incluída', tipo: 'incluida' }); continue; }
+      for (const campo of new Set([...Object.keys(xa), ...Object.keys(xb)])) {
+        if (['nome', 'cargo', 'descricao', 'obs', 'justificativa'].includes(campo)) continue;
+        const va = val(xa[campo]), vb = val(xb[campo]);
+        if (va == null && vb == null) { if (!igual(xa[campo], xb[campo]) && typeof (xb[campo] ?? xa[campo]) !== 'object') out.push({ secao: sec, rotulo: rot, item: nome, campo, de: xa[campo] ?? null, para: xb[campo] ?? null }); continue; }
+        if (!igual(va, vb)) out.push({ secao: sec, rotulo: rot, item: nome, campo, de: va, para: vb });
+      }
+    }
+    for (const [k, xa] of ma) if (!mb.has(k)) out.push({ secao: sec, rotulo: rot, item: xa?.nome || xa?.cargo || k, campo: 'linha', de: 'existia', para: null, tipo: 'removida' });
+  }
+  const ma = a.marketing || {}, mb = b.marketing || {};
+  for (const campo of new Set([...Object.keys(ma), ...Object.keys(mb)])) { const va = val(ma[campo]), vb = val(mb[campo]); if (!igual(va, vb)) out.push({ secao: 'marketing', rotulo: 'Marketing', item: 'Marketing', campo, de: va, para: vb }); }
+  for (const [k, rot] of Object.entries(_ESCALARES)) { const va = val(a[k]), vb = val(b[k]); if (!igual(va, vb) && !(va == null && vb == null)) out.push({ secao: k, rotulo: rot, item: rot, campo: k, de: va, para: vb }); }
+  return out.slice(0, 60);
+}
+// só cortes de custo (nada de receita mexido) → o VPL não pode cair; se cair, o cálculo partiu do lugar errado
+function _soCortesDeCusto(diff) {
+  if (!diff.length) return false;
+  return diff.every(d => _CUSTOS.has(d.secao) && (d.tipo === 'removida' || (typeof d.de === 'number' && typeof d.para === 'number' && d.para <= d.de) || (Array.isArray(d.de) && Array.isArray(d.para) && d.para.every((v, i) => v <= (d.de[i] ?? v)))));
+}
+async function contrapropostaBP({ ideia, bp_id = null, oferta = '', docs_texto = [], instrucoes = '', instrucoes_novas = '', destinatario = 'Parceiro', partir_de_id = null, cambio_eur = null }) {
   // v3.94: validação de entrada — antes ideia nula / documento malformado viravam HTTP 500 sem explicação
   if (!ideia || typeof ideia !== 'object' || Array.isArray(ideia)) ideia = {};
   if (!ideia.titulo && !bp_id) throw _erro('Abra ou analise uma ideia antes de gerar a contraproposta.', 400);
@@ -339,6 +373,11 @@ async function contrapropostaBP({ ideia, bp_id = null, oferta = '', docs_texto =
   // v3.62: AJUSTE de uma contraproposta já gerada — parte dela (e não do zero), aplicando as orientações do fundador
   let anterior = null;
   if (partir_de_id) { try { const a = await obterBP(partir_de_id); if (a?.premissas) anterior = a; } catch (_) {} }
+  // v3.103: no AJUSTE o ponto de partida é a contraproposta anterior (não o plano original) — antes as seções que a IA
+  // não devolvia voltavam para o plano ORIGINAL e as alavancas já negociadas se perdiam (ex.: só cortar despesas e o VPL cair)
+  const pIni = anterior ? anterior.premissas : p0;
+  const iIni = anterior ? _ind(anterior.resultado) : i0;
+  const novas = String(instrucoes_novas || '').trim();
   const t0 = Date.now();
   const instr = String(instrucoes || '').trim();
   const cambio = parseFloat(String(cambio_eur || '').replace(',', '.')) || null;
@@ -378,7 +417,14 @@ Com quem é a negociação: ${destinatario}
 ${oferta ? 'OFERTA / CONDIÇÕES RECEBIDAS DA OUTRA PARTE:\n' + String(oferta).substring(0, 6000) : '(sem oferta colada — use os documentos e o business plan)'}
 ${instr ? '══ ORIENTAÇÕES DO FUNDADOR (OBRIGATÓRIAS — aplicar todas nas premissas) ══\n' + instr.substring(0, 3000) + '\n══════' : ''}
 ${cambio ? 'CÂMBIO A USAR: 1 EUR = R$ ' + cambio.toFixed(2) : ''}
-${anterior ? 'CONTRAPROPOSTA ANTERIOR (ponto de partida — ajuste ESTA, aplicando as orientações do fundador; "premissas_alteradas" é relativo ao PLANO ATUAL abaixo, então devolva completas as seções que diferem dele):\n' + JSON.stringify(anterior.premissas).substring(0, 15000) + '\nResumo anterior: ' + String(anterior.narrativa?.estrategia || '').substring(0, 600) : ''}
+${anterior ? `══ MODO AJUSTE ══
+CONTRAPROPOSTA ATUAL (é o PONTO DE PARTIDA — tudo o que está nela continua valendo):
+${JSON.stringify(anterior.premissas).substring(0, 15000)}
+Indicadores da contraproposta atual (motor): ${JSON.stringify(iIni)}
+Resumo: ${String(anterior.narrativa?.estrategia || '').substring(0, 600)}
+${novas ? 'AJUSTE PEDIDO AGORA (aplicar SOBRE a contraproposta atual): ' + novas.substring(0, 2000) : ''}
+REGRAS DO AJUSTE: "premissas_alteradas" é RELATIVO À CONTRAPROPOSTA ATUAL. Devolva SOMENTE as seções que o ajuste pedido muda (cada seção devolvida vem completa, copiando sem alteração as linhas que não mudam). NÃO mexa em nenhuma outra alavanca, receita ou linha que o fundador não pediu. Se o ajuste é só de despesas, NÃO devolva "receitas". Valores do ajuste são o valor FINAL da linha (ex.: "licenças de R$ 2.200 para R$ 1.200" → a linha fica 1200; não subtraia de novo se a contraproposta atual já estiver com 1200).
+══════` : ''}
 BUSINESS PLAN ATUAL — premissas:
 ${JSON.stringify(p0).substring(0, 20000)}
 Justificativas do plano atual: ${JSON.stringify(base.narrativa?.justificativas || {}).substring(0, 3000)}
@@ -422,20 +468,27 @@ ${docs ? '\nDOCUMENTOS DA NEGOCIAÇÃO:\n' + docs : ''}${extra ? '\n\n' + extra 
     rodadas++;
     // mescla: só as seções devolvidas substituem as do plano atual
     const alt = j.premissas_alteradas || {}; const permitidas = ['receitas', 'pessoal', 'investimentos', 'despesas_fixas', 'custos_variaveis', 'marketing', 'taxa_desconto_anual', 'deducoes_pct', 'ir_csll_pct', 'prazo_recebimento_dias', 'crescimento_perpetuidade_pct'];
-    const premissas = { ...p0, ...Object.fromEntries(Object.entries(alt).filter(([k, v]) => permitidas.includes(k) && v != null && !(Array.isArray(v) && !v.length))), inicio: p0.inicio, meses: p0.meses || 36, titulo: p0.titulo };
+    const premissas = { ...pIni, ...Object.fromEntries(Object.entries(alt).filter(([k, v]) => permitidas.includes(k) && v != null && !(Array.isArray(v) && !v.length))), inicio: p0.inicio, meses: p0.meses || 36, titulo: p0.titulo };
     // v3.94: premissas malformadas da IA não derrubam a rota — pede de novo na próxima rodada
     let res; try { res = calcularBP(premissas); } catch (e) { console.warn('[BP contraproposta] premissas da IA inválidas:', e.message); extra = 'As premissas_alteradas que você devolveu não puderam ser calculadas (' + e.message + '). Devolva o JSON de novo respeitando exatamente a estrutura das premissas do plano atual.'; continue; }
     const ind = _ind(res);
     const cand = { j, premissas, res, ind };
     if (!melhor || _melhor(melhor.ind, ind)) melhor = cand;
+    // v3.103: no ajuste, aplica SÓ o que o fundador pediu (uma rodada) — nada de mexer em outras alavancas para "fechar a conta"
+    if (anterior) break;
     const ok = objetivo === 'TORNAR_VIAVEL' ? ind.viavel : (ind.viavel && (ind.vpl || 0) > (i0.vpl || 0));
     if (ok) break;
     extra = `RESULTADO DA SUA PROPOSTA ANTERIOR NO MOTOR: ${JSON.stringify(ind)} — ${objetivo === 'TORNAR_VIAVEL' ? 'AINDA NÃO É VIÁVEL' : 'NÃO MELHOROU o VPL da Atlantyx'}. Ajuste as alavancas (com justificativa realista) e devolva o JSON completo de novo.${instr ? ' MANTENHA todas as ORIENTAÇÕES DO FUNDADOR exatamente como pedidas — mexa só nas outras alavancas.' : ''}`;
   }
   if (!melhor) throw _erro('A IA devolveu premissas que o motor financeiro não conseguiu calcular. Tente de novo.', 502);
   const { j, premissas, res, ind } = melhor;
+  const diff = _diffPremissas(pIni, premissas);
+  // conferência: se só houve corte de custo e o VPL caiu, algo está errado — não entrega número incoerente
+  let alerta = null;
+  if (_soCortesDeCusto(diff) && (ind.vpl ?? 0) < (iIni.vpl ?? 0) - 1) alerta = 'Conferência do motor: só houve cortes de custo, mas o VPL caiu de ' + Math.round(iIni.vpl) + ' para ' + Math.round(ind.vpl) + '. Recalcule — este resultado não deve ser usado.';
   const narrativa = { contraproposta: true, base_bp_id: base.id, base_titulo: base.titulo, objetivo, rodadas, destinatario, oferta: String(oferta || '').substring(0, 6000), instrucoes: instr.substring(0, 3000), cambio_eur: cambio, ajuste_de: anterior?.id || null,
-    antes: i0, depois: ind, anos_antes: _anosResumo(base.resultado), anos_depois: _anosResumo(res),
+    antes: i0, depois: ind, anterior: anterior ? iIni : null, anterior_id: anterior?.id || null, anos_antes: _anosResumo(base.resultado), anos_depois: _anosResumo(res),
+    diff_premissas: diff, diff_vs_original: anterior ? _diffPremissas(p0, premissas) : diff, ajuste_aplicado: novas.substring(0, 2000) || null, alerta_consistencia: alerta,
     diagnostico_base: j.diagnostico_base, estrategia: j.estrategia, alteracoes: j.alteracoes || [], ganhos_contraparte: j.ganhos_contraparte || [], ganhos_atlantyx: j.ganhos_atlantyx || [],
     contrapartidas_oferecidas: j.contrapartidas_oferecidas || [], concessoes_possiveis: j.concessoes_possiveis || [], limites: j.limites || [], clausulas: j.clausulas || [], riscos: j.riscos || [],
     proximos_passos: j.proximos_passos || [], mensagem_para_enviar: j.mensagem_para_enviar || '', resumo_executivo: j.resumo_executivo || '',
