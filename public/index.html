@@ -3099,7 +3099,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <select class="fsel" id="dashFiltroAno" title="Ano do período" aria-label="Ano do período" style="font-size:11px;width:auto;" onchange="carregarDashboardFinanceiro()"></select>
     <select class="fsel contaFiltro" id="dash_conta" title="Conta bancária" aria-label="Conta bancária" style="font-size:11px;width:auto;max-width:200px;" onchange="carregarDashboardFinanceiro()"><option value="">Todas as contas</option></select>
     <button class="btn" style="font-size:10px;" onclick="_dashMesAtual()" title="Voltar para o mês corrente">&#8634; Mês atual</button>
-    <button class="btn btn-gn" onclick="carregarDashboardFinanceiro()">&#8635; Atualizar</button>
+    <button class="btn btn-gn" id="dfBtnAtualizar" onclick="carregarDashboardFinanceiro()">&#8635; Atualizar</button>
     <button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="previewRelatorioPagamentos()">&#128231; Relatório de Pagamentos</button>
     <button class="btn btn-p" onclick="nav('s3gerente')">&#129302; Perguntar ao Gerente IA</button>
   </div>
@@ -17327,7 +17327,7 @@ async function finApi(action, params = {}, opts = {}) {
       });
     } catch (netErr) {
       if (ctrl && ctrl.signal.aborted) throw _erroTimeout();
-      throw new Error('Rede: não conectou em /api/financeiro — ' + netErr.message);
+      const eRede = new Error('Rede: não conectou em /api/financeiro — ' + netErr.message); eRede.httpStatus = 0; eRede.semConexao = true; throw eRede; // dem_muv797a83sn4: HTTP 0 identificável
     }
     // FIX v1.5.2: diagnóstico claro por status HTTP
     if (r.status === 404) {
@@ -26397,9 +26397,22 @@ function _dashIntervalo() {
   if (t === 'tri') { const q = Math.floor(((mes || new Date().getMonth() + 1) - 1) / 3); return { de: f(new Date(ano, q * 3, 1)), ate: f(new Date(ano, q * 3 + 3, 0)) }; }
   return { de: f(new Date(ano, mes - 1, 1)), ate: f(new Date(ano, mes, 0)) };
 }
+// dem_muv797a83sn4: painéis que nascem "Carregando..." — todos saem desse estado em qualquer desfecho
+const _DF_PAINEIS = ['df_social', 'df_pr', 'df_fluxo', 'df_kpis', 'df_lanc'];
+let _dfSeq = 0;
+// HTTP 0 / timeout viram mensagem legível; os demais erros seguem com o texto original
+function _dfErroLegivel(e) {
+  if (!e || !(e.timeout || e.semConexao || e.httpStatus === 0 || e.name === 'AbortError')) return e;
+  const n = new Error('Sem conexão — tente novamente' + (e.timeout ? ' (o servidor não respondeu em ' + Math.round(_FIN_TIMEOUT_MS / 1000) + 's)' : ' (rede indisponível ou servidor fora do ar)'));
+  n.timeout = e.timeout; n.httpStatus = 0; return n;
+}
 async function carregarDashboardFinanceiro() {
   popularSeletoresConta(); // v1.67
   const st = document.getElementById('dfStatus'); const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  // dem_muv797a83sn4: ↻ Atualizar travado durante a carga (sem cliques duplicados); só a carga mais recente pinta a tela
+  const seq = ++_dfSeq, btn = document.getElementById('dfBtnAtualizar'), payload = {};
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Atualizando...'; }
+  u('dfAtualizado', '⏳ atualizando...');
   try {
     // v1.36: filtro de mês/ano
     const selMes = document.getElementById('dashFiltroMes'), selAno = document.getElementById('dashFiltroAno');
@@ -26411,7 +26424,10 @@ async function carregarDashboardFinanceiro() {
     }
     // v3.85: timeout de 12s; se falhar, usa a última carga boa salva no navegador
     const _iv = _dashIntervalo(); // v3.91: período de/até
-    const { d, cache } = await _finCarregarComFallback('s3dashboard', 'dashboard_financeiro', { mes: selMes?.value || null, ano: selAno?.value || null, conta_id: document.getElementById('dash_conta')?.value || null, data_inicio: _iv.de, data_fim: _iv.ate, ...(window._dfForcar ? { _forcar: true } : {}) }); window._dfForcar = false;
+    Object.assign(payload, { mes: selMes?.value || null, ano: selAno?.value || null, conta_id: document.getElementById('dash_conta')?.value || null, data_inicio: _iv.de, data_fim: _iv.ate, ...(window._dfForcar ? { _forcar: true } : {}) });
+    const { d, cache } = await _finCarregarComFallback('s3dashboard', 'dashboard_financeiro', payload); window._dfForcar = false;
+    if (seq !== _dfSeq) return; // um clique mais novo já está carregando
+    if (cache && cache.erro) cache.erro = _dfErroLegivel(cache.erro);
     const lbl = document.getElementById('dashPeriodoLabel');
     if (lbl) { const p = d.periodo || d.dashboard?.periodo;
       lbl.textContent = p ? ` · período: ${p.de.split('-').reverse().join('/')} a ${p.ate.split('-').reverse().join('/')}${p.atual ? ' (em curso)' : ''}` : ''; } const x = d.dashboard || {};
@@ -26490,12 +26506,20 @@ async function carregarDashboardFinanceiro() {
     _finAvisoFalha('dfStatus', 'carregarDashboardFinanceiro', cache && cache.erro, cache);
     if (st) { if (x.quickbooks && !x.quickbooks.conectado && x.quickbooks.erros?.length) { st.style.display = 'block'; st.innerHTML = '<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:10px;font-size:11px;color:var(--t1);">⚠ QuickBooks: ' + x.quickbooks.erros[0] + ' — <a style="color:var(--blue);cursor:pointer;" onclick="conectarQuickBooks()">reconectar</a></div>'; } else st.style.display = 'none'; }
   } catch (e) {
+    if (seq !== _dfSeq) return;
     // v3.85: sem cache local — o "Carregando..." dá lugar ao erro com botão de retry
     if (st) st.style.display = 'none';
-    _finAvisoFalha('dfStatus', 'carregarDashboardFinanceiro', e, null);
-    ['df_fluxo', 'df_kpis', 'df_lanc'].forEach(id => { const el = document.getElementById(id); if (el && /Carregando/.test(el.textContent)) el.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Não carregado — use ↻ Tentar novamente acima.</div>'; });
+    _finAvisoFalha('dfStatus', 'carregarDashboardFinanceiro', _dfErroLegivel(e), null);
     u('dfAtualizado', '⛔ falha ao carregar');
-    addLog('err', '[Dashboard Fin] ' + e.message);
+    // dem_muv797a83sn4: registro no Log com tela, timestamp e payload (rastrear recorrência)
+    addLog('err', '[Dashboard Fin] ' + JSON.stringify({ tela: 's3dashboard', erro: e.message, http: e.httpStatus ?? null, ts: new Date().toISOString(), payload }).replace(/</g, '&lt;'));
+  } finally {
+    // dem_muv797a83sn4: em QUALQUER desfecho (sucesso, erro, timeout) nenhum painel fica "Carregando..." e o botão volta
+    if (seq === _dfSeq) {
+      _DF_PAINEIS.forEach(id => { const el = document.getElementById(id); if (el && (/Carregando/.test(el.textContent) || el.querySelector('.skel'))) el.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Não carregado — use ↻ Tentar novamente acima.</div>'; });
+      if (btn) { btn.disabled = false; btn.innerHTML = '&#8635; Atualizar'; }
+      if (/atualizando/.test(document.getElementById('dfAtualizado')?.textContent || '')) u('dfAtualizado', '');
+    }
   }
 }
 
