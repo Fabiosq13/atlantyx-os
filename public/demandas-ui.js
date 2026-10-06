@@ -35,12 +35,33 @@
     if (pr && rot.includes('conflito')) return chip('var(--gold)', `🔧 PR #${pr.numero} em conflito com a main — o Claude está atualizando a branch; o merge é tentado de novo sozinho`, pr.url);
     if (pr && (rot.includes('aprovado-merge') || x.merge_pedido_em)) return chip('var(--blue)', `🔄 Mesclando o PR #${pr.numero}${x.merge_pedido_em ? ' (aprovado às ' + quando(x.merge_pedido_em) + ')' : ''} — atualiza com a main, valida e publica (alguns minutos)`, pr.url);
     if (pr) return chip('var(--gold)', `📬 Claude terminou${c?.atualizado ? ' às ' + quando(c.atualizado) : ''}${c?.duracao ? ' (' + c.duracao + ')' : ''} — PR #${pr.numero} ${qa ? 'em validação automática' : 'aguarda o SEU merge'}`, pr.url);
-    if (!c) return chip('var(--t3)', '⏳ Na fila do GitHub — o Claude ainda não começou', d.issue_url);
+    if (x.reenviado_em && (!c || Date.parse(x.reenviado_em) > Date.parse(c.atualizado))) return chip('var(--blue)', `🔁 Reenviado ao Claude às ${quando(x.reenviado_em)} — aguardando ele começar`, d.issue_url);
+    if (!c) { const velho = x.issue_criada_em && Date.now() - Date.parse(x.issue_criada_em) > 15 * 60000;
+      return velho ? chip('var(--red)', `⚠ O Claude não começou (tarefa aberta ${ha(x.issue_criada_em)}) — o GitHub pode não ter iniciado o robô. Use "Reenviar ao Claude"`, d.issue_url) : chip('var(--t3)', '⏳ Na fila do GitHub — o Claude ainda não começou', d.issue_url); }
     if (c.estado === 'trabalhando') { const parado = Date.now() - Date.parse(c.atualizado) > 70 * 60000;
       return parado ? chip('var(--red)', `⚠ Sem sinal do Claude ${ha(c.atualizado)} — abra a tarefa`, c.url) : chip('var(--blue)', `⚙ Claude trabalhando desde ${quando(c.inicio)} · última atualização ${ha(c.atualizado)}`, c.url); }
     if (c.estado === 'erro') return chip('var(--red)', `❌ Claude parou com erro às ${quando(c.atualizado)} — abra a tarefa`, c.url);
-    return chip('var(--gold)', `✅ Claude terminou às ${quando(c.atualizado)}${c.duracao ? ' (' + c.duracao + ')' : ''} — abrindo o PR (até alguns minutos)`, c.url);
+    return chip('var(--gold)', `✅ Claude terminou às ${quando(c.atualizado)}${c.duracao ? ' (' + c.duracao + ')' : ''} — ${x.branch && !qa ? 'trabalho pronto na branch; aprove o merge (o PR é aberto na hora)' : 'abrindo o PR (até alguns minutos)'}`, c.url);
   }
+  // v3.98: o que dá para fazer AGORA com a tarefa — os mesmos botões no card e no detalhe
+  function acoesTarefa(d) {
+    if (d.status !== 'em_execucao') return [];
+    const x = d.dados || {}, c = x.claude, pr = x.pr, qa = d.squad === 'qa', rot = pr?.rotulos || [], A = [];
+    const aberto = pr && pr.estado === 'open';
+    const pedido = aberto && (rot.includes('aprovado-merge') || x.merge_pedido_em);
+    const travado = pedido && x.merge_pedido_em && Date.now() - Date.parse(x.merge_pedido_em) > 40 * 60000;
+    const semSinal = !pr && (c?.estado === 'erro' || (c?.estado === 'trabalhando' && Date.now() - Date.parse(c.atualizado) > 70 * 60000)
+      || (!c && x.issue_criada_em && Date.now() - Date.parse(x.issue_criada_em) > 15 * 60000)) && !(x.reenviado_em && Date.now() - Date.parse(x.reenviado_em) < 20 * 60000);
+    if (!qa && aberto && !pedido && !rot.includes('precisa-revisao') && !rot.includes('conflito')) A.push(['mesclar', '✅ Aprovar e mesclar', 'btn-gn']);
+    if (!qa && !aberto && x.branch && c?.estado === 'concluiu') A.push(['mesclar', '✅ Aprovar e mesclar', 'btn-gn']);
+    if (aberto && (rot.includes('precisa-revisao') || rot.includes('conflito'))) { A.push(['corrigir', '🛠 Pedir correção ao Claude', 'btn-p']); A.push(['refazer_merge', '🔁 Mesclar de novo', 'btn-g']); }
+    else if (travado) A.push(['refazer_merge', '🔁 Mesclar de novo', 'btn-g']);
+    if (semSinal) A.push(['reenviar', '🔁 Reenviar ao Claude', 'btn-p']);
+    if (aberto && c?.estado === 'erro' && !rot.includes('precisa-revisao')) A.push(['reenviar', '🔁 Pedir ao Claude para terminar', 'btn-p']);
+    A.push(['cancelar', '✕ Cancelar', 'btn-g']);
+    return A;
+  }
+  const botoesTarefa = (d, mini) => acoesTarefa(d).map(([op, rot, cls]) => `<button class="btn ${cls}" style="font-size:${mini ? '9.5px;padding:3px 7px' : '11px'};${op === 'cancelar' ? 'color:var(--red);' : ''}" onclick="event.stopPropagation();DEM.tarefa('${d.id}','${op}')">${rot}</button>`).join('');
   const estrelas = n => '★'.repeat(Math.max(0, Math.min(5, +n || 0))) + '☆'.repeat(5 - Math.max(0, Math.min(5, +n || 0)));
 
   function abrir() {
@@ -82,6 +103,7 @@
         💡 Último ciclo do agente: ${uc ? quando(uc.em) + (uc.pulado ? ' · pulado: ' + esc(uc.pulado) : ' · ' + (uc.criadas ?? 0) + ' sugestão(ões)') : 'ainda não rodou'} · o agente pausa sozinho se houver 12 sugestões esperando sua decisão.<br>
         🌙 Última madrugada: ${un ? quando(un.em) + ' · ' + (un.telas || 0) + ' telas · ' + esc(un.resultado || '') + (un.issue ? ' (tarefa #' + un.issue + ')' : '') : 'ainda não rodou — configure o GitHub (veja abaixo)'}
         ${D.github ? '' : '<br><b style="color:var(--red);">GITHUB_TOKEN não configurado no Vercel</b> — sem ele as demandas aprovadas não viram tarefa para o Claude.'}
+        <div style="margin-top:4px;"><button class="btn btn-g" style="font-size:10px;" onclick="DEM.testarGithub()">🔑 Testar conexão com o GitHub</button> <span id="demGhTeste" style="font-size:10.5px;"></span></div>
         <details style="margin-top:4px;"><summary style="cursor:pointer;color:var(--blue);">Configuração única (GitHub)</summary>
           <div style="padding:6px 0 0 12px;">1) App do Claude instalado no repositório e secret <b>ANTHROPIC_API_KEY</b> no GitHub Actions · 2) No Vercel: <b>GITHUB_TOKEN</b> (fine-grained, Issues: Read and write) e <b>CRON_SECRET</b> ·
           3) No GitHub Actions: secrets <b>CRON_SECRET</b> (mesmo valor do Vercel), <b>ATX_QA_EMAIL</b> e <b>ATX_QA_SENHA</b> (login e senha de um usuário criado em Acesso › Usuários × Perfil) · 4) Criar os rótulos <b>demanda-aprovada</b>, <b>correcao-noturna</b> e <b>precisa-revisao</b> (ou deixar que sejam criados na primeira tarefa).</div></details></div>`;
@@ -105,6 +127,7 @@
       <div style="font-size:9.5px;color:var(--t2);margin-top:3px;">${qa ? n + ' erro(s)' : `<span style="color:var(--gold);" title="impacto">${estrelas(x.impacto || d.prioridade)}</span> · esforço ${esc(x.esforco || '?')} · risco ${esc(x.risco || '?')}`}</div>
       ${d.issue_numero ? `<div style="font-size:9.5px;margin-top:3px;"><a href="${esc(d.issue_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--blue);">tarefa #${d.issue_numero}</a>${x.pr ? ` · <a href="${esc(x.pr.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--blue);">PR #${x.pr.numero}${x.pr.merged ? ' ✓ no ar' : ''}</a>` : ''}</div>` : ''}
       ${andamento(d)}
+      ${d.status === 'em_execucao' ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">${botoesTarefa(d, true)}</div>` : ''}
       ${x.aviso ? `<div style="font-size:9.5px;color:var(--red);margin-top:3px;">${esc(x.aviso).substring(0, 140)}</div>` : ''}
     </div>`;
   }
@@ -130,7 +153,8 @@
         <button class="btn btn-g" style="color:var(--red);" onclick="DEM.decidir('${d.id}','recusar')">✕ Recusar</button><button class="btn btn-g" onclick="DEM.editar('${d.id}')">✎ Editar</button>
         <span style="flex:1;"></span><button class="btn btn-g" style="color:var(--red);" onclick="DEM.excluir('${d.id}')">🗑 Excluir</button></div>`
       : d.status === 'aprovada' ? `<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-gn" onclick="DEM.decidir('${d.id}','enviar')">⚙ Enviar para implementação (GitHub)</button><button class="btn btn-g" onclick="DEM.editar('${d.id}')">✎ Editar</button><button class="btn btn-g" onclick="DEM.mover('${d.id}','arquivada')">Arquivar</button></div>`
-      : d.status === 'em_execucao' ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:11px;">${d.issue_url ? `<a class="btn btn-g" href="${esc(d.issue_url)}" target="_blank" rel="noopener">Abrir tarefa #${d.issue_numero}</a>` : ''}${x.pr ? `<a class="btn btn-g" href="${esc(x.pr.url)}" target="_blank" rel="noopener">${qa ? 'Ver' : 'Revisar'} o PR #${x.pr.numero} no GitHub</a>${!qa && x.pr.estado === 'open' && !(x.pr.rotulos || []).includes('aprovado-merge') && !x.merge_pedido_em ? `<button class="btn btn-gn" onclick="DEM.mesclar('${d.id}')">✅ Aprovar e mesclar</button>` : ''}` : '<span style="color:var(--t2);">O Claude está trabalhando — o PR aparece aqui quando estiver pronto.</span>'}<span style="flex:1;"></span><button class="btn btn-g" onclick="DEM.mover('${d.id}','implementada')">Marcar como implementada</button></div>`
+      : d.status === 'em_execucao' ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:11px;">${d.issue_url ? `<a class="btn btn-g" href="${esc(d.issue_url)}" target="_blank" rel="noopener">Abrir tarefa #${d.issue_numero}</a>` : ''}${x.pr ? `<a class="btn btn-g" href="${esc(x.pr.url)}" target="_blank" rel="noopener">${qa ? 'Ver' : 'Revisar'} o PR #${x.pr.numero} no GitHub</a>` : x.branch ? `<a class="btn btn-g" href="https://github.com/${esc((d.issue_url || '').split('/').slice(3, 5).join('/'))}/compare/main...${esc(x.branch)}" target="_blank" rel="noopener">Ver as mudanças da branch</a>` : '<span style="color:var(--t2);">O Claude está trabalhando — o PR aparece aqui quando estiver pronto.</span>'}${botoesTarefa(d)}<span style="flex:1;"></span><button class="btn btn-g" onclick="DEM.mover('${d.id}','implementada')">Marcar como implementada</button></div>
+        <div style="margin-top:6px;">${andamento(d)}</div>`
       : `<div style="display:flex;gap:8px;flex-wrap:wrap;">${d.issue_url ? `<a class="btn btn-g" href="${esc(d.issue_url)}" target="_blank" rel="noopener">Tarefa #${d.issue_numero}</a>` : ''}${x.pr ? `<a class="btn btn-g" href="${esc(x.pr.url)}" target="_blank" rel="noopener">PR #${x.pr.numero}</a>` : ''}${['recusada', 'arquivada'].includes(d.status) ? `<button class="btn btn-g" onclick="DEM.mover('${d.id}','sugerida')">↩ Voltar para sugeridas</button>` : ''}<span style="flex:1;"></span><button class="btn btn-g" style="color:var(--red);" onclick="DEM.excluir('${d.id}')">🗑 Excluir</button></div>`;
     const achados = qa ? `${(x.achados_qa || []).length ? '<div style="margin-top:10px;font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">Erros nas telas</div>' + x.achados_qa.map(a => `<div style="font-size:11.5px;padding:5px 0;border-bottom:1px solid var(--bd);"><b>[${esc(a.sev)}] ${esc(a.titulo)}</b> — ${esc(a.rotulo || a.tela || '')}<div style="color:var(--t2);font-size:10.5px;">${esc(a.evidencia || '')}</div></div>`).join('') : ''}
         ${(x.achados_seguranca || []).length ? '<div style="margin-top:10px;font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);">Segurança</div>' + x.achados_seguranca.map(a => `<div style="font-size:11.5px;padding:5px 0;border-bottom:1px solid var(--bd);"><b>[${esc(a.severidade)}] ${esc(a.titulo)}</b> — ${esc(a.arquivo || '')}${a.linha ? ':' + a.linha : ''}<div style="color:var(--t2);font-size:10.5px;">${esc(a.evidencia || '')}</div></div>`).join('') : ''}` : '';
@@ -147,6 +171,7 @@
     if (decisao === 'recusar' && !obs) return nota('Escreva o motivo da recusa — o agente usa para não repetir', 'error');
     if (decisao === 'aprovar' && !confirm('Aprovar esta demanda?\n\nEla vira uma tarefa para o Claude no GitHub. Ele implementa numa branch e abre um pull request — que só vai para o ar quando VOCÊ fizer o merge.')) return;
     try { const r = await api('decidir', { id, decisao, obs }); $('demModal')?.remove();
+      if (r.aviso && /GitHub|token/i.test(r.aviso)) { await carregar(); return erroGithub(new Error('A demanda ficou APROVADA, mas não virou tarefa para o Claude: ' + r.aviso + '\n\nDepois de resolver, use "⚙ Enviar para implementação" no card.')); }
       nota(decisao === 'recusar' ? 'Demanda recusada — o agente vai levar o motivo em conta' : r.issue ? 'Aprovada — tarefa #' + r.issue + ' aberta para o Claude' : (r.aviso || 'Aprovada'), r.aviso ? 'error' : 'success'); await carregar(); }
     catch (e) { nota(e.message, 'error'); }
   }
@@ -155,9 +180,9 @@
     const d = (D.demandas || []).find(x => x.id === id); const x = d?.dados || {};
     let mesmo = false;
     if (x.claude?.estado === 'erro') { if (!confirm('ATENÇÃO: o Claude parou com ERRO nesta tarefa e o PR pode estar incompleto.\n\nMesclar mesmo assim?')) return; mesmo = true; }
-    else if (!confirm('Aprovar e mesclar o PR #' + (x.pr?.numero || '') + '?\n\nO robô do GitHub atualiza o PR com a versão atual do sistema (resolve sozinho o conflito de versão), valida (sintaxe + carga da página) e só então mescla e publica. Se houver conflito de verdade, ele pede ao Claude para resolver e tenta de novo.')) return;
-    try { await api('mesclar', { id, mesmo_assim: mesmo }); $('demModal')?.remove(); nota('Aprovado — o merge começa em instantes (acompanhe no card)'); await carregar(); }
-    catch (e) { nota(e.message, 'error'); }
+    else if (!confirm('Aprovar e mesclar ' + (x.pr?.estado === 'open' ? 'o PR #' + x.pr.numero : 'o trabalho do Claude (o PR é aberto agora)') + '?\n\nO robô do GitHub atualiza o PR com a versão atual do sistema (resolve sozinho o conflito de versão), valida (sintaxe + carga da página) e só então mescla e publica. Se houver conflito de verdade, ele pede ao Claude para resolver e tenta de novo.')) return;
+    try { const r = await api('mesclar', { id, mesmo_assim: mesmo }); $('demModal')?.remove(); nota(r.via === 'comando' ? 'Aprovado — pedido enviado ao robô do GitHub (abre o PR, valida e publica em alguns minutos)' : 'Aprovado — o merge começa em instantes (acompanhe no card)'); await carregar(); }
+    catch (e) { erroGithub(e); }
   }
   async function mover(id, status) { try { await api('mover', { id, status }); $('demModal')?.remove(); await carregar(); } catch (e) { nota(e.message, 'error'); } }
   async function excluir(id) { if (!confirm('Excluir esta demanda da esteira?')) return; try { await api('excluir', { id }); $('demModal')?.remove(); await carregar(); } catch (e) { nota(e.message, 'error'); } }
@@ -195,5 +220,34 @@
     try { const r = await api('config_salvar', { config: { ativo: $('demAtivo')?.checked, frequencia_horas: $('demFreq')?.value, max_por_ciclo: $('demMax')?.value, foco: $('demFoco')?.value || '' } }); D.config = r.config; render(); nota('Configuração do agente salva'); }
     catch (e) { nota(e.message, 'error'); }
   }
-  window.DEM = { abrir, carregar, filtrar, detalhe, decidir, mesclar, mover, excluir, editar, salvarEdicao, nova, salvarNova, pensar, salvarCfg, _render: render, _estado: () => D };
+  // v3.98: ações da tarefa direto do card
+  async function tarefa(id, op) {
+    if (op === 'mesclar') return mesclar(id);
+    const d = (D.demandas || []).find(x => x.id === id); if (!d) return; const x = d.dados || {};
+    const T = { reenviar: 'Reenviar a tarefa #' + d.issue_numero + ' para o Claude?\n\nEle recebe um novo pedido na tarefa e recomeça (ou continua na branch, se já houver trabalho).',
+      corrigir: 'Pedir ao Claude para corrigir o PR #' + (x.pr?.numero || '') + ' (' + ((x.pr?.rotulos || []).includes('conflito') ? 'conflito com a main' : 'validação que falhou') + ')?\n\nQuando ele terminar, clique em "Mesclar de novo".',
+      refazer_merge: 'Pedir o merge do PR #' + (x.pr?.numero || '') + ' de novo?\n\nO robô atualiza com a main, valida e só publica se passar.',
+      cancelar: 'Cancelar esta tarefa?\n\nA tarefa' + (x.pr?.estado === 'open' ? ' e o PR #' + x.pr.numero : '') + ' são fechados no GitHub sem publicar nada, e a demanda vai para Arquivadas (dá para voltar para Sugeridas depois).' };
+    if (!T[op] || !confirm(T[op])) return;
+    let obs = '';
+    if (op === 'reenviar' || op === 'corrigir') obs = prompt('Alguma orientação extra para o Claude? (opcional)', '') || '';
+    if (op === 'cancelar') obs = prompt('Motivo (opcional)', '') || '';
+    try { const r = await api('tarefa', { id, op, obs }); $('demModal')?.remove(); nota(r.msg || 'Feito'); await carregar(); }
+    catch (e) { erroGithub(e); }
+  }
+  // v3.99: erro do GitHub → mostra a mensagem completa e já roda o teste do token
+  function erroGithub(e) {
+    const m = String(e.message || e);
+    if (/GitHub|token/i.test(m)) { alert(m + '\n\nVou testar agora o que o token do GitHub consegue fazer (resultado no topo da Esteira).'); testarGithub(); }
+    else nota(m, 'error');
+  }
+  async function testarGithub() {
+    const el = $('demGhTeste'); if (el) el.innerHTML = '<span style="color:var(--blue);">testando…</span>';
+    try { const r = await api('github_teste'); const N = { ler_repositorio: 'ler o repositório', tarefas_escrever: 'tarefas (issues)', pull_requests_escrever: 'pull requests' };
+      const falhas = Object.entries(r.teste).filter(([, v]) => v.ok === false);
+      const txt = Object.entries(r.teste).map(([k, v]) => (v.ok ? '✅ ' : v.ok === false ? '❌ ' : '— ') + N[k] + (v.ok === false ? ' (' + esc(v.erro) + ')' : '')).join(' · ');
+      if (el) el.innerHTML = txt + (falhas.length ? '<br><b style="color:var(--gold);">Como resolver:</b> em github.com → Settings → Developer settings → Fine-grained tokens, edite o token do Atlantyx OS (repositório ' + esc(r.repo) + ') e marque <b>Issues: Read and write</b>' + (r.teste.pull_requests_escrever?.ok === false ? ', <b>Pull requests: Read and write</b> e <b>Contents: Read</b>' : '') + '. Se o erro for 401, gere um token novo e troque o <b>GITHUB_TOKEN</b> no Vercel (e faça Redeploy). Enquanto isso, o merge funciona pelo robô do GitHub desde que "tarefas" esteja ✅.' : ''); }
+    catch (e) { if (el) el.innerHTML = '<span style="color:var(--red);">' + esc(e.message) + '</span>'; }
+  }
+  window.DEM = { abrir, tarefa, testarGithub, carregar, filtrar, detalhe, decidir, mesclar, mover, excluir, editar, salvarEdicao, nova, salvarNova, pensar, salvarCfg, _render: render, _estado: () => D };
 })();

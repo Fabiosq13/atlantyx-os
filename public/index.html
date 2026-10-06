@@ -1724,6 +1724,9 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="kpi gd"><div class="kl">Aguardando Fundador</div><div class="kv" id="s1_fundador">0</div><div class="ks up">decisão pendente</div></div>
       <div class="kpi gn"><div class="kl">Aprovadas / Em Dev</div><div class="kv" id="s1_dev">0</div><div class="ks">em desenvolvimento</div></div>
     </div>
+    <div class="panel"><div class="ph"><div class="pt">Semáforo de Riscos</div><span class="tag live">Ao Vivo</span><button class="btn btn-g" style="font-size:9px;padding:3px 8px;margin-left:auto;" onclick="_rskIr('s1riscos')">Abrir Gestão de Riscos &#8594;</button></div>
+      <div class="pb" id="s1RiscosSemaforoDash"><div style="color:var(--t3);font-size:11px;text-align:center;padding:10px;">Carregando semáforo de riscos…</div></div>
+    </div>
     <div class="kg k2">
       <div class="panel"><div class="ph"><div class="pt">Agentes S1</div><span class="tag live">10 Ativos</span></div><div class="pb" id="s1AgentList"></div></div>
       <div class="panel"><div class="ph"><div class="pt">OKRs — Saúde Geral</div><span class="tag on">Q2 2026</span><button class="btn btn-g" style="font-size:9px;padding:3px 8px;" onclick="loadOKR()">↻</button></div><div class="pb" id="s1OkrDash"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Clique ↻ para carregar</div></div></div>
@@ -2024,6 +2027,10 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
   <!-- S1 RISCOS -->
   <div class="page" id="page-s1riscos">
+    <!-- Sinais de Alerta Automáticos: semáforo ao vivo com dados de A Receber, Marcos de Projeto e QuickBooks (sem IA) -->
+    <div class="panel" id="alertas-automaticos"><div class="ph"><div class="pt">Sinais de Alerta Automáticos</div><span class="tag live">Ao Vivo</span><span id="rskAtualizado" style="font-family:var(--M);font-size:9px;color:var(--t3);margin-left:6px;"></span><button class="btn btn-g" style="font-size:9px;padding:3px 8px;margin-left:auto;" onclick="carregarSinaisRisco(true)">↻ Atualizar</button></div>
+      <div class="pb" id="rskSinais"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando sinais de alerta…</div></div>
+    </div>
     <div class="panel"><div class="ph"><div class="pt">Gestão de Riscos — Atlantyx</div><span class="tag on">Claude IA</span><button class="btn btn-rd" id="btnRiscos" style="font-size:9px;padding:4px 9px;" onclick="runIntel('analise_riscos','s1RiscosResult','btnRiscos')">&#9670; Analisar Riscos</button></div>
       <div class="pb" id="s1RiscosResult"><div style="color:var(--t3);font-size:11px;text-align:center;padding:30px;">Clique em "Analisar Riscos" para mapear todos os riscos da empresa com IA</div></div>
     </div>
@@ -3767,6 +3774,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Status Report de Projetos</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Acompanhamento por farol · riscos e bloqueios · histórico por projeto</div></div>
     <button class="btn" style="font-size:10px;" onclick="configurarFontePmo()" title="Conectar ao sistema de projetos externo">&#9881; Fonte de dados</button>
     <button class="btn btn-gn" onclick="abrirNovoReport()">+ Novo Status Report</button>
+    <button class="btn" onclick="exportarStatusPDF()" title="Baixa o último status report do projeto em PDF (logo, farol RAG, marcos e riscos)">&#128196; Exportar PDF</button>
+    <button class="btn" onclick="enviarStatusEmail()" title="Baixa o PDF e abre seu e-mail com assunto e resumo preenchidos — anexe o PDF baixado">&#9993; Enviar por E-mail</button>
     <button class="btn" onclick="carregarStatusReports()">&#8635; Atualizar</button>
   </div>
   <div id="pmoAvisoFonte" style="display:none;margin-bottom:10px;"></div>
@@ -8343,9 +8352,9 @@ async function rfpBaixarPdf() {
       r.valor || '—', { text: r.prazo_submissao || r.prazo || '—', color: '#A16207', bold: true }, r.compatibilidade != null ? r.compatibilidade + '%' : '—']);
     pdfMake.createPdf({ pageOrientation: 'landscape', pageMargins: [30, 36, 30, 36], defaultStyle: { fontSize: 9 },
       content: [{ text: 'ATLANTYX · MONITOR DE RFPs', color: '#00708A', bold: true, fontSize: 9, characterSpacing: 2 }, { text: 'Editais abertos — ' + hoje, fontSize: 16, bold: true, margin: [0, 4, 0, 2] },
-        { text: l.length + ' edital(is) do PNCP, ordenados por aderência. Clique no nome para abrir o edital.', fontSize: 9, color: '#555', margin: [0, 0, 0, 10] },
+        { text: l.length + ' edital(is) do PNCP e oportunidades Petrobras (Petronect), ordenados por aderência. Clique no nome para abrir o edital.', fontSize: 9, color: '#555', margin: [0, 0, 0, 10] },
         { table: { headerRows: 1, widths: [16, '*', 90, 80, 50], body: [[{ text: '#', bold: true }, { text: 'Edital / órgão', bold: true }, { text: 'Valor estimado', bold: true }, { text: 'Propostas até', bold: true }, { text: 'Aderência', bold: true }], ...linhas] }, layout: 'lightHorizontalLines' }],
-      footer: (p, t) => ({ text: 'Fonte: PNCP · Atlantyx OS · ' + p + '/' + t, alignment: 'right', fontSize: 7, color: '#999', margin: [0, 0, 30, 0] }) }).download('RFPs_' + new Date().toISOString().substring(0, 10) + '.pdf');
+      footer: (p, t) => ({ text: 'Fontes: PNCP e Petronect (e-mail) · Atlantyx OS · ' + p + '/' + t, alignment: 'right', fontSize: 7, color: '#999', margin: [0, 0, 30, 0] }) }).download('RFPs_' + new Date().toISOString().substring(0, 10) + '.pdf');
   } catch (e) { toast('PDF: ' + e.message, 'error'); }
 }
 async function rfpEnviarEmail() {
@@ -8361,6 +8370,49 @@ async function rfpEnviarEmail() {
     if (!d.success) throw new Error(d.error || 'HTTP ' + r.status);
     toast('Lista enviada para ' + d.para.join(', '), 'success'); addLog('ok', '[S2-04] Lista de ' + d.total + ' RFPs enviada por e-mail para ' + d.para.join(', '));
   } catch (e) { toast('Não enviou: ' + e.message, 'error'); }
+}
+// v3.97: oportunidades da Petrobras lidas dos e-mails do Serviço de Notificação Petronect
+function rfpPetronectBarra(p) {
+  const e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  p = p || {};
+  const quando = p.atualizado_em ? new Date(p.atualizado_em).toLocaleString('pt-BR') : null;
+  const st = window._petroLendo ? '<span style="color:var(--blue);">' + e(window._petroLendo) + '</span>'
+    : p.erro ? '<span style="color:var(--red);">&#9888; ' + e(p.erro) + '</span>'
+    : quando ? 'Caixa <b>' + e(p.conta || '') + '</b> · ' + (p.emails_avaliados || 0) + ' e-mail(s) avaliados · <b>' + (p.aderentes_abertas || 0) + '</b> oportunidade(s) aderentes em aberto · última leitura ' + e(quando)
+    : 'Ainda não lido — clique para ler os e-mails dos últimos 3 meses.';
+  return '<div id="rfpPetroBox" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;text-align:left;font-size:10.5px;color:var(--t2);background:var(--bg3);border:1px solid var(--bd);border-radius:6px;padding:8px 10px;margin-bottom:10px;">'
+    + '<b style="color:var(--t1);">&#128231; Petronect (Petrobras)</b><span id="rfpPetroSt" style="flex:1;min-width:200px;">' + st + '</span>'
+    + '<button class="btn btn-g" style="font-size:10px;" id="btnPetro" ' + (window._petroLendo ? 'disabled ' : '') + 'onclick="rfpLerPetronect()">Ler e-mails (3 meses)</button></div>';
+}
+function rfpPetronectAuto(p, eraCache) {
+  // ao abrir a tela: lê os e-mails novos se a última leitura tem mais de 6h (ou nunca foi feita)
+  if (!eraCache || window._petroLendo || window._petroAutoFeito) return;
+  const ult = p?.atualizado_em ? new Date(p.atualizado_em).getTime() : 0;
+  if (Date.now() - ult < 6 * 3600e3) return;
+  window._petroAutoFeito = true; rfpLerPetronect(true);
+}
+async function rfpLerPetronect(auto) {
+  if (window._petroLendo) return;
+  const set = t => { window._petroLendo = t; const el = document.getElementById('rfpPetroSt'); if (el) el.innerHTML = '<span style="color:var(--blue);">' + String(t).replace(/</g, '&lt;') + '</span>'; const b = document.getElementById('btnPetro'); if (b) b.disabled = true; };
+  let avaliados = 0, aderentes = 0, erro = null, d = null;
+  try {
+    for (let i = 0; i < 10; i++) {
+      set('Lendo e-mails da Petronect' + (i ? ' (parte ' + (i + 1) + ')' : '') + '… ' + (avaliados ? avaliados + ' avaliados até agora' : 'pode levar até 1 minuto'));
+      const r = await fetch('/api/rfp-monitor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acao: 'petronect', dias: 90 }) });
+      const txt = await r.text(); try { d = JSON.parse(txt); } catch (_) { throw new Error(r.status === 504 ? 'tempo limite do servidor (HTTP 504)' : 'HTTP ' + r.status); }
+      if (!d.success) throw new Error(d.error || 'HTTP ' + r.status);
+      avaliados += d.diag?.avaliados_agora || 0; aderentes += d.diag?.aderentes_novas || 0;
+      if (d.erro) { erro = d.erro; break; }
+      if (!(d.diag?.faltam > 0) || !(d.diag?.avaliados_agora > 0)) break;
+    }
+  } catch (e) { erro = e.message; }
+  window._petroLendo = null;
+  if (erro) { toast('Petronect: ' + erro, 'error'); addLog('err', '[S2-04] Petronect: ' + erro); }
+  else { addLog('success', '[S2-04] Petronect: ' + avaliados + ' e-mail(s) avaliados, ' + aderentes + ' oportunidade(s) aderente(s) nova(s)' + (d?.diag ? ' · ' + d.diag.encontrados + ' e-mail(s) da Petronect nos últimos 90 dias em ' + (d.diag.conta || '') : ''));
+    if (!auto || aderentes) toast('Petronect: ' + avaliados + ' e-mail(s) lidos · ' + aderentes + ' oportunidade(s) aderente(s) nova(s)', 'success'); }
+  // recarrega a lista (última varredura do PNCP + Petronect) sem refazer a busca no PNCP
+  if (!document.getElementById('btnRfp')?.disabled) { window._rfpSoCache = true; runRfpMonitorAtualizado(); }
+  else { const box = document.getElementById('rfpPetroBox'); if (box) box.outerHTML = rfpPetronectBarra(d?.petronect ? { ...d.petronect, erro: erro || d.petronect.erro } : { erro }); }
 }
 async function runRfpMonitorAtualizado() {
   const btn = document.getElementById('btnRfp');
@@ -8387,9 +8439,12 @@ async function runRfpMonitorAtualizado() {
       return;
     }
     const rfps = data.rfps || [];
+    const _eraCache = !!data.do_cache;
+    setTimeout(() => rfpPetronectAuto(data.petronect, _eraCache), 300);
     if (!rfps.length) {
-      res.innerHTML = '<div style="color:var(--t3);font-size:11px;padding:16px;text-align:center;">' + String(data.aviso || 'Nenhum edital aberto encontrado no PNCP agora.').replace(/</g,'&lt;') + '</div>';
+      res.innerHTML = rfpPetronectBarra(data.petronect) + '<div style="color:var(--t3);font-size:11px;padding:16px;text-align:center;">' + String(data.aviso || 'Nenhum edital aberto encontrado no PNCP agora.').replace(/</g,'&lt;') + '</div>';
       if (st) { st.textContent = 'Sem resultados'; st.className = 'tag off'; }
+      btn.disabled = false; btn.textContent = 'Varrer RFPs Agora';
       return;
     }
     if (st) { st.textContent = rfps.length + ' editais'; st.className = 'tag live'; }
@@ -8397,13 +8452,14 @@ async function runRfpMonitorAtualizado() {
     const e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
     const fontesTxt = data.fontes ? Object.entries(data.fontes).map(([k, f]) => (k === 'busca_pncp' ? 'Busca PNCP' : 'API oficial PNCP') + ': ' + (f.ok ? f.encontrados + ' encontrados' : 'indisponível')).join(' · ') : '';
     window._rfpUltimos = rfps; // v3.25: base para e-mail e PDF
+    const petro = rfpPetronectBarra(data.petronect);
     const barraRfp = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;"><b style="font-size:11.5px;">' + rfps.length + ' edital(is)</b><button class="btn btn-g" style="font-size:10px;margin-left:auto;" onclick="rfpBaixarPdf()">📄 Baixar PDF da lista</button><button class="btn btn-p" style="font-size:10px;" onclick="rfpEnviarEmail()">📧 Enviar lista por e-mail</button></div>';
-    res.innerHTML = avisoTopo + barraRfp + '<div style="font-size:10.5px;color:var(--t2);margin-bottom:10px;text-align:left;">&#128269; ' + (data.do_cache ? '<b>Última varredura guardada</b> · ' : '') + 'Fonte: <b>' + e(data.fonte || 'PNCP') + '</b> · consulta em ' + e(data.data_consulta || '') + (fontesTxt ? ' · ' + e(fontesTxt) : '') + ' · ' + (data.total_encontrado || 0) + ' editais em aberto analisados. Somente editais reais — a IA avalia a aderência, não cria editais.</div>'
+    res.innerHTML = avisoTopo + petro + barraRfp + '<div style="font-size:10.5px;color:var(--t2);margin-bottom:10px;text-align:left;">&#128269; ' + (data.do_cache ? '<b>Última varredura guardada</b> · ' : '') + 'Fonte: <b>' + e(data.fonte || 'PNCP') + '</b> · consulta em ' + e(data.data_consulta || '') + (fontesTxt ? ' · ' + e(fontesTxt) : '') + ' · ' + (data.total_encontrado || 0) + ' editais em aberto analisados' + (data.petronect ? ' + ' + (data.petronect.aderentes_abertas || 0) + ' oportunidade(s) Petrobras aderentes lidas do e-mail Petronect' : '') + '. Somente editais reais — a IA avalia a aderência, não cria editais.</div>'
     + rfps.map(r => `
       <div style="background:var(--bg4);border:1px solid var(--bd);border-left:3px solid ${r.urgencia==='Alta'?'var(--red)':r.urgencia==='Media'?'var(--gold)':'var(--blue)'};border-radius:7px;padding:12px;margin-bottom:8px;text-align:left;color:var(--t1);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
           <strong style="font-size:12px;flex:1;min-width:200px;">${e(r.empresa)}${r.uf ? ' <span style="font-weight:400;color:var(--t2);">· ' + e(r.municipio ? r.municipio + '/' : '') + e(r.uf) + '</span>' : ''}</strong>
-          ${r.verificado ? '<span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:var(--g2);color:var(--green);" title="Conferido na API oficial do PNCP">&#10003; verificado no PNCP</span>' : ''}
+          ${r.origem_email ? '<span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:var(--b2,var(--bg3));color:var(--blue);" title="Lida do e-mail do Serviço de Notificação Petronect">&#128231; e-mail Petronect</span>' : r.verificado ? '<span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:var(--g2);color:var(--green);" title="Conferido na API oficial do PNCP">&#10003; verificado no PNCP</span>' : ''}
           <span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:var(--go2);color:var(--gold);">${r.compatibilidade}% aderência</span>
           <span style="font-family:var(--M);font-size:9px;padding:2px 7px;border-radius:3px;background:${r.urgencia==='Alta'?'var(--r2)':'var(--bg)'};color:${_corTxt(r.urgencia==='Alta'?'var(--red)':'var(--t3)')};">${e(r.urgencia||'Media')}</span>
         </div>
@@ -8425,11 +8481,11 @@ async function runRfpMonitorAtualizado() {
         </div>
         <div style="margin-top:8px;padding:8px 10px;background:var(--bg3);border:1px solid var(--bd);border-radius:6px;font-size:10.5px;">
           <div style="font-family:var(--M);font-size:8.5px;text-transform:uppercase;color:var(--t2);margin-bottom:4px;">Origem do edital</div>
-          <div style="color:var(--t1);margin-bottom:6px;">${e(r.fonte || 'PNCP')}${r.numero_pncp ? ' · Nº de controle PNCP <b>' + e(r.numero_pncp) + '</b>' : ''}${r.orgao_cnpj ? ' · CNPJ do órgão ' + e(r.orgao_cnpj) : ''}${r.processo ? ' · Processo ' + e(r.processo) : ''}${r.publicado_em ? ' · publicado em ' + e(r.publicado_em) : ''}</div>
+          <div style="color:var(--t1);margin-bottom:6px;">${e(r.fonte || 'PNCP')}${r.email_assunto ? ' · Assunto do e-mail: <i>' + e(r.email_assunto) + '</i>' : ''}${r.numero_pncp ? ' · Nº de controle PNCP <b>' + e(r.numero_pncp) + '</b>' : ''}${r.orgao_cnpj ? ' · CNPJ do órgão ' + e(r.orgao_cnpj) : ''}${r.processo ? ' · Processo ' + e(r.processo) : ''}${r.publicado_em ? ' · publicado em ' + e(r.publicado_em) : ''}</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${r.link_pncp ? '<a class="btn btn-p" style="font-size:10px;padding:4px 10px;text-decoration:none;" href="' + e(r.link_pncp) + '" target="_blank" rel="noopener">&#128196; Abrir edital no PNCP</a>' : ''}
+            ${r.origem_email ? '<a class="btn btn-p" style="font-size:10px;padding:4px 10px;text-decoration:none;" href="' + e(r.link_acesso) + '" target="_blank" rel="noopener">&#128196; Abrir no Petronect</a>' + (r.numero_compra ? '<button class="btn btn-g" style="font-size:10px;padding:4px 10px;" data-copiar="' + e(r.numero_compra) + '" onclick="atxCopiar(this.dataset.copiar,\'Nº copiado\')">Copiar nº da oportunidade</button>' : '') : `${r.link_pncp ? '<a class="btn btn-p" style="font-size:10px;padding:4px 10px;text-decoration:none;" href="' + e(r.link_pncp) + '" target="_blank" rel="noopener">&#128196; Abrir edital no PNCP</a>' : ''}
             ${r.link_origem ? '<a class="btn btn-g" style="font-size:10px;padding:4px 10px;text-decoration:none;" href="' + e(r.link_origem) + '" target="_blank" rel="noopener">&#8599; Portal de origem (envio da proposta)</a>' : '<span style="font-size:10px;color:var(--t3);align-self:center;">Portal de origem: consulte a página do edital no PNCP</span>'}
-            ${r.numero_pncp ? '<button class="btn btn-g" style="font-size:10px;padding:4px 10px;" data-copiar="' + e(r.numero_pncp) + '" onclick="atxCopiar(this.dataset.copiar,\'Nº PNCP copiado\')">Copiar nº PNCP</button>' : ''}
+            ${r.numero_pncp ? '<button class="btn btn-g" style="font-size:10px;padding:4px 10px;" data-copiar="' + e(r.numero_pncp) + '" onclick="atxCopiar(this.dataset.copiar,\'Nº PNCP copiado\')">Copiar nº PNCP</button>' : ''}`}
           </div>
         </div>
         ${r.justificativa ? `<div style="font-size:11px;color:var(--blue);margin-top:6px;">-> ${e(r.justificativa)}</div>` : ''}
@@ -12009,6 +12065,156 @@ const _origNavKpi = nav;
 nav = function(p, el) {
   _origNavKpi(p, el);
   if (p === 's7kpi') setTimeout(initKpiDashboard, 100);
+};
+
+// ═══ PAINEL DE RISCOS COM SEMÁFORO AO VIVO (s1riscos + resumo no s1dash) ═══
+// Só leitura de dados que já existem, sem IA: A Receber (painel_resumo), Kanban de Marcos (marcos_kanban),
+// margem do mês no QuickBooks (kpis_saude) e meta de margem do Orçamento Anual (orcamento_consolidado).
+// Regras: recebível vencido >15d = vermelho (vencido até 15d = amarelo) · marco atrasado = amarelo, >15d = vermelho
+//         margem < 0 = vermelho · margem < meta do orçamento (padrão 20%) = amarelo · API sem resposta em 8s = cinza
+const RSK_TIMEOUT_MS = 8000, RSK_DIAS_CRITICO = 15, RSK_MARGEM_PADRAO = 20;
+const RSK_COR = { verde: 'var(--green)', amarelo: 'var(--gold)', vermelho: 'var(--red)', cinza: 'var(--t3)' };
+const RSK_FUNDO = { verde: 'var(--g2)', amarelo: 'var(--go2)', vermelho: 'var(--r2)', cinza: 'var(--bg3)' };
+const RSK_ROTULO = { verde: 'Verde', amarelo: 'Amarelo', vermelho: 'Vermelho', cinza: 'Dado indisponível' };
+let _rskSinais = null, _rskEm = 0, _rskCarregando = null;
+
+function _rskIr(tela) { nav(tela, document.querySelector(`.sbi[onclick*="'${tela}'"]`)); }
+function _rskMotivo(res) { const m = (res && res.reason && res.reason.message) || 'sem resposta'; return _recEsc(m.substring(0, 140)); }
+function _rskPlural(n, s, p) { return n + ' ' + (n === 1 ? s : p); }
+
+function _rskLiquidez(res) {
+  const s = { chave: 'liquidez', titulo: 'Risco de liquidez', origem: 'A Receber', tela: 's3receber', itens: [] };
+  if (res.status === 'fulfilled') {
+    const it = res.value && res.value.contasReceber && res.value.contasReceber.itens;
+    if (Array.isArray(it)) { receberQBItems = it; _recQBCarregado = true; _recQBErro = ''; }
+    else if (res.value && !res.value.qb_configurado) _recQBCarregado = true;
+  } else if (!_recQBCarregado) {
+    return { ...s, nivel: 'cinza', resumo: 'Dado indisponível — ' + _rskMotivo(res) };
+  }
+  const venc = _recLinhas().filter(l => l.dias != null && l.dias < 0).sort((a, b) => a.dias - b.dias);
+  const crit = venc.filter(l => -l.dias > RSK_DIAS_CRITICO);
+  const total = venc.reduce((a, l) => a + l.valor, 0);
+  s.nivel = crit.length ? 'vermelho' : venc.length ? 'amarelo' : 'verde';
+  s.resumo = !venc.length ? 'Nenhum recebível vencido.'
+    : `${_rskPlural(venc.length, 'recebível vencido', 'recebíveis vencidos')} · ${_recFmt(total)}` + (crit.length ? ` · ${crit.length} há mais de ${RSK_DIAS_CRITICO} dias (${_recFmt(crit.reduce((a, l) => a + l.valor, 0))})` : '');
+  s.itens = venc.slice(0, 5).map(l => `${_recEsc(l.cliente)}${l.doc ? ' · ' + _recEsc(l.doc) : ''} — ${_recFmt(l.valor)} · vencido há ${-l.dias}d`);
+  if (res.status !== 'fulfilled') s.resumo += ' (QuickBooks não respondeu — última leitura)';
+  return s;
+}
+
+function _rskEntrega(res) {
+  const s = { chave: 'entrega', titulo: 'Risco de entrega', origem: 'Kanban de Marcos', tela: 's3marcoskanban', extra: ['s3projetos', 'Projetos &amp; Marcos'], itens: [] };
+  if (res.status !== 'fulfilled') return { ...s, nivel: 'cinza', resumo: 'Dado indisponível — ' + _rskMotivo(res) };
+  const col = (res.value && res.value.colunas) || {};
+  const marcos = (col.aguardando_entrega && col.aguardando_entrega.marcos) || [];
+  const atras = marcos.map(m => ({ m, dias: _recDias(m.data_entrega) })).filter(x => x.dias != null && x.dias < 0).sort((a, b) => a.dias - b.dias);
+  const crit = atras.filter(x => -x.dias > RSK_DIAS_CRITICO);
+  s.nivel = crit.length ? 'vermelho' : atras.length ? 'amarelo' : 'verde';
+  s.resumo = !atras.length ? 'Nenhum marco de projeto atrasado.'
+    : `${_rskPlural(atras.length, 'marco atrasado', 'marcos atrasados')} · ${_recFmt(atras.reduce((a, x) => a + (Number(x.m.valor) || 0), 0))} a faturar` + (crit.length ? ` · ${crit.length} com mais de ${RSK_DIAS_CRITICO} dias` : '');
+  s.itens = atras.slice(0, 5).map(x => `${_recEsc(x.m.descricao || 'Marco')} — ${_recEsc(x.m.projeto_nome || '')}${x.m.projeto_cliente ? ' · ' + _recEsc(x.m.projeto_cliente) : ''} · atrasado ${-x.dias}d`);
+  return s;
+}
+
+// Meta de margem: margem orçada do mês corrente no Orçamento Anual (receita − despesa) / receita; sem orçamento, 20%
+function _rskMetaMargem(res) {
+  const h = new Date(), mes = h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0');
+  const pt = res.status === 'fulfilled' && res.value && res.value.por_tipo;
+  if (pt && pt.receita) {
+    const rm = pt.receita.meses && pt.receita.meses[mes], dm = pt.despesa && pt.despesa.meses && pt.despesa.meses[mes];
+    let R = rm ? rm.orcado : 0, D = dm ? Math.abs(dm.orcado) : 0, fonte = 'Orçamento Anual · mês atual';
+    if (!(R > 0)) { R = pt.receita.orcado_ano || 0; D = Math.abs((pt.despesa && pt.despesa.orcado_ano) || 0); fonte = 'Orçamento Anual · ano'; }
+    if (R > 0) {
+      const meta = Math.round((R - D) / R * 1000) / 10;
+      try { localStorage.setItem('atx:riscos_meta_margem', JSON.stringify({ meta, fonte, em: Date.now() })); } catch (_) {}
+      return { meta, fonte };
+    }
+  }
+  try { const s = JSON.parse(localStorage.getItem('atx:riscos_meta_margem') || 'null'); if (s && typeof s.meta === 'number') return { meta: s.meta, fonte: s.fonte + ' (última leitura)' }; } catch (_) {}
+  return { meta: RSK_MARGEM_PADRAO, fonte: 'meta padrão — sem orçamento disponível' };
+}
+
+function _rskFinanceiro(kpi, orc) {
+  const s = { chave: 'financeiro', titulo: 'Risco financeiro', origem: 'KPIs QuickBooks', tela: 's3kpis', extra: ['s3orcamento', 'Orçamento Anual'], itens: [] };
+  if (kpi.status !== 'fulfilled') return { ...s, nivel: 'cinza', resumo: 'Dado indisponível — ' + _rskMotivo(kpi) };
+  const k = (kpi.value && kpi.value.kpis) || {}, m = k.margem_liquida_pct;
+  const { meta, fonte } = _rskMetaMargem(orc);
+  if (m == null || !isFinite(m)) return { ...s, nivel: 'cinza', resumo: 'Margem do mês indisponível (sem receita lançada no QuickBooks).', itens: [`Meta de margem: ${meta}% (${_recEsc(fonte)})`] };
+  s.nivel = m < 0 ? 'vermelho' : m < meta ? 'amarelo' : 'verde';
+  s.resumo = `Margem líquida do mês ${m}% · meta ${meta}%` + (m < meta ? ` · ${Math.round((meta - m) * 10) / 10} p.p. abaixo` : '');
+  s.itens = [`Meta: ${_recEsc(fonte)}`];
+  if (k.receita_mes != null) s.itens.push(`Receita do mês ${_recFmt(k.receita_mes)} · despesa ${_recFmt(k.despesa_mes || 0)}`);
+  return s;
+}
+
+function _rskGeral(sinais) {
+  const n = (sinais || []).map(x => x.nivel);
+  return n.includes('vermelho') ? 'vermelho' : n.includes('amarelo') ? 'amarelo' : n.includes('verde') ? 'verde' : 'cinza';
+}
+function _rskLink(tela, txt) { return `<a href="#${tela}" onclick="_rskIr('${tela}');return false;" style="color:var(--blue);text-decoration:none;font-size:10px;">${txt} &#8594;</a>`; }
+
+function _rskCardHtml(s) {
+  const cor = RSK_COR[s.nivel], fundo = RSK_FUNDO[s.nivel];
+  const itens = s.itens.length ? `<div style="margin-top:7px;display:flex;flex-direction:column;gap:3px;">${s.itens.map(t => `<a href="#${s.tela}" onclick="_rskIr('${s.tela}');return false;" style="font-family:var(--M);font-size:9.5px;color:var(--t2);text-decoration:none;">• ${t}</a>`).join('')}</div>` : '';
+  return `<div style="background:${fundo};border:1px solid ${cor};border-radius:8px;padding:11px 13px;display:flex;flex-direction:column;">
+    <a href="#${s.tela}" onclick="_rskIr('${s.tela}');return false;" title="Abrir ${_recEsc(s.origem)}" style="text-decoration:none;color:inherit;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="width:12px;height:12px;border-radius:50%;background:${cor};box-shadow:0 0 8px ${cor};flex-shrink:0;"></span>
+        <span style="font-family:var(--H);font-size:12.5px;font-weight:700;flex:1;">${s.titulo}</span>
+        <span style="font-family:var(--M);font-size:9px;color:${cor};text-transform:uppercase;">${RSK_ROTULO[s.nivel]}</span>
+      </div>
+      <div style="font-size:11px;color:var(--t1);margin-top:6px;">${s.resumo}</div>
+    </a>${itens}
+    <div style="margin-top:auto;padding-top:8px;display:flex;gap:12px;flex-wrap:wrap;">${_rskLink(s.tela, 'Abrir ' + s.origem)}${s.extra ? _rskLink(s.extra[0], s.extra[1]) : ''}</div>
+  </div>`;
+}
+
+function _rskRender() {
+  const box = document.getElementById('rskSinais'), dash = document.getElementById('s1RiscosSemaforoDash'), at = document.getElementById('rskAtualizado');
+  const sinais = _rskSinais;
+  if (!sinais) {
+    const msg = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:14px;">Carregando sinais de alerta…</div>';
+    if (box) box.innerHTML = msg; if (dash) dash.innerHTML = msg; return;
+  }
+  const g = _rskGeral(sinais);
+  if (at) at.textContent = 'atualizado ' + new Date(_rskEm).toLocaleTimeString('pt-BR');
+  if (box) box.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px;color:var(--t2);">
+      <span style="width:10px;height:10px;border-radius:50%;background:${RSK_COR[g]};"></span>
+      Semáforo geral: <strong style="color:${RSK_COR[g]};">${RSK_ROTULO[g]}</strong>
+      <span style="color:var(--t3);font-size:10px;">· clique num sinal para abrir a tela de origem</span></div>
+    <div class="kg k3" style="gap:10px;">${sinais.map(_rskCardHtml).join('')}</div>`;
+  if (dash) dash.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;">${sinais.map(s => `<a href="#${s.tela}" onclick="_rskIr('${s.tela}');return false;" title="${_recEsc(String(s.resumo).replace(/<[^>]*>/g, ''))}"
+      style="flex:1;min-width:200px;display:flex;align-items:center;gap:8px;background:${RSK_FUNDO[s.nivel]};border:1px solid ${RSK_COR[s.nivel]};border-radius:7px;padding:8px 11px;text-decoration:none;color:inherit;">
+      <span style="width:11px;height:11px;border-radius:50%;background:${RSK_COR[s.nivel]};flex-shrink:0;"></span>
+      <span style="flex:1;min-width:0;"><span style="font-family:var(--H);font-size:11.5px;font-weight:700;">${s.titulo}</span><br><span style="font-size:10px;color:var(--t2);">${s.resumo}</span></span></a>`).join('')}</div>`;
+}
+
+async function carregarSinaisRisco(forcar) {
+  if (!forcar && _rskSinais && Date.now() - _rskEm < 60000) { _rskRender(); return _rskSinais; }
+  if (_rskCarregando) return _rskCarregando;
+  if (!_rskSinais) _rskRender();
+  const o = { timeoutMs: RSK_TIMEOUT_MS };
+  _rskCarregando = (async () => {
+    // 4 leituras em paralelo, cada uma com timeout de 8s; a que falhar vira "dado indisponível" sem travar as outras
+    const [rec, mar, kpi, orc] = await Promise.allSettled([
+      finApi('painel_resumo', {}, o), finApi('marcos_kanban', {}, o), finApi('kpis_saude', {}, o), finApi('orcamento_consolidado', { ano: new Date().getFullYear() }, o)]);
+    const seguro = (fn, titulo, tela) => { try { return fn(); } catch (e) { return { chave: tela, titulo, origem: tela, tela, itens: [], nivel: 'cinza', resumo: 'Dado indisponível — ' + _recEsc(e.message) }; } };
+    _rskSinais = [seguro(() => _rskLiquidez(rec), 'Risco de liquidez', 's3receber'), seguro(() => _rskEntrega(mar), 'Risco de entrega', 's3marcoskanban'), seguro(() => _rskFinanceiro(kpi, orc), 'Risco financeiro', 's3kpis')];
+    _rskEm = Date.now();
+    try { renderRecAlertaDash(); } catch (_) {}
+    return _rskSinais;
+  })();
+  try { await _rskCarregando; } finally { _rskCarregando = null; }
+  _rskRender();
+  return _rskSinais;
+}
+
+// Carrega o semáforo ao abrir Gestão de Riscos ou o Painel Estratégico
+const _origNavRiscos = nav;
+nav = function(p, el) {
+  const r = _origNavRiscos(p, el);
+  if (p === 's1riscos' || p === 's1dash') { const pg = document.getElementById('page-' + p); if (pg && pg.classList.contains('active')) setTimeout(() => carregarSinaisRisco(false), 120); }
+  return r;
 };
 
 
@@ -21413,6 +21619,7 @@ async function pmoApi(action, params = {}) {
   return d;
 }
 let _pmoProjetos = [];
+let _srUltimos = [];   // último report de cada projeto (usado pelos botões de exportação)
 // ── Fonte de dados (sistema externo de projetos) ──
 async function configurarFontePmo() {
   try {
@@ -21446,6 +21653,7 @@ async function carregarStatusReports() {
   try {
     const [d, proj] = await Promise.all([pmoApi('report_list', { limite: 200 }), pmoApi('projetos_listar')]);
     _pmoProjetos = proj.projetos || [];
+    _srUltimos = d.ultimos || [];
     const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
     u('sr_projetos', d.resumo.projetos); u('sr_verde', d.resumo.verde);
     u('sr_amarelo', d.resumo.amarelo); u('sr_vermelho', d.resumo.vermelho);
@@ -21481,6 +21689,8 @@ async function carregarStatusReports() {
         <td style="padding:5px;text-align:right;white-space:nowrap;">
           <button class="btn" style="font-size:9px;padding:1px 5px;" onclick="abrirReport('${r.id}')">✎</button>
           <button class="btn" style="font-size:9px;padding:1px 5px;color:var(--gold);" onclick="apresentarStatusReport('${r.id}')" title="Ver no layout de apresentação / exportar PDF">📄</button>
+          <button class="btn" style="font-size:9px;padding:1px 5px;" onclick="exportarStatusPDF('${r.id}')" title="Baixar PDF">⬇</button>
+          <button class="btn" style="font-size:9px;padding:1px 5px;" onclick="enviarStatusEmail('${r.id}')" title="Enviar por e-mail">✉</button>
           <button class="btn" style="font-size:9px;padding:1px 5px;color:var(--red);" onclick="excluirReport('${r.id}')">🗑</button></td></tr>`).join('')}</tbody></table>`
       : '<div style="text-align:center;color:var(--t3);padding:16px;">—</div>';
   } catch (e) { box.innerHTML = '<div style="color:var(--red);text-align:center;padding:20px;font-size:11px;">Erro: ' + e.message + '</div>'; }
@@ -21900,7 +22110,8 @@ async function apresentarStatusReport(id) {
       <div style="display:flex;gap:8px;margin-bottom:10px;">
         <button class="btn btn-p" onclick="_srEditar('${id}')">✎ Editar</button>
         <button class="btn btn-gn" onclick="_srExportarPptx('${id}')">📊 Exportar PPT</button>
-        <button class="btn" onclick="_srExportarPdf()">📄 PDF</button>
+        <button class="btn" onclick="exportarStatusPDF('${id}')">📄 Exportar PDF</button>
+        <button class="btn" onclick="enviarStatusEmail('${id}')">✉ Enviar por E-mail</button>
         <button class="btn" onclick="_srImprimir()">🖨 Imprimir</button>
         <button class="btn" style="margin-left:auto;" onclick="document.getElementById('srApresModal').style.display='none'">✕ Fechar</button>
       </div>
@@ -21921,6 +22132,203 @@ function _srExportarPdf() {
   // Usa a impressão do navegador com "Salvar como PDF" — sem dependência externa
   toast('Na janela de impressão, escolha "Salvar como PDF"', 'success');
   _srImprimir();
+}
+
+// ═══ Demanda dem_muv797nfaolq: STATUS REPORT EM PDF (jsPDF) + ENVIO POR E-MAIL + AUDITORIA NO LOG ═══
+async function _srCarregarJsPdf() {
+  if (window.jspdf?.jsPDF) return window.jspdf.jsPDF;
+  for (const src of ['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js']) {
+    await new Promise(res => { const sc = document.createElement('script'); sc.src = src; sc.onload = res; sc.onerror = res; document.head.appendChild(sc); });
+    if (window.jspdf?.jsPDF) return window.jspdf.jsPDF;
+  }
+  throw new Error('não consegui carregar o gerador de PDF (jsPDF)');
+}
+// sem id (botões do topo da tela): usa o último report do projeto; com vários projetos, pergunta qual
+async function _srEscolherReport(id) {
+  if (id) return id;
+  if (!_srUltimos.length) await carregarStatusReports();
+  if (!_srUltimos.length) { toast('Nenhum status report para exportar — crie um em + Novo Status Report', 'error'); return null; }
+  if (_srUltimos.length === 1) return _srUltimos[0].id;
+  const op = prompt('Qual projeto exportar? (último status report de cada projeto)\n\n'
+    + _srUltimos.map((r, i) => `${i + 1}. ${r.projeto_nome}${r.data_report ? ' · ' + String(r.data_report).substring(0, 10).split('-').reverse().join('/') : ''}`).join('\n')
+    + '\n\nDigite o número:', '1');
+  if (op === null) return null;
+  const r = _srUltimos[parseInt(op, 10) - 1];
+  if (!r) { toast('Número inválido', 'error'); return null; }
+  return r.id;
+}
+// fonte padrão do jsPDF só tem Latin-1: troca aspas/traços tipográficos e descarta emojis
+const _srPdfTxt = v => String(v ?? '').replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-')
+  .replace(/•/g, '-').replace(/…/g, '...').replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, '').trim();
+const _srItens = arr => (Array.isArray(arr) ? arr : (arr ? String(arr).split('\n') : []))
+  .map(x => typeof x === 'string' ? x : [x.descricao || x.titulo || x.texto || x.acao || '', x.responsavel ? '(' + x.responsavel + ')' : '', (x.prazo || x.data) ? '- ' + (x.prazo || x.data) : ''].filter(Boolean).join(' '))
+  .map(s => String(s).trim()).filter(Boolean);
+const _srProximos = r => [r.marcos_proximos, r.marcos, r.proximas_atividades, r.proximos_passos].map(_srItens).find(a => a.length) || [];
+// farol por dimensão (RAG) a partir dos campos do report
+function _srRag(r) {
+  const n = v => (v === null || v === undefined || v === '' || isNaN(Number(v))) ? null : Number(v);
+  const linhas = [['Geral', r.farol || null, `${n(r.pct_concluido) ?? 0}% concluído`]];
+  const spi = n(r.spi), plan = n(r.pct_previsto) ?? n(r.pct_planejado), real = n(r.pct_concluido);
+  if (spi != null) linhas.push(['Prazo', spi >= 0.95 ? 'verde' : spi >= 0.85 ? 'amarelo' : 'vermelho', 'SPI ' + spi.toFixed(2).replace('.', ',')]);
+  else if (plan != null && real != null) { const dif = real - plan; linhas.push(['Prazo', dif >= -5 ? 'verde' : dif >= -15 ? 'amarelo' : 'vermelho', `previsto ${plan}% / realizado ${real}%`]); }
+  const atr = _srItens(r.atividades_atrasadas).length;
+  linhas.push(['Cronograma (atividades)', atr === 0 ? 'verde' : atr <= 2 ? 'amarelo' : 'vermelho', atr ? atr + ' atividade(s) atrasada(s)' : 'nenhuma atividade atrasada']);
+  const orcP = n(r.orcamento_previsto), orcR = n(r.orcamento_realizado);
+  if (orcP && orcR != null) { const x = orcR / orcP; linhas.push(['Custo', x <= 1 ? 'verde' : x <= 1.1 ? 'amarelo' : 'vermelho', `${Math.round(x * 100)}% do orçamento previsto`]); }
+  if (r.tipo_projeto === 'sustentacao' && n(r.sla_cumprido_pct) != null) {
+    const s = n(r.sla_cumprido_pct);
+    linhas.push(['SLA', s >= 95 ? 'verde' : s >= 85 ? 'amarelo' : 'vermelho', s + '% cumprido' + (n(r.sla_violacoes) ? ' · ' + n(r.sla_violacoes) + ' violação(ões)' : '')]);
+  }
+  const bl = _srItens(r.bloqueios).length, rc = _srItens(r.riscos).length + _srItens(r.riscos_projeto).length;
+  linhas.push(['Riscos e bloqueios', bl ? 'vermelho' : rc ? 'amarelo' : 'verde', [bl ? bl + ' bloqueio(s)' : '', rc ? rc + ' risco(s)' : ''].filter(Boolean).join(' · ') || 'sem riscos registrados']);
+  return linhas;
+}
+async function _srGerarPdf(id) {
+  const JsPDF = await _srCarregarJsPdf();
+  const r = (await pmoApi('report_get', { id })).report;
+  const pdf = new JsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+  const W = 210, H = 297, M = 14, CW = W - 2 * M;
+  const AZUL = [0, 51, 102], CINZA = [90, 100, 120], TXT = [28, 35, 51], LINHA = [215, 220, 232], BRANCO = [255, 255, 255];
+  const RAG = { verde: [31, 178, 135], amarelo: [224, 164, 34], vermelho: [214, 69, 69] };
+  const RAGNOME = { verde: 'Verde', amarelo: 'Amarelo', vermelho: 'Vermelho' };
+  const RAGTXT = { verde: 'Verde - no rumo', amarelo: 'Amarelo - requer atenção', vermelho: 'Vermelho - crítico' };
+  const dataISO = String(r.data_report || '').substring(0, 10) || new Date().toISOString().split('T')[0];
+  const dataBR = dataISO.split('-').reverse().join('/');
+  let y = 0, _est = ['normal', 10, TXT];
+  const est = (f, s, c) => { _est = [f, s, c]; pdf.setFont('helvetica', f); pdf.setFontSize(s); pdf.setTextColor(...c); };
+  const cabecalho = () => {
+    pdf.setFillColor(...AZUL); pdf.rect(0, 0, W, 24, 'F');
+    // logo Atlantyx: dois losangos sobrepostos, em branco
+    pdf.setDrawColor(...BRANCO); pdf.setLineWidth(0.7);
+    const losango = (cx, cy, s) => pdf.lines([[s, s], [-s, s], [-s, -s], [s, -s]], cx, cy - s, [1, 1], 'S', true);
+    losango(M + 4, 9, 4); losango(M + 4, 15, 4);
+    pdf.setTextColor(...BRANCO); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(14); pdf.text('ATLANTYX', M + 11, 11.5);
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); pdf.text('STATUS REPORT DE PROJETO', M + 11, 16.5);
+    pdf.setFontSize(9); pdf.text(dataBR, W - M, 11.5, { align: 'right' });
+    pdf.text(_srPdfTxt(r.projeto_nome).substring(0, 60), W - M, 16.5, { align: 'right' });
+    y = 32;
+  };
+  const garantir = h => { if (y + h > H - 16) { pdf.addPage(); cabecalho(); est(..._est); } };
+  const titulo = t => { garantir(16); est('bold', 11.5, AZUL); pdf.text(t, M, y); pdf.setDrawColor(...AZUL); pdf.setLineWidth(0.4); pdf.line(M, y + 1.6, W - M, y + 1.6); y += 7.5; };
+  const paragrafo = t => { est('normal', 10, TXT); pdf.splitTextToSize(_srPdfTxt(t), CW).forEach(l => { garantir(5); pdf.text(l, M, y); y += 5; }); y += 3; };
+  const lista = (itens, vazio) => {
+    if (!itens.length) { est('italic', 10, CINZA); garantir(5); pdf.text(vazio, M, y); y += 8; return; }
+    est('normal', 10, TXT);
+    itens.forEach((it, i) => {
+      const ls = pdf.splitTextToSize(_srPdfTxt(it), CW - 7); garantir(ls.length * 5);
+      pdf.text((i + 1) + '.', M + 1, y); ls.forEach(l => { pdf.text(l, M + 7, y); y += 5; }); y += 0.8;
+    });
+    y += 3;
+  };
+
+  cabecalho();
+  est('bold', 17, AZUL); pdf.splitTextToSize(_srPdfTxt(r.projeto_nome || 'Projeto'), CW).forEach(l => { pdf.text(l, M, y); y += 7; });
+  est('normal', 9.5, CINZA);
+  const meta = [r.cliente ? 'Cliente: ' + r.cliente : '', 'Data: ' + dataBR, r.periodo ? 'Período: ' + r.periodo : '', r.gerente ? 'GP: ' + r.gerente : '', r.tipo_projeto === 'sustentacao' ? 'Sustentação' : ''].filter(Boolean).join('   |   ');
+  pdf.splitTextToSize(_srPdfTxt(meta), CW).forEach(l => { pdf.text(l, M, y); y += 5; });
+  y += 2;
+  // faixa do status geral + barra de progresso
+  const fc = RAG[r.farol] || CINZA, pct = Math.max(0, Math.min(100, Number(r.pct_concluido) || 0));
+  pdf.setFillColor(238, 243, 250); pdf.setDrawColor(...LINHA); pdf.setLineWidth(0.3); pdf.roundedRect(M, y, CW, 16, 2, 2, 'FD');
+  pdf.setFillColor(...fc); pdf.circle(M + 7, y + 8, 3.2, 'F');
+  est('bold', 11, TXT); pdf.text('Status geral: ' + _srPdfTxt(RAGTXT[r.farol] || '-'), M + 13, y + 6.8);
+  const prev = r.pct_previsto ?? r.pct_planejado;
+  est('normal', 9, CINZA); pdf.text(_srPdfTxt(`Concluído: ${pct}%` + (prev != null && prev !== '' ? `   |   Previsto: ${prev}%` : '')), M + 13, y + 11.8);
+  const bx = M + CW - 60, bw = 54;
+  pdf.setFillColor(...LINHA); pdf.rect(bx, y + 6.3, bw, 3.4, 'F');
+  if (pct) { pdf.setFillColor(...fc); pdf.rect(bx, y + 6.3, bw * pct / 100, 3.4, 'F'); }
+  y += 23;
+
+  // tabela RAG por dimensão
+  garantir(30);
+  titulo('Status por dimensão (RAG)');
+  const c1 = 58, c2 = 40;
+  pdf.setFillColor(...AZUL); pdf.rect(M, y - 4.8, CW, 7, 'F');
+  est('bold', 9.5, BRANCO); pdf.text('Dimensão', M + 2, y); pdf.text('Status', M + c1 + 2, y); pdf.text('Indicador', M + c1 + c2 + 2, y);
+  y += 2.2;
+  _srRag(r).forEach(([dim, f, ind], i) => {
+    est('normal', 9.5, TXT);
+    const ls = pdf.splitTextToSize(_srPdfTxt(ind), CW - c1 - c2 - 4), h = Math.max(7.5, ls.length * 4.6 + 2.9);
+    garantir(h);
+    if (i % 2) { pdf.setFillColor(246, 248, 252); pdf.rect(M, y, CW, h, 'F'); }
+    pdf.setDrawColor(...LINHA); pdf.setLineWidth(0.2); pdf.line(M, y + h, W - M, y + h);
+    pdf.text(_srPdfTxt(dim), M + 2, y + 5);
+    pdf.setFillColor(...(RAG[f] || CINZA)); pdf.circle(M + c1 + 4, y + 3.8, 1.9, 'F');
+    pdf.text(RAGNOME[f] || '-', M + c1 + 8, y + 5);
+    ls.forEach((l, k) => pdf.text(l, M + c1 + c2 + 2, y + 5 + k * 4.6));
+    y += h;
+  });
+  y += 7;
+
+  if (r.resumo) { titulo('Resumo executivo'); paragrafo(r.resumo); }
+  titulo('Realizações do período');
+  lista(_srItens((r.marcos_entregues || []).length ? r.marcos_entregues : r.realizado), 'Nenhuma realização registrada');
+  titulo('Próximos marcos');
+  lista(_srProximos(r), 'Nenhum marco previsto');
+  const atencao = _srItens(r.pontos_atencao).concat(_srItens(r.bloqueios).map(b => 'Bloqueio: ' + b));
+  if (atencao.length) { titulo('Pontos de atenção e bloqueios'); lista(atencao, ''); }
+  titulo('Riscos');
+  const riscos = (r.riscos_projeto || []).length
+    ? r.riscos_projeto.map(x => [x.descricao, x.acao ? 'Ação: ' + x.acao : '', x.responsavel ? 'Resp.: ' + x.responsavel : '', x.probabilidade ? 'Prob.: ' + x.probabilidade : ''].filter(Boolean).join(' | '))
+    : (r.riscos || []).map(x => typeof x === 'string' ? x : [x.descricao, x.mitigacao ? 'Mitigação: ' + x.mitigacao : '', x.impacto ? 'Impacto: ' + x.impacto : '', x.probabilidade ? 'Prob.: ' + x.probabilidade : ''].filter(Boolean).join(' | '));
+  lista(riscos.filter(Boolean), 'Nenhum risco registrado');
+
+  // rodapé em todas as páginas
+  const total = pdf.getNumberOfPages(), geradoEm = new Date().toLocaleString('pt-BR');
+  for (let p = 1; p <= total; p++) {
+    pdf.setPage(p); pdf.setDrawColor(...LINHA); pdf.setLineWidth(0.3); pdf.line(M, H - 11, W - M, H - 11);
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8); pdf.setTextColor(...CINZA);
+    pdf.text(_srPdfTxt('Atlantyx · gerado pelo Atlantyx OS em ' + geradoEm), M, H - 6.5);
+    pdf.text(`Página ${p} de ${total}`, W - M, H - 6.5, { align: 'right' });
+  }
+  const slug = String(r.projeto_nome || 'projeto').normalize('NFD').replace(/[^\x00-\x7F]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').substring(0, 50) || 'projeto';
+  const arquivo = `status-report-${slug}-${dataISO}.pdf`;
+  pdf.setProperties({ title: 'Status Report - ' + _srPdfTxt(r.projeto_nome), author: 'Atlantyx', creator: 'Atlantyx OS' });
+  pdf.save(arquivo);
+  return { r, arquivo, dataBR };
+}
+// auditoria: registra no banco (quem/quando/projeto, usuário vem da sessão) e na tela Log
+async function _srRegistrarExport(r, formato, arquivo) {
+  let quem = '', extra = '';
+  try {
+    const d = await pmoApi('export_registrar', { acao: 'export_status', formato, projeto: r.projeto_nome, report_id: r.id, arquivo });
+    quem = d.usuario; extra = ` · ${d.ultimos_7_dias} exportação(ões) nos últimos 7 dias`;
+  } catch (e) { extra = ' · (registro no banco falhou: ' + e.message + ')'; }
+  const esc = s => String(s ?? '').replace(/</g, '&lt;');
+  addLog('success', `[S9 · Status Report] ${formato === 'email' ? 'Enviado por e-mail' : 'Exportado em PDF'}: ${esc(r.projeto_nome)} (${esc(arquivo)})${quem ? ' · por ' + esc(quem) : ''}${esc(extra)}`);
+}
+async function exportarStatusPDF(id) {
+  try {
+    id = await _srEscolherReport(id); if (!id) return;
+    toast('Gerando PDF...', 'success');
+    const { r, arquivo } = await _srGerarPdf(id);
+    toast('PDF gerado: ' + arquivo, 'success');
+    _srRegistrarExport(r, 'pdf', arquivo);
+  } catch (e) { toast('Erro ao gerar PDF: ' + e.message, 'error'); console.error(e); }
+}
+// mailto não aceita anexo: baixa o PDF e abre o e-mail com assunto e resumo — o usuário anexa o arquivo
+async function enviarStatusEmail(id) {
+  try {
+    id = await _srEscolherReport(id); if (!id) return;
+    toast('Gerando PDF para o e-mail...', 'success');
+    const { r, arquivo, dataBR } = await _srGerarPdf(id);
+    const farol = { verde: 'Verde (no rumo)', amarelo: 'Amarelo (requer atenção)', vermelho: 'Vermelho (crítico)' }[r.farol] || '-';
+    const prox = _srProximos(r);
+    const assunto = `Status Report - ${r.projeto_nome} - ${dataBR}`;
+    const corpo = ['Olá,', '', `Segue o status report do projeto ${r.projeto_nome}${r.cliente ? ' (' + r.cliente + ')' : ''} referente a ${dataBR}.`, '',
+      `Status geral: ${farol}`, `Concluído: ${r.pct_concluido ?? 0}%`];
+    if (r.resumo) corpo.push('', 'Resumo: ' + String(r.resumo).substring(0, 500));
+    if (prox.length) corpo.push('', 'Próximos marcos:', ...prox.slice(0, 5).map(x => '- ' + x));
+    corpo.push('', `O relatório completo segue no PDF anexo (${arquivo}).`, '', 'Atenciosamente,');
+    if (r.gerente) corpo.push(r.gerente);
+    setTimeout(() => {
+      const a = document.createElement('a');
+      a.href = 'mailto:?subject=' + encodeURIComponent(assunto) + '&body=' + encodeURIComponent(corpo.join('\n'));
+      document.body.appendChild(a); a.click(); a.remove();
+    }, 500);
+    toast('PDF baixado (' + arquivo + '). Anexe-o ao e-mail que foi aberto antes de enviar.', 'success');
+    _srRegistrarExport(r, 'email', arquivo);
+  } catch (e) { toast('Erro ao preparar o e-mail: ' + e.message, 'error'); console.error(e); }
 }
 
 // ═══ v1.74: AUTOCAMPANHA ═══
@@ -28419,7 +28827,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.96] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.101] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -28435,7 +28843,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.96';
+window.__ATX_BUILD_ID__ = 'ATX-v3.101';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

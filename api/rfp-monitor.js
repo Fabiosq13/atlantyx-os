@@ -39,8 +39,18 @@ async function handler(req, res) {
     const body = req.method === 'POST' ? (req.body || {}) : {};
     // v3.25: envia a lista de editais por e-mail (a da tela ou a última varredura guardada)
     if (body.acao === 'enviar_email') return res.status(200).json({ success: true, ...(await enviarListaEmail(body)) });
+    // v3.97: oportunidades da Petrobras (e-mails do Serviço de Notificação Petronect na caixa contato@)
+    const acao = body.acao || req.query?.acao;
+    if (acao === 'petronect') { _prazo = Date.now() + 80000;
+      const r = await lerPetronect({ dias: Number(body.dias || req.query?.dias) || 90, reavaliar: !!body.reavaliar });
+      // cron (a cada 6h): avisa no WhatsApp as oportunidades Petronect novas e bem aderentes
+      const isCronP = !!(process.env.CRON_SECRET && req.headers.authorization === `Bearer ${process.env.CRON_SECRET}`);
+      if (isCronP && process.env.ZAPI_INSTANCE) for (const o of (r.novas_aderentes || []).filter(o => o.compatibilidade >= 75).slice(0, 3)) await notificarWhatsApp(_petronectFormatar(o)).catch(() => {});
+      delete r.novas_aderentes;
+      return res.status(200).json({ success: true, ...r }); }
+    if (body.acao === 'petronect_lista') return res.status(200).json({ success: true, ...(await petronectCache()) });
     // v3.14: a tela pode pedir só a última varredura guardada (abre instantâneo)
-    if (body.somente_cache) { const c = await lerCache(); return res.status(200).json(c ? { success: true, do_cache: true, ...c } : { success: true, do_cache: true, rfps: [], aviso: 'Ainda não há varredura guardada — clique em "Varrer RFPs Agora".' }); }
+    if (body.somente_cache) { const c = await lerCache(); return res.status(200).json(await _comPetronect(c ? { success: true, do_cache: true, ...c } : { success: true, do_cache: true, rfps: [], aviso: 'Ainda não há varredura guardada — clique em "Varrer RFPs Agora".' })); }
     _prazo = Date.now() + 48000;
     const isCron = !!(process.env.CRON_SECRET && req.headers.authorization === `Bearer ${process.env.CRON_SECRET}`);
     const keywords = (Array.isArray(body.palavras_chave) && body.palavras_chave.length ? body.palavras_chave : KEYWORDS_PADRAO).map(String);
@@ -55,15 +65,15 @@ async function handler(req, res) {
 
     if (!todos.length) {
       const falhou = !fontes.busca_pncp.ok && !fontes.api_consulta_pncp.ok;
-      if (falhou) { const c = await lerCache(); if (c?.rfps?.length) return res.status(200).json({ ...c, success: true, do_cache: true, fontes,
-        aviso: 'O PNCP não respondeu agora (' + [fontes.busca_pncp.erro, fontes.api_consulta_pncp.erro].filter(Boolean).join(' · ') + '). Mostrando a última varredura bem-sucedida, de ' + new Date(c.cache_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + '.' }); }
-      return res.status(200).json({
+      if (falhou) { const c = await lerCache(); if (c?.rfps?.length) return res.status(200).json(await _comPetronect({ ...c, success: true, do_cache: true, fontes,
+        aviso: 'O PNCP não respondeu agora (' + [fontes.busca_pncp.erro, fontes.api_consulta_pncp.erro].filter(Boolean).join(' · ') + '). Mostrando a última varredura bem-sucedida, de ' + new Date(c.cache_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + '.' })); }
+      return res.status(200).json(await _comPetronect({
         success: true, rfps: [], fontes, total_encontrado: 0, total_relevante: 0,
         data_consulta: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
         aviso: falhou
           ? 'O PNCP não respondeu agora (' + [fontes.busca_pncp.erro, fontes.api_consulta_pncp.erro].filter(Boolean).join(' · ') + '). Nenhum edital é inventado — tente novamente em alguns minutos.'
           : 'Nenhum edital com propostas em aberto no PNCP para as palavras-chave de BI/Dados/IA neste momento.',
-      });
+      }));
     }
 
     // 2. Pré-seleção por aderência de palavras-chave e prazo
@@ -83,14 +93,14 @@ async function handler(req, res) {
     // 5. WhatsApp só para editais reais e aderentes (cron)
     if (isCron && process.env.ZAPI_INSTANCE) for (const r of rfps.filter(r => r.compatibilidade >= 75).slice(0, 3)) await notificarWhatsApp(r);
 
-    const saida = {
+    const saida0 = {
       success: true,
       fonte: 'PNCP — Portal Nacional de Contratações Públicas (dados reais)',
       data_consulta: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
       fontes, total_encontrado: todos.length, total_relevante: rfps.length, rfps,
     };
-    if (rfps.length) await gravarCache(saida);
-    return res.status(200).json(saida);
+    if (rfps.length) await gravarCache(saida0);
+    return res.status(200).json(await _comPetronect(saida0));
   } catch (error) {
     console.error('[ERRO rfp-monitor]', error.message);
     return res.status(500).json({ success: false, error: error.message });
@@ -254,6 +264,118 @@ function formatarSaida(e) {
     fonte: e.fonte, portal: 'PNCP', numero_pncp: e.numero_pncp || '', link_pncp: e.link_pncp || linkAcesso(e), link_origem: e.link_origem || null,
     verificado: e.verificado === true, palavra_chave: e.keyword || '', publicado_em: e.publicado_em ? data(e.publicado_em) : null,
   };
+}
+
+// ═══ v3.97: PETRONECT — oportunidades da Petrobras recebidas por e-mail ═══
+// Lê na caixa configurada (EMAIL_IMAP_USER/PASS/HOST — a mesma conexão das notas fiscais; RFP_IMAP_* se quiser outra)
+// os e-mails do "Serviço de Notificação Petronect" <petronect@petronect.com.br>. A IA só EXTRAI as oportunidades do
+// texto do e-mail e AVALIA a aderência ao escopo da Atlantyx — número, objeto e prazo vêm do e-mail, nada é inventado.
+// Cada e-mail é avaliado uma vez (guardado em kv 'rfp:petronect'); as aderentes entram no rol de RFPs da tela.
+const KV_PETRONECT = 'rfp:petronect';
+const PETRONECT_LINK = 'https://www.petronect.com.br';
+async function _kvGetRfp(k) { try { const { neon } = await import('@neondatabase/serverless'); const sql = neon(process.env.DATABASE_URL); const r = await sql`SELECT value FROM kv_store WHERE key = ${k} LIMIT 1`; const v = r[0]?.value; return typeof v === 'string' ? JSON.parse(v) : v || null; } catch (_) { return null; } }
+async function _kvSetRfp(k, v) { const { neon } = await import('@neondatabase/serverless'); const sql = neon(process.env.DATABASE_URL); await sql`CREATE TABLE IF NOT EXISTS kv_store (key TEXT PRIMARY KEY, value JSONB, updated_at TIMESTAMPTZ DEFAULT NOW())`; await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; }
+function _textoDeHtml(h) { return String(h || '').replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, ' ').replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d)>/gi, '\n').replace(/<\/t[dh]>/gi, ' | ').replace(/<[^>]+>/g, ' ')
+  .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n)).replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim(); }
+function _petronectFormatar(o) {
+  const data = v => { if (!v) return 'Não informado no e-mail'; const d = new Date(v); return isNaN(d) ? String(v) : d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
+  return { empresa: 'Petrobras · Petronect', orgao_cnpj: '', unidade: o.unidade || '', uf: '', municipio: '',
+    titulo: o.titulo || String(o.objeto || '').substring(0, 160), descricao: String(o.objeto || '').substring(0, 600),
+    valor: o.valor ? String(o.valor) : 'Não informado no e-mail', valor_num: null, prazo_submissao: data(o.prazo_iso || o.prazo), prazo_iso: o.prazo_iso || null, abertura: null,
+    modalidade: o.modalidade || 'Oportunidade Petronect', numero_compra: o.numero || '', processo: o.numero || '', situacao: o.situacao || '',
+    compatibilidade: o.compatibilidade, urgencia: o.urgencia || urgenciaPorPrazo(o.prazo_iso), justificativa: o.justificativa || '', decisor_provavel: 'Comprador Petrobras (Petronect)', acoes_sugeridas: o.acoes_sugeridas || [],
+    nome_edital: 'Petronect' + (o.numero ? ' nº ' + o.numero : '') + ' — Petrobras', link_acesso: o.link || PETRONECT_LINK,
+    fonte: 'Petronect (e-mail ' + (o.conta || 'contato@') + ')', portal: 'Petronect', numero_pncp: '', link_pncp: o.link || PETRONECT_LINK, link_origem: o.link || PETRONECT_LINK,
+    verificado: true, palavra_chave: '', publicado_em: o.email_data ? data(o.email_data) : null, email_assunto: o.email_assunto || '', origem_email: true };
+}
+async function petronectCache() {
+  const c = await _kvGetRfp(KV_PETRONECT) || {};
+  const hoje = inicioDoDia();
+  const ops = (c.oportunidades || []).filter(o => o.aderente && (!o.prazo_iso || new Date(o.prazo_iso) >= hoje)).sort((a, b) => (b.compatibilidade || 0) - (a.compatibilidade || 0));
+  return { petronect: { conta: c.conta || null, atualizado_em: c.atualizado_em || null, emails_avaliados: Object.keys(c.processados || {}).length, oportunidades_total: (c.oportunidades || []).length, aderentes_abertas: ops.length, erro: c.erro || null }, rfps_petronect: ops.map(_petronectFormatar) };
+}
+async function _comPetronect(saida) {
+  try { const p = await petronectCache(); const lista = (saida.rfps || []).concat(p.rfps_petronect);
+    return { ...saida, rfps: lista.sort((a, b) => (b.compatibilidade || 0) - (a.compatibilidade || 0)), petronect: p.petronect, total_relevante: lista.length }; }
+  catch (_) { return saida; }
+}
+async function _avaliarPetronect(emails) {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
+  const ac = new AbortController(); const t = setTimeout(() => ac.abort(), Math.max(15000, restante() - 5000));
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ac.signal, headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: MODEL, max_tokens: 6000,
+        system: `Você é o Agente de RFPs da Atlantyx: empresa brasileira B2B com 17 anos, que entrega BI, engenharia de dados, data warehouse/lakehouse, analytics, ciência de dados, IA/IA generativa, dashboards, integração de sistemas e dados, automação de processos com IA, desenvolvimento de software/sistemas sob medida, sustentação de dados e alocação de profissionais de TI/dados (outsourcing). Clientes: CPFL, Enel, Caixa Capitalização.
+Você recebe e-mails REAIS do "Serviço de Notificação Petronect" (portal de compras da Petrobras). Para cada e-mail, EXTRAIA as oportunidades listadas e AVALIE se cada uma está no escopo da Atlantyx.
+Regras: copie número, objeto/descrição e prazo EXATAMENTE como no e-mail (não invente; se não houver, deixe vazio). Não crie oportunidades que não estão no texto. Fora do escopo (obras, materiais, peças, equipamentos, serviços de engenharia civil/naval, logística, alimentação, etc.) = aderente false.
+Responda APENAS com um array JSON.`,
+        messages: [{ role: 'user', content: `E-mails (índice, data, assunto, texto):\n${JSON.stringify(emails.map((e, i) => ({ i, data: e.data, assunto: e.assunto, texto: e.texto })))}\n\nDevolva um array com um objeto por OPORTUNIDADE encontrada:\n{"email": i, "numero": "nº da oportunidade como no e-mail", "titulo": "objeto resumido (fiel)", "objeto": "descrição como no e-mail", "prazo": "data/hora limite como no e-mail", "prazo_iso": "AAAA-MM-DDTHH:MM:00-03:00 ou null", "modalidade": "tipo (ex.: Oportunidade, Licitação, Cotação) ou vazio", "aderente": true|false, "compatibilidade": 0-100, "urgencia": "Alta|Media|Baixa", "justificativa": "por que está ou não no escopo", "acoes_sugeridas": ["…"], "link": "link da oportunidade se houver no e-mail, senão vazio"}\nSe o e-mail não tiver nenhuma oportunidade (ex.: aviso de senha, newsletter), devolva {"email": i, "sem_oportunidade": true}.` }] }) });
+    const d = await r.json(); if (!r.ok) throw new Error(d.error?.message || 'Erro Claude');
+    const text = (d.content || []).map(c => c.text || '').join('').replace(/```json|```/g, '').trim();
+    let arr; try { arr = JSON.parse(text); } catch (_) { const m = text.match(/\[[\s\S]*\]/); arr = m ? JSON.parse(m[0]) : null; }
+    if (!Array.isArray(arr)) throw new Error('a IA não devolveu uma lista válida');
+    return arr;
+  } finally { clearTimeout(t); }
+}
+async function lerPetronect({ dias = 90, reavaliar = false } = {}) {
+  const user = process.env.RFP_IMAP_USER || process.env.EMAIL_IMAP_USER || 'atlanteambr@gmail.com';
+  const pass = (process.env.RFP_IMAP_PASS || process.env.EMAIL_IMAP_PASS || '').replace(/\s+/g, '');
+  const host = process.env.RFP_IMAP_HOST || process.env.EMAIL_IMAP_HOST || 'imap.gmail.com';
+  const port = parseInt(process.env.RFP_IMAP_PORT || process.env.EMAIL_IMAP_PORT || '993');
+  const cache = (reavaliar ? null : await _kvGetRfp(KV_PETRONECT)) || { processados: {}, oportunidades: [] };
+  cache.processados = cache.processados || {}; cache.oportunidades = cache.oportunidades || []; cache.conta = user;
+  const diag = { conta: user, pasta: null, encontrados: 0, novos: 0, avaliados_agora: 0, oportunidades_novas: 0, aderentes_novas: 0, faltam: 0 };
+  if (!pass) { cache.erro = 'EMAIL_IMAP_PASS não configurada no Vercel'; await _kvSetRfp(KV_PETRONECT, cache).catch(() => {}); return { diag, erro: cache.erro, ...(await petronectCache()) }; }
+  let ImapFlow; try { ({ ImapFlow } = await import('imapflow')); } catch (_) { return { diag, erro: 'Pacote imapflow não instalado', ...(await petronectCache()) }; }
+  const client = new ImapFlow({ host, port, secure: true, auth: { user, pass }, logger: false });
+  const emails = [], novas = [];
+  try {
+    await client.connect();
+    // Gmail: procura também nos arquivados (pasta "Todos os e-mails"); outros provedores: INBOX
+    let pasta = 'INBOX'; try { const l = await client.list(); const all = l.find(x => x.specialUse === '\\All'); if (all) pasta = all.path; } catch (_) {}
+    diag.pasta = pasta;
+    const lock = await client.getMailboxLock(pasta);
+    try {
+      const desde = new Date(Date.now() - dias * 864e5);
+      const uids = (await client.search({ since: desde, from: 'petronect.com.br' }, { uid: true })) || [];
+      diag.encontrados = uids.length;
+      for (const uid of uids.slice().reverse()) { // mais novos primeiro
+        if (restante() < 35000 || emails.length >= 40) { diag.faltam++; continue; }
+        let msg; try { msg = await client.fetchOne(uid, { envelope: true, bodyStructure: true }, { uid: true }); } catch (_) { continue; }
+        const id = msg?.envelope?.messageId || ('uid:' + uid);
+        if (cache.processados[id]) continue;
+        diag.novos++;
+        let parte = null; (function ach(n) { if (!n || parte) return; if (/^text\/html$/i.test(n.type || '')) parte = n; (n.childNodes || []).forEach(ach); })(msg.bodyStructure);
+        if (!parte) (function ach(n) { if (!n || parte) return; if (/^text\/plain$/i.test(n.type || '')) parte = n; (n.childNodes || []).forEach(ach); })(msg.bodyStructure);
+        let texto = '';
+        try { const dl = await client.download(uid, parte?.part || '1', { uid: true }); const ch = []; for await (const c of dl.content) ch.push(c); texto = Buffer.concat(ch).toString('utf8'); } catch (_) {}
+        texto = /<[a-z][\s\S]*>/i.test(texto) ? _textoDeHtml(texto) : texto;
+        emails.push({ id, uid, data: msg.envelope?.date ? new Date(msg.envelope.date).toISOString() : null, assunto: String(msg.envelope?.subject || '').substring(0, 300), texto: texto.substring(0, 6000) });
+      }
+    } finally { lock.release(); }
+  } catch (e) { cache.erro = 'IMAP: ' + e.message; await _kvSetRfp(KV_PETRONECT, cache).catch(() => {}); try { await client.logout(); } catch (_) {} return { diag, erro: cache.erro, ...(await petronectCache()) }; }
+  try { await client.logout(); } catch (_) {}
+  // avalia em lotes de 8 e-mails
+  for (let k = 0; k < emails.length; k += 8) {
+    if (restante() < 20000) { diag.faltam += emails.length - k; break; }
+    const lote = emails.slice(k, k + 8);
+    let res; try { res = await _avaliarPetronect(lote); } catch (e) { cache.erro = 'IA: ' + e.message; diag.faltam += emails.length - k; break; }
+    lote.forEach(e => { cache.processados[e.id] = e.data || true; });
+    diag.avaliados_agora += lote.length;
+    for (const o of res) { const e = lote[Number(o.email)]; if (!e || o.sem_oportunidade) continue;
+      const chave = (o.numero || '') + '|' + (o.titulo || o.objeto || '').substring(0, 60);
+      if (cache.oportunidades.some(x => x.chave === chave)) continue;
+      cache.oportunidades.push({ chave, numero: String(o.numero || ''), titulo: String(o.titulo || ''), objeto: String(o.objeto || ''), prazo: String(o.prazo || ''), prazo_iso: o.prazo_iso && !isNaN(new Date(o.prazo_iso)) ? new Date(o.prazo_iso).toISOString() : null,
+        modalidade: String(o.modalidade || ''), aderente: !!o.aderente, compatibilidade: Math.max(0, Math.min(100, Number(o.compatibilidade) || 0)), urgencia: ['Alta', 'Media', 'Baixa'].includes(o.urgencia) ? o.urgencia : null,
+        justificativa: String(o.justificativa || ''), acoes_sugeridas: Array.isArray(o.acoes_sugeridas) ? o.acoes_sugeridas.map(String).slice(0, 4) : [], link: /^https?:\/\//.test(o.link || '') ? o.link : '',
+        email_assunto: e.assunto, email_data: e.data, conta: user });
+      diag.oportunidades_novas++; if (o.aderente) { diag.aderentes_novas++; novas.push(cache.oportunidades[cache.oportunidades.length - 1]); } }
+  }
+  if (diag.avaliados_agora && !/^IA:/.test(cache.erro || '')) cache.erro = null;
+  cache.atualizado_em = new Date().toISOString();
+  cache.oportunidades = cache.oportunidades.slice(-600);
+  await _kvSetRfp(KV_PETRONECT, cache);
+  return { diag, erro: cache.erro || null, novas_aderentes: novas, ...(await petronectCache()) };
 }
 
 async function notificarWhatsApp(rfp) {

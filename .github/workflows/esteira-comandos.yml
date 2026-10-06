@@ -1,0 +1,72 @@
+# v3.99 — Comandos da Esteira de Demandas (Atlantyx OS)
+# O token do Vercel (GITHUB_TOKEN) às vezes só tem "Issues: Read and write" e o GitHub recusa mexer em PRs.
+# Por isso a Esteira manda o pedido como COMENTÁRIO na tarefa ("/atx-mesclar", "/atx-mesclar-de-novo",
+# "/atx-cancelar") e este robô — que tem permissão de PR pelo próprio GitHub Actions — executa:
+#   /atx-mesclar / /atx-mesclar-de-novo → abre o PR da branch claude/issue-N-* (se faltar), tira os rótulos
+#       precisa-revisao/conflito, põe aprovado-merge e chama o robô de merge (claude-pr.yml), que atualiza,
+#       valida e só publica se passar.
+#   /atx-cancelar → fecha o PR (sem merge) e a tarefa.
+# Só vale para comentário do dono/colaboradores do repositório.
+name: Esteira — comandos
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  actions: write
+concurrency:
+  group: esteira-comando-${{ github.event.issue.number }}
+  cancel-in-progress: false
+jobs:
+  comando:
+    if: startsWith(github.event.comment.body, '/atx-') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      NUM: ${{ github.event.issue.number }}
+      EH_PR: ${{ github.event.issue.pull_request && 'sim' || 'nao' }}
+      COMENTARIO: ${{ github.event.comment.body }}
+      COMENTARIO_ID: ${{ github.event.comment.id }}
+    steps:
+      - name: Executar o comando
+        run: |
+          set -u
+          CMD=$(printf '%s' "$COMENTARIO" | head -1 | awk '{print $1}')
+          gh api "repos/$REPO/issues/comments/$COMENTARIO_ID/reactions" -f content=eyes >/dev/null 2>&1 || true
+          gh label create aprovado-merge -R "$REPO" --color 4f7cff --description "Fundador aprovou na Esteira — o robô atualiza, valida e mescla" 2>/dev/null || true
+          if [ "$EH_PR" = "sim" ]; then
+            PR="$NUM"; BR=$(gh pr view "$PR" -R "$REPO" --json headRefName -q .headRefName)
+            N=$(echo "$BR" | sed -n 's#^claude/issue-\([0-9]*\)-.*#\1#p')
+          else
+            N="$NUM"
+            BR=$(gh api "repos/$REPO/branches?per_page=100" --paginate -q '.[].name' | grep "^claude/issue-$N-" | sort | tail -1 || true)
+            PR=""; [ -n "$BR" ] && PR=$(gh pr list -R "$REPO" --head "$BR" --state open --json number -q '.[0].number')
+          fi
+          echo "comando=$CMD tarefa=${N:-} branch=${BR:-} pr=${PR:-}"
+          case "$CMD" in
+            /atx-mesclar|/atx-mesclar-de-novo)
+              if [ -z "${PR:-}" ]; then
+                if [ -z "${BR:-}" ]; then gh issue comment "$NUM" -R "$REPO" --body "⚠ Não achei a branch do Claude desta tarefa (claude/issue-$N-…) — ele ainda não terminou. Use \"Reenviar ao Claude\" na Esteira."; exit 0; fi
+                TIT=$(gh issue view "$N" -R "$REPO" --json title -q .title)
+                printf 'Fixes #%s\n\nPull request aberto pela Esteira de Demandas a partir do trabalho do Claude na branch `%s`.\n\n**Aprovado pelo fundador na Esteira.**\n' "$N" "$BR" > /tmp/corpo.md
+                gh pr create -R "$REPO" --base main --head "$BR" --title "$TIT" --body-file /tmp/corpo.md
+                PR=$(gh pr list -R "$REPO" --head "$BR" --state open --json number -q '.[0].number')
+                gh pr edit "$PR" -R "$REPO" --add-label demanda-aprovada || true
+              fi
+              gh pr edit "$PR" -R "$REPO" --remove-label precisa-revisao >/dev/null 2>&1 || true
+              gh pr edit "$PR" -R "$REPO" --remove-label conflito >/dev/null 2>&1 || true
+              gh pr edit "$PR" -R "$REPO" --add-label aprovado-merge
+              gh workflow run claude-pr.yml -R "$REPO" --ref main
+              gh issue comment "$NUM" -R "$REPO" --body "🔄 Merge do PR #$PR pedido na Esteira — o robô atualiza com a main, valida (sintaxe + carga da página) e só publica se passar."
+              ;;
+            /atx-cancelar)
+              [ -n "${PR:-}" ] && gh pr close "$PR" -R "$REPO" --comment "Cancelado pelo fundador na Esteira de Demandas." || true
+              [ -n "${N:-}" ] && gh issue close "$N" -R "$REPO" --reason "not planned" || true
+              ;;
+            *) echo "comando desconhecido: $CMD" ;;
+          esac
+          gh api "repos/$REPO/issues/comments/$COMENTARIO_ID/reactions" -f content=+1 >/dev/null 2>&1 || true
