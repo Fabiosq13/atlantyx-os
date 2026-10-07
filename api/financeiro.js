@@ -158,6 +158,9 @@ async function handler(req, res) {
       email_diagnostico:     () => emailDiagnostico(params),
       versao:                () => ({ versao_api: VERSAO_API }),
       fluxo_detalhado:       () => fluxoDetalhado(params),
+      // v3.105: incluir / excluir lançamento futuro direto da tela do fluxo — grava no QuickBooks
+      fluxo_lancamento_excluir: () => fluxoLancamentoExcluir(params),
+      fluxo_lancamento_incluir: () => fluxoLancamentoIncluir(params),
       qb_diagnostico:        () => qbDiagnostico(),
       qb_contas_diagnostico: () => qbContasDiagnostico(),
       qb_contas_filtro:      () => qbContasParaFiltro(),
@@ -2720,6 +2723,138 @@ async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
   return out;
 }
 
+// ═══ v3.105: INCLUIR / EXCLUIR LANÇAMENTO FUTURO direto do fluxo de caixa — afeta o QuickBooks ═══
+// Excluir: fatura a receber (Invoice), conta a pagar (Bill), previsão de marco (Estimate), lançamento com data
+// futura já registrado no QuickBooks, despesa programada do Atlantyx (e a Bill dela) ou simulado. Sempre em 2 passos:
+// sem "confirmar" devolve a PRÉVIA do que será apagado; com confirmar: true apaga.
+// Incluir: entrada → fatura a receber (Invoice) com vencimento na data; saída → conta a pagar (Bill). Cliente /
+// fornecedor que não existe no QuickBooks é criado. Opção "só simulação" grava no Atlantyx sem tocar o QuickBooks.
+async function _limparCacheFin() {
+  try { const sql = await getSql(); await sql`DELETE FROM kv_store WHERE key LIKE 'cache:fin:%'`; } catch (_) {}
+  try { _qbCache.clear(); } catch (_) {}
+}
+const _brl = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+async function fluxoLancamentoExcluir({ id, qb_txn_id = null, origem = '', confirmar = false, motivo = '' } = {}) {
+  const sid = String(id || ''); const pos = sid.indexOf('_'); const pref = pos > 0 ? sid.substring(0, pos) : ''; const num = pos > 0 ? sid.substring(pos + 1) : '';
+  if (/recorrente/.test(origem) || pref === 'rec') throw new Error('Este lançamento vem de uma TRANSAÇÃO RECORRENTE do QuickBooks — cada mês é gerado a partir do modelo. Para tirá-lo do fluxo, edite ou pause o modelo em QuickBooks → Transações recorrentes.');
+  const sql = await getSql();
+  const feito = async (r) => { await _limparCacheFin(); console.log('[Fluxo] EXCLUÍDO:', JSON.stringify(r.registro || r).substring(0, 300), motivo ? '· motivo: ' + motivo : ''); return { excluido: true, ...r }; };
+  // lançamento já registrado no QuickBooks com data futura (Purchase, Deposit, JournalEntry...)
+  if (!['inv', 'bill', 'est', 'desp', 'sim'].includes(pref)) {
+    if (!qb_txn_id) throw new Error('Este lançamento não pode ser excluído por aqui (origem desconhecida).');
+    const r = await qbExcluirLancamento({ qb_txn_id, confirmar: !!confirmar });
+    if (!confirmar) return { ...r, onde: 'QuickBooks' };
+    return feito({ registro: r.registro, onde: 'QuickBooks' });
+  }
+  if (pref === 'sim') {
+    const [r] = await sql`SELECT * FROM lancamentos_simulados WHERE id = ${num} LIMIT 1`; if (!r) throw new Error('Simulação não encontrada');
+    const reg = { tipo: 'Simulação (só no Atlantyx)', descricao: r.descricao, valor: parseFloat(r.valor), data: String(r.data).substring(0, 10) };
+    if (!confirmar) return { previa: true, sera_excluido: reg, onde: 'Atlantyx', irreversivel: 'Só sai do Atlantyx — o QuickBooks não é afetado.' };
+    await sql`UPDATE lancamentos_simulados SET excluido = true, atualizado_em = NOW() WHERE id = ${num}`;
+    return feito({ registro: reg, onde: 'Atlantyx' });
+  }
+  if (pref === 'desp') {
+    const [o] = await sql`SELECT o.*, d.descricao AS desp_desc, d.fornecedor AS desp_fornecedor FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id WHERE o.id = ${num} LIMIT 1`;
+    if (!o) throw new Error('Despesa programada não encontrada');
+    const reg = { tipo: 'Despesa programada (Atlantyx) — só esta ocorrência', descricao: o.desp_desc, contraparte: o.desp_fornecedor || '', valor: parseFloat(o.valor), data: String(o.data_prevista).substring(0, 10), conta_a_pagar_qb: o.qb_txn_id || null };
+    if (!confirmar) return { previa: true, sera_excluido: reg, onde: o.qb_txn_id ? 'Atlantyx + QuickBooks' : 'Atlantyx',
+      aviso: 'Só a ocorrência desta data sai — os outros meses da despesa programada continuam.' + (o.qb_txn_id ? ' A conta a pagar (Bill #' + o.qb_txn_id + ') dela no QuickBooks também será excluída.' : ''),
+      irreversivel: o.qb_txn_id ? 'A exclusão no QuickBooks não pode ser desfeita pelo Atlantyx.' : 'O QuickBooks não é afetado.' };
+    if (o.qb_txn_id) {
+      const token = await qbToken();
+      const b = (await qbQuery(`select * from Bill where Id = '${String(o.qb_txn_id).replace(/'/g, '')}'`, token))?.QueryResponse?.Bill?.[0];
+      if (b) { if (parseFloat(b.Balance || 0) < parseFloat(b.TotalAmt || 0) - 0.009) throw new Error('A conta a pagar desta despesa já tem pagamento registrado no QuickBooks — exclua o pagamento lá antes.');
+        await qbFetch('/bill?operation=delete', token, 'POST', { Id: b.Id, SyncToken: b.SyncToken }); }
+    }
+    await sql`UPDATE despesas_ocorrencias SET status = 'cancelada' WHERE id = ${num}`;
+    return feito({ registro: reg, onde: o.qb_txn_id ? 'Atlantyx + QuickBooks' : 'Atlantyx' });
+  }
+  if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
+  const token = await qbToken(); const idQ = String(num).replace(/'/g, '');
+  if (pref === 'inv') {
+    const inv = (await qbQuery(`select * from Invoice where Id = '${idQ}'`, token))?.QueryResponse?.Invoice?.[0];
+    if (!inv) throw new Error('Fatura não encontrada no QuickBooks (já excluída?)');
+    const recebido = parseFloat(inv.TotalAmt || 0) - parseFloat(inv.Balance || 0);
+    if (recebido > 0.009) throw new Error('Esta fatura já tem ' + _brl(recebido) + ' recebido no QuickBooks — exclua o recebimento lá antes, ou ajuste a fatura em vez de excluir.');
+    const reg = { tipo: 'Fatura a receber (Invoice)', doc: inv.DocNumber || inv.Id, contraparte: inv.CustomerRef?.name || '', valor: parseFloat(inv.TotalAmt || 0), vencimento: inv.DueDate || inv.TxnDate };
+    let vinc = []; try { vinc = await sql`SELECT e.empresa, t.numero_termo FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id WHERE e.qb_invoice_id = ${inv.Id}`; } catch (_) {}
+    if (!confirmar) return { previa: true, sera_excluido: reg, onde: 'QuickBooks', aviso: vinc.length ? '⚠ Esta fatura está vinculada ao termo de faturamento nº ' + vinc.map(v => v.numero_termo + ' (' + v.empresa + ')').join(', ') + ' — o vínculo será desfeito.' : null,
+      irreversivel: 'A exclusão é feita direto no QuickBooks e NÃO pode ser desfeita pelo Atlantyx.' };
+    await qbFetch('/invoice?operation=delete', token, 'POST', { Id: inv.Id, SyncToken: inv.SyncToken });
+    try { await sql`UPDATE termos_empresas SET qb_invoice_id = NULL, qb_invoice_doc = NULL, qb_erro = ${'fatura excluída do QB pelo fluxo de caixa em ' + new Date().toISOString().substring(0, 10) + (motivo ? ': ' + motivo : '')} WHERE qb_invoice_id = ${inv.Id}`; } catch (_) {}
+    return feito({ registro: reg, onde: 'QuickBooks' });
+  }
+  if (pref === 'bill') {
+    const b = (await qbQuery(`select * from Bill where Id = '${idQ}'`, token))?.QueryResponse?.Bill?.[0];
+    if (!b) throw new Error('Conta a pagar não encontrada no QuickBooks (já excluída?)');
+    const pago = parseFloat(b.TotalAmt || 0) - parseFloat(b.Balance || 0);
+    if (pago > 0.009) throw new Error('Esta conta já tem ' + _brl(pago) + ' pago no QuickBooks — exclua o pagamento lá antes.');
+    const reg = { tipo: 'Conta a pagar (Bill)', doc: b.DocNumber || b.Id, contraparte: b.VendorRef?.name || '', valor: parseFloat(b.TotalAmt || 0), vencimento: b.DueDate || b.TxnDate };
+    if (!confirmar) return { previa: true, sera_excluido: reg, onde: 'QuickBooks', irreversivel: 'A exclusão é feita direto no QuickBooks e NÃO pode ser desfeita pelo Atlantyx.' };
+    await qbFetch('/bill?operation=delete', token, 'POST', { Id: b.Id, SyncToken: b.SyncToken });
+    try { await sql`UPDATE despesas_ocorrencias SET status = 'cancelada', qb_txn_id = NULL WHERE qb_txn_id = ${b.Id} AND status <> 'paga'`; } catch (_) {}
+    return feito({ registro: reg, onde: 'QuickBooks' });
+  }
+  if (pref === 'est') {
+    const e = (await qbFetch('/estimate/' + idQ, token))?.Estimate;
+    if (!e) throw new Error('Previsão não encontrada no QuickBooks (já excluída?)');
+    const reg = { tipo: 'Receita prevista de marco (estimativa)', doc: e.DocNumber || e.Id, contraparte: e.CustomerRef?.name || '', valor: parseFloat(e.TotalAmt || 0), vencimento: e.ExpirationDate || e.TxnDate };
+    if (!confirmar) return { previa: true, sera_excluido: reg, onde: 'QuickBooks',
+      aviso: 'É uma previsão gerada a partir de um marco de projeto (não é contabilidade). Se você gerar as previsões dos marcos de novo, ela volta — para tirar de vez, ajuste ou conclua o marco no projeto.',
+      irreversivel: 'A estimativa é apagada do QuickBooks.' };
+    await _qbApagarEstimativa(e.Id, e.SyncToken, token);
+    try { await sql`UPDATE projetos_marcos SET previsao_qb_estimate_id = NULL, previsao_qb_doc = NULL WHERE previsao_qb_estimate_id = ${String(e.Id)}`; } catch (_) {}
+    return feito({ registro: reg, onde: 'QuickBooks' });
+  }
+  throw new Error('Tipo de lançamento não reconhecido');
+}
+async function _qbClienteAchar(nome, token) {
+  const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+  const alvo = norm(nome); if (!alvo) return null;
+  const lista = (await qbQuery(`select Id, DisplayName, CompanyName from Customer where Active = true maxresults 1000`, token))?.QueryResponse?.Customer || [];
+  let c = lista.find(x => norm(x.DisplayName) === alvo || norm(x.CompanyName) === alvo);
+  if (!c) c = lista.find(x => { const n = norm(x.DisplayName); return n && n.length > 3 && (n.includes(alvo) || alvo.includes(n)); });
+  return c ? { id: c.Id, nome: c.DisplayName } : null;
+}
+async function fluxoLancamentoIncluir({ tipo, data, valor, descricao, contraparte, categoria = '', no_quickbooks = true } = {}) {
+  tipo = tipo === 'entrada' ? 'entrada' : tipo === 'saida' ? 'saida' : null;
+  if (!tipo) throw Object.assign(new Error('Escolha se é entrada (receita) ou saída (despesa)'), { status: 400 });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data || ''))) throw Object.assign(new Error('Informe a data (vencimento) do lançamento'), { status: 400 });
+  const vNum = Math.round((typeof valor === 'number' ? valor : /,/.test(String(valor)) ? parseFloat(String(valor).replace(/\./g, '').replace(',', '.')) : parseFloat(valor)) * 100) / 100;
+  if (!(vNum > 0)) throw Object.assign(new Error('Informe um valor maior que zero'), { status: 400 });
+  const desc = String(descricao || '').trim().substring(0, 400); if (!desc) throw Object.assign(new Error('Informe a descrição'), { status: 400 });
+  const sql = await getSql();
+  if (!no_quickbooks) {
+    const id = 'fx' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    await sql`INSERT INTO lancamentos_simulados (id, data, descricao, categoria, tipo, valor, atualizado_em) VALUES (${id}, ${data}, ${desc}, ${categoria || 'Simulação'}, ${tipo}, ${vNum}, NOW())`;
+    await _limparCacheFin();
+    return { criado: true, onde: 'Atlantyx (simulação)', id: 'sim_' + id };
+  }
+  if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
+  const nome = String(contraparte || '').trim().substring(0, 100);
+  if (!nome) throw Object.assign(new Error(tipo === 'entrada' ? 'Informe o cliente (quem vai pagar)' : 'Informe o fornecedor (a quem vamos pagar)'), { status: 400 });
+  const token = await qbToken(); const sandbox = process.env.QB_SANDBOX === 'true';
+  const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const txnDate = data < hoje ? data : hoje;
+  const nota = 'Lançado pelo fluxo de caixa do Atlantyx OS em ' + hoje.split('-').reverse().join('/');
+  if (tipo === 'saida') {
+    let forn = await qbBuscarFornecedor(nome, token, qbRealmId(), sandbox), criado = false;
+    if (!forn) { const r = await qbFetch('/vendor', token, 'POST', { DisplayName: nome.replace(/[:\t\n]/g, ' '), CompanyName: nome }); forn = { id: r?.Vendor?.Id, nome: r?.Vendor?.DisplayName }; criado = true; }
+    const conta = await qbContaDespesaPadrao(token, qbRealmId(), sandbox, categoria || null);
+    const r = await qbFetch('/bill', token, 'POST', { VendorRef: { value: String(forn.id) }, TxnDate: txnDate, DueDate: data, PrivateNote: nota + ' · ' + desc,
+      Line: [{ Amount: vNum, DetailType: 'AccountBasedExpenseLineDetail', Description: desc, AccountBasedExpenseLineDetail: { AccountRef: { value: String(conta.id) } } }] });
+    await _limparCacheFin();
+    return { criado: true, onde: 'QuickBooks', entidade: 'Conta a pagar (Bill)', id: 'bill_' + r?.Bill?.Id, doc: r?.Bill?.DocNumber || r?.Bill?.Id, contraparte: forn.nome, contraparte_criada: criado, conta: conta.nome };
+  }
+  let cli = await _qbClienteAchar(nome, token), criado = false;
+  if (!cli) { const c = await qbClienteCriar({ nome, notas: 'Criado pelo fluxo de caixa do Atlantyx OS' }); cli = { id: c.id, nome: c.nome }; criado = !!c.criado; }
+  const item = await _qbItemPrevisao(token);
+  const r = await qbFetch('/invoice', token, 'POST', { CustomerRef: { value: String(cli.id) }, TxnDate: txnDate, DueDate: data, PrivateNote: nota,
+    Line: [{ Amount: vNum, DetailType: 'SalesItemLineDetail', Description: desc, SalesItemLineDetail: { ItemRef: { value: String(item.Id) }, Qty: 1, UnitPrice: vNum } }] });
+  await _limparCacheFin();
+  return { criado: true, onde: 'QuickBooks', entidade: 'Fatura a receber (Invoice)', id: 'inv_' + r?.Invoice?.Id, doc: r?.Invoice?.DocNumber || r?.Invoice?.Id, contraparte: cli.nome, contraparte_criada: criado, item: item.Name };
+}
+
 async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, incluir_simulados = true, conta_id = null } = {}) {
   const hoje = new Date().toISOString().split('T')[0];
   // v1.16.1: filtro de período explícito. Se data_inicio/data_fim vierem, o "hoje" divisório
@@ -2752,10 +2887,10 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
     const rows = fim
       ? await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat
           FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
-          WHERE o.data_prevista > ${hoje} AND o.data_prevista <= ${fim} AND o.status != 'paga' ORDER BY o.data_prevista ASC`
+          WHERE o.data_prevista > ${hoje} AND o.data_prevista <= ${fim} AND o.status NOT IN ('paga', 'cancelada') ORDER BY o.data_prevista ASC`
       : await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat
           FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
-          WHERE o.data_prevista > ${hoje} AND o.status != 'paga' ORDER BY o.data_prevista ASC`;
+          WHERE o.data_prevista > ${hoje} AND o.status NOT IN ('paga', 'cancelada') ORDER BY o.data_prevista ASC`;
     despFuturas = rows.map(r => ({ id: 'desp_' + r.id, data: String(r.data_prevista).split('T')[0], descricao: r.despesa_desc || 'Despesa programada', categoria: r.despesa_cat || 'Despesa', valor: parseFloat(r.valor), tipo: 'saida', origem: 'atlantyx_futuro' }));
   } catch (e) { console.warn('[FluxoDetalhado] despesas futuras:', e.message); }
 
