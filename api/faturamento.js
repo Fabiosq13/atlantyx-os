@@ -360,6 +360,22 @@ async function termoDiagnostico() {
   };
 }
 
+// v3.104: DATE do banco → 'AAAA-MM-DD' (o driver pode devolver Date; String(Date) dava 'Wed Sep 30')
+const _dataISO = v => !v ? null : v instanceof Date ? v.toISOString().substring(0, 10) : String(v).substring(0, 10);
+const _MESES_PT = { jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6, jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12 };
+// mês de referência 'AAAA-MM': período de medição (último mês citado) → data do termo → inclusão (Brasília)
+function _mesReferencia(t) {
+  const txt = String(t.periodo_medicao || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const achados = [];
+  for (const m of txt.matchAll(/\b(\d{4})[-\/.](\d{1,2})\b/g)) achados.push([+m[1], +m[2], m.index]);
+  for (const m of txt.matchAll(/\b(\d{1,2})[-\/.](\d{4})\b/g)) achados.push([+m[2], +m[1], m.index]);
+  for (const m of txt.matchAll(/\b(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*\.?\s*(?:\/|de|-)?\s*(\d{4}|\d{2})\b/g)) achados.push([+m[2] < 100 ? 2000 + +m[2] : +m[2], _MESES_PT[m[1]], m.index]);
+  const ok = achados.filter(([a, m]) => a >= 2000 && a <= 2100 && m >= 1 && m <= 12).sort((x, y) => x[2] - y[2]);
+  if (ok.length) { const [a, m] = ok[ok.length - 1]; return a + '-' + String(m).padStart(2, '0'); }
+  const d = _dataISO(t.data_termo); if (d) return d.substring(0, 7);
+  if (t.criado_em) return new Date(t.criado_em).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }).substring(0, 7);
+  return null;
+}
 async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf } = {}) {
   const sql = await getSql();
   // v1.32: filtro por mês/ano (data de criação do termo) e/ou por texto do período de medição.
@@ -383,11 +399,15 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
     // escolhido ela deixava o filtro parecer morto.
     const mesEscolhido = !!(mes && String(mes).trim()) || !!(ano && String(ano).trim());   // mês OU ano escolhido → estrito
     if (mesEscolhido) {
-      termos = status
-        ? await sql`SELECT * FROM termos_faturamento WHERE status = ${status}
-            AND criado_em >= ${ini + ' 00:00:00'} AND criado_em <= ${fim + ' 23:59:59'} ORDER BY criado_em DESC`
-        : await sql`SELECT * FROM termos_faturamento
-            WHERE criado_em >= ${ini + ' 00:00:00'} AND criado_em <= ${fim + ' 23:59:59'} ORDER BY criado_em DESC`;
+      // v3.104: o mês do termo é a DATA DO TERMO (quando informada) — antes era a data de inclusão no sistema, e um
+      // termo incluído em setembro com data de outubro aparecia em setembro. Sem data do termo: inclusão, no horário de Brasília.
+      // v3.104: o mês do termo é o que o card mostra — o PERÍODO DE MEDIÇÃO (ex.: "10/2026", "outubro/2026");
+      // sem período legível, a data do termo; sem ela, a inclusão no sistema (horário de Brasília).
+      // Antes era sempre a data de inclusão: um termo de 10/2026 incluído em setembro aparecia em setembro.
+      const todos = status ? await sql`SELECT * FROM termos_faturamento WHERE status = ${status} ORDER BY criado_em DESC`
+        : await sql`SELECT * FROM termos_faturamento ORDER BY criado_em DESC`;
+      const iniM = ini.substring(0, 7), fimM = fim.substring(0, 7);
+      termos = todos.filter(t => { const m = _mesReferencia(t); t.mes_referencia = m; return m && m >= iniM && m <= fimM; });
     } else {
       termos = status
         ? (EM_ABERTO.includes(status)
@@ -448,11 +468,11 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
       nf_numeros: emp.map(e => e.nf_numero).filter(Boolean),   // v2.44: para o card destacar a NF filtrada
       nf_soma: num(t.nf_soma), nf_status_termo: t.nf_status || null,
       // v2.56: data-base do prazo, na ordem: informada → derivada do período → NF mais antiga → criação
-      data_termo: t.data_termo ? String(t.data_termo).substring(0,10) : null,
+      data_termo: t.data_termo ? _dataISO(t.data_termo) : null,
       // v2.58: base do prazo = data de INCLUSÃO no sistema (criado_em). O período de medição é o mês
       // dos serviços, anterior ao termo — usá-lo inflava os dias (dava 53). A data do termo
       // informada manualmente continua tendo prioridade, quando existir.
-      data_base_prazo: (t.data_termo ? String(t.data_termo).substring(0,10) : null) || (t.criado_em ? String(t.criado_em).substring(0,10) : null),
+      data_base_prazo: (t.data_termo ? _dataISO(t.data_termo) : null) || (t.criado_em ? String(t.criado_em).substring(0,10) : null),
       data_base_origem: t.data_termo ? 'data do termo (informada)' : 'inclusão no sistema',
       data_emissao: datasNf[0] ? String(datasNf[0]).split('T')[0] : null,
       data_emissao_ultima: datasNf.length > 1 ? String(datasNf[datasNf.length - 1]).split('T')[0] : null,
@@ -466,7 +486,7 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
   // v1.32: anos disponíveis (para o seletor) — sempre da base inteira, não do filtro atual
   let anosDisponiveis = [];
   try {
-    const r = await sql`SELECT DISTINCT EXTRACT(YEAR FROM criado_em)::int AS ano FROM termos_faturamento ORDER BY ano DESC`;
+    const r = await sql`SELECT DISTINCT EXTRACT(YEAR FROM COALESCE(data_termo, (criado_em AT TIME ZONE 'America/Sao_Paulo')::date))::int AS ano FROM termos_faturamento ORDER BY ano DESC`;
     anosDisponiveis = r.map(x => x.ano);
   } catch (_) {}
   // v2.24: filtro por DATA DE PAGAMENTO — mantém só os termos com alguma empresa paga no intervalo
@@ -508,7 +528,7 @@ async function termoGet({ id } = {}) {
   const _datasNf = empresas.map(e => e.nf_data).filter(Boolean).sort();
   const _datasPag = empresas.map(e => e.pagamento_data).filter(Boolean).sort();
   return { termo: { ...termo, valor_total_termo: num(termo.valor_total_termo), nf_soma: num(termo.nf_soma), nf_diferenca: num(termo.nf_diferenca),
-      data_termo: termo.data_termo ? String(termo.data_termo).substring(0,10) : null, data_base_prazo: (termo.data_termo ? String(termo.data_termo).substring(0,10) : null) || (termo.criado_em ? String(termo.criado_em).substring(0,10) : null), data_base_origem: termo.data_termo ? 'data do termo (informada)' : 'inclusão no sistema',
+      data_termo: termo.data_termo ? _dataISO(termo.data_termo) : null, data_base_prazo: (termo.data_termo ? _dataISO(termo.data_termo) : null) || (termo.criado_em ? String(termo.criado_em).substring(0,10) : null), data_base_origem: termo.data_termo ? 'data do termo (informada)' : 'inclusão no sistema',
       // v1.33: datas consolidadas para exibição
       data_emissao: _datasNf[0] ? String(_datasNf[0]).split('T')[0] : null,
       data_emissao_ultima: _datasNf.length > 1 ? String(_datasNf[_datasNf.length - 1]).split('T')[0] : null,

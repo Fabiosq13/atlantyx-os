@@ -3922,9 +3922,9 @@ async function verificarTermosDoMes({ mes, ano, nomes, dia_inicio = 5, limite_di
   let lancados = [];
   try {
     lancados = await sql`SELECT id, numero_termo, projeto, contratante, periodo_medicao, status,
-        valor_total_termo, criado_em
+        valor_total_termo, criado_em, data_termo
       FROM termos_faturamento
-      WHERE (criado_em >= ${ini}::date AND criado_em < (${fim}::date + interval '1 day'))
+      WHERE (COALESCE(data_termo, (criado_em AT TIME ZONE 'America/Sao_Paulo')::date) BETWEEN ${ini}::date AND ${fim}::date)
          OR (periodo_medicao ILIKE ${'%' + String(m).padStart(2,'0') + '/' + a + '%'})
       ORDER BY criado_em DESC`;
   } catch (e) { return { erro: 'Não consegui ler o kanban de faturamento: ' + e.message }; }
