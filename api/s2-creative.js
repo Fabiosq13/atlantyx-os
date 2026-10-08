@@ -1,10 +1,10 @@
 import { comGuarda } from '../lib/qa-guard.js';
 
 // v3.32: o CTA do Instagram vem da configuração da campanha (link curto, palavra no Direct, WhatsApp ou bio)
-const ctaIgDe = p => String((p && p.cta_instagram) || '').trim() || 'Peça seu diagnóstico gratuito de dados e IA com um especialista da Atlantyx';
+const ctaIgDe = p => String((p && p.cta_instagram) || '').trim() || '🔗 Link na bio → agende uma conversa com a nossa equipe'; // v3.106: no Instagram, link só na bio
 // v3.60: OFERTA padrão dos posts — post de opinião gera engajamento, não lead; o post precisa oferecer algo em troca do contato
-const OFERTA = p => String((p && p.oferta) || '').trim() || 'Diagnóstico gratuito de dados e IA: um especialista da Atlantyx conversa com o time do cliente, mapeia onde dados e IA geram resultado na operação e entrega as oportunidades priorizadas por impacto e esforço — sem custo e sem compromisso';
-const ctaCurtoIg = p => String((p && p.cta_curto) || '').trim() || 'Diagnóstico gratuito';
+const OFERTA = p => String((p && p.oferta) || '').trim() || 'Conversa gratuita com um especialista da Atlantyx: entendemos o cenário do cliente (sistemas, dados, processos e indicadores) e mostramos onde tecnologia, dados, software sob medida e os produtos Atlantyx geram resultado na operação, com as oportunidades priorizadas por impacto e esforço — sem custo e sem compromisso';
+const ctaCurtoIg = p => String((p && p.cta_curto) || '').trim() || 'Link na bio';
 const regraCtaIg = p => `REGRA DO CTA NO INSTAGRAM: a legenda do Instagram não tem link clicável e NÃO se deve mandar a pessoa para a bio. Não escreva "link na bio". Termine o texto do Instagram com este CTA, exatamente: "${ctaIgDe(p)}". No LinkedIn e no Facebook o link vai clicável no próprio post.`;
 // api/s2-creative.js
 // S2 · Agentes de Marketing Digital Criativo

@@ -4126,7 +4126,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <div><label class="fl">Clique leva para</label><select class="fsel" id="acCtaDestino" onchange="salvarCtaCfg({destino:this.value})" title="Destino do link das campanhas" style="min-width:230px;">
             <option value="cadastro">Cadastro (página de captura) → agenda</option><option value="reuniao">Agenda de reunião direto</option></select></div>
           <div><label class="fl">No Instagram (sem link clicável no post)</label><select class="fsel" id="acCtaIg" onchange="salvarCtaCfg({ig:this.value})" title="Como o Instagram leva a pessoa ao cadastro/agenda" style="min-width:260px;">
-            <option value="link_curto">Link curto na legenda e na arte</option><option value="palavra">Comentar palavra → link no Direct</option><option value="whatsapp">WhatsApp na legenda e na arte</option><option value="bio">Link na bio (antigo)</option></select></div>
+            <option value="bio">Link na bio (padrão)</option><option value="link_curto">Link curto na legenda e na arte</option><option value="palavra">Comentar palavra → link no Direct</option><option value="whatsapp">WhatsApp na legenda e na arte</option></select></div>
           <div id="acCtaPalavraWrap" style="display:none;"><label class="fl">Palavra</label><input class="fi" id="acCtaPalavra" style="width:110px;" oninput="salvarCtaCfg({palavra:this.value.trim().toUpperCase()||'AGENDA'})" title="Palavra que a pessoa comenta"/></div>
           <div id="acCtaWhatsWrap" style="display:none;"><label class="fl">WhatsApp comercial</label><input class="fi" id="acCtaWhats" style="width:160px;" placeholder="(21) 99999-0000" oninput="salvarCtaCfg({whats:this.value.trim()})" title="Número exibido nos posts"/></div>
           <button class="btn btn-g" style="font-size:10px;" onclick="window.open(location.origin + '/' + (ctaCfg().destino === 'reuniao' ? 'reuniao' : 'agenda'), '_blank', 'noopener')" title="Abre o link curto para conferir">↗ testar link curto</button>
@@ -4151,6 +4151,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <button class="btn" style="font-size:10px;" onclick="acAuditoria()" title="Por que nao ha leads? Cruza publicacoes, erros e capturas">&#128269; Auditoria do funil</button>
         <button class="btn" style="font-size:10px;" onclick="acCorrigirImagens()" title="Corrige posts agendados cuja imagem vai expirar antes da publicacao">&#128295; Corrigir imagens agendadas</button>
         <button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red);" onclick="acRemoverDuplicados()" title="Apaga do Metricool as cópias de um mesmo post (mesmo horário, mesmas redes, mesmo texto) — fica um por horário">&#129529; Remover duplicados no Metricool</button>
+        <button class="btn" style="font-size:10px;color:var(--blue);border-color:var(--blue);" onclick="acInstagramParaBio()" title="Tira o link da legenda de todos os posts do Instagram já agendados no Metricool e põe a chamada 'Link na bio'">&#128279; Instagram: link na bio nos agendados</button>
         <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="acTrocarLinkAgendados()" title="Troca o link 'agenda direto' dos posts já agendados pela página de captura (cadastro → agenda), mantendo a campanha da UTM">&#128257; Trocar link dos já agendados</button>
         <button class="btn" style="font-size:10px;color:#e1306c;border-color:#e1306c;" onclick="acGerarStory()" title="Gera um Story do Instagram com oferta, QR code e link de captura">&#128247; Story com link</button>
         <button class="btn" style="font-size:10px;margin-left:auto;color:var(--t3);" title="Modo antigo, em que o servidor gerava os posts numa fila" onclick="const x=document.getElementById('acFilaAntiga');x.style.display=x.style.display==='none'?'flex':'none';">Fila do servidor (modo antigo) ▾</button>
@@ -6997,7 +6998,7 @@ function definirLinkReuniao() {
   toast('Link de reunião padrão: ' + linkReuniao(), 'success');
 }
 // v1.10.6: texto padrão que explica o link na bio (Instagram) — o link da bio leva ao SITE, onde a pessoa deixa o contato
-const TEXTO_LINK_BIO_PADRAO = '🔗 Link na bio → acesse o site e deixe seu contato: nossa equipe fala com você em até 24h.';
+const TEXTO_LINK_BIO_PADRAO = '🔗 Link na bio → agende uma conversa com a nossa equipe.'; // v3.106: mesmo texto que o servidor usa nos agendados
 const TEXTO_LINK_BIO_CURTO_PADRAO = 'acesse o site e deixe seu contato';
 // v3.32: CHAMADA PARA AÇÃO DO INSTAGRAM sem depender da bio. O Instagram não deixa link clicável na legenda
 // do feed (regra da rede, vale para qualquer ferramenta). Em vez de "link na bio", a campanha usa:
@@ -7007,7 +7008,7 @@ const TEXTO_LINK_BIO_CURTO_PADRAO = 'acesse o site e deixe seu contato';
 //   bio        → o comportamento antigo (link na bio)
 // LinkedIn e Facebook continuam com o link CLICÁVEL direto no post.
 // v3.60: OFERTA dos posts = diagnóstico gratuito (post de opinião gera curtida; oferta concreta gera lead)
-const CTA_OFERTA = '🎁 Peça seu diagnóstico gratuito de dados e IA:';
+const CTA_OFERTA = '🎁 Agende uma conversa gratuita com a Atlantyx:'; // v3.106: oferta genérica (serviços e produtos), sem foco em IA
 // v3.73: a IA às vezes escrevia no texto a chamada do INSTAGRAM (link curto /reuniao) e o sistema ainda
 // acrescentava a chamada com o link — no LinkedIn saía o link curto errado + a chamada repetida.
 // Agora: tira do texto qualquer chamada/link curto pronto e fecha UMA vez com o link certo de cada rede.
@@ -7027,7 +7028,10 @@ function _textoInstagram(t, campId) { return _limparCtas(_semBio(t)) + '\n\n' + 
 // agendava não virava lead e a visita nem era registrada. Migra quem estava em "agenda direto" uma vez.
 try { if (!localStorage.getItem('atx:cta_mig_v370')) { const c0 = JSON.parse(localStorage.getItem('atx:cta_cfg') || '{}'); if (c0.destino === 'reuniao') { c0.destino = 'cadastro'; localStorage.setItem('atx:cta_cfg', JSON.stringify(c0)); }
   if (localStorage.getItem('atx:destino_campanha') === 'reuniao') localStorage.setItem('atx:destino_campanha', 'captura'); localStorage.setItem('atx:cta_mig_v370', '1'); } } catch (_) {}
-function ctaCfg() { const pad = { ig: 'link_curto', destino: 'cadastro', palavra: 'AGENDA', whats: '' };
+// v3.106: o fundador decidiu tirar o link fixo da legenda do Instagram — padrão (e migração única) = "link na bio"
+try { if (!localStorage.getItem('atx:cta_mig_v3106')) { const c0 = JSON.parse(localStorage.getItem('atx:cta_cfg') || '{}'); c0.ig = 'bio'; localStorage.setItem('atx:cta_cfg', JSON.stringify(c0));
+  if (/acesse o site e deixe seu contato/.test(localStorage.getItem('atx:texto_link_bio') || '')) localStorage.removeItem('atx:texto_link_bio'); localStorage.setItem('atx:cta_mig_v3106', '1'); } } catch (_) {}
+function ctaCfg() { const pad = { ig: 'bio', destino: 'cadastro', palavra: 'AGENDA', whats: '' };
   try { return Object.assign(pad, JSON.parse(localStorage.getItem('atx:cta_cfg') || '{}')); } catch (_) { return pad; } }
 function salvarCtaCfg(parcial) { const c = Object.assign(ctaCfg(), parcial || {}); try { localStorage.setItem('atx:cta_cfg', JSON.stringify(c)); localStorage.setItem('atx:destino_campanha', c.destino === 'reuniao' ? 'reuniao' : 'captura'); } catch (_) {} try { _ctaPreview(); } catch (_) {} return c; }
 // v3.46: o link curto leva um CÓDIGO de 4 letras da campanha (/agenda/k3f9) — antes ia sem campanha e os
@@ -7049,7 +7053,7 @@ function _leadsDaCampanha(campId) {
 }
 function textoLinkBio(campId) {
   const c = ctaCfg();
-  if (c.ig === 'link_curto') return '🎁 Peça seu diagnóstico gratuito de dados e IA: ' + linkCurtoCampanha(campId); // v3.60: oferta = diagnóstico gratuito
+  if (c.ig === 'link_curto') return CTA_OFERTA + ' ' + linkCurtoCampanha(campId); // v3.60: oferta = diagnóstico gratuito
   if (c.ig === 'palavra') return '💬 Comente ' + (c.palavra || 'AGENDA') + ' aqui embaixo e receba no seu Direct o link para pedir seu diagnóstico gratuito.';
   if (c.ig === 'whatsapp' && c.whats) return '📲 Fale com a gente no WhatsApp: ' + c.whats;
   try { return (localStorage.getItem('atx:texto_link_bio') || '').trim() || TEXTO_LINK_BIO_PADRAO; } catch(_) { return TEXTO_LINK_BIO_PADRAO; } }
@@ -22931,6 +22935,25 @@ async function acTrocarLinkAgendados() {
     try { await sincronizarStatusMetricool(true); } catch (_) {}
   } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
+// v3.106: tira o link da legenda dos posts do Instagram já agendados e põe "Link na bio"
+async function acInstagramParaBio() {
+  try {
+    toast('Lendo os posts do Instagram agendados no Metricool...', 'info');
+    const d = await mcApi('instagram_para_bio', { aplicar: false });
+    const mx = (d.mistos || []).length ? `\n\n${d.mistos.length} post(s) vão para Instagram E LinkedIn/Facebook com o mesmo texto — não mexi neles (no LinkedIn o link é clicável). Se quiser, separe por rede no Metricool.` : '';
+    if (!d.instagram_com_link) { alert('Nenhum post do Instagram agendado tem link na legenda. ' + d.total_agendados + ' post(s) agendado(s) conferidos.' + mx); return; }
+    if (!confirm(`${d.instagram_com_link} post(s) do Instagram agendado(s) têm link na legenda:\n\n${d.itens.slice(0, 12).map(i => '• ' + i.data.replace('T', ' ') + ' — ' + i.texto.substring(0, 50)).join('\n')}${d.itens.length > 12 ? '\n(e mais ' + (d.itens.length - 12) + ')' : ''}\n\nTirar o link e fechar com:\n"${d.texto_bio}"\n\nOs posts são recriados no Metricool no MESMO horário, com a mesma imagem.${mx}`)) return;
+    const ids = d.itens.map(i => i.id); let feitos = [], falhas = [];
+    for (let k = 0; k < ids.length; k += 5) {
+      toast(`Ajustando ${Math.min(k + 5, ids.length)} de ${ids.length}...`, 'info');
+      try { const r = await mcApi('instagram_para_bio', { aplicar: true, ids: ids.slice(k, k + 5) }); feitos = feitos.concat(r.feitos || []); falhas = falhas.concat(r.falhas || []); }
+      catch (e) { falhas.push({ data: '(lote)', erro: e.message }); }
+    }
+    try { let mud = 0; feitos.forEach(f => (_publicacoes || []).forEach(p => { if (String(p.metricool_id) === String(f.id_antigo)) { p.metricool_id = f.id_novo; mud++; } })); if (mud) await salvarPublicacoes(); } catch (_) {}
+    alert(`${feitos.length} post(s) do Instagram agora mandam para a bio.${falhas.length ? '\n\n' + falhas.length + ' não ajustado(s):\n' + falhas.slice(0, 6).map(f => (f.data || '') + ' ' + f.erro).join('\n') : ''}\n\nConfira no perfil do Instagram se o link da bio é: ${location.origin}/bio`);
+    try { await sincronizarStatusMetricool(true); } catch (_) {}
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
 // v3.72: apaga do Metricool os posts com erro (já corrigidos de outro jeito) — limpa a auditoria
 async function acApagarFalhas() {
   try {
@@ -28940,7 +28963,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.106] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.107] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -28956,7 +28979,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.106';
+window.__ATX_BUILD_ID__ = 'ATX-v3.107';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

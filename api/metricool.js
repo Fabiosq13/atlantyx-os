@@ -224,6 +224,56 @@ function _corpoPostMc(fonte, extra) {
   c.text = c.text ?? ''; c.draft = false; if (c.autoPublish === undefined) c.autoPublish = true;
   return Object.assign(c, extra || {});
 }
+// v3.106: INSTAGRAM → "LINK NA BIO". No feed do Instagram o link escrito na legenda não é clicável; o fundador
+// decidiu tirar o link fixo dos posts e mandar para a bio. Remove dos posts agendados do Instagram as linhas com
+// link (página de captura, /agenda, /reuniao, agenda do HubSpot, qualquer URL) e a chamada da oferta, e fecha com
+// UMA chamada para a bio. Posts que também vão para LinkedIn/Facebook (mesmo texto) não são mexidos — lá o link
+// é clicável; eles são listados à parte. aplicar:false só lista.
+const TEXTO_BIO_IG = '🔗 Link na bio → agende uma conversa com a nossa equipe.';
+function _igParaBio(txt) {
+  const reUrl = /(https?:\/\/\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:app|com|cool|ly|io|br|net|org)\/\S*)/i;
+  let n = 0;
+  const linhas = String(txt || '').split('\n').filter(l => { const x = l.trim();
+    const tira = reUrl.test(x) || /^🎁\s*Peça seu diagn[oó]stico/i.test(x) || /^👉\s*$/.test(x) || /link na bio/i.test(x) || /diagn[oó]stico gratuito de dados e IA:?\s*$/i.test(x);
+    if (tira && !/link na bio/i.test(x)) n++; return !tira; });
+  const base = linhas.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  // hashtags ficam no fim: a chamada entra antes delas
+  const m = base.match(/\n\s*((?:#[\p{L}\p{N}_]+\s*)+)$/u);
+  const corpo = m ? base.substring(0, m.index).trim() : base, tags = m ? m[1].trim() : '';
+  return { texto: corpo + '\n\n' + TEXTO_BIO_IG + (tags ? '\n\n' + tags : ''), n };
+}
+async function instagramParaBio({ aplicar = false, ids = null, blog_id, dias = 90 } = {}) {
+  const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
+  if (!TOKEN || !USERID || !BLOGID) throw new Error('Credenciais do Metricool ausentes');
+  const agora = new Date(Date.now() + 10 * 60000), fim = new Date(Date.now() + dias * 864e5), f = d => d.toISOString().substring(0, 10);
+  const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${f(agora)}T00:00:00&end=${f(fim)}T23:59:59&timezone=America/Sao_Paulo`, TOKEN);
+  const lista = (Array.isArray(r) ? r : (r?.data || [])).filter(p => { const dt = new Date(String(p.publicationDate?.dateTime || p.publicationDate || '').substring(0, 19) + '-03:00'); return !isNaN(dt) && dt > agora && !p.published; });
+  const itens = [], mistos = [];
+  for (const p of lista) {
+    const provs = p.providers || []; const redes = provs.map(x => String(x.network || '').toLowerCase());
+    if (!redes.includes('instagram')) continue;
+    if (provs.some(x => x?.data?.postType === 'STORY')) continue;
+    const a = _igParaBio(p.text), c = p.firstCommentText ? _igParaBio(p.firstCommentText) : { n: 0 };
+    if (!a.n && !c.n) continue;
+    const it = { id: p.id, data: String(p.publicationDate?.dateTime || p.publicationDate).substring(0, 16), redes, texto: String(p.text || '').substring(0, 80), links: a.n + c.n };
+    if (redes.some(x => x !== 'instagram')) { mistos.push(it); continue; }
+    itens.push({ ...it, _p: p });
+  }
+  const alvo = Array.isArray(ids) && ids.length ? itens.filter(i => ids.map(String).includes(String(i.id))) : itens;
+  if (!aplicar) return { total_agendados: lista.length, instagram_com_link: itens.length, itens: itens.map(({ _p, ...x }) => x), mistos, texto_bio: TEXTO_BIO_IG };
+  const feitos = [], falhas = [];
+  for (const it of alvo) {
+    try {
+      let atual = null; try { const g = await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN); atual = g?.data || g?.post || g; if (!atual?.providers) atual = null; } catch (_) {}
+      const fonte = atual || it._p;
+      const extra = { text: _igParaBio(fonte.text).texto, shortener: false };
+      if (fonte.firstCommentText) { const fc = _igParaBio(fonte.firstCommentText); extra.firstCommentText = fc.n ? fc.texto.replace('\n\n' + TEXTO_BIO_IG, '').trim() : fonte.firstCommentText; }
+      const novoId = await _recriarSemDuplicar(it.id, _corpoPostMc(fonte, extra), { USERID, BLOGID, TOKEN });
+      feitos.push({ id_antigo: it.id, id_novo: novoId, data: it.data });
+    } catch (e) { falhas.push({ id: it.id, data: it.data, erro: e.message.substring(0, 200) }); }
+  }
+  return { trocados: feitos.length, feitos, falhas };
+}
 async function trocarLinkAgendados({ aplicar = false, ids = null, blog_id, dias = 60, adicionar = false } = {}, req) {
   const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
   if (!TOKEN || !USERID || !BLOGID) throw new Error('Credenciais do Metricool ausentes');
@@ -274,7 +324,7 @@ async function trocarLinkAgendados({ aplicar = false, ids = null, blog_id, dias 
       const redes = provs.map(x => String(x.network || '').toLowerCase()); const soIg = redes.length && redes.every(r => r === 'instagram');
       const redeUtm = redes.find(r => r !== 'instagram') || 'instagram';
       const link = soIg ? base.replace(/^https?:\/\//, '') + '/agenda' : base + '/captura.html?r=' + encodeURIComponent(reuniao) + '&utm_source=' + redeUtm + '&utm_medium=social&utm_campaign=agendado_sem_link';
-      const novoTxt = String(p.text || '').replace(/\s+$/, '') + '\n\n🎁 Peça seu diagnóstico gratuito de dados e IA:' + (soIg ? ' ' : '\n') + link;
+      const novoTxt = soIg ? _igParaBio(p.text).texto : String(p.text || '').replace(/\s+$/, '') + '\n\n🎁 Agende uma conversa gratuita com a Atlantyx:\n' + link; // v3.106: Instagram → link na bio
       itens.push({ id: p.id, data: String(p.publicationDate?.dateTime || p.publicationDate).substring(0, 16), redes, trocas: 1, texto: String(p.text || '').substring(0, 80), _p: p, _novo: novoTxt }); }
   }
   for (const p of (adicionar ? [] : lista)) {
@@ -1102,6 +1152,7 @@ async function handler(req, res) {
     republicar_falhas:      () => republicarFalhas(payload, req), // v3.70
     trocar_link_agendados:  () => trocarLinkAgendados(payload, req), // v3.71
     remover_duplicados:     () => removerDuplicados(payload), // v3.80
+    instagram_para_bio:     () => instagramParaBio(payload, req), // v3.106
     story_texto:            () => storyTexto(payload),
     autocampanha_agendar_um:() => autoCampanhaAgendarUm(payload),
     fila_enfileirar:        () => filaEnfileirar(payload),
