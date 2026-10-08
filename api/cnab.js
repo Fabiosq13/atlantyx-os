@@ -230,15 +230,21 @@ function trailerArquivo(emp, qtdLotes, qtdRegistros) {
 // ═══════════════════════════════════════════════════════════════════════════
 async function pagamentosDisponiveis({ data_inicio, data_fim } = {}) {
   const sql = await getSql();
-  const hoje = new Date().toISOString().split('T')[0];
-  const ini = data_inicio || hoje;
+  // v3.109: hoje em Brasília e janela que começa 90 dias atrás — antes começava hoje (UTC) e o vencido não pago nunca aparecia
+  const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const ini = data_inicio || new Date(Date.now() - 90 * 864e5).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
   const fim = data_fim || new Date(new Date(hoje).getFullYear(), new Date(hoje).getMonth() + 1, 0).toISOString().split('T')[0];
   const rows = await sql`SELECT o.id, o.data_prevista, o.valor, o.status, o.despesa_id,
       d.descricao, d.fornecedor, d.forn_cnpj_cpf, d.forn_banco, d.forn_agencia, d.forn_conta,
       d.forn_conta_dac, d.forn_tipo_conta, d.forn_codigo_barras, d.forma_pagamento
     FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
-    WHERE o.status != 'paga' AND o.data_prevista >= ${ini} AND o.data_prevista <= ${fim}
+    WHERE o.status NOT IN ('paga', 'cancelada') AND o.data_prevista >= ${ini} AND o.data_prevista <= ${fim}
     ORDER BY o.data_prevista ASC`;
+  // v3.109: o que já foi para uma remessa (evita pagar duas vezes)
+  const jaRem = {};
+  try { (await sql`SELECT id, arquivo_nome, criado_em, ocorrencias_ids FROM cnab_remessas ORDER BY criado_em DESC LIMIT 200`).forEach(r => {
+    let ids = r.ocorrencias_ids; if (typeof ids === 'string') { try { ids = JSON.parse(ids); } catch (_) { ids = []; } }
+    (ids || []).forEach(i => { if (!jaRem[i]) jaRem[i] = { arquivo: r.arquivo_nome, em: r.criado_em }; }); }); } catch (_) {}
   return {
     pagamentos: rows.map(r => {
       const forma = r.forma_pagamento || (r.forn_codigo_barras ? '30' : (r.forn_banco === '341' ? '01' : '41'));
@@ -248,7 +254,8 @@ async function pagamentosDisponiveis({ data_inicio, data_fim } = {}) {
       if (forma === '30') { if (!r.forn_codigo_barras) faltando.push('código de barras'); }
       else { if (!r.forn_banco) faltando.push('banco'); if (!r.forn_agencia) faltando.push('agência'); if (!r.forn_conta) faltando.push('conta'); }
       return { ...r, data_prevista: String(r.data_prevista).split('T')[0], valor: parseFloat(r.valor) || 0,
-        forma_pagamento: forma, pronto: faltando.length === 0, faltando };
+        forma_pagamento: forma, pronto: faltando.length === 0, faltando,
+        vencido: String(r.data_prevista).split('T')[0] < hoje, ja_em_remessa: jaRem[r.id] || null };
     }),
     periodo: { data_inicio: ini, data_fim: fim },
   };
@@ -266,13 +273,15 @@ async function dadosBancariosSalvar(p = {}) {
   return { salvo: true };
 }
 
-async function gerarRemessa({ ocorrencias_ids = [], data_pagamento } = {}) {
+async function gerarRemessa({ ocorrencias_ids = [], data_pagamento, repetir = false } = {}) {
   if (!ocorrencias_ids.length) throw new Error('Selecione ao menos um pagamento');
   const emp = empresaPagadora();
   const sql = await getSql();
   const { pagamentos } = await pagamentosDisponiveis({ data_inicio: '2000-01-01', data_fim: '2099-12-31' });
   const selecionados = pagamentos.filter(p => ocorrencias_ids.includes(p.id));
   if (!selecionados.length) throw new Error('Nenhum pagamento encontrado com os ids informados');
+  const repetidos = selecionados.filter(p => p.ja_em_remessa);
+  if (repetidos.length && !repetir) { const e = new Error(`${repetidos.length} pagamento(s) já estão em remessa gerada antes: ` + repetidos.map(p => `${p.descricao || p.fornecedor} (${p.ja_em_remessa.arquivo})`).join(' · ')); e.status = 409; e.hint = 'Confirme que a remessa anterior NÃO foi enviada ao banco antes de gerar de novo (risco de pagar duas vezes).'; throw e; }
   const semDados = selecionados.filter(p => !p.pronto);
   if (semDados.length) {
     const err = new Error(`${semDados.length} pagamento(s) sem dados bancários completos: ` +

@@ -3194,8 +3194,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div id="fdStatus" style="display:none;margin-bottom:10px;"></div>
   <div class="kg k4" style="margin-bottom:12px;">
     <div class="kpi bl"><div class="kl" id="fd_saldoHojeLabel">Saldo inicial</div><div class="kv" id="fd_saldoHoje">—</div><div class="ks" id="fd_saldoHojeSub">saldo contabil na data inicial</div></div>
-    <div class="kpi gn"><div class="kl">A receber (futuro real, QB)</div><div class="kv" id="fd_receber">—</div><div class="ks" id="fd_receberSub">—</div></div>
-    <div class="kpi rd"><div class="kl">A pagar (futuro real, QB+Atlantyx)</div><div class="kv" id="fd_pagar">—</div><div class="ks" id="fd_pagarSub">—</div></div>
+    <div class="kpi gn"><div class="kl">Entradas no período (recebido + previsto)</div><div class="kv" id="fd_receber">—</div><div class="ks" id="fd_receberSub">—</div></div>
+    <div class="kpi rd"><div class="kl">Saídas no período (pago + a pagar)</div><div class="kv" id="fd_pagar">—</div><div class="ks" id="fd_pagarSub">—</div></div>
     <div class="kpi pu"><div class="kl">Saldo projetado final</div><div class="kv" id="fd_saldoFinal">—</div><div class="ks" id="fd_saldoFinalSub">até onde há dados</div></div>
   </div>
   <div id="fd_menorSaldo" style="display:none;margin-bottom:12px;"></div>
@@ -3205,7 +3205,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div class="pb" style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:700px;">
         <thead><tr style="border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">DATA</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">DESCRIÇÃO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">CATEGORIA</th><th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">VALOR</th><th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">SALDO ACUM.</th><th style="width:34px;"></th></tr></thead>
-        <tbody id="fd_tbodyPassado"><tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Carregando...</td></tr></tbody>
+        <tbody id="fd_tbodyPassado"><tr><td colspan="6" style="text-align:center;padding:20px;color:var(--t3);">Carregando...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -3214,8 +3214,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div class="ph"><div class="pt">📘 Projetado — a partir de hoje (lançamento a lançamento)</div><span class="tag off" id="fd_tagFuturo">Carregando</span></div>
     <div class="pb" style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:700px;">
-        <thead><tr style="border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">DATA</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">DESCRIÇÃO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">CATEGORIA / FONTE</th><th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">VALOR</th><th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">SALDO PROJETADO</th></tr></thead>
-        <tbody id="fd_tbodyFuturo"><tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Carregando...</td></tr></tbody>
+        <thead><tr style="border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">DATA</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">DESCRIÇÃO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">CATEGORIA / FONTE</th><th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">VALOR</th><th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">SALDO PROJETADO</th><th style="width:60px;"></th></tr></thead>
+        <tbody id="fd_tbodyFuturo"><tr><td colspan="6" style="text-align:center;padding:20px;color:var(--t3);">Carregando...</td></tr></tbody>
       </table>
     </div>
     <div style="padding:10px 14px;font-size:9.5px;color:var(--t3);border-top:1px solid var(--bd);">Fonte "QuickBooks" = faturas (Invoice) e contas (Bill) em aberto reais, pela data de vencimento. Fonte "Atlantyx" = despesas programadas e lançamentos simulados futuros cadastrados no sistema. O projetado vai até onde houver dado — sem limite fixo de meses.</div>
@@ -4548,7 +4548,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div class="page" id="page-s3realizado">
     <div class="panel">
       <div class="ph"><div class="pt">Receita Realizada — QuickBooks</div><span class="tag off" id="qbRealTag">Aguardando</span>
-        <button class="btn btn-gn" id="btnQBReal" onclick="syncQuickBooks()" style="font-size:9px;padding:3px 8px;">&#8635; Sync QB</button>
+        <button class="btn btn-gn" id="btnQBReal" onclick="carregarRealizado(true)" style="font-size:9px;padding:3px 8px;">&#8635; Atualizar</button>
         <button class="btn btn-g" onclick="gerarAnaliseFin()" style="font-size:9px;padding:3px 8px;">&#9670; Analisar com IA</button>
       </div>
       <div class="pb">
@@ -4557,7 +4557,22 @@ tr:hover td{background:rgba(79,124,255,.03);}
         </div>
         <div style="display:flex;gap:8px;margin-bottom:10px;"><button class="btn" style="font-size:10px;" onclick="diagnosticoQB('qbDiagRealizado')">&#128269; Diagnóstico QuickBooks (empresa, contagens, datas com dados)</button></div>
         <div id="qbDiagRealizado"></div>
-        <div id="f_realTable"><div style="color:var(--t3);font-size:11px;text-align:center;padding:24px;">Sincronize o QuickBooks para ver os lancamentos realizados</div></div>
+        <!-- v3.109: filtros e indicadores próprios desta tela (antes ela não mostrava nada — o código escrevia em outra tela) -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;">
+          <div><label class="fl">Mês</label><select class="fsel" id="real_mes" style="width:auto;" onchange="carregarRealizado()"><option value="">Ano inteiro</option></select></div>
+          <div><label class="fl">Ano</label><select class="fsel" id="real_ano" style="width:auto;" onchange="carregarRealizado()"></select></div>
+          <div class="seg" id="real_tipoSeg"><button data-t="" class="on" onclick="_realTipo('')">Todos</button><button data-t="entrada" onclick="_realTipo('entrada')">💚 Entradas</button><button data-t="saida" onclick="_realTipo('saida')">🔴 Saídas</button></div>
+          <input type="search" class="fi" id="real_busca" style="max-width:260px;margin:0;font-size:11px;" placeholder="🔎 descrição, cliente, categoria" oninput="_realRender()"/>
+        </div>
+        <div class="kg k4" style="margin-bottom:10px;">
+          <div class="kpi gn"><div class="kl">Receita (DRE) no período</div><div class="kv" id="real_kRec">—</div><div class="ks" id="real_kRecSub">competência · QuickBooks</div></div>
+          <div class="kpi rd"><div class="kl">Despesas (DRE) no período</div><div class="kv" id="real_kDesp">—</div><div class="ks" id="real_kDespSub">competência · QuickBooks</div></div>
+          <div class="kpi bl"><div class="kl">Entradas de caixa</div><div class="kv" id="real_kEnt">—</div><div class="ks">recebido no período</div></div>
+          <div class="kpi pu"><div class="kl">Saídas de caixa</div><div class="kv" id="real_kSai">—</div><div class="ks">pago no período</div></div>
+        </div>
+        <div id="real_resumo" style="font-size:10.5px;color:var(--t2);margin-bottom:6px;"></div>
+        <div id="f_realTable"><div style="color:var(--t3);font-size:11px;text-align:center;padding:24px;">Carregando…</div></div>
+        <div id="s3AnaliseSaida" style="margin-top:12px;"></div>
       </div>
     </div>
   </div>
@@ -4565,20 +4580,24 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- S3 PROJETADO -->
   <div class="page" id="page-s3projetado">
     <div class="panel">
-      <div class="ph"><div class="pt">Receita Projetada — Contratos + Projetos em Andamento</div><span class="tag on">Claude IA</span>
+      <div class="ph"><div class="pt">Receita Projetada — Contratos + Projetos em Andamento</div><span class="tag on">dados reais</span>
         <select class="fsel contaFiltro" id="s3projetado_conta" style="font-size:11px;width:auto;max-width:200px;" onchange="gerarProjetado()"><option value="">Todas as contas</option></select>
-      <button class="btn btn-gn" id="btnProj" onclick="gerarProjetado()" style="font-size:9px;padding:3px 8px;">&#9670; Gerar Projecao</button>
+      <button class="btn btn-gn" id="btnProj" onclick="gerarProjetado()" style="font-size:9px;padding:3px 8px;">&#8635; Atualizar</button>
+      <button class="btn btn-g" id="btnProjIA" onclick="projAnaliseIA()" style="font-size:9px;padding:3px 8px;">&#9670; Comentário da IA</button>
       </div>
       <div class="pb">
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
-          <div class="fg" style="margin:0;"><label class="fl">Contratos Assinados (valor total)</label><input class="fi" id="f_contratos" type="text" placeholder="Ex: R$500k"/></div>
-          <div class="fg" style="margin:0;"><label class="fl">Projetos em Andamento (valor)</label><input class="fi" id="f_projetos" type="text" placeholder="Ex: R$300k"/></div>
-          <div class="fg" style="margin:0;"><label class="fl">Propostas Enviadas (valor)</label><input class="fi" id="f_propostas" type="text" placeholder="Ex: R$1.2M"/></div>
-          <div class="fg" style="margin:0;"><label class="fl">Probabilidade Fechamento (%)</label><input class="fi" id="f_probFech" type="text" placeholder="Ex: 28%"/></div>
-          <div class="fg" style="margin:0;"><label class="fl">Receita Recorrente Mensal (MRR)</label><input class="fi" id="f_mrr" type="text" placeholder="Ex: R$0"/></div>
-          <div class="fg" style="margin:0;"><label class="fl">Churn mensal estimado (%)</label><input class="fi" id="f_churn" type="text" placeholder="Ex: 3%"/></div>
+          <!-- v3.109: a base vem dos DADOS REAIS (faturas em aberto, previsão dos marcos, contratos/recorrentes do fluxo de 12 meses);
+               os campos abaixo só acrescentam o que ainda não está no sistema (propostas e novo MRR) -->
+          <div class="fg" style="margin:0;"><label class="fl">Propostas enviadas (valor total)</label><input class="fi" id="f_propostas" type="text" placeholder="ex.: 1.200.000" oninput="_projRender()"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Probabilidade de fechamento (%)</label><input class="fi" id="f_probFech" type="text" value="30" oninput="_projRender()"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Propostas entram em (meses)</label><input class="fi" id="f_projPrazo" type="text" value="3" title="A receita das propostas fechadas é distribuída igualmente a partir deste mês, por 6 meses" oninput="_projRender()"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Novo MRR a partir do próximo mês</label><input class="fi" id="f_mrr" type="text" placeholder="ex.: 50.000" oninput="_projRender()"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Churn mensal (%)</label><input class="fi" id="f_churn" type="text" value="0" oninput="_projRender()"/></div>
+          <div class="fg" style="margin:0;"><label class="fl">Meta de receita mensal</label><input class="fi" id="f_projMeta" type="text" value="1.500.000" oninput="_projRender()"/></div>
         </div>
-        <div id="f_projetadoResult"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Preencha os dados e clique em Gerar Projecao</div></div>
+        <div id="f_projetadoResult"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando a projeção…</div></div>
+        <div id="f_projetadoIA" style="margin-top:12px;"></div>
       </div>
     </div>
   </div>
@@ -4613,6 +4632,14 @@ tr:hover td{background:rgba(79,124,255,.03);}
           <div class="kpi rd"><div class="kl">Vencido</div><div class="kv" id="f_vencido">R$0</div></div>
           <div class="kpi bl"><div class="kl">A Vencer (30d)</div><div class="kv" id="f_aVencer">R$0</div></div>
         </div>
+        <!-- v3.109: filtros que fazem sentido aqui (cliente, situação, vencimento) — o filtro de conta bancária não fazia nada -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;">
+          <input type="search" class="fi" id="rec_fCliente" style="max-width:240px;margin:0;font-size:11px;" placeholder="🔎 cliente ou nº da fatura" oninput="renderReceberTable()"/>
+          <select class="fsel" id="rec_fStatus" style="width:auto;font-size:11px;" onchange="renderReceberTable()"><option value="">Todas as situações</option><option value="vencido">Vencidos</option><option value="alerta">Vencem em até 7 dias</option><option value="ok">Em dia</option></select>
+          <label style="font-size:10px;color:var(--t2);">vencimento até <input type="date" class="fsel" id="rec_fAte" style="width:auto;font-size:11px;" onchange="renderReceberTable()"/></label>
+          <button class="btn" style="font-size:10px;" onclick="['rec_fCliente','rec_fStatus','rec_fAte'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});renderReceberTable()">✕</button>
+          <span id="rec_fResumo" style="font-size:10.5px;color:var(--t2);margin-left:auto;"></span>
+        </div>
         <div id="f_receberTable"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Sincronize o QuickBooks para ver contas a receber</div></div>
         <!-- Lancamento manual enquanto QB nao configurado -->
         <div style="border-top:1px solid var(--bd);padding-top:12px;margin-top:8px;">
@@ -4621,7 +4648,6 @@ tr:hover td{background:rgba(79,124,255,.03);}
             <div class="fg" style="margin:0;"><label class="fl">Cliente</label><input class="fi" id="f_recCliente" placeholder="Nome do cliente"/></div>
             <div class="fg" style="margin:0;"><label class="fl">Valor</label><input class="fi" id="f_recValor" placeholder="R$X"/></div>
             <div class="fg" style="margin:0;"><label class="fl">Vencimento</label><input class="fi" id="f_recVenc" placeholder="DD/MM/AAAA"/></div>
-            <select class="fsel contaFiltro" id="s3receber_conta" style="font-size:11px;width:auto;max-width:200px;" onchange="syncReceberQB()"><option value="">Todas as contas</option></select>
       <button class="btn btn-gn" style="margin-bottom:10px;" onclick="addReceber()">+ Adicionar</button>
           </div>
         </div>
@@ -5677,7 +5703,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   } catch (_) {}
 });
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s0usuarios:'/ Acesso · Usuários × Perfil',s0perfis:'/ Acesso · Perfis',s0telas:'/ Acesso · Telas',s0perfiltelas:'/ Acesso · Perfil × Telas',s0demandas:'/ S0 · Esteira de Demandas IA',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9agenda:'/ S9 · Agenda do GP',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1bp:'/ S1 · Business Plan',qa:'/ Agente de QA e Segurança',s1fundador:'/ S1 · Inbox do Fundador',s1comercial:'/ S1 · Politica Comercial',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7clientes:'/ S7 · Clientes do CRM',s7mapa:'/ S7 · Mapa de Atuacao Comercial',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7feed:'/ S7 · Feed de Prospeccao',s7cartao:'/ S7 · Meu Cartao Digital',s7kpi:'/ S7 Metas',s7painel:'/ S7 · Painel de Vendas IA',s7propostas:'/ S7 · Elaboração de Propostas',s5contratos:'/ S5 · Análise de Contratos',s3kpis:'/ S3 · KPIs de Saúde Financeira',s4crm:'/ S4 · Vendas CRM — Metas e Pipeline',s5juridico:'/ S5 · Jurídico e Compliance',s6dev:'/ S6 · Desenvolvimento, QA e Versões',s6qa:'/ S6 · Agente de QA Visual',s8rh:'/ S8 · Departamento Pessoal',s9projetos:'/ S9 · Gestão de Projetos',s10atend:'/ S10 · Atendimento Omnichannel',s11sales:'/ S11 · Inside Sales + SDR',s12hub:'/ S12 · Engenharia de Dados',s12novo:'/ S12 · Novo Projeto de Dados',s12modelagem:'/ S12 · Modelagem DW + Data Marts',s13hub:'/ S13 · Dashboard Studio',s13novo:'/ S13 · Novo Dashboard',s13mockup:'/ S13 · Mockup Interativo',s13codigo:'/ S13 · Código do Dashboard'};document.getElementById('tbc').textContent=lb[p]||(pg?'/ '+((pg.querySelector('[style*="font-family:var(--H)"]')||pg.querySelector('.pt')||{}).textContent||'').trim().substring(0,60):'');if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7pipe'||p==='dash')loadKPIs();if(p==='dash')setTimeout(_dashRfpCache,200);if(p==='dash')setTimeout(()=>{try{carregarRecAlertaDash();}catch(_){}},250);if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7clientes')setTimeout(carregarClientes,150);if(p==='s1comercial')setTimeout(comCarregar,150);if(p==='s7kpi')setTimeout(carregarSemaforoComercial,150);if(p==='s7feed')setTimeout(feedListar,150);if(p==='s7cartao')setTimeout(cartaoCarregar,150);if(p==='s7meet')setTimeout(carregarBriefings,150);if(p==='s7mapa')setTimeout(_mpPopularClientes,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();/* v3.94: s2wa não chama mais o agente ao abrir (10s+); só no clique em "Gerar mensagens" */if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s2social')setTimeout(_smCarregarMetricas,150);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(syncQuickBooks,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9agenda')setTimeout(carregarAgendaGP,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{syncQuickBooks();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);if(p==='s1bp'){setTimeout(bpInit,150);if(_bpAba==='atlantyx')setTimeout(()=>{_bpAtxCarregado=_bpAtxCarregado&&!!_bpAtual;bpAtlantyx();},200);}if(p==='qa')setTimeout(qaAbrir,50);if(p==='s0demandas')setTimeout(demandasAbrir,50);if(/^s0(usuarios|perfis|telas|perfiltelas)$/.test(p))setTimeout(()=>acessoAbrir(p),30);if(p==='s7painel'||p==='s7propostas')setTimeout(()=>vendasAbrir(p),50);if(p==='s2auto')setTimeout(_acCtaInit,80);if(p==='s5contratos')setTimeout(juridicoAbrir,50);if(p==='s1dados')setTimeout(s1DadosStatus,80);if(/^s1(dash|intel|plano|acoes|cenarios|okr|relatorio|riscos|financeiro|mercado|dados)$/.test(p))setTimeout(s1HistBotoes,60);if(p==='s2rfps'){window._rfpSoCache=true;setTimeout(runRfpMonitorAtualizado,150);}}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s0usuarios:'/ Acesso · Usuários × Perfil',s0perfis:'/ Acesso · Perfis',s0telas:'/ Acesso · Telas',s0perfiltelas:'/ Acesso · Perfil × Telas',s0demandas:'/ S0 · Esteira de Demandas IA',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9agenda:'/ S9 · Agenda do GP',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1bp:'/ S1 · Business Plan',qa:'/ Agente de QA e Segurança',s1fundador:'/ S1 · Inbox do Fundador',s1comercial:'/ S1 · Politica Comercial',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7clientes:'/ S7 · Clientes do CRM',s7mapa:'/ S7 · Mapa de Atuacao Comercial',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7feed:'/ S7 · Feed de Prospeccao',s7cartao:'/ S7 · Meu Cartao Digital',s7kpi:'/ S7 Metas',s7painel:'/ S7 · Painel de Vendas IA',s7propostas:'/ S7 · Elaboração de Propostas',s5contratos:'/ S5 · Análise de Contratos',s3kpis:'/ S3 · KPIs de Saúde Financeira',s4crm:'/ S4 · Vendas CRM — Metas e Pipeline',s5juridico:'/ S5 · Jurídico e Compliance',s6dev:'/ S6 · Desenvolvimento, QA e Versões',s6qa:'/ S6 · Agente de QA Visual',s8rh:'/ S8 · Departamento Pessoal',s9projetos:'/ S9 · Gestão de Projetos',s10atend:'/ S10 · Atendimento Omnichannel',s11sales:'/ S11 · Inside Sales + SDR',s12hub:'/ S12 · Engenharia de Dados',s12novo:'/ S12 · Novo Projeto de Dados',s12modelagem:'/ S12 · Modelagem DW + Data Marts',s13hub:'/ S13 · Dashboard Studio',s13novo:'/ S13 · Novo Dashboard',s13mockup:'/ S13 · Mockup Interativo',s13codigo:'/ S13 · Código do Dashboard'};document.getElementById('tbc').textContent=lb[p]||(pg?'/ '+((pg.querySelector('[style*="font-family:var(--H)"]')||pg.querySelector('.pt')||{}).textContent||'').trim().substring(0,60):'');if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7pipe'||p==='dash')loadKPIs();if(p==='dash')setTimeout(_dashRfpCache,200);if(p==='dash')setTimeout(()=>{try{carregarRecAlertaDash();}catch(_){}},250);if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7clientes')setTimeout(carregarClientes,150);if(p==='s1comercial')setTimeout(comCarregar,150);if(p==='s7kpi')setTimeout(carregarSemaforoComercial,150);if(p==='s7feed')setTimeout(feedListar,150);if(p==='s7cartao')setTimeout(cartaoCarregar,150);if(p==='s7meet')setTimeout(carregarBriefings,150);if(p==='s7mapa')setTimeout(_mpPopularClientes,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();/* v3.94: s2wa não chama mais o agente ao abrir (10s+); só no clique em "Gerar mensagens" */if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s2social')setTimeout(_smCarregarMetricas,150);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(carregarRealizado,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9agenda')setTimeout(carregarAgendaGP,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{carregarRealizado();}catch(_){}},150);if(p==='s3projetado')setTimeout(()=>{try{gerarProjetado();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);if(p==='s1bp'){setTimeout(bpInit,150);if(_bpAba==='atlantyx')setTimeout(()=>{_bpAtxCarregado=_bpAtxCarregado&&!!_bpAtual;bpAtlantyx();},200);}if(p==='qa')setTimeout(qaAbrir,50);if(p==='s0demandas')setTimeout(demandasAbrir,50);if(/^s0(usuarios|perfis|telas|perfiltelas)$/.test(p))setTimeout(()=>acessoAbrir(p),30);if(p==='s7painel'||p==='s7propostas')setTimeout(()=>vendasAbrir(p),50);if(p==='s2auto')setTimeout(_acCtaInit,80);if(p==='s5contratos')setTimeout(juridicoAbrir,50);if(p==='s1dados')setTimeout(s1DadosStatus,80);if(/^s1(dash|intel|plano|acoes|cenarios|okr|relatorio|riscos|financeiro|mercado|dados)$/.test(p))setTimeout(s1HistBotoes,60);if(p==='s2rfps'){window._rfpSoCache=true;setTimeout(runRfpMonitorAtualizado,150);}}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -9111,32 +9137,58 @@ async function gerarAnaliseFin() {
   }
 }
 
+// v3.109: projeção DETERMINÍSTICA a partir do Fluxo de 12 meses (mesma base do sistema) + propostas e novo MRR informados.
+// Antes: texto livre da IA, com 3 dos 6 campos ignorados, meta fixa e o filtro de conta sem efeito.
+let _projBase = null;
 async function gerarProjetado() {
-  popularSeletoresConta(); // v1.75
-  const btn = document.getElementById('btnProj');
-  if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
-  const contratos = document.getElementById('f_contratos')?.value || '0';
-  const propostas = document.getElementById('f_propostas')?.value || '0';
-  const mrr = document.getElementById('f_mrr')?.value || '0';
-  const metaMensal = 1500000;
-  addLog('info', '[S3] Gerando projecao financeira...');
+  popularSeletoresConta();
+  const btn = document.getElementById('btnProj'); if (btn) { btn.disabled = true; btn.textContent = 'Carregando…'; }
+  const el = document.getElementById('f_projetadoResult');
   try {
-    const r = await fetch('/api/s1-strategy', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ action: 'analise_financeira', payload: {
-        acao: 'projecao_receita',
-        dados: { contratos, propostas, mrr, meta_mensal: metaMensal, empresa: 'Atlantyx' }
-      }})
-    });
-    const d = await r.json();
-    const txt = d.content || d.resultado || 'Projecao gerada.';
-    const el = document.getElementById('f_projetadoResult');
-    if (el) el.innerHTML = '<div style="font-size:12px;line-height:1.8;white-space:pre-wrap;">' + txt + '</div>';
-    addLog('ok', '[S3] Projecao gerada');
-  } catch(e) {
-    addLog('err', '[S3] Erro projecao: ' + e.message);
-  }
-  if (btn) { btn.disabled = false; btn.textContent = 'Gerar Projecao'; }
+    const d = await finApi('fluxo_futuro', { meses: 12, conta_id: document.getElementById('s3projetado_conta')?.value || null });
+    _projBase = d; _projRender();
+  } catch (e) { if (el) el.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Não consegui ler o fluxo de 12 meses: ' + String(e.message).replace(/</g, '&lt;') + '</div>'; }
+  if (btn) { btn.disabled = false; btn.innerHTML = '&#8635; Atualizar'; }
+}
+function _projCalc() {
+  const d = _projBase; if (!d) return null; const L = d.linhas || {}; const meses = d.meses || [];
+  const v = id => _numBR(document.getElementById(id)?.value || '0');
+  const prop = v('f_propostas'), prob = Math.min(100, Math.max(0, v('f_probFech'))) / 100, prazo = Math.max(0, Math.round(v('f_projPrazo'))), mrr = v('f_mrr'), churn = Math.min(100, Math.max(0, v('f_churn'))) / 100, meta = v('f_projMeta');
+  const pipeMes = prop * prob / 6; let mrrAtual = mrr;
+  return { meta, linhas: meses.map((m, i) => {
+    const qb = L['+ A Receber QB']?.[m] || 0, marcos = L['+ Receita Prevista (marcos)']?.[m] || 0, rec = L['+ Receita Recorrente (MRR)']?.[m] || 0, outras = (L['+ Outras Entradas Simuladas']?.[m] || 0);
+    const pipe = i >= prazo && i < prazo + 6 ? pipeMes : 0;
+    let novoMrr = 0; if (i >= 1 && mrr) { novoMrr = mrrAtual; mrrAtual = mrrAtual * (1 - churn); }
+    const total = qb + marcos + rec + outras + pipe + novoMrr;
+    return { m, qb, marcos, rec, outras, pipe, novoMrr, total, base: qb + marcos + rec + outras };
+  }) };
+}
+function _projRender() {
+  const el = document.getElementById('f_projetadoResult'); const c = _projCalc(); if (!el || !c) return;
+  const R = v => v ? fmtBRLcompleto(v) : '—'; const nm = m => { const [a, mm] = m.split('-'); return ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][+mm - 1] + '/' + a.slice(2); };
+  const tot = k => c.linhas.reduce((a, x) => a + x[k], 0);
+  const acima = c.linhas.filter(x => c.meta && x.total >= c.meta).length;
+  el.innerHTML = '<div class="kg k4" style="margin-bottom:10px;">'
+    + '<div class="kpi gn"><div class="kl">Receita projetada 12 meses</div><div class="kv">' + fmtBRLcompleto(tot('total')) + '</div><div class="ks">média ' + fmtBRLcompleto(tot('total') / (c.linhas.length || 1)) + '/mês</div></div>'
+    + '<div class="kpi bl"><div class="kl">Já no sistema</div><div class="kv">' + fmtBRLcompleto(tot('base')) + '</div><div class="ks">faturas, marcos, recorrentes</div></div>'
+    + '<div class="kpi pu"><div class="kl">Propostas + novo MRR</div><div class="kv">' + fmtBRLcompleto(tot('pipe') + tot('novoMrr')) + '</div><div class="ks">ponderado pela probabilidade</div></div>'
+    + '<div class="kpi rd"><div class="kl">Meses na meta</div><div class="kv">' + (c.meta ? acima + ' de ' + c.linhas.length : '—') + '</div><div class="ks">meta ' + (c.meta ? fmtBRLcompleto(c.meta) + '/mês' : 'não definida') + '</div></div></div>'
+    + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:760px;"><thead><tr style="color:var(--t2);font-family:var(--M);font-size:9px;text-transform:uppercase;border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:6px;">Mês</th><th style="text-align:right;padding:6px;">Faturas em aberto</th><th style="text-align:right;padding:6px;">Marcos previstos</th><th style="text-align:right;padding:6px;">Recorrente</th><th style="text-align:right;padding:6px;">Simulados</th><th style="text-align:right;padding:6px;">Propostas (pond.)</th><th style="text-align:right;padding:6px;">Novo MRR</th><th style="text-align:right;padding:6px;">Total</th><th style="text-align:right;padding:6px;">vs meta</th></tr></thead><tbody>'
+    + c.linhas.map(x => '<tr style="border-bottom:1px solid var(--bd);"><td style="padding:6px;font-weight:600;">' + nm(x.m) + '</td><td style="padding:6px;text-align:right;font-family:var(--M);">' + R(x.qb) + '</td><td style="padding:6px;text-align:right;font-family:var(--M);">' + R(x.marcos) + '</td><td style="padding:6px;text-align:right;font-family:var(--M);">' + R(x.rec) + '</td><td style="padding:6px;text-align:right;font-family:var(--M);">' + R(x.outras) + '</td><td style="padding:6px;text-align:right;font-family:var(--M);color:var(--blue);">' + R(x.pipe) + '</td><td style="padding:6px;text-align:right;font-family:var(--M);color:var(--blue);">' + R(x.novoMrr) + '</td><td style="padding:6px;text-align:right;font-family:var(--M);font-weight:700;">' + fmtBRLcompleto(x.total) + '</td><td style="padding:6px;text-align:right;font-family:var(--M);color:' + (!c.meta ? 'var(--t3)' : x.total >= c.meta ? 'var(--green,#22d3a3)' : 'var(--red)') + ';">' + (c.meta ? (x.total >= c.meta ? '+' : '') + fmtBRLcompleto(x.total - c.meta) : '—') + '</td></tr>').join('')
+    + '</tbody></table></div><div style="font-size:10px;color:var(--t3);margin-top:6px;">Base = mesma do Fluxo Futuro 12 Meses (faturas em aberto no QuickBooks, previsão dos marcos e recorrentes). Propostas: valor × probabilidade, distribuído em 6 meses a partir do mês informado. Novo MRR: a partir do próximo mês, com o churn aplicado mês a mês.</div>';
+}
+async function projAnaliseIA() {
+  const c = _projCalc(); if (!c) return toast('Carregue a projeção primeiro', 'error');
+  const el = document.getElementById('f_projetadoIA'); const b = document.getElementById('btnProjIA'); if (b) { b.disabled = true; b.textContent = 'Analisando…'; }
+  if (el) el.innerHTML = '<div style="color:var(--blue);font-size:11px;">A IA está lendo a projeção…</div>';
+  try {
+    const r = await fetch('/api/s1-strategy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'analise_financeira', payload: { acao: 'comentar_projecao_receita', instrucao: 'Comente esta projeção de receita de 12 meses (dados reais do sistema): onde está o risco, quais meses ficam abaixo da meta e o que fazer. Seja objetivo, em até 10 linhas. Não invente números.', dados: c } }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.success === false) throw new Error(d.error || 'HTTP ' + r.status);
+    const txt = String(d.content || d.resultado || '').trim(); if (!txt) throw new Error('a IA não respondeu');
+    if (el) el.innerHTML = '<div style="background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.7;white-space:pre-wrap;">' + txt.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</div>';
+  } catch (e) { if (el) el.innerHTML = '<div style="color:var(--red);font-size:11px;">Não consegui a análise: ' + String(e.message).replace(/</g, '&lt;') + '</div>'; }
+  if (b) { b.disabled = false; b.innerHTML = '&#9670; Comentário da IA'; }
 }
 
 
@@ -9164,15 +9216,21 @@ async function addReceber() {
 function renderReceberTable() {
   const el = document.getElementById('f_receberTable');
   try { renderRecAlertaBanner(); renderRecAlertaDash(); } catch (_) {}
-  const linhas = _recLinhas();   // v3.85: lançamentos manuais + faturas em aberto do QuickBooks
+  const todas = _recLinhas();   // v3.85: lançamentos manuais + faturas em aberto do QuickBooks
+  // v3.109: cards, número do menu e tabela pela MESMA lista (antes o card e o menu contavam só o QuickBooks)
+  { const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    u('f_totalReceber', formatarMoeda(todas.reduce((a, l) => a + l.valor, 0)));
+    u('f_vencido', formatarMoeda(todas.filter(l => l.dias != null && l.dias < 0).reduce((a, l) => a + l.valor, 0)));
+    u('f_aVencer', formatarMoeda(todas.filter(l => l.dias != null && l.dias >= 0 && l.dias <= 30).reduce((a, l) => a + l.valor, 0)));
+    const bdg = document.getElementById('s3ReceberCnt'); if (bdg) bdg.textContent = todas.length || ''; }
+  const fc = (document.getElementById('rec_fCliente')?.value || '').trim().toLowerCase(), fs = document.getElementById('rec_fStatus')?.value || '', fa = document.getElementById('rec_fAte')?.value || '';
+  const linhas = todas.filter(l => (!fc || (String(l.cliente) + ' ' + String(l.doc || '')).toLowerCase().includes(fc))
+    && (!fs || (fs === 'ok' ? !l.status : l.status === fs))
+    && (!fa || (l.vencimento && (_recData(l.vencimento)?.toLocaleDateString('sv-SE') || '') <= fa)));
+  { const r = document.getElementById('rec_fResumo'); if (r) r.textContent = (linhas.length !== todas.length ? linhas.length + ' de ' + todas.length : todas.length) + ' recebível(is) · ' + formatarMoeda(linhas.reduce((a, l) => a + l.valor, 0)); }
   if (!el || !linhas.length) {
-    if (el) el.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Nenhuma conta a receber lancada.</div>';
+    if (el) el.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">' + (todas.length ? 'Nenhum recebível com esse filtro.' : 'Nenhuma conta a receber lancada.') + '</div>';
     return;
-  }
-  // com o QuickBooks sincronizado, o total do card vem dele (syncQuickBooks)
-  if (receberItems.length && !receberQBItems.length) {
-    const total = receberItems.reduce((s, i) => s + parseMoeda(i.valor), 0);
-    document.getElementById('f_totalReceber').textContent = formatarMoeda(total);
   }
 
   const cols = 'grid-template-columns:2fr 1fr 1fr 1.1fr 170px';
@@ -9258,7 +9316,7 @@ function _recDias(v) {
   const h = new Date(); const hoje = new Date(h.getFullYear(), h.getMonth(), h.getDate());
   return Math.round((dt - hoje) / 86400000);
 }
-function _recStatus(dias) { return dias == null ? '' : dias <= 0 ? 'vencido' : dias <= REC_DIAS_ALERTA ? 'alerta' : ''; }
+function _recStatus(dias) { return dias == null ? '' : dias < 0 ? 'vencido' : dias <= REC_DIAS_ALERTA ? 'alerta' : ''; } // v3.109: vence hoje = alerta (mesma regra do card "Vencido")
 function _recBadge(dias) {
   if (dias == null) return '<span class="rec-bdg ok">sem data</span>';
   if (dias < 0) return `<span class="rec-bdg vencido">&#9679; Vencido há ${-dias}d</span>`;
@@ -17425,7 +17483,7 @@ async function finApi(action, params = {}, opts = {}) {
   return d;
 }
 const _FIN_RECARREGA = { fluxo_detalhado: ['s3fluxodet', () => carregarFluxoDetalhado()], dashboard_financeiro: ['s3dashboard', () => carregarDashboardFinanceiro()],
-  extrato_diario: ['s3diario', () => carregarExtratoDiario()], extrato_mensal: ['s3mensal', () => carregarExtratoMensal()], painel_resumo: ['s3realizado', () => syncQuickBooks()] };
+  extrato_diario: ['s3diario', () => carregarExtratoDiario()], extrato_mensal: ['s3mensal', () => carregarExtratoMensal()], painel_resumo: ['s3realizado', () => carregarRealizado()] };
 const _finFundo = {};
 function _finAtualizarFundo(action, params) {
   const k = action + JSON.stringify(params); if (_finFundo[k]) return; _finFundo[k] = 1;
@@ -17633,6 +17691,57 @@ async function atualizarPainelFinanceiro(realAnual, realMes, aReceber, projetado
   }
 }
 
+// v3.109: tela Realizado QuickBooks — período, tipo e busca; indicadores de competência (DRE) e de caixa
+let _realDados = null, _realTipoSel = '';
+function _realTipo(t) { _realTipoSel = t || ''; document.querySelectorAll('#real_tipoSeg button').forEach(b => b.classList.toggle('on', (b.dataset.t || '') === _realTipoSel)); _realRender(); }
+async function carregarRealizado(forcar) {
+  const selM = document.getElementById('real_mes'), selA = document.getElementById('real_ano');
+  const hoje = new Date();
+  if (selM && selM.options.length <= 1) { ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'].forEach((m, i) => selM.add(new Option(m.charAt(0).toUpperCase() + m.slice(1), String(i + 1)))); selM.value = String(hoje.getMonth() + 1); }
+  if (selA && !selA.options.length) { for (let a = hoje.getFullYear(); a >= hoje.getFullYear() - 5; a--) selA.add(new Option(String(a), String(a))); selA.value = String(hoje.getFullYear()); }
+  const tag = document.getElementById('qbRealTag'), tb = document.getElementById('f_realTable');
+  if (tag) { tag.className = 'tag off'; tag.textContent = 'Carregando'; }
+  if (tb) tb.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:24px;">Consultando o QuickBooks…</div>';
+  try {
+    const d = await finApi('painel_resumo', { mes: selM?.value || null, ano: selA?.value || null, ...(forcar ? { _forcar: true } : {}) });
+    _realDados = d;
+    const av = document.getElementById('qbAvisoRealizado'); if (av) av.style.display = d.qb_configurado === false ? '' : 'none';
+    const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    u('real_kRec', fmtBRLcompleto(d.realMes || 0)); u('real_kRecSub', (selM?.value ? 'no mês' : 'no ano') + ' · no ano: ' + fmtBRLcompleto(d.realAnual || 0));
+    u('real_kDesp', fmtBRLcompleto(d.despMes || 0)); u('real_kDespSub', d.lucroMes != null ? 'resultado do período: ' + fmtBRLcompleto(d.lucroMes) : 'competência · QuickBooks');
+    u('real_kEnt', fmtBRLcompleto(d.caixa_periodo?.entradas || 0)); u('real_kSai', fmtBRLcompleto(d.caixa_periodo?.saidas || 0));
+    if (tag) { tag.className = 'tag ' + (d.erros?.length ? 'hot' : 'on'); tag.textContent = d.erros?.length ? 'com avisos' : 'Atualizado ' + new Date().toLocaleTimeString('pt-BR').substring(0, 5); }
+    if (d.erros?.length) d.erros.forEach(e => addLog('warn', '[Realizado] ' + e));
+    _realRender();
+  } catch (e) {
+    if (tag) { tag.className = 'tag hot'; tag.textContent = 'Erro'; }
+    if (tb) tb.innerHTML = '<div style="color:var(--red);font-size:11px;padding:14px;">Erro ao consultar o QuickBooks: ' + String(e.message).replace(/</g, '&lt;') + ' <button class="btn" style="font-size:10px;margin-left:6px;" onclick="carregarRealizado(true)">↻ Tentar de novo</button></div>';
+  }
+}
+function _realRender() {
+  const d = _realDados; const tb = document.getElementById('f_realTable'); if (!d || !tb) return;
+  const termos = (document.getElementById('real_busca')?.value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/\s+/).filter(Boolean);
+  let l = (d.lancamentos_periodo || d.lancamentos || []);
+  if (_realTipoSel) l = l.filter(x => x.tipo === _realTipoSel);
+  if (termos.length) l = l.filter(x => { const a = [x.descricao, x.categoria, x.conta].join(' ').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); return termos.every(t => a.includes(t)); });
+  const ent = l.filter(x => x.tipo === 'entrada').reduce((a, x) => a + x.valor, 0), sai = l.filter(x => x.tipo === 'saida').reduce((a, x) => a + x.valor, 0);
+  const r = document.getElementById('real_resumo'); if (r) r.innerHTML = '<b>' + l.length + '</b> lançamento(s) · <span style="color:var(--green,#22d3a3);">entradas ' + fmtBRLcompleto(ent) + '</span> · <span style="color:var(--red);">saídas ' + fmtBRLcompleto(sai) + '</span> · líquido <b>' + fmtBRLcompleto(ent - sai) + '</b> <span style="color:var(--t3);">(notas emitidas e transferências entre contas aparecem sem sinal: não mexem no caixa)</span>';
+  _renderLancamentosEm(tb, l);
+}
+function _renderLancamentosEm(el, lancamentos) {
+  if (!lancamentos.length) { el.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:18px;">Nenhum lançamento no período</div>'; return; }
+  el.innerHTML = lancamentos.map(l => {
+    const ref = l.tipo === 'referencia';
+    const cor = ref ? 'var(--t3)' : l.tipo === 'entrada' ? 'var(--green)' : 'var(--red)';
+    const sinal = ref ? '' : l.tipo === 'entrada' ? '+ ' : '− ';
+    const tag = ref ? '<span style="font-size:9px;color:var(--t3);margin-left:6px;" title="' + String(l.nota_dedup || '').replace(/"/g, '') + '">' + (l.qb_tipo === 'invoice' ? '📄 nota emitida' : l.qb_tipo === 'transferencia' ? '⇄ transferência' : 'sem efeito no caixa') + '</span>' : '';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:11px;' + (ref ? 'opacity:.65;' : '') + '">'
+      + '<span style="color:var(--t2);width:78px;flex-shrink:0;font-family:var(--M);font-size:10px;">' + (l.data ? l.data.split('-').reverse().join('/') : '') + '</span>'
+      + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + String(l.descricao || '').replace(/"/g, '&quot;') + '">' + String(l.descricao || '').replace(/</g, '&lt;') + tag + '</span>'
+      + '<span style="font-size:9px;color:var(--t3);padding:2px 6px;border:1px solid var(--bd);border-radius:3px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + String(l.categoria || '').replace(/</g, '&lt;') + '</span>'
+      + '<span style="font-weight:600;color:' + _corTxt(cor) + ';font-family:var(--M);min-width:110px;text-align:right;">' + sinal + fmtBRLcompleto(l.valor) + '</span></div>';
+  }).join('');
+}
 function renderLancamentos(lancamentos) {
   const el = document.getElementById('f_lancamentos');
   if (!el) return;
@@ -17641,8 +17750,8 @@ function renderLancamentos(lancamentos) {
     return;
   }
   el.innerHTML = lancamentos.map(l => {
-    const cor = l.tipo === 'entrada' ? 'var(--green)' : 'var(--red)';
-    const sinal = l.tipo === 'entrada' ? '+' : '-';
+    const cor = l.tipo === 'referencia' ? 'var(--t3)' : l.tipo === 'entrada' ? 'var(--green)' : 'var(--red)';
+    const sinal = l.tipo === 'referencia' ? '' : l.tipo === 'entrada' ? '+' : '-'; // v3.109: nota emitida/transferência não tem sinal (não mexe no caixa)
     return `
       <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:11px;">
         <span style="color:var(--t2);width:78px;flex-shrink:0;font-family:var(--M);font-size:10px;">${l.data || ''}</span>
@@ -17675,6 +17784,8 @@ async function carregarExtrato() {
     _mostrarConferenciaSaldo('ext_confSaldo', d);
     clearTimeout(_hintT);
     _extratoCache = d;
+    // v3.109: mostra nas datas o período que o servidor usou (sem datas = últimos 90 dias, antes invisível)
+    if (d.periodo) { const fi = document.getElementById('f_ext_inicio'), ff = document.getElementById('f_ext_fim'); if (fi && !fi.value && d.periodo.data_inicio) fi.value = d.periodo.data_inicio; if (ff && !ff.value && d.periodo.data_fim) ff.value = d.periodo.data_fim; }
     renderExtrato(d);
     try { _avisoQbErro('f_extratoTabela', d); } catch(_) {}
   } catch (e) {
@@ -17697,6 +17808,8 @@ function renderExtrato(d) {
       // v1.60.1: mostra a fonte REAL que respondeu, e o erro quando o razão falha
       txt = det.origem_real === 'razao_saldo_inicial'
         ? `linha "Saldo inicial" do razão do QuickBooks em ${(det.data_base||'').split('-').reverse().join('/')}`
+        : det.origem_real === 'balanco_contas_bank' // v3.109: o balanço respondeu (antes aparecia "razão não respondeu")
+        ? `balanço patrimonial do QuickBooks (contas bancárias) em ${(det.data_base||'').split('-').reverse().join('/')}`
         : `soma das transações até ${(det.data_base||'').split('-').reverse().join('/')}${det.erro_razao ? ' — razão falhou: ' + det.erro_razao : ' — razão não respondeu'}`;
     } else if (d.saldo_inicial_origem === 'cadastrado_mais_movimento' && det) {
       txt = `${fmtBRLcompleto(det.saldo_base)} em ${(det.base_data||'').split('-').reverse().join('/')} + ${fmtBRLcompleto(det.movimento_anterior)} de movimento até o início do período`;
@@ -17768,7 +17881,7 @@ async function adicionarSimulado() {
   const descricao = document.getElementById('f_sim_desc')?.value?.trim();
   const categoria = document.getElementById('f_sim_cat')?.value?.trim();
   const tipo = document.getElementById('f_sim_tipo')?.value;
-  const valor = parseFloat((document.getElementById('f_sim_valor')?.value || '0').replace(/[^\d,-]/g, '').replace(',', '.'));
+  const valor = _numBR(document.getElementById('f_sim_valor')?.value || '0');
 
   if (!data || !descricao || !valor) {
     if (typeof toast === 'function') toast('Preencha data, descrição e valor', 'error');
@@ -17813,7 +17926,7 @@ async function ocultarQB(qbTxnId) {
 
 async function salvarSaldoInicial() {
   const data = document.getElementById('f_si_data')?.value;
-  const valor = parseFloat((document.getElementById('f_si_valor')?.value || '0').replace(/[^\d,-]/g, '').replace(',', '.'));
+  const valor = _numBR(document.getElementById('f_si_valor')?.value || '0');
   const descricao = document.getElementById('f_si_desc')?.value;
   if (!data || isNaN(valor)) { if (typeof toast === 'function') toast('Data e valor obrigatórios', 'error'); return; }
   try {
@@ -17857,8 +17970,10 @@ async function carregarDespesas() {
   try {
     const [d, o] = await Promise.all([
       finApi('desp_list', {}),
-      finApi('desp_ocorrencias', {}),
+      // v3.109: carrega do mês exibido − 90 dias até +12 meses (antes só de hoje em diante: vencidas e meses passados sumiam)
+      finApi('desp_ocorrencias', { data_inicio: new Date(_calMes.getFullYear(), _calMes.getMonth() - 3, 1).toLocaleDateString('sv-SE'), data_fim: new Date(_calMes.getFullYear(), _calMes.getMonth() + 13, 0).toLocaleDateString('sv-SE') }),
     ]);
+    _ocoJanela = _calMes.getFullYear() * 12 + _calMes.getMonth();
     _despCache = d.despesas;
     _ocoCache = o.ocorrencias;
     try { const nQb = o.qb_bills || 0; addLog('info', '[Agenda] ' + (_ocoCache.length) + ' ocorrência(s) · ' + nQb + ' conta(s) a pagar do QuickBooks' + (o.qb_erro ? ' · QB: ' + o.qb_erro : '')); const hd = document.querySelector('#page-s3agenda .pt'); if (hd && !document.getElementById('agendaQbBadge')) { const b = document.createElement('span'); b.id = 'agendaQbBadge'; b.className = 'nbx gn'; b.style.marginLeft = '8px'; hd.appendChild(b); } const bd = document.getElementById('agendaQbBadge'); if (bd) bd.textContent = 'QB: ' + nQb; } catch(_) {}
@@ -17880,7 +17995,7 @@ async function ajustarDespesaReplicar(id, descricao, valorAtual, diaAtual) {
     const d = await finApi('desp_ajustar_replicar', { despesa_id: id, valor: parseFloat(valor), dia_vencimento: parseInt(dia),
       a_partir_de: desde || null, meses: 12, atualizar_qb: /^s/i.test(atQb||''), lancar_qb: /^s/i.test(lancQb||'') });
     alert(`✅ "${descricao}" ajustada para ${fmtBRLcompleto(d.valor)} no dia ${d.dia_vencimento}.\n\n${d.ocorrencias_ajustadas} ocorrência(s) futura(s) ajustada(s)\n${d.ocorrencias_criadas} nova(s) criada(s) até completar 12 meses${d.bills_atualizadas_qb ? '\n' + d.bills_atualizadas_qb + ' Bill(s) atualizada(s) no QuickBooks' : ''}${(d.erros_qb||[]).length ? '\n\nFalhas no QB:\n' + d.erros_qb.join('\n') : ''}`);
-    if (typeof carregarAgendaDespesas === 'function') carregarAgendaDespesas();
+    if (typeof carregarDespesas === 'function') carregarDespesas(); // v3.109: a função antiga não existia — a tela não atualizava
   } catch (e) { toast('Erro: ' + e.message, 'error'); alert(e.message); }
 }
 function renderDespesasLista() {
@@ -17931,7 +18046,7 @@ async function adicionarDespesa() {
   const p = {
     descricao: document.getElementById('f_desp_desc')?.value?.trim(),
     categoria: document.getElementById('f_desp_cat')?.value?.trim(),
-    valor: parseFloat((document.getElementById('f_desp_valor')?.value || '0').replace(/[^\d,-]/g, '').replace(',', '.')),
+    valor: _numBR(document.getElementById('f_desp_valor')?.value || '0'),
     recorrencia: ehRecorrente ? (document.getElementById('f_desp_rec')?.value || 'mensal') : 'unica',
     data_inicio: document.getElementById('f_desp_inicio')?.value,
     data_fim: ehRecorrente ? (document.getElementById('f_desp_fim')?.value || null) : null,
@@ -17979,7 +18094,7 @@ function renderCalendario() {
   // Agrupa ocorrências por dia
   const porDia = {};
   for (const o of _ocoCache) {
-    const dt = new Date(o.data_prevista);
+    const dt = _dLocal(o.data_prevista); // v3.109
     if (dt.getFullYear() === ano && dt.getMonth() === mes) {
       const dia = dt.getDate();
       if (!porDia[dia]) porDia[dia] = [];
@@ -18027,20 +18142,31 @@ function renderCalendario() {
   }
 
   html += '</div>';
-  el.innerHTML = html;
+  // v3.109: contas EM ATRASO (vencidas e não pagas) em destaque — antes não apareciam em lugar nenhum da agenda
+  const _hj = new Date().toLocaleDateString('sv-SE');
+  const _atraso = (_ocoCache || []).filter(o => o.status !== 'paga' && o.status !== 'cancelada' && String(o.data_prevista).substring(0, 10) < _hj).sort((a, b) => String(a.data_prevista).localeCompare(String(b.data_prevista)));
+  const _atrasoHtml = _atraso.length ? '<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:11px;"><b style="color:var(--red);">⚠ ' + _atraso.length + ' conta(s) em atraso · ' + fmtBRLcompleto(_atraso.reduce((a, o) => a + (o.valor || 0), 0)) + '</b>'
+    + _atraso.slice(0, 8).map(o => '<div style="display:flex;gap:8px;margin-top:3px;"><span style="font-family:var(--M);color:var(--t2);width:72px;">' + String(o.data_prevista).substring(0, 10).split('-').reverse().join('/') + '</span><span style="flex:1;">' + String(o.descricao || '').replace(/</g, '&lt;') + (o.fonte === 'quickbooks' ? ' <span style="color:var(--t3);font-size:9px;">QB</span>' : '') + '</span><b>' + fmtBRLcompleto(o.valor) + '</b></div>').join('') + (_atraso.length > 8 ? '<div style="color:var(--t3);margin-top:3px;">… e mais ' + (_atraso.length - 8) + '</div>' : '') + '</div>' : '';
+  el.innerHTML = _atrasoHtml + html;
 }
 
+let _ocoJanela = null;
 function mudarMesCal(delta) {
   _calMes = new Date(_calMes.getFullYear(), _calMes.getMonth() + delta, 1);
+  // v3.109: saiu da janela carregada (3 meses para trás / 12 à frente) → busca de novo
+  const k = _calMes.getFullYear() * 12 + _calMes.getMonth();
+  if (_ocoJanela != null && (k < _ocoJanela - 3 || k > _ocoJanela + 12)) { carregarDespesas(); return; }
   renderCalendario();
 }
+// data 'AAAA-MM-DD' como data LOCAL (new Date('2026-11-01') é meia-noite UTC = 31/10 no Brasil)
+function _dLocal(v) { const [y, m, d] = String(v || '').substring(0, 10).split('-').map(Number); return new Date(y, (m || 1) - 1, d || 1); }
 
 // v1.20.6: modal de verdade no lugar do alert() — com ações (marcar paga / lançar no QuickBooks)
 function mostrarDetalhesDia(dia) {
   const ano = _calMes.getFullYear();
   const mes = _calMes.getMonth();
   const ocs = _ocoCache.filter(o => {
-    const dt = new Date(o.data_prevista);
+    const dt = _dLocal(o.data_prevista); // v3.109
     return dt.getFullYear() === ano && dt.getMonth() === mes && dt.getDate() === dia;
   });
   const total = ocs.reduce((s, o) => s + o.valor, 0);
@@ -18150,6 +18276,7 @@ function renderFluxoMatriz(d) {
     '− Despesas Programadas',
     '− Outras Saídas Simuladas',
     '= Total Saídas',
+    '± Já lançado no QuickBooks', // v3.109: estava no cálculo do resultado mas não aparecia na tela
     '= Resultado do Mês',
     '= Saldo Final',
   ];
@@ -18179,7 +18306,7 @@ function renderFluxoMatriz(d) {
                   const cor = negativo ? 'var(--red)' : subtotal ? 'var(--blue)' : 'var(--t1)';
                   if (editavel) {
                     return `<td style="padding:5px 6px;text-align:right;">
-                      <input type="text" value="${v.toFixed(2)}" data-linha="${linha}" data-mes="${mes}" title="${String(linha).replace(/"/g,'&quot;')} · ${mes} (editável — ajusta a projeção)" aria-label="${String(linha).replace(/"/g,'&quot;')} ${mes}"
+                      <input type="text" value="${v.toFixed(2)}" data-orig="${v.toFixed(2)}" data-linha="${linha}" data-mes="${mes}" title="${String(linha).replace(/"/g,'&quot;')} · ${mes} (editável — ajusta a projeção)" aria-label="${String(linha).replace(/"/g,'&quot;')} ${mes}"
                         onblur="atualizarOverrideFluxo(this)"
                         style="width:100%;background:transparent;border:1px solid rgba(79,124,255,.2);border-radius:3px;padding:3px 5px;color:var(--t1);font-family:var(--M);font-size:10px;text-align:right;"/>
                     </td>`;
@@ -18245,7 +18372,8 @@ function renderFluxoMatriz(d) {
 function atualizarOverrideFluxo(input) {
   const linha = input.dataset.linha;
   const mes = input.dataset.mes;
-  const valor = parseFloat(input.value.replace(/[^\d.-]/g, '')) || 0;
+  const valor = _numBR(input.value); // v3.109: aceita 1.234,56 (antes virava 1,23456)
+  if (input.dataset.orig != null && Math.abs(valor - parseFloat(input.dataset.orig)) < 0.005) return; // não mudou: não congela a célula
   if (!_fluxoOverrides[mes]) _fluxoOverrides[mes] = {};
   _fluxoOverrides[mes][linha] = valor;
   gerarFluxoMatriz();
@@ -18391,8 +18519,8 @@ async function carregarExtratoDiario() {
   let fim = document.getElementById('diario_fim')?.value;
   if (!ini || !fim) {
     const hoje = new Date();
-    fim = hoje.toISOString().split('T')[0];
-    ini = new Date(Date.now() - 30 * 86400 * 1000).toISOString().split('T')[0];
+    fim = hoje.toLocaleDateString('sv-SE'); // v3.109: data local (UTC virava amanhã depois das 21h)
+    ini = new Date(Date.now() - 30 * 86400 * 1000).toLocaleDateString('sv-SE');
     if (document.getElementById('diario_ini')) document.getElementById('diario_ini').value = ini;
     if (document.getElementById('diario_fim')) document.getElementById('diario_fim').value = fim;
   }
@@ -18433,7 +18561,7 @@ async function carregarExtratoDiario() {
         </tr></thead>
         <tbody>${d.dias.filter(x => x.lancamentos_count > 0).reverse().map(x => `
           <tr style="border-bottom:1px solid rgba(255,255,255,.03);">
-            <td style="padding:7px;font-family:var(--M);font-size:10px;color:var(--t2);">${x.data}</td>
+            <td style="padding:7px;font-family:var(--M);font-size:10px;color:var(--t2);">${x.data.split('-').reverse().join('/')}${x.previsto ? ' <span style="font-size:8.5px;color:var(--blue);border:1px solid var(--blue);border-radius:3px;padding:0 3px;" title="Dia futuro: valores previstos (faturas, contas, despesas programadas)">previsto</span>' : ''}</td>
             <td style="padding:7px;text-align:right;font-family:var(--M);color:var(--t2);">${fmtBRLcompleto(x.saldo_inicio)}</td>
             <td style="padding:7px;text-align:right;font-family:var(--M);color:${_corTxt(x.entradas>0?'var(--green)':'var(--t3)')};">${x.entradas>0?'+'+fmtBRLcompleto(x.entradas):'-'}</td>
             <td style="padding:7px;text-align:right;font-family:var(--M);color:${_corTxt(x.saidas>0?'var(--red)':'var(--t3)')};">${x.saidas>0?'-'+fmtBRLcompleto(x.saidas):'-'}</td>
@@ -18919,7 +19047,7 @@ function abrirFormProjeto(id) {
     document.getElementById('pjGPNome').value = p.gerente_projeto_nome || '';
     document.getElementById('pjGPEmail').value = p.gerente_projeto_email || '';
     document.getElementById('pjFinEmail').value = p.financeiro_email || '';
-    document.getElementById('pjValor').value = p.valor_total || '';
+    document.getElementById('pjValor').value = p.valor_total ? Number(p.valor_total).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''; // v3.109: em pt-BR (antes "12345.67" virava 1234567 ao salvar)
     document.getElementById('pjDesc').value = p.descricao || '';
   } else {
     tit.textContent = 'Novo Projeto';
@@ -18941,7 +19069,7 @@ async function salvarProjeto() {
     gerente_projeto_nome: document.getElementById('pjGPNome').value.trim(),
     gerente_projeto_email: document.getElementById('pjGPEmail').value.trim(),
     financeiro_email: document.getElementById('pjFinEmail').value.trim(),
-    valor_total: parseFloat((document.getElementById('pjValor').value || '0').replace(/[^\d,-]/g, '').replace(',', '.')),
+    valor_total: _numBR(document.getElementById('pjValor').value || '0'),
     descricao: document.getElementById('pjDesc').value.trim(),
   };
   if (!p.nome) { if (typeof toast === 'function') toast('Nome obrigatório', 'error'); return; }
@@ -19049,7 +19177,7 @@ function abrirFormMarco(id) {
     const hintData = document.getElementById('mkDataHint');
     if (hintData) hintData.style.display = m.data_entrega ? 'none' : 'block';
     document.getElementById('mkPct').value = m.percentual != null ? m.percentual : '';
-    document.getElementById('mkValor').value = m.valor || '';
+    document.getElementById('mkValor').value = m.valor ? Number(m.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''; // v3.109
     document.getElementById('mkNF').value = m.nota_fiscal || '';
     document.getElementById('mkDataPag').value = m.data_pagamento || '';
     document.getElementById('mkObs').value = m.observacoes || '';
@@ -19074,7 +19202,7 @@ async function salvarMarco() {
     descricao: document.getElementById('mkDesc').value.trim(),
     data_entrega: document.getElementById('mkData').value,
     percentual: parseFloat(document.getElementById('mkPct').value) || null,
-    valor: parseFloat((document.getElementById('mkValor').value || '0').replace(/[^\d,-]/g, '').replace(',', '.')),
+    valor: _numBR(document.getElementById('mkValor').value || '0'),
     nota_fiscal: document.getElementById('mkNF').value.trim() || null,
     data_pagamento: document.getElementById('mkDataPag').value || null,
     observacoes: document.getElementById('mkObs').value.trim() || null,
@@ -19391,7 +19519,7 @@ async function cnabApi(action, params = {}) {
 let _cnabPagamentos = [];
 async function carregarCnab() {
   const box = document.getElementById('cnabLista'); if (!box) return;
-  const dt = document.getElementById('cnabDataPagto'); if (dt && !dt.value) dt.value = new Date().toISOString().split('T')[0];
+  const dt = document.getElementById('cnabDataPagto'); if (dt && !dt.value) dt.value = new Date().toLocaleDateString('sv-SE'); // v3.109: data local
   try {
     const cfg = await cnabApi('config_status');
     const aviso = document.getElementById('cnabConfigAviso');
@@ -19413,8 +19541,8 @@ async function carregarCnab() {
         <th></th></tr></thead>
       <tbody>${_cnabPagamentos.map(p => `<tr style="border-bottom:1px solid var(--bd);${!p.pronto?'opacity:.65;':''}">
         <td style="padding:5px;"><input type="checkbox" class="cnabChk" value="${p.id}" ${p.pronto?'':'disabled'} onchange="_cnabAtualizaInfo()"/></td>
-        <td style="padding:5px;font-family:var(--M);white-space:nowrap;">${p.data_prevista.split('-').reverse().join('/')}</td>
-        <td style="padding:5px;">${p.descricao||'—'}</td>
+        <td style="padding:5px;font-family:var(--M);white-space:nowrap;${p.vencido ? 'color:var(--red);font-weight:700;' : ''}">${p.data_prevista.split('-').reverse().join('/')}${p.vencido ? ' <span style="font-size:8.5px;">vencido</span>' : ''}</td>
+        <td style="padding:5px;">${p.descricao||'—'}${p.ja_em_remessa ? ` <span style="font-size:8.5px;color:var(--gold);border:1px solid var(--gold);border-radius:3px;padding:0 4px;" title="Já incluído na remessa ${p.ja_em_remessa.arquivo} — confira se ela foi enviada ao banco antes de pagar de novo">já em ${p.ja_em_remessa.arquivo}</span>` : ''}</td>
         <td style="padding:5px;color:var(--t2);">${p.fornecedor||'<span style="color:var(--red);">sem fornecedor</span>'}</td>
         <td style="padding:5px;font-size:10px;">${formaLbl[p.forma_pagamento]||p.forma_pagamento}</td>
         <td style="padding:5px;text-align:right;font-family:var(--M);">${fmtBRLcompleto(p.valor)}</td>
@@ -19437,17 +19565,20 @@ function _cnabAtualizaInfo() {
   const el = document.getElementById('cnabSelecaoInfo');
   if (el) el.textContent = sel.length ? `${sel.length} selecionado(s) · ${fmtBRLcompleto(total)}` : 'nenhum selecionado';
 }
-async function gerarRemessaCnab() {
+async function gerarRemessaCnab(repetir) {
   const ids = [...document.querySelectorAll('.cnabChk:checked')].map(c => c.value);
   if (!ids.length) { toast('Selecione ao menos um pagamento', 'error'); return; }
   const btn = document.getElementById('btnGerarCnab'); if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando...'; }
   try {
-    const d = await cnabApi('gerar_remessa', { ocorrencias_ids: ids, data_pagamento: document.getElementById('cnabDataPagto')?.value });
+    const d = await cnabApi('gerar_remessa', { ocorrencias_ids: ids, data_pagamento: document.getElementById('cnabDataPagto')?.value, repetir: !!repetir });
     _cnabDownload(d.arquivo_nome, d.conteudo);
     toast(`Arquivo ${d.arquivo_nome} gerado — ${d.qtd_pagamentos} pagamento(s), ${fmtBRLcompleto(d.valor_total)}`, 'success');
     addLog('ok', '[CNAB] ' + d.arquivo_nome + ' · ' + d.linhas + ' linhas · ' + d.aviso);
     carregarCnab();
-  } catch (e) { toast('Erro: ' + e.message, 'error'); if (e.hint) addLog('warn', '[CNAB] ' + e.hint); }
+  } catch (e) {
+    // v3.109: pagamento que já está numa remessa anterior — só gera de novo com confirmação explícita
+    if (!repetir && /já estão em remessa/.test(e.message)) { if (btn) { btn.disabled = false; btn.textContent = '💾 Gerar arquivo'; } if (confirm(e.message + '\n\n' + (e.hint || '') + '\n\nGerar mesmo assim?')) return gerarRemessaCnab(true); return; }
+    toast('Erro: ' + e.message, 'error'); if (e.hint) addLog('warn', '[CNAB] ' + e.hint); }
   finally { if (btn) { btn.disabled = false; btn.textContent = '💾 Gerar arquivo'; } }
 }
 function _cnabDownload(nome, conteudo) {
@@ -19929,7 +20060,7 @@ function _fdComQuebraMes(lista, corSaldo) {
     const res = ent - sai;
     const [aa, mm] = mesAtual.split('-');
     saida.push(`<tr style="background:var(--bg3,#151b2e);">
-      <td colspan="5" style="padding:6px 8px;border-top:2px solid var(--bd);border-bottom:1px solid var(--bd);">
+      <td colspan="6" style="padding:6px 8px;border-top:2px solid var(--bd);border-bottom:1px solid var(--bd);">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;font-size:10px;">
           <span style="font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--t2);">
             ${MESES[parseInt(mm,10)-1]} de ${aa} · ${buffer.length} lançamento(s)</span>
@@ -19948,7 +20079,7 @@ function _fdComQuebraMes(lista, corSaldo) {
       fecharMes();
       mesAtual = mes;
       const [aa, mm] = mes.split('-');
-      saida.push(`<tr><td colspan="5" style="padding:9px 8px 4px;border-top:2px solid var(--gold);">
+      saida.push(`<tr><td colspan="6" style="padding:9px 8px 4px;border-top:2px solid var(--gold);">
         <span style="font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:1px;">
           ▸ ${MESES[parseInt(mm,10)-1]} ${aa}</span></td></tr>`);
     }
@@ -19979,9 +20110,16 @@ function _fdLinha(l, corSaldo) {
     + '<td style="padding:6px;">' + (l.descricao || '') + venc + refTag + repTag + termoTag + '</td>'
     + '<td style="padding:6px;color:var(--t2);font-size:10px;">' + (l.categoria || '') + ' · ' + fonte + '</td>'
     + '<td style="padding:6px;text-align:right;color:' + _corTxt(cor) + ';font-family:var(--M);">' + (ehRef ? '' : (l.tipo === 'saida' ? '-' : '+')) + fmtBRLcompleto(l.valor) + '</td>'
-    + '<td style="padding:6px;text-align:right;font-family:var(--M);font-weight:600;color:' + (l.saldo_acumulado < 0 ? 'var(--red)' : (corSaldo || 'var(--t1)')) + ';">' + fmtBRLcompleto(l.saldo_acumulado) + '</td>'
+    + '<td style="padding:6px;text-align:right;font-family:var(--M);font-weight:600;color:' + (l.saldo_acumulado < 0 ? 'var(--red)' : (corSaldo || 'var(--t1)')) + ';"' + (l.saldo_acumulado == null ? ' title="Fora do período escolhido — não entra no saldo"' : '') + '>' + (l.saldo_acumulado == null ? '—' : fmtBRLcompleto(l.saldo_acumulado)) + '</td>'
     + '<td style="padding:6px;text-align:center;">' + acao + '</td>'
     + '</tr>';
+}
+// v3.109: número digitado no padrão brasileiro → Number ("1.234,56", "12.500", "1234.56", "R$ 80.000,50")
+function _numBR(v) {
+  if (typeof v === 'number') return v; let t = String(v ?? '').replace(/[^\d.,-]/g, ''); if (!t) return 0;
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+  const n = parseFloat(t); return isNaN(n) ? 0 : n;
 }
 // v3.105: excluir / incluir lançamento futuro direto no fluxo (grava no QuickBooks)
 function _fdExcluivel(l) {
@@ -20054,7 +20192,7 @@ async function _fdIncTipo(t) {
 async function _fdIncluirSalvar() {
   const v = id => (document.getElementById(id)?.value || '').trim();
   const qb = document.getElementById('fdIncQb')?.checked !== false; const t = window._fdIncTipoSel || 'saida';
-  const valor = v('fdIncValor'); const num = parseFloat(/,/.test(valor) ? valor.replace(/\./g, '').replace(',', '.') : valor);
+  const valor = v('fdIncValor'); const num = _numBR(valor);
   if (!v('fdIncData') || !(num > 0) || !v('fdIncDesc') || (qb && !v('fdIncContra'))) return toast('Preencha data, valor, descrição' + (qb ? ' e ' + (t === 'entrada' ? 'cliente' : 'fornecedor') : ''), 'error');
   if (qb && !confirm('Lançar no QuickBooks ' + (t === 'entrada' ? 'uma FATURA A RECEBER' : 'uma CONTA A PAGAR') + ' de ' + fmtBRLcompleto(num) + ' para ' + v('fdIncContra') + ', vencimento ' + v('fdIncData').split('-').reverse().join('/') + '?')) return;
   const b = document.getElementById('fdIncBtn'); if (b) { b.disabled = true; b.textContent = 'Lançando…'; }
@@ -20135,7 +20273,7 @@ function _mostrarConferenciaSaldo(elId, d) {
     box.style.display = 'block';
     box.innerHTML = `<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:8px;padding:10px 12px;font-size:10.5px;line-height:1.6;">
       ⚠ <b>Saldo inicial diverge do contábil</b><br>${c.aviso}
-      <button class="btn" style="font-size:9px;margin-left:6px;" onclick="nav('s3saldoinicial')">Rever saldos iniciais</button></div>`;
+      <button class="btn" style="font-size:9px;margin-left:6px;" onclick="nav('s3extrato',document.querySelector('.sbi[onclick*=&quot;s3extrato&quot;]'));setTimeout(()=>{const p=document.getElementById('panelSaldoInicial');if(p){p.style.display='block';p.scrollIntoView({behavior:'smooth'});}},300)">Rever saldos iniciais</button></div>`;
   } else if (c && c.confere) {
     box.style.display = 'block';
     box.innerHTML = `<div style="background:rgba(34,211,163,.08);border:1px solid rgba(34,211,163,.3);border-radius:8px;padding:7px 12px;font-size:10px;color:var(--t2);">
@@ -20179,7 +20317,7 @@ function _fdRenderTabelas() {
   const busca = buscaTxt || (_fdTipoSel ? (_fdTipoSel === 'entrada' ? 'receitas' : 'despesas') : '');
   const pasTodos = d.passado.lancamentos || [], futTodos = d.futuro.lancamentos || [];
   const pas = _fdFiltrar(pasTodos), fut = _fdFiltrar(futTodos);
-  const semNada = (txt) => '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">' + txt + '</td></tr>';
+  const semNada = (txt) => '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--t3);">' + txt + '</td></tr>';
   if (tbP) tbP.innerHTML = pas.length ? _fdComQuebraMes(pas) : (busca ? semNada('Nenhum lançamento realizado com "' + busca.replace(/</g, '&lt;') + '" na descrição.') : semNada('Nenhum lançamento realizado nos últimos 60 dias' + (d.passado.qb_erro ? ' · ⚠ QuickBooks: ' + d.passado.qb_erro : '') + '.'));
   // v2.04: separa o que vence no período do que está em aberto fora dele — os dois importam,
   // mas por motivos diferentes. Vencido e não pago é o mais urgente e vinha sumindo.
@@ -20187,7 +20325,7 @@ function _fdRenderTabelas() {
     const vencidos = fut.filter(l => l.vencida);
     const noPer = fut.filter(l => !l.vencida && l.no_periodo !== false);
     const foraPer = fut.filter(l => !l.vencida && l.no_periodo === false);
-    const secao = (titulo, lista, cor, nota) => lista.length ? `<tr><td colspan="5" style="padding:7px 6px 4px;font-size:10px;color:${_corTxt(cor)};font-weight:600;border-top:1px solid var(--bd);">${titulo} · ${lista.length} documento(s) · ${fmtBRLcompleto(lista.reduce((a,x)=>a+x.valor,0))}${nota?` <span style="font-weight:400;color:var(--t3);">${nota}</span>`:''}</td></tr>`
+    const secao = (titulo, lista, cor, nota) => lista.length ? `<tr><td colspan="6" style="padding:7px 6px 4px;font-size:10px;color:${_corTxt(cor)};font-weight:600;border-top:1px solid var(--bd);">${titulo} · ${lista.length} lançamento(s) · <span style="color:var(--green,#22d3a3);">+${fmtBRLcompleto(lista.filter(x=>x.tipo==='entrada').reduce((a,x)=>a+x.valor,0))}</span> <span style="color:var(--red);">−${fmtBRLcompleto(lista.filter(x=>x.tipo==='saida').reduce((a,x)=>a+x.valor,0))}</span>${nota?` <span style="font-weight:400;color:var(--t3);">${nota}</span>`:''}</td></tr>`
       + _fdComQuebraMes(lista, cor) : '';
     tbF.innerHTML = fut.length
       ? secao('⚠ VENCIDOS E NÃO PAGOS', vencidos, 'var(--red)', '— cobrar primeiro')
@@ -20360,11 +20498,11 @@ async function carregarFluxoDetalhado() {
       const ar = d.a_receber_composicao, ap = d.a_pagar_composicao;
       if (d.a_receber_total != null) {
         u('fd_receber', fmtBRLcompleto(d.a_receber_total));
-        u('fd_receberSub', ar ? `${fmtBRLcompleto(ar.recebido)} recebido + ${fmtBRLcompleto(ar.previsto)} previsto (${ar.qtd_previstos} doc)` : '');
+        u('fd_receberSub', ar ? `${fmtBRLcompleto(ar.recebido)} recebido + ${fmtBRLcompleto(ar.previsto)} previsto (${ar.qtd_previstos} lanç.)` + (ar.previsao_marcos ? ` · ${fmtBRLcompleto(ar.previsao_marcos)} são previsão de marcos` : '') + (d.futuro?.recebiveis_vencidos > 0 ? ` · ⚠ ${fmtBRLcompleto(d.futuro.recebiveis_vencidos)} vencido` : '') : '');
       }
       if (d.a_pagar_total != null) {
         u('fd_pagar', fmtBRLcompleto(d.a_pagar_total));
-        u('fd_pagarSub', ap ? `${fmtBRLcompleto(ap.pago)} pago + ${fmtBRLcompleto(ap.a_pagar)} a pagar (${ap.qtd_a_pagar} doc)` : '');
+        u('fd_pagarSub', ap ? `${fmtBRLcompleto(ap.pago)} pago + ${fmtBRLcompleto(ap.a_pagar)} a pagar (${ap.qtd_a_pagar} lanç.)` + (d.futuro?.pagaveis_vencidos > 0 ? ` · ⚠ ${fmtBRLcompleto(d.futuro.pagaveis_vencidos)} vencido` : '') : '');
       }
       if (d.saldo_projetado != null) {
         u('fd_saldoFinal', fmtBRLcompleto(d.saldo_projetado));
@@ -20644,8 +20782,9 @@ async function carregarKanbanFaturamento() {
       infoEl.style.color = ativos.length ? 'var(--gold)' : 'var(--t3)';
     }
 
-    const cntTotal = FAT_COLS.reduce((s, c) => s + (_fatColunas[c]?.length || 0), 0);
-    const badge = document.getElementById('fatMenuCnt'); if (badge) badge.textContent = cntTotal || '';
+    // v3.109: o número do menu = termos EM ABERTO (até o pagamento), não muda com o filtro da tela
+    const _abertas = ['elaboracao', 'aprovacao', 'emissao_nf', 'envio_nf', 'pagamento'];
+    if (!Object.values(filtros).some(Boolean)) { const cntAberto = _abertas.reduce((s, c) => s + (_fatColunas[c]?.length || 0), 0); const badge = document.getElementById('fatMenuCnt'); if (badge) { badge.textContent = cntAberto || ''; badge.title = cntAberto + ' termo(s) em aberto'; } }
     // v1.20.3: faixa de totais em valor por etapa, no topo
     const totCores = { elaboracao:'bl', aprovacao:'gd', emissao_nf:'pu', envio_nf:'gd', pagamento:'gd', pago:'gn', concluido:'gn' };
     const boxTot = document.getElementById('fatKbTotais');
@@ -20671,7 +20810,7 @@ async function carregarKanbanFaturamento() {
     if (ativos.length && totalTermos === 0) {
       board.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:26px;color:var(--t2);font-size:11.5px;line-height:1.7;">
         Nenhum termo corresponde ao filtro <b>${ativos.join(' + ')}</b>.${futuro ? '<br><span style="color:var(--gold);">O período começa em ' + fa.pag_de.split('-').reverse().join('/') + ', que ainda não chegou — nenhum pagamento pode ter sido registrado.</span>' : '<br>Confira se as notas desse período estão marcadas como pagas (com data) no rateio dos termos.'}
-        <br><button class="btn" style="font-size:10px;margin-top:8px;" onclick="document.getElementById('fatFiltroNf').value='';document.getElementById('fatPagDe').value='';document.getElementById('fatPagAte').value='';document.getElementById('fatFiltroTexto').value='';carregarKanbanFaturamento()">✕ Limpar filtros</button></div>`;
+        <br><button class="btn" style="font-size:10px;margin-top:8px;" onclick="_fatLimparFiltros()">✕ Limpar filtros</button></div>`;
       const tot = document.getElementById('fatKbTotais'); if (tot) tot.innerHTML = '';
       return;
     }
@@ -20687,8 +20826,8 @@ async function carregarKanbanFaturamento() {
   } catch (e) { board.innerHTML = '<div style="grid-column:1/-1;color:var(--red);text-align:center;padding:20px;font-size:11px;">Erro: ' + e.message + '</div>'; addLog('err', '[Faturamento] ' + e.message); }
 }
 async function _fatLimparFiltros() {
-  ['fatFiltroMes','fatFiltroAno'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
-  const t = document.getElementById('fatFiltroTexto'); if (t) t.value = '';
+  // v3.109: limpa TODOS os filtros (antes o "Limpar" deixava NF e datas de pagamento ativos)
+  ['fatFiltroMes','fatFiltroAno','fatFiltroTexto','fatFiltroNf','fatPagDe','fatPagAte'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
   await carregarKanbanFaturamento(); // v1.32: await — sem ele o texto informativo ficava com o filtro antigo
 }
 function _fatCard(t, col) {
@@ -20713,14 +20852,13 @@ function _fatCard(t, col) {
   const mesFiltro = document.getElementById('fatFiltroMes')?.value;
   const anoFiltro = document.getElementById('fatFiltroAno')?.value;
   let mesAntBadge = '';
-  if (mesFiltro && anoFiltro && t.criado_em) {
-    const cri = String(t.criado_em).substring(0, 7);
-    const alvo = `${anoFiltro}-${String(mesFiltro).padStart(2,'0')}`;
-    if (cri && cri < alvo) {
+  // v3.109: o mês do termo é o mês de referência (período de medição) — mostra só quando a inclusão foi em outro mês
+  if (mesFiltro && t.criado_em && !['pago', 'concluido'].includes(col)) {
+    const cri = new Date(t.criado_em).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }).substring(0, 7);
+    if (t.mes_referencia && cri !== t.mes_referencia) {
       const [ca, cm] = cri.split('-');
-      const dias = Math.floor((Date.now() - new Date(t.criado_em)) / 86400000);
-      mesAntBadge = `<div style="font-size:8.5px;margin-top:3px;color:var(--gold);background:rgba(245,185,75,.1);border-radius:4px;padding:1px 5px;display:inline-block;"
-        title="Criado em ${cm}/${ca} e ainda em aberto — por isso continua aparecendo">⏳ de ${cm}/${ca} · ${dias} dias em aberto</div>`;
+      mesAntBadge = `<div style="font-size:8.5px;margin-top:3px;color:var(--t3);background:var(--bg4);border-radius:4px;padding:1px 5px;display:inline-block;"
+        title="O termo é de ${t.mes_referencia.split('-').reverse().join('/')} (período de medição) e foi incluído no sistema em ${cm}/${ca}">incluído em ${cm}/${ca}</div>`;
     }
   }
   // v2.10: no concluído, mostra QUANDO e POR QUE — e permite reabrir se foi automático demais.
@@ -23848,7 +23986,9 @@ async function _tmCriarNoKanban() {
     const r = await fatApi('termo_importar', { arquivo_nome: 'gerado-dos-marcos', cabecalho, empresas });
     // vincula os marcos ao termo criado
     const ids = (window._tmMarcosSel || []).map(m => m.id);
-    for (const id of ids) { try { await finApi('marco_editar', { id, termo_id: r.id || r.termo_id, status: 'elaborando_termo' }); } catch (_) {} }
+    // v3.109: a ação 'marco_editar' não existe — os marcos nunca andavam. Move para "Elaborando termo" e avisa se falhar
+    let _falhasMov = 0; for (const id of ids) { try { await finApi('marco_mover_status', { id, novo_status: 'elaborando_termo', observacao: 'Termo ' + (r.numero_termo || r.id || r.termo_id || '') + ' gerado a partir do marco' }); } catch (e) { _falhasMov++; addLog('warn', '[Marcos] não movi ' + id + ': ' + e.message); } }
+    if (_falhasMov) toast(_falhasMov + ' marco(s) não foram movidos para "Elaborando termo" — veja o log', 'error');
     toast('Termo criado no Kanban de Faturamento', 'success');
     document.getElementById('termoMarcosModal').style.display = 'none';
     _mkSelecionados.clear(); _mkToggle('', false);
@@ -29095,7 +29235,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.108] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.109] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -29111,7 +29251,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.108';
+window.__ATX_BUILD_ID__ = 'ATX-v3.109';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

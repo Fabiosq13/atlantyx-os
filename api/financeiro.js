@@ -306,6 +306,9 @@ async function handler(req, res) {
       return res.status(200).json({ success: true, action, ...resultado, _cache: { idade_s: 0, stale: false } });
     }
     const resultado = await acoes[action]();
+    // v3.109: qualquer gravação invalida o cache das telas financeiras (antes: lançar/ocultar/editar e a tela seguia
+    // mostrando o número velho por até 3 min — e até 12h como "desatualizado")
+    if (/save|salvar|delete|excluir|ocultar|desocultar|marcar|aprovar|rejeitar|lancar|incluir|importar|criar|editar|mover|replicar|gerar|baixar|conciliar|vincular|ajustar/i.test(action)) await _limparCacheFin();
     return res.status(200).json({ success: true, action, ...resultado });
 
   } catch (error) {
@@ -538,7 +541,7 @@ async function contextoFinanceiro({ mes, ano, conta_id = null } = {}) {
   const v = p => p.status === 'fulfilled' ? p.value : { erro: p.reason?.message };
   const R = v(resumo), K = v(kpis), F = v(fluxo), C = v(conc), M = v(kanban), O = v(orc);
   return {
-    quickbooks: { conectado: !R.erros?.length || (R.saldoCaixa !== undefined && R.saldoCaixa !== 0), erros: (R.erros || []).slice(0, 3) },
+    quickbooks: { conectado: !R.erro && R.qb_configurado !== false && (!R.erros?.length || (R.saldoCaixa !== undefined && R.saldoCaixa !== 0)), erros: (R.erro ? [R.erro] : R.erros || []).slice(0, 3) }, // v3.109: falha do resumo não aparece mais como "conectado"
     periodo: R.periodo || null,
     caixa: { saldo: R.saldoCaixa ?? null, a_receber: R.aReceber ?? null, a_pagar: R.aPagar ?? null, receita_mes: R.realMes ?? null, receita_ano: R.realAnual ?? null },
     saude: { semaforo: K.semaforo, motivos: K.semaforo_motivos, erro: K.erro || null, fonte: K.fonte || null, kpis: Object.fromEntries(Object.entries(K).filter(([k, v]) => !/semaforo|erro|fonte|timestamp/.test(k) && v != null && typeof v !== 'object')) },
@@ -548,8 +551,8 @@ async function contextoFinanceiro({ mes, ano, conta_id = null } = {}) {
     fluxo_erro: F.erro || null,
     // v3.18 FIX: conciliacaoStatus devolve aprovadas/rejeitadas — os nomes antigos (conciliados/taxa) nunca
     // existiam, por isso o card "Conciliação" do Dashboard ficava sempre vazio.
-    conciliacao: (() => { const ok = C.conciliados ?? C.aprovados ?? C.aprovadas ?? 0, rej = C.rejeitadas ?? 0, pend = C.pendentes ?? C.com_sugestao ?? rej;
-      const tot = ok + rej; return { conciliados: ok, pendentes: pend, rejeitadas: rej, sem_sugestao: C.sem_sugestao, total_aprovado: C.total_aprovado ?? null,
+    conciliacao: (() => { const ok = C.conciliados ?? C.aprovados ?? C.aprovadas ?? 0, rej = C.rejeitadas ?? 0, pend = C.pendentes ?? C.com_sugestao ?? null; // v3.109: "pendentes" não é mais o nº de rejeitadas
+      const tot = ok + rej; return { conciliados: ok, pendentes: pend, rejeitadas: rej, sem_sugestao: C.sem_sugestao ?? null, total_aprovado: C.total_aprovado ?? null,
         taxa: C.taxa ?? C.taxa_pct ?? (tot > 0 ? Math.round(ok / tot * 100) : null), janela_dias: 60, erro: C.erro || null }; })(),
     marcos: Object.fromEntries(Object.entries(M.colunas || {}).map(([k, c]) => [k, { qtd: c.total_count, valor: c.total_valor, label: c.label }])),
     marcos_erro: M.erro || null,
@@ -565,7 +568,7 @@ const TAREFAS_FIN = {
     descricao: 'Rodar o fluxo de caixa de um período ou mês',
     params: 'data_inicio, data_fim, conta_id (opcional)',
     executar: async (p) => {
-      const hoje = new Date().toISOString().split('T')[0];
+      const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
       const ini = p.data_inicio || `${hoje.substring(0,8)}01`;
       const fim = p.data_fim || hoje;
       const d = await fluxoDetalhado({ data_inicio: ini, data_fim: fim, conta_id: p.conta_id || null });
@@ -580,7 +583,7 @@ const TAREFAS_FIN = {
     descricao: 'Abrir o extrato com saldo acumulado de um período',
     params: 'data_inicio, data_fim, conta_id (opcional)',
     executar: async (p) => {
-      const hoje = new Date().toISOString().split('T')[0];
+      const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
       const ini = p.data_inicio || `${hoje.substring(0,8)}01`, fim = p.data_fim || hoje;
       const d = await extratoConsolidado({ data_inicio: ini, data_fim: fim, conta_id: p.conta_id || null });
       return {
@@ -604,8 +607,10 @@ const TAREFAS_FIN = {
     params: 'meses (padrão 12)',
     executar: async (p) => {
       const d = await fluxoFuturo({ meses: parseInt(p.meses) || 12 });
-      const neg = (d.meses || []).find(m => m.saldo_acumulado < 0);
-      return { resumo: `Projeção de ${p.meses || 12} meses. Saldo inicial ${fmtBR(d.saldo_inicial)}.` + (neg ? ` ⚠ Fica negativo em ${neg.mes} (${fmtBR(neg.saldo_acumulado)}).` : ' Permanece positivo em todo o horizonte.'),
+      // v3.109: meses vêm como texto ("2026-10") e o saldo em linhas['= Saldo Final'][mês] — antes sempre dizia "positivo" e saldo R$ 0
+      const sf = d.linhas?.['= Saldo Final'] || {}; const negM = (d.meses || []).find(m => (sf[m] ?? 0) < 0);
+      const neg = negM ? { mes: negM, saldo_acumulado: sf[negM] } : null;
+      return { resumo: `Projeção de ${p.meses || 12} meses. Saldo atual ${fmtBR(d.saldo_inicial_atual ?? d.saldo_inicial ?? d.linhas?.['Saldo Inicial']?.[(d.meses || [])[0]])}.` + (neg ? ` ⚠ Fica negativo em ${neg.mes} (${fmtBR(neg.saldo_acumulado)}).` : ' Permanece positivo em todo o horizonte.'),
         numeros: { saldo_inicial: d.saldo_inicial, primeiro_mes_negativo: neg?.mes || null }, tela: 's3fluxo', filtros: {} };
     },
   },
@@ -728,7 +733,7 @@ ${JSON.stringify(ctx).substring(0, 9000)}`;
   // v1.71: antes de responder, verifica se a mensagem é uma ORDEM DE TAREFA para executar
   let tarefaExecutada = null;
   try {
-    const hoje = new Date().toISOString().split('T')[0];
+    const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
     const sysT = `Decida se a mensagem do usuário é uma ORDEM para executar uma operação financeira.
 Hoje é ${hoje}.
 
@@ -762,7 +767,7 @@ Regras:
 //    VENCIMENTO, pagas ou não (valor total), + despesas programadas do Atlantyx (sem conta no QB) + simulados.
 //    Para dias futuros usa o previsto do Fluxo Detalhado (em aberto + programado + recorrente).
 async function planejadoVsReal({ data_inicio, data_fim, conta_id = null } = {}) {
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
   const ini = data_inicio, fim = data_fim;
   const meses = []; { let [a, m] = ini.split('-').map(Number); const [af, mf] = fim.split('-').map(Number);
     while (a < af || (a === af && m <= mf)) { meses.push(`${a}-${String(m).padStart(2, '0')}`); m++; if (m > 12) { m = 1; a++; } if (meses.length > 24) break; } }
@@ -807,7 +812,7 @@ async function planejadoVsReal({ data_inicio, data_fim, conta_id = null } = {}) 
 //              + despesas programadas do Atlantyx com categoria/descrição social já pagas no período
 const RX_SOCIAL = /social|doa[cç][aã]o|doa[cç][oõ]es|filantrop|benefic[eê]n|instituto|\bong\b|terceiro setor|responsabilidade social|patroc[ií]nio social|caridade|voluntari/i;
 async function indicadorSocial({ data_inicio, data_fim } = {}) {
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
   const ini = data_inicio || hoje.substring(0, 8) + '01', fim = data_fim || hoje;
   const fimReal = fim > hoje ? hoje : fim;
   let pct = 5; try { const c = await configAppGet({ chave: 'social_pct' }); if (c.valor != null && !isNaN(Number(c.valor))) pct = Number(c.valor); } catch (_) {}
@@ -897,7 +902,7 @@ const DEST_RELATORIO = (process.env.RELATORIO_PAGAMENTOS_PARA || 'financeiro@atl
 
 async function pagamentosDoDiaEPendentes() {
   const sql = await getSql();
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
   const inicioMes = hoje.substring(0, 8) + '01';
   const fimMes = new Date(new Date(hoje).getFullYear(), new Date(hoje).getMonth() + 1, 0).toISOString().split('T')[0];
 
@@ -1266,12 +1271,21 @@ function qbConfigurado() {
 // 1. QuickBooks estendido
 // ═══════════════════════════════════════════════════════════════════════════
 
+const _hojeBR = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+// v3.109: Ids das contas bancárias do QuickBooks (10 min de cache) — null se a consulta falhar (mantém o comportamento antigo)
+let _bancosCache = null;
+async function _qbContasBanco(token) {
+  if (_bancosCache && Date.now() - _bancosCache.em < 600000) return _bancosCache.v;
+  try { const d = await qbQuery(`select Id from Account where AccountType = 'Bank' maxresults 200`, token);
+    const v = new Set((d?.QueryResponse?.Account || []).map(a => String(a.Id))); _bancosCache = { em: Date.now(), v: v.size ? v : null }; return _bancosCache.v; }
+  catch (_) { return null; }
+}
 // 1.1 Lançamentos linha-a-linha (Purchase, Payment, Deposit, JournalEntry, SalesReceipt)
 const fmtNum = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
 async function qbLancamentos({ data_inicio, data_fim, limite = 200, conta_id = null } = {}) {
   if (!qbConfigurado()) return { erros: ['QuickBooks não configurado'], lancamentos: [], qb_configurado: false };
   const token = await qbToken();
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
   const ini = data_inicio || new Date(Date.now() - 90 * 86400 * 1000).toISOString().split('T')[0];
   const fim = data_fim || hoje;
 
@@ -1299,6 +1313,11 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200, conta_id = n
 
   const lancamentos = []; const erros = [];
   let incompletoPorThrottle = false; // v1.49
+  // v3.109: contas BANCÁRIAS (o saldo inicial soma só elas). Compra no cartão de crédito não sai do caixa na
+  // compra — sai quando a fatura do cartão é paga (CreditCardPayment). Lançamento manual (JournalEntry) só
+  // mexe no caixa pelas linhas das contas bancárias. Transferência banco → não-banco (e o contrário) mexe no caixa.
+  const bancos = await _qbContasBanco(token);
+  const ehBanco = id => !!(bancos && id && bancos.has(String(id)));
   const vistos = new Set(); // trava extra contra duplicidade (mesmo id não entra duas vezes)
   for (const [idx, { tipo, entidade, q }] of queries.entries()) {
     try {
@@ -1338,8 +1357,28 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200, conta_id = n
         // v1.48: classificação dos novos tipos.
         // BillPayment/CreditCardPayment/reembolso = SAÍDA · Transfer não muda o caixa total
         // (sai de uma conta e entra em outra) · JournalEntry depende das linhas.
-        const entrada = ['pagamento', 'deposito', 'venda'].includes(tipo);
-        const soReferencia = tipo === 'invoice' || tipo === 'transferencia';
+        let entrada = ['pagamento', 'deposito', 'venda'].includes(tipo);
+        let soReferencia = tipo === 'invoice' || tipo === 'transferencia';
+        let contaCaixa = null, notaCaixa = null;
+        if (bancos) {
+          if (tipo === 'despesa') {
+            if (item.AccountRef?.value && !ehBanco(item.AccountRef.value)) { soReferencia = true; notaCaixa = 'Compra no cartão/conta não bancária — o caixa só muda quando a fatura do cartão é paga.'; }
+            else if (item.Credit === true) entrada = true; // estorno/crédito na conta
+          } else if (tipo === 'lancamento' && Array.isArray(item.Line)) {
+            let liq = 0;
+            for (const l of item.Line) { const d = l.JournalEntryLineDetail; if (!d || !ehBanco(d.AccountRef?.value)) continue;
+              const v = parseFloat(l.Amount) || 0; liq += d.PostingType === 'Debit' ? v : -v; contaCaixa = contaCaixa || d.AccountRef.value; }
+            liq = Math.round(liq * 100) / 100;
+            if (!liq) { soReferencia = true; notaCaixa = 'Lançamento manual sem conta bancária — não mexe no caixa.'; }
+            else { entrada = liq > 0; valorItem = Math.abs(liq); }
+          } else if (tipo === 'transferencia') {
+            const de = ehBanco(item.FromAccountRef?.value), para = ehBanco(item.ToAccountRef?.value);
+            if (de && !para) { soReferencia = false; entrada = false; contaCaixa = item.FromAccountRef.value; }
+            else if (!de && para) { soReferencia = false; entrada = true; contaCaixa = item.ToAccountRef.value; }
+          } else if (tipo === 'pagto_conta' && (item.PayType === 'CreditCard' || (item.CreditCardPayment?.CCAccountRef && !ehBanco(item.CreditCardPayment.CCAccountRef.value)))) {
+            soReferencia = true; notaCaixa = 'Conta paga com cartão de crédito — o caixa só muda quando a fatura do cartão é paga.';
+          }
+        }
         lancamentos.push({
           id: `qb_${tipo}_${item.Id}`,
           qb_txn_id: `${tipo}:${item.Id}`,
@@ -1362,13 +1401,14 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200, conta_id = n
                   || item.APAccountRef?.name || item.BankAccountRef?.name
                   || item.CheckPayment?.BankAccountRef?.name || item.FromAccountRef?.name || '',
           // v1.53: id da conta, para o filtro por conta bancária
-          conta_id: item.AccountRef?.value || item.DepositToAccountRef?.value
+          conta_id: contaCaixa || item.AccountRef?.value || item.DepositToAccountRef?.value
                   || item.BankAccountRef?.value || item.CheckPayment?.BankAccountRef?.value
                   || item.FromAccountRef?.value || null,
+          _de: item.FromAccountRef?.value || null, _para: item.ToAccountRef?.value || null,
           tipo: soReferencia ? 'referencia' : (entrada ? 'entrada' : 'saida'),
           valor: valorItem,
           valor_documento: parseFloat(item.TotalAmt || 0),
-          nota_dedup: obsDedup,
+          nota_dedup: obsDedup || notaCaixa,
           // v1.38: nota emitida não movimenta caixa — fica visível na lista, mas não soma no saldo
           afeta_saldo: !soReferencia,
           origem: 'quickbooks',
@@ -1425,8 +1465,16 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200, conta_id = n
   let filtrados = lancamentos.filter(l => !ocultos.has(l.qb_txn_id));
   // v1.53: filtro por conta bancária — permite bater a tela com o extrato de UM banco
   if (conta_id) {
-    filtrados = filtrados.filter(l => String(l.conta_id || '') === String(conta_id));
+    // v3.109: transferência entre contas bancárias — com uma conta escolhida, é saída numa e entrada na outra
+    const cid = String(conta_id);
+    filtrados = filtrados.flatMap(l => {
+      if (l.qb_tipo === 'transferencia' && (String(l._de) === cid || String(l._para) === cid)) {
+        const ent = String(l._para) === cid; return [{ ...l, tipo: ent ? 'entrada' : 'saida', afeta_saldo: true, conta_id: cid }];
+      }
+      return String(l.conta_id || '') === cid ? [l] : [];
+    });
   }
+  filtrados.forEach(l => { delete l._de; delete l._para; });
 
   filtrados.sort((a, b) => (a.data < b.data ? -1 : 1));
   return { erros,
@@ -1510,7 +1558,7 @@ async function qbOrcamento({ ano } = {}) {
 async function qbConferirComBanco({ data_inicio, data_fim, conta_id = null } = {}) {
   if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
   const token = await qbToken();
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
   const ini = data_inicio || `${hoje.substring(0, 8)}01`;
   const fim = data_fim || hoje;
   const out = { periodo: { de: ini, ate: fim } };
@@ -1559,7 +1607,7 @@ async function qbConferirComBanco({ data_inicio, data_fim, conta_id = null } = {
 async function qbVarrerDuplicados({ data_inicio, data_fim, tolerancia_dias = 3 } = {}) {
   if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
   const token = await qbToken();
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
   const ini = data_inicio || new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
   const fim = data_fim || hoje;
 
@@ -1763,7 +1811,11 @@ async function qbExcluirLancamento({ qb_txn_id, confirmar = false } = {}) {
 // inclui lançamentos com DATA FUTURA, e ao retroagir esse excesso era arrastado para trás.
 // (No caso real: razão do Itaú fechava 31/07 em R$ 91.913,38, mas o CurrentBalance dizia
 //  -R$ 137.644,04 porque somava lançamentos datados depois do período.)
-const _cacheSaldoData = new Map();
+// v3.109: cache do saldo inicial expira em 5 min (antes nunca expirava — lançamento retroativo não mudava o saldo até reiniciar)
+const _cacheSaldoEm = new Map();
+const _cacheSaldoOrig = new Map();
+class _MapTTL extends Map { set(k, v) { _cacheSaldoEm.set(k, Date.now()); try { _cacheSaldoOrig.set(k, _ultimaOrigemSaldo); } catch (_) {} return super.set(k, v); } has(k) { if (super.has(k) && Date.now() - (_cacheSaldoEm.get(k) || 0) > 300000) { super.delete(k); } return super.has(k); } }
+const _cacheSaldoData = new _MapTTL();
 let _saldoAberturaTruncado = false; // v1.59
 let _ultimaOrigemSaldo = null, _ultimoErroSaldo = null; // v1.60.1 diagnóstico
 async function qbSaldoContaNaData({ conta_id = null, data } = {}) {
@@ -1775,7 +1827,7 @@ async function qbSaldoContaNaData({ conta_id = null, data } = {}) {
   // devolviam null — mesmo quando o razão já conseguia buscar o número certo.
   if (_cacheSaldoData.has(chave)) {
     const c = _cacheSaldoData.get(chave);
-    if (c != null) return c;
+    if (c != null) { _ultimaOrigemSaldo = _cacheSaldoOrig.get(chave) || _ultimaOrigemSaldo; return c; } // v3.109: a origem também vem do cache
     _cacheSaldoData.delete(chave);
   }
 
@@ -1941,7 +1993,7 @@ async function qbSaldoContaNaData({ conta_id = null, data } = {}) {
 async function qbRazaoConta({ conta_id, data_inicio, data_fim } = {}) {
   if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
   const token = await qbToken();
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
   const ini = data_inicio || `${hoje.substring(0, 8)}01`;
   const fim = data_fim || hoje;
   const out = { periodo: { de: ini, ate: fim }, conta_id: conta_id || null };
@@ -2275,7 +2327,7 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
   const chave = String(conta_id || 'todas');
   const c = _baseCache.get(chave);
   if (c && Date.now() - c.em < 60000) return c.valor;
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
   const ini = hoje.substring(0, 8) + '01';
   const em30 = _diasMais(hoje, 30);
   const [ext, fut] = await Promise.all([
@@ -2348,7 +2400,7 @@ async function painelResumo({ mes, ano } = {}) {
     qbFetch(`/reports/AgedReceivables?date_macro=Today`, token),
     qbFetch(`/reports/AgedPayables?date_macro=Today`, token),
     qbQuery(`select * from Account where AccountType = 'Bank'`, token),
-    qbLancamentos({ data_inicio: inicioMes, data_fim: fimMes, limite: 50 }),
+    qbLancamentos({ data_inicio: inicioMes, data_fim: fimMes, limite: 300 }), // v3.109: período inteiro (antes 50 por tipo)
   ]);
 
   if (pAno.status === 'fulfilled') {
@@ -2360,6 +2412,8 @@ async function painelResumo({ mes, ano } = {}) {
   if (pMes.status === 'fulfilled') {
     const linhas = extrairLinhasRelatorio(pMes.value);
     resp.realMes = linhas.find(l => l.tipo === 'total' && /receita|income|revenue|total income/i.test(l.label))?.valor || 0;
+    resp.despMes = linhas.find(l => l.tipo === 'total' && /total (de )?despesas|total expenses/i.test(l.label))?.valor || 0; // v3.109
+    resp.lucroMes = linhas.find(l => /lucro l[ií]quido|net income/i.test(l.label))?.valor ?? null;
   } else { resp.erros.push(`DRE mês: ${pMes.reason?.message}`); }
 
   if (ar.status === 'fulfilled') {
@@ -2393,7 +2447,12 @@ async function painelResumo({ mes, ano } = {}) {
   } catch (e) { resp.erros.push('Base de caixa: ' + e.message); }
 
   if (lanc.status === 'fulfilled') {
-    resp.lancamentos = lanc.value.lancamentos.slice(0, 20);
+    // v3.109: os MAIS RECENTES primeiro (antes eram os 20 mais antigos do período) + a lista completa do período
+    const todos = (lanc.value.lancamentos || []).slice().reverse();
+    resp.lancamentos = todos.slice(0, 20);
+    resp.lancamentos_periodo = todos;
+    resp.caixa_periodo = { entradas: round(todos.filter(l => l.tipo === 'entrada').reduce((a, l) => a + l.valor, 0)), saidas: round(todos.filter(l => l.tipo === 'saida').reduce((a, l) => a + l.valor, 0)) };
+    if (lanc.value.dados_incompletos) resp.erros.push(lanc.value.aviso_incompleto);
   }
 
   return resp;
@@ -2404,7 +2463,7 @@ async function painelResumo({ mes, ano } = {}) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = true, conta_id = null } = {}) {
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
   const ini = data_inicio || new Date(Date.now() - 90 * 86400 * 1000).toISOString().split('T')[0];
   const fim = data_fim || hoje;
 
@@ -2413,7 +2472,7 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
   try {
     // v3.21: períodos longos (Saldo Mensal = ano inteiro) estouravam 500 por tipo e perdiam lançamentos
     const _dias = (new Date(fim + 'T12:00:00') - new Date(ini + 'T12:00:00')) / 864e5;
-    const r = await qbLancamentos({ data_inicio: ini, data_fim: fim, limite: _dias > 120 ? 1000 : 500 });
+    const r = await qbLancamentos({ data_inicio: ini, data_fim: fim, limite: _dias > 120 ? 1000 : 500, conta_id }); // v3.109: o filtro de conta agora vale para os lançamentos (antes só para o saldo inicial)
     qbLanc = r.lancamentos || [];
     if (r.erros?.length) qbErro = r.erros.join(' | ');
   } catch (e) {
@@ -2422,7 +2481,7 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
 
   // 2. Simulados
   let simulados = [];
-  if (incluir_simulados) {
+  if (incluir_simulados && !conta_id) { // v3.109: simulação não tem conta bancária — com uma conta escolhida, fica de fora
     try {
       const sql = await getSql();
       const rows = await sql`SELECT * FROM lancamentos_simulados
@@ -2496,7 +2555,7 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
       // v1.66: CONFERÊNCIA — o saldo inicial precisa bater com o saldo contábil da conta
       // na data de início. Se não bater, a tela avisa em vez de mostrar número errado calado.
       try {
-        if (conta_id) {
+        if (!conta_id) { // v3.109: o saldo cadastrado é da EMPRESA (todas as contas) — comparar com uma conta só gerava alerta falso
           const sqlC = await getSql();
           const cad = await sqlC`SELECT valor, data_ref FROM saldos_iniciais WHERE data_ref <= ${ini} ORDER BY data_ref DESC LIMIT 1`;
           if (cad.length) {
@@ -2696,7 +2755,7 @@ async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
     else out.recebiveis = (inv?.QueryResponse?.Invoice || []).map(i => ({
       id: 'inv_' + i.Id, data: i.DueDate || i.TxnDate, descricao: (i.CustomerRef?.name || 'Cliente') + (i.DocNumber ? ' · Fat. ' + i.DocNumber : '') + _descLinhasFatura(i),
       categoria: 'A Receber (Invoice)', valor: parseFloat(i.Balance || 0), valor_total: parseFloat(i.TotalAmt || 0), tipo: 'entrada', origem: 'quickbooks_futuro',
-      vencida: i.DueDate ? new Date(i.DueDate) < new Date(new Date().toISOString().split('T')[0]) : false,
+      vencida: i.DueDate ? i.DueDate < _hojeBR() : false,
       // v2.04: diz se cai no período consultado, sem excluir o que está fora
       no_periodo: (!data_inicio || (i.DueDate || i.TxnDate) >= data_inicio) && (!data_fim || (i.DueDate || i.TxnDate) <= data_fim),
       emissao: i.TxnDate,
@@ -2717,7 +2776,7 @@ async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
     else out.pagaveis = (bill?.QueryResponse?.Bill || []).map(b => ({
       id: 'bill_' + b.Id, data: b.DueDate || b.TxnDate, descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''),
       categoria: 'A Pagar (Bill)', valor: parseFloat(b.Balance || 0), valor_total: parseFloat(b.TotalAmt || 0), tipo: 'saida', origem: 'quickbooks_futuro',
-      no_periodo: (!data_inicio || (b.DueDate || b.TxnDate) >= data_inicio) && (!data_fim || (b.DueDate || b.TxnDate) <= data_fim), vencida: b.DueDate ? new Date(b.DueDate) < new Date(new Date().toISOString().split('T')[0]) : false,
+      no_periodo: (!data_inicio || (b.DueDate || b.TxnDate) >= data_inicio) && (!data_fim || (b.DueDate || b.TxnDate) <= data_fim), vencida: b.DueDate ? b.DueDate < _hojeBR() : false,
     }));
   } catch (e) { out.erro = e.message; }
   return out;
@@ -2732,6 +2791,7 @@ async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
 async function _limparCacheFin() {
   try { const sql = await getSql(); await sql`DELETE FROM kv_store WHERE key LIKE 'cache:fin:%'`; } catch (_) {}
   try { _qbCache.clear(); } catch (_) {}
+  try { _cacheSaldoData.clear(); _bancosCache = null; } catch (_) {}
 }
 const _brl = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 async function fluxoLancamentoExcluir({ id, qb_txn_id = null, origem = '', confirmar = false, motivo = '' } = {}) {
@@ -2856,7 +2916,7 @@ async function fluxoLancamentoIncluir({ tipo, data, valor, descricao, contrapart
 }
 
 async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, incluir_simulados = true, conta_id = null } = {}) {
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
   // v1.16.1: filtro de período explícito. Se data_inicio/data_fim vierem, o "hoje" divisório
   // passado/futuro só se aplica dentro desse período — passado é [ini, min(hoje,fim)],
   // futuro é [max(hoje+1,ini), fim] (fim vazio = sem limite, como antes).
@@ -2887,16 +2947,17 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
     const rows = fim
       ? await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat
           FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
-          WHERE o.data_prevista > ${hoje} AND o.data_prevista <= ${fim} AND o.status NOT IN ('paga', 'cancelada') ORDER BY o.data_prevista ASC`
+          WHERE o.data_prevista >= ${hoje} AND o.data_prevista <= ${fim} AND o.status NOT IN ('paga', 'cancelada') AND o.qb_txn_id IS NULL ORDER BY o.data_prevista ASC`
       : await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat
           FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
-          WHERE o.data_prevista > ${hoje} AND o.status NOT IN ('paga', 'cancelada') ORDER BY o.data_prevista ASC`;
+          WHERE o.data_prevista >= ${hoje} AND o.status NOT IN ('paga', 'cancelada') AND o.qb_txn_id IS NULL ORDER BY o.data_prevista ASC`;
+    // v3.109: a ocorrência já lançada no QuickBooks (qb_txn_id) aparece pela conta a pagar (Bill) — antes contava duas vezes
     despFuturas = rows.map(r => ({ id: 'desp_' + r.id, data: String(r.data_prevista).split('T')[0], descricao: r.despesa_desc || 'Despesa programada', categoria: r.despesa_cat || 'Despesa', valor: parseFloat(r.valor), tipo: 'saida', origem: 'atlantyx_futuro' }));
   } catch (e) { console.warn('[FluxoDetalhado] despesas futuras:', e.message); }
 
   // 4. Simulados futuros (lançamentos manuais com data > hoje)
   let simFuturos = [];
-  try {
+  if (incluir_simulados && !conta_id) try { // v3.109: respeita "incluir simulados" (antes só valia para o passado) e o filtro de conta
     const sql = await getSql();
     const rows = fim
       ? await sql`SELECT * FROM lancamentos_simulados WHERE excluido = false AND data > ${hoje} AND data <= ${fim} ORDER BY data ASC`
@@ -2933,18 +2994,23 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   }
   _marca('futuro_qb_lancados_recorrentes');
   if (qbExtraErro) fut.erro = (fut.erro ? fut.erro + ' | ' : '') + qbExtraErro;
+  // v3.109: faturas/contas VENCIDAS e o que vence HOJE entram (antes a regra "data > hoje" escondia os dois — a seção
+  // "Vencidos e não pagos" nunca aparecia). O que está em aberto mas FORA do período aparece na lista sem mexer no saldo.
   const futTodos = [...fut.recebiveis, ...fut.pagaveis, ...despFuturas, ...simFuturos, ...qbLancFuturos, ...qbRecorrentes]
-    .filter(l => l.data && l.data > hoje)
-    .sort((a, b) => a.data < b.data ? -1 : a.data > b.data ? 1 : 0);
+    .filter(l => l.data && (l.data >= hoje || l.vencida))
+    .sort((a, b) => (b.vencida ? 1 : 0) - (a.vencida ? 1 : 0) || (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
   let saldoCorrente = extrato.saldo_final || 0;
+  const conta = l => l.vencida || l.no_periodo !== false;
   const futuroComSaldo = futTodos.map(l => {
+    if (!conta(l)) return { ...l, saldo_acumulado: null, fora_do_saldo: true };
     if (l.tipo === 'entrada') saldoCorrente += l.valor;
     else if (l.tipo === 'saida') saldoCorrente -= l.valor;
     return { ...l, saldo_acumulado: Math.round(saldoCorrente * 100) / 100 };
   });
+  const noSaldo = futuroComSaldo.filter(l => !l.fora_do_saldo);
 
-  const menorSaldo = futuroComSaldo.length ? futuroComSaldo.reduce((min, l) => l.saldo_acumulado < min.saldo_acumulado ? l : min, futuroComSaldo[0]) : null;
-  const ultimaData = futuroComSaldo.length ? futuroComSaldo[futuroComSaldo.length - 1].data : hoje;
+  const menorSaldo = noSaldo.length ? noSaldo.reduce((min, l) => l.saldo_acumulado < min.saldo_acumulado ? l : min, noSaldo[0]) : null;
+  const ultimaData = noSaldo.length ? noSaldo.reduce((m, l) => l.data > m ? l.data : m, hoje) : hoje;
 
   // v1.50: o saldo REAL das contas no QuickBooks, para conferência contra o calculado.
   // Sem isso, "Saldo de hoje" era um número derivado (saldo inicial + movimento do período)
@@ -2980,8 +3046,10 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   const lancPer = extrato.lancamentos || [];
   const recebidoPeriodo = round(lancPer.filter(l => l.tipo === 'entrada').reduce((s, l) => s + l.valor, 0));
   const pagoPeriodo     = round(lancPer.filter(l => l.tipo === 'saida').reduce((s, l) => s + l.valor, 0));
-  const aReceberFut = round((fut.recebiveis || []).reduce((s, l) => s + l.valor, 0));
-  const aPagarFut   = round((fut.pagaveis   || []).reduce((s, l) => s + l.valor, 0));
+  // v3.109: previsto / a pagar = exatamente o que a tabela projetada soma no saldo (faturas, contas, previsões de marco,
+  // despesas programadas, simulados, lançados com data futura e recorrentes) — antes só faturas e contas do QB
+  const aReceberFut = round(noSaldo.filter(l => l.tipo === 'entrada').reduce((s, l) => s + l.valor, 0));
+  const aPagarFut   = round(noSaldo.filter(l => l.tipo === 'saida').reduce((s, l) => s + l.valor, 0));
   const totalReceitas = round(recebidoPeriodo + aReceberFut);
   const totalDespesas = round(pagoPeriodo + aPagarFut);
   // v1.83: se o saldo inicial não veio (throttle, API fora), NÃO assumir zero em silêncio —
@@ -3003,9 +3071,9 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
       ? 'Não foi possível obter o saldo contábil na data inicial (o QuickBooks pode ter limitado as consultas). A coluna de saldo está partindo de zero — recarregue em alguns segundos.'
       : null,
     a_receber_total: totalReceitas,
-    a_receber_composicao: { recebido: recebidoPeriodo, previsto: aReceberFut, qtd_previstos: (fut.recebiveis||[]).length },
+    a_receber_composicao: { recebido: recebidoPeriodo, previsto: aReceberFut, qtd_previstos: noSaldo.filter(l => l.tipo === 'entrada').length, previsao_marcos: round(noSaldo.filter(l => l.origem === 'quickbooks_previsao').reduce((s, l) => s + l.valor, 0)) },
     a_pagar_total: totalDespesas,
-    a_pagar_composicao: { pago: pagoPeriodo, a_pagar: aPagarFut, qtd_a_pagar: (fut.pagaveis||[]).length },
+    a_pagar_composicao: { pago: pagoPeriodo, a_pagar: aPagarFut, qtd_a_pagar: noSaldo.filter(l => l.tipo === 'saida').length },
     saldo_projetado: saldoProjetadoNovo,
     saldo_projetado_formula: `${fmtB(saldoInicialPer)} + ${fmtB(totalReceitas)} − ${fmtB(totalDespesas)}`,
     // v1.50: conferência explícita
@@ -3037,7 +3105,7 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
       qtd_pagaveis_vencidos: fut.pagaveis.filter(p => p.vencida).length,
       qb_erro: fut.erro, ate: ultimaData,
       filtro_conta_nao_aplicavel: !!conta_id },
-    saldo_projetado_final: futuroComSaldo.length ? futuroComSaldo[futuroComSaldo.length - 1].saldo_acumulado : (extrato.saldo_final || 0),
+    saldo_projetado_final: noSaldo.length ? noSaldo[noSaldo.length - 1].saldo_acumulado : (extrato.saldo_final || 0),
     menor_saldo_projetado: menorSaldo ? { valor: menorSaldo.saldo_acumulado, data: menorSaldo.data, descricao: menorSaldo.descricao } : null,
   };
 }
@@ -3172,7 +3240,7 @@ async function despDelete({ id } = {}) {
 
 async function despOcorrencias({ data_inicio, data_fim, status, incluir_qb = true } = {}) {
   const sql = await getSql();
-  const ini = data_inicio || new Date().toISOString().split('T')[0];
+  const ini = data_inicio || _hojeBR();
   const fim = data_fim || new Date(Date.now() + 365 * 86400 * 1000).toISOString().split('T')[0];
   // v1.15: contas a pagar do QuickBooks (Bills) no período entram na agenda como ocorrências fonte 'quickbooks'
   let qbBills = [], qbErro = null;
@@ -3204,8 +3272,12 @@ async function despOcorrencias({ data_inicio, data_fim, status, incluir_qb = tru
       valor: parseFloat(r.valor),
       status: r.status,
       data_pagamento: r.data_pagamento ? String(r.data_pagamento).split('T')[0] : null,
+      qb_txn_id: r.qb_txn_id || null,
       fonte: 'atlantyx',
-    }));
+    })).filter(o => status || o.status !== 'cancelada'); // v3.109: canceladas não aparecem na agenda nem no fluxo
+  // v3.109: ocorrência já lançada no QuickBooks vira uma conta a pagar (Bill) — sem isto a mesma despesa contava duas vezes
+  const lancadasQb = new Set(locais.map(o => o.qb_txn_id).filter(Boolean).map(String));
+  qbBills = qbBills.filter(b => !lancadasQb.has(String(b.id).replace(/^qb_/, '')));
   const filtQb = status ? qbBills.filter(b => b.status === status) : qbBills;
   return { ocorrencias: locais.concat(filtQb).sort((a, b) => String(a.data_prevista).localeCompare(String(b.data_prevista))), qb_bills: qbBills.length, qb_erro: qbErro };
 }
@@ -3214,7 +3286,7 @@ async function despMarcarPaga({ id, data_pagamento, qb_txn_id } = {}) {
   if (!id) throw new Error('id obrigatório');
   const sql = await getSql();
   await sql`UPDATE despesas_ocorrencias
-    SET status = 'paga', data_pagamento = ${data_pagamento || new Date().toISOString().split('T')[0]},
+    SET status = 'paga', data_pagamento = ${data_pagamento || _hojeBR()},
         qb_txn_id = ${qb_txn_id || null}
     WHERE id = ${id}`;
   return { id, paga: true };
@@ -3316,7 +3388,7 @@ async function regerarOcorrencias(sql, despesaId, meses = 12) {
   if (!d || !d.ativa) return 0;
 
   // Apaga ocorrências futuras ainda previstas
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
   // v1.21.1 FIX: apagar também as 'lancada' (não pagas) — antes só 'prevista' era removida,
   // então editar uma despesa recorrente deixava ocorrências antigas duplicadas no calendário.
   // As 'paga' são preservadas (histórico real não se mexe).
@@ -3349,10 +3421,11 @@ function gerarDatasRecorrencia(d, meses) {
   }
 
   const incrementoMeses = { mensal: 1, trimestral: 3, anual: 12 }[d.recorrencia] || 1;
-  const cursor = new Date(inicio);
+  // v3.109: o cursor anda pelo dia 1 e o dia é limitado ao fim do mês — com vencimento 29-31 pulava fev/abr/jun e duplicava maio
+  const cursor = new Date(inicio.getFullYear(), inicio.getMonth(), 1);
   while (cursor <= fimEfetivo) {
     const dia = d.dia_vencimento || inicio.getDate();
-    const data = new Date(cursor.getFullYear(), cursor.getMonth(), dia);
+    const data = new Date(cursor.getFullYear(), cursor.getMonth(), Math.min(dia, new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate()));
     if (data >= inicio && data <= fimEfetivo) {
       datas.push(data.toISOString().split('T')[0]);
     }
@@ -3503,7 +3576,7 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
         // v3.02: previsão de marco que já virou fatura em aberto (mesmo cliente, valor ±2%, até 45 dias) não conta de novo
         if (invoices.some(inv => Math.abs(parseFloat(inv.Balance || 0) - e.valor) <= Math.max(1, e.valor * 0.02) && Math.abs((new Date(inv.DueDate || inv.TxnDate) - new Date(e.data)) / 864e5) <= 45
           && (_nc(inv.CustomerRef?.name).startsWith(_nc(e.cliente)) || _nc(e.cliente).startsWith(_nc(inv.CustomerRef?.name).substring(0, 6))))) continue;
-        const m2 = mes > ultimoMes ? ultimoMes : mes; previstoMarcosPorMes[m2] = (previstoMarcosPorMes[m2] || 0) + e.valor; } } catch (_) {}
+        /* v3.109: além do horizonte fica de fora (antes somava tudo no 12º mês) */ if (mes > ultimoMes) continue; previstoMarcosPorMes[mes] = (previstoMarcosPorMes[mes] || 0) + e.valor; } } catch (_) {}
     } catch {}
   }
 
@@ -3585,7 +3658,11 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
       });
       // v3.00: transações recorrentes do QuickBooks entram no "± Já lançado/agendado no QuickBooks"
       try { const rc = await qbRecorrentesProjecao({ ate: fimHorizonte });
+        // v3.109: mesma regra do Fluxo Detalhado — recorrente com o mesmo valor (±1%) no mesmo mês de uma conta a pagar
+        // ou despesa programada é a mesma despesa (antes contava duas vezes só nesta tela)
+        const baseMes = [...(fut.pagaveis || []).map(p => ({ m: String(p.data).substring(0, 7), v: Math.abs(p.valor) })), ...(ocorrencias || []).map(o => ({ m: String(o.data_prevista).substring(0, 7), v: Math.abs(parseFloat(o.valor) || 0) }))];
         (rc.itens || []).forEach(l => { const ch = `${l.data}|${Math.abs(l.valor).toFixed(2)}`; if (previstos.has(ch)) { ignorados++; return; }
+          if (l.tipo !== 'entrada' && baseMes.some(b => b.m === l.data.substring(0, 7) && Math.abs(b.v - l.valor) <= Math.max(1, l.valor * 0.01))) { ignorados++; return; }
           const mes = l.data.substring(0, 7); jaLancadoPorMes[mes] = round((jaLancadoPorMes[mes] || 0) + (l.tipo === 'entrada' ? l.valor : -l.valor)); }); }
       catch (e) { console.warn('[fluxoFuturo] recorrentes:', e.message); }
       if (ignorados) console.log(`[fluxoFuturo] ${ignorados} lançamento(s) ignorado(s) por já constarem como previsão`);
@@ -3892,7 +3969,7 @@ async function kpisSaude({ overrides = {}, conta_id = null } = {}) {
 
   if (score >= 5) kpis.semaforo = 'verde';
   else if (score >= 3) kpis.semaforo = 'amarelo';
-  else if (score > 0) kpis.semaforo = 'vermelho';
+  else if (score > 0 || motivos.length) kpis.semaforo = 'vermelho'; // v3.109: tudo ruim (score 0) era cinza = "sem dados"
   kpis.semaforo_motivos = motivos;
 
   return { kpis };
@@ -4962,7 +5039,7 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
 // OU as notas uma a uma, com vencimento ~30 dias após a emissão.
 async function conciliacaoRecebiveis({ tolerancia_valor_pct = 2, tolerancia_dias = 10, prazo_padrao_dias = 30, apenas_futuros = true } = {}) {
   const sql = await getSql();
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
 
   // 1. Termos aprovados, com empresas e notas
   let termos = [];
@@ -5103,9 +5180,10 @@ async function conciliacaoRecebiveis({ tolerancia_valor_pct = 2, tolerancia_dias
 
 async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55, conta_id = null, tipo = 'todos', apenas_futuros = false, janela_dias = 30 } = {}) {
   const sql = await getSql();
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
   const ini = data_inicio || new Date(Date.now() - 60 * 86400 * 1000).toISOString().split('T')[0];
-  const fim = data_fim || hoje;
+  // v3.109: "só lançamentos futuros" com fim = hoje nunca trazia nada — estende o fim para 90 dias à frente
+  const fim = apenas_futuros ? ((data_fim && data_fim > _diasMais(hoje, 90)) ? data_fim : _diasMais(hoje, 90)) : (data_fim || hoje);
 
   // 1. Buscar lançamentos REAIS (QB + simulados − ocultos) no período
   const ext = await extratoConsolidado({ conta_id, data_inicio: ini, data_fim: fim });
@@ -5118,8 +5196,7 @@ async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55, c
   else reais = reais.filter(l => l.tipo === 'entrada' || l.tipo === 'saida');  // exclui 'referencia'
 
   if (apenas_futuros) {
-    const hojeF = new Date().toISOString().split('T')[0];
-    reais = reais.filter(l => String(l.data) > hojeF);
+    reais = reais.filter(l => String(l.data) > hoje);
   }
 
   // 2. Já tem conciliação aprovada/rejeitada para algum deles?
@@ -5261,7 +5338,7 @@ async function conciliacaoSugestoes({ data_inicio, data_fim, score_min = 0.55, c
 
   // 5. Stats
   const totalReais = reais.length;
-  const jaConciliados = jaProcessados.filter(c => c.status === 'aprovada').length;
+  const jaConciliados = new Set(jaProcessados.filter(c => c.status === 'aprovada').map(c => c.real_id)).size; // v3.109: aprovação repetida não conta duas vezes (taxa passava de 100%)
   const comSugestao = sugestoes.filter(s => s.sugestao).length;
   const semSugestao = sugestoes.filter(s => !s.sugestao).length;
   const taxaConciliacao = totalReais > 0
@@ -5305,6 +5382,9 @@ function calcScore(realValor, refValor, realData, refData, realDesc, refDesc) {
 async function conciliacaoAprovar({ real_id, ref_id, ref_tipo, sugestao } = {}) {
   if (!real_id) throw new Error('real_id obrigatório');
   const sql = await getSql();
+  // v3.109: clique duplo / segunda aprovação do mesmo lançamento não cria outra linha
+  const ja = await sql`SELECT id FROM conciliacoes WHERE real_id = ${real_id} AND status = 'aprovada' LIMIT 1`.catch(() => []);
+  if (ja.length) return { ok: true, ja_aprovada: true, id: ja[0].id };
   const id = 'conc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
   const s = sugestao || {};
   await sql`INSERT INTO conciliacoes
@@ -5424,7 +5504,7 @@ async function orcamentoConsolidado({ ano } = {}) {
   const anoRef = ano || new Date().getFullYear();
   const inicioAno = `${anoRef}-01-01`;
   const fimAno = `${anoRef}-12-31`;
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
 
   // 1. Buscar Budget do QB
   let budget = { matriz: {}, nome: 'Sem budget cadastrado' };
@@ -5577,7 +5657,7 @@ async function extratoDiario({ data_inicio, data_fim, conta_id = null } = {}) {
   // v3.21: mesma fonte do Fluxo Detalhado. Dois erros corrigidos: (1) notas fiscais emitidas
   // (tipo "referencia", que não movem caixa) eram somadas como SAÍDA; (2) dias futuros do período
   // ficavam zerados — agora recebem o previsto (faturas/contas em aberto, despesas, simulados...).
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
   const ini = data_inicio || new Date(Date.now() - 30 * 86400 * 1000).toISOString().split('T')[0];
   const fim = data_fim || hoje;
   const fd = await fluxoDetalhado({ data_inicio: ini, data_fim: fim, conta_id });
@@ -5615,7 +5695,7 @@ async function extratoMensal({ ano, conta_id = null } = {}) {
   // em aberto, despesas programadas, simulados, lançamentos futuros e recorrentes do QuickBooks).
   const anoRef = parseInt(ano) || new Date().getFullYear();
   const inicio = `${anoRef}-01-01`, fim = `${anoRef}-12-31`;
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
   if (inicio > hoje) return extratoMensalLegado({ ano: anoRef, conta_id });
   const fd = await fluxoDetalhado({ data_inicio: inicio, data_fim: fim, conta_id });
   const porMes = {};
@@ -5869,7 +5949,8 @@ async function marcosImportarPlanilha({ linhas = [] } = {}) {
       const marcoId = `mar_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       const dataEntrega = l.data_solicitacao || l.data_pagamento || new Date().toISOString().substring(0, 10);
       const semDataOriginal = !l.data_solicitacao;
-      const statusKanban = /pago/i.test(l.status || '') ? 'concluido' : (l.status ? 'aguardando_pagamento' : 'aguardando_entrega');
+      // v3.109: só "pago" conclui; o resto entra em "Aguardando entrega" (antes virava 'aguardando_pagamento', que não é coluna — e ia para concluído no reinício)
+      const statusKanban = /pago/i.test(l.status || '') ? 'concluido' : /fatur|nf emitida|nota emitida|termo/i.test(l.status || '') ? 'termo_pronto' : 'aguardando_entrega';
       const obs = [l.observacoes, semDataOriginal ? 'Data de entrega não informada na planilha original — ajuste se necessário.' : null, l.gp_responsavel ? 'GP: ' + l.gp_responsavel : null].filter(Boolean).join(' · ');
       await sql`INSERT INTO projetos_marcos (id, projeto_id, descricao, data_entrega, valor, status_kanban, data_pagamento, observacoes, atualizado_em)
         VALUES (${marcoId}, ${projId}, ${String(l.marco).trim()}, ${dataEntrega}, ${num(l.valor)}, ${statusKanban}, ${l.data_pagamento || null}, ${obs || null}, NOW())`;
@@ -6113,10 +6194,10 @@ async function marcoEnviarTermo({ id, mensagem_extra } = {}) {
   });
 
   await sql`UPDATE projetos_marcos
-    SET status_kanban='aguardando_cliente', termo_enviado_cliente_em=NOW(), atualizado_em=NOW()
-    WHERE id=${id}`;
+    SET status_kanban='termo_pronto', termo_enviado_cliente_em=NOW(), atualizado_em=NOW()
+    WHERE id=${id}`; // v3.109: continua em "Termo pronto" (marcado como enviado) — 'aguardando_cliente' não é coluna e o marco sumia do quadro
 
-  await logMarco(sql, id, 'termo_enviado', 'termo_pronto', 'aguardando_cliente',
+  await logMarco(sql, id, 'termo_enviado', 'termo_pronto', 'termo_pronto',
                  `Termo enviado para ${marco.cliente_responsavel_email}`, 'sistema');
   return { id, enviado: true, para: marco.cliente_responsavel_email };
 }
@@ -6251,7 +6332,7 @@ async function marcosProcessarAlertas() {
                                        p.cliente_responsavel_nome, p.cliente_responsavel_email,
                                        p.financeiro_email
     FROM projetos_marcos m JOIN projetos_financeiros p ON p.id = m.projeto_id
-    WHERE m.status_kanban = 'aguardando_cliente'
+    WHERE (m.status_kanban = 'aguardando_cliente' OR (m.status_kanban = 'termo_pronto' AND m.termo_enviado_cliente_em IS NOT NULL))
       AND (m.cliente_ultimo_lembrete_em IS NULL OR m.cliente_ultimo_lembrete_em < ${limite3dias}::timestamptz)`;
 
   for (const marco of paraCliente) {

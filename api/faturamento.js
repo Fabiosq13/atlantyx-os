@@ -369,7 +369,7 @@ function _mesReferencia(t) {
   const achados = [];
   for (const m of txt.matchAll(/\b(\d{4})[-\/.](\d{1,2})\b/g)) achados.push([+m[1], +m[2], m.index]);
   for (const m of txt.matchAll(/\b(\d{1,2})[-\/.](\d{4})\b/g)) achados.push([+m[2], +m[1], m.index]);
-  for (const m of txt.matchAll(/\b(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*\.?\s*(?:\/|de|-)?\s*(\d{4}|\d{2})\b/g)) achados.push([+m[2] < 100 ? 2000 + +m[2] : +m[2], _MESES_PT[m[1]], m.index]);
+  for (const m of txt.matchAll(/\b(jan(?:eiro)?|fev(?:ereiro)?|mar(?:co)?|abr(?:il)?|mai(?:o)?|jun(?:ho)?|jul(?:ho)?|ago(?:sto)?|set(?:embro)?|out(?:ubro)?|nov(?:embro)?|dez(?:embro)?)\.?\s*(?:\/|de|-)?\s*(\d{4}|\d{2})\b/g)) achados.push([+m[2] < 100 ? 2000 + +m[2] : +m[2], _MESES_PT[m[1].substring(0, 3)], m.index]);
   const ok = achados.filter(([a, m]) => a >= 2000 && a <= 2100 && m >= 1 && m <= 12).sort((x, y) => x[2] - y[2]);
   if (ok.length) { const [a, m] = ok[ok.length - 1]; return a + '-' + String(m).padStart(2, '0'); }
   const d = _dataISO(t.data_termo); if (d) return d.substring(0, 7);
@@ -378,6 +378,7 @@ function _mesReferencia(t) {
 }
 async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf } = {}) {
   const sql = await getSql();
+  let notasNoPeriodo = {};
   // v1.32: filtro por mês/ano (data de criação do termo) e/ou por texto do período de medição.
   // Filtra pela criação porque "periodo_medicao" é texto livre ("julho/2026", "07/2026") e não
   // é confiável para comparação de data — mas dá para buscar por ele como texto.
@@ -407,7 +408,9 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
       const todos = status ? await sql`SELECT * FROM termos_faturamento WHERE status = ${status} ORDER BY criado_em DESC`
         : await sql`SELECT * FROM termos_faturamento ORDER BY criado_em DESC`;
       const iniM = ini.substring(0, 7), fimM = fim.substring(0, 7);
-      termos = todos.filter(t => { const m = _mesReferencia(t); t.mes_referencia = m; return m && m >= iniM && m <= fimM; });
+      // v3.109: mês escolhido com "Todos os anos" = esse mês em qualquer ano (antes valia só o ano corrente)
+      const soMes = mes && !ano ? String(parseInt(mes)).padStart(2, '0') : null;
+      termos = todos.filter(t => { const m = _mesReferencia(t); t.mes_referencia = m; return m && (soMes ? m.substring(5) === soMes : (m >= iniM && m <= fimM)); });
     } else {
       termos = status
         ? (EM_ABERTO.includes(status)
@@ -429,7 +432,7 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
   if (periodo_texto && periodo_texto.trim()) {
     const alvo = periodo_texto.trim().toLowerCase();
     termos = termos.filter(t => (t.periodo_medicao || '').toLowerCase().includes(alvo)
-      || (t.projeto || '').toLowerCase().includes(alvo)
+      || (t.projeto || '').toLowerCase().includes(alvo) || (t.contratante || '').toLowerCase().includes(alvo) // v3.109: busca também pelo cliente
       || (t.numero_termo || '').toLowerCase().includes(alvo));
   }
   // v2.42: filtro por NÚMERO DA NOTA FISCAL — busca nas empresas do rateio e nas notas encontradas
@@ -448,6 +451,30 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
       termos = termos.filter(t => ok.has(t.id));
     } catch (e) { console.warn('[FAT] filtro por NF:', e.message); }
   }
+  // v3.109: o filtro por data de pagamento roda ANTES de montar as colunas — antes só mudava o contador e o quadro seguia completo
+  // v2.24: filtro por DATA DE PAGAMENTO — mantém só os termos com alguma empresa paga no intervalo
+  if (pag_de || pag_ate) {
+    try {
+      const idsT = termos.map(t => t.id);
+      // v2.44: pagamento_data é TEXT e pode vir como AAAA-MM-DD ou DD/MM/AAAA. Normaliza no SQL
+      // antes de comparar — um único registro mal formatado derrubava o filtro inteiro.
+      const pagas = idsT.length ? await sql`SELECT termo_id, id AS empresa_id, empresa, nf_numero, pagamento_data FROM termos_empresas
+        WHERE termo_id = ANY(${idsT}) AND pagamento_data IS NOT NULL AND pagamento_data <> ''
+          AND (CASE WHEN pagamento_data ~ '^\\d{4}-\\d{2}-\\d{2}' THEN SUBSTRING(pagamento_data,1,10)::date
+                    WHEN pagamento_data ~ '^\\d{2}/\\d{2}/\\d{4}' THEN TO_DATE(SUBSTRING(pagamento_data,1,10),'DD/MM/YYYY')
+                    ELSE NULL END) BETWEEN COALESCE(${pag_de || null}::date, '1900-01-01'::date) AND COALESCE(${pag_ate || null}::date, '2999-12-31'::date)` : [];
+      const ok = new Set(pagas.map(p => p.termo_id));
+      // guarda quais notas caem no período, para o card destacar
+      pagas.forEach(p => (notasNoPeriodo[p.termo_id] = notasNoPeriodo[p.termo_id] || []).push({ empresa: p.empresa, nf: p.nf_numero, data: p.pagamento_data }));
+      // também aceita pago_em do termo (marcação manual sem data por empresa)
+      const pagoEm = idsT.length ? await sql`SELECT id FROM termos_faturamento WHERE id = ANY(${idsT}) AND pago_em IS NOT NULL
+          AND (${pag_de || null}::date IS NULL OR (pago_em AT TIME ZONE 'America/Sao_Paulo')::date >= ${pag_de || null}::date)
+          AND (${pag_ate || null}::date IS NULL OR (pago_em AT TIME ZONE 'America/Sao_Paulo')::date <= ${pag_ate || null}::date)` : [];
+      pagoEm.forEach(p => ok.add(p.id));
+      termos = termos.filter(t => ok.has(t.id));
+    } catch (e) { console.warn('[FAT] filtro por pagamento:', e.message); }
+  }
+
   const ids = termos.map(t => t.id);
   if (typeof notasNoPeriodo !== 'undefined') termos.forEach(t => { t.notas_no_periodo = notasNoPeriodo[t.id] || []; });
   let empresasPorTermo = {};
@@ -489,29 +516,6 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
     const r = await sql`SELECT DISTINCT EXTRACT(YEAR FROM COALESCE(data_termo, (criado_em AT TIME ZONE 'America/Sao_Paulo')::date))::int AS ano FROM termos_faturamento ORDER BY ano DESC`;
     anosDisponiveis = r.map(x => x.ano);
   } catch (_) {}
-  // v2.24: filtro por DATA DE PAGAMENTO — mantém só os termos com alguma empresa paga no intervalo
-  if (pag_de || pag_ate) {
-    try {
-      const idsT = termos.map(t => t.id);
-      // v2.44: pagamento_data é TEXT e pode vir como AAAA-MM-DD ou DD/MM/AAAA. Normaliza no SQL
-      // antes de comparar — um único registro mal formatado derrubava o filtro inteiro.
-      const pagas = idsT.length ? await sql`SELECT termo_id, id AS empresa_id, empresa, nf_numero, pagamento_data FROM termos_empresas
-        WHERE termo_id = ANY(${idsT}) AND pagamento_data IS NOT NULL AND pagamento_data <> ''
-          AND (CASE WHEN pagamento_data ~ '^\\d{4}-\\d{2}-\\d{2}' THEN SUBSTRING(pagamento_data,1,10)::date
-                    WHEN pagamento_data ~ '^\\d{2}/\\d{2}/\\d{4}' THEN TO_DATE(SUBSTRING(pagamento_data,1,10),'DD/MM/YYYY')
-                    ELSE NULL END) BETWEEN COALESCE(${pag_de || null}::date, '1900-01-01'::date) AND COALESCE(${pag_ate || null}::date, '2999-12-31'::date)` : [];
-      const ok = new Set(pagas.map(p => p.termo_id));
-      // guarda quais notas caem no período, para o card destacar
-      var notasNoPeriodo = {}; pagas.forEach(p => (notasNoPeriodo[p.termo_id] = notasNoPeriodo[p.termo_id] || []).push({ empresa: p.empresa, nf: p.nf_numero, data: p.pagamento_data }));
-      // também aceita pago_em do termo (marcação manual sem data por empresa)
-      const pagoEm = idsT.length ? await sql`SELECT id FROM termos_faturamento WHERE id = ANY(${idsT}) AND pago_em IS NOT NULL
-          AND (${pag_de || null}::date IS NULL OR pago_em::date >= ${pag_de || null}::date)
-          AND (${pag_ate || null}::date IS NULL OR pago_em::date <= ${pag_ate || null}::date)` : [];
-      pagoEm.forEach(p => ok.add(p.id));
-      termos = termos.filter(t => ok.has(t.id));
-    } catch (e) { console.warn('[FAT] filtro por pagamento:', e.message); }
-  }
-
   return { colunas: porColuna, labels: STATUS_LABEL, total: termos.length,
     totais_por_coluna: totaisPorColuna, total_geral: totalGeral,
     anos_disponiveis: anosDisponiveis, filtro_aplicado: { mes: mes || null, ano: ano || null, periodo_texto: periodo_texto || null, pag_de: pag_de || null, pag_ate: pag_ate || null, nf: nf || null } };
