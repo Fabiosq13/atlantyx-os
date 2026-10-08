@@ -158,6 +158,9 @@ async function handler(req, res) {
       email_diagnostico:     () => emailDiagnostico(params),
       versao:                () => ({ versao_api: VERSAO_API }),
       fluxo_detalhado:       () => fluxoDetalhado(params),
+      // v3.110: Orçamento em DRE de 12 meses móveis (orçado × realizado/projetado) + propostas do CRM
+      orcamento_dre:         () => orcamentoDre(params),
+      crm_etapas:            () => crmEtapas(),
       // v3.105: incluir / excluir lançamento futuro direto da tela do fluxo — grava no QuickBooks
       fluxo_lancamento_excluir: () => fluxoLancamentoExcluir(params),
       fluxo_lancamento_incluir: () => fluxoLancamentoIncluir(params),
@@ -5498,6 +5501,127 @@ async function dreMensal({ meses = 12 } = {}) {
   }
   (data?.Rows?.Row || []).forEach(r => walk(r, null));
   return { disponivel: true, periodo: { inicio: ds(ini), fim: ds(fim) }, meses: listaMeses, grupos, contas };
+}
+
+// ═══ v3.110: ORÇAMENTO EM DRE — 12 MESES MÓVEIS ═══
+// Linhas por conta (receitas, custos, despesas, outras) com ORÇADO (Budget do QuickBooks, de todos os anos que a
+// janela cobre) e REALIZADO (DRE mensal do QuickBooks) nos meses até o atual; nos meses seguintes o "real" vira
+// PROJETADO = orçado. As propostas do CRM (HubSpot) das etapas escolhidas entram como receita a partir do mês corrente
+// (ou do mês de fechamento, se for depois), e os gastos dessas demandas são simulados como % do valor.
+const _crmBase = 'https://api.hubapi.com';
+async function _hs(caminho, metodo = 'GET', corpo = null) {
+  const t = process.env.HUBSPOT_TOKEN; if (!t) throw new Error('HUBSPOT_TOKEN não configurado no Vercel');
+  const r = await fetch(_crmBase + caminho, { method: metodo, headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }, body: corpo ? JSON.stringify(corpo) : undefined });
+  const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error('HubSpot ' + r.status + ': ' + (d.message || '')); return d;
+}
+async function crmEtapas() {
+  const d = await _hs('/crm/v3/pipelines/deals');
+  return { pipelines: (d.results || []).map(p => ({ id: p.id, nome: p.label, etapas: (p.stages || []).sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0)).map(e => ({ id: e.id, nome: e.label, probabilidade: e.metadata?.probability != null ? Number(e.metadata.probability) : null, fechada: e.metadata?.isClosed === 'true' })) })) };
+}
+async function _crmPropostas(etapas) {
+  const out = []; let after;
+  for (let pg = 0; pg < 10; pg++) {
+    const d = await _hs('/crm/v3/objects/deals/search', 'POST', { filterGroups: [{ filters: [{ propertyName: 'dealstage', operator: 'IN', values: etapas }] }],
+      properties: ['dealname', 'amount', 'closedate', 'dealstage', 'pipeline', 'hs_deal_stage_probability'], limit: 100, ...(after ? { after } : {}) });
+    (d.results || []).forEach(x => out.push({ id: x.id, nome: x.properties?.dealname || 'Proposta', valor: Number(x.properties?.amount) || 0, fechamento: x.properties?.closedate ? String(x.properties.closedate).substring(0, 10) : null,
+      etapa: x.properties?.dealstage, probabilidade: x.properties?.hs_deal_stage_probability != null ? Number(x.properties.hs_deal_stage_probability) : null }));
+    after = d.paging?.next?.after; if (!after) break;
+  }
+  return out;
+}
+async function orcamentoDre({ inicio, meses: nMeses = 12, crm = null } = {}) {
+  const hoje = _hojeBR(), mesHoje = hoje.substring(0, 7);
+  const ini = /^\d{4}-\d{2}$/.test(String(inicio || '')) ? inicio : (() => { const d = new Date(hoje + 'T12:00:00'); d.setMonth(d.getMonth() - 5); return d.toISOString().substring(0, 7); })();
+  const N = Math.max(3, Math.min(24, parseInt(nMeses) || 12));
+  const meses = []; { const [a, m] = ini.split('-').map(Number); for (let i = 0; i < N; i++) { const d = new Date(a, m - 1 + i, 1); meses.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')); } }
+  const fimJanela = meses[meses.length - 1]; const ultimoDia = m => { const [a, mm] = m.split('-').map(Number); return `${m}-${String(new Date(a, mm, 0).getDate()).padStart(2, '0')}`; };
+  const out = { meses, mes_atual: mesHoje, grupos: {}, avisos: [], crm: null, qb_configurado: qbConfigurado() };
+  // contas: id → { nome, grupo }
+  const linhas = {}; // chave → { nome, grupo, orcado:{}, real:{} }
+  const GRUPO = acc => { const c = String(acc?.Classification || ''), t = String(acc?.AccountType || '');
+    if (/Other Income/i.test(t)) return 'outras_receitas'; if (/Other Expense/i.test(t)) return 'outras_despesas';
+    if (/Cost of Goods Sold/i.test(t)) return 'custos'; if (/^Revenue$/i.test(c) || /Income/i.test(t)) return 'receitas'; if (/^Expense$/i.test(c) || /Expense/i.test(t)) return 'despesas'; return null; };
+  const contaPorId = {}, contaPorNome = {};
+  if (qbConfigurado()) {
+    const token = await qbToken();
+    try { const ac = await qbQuery(`select * from Account maxresults 1000`, token);
+      (ac?.QueryResponse?.Account || []).forEach(a => { const g = GRUPO(a); if (!g) return; contaPorId[String(a.Id)] = { nome: a.Name, grupo: g }; [a.Name, a.FullyQualifiedName].filter(Boolean).forEach(n => contaPorNome[n] = { id: String(a.Id), nome: a.Name, grupo: g }); }); }
+    catch (e) { out.avisos.push('Contas do QuickBooks: ' + e.message); }
+    const lin = (id, nome, grupo) => { const k = id ? 'a' + id : 'n' + nome; if (!linhas[k]) linhas[k] = { chave: k, nome, grupo, orcado: {}, real: {} }; return linhas[k]; };
+    // ORÇADO — todos os budgets de P&L que cobrem a janela (um por ano; o mais recente se houver mais de um)
+    try { const bl = (await qbQuery(`select * from Budget`, token))?.QueryResponse?.Budget || [];
+      const anos = [...new Set(meses.map(m => m.substring(0, 4)))]; const usados = [];
+      for (const ano of anos) {
+        const cands = bl.filter(b => String(b.StartDate || '').startsWith(ano) && (!b.BudgetType || /ProfitAndLoss/i.test(b.BudgetType)) && b.Active !== false)
+          .sort((a, b) => String(b.MetaData?.LastUpdatedTime || '').localeCompare(String(a.MetaData?.LastUpdatedTime || '')));
+        const b = cands[0]; if (!b) continue; usados.push(b.Name);
+        (b.BudgetDetail || []).forEach(d => { const mes = String(d.BudgetDate || '').substring(0, 7); if (!meses.includes(mes)) return;
+          const id = d.AccountRef?.value ? String(d.AccountRef.value) : null; const info = (id && contaPorId[id]) || contaPorNome[d.AccountRef?.name] || null; if (!info) return;
+          const l = lin(id || info.id, info.nome, info.grupo); l.orcado[mes] = (l.orcado[mes] || 0) + (parseFloat(d.Amount) || 0); });
+      }
+      out.orcamentos_usados = usados; if (!usados.length) out.avisos.push('Nenhum orçamento (Budget de resultado) cadastrado no QuickBooks para ' + anos.join('/') + ' — a coluna Orçado fica vazia. Cadastre em QuickBooks → Orçamento.');
+    } catch (e) { out.avisos.push('Orçamento do QuickBooks: ' + e.message); }
+    // REALIZADO — DRE mensal do início da janela até o mês atual
+    const fimReal = mesHoje < fimJanela ? hoje : ultimoDia(fimJanela);
+    if (ini <= mesHoje) try {
+      const data = await qbFetch(`/reports/ProfitAndLoss?start_date=${ini}-01&end_date=${fimReal}&summarize_column_by=Month&accounting_method=Accrual`, token);
+      const cols = (data?.Columns?.Column || []).map(c => c.ColTitle || ''); const mesCol = cols.map((t, i) => i === 0 ? null : (_mesDaColunaQB(t, ini.substring(0, 4), -1) || meses[i - 1] || null));
+      const walk = (row, grupoQB) => {
+        if (row.type === 'Section' || row.Rows) { const g = row.group || grupoQB; (row.Rows?.Row || []).forEach(r => walk(r, g)); return; }
+        if (row.type !== 'Data') return; const c = row.ColData || []; const nome = c[0]?.value; if (!nome) return; const id = c[0]?.id ? String(c[0].id) : null;
+        const info = (id && contaPorId[id]) || contaPorNome[nome] || { nome, grupo: /^Income$/i.test(grupoQB) ? 'receitas' : /COGS/i.test(grupoQB) ? 'custos' : /^OtherIncome$/i.test(grupoQB) ? 'outras_receitas' : /^OtherExpenses$/i.test(grupoQB) ? 'outras_despesas' : 'despesas' };
+        const l = lin(id || null, info.nome || nome, info.grupo);
+        for (let i = 1; i < c.length; i++) { const m = mesCol[i]; if (!m || !meses.includes(m)) continue; const v = parseFloat(String(c[i].value || '0').replace(/[^\d.-]/g, '')) || 0; l.real[m] = (l.real[m] || 0) + v; }
+      };
+      (data?.Rows?.Row || []).forEach(r => walk(r, r.group || ''));
+    } catch (e) { out.avisos.push('Realizado (DRE) do QuickBooks: ' + e.message); }
+  } else out.avisos.push('QuickBooks não conectado.');
+  // PROPOSTAS DO CRM
+  if (crm && Array.isArray(crm.etapas) && crm.etapas.length) {
+    try {
+      const props = await _crmPropostas(crm.etapas.map(String));
+      const dist = Math.max(1, Math.min(36, parseInt(crm.distribuir_meses) || 1)), custoPct = Math.max(0, Math.min(100, Number(crm.custo_pct ?? 60))) / 100, pond = crm.ponderar !== false;
+      const probEtapa = crm.probabilidades || {};
+      const rec = { chave: 'crm_receita', nome: 'Propostas do CRM', grupo: 'receitas', crm: true, orcado: {}, real: {} };
+      const gas = { chave: 'crm_gastos', nome: 'Gastos simulados das propostas (' + Math.round(custoPct * 100) + '%)', grupo: 'despesas', crm: true, orcado: {}, real: {} };
+      const det = [];
+      for (const p of props) {
+        if (!(p.valor > 0)) continue;
+        const prob = pond ? (p.probabilidade != null ? p.probabilidade : (probEtapa[p.etapa] != null ? Number(probEtapa[p.etapa]) : 1)) : 1;
+        const inicioMes = p.fechamento && p.fechamento.substring(0, 7) > mesHoje ? p.fechamento.substring(0, 7) : mesHoje;
+        const [a0, m0] = inicioMes.split('-').map(Number); const parcela = p.valor * prob / dist; let dentro = 0;
+        for (let i = 0; i < dist; i++) { const d = new Date(a0, m0 - 1 + i, 1); const m = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); if (!meses.includes(m)) continue; dentro += parcela;
+          rec.real[m] = (rec.real[m] || 0) + parcela; gas.real[m] = (gas.real[m] || 0) + parcela * custoPct; }
+        det.push({ ...p, prob_usada: prob, a_partir_de: inicioMes, valor_na_janela: round(dentro) });
+      }
+      linhas.crm_receita = rec; linhas.crm_gastos = gas;
+      out.crm = { qtd: det.length, valor_total: round(det.reduce((a, p) => a + p.valor, 0)), valor_ponderado_janela: round(det.reduce((a, p) => a + p.valor_na_janela, 0)), custo_pct: custoPct * 100, distribuir_meses: dist, ponderar: pond, propostas: det.sort((a, b) => b.valor - a.valor).slice(0, 80) };
+    } catch (e) { out.avisos.push('Propostas do CRM: ' + e.message); }
+  }
+  // MONTAGEM — por grupo e totais; meses futuros: real = projetado (orçado), CRM soma por cima
+  const ehFuturo = m => m > mesHoje;
+  const ORDEM = ['receitas', 'custos', 'despesas', 'outras_receitas', 'outras_despesas'];
+  const valorMes = (l, m) => { const o = round(l.orcado[m] || 0); const r = l.crm ? round(l.real[m] || 0) : ehFuturo(m) ? o : round(l.real[m] || 0); return { orcado: l.crm ? 0 : o, real: r }; };
+  for (const g of ORDEM) {
+    const ls = Object.values(linhas).filter(l => l.grupo === g).map(l => { const mm = Object.fromEntries(meses.map(m => [m, valorMes(l, m)]));
+      const tot = { orcado: round(meses.reduce((a, m) => a + mm[m].orcado, 0)), real: round(meses.reduce((a, m) => a + mm[m].real, 0)) };
+      return { chave: l.chave, nome: l.nome, crm: !!l.crm, meses: mm, total: tot }; })
+      .filter(l => l.total.orcado || l.total.real || l.crm)
+      .sort((a, b) => (a.crm ? 1 : 0) - (b.crm ? 1 : 0) || Math.abs(b.total.real || b.total.orcado) - Math.abs(a.total.real || a.total.orcado));
+    const tm = Object.fromEntries(meses.map(m => [m, { orcado: round(ls.reduce((a, l) => a + l.meses[m].orcado, 0)), real: round(ls.reduce((a, l) => a + l.meses[m].real, 0)) }]));
+    out.grupos[g] = { linhas: ls, meses: tm, total: { orcado: round(ls.reduce((a, l) => a + l.total.orcado, 0)), real: round(ls.reduce((a, l) => a + l.total.real, 0)) } };
+  }
+  const G = out.grupos; const calc = f => { const mm = Object.fromEntries(meses.map(m => [m, { orcado: round(f(m, 'orcado')), real: round(f(m, 'real')) }])); return { meses: mm, total: { orcado: round(meses.reduce((a, m) => a + mm[m].orcado, 0)), real: round(meses.reduce((a, m) => a + mm[m].real, 0)) } }; };
+  out.resultados = {
+    lucro_bruto: calc((m, k) => G.receitas.meses[m][k] - G.custos.meses[m][k]),
+    resultado_operacional: calc((m, k) => G.receitas.meses[m][k] - G.custos.meses[m][k] - G.despesas.meses[m][k]),
+    resultado_liquido: calc((m, k) => G.receitas.meses[m][k] - G.custos.meses[m][k] - G.despesas.meses[m][k] + G.outras_receitas.meses[m][k] - G.outras_despesas.meses[m][k]),
+  };
+  // margem histórica (realizado na janela) — referência para o % de gastos das propostas
+  const recReal = meses.filter(m => !ehFuturo(m)).reduce((a, m) => a + (G.receitas.meses[m].real - (linhas.crm_receita?.real?.[m] || 0)), 0);
+  const cusReal = meses.filter(m => !ehFuturo(m)).reduce((a, m) => a + G.custos.meses[m].real + G.despesas.meses[m].real - (linhas.crm_gastos?.real?.[m] || 0), 0);
+  out.custo_historico_pct = recReal > 0 ? Math.round(cusReal / recReal * 100) : null;
+  return out;
 }
 
 async function orcamentoConsolidado({ ano } = {}) {

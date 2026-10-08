@@ -4408,24 +4408,59 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <!-- S3 ORÇAMENTO -->
   <!-- ═══════════════════════════════════════════════════════════════════ -->
   <div class="page" id="page-s3orcamento">
-    <div style="background:linear-gradient(135deg,rgba(156,109,255,.12),rgba(156,109,255,.03));border:1px solid rgba(156,109,255,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Orçamento Anual</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Orçamento do QuickBooks × Realizado · barras de utilização por categoria</div></div>
-      <select class="fsel" id="orc_ano" onchange="carregarOrcamento()" style="width:120px;"></select>
-      <button class="btn btn-gn" onclick="carregarOrcamento()">&#8635; Recarregar</button>
+    <!-- v3.110: Orçamento em DRE de 12 meses móveis — orçado × realizado/projetado + propostas do CRM -->
+    <style>
+      #page-s3orcamento .od-top{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px}
+      #page-s3orcamento .od-tit{flex:1;min-width:220px}
+      #page-s3orcamento .od-tit b{font-family:var(--H);font-size:16px}
+      #page-s3orcamento .od-tit div{font-size:10.5px;color:var(--t2);margin-top:2px}
+      #page-s3orcamento .od-crm{background:var(--bg3);border:1px solid var(--bd);border-radius:10px;padding:10px 14px;margin-bottom:12px}
+      #page-s3orcamento .od-chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;padding:4px 10px;border:1px solid var(--bd2);border-radius:999px;margin:3px 4px 3px 0;cursor:pointer;user-select:none;background:var(--bg2)}
+      #page-s3orcamento .od-chip.on{border-color:var(--blue);background:rgba(79,124,255,.15);color:var(--t1)}
+      #page-s3orcamento .od-chip small{color:var(--t3)}
+      #page-s3orcamento .od-wrap{overflow:auto;border:1px solid var(--bd);border-radius:10px;max-height:72vh}
+      #page-s3orcamento table.od{border-collapse:separate;border-spacing:0;font-size:11.5px;min-width:100%}
+      #page-s3orcamento table.od th,#page-s3orcamento table.od td{padding:7px 10px;white-space:nowrap;text-align:right;border-bottom:1px solid var(--bd);color:var(--t1)}
+      #page-s3orcamento table.od td.fut{color:#9fb4ff}
+      #page-s3orcamento table.od thead th{position:sticky;top:0;background:var(--bg2);z-index:2;font-family:var(--M);font-size:9.5px;color:var(--t2);font-weight:600}
+      #page-s3orcamento table.od thead th.fut{color:var(--blue)}
+      #page-s3orcamento table.od td:first-child,#page-s3orcamento table.od th:first-child{position:sticky;left:0;text-align:left;background:var(--bg2);z-index:1;min-width:230px;max-width:280px;overflow:hidden;text-overflow:ellipsis}
+      #page-s3orcamento table.od thead th:first-child{z-index:3}
+      #page-s3orcamento tr.od-g td{background:var(--bg3);font-weight:700;cursor:pointer}
+      #page-s3orcamento tr.od-g td:first-child{background:var(--bg3)}
+      #page-s3orcamento tr.od-r td{font-weight:800;background:rgba(0,196,204,.07)}
+      #page-s3orcamento tr.od-r td:first-child{background:#0d1b22}
+      #page-s3orcamento tr.od-l td:first-child{padding-left:26px;font-weight:400;color:var(--t1)}
+      #page-s3orcamento tr.od-crm td:first-child{color:var(--blue)}
+      #page-s3orcamento td.fut{background:rgba(79,124,255,.035)}
+      #page-s3orcamento td .v{font-family:var(--M)}
+      #page-s3orcamento td .d{display:block;font-family:var(--M);font-size:9.5px;margin-top:1px}
+      #page-s3orcamento td.fut .v{color:#9fb4ff}
+      #page-s3orcamento td.tot{border-left:1px solid var(--bd2);font-weight:700}
+    </style>
+    <div class="od-top">
+      <div class="od-tit"><b>Orçamento · DRE 12 meses</b><div>Orçado × realizado nos meses fechados e no atual · <span style="color:var(--blue);">projetado</span> nos próximos (orçamento + propostas do CRM)</div></div>
+      <div><label class="fl">Janela</label><select class="fsel" id="od_janela" style="width:auto;" onchange="odJanela(this.value)"><option value="6">6 passados + 6 à frente</option><option value="11">Últimos 12 meses</option><option value="0">Próximos 12 meses</option><option value="x">Escolher início…</option></select></div>
+      <div id="od_iniWrap" style="display:none;"><label class="fl">Início</label><input type="month" class="fsel" id="od_inicio" style="width:auto;" onchange="carregarOrcamento()"/></div>
+      <div class="seg" id="od_vista"><button data-v="rv" class="on" onclick="odVista('rv')">Real × Orçado</button><button data-v="o" onclick="odVista('o')">Orçado</button><button data-v="r" onclick="odVista('r')">Real/Proj.</button><button data-v="d" onclick="odVista('d')">Variação</button></div>
+      <button class="btn btn-gn" onclick="carregarOrcamento()">&#8635; Atualizar</button>
     </div>
-    <div class="kg k3" style="margin-bottom:12px;">
-      <div class="kpi bl"><div class="kl">Orçado Total</div><div class="kv" id="orc_orcado">R$0</div></div>
-      <div class="kpi gn"><div class="kl">Realizado Total</div><div class="kv" id="orc_realizado">R$0</div></div>
-      <div class="kpi pu"><div class="kl">Utilização</div><div class="kv" id="orc_util">0%</div><div class="ks" id="orc_util_sub">do orçado consumido</div></div>
+    <div class="od-crm">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <label style="display:flex;gap:6px;align-items:center;font-weight:700;font-size:12px;cursor:pointer;"><input type="checkbox" id="od_crmOn" onchange="odCrmSalvar();carregarOrcamento()"/> Incluir propostas do CRM nas receitas</label>
+        <span id="od_crmResumo" style="font-size:10.5px;color:var(--t2);"></span>
+        <span style="flex:1"></span>
+        <label style="font-size:10.5px;color:var(--t2);">distribuir em <input class="fi" id="od_crmDist" value="1" style="width:46px;display:inline-block;padding:4px 6px;margin:0;" onchange="odCrmSalvar();carregarOrcamento()"/> mês(es)</label>
+        <label style="font-size:10.5px;color:var(--t2);">gastos da demanda <input class="fi" id="od_crmCusto" value="60" style="width:52px;display:inline-block;padding:4px 6px;margin:0;" onchange="odCrmSalvar();carregarOrcamento()"/> %</label>
+        <label style="font-size:10.5px;color:var(--t2);display:flex;gap:4px;align-items:center;cursor:pointer;"><input type="checkbox" id="od_crmPond" checked onchange="odCrmSalvar();carregarOrcamento()"/> ponderar pela probabilidade da etapa</label>
+      </div>
+      <div id="od_crmEtapas" style="margin-top:6px;display:none;"></div>
     </div>
-    <div class="panel" style="margin-bottom:12px;">
-      <div class="ph"><div class="pt">Utilização por Categoria</div></div>
-      <div class="pb" id="orc_barras"><div style="text-align:center;color:var(--t3);padding:30px;font-size:11px;">Carregando...</div></div>
-    </div>
-    <div class="panel">
-      <div class="ph"><div class="pt">Matriz Mensal · Orçado vs Realizado</div></div>
-      <div class="pb" id="orc_matriz" style="overflow-x:auto;"><div style="text-align:center;color:var(--t3);padding:30px;font-size:11px;">Carregando...</div></div>
-    </div>
+    <div class="kg k4" style="margin-bottom:12px;" id="od_kpis"></div>
+    <div id="od_avisos"></div>
+    <div id="od_orcUsado" style="font-size:10px;color:var(--t3);margin:0 0 5px 2px;"></div>
+    <div class="od-wrap"><div id="od_tabela"><div style="padding:30px;text-align:center;color:var(--t3);font-size:11px;">Carregando…</div></div></div>
+    <details id="od_crmLista" style="margin-top:10px;display:none;"><summary style="cursor:pointer;font-size:11px;color:var(--blue);">Ver as propostas do CRM usadas</summary><div id="od_crmTabela" style="margin-top:6px;"></div></details>
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -18804,86 +18839,79 @@ async function rejeitarConciliacao(idx) {
 // ═══════════════════════════════════════════════════════════════════════════
 // ORÇAMENTO VISUAL
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══ v3.110: ORÇAMENTO · DRE 12 MESES MÓVEIS ═══
+let _odDados = null, _odVista = 'rv', _odAberto = { receitas: true, resultados: true }, _odEtapas = null;
+const _odEsc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+function _odCfg() { try { return JSON.parse(localStorage.getItem('atx:od_cfg') || '{}'); } catch (_) { return {}; } }
+function odCrmSalvar() { const c = _odCfg(); c.on = !!document.getElementById('od_crmOn')?.checked; c.dist = document.getElementById('od_crmDist')?.value; c.custo = document.getElementById('od_crmCusto')?.value; c.pond = !!document.getElementById('od_crmPond')?.checked;
+  c.etapas = [...document.querySelectorAll('#od_crmEtapas .od-chip.on')].map(x => x.dataset.id); try { localStorage.setItem('atx:od_cfg', JSON.stringify(c)); } catch (_) {} }
+function odVista(v) { _odVista = v; document.querySelectorAll('#od_vista button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); _odRender(); }
+function odJanela(v) { const w = document.getElementById('od_iniWrap'); if (w) w.style.display = v === 'x' ? '' : 'none'; const c = _odCfg(); c.janela = v; try { localStorage.setItem('atx:od_cfg', JSON.stringify(c)); } catch (_) {} if (v !== 'x') carregarOrcamento(); }
+function _odInicio() { const v = document.getElementById('od_janela')?.value || '6'; if (v === 'x') return document.getElementById('od_inicio')?.value || null; const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - Number(v)); return d.toLocaleDateString('sv-SE').substring(0, 7); }
+async function _odCarregarEtapas() {
+  const box = document.getElementById('od_crmEtapas'); if (!box) return;
+  if (!_odEtapas) { box.style.display = 'block'; box.innerHTML = '<span style="font-size:10.5px;color:var(--t3);">Lendo as etapas do funil no HubSpot…</span>';
+    try { _odEtapas = (await finApi('crm_etapas')).pipelines || []; } catch (e) { box.innerHTML = '<span style="font-size:10.5px;color:var(--red);">Não consegui ler o funil do HubSpot: ' + _odEsc(e.message) + '</span>'; return; } }
+  const sel = new Set(_odCfg().etapas || []);
+  box.style.display = 'block';
+  box.innerHTML = '<div style="font-size:10px;color:var(--t2);margin-bottom:2px;">Etapas do funil cujas propostas entram (clique para marcar):</div>' + _odEtapas.map(p => '<div style="margin-top:4px;"><span style="font-size:9.5px;font-family:var(--M);color:var(--t3);text-transform:uppercase;margin-right:6px;">' + _odEsc(p.nome) + '</span>'
+    + p.etapas.map(e => '<span class="od-chip' + (sel.has(e.id) ? ' on' : '') + '" data-id="' + _odEsc(e.id) + '" data-prob="' + (e.probabilidade ?? '') + '" onclick="this.classList.toggle(\'on\');odCrmSalvar();clearTimeout(window._odT);window._odT=setTimeout(carregarOrcamento,600)">' + _odEsc(e.nome) + (e.probabilidade != null ? ' <small>' + Math.round(e.probabilidade * 100) + '%</small>' : '') + '</span>').join('') + '</div>').join('');
+}
 async function carregarOrcamento() {
-  const sel = document.getElementById('orc_ano');
-  if (sel && sel.options.length === 0) {
-    const anoAtual = new Date().getFullYear();
-    for (let a = anoAtual + 1; a >= anoAtual - 4; a--) {
-      const opt = document.createElement('option');
-      opt.value = a; opt.textContent = a;
-      if (a === anoAtual) opt.selected = true;
-      sel.appendChild(opt);
-    }
-  }
-  const ano = sel ? parseInt(sel.value) : new Date().getFullYear();
-  const matriz = document.getElementById('orc_matriz');
-  if (matriz) matriz.innerHTML = '<div style="text-align:center;padding:24px;color:var(--t2);font-size:11px;">Carregando orçamento...</div>';
+  const c = _odCfg();
+  const jan = document.getElementById('od_janela'); if (jan && c.janela && !jan.dataset.ok) { jan.value = c.janela; jan.dataset.ok = '1'; const w = document.getElementById('od_iniWrap'); if (w) w.style.display = c.janela === 'x' ? '' : 'none'; }
+  const on = document.getElementById('od_crmOn'); if (on && !on.dataset.ok) { on.checked = !!c.on; on.dataset.ok = '1'; if (c.dist) document.getElementById('od_crmDist').value = c.dist; if (c.custo) document.getElementById('od_crmCusto').value = c.custo; if (c.pond === false) document.getElementById('od_crmPond').checked = false; }
+  const crmOn = !!on?.checked;
+  if (crmOn) await _odCarregarEtapas(); else { const b = document.getElementById('od_crmEtapas'); if (b) b.style.display = 'none'; }
+  const etapas = crmOn ? [...document.querySelectorAll('#od_crmEtapas .od-chip.on')].map(x => x.dataset.id) : [];
+  const probabilidades = Object.fromEntries([...document.querySelectorAll('#od_crmEtapas .od-chip')].filter(x => x.dataset.prob !== '').map(x => [x.dataset.id, Number(x.dataset.prob)]));
+  const tb = document.getElementById('od_tabela'); if (tb) tb.innerHTML = '<div style="padding:30px;text-align:center;color:var(--t3);font-size:11px;">Montando a DRE com o QuickBooks' + (etapas.length ? ' e o CRM' : '') + '…</div>';
   try {
-    const d = await finApi('orcamento_consolidado', { ano });
-    const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
-    d.total_geral = d.total_geral || { orcado: 0, realizado: 0, utilizacao_pct: 0, diferenca: 0 }; // v1.12: defensivo (QB off/sem dados)
-    d.categorias = d.categorias || []; d.meses = d.meses || [];
-    u('orc_orcado', fmtBRLcompleto(d.total_geral.orcado));
-    u('orc_realizado', fmtBRLcompleto(d.total_geral.realizado));
-    u('orc_util', (d.total_geral.utilizacao_pct ?? 0) + '%');
-    u('orc_util_sub', d.total_geral.diferenca >= 0 ? 'estouro ' + fmtBRLcompleto(d.total_geral.diferenca) : 'economia ' + fmtBRLcompleto(Math.abs(d.total_geral.diferenca)));
-
-    // Barras horizontais por categoria
-    const barras = document.getElementById('orc_barras');
-    if (barras) {
-      if (!d.categorias.length) {
-        barras.innerHTML = '<div style="text-align:center;padding:24px;color:var(--t3);font-size:11px;">Sem orçamento cadastrado no QuickBooks para este ano.<br/>Cadastre um Budget no QB e atualize.</div>';
-      } else {
-        barras.innerHTML = d.categorias.slice(0, 12).map(cat => {
-          const pct = cat.total_util_pct;
-          const corBarra = pct == null ? 'var(--t3)' :
-                          pct < 80 ? 'var(--green)' :
-                          pct < 100 ? 'var(--gold)' : 'var(--red)';
-          const widthPct = pct == null ? 0 : Math.min(pct, 150);
-          return `<div style="margin-bottom:14px;">
-            <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:11px;">
-              <span style="font-weight:600;">${cat.categoria}</span>
-              <span style="font-family:var(--M);"><span style="color:var(--blue);">${fmtBRL(cat.total_realizado)}</span> / <span style="color:var(--t2);">${fmtBRL(cat.total_orcado)}</span> <span style="color:${_corTxt(corBarra)};font-weight:600;">${pct == null ? '-' : pct + '%'}</span></span>
-            </div>
-            <div style="background:var(--bg4);border-radius:4px;height:10px;overflow:hidden;position:relative;">
-              <div style="height:100%;background:${corBarra};width:${widthPct}%;transition:width .5s;${pct > 100 ? 'background:repeating-linear-gradient(45deg,var(--red),var(--red) 4px,#aa3030 4px,#aa3030 8px);' : ''}"></div>
-              ${pct > 100 ? '<div style="position:absolute;top:0;right:5px;color:#fff;font-size:9px;font-family:var(--M);">⚠ ESTOURO</div>' : ''}
-            </div>
-          </div>`;
-        }).join('');
-      }
-    }
-
-    // Matriz mensal completa
-    if (matriz && !d.categorias.length) matriz.innerHTML = '<div style="text-align:center;color:var(--t3);padding:24px;font-size:11px;">Sem dados de orçamento para o ano (QuickBooks desconectado ou sem orçamento cadastrado).</div>';
-    if (matriz && d.categorias.length) {
-      const nomesMes = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-      let html = `<table style="width:100%;min-width:1400px;border-collapse:collapse;font-size:10px;">
-        <thead><tr style="border-bottom:1px solid var(--bd);">
-          <th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;position:sticky;left:0;background:var(--bg3);">Categoria</th>
-          ${d.meses.map((m, i) => `<th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">${nomesMes[i]}</th>`).join('')}
-          <th style="text-align:right;padding:6px;color:var(--blue);font-family:var(--M);font-size:9px;border-left:1px solid var(--bd);">Total</th>
-        </tr></thead>
-        <tbody>${d.categorias.slice(0, 15).map(cat => `
-          <tr style="border-bottom:1px solid rgba(255,255,255,.03);">
-            <td style="padding:6px;font-size:10px;position:sticky;left:0;background:var(--bg3);">${cat.categoria}</td>
-            ${d.meses.map(mes => {
-              const c = cat.meses[mes];
-              const tit = `O:${c.orcado} R:${c.realizado}`;
-              if (c.orcado === 0 && c.realizado === 0) return '<td style="padding:6px;text-align:right;color:var(--t3);font-family:var(--M);">-</td>';
-              const cor = c.utilizacao_pct == null ? 'var(--t3)' :
-                          c.utilizacao_pct < 80 ? 'var(--green)' :
-                          c.utilizacao_pct < 100 ? 'var(--gold)' : 'var(--red)';
-              return `<td title="${tit}" style="padding:6px;text-align:right;font-family:var(--M);color:${_corTxt(cor)};">${fmtBRL(c.realizado)}</td>`;
-            }).join('')}
-            <td style="padding:6px;text-align:right;font-family:var(--M);font-weight:600;border-left:1px solid var(--bd);">${fmtBRL(cat.total_realizado)} / ${fmtBRL(cat.total_orcado)}</td>
-          </tr>`).join('')}
-        </tbody></table>`;
-      matriz.innerHTML = html;
-    }
-  } catch (e) {
-    if (matriz) matriz.innerHTML = `<div style="color:var(--red);font-size:11px;padding:14px;">Erro: ${e.message}</div>`;
-  }
+    _odDados = await finApi('orcamento_dre', { inicio: _odInicio(), meses: 12, crm: etapas.length ? { etapas, distribuir_meses: _numBR(document.getElementById('od_crmDist')?.value || 1), custo_pct: _numBR(document.getElementById('od_crmCusto')?.value || 60), ponderar: !!document.getElementById('od_crmPond')?.checked, probabilidades } : null });
+    const r = document.getElementById('od_crmResumo'), cr = _odDados.crm;
+    if (r) r.innerHTML = !crmOn ? '' : !etapas.length ? '<span style="color:var(--gold);">marque abaixo as etapas do funil</span>' : cr ? '<b>' + cr.qtd + '</b> proposta(s) · ' + fmtBRLcompleto(cr.valor_total) + ' no total · <b>' + fmtBRLcompleto(cr.valor_ponderado_janela) + '</b> entram na janela' + (cr.ponderar ? ' (ponderado)' : '') : '';
+    if (_odDados.custo_historico_pct != null && crmOn) { const h = document.getElementById('od_crmCusto'); if (h) h.title = 'Referência: custos + despesas foram ' + _odDados.custo_historico_pct + '% da receita realizada nesta janela'; }
+    _odRender();
+  } catch (e) { if (tb) tb.innerHTML = '<div style="padding:20px;color:var(--red);font-size:11px;">Erro: ' + _odEsc(e.message) + '</div>'; }
+}
+function _odFmt(v) { if (!v) return '—'; const a = Math.abs(v); const t = a >= 1e6 ? (a / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' mi' : a >= 1e3 ? (a / 1e3).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mil' : a.toLocaleString('pt-BR', { maximumFractionDigits: 0 }); return (v < 0 ? '−' : '') + t; }
+function _odCelula(x, bomSeMaior, fut, tot, semOrc) {
+  const o = x?.orcado || 0, r = x?.real || 0, d = r - o; const cls = (fut ? 'fut' : '') + (tot ? ' tot' : '');
+  const corD = !o && !r ? 'var(--t3)' : (d === 0 ? 'var(--t3)' : ((d > 0) === bomSeMaior ? 'var(--green,#22d3a3)' : 'var(--red)'));
+  const pct = o ? Math.round(d / Math.abs(o) * 100) : null;
+  let html;
+  if (_odVista === 'o') html = '<span class="v">' + _odFmt(o) + '</span>';
+  else if (_odVista === 'r') html = '<span class="v">' + _odFmt(r) + '</span>';
+  else if (_odVista === 'd') html = '<span class="v" style="color:' + corD + ';">' + (o || r ? (d > 0 ? '+' : '') + _odFmt(d) : '—') + '</span>' + (pct != null ? '<span class="d" style="color:' + corD + ';">' + (pct > 0 ? '+' : '') + pct + '%</span>' : '');
+  else html = '<span class="v">' + _odFmt(r) + '</span>' + (o ? (Math.abs(d) < 0.5 ? '<span class="d" style="color:var(--t3);">= orçado</span>' : '<span class="d" style="color:' + corD + ';" title="Orçado ' + fmtBRLcompleto(o) + '">' + (d >= 0 ? '▲ ' : '▼ ') + _odFmt(Math.abs(d)) + '</span>') : semOrc ? '' : '<span class="d" style="color:var(--t3);">sem orçado</span>');
+  return '<td class="' + cls + '" title="Orçado ' + fmtBRLcompleto(o) + ' · ' + (fut ? 'Projetado ' : 'Realizado ') + fmtBRLcompleto(r) + '">' + html + '</td>';
+}
+function _odToggle(g) { _odAberto[g] = !_odAberto[g]; _odRender(); }
+function _odRender() {
+  const d = _odDados, tb = document.getElementById('od_tabela'); if (!d || !tb) return;
+  const M = d.meses, atual = d.mes_atual; const nm = m => { const [a, mm] = m.split('-'); return ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][+mm - 1] + '/' + a.slice(2); };
+  const G = d.grupos, R = d.resultados;
+  const kpi = (rot, x, bom, cor) => { const o = x.total.orcado, r = x.total.real, dd = r - o; const ok = (dd >= 0) === bom; return '<div class="kpi ' + cor + '"><div class="kl">' + rot + '</div><div class="kv">' + fmtBRLcompleto(r) + '</div><div class="ks">orçado ' + fmtBRLcompleto(o) + (o ? ' · <span style="color:' + (ok ? 'var(--green,#22d3a3)' : 'var(--red)') + ';">' + (dd >= 0 ? '+' : '') + fmtBRLcompleto(dd) + '</span>' : '') + '</div></div>'; };
+  const custos = { total: { orcado: G.custos.total.orcado + G.despesas.total.orcado, real: G.custos.total.real + G.despesas.total.real } };
+  const margem = G.receitas.total.real ? Math.round(R.resultado_liquido.total.real / G.receitas.total.real * 1000) / 10 : null;
+  document.getElementById('od_kpis').innerHTML = kpi('Receitas · 12 meses', G.receitas, true, 'gn') + kpi('Custos + despesas · 12 meses', custos, false, 'rd') + kpi('Resultado líquido · 12 meses', R.resultado_liquido, true, 'bl')
+    + '<div class="kpi pu"><div class="kl">Margem líquida</div><div class="kv">' + (margem != null ? margem.toLocaleString('pt-BR') + '%' : '—') + '</div><div class="ks">realizado + projetado na janela</div></div>';
+  document.getElementById('od_avisos').innerHTML = (d.avisos || []).map(a => '<div style="font-size:10.5px;color:var(--gold);background:rgba(245,185,75,.08);border:1px solid rgba(245,185,75,.3);border-radius:7px;padding:6px 10px;margin-bottom:8px;">⚠ ' + _odEsc(a) + '</div>').join('');
+  { const ou = document.getElementById('od_orcUsado'); if (ou) ou.textContent = d.orcamentos_usados?.length ? 'Orçado = ' + d.orcamentos_usados.join(' + ') + ' (QuickBooks) · clique num grupo para abrir as contas · valores em R$ (mil / mi)' : ''; }
+  const head = '<thead><tr><th>Conta</th>' + M.map(m => '<th class="' + (m > atual ? 'fut' : '') + '">' + nm(m) + '<div style="font-size:8px;font-weight:400;">' + (m > atual ? 'projetado' : m === atual ? 'mês atual' : 'realizado') + '</div></th>').join('') + '<th style="border-left:1px solid var(--bd2);">Total</th></tr></thead>';
+  const linhaHtml = (nome, x, bom, cls, onclick, semOrc) => '<tr class="' + cls + '"' + (onclick ? ' onclick="' + onclick + '"' : '') + '><td title="' + _odEsc(String(nome).replace(/<[^>]+>/g, '')) + '">' + nome + '</td>' + M.map(m => _odCelula(x.meses[m], bom, m > atual, false, semOrc)).join('') + _odCelula(x.total, bom, false, true, semOrc) + '</tr>';
+  const grupo = (g, rot, bom) => { const x = G[g]; if (!x || (!x.linhas.length && !x.total.orcado && !x.total.real)) return '';
+    const ab = !!_odAberto[g]; return linhaHtml((ab ? '▾ ' : '▸ ') + rot + ' <span style="font-weight:400;color:var(--t3);font-size:10px;">(' + x.linhas.length + ')</span>', x, bom, 'od-g', "_odToggle('" + g + "')")
+      + (ab ? x.linhas.map(l => linhaHtml((l.crm ? '◆ ' : '') + _odEsc(l.nome), l, bom, 'od-l' + (l.crm ? ' od-crm' : ''), null, l.crm)).join('') : ''); };
+  tb.innerHTML = '<table class="od">' + head + '<tbody>'
+    + grupo('receitas', 'Receitas', true) + grupo('custos', '(−) Custos', false) + linhaHtml('= Lucro bruto', R.lucro_bruto, true, 'od-r')
+    + grupo('despesas', '(−) Despesas operacionais', false) + linhaHtml('= Resultado operacional', R.resultado_operacional, true, 'od-r')
+    + grupo('outras_receitas', '(+) Outras receitas', true) + grupo('outras_despesas', '(−) Outras despesas', false) + linhaHtml('= Resultado líquido', R.resultado_liquido, true, 'od-r')
+    + '</tbody></table>';
+  const cl = document.getElementById('od_crmLista'), ct = document.getElementById('od_crmTabela');
+  if (cl && ct) { const ps = d.crm?.propostas || []; cl.style.display = ps.length ? '' : 'none';
+    ct.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:11px;"><tr style="color:var(--t2);font-family:var(--M);font-size:9px;text-transform:uppercase;"><th style="text-align:left;padding:4px;">Proposta</th><th style="text-align:right;padding:4px;">Valor</th><th style="text-align:right;padding:4px;">Prob.</th><th style="text-align:left;padding:4px;">Fechamento</th><th style="text-align:left;padding:4px;">Entra a partir de</th><th style="text-align:right;padding:4px;">Na janela</th></tr>'
+      + ps.map(p => '<tr style="border-top:1px solid var(--bd);"><td style="padding:4px;">' + _odEsc(p.nome) + '</td><td style="padding:4px;text-align:right;font-family:var(--M);">' + fmtBRLcompleto(p.valor) + '</td><td style="padding:4px;text-align:right;">' + Math.round((p.prob_usada ?? 1) * 100) + '%</td><td style="padding:4px;">' + (p.fechamento ? p.fechamento.split('-').reverse().join('/') : '—') + '</td><td style="padding:4px;">' + nm(p.a_partir_de) + '</td><td style="padding:4px;text-align:right;font-family:var(--M);">' + fmtBRLcompleto(p.valor_na_janela) + '</td></tr>').join('') + '</table>'; }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -29235,7 +29263,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.109] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.110] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -29251,7 +29279,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.109';
+window.__ATX_BUILD_ID__ = 'ATX-v3.110';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
