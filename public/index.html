@@ -27729,6 +27729,63 @@ function _resCardsHtml(R, modo) {
       + '</div><div class="rs"><span style="color:var(--blue);">■</span> faturamento · <span style="color:var(--green);">■</span> lucro (<span style="color:var(--red);">■</span> prejuízo) · passe o mouse para ver os valores</div></div>'); }
   return '<div class="rc-row">' + cards.slice(0, 5).join('') + '</div>' + cards.slice(5).join(''); // v3.123: os 5 indicadores ocupam a largura toda
 }
+// ═══ v3.125: DRILL-DOWN DOS CARTÕES DE CAIXA — A receber / A pagar / Fôlego, linha a linha ═══
+let _cxDet = null;
+async function cxDetalheAbrir(tipo, per) {
+  per = per || window._dfPeriodoAtual || {};
+  const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  let ov = document.getElementById('cxModal'); if (ov) ov.remove();
+  ov = document.createElement('div'); ov.id = 'cxModal';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:12px;';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  const tit = { receber: 'A receber — faturas em aberto', pagar: 'A pagar — contas em aberto', folego: 'Fôlego de caixa — o que entra e sai nos próximos 30 dias' }[tipo];
+  ov.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:10px;width:min(1100px,100%);max-height:92vh;display:flex;flex-direction:column;">'
+    + '<div style="padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><div style="flex:1;min-width:220px;"><div style="font-family:var(--H);font-size:14px;font-weight:700;">' + tit + '</div><div id="cxSub" style="font-size:10.5px;color:var(--t2);margin-top:2px;">carregando do QuickBooks…</div></div>'
+    + '<div id="cxAbas" style="display:flex;gap:4px;flex-wrap:wrap;"></div><button class="btn btn-g" onclick="document.getElementById(\'cxModal\').remove()">Fechar ✕</button></div>'
+    + '<div id="cxCorpo" style="overflow:auto;padding:6px 16px 14px;"><div style="color:var(--t3);font-size:11px;padding:20px;">Carregando…</div></div></div>';
+  document.body.appendChild(ov);
+  try {
+    const d = await finApi('caixa_detalhe', per);
+    _cxDet = { D: d.caixa_detalhe, tipo, aba: tipo === 'folego' ? '30d' : (d.caixa_detalhe.periodo ? 'periodo' : '30d') };
+    _cxRender();
+  } catch (e) { document.getElementById('cxCorpo').innerHTML = '<div style="color:var(--red);font-size:11px;padding:16px;">Não consegui carregar: ' + esc(_errQbAmigavel(e.message)) + '</div>'; }
+}
+function _cxAba(a) { _cxDet.aba = a; _cxRender(); }
+function _cxRender() {
+  const { D, tipo, aba } = _cxDet, brl = v => fmtBRL(v || 0), esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), dt = x => x ? String(x).split('-').reverse().join('/') : '—';
+  const P = D.periodo, perTxt = P ? dt(P.de).substring(0, 5) + ' a ' + dt(P.ate).substring(0, 5) : '';
+  const filtro = { periodo: x => x.faixa === 'periodo', antes: x => x.faixa === 'antes', vencido: x => x.dias != null && x.dias < 0, '30d': x => x.em_30d, depois: x => x.faixa === 'depois', todos: () => true };
+  const abas = [P ? ['periodo', 'Vence no período (' + perTxt + ')'] : null, P ? ['antes', 'Vencido antes'] : null, ['vencido', 'Todo vencido'], ['30d', 'Vencido + próx. 30 dias'], P ? ['depois', 'Depois do período'] : null, ['todos', 'Todos em aberto']].filter(Boolean);
+  document.getElementById('cxAbas').innerHTML = abas.map(([k, t]) => '<button class="btn ' + (k === aba ? '' : 'btn-g') + '" style="font-size:9.5px;padding:3px 9px;" onclick="_cxAba(\'' + k + '\')">' + t + '</button>').join('');
+  const tabela = (lista, tp) => {
+    const L = lista.filter(filtro[aba] || filtro.todos), tot = L.reduce((a, x) => a + (x.valor || 0), 0);
+    const cab = tp === 'receber' ? ['Vencimento', 'Cliente', 'Fatura', 'Termo', 'Valor em aberto', ''] : ['Vencimento', 'Fornecedor', 'Nº', 'Conta / categoria', 'Valor em aberto', ''];
+    return '<div style="font-size:11px;font-weight:700;margin:10px 0 4px;color:' + (tp === 'receber' ? 'var(--green)' : 'var(--red)') + ';">' + (tp === 'receber' ? 'A receber' : 'A pagar') + ' · ' + L.length + ' item(ns) · ' + brl(tot) + '</div>'
+      + (L.length ? '<table style="width:100%;border-collapse:collapse;font-size:10.5px;"><tr style="color:var(--t3);font-family:var(--M);font-size:8.5px;text-transform:uppercase;text-align:left;">' + cab.map((c, i) => '<th style="padding:4px;' + (i === 4 ? 'text-align:right;' : '') + '">' + c + '</th>').join('') + '</tr>'
+        + L.map(x => { const atraso = x.dias != null && x.dias < 0;
+          const venc = '<span style="font-family:var(--M);">' + dt(x.data) + '</span>' + (atraso ? ' <span style="color:var(--red);font-size:9px;">' + (-x.dias) + 'd em atraso</span>' : x.dias != null && x.dias <= 7 ? ' <span style="color:var(--gold);font-size:9px;">em ' + x.dias + 'd</span>' : '');
+          const c3 = tp === 'receber' ? (x.termo_id ? '<a href="#" onclick="event.preventDefault();document.getElementById(\'cxModal\').remove();abrirDetalheTermo(\'' + esc(x.termo_id) + '\')" style="color:var(--blue);">Termo ' + esc(x.termo_numero || '') + '</a>' + (x.termo_projeto ? ' <span style="color:var(--t3);">' + esc(x.termo_projeto) + '</span>' : '') : '<span style="color:var(--t3);">—</span>') : esc(x.conta || '') + (x.memo ? ' <span style="color:var(--t3);">· ' + esc(String(x.memo).substring(0, 60)) + '</span>' : '');
+          return '<tr style="border-top:1px solid var(--bd);"><td style="padding:4px;white-space:nowrap;">' + venc + '</td><td style="padding:4px;">' + esc(tp === 'receber' ? x.cliente : x.fornecedor) + '</td><td style="padding:4px;">' + esc(x.doc || '') + '</td><td style="padding:4px;">' + c3 + '</td>'
+            + '<td style="padding:4px;text-align:right;font-family:var(--M);white-space:nowrap;">' + brl(x.valor) + '</td><td style="padding:4px;">' + (x.qb_url ? '<a href="' + x.qb_url + '" target="_blank" rel="noopener" style="color:var(--blue);white-space:nowrap;">abrir ↗</a>' : '') + '</td></tr>'; }).join('') + '</table>'
+        : '<div style="font-size:10.5px;color:var(--t3);padding:4px 0;">Nada nesta faixa.</div>');
+  };
+  let h = '';
+  if (tipo === 'folego') {
+    const r30 = D.receber.filter(filtro[aba] || filtro.todos).reduce((a, x) => a + x.valor, 0), p30 = D.pagar.filter(filtro[aba] || filtro.todos).reduce((a, x) => a + x.valor, 0);
+    h = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin:8px 0;font-size:11px;">' + [['Saldo em caixa hoje', D.saldo_hoje, 'var(--blue)'], ['+ A receber (filtro acima)', r30, 'var(--green)'], ['− A pagar (filtro acima)', p30, 'var(--red)'], ['= Caixa projetado', (D.saldo_hoje || 0) + r30 - p30, ((D.saldo_hoje || 0) + r30 - p30) < 0 ? 'var(--red)' : 'var(--green)']]
+      .map(([t, v, c]) => '<div style="flex:1;min-width:150px;background:var(--bg3);border-left:3px solid ' + c + ';border-radius:6px;padding:8px 10px;"><div style="font-size:9px;color:var(--t3);text-transform:uppercase;font-family:var(--M);">' + t + '</div><div style="font-family:var(--H);font-size:17px;font-weight:700;color:' + c + ';">' + brl(v) + '</div></div>').join('') + '</div>'
+      + tabela(D.receber, 'receber') + tabela(D.pagar, 'pagar');
+  } else h = tabela(tipo === 'receber' ? D.receber : D.pagar, tipo);
+  document.getElementById('cxCorpo').innerHTML = h;
+  document.getElementById('cxSub').innerHTML = 'Posição de hoje (' + dt(D.hoje) + ') no QuickBooks · total em aberto: a receber ' + brl(D.totais.receber) + ' · a pagar ' + brl(D.totais.pagar) + ' · empresa toda (não depende da conta bancária) · ordenado por vencimento' + (D.erro ? ' · <span style="color:var(--gold);">' + esc(_errQbAmigavel(D.erro)) + '</span>' : '');
+}
+// liga o clique nos cartões de caixa (Dashboard Financeiro e LIVE)
+function _cxLigarCartoes() {
+  const liga = (id, fn) => { const el = document.getElementById(id); const card = el && el.closest('.kpi'); if (!card || card.dataset.cxLigado) return; card.dataset.cxLigado = '1'; card.style.cursor = 'pointer'; card.title = 'Clique para ver linha a linha';
+    card.addEventListener('click', e => { if (e.target.closest('.tip-i, a, button, select')) return; fn(); }); };
+  liga('df_receber', () => cxDetalheAbrir('receber')); liga('df_pagar', () => cxDetalheAbrir('pagar')); liga('df_runway', () => cxDetalheAbrir('folego'));
+  liga('df_saldo', () => { const p = window._dfPeriodoAtual; nav('s3fluxodet', document.querySelector('.sbi[onclick*="s3fluxodet"]')); });
+}
 // ═══ v3.122: DRE COM DRILL-DOWN — grupo → conta → lançamentos (cada um com link para o QuickBooks) ═══
 let _dreEstado = null;
 // clicar num cartão de resultado (faturamento, gastos, EBITDA, lucro, margem) abre a DRE do mesmo período
@@ -27832,12 +27889,13 @@ function _folegoInfo(k) {
   const queima = rw == null ? '' : rw >= 999 ? 'sem queima líquida' : 'queima líquida ' + brl(k.burn_liquido_mensal) + '/mês → ' + n1(rw) + ' meses';
   const sub = 'de gastos cobertos pelo caixa · ' + queima + (c30 != null ? ' · em 30 dias ' + brl(c30) : '');
   const base = cob != null ? cob : rw;
-  const cor = (c30 != null && c30 < 0) || base < 1 ? 'var(--red)' : base < 3 ? 'var(--gold)' : 'var(--green)';
+  // v3.125: vermelho só quando o caixa de 30 dias fica negativo; cobertura curta com 30 dias positivo = atenção (amarelo)
+  const cor = (c30 != null && c30 < 0) || (c30 == null && base < 1) ? 'var(--red)' : base < 3 ? 'var(--gold)' : 'var(--green)';
   const tip = '**Fôlego de caixa** = quantos meses de gastos o caixa de hoje paga se nada mais entrar.\n\n' + (cob != null ? brl(k.saldo_caixa) + ' ÷ gasto médio ' + brl(k.burn_rate_mensal) + '/mês (' + (k.burn_base || '3 últimos meses fechados') + ') = ' + n1(cob) + ' meses.' : '')
     + '\n\n**Queima líquida** = gasto médio − faturamento médio: ' + (rw >= 999 ? 'faturamento médio ' + brl(k.media_receita_3m) + ' ≥ gasto médio ' + brl(k.media_gastos_3m) + ' → o caixa não se esgota pela operação média (antes este cartão mostrava só "∞").' : brl(k.burn_liquido_mensal) + '/mês → o caixa dura ' + n1(rw) + ' meses.')
     + (c30 != null ? '\n\n**Caixa em 30 dias** = caixa ' + brl(k.saldo_caixa) + ' + a receber vencido ' + brl(k.contas_receber_vencido) + ' + a receber 30 dias ' + brl(k.contas_receber_30d) + ' − a pagar vencido ' + brl(k.contas_pagar_vencido) + ' − a pagar 30 dias ' + brl(k.contas_pagar_30d) + ' = ' + brl(c30) + '.' : '')
     + (k.caixa_filtrado_por_conta ? '\n\n⚠ Saldo de UMA conta (filtro) contra a receber/pagar da empresa toda — selecione "Todas as contas" para a leitura completa.' : '')
-    + '\n\nCor: vermelho abaixo de 1 mês ou caixa em 30 dias negativo · amarelo até 3 meses · verde acima.';
+    + '\n\nCor: vermelho = caixa em 30 dias negativo · amarelo = cobre menos de 3 meses de gastos · verde acima.\n\nClique no cartão para ver, linha a linha, o que entra e sai.';
   return { val, sub, cor, tip };
 }
 function _resNota(R) {
@@ -27895,6 +27953,7 @@ async function carregarResultadoLive(forcar) {
       roe: '**ROE no ano** = lucro líquido acumulado no ano ÷ patrimônio líquido.\n\n' + brl(k.lucro_ano) + ' ÷ ' + brl(k.patrimonio_liquido) + ' = ' + (k.roi_pct != null ? _resFmtPct(k.roi_pct) : 'n/d') + '\n\nPatrimônio líquido = grupo Equity do Balanço do QuickBooks na data de hoje; sem patrimônio positivo o ROE não se aplica.' + fk,
       saude: '**Saúde financeira** — semáforo com 3 notas (0 a 2 cada):\n• Fôlego: ≥ 12 meses = 2 · ≥ 6 = 1\n• Margem líquida do ano: ≥ 15% = 2 · ≥ 0% = 1\n• Liquidez: ≥ 1,5 = 2 · ≥ 1 = 1 (sem contas a pagar = 2)\nSoma ≥ 5 verde · ≥ 3 amarelo · abaixo vermelho.\n\nAgora: ' + ((k.semaforo_motivos || []).join(' · ') || '—') + fk,
     };
+    setTimeout(() => { const cs = b2.querySelectorAll('.res-card'); [[0, () => cxDetalheAbrir('folego', {})], [1, () => cxDetalheAbrir('folego', {})]].forEach(([i, fn]) => { const c = cs[i]; if (!c) return; c.style.cursor = 'pointer'; c.title = 'Clique para ver linha a linha'; c.onclick = e => { if (!e.target.closest('.tip-i, a, button')) fn(); }; }); }, 0);
     b2.innerHTML = [
       _resCartao('Saldo em caixa', brl(k.saldo_caixa), k.contas_pagar_30d != null ? 'hoje · em 30 dias: a receber ' + brl((k.contas_receber_vencido || 0) + (k.contas_receber_30d || 0)) + ' · a pagar ' + brl((k.contas_pagar_vencido || 0) + (k.contas_pagar_30d || 0)) : 'hoje · a receber ' + brl(k.contas_receber) + ' · a pagar ' + brl(k.contas_pagar), k.saldo_caixa < 0 ? 'var(--red)' : 'var(--blue)', TK.caixa),
       (() => { const F = _folegoInfo(k); return _resCartao('Fôlego de caixa', F.val, F.sub, F.cor, F.tip + fk); })(),
@@ -28012,7 +28071,7 @@ async function carregarDashboardFinanceiro() {
     // v3.122: obedecem o período do filtro — em aberto com vencimento no período; sem o recorte, cai no vencido + 30 dias
     const _ag = (tot, v, d) => tot == null ? null : (v == null && d == null ? tot : (v || 0) + (d || 0));
     const PV = c.periodo_vencimentos, _pvTxt = PV ? (PV.de.substring(0, 7) === PV.ate.substring(0, 7) ? ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][parseInt(PV.de.substring(5, 7)) - 1] + '/' + PV.de.substring(2, 4) : PV.de.split('-').reverse().slice(0, 2).join('/') + ' a ' + PV.ate.split('-').reverse().slice(0, 2).join('/')) : '';
-    u('df_saldo', brl(c.saldo));
+    u('df_saldo', brl(c.saldo)); try { _cxLigarCartoes(); } catch (_) {}
     u('df_receber', brl(PV?.receber ? PV.receber.valor : _ag(c.a_receber, c.a_receber_vencido, c.a_receber_30d)));
     u('df_pagar', brl(PV?.pagar ? PV.pagar.valor : _ag(c.a_pagar, c.a_pagar_vencido, c.a_pagar_30d)));
     u('df_receber_lbl', PV?.receber ? 'A receber · vence em ' + _pvTxt : 'A receber · até 30 dias');
@@ -30450,7 +30509,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.124] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.125] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -30466,7 +30525,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.124';
+window.__ATX_BUILD_ID__ = 'ATX-v3.125';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

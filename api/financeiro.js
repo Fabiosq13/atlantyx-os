@@ -217,6 +217,7 @@ async function handler(req, res) {
       // v3.04: DRE mensal real (QuickBooks) — base do Business Plan dinâmico da Atlantyx
       dre_mensal:            () => dreMensal(params),
       dre_arvore:            () => dreArvore(params),        // v3.122: DRE completa com drill-down
+      caixa_detalhe:         () => caixaDetalhe(params),     // v3.125: cartões A receber / A pagar / Fôlego linha a linha
       dre_conta_lancamentos: () => dreContaLancamentos(params),
 
       // ── KPIs determinísticos de saúde ────────────────────────────────────
@@ -2428,7 +2429,9 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
       qb_id: qid || null, qb_url: qid ? `${_qbBase}/app/invoice?txnId=${qid}` : null, ...(termoPorInv[qid] || {}) }; }),
     a_pagar: fut.erro ? null : soma(fut.pagaveis || []), a_pagar_vencido: fut.erro ? null : soma(fut.pagaveis || [], p => p.vencida), a_pagar_30d: fut.erro ? null : soma(fut.pagaveis || [], p => !p.vencida && p.data <= em30),
     qtd_pagar: fut.erro ? null : (fut.pagaveis || []).length,
-    pagaveis_itens: fut.erro ? null : (fut.pagaveis || []).map(p => ({ data: p.data, valor: round(p.valor || 0) })), // v3.122: para recortar pelo período do filtro
+    pagaveis_itens: fut.erro ? null : (fut.pagaveis || []).map(p => { const qid = String(p.id || '').replace(/^bill_/, ''); return { id: p.id, data: p.data, valor: round(p.valor || 0), valor_total: round(p.valor_total || 0),
+      vencida: !!p.vencida, fornecedor: p.fornecedor || String(p.descricao || '').split(' · ')[0], doc: p.doc || '', conta: p.conta || '', memo: p.memo || '', emissao: p.emissao || null,
+      qb_url: qid ? `${_qbBase}/app/bill?txnId=${qid}` : null }; }), // v3.122/v3.125: recorte pelo período + drill-down linha a linha
     erro: [ext._erro, ext.qb_erro, fut.erro].filter(Boolean).join(' | ') || null,
     fonte: 'Fluxo Detalhado (extrato real + previsto)',
   };
@@ -2436,6 +2439,20 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
   return valor;
 }
 
+// v3.125: DRILL-DOWN dos cartões de caixa — faturas (A receber) e contas (A pagar) em aberto, uma a uma, com o recorte
+// do período do filtro (no período · vencido antes · depois) e os próximos 30 dias; mesma base dos cartões (baseCaixaHoje).
+async function caixaDetalhe({ data_inicio = null, data_fim = null, mes = null, ano = null } = {}) {
+  const b = await baseCaixaHoje({});
+  const hoje = b.hoje || _hojeBR(), em30 = _diasMais(hoje, 30);
+  let pIni = data_inicio, pFim = data_fim;
+  if (!pIni && (mes || ano)) { const a = parseInt(ano) || parseInt(hoje), m = parseInt(mes) || null; pIni = m ? `${a}-${String(m).padStart(2, '0')}-01` : `${a}-01-01`; pFim = m ? _fimDoMes(pIni) : `${a}-12-31`; }
+  const marca = (x, d) => ({ ...x, faixa: !d ? 'sem data' : (pIni && d >= pIni && d <= pFim) ? 'periodo' : (pIni && d < pIni) ? 'antes' : (pFim && d > pFim) ? 'depois' : 'periodo',
+    em_30d: !!d && (d < hoje || d <= em30), dias: d ? Math.round((Date.parse(d + 'T12:00:00Z') - Date.parse(hoje + 'T12:00:00Z')) / 864e5) : null });
+  const receber = (b.recebiveis_itens || []).map(r => marca({ ...r, data: r.vencimento }, r.vencimento)).sort((x, y) => String(x.data).localeCompare(String(y.data)));
+  const pagar = (b.pagaveis_itens || []).map(p => marca(p, p.data)).sort((x, y) => String(x.data).localeCompare(String(y.data)));
+  return { caixa_detalhe: { hoje, periodo: pIni ? { de: pIni, ate: pFim } : null, saldo_hoje: b.saldo_hoje, receber, pagar, erro: b.erro || null,
+    totais: { receber: b.a_receber, pagar: b.a_pagar, receber_vencido: b.a_receber_vencido, receber_30d: b.a_receber_30d, pagar_vencido: b.a_pagar_vencido, pagar_30d: b.a_pagar_30d } } };
+}
 async function painelResumo({ mes, ano, data_inicio = null, data_fim = null, conta_id = null, metodo = null } = {}) {
   const resp = {
     qb_configurado: qbConfigurado(),
@@ -2872,6 +2889,8 @@ async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
       id: 'bill_' + b.Id, data: b.DueDate || b.TxnDate, descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''),
       categoria: 'A Pagar (Bill)', valor: parseFloat(b.Balance || 0), valor_total: parseFloat(b.TotalAmt || 0), tipo: 'saida', origem: 'quickbooks_futuro',
       no_periodo: (!data_inicio || (b.DueDate || b.TxnDate) >= data_inicio) && (!data_fim || (b.DueDate || b.TxnDate) <= data_fim), vencida: b.DueDate ? b.DueDate < _hojeBR() : false,
+      fornecedor: b.VendorRef?.name || '', doc: b.DocNumber || '', emissao: b.TxnDate, memo: b.PrivateNote || '', // v3.125: drill-down do cartão A pagar
+      conta: [...new Set((b.Line || []).map(l => l.AccountBasedExpenseLineDetail?.AccountRef?.name).filter(Boolean))].join(', '),
     }));
   } catch (e) { out.erro = e.message; }
   return out;
