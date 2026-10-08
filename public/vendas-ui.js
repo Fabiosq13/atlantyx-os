@@ -261,6 +261,7 @@
     const ctx = rfpCtxLer();
     if (ctx && PROP && PROP.dados.escopo && !PROP.id && !confirm('Descartar a proposta em edição (não salva) e abrir a da RFP?')) { aba(box.dataset.aba || 'nova'); return; }
     funilCarregar();
+    if (!ctx) propPrefillRfp(box);
     try { const [rc, cfg] = await Promise.all([api('rate_card'), api('prop_config')]); RC = rc.rate_card || []; CFG = cfg; } catch (_) {}
     if (!ctx) return aba(box.dataset.aba || 'nova');
     // Ponte s2rfps → s7propostas: formulário pré-preenchido com o edital e rascunho IA disparado
@@ -347,6 +348,17 @@
   function funilIr() {
     FUNIL_ROLAR = true; nav('s7propostas', document.querySelector(`.sbi[onclick*="'s7propostas'"]`));
   }
+  // Demanda #21: botão "→ Gerar Proposta" do Monitor RFPs deixa os dados em localStorage('proposta_prefill')
+  function propPrefillRfp(box) {
+    let pre = null; try { pre = JSON.parse(localStorage.getItem('proposta_prefill') || 'null'); localStorage.removeItem('proposta_prefill'); } catch (_) {}
+    if (!pre || typeof pre !== 'object' || !(pre.titulo || pre.cliente || pre.escopo)) return;
+    if ($('vpCliente')) { try { lerForm(); } catch (_) {} }
+    if (PROP && !PROP.id && (PROP.dados.escopo || PROP.titulo || PROP.cliente) && !confirm('Substituir a proposta em edição (não salva) pelos dados da RFP?')) return;
+    PROP = novaProp();
+    PROP.cliente = String(pre.cliente || '').substring(0, 200); PROP.titulo = String(pre.titulo || '').substring(0, 200); PROP.dados.escopo = String(pre.escopo || '').substring(0, 5000);
+    PROP.dados.origem = 'rfp'; PROP.dados.rfp_chave = String(pre.chave || '').substring(0, 300); if (/^\d{4}-\d{2}-\d{2}$/.test(String(pre.prazo || ''))) PROP.dados.prazo_rfp = pre.prazo;
+    box.dataset.aba = 'nova'; nota('Proposta pré-preenchida com os dados da RFP');
+  }
   function propEsqueleto() {
     return `<div class="cp-top"><div style="flex:1;min-width:0;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">Elaboração de Propostas</div>
       <div style="font-size:10.5px;color:var(--t2);">Escopo → equipe e horas → melhor formato para as metas e para o cliente → proposta no padrão Atlantyx</div></div>
@@ -359,7 +371,7 @@
   }
   function nova() { if (PROP && PROP.dados.escopo && !PROP.id && !confirm('Descartar a proposta em edição (não salva)?')) return; PROP = novaProp(); aba('nova'); }
   function formHtml() {
-    return `<div class="kg k2">
+    return `<div id="vpRfpInfo"></div><div class="kg k2">
       <div class="panel"><div class="ph"><div class="pt">① Cliente e escopo</div></div><div class="pb">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
           <div class="fg"><label class="fl">Cliente</label><input class="fi" id="vpCliente" list="vpClientesDL" placeholder="Ex.: CPFL Energia"/><datalist id="vpClientesDL"></datalist></div>
@@ -389,6 +401,7 @@
     const d = PROP.dados; $('vpCliente').value = PROP.cliente || ''; $('vpContato').value = PROP.contato || ''; $('vpTitulo').value = PROP.titulo || '';
     $('vpTipo').value = d.tipo_demanda || 'indefinido'; $('vpMeses').value = d.meses || ''; $('vpInicio').value = d.inicio || ''; $('vpRisco').value = d.risco || 'medio';
     $('vpOrc').value = d.orcamento_cliente || ''; $('vpOrcTipo').value = d.orcamento_tipo || 'total'; $('vpEscopo').value = d.escopo || '';
+    $('vpRfpInfo').innerHTML = d.origem === 'rfp' ? `<div style="background:var(--bg4);border-left:3px solid var(--gold);border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:11px;">📌 Proposta originada do Monitor RFPs${d.prazo_rfp ? ` · envio da proposta até <b style="color:var(--gold);">${esc(d.prazo_rfp.split('-').reverse().join('/'))}</b>` : ''}</div>` : '';
     renderPerfis(); if (PROP.analise) renderAnalise(); if (PROP.documento) renderDoc();
     if (!$('vpClientesDL').dataset.ok) { $('vpClientesDL').dataset.ok = '1'; fetch('/api/crm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clientes_listar', payload: {} }) }).then(r => r.json()).then(d => { $('vpClientesDL').innerHTML = (d.clientes || []).map(c => `<option value="${esc(c.empresa)}">`).join(''); }).catch(() => {}); }
   }
