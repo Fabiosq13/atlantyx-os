@@ -556,10 +556,10 @@ function _periodoConc({ mes, ano, data_inicio, data_fim } = {}) {
   if (!fim || fim > hoje) fim = hoje;
   return ini > fim ? {} : { data_inicio: ini, data_fim: fim };
 }
-async function contextoFinanceiro({ mes, ano, conta_id = null, data_inicio = null, data_fim = null } = {}) {
+async function contextoFinanceiro({ mes, ano, conta_id = null, data_inicio = null, data_fim = null, metodo = null } = {}) {
   const [resumo, kpis, fluxo, conc, kanban, orc, resul] = await Promise.allSettled([
-    painelResumo({ mes, ano, data_inicio, data_fim, conta_id }), kpisSaude({ conta_id }), fluxoFuturo({ meses: 6, conta_id }), conciliacaoStatus({ conta_id, ..._periodoConc({ mes, ano, data_inicio, data_fim }) }), marcosKanban({}), orcamentoConsolidado({ ano }),
-    resultadoKpis({ data_inicio, data_fim, mes, ano }), // v3.112
+    painelResumo({ mes, ano, data_inicio, data_fim, conta_id, metodo }), kpisSaude({ conta_id, metodo }), fluxoFuturo({ meses: 6, conta_id }), conciliacaoStatus({ conta_id, ..._periodoConc({ mes, ano, data_inicio, data_fim }) }), marcosKanban({}), orcamentoConsolidado({ ano }),
+    resultadoKpis({ data_inicio, data_fim, mes, ano, metodo }), // v3.112
   ]);
   const v = p => p.status === 'fulfilled' ? p.value : { erro: p.reason?.message };
   // dem_muyzjr88clbc FIX: kpisSaude devolve { kpis: {...} } — lendo o objeto de fora, semáforo/motivos vinham undefined e a
@@ -852,7 +852,7 @@ async function planejadoVsReal({ data_inicio, data_fim, conta_id = null } = {}) 
 // v3.113: tributo/encargo com "social" no nome (Contribuição Social = CSLL, INSS/Previdência Social) não é doação
 const RX_SOCIAL_NAO = /contribui[cç][aã]o social|\bcsll\b|previd[eê]ncia|\binss\b|encargos? sociais|seguridade|\bpis\b|\bcofins\b|seguro social/i;
 const RX_SOCIAL = /social|doa[cç][aã]o|doa[cç][oõ]es|filantrop|benefic[eê]n|instituto|\bong\b|terceiro setor|responsabilidade social|patroc[ií]nio social|caridade|voluntari/i;
-async function indicadorSocial({ data_inicio, data_fim } = {}) {
+async function indicadorSocial({ data_inicio, data_fim, metodo } = {}) {
   const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
   const ini = data_inicio || hoje.substring(0, 8) + '01', fim = data_fim || hoje;
   const fimReal = fim > hoje ? hoje : fim;
@@ -861,7 +861,7 @@ async function indicadorSocial({ data_inicio, data_fim } = {}) {
   if (ini <= fimReal && qbConfigurado()) {
     try {
       const token = await qbToken();
-      const dre = await qbPL(ini, fimReal, token);
+      const dre = await qbPL(ini, fimReal, token, '', _met(metodo));
       const L = extrairLinhasRelatorio(dre);
       out.faturamento = dreResumo(dre).faturamento; // v3.112: mesmo faturamento (competência) do Dashboard e dos KPIs
       // contas de despesa com nome social (linhas de dados — não os totais)
@@ -882,7 +882,7 @@ async function indicadorSocial({ data_inicio, data_fim } = {}) {
   return out;
 }
 
-async function dashboardFinanceiro({ mes, ano, conta_id = null, data_inicio = null, data_fim = null } = {}) {
+async function dashboardFinanceiro({ mes, ano, conta_id = null, data_inicio = null, data_fim = null, metodo = null } = {}) {
   // v3.91: período livre (de/até). Sem ele, o mês/ano escolhido.
   const hoje = new Date(_hojeBR() + 'T12:00:00Z'); // v3.113: Brasília
   const a = parseInt(ano) || hoje.getFullYear(), m = parseInt(mes) || (hoje.getMonth() + 1);
@@ -895,10 +895,10 @@ async function dashboardFinanceiro({ mes, ano, conta_id = null, data_inicio = nu
   const fimDoMes = fim === f(new Date(parseInt(fim.substring(0, 4)), parseInt(fim.substring(5, 7)), 0));
   const dentro = ini >= i6 && fim <= f6 && ini.endsWith('-01') && fimDoMes; // período de meses inteiros dentro da janela → reaproveita o cálculo
   const [ctxR, pvr6R, pvrR, socR] = await Promise.allSettled([
-    contextoFinanceiro({ mes: parseInt(fim.substring(5, 7)), ano: parseInt(fim.substring(0, 4)), conta_id, data_inicio: ini, data_fim: fim }),
+    contextoFinanceiro({ mes: parseInt(fim.substring(5, 7)), ano: parseInt(fim.substring(0, 4)), conta_id, data_inicio: ini, data_fim: fim, metodo }),
     planejadoVsReal({ data_inicio: i6, data_fim: f6, conta_id }),
     dentro ? Promise.resolve(null) : planejadoVsReal({ data_inicio: ini, data_fim: fim, conta_id }),
-    indicadorSocial({ data_inicio: ini, data_fim: fim }),
+    indicadorSocial({ data_inicio: ini, data_fim: fim, metodo }),
   ]);
   const _social = socR.status === 'fulfilled' ? socR.value : { erro: socR.reason?.message };
   const ctx = ctxR.status === 'fulfilled' ? ctxR.value : { erro: ctxR.reason?.message };
@@ -909,7 +909,7 @@ async function dashboardFinanceiro({ mes, ano, conta_id = null, data_inicio = nu
     const soma = c => round(ms.reduce((a, m) => a + (m[c] || 0), 0));
     ctx.planejado_real = { de: ini, ate: fim, meses: ms, erros: ctx.grafico_6m.erros || [], totais: { receita_planejada: soma('receita_planejada'), receita_real: soma('receita_real'), despesa_planejada: soma('despesa_planejada'), despesa_real: soma('despesa_real') } };
   } else ctx.planejado_real = pvrR.status === 'fulfilled' && pvrR.value ? pvrR.value : { erro: pvrR.reason?.message || ctx.grafico_6m.erro || 'sem dados' };
-  return { dashboard: ctx, gerado_em: new Date().toISOString(), periodo: { de: ini, ate: fim, atual: fim >= hoje.toISOString().split('T')[0] && ini <= hoje.toISOString().split('T')[0] } };
+  return { dashboard: ctx, metodo: _met(metodo) === 'Cash' ? 'caixa' : 'competência', gerado_em: new Date().toISOString(), periodo: { de: ini, ate: fim, atual: fim >= hoje.toISOString().split('T')[0] && ini <= hoje.toISOString().split('T')[0] } };
 }
 
 // v1.15: diagnóstico do QuickBooks — empresa, realm, contagens e INTERVALO DE DATAS com dados (sandbox costuma ter
@@ -2436,7 +2436,7 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
   return valor;
 }
 
-async function painelResumo({ mes, ano, data_inicio = null, data_fim = null, conta_id = null } = {}) {
+async function painelResumo({ mes, ano, data_inicio = null, data_fim = null, conta_id = null, metodo = null } = {}) {
   const resp = {
     qb_configurado: qbConfigurado(),
     timestamp: new Date().toISOString(),
@@ -2484,8 +2484,8 @@ async function painelResumo({ mes, ano, data_inicio = null, data_fim = null, con
   resp.periodo = { ano: anoSel, mes: mesSel, de: inicioMes, ate: fimMes, atual: ehPeriodoAtual };
 
   const [pAno, pMes, ar, ap, contas, lanc] = await Promise.allSettled([
-    qbPL(inicioAno, hojeStr, token), // v3.112: competência (accrual) — mesma base dos KPIs e do Dashboard LIVE
-    periodoFuturo ? Promise.resolve(null) : qbPL(inicioMes, fimMes, token),
+    qbPL(inicioAno, hojeStr, token, '', _met(metodo)), // v3.112: competência (accrual) — v3.124: ou caixa, conforme a tela
+    periodoFuturo ? Promise.resolve(null) : qbPL(inicioMes, fimMes, token, '', _met(metodo)),
     qbFetch(`/reports/AgedReceivables?date_macro=Today`, token),
     qbFetch(`/reports/AgedPayables?date_macro=Today`, token),
     qbQuery(`select * from Account where AccountType = 'Bank'`, token),
@@ -3922,7 +3922,7 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
 // 9. KPIs determinísticos de saúde
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function kpisSaude({ overrides = {}, conta_id = null } = {}) {
+async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}) {
   const kpis = {
     saldo_caixa: 0,
     roi_pct: null,
@@ -3961,12 +3961,12 @@ async function kpisSaude({ overrides = {}, conta_id = null } = {}) {
 
       const [contas, dreM, dreA, ar, ap, bs, dre3] = await Promise.allSettled([
         qbQuery(`select * from Account where AccountType = 'Bank'`, token),
-        qbPL(inicioMes, hojeStr, token),
-        qbPL(inicioAno, hojeStr, token),
+        qbPL(inicioMes, hojeStr, token, '', _met(metodo)),
+        qbPL(inicioAno, hojeStr, token, '', _met(metodo)),
         qbFetch(`/reports/AgedReceivables?date_macro=Today`, token),
         qbFetch(`/reports/AgedPayables?date_macro=Today`, token),
         qbFetch(`/reports/BalanceSheet?start_date=${hojeStr}&end_date=${hojeStr}`, token), // patrimônio líquido (ROE)
-        qbPL(m3, fimMesAnt, token),
+        qbPL(m3, fimMesAnt, token, '', _met(metodo)),
       ]);
 
       if (contas.status === 'fulfilled') {
@@ -4217,6 +4217,8 @@ async function dreContaLancamentos({ conta_id, data_inicio, data_fim, mes, ano, 
   lanc.sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor));
   return { conta_id: id, conta, de: ini, ate: fim, qtd: lanc.length, total: round(lanc.reduce((a, l) => a + l.valor, 0)), lancamentos: lanc.slice(0, 500) };
 }
+// v3.124: regime escolhido na tela (competência = Accrual, padrão · caixa = Cash) — vale para todos os indicadores da DRE
+const _met = m => /^(cash|caixa)$/i.test(String(m || '')) ? 'Cash' : 'Accrual';
 function qbPL(ini, fim, token, extra = '', metodo = 'Accrual') {
   return qbFetch(`/reports/ProfitAndLoss?start_date=${ini}&end_date=${fim}&accounting_method=${metodo}${extra}`, token);
 }
@@ -4294,9 +4296,10 @@ async function metasEmpresaSalvar({ ano, faturamento, margem_pct } = {}) {
   m.por_ano = { ...(m.por_ano || {}), [a]: { faturamento: round(fat), margem_pct: round(mg, 1), atualizado_em: new Date().toISOString() } };
   if (a === _hojeBR().substring(0, 4)) { m.anual = round(fat); m.mensal = round(fat / 12); m.margem_pct = round(mg, 1); } // mesma meta nas barras do Dashboard LIVE
   await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('atx:metas', ${JSON.stringify(m)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
+  try { _resCache.clear(); } catch (_) {} // v3.123: metas novas aparecem já nos cartões do resultado
   return { metas: m.por_ano[a], ano: a };
 }
-async function metasEmpresaStatus({ ano, com_crm = true, _forcar = false } = {}) {
+async function metasEmpresaStatus({ ano, com_crm = true, _forcar = false, metodo = null } = {}) {
   const hoje = _hojeBR(), anoAtual = parseInt(hoje), a = parseInt(ano) || anoAtual;
   const m = await _kvMetas().catch(() => ({}));
   const def = m.por_ano?.[String(a)] || null;
@@ -4310,7 +4313,7 @@ async function metasEmpresaStatus({ ano, com_crm = true, _forcar = false } = {})
   const frac = Math.max(0, Math.min(1, (agora - ini) / (fim - ini)));
   out.fracao_ano = Math.round(frac * 1000) / 10;
   const [res, crm] = await Promise.allSettled([
-    a > anoAtual ? Promise.resolve(null) : resultadoKpis({ data_inicio: `${a}-01-01`, data_fim: `${a}-12-31`, _forcar }),
+    a > anoAtual ? Promise.resolve(null) : resultadoKpis({ data_inicio: `${a}-01-01`, data_fim: `${a}-12-31`, _forcar, metodo }),
     com_crm && process.env.HUBSPOT_TOKEN && out.situacao !== 'encerrado' ? _crmPipelineAno(a) : Promise.resolve(null),
   ]);
   const R = res.status === 'fulfilled' ? res.value?.resultado : null; if (res.status === 'rejected') out.erros.push('QuickBooks: ' + res.reason?.message);
@@ -4356,7 +4359,8 @@ async function _crmPipelineAno(ano) {
     sem_data: lista.filter(x => !x.fechamento).length, sem_valor: lista.filter(x => !x.valor).length, negocios: lista.slice(0, 200) };
 }
 const _resCache = new Map();
-async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, ano = null, _forcar = false } = {}) {
+async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, ano = null, _forcar = false, metodo = null } = {}) {
+  const met = _met(metodo), outro = met === 'Cash' ? 'Accrual' : 'Cash';
   const hoje = _hojeBR();
   if (!data_inicio && (mes || ano)) {
     const a = parseInt(ano) || parseInt(hoje.substring(0, 4)), m = parseInt(mes) || null;
@@ -4367,11 +4371,11 @@ async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, 
   const fimPedido = data_fim || hoje, fim = fimPedido > hoje ? hoje : fimPedido;
   const futuro = ini > hoje;
   const anoIni = (futuro ? ini : fim).substring(0, 4) + '-01-01', anoFim = futuro ? anoIni : fim;
-  const out = { qb_configurado: qbConfigurado(), metodo: 'competência (accrual) — DRE do QuickBooks',
+  const out = { qb_configurado: qbConfigurado(), metodo: met === 'Cash' ? 'caixa (cash) — DRE do QuickBooks' : 'competência (accrual) — DRE do QuickBooks', regime: met === 'Cash' ? 'caixa' : 'competência',
     periodo: { de: ini, ate: futuro ? fimPedido : fim, ate_pedido: fimPedido, futuro, parcial: fimPedido > hoje && !futuro },
     ano: { de: anoIni, ate: anoFim }, periodo_res: null, ano_res: null, meta_margem: null, erros: [] };
   if (!out.qb_configurado) { out.erros.push('QuickBooks não configurado'); return { resultado: out }; }
-  const chave = `${ini}|${fim}|${futuro}`, c = _resCache.get(chave);
+  const chave = `${ini}|${fim}|${futuro}|${met}`, c = _resCache.get(chave);
   if (!_forcar && c && Date.now() - c.em < 300000) return { resultado: c.v };
   const token = await qbToken();
   const comTempo = (p, ms, msg) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error(msg)), ms))]);
@@ -4379,25 +4383,27 @@ async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, 
   // do ano (mesma fonte, uma consulta a menos ao QuickBooks — menos risco de 429 deixar o cartão vazio)
   const doAno = !futuro && ini.substring(8) === '01' && ini.substring(0, 4) === anoIni.substring(0, 4);
   const [pP, pA, orc, pC, mt] = await Promise.allSettled([
-    futuro || doAno ? Promise.resolve(null) : qbPL(ini, fim, token),
+    futuro || doAno ? Promise.resolve(null) : qbPL(ini, fim, token, '', met),
     // v3.114: o ano vem mês a mês (a última coluna é o total) — permite mostrar o último mês fechado e a evolução
-    futuro ? Promise.resolve(null) : qbPL(anoIni, anoFim, token, '&summarize_column_by=Month'),
+    futuro ? Promise.resolve(null) : qbPL(anoIni, anoFim, token, '&summarize_column_by=Month', met),
     comTempo(orcamentoConsolidado({ ano: parseInt(anoIni) }), 8000, 'orçamento não respondeu em 8s'),
     // v3.114: o mesmo período pelo regime de CAIXA — quanto de receita efetivamente entrou (recebimentos)
-    futuro ? Promise.resolve(null) : qbPL(ini, fim, token, '', 'Cash'),
+    futuro ? Promise.resolve(null) : qbPL(ini, fim, token, '', outro), // v3.124: o mesmo período no OUTRO regime (comparação)
     _kvMetas().catch(() => ({})),
   ]);
   const vazio = dreResumo({});
   if (doAno && pA.status === 'fulfilled' && pA.value) {
     const sub = _plColunasMeses(pA.value, ini.substring(0, 7), fim.substring(0, 7), parseInt(anoIni));
     if (sub) { out.periodo_res = dreResumo(sub); out.periodo_res_fonte = 'colunas mensais da DRE do ano'; }
-    else { try { out.periodo_res = dreResumo(await qbPL(ini, fim, token)); } catch (e) { out.erros.push('DRE do período: ' + e.message); } }
+    else { try { out.periodo_res = dreResumo(await qbPL(ini, fim, token, '', met)); } catch (e) { out.erros.push('DRE do período: ' + e.message); } }
   } else if (doAno && pA.status === 'rejected') {
-    try { out.periodo_res = dreResumo(await qbPL(ini, fim, token)); } catch (e) { out.erros.push('DRE do período: ' + e.message); }
+    try { out.periodo_res = dreResumo(await qbPL(ini, fim, token, '', met)); } catch (e) { out.erros.push('DRE do período: ' + e.message); }
   } else if (pP.status === 'fulfilled') out.periodo_res = pP.value ? dreResumo(pP.value) : vazio; else out.erros.push('DRE do período: ' + pP.reason?.message);
   if (pA.status === 'fulfilled') { out.ano_res = pA.value ? dreResumo(pA.value) : vazio; out.mensal = pA.value ? dreMensalSerie(pA.value, parseInt(anoIni)) : []; }
   else out.erros.push('DRE do ano: ' + pA.reason?.message);
-  if (pC.status === 'fulfilled' && pC.value) { const c = dreResumo(pC.value); out.periodo_caixa = { receita_recebida: c.faturamento, lucro_caixa: c.lucro_liquido }; }
+  if (pC.status === 'fulfilled' && pC.value) { const c = dreResumo(pC.value);
+    out.periodo_outro = { regime: outro === 'Cash' ? 'caixa' : 'competência', faturamento: c.faturamento, gastos: c.gastos_totais, lucro: c.lucro_liquido };
+    if (outro === 'Cash') out.periodo_caixa = { receita_recebida: c.faturamento, lucro_caixa: c.lucro_liquido }; }
   // último mês FECHADO com faturamento (referência quando o mês corrente ainda não tem notas emitidas)
   { const mesH = hoje.substring(0, 7); const fech = (out.mensal || []).filter(m => m.mes < mesH && m.faturamento); out.ultimo_mes_fechado = fech.length ? fech[fech.length - 1] : null; }
   // Meta de margem: 1º a meta de lucro definida em "Metas do ano"; 2º a margem orçada do período no Orçamento Anual; senão 20%
@@ -4416,6 +4422,32 @@ async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, 
     const m = p.margem_liquida_pct, meta = out.meta_margem.pct;
     out.semaforo_margem = m < 0 ? 'vermelho' : m < meta ? 'amarelo' : 'verde';
   } else out.semaforo_margem = 'cinza';
+  // v3.123: METAS DO PERÍODO ao lado de cada indicador — 1º as Metas do ano (faturamento anual ÷ 12 × meses do período,
+  // lucro = faturamento × % de lucro); 2º o Orçamento Anual do QuickBooks (receita e despesa orçadas nos meses do período).
+  try {
+    const pFim = futuro ? fimPedido : fimPedido, aRef = ini.substring(0, 4);
+    const nMeses = (parseInt(pFim.substring(0, 4)) - parseInt(ini.substring(0, 4))) * 12 + parseInt(pFim.substring(5, 7)) - parseInt(ini.substring(5, 7)) + 1;
+    const mUserAno = mt.status === 'fulfilled' ? mt.value?.por_ano?.[aRef] : null;
+    const pt = orc.status === 'fulfilled' ? (orc.value?.por_tipo || {}) : {}, mi = ini.substring(0, 7), mf = pFim.substring(0, 7);
+    const somaO = t => Object.entries(pt[t]?.meses || {}).filter(([k]) => k >= mi && k <= mf).reduce((a, [, v]) => a + (v.orcado || 0), 0);
+    const Ro = round(somaO('receita')), Do = round(Math.abs(somaO('despesa'))), nomeOrc = 'Orçamento ' + (orc.value?.budget_nome || 'QuickBooks');
+    const M = { meses: nMeses, faturamento: null, gastos: null, lucro: null, margem_pct: null, fonte: {} };
+    if (mUserAno?.faturamento) {
+      M.faturamento = round(mUserAno.faturamento / 12 * nMeses); M.fonte.faturamento = `Metas do ano ${aRef}: ${fmtBR(mUserAno.faturamento)} ÷ 12 × ${nMeses} ${nMeses === 1 ? 'mês' : 'meses'}`;
+      if (mUserAno.margem_pct != null) { M.margem_pct = Number(mUserAno.margem_pct); M.lucro = round(M.faturamento * M.margem_pct / 100); M.fonte.lucro = `faturamento meta × ${M.margem_pct}% (meta de lucro)`; M.fonte.margem = `Metas do ano ${aRef}`; }
+    } else if (Ro > 0) { M.faturamento = Ro; M.fonte.faturamento = `${nomeOrc} — receita orçada nos meses do período`; }
+    if (Do > 0) { M.gastos = Do; M.fonte.gastos = `${nomeOrc} — despesa orçada nos meses do período`; }
+    else if (M.faturamento && M.lucro != null) { M.gastos = round(M.faturamento - M.lucro); M.fonte.gastos = 'faturamento meta − lucro meta'; }
+    if (M.lucro == null && Ro > 0 && Do > 0) { M.lucro = round(Ro - Do); M.fonte.lucro = `${nomeOrc} — receita − despesa orçadas`; }
+    if (M.margem_pct == null && M.lucro != null && M.faturamento > 0) { M.margem_pct = Math.round(M.lucro / M.faturamento * 1000) / 10; M.fonte.margem = M.fonte.lucro; }
+    if (M.margem_pct == null) { M.margem_pct = out.meta_margem?.pct ?? null; M.fonte.margem = out.meta_margem?.fonte; }
+    // mês em curso: quanto do período já passou (para o "esperado até hoje" na barra)
+    if (out.periodo.parcial || (!futuro && fimPedido >= hoje && ini <= hoje)) {
+      const dIni = Date.parse(ini + 'T00:00:00Z'), dFim = Date.parse(fimPedido + 'T00:00:00Z'), dH = Date.parse(hoje + 'T00:00:00Z');
+      M.fracao_decorrida = Math.max(0, Math.min(1, (dH - dIni + 86400000) / (dFim - dIni + 86400000)));
+    }
+    out.metas_periodo = M;
+  } catch (e) { out.metas_periodo = null; }
   if (!out.erros.length) _resCache.set(chave, { em: Date.now(), v: out });
   return { resultado: out };
 }

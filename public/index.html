@@ -441,6 +441,24 @@ tr:hover td{background:rgba(79,124,255,.03);}
 .res-card .rv{font-family:var(--H);font-size:20px;font-weight:700;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .res-card .rs{font-size:10px;color:var(--t3);margin-top:3px;line-height:1.45;}
 .res-card .rs b{color:var(--t1);font-weight:600;}
+/* v3.123: cartões de resultado com meta do período */
+.res-card.rc2{padding:12px 14px 11px;display:flex;flex-direction:column;gap:2px;background:linear-gradient(180deg,var(--bg4),var(--bg3));transition:transform .12s,box-shadow .12s;}
+.res-card.rc2:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,.18);}
+.res-card.rc2 .rv{font-size:22px;letter-spacing:-.3px;}
+.rc-meta{margin-top:7px;padding-top:7px;border-top:1px dashed var(--bd);}
+.rc-meta-l{display:flex;justify-content:space-between;align-items:baseline;gap:6px;font-size:9.5px;color:var(--t2);}
+.rc-meta-l b{font-family:var(--M);color:var(--t1);font-weight:600;font-size:10px;}
+.rc-bar{position:relative;height:6px;border-radius:4px;background:var(--bd);margin:5px 0 4px;overflow:visible;}
+.rc-bar>i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;}
+.rc-bar>u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--t2);border-radius:1px;text-decoration:none;}
+.rc-st{font-size:9.5px;font-weight:600;}
+.rc-sem{font-size:9.5px;color:var(--t3);}
+.rc-sem a{color:var(--blue);cursor:pointer;}
+.res-card.rc2 .rs{margin-top:auto;padding-top:6px;font-size:9.5px;}
+.rc-row{grid-column:1/-1;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;}
+@media (max-width:1100px){.rc-row{grid-template-columns:repeat(3,minmax(0,1fr));}}
+@media (max-width:700px){.rc-row{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media (max-width:420px){.rc-row{grid-template-columns:1fr;}}
 .sg-body .sbi{padding:6px 10px 6px 22px;font-size:11px;margin:1px 6px;border-radius:5px;}
 .sbi.s3.active{color:var(--green);border-left-color:var(--green);background:rgba(34,211,163,.08);}
 .sbi.s3{color:var(--t1);}
@@ -783,6 +801,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="ph" style="flex-wrap:wrap;row-gap:6px;"><div class="pt">&#128200; Resultado da empresa · ao vivo<span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**Resultado da empresa** — DRE do QuickBooks em competência: mês corrente até hoje e acumulado do ano. Segunda linha: caixa, fôlego, liquidez, ROE e saúde (KPIs de Saúde). Passe o mouse no ⓘ de cada cartão para ver a conta com os valores.">i</span></div><span class="tag live">QuickBooks</span>
         <span id="liveResAt" style="font-family:var(--M);font-size:9px;color:var(--t3);margin-left:8px;"></span>
         <div style="margin-left:auto;display:flex;gap:6px;">
+          <select class="fsel finRegimeSel" title="Regime da DRE: competência = pela data da nota/conta · caixa = pela data do recebimento/pagamento" aria-label="Regime" style="font-size:9.5px;width:auto;padding:2px 6px;" onchange="_finMetodoSet(this.value)"><option value="Accrual">Competência</option><option value="Cash">Caixa</option></select>
           <button class="btn btn-g" style="font-size:9px;padding:3px 9px;white-space:nowrap;" onclick="dreAbrir({})" title="DRE completa do mês corrente — clique nas contas para ver os lançamentos">&#128269; Abrir DRE</button>
           <button class="btn btn-g" id="liveResBtn" style="font-size:9px;padding:3px 9px;white-space:nowrap;" onclick="carregarResultadoLive(true)">&#8635; Atualizar</button>
           <button class="btn btn-g" style="font-size:9px;padding:3px 9px;white-space:nowrap;" onclick="nav('s3dashboard',document.querySelector('.sbi[onclick*=&quot;s3dashboard&quot;]'))">Dashboard Financeiro &#8594;</button>
@@ -3187,6 +3206,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
     </select>
     <select class="fsel" id="dashFiltroAno" title="Ano do período" aria-label="Ano do período" style="font-size:11px;width:auto;" onchange="carregarDashboardFinanceiro()"></select>
+    <select class="fsel finRegimeSel" id="dashRegime" title="Regime da DRE: competência = pela data da nota/conta · caixa = pela data do recebimento/pagamento" aria-label="Regime" style="font-size:11px;width:auto;" onchange="_finMetodoSet(this.value)"><option value="Accrual">Competência</option><option value="Cash">Caixa</option></select>
     <select class="fsel contaFiltro" id="dash_conta" title="Conta bancária" aria-label="Conta bancária" style="font-size:11px;width:auto;max-width:200px;" onchange="carregarDashboardFinanceiro()"><option value="">Todas as contas</option></select>
     <button class="btn" style="font-size:10px;" onclick="_dashMesAtual()" title="Voltar para o mês corrente">&#8634; Mês atual</button>
     <button class="btn btn-gn" id="dfBtnAtualizar" onclick="carregarDashboardFinanceiro()">&#8635; Atualizar</button>
@@ -27624,6 +27644,35 @@ function _resCartao(rot, val, sub, cor, titulo) {
   return '<div class="res-card" style="--c:' + cor + ';"><div class="rl">' + rot + _tip(titulo) + '</div><div class="rv" style="color:' + cor + ';">' + val + '</div><div class="rs">' + (sub || '') + '</div></div>';
 }
 // modo 'dash' = Dashboard Financeiro (período escolhido × ano) · modo 'live' = mês corrente × ano, mais compacto
+// v3.124: regime da DRE escolhido na tela — competência (padrão) ou caixa; vale para o Dashboard Financeiro, o LIVE,
+// as metas, a DRE com drill-down e o indicador social. Fica guardado neste navegador.
+function _finMetodo() { try { return localStorage.getItem('atx_fin_metodo') === 'Cash' ? 'Cash' : 'Accrual'; } catch (_) { return 'Accrual'; } }
+function _finRegimeTxt(m) { return (m || _finMetodo()) === 'Cash' ? 'caixa' : 'competência'; }
+function _finMetodoSet(v) {
+  try { localStorage.setItem('atx_fin_metodo', v === 'Cash' ? 'Cash' : 'Accrual'); } catch (_) {}
+  document.querySelectorAll('.finRegimeSel').forEach(x => { x.value = _finMetodo(); });
+  try { if (document.getElementById('page-s3dashboard')?.classList.contains('active') || document.getElementById('df_res')?.offsetParent) carregarDashboardFinanceiro(); } catch (_) {}
+  try { if (document.getElementById('liveRes')?.offsetParent) carregarResultadoLive(); } catch (_) {}
+}
+function _finRegimeSelHtml(extra) { return '<select class="fsel finRegimeSel" title="Regime da DRE: competência = pela data da nota/conta · caixa = pela data do recebimento/pagamento" aria-label="Regime" style="font-size:11px;width:auto;' + (extra || '') + '" onchange="_finMetodoSet(this.value)"><option value="Accrual">Competência</option><option value="Cash">Caixa</option></select>'; }
+document.addEventListener('DOMContentLoaded', () => { document.querySelectorAll('.finRegimeSel').forEach(x => { x.value = _finMetodo(); }); });
+// v3.123: cartão com a meta do período ao lado — barra de atingimento, marcador do "esperado até hoje" no mês em curso e semáforo
+function _resCartaoMeta(rot, val, cor, tip, m, rodape) {
+  const brl = v => (v == null || isNaN(v)) ? '—' : fmtBRL(v);
+  let metaH = '';
+  if (m && m.meta != null && m.real != null && !(m.fmt !== 'pct' && !m.meta)) {
+    const pct = m.fmt === 'pct' ? null : (m.meta ? m.real / m.meta * 100 : null);
+    let st, c;
+    if (m.fmt === 'pct') { const d = Math.round((m.real - m.meta) * 10) / 10; c = d >= 0 ? 'var(--green)' : d >= -5 ? 'var(--gold)' : 'var(--red)'; st = (d >= 0 ? '▲ ' : '▼ ') + String(Math.abs(d)).replace('.', ',') + ' p.p. ' + (d >= 0 ? 'acima' : 'abaixo') + ' da meta'; }
+    else if (m.tipo === 'menor') { c = pct <= 100 ? 'var(--green)' : pct <= 110 ? 'var(--gold)' : 'var(--red)'; const d = m.real - m.meta; st = (d <= 0 ? '✓ ' + brl(-d) + ' abaixo do orçado' : '▲ ' + brl(d) + ' acima do orçado'); }
+    else { const esp = m.frac != null ? m.frac * 100 : 100; c = m.real < 0 ? 'var(--red)' : pct >= esp ? 'var(--green)' : pct >= esp * 0.85 ? 'var(--gold)' : 'var(--red)'; const d = m.real - m.meta; st = d >= 0 ? '✓ ' + brl(d) + ' acima da meta' : 'faltam ' + brl(-d) + (m.frac != null && m.frac < 1 ? ' · esperado até hoje ' + Math.round(esp) + '%' : ''); }
+    const larg = m.fmt === 'pct' ? Math.max(0, Math.min(100, m.meta ? m.real / m.meta * 100 : 0)) : Math.max(0, Math.min(100, pct || 0));
+    metaH = '<div class="rc-meta"><div class="rc-meta-l"><span>Meta' + (m.rot ? ' ' + m.rot : '') + ' <b>' + (m.fmt === 'pct' ? _resFmtPct(m.meta) : brl(m.meta)) + '</b></span><b style="color:' + c + ';">' + (m.fmt === 'pct' ? _resFmtPct(m.real) : Math.round(pct) + '%') + '</b></div>'
+      + '<div class="rc-bar" title="' + String(m.fonte || '').replace(/"/g, '&quot;') + '"><i style="width:' + larg + '%;background:' + c + ';"></i>' + (m.frac != null && m.frac < 1 && m.fmt !== 'pct' && m.tipo !== 'menor' ? '<u style="left:calc(' + Math.round(m.frac * 100) + '% - 1px);" title="esperado até hoje"></u>' : '') + '</div>'
+      + '<div class="rc-st" style="color:' + c + ';">' + st + '</div></div>';
+  } else if (m && m.semMeta) metaH = '<div class="rc-meta"><span class="rc-sem">sem meta · <a onclick="event.stopPropagation();metasEditar()">definir metas</a></span></div>';
+  return '<div class="res-card rc2" style="--c:' + cor + ';"><div class="rl">' + rot + _tip(tip) + '</div><div class="rv" style="color:' + cor + ';">' + val + '</div>' + metaH + (rodape ? '<div class="rs">' + rodape + '</div>' : '') + '</div>';
+}
 function _resCardsHtml(R, modo) {
   const brl = v => (v == null || isNaN(v)) ? '—' : fmtBRL(v);
   if (!R) return '<div style="color:var(--t3);font-size:11px;padding:8px;">Sem dados de resultado.</div>';
@@ -27637,43 +27686,48 @@ function _resCardsHtml(R, modo) {
   const futuro = R.periodo && R.periodo.futuro;
   const U = R.ultimo_mes_fechado, nomeMes = m => m ? ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][+m.substring(5, 7) - 1] + '/' + m.substring(2, 4) : '';
   const semFat = !futuro && !(p.faturamento > 0);
-  const caixa = R.periodo_caixa ? ' · recebido no período (caixa) <b>' + brl(R.periodo_caixa.receita_recebida) + '</b>' : '';
+  const caixa = R.regime === 'caixa' ? (R.periodo_outro ? ' · emitido no período (competência) <b>' + brl(R.periodo_outro.faturamento) + '</b>' : '') : (R.periodo_caixa ? ' · recebido no período (caixa) <b>' + brl(R.periodo_caixa.receita_recebida) + '</b>' : '');
   // v3.114: sem nota emitida no mês (comum no começo do mês), mostra o último mês fechado como referência — antes ficava só "R$ 0,00"
   const subFat = futuro ? 'período ainda não começou' : (semFat ? '<span style="color:var(--gold);">nenhuma nota emitida ' + lblP + ' até hoje</span>' + (U ? ' · ' + nomeMes(U.mes) + ': <b>' + brl(U.faturamento) + '</b>' : '') : '') + (semFat ? '' : anoTxt + ': <b>' + brl(a.faturamento) + '</b>') + caixa + (semFat ? ' · ' + anoTxt + ': <b>' + brl(a.faturamento) + '</b>' : '');
   const semCpv = !(a.custos > 0) && !(p.custos > 0);
   // v3.117: tooltips — definição, fonte e a conta com os valores deste período
   const per = R.periodo ? _resData(R.periodo.de) + ' a ' + _resData(R.periodo.ate) : '', aj = p.ajustes_ebitda || {};
-  const fonte = '\n\nFonte: DRE (Lucros e Perdas) do QuickBooks, regime de competência, ' + per + '; o "ano" vai de 01/01 até ' + _resData(R.ano?.ate) + '.';
+  const fonte = '\n\nFonte: DRE (Lucros e Perdas) do QuickBooks, regime de ' + (R.regime || 'competência') + ', ' + per + '; o "ano" vai de 01/01 até ' + _resData(R.ano?.ate) + '.';
   const T = {
-    fat: '**Faturamento** = total do grupo Receita (Income) da DRE: notas/faturas emitidas no período, pela data de emissão — não é o dinheiro recebido.\n\nPeríodo: ' + brl(p.faturamento) + ' · ano: ' + brl(a.faturamento) + (R.periodo_caixa ? '\nRecebido no período (regime de caixa): ' + brl(R.periodo_caixa.receita_recebida) : '') + (semFat && U ? '\nSem nota emitida no período; último mês fechado (' + nomeMes(U.mes) + '): ' + brl(U.faturamento) : '') + fonte,
+    fat: (R.regime === 'caixa' ? '**Faturamento (caixa)** = total do grupo Receita (Income) da DRE em regime de caixa: o que foi efetivamente RECEBIDO no período, pela data do recebimento.' + (R.periodo_outro ? '\nEmitido no período (competência): ' + brl(R.periodo_outro.faturamento) : '') : '**Faturamento** = total do grupo Receita (Income) da DRE: notas/faturas emitidas no período, pela data de emissão — não é o dinheiro recebido.') + '\n\nPeríodo: ' + brl(p.faturamento) + ' · ano: ' + brl(a.faturamento) + (R.periodo_caixa ? '\nRecebido no período (regime de caixa): ' + brl(R.periodo_caixa.receita_recebida) : '') + (semFat && U ? '\nSem nota emitida no período; último mês fechado (' + nomeMes(U.mes) + '): ' + brl(U.faturamento) : '') + fonte,
     gastos: '**Gastos** = custo dos serviços (COGS) + despesas operacionais + outras despesas da DRE.\n\n' + brl(p.custos) + ' + ' + brl(p.despesas_operacionais) + ' + ' + brl(p.outras_despesas) + ' = ' + brl(p.gastos_totais) + '\nAno: ' + brl(a.gastos_totais)
       + ((p.maiores_gastos || []).length ? '\n\n**Maiores contas no período** (' + (p.qtd_contas_gasto || p.maiores_gastos.length) + ' contas):\n' + p.maiores_gastos.slice(0, 12).map(g => '• ' + g.conta + ': ' + brl(g.valor) + (g.tipo ? ' — ' + g.tipo : '')).join('\n') : '')
-      + (R.periodo_caixa && R.periodo_caixa.receita_recebida != null && R.periodo_caixa.lucro_caixa != null ? '\n\nPelo **caixa** (o que foi efetivamente pago no período): ' + brl(R.periodo_caixa.receita_recebida - R.periodo_caixa.lucro_caixa) + '. A DRE é por **competência**: entra a despesa do mês, paga ou não — uma conta lançada neste período e paga no seguinte conta aqui.' : '')
+      + (R.regime === 'caixa' && R.periodo_outro ? '\n\nPor **competência** (despesa do mês, paga ou não): ' + brl(R.periodo_outro.gastos) + '. Aqui, em caixa, entra só o que foi efetivamente pago no período.' : '')
+      + (R.regime !== 'caixa' && R.periodo_caixa && R.periodo_caixa.receita_recebida != null && R.periodo_caixa.lucro_caixa != null ? '\n\nPelo **caixa** (o que foi efetivamente pago no período): ' + brl(R.periodo_caixa.receita_recebida - R.periodo_caixa.lucro_caixa) + '. A DRE é por **competência**: entra a despesa do mês, paga ou não — uma conta lançada neste período e paga no seguinte conta aqui.' : '')
       + '\n\nAparece no lugar do lucro bruto porque não há custo direto (CPV) separado no QuickBooks.' + fonte,
     lb: '**Lucro bruto** = faturamento − custo dos serviços prestados (COGS).\n\n' + brl(p.faturamento) + ' − ' + brl(p.custos) + ' = ' + brl(p.lucro_bruto) + '\nMargem bruta = lucro bruto ÷ faturamento = ' + _resFmtPct(p.margem_bruta_pct) + fonte,
     eb: '**EBITDA** = lucro líquido + depreciação/amortização + juros e despesas financeiras + IR/CSLL − receitas financeiras.\n\n' + brl(p.lucro_liquido) + ' + ' + brl(aj.depreciacao_amortizacao) + ' + ' + brl(aj.juros_despesas_financeiras) + ' + ' + brl(aj.ir_csll) + ' − ' + brl(aj.receitas_financeiras) + ' = ' + brl(p.ebitda) + '\nMargem EBITDA = EBITDA ÷ faturamento = ' + _resFmtPct(p.margem_ebitda_pct) + '\n\nAs contas de depreciação, juros e IR/CSLL são reconhecidas pelo nome na DRE.' + fonte,
     ll: '**Lucro líquido** = linha "Lucro líquido" (Net Income) da DRE = faturamento − gastos + outras receitas.\n\n' + brl(p.faturamento) + ' − ' + brl(p.gastos_totais) + ' + ' + brl(p.outras_receitas) + ' = ' + brl(p.lucro_liquido) + '\nAno: ' + brl(a.lucro_liquido) + fonte,
     mg: '**Margem líquida** = lucro líquido ÷ faturamento.\n\n' + (semFat ? 'Sem faturamento no período → "—".' : brl(p.lucro_liquido) + ' ÷ ' + brl(p.faturamento) + ' = ' + _resFmtPct(p.margem_liquida_pct)) + '\nAno: ' + brl(a.lucro_liquido) + ' ÷ ' + brl(a.faturamento) + ' = ' + _resFmtPct(a.margem_liquida_pct) + '\n\nMeta: ' + _resFmtPct(meta.pct) + ' (' + (meta.fonte || '') + '). Cor: verde ≥ meta · amarelo entre 0 e a meta · vermelho negativa.' + fonte,
   };
+  // v3.123: meta do período ao lado de cada indicador (Metas do ano ÷ 12 ou Orçamento Anual)
+  const MP = R.metas_periodo || {}, fr = MP.fracao_decorrida, rotM = MP.meses > 1 ? 'do período' : 'do mês';
+  const mm = (meta, real, extra) => futuro ? null : (meta != null ? { meta, real, frac: fr, rot: rotM, ...extra } : { semMeta: true });
+  const fm = k => MP.fonte?.[k] ? '\n\n**Meta ' + rotM + '**: ' + MP.fonte[k] + '.' : '\n\nSem meta: defina em **Metas do ano** (faturamento e % de lucro) ou cadastre um Budget no QuickBooks.';
   const cards = [
-    _resCartao('Faturamento ' + lblP, futuro ? '—' : brl(p.faturamento), subFat, semFat ? 'var(--gold)' : 'var(--blue)', T.fat),
+    _resCartaoMeta('Faturamento ' + lblP, futuro ? '—' : brl(p.faturamento), semFat ? 'var(--gold)' : 'var(--blue)', T.fat + fm('faturamento'), mm(MP.faturamento, p.faturamento), subFat),
     semCpv
-      ? _resCartao('Gastos ' + lblP, futuro ? '—' : brl(p.gastos_totais), anoTxt + ': <b>' + brl(a.gastos_totais) + '</b> · custos e despesas da DRE', 'var(--red)', T.gastos)
-      : _resCartao('Lucro bruto', futuro ? '—' : brl(p.lucro_bruto), 'margem bruta <b>' + _resFmtPct(p.margem_bruta_pct) + '</b> · ' + anoTxt + ' ' + _resFmtPct(a.margem_bruta_pct), corLuc(p.lucro_bruto), T.lb),
-    _resCartao('EBITDA', futuro ? '—' : brl(p.ebitda), 'margem <b>' + _resFmtPct(p.margem_ebitda_pct) + '</b> · ' + anoTxt + ' ' + brl(a.ebitda), corLuc(p.ebitda), T.eb),
-    _resCartao('Lucro líquido ' + lblP, futuro ? '—' : brl(p.lucro_liquido), anoTxt + ': <b style="color:' + corLuc(a.lucro_liquido) + ';">' + brl(a.lucro_liquido) + '</b>' + (semFat && p.lucro_liquido < 0 ? ' · <span style="color:var(--gold);">só gastos lançados no mês, sem nota emitida ainda</span>' : ''), corLuc(p.lucro_liquido), T.ll),
-    _resCartao('Margem líquida ' + lblP, futuro || semFat ? '—' : _resFmtPct(p.margem_liquida_pct), (semFat && U ? nomeMes(U.mes) + ' <b>' + _resFmtPct(U.margem_liquida_pct) + '</b> · ' : '') + 'meta <b>' + _resFmtPct(meta.pct) + '</b> · ' + anoTxt + ' <b style="color:' + corMg(a.margem_liquida_pct) + ';">' + _resFmtPct(a.margem_liquida_pct) + '</b>', semFat ? corMg(a.margem_liquida_pct) : corMg(p.margem_liquida_pct), T.mg),
+      ? _resCartaoMeta('Gastos ' + lblP, futuro ? '—' : brl(p.gastos_totais), 'var(--red)', T.gastos + fm('gastos'), mm(MP.gastos, p.gastos_totais, { tipo: 'menor', frac: null, rot: 'orçada' }), anoTxt + ': <b>' + brl(a.gastos_totais) + '</b> · custos e despesas da DRE')
+      : _resCartaoMeta('Lucro bruto', futuro ? '—' : brl(p.lucro_bruto), corLuc(p.lucro_bruto), T.lb, null, 'margem bruta <b>' + _resFmtPct(p.margem_bruta_pct) + '</b> · ' + anoTxt + ' ' + _resFmtPct(a.margem_bruta_pct)),
+    _resCartaoMeta('EBITDA', futuro ? '—' : brl(p.ebitda), corLuc(p.ebitda), T.eb, null, 'margem EBITDA <b>' + _resFmtPct(p.margem_ebitda_pct) + '</b> · ' + anoTxt + ' <b>' + brl(a.ebitda) + '</b>'),
+    _resCartaoMeta('Lucro líquido ' + lblP, futuro ? '—' : brl(p.lucro_liquido), corLuc(p.lucro_liquido), T.ll + fm('lucro'), mm(MP.lucro, p.lucro_liquido), anoTxt + ': <b style="color:' + corLuc(a.lucro_liquido) + ';">' + brl(a.lucro_liquido) + '</b>' + (semFat && p.lucro_liquido < 0 ? ' · <span style="color:var(--gold);">só gastos lançados no mês, sem nota emitida ainda</span>' : '')),
+    _resCartaoMeta('Margem líquida ' + lblP, futuro || semFat ? '—' : _resFmtPct(p.margem_liquida_pct), semFat ? corMg(a.margem_liquida_pct) : corMg(p.margem_liquida_pct), T.mg + fm('margem'), semFat ? null : mm(MP.margem_pct ?? meta.pct, p.margem_liquida_pct, { fmt: 'pct' }), (semFat && U ? nomeMes(U.mes) + ' <b>' + _resFmtPct(U.margem_liquida_pct) + '</b> · ' : '') + anoTxt + ' <b style="color:' + corMg(a.margem_liquida_pct) + ';">' + _resFmtPct(a.margem_liquida_pct) + '</b>'),
   ];
   // v3.114: evolução mês a mês do ano (faturamento e lucro) — mostra de onde vem o acumulado
   const M = (R.mensal || []).filter(m => m.mes <= (R.ano?.ate || '9999').substring(0, 7));
   if (M.length > 1) { const mx = Math.max(1, ...M.map(m => Math.abs(m.faturamento)), ...M.map(m => Math.abs(m.lucro_liquido)));
-    cards.push('<div class="res-card" style="--c:var(--t3);grid-column:1/-1;"><div class="rl">Faturamento e lucro mês a mês · ' + anoTxt + _tip('Cada mês do ano pela DRE do QuickBooks (competência): barra azul = faturamento (Receita), barra verde/vermelha = lucro líquido do mês. Passe o mouse sobre um mês para ver os valores. A soma dos meses é o acumulado do ano.') + '</div><div style="display:flex;gap:6px;align-items:flex-end;height:74px;margin-top:6px;overflow-x:auto;">'
+    cards.push('<div class="res-card" style="--c:var(--t3);grid-column:1/-1;"><div class="rl">Faturamento e lucro mês a mês · ' + anoTxt + _tip('Cada mês do ano pela DRE do QuickBooks (' + (R.regime || 'competência') + '): barra azul = faturamento (Receita), barra verde/vermelha = lucro líquido do mês. Passe o mouse sobre um mês para ver os valores. A soma dos meses é o acumulado do ano.') + '</div><div style="display:flex;gap:6px;align-items:flex-end;height:74px;margin-top:6px;overflow-x:auto;">'
       + M.map(m => '<div title="' + nomeMes(m.mes) + ' · faturamento ' + brl(m.faturamento) + ' · lucro ' + brl(m.lucro_liquido) + ' (' + _resFmtPct(m.margem_liquida_pct) + ')" style="flex:1;min-width:28px;display:flex;flex-direction:column;align-items:center;gap:2px;">'
         + '<div style="display:flex;gap:2px;align-items:flex-end;height:52px;"><div style="width:9px;background:var(--blue);border-radius:2px 2px 0 0;height:' + Math.max(1, Math.round(Math.abs(m.faturamento) / mx * 52)) + 'px;"></div>'
         + '<div style="width:9px;background:' + (m.lucro_liquido < 0 ? 'var(--red)' : 'var(--green)') + ';border-radius:2px 2px 0 0;height:' + Math.max(1, Math.round(Math.abs(m.lucro_liquido) / mx * 52)) + 'px;"></div></div>'
         + '<div style="font-family:var(--M);font-size:8.5px;color:var(--t3);">' + nomeMes(m.mes).substring(0, 3) + '</div></div>').join('')
       + '</div><div class="rs"><span style="color:var(--blue);">■</span> faturamento · <span style="color:var(--green);">■</span> lucro (<span style="color:var(--red);">■</span> prejuízo) · passe o mouse para ver os valores</div></div>'); }
-  return cards.join('');
+  return '<div class="rc-row">' + cards.slice(0, 5).join('') + '</div>' + cards.slice(5).join(''); // v3.123: os 5 indicadores ocupam a largura toda
 }
 // ═══ v3.122: DRE COM DRILL-DOWN — grupo → conta → lançamentos (cada um com link para o QuickBooks) ═══
 let _dreEstado = null;
@@ -27683,7 +27737,7 @@ function _dreCliqueCartoes(box, per) {
   box.onclick = e => { if (e.target.closest('.tip-i, a, button')) return; const c = e.target.closest('.res-card'); if (!c || c.closest('#liveRes2')) return; dreAbrir(per()); };
 }
 async function dreAbrir(per, metodo) {
-  per = per || {}; metodo = metodo || _dreEstado?.metodo || 'Accrual';
+  per = per || {}; metodo = metodo || _finMetodo();
   const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   let ov = document.getElementById('dreModal'); if (ov) ov.remove();
   ov = document.createElement('div'); ov.id = 'dreModal';
@@ -27790,7 +27844,7 @@ function _resNota(R) {
   if (!R) return '';
   const aj = R.periodo_res?.ajustes_ebitda || {}, brl = v => fmtBRL(v || 0);
   const ajTxt = [aj.depreciacao_amortizacao ? 'depreciação ' + brl(aj.depreciacao_amortizacao) : '', aj.juros_despesas_financeiras ? 'juros/financeiras ' + brl(aj.juros_despesas_financeiras) : '', aj.ir_csll ? 'IR/CSLL ' + brl(aj.ir_csll) : '', aj.receitas_financeiras ? '− receitas financeiras ' + brl(aj.receitas_financeiras) : ''].filter(Boolean).join(' · ');
-  return 'DRE do QuickBooks em regime de competência · ' + (R.periodo ? _resData(R.periodo.de) + ' a ' + _resData(R.periodo.ate) + (R.periodo.parcial ? ' (até hoje)' : '') : '')
+  return 'DRE do QuickBooks em regime de <b>' + (R.regime || 'competência') + '</b> · ' + (R.periodo ? _resData(R.periodo.de) + ' a ' + _resData(R.periodo.ate) + (R.periodo.parcial ? ' (até hoje)' : '') : '')
     + ' · acumulado do ano até ' + _resData(R.ano?.ate) + (ajTxt ? ' · ajustes do EBITDA: ' + ajTxt : ' · EBITDA = lucro líquido (sem depreciação, juros ou IR lançados no período)')
     + ((R.erros || []).length ? ' · <span style="color:var(--gold);">⚠ ' + R.erros.map(_errQbAmigavel).join(' · ').replace(/</g, '&lt;') + '</span>' : '');
 }
@@ -27819,10 +27873,10 @@ async function carregarResultadoLive(forcar) {
     }
   };
   try {
-    const d = await finApi('resultado_kpis', forcar ? { _forcar: true } : {}, { timeoutMs: 25000 });
+    const d = await finApi('resultado_kpis', { metodo: _finMetodo(), ...(forcar ? { _forcar: true } : {}) }, { timeoutMs: 25000 });
     if (seq !== _liveResSeq) return;
     pinta(d.resultado, d._cache);
-    if (d._cache && d._cache.stale) { const d2 = await finApi('resultado_kpis', { _forcar: true }, { timeoutMs: 25000 }).catch(() => null); if (d2 && seq === _liveResSeq) pinta(d2.resultado, null); }
+    if (d._cache && d._cache.stale) { const d2 = await finApi('resultado_kpis', { metodo: _finMetodo(), _forcar: true }, { timeoutMs: 25000 }).catch(() => null); if (d2 && seq === _liveResSeq) pinta(d2.resultado, null); }
   } catch (e) {
     if (seq !== _liveResSeq) return;
     box.innerHTML = '<div style="color:var(--red);font-size:11px;padding:8px;">Não consegui ler o resultado no QuickBooks: ' + String(e.message || e).replace(/</g, '&lt;') + ' <button class="btn btn-g" style="font-size:9px;padding:2px 8px;margin-left:6px;" onclick="carregarResultadoLive(true)">Tentar de novo</button></div>';
@@ -27851,7 +27905,7 @@ async function carregarResultadoLive(forcar) {
   };
   if (!forcar && _liveKpi && Date.now() - _liveKpiEm < 300000) return pinta2(_liveKpi);
   if (!b2.innerHTML) b2.innerHTML = '<div style="color:var(--t3);font-size:10.5px;padding:4px 8px;">Calculando caixa, fôlego, liquidez e ROE…</div>';
-  try { const k = (await finApi('kpis_saude', {}, { timeoutMs: 30000 })).kpis || {}; _liveKpi = k; _liveKpiEm = Date.now(); if (seq === _liveResSeq) pinta2(k); }
+  try { const k = (await finApi('kpis_saude', { metodo: _finMetodo() }, { timeoutMs: 30000 })).kpis || {}; _liveKpi = k; _liveKpiEm = Date.now(); if (seq === _liveResSeq) pinta2(k); }
   catch (e) { if (seq === _liveResSeq && !_liveKpi) b2.innerHTML = '<div style="color:var(--t3);font-size:10.5px;padding:4px 8px;">Indicadores de caixa indisponíveis agora: ' + String(e.message || e).replace(/</g, '&lt;') + '</div>'; }
 }
 // ═══ v3.113: METAS DO ANO — faturamento e % de lucro (meta × realizado), quanto falta, semáforo e pipeline do CRM ═══
@@ -27867,7 +27921,7 @@ function _mtHtml(M) {
   if (!M.meta.faturamento) return '<div style="font-size:11px;color:var(--t2);padding:8px;">Nenhuma meta definida para ' + M.ano + '. <button class="btn btn-gn" style="font-size:10px;padding:3px 10px;margin-left:6px;" onclick="metasEditar()">Definir meta de faturamento e % de lucro</button></div>';
   const F = M.faturamento || {}, G = M.margem, C = M.crm, fut = M.situacao === 'futuro';
   const cards = [];
-  const fonteM = '\n\nRealizado: faturamento da DRE do QuickBooks (competência) de 01/01/' + M.ano + ' até hoje. Metas: definidas em "Definir metas".';
+  const fonteM = '\n\nRealizado: faturamento da DRE do QuickBooks (' + _finRegimeTxt() + ') de 01/01/' + M.ano + ' até hoje. Metas: definidas em "Definir metas".';
   const T1 = '**Meta de faturamento** do ano e quanto já foi faturado.\n\nRealizado ' + brl(F.realizado) + ' ÷ meta ' + brl(F.meta) + ' = ' + _resFmtPct(F.pct_atingido) + ' atingido.\nEsperado até hoje = meta × fração do ano decorrida = ' + brl(F.meta) + ' × ' + _resFmtPct(M.fracao_ano) + ' = ' + brl(F.esperado_ate_hoje) + '.' + fonteM;
   const T2 = '**Falta faturar** = meta − realizado = ' + brl(F.meta) + ' − ' + brl(F.realizado) + ' = ' + brl(F.falta) + '.\nPor mês necessário = falta ÷ ' + (F.meses_restantes ?? '—') + ' mes(es) restantes = ' + brl(F.por_mes_necessario) + '.\nRitmo = realizado ÷ esperado até hoje = ' + _resFmtPct(F.ritmo_pct) + '.\nProjeção de fechamento = realizado ÷ fração do ano = ' + brl(F.projecao_fechamento) + '.\n\nSemáforo pelo ritmo: verde ≥ 100% · amarelo ≥ 85% · vermelho abaixo.' + fonteM;
   const T3 = G ? '**Meta de lucro** = margem líquida (lucro líquido ÷ faturamento) desejada para o ano.\n\nRealizado no ano: ' + brl(G.lucro_realizado) + ' ÷ ' + brl(F.realizado) + ' = ' + _resFmtPct(G.realizado_pct) + ' (meta ' + _resFmtPct(G.meta_pct) + ').\nLucro da meta = meta de faturamento × meta de margem = ' + brl(F.meta) + ' × ' + _resFmtPct(G.meta_pct) + ' = ' + brl(G.lucro_meta) + '.\n\nSemáforo: verde ≥ meta · amarelo até 5 p.p. abaixo · vermelho mais que isso.' + fonteM : '';
@@ -27892,7 +27946,7 @@ async function carregarMetasEmpresa(forcar) {
   const ano = _mtAnoSel();
   if (!forcar && _mtUlt[ano] && Date.now() - _mtUlt[ano].em < 120000) { alvos.forEach(e => e.innerHTML = _mtHtml(_mtUlt[ano].M)); return; }
   try {
-    const d = await finApi('metas_empresa_status', { ano, ...(forcar ? { _forcar: true } : {}) }, { timeoutMs: 30000 });
+    const d = await finApi('metas_empresa_status', { ano, metodo: _finMetodo(), ...(forcar ? { _forcar: true } : {}) }, { timeoutMs: 30000 });
     _mtUlt[ano] = { em: Date.now(), M: d.metas };
     if (ano !== _mtAnoSel()) return;
     document.querySelectorAll('#df_metas, #live_metas').forEach(e => e.innerHTML = _mtHtml(d.metas));
@@ -27944,7 +27998,7 @@ async function carregarDashboardFinanceiro() {
     }
     // v3.85: timeout de 12s; se falhar, usa a última carga boa salva no navegador
     const _iv = _dashIntervalo(); // v3.91: período de/até
-    Object.assign(payload, { mes: selMes?.value || null, ano: selAno?.value || null, conta_id: document.getElementById('dash_conta')?.value || null, data_inicio: _iv.de, data_fim: _iv.ate, ...(window._dfForcar ? { _forcar: true } : {}) });
+    Object.assign(payload, { mes: selMes?.value || null, ano: selAno?.value || null, conta_id: document.getElementById('dash_conta')?.value || null, data_inicio: _iv.de, data_fim: _iv.ate, metodo: _finMetodo(), ...(window._dfForcar ? { _forcar: true } : {}) });
     const { d, cache } = await _finCarregarComFallback('s3dashboard', 'dashboard_financeiro', payload); window._dfForcar = false;
     if (seq !== _dfSeq) return; // um clique mais novo já está carregando
     if (cache && cache.erro) cache.erro = _dfErroLegivel(cache.erro);
@@ -28067,7 +28121,7 @@ async function carregarDashboardFinanceiro() {
       _setTip('df_fluxo', '**Fluxo de caixa 6 meses** — 2 meses antes, o mês do período e 3 à frente. Barras cheias = real (extrato); contorno = planejado (vencimentos de faturas, contas e despesas programadas). Meses futuros só têm planejado.');
       _setTip('df_kpis', '**Indicadores de saúde** calculados a partir do QuickBooks (mesmo cálculo da tela KPIs de Saúde). Faturamento, gastos e margens do mês vão até hoje (mês parcial); a média de 3 meses usa os meses fechados.');
       _setTip('df_lanc', '**Últimos lançamentos** do período que movem caixa (recebimentos, pagamentos, transferências, depósitos), do mais recente para o mais antigo. Clique para abrir a transação no QuickBooks.');
-      _setTip('df_res', '**Resultado da empresa** — DRE do QuickBooks em competência para o período do filtro e acumulado do ano. Passe o mouse no ⓘ de cada cartão para ver a conta.');
+      _setTip('df_res', '**Resultado da empresa** — DRE do QuickBooks em ' + _finRegimeTxt() + ' (troque no seletor Competência/Caixa) para o período do filtro e acumulado do ano. Passe o mouse no ⓘ de cada cartão para ver a conta.');
       _setTip('df_metas', '**Metas do ano** — meta de faturamento e de % de lucro definidas em "Definir metas", comparadas com o realizado no QuickBooks e com o ritmo esperado para a data de hoje.');
     } catch (_) {}
     u('dfAtualizado', cache ? '⚠ Dados de ' + _finFmtTs(cache.ts) : 'atualizado ' + new Date().toLocaleTimeString('pt-BR').substring(0,5) + (x.quickbooks?.conectado ? ' · QB ok' : ' · QB sem dados'));
@@ -30396,7 +30450,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.122] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.124] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -30412,7 +30466,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.122';
+window.__ATX_BUILD_ID__ = 'ATX-v3.124';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
