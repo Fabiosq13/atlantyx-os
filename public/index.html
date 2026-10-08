@@ -8774,7 +8774,8 @@ async function runRfpMonitorAtualizado() {
           <input type="date" class="fi" style="width:140px;padding:3px 6px;font-size:10.5px;" value="${e(r.prazo || '')}" title="Prazo para envio da proposta — editável (vazio = data do PNCP)" onchange="rfpSalvarPrazo(${i}, this.value)"/>
           <span id="rfpBadge${i}">${_rfpBadge(r.prazo)}</span>
           ${r.prazo_editado ? '<span style="font-size:9px;color:var(--t3);">editado</span>' : ''}
-          <button class="btn btn-or" style="font-size:10px;padding:4px 10px;margin-left:auto;" onclick="abrirPropostaRFP(${i})" title="Abre a Elaboração de Propostas com cliente, título e escopo deste edital já preenchidos e a IA já redigindo">&#128221; Gerar Proposta &#8250;</button>
+          <button class="btn btn-p" style="font-size:10px;padding:4px 10px;margin-left:auto;" onclick="rfpAnalisarAderencia(${i})" title="A IA avalia este edital contra o perfil da Atlantyx (serviços, cases, equipe e plano estratégico do S1) e recomenda se vale concorrer">&#9878; Analisar Aderência</button>
+          <button class="btn btn-or" style="font-size:10px;padding:4px 10px;" onclick="abrirPropostaRFP(${i})" title="Abre a Elaboração de Propostas com cliente, título e escopo deste edital já preenchidos e a IA já redigindo">&#128221; Gerar Proposta &#8250;</button>
         </div>
         <div style="margin-top:8px;padding:8px 10px;background:var(--bg3);border:1px solid var(--bd);border-radius:6px;font-size:10.5px;">
           <div style="font-family:var(--M);font-size:8.5px;text-transform:uppercase;color:var(--t2);margin-bottom:4px;">Origem do edital</div>
@@ -8833,6 +8834,84 @@ function abrirPropostaRFP(i) {
   try { const u = new URL(location.href); u.searchParams.set('tela', 's7propostas'); u.searchParams.set('rfp_ctx', b64); history.replaceState(null, '', u.toString()); } catch (_) {}
   addLog('info', '[S2-04 → S7] Gerando proposta a partir da RFP ' + String(ctx.rfp_id).replace(/</g, '&lt;') + ' · ' + String(ctx.cliente).replace(/</g, '&lt;'));
   nav('s7propostas', [...document.querySelectorAll('.sbi')].find(x => (x.getAttribute('onclick') || '').includes("'s7propostas'")) || null);
+}
+
+// Demanda dem_muwmozsoi4aj: "Analisar Aderência" — a IA avalia o edital contra o perfil da Atlantyx (base fixa +
+// último Plano Estratégico salvo no S1) e devolve score 0-100, justificativa em 3 linhas e recomendação, num modal
+// com "Gerar Proposta" (mesma ponte abrirPropostaRFP → s7propostas) e "Tentar novamente" em caso de erro.
+const RFP_PERFIL_ATX = 'Atlantyx: empresa brasileira B2B com 17 anos. Serviços: BI, engenharia de dados, data warehouse/lakehouse, analytics, ciência de dados, IA/IA generativa, dashboards, integração de sistemas e dados, automação de processos com IA, desenvolvimento de software/sistemas sob medida, sustentação de dados e alocação de profissionais de TI/dados (outsourcing). Cases/clientes: CPFL, Enel, Caixa Capitalização. Setores-foco: Energia, Automotivo, Varejo, Indústria. Ticket mínimo R$200 mil; clientes de grande porte.';
+let _rfpPerfilS1 = null; // cache da sessão: resumo do último Plano Estratégico (s1plano)
+async function _rfpPerfilPlano() {
+  if (_rfpPerfilS1 !== null) return _rfpPerfilS1;
+  const comTempo = (corpo) => { const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 2500);
+    return fetch('/api/s1-intel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo), signal: ac.signal }).then(r => r.json()).finally(() => clearTimeout(t)); };
+  try {
+    const l = await comTempo({ action: 'historico_listar', tipo: 'planejamento_estrategico', limite: 1 });
+    const id = l?.success && l.itens?.[0]?.id;
+    if (!id) { _rfpPerfilS1 = ''; return ''; }
+    const h = await comTempo({ action: 'historico_obter', id });
+    const p = h?.item?.dados?.plano || h?.item?.dados || null;
+    _rfpPerfilS1 = p ? JSON.stringify(p).substring(0, 3500) : '';
+  } catch (_) { return ''; } // falha/tempo esgotado: segue só com o perfil base (sem cachear, tenta de novo na próxima)
+  return _rfpPerfilS1;
+}
+let _rfpAdSeq = 0; // só a análise mais recente escreve no modal (evita resposta atrasada de outra RFP)
+function _rfpAdModalCorpo(html, seq) { if (seq !== _rfpAdSeq) return; const b =document.getElementById('rfpAdCorpo'); if (b) b.innerHTML = html; }
+async function rfpAnalisarAderencia(i) {
+  const r = (window._rfpUltimos || [])[i];
+  if (!r) { toast('RFP não encontrada — varra as RFPs novamente', 'error'); return; }
+  const e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  document.getElementById('rfpAdModal')?.remove();
+  const seq = ++_rfpAdSeq;
+  const m = document.createElement('div'); m.id = 'rfpAdModal';
+  m.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(5,6,12,.7);display:flex;align-items:center;justify-content:center;padding:16px;';
+  m.onclick = ev => { if (ev.target === m) m.remove(); };
+  m.innerHTML = '<div class="panel" style="width:min(620px,100%);max-height:85vh;display:flex;flex-direction:column;"><div class="ph"><div class="pt">&#9878; Aderência da RFP</div><button class="btn btn-g" style="font-size:10px;margin-left:auto;" onclick="document.getElementById(\'rfpAdModal\').remove()">✕</button></div>'
+    + '<div class="pb" style="overflow:auto;"><div style="font-size:12px;font-weight:700;margin-bottom:2px;">' + e(r.nome_edital || r.titulo) + '</div><div style="font-size:10.5px;color:var(--t2);margin-bottom:10px;">' + e(r.empresa) + (r.prazo_submissao ? ' · propostas até ' + e(r.prazo_submissao) : '') + '</div>'
+    + '<div id="rfpAdCorpo"></div></div></div>';
+  document.body.appendChild(m);
+  _rfpAdModalCorpo('<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:18px;text-align:center;">A IA está avaliando a aderência ao perfil da Atlantyx (até 20s)...</div>', seq);
+  addLog('info', '[S2-04] Analisando aderência: ' + e(r.titulo || r.nome_edital || ''));
+  const ini = Date.now();
+  try {
+    const plano = await _rfpPerfilPlano();
+    const textoRfp = [r.nome_edital && r.nome_edital !== r.titulo ? 'Edital: ' + r.nome_edital : '', 'Objeto: ' + (r.titulo || ''), 'Órgão/cliente: ' + (r.empresa || '') + (r.uf ? ' (' + (r.municipio ? r.municipio + '/' : '') + r.uf + ')' : ''),
+      r.descricao ? 'Descrição: ' + String(r.descricao).substring(0, 3000) : '', r.modalidade ? 'Modalidade: ' + r.modalidade : '', r.valor ? 'Valor estimado: ' + r.valor : '',
+      r.prazo_submissao ? 'Prazo para propostas: ' + r.prazo_submissao : '', 'Fonte: ' + (r.fonte || 'PNCP')].filter(Boolean).join('\n');
+    const system = 'Você é o analista de licitações da Atlantyx. Avalie com rigor e honestidade se vale a pena a Atlantyx concorrer à RFP. Responda SOMENTE com JSON válido, sem texto fora dele, no formato {"score": inteiro 0-100, "justificativa": ["linha 1", "linha 2", "linha 3"], "recomendacao": "Concorrer" | "Concorrer com ressalvas" | "Não concorrer"}. A justificativa tem exatamente 3 linhas curtas (máx. 160 caracteres cada), em português.';
+    const prompt = 'Avalie a aderência desta RFP ao perfil da Atlantyx.\n\n[RFP]\n' + textoRfp + '\n\n[Perfil]\n' + RFP_PERFIL_ATX + (plano ? '\n\n[Plano Estratégico atual (S1)]\n' + plano : '');
+    const ac = new AbortController(); const t = setTimeout(() => ac.abort(), Math.max(14000, 20000 - (Date.now() - ini))); // total ≈ 20s com a leitura do perfil
+    let d;
+    try {
+      const rr = await fetch('/api/claude', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ system, messages: [{ role: 'user', content: prompt }], max_tokens: 500 }), signal: ac.signal });
+      const txt = await rr.text(); try { d = JSON.parse(txt); } catch (_) { throw new Error(rr.status === 504 ? 'o servidor excedeu o tempo limite (HTTP 504)' : 'HTTP ' + rr.status); }
+      if (!rr.ok) throw new Error(d?.error || 'HTTP ' + rr.status);
+    } catch (er) { throw new Error(er.name === 'AbortError' ? 'a IA não respondeu em 20 segundos' : er.message); }
+    finally { clearTimeout(t); }
+    const bruto = (d?.content || []).map(c => c.text || '').join('');
+    const js = bruto.match(/\{[\s\S]*\}/); if (!js) throw new Error('a IA não devolveu o resultado no formato esperado');
+    const a = JSON.parse(js[0]);
+    const score = Math.max(0, Math.min(100, Math.round(Number(a.score))));
+    if (!Number.isFinite(score)) throw new Error('a IA não devolveu um score numérico');
+    const just = (Array.isArray(a.justificativa) ? a.justificativa : String(a.justificativa || '').split('\n')).map(x => String(x).trim()).filter(Boolean).slice(0, 3);
+    const rec = ['Concorrer', 'Concorrer com ressalvas', 'Não concorrer'].find(x => x.toLowerCase() === String(a.recomendacao || '').trim().toLowerCase()) || (score >= 70 ? 'Concorrer' : score >= 45 ? 'Concorrer com ressalvas' : 'Não concorrer');
+    const cor = rec === 'Concorrer' ? 'var(--green)' : rec === 'Não concorrer' ? 'var(--red)' : 'var(--gold)';
+    r.aderencia_ia = { score, justificativa: just, recomendacao: rec, em: new Date().toISOString() };
+    _rfpAdModalCorpo('<div style="display:flex;gap:14px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">'
+      + '<div style="text-align:center;min-width:90px;"><div style="font-family:var(--M);font-size:8.5px;text-transform:uppercase;color:var(--t2);">Score</div><div style="font-size:34px;font-weight:800;color:' + cor + ';line-height:1.1;">' + score + '</div><div style="font-size:9.5px;color:var(--t3);">de 100</div></div>'
+      + '<div style="flex:1;min-width:180px;"><div style="font-family:var(--M);font-size:8.5px;text-transform:uppercase;color:var(--t2);margin-bottom:3px;">Recomendação</div><span style="display:inline-block;font-size:12.5px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid ' + cor + ';color:' + cor + ';">' + e(rec) + '</span></div></div>'
+      + '<div style="font-family:var(--M);font-size:8.5px;text-transform:uppercase;color:var(--t2);margin-bottom:4px;">Justificativa</div>'
+      + '<div style="background:var(--bg3);border:1px solid var(--bd);border-radius:6px;padding:8px 10px;margin-bottom:12px;">' + (just.length ? just.map(x => '<div style="font-size:11px;margin:2px 0;">• ' + e(x) + '</div>').join('') : '<div style="font-size:11px;color:var(--t3);">—</div>') + '</div>'
+      + '<div style="font-size:9.5px;color:var(--t3);margin-bottom:10px;">Perfil usado: serviços, cases e foco da Atlantyx' + (plano ? ' + último Plano Estratégico salvo no S1' : ' (sem Plano Estratégico salvo no S1)') + ' · ' + ((Date.now() - ini) / 1000).toFixed(1) + 's</div>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;"><button class="btn btn-g" style="font-size:10.5px;" onclick="rfpAnalisarAderencia(' + i + ')">&#8635; Reavaliar</button>'
+      + '<button class="btn btn-or" style="font-size:10.5px;" onclick="document.getElementById(\'rfpAdModal\')?.remove();abrirPropostaRFP(' + i + ')">&#128221; Gerar Proposta &#8250;</button></div>', seq);
+    addLog('success', '[S2-04] Aderência ' + score + '/100 · ' + rec + ' · ' + e(r.titulo || r.nome_edital || ''));
+  } catch (er) {
+    _rfpAdModalCorpo('<div style="background:var(--r2);border:1px solid var(--red);border-radius:6px;padding:10px 12px;font-size:11px;color:var(--red);margin-bottom:10px;">&#9888; Não consegui analisar a aderência: ' + e(er.message) + '</div>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;"><button class="btn btn-p" style="font-size:10.5px;" onclick="rfpAnalisarAderencia(' + i + ')">&#8635; Tentar novamente</button>'
+      + '<button class="btn btn-or" style="font-size:10.5px;" onclick="document.getElementById(\'rfpAdModal\')?.remove();abrirPropostaRFP(' + i + ')">&#128221; Gerar Proposta mesmo assim &#8250;</button></div>', seq);
+    addLog('err', '[S2-04] Aderência: ' + e(er.message));
+  }
 }
 
 
