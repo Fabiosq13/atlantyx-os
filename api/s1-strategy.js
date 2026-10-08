@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { sensibilidades } from '../lib/bp-ops.js';
 import { salvarHistorico } from '../lib/historico-s1.js';
 // api/s1-strategy.js
 // S1 — Planejamento Estratégico + Linha de Produtos
@@ -403,6 +404,9 @@ async function chatIdeia({ ideia_id = null, ideia = {}, analise = null, proposta
   docs_texto = (docs_texto || []).concat((mat?.docs || []).filter(d => d && !nomes.has(d.nome)));
   const corta = (v, n) => String(v ?? '').substring(0, n);
   const js = (v, n) => v ? corta(JSON.stringify(v), n) : '';
+  // v3.115: impacto REAL de cada alavanca no VPL, calculado pelo motor sobre a contraproposta atual (ou o BP) —
+  // o chat cita estes números em vez de "estimar" (as estimativas da IA divergiam do recálculo)
+  let sens = null; try { const pr = contraproposta?.premissas || bp?.premissas; if (pr) sens = sensibilidades(pr, 24); } catch (e) { console.warn('[chat] sensibilidade:', e.message); }
   // documentos: até ~140 mil caracteres no total, divididos entre os arquivos
   const docs = (Array.isArray(docs_texto) ? docs_texto : []).filter(d => d && d.texto).slice(0, 8);
   const porDoc = docs.length ? Math.floor(140000 / docs.length) : 0;
@@ -417,6 +421,7 @@ ${ideia.resultados_s1 ? '\nPESQUISA / MODELO / PARECER DO COMITÊ:\n' + js(ideia
 ${proposta ? '\nPROPOSTA/CONTRAPROPOSTA JÁ GERADA:\n' + js(proposta, 6000) : ''}
 ${bp ? '\nBUSINESS PLAN (valores em R$; premissas que alimentam o cálculo e resultado):\n' + js(bp, 14000) : ''}
 ${contraproposta ? '\nCONTRAPROPOSTA ATUAL (calculada pelo motor financeiro do sistema — DRE, fluxo de 36 meses, TIR e VPL; os indicadores abaixo são o resultado desse cálculo e a lista "o_que_mudou_no_ultimo_recalculo" é a diferença real entre as premissas):\n' + js(contraproposta, 14000) : ''}
+${sens ? '\nIMPACTO DE CADA ALAVANCA NO VPL — CALCULADO PELO MOTOR sobre ' + (contraproposta?.premissas ? 'a CONTRAPROPOSTA ATUAL' : 'o BUSINESS PLAN') + ' (VPL atual R$ ' + sens.vpl_atual + '; cada linha é a alavanca aplicada SOZINHA):\n' + sens.alavancas.map(a => '- ' + a.alavanca + ': ΔVPL R$ ' + a.delta_vpl + ' → VPL R$ ' + a.vpl_resultante).join('\n') : ''}
 ${docsTxt ? '\nDOCUMENTOS ANEXADOS (texto extraído):\n' + docsTxt : '\n(nenhum documento anexado)'}`;
 
   const system = [
@@ -426,7 +431,9 @@ Seu papel:
 - Exercitar negociação: simular a outra parte quando pedido (responda no papel dela, de forma realista e dura), montar contrapropostas cláusula a cláusula, propor concessões e contrapartidas, apontar riscos e o que travar no contrato.
 - Fazer contas quando útil (câmbio, revenue share, payback) mostrando a conta. Valores em R$ quando falar do BP; se o documento estiver em outra moeda, mostre as duas.
 - Apontar inconsistências entre documentos, análise e BP.
-Números: os indicadores do business plan e da contraproposta vêm do MOTOR FINANCEIRO determinístico do sistema (não de você). Para explicar um resultado, use as premissas e a lista de mudanças do material. Nunca diga que "não tem acesso a uma calculadora" nem invente um VPL consolidado "à mão" — se precisar de um número novo, peça para recalcular (ação automática abaixo). Se o fundador estranhar um número, compare os indicadores (plano original × contraproposta anterior × atual) e aponte exatamente quais premissas mudaram.
+Números: os indicadores do business plan e da contraproposta vêm do MOTOR FINANCEIRO determinístico do sistema (não de você), e o recálculo é feito pelo sistema quando o fundador pede (ação automática abaixo) — você TEM esse cálculo à disposição. NUNCA diga que "não tem calculadora", "não consegue rodar o modelo" ou que o recálculo é uma "simulação de interface".
+Impacto de alavancas: use SOMENTE os valores da seção "IMPACTO DE CADA ALAVANCA NO VPL — CALCULADO PELO MOTOR". Cite-os como estão (são de cada alavanca sozinha; combinadas não somam exatamente). Para uma alavanca que não está na lista, NÃO invente número: diga que o valor exato sai no recálculo. Nunca apresente um VPL "estimado à mão" nem some estimativas para prever o VPL final.
+Se um recálculo der resultado estranho (ex.: só cortou custo e o VPL caiu, ou a receita despencou), NÃO culpe "o motor" nem invente um número: mostre a lista "impacto de cada operação" e "operações não aplicadas" do material, aponte qual mudança causou e proponha recalcular DO ZERO com a lista consolidada (do_zero=true).
 Estilo: português do Brasil, direto, de executivo para executivo. Use parágrafos curtos, listas e **negrito** quando ajudar; tabelas simples em markdown são permitidas. Não invente fatos, números ou cláusulas que não estejam no material — quando estimar, diga que é estimativa.` },
     { type: 'text', text: 'MATERIAL DA IDEIA:\n' + contexto, cache_control: { type: 'ephemeral' } },
     // v3.95: ação automática — o chat dispara o recálculo da contraproposta com o que foi conversado
@@ -434,8 +441,8 @@ Estilo: português do Brasil, direto, de executivo para executivo. Use parágraf
 Quando o fundador PEDIR para recalcular, refazer, gerar ou aplicar a contraproposta / o business plan com o que foi conversado (ex.: "recalcula", "refaz a contraproposta com isso", "aplica no plano", "gera a contraproposta"):
 1) responda em até 6 linhas dizendo exatamente o que será aplicado (as condições, com números);
 2) termine a resposta com UMA linha exatamente neste formato (JSON válido numa linha só, sem markdown):
-<<<ACAO {"tipo":"contraproposta","oferta":"o que a OUTRA PARTE propôs/aceitou, com números","instrucoes":"as condições e ajustes do fundador, objetivas e com números (setup, marcos, recorrência, prazos, percentuais, quem paga o quê)","cambio_eur":6.2 ou null,"destinatario":"Parceiro|Cliente|Investidor|Fornecedor"}>>>
-Em "instrucoes" escreva SÓ o que muda AGORA em relação à CONTRAPROPOSTA ATUAL (ela já contém tudo o que foi aplicado antes e continua valendo), sempre com o VALOR FINAL de cada linha (ex.: "Licenças ERP: despesa fixa de R$ 2.200 para R$ 1.200/mês"; "Setup fee por cliente: R$ 35.000 para R$ 42.000"). Se ainda não existe contraproposta, consolide tudo o que foi combinado na conversa. Converta valores em euro para o campo cambio_eur quando o fundador informar o câmbio.
+<<<ACAO {"tipo":"contraproposta","oferta":"o que a OUTRA PARTE propôs/aceitou, com números","instrucoes":"as condições e ajustes do fundador, objetivas e com números (setup, marcos, recorrência, prazos, percentuais, quem paga o quê)","cambio_eur":6.2 ou null,"destinatario":"Parceiro|Cliente|Investidor|Fornecedor","do_zero":false}>>>
+Em "instrucoes" escreva SÓ o que muda AGORA em relação à CONTRAPROPOSTA ATUAL (ela já contém tudo o que foi aplicado antes e continua valendo), sempre com o VALOR FINAL de cada linha (ex.: "Licenças ERP: despesa fixa de R$ 2.200 para R$ 1.200/mês"; "Setup fee por cliente: R$ 35.000 para R$ 42.000"). Se ainda não existe contraproposta, consolide tudo o que foi combinado na conversa. Converta valores em euro para o campo cambio_eur quando o fundador informar o câmbio. Exceção — RECALCULAR DO ZERO: se o fundador pedir para "recalcular tudo", "do zero", ou se o último recálculo saiu incoerente, inclua "do_zero":true na ação e escreva em "instrucoes" a LISTA CONSOLIDADA COMPLETA de todas as condições combinadas na conversa (cada uma com o valor final e o mês de início contado do mês 1 do plano) — o sistema parte do business plan ORIGINAL e aplica a lista inteira.
 NÃO emita a linha <<<ACAO>>> se ele só estiver perguntando, discutindo ou simulando.` },
   ];
 

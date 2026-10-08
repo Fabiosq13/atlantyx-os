@@ -22,6 +22,7 @@ import { salvarHistorico } from '../lib/historico-s1.js';
 //   atlantyx_salvar_ajustes { overrides }     · atlantyx_snapshot { overrides? }
 
 import { calcularBP, cenariosBP, mesesLabels } from '../lib/bp-calc.js';
+import { aplicarOperacoes, impactoPorOperacao, checarCoerencia, sensibilidades } from '../lib/bp-ops.js';
 import { gerarExcel, lerPremissasExcel } from '../lib/bp-excel.js';
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
@@ -360,7 +361,7 @@ function _soCortesDeCusto(diff) {
   if (!diff.length) return false;
   return diff.every(d => _CUSTOS.has(d.secao) && (d.tipo === 'removida' || (typeof d.de === 'number' && typeof d.para === 'number' && d.para <= d.de) || (Array.isArray(d.de) && Array.isArray(d.para) && d.para.every((v, i) => v <= (d.de[i] ?? v)))));
 }
-async function contrapropostaBP({ ideia, bp_id = null, oferta = '', docs_texto = [], instrucoes = '', instrucoes_novas = '', destinatario = 'Parceiro', partir_de_id = null, cambio_eur = null }) {
+async function contrapropostaBP({ ideia, bp_id = null, oferta = '', docs_texto = [], instrucoes = '', instrucoes_novas = '', destinatario = 'Parceiro', partir_de_id = null, cambio_eur = null, do_zero = false }) {
   // v3.94: validação de entrada — antes ideia nula / documento malformado viravam HTTP 500 sem explicação
   if (!ideia || typeof ideia !== 'object' || Array.isArray(ideia)) ideia = {};
   if (!ideia.titulo && !bp_id) throw _erro('Abra ou analise uma ideia antes de gerar a contraproposta.', 400);
@@ -372,7 +373,10 @@ async function contrapropostaBP({ ideia, bp_id = null, oferta = '', docs_texto =
   const p0 = base.premissas; const i0 = _ind(base.resultado);
   // v3.62: AJUSTE de uma contraproposta já gerada — parte dela (e não do zero), aplicando as orientações do fundador
   let anterior = null;
-  if (partir_de_id) { try { const a = await obterBP(partir_de_id); if (a?.premissas) anterior = a; } catch (_) {} }
+  if (partir_de_id && !do_zero) { try { const a = await obterBP(partir_de_id); if (a?.premissas) anterior = a; } catch (_) {} }
+  // v3.115: "recalcular do zero" = parte do plano ORIGINAL e aplica a lista consolidada de condições como operações
+  // (antes um recálculo partindo de uma contraproposta quebrada herdava o erro e devolvia os mesmos números)
+  if (do_zero && String(instrucoes_novas || instrucoes || '').trim()) anterior = { id: null, premissas: p0, resultado: base.resultado, narrativa: { estrategia: 'plano original (recálculo do zero)' } };
   // v3.103: no AJUSTE o ponto de partida é a contraproposta anterior (não o plano original) — antes as seções que a IA
   // não devolvia voltavam para o plano ORIGINAL e as alavancas já negociadas se perdiam (ex.: só cortar despesas e o VPL cair)
   const pIni = anterior ? anterior.premissas : p0;
@@ -408,7 +412,7 @@ Responda SOMENTE com JSON válido:
  "riscos": ["risco → mitigação"],
  "proximos_passos": ["passo com prazo"],
  "mensagem_para_enviar": "e-mail/mensagem profissional para ${destinatario.toLowerCase()} apresentando a contraproposta (em nome da Atlantyx, assinado por Fabio Quintanilha / CEO – Atlantyx)",
- "resumo_executivo": "5-7 linhas para o CEO: antes x depois e por que é bom para os dois lados"
+ "resumo_executivo": "5-7 linhas para o CEO: o que muda e por que é bom para os dois lados (SEM números de VPL/TIR/payback/exposição — o sistema mostra os calculados pelo motor)"
 }`;
   const montarUser = (extra) => `IDEIA / OPORTUNIDADE: ${ideia.titulo || base.titulo || ''}
 ${ideia.desc ? 'Descrição: ' + String(ideia.desc).substring(0, 4000) : ''}
@@ -423,7 +427,16 @@ ${JSON.stringify(anterior.premissas).substring(0, 15000)}
 Indicadores da contraproposta atual (motor): ${JSON.stringify(iIni)}
 Resumo: ${String(anterior.narrativa?.estrategia || '').substring(0, 600)}
 ${novas ? 'AJUSTE PEDIDO AGORA (aplicar SOBRE a contraproposta atual): ' + novas.substring(0, 2000) : ''}
-REGRAS DO AJUSTE: "premissas_alteradas" é RELATIVO À CONTRAPROPOSTA ATUAL. Devolva SOMENTE as seções que o ajuste pedido muda (cada seção devolvida vem completa, copiando sem alteração as linhas que não mudam). NÃO mexa em nenhuma outra alavanca, receita ou linha que o fundador não pediu. Se o ajuste é só de despesas, NÃO devolva "receitas". Valores do ajuste são o valor FINAL da linha (ex.: "licenças de R$ 2.200 para R$ 1.200" → a linha fica 1200; não subtraia de novo se a contraproposta atual já estiver com 1200).
+REGRAS DO AJUSTE (OBRIGATÓRIAS):
+- NÃO devolva "premissas_alteradas". Devolva "operacoes": a lista de mudanças PONTUAIS que o sistema aplica sobre a contraproposta atual. Tudo o que você não citar fica exatamente como está.
+- Formatos: {"op":"alterar","secao":"receitas|pessoal|despesas_fixas|custos_variaveis|investimentos","item":"NOME EXATO da linha (campo nome; em pessoal, o cargo)","campos":{"preco":7700}}
+  {"op":"remover","secao":"...","item":"NOME EXATO"} · {"op":"incluir","secao":"...","linha":{...linha completa na mesma estrutura...}} · {"op":"marketing","campos":{"fixo_mensal":0,"pct_receita":0}} · {"op":"escalar","campo":"taxa_desconto_anual","valor":15}
+- Use os NOMES EXATOS das linhas que estão na contraproposta atual. Uma operação por mudança pedida; nenhuma operação que o fundador não pediu.
+- Valores são o valor FINAL (ex.: "licenças de R$ 2.200 para R$ 1.200" → {"campos":{"valor_mensal":1200}}). Moeda estrangeira: converta para R$.
+- Meses (mes_inicio, mes_fim, mes) são SEMPRE contados do mês 1 do plano (nunca "mês X de vendas"). Se o fundador diz "a partir do mês 4", é mes_inicio 4.
+- Setup/implantação cobrado de cada cliente novo: a linha de setup (tipo "unico") usa os MESMOS novos_mes e mes_inicio da assinatura — se mudar o ritmo de clientes ou o início das vendas, aplique nas duas linhas.
+- Remover algo (ex.: piloto) = {"op":"remover"} só daquela linha; não mexa nas demais.
+- Em "alteracoes" descreva cada operação em português (de → para). Não escreva números de VPL, TIR, payback ou exposição nos textos — o sistema mostra os calculados pelo motor.
 ══════` : ''}
 BUSINESS PLAN ATUAL — premissas:
 ${JSON.stringify(p0).substring(0, 20000)}
@@ -454,6 +467,7 @@ ${docs ? '\nDOCUMENTOS DA NEGOCIAÇÃO:\n' + docs : ''}${extra ? '\n\n' + extra 
       if (!r.ok) throw _erro('A IA recusou o pedido: ' + (d?.error?.message || 'HTTP ' + r.status) + (r.status === 400 ? ' — tente com uma oferta/documentos mais curtos.' : ''), 502);
       const txt = (d.content || []).map(c => c.text || '').join('');
       const j = parseJSON(txt);
+      if (j && Array.isArray(j.operacoes) && j.operacoes.length) return j; // v3.115: ajuste por operações pontuais
       const alt = j && (j.premissas_alteradas || j.premissas || j.premissas_contraproposta || j.novas_premissas);
       if (j && alt && typeof alt === 'object' && Object.keys(alt).length) { j.premissas_alteradas = alt; return j; }
       ultimoErro = d.stop_reason === 'max_tokens' ? 'a resposta da IA foi cortada por ser longa demais' : (j ? 'a IA não indicou nenhuma alteração nas premissas' : 'a resposta da IA não veio em JSON válido');
@@ -468,11 +482,17 @@ ${docs ? '\nDOCUMENTOS DA NEGOCIAÇÃO:\n' + docs : ''}${extra ? '\n\n' + extra 
     rodadas++;
     // mescla: só as seções devolvidas substituem as do plano atual
     const alt = j.premissas_alteradas || {}; const permitidas = ['receitas', 'pessoal', 'investimentos', 'despesas_fixas', 'custos_variaveis', 'marketing', 'taxa_desconto_anual', 'deducoes_pct', 'ir_csll_pct', 'prazo_recebimento_dias', 'crescimento_perpetuidade_pct'];
-    const premissas = { ...pIni, ...Object.fromEntries(Object.entries(alt).filter(([k, v]) => permitidas.includes(k) && v != null && !(Array.isArray(v) && !v.length))), inicio: p0.inicio, meses: p0.meses || 36, titulo: p0.titulo };
+    let premissas, ops = null;
+    if (anterior && Array.isArray(j.operacoes)) {
+      // v3.115: aplica as operações pontuais sobre a contraproposta atual — nada além do que foi pedido muda
+      ops = aplicarOperacoes(pIni, j.operacoes);
+      premissas = { ...ops.premissas, inicio: p0.inicio, meses: p0.meses || 36, titulo: p0.titulo };
+      if (!ops.aplicadas.length) { extra = 'Nenhuma das operações pôde ser aplicada: ' + ops.nao_aplicadas.map(x => x.motivo).join('; ') + '. Use os NOMES EXATOS das linhas da contraproposta atual e devolva o JSON de novo.'; continue; }
+    } else premissas = { ...pIni, ...Object.fromEntries(Object.entries(alt).filter(([k, v]) => permitidas.includes(k) && v != null && !(Array.isArray(v) && !v.length))), inicio: p0.inicio, meses: p0.meses || 36, titulo: p0.titulo };
     // v3.94: premissas malformadas da IA não derrubam a rota — pede de novo na próxima rodada
     let res; try { res = calcularBP(premissas); } catch (e) { console.warn('[BP contraproposta] premissas da IA inválidas:', e.message); extra = 'As premissas_alteradas que você devolveu não puderam ser calculadas (' + e.message + '). Devolva o JSON de novo respeitando exatamente a estrutura das premissas do plano atual.'; continue; }
     const ind = _ind(res);
-    const cand = { j, premissas, res, ind };
+    const cand = { j, premissas, res, ind, ops };
     if (!melhor || _melhor(melhor.ind, ind)) melhor = cand;
     // v3.103: no ajuste, aplica SÓ o que o fundador pediu (uma rodada) — nada de mexer em outras alavancas para "fechar a conta"
     if (anterior) break;
@@ -481,14 +501,20 @@ ${docs ? '\nDOCUMENTOS DA NEGOCIAÇÃO:\n' + docs : ''}${extra ? '\n\n' + extra 
     extra = `RESULTADO DA SUA PROPOSTA ANTERIOR NO MOTOR: ${JSON.stringify(ind)} — ${objetivo === 'TORNAR_VIAVEL' ? 'AINDA NÃO É VIÁVEL' : 'NÃO MELHOROU o VPL da Atlantyx'}. Ajuste as alavancas (com justificativa realista) e devolva o JSON completo de novo.${instr ? ' MANTENHA todas as ORIENTAÇÕES DO FUNDADOR exatamente como pedidas — mexa só nas outras alavancas.' : ''}`;
   }
   if (!melhor) throw _erro('A IA devolveu premissas que o motor financeiro não conseguiu calcular. Tente de novo.', 502);
-  const { j, premissas, res, ind } = melhor;
+  const { j, premissas, res, ind, ops } = melhor;
   const diff = _diffPremissas(pIni, premissas);
   // conferência: se só houve corte de custo e o VPL caiu, algo está errado — não entrega número incoerente
   let alerta = null;
   if (_soCortesDeCusto(diff) && (ind.vpl ?? 0) < (iIni.vpl ?? 0) - 1) alerta = 'Conferência do motor: só houve cortes de custo, mas o VPL caiu de ' + Math.round(iIni.vpl) + ' para ' + Math.round(ind.vpl) + '. Recalcule — este resultado não deve ser usado.';
+  // v3.115: impacto de CADA operação no VPL (calculado pelo motor, em sequência) + conferências de coerência
+  const impacto_operacoes = ops ? impactoPorOperacao(pIni, ops.aplicadas) : null;
+  const coerencia = checarCoerencia(premissas);
+  if (!alerta && anterior && (iIni.receita_total || 0) > 0 && (ind.receita_total || 0) < iIni.receita_total * 0.6 && !(impacto_operacoes || []).some(x => /remov/.test(x.descricao)))
+    alerta = 'Conferência: a receita total caiu de ' + Math.round(iIni.receita_total).toLocaleString('pt-BR') + ' para ' + Math.round(ind.receita_total).toLocaleString('pt-BR') + ' sem nenhuma receita removida — veja abaixo qual operação causou e corrija.';
   const narrativa = { contraproposta: true, base_bp_id: base.id, base_titulo: base.titulo, objetivo, rodadas, destinatario, oferta: String(oferta || '').substring(0, 6000), instrucoes: instr.substring(0, 3000), cambio_eur: cambio, ajuste_de: anterior?.id || null,
     antes: i0, depois: ind, anterior: anterior ? iIni : null, anterior_id: anterior?.id || null, anos_antes: _anosResumo(base.resultado), anos_depois: _anosResumo(res),
     diff_premissas: diff, diff_vs_original: anterior ? _diffPremissas(p0, premissas) : diff, ajuste_aplicado: novas.substring(0, 2000) || null, alerta_consistencia: alerta,
+    do_zero: !!do_zero, impacto_operacoes, operacoes_nao_aplicadas: ops ? ops.nao_aplicadas.map(x => ({ item: x.op?.item || x.op?.campo || x.op?.secao || '', motivo: x.motivo })) : null, coerencia,
     diagnostico_base: j.diagnostico_base, estrategia: j.estrategia, alteracoes: j.alteracoes || [], ganhos_contraparte: j.ganhos_contraparte || [], ganhos_atlantyx: j.ganhos_atlantyx || [],
     contrapartidas_oferecidas: j.contrapartidas_oferecidas || [], concessoes_possiveis: j.concessoes_possiveis || [], limites: j.limites || [], clausulas: j.clausulas || [], riscos: j.riscos || [],
     proximos_passos: j.proximos_passos || [], mensagem_para_enviar: j.mensagem_para_enviar || '', resumo_executivo: j.resumo_executivo || '',
@@ -612,6 +638,7 @@ async function handler(req, res) {
       listar: async () => ({ lista: await listarBP({ tipo: b.tipo }) }),
       obter: async () => ({ bp: await obterBP(b.id) }),
       contraproposta: async () => contrapropostaBP(b), // v3.44
+      sensibilidade: async () => { const bp = await obterBP(b.id); if (!bp?.premissas) throw new Error('plano não encontrado'); return { sensibilidade: sensibilidades(bp.premissas) }; }, // v3.115
       analise: async () => analiseBP({ id: b.id || null, overrides: b.overrides }, req.sessao?.login), // v3.92
       chat: async () => chatBP({ id: b.id || null, overrides: b.overrides, mensagem: b.mensagem, historico: b.historico }),
       ia_estado: async () => bpIaEstado({ id: b.id || null }),
