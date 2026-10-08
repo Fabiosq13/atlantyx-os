@@ -32,7 +32,10 @@ const STATUS_LABEL = {
 let _sql = null;
 async function getSql() {
   if (_sql) return _sql;
-  const { neon } = await import('@neondatabase/serverless');
+  const { neon, types } = await import('@neondatabase/serverless');
+  // v3.113: colunas DATE voltam como texto 'AAAA-MM-DD'. O driver devolvia objeto Date e o código fazia
+  // String(data).split('T')[0] → "" ou "Wed Oct 14 2026 00:00:00 GM" (datas vazias na agenda, marcos, contratos, CNAB)
+  try { types?.setTypeParser?.(1082, v => v); } catch (_) {}
   _sql = neon(process.env.DATABASE_URL);
   await ensureTabelas(_sql);
   return _sql;
@@ -424,9 +427,10 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
             ORDER BY criado_em DESC`;
     }
   } else {
+    // v3.113: sem filtro, a coluna Concluído mostra só os últimos 90 dias (como diz a tela) — antes vinha tudo desde sempre
     termos = status
       ? await sql`SELECT * FROM termos_faturamento WHERE status = ${status} ORDER BY criado_em DESC`
-      : await sql`SELECT * FROM termos_faturamento ORDER BY criado_em DESC`;
+      : await sql`SELECT * FROM termos_faturamento WHERE status <> 'concluido' OR COALESCE(concluido_em, atualizado_em) >= NOW() - INTERVAL '90 days' ORDER BY criado_em DESC`;
   }
   // Busca livre pelo texto do período de medição (ex.: "julho", "07/2026")
   if (periodo_texto && periodo_texto.trim()) {
@@ -612,6 +616,10 @@ async function termoReabrir({ id, motivo } = {}) {
   await sql`UPDATE termos_faturamento SET status = 'pagamento',
     concluido_em = NULL, concluido_motivo = ${'reaberto: ' + (motivo || 'sem motivo informado')},
     atualizado_em = NOW() WHERE id = ${id}`;
+  // v3.113: reaberto volta a ser "a receber" — antes seguia com data de pagamento e "N/N pagas" no card
+  try { await sql`UPDATE termos_faturamento SET pago_em = NULL WHERE id = ${id}`; } catch (_) {}
+  try { await sql`UPDATE termos_empresas SET pagamento_status = 'pendente', pagamento_data = NULL
+    WHERE termo_id = ${id} AND pagamento_status = 'pago' AND pagamento_origem IS NULL`; } catch (_) {}
   return await termoGet({ id });
 }
 

@@ -19,7 +19,10 @@ const _q = (db, texto, params) => (typeof db.query === 'function' ? db.query(tex
 let _sql = null;
 async function getSql() {
   if (_sql) return _sql;
-  const { neon } = await import('@neondatabase/serverless');
+  const { neon, types } = await import('@neondatabase/serverless');
+  // v3.113: colunas DATE voltam como texto 'AAAA-MM-DD'. O driver devolvia objeto Date e o código fazia
+  // String(data).split('T')[0] → "" ou "Wed Oct 14 2026 00:00:00 GM" (datas vazias na agenda, marcos, contratos, CNAB)
+  try { types?.setTypeParser?.(1082, v => v); } catch (_) {}
   _sql = neon(process.env.DATABASE_URL);
   await ensureTabelas(_sql);
   return _sql;

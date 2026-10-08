@@ -786,6 +786,11 @@ tr:hover td{background:rgba(79,124,255,.03);}
         <div class="res-grid" id="liveRes2" style="margin-top:10px;"></div>
         <div id="liveResNota" style="font-size:9.5px;color:var(--t3);margin-top:8px;"></div></div>
     </div>
+    <!-- v3.113: METAS DO ANO (faturamento e % de lucro) com semáforo e pipeline do CRM -->
+    <div class="panel metas-panel" style="margin-bottom:13px;border-color:rgba(245,166,35,.35);"><div class="ph" style="flex-wrap:wrap;row-gap:6px;"><div class="pt">&#127919; Metas do ano</div>
+      <div class="seg mt-anos" data-alvo="live" style="margin-left:8px;"></div><span class="mt-at" style="font-size:9.5px;color:var(--t3);margin-left:8px;"></span>
+      <button class="btn btn-g" style="font-size:9px;padding:3px 9px;margin-left:auto;" onclick="metasEditar('live')">&#9998; Definir metas</button></div>
+      <div class="pb"><div class="res-grid" id="live_metas"><div style="color:var(--t3);font-size:11px;padding:8px;">Carregando metas...</div></div></div></div>
 
     <!-- META FINANCEIRA UNICA DA EMPRESA -->
     <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(79,124,255,.08));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;">
@@ -3197,6 +3202,11 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div class="pb"><div class="res-grid" id="df_res"><div style="color:var(--t3);font-size:11px;padding:10px;">Carregando...</div></div>
       <div id="df_res_nota" style="font-size:9.5px;color:var(--t3);margin-top:8px;"></div></div>
   </div>
+  <!-- v3.113: METAS DO ANO — faturamento e % de lucro, quanto falta, semáforo e pipeline do CRM -->
+  <div class="panel metas-panel" style="margin-bottom:12px;border-color:rgba(245,166,35,.35);"><div class="ph" style="flex-wrap:wrap;row-gap:6px;"><div class="pt">&#127919; Metas do ano</div>
+    <div class="seg mt-anos" data-alvo="df" style="margin-left:8px;"></div><span class="mt-at" style="font-size:9.5px;color:var(--t3);margin-left:8px;"></span>
+    <button class="btn btn-g" style="font-size:9px;padding:3px 9px;margin-left:auto;" onclick="metasEditar('df')">&#9998; Definir metas</button></div>
+    <div class="pb"><div class="res-grid" id="df_metas"><div style="color:var(--t3);font-size:11px;padding:8px;">Carregando metas...</div></div></div></div>
   <div class="kg k4" style="margin-bottom:12px;">
     <div class="kpi gd"><div class="kl">Saúde financeira</div><div class="kv" id="df_semaforo">—</div><div class="ks" id="df_semaforo_sub">semáforo automático</div></div>
     <div class="kpi bl"><div class="kl">Despesa × orçamento (ano)</div><div class="kv" id="df_orc">—</div><div class="ks" id="df_orc_sub">orçado vs realizado</div></div>
@@ -5825,7 +5835,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   } catch (_) {}
 });
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s0usuarios:'/ Acesso · Usuários × Perfil',s0perfis:'/ Acesso · Perfis',s0telas:'/ Acesso · Telas',s0perfiltelas:'/ Acesso · Perfil × Telas',s0demandas:'/ S0 · Esteira de Demandas IA',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9agenda:'/ S9 · Agenda do GP',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1bp:'/ S1 · Business Plan',qa:'/ Agente de QA e Segurança',s1fundador:'/ S1 · Inbox do Fundador',s1comercial:'/ S1 · Politica Comercial',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7clientes:'/ S7 · Clientes do CRM',s7mapa:'/ S7 · Mapa de Atuacao Comercial',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7feed:'/ S7 · Feed de Prospeccao',s7cartao:'/ S7 · Meu Cartao Digital',s7kpi:'/ S7 Metas',s7painel:'/ S7 · Painel de Vendas IA',s7propostas:'/ S7 · Elaboração de Propostas',s5contratos:'/ S5 · Análise de Contratos',s3kpis:'/ S3 · KPIs de Saúde Financeira',s4crm:'/ S4 · Vendas CRM — Metas e Pipeline',s5juridico:'/ S5 · Jurídico e Compliance',s6dev:'/ S6 · Desenvolvimento, QA e Versões',s6qa:'/ S6 · Agente de QA Visual',s8rh:'/ S8 · Departamento Pessoal',s9projetos:'/ S9 · Gestão de Projetos',s10atend:'/ S10 · Atendimento Omnichannel',s11sales:'/ S11 · Inside Sales + SDR',s12hub:'/ S12 · Engenharia de Dados',s12novo:'/ S12 · Novo Projeto de Dados',s12modelagem:'/ S12 · Modelagem DW + Data Marts',s13hub:'/ S13 · Dashboard Studio',s13novo:'/ S13 · Novo Dashboard',s13mockup:'/ S13 · Mockup Interativo',s13codigo:'/ S13 · Código do Dashboard'};document.getElementById('tbc').textContent=lb[p]||(pg?'/ '+((pg.querySelector('[style*="font-family:var(--H)"]')||pg.querySelector('.pt')||{}).textContent||'').trim().substring(0,60):'');if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7pipe'||p==='dash')loadKPIs();if(p==='dash')setTimeout(_dashRfpCache,200);if(p==='dash')setTimeout(()=>{try{carregarResultadoLive();}catch(_){}},180);if(p==='dash')setTimeout(()=>{try{carregarSemanaFoco();}catch(_){}},350);if(p==='dash')setTimeout(()=>{try{carregarMarcosAlertaDash();}catch(_){}},300);if(p==='dash')setTimeout(()=>{try{carregarReceitaRiscoDash();}catch(_){}},250);if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7clientes')setTimeout(carregarClientes,150);if(p==='s1comercial')setTimeout(comCarregar,150);if(p==='s7kpi')setTimeout(carregarSemaforoComercial,150);if(p==='s7feed')setTimeout(feedListar,150);if(p==='s7cartao')setTimeout(cartaoCarregar,150);if(p==='s7meet')setTimeout(carregarBriefings,150);if(p==='s7mapa')setTimeout(_mpPopularClientes,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();/* v3.94: s2wa não chama mais o agente ao abrir (10s+); só no clique em "Gerar mensagens" */if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s2social')setTimeout(_smCarregarMetricas,150);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(carregarRealizado,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9agenda')setTimeout(carregarAgendaGP,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{carregarRealizado();}catch(_){}},150);if(p==='s3projetado')setTimeout(()=>{try{gerarProjetado();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);if(p==='s1bp'){setTimeout(bpInit,150);if(_bpAba==='atlantyx')setTimeout(()=>{_bpAtxCarregado=_bpAtxCarregado&&!!_bpAtual;bpAtlantyx();},200);}if(p==='qa')setTimeout(qaAbrir,50);if(p==='s0demandas')setTimeout(demandasAbrir,50);if(/^s0(usuarios|perfis|telas|perfiltelas)$/.test(p))setTimeout(()=>acessoAbrir(p),30);if(p==='s7painel'||p==='s7propostas')setTimeout(()=>vendasAbrir(p),50);if(p==='s2auto')setTimeout(_acCtaInit,80);if(p==='s5contratos')setTimeout(juridicoAbrir,50);if(p==='s1dados')setTimeout(s1DadosStatus,80);if(/^s1(dash|intel|plano|acoes|cenarios|okr|relatorio|riscos|financeiro|mercado|dados)$/.test(p))setTimeout(s1HistBotoes,60);if(p==='s2rfps'){window._rfpSoCache=true;setTimeout(runRfpMonitorAtualizado,150);}}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s0usuarios:'/ Acesso · Usuários × Perfil',s0perfis:'/ Acesso · Perfis',s0telas:'/ Acesso · Telas',s0perfiltelas:'/ Acesso · Perfil × Telas',s0demandas:'/ S0 · Esteira de Demandas IA',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9agenda:'/ S9 · Agenda do GP',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1bp:'/ S1 · Business Plan',qa:'/ Agente de QA e Segurança',s1fundador:'/ S1 · Inbox do Fundador',s1comercial:'/ S1 · Politica Comercial',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7clientes:'/ S7 · Clientes do CRM',s7mapa:'/ S7 · Mapa de Atuacao Comercial',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7feed:'/ S7 · Feed de Prospeccao',s7cartao:'/ S7 · Meu Cartao Digital',s7kpi:'/ S7 Metas',s7painel:'/ S7 · Painel de Vendas IA',s7propostas:'/ S7 · Elaboração de Propostas',s5contratos:'/ S5 · Análise de Contratos',s3kpis:'/ S3 · KPIs de Saúde Financeira',s4crm:'/ S4 · Vendas CRM — Metas e Pipeline',s5juridico:'/ S5 · Jurídico e Compliance',s6dev:'/ S6 · Desenvolvimento, QA e Versões',s6qa:'/ S6 · Agente de QA Visual',s8rh:'/ S8 · Departamento Pessoal',s9projetos:'/ S9 · Gestão de Projetos',s10atend:'/ S10 · Atendimento Omnichannel',s11sales:'/ S11 · Inside Sales + SDR',s12hub:'/ S12 · Engenharia de Dados',s12novo:'/ S12 · Novo Projeto de Dados',s12modelagem:'/ S12 · Modelagem DW + Data Marts',s13hub:'/ S13 · Dashboard Studio',s13novo:'/ S13 · Novo Dashboard',s13mockup:'/ S13 · Mockup Interativo',s13codigo:'/ S13 · Código do Dashboard'};document.getElementById('tbc').textContent=lb[p]||(pg?'/ '+((pg.querySelector('[style*="font-family:var(--H)"]')||pg.querySelector('.pt')||{}).textContent||'').trim().substring(0,60):'');if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7pipe'||p==='dash')loadKPIs();if(p==='dash')setTimeout(_dashRfpCache,200);if(p==='dash')setTimeout(()=>{try{carregarResultadoLive();}catch(_){}},180);if(p==='dash')setTimeout(()=>{try{carregarMetasEmpresa();}catch(_){}},260);if(p==='dash')setTimeout(()=>{try{carregarSemanaFoco();}catch(_){}},350);if(p==='dash')setTimeout(()=>{try{carregarMarcosAlertaDash();}catch(_){}},300);if(p==='dash')setTimeout(()=>{try{carregarReceitaRiscoDash();}catch(_){}},250);if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7clientes')setTimeout(carregarClientes,150);if(p==='s1comercial')setTimeout(comCarregar,150);if(p==='s7kpi')setTimeout(carregarSemaforoComercial,150);if(p==='s7feed')setTimeout(feedListar,150);if(p==='s7cartao')setTimeout(cartaoCarregar,150);if(p==='s7meet')setTimeout(carregarBriefings,150);if(p==='s7mapa')setTimeout(_mpPopularClientes,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();/* v3.94: s2wa não chama mais o agente ao abrir (10s+); só no clique em "Gerar mensagens" */if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s2social')setTimeout(_smCarregarMetricas,150);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(carregarRealizado,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9agenda')setTimeout(carregarAgendaGP,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{carregarRealizado();}catch(_){}},150);if(p==='s3projetado')setTimeout(()=>{try{gerarProjetado();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);if(p==='s1bp'){setTimeout(bpInit,150);if(_bpAba==='atlantyx')setTimeout(()=>{_bpAtxCarregado=_bpAtxCarregado&&!!_bpAtual;bpAtlantyx();},200);}if(p==='qa')setTimeout(qaAbrir,50);if(p==='s0demandas')setTimeout(demandasAbrir,50);if(/^s0(usuarios|perfis|telas|perfiltelas)$/.test(p))setTimeout(()=>acessoAbrir(p),30);if(p==='s7painel'||p==='s7propostas')setTimeout(()=>vendasAbrir(p),50);if(p==='s2auto')setTimeout(_acCtaInit,80);if(p==='s5contratos')setTimeout(juridicoAbrir,50);if(p==='s1dados')setTimeout(s1DadosStatus,80);if(/^s1(dash|intel|plano|acoes|cenarios|okr|relatorio|riscos|financeiro|mercado|dados)$/.test(p))setTimeout(s1HistBotoes,60);if(p==='s2rfps'){window._rfpSoCache=true;setTimeout(runRfpMonitorAtualizado,150);}}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -9229,13 +9239,10 @@ function formatarMoeda(valor) {
 }
 
 function parseMoeda(str) {
-  if (!str) return 0;
-  const clean = str.replace(/R\\$|\s|\./g, '').replace(',','.');
-  const num = parseFloat(clean);
-  if (isNaN(num)) return 0;
-  if (str.toLowerCase().includes('m')) return num * 1000000;
-  if (str.toLowerCase().includes('k')) return num * 1000;
-  return num;
+  // v3.113: "R$ 12.500,00" dava 0 (a regex procurava uma barra invertida) e "1500.50" virava 150050 — agora usa o leitor pt-BR
+  if (str == null || str === '') return 0; if (typeof str === 'number') return str;
+  const t = String(str).toLowerCase(), mult = /\d\s*(k|mil\b)/.test(t) ? 1e3 : /\d\s*m(i|ilh|m)?/.test(t) ? 1e6 : 1;
+  return _numBR(t.replace(/[a-z$\s]/g, '')) * mult;
 }
 
 function atualizarBarras(metas) {
@@ -9496,12 +9503,10 @@ function renderReceberTable() {
 async function marcarRecebido(i) {
   const item = receberItems[i];
   if (!item) return;
-  // Atualizar metas com valor recebido
+  // v3.113: o realizado das metas vem do faturamento do QuickBooks (Dashboard LIVE) — somar o recebido aqui contava duas vezes
   const metas = await DB.get('metas', {});
   const val = parseMoeda(item.valor);
-  metas.realAnual = (metas.realAnual || 0) + val;
-  metas.realMensal = (metas.realMensal || 0) + val;
-  await DB.set('metas', metas);
+  if (metas.real_fonte !== 'QuickBooks') { metas.realAnual = (metas.realAnual || 0) + val; metas.realMensal = (metas.realMensal || 0) + val; await DB.set('metas', metas); }
   receberItems.splice(i, 1);
   await DB.set('receber', receberItems);
   renderReceberTable();
@@ -9618,6 +9623,7 @@ async function carregarRecAlertaDash() {
     const d = await finApi('painel_resumo');
     const it = d && d.contasReceber && d.contasReceber.itens;
     if (Array.isArray(it)) { receberQBItems = it; _recQBCarregado = true; _recQBErro = ''; }
+    else if (d && d.contasReceber && d.contasReceber.erro) { _recQBErro = 'QuickBooks não respondeu às faturas: ' + d.contasReceber.erro; } // v3.113: falha ≠ "nenhum recebível"
     else if (!d.qb_configurado) { _recQBCarregado = true; }
     // resposta veio do cache antigo: o finApi já pediu a versão nova; relê uma vez em seguida
     if (d && d._cache && d._cache.stale && !_recDashRetry) { _recDashRetry = true; setTimeout(() => { _recDashEm = 0; carregarRecAlertaDash(); }, 20000); }
@@ -9853,7 +9859,7 @@ async function carregarReceitaRiscoDash(forcar) {
 // Dashboard LIVE é a tela inicial: carrega o widget ao abrir o sistema
 window.addEventListener('DOMContentLoaded', () => setTimeout(() => {
   const pg = document.getElementById('page-dash');
-  if (pg && pg.classList.contains('active')) { try { carregarResultadoLive(); } catch (_) {} try { carregarReceitaRiscoDash(); } catch (_) {} try { _dashRfpUrgentes(); } catch (_) {} try { carregarMarcosAlertaDash(); } catch (_) {} try { carregarSemanaFoco(); } catch (_) {} }
+  if (pg && pg.classList.contains('active')) { try { carregarResultadoLive(); } catch (_) {} try { carregarMetasEmpresa(); } catch (_) {} try { carregarReceitaRiscoDash(); } catch (_) {} try { _dashRfpUrgentes(); } catch (_) {} try { carregarMarcosAlertaDash(); } catch (_) {} try { carregarSemanaFoco(); } catch (_) {} }
 }, 2500));
 
 // ═══ dem_muwmozw1hkd7: SEMANA EM FOCO — resumo executivo semanal no Dashboard LIVE ═══
@@ -12745,6 +12751,7 @@ function _rskLiquidez(res) {
   if (res.status === 'fulfilled') {
     const it = res.value && res.value.contasReceber && res.value.contasReceber.itens;
     if (Array.isArray(it)) { receberQBItems = it; _recQBCarregado = true; _recQBErro = ''; }
+    else if (res.value && res.value.contasReceber && res.value.contasReceber.erro && !_recQBCarregado) return { ...s, nivel: 'cinza', resumo: 'Dado indisponível — QuickBooks não respondeu às faturas' }; // v3.113
     else if (res.value && !res.value.qb_configurado) _recQBCarregado = true;
   } else if (!_recQBCarregado) {
     return { ...s, nivel: 'cinza', resumo: 'Dado indisponível — ' + _rskMotivo(res) };
@@ -12764,7 +12771,8 @@ function _rskEntrega(res) {
   const s = { chave: 'entrega', titulo: 'Risco de entrega', origem: 'Kanban de Marcos', tela: 's3marcoskanban', extra: ['s3projetos', 'Projetos &amp; Marcos'], itens: [] };
   if (res.status !== 'fulfilled') return { ...s, nivel: 'cinza', resumo: 'Dado indisponível — ' + _rskMotivo(res) };
   const col = (res.value && res.value.colunas) || {};
-  const marcos = (col.aguardando_entrega && col.aguardando_entrega.marcos) || [];
+  // v3.113: marco atrasado também fica em "Liberação do GP" (o robô move 10 dias antes do prazo) — antes era ignorado
+  const marcos = [...((col.aguardando_entrega && col.aguardando_entrega.marcos) || []), ...((col.liberacao_gp && col.liberacao_gp.marcos) || [])];
   const atras = marcos.map(m => ({ m, dias: _recDias(m.data_entrega) })).filter(x => x.dias != null && x.dias < 0).sort((a, b) => a.dias - b.dias);
   const crit = atras.filter(x => -x.dias > RSK_DIAS_CRITICO);
   s.nivel = crit.length ? 'vermelho' : atras.length ? 'amarelo' : 'verde';
@@ -12795,11 +12803,11 @@ function _rskMetaMargem(res) {
 function _rskFinanceiro(kpi, orc) {
   const s = { chave: 'financeiro', titulo: 'Risco financeiro', origem: 'KPIs QuickBooks', tela: 's3kpis', extra: ['s3orcamento', 'Orçamento Anual'], itens: [] };
   if (kpi.status !== 'fulfilled') return { ...s, nivel: 'cinza', resumo: 'Dado indisponível — ' + _rskMotivo(kpi) };
-  const k = (kpi.value && kpi.value.kpis) || {}, m = k.margem_liquida_pct;
+  const k = (kpi.value && kpi.value.kpis) || {}, m = k.margem_liquida_ano_pct ?? k.margem_liquida_pct; // v3.113: margem do ANO (o mês corrente é parcial — no começo do mês ficava vermelho à toa)
   const { meta, fonte } = _rskMetaMargem(orc);
   if (m == null || !isFinite(m)) return { ...s, nivel: 'cinza', resumo: 'Margem do mês indisponível (sem receita lançada no QuickBooks).', itens: [`Meta de margem: ${meta}% (${_recEsc(fonte)})`] };
   s.nivel = m < 0 ? 'vermelho' : m < meta ? 'amarelo' : 'verde';
-  s.resumo = `Margem líquida do mês ${m}% · meta ${meta}%` + (m < meta ? ` · ${Math.round((meta - m) * 10) / 10} p.p. abaixo` : '');
+  s.resumo = `Margem líquida ${k.margem_liquida_ano_pct != null ? 'no ano' : 'do mês'} ${m}% · meta ${meta}%` + (m < meta ? ` · ${Math.round((meta - m) * 10) / 10} p.p. abaixo` : '');
   s.itens = [`Meta: ${_recEsc(fonte)}`];
   if (k.receita_mes != null) s.itens.push(`Receita do mês ${_recFmt(k.receita_mes)} · despesa ${_recFmt(k.despesa_mes || 0)}`);
   return s;
@@ -18312,10 +18320,12 @@ async function syncQuickBooks() {
       renderLancamentos(d.lancamentos || []);
       // v3.21: A Receber pela mesma base do Fluxo Detalhado (faturas em aberto no QuickBooks)
       { const cr = d.contasReceber || {}; const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
-        u('f_totalReceber', fmtBRL(cr.total || 0)); u('f_vencido', fmtBRL(cr.vencido || 0)); u('f_aVencer', fmtBRL(cr.a_vencer_30d || 0));
+        const _fb = v => v == null ? '—' : fmtBRL(v); // v3.113: não lido = "—" (antes R$ 0,00)
+        u('f_totalReceber', _fb(cr.total)); u('f_vencido', _fb(cr.vencido)); u('f_aVencer', _fb(cr.a_vencer_30d));
         const bdg = document.getElementById('s3ReceberCnt'); if (bdg && cr.qtd != null) bdg.textContent = cr.qtd;
         // v3.85: faturas uma a uma → badges de vencimento, banner da A Receber e widget do Dashboard
         if (Array.isArray(cr.itens)) { receberQBItems = cr.itens; _recQBCarregado = true; _recQBErro = ''; _recDashEm = Date.now(); try { renderReceberTable(); } catch (_) {} }
+        else if (cr.erro) { _recQBErro = 'QuickBooks não respondeu às faturas: ' + cr.erro; try { renderReceberTable(); } catch (_) {} }
         const sc = document.getElementById('f_saldoCaixa'); const ks = sc && sc.parentElement && sc.parentElement.querySelector('.ks'); if (ks && d.saldoCaixaFonte) ks.textContent = 'saldo de hoje · igual ao Fluxo Detalhado'; }
       const tag = document.getElementById('qbTag');
       if (tag) { tag.className = 'tag on'; tag.textContent = 'Sincronizado ' + new Date().toLocaleTimeString('pt-BR'); }
@@ -18356,12 +18366,13 @@ async function syncQuickBooks() {
 // 2. ATUALIZAR PAINEL — adicionado saldoCaixa
 // ═══════════════════════════════════════════════════════════════════════════
 async function atualizarPainelFinanceiro(realAnual, realMes, aReceber, projetado, saldoCaixa) {
+  const _fb = v => v == null ? '—' : fmtBRL(v); // v3.113: valor não lido aparece "—" (antes R$ 0,00 — parecia zero de verdade)
   const els = {
-    f_realAnual: fmtBRL(realAnual),
-    f_realMes: fmtBRL(realMes),
-    f_aReceber: fmtBRL(aReceber),
+    f_realAnual: _fb(realAnual),
+    f_realMes: _fb(realMes),
+    f_aReceber: _fb(aReceber),
     f_projetado: fmtBRL(projetado || 0),
-    f_saldoCaixa: fmtBRL(saldoCaixa || 0),
+    f_saldoCaixa: _fb(saldoCaixa),
   };
   Object.entries(els).forEach(([id, val]) => {
     const el = document.getElementById(id);
@@ -18374,8 +18385,8 @@ async function atualizarPainelFinanceiro(realAnual, realMes, aReceber, projetado
   catch(e) { console.warn('[atualizarPainelFinanceiro] localStorage corrompido em atx:metas, usando default'); }
   const metaAnual = metas.anual || 18000000;
   const metaMensal = metas.mensal || 1500000;
-  const pctA = Math.min(100, (realAnual / metaAnual) * 100);
-  const pctM = Math.min(100, (realMes / metaMensal) * 100);
+  const pctA = Math.min(100, ((realAnual || 0) / metaAnual) * 100);
+  const pctM = Math.min(100, ((realMes || 0) / metaMensal) * 100);
   const corA = pctA >= 80 ? 'var(--green)' : pctA >= 50 ? 'var(--blue)' : pctA >= 25 ? 'var(--gold)' : 'var(--red)';
   const corM = pctM >= 80 ? 'var(--green)' : pctM >= 50 ? 'var(--blue)' : pctM >= 25 ? 'var(--gold)' : 'var(--red)';
 
@@ -18391,16 +18402,8 @@ async function atualizarPainelFinanceiro(realAnual, realMes, aReceber, projetado
   const mAL = document.getElementById('f_metaAnualLabel'); if (mAL) mAL.textContent = 'meta ' + fmtBRL(metaAnual);
   const mML = document.getElementById('f_metaMensalLabel'); if (mML) mML.textContent = 'meta ' + fmtBRL(metaMensal);
 
-  // Sincronizar com dashboard
-  if (typeof DB !== 'undefined' && DB.get) {
-    try {
-      const mDash = await DB.get('metas', {});
-      mDash.realAnual = realAnual;
-      mDash.realMensal = realMes;
-      await DB.set('metas', mDash);
-      if (typeof atualizarBarras === 'function') atualizarBarras(mDash);
-    } catch {}
-  }
+  // v3.113: não sincroniza mais as metas do Dashboard daqui — esta tela pode estar filtrada em outro período e
+  // sobrescrevia o realizado. O Dashboard LIVE lê o faturamento do mês/ano direto do QuickBooks (resultado_kpis).
 }
 
 // v3.109: tela Realizado QuickBooks — período, tipo e busca; indicadores de competência (DRE) e de caixa
@@ -18683,7 +18686,7 @@ async function carregarDespesas() {
     const [d, o] = await Promise.all([
       finApi('desp_list', {}),
       // v3.109: carrega do mês exibido − 90 dias até +12 meses (antes só de hoje em diante: vencidas e meses passados sumiam)
-      finApi('desp_ocorrencias', { data_inicio: new Date(_calMes.getFullYear(), _calMes.getMonth() - 3, 1).toLocaleDateString('sv-SE'), data_fim: new Date(_calMes.getFullYear(), _calMes.getMonth() + 13, 0).toLocaleDateString('sv-SE') }),
+      finApi('desp_ocorrencias', { data_inicio: new Date(Math.min(new Date(_calMes.getFullYear(), _calMes.getMonth() - 3, 1).getTime(), Date.now() - 365 * 864e5)).toLocaleDateString('sv-SE'), /* v3.113: atrasados de até 1 ano sempre entram no aviso */ data_fim: new Date(_calMes.getFullYear(), _calMes.getMonth() + 13, 0).toLocaleDateString('sv-SE') }),
     ]);
     _ocoJanela = _calMes.getFullYear() * 12 + _calMes.getMonth();
     _despCache = d.despesas;
@@ -18980,11 +18983,13 @@ function renderFluxoMatriz(d) {
 
   const linhasOrdenadas = [
     'Saldo Inicial',
+    '+ Recebido no mês (realizado)', // v3.113
     '+ A Receber QB',
     '+ Receita Prevista (marcos)',
     '+ Receita Recorrente (MRR)',
     '+ Outras Entradas Simuladas',
     '= Total Entradas',
+    '− Pago no mês (realizado)', // v3.113
     '− Despesas Programadas',
     '− Outras Saídas Simuladas',
     '= Total Saídas',
@@ -19205,7 +19210,8 @@ function renderKpisSaude(k) {
     const receita = k.receita_mes || 0, lucro = (k.receita_mes||0) - (k.despesa_mes||0);
     u('s3_das', cfg.regime === 'simples' && cfg.aliq_das != null ? fmtBRL(receita * cfg.aliq_das/100) : (cfg.regime === 'simples' ? '—' : 'n/a (regime ' + cfg.regime + ')'));
     u('s3_fgts', cfg.folha > 0 ? fmtBRL(cfg.folha * 0.08) : (cfg.folha === 0 ? fmtBRL(0) : '—'));
-    u('s3_irpj', (cfg.regime === 'presumido' || cfg.regime === 'real') && cfg.aliq_irpj != null ? fmtBRL(Math.max(0,lucro) * cfg.aliq_irpj/100) : (cfg.regime === 'simples' ? 'incluso no DAS' : '—'));
+    // v3.113: no Lucro Presumido a base é o lucro PRESUMIDO (32% do faturamento de serviços), não o lucro contábil; IRPJ 15% + adicional 10% acima de R$ 20 mil/mês + CSLL 9%
+    u('s3_irpj', cfg.regime === 'presumido' ? fmtBRL(receita * 0.32 * 0.15 + Math.max(0, receita * 0.32 - 20000) * 0.10 + receita * 0.32 * 0.09) : cfg.regime === 'real' && cfg.aliq_irpj != null ? fmtBRL(Math.max(0,lucro) * cfg.aliq_irpj/100) : (cfg.regime === 'simples' ? 'incluso no DAS' : '—'));
     u('s3_iss', cfg.aliq_iss > 0 ? fmtBRL(receita * cfg.aliq_iss/100) : (cfg.aliq_iss === 0 ? 'n/a' : '—'));
   }
 }
@@ -19733,7 +19739,7 @@ function renderProjetos() {
         </div>
         <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t2);">
           <span>Valor:</span>
-          <span style="font-family:var(--M);">${fmtBRL(ag.valor_concluido)} / ${fmtBRL(p.valor_total)}</span>
+          <span style="font-family:var(--M);">${fmtBRL(ag.valor_concluido)} / ${fmtBRL(Number(p.valor_total) || ag.valor_total || ag.total_valor || 0)}</span>
         </div>
       </div>`;
     }).join('') + '</div>';
@@ -21125,7 +21131,7 @@ async function carregarFluxoDetalhado() {
         box.innerHTML = `<b>⚠ O saldo calculado não bate com o saldo do banco</b><br>
           Calculado nesta tela: <b>${fmtBRLcompleto(d.saldo_hoje)}</b> · Saldo real das contas no QuickBooks: <b>${fmtBRLcompleto(d.saldo_real_banco)}</b> · Diferença: <b style="color:var(--gold);">${fmtBRLcompleto(Math.abs(d.divergencia_calculado_vs_real))}</b><br>
           <span style="color:var(--t2);">O calculado parte do saldo estimado no início do período e soma o movimento. A diferença aponta lançamento faltando, duplicado, ou saldo inicial impreciso. Contas no QuickBooks: ${(d.contas_banco||[]).map(c => c.nome + ' ' + fmtBRLcompleto(c.saldo)).join(' · ') || '—'}</span><br>
-          ${d.passado?.saldo_inicial_detalhe ? `<span style="color:var(--t3);font-size:10px;">Composição do saldo inicial: ${fmtBRLcompleto(d.passado.saldo_inicial_detalhe.saldo_hoje || 0)} (saldo do QuickBooks hoje) − ${fmtBRLcompleto(d.passado.saldo_inicial_detalhe.movimento_no_periodo_ate_hoje || 0)} (movimento do período) = ${fmtBRLcompleto(d.passado.saldo_inicial || 0)}</span><br>` : ''}
+          ${d.passado?.saldo_inicial_detalhe && d.passado.saldo_inicial_detalhe.saldo_hoje != null ? `<span style="color:var(--t3);font-size:10px;">Composição do saldo inicial: ${fmtBRLcompleto(d.passado.saldo_inicial_detalhe.saldo_hoje || 0)} (saldo do QuickBooks hoje) − ${fmtBRLcompleto(d.passado.saldo_inicial_detalhe.movimento_no_periodo_ate_hoje || 0)} (movimento do período) = ${fmtBRLcompleto(d.passado.saldo_inicial || 0)}</span><br>` : ''}
           <button class="btn" style="font-size:10px;margin-top:5px;" onclick="varrerDuplicados()">⚠ Procurar duplicados</button>
           <button class="btn" style="font-size:10px;margin-top:5px;" onclick="conferirComBanco()">🔍 Conferir com o banco</button>`;
       } else if (box) box.remove();
@@ -27605,6 +27611,73 @@ async function carregarResultadoLive(forcar) {
   try { const k = (await finApi('kpis_saude', {}, { timeoutMs: 30000 })).kpis || {}; _liveKpi = k; _liveKpiEm = Date.now(); if (seq === _liveResSeq) pinta2(k); }
   catch (e) { if (seq === _liveResSeq && !_liveKpi) b2.innerHTML = '<div style="color:var(--t3);font-size:10.5px;padding:4px 8px;">Indicadores de caixa indisponíveis agora: ' + String(e.message || e).replace(/</g, '&lt;') + '</div>'; }
 }
+// ═══ v3.113: METAS DO ANO — faturamento e % de lucro (meta × realizado), quanto falta, semáforo e pipeline do CRM ═══
+let _mtAno = null, _mtUlt = {};
+function _mtAnoSel() { const a = new Date().getFullYear(); return _mtAno || a; }
+function _mtSegs() { const a = new Date().getFullYear(), sel = _mtAnoSel();
+  document.querySelectorAll('.mt-anos').forEach(el => { el.innerHTML = [a, a + 1].map(x => `<button class="${x === sel ? 'on' : ''}" onclick="metasAno(${x})">${x}</button>`).join(''); }); }
+function metasAno(a) { _mtAno = a; _mtSegs(); carregarMetasEmpresa(true); }
+function _mtHtml(M) {
+  const brl = v => (v == null || isNaN(v)) ? '—' : fmtBRL(v), cor = k => _RES_COR[k] || 'var(--t3)';
+  const luz = k => ({ verde: '🟢', amarelo: '🟡', vermelho: '🔴' })[k] || '⚪';
+  if (!M) return '<div style="color:var(--t3);font-size:11px;padding:8px;">Sem dados.</div>';
+  if (!M.meta.faturamento) return '<div style="font-size:11px;color:var(--t2);padding:8px;">Nenhuma meta definida para ' + M.ano + '. <button class="btn btn-gn" style="font-size:10px;padding:3px 10px;margin-left:6px;" onclick="metasEditar()">Definir meta de faturamento e % de lucro</button></div>';
+  const F = M.faturamento || {}, G = M.margem, C = M.crm, fut = M.situacao === 'futuro';
+  const cards = [];
+  cards.push(_resCartao('Meta de faturamento ' + M.ano, brl(F.meta),
+    fut ? 'o ano ainda não começou' : `realizado <b>${brl(F.realizado)}</b> (${_resFmtPct(F.pct_atingido)}) · esperado até hoje ${brl(F.esperado_ate_hoje)} (${_resFmtPct(M.fracao_ano)} do ano)`, 'var(--blue)'));
+  cards.push(_resCartao(luz(F.semaforo) + ' Falta faturar', brl(F.falta),
+    fut ? (F.por_mes_necessario ? '≈ ' + brl(F.por_mes_necessario) + '/mês' : '') : (F.semaforo === 'verde' ? 'no ritmo ou acima da meta' : F.semaforo === 'amarelo' ? 'um pouco abaixo do ritmo' : 'abaixo do ritmo da meta') + (F.ritmo_pct != null ? ` · ritmo ${_resFmtPct(F.ritmo_pct)}` : '') + (F.por_mes_necessario ? ` · precisa de <b>${brl(F.por_mes_necessario)}/mês</b> nos ${F.meses_restantes} mes(es) restantes` : '') + (F.projecao_fechamento ? ` · no ritmo atual fecha o ano em ${brl(F.projecao_fechamento)}` : ''),
+    cor(F.semaforo)));
+  if (G) cards.push(_resCartao(luz(G.semaforo) + ' Meta de lucro ' + M.ano, _resFmtPct(G.meta_pct) + ' de margem',
+    `realizado <b style="color:${cor(G.semaforo)};">${_resFmtPct(G.realizado_pct)}</b>${G.diferenca_pp != null ? ` (${G.diferenca_pp >= 0 ? '+' : ''}${String(G.diferenca_pp).replace('.', ',')} p.p.)` : ''} · lucro ${brl(G.lucro_realizado)} de ${brl(G.lucro_meta)} na meta`, cor(G.semaforo)));
+  if (C && !C.indisponivel) {
+    const cob = C.cobre_pct_ponderado, cc = cob == null ? 'var(--t3)' : cob >= 100 ? 'var(--green)' : cob >= 60 ? 'var(--gold)' : 'var(--red)';
+    cards.push('<div class="res-card" style="--c:' + cc + ';cursor:pointer;" onclick="metasCrmAbrir()" title="Ver as propostas abertas no CRM"><div class="rl">CRM · pendente para a meta</div><div class="rv" style="color:' + cc + ';">' + brl(C.total_ponderado) + '</div>'
+      + '<div class="rs">ponderado pela etapa · aberto ' + brl(C.total_aberto) + ' em ' + C.qtd + ' negócio(s)' + (cob != null ? ' · cobre <b>' + _resFmtPct(cob) + '</b> do que falta' : '') + '<br><span style="color:var(--blue);">Ver propostas ›</span></div></div>');
+  } else cards.push(_resCartao('CRM · pendente para a meta', '—', C?.indisponivel || 'CRM não respondeu', 'var(--t3)'));
+  return cards.join('');
+}
+async function carregarMetasEmpresa(forcar) {
+  const alvos = ['df_metas', 'live_metas'].map(id => document.getElementById(id)).filter(e => e && e.offsetParent !== null);
+  if (!alvos.length) return; _mtSegs();
+  const ano = _mtAnoSel();
+  if (!forcar && _mtUlt[ano] && Date.now() - _mtUlt[ano].em < 120000) { alvos.forEach(e => e.innerHTML = _mtHtml(_mtUlt[ano].M)); return; }
+  try {
+    const d = await finApi('metas_empresa_status', { ano, ...(forcar ? { _forcar: true } : {}) }, { timeoutMs: 30000 });
+    _mtUlt[ano] = { em: Date.now(), M: d.metas };
+    if (ano !== _mtAnoSel()) return;
+    document.querySelectorAll('#df_metas, #live_metas').forEach(e => e.innerHTML = _mtHtml(d.metas));
+    document.querySelectorAll('.mt-at').forEach(e => e.textContent = (d.metas.erros || []).length ? '⚠ ' + d.metas.erros[0] : 'atualizado ' + new Date().toLocaleTimeString('pt-BR').substring(0, 5));
+  } catch (e) { alvos.forEach(el => el.innerHTML = '<div style="color:var(--red);font-size:11px;padding:8px;">Não consegui calcular as metas: ' + String(e.message || e).replace(/</g, '&lt;') + '</div>'); }
+}
+async function metasEditar() {
+  const ano = _mtAnoSel(), M = _mtUlt[ano]?.M;
+  const f = prompt(`Meta de FATURAMENTO de ${ano} (R$):`, M?.meta?.faturamento ? String(M.meta.faturamento).replace('.', ',') : ''); if (f === null) return;
+  const m = prompt(`Meta de LUCRO de ${ano} — margem líquida em % do faturamento:`, M?.meta?.margem_pct != null ? String(M.meta.margem_pct).replace('.', ',') : '20'); if (m === null) return;
+  try { await finApi('metas_empresa_salvar', { ano, faturamento: parseMoeda(f), margem_pct: _numBR(m) }); toast('Metas de ' + ano + ' salvas', 'success'); _mtUlt = {};
+    try { carregarMetas && carregarMetas(); } catch (_) {} carregarMetasEmpresa(true); }
+  catch (e) { toast('Não salvou: ' + e.message, 'error'); }
+}
+function metasCrmAbrir() {
+  const ano = _mtAnoSel(), M = _mtUlt[ano]?.M, C = M?.crm; if (!C || !C.negocios) return;
+  const brl = v => fmtBRL(v || 0), esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  let ov = document.getElementById('mtCrmModal'); if (ov) ov.remove();
+  ov = document.createElement('div'); ov.id = 'mtCrmModal';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  const F = M.faturamento || {};
+  ov.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:10px;width:min(920px,100%);max-height:88vh;display:flex;flex-direction:column;">'
+    + '<div style="padding:14px 16px;border-bottom:1px solid var(--bd);display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><div style="flex:1;min-width:200px;"><div style="font-family:var(--H);font-size:14px;font-weight:700;">Propostas abertas no CRM · fechamento em ' + ano + '</div>'
+    + '<div style="font-size:10.5px;color:var(--t2);margin-top:2px;">Falta faturar ' + brl(F.falta) + ' · aberto ' + brl(C.total_aberto) + ' · ponderado pela etapa ' + brl(C.total_ponderado) + (C.cobre_pct_ponderado != null ? ' (cobre ' + _resFmtPct(C.cobre_pct_ponderado) + ')' : '') + (C.sem_data ? ' · ' + C.sem_data + ' sem data de fechamento' : '') + (C.sem_valor ? ' · ' + C.sem_valor + ' sem valor' : '') + '</div></div>'
+    + '<button class="btn btn-g" onclick="document.getElementById(\'mtCrmModal\').remove()">Fechar ✕</button></div>'
+    + '<div style="overflow:auto;padding:4px 16px 14px;"><table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="text-align:left;color:var(--t2);font-family:var(--M);font-size:9px;text-transform:uppercase;">'
+    + '<th style="padding:8px 4px;">Negócio</th><th style="padding:8px 4px;">Etapa</th><th style="padding:8px 4px;">Fechamento</th><th style="padding:8px 4px;text-align:right;">Valor</th><th style="padding:8px 4px;text-align:right;">Prob.</th><th style="padding:8px 4px;text-align:right;">Ponderado</th></tr></thead><tbody>'
+    + (C.negocios.length ? C.negocios.map(n => '<tr style="border-top:1px solid var(--bd);"><td style="padding:6px 4px;">' + (n.link ? '<a href="' + n.link + '" target="_blank" rel="noopener" style="color:var(--blue);">' + esc(n.nome) + '</a>' : esc(n.nome)) + '</td><td style="padding:6px 4px;color:var(--t2);">' + esc(n.etapa) + '</td><td style="padding:6px 4px;color:var(--t2);font-family:var(--M);">' + (n.fechamento ? n.fechamento.split('-').reverse().join('/') : '<span style="color:var(--gold);">sem data</span>') + '</td><td style="padding:6px 4px;text-align:right;font-family:var(--M);">' + (n.valor ? brl(n.valor) : '<span style="color:var(--gold);">sem valor</span>') + '</td><td style="padding:6px 4px;text-align:right;">' + n.probabilidade + '%</td><td style="padding:6px 4px;text-align:right;font-family:var(--M);font-weight:600;">' + brl(n.ponderado) + '</td></tr>').join('')
+      : '<tr><td colspan="6" style="padding:16px;text-align:center;color:var(--t3);">Nenhuma proposta aberta com fechamento em ' + ano + '.</td></tr>')
+    + '</tbody></table></div></div>';
+  document.body.appendChild(ov);
+}
 async function carregarDashboardFinanceiro() {
   popularSeletoresConta(); // v1.67
   const st = document.getElementById('dfStatus'); const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
@@ -27634,6 +27707,7 @@ async function carregarDashboardFinanceiro() {
     const brl = v => (v == null || isNaN(v)) ? '—' : fmtBRL(v);
     u('df_saldo', brl(c.saldo)); u('df_receber', brl(c.a_receber)); u('df_pagar', brl(c.a_pagar));
     // v3.112: resultado da empresa (faturamento, lucro, EBITDA, margens) + fôlego de caixa
+    try { carregarMetasEmpresa(!!window._dfForcarMetas); } catch (_) {}
     { const R = x.resultado, box = document.getElementById('df_res');
       if (box) box.innerHTML = _resCardsHtml(R, 'dash');
       const nt = document.getElementById('df_res_nota'); if (nt) nt.innerHTML = _resNota(R);
@@ -27652,7 +27726,7 @@ async function carregarDashboardFinanceiro() {
       else { u('df_orc', dsp.utilizacao_pct != null ? dsp.utilizacao_pct + '%' : '—');
         u('df_orc_sub', 'despesa ' + brl(dsp.realizado) + ' de ' + brl(dsp.orcado_ate_hoje) + ' orçados até hoje' + (rec.orcado_ate_hoje ? ' · receita ' + (rec.utilizacao_pct ?? '—') + '% da meta' : '')); } }
     u('df_conc', cc.taxa != null ? (String(cc.taxa).replace('%','') + '%') : (cc.erro ? 'n/d' : '—')); // dem_muyzjr88clbc: sem conciliação no período não é "0"
-    u('df_conc_sub', cc.erro ? ('indisponível: ' + String(cc.erro).substring(0, 60)) : (cc.taxa != null ? (cc.conciliados ?? 0) + ' batidos · ' + (cc.rejeitadas ?? cc.pendentes ?? 0) + ' rejeitados (60d)' : 'nenhuma conciliação nos últimos 60 dias'));
+    u('df_conc_sub', cc.erro ? ('indisponível: ' + String(cc.erro).substring(0, 60)) : (cc.taxa != null ? (cc.conciliados ?? 0) + ' de ' + (cc.movimentos ?? '?') + ' movimentos do banco conciliados (60 dias)' : 'sem movimentos do banco nos últimos 60 dias')); // v3.113
     // v3.91 FIX: somava colunas antigas do Kanban (nf_emitida/aguardando_pagamento) — os marcos estão nas colunas novas
     { const ab = Object.entries(mk).filter(([k]) => k !== 'concluido'); const val = ab.reduce((a, [, v]) => a + (v.valor || 0), 0), qtd = ab.reduce((a, [, v]) => a + (v.qtd || 0), 0);
       const top = ab.filter(([, v]) => v.qtd).sort((a, b) => (b[1].valor || 0) - (a[1].valor || 0)).slice(0, 2).map(([k, v]) => (v.label || k) + ' ' + brl(v.valor)).join(' · ');
@@ -30035,7 +30109,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.112] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.113] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -30051,7 +30125,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.112';
+window.__ATX_BUILD_ID__ = 'ATX-v3.113';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
