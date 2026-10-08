@@ -431,6 +431,12 @@ tr:hover td{background:rgba(79,124,255,.03);}
 .sg-arr.open{transform:rotate(180deg);}
 .sg-body{overflow:hidden;transition:max-height .3s ease;max-height:2000px;}
 .sg-body.closed{max-height:0;}
+.res-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:10px;}
+.res-card{background:var(--bg4);border:1px solid var(--bd);border-left:3px solid var(--c,var(--blue));border-radius:8px;padding:10px 12px;min-width:0;}
+.res-card .rl{font-family:var(--M);font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--t2);}
+.res-card .rv{font-family:var(--H);font-size:20px;font-weight:700;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.res-card .rs{font-size:10px;color:var(--t3);margin-top:3px;line-height:1.45;}
+.res-card .rs b{color:var(--t1);font-weight:600;}
 .sg-body .sbi{padding:6px 10px 6px 22px;font-size:11px;margin:1px 6px;border-radius:5px;}
 .sbi.s3.active{color:var(--green);border-left-color:var(--green);background:rgba(34,211,163,.08);}
 .sbi.s3{color:var(--t1);}
@@ -768,6 +774,19 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="pb" id="sfConteudo"><div style="font-family:var(--M);font-size:10px;color:var(--t3);">Carregando resumo da semana…</div></div>
     </div>
 
+    <!-- v3.112: RESULTADO DA EMPRESA AO VIVO — faturamento, lucro, EBITDA, margens (QuickBooks) + caixa, fôlego, liquidez e ROE -->
+    <div class="panel" id="liveResPanel" style="margin-bottom:13px;border-color:rgba(34,211,163,.35);">
+      <div class="ph" style="flex-wrap:wrap;row-gap:6px;"><div class="pt">&#128200; Resultado da empresa · ao vivo</div><span class="tag live">QuickBooks</span>
+        <span id="liveResAt" style="font-family:var(--M);font-size:9px;color:var(--t3);margin-left:8px;"></span>
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn btn-g" id="liveResBtn" style="font-size:9px;padding:3px 9px;white-space:nowrap;" onclick="carregarResultadoLive(true)">&#8635; Atualizar</button>
+          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;white-space:nowrap;" onclick="nav('s3dashboard',document.querySelector('.sbi[onclick*=&quot;s3dashboard&quot;]'))">Dashboard Financeiro &#8594;</button>
+        </div></div>
+      <div class="pb"><div class="res-grid" id="liveRes"><div style="color:var(--t3);font-size:11px;padding:8px;">Carregando faturamento, lucro e margem do QuickBooks…</div></div>
+        <div class="res-grid" id="liveRes2" style="margin-top:10px;"></div>
+        <div id="liveResNota" style="font-size:9.5px;color:var(--t3);margin-top:8px;"></div></div>
+    </div>
+
     <!-- META FINANCEIRA UNICA DA EMPRESA -->
     <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(79,124,255,.08));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;">
       <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
@@ -812,7 +831,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
         <!-- EDICAO RAPIDA DAS METAS -->
         <div style="flex-shrink:0;">
-          <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--t2);margin-bottom:6px;">Atualizar Realizacao</div>
+          <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--t2);margin-bottom:6px;">Ajuste manual (o QuickBooks atualiza sozinho)</div>
           <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
             <input class="fi" id="inputRealAnual" placeholder="R$ anual realizado" style="width:160px;font-size:11px;padding:5px 8px;"/>
             <button class="btn btn-gn" style="font-size:10px;padding:4px 9px;white-space:nowrap;" onclick="atualizarMetas()">OK</button>
@@ -3169,7 +3188,14 @@ tr:hover td{background:rgba(79,124,255,.03);}
     <div class="kpi bl"><div class="kl">Saldo em caixa</div><div class="kv" id="df_saldo">—</div><div class="ks">hoje · extrato real (mesma base do Fluxo Detalhado)</div></div>
     <div class="kpi gn"><div class="kl">A receber</div><div class="kv" id="df_receber">—</div><div class="ks">faturas em aberto</div></div>
     <div class="kpi rd"><div class="kl">A pagar</div><div class="kv" id="df_pagar">—</div><div class="ks">contas em aberto</div></div>
-    <div class="kpi pu"><div class="kl">Receita do período</div><div class="kv" id="df_recmes">—</div><div class="ks" id="df_recano">ano: —</div></div>
+    <div class="kpi pu"><div class="kl">Fôlego de caixa</div><div class="kv" id="df_runway">—</div><div class="ks" id="df_runway_sub">caixa ÷ queima líquida mensal</div></div>
+  </div>
+  <!-- v3.112: RESULTADO DA EMPRESA — faturamento, lucro e margens (DRE do QuickBooks, competência), período × ano -->
+  <div class="panel" style="margin-bottom:12px;border-color:rgba(34,211,163,.35);">
+    <div class="ph"><div class="pt">&#128200; Resultado da empresa · <span id="df_res_periodo" style="color:var(--t2);font-weight:400;"></span></div><span class="tag live">QuickBooks</span>
+      <span id="df_res_meta" style="font-size:9.5px;color:var(--t3);margin-left:auto;"></span></div>
+    <div class="pb"><div class="res-grid" id="df_res"><div style="color:var(--t3);font-size:11px;padding:10px;">Carregando...</div></div>
+      <div id="df_res_nota" style="font-size:9.5px;color:var(--t3);margin-top:8px;"></div></div>
   </div>
   <div class="kg k4" style="margin-bottom:12px;">
     <div class="kpi gd"><div class="kl">Saúde financeira</div><div class="kv" id="df_semaforo">—</div><div class="ks" id="df_semaforo_sub">semáforo automático</div></div>
@@ -4913,9 +4939,9 @@ tr:hover td{background:rgba(79,124,255,.03);}
     </div>
 
     <div class="kg k3" style="margin-bottom:12px;">
-      <div class="kpi pk"><div class="kl">EBITDA</div><div class="kv" id="s3_ebitda">&mdash;</div><div class="ks">mes atual</div></div>
-      <div class="kpi pk"><div class="kl">Margem Liquida</div><div class="kv" id="s3_margem">&mdash;</div><div class="ks">% lucro/receita</div></div>
-      <div class="kpi pk"><div class="kl">ROI Total</div><div class="kv" id="s3_roi">&mdash;</div><div class="ks" id="s3_roi_sub">lucro &divide; patrim&ocirc;nio l&iacute;quido</div></div>
+      <div class="kpi pk"><div class="kl">EBITDA</div><div class="kv" id="s3_ebitda">&mdash;</div><div class="ks" id="s3_ebitda_sub">mês atual</div></div>
+      <div class="kpi pk"><div class="kl">Margem Líquida</div><div class="kv" id="s3_margem">&mdash;</div><div class="ks" id="s3_margem_sub">% lucro/faturamento</div></div>
+      <div class="kpi pk"><div class="kl">ROE no ano</div><div class="kv" id="s3_roi">&mdash;</div><div class="ks" id="s3_roi_sub">lucro &divide; patrim&ocirc;nio l&iacute;quido</div></div>
       <div class="kpi pk"><div class="kl">Liquidez Corrente</div><div class="kv" id="s3_liq">&mdash;</div><div class="ks">ideal &gt; 1.5</div></div>
       <div class="kpi pk"><div class="kl">Runway</div><div class="kv" id="s3_runway">&mdash;</div><div class="ks">meses de caixa</div></div>
       <div class="kpi gd"><div class="kl">Contas a Receber</div><div class="kv" id="s3_backlog">&mdash;</div><div class="ks">em aberto</div></div>
@@ -5799,7 +5825,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   } catch (_) {}
 });
-function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s0usuarios:'/ Acesso · Usuários × Perfil',s0perfis:'/ Acesso · Perfis',s0telas:'/ Acesso · Telas',s0perfiltelas:'/ Acesso · Perfil × Telas',s0demandas:'/ S0 · Esteira de Demandas IA',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9agenda:'/ S9 · Agenda do GP',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1bp:'/ S1 · Business Plan',qa:'/ Agente de QA e Segurança',s1fundador:'/ S1 · Inbox do Fundador',s1comercial:'/ S1 · Politica Comercial',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7clientes:'/ S7 · Clientes do CRM',s7mapa:'/ S7 · Mapa de Atuacao Comercial',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7feed:'/ S7 · Feed de Prospeccao',s7cartao:'/ S7 · Meu Cartao Digital',s7kpi:'/ S7 Metas',s7painel:'/ S7 · Painel de Vendas IA',s7propostas:'/ S7 · Elaboração de Propostas',s5contratos:'/ S5 · Análise de Contratos',s3kpis:'/ S3 · KPIs de Saúde Financeira',s4crm:'/ S4 · Vendas CRM — Metas e Pipeline',s5juridico:'/ S5 · Jurídico e Compliance',s6dev:'/ S6 · Desenvolvimento, QA e Versões',s6qa:'/ S6 · Agente de QA Visual',s8rh:'/ S8 · Departamento Pessoal',s9projetos:'/ S9 · Gestão de Projetos',s10atend:'/ S10 · Atendimento Omnichannel',s11sales:'/ S11 · Inside Sales + SDR',s12hub:'/ S12 · Engenharia de Dados',s12novo:'/ S12 · Novo Projeto de Dados',s12modelagem:'/ S12 · Modelagem DW + Data Marts',s13hub:'/ S13 · Dashboard Studio',s13novo:'/ S13 · Novo Dashboard',s13mockup:'/ S13 · Mockup Interativo',s13codigo:'/ S13 · Código do Dashboard'};document.getElementById('tbc').textContent=lb[p]||(pg?'/ '+((pg.querySelector('[style*="font-family:var(--H)"]')||pg.querySelector('.pt')||{}).textContent||'').trim().substring(0,60):'');if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7pipe'||p==='dash')loadKPIs();if(p==='dash')setTimeout(_dashRfpCache,200);if(p==='dash')setTimeout(()=>{try{carregarSemanaFoco();}catch(_){}},350);if(p==='dash')setTimeout(()=>{try{carregarMarcosAlertaDash();}catch(_){}},300);if(p==='dash')setTimeout(()=>{try{carregarReceitaRiscoDash();}catch(_){}},250);if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7clientes')setTimeout(carregarClientes,150);if(p==='s1comercial')setTimeout(comCarregar,150);if(p==='s7kpi')setTimeout(carregarSemaforoComercial,150);if(p==='s7feed')setTimeout(feedListar,150);if(p==='s7cartao')setTimeout(cartaoCarregar,150);if(p==='s7meet')setTimeout(carregarBriefings,150);if(p==='s7mapa')setTimeout(_mpPopularClientes,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();/* v3.94: s2wa não chama mais o agente ao abrir (10s+); só no clique em "Gerar mensagens" */if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s2social')setTimeout(_smCarregarMetricas,150);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(carregarRealizado,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9agenda')setTimeout(carregarAgendaGP,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{carregarRealizado();}catch(_){}},150);if(p==='s3projetado')setTimeout(()=>{try{gerarProjetado();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);if(p==='s1bp'){setTimeout(bpInit,150);if(_bpAba==='atlantyx')setTimeout(()=>{_bpAtxCarregado=_bpAtxCarregado&&!!_bpAtual;bpAtlantyx();},200);}if(p==='qa')setTimeout(qaAbrir,50);if(p==='s0demandas')setTimeout(demandasAbrir,50);if(/^s0(usuarios|perfis|telas|perfiltelas)$/.test(p))setTimeout(()=>acessoAbrir(p),30);if(p==='s7painel'||p==='s7propostas')setTimeout(()=>vendasAbrir(p),50);if(p==='s2auto')setTimeout(_acCtaInit,80);if(p==='s5contratos')setTimeout(juridicoAbrir,50);if(p==='s1dados')setTimeout(s1DadosStatus,80);if(/^s1(dash|intel|plano|acoes|cenarios|okr|relatorio|riscos|financeiro|mercado|dados)$/.test(p))setTimeout(s1HistBotoes,60);if(p==='s2rfps'){window._rfpSoCache=true;setTimeout(runRfpMonitorAtualizado,150);}}
+function nav(p,el){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s0usuarios:'/ Acesso · Usuários × Perfil',s0perfis:'/ Acesso · Perfis',s0telas:'/ Acesso · Telas',s0perfiltelas:'/ Acesso · Perfil × Telas',s0demandas:'/ S0 · Esteira de Demandas IA',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9agenda:'/ S9 · Agenda do GP',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1bp:'/ S1 · Business Plan',qa:'/ Agente de QA e Segurança',s1fundador:'/ S1 · Inbox do Fundador',s1comercial:'/ S1 · Politica Comercial',s1okr:'/ S1 · OKRs',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7clientes:'/ S7 · Clientes do CRM',s7mapa:'/ S7 · Mapa de Atuacao Comercial',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7feed:'/ S7 · Feed de Prospeccao',s7cartao:'/ S7 · Meu Cartao Digital',s7kpi:'/ S7 Metas',s7painel:'/ S7 · Painel de Vendas IA',s7propostas:'/ S7 · Elaboração de Propostas',s5contratos:'/ S5 · Análise de Contratos',s3kpis:'/ S3 · KPIs de Saúde Financeira',s4crm:'/ S4 · Vendas CRM — Metas e Pipeline',s5juridico:'/ S5 · Jurídico e Compliance',s6dev:'/ S6 · Desenvolvimento, QA e Versões',s6qa:'/ S6 · Agente de QA Visual',s8rh:'/ S8 · Departamento Pessoal',s9projetos:'/ S9 · Gestão de Projetos',s10atend:'/ S10 · Atendimento Omnichannel',s11sales:'/ S11 · Inside Sales + SDR',s12hub:'/ S12 · Engenharia de Dados',s12novo:'/ S12 · Novo Projeto de Dados',s12modelagem:'/ S12 · Modelagem DW + Data Marts',s13hub:'/ S13 · Dashboard Studio',s13novo:'/ S13 · Novo Dashboard',s13mockup:'/ S13 · Mockup Interativo',s13codigo:'/ S13 · Código do Dashboard'};document.getElementById('tbc').textContent=lb[p]||(pg?'/ '+((pg.querySelector('[style*="font-family:var(--H)"]')||pg.querySelector('.pt')||{}).textContent||'').trim().substring(0,60):'');if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7pipe'||p==='dash')loadKPIs();if(p==='dash')setTimeout(_dashRfpCache,200);if(p==='dash')setTimeout(()=>{try{carregarResultadoLive();}catch(_){}},180);if(p==='dash')setTimeout(()=>{try{carregarSemanaFoco();}catch(_){}},350);if(p==='dash')setTimeout(()=>{try{carregarMarcosAlertaDash();}catch(_){}},300);if(p==='dash')setTimeout(()=>{try{carregarReceitaRiscoDash();}catch(_){}},250);if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7clientes')setTimeout(carregarClientes,150);if(p==='s1comercial')setTimeout(comCarregar,150);if(p==='s7kpi')setTimeout(carregarSemaforoComercial,150);if(p==='s7feed')setTimeout(feedListar,150);if(p==='s7cartao')setTimeout(cartaoCarregar,150);if(p==='s7meet')setTimeout(carregarBriefings,150);if(p==='s7mapa')setTimeout(_mpPopularClientes,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();/* v3.94: s2wa não chama mais o agente ao abrir (10s+); só no clique em "Gerar mensagens" */if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s2social')setTimeout(_smCarregarMetricas,150);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(carregarRealizado,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9agenda')setTimeout(carregarAgendaGP,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{carregarRealizado();}catch(_){}},150);if(p==='s3projetado')setTimeout(()=>{try{gerarProjetado();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);if(p==='s1bp'){setTimeout(bpInit,150);if(_bpAba==='atlantyx')setTimeout(()=>{_bpAtxCarregado=_bpAtxCarregado&&!!_bpAtual;bpAtlantyx();},200);}if(p==='qa')setTimeout(qaAbrir,50);if(p==='s0demandas')setTimeout(demandasAbrir,50);if(/^s0(usuarios|perfis|telas|perfiltelas)$/.test(p))setTimeout(()=>acessoAbrir(p),30);if(p==='s7painel'||p==='s7propostas')setTimeout(()=>vendasAbrir(p),50);if(p==='s2auto')setTimeout(_acCtaInit,80);if(p==='s5contratos')setTimeout(juridicoAbrir,50);if(p==='s1dados')setTimeout(s1DadosStatus,80);if(/^s1(dash|intel|plano|acoes|cenarios|okr|relatorio|riscos|financeiro|mercado|dados)$/.test(p))setTimeout(s1HistBotoes,60);if(p==='s2rfps'){window._rfpSoCache=true;setTimeout(runRfpMonitorAtualizado,150);}}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -9827,7 +9853,7 @@ async function carregarReceitaRiscoDash(forcar) {
 // Dashboard LIVE é a tela inicial: carrega o widget ao abrir o sistema
 window.addEventListener('DOMContentLoaded', () => setTimeout(() => {
   const pg = document.getElementById('page-dash');
-  if (pg && pg.classList.contains('active')) { try { carregarReceitaRiscoDash(); } catch (_) {} try { _dashRfpUrgentes(); } catch (_) {} try { carregarMarcosAlertaDash(); } catch (_) {} try { carregarSemanaFoco(); } catch (_) {} }
+  if (pg && pg.classList.contains('active')) { try { carregarResultadoLive(); } catch (_) {} try { carregarReceitaRiscoDash(); } catch (_) {} try { _dashRfpUrgentes(); } catch (_) {} try { carregarMarcosAlertaDash(); } catch (_) {} try { carregarSemanaFoco(); } catch (_) {} }
 }, 2500));
 
 // ═══ dem_muwmozw1hkd7: SEMANA EM FOCO — resumo executivo semanal no Dashboard LIVE ═══
@@ -19136,9 +19162,11 @@ function renderKpisSaude(k) {
   _ultimoKpi = k;
   const u = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   u('s3_ebitda', k.ebitda_mes != null ? fmtBRL(k.ebitda_mes) : '—');
-  u('s3_margem', k.margem_liquida_pct != null ? k.margem_liquida_pct + '%' : '—');
-  u('s3_roi', k.roi_pct != null ? k.roi_pct + '%' : 'n/d'); // v1.20.7 FIX: era igual à margem líquida; agora é lucro/patrimônio líquido
-  { const subRoi = document.getElementById('s3_roi_sub'); if (subRoi) subRoi.textContent = k.roi_pct != null ? 'lucro ÷ patrimônio líquido' : (k.patrimonio_liquido == null ? 'sem dado de patrimônio no QB' : 'lucro ÷ patrimônio líquido'); }
+  u('s3_ebitda_sub', 'mês atual' + (k.ebitda_margem_pct != null ? ' · margem ' + _resFmtPct(k.ebitda_margem_pct) : '') + (k.ebitda_ano != null ? ' · ano ' + fmtBRL(k.ebitda_ano) : ''));
+  u('s3_margem', k.margem_liquida_pct != null ? _resFmtPct(k.margem_liquida_pct) : '—');
+  u('s3_margem_sub', 'mês até hoje' + (k.margem_liquida_ano_pct != null ? ' · no ano ' + _resFmtPct(k.margem_liquida_ano_pct) : ''));
+  u('s3_roi', k.roi_pct != null ? _resFmtPct(k.roi_pct) : 'n/d'); // v1.20.7 FIX: era igual à margem líquida; agora é lucro/patrimônio líquido
+  { const subRoi = document.getElementById('s3_roi_sub'); if (subRoi) subRoi.textContent = k.roi_pct != null ? 'lucro do ano ÷ patrimônio líquido' : (k.patrimonio_liquido == null ? 'sem dado de patrimônio no QB' : 'patrimônio líquido ≤ 0 — ROE não se aplica'); }
   u('s3_liq', k.liquidez_corrente != null ? k.liquidez_corrente : '—');
   u('s3_runway', k.runway_meses != null ? (k.runway_meses === 999 ? '∞' : k.runway_meses === 0 && k.saldo_caixa <= 0 ? '0m ⚠' : k.runway_meses + 'm') : '—'); // v1.20.7 FIX: caixa negativo agora mostra 0m em vez de sumir
   u('s3_backlog', fmtBRL(k.contas_receber));
@@ -19154,13 +19182,13 @@ function renderKpisSaude(k) {
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;">
         <div><div style="color:var(--t2);font-size:9px;font-family:var(--M);text-transform:uppercase;">Saldo de Caixa</div><div style="font-family:var(--M);font-size:14px;font-weight:600;">${fmtBRLcompleto(k.saldo_caixa)}</div></div>
-        <div><div style="color:var(--t2);font-size:9px;font-family:var(--M);text-transform:uppercase;">Receita do Mês</div><div style="font-family:var(--M);font-size:14px;font-weight:600;color:var(--green);">${fmtBRLcompleto(k.receita_mes)}</div></div>
-        <div><div style="color:var(--t2);font-size:9px;font-family:var(--M);text-transform:uppercase;">Despesas do Mês</div><div style="font-family:var(--M);font-size:14px;font-weight:600;color:var(--red);">${fmtBRLcompleto(k.despesa_mes)}</div></div>
-        <div><div style="color:var(--t2);font-size:9px;font-family:var(--M);text-transform:uppercase;">Burn Rate Mensal</div><div style="font-family:var(--M);font-size:14px;font-weight:600;">${fmtBRLcompleto(k.burn_rate_mensal)}</div></div>
+        <div><div style="color:var(--t2);font-size:9px;font-family:var(--M);text-transform:uppercase;">Faturamento do Mês</div><div style="font-family:var(--M);font-size:14px;font-weight:600;color:var(--green);">${fmtBRLcompleto(k.receita_mes)}</div></div>
+        <div><div style="color:var(--t2);font-size:9px;font-family:var(--M);text-transform:uppercase;">Gastos do Mês</div><div style="font-family:var(--M);font-size:14px;font-weight:600;color:var(--red);">${fmtBRLcompleto(k.despesa_mes)}</div></div>
+        <div><div style="color:var(--t2);font-size:9px;font-family:var(--M);text-transform:uppercase;">Gasto Médio Mensal (3m)</div><div style="font-family:var(--M);font-size:14px;font-weight:600;">${fmtBRLcompleto(k.burn_rate_mensal)}</div></div>
         <div><div style="color:var(--t2);font-size:9px;font-family:var(--M);text-transform:uppercase;">Working Capital</div><div style="font-family:var(--M);font-size:14px;font-weight:600;">${fmtBRLcompleto(k.working_capital)}</div></div>
         <div><div style="color:var(--t2);font-size:9px;font-family:var(--M);text-transform:uppercase;">Cobertura Desp. Fixas</div><div style="font-family:var(--M);font-size:14px;font-weight:600;">${k.cobertura_despesas_fixas !== null ? k.cobertura_despesas_fixas + 'x' : '—'}</div></div>
       </div>
-      ${k.semaforo_motivos.length ? `
+      ${(k.semaforo_motivos || []).length ? `
         <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--bd);">
           ${k.semaforo_motivos.map(m => `<div style="font-size:10px;color:var(--t2);margin:2px 0;">• ${m}</div>`).join('')}
         </div>
@@ -27486,13 +27514,96 @@ function _dashIntervalo() {
   return { de: f(new Date(ano, mes - 1, 1)), ate: f(new Date(ano, mes, 0)) };
 }
 // dem_muv797a83sn4: painéis que nascem "Carregando..." — todos saem desse estado em qualquer desfecho
-const _DF_PAINEIS = ['df_social', 'df_pr', 'df_fluxo', 'df_kpis', 'df_lanc'];
+const _DF_PAINEIS = ['df_res', 'df_social', 'df_pr', 'df_fluxo', 'df_kpis', 'df_lanc'];
 let _dfSeq = 0;
 // HTTP 0 / timeout viram mensagem legível; os demais erros seguem com o texto original
 function _dfErroLegivel(e) {
   if (!e || !(e.timeout || e.semConexao || e.httpStatus === 0 || e.name === 'AbortError')) return e;
   const n = new Error('Sem conexão — tente novamente' + (e.timeout ? ' (o servidor não respondeu em ' + Math.round(_FIN_TIMEOUT_MS / 1000) + 's)' : ' (rede indisponível ou servidor fora do ar)'));
   n.timeout = e.timeout; n.httpStatus = 0; return n;
+}
+// ═══ v3.112: RESULTADO DA EMPRESA — cartões de faturamento, lucro, EBITDA e margens (Dashboard Financeiro e Dashboard LIVE) ═══
+// Fonte única: /api/financeiro resultado_kpis (DRE do QuickBooks em competência, lida pelos grupos de seção).
+const _RES_COR = { verde: 'var(--green)', amarelo: 'var(--gold)', vermelho: 'var(--red)', cinza: 'var(--t3)' };
+function _resFmtPct(v) { return v == null || !isFinite(v) ? '—' : String(Math.round(v * 10) / 10).replace('.', ',') + '%'; }
+function _resData(d) { return String(d || '').split('-').reverse().join('/'); }
+function _resCartao(rot, val, sub, cor, titulo) {
+  return '<div class="res-card" style="--c:' + cor + ';"' + (titulo ? ' title="' + String(titulo).replace(/"/g, '&quot;') + '"' : '') + '><div class="rl">' + rot + '</div><div class="rv" style="color:' + cor + ';">' + val + '</div><div class="rs">' + (sub || '') + '</div></div>';
+}
+// modo 'dash' = Dashboard Financeiro (período escolhido × ano) · modo 'live' = mês corrente × ano, mais compacto
+function _resCardsHtml(R, modo) {
+  const brl = v => (v == null || isNaN(v)) ? '—' : fmtBRL(v);
+  if (!R) return '<div style="color:var(--t3);font-size:11px;padding:8px;">Sem dados de resultado.</div>';
+  if (R.qb_configurado === false) return '<div style="color:var(--gold);font-size:11px;padding:8px;">QuickBooks não conectado — conecte para ver faturamento, lucro e margem.</div>';
+  const P = R.periodo_res, A = R.ano_res, meta = R.meta_margem || { pct: 20 };
+  if (!P && !A) return '<div style="color:var(--red);font-size:11px;padding:8px;">Não consegui ler a DRE do QuickBooks' + ((R.erros || []).length ? ': ' + String(R.erros[0]).replace(/</g, '&lt;') : '') + '.</div>';
+  const lblP = modo === 'live' ? 'do mês' : 'do período', anoTxt = 'ano ' + String(R.ano?.de || '').substring(0, 4);
+  const corLuc = v => v == null ? 'var(--t3)' : v < 0 ? 'var(--red)' : 'var(--green)';
+  const corMg = v => v == null ? 'var(--t3)' : v < 0 ? 'var(--red)' : v < meta.pct ? 'var(--gold)' : 'var(--green)';
+  const p = P || {}, a = A || {};
+  const futuro = R.periodo && R.periodo.futuro;
+  const cards = [
+    _resCartao('Faturamento ' + lblP, futuro ? '—' : brl(p.faturamento), futuro ? 'período ainda não começou' : anoTxt + ': <b>' + brl(a.faturamento) + '</b>', 'var(--blue)', 'Receita da DRE do QuickBooks (competência = notas emitidas)'),
+    _resCartao('Lucro bruto', futuro ? '—' : brl(p.lucro_bruto), 'margem bruta <b>' + _resFmtPct(p.margem_bruta_pct) + '</b> · ' + anoTxt + ' ' + _resFmtPct(a.margem_bruta_pct), corLuc(p.lucro_bruto), 'Faturamento − custo dos serviços prestados (COGS)'),
+    _resCartao('EBITDA', futuro ? '—' : brl(p.ebitda), 'margem <b>' + _resFmtPct(p.margem_ebitda_pct) + '</b> · ' + anoTxt + ' ' + brl(a.ebitda), corLuc(p.ebitda), 'Lucro líquido + depreciação/amortização + juros/despesas financeiras + IR/CSLL − receitas financeiras'),
+    _resCartao('Lucro líquido ' + lblP, futuro ? '—' : brl(p.lucro_liquido), anoTxt + ': <b style="color:' + corLuc(a.lucro_liquido) + ';">' + brl(a.lucro_liquido) + '</b>', corLuc(p.lucro_liquido), 'Lucro líquido da DRE do QuickBooks'),
+    _resCartao('Margem líquida ' + lblP, futuro ? '—' : _resFmtPct(p.margem_liquida_pct), 'meta <b>' + _resFmtPct(meta.pct) + '</b> · ' + anoTxt + ' <b style="color:' + corMg(a.margem_liquida_pct) + ';">' + _resFmtPct(a.margem_liquida_pct) + '</b>', corMg(p.margem_liquida_pct), 'Lucro líquido ÷ faturamento. Meta: ' + (meta.fonte || '')),
+  ];
+  return cards.join('');
+}
+function _resNota(R) {
+  if (!R) return '';
+  const aj = R.periodo_res?.ajustes_ebitda || {}, brl = v => fmtBRL(v || 0);
+  const ajTxt = [aj.depreciacao_amortizacao ? 'depreciação ' + brl(aj.depreciacao_amortizacao) : '', aj.juros_despesas_financeiras ? 'juros/financeiras ' + brl(aj.juros_despesas_financeiras) : '', aj.ir_csll ? 'IR/CSLL ' + brl(aj.ir_csll) : '', aj.receitas_financeiras ? '− receitas financeiras ' + brl(aj.receitas_financeiras) : ''].filter(Boolean).join(' · ');
+  return 'DRE do QuickBooks em regime de competência · ' + (R.periodo ? _resData(R.periodo.de) + ' a ' + _resData(R.periodo.ate) + (R.periodo.parcial ? ' (até hoje)' : '') : '')
+    + ' · acumulado do ano até ' + _resData(R.ano?.ate) + (ajTxt ? ' · ajustes do EBITDA: ' + ajTxt : ' · EBITDA = lucro líquido (sem depreciação, juros ou IR lançados no período)')
+    + ((R.erros || []).length ? ' · <span style="color:var(--gold);">⚠ ' + R.erros.join(' · ').replace(/</g, '&lt;') + '</span>' : '');
+}
+// v3.112: Dashboard LIVE — resultado da empresa (mês corrente × ano) e indicadores de caixa; o "realizado" das metas vem do QuickBooks
+let _liveResSeq = 0, _liveKpi = null, _liveKpiEm = 0, _liveResEm = 0;
+async function carregarResultadoLive(forcar) {
+  const box = document.getElementById('liveRes'); if (!box) return;
+  if (!forcar && Date.now() - _liveResEm < 60000) return; // evita recarregar a cada clique no menu
+  _liveResEm = Date.now();
+  const seq = ++_liveResSeq, btn = document.getElementById('liveResBtn'), at = document.getElementById('liveResAt');
+  if (btn) btn.disabled = true; if (at) at.textContent = '⏳ atualizando...';
+  const pinta = (R, cache) => {
+    box.innerHTML = _resCardsHtml(R, 'live');
+    const nt = document.getElementById('liveResNota'); if (nt) nt.innerHTML = _resNota(R);
+    if (at) { at.textContent = cache && cache.stale ? 'dados de ' + Math.round(cache.idade_s / 60) + ' min atrás — atualizando…' : 'atualizado ' + new Date().toLocaleTimeString('pt-BR').substring(0, 5); }
+    // metas da empresa: realizado mensal/anual = faturamento do QuickBooks (antes era digitado à mão)
+    if (R && R.periodo_res && R.ano_res && typeof DB !== 'undefined' && DB.get) {
+      DB.get('metas', {}).then(m => { m = m || {}; m.realMensal = R.periodo_res.faturamento || 0; m.realAnual = R.ano_res.faturamento || 0; m.real_fonte = 'QuickBooks'; m.real_em = new Date().toISOString();
+        try { atualizarBarras(m); } catch (_) {} return DB.set('metas', m); }).catch(() => {});
+    }
+  };
+  try {
+    const d = await finApi('resultado_kpis', forcar ? { _forcar: true } : {}, { timeoutMs: 25000 });
+    if (seq !== _liveResSeq) return;
+    pinta(d.resultado, d._cache);
+    if (d._cache && d._cache.stale) { const d2 = await finApi('resultado_kpis', { _forcar: true }, { timeoutMs: 25000 }).catch(() => null); if (d2 && seq === _liveResSeq) pinta(d2.resultado, null); }
+  } catch (e) {
+    if (seq !== _liveResSeq) return;
+    box.innerHTML = '<div style="color:var(--red);font-size:11px;padding:8px;">Não consegui ler o resultado no QuickBooks: ' + String(e.message || e).replace(/</g, '&lt;') + ' <button class="btn btn-g" style="font-size:9px;padding:2px 8px;margin-left:6px;" onclick="carregarResultadoLive(true)">Tentar de novo</button></div>';
+    if (at) at.textContent = '';
+  } finally { if (btn) btn.disabled = false; }
+  // segunda linha: caixa, fôlego, liquidez, ROE e saúde (KPIs de Saúde; cálculo mais pesado → guardado por 5 min)
+  const b2 = document.getElementById('liveRes2'); if (!b2) return;
+  const pinta2 = k => {
+    const brl = v => (v == null || isNaN(v)) ? '—' : fmtBRL(v), rw = k.runway_meses;
+    const semCor = { verde: ['🟢 Saudável', 'var(--green)'], amarelo: ['🟡 Atenção', 'var(--gold)'], vermelho: ['🔴 Crítico', 'var(--red)'], cinza: ['⚪ Sem dados', 'var(--t3)'] }[k.semaforo || 'cinza'];
+    b2.innerHTML = [
+      _resCartao('Saldo em caixa', brl(k.saldo_caixa), 'hoje · a receber ' + brl(k.contas_receber) + ' · a pagar ' + brl(k.contas_pagar), k.saldo_caixa < 0 ? 'var(--red)' : 'var(--blue)'),
+      _resCartao('Fôlego de caixa', rw == null ? '—' : rw >= 999 ? '∞' : String(rw).replace('.', ',') + ' meses', rw == null ? 'sem dados' : rw >= 999 ? 'faturamento cobre os gastos (média 3 meses)' : 'queima líquida ' + brl(k.burn_liquido_mensal) + '/mês', rw == null ? 'var(--t3)' : rw >= 12 ? 'var(--green)' : rw >= 6 ? 'var(--gold)' : 'var(--red)', 'Caixa ÷ (gasto médio − faturamento médio) dos 3 últimos meses fechados'),
+      _resCartao('Liquidez corrente', k.liquidez_corrente != null ? String(k.liquidez_corrente).replace('.', ',') : (k.contas_pagar > 0 ? '—' : 'sem contas a pagar'), '(caixa + a receber) ÷ a pagar · ideal ≥ 1,5', k.liquidez_corrente == null ? 'var(--green)' : k.liquidez_corrente >= 1.5 ? 'var(--green)' : k.liquidez_corrente >= 1 ? 'var(--gold)' : 'var(--red)'),
+      _resCartao('ROE no ano', k.roi_pct != null ? _resFmtPct(k.roi_pct) : 'n/d', k.roi_pct != null ? 'lucro do ano ÷ patrimônio líquido ' + brl(k.patrimonio_liquido) : 'sem patrimônio líquido positivo no QuickBooks', k.roi_pct == null ? 'var(--t3)' : k.roi_pct < 0 ? 'var(--red)' : 'var(--pu)'),
+      _resCartao('Saúde financeira', semCor[0], (k.semaforo_motivos || []).slice(0, 2).join(' · ') || 'semáforo automático', semCor[1]),
+    ].join('');
+  };
+  if (!forcar && _liveKpi && Date.now() - _liveKpiEm < 300000) return pinta2(_liveKpi);
+  if (!b2.innerHTML) b2.innerHTML = '<div style="color:var(--t3);font-size:10.5px;padding:4px 8px;">Calculando caixa, fôlego, liquidez e ROE…</div>';
+  try { const k = (await finApi('kpis_saude', {}, { timeoutMs: 30000 })).kpis || {}; _liveKpi = k; _liveKpiEm = Date.now(); if (seq === _liveResSeq) pinta2(k); }
+  catch (e) { if (seq === _liveResSeq && !_liveKpi) b2.innerHTML = '<div style="color:var(--t3);font-size:10.5px;padding:4px 8px;">Indicadores de caixa indisponíveis agora: ' + String(e.message || e).replace(/</g, '&lt;') + '</div>'; }
 }
 async function carregarDashboardFinanceiro() {
   popularSeletoresConta(); // v1.67
@@ -27521,7 +27632,16 @@ async function carregarDashboardFinanceiro() {
       lbl.textContent = p ? ` · período: ${p.de.split('-').reverse().join('/')} a ${p.ate.split('-').reverse().join('/')}${p.atual ? ' (em curso)' : ''}` : ''; } const x = d.dashboard || {};
     const c = x.caixa || {}, sd = x.saude || {}, o = x.orcamento, cc = x.conciliacao || {}, mk = x.marcos || {};
     const brl = v => (v == null || isNaN(v)) ? '—' : fmtBRL(v);
-    u('df_saldo', brl(c.saldo)); u('df_receber', brl(c.a_receber)); u('df_pagar', brl(c.a_pagar)); u('df_recmes', brl(c.receita_mes)); u('df_recano', 'ano: ' + brl(c.receita_ano));
+    u('df_saldo', brl(c.saldo)); u('df_receber', brl(c.a_receber)); u('df_pagar', brl(c.a_pagar));
+    // v3.112: resultado da empresa (faturamento, lucro, EBITDA, margens) + fôlego de caixa
+    { const R = x.resultado, box = document.getElementById('df_res');
+      if (box) box.innerHTML = _resCardsHtml(R, 'dash');
+      const nt = document.getElementById('df_res_nota'); if (nt) nt.innerHTML = _resNota(R);
+      u('df_res_periodo', R && R.periodo ? _resData(R.periodo.de) + ' a ' + _resData(R.periodo.ate) : '');
+      u('df_res_meta', R && R.meta_margem ? 'meta de margem: ' + _resFmtPct(R.meta_margem.pct) + ' (' + R.meta_margem.fonte + ')' : '');
+      const k = sd.kpis || {}, rw = k.runway_meses;
+      u('df_runway', rw == null ? '—' : rw >= 999 ? '∞' : String(rw).replace('.', ',') + ' meses');
+      u('df_runway_sub', rw == null ? 'sem dados de caixa/gastos' : rw >= 999 ? 'faturamento cobre os gastos (média 3 meses)' : 'queima líquida ' + brl(k.burn_liquido_mensal) + '/mês (média 3 meses)'); }
     const semCor = { verde: '🟢 Saudável', amarelo: '🟡 Atenção', vermelho: '🔴 Crítico', cinza: '⚪ Sem dados' };
     // v3.91: quando a saúde não vem, diz POR QUÊ (antes só "KPIs de saúde indisponíveis")
     u('df_semaforo', semCor[sd.semaforo] || semCor.cinza);
@@ -27582,8 +27702,8 @@ async function carregarDashboardFinanceiro() {
           + '<div style="font-size:9.5px;color:var(--t3);margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;"><span><span style="display:inline-block;width:9px;height:9px;background:var(--green);border-radius:2px;"></span> receita real</span><span><span style="display:inline-block;width:9px;height:9px;border:1.5px dashed var(--green);"></span> receita planejada</span><span><span style="display:inline-block;width:9px;height:9px;background:var(--red);border-radius:2px;"></span> despesa real</span><span><span style="display:inline-block;width:9px;height:9px;border:1.5px dashed var(--red);"></span> despesa planejada</span><span>· número = resultado do mês (real; planejado nos meses futuros)</span></div>'; } }
     // v3.91: indicadores de saúde com nomes legíveis; sem dados → diz o motivo
     const kp = document.getElementById('df_kpis');
-    if (kp) { const NOMES = { saldo_caixa: 'Saldo em caixa', receita_mes: 'Receita do mês', receita_ano: 'Receita do ano', despesa_mes: 'Despesa do mês', despesa_ano: 'Despesa do ano', margem_liquida_pct: 'Margem líquida', ebitda_mes: 'EBITDA do mês', ebitda_margem_pct: 'Margem EBITDA', burn_rate_mensal: 'Queima mensal', runway_meses: 'Fôlego de caixa (meses)', liquidez_corrente: 'Liquidez corrente', contas_receber: 'Contas a receber', contas_pagar: 'Contas a pagar', working_capital: 'Capital de giro', cobertura_despesas_fixas: 'Cobertura de despesas fixas (x)', roi_pct: 'ROI do mês', patrimonio_liquido: 'Patrimônio líquido', contas_receber_vencido: 'A receber vencido', contas_pagar_vencido: 'A pagar vencido' };
-      const fmtK = (k, v) => /_pct$/.test(k) ? v + '%' : /runway|liquidez|cobertura/.test(k) ? (v >= 999 ? '∞ (sem queima)' : String(v).replace('.', ',')) : brl(v);
+    if (kp) { const NOMES = { saldo_caixa: 'Saldo em caixa', receita_mes: 'Faturamento do mês (até hoje)', receita_ano: 'Faturamento do ano', despesa_mes: 'Gastos do mês (até hoje)', despesa_ano: 'Gastos do ano', lucro_mes: 'Lucro líquido do mês', lucro_ano: 'Lucro líquido do ano', margem_liquida_pct: 'Margem líquida do mês', margem_liquida_ano_pct: 'Margem líquida do ano', ebitda_mes: 'EBITDA do mês', ebitda_margem_pct: 'Margem EBITDA do mês', ebitda_ano: 'EBITDA do ano', burn_rate_mensal: 'Gasto médio mensal (3 meses)', burn_liquido_mensal: 'Queima líquida mensal (3 meses)', runway_meses: 'Fôlego de caixa (meses)', liquidez_corrente: 'Liquidez corrente', contas_receber: 'Contas a receber', contas_pagar: 'Contas a pagar', working_capital: 'Capital de giro', cobertura_despesas_fixas: 'Cobertura de despesas fixas (x)', roi_pct: 'ROE no ano (lucro ÷ PL)', patrimonio_liquido: 'Patrimônio líquido', contas_receber_vencido: 'A receber vencido', contas_pagar_vencido: 'A pagar vencido' };
+      const fmtK = (k, v) => /_pct$/.test(k) ? _resFmtPct(v) : /runway|liquidez|cobertura/.test(k) ? (v >= 999 ? '∞ (sem queima)' : String(v).replace('.', ',')) : brl(v);
       const ent = Object.entries(sd.kpis || {}).filter(([k, v]) => NOMES[k] && v != null && typeof v === 'number');
       kp.innerHTML = ent.length ? ent.map(([k, v]) => '<div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--bd);"><span style="color:var(--t2);">' + NOMES[k] + '</span><b style="font-family:var(--M);' + (v < 0 ? 'color:var(--red);' : '') + '">' + fmtK(k, v) + '</b></div>').join('') + ((sd.motivos || []).length ? '<div style="font-size:10px;color:var(--t2);margin-top:6px;">' + sd.motivos.join(' · ') + '</div>' : '')
         : '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">' + (sd.erro ? 'Erro ao calcular os indicadores: ' + String(sd.erro).replace(/</g, '&lt;') : 'Sem indicadores — o cálculo não retornou dados.') + '</div>'; }
@@ -29915,7 +30035,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.111] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.112] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -29931,7 +30051,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.111';
+window.__ATX_BUILD_ID__ = 'ATX-v3.112';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

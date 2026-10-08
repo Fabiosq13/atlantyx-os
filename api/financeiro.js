@@ -219,6 +219,7 @@ async function handler(req, res) {
 
       // ── KPIs determinísticos de saúde ────────────────────────────────────
       kpis_saude:            () => kpisSaude(params),
+      resultado_kpis:        () => resultadoKpis(params), // v3.112: faturamento, lucro, margens e EBITDA (período + ano)
 
       // ── Conciliação bancária ─────────────────────────────────────────────
       conc_sugestoes:        () => conciliacaoSugestoes(params),
@@ -294,7 +295,7 @@ async function handler(req, res) {
     // v3.69: telas que consultam o QuickBooks levavam ~10s a cada abertura (QA-001/006/009/016/019/021).
     // Resultado guardado no banco: até 3 min devolve na hora; até 12h devolve o último na hora marcado como
     // "desatualizado" e a tela pede a versão nova em seguida (params._forcar). Botão Atualizar força.
-    const CACHE_FIN = { dashboard_financeiro: 1, fluxo_detalhado: 1, extrato_diario: 1, extrato_mensal: 1, painel_resumo: 1 };
+    const CACHE_FIN = { dashboard_financeiro: 1, fluxo_detalhado: 1, extrato_diario: 1, extrato_mensal: 1, painel_resumo: 1, resultado_kpis: 1 };
     if (CACHE_FIN[action]) {
       const { _forcar, ...pChave } = params || {};
       const chave = 'cache:fin:' + action + ':' + JSON.stringify(pChave).substring(0, 400);
@@ -538,8 +539,9 @@ async function claudeFin(system, messages, maxTokens = 1400) {
   return d.content?.[0]?.text || '';
 }
 async function contextoFinanceiro({ mes, ano, conta_id = null, data_inicio = null, data_fim = null } = {}) {
-  const [resumo, kpis, fluxo, conc, kanban, orc] = await Promise.allSettled([
-    painelResumo({ mes, ano, data_inicio, data_fim }), kpisSaude({ conta_id }), fluxoFuturo({ meses: 6, conta_id }), conciliacaoStatus({ conta_id }), marcosKanban({}), orcamentoConsolidado({ ano })
+  const [resumo, kpis, fluxo, conc, kanban, orc, resul] = await Promise.allSettled([
+    painelResumo({ mes, ano, data_inicio, data_fim }), kpisSaude({ conta_id }), fluxoFuturo({ meses: 6, conta_id }), conciliacaoStatus({ conta_id }), marcosKanban({}), orcamentoConsolidado({ ano }),
+    resultadoKpis({ data_inicio, data_fim, mes, ano }), // v3.112
   ]);
   const v = p => p.status === 'fulfilled' ? p.value : { erro: p.reason?.message };
   // dem_muyzjr88clbc FIX: kpisSaude devolve { kpis: {...} } — lendo o objeto de fora, semáforo/motivos vinham undefined e a
@@ -549,6 +551,7 @@ async function contextoFinanceiro({ mes, ano, conta_id = null, data_inicio = nul
   return {
     quickbooks: { conectado: !R.erro && R.qb_configurado !== false && (!R.erros?.length || (R.saldoCaixa !== undefined && R.saldoCaixa !== 0)), erros: (R.erro ? [R.erro] : R.erros || []).slice(0, 3) }, // v3.109: falha do resumo não aparece mais como "conectado"
     periodo: R.periodo || null,
+    resultado: resul.status === 'fulfilled' ? resul.value.resultado : { erros: [resul.reason?.message || 'falhou'] }, // v3.112: faturamento, lucro, margens, EBITDA
     caixa: { saldo: R.saldoCaixa ?? null, a_receber: R.aReceber ?? null, a_pagar: R.aPagar ?? null, receita_mes: R.realMes ?? null, receita_ano: R.realAnual ?? null },
     saude: { semaforo: K.semaforo, motivos: K.semaforo_motivos, erro: K.erro || null, fonte: K.fonte || null, kpis: Object.fromEntries(Object.entries(K).filter(([k, v]) => !/semaforo|erro|fonte|timestamp/.test(k) && v != null && typeof v !== 'object')) },
     // v3.91 FIX: fluxoFuturo devolve meses como texto ("2026-10") e os valores em linhas[rótulo][mês] — antes o
@@ -830,9 +833,9 @@ async function indicadorSocial({ data_inicio, data_fim } = {}) {
   if (ini <= fimReal && qbConfigurado()) {
     try {
       const token = await qbToken();
-      const dre = await qbFetch(`/reports/ProfitAndLoss?start_date=${ini}&end_date=${fimReal}`, token);
+      const dre = await qbPL(ini, fimReal, token);
       const L = extrairLinhasRelatorio(dre);
-      out.faturamento = round(dreReceita(L) || 0); // mesmo critério do painel (total de topo da DRE)
+      out.faturamento = dreResumo(dre).faturamento; // v3.112: mesmo faturamento (competência) do Dashboard e dos KPIs
       // contas de despesa com nome social (linhas de dados — não os totais)
       L.filter(l => l.tipo === 'linha' && RX_SOCIAL.test(l.label || '') && Number(l.valor)).forEach(l => { out.destinado += Math.abs(Number(l.valor)); out.contas_sociais.push({ conta: l.label, valor: round(Math.abs(Number(l.valor))) }); });
     } catch (e) { out.erro = 'QuickBooks: ' + e.message; }
@@ -2392,19 +2395,19 @@ async function painelResumo({ mes, ano, data_inicio = null, data_fim = null } = 
   // Em paralelo: DRE do ano, DRE do mês, AR, AP, saldos, lançamentos recentes
   // v1.36: período selecionável. Sem filtro = mês/ano corrente (comportamento antigo).
   // Com mês/ano escolhidos, o "mês" vira o mês inteiro selecionado e o "ano" vai até o fim dele.
-  const hoje = new Date();
-  const anoSel = ano ? parseInt(ano) : hoje.getFullYear();
-  const mesSel = mes ? parseInt(mes) : (ano ? null : hoje.getMonth() + 1);
-  const ehPeriodoAtual = anoSel === hoje.getFullYear() && (!mesSel || mesSel === hoje.getMonth() + 1);
+  const hojeBR = _hojeBR(), anoHoje = parseInt(hojeBR.substring(0, 4)), mesHoje = parseInt(hojeBR.substring(5, 7)); // v3.112: Brasília
+  const anoSel = ano ? parseInt(ano) : anoHoje;
+  const mesSel = mes ? parseInt(mes) : (ano ? null : mesHoje);
+  const ehPeriodoAtual = anoSel === anoHoje && (!mesSel || mesSel === mesHoje);
   let inicioMes = mesSel ? `${anoSel}-${String(mesSel).padStart(2, '0')}-01` : `${anoSel}-01-01`;
   let fimMes = mesSel
-    ? (ehPeriodoAtual ? hoje.toISOString().split('T')[0] : new Date(anoSel, mesSel, 0).toISOString().split('T')[0])
-    : (anoSel === hoje.getFullYear() ? hoje.toISOString().split('T')[0] : `${anoSel}-12-31`);
+    ? (ehPeriodoAtual ? hojeBR : _fimDoMes(inicioMes))
+    : (anoSel === anoHoje ? hojeBR : `${anoSel}-12-31`);
   let periodoFuturo = false;
   // dem_muyzjr88clbc: período livre de/até (Dashboard). Antes o Dashboard mandava só o mês do FIM do período —
   // em "ano" ou "trimestre" isso virava dezembro/fim do trimestre (futuro) e "Receita" e "Últimos lançamentos" saíam zerados.
   if (data_inicio && data_fim) {
-    const hojeISO = hoje.toISOString().split('T')[0];
+    const hojeISO = hojeBR;
     inicioMes = data_inicio; fimMes = data_fim > hojeISO ? hojeISO : data_fim;
     periodoFuturo = inicioMes > fimMes; // período inteiro no futuro: ainda não há realizado
     if (periodoFuturo) fimMes = inicioMes;
@@ -2414,8 +2417,8 @@ async function painelResumo({ mes, ano, data_inicio = null, data_fim = null } = 
   resp.periodo = { ano: anoSel, mes: mesSel, de: inicioMes, ate: fimMes, atual: ehPeriodoAtual };
 
   const [pAno, pMes, ar, ap, contas, lanc] = await Promise.allSettled([
-    qbFetch(`/reports/ProfitAndLoss?start_date=${inicioAno}&end_date=${hojeStr}`, token),
-    periodoFuturo ? Promise.resolve(null) : qbFetch(`/reports/ProfitAndLoss?start_date=${inicioMes}&end_date=${fimMes}`, token),
+    qbPL(inicioAno, hojeStr, token), // v3.112: competência (accrual) — mesma base dos KPIs e do Dashboard LIVE
+    periodoFuturo ? Promise.resolve(null) : qbPL(inicioMes, fimMes, token),
     qbFetch(`/reports/AgedReceivables?date_macro=Today`, token),
     qbFetch(`/reports/AgedPayables?date_macro=Today`, token),
     qbQuery(`select * from Account where AccountType = 'Bank'`, token),
@@ -2424,15 +2427,13 @@ async function painelResumo({ mes, ano, data_inicio = null, data_fim = null } = 
 
   // dem_muyzjr88clbc: receita = total de TOPO da DRE (antes podia pegar o subtotal de uma subconta)
   if (pAno.status === 'fulfilled') {
-    resp.realAnual = round(dreReceita(extrairLinhasRelatorio(pAno.value)) || 0);
+    const ra = dreResumo(pAno.value); resp.realAnual = ra.faturamento; resp.lucroAno = ra.lucro_liquido; resp.margemAno = ra.margem_liquida_pct;
   } else { resp.erros.push(`DRE ano: ${pAno.reason?.message}`); }
 
   if (pMes.status === 'fulfilled') {
     if (pMes.value) {
-      const linhas = extrairLinhasRelatorio(pMes.value);
-      resp.realMes = round(dreReceita(linhas) || 0);
-      resp.despMes = round(dreDespesa(linhas) || 0); // v3.109
-      resp.lucroMes = dreLucro(linhas) ?? linhas.find(l => /lucro l[ií]quido|net income/i.test(l.label))?.valor ?? null;
+      const rm = dreResumo(pMes.value); // v3.112: grupos da DRE (independe do nome das contas)
+      resp.realMes = rm.faturamento; resp.despMes = rm.gastos_totais; resp.lucroMes = rm.lucro_liquido; resp.margemMes = rm.margem_liquida_pct;
     } else resp.realMes = 0;
   } else { resp.erros.push(`DRE mês: ${pMes.reason?.message}`); }
 
@@ -2810,6 +2811,7 @@ async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
 // Incluir: entrada → fatura a receber (Invoice) com vencimento na data; saída → conta a pagar (Bill). Cliente /
 // fornecedor que não existe no QuickBooks é criado. Opção "só simulação" grava no Atlantyx sem tocar o QuickBooks.
 async function _limparCacheFin() {
+  try { _resCache.clear(); } catch (_) {} // v3.112
   try { const sql = await getSql(); await sql`DELETE FROM kv_store WHERE key LIKE 'cache:fin:%'`; } catch (_) {}
   try { _qbCache.clear(); } catch (_) {}
   try { _cacheSaldoData.clear(); _bancosCache = null; } catch (_) {}
@@ -3850,18 +3852,22 @@ async function kpisSaude({ overrides = {}, conta_id = null } = {}) {
   if (qbConfigurado()) {
     try {
       const token = await qbToken();
-      const hoje = new Date();
-      const inicioMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
-      const inicioAno = `${hoje.getFullYear()}-01-01`;
-      const hojeStr = hoje.toISOString().split('T')[0];
+      // v3.112: datas no horário de Brasília; DRE em competência pelo "group" das seções (dreResumo) — mesma base do
+      // Dashboard Financeiro e do Dashboard LIVE. Burn rate e runway pela MÉDIA dos 3 últimos meses fechados
+      // (o mês corrente é parcial e distorce: no dia 8 a receita ainda não foi faturada).
+      const hojeStr = _hojeBR();
+      const inicioMes = hojeStr.substring(0, 8) + '01', inicioAno = hojeStr.substring(0, 4) + '-01-01';
+      const m3 = new Date(Date.UTC(parseInt(hojeStr.substring(0, 4)), parseInt(hojeStr.substring(5, 7)) - 4, 1)).toISOString().substring(0, 10);
+      const fimMesAnt = _diasMais(inicioMes, -1);
 
-      const [contas, dreM, dreA, ar, ap, bs] = await Promise.allSettled([
+      const [contas, dreM, dreA, ar, ap, bs, dre3] = await Promise.allSettled([
         qbQuery(`select * from Account where AccountType = 'Bank'`, token),
-        qbFetch(`/reports/ProfitAndLoss?start_date=${inicioMes}&end_date=${hojeStr}`, token),
-        qbFetch(`/reports/ProfitAndLoss?start_date=${inicioAno}&end_date=${hojeStr}`, token),
+        qbPL(inicioMes, hojeStr, token),
+        qbPL(inicioAno, hojeStr, token),
         qbFetch(`/reports/AgedReceivables?date_macro=Today`, token),
         qbFetch(`/reports/AgedPayables?date_macro=Today`, token),
-        qbFetch(`/reports/BalanceSheet?date_macro=Today`, token), // v1.20.7: p/ ROI real (patrimônio líquido)
+        qbFetch(`/reports/BalanceSheet?as_of=${hojeStr}`, token), // patrimônio líquido (ROE)
+        qbPL(m3, fimMesAnt, token),
       ]);
 
       if (contas.status === 'fulfilled') {
@@ -3873,22 +3879,22 @@ async function kpisSaude({ overrides = {}, conta_id = null } = {}) {
       let _b = null; try { _b = await baseCaixaHoje({ conta_id }); } catch (_) {}
 
       if (dreM.status === 'fulfilled') {
-        const l = extrairLinhasRelatorio(dreM.value);
-        // dem_muyzjr88clbc: totais de topo da DRE (antes pegava o 1º subtotal) e lucro = "Lucro líquido" da própria DRE
-        kpis.receita_mes = round(dreReceita(l));
-        kpis.despesa_mes = round(dreDespesa(l));
-        const lucro = dreLucro(l) ?? (kpis.receita_mes - kpis.despesa_mes);
-        if (kpis.receita_mes > 0) {
-          kpis.margem_liquida_pct = round((lucro / kpis.receita_mes) * 100);
-        }
-        kpis.ebitda_mes = round(lucro); // simplificação — assume sem deprec/juros separados
-        if (kpis.receita_mes > 0) kpis.ebitda_margem_pct = round((lucro / kpis.receita_mes) * 100);
+        const r = dreResumo(dreM.value);
+        kpis.receita_mes = r.faturamento; kpis.despesa_mes = r.gastos_totais; kpis.lucro_mes = r.lucro_liquido;
+        kpis.margem_liquida_pct = r.margem_liquida_pct; kpis.margem_bruta_pct = r.margem_bruta_pct;
+        kpis.ebitda_mes = r.ebitda; kpis.ebitda_margem_pct = r.margem_ebitda_pct;
+        kpis.ajustes_ebitda = r.ajustes_ebitda;
       }
 
       if (dreA.status === 'fulfilled') {
-        const l = extrairLinhasRelatorio(dreA.value);
-        kpis.receita_ano = round(dreReceita(l));
-        kpis.despesa_ano = round(dreDespesa(l));
+        const r = dreResumo(dreA.value);
+        kpis.receita_ano = r.faturamento; kpis.despesa_ano = r.gastos_totais; kpis.lucro_ano = r.lucro_liquido;
+        kpis.margem_liquida_ano_pct = r.margem_liquida_pct; kpis.ebitda_ano = r.ebitda; kpis.ebitda_margem_ano_pct = r.margem_ebitda_pct;
+      }
+      if (dre3.status === 'fulfilled') {
+        const r = dreResumo(dre3.value);
+        kpis.media_receita_3m = round(r.faturamento / 3); kpis.media_gastos_3m = round(r.gastos_totais / 3);
+        kpis.periodo_media_3m = { de: m3, ate: fimMesAnt };
       }
 
       if (ar.status === 'fulfilled') {
@@ -3907,39 +3913,37 @@ async function kpisSaude({ overrides = {}, conta_id = null } = {}) {
         kpis.fonte_caixa = _b.fonte;
       }
 
-      // v1.20.7 FIX: "ROI Total" era igual à Margem Líquida (bug de exibição — a mesma variável
-      // era usada nos dois cartões). Agora calcula um ROI de verdade: lucro do mês / patrimônio
-      // líquido (do Balanço Patrimonial), que é uma métrica genuinamente diferente da margem.
+      // ROE acumulado no ano = lucro líquido do ano ÷ patrimônio líquido (antes: lucro de um mês PARCIAL ÷ PL)
       if (bs.status === 'fulfilled') {
+        const rows = bs.value?.Rows?.Row || [];
+        const eq = (function achar(rs) { for (const r of rs) { if (r.group === 'Equity' && r.Summary?.ColData) return parseFloat(r.Summary.ColData[r.Summary.ColData.length - 1]?.value); const f = achar(r.Rows?.Row || []); if (f != null) return f; } return null; })(rows);
         const l = extrairLinhasRelatorio(bs.value);
-        kpis.patrimonio_liquido = somaPorPadrao(l, /total equity|patrim[oô]nio l[ií]quido|total patrim[oô]nio/i) || null;
-        if (kpis.patrimonio_liquido && kpis.patrimonio_liquido !== 0 && kpis.ebitda_mes != null) {
-          kpis.roi_pct = round((kpis.ebitda_mes / kpis.patrimonio_liquido) * 100);
+        kpis.patrimonio_liquido = (isFinite(eq) && eq != null ? eq : somaPorPadrao(l, /total equity|patrim[oô]nio l[ií]quido|total patrim[oô]nio/i)) || null;
+        if (kpis.patrimonio_liquido && kpis.patrimonio_liquido > 0 && kpis.lucro_ano != null) {
+          kpis.roi_pct = round((kpis.lucro_ano / kpis.patrimonio_liquido) * 100);
         }
       }
     } catch (e) {
       console.log('[KPIs QB] erro:', e.message);
+      kpis.erro = e.message;
     }
   }
 
   // Override (caso usuário queira simular)
   Object.assign(kpis, overrides);
 
-  // Burn rate: média de despesa dos últimos 3 meses se disponível, ou despesa_mes
-  kpis.burn_rate_mensal = kpis.despesa_mes;
-
-  // Runway
-  // v1.20.7 FIX: com caixa negativo o runway ficava "—" (indefinido) sem explicação — agora
-  // mostra 0 explicitamente (não há fôlego de caixa nenhum) em vez de sumir da tela.
-  // dem_muyzjr88clbc: burn_rate nunca é null (nasce 0) — sem dados (saldo 0 e despesa 0) o runway virava 0 e o semáforo
-  // acusava "Runway curto: 0 meses". Só é 0 de verdade com caixa negativo, ou zerado havendo despesa.
-  if (kpis.saldo_caixa < 0 || (kpis.saldo_caixa === 0 && kpis.burn_rate_mensal > 0)) {
+  // Burn rate = gasto médio mensal dos 3 últimos meses fechados (sem isso, o mês corrente);
+  // runway = caixa ÷ queima LÍQUIDA (gastos − faturamento). Sem queima líquida, o caixa não se esgota (∞).
+  const temMedia = kpis.media_gastos_3m != null;
+  kpis.burn_rate_mensal = temMedia ? kpis.media_gastos_3m : kpis.despesa_mes;
+  const burnLiquido = temMedia ? Math.max(0, kpis.media_gastos_3m - kpis.media_receita_3m) : Math.max(0, kpis.despesa_mes - kpis.receita_mes);
+  kpis.burn_liquido_mensal = round(burnLiquido);
+  kpis.burn_base = temMedia ? 'média dos 3 últimos meses fechados' : 'mês corrente (parcial)';
+  if (kpis.saldo_caixa < 0 || (kpis.saldo_caixa === 0 && burnLiquido > 0)) {
     kpis.runway_meses = 0; kpis.runway_dias = 0;
-  } else if (kpis.burn_rate_mensal > 0 && kpis.saldo_caixa > 0) {
-    // Burn líquido = despesa - receita (se ainda perde dinheiro)
-    const burnLiquido = Math.max(0, kpis.despesa_mes - kpis.receita_mes);
+  } else if (kpis.saldo_caixa > 0 && (kpis.burn_rate_mensal > 0 || burnLiquido > 0)) {
     if (burnLiquido > 0) {
-      kpis.runway_meses = round(kpis.saldo_caixa / burnLiquido);
+      kpis.runway_meses = round(kpis.saldo_caixa / burnLiquido, 1);
       kpis.runway_dias = Math.round(kpis.runway_meses * 30);
     } else {
       kpis.runway_meses = 999;
@@ -3958,14 +3962,12 @@ async function kpisSaude({ overrides = {}, conta_id = null } = {}) {
   // Cobertura de despesas fixas — usa ocorrências previstas no mês atual
   try {
     const sql = await getSql();
-    const hoje = new Date();
-    const inicio = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
-    const fim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).toISOString().split('T')[0];
+    const inicio = _hojeBR().substring(0, 8) + '01', fim = _fimDoMes(inicio); // v3.112: mês de Brasília
     // v1.20.7 FIX: contar 'prevista' E 'lancada' (só excluir as já pagas) — antes só somava
     // 'prevista', então despesas já lançadas no QuickBooks (status vira 'lancada') sumiam
     // deste cálculo mesmo continuando por pagar, subestimando a cobertura de despesas fixas.
     const r = await sql`SELECT COALESCE(SUM(valor), 0) AS total FROM despesas_ocorrencias
-      WHERE status != 'paga' AND data_prevista >= ${inicio} AND data_prevista <= ${fim}`;
+      WHERE status NOT IN ('paga', 'cancelada') AND data_prevista >= ${inicio} AND data_prevista <= ${fim}`;
     const despFixas = parseFloat(r[0]?.total || 0);
     if (despFixas > 0) {
       kpis.cobertura_despesas_fixas = round(kpis.saldo_caixa / despFixas, 1);
@@ -3976,16 +3978,19 @@ async function kpisSaude({ overrides = {}, conta_id = null } = {}) {
   const motivos = [];
   let score = 0;
   if (kpis.runway_meses !== null) {
-    if (kpis.runway_meses >= 12) { score += 2; motivos.push('Runway > 12 meses ✓'); }
+    if (kpis.runway_meses >= 12) { score += 2; motivos.push(kpis.runway_meses === 999 ? 'Sem queima de caixa (faturamento cobre os gastos) ✓' : 'Runway > 12 meses ✓'); }
     else if (kpis.runway_meses >= 6) { score += 1; motivos.push(`Runway de ${kpis.runway_meses} meses (ok)`); }
     else motivos.push(`Runway curto: ${kpis.runway_meses} meses ⚠`);
   }
-  if (kpis.margem_liquida_pct !== null) {
-    if (kpis.margem_liquida_pct >= 15) { score += 2; motivos.push(`Margem ${kpis.margem_liquida_pct}% ✓`); }
-    else if (kpis.margem_liquida_pct >= 0) { score += 1; motivos.push(`Margem ${kpis.margem_liquida_pct}%`); }
-    else motivos.push(`Margem negativa ${kpis.margem_liquida_pct}% ⚠`);
-  }
-  if (kpis.liquidez_corrente !== null) {
+  { const mg = kpis.margem_liquida_ano_pct ?? kpis.margem_liquida_pct; // v3.112: margem acumulada no ano (mês corrente é parcial)
+    if (mg != null) {
+      if (mg >= 15) { score += 2; motivos.push(`Margem no ano ${mg}% ✓`); }
+      else if (mg >= 0) { score += 1; motivos.push(`Margem no ano ${mg}%`); }
+      else motivos.push(`Margem negativa no ano ${mg}% ⚠`);
+    } }
+  if (kpis.liquidez_corrente === null && !(kpis.contas_pagar > 0) && (kpis.saldo_caixa + kpis.contas_receber) > 0) {
+    score += 2; motivos.push('Sem contas a pagar em aberto ✓'); // v3.112: antes ficava sem nota e o semáforo nunca chegava ao verde
+  } else if (kpis.liquidez_corrente !== null) {
     if (kpis.liquidez_corrente >= 1.5) { score += 2; motivos.push(`Liquidez ${kpis.liquidez_corrente} ✓`); }
     else if (kpis.liquidez_corrente >= 1) { score += 1; motivos.push(`Liquidez ${kpis.liquidez_corrente}`); }
     else motivos.push(`Liquidez baixa ${kpis.liquidez_corrente} ⚠`);
@@ -4026,6 +4031,95 @@ function dreLucro(linhas) {
   const t = linhas.find(l => l.tipo === 'total' && l.nivel === 0 && RX_DRE_LUCRO.test(String(l.label || '').trim()));
   return t ? t.valor : null;
 }
+
+// ═══ v3.112: RESULTADO DA EMPRESA (faturamento, lucro, margens, EBITDA) — base ÚNICA para Dashboard, LIVE e KPIs ═══
+// Lê a DRE do QuickBooks pelo "group" de cada seção (Income, COGS, Expenses, OtherIncome, OtherExpenses, NetIncome),
+// que não depende do idioma nem do nome das contas. Regime de COMPETÊNCIA (accrual): faturamento = notas emitidas.
+// EBITDA = lucro líquido + depreciação/amortização + juros/despesas financeiras + IR/CSLL − receitas financeiras.
+const RX_EB_DEP = /deprecia|amortiza/i;
+const RX_EB_JUROS = /juros|interest|encargos financeiros|despesas? financeiras?|iof\b/i;
+const RX_EB_IR = /\bIRPJ\b|\bCSLL\b|imposto de renda|contribui[cç][aã]o social|income tax/i;
+const RX_EB_REC_FIN = /rendimento|juros|interest|aplica[cç][aã]o financeira|receitas? financeiras?/i;
+function qbPL(ini, fim, token, extra = '') {
+  return qbFetch(`/reports/ProfitAndLoss?start_date=${ini}&end_date=${fim}&accounting_method=Accrual${extra}`, token);
+}
+function dreResumo(rep) {
+  const rows = rep?.Rows?.Row || [];
+  const val = cd => { const v = parseFloat(cd?.[cd.length - 1]?.value); return isFinite(v) ? v : 0; };
+  const G = {}; let dep = 0, juros = 0, ir = 0, recFin = 0;
+  const folhas = (row, fn) => { if (row.type === 'Data') fn(row.ColData?.[0]?.value || '', val(row.ColData)); (row.Rows?.Row || []).forEach(r => folhas(r, fn)); };
+  for (const r of rows) {
+    if (!r.group) continue;
+    G[r.group] = r.Summary?.ColData ? val(r.Summary.ColData) : 0;
+    if (r.group === 'Expenses' || r.group === 'OtherExpenses' || r.group === 'COGS') folhas(r, (lb, v) => {
+      if (RX_EB_DEP.test(lb)) dep += v; else if (RX_EB_IR.test(lb)) ir += v; else if (RX_EB_JUROS.test(lb)) juros += v; });
+    if (r.group === 'OtherIncome') folhas(r, (lb, v) => { if (RX_EB_REC_FIN.test(lb)) recFin += v; });
+  }
+  let receita, custos, despesas, outrasRec, outrasDesp, lucro;
+  if ('Income' in G || 'NetIncome' in G) {
+    receita = G.Income || 0; custos = G.COGS || 0; despesas = G.Expenses || 0; outrasRec = G.OtherIncome || 0; outrasDesp = G.OtherExpenses || 0;
+    lucro = 'NetIncome' in G ? G.NetIncome : receita - custos - despesas + outrasRec - outrasDesp;
+  } else { // relatório sem "group" (não deveria acontecer no QBO): cai no critério por rótulo
+    const l = extrairLinhasRelatorio(rep); receita = dreReceita(l) || 0; despesas = dreDespesa(l) || 0; custos = 0; outrasRec = 0; outrasDesp = 0;
+    lucro = dreLucro(l) ?? (receita - despesas);
+  }
+  const lucroBruto = 'GrossProfit' in G ? G.GrossProfit : receita - custos;
+  const operacional = 'NetOperatingIncome' in G ? G.NetOperatingIncome : lucroBruto - despesas;
+  const ebitda = lucro + dep + juros + ir - recFin;
+  const pct = v => receita > 0 ? Math.round(v / receita * 1000) / 10 : null;
+  return {
+    faturamento: round(receita), custos: round(custos), lucro_bruto: round(lucroBruto), despesas_operacionais: round(despesas),
+    resultado_operacional: round(operacional), outras_receitas: round(outrasRec), outras_despesas: round(outrasDesp),
+    gastos_totais: round(custos + despesas + outrasDesp), lucro_liquido: round(lucro), ebitda: round(ebitda),
+    ajustes_ebitda: { depreciacao_amortizacao: round(dep), juros_despesas_financeiras: round(juros), ir_csll: round(ir), receitas_financeiras: round(recFin) },
+    margem_bruta_pct: pct(lucroBruto), margem_operacional_pct: pct(operacional), margem_ebitda_pct: pct(ebitda), margem_liquida_pct: pct(lucro),
+  };
+}
+const _resCache = new Map();
+async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, ano = null, _forcar = false } = {}) {
+  const hoje = _hojeBR();
+  if (!data_inicio && (mes || ano)) {
+    const a = parseInt(ano) || parseInt(hoje.substring(0, 4)), m = parseInt(mes) || null;
+    data_inicio = m ? `${a}-${String(m).padStart(2, '0')}-01` : `${a}-01-01`;
+    data_fim = m ? _fimDoMes(`${a}-${String(m).padStart(2, '0')}-01`) : `${a}-12-31`;
+  }
+  const ini = data_inicio || hoje.substring(0, 8) + '01';
+  const fimPedido = data_fim || hoje, fim = fimPedido > hoje ? hoje : fimPedido;
+  const futuro = ini > hoje;
+  const anoIni = (futuro ? ini : fim).substring(0, 4) + '-01-01', anoFim = futuro ? anoIni : fim;
+  const out = { qb_configurado: qbConfigurado(), metodo: 'competência (accrual) — DRE do QuickBooks',
+    periodo: { de: ini, ate: futuro ? fimPedido : fim, ate_pedido: fimPedido, futuro, parcial: fimPedido > hoje && !futuro },
+    ano: { de: anoIni, ate: anoFim }, periodo_res: null, ano_res: null, meta_margem: null, erros: [] };
+  if (!out.qb_configurado) { out.erros.push('QuickBooks não configurado'); return { resultado: out }; }
+  const chave = `${ini}|${fim}|${futuro}`, c = _resCache.get(chave);
+  if (!_forcar && c && Date.now() - c.em < 300000) return { resultado: c.v };
+  const token = await qbToken();
+  const comTempo = (p, ms, msg) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error(msg)), ms))]);
+  const [pP, pA, orc] = await Promise.allSettled([
+    futuro ? Promise.resolve(null) : qbPL(ini, fim, token),
+    futuro ? Promise.resolve(null) : qbPL(anoIni, anoFim, token),
+    comTempo(orcamentoConsolidado({ ano: parseInt(anoIni) }), 8000, 'orçamento não respondeu em 8s'),
+  ]);
+  const vazio = dreResumo({});
+  if (pP.status === 'fulfilled') out.periodo_res = pP.value ? dreResumo(pP.value) : vazio; else out.erros.push('DRE do período: ' + pP.reason?.message);
+  if (pA.status === 'fulfilled') out.ano_res = pA.value ? dreResumo(pA.value) : vazio; else out.erros.push('DRE do ano: ' + pA.reason?.message);
+  // Meta de margem: margem ORÇADA dos meses do período (Orçamento Anual do QuickBooks); sem orçamento, 20%
+  out.meta_margem = { pct: 20, fonte: 'meta padrão (sem orçamento cadastrado)' };
+  if (orc.status === 'fulfilled') {
+    const pt = orc.value?.por_tipo || {}, mi = ini.substring(0, 7), mf = (futuro ? fimPedido : fim).substring(0, 7);
+    const soma = t => Object.entries(pt[t]?.meses || {}).filter(([k]) => k >= mi && k <= mf).reduce((a, [, v]) => a + (v.orcado || 0), 0);
+    const R = soma('receita'), D = Math.abs(soma('despesa'));
+    if (R > 0) out.meta_margem = { pct: Math.round((R - D) / R * 1000) / 10, fonte: 'margem orçada no Orçamento Anual (' + (orc.value.budget_nome || 'QuickBooks') + ')', receita_orcada: round(R), despesa_orcada: round(D) };
+  }
+  const p = out.periodo_res;
+  if (p && p.margem_liquida_pct != null) {
+    const m = p.margem_liquida_pct, meta = out.meta_margem.pct;
+    out.semaforo_margem = m < 0 ? 'vermelho' : m < meta ? 'amarelo' : 'verde';
+  } else out.semaforo_margem = 'cinza';
+  if (!out.erros.length) _resCache.set(chave, { em: Date.now(), v: out });
+  return { resultado: out };
+}
+function _fimDoMes(d) { const a = parseInt(d.substring(0, 4)), m = parseInt(d.substring(5, 7)); return `${a}-${String(m).padStart(2, '0')}-${String(new Date(Date.UTC(a, m, 0)).getUTCDate()).padStart(2, '0')}`; }
 
 function round(n, casas = 2) {
   const mult = Math.pow(10, casas);
@@ -5692,7 +5786,7 @@ async function orcamentoConsolidado({ ano } = {}) {
     try {
       const token = await qbToken();
       // Buscar DRE do ano todo, agrupado por mês
-      const data = await qbFetch(`/reports/ProfitAndLoss?start_date=${inicioAno}&end_date=${anoRef === new Date().getFullYear() ? hoje : fimAno}&summarize_column_by=Month`, token);
+      const data = await qbFetch(`/reports/ProfitAndLoss?start_date=${inicioAno}&end_date=${anoRef === new Date().getFullYear() ? hoje : fimAno}&summarize_column_by=Month&accounting_method=Accrual`, token); // v3.112: competência
       const rows = data?.Rows?.Row || [];
       const colNames = (data?.Columns?.Column || []).map(c => c.ColTitle || c.MetaData?.[0]?.Value || '');
 
