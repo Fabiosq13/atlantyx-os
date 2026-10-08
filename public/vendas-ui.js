@@ -257,8 +257,38 @@
   async function propAbrir() {
     const box = $('vdProp'); if (!box) return;
     if (!box.dataset.ok) { box.dataset.ok = '1'; box.innerHTML = propEsqueleto(); PROP = novaProp(); }
+    const ctx = rfpCtxLer();
+    if (ctx && PROP && PROP.dados.escopo && !PROP.id && !confirm('Descartar a proposta em edição (não salva) e abrir a da RFP?')) { aba(box.dataset.aba || 'nova'); return; }
     try { const [rc, cfg] = await Promise.all([api('rate_card'), api('prop_config')]); RC = rc.rate_card || []; CFG = cfg; } catch (_) {}
-    aba(box.dataset.aba || 'nova');
+    if (!ctx) return aba(box.dataset.aba || 'nova');
+    // Ponte s2rfps → s7propostas: formulário pré-preenchido com o edital e rascunho IA disparado
+    PROP = novaProp(); PROP.cliente = ctx.cliente || ''; PROP.titulo = ctx.titulo || '';
+    Object.assign(PROP.dados, { escopo: ctx.escopo || '', orcamento_cliente: /\d/.test(ctx.valorRef || '') ? ctx.valorRef : '', orcamento_tipo: 'total', rfp_origem: { rfp_id: ctx.rfp_id, link: ctx.link, fonte: ctx.fonte, prazo: ctx.prazo, rfp_recebida: ctx.rfp_recebida, identificada_em: ctx.identificada_em, proposta_criada_em: new Date().toISOString() } });
+    rfpLog(PROP.dados.rfp_origem, null);
+    aba('nova'); nota('Proposta pré-preenchida com a RFP — a IA está montando o rascunho');
+    rascunhoRFP();
+  }
+  // ?rfp_ctx=<base64 de JSON UTF-8> (gerado por abrirPropostaRFP em index.html); consumido uma vez e removido da URL
+  function rfpCtxLer() {
+    let u; try { u = new URL(location.href); } catch (_) { return null; }
+    const b64 = u.searchParams.get('rfp_ctx'); if (!b64) return null;
+    u.searchParams.delete('rfp_ctx'); if (u.searchParams.get('tela') === 's7propostas') u.searchParams.delete('tela'); try { history.replaceState(null, '', u.toString()); } catch (_) {}
+    try { const bin = atob(b64); return JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0)))); }
+    catch (e) { nota('Contexto da RFP inválido: ' + e.message, 'error'); return null; }
+  }
+  // Log de rastreabilidade RFP → proposta (Log do sistema + sessionStorage rfp_id → proposta_id)
+  function rfpLog(o, prop) {
+    if (!o || !o.rfp_id) return;
+    let m = {}; try { m = JSON.parse(sessionStorage.getItem('atx_rfp_propostas') || '{}'); } catch (_) {}
+    m[o.rfp_id] = { ...(m[o.rfp_id] || {}), rfp_recebida: o.rfp_recebida || null, identificada_em: o.identificada_em || null, proposta_criada_em: o.proposta_criada_em || null, ...(prop ? { proposta_id: prop.id, proposta_numero: prop.numero, salva_em: new Date().toISOString() } : {}) };
+    try { sessionStorage.setItem('atx_rfp_propostas', JSON.stringify(m)); } catch (_) {}
+    if (window.addLog) addLog(prop ? 'success' : 'info', '[S7 · Propostas] ' + (prop ? 'Proposta ' + esc(prop.numero || prop.id) + ' salva — originada da RFP ' : 'Rascunho aberto a partir da RFP ') + esc(o.rfp_id) + (o.rfp_recebida ? ' · RFP recebida em ' + esc(o.rfp_recebida) : '') + ' · proposta criada em ' + esc(new Date(o.proposta_criada_em || Date.now()).toLocaleString('pt-BR')));
+  }
+  // Rascunho IA encadeado: estimar equipe → analisar formatos → redigir; para (com aviso) no primeiro passo que precisar do usuário
+  async function rascunhoRFP() {
+    if (!(await estimar(true))) return;
+    if (!(await analisar())) return;
+    await redigir();
   }
   function propEsqueleto() {
     return `<div class="cp-top"><div style="flex:1;min-width:0;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">Elaboração de Propostas</div>
@@ -318,14 +348,15 @@
   }
   function addPerfil() { lerForm(); PROP.dados.perfis.push({ perfil: '', horas: 0 }); renderPerfis(); }
   function perfilRC(inp) { const c = RC.find(x => x.perfil.toLowerCase() === inp.value.toLowerCase()); if (!c) return; const tr = inp.closest('tr'); const s = (k, v) => { const e = tr.querySelector(`[data-c="${k}"]`); if (e && !e.value && v != null) e.value = v; }; s('custo', c.custo_hora); s('preco', c.preco_alvo); }
-  async function estimar() {
+  async function estimar(auto) {
     lerForm(); if ((PROP.dados.escopo || '').length < 30) return nota('Descreva o escopo (pelo menos 30 caracteres)', 'error');
-    if (!RC.length && !confirm('O rate card está vazio — a IA vai sugerir perfis sem custo. Continuar? (cadastre em "Rate card e parâmetros")')) return;
+    if (!RC.length && !auto && !confirm('O rate card está vazio — a IA vai sugerir perfis sem custo. Continuar? (cadastre em "Rate card e parâmetros")')) return;
     const fim = ocupado($('vpBtnEstimar'), '🤖 Estimando...');
     try { const r = await api('estimar', { escopo: PROP.dados.escopo, tipo_demanda: PROP.dados.tipo_demanda, meses: PROP.dados.meses });
       PROP.dados.perfis = r.perfis; PROP.dados.estimativa = r; if (!PROP.dados.meses && r.meses) PROP.dados.meses = r.meses; if (r.risco) PROP.dados.risco = r.risco;
       preencherForm(); const sem = r.perfis.filter(x => !x.no_rate_card).map(x => x.perfil);
       $('vpEstInfo').innerHTML = `<b>${r.perfis.reduce((a, x) => a + (+x.horas || 0), 0)} horas</b> em ${r.meses || PROP.dados.meses} meses · risco ${esc(r.risco || '')}${sem.length ? `<br><span style="color:var(--gold);">Fora do rate card (informe custo/preço): ${esc(sem.join(', '))}</span>` : ''}${(r.premissas || []).length ? '<br>Premissas: ' + esc(r.premissas.slice(0, 4).join(' · ')) : ''}`;
+      fim(); return true;
     } catch (e) { nota('Erro: ' + e.message, 'error'); } fim();
   }
   async function analisar() {
@@ -333,7 +364,7 @@
     if (d.perfis.some(x => !(x.custo_hora > 0))) return nota('Falta o custo/hora de algum perfil (rate card ou RH)', 'error');
     const fim = ocupado($('vpBtnAnalisar'), '◆ Analisando...');
     try { PROP.analise = await api('analisar', { cliente: PROP.cliente, perfis: d.perfis, meses: d.meses || 3, inicio: d.inicio || undefined, risco: d.risco, tipo_demanda: d.tipo_demanda, orcamento_cliente: d.orcamento_cliente, orcamento_tipo: d.orcamento_tipo });
-      delete PROP.analise.success; delete PROP.analise.action; PROP.formato = PROP.analise.recomendado; renderAnalise(); $('vpAnalise').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      delete PROP.analise.success; delete PROP.analise.action; PROP.formato = PROP.analise.recomendado; renderAnalise(); $('vpAnalise').scrollIntoView({ behavior: 'smooth', block: 'start' }); fim(); return true; }
     catch (e) { nota('Erro: ' + e.message, 'error'); } fim();
   }
   function renderAnalise() {
@@ -376,7 +407,7 @@
   }
   async function salvar() {
     lerForm(); lerDoc(); if (!PROP.cliente) return nota('Informe o cliente', 'error');
-    try { const r = await api('prop_salvar', PROP); PROP.id = r.id; PROP.numero = r.numero; nota('Proposta ' + r.numero + ' salva'); } catch (e) { nota('Erro: ' + e.message, 'error'); }
+    try { const r = await api('prop_salvar', PROP); PROP.id = r.id; PROP.numero = r.numero; nota('Proposta ' + r.numero + ' salva'); if (PROP.dados.rfp_origem) rfpLog(PROP.dados.rfp_origem, PROP); } catch (e) { nota('Erro: ' + e.message, 'error'); }
   }
   function docMarkdownParaPdf(txt) { return String(txt || '').split('\n').map(l => l.trim().startsWith('- ') ? { text: '• ' + l.trim().substring(2), margin: [8, 1, 0, 1] } : { text: l.replace(/\*\*/g, ''), margin: [0, 1, 0, 1] }); }
   async function baixarPdf() {
