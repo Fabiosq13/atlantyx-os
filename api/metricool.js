@@ -224,6 +224,102 @@ function _corpoPostMc(fonte, extra) {
   c.text = c.text ?? ''; c.draft = false; if (c.autoPublish === undefined) c.autoPublish = true;
   return Object.assign(c, extra || {});
 }
+// ═══ v3.108: CAMPANHA PATROCINADA NO INSTAGRAM — botão "Saiba mais" levando para a landing page ═══
+// A API do Metricool só AGENDA posts orgânicos e LÊ relatórios de anúncios — criar anúncio só pela tela do Metricool
+// (Ads → Criar campanha). Por isso há dois caminhos:
+//  1) Meta configurado (META_ADS_TOKEN, META_AD_ACCOUNT_ID, META_PAGE_ID, META_IG_USER_ID no Vercel): o sistema cria
+//     campanha (Tráfego) → conjunto (só Instagram: feed, stories, reels) → criativo com botão SAIBA MAIS → anúncio,
+//     TUDO PAUSADO. Nada é gasto até o fundador clicar "Ativar" (com o valor total na confirmação). Os resultados
+//     aparecem no Metricool (Ads) porque a conta de anúncios é a mesma.
+//  2) Sem Meta: monta o KIT (texto, título, imagem, link com UTM, orçamento, público) para criar no Metricool → Ads.
+const META_V = process.env.META_API_VERSION || 'v21.0';
+const _metaCfg = () => ({ token: process.env.META_ADS_TOKEN || '', conta: String(process.env.META_AD_ACCOUNT_ID || '').replace(/^act_/, ''), pagina: process.env.META_PAGE_ID || '', ig: process.env.META_IG_USER_ID || '' });
+async function _meta(caminho, metodo = 'GET', corpo = null) {
+  const c = _metaCfg(); const url = `https://graph.facebook.com/${META_V}/${caminho}`;
+  const op = { method: metodo, headers: {} };
+  if (metodo === 'GET') { const u = new URL(url); u.searchParams.set('access_token', c.token); const r = await fetch(u); const d = await r.json().catch(() => ({})); if (!r.ok || d.error) throw new Error('Meta: ' + (d.error?.error_user_msg || d.error?.message || 'HTTP ' + r.status)); return d; }
+  const form = new URLSearchParams(); Object.entries(corpo || {}).forEach(([k, v]) => form.set(k, typeof v === 'object' ? JSON.stringify(v) : String(v))); form.set('access_token', c.token);
+  op.headers['Content-Type'] = 'application/x-www-form-urlencoded'; op.body = form.toString();
+  const r = await fetch(url, op); const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.error) throw new Error('Meta: ' + (d.error?.error_user_title ? d.error.error_user_title + ' — ' : '') + (d.error?.error_user_msg || d.error?.message || 'HTTP ' + r.status));
+  return d;
+}
+async function _kvMc(k, v) {
+  const sql = await getSql(); await sql`CREATE TABLE IF NOT EXISTS kv_store (key TEXT PRIMARY KEY, value JSONB, updated_at TIMESTAMPTZ DEFAULT NOW())`;
+  if (v === undefined) { const r = await sql`SELECT value FROM kv_store WHERE key = ${k} LIMIT 1`; const x = r[0]?.value; return typeof x === 'string' ? JSON.parse(x) : (x ?? null); }
+  await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; return v;
+}
+async function patrocinadoStatus(req) {
+  const c = _metaCfg(); const falta = [['META_ADS_TOKEN', c.token], ['META_AD_ACCOUNT_ID', c.conta], ['META_PAGE_ID', c.pagina], ['META_IG_USER_ID', c.ig]].filter(([, v]) => !v).map(([k]) => k);
+  const out = { meta_configurado: !falta.length, falta, conta: c.conta ? 'act_' + c.conta : null };
+  if (!falta.length) { try { const a = await _meta('act_' + c.conta + '?fields=name,currency,account_status,amount_spent'); out.conta_nome = a.name; out.moeda = a.currency; out.conta_ativa = a.account_status === 1; } catch (e) { out.erro = e.message; } }
+  return out;
+}
+async function patrocinadoCopy({ tema = '', oferta = '', publico = '' } = {}) {
+  const sys = 'Você escreve anúncios pagos de Instagram para a Atlantyx (empresa brasileira B2B de tecnologia: engenharia de dados, indicadores/BI, software sob medida, produtos próprios e especialistas; 17 anos; clientes como CPFL, Enel, Caixa Capitalização). Público: diretores e gerentes de grandes empresas. O anúncio tem botão "Saiba mais" que leva para a página onde a pessoa agenda uma conversa gratuita. Português do Brasil, direto, sem clichês, sem prometer o que não está no tema.';
+  const usr = `Tema/oferta: ${String(tema || oferta || 'conversa gratuita com especialista').substring(0, 600)}\n${publico ? 'Público: ' + String(publico).substring(0, 200) + '\n' : ''}Devolva JSON: {"texto":"texto principal do anúncio, até 220 caracteres, 1ª frase = gancho, termina convidando a clicar em Saiba mais","titulo":"título curto, até 40 caracteres","descricao":"linha de apoio, até 30 caracteres","prompt_imagem":"cena quadrada 1:1 em inglês, 35-55 palavras, sem texto, profissional, tons escuros com ciano e verde"}`;
+  const j = JSON.parse(await _claudeAuto(sys, usr, 500));
+  return { texto: String(j.texto || '').substring(0, 500), titulo: String(j.titulo || '').substring(0, 60), descricao: String(j.descricao || '').substring(0, 60), prompt_imagem: j.prompt_imagem || '' };
+}
+function _linkPago(base, nome) {
+  const slug = String(nome || 'patrocinado').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 40) || 'patrocinado';
+  return base + '/captura.html?utm_source=instagram&utm_medium=pago&utm_campaign=' + slug + '&utm_content=saiba_mais';
+}
+async function patrocinadoCriar(p = {}, req) {
+  const base = (process.env.MEDIA_PUBLIC_BASE || ('https://' + (req?.headers?.host || 'atlantyx-os.vercel.app'))).replace(/\/$/, '');
+  const nome = String(p.nome || '').trim().substring(0, 80) || 'Instagram · Saiba mais · ' + new Date().toISOString().substring(0, 10);
+  const texto = String(p.texto || '').trim(), titulo = String(p.titulo || '').trim().substring(0, 40), descricao = String(p.descricao || '').trim().substring(0, 30);
+  const imagem = String(p.imagem || '').trim();
+  const diario = Math.round(Number(String(p.orcamento_diario || '').replace(',', '.')) * 100) / 100;
+  const ini = String(p.inicio || ''), fim = String(p.fim || '');
+  const idMin = Math.max(18, Math.min(65, parseInt(p.idade_min) || 25)), idMax = Math.max(idMin, Math.min(65, parseInt(p.idade_max) || 60));
+  const err = m => Object.assign(new Error(m), { status: 400 });
+  if (!texto) throw err('Escreva o texto do anúncio'); if (!titulo) throw err('Escreva o título');
+  if (!/^https:\/\//.test(imagem)) throw err('Escolha ou gere a imagem do anúncio (precisa ser um endereço https público)');
+  if (!(diario >= 6)) throw err('Orçamento diário mínimo: R$ 6,00');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ini) || !/^\d{4}-\d{2}-\d{2}$/.test(fim) || fim < ini) throw err('Informe início e fim da campanha (fim depois do início)');
+  const dias = Math.round((new Date(fim) - new Date(ini)) / 864e5) + 1;
+  const link = p.link && /^https:\/\//.test(p.link) ? p.link : _linkPago(base, nome);
+  const kit = { nome, objetivo: 'Tráfego (cliques no link)', posicionamentos: 'Instagram — Feed, Stories e Reels', botao: 'Saiba mais', link, texto, titulo, descricao, imagem,
+    orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, publico: `Brasil · ${idMin} a ${idMax} anos` };
+  const c = _metaCfg();
+  if (!(c.token && c.conta && c.pagina && c.ig) || p.so_kit) return { modo: 'kit', kit };
+  // 1. campanha · 2. conjunto · 3. imagem · 4. criativo (Saiba mais) · 5. anúncio — tudo PAUSADO
+  const camp = await _meta(`act_${c.conta}/campaigns`, 'POST', { name: nome, objective: 'OUTCOME_TRAFFIC', status: 'PAUSED', special_ad_categories: [], is_adset_budget_sharing_enabled: false });
+  const desfazer = async () => { try { await _meta(camp.id, 'DELETE'); } catch (_) {} };
+  try {
+    const adset = await _meta(`act_${c.conta}/adsets`, 'POST', { name: nome + ' · Instagram', campaign_id: camp.id, daily_budget: Math.round(diario * 100), billing_event: 'IMPRESSIONS',
+      optimization_goal: 'LINK_CLICKS', bid_strategy: 'LOWEST_COST_WITHOUT_CAP', destination_type: 'WEBSITE', status: 'PAUSED',
+      start_time: ini + 'T08:00:00-0300', end_time: fim + 'T23:59:00-0300',
+      targeting: { geo_locations: { countries: ['BR'] }, age_min: idMin, age_max: idMax, publisher_platforms: ['instagram'], instagram_positions: ['stream', 'story', 'reels'] } });
+    let imgHash = null;
+    try { const ri = await fetch(imagem); if (ri.ok) { const b64 = Buffer.from(await ri.arrayBuffer()).toString('base64'); const up = await _meta(`act_${c.conta}/adimages`, 'POST', { bytes: b64 }); imgHash = Object.values(up.images || {})[0]?.hash || null; } } catch (_) {}
+    const link_data = { link, message: texto, name: titulo, ...(descricao ? { description: descricao } : {}), ...(imgHash ? { image_hash: imgHash } : { picture: imagem }), call_to_action: { type: 'LEARN_MORE', value: { link } } };
+    const cr = await _meta(`act_${c.conta}/adcreatives`, 'POST', { name: nome + ' · criativo', object_story_spec: { page_id: c.pagina, instagram_user_id: c.ig, link_data } });
+    const ad = await _meta(`act_${c.conta}/ads`, 'POST', { name: nome + ' · anúncio', adset_id: adset.id, creative: { creative_id: cr.id }, status: 'PAUSED' });
+    const reg = { id: camp.id, adset_id: adset.id, ad_id: ad.id, creative_id: cr.id, criado_em: new Date().toISOString(), estado: 'PAUSED', ...kit,
+      gerenciador: `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${c.conta}&selected_campaign_ids=${camp.id}` };
+    const lista = (await _kvMc('mkt:patrocinados')) || []; lista.unshift(reg); await _kvMc('mkt:patrocinados', lista.slice(0, 100));
+    return { modo: 'meta', campanha: reg };
+  } catch (e) { await desfazer(); throw new Error(e.message + ' (nada ficou criado no Meta)'); }
+}
+async function patrocinadoEstado({ id, estado } = {}) {
+  if (!['ACTIVE', 'PAUSED'].includes(estado)) throw Object.assign(new Error('Estado inválido'), { status: 400 });
+  const lista = (await _kvMc('mkt:patrocinados')) || []; const reg = lista.find(x => String(x.id) === String(id)); if (!reg) throw new Error('Campanha não encontrada');
+  // ativar liga os três níveis; pausar desliga a campanha (o resto fica como está)
+  if (estado === 'ACTIVE') { for (const k of [reg.ad_id, reg.adset_id, reg.id]) await _meta(k, 'POST', { status: 'ACTIVE' }); }
+  else await _meta(reg.id, 'POST', { status: 'PAUSED' });
+  reg.estado = estado; reg[estado === 'ACTIVE' ? 'ativado_em' : 'pausado_em'] = new Date().toISOString(); await _kvMc('mkt:patrocinados', lista);
+  return { ok: true, estado };
+}
+async function patrocinadoListar() {
+  const lista = (await _kvMc('mkt:patrocinados')) || []; const c = _metaCfg();
+  if (c.token && lista.length) { await Promise.all(lista.slice(0, 15).map(async r => { try { const i = await _meta(`${r.id}/insights?fields=spend,impressions,clicks,inline_link_clicks,ctr,cpc&date_preset=maximum`); const x = (i.data || [])[0] || {};
+    r.resultado = { gasto: Number(x.spend || 0), impressoes: Number(x.impressions || 0), cliques_link: Number(x.inline_link_clicks || 0), cpc: x.cpc ? Number(x.cpc) : null };
+    const st = await _meta(`${r.id}?fields=effective_status`); r.estado_meta = st.effective_status; } catch (_) {} })); }
+  return { campanhas: lista };
+}
+
 // v3.106: INSTAGRAM → "LINK NA BIO". No feed do Instagram o link escrito na legenda não é clicável; o fundador
 // decidiu tirar o link fixo dos posts e mandar para a bio. Remove dos posts agendados do Instagram as linhas com
 // link (página de captura, /agenda, /reuniao, agenda do HubSpot, qualquer URL) e a chamada da oferta, e fecha com
@@ -1153,6 +1249,12 @@ async function handler(req, res) {
     trocar_link_agendados:  () => trocarLinkAgendados(payload, req), // v3.71
     remover_duplicados:     () => removerDuplicados(payload), // v3.80
     instagram_para_bio:     () => instagramParaBio(payload, req), // v3.106
+    // v3.108: campanha PATROCINADA no Instagram com botão "Saiba mais" → landing page
+    patrocinado_status:     () => patrocinadoStatus(req),
+    patrocinado_copy:       () => patrocinadoCopy(payload),
+    patrocinado_criar:      () => patrocinadoCriar(payload, req),
+    patrocinado_estado:     () => patrocinadoEstado(payload),
+    patrocinado_listar:     () => patrocinadoListar(),
     story_texto:            () => storyTexto(payload),
     autocampanha_agendar_um:() => autoCampanhaAgendarUm(payload),
     fila_enfileirar:        () => filaEnfileirar(payload),
