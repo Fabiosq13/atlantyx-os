@@ -537,12 +537,15 @@ async function claudeFin(system, messages, maxTokens = 1400) {
   if (!r.ok) throw new Error('Claude API [' + r.status + ']: ' + (d.error?.message || 'erro'));
   return d.content?.[0]?.text || '';
 }
-async function contextoFinanceiro({ mes, ano, conta_id = null } = {}) {
+async function contextoFinanceiro({ mes, ano, conta_id = null, data_inicio = null, data_fim = null } = {}) {
   const [resumo, kpis, fluxo, conc, kanban, orc] = await Promise.allSettled([
-    painelResumo({ mes, ano }), kpisSaude({ conta_id }), fluxoFuturo({ meses: 6, conta_id }), conciliacaoStatus({ conta_id }), marcosKanban({}), orcamentoConsolidado({ ano })
+    painelResumo({ mes, ano, data_inicio, data_fim }), kpisSaude({ conta_id }), fluxoFuturo({ meses: 6, conta_id }), conciliacaoStatus({ conta_id }), marcosKanban({}), orcamentoConsolidado({ ano })
   ]);
   const v = p => p.status === 'fulfilled' ? p.value : { erro: p.reason?.message };
-  const R = v(resumo), K = v(kpis), F = v(fluxo), C = v(conc), M = v(kanban), O = v(orc);
+  // dem_muyzjr88clbc FIX: kpisSaude devolve { kpis: {...} } — lendo o objeto de fora, semáforo/motivos vinham undefined e a
+  // lista "Indicadores de saúde" do Dashboard (e o contexto do Gerente IA) ficava vazia: "⚪ Sem dados" / "Sem indicadores".
+  const _k = v(kpis), K = _k.kpis || _k;
+  const R = v(resumo), F = v(fluxo), C = v(conc), M = v(kanban), O = v(orc);
   return {
     quickbooks: { conectado: !R.erro && R.qb_configurado !== false && (!R.erros?.length || (R.saldoCaixa !== undefined && R.saldoCaixa !== 0)), erros: (R.erro ? [R.erro] : R.erros || []).slice(0, 3) }, // v3.109: falha do resumo não aparece mais como "conectado"
     periodo: R.periodo || null,
@@ -561,7 +564,7 @@ async function contextoFinanceiro({ mes, ano, conta_id = null } = {}) {
     marcos_erro: M.erro || null,
     orcamento: O.total_geral || null,
     orcamento_por_tipo: O.por_tipo || null, orcamento_nome: O.budget_nome || null,
-    ultimos_lancamentos: (R.lancamentos || []).slice(0, 12).map(l => ({ data: l.data, desc: (l.descricao || l.nome || '').substring(0, 50), valor: l.valor, tipo: l.tipo })),
+    ultimos_lancamentos: (R.lancamentos_recentes || R.lancamentos || []).slice(0, 12).map(l => ({ data: l.data, desc: (l.descricao || l.nome || '').substring(0, 50), valor: l.valor, tipo: l.tipo })),
   };
 }
 // v1.71: TAREFAS OPERACIONAIS — o gerente IA não só responde, ele EXECUTA e devolve
@@ -783,6 +786,7 @@ async function planejadoVsReal({ data_inicio, data_fim, conta_id = null } = {}) 
   // planejado do que já venceu (de ini até hoje): documentos do QuickBooks pelo vencimento + despesas programadas
   const fimPassado = fim < hoje ? fim : hoje;
   if (ini <= fimPassado) {
+    let qbDocsOk = false;
     if (qbConfigurado()) {
       try {
         const token = await qbToken();
@@ -794,12 +798,15 @@ async function planejadoVsReal({ data_inicio, data_fim, conta_id = null } = {}) 
             if (arr.length < 500) break; pos += 500;
           }
         }
+        qbDocsOk = true;
       } catch (e) { erros.push('QuickBooks: ' + e.message); }
     }
     try {
       const sql = await getSql();
-      const rows = await sql`SELECT o.data_prevista, o.valor FROM despesas_ocorrencias o WHERE o.data_prevista >= ${ini} AND o.data_prevista <= ${fimPassado}`;
-      rows.forEach(r => add(String(r.data_prevista).split('T')[0], 'despesa_planejada', parseFloat(r.valor) || 0));
+      const rows = await sql`SELECT o.data_prevista, o.valor, o.status FROM despesas_ocorrencias o WHERE o.data_prevista >= ${ini} AND o.data_prevista <= ${fimPassado}`;
+      // dem_muyzjr88clbc: ocorrência 'lancada' já virou Bill no QuickBooks com vencimento = data prevista — e as Bills acima
+      // já foram somadas. Contar as duas dobrava a "despesa planejada" do Dashboard. (Sem QB lido, mantém a ocorrência.)
+      rows.filter(r => !(qbDocsOk && r.status === 'lancada')).forEach(r => add(String(r.data_prevista).split('T')[0], 'despesa_planejada', parseFloat(r.valor) || 0));
     } catch (e) { erros.push('despesas programadas: ' + e.message); }
   }
   const lista = meses.map(k => { const r = M[k]; ['receita_planejada', 'receita_real', 'despesa_planejada', 'despesa_real'].forEach(c => r[c] = round(r[c]));
@@ -825,7 +832,7 @@ async function indicadorSocial({ data_inicio, data_fim } = {}) {
       const token = await qbToken();
       const dre = await qbFetch(`/reports/ProfitAndLoss?start_date=${ini}&end_date=${fimReal}`, token);
       const L = extrairLinhasRelatorio(dre);
-      out.faturamento = round(L.find(l => l.tipo === 'total' && /receita|income|revenue|total income/i.test(l.label))?.valor || 0); // mesmo critério do painel
+      out.faturamento = round(dreReceita(L) || 0); // mesmo critério do painel (total de topo da DRE)
       // contas de despesa com nome social (linhas de dados — não os totais)
       L.filter(l => l.tipo === 'linha' && RX_SOCIAL.test(l.label || '') && Number(l.valor)).forEach(l => { out.destinado += Math.abs(Number(l.valor)); out.contas_sociais.push({ conta: l.label, valor: round(Math.abs(Number(l.valor))) }); });
     } catch (e) { out.erro = 'QuickBooks: ' + e.message; }
@@ -854,7 +861,7 @@ async function dashboardFinanceiro({ mes, ano, conta_id = null, data_inicio = nu
   const fimDoMes = fim === f(new Date(parseInt(fim.substring(0, 4)), parseInt(fim.substring(5, 7)), 0));
   const dentro = ini >= i6 && fim <= f6 && ini.endsWith('-01') && fimDoMes; // período de meses inteiros dentro da janela → reaproveita o cálculo
   const [ctxR, pvr6R, pvrR, socR] = await Promise.allSettled([
-    contextoFinanceiro({ mes: parseInt(fim.substring(5, 7)), ano: parseInt(fim.substring(0, 4)), conta_id }),
+    contextoFinanceiro({ mes: parseInt(fim.substring(5, 7)), ano: parseInt(fim.substring(0, 4)), conta_id, data_inicio: ini, data_fim: fim }),
     planejadoVsReal({ data_inicio: i6, data_fim: f6, conta_id }),
     dentro ? Promise.resolve(null) : planejadoVsReal({ data_inicio: ini, data_fim: fim, conta_id }),
     indicadorSocial({ data_inicio: ini, data_fim: fim }),
@@ -2359,7 +2366,7 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
   return valor;
 }
 
-async function painelResumo({ mes, ano } = {}) {
+async function painelResumo({ mes, ano, data_inicio = null, data_fim = null } = {}) {
   const resp = {
     qb_configurado: qbConfigurado(),
     timestamp: new Date().toISOString(),
@@ -2389,34 +2396,44 @@ async function painelResumo({ mes, ano } = {}) {
   const anoSel = ano ? parseInt(ano) : hoje.getFullYear();
   const mesSel = mes ? parseInt(mes) : (ano ? null : hoje.getMonth() + 1);
   const ehPeriodoAtual = anoSel === hoje.getFullYear() && (!mesSel || mesSel === hoje.getMonth() + 1);
-  const inicioMes = mesSel ? `${anoSel}-${String(mesSel).padStart(2, '0')}-01` : `${anoSel}-01-01`;
-  const fimMes = mesSel
+  let inicioMes = mesSel ? `${anoSel}-${String(mesSel).padStart(2, '0')}-01` : `${anoSel}-01-01`;
+  let fimMes = mesSel
     ? (ehPeriodoAtual ? hoje.toISOString().split('T')[0] : new Date(anoSel, mesSel, 0).toISOString().split('T')[0])
     : (anoSel === hoje.getFullYear() ? hoje.toISOString().split('T')[0] : `${anoSel}-12-31`);
-  const inicioAno = `${anoSel}-01-01`;
+  let periodoFuturo = false;
+  // dem_muyzjr88clbc: período livre de/até (Dashboard). Antes o Dashboard mandava só o mês do FIM do período —
+  // em "ano" ou "trimestre" isso virava dezembro/fim do trimestre (futuro) e "Receita" e "Últimos lançamentos" saíam zerados.
+  if (data_inicio && data_fim) {
+    const hojeISO = hoje.toISOString().split('T')[0];
+    inicioMes = data_inicio; fimMes = data_fim > hojeISO ? hojeISO : data_fim;
+    periodoFuturo = inicioMes > fimMes; // período inteiro no futuro: ainda não há realizado
+    if (periodoFuturo) fimMes = inicioMes;
+  }
+  const inicioAno = `${fimMes.substring(0, 4)}-01-01`;
   const hojeStr = fimMes; // fim do período selecionado
   resp.periodo = { ano: anoSel, mes: mesSel, de: inicioMes, ate: fimMes, atual: ehPeriodoAtual };
 
   const [pAno, pMes, ar, ap, contas, lanc] = await Promise.allSettled([
     qbFetch(`/reports/ProfitAndLoss?start_date=${inicioAno}&end_date=${hojeStr}`, token),
-    qbFetch(`/reports/ProfitAndLoss?start_date=${inicioMes}&end_date=${fimMes}`, token),
+    periodoFuturo ? Promise.resolve(null) : qbFetch(`/reports/ProfitAndLoss?start_date=${inicioMes}&end_date=${fimMes}`, token),
     qbFetch(`/reports/AgedReceivables?date_macro=Today`, token),
     qbFetch(`/reports/AgedPayables?date_macro=Today`, token),
     qbQuery(`select * from Account where AccountType = 'Bank'`, token),
-    qbLancamentos({ data_inicio: inicioMes, data_fim: fimMes, limite: 300 }), // v3.109: período inteiro (antes 50 por tipo)
+    periodoFuturo ? Promise.resolve({ lancamentos: [] }) : qbLancamentos({ data_inicio: inicioMes, data_fim: fimMes, limite: 300 }), // v3.109: período inteiro (antes 50 por tipo)
   ]);
 
+  // dem_muyzjr88clbc: receita = total de TOPO da DRE (antes podia pegar o subtotal de uma subconta)
   if (pAno.status === 'fulfilled') {
-    const linhas = extrairLinhasRelatorio(pAno.value);
-    const totalReceita = linhas.find(l => l.tipo === 'total' && /receita|income|revenue|total income/i.test(l.label))?.valor || 0;
-    resp.realAnual = totalReceita;
+    resp.realAnual = round(dreReceita(extrairLinhasRelatorio(pAno.value)) || 0);
   } else { resp.erros.push(`DRE ano: ${pAno.reason?.message}`); }
 
   if (pMes.status === 'fulfilled') {
-    const linhas = extrairLinhasRelatorio(pMes.value);
-    resp.realMes = linhas.find(l => l.tipo === 'total' && /receita|income|revenue|total income/i.test(l.label))?.valor || 0;
-    resp.despMes = linhas.find(l => l.tipo === 'total' && /total (de )?despesas|total expenses/i.test(l.label))?.valor || 0; // v3.109
-    resp.lucroMes = linhas.find(l => /lucro l[ií]quido|net income/i.test(l.label))?.valor ?? null;
+    if (pMes.value) {
+      const linhas = extrairLinhasRelatorio(pMes.value);
+      resp.realMes = round(dreReceita(linhas) || 0);
+      resp.despMes = round(dreDespesa(linhas) || 0); // v3.109
+      resp.lucroMes = dreLucro(linhas) ?? linhas.find(l => /lucro l[ií]quido|net income/i.test(l.label))?.valor ?? null;
+    } else resp.realMes = 0;
   } else { resp.erros.push(`DRE mês: ${pMes.reason?.message}`); }
 
   if (ar.status === 'fulfilled') {
@@ -2456,6 +2473,7 @@ async function painelResumo({ mes, ano } = {}) {
     resp.lancamentos_periodo = todos;
     resp.caixa_periodo = { entradas: round(todos.filter(l => l.tipo === 'entrada').reduce((a, l) => a + l.valor, 0)), saidas: round(todos.filter(l => l.tipo === 'saida').reduce((a, l) => a + l.valor, 0)) };
     if (lanc.value.dados_incompletos) resp.erros.push(lanc.value.aviso_incompleto);
+    resp.lancamentos_recentes = todos.filter(l => l.afeta_saldo !== false).slice(0, 20); // só o que move caixa
   }
 
   return resp;
@@ -3856,9 +3874,10 @@ async function kpisSaude({ overrides = {}, conta_id = null } = {}) {
 
       if (dreM.status === 'fulfilled') {
         const l = extrairLinhasRelatorio(dreM.value);
-        kpis.receita_mes = somaPorPadrao(l, /receita|income|revenue|total income/i);
-        kpis.despesa_mes = somaPorPadrao(l, /despesa|expense|total expense/i);
-        const lucro = kpis.receita_mes - kpis.despesa_mes;
+        // dem_muyzjr88clbc: totais de topo da DRE (antes pegava o 1º subtotal) e lucro = "Lucro líquido" da própria DRE
+        kpis.receita_mes = round(dreReceita(l));
+        kpis.despesa_mes = round(dreDespesa(l));
+        const lucro = dreLucro(l) ?? (kpis.receita_mes - kpis.despesa_mes);
         if (kpis.receita_mes > 0) {
           kpis.margem_liquida_pct = round((lucro / kpis.receita_mes) * 100);
         }
@@ -3868,8 +3887,8 @@ async function kpisSaude({ overrides = {}, conta_id = null } = {}) {
 
       if (dreA.status === 'fulfilled') {
         const l = extrairLinhasRelatorio(dreA.value);
-        kpis.receita_ano = somaPorPadrao(l, /receita|income|revenue|total income/i);
-        kpis.despesa_ano = somaPorPadrao(l, /despesa|expense|total expense/i);
+        kpis.receita_ano = round(dreReceita(l));
+        kpis.despesa_ano = round(dreDespesa(l));
       }
 
       if (ar.status === 'fulfilled') {
@@ -3912,7 +3931,9 @@ async function kpisSaude({ overrides = {}, conta_id = null } = {}) {
   // Runway
   // v1.20.7 FIX: com caixa negativo o runway ficava "—" (indefinido) sem explicação — agora
   // mostra 0 explicitamente (não há fôlego de caixa nenhum) em vez de sumir da tela.
-  if (kpis.saldo_caixa <= 0 && kpis.burn_rate_mensal != null) {
+  // dem_muyzjr88clbc: burn_rate nunca é null (nasce 0) — sem dados (saldo 0 e despesa 0) o runway virava 0 e o semáforo
+  // acusava "Runway curto: 0 meses". Só é 0 de verdade com caixa negativo, ou zerado havendo despesa.
+  if (kpis.saldo_caixa < 0 || (kpis.saldo_caixa === 0 && kpis.burn_rate_mensal > 0)) {
     kpis.runway_meses = 0; kpis.runway_dias = 0;
   } else if (kpis.burn_rate_mensal > 0 && kpis.saldo_caixa > 0) {
     // Burn líquido = despesa - receita (se ainda perde dinheiro)
@@ -3984,6 +4005,26 @@ function somaPorPadrao(linhas, padrao) {
   if (total) return total.valor;
   return linhas.filter(l => l.tipo === 'linha' && padrao.test(l.label))
     .reduce((s, l) => s + l.valor, 0);
+}
+
+// dem_muyzjr88clbc: totais da DRE (ProfitAndLoss) pelo NÍVEL DE TOPO. O extrairLinhasRelatorio grava os totais das
+// subcontas ANTES do total da seção (ex.: "Total Receita de Serviços" vem antes de "Total Income"), então um find() pelo
+// primeiro total que casa /receita|income/ podia devolver só uma subconta — receita/despesa/margem inconsistentes.
+const RX_DRE_RECEITA = /receita|income|revenue|faturamento/i, RX_DRE_RECEITA_NAO = /\bnet\b|l[ií]quid|other|outr[ao]s?\b|lucro|gross/i;
+const RX_DRE_DESPESA = /despesa|expense|cost of goods|custo/i, RX_DRE_DESPESA_NAO = /\bnet\b|l[ií]quid/i;
+const RX_DRE_LUCRO = /^(net income|net earnings|net profit)$|lucro l[ií]quido|preju[ií]zo l[ií]quido|resultado l[ií]quido|renda l[ií]quida/i;
+function dreReceita(linhas) {
+  const ok = l => l.tipo === 'total' && RX_DRE_RECEITA.test(l.label || '') && !RX_DRE_RECEITA_NAO.test(l.label || '');
+  const t = linhas.find(l => ok(l) && l.nivel === 0) || linhas.find(ok);
+  return t ? t.valor : somaPorPadrao(linhas, RX_DRE_RECEITA);
+}
+function dreDespesa(linhas) {
+  const tops = linhas.filter(l => l.tipo === 'total' && l.nivel === 0 && RX_DRE_DESPESA.test(l.label || '') && !RX_DRE_DESPESA_NAO.test(l.label || ''));
+  return tops.length ? tops.reduce((s, l) => s + (l.valor || 0), 0) : somaPorPadrao(linhas, /despesa|expense|total expense/i);
+}
+function dreLucro(linhas) {
+  const t = linhas.find(l => l.tipo === 'total' && l.nivel === 0 && RX_DRE_LUCRO.test(String(l.label || '').trim()));
+  return t ? t.valor : null;
 }
 
 function round(n, casas = 2) {
