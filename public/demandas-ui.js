@@ -63,6 +63,42 @@
   }
   const botoesTarefa = (d, mini) => acoesTarefa(d).map(([op, rot, cls]) => `<button class="btn ${cls}" style="font-size:${mini ? '9.5px;padding:3px 7px' : '11px'};${op === 'cancelar' ? 'color:var(--red);' : ''}" onclick="event.stopPropagation();DEM.tarefa('${d.id}','${op}')">${rot}</button>`).join('');
   const estrelas = n => '★'.repeat(Math.max(0, Math.min(5, +n || 0))) + '☆'.repeat(5 - Math.max(0, Math.min(5, +n || 0)));
+  // "o que mudou": versão anterior (guardada pela API na 1ª edição pendente) × texto atual — mesmo retrato de api/agente-ideias.js
+  const CAMPOS_DIFF = [['titulo', 'Título'], ['problema', 'Problema'], ['proposta', 'Proposta'], ['criterios_aceite', 'Critérios de aceite'], ['como_implementar', 'Como implementar'], ['metrica_sucesso', 'Métrica de sucesso'], ['esforco', 'Esforço'], ['risco', 'Risco'], ['impacto', 'Impacto']];
+  const retrato = d => { const x = d.dados || {}; return { titulo: d.titulo || '', problema: x.problema || '', proposta: x.proposta || '', criterios_aceite: (x.criterios_aceite || []).join('\n'),
+    como_implementar: x.como_implementar || '', metrica_sucesso: x.metrica_sucesso || '', esforco: x.esforco || '', risco: x.risco || '', impacto: String(d.prioridade ?? '') }; };
+  const camposAlterados = d => { const a = d.dados?.versao_anterior; if (!a) return []; const b = retrato(d); return CAMPOS_DIFF.filter(([k]) => String(a[k] ?? '') !== b[k]); };
+  // diff linha a linha (maior subsequência comum): [{ t: '=' | '-' | '+', a, b }]
+  function diffTexto(antes, depois) {
+    const linhas = v => { const s = String(v ?? ''); return s ? s.split('\n') : []; };
+    const A = linhas(antes).slice(0, 400), B = linhas(depois).slice(0, 400), n = A.length, m = B.length;
+    const L = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+    const out = []; let i = 0, j = 0;
+    while (i < n && j < m) { if (A[i] === B[j]) out.push({ t: '=', a: A[i++], b: B[j++] }); else if (L[i + 1][j] >= L[i][j + 1]) out.push({ t: '-', a: A[i++] }); else out.push({ t: '+', b: B[j++] }); }
+    while (i < n) out.push({ t: '-', a: A[i++] }); while (j < m) out.push({ t: '+', b: B[j++] });
+    return out;
+  }
+  // duas colunas (anterior | novo): removidas e incluídas do mesmo trecho ficam lado a lado
+  function tabelaDiff(ops) {
+    const rows = []; let k = 0;
+    while (k < ops.length) {
+      if (ops[k].t === '=') { rows.push([ops[k].a, ops[k].b, false]); k++; continue; }
+      const rem = [], add = []; while (k < ops.length && ops[k].t !== '=') (ops[k].t === '-' ? rem : add).push(ops[k++]);
+      for (let z = 0; z < Math.max(rem.length, add.length); z++) rows.push([rem[z]?.a, add[z]?.b, true]);
+    }
+    const td = (v, fundo) => `<td style="vertical-align:top;width:50%;padding:2px 6px;white-space:pre-wrap;word-break:break-word;border-top:1px solid var(--bd);${v != null && fundo ? 'background:' + fundo + ';color:#222;' : ''}">${v != null ? esc(v) || '&nbsp;' : ''}</td>`;
+    return `<table style="width:100%;border-collapse:collapse;font-size:11.5px;line-height:1.5;table-layout:fixed;"><tr style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);text-align:left;"><th style="padding:2px 6px;">Anterior</th><th style="padding:2px 6px;">Novo</th></tr>
+      ${rows.map(([a, b, mud]) => `<tr>${td(a, mud && '#fee')}${td(b, mud && '#efe')}</tr>`).join('')}</table>`;
+  }
+  function blocoDiff(d) {
+    const campos = camposAlterados(d); if (!campos.length) return '';
+    const a = d.dados.versao_anterior, b = retrato(d);
+    return `<div style="margin-bottom:10px;"><button class="btn btn-g" style="font-size:10.5px;color:var(--gold);" onclick="const p=this.nextElementSibling;p.hidden=!p.hidden;this.textContent=p.hidden?'Ver o que mudou ▾':'Ocultar o que mudou ▴'">Ver o que mudou ▾</button>
+      <div hidden style="margin-top:8px;background:var(--bg2);border:1px solid var(--bd);border-radius:6px;padding:8px 10px;">
+        <div style="font-size:10.5px;color:var(--t2);margin-bottom:4px;">⚠ Alterada${d.dados.versao_alterada_em ? ' em ' + quando(d.dados.versao_alterada_em) : ''} — comparação com a versão ${d.dados.versao_aprovada ? 'aprovada' : 'original'}: <span style="background:#fee;color:#222;padding:0 4px;border-radius:2px;">removido</span> <span style="background:#efe;color:#222;padding:0 4px;border-radius:2px;">incluído</span></div>
+        ${campos.map(([k, rot]) => `<div style="margin-top:8px;"><div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);margin-bottom:2px;">${rot}</div>${tabelaDiff(diffTexto(a[k], b[k]))}</div>`).join('')}</div></div>`;
+  }
 
   function abrir() {
     const box = $('demApp'); if (!box) return;
@@ -122,6 +158,7 @@
     const n = qa ? (x.achados_qa || []).length + (x.achados_seguranca || []).length : 0;
     return `<div onclick="DEM.detalhe('${d.id}')" style="background:var(--bg3);border:1px solid ${d.status === 'sugerida' ? 'rgba(245,166,35,.45)' : 'var(--bd)'};border-radius:6px;padding:8px;margin-bottom:6px;cursor:pointer;">
       <div style="display:flex;gap:4px;align-items:center;margin-bottom:3px;"><span style="font-size:8.5px;font-family:var(--M);padding:1px 5px;border-radius:3px;background:${qa ? 'rgba(156,109,255,.18);color:#b9a0ff' : x.origem === 'fundador' ? 'rgba(34,211,163,.15);color:var(--green)' : 'rgba(79,124,255,.15);color:var(--blue)'};">${qa ? '🌙 QA madrugada' : x.origem === 'fundador' ? '✍ Fundador' : '💡 Produto'}</span>
+        ${camposAlterados(d).length ? '<span style="font-size:8.5px;font-family:var(--M);padding:1px 5px;border-radius:3px;background:rgba(245,166,35,.18);color:var(--gold);" title="Há uma versão alterada aguardando sua aprovação — abra para ver o que mudou">⚠ alterado</span>' : ''}
         ${x.area ? `<span style="font-size:8.5px;color:var(--t3);">${esc(x.area)}</span>` : ''}<span style="flex:1;"></span><span style="font-size:8.5px;color:var(--t3);">${quando(d.criado_em)}</span></div>
       <div style="font-size:11px;font-weight:600;line-height:1.35;">${esc(d.titulo)}</div>
       <div style="font-size:9.5px;color:var(--t2);margin-top:3px;">${qa ? n + ' erro(s)' : `<span style="color:var(--gold);" title="impacto">${estrelas(x.impacto || d.prioridade)}</span> · esforço ${esc(x.esforco || '?')} · risco ${esc(x.risco || '?')}`}</div>
@@ -164,7 +201,7 @@
       <div style="padding:6px 18px 14px;">
         ${qa ? '' : `<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--t2);margin-top:6px;"><span>Impacto <b style="color:var(--gold);">${estrelas(x.impacto || d.prioridade)}</b></span><span>Esforço <b>${esc(x.esforco || '?')}</b></span><span>Risco <b>${esc(x.risco || '?')}</b></span><span>Área <b>${esc(x.area || '-')}</b></span>${(x.telas_afetadas || []).length ? `<span>Telas: <b>${esc(x.telas_afetadas.join(', '))}</b></span>` : ''}</div>`}
         ${bloco('Problema', x.problema)}${bloco('Proposta', x.proposta)}${lista('Critérios de aceite', x.criterios_aceite)}${bloco('Como implementar (orientação técnica)', x.como_implementar)}${bloco('Métrica de sucesso', x.metrica_sucesso)}${achados}
-      </div><div style="padding:12px 18px;border-top:1px solid var(--bd);background:var(--bg3);border-radius:0 0 12px 12px;">${acao}</div>`);
+      </div><div style="padding:12px 18px;border-top:1px solid var(--bd);background:var(--bg3);border-radius:0 0 12px 12px;">${blocoDiff(d)}${acao}</div>`);
   }
   async function decidir(id, decisao) {
     const obs = $('demObs')?.value?.trim() || '';

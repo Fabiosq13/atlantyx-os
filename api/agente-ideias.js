@@ -42,6 +42,9 @@ async function kvSet(key, value) { const sql = await getSql(); await sql`INSERT 
 async function config() { return { ...CFG_PADRAO, ...((await kvGet('agente:ideias:config')) || {}) }; }
 const novoId = () => 'dem_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const linha = r => ({ ...r, dados: parse(r.dados) || {} });
+// retrato do texto da demanda — base do diff "o que mudou" na Esteira (o mesmo formato é montado em public/demandas-ui.js)
+const retrato = (r, d = parse(r.dados) || {}) => ({ titulo: r.titulo || '', problema: d.problema || '', proposta: d.proposta || '', criterios_aceite: (d.criterios_aceite || []).join('\n'),
+  como_implementar: d.como_implementar || '', metrica_sucesso: d.metrica_sucesso || '', esforco: d.esforco || '', risco: d.risco || '', impacto: String(r.prioridade ?? '') });
 
 function parseJSON(text) {
   const t = String(text || '').replace(/```json|```/g, '').trim();
@@ -213,8 +216,10 @@ async function decidir({ id, decisao, obs = '' } = {}, usuario) {
   if (decisao === 'aprovar' && r.status !== 'sugerida') throw new Error('Só demandas sugeridas podem ser aprovadas');
   if (decisao === 'enviar' && r.status !== 'aprovada') throw new Error('Só demandas aprovadas podem ser enviadas para implementação');
   const obsFinal = decisao === 'aprovar' ? String(obs || '').substring(0, 1000) : r.decisao_obs;
+  // aprovação registra a versão aprovada e limpa a alteração pendente (some o badge "⚠ alterado")
+  const { versao_anterior, ...dadosAprov } = r.dados;
   await sql`UPDATE agente_demandas SET status = 'aprovada', decisao_obs = ${obsFinal}, decidido_em = COALESCE(decidido_em, NOW()), atualizado_em = NOW(),
-    dados = ${JSON.stringify({ ...r.dados, aprovado_por: usuario || 'fundador' })} WHERE id = ${id}`;
+    dados = ${JSON.stringify({ ...dadosAprov, aprovado_por: usuario || 'fundador', versao_aprovada: retrato(r0, r.dados), versao_aprovada_em: new Date().toISOString() })} WHERE id = ${id}`;
   if (r.tipo !== 'implementacao') return { status: 'aprovada' };
   const iss = await abrirIssue({ ...r, decisao_obs: obsFinal });
   if (iss.erro) return { status: 'aprovada', aviso: iss.erro };
@@ -456,6 +461,10 @@ async function handler(req, res) {
         if (Array.isArray(c.criterios_aceite)) dados.criterios_aceite = c.criterios_aceite.map(x => String(x).substring(0, 400)).slice(0, 20);
         const titulo = c.titulo ? String(c.titulo).substring(0, 200) : r0.titulo;
         const pri = c.prioridade ? Math.max(1, Math.min(5, parseInt(c.prioridade))) : r0.prioridade;
+        // guarda a versão de antes da 1ª alteração pendente; se a edição voltar ao texto original, não há o que revisar
+        const antes = dados.versao_anterior || retrato(r0);
+        if (JSON.stringify(antes) === JSON.stringify(retrato({ titulo, prioridade: pri }, dados))) { delete dados.versao_anterior; delete dados.versao_alterada_em; }
+        else { dados.versao_anterior = antes; dados.versao_alterada_em = new Date().toISOString(); }
         await sql`UPDATE agente_demandas SET titulo = ${titulo}, prioridade = ${pri}, dados = ${JSON.stringify(dados)}, atualizado_em = NOW() WHERE id = ${b.id}`;
         return { ok: true };
       },
