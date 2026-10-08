@@ -432,7 +432,7 @@ async function handler(req, res) {
     analisar: () => analisar(base, payload),
     redigir: () => redigir(payload),
     prop_salvar: () => propSalvar(payload),
-    prop_listar: () => sqlRun(async sql => ({ propostas: await sql`SELECT id, numero, cliente, contato, titulo, status, formato, valor_total, valor_mensal, meses, margem_pct, motivo_resultado, projeto_id, criado_em, atualizado_em FROM propostas ORDER BY atualizado_em DESC LIMIT 300` })),
+    prop_listar: () => sqlRun(async sql => ({ propostas: await sql`SELECT id, numero, cliente, contato, titulo, status, formato, valor_total, valor_mensal, meses, margem_pct, motivo_resultado, projeto_id, criado_em, enviada_em, fechada_em, atualizado_em FROM propostas ORDER BY atualizado_em DESC LIMIT 300` })),
     prop_obter: () => sqlRun(async sql => ({ proposta: (await sql`SELECT * FROM propostas WHERE id = ${payload.id}`)[0] || null })),
     prop_excluir: () => sqlRun(async sql => { await sql`DELETE FROM propostas WHERE id = ${payload.id}`; return { ok: true }; }),
     prop_status: () => propStatus(payload),
