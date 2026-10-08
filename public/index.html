@@ -783,6 +783,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div class="ph" style="flex-wrap:wrap;row-gap:6px;"><div class="pt">&#128200; Resultado da empresa · ao vivo<span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**Resultado da empresa** — DRE do QuickBooks em competência: mês corrente até hoje e acumulado do ano. Segunda linha: caixa, fôlego, liquidez, ROE e saúde (KPIs de Saúde). Passe o mouse no ⓘ de cada cartão para ver a conta com os valores.">i</span></div><span class="tag live">QuickBooks</span>
         <span id="liveResAt" style="font-family:var(--M);font-size:9px;color:var(--t3);margin-left:8px;"></span>
         <div style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;white-space:nowrap;" onclick="dreAbrir({})" title="DRE completa do mês corrente — clique nas contas para ver os lançamentos">&#128269; Abrir DRE</button>
           <button class="btn btn-g" id="liveResBtn" style="font-size:9px;padding:3px 9px;white-space:nowrap;" onclick="carregarResultadoLive(true)">&#8635; Atualizar</button>
           <button class="btn btn-g" style="font-size:9px;padding:3px 9px;white-space:nowrap;" onclick="nav('s3dashboard',document.querySelector('.sbi[onclick*=&quot;s3dashboard&quot;]'))">Dashboard Financeiro &#8594;</button>
         </div></div>
@@ -3195,14 +3196,15 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div id="dfStatus" style="display:none;margin-bottom:10px;"></div>
   <div class="kg k4" style="margin-bottom:12px;">
     <div class="kpi bl"><div class="kl">Saldo em caixa</div><div class="kv" id="df_saldo">—</div><div class="ks" id="df_saldo_sub">hoje · extrato real (mesma base do Fluxo Detalhado)</div></div>
-    <div class="kpi gn"><div class="kl">A receber · até 30 dias</div><div class="kv" id="df_receber">—</div><div class="ks" id="df_receber_sub">faturas em aberto</div></div>
-    <div class="kpi rd"><div class="kl">A pagar · até 30 dias</div><div class="kv" id="df_pagar">—</div><div class="ks" id="df_pagar_sub">contas em aberto</div></div>
+    <div class="kpi gn"><div class="kl" id="df_receber_lbl">A receber · até 30 dias</div><div class="kv" id="df_receber">—</div><div class="ks" id="df_receber_sub">faturas em aberto</div></div>
+    <div class="kpi rd"><div class="kl" id="df_pagar_lbl">A pagar · até 30 dias</div><div class="kv" id="df_pagar">—</div><div class="ks" id="df_pagar_sub">contas em aberto</div></div>
     <div class="kpi pu"><div class="kl">Fôlego de caixa</div><div class="kv" id="df_runway">—</div><div class="ks" id="df_runway_sub">caixa ÷ queima líquida mensal</div></div>
   </div>
   <!-- v3.112: RESULTADO DA EMPRESA — faturamento, lucro e margens (DRE do QuickBooks, competência), período × ano -->
   <div class="panel" style="margin-bottom:12px;border-color:rgba(34,211,163,.35);">
     <div class="ph"><div class="pt">&#128200; Resultado da empresa · <span id="df_res_periodo" style="color:var(--t2);font-weight:400;"></span></div><span class="tag live">QuickBooks</span>
-      <span id="df_res_meta" style="font-size:9.5px;color:var(--t3);margin-left:auto;"></span></div>
+      <span id="df_res_meta" style="font-size:9.5px;color:var(--t3);margin-left:auto;"></span>
+      <button class="btn btn-g" style="font-size:9.5px;padding:3px 10px;margin-left:8px;white-space:nowrap;" onclick="dreAbrir(window._dfPeriodoAtual || {})" title="DRE completa do período do filtro — clique nas contas para ver os lançamentos">&#128269; Abrir DRE</button></div>
     <div class="pb"><div class="res-grid" id="df_res"><div style="color:var(--t3);font-size:11px;padding:10px;">Carregando...</div></div>
       <div id="df_res_nota" style="font-size:9.5px;color:var(--t3);margin-top:8px;"></div></div>
   </div>
@@ -27673,6 +27675,99 @@ function _resCardsHtml(R, modo) {
       + '</div><div class="rs"><span style="color:var(--blue);">■</span> faturamento · <span style="color:var(--green);">■</span> lucro (<span style="color:var(--red);">■</span> prejuízo) · passe o mouse para ver os valores</div></div>'); }
   return cards.join('');
 }
+// ═══ v3.122: DRE COM DRILL-DOWN — grupo → conta → lançamentos (cada um com link para o QuickBooks) ═══
+let _dreEstado = null;
+// clicar num cartão de resultado (faturamento, gastos, EBITDA, lucro, margem) abre a DRE do mesmo período
+function _dreCliqueCartoes(box, per) {
+  box.querySelectorAll('.res-card').forEach(c => { if (c.closest('#liveRes2')) return; c.style.cursor = 'pointer'; c.title = 'Clique para abrir a DRE e ver de onde vem o valor'; });
+  box.onclick = e => { if (e.target.closest('.tip-i, a, button')) return; const c = e.target.closest('.res-card'); if (!c || c.closest('#liveRes2')) return; dreAbrir(per()); };
+}
+async function dreAbrir(per, metodo) {
+  per = per || {}; metodo = metodo || _dreEstado?.metodo || 'Accrual';
+  const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  let ov = document.getElementById('dreModal'); if (ov) ov.remove();
+  ov = document.createElement('div'); ov.id = 'dreModal';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:12px;';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:10px;width:min(1180px,100%);max-height:92vh;display:flex;flex-direction:column;">'
+    + '<div style="padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><div style="flex:1;min-width:200px;"><div style="font-family:var(--H);font-size:14px;font-weight:700;">DRE — Demonstração do Resultado</div>'
+    + '<div id="dreSub" style="font-size:10.5px;color:var(--t2);margin-top:2px;">carregando do QuickBooks…</div></div>'
+    + '<input type="date" id="dreIni" style="font-size:11px;"><input type="date" id="dreFim" style="font-size:11px;">'
+    + '<select id="dreMet" style="font-size:11px;"><option value="Accrual">Competência</option><option value="Cash">Caixa</option></select>'
+    + '<button class="btn btn-g" style="font-size:10px;" onclick="dreAbrir({data_inicio:document.getElementById(\'dreIni\').value,data_fim:document.getElementById(\'dreFim\').value},document.getElementById(\'dreMet\').value)">Aplicar</button>'
+    + '<button class="btn btn-g" style="font-size:10px;" onclick="dreExpandirTudo()">Expandir tudo</button>'
+    + '<button class="btn btn-g" onclick="document.getElementById(\'dreModal\').remove()">Fechar ✕</button></div>'
+    + '<div id="dreCorpo" style="overflow:auto;padding:6px 16px 14px;"><div style="color:var(--t3);font-size:11px;padding:20px;">Carregando a DRE do QuickBooks…</div></div></div>';
+  document.body.appendChild(ov);
+  document.getElementById('dreMet').value = metodo;
+  try {
+    const d = await finApi('dre_arvore', { ...per, metodo });
+    const D = d.dre; if (!D) throw new Error(d.erro || 'sem dados');
+    _dreEstado = { D, metodo, abertos: new Set() };
+    document.getElementById('dreIni').value = D.de; document.getElementById('dreFim').value = D.ate;
+    document.getElementById('dreSub').innerHTML = esc(D.de.split('-').reverse().join('/') + ' a ' + D.ate.split('-').reverse().join('/')) + ' · regime de ' + esc(D.metodo)
+      + ' · clique em um grupo para abrir as contas e em uma conta (ou no valor de um mês) para ver os lançamentos · <a href="' + esc(D.qb_relatorio_url) + '" target="_blank" rel="noopener" style="color:var(--blue);">abrir no QuickBooks ↗</a>';
+    // por padrão: grupos abertos (mostra as contas de 1º nível)
+    const marca = (n, path) => { (n.filhos || []).forEach((f, i) => marca(f, path + '.' + i)); };
+    D.arvore.forEach((n, i) => { if (n.filhos?.length) _dreEstado.abertos.add(String(i)); marca(n, String(i)); });
+    _dreRender();
+  } catch (e) { document.getElementById('dreCorpo').innerHTML = '<div style="color:var(--red);font-size:11px;padding:16px;">Não consegui abrir a DRE: ' + esc(_errQbAmigavel(e.message)) + '</div>'; }
+}
+function dreExpandirTudo() { if (!_dreEstado) return; const S = _dreEstado.abertos; const tudo = (n, p) => { if (n.filhos?.length) { S.add(p); n.filhos.forEach((f, i) => tudo(f, p + '.' + i)); } }; _dreEstado.D.arvore.forEach((n, i) => tudo(n, String(i))); _dreRender(); }
+function _dreToggle(p) { const S = _dreEstado.abertos; S.has(p) ? S.delete(p) : S.add(p); _dreRender(); }
+function _dreRender() {
+  const { D } = _dreEstado, S = _dreEstado.abertos;
+  const brl = v => fmtBRL(v || 0), esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const cols = D.colunas, multi = cols.length > 1, rec = D.receita_total;
+  const mesCol = i => { const t = cols[i] || ''; return t; };
+  let h = '<table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="color:var(--t2);font-family:var(--M);font-size:9px;text-transform:uppercase;position:sticky;top:0;background:var(--bg2);">'
+    + '<th style="padding:8px 4px;text-align:left;min-width:220px;">Conta</th>' + cols.map(c => '<th style="padding:8px 6px;text-align:right;white-space:nowrap;">' + esc(c) + '</th>').join('') + '<th style="padding:8px 6px;text-align:right;">% receita</th></tr></thead><tbody>';
+  const linha = (n, p) => {
+    const temF = !!n.filhos?.length, aberto = S.has(p), ind = 6 + n.nivel * 16;
+    const forte = n.nivel === 0, resultado = n.tipo === 'resultado';
+    const cor = resultado ? (n.total < 0 ? 'var(--red)' : 'var(--green)') : 'inherit';
+    const clicConta = n.conta_id ? ' onclick="dreConta(\'' + esc(n.conta_id) + '\',\'' + esc(n.nome).replace(/'/g, '') + '\',null,\'' + p + '\')" style="cursor:pointer;color:var(--blue);"' : '';
+    const nome = temF ? '<span onclick="_dreToggle(\'' + p + '\')" style="cursor:pointer;user-select:none;"><span style="display:inline-block;width:14px;color:var(--t3);">' + (aberto ? '▾' : '▸') + '</span>' + esc(n.nome) + '</span>'
+      + (n.conta_id ? ' <span' + clicConta + ' title="ver lançamentos desta conta">🔍</span>' : '')
+      : '<span style="display:inline-block;width:14px;"></span>' + (n.conta_id ? '<span' + clicConta + ' title="ver lançamentos">' + esc(n.nome) + '</span>' : esc(n.nome));
+    const vals = (multi ? n.valores : [n.total]).map((v, i) => {
+      const ultimo = !multi || i === n.valores.length - 1;
+      const clic = n.conta_id && !temF && multi && !ultimo ? ' onclick="dreConta(\'' + esc(n.conta_id) + '\',\'' + esc(n.nome).replace(/'/g, '') + '\',' + i + ',\'' + p + '\')" style="cursor:pointer;padding:5px 6px;text-align:right;font-family:var(--M);white-space:nowrap;" title="lançamentos deste mês"' : ' style="padding:5px 6px;text-align:right;font-family:var(--M);white-space:nowrap;' + (ultimo && multi ? 'font-weight:700;' : '') + '"';
+      return '<td' + clic + '>' + (v ? brl(v) : '<span style="color:var(--t3);">—</span>') + '</td>'; }).join('');
+    const pct = rec ? Math.round(n.total / rec * 1000) / 10 : null;
+    let r = '<tr style="border-top:1px solid var(--bd);' + (forte ? 'background:var(--bg3);font-weight:700;' : '') + 'color:' + cor + ';"><td style="padding:5px 4px 5px ' + ind + 'px;">' + nome + '</td>' + vals
+      + '<td style="padding:5px 6px;text-align:right;color:var(--t3);font-family:var(--M);">' + (pct != null && n.total ? String(pct).replace('.', ',') + '%' : '') + '</td></tr>'
+      + '<tr id="dreL_' + p.replace(/\./g, '_') + '" style="display:none;"><td colspan="' + (cols.length + 2) + '"></td></tr>';
+    if (temF && aberto) n.filhos.forEach((f, i) => { r += linha(f, p + '.' + i); });
+    return r;
+  };
+  D.arvore.forEach((n, i) => { h += linha(n, String(i)); });
+  h += '</tbody></table>';
+  document.getElementById('dreCorpo').innerHTML = h;
+}
+async function dreConta(contaId, nome, colIdx, p) {
+  const { D, metodo } = _dreEstado; const tr = document.getElementById('dreL_' + p.replace(/\./g, '_')); if (!tr) return;
+  if (tr.style.display !== 'none' && tr.dataset.col === String(colIdx)) { tr.style.display = 'none'; return; }
+  tr.style.display = ''; tr.dataset.col = String(colIdx);
+  const td = tr.firstChild, brl = v => fmtBRL(v || 0), esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  let ini = D.de, fim = D.ate, rot = 'período';
+  if (colIdx != null) { // mês da coluna clicada
+    const t = D.colunas[colIdx] || ''; const mm = { jan: 1, feb: 2, fev: 2, mar: 3, apr: 4, abr: 4, may: 5, mai: 5, jun: 6, jul: 7, aug: 8, ago: 8, sep: 9, set: 9, oct: 10, out: 10, nov: 11, dec: 12, dez: 12 };
+    const k = Object.keys(mm).find(x => t.toLowerCase().startsWith(x)), a = (t.match(/\d{4}/) || [D.de.substring(0, 4)])[0];
+    if (k) { const m = String(mm[k]).padStart(2, '0'); const i2 = a + '-' + m + '-01'; ini = i2 > D.de ? i2 : D.de; const f2 = a + '-' + m + '-' + String(new Date(Date.UTC(+a, mm[k], 0)).getUTCDate()).padStart(2, '0'); fim = f2 < D.ate ? f2 : D.ate; rot = t; }
+  }
+  td.innerHTML = '<div style="padding:8px 10px 10px 30px;color:var(--t3);font-size:10.5px;">Carregando lançamentos de ' + esc(nome) + ' (' + esc(rot) + ')…</div>';
+  try {
+    const d = await finApi('dre_conta_lancamentos', { conta_id: contaId, data_inicio: ini, data_fim: fim, metodo });
+    const L = d.lancamentos || [];
+    td.innerHTML = '<div style="margin:2px 0 8px 26px;border-left:3px solid var(--blue);background:var(--bg3);border-radius:6px;padding:8px 10px;">'
+      + '<div style="font-size:10.5px;color:var(--t2);margin-bottom:6px;"><b>' + esc(nome) + '</b> · ' + esc(rot) + ' · ' + d.qtd + ' lançamento(s) · total ' + brl(d.total) + ' · maiores primeiro</div>'
+      + (L.length ? '<table style="width:100%;border-collapse:collapse;font-size:10.5px;"><tr style="color:var(--t3);font-family:var(--M);font-size:8.5px;text-transform:uppercase;text-align:left;"><th style="padding:3px;">Data</th><th style="padding:3px;">Tipo</th><th style="padding:3px;">Nº</th><th style="padding:3px;">Fornecedor / cliente</th><th style="padding:3px;">Descrição</th><th style="padding:3px;">Contrapartida</th><th style="padding:3px;text-align:right;">Valor</th><th></th></tr>'
+        + L.map(l => '<tr style="border-top:1px solid var(--bd);"><td style="padding:3px;font-family:var(--M);white-space:nowrap;">' + esc((l.data || '').split('-').reverse().join('/')) + '</td><td style="padding:3px;">' + esc(l.tipo) + '</td><td style="padding:3px;">' + esc(l.doc) + '</td><td style="padding:3px;">' + esc(l.nome) + '</td><td style="padding:3px;color:var(--t2);">' + esc(l.memo).substring(0, 80) + '</td><td style="padding:3px;color:var(--t2);">' + esc(l.contrapartida) + '</td>'
+          + '<td style="padding:3px;text-align:right;font-family:var(--M);white-space:nowrap;">' + brl(l.valor) + '</td><td style="padding:3px;">' + (l.qb_url ? '<a href="' + l.qb_url + '" target="_blank" rel="noopener" style="color:var(--blue);white-space:nowrap;">abrir ↗</a>' : '') + '</td></tr>').join('') + '</table>'
+        : '<div style="font-size:10.5px;color:var(--t3);">Nenhum lançamento nesta conta no período.</div>') + '</div>';
+  } catch (e) { td.innerHTML = '<div style="padding:8px 30px;color:var(--red);font-size:10.5px;">Erro: ' + esc(_errQbAmigavel(e.message)) + '</div>'; }
+}
 // v3.120: fôlego de caixa — antes só "∞" quando o faturamento médio cobria os gastos, escondendo que o caixa paga menos de
 // um mês de despesas. Agora: meses de gastos que o caixa cobre (caixa ÷ gasto médio), a queima líquida e o caixa em 30 dias.
 function _folegoInfo(k) {
@@ -27714,7 +27809,7 @@ async function carregarResultadoLive(forcar) {
   const seq = ++_liveResSeq, btn = document.getElementById('liveResBtn'), at = document.getElementById('liveResAt');
   if (btn) btn.disabled = true; if (at) at.textContent = '⏳ atualizando...';
   const pinta = (R, cache) => {
-    box.innerHTML = _resCardsHtml(R, 'live');
+    box.innerHTML = _resCardsHtml(R, 'live'); _dreCliqueCartoes(box, () => ({}));
     const nt = document.getElementById('liveResNota'); if (nt) nt.innerHTML = _resNota(R);
     if (at) { at.textContent = cache && cache.stale ? 'dados de ' + Math.round(cache.idade_s / 60) + ' min atrás — atualizando…' : 'atualizado ' + new Date().toLocaleTimeString('pt-BR').substring(0, 5); }
     // metas da empresa: realizado mensal/anual = faturamento do QuickBooks (antes era digitado à mão)
@@ -27855,22 +27950,30 @@ async function carregarDashboardFinanceiro() {
     if (cache && cache.erro) cache.erro = _dfErroLegivel(cache.erro);
     const lbl = document.getElementById('dashPeriodoLabel');
     if (lbl) { const p = d.periodo || d.dashboard?.periodo;
-      lbl.textContent = p ? ` · período: ${p.de.split('-').reverse().join('/')} a ${p.ate.split('-').reverse().join('/')}${p.atual ? ' (em curso)' : ''}` : ''; } const x = d.dashboard || {};
+      lbl.textContent = p ? ` · período: ${p.de.split('-').reverse().join('/')} a ${p.ate.split('-').reverse().join('/')}${p.atual ? ' (em curso)' : ''}` : '';
+      window._dfPeriodoAtual = p ? { data_inicio: p.de, data_fim: p.ate } : null; } const x = d.dashboard || {};
     const c = x.caixa || {}, sd = x.saude || {}, o = x.orcamento, cc = x.conciliacao || {}, mk = x.marcos || {};
     const brl = v => (v == null || isNaN(v)) ? '—' : fmtBRL(v);
     // v3.121: número principal = o que vence AGORA (vencido + próximos 30 dias); o total em aberto (inclui contas de meses à frente) vai na linha de baixo
+    // v3.122: obedecem o período do filtro — em aberto com vencimento no período; sem o recorte, cai no vencido + 30 dias
     const _ag = (tot, v, d) => tot == null ? null : (v == null && d == null ? tot : (v || 0) + (d || 0));
-    u('df_saldo', brl(c.saldo)); u('df_receber', brl(_ag(c.a_receber, c.a_receber_vencido, c.a_receber_30d))); u('df_pagar', brl(_ag(c.a_pagar, c.a_pagar_vencido, c.a_pagar_30d)));
+    const PV = c.periodo_vencimentos, _pvTxt = PV ? (PV.de.substring(0, 7) === PV.ate.substring(0, 7) ? ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][parseInt(PV.de.substring(5, 7)) - 1] + '/' + PV.de.substring(2, 4) : PV.de.split('-').reverse().slice(0, 2).join('/') + ' a ' + PV.ate.split('-').reverse().slice(0, 2).join('/')) : '';
+    u('df_saldo', brl(c.saldo));
+    u('df_receber', brl(PV?.receber ? PV.receber.valor : _ag(c.a_receber, c.a_receber_vencido, c.a_receber_30d)));
+    u('df_pagar', brl(PV?.pagar ? PV.pagar.valor : _ag(c.a_pagar, c.a_pagar_vencido, c.a_pagar_30d)));
+    u('df_receber_lbl', PV?.receber ? 'A receber · vence em ' + _pvTxt : 'A receber · até 30 dias');
+    u('df_pagar_lbl', PV?.pagar ? 'A pagar · vence em ' + _pvTxt : 'A pagar · até 30 dias');
     { // v3.120: quando vence — o total sozinho mistura o que vence hoje com contas de meses à frente
       const _q = (tot, venc, d30) => tot == null ? '' : venc == null && d30 == null ? 'total em aberto' : 'vencido ' + brl(venc || 0) + ' + próx. 30 dias ' + brl(d30 || 0) + ' · total em aberto ' + brl(tot) + ' (inclui meses à frente)';
       const _emp = c.conta_filtrada ? ' · empresa toda' : '';
       u('df_saldo_sub', c.conta_filtrada ? 'hoje · só a conta selecionada (extrato real)' : 'hoje · todas as contas · extrato real (mesma base do Fluxo Detalhado)');
-      u('df_receber_sub', (_q(c.a_receber, c.a_receber_vencido, c.a_receber_30d) || 'faturas em aberto') + _emp);
-      u('df_pagar_sub', (_q(c.a_pagar, c.a_pagar_vencido, c.a_pagar_30d) || 'contas em aberto') + _emp); }
+      const _qp = (r, tot) => r.qtd + (r.qtd === 1 ? ' em aberto' : ' em aberto') + ' no período' + (r.antes ? ' · + ' + brl(r.antes) + ' vencido antes (' + r.qtd_antes + ')' : '') + ' · total em aberto ' + brl(tot);
+      u('df_receber_sub', (PV?.receber ? _qp(PV.receber, c.a_receber) : (_q(c.a_receber, c.a_receber_vencido, c.a_receber_30d) || 'faturas em aberto')) + _emp);
+      u('df_pagar_sub', (PV?.pagar ? _qp(PV.pagar, c.a_pagar) : (_q(c.a_pagar, c.a_pagar_vencido, c.a_pagar_30d) || 'contas em aberto')) + _emp); }
     // v3.112: resultado da empresa (faturamento, lucro, EBITDA, margens) + fôlego de caixa
     try { carregarMetasEmpresa(!!window._dfForcarMetas); } catch (_) {}
     { const R = x.resultado, box = document.getElementById('df_res');
-      if (box) box.innerHTML = _resCardsHtml(R, 'dash');
+      if (box) { box.innerHTML = _resCardsHtml(R, 'dash'); _dreCliqueCartoes(box, () => window._dfPeriodoAtual || {}); }
       const nt = document.getElementById('df_res_nota'); if (nt) nt.innerHTML = _resNota(R);
       u('df_res_periodo', R && R.periodo ? _resData(R.periodo.de) + ' a ' + _resData(R.periodo.ate) : '');
       u('df_res_meta', R && R.meta_margem ? 'meta de margem: ' + _resFmtPct(R.meta_margem.pct) + ' (' + R.meta_margem.fonte + ')' : '');
@@ -27948,8 +28051,8 @@ async function carregarDashboardFinanceiro() {
     try { const k = sd.kpis || {}, pt = x.orcamento_por_tipo || {}, dsp = pt.despesa || {}, so = x.social || {}, T2 = x.planejado_real?.totais || {};
       const ab = Object.entries(mk).filter(([kk]) => kk !== 'concluido');
       _setTip('df_saldo', '**Saldo em caixa (hoje)** = saldo de abertura do mês nas contas bancárias (Balanço do QuickBooks) + entradas − saídas do mês até hoje. Simulações não entram.' + (x.periodo ? '' : '') + '\n\nValor: ' + brl(c.saldo) + '\nCom uma conta selecionada no filtro, só aquela conta.\n\nFonte: mesma base do Fluxo Detalhado (extrato real).');
-      _setTip('df_receber', '**A receber** = soma do saldo em aberto de todas as faturas (Invoice) do QuickBooks, vencidas ou não, de qualquer vencimento' + (c.qtd_receber != null ? ' (' + c.qtd_receber + ' faturas)' : '') + '.\n\nTotal: ' + brl(c.a_receber) + '\n• vencido: ' + brl(c.a_receber_vencido) + '\n• vence nos próximos 30 dias: ' + brl(c.a_receber_30d) + '\n• vence depois: ' + brl(Math.max(0, (c.a_receber || 0) - (c.a_receber_vencido || 0) - (c.a_receber_30d || 0))) + '\n\nÉ da empresa toda — o filtro de conta bancária não se aplica a faturas. Previsões de marcos não entram.');
-      _setTip('df_pagar', '**A pagar** = soma do saldo em aberto das contas (Bill) do QuickBooks, vencidas ou não, de qualquer vencimento' + (c.qtd_pagar != null ? ' (' + c.qtd_pagar + ' contas)' : '') + ' — inclui as Bills das despesas programadas já lançadas para os próximos meses.\n\nTotal: ' + brl(c.a_pagar) + '\n• vencido: ' + brl(c.a_pagar_vencido) + '\n• vence nos próximos 30 dias: ' + brl(c.a_pagar_30d) + '\n• vence depois: ' + brl(Math.max(0, (c.a_pagar || 0) - (c.a_pagar_vencido || 0) - (c.a_pagar_30d || 0))) + '\n\nÉ da empresa toda — o filtro de conta bancária não se aplica a contas a pagar.');
+      _setTip('df_receber', (c.periodo_vencimentos?.receber ? '**A receber no período** = faturas (Invoice) em aberto com vencimento entre ' + c.periodo_vencimentos.de.split('-').reverse().join('/') + ' e ' + c.periodo_vencimentos.ate.split('-').reverse().join('/') + ': ' + brl(c.periodo_vencimentos.receber.valor) + ' em ' + c.periodo_vencimentos.receber.qtd + ' fatura(s). Vencidas antes do período e ainda abertas: ' + brl(c.periodo_vencimentos.receber.antes) + '.\n\n' : '') + '**Total em aberto** = soma do saldo em aberto de todas as faturas (Invoice) do QuickBooks, vencidas ou não, de qualquer vencimento' + (c.qtd_receber != null ? ' (' + c.qtd_receber + ' faturas)' : '') + '.\n\nTotal: ' + brl(c.a_receber) + '\n• vencido: ' + brl(c.a_receber_vencido) + '\n• vence nos próximos 30 dias: ' + brl(c.a_receber_30d) + '\n• vence depois: ' + brl(Math.max(0, (c.a_receber || 0) - (c.a_receber_vencido || 0) - (c.a_receber_30d || 0))) + '\n\nÉ da empresa toda — o filtro de conta bancária não se aplica a faturas. Previsões de marcos não entram.');
+      _setTip('df_pagar', (c.periodo_vencimentos?.pagar ? '**A pagar no período** = contas (Bill) em aberto no QuickBooks com vencimento entre ' + c.periodo_vencimentos.de.split('-').reverse().join('/') + ' e ' + c.periodo_vencimentos.ate.split('-').reverse().join('/') + ' (o filtro de período do painel): ' + brl(c.periodo_vencimentos.pagar.valor) + ' em ' + c.periodo_vencimentos.pagar.qtd + ' conta(s). Vencidas antes do período e ainda abertas: ' + brl(c.periodo_vencimentos.pagar.antes) + '.\n\n' : '') + '**Total em aberto** = soma do saldo em aberto das contas (Bill) do QuickBooks, vencidas ou não, de qualquer vencimento' + (c.qtd_pagar != null ? ' (' + c.qtd_pagar + ' contas)' : '') + ' — inclui as Bills das despesas programadas já lançadas para os próximos meses.\n\nTotal: ' + brl(c.a_pagar) + '\n• vencido: ' + brl(c.a_pagar_vencido) + '\n• vence nos próximos 30 dias: ' + brl(c.a_pagar_30d) + '\n• vence depois: ' + brl(Math.max(0, (c.a_pagar || 0) - (c.a_pagar_vencido || 0) - (c.a_pagar_30d || 0))) + '\n\nÉ da empresa toda — o filtro de conta bancária não se aplica a contas a pagar.');
       _setTip('df_runway', _folegoInfo(k).tip);
       _setTip('df_semaforo', '**Saúde financeira** — 3 notas (0 a 2):\n• Fôlego ≥ 12 meses = 2 · ≥ 6 = 1\n• Margem líquida do ano ≥ 15% = 2 · ≥ 0% = 1\n• Liquidez ≥ 1,5 = 2 · ≥ 1 = 1 (sem contas a pagar = 2)\nSoma ≥ 5 verde · ≥ 3 amarelo · menos vermelho.\n\nAgora: ' + ((sd.motivos || []).join(' · ') || '—'));
       _setTip('df_orc', '**Despesa × orçamento (ano)** = despesa realizada no ano ÷ despesa orçada até hoje (o mês corrente entra proporcional aos dias corridos).\n\n' + (dsp.categorias ? brl(dsp.realizado) + ' ÷ ' + brl(dsp.orcado_ate_hoje) + ' = ' + (dsp.utilizacao_pct ?? '—') + '%' : 'Sem orçamento (Budget) cadastrado no QuickBooks.') + '\n\nFonte: Budget do QuickBooks × DRE mês a mês (competência). Abaixo de 100% = gastando menos que o orçado.');
@@ -30293,7 +30396,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.121] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.122] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -30309,7 +30412,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.121';
+window.__ATX_BUILD_ID__ = 'ATX-v3.122';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

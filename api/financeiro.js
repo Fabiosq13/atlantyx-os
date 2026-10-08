@@ -216,6 +216,8 @@ async function handler(req, res) {
       fluxo_futuro:          () => fluxoFuturo(params),
       // v3.04: DRE mensal real (QuickBooks) — base do Business Plan dinâmico da Atlantyx
       dre_mensal:            () => dreMensal(params),
+      dre_arvore:            () => dreArvore(params),        // v3.122: DRE completa com drill-down
+      dre_conta_lancamentos: () => dreContaLancamentos(params),
 
       // ── KPIs determinísticos de saúde ────────────────────────────────────
       kpis_saude:            () => kpisSaude(params),
@@ -571,7 +573,8 @@ async function contextoFinanceiro({ mes, ano, conta_id = null, data_inicio = nul
     caixa: { saldo: R.saldoCaixa ?? null, a_receber: R.aReceber ?? null, a_pagar: R.aPagar ?? null, receita_mes: R.realMes ?? null, receita_ano: R.realAnual ?? null,
       // v3.120: quando vence (vencido · 30 dias · depois) e se o saldo é de uma conta só (faturas e contas são da empresa toda)
       a_receber_vencido: R.contasReceber?.vencido ?? null, a_receber_30d: R.contasReceber?.a_vencer_30d ?? null, qtd_receber: R.contasReceber?.qtd ?? null,
-      a_pagar_vencido: R.contasPagar?.vencido ?? null, a_pagar_30d: R.contasPagar?.a_vencer_30d ?? null, qtd_pagar: R.contasPagar?.qtd ?? null, conta_filtrada: !!conta_id },
+      a_pagar_vencido: R.contasPagar?.vencido ?? null, a_pagar_30d: R.contasPagar?.a_vencer_30d ?? null, qtd_pagar: R.contasPagar?.qtd ?? null, conta_filtrada: !!conta_id,
+      periodo_vencimentos: R.periodo_vencimentos || null },
     saude: { semaforo: K.semaforo, motivos: K.semaforo_motivos, erro: K.erro || null, fonte: K.fonte || null, kpis: Object.fromEntries(Object.entries(K).filter(([k, v]) => !/semaforo|erro|fonte|timestamp/.test(k) && v != null && typeof v !== 'object')) },
     // v3.91 FIX: fluxoFuturo devolve meses como texto ("2026-10") e os valores em linhas[rótulo][mês] — antes o
     // mapeamento lia m.entradas de uma string e o gráfico do Dashboard saía vazio
@@ -2425,6 +2428,7 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
       qb_id: qid || null, qb_url: qid ? `${_qbBase}/app/invoice?txnId=${qid}` : null, ...(termoPorInv[qid] || {}) }; }),
     a_pagar: fut.erro ? null : soma(fut.pagaveis || []), a_pagar_vencido: fut.erro ? null : soma(fut.pagaveis || [], p => p.vencida), a_pagar_30d: fut.erro ? null : soma(fut.pagaveis || [], p => !p.vencida && p.data <= em30),
     qtd_pagar: fut.erro ? null : (fut.pagaveis || []).length,
+    pagaveis_itens: fut.erro ? null : (fut.pagaveis || []).map(p => ({ data: p.data, valor: round(p.valor || 0) })), // v3.122: para recortar pelo período do filtro
     erro: [ext._erro, ext.qb_erro, fut.erro].filter(Boolean).join(' | ') || null,
     fonte: 'Fluxo Detalhado (extrato real + previsto)',
   };
@@ -2527,6 +2531,12 @@ async function painelResumo({ mes, ano, data_inicio = null, data_fim = null, con
     resp.projetado = round((b.a_receber || 0) + b.receita_prevista_marcos);
     resp.contasReceber = { erro: b.erro_futuros || null, total: b.a_receber, vencido: b.a_receber_vencido, a_vencer_30d: b.a_receber_30d, qtd: b.qtd_receber, previsto_marcos: b.receita_prevista_marcos, itens: b.recebiveis_itens };
     resp.contasPagar = { total: b.a_pagar, vencido: b.a_pagar_vencido, a_vencer_30d: b.a_pagar_30d, qtd: b.qtd_pagar };
+    // v3.122: A pagar / A receber obedecem o PERÍODO do filtro — em aberto com vencimento dentro do período (mês inteiro,
+    // inclusive os dias que ainda vão vencer), e à parte o que venceu antes do período e continua em aberto.
+    { const pIni = data_inicio || inicioMes, pFim = data_fim || (mesSel ? _fimDoMes(inicioMes) : `${anoSel}-12-31`);
+      const recorte = (itens, campo) => { if (!itens) return null; const no = itens.filter(x => x[campo] && x[campo] >= pIni && x[campo] <= pFim), antes = itens.filter(x => x[campo] && x[campo] < pIni);
+        return { valor: round(no.reduce((a, x) => a + (x.valor || 0), 0)), qtd: no.length, antes: round(antes.reduce((a, x) => a + (x.valor || 0), 0)), qtd_antes: antes.length }; };
+      resp.periodo_vencimentos = { de: pIni, ate: pFim, pagar: recorte(b.pagaveis_itens, 'data'), receber: recorte(b.recebiveis_itens, 'vencimento') }; }
     if (b.erro) resp.erros.push('Base de caixa: ' + b.erro);
   } catch (e) { resp.erros.push('Base de caixa: ' + e.message); }
 
@@ -4143,6 +4153,70 @@ const RX_EB_REC_FIN = /rendimento|juros|interest|aplica[cç][aã]o financeira|re
 const _QB_TELA = { invoice: 'invoice', pagamento: 'recvpayment', deposito: 'deposit', despesa: 'expense', pagto_conta: 'billpayment', conta: 'bill', venda: 'salesreceipt', lancamento: 'journal', transferencia: 'transfer', pagto_cartao: 'creditcardpayment', reembolso: 'refundreceipt', cheque: 'check' };
 function _qbUrlTxn(txn) { const m = String(txn || '').match(/^([a-z_]+):(\w+)$/); if (!m || !_QB_TELA[m[1]]) return null;
   return (process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com') + '/app/' + _QB_TELA[m[1]] + '?txnId=' + m[2]; }
+// ═══ v3.122: DRE COM DRILL-DOWN — grupo → conta → lançamentos (com link para o lançamento no QuickBooks) ═══
+function _drePeriodo({ data_inicio, data_fim, mes, ano } = {}) {
+  const hoje = _hojeBR();
+  if (!data_inicio && (mes || ano)) { const a = parseInt(ano) || parseInt(hoje), m = parseInt(mes) || null;
+    data_inicio = m ? `${a}-${String(m).padStart(2, '0')}-01` : `${a}-01-01`; data_fim = m ? _fimDoMes(data_inicio) : `${a}-12-31`; }
+  const ini = data_inicio || hoje.substring(0, 8) + '01'; let fim = data_fim || hoje; if (fim > hoje) fim = hoje;
+  return { ini, fim: fim < ini ? ini : fim };
+}
+const _DRE_GRUPOS = { Income: 'Receita', COGS: 'Custo dos serviços', GrossProfit: 'Lucro bruto', Expenses: 'Despesas operacionais', NetOperatingIncome: 'Resultado operacional',
+  OtherIncome: 'Outras receitas', OtherExpenses: 'Outras despesas', NetOtherIncome: 'Resultado não operacional', NetIncome: 'Lucro líquido' };
+async function dreArvore({ data_inicio, data_fim, mes, ano, metodo = 'Accrual' } = {}) {
+  if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
+  const { ini, fim } = _drePeriodo({ data_inicio, data_fim, mes, ano });
+  const token = await qbToken();
+  const multi = ini.substring(0, 7) !== fim.substring(0, 7);
+  const rep = await qbPL(ini, fim, token, multi ? '&summarize_column_by=Month' : '', metodo === 'Cash' ? 'Cash' : 'Accrual');
+  const cols = (rep?.Columns?.Column || []).map(c => c.ColTitle || '');
+  const nV = Math.max(1, cols.length - 1);
+  const vals = cd => Array.from({ length: nV }, (_, i) => { const x = parseFloat(cd?.[i + 1]?.value); return isFinite(x) ? round(x) : 0; });
+  const no = (r, nivel) => {
+    if (r.type === 'Data' || (!r.type && r.ColData && !r.Rows)) { const v = vals(r.ColData);
+      return { tipo: 'conta', nome: r.ColData?.[0]?.value || '', conta_id: r.ColData?.[0]?.id || null, valores: v, total: v[v.length - 1], nivel }; }
+    const filhos = (r.Rows?.Row || []).map(x => no(x, nivel + 1)).filter(Boolean);
+    const v = r.Summary?.ColData ? vals(r.Summary.ColData) : filhos.reduce((a, f) => a.map((x, i) => round(x + (f.valores[i] || 0))), Array(nV).fill(0));
+    const nome = r.group && _DRE_GRUPOS[r.group] ? _DRE_GRUPOS[r.group] : (r.Header?.ColData?.[0]?.value || r.Summary?.ColData?.[0]?.value || '');
+    // conta-mãe com subcontas: o QuickBooks traz o id no cabeçalho — permite abrir os lançamentos dela também
+    return { tipo: nivel === 0 ? (filhos.length ? 'grupo' : 'resultado') : 'secao', grupo: r.group || null, nome, conta_id: r.Header?.ColData?.[0]?.id || null, valores: v, total: v[v.length - 1], nivel, filhos };
+  };
+  const arvore = (rep?.Rows?.Row || []).map(r => no(r, 0)).filter(x => x && (x.nome || x.filhos?.length));
+  const receita = arvore.find(x => x.grupo === 'Income')?.total || 0;
+  return { dre: { de: ini, ate: fim, metodo: metodo === 'Cash' ? 'caixa' : 'competência', colunas: cols.slice(1).map(t => /total/i.test(t) ? 'Total' : t), receita_total: receita, arvore,
+    qb_relatorio_url: (process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com') + '/app/reportv2?token=PANDL' } };
+}
+const _QB_TIPO_TELA = [[/^(invoice|fatura)/i, 'invoice'], [/^(bill payment|pagamento de conta|pagto)/i, 'billpayment'], [/^(bill|conta a pagar|conta$)/i, 'bill'], [/^(expense|despesa)/i, 'expense'],
+  [/^(check|cheque)/i, 'check'], [/^(deposit|dep[oó]sito)/i, 'deposit'], [/^(journal|lan[cç]amento|di[aá]rio)/i, 'journal'], [/^(payment|recebimento|pagamento)/i, 'recvpayment'],
+  [/^(sales receipt|recibo de venda)/i, 'salesreceipt'], [/^(transfer|transfer[eê]ncia)/i, 'transfer'], [/^(credit card|cart[aã]o)/i, 'creditcardcredit'], [/^(vendor credit|cr[eé]dito de fornecedor)/i, 'vendorcredit'],
+  [/^(credit memo|nota de cr[eé]dito)/i, 'creditmemo'], [/^(refund|reembolso)/i, 'refundreceipt']];
+async function dreContaLancamentos({ conta_id, data_inicio, data_fim, mes, ano, metodo = 'Accrual' } = {}) {
+  if (!conta_id) throw new Error('conta_id obrigatório');
+  if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
+  const { ini, fim } = _drePeriodo({ data_inicio, data_fim, mes, ano });
+  const token = await qbToken();
+  const id = String(conta_id).replace(/[^\w]/g, '');
+  const rep = await qbFetch(`/reports/GeneralLedger?start_date=${ini}&end_date=${fim}&accounting_method=${metodo === 'Cash' ? 'Cash' : 'Accrual'}&account=${id}&columns=tx_date,txn_type,doc_num,name,memo,split_acc,subt_nat_amount`, token);
+  const cols = (rep?.Columns?.Column || []).map(c => (c.MetaData || []).find(m => m.Name === 'ColKey')?.Value || c.ColTitle || '');
+  const ix = k => cols.indexOf(k);
+  const base = process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
+  const linhas = []; let conta = '';
+  const andar = (rows, nomeSec) => (rows || []).forEach(r => {
+    const sec = r.Header?.ColData?.[0]?.value || nomeSec;
+    if (r.type === 'Data' && r.ColData) { const cd = r.ColData, tipo = cd[ix('txn_type')]?.value || '', tid = cd[ix('txn_type')]?.id || null;
+      const tela = (_QB_TIPO_TELA.find(([re]) => re.test(tipo)) || [])[1];
+      const valor = parseFloat(cd[ix('subt_nat_amount')]?.value);
+      if (!cd[ix('tx_date')]?.value && !isFinite(valor)) return;
+      linhas.push({ data: cd[ix('tx_date')]?.value || '', tipo, doc: cd[ix('doc_num')]?.value || '', nome: cd[ix('name')]?.value || '', memo: cd[ix('memo')]?.value || '',
+        contrapartida: cd[ix('split_acc')]?.value || '', conta: sec, valor: isFinite(valor) ? round(valor) : 0, qb_url: tid && tela ? `${base}/app/${tela}?txnId=${tid}` : null }); }
+    if (!conta && sec) conta = sec;
+    if (r.Rows?.Row) andar(r.Rows.Row, sec);
+  });
+  andar(rep?.Rows?.Row, '');
+  const lanc = linhas.filter(l => l.data && !/^(beginning|saldo inicial)/i.test(l.tipo));
+  lanc.sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor));
+  return { conta_id: id, conta, de: ini, ate: fim, qtd: lanc.length, total: round(lanc.reduce((a, l) => a + l.valor, 0)), lancamentos: lanc.slice(0, 500) };
+}
 function qbPL(ini, fim, token, extra = '', metodo = 'Accrual') {
   return qbFetch(`/reports/ProfitAndLoss?start_date=${ini}&end_date=${fim}&accounting_method=${metodo}${extra}`, token);
 }
