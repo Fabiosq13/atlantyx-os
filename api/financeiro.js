@@ -4174,12 +4174,13 @@ function _plColunasMeses(rep, mIni, mFim, anoRef) {
 function dreResumo(rep) {
   const rows = rep?.Rows?.Row || [];
   const val = cd => { const v = parseFloat(cd?.[cd.length - 1]?.value); return isFinite(v) ? v : 0; };
-  const G = {}; let dep = 0, juros = 0, ir = 0, recFin = 0;
+  const G = {}; let dep = 0, juros = 0, ir = 0, recFin = 0; const contasGasto = []; // v3.121: de onde vêm os gastos, conta a conta
   const folhas = (row, fn) => { if (row.type === 'Data') fn(row.ColData?.[0]?.value || '', val(row.ColData)); (row.Rows?.Row || []).forEach(r => folhas(r, fn)); };
   for (const r of rows) {
     if (!r.group) continue;
     G[r.group] = r.Summary?.ColData ? val(r.Summary.ColData) : 0;
     if (r.group === 'Expenses' || r.group === 'OtherExpenses' || r.group === 'COGS') folhas(r, (lb, v) => {
+      if (v) contasGasto.push({ conta: lb, valor: v, grupo: r.group });
       if (RX_EB_DEP.test(lb)) dep += v; else if (RX_EB_IR.test(lb)) ir += v; else if (RX_EB_JUROS.test(lb)) juros += v; });
     if (r.group === 'OtherIncome') folhas(r, (lb, v) => { if (RX_EB_REC_FIN.test(lb)) recFin += v; });
   }
@@ -4201,6 +4202,9 @@ function dreResumo(rep) {
     gastos_totais: round(custos + despesas + outrasDesp), lucro_liquido: round(lucro), ebitda: round(ebitda),
     ajustes_ebitda: { depreciacao_amortizacao: round(dep), juros_despesas_financeiras: round(juros), ir_csll: round(ir), receitas_financeiras: round(recFin) },
     margem_bruta_pct: pct(lucroBruto), margem_operacional_pct: pct(operacional), margem_ebitda_pct: pct(ebitda), margem_liquida_pct: pct(lucro),
+    maiores_gastos: contasGasto.sort((a, b) => Math.abs(b.valor) - Math.abs(a.valor)).slice(0, 15).map(x => ({ conta: x.conta, valor: round(x.valor),
+      grupo: x.grupo === 'COGS' ? 'custo' : x.grupo === 'OtherExpenses' ? 'outras despesas' : 'despesa', tipo: RX_EB_IR.test(x.conta) ? 'imposto sobre lucro' : RX_EB_DEP.test(x.conta) ? 'depreciação (não é saída de caixa)' : RX_EB_JUROS.test(x.conta) ? 'juros/financeiras' : null })),
+    qtd_contas_gasto: contasGasto.length,
   };
 }
 // ═══ v3.113: METAS DA EMPRESA — faturamento anual e % de lucro (margem líquida) por ano, quanto falta, semáforo e

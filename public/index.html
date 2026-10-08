@@ -3195,8 +3195,8 @@ tr:hover td{background:rgba(79,124,255,.03);}
   <div id="dfStatus" style="display:none;margin-bottom:10px;"></div>
   <div class="kg k4" style="margin-bottom:12px;">
     <div class="kpi bl"><div class="kl">Saldo em caixa</div><div class="kv" id="df_saldo">—</div><div class="ks" id="df_saldo_sub">hoje · extrato real (mesma base do Fluxo Detalhado)</div></div>
-    <div class="kpi gn"><div class="kl">A receber</div><div class="kv" id="df_receber">—</div><div class="ks" id="df_receber_sub">faturas em aberto</div></div>
-    <div class="kpi rd"><div class="kl">A pagar</div><div class="kv" id="df_pagar">—</div><div class="ks" id="df_pagar_sub">contas em aberto</div></div>
+    <div class="kpi gn"><div class="kl">A receber · até 30 dias</div><div class="kv" id="df_receber">—</div><div class="ks" id="df_receber_sub">faturas em aberto</div></div>
+    <div class="kpi rd"><div class="kl">A pagar · até 30 dias</div><div class="kv" id="df_pagar">—</div><div class="ks" id="df_pagar_sub">contas em aberto</div></div>
     <div class="kpi pu"><div class="kl">Fôlego de caixa</div><div class="kv" id="df_runway">—</div><div class="ks" id="df_runway_sub">caixa ÷ queima líquida mensal</div></div>
   </div>
   <!-- v3.112: RESULTADO DA EMPRESA — faturamento, lucro e margens (DRE do QuickBooks, competência), período × ano -->
@@ -27644,7 +27644,10 @@ function _resCardsHtml(R, modo) {
   const fonte = '\n\nFonte: DRE (Lucros e Perdas) do QuickBooks, regime de competência, ' + per + '; o "ano" vai de 01/01 até ' + _resData(R.ano?.ate) + '.';
   const T = {
     fat: '**Faturamento** = total do grupo Receita (Income) da DRE: notas/faturas emitidas no período, pela data de emissão — não é o dinheiro recebido.\n\nPeríodo: ' + brl(p.faturamento) + ' · ano: ' + brl(a.faturamento) + (R.periodo_caixa ? '\nRecebido no período (regime de caixa): ' + brl(R.periodo_caixa.receita_recebida) : '') + (semFat && U ? '\nSem nota emitida no período; último mês fechado (' + nomeMes(U.mes) + '): ' + brl(U.faturamento) : '') + fonte,
-    gastos: '**Gastos** = custo dos serviços (COGS) + despesas operacionais + outras despesas da DRE.\n\n' + brl(p.custos) + ' + ' + brl(p.despesas_operacionais) + ' + ' + brl(p.outras_despesas) + ' = ' + brl(p.gastos_totais) + '\nAno: ' + brl(a.gastos_totais) + '\n\nAparece no lugar do lucro bruto porque não há custo direto (CPV) separado no QuickBooks.' + fonte,
+    gastos: '**Gastos** = custo dos serviços (COGS) + despesas operacionais + outras despesas da DRE.\n\n' + brl(p.custos) + ' + ' + brl(p.despesas_operacionais) + ' + ' + brl(p.outras_despesas) + ' = ' + brl(p.gastos_totais) + '\nAno: ' + brl(a.gastos_totais)
+      + ((p.maiores_gastos || []).length ? '\n\n**Maiores contas no período** (' + (p.qtd_contas_gasto || p.maiores_gastos.length) + ' contas):\n' + p.maiores_gastos.slice(0, 12).map(g => '• ' + g.conta + ': ' + brl(g.valor) + (g.tipo ? ' — ' + g.tipo : '')).join('\n') : '')
+      + (R.periodo_caixa && R.periodo_caixa.receita_recebida != null && R.periodo_caixa.lucro_caixa != null ? '\n\nPelo **caixa** (o que foi efetivamente pago no período): ' + brl(R.periodo_caixa.receita_recebida - R.periodo_caixa.lucro_caixa) + '. A DRE é por **competência**: entra a despesa do mês, paga ou não — uma conta lançada neste período e paga no seguinte conta aqui.' : '')
+      + '\n\nAparece no lugar do lucro bruto porque não há custo direto (CPV) separado no QuickBooks.' + fonte,
     lb: '**Lucro bruto** = faturamento − custo dos serviços prestados (COGS).\n\n' + brl(p.faturamento) + ' − ' + brl(p.custos) + ' = ' + brl(p.lucro_bruto) + '\nMargem bruta = lucro bruto ÷ faturamento = ' + _resFmtPct(p.margem_bruta_pct) + fonte,
     eb: '**EBITDA** = lucro líquido + depreciação/amortização + juros e despesas financeiras + IR/CSLL − receitas financeiras.\n\n' + brl(p.lucro_liquido) + ' + ' + brl(aj.depreciacao_amortizacao) + ' + ' + brl(aj.juros_despesas_financeiras) + ' + ' + brl(aj.ir_csll) + ' − ' + brl(aj.receitas_financeiras) + ' = ' + brl(p.ebitda) + '\nMargem EBITDA = EBITDA ÷ faturamento = ' + _resFmtPct(p.margem_ebitda_pct) + '\n\nAs contas de depreciação, juros e IR/CSLL são reconhecidas pelo nome na DRE.' + fonte,
     ll: '**Lucro líquido** = linha "Lucro líquido" (Net Income) da DRE = faturamento − gastos + outras receitas.\n\n' + brl(p.faturamento) + ' − ' + brl(p.gastos_totais) + ' + ' + brl(p.outras_receitas) + ' = ' + brl(p.lucro_liquido) + '\nAno: ' + brl(a.lucro_liquido) + fonte,
@@ -27744,7 +27747,7 @@ async function carregarResultadoLive(forcar) {
       saude: '**Saúde financeira** — semáforo com 3 notas (0 a 2 cada):\n• Fôlego: ≥ 12 meses = 2 · ≥ 6 = 1\n• Margem líquida do ano: ≥ 15% = 2 · ≥ 0% = 1\n• Liquidez: ≥ 1,5 = 2 · ≥ 1 = 1 (sem contas a pagar = 2)\nSoma ≥ 5 verde · ≥ 3 amarelo · abaixo vermelho.\n\nAgora: ' + ((k.semaforo_motivos || []).join(' · ') || '—') + fk,
     };
     b2.innerHTML = [
-      _resCartao('Saldo em caixa', brl(k.saldo_caixa), 'hoje · a receber ' + brl(k.contas_receber) + ' · a pagar ' + brl(k.contas_pagar), k.saldo_caixa < 0 ? 'var(--red)' : 'var(--blue)', TK.caixa),
+      _resCartao('Saldo em caixa', brl(k.saldo_caixa), k.contas_pagar_30d != null ? 'hoje · em 30 dias: a receber ' + brl((k.contas_receber_vencido || 0) + (k.contas_receber_30d || 0)) + ' · a pagar ' + brl((k.contas_pagar_vencido || 0) + (k.contas_pagar_30d || 0)) : 'hoje · a receber ' + brl(k.contas_receber) + ' · a pagar ' + brl(k.contas_pagar), k.saldo_caixa < 0 ? 'var(--red)' : 'var(--blue)', TK.caixa),
       (() => { const F = _folegoInfo(k); return _resCartao('Fôlego de caixa', F.val, F.sub, F.cor, F.tip + fk); })(),
       _resCartao('Liquidez corrente', k.liquidez_corrente != null ? String(k.liquidez_corrente).replace('.', ',') : (k.contas_pagar > 0 ? '—' : 'sem contas a pagar'), '(caixa + a receber) ÷ a pagar · ideal ≥ 1,5', k.liquidez_corrente == null ? 'var(--green)' : k.liquidez_corrente >= 1.5 ? 'var(--green)' : k.liquidez_corrente >= 1 ? 'var(--gold)' : 'var(--red)', TK.liq),
       _resCartao('ROE no ano', k.roi_pct != null ? _resFmtPct(k.roi_pct) : 'n/d', k.roi_pct != null ? 'lucro do ano ÷ patrimônio líquido ' + brl(k.patrimonio_liquido) : 'sem patrimônio líquido positivo no QuickBooks', k.roi_pct == null ? 'var(--t3)' : k.roi_pct < 0 ? 'var(--red)' : 'var(--pu)', TK.roe),
@@ -27855,9 +27858,11 @@ async function carregarDashboardFinanceiro() {
       lbl.textContent = p ? ` · período: ${p.de.split('-').reverse().join('/')} a ${p.ate.split('-').reverse().join('/')}${p.atual ? ' (em curso)' : ''}` : ''; } const x = d.dashboard || {};
     const c = x.caixa || {}, sd = x.saude || {}, o = x.orcamento, cc = x.conciliacao || {}, mk = x.marcos || {};
     const brl = v => (v == null || isNaN(v)) ? '—' : fmtBRL(v);
-    u('df_saldo', brl(c.saldo)); u('df_receber', brl(c.a_receber)); u('df_pagar', brl(c.a_pagar));
+    // v3.121: número principal = o que vence AGORA (vencido + próximos 30 dias); o total em aberto (inclui contas de meses à frente) vai na linha de baixo
+    const _ag = (tot, v, d) => tot == null ? null : (v == null && d == null ? tot : (v || 0) + (d || 0));
+    u('df_saldo', brl(c.saldo)); u('df_receber', brl(_ag(c.a_receber, c.a_receber_vencido, c.a_receber_30d))); u('df_pagar', brl(_ag(c.a_pagar, c.a_pagar_vencido, c.a_pagar_30d)));
     { // v3.120: quando vence — o total sozinho mistura o que vence hoje com contas de meses à frente
-      const _q = (tot, venc, d30) => tot == null ? '' : 'vencido ' + brl(venc || 0) + ' · próx. 30 dias ' + brl(d30 || 0) + ' · depois ' + brl(Math.max(0, tot - (venc || 0) - (d30 || 0)));
+      const _q = (tot, venc, d30) => tot == null ? '' : venc == null && d30 == null ? 'total em aberto' : 'vencido ' + brl(venc || 0) + ' + próx. 30 dias ' + brl(d30 || 0) + ' · total em aberto ' + brl(tot) + ' (inclui meses à frente)';
       const _emp = c.conta_filtrada ? ' · empresa toda' : '';
       u('df_saldo_sub', c.conta_filtrada ? 'hoje · só a conta selecionada (extrato real)' : 'hoje · todas as contas · extrato real (mesma base do Fluxo Detalhado)');
       u('df_receber_sub', (_q(c.a_receber, c.a_receber_vencido, c.a_receber_30d) || 'faturas em aberto') + _emp);
@@ -30288,7 +30293,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.120] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.121] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -30304,7 +30309,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.120';
+window.__ATX_BUILD_ID__ = 'ATX-v3.121';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
