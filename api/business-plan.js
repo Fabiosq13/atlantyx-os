@@ -69,6 +69,18 @@ async function salvarBP({ id, tipo = 'ideia', titulo, premissas, narrativa = {},
     await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${'bp:' + bpId}, ${JSON.stringify({ ...reg, atualizado_em: new Date().toISOString() })}, NOW())
       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
   }
+  // v3.116: contraproposta editada e salva na tela do business plan — os indicadores da contraproposta (narrativa.depois)
+  // são recalculados e o card da ideia é atualizado; antes o bloco Contraproposta continuava mostrando os números antigos
+  if (tipo === 'contraproposta' && id) {
+    try {
+      const ind = _ind(res);
+      if (narrativa && typeof narrativa === 'object') { narrativa.depois = ind; narrativa.anos_depois = _anosResumo(res); narrativa.editada_em = new Date().toISOString(); }
+      if (_temTabela) await sql`UPDATE business_plans SET narrativa = ${JSON.stringify(narrativa)} WHERE id = ${bpId}`;
+      if (ideiaId) { const r = await sql`SELECT data FROM ideias WHERE id = ${ideiaId} LIMIT 1`; const d = r[0]?.data; if (d) { const o = typeof d === 'string' ? JSON.parse(d) : d;
+        if (o.contraproposta_bp?.id === bpId) { o.contraproposta_bp = { ...o.contraproposta_bp, atualizado_em: new Date().toISOString(), viavel_depois: ind.viavel, vpl_depois: ind.vpl, tir_depois: ind.tir_anual };
+          await sql`UPDATE ideias SET data = ${JSON.stringify(o)}, atualizado_em = NOW() WHERE id = ${ideiaId}`; } } }
+    } catch (e) { console.warn('[BP] atualizar contraproposta salva:', e.message); }
+  }
   // "Assina" a ideia: grava o vínculo do plano dentro do cadastro da ideia (pipeline S1)
   if (tipo === 'ideia' && ideia?.titulo && vincularIdeia) {
     try {
@@ -87,7 +99,7 @@ async function salvarBP({ id, tipo = 'ideia', titulo, premissas, narrativa = {},
       }
     } catch (e) { console.warn('[BP] vínculo com a ideia falhou:', e.message); }
   }
-  return { ...reg, resultado: { ...res, cenarios: cenariosBP(premissas) } };
+  return { ...reg, salvo_em: new Date().toISOString(), indicadores: _ind(res), resultado: { ...res, cenarios: cenariosBP(premissas) } };
 }
 
 async function obterBP(id) {

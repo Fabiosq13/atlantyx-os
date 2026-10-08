@@ -416,7 +416,7 @@ tr:hover td{background:rgba(79,124,255,.03);}
 .prog-fill{height:100%;border-radius:4px;transition:width .4s;}
 ::-webkit-scrollbar{width:3px;}
 ::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:2px;}
-.toast{position:fixed;bottom:18px;right:18px;background:var(--bg3);border:1px solid var(--bd2);border-radius:7px;padding:8px 13px;font-size:11px;z-index:999;opacity:0;transform:translateY(5px);transition:all .2s;pointer-events:none;}
+.toast{position:fixed;bottom:18px;right:18px;background:var(--bg3);border:1px solid var(--bd2);border-radius:7px;padding:8px 13px;font-size:11px;z-index:100001;opacity:0;transform:translateY(5px);transition:all .2s;pointer-events:none;}
 
 /* ── MENU RETRATIL POR SQUADS ────────────────────── */
 .sb-nav{flex:1;overflow-y:auto;padding:6px 0 8px;}
@@ -6370,6 +6370,9 @@ async function salvarIdeiaS1(ideia) {
     const r = await fetch('/api/db', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save_ideia', value: ideia }) });
     const d = await r.json().catch(() => ({}));
     if (!d.success) throw new Error(d.error || ('Servidor retornou ' + r.status));
+    // v3.116: o servidor devolve os vínculos mais recentes (business plan / contraproposta) — a tela fica com eles
+    if (d.business_plan) ideia.business_plan = d.business_plan; if (d.contraproposta_bp) ideia.contraproposta_bp = d.contraproposta_bp;
+    ideia._salvo_em = d.salvo_em || new Date().toISOString();
     if (window._ichatPendente) _ichatLevarParaIdeia(ideia).catch(() => {}); // v3.37
     return true;
   } catch (e) { addLog('err', '[S1] Não consegui salvar a ideia no banco: ' + e.message); toast('A ideia não foi salva no banco: ' + e.message, 'error'); return false; }
@@ -10426,7 +10429,7 @@ function ideiaFechar(forcar) {
   _ideiaEd = null; _ideiaEdSujo = false;
 }
 
-function ideiaCampo(k, v) { if (!_ideiaEd) return; _ideiaEd[k] = v; if (k === 'categoria') _ideiaEd.cat = v; _ideiaEdSujo = true; const t = document.getElementById('ideiaSujo'); if (t) t.textContent = '· alterações não salvas'; }
+function ideiaCampo(k, v) { if (!_ideiaEd) return; _ideiaEd[k] = v; if (k === 'categoria') _ideiaEd.cat = v; _ideiaEdSujo = true; const t = document.getElementById('ideiaSujo'); if (t) t.textContent = '· alterações não salvas'; const st = document.getElementById('ideiaSalvoSt'); if (st) { st.textContent = '● alterações não salvas'; st.style.color = 'var(--gold)'; } }
 
 function _ideiaResumoHtml(x) {
   const a = x.analise_completa || x.analise || {}, r = x.resultados_s1 || {}, p = r.parecer || {}, pq = r.pesquisa || {}, bp = x.business_plan;
@@ -10472,7 +10475,7 @@ function ideiaRender() {
     + '<div id="ideiaMsg" style="font-size:11px;margin-top:10px;"></div>'
     + '</div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;padding:12px 18px;border-top:1px solid var(--bd);background:var(--bg3);border-radius:0 0 12px 12px;">'
-    + '<button class="btn btn-p" onclick="ideiaSalvar()">&#10003; Salvar</button>'
+    + '<button class="btn btn-p" onclick="ideiaSalvar()">&#10003; Salvar</button><span id="ideiaSalvoSt" style="align-self:center;font-family:var(--M);font-size:10px;color:' + (_ideiaEdSujo ? 'var(--gold)' : 'var(--t3)') + ';">' + (_ideiaEdSujo ? '● alterações não salvas' : (x._salvo_em ? '✓ salvo às ' + new Date(x._salvo_em).toLocaleTimeString('pt-BR').substring(0, 5) : '')) + '</span>'
     + '<button class="btn btn-gn" id="btnIdeiaPdf" onclick="ideiaPdf()">&#128196; Gerar PDF — relatório completo + resumo financeiro</button>'
     + '<button class="btn btn-g" id="btnIdeiaAnalisar" onclick="ideiaAnalisar()">&#9670; ' + ((x.analise_completa || x.analise) ? 'Reanalisar' : 'Analisar') + ' com IA</button>'
     + '<button class="btn btn-g" onclick="ideiaBP()">&#128202; ' + (x.business_plan ? 'Abrir' : 'Gerar') + ' Business Plan</button>'
@@ -10499,7 +10502,16 @@ async function ideiaSalvar() {
   if (!ok) { _ideiaMsg('Não foi possível salvar — tente de novo.', 'var(--red)'); return false; }
   const i = S1_PIPELINE.findIndex(y => String(y.id) === String(x.id));
   if (i >= 0) S1_PIPELINE[i] = JSON.parse(JSON.stringify(x)); else S1_PIPELINE.unshift(JSON.parse(JSON.stringify(x)));
-  renderS1Kanban(); _ideiaEdSujo = false; ideiaRender(); toast('Ideia salva', 'success');
+  // v3.116: o que está digitado na contraproposta (oferta, condições, ajuste) não se perde ao salvar
+  const _cpCampos = ['cpOferta_ed', 'cpInstr_ed', 'cpAjuste_ed', 'cpCambio_ed', 'cpDest_ed'].map(id => [id, document.getElementById(id)?.value]);
+  renderS1Kanban(); _ideiaEdSujo = false; ideiaRender();
+  _cpCampos.forEach(([id, v]) => { const e = document.getElementById(id); if (e && v != null && v !== '') e.value = v; });
+  const hora = new Date(x._salvo_em || Date.now()).toLocaleTimeString('pt-BR').substring(0, 5);
+  const cp = x.contraproposta_bp, bp = x.business_plan;
+  const det = [bp?.id ? 'business plan vinculado' : '', cp?.id ? 'contraproposta ' + (cp.vpl_depois != null ? '(VPL R$ ' + Math.round(cp.vpl_depois).toLocaleString('pt-BR') + ')' : 'vinculada') : ''].filter(Boolean).join(' · ');
+  _ideiaMsg('✓ Ideia salva no banco às ' + hora + (det ? ' — ' + det : '') + '. A contraproposta e a conversa são gravadas automaticamente a cada recálculo/mensagem.', 'var(--green)');
+  const st = document.getElementById('ideiaSalvoSt'); if (st) { st.textContent = '✓ salvo às ' + hora; st.style.color = 'var(--green)'; }
+  toast('Ideia salva às ' + hora, 'success');
   return true;
 }
 
@@ -12342,13 +12354,19 @@ async function bpRecalcular() {
   try { const d = await bpApi('recalcular', { premissas: _bpAtual.premissas }); _bpAtual.resultado = d.resultado; bpRender(); toast('Recalculado — clique em Salvar para gravar', 'success'); }
   catch (e) { toast(e.message, 'error'); }
 }
+let _bpSalvoEm = null;
 async function bpSalvar(copia) {
   const b = _bpAtual; if (!b) return;
   try {
     // recalcula antes de gravar, para o resumo da lista refletir as premissas editadas
+    const btn = document.getElementById('bpBtnSalvar'); if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
     const d = await bpApi('salvar', { id: b.id, copia: !!copia, tipo: b.tipo || 'ideia', titulo: b.titulo, premissas: b.premissas, narrativa: b.narrativa, ideia: b.ideia });
-    _bpAtual = d.bp; _bpSujo = false; bpRender(); bpListar(); toast(copia ? 'Cópia salva — você está editando a cópia' : 'Business plan salvo', 'success'); }
-  catch (e) { toast(e.message, 'error'); }
+    _bpAtual = d.bp; _bpSujo = false; _bpSalvoEm = d.bp.salvo_em || new Date().toISOString(); bpRender(); bpListar();
+    // v3.116: se é uma contraproposta aberta no card da ideia, o bloco Contraproposta passa a mostrar os números novos
+    try { Object.keys(window._cp || {}).forEach(k => { if (window._cp[k]?.bp?.id === d.bp.id) { window._cp[k].bp = d.bp; cpRender(k); } }); } catch (_) {}
+    const I = d.bp.indicadores || d.bp.resultado?.indicadores || {}, hora = new Date(_bpSalvoEm).toLocaleTimeString('pt-BR').substring(0, 5);
+    toast((copia ? 'Cópia salva' : 'Salvo e recalculado') + ' às ' + hora + (I.vpl != null ? ' — VPL R$ ' + Math.round(I.vpl).toLocaleString('pt-BR') : ''), 'success'); }
+  catch (e) { toast('Não salvou: ' + e.message, 'error'); const btn = document.getElementById('bpBtnSalvar'); if (btn) { btn.disabled = false; btn.innerHTML = '&#10003; Salvar'; } }
 }
 
 // ── Render ──────────────────────────────────────────────────────────────
@@ -12395,7 +12413,8 @@ function bpRender() {
     + '<button class="btn btn-gn" style="font-size:10px;" onclick="bpExcel()">&#11015; Baixar Excel</button>'
     + (vivo ? '<button class="btn btn-p" style="font-size:10px;margin-left:5px;" onclick="bpAtlantyxEditavel()" title="Congela os números de hoje num plano salvo que você pode editar">&#9998; Salvar como plano editável</button>'
       : '<button class="btn btn-g" id="bpBtnRecalc" style="font-size:10px;margin-left:5px;" onclick="bpRecalcular()">&#8635; Recalcular</button>'
-      + '<button class="btn btn-p" style="font-size:10px;margin-left:5px;" onclick="bpSalvar()">&#10003; Salvar</button>'
+      + '<button class="btn btn-p" id="bpBtnSalvar" style="font-size:10px;margin-left:5px;" onclick="bpSalvar()">&#10003; Salvar</button>'
+      + '<span style="font-family:var(--M);font-size:9.5px;margin-left:6px;color:' + (_bpSujo ? 'var(--gold)' : 'var(--green)') + ';">' + (_bpSujo ? '' : (_bpSalvoEm && b.id ? '✓ salvo e recalculado às ' + new Date(_bpSalvoEm).toLocaleTimeString('pt-BR').substring(0, 5) : '')) + '</span>'
       + '<button class="btn btn-g" style="font-size:10px;margin-left:5px;" onclick="bpSalvar(true)" title="Grava uma nova versão sem alterar este plano">&#10697; Salvar como cópia</button>'
       + '<button class="btn btn-g" style="font-size:10px;margin-left:5px;" onclick="document.getElementById(\'bpImpFile\').click()" title="Traz para o sistema as premissas alteradas no Excel baixado">&#11014; Importar Excel editado</button>'
       + '<input type="file" id="bpImpFile" accept=".xlsx" style="display:none;" onchange="bpImportarExcel(this)"/>')
@@ -30162,7 +30181,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.115] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.116] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -30178,7 +30197,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.115';
+window.__ATX_BUILD_ID__ = 'ATX-v3.116';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

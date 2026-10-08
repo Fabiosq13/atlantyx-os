@@ -264,10 +264,15 @@ async function handler(req, res) {
     if (action === 'save_ideia') {
       const ideia = value;
       if (!ideia.id) ideia.id = 'ideia_' + Date.now();
+      // v3.116: o servidor grava sozinho o vínculo do business plan e da contraproposta quando eles são (re)calculados —
+      // salvar a ideia com uma cópia antiga da tela apagava esse vínculo (o plano/contraproposta "sumia" ao reabrir)
+      try { const at = (await sql`SELECT data FROM ideias WHERE id = ${String(ideia.id)} LIMIT 1`)[0]?.data; const o = typeof at === 'string' ? JSON.parse(at) : at;
+        if (o) for (const k of ['business_plan', 'contraproposta_bp']) { const srv = o[k], cli = ideia[k];
+          if (srv && (!cli || String(srv.atualizado_em || '') > String(cli.atualizado_em || ''))) ideia[k] = srv; } } catch (_) {}
       await sql`INSERT INTO ideias (id,titulo,status,data,atualizado_em)
         VALUES (${ideia.id},${ideia.titulo||''},${ideia.stage||ideia.status||'Recebida'},${jsonSeguro(ideia)},NOW())
         ON CONFLICT (id) DO UPDATE SET titulo=EXCLUDED.titulo, status=EXCLUDED.status, data=EXCLUDED.data, atualizado_em=NOW()`;
-      return res.status(200).json({ success: true, id: ideia.id });
+      return res.status(200).json({ success: true, id: ideia.id, salvo_em: new Date().toISOString(), business_plan: ideia.business_plan || null, contraproposta_bp: ideia.contraproposta_bp || null });
     }
     // v3.36: excluir ideia (antes não havia como — o card não tinha excluir)
     if (action === 'delete_ideia') {
