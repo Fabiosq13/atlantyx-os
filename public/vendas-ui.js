@@ -34,6 +34,7 @@
   function painelEsqueleto() {
     return `<div class="cp-top"><div style="flex:1;min-width:0;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">Painel de Vendas IA</div>
         <div style="font-size:10.5px;color:var(--t2);">Quanto falta, quantas vendas você precisa, como estão as margens — e o que fazer hoje</div></div>
+      <a href="#funil-propostas" class="btn btn-g" onclick="event.preventDefault();VD.funilIr()" title="Taxa de conversão, valor em aberto e tempo até fechamento das propostas">📊 Funil de propostas →</a>
       <button class="btn btn-g" id="vdBtnAtualizar" onclick="VD.painelCarregar(true)">↻ Atualizar</button>
       <button class="btn btn-p" id="vdBtnCoach" onclick="VD.coach()">🤖 O que fazer hoje</button></div>
       <div id="painel-erro"></div><div id="vdPnStatus"></div><div id="vdCoach"></div><div id="vdPnCorpo">${painelSkeleton()}</div>`;
@@ -259,6 +260,7 @@
     if (!box.dataset.ok) { box.dataset.ok = '1'; box.innerHTML = propEsqueleto(); PROP = novaProp(); }
     const ctx = rfpCtxLer();
     if (ctx && PROP && PROP.dados.escopo && !PROP.id && !confirm('Descartar a proposta em edição (não salva) e abrir a da RFP?')) { aba(box.dataset.aba || 'nova'); return; }
+    funilCarregar();
     try { const [rc, cfg] = await Promise.all([api('rate_card'), api('prop_config')]); RC = rc.rate_card || []; CFG = cfg; } catch (_) {}
     if (!ctx) return aba(box.dataset.aba || 'nova');
     // Ponte s2rfps → s7propostas: formulário pré-preenchido com o edital e rascunho IA disparado
@@ -290,11 +292,66 @@
     if (!(await analisar())) return;
     await redigir();
   }
+
+  // ═══════════════ FUNIL DE PROPOSTAS (conversão, valor em aberto, tempo até fechar) ═══════════════
+  // Só leitura local: mesma lista de prop_listar. Entrada no funil = enviada_em (ou criado_em se nunca foi marcada como enviada).
+  // Período filtra as propostas que entraram no funil nos últimos N dias.
+  let FUNIL = null, FUNIL_DIAS = 90, FUNIL_SEQ = 0, FUNIL_ROLAR = false;
+  const FUNIL_ETAPAS = [['rascunho', 'Rascunho', 'var(--t3)'], ['enviada', 'Enviada', 'var(--blue)'], ['negociacao', 'Em negociação', 'var(--gold)'], ['ganha', 'Fechada (ganha)', 'var(--green)'], ['perdida', 'Perdida', 'var(--red)']];
+  function calcularFunilPropostas(lista, dias) {
+    const corte = Date.now() - dias * 864e5, t = v => v ? new Date(v).getTime() : NaN;
+    const etapas = {}; FUNIL_ETAPAS.forEach(([k]) => { etapas[k] = { qtd: 0, valor: 0 }; });
+    let ativas = 0, aberto = 0, qtdAberto = 0, enviadas = 0, ganhas = 0; const ciclos = [];
+    (lista || []).forEach(p => {
+      const entrada = t(p.enviada_em) || t(p.criado_em); if (!(entrada >= corte)) return;
+      const e = etapas[p.status]; if (!e) return; const v = +p.valor_total || 0;
+      e.qtd++; e.valor += v;
+      if (['rascunho', 'enviada', 'negociacao'].includes(p.status)) ativas++;
+      if (['enviada', 'negociacao'].includes(p.status)) { aberto += v; qtdAberto++; }
+      if (p.status !== 'rascunho') enviadas++;
+      if (p.status === 'ganha') { ganhas++; const f = t(p.fechada_em); if (f >= entrada) ciclos.push((f - entrada) / 864e5); }
+    });
+    return { dias, etapas, ativas, aberto, qtdAberto, enviadas, ganhas, conversao: enviadas ? ganhas / enviadas * 100 : null,
+      tempo_medio: ciclos.length ? ciclos.reduce((a, x) => a + x, 0) / ciclos.length : null, qtdCiclos: ciclos.length };
+  }
+  async function funilCarregar() {
+    const seq = ++FUNIL_SEQ; funilRender();
+    try { const d = await api('prop_listar', {}, PN_MS); if (seq !== FUNIL_SEQ) return; FUNIL = { lista: d.propostas || [] }; }
+    catch (e) { if (seq !== FUNIL_SEQ) return; FUNIL = { erro: e.message }; }
+    funilRender();
+  }
+  function funilPeriodo(d) { FUNIL_DIAS = +d || 90; funilRender(); }
+  function funilRender() {
+    const el = $('funil-propostas'); if (!el) return;
+    const per = `<div class="seg">${[30, 60, 90].map(d => `<button class="${d === FUNIL_DIAS ? 'on' : ''}" onclick="VD.funilPeriodo(${d})">${d}d</button>`).join('')}</div>`;
+    const cab = `<div class="ph"><div class="pt">📊 Funil de Propostas</div><span style="font-size:10px;color:var(--t2);flex:1;">propostas que entraram no funil nos últimos ${FUNIL_DIAS} dias</span>${per}</div>`;
+    const card = (cor, t, v, s) => `<div class="kpi" style="border-left:3px solid ${cor};"><div class="kl">${t}</div><div class="kv" style="color:${cor};">${v}</div><div class="ks">${s || ''}</div></div>`;
+    let corpo;
+    if (!FUNIL) corpo = '<div style="font-size:11px;color:var(--t3);padding:8px 0;">Calculando o funil...</div>';
+    else if (FUNIL.erro) corpo = `<div style="display:flex;gap:10px;align-items:center;"><span style="color:var(--red);font-size:11px;flex:1;">⚠ ${esc(FUNIL.erro)}</span><button class="btn btn-g" onclick="VD.funilCarregar()">↻ Tentar novamente</button></div>`;
+    else {
+      const f = calcularFunilPropostas(FUNIL.lista, FUNIL_DIAS), tot = FUNIL_ETAPAS.reduce((a, [k]) => a + f.etapas[k].qtd, 0);
+      const cConv = f.conversao == null ? 'var(--t3)' : f.conversao >= 30 ? 'var(--green)' : f.conversao >= 15 ? 'var(--gold)' : 'var(--red)';
+      const dist = FUNIL_ETAPAS.map(([k, n, c]) => { const e = f.etapas[k]; return `<div style="font-size:10.5px;"><div style="display:flex;justify-content:space-between;gap:6px;"><span style="color:${c};font-weight:600;">${n}</span><b>${e.qtd}</b></div>${barra(e.qtd, tot, c)}<div style="color:var(--t3);font-size:9.5px;margin-top:2px;">${R(e.valor)}</div></div>`; }).join('');
+      corpo = `<div class="kg k5" style="margin:0;">
+          ${card('var(--blue)', 'Propostas ativas', f.ativas, `rascunho ${f.etapas.rascunho.qtd} · enviada ${f.etapas.enviada.qtd} · negociação ${f.etapas.negociacao.qtd}`)}
+          ${card('var(--gold)', 'Valor em aberto', R(f.aberto), `${f.qtdAberto} proposta(s) enviada(s) ou em negociação`)}
+          ${card(cConv, 'Taxa de conversão', f.conversao == null ? '—' : P(f.conversao), `${f.ganhas} fechada(s) ÷ ${f.enviadas} enviada(s)`)}
+          ${card('var(--pu)', 'Tempo médio até fechar', f.tempo_medio == null ? '—' : N(f.tempo_medio) + ' dias', f.qtdCiclos ? `do envio à assinatura · ${f.qtdCiclos} proposta(s) ganha(s)` : 'sem propostas ganhas no período')}
+          <div class="kpi"><div class="kl">Distribuição por etapa</div><div style="display:grid;gap:5px;margin-top:4px;">${dist}</div></div></div>
+        <div style="font-size:9.5px;color:var(--t3);margin-top:6px;">Conversão = fechadas (ganhas) ÷ enviadas (enviada, em negociação, ganha ou perdida) no período. Valor em aberto = soma das propostas enviadas ou em negociação. Dados das propostas salvas — sem consulta externa.</div>`;
+    }
+    el.innerHTML = `<div class="panel">${cab}<div class="pb">${corpo}</div></div>`;
+    if (FUNIL && FUNIL_ROLAR) { FUNIL_ROLAR = false; el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  }
+  function funilIr() {
+    FUNIL_ROLAR = true; nav('s7propostas', document.querySelector(`.sbi[onclick*="'s7propostas'"]`));
+  }
   function propEsqueleto() {
     return `<div class="cp-top"><div style="flex:1;min-width:0;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">Elaboração de Propostas</div>
       <div style="font-size:10.5px;color:var(--t2);">Escopo → equipe e horas → melhor formato para as metas e para o cliente → proposta no padrão Atlantyx</div></div>
       <div class="seg" id="vdAbas"><button data-a="nova" onclick="VD.aba('nova')">Nova / editar</button><button data-a="lista" onclick="VD.aba('lista')">Propostas</button><button data-a="aprender" onclick="VD.aba('aprender')">Aprendizado</button><button data-a="rate" onclick="VD.aba('rate')">Rate card e parâmetros</button></div>
-      <button class="btn btn-p" onclick="VD.nova()">＋ Nova proposta</button></div><div id="vdPropCorpo"></div>`;
+      <button class="btn btn-p" onclick="VD.nova()">＋ Nova proposta</button></div><div id="funil-propostas"></div><div id="vdPropCorpo"></div>`;
   }
   function aba(a) {
     $('vdProp').dataset.aba = a; document.querySelectorAll('#vdAbas button').forEach(b => b.classList.toggle('on', b.dataset.a === a));
@@ -408,6 +465,7 @@
   async function salvar() {
     lerForm(); lerDoc(); if (!PROP.cliente) return nota('Informe o cliente', 'error');
     try { const r = await api('prop_salvar', PROP); PROP.id = r.id; PROP.numero = r.numero; nota('Proposta ' + r.numero + ' salva'); if (PROP.dados.rfp_origem) rfpLog(PROP.dados.rfp_origem, PROP); } catch (e) { nota('Erro: ' + e.message, 'error'); }
+    try { const r = await api('prop_salvar', PROP); PROP.id = r.id; PROP.numero = r.numero; nota('Proposta ' + r.numero + ' salva'); funilCarregar(); } catch (e) { nota('Erro: ' + e.message, 'error'); }
   }
   function docMarkdownParaPdf(txt) { return String(txt || '').split('\n').map(l => l.trim().startsWith('- ') ? { text: '• ' + l.trim().substring(2), margin: [8, 1, 0, 1] } : { text: l.replace(/\*\*/g, ''), margin: [0, 1, 0, 1] }); }
   async function baixarPdf() {
@@ -433,7 +491,7 @@
   async function mudarStatus(id, status) {
     id = id || PROP?.id; if (!id) return nota('Salve a proposta primeiro', 'error');
     let motivo = null; if (['ganha', 'perdida'].includes(status)) { motivo = prompt(status === 'ganha' ? 'O que fez a proposta ser ganha? (preço, formato, prazo, relacionamento...)' : 'Por que foi perdida? (preço, concorrente, timing, escopo...)'); if (!motivo) return; }
-    try { await api('prop_status', { id, status, motivo }); nota('Status: ' + STATUS[status]); if ($('vdProp').dataset.aba === 'lista') listar(); if (status === 'ganha' && confirm('Proposta ganha! Criar o projeto e os marcos de faturamento no financeiro agora?')) converter(id); }
+    try { await api('prop_status', { id, status, motivo }); nota('Status: ' + STATUS[status]); funilCarregar(); if ($('vdProp').dataset.aba === 'lista') listar(); if (status === 'ganha' && confirm('Proposta ganha! Criar o projeto e os marcos de faturamento no financeiro agora?')) converter(id); }
     catch (e) { nota('Erro: ' + e.message, 'error'); }
   }
   async function converter(id) { try { const r = await api('prop_converter', { id }); nota(`Projeto criado com ${r.marcos_criados} marco(s) de faturamento`); listar(); } catch (e) { nota('Erro: ' + e.message, 'error'); } }
@@ -449,7 +507,7 @@
     } catch (e) { c.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);">${esc(e.message)}</div></div>`; }
   }
   async function abrirProp(id) { try { const d = await api('prop_obter', { id }); const p = d.proposta; ['dados', 'analise', 'documento'].forEach(k => { if (typeof p[k] === 'string') p[k] = JSON.parse(p[k]); }); PROP = { ...novaProp(), ...p, dados: { ...novaProp().dados, ...(p.dados || {}) } }; aba('nova'); } catch (e) { nota('Erro: ' + e.message, 'error'); } }
-  async function excluir(id) { if (!confirm('Excluir esta proposta?')) return; await api('prop_excluir', { id }); listar(); }
+  async function excluir(id) { if (!confirm('Excluir esta proposta?')) return; await api('prop_excluir', { id }); listar(); funilCarregar(); }
 
   // ── Aprendizado ──
   async function aprenderAbrir() {
@@ -534,7 +592,7 @@
     try { CFG = await api('prop_config_salvar', { params }); nota('Parâmetros salvos'); } catch (e) { nota('Erro: ' + e.message, 'error'); }
   }
 
-  window.VD = { painelAbrir, painelCarregar, rfCarregar, rfIr,coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
+  window.VD = { painelAbrir, painelCarregar, rfCarregar, rfIr, funilIr, funilPeriodo, funilCarregar, coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
     propAbrir, aba, nova, estimar, analisar, escolher, redigir, salvar, baixarPdf, baixarWord, mudarStatus, converter, abrirProp, excluir, addPerfil, perfilRC,
     aprender, salvarInstrucoes, regerarPadrao, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar };
 })();
