@@ -568,7 +568,10 @@ async function contextoFinanceiro({ mes, ano, conta_id = null, data_inicio = nul
     quickbooks: { conectado: !R.erro && R.qb_configurado !== false && (!R.erros?.length || (R.saldoCaixa !== undefined && R.saldoCaixa !== 0)), erros: (R.erro ? [R.erro] : R.erros || []).slice(0, 3) }, // v3.109: falha do resumo não aparece mais como "conectado"
     periodo: R.periodo || null,
     resultado: resul.status === 'fulfilled' ? resul.value.resultado : { erros: [resul.reason?.message || 'falhou'] }, // v3.112: faturamento, lucro, margens, EBITDA
-    caixa: { saldo: R.saldoCaixa ?? null, a_receber: R.aReceber ?? null, a_pagar: R.aPagar ?? null, receita_mes: R.realMes ?? null, receita_ano: R.realAnual ?? null },
+    caixa: { saldo: R.saldoCaixa ?? null, a_receber: R.aReceber ?? null, a_pagar: R.aPagar ?? null, receita_mes: R.realMes ?? null, receita_ano: R.realAnual ?? null,
+      // v3.120: quando vence (vencido · 30 dias · depois) e se o saldo é de uma conta só (faturas e contas são da empresa toda)
+      a_receber_vencido: R.contasReceber?.vencido ?? null, a_receber_30d: R.contasReceber?.a_vencer_30d ?? null, qtd_receber: R.contasReceber?.qtd ?? null,
+      a_pagar_vencido: R.contasPagar?.vencido ?? null, a_pagar_30d: R.contasPagar?.a_vencer_30d ?? null, qtd_pagar: R.contasPagar?.qtd ?? null, conta_filtrada: !!conta_id },
     saude: { semaforo: K.semaforo, motivos: K.semaforo_motivos, erro: K.erro || null, fonte: K.fonte || null, kpis: Object.fromEntries(Object.entries(K).filter(([k, v]) => !/semaforo|erro|fonte|timestamp/.test(k) && v != null && typeof v !== 'object')) },
     // v3.91 FIX: fluxoFuturo devolve meses como texto ("2026-10") e os valores em linhas[rótulo][mês] — antes o
     // mapeamento lia m.entradas de uma string e o gráfico do Dashboard saía vazio
@@ -3996,6 +3999,7 @@ async function kpisSaude({ overrides = {}, conta_id = null } = {}) {
         if (_b.saldo_hoje != null) kpis.saldo_caixa = _b.saldo_hoje;
         if (_b.a_receber != null) kpis.contas_receber = _b.a_receber; if (_b.a_pagar != null) kpis.contas_pagar = _b.a_pagar; // v3.113: falha não vira zero
         kpis.contas_receber_vencido = _b.a_receber_vencido; kpis.contas_pagar_vencido = _b.a_pagar_vencido;
+        kpis.contas_receber_30d = _b.a_receber_30d; kpis.contas_pagar_30d = _b.a_pagar_30d; // v3.120: o que vence nos próximos 30 dias
         kpis.fonte_caixa = _b.fonte;
       }
 
@@ -4037,6 +4041,14 @@ async function kpisSaude({ overrides = {}, conta_id = null } = {}) {
     }
   }
 
+  // v3.120: o "∞" sozinho escondia o risco — com faturamento ≥ gastos na média, a queima líquida é zero, mas o caixa pode
+  // cobrir menos de um mês de gastos. Cobertura = caixa ÷ gasto médio mensal (quantos meses de gastos o caixa paga se nada
+  // entrar) e caixa em 30 dias = caixa + a receber (vencido + 30 dias) − a pagar (vencido + 30 dias).
+  kpis.cobertura_caixa_meses = kpis.saldo_caixa != null && kpis.burn_rate_mensal > 0 ? round(kpis.saldo_caixa / kpis.burn_rate_mensal, 1) : null;
+  if (kpis.saldo_caixa != null && kpis.contas_pagar_30d != null && kpis.contas_receber_30d != null)
+    kpis.caixa_30d = round(kpis.saldo_caixa + (kpis.contas_receber_vencido || 0) + kpis.contas_receber_30d - (kpis.contas_pagar_vencido || 0) - kpis.contas_pagar_30d);
+  kpis.caixa_filtrado_por_conta = !!conta_id;
+
   // Liquidez corrente (simplificada: saldo + AR vs AP)
   if (kpis.contas_pagar > 0) {
     kpis.liquidez_corrente = round((kpis.saldo_caixa + kpis.contas_receber) / kpis.contas_pagar, 2);
@@ -4064,7 +4076,8 @@ async function kpisSaude({ overrides = {}, conta_id = null } = {}) {
   const motivos = [];
   let score = 0;
   if (kpis.runway_meses !== null) {
-    if (kpis.runway_meses >= 12) { score += 2; motivos.push(kpis.runway_meses === 999 ? 'Sem queima de caixa (faturamento cobre os gastos) ✓' : 'Runway > 12 meses ✓'); }
+    if (kpis.runway_meses === 999 && kpis.cobertura_caixa_meses != null && kpis.cobertura_caixa_meses < 1) { score += 1; motivos.push(`Sem queima líquida, mas o caixa cobre só ${String(kpis.cobertura_caixa_meses).replace('.', ',')} mês de gastos ⚠`); }
+    else if (kpis.runway_meses >= 12) { score += 2; motivos.push(kpis.runway_meses === 999 ? 'Sem queima de caixa (faturamento cobre os gastos) ✓' : 'Runway > 12 meses ✓'); }
     else if (kpis.runway_meses >= 6) { score += 1; motivos.push(`Runway de ${kpis.runway_meses} meses (ok)`); }
     else motivos.push(`Runway curto: ${kpis.runway_meses} meses ⚠`);
   }

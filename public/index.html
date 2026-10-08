@@ -3194,9 +3194,9 @@ tr:hover td{background:rgba(79,124,255,.03);}
   </div>
   <div id="dfStatus" style="display:none;margin-bottom:10px;"></div>
   <div class="kg k4" style="margin-bottom:12px;">
-    <div class="kpi bl"><div class="kl">Saldo em caixa</div><div class="kv" id="df_saldo">—</div><div class="ks">hoje · extrato real (mesma base do Fluxo Detalhado)</div></div>
-    <div class="kpi gn"><div class="kl">A receber</div><div class="kv" id="df_receber">—</div><div class="ks">faturas em aberto</div></div>
-    <div class="kpi rd"><div class="kl">A pagar</div><div class="kv" id="df_pagar">—</div><div class="ks">contas em aberto</div></div>
+    <div class="kpi bl"><div class="kl">Saldo em caixa</div><div class="kv" id="df_saldo">—</div><div class="ks" id="df_saldo_sub">hoje · extrato real (mesma base do Fluxo Detalhado)</div></div>
+    <div class="kpi gn"><div class="kl">A receber</div><div class="kv" id="df_receber">—</div><div class="ks" id="df_receber_sub">faturas em aberto</div></div>
+    <div class="kpi rd"><div class="kl">A pagar</div><div class="kv" id="df_pagar">—</div><div class="ks" id="df_pagar_sub">contas em aberto</div></div>
     <div class="kpi pu"><div class="kl">Fôlego de caixa</div><div class="kv" id="df_runway">—</div><div class="ks" id="df_runway_sub">caixa ÷ queima líquida mensal</div></div>
   </div>
   <!-- v3.112: RESULTADO DA EMPRESA — faturamento, lucro e margens (DRE do QuickBooks, competência), período × ano -->
@@ -27670,6 +27670,24 @@ function _resCardsHtml(R, modo) {
       + '</div><div class="rs"><span style="color:var(--blue);">■</span> faturamento · <span style="color:var(--green);">■</span> lucro (<span style="color:var(--red);">■</span> prejuízo) · passe o mouse para ver os valores</div></div>'); }
   return cards.join('');
 }
+// v3.120: fôlego de caixa — antes só "∞" quando o faturamento médio cobria os gastos, escondendo que o caixa paga menos de
+// um mês de despesas. Agora: meses de gastos que o caixa cobre (caixa ÷ gasto médio), a queima líquida e o caixa em 30 dias.
+function _folegoInfo(k) {
+  k = k || {}; const brl = v => (v == null || isNaN(v)) ? '—' : fmtBRL(v), n1 = v => String(v).replace('.', ',');
+  const cob = k.cobertura_caixa_meses, rw = k.runway_meses, c30 = k.caixa_30d;
+  if (cob == null && rw == null) return { val: '—', sub: 'sem dados de caixa/gastos', cor: 'var(--t3)', tip: '**Fôlego de caixa**: sem saldo ou sem gastos médios para calcular.' };
+  const val = cob != null ? n1(cob) + (cob === 1 ? ' mês' : ' meses') : (rw >= 999 ? 'sem queima' : n1(rw) + ' meses');
+  const queima = rw == null ? '' : rw >= 999 ? 'sem queima líquida' : 'queima líquida ' + brl(k.burn_liquido_mensal) + '/mês → ' + n1(rw) + ' meses';
+  const sub = 'de gastos cobertos pelo caixa · ' + queima + (c30 != null ? ' · em 30 dias ' + brl(c30) : '');
+  const base = cob != null ? cob : rw;
+  const cor = (c30 != null && c30 < 0) || base < 1 ? 'var(--red)' : base < 3 ? 'var(--gold)' : 'var(--green)';
+  const tip = '**Fôlego de caixa** = quantos meses de gastos o caixa de hoje paga se nada mais entrar.\n\n' + (cob != null ? brl(k.saldo_caixa) + ' ÷ gasto médio ' + brl(k.burn_rate_mensal) + '/mês (' + (k.burn_base || '3 últimos meses fechados') + ') = ' + n1(cob) + ' meses.' : '')
+    + '\n\n**Queima líquida** = gasto médio − faturamento médio: ' + (rw >= 999 ? 'faturamento médio ' + brl(k.media_receita_3m) + ' ≥ gasto médio ' + brl(k.media_gastos_3m) + ' → o caixa não se esgota pela operação média (antes este cartão mostrava só "∞").' : brl(k.burn_liquido_mensal) + '/mês → o caixa dura ' + n1(rw) + ' meses.')
+    + (c30 != null ? '\n\n**Caixa em 30 dias** = caixa ' + brl(k.saldo_caixa) + ' + a receber vencido ' + brl(k.contas_receber_vencido) + ' + a receber 30 dias ' + brl(k.contas_receber_30d) + ' − a pagar vencido ' + brl(k.contas_pagar_vencido) + ' − a pagar 30 dias ' + brl(k.contas_pagar_30d) + ' = ' + brl(c30) + '.' : '')
+    + (k.caixa_filtrado_por_conta ? '\n\n⚠ Saldo de UMA conta (filtro) contra a receber/pagar da empresa toda — selecione "Todas as contas" para a leitura completa.' : '')
+    + '\n\nCor: vermelho abaixo de 1 mês ou caixa em 30 dias negativo · amarelo até 3 meses · verde acima.';
+  return { val, sub, cor, tip };
+}
 function _resNota(R) {
   if (!R) return '';
   const aj = R.periodo_res?.ajustes_ebitda || {}, brl = v => fmtBRL(v || 0);
@@ -27727,7 +27745,7 @@ async function carregarResultadoLive(forcar) {
     };
     b2.innerHTML = [
       _resCartao('Saldo em caixa', brl(k.saldo_caixa), 'hoje · a receber ' + brl(k.contas_receber) + ' · a pagar ' + brl(k.contas_pagar), k.saldo_caixa < 0 ? 'var(--red)' : 'var(--blue)', TK.caixa),
-      _resCartao('Fôlego de caixa', rw == null ? '—' : rw >= 999 ? '∞' : String(rw).replace('.', ',') + ' meses', rw == null ? 'sem dados' : rw >= 999 ? 'faturamento cobre os gastos (média 3 meses)' : 'queima líquida ' + brl(k.burn_liquido_mensal) + '/mês', rw == null ? 'var(--t3)' : rw >= 12 ? 'var(--green)' : rw >= 6 ? 'var(--gold)' : 'var(--red)', TK.folego),
+      (() => { const F = _folegoInfo(k); return _resCartao('Fôlego de caixa', F.val, F.sub, F.cor, F.tip + fk); })(),
       _resCartao('Liquidez corrente', k.liquidez_corrente != null ? String(k.liquidez_corrente).replace('.', ',') : (k.contas_pagar > 0 ? '—' : 'sem contas a pagar'), '(caixa + a receber) ÷ a pagar · ideal ≥ 1,5', k.liquidez_corrente == null ? 'var(--green)' : k.liquidez_corrente >= 1.5 ? 'var(--green)' : k.liquidez_corrente >= 1 ? 'var(--gold)' : 'var(--red)', TK.liq),
       _resCartao('ROE no ano', k.roi_pct != null ? _resFmtPct(k.roi_pct) : 'n/d', k.roi_pct != null ? 'lucro do ano ÷ patrimônio líquido ' + brl(k.patrimonio_liquido) : 'sem patrimônio líquido positivo no QuickBooks', k.roi_pct == null ? 'var(--t3)' : k.roi_pct < 0 ? 'var(--red)' : 'var(--pu)', TK.roe),
       _resCartao('Saúde financeira', semCor[0], (k.semaforo_motivos || []).slice(0, 2).join(' · ') || 'semáforo automático', semCor[1], TK.saude),
@@ -27838,6 +27856,12 @@ async function carregarDashboardFinanceiro() {
     const c = x.caixa || {}, sd = x.saude || {}, o = x.orcamento, cc = x.conciliacao || {}, mk = x.marcos || {};
     const brl = v => (v == null || isNaN(v)) ? '—' : fmtBRL(v);
     u('df_saldo', brl(c.saldo)); u('df_receber', brl(c.a_receber)); u('df_pagar', brl(c.a_pagar));
+    { // v3.120: quando vence — o total sozinho mistura o que vence hoje com contas de meses à frente
+      const _q = (tot, venc, d30) => tot == null ? '' : 'vencido ' + brl(venc || 0) + ' · próx. 30 dias ' + brl(d30 || 0) + ' · depois ' + brl(Math.max(0, tot - (venc || 0) - (d30 || 0)));
+      const _emp = c.conta_filtrada ? ' · empresa toda' : '';
+      u('df_saldo_sub', c.conta_filtrada ? 'hoje · só a conta selecionada (extrato real)' : 'hoje · todas as contas · extrato real (mesma base do Fluxo Detalhado)');
+      u('df_receber_sub', (_q(c.a_receber, c.a_receber_vencido, c.a_receber_30d) || 'faturas em aberto') + _emp);
+      u('df_pagar_sub', (_q(c.a_pagar, c.a_pagar_vencido, c.a_pagar_30d) || 'contas em aberto') + _emp); }
     // v3.112: resultado da empresa (faturamento, lucro, EBITDA, margens) + fôlego de caixa
     try { carregarMetasEmpresa(!!window._dfForcarMetas); } catch (_) {}
     { const R = x.resultado, box = document.getElementById('df_res');
@@ -27846,8 +27870,7 @@ async function carregarDashboardFinanceiro() {
       u('df_res_periodo', R && R.periodo ? _resData(R.periodo.de) + ' a ' + _resData(R.periodo.ate) : '');
       u('df_res_meta', R && R.meta_margem ? 'meta de margem: ' + _resFmtPct(R.meta_margem.pct) + ' (' + R.meta_margem.fonte + ')' : '');
       const k = sd.kpis || {}, rw = k.runway_meses;
-      u('df_runway', rw == null ? '—' : rw >= 999 ? '∞' : String(rw).replace('.', ',') + ' meses');
-      u('df_runway_sub', rw == null ? 'sem dados de caixa/gastos' : rw >= 999 ? 'faturamento cobre os gastos (média 3 meses)' : 'queima líquida ' + brl(k.burn_liquido_mensal) + '/mês (média 3 meses)'); }
+      { const F = _folegoInfo(k); u('df_runway', F.val); u('df_runway_sub', F.sub); const el = document.getElementById('df_runway'); if (el) el.style.color = F.cor; } }
     const semCor = { verde: '🟢 Saudável', amarelo: '🟡 Atenção', vermelho: '🔴 Crítico', cinza: '⚪ Sem dados' };
     // v3.91: quando a saúde não vem, diz POR QUÊ (antes só "KPIs de saúde indisponíveis")
     u('df_semaforo', semCor[sd.semaforo] || semCor.cinza);
@@ -27920,9 +27943,9 @@ async function carregarDashboardFinanceiro() {
     try { const k = sd.kpis || {}, pt = x.orcamento_por_tipo || {}, dsp = pt.despesa || {}, so = x.social || {}, T2 = x.planejado_real?.totais || {};
       const ab = Object.entries(mk).filter(([kk]) => kk !== 'concluido');
       _setTip('df_saldo', '**Saldo em caixa (hoje)** = saldo de abertura do mês nas contas bancárias (Balanço do QuickBooks) + entradas − saídas do mês até hoje. Simulações não entram.' + (x.periodo ? '' : '') + '\n\nValor: ' + brl(c.saldo) + '\nCom uma conta selecionada no filtro, só aquela conta.\n\nFonte: mesma base do Fluxo Detalhado (extrato real).');
-      _setTip('df_receber', '**A receber** = soma do saldo em aberto de todas as faturas (Invoice) do QuickBooks, vencidas ou não.\n\nValor: ' + brl(c.a_receber) + (k.contas_receber_vencido != null ? '\nDisso, vencido: ' + brl(k.contas_receber_vencido) : '') + '\n\nPrevisões de marcos (estimativas) não entram aqui.');
-      _setTip('df_pagar', '**A pagar** = soma do saldo em aberto das contas (Bill) do QuickBooks, vencidas ou não.\n\nValor: ' + brl(c.a_pagar) + (k.contas_pagar_vencido != null ? '\nDisso, vencido: ' + brl(k.contas_pagar_vencido) : '') + '\n\nDespesas programadas ainda não lançadas no QuickBooks aparecem na Agenda e no Fluxo, não aqui.');
-      _setTip('df_runway', '**Fôlego de caixa** = saldo em caixa ÷ queima líquida mensal (gasto médio − faturamento médio dos 3 últimos meses fechados).\n\n' + (k.runway_meses >= 999 ? 'Faturamento médio ' + brl(k.media_receita_3m) + ' ≥ gasto médio ' + brl(k.media_gastos_3m) + ' → sem queima (∞).' : brl(k.saldo_caixa) + ' ÷ ' + brl(k.burn_liquido_mensal) + ' = ' + (k.runway_meses == null ? '—' : String(k.runway_meses).replace('.', ',') + ' meses')));
+      _setTip('df_receber', '**A receber** = soma do saldo em aberto de todas as faturas (Invoice) do QuickBooks, vencidas ou não, de qualquer vencimento' + (c.qtd_receber != null ? ' (' + c.qtd_receber + ' faturas)' : '') + '.\n\nTotal: ' + brl(c.a_receber) + '\n• vencido: ' + brl(c.a_receber_vencido) + '\n• vence nos próximos 30 dias: ' + brl(c.a_receber_30d) + '\n• vence depois: ' + brl(Math.max(0, (c.a_receber || 0) - (c.a_receber_vencido || 0) - (c.a_receber_30d || 0))) + '\n\nÉ da empresa toda — o filtro de conta bancária não se aplica a faturas. Previsões de marcos não entram.');
+      _setTip('df_pagar', '**A pagar** = soma do saldo em aberto das contas (Bill) do QuickBooks, vencidas ou não, de qualquer vencimento' + (c.qtd_pagar != null ? ' (' + c.qtd_pagar + ' contas)' : '') + ' — inclui as Bills das despesas programadas já lançadas para os próximos meses.\n\nTotal: ' + brl(c.a_pagar) + '\n• vencido: ' + brl(c.a_pagar_vencido) + '\n• vence nos próximos 30 dias: ' + brl(c.a_pagar_30d) + '\n• vence depois: ' + brl(Math.max(0, (c.a_pagar || 0) - (c.a_pagar_vencido || 0) - (c.a_pagar_30d || 0))) + '\n\nÉ da empresa toda — o filtro de conta bancária não se aplica a contas a pagar.');
+      _setTip('df_runway', _folegoInfo(k).tip);
       _setTip('df_semaforo', '**Saúde financeira** — 3 notas (0 a 2):\n• Fôlego ≥ 12 meses = 2 · ≥ 6 = 1\n• Margem líquida do ano ≥ 15% = 2 · ≥ 0% = 1\n• Liquidez ≥ 1,5 = 2 · ≥ 1 = 1 (sem contas a pagar = 2)\nSoma ≥ 5 verde · ≥ 3 amarelo · menos vermelho.\n\nAgora: ' + ((sd.motivos || []).join(' · ') || '—'));
       _setTip('df_orc', '**Despesa × orçamento (ano)** = despesa realizada no ano ÷ despesa orçada até hoje (o mês corrente entra proporcional aos dias corridos).\n\n' + (dsp.categorias ? brl(dsp.realizado) + ' ÷ ' + brl(dsp.orcado_ate_hoje) + ' = ' + (dsp.utilizacao_pct ?? '—') + '%' : 'Sem orçamento (Budget) cadastrado no QuickBooks.') + '\n\nFonte: Budget do QuickBooks × DRE mês a mês (competência). Abaixo de 100% = gastando menos que o orçado.');
       _setTip('df_conc', cc.fonte === 'quickbooks'
@@ -30265,7 +30288,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.119] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.120] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -30281,7 +30304,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.119';
+window.__ATX_BUILD_ID__ = 'ATX-v3.120';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
