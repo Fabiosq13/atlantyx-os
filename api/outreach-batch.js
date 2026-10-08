@@ -12,13 +12,32 @@ async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   try {
-    const { leads, tom = 'Direto e objetivo', delay_segundos = 30 } = req.body;
+    const { leads, tom = 'Direto e objetivo', delay_segundos = 30, preview = false } = req.body;
 
     if (!leads || !Array.isArray(leads) || leads.length === 0) {
       return res.status(400).json({ error: 'Campo leads[] é obrigatório' });
     }
 
-    console.log(`[S7-05] Iniciando outreach em lote: ${leads.length} leads`);
+    // Demanda dem_muy2514ghss2: pré-visualização — gera a amostra (3 primeiros com telefone) SEM enviar nada
+    if (preview) {
+      const comTelefone = leads.filter(l => l && l.phone);
+      const amostra = [];
+      for (const lead of comTelefone.slice(0, 3)) {
+        try {
+          const mensagem = mensagemPronta(lead) || await gerarMensagemPersonalizada(lead, tom);
+          amostra.push({ nome: lead.name, empresa: lead.company, phone: lead.phone, mensagem });
+        } catch (e) {
+          amostra.push({ nome: lead.name, empresa: lead.company, phone: lead.phone, mensagem: '', erro: e.message });
+        }
+      }
+      return res.status(200).json({
+        success: true, preview: true, total: leads.length,
+        com_telefone: comTelefone.length, sem_telefone: leads.length - comTelefone.length, amostra,
+      });
+    }
+
+    const lote = { usuario: req.usuario || 'fundador', iniciado_em: new Date().toISOString(), total: leads.length };
+    console.log(`[S7-05] Lote confirmado — usuário: ${lote.usuario} · ${lote.iniciado_em} · ${leads.length} leads`);
 
     const resultados = [];
     let enviados = 0;
@@ -36,8 +55,16 @@ async function handler(req, res) {
         // Delay entre envios para parecer natural e evitar bloqueio
         if (i > 0) await sleep(delay_segundos * 1000);
 
-        // ── Claude gera mensagem única para este decisor ──
-        const mensagem = await gerarMensagemPersonalizada(lead, tom);
+        // ── Mensagem revisada na pré-visualização (ou template) ou Claude gera uma única para este decisor ──
+        const mensagem = mensagemPronta(lead) || await gerarMensagemPersonalizada(lead, tom);
+
+        // ── Nunca envia mensagem com variável não substituída ({{nome_cliente}} etc.) ──
+        const faltando = variaveisFaltando(mensagem);
+        if (faltando.length) {
+          resultados.push({ nome: lead.name, empresa: lead.company, status: 'VARIAVEL_FALTANDO', erro: 'Variáveis sem valor: ' + faltando.join(', ') });
+          erros++;
+          continue;
+        }
 
         // ── Enviar via Z-API ──
         await enviarWhatsApp(lead.phone, mensagem);
@@ -62,12 +89,17 @@ async function handler(req, res) {
       `[S7-05 · Outreach Concluído]\n\nTotal: ${leads.length}\nEnviados: ${enviados}\nErros: ${erros}\n\nAcompanhe as respostas no painel.`
     );
 
+    lote.concluido_em = new Date().toISOString();
+    lote.enviados = enviados;
+    console.log(`[S7-05] Lote concluído — usuário: ${lote.usuario} · ${lote.concluido_em} · ${enviados}/${leads.length} enviados`);
+
     return res.status(200).json({
       success: true,
       total: leads.length,
       enviados,
       erros,
       resultados,
+      lote,
     });
 
   } catch (error) {
@@ -145,6 +177,15 @@ async function notificarWhatsApp(message) {
     headers: { 'Content-Type': 'application/json', 'Client-Token': process.env.ZAPI_CLIENT_TOKEN },
     body: JSON.stringify({ phone, message }),
   });
+}
+
+// mensagem já pronta (revisada na pré-visualização ou montada a partir de template no painel)
+function mensagemPronta(lead) {
+  return typeof lead.mensagem === 'string' && lead.mensagem.trim() ? lead.mensagem : null;
+}
+
+function variaveisFaltando(texto) {
+  return [...new Set([...String(texto || '').matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map(m => m[1]))];
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
