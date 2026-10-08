@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Atlantyx — Diagnóstico gratuito de dados e IA</title>
-<meta name="description" content="Há 17 anos a Atlantyx estrutura engenharia de dados, analytics e IA para grandes empresas. Agende uma conversa com um especialista.">
+<title>Atlantyx — Tecnologia, dados e produtos para a sua operação</title>
+<meta name="description" content="Há 17 anos a Atlantyx entrega tecnologia, dados, software e produtos próprios para grandes empresas. Agende uma conversa com um especialista.">
 <!-- v3.51: prévia do link no LinkedIn/WhatsApp/Facebook ("Não é possível extrair a imagem do link") -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Atlantyx">
@@ -15,11 +15,11 @@
 <meta property="og:image:type" content="image/jpeg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="627">
-<meta property="og:image:alt" content="Atlantyx — decisões com dados de hoje, não de ontem. Agende uma conversa.">
+<meta property="og:image:alt" content="Atlantyx — tecnologia e dados para a sua operação. Agende uma conversa.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://atlantyx-os.vercel.app/og-atlantyx.jpg">
-<meta property="og:title" content="Atlantyx — Diagnóstico gratuito de dados e IA">
-<meta property="og:description" content="Peça seu diagnóstico gratuito: um especialista mapeia onde dados e IA geram resultado na sua operação.">
+<meta property="og:title" content="Atlantyx — Tecnologia, dados e produtos para a sua operação">
+<meta property="og:description" content="Agende uma conversa gratuita: um especialista entende o seu cenário e mostra onde a Atlantyx gera resultado na sua operação.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -34,8 +34,15 @@
   /* topo */
   header { position:absolute; top:0; left:0; right:0; z-index:2; }
   header .container { display:flex; align-items:center; justify-content:space-between; height:72px; }
-  .marca { display:flex; align-items:center; gap:10px; color:#fff; text-decoration:none; font-weight:800; letter-spacing:3px; font-size:15px; }
-  .marca svg { width:30px; height:30px; }
+  .marca { display:flex; align-items:center; gap:12px; color:#fff; text-decoration:none; font-weight:800; letter-spacing:4px; font-size:21px; }
+  .marca svg { width:42px; height:42px; }
+  .marca .ponto { color:var(--verde); }
+  .card-marca { display:flex; align-items:center; gap:8px; font-weight:800; letter-spacing:3px; font-size:13px; color:var(--preto); margin-bottom:14px; }
+  .card-marca svg { width:24px; height:24px; }
+  .final-marca { display:inline-flex; align-items:center; gap:12px; font-weight:800; letter-spacing:5px; font-size:26px; color:#fff; margin-bottom:18px; }
+  .final-marca svg { width:48px; height:48px; }
+  .rod-marca { display:inline-flex; align-items:center; gap:8px; font-weight:800; letter-spacing:3px; color:#fff; }
+  .rod-marca svg { width:20px; height:20px; }
   .topo-info { color:rgba(255,255,255,.6); font-size:12px; font-weight:500; }
 
   /* hero */
@@ -95,7 +102,7 @@
   .passo h4 { margin:0 0 6px; font-size:16.5px; }
   .passo p { margin:0; color:var(--cinza); font-size:14px; }
   .cinza { background:var(--fundo); }
-  .ofertas { display:grid; grid-template-columns:repeat(4, 1fr); gap:18px; }
+  .ofertas { display:grid; grid-template-columns:repeat(5, 1fr); gap:16px; }
   .oferta { background:#fff; border-radius:14px; padding:22px; border:1px solid var(--linha); }
   .oferta .ic { width:40px; height:40px; border-radius:11px; background:rgba(0,196,204,.12); display:flex; align-items:center; justify-content:center; margin-bottom:14px; }
   .oferta h4 { margin:0 0 6px; font-size:15.5px; }
@@ -112,6 +119,7 @@
   footer { background:var(--preto2); color:rgba(255,255,255,.55); font-size:12.5px; padding:22px 0; }
   footer .container { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
 
+  @media (max-width: 1100px) { .ofertas { grid-template-columns:repeat(3, 1fr); } }
   @media (max-width: 960px) {
     .hero { padding:96px 0 48px; }
     .hero .container { grid-template-columns:1fr; gap:30px; }
@@ -126,6 +134,7 @@
     .linha2 { grid-template-columns:1fr; gap:0; }
     .ofertas { grid-template-columns:1fr; }
     .topo-info { display:none; }
+    .marca { font-size:17px; } .marca svg { width:34px; height:34px; }
     .numeros { gap:18px; grid-template-columns:1fr; }
     h3.h { font-size:24px; }
     section.bloco { padding:56px 0; }
@@ -138,20 +147,20 @@
   <div class="container">
     <a class="marca" href="#" aria-label="Atlantyx">
       <svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect x="6" y="9" width="17" height="17" rx="5" transform="rotate(45 14.5 17.5)" stroke="#00C4CC" stroke-width="3"/><rect x="17" y="14" width="17" height="17" rx="5" transform="rotate(45 25.5 22.5)" stroke="#00FCA8" stroke-width="3"/></svg>
-      ATLANTYX.
+      <span>ATLANTYX<span class="ponto">.</span></span>
     </a>
-    <span class="topo-info">Engenharia de dados · Analytics · IA aplicada</span>
+    <span class="topo-info">Tecnologia · Dados · Software · Produtos</span>
   </div>
 </header>
 
 <div class="hero">
   <div class="container">
     <div>
-      <div class="selo"><i></i> Diagnóstico gratuito · sem compromisso</div>
-      <h1 id="titulo">Diagnóstico gratuito de <em>dados e IA</em> da sua operação.</h1>
-      <p class="sub" id="sub">Há 17 anos a Atlantyx estrutura engenharia de dados, analytics e inteligência artificial para grandes empresas. No diagnóstico gratuito, um especialista mapeia com você onde dados e IA geram resultado na sua operação.</p>
+      <div class="selo"><i></i> Conversa gratuita · sem compromisso</div>
+      <h1 id="titulo">Tecnologia e dados que <em>fazem a sua operação</em> render mais.</h1>
+      <p class="sub" id="sub">Há 17 anos a Atlantyx entrega engenharia de dados, indicadores, software sob medida, produtos próprios e especialistas para grandes empresas. Em uma conversa gratuita, um especialista entende o seu cenário e mostra onde podemos gerar resultado.</p>
       <ul class="pontos">
-        <li><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" stroke="#00FCA8" stroke-width="1.6"/><path d="M6 10.4l2.6 2.5L14 7.4" stroke="#00FCA8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Conversa técnica com quem executa projetos — não é uma apresentação comercial.</li>
+        <li><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" stroke="#00FCA8" stroke-width="1.6"/><path d="M6 10.4l2.6 2.5L14 7.4" stroke="#00FCA8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Conversa com quem executa projetos — não é uma apresentação comercial.</li>
         <li><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" stroke="#00FCA8" stroke-width="1.6"/><path d="M6 10.4l2.6 2.5L14 7.4" stroke="#00FCA8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Você sai com oportunidades priorizadas por impacto e esforço.</li>
         <li><svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" stroke="#00FCA8" stroke-width="1.6"/><path d="M6 10.4l2.6 2.5L14 7.4" stroke="#00FCA8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Proposta só se fizer sentido para o seu momento.</li>
       </ul>
@@ -163,8 +172,9 @@
     </div>
 
     <div class="card" id="cardForm">
+      <div class="card-marca"><svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect x="6" y="9" width="17" height="17" rx="5" transform="rotate(45 14.5 17.5)" stroke="#00C4CC" stroke-width="3"/><rect x="17" y="14" width="17" height="17" rx="5" transform="rotate(45 25.5 22.5)" stroke="#00FCA8" stroke-width="3"/></svg><span>ATLANTYX<span style="color:var(--petroleo)">.</span></span></div>
       <div id="form">
-        <h2>Peça seu diagnóstico gratuito</h2>
+        <h2>Agende uma conversa</h2>
         <p class="ajuda">Leva menos de um minuto. Em seguida você escolhe o horário.</p>
         <div class="linha2">
           <div><label for="nome">Nome</label><input id="nome" autocomplete="name" required></div>
@@ -180,14 +190,15 @@
             <select id="interesse">
               <option value="">Selecione</option>
               <option>Dados dispersos e relatórios manuais</option>
-              <option>Indicadores e painéis executivos (BI)</option>
-              <option>IA aplicada a processos</option>
-              <option>Engenharia de dados / Data Lake</option>
+              <option>Indicadores e painéis executivos</option>
+              <option>Sistema ou software sob medida</option>
+              <option>Integração de sistemas</option>
+              <option>Produtos e plataformas Atlantyx</option>
               <option>Sustentação e especialistas</option>
               <option>Outro</option>
             </select></div>
         </div>
-        <button class="btn" id="btn" onclick="enviar()">Quero meu diagnóstico <span class="seta">→</span></button>
+        <button class="btn" id="btn" onclick="enviar()">Quero conversar <span class="seta">→</span></button>
         <div class="erro" id="erro" role="alert"></div>
         <div class="lgpd"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" style="flex:0 0 14px;margin-top:1px"><rect x="4" y="9" width="12" height="9" rx="2" stroke="#7a8692" stroke-width="1.6"/><path d="M7 9V6.5a3 3 0 016 0V9" stroke="#7a8692" stroke-width="1.6"/></svg>
           Seus dados são usados apenas para este contato, conforme a LGPD. Sem lista de e-mails.</div>
@@ -195,7 +206,7 @@
       <div class="ok" id="ok">
         <div class="check"><svg width="26" height="26" viewBox="0 0 20 20" fill="none"><path d="M5 10.5l3.2 3L15 6.5" stroke="#047857" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <h2 id="okTitulo">Recebemos seu contato.</h2>
-        <p id="okTexto">Escolha abaixo o melhor horário para o seu diagnóstico. Se preferir, retornamos em até um dia útil.</p>
+        <p id="okTexto">Escolha abaixo o melhor horário para a conversa. Se preferir, retornamos em até um dia útil.</p>
         <iframe class="agenda-frame" id="agendaFrame" title="Agenda de reuniões Atlantyx" loading="lazy"></iframe>
         <a class="btn-sec" id="agenda" href="#" target="_blank" rel="noopener">Abrir a agenda em nova aba</a>
         <a class="btn-sec" id="wa" href="#" target="_blank" rel="noopener">Falar agora pelo WhatsApp</a>
@@ -210,7 +221,7 @@
     <h3 class="h">Uma conversa objetiva, com encaminhamento claro.</h3>
     <div class="passos">
       <div class="passo"><div class="n">1</div><h4>Você agenda</h4><p>Escolhe o horário que funciona para você, na hora, logo depois do cadastro.</p></div>
-      <div class="passo"><div class="n">2</div><h4>Diagnóstico do cenário</h4><p>Entendemos seus dados, sistemas, indicadores e metas — e onde estão os gargalos.</p></div>
+      <div class="passo"><div class="n">2</div><h4>Entendemos o cenário</h4><p>Seus sistemas, dados, processos, indicadores e metas — e onde estão os gargalos.</p></div>
       <div class="passo"><div class="n">3</div><h4>Próximos passos</h4><p>Recomendações priorizadas por impacto. Proposta apenas se fizer sentido.</p></div>
     </div>
   </div>
@@ -219,11 +230,12 @@
 <section class="bloco cinza" id="servicos">
   <div class="container">
     <div class="titulo-sec">O que entregamos</div>
-    <h3 class="h">Da base de dados à decisão, com operação contínua.</h3>
+    <h3 class="h">Serviços e produtos para cada etapa da sua operação.</h3>
     <div class="ofertas">
-      <div class="oferta"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="6" rx="7" ry="3" stroke="#00708A" stroke-width="1.8"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" stroke="#00708A" stroke-width="1.8"/></svg></div><h4>Engenharia de dados</h4><p>Integração de sistemas, pipelines e data lake/warehouse com dados confiáveis.</p></div>
-      <div class="oferta"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke="#00708A" stroke-width="1.8" stroke-linecap="round"/></svg></div><h4>BI e analytics</h4><p>Indicadores consistentes e painéis executivos que a liderança usa no dia a dia.</p></div>
-      <div class="oferta"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="5" y="7" width="14" height="11" rx="3" stroke="#00708A" stroke-width="1.8"/><path d="M9 12h.01M15 12h.01M12 3v4M9 21h6" stroke="#00708A" stroke-width="2" stroke-linecap="round"/></svg></div><h4>IA aplicada</h4><p>Agentes de IA, automação de processos e modelos de previsão integrados à operação.</p></div>
+      <div class="oferta"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="6" rx="7" ry="3" stroke="#00708A" stroke-width="1.8"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" stroke="#00708A" stroke-width="1.8"/></svg></div><h4>Engenharia de dados</h4><p>Integração de fontes, pipelines e bases de dados confiáveis para toda a empresa.</p></div>
+      <div class="oferta"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke="#00708A" stroke-width="1.8" stroke-linecap="round"/></svg></div><h4>Indicadores e BI</h4><p>Indicadores consistentes e painéis executivos que a liderança usa no dia a dia.</p></div>
+      <div class="oferta"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M13.5 5l-3 14" stroke="#00708A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div><h4>Software sob medida</h4><p>Sistemas, integrações e automação de processos desenhados para a sua operação.</p></div>
+      <div class="oferta"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="13" rx="2.5" stroke="#00708A" stroke-width="1.8"/><path d="M8 21h8M12 17v4M7 12l3-3 2 2 4-4" stroke="#00708A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div><h4>Produtos Atlantyx</h4><p>Plataformas próprias para gestão de projetos, operação e indicadores, prontas para usar.</p></div>
       <div class="oferta"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="#00708A" stroke-width="1.8"/><path d="M3 19c.8-3 3.2-4.6 6-4.6s5.2 1.6 6 4.6M16 11l2 2 4-4" stroke="#00708A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div><h4>Sustentação e especialistas</h4><p>Operação contínua com SLA e profissionais alocados no seu time.</p></div>
     </div>
   </div>
@@ -238,13 +250,14 @@
 
 <div class="final">
   <div class="container">
+    <div class="final-marca"><svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect x="6" y="9" width="17" height="17" rx="5" transform="rotate(45 14.5 17.5)" stroke="#00C4CC" stroke-width="3"/><rect x="17" y="14" width="17" height="17" rx="5" transform="rotate(45 25.5 22.5)" stroke="#00FCA8" stroke-width="3"/></svg><span>ATLANTYX<span style="color:var(--verde)">.</span></span></div>
     <h3>Vamos olhar o seu cenário?</h3>
     <p>Uma conversa com especialista, sem custo e sem compromisso.</p>
     <a href="#cardForm" onclick="setTimeout(()=>document.getElementById('nome').focus(),350)">Agendar conversa <span style="color:var(--petroleo)">→</span></a>
   </div>
 </div>
 
-<footer><div class="container"><span>© Atlantyx — Rio de Janeiro · São Paulo</span><span>Dados tratados conforme a LGPD</span></div></footer>
+<footer><div class="container"><span class="rod-marca"><svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect x="6" y="9" width="17" height="17" rx="5" transform="rotate(45 14.5 17.5)" stroke="#00C4CC" stroke-width="3"/><rect x="17" y="14" width="17" height="17" rx="5" transform="rotate(45 25.5 22.5)" stroke="#00FCA8" stroke-width="3"/></svg>ATLANTYX.</span><span>© Atlantyx — Rio de Janeiro · São Paulo</span><span>Dados tratados conforme a LGPD</span></div></footer>
 
 <script>
   // Origem da visita — vem da UTM do post. É o que permite saber QUAL campanha gerou o lead.
@@ -288,7 +301,7 @@
         const a = document.getElementById('agenda'); a.href = url; a.style.display = 'block';
         if (fr.style.display === 'block') a.textContent = 'Agenda não carregou? Abrir em nova aba';
       } else {
-        document.getElementById('okTexto').textContent = 'Um especialista retorna em até um dia útil para combinar o seu diagnóstico.';
+        document.getElementById('okTexto').textContent = 'Um especialista retorna em até um dia útil para combinar a conversa.';
       }
       const numero = (d && d.whatsapp) || whatsComercial;
       const wa = document.getElementById('wa');
@@ -296,7 +309,7 @@
       document.getElementById('cardForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
       erro.textContent = 'Não foi possível enviar agora (' + e.message + '). Tente novamente em instantes.'; erro.style.display = 'block';
-      btn.disabled = false; btn.innerHTML = 'Quero meu diagnóstico <span class="seta">→</span>';
+      btn.disabled = false; btn.innerHTML = 'Quero conversar <span class="seta">→</span>';
     }
   }
 </script>
