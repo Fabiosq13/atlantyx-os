@@ -27714,7 +27714,8 @@ function _resCardsHtml(R, modo) {
     semCpv
       ? _resCartaoMeta('Gastos ' + lblP, futuro ? '—' : brl(p.gastos_totais), 'var(--red)', T.gastos + fm('gastos'), mm(MP.gastos, p.gastos_totais, { tipo: 'menor', frac: null, rot: 'orçada' }), anoTxt + ': <b>' + brl(a.gastos_totais) + '</b> · custos e despesas da DRE')
       : _resCartaoMeta('Lucro bruto', futuro ? '—' : brl(p.lucro_bruto), corLuc(p.lucro_bruto), T.lb, null, 'margem bruta <b>' + _resFmtPct(p.margem_bruta_pct) + '</b> · ' + anoTxt + ' ' + _resFmtPct(a.margem_bruta_pct)),
-    _resCartaoMeta('EBITDA', futuro ? '—' : brl(p.ebitda), corLuc(p.ebitda), T.eb, null, 'margem EBITDA <b>' + _resFmtPct(p.margem_ebitda_pct) + '</b> · ' + anoTxt + ' <b>' + brl(a.ebitda) + '</b>'),
+    // v3.126: margem EBITDA em destaque ao lado do valor e linha de meta comparando com a margem líquida meta
+    _resCartaoMeta('EBITDA', futuro ? '—' : brl(p.ebitda) + (p.margem_ebitda_pct != null ? ' <span style="font-size:13px;font-weight:600;opacity:.85;">' + _resFmtPct(p.margem_ebitda_pct) + '</span>' : ''), corLuc(p.ebitda), T.eb, null, 'margem EBITDA <b>' + _resFmtPct(p.margem_ebitda_pct) + '</b> do faturamento · ' + anoTxt + ' <b>' + brl(a.ebitda) + '</b> (' + _resFmtPct(a.margem_ebitda_pct) + ')'),
     _resCartaoMeta('Lucro líquido ' + lblP, futuro ? '—' : brl(p.lucro_liquido), corLuc(p.lucro_liquido), T.ll + fm('lucro'), mm(MP.lucro, p.lucro_liquido), anoTxt + ': <b style="color:' + corLuc(a.lucro_liquido) + ';">' + brl(a.lucro_liquido) + '</b>' + (semFat && p.lucro_liquido < 0 ? ' · <span style="color:var(--gold);">só gastos lançados no mês, sem nota emitida ainda</span>' : '')),
     _resCartaoMeta('Margem líquida ' + lblP, futuro || semFat ? '—' : _resFmtPct(p.margem_liquida_pct), semFat ? corMg(a.margem_liquida_pct) : corMg(p.margem_liquida_pct), T.mg + fm('margem'), semFat ? null : mm(MP.margem_pct ?? meta.pct, p.margem_liquida_pct, { fmt: 'pct' }), (semFat && U ? nomeMes(U.mes) + ' <b>' + _resFmtPct(U.margem_liquida_pct) + '</b> · ' : '') + anoTxt + ' <b style="color:' + corMg(a.margem_liquida_pct) + ';">' + _resFmtPct(a.margem_liquida_pct) + '</b>'),
   ];
@@ -30509,7 +30510,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.125] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.126] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -30525,7 +30526,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.125';
+window.__ATX_BUILD_ID__ = 'ATX-v3.126';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
