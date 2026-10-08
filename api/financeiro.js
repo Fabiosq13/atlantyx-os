@@ -572,7 +572,7 @@ async function contextoFinanceiro({ mes, ano, conta_id = null, data_inicio = nul
     marcos_erro: M.erro || null,
     orcamento: O.total_geral || null,
     orcamento_por_tipo: O.por_tipo || null, orcamento_nome: O.budget_nome || null,
-    ultimos_lancamentos: (R.lancamentos_recentes || R.lancamentos || []).slice(0, 12).map(l => ({ data: l.data, desc: (l.descricao || l.nome || '').substring(0, 50), valor: l.valor, tipo: l.tipo })),
+    ultimos_lancamentos: (R.lancamentos_recentes || R.lancamentos || []).slice(0, 12).map(l => ({ data: l.data, desc: (l.descricao || l.nome || '').substring(0, 50), valor: l.valor, tipo: l.tipo, qb_url: _qbUrlTxn(l.qb_txn_id) })),
   };
 }
 // v1.71: TAREFAS OPERACIONAIS — o gerente IA não só responde, ele EXECUTA e devolve
@@ -2367,6 +2367,12 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
   ]);
   const reais = (fut.recebiveis || []).filter(r => !r.previsao);
   const prev = (fut.recebiveis || []).filter(r => r.previsao);
+  // v3.114: termo de faturamento de cada fatura (termos_empresas.qb_invoice_id) — os alertas levam direto ao termo
+  const termoPorInv = {};
+  try { const ids = reais.map(r => String(r.id || '').replace(/^inv_/, '')).filter(Boolean);
+    if (ids.length) { const sql = await getSql(); (await sql`SELECT e.qb_invoice_id, t.id, t.numero_termo, t.projeto FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id WHERE e.qb_invoice_id = ANY(${ids})`)
+      .forEach(x => { termoPorInv[String(x.qb_invoice_id)] = { termo_id: x.id, termo_numero: x.numero_termo, termo_projeto: x.projeto }; }); } } catch (_) {}
+  const _qbBase = process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
   const soma = (l, f) => round(l.filter(f || (() => true)).reduce((a, x) => a + (x.valor || 0), 0));
   const valor = {
     hoje,
@@ -2378,7 +2384,8 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
     a_receber: fut.erro ? null : soma(reais), a_receber_vencido: fut.erro ? null : soma(reais, r => r.vencida), a_receber_30d: fut.erro ? null : soma(reais, r => !r.vencida && r.data <= em30),
     qtd_receber: fut.erro ? null : reais.length, receita_prevista_marcos: soma(prev), erro_futuros: fut.erro || null,
     // v3.85: faturas em aberto, uma a uma — alimenta os alertas de vencimento (A Receber + Dashboard LIVE)
-    recebiveis_itens: fut.erro ? null : reais.map(r => ({ id: r.id, cliente: r.cliente || String(r.descricao || '').split(' · ')[0], doc: r.doc || '', valor: round(r.valor || 0), vencimento: r.data, vencida: !!r.vencida })),
+    recebiveis_itens: fut.erro ? null : reais.map(r => { const qid = String(r.id || '').replace(/^inv_/, ''); return { id: r.id, cliente: r.cliente || String(r.descricao || '').split(' · ')[0], doc: r.doc || '', valor: round(r.valor || 0), vencimento: r.data, vencida: !!r.vencida,
+      qb_id: qid || null, qb_url: qid ? `${_qbBase}/app/invoice?txnId=${qid}` : null, ...(termoPorInv[qid] || {}) }; }),
     a_pagar: fut.erro ? null : soma(fut.pagaveis || []), a_pagar_vencido: fut.erro ? null : soma(fut.pagaveis || [], p => p.vencida), a_pagar_30d: fut.erro ? null : soma(fut.pagaveis || [], p => !p.vencida && p.data <= em30),
     qtd_pagar: fut.erro ? null : (fut.pagaveis || []).length,
     erro: [ext._erro, ext.qb_erro, fut.erro].filter(Boolean).join(' | ') || null,
@@ -4085,8 +4092,24 @@ const RX_EB_DEP = /deprecia|amortiza/i;
 const RX_EB_JUROS = /juros|interest|encargos financeiros|despesas? financeiras?|iof\b/i;
 const RX_EB_IR = /\bIRPJ\b|\bCSLL\b|imposto de renda|contribui[cç][aã]o social|income tax/i;
 const RX_EB_REC_FIN = /rendimento|juros|interest|aplica[cç][aã]o financeira|receitas? financeiras?/i;
-function qbPL(ini, fim, token, extra = '') {
-  return qbFetch(`/reports/ProfitAndLoss?start_date=${ini}&end_date=${fim}&accounting_method=Accrual${extra}`, token);
+// v3.114: link direto para a transação no QuickBooks ("tipo:Id" do qbLancamentos → tela do QBO)
+const _QB_TELA = { invoice: 'invoice', pagamento: 'recvpayment', deposito: 'deposit', despesa: 'expense', pagto_conta: 'billpayment', conta: 'bill', venda: 'salesreceipt', lancamento: 'journal', transferencia: 'transfer', pagto_cartao: 'creditcardpayment', reembolso: 'refundreceipt', cheque: 'check' };
+function _qbUrlTxn(txn) { const m = String(txn || '').match(/^([a-z_]+):(\w+)$/); if (!m || !_QB_TELA[m[1]]) return null;
+  return (process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com') + '/app/' + _QB_TELA[m[1]] + '?txnId=' + m[2]; }
+function qbPL(ini, fim, token, extra = '', metodo = 'Accrual') {
+  return qbFetch(`/reports/ProfitAndLoss?start_date=${ini}&end_date=${fim}&accounting_method=${metodo}${extra}`, token);
+}
+// v3.114: série mensal (faturamento, gastos e lucro por mês) da DRE pedida com summarize_column_by=Month
+function dreMensalSerie(rep, anoRef) {
+  const cols = (rep?.Columns?.Column || []).map(c => c.ColTitle || c.MetaData?.[0]?.Value || '');
+  const idx = cols.map((t, i) => (i === 0 || /total/i.test(t) ? null : _mesDaColunaQB(t, anoRef, i)));
+  const G = {}; for (const r of rep?.Rows?.Row || []) if (r.group && r.Summary?.ColData) G[r.group] = r.Summary.ColData;
+  const v = (g, i) => { const x = parseFloat(G[g]?.[i]?.value); return isFinite(x) ? x : 0; };
+  const out = [];
+  idx.forEach((m, i) => { if (!m) return; const fat = v('Income', i), gastos = v('COGS', i) + v('Expenses', i) + v('OtherExpenses', i);
+    const luc = G.NetIncome ? v('NetIncome', i) : fat - gastos + v('OtherIncome', i);
+    out.push({ mes: m, faturamento: round(fat), gastos: round(gastos), lucro_liquido: round(luc), margem_liquida_pct: fat > 0 ? Math.round(luc / fat * 1000) / 10 : null }); });
+  return out;
 }
 function dreResumo(rep) {
   const rows = rep?.Rows?.Row || [];
@@ -4214,21 +4237,32 @@ async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, 
   if (!_forcar && c && Date.now() - c.em < 300000) return { resultado: c.v };
   const token = await qbToken();
   const comTempo = (p, ms, msg) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error(msg)), ms))]);
-  const [pP, pA, orc] = await Promise.allSettled([
+  const [pP, pA, orc, pC, mt] = await Promise.allSettled([
     futuro ? Promise.resolve(null) : qbPL(ini, fim, token),
-    futuro ? Promise.resolve(null) : qbPL(anoIni, anoFim, token),
+    // v3.114: o ano vem mês a mês (a última coluna é o total) — permite mostrar o último mês fechado e a evolução
+    futuro ? Promise.resolve(null) : qbPL(anoIni, anoFim, token, '&summarize_column_by=Month'),
     comTempo(orcamentoConsolidado({ ano: parseInt(anoIni) }), 8000, 'orçamento não respondeu em 8s'),
+    // v3.114: o mesmo período pelo regime de CAIXA — quanto de receita efetivamente entrou (recebimentos)
+    futuro ? Promise.resolve(null) : qbPL(ini, fim, token, '', 'Cash'),
+    _kvMetas().catch(() => ({})),
   ]);
   const vazio = dreResumo({});
   if (pP.status === 'fulfilled') out.periodo_res = pP.value ? dreResumo(pP.value) : vazio; else out.erros.push('DRE do período: ' + pP.reason?.message);
-  if (pA.status === 'fulfilled') out.ano_res = pA.value ? dreResumo(pA.value) : vazio; else out.erros.push('DRE do ano: ' + pA.reason?.message);
-  // Meta de margem: margem ORÇADA dos meses do período (Orçamento Anual do QuickBooks); sem orçamento, 20%
-  out.meta_margem = { pct: 20, fonte: 'meta padrão (sem orçamento cadastrado)' };
-  if (orc.status === 'fulfilled') {
+  if (pA.status === 'fulfilled') { out.ano_res = pA.value ? dreResumo(pA.value) : vazio; out.mensal = pA.value ? dreMensalSerie(pA.value, parseInt(anoIni)) : []; }
+  else out.erros.push('DRE do ano: ' + pA.reason?.message);
+  if (pC.status === 'fulfilled' && pC.value) { const c = dreResumo(pC.value); out.periodo_caixa = { receita_recebida: c.faturamento, lucro_caixa: c.lucro_liquido }; }
+  // último mês FECHADO com faturamento (referência quando o mês corrente ainda não tem notas emitidas)
+  { const mesH = hoje.substring(0, 7); const fech = (out.mensal || []).filter(m => m.mes < mesH && m.faturamento); out.ultimo_mes_fechado = fech.length ? fech[fech.length - 1] : null; }
+  // Meta de margem: 1º a meta de lucro definida em "Metas do ano"; 2º a margem orçada do período no Orçamento Anual; senão 20%
+  out.meta_margem = { pct: 20, fonte: 'meta padrão (defina em Metas do ano)' };
+  const mUser = mt.status === 'fulfilled' ? mt.value?.por_ano?.[anoIni.substring(0, 4)]?.margem_pct : null;
+  if (mUser != null) out.meta_margem = { pct: Number(mUser), fonte: 'meta de lucro de ' + anoIni.substring(0, 4) + ' (Metas do ano)' };
+  else if (orc.status === 'fulfilled') {
     const pt = orc.value?.por_tipo || {}, mi = ini.substring(0, 7), mf = (futuro ? fimPedido : fim).substring(0, 7);
     const soma = t => Object.entries(pt[t]?.meses || {}).filter(([k]) => k >= mi && k <= mf).reduce((a, [, v]) => a + (v.orcado || 0), 0);
     const R = soma('receita'), D = Math.abs(soma('despesa'));
-    if (R > 0) out.meta_margem = { pct: Math.round((R - D) / R * 1000) / 10, fonte: 'margem orçada no Orçamento Anual (' + (orc.value.budget_nome || 'QuickBooks') + ')', receita_orcada: round(R), despesa_orcada: round(D) };
+    const _mb = R > 0 ? Math.round((R - D) / R * 1000) / 10 : null; // v3.114: orçamento sem receita orçada no mês dava meta absurda (ex.: −38%)
+    if (_mb != null && _mb >= -10 && _mb <= 90) out.meta_margem = { pct: _mb, fonte: 'margem orçada no Orçamento Anual (' + (orc.value.budget_nome || 'QuickBooks') + ')', receita_orcada: round(R), despesa_orcada: round(D) };
   }
   const p = out.periodo_res;
   if (p && p.margem_liquida_pct != null) {

@@ -9489,7 +9489,7 @@ function renderReceberTable() {
     <span>Cliente</span><span>Valor</span><span>Vencimento</span><span>Situacao</span><span>Acao</span>
   </div>` + linhas.map(l => `
     <div class="rec-row ${l.status}" style="display:grid;${cols};gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);">
-      <span style="font-size:12px;">${_recEsc(l.cliente)}<span style="display:block;font-family:var(--M);font-size:9px;color:var(--t3);">${l.origem === 'qb' ? 'QuickBooks' + (l.doc ? ' · Fat. ' + _recEsc(l.doc) : '') : 'Lançamento manual'}</span></span>
+      <span style="font-size:12px;">${_recEsc(l.cliente)}<span style="display:block;font-family:var(--M);font-size:9px;color:var(--t3);">${l.origem === 'qb' ? 'QuickBooks' + (l.doc ? ' · Fat. ' + _recEsc(l.doc) : '') : 'Lançamento manual'}${_recLinksHtml(l)}</span></span>
       <span style="font-size:12px;font-weight:600;color:var(--green);">${_recEsc(l.valorTxt)}</span>
       <span style="font-size:11px;color:var(--gold);">${_recEsc(_recDataBR(l.vencimento) || '—')}</span>
       <span>${_recBadge(l.dias)}</span>
@@ -9576,8 +9576,21 @@ function _recBadge(dias) {
 }
 function _recLinhas() {
   const man = (Array.isArray(receberItems) ? receberItems : []).map((it, i) => ({ origem: 'manual', idx: i, cliente: it.cliente, doc: '', valorTxt: it.valor, valor: _recNum(it.valor), vencimento: it.vencimento }));
-  const qb = (Array.isArray(receberQBItems) ? receberQBItems : []).map((it, i) => ({ origem: 'qb', idx: i, cliente: it.cliente || 'Cliente', doc: it.doc || '', valorTxt: _recFmt(it.valor), valor: Number(it.valor) || 0, vencimento: it.vencimento }));
+  const qb = (Array.isArray(receberQBItems) ? receberQBItems : []).map((it, i) => ({ origem: 'qb', idx: i, cliente: it.cliente || 'Cliente', doc: it.doc || '', valorTxt: _recFmt(it.valor), valor: Number(it.valor) || 0, vencimento: it.vencimento,
+    qb_url: it.qb_url || null, termo_id: it.termo_id || null, termo_numero: it.termo_numero || null })); // v3.114: links para a fatura e o termo
   return man.concat(qb).map(l => { l.dias = _recDias(l.vencimento); l.status = _recStatus(l.dias); return l; });
+}
+// v3.114: atalhos para o objeto do lançamento — fatura no QuickBooks e termo de faturamento
+function _recLinksHtml(l) {
+  const a = [];
+  if (l.termo_id) a.push(`<a href="#s3fatkanban" onclick="abrirDetalheTermo('${_recEsc(String(l.termo_id))}');return false;" title="Abrir o termo de faturamento" style="color:var(--blue);font-family:var(--M);font-size:9.5px;text-decoration:none;white-space:nowrap;">&#128196; Termo ${_recEsc(l.termo_numero || '')}</a>`);
+  if (l.qb_url) a.push(`<a href="${_recEsc(l.qb_url)}" target="_blank" rel="noopener" title="Abrir a fatura no QuickBooks" style="color:var(--blue);font-family:var(--M);font-size:9.5px;text-decoration:none;white-space:nowrap;">&#8599; Fatura no QB</a>`);
+  return a.length ? ' <span style="display:inline-flex;gap:8px;margin-left:6px;">' + a.join('') + '</span>' : '';
+}
+function _abrirPropostaDash(id) {
+  nav('s7propostas', document.querySelector('.sbi[onclick*="\'s7propostas\'"]'));
+  let n = 0; const t = setInterval(() => { n++; if (window.VD && typeof VD.abrirProp === 'function' && document.getElementById('vdProp')?.dataset.ok) { clearInterval(t); setTimeout(() => { try { VD.abrirProp(String(id)); } catch (e) { toast('Não abriu a proposta: ' + e.message, 'error'); } }, 400); }
+    else if (n > 40) { clearInterval(t); toast('Abra a proposta na lista de Propostas', 'info'); } }, 150);
 }
 function _recResumo(linhas) {
   const r = linhas.reduce((a, l) => { if (a[l.status]) { a[l.status].qtd++; a[l.status].valor += l.valor; } return a; },
@@ -9671,12 +9684,14 @@ function renderMarcosAlertaDash() {
   const cor = venc.length ? 'var(--red)' : l.some(x => x.dias <= MAR_DIAS_ALERTA) ? 'var(--gold)' : 'var(--blue)';
   const fundo = venc.length ? 'var(--r2)' : cor === 'var(--gold)' ? 'var(--go2)' : 'var(--b2)';
   const MAX = 8;
-  const itens = l.slice(0, MAX).map(x => `<a href="#s3marcoskanban" onclick="abrirMarcoNoKanban('${_recEsc(String(x.m.id))}');return false;" title="Abrir no Kanban de Marcos (${_recEsc(x.etapa)})"
-      style="display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:6px;background:var(--bg3);text-decoration:none;color:inherit;font-size:11px;">
+  // v3.114: cada marco abre o próprio card no Kanban; "Termos" abre o Kanban de Faturamento filtrado pelo projeto
+  const itens = l.slice(0, MAX).map(x => `<div role="link" tabindex="0" onclick="abrirMarcoNoKanban('${_recEsc(String(x.m.id))}')" title="Abrir este marco no Kanban de Marcos (${_recEsc(x.etapa)})"
+      style="display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:6px;background:var(--bg3);cursor:pointer;color:inherit;font-size:11px;">
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><strong>${_recEsc(x.m.projeto_nome || 'Projeto')}</strong> · ${_recEsc(x.m.descricao || 'Marco')}${x.m.projeto_cliente ? ' <span style="color:var(--t3);">· ' + _recEsc(x.m.projeto_cliente) + '</span>' : ''}</span>
       <span style="font-family:var(--M);font-size:10px;color:var(--t1);white-space:nowrap;">${_recFmt(x.m.valor)}</span>
       <span style="font-family:var(--M);font-size:10px;color:var(--t2);white-space:nowrap;">${_recDataBR(x.m.data_entrega)}</span>
-      ${_marBadge(x.dias)}</a>`).join('');
+      <a href="#s3fatkanban" onclick="event.stopPropagation();_abrirTermosProjeto('${_recEsc(String(x.m.projeto_nome || ''))}');return false;" title="Termos de faturamento deste projeto" style="color:var(--blue);font-family:var(--M);font-size:9.5px;white-space:nowrap;text-decoration:none;">&#128196; Termos</a>
+      ${_marBadge(x.dias)}</div>`).join('');
   el.innerHTML = `<div style="background:${fundo};border:1px solid ${cor};border-radius:8px;padding:10px 14px;margin-bottom:12px;">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;">
       <div style="flex:1;min-width:220px;">
@@ -9700,6 +9715,11 @@ async function carregarMarcosAlertaDash(forcar) {
   renderMarcosAlertaDash();
 }
 // Abre o Kanban de Marcos (sem filtro de projeto) e destaca o card do marco, se informado
+function _abrirTermosProjeto(nome) {
+  ['fatFiltroMes', 'fatFiltroAno', 'fatFiltroNf', 'fatPagDe', 'fatPagAte'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+  const t = document.getElementById('fatFiltroTexto'); if (t) t.value = nome || '';
+  nav('s3fatkanban', document.querySelector('.sbi[onclick*="\'s3fatkanban\'"]'));
+}
 function abrirMarcoNoKanban(id) {
   const dd = document.getElementById('kanbanFiltroProjeto'); if (dd) dd.value = '';
   window._mkFoco = id ? String(id) : null;
@@ -9817,14 +9837,14 @@ async function renderReceitaRiscoDash() {
   if (!d.venc.length && !_recQBCarregado && _recQBErro) recHtml = `<div style="font-size:10px;color:var(--t3);">Não foi possível consultar o QuickBooks — ${_recEsc(_recQBErro.substring(0, 120))}</div>`;
   else if (!d.venc.length) recHtml = vazio(`Nenhum recebível vencido há ${RR_DIAS_VENCIDO}+ dias.`);
   else recHtml = d.venc.slice(0, MAX).map(l => linha(
-    `<div style="flex:1;min-width:0;"><b>${_recEsc(l.cliente)}</b>${l.doc ? ` <span style="font-family:var(--M);font-size:9px;color:var(--t3);">${_recEsc(l.doc)}</span>` : ''}<div style="font-family:var(--M);font-size:9.5px;color:var(--red);">vencido há ${-l.dias}d · ${_recDataBR(l.vencimento)}</div></div>`,
+    `<div style="flex:1;min-width:0;">${l.qb_url ? `<a href="${_recEsc(l.qb_url)}" target="_blank" rel="noopener" style="color:inherit;" title="Abrir a fatura no QuickBooks"><b>${_recEsc(l.cliente)}</b></a>` : `<b>${_recEsc(l.cliente)}</b>`}${l.doc ? ` <span style="font-family:var(--M);font-size:9px;color:var(--t3);">${_recEsc(l.doc)}</span>` : ''}${_recLinksHtml(l)}<div style="font-family:var(--M);font-size:9.5px;color:var(--red);">vencido há ${-l.dias}d · ${_recDataBR(l.vencimento)}</div></div>`,
     `<span style="font-family:var(--M);white-space:nowrap;">${_recFmt(l.valor)}</span><button class="btn btn-g" style="${mini}" onclick="cobrarRecebivelWA('${l.origem}',${l.idx})" title="Abre o WhatsApp IA com a mensagem de cobrança pronta">Cobrar via WhatsApp</button>`)).join('') + mais(d.venc.length, 's3receber', 'ver em A Receber');
 
   let propHtml;
   if (_rrPropsErro && !_rrProps) propHtml = `<div style="font-size:10px;color:var(--t3);">Não foi possível consultar as propostas — ${_recEsc(_rrPropsErro.substring(0, 120))}</div>`;
   else if (!d.props.length) propHtml = vazio(`Nenhuma proposta em aberto parada há ${RR_DIAS_PARADA}+ dias.`);
   else propHtml = d.props.slice(0, MAX).map(p => linha(
-    `<div style="flex:1;min-width:0;"><b>${_recEsc(p.cliente)}</b>${p.numero ? ` <span style="font-family:var(--M);font-size:9px;color:var(--t3);">${_recEsc(p.numero)}</span>` : ''}<div style="font-family:var(--M);font-size:9.5px;color:var(--gold);">${RR_STATUS_ABERTO[p.status]} · sem atualização há ${p.dias}d</div></div>`,
+    `<div style="flex:1;min-width:0;"><a href="#s7propostas" onclick="_abrirPropostaDash('${_recEsc(String(p.id))}');return false;" style="color:inherit;" title="Abrir a proposta"><b>${_recEsc(p.cliente)}</b>${p.numero ? ` <span style="font-family:var(--M);font-size:9px;color:var(--t3);">${_recEsc(p.numero)}</span>` : ''} <span style="color:var(--blue);font-family:var(--M);font-size:9.5px;">abrir ›</span></a><div style="font-family:var(--M);font-size:9.5px;color:var(--gold);">${RR_STATUS_ABERTO[p.status]} · sem atualização há ${p.dias}d</div></div>`,
     `<span style="font-family:var(--M);white-space:nowrap;">${_recFmt(p.valor)}</span>`)).join('') + mais(d.props.length, 's7propostas', 'ver em Propostas');
 
   el.innerHTML = `<div style="background:var(--bg2);border:1px solid ${s.cor};border-left:4px solid ${s.cor};border-radius:10px;padding:12px 16px;margin-bottom:13px;">
@@ -27548,13 +27568,30 @@ function _resCardsHtml(R, modo) {
   const corMg = v => v == null ? 'var(--t3)' : v < 0 ? 'var(--red)' : v < meta.pct ? 'var(--gold)' : 'var(--green)';
   const p = P || {}, a = A || {};
   const futuro = R.periodo && R.periodo.futuro;
+  const U = R.ultimo_mes_fechado, nomeMes = m => m ? ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][+m.substring(5, 7) - 1] + '/' + m.substring(2, 4) : '';
+  const semFat = !futuro && !(p.faturamento > 0);
+  const caixa = R.periodo_caixa ? ' · recebido no período (caixa) <b>' + brl(R.periodo_caixa.receita_recebida) + '</b>' : '';
+  // v3.114: sem nota emitida no mês (comum no começo do mês), mostra o último mês fechado como referência — antes ficava só "R$ 0,00"
+  const subFat = futuro ? 'período ainda não começou' : (semFat ? '<span style="color:var(--gold);">nenhuma nota emitida ' + lblP + ' até hoje</span>' + (U ? ' · ' + nomeMes(U.mes) + ': <b>' + brl(U.faturamento) + '</b>' : '') : '') + (semFat ? '' : anoTxt + ': <b>' + brl(a.faturamento) + '</b>') + caixa + (semFat ? ' · ' + anoTxt + ': <b>' + brl(a.faturamento) + '</b>' : '');
+  const semCpv = !(a.custos > 0) && !(p.custos > 0);
   const cards = [
-    _resCartao('Faturamento ' + lblP, futuro ? '—' : brl(p.faturamento), futuro ? 'período ainda não começou' : anoTxt + ': <b>' + brl(a.faturamento) + '</b>', 'var(--blue)', 'Receita da DRE do QuickBooks (competência = notas emitidas)'),
-    _resCartao('Lucro bruto', futuro ? '—' : brl(p.lucro_bruto), 'margem bruta <b>' + _resFmtPct(p.margem_bruta_pct) + '</b> · ' + anoTxt + ' ' + _resFmtPct(a.margem_bruta_pct), corLuc(p.lucro_bruto), 'Faturamento − custo dos serviços prestados (COGS)'),
+    _resCartao('Faturamento ' + lblP, futuro ? '—' : brl(p.faturamento), subFat, semFat ? 'var(--gold)' : 'var(--blue)', 'Receita da DRE do QuickBooks (competência = notas emitidas no período)'),
+    semCpv
+      ? _resCartao('Gastos ' + lblP, futuro ? '—' : brl(p.gastos_totais), anoTxt + ': <b>' + brl(a.gastos_totais) + '</b> · custos e despesas da DRE', 'var(--red)', 'Não há custo direto (CPV) separado no QuickBooks — o lucro bruto seria igual ao faturamento, então aqui aparecem os gastos totais')
+      : _resCartao('Lucro bruto', futuro ? '—' : brl(p.lucro_bruto), 'margem bruta <b>' + _resFmtPct(p.margem_bruta_pct) + '</b> · ' + anoTxt + ' ' + _resFmtPct(a.margem_bruta_pct), corLuc(p.lucro_bruto), 'Faturamento − custo dos serviços prestados (COGS)'),
     _resCartao('EBITDA', futuro ? '—' : brl(p.ebitda), 'margem <b>' + _resFmtPct(p.margem_ebitda_pct) + '</b> · ' + anoTxt + ' ' + brl(a.ebitda), corLuc(p.ebitda), 'Lucro líquido + depreciação/amortização + juros/despesas financeiras + IR/CSLL − receitas financeiras'),
-    _resCartao('Lucro líquido ' + lblP, futuro ? '—' : brl(p.lucro_liquido), anoTxt + ': <b style="color:' + corLuc(a.lucro_liquido) + ';">' + brl(a.lucro_liquido) + '</b>', corLuc(p.lucro_liquido), 'Lucro líquido da DRE do QuickBooks'),
-    _resCartao('Margem líquida ' + lblP, futuro ? '—' : _resFmtPct(p.margem_liquida_pct), 'meta <b>' + _resFmtPct(meta.pct) + '</b> · ' + anoTxt + ' <b style="color:' + corMg(a.margem_liquida_pct) + ';">' + _resFmtPct(a.margem_liquida_pct) + '</b>', corMg(p.margem_liquida_pct), 'Lucro líquido ÷ faturamento. Meta: ' + (meta.fonte || '')),
+    _resCartao('Lucro líquido ' + lblP, futuro ? '—' : brl(p.lucro_liquido), anoTxt + ': <b style="color:' + corLuc(a.lucro_liquido) + ';">' + brl(a.lucro_liquido) + '</b>' + (semFat && p.lucro_liquido < 0 ? ' · <span style="color:var(--gold);">só gastos lançados no mês, sem nota emitida ainda</span>' : ''), corLuc(p.lucro_liquido), 'Lucro líquido da DRE do QuickBooks'),
+    _resCartao('Margem líquida ' + lblP, futuro || semFat ? '—' : _resFmtPct(p.margem_liquida_pct), (semFat && U ? nomeMes(U.mes) + ' <b>' + _resFmtPct(U.margem_liquida_pct) + '</b> · ' : '') + 'meta <b>' + _resFmtPct(meta.pct) + '</b> · ' + anoTxt + ' <b style="color:' + corMg(a.margem_liquida_pct) + ';">' + _resFmtPct(a.margem_liquida_pct) + '</b>', semFat ? corMg(a.margem_liquida_pct) : corMg(p.margem_liquida_pct), 'Lucro líquido ÷ faturamento. Meta: ' + (meta.fonte || '')),
   ];
+  // v3.114: evolução mês a mês do ano (faturamento e lucro) — mostra de onde vem o acumulado
+  const M = (R.mensal || []).filter(m => m.mes <= (R.ano?.ate || '9999').substring(0, 7));
+  if (M.length > 1) { const mx = Math.max(1, ...M.map(m => Math.abs(m.faturamento)), ...M.map(m => Math.abs(m.lucro_liquido)));
+    cards.push('<div class="res-card" style="--c:var(--t3);grid-column:1/-1;"><div class="rl">Faturamento e lucro mês a mês · ' + anoTxt + '</div><div style="display:flex;gap:6px;align-items:flex-end;height:74px;margin-top:6px;overflow-x:auto;">'
+      + M.map(m => '<div title="' + nomeMes(m.mes) + ' · faturamento ' + brl(m.faturamento) + ' · lucro ' + brl(m.lucro_liquido) + ' (' + _resFmtPct(m.margem_liquida_pct) + ')" style="flex:1;min-width:28px;display:flex;flex-direction:column;align-items:center;gap:2px;">'
+        + '<div style="display:flex;gap:2px;align-items:flex-end;height:52px;"><div style="width:9px;background:var(--blue);border-radius:2px 2px 0 0;height:' + Math.max(1, Math.round(Math.abs(m.faturamento) / mx * 52)) + 'px;"></div>'
+        + '<div style="width:9px;background:' + (m.lucro_liquido < 0 ? 'var(--red)' : 'var(--green)') + ';border-radius:2px 2px 0 0;height:' + Math.max(1, Math.round(Math.abs(m.lucro_liquido) / mx * 52)) + 'px;"></div></div>'
+        + '<div style="font-family:var(--M);font-size:8.5px;color:var(--t3);">' + nomeMes(m.mes).substring(0, 3) + '</div></div>').join('')
+      + '</div><div class="rs"><span style="color:var(--blue);">■</span> faturamento · <span style="color:var(--green);">■</span> lucro (<span style="color:var(--red);">■</span> prejuízo) · passe o mouse para ver os valores</div></div>'); }
   return cards.join('');
 }
 function _resNota(R) {
@@ -27782,7 +27819,7 @@ async function carregarDashboardFinanceiro() {
       kp.innerHTML = ent.length ? ent.map(([k, v]) => '<div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--bd);"><span style="color:var(--t2);">' + NOMES[k] + '</span><b style="font-family:var(--M);' + (v < 0 ? 'color:var(--red);' : '') + '">' + fmtK(k, v) + '</b></div>').join('') + ((sd.motivos || []).length ? '<div style="font-size:10px;color:var(--t2);margin-top:6px;">' + sd.motivos.join(' · ') + '</div>' : '')
         : '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">' + (sd.erro ? 'Erro ao calcular os indicadores: ' + String(sd.erro).replace(/</g, '&lt;') : 'Sem indicadores — o cálculo não retornou dados.') + '</div>'; }
     const ln = document.getElementById('df_lanc');
-    if (ln) { const ls = x.ultimos_lancamentos || []; ln.innerHTML = ls.length ? '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + ls.map(l => '<tr style="border-bottom:1px solid var(--bd);"><td style="padding:5px;color:var(--t2);font-family:var(--M);font-size:10px;">' + (l.data||'') + '</td><td style="padding:5px;">' + (l.desc||'') + '</td><td style="padding:5px;text-align:right;color:' + ((l.tipo||'').match(/sa[ií]da|despesa|expense/i) || (l.valor||0) < 0 ? 'var(--red)' : 'var(--green,#22d3a3)') + ';font-family:var(--M);">' + brl(l.valor) + '</td></tr>').join('') + '</table>' : '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Sem lançamentos (QB desconectado?)</div>'; }
+    if (ln) { const ls = x.ultimos_lancamentos || []; ln.innerHTML = ls.length ? '<table style="width:100%;border-collapse:collapse;font-size:11px;">' + ls.map(l => '<tr style="border-bottom:1px solid var(--bd);"><td style="padding:5px;color:var(--t2);font-family:var(--M);font-size:10px;">' + (l.data||'') + '</td><td style="padding:5px;">' + (l.qb_url ? '<a href="' + l.qb_url + '" target="_blank" rel="noopener" style="color:inherit;" title="Abrir no QuickBooks">' + String(l.desc||'').replace(/</g,'&lt;') + ' <span style="color:var(--blue);font-size:9.5px;">&#8599;</span></a>' : String(l.desc||'').replace(/</g,'&lt;')) + '</td><td style="padding:5px;text-align:right;color:' + ((l.tipo||'').match(/sa[ií]da|despesa|expense/i) || (l.valor||0) < 0 ? 'var(--red)' : 'var(--green,#22d3a3)') + ';font-family:var(--M);">' + brl(l.valor) + '</td></tr>').join('') + '</table>' : '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Sem lançamentos (QB desconectado?)</div>'; }
     u('dfAtualizado', cache ? '⚠ Dados de ' + _finFmtTs(cache.ts) : 'atualizado ' + new Date().toLocaleTimeString('pt-BR').substring(0,5) + (x.quickbooks?.conectado ? ' · QB ok' : ' · QB sem dados'));
     { const at = document.getElementById('dfAtualizado'); if (at) at.style.color = cache ? 'var(--gold)' : ''; }
     _finAvisoFalha('dfStatus', 'carregarDashboardFinanceiro', cache && cache.erro, cache);
@@ -30109,7 +30146,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.113] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.114] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -30125,7 +30162,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.113';
+window.__ATX_BUILD_ID__ = 'ATX-v3.114';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
