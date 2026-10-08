@@ -2040,12 +2040,41 @@ tr:hover td{background:rgba(79,124,255,.03);}
 
   <!-- S1 RISCOS -->
   <div class="page" id="page-s1riscos">
+    <!-- Abas: Painel de Riscos (existente) · Simular Cenário (Gabinete de Simulação — MVP com 3 agentes de IA) -->
+    <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+      <button class="btn btn-p" id="gabAbaBtnPainel" style="font-size:10.5px;padding:5px 11px;" onclick="gabAba('painel')">&#9888; Painel de Riscos</button>
+      <button class="btn btn-g" id="gabAbaBtnSim" style="font-size:10.5px;padding:5px 11px;" onclick="gabAba('sim')">&#9881; Simular Cenário</button>
+    </div>
+    <div id="gabAbaSim" style="display:none;">
+      <div class="panel"><div class="ph"><div class="pt">Gabinete de Simulação de Riscos</div><span class="tag on">3 Agentes IA</span><a href="#s1pipeline" onclick="_rskIr('s1pipeline');return false;" style="margin-left:auto;color:var(--blue);text-decoration:none;font-size:10px;">Ideia GABINETE no Pipeline &#8594;</a></div>
+        <div class="pb">
+          <div style="font-size:10.5px;color:var(--t2);margin-bottom:10px;">Escolha um risco, descreva um cenário de estresse e três agentes (Financeiro, Jurídico e Operacional) dão o parecer de cada perspectiva — no fim, uma síntese consolidada com impacto estimado e ação recomendada.</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+            <label for="gabRisco" style="font-family:var(--M);font-size:9.5px;color:var(--t3);text-transform:uppercase;">Risco</label>
+            <select class="fsel" id="gabRisco" style="flex:1;min-width:240px;"><option value="">Carregando riscos cadastrados…</option></select>
+            <button class="btn btn-g" style="font-size:9px;padding:3px 8px;" onclick="gabCarregarRiscos(true)">↻</button>
+          </div>
+          <label for="gabCenario" style="font-family:var(--M);font-size:9.5px;color:var(--t3);text-transform:uppercase;">Descreva o cenário de estresse</label>
+          <textarea class="fta" id="gabCenario" rows="3" style="width:100%;margin-top:4px;resize:vertical;" placeholder="Ex.: cliente CPFL atrasa 60 dias o pagamento das próximas duas faturas"></textarea>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+            <button class="btn btn-rd" id="gabBtnSimular" onclick="gabSimular()">&#9670; Simular</button>
+            <span id="gabStatus" style="font-size:10.5px;color:var(--t3);"></span>
+          </div>
+        </div>
+      </div>
+      <div id="gabResultado"></div>
+      <div class="panel"><div class="ph"><div class="pt">Histórico de Simulações</div><span class="tag">neste navegador</span></div>
+        <div class="pb" id="gabHistorico"></div>
+      </div>
+    </div>
+    <div id="gabAbaPainel">
     <!-- Sinais de Alerta Automáticos: semáforo ao vivo com dados de A Receber, Marcos de Projeto e QuickBooks (sem IA) -->
     <div class="panel" id="alertas-automaticos"><div class="ph"><div class="pt">Sinais de Alerta Automáticos</div><span class="tag live">Ao Vivo</span><span id="rskAtualizado" style="font-family:var(--M);font-size:9px;color:var(--t3);margin-left:6px;"></span><button class="btn btn-g" style="font-size:9px;padding:3px 8px;margin-left:auto;" onclick="carregarSinaisRisco(true)">↻ Atualizar</button></div>
       <div class="pb" id="rskSinais"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando sinais de alerta…</div></div>
     </div>
     <div class="panel"><div class="ph"><div class="pt">Gestão de Riscos — Atlantyx</div><span class="tag on">Claude IA</span><button class="btn btn-rd" id="btnRiscos" style="font-size:9px;padding:4px 9px;" onclick="runIntel('analise_riscos','s1RiscosResult','btnRiscos')">&#9670; Analisar Riscos</button></div>
       <div class="pb" id="s1RiscosResult"><div style="color:var(--t3);font-size:11px;text-align:center;padding:30px;">Clique em "Analisar Riscos" para mapear todos os riscos da empresa com IA</div></div>
+    </div>
     </div>
   </div>
 
@@ -12470,6 +12499,168 @@ nav = function(p, el) {
   if (p === 's1riscos' || p === 's1dash') { const pg = document.getElementById('page-' + p); if (pg && pg.classList.contains('active')) setTimeout(() => carregarSinaisRisco(false), 120); }
   return r;
 };
+
+// ═══ GABINETE DE SIMULAÇÃO DE RISCOS (aba "Simular Cenário" em s1riscos) — MVP da ideia GABINETE ═══
+// Riscos do dropdown: sinais do semáforo ao vivo + última "Análise de riscos" da IA (s1_historico). Ao simular, 3 agentes
+// (Financeiro, Jurídico, Operacional) respondem em paralelo via /api/claude e um 4º chamado consolida o parecer.
+// Histórico fica no localStorage deste navegador (últimas GAB_MAX_HIST simulações).
+const GAB_LS = 'atx:gabinete_simulacoes', GAB_MAX_HIST = 30;
+const GAB_AGENTES = [
+  { chave: 'financeiro', nome: 'Agente Financeiro', cor: 'var(--green)', foco: 'impacto no fluxo de caixa, receita, margem e necessidade de capital de giro — quantifique em R$ e em dias de caixa sempre que possível' },
+  { chave: 'juridico', nome: 'Agente Jurídico', cor: 'var(--blue)', foco: 'exposição contratual: cláusulas de multa, SLA, rescisão, garantias, cobrança e notificação, responsabilidades e passivos possíveis' },
+  { chave: 'operacional', nome: 'Agente Operacional', cor: 'var(--gold)', foco: 'continuidade de entrega: equipe, marcos de projeto, dependências, capacidade e efeito nos demais clientes' }
+];
+let _gabRiscos = [], _gabRiscosEm = 0, _gabRodando = false;
+
+function gabAba(qual) {
+  const sim = qual === 'sim';
+  const a = document.getElementById('gabAbaSim'), b = document.getElementById('gabAbaPainel');
+  if (a) a.style.display = sim ? 'block' : 'none'; if (b) b.style.display = sim ? 'none' : 'block';
+  const bs = document.getElementById('gabAbaBtnSim'), bp = document.getElementById('gabAbaBtnPainel');
+  if (bs) bs.className = 'btn ' + (sim ? 'btn-p' : 'btn-g'); if (bp) bp.className = 'btn ' + (sim ? 'btn-g' : 'btn-p');
+  if (sim) { gabCarregarRiscos(false); gabRenderHistorico(); }
+}
+
+function _gabTxt(s) { return String(s == null ? '' : s).replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim(); }
+// Texto da IA → HTML seguro (escapa tudo, depois só aplica **negrito** e quebras de linha)
+function _gabFmt(s) { return _recEsc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/^#{1,4}\s*(.+)$/gm, '<strong>$1</strong>').replace(/\n/g, '<br>'); }
+
+async function gabCarregarRiscos(forcar) {
+  const sel = document.getElementById('gabRisco'); if (!sel) return;
+  if (!forcar && _gabRiscos.length && Date.now() - _gabRiscosEm < 120000) return _gabPopularRiscos();
+  sel.innerHTML = '<option value="">Carregando riscos cadastrados…</option>';
+  const lista = [];
+  // 1) Sinais automáticos do semáforo (sem IA)
+  try {
+    const sinais = await carregarSinaisRisco(!!forcar);
+    (sinais || []).forEach(s => lista.push({ grupo: 'Sinais de alerta ao vivo', rotulo: s.titulo + ' — ' + RSK_ROTULO[s.nivel], descricao: `${s.titulo} (semáforo ${RSK_ROTULO[s.nivel]}): ${_gabTxt(s.resumo)}`, detalhes: (s.itens || []).map(_gabTxt) }));
+  } catch (_) {}
+  // 2) Riscos da última análise de riscos gerada pela IA
+  try {
+    const h = await api('/api/s1-intel', 'POST', { action: 'historico_listar', tipo: 'analise_riscos', limite: 1 });
+    const id = h?.success && h.itens?.[0]?.id;
+    if (id) {
+      const d = await api('/api/s1-intel', 'POST', { action: 'historico_obter', id });
+      const dados = d?.item?.dados || {}, rs = (dados.riscos && dados.riscos.riscos) || dados.riscos || [];
+      const quando = new Date(d.item.criado_em).toLocaleDateString('pt-BR');
+      (Array.isArray(rs) ? rs : []).forEach(r => r && r.risco && lista.push({ grupo: 'Análise de riscos (IA) · ' + quando, rotulo: `[${r.categoria || 'Risco'}] ${r.risco}`,
+        descricao: `${r.risco} (categoria ${r.categoria || '—'}, probabilidade ${r.probabilidade || '—'}, impacto ${r.impacto || '—'}${r.impacto_financeiro_estimado ? ', impacto estimado ' + r.impacto_financeiro_estimado : ''})`,
+        detalhes: [r.gatilho && 'Gatilho: ' + r.gatilho, r.mitigacao && 'Mitigação atual: ' + r.mitigacao, r.status && 'Status: ' + r.status].filter(Boolean) }));
+    }
+  } catch (_) {}
+  _gabRiscos = lista; _gabRiscosEm = Date.now();
+  _gabPopularRiscos();
+}
+
+function _gabPopularRiscos() {
+  const sel = document.getElementById('gabRisco'); if (!sel) return;
+  const atual = sel.value, grupos = {};
+  _gabRiscos.forEach((r, i) => { (grupos[r.grupo] = grupos[r.grupo] || []).push(`<option value="${i}">${_recEsc(r.rotulo.substring(0, 140))}</option>`); });
+  sel.innerHTML = '<option value="">— Selecione um risco —</option>' + Object.keys(grupos).map(g => `<optgroup label="${_recEsc(g)}">${grupos[g].join('')}</optgroup>`).join('')
+    + '<option value="livre">Outro risco (descrever só no cenário)</option>';
+  if (!_gabRiscos.length) sel.options[0].textContent = '— Nenhum risco cadastrado ainda (rode "Analisar Riscos") —';
+  if (atual && [...sel.options].some(o => o.value === atual)) sel.value = atual;
+}
+
+async function _gabClaude(system, user, maxTokens) {
+  const d = await api('/api/claude', 'POST', { system, messages: [{ role: 'user', content: user }], max_tokens: maxTokens });
+  const t = d?.content?.[0]?.text;
+  if (!t) throw new Error(d?.error || 'sem resposta da IA');
+  return t;
+}
+
+async function gabSimular() {
+  if (_gabRodando) return;
+  const sel = document.getElementById('gabRisco'), cen = (document.getElementById('gabCenario')?.value || '').trim();
+  const st = document.getElementById('gabStatus'), btn = document.getElementById('gabBtnSimular'), out = document.getElementById('gabResultado');
+  if (!sel || sel.value === '') { if (st) { st.style.color = 'var(--red)'; st.textContent = 'Selecione um risco.'; } return; }
+  if (cen.length < 8) { if (st) { st.style.color = 'var(--red)'; st.textContent = 'Descreva o cenário de estresse.'; } return; }
+  const risco = sel.value === 'livre' ? { rotulo: 'Risco descrito no cenário', descricao: 'Risco não cadastrado — ver cenário.', detalhes: [] } : _gabRiscos[+sel.value];
+  if (!risco) return;
+  _gabRodando = true; if (btn) btn.disabled = true;
+  if (st) { st.style.color = 'var(--blue)'; st.textContent = 'Agentes analisando o cenário…'; }
+  if (out) out.innerHTML = '<div class="panel"><div class="pb" style="color:var(--blue);font-family:var(--M);font-size:11px;text-align:center;padding:20px;">Gabinete reunido: Financeiro, Jurídico e Operacional analisando em paralelo…</div></div>';
+  addLog('info', '[Gabinete] Simulando: ' + risco.rotulo.substring(0, 80));
+
+  const sinais = (_rskSinais || []).map(s => `- ${s.titulo}: ${RSK_ROTULO[s.nivel]} — ${_gabTxt(s.resumo)}`).join('\n') || '- indisponível';
+  const contexto = `EMPRESA: Atlantyx (consultoria de BI, Dados e IA para grandes empresas).
+RISCO SELECIONADO: ${risco.descricao}${risco.detalhes.length ? '\nDETALHES DO RISCO:\n- ' + risco.detalhes.join('\n- ') : ''}
+SEMÁFORO DE RISCOS ATUAL (dados reais):\n${sinais}
+CENÁRIO DE ESTRESSE A SIMULAR: ${cen}`;
+  const formato = `Responda em português, no máximo ~220 palavras, nesta estrutura:
+**Impacto estimado:** (quantifique; se faltar dado, diga qual e use uma faixa)
+**Severidade:** Alta | Média | Baixa
+**Análise:** 3 a 5 pontos curtos
+**Ação recomendada:** 1 a 3 ações concretas com prazo
+Nunca invente números como se fossem fatos — deixe claro o que é estimativa.`;
+
+  const sim = { id: 'gab_' + Date.now(), em: Date.now(), risco: risco.rotulo, cenario: cen, agentes: [], sintese: null };
+  try {
+    const resps = await Promise.allSettled(GAB_AGENTES.map(a => _gabClaude(
+      `Você é o ${a.nome} do Gabinete de Simulação de Riscos da Atlantyx. Seu foco exclusivo: ${a.foco}. Seja direto e prático, como um conselheiro sênior falando com o fundador.`,
+      contexto + '\n\n' + formato, 900)));
+    sim.agentes = GAB_AGENTES.map((a, i) => ({ chave: a.chave, nome: a.nome, texto: resps[i].status === 'fulfilled' ? resps[i].value : '', erro: resps[i].status === 'rejected' ? String(resps[i].reason?.message || 'falha') : '' }));
+    const ok = sim.agentes.filter(a => a.texto);
+    if (!ok.length) throw new Error(sim.agentes[0]?.erro || 'nenhum agente respondeu');
+    if (st) st.textContent = 'Consolidando o parecer…';
+    try {
+      const t = await _gabClaude('Você é o Coordenador do Gabinete de Simulação de Riscos da Atlantyx. Consolide os pareceres dos agentes num parecer único para o fundador. Retorne APENAS JSON válido.',
+        contexto + '\n\nPARECERES DOS AGENTES:\n' + ok.map(a => `### ${a.nome}\n${a.texto}`).join('\n\n') +
+        '\n\nRetorne: {"severidade":"Alta|Média|Baixa","impacto_estimado":"impacto consolidado (R$, prazo, efeito)","parecer":"síntese em 3-4 frases","acao_recomendada":"a ação nº 1 a tomar agora, com prazo","acoes_complementares":["…"]}', 900);
+      const m = t.match(/\{[\s\S]*\}/);
+      sim.sintese = m ? JSON.parse(m[0]) : { parecer: t };
+    } catch (e) { sim.sintese = { erro: e.message }; }
+    gabSalvar(sim);
+    gabRenderSimulacao(sim);
+    gabRenderHistorico();
+    if (st) { st.style.color = 'var(--green)'; st.textContent = 'Simulação concluída e salva no histórico.'; }
+    addLog('success', '[Gabinete] Simulação concluída');
+  } catch (e) {
+    if (out) out.innerHTML = `<div class="panel"><div class="pb" style="color:var(--red);font-size:11px;padding:16px;">⛔ Não consegui rodar a simulação: ${_recEsc(e.message)}</div></div>`;
+    if (st) { st.style.color = 'var(--red)'; st.textContent = ''; }
+    addLog('err', '[Gabinete] Erro: ' + e.message);
+  } finally { _gabRodando = false; if (btn) btn.disabled = false; }
+}
+
+function gabRenderSimulacao(sim) {
+  const out = document.getElementById('gabResultado'); if (!out || !sim) return;
+  const s = sim.sintese || {}, sev = s.severidade || '';
+  const cor = /alta/i.test(sev) ? 'var(--red)' : /m[eé]dia/i.test(sev) ? 'var(--gold)' : /baixa/i.test(sev) ? 'var(--green)' : 'var(--t3)';
+  const cards = GAB_AGENTES.map(a => {
+    const r = (sim.agentes || []).find(x => x.chave === a.chave) || {};
+    return `<details open style="background:var(--bg4);border:1px solid var(--bd);border-left:3px solid ${a.cor};border-radius:7px;padding:10px 12px;margin-bottom:8px;">
+      <summary style="cursor:pointer;font-family:var(--H);font-size:12.5px;font-weight:700;">${a.nome}</summary>
+      <div style="font-size:11.5px;line-height:1.65;margin-top:8px;color:var(--t1);">${r.texto ? _gabFmt(r.texto) : `<span style="color:var(--red);">Agente não respondeu${r.erro ? ': ' + _recEsc(r.erro) : ''}</span>`}</div>
+    </details>`;
+  }).join('');
+  const sintese = s.erro ? `<div style="color:var(--red);font-size:11px;">Não consegui consolidar o parecer: ${_recEsc(s.erro)}</div>`
+    : `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="width:11px;height:11px;border-radius:50%;background:${cor};"></span><span style="font-family:var(--M);font-size:10px;color:${cor};text-transform:uppercase;">Severidade ${_recEsc(sev || '—')}</span></div>
+      ${s.impacto_estimado ? `<div style="font-size:11.5px;margin-bottom:6px;"><strong>Impacto estimado:</strong> ${_recEsc(s.impacto_estimado)}</div>` : ''}
+      ${s.parecer ? `<div style="font-size:11.5px;line-height:1.65;margin-bottom:8px;color:var(--t1);">${_gabFmt(s.parecer)}</div>` : ''}
+      ${s.acao_recomendada ? `<div style="background:var(--r2);border:1px solid var(--red);border-radius:7px;padding:9px 11px;font-size:12px;"><strong>Ação recomendada:</strong> ${_recEsc(s.acao_recomendada)}</div>` : ''}
+      ${Array.isArray(s.acoes_complementares) && s.acoes_complementares.length ? `<div style="margin-top:7px;font-size:11px;color:var(--t2);">${s.acoes_complementares.map(x => '• ' + _recEsc(x)).join('<br>')}</div>` : ''}`;
+  out.innerHTML = `<div class="panel"><div class="ph"><div class="pt">Resultado da Simulação</div><span style="font-family:var(--M);font-size:9px;color:var(--t3);margin-left:auto;">${new Date(sim.em).toLocaleString('pt-BR')}</span></div>
+    <div class="pb">
+      <div style="font-size:11px;color:var(--t2);margin-bottom:10px;"><strong>Risco:</strong> ${_recEsc(sim.risco)}<br><strong>Cenário:</strong> ${_recEsc(sim.cenario)}</div>
+      ${cards}
+      <div style="background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:12px;margin-top:4px;"><div style="font-family:var(--H);font-size:13px;font-weight:700;margin-bottom:8px;">Síntese do Gabinete</div>${sintese}</div>
+    </div></div>`;
+}
+
+function _gabLer() { try { const l = JSON.parse(localStorage.getItem(GAB_LS) || '[]'); return Array.isArray(l) ? l : []; } catch (_) { return []; } }
+function gabSalvar(sim) { const l = [sim, ..._gabLer().filter(x => x.id !== sim.id)].slice(0, GAB_MAX_HIST); try { localStorage.setItem(GAB_LS, JSON.stringify(l)); } catch (_) {} }
+function gabAbrirHist(id) { const s = _gabLer().find(x => x.id === id); if (s) { gabRenderSimulacao(s); document.getElementById('gabResultado')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }
+function gabExcluirHist(id) { if (!confirm('Excluir esta simulação do histórico?')) return; try { localStorage.setItem(GAB_LS, JSON.stringify(_gabLer().filter(x => x.id !== id))); } catch (_) {} gabRenderHistorico(); }
+function gabRenderHistorico() {
+  const box = document.getElementById('gabHistorico'); if (!box) return;
+  const l = _gabLer();
+  box.innerHTML = l.length ? l.map(s => `<div style="display:flex;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);">
+      <div style="flex:1;min-width:0;"><div style="font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${new Date(s.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })} · ${_recEsc(s.risco)}</div>
+      <div style="font-size:10.5px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_recEsc(s.cenario)}${s.sintese?.severidade ? ' · severidade ' + _recEsc(s.sintese.severidade) : ''}</div></div>
+      <button class="btn btn-p" style="font-size:10px;" onclick="gabAbrirHist('${s.id}')">Abrir</button>
+      <button class="btn btn-g" style="font-size:10px;" onclick="gabExcluirHist('${s.id}')">✕</button></div>`).join('')
+    : '<div style="color:var(--t3);font-size:11px;padding:12px;text-align:center;">Nenhuma simulação ainda. As simulações rodadas aqui ficam salvas neste navegador.</div>';
+}
 
 
 // ══════════════════════════════════════════════════════════════════════════════
