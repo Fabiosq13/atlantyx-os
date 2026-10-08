@@ -8564,7 +8564,7 @@ async function runRfpMonitorAtualizado() {
     const petro = rfpPetronectBarra(data.petronect);
     const barraRfp = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;"><b style="font-size:11.5px;">' + rfps.length + ' edital(is)</b><button class="btn btn-g" style="font-size:10px;margin-left:auto;" onclick="rfpBaixarPdf()">📄 Baixar PDF da lista</button><button class="btn btn-p" style="font-size:10px;" onclick="rfpEnviarEmail()">📧 Enviar lista por e-mail</button></div>';
     res.innerHTML = avisoTopo + petro + barraRfp + '<div style="font-size:10.5px;color:var(--t2);margin-bottom:10px;text-align:left;">&#128269; ' + (data.do_cache ? '<b>Última varredura guardada</b> · ' : '') + 'Fonte: <b>' + e(data.fonte || 'PNCP') + '</b> · consulta em ' + e(data.data_consulta || '') + (fontesTxt ? ' · ' + e(fontesTxt) : '') + ' · ' + (data.total_encontrado || 0) + ' editais em aberto analisados' + (data.petronect ? ' + ' + (data.petronect.aderentes_abertas || 0) + ' oportunidade(s) Petrobras aderentes lidas do e-mail Petronect' : '') + '. Somente editais reais — a IA avalia a aderência, não cria editais.</div>'
-    + rfps.map(r => `
+    + rfps.map((r, i) => `
       <div style="background:var(--bg4);border:1px solid var(--bd);border-left:3px solid ${r.urgencia==='Alta'?'var(--red)':r.urgencia==='Media'?'var(--gold)':'var(--blue)'};border-radius:7px;padding:12px;margin-bottom:8px;text-align:left;color:var(--t1);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
           <strong style="font-size:12px;flex:1;min-width:200px;">${e(r.empresa)}${r.uf ? ' <span style="font-weight:400;color:var(--t2);">· ' + e(r.municipio ? r.municipio + '/' : '') + e(r.uf) + '</span>' : ''}</strong>
@@ -8599,6 +8599,7 @@ async function runRfpMonitorAtualizado() {
         </div>
         ${r.justificativa ? `<div style="font-size:11px;color:var(--blue);margin-top:6px;">-> ${e(r.justificativa)}</div>` : ''}
         ${(r.acoes_sugeridas||[]).length ? `<div style="margin-top:6px;">${r.acoes_sugeridas.map(a=>`<div style="font-size:10px;color:var(--t2);">• ${e(a)}</div>`).join('')}</div>` : ''}
+        <div style="display:flex;justify-content:flex-end;margin-top:8px;"><button class="btn btn-or" style="font-size:10.5px;padding:5px 12px;font-weight:700;" onclick="abrirPropostaRFP(${i})" title="Abre a Elaboração de Propostas com cliente, título e escopo deste edital já preenchidos e a IA já redigindo">&#128221; Gerar Proposta &#8250;</button></div>
       </div>`).join('');
     addLog('success', '[S2-04] ' + rfps.length + ' RFPs identificados');
     toast(rfps.length + ' RFPs encontrados!', 'success');
@@ -8607,6 +8608,44 @@ async function runRfpMonitorAtualizado() {
     addLog('err', '[S2-04] Erro: ' + e.message);
   }
   btn.disabled = false; btn.textContent = 'Varrer RFPs Agora';
+}
+
+// Ponte s2rfps → s7propostas: serializa o edital em ?rfp_ctx=<base64> e abre a Elaboração de Propostas,
+// que pré-preenche o formulário e dispara o rascunho IA (VD.propAbrir em /vendas-ui.js)
+function abrirPropostaRFP(i) {
+  const r = (window._rfpUltimos || [])[i];
+  if (!r) { toast('RFP não encontrada — varra as RFPs novamente', 'error'); return; }
+  const linhas = [
+    r.nome_edital && r.nome_edital !== r.titulo ? 'Edital: ' + r.nome_edital : '',
+    r.titulo ? 'Objeto: ' + r.titulo : '',
+    r.descricao || '',
+    r.modalidade ? 'Modalidade: ' + r.modalidade + (r.numero_compra ? ' nº ' + r.numero_compra : '') : '',
+    r.prazo_submissao ? 'Prazo para envio da proposta: ' + r.prazo_submissao : '',
+    r.valor ? 'Valor estimado: ' + r.valor : '',
+    r.decisor_provavel ? 'Decisor provável: ' + r.decisor_provavel : '',
+    r.justificativa ? 'Aderência à Atlantyx: ' + r.justificativa : '',
+    (r.acoes_sugeridas || []).length ? 'Ações sugeridas: ' + r.acoes_sugeridas.join('; ') : '',
+    (r.link_acesso || r.link_pncp) ? 'Link do edital: ' + (r.link_acesso || r.link_pncp) : '',
+    'Fonte: ' + (r.fonte || 'PNCP') + (r.numero_pncp ? ' · Nº de controle PNCP ' + r.numero_pncp : '')
+  ].filter(Boolean);
+  const ctx = {
+    rfp_id: r.numero_pncp || r.numero_compra || r.processo || r.link_acesso || r.link_pncp || r.titulo || ('rfp_' + i),
+    titulo: r.nome_edital || r.titulo || '',
+    cliente: r.empresa || '',
+    escopo: linhas.join('\n'),
+    prazo: r.prazo_submissao || '',
+    valorRef: r.valor || '',
+    link: r.link_acesso || r.link_pncp || '',
+    fonte: r.fonte || 'PNCP',
+    rfp_recebida: r.publicado_em || '',
+    identificada_em: new Date().toISOString()
+  };
+  let b64;
+  try { const by = new TextEncoder().encode(JSON.stringify(ctx)); let bin = ''; by.forEach(c => { bin += String.fromCharCode(c); }); b64 = btoa(bin); }
+  catch (e) { toast('Não consegui preparar o contexto da RFP: ' + e.message, 'error'); return; }
+  try { const u = new URL(location.href); u.searchParams.set('tela', 's7propostas'); u.searchParams.set('rfp_ctx', b64); history.replaceState(null, '', u.toString()); } catch (_) {}
+  addLog('info', '[S2-04 → S7] Gerando proposta a partir da RFP ' + String(ctx.rfp_id).replace(/</g, '&lt;') + ' · ' + String(ctx.cliente).replace(/</g, '&lt;'));
+  nav('s7propostas', [...document.querySelectorAll('.sbi')].find(x => (x.getAttribute('onclick') || '').includes("'s7propostas'")) || null);
 }
 
 
