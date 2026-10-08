@@ -21036,8 +21036,8 @@ async function popularSeletoresConta(forcar) {
     sels.forEach(sel => {
       if (sel.dataset.populado === '1' && !forcar) return;
       const atual = sel.value;
-      sel.innerHTML = `<option value="">Todas as contas (${d.contas.length}) · ${fmtBRLcompleto(d.saldo_total||0)}</option>` +
-        d.contas.map(c => `<option value="${c.id}">${c.nome} · ${fmtBRLcompleto(c.saldo)}</option>`).join('');
+      sel.innerHTML = `<option value="">Todas as contas (${d.contas.length})</option>` + // v3.119: o total do QuickBooks inclui lançamentos futuros e contradizia o "Saldo em caixa" de hoje
+        d.contas.map(c => `<option value="${c.id}" title="saldo no QuickBooks (inclui lançamentos futuros): ${fmtBRLcompleto(c.saldo)}">${c.nome}</option>`).join('');
       sel.value = atual; sel.dataset.populado = '1';
     });
   } catch (e) { /* silencioso: sem QuickBooks o filtro simplesmente não aparece */ }
@@ -21068,8 +21068,8 @@ async function _fdPopularContas() {
     if (!d.contas?.length) return;
     _fdContasCarregadas = true;
     const atual = sel.value;
-    sel.innerHTML = `<option value="">Todas as contas (${d.contas.length}) · ${fmtBRLcompleto(d.saldo_total||0)}</option>` +
-      d.contas.map(c => `<option value="${c.id}">${c.nome} · ${fmtBRLcompleto(c.saldo)}</option>`).join('');
+    sel.innerHTML = `<option value="">Todas as contas (${d.contas.length})</option>` +
+      d.contas.map(c => `<option value="${c.id}" title="saldo no QuickBooks (inclui lançamentos futuros): ${fmtBRLcompleto(c.saldo)}">${c.nome}</option>`).join('');
     sel.value = atual;
   } catch (e) { addLog('warn', '[Fluxo] contas: ' + e.message); }
 }
@@ -27676,7 +27676,13 @@ function _resNota(R) {
   const ajTxt = [aj.depreciacao_amortizacao ? 'depreciação ' + brl(aj.depreciacao_amortizacao) : '', aj.juros_despesas_financeiras ? 'juros/financeiras ' + brl(aj.juros_despesas_financeiras) : '', aj.ir_csll ? 'IR/CSLL ' + brl(aj.ir_csll) : '', aj.receitas_financeiras ? '− receitas financeiras ' + brl(aj.receitas_financeiras) : ''].filter(Boolean).join(' · ');
   return 'DRE do QuickBooks em regime de competência · ' + (R.periodo ? _resData(R.periodo.de) + ' a ' + _resData(R.periodo.ate) + (R.periodo.parcial ? ' (até hoje)' : '') : '')
     + ' · acumulado do ano até ' + _resData(R.ano?.ate) + (ajTxt ? ' · ajustes do EBITDA: ' + ajTxt : ' · EBITDA = lucro líquido (sem depreciação, juros ou IR lançados no período)')
-    + ((R.erros || []).length ? ' · <span style="color:var(--gold);">⚠ ' + R.erros.join(' · ').replace(/</g, '&lt;') + '</span>' : '');
+    + ((R.erros || []).length ? ' · <span style="color:var(--gold);">⚠ ' + R.erros.map(_errQbAmigavel).join(' · ').replace(/</g, '&lt;') + '</span>' : '');
+}
+// v3.119: erro cru do QuickBooks (JSON do 429) vira uma frase legível
+function _errQbAmigavel(e) {
+  const t = String(e || '');
+  if (/\b429\b|throttle/i.test(t)) return (t.split(':')[0] || 'QuickBooks') + ': o QuickBooks limitou as consultas por alguns segundos — clique em Atualizar em 1 minuto';
+  return t.length > 160 ? t.substring(0, 160) + '…' : t;
 }
 // v3.112: Dashboard LIVE — resultado da empresa (mês corrente × ano) e indicadores de caixa; o "realizado" das metas vem do QuickBooks
 let _liveResSeq = 0, _liveKpi = null, _liveKpiEm = 0, _liveResEm = 0;
@@ -27774,7 +27780,7 @@ async function carregarMetasEmpresa(forcar) {
     _mtUlt[ano] = { em: Date.now(), M: d.metas };
     if (ano !== _mtAnoSel()) return;
     document.querySelectorAll('#df_metas, #live_metas').forEach(e => e.innerHTML = _mtHtml(d.metas));
-    document.querySelectorAll('.mt-at').forEach(e => e.textContent = (d.metas.erros || []).length ? '⚠ ' + d.metas.erros[0] : 'atualizado ' + new Date().toLocaleTimeString('pt-BR').substring(0, 5));
+    document.querySelectorAll('.mt-at').forEach(e => e.textContent = (d.metas.erros || []).length ? '⚠ ' + _errQbAmigavel(d.metas.erros[0]) : 'atualizado ' + new Date().toLocaleTimeString('pt-BR').substring(0, 5));
   } catch (e) { alvos.forEach(el => el.innerHTML = '<div style="color:var(--red);font-size:11px;padding:8px;">Não consegui calcular as metas: ' + String(e.message || e).replace(/</g, '&lt;') + '</div>'); }
 }
 async function metasEditar() {
@@ -27852,7 +27858,8 @@ async function carregarDashboardFinanceiro() {
       else { u('df_orc', dsp.utilizacao_pct != null ? dsp.utilizacao_pct + '%' : '—');
         u('df_orc_sub', 'despesa ' + brl(dsp.realizado) + ' de ' + brl(dsp.orcado_ate_hoje) + ' orçados até hoje' + (rec.orcado_ate_hoje ? ' · receita ' + (rec.utilizacao_pct ?? '—') + '% da meta' : '')); } }
     u('df_conc', cc.taxa != null ? (String(cc.taxa).replace('%','') + '%') : (cc.erro ? 'n/d' : '—')); // dem_muyzjr88clbc: sem conciliação no período não é "0"
-    u('df_conc_sub', cc.erro ? ('indisponível: ' + String(cc.erro).substring(0, 60)) : (cc.taxa != null ? (cc.conciliados ?? 0) + ' de ' + (cc.movimentos ?? '?') + ' movimentos do banco conciliados (60 dias)' : 'sem movimentos do banco nos últimos 60 dias')); // v3.113
+    { const _pc = cc.periodo ? (cc.periodo.de.split('-').reverse().slice(0, 2).join('/') + ' a ' + cc.periodo.ate.split('-').reverse().slice(0, 2).join('/')) : '60 dias'; // v3.119: período do painel, fonte QuickBooks
+      u('df_conc_sub', cc.erro ? ('indisponível: ' + String(cc.erro).substring(0, 60)) : (cc.taxa != null ? (cc.conciliados ?? 0) + ' de ' + (cc.movimentos ?? '?') + ' movimentos do banco conciliados · ' + _pc + (cc.fonte === 'quickbooks' ? ' (QuickBooks)' : '') + (cc.pendentes ? ' · ' + cc.pendentes + ' pendente(s)' + (cc.valor_pendente ? ' ' + brl(cc.valor_pendente) : '') : '') : 'sem movimentos do banco em ' + _pc)); }
     // v3.91 FIX: somava colunas antigas do Kanban (nf_emitida/aguardando_pagamento) — os marcos estão nas colunas novas
     { const ab = Object.entries(mk).filter(([k]) => k !== 'concluido'); const val = ab.reduce((a, [, v]) => a + (v.valor || 0), 0), qtd = ab.reduce((a, [, v]) => a + (v.qtd || 0), 0);
       const top = ab.filter(([, v]) => v.qtd).sort((a, b) => (b[1].valor || 0) - (a[1].valor || 0)).slice(0, 2).map(([k, v]) => (v.label || k) + ' ' + brl(v.valor)).join(' · ');
@@ -27918,7 +27925,11 @@ async function carregarDashboardFinanceiro() {
       _setTip('df_runway', '**Fôlego de caixa** = saldo em caixa ÷ queima líquida mensal (gasto médio − faturamento médio dos 3 últimos meses fechados).\n\n' + (k.runway_meses >= 999 ? 'Faturamento médio ' + brl(k.media_receita_3m) + ' ≥ gasto médio ' + brl(k.media_gastos_3m) + ' → sem queima (∞).' : brl(k.saldo_caixa) + ' ÷ ' + brl(k.burn_liquido_mensal) + ' = ' + (k.runway_meses == null ? '—' : String(k.runway_meses).replace('.', ',') + ' meses')));
       _setTip('df_semaforo', '**Saúde financeira** — 3 notas (0 a 2):\n• Fôlego ≥ 12 meses = 2 · ≥ 6 = 1\n• Margem líquida do ano ≥ 15% = 2 · ≥ 0% = 1\n• Liquidez ≥ 1,5 = 2 · ≥ 1 = 1 (sem contas a pagar = 2)\nSoma ≥ 5 verde · ≥ 3 amarelo · menos vermelho.\n\nAgora: ' + ((sd.motivos || []).join(' · ') || '—'));
       _setTip('df_orc', '**Despesa × orçamento (ano)** = despesa realizada no ano ÷ despesa orçada até hoje (o mês corrente entra proporcional aos dias corridos).\n\n' + (dsp.categorias ? brl(dsp.realizado) + ' ÷ ' + brl(dsp.orcado_ate_hoje) + ' = ' + (dsp.utilizacao_pct ?? '—') + '%' : 'Sem orçamento (Budget) cadastrado no QuickBooks.') + '\n\nFonte: Budget do QuickBooks × DRE mês a mês (competência). Abaixo de 100% = gastando menos que o orçado.');
-      _setTip('df_conc', '**Conciliação** = movimentos do banco conciliados ÷ movimentos do banco nos últimos 60 dias.\n\n' + (cc.taxa != null ? (cc.conciliados ?? 0) + ' ÷ ' + (cc.movimentos ?? '?') + ' = ' + cc.taxa + '%' : 'Sem movimentos no período.') + '\n\nUm movimento conta como conciliado quando uma sugestão foi aprovada na tela Conciliação Bancária.');
+      _setTip('df_conc', cc.fonte === 'quickbooks'
+        ? '**Conciliação** = movimentos das contas bancárias marcados como conciliados no QuickBooks ÷ todos os movimentos bancários do período do painel.\n\n' + (cc.taxa != null ? (cc.conciliados ?? 0) + ' ÷ ' + (cc.movimentos ?? '?') + ' = ' + cc.taxa + '%' : 'Sem movimentos no período.')
+          + '\n\nConciliado = status **R** (reconciliado) ou **C** (compensado/aceito no feed bancário) no QuickBooks: ' + (cc.reconciliados ?? 0) + ' R + ' + (cc.compensados ?? 0) + ' C.'
+          + (cc.pendentes_amostra?.length ? '\n\nPendentes:\n' + cc.pendentes_amostra.slice(0, 8).map(p => '• ' + (p.data || '') + ' ' + (p.tipo || '') + ' ' + (p.nome || '') + ' ' + brl(p.valor)).join('\n') : '')
+        : '**Conciliação** = movimentos do banco conciliados ÷ movimentos do banco nos últimos 60 dias.\n\n' + (cc.taxa != null ? (cc.conciliados ?? 0) + ' ÷ ' + (cc.movimentos ?? '?') + ' = ' + cc.taxa + '%' : 'Sem movimentos no período.') + '\n\nQuickBooks indisponível agora: contando as sugestões aprovadas na tela Conciliação Bancária.');
       _setTip('df_marcos', '**Marcos em fluxo** = soma do valor dos marcos de projeto que ainda não foram concluídos (todas as colunas do Kanban de Marcos menos "Concluído"), de projetos ativos.\n\n' + (ab.map(([kk, v]) => (v.label || kk) + ': ' + (v.qtd || 0) + ' · ' + brl(v.valor)).join('\n') || '—'));
       _setTip('df_social', '**Indicador social** = ' + String(so.pct ?? 5).replace('.', ',') + '% do faturamento do período destinado a ações sociais.\n\nMeta = faturamento ' + brl(so.faturamento) + ' × ' + String(so.pct ?? 5).replace('.', ',') + '% = ' + brl(so.meta) + '\nDestinado = contas de despesa com doação/ação social na DRE (tributos como CSLL e INSS não contam) = ' + brl(so.destinado) + '\nSaldo a destinar = meta − destinado = ' + brl(so.saldo_a_destinar));
       _setTip('df_pr', '**Planejado × Real** no período.\n\nReal = o que passou no banco (extrato do QuickBooks): receita ' + brl(T2.receita_real) + ' · despesa ' + brl(T2.despesa_real) + '\nPlanejado = faturas e contas do QuickBooks pelo vencimento + despesas programadas + simulações: receita ' + brl(T2.receita_planejada) + ' · despesa ' + brl(T2.despesa_planejada) + '\n\nResultado = receita − despesa de cada lado. Dias futuros só têm planejado.');
@@ -30254,7 +30265,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.118] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.119] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -30270,7 +30281,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.118';
+window.__ATX_BUILD_ID__ = 'ATX-v3.119';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

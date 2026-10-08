@@ -543,9 +543,20 @@ async function claudeFin(system, messages, maxTokens = 1400) {
   if (!r.ok) throw new Error('Claude API [' + r.status + ']: ' + (d.error?.message || 'erro'));
   return d.content?.[0]?.text || '';
 }
+// v3.119: a conciliação do painel acompanha o período escolhido (antes: sempre os últimos 60 dias, misturando o mês
+// corrente — ainda não conciliado — com meses já fechados). Mês corrente: até hoje.
+function _periodoConc({ mes, ano, data_inicio, data_fim } = {}) {
+  const hoje = _hojeBR();
+  let ini = data_inicio, fim = data_fim;
+  if (!ini && (mes || ano)) { const a = parseInt(ano) || parseInt(hoje), m = parseInt(mes) || null;
+    ini = m ? `${a}-${String(m).padStart(2, '0')}-01` : `${a}-01-01`; fim = m ? _fimDoMes(ini) : `${a}-12-31`; }
+  if (!ini) return {};
+  if (!fim || fim > hoje) fim = hoje;
+  return ini > fim ? {} : { data_inicio: ini, data_fim: fim };
+}
 async function contextoFinanceiro({ mes, ano, conta_id = null, data_inicio = null, data_fim = null } = {}) {
   const [resumo, kpis, fluxo, conc, kanban, orc, resul] = await Promise.allSettled([
-    painelResumo({ mes, ano, data_inicio, data_fim, conta_id }), kpisSaude({ conta_id }), fluxoFuturo({ meses: 6, conta_id }), conciliacaoStatus({ conta_id }), marcosKanban({}), orcamentoConsolidado({ ano }),
+    painelResumo({ mes, ano, data_inicio, data_fim, conta_id }), kpisSaude({ conta_id }), fluxoFuturo({ meses: 6, conta_id }), conciliacaoStatus({ conta_id, ..._periodoConc({ mes, ano, data_inicio, data_fim }) }), marcosKanban({}), orcamentoConsolidado({ ano }),
     resultadoKpis({ data_inicio, data_fim, mes, ano }), // v3.112
   ]);
   const v = p => p.status === 'fulfilled' ? p.value : { erro: p.reason?.message };
@@ -567,7 +578,9 @@ async function contextoFinanceiro({ mes, ano, conta_id = null, data_inicio = nul
     // existiam, por isso o card "Conciliação" do Dashboard ficava sempre vazio.
     conciliacao: (() => { const ok = C.conciliados ?? C.aprovados ?? C.aprovadas ?? 0, rej = C.rejeitadas ?? 0, pend = C.pendentes ?? C.com_sugestao ?? null; // v3.109: "pendentes" não é mais o nº de rejeitadas
       const tot = ok + rej; return { conciliados: ok, pendentes: pend, rejeitadas: rej, movimentos: C.movimentos_banco ?? null, sem_sugestao: C.sem_sugestao ?? null, total_aprovado: C.total_aprovado ?? null,
-        taxa: C.taxa ?? C.taxa_pct ?? (tot > 0 ? Math.round(ok / tot * 100) : null), janela_dias: 60, erro: C.erro || null }; })(),
+        taxa: C.taxa ?? C.taxa_pct ?? (tot > 0 ? Math.round(ok / tot * 100) : null), janela_dias: C.periodo ? null : 60, erro: C.erro || null,
+        fonte: C.fonte || 'atlantyx', periodo: C.periodo || null, reconciliados: C.reconciliados ?? null, compensados: C.compensados ?? null,
+        valor_pendente: C.valor_pendente ?? null, pendentes_amostra: C.pendentes_amostra || [], aprovadas_no_atlantyx: C.aprovadas_no_atlantyx ?? null }; })(),
     marcos: Object.fromEntries(Object.entries(M.colunas || {}).map(([k, c]) => [k, { qtd: c.total_count, valor: c.total_valor, label: c.label }])),
     marcos_erro: M.erro || null,
     orcamento: O.total_geral || null,
@@ -1240,13 +1253,34 @@ async function qbFetch(endpoint, token, method = 'GET', body = null) {
   else {
     const c = _qbCache.get(endpoint);
     if (c && Date.now() - c.em < QB_CACHE_MS) return c.p;
-    const p = _qbFetchReal(endpoint, token, method, body);
+    const p = _qbFetchFila(endpoint, token);
     _qbCache.set(endpoint, { em: Date.now(), p });
     p.catch(() => _qbCache.delete(endpoint));
     if (_qbCache.size > 300) _qbCache.delete(_qbCache.keys().next().value);
     return p;
   }
   return _qbFetchReal(endpoint, token, method, body);
+}
+// v3.119: o painel dispara ~15 consultas ao QuickBooks em paralelo (DRE do período, do ano, caixa, orçamento,
+// extrato, contas...) e o QuickBooks responde 429 ThrottleExceeded acima de ~10 simultâneas por empresa. Era isso que
+// zerava "Faturamento do período", "Gastos", "EBITDA" e as Metas. Agora as leituras passam por uma fila (no máx. 4 ao
+// mesmo tempo nesta instância) e um 429 é repetido com espera crescente antes de virar erro.
+let _qbAtivas = 0; const _qbEspera = [];
+const QB_MAX_SIMULT = 4;
+async function _qbFetchFila(endpoint, token) {
+  if (_qbAtivas >= QB_MAX_SIMULT) await new Promise(r => _qbEspera.push(r));
+  _qbAtivas++;
+  try {
+    for (let t = 0; ; t++) {
+      try { return await _qbFetchReal(endpoint, token, 'GET'); }
+      catch (e) {
+        if (!/\b429\b|throttle/i.test(e.message || '') || t >= 4) throw e;
+        const ms = [1500, 3000, 6000, 10000][t] + Math.floor(Math.random() * 700);
+        console.warn(`[QB] 429 em ${endpoint.substring(0, 60)} — nova tentativa em ${ms}ms`);
+        await qbEsperar(ms);
+      }
+    }
+  } finally { _qbAtivas--; const prox = _qbEspera.shift(); if (prox) prox(); }
 }
 async function _qbFetchReal(endpoint, token, method = 'GET', body = null) {
   if (!_realmCache || Date.now() - _realmCache.em > 300000) _realmCache = { em: Date.now(), v: (await qbTokensLer())?.realm_id || process.env.QB_REALM_ID };
@@ -1274,7 +1308,7 @@ async function qbQuery(sqlQuery, token, _tentativa = 0) {
   try { return await _qbQueryInterno(sqlQuery, token); }
   catch (e) {
     const ehThrottle = /throttle|429/i.test(e.message || '');
-    if (ehThrottle && _tentativa < 3) {
+    if (ehThrottle && _tentativa < 1) { // v3.119: as repetições principais já acontecem na fila do qbFetch
       const espera = [1200, 3000, 6000][_tentativa];
       console.warn(`[QB] Throttle (tentativa ${_tentativa + 1}), aguardando ${espera}ms`);
       await qbEsperar(espera);
@@ -4111,6 +4145,19 @@ function dreMensalSerie(rep, anoRef) {
     out.push({ mes: m, faturamento: round(fat), gastos: round(gastos), lucro_liquido: round(luc), margem_liquida_pct: fat > 0 ? Math.round(luc / fat * 1000) / 10 : null }); });
   return out;
 }
+// v3.119: recorta a DRE mensal (summarize_column_by=Month) nos meses [mIni, mFim] e devolve um relatório no formato de
+// uma coluna só (rótulo + soma), que o dreResumo lê como se fosse a DRE do período. null se os meses não forem achados.
+function _plColunasMeses(rep, mIni, mFim, anoRef) {
+  const cols = (rep?.Columns?.Column || []).map(c => c.ColTitle || c.MetaData?.[0]?.Value || '');
+  const idx = []; cols.forEach((t, i) => { if (i === 0 || /total/i.test(t)) return; const m = _mesDaColunaQB(t, anoRef, i); if (m && m >= mIni && m <= mFim) idx.push(i); });
+  const meses = new Set(cols.map((t, i) => i && !/total/i.test(t) ? _mesDaColunaQB(t, anoRef, i) : null).filter(m => m && m >= mIni && m <= mFim));
+  const esperados = (parseInt(mFim.substring(0, 4)) - parseInt(mIni.substring(0, 4))) * 12 + parseInt(mFim.substring(5)) - parseInt(mIni.substring(5)) + 1;
+  if (!idx.length || meses.size !== esperados) return null;
+  const soma = cd => { if (!cd) return cd; let t = 0; for (const i of idx) { const x = parseFloat(cd[i]?.value); if (isFinite(x)) t += x; } return [cd[0], { value: String(Math.round(t * 100) / 100) }]; };
+  const cp = row => { const o = { ...row }; if (row.ColData) o.ColData = soma(row.ColData); if (row.Summary?.ColData) o.Summary = { ...row.Summary, ColData: soma(row.Summary.ColData) };
+    if (row.Header?.ColData) o.Header = { ...row.Header, ColData: soma(row.Header.ColData) }; if (row.Rows?.Row) o.Rows = { ...row.Rows, Row: row.Rows.Row.map(cp) }; return o; };
+  return { ...rep, Columns: { Column: [cols[0], 'Total'].map(t => ({ ColTitle: t })) }, Rows: { ...rep.Rows, Row: (rep.Rows?.Row || []).map(cp) } };
+}
 function dreResumo(rep) {
   const rows = rep?.Rows?.Row || [];
   const val = cd => { const v = parseFloat(cd?.[cd.length - 1]?.value); return isFinite(v) ? v : 0; };
@@ -4237,8 +4284,11 @@ async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, 
   if (!_forcar && c && Date.now() - c.em < 300000) return { resultado: c.v };
   const token = await qbToken();
   const comTempo = (p, ms, msg) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error(msg)), ms))]);
+  // v3.119: quando o período começa no dia 1 de um mês do mesmo ano, a DRE do período sai das colunas da DRE mensal
+  // do ano (mesma fonte, uma consulta a menos ao QuickBooks — menos risco de 429 deixar o cartão vazio)
+  const doAno = !futuro && ini.substring(8) === '01' && ini.substring(0, 4) === anoIni.substring(0, 4);
   const [pP, pA, orc, pC, mt] = await Promise.allSettled([
-    futuro ? Promise.resolve(null) : qbPL(ini, fim, token),
+    futuro || doAno ? Promise.resolve(null) : qbPL(ini, fim, token),
     // v3.114: o ano vem mês a mês (a última coluna é o total) — permite mostrar o último mês fechado e a evolução
     futuro ? Promise.resolve(null) : qbPL(anoIni, anoFim, token, '&summarize_column_by=Month'),
     comTempo(orcamentoConsolidado({ ano: parseInt(anoIni) }), 8000, 'orçamento não respondeu em 8s'),
@@ -4247,7 +4297,13 @@ async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, 
     _kvMetas().catch(() => ({})),
   ]);
   const vazio = dreResumo({});
-  if (pP.status === 'fulfilled') out.periodo_res = pP.value ? dreResumo(pP.value) : vazio; else out.erros.push('DRE do período: ' + pP.reason?.message);
+  if (doAno && pA.status === 'fulfilled' && pA.value) {
+    const sub = _plColunasMeses(pA.value, ini.substring(0, 7), fim.substring(0, 7), parseInt(anoIni));
+    if (sub) { out.periodo_res = dreResumo(sub); out.periodo_res_fonte = 'colunas mensais da DRE do ano'; }
+    else { try { out.periodo_res = dreResumo(await qbPL(ini, fim, token)); } catch (e) { out.erros.push('DRE do período: ' + e.message); } }
+  } else if (doAno && pA.status === 'rejected') {
+    try { out.periodo_res = dreResumo(await qbPL(ini, fim, token)); } catch (e) { out.erros.push('DRE do período: ' + e.message); }
+  } else if (pP.status === 'fulfilled') out.periodo_res = pP.value ? dreResumo(pP.value) : vazio; else out.erros.push('DRE do período: ' + pP.reason?.message);
   if (pA.status === 'fulfilled') { out.ano_res = pA.value ? dreResumo(pA.value) : vazio; out.mensal = pA.value ? dreMensalSerie(pA.value, parseInt(anoIni)) : []; }
   else out.erros.push('DRE do ano: ' + pA.reason?.message);
   if (pC.status === 'fulfilled' && pC.value) { const c = dreResumo(pC.value); out.periodo_caixa = { receita_recebida: c.faturamento, lucro_caixa: c.lucro_liquido }; }
@@ -5709,6 +5765,33 @@ async function conciliacaoRejeitar({ real_id, motivo } = {}) {
   return { id, status: 'rejeitada' };
 }
 
+// v3.119: status de conciliação direto do QuickBooks — relatório TransactionList das contas bancárias, contado por
+// situação (cleared=Reconciled → "R", Cleared → "C"; o restante está pendente). O filtro "cleared" só funciona como filtro,
+// então são 3 consultas: todos, reconciliados e compensados.
+async function qbConciliacaoStatus({ data_inicio, data_fim, conta_id = null } = {}) {
+  if (!qbConfigurado()) return null;
+  const token = await qbToken();
+  let nomeConta = null;
+  if (conta_id) { try { const a = await qbFetch(`/account/${conta_id}`, token); nomeConta = a?.Account?.Name || null; } catch (_) {} }
+  const base = `/reports/TransactionList?start_date=${data_inicio}&end_date=${data_fim}&source_account_type=Bank&columns=tx_date,txn_type,doc_num,name,memo,account_name,subt_nat_amount`;
+  const ler = async (extra) => {
+    const rep = await qbFetch(base + extra, token);
+    const cols = (rep?.Columns?.Column || []).map(c => (c.MetaData || []).find(m => m.Name === 'ColKey')?.Value || c.ColTitle || '');
+    const iC = cols.indexOf('account_name'), iV = cols.indexOf('subt_nat_amount'), iD = cols.indexOf('tx_date'), iT = cols.indexOf('txn_type'), iN = cols.indexOf('name');
+    const linhas = []; const andar = rows => (rows || []).forEach(r => { if (r.type === 'Data' || (!r.type && r.ColData)) linhas.push(r); if (r.Rows?.Row) andar(r.Rows.Row); });
+    andar(rep?.Rows?.Row);
+    return linhas.map(r => { const cd = r.ColData || []; return { id: cd[iD >= 0 ? iD : 0]?.id || cd[iT >= 0 ? iT : 1]?.id || null, data: cd[iD]?.value, tipo: cd[iT]?.value, nome: cd[iN]?.value,
+      conta: iC >= 0 ? cd[iC]?.value : null, valor: parseFloat(cd[iV]?.value) || 0 }; })
+      .filter(l => !nomeConta || !l.conta || l.conta === nomeConta || String(l.conta).endsWith(':' + nomeConta));
+  };
+  const [tod, rec, cle] = await Promise.all([ler(''), ler('&cleared=Reconciled'), ler('&cleared=Cleared')]);
+  const chave = l => (l.id || '') + '|' + l.data + '|' + l.tipo + '|' + l.valor;
+  const ok = new Set([...rec, ...cle].map(chave));
+  const pend = tod.filter(l => !ok.has(chave(l)));
+  return { movimentos: tod.length, reconciliados: rec.length, compensados: cle.length, pendentes: Math.max(0, tod.length - rec.length - cle.length),
+    valor_pendente: round(pend.reduce((s, l) => s + Math.abs(l.valor), 0)),
+    pendentes_amostra: pend.slice(0, 15).map(l => ({ data: l.data, tipo: l.tipo, nome: l.nome, conta: l.conta, valor: l.valor })) };
+}
 async function conciliacaoStatus({ data_inicio, data_fim, conta_id = null } = {}) {
   const sql = await getSql();
   const ini = data_inicio || new Date(Date.now() - 60*86400*1000).toISOString().split('T')[0];
@@ -5728,8 +5811,21 @@ async function conciliacaoStatus({ data_inicio, data_fim, conta_id = null } = {}
       out.total_rejeitado = parseFloat(r.total);
     }
   }
-  // v3.113: taxa de conciliação de verdade = movimentos do banco batidos ÷ movimentos do banco na janela
-  // (antes era aprovadas ÷ (aprovadas + rejeitadas): 5 aprovações e 0 rejeições = "100%" com centenas sem conciliar)
+  // v3.119: a fonte da verdade é o próprio QuickBooks — a conciliação é feita LÁ (bank feed / Reconcile). Antes o cartão
+  // contava só as sugestões aprovadas na tela Conciliação Bancária do Atlantyx: com setembro todo conciliado no
+  // QuickBooks, o painel mostrava "0 de 147 conciliados — 0%".
+  try {
+    const q = await qbConciliacaoStatus({ data_inicio: ini, data_fim: fim, conta_id });
+    if (q && q.movimentos != null) {
+      Object.assign(out, { fonte: 'quickbooks', movimentos_banco: q.movimentos, conciliados: q.reconciliados + q.compensados, reconciliados: q.reconciliados,
+        compensados: q.compensados, pendentes: q.pendentes, taxa: q.movimentos ? Math.min(100, Math.round((q.reconciliados + q.compensados) / q.movimentos * 100)) : null,
+        valor_pendente: q.valor_pendente, periodo: { de: ini, ate: fim }, pendentes_amostra: q.pendentes_amostra });
+      const ap = await sql`SELECT COUNT(DISTINCT real_id) AS n FROM conciliacoes WHERE status = 'aprovada' AND real_data >= ${ini} AND real_data <= ${fim}`.catch(() => []);
+      out.aprovadas_no_atlantyx = parseInt(ap[0]?.n || 0);
+      return out;
+    }
+  } catch (e) { out.erro_qb = e.message; }
+  // reserva (QuickBooks indisponível): movimentos batidos na tela Conciliação Bancária do Atlantyx
   try {
     const [mov, bat] = await Promise.all([
       qbLancamentos({ data_inicio: ini, data_fim: fim, limite: 500, conta_id }),
