@@ -4538,12 +4538,19 @@ tr:hover td{background:rgba(79,124,255,.03);}
       #page-s3orcamento td .d{display:block;font-family:var(--M);font-size:9.5px;margin-top:1px}
       #page-s3orcamento td.fut .v{color:#9fb4ff}
       #page-s3orcamento td.tot{border-left:1px solid var(--bd2);font-weight:700}
+      #page-s3orcamento tr.od-var td{font-family:var(--M);font-size:10px;padding:3px 10px;font-weight:600;color:var(--t3)}
+      #page-s3orcamento tr.od-var td:first-child{padding-left:26px;font-family:inherit;font-weight:400;font-style:italic}
+      #page-s3orcamento table.od td.var-verde{background:rgba(34,211,163,.13);color:var(--green,#22d3a3)}
+      #page-s3orcamento table.od td.var-amarelo{background:rgba(245,185,75,.15);color:var(--gold,#f5b94b)}
+      #page-s3orcamento table.od td.var-vermelho{background:rgba(255,79,79,.15);color:var(--red,#ff4f4f)}
+      #page-s3orcamento #od_varBtn.on{border-color:var(--blue);color:var(--blue);background:rgba(79,124,255,.12)}
     </style>
     <div class="od-top">
       <div class="od-tit"><b>Orçamento · DRE 12 meses</b><div>Orçado × realizado nos meses fechados e no atual · <span style="color:var(--blue);">projetado</span> nos próximos (orçamento + propostas do CRM)</div></div>
       <div><label class="fl">Janela</label><select class="fsel" id="od_janela" style="width:auto;" onchange="odJanela(this.value)"><option value="6">6 passados + 6 à frente</option><option value="11">Últimos 12 meses</option><option value="0">Próximos 12 meses</option><option value="x">Escolher início…</option></select></div>
       <div id="od_iniWrap" style="display:none;"><label class="fl">Início</label><input type="month" class="fsel" id="od_inicio" style="width:auto;" onchange="carregarOrcamento()"/></div>
       <div class="seg" id="od_vista"><button data-v="rv" class="on" onclick="odVista('rv')">Real × Orçado</button><button data-v="o" onclick="odVista('o')">Orçado</button><button data-v="r" onclick="odVista('r')">Real/Proj.</button><button data-v="d" onclick="odVista('d')">Variação</button></div>
+      <button class="btn" id="od_varBtn" onclick="odVariancia()" title="Linha Δ% = (realizado ou projetado − orçado) ÷ orçado, abaixo de cada grupo e resultado · semáforo: verde até 5%, amarelo de 5% a 15%, vermelho acima de 15% de desvio · coluna YTD Δ% = desvio acumulado nos meses encerrados do ano">Δ% Mostrar variação %</button>
       <button class="btn btn-gn" onclick="carregarOrcamento()">&#8635; Atualizar</button>
     </div>
     <div class="od-crm">
@@ -19591,6 +19598,15 @@ async function rejeitarConciliacao(idx) {
 let _odDados = null, _odVista = 'rv', _odAberto = { receitas: true, resultados: true }, _odEtapas = null;
 const _odEsc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 function _odCfg() { try { return JSON.parse(localStorage.getItem('atx:od_cfg') || '{}'); } catch (_) { return {}; } }
+let _odShowVar = !!_odCfg().showVar;
+function odVariancia() { _odShowVar = !_odShowVar; const c = _odCfg(); c.showVar = _odShowVar; try { localStorage.setItem('atx:od_cfg', JSON.stringify(c)); } catch (_) {} _odRender(); }
+// Δ% = (real/projetado − orçado) ÷ |orçado| · semáforo pelo desvio absoluto: até 5% verde, até 15% amarelo, acima vermelho
+function _odVarCel(o, r, cls, titulo) {
+  const p = o ? Math.round((r - o) / Math.abs(o) * 1000) / 10 : null, a = p == null ? null : Math.abs(p);
+  const sem = p == null ? '' : a <= 5 ? 'var-verde' : a <= 15 ? 'var-amarelo' : 'var-vermelho';
+  const txt = p == null ? '—' : (p > 0 ? '+' : p < 0 ? '−' : '') + a.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+  return '<td class="' + [cls, sem].filter(Boolean).join(' ') + '" title="' + _odEsc(titulo + (p == null ? ' · sem orçado' : '')) + '">' + txt + '</td>';
+}
 function odCrmSalvar() { const c = _odCfg(); c.on = !!document.getElementById('od_crmOn')?.checked; c.dist = document.getElementById('od_crmDist')?.value; c.custo = document.getElementById('od_crmCusto')?.value; c.pond = !!document.getElementById('od_crmPond')?.checked;
   c.etapas = [...document.querySelectorAll('#od_crmEtapas .od-chip.on')].map(x => x.dataset.id); try { localStorage.setItem('atx:od_cfg', JSON.stringify(c)); } catch (_) {} }
 function odVista(v) { _odVista = v; document.querySelectorAll('#od_vista button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); _odRender(); }
@@ -19645,16 +19661,30 @@ function _odRender() {
   document.getElementById('od_kpis').innerHTML = kpi('Receitas · 12 meses', G.receitas, true, 'gn') + kpi('Custos + despesas · 12 meses', custos, false, 'rd') + kpi('Resultado líquido · 12 meses', R.resultado_liquido, true, 'bl')
     + '<div class="kpi pu"><div class="kl">Margem líquida</div><div class="kv">' + (margem != null ? margem.toLocaleString('pt-BR') + '%' : '—') + '</div><div class="ks">realizado + projetado na janela</div></div>';
   document.getElementById('od_avisos').innerHTML = (d.avisos || []).map(a => '<div style="font-size:10.5px;color:var(--gold);background:rgba(245,185,75,.08);border:1px solid rgba(245,185,75,.3);border-radius:7px;padding:6px 10px;margin-bottom:8px;">⚠ ' + _odEsc(a) + '</div>').join('');
-  { const ou = document.getElementById('od_orcUsado'); if (ou) ou.textContent = d.orcamentos_usados?.length ? 'Orçado = ' + d.orcamentos_usados.join(' + ') + ' (QuickBooks) · clique num grupo para abrir as contas · valores em R$ (mil / mi)' : ''; }
-  const head = '<thead><tr><th>Conta</th>' + M.map(m => '<th class="' + (m > atual ? 'fut' : '') + '">' + nm(m) + '<div style="font-size:8px;font-weight:400;">' + (m > atual ? 'projetado' : m === atual ? 'mês atual' : 'realizado') + '</div></th>').join('') + '<th style="border-left:1px solid var(--bd2);">Total</th></tr></thead>';
-  const linhaHtml = (nome, x, bom, cls, onclick, semOrc) => '<tr class="' + cls + '"' + (onclick ? ' onclick="' + onclick + '"' : '') + '><td title="' + _odEsc(String(nome).replace(/<[^>]+>/g, '')) + '">' + nome + '</td>' + M.map(m => _odCelula(x.meses[m], bom, m > atual, false, semOrc)).join('') + _odCelula(x.total, bom, false, true, semOrc) + '</tr>';
+  { const ou = document.getElementById('od_orcUsado'); if (ou) ou.textContent = d.orcamentos_usados?.length ? 'Orçado = ' + d.orcamentos_usados.join(' + ') + ' (QuickBooks) · clique num grupo para abrir as contas · valores em R$ (mil / mi)' + (_odShowVar ? ' · Δ%: verde até 5% · amarelo 5–15% · vermelho acima de 15% de desvio' : '') : ''; }
+  // Variação %: linha Δ% abaixo de cada grupo/resultado + coluna YTD Δ% (meses encerrados do ano corrente presentes na janela)
+  const V = _odShowVar; { const b = document.getElementById('od_varBtn'); if (b) { b.classList.toggle('on', V); b.textContent = 'Δ% ' + (V ? 'Ocultar' : 'Mostrar') + ' variação %'; } }
+  const ano = String(atual).slice(0, 4), ytdM = M.filter(m => m.startsWith(ano) && m < atual);
+  const ytdRot = ytdM.length ? nm(ytdM[0]) + (ytdM.length > 1 ? ' a ' + nm(ytdM[ytdM.length - 1]) : '') : '';
+  const ytdCel = x => { if (!ytdM.length) return '<td class="tot" title="Nenhum mês encerrado de ' + ano + ' nesta janela">—</td>';
+    const t = ytdM.reduce((s, m) => { const v = x.meses[m] || {}; s.o += v.orcado || 0; s.r += v.real || 0; return s; }, { o: 0, r: 0 });
+    return _odVarCel(t.o, t.r, 'tot', 'YTD ' + ytdRot + ' · orçado ' + fmtBRLcompleto(t.o) + ' · realizado ' + fmtBRLcompleto(t.r)); };
+  const varLinha = (rot, x) => '<tr class="od-var"><td title="Δ% ' + _odEsc(rot) + ' = (realizado/projetado − orçado) ÷ orçado">Δ% ' + _odEsc(rot) + '</td>'
+    + M.map(m => { const v = x.meses[m] || {}, f = m > atual; return _odVarCel(v.orcado || 0, v.real || 0, f ? 'fut' : '', nm(m) + ' · orçado ' + fmtBRLcompleto(v.orcado || 0) + ' · ' + (f ? 'projetado ' : 'realizado ') + fmtBRLcompleto(v.real || 0)); }).join('')
+    + _odVarCel(x.total.orcado, x.total.real, 'tot', 'Janela de 12 meses · orçado ' + fmtBRLcompleto(x.total.orcado) + ' · real/projetado ' + fmtBRLcompleto(x.total.real)) + ytdCel(x) + '</tr>';
+  const head = '<thead><tr><th>Conta</th>' + M.map(m => '<th class="' + (m > atual ? 'fut' : '') + '">' + nm(m) + '<div style="font-size:8px;font-weight:400;">' + (m > atual ? 'projetado' : m === atual ? 'mês atual' : 'realizado') + '</div></th>').join('') + '<th style="border-left:1px solid var(--bd2);">Total</th>'
+    + (V ? '<th style="border-left:1px solid var(--bd2);" title="Desvio acumulado no ano: realizado ÷ orçado − 1 somando os meses já encerrados de ' + ano + ' presentes na janela">YTD Δ%<div style="font-size:8px;font-weight:400;">' + (ytdRot || 'sem meses encerrados') + '</div></th>' : '') + '</tr></thead>';
+  const linhaHtml = (nome, x, bom, cls, onclick, semOrc) => '<tr class="' + cls + '"' + (onclick ? ' onclick="' + onclick + '"' : '') + '><td title="' + _odEsc(String(nome).replace(/<[^>]+>/g, '')) + '">' + nome + '</td>' + M.map(m => _odCelula(x.meses[m], bom, m > atual, false, semOrc)).join('') + _odCelula(x.total, bom, false, true, semOrc)
+    + (V ? (cls.startsWith('od-l') ? ytdCel(x) : '<td class="tot"></td>') : '') + '</tr>';
   const grupo = (g, rot, bom) => { const x = G[g]; if (!x || (!x.linhas.length && !x.total.orcado && !x.total.real)) return '';
     const ab = !!_odAberto[g]; return linhaHtml((ab ? '▾ ' : '▸ ') + rot + ' <span style="font-weight:400;color:var(--t3);font-size:10px;">(' + x.linhas.length + ')</span>', x, bom, 'od-g', "_odToggle('" + g + "')")
+      + (V ? varLinha(rot, x) : '')
       + (ab ? x.linhas.map(l => linhaHtml((l.crm ? '◆ ' : '') + _odEsc(l.nome), l, bom, 'od-l' + (l.crm ? ' od-crm' : ''), null, l.crm)).join('') : ''); };
+  const res = (rot, x) => linhaHtml('= ' + rot, x, true, 'od-r') + (V ? varLinha(rot, x) : '');
   tb.innerHTML = '<table class="od">' + head + '<tbody>'
-    + grupo('receitas', 'Receitas', true) + grupo('custos', '(−) Custos', false) + linhaHtml('= Lucro bruto', R.lucro_bruto, true, 'od-r')
-    + grupo('despesas', '(−) Despesas operacionais', false) + linhaHtml('= Resultado operacional', R.resultado_operacional, true, 'od-r')
-    + grupo('outras_receitas', '(+) Outras receitas', true) + grupo('outras_despesas', '(−) Outras despesas', false) + linhaHtml('= Resultado líquido', R.resultado_liquido, true, 'od-r')
+    + grupo('receitas', 'Receitas', true) + grupo('custos', '(−) Custos', false) + res('Lucro bruto', R.lucro_bruto)
+    + grupo('despesas', '(−) Despesas operacionais', false) + res('Resultado operacional', R.resultado_operacional)
+    + grupo('outras_receitas', '(+) Outras receitas', true) + grupo('outras_despesas', '(−) Outras despesas', false) + res('Resultado líquido', R.resultado_liquido)
     + '</tbody></table>';
   const cl = document.getElementById('od_crmLista'), ct = document.getElementById('od_crmTabela');
   if (cl && ct) { const ps = d.crm?.propostas || []; cl.style.display = ps.length ? '' : 'none';
