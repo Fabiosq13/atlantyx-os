@@ -8,6 +8,11 @@ on:
     - cron: '30 6 * * *'
     - cron: '*/30 * * * *'
   workflow_dispatch:
+    inputs:
+      todos:
+        description: 'Enfileirar e testar todos os produtos ativos agora'
+        type: boolean
+        default: false
 concurrency:
   group: qa-externo
   cancel-in-progress: false
@@ -21,7 +26,7 @@ jobs:
         env:
           ATX_URL: ${{ vars.ATX_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          NOTURNO: ${{ github.event.schedule == '30 6 * * *' && '1' || '0' }}
+          NOTURNO: ${{ (github.event.schedule == '30 6 * * *' || inputs.todos) && '1' || '0' }}
         run: |
           URL="${ATX_URL:-https://atlantyx-os.vercel.app}"
           if [ -z "$CRON_SECRET" ]; then echo "Falta o secret CRON_SECRET"; exit 1; fi
@@ -45,4 +50,4 @@ jobs:
         env:
           ATX_URL: ${{ vars.ATX_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          QA_NOTURNO: ${{ github.event.schedule == '30 6 * * *' && '1' || '0' }}
+          QA_NOTURNO: ${{ (github.event.schedule == '30 6 * * *' || inputs.todos) && '1' || '0' }}
