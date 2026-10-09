@@ -217,7 +217,9 @@ async function handler(req, res) {
       // v3.04: DRE mensal real (QuickBooks) — base do Business Plan dinâmico da Atlantyx
       dre_mensal:            () => dreMensal(params),
       dre_arvore:            () => dreArvore(params),        // v3.122: DRE completa com drill-down
-      caixa_detalhe:         () => caixaDetalhe(params),     // v3.125: cartões A receber / A pagar / Fôlego linha a linha
+      caixa_detalhe:         () => caixaDetalhe(params),
+      fin_v2:                () => finV2(params),            // v3.127: Dashboard Financeiro v2 (especificação · 6 telas)
+      fin_v2_cfg_salvar:     () => finV2CfgSalvar(params),     // v3.125: cartões A receber / A pagar / Fôlego linha a linha
       dre_conta_lancamentos: () => dreContaLancamentos(params),
 
       // ── KPIs determinísticos de saúde ────────────────────────────────────
@@ -300,7 +302,7 @@ async function handler(req, res) {
     // v3.69: telas que consultam o QuickBooks levavam ~10s a cada abertura (QA-001/006/009/016/019/021).
     // Resultado guardado no banco: até 3 min devolve na hora; até 12h devolve o último na hora marcado como
     // "desatualizado" e a tela pede a versão nova em seguida (params._forcar). Botão Atualizar força.
-    const CACHE_FIN = { dashboard_financeiro: 1, fluxo_detalhado: 1, extrato_diario: 1, extrato_mensal: 1, painel_resumo: 1, resultado_kpis: 1 };
+    const CACHE_FIN = { dashboard_financeiro: 1, fluxo_detalhado: 1, extrato_diario: 1, extrato_mensal: 1, painel_resumo: 1, resultado_kpis: 1, fin_v2: 1 };
     if (CACHE_FIN[action]) {
       const { _forcar, ...pChave } = params || {};
       const chave = 'cache:fin:' + action + ':' + JSON.stringify(pChave).substring(0, 400);
@@ -7231,6 +7233,483 @@ function emailTplLembreteFinanceiro(m, tentativa) {
     <p style="color:#666;font-size:12px;">Atlantyx OS — lembrete automático a cada 3 dias até a conclusão.</p>
   </div>`;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
+// v3.127: DASHBOARD FINANCEIRO v2 — "Especificação · Dashboard Financeiro Atlantyx" (08/10/2026)
+// Seis telas (executiva, caixa e liquidez, pessoas, projetos, produtos, clientes e risco), no máximo 10 KPIs cada,
+// todo KPI com meta, período anterior, tendência, semáforo configurável, fonte/atualização e drill-down.
+// Fontes: QuickBooks (DRE, faturas, contas, CustomerIncome, razão), cadastro de funcionários/alocação (S8),
+// projetos e marcos (S3), HubSpot (CRM). O que ainda não tem fonte integrada aparece rotulado como tal — nunca inventado.
+// Rateio de custo compartilhado entre motores: proporcional à receita de cada motor no período (custo DIRETO é o das
+// contas mapeadas para o motor em Configurar; o restante é compartilhado).
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
+const FV2_LIMITES = {
+  runway: { verde: 6, amarelo: 3, maior_melhor: true, unidade: 'meses' },
+  orcado_receita: { verde: 5, amarelo: 10, desvio: true, unidade: '%' },
+  dso: { verde: 45, amarelo: 60, maior_melhor: false, unidade: 'dias' },
+  alocacao: { verde: 85, amarelo: 75, maior_melhor: true, unidade: '%' },
+  margem_projeto: { amarelo: 5, unidade: 'p.p. abaixo do orçado' },
+  churn: { verde: 2, amarelo: 4, maior_melhor: false, unidade: '% ao mês' },
+  concentracao: { verde: 60, amarelo: 75, maior_melhor: false, unidade: '%' },
+  ltv_cac: { verde: 3, amarelo: 2, maior_melhor: true, unidade: 'x' },
+  vencido60: { verde: 5, amarelo: 10, maior_melhor: false, unidade: '% do a receber' },
+  ciclo_caixa: { verde: 30, amarelo: 45, maior_melhor: false, unidade: 'dias' },
+  nrr: { verde: 100, amarelo: 95, maior_melhor: true, unidade: '%' },
+  cac_payback: { verde: 12, amarelo: 18, maior_melhor: false, unidade: 'meses' },
+  rule40: { verde: 40, amarelo: 25, maior_melhor: true, unidade: '%' },
+  bench: { verde: 10, amarelo: 20, maior_melhor: false, unidade: '% do time' },
+  backlog_cobertura: { verde: 3, amarelo: 1.5, maior_melhor: true, unidade: 'meses' },
+  desvio_esforco: { verde: 110, amarelo: 120, maior_melhor: false, unidade: '%' },
+  recorrencia_meta_2027: 30, recorrencia_meta_2031: 60,
+};
+const FV2_ANCORAS = [['CPFL Energia', /cpfl/i], ['Enel', /\benel\b/i], ['Grupo Jelta Veículos', /jelta/i], ['Caixa Capitalização', /caixa cap|caixa capitaliza/i]];
+const FV2_PRODUTOS = [['Maestro', /maestro|mestro/i], ['Sentinel', /sentinel/i], ['ConnEX', /connex/i], ['BRATECC Connect AI', /bratecc/i], ['Atlantyx OS', /atlantyx ?os\b|plataforma atlantyx/i]];
+const FV2_RX = {
+  produtos: /licen[cç]|assinatura|saas|software|subscri|recorr|plataforma|atlantyx ?os|maestro|mestro|sentinel|connex|bratecc|mensalidade/i,
+  pessoas: /aloca[cç]|outsourc|staff|body ?shop|terceiriz|m[aã]o de obra|horas? t[eé]cnic|banco de horas|squad|aloca/i,
+  comercial: /marketing|comercial|vendas|publicidade|propaganda|an[uú]ncio|\bads\b|comiss[aã]o|eventos|feiras|crm|prospec/i,
+};
+async function _fv2Cfg() {
+  let v = {}; try { const sql = await getSql(); const r = await sql`SELECT value FROM kv_store WHERE key = 'atx:fin_v2_cfg' LIMIT 1`; v = r[0]?.value; v = (typeof v === 'string' ? JSON.parse(v) : v) || {}; } catch (_) {}
+  const lim = JSON.parse(JSON.stringify(FV2_LIMITES)); for (const [k, o] of Object.entries(v.limites || {})) if (lim[k] && typeof o === 'object') Object.assign(lim[k], o); else if (k in lim) lim[k] = o;
+  return { limites: lim, motores: v.motores || {}, produtos: v.produtos || {}, atualizado_em: v.atualizado_em || null };
+}
+async function finV2CfgSalvar({ limites, motores, produtos } = {}) {
+  const sql = await getSql(); const atual = await _fv2Cfg();
+  const novo = { limites: limites || {}, motores: motores || atual.motores, produtos: produtos || atual.produtos, atualizado_em: new Date().toISOString() };
+  for (const [k, m] of Object.entries(novo.motores)) if (!['pessoas', 'projetos', 'produtos', 'compartilhado', 'auto'].includes(m)) delete novo.motores[k]; else if (m === 'auto') delete novo.motores[k];
+  await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('atx:fin_v2_cfg', ${JSON.stringify(novo)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
+  return { cfg: await _fv2Cfg() };
+}
+function _fv2Sem(v, lim) {
+  if (v == null || !isFinite(v) || !lim) return 'cinza';
+  if (lim.desvio) { const a = Math.abs(v); return a <= lim.verde ? 'verde' : a <= lim.amarelo ? 'amarelo' : 'vermelho'; }
+  if (lim.maior_melhor) return v >= lim.verde ? 'verde' : v >= lim.amarelo ? 'amarelo' : 'vermelho';
+  return v <= lim.verde ? 'verde' : v <= lim.amarelo ? 'amarelo' : 'vermelho';
+}
+const _fv2Mes = d => d.substring(0, 7);
+function _fv2AddMes(m, n) { const [a, mm] = m.split('-').map(Number); const d = new Date(Date.UTC(a, mm - 1 + n, 1)); return d.toISOString().substring(0, 7); }
+function _fv2Periodo({ data_inicio, data_fim, mes, ano } = {}) {
+  const hoje = _hojeBR();
+  if (!data_inicio && (mes || ano)) { const a = parseInt(ano) || parseInt(hoje), m = parseInt(mes) || null;
+    data_inicio = m ? `${a}-${String(m).padStart(2, '0')}-01` : `${a}-01-01`; data_fim = m ? _fimDoMes(data_inicio) : `${a}-12-31`; }
+  const ini = data_inicio || hoje.substring(0, 8) + '01', fimPedido = data_fim || _fimDoMes(hoje.substring(0, 8) + '01');
+  const fim = fimPedido > hoje ? hoje : fimPedido;
+  const dias = Math.round((Date.parse(fimPedido) - Date.parse(ini)) / 864e5) + 1;
+  // período anterior de mesmo tamanho (mês → mês anterior; trimestre → trimestre anterior)
+  const mesesInteiros = ini.endsWith('-01') && fimPedido === _fimDoMes(fimPedido.substring(0, 8) + '01');
+  const nM = (parseInt(fimPedido) - parseInt(ini)) * 12 + parseInt(fimPedido.substring(5, 7)) - parseInt(ini.substring(5, 7)) + 1;
+  let antIni, antFim;
+  if (mesesInteiros) { antIni = _fv2AddMes(_fv2Mes(ini), -nM) + '-01'; antFim = _fimDoMes(_fv2AddMes(_fv2Mes(fimPedido), -nM) + '-01'); }
+  else { antFim = _diasMais(ini, -1); antIni = _diasMais(antFim, -(dias - 1)); }
+  // mês corrente pela metade: compara com o MESMO trecho do período anterior (1º a dia X)
+  const decorridos = Math.round((Date.parse(fim) - Date.parse(ini)) / 864e5) + 1;
+  const antFimCmp = fim < fimPedido ? _diasMais(antIni, decorridos - 1) : antFim;
+  const yoy = d => `${parseInt(d) - 1}${d.substring(4)}`;
+  return { hoje, ini, fim, fimPedido, parcial: fim < fimPedido, nMeses: nM, antIni, antFim: antFimCmp, yoyIni: yoy(ini), yoyFim: yoy(fim).endsWith('-02-29') ? yoy(fim).replace('-29', '-28') : yoy(fim) };
+}
+// folhas da DRE (contas) com o grupo de topo e o valor de cada coluna
+function _fv2Folhas(rep) {
+  const cols = (rep?.Columns?.Column || []).map(c => c.ColTitle || '');
+  const out = [];
+  const andar = (rows, grupo) => (rows || []).forEach(r => { const g = r.group && /^(Income|COGS|Expenses|OtherIncome|OtherExpenses)$/.test(r.group) ? r.group : grupo;
+    if (r.type === 'Data' && r.ColData) { const cd = r.ColData; out.push({ nome: cd[0]?.value || '', id: cd[0]?.id || null, grupo: g, cols: cd.slice(1).map(x => { const v = parseFloat(x?.value); return isFinite(v) ? v : 0; }) }); }
+    if (r.Rows?.Row) andar(r.Rows.Row, g); });
+  andar(rep?.Rows?.Row, null);
+  return { cols, folhas: out.filter(f => f.grupo) };
+}
+function _fv2MotorConta(nome, grupo, cfg) {
+  if (cfg.motores[nome]) return cfg.motores[nome];
+  if (grupo === 'Income') return FV2_RX.produtos.test(nome) ? 'produtos' : FV2_RX.pessoas.test(nome) ? 'pessoas' : 'projetos';
+  if (grupo === 'COGS') return FV2_RX.produtos.test(nome) ? 'produtos' : FV2_RX.pessoas.test(nome) ? 'pessoas' : 'compartilhado';
+  return 'compartilhado';
+}
+function _fv2ProdutoConta(nome, cfg) { if (cfg.produtos[nome]) return cfg.produtos[nome]; const p = FV2_PRODUTOS.find(([, re]) => re.test(nome)); return p ? p[0] : 'Não identificado'; }
+// receita, custo direto e margem por motor de um conjunto de folhas (coluna idx; -1 = última)
+function _fv2Motores(folhas, cfg, idx = -1) {
+  const M = { pessoas: { receita: 0, custo_direto: 0 }, projetos: { receita: 0, custo_direto: 0 }, produtos: { receita: 0, custo_direto: 0 } };
+  let comp = 0, recTot = 0;
+  for (const f of folhas) { const v = idx < 0 ? f.cols[f.cols.length - 1] : (f.cols[idx] || 0); if (!v) continue; const mo = _fv2MotorConta(f.nome, f.grupo, cfg);
+    if (f.grupo === 'Income') { (M[mo] || M.projetos).receita += v; recTot += v; }
+    else if (f.grupo === 'COGS' || f.grupo === 'Expenses' || f.grupo === 'OtherExpenses') { if (M[mo]) M[mo].custo_direto += v; else if (f.grupo === 'COGS') comp += v; } }
+  for (const [k, m] of Object.entries(M)) { const share = recTot > 0 ? m.receita / recTot : 0; m.custo_rateado = round(comp * share); m.receita = round(m.receita); m.custo_direto = round(m.custo_direto);
+    m.margem_bruta_pct = m.receita > 0 ? Math.round((m.receita - m.custo_direto - m.custo_rateado) / m.receita * 1000) / 10 : null; m.participacao_pct = recTot > 0 ? Math.round(m.receita / recTot * 1000) / 10 : null; }
+  return { motores: M, custo_compartilhado_direto: round(comp), receita_total: round(recTot) };
+}
+function _fv2Var(a, b) { return a != null && b != null && b !== 0 ? Math.round((a - b) / Math.abs(b) * 1000) / 10 : null; }
+function _fv2Kpi(o) { return { fonte: 'QuickBooks', ...o, semaforo: o.semaforo || 'cinza' }; }
+async function _fv2Clientes(ini, fim, met, token) {
+  const rep = await qbFetch(`/reports/CustomerIncome?start_date=${ini}&end_date=${fim}&accounting_method=${met}`, token);
+  const cols = (rep?.Columns?.Column || []).map(c => String(c.ColTitle || '').toLowerCase());
+  const iR = Math.max(1, cols.findIndex(t => /income|receita/.test(t) && !/net|l[ií]quid/.test(t))), iD = cols.findIndex(t => /expense|despesa|custo/.test(t)), iN = cols.findIndex(t => /net|l[ií]quid|lucro/.test(t));
+  const out = [];
+  const andar = rows => (rows || []).forEach(r => { if (r.type === 'Data' && r.ColData) { const cd = r.ColData, n = i => { const v = parseFloat(cd[i]?.value); return isFinite(v) ? v : 0; };
+    const nome = cd[0]?.value || ''; if (!nome || /^total/i.test(nome)) return;
+    out.push({ cliente: nome, id: cd[0]?.id || null, receita: round(n(iR)), custo: iD > 0 ? round(n(iD)) : null, resultado: iN > 0 ? round(n(iN)) : null }); }
+    if (r.Rows?.Row) andar(r.Rows.Row); });
+  andar(rep?.Rows?.Row);
+  return out.filter(c => c.receita || c.custo);
+}
+const _fv2QbBase = () => process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
+
+async function finV2({ tela = 'executiva', data_inicio, data_fim, mes, ano, metodo } = {}) {
+  if (!qbConfigurado()) return { fin_v2: { tela, erro: 'QuickBooks não conectado' } };
+  const met = _met(metodo), P = _fv2Periodo({ data_inicio, data_fim, mes, ano }), cfg = await _fv2Cfg(), L = cfg.limites;
+  const token = await qbToken();
+  const base = { tela, periodo: { de: P.ini, ate: P.fim, ate_pedido: P.fimPedido, parcial: P.parcial, anterior: { de: P.antIni, ate: P.antFim }, yoy: { de: P.yoyIni, ate: P.yoyFim } },
+    regime: met === 'Cash' ? 'caixa' : 'competência', atualizado_em: new Date().toISOString(), limites: L, erros: [], avisos: [] };
+  const fn = { executiva: _fv2Executiva, caixa: _fv2Caixa, pessoas: _fv2Pessoas, projetos: _fv2Projetos, produtos: _fv2Produtos, clientes: _fv2ClientesTela, config: _fv2Config }[tela];
+  if (!fn) throw new Error('tela desconhecida: ' + tela);
+  const [r, conc] = await Promise.allSettled([fn({ P, met, cfg, L, token, base }), tela === 'executiva' || tela === 'caixa' ? qbConciliacaoStatus({ data_inicio: P.ini, data_fim: P.fim }) : Promise.resolve(null)]);
+  if (r.status === 'rejected') { base.erros.push(r.reason?.message || 'falhou'); return { fin_v2: base }; }
+  const c = conc.status === 'fulfilled' ? conc.value : null;
+  if (c && c.movimentos != null) base.conciliacao = { pct: c.movimentos ? Math.round((c.reconciliados + c.compensados) / c.movimentos * 100) : null, pendentes: c.pendentes, movimentos: c.movimentos, de: P.ini, ate: P.fim };
+  return { fin_v2: { ...base, ...r.value } };
+}
+
+// ── TELA 1 · VISÃO EXECUTIVA ── "Estamos bem este mês?"
+async function _fv2Executiva({ P, met, cfg, L, token, base }) {
+  const m13 = _fv2AddMes(_fv2Mes(P.fim), -12) + '-01';
+  const anoA = parseInt(P.fim), anoB = parseInt(m13);
+  const [pAt, pAnt, pYoy, serie, caixaK, orcA, orcB, fco, fluxo, cli, cliAnt] = await Promise.allSettled([
+    qbPL(P.ini, P.fim, token, '', met), qbPL(P.antIni, P.antFim, token, '', met), qbPL(P.yoyIni, P.yoyFim, token, '', met),
+    qbPL(m13, P.fim, token, '&summarize_column_by=Month', met),
+    kpisSaude({ metodo: met }),
+    Promise.race([orcamentoConsolidado({ ano: anoA }), new Promise((_, r) => setTimeout(() => r(new Error('orçamento não respondeu')), 9000))]),
+    anoB !== anoA ? Promise.race([orcamentoConsolidado({ ano: anoB }), new Promise((_, r) => setTimeout(() => r(new Error('orçamento não respondeu')), 9000))]) : Promise.resolve(null),
+    qbPL(P.ini, P.fim, token, '', 'Cash'),
+    fluxoFuturo({ meses: 12 }),
+    _fv2Clientes(P.ini, P.fim, met, token), _fv2Clientes(P.antIni, P.antFim, met, token),
+  ]);
+  const ok = p => p.status === 'fulfilled' ? p.value : (base.erros.push(p.reason?.message || 'falhou'), null);
+  const A = ok(pAt) ? dreResumo(pAt.value) : null, B = ok(pAnt) ? dreResumo(pAnt.value) : null, Y = ok(pYoy) ? dreResumo(pYoy.value) : null;
+  const S = ok(serie), K = ok(caixaK)?.kpis || {}, OA = ok(orcA), OB = orcB.status === 'fulfilled' ? orcB.value : null;
+  // série mensal: receita, margem bruta, EBITDA, por motor
+  const serieM = []; let F = null;
+  if (S) { F = _fv2Folhas(S); const cols = F.cols.slice(1);
+    cols.forEach((t, i) => { if (/total/i.test(t)) return; const mm = _mesDaColunaQB(t, anoB, i + 1); if (!mm) return; const sub = _plColunasMeses(S, mm, mm, parseInt(mm)); const d = sub ? dreResumo(sub) : null;
+      const mo = _fv2Motores(F.folhas, cfg, i).motores;
+      serieM.push({ mes: mm, receita: d?.faturamento ?? 0, margem_bruta_pct: d?.margem_bruta_pct ?? null, margem_ebitda_pct: d?.margem_ebitda_pct ?? null, ebitda: d?.ebitda ?? 0, lucro: d?.lucro_liquido ?? 0,
+        pessoas: mo.pessoas.receita, projetos: mo.projetos.receita, produtos: mo.produtos.receita }); }); }
+  const orcMes = {}; [OA, OB].filter(Boolean).forEach(o => Object.entries(o.por_tipo?.receita?.meses || {}).forEach(([k, v]) => { orcMes[k] = (orcMes[k] || 0) + (v.orcado || 0); }));
+  serieM.forEach(s => { s.orcado = orcMes[s.mes] != null ? round(orcMes[s.mes]) : null; });
+  const tend = k => serieM.slice(-7).map(s => ({ mes: s.mes, v: s[k] }));
+  const kpis = [];
+  // 1 receita e crescimento
+  const metaRec = (() => { const mi = _fv2Mes(P.ini), mf = _fv2Mes(P.fimPedido); let t = 0, achou = false; for (const [k, v] of Object.entries(orcMes)) if (k >= mi && k <= mf) { t += v; achou = true; } return achou && t > 0 ? round(t) : null; })();
+  const recFrac = P.parcial ? (Math.round((Date.parse(P.fim) - Date.parse(P.ini)) / 864e5) + 1) / (Math.round((Date.parse(P.fimPedido) - Date.parse(P.ini)) / 864e5) + 1) : 1;
+  kpis.push(_fv2Kpi({ id: 'receita', titulo: 'Receita', valor: A?.faturamento, fmt: 'brl', meta: metaRec != null ? { valor: metaRec, texto: 'orçado no período', esperado_ate_hoje: P.parcial ? round(metaRec * recFrac) : null } : null,
+    anterior: { valor: B?.faturamento, var_pct: _fv2Var(A?.faturamento, B?.faturamento), rotulo: P.parcial ? 'mesmo trecho do período anterior' : 'período anterior' },
+    yoy: { valor: Y?.faturamento, var_pct: _fv2Var(A?.faturamento, Y?.faturamento) }, tendencia: tend('receita'),
+    semaforo: metaRec ? _fv2Sem(_fv2Var(A?.faturamento, metaRec * recFrac), L.orcado_receita) : 'cinza', drill: { tipo: 'dre' }, formula: 'Receita do período (grupo Receita da DRE) vs. período anterior (MoM) e mesmo período do ano anterior (YoY)' }));
+  // 2 margem bruta
+  kpis.push(_fv2Kpi({ id: 'margem_bruta', titulo: 'Margem bruta', valor: A?.margem_bruta_pct, fmt: 'pct', meta: null,
+    anterior: { valor: B?.margem_bruta_pct, var_pp: A && B && A.margem_bruta_pct != null && B.margem_bruta_pct != null ? Math.round((A.margem_bruta_pct - B.margem_bruta_pct) * 10) / 10 : null },
+    yoy: { valor: Y?.margem_bruta_pct }, tendencia: tend('margem_bruta_pct'), drill: { tipo: 'dre' }, formula: '(Receita − custo direto/COGS) ÷ Receita',
+    nota: !(A?.custos > 0) ? 'Não há custo direto (COGS) separado no QuickBooks — margem bruta = 100%. Classifique o custo dos serviços em contas de Custo para medir de verdade.' : null }));
+  // 3 margem EBITDA
+  kpis.push(_fv2Kpi({ id: 'margem_ebitda', titulo: 'Margem EBITDA', valor: A?.margem_ebitda_pct, fmt: 'pct', valor2: A?.ebitda, meta: null,
+    anterior: { valor: B?.margem_ebitda_pct, var_pp: A && B && A.margem_ebitda_pct != null && B.margem_ebitda_pct != null ? Math.round((A.margem_ebitda_pct - B.margem_ebitda_pct) * 10) / 10 : null },
+    yoy: { valor: Y?.margem_ebitda_pct }, tendencia: tend('margem_ebitda_pct'), drill: { tipo: 'dre' }, formula: 'EBITDA ÷ Receita · EBITDA = lucro líquido + depreciação + juros + IR/CSLL − receitas financeiras' }));
+  // 4 caixa e runway
+  const rw = K.runway_meses, rwVal = rw == null ? null : rw >= 999 ? null : rw;
+  kpis.push(_fv2Kpi({ id: 'runway', titulo: 'Caixa e runway', valor: K.saldo_caixa, fmt: 'brl', valor2_txt: rw == null ? '—' : rw >= 999 ? 'sem queima líquida' : String(rw).replace('.', ',') + ' meses de runway',
+    meta: { valor: L.runway.verde, texto: 'runway acima de ' + L.runway.verde + ' meses' }, anterior: null,
+    extra: { cobertura_meses: K.cobertura_caixa_meses, caixa_30d: K.caixa_30d, queima_liquida: K.burn_liquido_mensal, gasto_medio: K.burn_rate_mensal },
+    semaforo: rw >= 999 ? 'verde' : _fv2Sem(rwVal, L.runway), drill: { tipo: 'caixa', sub: 'folego' }, formula: 'Runway = caixa ÷ queima líquida média dos 3 últimos meses fechados (gastos − receita)', fonte: 'QuickBooks (extrato + DRE)' }));
+  // 5 FCO
+  const C = fco.status === 'fulfilled' ? dreResumo(fco.value) : null;
+  kpis.push(_fv2Kpi({ id: 'fco', titulo: 'Fluxo de caixa operacional', valor: C?.lucro_liquido, fmt: 'brl', meta: { valor: 0, texto: 'positivo' },
+    extra: { entradas: C?.faturamento, saidas: C ? round(C.faturamento - C.lucro_liquido) : null }, semaforo: C ? (C.lucro_liquido >= 0 ? 'verde' : 'vermelho') : 'cinza', drill: { tipo: 'dre', metodo: 'Cash' },
+    formula: 'Entradas − saídas operacionais do período (DRE em regime de caixa: recebimentos − pagamentos de custos e despesas; transferências e empréstimos não entram)' }));
+  // 6 realizado vs orçado
+  const desv = metaRec ? _fv2Var(A?.faturamento, metaRec * recFrac) : null;
+  kpis.push(_fv2Kpi({ id: 'orcado', titulo: 'Realizado vs. orçado (receita)', valor: desv, fmt: 'pct_sinal', meta: { valor: 0, texto: 'dentro de ±' + L.orcado_receita.verde + '%' },
+    extra: { realizado: A?.faturamento, orcado: metaRec, orcamento: OA?.budget_nome || null, proporcional: P.parcial }, semaforo: _fv2Sem(desv, L.orcado_receita), drill: { tipo: 'dre' },
+    formula: '(Realizado − orçado) ÷ orçado' + (P.parcial ? ' — mês em curso: orçado proporcional aos dias decorridos' : ''), nota: metaRec ? null : 'Sem orçamento de receita cadastrado no QuickBooks para o período.' }));
+  // 7 forecast rolling 12m
+  const FL = ok(fluxo); const fm = (FL?.meses || []).map(k => ({ mes: k, saldo: FL.linhas?.['= Saldo Final']?.[k] ?? null, entradas: FL.linhas?.['= Total Entradas']?.[k] ?? 0, saidas: FL.linhas?.['= Total Saídas']?.[k] ?? 0 }));
+  const minS = fm.filter(x => x.saldo != null).reduce((a, x) => (a == null || x.saldo < a.saldo ? x : a), null);
+  kpis.push(_fv2Kpi({ id: 'forecast', titulo: 'Forecast de caixa (12 meses)', valor: fm.length ? fm[fm.length - 1].saldo : null, fmt: 'brl', meta: { valor: 0, texto: 'saldo sempre positivo' },
+    extra: { menor_saldo: minS?.saldo, menor_mes: minS?.mes, meses: fm }, semaforo: minS ? (minS.saldo < 0 ? 'vermelho' : 'verde') : 'cinza', drill: { tipo: 'fluxo' }, fonte: 'Fluxo Futuro (QuickBooks + despesas programadas + marcos)',
+    formula: 'Saldo de hoje + recebíveis, marcos previstos e receitas recorrentes − contas, despesas programadas e folha, mês a mês, recalculado a cada atualização' }));
+  // 8 concentração
+  const CL = ok(cli) || [], CLa = cliAnt.status === 'fulfilled' ? cliAnt.value : [];
+  const conc = lst => { const t = lst.reduce((a, c) => a + Math.max(0, c.receita), 0); const top = [...lst].sort((a, b) => b.receita - a.receita).slice(0, 5); return t > 0 ? Math.round(top.reduce((a, c) => a + Math.max(0, c.receita), 0) / t * 1000) / 10 : null; };
+  const cA = conc(CL), cB = conc(CLa);
+  kpis.push(_fv2Kpi({ id: 'concentracao', titulo: 'Concentração (5 maiores clientes)', valor: cA, fmt: 'pct', meta: { valor: L.concentracao.verde, texto: 'abaixo de ' + L.concentracao.verde + '%' },
+    anterior: { valor: cB, var_pp: cA != null && cB != null ? Math.round((cA - cB) * 10) / 10 : null }, semaforo: _fv2Sem(cA, L.concentracao), drill: { tipo: 'tela', tela: 'clientes' },
+    extra: { top: [...CL].sort((a, b) => b.receita - a.receita).slice(0, 5).map(c => ({ cliente: c.cliente, receita: c.receita })) }, formula: '% da receita do período nos 5 maiores clientes (relatório Receita por Cliente do QuickBooks)' }));
+  // 9 recorrência (ARR ÷ receita) vs meta 30%
+  const ult12 = serieM.filter(s => s.mes < _fv2Mes(P.hoje)).slice(-12), rec12 = ult12.reduce((a, s) => a + s.receita, 0), ultM = ult12[ult12.length - 1];
+  const arr = ultM ? round(ultM.produtos * 12) : null, recPct = rec12 > 0 && arr != null ? Math.round(arr / rec12 * 1000) / 10 : null;
+  kpis.push(_fv2Kpi({ id: 'recorrencia', titulo: 'Receita recorrente (ARR ÷ receita)', valor: recPct, fmt: 'pct', meta: { valor: L.recorrencia_meta_2027, texto: L.recorrencia_meta_2027 + '% até o fim de 2027 · ' + L.recorrencia_meta_2031 + '% até 2031' },
+    extra: { arr, receita_12m: round(rec12), mes_base: ultM?.mes }, semaforo: recPct == null ? 'cinza' : recPct >= L.recorrencia_meta_2027 ? 'verde' : recPct >= L.recorrencia_meta_2027 / 2 ? 'amarelo' : 'vermelho',
+    tendencia: serieM.slice(-7).map(s => ({ mes: s.mes, v: s.receita > 0 ? Math.round(s.produtos / s.receita * 1000) / 10 : null })), drill: { tipo: 'tela', tela: 'produtos' },
+    formula: 'ARR (receita de produtos do último mês fechado × 12) ÷ receita dos últimos 12 meses fechados' }));
+  // margem por motor no período (decisão: onde alocar foco)
+  let motores = null; if (ok(pAt)) { const fp = _fv2Folhas(pAt.value); motores = _fv2Motores(fp.folhas, cfg); }
+  const alertas = kpis.filter(k => k.semaforo === 'vermelho' || k.semaforo === 'amarelo').map(k => ({ id: k.id, titulo: k.titulo, semaforo: k.semaforo }));
+  return { kpis, serie: serieM, forecast: fm, motores, alertas, orcamento_nome: OA?.budget_nome || null,
+    criterio_rateio: 'Custo direto = contas de custo mapeadas ao motor (Configurar). Custo compartilhado (COGS sem motor) rateado proporcionalmente à receita de cada motor.' };
+}
+
+// ── TELA 2 · CAIXA E LIQUIDEZ ── "Temos caixa para os próximos meses?"
+async function _fv2Caixa({ P, met, cfg, L, token, base }) {
+  const hoje = P.hoje, i90 = _diasMais(hoje, -90);
+  const sql = await getSql();
+  const [bc, ks, pl90, desp] = await Promise.allSettled([
+    baseCaixaHoje({}), kpisSaude({ metodo: met }), qbPL(i90, hoje, token, '', 'Accrual'),
+    sql`SELECT o.id, o.data_prevista, o.valor, o.status, d.descricao, d.fornecedor FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
+        WHERE o.status <> 'paga' AND o.qb_txn_id IS NULL AND o.data_prevista >= ${hoje} AND o.data_prevista <= ${_diasMais(hoje, 91)}`,
+  ]);
+  const B = bc.status === 'fulfilled' ? bc.value : (base.erros.push('Base de caixa: ' + bc.reason?.message), {});
+  const K = ks.status === 'fulfilled' ? ks.value.kpis || {} : {};
+  const D90 = pl90.status === 'fulfilled' ? dreResumo(pl90.value) : null;
+  const rec = B.recebiveis_itens || [], pag = B.pagaveis_itens || [], DP = desp.status === 'fulfilled' ? desp.value : [];
+  const recDia = D90 && D90.faturamento > 0 ? D90.faturamento / 90 : null, cusDia = D90 && D90.gastos_totais > 0 ? D90.gastos_totais / 90 : null;
+  const dso = recDia && B.a_receber != null ? Math.round(B.a_receber / recDia) : null, dpo = cusDia && B.a_pagar != null ? Math.round(B.a_pagar / cusDia) : null;
+  const dias = d => d ? Math.round((Date.parse(hoje) - Date.parse(d)) / 864e5) : null;
+  const faixas = [['a vencer', x => x <= 0], ['1–30', x => x >= 1 && x <= 30], ['31–60', x => x >= 31 && x <= 60], ['61–90', x => x >= 61 && x <= 90], ['mais de 90', x => x > 90]];
+  const aging = itens => faixas.map(([f, t]) => { const l = itens.filter(i => t(dias(i.data ?? i.vencimento) ?? 0)); return { faixa: f, valor: round(l.reduce((a, i) => a + (i.valor || 0), 0)), qtd: l.length }; });
+  const agR = aging(rec), agP = aging(pag);
+  const totR = rec.reduce((a, i) => a + i.valor, 0), venc60 = rec.filter(i => dias(i.vencimento) > 60).reduce((a, i) => a + i.valor, 0);
+  const v60pct = totR > 0 ? Math.round(venc60 / totR * 1000) / 10 : null;
+  // projeção de 13 semanas: semana 1 começa hoje; vencidos entram na semana 1
+  const sem = Array.from({ length: 13 }, (_, i) => ({ semana: i + 1, de: _diasMais(hoje, i * 7), ate: _diasMais(hoje, i * 7 + 6), entradas: 0, saidas: 0 }));
+  const idx = d => { if (!d || d <= hoje) return 0; const k = Math.floor((Date.parse(d) - Date.parse(hoje)) / (7 * 864e5)); return k < 13 ? k : -1; };
+  rec.forEach(i => { const k = idx(i.vencimento); if (k >= 0) sem[k].entradas += i.valor; });
+  pag.forEach(i => { const k = idx(i.data); if (k >= 0) sem[k].saidas += i.valor; });
+  DP.forEach(o => { const k = idx(String(o.data_prevista).substring(0, 10)); if (k >= 0) sem[k].saidas += Math.abs(parseFloat(o.valor) || 0); });
+  let s = B.saldo_hoje || 0; sem.forEach(w => { w.entradas = round(w.entradas); w.saidas = round(w.saidas); s += w.entradas - w.saidas; w.saldo = round(s); });
+  const minW = sem.reduce((a, w) => (a == null || w.saldo < a.saldo ? w : a), null);
+  const rw = K.runway_meses;
+  const kpis = [
+    _fv2Kpi({ id: 'saldo', titulo: 'Saldo de caixa hoje', valor: B.saldo_hoje, fmt: 'brl', semaforo: B.saldo_hoje == null ? 'cinza' : B.saldo_hoje < 0 ? 'vermelho' : 'verde', drill: { tipo: 'nav', tela: 's3fluxodet' }, formula: 'Saldo de abertura do mês nas contas bancárias + entradas − saídas até hoje (extrato)', fonte: 'QuickBooks (extrato)' }),
+    _fv2Kpi({ id: 'runway', titulo: 'Runway', valor: rw >= 999 ? null : rw, valor_txt: rw >= 999 ? 'sem queima' : null, fmt: 'meses', meta: { valor: L.runway.verde, texto: 'acima de ' + L.runway.verde + ' meses' }, semaforo: rw >= 999 ? 'verde' : _fv2Sem(rw, L.runway),
+      extra: { cobertura_meses: K.cobertura_caixa_meses, queima_liquida: K.burn_liquido_mensal }, drill: { tipo: 'caixa', sub: 'folego' }, formula: 'Caixa ÷ queima líquida média de 3 meses' }),
+    _fv2Kpi({ id: 'projecao13', titulo: 'Menor saldo em 13 semanas', valor: minW?.saldo, fmt: 'brl', meta: { valor: 0, texto: 'sempre positivo' }, semaforo: minW ? (minW.saldo < 0 ? 'vermelho' : minW.saldo < (K.burn_rate_mensal || 0) ? 'amarelo' : 'verde') : 'cinza',
+      extra: { semana: minW?.semana, de: minW?.de }, drill: { tipo: 'caixa', sub: 'folego' }, formula: 'Saldo de hoje + faturas a receber − contas a pagar − despesas programadas ainda não lançadas, semana a semana' }),
+    _fv2Kpi({ id: 'dso', titulo: 'DSO (prazo de recebimento)', valor: dso, fmt: 'dias', meta: { valor: L.dso.verde, texto: 'abaixo de ' + L.dso.verde + ' dias' }, semaforo: _fv2Sem(dso, L.dso), drill: { tipo: 'caixa', sub: 'receber' },
+      formula: 'Contas a receber ÷ receita diária média (90 dias)', extra: { a_receber: B.a_receber, receita_90d: D90?.faturamento } }),
+    _fv2Kpi({ id: 'dpo', titulo: 'DPO (prazo de pagamento)', valor: dpo, fmt: 'dias', meta: { valor: dso, texto: 'alinhado ao DSO' }, semaforo: dpo == null || dso == null ? 'cinza' : dpo >= dso * 0.8 ? 'verde' : dpo >= dso * 0.5 ? 'amarelo' : 'vermelho', drill: { tipo: 'caixa', sub: 'pagar' },
+      formula: 'Contas a pagar ÷ custo diário médio (90 dias)', extra: { a_pagar: B.a_pagar, gastos_90d: D90?.gastos_totais } }),
+    _fv2Kpi({ id: 'ciclo', titulo: 'Ciclo de caixa', valor: dso != null && dpo != null ? dso - dpo : null, fmt: 'dias', meta: { valor: L.ciclo_caixa.verde, texto: 'menor que ' + L.ciclo_caixa.verde + ' dias' }, semaforo: _fv2Sem(dso != null && dpo != null ? dso - dpo : null, L.ciclo_caixa), formula: 'DSO − DPO' }),
+    _fv2Kpi({ id: 'vencido60', titulo: 'Inadimplência (vencido > 60 dias)', valor: v60pct, fmt: 'pct', valor2: round(venc60), meta: { valor: L.vencido60.verde, texto: 'abaixo de ' + L.vencido60.verde + '% do a receber' }, semaforo: _fv2Sem(v60pct, L.vencido60), drill: { tipo: 'caixa', sub: 'receber' },
+      formula: 'Recebíveis vencidos há mais de 60 dias ÷ total a receber' }),
+    _fv2Kpi({ id: 'pagar13', titulo: 'A pagar nas 13 semanas', valor: round(sem.reduce((a, w) => a + w.saidas, 0)), fmt: 'brl', extra: { a_receber_13: round(sem.reduce((a, w) => a + w.entradas, 0)) }, drill: { tipo: 'caixa', sub: 'pagar' },
+      formula: 'Contas a pagar (Bills) + despesas programadas ainda não lançadas no QuickBooks com vencimento nas próximas 13 semanas (vencidas entram na 1ª)' }),
+  ];
+  return { kpis, semanas: sem, aging_receber: agR, aging_pagar: agP, dso, dpo };
+}
+
+// ── TELA 3 · MOTOR PESSOAS ── "Estamos alocando bem o time?"
+async function _fv2Pessoas({ P, met, cfg, L, token, base }) {
+  const sql = await getSql();
+  try { await sql`ALTER TABLE funcionarios_projetos ADD COLUMN IF NOT EXISTS valor_hora NUMERIC`; } catch (_) {}
+  const [fq, aq, plq, cliq] = await Promise.allSettled([
+    sql`SELECT id, nome, cargo, custo_hora, horas_mensais_padrao, ativo FROM funcionarios WHERE ativo IS NOT FALSE ORDER BY nome`,
+    sql`SELECT fp.funcionario_id, fp.projeto_id, fp.alocacao_pct, fp.papel, fp.valor_hora, p.nome AS projeto, p.cliente, p.status FROM funcionarios_projetos fp LEFT JOIN projetos_financeiros p ON p.id = fp.projeto_id`,
+    qbPL(P.ini, P.fim, token, '', met), _fv2Clientes(P.ini, P.fim, met, token),
+  ]);
+  if (fq.status === 'rejected') { base.avisos.push('Cadastro de funcionários indisponível: ' + fq.reason?.message); }
+  const F = fq.status === 'fulfilled' ? fq.value : [], A = aq.status === 'fulfilled' ? aq.value : [];
+  const meses = Math.max(1, (Math.round((Date.parse(P.fim) - Date.parse(P.ini)) / 864e5) + 1) / 30.4);
+  const motor = plq.status === 'fulfilled' ? _fv2Motores(_fv2Folhas(plq.value).folhas, cfg).motores.pessoas : null;
+  const CL = cliq.status === 'fulfilled' ? cliq.value : [];
+  const prof = F.map(f => { const al = A.filter(a => a.funcionario_id === f.id && String(a.status || 'ativo') !== 'encerrado');
+    const pct = Math.min(100, al.reduce((s, a) => s + (parseFloat(a.alocacao_pct) || 0), 0)), h = parseFloat(f.horas_mensais_padrao) || 160, ch = parseFloat(f.custo_hora) || 0;
+    const vh = al.length ? al.reduce((s, a) => s + (parseFloat(a.valor_hora) || 0) * (parseFloat(a.alocacao_pct) || 0), 0) / Math.max(1, al.reduce((s, a) => s + (parseFloat(a.alocacao_pct) || 0), 0)) : 0;
+    return { id: f.id, nome: f.nome, cargo: f.cargo || '', alocacao_pct: Math.round(pct), clientes: [...new Set(al.map(a => a.cliente).filter(Boolean))], projetos: al.map(a => a.projeto).filter(Boolean),
+      custo_hora: ch, horas_mes: h, custo_mes: round(ch * h), valor_hora: vh ? round(vh) : null, margem_pct: vh && ch ? Math.round((vh - ch) / vh * 1000) / 10 : null,
+      custo_ocioso_mes: round(ch * h * (1 - pct / 100)) }; });
+  const ativos = prof.length, hDisp = prof.reduce((s, p) => s + p.horas_mes, 0), hAloc = prof.reduce((s, p) => s + p.horas_mes * p.alocacao_pct / 100, 0);
+  const taxa = hDisp ? Math.round(hAloc / hDisp * 1000) / 10 : null;
+  const bench = prof.filter(p => p.alocacao_pct < 50), benchPct = ativos ? Math.round(bench.length / ativos * 1000) / 10 : null;
+  const custoBench = round(prof.reduce((s, p) => s + p.custo_ocioso_mes, 0));
+  const alocados = prof.filter(p => p.alocacao_pct >= 50).length;
+  const recProf = motor && alocados ? round(motor.receita / alocados / meses) : null;
+  const comVH = prof.filter(p => p.margem_pct != null), margemMed = comVH.length ? Math.round(comVH.reduce((s, p) => s + p.margem_pct, 0) / comVH.length * 10) / 10 : null;
+  // por cliente: custo do time alocado × receita do cliente no período
+  const porCli = {}; A.forEach(a => { const f = prof.find(p => p.id === a.funcionario_id); if (!f || !a.cliente) return; const k = a.cliente;
+    porCli[k] = porCli[k] || { cliente: k, profissionais: 0, custo_mes: 0 }; porCli[k].profissionais++; porCli[k].custo_mes += f.custo_hora * f.horas_mes * (parseFloat(a.alocacao_pct) || 0) / 100; });
+  const normal = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+  const clientes = Object.values(porCli).map(c => { const q = CL.find(x => normal(x.cliente).includes(normal(c.cliente).substring(0, 6)) || normal(c.cliente).includes(normal(x.cliente).substring(0, 6)));
+    const recM = q ? q.receita / meses : null; return { ...c, custo_mes: round(c.custo_mes), receita_mes: recM != null ? round(recM) : null, margem_pct: recM ? Math.round((recM - c.custo_mes) / recM * 1000) / 10 : null }; })
+    .sort((a, b) => b.custo_mes - a.custo_mes);
+  const kpis = [
+    _fv2Kpi({ id: 'alocacao', titulo: 'Taxa de alocação', valor: taxa, fmt: 'pct', meta: { valor: L.alocacao.verde, texto: 'acima de ' + L.alocacao.verde + '%' }, semaforo: _fv2Sem(taxa, L.alocacao), fonte: 'Cadastro de funcionários × projetos (S8)',
+      formula: 'Horas alocadas ÷ horas disponíveis (alocação cadastrada × horas mensais de cada profissional)', nota: 'Horas faturadas reais ainda não integradas (timesheet/Maestro) — usa a alocação cadastrada.' }),
+    _fv2Kpi({ id: 'bench', titulo: 'Bench (sem alocação)', valor: bench.length, fmt: 'num', valor2: custoBench, valor2_rot: 'custo ocioso/mês', meta: { valor: L.bench.verde, texto: 'menos de ' + L.bench.verde + '% do time' }, semaforo: _fv2Sem(benchPct, L.bench),
+      fonte: 'Cadastro de funcionários × projetos (S8)', formula: 'Profissionais ativos com menos de 50% de alocação · custo = custo/hora × horas não alocadas', drill: { tipo: 'nav', tela: 's8funcionarios' } }),
+    _fv2Kpi({ id: 'receita_prof', titulo: 'Receita por profissional (mês)', valor: recProf, fmt: 'brl', fonte: 'QuickBooks + cadastro S8', formula: 'Receita do motor Pessoas no período ÷ profissionais alocados ÷ meses', extra: { receita_motor: motor?.receita, alocados }, drill: { tipo: 'dre' },
+      nota: motor && !motor.receita ? 'Nenhuma conta de receita classificada como Pessoas — ajuste em Configurar.' : null }),
+    _fv2Kpi({ id: 'margem_prof', titulo: 'Margem por profissional (média)', valor: margemMed, fmt: 'pct', fonte: 'Cadastro S8 (valor/hora e custo/hora)', formula: '(Valor/hora faturado − custo/hora) ÷ valor/hora faturado',
+      nota: comVH.length ? null : 'Cadastre o valor/hora faturado de cada alocação (funcionário × projeto) para calcular.' }),
+    _fv2Kpi({ id: 'time', titulo: 'Profissionais ativos', valor: ativos, fmt: 'num', valor2: round(prof.reduce((s, p) => s + p.custo_mes, 0)), valor2_rot: 'custo mensal do time', fonte: 'Cadastro de funcionários (S8)', drill: { tipo: 'nav', tela: 's8funcionarios' } }),
+    _fv2Kpi({ id: 'margem_motor', titulo: 'Margem bruta do motor Pessoas', valor: motor?.margem_bruta_pct, fmt: 'pct', valor2: motor?.receita, valor2_rot: 'receita no período', formula: '(Receita do motor − custo direto − custo compartilhado rateado) ÷ receita', drill: { tipo: 'dre' } }),
+  ];
+  return { kpis, profissionais: prof, clientes };
+}
+
+// ── TELA 4 · MOTOR PROJETOS ── "Os projetos dão a margem prometida?"
+async function _fv2Projetos({ P, met, cfg, L, token, base }) {
+  const sql = await getSql(), hoje = P.hoje, i90 = _diasMais(hoje, -90);
+  const [pq, mq, aq, pl90] = await Promise.allSettled([
+    sql`SELECT id, nome, cliente, valor_total, status, criado_em FROM projetos_financeiros ORDER BY nome`,
+    sql`SELECT id, projeto_id, descricao, data_entrega, valor, status_kanban, concluido_em FROM projetos_marcos`,
+    sql`SELECT fp.projeto_id, fp.alocacao_pct, f.custo_hora, f.horas_mensais_padrao FROM funcionarios_projetos fp JOIN funcionarios f ON f.id = fp.funcionario_id WHERE f.ativo IS NOT FALSE`,
+    qbPL(i90, hoje, token, '', met),
+  ]);
+  const PR = pq.status === 'fulfilled' ? pq.value : [], MK = mq.status === 'fulfilled' ? mq.value : [], AL = aq.status === 'fulfilled' ? aq.value : [];
+  if (pq.status === 'rejected') base.avisos.push('Projetos indisponíveis: ' + pq.reason?.message);
+  const motor90 = pl90.status === 'fulfilled' ? _fv2Motores(_fv2Folhas(pl90.value).folhas, cfg).motores.projetos : null;
+  const recMesMotor = motor90 ? motor90.receita / 3 : null;
+  const d = x => x ? String(x instanceof Date ? x.toISOString() : x).substring(0, 10) : null;
+  const projetos = PR.map(p => { const ms = MK.filter(m => m.projeto_id === p.id), conc = ms.filter(m => m.status_kanban === 'concluido'), abertos = ms.filter(m => m.status_kanban !== 'concluido');
+    const faturado = conc.reduce((s, m) => s + (parseFloat(m.valor) || 0), 0), valorTot = parseFloat(p.valor_total) || ms.reduce((s, m) => s + (parseFloat(m.valor) || 0), 0);
+    const backlog = abertos.length ? abertos.reduce((s, m) => s + (parseFloat(m.valor) || 0), 0) : Math.max(0, valorTot - faturado);
+    const atr = abertos.filter(m => d(m.data_entrega) && d(m.data_entrega) < hoje);
+    const custoMes = AL.filter(a => a.projeto_id === p.id).reduce((s, a) => s + (parseFloat(a.custo_hora) || 0) * (parseFloat(a.horas_mensais_padrao) || 160) * (parseFloat(a.alocacao_pct) || 0) / 100, 0);
+    const rec90 = conc.filter(m => d(m.concluido_em) && d(m.concluido_em) >= i90).reduce((s, m) => s + (parseFloat(m.valor) || 0), 0);
+    const recMes = rec90 / 3;
+    return { id: p.id, nome: p.nome, cliente: p.cliente || '', status: p.status || 'ativo', valor_contratado: round(valorTot), faturado: round(faturado), backlog: round(backlog),
+      marcos: ms.length, marcos_atrasados: atr.length, valor_atrasado: round(atr.reduce((s, m) => s + (parseFloat(m.valor) || 0), 0)),
+      atrasados: atr.map(m => ({ descricao: m.descricao, data_entrega: d(m.data_entrega), valor: round(parseFloat(m.valor) || 0), status: m.status_kanban })),
+      custo_equipe_mes: round(custoMes), receita_mes_90d: round(recMes), margem_estimada_pct: recMes > 0 ? Math.round((recMes - custoMes) / recMes * 1000) / 10 : null }; })
+    .filter(p => p.status !== 'encerrado' || p.backlog > 0);
+  const backlog = round(projetos.reduce((s, p) => s + p.backlog, 0)), cob = recMesMotor > 0 ? Math.round(backlog / recMesMotor * 10) / 10 : null;
+  const atrQ = projetos.reduce((s, p) => s + p.marcos_atrasados, 0), atrV = round(projetos.reduce((s, p) => s + p.valor_atrasado, 0));
+  const comM = projetos.filter(p => p.margem_estimada_pct != null), mMed = comM.length ? Math.round(comM.reduce((s, p) => s + p.margem_estimada_pct, 0) / comM.length * 10) / 10 : null;
+  const kpis = [
+    _fv2Kpi({ id: 'backlog', titulo: 'Receita a reconhecer (backlog)', valor: backlog, fmt: 'brl', valor2_txt: cob != null ? String(cob).replace('.', ',') + ' meses de cobertura' : null, meta: { valor: L.backlog_cobertura.verde, texto: 'cobertura acima de ' + L.backlog_cobertura.verde + ' meses' },
+      semaforo: projetos.length ? _fv2Sem(cob, L.backlog_cobertura) : 'cinza', fonte: 'Projetos e marcos (S3) + QuickBooks', formula: 'Valor dos marcos ainda não concluídos (ou contratado − faturado) · cobertura = backlog ÷ receita mensal média do motor Projetos (90 dias)', drill: { tipo: 'nav', tela: 's3marcoskanban' } }),
+    _fv2Kpi({ id: 'marcos_atraso', titulo: 'Marcos faturáveis em atraso', valor: atrQ, fmt: 'num', valor2: atrV, valor2_rot: 'valor em atraso', meta: { valor: 0, texto: 'zero' }, semaforo: atrQ === 0 ? 'verde' : atrQ <= 2 ? 'amarelo' : 'vermelho',
+      fonte: 'Kanban de marcos (S3)', formula: 'Marcos com data de entrega vencida e ainda não concluídos/faturados', drill: { tipo: 'nav', tela: 's3marcoskanban' } }),
+    _fv2Kpi({ id: 'margem_projeto', titulo: 'Margem estimada por projeto (média)', valor: mMed, fmt: 'pct', fonte: 'Marcos concluídos (90 dias) × custo da equipe alocada (S8)', formula: '(Receita mensal dos marcos concluídos nos últimos 90 dias − custo mensal da equipe alocada) ÷ receita',
+      nota: 'Estimativa: custo real por projeto (horas reais × custo) depende da integração com o Maestro.' }),
+    _fv2Kpi({ id: 'desvio_esforco', titulo: 'Desvio de esforço', valor: null, fmt: 'pct', meta: { valor: L.desvio_esforco.verde, texto: 'até ' + L.desvio_esforco.verde + '%' }, fonte: 'Maestro (a integrar)', formula: 'Horas reais ÷ horas orçadas', nota: 'Horas reais e orçadas por projeto ainda não integradas (Maestro).' }),
+    _fv2Kpi({ id: 'margem_motor', titulo: 'Margem bruta do motor Projetos (90 dias)', valor: motor90?.margem_bruta_pct, fmt: 'pct', valor2: motor90?.receita, valor2_rot: 'receita 90 dias', formula: '(Receita do motor − custo direto − compartilhado rateado) ÷ receita', drill: { tipo: 'dre' } }),
+    _fv2Kpi({ id: 'projetos_ativos', titulo: 'Projetos com saldo a entregar', valor: projetos.filter(p => p.backlog > 0).length, fmt: 'num', fonte: 'Projetos (S3)', drill: { tipo: 'nav', tela: 's3projetos' } }),
+  ];
+  return { kpis, projetos: projetos.sort((a, b) => b.backlog - a.backlog) };
+}
+
+// ── TELA 5 · MOTOR PRODUTOS ── "O recorrente está crescendo?"
+async function _fv2Produtos({ P, met, cfg, L, token, base }) {
+  const hoje = P.hoje, mesH = _fv2Mes(hoje), m13 = _fv2AddMes(mesH, -13) + '-01', fimFech = _diasMais(mesH + '-01', -1);
+  const m24 = _fv2AddMes(mesH, -24) + '-01', m12 = _fv2AddMes(mesH, -12) + '-01';
+  const [serie, p12, p24] = await Promise.allSettled([qbPL(m13, fimFech, token, '&summarize_column_by=Month', met), qbPL(m12, fimFech, token, '', met), qbPL(m24, _diasMais(m12, -1), token, '', met)]);
+  if (serie.status === 'rejected') throw serie.reason;
+  const F = _fv2Folhas(serie.value), cols = F.cols.slice(1); const mesesCol = cols.map((t, i) => /total/i.test(t) ? null : _mesDaColunaQB(t, parseInt(m13), i + 1));
+  const contasProd = F.folhas.filter(f => f.grupo === 'Income' && _fv2MotorConta(f.nome, 'Income', cfg) === 'produtos');
+  const mrrMes = mesesCol.map((m, i) => m ? { mes: m, mrr: round(contasProd.reduce((s, f) => s + (f.cols[i] || 0), 0)) } : null).filter(Boolean);
+  const porProd = {}; contasProd.forEach(f => { const pn = _fv2ProdutoConta(f.nome, cfg); const iU = mesesCol.findIndex(m => m === mrrMes[mrrMes.length - 1]?.mes); porProd[pn] = (porProd[pn] || 0) + (iU >= 0 ? f.cols[iU] || 0 : 0); });
+  const mrr = mrrMes.length ? mrrMes[mrrMes.length - 1].mrr : 0, arr = round(mrr * 12);
+  const R12 = p12.status === 'fulfilled' ? dreResumo(p12.value) : null, R24 = p24.status === 'fulfilled' ? dreResumo(p24.value) : null;
+  const recPct = R12?.faturamento > 0 ? Math.round(arr / R12.faturamento * 1000) / 10 : null;
+  // nível cliente: razão das contas de produto (13 meses) → MRR por cliente por mês
+  let porCliMes = {}, glOk = false;
+  const ids = contasProd.map(f => f.id).filter(Boolean);
+  if (ids.length) { try {
+    const rep = await qbFetch(`/reports/GeneralLedger?start_date=${m13}&end_date=${fimFech}&accounting_method=${met}&account=${ids.join(',')}&columns=tx_date,name,subt_nat_amount`, token);
+    const cs = (rep?.Columns?.Column || []).map(c => (c.MetaData || []).find(m => m.Name === 'ColKey')?.Value || c.ColTitle || '');
+    const iD = cs.indexOf('tx_date'), iN = cs.indexOf('name'), iV = cs.indexOf('subt_nat_amount');
+    const andar = rows => (rows || []).forEach(r => { if (r.type === 'Data' && r.ColData) { const dt = r.ColData[iD]?.value, nm = r.ColData[iN]?.value || '(sem cliente)', v = parseFloat(r.ColData[iV]?.value);
+      if (dt && /^\d{4}-\d{2}/.test(dt) && isFinite(v)) { const m = dt.substring(0, 7); porCliMes[nm] = porCliMes[nm] || {}; porCliMes[nm][m] = (porCliMes[nm][m] || 0) + v; } } if (r.Rows?.Row) andar(r.Rows.Row); });
+    andar(rep?.Rows?.Row); glOk = true; } catch (e) { base.avisos.push('Razão das contas de produto: ' + e.message); } }
+  const meses = mrrMes.map(x => x.mes);
+  const churnM = [], nrrM = [], novosM = [];
+  for (let i = 1; i < meses.length; i++) { const a = meses[i - 1], b = meses[i]; let baseA = 0, retido = 0, perdidos = 0, ativosA = 0, perdMRR = 0, novos = 0;
+    for (const c of Object.values(porCliMes)) { const va = c[a] || 0, vb = c[b] || 0; if (va > 0) { ativosA++; baseA += va; retido += vb; if (vb <= 0) { perdidos++; perdMRR += va; } }
+      else if (vb > 0 && !meses.slice(0, i).some(m => (c[m] || 0) > 0)) novos++; }
+    if (ativosA) { churnM.push({ mes: b, logos_pct: Math.round(perdidos / ativosA * 1000) / 10, receita_pct: baseA ? Math.round(perdMRR / baseA * 1000) / 10 : null }); nrrM.push({ mes: b, nrr: baseA ? Math.round(retido / baseA * 1000) / 10 : null }); }
+    novosM.push({ mes: b, novos }); }
+  const med = (arrv, k) => { const l = arrv.slice(-3).map(x => x[k]).filter(v => v != null); return l.length ? Math.round(l.reduce((s, v) => s + v, 0) / l.length * 10) / 10 : null; };
+  const churnRec = med(churnM, 'receita_pct'), churnLog = med(churnM, 'logos_pct'), nrr = med(nrrM, 'nrr');
+  const ativosUlt = Object.values(porCliMes).filter(c => (c[meses[meses.length - 1]] || 0) > 0).length;
+  const arpa = ativosUlt ? mrr / ativosUlt : null;
+  // CAC: gasto comercial/marketing (3 meses fechados) ÷ novos clientes de produto (3 meses)
+  const i3 = mesesCol.map((m, i) => (m && meses.slice(-3).includes(m) ? i : -1)).filter(i => i >= 0);
+  const gastoCom = F.folhas.filter(f => (f.grupo === 'Expenses' || f.grupo === 'COGS') && FV2_RX.comercial.test(f.nome)).reduce((s, f) => s + i3.reduce((a, i) => a + (f.cols[i] || 0), 0), 0);
+  const novos3 = novosM.slice(-3).reduce((s, x) => s + x.novos, 0);
+  const cac = novos3 ? round(gastoCom / novos3) : null;
+  const mProd = _fv2Motores(F.folhas, cfg).motores.produtos, mb = mProd.margem_bruta_pct != null ? mProd.margem_bruta_pct / 100 : null;
+  const churnDec = churnLog != null ? Math.max(churnLog, 0.5) / 100 : null; // piso 0,5% a.m. (vida máx. 200 meses) para não dar LTV infinito
+  const ltv = arpa && mb != null && churnDec ? round(arpa * mb / churnDec) : null;
+  const ltvCac = ltv && cac ? Math.round(ltv / cac * 10) / 10 : null, payback = cac && arpa && mb ? Math.round(cac / (arpa * mb) * 10) / 10 : null;
+  const cresc = R12 && R24 && R24.faturamento > 0 ? Math.round((R12.faturamento - R24.faturamento) / R24.faturamento * 1000) / 10 : null;
+  const r40 = cresc != null && R12?.margem_ebitda_pct != null ? Math.round((cresc + R12.margem_ebitda_pct) * 10) / 10 : null;
+  const arrProd = Object.entries(porProd).map(([produto, v]) => ({ produto, arr: round(v * 12) })).filter(x => x.arr).sort((a, b) => b.arr - a.arr);
+  const tot = arrProd.reduce((s, x) => s + x.arr, 0); let acc = 0; const ancoras = arrProd.filter(x => { const dentro = acc < tot * 0.8; acc += x.arr; return dentro; }).length;
+  const semBilling = 'Billing dos produtos ainda não definido: MRR, churn e NRR lidos das contas de receita de produto do QuickBooks (razão por cliente).';
+  const kpis = [
+    _fv2Kpi({ id: 'mrr', titulo: 'MRR', valor: mrr, fmt: 'brl', anterior: mrrMes.length > 1 ? { valor: mrrMes[mrrMes.length - 2].mrr, var_pct: _fv2Var(mrr, mrrMes[mrrMes.length - 2].mrr) } : null, tendencia: mrrMes.slice(-7).map(x => ({ mes: x.mes, v: x.mrr })),
+      formula: 'Receita das contas de produto no último mês fechado (' + (meses[meses.length - 1] || '—') + ')', drill: { tipo: 'dre' }, nota: contasProd.length ? null : 'Nenhuma conta de receita classificada como Produtos — ajuste em Configurar.' }),
+    _fv2Kpi({ id: 'arr', titulo: 'ARR', valor: arr, fmt: 'brl', formula: 'MRR × 12', drill: { tipo: 'dre' } }),
+    _fv2Kpi({ id: 'recorrencia', titulo: 'ARR ÷ receita', valor: recPct, fmt: 'pct', meta: { valor: L.recorrencia_meta_2027, texto: L.recorrencia_meta_2027 + '% até 2027 · ' + L.recorrencia_meta_2031 + '% até 2031' },
+      semaforo: recPct == null ? 'cinza' : recPct >= L.recorrencia_meta_2027 ? 'verde' : recPct >= L.recorrencia_meta_2027 / 2 ? 'amarelo' : 'vermelho', formula: 'ARR ÷ receita dos últimos 12 meses fechados', extra: { receita_12m: R12?.faturamento } }),
+    _fv2Kpi({ id: 'nrr', titulo: 'Net Revenue Retention', valor: nrr, fmt: 'pct', meta: { valor: L.nrr.verde, texto: 'acima de ' + L.nrr.verde + '%' }, semaforo: _fv2Sem(nrr, L.nrr), tendencia: nrrM.slice(-7).map(x => ({ mes: x.mes, v: x.nrr })),
+      formula: '(MRR inicial + expansão − contração − churn) ÷ MRR inicial — média mensal dos 3 últimos meses', nota: glOk ? null : semBilling }),
+    _fv2Kpi({ id: 'churn', titulo: 'Churn de receita (MRR)', valor: churnRec, fmt: 'pct', valor2_txt: churnLog != null ? 'logos: ' + String(churnLog).replace('.', ',') + '% ao mês' : null, meta: { valor: L.churn.verde, texto: 'menor que ' + L.churn.verde + '% ao mês' }, semaforo: _fv2Sem(churnRec, L.churn),
+      formula: 'MRR (e clientes) perdidos ÷ base inicial do mês — média dos 3 últimos meses' }),
+    _fv2Kpi({ id: 'cac', titulo: 'CAC', valor: cac, fmt: 'brl', extra: { gasto_comercial_3m: round(gastoCom), novos_clientes_3m: novos3 }, formula: 'Gasto comercial e de marketing (3 meses) ÷ novos clientes de produto (3 meses)',
+      nota: novos3 ? null : 'Nenhum cliente novo de produto nos últimos 3 meses.' }),
+    _fv2Kpi({ id: 'ltv_cac', titulo: 'LTV / CAC', valor: ltvCac, fmt: 'x', meta: { valor: L.ltv_cac.verde, texto: 'acima de ' + L.ltv_cac.verde + 'x' }, semaforo: _fv2Sem(ltvCac, L.ltv_cac), extra: { ltv, arpa: arpa ? round(arpa) : null },
+      formula: 'LTV = ARPA × margem bruta do motor ÷ churn mensal de logos (piso 0,5%) · LTV ÷ CAC' }),
+    _fv2Kpi({ id: 'cac_payback', titulo: 'CAC payback', valor: payback, fmt: 'meses', meta: { valor: L.cac_payback.verde, texto: 'abaixo de ' + L.cac_payback.verde + ' meses' }, semaforo: _fv2Sem(payback, L.cac_payback), formula: 'CAC ÷ margem bruta mensal por cliente' }),
+    _fv2Kpi({ id: 'rule40', titulo: 'Rule of 40', valor: r40, fmt: 'pct', meta: { valor: L.rule40.verde, texto: 'acima de ' + L.rule40.verde + '%' }, semaforo: _fv2Sem(r40, L.rule40), extra: { crescimento_pct: cresc, margem_ebitda_pct: R12?.margem_ebitda_pct },
+      formula: 'Crescimento anual da receita (12 meses vs. 12 anteriores) + margem EBITDA dos 12 meses' }),
+    _fv2Kpi({ id: 'foco', titulo: 'Produtos-âncora (80% do ARR)', valor: arrProd.length ? ancoras : null, fmt: 'num', meta: { valor: 2, texto: '1 a 2 âncoras em 18 meses' }, semaforo: !arrProd.length ? 'cinza' : ancoras <= 2 ? 'verde' : ancoras === 3 ? 'amarelo' : 'vermelho',
+      formula: 'Quantos produtos somam 80% do ARR', extra: { produtos: arrProd.length } }),
+  ];
+  return { kpis, mrr_mensal: mrrMes, arr_produto: arrProd, churn_mensal: churnM, nrr_mensal: nrrM, contas_produto: contasProd.map(f => f.nome), billing: semBilling };
+}
+
+// ── TELA 6 · CLIENTES E RISCO ── "Onde está o risco?"
+async function _fv2ClientesTela({ P, met, cfg, L, token, base }) {
+  const [cq, bc] = await Promise.allSettled([_fv2Clientes(P.ini, P.fim, met, token), baseCaixaHoje({})]);
+  if (cq.status === 'rejected') throw cq.reason;
+  const CL = cq.value, B = bc.status === 'fulfilled' ? bc.value : {};
+  const rec = B.recebiveis_itens || [], hoje = P.hoje;
+  const normal = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+  const tot = CL.reduce((s, c) => s + Math.max(0, c.receita), 0);
+  let acc = 0;
+  const lista = [...CL].sort((a, b) => b.receita - a.receita).map(c => { acc += Math.max(0, c.receita);
+    const inv = rec.filter(r => normal(r.cliente) === normal(c.cliente) || normal(r.cliente).startsWith(normal(c.cliente).substring(0, 8)));
+    const venc = inv.filter(r => r.vencimento && r.vencimento < hoje), v60 = inv.filter(r => r.vencimento && (Date.parse(hoje) - Date.parse(r.vencimento)) / 864e5 > 60);
+    const anc = FV2_ANCORAS.find(([, re]) => re.test(c.cliente));
+    return { ...c, participacao_pct: tot > 0 ? Math.round(Math.max(0, c.receita) / tot * 1000) / 10 : null, acumulado_pct: tot > 0 ? Math.round(acc / tot * 1000) / 10 : null,
+      margem_pct: c.receita > 0 && c.custo != null ? Math.round((c.receita - c.custo) / c.receita * 1000) / 10 : null, a_receber: round(inv.reduce((s, r) => s + r.valor, 0)),
+      vencido: round(venc.reduce((s, r) => s + r.valor, 0)), vencido_60: round(v60.reduce((s, r) => s + r.valor, 0)), ancora: anc ? anc[0] : null,
+      qb_url: c.id ? `${_fv2QbBase()}/app/customerdetail?nameId=${c.id}` : null }; });
+  const top5 = lista.slice(0, 5).reduce((s, c) => s + Math.max(0, c.receita), 0), c5 = tot > 0 ? Math.round(top5 / tot * 1000) / 10 : null;
+  const anc = tot > 0 ? Math.round(lista.filter(c => c.ancora).reduce((s, c) => s + Math.max(0, c.receita), 0) / tot * 1000) / 10 : null;
+  const totAR = rec.reduce((s, r) => s + r.valor, 0), v60 = rec.filter(r => r.vencimento && (Date.parse(hoje) - Date.parse(r.vencimento)) / 864e5 > 60).reduce((s, r) => s + r.valor, 0);
+  const comMg = lista.filter(c => c.margem_pct != null && c.custo), mgMed = comMg.length && tot ? Math.round(comMg.reduce((s, c) => s + c.margem_pct * c.receita, 0) / comMg.reduce((s, c) => s + c.receita, 0) * 10) / 10 : null;
+  const ancorasPresentes = FV2_ANCORAS.map(([n]) => { const c = lista.find(x => x.ancora === n); return { ancora: n, receita: c?.receita || 0, participacao_pct: c?.participacao_pct || 0, vencido: c?.vencido || 0, presente: !!c }; });
+  const kpis = [
+    _fv2Kpi({ id: 'concentracao', titulo: 'Concentração nos 5 maiores', valor: c5, fmt: 'pct', meta: { valor: L.concentracao.verde, texto: 'abaixo de ' + L.concentracao.verde + '%' }, semaforo: _fv2Sem(c5, L.concentracao), formula: '% da receita do período nos 5 maiores clientes' }),
+    _fv2Kpi({ id: 'maior', titulo: 'Maior cliente', valor: lista[0]?.participacao_pct ?? null, fmt: 'pct', valor2_txt: lista[0]?.cliente || null, formula: '% da receita do período no maior cliente' }),
+    _fv2Kpi({ id: 'ancoras', titulo: 'Receita nas 4 âncoras', valor: anc, fmt: 'pct', formula: 'CPFL Energia, Enel, Grupo Jelta Veículos e Caixa Capitalização ÷ receita do período' }),
+    _fv2Kpi({ id: 'inadimplencia', titulo: 'Vencido há mais de 60 dias', valor: round(v60), fmt: 'brl', valor2_txt: totAR > 0 ? String(Math.round(v60 / totAR * 1000) / 10).replace('.', ',') + '% do a receber' : null,
+      meta: { valor: L.vencido60.verde, texto: 'abaixo de ' + L.vencido60.verde + '% do a receber' }, semaforo: _fv2Sem(totAR > 0 ? v60 / totAR * 100 : null, L.vencido60), drill: { tipo: 'caixa', sub: 'receber' }, formula: 'Faturas vencidas há mais de 60 dias' }),
+    _fv2Kpi({ id: 'margem_cliente', titulo: 'Margem média por cliente', valor: mgMed, fmt: 'pct', formula: '(Receita − despesas atribuídas ao cliente) ÷ receita, ponderada pela receita', nota: comMg.length ? null : 'Nenhuma despesa atribuída a clientes no QuickBooks (campo Cliente nos lançamentos de custo).' }),
+    _fv2Kpi({ id: 'ativos', titulo: 'Clientes com receita no período', valor: lista.filter(c => c.receita > 0).length, fmt: 'num' }),
+  ];
+  return { kpis, clientes: lista.slice(0, 60), ancoras: ancorasPresentes, total_receita: round(tot) };
+}
+
+// ── CONFIGURAR: contas de receita/custo por motor e produto + limites ──
+async function _fv2Config({ P, met, cfg, L, token, base }) {
+  const rep = await qbPL(_fv2AddMes(_fv2Mes(P.hoje), -12) + '-01', P.hoje, token, '', 'Accrual');
+  const F = _fv2Folhas(rep);
+  const contas = F.folhas.filter(f => ['Income', 'COGS', 'Expenses', 'OtherExpenses'].includes(f.grupo)).map(f => ({ nome: f.nome, grupo: f.grupo, valor_12m: round(f.cols[f.cols.length - 1]),
+    motor: _fv2MotorConta(f.nome, f.grupo, cfg), motor_manual: !!cfg.motores[f.nome], produto: f.grupo === 'Income' ? _fv2ProdutoConta(f.nome, cfg) : null }))
+    .sort((a, b) => (a.grupo === 'Income' ? 0 : 1) - (b.grupo === 'Income' ? 0 : 1) || Math.abs(b.valor_12m) - Math.abs(a.valor_12m));
+  return { contas, motores_cfg: cfg.motores, produtos_cfg: cfg.produtos, limites_padrao: FV2_LIMITES, criterio_rateio: 'Custo compartilhado rateado proporcionalmente à receita de cada motor no período.' };
+}
+
 
 // v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
 export default comGuarda(handler, 'financeiro');
