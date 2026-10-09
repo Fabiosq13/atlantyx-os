@@ -9636,28 +9636,33 @@ async function gerarAnaliseFin() {
 
 // v3.109: projeção DETERMINÍSTICA a partir do Fluxo de 12 meses (mesma base do sistema) + propostas e novo MRR informados.
 // Antes: texto livre da IA, com 3 dos 6 campos ignorados, meta fixa e o filtro de conta sem efeito.
-let _projBase = null;
+let _projBase = null, _projFontes = null;
 async function gerarProjetado() {
   popularSeletoresConta();
   const btn = document.getElementById('btnProj'); if (btn) { btn.disabled = true; btn.textContent = 'Carregando…'; }
   const el = document.getElementById('f_projetadoResult');
   try {
-    const d = await finApi('fluxo_futuro', { meses: 12, conta_id: document.getElementById('s3projetado_conta')?.value || null });
-    _projBase = d; _projRender();
+    // dem_mv0x0jbvp5sp: em paralelo, as fontes das colunas Recorrente (QuickBooks + contratos) e Propostas (HubSpot × probabilidade)
+    const [d, f] = await Promise.all([finApi('fluxo_futuro', { meses: 12, conta_id: document.getElementById('s3projetado_conta')?.value || null }),
+      finApi('projetado_fontes', { meses: 12 }).catch(e => ({ avisos: ['Fontes de recorrente/propostas indisponíveis: ' + e.message] }))]);
+    _projBase = d; _projFontes = f; _projRender();
   } catch (e) { if (el) el.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Não consegui ler o fluxo de 12 meses: ' + String(e.message).replace(/</g, '&lt;') + '</div>'; }
   if (btn) { btn.disabled = false; btn.innerHTML = '&#8635; Atualizar'; }
 }
 function _projCalc() {
-  const d = _projBase; if (!d) return null; const L = d.linhas || {}; const meses = d.meses || [];
+  const d = _projBase; if (!d) return null; const L = d.linhas || {}; const meses = d.meses || []; const F = _projFontes || {};
   const v = id => _numBR(document.getElementById(id)?.value || '0');
   const prop = v('f_propostas'), prob = Math.min(100, Math.max(0, v('f_probFech'))) / 100, prazo = Math.max(0, Math.round(v('f_projPrazo'))), mrr = v('f_mrr'), churn = Math.min(100, Math.max(0, v('f_churn'))) / 100, meta = v('f_projMeta');
   const pipeMes = prop * prob / 6; let mrrAtual = mrr;
   return { meta, linhas: meses.map((m, i) => {
-    const qb = L['+ A Receber QB']?.[m] || 0, marcos = L['+ Receita Prevista (marcos)']?.[m] || 0, rec = L['+ Receita Recorrente (MRR)']?.[m] || 0, outras = (L['+ Outras Entradas Simuladas']?.[m] || 0);
-    const pipe = i >= prazo && i < prazo + 6 ? pipeMes : 0;
-    let novoMrr = 0; if (i >= 1 && mrr) { novoMrr = mrrAtual; mrrAtual = mrrAtual * (1 - churn); }
-    const total = qb + marcos + rec + outras + pipe + novoMrr;
-    return { m, qb, marcos, rec, outras, pipe, novoMrr, total, base: qb + marcos + rec + outras };
+    const qb = L['+ A Receber QB']?.[m] || 0, marcos = L['+ Receita Prevista (marcos)']?.[m] || 0, outras = (L['+ Outras Entradas Simuladas']?.[m] || 0);
+    // dem_mv0x0jbvp5sp: Recorrente = MRR do fluxo + recorrentes do QuickBooks e contratos vigentes; Propostas = HubSpot ponderado + valor informado
+    const rec = (L['+ Receita Recorrente (MRR)']?.[m] || 0) + (F.recorrente?.[m] || 0);
+    const pipe = (i >= prazo && i < prazo + 6 ? pipeMes : 0) + (F.propostas_pond?.[m] || 0);
+    let mrrExtra = 0; if (i >= 1 && mrr) { mrrExtra = mrrAtual; mrrAtual = mrrAtual * (1 - churn); }
+    const novoMrr = rec + pipe + mrrExtra;   // coluna Novo MRR = Recorrente + Propostas (pond.) (+ novo MRR informado na tela)
+    const total = qb + marcos + rec + outras + pipe + mrrExtra;   // Novo MRR não entra de novo no total
+    return { m, qb, marcos, rec, outras, pipe, mrrExtra, novoMrr, total, base: qb + marcos + rec + outras };
   }) };
 }
 function _projRender() {
@@ -9668,11 +9673,23 @@ function _projRender() {
   el.innerHTML = '<div class="kg k4" style="margin-bottom:10px;">'
     + '<div class="kpi gn"><div class="kl">Receita projetada 12 meses</div><div class="kv">' + fmtBRLcompleto(tot('total')) + '</div><div class="ks">média ' + fmtBRLcompleto(tot('total') / (c.linhas.length || 1)) + '/mês</div></div>'
     + '<div class="kpi bl"><div class="kl">Já no sistema</div><div class="kv">' + fmtBRLcompleto(tot('base')) + '</div><div class="ks">faturas, marcos, recorrentes</div></div>'
-    + '<div class="kpi pu"><div class="kl">Propostas + novo MRR</div><div class="kv">' + fmtBRLcompleto(tot('pipe') + tot('novoMrr')) + '</div><div class="ks">ponderado pela probabilidade</div></div>'
+    + '<div class="kpi pu"><div class="kl">Propostas + novo MRR</div><div class="kv">' + fmtBRLcompleto(tot('pipe') + tot('mrrExtra')) + '</div><div class="ks">ponderado pela probabilidade</div></div>'
     + '<div class="kpi rd"><div class="kl">Meses na meta</div><div class="kv">' + (c.meta ? acima + ' de ' + c.linhas.length : '—') + '</div><div class="ks">meta ' + (c.meta ? fmtBRLcompleto(c.meta) + '/mês' : 'não definida') + '</div></div></div>'
     + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:760px;"><thead><tr style="color:var(--t2);font-family:var(--M);font-size:9px;text-transform:uppercase;border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:6px;">Mês</th><th style="text-align:right;padding:6px;">Faturas em aberto</th><th style="text-align:right;padding:6px;">Marcos previstos</th><th style="text-align:right;padding:6px;">Recorrente</th><th style="text-align:right;padding:6px;">Simulados</th><th style="text-align:right;padding:6px;">Propostas (pond.)</th><th style="text-align:right;padding:6px;">Novo MRR</th><th style="text-align:right;padding:6px;">Total</th><th style="text-align:right;padding:6px;">vs meta</th></tr></thead><tbody>'
     + c.linhas.map(x => '<tr style="border-bottom:1px solid var(--bd);"><td style="padding:6px;font-weight:600;">' + nm(x.m) + '</td><td style="padding:6px;text-align:right;font-family:var(--M);">' + R(x.qb) + '</td><td style="padding:6px;text-align:right;font-family:var(--M);">' + R(x.marcos) + '</td><td style="padding:6px;text-align:right;font-family:var(--M);">' + R(x.rec) + '</td><td style="padding:6px;text-align:right;font-family:var(--M);">' + R(x.outras) + '</td><td style="padding:6px;text-align:right;font-family:var(--M);color:var(--blue);">' + R(x.pipe) + '</td><td style="padding:6px;text-align:right;font-family:var(--M);color:var(--blue);">' + R(x.novoMrr) + '</td><td style="padding:6px;text-align:right;font-family:var(--M);font-weight:700;">' + fmtBRLcompleto(x.total) + '</td><td style="padding:6px;text-align:right;font-family:var(--M);color:' + (!c.meta ? 'var(--t3)' : x.total >= c.meta ? 'var(--green,#22d3a3)' : 'var(--red)') + ';">' + (c.meta ? (x.total >= c.meta ? '+' : '') + fmtBRLcompleto(x.total - c.meta) : '—') + '</td></tr>').join('')
-    + '</tbody></table></div><div style="font-size:10px;color:var(--t3);margin-top:6px;">Base = mesma do Fluxo Futuro 12 Meses (faturas em aberto no QuickBooks, previsão dos marcos e recorrentes). Propostas: valor × probabilidade, distribuído em 6 meses a partir do mês informado. Novo MRR: a partir do próximo mês, com o churn aplicado mês a mês.</div>';
+    + '</tbody></table></div><div style="font-size:10px;color:var(--t3);margin-top:6px;">Base = mesma do Fluxo Futuro 12 Meses (faturas em aberto no QuickBooks e previsão dos marcos). Recorrente: modelos recorrentes de receita do QuickBooks + projetos recorrentes (sustentação) com contrato vigente, valor ÷ meses de vigência — sem repetir o mês em que o cliente já tem fatura ou marco previsto. Simulados: lançamentos simulados de entrada do Fluxo Futuro. Propostas (pond.): negócios abertos do HubSpot × probabilidade da etapa, no mês do fechamento previsto (vencido ou sem data → mês atual), + o valor informado acima × probabilidade, em 6 meses a partir do mês informado. Novo MRR = Recorrente + Propostas (pond.) (+ novo MRR informado, com churn a partir do próximo mês); o Total não soma essa coluna de novo.</div>'
+    + _projFontesHtml(c);
+}
+// dem_mv0x0jbvp5sp: de onde vieram Recorrente / Simulados / Propostas (pond.) — e o que falta cadastrar
+function _projFontesHtml(c) {
+  const F = _projFontes; if (!F) return ''; const e = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const nm = m => { const [a, mm] = String(m).split('-'); return ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][+mm - 1] + '/' + String(a).slice(2); };
+  const av = [...(F.avisos || [])];
+  if (!c.linhas.some(x => x.outras) && !F.simulados_qtd) av.push('Nenhum lançamento simulado de entrada no horizonte — cadastre em Fluxo de Caixa Futuro (simulados) para a coluna Simulados.');
+  const rec = F.detalhe?.recorrente || [], pr = F.detalhe?.propostas || [];
+  return (av.length ? '<div style="margin-top:8px;font-size:10.5px;color:var(--gold);line-height:1.6;">' + av.map(a => '⚠ ' + e(a)).join('<br/>') + '</div>' : '')
+    + (rec.length ? '<details style="margin-top:8px;font-size:11px;"><summary style="cursor:pointer;color:var(--t2);">Recorrentes considerados (' + rec.length + ')</summary>' + rec.map(r => '<div style="padding:3px 0;border-bottom:1px solid var(--bd);">' + e(r.nome) + (r.cliente ? ' <span style="color:var(--t3);">· ' + e(r.cliente) + '</span>' : '') + ' — ' + fmtBRLcompleto(r.mensal) + '/mês em ' + r.meses + ' mês(es) <span style="color:var(--t3);">(' + (r.origem === 'contrato' && r.vigencia ? 'contrato ' + nm(r.vigencia.inicio) + '–' + nm(r.vigencia.fim) : 'QuickBooks') + ')</span></div>').join('') + '</details>' : '')
+    + (pr.length ? '<details style="margin-top:6px;font-size:11px;"><summary style="cursor:pointer;color:var(--t2);">Propostas abertas do HubSpot (' + pr.length + ')</summary>' + pr.slice(0, 60).map(p => '<div style="padding:3px 0;border-bottom:1px solid var(--bd);">' + e(p.nome) + ' — ' + fmtBRLcompleto(p.valor) + ' × ' + p.probabilidade + '% = <b>' + fmtBRLcompleto(p.ponderado) + '</b> <span style="color:var(--t3);">em ' + nm(p.mes) + (p.atrasada ? ' · fechamento previsto já passou' : p.sem_data ? ' · sem data de fechamento' : '') + '</span></div>').join('') + '</details>' : '');
 }
 async function projAnaliseIA() {
   const c = _projCalc(); if (!c) return toast('Carregue a projeção primeiro', 'error');
