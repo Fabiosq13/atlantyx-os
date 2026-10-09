@@ -1,0 +1,44 @@
+# v3.133 — Robô de QA dos produtos da Atlantyx (caixa-preta: URL + usuário + senha de teste, sem código-fonte).
+# Fila: Atlantyx OS → S6 · QA de Produtos ("Testar agora" dispara este workflow; sem permissão de disparo,
+# a passagem a cada 30 min pega a fila). Toda madrugada (03:30 Brasília) enfileira os produtos marcados "rodar à noite".
+# Secret necessário (o mesmo do QA noturno): CRON_SECRET. Variável opcional: ATX_URL.
+name: QA de Produtos — robô de testes
+on:
+  schedule:
+    - cron: '30 6 * * *'
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+concurrency:
+  group: qa-externo
+  cancel-in-progress: false
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: Há produto na fila?
+        id: fila
+        env:
+          ATX_URL: ${{ vars.ATX_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          NOTURNO: ${{ github.event.schedule == '30 6 * * *' && '1' || '0' }}
+        run: |
+          URL="${ATX_URL:-https://atlantyx-os.vercel.app}"
+          if [ -z "$CRON_SECRET" ]; then echo "Falta o secret CRON_SECRET"; exit 1; fi
+          if [ "$NOTURNO" = "1" ]; then echo "rodar=1" >> "$GITHUB_OUTPUT"; exit 0; fi
+          R=$(curl -s -X POST "$URL/api/qa-externo" -H "Content-Type: application/json" -H "Authorization: Bearer $CRON_SECRET" -d '{"action":"robo_tem_fila"}')
+          if echo "$R" | grep -Eq '"fila":[1-9]'; then echo "rodar=1" >> "$GITHUB_OUTPUT"; else echo "Fila vazia"; echo "rodar=0" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/checkout@v4
+        if: steps.fila.outputs.rodar == '1'
+      - uses: actions/setup-node@v4
+        if: steps.fila.outputs.rodar == '1'
+        with:
+          node-version: 22
+      - if: steps.fila.outputs.rodar == '1'
+        run: npm i --no-save --no-audit --no-fund playwright@1.48.2 && npx playwright install --with-deps chromium
+      - if: steps.fila.outputs.rodar == '1'
+        run: node scripts/qa-externo.mjs
+        env:
+          ATX_URL: ${{ vars.ATX_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          QA_NOTURNO: ${{ github.event.schedule == '30 6 * * *' && '1' || '0' }}

@@ -155,6 +155,9 @@
     },
     "api/health.js": {
       "maxDuration": 60
+    },
+    "api/qa-externo.js": {
+      "maxDuration": 60
     }
   },
   "crons": [
