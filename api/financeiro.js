@@ -946,8 +946,9 @@ async function qbDiagnostico() {
 // Enviado VIA atlanteambr@gmail.com (SMTP do Gmail, mesma senha de app já usada
 // para ler as notas fiscais) para financeiro@atlanteam.com.br e contato@atlanteam.com.br
 // ═══════════════════════════════════════════════════════════════════════════
-const DEST_RELATORIO = (process.env.RELATORIO_PAGAMENTOS_PARA || 'financeiro@atlanteam.com.br,contato@atlanteam.com.br')
-  .split(',').map(s => s.trim()).filter(Boolean);
+// v3.130: financeiro, contato e o CTO (Julio) recebem sempre — mesmo que RELATORIO_PAGAMENTOS_PARA esteja definida no Vercel
+const DEST_RELATORIO = [...new Set([...(process.env.RELATORIO_PAGAMENTOS_PARA || '').split(','), 'financeiro@atlanteam.com.br', 'contato@atlanteam.com.br', 'julio.castro@atlanteam.com.br']
+  .map(s => s.trim().toLowerCase()).filter(Boolean))];
 
 async function pagamentosDoDiaEPendentes() {
   const sql = await getSql();
