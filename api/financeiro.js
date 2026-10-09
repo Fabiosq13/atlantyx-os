@@ -3303,7 +3303,17 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   if (qbExtraErro) fut.erro = (fut.erro ? fut.erro + ' | ' : '') + qbExtraErro;
   // v3.109: faturas/contas VENCIDAS e o que vence HOJE entram (antes a regra "data > hoje" escondia os dois — a seção
   // "Vencidos e não pagos" nunca aparecia). O que está em aberto mas FORA do período aparece na lista sem mexer no saldo.
-  const futTodos = [...fut.recebiveis, ...fut.pagaveis, ...despFuturas, ...simFuturos, ...qbLancFuturos, ...qbRecorrentes]
+  // Demanda dem_mv0x0jf8vqaw: o mesmo lançamento não pode entrar duas vezes na Tabela 2 (distorce o saldo acumulado).
+  // Chave natural = id da origem (+ tipo, para não fundir os dois lados de uma transferência); sem id, data+valor+tipo+descrição.
+  const _chaveFut = l => (l.id != null && l.id !== '' ? String(l.id) : `${String(l.data).substring(0, 10)}|${Math.abs(l.valor || 0).toFixed(2)}|${l.descricao || ''}`) + '|' + (l.tipo || '');
+  const _vistosFut = new Map(), duplicatasFut = [];
+  [...fut.recebiveis, ...fut.pagaveis, ...despFuturas, ...simFuturos, ...qbLancFuturos, ...qbRecorrentes].forEach(l => {
+    const k = _chaveFut(l);
+    if (_vistosFut.has(k)) duplicatasFut.push({ id: l.id ?? null, data: l.data, descricao: l.descricao, valor: l.valor, tipo: l.tipo, origem: l.origem, origem_mantida: _vistosFut.get(k).origem });
+    else _vistosFut.set(k, l);
+  });
+  if (duplicatasFut.length) console.warn('[FluxoDetalhado] lançamento(s) duplicado(s) removido(s) da projeção:', JSON.stringify(duplicatasFut.map(x => ({ id: x.id, data: x.data, valor: x.valor }))));
+  const futTodos = [..._vistosFut.values()]
     .filter(l => l.data && (l.data >= hoje || l.vencida))
     .sort((a, b) => (b.vencida ? 1 : 0) - (a.vencida ? 1 : 0) || (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
   let saldoCorrente = extrato.saldo_final || 0;
@@ -3414,7 +3424,8 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
       qtd_recebiveis_vencidos: fut.recebiveis.filter(r => r.vencida).length,
       qtd_pagaveis_vencidos: fut.pagaveis.filter(p => p.vencida).length,
       qb_erro: fut.erro, ate: ultimaData,
-      filtro_conta_nao_aplicavel: !!conta_id },
+      filtro_conta_nao_aplicavel: !!conta_id,
+      duplicatas_removidas: duplicatasFut },
     saldo_projetado_final: noSaldo.length ? noSaldo[noSaldo.length - 1].saldo_acumulado : (extrato.saldo_final || 0),
     menor_saldo_projetado: menorSaldo ? { valor: menorSaldo.saldo_acumulado, data: menorSaldo.data, descricao: menorSaldo.descricao } : null,
   };

@@ -21065,8 +21065,10 @@ function _fdMarcarRepetidos(lista) {
 }
 // v2.06: insere uma linha de separação a cada mudança de mês, com o subtotal do mês.
 // Sem isso, uma lista longa vira um bloco só e fica difícil achar onde agosto termina.
-function _fdComQuebraMes(lista, corSaldo) {
+function _fdComQuebraMes(lista, corSaldo, rotulo) {
   if (!lista.length) return '';
+  // dem_mv0x0jf8vqaw: o mesmo mês aparece em mais de uma seção da Tabela 2 (vencidos × no período) — o rótulo da seção evita linha repetida
+  const sufixo = rotulo ? ' · ' + rotulo : '';
   const MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
   let mesAtual = null, buffer = [], saida = [];
   const fecharMes = () => {
@@ -21079,7 +21081,7 @@ function _fdComQuebraMes(lista, corSaldo) {
       <td colspan="6" style="padding:6px 8px;border-top:2px solid var(--bd);border-bottom:1px solid var(--bd);">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;font-size:10px;">
           <span style="font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--t2);">
-            ${MESES[parseInt(mm,10)-1]} de ${aa} · ${buffer.length} lançamento(s)</span>
+            ${MESES[parseInt(mm,10)-1]} de ${aa}${sufixo} · ${buffer.length} lançamento(s)</span>
           <span style="font-family:var(--M);display:flex;gap:12px;">
             <span style="color:var(--green,#22d3a3);">+${fmtBRLcompleto(ent)}</span>
             <span style="color:var(--red);">−${fmtBRLcompleto(sai)}</span>
@@ -21097,7 +21099,7 @@ function _fdComQuebraMes(lista, corSaldo) {
       const [aa, mm] = mes.split('-');
       saida.push(`<tr><td colspan="6" style="padding:9px 8px 4px;border-top:2px solid var(--gold);">
         <span style="font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:1px;">
-          ▸ ${MESES[parseInt(mm,10)-1]} ${aa}</span></td></tr>`);
+          ▸ ${MESES[parseInt(mm,10)-1]} ${aa}${sufixo}</span></td></tr>`);
     }
     buffer.push(l);
     saida.push(_fdLinha(l, corSaldo));
@@ -21341,12 +21343,12 @@ function _fdRenderTabelas() {
     const vencidos = fut.filter(l => l.vencida);
     const noPer = fut.filter(l => !l.vencida && l.no_periodo !== false);
     const foraPer = fut.filter(l => !l.vencida && l.no_periodo === false);
-    const secao = (titulo, lista, cor, nota) => lista.length ? `<tr><td colspan="6" style="padding:7px 6px 4px;font-size:10px;color:${_corTxt(cor)};font-weight:600;border-top:1px solid var(--bd);">${titulo} · ${lista.length} lançamento(s) · <span style="color:var(--green,#22d3a3);">+${fmtBRLcompleto(lista.filter(x=>x.tipo==='entrada').reduce((a,x)=>a+x.valor,0))}</span> <span style="color:var(--red);">−${fmtBRLcompleto(lista.filter(x=>x.tipo==='saida').reduce((a,x)=>a+x.valor,0))}</span>${nota?` <span style="font-weight:400;color:var(--t3);">${nota}</span>`:''}</td></tr>`
-      + _fdComQuebraMes(lista, cor) : '';
+    const secao = (titulo, lista, cor, nota, rotulo) => lista.length ? `<tr><td colspan="6" style="padding:7px 6px 4px;font-size:10px;color:${_corTxt(cor)};font-weight:600;border-top:1px solid var(--bd);">${titulo} · ${lista.length} lançamento(s) · <span style="color:var(--green,#22d3a3);">+${fmtBRLcompleto(lista.filter(x=>x.tipo==='entrada').reduce((a,x)=>a+x.valor,0))}</span> <span style="color:var(--red);">−${fmtBRLcompleto(lista.filter(x=>x.tipo==='saida').reduce((a,x)=>a+x.valor,0))}</span>${nota?` <span style="font-weight:400;color:var(--t3);">${nota}</span>`:''}</td></tr>`
+      + _fdComQuebraMes(lista, cor, rotulo) : '';
     tbF.innerHTML = fut.length
-      ? secao('⚠ VENCIDOS E NÃO PAGOS', vencidos, 'var(--red)', '— cobrar primeiro')
-        + secao('NO PERÍODO CONSULTADO', noPer, 'var(--blue,#4f7cff)')
-        + secao('EM ABERTO, FORA DO PERÍODO', foraPer, 'var(--t3)', '— aparecem porque continuam a receber/pagar')
+      ? secao('⚠ VENCIDOS E NÃO PAGOS', vencidos, 'var(--red)', '— cobrar primeiro', 'vencidos')
+        + secao('NO PERÍODO CONSULTADO', noPer, 'var(--blue,#4f7cff)', '', 'no período')
+        + secao('EM ABERTO, FORA DO PERÍODO', foraPer, 'var(--t3)', '— aparecem porque continuam a receber/pagar', 'fora do período')
       : (busca ? semNada('Nenhum lançamento futuro com "' + busca.replace(/</g, '&lt;') + '" na descrição.')
         : semNada('Nenhum recebível/pagável futuro encontrado no QuickBooks' + (d.futuro.qb_erro ? ' · ⚠ ' + d.futuro.qb_erro : ' (sem faturas/contas em aberto, sem despesas programadas futuras e sem simulados futuros)') + '.'));
   }
@@ -21537,6 +21539,8 @@ async function carregarFluxoDetalhado() {
     _fdDados = d; _fdRenderTabelas(); // v3.59: tabelas renderizadas à parte, para o filtro por descrição
     if (cache) ['fd_tagPassado', 'fd_tagFuturo'].forEach(id => { const tg = document.getElementById(id); if (tg) { tg.textContent = '⚠ Dados de ' + _finFmtTs(cache.ts); tg.className = 'tag off'; } });
     const pas = d.passado.lancamentos || [], fut = d.futuro.lancamentos || [];
+    // dem_mv0x0jf8vqaw: duplicata removida da projeção pelo servidor → aviso no Log com data e ID, para rastrear a origem
+    (d.futuro.duplicatas_removidas || []).forEach(x => addLog('warn', '[Fluxo Detalhado] lançamento duplicado removido da projeção · data ' + (x.data || '?') + ' · ID ' + (x.id ?? 's/ id') + ' · ' + (x.descricao || '') + ' · ' + fmtBRLcompleto(x.valor) + ' (' + (x.origem || '?') + (x.origem_mantida && x.origem_mantida !== x.origem ? ' × ' + x.origem_mantida : '') + ')'));
 
     if (d.passado.qb_erro || d.futuro.qb_erro) { if (st) { st.style.display = 'block'; st.innerHTML = '<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:10px;font-size:11px;">⚠ QuickBooks: ' + (d.passado.qb_erro || d.futuro.qb_erro) + ' — <a style="color:var(--blue);cursor:pointer;" onclick="conectarQuickBooks()">reconectar</a></div>'; } }
     addLog('ok', '[Fluxo Detalhado] ' + pas.length + ' realizados + ' + fut.length + ' futuros · saldo hoje ' + fmtBRLcompleto(d.saldo_hoje) + ' → projetado ' + fmtBRLcompleto(d.saldo_projetado_final));
