@@ -27949,7 +27949,7 @@ function _fv2TabHtml(cab, linhas) { return '<table class="fv2-t"><thead><tr>' + 
 function fv2Montar() {
   const bar = document.getElementById('fv2Abas'); if (!bar) return;
   bar.innerHTML = FV2_ABAS.map(([k, t, q]) => '<button class="fv2-aba' + (k === _fv2Aba ? ' on' : '') + '" title="' + _fv2Esc(q) + '" onclick="fv2IrAba(\'' + k + '\')">' + _fv2Esc(t) + '</button>').join('')
-    + '<span style="flex:1;"></span><button class="fv2-aba fv2-acao" onclick="fv2ExportarCsv()" title="Exportar os indicadores desta tela para planilha (CSV)">⭳ Planilha</button><button class="fv2-aba fv2-acao" onclick="fv2Pdf()" title="Imprimir / salvar em PDF">⎙ PDF</button>';
+    + '<span style="flex:1;"></span><button class="fv2-aba fv2-acao" style="color:var(--fv2-brand);font-weight:700;" onclick="dreAbrir(window._dfPeriodoAtual || {}, _finMetodo())" title="DRE completa do período: grupo → conta → lançamento">📑 DRE</button><button class="fv2-aba fv2-acao" onclick="fv2ExportarCsv()" title="Exportar os indicadores desta tela para planilha (CSV)">⭳ Planilha</button><button class="fv2-aba fv2-acao" onclick="fv2Pdf()" title="Imprimir / salvar em PDF">⎙ PDF</button>';
   document.getElementById('dfLegado').style.display = _fv2Aba === 'completo' ? '' : 'none';
   document.getElementById('fv2App').style.display = _fv2Aba === 'completo' ? 'none' : '';
 }
@@ -31029,7 +31029,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.131] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.132] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -31045,7 +31045,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.131';
+window.__ATX_BUILD_ID__ = 'ATX-v3.132';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
