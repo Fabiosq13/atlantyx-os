@@ -60,7 +60,7 @@ for (let n = 0; n < 10; n++) {
   if (job.planos_rascunho) console.log(`  (${job.planos_rascunho} plano(s) de testes em rascunho — os casos só rodam depois de aprovados na Esteira de Entrega)`);
   _execAtual = job.execucao.id; _progEstado = { inicio: new Date().toISOString(), pct: 1, etapa: 'Abrindo o produto', achados: 0 }; progresso({}, true);
   try { R = await testarProduto(P, job.execucao.id, job.casos || []); }
-  catch (e) { console.error('Falha geral:', e.message); R = { erro: e.message, telas_descobertas: 0, telas_testadas: 0, cobertura_pct: 0, achados: [{ tipo: 'acesso', severidade: 'critica', titulo: 'O robô não conseguiu testar o produto', descricao: e.message, tela: P.url, url: P.url, chave: 'falha-geral' }] }; }
+  catch (e) { console.error('Falha geral:', e.message); R = { erro: e.message, telas_descobertas: 0, telas_testadas: 0, cobertura_pct: 0, achados: [{ tipo: 'acesso', severidade: 'critica', titulo: 'O robô não conseguiu testar o produto', descricao: e.message, tela: P.url, url: P.url, chave: 'falha-geral', print: e.print || null }] }; }
   _progEstado = { ..._progEstado, etapa: 'Gravando o resultado', pct: 99 }; await api('robo_progresso', { execucao_id: job.execucao.id, progresso: _progEstado }).catch(() => {});
   try { const r = await api('robo_resultado', { execucao_id: job.execucao.id, ...R }); console.log('Resultado gravado:', JSON.stringify(r)); } catch (e) { console.error('Não gravou o resultado:', e.message); }
   // resumo no painel da execução do GitHub (sem dados sensíveis)
@@ -403,18 +403,25 @@ async function login(pg, P, add) {
   if (!(await temCampoSenha(pg))) { if (P.usuario) add({ tipo: 'acesso', severidade: 'media', titulo: 'Tela de login não encontrada', descricao: 'O robô não achou um campo de senha na URL informada; seguiu sem login.', tela: 'Login', url: pg.url(), chave: 'sem-form-login' }); return; }
   if (!P.usuario) throw new Error('O produto pede login, mas o usuário de teste não está cadastrado.');
   if (!P.senha) throw new Error(P.senha_status === 'ilegivel' ? 'A senha de teste está guardada, mas não pôde ser lida (a chave de criptografia mudou) — digite a senha de novo no cadastro do produto.' : 'O produto pede login, mas a senha de teste não está cadastrada.');
-  const user = pg.locator('input[type=email]:visible, input[name*=user i]:visible, input[name*=login i]:visible, input[name*=email i]:visible, input[type=text]:visible').first();
-  await user.fill(P.usuario); await pg.locator('input[type=password]:visible').first().fill(P.senha);
+  const campos = await pg.evaluate(() => [...document.querySelectorAll('input,button,[role=button]')].filter(e => e.offsetParent).map(e => e.tagName === 'INPUT' ? `input[${e.type}${e.name ? ' name=' + e.name : ''}${e.placeholder ? ' "' + e.placeholder + '"' : ''}]` : `botão "${(e.innerText || e.getAttribute('aria-label') || '').trim().substring(0, 30)}"${e.type ? ' (' + e.type + ')' : ''}`).slice(0, 20).join(', ')).catch(() => '');
+  const user = pg.locator('input[type=email]:visible, input[name*=email i]:visible, input[autocomplete*=email i]:visible, input[name*=user i]:visible, input[name*=login i]:visible, input[placeholder*=mail i]:visible, input[type=text]:visible').first();
+  // digita como um usuário (alguns apps só habilitam o botão com eventos de teclado)
+  await user.click().catch(() => {}); await user.fill(''); await user.pressSequentially(P.usuario, { delay: 25 });
+  const ps = pg.locator('input[type=password]:visible').first(); await ps.click().catch(() => {}); await ps.fill(''); await ps.pressSequentially(P.senha, { delay: 25 });
+  const preenchido = await pg.evaluate(() => { const e = document.querySelector('input[type=email],input[name*=email i],input[type=text]'), p = document.querySelector('input[type=password]'); return { email: e ? (e.value || '').replace(/^(.).*(@.*)$/, '$1…$2') : '?', senha_chars: p ? (p.value || '').length : 0 }; }).catch(() => ({}));
   // v3.138: escolhe o botão de entrar EXATO (não "Entrar com Face ID", "Esqueci minha senha", "Criar conta"…)
   const exato = pg.locator('button:visible, [role=button]:visible, input[type=submit]:visible').filter({ hasText: /^\s*(entrar|login|log in|acessar|sign in|continuar|enviar)\s*$/i }).first();
   const submit = pg.locator('form button[type=submit]:visible, form input[type=submit]:visible').filter({ hasNotText: /face id|digital|biometria|google|microsoft|apple|esqueci|criar|cadastr/i }).first();
-  if (await exato.count()) await exato.click().catch(() => {}); else if (await submit.count()) await submit.click().catch(() => {}); else await pg.locator('input[type=password]:visible').first().press('Enter');
+  let clicado = 'Enter';
+  if (await exato.count()) { clicado = 'botão "' + (await exato.innerText().catch(() => '')).trim() + '"'; await exato.click().catch(() => {}); } else if (await submit.count()) { clicado = 'botão submit "' + (await submit.innerText().catch(() => '')).trim() + '"'; await submit.click().catch(() => {}); } else await pg.locator('input[type=password]:visible').first().press('Enter');
   // espera até 20 s o campo de senha sumir (login com Supabase/redirecionamento pode demorar)
   for (let i = 0; i < 20 && await temCampoSenha(pg); i++) await espera(1000);
   await pg.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {}); await espera(1500);
   if (await temCampoSenha(pg)) {
     const alerta = await pg.evaluate(() => [...document.querySelectorAll('[role=alert],[role=status],.toast,[class*=toast],[class*=error],[class*=destructive],[aria-live]')].map(e => e.innerText.trim()).filter(Boolean).join(' | ').substring(0, 300)).catch(() => '');
-    throw new Error('Login não concluído com o usuário de teste' + (alerta ? ' — mensagem do sistema: "' + alerta + '"' : ' — nenhuma mensagem de erro na tela (confira e-mail/senha ou se o login exige outra etapa)') + '.'); }
+    const e = new Error('Login não concluído com o usuário de teste' + (alerta ? ' — mensagem do sistema: "' + alerta + '"' : ' — nenhuma mensagem de erro na tela') + `. Diagnóstico: preenchido e-mail ${preenchido.email} e senha com ${preenchido.senha_chars} caractere(s); clicou ${clicado}; endereço depois: ${pg.url()}; elementos da tela: ${campos}.`);
+    try { e.print = 'data:image/jpeg;base64,' + (await pg.screenshot({ type: 'jpeg', quality: 50 })).toString('base64'); } catch (_) {}
+    throw e; }
 }
 async function textosClicaveis(pg, soNavegacao = false) {
   return pg.evaluate(sn => { const vis = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; };
