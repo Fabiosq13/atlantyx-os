@@ -229,6 +229,8 @@ async function handler(req, res) {
       resultado_kpis:        () => resultadoKpis(params), // v3.112: faturamento, lucro, margens e EBITDA (período + ano)
       metas_empresa_status:  () => metasEmpresaStatus(params), // v3.113: metas do ano (faturamento e % de lucro), falta, semáforo e CRM
       metas_empresa_salvar:  () => metasEmpresaSalvar(params),
+      metas_empresa_ler:     () => metasEmpresaLer(params),
+      metas_padrao_salvar:   () => metasPadraoSalvar(params), // v3.131: cadastro completo (Planejamento → Metas da Empresa)
 
       // ── Conciliação bancária ─────────────────────────────────────────────
       conc_sugestoes:        () => conciliacaoSugestoes(params),
@@ -4492,26 +4494,96 @@ function dreResumo(rep) {
 // o que existe no CRM (HubSpot) em aberto para cumprir. As metas ficam no mesmo registro do Dashboard LIVE (kv 'atx:metas').
 async function _kvMetas() { const sql = await getSql(); const r = await sql`SELECT value FROM kv_store WHERE key = 'atx:metas' LIMIT 1`;
   const v = r[0]?.value; return (typeof v === 'string' ? JSON.parse(v) : v) || {}; }
-async function metasEmpresaSalvar({ ano, faturamento, margem_pct } = {}) {
+// v3.131: METAS PADRÃO DA EMPRESA (definidas pelo CEO em 09/10/2026): crescimento do faturamento de 25% ao ano e margem
+// de lucro líquido de 35%. Valem para todo ano SEM cadastro próprio em Planejamento → Metas da Empresa:
+// faturamento = realizado do ano anterior (DRE do QuickBooks) × 1,25 · margem = 35%. Editáveis na mesma tela.
+const METAS_PADRAO = { crescimento_pct: 25, margem_pct: 35 };
+// metas definidas pelo CEO (09/10/2026) — entram no cadastro enquanto o ano não for salvo pela tela (que passa a valer)
+const METAS_DEFINIDAS = { '2027': { faturamento: 6500000, margem_pct: 35, crescimento_pct: 25, fonte: 'definida pelo CEO em 09/10/2026', atualizado_em: '2026-10-09T10:02:00.000Z' } };
+const _fatAnoCache = new Map();
+async function _faturamentoAno(a) {
+  const c = _fatAnoCache.get(a); if (c && Date.now() - c.em < 3600000) return c.v;
+  if (!qbConfigurado()) return null;
+  const token = await qbToken(); const hoje = _hojeBR();
+  const fim = String(a) === hoje.substring(0, 4) ? hoje : `${a}-12-31`;
+  const v = dreResumo(await qbPL(`${a}-01-01`, fim, token)).faturamento; _fatAnoCache.set(a, { em: Date.now(), v }); return v;
+}
+async function _metasComPadrao(anos = []) {
+  const m = await _kvMetas().catch(() => ({}));
+  const pad = { ...METAS_PADRAO, ...(m.padrao || {}) };
+  m.por_ano = { ...(m.por_ano || {}) }; m.padrao_efetivo = pad;
+  for (const a of [...new Set(anos.map(x => parseInt(x)).filter(Boolean))]) {
+    const k = String(a); if (!m.por_ano[k]?.faturamento && METAS_DEFINIDAS[k]) m.por_ano[k] = { ...METAS_DEFINIDAS[k] };
+    const cad = m.por_ano[k];
+    if (cad?.faturamento) { if (cad.margem_pct == null) cad.margem_pct = pad.margem_pct; continue; }
+    let base = null; try { base = await _faturamentoAno(a - 1); } catch (_) {}
+    // ano seguinte ao corrente sem realizado completo: cresce sobre a meta (cadastrada ou padrão) do ano anterior
+    if (!(base > 0) && m.por_ano[String(a - 1)]?.faturamento) base = m.por_ano[String(a - 1)].faturamento;
+    if (base > 0) m.por_ano[k] = { faturamento: round(base * (1 + pad.crescimento_pct / 100)), margem_pct: pad.margem_pct, crescimento_pct: pad.crescimento_pct,
+      fonte: `padrão da empresa: ${a - 1} × ${1 + pad.crescimento_pct / 100} (crescimento de ${pad.crescimento_pct}%) e margem de ${pad.margem_pct}%`, padrao: true };
+    else m.por_ano[k] = { faturamento: null, margem_pct: pad.margem_pct, crescimento_pct: pad.crescimento_pct, fonte: 'padrão da empresa (sem faturamento do ano anterior para aplicar o crescimento)', padrao: true };
+  }
+  return m;
+}
+async function metasPadraoSalvar({ crescimento_pct, margem_pct } = {}) {
+  const c = Number(crescimento_pct), mg = Number(margem_pct);
+  if (!isFinite(c) || c < -50 || c > 500) throw new Error('Crescimento (%) inválido'); if (!isFinite(mg) || mg < -100 || mg > 100) throw new Error('Margem (%) inválida');
+  const sql = await getSql(); const m = await _kvMetas(); m.padrao = { crescimento_pct: round(c, 1), margem_pct: round(mg, 1), atualizado_em: new Date().toISOString() };
+  await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('atx:metas', ${JSON.stringify(m)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
+  try { _resCache.clear(); } catch (_) {} return { padrao: m.padrao };
+}
+// v3.131: cadastro COMPLETO de metas por ano (tela Planejamento → Metas da Empresa): faturamento, margem líquida,
+// margem EBITDA, receita recorrente (ARR ÷ receita), receita por motor, caixa mínimo e distribuição mês a mês.
+// Mesmo registro (kv 'atx:metas') lido pelo Dashboard Financeiro, Dashboard LIVE, Metas do ano e Estratégia.
+async function metasEmpresaSalvar({ ano, faturamento, margem_pct, margem_ebitda_pct, recorrencia_pct, motores, mensal, caixa_minimo, fonte, observacao, crescimento_pct } = {}) {
   const a = String(parseInt(ano) || parseInt(_hojeBR()));
   const fat = Number(faturamento), mg = Number(margem_pct);
   if (!(fat > 0)) throw new Error('Informe a meta de faturamento do ano (maior que zero)');
   if (!isFinite(mg) || mg < -100 || mg > 100) throw new Error('Meta de lucro (%) inválida');
+  const opt = (v, mn, mx) => { if (v === '' || v == null) return null; const n = Number(v); if (!isFinite(n) || n < mn || n > mx) throw new Error('Valor de meta inválido: ' + v); return round(n, 1); };
   const sql = await getSql(); const m = await _kvMetas();
-  m.por_ano = { ...(m.por_ano || {}), [a]: { faturamento: round(fat), margem_pct: round(mg, 1), atualizado_em: new Date().toISOString() } };
+  let mens = null;
+  if (Array.isArray(mensal) && mensal.length === 12) { mens = mensal.map(v => round(Math.max(0, Number(v) || 0)));
+    const t = mens.reduce((x, y) => x + y, 0); if (t > 0 && Math.abs(t - fat) > Math.max(1, fat * 0.005)) mens = mens.map(v => round(v / t * fat)); } // a soma dos meses sempre fecha o ano
+  const mot = motores && typeof motores === 'object' ? Object.fromEntries(['pessoas', 'projetos', 'produtos'].map(k => [k, motores[k] === '' || motores[k] == null ? null : round(Number(motores[k]) || 0)])) : (m.por_ano?.[a]?.motores || null);
+  m.por_ano = { ...(m.por_ano || {}), [a]: { faturamento: round(fat), margem_pct: round(mg, 1), margem_ebitda_pct: opt(margem_ebitda_pct, -100, 100), recorrencia_pct: opt(recorrencia_pct, 0, 100),
+    crescimento_pct: crescimento_pct === '' || crescimento_pct == null ? null : round(Number(crescimento_pct) || 0, 1), motores: mot, mensal: mens, caixa_minimo: caixa_minimo === '' || caixa_minimo == null ? null : round(Number(caixa_minimo) || 0), fonte: fonte || 'manual', observacao: observacao || null, atualizado_em: new Date().toISOString() } };
   if (a === _hojeBR().substring(0, 4)) { m.anual = round(fat); m.mensal = round(fat / 12); m.margem_pct = round(mg, 1); } // mesma meta nas barras do Dashboard LIVE
   await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('atx:metas', ${JSON.stringify(m)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
   try { _resCache.clear(); } catch (_) {} // v3.123: metas novas aparecem já nos cartões do resultado
   return { metas: m.por_ano[a], ano: a };
 }
+// v3.131: leitura do cadastro + realizado mês a mês (QuickBooks) e sugestões (orçamento do QuickBooks e histórico)
+async function metasEmpresaLer({ ano, metodo } = {}) {
+  const a = parseInt(ano) || parseInt(_hojeBR()), m = await _metasComPadrao([a]), hoje = _hojeBR();
+  const cad = m.por_ano?.[String(a)] || null;
+  const out = { ano: a, metas: cad && !cad.padrao ? cad : null, meta_padrao: cad?.padrao ? cad : null, padrao: m.padrao_efetivo, todos_anos: m.por_ano || {}, realizado: null, sugestoes: {}, erros: [] };
+  const [rA, rP, orc] = await Promise.allSettled([
+    a <= parseInt(hoje) ? resultadoKpis({ data_inicio: `${a}-01-01`, data_fim: `${a}-12-31`, metodo }) : Promise.resolve(null),
+    resultadoKpis({ data_inicio: `${a - 1}-01-01`, data_fim: `${a - 1}-12-31`, metodo }),
+    Promise.race([orcamentoConsolidado({ ano: a }), new Promise((_, r) => setTimeout(() => r(new Error('orçamento não respondeu')), 9000))]),
+  ]);
+  const mesesDe = (R, ano) => { const mm = Array(12).fill(null); (R?.resultado?.mensal || []).forEach(x => { if (parseInt(x.mes) === ano) mm[parseInt(x.mes.substring(5, 7)) - 1] = { faturamento: x.faturamento, lucro: x.lucro_liquido, margem: x.margem_liquida_pct }; }); return mm; };
+  if (rA.status === 'fulfilled' && rA.value) out.realizado = { mensal: mesesDe(rA.value, a), ano: rA.value.resultado?.periodo_res || null };
+  else if (rA.status === 'rejected') out.erros.push('Realizado: ' + rA.reason?.message);
+  if (rP.status === 'fulfilled' && rP.value) { const P = rP.value.resultado?.periodo_res, mm = mesesDe(rP.value, a - 1);
+    out.ano_anterior = { faturamento: P?.faturamento ?? null, margem_pct: P?.margem_liquida_pct ?? null, margem_ebitda_pct: P?.margem_ebitda_pct ?? null, mensal: mm.map(x => x?.faturamento ?? null) };
+    const tot = mm.reduce((s, x) => s + (x?.faturamento || 0), 0); if (tot > 0) out.sugestoes.sazonalidade = mm.map(x => Math.round((x?.faturamento || 0) / tot * 10000) / 10000); }
+  if (orc.status === 'fulfilled' && orc.value) { const pt = orc.value.por_tipo || {}, mr = Array(12).fill(0), md = Array(12).fill(0);
+    Object.entries(pt.receita?.meses || {}).forEach(([k, v]) => { if (parseInt(k) === a) mr[parseInt(k.substring(5, 7)) - 1] += v.orcado || 0; });
+    Object.entries(pt.despesa?.meses || {}).forEach(([k, v]) => { if (parseInt(k) === a) md[parseInt(k.substring(5, 7)) - 1] += Math.abs(v.orcado || 0); });
+    const R = mr.reduce((x, y) => x + y, 0), D = md.reduce((x, y) => x + y, 0);
+    if (R > 0) out.sugestoes.orcamento = { nome: orc.value.budget_nome || 'Orçamento do QuickBooks', faturamento: round(R), margem_pct: Math.round((R - D) / R * 1000) / 10, mensal: mr.map(v => round(v)) }; }
+  return { metas_cadastro: out };
+}
 async function metasEmpresaStatus({ ano, com_crm = true, _forcar = false, metodo = null } = {}) {
   const hoje = _hojeBR(), anoAtual = parseInt(hoje), a = parseInt(ano) || anoAtual;
-  const m = await _kvMetas().catch(() => ({}));
+  const m = await _metasComPadrao([a]).catch(() => ({}));
   const def = m.por_ano?.[String(a)] || null;
-  const metaFat = def?.faturamento ?? (a === anoAtual && m.anual ? Number(m.anual) : null);
-  const metaMg = def?.margem_pct ?? (a === anoAtual && m.margem_pct != null ? Number(m.margem_pct) : null);
+  const metaFat = def?.faturamento ?? null;
+  const metaMg = def?.margem_pct ?? null;
   const out = { ano: a, situacao: a < anoAtual ? 'encerrado' : a === anoAtual ? 'em_curso' : 'futuro',
-    meta: { faturamento: metaFat, margem_pct: metaMg, definida: !!def || (a === anoAtual && !!m.anual) },
+    meta: { faturamento: metaFat, margem_pct: metaMg, definida: !!def?.faturamento, padrao: !!def?.padrao, fonte: def?.fonte || null },
     realizado: null, faturamento: null, margem: null, crm: null, erros: [] };
   // fração do ano decorrida (para o ritmo esperado)
   const ini = Date.UTC(a, 0, 1), fim = Date.UTC(a + 1, 0, 1), agora = Date.UTC(anoAtual, parseInt(hoje.substring(5, 7)) - 1, parseInt(hoje.substring(8, 10)) + 1);
@@ -4594,7 +4666,7 @@ async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, 
     comTempo(orcamentoConsolidado({ ano: parseInt(anoIni) }), 8000, 'orçamento não respondeu em 8s'),
     // v3.114: o mesmo período pelo regime de CAIXA — quanto de receita efetivamente entrou (recebimentos)
     futuro ? Promise.resolve(null) : qbPL(ini, fim, token, '', outro), // v3.124: o mesmo período no OUTRO regime (comparação)
-    _kvMetas().catch(() => ({})),
+    _metasComPadrao([parseInt(anoIni), parseInt(ini), parseInt(fimPedido)]).catch(() => ({})),
   ]);
   const vazio = dreResumo({});
   if (doAno && pA.status === 'fulfilled' && pA.value) {
@@ -4614,7 +4686,7 @@ async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, 
   // Meta de margem: 1º a meta de lucro definida em "Metas do ano"; 2º a margem orçada do período no Orçamento Anual; senão 20%
   out.meta_margem = { pct: 20, fonte: 'meta padrão (defina em Metas do ano)' };
   const mUser = mt.status === 'fulfilled' ? mt.value?.por_ano?.[anoIni.substring(0, 4)]?.margem_pct : null;
-  if (mUser != null) out.meta_margem = { pct: Number(mUser), fonte: 'meta de lucro de ' + anoIni.substring(0, 4) + ' (Metas do ano)' };
+  if (mUser != null) out.meta_margem = { pct: Number(mUser), fonte: 'meta de lucro de ' + anoIni.substring(0, 4) + (mt.value?.por_ano?.[anoIni.substring(0, 4)]?.padrao ? ' (padrão da empresa)' : ' (Metas da Empresa)') };
   else if (orc.status === 'fulfilled') {
     const pt = orc.value?.por_tipo || {}, mi = ini.substring(0, 7), mf = (futuro ? fimPedido : fim).substring(0, 7);
     const soma = t => Object.entries(pt[t]?.meses || {}).filter(([k]) => k >= mi && k <= mf).reduce((a, [, v]) => a + (v.orcado || 0), 0);
@@ -4638,7 +4710,11 @@ async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, 
     const Ro = round(somaO('receita')), Do = round(Math.abs(somaO('despesa'))), nomeOrc = 'Orçamento ' + (orc.value?.budget_nome || 'QuickBooks');
     const M = { meses: nMeses, faturamento: null, gastos: null, lucro: null, margem_pct: null, fonte: {} };
     if (mUserAno?.faturamento) {
-      M.faturamento = round(mUserAno.faturamento / 12 * nMeses); M.fonte.faturamento = `Metas do ano ${aRef}: ${fmtBR(mUserAno.faturamento)} ÷ 12 × ${nMeses} ${nMeses === 1 ? 'mês' : 'meses'}`;
+      if (Array.isArray(mUserAno.mensal) && mUserAno.mensal.length === 12 && parseInt(pFim) === parseInt(aRef)) { // v3.131: distribuição mês a mês do cadastro
+        const i0 = parseInt(ini.substring(5, 7)) - 1, i1 = parseInt(pFim.substring(5, 7)) - 1; M.faturamento = round(mUserAno.mensal.slice(i0, i1 + 1).reduce((x, y) => x + (y || 0), 0));
+        M.fonte.faturamento = `Metas da Empresa ${aRef} — meta mês a mês (${nMeses} ${nMeses === 1 ? 'mês' : 'meses'})`;
+      } else { M.faturamento = round(mUserAno.faturamento / 12 * nMeses); M.fonte.faturamento = `${mUserAno.padrao ? 'Meta padrão da empresa (' + (mUserAno.crescimento_pct ?? 25) + '% sobre o ano anterior)' : 'Metas da Empresa'} ${aRef}: ${fmtBR(mUserAno.faturamento)} ÷ 12 × ${nMeses} ${nMeses === 1 ? 'mês' : 'meses'}`; }
+      if (mUserAno.margem_ebitda_pct != null) { M.margem_ebitda_pct = mUserAno.margem_ebitda_pct; M.ebitda = round(M.faturamento * mUserAno.margem_ebitda_pct / 100); M.fonte.ebitda = `Metas da Empresa ${aRef} (margem EBITDA ${mUserAno.margem_ebitda_pct}%)`; }
       if (mUserAno.margem_pct != null) { M.margem_pct = Number(mUserAno.margem_pct); M.lucro = round(M.faturamento * M.margem_pct / 100); M.fonte.lucro = `faturamento meta × ${M.margem_pct}% (meta de lucro)`; M.fonte.margem = `Metas do ano ${aRef}`; }
     } else if (Ro > 0) { M.faturamento = Ro; M.fonte.faturamento = `${nomeOrc} — receita orçada nos meses do período`; }
     if (Do > 0) { M.gastos = Do; M.fonte.gastos = `${nomeOrc} — despesa orçada nos meses do período`; }
@@ -7580,9 +7656,16 @@ async function _fv2Executiva({ P, met, cfg, L, token, base }) {
   const tend = k => serieM.slice(-7).map(s => ({ mes: s.mes, v: s[k] }));
   const kpis = [];
   // 1 receita e crescimento
-  const metaRec = (() => { const mi = _fv2Mes(P.ini), mf = _fv2Mes(P.fimPedido); let t = 0, achou = false; for (const [k, v] of Object.entries(orcMes)) if (k >= mi && k <= mf) { t += v; achou = true; } return achou && t > 0 ? round(t) : null; })();
+  // v3.131: meta de receita — 1º Metas da Empresa (mês a mês ou anual ÷ 12), 2º Orçamento do QuickBooks
+  let MT = {}; try { MT = (await _metasComPadrao([parseInt(m13), parseInt(P.ini), parseInt(P.fimPedido)])).por_ano || {}; } catch (_) {}
+  const metaCad = (() => { let t = 0, ok = false; let m = _fv2Mes(P.ini); const mf = _fv2Mes(P.fimPedido);
+    while (m <= mf) { const y = MT[m.substring(0, 4)]; if (y?.faturamento) { ok = true; t += Array.isArray(y.mensal) && y.mensal.length === 12 ? (y.mensal[parseInt(m.substring(5, 7)) - 1] || 0) : y.faturamento / 12; } m = _fv2AddMes(m, 1); }
+    return ok ? round(t) : null; })();
+  serieM.forEach(s => { const y = MT[s.mes.substring(0, 4)]; if (y?.faturamento) s.meta = round(Array.isArray(y.mensal) && y.mensal.length === 12 ? y.mensal[parseInt(s.mes.substring(5, 7)) - 1] : y.faturamento / 12); });
+  const metaRec = metaCad ?? (() => { const mi = _fv2Mes(P.ini), mf = _fv2Mes(P.fimPedido); let t = 0, achou = false; for (const [k, v] of Object.entries(orcMes)) if (k >= mi && k <= mf) { t += v; achou = true; } return achou && t > 0 ? round(t) : null; })();
+  const metaAno = MT[P.ini.substring(0, 4)] || {};
   const recFrac = P.parcial ? (Math.round((Date.parse(P.fim) - Date.parse(P.ini)) / 864e5) + 1) / (Math.round((Date.parse(P.fimPedido) - Date.parse(P.ini)) / 864e5) + 1) : 1;
-  kpis.push(_fv2Kpi({ id: 'receita', titulo: 'Receita', valor: A?.faturamento, fmt: 'brl', meta: metaRec != null ? { valor: metaRec, texto: 'orçado no período', esperado_ate_hoje: P.parcial ? round(metaRec * recFrac) : null } : null,
+  kpis.push(_fv2Kpi({ id: 'receita', titulo: 'Receita', valor: A?.faturamento, fmt: 'brl', meta: metaRec != null ? { valor: metaRec, texto: fmtBR(metaRec) + (metaCad != null ? (MT[P.ini.substring(0, 4)]?.padrao ? ' (meta padrão: +25% a.a.)' : ' (Metas da Empresa)') : ' (orçado no período)'), esperado_ate_hoje: P.parcial ? round(metaRec * recFrac) : null } : null,
     anterior: { valor: B?.faturamento, var_pct: _fv2Var(A?.faturamento, B?.faturamento), rotulo: P.parcial ? 'mesmo trecho do período anterior' : 'período anterior' },
     yoy: { valor: Y?.faturamento, var_pct: _fv2Var(A?.faturamento, Y?.faturamento) }, tendencia: tend('receita'),
     semaforo: metaRec ? _fv2Sem(_fv2Var(A?.faturamento, metaRec * recFrac), L.orcado_receita) : 'cinza', drill: { tipo: 'dre' }, formula: 'Receita do período (grupo Receita da DRE) vs. período anterior (MoM) e mesmo período do ano anterior (YoY)' }));
@@ -7592,7 +7675,8 @@ async function _fv2Executiva({ P, met, cfg, L, token, base }) {
     yoy: { valor: Y?.margem_bruta_pct }, tendencia: tend('margem_bruta_pct'), drill: { tipo: 'dre' }, formula: '(Receita − custo direto/COGS) ÷ Receita',
     nota: !(A?.custos > 0) ? 'Não há custo direto (COGS) separado no QuickBooks — margem bruta = 100%. Classifique o custo dos serviços em contas de Custo para medir de verdade.' : null }));
   // 3 margem EBITDA
-  kpis.push(_fv2Kpi({ id: 'margem_ebitda', titulo: 'Margem EBITDA', valor: A?.margem_ebitda_pct, fmt: 'pct', valor2: A?.ebitda, meta: null,
+  kpis.push(_fv2Kpi({ id: 'margem_ebitda', titulo: 'Margem EBITDA', valor: A?.margem_ebitda_pct, fmt: 'pct', valor2: A?.ebitda, meta: metaAno.margem_ebitda_pct != null ? { valor: metaAno.margem_ebitda_pct, texto: metaAno.margem_ebitda_pct + '% (Metas da Empresa)' } : null,
+    semaforo: metaAno.margem_ebitda_pct != null && A?.margem_ebitda_pct != null ? (A.margem_ebitda_pct >= metaAno.margem_ebitda_pct ? 'verde' : A.margem_ebitda_pct >= metaAno.margem_ebitda_pct - 5 ? 'amarelo' : 'vermelho') : 'cinza',
     anterior: { valor: B?.margem_ebitda_pct, var_pp: A && B && A.margem_ebitda_pct != null && B.margem_ebitda_pct != null ? Math.round((A.margem_ebitda_pct - B.margem_ebitda_pct) * 10) / 10 : null },
     yoy: { valor: Y?.margem_ebitda_pct }, tendencia: tend('margem_ebitda_pct'), drill: { tipo: 'dre' }, formula: 'EBITDA ÷ Receita · EBITDA = lucro líquido + depreciação + juros + IR/CSLL − receitas financeiras' }));
   // 4 caixa e runway
@@ -7627,8 +7711,9 @@ async function _fv2Executiva({ P, met, cfg, L, token, base }) {
   // 9 recorrência (ARR ÷ receita) vs meta 30%
   const ult12 = serieM.filter(s => s.mes < _fv2Mes(P.hoje)).slice(-12), rec12 = ult12.reduce((a, s) => a + s.receita, 0), ultM = ult12[ult12.length - 1];
   const arr = ultM ? round(ultM.produtos * 12) : null, recPct = rec12 > 0 && arr != null ? Math.round(arr / rec12 * 1000) / 10 : null;
-  kpis.push(_fv2Kpi({ id: 'recorrencia', titulo: 'Receita recorrente (ARR ÷ receita)', valor: recPct, fmt: 'pct', meta: { valor: L.recorrencia_meta_2027, texto: L.recorrencia_meta_2027 + '% até o fim de 2027 · ' + L.recorrencia_meta_2031 + '% até 2031' },
-    extra: { arr, receita_12m: round(rec12), mes_base: ultM?.mes }, semaforo: recPct == null ? 'cinza' : recPct >= L.recorrencia_meta_2027 ? 'verde' : recPct >= L.recorrencia_meta_2027 / 2 ? 'amarelo' : 'vermelho',
+  const metaRecor = metaAno.recorrencia_pct ?? L.recorrencia_meta_2027;
+  kpis.push(_fv2Kpi({ id: 'recorrencia', titulo: 'Receita recorrente (ARR ÷ receita)', valor: recPct, fmt: 'pct', meta: { valor: metaRecor, texto: metaAno.recorrencia_pct != null ? metaRecor + '% em ' + P.ini.substring(0, 4) + ' (Metas da Empresa) · ' + L.recorrencia_meta_2027 + '% até 2027' : L.recorrencia_meta_2027 + '% até o fim de 2027 · ' + L.recorrencia_meta_2031 + '% até 2031' },
+    extra: { arr, receita_12m: round(rec12), mes_base: ultM?.mes }, semaforo: recPct == null ? 'cinza' : recPct >= metaRecor ? 'verde' : recPct >= metaRecor / 2 ? 'amarelo' : 'vermelho',
     tendencia: serieM.slice(-7).map(s => ({ mes: s.mes, v: s.receita > 0 ? Math.round(s.produtos / s.receita * 1000) / 10 : null })), drill: { tipo: 'tela', tela: 'produtos' },
     formula: 'ARR (receita de produtos do último mês fechado × 12) ÷ receita dos últimos 12 meses fechados' }));
   // margem por motor no período (decisão: onde alocar foco)
