@@ -29,6 +29,10 @@
       "destination": "/api/media-upload?f=:file"
     },
     {
+      "source": "/qa/:t",
+      "destination": "/api/fabrica?action=painel_cliente&t=:t"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/:path*"
     },
@@ -158,6 +162,9 @@
     },
     "api/qa-externo.js": {
       "maxDuration": 60
+    },
+    "api/fabrica.js": {
+      "maxDuration": 300
     }
   },
   "crons": [

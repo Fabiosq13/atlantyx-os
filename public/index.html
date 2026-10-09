@@ -532,6 +532,46 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 .mc-f small{font-weight:400;color:var(--t3);font-size:9.5px;}
 .mc-calc{font-size:15px;font-weight:700;color:var(--t1);padding:6px 0;}
 .mc-sug{display:flex;gap:6px;flex-wrap:wrap;}
+.fb-sel{background:var(--bg3);border:1px solid var(--bd2);color:var(--t1);border-radius:7px;padding:6px 8px;font:600 11.5px Montserrat,sans-serif;max-width:280px;}
+.fb-vazio{text-align:center;padding:40px 20px;color:var(--t2);font-size:12px;display:flex;flex-direction:column;gap:10px;align-items:center;font-family:Montserrat,sans-serif;}
+.fb-ks{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-bottom:12px;}
+.fb-k{background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:11px 13px;} .fb-k .v{font-size:20px;font-weight:700;color:var(--t1);} .fb-k .l{font-size:10.5px;color:var(--t3);}
+.fb-etapas{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-bottom:12px;}
+.fb-et{background:var(--bg2);border:1px solid var(--bd);border-radius:9px;padding:9px 11px;font-size:11px;display:flex;flex-direction:column;gap:5px;}
+.fb-et.ok{border-color:color-mix(in srgb,var(--fv2-ok) 45%,transparent);background:color-mix(in srgb,var(--fv2-ok) 6%,var(--bg2));} .fb-et.at{border-color:var(--fv2-brand);box-shadow:0 0 0 1px var(--fv2-brand) inset;}
+.fb-eth{font-weight:700;color:var(--t1);} .fb-eth b{color:var(--fv2-brand);} .fb-etd{color:var(--t3);font-size:10px;} .fb-et details{font-size:10px;color:var(--t2);} .fb-et ul{margin:4px 0 0 16px;padding:0;} .fb-et .btn{font-size:10px;padding:3px 9px;align-self:flex-start;}
+.fb-etok{font-size:10px;color:var(--fv2-ok);} .fb-etok a{color:var(--t3);}
+.fb-g3{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-top:4px;}
+.fb-gate{border:1px solid var(--bd);border-radius:9px;padding:9px 11px;background:var(--bg2);font-size:11px;} .fb-gate.ok{border-color:color-mix(in srgb,var(--fv2-ok) 45%,transparent);} .fb-gate.pend{border-color:color-mix(in srgb,var(--fv2-crit) 35%,transparent);}
+.fb-gh{font-weight:700;color:var(--t1);display:flex;justify-content:space-between;gap:6px;margin-bottom:4px;} .fb-gh span{font-size:10px;color:var(--t3);font-weight:600;}
+.fb-gc{padding:4px 0;border-top:1px dashed var(--bd);} .fb-gc small{display:block;color:var(--t3);margin-left:15px;font-size:10px;} .fb-gate .fb-gc b{margin-right:2px;}
+.fb-docs{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px;}
+.fb-doc{background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:12px 13px;display:flex;flex-direction:column;gap:8px;}
+.fb-dh{display:flex;gap:10px;align-items:flex-start;} .fb-di{font-size:22px;line-height:1;} .fb-dm{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+.fb-chip{font-size:10px;font-weight:700;color:var(--c);border:1px solid var(--c);border-radius:10px;padding:1px 8px;}
+.fb-da{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto;} .fb-da .btn{font-size:10.5px;padding:4px 10px;}
+.fb-ger{font-size:10.5px;color:var(--fv2-brand);display:flex;gap:6px;align-items:center;}
+.fb-spin{width:12px;height:12px;border:2px solid color-mix(in srgb,var(--fv2-brand) 30%,transparent);border-top-color:var(--fv2-brand);border-radius:50%;animation:fbgira .8s linear infinite;display:inline-block;} @keyframes fbgira{to{transform:rotate(360deg);}}
+.fb-tipos{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11px;margin-bottom:10px;}
+.fb-form,.fb-form2{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px 12px;margin-bottom:8px;font-size:11px;}
+.fb-form label,.fb-form2 label,.fb-lbl{display:flex;flex-direction:column;gap:3px;color:var(--t2);font-size:10.5px;} .fb-w{grid-column:1/-1;}
+.fb-form input,.fb-form select,.fb-form textarea,.fb-form2 input,.fb-lbl textarea{background:var(--bg3);border:1px solid var(--bd2);color:var(--t1);border-radius:6px;padding:6px 8px;font:12px Montserrat,sans-serif;}
+.fb-chk{flex-direction:row!important;align-items:center;gap:6px!important;}
+.fb-md{font-size:12px;line-height:1.5;color:var(--t1);} .fb-md h2{font-size:16px;margin:14px 0 6px;} .fb-md h3{font-size:14px;margin:12px 0 5px;} .fb-md h4,.fb-md h5{font-size:12.5px;margin:10px 0 4px;color:var(--fv2-brand);} .fb-md p{margin:4px 0;}
+.fb-ta{width:100%;min-height:60vh;background:var(--bg3);border:1px solid var(--bd2);color:var(--t1);border-radius:8px;padding:10px;font:12px var(--M),monospace;box-sizing:border-box;}
+.fb-tb{width:100%;border-collapse:collapse;font-size:11px;margin:6px 0;} .fb-tb th{background:var(--bg4);text-align:left;padding:6px 7px;font-weight:700;color:var(--t1);} .fb-tb td{padding:6px 7px;border-bottom:1px solid var(--bd);vertical-align:top;}
+.fb-casos tr:not(:first-child){cursor:pointer;} .fb-casos tr:not(:first-child):hover td{background:var(--bg3);}
+.fb-li{font-size:11.5px;padding:1px 0 1px 8px;}
+.fb-board{display:grid;grid-template-columns:repeat(8,minmax(165px,1fr));gap:8px;overflow-x:auto;padding-bottom:6px;}
+.fb-col{min-height:220px;} .fb-col.fb-drop{outline:2px dashed var(--fv2-brand);} .fb-c-aprovado_qa .qp-colh,.fb-c-entregue .qp-colh{color:var(--fv2-ok);} .fb-c-qa .qp-colh{color:var(--fv2-brand);}
+.fb-card{padding:8px 9px;} .fb-cc{display:flex;justify-content:space-between;align-items:center;font-size:10.5px;margin-bottom:3px;}
+.fb-pr{font-size:9.5px;font-weight:700;color:var(--c);border:1px solid var(--c);border-radius:9px;padding:0 6px;}
+.fb-filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;} .fb-filtros select{background:var(--bg3);border:1px solid var(--bd2);color:var(--t1);border-radius:6px;padding:5px 8px;font:11px Montserrat,sans-serif;}
+.fb-sug{display:flex;gap:8px;align-items:flex-start;border:1px solid var(--bd);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:11.5px;background:var(--bg3);}
+.fb-robos{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-bottom:12px;}
+.fb-robo{background:var(--bg2);border:1px solid var(--bd);border-left:3px solid var(--fv2-brand);border-radius:9px;padding:10px 12px;display:flex;flex-direction:column;gap:4px;} .fb-rr{font-size:11px;color:var(--t1);margin-top:4px;}
+.fb-ifr{width:100%;height:78vh;border:1px solid var(--bd);border-radius:10px;background:#fff;}
+@media (max-width:760px){.fb-board{grid-template-columns:repeat(8,minmax(150px,78vw));}.fb-docs{grid-template-columns:1fr;}.fb-sel{max-width:100%;flex:1;}}
 .qp-board{display:grid;grid-template-columns:repeat(6,minmax(170px,1fr));gap:10px;overflow-x:auto;padding-bottom:6px;}
 .qp-col{background:var(--bg3);border:1px solid var(--bd);border-radius:10px;padding:8px;min-height:160px;}
 .qp-colh{font:700 11px Montserrat,sans-serif;text-transform:uppercase;letter-spacing:.4px;color:var(--t2);padding:4px 4px 8px;display:flex;justify-content:space-between;}
@@ -747,7 +787,8 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     <div class="sg-body closed" id="gDev">
       <div class="sbi s2" onclick="nav('s6pipeline',this)">&#128203; Linha de Producao <span class="nbx gn">IA</span></div>
       <div class="sbi s2" onclick="nav('s6qa',this)">&#129514; Agente de QA <span class="nbx gd">testa telas</span></div>
-      <div class="sbi s2" onclick="nav('s6qaprod',this)">&#129302; QA de Produtos <span class="nbx gn">novo</span></div>
+      <div class="sbi s2" onclick="nav('s6fabrica',this)">&#127981; Esteira de Entrega <span class="nbx gn">novo</span></div>
+      <div class="sbi s2" onclick="nav('s6qaprod',this)">&#129302; QA de Produtos <span class="nbx gd">robôs</span></div>
       <div class="sbi s2" onclick="nav('s6dev',this)">&#9670; Versoes + Release Notes <span class="nbx gn">IA</span></div>
       <div class="sbi s2" onclick="nav('s6dev',this)">&#10003; Checklist QA</div>
     </div>
@@ -4216,6 +4257,17 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 </div>
 
 <!-- v1.69: AGENTE DE QA VISUAL -->
+<!-- v3.134: ESTEIRA DE ENTREGA (FÁBRICA) — metodologia Atlantyx: documentos com IA (Word), Kanban da fábrica, plano de testes, robôs e painel do cliente -->
+<div class="page" id="page-s6fabrica">
+  <div style="background:linear-gradient(135deg,rgba(0,196,204,.13),rgba(0,196,204,.03));border:1px solid rgba(0,196,204,.3);border-radius:10px;padding:14px 18px;margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <div style="flex:1;min-width:260px;"><div style="font-family:Montserrat,var(--H);font-size:15px;font-weight:700;">&#127981; Esteira de Entrega (Fábrica)</div>
+    <div style="font-size:10.5px;color:var(--t2);margin-top:2px;">Metodologia Atlantyx: ERF importada → ERT gerada pela IA no padrão do cliente → Plano de Projeto → Kanban da Fábrica → Plano de Testes com IA → robôs de QA seguindo o plano → painel de qualidade para o cliente. Documentos em Word.</div></div>
+    <select id="fbProj" class="fb-sel" onchange="fbSelecionar(this.value)"></select>
+    <button class="btn btn-g" onclick="fbProjetoForm(_fb.pid)">&#9998; Projeto</button><button class="btn btn-gn" onclick="fbProjetoForm()">+ Novo projeto</button>
+  </div>
+  <div class="fv2-abas" id="fbAbas" role="tablist"></div>
+  <div id="fbApp" class="fv2-app"><div class="fv2-load">Carregando…</div></div>
+</div>
 <!-- v3.133: QA DE PRODUTOS — robô de testes caixa-preta dos produtos da Atlantyx + Kanban de QA -->
 <div class="page" id="page-s6qaprod">
   <div style="background:linear-gradient(135deg,rgba(0,196,204,.13),rgba(0,196,204,.03));border:1px solid rgba(0,196,204,.3);border-radius:10px;padding:14px 18px;margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
@@ -6007,7 +6059,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   } catch (_) {}
 });
-function nav(p,el){try{document.body.classList.remove('sb-aberto');}catch(_){}document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s0usuarios:'/ Acesso · Usuários × Perfil',s0perfis:'/ Acesso · Perfis',s0telas:'/ Acesso · Telas',s0perfiltelas:'/ Acesso · Perfil × Telas',s0demandas:'/ S0 · Esteira de Demandas IA',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9agenda:'/ S9 · Agenda do GP',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1bp:'/ S1 · Business Plan',qa:'/ Agente de QA e Segurança',s1fundador:'/ S1 · Inbox do Fundador',s1comercial:'/ S1 · Politica Comercial',s1okr:'/ S1 · OKRs',s1metas:'/ S1 · Planejamento · Metas da Empresa',s6qaprod:'/ S6 · QA de Produtos',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7clientes:'/ S7 · Clientes do CRM',s7mapa:'/ S7 · Mapa de Atuacao Comercial',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7feed:'/ S7 · Feed de Prospeccao',s7cartao:'/ S7 · Meu Cartao Digital',s7kpi:'/ S7 Metas',s7painel:'/ S7 · Painel de Vendas IA',s7propostas:'/ S7 · Elaboração de Propostas',s5contratos:'/ S5 · Análise de Contratos',s3kpis:'/ S3 · KPIs de Saúde Financeira',s4crm:'/ S4 · Vendas CRM — Metas e Pipeline',s5juridico:'/ S5 · Jurídico e Compliance',s6dev:'/ S6 · Desenvolvimento, QA e Versões',s6qa:'/ S6 · Agente de QA Visual',s8rh:'/ S8 · Departamento Pessoal',s9projetos:'/ S9 · Gestão de Projetos',s10atend:'/ S10 · Atendimento Omnichannel',s11sales:'/ S11 · Inside Sales + SDR',s12hub:'/ S12 · Engenharia de Dados',s12novo:'/ S12 · Novo Projeto de Dados',s12modelagem:'/ S12 · Modelagem DW + Data Marts',s13hub:'/ S13 · Dashboard Studio',s13novo:'/ S13 · Novo Dashboard',s13mockup:'/ S13 · Mockup Interativo',s13codigo:'/ S13 · Código do Dashboard'};document.getElementById('tbc').textContent=lb[p]||(pg?'/ '+((pg.querySelector('[style*="font-family:var(--H)"]')||pg.querySelector('.pt')||{}).textContent||'').trim().substring(0,60):'');if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7pipe'||p==='dash')loadKPIs();if(p==='dash')setTimeout(_dashRfpCache,200);if(p==='dash')setTimeout(()=>{try{carregarResultadoLive();}catch(_){}},180);if(p==='dash')setTimeout(()=>{try{carregarMetasEmpresa();}catch(_){}},260);if(p==='dash')setTimeout(()=>{try{carregarSemanaFoco();}catch(_){}},350);if(p==='dash')setTimeout(()=>{try{carregarMarcosAlertaDash();}catch(_){}},300);if(p==='dash')setTimeout(()=>{try{carregarReceitaRiscoDash();}catch(_){}},250);if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7clientes')setTimeout(carregarClientes,150);if(p==='s1comercial')setTimeout(comCarregar,150);if(p==='s7kpi')setTimeout(carregarSemaforoComercial,150);if(p==='s7feed')setTimeout(feedListar,150);if(p==='s7cartao')setTimeout(cartaoCarregar,150);if(p==='s7meet')setTimeout(carregarBriefings,150);if(p==='s7mapa')setTimeout(_mpPopularClientes,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();/* v3.94: s2wa não chama mais o agente ao abrir (10s+); só no clique em "Gerar mensagens" */if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s2social')setTimeout(_smCarregarMetricas,150);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(carregarRealizado,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s1metas')setTimeout(metasCadastroCarregar,120);if(p==='s6qaprod')setTimeout(qpCarregar,120);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9agenda')setTimeout(carregarAgendaGP,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{carregarRealizado();}catch(_){}},150);if(p==='s3projetado')setTimeout(()=>{try{gerarProjetado();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);if(p==='s1bp'){setTimeout(bpInit,150);if(_bpAba==='atlantyx')setTimeout(()=>{_bpAtxCarregado=_bpAtxCarregado&&!!_bpAtual;bpAtlantyx();},200);}if(p==='qa')setTimeout(qaAbrir,50);if(p==='s0demandas')setTimeout(demandasAbrir,50);if(/^s0(usuarios|perfis|telas|perfiltelas)$/.test(p))setTimeout(()=>acessoAbrir(p),30);if(p==='s7painel'||p==='s7propostas')setTimeout(()=>vendasAbrir(p),50);if(p==='s2auto')setTimeout(_acCtaInit,80);if(p==='s5contratos')setTimeout(juridicoAbrir,50);if(p==='s1dados')setTimeout(s1DadosStatus,80);if(/^s1(dash|intel|plano|acoes|cenarios|okr|relatorio|riscos|financeiro|mercado|dados)$/.test(p))setTimeout(s1HistBotoes,60);if(p==='s2rfps'){window._rfpSoCache=true;setTimeout(runRfpMonitorAtualizado,150);}}
+function nav(p,el){try{document.body.classList.remove('sb-aberto');}catch(_){}document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s0usuarios:'/ Acesso · Usuários × Perfil',s0perfis:'/ Acesso · Perfis',s0telas:'/ Acesso · Telas',s0perfiltelas:'/ Acesso · Perfil × Telas',s0demandas:'/ S0 · Esteira de Demandas IA',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9agenda:'/ S9 · Agenda do GP',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1bp:'/ S1 · Business Plan',qa:'/ Agente de QA e Segurança',s1fundador:'/ S1 · Inbox do Fundador',s1comercial:'/ S1 · Politica Comercial',s1okr:'/ S1 · OKRs',s1metas:'/ S1 · Planejamento · Metas da Empresa',s6qaprod:'/ S6 · QA de Produtos',s6fabrica:'/ S6 · Esteira de Entrega (Fábrica)',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7clientes:'/ S7 · Clientes do CRM',s7mapa:'/ S7 · Mapa de Atuacao Comercial',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7feed:'/ S7 · Feed de Prospeccao',s7cartao:'/ S7 · Meu Cartao Digital',s7kpi:'/ S7 Metas',s7painel:'/ S7 · Painel de Vendas IA',s7propostas:'/ S7 · Elaboração de Propostas',s5contratos:'/ S5 · Análise de Contratos',s3kpis:'/ S3 · KPIs de Saúde Financeira',s4crm:'/ S4 · Vendas CRM — Metas e Pipeline',s5juridico:'/ S5 · Jurídico e Compliance',s6dev:'/ S6 · Desenvolvimento, QA e Versões',s6qa:'/ S6 · Agente de QA Visual',s8rh:'/ S8 · Departamento Pessoal',s9projetos:'/ S9 · Gestão de Projetos',s10atend:'/ S10 · Atendimento Omnichannel',s11sales:'/ S11 · Inside Sales + SDR',s12hub:'/ S12 · Engenharia de Dados',s12novo:'/ S12 · Novo Projeto de Dados',s12modelagem:'/ S12 · Modelagem DW + Data Marts',s13hub:'/ S13 · Dashboard Studio',s13novo:'/ S13 · Novo Dashboard',s13mockup:'/ S13 · Mockup Interativo',s13codigo:'/ S13 · Código do Dashboard'};document.getElementById('tbc').textContent=lb[p]||(pg?'/ '+((pg.querySelector('[style*="font-family:var(--H)"]')||pg.querySelector('.pt')||{}).textContent||'').trim().substring(0,60):'');if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7pipe'||p==='dash')loadKPIs();if(p==='dash')setTimeout(_dashRfpCache,200);if(p==='dash')setTimeout(()=>{try{carregarResultadoLive();}catch(_){}},180);if(p==='dash')setTimeout(()=>{try{carregarMetasEmpresa();}catch(_){}},260);if(p==='dash')setTimeout(()=>{try{carregarSemanaFoco();}catch(_){}},350);if(p==='dash')setTimeout(()=>{try{carregarMarcosAlertaDash();}catch(_){}},300);if(p==='dash')setTimeout(()=>{try{carregarReceitaRiscoDash();}catch(_){}},250);if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7clientes')setTimeout(carregarClientes,150);if(p==='s1comercial')setTimeout(comCarregar,150);if(p==='s7kpi')setTimeout(carregarSemaforoComercial,150);if(p==='s7feed')setTimeout(feedListar,150);if(p==='s7cartao')setTimeout(cartaoCarregar,150);if(p==='s7meet')setTimeout(carregarBriefings,150);if(p==='s7mapa')setTimeout(_mpPopularClientes,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();/* v3.94: s2wa não chama mais o agente ao abrir (10s+); só no clique em "Gerar mensagens" */if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s2social')setTimeout(_smCarregarMetricas,150);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(carregarRealizado,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s1metas')setTimeout(metasCadastroCarregar,120);if(p==='s6qaprod')setTimeout(qpCarregar,120);if(p==='s6fabrica')setTimeout(fbCarregar,120);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9agenda')setTimeout(carregarAgendaGP,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{carregarRealizado();}catch(_){}},150);if(p==='s3projetado')setTimeout(()=>{try{gerarProjetado();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);if(p==='s1bp'){setTimeout(bpInit,150);if(_bpAba==='atlantyx')setTimeout(()=>{_bpAtxCarregado=_bpAtxCarregado&&!!_bpAtual;bpAtlantyx();},200);}if(p==='qa')setTimeout(qaAbrir,50);if(p==='s0demandas')setTimeout(demandasAbrir,50);if(/^s0(usuarios|perfis|telas|perfiltelas)$/.test(p))setTimeout(()=>acessoAbrir(p),30);if(p==='s7painel'||p==='s7propostas')setTimeout(()=>vendasAbrir(p),50);if(p==='s2auto')setTimeout(_acCtaInit,80);if(p==='s5contratos')setTimeout(juridicoAbrir,50);if(p==='s1dados')setTimeout(s1DadosStatus,80);if(/^s1(dash|intel|plano|acoes|cenarios|okr|relatorio|riscos|financeiro|mercado|dados)$/.test(p))setTimeout(s1HistBotoes,60);if(p==='s2rfps'){window._rfpSoCache=true;setTimeout(runRfpMonitorAtualizado,150);}}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -28282,12 +28334,315 @@ async function metasCadastroSalvar() {
   } catch (e) { toast('Não salvou: ' + e.message, 'error'); if (b) { b.disabled = false; b.textContent = '💾 Salvar metas de ' + _mcAno; } }
 }
 
+// ═══ v3.134: S6 · ESTEIRA DE ENTREGA (FÁBRICA) — Metodologia Atlantyx v4: gates G1–G12, ERF → ERT (IA, no padrão do cliente),
+// Plano de Projeto, Plano de Testes com IA (Word), Kanban da Fábrica, robôs de QA seguindo o plano e painel do cliente ═══
+let _fb = { lista: null, pid: null, aba: 'visao', proj: null, docs: null, itens: null, casos: null, painel: null, gerando: {}, filtroTipo: '', filtroSt: '' };
+const _fbEsc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const FB_ABAS = [['visao', 'Visão e gates'], ['docs', 'Documentos'], ['kanban', 'Kanban da Fábrica'], ['casos', 'Plano de Testes'], ['robos', 'Robôs de QA'], ['painel', 'Painel do cliente']];
+const FB_DOC_ORDEM = ['erf', 'modelo_ert', 'ert', 'plano_projeto', 'plano_testes', 'relatorio_qualidade'];
+const FB_DOC_INFO = {
+  erf: { icone: '📥', como: 'Importada (Word/PDF) — especificação conceitual do parceiro de processos ou do cliente.', importa: true },
+  modelo_ert: { icone: '📐', como: 'Importado — modelo/padrão de ERT do cliente. A IA escreve a ERT com os mesmos títulos e ordem.', importa: true },
+  ert: { icone: '🧠', como: 'Gerada pela IA lendo a ERF no padrão do cliente + análise de consistência, ambiguidades e rastreabilidade.', gera: true, importa: true },
+  plano_projeto: { icone: '🗓', como: 'Gerado pela IA: 12 etapas, gates G1–G12, cronograma, RACI, riscos e governança.', gera: true, importa: true },
+  plano_testes: { icone: '🧪', como: 'Gerado pela IA a partir dos critérios de aceite: casos com passos, dados fictícios e resultado esperado.', gera: true },
+  relatorio_qualidade: { icone: '📊', como: 'Montado com os resultados dos robôs e dos testes + parecer executivo da IA.', gera: true },
+};
+const FB_ST = { nao_executado: ['Não executado', 'var(--t3)'], passou: ['Aprovado', 'var(--fv2-ok)'], falhou: ['Reprovado', 'var(--fv2-crit)'], bloqueado: ['Bloqueado', 'var(--fv2-warn)'] };
+const FB_PR = { alta: 'var(--fv2-crit)', media: 'var(--fv2-warn)', baixa: 'var(--t3)' };
+async function fbApi(action, body = {}) {
+  const r = await fetch('/api/fabrica', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(typeof authHeaders === 'function' ? authHeaders() : {}) }, body: JSON.stringify({ action, ...body }) });
+  const d = await r.json().catch(() => ({})); if (!r.ok || !d.success) throw new Error(d.error || ('HTTP ' + r.status)); return d;
+}
+function _fbBox() { return document.getElementById('fbApp'); }
+async function fbCarregar(manterAba) {
+  const box = _fbBox(); if (!box) return;
+  try { _fb.lista = await fbApi('projetos'); } catch (e) { box.innerHTML = '<div class="fv2-erro">Não consegui carregar: ' + _fbEsc(e.message) + '</div>'; return; }
+  const P = _fb.lista.projetos;
+  if (!_fb.pid || !P.some(p => p.id === _fb.pid)) _fb.pid = P[0]?.id || null;
+  const sel = document.getElementById('fbProj');
+  if (sel) sel.innerHTML = P.length ? P.map(p => '<option value="' + p.id + '"' + (p.id === _fb.pid ? ' selected' : '') + '>' + _fbEsc(p.nome) + (p.cliente ? ' · ' + _fbEsc(p.cliente) : '') + '</option>').join('') : '<option value="">— nenhum projeto —</option>';
+  if (!manterAba) _fb.aba = _fb.aba || 'visao';
+  _fbAbas(); fbIrAba(_fb.aba);
+}
+function fbSelecionar(id) { _fb.pid = id; _fb.docs = _fb.itens = _fb.casos = _fb.painel = null; fbIrAba(_fb.aba); }
+function _fbAbas() { const a = document.getElementById('fbAbas'); if (a) a.innerHTML = FB_ABAS.map(([k, t]) => '<button class="fv2-aba' + (k === _fb.aba ? ' on' : '') + '" role="tab" onclick="fbIrAba(\'' + k + '\')">' + t + '</button>').join(''); }
+function _fbProj() { return (_fb.lista?.projetos || []).find(p => p.id === _fb.pid) || null; }
+async function fbIrAba(k) {
+  _fb.aba = k; _fbAbas(); const box = _fbBox(); if (!box) return;
+  if (!_fb.pid) { box.innerHTML = '<div class="fb-vazio"><div style="font-size:28px;">🏭</div><b>Nenhum projeto na esteira ainda.</b><div>Cadastre o projeto, importe a especificação conceitual (ERF) e o modelo de ERT do cliente — a IA gera a ERT, o plano de projeto, o backlog da fábrica e o plano de testes.</div><button class="btn btn-gn" onclick="fbProjetoForm()">+ Novo projeto</button></div>'; return; }
+  box.innerHTML = '<div class="fv2-load">Carregando…</div>';
+  try {
+    if (k === 'visao') { _fb.painel = await fbApi('painel', { projeto_id: _fb.pid }); _fbVisao(); }
+    else if (k === 'docs') { const r = await fbApi('projeto_obter', { id: _fb.pid }); _fb.proj = r.projeto; _fb.docs = r.documentos; _fbDocs(); }
+    else if (k === 'kanban') { const r = await fbApi('itens', { projeto_id: _fb.pid }); _fb.itens = r.itens; _fbKanban(); }
+    else if (k === 'casos') { const [r, i] = await Promise.all([fbApi('casos', { projeto_id: _fb.pid }), fbApi('itens', { projeto_id: _fb.pid })]); _fb.casos = r; _fb.itens = i.itens; _fbCasos(); }
+    else if (k === 'robos') { _fb.painel = await fbApi('painel', { projeto_id: _fb.pid }); _fbRobos(); }
+    else if (k === 'painel') { _fb.painel = await fbApi('painel', { projeto_id: _fb.pid }); _fbPainelCli(); }
+  } catch (e) { box.innerHTML = '<div class="fv2-erro">' + _fbEsc(e.message) + '</div>'; }
+}
+// ── visão e gates ──
+function _fbChecks(g, titulo) { return '<div class="fb-gate ' + (g.aprovavel ? 'ok' : 'pend') + '"><div class="fb-gh">' + titulo + '<span>' + (g.aprovavel ? '✔ critérios atendidos' : 'pendências') + '</span></div>' + g.criterios.map(c => '<div class="fb-gc"><b style="color:' + (c.ok ? 'var(--fv2-ok)' : 'var(--fv2-crit)') + '">' + (c.ok ? '✔' : '✖') + '</b> ' + _fbEsc(c.nome) + '<small>' + _fbEsc(c.detalhe) + '</small></div>').join('') + '</div>'; }
+function _fbVisao() {
+  const D = _fb.painel, P = D.projeto, E = _fb.lista.etapas, c = D.casos.total;
+  const k = (v, l, cor) => '<div class="fb-k"><div class="v" style="' + (cor ? 'color:' + cor : '') + '">' + v + '</div><div class="l">' + l + '</div></div>';
+  _fbBox().innerHTML = '<div class="fb-ks">' + k('Etapa ' + P.etapa + '/12', _fbEsc(E[P.etapa - 1]?.nome || '')) + k(c.total, 'casos no plano · ' + c.passou + ' aprovados') + k(D.defeitos.abertos, 'defeitos em aberto', D.defeitos.abertos ? 'var(--fv2-crit)' : 'var(--fv2-ok)') + k(D.itens.total, 'itens na fábrica · ' + (D.itens.por_coluna.find(x => x.coluna === 'entregue')?.n || 0) + ' entregues') + k(D.requisitos.cobertos + '/' + D.requisitos.total, 'requisitos com casos de teste') + '</div>'
+    + '<div class="fb-etapas">' + E.map(e => { const g = P.gates?.[e.gate]; const at = e.n === P.etapa && !g;
+      return '<div class="fb-et ' + (g ? 'ok' : at ? 'at' : '') + '"><div class="fb-eth"><b>' + e.gate + '</b> ' + e.n + '. ' + _fbEsc(e.nome) + '</div><div class="fb-etd">📄 ' + _fbEsc(e.doc) + '<br>✍ ' + _fbEsc(e.aprova) + '</div>'
+        + '<details><summary>Critérios de aprovação</summary><ul>' + e.criterios.map(x => '<li>' + _fbEsc(x) + '</li>').join('') + '</ul></details>'
+        + (g ? '<div class="fb-etok">✔ Aprovado por ' + _fbEsc(g.por) + ' em ' + new Date(g.em).toLocaleDateString('pt-BR') + (g.obs ? ' — ' + _fbEsc(g.obs) : '') + ' <a href="#" onclick="event.preventDefault();fbGate(\'' + e.gate + '\',true)">reabrir</a></div>' : '<button class="btn btn-g" onclick="fbGate(\'' + e.gate + '\')">Aprovar ' + e.gate + '</button>') + '</div>'; }).join('') + '</div>'
+    + '<div class="fb-g3">' + _fbChecks(D.g6, 'G6 · Construção (calculado)') + _fbChecks(D.g7, 'G7 · Qualidade e testes (calculado)') + _fbChecks(D.g8, 'G8 · Segurança e desempenho (calculado)') + '</div>';
+}
+async function fbGate(gate, reabrir) {
+  let por = null, obs = null;
+  if (!reabrir) { por = prompt('Quem aprovou o ' + gate + '? (nome / área do cliente)'); if (!por) return; obs = prompt('Observação (opcional):') || null; }
+  else if (!confirm('Reabrir o ' + gate + '?')) return;
+  try { await fbApi('gate_aprovar', { projeto_id: _fb.pid, gate, aprovado_por: por, observacao: obs, reabrir: !!reabrir }); toast(reabrir ? gate + ' reaberto' : gate + ' aprovado', 'success'); await fbCarregar(true); }
+  catch (e) { toast(e.message, 'error'); }
+}
+// ── documentos ──
+function _fbDocs() {
+  const L = _fb.docs || [], meta = _fb.lista.docs;
+  _fbBox().innerHTML = '<div class="fv2-cab"><span>Fluxo: <b>ERF</b> (importada) + <b>modelo de ERT do cliente</b> → <b>ERT</b> gerada pela IA → <b>Plano de Projeto</b> → <b>Plano de Testes</b> → robôs → <b>Relatório de Qualidade</b>. Tudo editável, versionado, aprovado e exportado em Word.</span><button class="btn btn-gn" onclick="fbPacote()">📦 Pacote para a Fábrica (Word)</button></div>'
+    + '<div class="fb-docs">' + FB_DOC_ORDEM.map(t => { const d = L.find(x => x.tipo === t), I = FB_DOC_INFO[t], ger = _fb.gerando[t];
+      const st = !d ? '<span class="fb-chip" style="--c:var(--t3)">não existe</span>' : d.status === 'aprovado' ? '<span class="fb-chip" style="--c:var(--fv2-ok)">✔ aprovado v' + d.versao + '</span>' : '<span class="fb-chip" style="--c:var(--fv2-warn)">rascunho v' + d.versao + '</span>';
+      return '<div class="fb-doc"><div class="fb-dh"><span class="fb-di">' + I.icone + '</span><div><div class="fv2-pt">' + _fbEsc(meta[t].nome) + '</div><div class="fv2-pq">Etapa ' + meta[t].etapa + ' · ' + _fbEsc(I.como) + '</div></div></div>'
+        + '<div class="fb-dm">' + st + (d ? ' <span class="fv2-pq">' + (d.origem === 'importado' ? 'importado' + (d.arquivo_nome ? ' de ' + _fbEsc(d.arquivo_nome) : '') : d.origem === 'ia' ? 'gerado pela IA' : d.origem === 'sistema' ? 'atualizado pelo sistema' : 'editado') + ' · ' + new Date(d.atualizado_em).toLocaleString('pt-BR').substring(0, 16) + (d.aprovado_por ? ' · aprovado por ' + _fbEsc(d.aprovado_por) : '') + '</span>' : '') + '</div>'
+        + (ger ? '<div class="fb-ger"><span class="fb-spin"></span> ' + _fbEsc(ger) + '</div>' : '')
+        + '<div class="fb-da">' + (I.importa ? '<label class="btn btn-g">⭱ Importar<input type="file" accept=".docx,.pdf,.txt,.md,.xlsx" style="display:none" onchange="fbImportar(\'' + t + '\',this)"></label>' : '')
+        + (I.gera ? '<button class="btn btn-g" ' + (ger ? 'disabled' : '') + ' onclick="fbGerarForm(\'' + t + '\')">✨ ' + (d ? 'Gerar de novo' : 'Gerar com IA') + '</button>' : '')
+        + (d ? '<button class="btn btn-g" onclick="fbDocAbrir(\'' + t + '\')">👁 Ver / editar</button><button class="btn btn-g" onclick="fbWord(\'' + t + '\')">⭳ Word</button>'
+          + (d.status === 'aprovado' ? '<button class="btn btn-g" onclick="fbDocAprovar(\'' + t + '\',true)">Reabrir</button>' : '<button class="btn btn-gn" onclick="fbDocAprovar(\'' + t + '\')">✔ Aprovar</button>') : '')
+        + (t === 'plano_testes' && d ? '<button class="btn btn-g" onclick="fbGerar(\'plano_testes\',{so_atualizar:true})" title="Reescreve as seções de casos e rastreabilidade com a situação atual, sem chamar a IA">↻ Atualizar casos no documento</button>' : '') + '</div></div>'; }).join('') + '</div>';
+}
+async function fbImportar(tipo, inp) {
+  const f = inp.files[0]; if (!f) return; if (f.size > 15 * 1024 * 1024) return toast('Arquivo acima de 15 MB', 'error');
+  const base64 = await new Promise((ok, err) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = err; r.readAsDataURL(f); });
+  _fb.gerando[tipo] = 'Lendo ' + f.name + '…'; _fbDocs();
+  try { const r = await fbApi('doc_importar', { projeto_id: _fb.pid, tipo, nome: f.name, base64 }); toast('Importado: ' + r.secoes + ' seção(ões), ' + r.caracteres.toLocaleString('pt-BR') + ' caracteres', 'success'); }
+  catch (e) { toast(e.message, 'error'); }
+  delete _fb.gerando[tipo]; fbIrAba('docs');
+}
+function _fbModal(html, largura) {
+  let ov = document.getElementById('fbModal'); if (ov) ov.remove();
+  ov = document.createElement('div'); ov.id = 'fbModal'; ov.className = 'qp-ov'; ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = '<div class="qp-mod" style="' + (largura ? 'width:min(' + largura + 'px,100%)' : '') + '">' + html + '</div>'; document.body.appendChild(ov); return ov;
+}
+const _fbFechar = () => document.getElementById('fbModal')?.remove();
+function fbGerarForm(tipo) {
+  const nome = _fb.lista.docs[tipo].nome, T = _fb.lista.tipos_caso;
+  _fbModal('<div class="qp-mh"><div class="fv2-pt">✨ Gerar com IA — ' + _fbEsc(nome) + '</div><button class="btn btn-g" onclick="_fbFechar()">Fechar ✕</button></div>'
+    + (tipo === 'plano_testes' ? '<div class="fv2-pq" style="margin-bottom:6px;">Tipos de teste a gerar (cada tipo é executado pelo robô correspondente):</div><div class="fb-tipos">' + Object.entries(T).map(([k, t]) => '<label><input type="checkbox" class="fbTipo" value="' + k + '" checked> ' + _fbEsc(t.nome) + '</label>').join('') + '</div>'
+      + '<div class="fb-form2"><label>Quantidade máxima de casos<input id="fbQtd" type="number" min="5" max="80" value="45"></label><label class="fb-chk"><input id="fbSubst" type="checkbox" checked> Substituir casos gerados pela IA que ainda não foram executados</label></div>' : '')
+    + (tipo === 'plano_projeto' ? '<div class="fb-form2"><label>Início previsto<input id="fbInicio" type="date" value="' + new Date(Date.now() + 7 * 864e5).toISOString().substring(0, 10) + '"></label></div>' : '')
+    + '<label class="fb-lbl">Instruções para a IA (opcional)<textarea id="fbInstr" rows="4" placeholder="' + (tipo === 'ert' ? 'Ex.: a solução roda na Azure do cliente; integração com SAP via API REST; usar Databricks para a camada de dados…' : tipo === 'plano_testes' ? 'Ex.: priorize o fluxo de aprovação; inclua limites de valores; o perfil Analista não pode aprovar…' : 'Ex.: equipe de 4 pessoas; homologação em março; fábrica trabalha em sprints de 2 semanas…') + '"></textarea></label>'
+    + '<div class="fv2-pq" style="margin:6px 0 10px;">A IA pode levar de 1 a 4 minutos. O documento gerado fica em <b>rascunho</b> até um especialista revisar e aprovar.</div>'
+    + '<button class="btn btn-gn" onclick="fbGerarEnviar(\'' + tipo + '\')">Gerar</button>', 720);
+}
+function fbGerarEnviar(tipo) {
+  const extra = { instrucoes: document.getElementById('fbInstr')?.value || '' };
+  if (tipo === 'plano_testes') { extra.tipos = [...document.querySelectorAll('.fbTipo:checked')].map(x => x.value); extra.quantidade = +document.getElementById('fbQtd').value || 45; extra.substituir = document.getElementById('fbSubst').checked; if (!extra.tipos.length) return toast('Escolha ao menos um tipo', 'error'); }
+  if (tipo === 'plano_projeto') extra.inicio = document.getElementById('fbInicio').value;
+  _fbFechar(); fbGerar(tipo, extra);
+}
+async function fbGerar(tipo, extra = {}) {
+  _fb.gerando[tipo] = extra.so_atualizar ? 'Atualizando…' : 'A IA está escrevendo — pode levar até 4 minutos…'; if (_fb.aba === 'docs') _fbDocs();
+  try { const r = await fbApi('doc_gerar', { projeto_id: _fb.pid, tipo, ...extra }); toast((_fb.lista.docs[tipo]?.nome || 'Documento') + ' pronto (v' + r.versao + ')' + (r.casos_gerados != null ? ' · ' + r.casos_gerados + ' casos de teste' : ''), 'success'); }
+  catch (e) { toast(e.message, 'error'); }
+  delete _fb.gerando[tipo]; if (_fb.aba === 'docs') fbIrAba('docs'); else if (_fb.aba === 'casos') fbIrAba('casos');
+}
+async function fbDocAprovar(tipo, reabrir) {
+  let por = null; if (!reabrir) { por = prompt('Aprovado por (nome do especialista / área):'); if (!por) return; }
+  try { await fbApi('doc_aprovar', { projeto_id: _fb.pid, tipo, aprovado_por: por, reabrir: !!reabrir }); toast(reabrir ? 'Documento reaberto' : 'Documento aprovado' + (tipo === 'plano_testes' ? ' — os robôs passam a executar os casos' : ''), 'success'); fbIrAba(_fb.aba); }
+  catch (e) { toast(e.message, 'error'); }
+}
+function _fbMd(md) { // visualização simples (títulos, listas, tabelas, negrito)
+  const inl = t => _fbEsc(t).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+  const L = String(md || '').split('\n'); let h = '', i = 0;
+  while (i < L.length) { const l = L[i];
+    if (/^\s*\|/.test(l)) { const rows = []; while (i < L.length && /^\s*\|/.test(L[i])) { if (!/^[\s|:-]+$/.test(L[i])) rows.push(L[i].trim().replace(/^\||\|$/g, '').split('|')); i++; }
+      h += '<div class="fv2-tabwrap"><table class="fb-tb">' + rows.map((r, k) => '<tr>' + r.map(c => k ? '<td>' + inl(c.trim()).replace(/&lt;br&gt;/g, '<br>') + '</td>' : '<th>' + inl(c.trim()) + '</th>').join('') + '</tr>').join('') + '</table></div>'; continue; }
+    const m = l.match(/^(#{1,4})\s+(.*)/); if (m) h += '<h' + (m[1].length + 1) + '>' + inl(m[2]) + '</h' + (m[1].length + 1) + '>';
+    else if (/^\s*[-*]\s/.test(l)) h += '<div class="fb-li">• ' + inl(l.replace(/^\s*[-*]\s/, '')) + '</div>';
+    else if (/^\s*\d+[.)]\s/.test(l)) h += '<div class="fb-li">' + inl(l.trim()) + '</div>';
+    else if (/<!--\s*quebra/.test(l)) h += '<hr>';
+    else if (l.trim()) h += '<p>' + inl(l.replace(/^>\s?/, '')) + '</p>';
+    i++; }
+  return h;
+}
+async function fbDocAbrir(tipo) {
+  const ov = _fbModal('<div class="fv2-load">Carregando…</div>', 1100);
+  try { const { documento: d } = await fbApi('doc_obter', { projeto_id: _fb.pid, tipo }); window._fbDocAtual = d;
+    ov.querySelector('.qp-mod').innerHTML = '<div class="qp-mh"><div><div class="fv2-pt">' + _fbEsc(_fb.lista.docs[tipo].nome) + ' — v' + d.versao + '</div><div class="fv2-pq">' + (d.status === 'aprovado' ? 'Aprovado — salvar uma edição cria nova versão em rascunho' : 'Rascunho') + '</div></div>'
+      + '<div class="mc-sug"><button class="btn btn-g" id="fbDocModo" onclick="fbDocModo()">✎ Editar</button><button class="btn btn-g" onclick="fbWord(\'' + tipo + '\')">⭳ Word</button><button class="btn btn-g" onclick="_fbFechar()">Fechar ✕</button></div></div>'
+      + '<div id="fbDocVer" class="fb-md">' + _fbMd(d.conteudo_md) + '</div>'
+      + '<div id="fbDocEd" style="display:none;"><textarea id="fbDocTxt" class="fb-ta">' + _fbEsc(d.conteudo_md) + '</textarea><div class="fv2-pq" style="margin:4px 0 8px;">Markdown: # títulos, - listas, | tabelas |, **negrito**. Linha &lt;!-- quebra --&gt; = quebra de página no Word.</div><button class="btn btn-gn" onclick="fbDocSalvar(\'' + tipo + '\')">Salvar nova versão</button></div>'; }
+  catch (e) { ov.querySelector('.qp-mod').innerHTML = '<div class="fv2-erro">' + _fbEsc(e.message) + '</div>'; }
+}
+function fbDocModo() { const v = document.getElementById('fbDocVer'), e = document.getElementById('fbDocEd'), ed = e.style.display === 'none'; e.style.display = ed ? '' : 'none'; v.style.display = ed ? 'none' : ''; if (!ed) v.innerHTML = _fbMd(document.getElementById('fbDocTxt').value); document.getElementById('fbDocModo').textContent = ed ? '👁 Visualizar' : '✎ Editar'; }
+async function fbDocSalvar(tipo) {
+  try { const r = await fbApi('doc_salvar', { projeto_id: _fb.pid, tipo, conteudo_md: document.getElementById('fbDocTxt').value }); toast('Salvo — versão ' + r.versao, 'success'); _fbFechar(); fbIrAba(_fb.aba); }
+  catch (e) { toast(e.message, 'error'); }
+}
+function _fbBaixar(r) { const bin = atob(r.base64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([u], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })); a.download = r.nome; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500); }
+async function fbWord(tipo) { try { toast('Gerando Word…'); _fbBaixar(await fbApi('doc_word', { projeto_id: _fb.pid, tipo })); } catch (e) { toast(e.message, 'error'); } }
+async function fbPacote() { try { toast('Montando o pacote para a fábrica…'); _fbBaixar(await fbApi('pacote_word', { projeto_id: _fb.pid })); } catch (e) { toast(e.message, 'error'); } }
+// ── Kanban da fábrica ──
+function _fbKanban() {
+  const I = _fb.itens || [], C = _fb.lista.colunas, h = I.reduce((s, i) => s + (+i.estimativa_h || 0), 0);
+  _fbBox().innerHTML = '<div class="fv2-cab"><span>' + I.length + ' item(ns) · ' + h.toLocaleString('pt-BR') + ' h estimadas · arraste os cartões entre as colunas. Item em <b>Em QA</b> com todos os casos aprovados pelos robôs vai sozinho para <b>Aprovado no QA</b>; caso reprovado devolve para desenvolvimento.</span>'
+    + '<span class="mc-sug"><button class="btn btn-g" onclick="fbItensGerar()" ' + (_fb.gerando.itens ? 'disabled' : '') + '>✨ ' + (_fb.gerando.itens ? 'Gerando…' : 'Gerar backlog com IA') + '</button><button class="btn btn-g" onclick="fbItemForm()">+ Item</button><button class="btn btn-g" onclick="fbWord(\'backlog\')">⭳ Backlog em Word</button></span></div>'
+    + '<div class="fb-board">' + C.map(([k, n]) => { const L = I.filter(i => i.coluna === k);
+      return '<div class="qp-col fb-col fb-c-' + k + '" ondragover="event.preventDefault();this.classList.add(\'fb-drop\')" ondragleave="this.classList.remove(\'fb-drop\')" ondrop="fbSoltar(event,\'' + k + '\',this)"><div class="qp-colh">' + n + ' <span>' + L.length + '</span></div>'
+        + (L.length ? L.map(i => { const c = i.casos || {};
+          return '<div class="qp-card fb-card" draggable="true" ondragstart="event.dataTransfer.setData(\'text/plain\',\'' + i.id + '\')" onclick="fbItemForm(\'' + i.id + '\')"><div class="fb-cc"><b>' + _fbEsc(i.codigo) + '</b><span class="fb-pr" style="--c:' + (FB_PR[i.prioridade] || 'var(--t3)') + '">' + _fbEsc(i.prioridade) + '</span></div><div class="qp-cn" style="font-size:11.5px;">' + _fbEsc(i.titulo) + '</div>'
+            + '<div class="qp-cm">' + (i.requisito_ref ? _fbEsc(i.requisito_ref) + ' · ' : '') + (i.estimativa_h != null ? i.estimativa_h + ' h' : '') + (i.responsavel ? ' · ' + _fbEsc(i.responsavel) : '') + '</div>'
+            + ((c.passou || c.falhou || c.nao_executado || c.bloqueado) ? '<div class="qp-tags">' + (c.passou ? '<span style="--c:var(--fv2-ok)">✔ ' + c.passou + '</span>' : '') + (c.falhou ? '<span style="--c:var(--fv2-crit)">✖ ' + c.falhou + '</span>' : '') + (c.bloqueado ? '<span style="--c:var(--fv2-warn)">⏸ ' + c.bloqueado + '</span>' : '') + (c.nao_executado ? '<span style="--c:var(--t3)">○ ' + c.nao_executado + '</span>' : '') + '</div>' : '')
+            + (i.nota ? '<div class="fv2-pq" style="margin-top:4px;">ℹ ' + _fbEsc(i.nota) + '</div>' : '') + '</div>'; }).join('') : '<div class="qp-vazio">—</div>') + '</div>'; }).join('') + '</div>';
+}
+async function fbSoltar(ev, col, el) { ev.preventDefault(); el.classList.remove('fb-drop'); const id = ev.dataTransfer.getData('text/plain'); if (!id) return; const it = _fb.itens.find(i => i.id === id); if (!it || it.coluna === col) return;
+  it.coluna = col; _fbKanban();
+  try { await fbApi('item_mover', { id, coluna: col }); if (col === 'qa') toast('Em QA — os robôs executam os casos deste item na próxima rodada', 'success'); } catch (e) { toast(e.message, 'error'); fbIrAba('kanban'); } }
+async function fbItensGerar() {
+  if ((_fb.itens || []).length && !confirm('Já existem itens. Gerar mais itens a partir da ERT? (os atuais são mantidos)')) return;
+  _fb.gerando.itens = 1; _fbKanban();
+  try { const r = await fbApi('itens_gerar', { projeto_id: _fb.pid }); toast(r.itens_gerados + ' item(ns) gerados' + (r.casos_ligados ? ' · ' + r.casos_ligados + ' caso(s) ligados' : ''), 'success'); } catch (e) { toast(e.message, 'error'); }
+  delete _fb.gerando.itens; fbIrAba('kanban');
+}
+function fbItemForm(id) {
+  const i = (_fb.itens || []).find(x => x.id === id) || { prioridade: 'media', coluna: 'backlog' };
+  const C = (_fb.casos?.casos || []).filter(c => i.codigo && c.item_codigo === i.codigo);
+  _fbModal('<div class="qp-mh"><div class="fv2-pt">' + (i.id ? _fbEsc(i.codigo) + ' — ' + _fbEsc(i.titulo) : 'Novo item da fábrica') + '</div><button class="btn btn-g" onclick="_fbFechar()">Fechar ✕</button></div>'
+    + '<div class="fb-form"><label class="fb-w">Título<input id="fiT" value="' + _fbEsc(i.titulo || '') + '"></label>'
+    + '<label>Coluna<select id="fiCol">' + _fb.lista.colunas.map(([k, n]) => '<option value="' + k + '"' + (k === i.coluna ? ' selected' : '') + '>' + n + '</option>').join('') + '</select></label>'
+    + '<label>Prioridade<select id="fiP">' + ['alta', 'media', 'baixa'].map(p => '<option' + (p === i.prioridade ? ' selected' : '') + '>' + p + '</option>').join('') + '</select></label>'
+    + '<label>Tipo<input id="fiTp" value="' + _fbEsc(i.tipo || '') + '" placeholder="funcionalidade, integracao, dados…"></label><label>Estimativa (h)<input id="fiH" type="number" value="' + (i.estimativa_h ?? '') + '"></label>'
+    + '<label>Requisitos (RF/RT)<input id="fiR" value="' + _fbEsc(i.requisito_ref || '') + '"></label><label>Responsável<input id="fiResp" value="' + _fbEsc(i.responsavel || '') + '"></label>'
+    + '<label class="fb-w">Descrição<textarea id="fiD" rows="3">' + _fbEsc(i.descricao || '') + '</textarea></label><label class="fb-w">Critérios de aceite (um por linha)<textarea id="fiC" rows="4">' + _fbEsc(i.criterios || '') + '</textarea></label></div>'
+    + (C.length ? '<div class="fv2-pq" style="margin:8px 0 4px;">Casos de teste ligados:</div>' + C.map(c => '<div class="fb-li">' + _fbEsc(c.codigo) + ' ' + _fbEsc(c.titulo) + ' — <b style="color:' + FB_ST[c.status][1] + '">' + FB_ST[c.status][0] + '</b></div>').join('') : '')
+    + '<div class="mc-sug" style="margin-top:10px;"><button class="btn btn-gn" onclick="fbItemSalvar(\'' + (i.id || '') + '\')">Salvar</button>' + (i.id ? '<button class="btn btn-g" onclick="fbItemExcluir(\'' + i.id + '\')">Excluir</button>' : '') + '</div>', 760);
+}
+async function fbItemSalvar(id) {
+  const v = k => document.getElementById(k).value; const col = v('fiCol');
+  try { const r = await fbApi('item_salvar', { id: id || null, projeto_id: _fb.pid, titulo: v('fiT'), prioridade: v('fiP'), tipo: v('fiTp'), estimativa_h: v('fiH'), requisito_ref: v('fiR'), responsavel: v('fiResp'), descricao: v('fiD'), criterios: v('fiC'), coluna: col });
+    const atual = (_fb.itens || []).find(x => x.id === id); if (id && atual && atual.coluna !== col) await fbApi('item_mover', { id, coluna: col });
+    toast('Item salvo', 'success'); _fbFechar(); fbIrAba('kanban'); } catch (e) { toast(e.message, 'error'); }
+}
+async function fbItemExcluir(id) { if (!confirm('Excluir este item?')) return; try { await fbApi('item_excluir', { id }); _fbFechar(); fbIrAba('kanban'); } catch (e) { toast(e.message, 'error'); } }
+// ── plano de testes (casos) ──
+function _fbCasos() {
+  const R = _fb.casos, T = R.tipos, all = R.casos, P = R.plano;
+  const L = all.filter(c => (!_fb.filtroTipo || c.tipo === _fb.filtroTipo) && (!_fb.filtroSt || c.status === _fb.filtroSt));
+  const cont = k => all.filter(c => c.status === k).length;
+  _fbBox().innerHTML = (!P ? '<div class="fv2-aviso">Ainda não há plano de testes. Gere com IA (a partir da ERF/ERT) ou cadastre os casos manualmente.</div>' : P.status !== 'aprovado' ? '<div class="fv2-aviso">O plano (v' + P.versao + ') está em <b>rascunho</b>: os robôs só executam os casos depois que o especialista de qualidade aprovar (metodologia 9.3.1). <button class="btn btn-gn" style="margin-left:6px;" onclick="fbDocAprovar(\'plano_testes\')">✔ Aprovar plano</button></div>' : '')
+    + '<div class="fv2-cab"><span>' + all.length + ' caso(s) · <b style="color:var(--fv2-ok)">' + cont('passou') + ' aprovados</b> · <b style="color:var(--fv2-crit)">' + cont('falhou') + ' reprovados</b> · ' + cont('bloqueado') + ' bloqueados · ' + cont('nao_executado') + ' a executar · ' + all.filter(c => c.automatizavel).length + ' automatizáveis</span>'
+    + '<span class="mc-sug"><button class="btn btn-gn" onclick="fbGerarForm(\'plano_testes\')" ' + (_fb.gerando.plano_testes ? 'disabled' : '') + '>✨ ' + (_fb.gerando.plano_testes ? 'Gerando…' : 'Gerar plano com IA') + '</button><button class="btn btn-g" onclick="fbSugerirForm()">💡 Sugerir casos com IA</button><button class="btn btn-g" onclick="fbCasoForm()">+ Caso</button>'
+    + '<button class="btn btn-g" onclick="fbWord(\'plano_testes\')">⭳ Plano em Word</button><label class="btn btn-g">⭱ Testes unitários (JUnit)<input type="file" accept=".xml" style="display:none" onchange="fbJunit(this)"></label></span></div>'
+    + '<div class="fb-filtros"><select onchange="_fb.filtroTipo=this.value;_fbCasos()"><option value="">Todos os tipos</option>' + Object.entries(T).map(([k, t]) => '<option value="' + k + '"' + (k === _fb.filtroTipo ? ' selected' : '') + '>' + _fbEsc(t.nome) + ' (' + all.filter(c => c.tipo === k).length + ')</option>').join('') + '</select>'
+    + '<select onchange="_fb.filtroSt=this.value;_fbCasos()"><option value="">Todas as situações</option>' + Object.entries(FB_ST).map(([k, [n]]) => '<option value="' + k + '"' + (k === _fb.filtroSt ? ' selected' : '') + '>' + n + '</option>').join('') + '</select></div>'
+    + '<div class="fv2-tabwrap"><table class="fb-tb fb-casos"><tr><th>Código</th><th>Caso de teste</th><th>Tipo</th><th>Requisito</th><th>Item</th><th>Prior.</th><th>Execução</th><th>Situação</th></tr>'
+    + (L.length ? L.map(c => '<tr onclick="fbCasoForm(\'' + c.id + '\')"><td><b>' + _fbEsc(c.codigo) + '</b></td><td>' + _fbEsc(c.titulo) + (c.evidencia && c.status === 'falhou' ? '<div class="fv2-pq" style="color:var(--fv2-crit);">' + _fbEsc(String(c.evidencia).split('\n')[0].substring(0, 140)) + '</div>' : '') + '</td><td>' + _fbEsc(T[c.tipo]?.nome || c.tipo) + '</td><td>' + _fbEsc(c.requisito_ref || '—') + '</td><td>' + _fbEsc(c.item_codigo || '—') + '</td>'
+      + '<td><span class="fb-pr" style="--c:' + (FB_PR[c.prioridade] || 'var(--t3)') + '">' + _fbEsc(c.prioridade) + '</span></td><td>' + (c.automatizavel ? '🤖 robô' : '✋ manual') + '</td><td><b style="color:' + FB_ST[c.status][1] + '">' + FB_ST[c.status][0] + '</b>' + (c.ultima_execucao_em ? '<div class="fv2-pq">' + new Date(c.ultima_execucao_em).toLocaleDateString('pt-BR') + '</div>' : '') + '</td></tr>').join('') : '<tr><td colspan="8" class="qp-vazio">Nenhum caso.</td></tr>') + '</table></div>';
+}
+function fbCasoForm(id) {
+  const c = (_fb.casos?.casos || []).find(x => x.id === id) || { tipo: 'funcional', prioridade: 'media', automatizavel: true, passos: [], status: 'nao_executado' };
+  _fbModal('<div class="qp-mh"><div class="fv2-pt">' + (c.id ? _fbEsc(c.codigo) + ' — ' + _fbEsc(c.titulo) : 'Novo caso de teste') + '</div><button class="btn btn-g" onclick="_fbFechar()">Fechar ✕</button></div>'
+    + '<div class="fb-form"><label class="fb-w">Título<input id="fcT" value="' + _fbEsc(c.titulo || '') + '"></label>'
+    + '<label>Tipo<select id="fcTp">' + Object.entries(_fb.casos.tipos).map(([k, t]) => '<option value="' + k + '"' + (k === c.tipo ? ' selected' : '') + '>' + _fbEsc(t.nome) + '</option>').join('') + '</select></label>'
+    + '<label>Prioridade<select id="fcP">' + ['alta', 'media', 'baixa'].map(p => '<option' + (p === c.prioridade ? ' selected' : '') + '>' + p + '</option>').join('') + '</select></label>'
+    + '<label>Requisito<input id="fcR" value="' + _fbEsc(c.requisito_ref || '') + '" placeholder="RF-01"></label><label>Item da fábrica<select id="fcI"><option value="">—</option>' + (_fb.itens || []).map(i => '<option' + (i.codigo === c.item_codigo ? ' selected' : '') + ' value="' + _fbEsc(i.codigo) + '">' + _fbEsc(i.codigo + ' ' + i.titulo).substring(0, 60) + '</option>').join('') + '</select></label>'
+    + '<label class="fb-w">Risco (por que importa)<input id="fcRi" value="' + _fbEsc(c.risco || '') + '"></label><label class="fb-w">Pré-condição<input id="fcPc" value="' + _fbEsc(c.pre_condicao || '') + '"></label>'
+    + '<label class="fb-w">Passos (um por linha, como o usuário faz na tela)<textarea id="fcPs" rows="6">' + _fbEsc((c.passos || []).join('\n')) + '</textarea></label>'
+    + '<label class="fb-w">Dados de teste (fictícios)<input id="fcD" value="' + _fbEsc(c.dados || '') + '"></label><label class="fb-w">Resultado esperado<textarea id="fcE" rows="2">' + _fbEsc(c.esperado || '') + '</textarea></label>'
+    + '<label class="fb-chk fb-w"><input id="fcA" type="checkbox"' + (c.automatizavel ? ' checked' : '') + '> Automatizável — o robô do plano executa este caso</label></div>'
+    + (c.evidencia ? '<div class="fv2-pq" style="margin-top:8px;"><b>Última evidência:</b></div><div class="qp-ev">' + _fbEsc(c.evidencia) + '</div>' : '')
+    + '<div class="mc-sug" style="margin-top:10px;"><button class="btn btn-gn" onclick="fbCasoSalvar(\'' + (c.id || '') + '\')">Salvar</button>'
+    + (c.id ? '<span class="fv2-pq" style="align-self:center;">Resultado manual:</span>' + ['passou', 'falhou', 'bloqueado', 'nao_executado'].map(s => '<button class="btn btn-g" onclick="fbCasoStatus(\'' + c.id + '\',\'' + s + '\')" style="color:' + FB_ST[s][1] + '">' + FB_ST[s][0] + '</button>').join('') + '<button class="btn btn-g" onclick="fbCasoExcluir(\'' + c.id + '\')">Excluir</button>' : '') + '</div>', 820);
+}
+async function fbCasoSalvar(id) {
+  const v = k => document.getElementById(k).value;
+  try { await fbApi('caso_salvar', { id: id || null, projeto_id: _fb.pid, titulo: v('fcT'), tipo: v('fcTp'), prioridade: v('fcP'), requisito_ref: v('fcR'), item_codigo: v('fcI'), risco: v('fcRi'), pre_condicao: v('fcPc'), passos: v('fcPs'), dados: v('fcD'), esperado: v('fcE'), automatizavel: document.getElementById('fcA').checked });
+    toast('Caso salvo', 'success'); _fbFechar(); fbIrAba('casos'); } catch (e) { toast(e.message, 'error'); }
+}
+async function fbCasoStatus(id, status) {
+  let ev = null; if (status !== 'nao_executado') { ev = prompt('Evidência / observação do teste manual:'); if (ev === null) return; }
+  try { const r = await fbApi('caso_status', { id, status, evidencia: ev }); toast('Resultado registrado' + (r.itens_movidos?.length ? ' · ' + r.itens_movidos.map(m => m.codigo + ' → ' + m.para).join(', ') : ''), 'success'); _fbFechar(); fbIrAba('casos'); } catch (e) { toast(e.message, 'error'); }
+}
+async function fbCasoExcluir(id) { if (!confirm('Excluir este caso de teste?')) return; try { await fbApi('caso_excluir', { id }); _fbFechar(); fbIrAba('casos'); } catch (e) { toast(e.message, 'error'); } }
+function fbSugerirForm() {
+  const reqs = [...new Set((_fb.casos?.casos || []).map(c => c.requisito_ref).filter(Boolean))];
+  _fbModal('<div class="qp-mh"><div class="fv2-pt">💡 Sugerir casos com IA</div><button class="btn btn-g" onclick="_fbFechar()">Fechar ✕</button></div>'
+    + '<div class="fb-form"><label>Requisito (opcional)<input id="fsR" list="fsRl" placeholder="RF-03"><datalist id="fsRl">' + reqs.map(r => '<option value="' + _fbEsc(r) + '">').join('') + '</datalist></label>'
+    + '<label>Item da fábrica (opcional)<select id="fsI"><option value="">—</option>' + (_fb.itens || []).map(i => '<option value="' + _fbEsc(i.codigo) + '">' + _fbEsc(i.codigo + ' ' + i.titulo).substring(0, 60) + '</option>').join('') + '</select></label>'
+    + '<label>Quantidade<input id="fsQ" type="number" value="8" min="1" max="20"></label>'
+    + '<label class="fb-w">O que você quer testar? (opcional)<textarea id="fsP" rows="3" placeholder="Ex.: limites de valor na aprovação; perfil sem permissão; datas retroativas…"></textarea></label></div>'
+    + '<div class="fb-tipos">' + Object.entries(_fb.casos.tipos).map(([k, t]) => '<label><input type="checkbox" class="fsTipo" value="' + k + '"' + (['mundo_ideal', 'funcional', 'limite'].includes(k) ? ' checked' : '') + '> ' + _fbEsc(t.nome) + '</label>').join('') + '</div>'
+    + '<button class="btn btn-gn" id="fsBt" onclick="fbSugerir()">Sugerir</button><div id="fsRes" style="margin-top:10px;"></div>', 860);
+}
+async function fbSugerir() {
+  const bt = document.getElementById('fsBt'); bt.disabled = true; bt.textContent = 'A IA está pensando…';
+  try { const r = await fbApi('casos_sugerir', { projeto_id: _fb.pid, requisito_ref: document.getElementById('fsR').value, item_codigo: document.getElementById('fsI').value, quantidade: +document.getElementById('fsQ').value, pedido: document.getElementById('fsP').value, tipos: [...document.querySelectorAll('.fsTipo:checked')].map(x => x.value) });
+    window._fbSug = r.sugestoes;
+    document.getElementById('fsRes').innerHTML = r.sugestoes.length ? r.sugestoes.map((c, k) => '<label class="fb-sug"><input type="checkbox" class="fsSel" value="' + k + '" checked><div><b>' + _fbEsc(c.titulo) + '</b> <span class="fv2-pq">' + _fbEsc(_fb.casos.tipos[c.tipo]?.nome || c.tipo) + ' · ' + _fbEsc(c.requisito_ref || '—') + ' · ' + _fbEsc(c.prioridade || '') + '</span><div class="fv2-pq">' + (c.passos || []).map((p, i) => (i + 1) + '. ' + _fbEsc(p)).join(' ') + '</div><div class="fv2-pq"><b>Esperado:</b> ' + _fbEsc(c.esperado || '') + '</div></div></label>').join('') + '<button class="btn btn-gn" onclick="fbSugAdicionar()">Adicionar selecionados ao plano</button>' : '<div class="qp-vazio">A IA não encontrou lacunas para esse foco.</div>'; }
+  catch (e) { toast(e.message, 'error'); }
+  bt.disabled = false; bt.textContent = 'Sugerir de novo';
+}
+async function fbSugAdicionar() {
+  const sel = [...document.querySelectorAll('.fsSel:checked')].map(x => window._fbSug[+x.value]); if (!sel.length) return;
+  try { const r = await fbApi('casos_adicionar', { projeto_id: _fb.pid, casos: sel }); toast(r.ids.length + ' caso(s) adicionados — atualize o documento do plano para incluí-los no Word', 'success'); _fbFechar(); fbIrAba('casos'); } catch (e) { toast(e.message, 'error'); }
+}
+async function fbJunit(inp) {
+  const f = inp.files[0]; if (!f) return; const xml = await f.text(); const cob = prompt('Cobertura de código informada pela fábrica (%) — opcional:', '');
+  try { const r = await fbApi('unitarios_importar', { projeto_id: _fb.pid, nome: f.name, xml, cobertura_pct: cob }); toast(`JUnit: ${r.passou}/${r.total} aprovados, ${r.falhou} reprovados` + (r.casos_atualizados ? ` · ${r.casos_atualizados} caso(s) do plano atualizados` : ''), r.falhou ? 'error' : 'success'); fbIrAba('casos'); }
+  catch (e) { toast(e.message, 'error'); }
+}
+// ── robôs ──
+function _fbRobos() {
+  const D = _fb.painel, R = _fb.lista.robos, P = _fbProj(), prod = (_fb.lista.produtos || []).find(p => p.id === P?.qa_produto_id), U = D.ultima_execucao;
+  const res = Object.fromEntries((D.robos || []).map(r => [r.robo, r.resumo]));
+  _fbBox().innerHTML = '<div class="fv2-cab"><span>' + (prod ? 'Produto testado: <b>' + _fbEsc(prod.nome) + '</b> · ' + _fbEsc(prod.url) + (U ? ' · última execução ' + (U.em ? new Date(U.em).toLocaleString('pt-BR').substring(0, 16) : '—') + ' · ' + Math.round(U.cobertura_pct) + '% das telas' : ' · ainda não executado') : '<b style="color:var(--fv2-crit);">Projeto sem produto ligado</b> — cadastre o produto (URL + usuário de teste) em QA de Produtos e ligue-o no cadastro do projeto.') + '</span>'
+    + '<span class="mc-sug"><button class="btn btn-gn" onclick="fbRodarRobos()" ' + (prod ? '' : 'disabled') + '>▶ Rodar todos os robôs agora</button><button class="btn btn-g" onclick="nav(\'s6qaprod\', document.querySelector(\'.sbi[onclick*=s6qaprod]\'))">Ver achados no QA de Produtos</button><button class="btn btn-g" onclick="fbProjetoForm(_fb.pid)">Ligar produto</button></span></div>'
+    + (D.plano?.status !== 'aprovado' ? '<div class="fv2-aviso">O Robô do Plano só executa os casos depois que o Plano de Testes for aprovado.</div>' : '')
+    + '<div class="fb-robos">' + Object.entries(R).map(([k, t]) => { const [nome, desc] = [t.split(' (')[0], (t.match(/\((.*)\)/) || [])[1] || ''];
+      return '<div class="fb-robo"><div class="fv2-pt">' + _fbEsc(nome) + '</div><div class="fv2-pq">' + _fbEsc(desc) + '</div><div class="fb-rr">' + (res[k] ? _fbEsc(res[k]) : k === 'unitario' ? (D.unitarios ? D.unitarios.passou + '/' + D.unitarios.total + ' aprovados' + (D.unitarios.cobertura_pct != null ? ' · cobertura ' + Math.round(D.unitarios.cobertura_pct) + '%' : '') : 'aguardando o JUnit da fábrica (aba Plano de Testes)') : '<span style="color:var(--t3)">sem resultado ainda</span>') + '</div></div>'; }).join('') + '</div>'
+    + '<div class="fb-g3">' + _fbChecks(D.g6, 'G6 · Construção') + _fbChecks(D.g7, 'G7 · Qualidade e testes') + _fbChecks(D.g8, 'G8 · Segurança e desempenho') + '</div>';
+}
+async function fbRodarRobos() { try { const r = await fbApi('robos_executar', { projeto_id: _fb.pid }); toast(r.disparado ? 'Robôs disparados — começam em 1 a 2 minutos' : 'Na fila — ' + (r.motivo || 'os robôs pegam na próxima passagem'), 'success'); } catch (e) { toast(e.message, 'error'); } }
+// ── painel do cliente ──
+function _fbPainelCli() {
+  const P = _fb.painel.projeto, url = location.origin + '/qa/' + P.token_publico;
+  _fbBox().innerHTML = '<div class="fv2-cab"><span>Link para enviar ao cliente (sem login, só leitura): <b>' + _fbEsc(url) + '</b>' + (P.painel_so_confirmados !== false ? ' · mostra só defeitos <b>confirmados</b> por um analista' : ' · mostra todos os defeitos') + '</span>'
+    + '<span class="mc-sug"><button class="btn btn-gn" onclick="navigator.clipboard.writeText(\'' + url + '\');toast(\'Link copiado\',\'success\')">Copiar link</button><a class="btn btn-g" href="' + url + '" target="_blank" rel="noopener">Abrir ↗</a><button class="btn btn-g" onclick="fbNovoToken()">Gerar novo link</button><button class="btn btn-g" onclick="fbWord(\'relatorio_qualidade\')">⭳ Relatório de Qualidade (Word)</button></span></div>'
+    + '<iframe class="fb-ifr" src="' + url + '" title="Painel do cliente"></iframe>';
+}
+async function fbNovoToken() { if (!confirm('Gerar um novo link? O link anterior deixa de funcionar.')) return; try { await fbApi('painel_token', { projeto_id: _fb.pid }); toast('Novo link gerado', 'success'); fbIrAba('painel'); } catch (e) { toast(e.message, 'error'); } }
+// ── cadastro do projeto ──
+function fbProjetoForm(id) {
+  const p = id ? _fbProj() || {} : {}; const prods = _fb.lista?.produtos || [];
+  _fbModal('<div class="qp-mh"><div class="fv2-pt">' + (p.id ? 'Projeto — ' + _fbEsc(p.nome) : 'Novo projeto na esteira') + '</div><button class="btn btn-g" onclick="_fbFechar()">Fechar ✕</button></div>'
+    + '<div class="fb-form"><label class="fb-w">Nome do projeto<input id="fpN" value="' + _fbEsc(p.nome || '') + '"></label><label>Cliente<input id="fpC" value="' + _fbEsc(p.cliente || '') + '"></label><label>Gerente de projeto<input id="fpG" value="' + _fbEsc(p.gp || '') + '"></label>'
+    + '<label>Fábrica de desenvolvimento<input id="fpF" value="' + _fbEsc(p.fabrica || '') + '" placeholder="fábrica do cliente"></label>'
+    + '<label>Produto testado pelos robôs<select id="fpQ"><option value="">— nenhum —</option>' + prods.map(x => '<option value="' + x.id + '"' + (x.id === p.qa_produto_id ? ' selected' : '') + '>' + _fbEsc(x.nome) + '</option>').join('') + '</select></label>'
+    + '<label class="fb-w">Descrição / contexto<textarea id="fpD" rows="3">' + _fbEsc(p.descricao || '') + '</textarea></label>'
+    + '<label class="fb-chk fb-w"><input id="fpS" type="checkbox"' + (p.painel_so_confirmados !== false ? ' checked' : '') + '> No painel do cliente, mostrar só defeitos confirmados por um analista da Atlantyx</label></div>'
+    + '<div class="fv2-pq" style="margin:6px 0 10px;">Sem produto na lista? Cadastre a URL e o usuário de teste em <a href="#" onclick="event.preventDefault();_fbFechar();nav(\'s6qaprod\', document.querySelector(\'.sbi[onclick*=s6qaprod]\'));setTimeout(qpNovo,400)">QA de Produtos</a>.</div>'
+    + '<div class="mc-sug"><button class="btn btn-gn" onclick="fbProjetoSalvar(\'' + (p.id || '') + '\')">Salvar</button>' + (p.id ? '<button class="btn btn-g" onclick="fbProjetoExcluir(\'' + p.id + '\')">Excluir projeto</button>' : '') + '</div>', 720);
+}
+async function fbProjetoSalvar(id) {
+  const v = k => document.getElementById(k).value;
+  if (!v('fpN').trim()) return toast('Informe o nome', 'error');
+  try { const r = await fbApi('projeto_salvar', { id: id || null, nome: v('fpN'), cliente: v('fpC'), gp: v('fpG'), fabrica: v('fpF'), qa_produto_id: v('fpQ'), descricao: v('fpD'), painel_so_confirmados: document.getElementById('fpS').checked });
+    _fb.pid = r.id; _fbFechar(); toast('Projeto salvo', 'success'); if (!id) _fb.aba = 'docs'; await fbCarregar(true); } catch (e) { toast(e.message, 'error'); }
+}
+async function fbProjetoExcluir(id) { if (!confirm('Excluir o projeto e todos os documentos, itens e casos?')) return; try { await fbApi('projeto_excluir', { id }); _fb.pid = null; _fbFechar(); fbCarregar(); } catch (e) { toast(e.message, 'error'); } }
+
 // ═══ v3.133: S6 · QA DE PRODUTOS — robô de testes caixa-preta dos produtos da Atlantyx + Kanban de QA ═══
 // Produto só vai para "Aprovado" com 100% das telas testadas e nenhum achado aberto, em correção ou a retestar.
 let _qpDados = null, _qpProd = null, _qpAchados = null, _qpFiltro = 'pendentes';
 const _qpEsc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const _QP_SEV = { critica: ['Crítica', 'var(--fv2-crit)'], alta: ['Alta', '#e0662f'], media: ['Média', 'var(--fv2-warn)'], baixa: ['Baixa', 'var(--t3)'] };
-const _QP_ST = { aberto: 'Aberto', em_correcao: 'Em correção', corrigido: 'Corrigido · retestar', validado: 'Validado no reteste', falso_positivo: 'Falso positivo' };
+const _QP_ST = { aberto: 'Aberto', em_correcao: 'Em correção', corrigido: 'Corrigido · retestar', validado: 'Validado no reteste', falso_positivo: 'Falso positivo', aceito: 'Risco aceito' };
 async function qpApi(action, body = {}) {
   const r = await fetch('/api/qa-externo', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(typeof authHeaders === 'function' ? authHeaders() : {}) }, body: JSON.stringify({ action, ...body }) });
   const d = await r.json().catch(() => ({})); if (!r.ok || !d.success) throw new Error(d.error || ('HTTP ' + r.status)); return d;
@@ -28322,13 +28677,13 @@ async function qpAbrir(id) {
 function qpDetalhe() {
   const P = _qpProd, A = _qpAchados.achados || [], ov = document.getElementById('qpModal'); if (!ov) return;
   const pend = A.filter(a => ['aberto', 'em_correcao', 'corrigido'].includes(a.status));
-  const filt = { pendentes: pend, aberto: A.filter(a => a.status === 'aberto'), em_correcao: A.filter(a => a.status === 'em_correcao'), corrigido: A.filter(a => a.status === 'corrigido'), fechados: A.filter(a => ['validado', 'falso_positivo'].includes(a.status)), todos: A }[_qpFiltro] || pend;
+  const filt = { pendentes: pend, aberto: A.filter(a => a.status === 'aberto'), em_correcao: A.filter(a => a.status === 'em_correcao'), corrigido: A.filter(a => a.status === 'corrigido'), fechados: A.filter(a => ['validado', 'falso_positivo', 'aceito'].includes(a.status)), todos: A }[_qpFiltro] || pend;
   const E = (_qpAchados.execucoes || [])[0];
   ov.querySelector('.qp-mod').innerHTML = '<div class="qp-mh"><div><div class="fv2-pt">' + _qpEsc(P.nome) + '</div><div class="fv2-pq"><a href="' + _qpEsc(P.url) + '" target="_blank" rel="noopener">' + _qpEsc(P.url) + ' ↗</a>' + (P.plataforma ? ' · ' + _qpEsc(P.plataforma) : '') + ' · usuário de teste: ' + _qpEsc(P.usuario || '—') + (P.tem_senha ? ' · senha guardada 🔒' : ' · <b style="color:var(--fv2-crit);">sem senha</b>') + '</div></div>'
     + '<div class="mc-sug"><button class="btn btn-gn" onclick="qpTestar(\'' + P.id + '\')">▶ Testar agora</button><button class="btn btn-g" onclick="qpForm(_qpProd)">✎ Cadastro</button><button class="btn btn-g" onclick="document.getElementById(\'qpModal\').remove()">Fechar ✕</button></div></div>'
     + (E ? '<div class="fv2-cab"><span>Última execução: <b>' + _qpEsc(E.status) + '</b> · ' + (E.terminado_em ? new Date(E.terminado_em).toLocaleString('pt-BR').substring(0, 16) : 'em andamento') + ' · ' + (E.telas_testadas ?? 0) + ' de ' + (E.telas_descobertas ?? 0) + ' telas (' + (E.cobertura_pct != null ? Number(E.cobertura_pct).toLocaleString('pt-BR') : 0) + '%)' + (E.resumo?.ciclos_cadastro != null ? ' · ' + E.resumo.ciclos_cadastro + ' ciclo(s) de cadastro · ' + (E.resumo.analises_ia || 0) + ' tela(s) analisadas pela IA' : '') + (E.erro ? ' · <b style="color:var(--fv2-crit);">' + _qpEsc(E.erro) + '</b>' : '') + '</span>'
       + '<span>Aprovação: 100% das telas e nenhum achado pendente</span></div>' : '<div class="fv2-aviso">Ainda não testado — clique em Testar agora.</div>')
-    + '<div class="fv2-abas">' + [['pendentes', 'Pendentes'], ['aberto', 'Abertos'], ['em_correcao', 'Em correção'], ['corrigido', 'A retestar'], ['fechados', 'Fechados'], ['todos', 'Todos']].map(([k, t]) => { const n = { pendentes: pend, aberto: A.filter(a => a.status === 'aberto'), em_correcao: A.filter(a => a.status === 'em_correcao'), corrigido: A.filter(a => a.status === 'corrigido'), fechados: A.filter(a => ['validado', 'falso_positivo'].includes(a.status)), todos: A }[k].length;
+    + '<div class="fv2-abas">' + [['pendentes', 'Pendentes'], ['aberto', 'Abertos'], ['em_correcao', 'Em correção'], ['corrigido', 'A retestar'], ['fechados', 'Fechados'], ['todos', 'Todos']].map(([k, t]) => { const n = { pendentes: pend, aberto: A.filter(a => a.status === 'aberto'), em_correcao: A.filter(a => a.status === 'em_correcao'), corrigido: A.filter(a => a.status === 'corrigido'), fechados: A.filter(a => ['validado', 'falso_positivo', 'aceito'].includes(a.status)), todos: A }[k].length;
       return '<button class="fv2-aba' + (k === _qpFiltro ? ' on' : '') + '" onclick="_qpFiltro=\'' + k + '\';qpDetalhe()">' + t + ' (' + n + ')</button>'; }).join('')
     + '<span style="flex:1;"></span>' + (filt.some(a => a.status === 'aberto') ? '<button class="fv2-aba fv2-acao" onclick="qpPromptLote()">📋 Copiar prompts de correção</button>' : '') + '</div>'
     + '<div class="qp-lista">' + (filt.length ? filt.map(a => { const sv = _QP_SEV[a.severidade] || _QP_SEV.media;
@@ -28340,10 +28695,17 @@ function qpDetalhe() {
         + (a.status === 'aberto' ? '<button class="btn btn-g" onclick="qpStatus(\'' + a.id + '\',\'em_correcao\')">Em correção</button>' : '')
         + (['aberto', 'em_correcao'].includes(a.status) ? '<button class="btn btn-g" onclick="qpStatus(\'' + a.id + '\',\'corrigido\')">✓ Corrigido — retestar</button><button class="btn btn-g" onclick="qpStatus(\'' + a.id + '\',\'falso_positivo\')">Falso positivo</button>' : '')
         + (P.repo_github && !a.issue_url && a.status !== 'validado' ? '<button class="btn btn-g" onclick="qpTarefa(\'' + a.id + '\')">Abrir tarefa no GitHub</button>' : '') + (a.issue_url ? '<a class="btn btn-g" href="' + _qpEsc(a.issue_url) + '" target="_blank" rel="noopener">Tarefa ↗</a>' : '')
-        + (['validado', 'falso_positivo'].includes(a.status) ? '<button class="btn btn-g" onclick="qpStatus(\'' + a.id + '\',\'aberto\')">Reabrir</button>' : '') + '</div></div>'; }).join('') : '<div class="fv2-vazio">Nada aqui.</div>') + '</div>';
+        + (['aberto', 'em_correcao', 'corrigido'].includes(a.status) && ['media', 'baixa'].includes(a.severidade) ? '<button class="btn btn-g" title="Defeito médio/baixo aceito formalmente pelo cliente, com plano de correção (critério do gate G7)" onclick="qpStatus(\'' + a.id + '\',\'aceito\')">Risco aceito</button>' : '')
+        + (!['falso_positivo'].includes(a.status) ? '<button class="btn btn-g" title="Metodologia 9.4: só defeitos confirmados por um analista aparecem no painel do cliente" onclick="qpConfirmar(\'' + a.id + '\',' + (!a.confirmado) + ')">' + (a.confirmado ? '✔ Confirmado (desfazer)' : 'Confirmar para o cliente') + '</button>' : '')
+        + (['validado', 'falso_positivo', 'aceito'].includes(a.status) ? '<button class="btn btn-g" onclick="qpStatus(\'' + a.id + '\',\'aberto\')">Reabrir</button>' : '') + '</div></div>'; }).join('') : '<div class="fv2-vazio">Nada aqui.</div>') + '</div>';
+}
+async function qpConfirmar(id, conf) {
+  try { await qpApi('achado_confirmar', { id, confirmado: conf }); const a = _qpAchados.achados.find(x => x.id === id); if (a) a.confirmado = conf; qpDetalhe(); toast(conf ? 'Confirmado — aparece no painel do cliente' : 'Confirmação removida', 'success'); }
+  catch (e) { toast(e.message, 'error'); }
 }
 async function qpStatus(id, status) {
   let nota = null; if (status === 'falso_positivo') { nota = prompt('Por que é falso positivo? (fica registrado)'); if (nota === null) return; }
+  if (status === 'aceito') { nota = prompt('Quem aceitou o risco e qual o plano de correção? (fica registrado — critério do gate G7)'); if (!nota) return; }
   try { await qpApi('achado_status', { id, status, nota }); const a = _qpAchados.achados.find(x => x.id === id); if (a) { a.status = status; if (nota) a.nota = nota; } qpDetalhe(); qpCarregar();
     if (status === 'corrigido') toast('Marcado como corrigido — no próximo teste completo ele é validado (ou reaberto se ainda ocorrer)', 'success'); }
   catch (e) { toast(e.message, 'error'); }
@@ -31161,7 +31523,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.133] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.134] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -31177,7 +31539,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.133';
+window.__ATX_BUILD_ID__ = 'ATX-v3.134';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
