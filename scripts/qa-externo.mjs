@@ -405,11 +405,16 @@ async function login(pg, P, add) {
   if (!P.senha) throw new Error(P.senha_status === 'ilegivel' ? 'A senha de teste está guardada, mas não pôde ser lida (a chave de criptografia mudou) — digite a senha de novo no cadastro do produto.' : 'O produto pede login, mas a senha de teste não está cadastrada.');
   const user = pg.locator('input[type=email]:visible, input[name*=user i]:visible, input[name*=login i]:visible, input[name*=email i]:visible, input[type=text]:visible').first();
   await user.fill(P.usuario); await pg.locator('input[type=password]:visible').first().fill(P.senha);
-  const botao = pg.locator('button[type=submit]:visible, button:visible:has-text("Entrar"), button:visible:has-text("Login"), button:visible:has-text("Acessar"), button:visible:has-text("Sign in")').first();
-  if (await botao.count()) await botao.click().catch(() => {}); else await pg.keyboard.press('Enter');
-  await pg.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {}); await espera(3000);
-  if (await temCampoSenha(pg)) { const msg = await pg.evaluate(() => document.body.innerText.substring(0, 300)).catch(() => '');
-    throw new Error('Login recusado com o usuário de teste. Tela: ' + msg.replace(/\s+/g, ' ').substring(0, 200)); }
+  // v3.138: escolhe o botão de entrar EXATO (não "Entrar com Face ID", "Esqueci minha senha", "Criar conta"…)
+  const exato = pg.locator('button:visible, [role=button]:visible, input[type=submit]:visible').filter({ hasText: /^\s*(entrar|login|log in|acessar|sign in|continuar|enviar)\s*$/i }).first();
+  const submit = pg.locator('form button[type=submit]:visible, form input[type=submit]:visible').filter({ hasNotText: /face id|digital|biometria|google|microsoft|apple|esqueci|criar|cadastr/i }).first();
+  if (await exato.count()) await exato.click().catch(() => {}); else if (await submit.count()) await submit.click().catch(() => {}); else await pg.locator('input[type=password]:visible').first().press('Enter');
+  // espera até 20 s o campo de senha sumir (login com Supabase/redirecionamento pode demorar)
+  for (let i = 0; i < 20 && await temCampoSenha(pg); i++) await espera(1000);
+  await pg.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {}); await espera(1500);
+  if (await temCampoSenha(pg)) {
+    const alerta = await pg.evaluate(() => [...document.querySelectorAll('[role=alert],[role=status],.toast,[class*=toast],[class*=error],[class*=destructive],[aria-live]')].map(e => e.innerText.trim()).filter(Boolean).join(' | ').substring(0, 300)).catch(() => '');
+    throw new Error('Login não concluído com o usuário de teste' + (alerta ? ' — mensagem do sistema: "' + alerta + '"' : ' — nenhuma mensagem de erro na tela (confira e-mail/senha ou se o login exige outra etapa)') + '.'); }
 }
 async function textosClicaveis(pg, soNavegacao = false) {
   return pg.evaluate(sn => { const vis = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; };
