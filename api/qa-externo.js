@@ -62,7 +62,9 @@ function cifrar(txt) { const iv = crypto.randomBytes(12), c = crypto.createCiphe
 function decifrar(s) { if (!s) return null; const [iv, tag, e] = String(s).split('.'); const d = crypto.createDecipheriv('aes-256-gcm', _chave(), Buffer.from(iv, 'base64')); d.setAuthTag(Buffer.from(tag, 'base64')); return Buffer.concat([d.update(Buffer.from(e, 'base64')), d.final()]).toString('utf8'); }
 
 function _ehRobo(req) { const a = String(req.headers?.authorization || ''); return !!process.env.CRON_SECRET && a.length === ('Bearer ' + process.env.CRON_SECRET).length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from('Bearer ' + process.env.CRON_SECRET)); }
-const _semSenha = p => { const { senha_cripto, ...r } = p; return { ...r, tem_senha: !!senha_cripto }; };
+// devolve só se a senha existe e se pode ser lida (nunca a senha)
+const _senhaOk = c => { if (!c) return false; try { return decifrar(c) != null; } catch (_) { return false; } };
+const _semSenha = p => { const { senha_cripto, ...r } = p; return { ...r, tem_senha: !!senha_cripto, senha_legivel: _senhaOk(senha_cripto) }; };
 
 // ── coluna do Kanban do produto ──
 function colunaProduto(p, ult, cont) {
@@ -137,7 +139,7 @@ async function roboProximo() {
   const e = (await sql`UPDATE qa_execucoes SET status='rodando', iniciado_em=NOW() WHERE id = (SELECT id FROM qa_execucoes WHERE status='fila' ORDER BY pedido_em LIMIT 1) RETURNING *`)[0];
   if (!e) return { execucao: null };
   const p = (await sql`SELECT * FROM qa_produtos WHERE id=${e.produto_id}`)[0];
-  let senha = null; try { senha = decifrar(p.senha_cripto); } catch (_) { senha = null; }
+  let senha = null, senha_status = p.senha_cripto ? 'ok' : 'ausente'; try { senha = decifrar(p.senha_cripto); } catch (_) { senha = null; if (p.senha_cripto) senha_status = 'ilegivel'; }
   const conhecidos = await sql`SELECT assinatura, titulo, status, tela FROM qa_achados WHERE produto_id=${p.id} AND status NOT IN ('validado','falso_positivo','aceito')`;
   // v3.134: casos do plano de testes (aprovado pelo especialista de qualidade) dos projetos ligados a este produto
   let casos = [], planos_rascunho = 0;
@@ -152,7 +154,7 @@ async function roboProximo() {
       .sort((a, b) => (TIPOS_CASO[a.tipo]?.ordem || 99) - (TIPOS_CASO[b.tipo]?.ordem || 99) || ['alta', 'media', 'baixa'].indexOf(a.prioridade) - ['alta', 'media', 'baixa'].indexOf(b.prioridade));
   } catch (err) { console.error('[qa-externo] casos', err.message); }
   return { execucao: { id: e.id, origem: e.origem }, produto: { id: p.id, nome: p.nome, url: p.url, url_login: p.url_login, usuario: p.usuario, senha, plataforma: p.plataforma, contexto: p.contexto,
-    permitir_gravacao: p.permitir_gravacao, max_telas: p.max_telas || 60, permitir_carga: !!p.permitir_carga, usuarios_simultaneos: p.usuarios_simultaneos || 10 }, conhecidos, casos, planos_rascunho };
+    permitir_gravacao: p.permitir_gravacao, max_telas: p.max_telas || 60, permitir_carga: !!p.permitir_carga, usuarios_simultaneos: p.usuarios_simultaneos || 10, senha_status }, conhecidos, casos, planos_rascunho };
 }
 async function roboResultado(b) {
   const sql = await getSql();

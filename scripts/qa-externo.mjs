@@ -401,7 +401,8 @@ async function login(pg, P, add) {
     if (t) { await clicarPorTexto(pg, t); await espera(2000); }
   }
   if (!(await temCampoSenha(pg))) { if (P.usuario) add({ tipo: 'acesso', severidade: 'media', titulo: 'Tela de login não encontrada', descricao: 'O robô não achou um campo de senha na URL informada; seguiu sem login.', tela: 'Login', url: pg.url(), chave: 'sem-form-login' }); return; }
-  if (!P.usuario || !P.senha) throw new Error('O produto pede login, mas usuário/senha de teste não estão cadastrados (ou a senha não pôde ser lida — cadastre de novo).');
+  if (!P.usuario) throw new Error('O produto pede login, mas o usuário de teste não está cadastrado.');
+  if (!P.senha) throw new Error(P.senha_status === 'ilegivel' ? 'A senha de teste está guardada, mas não pôde ser lida (a chave de criptografia mudou) — digite a senha de novo no cadastro do produto.' : 'O produto pede login, mas a senha de teste não está cadastrada.');
   const user = pg.locator('input[type=email]:visible, input[name*=user i]:visible, input[name*=login i]:visible, input[name*=email i]:visible, input[type=text]:visible').first();
   await user.fill(P.usuario); await pg.locator('input[type=password]:visible').first().fill(P.senha);
   const botao = pg.locator('button[type=submit]:visible, button:visible:has-text("Entrar"), button:visible:has-text("Login"), button:visible:has-text("Acessar"), button:visible:has-text("Sign in")').first();
