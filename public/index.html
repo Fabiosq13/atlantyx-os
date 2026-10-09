@@ -598,6 +598,8 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 .qp-cm{font-size:9.5px;color:var(--t3);}
 .qp-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;} .qp-tags span{font-size:9.5px;font-weight:600;color:var(--c);border:1px solid var(--c);border-radius:10px;padding:0 6px;}
 .qp-act{margin-top:8px;} .qp-act .btn{font-size:10px;padding:3px 9px;}
+.qp-prog{margin:7px 0 2px;padding:6px 7px;border-radius:6px;background:color-mix(in srgb,var(--fv2-brand) 8%,var(--bg3));} .qp-pe{font-size:10.5px;font-weight:600;color:var(--t1);}
+.qp-cov-run i{background:linear-gradient(90deg,var(--fv2-brand),var(--fv2-s1));animation:qppulsa 1.6s ease-in-out infinite;} @keyframes qppulsa{50%{opacity:.55;}}
 .qp-vazio{color:var(--t3);font-size:11px;text-align:center;padding:16px;}
 .qp-ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:12px;}
 .qp-mod{background:var(--bg2);border:1px solid var(--bd2);border-radius:10px;width:min(1100px,100%);max-height:92vh;overflow:auto;padding:14px 16px;font-family:Montserrat,sans-serif;}
@@ -28798,7 +28800,7 @@ async function qpApi(action, body = {}) {
 }
 async function qpCarregar() {
   const box = document.getElementById('qpBoard'); if (!box) return;
-  try { _qpDados = await qpApi('kanban'); qpRender(); }
+  try { _qpDados = await qpApi('kanban'); qpRender(); _qpAuto(); }
   catch (e) { box.innerHTML = '<div class="fv2-erro">Não consegui carregar: ' + _qpEsc(e.message) + '</div>'; }
 }
 function qpRender() {
@@ -28807,12 +28809,21 @@ function qpRender() {
   box.innerHTML = '<div class="qp-board">' + D.colunas.map(([k, nome]) => { const L = D.produtos.filter(p => p.coluna === k);
     return '<div class="qp-col qp-' + k + '"><div class="qp-colh">' + nome + ' <span>' + L.length + '</span></div>' + (L.length ? L.map(p => { const u = p.ultima || {}, c = p.contagem || {}, s = p.severidades || {};
       return '<div class="qp-card" onclick="qpAbrir(\'' + p.id + '\')"><div class="qp-cn">' + _qpEsc(p.nome) + '</div><div class="qp-cu">' + _qpEsc(p.url.replace(/^https?:\/\//, '')) + (p.plataforma ? ' · ' + _qpEsc(p.plataforma) : '') + '</div>'
+        + (k === 'testando' && u.progresso ? '<div class="qp-prog"><div class="qp-pe">⏳ ' + _qpEsc(u.progresso.etapa || 'Rodando') + '</div><div class="qp-cov qp-cov-run"><i style="width:' + Math.min(100, u.progresso.pct || 1) + '%;"></i></div><div class="qp-cm">' + (u.progresso.pct || 1) + '%' + (u.progresso.telas ? ' · telas ' + _qpEsc(u.progresso.telas) : '') + (u.progresso.casos ? ' · casos ' + _qpEsc(u.progresso.casos) : '') + ' · ' + (u.progresso.achados || 0) + ' achado(s) · ' + _qpTempo(u.progresso.inicio) + ' rodando · atualizado ' + _qpHa(u.progresso.em) + '</div></div>'
+          : k === 'testando' ? '<div class="qp-prog"><div class="qp-pe">⏳ Robô iniciando (abrindo o navegador)…</div><div class="qp-cov qp-cov-run"><i style="width:2%;"></i></div><div class="qp-cm">iniciado ' + _qpHa(u.iniciado_em) + '</div></div>'
+          : k === 'na_fila' && u.status === 'fila' ? '<div class="qp-prog"><div class="qp-pe">🕒 Na fila desde ' + new Date(u.pedido_em).toLocaleTimeString('pt-BR').substring(0, 5) + ' — aguardando o robô pegar</div></div>' : '')
         + '<div class="qp-cov"><i style="width:' + Math.min(100, Number(u.cobertura_pct) || 0) + '%;"></i></div><div class="qp-cm">cobertura ' + (u.cobertura_pct != null ? Number(u.cobertura_pct).toLocaleString('pt-BR') + '%' : '—') + ' · ' + (u.telas_testadas ?? 0) + ' tela(s) · ' + tempo(u.terminado_em || u.pedido_em) + '</div>'
         + '<div class="qp-tags">' + ['critica', 'alta', 'media', 'baixa'].filter(x => s[x]).map(x => '<span style="--c:' + _QP_SEV[x][1] + ';">' + s[x] + ' ' + _QP_SEV[x][0].toLowerCase() + '</span>').join('') + (c.em_correcao ? '<span style="--c:var(--fv2-s1);">' + c.em_correcao + ' em correção</span>' : '') + (c.corrigido ? '<span style="--c:var(--fv2-s3);">' + c.corrigido + ' a retestar</span>' : '') + (u.erro ? '<span style="--c:var(--fv2-crit);">falhou: ' + _qpEsc(String(u.erro).substring(0, 40)) + '</span>' : '') + '</div>'
         + '<div class="qp-act"><button class="btn btn-g" onclick="event.stopPropagation();qpTestar(\'' + p.id + '\')">' + (k === 'retestar' ? '↻ Retestar' : '▶ Testar agora') + '</button></div></div>'; }).join('') : '<div class="qp-vazio">—</div>') + '</div>'; }).join('') + '</div>';
 }
+const _qpHa = d => { if (!d) return '—'; const s = Math.max(0, Math.round((Date.now() - new Date(d)) / 1000)); return s < 60 ? 'há ' + s + ' s' : s < 3600 ? 'há ' + Math.round(s / 60) + ' min' : 'há ' + Math.round(s / 3600) + ' h'; };
+const _qpTempo = d => { if (!d) return '—'; const s = Math.max(0, Math.round((Date.now() - new Date(d)) / 1000)); return s < 60 ? s + ' s' : Math.floor(s / 60) + ' min ' + (s % 60) + ' s'; };
+// atualiza sozinho a cada 10 s enquanto algum produto estiver na fila ou testando
+let _qpTimer = null;
+function _qpAuto() { clearTimeout(_qpTimer); const ativo = (_qpDados?.produtos || []).some(p => p.coluna === 'testando' || p.ultima?.status === 'fila'); const pg = document.getElementById('page-s6qaprod');
+  if (ativo && pg && pg.classList.contains('active')) _qpTimer = setTimeout(() => qpCarregar(), 10000); }
 async function qpTestar(id) {
-  try { const r = await qpApi('executar', { produto_id: id }); toast(r.disparado ? 'Robô disparado — o teste começa em 1 a 2 minutos' : 'Na fila — ' + (r.motivo || 'o robô pega na próxima passagem'), 'success'); qpCarregar(); }
+  try { const r = await qpApi('executar', { produto_id: id }); toast(r.disparado ? 'Robô disparado — começa em 1 a 2 minutos; o andamento aparece no cartão' : 'Na fila — o disparo imediato precisa do GITHUB_TOKEN no Vercel; sem ele o robô pega a fila em até 30 min', r.disparado ? 'success' : 'error'); qpCarregar(); }
   catch (e) { toast(e.message, 'error'); }
 }
 function qpNovo() { _qpProd = null; qpForm({}); }
@@ -31673,7 +31684,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.135] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.136] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -31689,7 +31700,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.135';
+window.__ATX_BUILD_ID__ = 'ATX-v3.136';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

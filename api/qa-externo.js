@@ -41,6 +41,7 @@ async function getSql() {
   await _sql`ALTER TABLE qa_achados ADD COLUMN IF NOT EXISTS confirmado BOOLEAN DEFAULT false`;
   // v3.135: teste de carga só em produto liberado (ambiente de homologação/desempenho)
   await _sql`ALTER TABLE qa_produtos ADD COLUMN IF NOT EXISTS permitir_carga BOOLEAN DEFAULT false`;
+  await _sql`ALTER TABLE qa_execucoes ADD COLUMN IF NOT EXISTS progresso JSONB`;
   await _sql`ALTER TABLE qa_produtos ADD COLUMN IF NOT EXISTS usuarios_simultaneos INT DEFAULT 10`;
   return _sql;
 }
@@ -280,6 +281,8 @@ async function handler(req, res) {
       robo_resultado: soRobo(() => roboResultado(b)),
       robo_criticar: soRobo(() => roboCriticar(b)),
       robo_passo: soRobo(() => roboPasso(b)),
+      // v3.136: andamento da execução (etapa, %, telas, achados) para a tela acompanhar ao vivo
+      robo_progresso: soRobo(async () => { const sql = await getSql(); await sql`UPDATE qa_execucoes SET progresso=${JSON.stringify({ ...(b.progresso || {}), em: new Date().toISOString() })} WHERE id=${b.execucao_id} AND status='rodando'`; return { ok: true }; }),
       robo_layout: soRobo(() => roboLayout(b)),
     };
     if (!acoes[b.action]) return res.status(400).json({ success: false, error: 'Ação desconhecida' });

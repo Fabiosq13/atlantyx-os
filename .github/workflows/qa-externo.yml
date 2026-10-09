@@ -26,8 +26,12 @@ jobs:
           URL="${ATX_URL:-https://atlantyx-os.vercel.app}"
           if [ -z "$CRON_SECRET" ]; then echo "Falta o secret CRON_SECRET"; exit 1; fi
           if [ "$NOTURNO" = "1" ]; then echo "rodar=1" >> "$GITHUB_OUTPUT"; exit 0; fi
-          R=$(curl -s -X POST "$URL/api/qa-externo" -H "Content-Type: application/json" -H "Authorization: Bearer $CRON_SECRET" -d '{"action":"robo_tem_fila"}')
-          if echo "$R" | grep -Eq '"fila":[1-9]'; then echo "rodar=1" >> "$GITHUB_OUTPUT"; else echo "Fila vazia"; echo "rodar=0" >> "$GITHUB_OUTPUT"; fi
+          CODE=$(curl -s -o /tmp/fila.json -w "%{http_code}" -X POST "$URL/api/qa-externo" -H "Content-Type: application/json" -H "Authorization: Bearer $CRON_SECRET" -d '{"action":"robo_tem_fila"}')
+          R=$(head -c 300 /tmp/fila.json | tr -d '\n')
+          echo "robo_tem_fila em $URL -> HTTP $CODE: $R"
+          # aviso visível no resumo da execução (sem expor o secret)
+          if [ "$CODE" != "200" ]; then echo "::warning title=Fila do QA::HTTP $CODE em $URL/api/qa-externo — $R (CRON_SECRET do GitHub igual ao do Vercel? ATX_URL correta?)"; fi
+          if echo "$R" | grep -Eq '"fila":[1-9]'; then echo "rodar=1" >> "$GITHUB_OUTPUT"; echo "::notice title=Fila do QA::$R"; else echo "Fila vazia"; echo "rodar=0" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/checkout@v4
         if: steps.fila.outputs.rodar == '1'
       - uses: actions/setup-node@v4

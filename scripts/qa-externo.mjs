@@ -32,6 +32,9 @@ const api = async (action, body = {}) => {
   const d = await r.json().catch(() => ({})); if (!r.ok || !d.success) throw new Error(action + ': ' + (d.error || r.status)); return d;
 };
 const espera = ms => new Promise(r => setTimeout(r, ms));
+// andamento para a tela (no máximo 1 envio a cada 4 s, sem travar o robô)
+let _execAtual = null, _ultProg = 0, _progEstado = {};
+const progresso = (p, forcar) => { _progEstado = { ..._progEstado, ...p, pct: Math.max(_progEstado.pct || 0, p.pct || 0) }; if (!_execAtual || (!forcar && Date.now() - _ultProg < 4000)) return; _ultProg = Date.now(); api('robo_progresso', { execucao_id: _execAtual, progresso: _progEstado }).catch(() => {}); };
 // nunca clicar: sair da conta, excluir a própria conta, pagamentos, envios em massa
 const RX_PERIGO = /\b(sair|logout|log ?out|sign ?out|desconectar|excluir (minha )?conta|apagar (minha )?conta|delete account|encerrar conta|cancelar assinatura|pagar|checkout|comprar|disparar|enviar para todos)\b/i;
 const RX_LIXO = /\bundefined\b|\bNaN\b|\[object Object\]|Invalid Date|R\$\s*NaN|(^|\s)null(\s|$)/;
@@ -52,6 +55,7 @@ for (let n = 0; n < 10; n++) {
   const P = job.produto; console.log(`\n=== ${P.nome} (${P.url}) · execução ${job.execucao.id}`);
   let R;
   if (job.planos_rascunho) console.log(`  (${job.planos_rascunho} plano(s) de testes em rascunho — os casos só rodam depois de aprovados na Esteira de Entrega)`);
+  _execAtual = job.execucao.id; _progEstado = { inicio: new Date().toISOString(), pct: 1, etapa: 'Abrindo o produto', achados: 0 }; progresso({}, true);
   try { R = await testarProduto(P, job.execucao.id, job.casos || []); }
   catch (e) { console.error('Falha geral:', e.message); R = { erro: e.message, telas_descobertas: 0, telas_testadas: 0, cobertura_pct: 0, achados: [{ tipo: 'acesso', severidade: 'critica', titulo: 'O robô não conseguiu testar o produto', descricao: e.message, tela: P.url, url: P.url, chave: 'falha-geral' }] }; }
   try { const r = await api('robo_resultado', { execucao_id: job.execucao.id, ...R }); console.log('Resultado gravado:', JSON.stringify(r)); } catch (e) { console.error('Não gravou o resultado:', e.message); }
@@ -60,7 +64,7 @@ await browser.close();
 
 async function testarProduto(P, execId, casos = []) {
   const t0 = Date.now(), fimEm = t0 + ORC_MIN * 60000, marca = 'QA-ATX-' + execId.slice(-6);
-  const A = []; const add = a => { A.push(a); };
+  const A = []; const add = a => { A.push(a); progresso({ achados: A.length }); };
   const origem = new URL(P.url).origin;
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: false });
   const pg = await ctx.newPage();
@@ -92,6 +96,7 @@ async function testarProduto(P, execId, casos = []) {
     prompt_correcao: 'Configure no servidor/hospedagem do app os cabeçalhos HTTP de segurança: ' + faltam.map(f => f[0]).join(', ') + '. Em apps Lovable/Vercel isso é feito no arquivo de configuração de headers (vercel.json ou equivalente).' });
 
   // ── 1. login ──
+  progresso({ etapa: 'Entrando com o usuário de teste', pct: 3 }, true);
   await login(pg, P, add);
   if (Date.now() > fimEm) throw new Error('tempo esgotado no login');
   const cookies = await ctx.cookies();
@@ -108,6 +113,7 @@ async function testarProduto(P, execId, casos = []) {
     for (const C of casos.filter(c => !['carga', 'estresse'].includes(c.tipo)).slice(0, MAX_CASOS)) {
       if (Date.now() > limiteT) { console.log('  (tempo do plano esgotado — restantes ficam para a próxima execução)'); break; }
       consoleErros = []; chamadas = [];
+      progresso({ etapa: `Robô do Plano — ${C.codigo} ${C.titulo}`.substring(0, 140), pct: 5 + Math.round(casosRes.length / Math.max(1, Math.min(MAX_CASOS, casos.length)) * 30), casos: casosRes.length + '/' + Math.min(MAX_CASOS, casos.length) }, true);
       const r = await executarCaso(pg, C, P, origem, urlInicial).catch(e => ({ veredito: 'bloqueado', motivo: 'erro do robô: ' + e.message, hist: [] }));
       const js = consoleErros.filter(t => /^JS:/.test(t)); const api5 = chamadas.filter(c => c.status >= 500 || c.status === 0);
       if (r.veredito === 'passou' && (js.length || api5.length)) { r.veredito = 'falhou'; r.motivo += ` — mas a tela teve ${js.length ? 'erro de JavaScript (' + js[0].substring(0, 120) + ')' : 'API com erro ' + api5[0].status + ' em ' + new URL(api5[0].url).pathname}`; }
@@ -146,6 +152,7 @@ async function testarProduto(P, execId, casos = []) {
     const titulo = await pg.evaluate(() => (document.querySelector('h1,h2,[role=heading]')?.innerText || document.title || location.pathname).trim().substring(0, 80)).catch(() => pg.url());
     visitadas.set(k, { titulo, url: pg.url() }); const nomeTela = titulo || pg.url();
     console.log(`  · ${nomeTela} (${ms} ms)`);
+    progresso({ etapa: `Testando a tela "${nomeTela}"`.substring(0, 140), pct: Math.min(75, 35 + Math.round(visitadas.size / Math.max(visitadas.size + fila.length, 1) * 40)), telas: visitadas.size + ' de ' + (visitadas.size + fila.length) }, true);
     // se a sessão caiu (voltou ao login), reentra
     if (await temCampoSenha(pg)) { await login(pg, P, add).catch(() => {}); continue; }
     const print = async () => { try { return 'data:image/jpeg;base64,' + (await pg.screenshot({ type: 'jpeg', quality: 45, fullPage: false })).toString('base64'); } catch (_) { return null; } };
@@ -212,6 +219,7 @@ async function testarProduto(P, execId, casos = []) {
   const descobertas = visitadas.size + fila.length, testadas = visitadas.size;
   robos.exploratorio = { telas: testadas, ciclos_cadastro: crudFeitos, analises_ia: iaUsadas, texto: `${testadas} de ${descobertas} telas · ${crudFeitos} ciclo(s) incluir/alterar/excluir · ${iaUsadas} tela(s) criticadas pela IA` };
   // ── 2h. Robô Macaco ──
+  progresso({ etapa: 'Robô Macaco — uso fora do roteiro', pct: 78 }, true);
   let macAcoes = 0, macProb = 0;
   for (const v of [...visitadas.values()].slice(0, MACACO_TELAS)) {
     if (Date.now() > fimEm - 90000) break;
@@ -243,6 +251,7 @@ async function testarProduto(P, execId, casos = []) {
   }
   robos.macaco = { telas: Math.min(MACACO_TELAS, visitadas.size), acoes: macAcoes, problemas: macProb, texto: `${macAcoes} ação(ões) aleatória(s) em ${Math.min(MACACO_TELAS, visitadas.size)} tela(s) · ${macProb} quebra(s)` };
   // ── 2i. Robô de Layout de Saída (IA com visão) ──
+  progresso({ etapa: 'Robô de Layout — IA analisando os prints', pct: 83 }, true);
   let layAch = 0;
   for (const L of layoutFila) { if (Date.now() > fimEm - 45000) break;
     try { const r = await api('robo_layout', { produto: { nome: P.nome }, tela: { titulo: L.titulo, url: L.url }, imagens: L.imagens });
@@ -250,6 +259,7 @@ async function testarProduto(P, execId, casos = []) {
     catch (e) { console.log('    layout:', e.message); } }
   robos.layout = { telas: layoutFila.length, achados: layAch, texto: `${layoutFila.length} tela(s) analisadas no computador e no celular · ${layAch} problema(s) de layout` };
   // ── 2j. Robô de Governança (LGPD) ──
+  progresso({ etapa: 'Robô de Governança (LGPD)', pct: 88 }, true);
   let govN = 0; for (const a of govTexto.values()) { add(a); govN++; }
   if (segredosApi.size) { govN++; add({ tipo: 'governanca', severidade: 'critica', titulo: 'API devolve campo de senha ou segredo', descricao: 'Respostas com campo de senha/hash/segredo preenchido:\n' + [...segredosApi].slice(0, 8).join('\n'), tela: 'Retaguarda (APIs)', url: P.url, chave: 'gov-segredo',
     prompt_correcao: 'Remova das respostas das APIs (e das consultas às tabelas) qualquer campo de senha, hash de senha ou segredo. Selecione só as colunas que a tela usa.' }); }
@@ -263,6 +273,7 @@ async function testarProduto(P, execId, casos = []) {
     await pv.close(); } catch (_) {}
   robos.governanca = { achados: govN, texto: `dados pessoais nas telas, segredos nas APIs, política de privacidade e cookies · ${govN} achado(s)` };
   // ── 2k. Robô de Integração (APIs que as telas chamaram) ──
+  progresso({ etapa: 'Robô de Integração — reexecutando as APIs', pct: 91 }, true);
   let intN = 0, intRe = 0; const anon = await pwRequest.newContext({ ignoreHTTPSErrors: false }).catch(() => null);
   for (const [cam, A2] of [...apisVistas.entries()].slice(0, 20)) { if (Date.now() > fimEm - 30000) break;
     const hdr = Object.fromEntries(Object.entries(A2.headers || {}).filter(([k]) => !/^(host|content-length|connection|accept-encoding)$/i.test(k)));
@@ -308,6 +319,7 @@ async function testarProduto(P, execId, casos = []) {
   } else robos.carga = { texto: P.permitir_carga ? 'nenhuma API capturada para medir' : 'desligado — libere "teste de carga" no cadastro do produto (use ambiente de homologação)' };
   robos.integracao = { apis: apisVistas.size, reexecutadas: intRe, achados: intN, texto: `${intRe} API(s) reexecutadas (status, contrato, tempo e acesso sem login) · ${intN} achado(s)` };
   // ── 3. segurança: telas internas exigem login? (sessão anônima, só leitura) ──
+  progresso({ etapa: 'Robô de Segurança — acesso sem login', pct: 96 }, true);
   try { const anon = await browser.newContext(); const pa = await anon.newPage(); let abertas = [];
     for (const v of [...visitadas.values()].slice(0, 12)) { const u = v.url; if (u.split('#')[0] === (P.url_login || P.url).split('#')[0]) continue;
       await pa.goto(u, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}); await espera(2500);
