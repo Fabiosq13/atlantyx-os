@@ -260,6 +260,36 @@ Responda SOMENTE JSON: {"achados":[{"severidade":"alta|media|baixa","titulo":"..
     { type: 'text', text: `PRODUTO: ${produto?.nome || ''}\nTELA: ${tela?.titulo || ''} (${tela?.url || ''})\nImagem 1 = computador (1440px); imagem 2 = celular (390px).` }];
   try { const j = await _ia(sistema, content, 1800); return { achados: (j.achados || []).slice(0, 8) }; } catch (e) { return { achados: [], aviso: e.message }; }
 }
+// v3.139: relatório geral de erros em Word, com o prompt de correção de cada achado para colar no Lovable
+async function relatorioWord({ produto_id, incluir_fechados }) {
+  const sql = await getSql(); const P = (await sql`SELECT * FROM qa_produtos WHERE id=${produto_id}`)[0]; if (!P) throw new Error('Produto não encontrado');
+  const A = (await sql`SELECT tipo, severidade, titulo, descricao, tela, url, evidencia, como_reproduzir, prompt_correcao, status, ocorrencias, criado_em FROM qa_achados WHERE produto_id=${produto_id} ORDER BY CASE severidade WHEN 'critica' THEN 0 WHEN 'alta' THEN 1 WHEN 'media' THEN 2 ELSE 3 END, tipo, criado_em`)
+    .filter(a => incluir_fechados || ['aberto', 'em_correcao', 'corrigido'].includes(a.status));
+  const E = (await sql`SELECT * FROM qa_execucoes WHERE produto_id=${produto_id} AND status IN ('concluida','erro') ORDER BY terminado_em DESC LIMIT 1`)[0];
+  const mdc = v => String(v ?? '').replace(/\|/g, '/').replace(/\s+/g, ' ').trim();
+  const SEV = { critica: 'Crítica', alta: 'Alta', media: 'Média', baixa: 'Baixa' }, ST = { aberto: 'Aberto', em_correcao: 'Em correção', corrigido: 'Corrigido — retestar', validado: 'Validado', falso_positivo: 'Falso positivo', aceito: 'Risco aceito' };
+  const cont = s2 => A.filter(a => a.severidade === s2).length;
+  const porTipo = Object.entries(A.reduce((m, a) => { m[a.tipo] = (m[a.tipo] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]);
+  const L = ['# Relatório de Erros e Correções', '', `Produto **${P.nome}** (${P.url})${P.plataforma ? ' · ' + P.plataforma : ''} · emitido em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }).substring(0, 16)}.`, '',
+    '## 1. Resumo', '', '| Indicador | Valor |', '|---|---|', `| Achados ${incluir_fechados ? 'no total' : 'pendentes'} | ${A.length} |`, `| Críticos / altos / médios / baixos | ${cont('critica')} / ${cont('alta')} / ${cont('media')} / ${cont('baixa')} |`,
+    ...(E ? [`| Última execução | ${new Date(E.terminado_em || E.pedido_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }).substring(0, 16)} · ${E.telas_testadas ?? 0} de ${E.telas_descobertas ?? 0} telas (${Number(E.cobertura_pct || 0)}%) |`] : []), '',
+    '| Tipo | Achados |', '|---|---|', ...porTipo.map(([t, n]) => `| ${TIPOS[t] || t} | ${n} |`), '',
+    '## 2. Como usar este relatório no Lovable', '', '- Corrija na ordem: críticos, depois altos, médios e baixos.', '- Para cada achado, copie o bloco **Prompt para o Lovable** e cole no chat do projeto no Lovable — um achado por vez, conferindo o resultado.', '- Depois de corrigir, marque o achado como **Corrigido — retestar** no Atlantyx OS (QA de Produtos) e rode o teste de novo: o robô valida ou reabre cada correção.', '- Achados de **segurança** e **dados** pedem atenção também no Supabase (regras de acesso/RLS, chaves e políticas).', '',
+    '## 3. Lista de achados', '', '| # | Severidade | Tipo | Achado | Tela | Situação |', '|---|---|---|---|---|---|',
+    ...A.map((a, i) => `| ${i + 1} | ${SEV[a.severidade] || a.severidade} | ${TIPOS[a.tipo] || a.tipo} | ${mdc(a.titulo)} | ${mdc(a.tela) || '—'} | ${ST[a.status] || a.status}${a.ocorrencias > 1 ? ' (visto ' + a.ocorrencias + 'x)' : ''} |`), '', '<!-- quebra -->', '', '## 4. Detalhe e correção de cada achado', ''];
+  A.forEach((a, i) => {
+    L.push(`### ${i + 1}. [${SEV[a.severidade]}] ${mdc(a.titulo)}`, '', `| Campo | Detalhe |`, `|---|---|`, `| Tipo | ${TIPOS[a.tipo] || a.tipo} |`, `| Tela | ${mdc(a.tela) || '—'} |`, `| Endereço | ${mdc(a.url) || '—'} |`, `| Situação | ${ST[a.status] || a.status} |`, '',
+      '**O que está errado:**', '', ...String(a.descricao || '—').split('\n').map(x => x.trim()).filter(Boolean).map(x => '> ' + x), '');
+    if (a.evidencia && a.evidencia !== a.descricao) L.push('**Evidência:** ' + mdc(a.evidencia).substring(0, 1200), '');
+    if (a.como_reproduzir) L.push('**Como reproduzir:**', '', ...String(a.como_reproduzir).split('\n').map(x => x.trim()).filter(Boolean).map(x => /^\d+\./.test(x) ? x : '- ' + x), '');
+    L.push('**Prompt para o Lovable:**', '', '> ' + mdc(a.prompt_correcao || `Na tela "${a.tela || ''}" foi encontrado: ${a.titulo}. ${a.descricao || ''} Corrija mantendo o restante do comportamento.`), '');
+  });
+  L.push('<!-- quebra -->', '', '## 5. Prompt consolidado (correções críticas e altas)', '', 'Use quando quiser pedir ao Lovable várias correções de uma vez (recomendado no máximo 5 por pedido):', '');
+  A.filter(a => ['critica', 'alta'].includes(a.severidade)).forEach((a, i) => L.push(`${i + 1}. ${mdc(a.prompt_correcao || a.titulo)}`));
+  const { gerarDocx } = await import('../lib/docx-md.js');
+  const buf = await gerarDocx(L.join('\n').replace(/^#\s+.*\n/, ''), { titulo: 'Relatório de Erros e Correções', subtitulo: P.nome, projeto: P.nome, cliente: 'Atlantyx', autor: 'QA de Produtos — Atlantyx OS (robôs + IA)', sumario: false });
+  return { nome: `Relatorio_Erros_${P.nome}_${new Date().toISOString().substring(0, 10)}.docx`.replace(/[^\wÀ-ú.\- ]+/g, '_'), base64: Buffer.from(buf).toString('base64'), achados: A.length };
+}
 async function achadoTarefa({ id }) {
   const sql = await getSql(); const a = (await sql`SELECT a.*, p.nome AS produto, p.repo_github FROM qa_achados a JOIN qa_produtos p ON p.id=a.produto_id WHERE a.id=${id}`)[0];
   if (!a) throw new Error('Achado não encontrado'); if (!a.repo_github) throw new Error('Este produto não tem repositório GitHub cadastrado — use o prompt de correção na ferramenta do produto (ex.: Lovable).');
@@ -287,6 +317,7 @@ async function handler(req, res) {
       achado_status: () => achadoStatus(b),
       achado_tarefa: () => achadoTarefa(b),
       achado_confirmar: () => achadoConfirmar(b),
+      relatorio_word: () => relatorioWord(b),
       achado_print: async () => { const sql = await getSql(); return { print: (await sql`SELECT print FROM qa_achados WHERE id=${b.id}`)[0]?.print || null }; },
       robo_tem_fila: soRobo(async () => { const sql = await getSql(); return { fila: (await sql`SELECT COUNT(*)::int AS n FROM qa_execucoes WHERE status='fila'`)[0].n }; }),
       robo_enfileirar_noturno: soRobo(() => roboEnfileirarNoturno()),

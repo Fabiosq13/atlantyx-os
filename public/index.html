@@ -28853,7 +28853,7 @@ function qpDetalhe() {
   const filt = { pendentes: pend, aberto: A.filter(a => a.status === 'aberto'), em_correcao: A.filter(a => a.status === 'em_correcao'), corrigido: A.filter(a => a.status === 'corrigido'), fechados: A.filter(a => ['validado', 'falso_positivo', 'aceito'].includes(a.status)), todos: A }[_qpFiltro] || pend;
   const E = (_qpAchados.execucoes || [])[0];
   ov.querySelector('.qp-mod').innerHTML = '<div class="qp-mh"><div><div class="fv2-pt">' + _qpEsc(P.nome) + '</div><div class="fv2-pq"><a href="' + _qpEsc(P.url) + '" target="_blank" rel="noopener">' + _qpEsc(P.url) + ' ↗</a>' + (P.plataforma ? ' · ' + _qpEsc(P.plataforma) : '') + ' · usuário de teste: ' + _qpEsc(P.usuario || '—') + (P.tem_senha ? (P.senha_legivel === false ? ' · <b style="color:var(--fv2-crit);">senha ilegível — digite de novo no Cadastro</b>' : ' · senha guardada 🔒') : ' · <b style="color:var(--fv2-crit);">sem senha</b>') + '</div></div>'
-    + '<div class="mc-sug"><button class="btn btn-gn" onclick="qpTestar(\'' + P.id + '\')">▶ Testar agora</button><button class="btn btn-g" onclick="qpForm(_qpProd)">✎ Cadastro</button><button class="btn btn-g" onclick="document.getElementById(\'qpModal\').remove()">Fechar ✕</button></div></div>'
+    + '<div class="mc-sug"><button class="btn btn-gn" onclick="qpTestar(\'' + P.id + '\')">▶ Testar agora</button><button class="btn btn-g" onclick="qpRelatorio(\'' + P.id + '\')">⭳ Relatório Word (correções Lovable)</button><button class="btn btn-g" onclick="qpForm(_qpProd)">✎ Cadastro</button><button class="btn btn-g" onclick="document.getElementById(\'qpModal\').remove()">Fechar ✕</button></div></div>'
     + (E ? '<div class="fv2-cab"><span>Última execução: <b>' + _qpEsc(E.status) + '</b> · ' + (E.terminado_em ? new Date(E.terminado_em).toLocaleString('pt-BR').substring(0, 16) : 'em andamento') + ' · ' + (E.telas_testadas ?? 0) + ' de ' + (E.telas_descobertas ?? 0) + ' telas (' + (E.cobertura_pct != null ? Number(E.cobertura_pct).toLocaleString('pt-BR') : 0) + '%)' + (E.resumo?.ciclos_cadastro != null ? ' · ' + E.resumo.ciclos_cadastro + ' ciclo(s) de cadastro · ' + (E.resumo.analises_ia || 0) + ' tela(s) analisadas pela IA' : '') + (E.erro ? ' · <b style="color:var(--fv2-crit);">' + _qpEsc(E.erro) + '</b>' : '') + '</span>'
       + '<span>Aprovação: 100% das telas e nenhum achado pendente</span></div>' : '<div class="fv2-aviso">Ainda não testado — clique em Testar agora.</div>')
     + _qpLogHtml(E)
@@ -28872,6 +28872,12 @@ function qpDetalhe() {
         + (['aberto', 'em_correcao', 'corrigido'].includes(a.status) && ['media', 'baixa'].includes(a.severidade) ? '<button class="btn btn-g" title="Defeito médio/baixo aceito formalmente pelo cliente, com plano de correção (critério do gate G7)" onclick="qpStatus(\'' + a.id + '\',\'aceito\')">Risco aceito</button>' : '')
         + (!['falso_positivo'].includes(a.status) ? '<button class="btn btn-g" title="Metodologia 9.4: só defeitos confirmados por um analista aparecem no painel do cliente" onclick="qpConfirmar(\'' + a.id + '\',' + (!a.confirmado) + ')">' + (a.confirmado ? '✔ Confirmado (desfazer)' : 'Confirmar para o cliente') + '</button>' : '')
         + (['validado', 'falso_positivo', 'aceito'].includes(a.status) ? '<button class="btn btn-g" onclick="qpStatus(\'' + a.id + '\',\'aberto\')">Reabrir</button>' : '') + '</div></div>'; }).join('') : '<div class="fv2-vazio">Nada aqui.</div>') + '</div>';
+}
+async function qpRelatorio(id) {
+  try { toast('Gerando o relatório em Word…'); const r = await qpApi('relatorio_word', { produto_id: id }); if (!r.achados) toast('Nenhum achado pendente — o Word sai só com o resumo', 'success');
+    const bin = atob(r.base64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([u], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })); a.download = r.nome; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500); }
+  catch (e) { toast(e.message, 'error'); }
 }
 async function qpConfirmar(id, conf) {
   try { await qpApi('achado_confirmar', { id, confirmado: conf }); const a = _qpAchados.achados.find(x => x.id === id); if (a) a.confirmado = conf; qpDetalhe(); toast(conf ? 'Confirmado — aparece no painel do cliente' : 'Confirmação removida', 'success'); }
@@ -31699,7 +31705,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.138] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.139] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -31715,7 +31721,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.138';
+window.__ATX_BUILD_ID__ = 'ATX-v3.139';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
