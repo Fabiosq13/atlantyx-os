@@ -995,6 +995,52 @@ async function pagamentosDoDiaEPendentes() {
     total_dia: soma(listaDia), total_mes_pendente: soma(listaMes), total_atrasado: soma(atrasadas), qb_erro: qbErro };
 }
 
+// v3.128: seções novas do e-mail — índice no topo, termos, pagamentos (duplicados e pagos) e vendas faturadas
+function _htmlRelatorioExtra(d) {
+  const brl = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const dt = s => s ? String(s).substring(0, 10).split('-').reverse().join('/') : '—';
+  const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const soma = l => (l || []).reduce((s, x) => s + (x.valor || 0), 0);
+  const td = (v, o = '') => `<td style="padding:6px 8px;border-bottom:1px solid #e4e8f2;font-size:12px;${o}">${v}</td>`;
+  const th = c => `<tr style="background:#eef1f8;color:#3a4560;">${c.map(x => `<th style="padding:6px 8px;text-align:${/valor|dias/i.test(x) ? 'right' : 'left'};font-size:10.5px;text-transform:uppercase;">${x}</th>`).join('')}</tr>`;
+  const bloco = (ico, titulo, cor, lista, cab, linha, vazio, nota) => `<h3 style="font-size:13.5px;color:#17224a;margin:20px 0 6px;border-left:4px solid ${cor};padding-left:8px;">${ico} ${titulo} <span style="color:#8a93a8;font-weight:normal;">· ${(lista || []).length} · ${brl(soma(lista))}</span></h3>`
+    + (nota ? `<div style="font-size:11.5px;color:#5a6478;margin:0 0 6px 12px;">${nota}</div>` : '')
+    + ((lista || []).length ? `<table style="width:100%;border-collapse:collapse;">${th(cab)}${lista.slice(0, 40).map(linha).join('')}${lista.length > 40 ? `<tr><td colspan="${cab.length}" style="padding:6px 8px;font-size:11px;color:#8a93a8;">+ ${lista.length - 40} item(ns) — veja no sistema</td></tr>` : ''}</table>` : `<p style="color:#1FB287;font-size:12px;margin:4px 0 0 12px;">✓ ${vazio}</p>`);
+  const T = d.termos || {}, V = d.vendas || {}, X = d.pagx || {};
+  const etapa = { elaboracao: 'Elaboração', aprovacao: 'Aprovação', emissao_nf: 'Emissão de NF', envio_nf: 'Envio de NF', pagamento: 'Pagamento', pago: 'Pago' };
+  const lT = (extra) => t => `<tr>${td(`<b>${esc(t.numero || '—')}</b>`)}${td(esc(t.projeto) + '<br><span style="color:#8a93a8;font-size:11px;">' + esc(t.cliente) + ' · ' + esc(t.periodo) + '</span>')}${td(etapa[t.status] || t.status)}${td(t.dias != null ? t.dias + ' dias' : '—', 'text-align:right;' + (t.dias >= PRAZO_TERMO_DIAS ? 'color:#D64545;font-weight:bold;' : ''))}${td(extra ? extra(t) : '')}${td(brl(t.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`;
+  const cabT = (x) => ['Termo', 'Projeto / cliente', 'Etapa', 'Dias', x || '', 'Valor'];
+  const lF = f => `<tr>${td(`<a href="${f.qb_url}" style="color:#1A3A8F;">${esc(f.doc || f.id)}</a>`)}${td(esc(f.cliente))}${td(dt(f.vencimento))}${td(f.dias_atraso ? f.dias_atraso + ' dias' : '—', 'text-align:right;' + (f.dias_atraso > 30 ? 'color:#D64545;font-weight:bold;' : ''))}${td(f.termo ? esc(f.termo) + (f.nf ? ' · NF ' + esc(f.nf) : ' · <span style="color:#E0A422;">sem NF</span>') : '<span style="color:#E0A422;">sem termo</span>')}${td(brl(f.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`;
+  const cabF = ['Fatura', 'Cliente', 'Vencimento', 'Dias de atraso', 'Termo / NF', 'Valor em aberto'];
+  const lP = x => `<tr>${td(dt(x.data))}${td(esc(x.descricao) + (x.fornecedor && !String(x.descricao).includes(x.fornecedor) ? '<br><span style="color:#8a93a8;font-size:11px;">' + esc(x.fornecedor) + '</span>' : ''))}${td(esc(x.categoria) + (x.fonte === 'quickbooks' ? ' <span style="color:#1FB287;">(QB)</span>' : ''))}${td(brl(x.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`;
+  const idx = [['Termos em atraso', T.em_atraso], ['Termos a confirmar na CPFL', T.a_confirmar_cpfl], ['Faturas vencidas', V.atraso], ['Pagamentos em atraso', d.atrasadas], ['Possíveis duplicados', X.duplicados]];
+  const resumo = `<table style="width:100%;border-collapse:collapse;margin:22px 0 4px;"><tr>${idx.map(([t, l]) => { const n = (l || []).length; return `<td style="padding:8px;background:${n ? '#FDEDED' : '#EAFBF5'};border-radius:6px;border:3px solid #fff;"><div style="font-size:10px;color:#5a6478;text-transform:uppercase;">${t}</div><div style="font-size:17px;font-weight:bold;color:${n ? '#D64545' : '#1FB287'};">${n}</div><div style="font-size:10.5px;color:#8a93a8;">${brl(t === 'Possíveis duplicados' ? soma(l) : soma(l))}</div></td>`; }).join('')}</tr></table>`;
+  if (d._soResumo) return resumo;
+  return `<h2 style="font-size:15px;color:#17224a;border-bottom:2px solid #1A3A8F;padding-bottom:5px;margin-top:26px;">📄 Termos de faturamento</h2>`
+    + (T.erro ? `<p style="color:#E0A422;font-size:12px;">⚠ Não consegui ler os termos: ${esc(T.erro)}</p>` : '')
+    + bloco('⏰', 'Termos em atraso (' + PRAZO_TERMO_DIAS + '+ dias sem pagamento)', '#D64545', T.em_atraso, cabT('Previsão CPFL'), lT(t => t.previsao ? dt(t.previsao) : '—'), 'Nenhum termo em atraso.')
+    + bloco('🏢', 'Termos a confirmar notas na CPFL', '#E0A422', T.a_confirmar_cpfl, cabT(''), lT(), 'Todos os termos em pagamento estão confirmados no portal da CPFL.', 'Termos na etapa Pagamento cujas notas ainda não foram confirmadas como entregues e aprovadas no portal de fornecedores.')
+    + bloco('✍', 'Termos pendentes de aprovação', '#4F7CFF', T.pendentes_aprovacao, cabT(''), lT(), 'Nenhum termo aguardando aprovação.', 'Termos em elaboração ou aguardando aprovação do cliente.')
+    + bloco('🧾', 'Termos com rateio sem nota', '#E0A422', T.rateio_sem_nota, cabT('Empresas sem NF'), lT(t => t.sem_nota.map(e => esc(e.empresa) + ' (' + brl(e.valor) + ')').join('<br>')), 'Todas as empresas dos rateios já têm nota.', 'Termos já em emissão/envio/pagamento em que alguma empresa do rateio ainda não tem número de nota fiscal.')
+    + bloco('💳', 'Termos com pagamento pendente', '#4F7CFF', T.pagamento_pendente, cabT('CPFL'), lT(t => t.cpfl_confirmado ? '✓ confirmado' + (t.previsao ? ' · prev. ' + dt(t.previsao) : '') : '<span style="color:#E0A422;">a confirmar</span>'), 'Nenhum termo aguardando pagamento.')
+    + bloco('📌', 'Termos não pagos (todas as etapas)', '#8a93a8', T.nao_pagos, cabT(''), lT(), 'Todos os termos estão pagos.')
+    + `<h2 style="font-size:15px;color:#17224a;border-bottom:2px solid #E0A422;padding-bottom:5px;margin-top:28px;">💰 Pagamentos — situação do mês</h2>`
+    + bloco('⚠', 'Pagamentos em atraso', '#D64545', d.atrasadas, ['Vencimento', 'Descrição', 'Categoria', 'Valor'], lP, 'Nenhum pagamento em atraso.')
+    + bloco('⧉', 'Possíveis pagamentos duplicados', '#D64545', (X.duplicados || []).map(x => ({ ...x, valor: x.valor })), ['Lançamento 1', 'Lançamento 2', 'Situação', 'Valor'],
+      x => `<tr>${td(esc(x.a.descricao) + '<br><span style="color:#8a93a8;font-size:11px;">' + dt(x.a.data) + ' · ' + (x.a.fonte === 'quickbooks' ? 'QuickBooks' : 'Atlantyx') + '</span>')}${td(esc(x.b.descricao) + '<br><span style="color:#8a93a8;font-size:11px;">' + dt(x.b.data) + ' · ' + (x.b.fonte === 'quickbooks' ? 'QuickBooks' : 'Atlantyx') + '</span>')}${td(x.a.situacao + ' / ' + x.b.situacao)}${td(brl(x.valor), 'text-align:right;font-family:monospace;')}</tr>`,
+      'Nenhum lançamento com mesmo fornecedor e valor em até 5 dias.', 'Mesmo fornecedor/descrição e mesmo valor com até 5 dias de diferença — confira antes de pagar.')
+    + bloco('⏳', 'Pagamentos pendentes do mês', '#E0A422', d.listaMes.filter(x => x.data >= d.hoje), ['Vencimento', 'Descrição', 'Categoria', 'Valor'], lP, 'Nenhum pagamento pendente a vencer no mês.')
+    + bloco('✅', 'Pagamentos feitos no mês', '#1FB287', X.pagos_mes, ['Data', 'Descrição', 'Categoria', 'Valor'], lP, 'Nenhum pagamento registrado no mês.', X.erro_qb ? '⚠ QuickBooks: ' + esc(X.erro_qb) : null)
+    + `<h2 style="font-size:15px;color:#17224a;border-bottom:2px solid #1FB287;padding-bottom:5px;margin-top:28px;">🧾 Vendas faturadas (QuickBooks)</h2>`
+    + (V.erro ? `<p style="color:#E0A422;font-size:12px;">⚠ ${esc(V.erro)}</p>` : '')
+    + bloco('⏰', 'Faturas em atraso não pagas', '#D64545', V.atraso, cabF, lF, 'Nenhuma fatura vencida.')
+    + bloco('📅', 'Faturas em dia não pagas (a vencer)', '#4F7CFF', V.em_dia, cabF, lF, 'Nenhuma fatura a vencer.')
+    + bloco('❓', 'Faturas sem nota ou termo correspondente', '#E0A422', V.sem_termo, cabF, lF, 'Todas as faturas em aberto têm termo e nota.', 'Faturas em aberto que não estão ligadas a um termo de faturamento ou cujo termo ainda não tem número de NF.')
+    + bloco('✅', 'Faturas pagas no mês', '#1FB287', V.pagas_mes, ['Fatura', 'Cliente', 'Pago em', 'Vencimento', 'Situação', 'Valor'],
+      f => `<tr>${td(`<a href="${f.qb_url}" style="color:#1A3A8F;">${esc(f.doc)}</a>`)}${td(esc(f.cliente))}${td(dt(f.pago_em))}${td(dt(f.vencimento))}${td(f.dias_atraso ? '<span style="color:#E0A422;">pago com ' + f.dias_atraso + ' dias de atraso</span>' : '<span style="color:#1FB287;">em dia</span>')}${td(brl(f.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`,
+      'Nenhum recebimento de fatura no mês.')
+    + (d.app_url ? `<p style="margin-top:18px;"><a href="${d.app_url}" style="background:#1A3A8F;color:#fff;padding:9px 16px;border-radius:6px;text-decoration:none;font-size:12.5px;">Abrir o Atlantyx OS</a></p>` : '');
+}
 function _htmlRelatorioPagamentos(d) {
   const brl = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const dataBR = s => String(s || '').split('-').reverse().join('/');
@@ -1010,7 +1056,8 @@ function _htmlRelatorioPagamentos(d) {
   <body style="margin:0;padding:0;background:#f4f6fb;"><div style="font-family:Arial,Helvetica,sans-serif;color:#1c2333;max-width:820px;">
   <div style="background:linear-gradient(135deg,#0B1226,#1A3A8F);color:#fff;padding:18px 22px;border-radius:10px 10px 0 0;">
     <div style="font-size:12px;letter-spacing:2px;color:#8fb0ff;">ATLANTYX OS · FINANCEIRO</div>
-    <div style="font-size:21px;font-weight:bold;margin-top:4px;">Pagamentos de ${dataBR(d.hoje)}</div>
+    <div style="font-size:21px;font-weight:bold;margin-top:4px;">Relatório financeiro de ${dataBR(d.hoje)}</div>
+    <div style="font-size:12px;color:#c9d6ff;margin-top:3px;">Pagamentos · termos de faturamento · vendas faturadas</div>
   </div>
   <div style="border:1px solid #e4e8f2;border-top:none;padding:18px 22px;border-radius:0 0 10px 10px;">
     <div style="display:block;margin-bottom:18px;">
@@ -1023,6 +1070,7 @@ function _htmlRelatorioPagamentos(d) {
       </tr></table>
     </div>
 
+    ${d.termos ? _htmlRelatorioExtra({ ...d, _soResumo: true }) : ''}
     <h2 style="font-size:15px;color:#17224a;border-bottom:2px solid #4F7CFF;padding-bottom:5px;">💰 Pagamentos de hoje (${dataBR(d.hoje)})</h2>
     ${d.listaDia.length ? `<table style="width:100%;border-collapse:collapse;font-size:13px;">${cab}${d.listaDia.map(x => linha(x, false)).join('')}
       <tr style="background:#f7f9fe;font-weight:bold;"><td colspan="3" style="padding:8px 9px;">TOTAL DO DIA</td><td style="padding:8px 9px;text-align:right;font-family:monospace;">${brl(d.total_dia)}</td><td></td></tr></table>`
@@ -1034,9 +1082,10 @@ function _htmlRelatorioPagamentos(d) {
       <tr style="background:#f7f9fe;font-weight:bold;"><td colspan="3" style="padding:8px 9px;">TOTAL PENDENTE NO MÊS</td><td style="padding:8px 9px;text-align:right;font-family:monospace;">${brl(d.total_mes_pendente)}</td><td></td></tr></table>`
       : '<p style="color:#5a6478;font-size:13px;padding:10px 0;">Nenhum pagamento pendente no mês.</p>'}
 
+    ${d.termos ? _htmlRelatorioExtra(d) : ''}
     ${d.qb_erro ? `<p style="color:#E0A422;font-size:12px;margin-top:14px;">⚠ Não foi possível consultar o QuickBooks nesta execução (${d.qb_erro}) — a lista pode estar incompleta.</p>` : ''}
     <p style="color:#8a93a8;font-size:11px;margin-top:20px;border-top:1px solid #e4e8f2;padding-top:10px;">
-      Enviado automaticamente pelo Atlantyx OS · Inclui despesas programadas do sistema e contas a pagar do QuickBooks (todos os fornecedores).
+      Enviado automaticamente pelo Atlantyx OS · Pagamentos: despesas programadas do sistema e contas a pagar do QuickBooks · Termos: Kanban de Faturamento (prazo de ${PRAZO_TERMO_DIAS} dias a partir da data do termo ou da inclusão) · Vendas: faturas do QuickBooks.
     </p>
   </div></div></body></html>`;
 }
@@ -1115,15 +1164,105 @@ async function emailDiagnostico({ para } = {}) {
   return out;
 }
 
+// ═══ v3.128: RELATÓRIO DIÁRIO DO FINANCEIRO — além dos pagamentos do dia: TERMOS (a confirmar na CPFL, pendentes de
+// aprovação, rateio sem nota, pagamento pendente, não pagos, em atraso), PAGAMENTOS (em atraso, possíveis duplicados,
+// pagos no mês, pendentes) e VENDAS FATURADAS (em atraso não pagas, em dia não pagas, sem nota/termo, pagas no mês).
+const PRAZO_TERMO_DIAS = 35; // mesmo prazo do Kanban de Faturamento (data do termo ou inclusão no sistema)
+async function _relTermos() {
+  const sql = await getSql(), hoje = _hojeBR();
+  const T = await sql`SELECT id, numero_termo, projeto, contratante, periodo_medicao, valor_total_termo, status, cpfl_confirmado, cpfl_previsao_pagamento,
+      data_termo, criado_em, aprovado_em, entrou_em_envio_nf, atualizado_em, pagamento_status
+    FROM termos_faturamento WHERE status IS DISTINCT FROM 'concluido' ORDER BY criado_em ASC`;
+  const E = T.length ? await sql`SELECT termo_id, empresa, nf_numero, valor_parcela, pagamento_status, qb_invoice_id FROM termos_empresas WHERE termo_id = ANY(${T.map(t => t.id)})` : [];
+  const dia = x => x ? String(x instanceof Date ? x.toISOString() : x).substring(0, 10) : null;
+  const ts = T.map(t => { const base = dia(t.data_termo) || dia(t.criado_em); const dias = base ? Math.floor((Date.parse(hoje) - Date.parse(base)) / 864e5) : null;
+    const emp = E.filter(e => e.termo_id === t.id); const semNota = emp.filter(e => !e.nf_numero);
+    return { id: t.id, numero: t.numero_termo || '', projeto: t.projeto || '', cliente: t.contratante || '', periodo: t.periodo_medicao || '', valor: round(parseFloat(t.valor_total_termo) || 0),
+      status: t.status, dias, base, cpfl_confirmado: !!t.cpfl_confirmado, previsao: dia(t.cpfl_previsao_pagamento),
+      empresas: emp.length, sem_nota: semNota.map(e => ({ empresa: e.empresa, valor: round(parseFloat(e.valor_parcela) || 0) })), valor_sem_nota: round(semNota.reduce((s, e) => s + (parseFloat(e.valor_parcela) || 0), 0)) }; });
+  const naoPago = ts.filter(t => !['pago', 'concluido'].includes(t.status));
+  return {
+    a_confirmar_cpfl: ts.filter(t => t.status === 'pagamento' && !t.cpfl_confirmado),
+    pendentes_aprovacao: ts.filter(t => ['elaboracao', 'aprovacao'].includes(t.status)),
+    rateio_sem_nota: ts.filter(t => ['emissao_nf', 'envio_nf', 'pagamento', 'pago'].includes(t.status) && t.sem_nota.length),
+    pagamento_pendente: ts.filter(t => t.status === 'pagamento'),
+    nao_pagos: naoPago,
+    em_atraso: naoPago.filter(t => t.dias != null && t.dias >= PRAZO_TERMO_DIAS),
+  };
+}
+async function _relVendasFaturadas() {
+  const out = { atraso: [], em_dia: [], sem_termo: [], pagas_mes: [], erro: null };
+  if (!qbConfigurado()) { out.erro = 'QuickBooks não conectado'; return out; }
+  const hoje = _hojeBR(), iniMes = hoje.substring(0, 8) + '01', base = process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
+  try {
+    const token = await qbToken(), sql = await getSql();
+    const [inv, pays, lig] = await Promise.all([
+      qbQuery(`select * from Invoice where Balance > '0' orderby DueDate asc maxresults 1000`, token),
+      qbQuery(`select * from Payment where TxnDate >= '${iniMes}' and TxnDate <= '${hoje}' maxresults 500`, token),
+      sql`SELECT e.qb_invoice_id, e.nf_numero, t.numero_termo, t.projeto FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id WHERE e.qb_invoice_id IS NOT NULL`.catch(() => []),
+    ]);
+    const porInv = {}; lig.forEach(x => { porInv[String(x.qb_invoice_id)] = x; });
+    const map = i => { const l = porInv[String(i.Id)]; return { id: i.Id, doc: i.DocNumber || '', cliente: i.CustomerRef?.name || '', emissao: i.TxnDate, vencimento: i.DueDate || i.TxnDate,
+      valor: round(parseFloat(i.Balance) || 0), total: round(parseFloat(i.TotalAmt) || 0), dias_atraso: i.DueDate && i.DueDate < hoje ? Math.floor((Date.parse(hoje) - Date.parse(i.DueDate)) / 864e5) : 0,
+      termo: l ? (l.numero_termo || '') + (l.projeto ? ' · ' + l.projeto : '') : null, nf: l?.nf_numero || null, qb_url: `${base}/app/invoice?txnId=${i.Id}` }; };
+    const abertas = (inv?.QueryResponse?.Invoice || []).map(map);
+    out.atraso = abertas.filter(i => i.vencimento < hoje).sort((a, b) => b.dias_atraso - a.dias_atraso);
+    out.em_dia = abertas.filter(i => i.vencimento >= hoje);
+    out.sem_termo = abertas.filter(i => !i.termo || !i.nf);
+    // pagas no mês: recebimentos (Payment) e as faturas que eles quitaram — em dia ou com atraso
+    const P = pays?.QueryResponse?.Payment || [];
+    const ids = [...new Set(P.flatMap(p => (p.Line || []).flatMap(l => (l.LinkedTxn || []).filter(x => x.TxnType === 'Invoice').map(x => x.TxnId))))];
+    let invPagas = {}; if (ids.length) { try { const r = await qbQuery(`select * from Invoice where Id in (${ids.slice(0, 200).map(x => `'${String(x).replace(/'/g, '')}'`).join(',')})`, token); (r?.QueryResponse?.Invoice || []).forEach(i => { invPagas[i.Id] = i; }); } catch (_) {} }
+    P.forEach(p => (p.Line || []).forEach(l => (l.LinkedTxn || []).filter(x => x.TxnType === 'Invoice').forEach(x => { const i = invPagas[x.TxnId] || {}; const venc = i.DueDate || null;
+      out.pagas_mes.push({ cliente: p.CustomerRef?.name || i.CustomerRef?.name || '', doc: i.DocNumber || x.TxnId, pago_em: p.TxnDate, vencimento: venc, valor: round(parseFloat(l.Amount) || 0),
+        dias_atraso: venc && p.TxnDate > venc ? Math.floor((Date.parse(p.TxnDate) - Date.parse(venc)) / 864e5) : 0, termo: porInv[String(x.TxnId)] ? (porInv[String(x.TxnId)].numero_termo || '') : null, qb_url: `${base}/app/invoice?txnId=${x.TxnId}` }); })));
+    out.pagas_mes.sort((a, b) => String(b.pago_em).localeCompare(String(a.pago_em)));
+  } catch (e) { out.erro = e.message; }
+  return out;
+}
+async function _relPagamentosExtra(d) {
+  const sql = await getSql(), hoje = d.hoje, out = { pagos_mes: [], duplicados: [] };
+  try { const r = await sql`SELECT o.*, d.descricao AS desp_desc, d.fornecedor AS desp_forn, d.categoria AS desp_cat FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
+      WHERE o.status = 'paga' AND COALESCE(o.data_pagamento, o.data_prevista) >= ${d.inicioMes} AND COALESCE(o.data_pagamento, o.data_prevista) <= ${hoje} ORDER BY COALESCE(o.data_pagamento, o.data_prevista) DESC`;
+    out.pagos_mes = r.map(x => ({ descricao: x.desp_desc || 'Despesa', fornecedor: x.desp_forn || '', categoria: x.desp_cat || '', data: String(x.data_pagamento || x.data_prevista).substring(0, 10), valor: round(parseFloat(x.valor) || 0), fonte: 'atlantyx' })); } catch (_) {}
+  // QuickBooks: pagamentos de contas e despesas pagas no mês
+  if (qbConfigurado()) { try { const token = await qbToken();
+    const [bp, pu] = await Promise.all([qbQuery(`select * from BillPayment where TxnDate >= '${d.inicioMes}' and TxnDate <= '${hoje}' maxresults 500`, token), qbQuery(`select * from Purchase where TxnDate >= '${d.inicioMes}' and TxnDate <= '${hoje}' maxresults 500`, token)]);
+    (bp?.QueryResponse?.BillPayment || []).forEach(b => out.pagos_mes.push({ descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''), fornecedor: b.VendorRef?.name || '', categoria: 'QuickBooks · pagamento de conta', data: b.TxnDate, valor: round(parseFloat(b.TotalAmt) || 0), fonte: 'quickbooks' }));
+    (pu?.QueryResponse?.Purchase || []).forEach(b => out.pagos_mes.push({ descricao: (b.EntityRef?.name || 'Despesa') + (b.DocNumber ? ' · ' + b.DocNumber : ''), fornecedor: b.EntityRef?.name || '', categoria: 'QuickBooks · ' + ((b.Line || [])[0]?.AccountBasedExpenseLineDetail?.AccountRef?.name || 'despesa'), data: b.TxnDate, valor: round(parseFloat(b.TotalAmt) || 0), fonte: 'quickbooks' }));
+  } catch (e) { out.erro_qb = e.message; } }
+  // possíveis DUPLICADOS: mesmo valor e mesmo fornecedor/descrição com até 5 dias de diferença (pendentes e pagos do mês)
+  const nrm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '').substring(0, 14);
+  const todos = [...d.listaMes.map(x => ({ ...x, situacao: 'pendente' })), ...out.pagos_mes.map(x => ({ ...x, situacao: 'pago' }))];
+  const vistos = new Set();
+  for (let i = 0; i < todos.length; i++) for (let j = i + 1; j < todos.length; j++) { const a = todos[i], b = todos[j];
+    if (!a.valor || Math.abs(a.valor - b.valor) > 0.01) continue;
+    const quem = nrm(a.fornecedor || a.descricao), quem2 = nrm(b.fornecedor || b.descricao); if (!quem || quem !== quem2) continue;
+    if (Math.abs(Date.parse(a.data) - Date.parse(b.data)) / 864e5 > 5) continue;
+    if (a.fonte === b.fonte && a.situacao === b.situacao && a.data === b.data && a.descricao === b.descricao && a.fonte === 'quickbooks') { /* mesma linha listada 2x por consultas diferentes */ }
+    const k = [a.descricao, a.data, b.descricao, b.data, a.valor].join('|'); if (vistos.has(k)) continue; vistos.add(k);
+    out.duplicados.push({ a, b, valor: a.valor }); }
+  out.pagos_mes.sort((a, b) => String(b.data).localeCompare(String(a.data)));
+  return out;
+}
 async function relatorioPagamentosEnviar({ apenas_gerar, para } = {}) {
   const d = await pagamentosDoDiaEPendentes();
+  const [tR, vR, pR] = await Promise.allSettled([_relTermos(), _relVendasFaturadas(), _relPagamentosExtra(d)]);
+  d.termos = tR.status === 'fulfilled' ? tR.value : { erro: tR.reason?.message };
+  d.vendas = vR.status === 'fulfilled' ? vR.value : { erro: vR.reason?.message };
+  d.pagx = pR.status === 'fulfilled' ? pR.value : { erro: pR.reason?.message, pagos_mes: [], duplicados: [] };
+  d.app_url = _baseUrlInterna();
   const html = _htmlRelatorioPagamentos(d);
   const resumo = { data: d.hoje, total_dia: d.total_dia, qtd_dia: d.listaDia.length,
-    total_mes_pendente: d.total_mes_pendente, qtd_mes: d.listaMes.length, total_atrasado: d.total_atrasado, qtd_atrasadas: d.atrasadas.length, qb_erro: d.qb_erro };
+    total_mes_pendente: d.total_mes_pendente, qtd_mes: d.listaMes.length, total_atrasado: d.total_atrasado, qtd_atrasadas: d.atrasadas.length, qb_erro: d.qb_erro,
+    termos: d.termos && !d.termos.erro ? Object.fromEntries(Object.entries(d.termos).map(([k, v]) => [k, Array.isArray(v) ? v.length : v])) : d.termos,
+    vendas: d.vendas ? { atraso: d.vendas.atraso?.length, em_dia: d.vendas.em_dia?.length, sem_termo: d.vendas.sem_termo?.length, pagas_mes: d.vendas.pagas_mes?.length, erro: d.vendas.erro } : null,
+    pagamentos: { duplicados: d.pagx?.duplicados?.length || 0, pagos_mes: d.pagx?.pagos_mes?.length || 0 } };
   if (apenas_gerar) return { ...resumo, html, enviado: false };
   const destinatarios = (para && para.length) ? para : DEST_RELATORIO;
   const dataBR = d.hoje.split('-').reverse().join('/');
-  const assunto = `[Atlantyx] Pagamentos de ${dataBR} — hoje R$ ${d.total_dia.toLocaleString('pt-BR',{minimumFractionDigits:2})} · pendente no mês R$ ${d.total_mes_pendente.toLocaleString('pt-BR',{minimumFractionDigits:2})}${d.total_atrasado > 0 ? ' · ⚠ ' + d.atrasadas.length + ' em atraso' : ''}`;
+  const nTA = d.termos?.em_atraso?.length || 0, nFA = d.vendas?.atraso?.length || 0;
+  const assunto = `[Atlantyx] Financeiro ${dataBR} — pagar hoje R$ ${d.total_dia.toLocaleString('pt-BR',{minimumFractionDigits:2})}${d.total_atrasado > 0 ? ' · ⚠ ' + d.atrasadas.length + ' pagamento(s) em atraso' : ''}${nTA ? ' · ' + nTA + ' termo(s) em atraso' : ''}${nFA ? ' · ' + nFA + ' fatura(s) vencida(s)' : ''}`;
   const envio = await enviarEmailGmail({ para: destinatarios, assunto, html });
   console.log(`[Financeiro] Relatório diário enviado para ${destinatarios.join(', ')} via ${envio.via}`);
   return { ...resumo, enviado: true, destinatarios, ...envio };
