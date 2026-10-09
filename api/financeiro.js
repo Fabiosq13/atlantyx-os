@@ -216,6 +216,7 @@ async function handler(req, res) {
 
       // ── Motor de fluxo futuro mês a mês ──────────────────────────────────
       fluxo_futuro:          () => fluxoFuturo(params),
+      projetado_fontes:      () => projetadoFontes(params),   // dem_mv0x0jbvp5sp: colunas Recorrente / Propostas (pond.) da tela Projetado
       // v3.04: DRE mensal real (QuickBooks) — base do Business Plan dinâmico da Atlantyx
       dre_mensal:            () => dreMensal(params),
       dre_arvore:            () => dreArvore(params),        // v3.122: DRE completa com drill-down
@@ -2996,7 +2997,7 @@ function _descLinhasFatura(inv) {
 }
 // v3.00: TRANSAÇÕES RECORRENTES do QuickBooks (modelos agendados) projetadas nas próximas datas.
 // O QuickBooks conta com elas na previsão; o Atlantyx ignorava. Só modelos ativos e agendados.
-async function qbRecorrentesProjecao({ ate } = {}) {
+async function qbRecorrentesProjecao({ ate, receitas = false } = {}) {   // receitas: true só na tela Projetado (coluna Recorrente)
   if (!qbConfigurado()) return { itens: [], erro: null };
   const token = await qbToken();
   const d = await qbQuery(`select * from RecurringTransaction maxresults 500`, token);
@@ -3012,7 +3013,7 @@ async function qbRecorrentesProjecao({ ate } = {}) {
     const dir = ENT[tipoEnt]; if (!dir) continue;
     // v3.02: modelos recorrentes de RECEITA não são projetados — a receita da Atlantyx entra pelas
     // faturas dos termos (e previsões dos marcos); projetar o modelo contava a mesma receita duas vezes.
-    if (dir === 'entrada') continue;
+    if (dir === 'entrada' && !receitas) continue;
     if (ri.Active === false || /unscheduled/i.test(String(ri.RecurType || ''))) continue;   // inativo ou sem agenda: não projeta
     const valor = parseFloat(t.TotalAmt || 0); if (!valor) continue;
     let prox = si.NextDate || si.StartDate; if (!prox) continue;
@@ -3023,7 +3024,7 @@ async function qbRecorrentesProjecao({ ate } = {}) {
     const desc = tipoEnt === 'Invoice' || tipoEnt === 'SalesReceipt' ? _descLinhasFatura(t) : (t.PrivateNote ? ' · ' + String(t.PrivateNote).substring(0, 80) : '');
     for (let k = 0; k < 400 && restantes > 0 && prox <= lim && prox <= fimModelo; k++) {
       if (prox > hojeS) itens.push({ id: `rec_${t.Id || ri.Name}_${prox}`, data: prox, descricao: `${nome}${desc} (recorrente: ${ri.Name || tipoEnt})`,
-        categoria: 'Recorrente QB (' + tipoEnt + ')', valor, tipo: dir, origem: 'quickbooks_recorrente', no_periodo: true });
+        categoria: 'Recorrente QB (' + tipoEnt + ')', valor, tipo: dir, origem: 'quickbooks_recorrente', no_periodo: true, cliente: nome });
       restantes--;
       if (/daily/i.test(tipo)) prox = _diasMais(prox, n);
       else if (/weekly/i.test(tipo)) prox = _diasMais(prox, 7 * n);
@@ -6327,6 +6328,120 @@ async function _crmPropostas(etapas) {
       etapa: x.properties?.dealstage, probabilidade: x.properties?.hs_deal_stage_probability != null ? Number(x.properties.hs_deal_stage_probability) : null }));
     after = d.paging?.next?.after; if (!after) break;
   }
+  return out;
+}
+
+// dem_mv0x0jbvp5sp: fontes das colunas RECORRENTE e PROPOSTAS (POND.) da tela Projetado + Contratos (s3projetado).
+// Só leitura — o Fluxo Futuro (s3fluxo) continua com a mesma conta; esta ação só alimenta a tela de projeção de receita.
+//  · RECORRENTE = modelos recorrentes de RECEITA do QuickBooks + projetos recorrentes (sustentação, mesma regra do painel
+//    de vendas) com contrato vigente (valor do projeto ÷ meses de vigência). Mês em que o cliente já tem fatura em aberto
+//    ou previsão de marco não conta de novo — esse valor já aparece em "Faturas em aberto" / "Marcos previstos".
+//  · PROPOSTAS (POND.) = negócios abertos do HubSpot × probabilidade da etapa, no mês do fechamento previsto
+//    (fechamento já passado ou sem data → mês corrente; depois do horizonte fica de fora, com aviso).
+//  · SIMULADOS continuam vindo dos lançamentos simulados do Fluxo Futuro; aqui só a contagem, para a tela orientar.
+async function projetadoFontes({ meses = 12 } = {}) {
+  const N = Math.max(1, Math.min(24, parseInt(meses) || 12));
+  const hoje = _hojeBR(), mesHoje = hoje.substring(0, 7);
+  const lista = []; { const [a, m] = mesHoje.split('-').map(Number); for (let i = 0; i < N; i++) { const d = new Date(a, m - 1 + i, 1); lista.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')); } }
+  const ultimo = lista[lista.length - 1];
+  const zeros = () => Object.fromEntries(lista.map(m => [m, 0]));
+  const out = { meses: lista, recorrente: zeros(), propostas_pond: zeros(), detalhe: { recorrente: [], propostas: [] }, simulados_qtd: 0, avisos: [] };
+  const _nc = s => String(s || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, '');   // NFD + só a-z0-9 = sem acentos
+  const _mesesEntre = (a, b) => { const [a1, m1] = a.split('-').map(Number), [a2, m2] = b.split('-').map(Number); return (a2 - a1) * 12 + (m2 - m1) + 1; };
+  // clientes que já têm fatura em aberto / previsão de marco em cada mês (evita contar a mesma receita duas vezes)
+  const jaPrevisto = {};
+  const marca = (mes, cli) => { const c = _nc(cli); if (mes && c.length >= 3) (jaPrevisto[mes] = jaPrevisto[mes] || []).push(c); };
+  const temPrevisto = (mes, cli) => { const c = _nc(cli); if (c.length < 3) return false; const p = c.substring(0, 6);
+    return (jaPrevisto[mes] || []).some(x => x.startsWith(p) || c.startsWith(x.substring(0, 6))); };
+  const recQB = [];
+
+  const qbParte = async () => {
+    if (!qbConfigurado()) { out.avisos.push('QuickBooks não conectado — recorrentes do QuickBooks ficam de fora.'); return; }
+    try {
+      const token = await qbToken();
+      const inv = (await qbQuery(`select * from Invoice where Balance > '0' maxresults 1000`, token))?.QueryResponse?.Invoice || [];
+      inv.forEach(i => marca(String(i.DueDate || i.TxnDate || '').substring(0, 7), i.CustomerRef?.name));
+      try { (await _qbEstimativasPrevisao(token)).forEach(e => marca(String(e.data || '').substring(0, 7), e.cliente)); } catch (_) {}
+      const fim = `${ultimo}-${String(new Date(+ultimo.substring(0, 4), +ultimo.substring(5, 7), 0).getDate()).padStart(2, '0')}`;
+      const rc = await qbRecorrentesProjecao({ ate: fim, receitas: true });
+      (rc.itens || []).filter(l => l.tipo === 'entrada').forEach(l => recQB.push(l));
+    } catch (e) { out.avisos.push('QuickBooks: ' + e.message); }
+  };
+  const hsParte = async () => {
+    if (!process.env.HUBSPOT_TOKEN) { out.avisos.push('HubSpot não configurado (HUBSPOT_TOKEN) — a coluna Propostas (pond.) usa só o valor informado na tela.'); return; }
+    try {
+      const et = await crmEtapas(); const abertas = [], probEtapa = {};
+      (et.pipelines || []).forEach(p => (p.etapas || []).forEach(e => { if (!e.fechada) { abertas.push(String(e.id)); probEtapa[e.id] = e.probabilidade; } }));
+      if (!abertas.length) return;
+      let fora = 0;
+      for (const p of await _crmPropostas(abertas)) {
+        if (!(p.valor > 0)) continue;
+        let prob = p.probabilidade != null ? p.probabilidade : probEtapa[p.etapa];
+        if (prob == null || isNaN(prob)) continue;
+        if (prob > 1) prob = prob / 100;   // etapa cadastrada em % em vez de fração
+        const mes = p.fechamento && p.fechamento.substring(0, 7) > mesHoje ? p.fechamento.substring(0, 7) : mesHoje;
+        if (mes > ultimo) { fora += p.valor * prob; continue; }
+        const v = round(p.valor * prob);
+        out.propostas_pond[mes] = round(out.propostas_pond[mes] + v);
+        out.detalhe.propostas.push({ id: p.id, nome: p.nome, valor: round(p.valor), probabilidade: round(prob * 100, 1), ponderado: v, mes,
+          atrasada: !!(p.fechamento && p.fechamento.substring(0, 7) < mesHoje), sem_data: !p.fechamento });
+      }
+      out.detalhe.propostas.sort((a, b) => b.ponderado - a.ponderado);
+      if (fora > 0) out.avisos.push(`${round(fora).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} ponderados em propostas com fechamento depois de ${ultimo.substring(5, 7)}/${ultimo.substring(0, 4)} — fora do horizonte.`);
+    } catch (e) { out.avisos.push('HubSpot: ' + e.message); }
+  };
+  await Promise.all([qbParte(), hsParte()]);
+
+  // recorrentes do QuickBooks (modelos agendados de fatura/recibo/depósito)
+  const porModelo = {}, usadosQB = [];
+  for (const l of recQB) {
+    const mes = String(l.data).substring(0, 7); if (!(mes in out.recorrente)) continue;
+    if (temPrevisto(mes, l.cliente)) continue;
+    out.recorrente[mes] = round(out.recorrente[mes] + l.valor); usadosQB.push([mes, l.cliente]);
+    const k = l.descricao; (porModelo[k] = porModelo[k] || { origem: 'quickbooks', nome: l.descricao, cliente: l.cliente, mensal: round(l.valor), meses: 0 }).meses++;
+  }
+  usadosQB.forEach(([mes, cli]) => marca(mes, cli));   // contrato do mesmo cliente não soma de novo nesses meses
+  out.detalhe.recorrente.push(...Object.values(porModelo));
+
+  // projetos recorrentes com contrato vigente
+  try {
+    const sql = await getSql();
+    const q = async f => { try { return await f(); } catch (_) { return []; } };
+    const projetos = await q(() => sql`SELECT id, nome, cliente, valor_total, status FROM projetos_financeiros WHERE COALESCE(status,'ativo') NOT IN ('cancelado')`);
+    const contratos = await q(() => sql`SELECT projeto, projeto_id, data_inicio, data_vencimento, prazo_meses FROM contratos_financeiros`);
+    const cfg = await q(() => sql`SELECT projeto_nome, tipo_projeto FROM pmo_projetos_config`);
+    const recorrenteP = p => { const c = cfg.find(x => String(x.projeto_nome).toLowerCase() === String(p.nome).toLowerCase());
+      return c?.tipo_projeto === 'sustentacao' || /sustent|suporte|ams|sla/i.test(p.nome); };
+    let semVigencia = 0;
+    for (const p of projetos) {
+      const valor = parseFloat(p.valor_total) || 0; if (!(valor > 0) || !recorrenteP(p)) continue;
+      const cs = contratos.filter(c => (c.projeto_id && c.projeto_id === p.id) || (!c.projeto_id && _nc(c.projeto) && _nc(c.projeto) === _nc(p.nome)));
+      if (!cs.length) continue;
+      let ini = null, fim = null;
+      for (const c of cs) {
+        const i = c.data_inicio ? _dStr(c.data_inicio).substring(0, 7) : null; if (!i) continue;
+        const f = c.data_vencimento ? _dStr(c.data_vencimento).substring(0, 7) : (parseInt(c.prazo_meses) > 0 ? _addMesesData(_dStr(c.data_inicio), parseInt(c.prazo_meses) - 1).substring(0, 7) : null);
+        if (!f || f < i) continue;
+        if (!ini || i < ini) ini = i; if (!fim || f > fim) fim = f;
+      }
+      if (!ini) { semVigencia++; continue; }
+      if (fim < mesHoje) continue;   // contrato já encerrado
+      const mensal = round(valor / _mesesEntre(ini, fim));
+      let n = 0;
+      for (const mes of lista) {
+        if (mes < ini || mes > fim || temPrevisto(mes, p.cliente || p.nome)) continue;
+        out.recorrente[mes] = round(out.recorrente[mes] + mensal); n++;
+      }
+      if (n) out.detalhe.recorrente.push({ origem: 'contrato', nome: p.nome, cliente: p.cliente, mensal, meses: n, vigencia: { inicio: ini, fim } });
+    }
+    if (semVigencia) out.avisos.push(`${semVigencia} projeto(s) recorrente(s) com contrato sem data de início/vencimento — cadastre a vigência em Contratos para entrar na coluna Recorrente.`);
+  } catch (e) { out.avisos.push('Contratos: ' + e.message); }
+
+  try {
+    const amanha = new Date(new Date(hoje + 'T12:00:00Z').getTime() + 864e5).toISOString().substring(0, 10);
+    const fim = `${ultimo}-${String(new Date(+ultimo.substring(0, 4), +ultimo.substring(5, 7), 0).getDate()).padStart(2, '0')}`;
+    out.simulados_qtd = ((await simList({ data_inicio: amanha, data_fim: fim })).simulados || []).filter(s => s.tipo === 'entrada').length;
+  } catch (_) {}
   return out;
 }
 async function orcamentoDre({ inicio, meses: nMeses = 12, crm = null } = {}) {
