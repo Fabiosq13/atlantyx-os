@@ -21799,7 +21799,11 @@ function _fatCard(t, col) {
   const estourou = naoPago && diasDecorridos != null && diasDecorridos >= PRAZO_DIAS;
   const prazoBadge = diasDecorridos != null && naoPago ? `<div style="font-size:9.5px;margin-top:4px;padding:2px 7px;border-radius:4px;display:inline-block;font-weight:700;${estourou ? 'background:rgba(255,80,80,.18);color:var(--red);' : 'background:rgba(34,211,163,.15);color:var(--green,#22d3a3);'}" title="Base: ${dataBase.split('-').reverse().join('/')} (${origemBase}) · prazo de ${PRAZO_DIAS} dias corridos para receber">
       ${estourou ? '⚠ em atraso · ' + diasDecorridos + ' dias' : '✓ em dia · ' + diasDecorridos + ' dias'}</div>` : '';
-  const cardStyle = estourou ? 'background:rgba(255,80,80,.08);border:1.5px solid var(--red);box-shadow:0 0 0 1px rgba(255,80,80,.25);' : 'background:var(--bg4);border:1px solid var(--bd);';
+  // v3.129: termo sem nota, incompleto, ou com nota e data de pagamento vazia/vencida também fica VERMELHO
+  const pend = (t.pendencias_criticas || []);
+  const critico = estourou || pend.length > 0;
+  const cardStyle = critico ? 'background:rgba(255,80,80,.10);border:1.5px solid var(--red);box-shadow:0 0 0 1px rgba(255,80,80,.25);' : 'background:var(--bg4);border:1px solid var(--bd);';
+  const pendBadge = pend.filter(p => p.tipo !== 'em_atraso').length ? `<div style="margin-top:5px;padding:4px 6px;border-radius:5px;background:rgba(255,80,80,.16);color:var(--red);font-size:9.5px;font-weight:700;line-height:1.4;" title="Preencher e tomar providências com o Julio (CTO) e o GP junto ao cliente">🚨 ${pend.filter(p => p.tipo !== 'em_atraso').map(p => String(p.texto).replace(/</g, '&lt;')).join('<br>🚨 ')}</div>` : '';
   return `<div class="fat-card" style="${cardStyle}border-radius:8px;padding:9px;cursor:pointer;" onclick="abrirDetalheTermo('${t.id}')">
     <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:4px 6px;">
       <div style="flex:1 1 60px;font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;">${(t.projeto||'Termo').replace(/</g,'&lt;')}</div>
@@ -21808,7 +21812,7 @@ function _fatCard(t, col) {
     <div style="font-size:9px;color:var(--t2);margin-top:2px;">${t.contratante||''} · ${t.periodo_medicao||''}</div>
     <div style="font-size:11px;font-family:var(--M);color:var(--gold);margin-top:4px;">${fmtBRLcompleto(t.valor_total_termo)}</div>
     <div style="font-size:9px;color:var(--t3);">${t.n_empresas} empresa(s) no rateio</div>
-    ${prazoBadge}${mesAntBadge}${nfFiltroBadge}${pagoBadgeData}${nfBadge}${pagBadge}${cpflBadge}${paradoBadge}${pagoBadge}${concBadge}${datasBadge}
+    ${pendBadge}${prazoBadge}${mesAntBadge}${nfFiltroBadge}${pagoBadgeData}${nfBadge}${pagBadge}${cpflBadge}${paradoBadge}${pagoBadge}${concBadge}${datasBadge}
   </div>`;
 }
 
@@ -30881,7 +30885,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.128] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.129] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -30897,7 +30901,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.128';
+window.__ATX_BUILD_ID__ = 'ATX-v3.129';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { termoPendencias } from '../lib/termo-regras.js'; // v3.129
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
 // SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
@@ -155,6 +156,7 @@ async function handler(req, res) {
       qb_saldo_contas:       () => qbSaldoContas(params),
       qb_status:             () => qbStatus(params),
       relatorio_pagamentos:  () => relatorioPagamentosEnviar(params),
+      alerta_termos_gps:     () => alertaTermosGpsEnviar(params), // v3.129
       email_diagnostico:     () => emailDiagnostico(params),
       versao:                () => ({ versao_api: VERSAO_API }),
       fluxo_detalhado:       () => fluxoDetalhado(params),
@@ -1013,10 +1015,16 @@ function _htmlRelatorioExtra(d) {
   const lF = f => `<tr>${td(`<a href="${f.qb_url}" style="color:#1A3A8F;">${esc(f.doc || f.id)}</a>`)}${td(esc(f.cliente))}${td(dt(f.vencimento))}${td(f.dias_atraso ? f.dias_atraso + ' dias' : '—', 'text-align:right;' + (f.dias_atraso > 30 ? 'color:#D64545;font-weight:bold;' : ''))}${td(f.termo ? esc(f.termo) + (f.nf ? ' · NF ' + esc(f.nf) : ' · <span style="color:#E0A422;">sem NF</span>') : '<span style="color:#E0A422;">sem termo</span>')}${td(brl(f.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`;
   const cabF = ['Fatura', 'Cliente', 'Vencimento', 'Dias de atraso', 'Termo / NF', 'Valor em aberto'];
   const lP = x => `<tr>${td(dt(x.data))}${td(esc(x.descricao) + (x.fornecedor && !String(x.descricao).includes(x.fornecedor) ? '<br><span style="color:#8a93a8;font-size:11px;">' + esc(x.fornecedor) + '</span>' : ''))}${td(esc(x.categoria) + (x.fonte === 'quickbooks' ? ' <span style="color:#1FB287;">(QB)</span>' : ''))}${td(brl(x.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`;
-  const idx = [['Termos em atraso', T.em_atraso], ['Termos a confirmar na CPFL', T.a_confirmar_cpfl], ['Faturas vencidas', V.atraso], ['Pagamentos em atraso', d.atrasadas], ['Possíveis duplicados', X.duplicados]];
+  const idx = [['Termos com pendência', T.criticos], ['Termos em atraso', T.em_atraso], ['Termos a confirmar na CPFL', T.a_confirmar_cpfl], ['Faturas vencidas', V.atraso], ['Pagamentos em atraso', d.atrasadas], ['Possíveis duplicados', X.duplicados]];
   const resumo = `<table style="width:100%;border-collapse:collapse;margin:22px 0 4px;"><tr>${idx.map(([t, l]) => { const n = (l || []).length; return `<td style="padding:8px;background:${n ? '#FDEDED' : '#EAFBF5'};border-radius:6px;border:3px solid #fff;"><div style="font-size:10px;color:#5a6478;text-transform:uppercase;">${t}</div><div style="font-size:17px;font-weight:bold;color:${n ? '#D64545' : '#1FB287'};">${n}</div><div style="font-size:10.5px;color:#8a93a8;">${brl(t === 'Possíveis duplicados' ? soma(l) : soma(l))}</div></td>`; }).join('')}</tr></table>`;
   if (d._soResumo) return resumo;
+  const C = T.criticos || [];
+  const urgente = C.length ? `<div style="background:#FDEDED;border:2px solid #D64545;border-radius:8px;padding:12px 14px;margin:10px 0 14px;">
+      <div style="font-size:14.5px;font-weight:bold;color:#B42318;">🚨 URGENTE — ${C.length} termo(s) com pendência · ${brl(soma(C))}</div>
+      <div style="font-size:12.5px;color:#7A271A;margin:4px 0 8px;">Preencher o que falta no sistema e tomar providências <b>hoje</b> com o <b>Julio (CTO)</b> e os <b>GPs</b> junto ao cliente: emitir/registrar as notas, completar o termo e obter a data de pagamento — ou cobrar o pagamento vencido. Os GPs e o CTO recebem este alerta diariamente.</div>
+      <table style="width:100%;border-collapse:collapse;">${th(['Termo', 'Projeto / cliente', 'Etapa', 'O que falta / problema', 'Valor'])}${C.map(t => `<tr style="background:#fff5f5;">${td(`<b style="color:#B42318;">${esc(t.numero || '—')}</b>`)}${td(esc(t.projeto) + '<br><span style="color:#8a93a8;font-size:11px;">' + esc(t.cliente) + ' · ' + esc(t.periodo) + '</span>')}${td(etapa[t.status] || t.status)}${td('<span style="color:#B42318;font-weight:bold;">' + t.pendencias.map(p => esc(p.texto) + (p.empresas?.length ? ' (' + p.empresas.map(esc).join(', ') + ')' : '')).join('<br>') + '</span>')}${td(brl(t.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`).join('')}</table></div>` : '';
   return `<h2 style="font-size:15px;color:#17224a;border-bottom:2px solid #1A3A8F;padding-bottom:5px;margin-top:26px;">📄 Termos de faturamento</h2>`
+    + urgente
     + (T.erro ? `<p style="color:#E0A422;font-size:12px;">⚠ Não consegui ler os termos: ${esc(T.erro)}</p>` : '')
     + bloco('⏰', 'Termos em atraso (' + PRAZO_TERMO_DIAS + '+ dias sem pagamento)', '#D64545', T.em_atraso, cabT('Previsão CPFL'), lT(t => t.previsao ? dt(t.previsao) : '—'), 'Nenhum termo em atraso.')
     + bloco('🏢', 'Termos a confirmar notas na CPFL', '#E0A422', T.a_confirmar_cpfl, cabT(''), lT(), 'Todos os termos em pagamento estão confirmados no portal da CPFL.', 'Termos na etapa Pagamento cujas notas ainda não foram confirmadas como entregues e aprovadas no portal de fornecedores.')
@@ -1179,9 +1187,11 @@ async function _relTermos() {
     const emp = E.filter(e => e.termo_id === t.id); const semNota = emp.filter(e => !e.nf_numero);
     return { id: t.id, numero: t.numero_termo || '', projeto: t.projeto || '', cliente: t.contratante || '', periodo: t.periodo_medicao || '', valor: round(parseFloat(t.valor_total_termo) || 0),
       status: t.status, dias, base, cpfl_confirmado: !!t.cpfl_confirmado, previsao: dia(t.cpfl_previsao_pagamento),
-      empresas: emp.length, sem_nota: semNota.map(e => ({ empresa: e.empresa, valor: round(parseFloat(e.valor_parcela) || 0) })), valor_sem_nota: round(semNota.reduce((s, e) => s + (parseFloat(e.valor_parcela) || 0), 0)) }; });
+      empresas: emp.length, sem_nota: semNota.map(e => ({ empresa: e.empresa, valor: round(parseFloat(e.valor_parcela) || 0) })), valor_sem_nota: round(semNota.reduce((s, e) => s + (parseFloat(e.valor_parcela) || 0), 0)),
+      pendencias: termoPendencias(t, emp, hoje) }; });
   const naoPago = ts.filter(t => !['pago', 'concluido'].includes(t.status));
   return {
+    criticos: ts.filter(t => t.pendencias.length), // v3.129: sem nota, incompleto, sem data de pagamento ou vencida, em atraso
     a_confirmar_cpfl: ts.filter(t => t.status === 'pagamento' && !t.cpfl_confirmado),
     pendentes_aprovacao: ts.filter(t => ['elaboracao', 'aprovacao'].includes(t.status)),
     rateio_sem_nota: ts.filter(t => ['emissao_nf', 'envio_nf', 'pagamento', 'pago'].includes(t.status) && t.sem_nota.length),
@@ -1245,6 +1255,37 @@ async function _relPagamentosExtra(d) {
   out.pagos_mes.sort((a, b) => String(b.data).localeCompare(String(a.data)));
   return out;
 }
+// ═══ v3.129: ALERTA DIÁRIO AOS GPs E AO CTO — termos com pendência, SEM valores: não pagamento, atraso, falta de nota
+// ou de data de pagamento, pedindo providência e cobrança junto ao cliente. Vai junto com o relatório do financeiro.
+const DEST_ALERTA_TERMOS = (process.env.ALERTA_TERMOS_PARA || 'ademir.souza@atlanteam.com.br,estevan.risek@atlanteam.com.br,vinicius.cosmo@atlanteam.com.br,julio.castro@atlanteam.com.br')
+  .split(',').map(s => s.trim()).filter(Boolean);
+function _htmlAlertaTermosGps(C, hoje, appUrl) {
+  const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;'), dt = s => String(s || '').split('-').reverse().join('/');
+  const etapa = { elaboracao: 'Elaboração', aprovacao: 'Aprovação', emissao_nf: 'Emissão de NF', envio_nf: 'Envio de NF', pagamento: 'Aguardando pagamento' };
+  const acao = p => ({ incompleto: 'completar o termo', sem_nota: 'providenciar a emissão/registro da nota', sem_data_pagamento: 'obter com o cliente a data de pagamento', pagamento_vencido: 'cobrar o cliente — pagamento vencido', em_atraso: 'cobrar o cliente — termo em atraso' }[p.tipo] || 'verificar');
+  const td = (v, o = '') => `<td style="padding:7px 9px;border-bottom:1px solid #f1d0d0;font-size:12.5px;vertical-align:top;${o}">${v}</td>`;
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#f4f6fb;">
+  <div style="font-family:Arial,Helvetica,sans-serif;color:#1c2333;max-width:780px;">
+  <div style="background:#B42318;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0;"><div style="font-size:12px;letter-spacing:2px;color:#ffd6d1;">ATLANTYX OS · FATURAMENTO</div>
+    <div style="font-size:20px;font-weight:bold;margin-top:4px;">🚨 ${C.length} termo(s) precisam de providência — ${dt(hoje)}</div></div>
+  <div style="border:1px solid #e4e8f2;border-top:none;padding:16px 20px;border-radius:0 0 10px 10px;background:#fff;">
+  <p style="font-size:13px;line-height:1.55;margin:0 0 12px;">Olá, GPs e Julio,<br>os termos abaixo estão <b>sem pagamento, em atraso, sem nota ou sem data de pagamento</b>. Por favor, tomem providência <b>hoje</b> junto ao cliente — <b>cobrança, confirmação da data de pagamento e envio das notas</b> — e completem o que falta no sistema. O financeiro acompanha.</p>
+  <table style="width:100%;border-collapse:collapse;"><tr style="background:#FDEDED;color:#7A271A;">${['Termo', 'Projeto / cliente', 'Etapa', 'Situação', 'Providência'].map(h => `<th style="padding:7px 9px;text-align:left;font-size:10.5px;text-transform:uppercase;">${h}</th>`).join('')}</tr>
+  ${C.map(t => `<tr>${td('<b>' + esc(t.numero || '—') + '</b>')}${td(esc(t.projeto) + '<br><span style="color:#8a93a8;font-size:11px;">' + esc(t.cliente) + (t.periodo ? ' · ' + esc(t.periodo) : '') + '</span>')}${td(etapa[t.status] || esc(t.status))}${td('<span style="color:#B42318;font-weight:bold;">' + t.pendencias.map(p => esc(p.texto) + (p.empresas?.length ? ' (' + p.empresas.map(esc).join(', ') + ')' : '')).join('<br>') + '</span>')}${td([...new Set(t.pendencias.map(acao))].join('<br>'))}</tr>`).join('')}</table>
+  ${appUrl ? `<p style="margin-top:16px;"><a href="${appUrl}" style="background:#B42318;color:#fff;padding:9px 16px;border-radius:6px;text-decoration:none;font-size:12.5px;">Abrir o Kanban de Faturamento</a></p>` : ''}
+  <p style="color:#8a93a8;font-size:11px;margin-top:16px;border-top:1px solid #e4e8f2;padding-top:10px;">Alerta diário automático do Atlantyx OS. Valores não são exibidos neste e-mail. Prazo de referência: ${35} dias a partir da data do termo.</p>
+  </div></div></body></html>`;
+}
+async function alertaTermosGpsEnviar({ apenas_gerar, para, termos } = {}) {
+  const T = termos || await _relTermos();
+  const C = T.criticos || [], hoje = _hojeBR();
+  const html = _htmlAlertaTermosGps(C, hoje, _baseUrlInterna());
+  if (apenas_gerar) return { qtd: C.length, html, enviado: false };
+  if (!C.length) return { qtd: 0, enviado: false, motivo: 'nenhum termo com pendência' };
+  const dest = (para && para.length) ? para : DEST_ALERTA_TERMOS;
+  const envio = await enviarEmailGmail({ para: dest, assunto: `[Atlantyx] 🚨 ${C.length} termo(s) sem pagamento, em atraso ou sem nota/data — providência hoje (${hoje.split('-').reverse().join('/')})`, html });
+  return { qtd: C.length, enviado: true, destinatarios: dest, via: envio.via };
+}
 async function relatorioPagamentosEnviar({ apenas_gerar, para } = {}) {
   const d = await pagamentosDoDiaEPendentes();
   const [tR, vR, pR] = await Promise.allSettled([_relTermos(), _relVendasFaturadas(), _relPagamentosExtra(d)]);
@@ -1265,7 +1306,10 @@ async function relatorioPagamentosEnviar({ apenas_gerar, para } = {}) {
   const assunto = `[Atlantyx] Financeiro ${dataBR} — pagar hoje R$ ${d.total_dia.toLocaleString('pt-BR',{minimumFractionDigits:2})}${d.total_atrasado > 0 ? ' · ⚠ ' + d.atrasadas.length + ' pagamento(s) em atraso' : ''}${nTA ? ' · ' + nTA + ' termo(s) em atraso' : ''}${nFA ? ' · ' + nFA + ' fatura(s) vencida(s)' : ''}`;
   const envio = await enviarEmailGmail({ para: destinatarios, assunto, html });
   console.log(`[Financeiro] Relatório diário enviado para ${destinatarios.join(', ')} via ${envio.via}`);
-  return { ...resumo, enviado: true, destinatarios, ...envio };
+  // v3.129: no envio normal (não no teste "só para mim"), o alerta dos termos vai também aos GPs e ao CTO
+  let alerta_gps = null;
+  if (!(para && para.length) && d.termos && !d.termos.erro) { try { alerta_gps = await alertaTermosGpsEnviar({ termos: d.termos }); } catch (e) { alerta_gps = { erro: e.message }; } }
+  return { ...resumo, enviado: true, destinatarios, ...envio, alerta_gps };
 }
 
 // v1.26.3: versão do arquivo — permite detectar deploy desatualizado sem adivinhação
