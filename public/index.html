@@ -2439,9 +2439,10 @@ tr:hover td{background:rgba(79,124,255,.03);}
       <div style="display:flex;gap:8px;align-items:center;">
         <span class="tag off" id="mcStatusTag">Metricool: verificando...</span>
         <button class="btn" style="font-size:10px;" onclick="listarLandingPagesHS()">&#128279; Landing Pages HubSpot</button>
-        <button class="btn btn-gn" onclick="carregarDesempenho()">&#8635; Atualizar</button>
+        <button class="btn btn-gn" onclick="carregarDesempenho(true)">&#8635; Atualizar</button>
       </div>
     </div>
+    <div class="erro-api" id="despErro" style="display:none;"></div>
 
     <!-- KPIs topo -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px;">
@@ -28588,61 +28589,177 @@ function registrarPublicacao(peca, rede, texto, metodo, metricoolId, linkDestino
 function _pubNova(p) { _pubMarcarNova(p); return p; }
 
 // ---------- Painel de Desempenho -------------------------------------------
-async function carregarDesempenho() {
-  window._mcDiag = {}; _mcAvisoMetricas = null;
-  await carregarPublicacoes();
-  await verificarMetricool();
-  // Popular select de campanhas
-  const sel = document.getElementById('despCampanhaSel');
-  if (sel) {
-    const atual = sel.value;
-    if (!_todasCampanhas || !_todasCampanhas.length) { try { await carregarCampanhasDB(); } catch {} }
-    sel.innerHTML = '<option value="">Todas as campanhas</option>' +
-      (_todasCampanhas || []).map(c => `<option value="${c.id}" ${c.id===atual?'selected':''}>${(c.nome||c.id).substring(0,40)}</option>`).join('');
-  }
-  // v1.5.4: leads automáticos do HubSpot via UTM (não bloqueia o resto se falhar)
-  try {
-    const dias = parseInt(document.getElementById('despPeriodoSel')?.value || '30');
-    const r = await fetch('/api/hubspot', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ action:'leads_por_campanha', properties: { dias } }) }); // v3.89: o período escolhido (antes era sempre ≥ 90 dias)
-    const d = await r.json();
-    _leadsHubspot = {}; window._despLeadsInfo = null;
-    if (d.success && d.leads_por_campanha) {
-      _leadsHubspot = d.leads_por_campanha; window._despLeadsInfo = d;
-      addLog('ok', '[Desemp] HubSpot: ' + Object.keys(_leadsHubspot).length + ' campanha(s) com leads via UTM (' + d.contatos_analisados + ' contatos analisados)');
-    } else if (d.error) {
-      addLog('warn', '[Desemp] HubSpot leads: ' + d.error);
-    }
-  } catch (e) { addLog('warn', '[Desemp] HubSpot leads: ' + e.message); }
+// dem_muzhkvi7slgy: a tela nunca fica "carregando" para sempre — timeout de 15s (AbortController), skeleton
+// enquanto carrega, erro claro + "↻ Tentar novamente", cache local de 10 min e stale-while-revalidate.
+const _DESP_TIMEOUT_MS = 15000, _DESP_CACHE_TTL = 600000, _DESP_CACHE_KEY = 'cache_s2desempenho';
+let _despSeq = 0, _despFalhas = 0;
+// fetch com AbortController: cancela e lança erro claro se o servidor não responder a tempo
+async function fetchComTimeout(url, opts, ms) {
+  ms = ms || _DESP_TIMEOUT_MS;
+  const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), ms);
+  try { return await fetch(url, Object.assign({}, opts, { signal: ctrl.signal })); }
+  catch (e) {
+    if (!ctrl.signal.aborted) throw e;
+    const t = new Error(url + ' não respondeu em ' + Math.round(ms / 1000) + 's'); t.timeout = true; throw t;
+  } finally { clearTimeout(tm); }
+}
+// Limite de tempo para etapas que fazem fetch por dentro (publicações, status do Metricool, campanhas)
+function _despLimite(p, rotulo, ms) {
+  ms = ms || _DESP_TIMEOUT_MS; let tm;
+  return Promise.race([Promise.resolve(p), new Promise((_, rej) => { tm = setTimeout(() => {
+    const e = new Error(rotulo + ' não respondeu em ' + Math.round(ms / 1000) + 's'); e.timeout = true; rej(e); }, ms); })])
+    .finally(() => clearTimeout(tm));
+}
+function _despCacheLer(dias) { try { const c = (JSON.parse(localStorage.getItem(_DESP_CACHE_KEY) || '{}') || {})[dias]; return c && c.dados ? c : null; } catch (_) { return null; } }
+function _despCacheSalvar(dias, dados) {
+  let tudo = {}; try { tudo = JSON.parse(localStorage.getItem(_DESP_CACHE_KEY) || '{}') || {}; } catch (_) {}
+  tudo[dias] = { ts: Date.now(), dados };
+  try { localStorage.setItem(_DESP_CACHE_KEY, JSON.stringify(tudo)); }
+  catch (_) { try { localStorage.setItem(_DESP_CACHE_KEY, JSON.stringify({ [dias]: tudo[dias] })); } catch (_) {} } // sem espaço: guarda só o período atual
+}
+function _despAplicarCache(d) {
+  window._mcDiag = d.mcDiag || {}; _mcAvisoMetricas = d.mcAviso || null;
+  _leadsHubspot = d.leadsHubspot || {}; window._despLeadsInfo = d.leadsInfo || null;
+  try { if (!(_publicacoes || []).length) _publicacoes = JSON.parse(localStorage.getItem('atx:publicacoes') || '[]'); } catch (_) {}
+}
+function _despPopularCampanhas() {
+  const sel = document.getElementById('despCampanhaSel'); if (!sel) return;
+  const atual = sel.value;
+  sel.innerHTML = '<option value="">Todas as campanhas</option>' +
+    (_todasCampanhas || []).map(c => `<option value="${c.id}" ${c.id===atual?'selected':''}>${(c.nome||c.id).substring(0,40)}</option>`).join('');
+}
+// Skeleton dos cards de métricas, funil, redes e publicações enquanto a primeira carga não chega
+function _despSkeleton() {
+  ['despPub','despImp','despCli','despEng','despLeads','despCPL'].forEach(id => { const e = document.getElementById(id); if (e) e.innerHTML = '<span class="skel" style="display:inline-block;width:80px;height:20px;vertical-align:middle;"></span>'; });
+  const linhas = (n, h) => Array.from({ length: n }, () => '<div class="skel" style="height:' + h + 'px;margin:6px 0;"></div>').join('');
+  const set = (id, html) => { const e = document.getElementById(id); if (e) e.innerHTML = html; };
+  set('despFunil', linhas(6, 22));
+  set('despRedes', '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">' + '<div class="skel" style="height:78px;"></div>'.repeat(3) + '</div>');
+  set('despPosts', linhas(4, 30));
+}
+function _despSkeletonLimpar() {
+  ['despPub','despImp','despCli','despEng','despLeads','despCPL'].forEach(id => { const e = document.getElementById(id); if (e && e.querySelector('.skel')) e.textContent = '—'; });
+  ['despFunil','despRedes','despPosts'].forEach(id => { const e = document.getElementById(id); if (e && e.querySelector('.skel')) e.innerHTML = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:16px;">Não carregado — use ↻ Tentar novamente acima.</div>'; });
+}
+// Caixa de erro (div.erro-api) com o botão de retry; e = null esconde
+function _despErro(e, cache) {
+  const box = document.getElementById('despErro'); if (!box) return;
+  if (!e) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const msg = String(e.message || e).replace(/</g, '&lt;');
+  const btn = '<button class="btn btn-gn" style="font-size:10.5px;margin-left:8px;" onclick="this.disabled=true;this.textContent=\'⏳ Tentando...\';carregarDesempenho(true)">↻ Tentar novamente</button>'
+    + (_despFalhas > 1 ? '<span style="margin-left:8px;font-size:10px;color:var(--t2);">tentativas sem sucesso: ' + _despFalhas + '</span>' : '');
+  box.style.cssText = 'display:block;margin-bottom:12px;border-radius:8px;padding:10px 13px;font-size:11px;line-height:1.6;' + (cache
+    ? 'background:rgba(245,185,75,.1);border:1px solid var(--gold);'
+    : 'background:rgba(255,80,80,.1);border:1px solid var(--red);');
+  box.innerHTML = cache
+    ? '<b style="color:' + _corTxt('var(--gold)') + ';">⚠ Dados de ' + _finFmtTs(cache.ts) + '</b> — não foi possível atualizar agora (' + msg + '). Mostrando a última carga bem-sucedida.' + btn
+    : '<b>⛔ Não foi possível carregar os dados de desempenho</b> — ' + msg + '. Os números abaixo podem estar incompletos.' + btn;
+}
 
-  // Se Metricool configurado, puxar métricas de posts e mesclar
-  if (_mcConfigurado) {
-    try { await sincronizarStatusMetricool(true); } catch (_) {} // v3.52: links públicos e posts da fila antes de casar as métricas
-    const dias = parseInt(document.getElementById('despPeriodoSel')?.value || '30');
-    const ini = new Date(Date.now() - dias * 864e5).toISOString().substring(0, 10);
-    for (const rede of ['linkedin','instagram','facebook']) {
-      try {
-        const r = await fetch('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ action:'metricas_posts', payload: { rede, inicio: ini } }) });
-        const d = await r.json().catch(() => ({ success: false, error: 'resposta inválida (HTTP ' + r.status + ')' }));
-        // v3.13: erro da API não é mais ignorado — vira diagnóstico específico na tela
-        window._mcDiag = window._mcDiag || {};
-        if (!d.success) { window._mcDiag[rede] = { ok: false, erro: d.error || 'falha na consulta', hint: d.hint || '' }; addLog('err', `[Desempenho] ${rede}: Metricool recusou a consulta de métricas — ${d.error || ''}`); }
-        if (d.success && d.posts) {
-          const res = mesclarMetricasMc(rede, d.posts);
-          window._mcDiag[rede] = { ok: true, api_ok: d.diagnostico?.api_ok !== false, fonte: d.fonte, total_mc: d.total, totais: d.totais || {}, casados: res.casados, semCasar: res.semCasar, aviso: d.diagnostico?.aviso || null, tentativas: d.diagnostico?.tentativas || [] };
-          if (d.diagnostico?.aviso && !d.diagnostico?.sem_metricas) { _mcAvisoMetricas = _mcAvisoMetricas || {}; _mcAvisoMetricas[rede] = d.diagnostico.aviso; }
-          // v1.42: se a API devolveu posts sem NENHUMA métrica, o problema é de permissão no Metricool
-          if (d.diagnostico?.sem_metricas) {
-            addLog('err', `[Desempenho] ${rede}: ${d.diagnostico.aviso}`);
-            _mcAvisoMetricas = _mcAvisoMetricas || {}; _mcAvisoMetricas[rede] = d.diagnostico.aviso;
+async function carregarDesempenho(forcar) {
+  forcar = forcar === true; // o setTimeout do nav() não passa argumento
+  const seq = ++_despSeq;
+  const dias = parseInt(document.getElementById('despPeriodoSel')?.value || '30');
+  const cache = _despCacheLer(dias);
+  _despErro(null);
+  if (cache) { // stale-while-revalidate: mostra na hora o que já foi carregado
+    _despAplicarCache(cache.dados); _despPopularCampanhas();
+    try { renderDesempenho(); } catch (e) { addLog('warn', '[Desemp] ' + e.message); }
+    if (!forcar && Date.now() - cache.ts < _DESP_CACHE_TTL) { _despBase(seq); return; } // cache válido (10 min): sem chamar Metricool/HubSpot
+  } else _despSkeleton();
+
+  let prazo;
+  const busca = _despBuscar(dias, seq);
+  const venceu = new Promise(res => { prazo = setTimeout(() => res('timeout'), _DESP_TIMEOUT_MS); });
+  try {
+    const r = await Promise.race([busca, venceu]);
+    if (r === 'timeout') { const t = new Error('a consulta ao Metricool/HubSpot não respondeu em ' + (_DESP_TIMEOUT_MS / 1000) + 's (serviço lento ou conexão instável)'); t.timeout = true; throw t; }
+    if (seq === _despSeq) _despFalhas = 0;
+  } catch (e) {
+    if (seq !== _despSeq) return; // já existe uma carga mais nova
+    _despFalhas++;
+    addLog('warn', '[Desemp] ' + e.message + (cache ? ' — exibindo dados salvos de ' + _finFmtTs(cache.ts) : ''));
+    try { renderDesempenho(); } catch (_) {} // mostra o que já chegou
+    _despSkeletonLimpar(); _despErro(e, cache);
+    // se a consulta terminar depois do prazo, a tela se atualiza sozinha e o aviso some
+    busca.then(ok => { if (ok && seq === _despSeq) { _despFalhas = 0; _despErro(null); } }).catch(() => {});
+  } finally { clearTimeout(prazo); }
+}
+
+// Cache válido: só atualiza o que é local/barato (publicações, status do Metricool, lista de campanhas)
+async function _despBase(seq) {
+  await Promise.allSettled([
+    _despLimite(carregarPublicacoes(), 'banco de publicações'),
+    _despLimite(verificarMetricool(), 'status do Metricool'),
+    (!_todasCampanhas || !_todasCampanhas.length) ? _despLimite(carregarCampanhasDB(), 'lista de campanhas') : null,
+  ]);
+  if (seq !== _despSeq) return;
+  const tag = document.getElementById('mcStatusTag');
+  if (tag && /verificando/.test(tag.textContent)) { tag.textContent = 'Metricool: sem resposta'; tag.className = 'tag off'; }
+  _despPopularCampanhas();
+  try { renderDesempenho(); } catch (e) { addLog('warn', '[Desemp] ' + e.message); }
+}
+
+// Busca completa; devolve true quando aplicou os dados na tela (false se uma carga mais nova assumiu)
+async function _despBuscar(dias, seq) {
+  const avisar = e => addLog('warn', '[Desemp] ' + e.message);
+  let incompleto = false; // não guarda em cache uma carga em que uma fonte não respondeu
+  await _despLimite(carregarPublicacoes(), 'banco de publicações').catch(avisar);
+  await _despLimite(verificarMetricool(), 'status do Metricool').catch(e => { avisar(e); incompleto = true;
+    const tag = document.getElementById('mcStatusTag');
+    if (tag && /verificando/.test(tag.textContent)) { tag.textContent = 'Metricool: sem resposta'; tag.className = 'tag off'; } });
+  // Popular select de campanhas
+  if (!_todasCampanhas || !_todasCampanhas.length) await _despLimite(carregarCampanhasDB(), 'lista de campanhas').catch(avisar);
+  if (seq === _despSeq) _despPopularCampanhas();
+
+  const diag = {}; let aviso = null;
+  const ini = new Date(Date.now() - dias * 864e5).toISOString().substring(0, 10);
+  // HubSpot e Metricool em paralelo: a falha (ou lentidão) de uma fonte não bloqueia a outra
+  const [hs] = await Promise.allSettled([
+    // v1.5.4: leads automáticos do HubSpot via UTM
+    (async () => {
+      const r = await fetchComTimeout('/api/hubspot', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ action:'leads_por_campanha', properties: { dias } }) }); // v3.89: o período escolhido (antes era sempre ≥ 90 dias)
+      return r.json();
+    })(),
+    // Se Metricool configurado, puxar métricas de posts e mesclar
+    _mcConfigurado ? (async () => {
+      try { await _despLimite(sincronizarStatusMetricool(true), 'sincronização com o Metricool'); } catch (_) {} // v3.52: links públicos e posts da fila antes de casar as métricas
+      await Promise.allSettled(['linkedin','instagram','facebook'].map(async rede => {
+        try {
+          const r = await fetchComTimeout('/api/metricool', { method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ action:'metricas_posts', payload: { rede, inicio: ini } }) });
+          const d = await r.json().catch(() => ({ success: false, error: 'resposta inválida (HTTP ' + r.status + ')' }));
+          // v3.13: erro da API não é mais ignorado — vira diagnóstico específico na tela
+          if (!d.success) { diag[rede] = { ok: false, erro: d.error || 'falha na consulta', hint: d.hint || '' }; addLog('err', `[Desempenho] ${rede}: Metricool recusou a consulta de métricas — ${d.error || ''}`); }
+          if (d.success && d.posts) {
+            const res = mesclarMetricasMc(rede, d.posts);
+            diag[rede] = { ok: true, api_ok: d.diagnostico?.api_ok !== false, fonte: d.fonte, total_mc: d.total, totais: d.totais || {}, casados: res.casados, semCasar: res.semCasar, aviso: d.diagnostico?.aviso || null, tentativas: d.diagnostico?.tentativas || [] };
+            if (d.diagnostico?.aviso && !d.diagnostico?.sem_metricas) { aviso = aviso || {}; aviso[rede] = d.diagnostico.aviso; }
+            // v1.42: se a API devolveu posts sem NENHUMA métrica, o problema é de permissão no Metricool
+            if (d.diagnostico?.sem_metricas) {
+              addLog('err', `[Desempenho] ${rede}: ${d.diagnostico.aviso}`);
+              aviso = aviso || {}; aviso[rede] = d.diagnostico.aviso;
+            }
           }
-        }
-      } catch (e) { addLog('warn', '[Desemp] ' + rede + ': ' + e.message); }
-    }
-    salvarPublicacoes();
-  }
+        } catch (e) { addLog('warn', '[Desemp] ' + rede + ': ' + e.message); }
+      }));
+      salvarPublicacoes();
+    })() : null,
+  ]);
+  if (seq !== _despSeq) return false;
+
+  _leadsHubspot = {}; window._despLeadsInfo = null;
+  const d = hs.status === 'fulfilled' ? hs.value : null;
+  if (!d) { incompleto = true; addLog('warn', '[Desemp] HubSpot leads: ' + (hs.reason?.message || 'sem resposta')); }
+  else if (d.success && d.leads_por_campanha) {
+    _leadsHubspot = d.leads_por_campanha; window._despLeadsInfo = d;
+    addLog('ok', '[Desemp] HubSpot: ' + Object.keys(_leadsHubspot).length + ' campanha(s) com leads via UTM (' + d.contatos_analisados + ' contatos analisados)');
+  } else if (d.error) addLog('warn', '[Desemp] HubSpot leads: ' + d.error);
+  window._mcDiag = diag; _mcAvisoMetricas = aviso;
+  if (!incompleto) _despCacheSalvar(dias, { mcDiag: diag, mcAviso: aviso, leadsHubspot: _leadsHubspot, leadsInfo: window._despLeadsInfo });
   renderDesempenho();
+  return true;
 }
 
 // v1.42: casamento robusto entre a publicação registrada e o post do Metricool.
