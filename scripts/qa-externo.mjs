@@ -63,6 +63,10 @@ for (let n = 0; n < 10; n++) {
   catch (e) { console.error('Falha geral:', e.message); R = { erro: e.message, telas_descobertas: 0, telas_testadas: 0, cobertura_pct: 0, achados: [{ tipo: 'acesso', severidade: 'critica', titulo: 'O robô não conseguiu testar o produto', descricao: e.message, tela: P.url, url: P.url, chave: 'falha-geral' }] }; }
   _progEstado = { ..._progEstado, etapa: 'Gravando o resultado', pct: 99 }; await api('robo_progresso', { execucao_id: job.execucao.id, progresso: _progEstado }).catch(() => {});
   try { const r = await api('robo_resultado', { execucao_id: job.execucao.id, ...R }); console.log('Resultado gravado:', JSON.stringify(r)); } catch (e) { console.error('Não gravou o resultado:', e.message); }
+  // resumo no painel da execução do GitHub (sem dados sensíveis)
+  { const cont = {}; (R.achados || []).forEach(x => { cont[x.severidade] = (cont[x.severidade] || 0) + 1; });
+    const msg = `${P.nome}: ${R.erro ? 'FALHOU — ' + String(R.erro).replace(/\s+/g, ' ').substring(0, 300) + ' — ' : ''}${R.telas_testadas || 0}/${R.telas_descobertas || 0} telas · ${(R.achados || []).length} achado(s) ${JSON.stringify(cont)} · ${(R.achados || []).slice(0, 6).map(x => '[' + x.severidade + '] ' + String(x.titulo).substring(0, 80)).join(' | ')}`.replace(/[\r\n]+/g, ' ');
+    _logOrig(`::${R.erro ? 'warning' : 'notice'} title=QA ${P.nome.replace(/[:,]/g, ' ')}::${msg}`); }
 }
 await browser.close();
 
