@@ -4439,29 +4439,29 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     <div style="font-size:10.5px;color:var(--t2);margin-top:2px">Olha os proximos dias e preenche so os horarios que estiverem vazios &middot; nunca sobrescreve o que ja esta agendado</div>
   </div>
   <!-- v3.108: campanha PATROCINADA no Instagram com botão "Saiba mais" → landing page -->
-  <style>@media (max-width: 820px) { .pat-grid { grid-template-columns:1fr !important; } } #patPanel > summary::-webkit-details-marker { display:none; }</style>
+  <style>@media (max-width: 820px) { .pat-grid { grid-template-columns:1fr !important; } } #patPanel > summary::-webkit-details-marker { display:none; } #patPanel:not([open]) > .pb { display:none; } /* fechado: o conteúdo oculto ainda tinha posição e contava como botões sobrepostos (como no QA-014) */</style>
   <details class="panel" id="patPanel" style="margin-bottom:12px;border:1px solid rgba(0,196,204,.35);" ontoggle="if(this.open)patAbrir()">
     <summary style="cursor:pointer;padding:12px 16px;font-weight:700;font-size:12.5px;list-style:none;display:flex;gap:10px;align-items:center;">📣 Campanha patrocinada no Instagram <span style="font-weight:400;font-size:10.5px;color:var(--t2);">anúncio pago com botão <b>Saiba mais</b> → página de agendamento</span><span id="patStatusTag" class="tag off" style="margin-left:auto;">configurar</span></summary>
     <div class="pb" style="padding-top:0;">
       <div id="patStatus" style="font-size:10.5px;color:var(--t2);line-height:1.6;margin-bottom:10px;"></div>
       <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:14px;" class="pat-grid">
         <div>
-          <label class="fl">Nome da campanha</label><input class="fi" id="patNome" placeholder="ex.: Instagram · Conversa gratuita · Outubro"/>
-          <label class="fl" style="margin-top:8px;">Tema / oferta do anúncio</label><textarea class="fta" id="patTema" style="min-height:52px;font-size:11.5px;">Conversa gratuita com um especialista da Atlantyx: entendemos o seu cenário e mostramos onde tecnologia, dados, software sob medida e os nossos produtos geram resultado na operação.</textarea>
+          <label class="fl" for="patNome">Nome da campanha</label><input class="fi" id="patNome" placeholder="ex.: Instagram · Conversa gratuita · Outubro"/>
+          <label class="fl" for="patTema" style="margin-top:8px;">Tema / oferta do anúncio</label><textarea class="fta" id="patTema" style="min-height:52px;font-size:11.5px;" title="Assunto e oferta que a IA usa para escrever o anúncio">Conversa gratuita com um especialista da Atlantyx: entendemos o seu cenário e mostramos onde tecnologia, dados, software sob medida e os nossos produtos geram resultado na operação.</textarea>
           <button class="btn btn-p" style="font-size:10.5px;margin-top:6px;" id="patBtnCopy" onclick="patEscrever()">✨ Escrever texto, título e imagem com IA</button>
-          <label class="fl" style="margin-top:8px;">Texto principal <small style="color:var(--t3);" id="patTxtN"></small></label><textarea class="fta" id="patTexto" style="min-height:70px;font-size:11.5px;" maxlength="500" oninput="patPrev()"></textarea>
+          <label class="fl" for="patTexto" style="margin-top:8px;">Texto principal <small style="color:var(--t3);" id="patTxtN"></small></label><textarea class="fta" id="patTexto" style="min-height:70px;font-size:11.5px;" maxlength="500" oninput="patPrev()" placeholder="Texto que aparece acima da imagem no anúncio (ideal até 125 caracteres)"></textarea>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            <div><label class="fl">Título (até 40)</label><input class="fi" id="patTitulo" maxlength="40" oninput="patPrev()"/></div>
-            <div><label class="fl">Descrição (até 30)</label><input class="fi" id="patDesc" maxlength="30" oninput="patPrev()"/></div></div>
-          <label class="fl" style="margin-top:8px;">Imagem</label>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;"><select class="fsel" id="patImgSel" style="flex:1;min-width:180px;font-size:11px;" onchange="if(this.value){document.getElementById('patImg').value=this.value;patPrev();}"><option value="">Usar imagem de um post já gerado…</option></select>
+            <div><label class="fl" for="patTitulo">Título (até 40)</label><input class="fi" id="patTitulo" maxlength="40" oninput="patPrev()" placeholder="Título ao lado do botão Saiba mais"/></div>
+            <div><label class="fl" for="patDesc">Descrição (até 30)</label><input class="fi" id="patDesc" maxlength="30" oninput="patPrev()" placeholder="Linha abaixo do título"/></div></div>
+          <label class="fl" for="patImgSel" style="margin-top:8px;">Imagem</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;"><select class="fsel" id="patImgSel" title="Reaproveitar a imagem de um post já gerado" style="flex:1;min-width:180px;font-size:11px;" onchange="if(this.value){document.getElementById('patImg').value=this.value;patPrev();}"><option value="">Usar imagem de um post já gerado…</option></select>
             <button class="btn" style="font-size:10px;" id="patBtnImg" onclick="patGerarImagem()">🎨 Gerar imagem nova</button></div>
           <input class="fi" id="patImg" style="margin-top:6px;font-size:11px;" placeholder="https://… (endereço público da imagem quadrada)" oninput="patPrev()"/>
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px;">
-            <div><label class="fl">R$ por dia</label><input class="fi" id="patDiario" inputmode="decimal" value="30" oninput="patPrev()"/></div>
-            <div><label class="fl">Início</label><input type="date" class="fi" id="patIni" oninput="patPrev()"/></div>
-            <div><label class="fl">Fim</label><input type="date" class="fi" id="patFim" oninput="patPrev()"/></div>
-            <div><label class="fl">Idade</label><div style="display:flex;gap:4px;"><input class="fi" id="patIdMin" value="25" style="padding:6px;" oninput="patPrev()"/><input class="fi" id="patIdMax" value="60" style="padding:6px;" oninput="patPrev()"/></div></div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-top:8px;">
+            <div><label class="fl" for="patDiario">R$ por dia</label><input class="fi" id="patDiario" inputmode="decimal" value="30" oninput="patPrev()" placeholder="ex.: 30" title="Orçamento diário do anúncio, em reais"/></div>
+            <div><label class="fl" for="patIni">Início</label><input type="date" class="fi" id="patIni" oninput="patPrev()" title="Primeiro dia em que o anúncio roda"/></div>
+            <div><label class="fl" for="patFim">Fim</label><input type="date" class="fi" id="patFim" oninput="patPrev()" title="Último dia em que o anúncio roda"/></div>
+            <div><label class="fl" for="patIdMin">Idade (mín.–máx.)</label><div style="display:flex;gap:4px;"><input class="fi" id="patIdMin" value="25" style="padding:6px;min-width:0;" oninput="patPrev()" placeholder="mín." title="Idade mínima do público" aria-label="Idade mínima do público"/><input class="fi" id="patIdMax" value="60" style="padding:6px;min-width:0;" oninput="patPrev()" placeholder="máx." title="Idade máxima do público" aria-label="Idade máxima do público"/></div></div>
           </div>
           <div id="patResumo" style="margin-top:8px;font-size:10.5px;color:var(--t2);line-height:1.6;"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
