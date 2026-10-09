@@ -412,14 +412,20 @@ async function login(pg, P, add) {
   // v3.138: escolhe o botão de entrar EXATO (não "Entrar com Face ID", "Esqueci minha senha", "Criar conta"…)
   const exato = pg.locator('button:visible, [role=button]:visible, input[type=submit]:visible').filter({ hasText: /^\s*(entrar|login|log in|acessar|sign in|continuar|enviar)\s*$/i }).first();
   const submit = pg.locator('form button[type=submit]:visible, form input[type=submit]:visible').filter({ hasNotText: /face id|digital|biometria|google|microsoft|apple|esqueci|criar|cadastr/i }).first();
+  // respostas de autenticação durante o login (só status e mensagem de erro — nunca tokens)
+  const respAuth = []; const ouvir = async r => { try { const u = r.url(); if (!/auth|login|token|session|signin|sign_in/i.test(u) || r.request().method() === 'GET' && r.status() < 400) return; const st = r.status(); let msg = '';
+    if (st >= 400) { const t = await r.text().catch(() => ''); const m = t.match(/"(?:error_description|msg|message|error)"\s*:\s*"([^"]{1,160})"/); msg = m ? m[1] : t.substring(0, 120); }
+    respAuth.push(`${r.request().method()} ${new URL(u).pathname} → ${st}${msg ? ' "' + msg + '"' : ''}`); } catch (_) {} };
+  pg.on('response', ouvir);
   let clicado = 'Enter';
   if (await exato.count()) { clicado = 'botão "' + (await exato.innerText().catch(() => '')).trim() + '"'; await exato.click().catch(() => {}); } else if (await submit.count()) { clicado = 'botão submit "' + (await submit.innerText().catch(() => '')).trim() + '"'; await submit.click().catch(() => {}); } else await pg.locator('input[type=password]:visible').first().press('Enter');
   // espera até 20 s o campo de senha sumir (login com Supabase/redirecionamento pode demorar)
   for (let i = 0; i < 20 && await temCampoSenha(pg); i++) await espera(1000);
   await pg.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {}); await espera(1500);
+  pg.off('response', ouvir);
   if (await temCampoSenha(pg)) {
     const alerta = await pg.evaluate(() => [...document.querySelectorAll('[role=alert],[role=status],.toast,[class*=toast],[class*=error],[class*=destructive],[aria-live]')].map(e => e.innerText.trim()).filter(Boolean).join(' | ').substring(0, 300)).catch(() => '');
-    const e = new Error('Login não concluído com o usuário de teste' + (alerta ? ' — mensagem do sistema: "' + alerta + '"' : ' — nenhuma mensagem de erro na tela') + `. Diagnóstico: preenchido e-mail ${preenchido.email} e senha com ${preenchido.senha_chars} caractere(s); clicou ${clicado}; endereço depois: ${pg.url()}; elementos da tela: ${campos}.`);
+    const e = new Error('Login não concluído com o usuário de teste' + (alerta ? ' — mensagem do sistema: "' + alerta + '"' : ' — nenhuma mensagem de erro na tela') + `. Diagnóstico: preenchido e-mail ${preenchido.email} e senha com ${preenchido.senha_chars} caractere(s); clicou ${clicado}; respostas do servidor: ${respAuth.slice(0, 5).join(' ; ') || 'nenhuma chamada de login detectada'}; endereço depois: ${pg.url()}; elementos da tela: ${campos}.`);
     try { e.print = 'data:image/jpeg;base64,' + (await pg.screenshot({ type: 'jpeg', quality: 50 })).toString('base64'); } catch (_) {}
     throw e; }
 }
