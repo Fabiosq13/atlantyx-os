@@ -28832,7 +28832,8 @@ const _qpTempo = d => { if (!d) return '—'; const s = Math.max(0, Math.round((
 // atualiza sozinho a cada 10 s enquanto algum produto estiver na fila ou testando
 let _qpTimer = null;
 function _qpAuto() { clearTimeout(_qpTimer);
-  const ov = document.getElementById('qpModal'); if (ov && _qpProd && (_qpAchados?.execucoes?.[0]?.status === 'rodando' || _qpAchados?.execucoes?.[0]?.status === 'fila')) { _qpTimer = setTimeout(async () => { try { const a = await qpApi('achados', { produto_id: _qpProd.id }); const aberto = ov.querySelector('.qp-log')?.open; _qpAchados = a; qpDetalhe(); const lg = document.querySelector('#qpModal .qp-log'); if (lg && aberto !== false) { lg.open = true; const t = lg.querySelector('.qp-logtx'); if (t) t.scrollTop = t.scrollHeight; } } catch (_) {} qpCarregar(); }, 8000); return; } const ativo = (_qpDados?.produtos || []).some(p => p.coluna === 'testando' || p.ultima?.status === 'fila'); const pg = document.getElementById('page-s6qaprod');
+  const ov = document.getElementById('qpModal'); if (ov && ov.dataset.modo === 'form') return; // v3.138: nunca redesenha com o cadastro aberto
+  if (ov && _qpProd && (_qpAchados?.execucoes?.[0]?.status === 'rodando' || _qpAchados?.execucoes?.[0]?.status === 'fila')) { _qpTimer = setTimeout(async () => { if (document.getElementById('qpModal')?.dataset.modo !== 'detalhe') return; try { const a = await qpApi('achados', { produto_id: _qpProd.id }); if (document.getElementById('qpModal')?.dataset.modo !== 'detalhe') return; const aberto = ov.querySelector('.qp-log')?.open; _qpAchados = a; qpDetalhe(); const lg = document.querySelector('#qpModal .qp-log'); if (lg && aberto !== false) { lg.open = true; const t = lg.querySelector('.qp-logtx'); if (t) t.scrollTop = t.scrollHeight; } } catch (_) {} qpCarregar(); }, 8000); return; } const ativo = (_qpDados?.produtos || []).some(p => p.coluna === 'testando' || p.ultima?.status === 'fila'); const pg = document.getElementById('page-s6qaprod');
   if (ativo && pg && pg.classList.contains('active')) _qpTimer = setTimeout(() => qpCarregar(), 10000); }
 async function qpTestar(id) {
   try { const r = await qpApi('executar', { produto_id: id }); toast(r.disparado ? 'Robô disparado — começa em 1 a 2 minutos; o andamento aparece no cartão' : 'Na fila — o disparo imediato precisa do GITHUB_TOKEN no Vercel; sem ele o robô pega a fila em até 30 min', r.disparado ? 'success' : 'error'); qpCarregar(); }
@@ -28847,7 +28848,7 @@ async function qpAbrir(id) {
   catch (e) { ov.querySelector('.qp-mod').innerHTML = '<div class="fv2-erro">' + _qpEsc(e.message) + '</div>'; }
 }
 function qpDetalhe() {
-  const P = _qpProd, A = _qpAchados.achados || [], ov = document.getElementById('qpModal'); if (!ov) return;
+  const P = _qpProd, A = _qpAchados.achados || [], ov = document.getElementById('qpModal'); if (!ov) return; ov.dataset.modo = 'detalhe';
   const pend = A.filter(a => ['aberto', 'em_correcao', 'corrigido'].includes(a.status));
   const filt = { pendentes: pend, aberto: A.filter(a => a.status === 'aberto'), em_correcao: A.filter(a => a.status === 'em_correcao'), corrigido: A.filter(a => a.status === 'corrigido'), fechados: A.filter(a => ['validado', 'falso_positivo', 'aceito'].includes(a.status)), todos: A }[_qpFiltro] || pend;
   const E = (_qpAchados.execucoes || [])[0];
@@ -28893,6 +28894,7 @@ function qpPromptLote() {
 function qpForm(P) {
   P = P || {}; let ov = document.getElementById('qpModal'); if (!ov) { ov = document.createElement('div'); ov.id = 'qpModal'; ov.className = 'qp-ov'; ov.onclick = e => { if (e.target === ov) ov.remove(); }; ov.innerHTML = '<div class="qp-mod"></div>'; document.body.appendChild(ov); }
   const c = (id, rot, v, ph, tipo) => '<label class="mc-f"><span>' + rot + '</span><input class="fi" id="' + id + '" type="' + (tipo || 'text') + '" value="' + _qpEsc(v || '') + '" placeholder="' + _qpEsc(ph || '') + '" autocomplete="off"></label>';
+  ov.dataset.modo = 'form'; clearTimeout(_qpTimer);
   ov.querySelector('.qp-mod').innerHTML = '<div class="qp-mh"><div class="fv2-pt">' + (P.id ? 'Cadastro — ' + _qpEsc(P.nome) : 'Novo produto para testar') + '</div><button class="btn btn-g" onclick="document.getElementById(\'qpModal\').remove()">Fechar ✕</button></div>'
     + '<div class="mc-grid">' + c('qpNome', 'Nome do produto *', P.nome, 'ex.: Atlantyx Maestro') + c('qpUrl', 'URL do produto *', P.url, 'https://…') + c('qpUrlLogin', 'URL da tela de login (se for outra)', P.url_login, 'https://…/login')
     + c('qpUser', 'Usuário / e-mail de teste', P.usuario, 'qa@atlantyx.com.br') + c('qpSenha', 'Senha de teste' + (P.tem_senha ? ' (guardada 🔒 — deixe vazio para manter)' : ''), '', P.tem_senha ? '••••••••' : 'senha do usuário de teste', 'password')
@@ -31697,7 +31699,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.137] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.138] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -31713,7 +31715,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.137';
+window.__ATX_BUILD_ID__ = 'ATX-v3.138';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

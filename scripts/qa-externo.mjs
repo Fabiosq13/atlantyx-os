@@ -26,7 +26,7 @@ const SEG = process.env.CRON_SECRET;
 if (!SEG) { console.error('Falta o secret CRON_SECRET no GitHub (o mesmo valor do Vercel).'); process.exit(1); }
 const MAX_IA = parseInt(process.env.QA_MAX_IA || '40'), ORC_MIN = parseInt(process.env.QA_MINUTOS_PRODUTO || '45');
 const MAX_CASOS = parseInt(process.env.QA_MAX_CASOS || '40'), MAX_PASSOS = parseInt(process.env.QA_MAX_PASSOS || '12'), MAX_LAYOUT = parseInt(process.env.QA_MAX_LAYOUT || '10');
-const MACACO_TELAS = parseInt(process.env.QA_MACACO_TELAS || '4'), MACACO_ACOES = parseInt(process.env.QA_MACACO_ACOES || '20');
+const MACACO_TELAS = parseInt(process.env.QA_MACACO_TELAS || '4'), MACACO_ACOES = parseInt(process.env.QA_MACACO_ACOES || '20'), MAX_JORNADAS = parseInt(process.env.QA_MAX_JORNADAS || '8');
 const api = async (action, body = {}) => {
   const r = await fetch(BASE + '/api/qa-externo', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + SEG }, body: JSON.stringify({ action, ...body }) });
   const d = await r.json().catch(() => ({})); if (!r.ok || !d.success) throw new Error(action + ': ' + (d.error || r.status)); return d;
@@ -216,7 +216,7 @@ async function testarProduto(P, execId, casos = []) {
       const botoes = await textosClicaveis(pg); const novo = botoes.find(t => RX_NOVO.test(t));
       if (novo) { crudFeitos++; await testarCrud(pg, P, nomeTela, novo, marca + '-' + crudFeitos, add, comoChegar, print).catch(e => add({ tipo: 'crud', severidade: 'media', titulo: `Ciclo de cadastro interrompido em "${nomeTela}"`, descricao: e.message.substring(0, 400), tela: nomeTela, url: pg.url(), chave: 'crud-int' })); }
     }
-    telasInfo.push({ titulo: nomeTela, url: pg.url(), ms, apis: chamadas.length });
+    telasInfo.push({ titulo: nomeTela, url: pg.url(), ms, apis: chamadas.length, trecho: info.txt.substring(0, 600) });
     // 2g. descobre novas telas a partir desta
     const base = pg.url();
     const links = await pg.evaluate(o => [...document.querySelectorAll('a[href]')].map(a => a.href).filter(h => h.startsWith(o) && !/\.(pdf|zip|png|jpe?g|csv|xlsx?)$/i.test(h)), origem).catch(() => []);
@@ -226,6 +226,28 @@ async function testarProduto(P, execId, casos = []) {
   }
   const descobertas = visitadas.size + fila.length, testadas = visitadas.size;
   robos.exploratorio = { telas: testadas, ciclos_cadastro: crudFeitos, analises_ia: iaUsadas, texto: `${testadas} de ${descobertas} telas · ${crudFeitos} ciclo(s) incluir/alterar/excluir · ${iaUsadas} tela(s) criticadas pela IA` };
+  // ── 2g2. Robô Usuário IA — jornadas como uma pessoa usaria ──
+  let jorn = [], jRes = [];
+  if (MAX_JORNADAS > 0 && telasInfo.length && Date.now() < fimEm - 300000) {
+    progresso({ etapa: 'Robô Usuário IA — montando jornadas', pct: 76 }, true);
+    try { jorn = (await api('robo_jornadas', { produto: { nome: P.nome, contexto: P.contexto }, telas: telasInfo, permitir_gravacao: P.permitir_gravacao, quantidade: MAX_JORNADAS })).jornadas || []; } catch (e) { console.log('    jornadas:', e.message); }
+    for (const [i, J] of jorn.slice(0, MAX_JORNADAS).entries()) {
+      if (Date.now() > fimEm - 240000) break;
+      const C = { codigo: 'J-' + String(i + 1).padStart(2, '0'), titulo: J.titulo, tipo: J.tipo, passos: J.passos || [], esperado: J.esperado };
+      progresso({ etapa: `Robô Usuário IA — ${C.codigo} ${C.titulo}`.substring(0, 140), pct: 76, jornadas: (i + 1) + '/' + Math.min(MAX_JORNADAS, jorn.length) }, true);
+      consoleErros = []; chamadas = [];
+      const r = await executarCaso(pg, C, P, origem, urlInicial).catch(e => ({ veredito: 'bloqueado', motivo: 'erro do robô: ' + e.message, hist: [] }));
+      const js = consoleErros.filter(t => /^JS:/.test(t)); const a5 = chamadas.filter(c => c.status >= 500);
+      if (r.veredito === 'passou' && (js.length || a5.length)) { r.veredito = 'falhou'; r.motivo += ' — mas houve ' + (js.length ? 'erro de JavaScript: ' + js[0].substring(0, 120) : 'API com erro ' + a5[0].status); }
+      console.log(`  · ${C.codigo} ${r.veredito.toUpperCase()} — ${C.titulo} — ${String(r.motivo).substring(0, 100)}`);
+      jRes.push(r.veredito);
+      if (r.veredito === 'falhou') add({ tipo: 'jornada', severidade: J.tipo === 'mundo_ideal' ? 'alta' : 'media', titulo: `Jornada reprovada: ${C.titulo}`.substring(0, 280), descricao: `Esperado: ${C.esperado || '—'}\nObservado: ${r.motivo}\nPor que importa: ${J.por_que || '—'}`, evidencia: r.hist.join(' → ').substring(0, 3000),
+        tela: C.titulo, url: pg.url(), chave: 'jornada:' + String(C.titulo).substring(0, 70), print: await printPg(), como_reproduzir: C.passos.map((x, k) => (k + 1) + '. ' + x).join('\n'),
+        prompt_correcao: `Ao tentar "${C.titulo}" (${C.passos.join('; ')}), o esperado era: ${C.esperado}. Aconteceu: ${r.motivo}. Corrija o fluxo para atender ao esperado.` });
+    }
+    await pg.goto(urlInicial, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+  }
+  robos.jornadas = { jornadas: jRes.length, passou: jRes.filter(x => x === 'passou').length, falhou: jRes.filter(x => x === 'falhou').length, texto: `${jRes.length} jornada(s) de usuário montadas pela IA: ${jRes.filter(x => x === 'passou').length} ok, ${jRes.filter(x => x === 'falhou').length} com problema, ${jRes.filter(x => x === 'bloqueado').length} bloqueada(s)` };
   // ── 2h. Robô Macaco ──
   progresso({ etapa: 'Robô Macaco — uso fora do roteiro', pct: 78 }, true);
   let macAcoes = 0, macProb = 0;
@@ -339,6 +361,36 @@ async function testarProduto(P, execId, casos = []) {
     if (abertas.length) add({ tipo: 'seguranca', severidade: 'critica', titulo: 'Telas internas abrem sem login', descricao: 'Abertas numa sessão anônima, sem pedir login:\n' + abertas.join('\n'), tela: 'Controle de acesso', url: P.url, chave: 'sem-login',
       prompt_correcao: 'Proteja todas as rotas internas do app: sem sessão válida, redirecione para a tela de login e não carregue dados (verifique também as regras de acesso das tabelas no backend).' });
   } catch (_) {}
+  // ── 3b. segurança ampliada (só leitura, no próprio produto) ──
+  progresso({ etapa: 'Robô de Segurança — arquivos, segredos no código, CORS', pct: 97 }, true);
+  try { const rq = await pwRequest.newContext(); let n = 0;
+    // arquivos sensíveis publicados por engano
+    for (const cam of ['/.env', '/.env.local', '/.env.production', '/.git/HEAD', '/.git/config', '/config.json', '/backup.sql', '/.DS_Store']) {
+      const r = await rq.get(origem + cam, { timeout: 15000, maxRedirects: 0 }).catch(() => null); if (!r || r.status() !== 200) continue;
+      const ct = r.headers()['content-type'] || '', t = (await r.text().catch(() => '')).substring(0, 400);
+      const real = !/html/i.test(ct) && !/<html|<!doctype/i.test(t) && (cam.includes('.env') ? /^[A-Z0-9_]+\s*=/m.test(t) : cam.includes('.git') ? /ref:|\[core\]/.test(t) : t.length > 20);
+      if (real) { n++; add({ tipo: 'seguranca', severidade: 'critica', titulo: `Arquivo sensível público: ${cam}`, descricao: `${origem + cam} responde 200 com conteúdo (não é a página do app).`, tela: 'Configuração', url: origem + cam, chave: 'arq:' + cam,
+        prompt_correcao: `Remova ${cam} da publicação (não deve ir para a pasta pública/build) e troque as credenciais que estavam nele.` }); } }
+    // segredos no JavaScript enviado ao navegador
+    const scripts = await pg.evaluate(o => [...document.scripts].map(s => s.src).filter(x => x && x.startsWith(o)).slice(0, 6), origem).catch(() => []);
+    const PADROES = [[/sk_live_[0-9a-zA-Z]{16,}/, 'chave secreta Stripe (live)'], [/AKIA[0-9A-Z]{16}/, 'chave de acesso AWS'], [/-----BEGIN (?:RSA |EC )?PRIVATE KEY-----/, 'chave privada'], [/ghp_[0-9A-Za-z]{30,}/, 'token GitHub'], [/xox[bap]-[0-9A-Za-z-]{20,}/, 'token Slack'], [/sk-(?:proj-|ant-)?[0-9A-Za-z_-]{30,}/, 'chave de API de IA (OpenAI/Anthropic)']];
+    for (const src of scripts) { const r = await rq.get(src, { timeout: 20000 }).catch(() => null); if (!r || r.status() !== 200) continue; const t = await r.text().catch(() => ''); if (t.length > 8e6) continue;
+      for (const [rx, nome] of PADROES) { const m = t.match(rx); if (m) { n++; add({ tipo: 'seguranca', severidade: 'critica', titulo: `Segredo exposto no código do navegador: ${nome}`, descricao: `Encontrado em ${src.replace(origem, '')}: ${m[0].substring(0, 6)}…${m[0].slice(-3)} (mascarado).`, tela: 'Código publicado', url: src, chave: 'seg-js:' + nome,
+        prompt_correcao: `Remova a ${nome} do código do front-end (ela é visível para qualquer visitante). Mova a chamada para o backend/edge function e troque (rotacione) a chave imediatamente.` }); } }
+      // chave service_role do Supabase (dá acesso total ao banco) — a anon é pública por natureza
+      for (const jwt of (t.match(/eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g) || []).slice(0, 10)) { try { const pl = JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url').toString()); if (pl.role === 'service_role') { n++; add({ tipo: 'seguranca', severidade: 'critica', titulo: 'Chave service_role do Supabase no código do navegador', descricao: `Em ${src.replace(origem, '')}. Essa chave ignora as regras de acesso (RLS) e dá acesso total ao banco.`, tela: 'Código publicado', url: src, chave: 'seg-service-role',
+        prompt_correcao: 'Remova a chave service_role do front-end; use só a chave anon no navegador e faça operações privilegiadas em edge functions. Rotacione a chave no painel do Supabase.' }); break; } } catch (_) {} }
+      const mapa = (t.match(/\/\/# sourceMappingURL=([^\s]+\.map)/) || [])[1];
+      if (mapa) { const mu = new URL(mapa, src).href; const rm = await rq.get(mu, { timeout: 15000 }).catch(() => null); if (rm && rm.status() === 200 && /"sources"/.test((await rm.text().catch(() => '')).substring(0, 2000))) { n++; add({ tipo: 'seguranca', severidade: 'baixa', titulo: 'Código-fonte publicado (source map)', descricao: `${mu.replace(origem, '')} expõe o código-fonte original do app.`, tela: 'Código publicado', url: mu, chave: 'seg-sourcemap',
+        prompt_correcao: 'Desative a geração/publicação de source maps em produção (build.sourcemap = false).' }); } } }
+    // CORS permissivo nas APIs com credenciais e versão do servidor exposta
+    for (const A2 of [...apisVistas.values()].slice(0, 8)) { const r = await rq.get(A2.url, { headers: { Origin: 'https://site-externo.exemplo' }, timeout: 15000 }).catch(() => null); if (!r) continue; const h = r.headers();
+      if ((h['access-control-allow-origin'] === 'https://site-externo.exemplo' || h['access-control-allow-origin'] === '*') && h['access-control-allow-credentials'] === 'true') { n++; add({ tipo: 'seguranca', severidade: 'alta', titulo: `API aceita chamadas com credenciais de qualquer site: ${new URL(A2.url).pathname}`, descricao: `Access-Control-Allow-Origin: ${h['access-control-allow-origin']} com Allow-Credentials: true.`, tela: 'Retaguarda (APIs)', url: A2.url.replace(/\?.*/, ''), chave: 'cors:' + new URL(A2.url).pathname,
+        prompt_correcao: 'Restrinja o CORS da API à lista de domínios do próprio app; nunca reflita a origem recebida junto com Allow-Credentials: true.' }); break; } }
+    const banner = [H['x-powered-by'], /\d/.test(H['server'] || '') ? H['server'] : null].filter(Boolean);
+    if (banner.length) { n++; add({ tipo: 'seguranca', severidade: 'baixa', titulo: 'Servidor expõe tecnologia/versão', descricao: 'Cabeçalhos: ' + banner.join(', '), tela: 'Configuração', url: P.url, chave: 'banner', prompt_correcao: 'Remova os cabeçalhos X-Powered-By e a versão do Server nas respostas.' }); }
+    await rq.dispose(); robos.seguranca_ampliada = { achados: n, texto: `arquivos sensíveis, segredos no JavaScript, chave service_role, source maps, CORS e versão do servidor · ${n} achado(s)` };
+  } catch (e) { console.log('    segurança ampliada:', e.message); }
   await ctx.close();
   const nTipo = t => A.filter(a => a.tipo === t).length;
   robos.seguranca = { achados: nTipo('seguranca'), texto: `HTTPS, cabeçalhos, cookies de sessão, telas e APIs sem login · ${nTipo('seguranca')} achado(s)` };

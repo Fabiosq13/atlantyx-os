@@ -49,7 +49,7 @@ const IA_MODEL = process.env.QA_IA_MODEL || 'claude-sonnet-4-6';
 const novoId = p => p + '_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
 const SEV = ['critica', 'alta', 'media', 'baixa'];
 const TIPOS = { tela: 'Tela (front)', api: 'Retaguarda (API)', crud: 'Incluir/alterar/excluir', logica: 'Lógica de negócio (IA)', dados: 'Dados ausentes/incoerentes', seguranca: 'Configuração de segurança', desempenho: 'Desempenho', responsivo: 'Celular / layout', acesso: 'Login e acesso',
-  plano: 'Caso do plano de testes', integracao: 'Integração / APIs', governanca: 'Governança e LGPD', layout: 'Layout de saída (IA)', macaco: 'Teste do macaco' };
+  plano: 'Caso do plano de testes', jornada: 'Jornada de usuário (IA)', integracao: 'Integração / APIs', governanca: 'Governança e LGPD', layout: 'Layout de saída (IA)', macaco: 'Teste do macaco' };
 const FECHADOS = ['validado', 'falso_positivo', 'aceito']; // aceito = risco aceito formalmente (médio/baixo)
 
 // ── criptografia da senha do produto ──
@@ -241,6 +241,17 @@ Responda SOMENTE JSON: {"acao":"clicar|preencher|selecionar|navegar|aguardar|con
   const user = `CASO ${caso?.codigo || ''} — ${caso?.titulo || ''}\nTipo: ${caso?.tipo || ''}\nPré-condição: ${caso?.pre_condicao || '—'}\nDados: ${caso?.dados || '—'}\nPassos:\n${(caso?.passos || []).map((p, i) => (i + 1) + '. ' + p).join('\n')}\nResultado esperado: ${caso?.esperado || '—'}\n\nHISTÓRICO:\n${historico.slice(-14).map((h, i) => (i + 1) + '. ' + h).join('\n') || '(nenhuma ação ainda)'}\n\nESTADO ATUAL:\nURL: ${estado?.url || ''}\nTítulo: ${estado?.titulo || ''}\nClicáveis: ${(estado?.clicaveis || []).slice(0, 80).join(' | ')}\nCampos: ${(estado?.campos || []).slice(0, 40).join(' | ')}\nMensagens/erros: ${(estado?.alertas || []).join(' | ') || '—'}\nTexto visível:\n${String(estado?.texto || '').substring(0, 6000)}`;
   try { return await _ia(sistema, user, 600); } catch (e) { return { acao: 'concluir', veredito: 'bloqueado', motivo: 'IA indisponível: ' + e.message }; }
 }
+// v3.138 · Robô Usuário IA: monta jornadas como uma pessoa usaria o produto, a partir das telas descobertas
+async function roboJornadas({ produto, telas = [], permitir_gravacao, quantidade = 8 }) {
+  const sistema = `Você é um testador sênior que usa o sistema como uma PESSOA REAL usaria. Recebe as telas descobertas de um sistema da Atlantyx (título, endereço e trecho do conteúdo) e o contexto do negócio. Monte JORNADAS de teste que façam sentido para o negócio — tarefas completas que um usuário tentaria fazer — e verifique a lógica: o sistema faz o que promete? os números fecham? mensagens claras? estados vazios? dados incoerentes?
+Inclua: caminhos felizes das tarefas principais; erros comuns de usuário (campo vazio, formato errado, valor no limite, voltar no meio do fluxo); regras de negócio inferidas das telas.
+${permitir_gravacao ? 'Pode incluir cadastros de teste com nomes começando por "QA-ATX".' : 'NÃO inclua jornadas que gravem, alterem ou excluam dados — só navegação, filtros, buscas e conferências.'}
+Nunca: pagar, comprar, fazer pedido real, curtir, seguir, convidar, enviar mensagem a pessoas reais, sair da conta, excluir conta.
+Passos em linguagem de usuário com nomes de telas/botões/campos como aparecem. Resultado esperado verificável na tela.
+Responda SOMENTE JSON: {"jornadas":[{"titulo":"...","tipo":"mundo_ideal|limite|logica","passos":["Abrir /rota","Clicar em \"...\"","Preencher \"Campo\" com \"...\""],"esperado":"...","por_que":"risco ao negócio"}]}`;
+  const user = `PRODUTO: ${produto?.nome || ''}\nCONTEXTO DO NEGÓCIO: ${String(produto?.contexto || 'não informado').substring(0, 3000)}\nQUANTIDADE: até ${Math.min(15, quantidade)} jornadas\n\nTELAS:\n${telas.slice(0, 40).map(t => `- ${t.titulo} (${t.url}): ${String(t.trecho || '').replace(/\s+/g, ' ').substring(0, 500)}`).join('\n')}`;
+  try { const j = await _ia(sistema, user, 5000); return { jornadas: (j.jornadas || []).slice(0, 15) }; } catch (e) { return { jornadas: [], aviso: e.message }; }
+}
 // v3.134 · Robô de Layout de Saída: IA com visão analisa a tela no computador e no celular
 async function roboLayout({ produto, tela, imagens = [] }) {
   const sistema = `Você é especialista em UX/UI e revisa o LAYOUT DE SAÍDA de telas de um sistema da Atlantyx (prints do computador e do celular). Aponte só problemas VISÍVEIS e concretos: texto cortado ou sobreposto, elementos desalinhados ou fora da tela, tabelas ilegíveis, números truncados, contraste insuficiente, botões escondidos, estados vazios sem mensagem, gráficos sem legenda/rótulo, inconsistência de fontes/cores, hierarquia confusa, formatação errada de moeda/data/percentual (padrão brasileiro: R$ 1.234,56; 31/12/2026). Não invente; tela boa → lista vazia.
@@ -286,6 +297,7 @@ async function handler(req, res) {
       // v3.136: andamento da execução (etapa, %, telas, achados) para a tela acompanhar ao vivo
       robo_progresso: soRobo(async () => { const sql = await getSql(); await sql`UPDATE qa_execucoes SET progresso=${JSON.stringify({ ...(b.progresso || {}), em: new Date().toISOString() })} WHERE id=${b.execucao_id} AND status='rodando'`; return { ok: true }; }),
       robo_layout: soRobo(() => roboLayout(b)),
+      robo_jornadas: soRobo(() => roboJornadas(b)),
     };
     if (!acoes[b.action]) return res.status(400).json({ success: false, error: 'Ação desconhecida' });
     return res.status(200).json({ success: true, ...(await acoes[b.action]()) });
