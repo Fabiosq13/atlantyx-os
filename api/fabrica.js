@@ -1,6 +1,6 @@
 import { comGuarda } from '../lib/qa-guard.js';
 import crypto from 'node:crypto';
-import { fabSql, novoIdFab as novoId, ETAPAS, DOCS, COLUNAS_FAB, TIPOS_CASO, ROBOS, moverItensPorCasos } from '../lib/fabrica-db.js';
+import { fabSql, novoIdFab as novoId, ETAPAS, DOCS, COLUNAS_FAB, TIPOS_CASO, ROBOS, PLANOS, planoDoTipo, moverItensPorCasos } from '../lib/fabrica-db.js';
 // api/fabrica.js — v3.134 · ESTEIRA DE ENTREGA (Fábrica) — Metodologia Atlantyx v4
 // Do documento ao aceite, num só lugar, para cada projeto:
 //   • Gates G1–G12 das 12 etapas, com critérios de aprovação e quem aprova.
@@ -115,7 +115,7 @@ async function projetos() {
     FROM fab_projetos p ORDER BY p.atualizado_em DESC`;
   const D = await sql`SELECT projeto_id, tipo, status, versao, origem, atualizado_em FROM fab_documentos`;
   let produtos = []; try { produtos = await sql`SELECT id, nome, url FROM qa_produtos ORDER BY nome`; } catch (_) {}
-  return { projetos: P.map(p => ({ ...p, docs: D.filter(d => d.projeto_id === p.id) })), produtos, etapas: ETAPAS, docs: DOCS, colunas: COLUNAS_FAB, tipos_caso: TIPOS_CASO, robos: ROBOS };
+  return { projetos: P.map(p => ({ ...p, arquitetura: undefined, docs: D.filter(d => d.projeto_id === p.id) })), produtos, etapas: ETAPAS, docs: DOCS, colunas: COLUNAS_FAB, tipos_caso: TIPOS_CASO, robos: ROBOS, planos: PLANOS };
 }
 async function projetoSalvar(b) {
   const sql = await fabSql(); if (!b.nome) throw new Error('Informe o nome do projeto');
@@ -127,7 +127,9 @@ async function projetoSalvar(b) {
 }
 async function projetoObter({ id }) {
   const sql = await fabSql(); const p = (await sql`SELECT * FROM fab_projetos WHERE id=${id}`)[0]; if (!p) throw new Error('Projeto não encontrado');
-  const docs = await sql`SELECT id, tipo, titulo, origem, arquivo_nome, versao, status, aprovado_em, aprovado_por, historico, atualizado_em, LENGTH(conteudo_md) AS tamanho FROM fab_documentos WHERE projeto_id=${id}`;
+  const docs = (await sql`SELECT id, tipo, titulo, origem, arquivo_nome, versao, status, fase, rodadas, aprovado_em, aprovado_por, historico, atualizado_em, LENGTH(conteudo_md) AS tamanho FROM fab_documentos WHERE projeto_id=${id}`)
+    .map(d => { const A = (d.rodadas || []).filter(x => x.tipo === 'analise'), u = A[A.length - 1]; return { ...d, rodadas: undefined, n_rodadas: (d.rodadas || []).length,
+      analise: u ? { versao: u.versao, nota: u.nota, pronto: u.pronto, em: u.em, abertas: (u.pendencias || []).filter(x => x.status === 'aberta').length, altas: (u.pendencias || []).filter(x => x.status === 'aberta' && x.severidade === 'alta').length } : null }; });
   return { projeto: p, documentos: docs, etapas: ETAPAS, docs: DOCS };
 }
 async function gateAprovar({ projeto_id, gate, aprovado_por, observacao, reabrir }) {
@@ -141,12 +143,13 @@ async function gateAprovar({ projeto_id, gate, aprovado_por, observacao, reabrir
 }
 
 // ═══════════════ documentos ═══════════════
-async function _docGravar(sql, pid, tipo, conteudo, { origem, titulo, arquivo_nome } = {}) {
-  const ex = (await sql`SELECT id, versao, status, origem, historico, atualizado_em FROM fab_documentos WHERE projeto_id=${pid} AND tipo=${tipo}`)[0];
+async function _docGravar(sql, pid, tipo, conteudo, { origem, titulo, arquivo_nome, fase, comentarios } = {}) {
+  const ex = (await sql`SELECT id, versao, status, origem, historico, atualizado_em, conteudo_md, fase FROM fab_documentos WHERE projeto_id=${pid} AND tipo=${tipo}`)[0];
   if (ex) {
-    const hist = [...(ex.historico || []), { versao: ex.versao, origem: ex.origem, status: ex.status, em: ex.atualizado_em }].slice(-15);
-    await sql`UPDATE fab_documentos SET conteudo_md=${conteudo}, origem=${origem || 'manual'}, titulo=COALESCE(${titulo || null}, titulo), arquivo_nome=COALESCE(${arquivo_nome || null}, arquivo_nome),
-      versao=versao+1, status='rascunho', aprovado_em=NULL, aprovado_por=NULL, historico=${JSON.stringify(hist)}, atualizado_em=NOW() WHERE id=${ex.id}`;
+    const hist = [...(ex.historico || []), { versao: ex.versao, origem: ex.origem, status: ex.status, fase: ex.fase, em: ex.atualizado_em }].slice(-15);
+    const novaFase = fase || (ex.fase === 'em_revisao' || ex.fase === 'analisado' || ex.fase === 'reanalisado' ? 'ajustes_recebidos' : 'rascunho');
+    await sql`UPDATE fab_documentos SET conteudo_md=${conteudo}, conteudo_anterior=${ex.conteudo_md}, origem=${origem || 'manual'}, titulo=COALESCE(${titulo || null}, titulo), arquivo_nome=COALESCE(${arquivo_nome || null}, arquivo_nome),
+      versao=versao+1, status='rascunho', fase=${novaFase}, aprovado_em=NULL, aprovado_por=NULL, historico=${JSON.stringify(hist.map((h, i) => i === hist.length - 1 && comentarios ? { ...h, comentarios_ajuste: String(comentarios).substring(0, 4000) } : h))}, atualizado_em=NOW() WHERE id=${ex.id}`;
     return { id: ex.id, versao: ex.versao + 1 };
   }
   const id = novoId('fdc');
@@ -154,20 +157,102 @@ async function _docGravar(sql, pid, tipo, conteudo, { origem, titulo, arquivo_no
   return { id, versao: 1 };
 }
 async function _doc(sql, pid, tipo) { return (await sql`SELECT * FROM fab_documentos WHERE projeto_id=${pid} AND tipo=${tipo}`)[0] || null; }
-async function docImportar({ projeto_id, tipo, nome, base64 }) {
+async function docImportar({ projeto_id, tipo, nome, base64, comentarios, ajuste }) {
   if (!DOCS[tipo]) throw new Error('tipo de documento inválido');
   const sql = await fabSql(); const md = await lerArquivo(nome, base64);
   if (String(md).trim().length < 30) throw new Error('Não consegui ler texto deste arquivo');
-  const r = await _docGravar(sql, projeto_id, tipo, md, { origem: 'importado', arquivo_nome: nome, titulo: DOCS[tipo].nome });
+  const r = await _docGravar(sql, projeto_id, tipo, md, { origem: ajuste ? 'ajuste' : 'importado', arquivo_nome: nome, titulo: DOCS[tipo].nome, fase: ajuste ? 'ajustes_recebidos' : undefined, comentarios });
   return { ...r, caracteres: md.length, secoes: titulosDe(md).length };
 }
 async function docObter({ projeto_id, tipo }) { const sql = await fabSql(); return { documento: await _doc(sql, projeto_id, tipo) }; }
 async function docSalvar({ projeto_id, tipo, conteudo_md, titulo }) { if (!DOCS[tipo]) throw new Error('tipo inválido'); const sql = await fabSql(); return _docGravar(sql, projeto_id, tipo, String(conteudo_md || ''), { origem: 'manual', titulo }); }
-async function docAprovar({ projeto_id, tipo, aprovado_por, reabrir }) {
+async function docAprovar({ projeto_id, tipo, aprovado_por, reabrir, forcar, ressalva }) {
   const sql = await fabSql();
-  if (reabrir) await sql`UPDATE fab_documentos SET status='rascunho', aprovado_em=NULL, aprovado_por=NULL, atualizado_em=NOW() WHERE projeto_id=${projeto_id} AND tipo=${tipo}`;
-  else await sql`UPDATE fab_documentos SET status='aprovado', aprovado_em=NOW(), aprovado_por=${aprovado_por || 'Atlantyx'}, atualizado_em=NOW() WHERE projeto_id=${projeto_id} AND tipo=${tipo}`;
+  if (reabrir) { await sql`UPDATE fab_documentos SET status='rascunho', fase='rascunho', aprovado_em=NULL, aprovado_por=NULL, atualizado_em=NOW() WHERE projeto_id=${projeto_id} AND tipo=${tipo}`; return { ok: true }; }
+  const d = await _doc(sql, projeto_id, tipo); if (!d) throw new Error('Documento não existe');
+  const R = (d.rodadas || []).filter(x => x.tipo === 'analise'), ult = R[R.length - 1];
+  const abertas = ult ? (ult.pendencias || []).filter(x => x.status === 'aberta') : [];
+  const graves = abertas.filter(x => x.severidade === 'alta');
+  // aprovar com pendência alta aberta exige confirmação explícita (fica registrado como ressalva)
+  if (graves.length && !forcar) { const e = new Error(`Há ${graves.length} pendência(s) ALTA(s) em aberto na última análise. Resolva, aceite com justificativa ou aprove com ressalva.`); e.precisa_forcar = true; e.pendencias = graves.length; throw e; }
+  const rod = [...(d.rodadas || []), { tipo: 'aprovacao', n: (d.rodadas || []).length + 1, em: new Date().toISOString(), versao: d.versao, por: aprovado_por || 'Atlantyx', pendencias_abertas: abertas.length, ressalva: forcar ? (ressalva || 'aprovado com pendências em aberto') : null, analisada: !!ult && ult.versao === d.versao }];
+  await sql`UPDATE fab_documentos SET status='aprovado', fase='aprovado', aprovado_em=NOW(), aprovado_por=${aprovado_por || 'Atlantyx'}, rodadas=${JSON.stringify(rod)}, atualizado_em=NOW() WHERE id=${d.id}`;
+  return { ok: true, ressalva: !!forcar };
+}
+
+// ═══════════════ ciclo de revisão: análise da IA → ajustes → upload → reanálise → aprovação ═══════════════
+const CRITERIOS_REV = {
+  erf: 'gate G3 (ERF): necessidades cobertas por requisitos; todo requisito funcional com critério de aceite OBJETIVO; regras de negócio numeradas e sem conflito; telas, mensagens e relatórios descritos; integrações do ponto de vista do negócio; requisitos de qualidade; pendências com responsável.',
+  ert: 'gate G3 (ERT, item 15.3.1 e 5.4): viabilidade técnica; arquitetura e componentes; decisões com alternativas; modelo de dados e dicionário; contratos de integração (formato, frequência, volume, tratamento de falhas); fluxos de dados e qualidade; ambientes; segurança (acesso, criptografia, segredos, logs, ameaças); LGPD (dados pessoais, base legal, mascaramento, retenção); continuidade (RTO/RPO, backup); monitoramento; estratégia de testes; implantação e retorno; IA (guardrails, avaliação) quando houver; requisitos não funcionais MENSURÁVEIS; rastreabilidade RT ↔ RF da ERF; aderência ao MODELO DO CLIENTE.',
+  plano_projeto: 'gate G2: escopo e fora de escopo; EAP; cronograma com datas dos gates; RACI; orçamento; FinOps; plano da fábrica; riscos com resposta; metas de qualidade (9.5); governança; gestão de mudanças; plano de aceite.',
+  arquitetura: 'gate G4 e 6.3.1: aderência às políticas do cliente; componentes e responsabilidades claros; integrações com tratamento de falhas; ambientes e dimensionamento coerentes com a volumetria; segurança e LGPD; continuidade com RTO/RPO; observabilidade; escalabilidade; pontos únicos de falha; decisões registradas com alternativas; custo compatível com o FinOps. Faça uma ANÁLISE DE ARQUITETURA crítica (riscos, gargalos, superdimensionamento, complexidade desnecessária).',
+  modelo_dados: 'ERT 15.3.1 item 4: entidades cobrindo os requisitos da ERF; chaves e relacionamentos corretos; normalização adequada; dicionário completo; dados pessoais identificados e mascarados (LGPD); índices/particionamento/retenção coerentes com a volumetria; qualidade e reconciliação; backup.',
+  volumetria: 'etapa 2/4 (4.4): toda entidade/transação relevante da ERF com volume atual e fonte; crescimento justificado; picos e sazonalidade; projeções coerentes; impacto na arquitetura; premissas a validar.',
+  finops: 'etapa 4.4 FinOps: todos os serviços da arquitetura presentes (inclusive não produção, rede, backup, monitoramento, licenças); custos coerentes com a volumetria e com preços de referência; projeção 12/24/36 meses; recomendações de otimização; regras de controle de gastos.',
+  plano_testes_integracao: 'itens 9.3.1/9.3.2: inventário de integrações da ERT coberto; cenários de falha (indisponível, resposta inesperada, tempo esgotado, duplicidade); testes unitários com cobertura mínima e entrega em JUnit; critérios do G6/G7.',
+  plano_testes_usabilidade: 'layout de saída e robustez: formatos brasileiros, responsividade, estados vazios, acessibilidade básica; teste do macaco com limites; critérios claros.',
+  plano_testes_seguranca: 'itens 9.3.3 e gate G8: escopo e autorização; análise de ameaças com controles e casos; acesso e sessão; configurações e segredos; componentes de terceiros; LGPD; IA quando houver; tratamento por severidade e aceite de risco. Apenas verificações defensivas.',
+  plano_testes_desempenho: 'item 9.3.4 e gate G8: volumetria atual e projetada com fonte; perfis de carga; cenários de carga, pico, estresse, longa duração, volume e resiliência; METAS MENSURÁVEIS (p95, vazão, erro, RTO/RPO); ferramentas e evidências; ambiente adequado (não produção).',
+  plano_testes: 'item 9.3.1: estratégia e escopo; cada critério de aceite coberto por casos; casos de exceção e limite; priorização por risco; dados fictícios/mascarados; rastreabilidade; segurança e desempenho; critérios de entrada e saída do G7.',
+};
+async function docAnalisar({ projeto_id, tipo, foco }) {
+  const sql = await fabSql(); const P = (await sql`SELECT * FROM fab_projetos WHERE id=${projeto_id}`)[0]; if (!P) throw new Error('Projeto não encontrado');
+  const d = await _doc(sql, projeto_id, tipo); if (!d?.conteudo_md) throw new Error('Documento ainda não existe');
+  const R = (d.rodadas || []).filter(x => x.tipo === 'analise'), ant = R[R.length - 1];
+  const erf = tipo !== 'erf' ? await _doc(sql, projeto_id, 'erf') : null, mod = tipo === 'ert' ? await _doc(sql, projeto_id, 'modelo_ert') : null;
+  const comentarios = (d.historico || []).slice(-1)[0]?.comentarios_ajuste || '';
+  const reanalise = !!ant && !!d.conteudo_anterior && ant.versao < d.versao;
+  const pendAnt = ant ? (ant.pendencias || []).filter(x => x.status !== 'resolvida') : [];
+  const txt = await claude(SYS_BASE + `\nTarefa: REVISÃO TÉCNICA do documento "${DOCS[tipo]?.nome || tipo}" (apoio de IA da metodologia, item 5.5) contra os critérios do ${CRITERIOS_REV[tipo] || 'documento'}
+Seja específico: cite a seção/ID e o trecho. Não invente problemas; documento bom tem poucas pendências. Severidade: "alta" = impede aprovação/construção (falta seção essencial, requisito sem critério, contradição, risco de segurança/LGPD); "media" = precisa ajustar antes da construção; "baixa" = melhoria de redação/forma.
+${reanalise ? 'É uma REANÁLISE: compare com a versão anterior e com as pendências da rodada anterior; diga quais foram resolvidas, quais continuam e se o ajuste criou problema novo.' : ''}
+Responda SOMENTE JSON: {"resumo":"parecer em 3-5 frases","nota":0-10,"pronto_para_aprovar":true|false,"pendencias":[{"id":"P-01","secao":"...","severidade":"alta|media|baixa","problema":"...","sugestao":"texto sugerido ou ação"}],"resolvidas":["P-03"],"continuam":["P-01"],"mudancas":["o que mudou da versão anterior para esta"],"pontos_fortes":["..."]}`,
+    `PROJETO: ${P.nome} · CLIENTE: ${P.cliente || '—'}\n${foco ? 'FOCO PEDIDO PELO REVISOR: ' + foco + '\n' : ''}${comentarios ? 'COMENTÁRIOS QUE VIERAM COM O AJUSTE: ' + comentarios + '\n' : ''}
+${pendAnt.length ? 'PENDÊNCIAS DA RODADA ANTERIOR (mantenha o mesmo id se continuarem):\n' + pendAnt.map(x => `${x.id} [${x.severidade}] ${x.secao}: ${x.problema}`).join('\n') + '\n' : ''}
+${mod?.conteudo_md ? 'TÍTULOS DO MODELO DO CLIENTE:\n' + titulosDe(mod.conteudo_md).join('\n').substring(0, 4000) + '\n' : ''}
+${erf?.conteudo_md ? 'ERF (referência funcional):\n' + String(erf.conteudo_md).substring(0, 35000) + '\n' : ''}
+DOCUMENTO EM REVISÃO (v${d.versao}):\n${String(d.conteudo_md).substring(0, 60000)}
+${reanalise ? '\nVERSÃO ANTERIOR (v' + (d.versao - 1) + ', para comparação):\n' + String(d.conteudo_anterior).substring(0, 25000) : ''}`, 6000);
+  const j = json(txt);
+  const pend = (j.pendencias || []).slice(0, 60).map((x, i) => ({ id: x.id || 'P-' + String(i + 1).padStart(2, '0'), secao: x.secao || '', severidade: ['alta', 'media', 'baixa'].includes(x.severidade) ? x.severidade : 'media', problema: x.problema || '', sugestao: x.sugestao || '', status: 'aberta' }));
+  // pendências aceitas manualmente antes continuam aceitas se a IA repetir o mesmo id
+  for (const x of pend) { const a = pendAnt.find(y => y.id === x.id); if (a && a.status === 'aceita') { x.status = 'aceita'; x.nota = a.nota; } }
+  const rod = { tipo: 'analise', n: (d.rodadas || []).length + 1, em: new Date().toISOString(), versao: d.versao, reanalise, resumo: j.resumo || '', nota: j.nota ?? null, pronto: !!j.pronto_para_aprovar && !pend.some(x => x.severidade === 'alta' && x.status === 'aberta'),
+    pendencias: pend, resolvidas: j.resolvidas || [], continuam: j.continuam || [], mudancas: (j.mudancas || []).slice(0, 30), pontos_fortes: (j.pontos_fortes || []).slice(0, 10), comentarios_ajuste: comentarios || null };
+  const rodadas = [...(d.rodadas || []), rod].slice(-30);
+  await sql`UPDATE fab_documentos SET rodadas=${JSON.stringify(rodadas)}, fase=${reanalise ? 'reanalisado' : 'analisado'}, atualizado_em=NOW() WHERE id=${d.id}`;
+  return { rodada: rod };
+}
+async function docEnviarRevisao({ projeto_id, tipo, revisor, observacao }) {
+  const sql = await fabSql(); const d = await _doc(sql, projeto_id, tipo); if (!d) throw new Error('Documento não existe');
+  const rod = [...(d.rodadas || []), { tipo: 'envio', n: (d.rodadas || []).length + 1, em: new Date().toISOString(), versao: d.versao, revisor: revisor || 'cliente', observacao: observacao || null }];
+  await sql`UPDATE fab_documentos SET fase='em_revisao', rodadas=${JSON.stringify(rod)}, atualizado_em=NOW() WHERE id=${d.id}`;
   return { ok: true };
+}
+async function docPendencia({ projeto_id, tipo, id, status, nota }) {
+  if (!['aberta', 'resolvida', 'aceita'].includes(status)) throw new Error('status inválido');
+  const sql = await fabSql(); const d = await _doc(sql, projeto_id, tipo); if (!d) throw new Error('Documento não existe');
+  const rod = d.rodadas || []; let k = -1; for (let i = rod.length - 1; i >= 0; i--) if (rod[i].tipo === 'analise') { k = i; break; }
+  if (k < 0) throw new Error('Sem análise');
+  const x = (rod[k].pendencias || []).find(y => y.id === id); if (!x) throw new Error('Pendência não encontrada');
+  x.status = status; if (nota) x.nota = nota; x.atualizado_em = new Date().toISOString();
+  rod[k].pronto = !rod[k].pendencias.some(y => y.severidade === 'alta' && y.status === 'aberta') && rod[k].pronto !== false ? rod[k].pronto : !rod[k].pendencias.some(y => y.severidade === 'alta' && y.status === 'aberta');
+  await sql`UPDATE fab_documentos SET rodadas=${JSON.stringify(rod)}, atualizado_em=NOW() WHERE id=${d.id}`;
+  return { ok: true };
+}
+function parecerMd(P, tipo, d) {
+  const R = (d.rodadas || []), A = R.filter(x => x.tipo === 'analise'), ult = A[A.length - 1];
+  const sevN = { alta: 'Alta', media: 'Média', baixa: 'Baixa' }, stN = { aberta: 'Aberta', resolvida: 'Resolvida', aceita: 'Aceita' };
+  const L = ['# Parecer de Revisão', '', `Documento: **${DOCS[tipo]?.nome || tipo}** · versão ${d.versao} · projeto **${P.nome}**${P.cliente ? ' · cliente ' + P.cliente : ''}.`, ''];
+  if (ult) { L.push('## 1. Parecer da última análise', '', `> ${ult.resumo || '—'}`, '', `Nota: **${ult.nota ?? '—'}/10** · ${ult.pronto ? 'pronto para aprovação' : 'NÃO pronto para aprovação'} · análise da versão ${ult.versao} em ${new Date(ult.em).toLocaleDateString('pt-BR')}${ult.reanalise ? ' (reanálise)' : ''}.`, '');
+    if (ult.mudancas?.length) L.push('### Mudanças em relação à versão anterior', '', ...ult.mudancas.map(m => '- ' + m), '');
+    if (ult.pontos_fortes?.length) L.push('### Pontos fortes', '', ...ult.pontos_fortes.map(m => '- ' + m), '');
+    L.push('## 2. Pendências', '', '| ID | Seção | Severidade | Problema | Sugestão | Situação |', '|---|---|---|---|---|---|', ...(ult.pendencias || []).map(x => `| ${x.id} | ${mdc(x.secao)} | ${sevN[x.severidade]} | ${mdc(x.problema)} | ${mdc(x.sugestao)} | ${stN[x.status]}${x.nota ? ' — ' + mdc(x.nota) : ''} |`), '');
+    if (ult.resolvidas?.length) L.push(`Resolvidas desde a rodada anterior: ${ult.resolvidas.join(', ')}.`, ''); }
+  else L.push('Documento ainda não analisado pela IA.', '');
+  L.push('## 3. Histórico do ciclo de revisão', '', '| Rodada | Data | Evento | Versão | Detalhe |', '|---|---|---|---|---|',
+    ...R.map(x => `| ${x.n} | ${new Date(x.em).toLocaleDateString('pt-BR')} | ${x.tipo === 'analise' ? (x.reanalise ? 'Reanálise da IA' : 'Análise da IA') : x.tipo === 'envio' ? 'Enviado para revisão' : 'Aprovação'} | v${x.versao} | ${x.tipo === 'analise' ? `${(x.pendencias || []).filter(p => p.status === 'aberta').length} pendência(s) aberta(s) · nota ${x.nota ?? '—'}` : x.tipo === 'envio' ? mdc(x.revisor) + (x.observacao ? ' — ' + mdc(x.observacao) : '') : 'por ' + mdc(x.por) + (x.ressalva ? ' — ressalva: ' + mdc(x.ressalva) : '')} |`));
+  return L.join('\n');
 }
 
 const SYS_BASE = `Você é especialista sênior da Atlantyx (consultoria de dados, BI, engenharia de dados e IA para grandes empresas, ex.: CPFL, Enel) e segue a Metodologia Atlantyx de Gestão e Entrega de Projetos Tecnológicos: 12 etapas com gates G1–G12; a ERF (funcional, em linguagem de negócio) é do parceiro de processos/cliente; a ERT (técnica) é da Atlantyx; a construção é feita pela fábrica de desenvolvimento do cliente, com acompanhamento técnico e QA automatizado por IA da Atlantyx. Escreva em português do Brasil, claro e objetivo, sem inventar fatos que contradigam a fonte: quando faltar informação, registre como PREMISSA ou PENDÊNCIA (com responsável sugerido) em vez de supor silenciosamente. Use Markdown: títulos #/##/###, listas, tabelas com |. Não use HTML.`;
@@ -212,7 +297,7 @@ async function gerarPlanoProjeto(sql, P, b) {
     `PROJETO: ${P.nome} · CLIENTE: ${P.cliente || '—'} · GP: ${P.gp || '—'} · FÁBRICA DE DESENVOLVIMENTO: ${P.fabrica || 'fábrica do cliente'}\n${P.descricao ? 'DESCRIÇÃO: ' + P.descricao + '\n' : ''}INÍCIO PREVISTO: ${inicio}\n${b.instrucoes ? 'INSTRUÇÕES DO GP: ' + b.instrucoes + '\n' : ''}
 ETAPAS E GATES DA METODOLOGIA:\n${etapas}\n
 ${itens.length ? `BACKLOG DA FÁBRICA (${itens.length} itens, ${horas} h estimadas):\n` + itens.map(i => `${i.codigo} ${i.titulo} (${i.tipo || ''}, ${i.prioridade}, ${i.estimativa_h || '?'} h)`).join('\n').substring(0, 8000) + '\n' : ''}
-ERF:\n${String(erf?.conteudo_md || 'não importada').substring(0, 30000)}\n\nERT:\n${String(ert?.conteudo_md || 'não gerada').substring(0, 25000)}
+ERF:\n${String(erf?.conteudo_md || 'não importada').substring(0, 30000)}\n\nERT:\n${String(ert?.conteudo_md || 'não gerada').substring(0, 25000)}${(() => { const C = calcularFinops(P.arquitetura || {}); return C.servicos.length ? '\n\nFINOPS (use no orçamento de infraestrutura):\n' + tabelaFinopsMd(C) : ''; })()}
 
 Estrutura obrigatória (use estes títulos):
 # Plano Detalhado de Projeto e Cronograma
@@ -271,45 +356,95 @@ async function _inserirCasos(sql, pid, casos, origem = 'ia') {
   }
   return ids;
 }
-const TIPOS_FUNC = ['mundo_ideal', 'funcional', 'limite', 'regressao', 'dados', 'ia'], TIPOS_NF = ['integracao', 'seguranca', 'governanca', 'layout', 'macaco', 'desempenho', 'unitario'];
-async function gerarPlanoTestes(sql, P, b) {
+// v3.135: um plano por família de testes — cada um com estratégia própria, casos próprios, aprovação e Word
+const ESTRATEGIA_PLANO = {
+  plano_testes: `## 1. Objetivo, estratégia e escopo (por funcionalidade e jornada — tabela com os tipos de teste aplicáveis)
+## 2. Camadas de teste e robôs (tabela: camada, o que valida, robô/ferramenta, quando roda, critério de aprovação)
+## 3. Priorização por risco (tabela: área, chance de defeito, impacto no negócio, prioridade)
+## 4. Massas de dados de teste (fictícias/mascaradas, por cenário)
+## 5. Regressão (quais casos rodam a cada nova versão e como são selecionados)
+## 6. Ambientes, papéis e controle humano (revisão dos casos pelo especialista de qualidade; confirmação de cada defeito antes de reportar ao cliente)
+## 7. Critérios de entrada e de saída (gate G7)`,
+  plano_testes_integracao: `## 1. Objetivo e escopo (integrações, APIs e componentes; o que é da fábrica e o que é da Atlantyx)
+## 2. Inventário de integrações a testar (tabela: sistema, direção, contrato/formato, frequência, volume, tratamento de falhas — a partir da ERT)
+## 3. Cenários de integração (resposta normal, sistema indisponível, resposta inesperada, tempo esgotado, reprocessamento, duplicidade)
+## 4. Testes unitários da fábrica (regras e componentes que devem ter teste; cobertura mínima; entrega do resultado em JUnit XML; casos do plano citados pelo código CT-xxx no nome do teste)
+## 5. Dados e ambientes (simuladores/mocks, massas fictícias, ambiente de integração)
+## 6. Critérios de entrada e de saída (gate G6 para unitários e G7 para integração)`,
+  plano_testes_usabilidade: `## 1. Objetivo e escopo (telas e saídas: relatórios, painéis, exportações, e-mails)
+## 2. Padrões de layout de saída (formatos brasileiros de moeda/data/percentual, legibilidade, responsividade em celular, identidade visual, estados vazios e mensagens)
+## 3. Robô de Layout (IA com visão em computador 1440px e celular 390px) — o que verifica e critérios
+## 4. Teste do macaco (robustez a uso fora do roteiro: entradas inválidas, cliques aleatórios) — limites, ações evitadas e critérios
+## 5. Acessibilidade básica (contraste, rótulos, navegação por teclado)
+## 6. Critérios de entrada e de saída`,
+  plano_testes_seguranca: `## 1. Objetivo, escopo e autorização (sistemas e ambientes cobertos, janela de testes acordada com a Segurança da Informação do cliente, o que está fora)
+## 2. Análise de ameaças (tabela no modelo STRIDE: ativo, ameaça, controle esperado, caso de teste)
+## 3. Controle de acesso e sessão (perfis × permissões, telas e APIs sem login, expiração de sessão, cookies)
+## 4. Configurações e segredos (HTTPS, cabeçalhos de proteção, segredos fora do código e das respostas, ambientes separados)
+## 5. Componentes de terceiros e análise de código (responsabilidade da fábrica; ferramentas e evidência esperada)
+## 6. Privacidade e LGPD (inventário de dados pessoais, mascaramento em tela e relatório, retenção, política de privacidade, consentimento de cookies)
+## 7. Uso de IA na solução, quando houver (guardrails, vazamento de dados, abuso de funções — verificações defensivas)
+## 8. Classificação de vulnerabilidades e tratamento (prazos por severidade, aceite formal de risco)
+## 9. Critérios de entrada e de saída (gate G8)`,
+  plano_testes_desempenho: `## 1. Objetivo e escopo (jornadas e APIs críticas; ambiente de testes de desempenho — nunca produção sem autorização)
+## 2. Volumetria (tabela: entidade/arquivo/transação, volume atual, volume projetado em 12 e 36 meses, fonte da estimativa — a partir da ERT e do Plano de Projeto)
+## 3. Perfis de carga (tabela: jornada, usuários simultâneos nominais e de pico, transações por minuto, mix de operações)
+## 4. Cenários (carga nominal, pico, estresse em escada até a ruptura, longa duração/resistência, volume de dados, resiliência: falha de componente, reprocessamento, backup e restauração)
+## 5. Metas e critérios (tabela: tempo de resposta p95 por jornada, vazão, taxa de erro máxima, consumo de recursos, RTO/RPO)
+## 6. Ferramentas e evidências (Robô de Carga da Atlantyx para APIs e telas; ferramenta de carga/infra do cliente para volumetria e resiliência; o que vira evidência)
+## 7. Análise de gargalos e plano de correção
+## 8. Critérios de entrada e de saída (gate G8)`,
+};
+const EXTRA_CASOS = {
+  plano_testes_desempenho: '- Carga e estresse: indique no resultado esperado a META mensurável (ex.: "p95 abaixo de 3 s e erro abaixo de 1% com 50 usuários simultâneos"); "automatizavel": true (o Robô de Carga executa).\n- Volumetria e resiliência dependem da infraestrutura do cliente: "automatizavel": false, com passos para a equipe executar e a evidência a registrar.\n- Desempenho (tempo de resposta de uma tela/jornada): passos de tela com meta de tempo; "automatizavel": true.',
+  plano_testes_seguranca: '- Verificações DEFENSIVAS de configuração e de controle de acesso (perfil sem permissão, sessão expirada, API sem login, dado pessoal mascarado, mensagem de erro sem detalhe técnico, segredo ausente das respostas). Nada de cargas de ataque.',
+  plano_testes_integracao: '- Unitários: descreva a regra/componente a testar e o resultado esperado; "automatizavel": true (o resultado vem do JUnit da fábrica; o nome do teste deve conter o código do caso).',
+};
+const planoTipos = docTipo => PLANOS[docTipo]?.tipos || PLANOS.plano_testes.tipos;
+async function gerarPlanoTestes(sql, P, b, docTipo = 'plano_testes') {
   const fonte = await _fonteSpec(sql, P.id);
-  const tipos = Array.isArray(b.tipos) && b.tipos.length ? b.tipos.filter(t => TIPOS_CASO[t]) : Object.keys(TIPOS_CASO);
-  const f = tipos.filter(t => TIPOS_FUNC.includes(t)), nf = tipos.filter(t => TIPOS_NF.includes(t));
-  const qtd = Math.min(80, parseInt(b.quantidade) || 45);
-  const [cf, cnf, estrategia] = await Promise.all([
-    f.length ? gerarCasos(P, fonte, f, Math.ceil(qtd * (nf.length ? 0.65 : 1)), b.instrucoes) : [],
-    nf.length ? gerarCasos(P, fonte, nf, Math.ceil(qtd * (f.length ? 0.35 : 1)), b.instrucoes) : [],
-    claude(SYS_BASE + `\nTarefa: escrever as seções de ESTRATÉGIA do Plano de Testes Detalhado (item 9.3.1). Os casos detalhados são gerados à parte — não os liste.`,
-      `PROJETO: ${P.nome} · CLIENTE: ${P.cliente || '—'}\n${b.instrucoes ? 'INSTRUÇÕES: ' + b.instrucoes + '\n' : ''}ROBÔS DE QA DISPONÍVEIS NA ATLANTYX:\n${Object.values(ROBOS).map(r => '- ' + r).join('\n')}\n\n${fonte.substring(0, 50000)}\n\nEscreva em Markdown, com estes títulos:\n## 1. Objetivo, estratégia e escopo (por funcionalidade, integração e componente, com os tipos de teste aplicáveis — tabela)\n## 2. Camadas de teste e robôs (tabela: camada, o que valida, robô/ferramenta, quando roda, critério de aprovação)\n## 3. Priorização por risco (tabela: área, chance de defeito, impacto no negócio, prioridade)\n## 4. Massas de dados de teste (fictícias/mascaradas, por cenário)\n## 5. Plano de testes de segurança e de desempenho (verificações de configuração e acesso; perfis de carga e volumes a simular)\n## 6. Ambientes, papéis e controle humano (revisão dos casos pelo especialista de qualidade; confirmação de cada defeito antes de reportar ao cliente)\n## 7. Critérios de entrada e de saída (gate G7)`, 6000),
+  const base = planoTipos(docTipo);
+  const tipos = Array.isArray(b.tipos) && b.tipos.length ? b.tipos.filter(t => base.includes(t)) : base;
+  if (!tipos.length) throw new Error('Escolha ao menos um tipo de teste deste plano');
+  const qtd = Math.min(80, parseInt(b.quantidade) || (docTipo === 'plano_testes' ? 40 : 20));
+  const metade = tipos.length > 2 ? [tipos.slice(0, Math.ceil(tipos.length / 2)), tipos.slice(Math.ceil(tipos.length / 2))] : [tipos];
+  const instr = [b.instrucoes, EXTRA_CASOS[docTipo]].filter(Boolean).join('\n');
+  const [estrategia, ...grupos] = await Promise.all([
+    claude(SYS_BASE + `\nTarefa: escrever as seções de ESTRATÉGIA do "${DOCS[docTipo].nome}" (metodologia, itens 9.3.1 a 9.3.4). Os casos detalhados são gerados à parte — não os liste.`,
+      `PROJETO: ${P.nome} · CLIENTE: ${P.cliente || '—'}\n${b.instrucoes ? 'INSTRUÇÕES: ' + b.instrucoes + '\n' : ''}ROBÔS DE QA DA ATLANTYX:\n${Object.values(ROBOS).map(r => '- ' + r).join('\n')}\n\n${fonte.substring(0, 50000)}\n\nEscreva em Markdown, com estes títulos:\n${ESTRATEGIA_PLANO[docTipo]}`, 6000),
+    ...metade.map(g => gerarCasos(P, fonte, g, Math.ceil(qtd * g.length / tipos.length), instr)),
   ]);
-  if (b.substituir !== false) await sql`DELETE FROM fab_casos WHERE projeto_id=${P.id} AND origem='ia' AND status='nao_executado'`;
-  const ids = await _inserirCasos(sql, P.id, [...cf, ...cnf]);
-  return { md: await planoTestesMd(sql, P, limpaMd(estrategia)), casos_gerados: ids.length };
+  const casos = grupos.flat().filter(c => tipos.includes(c.tipo) || !TIPOS_CASO[c.tipo]).map(c => ({ ...c, tipo: tipos.includes(c.tipo) ? c.tipo : tipos[0] }));
+  if (b.substituir !== false) await sql`DELETE FROM fab_casos WHERE projeto_id=${P.id} AND origem='ia' AND status='nao_executado' AND tipo = ANY(${tipos})`;
+  const ids = await _inserirCasos(sql, P.id, casos);
+  return { md: await planoTestesMd(sql, P, limpaMd(estrategia), docTipo), casos_gerados: ids.length };
 }
-async function planoTestesMd(sql, P, estrategia) {
-  if (estrategia == null) { const d = await _doc(sql, P.id, 'plano_testes'); estrategia = String(d?.conteudo_md || '').split(/\n## 8\. /)[0].replace(/^# Plano de Testes Detalhado\s*/, ''); }
-  const C = await sql`SELECT * FROM fab_casos WHERE projeto_id=${P.id} ORDER BY codigo`;
-  const porTipo = Object.keys(TIPOS_CASO).map(t => [t, C.filter(c => c.tipo === t)]).filter(([, L]) => L.length);
+async function planoTestesMd(sql, P, estrategia, docTipo = 'plano_testes') {
+  const nomeDoc = DOCS[docTipo].nome, tipos = planoTipos(docTipo);
+  if (estrategia == null) { const d = await _doc(sql, P.id, docTipo); estrategia = String(d?.conteudo_md || '').split(/\n## (?:8|9|10)\. Resumo dos casos/)[0].replace(/^# .*\n/, ''); }
+  const C = (await sql`SELECT * FROM fab_casos WHERE projeto_id=${P.id} ORDER BY codigo`).filter(c => tipos.includes(c.tipo));
+  const porTipo = tipos.map(t => [t, C.filter(c => c.tipo === t)]).filter(([, L]) => L.length);
   const reqs = [...new Set(C.map(c => c.requisito_ref).filter(Boolean))].sort();
-  const L = ['# Plano de Testes Detalhado', '', estrategia.trim(), '', '## 8. Resumo dos casos de teste', '',
+  const nSec = Math.max(0, ...(estrategia.match(/^## (\d+)\./gm) || []).map(x => parseInt(x.slice(3)))); let k = nSec + 1;
+  const sec = t => `## ${k++}. ${t}`;
+  const L = ['# ' + nomeDoc, '', estrategia.trim(), '', sec('Resumo dos casos de teste'), '',
     `Total de **${C.length} casos**, ${C.filter(c => c.automatizavel).length} automatizáveis pelos robôs de QA (${C.length ? Math.round(C.filter(c => c.automatizavel).length / C.length * 100) : 0}%), cobrindo ${reqs.length} requisito(s).`, '',
-    '| Tipo | Casos | Alta | Média | Baixa | Automatizáveis | Robô |', '|---|---|---|---|---|---|---|',
-    ...porTipo.map(([t, L2]) => `| ${TIPOS_CASO[t].nome} | ${L2.length} | ${L2.filter(c => c.prioridade === 'alta').length} | ${L2.filter(c => c.prioridade === 'media').length} | ${L2.filter(c => c.prioridade === 'baixa').length} | ${L2.filter(c => c.automatizavel).length} | ${mdc(ROBOS[TIPOS_CASO[t].robo] || '').split('(')[0]} |`), '',
-    '## 9. Lista de casos de teste', '', '| Código | Caso | Tipo | Requisito | Item | Prioridade | Situação |', '|---|---|---|---|---|---|---|',
-    ...C.map(c => `| ${c.codigo} | ${mdc(c.titulo)} | ${TIPOS_CASO[c.tipo]?.nome || c.tipo} | ${c.requisito_ref || '—'} | ${c.item_codigo || '—'} | ${c.prioridade} | ${({ nao_executado: 'Não executado', passou: 'Aprovado', falhou: 'Reprovado', bloqueado: 'Bloqueado' })[c.status] || c.status} |`), '',
-    '<!-- quebra -->', '', '## 10. Casos de teste detalhados', ''];
-  for (const [t, L2] of porTipo) {
-    L.push(`### 10.${Object.keys(TIPOS_CASO).indexOf(t) + 1} ${TIPOS_CASO[t].nome}`, '');
+    '| Tipo | Casos | Alta | Média | Baixa | Automatizáveis | Executado por |', '|---|---|---|---|---|---|---|',
+    ...porTipo.map(([t, L2]) => `| ${TIPOS_CASO[t].nome} | ${L2.length} | ${L2.filter(c => c.prioridade === 'alta').length} | ${L2.filter(c => c.prioridade === 'media').length} | ${L2.filter(c => c.prioridade === 'baixa').length} | ${L2.filter(c => c.automatizavel).length} | ${mdc(ROBOS[TIPOS_CASO[t].robo] || '').split(' (')[0]} |`), '',
+    sec('Lista de casos de teste'), '', '| Código | Caso | Tipo | Requisito | Item | Prioridade | Situação |', '|---|---|---|---|---|---|---|',
+    ...C.map(c => `| ${c.codigo} | ${mdc(c.titulo)} | ${TIPOS_CASO[c.tipo]?.nome || c.tipo} | ${c.requisito_ref || '—'} | ${c.item_codigo || '—'} | ${c.prioridade} | ${({ nao_executado: 'Não executado', passou: 'Aprovado', falhou: 'Reprovado', bloqueado: 'Bloqueado' })[c.status] || c.status} |`), ''];
+  const nDet = k; L.push('<!-- quebra -->', '', sec('Casos de teste detalhados'), '');
+  porTipo.forEach(([t, L2], i) => {
+    L.push(`### ${nDet}.${i + 1} ${TIPOS_CASO[t].nome}`, '');
     for (const c of L2) {
       L.push(`#### ${c.codigo} — ${mdc(c.titulo)}`, '', `| Campo | Detalhe |`, `|---|---|`, `| Requisito | ${c.requisito_ref || '—'} |`, `| Item da fábrica | ${c.item_codigo || '—'} |`, `| Prioridade / risco | ${c.prioridade}${c.risco ? ' — ' + mdc(c.risco) : ''} |`,
-        `| Pré-condição | ${mdc(c.pre_condicao) || '—'} |`, `| Dados de teste | ${mdc(c.dados) || '—'} |`, `| Resultado esperado | ${mdc(c.esperado) || '—'} |`, `| Execução | ${c.automatizavel ? 'Automatizada (robô de QA)' : 'Manual'} |`, '', '**Passos:**', '');
-      (c.passos || []).forEach((p, i) => L.push(`${i + 1}. ${p}`)); L.push('');
+        `| Pré-condição | ${mdc(c.pre_condicao) || '—'} |`, `| Dados de teste | ${mdc(c.dados) || '—'} |`, `| Resultado esperado | ${mdc(c.esperado) || '—'} |`, `| Execução | ${c.automatizavel ? 'Automatizada — ' + mdc(ROBOS[TIPOS_CASO[t].robo] || 'robô de QA').split(' (')[0] : 'Manual / assistida, com evidência registrada'} |`, '', '**Passos:**', '');
+      (c.passos || []).forEach((p, j) => L.push(`${j + 1}. ${p}`)); L.push('');
     }
-  }
-  L.push('<!-- quebra -->', '', '## 11. Matriz de rastreabilidade (requisito → casos → item → situação)', '', '| Requisito | Casos | Itens da fábrica | Aprovados | Reprovados | Não executados |', '|---|---|---|---|---|---|',
+  });
+  L.push('<!-- quebra -->', '', sec('Matriz de rastreabilidade (requisito → casos → item → situação)'), '', '| Requisito | Casos | Itens da fábrica | Aprovados | Reprovados | Não executados |', '|---|---|---|---|---|---|',
     ...reqs.map(r => { const X = C.filter(c => c.requisito_ref === r); return `| ${r} | ${X.map(c => c.codigo).join(', ')} | ${[...new Set(X.map(c => c.item_codigo).filter(Boolean))].join(', ') || '—'} | ${X.filter(c => c.status === 'passou').length} | ${X.filter(c => c.status === 'falhou').length} | ${X.filter(c => c.status === 'nao_executado').length} |`; }),
-    '', '## 12. Indicadores acompanhados (item 9.5)', '', '- Defeitos encontrados antes da homologação versus durante e depois.', '- Tempo médio entre o surgimento e a identificação de um problema.', '- Tempo médio de diagnóstico e de correção.', '- Percentual de critérios de aceite cobertos por testes automáticos.', '- Defeitos que chegaram à produção.', '- Alertas da IA confirmados versus descartados.');
+    '', sec('Indicadores acompanhados (item 9.5)'), '', '- Defeitos encontrados antes da homologação versus durante e depois.', '- Tempo médio entre o surgimento e a identificação de um problema.', '- Tempo médio de diagnóstico e de correção.', '- Percentual de critérios de aceite cobertos por testes automáticos.', '- Defeitos que chegaram à produção.', '- Alertas da IA confirmados versus descartados.');
   return L.join('\n');
 }
 async function gerarRelatorioQualidade(sql, P) {
@@ -341,8 +476,9 @@ async function docGerar(b) {
   let md, extra = {};
   if (b.tipo === 'ert') md = await gerarErt(sql, P, b);
   else if (b.tipo === 'plano_projeto') md = await gerarPlanoProjeto(sql, P, b);
-  else if (b.tipo === 'plano_testes') { if (b.so_atualizar) md = await planoTestesMd(sql, P, null); else { const r = await gerarPlanoTestes(sql, P, b); md = r.md; extra.casos_gerados = r.casos_gerados; } }
+  else if (PLANOS[b.tipo]) { if (b.so_atualizar) md = await planoTestesMd(sql, P, null, b.tipo); else { const r = await gerarPlanoTestes(sql, P, b, b.tipo); md = r.md; extra.casos_gerados = r.casos_gerados; } }
   else if (b.tipo === 'relatorio_qualidade') md = await gerarRelatorioQualidade(sql, P);
+  else if (['arquitetura', 'modelo_dados', 'volumetria', 'finops'].includes(b.tipo)) md = await gerarArquitetura(sql, P, b, b.tipo);
   else throw new Error('Este documento é importado, não gerado pela IA');
   const r = await _docGravar(sql, P.id, b.tipo, md, { origem: b.so_atualizar ? 'sistema' : 'ia', titulo: DOCS[b.tipo].nome });
   await sql`UPDATE fab_projetos SET atualizado_em=NOW() WHERE id=${P.id}`;
@@ -350,6 +486,10 @@ async function docGerar(b) {
 }
 async function docWord({ projeto_id, tipo }) {
   const sql = await fabSql(); const P = (await sql`SELECT * FROM fab_projetos WHERE id=${projeto_id}`)[0]; if (!P) throw new Error('Projeto não encontrado');
+  if (String(tipo).startsWith('parecer:')) { const t = tipo.split(':')[1]; const d0 = await _doc(sql, projeto_id, t); if (!d0) throw new Error('Documento não existe');
+    const { gerarDocx } = await import('../lib/docx-md.js');
+    const buf = await gerarDocx(parecerMd(P, t, d0).replace(/^#\s+.*\n/, ''), { titulo: 'Parecer de Revisão — ' + (DOCS[t]?.sigla || t), subtitulo: DOCS[t]?.nome, projeto: P.nome, cliente: P.cliente, versao: d0.versao, sumario: false });
+    return { nome: `Parecer_${DOCS[t]?.sigla || t}_${P.nome}_v${d0.versao}.docx`.replace(/[^\wÀ-ú.\- ]+/g, '_'), base64: Buffer.from(buf).toString('base64') }; }
   let d = await _doc(sql, projeto_id, tipo);
   if (tipo === 'backlog') d = { conteudo_md: await backlogMd(sql, P), versao: 1, status: 'rascunho' };
   if (!d?.conteudo_md) throw new Error('Documento ainda não existe');
@@ -361,7 +501,7 @@ async function docWord({ projeto_id, tipo }) {
 async function pacoteWord({ projeto_id }) {
   const sql = await fabSql(); const P = (await sql`SELECT * FROM fab_projetos WHERE id=${projeto_id}`)[0]; if (!P) throw new Error('Projeto não encontrado');
   const partes = [];
-  for (const [tipo, nome] of [['plano_projeto', 'Parte 1 — Plano Detalhado de Projeto e Cronograma'], ['ert', 'Parte 2 — Especificação de Requisitos Técnicos (ERT)'], ['backlog', 'Parte 3 — Backlog da Fábrica'], ['plano_testes', 'Parte 4 — Plano de Testes Detalhado']]) {
+  for (const [tipo, nome] of [['plano_projeto', 'Parte 1 — Plano Detalhado de Projeto e Cronograma'], ['ert', 'Parte 2 — Especificação de Requisitos Técnicos (ERT)'], ['arquitetura', 'Parte 3 — Documento de Arquitetura'], ['modelo_dados', 'Parte 4 — Modelo de Dados e Banco'], ['backlog', 'Parte 5 — Backlog da Fábrica'], ...Object.keys(PLANOS).map((t, i) => [t, `Parte ${6 + i} — ${DOCS[t].nome}`])]) {
     const md = tipo === 'backlog' ? await backlogMd(sql, P) : (await _doc(sql, projeto_id, tipo))?.conteudo_md;
     if (!md) continue;
     partes.push(`# ${nome}\n\n` + md.replace(/^#\s+.*\n/, '').replace(/^(#{1,3})\s/gm, (m, h) => '#' + h + ' ').replace(/^#####\s/gm, '#### '));
@@ -371,6 +511,81 @@ async function pacoteWord({ projeto_id }) {
   const { gerarDocx } = await import('../lib/docx-md.js');
   const buf = await gerarDocx([intro, ...partes].join('\n\n<!-- quebra -->\n\n'), { titulo: 'Pacote para a Fábrica', subtitulo: P.nome, projeto: P.nome, cliente: P.cliente, versao: 1 });
   return { nome: `Pacote_Fabrica_${P.nome}.docx`.replace(/[^\wÀ-ú.\- ]+/g, '_'), base64: Buffer.from(buf).toString('base64') };
+}
+
+// ═══════════════ etapa 4 — arquitetura, modelo de dados, volumetria e FinOps ═══════════════
+const num = v => { const x = parseFloat(String(v ?? '').replace(/\s/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.')); return isFinite(x) ? x : 0; };
+const HORIZONTES = [0, 12, 24, 36];
+// volume no mês m (crescimento composto mensal) e custo de cada serviço a partir do seu "driver" de volumetria
+export function calcularFinops(A = {}) {
+  const V = (A.volumetria || []).map(v => ({ ...v, atual: num(v.atual), cresc_mensal_pct: num(v.cresc_mensal_pct) }));
+  const vol = (id, m) => { const v = V.find(x => x.id === id); return v ? v.atual * Math.pow(1 + v.cresc_mensal_pct / 100, m) : 0; };
+  const cambio = num(A.premissas?.cambio_usd) || 0;
+  const S = (A.servicos || []).map(x => {
+    const unit = num(x.custo_unitario) * (x.moeda === 'USD' && cambio ? cambio : 1), fixo = num(x.fixo_mensal) * (x.moeda === 'USD' && cambio ? cambio : 1), fator = x.fator === '' || x.fator == null ? 1 : num(x.fator);
+    const custo = m => fixo + (x.driver && x.driver !== 'fixo' ? unit * fator * vol(x.driver, m) : 0);
+    return { ...x, mensal: Object.fromEntries(HORIZONTES.map(m => [m, Math.round(custo(m) * 100) / 100])), anual: [0, 1, 2].map(a => Math.round(Array.from({ length: 12 }, (_, i) => custo(a * 12 + i)).reduce((s2, c) => s2 + c, 0) * 100) / 100) };
+  });
+  const total = m => Math.round(S.reduce((s2, x) => s2 + x.mensal[m], 0) * 100) / 100;
+  const serie = Array.from({ length: 37 }, (_, m) => Math.round(S.reduce((s2, x) => { const unit = num(x.custo_unitario) * (x.moeda === 'USD' && cambio ? cambio : 1), fixo = num(x.fixo_mensal) * (x.moeda === 'USD' && cambio ? cambio : 1), fator = x.fator === '' || x.fator == null ? 1 : num(x.fator); return s2 + fixo + (x.driver && x.driver !== 'fixo' ? unit * fator * vol(x.driver, m) : 0); }, 0) * 100) / 100);
+  const porCat = {}; S.forEach(x => { const k = x.categoria || 'Outros'; porCat[k] = (porCat[k] || 0) + x.mensal[0]; });
+  return { volumetria: V.map(v => ({ ...v, proj: Object.fromEntries(HORIZONTES.map(m => [m, Math.round(vol(v.id, m))])) })), servicos: S,
+    totais: { mensal: Object.fromEntries(HORIZONTES.map(m => [m, total(m)])), anual: [0, 1, 2].map(a => Math.round(S.reduce((s2, x) => s2 + x.anual[a], 0) * 100) / 100), por_categoria: porCat }, serie };
+}
+async function arqObter({ projeto_id }) {
+  const sql = await fabSql(); const p = (await sql`SELECT arquitetura FROM fab_projetos WHERE id=${projeto_id}`)[0]; if (!p) throw new Error('Projeto não encontrado');
+  const A = p.arquitetura || {}; return { arquitetura: A, calculo: calcularFinops(A) };
+}
+async function arqSalvar({ projeto_id, arquitetura }) {
+  const sql = await fabSql(); const A = arquitetura || {};
+  const limpo = { premissas: { moeda: 'BRL', cambio_usd: num(A.premissas?.cambio_usd) || null, ambiente_nuvem: A.premissas?.ambiente_nuvem || '', observacoes: A.premissas?.observacoes || '' },
+    volumetria: (A.volumetria || []).slice(0, 200).map((v, i) => ({ id: v.id || 'V' + (i + 1), item: String(v.item || '').substring(0, 200), unidade: v.unidade || '', atual: num(v.atual), cresc_mensal_pct: num(v.cresc_mensal_pct), fonte: v.fonte || '' })),
+    servicos: (A.servicos || []).slice(0, 200).map((x, i) => ({ id: x.id || 'S' + (i + 1), servico: String(x.servico || '').substring(0, 200), provedor: x.provedor || '', categoria: x.categoria || '', ambiente: x.ambiente || 'produção', moeda: x.moeda === 'USD' ? 'USD' : 'BRL',
+      driver: x.driver || 'fixo', fator: x.fator === '' || x.fator == null ? 1 : num(x.fator), custo_unitario: num(x.custo_unitario), unidade_custo: x.unidade_custo || '', fixo_mensal: num(x.fixo_mensal), obs: x.obs || '' })) };
+  await sql`UPDATE fab_projetos SET arquitetura=${JSON.stringify(limpo)}, atualizado_em=NOW() WHERE id=${projeto_id}`;
+  return { arquitetura: limpo, calculo: calcularFinops(limpo) };
+}
+async function arqSugerir({ projeto_id, instrucoes, substituir }) {
+  const sql = await fabSql(); const P = (await sql`SELECT * FROM fab_projetos WHERE id=${projeto_id}`)[0]; if (!P) throw new Error('Projeto não encontrado');
+  const ert = await _doc(sql, projeto_id, 'ert'), erf = await _doc(sql, projeto_id, 'erf'), arq = await _doc(sql, projeto_id, 'arquitetura');
+  if (!ert?.conteudo_md && !erf?.conteudo_md) throw new Error('Importe a ERF (e de preferência gere a ERT) antes de sugerir volumetria e custos.');
+  const txt = await claude(SYS_BASE + `\nTarefa: propor a VOLUMETRIA (atual e crescimento) e a LISTA DE SERVIÇOS COM CUSTOS (FinOps) da solução, para a etapa 4 da metodologia. Use preços de referência públicos e conservadores dos provedores de nuvem em reais por mês (ou USD com "moeda":"USD"); deixe claro em "obs" que o preço deve ser confirmado na calculadora do provedor/contrato do cliente. Cada serviço variável deve ter "driver" = id de uma linha da volumetria e "fator" = quantas unidades cobradas por unidade de volume. Serviços fixos: "driver":"fixo" e "fixo_mensal". Inclua ambientes de produção e de não produção.
+Responda SOMENTE JSON: {"premissas":{"ambiente_nuvem":"...","observacoes":"..."},"volumetria":[{"id":"V1","item":"Registros de medição armazenados","unidade":"GB","atual":120,"cresc_mensal_pct":3,"fonte":"ERF RF-04: 2 mil medidores × 96 leituras/dia"}],"servicos":[{"id":"S1","servico":"Armazenamento de objetos","provedor":"Azure","categoria":"Armazenamento","ambiente":"produção","moeda":"BRL","driver":"V1","fator":1,"custo_unitario":0.12,"unidade_custo":"GB/mês","fixo_mensal":0,"obs":"..."}]}`,
+    `PROJETO: ${P.nome} · CLIENTE: ${P.cliente || '—'}\n${instrucoes ? 'INSTRUÇÕES DO ARQUITETO: ' + instrucoes + '\n' : ''}\nERT:\n${String(ert?.conteudo_md || '').substring(0, 40000)}\n\nARQUITETURA:\n${String(arq?.conteudo_md || '').substring(0, 20000)}\n\nERF:\n${String(erf?.conteudo_md || '').substring(0, 25000)}`, 8000);
+  const j = json(txt); const atual = (P.arquitetura || {});
+  const A = substituir === false ? { premissas: { ...atual.premissas, ...j.premissas }, volumetria: [...(atual.volumetria || []), ...(j.volumetria || [])], servicos: [...(atual.servicos || []), ...(j.servicos || [])] } : j;
+  return arqSalvar({ projeto_id, arquitetura: A });
+}
+const brl = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const nbr = v => Number(v || 0).toLocaleString('pt-BR');
+function tabelaVolumetriaMd(C) { return ['| ID | Item | Unidade | Atual | Cresc. mensal | Em 12 meses | Em 24 meses | Em 36 meses | Fonte |', '|---|---|---|---|---|---|---|---|---|',
+  ...C.volumetria.map(v => `| ${v.id} | ${mdc(v.item)} | ${mdc(v.unidade)} | ${nbr(v.atual)} | ${String(v.cresc_mensal_pct).replace('.', ',')}% | ${nbr(v.proj[12])} | ${nbr(v.proj[24])} | ${nbr(v.proj[36])} | ${mdc(v.fonte) || '—'} |`)].join('\n'); }
+function tabelaFinopsMd(C) { return ['| Serviço | Provedor | Categoria | Ambiente | Base de custo | Custo/mês hoje | Em 12 meses | Em 24 meses | Em 36 meses |', '|---|---|---|---|---|---|---|---|---|',
+  ...C.servicos.map(x => `| ${mdc(x.servico)} | ${mdc(x.provedor)} | ${mdc(x.categoria)} | ${mdc(x.ambiente)} | ${x.driver && x.driver !== 'fixo' ? `${x.moeda === 'USD' ? 'US$' : 'R$'} ${String(x.custo_unitario).replace('.', ',')} por ${mdc(x.unidade_custo) || 'unidade'} × ${x.driver}${x.fator !== 1 ? ' × ' + String(x.fator).replace('.', ',') : ''}` : 'fixo'}${x.fixo_mensal ? ' + fixo ' + (x.moeda === 'USD' ? 'US$ ' : 'R$ ') + nbr(x.fixo_mensal) : ''} | ${brl(x.mensal[0])} | ${brl(x.mensal[12])} | ${brl(x.mensal[24])} | ${brl(x.mensal[36])} |`),
+  `| **Total** | | | | | **${brl(C.totais.mensal[0])}** | **${brl(C.totais.mensal[12])}** | **${brl(C.totais.mensal[24])}** | **${brl(C.totais.mensal[36])}** |`].join('\n'); }
+async function gerarArquitetura(sql, P, b, tipo) {
+  const ert = await _doc(sql, P.id, 'ert'), erf = await _doc(sql, P.id, 'erf'), arq = await _doc(sql, P.id, 'arquitetura');
+  if (!ert?.conteudo_md && !erf?.conteudo_md) throw new Error('Importe a ERF (e de preferência gere a ERT) antes da arquitetura.');
+  const C = calcularFinops(P.arquitetura || {});
+  const fonte = `PROJETO: ${P.nome} · CLIENTE: ${P.cliente || '—'}\n${b.instrucoes ? 'INSTRUÇÕES DO ARQUITETO: ' + b.instrucoes + '\n' : ''}\nERT:\n${String(ert?.conteudo_md || '').substring(0, 40000)}\n\nERF:\n${String(erf?.conteudo_md || '').substring(0, 20000)}`;
+  if (tipo === 'arquitetura') return limpaMd(await claude(SYS_BASE + `\nTarefa: escrever o DOCUMENTO DE ARQUITETURA (etapa 4 da metodologia, critérios do G4).`, `${fonte}${C.volumetria.length ? '\n\nVOLUMETRIA:\n' + tabelaVolumetriaMd(C) : ''}\n\nEstrutura (use estes títulos):\n# Documento de Arquitetura\n## 1. Controle do documento\n## 2. Visão geral e princípios de arquitetura\n## 3. Arquitetura lógica — componentes e responsabilidades (tabela) e diagrama de componentes em texto (bloco com setas →)\n## 4. Arquitetura de dados (camadas, fluxos, armazenamento)\n## 5. Integrações (contratos, padrões, filas/APIs, tratamento de falhas)\n## 6. Infraestrutura e ambientes (desenvolvimento, homologação, produção; dimensionamento a partir da volumetria)\n## 7. Segurança e privacidade (identidade e acesso, criptografia, segredos, rede, registros, LGPD)\n## 8. Continuidade (alta disponibilidade, backup, recuperação, RTO/RPO)\n## 9. Observabilidade e operação\n## 10. Escalabilidade e capacidade\n## 11. Registro de decisões de arquitetura (ADR: decisão, alternativas, motivo, consequências)\n## 12. Riscos técnicos e pontos únicos de falha (tabela com mitigação)\n## 13. Aderência às políticas do cliente e pendências`, 12000));
+  if (tipo === 'modelo_dados') return limpaMd(await claude(SYS_BASE + `\nTarefa: escrever o MODELO DE DADOS E BANCO (ERT 15.3.1 item 4 e etapa 4).`, `${fonte}\n\nARQUITETURA:\n${String(arq?.conteudo_md || 'não gerada').substring(0, 15000)}${C.volumetria.length ? '\n\nVOLUMETRIA:\n' + tabelaVolumetriaMd(C) : ''}\n\nEstrutura:\n# Modelo de Dados e Banco\n## 1. Modelo conceitual (entidades e relacionamentos — tabela)\n## 2. Modelo lógico (tabela por entidade: atributos, tipo, chave, obrigatório, regra)\n## 3. Dicionário de dados (tabela: entidade, campo, descrição, tipo, tamanho, domínio/valores, origem, dado pessoal LGPD sim/não, mascaramento)\n## 4. Modelo físico e tecnologia de banco (escolha justificada; DDL de referência em bloco de código das tabelas principais)\n## 5. Índices, particionamento e retenção (a partir da volumetria)\n## 6. Regras de qualidade de dados e reconciliação\n## 7. Segurança dos dados (perfis de acesso, criptografia, auditoria)\n## 8. Backup, restauração e arquivamento\n## 9. Pendências`, 12000));
+  if (tipo === 'volumetria') {
+    if (!C.volumetria.length) throw new Error('Preencha (ou peça para a IA sugerir) a tabela de volumetria na aba Arquitetura e FinOps.');
+    const narrativa = await claude(SYS_BASE + `\nTarefa: análise do ESTUDO DE VOLUMETRIA. Não repita a tabela; comente premissas, sazonalidade, picos, riscos de crescimento, impacto em armazenamento/processamento e o que precisa ser validado com o cliente. Use títulos ## 3 a ## 6: ## 3. Premissas e fontes, ## 4. Picos e sazonalidade, ## 5. Impactos na arquitetura e na capacidade, ## 6. Validações pendentes com o cliente.`, `${fonte}\n\nTABELA:\n${tabelaVolumetriaMd(C)}`, 4000);
+    return ['# Estudo de Volumetria (atual e projetada)', '', '## 1. Objetivo', '', 'Registrar o volume atual e projetado de dados e transações da solução, base para o dimensionamento da arquitetura, os testes de desempenho (G8) e o FinOps.', '',
+      '## 2. Volumetria atual e projetada', '', 'Projeção com crescimento mensal composto informado em cada linha.', '', tabelaVolumetriaMd(C), '', limpaMd(narrativa)].join('\n');
+  }
+  if (tipo === 'finops') {
+    if (!C.servicos.length) throw new Error('Preencha (ou peça para a IA sugerir) a tabela de serviços e custos na aba Arquitetura e FinOps.');
+    const cat = Object.entries(C.totais.por_categoria).sort((a, b2) => b2[1] - a[1]);
+    const narrativa = await claude(SYS_BASE + `\nTarefa: análise de FINOPS da solução. Não repita as tabelas. Use títulos: ## 5. Principais direcionadores de custo, ## 6. Recomendações de otimização (reservas/compromisso, camadas de armazenamento, desligamento de ambientes não produtivos, autoescala, retenção — com economia estimada em % ou R$), ## 7. Regras de controle de gastos (orçamentos, alertas, tags, revisão mensal), ## 8. Riscos e premissas a confirmar (preços de referência a validar na calculadora do provedor/contrato).`,
+      `${fonte.substring(0, 20000)}\n\nVOLUMETRIA:\n${tabelaVolumetriaMd(C)}\n\nCUSTOS:\n${tabelaFinopsMd(C)}\n\nTotais anuais: ano 1 ${brl(C.totais.anual[0])}, ano 2 ${brl(C.totais.anual[1])}, ano 3 ${brl(C.totais.anual[2])}.`, 4000);
+    return ['# Plano de FinOps e Custos dos Serviços', '', '## 1. Resumo', '', `| Indicador | Valor |`, `|---|---|`, `| Custo mensal hoje | ${brl(C.totais.mensal[0])} |`, `| Custo mensal em 12 meses | ${brl(C.totais.mensal[12])} |`, `| Custo mensal em 36 meses | ${brl(C.totais.mensal[36])} |`,
+      `| Total ano 1 / ano 2 / ano 3 | ${brl(C.totais.anual[0])} / ${brl(C.totais.anual[1])} / ${brl(C.totais.anual[2])} |`, `| Crescimento do custo em 36 meses | ${C.totais.mensal[0] ? Math.round((C.totais.mensal[36] / C.totais.mensal[0] - 1) * 100) + '%' : '—'} |`, '',
+      '## 2. Custos por serviço — atual e projetado', '', tabelaFinopsMd(C), '', '## 3. Custos por categoria (hoje)', '', '| Categoria | Custo/mês | Participação |', '|---|---|---|', ...cat.map(([k, v]) => `| ${mdc(k)} | ${brl(v)} | ${C.totais.mensal[0] ? Math.round(v / C.totais.mensal[0] * 100) : 0}% |`), '',
+      '## 4. Volumetria usada no cálculo', '', tabelaVolumetriaMd(C), '', limpaMd(narrativa), '', '> Preços de referência: confirme na calculadora do provedor ou no contrato do cliente antes de aprovar o orçamento.'].join('\n');
+  }
 }
 
 // ═══════════════ Kanban da fábrica ═══════════════
@@ -428,8 +643,9 @@ async function itensGerar(b) {
 async function casos({ projeto_id }) {
   const sql = await fabSql();
   const C = await sql`SELECT * FROM fab_casos WHERE projeto_id=${projeto_id} ORDER BY codigo`;
-  const plano = (await sql`SELECT status, versao FROM fab_documentos WHERE projeto_id=${projeto_id} AND tipo='plano_testes'`)[0] || null;
-  return { casos: C, tipos: TIPOS_CASO, robos: ROBOS, plano };
+  const D = await sql`SELECT tipo, status, versao, fase FROM fab_documentos WHERE projeto_id=${projeto_id} AND tipo = ANY(${Object.keys(PLANOS)})`;
+  const planos = Object.fromEntries(Object.keys(PLANOS).map(k => [k, { nome: DOCS[k].nome, tipos: PLANOS[k].tipos, gate: PLANOS[k].gate, doc: D.find(d => d.tipo === k) || null }]));
+  return { casos: C, tipos: TIPOS_CASO, robos: ROBOS, planos, plano: planos.plano_testes.doc };
 }
 async function casoSalvar(b) {
   const sql = await fabSql();
@@ -479,6 +695,11 @@ async function painel({ projeto_id, publico = false }) {
   const C = await sql`SELECT id, codigo, titulo, tipo, requisito_ref, item_codigo, prioridade, status, automatizavel, evidencia, ultima_execucao_em, primeira_falha_em FROM fab_casos WHERE projeto_id=${P.id} ORDER BY codigo`;
   const I = await sql`SELECT codigo, titulo, coluna, em_qa_em FROM fab_itens WHERE projeto_id=${P.id}`;
   const plano = await _doc(sql, P.id, 'plano_testes');
+  const PD = await sql`SELECT tipo, status, versao FROM fab_documentos WHERE projeto_id=${P.id} AND tipo = ANY(${Object.keys(PLANOS)})`;
+  const planoSit = gate => { const ks = Object.keys(PLANOS).filter(k => PLANOS[k].gate === gate); const docs = ks.map(k => PD.find(d => d.tipo === k)).filter(Boolean);
+    const tipos = ks.flatMap(k => PLANOS[k].tipos); const X = C.filter(c => tipos.includes(c.tipo));
+    return { docs, X, ok: docs.length > 0 && docs.every(d => d.status === 'aprovado') && X.length > 0 && X.every(c => c.status !== 'nao_executado'), detalhe: `${docs.length ? docs.map(d => (DOCS[d.tipo].sigla) + ' ' + (d.status === 'aprovado' ? 'aprovado' : 'em rascunho')).join(', ') : 'sem plano'} · ${X.filter(c => c.status !== 'nao_executado').length} de ${X.length} casos executados` }; };
+  const p7 = planoSit('G7'), p8 = planoSit('G8');
   const U = (await sql`SELECT * FROM fab_unitarios WHERE projeto_id=${P.id} ORDER BY em DESC LIMIT 1`)[0] || null;
   let A = [], E = [];
   if (P.qa_produto_id) {
@@ -505,14 +726,16 @@ async function painel({ projeto_id, publico = false }) {
     { nome: 'Todos os critérios de aceite da versão aprovados', ok: criterio.length > 0 && criterio.every(c => c.status === 'passou'), detalhe: criterio.length ? `${criterio.filter(c => c.status === 'passou').length} de ${criterio.length} casos de critério de aceite aprovados` : 'sem casos de critério de aceite no plano' },
     { nome: 'Nenhum defeito crítico ou alto em aberto', ok: P.qa_produto_id ? abertosCA.length === 0 : false, detalhe: P.qa_produto_id ? `${abertosCA.length} defeito(s) crítico(s)/alto(s) pendente(s)` : 'projeto sem produto ligado ao QA de Produtos' },
     { nome: 'Defeitos médios e baixos aceitos formalmente', ok: abertosMB.length === 0, detalhe: `${abertosMB.length} médio(s)/baixo(s) sem correção nem aceite formal` },
-    { nome: 'Plano de testes executado com evidências', ok: !!plano && plano.status === 'aprovado' && C.length > 0 && C.every(c => c.status !== 'nao_executado'), detalhe: `${plano ? 'plano ' + (plano.status === 'aprovado' ? 'aprovado' : 'em rascunho') : 'sem plano'} · ${C.filter(c => c.status !== 'nao_executado').length} de ${C.length} casos executados` },
+    { nome: 'Planos de testes da etapa 7 aprovados e executados com evidências', ok: p7.ok, detalhe: p7.detalhe },
   ];
   const seg = Av.filter(a => ['seguranca', 'governanca'].includes(a.tipo) && ABERTOS.includes(a.status));
   const des = Av.filter(a => a.tipo === 'desempenho' && ABERTOS.includes(a.status));
   const g8 = [
     { nome: 'Nenhuma vulnerabilidade crítica ou alta em aberto', ok: !seg.some(a => ['critica', 'alta'].includes(a.severidade)), detalhe: `${seg.filter(a => ['critica', 'alta'].includes(a.severidade)).length} crítica(s)/alta(s)` },
     { nome: 'Vulnerabilidades médias corrigidas ou com risco aceito', ok: !seg.some(a => a.severidade === 'media'), detalhe: `${seg.filter(a => a.severidade === 'media').length} média(s) pendente(s)` },
-    { nome: 'Metas de desempenho atingidas', ok: des.length === 0, detalhe: `${des.length} achado(s) de desempenho em aberto` },
+    { nome: 'Metas de desempenho e volumetria atingidas', ok: des.length === 0 && !p8.X.some(c => ['desempenho', 'carga', 'estresse', 'volumetria'].includes(c.tipo) && c.status === 'falhou'), detalhe: `${des.length} achado(s) de desempenho em aberto · ${p8.X.filter(c => ['desempenho', 'carga', 'estresse', 'volumetria'].includes(c.tipo) && c.status === 'falhou').length} caso(s) de desempenho reprovado(s)` },
+    { nome: 'Recuperação de falhas comprovada (resiliência)', ok: p8.X.filter(c => c.tipo === 'resiliencia').length > 0 && p8.X.filter(c => c.tipo === 'resiliencia').every(c => c.status === 'passou'), detalhe: `${p8.X.filter(c => c.tipo === 'resiliencia' && c.status === 'passou').length} de ${p8.X.filter(c => c.tipo === 'resiliencia').length} caso(s) de resiliência aprovados` },
+    { nome: 'Planos de segurança e de desempenho aprovados e executados', ok: p8.ok, detalhe: p8.detalhe },
   ];
   const g6 = [{ nome: 'Testes unitários executados e aprovados', ok: !!U && U.falhou === 0 && U.total > 0, detalhe: U ? `${U.passou}/${U.total} aprovados${U.cobertura_pct != null ? ' · cobertura ' + Number(U.cobertura_pct).toFixed(0) + '%' : ''}` : 'resultado JUnit ainda não enviado pela fábrica' }];
   // indicadores 9.5
@@ -536,7 +759,7 @@ async function painel({ projeto_id, publico = false }) {
   return {
     projeto: { id: P.id, nome: P.nome, cliente: P.cliente, etapa: P.etapa, gates: P.gates || {}, gp: P.gp, fabrica: P.fabrica, token_publico: publico ? undefined : P.token_publico, painel_so_confirmados: P.painel_so_confirmados },
     etapas: ETAPAS.map(e => ({ n: e.n, nome: e.nome, gate: e.gate, aprovado: P.gates?.[e.gate]?.status === 'aprovado', em: P.gates?.[e.gate]?.em || null })),
-    plano: plano ? { status: plano.status, versao: plano.versao } : null, casos: casosR,
+    plano: plano ? { status: plano.status, versao: plano.versao } : null, planos: PD.map(d => ({ tipo: d.tipo, nome: DOCS[d.tipo].nome, status: d.status, versao: d.versao })), casos: casosR,
     requisitos: { total: refs.length, cobertos: reqLista.filter(r => r.casos).length, aprovados: reqLista.filter(r => r.situacao === 'Aprovado').length, lista: reqLista },
     itens: { total: I.length, por_coluna: COLUNAS_FAB.map(([k, n]) => ({ coluna: k, nome: n, n: I.filter(i => i.coluna === k).length })) },
     defeitos: { total: Av.length, abertos: Av.filter(a => ABERTOS.includes(a.status)).length, por_sev: porSev, so_confirmados: somenteConf,
@@ -625,6 +848,12 @@ async function handler(req, res) {
       doc_obter: () => docObter(b),
       doc_salvar: () => docSalvar(b),
       doc_aprovar: () => docAprovar(b),
+      doc_analisar: () => docAnalisar(b),
+      arq_obter: () => arqObter(b),
+      arq_salvar: () => arqSalvar(b),
+      arq_sugerir: () => arqSugerir(b),
+      doc_enviar_revisao: () => docEnviarRevisao(b),
+      doc_pendencia: () => docPendencia(b),
       doc_gerar: () => docGerar(b),
       doc_word: () => docWord(b),
       pacote_word: () => pacoteWord(b),
@@ -650,7 +879,7 @@ async function handler(req, res) {
     return res.status(200).json({ success: true, ...(await acoes[b.action]()) });
   } catch (e) {
     console.error('[fabrica]', b.action, e.message);
-    return res.status(500).json({ success: false, error: e.message });
+    return res.status(e.precisa_forcar ? 409 : 500).json({ success: false, error: e.message, precisa_forcar: !!e.precisa_forcar });
   }
 }
 export default comGuarda(handler, 'fabrica');

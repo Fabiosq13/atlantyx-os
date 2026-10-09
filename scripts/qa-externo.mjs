@@ -105,7 +105,7 @@ async function testarProduto(P, execId, casos = []) {
   // ── 1b. Robô do Plano de Testes (mundo ideal primeiro) ──
   if (casos.length) {
     const limiteT = t0 + ORC_MIN * 60000 * 0.5;
-    for (const C of casos.slice(0, MAX_CASOS)) {
+    for (const C of casos.filter(c => !['carga', 'estresse'].includes(c.tipo)).slice(0, MAX_CASOS)) {
       if (Date.now() > limiteT) { console.log('  (tempo do plano esgotado — restantes ficam para a próxima execução)'); break; }
       consoleErros = []; chamadas = [];
       const r = await executarCaso(pg, C, P, origem, urlInicial).catch(e => ({ veredito: 'bloqueado', motivo: 'erro do robô: ' + e.message, hist: [] }));
@@ -281,6 +281,31 @@ async function testarProduto(P, execId, casos = []) {
             prompt_correcao: `A API ${cam} devolve dados para quem não está logado. Exija sessão válida e ative as regras de acesso por usuário (ex.: Row Level Security no Supabase) para essa tabela/rota.` }); } } }
     } catch (e) { intN++; add({ tipo: 'integracao', severidade: 'media', titulo: `API não responde ao ser repetida: ${cam}`, descricao: e.message.substring(0, 300), tela: 'Retaguarda (APIs)', url: A2.url.replace(/\?.*/, ''), chave: 'int-falha:' + cam }); } }
   if (anon) await anon.dispose().catch(() => {});
+  // ── 2l. Robô de Carga e Estresse (só em produto liberado para carga — ambiente de homologação/desempenho) ──
+  const casosCarga = casos.filter(c => ['carga', 'estresse'].includes(c.tipo));
+  if (P.permitir_carga && apisVistas.size && Date.now() < fimEm - 120000) {
+    const alvos = [...apisVistas.values()].slice(0, 5), nom = Math.max(1, P.usuarios_simultaneos || 10);
+    const degraus = [...new Set([Math.ceil(nom / 4), Math.ceil(nom / 2), nom, nom * 2, nom * 4].map(x => Math.min(200, x)))];
+    const DUR = parseInt(process.env.QA_CARGA_SEGUNDOS || '15') * 1000, med = [];
+    let ruptura = null;
+    for (const u of degraus) {
+      const lat = []; let err = 0, k = 0; const fim = Date.now() + DUR;
+      await Promise.all(Array.from({ length: u }, async () => { while (Date.now() < fim) { const A2 = alvos[k++ % alvos.length]; const h = Object.fromEntries(Object.entries(A2.headers || {}).filter(([x]) => !/^(host|content-length|connection|accept-encoding)$/i.test(x)));
+        const t1 = Date.now(); try { const r = await ctx.request.get(A2.url, { headers: h, timeout: 20000 }); if (r.status() >= 400) err++; await r.body().catch(() => {}); } catch (_) { err++; } lat.push(Date.now() - t1); } }));
+      lat.sort((a, b) => a - b); const p95 = lat[Math.floor(lat.length * 0.95)] || 0, erroPct = lat.length ? Math.round(err / lat.length * 1000) / 10 : 100;
+      med.push({ usuarios: u, req: lat.length, rps: Math.round(lat.length / (DUR / 1000) * 10) / 10, p50: lat[Math.floor(lat.length / 2)] || 0, p95, erro_pct: erroPct });
+      console.log(`  · carga ${u} usuários: ${lat.length} req · p95 ${p95} ms · erro ${erroPct}%`);
+      if (!ruptura && (erroPct >= 5 || p95 > 5000)) { ruptura = u; break; }
+    }
+    const nomM = med.find(m => m.usuarios === nom) || med[med.length - 1];
+    const okNom = nomM && nomM.p95 <= 3000 && nomM.erro_pct < 1;
+    const tab = med.map(m => `${m.usuarios} usuários: ${m.req} req (${m.rps}/s) · p50 ${m.p50} ms · p95 ${m.p95} ms · erro ${m.erro_pct}%`).join('\n');
+    if (!okNom) add({ tipo: 'desempenho', severidade: 'alta', titulo: `Não suporta a carga nominal de ${nom} usuários simultâneos`, descricao: `Meta: p95 até 3 s e erro abaixo de 1%.\n${tab}`, tela: 'Retaguarda (APIs)', url: P.url, chave: 'carga-nominal',
+      prompt_correcao: `Com ${nom} usuários simultâneos as APIs ${alvos.map(a => new URL(a.url).pathname).join(', ')} ficam lentas ou com erro (${nomM ? 'p95 ' + nomM.p95 + ' ms, erro ' + nomM.erro_pct + '%' : 'sem medição'}). Otimize consultas (índices, paginação, cache) e a capacidade do backend.` });
+    for (const C of casosCarga) casosRes.push({ id: C.id, tipo: C.tipo, status: C.tipo === 'carga' ? (okNom ? 'passou' : 'falhou') : (ruptura && ruptura <= nom ? 'falhou' : 'passou'),
+      evidencia: `Robô de Carga — APIs: ${alvos.map(a => new URL(a.url).pathname).join(', ')}\n${tab}\n${ruptura ? 'Ponto de ruptura: ' + ruptura + ' usuários simultâneos' : 'Sem ruptura até ' + degraus[degraus.length - 1] + ' usuários'}` });
+    robos.carga = { degraus: med, nominal: nom, ruptura, texto: `${med.length} degrau(s) até ${med[med.length - 1]?.usuarios} usuários · nominal ${nom}: ${nomM ? 'p95 ' + nomM.p95 + ' ms, erro ' + nomM.erro_pct + '%' : '—'} · ${ruptura ? 'ruptura em ' + ruptura + ' usuários' : 'sem ruptura'}` };
+  } else robos.carga = { texto: P.permitir_carga ? 'nenhuma API capturada para medir' : 'desligado — libere "teste de carga" no cadastro do produto (use ambiente de homologação)' };
   robos.integracao = { apis: apisVistas.size, reexecutadas: intRe, achados: intN, texto: `${intRe} API(s) reexecutadas (status, contrato, tempo e acesso sem login) · ${intN} achado(s)` };
   // ── 3. segurança: telas internas exigem login? (sessão anônima, só leitura) ──
   try { const anon = await browser.newContext(); const pa = await anon.newPage(); let abertas = [];

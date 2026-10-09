@@ -570,6 +570,20 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 .fb-sug{display:flex;gap:8px;align-items:flex-start;border:1px solid var(--bd);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:11.5px;background:var(--bg3);}
 .fb-robos{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-bottom:12px;}
 .fb-robo{background:var(--bg2);border:1px solid var(--bd);border-left:3px solid var(--fv2-brand);border-radius:9px;padding:10px 12px;display:flex;flex-direction:column;gap:4px;} .fb-rr{font-size:11px;color:var(--t1);margin-top:4px;}
+.fb-grupo{font:700 11px Montserrat,sans-serif;text-transform:uppercase;letter-spacing:.5px;color:var(--t2);margin:14px 0 8px;}
+.fb-mini{font-size:10px!important;padding:2px 8px!important;}
+.fb-fases{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px;margin-bottom:10px;}
+.fb-fase{background:var(--bg3);border-radius:7px;padding:6px;font-size:10px;color:var(--t3);text-align:center;} .fb-fase b{display:block;font-size:12px;} .fb-fase.ok{background:color-mix(in srgb,var(--fv2-ok) 14%,var(--bg3));color:var(--t1);} .fb-fase.at{outline:2px solid var(--fv2-brand);color:var(--t1);}
+.fb-revacoes{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px;} .fb-revacoes>div{display:flex;gap:6px;flex:1 1 100%;}
+.fb-in{flex:1;background:var(--bg3);border:1px solid var(--bd2);color:var(--t1);border-radius:6px;padding:6px 8px;font:12px Montserrat,sans-serif;min-width:0;}
+.fb-parecer{border:1px solid var(--bd);border-left:4px solid var(--fv2-warn);border-radius:8px;padding:10px 12px;background:var(--bg3);font-size:12px;margin-bottom:8px;} .fb-parecer.ok{border-left-color:var(--fv2-ok);} .fb-parecer p{margin:6px 0;}
+.fb-hist{display:flex;flex-direction:column;gap:3px;} .fb-hi{font-size:11px;color:var(--t2);padding:4px 8px;background:var(--bg3);border-radius:6px;}
+.fb-ajuste{border:2px dashed var(--fv2-brand);border-radius:10px;padding:10px 12px;margin-bottom:10px;display:flex;flex-direction:column;gap:6px;font-size:11px;}
+.fb-planos{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-bottom:10px;}
+.fb-plano{background:var(--bg2);border:1px solid var(--bd);border-radius:9px;padding:9px 11px;cursor:pointer;} .fb-plano.on{border-color:var(--fv2-brand);box-shadow:0 0 0 1px var(--fv2-brand) inset;}
+.fb-cel{background:var(--bg3);border:1px solid var(--bd);color:var(--t1);border-radius:5px;padding:3px 5px;font:11px Montserrat,sans-serif;}
+.fb-serie{display:flex;align-items:flex-end;gap:2px;height:90px;background:var(--bg3);border-radius:8px;padding:6px;} .fb-serie i{flex:1;background:var(--fv2-s1);border-radius:2px 2px 0 0;min-width:2px;}
+@media (max-width:760px){.fb-fases{grid-template-columns:repeat(3,minmax(0,1fr));}.fb-revacoes>div{flex-wrap:wrap;}}
 .fb-ifr{width:100%;height:78vh;border:1px solid var(--bd);border-radius:10px;background:#fff;}
 @media (max-width:760px){.fb-board{grid-template-columns:repeat(8,minmax(150px,78vw));}.fb-docs{grid-template-columns:1fr;}.fb-sel{max-width:100%;flex:1;}}
 .qp-board{display:grid;grid-template-columns:repeat(6,minmax(170px,1fr));gap:10px;overflow-x:auto;padding-bottom:6px;}
@@ -28338,21 +28352,32 @@ async function metasCadastroSalvar() {
 // Plano de Projeto, Plano de Testes com IA (Word), Kanban da Fábrica, robôs de QA seguindo o plano e painel do cliente ═══
 let _fb = { lista: null, pid: null, aba: 'visao', proj: null, docs: null, itens: null, casos: null, painel: null, gerando: {}, filtroTipo: '', filtroSt: '' };
 const _fbEsc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const FB_ABAS = [['visao', 'Visão e gates'], ['docs', 'Documentos'], ['kanban', 'Kanban da Fábrica'], ['casos', 'Plano de Testes'], ['robos', 'Robôs de QA'], ['painel', 'Painel do cliente']];
-const FB_DOC_ORDEM = ['erf', 'modelo_ert', 'ert', 'plano_projeto', 'plano_testes', 'relatorio_qualidade'];
+const FB_ABAS = [['visao', 'Visão e gates'], ['docs', 'Documentos'], ['arq', 'Arquitetura e FinOps'], ['kanban', 'Kanban da Fábrica'], ['casos', 'Planos de Teste'], ['robos', 'Robôs de QA'], ['painel', 'Painel do cliente']];
+const FB_DOC_GRUPOS = [['Etapa 2 · Planejamento', ['plano_projeto']], ['Etapa 3 · Especificação', ['erf', 'modelo_ert', 'ert']], ['Etapa 4 · Arquitetura, dados, volumetria e FinOps', ['arquitetura', 'modelo_dados', 'volumetria', 'finops']],
+  ['Etapas 7 e 8 · Planos de teste (um por família)', ['plano_testes', 'plano_testes_integracao', 'plano_testes_usabilidade', 'plano_testes_seguranca', 'plano_testes_desempenho']], ['Etapa 7 · Resultado', ['relatorio_qualidade']]];
+const FB_DOC_ORDEM = FB_DOC_GRUPOS.flatMap(g => g[1]);
+const FB_FASES = [['rascunho', 'Rascunho'], ['analisado', 'Analisado pela IA'], ['em_revisao', 'Em revisão do cliente'], ['ajustes_recebidos', 'Ajustes recebidos'], ['reanalisado', 'Reanalisado pela IA'], ['aprovado', 'Aprovado']];
 const FB_DOC_INFO = {
   erf: { icone: '📥', como: 'Importada (Word/PDF) — especificação conceitual do parceiro de processos ou do cliente.', importa: true },
   modelo_ert: { icone: '📐', como: 'Importado — modelo/padrão de ERT do cliente. A IA escreve a ERT com os mesmos títulos e ordem.', importa: true },
   ert: { icone: '🧠', como: 'Gerada pela IA lendo a ERF no padrão do cliente + análise de consistência, ambiguidades e rastreabilidade.', gera: true, importa: true },
   plano_projeto: { icone: '🗓', como: 'Gerado pela IA: 12 etapas, gates G1–G12, cronograma, RACI, riscos e governança.', gera: true, importa: true },
-  plano_testes: { icone: '🧪', como: 'Gerado pela IA a partir dos critérios de aceite: casos com passos, dados fictícios e resultado esperado.', gera: true },
+  plano_testes: { icone: '🧪', como: 'Funcionais: mundo ideal, ponta a ponta, exceção e limite, regressão, dados e avaliação de IA — a partir dos critérios de aceite.', gera: true, importa: true },
+  arquitetura: { icone: '🏛', como: 'Gerado pela IA a partir da ERT e da volumetria: componentes, dados, integrações, ambientes, segurança, continuidade, ADRs e riscos. A revisão da IA faz a análise crítica da arquitetura.', gera: true, importa: true },
+  modelo_dados: { icone: '🗄', como: 'Gerado pela IA: modelo conceitual, lógico e físico, dicionário com dados pessoais (LGPD), DDL de referência, índices, particionamento e retenção.', gera: true, importa: true },
+  volumetria: { icone: '📈', como: 'Montado da tabela de volumetria (aba Arquitetura e FinOps): atual e projetado em 12/24/36 meses + análise da IA.', gera: true, importa: true },
+  finops: { icone: '💰', como: 'Montado da tabela de serviços: custo por serviço hoje e projetado pela volumetria, por categoria, + recomendações de otimização da IA.', gera: true, importa: true },
+  plano_testes_integracao: { icone: '🔌', como: 'Integrações e APIs (cenários de falha) + testes unitários da fábrica (JUnit).', gera: true, importa: true },
+  plano_testes_usabilidade: { icone: '🖥', como: 'Layout de saída (IA com visão), responsividade, acessibilidade básica e teste do macaco.', gera: true, importa: true },
+  plano_testes_seguranca: { icone: '🛡', como: 'Ameaças (STRIDE), acesso e sessão, configurações e segredos, LGPD, IA — verificações defensivas, gate G8.', gera: true, importa: true },
+  plano_testes_desempenho: { icone: '⚡', como: 'Volumetria, perfis de carga, carga, pico, estresse, resiliência, metas p95/erro — gate G8.', gera: true, importa: true },
   relatorio_qualidade: { icone: '📊', como: 'Montado com os resultados dos robôs e dos testes + parecer executivo da IA.', gera: true },
 };
 const FB_ST = { nao_executado: ['Não executado', 'var(--t3)'], passou: ['Aprovado', 'var(--fv2-ok)'], falhou: ['Reprovado', 'var(--fv2-crit)'], bloqueado: ['Bloqueado', 'var(--fv2-warn)'] };
 const FB_PR = { alta: 'var(--fv2-crit)', media: 'var(--fv2-warn)', baixa: 'var(--t3)' };
 async function fbApi(action, body = {}) {
   const r = await fetch('/api/fabrica', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(typeof authHeaders === 'function' ? authHeaders() : {}) }, body: JSON.stringify({ action, ...body }) });
-  const d = await r.json().catch(() => ({})); if (!r.ok || !d.success) throw new Error(d.error || ('HTTP ' + r.status)); return d;
+  const d = await r.json().catch(() => ({})); if (!r.ok || !d.success) { const e = new Error(d.error || ('HTTP ' + r.status)); e.precisa_forcar = !!d.precisa_forcar; throw e; } return d;
 }
 function _fbBox() { return document.getElementById('fbApp'); }
 async function fbCarregar(manterAba) {
@@ -28376,6 +28401,7 @@ async function fbIrAba(k) {
     if (k === 'visao') { _fb.painel = await fbApi('painel', { projeto_id: _fb.pid }); _fbVisao(); }
     else if (k === 'docs') { const r = await fbApi('projeto_obter', { id: _fb.pid }); _fb.proj = r.projeto; _fb.docs = r.documentos; _fbDocs(); }
     else if (k === 'kanban') { const r = await fbApi('itens', { projeto_id: _fb.pid }); _fb.itens = r.itens; _fbKanban(); }
+    else if (k === 'arq') { const [r, o] = await Promise.all([fbApi('arq_obter', { projeto_id: _fb.pid }), fbApi('projeto_obter', { id: _fb.pid })]); _fb.arq = r.arquitetura || {}; _fb.calc = r.calculo; _fb.docs = o.documentos; _fbArq(); }
     else if (k === 'casos') { const [r, i] = await Promise.all([fbApi('casos', { projeto_id: _fb.pid }), fbApi('itens', { projeto_id: _fb.pid })]); _fb.casos = r; _fb.itens = i.itens; _fbCasos(); }
     else if (k === 'robos') { _fb.painel = await fbApi('painel', { projeto_id: _fb.pid }); _fbRobos(); }
     else if (k === 'painel') { _fb.painel = await fbApi('painel', { projeto_id: _fb.pid }); _fbPainelCli(); }
@@ -28401,19 +28427,24 @@ async function fbGate(gate, reabrir) {
   catch (e) { toast(e.message, 'error'); }
 }
 // ── documentos ──
+function _fbDocCard(t) {
+  const d = (_fb.docs || []).find(x => x.tipo === t), I = FB_DOC_INFO[t] || { icone: '📄', como: '' }, ger = _fb.gerando[t], meta = _fb.lista.docs[t];
+  if (!meta) return '';
+  const fase = d ? (FB_FASES.find(f => f[0] === (d.fase || (d.status === 'aprovado' ? 'aprovado' : 'rascunho'))) || FB_FASES[0]) : null;
+  const corF = { rascunho: 'var(--t3)', analisado: 'var(--fv2-s1)', em_revisao: 'var(--fv2-warn)', ajustes_recebidos: 'var(--fv2-s2)', reanalisado: 'var(--fv2-s1)', aprovado: 'var(--fv2-ok)' };
+  const st = !d ? '<span class="fb-chip" style="--c:var(--t3)">não existe</span>' : '<span class="fb-chip" style="--c:' + corF[fase[0]] + '">' + (fase[0] === 'aprovado' ? '✔ ' : '') + fase[1] + ' · v' + d.versao + '</span>';
+  const an = d?.analise ? '<span class="fb-chip" style="--c:' + (d.analise.altas ? 'var(--fv2-crit)' : d.analise.abertas ? 'var(--fv2-warn)' : 'var(--fv2-ok)') + '">IA ' + (d.analise.nota != null ? d.analise.nota + '/10 · ' : '') + d.analise.abertas + ' pendência(s)' + (d.analise.versao !== d.versao ? ' (v' + d.analise.versao + ')' : '') + '</span>' : '';
+  return '<div class="fb-doc"><div class="fb-dh"><span class="fb-di">' + I.icone + '</span><div><div class="fv2-pt">' + _fbEsc(meta.nome) + '</div><div class="fv2-pq">Etapa ' + meta.etapa + ' · ' + _fbEsc(I.como) + '</div></div></div>'
+    + '<div class="fb-dm">' + st + an + (d ? ' <span class="fv2-pq">' + (d.origem === 'importado' ? 'importado' + (d.arquivo_nome ? ' de ' + _fbEsc(d.arquivo_nome) : '') : d.origem === 'ajuste' ? 'ajuste enviado' + (d.arquivo_nome ? ' (' + _fbEsc(d.arquivo_nome) + ')' : '') : d.origem === 'ia' ? 'gerado pela IA' : d.origem === 'sistema' ? 'atualizado pelo sistema' : 'editado') + ' · ' + new Date(d.atualizado_em).toLocaleString('pt-BR').substring(0, 16) + (d.aprovado_por ? ' · aprovado por ' + _fbEsc(d.aprovado_por) : '') + '</span>' : '') + '</div>'
+    + (ger ? '<div class="fb-ger"><span class="fb-spin"></span> ' + _fbEsc(ger) + '</div>' : '')
+    + '<div class="fb-da">' + (I.importa && !d ? '<label class="btn btn-g">⭱ Importar<input type="file" accept=".docx,.pdf,.txt,.md,.xlsx" style="display:none" onchange="fbImportar(\'' + t + '\',this)"></label>' : '')
+    + (I.gera ? '<button class="btn btn-g" ' + (ger ? 'disabled' : '') + ' onclick="fbGerarForm(\'' + t + '\')">✨ ' + (d ? 'Gerar de novo' : 'Gerar com IA') + '</button>' : '')
+    + (d ? '<button class="btn btn-gn" onclick="fbRevisao(\'' + t + '\')">🔎 Revisão e aprovação</button><button class="btn btn-g" onclick="fbDocAbrir(\'' + t + '\')">👁 Ver / editar</button><button class="btn btn-g" onclick="fbWord(\'' + t + '\')">⭳ Word</button>' : '')
+    + (_fb.lista.planos?.[t] && d ? '<button class="btn btn-g" onclick="fbGerar(\'' + t + '\',{so_atualizar:true})" title="Reescreve as seções de casos e rastreabilidade com a situação atual, sem chamar a IA">↻ Atualizar casos</button>' : '') + '</div></div>';
+}
 function _fbDocs() {
-  const L = _fb.docs || [], meta = _fb.lista.docs;
-  _fbBox().innerHTML = '<div class="fv2-cab"><span>Fluxo: <b>ERF</b> (importada) + <b>modelo de ERT do cliente</b> → <b>ERT</b> gerada pela IA → <b>Plano de Projeto</b> → <b>Plano de Testes</b> → robôs → <b>Relatório de Qualidade</b>. Tudo editável, versionado, aprovado e exportado em Word.</span><button class="btn btn-gn" onclick="fbPacote()">📦 Pacote para a Fábrica (Word)</button></div>'
-    + '<div class="fb-docs">' + FB_DOC_ORDEM.map(t => { const d = L.find(x => x.tipo === t), I = FB_DOC_INFO[t], ger = _fb.gerando[t];
-      const st = !d ? '<span class="fb-chip" style="--c:var(--t3)">não existe</span>' : d.status === 'aprovado' ? '<span class="fb-chip" style="--c:var(--fv2-ok)">✔ aprovado v' + d.versao + '</span>' : '<span class="fb-chip" style="--c:var(--fv2-warn)">rascunho v' + d.versao + '</span>';
-      return '<div class="fb-doc"><div class="fb-dh"><span class="fb-di">' + I.icone + '</span><div><div class="fv2-pt">' + _fbEsc(meta[t].nome) + '</div><div class="fv2-pq">Etapa ' + meta[t].etapa + ' · ' + _fbEsc(I.como) + '</div></div></div>'
-        + '<div class="fb-dm">' + st + (d ? ' <span class="fv2-pq">' + (d.origem === 'importado' ? 'importado' + (d.arquivo_nome ? ' de ' + _fbEsc(d.arquivo_nome) : '') : d.origem === 'ia' ? 'gerado pela IA' : d.origem === 'sistema' ? 'atualizado pelo sistema' : 'editado') + ' · ' + new Date(d.atualizado_em).toLocaleString('pt-BR').substring(0, 16) + (d.aprovado_por ? ' · aprovado por ' + _fbEsc(d.aprovado_por) : '') + '</span>' : '') + '</div>'
-        + (ger ? '<div class="fb-ger"><span class="fb-spin"></span> ' + _fbEsc(ger) + '</div>' : '')
-        + '<div class="fb-da">' + (I.importa ? '<label class="btn btn-g">⭱ Importar<input type="file" accept=".docx,.pdf,.txt,.md,.xlsx" style="display:none" onchange="fbImportar(\'' + t + '\',this)"></label>' : '')
-        + (I.gera ? '<button class="btn btn-g" ' + (ger ? 'disabled' : '') + ' onclick="fbGerarForm(\'' + t + '\')">✨ ' + (d ? 'Gerar de novo' : 'Gerar com IA') + '</button>' : '')
-        + (d ? '<button class="btn btn-g" onclick="fbDocAbrir(\'' + t + '\')">👁 Ver / editar</button><button class="btn btn-g" onclick="fbWord(\'' + t + '\')">⭳ Word</button>'
-          + (d.status === 'aprovado' ? '<button class="btn btn-g" onclick="fbDocAprovar(\'' + t + '\',true)">Reabrir</button>' : '<button class="btn btn-gn" onclick="fbDocAprovar(\'' + t + '\')">✔ Aprovar</button>') : '')
-        + (t === 'plano_testes' && d ? '<button class="btn btn-g" onclick="fbGerar(\'plano_testes\',{so_atualizar:true})" title="Reescreve as seções de casos e rastreabilidade com a situação atual, sem chamar a IA">↻ Atualizar casos no documento</button>' : '') + '</div></div>'; }).join('') + '</div>';
+  _fbBox().innerHTML = '<div class="fv2-cab"><span>Cada documento passa pelo ciclo <b>gerar/importar → análise da IA → revisão do cliente → upload do ajuste → reanálise da IA → aprovação</b>, com versões, pendências e parecer em Word.</span><button class="btn btn-gn" onclick="fbPacote()">📦 Pacote para a Fábrica (Word)</button></div>'
+    + FB_DOC_GRUPOS.map(([g, L]) => '<div class="fb-grupo">' + g + '</div><div class="fb-docs">' + L.map(_fbDocCard).join('') + '</div>').join('');
 }
 async function fbImportar(tipo, inp) {
   const f = inp.files[0]; if (!f) return; if (f.size > 15 * 1024 * 1024) return toast('Arquivo acima de 15 MB', 'error');
@@ -28430,31 +28461,104 @@ function _fbModal(html, largura) {
 }
 const _fbFechar = () => document.getElementById('fbModal')?.remove();
 function fbGerarForm(tipo) {
-  const nome = _fb.lista.docs[tipo].nome, T = _fb.lista.tipos_caso;
+  const nome = _fb.lista.docs[tipo].nome, T = _fb.lista.tipos_caso, PL = _fb.lista.planos?.[tipo];
+  const dicas = { ert: 'Ex.: a solução roda na Azure do cliente; integração com SAP via API REST; usar Databricks para a camada de dados…', plano_projeto: 'Ex.: equipe de 4 pessoas; homologação em março; fábrica trabalha em sprints de 2 semanas…', arquitetura: 'Ex.: nuvem Azure obrigatória; dados ficam no Brasil; SSO com Entra ID; evitar serviços gerenciados caros…', modelo_dados: 'Ex.: banco PostgreSQL; histórico de 5 anos; separar dados pessoais em esquema próprio…', volumetria: 'Ex.: considerar pico no fechamento do mês…', finops: 'Ex.: o cliente tem desconto de 20% no contrato Azure; ambientes de teste só em horário comercial…', plano_testes_desempenho: 'Ex.: 300 usuários no pico do fechamento; meta p95 de 2 s; teste de restauração do backup…', plano_testes_seguranca: 'Ex.: perfis Analista, Gestor e Auditor; dados de clientes são sensíveis; SSO corporativo…' };
   _fbModal('<div class="qp-mh"><div class="fv2-pt">✨ Gerar com IA — ' + _fbEsc(nome) + '</div><button class="btn btn-g" onclick="_fbFechar()">Fechar ✕</button></div>'
-    + (tipo === 'plano_testes' ? '<div class="fv2-pq" style="margin-bottom:6px;">Tipos de teste a gerar (cada tipo é executado pelo robô correspondente):</div><div class="fb-tipos">' + Object.entries(T).map(([k, t]) => '<label><input type="checkbox" class="fbTipo" value="' + k + '" checked> ' + _fbEsc(t.nome) + '</label>').join('') + '</div>'
-      + '<div class="fb-form2"><label>Quantidade máxima de casos<input id="fbQtd" type="number" min="5" max="80" value="45"></label><label class="fb-chk"><input id="fbSubst" type="checkbox" checked> Substituir casos gerados pela IA que ainda não foram executados</label></div>' : '')
+    + (PL ? '<div class="fv2-pq" style="margin-bottom:6px;">Tipos de teste deste plano (cada tipo é executado pelo robô correspondente):</div><div class="fb-tipos">' + PL.tipos.map(k => '<label><input type="checkbox" class="fbTipo" value="' + k + '" checked> ' + _fbEsc(T[k]?.nome || k) + '</label>').join('') + '</div>'
+      + '<div class="fb-form2"><label>Quantidade máxima de casos<input id="fbQtd" type="number" min="5" max="80" value="' + (tipo === 'plano_testes' ? 40 : 20) + '"></label><label class="fb-chk"><input id="fbSubst" type="checkbox" checked> Substituir casos gerados pela IA que ainda não foram executados</label></div>' : '')
     + (tipo === 'plano_projeto' ? '<div class="fb-form2"><label>Início previsto<input id="fbInicio" type="date" value="' + new Date(Date.now() + 7 * 864e5).toISOString().substring(0, 10) + '"></label></div>' : '')
-    + '<label class="fb-lbl">Instruções para a IA (opcional)<textarea id="fbInstr" rows="4" placeholder="' + (tipo === 'ert' ? 'Ex.: a solução roda na Azure do cliente; integração com SAP via API REST; usar Databricks para a camada de dados…' : tipo === 'plano_testes' ? 'Ex.: priorize o fluxo de aprovação; inclua limites de valores; o perfil Analista não pode aprovar…' : 'Ex.: equipe de 4 pessoas; homologação em março; fábrica trabalha em sprints de 2 semanas…') + '"></textarea></label>'
-    + '<div class="fv2-pq" style="margin:6px 0 10px;">A IA pode levar de 1 a 4 minutos. O documento gerado fica em <b>rascunho</b> até um especialista revisar e aprovar.</div>'
+    + '<label class="fb-lbl">Instruções para a IA (opcional)<textarea id="fbInstr" rows="4" placeholder="' + _fbEsc(dicas[tipo] || 'Ex.: priorize o fluxo de aprovação; inclua limites de valores…') + '"></textarea></label>'
+    + '<div class="fv2-pq" style="margin:6px 0 10px;">A IA pode levar de 1 a 4 minutos. O documento fica em <b>rascunho</b> até passar pela revisão e ser aprovado.</div>'
     + '<button class="btn btn-gn" onclick="fbGerarEnviar(\'' + tipo + '\')">Gerar</button>', 720);
 }
 function fbGerarEnviar(tipo) {
   const extra = { instrucoes: document.getElementById('fbInstr')?.value || '' };
-  if (tipo === 'plano_testes') { extra.tipos = [...document.querySelectorAll('.fbTipo:checked')].map(x => x.value); extra.quantidade = +document.getElementById('fbQtd').value || 45; extra.substituir = document.getElementById('fbSubst').checked; if (!extra.tipos.length) return toast('Escolha ao menos um tipo', 'error'); }
+  if (_fb.lista.planos?.[tipo]) { extra.tipos = [...document.querySelectorAll('.fbTipo:checked')].map(x => x.value); extra.quantidade = +document.getElementById('fbQtd').value || 20; extra.substituir = document.getElementById('fbSubst').checked; if (!extra.tipos.length) return toast('Escolha ao menos um tipo', 'error'); }
   if (tipo === 'plano_projeto') extra.inicio = document.getElementById('fbInicio').value;
   _fbFechar(); fbGerar(tipo, extra);
 }
 async function fbGerar(tipo, extra = {}) {
-  _fb.gerando[tipo] = extra.so_atualizar ? 'Atualizando…' : 'A IA está escrevendo — pode levar até 4 minutos…'; if (_fb.aba === 'docs') _fbDocs();
-  try { const r = await fbApi('doc_gerar', { projeto_id: _fb.pid, tipo, ...extra }); toast((_fb.lista.docs[tipo]?.nome || 'Documento') + ' pronto (v' + r.versao + ')' + (r.casos_gerados != null ? ' · ' + r.casos_gerados + ' casos de teste' : ''), 'success'); }
+  _fb.gerando[tipo] = extra.so_atualizar ? 'Atualizando…' : 'A IA está escrevendo — pode levar até 4 minutos…'; if (_fb.aba === 'docs') _fbDocs(); else if (_fb.aba === 'arq') _fbArq(); else if (_fb.aba === 'casos') _fbCasos();
+  try { const r = await fbApi('doc_gerar', { projeto_id: _fb.pid, tipo, ...extra }); toast((_fb.lista.docs[tipo]?.nome || 'Documento') + ' pronto (v' + r.versao + ')' + (r.casos_gerados != null ? ' · ' + r.casos_gerados + ' casos de teste' : '') + ' — próximo passo: revisão da IA', 'success'); }
   catch (e) { toast(e.message, 'error'); }
-  delete _fb.gerando[tipo]; if (_fb.aba === 'docs') fbIrAba('docs'); else if (_fb.aba === 'casos') fbIrAba('casos');
+  delete _fb.gerando[tipo]; if (['docs', 'arq', 'casos'].includes(_fb.aba)) fbIrAba(_fb.aba);
 }
 async function fbDocAprovar(tipo, reabrir) {
-  let por = null; if (!reabrir) { por = prompt('Aprovado por (nome do especialista / área):'); if (!por) return; }
-  try { await fbApi('doc_aprovar', { projeto_id: _fb.pid, tipo, aprovado_por: por, reabrir: !!reabrir }); toast(reabrir ? 'Documento reaberto' : 'Documento aprovado' + (tipo === 'plano_testes' ? ' — os robôs passam a executar os casos' : ''), 'success'); fbIrAba(_fb.aba); }
+  let por = null; if (!reabrir) { por = prompt('Aprovado por (nome do especialista / área do cliente):'); if (!por) return; }
+  try { await fbApi('doc_aprovar', { projeto_id: _fb.pid, tipo, aprovado_por: por, reabrir: !!reabrir }); }
+  catch (e) {
+    if (!e.precisa_forcar) return toast(e.message, 'error');
+    const ress = prompt(e.message + '\n\nPara aprovar mesmo assim, registre a ressalva (quem aceitou e o plano para tratar as pendências):'); if (!ress) return;
+    try { await fbApi('doc_aprovar', { projeto_id: _fb.pid, tipo, aprovado_por: por, forcar: true, ressalva: ress }); } catch (e2) { return toast(e2.message, 'error'); }
+  }
+  toast(reabrir ? 'Documento reaberto' : 'Documento aprovado' + (_fb.lista.planos?.[tipo] ? ' — os robôs passam a executar os casos deste plano' : ''), 'success');
+  if (document.getElementById('fbModal') && _fb.revTipo === tipo) fbRevisao(tipo); fbIrAba(_fb.aba);
+}
+// ── ciclo de revisão: análise da IA → revisão do cliente → upload do ajuste → reanálise → aprovação ──
+async function fbRevisao(tipo) {
+  _fb.revTipo = tipo; const ov = document.getElementById('fbModal')?.dataset.rev === tipo ? document.getElementById('fbModal') : _fbModal('<div class="fv2-load">Carregando…</div>', 1100); ov.dataset.rev = tipo;
+  try { const { documento: d } = await fbApi('doc_obter', { projeto_id: _fb.pid, tipo }); _fb.revDoc = d; _fbRevRender(); }
+  catch (e) { ov.querySelector('.qp-mod').innerHTML = '<div class="fv2-erro">' + _fbEsc(e.message) + '</div>'; }
+}
+function _fbRevRender() {
+  const d = _fb.revDoc, tipo = _fb.revTipo, ov = document.getElementById('fbModal'); if (!ov || !d) return;
+  const R = d.rodadas || [], A = R.filter(x => x.tipo === 'analise'), u = A[A.length - 1], fase = d.fase || (d.status === 'aprovado' ? 'aprovado' : 'rascunho');
+  const iF = FB_FASES.findIndex(f => f[0] === fase), ger = _fb.gerando['rev:' + tipo];
+  const SEV = { alta: 'var(--fv2-crit)', media: 'var(--fv2-warn)', baixa: 'var(--t3)' }, STN = { aberta: 'Aberta', resolvida: 'Resolvida', aceita: 'Aceita' };
+  const desat = u && u.versao !== d.versao;
+  ov.querySelector('.qp-mod').innerHTML = '<div class="qp-mh"><div><div class="fv2-pt">🔎 Revisão e aprovação — ' + _fbEsc(_fb.lista.docs[tipo].nome) + '</div><div class="fv2-pq">Versão atual v' + d.versao + ' · ' + (d.status === 'aprovado' ? 'aprovado por ' + _fbEsc(d.aprovado_por || '') : 'em rascunho') + '</div></div><button class="btn btn-g" onclick="_fbFechar()">Fechar ✕</button></div>'
+    + '<div class="fb-fases">' + FB_FASES.map((f, i) => '<div class="fb-fase ' + (i < iF ? 'ok' : i === iF ? 'at' : '') + '"><b>' + (i + 1) + '</b>' + f[1] + '</div>').join('') + '</div>'
+    + '<div class="fb-revacoes">'
+    + '<div><input id="fbRevFoco" class="fb-in" placeholder="Foco da análise (opcional): ex. segurança, rastreabilidade, custos…"><button class="btn btn-gn" ' + (ger ? 'disabled' : '') + ' onclick="fbAnalisar(\'' + tipo + '\')">' + (ger ? 'Analisando…' : u ? (desat ? '🔎 Reanalisar a v' + d.versao + ' com IA' : '🔎 Analisar de novo') : '🔎 Analisar com IA') + '</button></div>'
+    + '<button class="btn btn-g" onclick="fbEnviarRevisao(\'' + tipo + '\')">📤 Enviar para revisão do cliente</button>'
+    + '<button class="btn btn-g" onclick="fbAjusteForm(\'' + tipo + '\')">⭱ Upload da versão ajustada</button>'
+    + '<button class="btn btn-g" onclick="_fbFechar();fbDocAbrir(\'' + tipo + '\')">✎ Editar aqui</button>'
+    + '<button class="btn btn-g" onclick="fbWord(\'parecer:' + tipo + '\')">⭳ Parecer em Word</button>'
+    + (d.status === 'aprovado' ? '<button class="btn btn-g" onclick="fbDocAprovar(\'' + tipo + '\',true)">Reabrir</button>' : '<button class="btn btn-gn" onclick="fbDocAprovar(\'' + tipo + '\')">✔ Aprovar v' + d.versao + '</button>') + '</div>'
+    + (ger ? '<div class="fb-ger"><span class="fb-spin"></span> A IA está revisando o documento' + (A.length ? ' e comparando com a versão anterior' : '') + ' — até 3 minutos…</div>' : '')
+    + (u ? '<div class="fb-parecer' + (u.pronto ? ' ok' : '') + '"><div class="fb-gh">' + (u.reanalise ? 'Reanálise' : 'Análise') + ' da IA — v' + u.versao + ' · ' + new Date(u.em).toLocaleString('pt-BR').substring(0, 16) + '<span>' + (u.nota != null ? 'nota ' + u.nota + '/10 · ' : '') + (u.pronto ? '✔ pronto para aprovar' : 'não pronto para aprovar') + '</span></div>'
+      + (desat ? '<div class="fv2-aviso" style="margin:6px 0;">Há uma versão mais nova (v' + d.versao + ') que ainda não foi analisada — clique em Reanalisar.</div>' : '')
+      + '<p>' + _fbEsc(u.resumo) + '</p>'
+      + (u.comentarios_ajuste ? '<div class="fv2-pq"><b>Comentários que vieram com o ajuste:</b> ' + _fbEsc(u.comentarios_ajuste) + '</div>' : '')
+      + (u.mudancas?.length ? '<div class="fv2-pq" style="margin-top:6px;"><b>O que mudou da versão anterior:</b></div>' + u.mudancas.map(m => '<div class="fb-li">• ' + _fbEsc(m) + '</div>').join('') : '')
+      + (u.resolvidas?.length ? '<div class="fv2-pq" style="margin-top:4px;color:var(--fv2-ok);">✔ Resolvidas desde a rodada anterior: ' + u.resolvidas.map(_fbEsc).join(', ') + '</div>' : '')
+      + (u.pontos_fortes?.length ? '<details style="margin-top:6px;"><summary class="fv2-pq">Pontos fortes</summary>' + u.pontos_fortes.map(m => '<div class="fb-li">• ' + _fbEsc(m) + '</div>').join('') + '</details>' : '') + '</div>'
+      + '<div class="fv2-tabwrap"><table class="fb-tb"><tr><th>ID</th><th>Seção</th><th>Sev.</th><th>Problema</th><th>Sugestão</th><th>Situação</th><th></th></tr>'
+      + ((u.pendencias || []).length ? u.pendencias.map(x => '<tr><td><b>' + _fbEsc(x.id) + '</b></td><td>' + _fbEsc(x.secao) + '</td><td><span class="fb-pr" style="--c:' + SEV[x.severidade] + '">' + _fbEsc(x.severidade) + '</span></td><td>' + _fbEsc(x.problema) + '</td><td class="fv2-pq">' + _fbEsc(x.sugestao) + '</td><td><b style="color:' + (x.status === 'aberta' ? SEV[x.severidade] : 'var(--fv2-ok)') + '">' + STN[x.status] + '</b>' + (x.nota ? '<div class="fv2-pq">' + _fbEsc(x.nota) + '</div>' : '') + '</td>'
+        + '<td style="white-space:nowrap;">' + (x.status === 'aberta' ? '<button class="btn btn-g fb-mini" onclick="fbPend(\'' + tipo + '\',\'' + x.id + '\',\'resolvida\')">Resolvida</button><button class="btn btn-g fb-mini" onclick="fbPend(\'' + tipo + '\',\'' + x.id + '\',\'aceita\')">Aceitar</button>' : '<button class="btn btn-g fb-mini" onclick="fbPend(\'' + tipo + '\',\'' + x.id + '\',\'aberta\')">Reabrir</button>') + '</td></tr>').join('') : '<tr><td colspan="7" class="qp-vazio">Nenhuma pendência.</td></tr>') + '</table></div>'
+      : '<div class="fv2-aviso">Este documento ainda não passou pela análise da IA. Clique em <b>Analisar com IA</b>: ela confere o documento contra os critérios do gate e a ERF, aponta pendências com sugestão de texto e, nas próximas rodadas, compara cada ajuste com a versão anterior.</div>')
+    + (R.length ? '<div class="fb-grupo" style="margin-top:12px;">Histórico do ciclo</div><div class="fb-hist">' + R.slice().reverse().map(x => '<div class="fb-hi"><b>' + new Date(x.em).toLocaleString('pt-BR').substring(0, 16) + '</b> · v' + x.versao + ' · '
+      + (x.tipo === 'analise' ? (x.reanalise ? 'Reanálise da IA' : 'Análise da IA') + ' — ' + (x.pendencias || []).length + ' pendência(s)' + (x.nota != null ? ', nota ' + x.nota : '') : x.tipo === 'envio' ? 'Enviado para revisão de ' + _fbEsc(x.revisor) + (x.observacao ? ' — ' + _fbEsc(x.observacao) : '') : 'Aprovado por ' + _fbEsc(x.por) + (x.ressalva ? ' — ressalva: ' + _fbEsc(x.ressalva) : '')) + '</div>').join('')
+      + (d.historico || []).slice().reverse().filter(h => h.comentarios_ajuste).map(h => '<div class="fb-hi">Ajuste sobre a v' + h.versao + ': ' + _fbEsc(h.comentarios_ajuste) + '</div>').join('') + '</div>' : '');
+}
+async function fbAnalisar(tipo) {
+  _fb.gerando['rev:' + tipo] = 1; _fbRevRender(); const foco = document.getElementById('fbRevFoco')?.value || '';
+  try { const r = await fbApi('doc_analisar', { projeto_id: _fb.pid, tipo, foco }); toast('Análise pronta: ' + r.rodada.pendencias.length + ' pendência(s)' + (r.rodada.pronto ? ' — pronto para aprovar' : ''), 'success'); }
   catch (e) { toast(e.message, 'error'); }
+  delete _fb.gerando['rev:' + tipo]; await fbRevisao(tipo); if (_fb.aba === 'docs' || _fb.aba === 'arq') fbIrAba(_fb.aba);
+}
+async function fbEnviarRevisao(tipo) {
+  const rev = prompt('Enviado para revisão de quem? (ex.: TI da CPFL — João)'); if (!rev) return; const obs = prompt('Observação (opcional):') || null;
+  try { await fbApi('doc_enviar_revisao', { projeto_id: _fb.pid, tipo, revisor: rev, observacao: obs }); toast('Registrado — baixe o Word e envie ao revisor', 'success'); fbWord(tipo); fbRevisao(tipo); } catch (e) { toast(e.message, 'error'); }
+}
+function fbAjusteForm(tipo) {
+  const ov = document.getElementById('fbModal'); const box = document.createElement('div'); box.className = 'fb-ajuste';
+  box.innerHTML = '<div class="fv2-pt">⭱ Upload da versão ajustada</div><div class="fv2-pq">Word ou PDF com os ajustes (do cliente, do parceiro ou da equipe). Vira a v' + ((_fb.revDoc?.versao || 0) + 1) + ' e a IA reanalisa comparando com a versão anterior e com as pendências abertas.</div>'
+    + '<input type="file" id="fbAjArq" accept=".docx,.pdf,.txt,.md"><label class="fb-lbl">Comentários / o que foi ajustado (opcional)<textarea id="fbAjCom" rows="3"></textarea></label><label class="fb-chk"><input type="checkbox" id="fbAjRe" checked> Reanalisar com IA logo após o upload</label>'
+    + '<div class="mc-sug"><button class="btn btn-gn" onclick="fbAjusteEnviar(\'' + tipo + '\')">Enviar ajuste</button><button class="btn btn-g" onclick="this.closest(\'.fb-ajuste\').remove()">Cancelar</button></div>';
+  ov.querySelector('.qp-mod').prepend(box);
+}
+async function fbAjusteEnviar(tipo) {
+  const f = document.getElementById('fbAjArq').files[0]; if (!f) return toast('Escolha o arquivo', 'error');
+  const com = document.getElementById('fbAjCom').value, re = document.getElementById('fbAjRe').checked;
+  const base64 = await new Promise((ok, err) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = err; r.readAsDataURL(f); });
+  try { const r = await fbApi('doc_importar', { projeto_id: _fb.pid, tipo, nome: f.name, base64, comentarios: com, ajuste: true }); toast('Ajuste recebido — versão ' + r.versao, 'success'); }
+  catch (e) { return toast(e.message, 'error'); }
+  await fbRevisao(tipo); if (re) fbAnalisar(tipo);
+}
+async function fbPend(tipo, id, status) {
+  let nota = null; if (status === 'aceita') { nota = prompt('Por que a pendência foi aceita? (quem aceitou / plano)'); if (!nota) return; }
+  try { await fbApi('doc_pendencia', { projeto_id: _fb.pid, tipo, id, status, nota }); fbRevisao(tipo); } catch (e) { toast(e.message, 'error'); }
 }
 function _fbMd(md) { // visualização simples (títulos, listas, tabelas, negrito)
   const inl = t => _fbEsc(t).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -28532,18 +28636,63 @@ async function fbItemSalvar(id) {
 async function fbItemExcluir(id) { if (!confirm('Excluir este item?')) return; try { await fbApi('item_excluir', { id }); _fbFechar(); fbIrAba('kanban'); } catch (e) { toast(e.message, 'error'); } }
 // ── plano de testes (casos) ──
 function _fbCasos() {
-  const R = _fb.casos, T = R.tipos, all = R.casos, P = R.plano;
-  const L = all.filter(c => (!_fb.filtroTipo || c.tipo === _fb.filtroTipo) && (!_fb.filtroSt || c.status === _fb.filtroSt));
-  const cont = k => all.filter(c => c.status === k).length;
-  _fbBox().innerHTML = (!P ? '<div class="fv2-aviso">Ainda não há plano de testes. Gere com IA (a partir da ERF/ERT) ou cadastre os casos manualmente.</div>' : P.status !== 'aprovado' ? '<div class="fv2-aviso">O plano (v' + P.versao + ') está em <b>rascunho</b>: os robôs só executam os casos depois que o especialista de qualidade aprovar (metodologia 9.3.1). <button class="btn btn-gn" style="margin-left:6px;" onclick="fbDocAprovar(\'plano_testes\')">✔ Aprovar plano</button></div>' : '')
-    + '<div class="fv2-cab"><span>' + all.length + ' caso(s) · <b style="color:var(--fv2-ok)">' + cont('passou') + ' aprovados</b> · <b style="color:var(--fv2-crit)">' + cont('falhou') + ' reprovados</b> · ' + cont('bloqueado') + ' bloqueados · ' + cont('nao_executado') + ' a executar · ' + all.filter(c => c.automatizavel).length + ' automatizáveis</span>'
-    + '<span class="mc-sug"><button class="btn btn-gn" onclick="fbGerarForm(\'plano_testes\')" ' + (_fb.gerando.plano_testes ? 'disabled' : '') + '>✨ ' + (_fb.gerando.plano_testes ? 'Gerando…' : 'Gerar plano com IA') + '</button><button class="btn btn-g" onclick="fbSugerirForm()">💡 Sugerir casos com IA</button><button class="btn btn-g" onclick="fbCasoForm()">+ Caso</button>'
-    + '<button class="btn btn-g" onclick="fbWord(\'plano_testes\')">⭳ Plano em Word</button><label class="btn btn-g">⭱ Testes unitários (JUnit)<input type="file" accept=".xml" style="display:none" onchange="fbJunit(this)"></label></span></div>'
-    + '<div class="fb-filtros"><select onchange="_fb.filtroTipo=this.value;_fbCasos()"><option value="">Todos os tipos</option>' + Object.entries(T).map(([k, t]) => '<option value="' + k + '"' + (k === _fb.filtroTipo ? ' selected' : '') + '>' + _fbEsc(t.nome) + ' (' + all.filter(c => c.tipo === k).length + ')</option>').join('') + '</select>'
+  const R = _fb.casos, T = R.tipos, all = R.casos, PL = R.planos || {};
+  if (_fb.filtroPlano && !PL[_fb.filtroPlano]) _fb.filtroPlano = '';
+  const tiposPlano = _fb.filtroPlano ? PL[_fb.filtroPlano].tipos : null;
+  const L = all.filter(c => (!tiposPlano || tiposPlano.includes(c.tipo)) && (!_fb.filtroTipo || c.tipo === _fb.filtroTipo) && (!_fb.filtroSt || c.status === _fb.filtroSt));
+  const cont = (X, k) => X.filter(c => c.status === k).length;
+  const corSt = { aprovado: 'var(--fv2-ok)', rascunho: 'var(--fv2-warn)' };
+  _fbBox().innerHTML = '<div class="fb-planos">' + Object.entries(PL).map(([k, p]) => { const X = all.filter(c => p.tipos.includes(c.tipo)), d = p.doc, ger = _fb.gerando[k];
+      return '<div class="fb-plano' + (_fb.filtroPlano === k ? ' on' : '') + '" onclick="_fb.filtroPlano=_fb.filtroPlano===\'' + k + '\'?\'\':\'' + k + '\';_fb.filtroTipo=\'\';_fbCasos()"><div class="fb-cc"><b>' + (FB_DOC_INFO[k]?.icone || '🧪') + ' ' + _fbEsc(p.nome.replace('Plano de Testes ', '')) + '</b><span class="fb-pr" style="--c:var(--fv2-brand)">' + p.gate + '</span></div>'
+        + '<div class="fv2-pq">' + p.tipos.map(t => _fbEsc(T[t]?.nome.split(' (')[0] || t)).join(' · ') + '</div>'
+        + '<div class="fb-dm" style="margin-top:5px;">' + (d ? '<span class="fb-chip" style="--c:' + (corSt[d.status] || 'var(--t3)') + '">' + (d.status === 'aprovado' ? '✔ aprovado' : 'rascunho') + ' v' + d.versao + '</span>' : '<span class="fb-chip" style="--c:var(--t3)">sem plano</span>')
+        + '<span class="fv2-pq">' + X.length + ' casos · ' + cont(X, 'passou') + ' ✔ · ' + cont(X, 'falhou') + ' ✖</span></div>'
+        + (ger ? '<div class="fb-ger"><span class="fb-spin"></span> gerando…</div>' : '<div class="fb-da" style="margin-top:6px;" onclick="event.stopPropagation()"><button class="btn btn-g fb-mini" onclick="fbGerarForm(\'' + k + '\')">✨ ' + (d ? 'Gerar de novo' : 'Gerar com IA') + '</button>' + (d ? '<button class="btn btn-g fb-mini" onclick="fbRevisao(\'' + k + '\')">🔎 Revisão</button><button class="btn btn-g fb-mini" onclick="fbWord(\'' + k + '\')">⭳ Word</button>' : '') + '</div>') + '</div>'; }).join('') + '</div>'
+    + (Object.values(PL).some(p => p.doc && p.doc.status !== 'aprovado') ? '<div class="fv2-aviso">Os robôs só executam os casos de um plano depois que ele for <b>aprovado</b> pelo especialista de qualidade (metodologia 9.3.1) — use 🔎 Revisão para analisar com a IA e aprovar.</div>' : '')
+    + '<div class="fv2-cab"><span>' + (_fb.filtroPlano ? '<b>' + _fbEsc(PL[_fb.filtroPlano].nome) + '</b> · ' : 'Todos os planos · ') + L.length + ' caso(s) · <b style="color:var(--fv2-ok)">' + cont(L, 'passou') + ' aprovados</b> · <b style="color:var(--fv2-crit)">' + cont(L, 'falhou') + ' reprovados</b> · ' + cont(L, 'bloqueado') + ' bloqueados · ' + cont(L, 'nao_executado') + ' a executar · ' + L.filter(c => c.automatizavel).length + ' automatizáveis</span>'
+    + '<span class="mc-sug"><button class="btn btn-g" onclick="fbSugerirForm()">💡 Sugerir casos com IA</button><button class="btn btn-g" onclick="fbCasoForm()">+ Caso</button><label class="btn btn-g">⭱ Testes unitários (JUnit)<input type="file" accept=".xml" style="display:none" onchange="fbJunit(this)"></label></span></div>'
+    + '<div class="fb-filtros"><select onchange="_fb.filtroTipo=this.value;_fbCasos()"><option value="">Todos os tipos</option>' + Object.entries(T).filter(([k]) => !tiposPlano || tiposPlano.includes(k)).map(([k, t]) => '<option value="' + k + '"' + (k === _fb.filtroTipo ? ' selected' : '') + '>' + _fbEsc(t.nome) + ' (' + all.filter(c => c.tipo === k).length + ')</option>').join('') + '</select>'
     + '<select onchange="_fb.filtroSt=this.value;_fbCasos()"><option value="">Todas as situações</option>' + Object.entries(FB_ST).map(([k, [n]]) => '<option value="' + k + '"' + (k === _fb.filtroSt ? ' selected' : '') + '>' + n + '</option>').join('') + '</select></div>'
     + '<div class="fv2-tabwrap"><table class="fb-tb fb-casos"><tr><th>Código</th><th>Caso de teste</th><th>Tipo</th><th>Requisito</th><th>Item</th><th>Prior.</th><th>Execução</th><th>Situação</th></tr>'
     + (L.length ? L.map(c => '<tr onclick="fbCasoForm(\'' + c.id + '\')"><td><b>' + _fbEsc(c.codigo) + '</b></td><td>' + _fbEsc(c.titulo) + (c.evidencia && c.status === 'falhou' ? '<div class="fv2-pq" style="color:var(--fv2-crit);">' + _fbEsc(String(c.evidencia).split('\n')[0].substring(0, 140)) + '</div>' : '') + '</td><td>' + _fbEsc(T[c.tipo]?.nome || c.tipo) + '</td><td>' + _fbEsc(c.requisito_ref || '—') + '</td><td>' + _fbEsc(c.item_codigo || '—') + '</td>'
       + '<td><span class="fb-pr" style="--c:' + (FB_PR[c.prioridade] || 'var(--t3)') + '">' + _fbEsc(c.prioridade) + '</span></td><td>' + (c.automatizavel ? '🤖 robô' : '✋ manual') + '</td><td><b style="color:' + FB_ST[c.status][1] + '">' + FB_ST[c.status][0] + '</b>' + (c.ultima_execucao_em ? '<div class="fv2-pq">' + new Date(c.ultima_execucao_em).toLocaleDateString('pt-BR') + '</div>' : '') + '</td></tr>').join('') : '<tr><td colspan="8" class="qp-vazio">Nenhum caso.</td></tr>') + '</table></div>';
+}
+// ── etapa 4: arquitetura, modelo de dados, volumetria e FinOps ──
+const _fbBRL = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+function _fbArq() {
+  const A = _fb.arq || {}, C = _fb.calc || { volumetria: [], servicos: [], totais: { mensal: {}, anual: [] }, serie: [] }, V = A.volumetria || [], S = A.servicos || [];
+  const inp = (arr, i, k, v, w, tp) => '<input class="fb-cel" style="width:' + (w || 90) + 'px" ' + (tp ? 'type="' + tp + '"' : '') + ' value="' + _fbEsc(v ?? '') + '" onchange="_fbArqSet(\'' + arr + '\',' + i + ',\'' + k + '\',this.value)">';
+  const drv = (i, v) => '<select class="fb-cel" onchange="_fbArqSet(\'servicos\',' + i + ',\'driver\',this.value)"><option value="fixo">fixo</option>' + V.map(x => '<option value="' + _fbEsc(x.id) + '"' + (x.id === v ? ' selected' : '') + '>' + _fbEsc(x.id + ' · ' + String(x.item).substring(0, 24)) + '</option>').join('') + '</select>';
+  const mx = Math.max(1, ...C.serie);
+  const T = C.totais;
+  _fbBox().innerHTML = '<div class="fv2-cab"><span>Etapa 4 da metodologia: a <b>volumetria</b> (atual e crescimento) alimenta o dimensionamento, os testes de desempenho e o <b>FinOps</b> — o custo de cada serviço hoje e projetado. A IA sugere as tabelas a partir da ERT/arquitetura; você ajusta; os documentos saem em Word e passam pela revisão.</span>'
+    + '<span class="mc-sug"><button class="btn btn-gn" ' + (_fb.gerando.arq ? 'disabled' : '') + ' onclick="fbArqSugerir()">' + (_fb.gerando.arq ? 'A IA está calculando…' : '✨ Sugerir volumetria e custos com IA') + '</button><button class="btn btn-g" onclick="fbArqSalvar()">💾 Salvar tabelas</button></span></div>'
+    + '<div class="fb-docs" style="margin-bottom:12px;">' + ['arquitetura', 'modelo_dados', 'volumetria', 'finops'].map(_fbDocCard).join('') + '</div>'
+    + '<div class="fb-ks">' + [['Custo/mês hoje', _fbBRL(T.mensal?.[0])], ['Custo/mês em 12 meses', _fbBRL(T.mensal?.[12])], ['Custo/mês em 36 meses', _fbBRL(T.mensal?.[36])], ['Ano 1 / ano 2 / ano 3', (T.anual || []).map(_fbBRL).join(' / ') || '—'], ['Crescimento do custo em 36 meses', T.mensal?.[0] ? Math.round((T.mensal[36] / T.mensal[0] - 1) * 100) + '%' : '—']].map(([l, v]) => '<div class="fb-k"><div class="v" style="font-size:16px;">' + v + '</div><div class="l">' + l + '</div></div>').join('') + '</div>'
+    + (C.serie.length && T.mensal?.[0] ? '<div class="fb-serie" title="Custo mensal projetado, mês 0 a 36">' + C.serie.map((v, m) => '<i style="height:' + Math.max(2, v / mx * 100) + '%" title="mês ' + m + ': ' + _fbBRL(v) + '"></i>').join('') + '</div><div class="fv2-pq" style="display:flex;justify-content:space-between;margin-bottom:12px;"><span>hoje</span><span>12 meses</span><span>24 meses</span><span>36 meses</span></div>' : '')
+    + '<div class="fb-grupo">📈 Volumetria — atual e projetada</div><div class="fv2-tabwrap"><table class="fb-tb"><tr><th>ID</th><th>Item (dado / transação)</th><th>Unidade</th><th>Atual</th><th>Cresc. mensal %</th><th>12 meses</th><th>24 meses</th><th>36 meses</th><th>Fonte / premissa</th><th></th></tr>'
+    + V.map((v, i) => { const pj = C.volumetria.find(x => x.id === v.id)?.proj || {}; return '<tr><td><b>' + _fbEsc(v.id) + '</b></td><td>' + inp('volumetria', i, 'item', v.item, 200) + '</td><td>' + inp('volumetria', i, 'unidade', v.unidade, 70) + '</td><td>' + inp('volumetria', i, 'atual', v.atual, 90) + '</td><td>' + inp('volumetria', i, 'cresc_mensal_pct', v.cresc_mensal_pct, 60) + '</td>'
+      + '<td>' + Number(pj[12] || 0).toLocaleString('pt-BR') + '</td><td>' + Number(pj[24] || 0).toLocaleString('pt-BR') + '</td><td>' + Number(pj[36] || 0).toLocaleString('pt-BR') + '</td><td>' + inp('volumetria', i, 'fonte', v.fonte, 180) + '</td><td><button class="btn btn-g fb-mini" onclick="_fbArqDel(\'volumetria\',' + i + ')">✕</button></td></tr>'; }).join('')
+    + '</table></div><button class="btn btn-g fb-mini" onclick="_fbArqAdd(\'volumetria\')">+ Linha de volumetria</button>'
+    + '<div class="fb-grupo" style="margin-top:14px;">💰 Serviços e custos (FinOps) — custo = fixo + preço unitário × fator × volume do driver</div><div class="fv2-pq" style="margin-bottom:4px;">Preços sugeridos pela IA são referências públicas: confirme na calculadora do provedor ou no contrato do cliente. Câmbio para serviços em USD: ' + inp('premissas', 0, 'cambio_usd', A.premissas?.cambio_usd, 70) + '</div>'
+    + '<div class="fv2-tabwrap"><table class="fb-tb"><tr><th>Serviço</th><th>Provedor</th><th>Categoria</th><th>Ambiente</th><th>Moeda</th><th>Driver (volume)</th><th>Fator</th><th>Preço unit.</th><th>Unidade</th><th>Fixo/mês</th><th>Hoje</th><th>12 m</th><th>36 m</th><th></th></tr>'
+    + S.map((x, i) => { const c = C.servicos.find(y => y.id === x.id)?.mensal || {}; return '<tr><td>' + inp('servicos', i, 'servico', x.servico, 170) + '</td><td>' + inp('servicos', i, 'provedor', x.provedor, 80) + '</td><td>' + inp('servicos', i, 'categoria', x.categoria, 100) + '</td><td>' + inp('servicos', i, 'ambiente', x.ambiente, 90) + '</td>'
+      + '<td><select class="fb-cel" onchange="_fbArqSet(\'servicos\',' + i + ',\'moeda\',this.value)"><option' + (x.moeda !== 'USD' ? ' selected' : '') + '>BRL</option><option' + (x.moeda === 'USD' ? ' selected' : '') + '>USD</option></select></td><td>' + drv(i, x.driver) + '</td><td>' + inp('servicos', i, 'fator', x.fator, 55) + '</td><td>' + inp('servicos', i, 'custo_unitario', x.custo_unitario, 70) + '</td><td>' + inp('servicos', i, 'unidade_custo', x.unidade_custo, 80) + '</td><td>' + inp('servicos', i, 'fixo_mensal', x.fixo_mensal, 75) + '</td>'
+      + '<td><b>' + _fbBRL(c[0]) + '</b></td><td>' + _fbBRL(c[12]) + '</td><td>' + _fbBRL(c[36]) + '</td><td><button class="btn btn-g fb-mini" onclick="_fbArqDel(\'servicos\',' + i + ')">✕</button></td></tr>'; }).join('')
+    + (S.length ? '<tr><td colspan="10"><b>Total</b></td><td><b>' + _fbBRL(T.mensal?.[0]) + '</b></td><td><b>' + _fbBRL(T.mensal?.[12]) + '</b></td><td><b>' + _fbBRL(T.mensal?.[36]) + '</b></td><td></td></tr>' : '') + '</table></div><button class="btn btn-g fb-mini" onclick="_fbArqAdd(\'servicos\')">+ Serviço</button>';
+}
+function _fbArqSet(arr, i, k, v) { const A = _fb.arq; if (arr === 'premissas') { A.premissas = { ...(A.premissas || {}), [k]: v }; } else A[arr][i][k] = v; _fb.arqSujo = true; clearTimeout(_fb.arqT); _fb.arqT = setTimeout(fbArqSalvar, 700); }
+function _fbArqAdd(arr) { const A = _fb.arq; A[arr] = A[arr] || []; const n = A[arr].length + 1; A[arr].push(arr === 'volumetria' ? { id: 'V' + (Math.max(0, ...A[arr].map(x => parseInt(String(x.id).slice(1)) || 0)) + 1), item: '', unidade: '', atual: 0, cresc_mensal_pct: 0, fonte: '' } : { id: 'S' + (Math.max(0, ...A[arr].map(x => parseInt(String(x.id).slice(1)) || 0)) + 1), servico: '', provedor: '', categoria: '', ambiente: 'produção', moeda: 'BRL', driver: 'fixo', fator: 1, custo_unitario: 0, unidade_custo: '', fixo_mensal: 0 }); _fbArq(); }
+function _fbArqDel(arr, i) { _fb.arq[arr].splice(i, 1); fbArqSalvar(); }
+async function fbArqSalvar() { try { const r = await fbApi('arq_salvar', { projeto_id: _fb.pid, arquitetura: _fb.arq }); _fb.arq = r.arquitetura; _fb.calc = r.calculo; _fb.arqSujo = false; if (_fb.aba === 'arq') { const y = window.scrollY; _fbArq(); window.scrollTo(0, y); } } catch (e) { toast(e.message, 'error'); } }
+async function fbArqSugerir() {
+  const temDados = (_fb.arq?.volumetria || []).length || (_fb.arq?.servicos || []).length;
+  let subst = true; if (temDados) subst = confirm('Substituir as tabelas atuais pela sugestão da IA?\n\nOK = substituir · Cancelar = acrescentar');
+  const instr = prompt('Instruções para a IA (opcional): nuvem, região, descontos, horários dos ambientes…', '') ?? '';
+  _fb.gerando.arq = 1; _fbArq();
+  try { const r = await fbApi('arq_sugerir', { projeto_id: _fb.pid, instrucoes: instr, substituir: subst }); _fb.arq = r.arquitetura; _fb.calc = r.calculo; toast('Volumetria e custos sugeridos — revise os preços antes de gerar o FinOps', 'success'); }
+  catch (e) { toast(e.message, 'error'); }
+  delete _fb.gerando.arq; if (_fb.aba === 'arq') _fbArq();
 }
 function fbCasoForm(id) {
   const c = (_fb.casos?.casos || []).find(x => x.id === id) || { tipo: 'funcional', prioridade: 'media', automatizavel: true, passos: [], status: 'nao_executado' };
@@ -28727,6 +28876,7 @@ function qpForm(P) {
     + c('qpRepo', 'Repositório GitHub (opcional)', P.repo_github, 'organizacao/repositorio') + c('qpMax', 'Máximo de telas por teste', P.max_telas || 60, '60', 'number') + '</div>'
     + '<label class="mc-f" style="margin-top:10px;"><span>Contexto do negócio para a IA (regras, o que cada tela deve mostrar, cálculos esperados)</span><textarea class="fi" id="qpCtx" rows="5" placeholder="Ex.: O Maestro gerencia portfólio de projetos. Cada projeto tem orçamento, horas planejadas e realizadas; o % de avanço não pode passar de 100%; projeto concluído não pode ter tarefas abertas…">' + _qpEsc(P.contexto || '') + '</textarea></label>'
     + '<div class="mc-sug" style="margin:10px 0;"><label><input type="checkbox" id="qpGrav"' + (P.permitir_gravacao !== false ? ' checked' : '') + '> Testar incluir, alterar e excluir (registros marcados "QA-ATX-…", apagados ao final)</label>'
+    + '<label title="Use só em ambiente de homologação/desempenho: o robô dispara usuários simultâneos contra as APIs"><input type="checkbox" id="qpCarga"' + (P.permitir_carga ? ' checked' : '') + '> Liberar teste de carga e estresse com <input id="qpUsu" type="number" min="1" max="200" value="' + (P.usuarios_simultaneos || 10) + '" style="width:58px;"> usuários simultâneos (nominal)</label>'
     + '<label><input type="checkbox" id="qpNot"' + (P.rodar_noturno !== false ? ' checked' : '') + '> Testar toda madrugada</label><label><input type="checkbox" id="qpAtivo"' + (P.ativo !== false ? ' checked' : '') + '> Ativo</label></div>'
     + '<div class="fv2-aviso">Use um <b>usuário de teste</b> e, de preferência, o ambiente de homologação. A senha fica criptografada no banco e nunca volta para a tela — só o robô a recebe na hora de testar.</div>'
     + '<div style="display:flex;gap:8px;justify-content:flex-end;">' + (P.id ? '<button class="btn btn-g" style="color:var(--fv2-crit);" onclick="qpExcluir(\'' + P.id + '\')">Excluir produto</button>' : '') + '<button class="btn btn-gn" onclick="qpSalvar(\'' + (P.id || '') + '\')">💾 Salvar</button></div>';
@@ -28734,7 +28884,7 @@ function qpForm(P) {
 async function qpSalvar(id) {
   const v = i => document.getElementById(i)?.value?.trim() || '';
   try { const r = await qpApi('produto_salvar', { id: id || null, nome: v('qpNome'), url: v('qpUrl'), url_login: v('qpUrlLogin'), usuario: v('qpUser'), senha: document.getElementById('qpSenha').value || null, plataforma: v('qpPlat'), repo_github: v('qpRepo'), max_telas: v('qpMax'), contexto: v('qpCtx'),
-      permitir_gravacao: document.getElementById('qpGrav').checked, rodar_noturno: document.getElementById('qpNot').checked, ativo: document.getElementById('qpAtivo').checked });
+      permitir_gravacao: document.getElementById('qpGrav').checked, permitir_carga: document.getElementById('qpCarga').checked, usuarios_simultaneos: +document.getElementById('qpUsu').value || 10, rodar_noturno: document.getElementById('qpNot').checked, ativo: document.getElementById('qpAtivo').checked });
     toast('Produto salvo', 'success'); document.getElementById('qpModal')?.remove(); await qpCarregar(); if (!id && confirm('Testar este produto agora?')) qpTestar(r.id); }
   catch (e) { toast(e.message, 'error'); }
 }
@@ -31523,7 +31673,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.134] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.135] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -31539,7 +31689,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.134';
+window.__ATX_BUILD_ID__ = 'ATX-v3.135';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

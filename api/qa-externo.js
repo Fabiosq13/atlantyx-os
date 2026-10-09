@@ -1,6 +1,6 @@
 import { comGuarda } from '../lib/qa-guard.js';
 import crypto from 'node:crypto';
-import { fabSql, aplicarResultadosCasos, TIPOS_CASO } from '../lib/fabrica-db.js';
+import { fabSql, aplicarResultadosCasos, TIPOS_CASO, planoDoTipo } from '../lib/fabrica-db.js';
 // api/qa-externo.js — v3.133 · QA DE PRODUTOS ATLANTYX (caixa-preta)
 // Robô de testes para os produtos da Atlantyx publicados fora deste sistema (Lovable, Vercel, etc.), sem acesso ao
 // código-fonte: só URL + usuário + senha de teste. O robô (GitHub Actions + navegador, scripts/qa-externo.mjs) entra,
@@ -39,6 +39,9 @@ async function getSql() {
   await _sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_qa_achados_assin ON qa_achados(produto_id, assinatura)`;
   // v3.134: confirmação humana (metodologia 9.4: todo defeito é confirmado por um analista antes de ir ao cliente)
   await _sql`ALTER TABLE qa_achados ADD COLUMN IF NOT EXISTS confirmado BOOLEAN DEFAULT false`;
+  // v3.135: teste de carga só em produto liberado (ambiente de homologação/desempenho)
+  await _sql`ALTER TABLE qa_produtos ADD COLUMN IF NOT EXISTS permitir_carga BOOLEAN DEFAULT false`;
+  await _sql`ALTER TABLE qa_produtos ADD COLUMN IF NOT EXISTS usuarios_simultaneos INT DEFAULT 10`;
   return _sql;
 }
 const IA_MODEL = process.env.QA_IA_MODEL || 'claude-sonnet-4-6';
@@ -95,12 +98,14 @@ async function produtoSalvar(b) {
   if (b.id) {
     await sql`UPDATE qa_produtos SET nome=${b.nome}, url=${b.url}, url_login=${b.url_login || null}, usuario=${b.usuario || null}, plataforma=${b.plataforma || null}, repo_github=${b.repo_github || null},
       contexto=${b.contexto || null}, ativo=${b.ativo !== false}, rodar_noturno=${b.rodar_noturno !== false}, permitir_gravacao=${b.permitir_gravacao !== false}, max_telas=${parseInt(b.max_telas) || 60},
+      permitir_carga=${!!b.permitir_carga}, usuarios_simultaneos=${Math.min(200, parseInt(b.usuarios_simultaneos) || 10)},
       senha_cripto=COALESCE(${senha}, senha_cripto), atualizado_em=NOW() WHERE id=${b.id}`;
     return { id: b.id };
   }
   const id = novoId('qap');
   await sql`INSERT INTO qa_produtos (id, nome, url, url_login, usuario, senha_cripto, plataforma, repo_github, contexto, ativo, rodar_noturno, permitir_gravacao, max_telas)
     VALUES (${id}, ${b.nome}, ${b.url}, ${b.url_login || null}, ${b.usuario || null}, ${senha}, ${b.plataforma || null}, ${b.repo_github || null}, ${b.contexto || null}, ${b.ativo !== false}, ${b.rodar_noturno !== false}, ${b.permitir_gravacao !== false}, ${parseInt(b.max_telas) || 60})`;
+  if (b.permitir_carga) await sql`UPDATE qa_produtos SET permitir_carga=true, usuarios_simultaneos=${Math.min(200, parseInt(b.usuarios_simultaneos) || 10)} WHERE id=${id}`;
   return { id };
 }
 async function _dispararRobo() {
@@ -136,14 +141,17 @@ async function roboProximo() {
   // v3.134: casos do plano de testes (aprovado pelo especialista de qualidade) dos projetos ligados a este produto
   let casos = [], planos_rascunho = 0;
   try { const f = await fabSql();
-    const projs = await f`SELECT p.id, p.nome, d.status AS plano_status FROM fab_projetos p LEFT JOIN fab_documentos d ON d.projeto_id=p.id AND d.tipo='plano_testes' WHERE p.qa_produto_id=${p.id}`;
-    const ok = projs.filter(x => x.plano_status === 'aprovado').map(x => x.id); planos_rascunho = projs.filter(x => x.plano_status !== 'aprovado').length;
-    if (ok.length) casos = (await f`SELECT id, projeto_id, codigo, titulo, tipo, requisito_ref, item_codigo, prioridade, pre_condicao, passos, dados, esperado FROM fab_casos WHERE automatizavel AND projeto_id = ANY(${ok}) ORDER BY codigo`)
-      .filter(c => !['unitario'].includes(c.tipo))
+    // cada caso só roda se o plano da sua família (funcional, integração, segurança, desempenho, layout) estiver aprovado
+    const projs = await f`SELECT id FROM fab_projetos WHERE qa_produto_id=${p.id}`; const ids = projs.map(x => x.id);
+    const aprov = ids.length ? await f`SELECT projeto_id, tipo, status FROM fab_documentos WHERE projeto_id = ANY(${ids}) AND tipo LIKE 'plano_testes%'` : [];
+    const okPlano = c => aprov.some(d => d.projeto_id === c.projeto_id && d.tipo === planoDoTipo(c.tipo) && d.status === 'aprovado');
+    const todos = ids.length ? await f`SELECT id, projeto_id, codigo, titulo, tipo, requisito_ref, item_codigo, prioridade, pre_condicao, passos, dados, esperado FROM fab_casos WHERE automatizavel AND projeto_id = ANY(${ids}) ORDER BY codigo` : [];
+    planos_rascunho = aprov.filter(d => d.status !== 'aprovado').length;
+    casos = todos.filter(okPlano).filter(c => !['unitario', 'volumetria', 'resiliencia'].includes(c.tipo))
       .sort((a, b) => (TIPOS_CASO[a.tipo]?.ordem || 99) - (TIPOS_CASO[b.tipo]?.ordem || 99) || ['alta', 'media', 'baixa'].indexOf(a.prioridade) - ['alta', 'media', 'baixa'].indexOf(b.prioridade));
   } catch (err) { console.error('[qa-externo] casos', err.message); }
   return { execucao: { id: e.id, origem: e.origem }, produto: { id: p.id, nome: p.nome, url: p.url, url_login: p.url_login, usuario: p.usuario, senha, plataforma: p.plataforma, contexto: p.contexto,
-    permitir_gravacao: p.permitir_gravacao, max_telas: p.max_telas || 60 }, conhecidos, casos, planos_rascunho };
+    permitir_gravacao: p.permitir_gravacao, max_telas: p.max_telas || 60, permitir_carga: !!p.permitir_carga, usuarios_simultaneos: p.usuarios_simultaneos || 10 }, conhecidos, casos, planos_rascunho };
 }
 async function roboResultado(b) {
   const sql = await getSql();
