@@ -34,6 +34,9 @@ const api = async (action, body = {}) => {
 const espera = ms => new Promise(r => setTimeout(r, ms));
 // andamento para a tela (no máximo 1 envio a cada 4 s, sem travar o robô)
 let _execAtual = null, _ultProg = 0, _progEstado = {};
+// cada linha do console também vai para o log da execução (últimas 150 linhas)
+const _logOrig = console.log.bind(console);
+console.log = (...a) => { _logOrig(...a); if (_execAtual) { const l = new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + '  ' + a.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' ').replace(/\s+$/, ''); _progEstado.log = [...(_progEstado.log || []), l].slice(-150); progresso({}); } };
 const progresso = (p, forcar) => { _progEstado = { ..._progEstado, ...p, pct: Math.max(_progEstado.pct || 0, p.pct || 0) }; if (!_execAtual || (!forcar && Date.now() - _ultProg < 4000)) return; _ultProg = Date.now(); api('robo_progresso', { execucao_id: _execAtual, progresso: _progEstado }).catch(() => {}); };
 // nunca clicar: sair da conta, excluir a própria conta, pagamentos, envios em massa
 const RX_PERIGO = /\b(sair|logout|log ?out|sign ?out|desconectar|excluir (minha )?conta|apagar (minha )?conta|delete account|encerrar conta|cancelar assinatura|pagar|checkout|comprar|disparar|enviar para todos)\b/i;
@@ -58,6 +61,7 @@ for (let n = 0; n < 10; n++) {
   _execAtual = job.execucao.id; _progEstado = { inicio: new Date().toISOString(), pct: 1, etapa: 'Abrindo o produto', achados: 0 }; progresso({}, true);
   try { R = await testarProduto(P, job.execucao.id, job.casos || []); }
   catch (e) { console.error('Falha geral:', e.message); R = { erro: e.message, telas_descobertas: 0, telas_testadas: 0, cobertura_pct: 0, achados: [{ tipo: 'acesso', severidade: 'critica', titulo: 'O robô não conseguiu testar o produto', descricao: e.message, tela: P.url, url: P.url, chave: 'falha-geral' }] }; }
+  _progEstado = { ..._progEstado, etapa: 'Gravando o resultado', pct: 99 }; await api('robo_progresso', { execucao_id: job.execucao.id, progresso: _progEstado }).catch(() => {});
   try { const r = await api('robo_resultado', { execucao_id: job.execucao.id, ...R }); console.log('Resultado gravado:', JSON.stringify(r)); } catch (e) { console.error('Não gravou o resultado:', e.message); }
 }
 await browser.close();
