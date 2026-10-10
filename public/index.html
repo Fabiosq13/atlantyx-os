@@ -599,6 +599,12 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 .qp-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;} .qp-tags span{font-size:9.5px;font-weight:600;color:var(--c);border:1px solid var(--c);border-radius:10px;padding:0 6px;}
 .qp-act{margin-top:8px;} .qp-act .btn{font-size:10px;padding:3px 9px;}
 .fd-resumo{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px;} .fd-chip{font:600 10.5px Montserrat,sans-serif;color:var(--c);border:1px solid var(--c);border-radius:12px;padding:2px 9px;background:color-mix(in srgb,var(--c) 8%,transparent);}
+.fh-cab{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font:700 13px Montserrat,sans-serif;color:var(--t1);margin:16px 0 8px;padding-top:12px;border-top:1px solid var(--bd);}
+.fh-item{border:1px solid var(--bd);border-left:4px solid var(--c);border-radius:8px;margin-bottom:6px;background:var(--bg2);font-size:12px;}
+.fh-item summary{cursor:pointer;padding:8px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;list-style:none;} .fh-item summary::-webkit-details-marker{display:none;}
+.fh-sev{font-size:9.5px;font-weight:700;color:#fff;background:var(--c);border-radius:4px;padding:1px 6px;text-transform:uppercase;} .fh-sis{font-size:10px;color:var(--t3);border:1px solid var(--bd2);border-radius:4px;padding:0 5px;}
+.fh-n{margin-left:auto;font-family:var(--M);font-size:11px;color:var(--t2);} .fh-det{padding:0 12px 10px 14px;color:var(--t2);display:flex;flex-direction:column;gap:4px;font-size:11.5px;}
+.fh-lista{max-height:240px;overflow:auto;background:var(--bg3);border-radius:6px;padding:6px 8px;color:var(--t1);} .fh-v{font-family:var(--M);color:var(--t2);}
 .fd-ifr{width:100%;min-height:420px;border:0;border-radius:10px;background:#f4f6fb;display:block;}
 .qp-log{margin:0 0 10px;font-size:11px;} .qp-log summary{cursor:pointer;color:var(--t2);}
 .qp-logtx{max-height:260px;overflow:auto;background:#0d1117;color:#c9d1d9;border-radius:7px;padding:8px 10px;font:10.5px/1.45 var(--M),monospace;white-space:pre-wrap;margin-top:6px;}
@@ -970,6 +976,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
         </div></div>
       <div id="finDiaResumo" class="fd-resumo"></div>
       <div id="finDiaCorpo"><div class="fv2-load">Carregando o relatório financeiro do dia…</div></div>
+      <div id="finHigCorpo"></div>
     </div>
     <!-- v3.85: widget de recebíveis em risco (vencidos / vencendo em ≤7 dias) -->
     <div id="recAlertaDashWidget"></div>
@@ -28814,7 +28821,7 @@ async function finDiaCarregar(forcar) {
   if (!forcar && _fdUlt && Date.now() - _fdUlt.em < 600000) return _fdRender();
   _fdCarregando = true; if (!_fdUlt) corpo.innerHTML = '<div class="fv2-load">Montando o relatório (QuickBooks + termos + vendas)… pode levar alguns segundos</div>';
   document.getElementById('finDiaMeta').textContent = 'atualizando…';
-  try { const d = await finApi('relatorio_pagamentos', { apenas_gerar: true }, { timeoutMs: 58000 }); _fdUlt = { d, em: Date.now() }; _fdRender(); }
+  try { const d = await finApi('relatorio_pagamentos', { apenas_gerar: true }, { timeoutMs: 58000 }); _fdUlt = { d, em: Date.now() }; _fdRender(); setTimeout(() => finHigCarregar(forcar), 300); }
   catch (e) { corpo.innerHTML = '<div class="fv2-erro">Não consegui montar o relatório do dia: ' + _qpEsc(e.message) + ' <button class="btn btn-g" style="font-size:10px;" onclick="finDiaCarregar(true)">Tentar de novo</button></div>'; document.getElementById('finDiaMeta').textContent = ''; }
   _fdCarregando = false;
 }
@@ -28833,6 +28840,30 @@ function _fdRender() {
   ifr.srcdoc = String(d.html || '').replace('<head>', '<head><base target="_blank"><style>body{margin:0!important}div[style*="max-width:820px"]{max-width:none!important}</style>');
   ifr.onload = () => { try { const ajusta = () => { ifr.style.height = (ifr.contentDocument.documentElement.scrollHeight + 8) + 'px'; }; ajusta(); setTimeout(ajusta, 400); } catch (_) {} };
 }
+// v3.141: Higienização de dados — logo depois do conteúdo do e-mail, as pendências que deixam os números errados
+let _fhUlt = null, _fhCarregando = false;
+async function finHigCarregar(forcar) {
+  const box = document.getElementById('finHigCorpo'); if (!box || _fhCarregando) return;
+  if (!forcar && _fhUlt) return _fhRender();
+  _fhCarregando = true; box.innerHTML = '<div class="fh-cab">🧹 Higienização de dados <span class="fv2-pq">verificando QuickBooks, conciliação, agenda, marcos, metas, orçamento e CRM…</span></div>';
+  try { _fhUlt = await finApi('higienizacao_dados', forcar ? { _forcar: true } : {}, { timeoutMs: 59000 }); _fhRender(); }
+  catch (e) { box.innerHTML = '<div class="fh-cab">🧹 Higienização de dados</div><div class="fv2-erro">Não consegui verificar agora: ' + _qpEsc(e.message) + ' <button class="btn btn-g" style="font-size:10px;" onclick="finHigCarregar(true)">Tentar de novo</button></div>'; }
+  _fhCarregando = false;
+}
+function _fhRender() {
+  const D = _fhUlt, box = document.getElementById('finHigCorpo'); if (!D || !box) return;
+  const brl = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const cor = { alta: 'var(--fv2-crit)', media: 'var(--fv2-warn)', baixa: 'var(--fv2-s1)' }, nomeG = { alta: 'Alta', media: 'Média', baixa: 'Baixa' };
+  const res = document.getElementById('finDiaResumo'); if (res && !res.querySelector('.fh-chip')) res.insertAdjacentHTML('beforeend', '<span class="fd-chip fh-chip" style="--c:' + (D.itens.some(x => x.gravidade === 'alta') ? 'var(--fv2-crit)' : D.itens.length ? 'var(--fv2-warn)' : 'var(--fv2-ok)') + '">🧹 ' + (D.itens.length ? D.itens.length + ' pendência(s) de dados' : 'dados sem pendências') + '</span>');
+  box.innerHTML = '<div class="fh-cab">🧹 Higienização de dados — o que deixa os números do sistema errados <span class="fv2-pq">' + (D.itens.length ? D.itens.length + ' tipo(s) de pendência · ' + D.total + ' ocorrência(s)' : 'nenhuma pendência encontrada ✔') + ' · verificado ' + (D.cache_min != null ? 'há ' + D.cache_min + ' min' : 'agora') + ' · não repete o que o e-mail acima já aponta</span>'
+    + '<button class="btn btn-g" style="font-size:9px;padding:3px 9px;margin-left:auto;" onclick="finHigCarregar(true)">&#8635; Verificar de novo</button></div>'
+    + D.itens.map((x, i) => '<details class="fh-item" style="--c:' + cor[x.gravidade] + '"><summary><span class="fh-sev">' + nomeG[x.gravidade] + '</span><span class="fh-sis">' + _qpEsc(x.sistema) + '</span><b>' + _qpEsc(x.titulo) + '</b><span class="fh-n">' + (x.qtd > 1 || x.valor ? x.qtd + (x.valor ? ' · ' + brl(x.valor) : '') : '') + '</span></summary>'
+      + '<div class="fh-det"><div><b>Impacto:</b> ' + _qpEsc(x.impacto) + '</div><div><b>Como corrigir:</b> ' + _qpEsc(x.acao) + '</div>'
+      + (x.itens?.length ? '<div class="fh-lista">' + x.itens.map(it => '<div>• ' + _qpEsc(it.texto) + (it.valor ? ' <span class="fh-v">' + brl(it.valor) + '</span>' : '') + (it.link ? ' <a href="' + _qpEsc(it.link) + '" target="_blank" rel="noopener">abrir ↗</a>' : '') + (it.detalhe ? '<div class="fv2-pq" style="margin-left:10px;">' + _qpEsc(it.detalhe) + '</div>' : '') + '</div>').join('') + '</div>' : '')
+      + (x.tela ? '<button class="btn btn-g" style="font-size:10px;margin-top:6px;" onclick="finHigIr(' + i + ')">Ir para a tela ↗</button>' : '') + '</div></details>').join('')
+    + (D.erros?.length ? '<div class="fv2-pq" style="margin-top:6px;">Não verificado agora: ' + _qpEsc(D.erros.join(' · ')) + '</div>' : '');
+}
+function finHigIr(i) { const x = _fhUlt?.itens?.[i]; if (!x) return; nav(x.tela, document.querySelector('.sbi[onclick*="' + x.tela + '"]')); if (x.abrir_dre) setTimeout(() => { try { dreAbrir(); } catch (_) {} }, 1500); }
 function finDiaAbrir() { const d = _fdUlt?.d; if (!d) return finDiaCarregar(true); const w = window.open('', '_blank'); if (w) { w.document.write(d.html); w.document.close(); } }
 function _fdMin(min) { const c = document.getElementById('finDiaCorpo'), r = document.getElementById('finDiaResumo'), b = document.getElementById('finDiaBtnMin'); if (!c) return; c.style.display = min ? 'none' : ''; if (b) b.innerHTML = min ? '&#9660; Mostrar' : '&#9650; Recolher'; }
 function finDiaMinimizar() { const min = document.getElementById('finDiaCorpo').style.display !== 'none'; _fdMin(min); try { localStorage.setItem('atx_findia_min', min ? '1' : '0'); } catch (_) {} if (!min) finDiaCarregar(); }
@@ -31752,7 +31783,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.140] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.141] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -31768,7 +31799,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.140';
+window.__ATX_BUILD_ID__ = 'ATX-v3.141';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
