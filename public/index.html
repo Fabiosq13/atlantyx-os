@@ -6088,7 +6088,9 @@ window.addEventListener('DOMContentLoaded', () => {
     const q = new URLSearchParams(location.search);
     const tela = q.get('tela');
     if (tela && document.getElementById('page-' + tela)) {
-      setTimeout(() => nav(tela), 250);
+      setTimeout(() => nav(tela, document.querySelector('.sbi[onclick*="\'' + tela + '\'"]')), 250);
+      // v3.142: ?tela=s3fatkanban&termo=<id> abre direto o termo (links do e-mail do financeiro)
+      const termo = q.get('termo'); if (termo && tela === 's3fatkanban') setTimeout(() => { try { abrirDetalheTermo(termo); } catch (_) {} }, 700);
       if (q.get('modo') === 'solo') {
         const css = document.createElement('style');
         css.textContent = '.sb,#sb,.sidebar,nav.sb{display:none!important}.main,#main,.content{margin-left:0!important;width:100%!important;max-width:100%!important}';
@@ -28838,7 +28840,12 @@ function _fdRender() {
   corpo.innerHTML = '<iframe id="finDiaIfr" class="fd-ifr" title="Relatório financeiro do dia" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>';
   const ifr = document.getElementById('finDiaIfr');
   ifr.srcdoc = String(d.html || '').replace('<head>', '<head><base target="_blank"><style>body{margin:0!important}div[style*="max-width:820px"]{max-width:none!important}</style>');
-  ifr.onload = () => { try { const ajusta = () => { ifr.style.height = (ifr.contentDocument.documentElement.scrollHeight + 8) + 'px'; }; ajusta(); setTimeout(ajusta, 400); } catch (_) {} };
+  ifr.onload = () => { try { const ajusta = () => { ifr.style.height = (ifr.contentDocument.documentElement.scrollHeight + 8) + 'px'; }; ajusta(); setTimeout(ajusta, 400);
+    // v3.142: links do Atlantyx (termo, agenda) abrem aqui mesmo; links do QuickBooks abrem em nova aba
+    ifr.contentDocument.addEventListener('click', ev => { const a = ev.target.closest && ev.target.closest('a[href]'); if (!a) return; let u; try { u = new URL(a.href); } catch (_) { return; }
+      const tela = u.searchParams.get('tela'); if (!tela || !document.getElementById('page-' + tela)) return; ev.preventDefault();
+      nav(tela, document.querySelector('.sbi[onclick*="\'' + tela + '\'"]')); const termo = u.searchParams.get('termo'); if (termo) setTimeout(() => { try { abrirDetalheTermo(termo); } catch (_) {} }, 400); });
+  } catch (_) {} };
 }
 // v3.141: Higienização de dados — logo depois do conteúdo do e-mail, as pendências que deixam os números errados
 let _fhUlt = null, _fhCarregando = false;
@@ -31783,7 +31790,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.141] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.142] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -31799,7 +31806,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.141';
+window.__ATX_BUILD_ID__ = 'ATX-v3.142';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
