@@ -1108,7 +1108,7 @@ function _htmlRelatorioPagamentos(d) {
 
 // Envio via SMTP do Gmail (atlanteambr@gmail.com) — reaproveita a senha de app já
 // configurada em EMAIL_IMAP_PASS. Cai para o Resend se o nodemailer não estiver instalado.
-async function enviarEmailGmail({ para, assunto, html }) {
+export async function enviarEmailGmail({ para, assunto, html, remetente }) {
   const user = (process.env.EMAIL_SMTP_USER || process.env.EMAIL_IMAP_USER) || 'atlanteambr@gmail.com';
   const pass = process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS;
   const trilha = []; // v1.25.1: registra CADA tentativa, para o erro nunca ser silencioso
@@ -1123,7 +1123,7 @@ async function enviarEmailGmail({ para, assunto, html }) {
       // verify() falha rápido e com mensagem clara se a credencial estiver errada
       try { await transporter.verify(); trilha.push('SMTP Gmail: autenticação OK'); }
       catch (eV) { trilha.push('SMTP Gmail: autenticação FALHOU — ' + eV.message.substring(0, 120)); throw eV; }
-      const info = await transporter.sendMail({ from: `Atlantyx OS Financeiro <${user}>`, to: para.join(', '), subject: assunto, html });
+      const info = await transporter.sendMail({ from: `${remetente || 'Atlantyx OS Financeiro'} <${user}>`, to: para.join(', '), subject: assunto, html });
       trilha.push('SMTP Gmail: aceito pelo servidor · destinatários aceitos: ' + JSON.stringify(info.accepted || []) + (info.rejected?.length ? ' · REJEITADOS: ' + JSON.stringify(info.rejected) : ''));
       return { via: 'gmail-smtp', de: user, id: info.messageId, aceitos: info.accepted, rejeitados: info.rejected, resposta_servidor: info.response, trilha };
     } catch (eSmtp) {

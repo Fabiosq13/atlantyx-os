@@ -603,6 +603,14 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 .tr-di{border:1px solid var(--bd);border-radius:8px;padding:7px 9px;background:var(--bg2);display:flex;flex-direction:column;gap:3px;font-size:11px;} .tr-di b{font-size:11.5px;color:var(--t1);} .tr-di span{color:var(--t3);}
 .tr-di.lar{border-color:color-mix(in srgb,var(--fv2-warn) 55%,transparent);background:color-mix(in srgb,var(--fv2-warn) 6%,var(--bg2));} .tr-di .tr-dac{color:var(--t2);}
 .tr-vt tr.tr-on td{background:color-mix(in srgb,var(--fv2-s2) 7%,transparent);} .tr-vt a{color:var(--t1);text-decoration:none;}
+.tr-mv{margin:8px 0;padding:10px 12px;border:1px dashed var(--b2,#2b3a66);border-radius:10px;font-size:13px;}
+.tr-g{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:16px;align-items:start;}.tr-g>*{min-width:0;}
+.tr-gv{position:relative;}.tr-gv canvas{width:100%;aspect-ratio:9/16;border-radius:12px;background:#05070f;display:block;}
+.tr-gst{position:absolute;left:8px;right:8px;top:8px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;pointer-events:none;}.tr-gst span{background:rgba(5,7,15,.75);color:#fff;font-size:12px;padding:3px 8px;border-radius:12px;}
+.tr-gst .tr-rec{color:#ff5a5a;font-weight:700;}.tr-cd{font-size:90px;color:#fff;text-shadow:0 0 20px #000;margin-top:40%;}
+.tr-gp{display:flex;flex-direction:column;gap:8px;}.tr-tp{height:230px;overflow:auto;background:#05070f;color:#fff;font-size:22px;line-height:1.5;padding:14px 16px;border-radius:10px;font-weight:600;}
+.tr-gprev{width:100%;max-height:340px;border-radius:10px;background:#000;}
+@media(max-width:720px){.tr-g{grid-template-columns:1fr;}.tr-gv{max-width:260px;margin:0 auto;width:100%;}}
 .tr-cal{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;max-height:520px;overflow:auto;padding-bottom:4px;}
 .tr-dia{background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:6px;} .tr-dh{font:700 10.5px Montserrat,sans-serif;color:var(--t2);text-transform:capitalize;margin-bottom:4px;}
 .tr-p{border-left:3px solid var(--c);background:var(--bg2);border-radius:5px;padding:4px 6px;margin-bottom:4px;cursor:pointer;font-size:10px;} .tr-p:hover{box-shadow:0 2px 8px rgba(0,0,0,.15);}
@@ -28978,7 +28986,9 @@ function trForm(id) {
     + '<label>Reels temáticos por semana<input id="trRs" type="number" min="0" max="4" value="' + cfg.reels_tema_semana + '"></label><label>Hora do reel temático<input id="trRh" value="' + _trEsc(cfg.reel_tema_hora) + '"></label>'
     + '<label>Stories por dia<input id="trSd" type="number" min="0" max="1" value="' + cfg.stories_dia + '"></label><label>Hora do story<input id="trSh" value="' + _trEsc(cfg.story_hora) + '"></label>'
     + '<label class="fb-chk fb-w"><input type="checkbox" id="trLi"' + (cfg.redes.includes('linkedin') ? ' checked' : '') + '> Publicar reações e carrosséis também no LinkedIn</label>'
-    + '<label class="fb-chk fb-w"><input type="checkbox" id="trFb"' + (cfg.redes.includes('facebook') ? ' checked' : '') + '> Publicar também no Facebook</label></div>'
+    + '<label class="fb-chk fb-w"><input type="checkbox" id="trFb"' + (cfg.redes.includes('facebook') ? ' checked' : '') + '> Publicar também no Facebook</label>'
+    + '<label class="fb-w">🎙 E-mail do produtor do Podtecno (recebe o vídeo completo de cada reação gravada; separe vários por vírgula)<input id="trPod" type="email" multiple value="' + _trEsc(cfg.podtecno_email || '') + '" placeholder="produtor@exemplo.com"></label>'
+    + '<label class="fb-chk fb-w"><input type="checkbox" id="trPodA"' + (cfg.podtecno_auto !== false ? ' checked' : '') + '> Enviar automaticamente ao produtor assim que eu gravar ou enviar uma reação</label></div>'
     + '<div class="fv2-pq" style="margin:6px 0 10px;">Com os padrões (3 reações + 1 story por dia, 3 carrosséis e 2 reels temáticos por semana, 21 dias) são cerca de 100 peças. O vídeo original nunca é republicado: cada reação é um Reel próprio da Atlantyx com crédito e link do criador.</div>'
     + '<div class="mc-sug"><button class="btn btn-gn" onclick="trSalvar(\'' + (c?.id || '') + '\')">Salvar</button>' + (c ? '<button class="btn btn-g" onclick="trExcluir(\'' + c.id + '\')">Excluir campanha</button>' : '') + '</div>', 760);
 }
@@ -28986,7 +28996,8 @@ async function trSalvar(id) {
   const v = k => document.getElementById(k).value;
   const redes = ['instagram', ...(document.getElementById('trLi').checked ? ['linkedin'] : []), ...(document.getElementById('trFb').checked ? ['facebook'] : [])];
   const config = { inicio: v('trIni'), dias: +v('trDias'), reacoes_dia: +v('trRd'), horarios: v('trH').split(/[,; ]+/).filter(x => /^\d{1,2}:\d{2}$/.test(x)), carrosseis_semana: +v('trCs'), carrossel_hora: v('trCh'),
-    reels_tema_semana: +v('trRs'), reel_tema_hora: v('trRh'), stories_dia: +v('trSd'), story_hora: v('trSh'), redes };
+    reels_tema_semana: +v('trRs'), reel_tema_hora: v('trRh'), stories_dia: +v('trSd'), story_hora: v('trSh'), redes,
+    podtecno_email: v('trPod').trim(), podtecno_auto: document.getElementById('trPodA').checked };
   if (!config.horarios.length) return toast('Informe os horários no formato 08:30, 12:30, 18:30', 'error');
   try { const r = await trApi('campanha_salvar', { id: id || null, nome: v('trN'), nicho: v('trNi'), palavras: v('trP'), config }); _tr.cid = r.id; _fbFechar(); toast('Campanha salva', 'success'); trCarregar(); } catch (e) { toast(e.message, 'error'); }
 }
@@ -29008,8 +29019,8 @@ function _trRender() {
     + '<span class="mc-sug" style="margin-left:auto;"><button class="btn btn-gn" onclick="trPlano()" ' + (esc.length ? '' : 'disabled') + '>🗓 ' + (P.length ? 'Refazer plano' : 'Gerar plano') + '</button><button class="btn btn-g" id="trBtRot" onclick="trRoteiros()" ' + (cont('planejada') ? '' : 'disabled') + '>✍ Escrever roteiros com IA (' + cont('planejada') + ')</button></span></div>'
     + (P.length ? '<div class="tr-cal">' + dias.map(d => '<div class="tr-dia"><div class="tr-dh">' + new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }) + '</div>' + P.filter(p => p.data === d).map(p => {
         const v = V.find(x => x.id === p.video_id), t = TR_TIPO[p.tipo] || [p.tipo, '#888'], st = TR_ST[p.status] || [p.status, 'var(--t3)'];
-        return '<div class="tr-p" style="--c:' + t[1] + '" onclick="trPeca(\'' + p.id + '\')" title="' + _trEsc(p.erro || '') + '"><div class="tr-pt"><span>' + p.hora + '</span><b>' + t[0] + '</b></div><div class="tr-pd">' + _trEsc(p.tema || (v ? v.titulo : '') || '—').substring(0, 70) + '</div><div class="tr-ps" style="color:' + st[1] + '">' + st[0] + '</div></div>'; }).join('') + '</div>').join('') + '</div>' : '')
-    + '<div class="fh-cab">④ Produzir e agendar no Metricool <span class="fv2-pq">gera as artes e os vídeos neste navegador (Chrome/Edge), hospeda e agenda — deixe a aba aberta até terminar</span></div>'
+        return '<div class="tr-p" style="--c:' + t[1] + '" onclick="trPeca(\'' + p.id + '\')" title="' + _trEsc(p.erro || '') + '"><div class="tr-pt"><span>' + p.hora + '</span><b>' + t[0] + (p.roteiro?.video_proprio ? ' 🎥' : '') + (p.roteiro?.video_completo?.enviado_para ? ' 🎙' : '') + '</b></div><div class="tr-pd">' + _trEsc(p.tema || (v ? v.titulo : '') || '—').substring(0, 70) + '</div><div class="tr-ps" style="color:' + st[1] + '">' + st[0] + '</div></div>'; }).join('') + '</div>').join('') + '</div>' : '')
+    + '<div class="fh-cab">④ Produzir e agendar no Metricool <span class="fv2-pq">gera as artes e os vídeos neste navegador (Chrome/Edge), hospeda e agenda — deixe a aba aberta até terminar · 🎥 para aparecer reagindo: clique na peça no calendário → <b>Gravar minha reação</b></span></div>'
     + '<div class="tr-prod"><label>Quantas peças<input id="trQt" type="number" min="1" max="120" value="' + Math.min(15, cont('roteiro') || 15) + '"></label>'
     + '<button class="btn btn-gn" id="trBtProd" onclick="trProduzir()" ' + (cont('roteiro') ? '' : 'disabled') + '>▶ Produzir e agendar as próximas</button><button class="btn btn-g" onclick="_tr.parar=true">⏸ Parar</button>'
     + '<div id="trProg" class="tr-prog"></div></div><canvas id="trCanvas" width="720" height="1280" style="display:none;"></canvas>';
@@ -29036,6 +29047,9 @@ function trPeca(id) {
     + (p.tipo === 'story' ? '<label class="fb-lbl">Texto do story<textarea id="trTx" rows="2">' + _trEsc(p.roteiro?.texto || '') + '</textarea></label>'
       : '<label class="fb-lbl">' + (p.tipo === 'carrossel' ? 'Slides (um por linha: título | apoio)' : 'Texto na tela (um slide por linha)') + '<textarea id="trSl" rows="8">' + _trEsc(sl.map(s => p.tipo === 'carrossel' ? (s.titulo || '') + ' | ' + (s.apoio || '') : (s.texto_tela || '')).join('\n')) + '</textarea></label>'
       + '<label class="fb-lbl">Legenda<textarea id="trLg" rows="6">' + _trEsc(p.legenda || '') + '</textarea></label>')
+    + ((p.tipo === 'reacao' || p.tipo === 'reel_tema') ? '<div class="tr-mv">' + (p.roteiro?.video_proprio ? '🎥 <b>Usando o seu vídeo</b> · <a href="' + _trEsc(p.roteiro.video_proprio) + '" target="_blank" rel="noopener">ver Reel ↗</a> <button class="btn btn-g" onclick="trVideoRemover(\'' + id + '\')">voltar para a arte</button>' : '🎨 Hoje esta peça vira um vídeo com a arte da marca. Quer aparecer reagindo?')
+      + (p.roteiro?.video_completo ? '<div class="fv2-pq" style="margin-top:4px;">🎙 Vídeo completo: <a href="' + _trEsc(p.roteiro.video_completo.link) + '" target="_blank" rel="noopener">link de download ↗</a>' + (p.roteiro.video_completo.enviado_para ? ' · enviado ao Podtecno (' + _trEsc(p.roteiro.video_completo.enviado_para) + ')' : ' · ainda não enviado ao Podtecno') + '</div>' : '')
+      + '<div class="mc-sug" style="margin-top:6px;"><button class="btn btn-gn" onclick="trGravar(\'' + id + '\')">🎥 Gravar minha reação</button><button class="btn btn-g" onclick="trGravar(\'' + id + '\',true)">⬆ Enviar vídeo pronto</button>' + (p.roteiro?.video_completo ? '<button class="btn btn-g" onclick="trPodtecno(\'' + id + '\')">📤 ' + (p.roteiro.video_completo.enviado_para ? 'Reenviar' : 'Enviar') + ' ao Podtecno</button>' : '') + '</div></div>' : '')
     + ((p.midia_urls || []).length ? '<div class="fv2-pq" style="margin:6px 0;">Mídia: ' + p.midia_urls.map((u, i) => '<a href="' + _trEsc(u) + '" target="_blank" rel="noopener">' + (i + 1) + ' ↗</a>').join(' ') + '</div>' : '')
     + '<div class="mc-sug" style="margin-top:8px;"><button class="btn btn-gn" onclick="trPecaSalvar(\'' + id + '\')">Salvar</button>' + (p.status !== 'agendada' ? '<button class="btn btn-g" onclick="trPecaUma(\'' + id + '\')">▶ Produzir e agendar esta</button>' : '') + '<button class="btn btn-g" onclick="trPecaExcluir(\'' + id + '\')">Excluir</button></div>', 760);
 }
@@ -29047,6 +29061,178 @@ async function trPecaSalvar(id) {
 }
 async function trPecaExcluir(id) { if (!confirm('Excluir esta peça do plano?')) return; try { await trApi('peca_excluir', { id }); _fbFechar(); trAbrir(_tr.cid); } catch (e) { toast(e.message, 'error'); } }
 async function trPecaUma(id) { _fbFechar(); await trProduzir([id]); }
+// ── v3.144: MINHA REAÇÃO — grave com a câmera (teleprompter com a fala) ou envie um vídeo pronto.
+// Saem DOIS arquivos: (1) o Reel 9:16 com a moldura Atlantyx (selo, textos do roteiro, crédito) — até 60 s e ≤4,3 MB,
+// agendado no lugar da arte; (2) o vídeo COMPLETO, sem corte nem moldura, que vai ao produtor do Podtecno (link por e-mail).
+const TR_REEL_MAX = 60, TR_FULL_MAX = 600, TR_PARTE = 2.4 * 1048576;
+let _trG = null;
+function _trMime(qualquer) {
+  if (typeof MediaRecorder === 'undefined') return null;
+  const L = ['video/mp4;codecs=avc1.42E01F,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4;codecs=avc1,opus', 'video/mp4', ...(qualquer ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'] : [])];
+  return L.find(t => { try { return MediaRecorder.isTypeSupported(t); } catch (_) { return false; } }) || null;
+}
+const _trMB = n => (n / 1048576).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' MB';
+function trGravar(id, arquivo) {
+  const p = _tr.dados.pecas.find(x => x.id === id); if (!p) return;
+  const v = _tr.dados.videos.find(x => x.id === p.video_id);
+  p._credito = v ? (v.criador_handle || v.criador || '').substring(0, 40) : '';
+  const fala = p.roteiro?.fala || (p.roteiro?.slides || []).map(s => s.texto_tela).filter(Boolean).join('\n\n') || 'Escreva os roteiros com IA para ter a fala aqui.';
+  const cfg = _tr.dados.campanha.config || {};
+  _trGFechar(true);
+  _trG = { p, arquivo: !!arquivo, src: null, stream: null, gravando: false, raf: 0, reel: null, full: null };
+  _fbModal('<div class="qp-mh"><div><div class="fv2-pt">🎥 ' + (arquivo ? 'Enviar meu vídeo de reação' : 'Gravar minha reação') + '</div><div class="fv2-pq">' + (v ? 'reage a <a href="' + _trEsc(v.url) + '" target="_blank" rel="noopener">' + _trEsc(v.titulo) + ' ↗</a> — abra o original em outra aba/tela para assistir enquanto grava' : _trEsc(p.tema || '')) + '</div></div><button class="btn btn-g" onclick="_trGFechar()">Fechar ✕</button></div>'
+    + '<div class="tr-g"><div class="tr-gv"><canvas id="trGc" width="540" height="960"></canvas><div id="trGst" class="tr-gst"></div></div><div class="tr-gp">'
+    + (arquivo
+      ? '<div class="fv2-aviso">Escolha o vídeo (MP4/MOV/WEBM) gravado no celular ou na câmera. O <b>Reel</b> sai com a moldura Atlantyx e até ' + TR_REEL_MAX + ' s; o <b>arquivo completo</b> vai inteiro, sem corte, para o produtor do Podtecno.</div><input type="file" id="trGf" accept="video/*" onchange="trGArquivo(this)">'
+      : '<div class="fv2-pq">Teleprompter — leia olhando para a câmera (role com a roda do mouse se precisar)</div><div id="trTp" class="tr-tp">' + _trEsc(fala).replace(/\n/g, '<br>') + '</div>'
+        + '<label class="fv2-pq">Velocidade do texto <input type="range" id="trTpV" min="0" max="6" value="2"></label>'
+        + '<div class="mc-sug"><button class="btn btn-gn" id="trGb1" onclick="trGCam()">📷 Ligar câmera e microfone</button><button class="btn btn-gn" id="trGb2" onclick="trGRec()" disabled>⏺ Gravar</button><button class="btn btn-g" id="trGb3" onclick="trGStop()" disabled>⏹ Parar</button></div>')
+    + '<label class="fb-chk"><input type="checkbox" id="trGmold" checked> Moldura Atlantyx no Reel (selo, textos do roteiro e crédito do vídeo original)</label>'
+    + '<label class="fb-chk"><input type="checkbox" id="trGpod"' + (cfg.podtecno_email ? (cfg.podtecno_auto !== false ? ' checked' : '') : ' disabled') + '> Enviar o vídeo completo ao produtor do Podtecno' + (cfg.podtecno_email ? ' (' + _trEsc(cfg.podtecno_email) + ')' : ' — <a href="#" onclick="_trGFechar();trForm(\'' + _tr.cid + '\');return false;">cadastre o e-mail em ⚙ Campanha</a>') + '</label>'
+    + '<div id="trGres" class="tr-gres"></div></div></div>', 980);
+  _trGDesenha(document.getElementById('trGc').getContext('2d'), null, p, 0, true);
+}
+function _trGFechar(silencioso) {
+  if (_trG) { if (_trG.gravando && !silencioso && !confirm('Está gravando — descartar?')) return; cancelAnimationFrame(_trG.raf); clearInterval(_trG.tick);
+    try { _trG.recR?.state === 'recording' && _trG.recR.stop(); _trG.recF?.state === 'recording' && _trG.recF.stop(); } catch (_) {}
+    _trG.stream?.getTracks().forEach(t => t.stop()); try { _trG.ac?.close(); } catch (_) {} if (_trG.src?.src?.startsWith('blob:')) URL.revokeObjectURL(_trG.src.src); _trG = null; }
+  if (!silencioso) _fbFechar();
+}
+// desenha um quadro 9:16 (coordenadas lógicas 720×1280 num canvas 540×960 — menos pixels = mais qualidade nos ≤4,3 MB)
+function _trGDesenha(ctx, src, p, t, mold) {
+  const W = 720, H = 1280; ctx.setTransform(0.75, 0, 0, 0.75, 0, 0); ctx.fillStyle = '#05070f'; ctx.fillRect(0, 0, W, H);
+  const sw = src?.videoWidth, sh = src?.videoHeight;
+  if (sw && sh) { const s = Math.max(W / sw, H / sh), dw = sw * s, dh = sh * s; ctx.drawImage(src, (W - dw) / 2, (H - dh) / 2, dw, dh); }
+  else { _trFundo(ctx, W, H, 0, 0); ctx.font = '600 30px Montserrat, Calibri, Arial, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.textAlign = 'center'; ctx.fillText(_trG?.arquivo ? 'Escolha o vídeo ao lado →' : 'Ligue a câmera ao lado →', W / 2, H / 2); }
+  if (!mold) return;
+  let g = ctx.createLinearGradient(0, 0, 0, 180); g.addColorStop(0, 'rgba(5,7,15,.78)'); g.addColorStop(1, 'rgba(5,7,15,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, 180);
+  _trMarca(ctx, W, '#00C4CC', p.tipo === 'reacao' ? '🔥 REAÇÃO' : '🎬 TENDÊNCIAS');
+  const sl = (p.roteiro?.slides || []).filter(s => s.texto_tela);
+  if (sl.length) { const i = Math.min(sl.length - 1, Math.floor(t / 7)); ctx.font = '800 40px Montserrat, Calibri, Arial, sans-serif'; ctx.textAlign = 'center';
+    const L = _trWrap(ctx, sl[i].texto_tela, W - 150), lh = 50, h = L.length * lh + 30, y0 = H * 0.64;
+    ctx.fillStyle = 'rgba(5,7,15,.74)'; if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(60, y0, W - 120, h, 22); ctx.fill(); } else ctx.fillRect(60, y0, W - 120, h);
+    ctx.fillStyle = '#00C4CC'; ctx.fillRect(60, y0, 8, h); ctx.fillStyle = '#fff'; L.forEach((l, k) => ctx.fillText(l, W / 2, y0 + lh + k * lh - 6)); }
+  g = ctx.createLinearGradient(0, H - 170, 0, H); g.addColorStop(0, 'rgba(5,7,15,0)'); g.addColorStop(1, 'rgba(5,7,15,.8)'); ctx.fillStyle = g; ctx.fillRect(0, H - 170, W, 170);
+  ctx.textAlign = 'center'; ctx.font = '700 26px Montserrat, Calibri, Arial, sans-serif'; ctx.fillStyle = '#F5B94B'; ctx.fillText(typeof ctaTituloArte === 'function' ? ctaTituloArte() : '🔗 Link na bio', W / 2, H - 92);
+  if (p._credito) { ctx.font = '500 21px Montserrat, Calibri, Arial, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillText('Vídeo original: ' + p._credito, W / 2, H - 54); }
+}
+function _trGLoop() {
+  const G = _trG; if (!G) return; const cv = document.getElementById('trGc'); if (!cv) return _trGFechar(true);
+  const t = G.gravando ? (performance.now() - G.t0) / 1000 : 0;
+  _trGDesenha(cv.getContext('2d'), G.src, G.p, t, document.getElementById('trGmold')?.checked !== false);
+  if (G.gravando && !G.arquivo) { const tp = document.getElementById('trTp'); if (tp) tp.scrollTop += (+document.getElementById('trTpV').value || 0) * 0.35; }
+  G.raf = requestAnimationFrame(_trGLoop);
+}
+const _trGSt = h => { const e = document.getElementById('trGst'); if (e) e.innerHTML = h || ''; };
+const _trGRes = h => { const e = document.getElementById('trGres'); if (e) e.innerHTML = h || ''; };
+async function trGCam() {
+  if (!navigator.mediaDevices?.getUserMedia) return toast('Este navegador não dá acesso à câmera', 'error');
+  try {
+    const st = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }, audio: { echoCancellation: true, noiseSuppression: true } });
+    _trG.stream = st; const v = document.createElement('video'); v.muted = true; v.playsInline = true; v.srcObject = st; await v.play(); _trG.src = v;
+    document.getElementById('trGb1').disabled = true; document.getElementById('trGb2').disabled = false; _trGLoop();
+    _trGSt('<span>📷 câmera ligada · ' + v.videoWidth + '×' + v.videoHeight + '</span>');
+  } catch (e) { toast('Câmera/microfone: ' + (e.name === 'NotAllowedError' ? 'permissão negada — libere no cadeado da barra de endereço' : e.message), 'error'); }
+}
+function _trGRecorders(videoStream, audioTracks, fullStream, durReel) {
+  const G = _trG, mimeR = _trMime(false);
+  if (!mimeR) throw new Error('este navegador não grava MP4 — use Chrome ou Edge atualizados (ou Safari)');
+  const vbps = Math.max(250000, Math.min(1500000, Math.floor((4.05 * 1048576 * 8) / durReel) - 64000));
+  G.chR = []; G.recR = new MediaRecorder(new MediaStream([...videoStream.getVideoTracks(), ...audioTracks]), { mimeType: mimeR, videoBitsPerSecond: vbps, audioBitsPerSecond: 64000 });
+  G.recR.ondataavailable = e => e.data.size && G.chR.push(e.data); G.mimeR = mimeR;
+  if (fullStream) { const mimeF = _trMime(true); G.chF = []; G.recF = new MediaRecorder(fullStream, { mimeType: mimeF, videoBitsPerSecond: 2000000, audioBitsPerSecond: 128000 });
+    G.recF.ondataavailable = e => e.data.size && G.chF.push(e.data); G.mimeF = mimeF; }
+}
+async function trGRec() {
+  const G = _trG; if (!G?.stream) return;
+  document.getElementById('trGb2').disabled = true; _trGRes('');
+  for (let n = 3; n > 0; n--) { _trGSt('<b class="tr-cd">' + n + '</b>'); await new Promise(r => setTimeout(r, 900)); if (!_trG) return; }
+  try { _trGRecorders(document.getElementById('trGc').captureStream(30), G.stream.getAudioTracks(), G.stream, TR_REEL_MAX); }
+  catch (e) { document.getElementById('trGb2').disabled = false; _trGSt(''); return toast(e.message, 'error'); }
+  const tp = document.getElementById('trTp'); if (tp) tp.scrollTop = 0;
+  G.recR.start(1000); G.recF.start(1000); G.gravando = true; G.t0 = performance.now(); document.getElementById('trGb3').disabled = false;
+  G.tick = setInterval(() => { const s = (performance.now() - G.t0) / 1000;
+    if (s >= TR_REEL_MAX && G.recR.state === 'recording') G.recR.stop();
+    _trGSt('<span class="tr-rec">● ' + Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0') + '</span>' + (s >= TR_REEL_MAX ? '<span>Reel fechado em ' + TR_REEL_MAX + ' s · o vídeo completo continua gravando</span>' : '<span>Reel: ' + Math.ceil(TR_REEL_MAX - s) + ' s restantes</span>'));
+    if (s >= TR_FULL_MAX) trGStop(); }, 250);
+}
+async function trGStop() {
+  const G = _trG; if (!G?.gravando) return; G.gravando = false; clearInterval(G.tick); document.getElementById('trGb3').disabled = true;
+  const fim = r => new Promise(ok => { if (!r || r.state === 'inactive') return ok(); r.onstop = ok; r.stop(); });
+  await Promise.all([fim(G.recR), fim(G.recF)]); await new Promise(r => setTimeout(r, 150));
+  G.reel = new Blob(G.chR, { type: G.mimeR.split(';')[0] }); G.full = new Blob(G.chF, { type: G.mimeF.split(';')[0] });
+  G.dur = Math.round((performance.now() - G.t0) / 1000);
+  document.getElementById('trGb2').disabled = false; document.getElementById('trGb2').textContent = '↺ Regravar';
+  _trGSt(''); _trGMostrar();
+}
+async function trGArquivo(inp) {
+  const f = inp.files?.[0]; if (!f || !_trG) return; const G = _trG;
+  if (!/^video\//.test(f.type) && !/\.(mp4|mov|webm|m4v)$/i.test(f.name)) return toast('Escolha um arquivo de vídeo', 'error');
+  const v = document.createElement('video'); v.playsInline = true; v.preload = 'auto'; v.src = URL.createObjectURL(f);
+  await new Promise((ok, ko) => { v.onloadedmetadata = ok; v.onerror = () => ko(new Error('o navegador não abriu este vídeo')); }).catch(e => toast(e.message, 'error'));
+  if (!v.duration) return; G.src = v; G.full = f; G.dur = Math.round(v.duration); inp.disabled = true; _trGLoop();
+  const mold = document.getElementById('trGmold').checked, durR = Math.min(TR_REEL_MAX, v.duration);
+  if (!mold && /mp4/.test(f.type) && f.size <= 4.3 * 1048576 && v.duration <= TR_REEL_MAX + 0.5) { G.reel = f; return _trGMostrar(); }
+  // monta o Reel tocando o vídeo no canvas (tempo real) — mantenha esta aba visível
+  try {
+    G.ac = new (window.AudioContext || window.webkitAudioContext)(); const dst = G.ac.createMediaStreamDestination(); G.ac.createMediaElementSource(v).connect(dst);
+    _trGRecorders(document.getElementById('trGc').captureStream(30), dst.stream.getAudioTracks(), null, durR);
+  } catch (e) { inp.disabled = false; return toast(e.message, 'error'); }
+  v.currentTime = 0; await G.ac.resume(); G.recR.start(1000); G.gravando = true; G.t0 = performance.now(); await v.play();
+  await new Promise(ok => { G.tick = setInterval(() => { const s = v.currentTime;
+    _trGSt('<span class="tr-rec">● montando o Reel ' + Math.round(s / durR * 100) + '%</span><span>deixe esta aba visível</span>');
+    if (s >= durR - 0.05 || v.ended) { clearInterval(G.tick); ok(); } }, 200); });
+  v.pause(); G.gravando = false; await new Promise(ok => { G.recR.onstop = ok; G.recR.stop(); });
+  G.reel = new Blob(G.chR, { type: G.mimeR.split(';')[0] }); _trGSt(''); _trGMostrar();
+}
+function _trGMostrar() {
+  const G = _trG, cfg = _tr.dados.campanha.config || {}, grande = G.reel.size > 4.3 * 1048576;
+  const uR = URL.createObjectURL(G.reel), uF = G.full ? URL.createObjectURL(G.full) : null, ext = /webm/.test(G.full?.type || '') ? 'webm' : /quicktime/.test(G.full?.type || '') ? 'mov' : 'mp4';
+  _trGRes('<div class="fh-cab" style="margin-top:8px;">Resultado</div><video src="' + uR + '" controls playsinline class="tr-gprev"></video>'
+    + '<div class="fv2-pq">📱 Reel: ' + _trMB(G.reel.size) + (grande ? ' — <b style="color:var(--fv2-crit)">acima de 4,3 MB</b>, grave mais curto' : ' ✓') + (G.full ? ' · 🎙 Completo (Podtecno): ' + _trMB(G.full.size) + ' · ' + Math.floor(G.dur / 60) + ':' + String(G.dur % 60).padStart(2, '0') + (G.full.size > 200 * 1048576 ? ' — <b>acima de 200 MB</b>, baixe e envie pelo Drive' : '') : '') + '</div>'
+    + '<div class="mc-sug" style="margin-top:6px;"><button class="btn btn-gn" id="trGok" onclick="trGUsar()"' + (grande ? ' disabled' : '') + '>✅ Usar no Reel' + (G.full && cfg.podtecno_email ? ' e enviar ao Podtecno' : '') + '</button>'
+    + (uF ? '<a class="btn btn-g" href="' + uF + '" download="reacao-completa-' + G.p.id + '.' + ext + '">⬇ Baixar completo</a>' : '') + '<a class="btn btn-g" href="' + uR + '" download="reel-' + G.p.id + '.mp4">⬇ Baixar Reel</a></div><div id="trGprog" class="fv2-pq"></div>');
+}
+const _trB64 = b => new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] || ''); r.onerror = () => ko(r.error); r.readAsDataURL(b); });
+async function _trGSubirCompleto(p, blob, nome, prog) {
+  const n = Math.ceil(blob.size / TR_PARTE);
+  const { envio_id } = await trApi('envio_iniciar', { peca_id: p.id, nome, tamanho: blob.size, partes: n, content_type: blob.type });
+  for (let i = 0; i < n; i++) { prog('⬆ Enviando o vídeo completo: parte ' + (i + 1) + ' de ' + n + '…');
+    const b64 = await _trB64(blob.slice(i * TR_PARTE, (i + 1) * TR_PARTE)); let err;
+    for (let t = 0; t < 3; t++) { try { await trApi('envio_parte', { envio_id, i, b64 }); err = null; break; } catch (e) { err = e; await new Promise(r => setTimeout(r, 1500)); } }
+    if (err) throw err; }
+  return trApi('envio_concluir', { envio_id });
+}
+async function trGUsar() {
+  const G = _trG; if (!G?.reel) return; const p = G.p, bt = document.getElementById('trGok'); bt.disabled = true;
+  const prog = h => { const e = document.getElementById('trGprog'); if (e) e.innerHTML = h; };
+  const estavaAgendada = p.status === 'agendada', pod = document.getElementById('trGpod')?.checked;
+  try {
+    prog('⬆ Hospedando o Reel…'); const url = await _trSubir(G.reel, 'reacao-' + p.id + '.mp4', 'reels', 'mp4', 'video/');
+    const roteiro = { ...(p.roteiro || {}), video_proprio: url };
+    await trApi('peca_salvar', { id: p.id, roteiro, status: 'roteiro', midia_urls: [] }); p.roteiro = roteiro; p.status = 'roteiro';
+    let msg = 'Reel salvo — ele entra no lugar da arte quando você clicar em Produzir e agendar';
+    if (G.full && G.full.size <= 200 * 1048576) {
+      const ext = /webm/.test(G.full.type) ? 'webm' : /quicktime/.test(G.full.type) ? 'mov' : 'mp4';
+      const r = await _trGSubirCompleto(p, G.full, 'reacao-completa-' + (p.data || '') + '-' + p.id + '.' + ext, prog);
+      p.roteiro.video_completo = { link: r.link, tamanho: G.full.size };
+      if (pod) { prog('✉ Enviando ao produtor do Podtecno…'); const e = await trApi('produtor_enviar', { peca_id: p.id }); msg += ' · vídeo completo enviado a ' + e.para.join(', '); }
+      else msg += ' · vídeo completo guardado (envie ao Podtecno pela peça)';
+    }
+    toast(msg, 'success'); if (estavaAgendada) toast('Esta peça já estava agendada com a arte: apague o agendamento antigo no Metricool e clique em ▶ Produzir e agendar esta', 'info');
+    _trGFechar(true); _fbFechar(); trAbrir(_tr.cid);
+  } catch (e) { bt.disabled = false; prog(''); toast(e.message, 'error'); }
+}
+async function trVideoRemover(id) {
+  const p = _tr.dados.pecas.find(x => x.id === id); if (!p || !confirm('Voltar a usar a arte da marca nesta peça? (o vídeo enviado ao Podtecno continua valendo)')) return;
+  const roteiro = { ...(p.roteiro || {}) }; delete roteiro.video_proprio;
+  try { await trApi('peca_salvar', { id, roteiro, status: p.status === 'agendada' ? 'agendada' : 'roteiro', midia_urls: p.status === 'agendada' ? null : [] }); _fbFechar(); trAbrir(_tr.cid); } catch (e) { toast(e.message, 'error'); }
+}
+async function trPodtecno(id) {
+  const p = _tr.dados.pecas.find(x => x.id === id); const cfg = _tr.dados.campanha.config || {};
+  const para = prompt('E-mail do produtor do Podtecno', cfg.podtecno_email || ''); if (!para) return;
+  try { const r = await trApi('produtor_enviar', { peca_id: id, para }); toast('Vídeo completo enviado a ' + r.para.join(', '), 'success'); trAbrir(_tr.cid); } catch (e) { toast(e.message, 'error'); }
+}
 // ── produção: artes da marca no canvas → MP4 (WebCodecs) / JPEG → hospeda → agenda no Metricool ──
 const TR_PAL = [['#0B1226', '#1A3A8F', '#00C4CC'], ['#120b26', '#5b2a8f', '#F5B94B'], ['#06201c', '#0f6b5a', '#5cf2c2'], ['#26100b', '#8f3a1a', '#F5B94B'], ['#0b1a26', '#1a5f8f', '#ffffff']];
 function _trFundo(ctx, W, H, k, i) {
@@ -29111,8 +29297,10 @@ async function _trProduzirUma(p, k) {
   if (new Date(quando.replace('T', ' ') + ' GMT-0300') < new Date(Date.now() + 10 * 60000)) throw new Error('horário já passou — ajuste a data da peça');
   let r;
   if (p.tipo === 'reacao' || p.tipo === 'reel_tema') {
-    const blob = await _trVideo(p, k); if (blob.size > 4.3 * 1048576) throw new Error('vídeo acima de 4,3 MB');
-    const url = await _trSubir(blob, 'tend-' + p.id + '.mp4', 'reels', 'mp4', 'video/'); p.midia_urls = [url];
+    let url = p.roteiro?.video_proprio; // v3.144: o vídeo gravado pelo Fabio entra no lugar da arte
+    if (!url) { const blob = await _trVideo(p, k); if (blob.size > 4.3 * 1048576) throw new Error('vídeo acima de 4,3 MB');
+      url = await _trSubir(blob, 'tend-' + p.id + '.mp4', 'reels', 'mp4', 'video/'); }
+    p.midia_urls = [url];
     const redes = (cfg.redes || ['instagram']).filter(x => x !== 'linkedin'); // Reel: Instagram (e Facebook); LinkedIn recebe o texto num post separado
     r = await trMc('publicar', { tipo: 'REEL', texto: legenda, redes, data_hora: quando, imagem_url: url, encurtar_link: false });
     if ((cfg.redes || []).includes('linkedin')) { try { await trMc('publicar', { texto: p.legenda || '', redes: ['linkedin'], data_hora: quando, imagem_url: url, tipo: 'POST' }); } catch (e) { addLog('warn', '[Tendências] LinkedIn: ' + e.message); } }
@@ -32055,7 +32243,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.143] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.144] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -32071,7 +32259,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.143';
+window.__ATX_BUILD_ID__ = 'ATX-v3.144';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
