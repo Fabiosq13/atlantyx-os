@@ -599,6 +599,16 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 .qp-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;} .qp-tags span{font-size:9.5px;font-weight:600;color:var(--c);border:1px solid var(--c);border-radius:10px;padding:0 6px;}
 .qp-act{margin-top:8px;} .qp-act .btn{font-size:10px;padding:3px 9px;}
 .fd-resumo{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px;} .fd-chip{font:600 10.5px Montserrat,sans-serif;color:var(--c);border:1px solid var(--c);border-radius:12px;padding:2px 9px;background:color-mix(in srgb,var(--c) 8%,transparent);}
+.tr-diag{margin-bottom:6px;} .tr-dgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:6px;}
+.tr-di{border:1px solid var(--bd);border-radius:8px;padding:7px 9px;background:var(--bg2);display:flex;flex-direction:column;gap:3px;font-size:11px;} .tr-di b{font-size:11.5px;color:var(--t1);} .tr-di span{color:var(--t3);}
+.tr-di.lar{border-color:color-mix(in srgb,var(--fv2-warn) 55%,transparent);background:color-mix(in srgb,var(--fv2-warn) 6%,var(--bg2));} .tr-di .tr-dac{color:var(--t2);}
+.tr-vt tr.tr-on td{background:color-mix(in srgb,var(--fv2-s2) 7%,transparent);} .tr-vt a{color:var(--t1);text-decoration:none;}
+.tr-cal{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;max-height:520px;overflow:auto;padding-bottom:4px;}
+.tr-dia{background:var(--bg3);border:1px solid var(--bd);border-radius:8px;padding:6px;} .tr-dh{font:700 10.5px Montserrat,sans-serif;color:var(--t2);text-transform:capitalize;margin-bottom:4px;}
+.tr-p{border-left:3px solid var(--c);background:var(--bg2);border-radius:5px;padding:4px 6px;margin-bottom:4px;cursor:pointer;font-size:10px;} .tr-p:hover{box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.tr-pt{display:flex;gap:5px;align-items:center;} .tr-pt span{font-family:var(--M);color:var(--t3);} .tr-pd{color:var(--t2);margin:2px 0;line-height:1.25;} .tr-ps{font-weight:600;font-size:9.5px;}
+.tr-prod{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;} .tr-prod label{display:flex;flex-direction:column;font-size:10.5px;color:var(--t2);gap:3px;} .tr-prod input{width:80px;background:var(--bg3);border:1px solid var(--bd2);color:var(--t1);border-radius:6px;padding:5px 7px;}
+.tr-prog{flex:1 1 100%;}
 .fh-cab{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font:700 13px Montserrat,sans-serif;color:var(--t1);margin:16px 0 8px;padding-top:12px;border-top:1px solid var(--bd);}
 .fh-item{border:1px solid var(--bd);border-left:4px solid var(--c);border-radius:8px;margin-bottom:6px;background:var(--bg2);font-size:12px;}
 .fh-item summary{cursor:pointer;padding:8px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;list-style:none;} .fh-item summary::-webkit-details-marker{display:none;}
@@ -778,6 +788,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
       <div class="sbi s2" onclick="nav('s2studio',this)">&#9670; Studio Criativo</div>
       <div class="sbi s2" onclick="nav('s2campanha',this)">&#9654; Nova Campanha</div>
       <div class="sbi s2" onclick="nav('s2auto',this)">&#128260; Autocampanha <span class="nbx gd">7 dias</span></div>
+      <div class="sbi s2" onclick="nav('s2reacao',this)">&#128293; Reação a Tendências <span class="nbx gn">3 semanas</span></div>
       <div class="sbi s2" onclick="nav('s2kanban',this)">&#9632; Kanban Aprovacao <span class="nbx gd" id="kanbanCnt">0</span></div>
       <div class="sbi s2" onclick="nav('s2desempenho',this)">&#128200; Desempenho <span class="nbx gn">NEW</span></div>
       <div class="sg-sub">OUTBOUND</div>
@@ -4454,6 +4465,15 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 </div>
 
 <!-- v1.74: AUTOCAMPANHA -->
+<!-- v3.143: REAÇÃO A TENDÊNCIAS — vídeos mais vistos do nicho + reação da Atlantyx 3x/dia + carrosséis, reels e stories por 3 semanas -->
+<div class="page" id="page-s2reacao">
+  <div style="background:linear-gradient(135deg,rgba(235,104,52,.15),rgba(235,104,52,.03));border:1px solid rgba(235,104,52,.35);border-radius:10px;padding:14px 18px;margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <div style="flex:1;min-width:260px;"><div style="font-family:Montserrat,var(--H);font-size:15px;font-weight:700;">&#128293; Reação a Tendências</div>
+    <div style="font-size:10.5px;color:var(--t2);margin-top:2px;">Os vídeos mais vistos do nicho no mundo → a reação da Atlantyx a cada um (3 por dia) → carrosséis, reels e stories sobre o mesmo conteúdo por 3 semanas, agendados no Metricool. O vídeo original não é republicado: cada reação é um Reel próprio com crédito ao criador.</div></div>
+    <select id="trCamp" class="fb-sel" onchange="trAbrir(this.value)"></select><button class="btn btn-gn" onclick="trForm()">+ Nova campanha</button>
+  </div>
+  <div id="trApp" class="fv2-app"><div class="fv2-load">Carregando…</div></div>
+</div>
 <div class="page" id="page-s2auto">
   <div style="background:linear-gradient(135deg,rgba(245,185,75,.12),rgba(245,185,75,.03));border:1px solid rgba(245,185,75,.25);border-radius:10px;padding:14px 18px;margin-bottom:13px;">
     <div style="font-family:var(--H);font-size:15px;font-weight:700">&#128260; Autocampanha</div>
@@ -6100,7 +6120,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   } catch (_) {}
 });
-function nav(p,el){try{document.body.classList.remove('sb-aberto');}catch(_){}document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s0usuarios:'/ Acesso · Usuários × Perfil',s0perfis:'/ Acesso · Perfis',s0telas:'/ Acesso · Telas',s0perfiltelas:'/ Acesso · Perfil × Telas',s0demandas:'/ S0 · Esteira de Demandas IA',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9agenda:'/ S9 · Agenda do GP',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1bp:'/ S1 · Business Plan',qa:'/ Agente de QA e Segurança',s1fundador:'/ S1 · Inbox do Fundador',s1comercial:'/ S1 · Politica Comercial',s1okr:'/ S1 · OKRs',s1metas:'/ S1 · Planejamento · Metas da Empresa',s6qaprod:'/ S6 · QA de Produtos',s6fabrica:'/ S6 · Esteira de Entrega (Fábrica)',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7clientes:'/ S7 · Clientes do CRM',s7mapa:'/ S7 · Mapa de Atuacao Comercial',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7feed:'/ S7 · Feed de Prospeccao',s7cartao:'/ S7 · Meu Cartao Digital',s7kpi:'/ S7 Metas',s7painel:'/ S7 · Painel de Vendas IA',s7propostas:'/ S7 · Elaboração de Propostas',s5contratos:'/ S5 · Análise de Contratos',s3kpis:'/ S3 · KPIs de Saúde Financeira',s4crm:'/ S4 · Vendas CRM — Metas e Pipeline',s5juridico:'/ S5 · Jurídico e Compliance',s6dev:'/ S6 · Desenvolvimento, QA e Versões',s6qa:'/ S6 · Agente de QA Visual',s8rh:'/ S8 · Departamento Pessoal',s9projetos:'/ S9 · Gestão de Projetos',s10atend:'/ S10 · Atendimento Omnichannel',s11sales:'/ S11 · Inside Sales + SDR',s12hub:'/ S12 · Engenharia de Dados',s12novo:'/ S12 · Novo Projeto de Dados',s12modelagem:'/ S12 · Modelagem DW + Data Marts',s13hub:'/ S13 · Dashboard Studio',s13novo:'/ S13 · Novo Dashboard',s13mockup:'/ S13 · Mockup Interativo',s13codigo:'/ S13 · Código do Dashboard'};document.getElementById('tbc').textContent=lb[p]||(pg?'/ '+((pg.querySelector('[style*="font-family:var(--H)"]')||pg.querySelector('.pt')||{}).textContent||'').trim().substring(0,60):'');if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7pipe'||p==='dash')loadKPIs();if(p==='dash')setTimeout(_dashRfpCache,200);if(p==='dash')setTimeout(()=>{try{carregarResultadoLive();}catch(_){}},180);if(p==='dash')setTimeout(()=>{try{carregarMetasEmpresa();}catch(_){}},260);if(p==='dash')setTimeout(()=>{try{finDiaCarregar();}catch(_){}},200);if(p==='dash')setTimeout(()=>{try{carregarSemanaFoco();}catch(_){}},350);if(p==='dash')setTimeout(()=>{try{carregarMarcosAlertaDash();}catch(_){}},300);if(p==='dash')setTimeout(()=>{try{carregarReceitaRiscoDash();}catch(_){}},250);if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7clientes')setTimeout(carregarClientes,150);if(p==='s1comercial')setTimeout(comCarregar,150);if(p==='s7kpi')setTimeout(carregarSemaforoComercial,150);if(p==='s7feed')setTimeout(feedListar,150);if(p==='s7cartao')setTimeout(cartaoCarregar,150);if(p==='s7meet')setTimeout(carregarBriefings,150);if(p==='s7mapa')setTimeout(_mpPopularClientes,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();/* v3.94: s2wa não chama mais o agente ao abrir (10s+); só no clique em "Gerar mensagens" */if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s2social')setTimeout(_smCarregarMetricas,150);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(carregarRealizado,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s1metas')setTimeout(metasCadastroCarregar,120);if(p==='s6qaprod')setTimeout(qpCarregar,120);if(p==='s6fabrica')setTimeout(fbCarregar,120);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9agenda')setTimeout(carregarAgendaGP,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{carregarRealizado();}catch(_){}},150);if(p==='s3projetado')setTimeout(()=>{try{gerarProjetado();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);if(p==='s1bp'){setTimeout(bpInit,150);if(_bpAba==='atlantyx')setTimeout(()=>{_bpAtxCarregado=_bpAtxCarregado&&!!_bpAtual;bpAtlantyx();},200);}if(p==='qa')setTimeout(qaAbrir,50);if(p==='s0demandas')setTimeout(demandasAbrir,50);if(/^s0(usuarios|perfis|telas|perfiltelas)$/.test(p))setTimeout(()=>acessoAbrir(p),30);if(p==='s7painel'||p==='s7propostas')setTimeout(()=>vendasAbrir(p),50);if(p==='s2auto')setTimeout(_acCtaInit,80);if(p==='s5contratos')setTimeout(juridicoAbrir,50);if(p==='s1dados')setTimeout(s1DadosStatus,80);if(/^s1(dash|intel|plano|acoes|cenarios|okr|relatorio|riscos|financeiro|mercado|dados)$/.test(p))setTimeout(s1HistBotoes,60);if(p==='s2rfps'){window._rfpSoCache=true;setTimeout(runRfpMonitorAtualizado,150);}}
+function nav(p,el){try{document.body.classList.remove('sb-aberto');}catch(_){}document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.sbi').forEach(x=>x.classList.remove('active'));const pg=document.getElementById('page-'+p);if(pg)pg.classList.add('active');if(el)el.classList.add('active');const lb={dash:'/ Dashboard ao Vivo',s0usuarios:'/ Acesso · Usuários × Perfil',s0perfis:'/ Acesso · Perfis',s0telas:'/ Acesso · Telas',s0perfiltelas:'/ Acesso · Perfil × Telas',s0demandas:'/ S0 · Esteira de Demandas IA',s1proposito:'/ S1 · Proposito e Metas Pessoais',s3dash:'/ S3 · Painel Financeiro',s3dashboard:'/ S1 · Dashboard Financeiro',s3cnab:'/ S1 · Remessa de Pagamentos (CNAB)',s2gerente:'/ S2 · Gerente de Marketing IA',s8funcionarios:'/ S8 · Cadastro de Funcionarios',s8organograma:'/ S8 · Organograma IA-First',s8reuniao:'/ S8 · Sala de Reuniao',s9status:'/ S9 · Status Report',s9painel:'/ S9 · Painel Mestre',s9raiox:'/ S9 · Raio-X do Projeto',s9agenda:'/ S9 · Agenda do GP',s9conselho:'/ S9 · Sala do Conselho · Projetos',s9sala:'/ S9 · Sala de Reuniao (Projetos)',s6pipeline:'/ S6 · Linha de Producao de Sistemas',s6qa:'/ S6 · Agente de QA Visual',s8conselho:'/ S8 · Sala do Conselho',s8gerente:'/ S8 · Gerente de RH IA',s3contratos:'/ S1 · Contratos',s3fatkanban:'/ S1 · Kanban de Faturamento',s3fluxodet:'/ S1 · Fluxo Detalhado',s3gerente:'/ S1 · Gerente Financeiro IA',s3extrato:'/ S3 · Extrato com Saldo',s3diario:'/ S3 · Saldo Diário',s3mensal:'/ S3 · Saldo Mensal',s3conciliacao:'/ S3 · Conciliação Bancária',s3orcamento:'/ S3 · Orçamento Anual',s3agenda:'/ S3 · Agenda de Despesas',s3projetos:'/ S3 · Projetos &amp; Marcos',s3marcoskanban:'/ S1 · Kanban Marcos de Projeto',s3realizado:'/ S3 · Realizado QuickBooks',s3projetado:'/ S3 · Projetado',s3fluxo:'/ S3 · Fluxo Futuro 12 Meses',s3receber:'/ S3 · A Receber',s1dash:'/ S1 · Estratégico',s1intel:'/ S1 · Inteligência Estratégica',email:'/ Email Intel · Caixa de Entrada',emailrfp:'/ Email Intel · RFPs',emailvendas:'/ Email Intel · Respostas de Vendas',emailprojetos:'/ Email Intel · Projetos',s1riscos:'/ S1 · Riscos',s1financeiro:'/ S1 · Análise Financeira',s1mercado:'/ S1 · Mercado',s1plano:'/ S1 · Planejamento',s1acoes:'/ S1 · Plano de Ação 90d',s1cenarios:'/ S1 · Cenários',s1pipeline:'/ S1 · Pipeline de Ideias',s1analise:'/ S1 · Análise de Ideia — S1-03',s1bp:'/ S1 · Business Plan',qa:'/ Agente de QA e Segurança',s1fundador:'/ S1 · Inbox do Fundador',s1comercial:'/ S1 · Politica Comercial',s1okr:'/ S1 · OKRs',s1metas:'/ S1 · Planejamento · Metas da Empresa',s6qaprod:'/ S6 · QA de Produtos',s2reacao:'/ S2 · Reação a Tendências',s6fabrica:'/ S6 · Esteira de Entrega (Fábrica)',s1relatorio:'/ S1 · Relatório Executivo',s1dados:'/ S1 · Dados Reais — QB + Drive',log:'/ Log',s2ag:'/ S2 Agentes',s2auto:'/ S2 · Autocampanha',s2studio:'/ S2 Studio Criativo',s2kanban:'/ S2 Kanban',s2desempenho:'/ S2 · Desempenho de Campanhas',s2campanha:'/ S2 Nova Campanha',s2outbound:'/ S2 Outbound',s2inbound:'/ S2 Inbound',s2img:'/ S2 · Gerar Imagem — Ideogram',s2social:'/ S2 Social Media',s2finops:'/ S2 FinOps',s2prospect:'/ S2 Prospeccao',s2rfps:'/ S2 RFPs',s2wa:'/ S2 WhatsApp',s2kpi:'/ S2 KPIs',s7ag:'/ S7 Agentes',s7pipe:'/ S7 Pipeline',s7outreach:'/ S7 Outreach',s7ceo:'/ S7 · Robo de Contato C-Level',s7clientes:'/ S7 · Clientes do CRM',s7mapa:'/ S7 · Mapa de Atuacao Comercial',s7agenda:'/ S7 · Agenda de Visitas',s7meet:'/ S7 Reunioes',s7feed:'/ S7 · Feed de Prospeccao',s7cartao:'/ S7 · Meu Cartao Digital',s7kpi:'/ S7 Metas',s7painel:'/ S7 · Painel de Vendas IA',s7propostas:'/ S7 · Elaboração de Propostas',s5contratos:'/ S5 · Análise de Contratos',s3kpis:'/ S3 · KPIs de Saúde Financeira',s4crm:'/ S4 · Vendas CRM — Metas e Pipeline',s5juridico:'/ S5 · Jurídico e Compliance',s6dev:'/ S6 · Desenvolvimento, QA e Versões',s6qa:'/ S6 · Agente de QA Visual',s8rh:'/ S8 · Departamento Pessoal',s9projetos:'/ S9 · Gestão de Projetos',s10atend:'/ S10 · Atendimento Omnichannel',s11sales:'/ S11 · Inside Sales + SDR',s12hub:'/ S12 · Engenharia de Dados',s12novo:'/ S12 · Novo Projeto de Dados',s12modelagem:'/ S12 · Modelagem DW + Data Marts',s13hub:'/ S13 · Dashboard Studio',s13novo:'/ S13 · Novo Dashboard',s13mockup:'/ S13 · Mockup Interativo',s13codigo:'/ S13 · Código do Dashboard'};document.getElementById('tbc').textContent=lb[p]||(pg?'/ '+((pg.querySelector('[style*="font-family:var(--H)"]')||pg.querySelector('.pt')||{}).textContent||'').trim().substring(0,60):'');if(p==='s7pipe'||p==='dash')loadPipeline();if(p==='s7pipe'||p==='dash')loadKPIs();if(p==='dash')setTimeout(_dashRfpCache,200);if(p==='dash')setTimeout(()=>{try{carregarResultadoLive();}catch(_){}},180);if(p==='dash')setTimeout(()=>{try{carregarMetasEmpresa();}catch(_){}},260);if(p==='dash')setTimeout(()=>{try{finDiaCarregar();}catch(_){}},200);if(p==='dash')setTimeout(()=>{try{carregarSemanaFoco();}catch(_){}},350);if(p==='dash')setTimeout(()=>{try{carregarMarcosAlertaDash();}catch(_){}},300);if(p==='dash')setTimeout(()=>{try{carregarReceitaRiscoDash();}catch(_){}},250);if(p==='s7ceo')setTimeout(ceoCarregar,150);if(p==='s7clientes')setTimeout(carregarClientes,150);if(p==='s1comercial')setTimeout(comCarregar,150);if(p==='s7kpi')setTimeout(carregarSemaforoComercial,150);if(p==='s7feed')setTimeout(feedListar,150);if(p==='s7cartao')setTimeout(cartaoCarregar,150);if(p==='s7meet')setTimeout(carregarBriefings,150);if(p==='s7mapa')setTimeout(_mpPopularClientes,150);if(p==='s7agenda')setTimeout(()=>{const e=document.getElementById('rot_inicio');if(e&&!e.value)e.value=new Date(Date.now()+7*86400000).toISOString().split('T')[0];},150);if(p==='s7kpi'||p==='s2kpi')loadKPIs();/* v3.94: s2wa não chama mais o agente ao abrir (10s+); só no clique em "Gerar mensagens" */if(p==='s2campanha')resetCampanhaState();if(p==='s13hub')setTimeout(s13CarregarHub,100);if(p==='s2social')setTimeout(_smCarregarMetricas,150);if(p==='s3dash'){p='s3realizado';const pg2=document.getElementById('page-s3realizado');document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));if(pg2)pg2.classList.add('active');setTimeout(carregarRealizado,150);}if(p==='s3extrato')setTimeout(carregarExtrato,150);if(p==='s3agenda')setTimeout(carregarDespesas,150);if(p==='s3fluxo')setTimeout(gerarFluxoMatriz,150);if(p==='s3kpis')setTimeout(calcularKpisFinanceiros,150);if(p==='s3diario')setTimeout(carregarExtratoDiario,150);if(p==='s3mensal')setTimeout(carregarExtratoMensal,150);if(p==='s3conciliacao')setTimeout(carregarConciliacao,150);if(p==='s3orcamento')setTimeout(carregarOrcamento,150);if(p==='s3projetos')setTimeout(carregarProjetos,150);if(p==='s3marcoskanban')setTimeout(carregarKanbanMarcos,150);if(p==='s3dashboard')setTimeout(carregarDashboardFinanceiro,150);if(p==='s1metas')setTimeout(metasCadastroCarregar,120);if(p==='s6qaprod')setTimeout(qpCarregar,120);if(p==='s2reacao')setTimeout(trCarregar,120);if(p==='s6fabrica')setTimeout(fbCarregar,120);if(p==='s3cnab')setTimeout(carregarCnab,150);if(p==='s2gerente')setTimeout(()=>{try{document.getElementById('mktInput')?.focus();}catch(_){}},200);if(p==='s8funcionarios')setTimeout(carregarFuncionarios,150);if(p==='s8organograma')setTimeout(carregarOrganograma,150);if(p==='s6pipeline')setTimeout(carregarPipeline,150);if(p==='s8conselho')setTimeout(carregarConselho,150);if(p==='s8reuniao')setTimeout(carregarSalaReuniao,150);if(p==='s9status')setTimeout(carregarStatusReports,150);if(p==='s9painel')setTimeout(carregarPainelMestre,150);if(p==='s9raiox'||p==='s9conselho')setTimeout(_rxPopularProjetos,150);if(p==='s9agenda')setTimeout(carregarAgendaGP,150);if(p==='s9sala')setTimeout(carregarSalaPmo,150);if(p==='s8gerente')setTimeout(()=>{try{document.getElementById('rhInput')?.focus();}catch(_){}},200);if(p==='s3contratos')setTimeout(carregarContratos,150);if(p==='s3fatkanban')setTimeout(carregarKanbanFaturamento,150);if(p==='s3fluxodet')setTimeout(carregarFluxoDetalhado,150);if(p==='s3gerente')setTimeout(()=>{try{document.getElementById('gfInput')?.focus();}catch(_){}},200);if(p==='s3receber')setTimeout(()=>{try{initS3&&initS3();}catch(_){}try{syncReceberQB();}catch(_){}},150);if(p==='s3realizado')setTimeout(()=>{try{carregarRealizado();}catch(_){}},150);if(p==='s3projetado')setTimeout(()=>{try{gerarProjetado();}catch(_){}},150);if(p==='s2kanban'){setTimeout(carregarKanbanDoBanco,150);setTimeout(()=>{carregarPublicacoes().then(renderCalendarioKanban);},400);}if(p==='s2desempenho')setTimeout(carregarDesempenho,150);if(p==='s1bp'){setTimeout(bpInit,150);if(_bpAba==='atlantyx')setTimeout(()=>{_bpAtxCarregado=_bpAtxCarregado&&!!_bpAtual;bpAtlantyx();},200);}if(p==='qa')setTimeout(qaAbrir,50);if(p==='s0demandas')setTimeout(demandasAbrir,50);if(/^s0(usuarios|perfis|telas|perfiltelas)$/.test(p))setTimeout(()=>acessoAbrir(p),30);if(p==='s7painel'||p==='s7propostas')setTimeout(()=>vendasAbrir(p),50);if(p==='s2auto')setTimeout(_acCtaInit,80);if(p==='s5contratos')setTimeout(juridicoAbrir,50);if(p==='s1dados')setTimeout(s1DadosStatus,80);if(/^s1(dash|intel|plano|acoes|cenarios|okr|relatorio|riscos|financeiro|mercado|dados)$/.test(p))setTimeout(s1HistBotoes,60);if(p==='s2rfps'){window._rfpSoCache=true;setTimeout(runRfpMonitorAtualizado,150);}}
 function toast(m,type='info'){const t=document.getElementById('toastEl');t.textContent=m;t.style.borderColor=type==='error'?'var(--red)':type==='success'?'var(--green)':'var(--bd2)';t.style.opacity='1';t.style.transform='translateY(0)';setTimeout(()=>{t.style.opacity='0';t.style.transform='translateY(5px)';},3000);}
 function addLog(type,msg){const time=new Date().toLocaleTimeString('pt-BR');LOGS.unshift({type,msg,time});if(LOGS.length>200)LOGS.pop();logCount++;document.getElementById('logCnt').textContent=logCount;const el=`<div class="le ${type}">[${time}] ${msg}</div>`;['full-log','dash-log'].forEach(id=>{const box=document.getElementById(id);if(box){box.insertAdjacentHTML('afterbegin',el);if(box.children.length>50)box.lastChild?.remove();}});}
 function clearLog(){document.getElementById('full-log').innerHTML='';document.getElementById('dash-log').innerHTML='';logCount=0;document.getElementById('logCnt').textContent='0';}
@@ -28875,6 +28895,251 @@ function finDiaAbrir() { const d = _fdUlt?.d; if (!d) return finDiaCarregar(true
 function _fdMin(min) { const c = document.getElementById('finDiaCorpo'), r = document.getElementById('finDiaResumo'), b = document.getElementById('finDiaBtnMin'); if (!c) return; c.style.display = min ? 'none' : ''; if (b) b.innerHTML = min ? '&#9660; Mostrar' : '&#9650; Recolher'; }
 function finDiaMinimizar() { const min = document.getElementById('finDiaCorpo').style.display !== 'none'; _fdMin(min); try { localStorage.setItem('atx_findia_min', min ? '1' : '0'); } catch (_) {} if (!min) finDiaCarregar(); }
 
+// ═══ v3.143: S2 · REAÇÃO A TENDÊNCIAS — diagnóstico do Instagram (verde/laranja + acertar), vídeos mais vistos do
+// nicho no mundo, reação da Atlantyx (3 por dia) + carrosséis, reels temáticos e stories por 3 semanas, com produção
+// das artes/vídeos no navegador e agendamento automático no Metricool. O vídeo original nunca é republicado. ═══
+let _tr = { lista: null, cid: null, dados: null, diag: null, produzindo: false, parar: false };
+const _trEsc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const TR_TIPO = { reacao: ['🔥 Reação', '#eb6834'], reel_tema: ['🎬 Reel temático', '#3987e5'], carrossel: ['🖼 Carrossel', '#1baf7a'], story: ['📱 Story', '#a35bd6'] };
+const TR_ST = { planejada: ['Planejada', 'var(--t3)'], roteiro: ['Roteiro pronto', 'var(--fv2-s1)'], produzida: ['Mídia pronta', 'var(--fv2-warn)'], agendada: ['Agendada ✔', 'var(--fv2-ok)'], erro: ['Erro', 'var(--fv2-crit)'] };
+async function trApi(action, body = {}) {
+  const r = await fetch('/api/tendencias', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(typeof authHeaders === 'function' ? authHeaders() : {}) }, body: JSON.stringify({ action, ...body }) });
+  const d = await r.json().catch(() => ({})); if (!r.ok || !d.success) throw new Error(d.error || ('HTTP ' + r.status)); return d;
+}
+async function trMc(action, payload = {}) {
+  const r = await fetch('/api/metricool', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(typeof authHeaders === 'function' ? authHeaders() : {}) }, body: JSON.stringify({ action, payload }) });
+  const d = await r.json().catch(() => ({})); if (!r.ok || d.success === false) throw new Error(d.error || ('HTTP ' + r.status)); return d;
+}
+async function trCarregar() {
+  const box = document.getElementById('trApp'); if (!box) return;
+  try { _tr.lista = await trApi('campanhas'); } catch (e) { box.innerHTML = '<div class="fv2-erro">' + _trEsc(e.message) + '</div>'; return; }
+  if (!_tr.cid || !_tr.lista.campanhas.some(c => c.id === _tr.cid)) _tr.cid = _tr.lista.campanhas[0]?.id || null;
+  const sel = document.getElementById('trCamp'); if (sel) sel.innerHTML = _tr.lista.campanhas.length ? _tr.lista.campanhas.map(c => '<option value="' + c.id + '"' + (c.id === _tr.cid ? ' selected' : '') + '>' + _trEsc(c.nome) + ' · ' + c.n_agendadas + '/' + c.n_pecas + ' agendadas</option>').join('') : '<option value="">— nenhuma campanha —</option>';
+  await trAbrir(_tr.cid);
+}
+async function trAbrir(id) {
+  _tr.cid = id; const box = document.getElementById('trApp');
+  if (!id) { box.innerHTML = _trDiagHtml() + '<div class="fb-vazio"><div style="font-size:28px;">🔥</div><b>Reação a tendências</b><div>A IA acha os vídeos mais vistos do seu nicho no mundo, escreve a reação da Atlantyx a cada um e agenda 3 por dia, com carrosséis, reels e stories sobre o mesmo conteúdo por 3 semanas.</div><button class="btn btn-gn" onclick="trForm()">+ Nova campanha</button></div>'; if (!_tr.diag) trDiagnosticar(); return; }
+  box.innerHTML = '<div class="fv2-load">Carregando…</div>';
+  try { _tr.dados = await trApi('campanha_obter', { id }); _trRender(); if (!_tr.diag) trDiagnosticar(); } catch (e) { box.innerHTML = '<div class="fv2-erro">' + _trEsc(e.message) + '</div>'; }
+}
+// ── ① diagnóstico verde/laranja + acertar ──
+const TR_FIX = [
+  { id: 'falhas', nome: 'Posts que falharam no Metricool (30 dias)', ler: () => trMc('republicar_falhas', { dias: 30, aplicar: false }), n: d => (d.itens || []).filter(i => i.categoria !== 'conexão da rede').length,
+    acertar: async d => { const ids = d.itens.filter(i => i.categoria !== 'conexão da rede').map(i => i.id); for (let k = 0; k < ids.length; k += 4) await trMc('republicar_falhas', { dias: 30, aplicar: true, ids: ids.slice(k, k + 4) }); }, dica: d => (d.itens || []).some(i => i.categoria === 'conexão da rede') ? 'Há falhas por conexão da rede: reconecte o Instagram no Metricool.' : '' },
+  { id: 'imagens', nome: 'Posts agendados com imagem quebrada/expirada', ler: () => trMc('corrigir_imagens', { dias: 60, aplicar: false }), n: d => (d.afetados || []).length, acertar: () => trMc('corrigir_imagens', { dias: 60, aplicar: true }) },
+  { id: 'bio', nome: 'Posts do Instagram com link na legenda (deveria ser "link na bio")', ler: () => trMc('instagram_para_bio', { aplicar: false }), n: d => d.instagram_com_link || 0,
+    acertar: async d => { const ids = (d.itens || []).map(i => i.id); for (let k = 0; k < ids.length; k += 5) await trMc('instagram_para_bio', { aplicar: true, ids: ids.slice(k, k + 5) }); } },
+  { id: 'link', nome: 'Posts agendados com link antigo (sem página de captura)', ler: () => trMc('trocar_link_agendados', { aplicar: false }), n: d => d.com_link_antigo || 0,
+    acertar: async d => { const ids = (d.itens || []).map(i => i.id); for (let k = 0; k < ids.length; k += 5) await trMc('trocar_link_agendados', { aplicar: true, ids: ids.slice(k, k + 5) }); } },
+  { id: 'dup', nome: 'Posts duplicados na agenda do Metricool', ler: () => trMc('remover_duplicados', { aplicar: false }), n: d => d.a_apagar || 0, acertar: d => trMc('remover_duplicados', { aplicar: true, ids: d.ids }), confirmar: 'Apagar as cópias duplicadas (mantém um de cada)?' },
+];
+async function trDiagnosticar() {
+  _tr.diag = { carregando: true, itens: [], fix: {} }; _trDiagPaint();
+  const [cfg, ...fx] = await Promise.allSettled([trMc('autocampanha_diagnostico'), ...TR_FIX.map(f => f.ler())]);
+  _tr.diag = { itens: cfg.status === 'fulfilled' ? (cfg.value.itens || []) : [{ peca: 'Metricool', ok: false, detalhe: cfg.reason?.message, acao: 'Confira as credenciais do Metricool no Vercel' }], fix: {} };
+  TR_FIX.forEach((f, i) => { const r = fx[i]; _tr.diag.fix[f.id] = r.status === 'fulfilled' ? { d: r.value, n: f.n(r.value) } : { erro: r.reason?.message }; });
+  _trDiagPaint();
+}
+function _trDiagHtml() {
+  const D = _tr.diag; if (!D) return '<div id="trDiag"></div>';
+  if (D.carregando) return '<div id="trDiag" class="tr-diag"><div class="fh-cab">① Instagram e Metricool <span class="fv2-pq">verificando…</span></div></div>';
+  const cfgItens = D.itens.map(x => ({ nome: x.peca, ok: x.ok, det: x.detalhe, acao: x.acao }));
+  const fixItens = TR_FIX.map(f => { const r = D.fix[f.id] || {}; return { id: f.id, nome: f.nome, ok: !r.erro && !r.n, det: r.erro ? 'não verificado: ' + r.erro : r.n ? r.n + ' para acertar' : 'tudo certo', acertavel: !!r.n, dica: r.d && f.dica ? f.dica(r.d) : '' }; });
+  const todos = [...cfgItens, ...fixItens], lar = todos.filter(x => !x.ok).length;
+  return '<div id="trDiag" class="tr-diag"><div class="fh-cab">① Instagram e Metricool <span class="fv2-pq">' + (lar ? lar + ' item(ns) em laranja' : 'tudo verde ✔') + '</span>'
+    + (fixItens.some(x => x.acertavel) ? '<button class="btn btn-gn" style="font-size:10px;margin-left:auto;" onclick="trAcertarTudo()">🛠 Acertar tudo que dá automaticamente</button>' : '<span style="margin-left:auto"></span>') + '<button class="btn btn-g" style="font-size:10px;" onclick="trDiagnosticar()">↻ Verificar</button></div>'
+    + '<div class="tr-dgrid">' + todos.map(x => '<div class="tr-di ' + (x.ok ? 'ok' : 'lar') + '"><b>' + (x.ok ? '🟢' : '🟠') + ' ' + _trEsc(x.nome) + '</b><span>' + _trEsc(x.det || '') + '</span>'
+      + (!x.ok && x.acao ? '<span class="tr-dac">→ ' + _trEsc(x.acao) + '</span>' : '') + (x.dica ? '<span class="tr-dac">→ ' + _trEsc(x.dica) + '</span>' : '') + (x.acertavel ? '<button class="btn btn-g" style="font-size:10px;align-self:flex-start;" onclick="trAcertar(\'' + x.id + '\')">Acertar</button>' : '') + '</div>').join('') + '</div></div>';
+}
+function _trDiagPaint() { const el = document.getElementById('trDiag'); if (el) el.outerHTML = _trDiagHtml(); }
+async function trAcertar(id, silencioso) {
+  const f = TR_FIX.find(x => x.id === id), r = _tr.diag?.fix?.[id]; if (!f || !r?.d) return;
+  if (f.confirmar && !silencioso && !confirm(f.confirmar)) return;
+  try { toast('Acertando: ' + f.nome + '…'); await f.acertar(r.d); toast('Acertado: ' + f.nome, 'success'); } catch (e) { toast(f.nome + ': ' + e.message, 'error'); }
+  if (!silencioso) trDiagnosticar();
+}
+async function trAcertarTudo() {
+  const alvo = TR_FIX.filter(f => _tr.diag?.fix?.[f.id]?.n); if (!alvo.length) return;
+  if (!confirm('Acertar automaticamente:\n' + alvo.map(f => '• ' + f.nome + ' (' + _tr.diag.fix[f.id].n + ')').join('\n') + '\n\nItens de configuração (chaves, conexão do Instagram) precisam de ajuste manual — as instruções estão em cada cartão.')) return;
+  for (const f of alvo) await trAcertar(f.id, true);
+  trDiagnosticar();
+}
+// ── campanha ──
+function trForm(id) {
+  const c = id ? _tr.dados?.campanha : null, P = _tr.lista.padrao, cfg = { ...P.config, ...(c?.config || {}) };
+  const ov = _fbModal('<div class="qp-mh"><div class="fv2-pt">' + (c ? 'Campanha — ' + _trEsc(c.nome) : 'Nova campanha de reação a tendências') + '</div><button class="btn btn-g" onclick="_fbFechar()">Fechar ✕</button></div>'
+    + '<div class="fb-form"><label class="fb-w">Nome<input id="trN" value="' + _trEsc(c?.nome || 'Reação a tendências — ' + new Date().toLocaleDateString('pt-BR', { month: 'long' })) + '"></label>'
+    + '<label class="fb-w">Nicho<input id="trNi" value="' + _trEsc(c?.nicho || 'Dados, BI, engenharia de dados e IA para empresas') + '"></label>'
+    + '<label class="fb-w">Palavras-chave para achar os vídeos (separe por vírgula; vale inglês)<textarea id="trP" rows="2">' + _trEsc((c?.palavras || P.palavras).join(', ')) + '</textarea></label>'
+    + '<label>Início<input id="trIni" type="date" value="' + _trEsc(cfg.inicio || new Date(Date.now() + 864e5).toISOString().substring(0, 10)) + '"></label><label>Dias<input id="trDias" type="number" min="1" max="42" value="' + cfg.dias + '"></label>'
+    + '<label>Reações por dia<input id="trRd" type="number" min="0" max="6" value="' + cfg.reacoes_dia + '"></label><label>Horários das reações<input id="trH" value="' + _trEsc(cfg.horarios.join(', ')) + '"></label>'
+    + '<label>Carrosséis por semana<input id="trCs" type="number" min="0" max="5" value="' + cfg.carrosseis_semana + '"></label><label>Hora do carrossel<input id="trCh" value="' + _trEsc(cfg.carrossel_hora) + '"></label>'
+    + '<label>Reels temáticos por semana<input id="trRs" type="number" min="0" max="4" value="' + cfg.reels_tema_semana + '"></label><label>Hora do reel temático<input id="trRh" value="' + _trEsc(cfg.reel_tema_hora) + '"></label>'
+    + '<label>Stories por dia<input id="trSd" type="number" min="0" max="1" value="' + cfg.stories_dia + '"></label><label>Hora do story<input id="trSh" value="' + _trEsc(cfg.story_hora) + '"></label>'
+    + '<label class="fb-chk fb-w"><input type="checkbox" id="trLi"' + (cfg.redes.includes('linkedin') ? ' checked' : '') + '> Publicar reações e carrosséis também no LinkedIn</label>'
+    + '<label class="fb-chk fb-w"><input type="checkbox" id="trFb"' + (cfg.redes.includes('facebook') ? ' checked' : '') + '> Publicar também no Facebook</label></div>'
+    + '<div class="fv2-pq" style="margin:6px 0 10px;">Com os padrões (3 reações + 1 story por dia, 3 carrosséis e 2 reels temáticos por semana, 21 dias) são cerca de 100 peças. O vídeo original nunca é republicado: cada reação é um Reel próprio da Atlantyx com crédito e link do criador.</div>'
+    + '<div class="mc-sug"><button class="btn btn-gn" onclick="trSalvar(\'' + (c?.id || '') + '\')">Salvar</button>' + (c ? '<button class="btn btn-g" onclick="trExcluir(\'' + c.id + '\')">Excluir campanha</button>' : '') + '</div>', 760);
+}
+async function trSalvar(id) {
+  const v = k => document.getElementById(k).value;
+  const redes = ['instagram', ...(document.getElementById('trLi').checked ? ['linkedin'] : []), ...(document.getElementById('trFb').checked ? ['facebook'] : [])];
+  const config = { inicio: v('trIni'), dias: +v('trDias'), reacoes_dia: +v('trRd'), horarios: v('trH').split(/[,; ]+/).filter(x => /^\d{1,2}:\d{2}$/.test(x)), carrosseis_semana: +v('trCs'), carrossel_hora: v('trCh'),
+    reels_tema_semana: +v('trRs'), reel_tema_hora: v('trRh'), stories_dia: +v('trSd'), story_hora: v('trSh'), redes };
+  if (!config.horarios.length) return toast('Informe os horários no formato 08:30, 12:30, 18:30', 'error');
+  try { const r = await trApi('campanha_salvar', { id: id || null, nome: v('trN'), nicho: v('trNi'), palavras: v('trP'), config }); _tr.cid = r.id; _fbFechar(); toast('Campanha salva', 'success'); trCarregar(); } catch (e) { toast(e.message, 'error'); }
+}
+async function trExcluir(id) { if (!confirm('Excluir a campanha (não apaga o que já foi agendado no Metricool)?')) return; try { await trApi('campanha_excluir', { id }); _tr.cid = null; _fbFechar(); trCarregar(); } catch (e) { toast(e.message, 'error'); } }
+// ── render principal ──
+function _trRender() {
+  const D = _tr.dados, c = D.campanha, V = D.videos, P = D.pecas, esc = V.filter(v => v.escolhido);
+  const cont = s => P.filter(p => p.status === s).length;
+  const fmtV = n => n == null ? '—' : n >= 1e6 ? (n / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mi' : n >= 1e3 ? Math.round(n / 1e3) + ' mil' : n;
+  const dias = [...new Set(P.map(p => p.data))];
+  document.getElementById('trApp').innerHTML = _trDiagHtml()
+    + '<div class="fh-cab">② Vídeos mais vistos do nicho no mundo <span class="fv2-pq">' + esc.length + ' escolhido(s) de ' + V.length + ' · fonte: pesquisa na web pela IA' + (_tr.lista.youtube ? ' + YouTube' : ' (cadastre YOUTUBE_API_KEY no Vercel para números exatos do YouTube)') + '</span>'
+    + '<span class="mc-sug" style="margin-left:auto;"><button class="btn btn-gn" id="trBtBusca" onclick="trBuscar()">🔎 Buscar vídeos em alta</button><button class="btn btn-g" onclick="trAddVideo()">+ Colar link</button><button class="btn btn-g" onclick="trForm(\'' + c.id + '\')">⚙ Campanha</button></span></div>'
+    + (V.length ? '<div class="fv2-tabwrap"><table class="fb-tb tr-vt"><tr><th></th><th>Vídeo</th><th>Criador</th><th>Visualizações</th><th>Publicado</th><th>Rede</th></tr>' + V.map(v => '<tr class="' + (v.escolhido ? 'tr-on' : '') + '"><td><input type="checkbox" ' + (v.escolhido ? 'checked' : '') + ' onchange="trEscolher(\'' + v.id + '\',this.checked)"></td>'
+      + '<td><a href="' + _trEsc(v.url) + '" target="_blank" rel="noopener"><b>' + _trEsc(v.titulo) + '</b> ↗</a><div class="fv2-pq">' + _trEsc(String(v.resumo || '').substring(0, 160)) + '</div></td><td>' + _trEsc(v.criador) + (v.criador_handle ? '<div class="fv2-pq">' + _trEsc(v.criador_handle) + '</div>' : '') + '</td>'
+      + '<td style="white-space:nowrap;"><b>' + fmtV(v.views) + '</b>' + (/estimado/.test(v.fonte || '') ? ' <span class="fv2-pq">(estimado)</span>' : '') + '</td><td>' + _trEsc(v.publicado_em || '—') + '</td><td>' + _trEsc(v.plataforma) + '</td></tr>').join('') + '</table></div>'
+      : '<div class="fv2-aviso">Clique em <b>Buscar vídeos em alta</b>: a IA pesquisa na web os vídeos mais vistos do nicho (YouTube, Reels, TikTok, LinkedIn). Depois marque os que a Atlantyx vai reagir — de 10 a 20 rende 3 semanas.</div>')
+    + '<div class="fh-cab">③ Plano de ' + (c.config?.dias || 21) + ' dias <span class="fv2-pq">' + P.length + ' peça(s) · ' + cont('roteiro') + ' com roteiro · ' + cont('agendada') + ' agendada(s) · ' + cont('erro') + ' com erro</span>'
+    + '<span class="mc-sug" style="margin-left:auto;"><button class="btn btn-gn" onclick="trPlano()" ' + (esc.length ? '' : 'disabled') + '>🗓 ' + (P.length ? 'Refazer plano' : 'Gerar plano') + '</button><button class="btn btn-g" id="trBtRot" onclick="trRoteiros()" ' + (cont('planejada') ? '' : 'disabled') + '>✍ Escrever roteiros com IA (' + cont('planejada') + ')</button></span></div>'
+    + (P.length ? '<div class="tr-cal">' + dias.map(d => '<div class="tr-dia"><div class="tr-dh">' + new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }) + '</div>' + P.filter(p => p.data === d).map(p => {
+        const v = V.find(x => x.id === p.video_id), t = TR_TIPO[p.tipo] || [p.tipo, '#888'], st = TR_ST[p.status] || [p.status, 'var(--t3)'];
+        return '<div class="tr-p" style="--c:' + t[1] + '" onclick="trPeca(\'' + p.id + '\')" title="' + _trEsc(p.erro || '') + '"><div class="tr-pt"><span>' + p.hora + '</span><b>' + t[0] + '</b></div><div class="tr-pd">' + _trEsc(p.tema || (v ? v.titulo : '') || '—').substring(0, 70) + '</div><div class="tr-ps" style="color:' + st[1] + '">' + st[0] + '</div></div>'; }).join('') + '</div>').join('') + '</div>' : '')
+    + '<div class="fh-cab">④ Produzir e agendar no Metricool <span class="fv2-pq">gera as artes e os vídeos neste navegador (Chrome/Edge), hospeda e agenda — deixe a aba aberta até terminar</span></div>'
+    + '<div class="tr-prod"><label>Quantas peças<input id="trQt" type="number" min="1" max="120" value="' + Math.min(15, cont('roteiro') || 15) + '"></label>'
+    + '<button class="btn btn-gn" id="trBtProd" onclick="trProduzir()" ' + (cont('roteiro') ? '' : 'disabled') + '>▶ Produzir e agendar as próximas</button><button class="btn btn-g" onclick="_tr.parar=true">⏸ Parar</button>'
+    + '<div id="trProg" class="tr-prog"></div></div><canvas id="trCanvas" width="720" height="1280" style="display:none;"></canvas>';
+}
+async function trBuscar() {
+  const bt = document.getElementById('trBtBusca'); if (bt) { bt.disabled = true; bt.textContent = 'Pesquisando na web… (até 2 min)'; }
+  try { const r = await trApi('buscar_videos', { campanha_id: _tr.cid }); toast(r.encontrados + ' vídeo(s) encontrados' + (r.erros.length ? ' · ' + r.erros.join(' · ') : ''), r.encontrados ? 'success' : 'error'); } catch (e) { toast(e.message, 'error'); }
+  trAbrir(_tr.cid);
+}
+async function trEscolher(id, on) { try { await trApi('video_escolher', { ids: [id], escolhido: on }); const v = _tr.dados.videos.find(x => x.id === id); if (v) v.escolhido = on; _trRender(); } catch (e) { toast(e.message, 'error'); } }
+async function trAddVideo() { const url = prompt('Link do vídeo (YouTube, Instagram, TikTok, LinkedIn):'); if (!url) return; const titulo = prompt('Título/assunto do vídeo:') || url; const criador = prompt('Criador (nome ou @):') || ''; const views = prompt('Visualizações (aprox.):') || '';
+  try { await trApi('video_adicionar', { campanha_id: _tr.cid, url, titulo, criador, views }); trAbrir(_tr.cid); } catch (e) { toast(e.message, 'error'); } }
+async function trPlano() { if (_tr.dados.pecas.some(p => p.status === 'agendada') && !confirm('Refazer o plano mantém o que já foi agendado e recria o resto. Continuar?')) return;
+  try { const r = await trApi('plano_gerar', { campanha_id: _tr.cid }); toast(r.pecas_criadas + ' peça(s) no plano', 'success'); trAbrir(_tr.cid); } catch (e) { toast(e.message, 'error'); } }
+async function trRoteiros() {
+  const bt = document.getElementById('trBtRot'); let total = 0;
+  try { for (let i = 0; i < 30; i++) { if (bt) bt.textContent = 'Escrevendo… ' + total + ' prontos'; const r = await trApi('roteiros_gerar', { campanha_id: _tr.cid, limite: 8 }); total += r.gerados; if (!r.restantes || !r.gerados) break; }
+    toast(total + ' roteiro(s) escritos', 'success'); } catch (e) { toast(e.message + (total ? ' (' + total + ' já prontos)' : ''), 'error'); }
+  trAbrir(_tr.cid);
+}
+function trPeca(id) {
+  const p = _tr.dados.pecas.find(x => x.id === id); if (!p) return; const v = _tr.dados.videos.find(x => x.id === p.video_id), sl = p.roteiro?.slides || [];
+  _fbModal('<div class="qp-mh"><div><div class="fv2-pt">' + (TR_TIPO[p.tipo] || [p.tipo])[0] + ' · ' + new Date(p.data + 'T12:00:00').toLocaleDateString('pt-BR') + ' ' + p.hora + '</div><div class="fv2-pq">' + (TR_ST[p.status] || [p.status])[0] + (p.erro ? ' — ' + _trEsc(p.erro) : '') + (v ? ' · reage a <a href="' + _trEsc(v.url) + '" target="_blank" rel="noopener">' + _trEsc(v.titulo) + ' ↗</a>' : '') + '</div></div><button class="btn btn-g" onclick="_fbFechar()">Fechar ✕</button></div>'
+    + (p.tipo === 'story' ? '<label class="fb-lbl">Texto do story<textarea id="trTx" rows="2">' + _trEsc(p.roteiro?.texto || '') + '</textarea></label>'
+      : '<label class="fb-lbl">' + (p.tipo === 'carrossel' ? 'Slides (um por linha: título | apoio)' : 'Texto na tela (um slide por linha)') + '<textarea id="trSl" rows="8">' + _trEsc(sl.map(s => p.tipo === 'carrossel' ? (s.titulo || '') + ' | ' + (s.apoio || '') : (s.texto_tela || '')).join('\n')) + '</textarea></label>'
+      + '<label class="fb-lbl">Legenda<textarea id="trLg" rows="6">' + _trEsc(p.legenda || '') + '</textarea></label>')
+    + ((p.midia_urls || []).length ? '<div class="fv2-pq" style="margin:6px 0;">Mídia: ' + p.midia_urls.map((u, i) => '<a href="' + _trEsc(u) + '" target="_blank" rel="noopener">' + (i + 1) + ' ↗</a>').join(' ') + '</div>' : '')
+    + '<div class="mc-sug" style="margin-top:8px;"><button class="btn btn-gn" onclick="trPecaSalvar(\'' + id + '\')">Salvar</button>' + (p.status !== 'agendada' ? '<button class="btn btn-g" onclick="trPecaUma(\'' + id + '\')">▶ Produzir e agendar esta</button>' : '') + '<button class="btn btn-g" onclick="trPecaExcluir(\'' + id + '\')">Excluir</button></div>', 760);
+}
+async function trPecaSalvar(id) {
+  const p = _tr.dados.pecas.find(x => x.id === id); const roteiro = { ...(p.roteiro || {}) };
+  if (p.tipo === 'story') roteiro.texto = document.getElementById('trTx').value;
+  else roteiro.slides = document.getElementById('trSl').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => p.tipo === 'carrossel' ? { titulo: l.split('|')[0].trim(), apoio: (l.split('|')[1] || '').trim() } : { texto_tela: l });
+  try { await trApi('peca_salvar', { id, roteiro, legenda: document.getElementById('trLg')?.value, status: p.status === 'planejada' ? 'roteiro' : p.status === 'agendada' ? 'agendada' : 'roteiro', midia_urls: p.status === 'agendada' ? null : [] }); _fbFechar(); toast('Peça salva', 'success'); trAbrir(_tr.cid); } catch (e) { toast(e.message, 'error'); }
+}
+async function trPecaExcluir(id) { if (!confirm('Excluir esta peça do plano?')) return; try { await trApi('peca_excluir', { id }); _fbFechar(); trAbrir(_tr.cid); } catch (e) { toast(e.message, 'error'); } }
+async function trPecaUma(id) { _fbFechar(); await trProduzir([id]); }
+// ── produção: artes da marca no canvas → MP4 (WebCodecs) / JPEG → hospeda → agenda no Metricool ──
+const TR_PAL = [['#0B1226', '#1A3A8F', '#00C4CC'], ['#120b26', '#5b2a8f', '#F5B94B'], ['#06201c', '#0f6b5a', '#5cf2c2'], ['#26100b', '#8f3a1a', '#F5B94B'], ['#0b1a26', '#1a5f8f', '#ffffff']];
+function _trFundo(ctx, W, H, k, i) {
+  const p = TR_PAL[k % TR_PAL.length], g = ctx.createLinearGradient(0, 0, W * (i % 2 ? 0.3 : 1), H); g.addColorStop(0, p[0]); g.addColorStop(1, p[1]); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 0.10; ctx.strokeStyle = p[2]; ctx.lineWidth = 2; for (let x = -H; x < W; x += 46) { ctx.beginPath(); ctx.moveTo(x + i * 9, 0); ctx.lineTo(x + H + i * 9, H); ctx.stroke(); } ctx.globalAlpha = 1;
+  ctx.fillStyle = p[2]; ctx.globalAlpha = 0.16; ctx.beginPath(); ctx.arc(W * 0.85, H * 0.18, W * 0.28, 0, 7); ctx.fill(); ctx.globalAlpha = 1; return p;
+}
+function _trWrap(ctx, t, maxW) { const w = String(t || '').split(/\s+/), L = []; let cur = ''; w.forEach(x => { const s2 = cur ? cur + ' ' + x : x; if (ctx.measureText(s2).width > maxW && cur) { L.push(cur); cur = x; } else cur = s2; }); if (cur) L.push(cur); return L; }
+function _trMarca(ctx, W, cor, rotulo) { ctx.fillStyle = cor; ctx.fillRect(48, 64, 6, 34); ctx.font = '700 24px Montserrat, Calibri, Arial, sans-serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.fillText('ATLANTYX', 66, 90);
+  if (rotulo) { ctx.font = '700 20px Montserrat, Calibri, Arial, sans-serif'; const w = ctx.measureText(rotulo).width + 28; ctx.fillStyle = cor; if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(W - 48 - w, 62, w, 38, 19); ctx.fill(); } ctx.fillStyle = '#0B1226'; ctx.textAlign = 'center'; ctx.fillText(rotulo, W - 48 - w / 2, 88); } }
+async function _trVideo(p, k) {
+  const sl = (p.roteiro?.slides || []).filter(s => s.texto_tela); if (!sl.length) throw new Error('roteiro sem slides');
+  if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') throw new Error('este navegador não gera MP4 (use Chrome ou Edge atualizados)');
+  if (!(await _carregarMp4Muxer())) throw new Error('não carregou o gerador de MP4');
+  const cv = document.getElementById('trCanvas'), ctx = cv.getContext('2d'), W = 720, H = 1280, FPS = 30, DUR = 2800, FADE = 380, total = sl.length * DUR;
+  const rot = p.tipo === 'reacao' ? '🔥 REAÇÃO' : '🎬 ' + (p.tema || 'TENDÊNCIAS').toUpperCase().substring(0, 18);
+  const desenha = (i, tl, a) => { ctx.save(); ctx.globalAlpha = a; const pal = _trFundo(ctx, W, H, k, i); _trMarca(ctx, W, pal[2], i === 0 ? rot : null);
+    const ta = Math.min(1, tl / 320); ctx.globalAlpha = a * ta; ctx.font = (i === 0 ? '800 62px' : '800 54px') + ' Montserrat, Calibri, Arial, sans-serif'; ctx.textAlign = 'center';
+    const L = _trWrap(ctx, sl[i].texto_tela, W - 120), lh = i === 0 ? 74 : 66; let y = H / 2 - (L.length - 1) * lh / 2 + (1 - ta) * 22;
+    ctx.fillStyle = 'rgba(0,0,0,.28)'; if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(36, y - lh - 10, W - 72, L.length * lh + 50, 26); ctx.fill(); } ctx.fillStyle = pal[2]; ctx.fillRect(36, y - lh - 10, 8, L.length * lh + 50);
+    ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 14; L.forEach(l => { ctx.fillText(l, W / 2, y); y += lh; }); ctx.shadowBlur = 0;
+    ctx.globalAlpha = a; ctx.fillStyle = 'rgba(255,255,255,.2)'; ctx.fillRect(48, H - 80, W - 96, 5); ctx.fillStyle = pal[2]; ctx.fillRect(48, H - 80, (W - 96) * ((i + Math.min(1, tl / DUR)) / sl.length), 5);
+    if (i === sl.length - 1) { ctx.font = '700 28px Montserrat, Calibri, Arial, sans-serif'; ctx.fillStyle = '#F5B94B'; ctx.fillText(typeof ctaTituloArte === 'function' ? ctaTituloArte() : '🔗 Link na bio', W / 2, H - 140); }
+    if (p.tipo === 'reacao' && p._credito) { ctx.font = '500 20px Montserrat, Calibri, Arial, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillText('Vídeo original: ' + p._credito, W / 2, H - 104); }
+    ctx.restore(); };
+  const codecs = ['avc1.42E01F', 'avc1.4D401F', 'avc1.42001F', 'avc1.640028']; let cfg = null;
+  for (const c of codecs) { const t = { codec: c, width: W, height: H, bitrate: 1_600_000, framerate: FPS, avc: { format: 'avc' } }; try { if ((await VideoEncoder.isConfigSupported(t)).supported) { cfg = t; break; } } catch (_) {} }
+  if (!cfg) throw new Error('nenhum perfil H.264 suportado neste navegador');
+  const mux = new Mp4Muxer.Muxer({ target: new Mp4Muxer.ArrayBufferTarget(), video: { codec: 'avc', width: W, height: H }, fastStart: 'in-memory', firstTimestampBehavior: 'offset' });
+  let err = null; const enc = new VideoEncoder({ output: (ch, m) => mux.addVideoChunk(ch, m), error: e => { err = e; } }); enc.configure(cfg);
+  const nF = Math.round(total / 1000 * FPS), us = Math.round(1e6 / FPS);
+  for (let f = 0; f < nF; f++) { const t = f * 1000 / FPS, i = Math.min(sl.length - 1, Math.floor(t / DUR)), tl = t - i * DUR;
+    ctx.fillStyle = '#05070f'; ctx.fillRect(0, 0, W, H); desenha(i, tl, 1); if (tl > DUR - FADE && i < sl.length - 1) desenha(i + 1, 0, (tl - (DUR - FADE)) / FADE);
+    const fr = new VideoFrame(cv, { timestamp: f * us, duration: us }); enc.encode(fr, { keyFrame: f % (FPS * 2) === 0 }); fr.close(); if (err) throw err;
+    if (enc.encodeQueueSize > 8) await new Promise(r => setTimeout(r, 8)); if (f % 15 === 0) await new Promise(r => setTimeout(r, 0)); }
+  await enc.flush(); enc.close(); mux.finalize(); return new Blob([mux.target.buffer], { type: 'video/mp4' });
+}
+async function _trImagem(p, k, i, W, H) {
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const ctx = cv.getContext('2d'); const pal = _trFundo(ctx, W, H, k, i);
+  if (p.tipo === 'story') { _trMarca(ctx, W, pal[2], '📱 HOJE'); ctx.font = '800 76px Montserrat, Calibri, Arial, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; const L = _trWrap(ctx, p.roteiro?.texto || p.tema || '', W - 160); let y = H / 2 - (L.length - 1) * 44; L.forEach(l => { ctx.fillText(l, W / 2, y); y += 88; });
+    ctx.font = '600 34px Montserrat, Calibri, Arial, sans-serif'; ctx.fillStyle = pal[2]; ctx.fillText('Responda nas mensagens 💬', W / 2, H - 260); }
+  else { const s = p.roteiro.slides[i], n = p.roteiro.slides.length; _trMarca(ctx, W, pal[2], (i + 1) + ' / ' + n); ctx.textAlign = 'left'; ctx.fillStyle = '#fff';
+    ctx.font = (i === 0 ? '800 76px' : '800 62px') + ' Montserrat, Calibri, Arial, sans-serif'; const T = _trWrap(ctx, s.titulo || '', W - 150), lh = i === 0 ? 88 : 74;
+    ctx.font = '500 36px Montserrat, Calibri, Arial, sans-serif'; const A = _trWrap(ctx, s.apoio || '', W - 150);
+    let y = H / 2 - (T.length * lh + A.length * 48 + 30) / 2 + lh; ctx.font = (i === 0 ? '800 76px' : '800 62px') + ' Montserrat, Calibri, Arial, sans-serif'; T.forEach(l => { ctx.fillText(l, 75, y); y += lh; });
+    ctx.fillStyle = pal[2]; ctx.fillRect(75, y - lh + 30, 90, 6); y += 40; ctx.font = '500 36px Montserrat, Calibri, Arial, sans-serif'; ctx.fillStyle = '#dfe8ff'; A.forEach(l => { ctx.fillText(l, 75, y); y += 48; });
+    if (i < n - 1) { ctx.font = '700 30px Montserrat, Calibri, Arial, sans-serif'; ctx.fillStyle = '#F5B94B'; ctx.textAlign = 'right'; ctx.fillText('deslize →', W - 70, H - 60); } }
+  return new Promise(r => cv.toBlob(r, 'image/jpeg', 0.9));
+}
+async function _trSubir(blob, nome, pasta, ext, tipoEsperado) {
+  const r = await fetch('/api/media-upload?name=' + encodeURIComponent(nome) + '&pasta=' + pasta, { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
+  const d = await r.json().catch(() => ({})); if (!d.success) throw new Error('hospedagem: ' + (d.error || r.status));
+  try { const rr = await _resolverUrlMidia(d.url, ext, tipoEsperado); if (rr?.chk?.ok) return rr.url; } catch (_) {}
+  return d.url;
+}
+async function _trProduzirUma(p, k) {
+  const cfg = _tr.dados.campanha.config || {}, v = _tr.dados.videos.find(x => x.id === p.video_id);
+  p._credito = v ? (v.criador_handle || v.criador || '').substring(0, 40) : '';
+  const bio = typeof textoLinkBio === 'function' ? textoLinkBio() : '';
+  const legenda = String(p.legenda || '') + (bio && !/link na bio/i.test(p.legenda || '') ? '\n\n' + bio : '');
+  const quando = p.data + 'T' + p.hora + ':00';
+  if (new Date(quando.replace('T', ' ') + ' GMT-0300') < new Date(Date.now() + 10 * 60000)) throw new Error('horário já passou — ajuste a data da peça');
+  let r;
+  if (p.tipo === 'reacao' || p.tipo === 'reel_tema') {
+    const blob = await _trVideo(p, k); if (blob.size > 4.3 * 1048576) throw new Error('vídeo acima de 4,3 MB');
+    const url = await _trSubir(blob, 'tend-' + p.id + '.mp4', 'reels', 'mp4', 'video/'); p.midia_urls = [url];
+    const redes = (cfg.redes || ['instagram']).filter(x => x !== 'linkedin'); // Reel: Instagram (e Facebook); LinkedIn recebe o texto num post separado
+    r = await trMc('publicar', { tipo: 'REEL', texto: legenda, redes, data_hora: quando, imagem_url: url, encurtar_link: false });
+    if ((cfg.redes || []).includes('linkedin')) { try { await trMc('publicar', { texto: p.legenda || '', redes: ['linkedin'], data_hora: quando, imagem_url: url, tipo: 'POST' }); } catch (e) { addLog('warn', '[Tendências] LinkedIn: ' + e.message); } }
+  } else if (p.tipo === 'carrossel') {
+    const urls = []; for (let i = 0; i < p.roteiro.slides.length; i++) urls.push(await _trSubir(await _trImagem(p, k, i, 1080, 1080), 'tend-' + p.id + '-' + (i + 1) + '.jpg', 'carrossel', 'jpg', 'image/'));
+    p.midia_urls = urls; r = await trMc('publicar', { texto: legenda, redes: cfg.redes || ['instagram'], data_hora: quando, imagem_url: urls[0], imagens_urls: urls, encurtar_link: false });
+  } else {
+    const url = await _trSubir(await _trImagem(p, k, 0, 1080, 1920), 'tend-' + p.id + '.jpg', 'stories', 'jpg', 'image/'); p.midia_urls = [url];
+    r = await trMc('story_agendar', { imagem_url: url, quando });
+  }
+  await trApi('peca_salvar', { id: p.id, midia_urls: p.midia_urls, status: 'agendada', metricool_id: r?.metricool_id ? String(r.metricool_id) : null });
+}
+async function trProduzir(ids) {
+  if (_tr.produzindo) return toast('Já está produzindo', 'info');
+  const P = _tr.dados.pecas, alvo = ids ? P.filter(p => ids.includes(p.id) && p.roteiro) : P.filter(p => p.status === 'roteiro' || p.status === 'erro' && p.roteiro).slice(0, +(document.getElementById('trQt')?.value || 15));
+  if (!alvo.length) return toast('Nada com roteiro para produzir — escreva os roteiros primeiro', 'error');
+  _tr.produzindo = true; _tr.parar = false; let ok = 0, falhas = 0; const prog = () => document.getElementById('trProg');
+  for (const [n, p] of alvo.entries()) {
+    if (_tr.parar) break;
+    if (prog()) prog().innerHTML = '<div class="qp-pe">⏳ ' + (n + 1) + ' de ' + alvo.length + ': ' + (TR_TIPO[p.tipo] || [p.tipo])[0] + ' de ' + new Date(p.data + 'T12:00:00').toLocaleDateString('pt-BR') + ' ' + p.hora + '</div><div class="qp-cov qp-cov-run"><i style="width:' + Math.round(n / alvo.length * 100) + '%"></i></div><div class="qp-cm">' + ok + ' agendada(s) · ' + falhas + ' com erro</div>';
+    try { await _trProduzirUma(p, P.indexOf(p)); p.status = 'agendada'; ok++; addLog('ok', '[Tendências] agendado: ' + p.tipo + ' ' + p.data + ' ' + p.hora); }
+    catch (e) { falhas++; p.status = 'erro'; p.erro = e.message; addLog('err', '[Tendências] ' + p.tipo + ' ' + p.data + ' ' + p.hora + ': ' + e.message); try { await trApi('peca_salvar', { id: p.id, status: 'erro', erro: e.message.substring(0, 300) }); } catch (_) {} }
+  }
+  _tr.produzindo = false; toast(ok + ' peça(s) agendada(s) no Metricool' + (falhas ? ' · ' + falhas + ' com erro (veja no calendário)' : ''), falhas ? 'error' : 'success');
+  trAbrir(_tr.cid);
+}
+
 // ═══ v3.133: S6 · QA DE PRODUTOS — robô de testes caixa-preta dos produtos da Atlantyx + Kanban de QA ═══
 // Produto só vai para "Aprovado" com 100% das telas testadas e nenhum achado aberto, em correção ou a retestar.
 let _qpDados = null, _qpProd = null, _qpAchados = null, _qpFiltro = 'pendentes';
@@ -31790,7 +32055,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.142] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.143] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -31806,7 +32071,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.142';
+window.__ATX_BUILD_ID__ = 'ATX-v3.143';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
