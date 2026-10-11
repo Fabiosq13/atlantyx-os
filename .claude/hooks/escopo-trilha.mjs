@@ -5,7 +5,7 @@
 // Trilha: variável BPM_TRILHA, ou arquivo .bpm-trilha na raiz ("T3" na 1ª linha, ID na 2ª). Sem trilha = Maestro → libera.
 import fs from 'fs';
 import path from 'path';
-import { podeAlterar, contaDDL, versoes } from '../../lib/bpm.js';
+import { podeAlterar, contaDDL, checaDDL, versoes, normalizar } from '../../lib/bpm.js';
 
 let entrada = {};
 try { entrada = JSON.parse(fs.readFileSync(0, 'utf8') || '{}'); } catch (_) { process.exit(0); }
@@ -29,7 +29,7 @@ if (entrada.tool_name === 'Write') { try { antes = fs.readFileSync(abs, 'utf8');
 else if (Array.isArray(ti.edits)) { antes = ti.edits.map(e => e.old_string || '').join('\n'); depois = ti.edits.map(e => e.new_string || '').join('\n'); }
 else { antes = ti.old_string || ''; depois = ti.new_string || ''; }
 
-if (trilha !== 'T5' && contaDDL(depois) > contaDDL(antes))
+if (trilha !== 'T5' && checaDDL(normalizar(arquivo, raiz)) && contaDDL(depois) > contaDDL(antes))
   bloquear('mudança de schema (CREATE/ALTER/DROP TABLE ou índice) é exclusiva da T5 Dados. Registre a necessidade em "Interseções" do plano.md e peça ao subagent afinador uma proposta em partitura/contratos/banco.md.');
 if (versoes(depois) && versoes(depois) !== versoes(antes) && !process.env.BPM_PERMITE_VERSAO)
   bloquear('não altere a versão ATX-vX.YY / ATLANTYX vX.YY — o robô de merge sobe a versão ao mesclar.');

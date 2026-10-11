@@ -14,7 +14,7 @@
 import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { podeAlterar, contaDDL, RX_SEGREDO, escopos } from '../lib/bpm.js';
+import { podeAlterar, contaDDL, checaDDL, RX_SEGREDO, escopos } from '../lib/bpm.js';
 
 const arg = (k, def = null) => { const i = process.argv.indexOf('--' + k); return i > 0 ? (process.argv[i + 1] && !process.argv[i + 1].startsWith('--') ? process.argv[i + 1] : true) : def; };
 const raiz = path.resolve(arg('raiz') || process.env.ATX_RAIZ || process.cwd());
@@ -70,7 +70,7 @@ if (trilha && id) {
 } else if (trilha) gate('partitura', 'aviso', ['PR de trilha sem "BPM-ID:" — não dá para conferir spec.md/plano.md']);
 
 // banco
-const ddl = Object.entries(porArquivo).filter(([f, x]) => /\.(m?js)$/.test(f || '') && contaDDL(x.add.join('\n')) > contaDDL(x.del.join('\n'))).map(([f]) => f);
+const ddl = Object.entries(porArquivo).filter(([f, x]) => /\.(m?js)$/.test(f || '') && checaDDL(f) && contaDDL(x.add.join('\n')) > contaDDL(x.del.join('\n'))).map(([f]) => f);
 if (ddl.length) gate('banco', trilha === 'T5' || rotulos.includes('afinacao-aprovada') ? 'aviso' : 'erro', ddl.map(f => `${f}: mudança de schema (CREATE/ALTER/DROP TABLE ou índice)` + (trilha === 'T5' ? ' — T5: confira a proposta em partitura/contratos/banco.md' : ' — só a T5 Dados aplica, depois da aprovação do Afinador (ou rótulo "afinacao-aprovada")')));
 else gate('banco', 'ok');
 
