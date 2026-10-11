@@ -463,19 +463,29 @@ async function agendaGP({ dias = 30 } = {}) {
     });
   } catch (e) { console.warn('[agenda] marcos:', e.message); }
 
-  // 2. Reuniões do PMO
+  // 2. Reuniões do PMO — v3.148: a coluna é data_hora (antes consultava data_reuniao/projetos_discutidos, que não existem,
+  //    e o erro era engolido: nenhuma reunião aparecia na agenda)
   try {
-    const reun = await sql`SELECT id, titulo, data_reuniao, projetos_discutidos FROM pmo_reunioes
-      WHERE data_reuniao >= ${hoje} AND data_reuniao <= ${fim} ORDER BY data_reuniao`;
-    reun.forEach(r => itens.push({ tipo: 'reuniao', data: String(r.data_reuniao).substring(0, 10), titulo: r.titulo,
-      projeto: Array.isArray(r.projetos_discutidos) ? r.projetos_discutidos.join(', ') : null, id: r.id, acao: 's9reuniao' }));
-  } catch (_) {}
+    const reun = await sql`SELECT id, titulo, data_hora, pauta FROM pmo_reunioes
+      WHERE data_hora >= ${hoje + 'T00:00:00-03:00'} AND data_hora <= ${fim + 'T23:59:59-03:00'} ORDER BY data_hora`;
+    reun.forEach(r => { const dt = new Date(new Date(r.data_hora).getTime() - 3 * 3600000).toISOString();
+      itens.push({ tipo: 'reuniao', data: dt.substring(0, 10), hora: dt.substring(11, 16), titulo: r.titulo, notas: r.pauta ? String(r.pauta).substring(0, 160) : null, id: r.id, acao: 's9sala' }); });
+  } catch (e) { console.warn('[agenda] reuniões:', e.message); }
+  // 2b. v3.148: ritos semanais (S0 · Reuniões Semanais) — cada ocorrência no horizonte entra na agenda
+  try {
+    const ritos = await sql`SELECT id, nome, dia_semana, hora, duracao_min FROM reu_ritos WHERE ativo`;
+    for (const r of ritos) for (let d = hoje; d <= fim; d = new Date(Date.parse(d + 'T12:00:00Z') + 864e5).toISOString().substring(0, 10)) {
+      const w = new Date(d + 'T12:00:00Z').getUTCDay() || 7; if (w !== +r.dia_semana) continue;
+      itens.push({ tipo: 'reuniao', data: d, hora: r.hora, titulo: 'Reunião semanal · ' + r.nome, notas: (r.duracao_min || 60) + ' min · pauta montada pelo sistema na véspera', id: r.id, acao: 's0ritos' });
+    }
+  } catch (_) { /* módulo de reuniões ainda não usado: tabela inexistente */ }
 
   // 3. Reports pendentes — projetos do ciclo sem report na semana
   let reportsPendentes = [];
   try {
-    const cfg = await sql`SELECT projeto FROM pmo_projetos_config`;
-    const ult = await sql`SELECT projeto, MAX(criado_em) AS ultimo FROM status_reports GROUP BY projeto`;
+    // v3.148: as colunas são projeto_nome (antes "projeto", inexistente — os reports pendentes nunca apareciam)
+    const cfg = await sql`SELECT projeto_nome AS projeto FROM pmo_projetos_config WHERE ativo IS NOT FALSE`;
+    const ult = await sql`SELECT projeto_nome AS projeto, MAX(data_report) AS ultimo FROM status_reports GROUP BY projeto_nome`;
     const mapa = {}; ult.forEach(u => mapa[u.projeto] = u.ultimo);
     const corte = new Date(Date.now() - 7 * 86400000);
     cfg.forEach(c => {
@@ -488,7 +498,7 @@ async function agendaGP({ dias = 30 } = {}) {
           atrasado: !u || (Date.now() - new Date(u)) > 14 * 86400000, acao: 's9status' });
       }
     });
-  } catch (_) {}
+  } catch (e) { console.warn('[agenda] reports:', e.message); }
 
   // 4. Compromissos manuais
   try {
