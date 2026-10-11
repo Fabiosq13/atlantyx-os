@@ -11043,7 +11043,7 @@ async function tvAbrir() { const box = document.getElementById('tvApp'); if (!bo
 function tvRender() {
   const c = _tv, e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   document.getElementById('tvApp').innerHTML = '<div style="background:linear-gradient(135deg,rgba(0,196,204,.12),rgba(0,196,204,.03));border:1px solid rgba(0,196,204,.3);border-radius:10px;padding:14px 18px;margin-bottom:12px;">'
-    + '<div style="font-family:var(--H);font-size:15px;font-weight:700;">📺 Gestão à vista na TV</div><div style="font-size:11px;color:var(--t2);margin-top:3px;line-height:1.6;">Uma página em tela cheia para a TV da empresa, aberta por <b>link direto, sem login</b>. Os slides giram sozinhos — <b>Financeiro</b> (faturamento e lucro do mês contra a meta, margem, caixa, a receber e vencidos, evolução no ano) e <b>Comercial</b> (meta de vendas do mês e do ano, propostas, win rate, funil de 30 dias e ritmo do time). Os números atualizam a cada 10 minutos. Só aparecem totais — nada de extrato ou cliente a cliente — e o link pode ser revogado a qualquer momento.</div></div>'
+    + '<div style="font-family:var(--H);font-size:15px;font-weight:700;">📺 Gestão à vista na TV</div><div style="font-size:11px;color:var(--t2);margin-top:3px;line-height:1.6;">Uma página em tela cheia para a TV da empresa, aberta por <b>link direto, sem login</b>. Os slides giram sozinhos — <b>Financeiro</b> (faturamento e lucro do mês contra a meta, margem, caixa, a receber e vencidos, evolução no ano) , <b>Comercial</b> (% da meta de faturamento do mês e do ano, propostas, win rate, funil de 30 dias e ritmo do time) e <b>Qualidade</b> (farol de termos de faturamento certos × com erro, dados do QuickBooks certos × com erro, projetos em dia × atrasados). Os números atualizam a cada 10 minutos. Só aparecem totais — nada de extrato ou cliente a cliente — e o link pode ser revogado a qualquer momento.</div></div>'
     + '<div class="panel" style="margin-bottom:12px;"><div class="pb">'
     + (c.link ? '<div style="font-size:10px;font-family:var(--M);text-transform:uppercase;color:var(--t2);margin-bottom:4px;">Link da TV</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><code id="tvLink" style="font-size:17px;padding:8px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:8px;user-select:all;">' + e(c.link) + '</code>'
         + '<button class="btn btn-gn" onclick="navigator.clipboard.writeText(_tv.link).then(()=>toast(\'Link copiado\',\'success\'))">📋 Copiar</button><a class="btn btn-g" href="' + e(c.link) + '" target="_blank" rel="noopener">↗ Abrir</a>'
@@ -11052,7 +11052,8 @@ function tvRender() {
       : '<div style="font-size:12px;margin-bottom:8px;">Nenhum link ativo.</div><button class="btn btn-gn" onclick="tvAcao(\'gerar\')">📺 Gerar o link da TV</button>')
     + '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-top:14px;font-size:12px;"><div><label class="fl">Trocar de slide a cada</label><select class="fsel" id="tvRot" style="width:auto;">' + [10, 15, 20, 25, 30, 45, 60, 90].map(s => '<option value="' + s + '"' + (+c.rotacao_s === s ? ' selected' : '') + '>' + s + ' segundos</option>').join('') + '</select></div>'
     + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSf"' + (c.slides.includes('financeiro') ? ' checked' : '') + '/> Financeiro</label><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSc"' + (c.slides.includes('comercial') ? ' checked' : '') + '/> Comercial</label>'
-    + '<button class="btn btn-g" onclick="tvSalvar()">💾 Salvar</button><button class="btn btn-g" onclick="tvAtualizar(this)">↻ Atualizar os números agora</button></div></div></div>'
+    + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSq"' + (c.slides.includes('qualidade') ? ' checked' : '') + '/> Qualidade (farol)</label>'
+    + '<button class="btn btn-g" onclick="tvSalvar()">💾 Salvar</button><button class="btn btn-g" onclick="tvAtualizar(this)">↻ Atualizar os números agora</button><button class="btn btn-p" onclick="tvConferir(this)">🔍 Conferir os números (abrir o caixa)</button></div></div></div><div id="tvConf"></div>'
     + (c.link ? '<div class="panel" style="margin-bottom:12px;"><div class="pb"><div style="font-size:10px;font-family:var(--M);text-transform:uppercase;color:var(--t2);margin-bottom:6px;">Prévia (como aparece na TV)</div><div style="position:relative;width:100%;max-width:960px;aspect-ratio:16/9;border-radius:10px;overflow:hidden;border:1px solid var(--bd);background:#070B18;"><iframe id="tvPrev" src="' + e(c.link) + '" style="position:absolute;inset:0;width:100%;height:100%;border:0;" loading="lazy" title="Prévia da TV"></iframe></div></div></div>' : '')
     + '<div class="panel"><div class="pb" style="font-size:11.5px;line-height:1.75;"><b>Como colocar na TV</b><br>1. <b>Smart TV:</b> abra o navegador da TV e digite o link acima (é curto de propósito). Aperte OK na tela para ficar em tela cheia; as setas do controle trocam de slide.<br>'
     + '2. <b>Chromecast, Fire TV ou Apple TV:</b> abra o link no Chrome do computador ou do celular e espelhe a aba na TV.<br>3. <b>Mini PC ou TV box ligado na TV:</b> abra o link no navegador em modo quiosque — a página recarrega sozinha e se recupera de queda de internet.<br>'
@@ -11064,8 +11065,40 @@ async function tvAcao(a) {
   try { const r = await tvApi(a); if (a === 'revogar') _tv = (await tvApi('config')).config; else _tv = r.config; tvRender(); toast(a === 'revogar' ? 'Link revogado' : 'Link da TV pronto', 'success'); } catch (e) { toast(e.message, 'error'); }
 }
 async function tvSalvar() {
-  const slides = [document.getElementById('tvSf').checked && 'financeiro', document.getElementById('tvSc').checked && 'comercial'].filter(Boolean);
+  const slides = [document.getElementById('tvSf').checked && 'financeiro', document.getElementById('tvSc').checked && 'comercial', document.getElementById('tvSq')?.checked && 'qualidade'].filter(Boolean);
   try { _tv = (await tvApi('salvar', { rotacao_s: document.getElementById('tvRot').value, slides })).config; tvRender(); toast('Salvo — a TV pega a mudança na próxima recarga (até 10 min) ou ao reabrir o link', 'success'); } catch (e) { toast(e.message, 'error'); }
+}
+// v3.152: abre cada número da TV até a origem — caixa (abertura + entradas − saídas), faturamento e % da meta
+async function tvConferir(b) {
+  const box = document.getElementById('tvConf'); if (!box) return; if (b) { b.disabled = true; b.textContent = '⏳ Abrindo os números no QuickBooks…'; }
+  const R = v => v == null || isNaN(v) ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), P = v => v == null ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+  const e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;'), D = d => d ? String(d).split('-').reverse().join('/') : '';
+  const lin = (r, v, x, forte) => '<tr><td style="padding:6px 8px;' + (forte ? 'font-weight:700;' : '') + '">' + r + '</td><td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;' + (forte ? 'font-weight:700;' : '') + '">' + v + '</td><td style="padding:6px 8px;color:var(--t3);font-size:10.5px;">' + (x || '') + '</td></tr>';
+  const lista = (t, L, cor) => '<div style="flex:1;min-width:280px;"><div style="font-size:10px;font-family:var(--M);text-transform:uppercase;color:var(--t2);margin:10px 0 4px;">' + t + '</div>' + (L.length ? L.map(l => '<div style="display:flex;gap:8px;font-size:11px;padding:3px 0;border-bottom:1px solid var(--bd);"><span style="color:var(--t3);width:44px;">' + D(l.data).substring(0, 5) + '</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + e(l.descricao) + '">' + e(l.descricao || '—') + '</span><span style="color:' + cor + ';font-variant-numeric:tabular-nums;">' + R(l.valor) + '</span></div>').join('') : '<div style="font-size:11px;color:var(--t3);">nenhum lançamento</div>') + '</div>';
+  try {
+    const c = (await tvApi('conferir')).conferir, C = c.caixa, F = c.faturamento, V = c.vendas, T = c.na_tv;
+    const fecha = C.saldo_abertura != null && C.saldo_hoje != null ? Math.abs((C.saldo_abertura + (C.entradas || 0) - (C.saidas || 0)) - C.saldo_hoje) < 1 : null;
+    const ori = { razao_saldo_inicial: 'saldo inicial do razão do QuickBooks', soma_transacoes: 'soma das transações do QuickBooks', quickbooks_retroagido: 'saldo atual das contas, retroagido', saldo_cadastrado: 'saldo inicial cadastrado no sistema', zero: 'sem saldo de abertura (QuickBooks sem saldo)' };
+    box.innerHTML = '<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">🔍 De onde vêm os números do mês</div><span class="tag on">' + D(c.periodo.de) + ' a ' + D(c.periodo.ate) + '</span></div><div class="pb">'
+      + (T ? '<div style="font-size:11px;color:var(--t2);margin-bottom:10px;">Na TV agora (cálculo de ' + new Date(T.gerado_em).toLocaleString('pt-BR') + '): caixa <b>' + R(T.caixa) + '</b> · faturamento do mês <b>' + R(T.faturamento_mes) + '</b> · meta do mês <b>' + P(T.meta_mes_pct) + '</b> · meta do ano <b>' + P(T.meta_ano_pct) + '</b>. A TV guarda os números por até 10 min; "Atualizar os números agora" força a leitura.</div>' : '')
+      + '<div style="font-family:var(--H);font-size:13px;font-weight:700;margin:4px 0 6px;">💰 Caixa hoje</div>' + (C.erro ? '<div style="color:var(--red);font-size:11px;">⚠ ' + e(C.erro) + '</div>' : '')
+      + '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+      + lin('Saldo de abertura em ' + D(C.abertura_data), R(C.saldo_abertura), e(ori[C.abertura_origem] || C.abertura_origem || ''))
+      + lin('+ Entradas no mês', '<span style="color:var(--gn);">' + R(C.entradas) + '</span>', 'recebimentos lançados no QuickBooks')
+      + lin('− Saídas no mês', '<span style="color:var(--red);">' + R(C.saidas) + '</span>', 'pagamentos lançados no QuickBooks')
+      + lin('= Caixa hoje (o número da TV)', R(C.saldo_hoje), C.qtd_lancamentos + ' lançamentos no mês' + (fecha === false ? ' · ⚠ a conta não fecha — avise o financeiro' : ''), true)
+      + (C.soma_contas_qb != null ? lin('Saldo atual das contas bancárias no QuickBooks', R(C.soma_contas_qb), Math.abs((C.soma_contas_qb || 0) - (C.saldo_hoje || 0)) > 1 ? '⚠ diferença de ' + R((C.soma_contas_qb || 0) - (C.saldo_hoje || 0)) + ' — normalmente lançamentos com data futura ou conciliação pendente' : 'confere com o caixa') : '')
+      + '</table>' + (C.abertura_obs ? '<div style="font-size:10.5px;color:var(--t3);margin-top:4px;">' + e(C.abertura_obs) + '</div>' : '') + (C.conferencia_cadastro?.aviso ? '<div style="font-size:10.5px;color:var(--am);margin-top:4px;">⚠ ' + e(C.conferencia_cadastro.aviso) + '</div>' : '')
+      + '<div style="display:flex;gap:18px;flex-wrap:wrap;">' + lista('Maiores entradas do mês', C.maiores_entradas || [], 'var(--gn)') + lista('Maiores saídas do mês', C.maiores_saidas || [], 'var(--red)') + '</div>'
+      + '<div style="font-size:10.5px;margin-top:6px;"><a href="#" onclick="event.preventDefault();nav(\'s3extrato\',document.querySelector(\'.sbi[onclick*=s3extrato]\'))">Ver o extrato completo do mês →</a></div>'
+      + '<div style="font-family:var(--H);font-size:13px;font-weight:700;margin:16px 0 6px;">📈 Faturamento e meta (slide Financeiro)</div>' + (F.erro ? '<div style="color:var(--red);font-size:11px;">⚠ ' + e(F.erro) + '</div>' : '')
+      + '<table style="width:100%;border-collapse:collapse;font-size:12px;">' + lin('Faturamento do mês', R(F.mes), 'DRE do QuickBooks, regime ' + e(F.regime || '—')) + lin('Meta do mês', R(F.meta_mes), e(F.meta_fonte || '')) + lin('Lucro do mês', R(F.lucro_mes), '') + '</table>'
+      + '<div style="font-family:var(--H);font-size:13px;font-weight:700;margin:16px 0 6px;">🎯 % da meta (slide Comercial)</div>' + (V.erro ? '<div style="color:var(--red);font-size:11px;">⚠ ' + e(V.erro) + '</div>' : '')
+      + '<table style="width:100%;border-collapse:collapse;font-size:12px;">' + lin('Meta do mês · faturado', P(V.pct_mes), R(V.realizado_mes) + ' faturado ÷ ' + R(V.meta_mes) + ' de meta — ' + e(V.meta_fonte?.mes || '')) + lin('Meta do ano · faturado', P(V.pct_ano), R(V.realizado_ano) + ' faturado ÷ ' + R(V.meta_ano) + ' de meta — ' + e(V.meta_fonte?.ano || '')) + '</table>'
+      + '<div style="font-size:10.5px;color:var(--t3);margin-top:4px;">É o faturamento (notas no QuickBooks) contra a meta de faturamento — não o valor de contratos assinados no mês.</div>'
+      + '</div></div>';
+  } catch (er) { box.innerHTML = '<div class="panel"><div class="pb" style="color:var(--red);font-size:12px;">' + e(er.message) + '</div></div>'; }
+  if (b) { b.disabled = false; b.textContent = '🔍 Conferir os números (abrir o caixa)'; }
 }
 async function tvAtualizar(b) { b.disabled = true; b.textContent = '⏳ Lendo QuickBooks e vendas…'; try { await tvApi('atualizar_dados'); toast('Números atualizados', 'success'); const f = document.getElementById('tvPrev'); if (f) f.src = f.src; } catch (e) { toast(e.message, 'error'); } b.disabled = false; b.textContent = '↻ Atualizar os números agora'; }
 // v3.147: Reuniões Semanais — ritos recorrentes com pauta automática (módulo sob demanda: /reunioes-ui.js)
@@ -32360,7 +32393,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.151] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.152] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -32376,7 +32409,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.151';
+window.__ATX_BUILD_ID__ = 'ATX-v3.152';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
