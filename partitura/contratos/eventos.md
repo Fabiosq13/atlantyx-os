@@ -30,6 +30,7 @@ _Gerado por `node scripts/bpm-inventario.mjs` a partir do código. Não edite ab
 | `* * * * *` | `/api/metricool?cron=fila` | T2 Integrações |
 | `*/15 * * * *` | `/api/campanha-disparo?cron=1` | T3 Agentes e Squads |
 | `0 */6 * * *` | `/api/agente-ideias?cron=1` | T1 Plataforma |
+| `0 11 * * *` | `/api/reunioes?cron=1` | T3 Agentes e Squads |
 
 ### Workflows do GitHub Actions
 
@@ -56,6 +57,7 @@ _Gerado por `node scripts/bpm-inventario.mjs` a partir do código. Não edite ab
 | `api/metricool.js` | `api/media.js` | T2 → T2 |
 | `api/metricool.js` | `api/media.js` | T2 → T2 |
 | `api/metricool.js` | `api/media.js` | T2 → T2 |
+| `api/reunioes.js` | `api/financeiro.js` | T3 → T6 (interseção) |
 | `api/s1-data.js` | `api/financeiro.js` | T3 → T6 (interseção) |
 | `api/s1-data.js` | `api/financeiro.js` | T3 → T6 (interseção) |
 | `api/s1-data.js` | `api/financeiro.js` | T3 → T6 (interseção) |

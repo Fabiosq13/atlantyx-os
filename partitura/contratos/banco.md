@@ -91,6 +91,8 @@ _Gerado por `node scripts/bpm-inventario.mjs` a partir do código. Não edite ab
 | `qa_execucoes` | T1 Plataforma | qa-externo | qa-externo | fabrica, qa-externo | progresso (qa-externo.js) |
 | `qa_produtos` | T1 Plataforma | qa-externo | qa-externo | fabrica, qa-externo | permitir_carga (qa-externo.js), usuarios_simultaneos (qa-externo.js) |
 | `qa_runs` | T1 Plataforma | qa | qa | qa | — |
+| `reu_reunioes` | T3 Agentes e Squads | reunioes | reunioes | reunioes | — |
+| `reu_ritos` | T3 Agentes e Squads | reunioes | reunioes | reunioes | — |
 | `s13_projetos` | T5 Dados | db | db | db | — |
 | `s1_historico` | T3 Agentes e Squads | historico-s1 | historico-s1 | historico-s1 | — |
 | `saldos_iniciais` | T6 Financeiro | financeiro | financeiro | financeiro | — |

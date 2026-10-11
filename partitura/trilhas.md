@@ -24,5 +24,6 @@ _(nenhuma)_
 ## Registro da Batida
 | Data | Concluído | Em andamento | Bloqueios | Decisão humana necessária |
 |---|---|---|---|---|
+| 2026-10-11 | Reuniões Semanais (v3.147): ritos, convites .ics, pauta automática, sala e ata | — | — | Fabio revisa participantes e envia os convites |
 | 2026-10-11 | Enviar para construção (v3.146): trilhas de produto P-<pasta> | — | — | Escolher o primeiro projeto real |
 | 2026-10-11 | Kit da F1 instalado no repositório e na Esteira (v3.145) | — | — | Escolher a trilha piloto da F2; decidir sobre branch protection (ver README) |

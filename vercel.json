@@ -169,6 +169,9 @@
     },
     "api/tendencias.js": {
       "maxDuration": 300
+    },
+    "api/reunioes.js": {
+      "maxDuration": 180
     }
   },
   "crons": [
@@ -223,6 +226,10 @@
     {
       "path": "/api/agente-ideias?cron=1",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/reunioes?cron=1",
+      "schedule": "0 11 * * *"
     }
   ],
   "headers": [

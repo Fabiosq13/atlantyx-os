@@ -68,6 +68,7 @@
 /api/briefing-cron.js  @Fabiosq13
 /api/outreach-batch.js  @Fabiosq13
 /api/crm.js  @Fabiosq13
+/api/reunioes.js  @Fabiosq13
 /api/pmo.js  @Fabiosq13
 /api/rh.js  @Fabiosq13
 /api/business-plan.js  @Fabiosq13
@@ -79,6 +80,7 @@
 /lib/proposta-calc.js  @Fabiosq13
 /lib/historico-s1.js  @Fabiosq13
 /public/vendas-ui.js  @Fabiosq13
+/public/reunioes-ui.js  @Fabiosq13
 /public/juridico-ui.js  @Fabiosq13
 /public/disparo-ui.js  @Fabiosq13
 /public/bio.html  @Fabiosq13

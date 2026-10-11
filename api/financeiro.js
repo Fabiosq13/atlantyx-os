@@ -1108,7 +1108,8 @@ function _htmlRelatorioPagamentos(d) {
 
 // Envio via SMTP do Gmail (atlanteambr@gmail.com) — reaproveita a senha de app já
 // configurada em EMAIL_IMAP_PASS. Cai para o Resend se o nodemailer não estiver instalado.
-export async function enviarEmailGmail({ para, assunto, html, remetente }) {
+// v3.147: `ical` (texto .ics) vira convite de calendário de verdade (Gmail/Outlook mostram Aceitar/Recusar); `anexos` = [{ filename, content, contentType }]
+export async function enviarEmailGmail({ para, assunto, html, remetente, ical, anexos }) {
   const user = (process.env.EMAIL_SMTP_USER || process.env.EMAIL_IMAP_USER) || 'atlanteambr@gmail.com';
   const pass = process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS;
   const trilha = []; // v1.25.1: registra CADA tentativa, para o erro nunca ser silencioso
@@ -1123,7 +1124,8 @@ export async function enviarEmailGmail({ para, assunto, html, remetente }) {
       // verify() falha rápido e com mensagem clara se a credencial estiver errada
       try { await transporter.verify(); trilha.push('SMTP Gmail: autenticação OK'); }
       catch (eV) { trilha.push('SMTP Gmail: autenticação FALHOU — ' + eV.message.substring(0, 120)); throw eV; }
-      const info = await transporter.sendMail({ from: `${remetente || 'Atlantyx OS Financeiro'} <${user}>`, to: para.join(', '), subject: assunto, html });
+      const info = await transporter.sendMail({ from: `${remetente || 'Atlantyx OS Financeiro'} <${user}>`, to: para.join(', '), subject: assunto, html,
+        ...(ical ? { icalEvent: { method: (String(ical).match(/^METHOD:(\w+)/m) || [])[1] || 'REQUEST', filename: 'convite.ics', content: ical } } : {}), ...(anexos?.length ? { attachments: anexos } : {}) });
       trilha.push('SMTP Gmail: aceito pelo servidor · destinatários aceitos: ' + JSON.stringify(info.accepted || []) + (info.rejected?.length ? ' · REJEITADOS: ' + JSON.stringify(info.rejected) : ''));
       return { via: 'gmail-smtp', de: user, id: info.messageId, aceitos: info.accepted, rejeitados: info.rejected, resposta_servidor: info.response, trilha };
     } catch (eSmtp) {
@@ -1141,7 +1143,8 @@ export async function enviarEmailGmail({ para, assunto, html, remetente }) {
   if (!key) { const err = new Error('Não foi possível enviar: nodemailer ausente ou senha não configurada, e sem RESEND_API_KEY de reserva.'); err.trilha = trilha;
     err.hint = 'Confirme que o package.json tem "nodemailer" nas dependencies (e que o deploy rodou depois disso) e que EMAIL_IMAP_PASS está preenchida no Vercel.'; throw err; }
   const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: process.env.RESEND_FROM || 'Atlantyx <noreply@atlantyx.com.br>', to: para, subject: assunto, html }) });
+    body: JSON.stringify({ from: process.env.RESEND_FROM || 'Atlantyx <noreply@atlantyx.com.br>', to: para, subject: assunto, html,
+      ...((ical || anexos?.length) ? { attachments: [...(ical ? [{ filename: 'convite.ics', content: Buffer.from(ical).toString('base64'), content_type: 'text/calendar; method=REQUEST' }] : []), ...(anexos || []).map(a => ({ filename: a.filename, content: Buffer.from(a.content).toString('base64'), content_type: a.contentType }))] } : {}) }) });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) {
     // v1.25.1: mostrar o MOTIVO do Resend (antes era só "HTTP 4xx", inútil para diagnosticar)
