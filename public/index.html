@@ -2369,7 +2369,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     </div>
     <div id="gabAbaPainel">
     <!-- Sinais de Alerta Automáticos: semáforo ao vivo com dados de A Receber, Marcos de Projeto e QuickBooks (sem IA) -->
-    <div class="panel" id="alertas-automaticos"><div class="ph"><div class="pt">Sinais de Alerta Automáticos</div><span class="tag live">Ao Vivo</span><span id="rskAtualizado" style="font-family:var(--M);font-size:9px;color:var(--t3);margin-left:6px;"></span><button class="btn btn-g" style="font-size:9px;padding:3px 8px;margin-left:auto;" onclick="carregarSinaisRisco(true)">↻ Atualizar</button></div>
+    <div class="panel" id="alertas-automaticos"><div class="ph"><div class="pt">Sinais de Alerta Automáticos</div><span class="tag live">Ao Vivo</span><span id="rskAtualizado" style="font-family:var(--M);font-size:9px;color:var(--t3);margin-left:6px;"></span><button class="btn btn-g" id="rskBtnAtualizar" style="font-size:9px;padding:3px 8px;margin-left:auto;" onclick="carregarSinaisRisco(true)">↻ Atualizar</button></div>
       <div class="pb" id="rskSinais"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando sinais de alerta…</div></div>
     </div>
     <div class="panel"><div class="ph"><div class="pt">Gestão de Riscos — Atlantyx</div><span class="tag on">Claude IA</span><button class="btn btn-rd" id="btnRiscos" style="font-size:9px;padding:4px 9px;" onclick="runIntel('analise_riscos','s1RiscosResult','btnRiscos')">&#9670; Analisar Riscos</button></div>
@@ -13098,11 +13098,50 @@ nav = function(p, el) {
 // margem do mês no QuickBooks (kpis_saude) e meta de margem do Orçamento Anual (orcamento_consolidado).
 // Regras: recebível vencido >15d = vermelho (vencido até 15d = amarelo) · marco atrasado = amarelo, >15d = vermelho
 //         margem < 0 = vermelho · margem < meta do orçamento (padrão 20%) = amarelo · API sem resposta em 8s = cinza
+// dem_muzhkv58n9ak: HTTP 0 / timeout tenta de novo (até 3x, 2s entre elas) dentro de um prazo total de 15s; se tudo falhar,
+// mostra a última leitura boa (localStorage 'cache_riscos') com a tag [dados offline] — o botão nunca fica girando para sempre.
 const RSK_TIMEOUT_MS = 8000, RSK_DIAS_CRITICO = 15, RSK_MARGEM_PADRAO = 20;
+const RSK_PRAZO_MS = 15000, RSK_TENTATIVAS = 3, RSK_BACKOFF_MS = 2000, RSK_CACHE = 'cache_riscos';
 const RSK_COR = { verde: 'var(--green)', amarelo: 'var(--gold)', vermelho: 'var(--red)', cinza: 'var(--t3)' };
 const RSK_FUNDO = { verde: 'var(--g2)', amarelo: 'var(--go2)', vermelho: 'var(--r2)', cinza: 'var(--bg3)' };
 const RSK_ROTULO = { verde: 'Verde', amarelo: 'Amarelo', vermelho: 'Vermelho', cinza: 'Dado indisponível' };
-let _rskSinais = null, _rskEm = 0, _rskCarregando = null;
+let _rskSinais = null, _rskEm = 0, _rskCarregando = null, _rskFalha = null; // _rskFalha = { msg, offline }
+
+// HTTP 0 (rede) e timeout são os únicos erros que valem nova tentativa — os demais vêm do servidor e se repetiriam
+function _rskErroRede(e) { return !!(e && (e.timeout || e.semConexao || e.httpStatus === 0 || e.name === 'AbortError')); }
+function _rskErroLegivel(e) {
+  if (!_rskErroRede(e)) return e;
+  const n = new Error('Sem conexão — tente novamente' + (e.timeout ? ' (o servidor não respondeu a tempo)' : ' (rede indisponível ou servidor fora do ar)'));
+  n.timeout = e.timeout; n.httpStatus = 0; n.semConexao = true; return n;
+}
+// finApi com retry: cada tentativa respeita o que sobra do prazo total (fim), então a leitura sempre termina até lá
+async function _rskComRetry(action, params, fim) {
+  let ult = null;
+  for (let t = 0; t < RSK_TENTATIVAS; t++) {
+    const resta = fim - Date.now();
+    if (resta < 1000) break;
+    try { return await finApi(action, params, { timeoutMs: Math.min(RSK_TIMEOUT_MS, resta) }); }
+    catch (e) { ult = e; if (!_rskErroRede(e)) throw e; }
+    if (t < RSK_TENTATIVAS - 1) { if (fim - Date.now() < RSK_BACKOFF_MS + 1000) break; await new Promise(r => setTimeout(r, RSK_BACKOFF_MS)); }
+  }
+  if (!ult) { ult = new Error('tempo esgotado'); ult.timeout = true; }
+  throw _rskErroLegivel(ult);
+}
+function _rskCacheSalvar(sinais) { try { localStorage.setItem(RSK_CACHE, JSON.stringify({ ts: Date.now(), sinais })); } catch (_) {} }
+function _rskCacheLer() { try { const c = JSON.parse(localStorage.getItem(RSK_CACHE) || 'null'); return c && Array.isArray(c.sinais) && c.sinais.length ? c : null; } catch (_) { return null; } }
+function _rskSkeleton(n) { return `<div class="kg k3" style="gap:10px;">${Array.from({ length: n || 3 }, () => '<div class="skel skeleton-row" style="height:96px;"></div>').join('')}</div>`; }
+function _rskBotao(carregando) {
+  const b = document.getElementById('rskBtnAtualizar'); if (!b) return;
+  b.disabled = !!carregando; b.textContent = carregando ? '⏳ Atualizando…' : '↻ Atualizar';
+}
+// Banner do erro: amarelo com dados offline, vermelho sem dados — ambos com "Tentar novamente"
+function _rskBannerHtml() {
+  const f = _rskFalha; if (!f) return '';
+  const btn = `<button class="btn btn-gn" style="font-size:10.5px;margin-left:8px;" onclick="this.disabled=true;this.textContent='⏳ Tentando...';carregarSinaisRisco(true)">↻ Tentar novamente</button>`;
+  return f.offline
+    ? `<div style="margin-bottom:10px;border-radius:8px;padding:10px 13px;font-size:11px;line-height:1.6;background:rgba(245,185,75,.1);border:1px solid var(--gold);"><b style="color:var(--gold);">⚠ [dados offline] Dados de ${_recEsc(new Date(f.offline).toLocaleString('pt-BR'))}</b> — ${_recEsc(f.msg)}. Mostrando a última leitura bem-sucedida.${btn}</div>`
+    : `<div style="margin-bottom:10px;border-radius:8px;padding:10px 13px;font-size:11px;line-height:1.6;background:rgba(255,80,80,.1);border:1px solid var(--red);"><b>⛔ ${_recEsc(f.msg)}</b>${btn}</div>`;
+}
 
 function _rskIr(tela) { nav(tela, document.querySelector(`.sbi[onclick*="'${tela}'"]`)); }
 function _rskMotivo(res) { const m = (res && res.reason && res.reason.message) || 'sem resposta'; return _recEsc(m.substring(0, 140)); }
@@ -13201,17 +13240,19 @@ function _rskRender() {
   const box = document.getElementById('rskSinais'), dash = document.getElementById('s1RiscosSemaforoDash'), at = document.getElementById('rskAtualizado');
   const sinais = _rskSinais;
   if (!sinais) {
-    const msg = '<div style="color:var(--t3);font-size:11px;text-align:center;padding:14px;">Carregando sinais de alerta…</div>';
-    if (box) box.innerHTML = msg; if (dash) dash.innerHTML = msg; return;
+    if (box) box.innerHTML = _rskBannerHtml() || _rskSkeleton(3);
+    if (dash) dash.innerHTML = _rskFalha ? `<div style="color:var(--t3);font-size:11px;text-align:center;padding:14px;">${_recEsc(_rskFalha.msg)}</div>` : '<div class="skel skeleton-row" style="height:44px;"></div>';
+    return;
   }
   const g = _rskGeral(sinais);
-  if (at) at.textContent = 'atualizado ' + new Date(_rskEm).toLocaleTimeString('pt-BR');
-  if (box) box.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px;color:var(--t2);">
+  const off = _rskFalha && _rskFalha.offline;
+  if (at) at.textContent = off ? '[dados offline] de ' + new Date(off).toLocaleTimeString('pt-BR') : _rskFalha ? 'sem conexão' : 'atualizado ' + new Date(_rskEm).toLocaleTimeString('pt-BR');
+  if (box) box.innerHTML = _rskBannerHtml() + `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px;color:var(--t2);">
       <span style="width:10px;height:10px;border-radius:50%;background:${RSK_COR[g]};"></span>
       Semáforo geral: <strong style="color:${RSK_COR[g]};">${RSK_ROTULO[g]}</strong>
       <span style="color:var(--t3);font-size:10px;">· clique num sinal para abrir a tela de origem</span></div>
     <div class="kg k3" style="gap:10px;">${sinais.map(_rskCardHtml).join('')}</div>`;
-  if (dash) dash.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;">${sinais.map(s => `<a href="#${s.tela}" onclick="_rskIr('${s.tela}');return false;" title="${_recEsc(String(s.resumo).replace(/<[^>]*>/g, ''))}"
+  if (dash) dash.innerHTML = (off ? `<div style="font-size:10px;color:var(--gold);margin-bottom:6px;">⚠ [dados offline] — última leitura de ${_recEsc(new Date(off).toLocaleString('pt-BR'))}</div>` : '') + `<div style="display:flex;gap:8px;flex-wrap:wrap;">${sinais.map(s => `<a href="#${s.tela}" onclick="_rskIr('${s.tela}');return false;" title="${_recEsc(String(s.resumo).replace(/<[^>]*>/g, ''))}"
       style="flex:1;min-width:200px;display:flex;align-items:center;gap:8px;background:${RSK_FUNDO[s.nivel]};border:1px solid ${RSK_COR[s.nivel]};border-radius:7px;padding:8px 11px;text-decoration:none;color:inherit;">
       <span style="width:11px;height:11px;border-radius:50%;background:${RSK_COR[s.nivel]};flex-shrink:0;"></span>
       <span style="flex:1;min-width:0;"><span style="font-family:var(--H);font-size:11.5px;font-weight:700;">${s.titulo}</span><br><span style="font-size:10px;color:var(--t2);">${s.resumo}</span></span></a>`).join('')}</div>`;
@@ -13220,19 +13261,34 @@ function _rskRender() {
 async function carregarSinaisRisco(forcar) {
   if (!forcar && _rskSinais && Date.now() - _rskEm < 60000) { _rskRender(); return _rskSinais; }
   if (_rskCarregando) return _rskCarregando;
-  if (!_rskSinais) _rskRender();
-  const o = { timeoutMs: RSK_TIMEOUT_MS };
+  _rskBotao(true);
+  if (!_rskSinais) { _rskFalha = null; _rskRender(); } // skeleton na primeira carga
+  const fim = Date.now() + RSK_PRAZO_MS;
   _rskCarregando = (async () => {
-    // 4 leituras em paralelo, cada uma com timeout de 8s; a que falhar vira "dado indisponível" sem travar as outras
-    const [rec, mar, kpi, orc] = await Promise.allSettled([
-      finApi('painel_resumo', {}, o), finApi('marcos_kanban', {}, o), finApi('kpis_saude', {}, o), finApi('orcamento_consolidado', { ano: new Date().getFullYear() }, o)]);
+    // 4 leituras em paralelo, cada uma com retry e prazo total de 15s; a que falhar vira "dado indisponível" sem travar as outras
+    const leituras = await Promise.allSettled([
+      _rskComRetry('painel_resumo', {}, fim), _rskComRetry('marcos_kanban', {}, fim), _rskComRetry('kpis_saude', {}, fim), _rskComRetry('orcamento_consolidado', { ano: new Date().getFullYear() }, fim)]);
+    const [rec, mar, kpi, orc] = leituras;
     const seguro = (fn, titulo, tela) => { try { return fn(); } catch (e) { return { chave: tela, titulo, origem: tela, tela, itens: [], nivel: 'cinza', resumo: 'Dado indisponível — ' + _recEsc(e.message) }; } };
-    _rskSinais = [seguro(() => _rskLiquidez(rec), 'Risco de liquidez', 's3receber'), seguro(() => _rskEntrega(mar), 'Risco de entrega', 's3marcoskanban'), seguro(() => _rskFinanceiro(kpi, orc), 'Risco financeiro', 's3kpis')];
-    _rskEm = Date.now();
+    const sinais = [seguro(() => _rskLiquidez(rec), 'Risco de liquidez', 's3receber'), seguro(() => _rskEntrega(mar), 'Risco de entrega', 's3marcoskanban'), seguro(() => _rskFinanceiro(kpi, orc), 'Risco financeiro', 's3kpis')];
+    const falhas = leituras.filter(x => x.status !== 'fulfilled');
+    if (falhas.length === leituras.length) {
+      // nenhuma leitura respondeu: última leitura boa (com aviso) ou, sem ela, os cartões cinza + banner de erro
+      const msg = String((_rskErroLegivel(falhas[0].reason) || {}).message || 'Sem conexão — tente novamente');
+      const c = _rskCacheLer();
+      if (c) { _rskSinais = c.sinais; _rskEm = c.ts; _rskFalha = { msg, offline: c.ts }; }
+      else { _rskSinais = sinais; _rskEm = 0; _rskFalha = { msg, offline: 0 }; }
+      addLog('warn', '[s1riscos] ' + msg + (c ? ' — exibindo dados salvos' : ' — sem cache local'));
+    } else {
+      _rskSinais = sinais; _rskEm = Date.now(); _rskFalha = null;
+      _rskCacheSalvar(sinais);
+    }
     try { renderRecAlertaDash(); } catch (_) {}
     return _rskSinais;
   })();
-  try { await _rskCarregando; } finally { _rskCarregando = null; }
+  try { await _rskCarregando; }
+  catch (e) { if (!_rskSinais) _rskFalha = { msg: (_rskErroLegivel(e) || {}).message || 'Erro ao carregar os sinais', offline: 0 }; }
+  finally { _rskCarregando = null; _rskBotao(false); }
   _rskRender();
   return _rskSinais;
 }
