@@ -5021,7 +5021,8 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
           <div class="fg" style="margin:0;"><label class="fl">Churn mensal (%)</label><input class="fi" id="f_churn" type="text" value="0" oninput="_projRender()"/></div>
           <div class="fg" style="margin:0;"><label class="fl">Meta de receita mensal</label><input class="fi" id="f_projMeta" type="text" value="1.500.000" oninput="_projRender()"/></div>
         </div>
-        <div id="f_projetadoResult"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando a projeção…</div></div>
+        <!-- dem_mv2cg88yists: skeleton imediato (colunas visíveis com '--'); _projSkeleton() repinta a cada carga -->
+        <div id="f_projetadoResult"><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:760px;"><thead><tr style="color:var(--t2);font-family:var(--M);font-size:9px;text-transform:uppercase;border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:6px;">Mês</th><th style="text-align:right;padding:6px;">Faturas em aberto</th><th style="text-align:right;padding:6px;">Marcos previstos</th><th style="text-align:right;padding:6px;">Recorrente</th><th style="text-align:right;padding:6px;">Simulados</th><th style="text-align:right;padding:6px;">Propostas (pond.)</th><th style="text-align:right;padding:6px;">Novo MRR</th><th style="text-align:right;padding:6px;">Total</th><th style="text-align:right;padding:6px;">vs meta</th></tr></thead><tbody><tr style="color:var(--t3);"><td style="padding:6px;">--</td><td style="padding:6px;text-align:right;">--</td><td style="padding:6px;text-align:right;">--</td><td style="padding:6px;text-align:right;">--</td><td style="padding:6px;text-align:right;">--</td><td style="padding:6px;text-align:right;">--</td><td style="padding:6px;text-align:right;">--</td><td style="padding:6px;text-align:right;">--</td><td style="padding:6px;text-align:right;">--</td></tr></tbody></table></div><div style="font-size:10px;color:var(--t3);margin-top:6px;">Abra a tela para carregar a projeção.</div></div>
         <div id="f_projetadoIA" style="margin-top:12px;"></div>
       </div>
     </div>
@@ -9690,15 +9691,50 @@ async function gerarAnaliseFin() {
 // v3.109: projeção DETERMINÍSTICA a partir do Fluxo de 12 meses (mesma base do sistema) + propostas e novo MRR informados.
 // Antes: texto livre da IA, com 3 dos 6 campos ignorados, meta fixa e o filtro de conta sem efeito.
 let _projBase = null;
+// dem_mv2cg88yists: skeleton imediato + timeout de 12s — o "carregando" sempre sai (dados ou erro com botão de tentar de novo)
+const _PROJ_TIMEOUT_MS = 12000;
+let _projSeq = 0;
+function _projSkeleton(msg) {
+  const el = document.getElementById('f_projetadoResult'); if (!el) return;
+  const cols = ['Mês', 'Faturas em aberto', 'Marcos previstos', 'Recorrente', 'Simulados', 'Propostas (pond.)', 'Novo MRR', 'Total', 'vs meta'];
+  const hoje = new Date(); const nm = i => { const d = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1); return ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][d.getMonth()] + '/' + String(d.getFullYear()).slice(2); };
+  el.innerHTML = '<div data-proj-skel="1" class="kg k4" style="margin-bottom:10px;opacity:.55;">'
+    + ['Receita projetada 12 meses', 'Já no sistema', 'Propostas + novo MRR', 'Meses na meta'].map(k => '<div class="kpi"><div class="kl">' + k + '</div><div class="kv">--</div><div class="ks">&nbsp;</div></div>').join('') + '</div>'
+    + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:760px;"><thead><tr style="color:var(--t2);font-family:var(--M);font-size:9px;text-transform:uppercase;border-bottom:1px solid var(--bd);">'
+    + cols.map((c, i) => '<th style="text-align:' + (i ? 'right' : 'left') + ';padding:6px;">' + c + '</th>').join('') + '</tr></thead><tbody>'
+    + Array.from({ length: 12 }, (_, m) => '<tr style="border-bottom:1px solid var(--bd);color:var(--t3);"><td style="padding:6px;font-weight:600;">' + nm(m) + '</td>' + cols.slice(1).map(() => '<td style="padding:6px;text-align:right;font-family:var(--M);">--</td>').join('') + '</tr>').join('')
+    + '</tbody></table></div><div style="font-size:10px;color:var(--blue);margin-top:6px;">' + (msg || 'Carregando a projeção…') + '</div>';
+}
+function _projErro(msg) {
+  const el = document.getElementById('f_projetadoResult'); if (!el) return;
+  el.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span>Não consegui ler o fluxo de 12 meses: ' + String(msg).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</span>'
+    + '<button class="btn btn-gn" onclick="gerarProjetado()" style="font-size:9px;padding:3px 8px;">&#8635; Tentar de novo</button></div>';
+}
 async function gerarProjetado() {
-  popularSeletoresConta();
+  try { popularSeletoresConta(); } catch (_) {}
+  const seq = ++_projSeq;
   const btn = document.getElementById('btnProj'); if (btn) { btn.disabled = true; btn.textContent = 'Carregando…'; }
-  const el = document.getElementById('f_projetadoResult');
+  _projSkeleton();
+  let guarda;
   try {
-    const d = await finApi('fluxo_futuro', { meses: 12, conta_id: document.getElementById('s3projetado_conta')?.value || null });
+    // finApi já aborta a requisição em timeoutMs; a guarda garante o teto mesmo se algo travar depois do fetch
+    const d = await Promise.race([
+      finApi('fluxo_futuro', { meses: 12, conta_id: document.getElementById('s3projetado_conta')?.value || null }, { timeoutMs: _PROJ_TIMEOUT_MS }),
+      new Promise((_, rej) => { guarda = setTimeout(() => rej(new Error('Tempo esgotado: o servidor não respondeu em ' + (_PROJ_TIMEOUT_MS / 1000) + 's (QuickBooks lento ou conexão instável)')), _PROJ_TIMEOUT_MS + 500); }),
+    ]);
+    if (seq !== _projSeq) return;   // uma carga mais nova (filtro de conta / Atualizar) já assumiu
     _projBase = d; _projRender();
-  } catch (e) { if (el) el.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Não consegui ler o fluxo de 12 meses: ' + String(e.message).replace(/</g, '&lt;') + '</div>'; }
-  if (btn) { btn.disabled = false; btn.innerHTML = '&#8635; Atualizar'; }
+  } catch (e) {
+    if (seq === _projSeq) _projErro(e && e.message || e);
+  } finally {
+    clearTimeout(guarda);
+    if (seq === _projSeq) {
+      // nunca deixa o skeleton/"carregando" na tela: se não houve render nem erro, mostra o erro
+      const el = document.getElementById('f_projetadoResult');
+      if (el && el.querySelector('[data-proj-skel]')) _projErro('a resposta veio vazia');
+      if (btn) { btn.disabled = false; btn.innerHTML = '&#8635; Atualizar'; }
+    }
+  }
 }
 function _projCalc() {
   const d = _projBase; if (!d) return null; const L = d.linhas || {}; const meses = d.meses || [];
