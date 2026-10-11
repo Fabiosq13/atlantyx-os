@@ -177,3 +177,4 @@ async function handler(req, res) {
   } catch (e) { console.error('[tv]', e.message); return res.status(500).json({ success: false, error: e.message }); }
 }
 export default comGuarda(handler, 'tv');
+export { dados as dadosGestao };

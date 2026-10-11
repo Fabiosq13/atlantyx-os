@@ -179,6 +179,9 @@
     },
     "api/tv.js": {
       "maxDuration": 120
+    },
+    "api/estrategia.js": {
+      "maxDuration": 300
     }
   },
   "crons": [

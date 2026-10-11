@@ -54,6 +54,8 @@ _Gerado por `node scripts/bpm-inventario.mjs` a partir do código. Não edite ab
 | `disparo_envios` | T3 Agentes e Squads ⚠ | campanha-disparo | campanha-disparo, wa-response | campanha-disparo | pegou_em (campanha-disparo.js) |
 | `disparo_lotes` | T3 Agentes e Squads | campanha-disparo | campanha-disparo | campanha-disparo | — |
 | `disparo_optout` | T3 Agentes e Squads ⚠ | campanha-disparo | campanha-disparo, wa-response | campanha-disparo | — |
+| `est_conversas` | T3 Agentes e Squads | estrategia | estrategia | estrategia | — |
+| `est_sessoes` | T3 Agentes e Squads | estrategia | estrategia | estrategia | — |
 | `fab_casos` | T1 Plataforma ⚠ | fabrica-db | fabrica, fabrica-db | fabrica, fabrica-db, qa-externo | — |
 | `fab_casos_hist` | T1 Plataforma ⚠ | fabrica-db | fabrica, fabrica-db | fabrica | — |
 | `fab_documentos` | T1 Plataforma | fabrica-db | fabrica | fabrica, qa-externo | fase (lib/fabrica-db.js), rodadas (lib/fabrica-db.js), conteudo_anterior (lib/fabrica-db.js) |
@@ -65,7 +67,7 @@ _Gerado por `node scripts/bpm-inventario.mjs` a partir do código. Não edite ab
 | `funcionarios_projetos` | T3 Agentes e Squads | rh | rh | financeiro, rh, vendas | valor_hora (financeiro.js) |
 | `ideias` | T5 Dados ⚠ | db | business-plan, db, qa | agente-ideias, business-plan, db, qa, s1-strategy | — |
 | `kpis_diarios` | T5 Dados | db | db | db, rh | — |
-| `kv_store` | T5 Dados + T6 Financeiro + T2 Integrações + T4 Dashboard e Telas + T1 Plataforma ⚠ | acesso, db, financeiro, metricool, rfp-monitor, tv | acesso, agente-ideias, analytics, business-plan, db, fabrica, faturamento, financeiro, metricool, qa, rfp-monitor, tv | acesso, agente-ideias, analytics, business-plan, db, fabrica, faturamento, financeiro, metricool, qa, rfp-monitor, s1-strategy, tv, vendas | — |
+| `kv_store` | T5 Dados + T3 Agentes e Squads + T6 Financeiro + T2 Integrações + T4 Dashboard e Telas + T1 Plataforma ⚠ | acesso, db, estrategia, financeiro, metricool, rfp-monitor, tv | acesso, agente-ideias, analytics, business-plan, db, estrategia, fabrica, faturamento, financeiro, metricool, qa, rfp-monitor, tv | acesso, agente-ideias, analytics, business-plan, db, estrategia, fabrica, faturamento, financeiro, metricool, qa, rfp-monitor, s1-strategy, tv, vendas | — |
 | `lancamentos_ocultos` | T6 Financeiro | financeiro | financeiro | financeiro | — |
 | `lancamentos_simulados` | T6 Financeiro | financeiro | financeiro | financeiro | — |
 | `leads` | T5 Dados + T3 Agentes e Squads ⚠ | db, lead-capture | crm, db, lead-capture, qa | campanha-disparo, crm, db, hubspot, metricool, qa, rh, s1-intel | — |
