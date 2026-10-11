@@ -65,7 +65,7 @@ _Gerado por `node scripts/bpm-inventario.mjs` a partir do código. Não edite ab
 | `funcionarios_projetos` | T3 Agentes e Squads | rh | rh | financeiro, rh, vendas | valor_hora (financeiro.js) |
 | `ideias` | T5 Dados ⚠ | db | business-plan, db, qa | agente-ideias, business-plan, db, qa, s1-strategy | — |
 | `kpis_diarios` | T5 Dados | db | db | db, rh | — |
-| `kv_store` | T5 Dados + T6 Financeiro + T2 Integrações + T1 Plataforma ⚠ | acesso, db, financeiro, metricool, rfp-monitor | acesso, agente-ideias, analytics, business-plan, db, fabrica, faturamento, financeiro, metricool, qa, rfp-monitor | acesso, agente-ideias, analytics, business-plan, db, fabrica, faturamento, financeiro, metricool, qa, rfp-monitor, s1-strategy, vendas | — |
+| `kv_store` | T5 Dados + T6 Financeiro + T2 Integrações + T4 Dashboard e Telas + T1 Plataforma ⚠ | acesso, db, financeiro, metricool, rfp-monitor, tv | acesso, agente-ideias, analytics, business-plan, db, fabrica, faturamento, financeiro, metricool, qa, rfp-monitor, tv | acesso, agente-ideias, analytics, business-plan, db, fabrica, faturamento, financeiro, metricool, qa, rfp-monitor, s1-strategy, tv, vendas | — |
 | `lancamentos_ocultos` | T6 Financeiro | financeiro | financeiro | financeiro | — |
 | `lancamentos_simulados` | T6 Financeiro | financeiro | financeiro | financeiro | — |
 | `leads` | T5 Dados + T3 Agentes e Squads ⚠ | db, lead-capture | crm, db, lead-capture, qa | campanha-disparo, crm, db, hubspot, metricool, qa, rh, s1-intel | — |
@@ -92,7 +92,7 @@ _Gerado por `node scripts/bpm-inventario.mjs` a partir do código. Não edite ab
 | `qa_produtos` | T1 Plataforma | qa-externo | qa-externo | fabrica, qa-externo | permitir_carga (qa-externo.js), usuarios_simultaneos (qa-externo.js) |
 | `qa_runs` | T1 Plataforma | qa | qa | qa | — |
 | `reu_reunioes` | T3 Agentes e Squads | reunioes | reunioes | reunioes | — |
-| `reu_ritos` | T3 Agentes e Squads | reunioes | reunioes | reunioes | — |
+| `reu_ritos` | T3 Agentes e Squads | reunioes | reunioes | pmo, reunioes | — |
 | `s13_projetos` | T5 Dados | db | db | db | — |
 | `s1_historico` | T3 Agentes e Squads | historico-s1 | historico-s1 | historico-s1 | — |
 | `saldos_iniciais` | T6 Financeiro | financeiro | financeiro | financeiro | — |

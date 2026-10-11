@@ -33,6 +33,10 @@
       "destination": "/api/fabrica?action=painel_cliente&t=:t"
     },
     {
+      "source": "/tv/:t",
+      "destination": "/api/tv?t=:t"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/:path*"
     },
@@ -172,6 +176,9 @@
     },
     "api/reunioes.js": {
       "maxDuration": 180
+    },
+    "api/tv.js": {
+      "maxDuration": 120
     }
   },
   "crons": [

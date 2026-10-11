@@ -90,6 +90,7 @@
 # T4 Dashboard e Telas (Madeiras)
 /public/index.html  @Fabiosq13
 /public/og-atlantyx.jpg  @Fabiosq13
+/api/tv.js  @Fabiosq13
 
 # T5 Dados (Afinação) — contratos e schema
 /api/db.js  @Fabiosq13

@@ -39,7 +39,7 @@
       "nome": "Dashboard e Telas",
       "naipe": "Madeiras",
       "escopo": "Dashboard ao vivo, KPIs, log diário, menu, CSS global e a estrutura do public/index.html",
-      "pode_alterar": ["public/index.html", "public/og-atlantyx.jpg"],
+      "pode_alterar": ["public/index.html", "public/og-atlantyx.jpg", "api/tv.js"],
       "dono_humano": "@Fabiosq13"
     },
     "T5": {
