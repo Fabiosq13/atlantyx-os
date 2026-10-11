@@ -1,6 +1,8 @@
 // v3.45 — ESTEIRA DE DEMANDAS IA (Kanban de aprovação)
 // Agente de Produto sugere → fundador aprova/recusa → aprovada vira tarefa @claude no GitHub → PR → merge do fundador.
 // Única parte autônoma: 🌙 correções de ERROS encontrados pelo QA de madrugada (validadas e mescladas sozinhas).
+// v3.145 — MÉTODO B.P.M.: Partitura (trilha + critérios de aceite para aprovar) · Mixagem (checklist humano antes do merge)
+//          · Batida (painel das trilhas, bloqueios, paralelismo, métricas e fases da implantação). Ver partitura/README.md.
 (function () {
   const $ = id => document.getElementById(id);
   const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -10,7 +12,7 @@
   async function api(action, body = {}) {
     const r = await fetch('/api/agente-ideias', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...body }) });
     const d = await r.json().catch(() => ({ success: false, error: r.status === 504 ? 'O agente demorou demais — tente de novo' : 'HTTP ' + r.status }));
-    if (!d.success) throw new Error(d.error || 'falha'); return d;
+    if (!d.success) { const e = new Error(d.error || 'falha'); e.codigo = d.codigo || null; throw e; } return d;
   }
   const COLS = [
     ['sugerida', '💡 Sugeridas — aguardando você', 'var(--gold)'],
@@ -108,6 +110,7 @@
         <div style="font-size:11px;color:var(--t2);margin-top:3px;line-height:1.6;">O <b>Agente de Produto</b> pensa o Atlantyx OS em ciclos agendados e sugere melhorias. <b>Nada é feito sem a sua aprovação</b>: aprovada, a demanda vira uma tarefa para o Claude no GitHub, que abre um pull request — e só vai para o ar quando você faz o merge.<br>
         Única exceção: <b>🌙 erros encontrados pelo agente de QA de madrugada</b> são corrigidos sozinhos (só se passarem na validação) e ficam listados aqui.</div>
       </div>
+      <div class="panel" style="margin-bottom:12px;"><div class="pb" id="demBatida">Carregando a Batida…</div></div>
       <div class="panel" style="margin-bottom:12px;"><div class="pb" id="demCfg">Carregando...</div></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
         <div class="seg" id="demFiltro">${[['todas', 'Todas'], ['produto', '💡 Agente de Produto'], ['qa', '🌙 Correções da madrugada'], ['fundador', '✍ Minhas']].map(([k, r]) => `<button data-f="${k}" class="${k === filtro ? 'on' : ''}" onclick="DEM.filtrar('${k}')">${r}</button>`).join('')}</div>
@@ -152,6 +155,54 @@
         ${itens.map(card).join('') || '<div style="font-size:10px;color:var(--t3);text-align:center;padding:14px 0;">—</div>'}</div>`;
     }).join('');
     const n = (D.demandas || []).filter(d => d.status === 'sugerida').length; const b = $('demCnt'); if (b) b.textContent = n || '';
+    renderBatida();
+  }
+  // ── v3.145 · 🥁 BATIDA — trilhas ativas, bloqueios, paralelismo, métricas e fases da implantação ──
+  const NAIPE_COR = { T1: '#4f7cff', T2: '#f5a623', T3: '#22d3a3', T4: '#b98cff', T5: '#ff7aa8', T6: '#00c4cc' };
+  const chipTrilha = (t, mini) => { const T = D.bpm?.trilhas?.[t]; return t ? `<span title="${esc(T ? T.naipe + ' · ' + T.escopo : '')}" style="font-size:${mini ? '8.5px' : '10px'};font-family:var(--M);padding:1px 5px;border-radius:3px;background:${NAIPE_COR[t] || '#888'}26;color:${NAIPE_COR[t] || 'var(--t2)'};white-space:nowrap;">${esc(t)}${T && !mini ? ' ' + esc(T.nome) : ''}</span>` : `<span style="font-size:8.5px;font-family:var(--M);padding:1px 5px;border-radius:3px;background:rgba(255,77,109,.15);color:var(--red);">sem trilha</span>`; };
+  function bloqueioDe(d) {
+    const x = d.dados || {}, c = x.claude, pr = x.pr, rot = pr?.rotulos || [];
+    if (pr && rot.includes('precisa-revisao')) return 'Mixagem devolveu o PR #' + pr.numero + ' (gate automático/validação)';
+    if (pr && rot.includes('conflito')) return 'PR #' + pr.numero + ' em conflito com a main';
+    if (c?.estado === 'erro') return 'Claude parou com erro';
+    if (c?.estado === 'trabalhando' && Date.now() - Date.parse(c.atualizado) > 70 * 60000) return 'sem sinal do Claude ' + ha(c.atualizado);
+    if (!c && !pr && x.issue_criada_em && Date.now() - Date.parse(x.issue_criada_em) > 15 * 60000) return 'Claude não começou';
+    if (pr && pr.estado === 'open' && !rot.includes('aprovado-merge') && !x.merge_pedido_em && d.squad !== 'qa') return 'aguarda a SUA Mixagem (PR #' + pr.numero + ')';
+    return null;
+  }
+  function renderBatida() {
+    const el = $('demBatida'), B = D.bpm; if (!el) return;
+    if (!B || B.erro) { el.innerHTML = `<div style="font-size:11px;color:var(--red);">Método B.P.M.: ${esc(B?.erro || 'sem dados da Partitura')}</div>`; return; }
+    const dem = (D.demandas || []).filter(d => d.squad !== 'qa');
+    const ativas = [...new Set(dem.filter(d => d.status === 'em_execucao').map(d => d.dados?.bpm?.trilha).filter(Boolean))];
+    const lim = B.limite, dia = 864e5, desde = Date.now() - 60 * dia;
+    const lead = d => { const a = Date.parse(d.dados?.bpm?.spec_aprovada_em || d.dados?.versao_aprovada_em || d.decidido_em), b = Date.parse(d.dados?.implementada_em); return a && b && b > a ? (b - a) / dia : null; };
+    const linhas = Object.entries(B.trilhas).map(([t, T]) => {
+      const L = dem.filter(d => d.dados?.bpm?.trilha === t);
+      const exe = L.filter(d => d.status === 'em_execucao'), fila = L.filter(d => ['sugerida', 'aprovada'].includes(d.status));
+      const feitas = L.filter(d => d.status === 'implementada' && Date.parse(d.dados?.implementada_em || d.atualizado_em) > desde);
+      const lt = feitas.map(lead).filter(v => v != null), ltm = lt.length ? lt.reduce((a, b) => a + b, 0) / lt.length : null;
+      const comMix = L.filter(d => d.dados?.mixagem || d.dados?.bpm?.devolucoes), dev = comMix.filter(d => (d.dados?.bpm?.devolucoes || 0) > 0).length;
+      const bl = exe.map(d => [d, bloqueioDe(d)]).filter(([, b]) => b);
+      return `<tr style="border-top:1px solid var(--bd);"><td style="padding:5px 6px;white-space:nowrap;">${chipTrilha(t)}<div style="font-size:9px;color:var(--t3);margin-top:2px;">${esc(T.naipe)}</div></td>
+        <td style="padding:5px 6px;text-align:center;"><b style="color:${exe.length ? 'var(--blue)' : 'var(--t3)'};">${exe.length}</b></td><td style="padding:5px 6px;text-align:center;color:var(--t2);">${fila.length}</td>
+        <td style="padding:5px 6px;font-size:10.5px;">${bl.length ? bl.map(([d, b]) => `<div style="color:${/SUA Mixagem/.test(b) ? 'var(--gold)' : 'var(--red)'};cursor:pointer;" onclick="DEM.detalhe('${d.id}')">• ${esc(b)} <span style="color:var(--t3);">— ${esc(d.titulo).substring(0, 50)}</span></div>`).join('') : '<span style="color:var(--t3);">—</span>'}</td>
+        <td style="padding:5px 6px;text-align:center;">${ltm != null ? ltm.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' d' : '—'}<div style="font-size:9px;color:var(--t3);">${feitas.length} entregue(s)</div></td>
+        <td style="padding:5px 6px;text-align:center;color:${comMix.length && dev / comMix.length > 0.3 ? 'var(--red)' : 'var(--t2)'};">${comMix.length ? Math.round(dev / comMix.length * 100) + '%' : '—'}</td></tr>`; }).join('');
+    const F = B.fases[B.fase] || {}, imp = B.implantacao?.[B.fase] || [];
+    el.innerHTML = `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+        <div style="font-family:var(--H);font-size:13.5px;font-weight:700;">🥁 Batida · Método B.P.M.</div>
+        <span style="font-size:10.5px;color:var(--t2);">Partitura → Trilha → Mixagem · <a href="https://github.com/Fabiosq13/atlantyx-os/blob/main/partitura/README.md" target="_blank" rel="noopener" style="color:var(--blue);">como funciona</a></span><span style="flex:1;"></span>
+        <label style="font-size:10.5px;color:var(--t2);">Fase <select class="fsel" style="width:auto;font-size:11px;" onchange="DEM.bpmSalvar({fase:this.value})">${Object.entries(B.fases).map(([k, f]) => `<option value="${k}" ${k === B.fase ? 'selected' : ''}>${k} · ${esc(f.nome)} (sem. ${esc(f.semanas)})</option>`).join('')}</select></label>
+        <span style="font-size:11px;padding:3px 8px;border-radius:5px;background:${ativas.length > lim ? 'rgba(255,77,109,.15);color:var(--red)' : ativas.length === lim ? 'rgba(245,166,35,.15);color:var(--gold)' : 'rgba(34,211,163,.12);color:var(--green)'};" title="Limite recomendado de trilhas em paralelo nesta fase — acima disso o gargalo vira a Mixagem humana">Trilhas ativas <b>${ativas.length}</b> / ${lim}${ativas.length ? ' · ' + ativas.join(' ') : ''}</span></div>
+      <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:620px;"><tr style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);text-align:left;"><th style="padding:3px 6px;">Trilha</th><th style="padding:3px 6px;text-align:center;">Em execução</th><th style="padding:3px 6px;text-align:center;">Na fila</th><th style="padding:3px 6px;">Bloqueios · decisão humana</th><th style="padding:3px 6px;text-align:center;" title="aprovação da spec → merge (últimos 60 dias)">Lead time</th><th style="padding:3px 6px;text-align:center;" title="PRs devolvidos pela Mixagem (alerta acima de 30%)">Devolvidos</th></tr>${linhas}</table></div>
+      <details style="margin-top:8px;"><summary style="cursor:pointer;font-size:11px;color:var(--blue);">Implantação · ${esc(B.fase)} ${esc(F.nome || '')} — ${imp.filter(i => i.feito).length}/${imp.length} itens (o gate da fase não se pula)</summary>
+        <div style="padding:6px 0 0 4px;">${imp.map(i => `<label style="display:flex;gap:6px;align-items:flex-start;font-size:11px;margin:3px 0;cursor:pointer;${/^GATE/.test(i.txt) ? 'font-weight:700;' : ''}"><input type="checkbox" ${i.feito ? 'checked' : ''} onchange="DEM.bpmSalvar({checks:{'${B.fase}:${i.k}':this.checked}})"/> ${esc(i.txt)}</label>`).join('')}</div></details>`;
+  }
+  async function bpmSalvar(mud) {
+    const atual = D.config?.bpm || {};
+    try { const r = await api('config_salvar', { config: { bpm: { fase: mud.fase || D.bpm?.fase || atual.fase, limite: mud.limite || null, checks: mud.checks || {} } } }); D.config = r.config; D.bpm = r.bpm; render(); nota('Batida atualizada'); }
+    catch (e) { nota(e.message, 'error'); }
   }
   function card(d) {
     const x = d.dados || {}; const qa = d.squad === 'qa';
@@ -159,7 +210,7 @@
     return `<div onclick="DEM.detalhe('${d.id}')" style="background:var(--bg3);border:1px solid ${d.status === 'sugerida' ? 'rgba(245,166,35,.45)' : 'var(--bd)'};border-radius:6px;padding:8px;margin-bottom:6px;cursor:pointer;">
       <div style="display:flex;gap:4px;align-items:center;margin-bottom:3px;"><span style="font-size:8.5px;font-family:var(--M);padding:1px 5px;border-radius:3px;background:${qa ? 'rgba(156,109,255,.18);color:#b9a0ff' : x.origem === 'fundador' ? 'rgba(34,211,163,.15);color:var(--green)' : 'rgba(79,124,255,.15);color:var(--blue)'};">${qa ? '🌙 QA madrugada' : x.origem === 'fundador' ? '✍ Fundador' : '💡 Produto'}</span>
         ${camposAlterados(d).length ? '<span style="font-size:8.5px;font-family:var(--M);padding:1px 5px;border-radius:3px;background:rgba(245,166,35,.18);color:var(--gold);" title="Há uma versão alterada aguardando sua aprovação — abra para ver o que mudou">⚠ alterado</span>' : ''}
-        ${x.area ? `<span style="font-size:8.5px;color:var(--t3);">${esc(x.area)}</span>` : ''}<span style="flex:1;"></span><span style="font-size:8.5px;color:var(--t3);">${quando(d.criado_em)}</span></div>
+        ${qa ? '' : chipTrilha(x.bpm?.trilha, true)}${x.area ? `<span style="font-size:8.5px;color:var(--t3);">${esc(x.area)}</span>` : ''}<span style="flex:1;"></span><span style="font-size:8.5px;color:var(--t3);">${quando(d.criado_em)}</span></div>
       <div style="font-size:11px;font-weight:600;line-height:1.35;">${esc(d.titulo)}</div>
       <div style="font-size:9.5px;color:var(--t2);margin-top:3px;">${qa ? n + ' erro(s)' : `<span style="color:var(--gold);" title="impacto">${estrelas(x.impacto || d.prioridade)}</span> · esforço ${esc(x.esforco || '?')} · risco ${esc(x.risco || '?')}`}</div>
       ${d.issue_numero ? `<div style="font-size:9.5px;margin-top:3px;"><a href="${esc(d.issue_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--blue);">tarefa #${d.issue_numero}</a>${x.pr ? ` · <a href="${esc(x.pr.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--blue);">PR #${x.pr.numero}${x.pr.merged ? ' ✓ no ar' : ''}</a>` : ''}</div>` : ''}
@@ -200,25 +251,73 @@
         <button class="btn btn-g" onclick="document.getElementById('demModal').remove()">✕</button></div>
       <div style="padding:6px 18px 14px;">
         ${qa ? '' : `<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--t2);margin-top:6px;"><span>Impacto <b style="color:var(--gold);">${estrelas(x.impacto || d.prioridade)}</b></span><span>Esforço <b>${esc(x.esforco || '?')}</b></span><span>Risco <b>${esc(x.risco || '?')}</b></span><span>Área <b>${esc(x.area || '-')}</b></span>${(x.telas_afetadas || []).length ? `<span>Telas: <b>${esc(x.telas_afetadas.join(', '))}</b></span>` : ''}</div>`}
+        ${qa ? '' : blocoPartitura(d)}
         ${bloco('Problema', x.problema)}${bloco('Proposta', x.proposta)}${lista('Critérios de aceite', x.criterios_aceite)}${bloco('Como implementar (orientação técnica)', x.como_implementar)}${bloco('Métrica de sucesso', x.metrica_sucesso)}${achados}
       </div><div style="padding:12px 18px;border-top:1px solid var(--bd);background:var(--bg3);border-radius:0 0 12px 12px;">${blocoDiff(d)}${acao}</div>`);
   }
-  async function decidir(id, decisao) {
+  // v3.145 · B.P.M.: a Partitura da demanda — trilha (dona dos arquivos), ID e escopo; o que falta para aprovar
+  function blocoPartitura(d) {
+    const x = d.dados || {}, b = x.bpm || {}, B = D.bpm || {}, T = B.trilhas?.[b.trilha];
+    const crit = (x.criterios_aceite || []).filter(c => String(c).trim()).length;
+    const editavel = ['sugerida', 'aprovada'].includes(d.status);
+    const faltas = [!crit && 'critérios de aceite', !T && 'trilha'].filter(Boolean);
+    return `<div style="margin-top:10px;border:1px solid ${faltas.length && editavel ? 'rgba(255,77,109,.4)' : 'var(--bd)'};border-radius:8px;padding:8px 10px;background:var(--bg3);">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;"><b style="font-family:var(--M);font-size:9.5px;text-transform:uppercase;color:var(--t2);">🎼 Partitura</b>
+        ${editavel ? `<select class="fsel" style="width:auto;font-size:11px;" onchange="DEM.trilha('${d.id}',this.value)"><option value="">— escolha a trilha —</option>${Object.entries(B.trilhas || {}).map(([k, t]) => `<option value="${k}" ${k === b.trilha ? 'selected' : ''}>${k} · ${esc(t.nome)} (${esc(t.naipe)})</option>`).join('')}</select>${b.trilha_origem === 'sugerida' ? '<span style="font-size:10px;color:var(--t3);">sugerida pelos arquivos citados — confira</span>' : ''}` : chipTrilha(b.trilha)}
+        ${b.id ? `<span style="font-size:10px;color:var(--t2);">ID <code>${esc(b.id)}</code></span>` : ''}${b.spec_aprovada_em ? `<span style="font-size:10px;color:var(--green);">spec aprovada ${quando(b.spec_aprovada_em)}</span>` : ''}
+        ${x.mixagem ? `<span style="font-size:10px;color:${x.mixagem.pendentes?.length ? 'var(--gold)' : 'var(--green)'};">🎚 Mixagem ${x.mixagem.pendentes?.length ? 'com ressalva' : 'completa'} · ${quando(x.mixagem.em)}</span>` : ''}${b.devolucoes ? `<span style="font-size:10px;color:var(--red);">devolvido ${b.devolucoes}× pela Mixagem</span>` : ''}</div>
+      ${T ? `<div style="font-size:10.5px;color:var(--t2);margin-top:4px;line-height:1.5;">${esc(T.escopo)}. <b>Pode alterar:</b> ${T.pode_alterar.slice(0, 14).map(f => '<code>' + esc(f) + '</code>').join(' ')}${T.pode_alterar.length > 14 ? ' …' : ''} + seção da tela em <code>public/index.html</code>. Banco, contratos e arquivos de outras trilhas viram <i>interseção</i>.</div>` : ''}
+      ${faltas.length && editavel ? `<div style="font-size:10.5px;color:var(--red);margin-top:4px;">Para aprovar falta: <b>${faltas.join(' e ')}</b>${!crit ? ' — use ✎ Editar' : ''}.</div>` : ''}</div>`;
+  }
+  async function trilha(id, t) { if (!t) return; try { await api('editar', { id, campos: { trilha: t } }); await carregar(); detalhe(id); nota('Trilha ' + t + ' definida'); } catch (e) { nota(e.message, 'error'); } }
+  async function decidir(id, decisao, forcar) {
     const obs = $('demObs')?.value?.trim() || '';
     if (decisao === 'recusar' && !obs) return nota('Escreva o motivo da recusa — o agente usa para não repetir', 'error');
-    if (decisao === 'aprovar' && !confirm('Aprovar esta demanda?\n\nEla vira uma tarefa para o Claude no GitHub. Ele implementa numa branch e abre um pull request — que só vai para o ar quando VOCÊ fizer o merge.')) return;
-    try { const r = await api('decidir', { id, decisao, obs }); $('demModal')?.remove();
+    if (decisao === 'aprovar' && !forcar && !confirm('Aprovar esta demanda (e a Partitura dela)?\n\nEla vira uma tarefa para o Claude no GitHub, na trilha escolhida. Ele cria a spec e o plano, implementa só nos arquivos da trilha e abre um pull request — que só vai para o ar depois da SUA Mixagem.')) return;
+    try { const r = await api('decidir', { id, decisao, obs, forcar_paralelismo: !!forcar }); $('demModal')?.remove();
       if (r.aviso && /GitHub|token/i.test(r.aviso)) { await carregar(); return erroGithub(new Error('A demanda ficou APROVADA, mas não virou tarefa para o Claude: ' + r.aviso + '\n\nDepois de resolver, use "⚙ Enviar para implementação" no card.')); }
       nota(decisao === 'recusar' ? 'Demanda recusada — o agente vai levar o motivo em conta' : r.issue ? 'Aprovada — tarefa #' + r.issue + ' aberta para o Claude' : (r.aviso || 'Aprovada'), r.aviso ? 'error' : 'success'); await carregar(); }
-    catch (e) { nota(e.message, 'error'); }
+    catch (e) {
+      if (e.codigo === 'limite' && confirm(e.message + '\n\nAbrir mais uma trilha assim mesmo?')) return decidir(id, decisao, true);
+      if (e.codigo === 'partitura') return alert(e.message);
+      nota(e.message, 'error'); }
   }
   // v3.88: aprova o PR pela Esteira — o robô do GitHub atualiza com a main (resolvendo o conflito de versão), valida, mescla e publica
-  async function mesclar(id) {
+  // v3.145 · B.P.M. — 🎚 MIXAGEM: gate humano antes do merge (o automático roda no robô: gates B.P.M. + validação)
+  const MIX = ['Todos os critérios de aceite da spec estão atendidos e demonstrados', 'O diff só toca arquivos do escopo da trilha (ou há interseção aprovada)',
+    'Contratos alterados foram aprovados na Afinação e versionados', 'Mudança de banco revisada pelo Afinador, aditiva e reversível (ou não há)',
+    'Nenhum segredo, token ou dado de cliente no código ou nos logs', 'Integrações externas: nenhuma chamada nova envia dados sem aprovação (Gmail de agentes = rascunho)',
+    'Validação/testes cobrem o caminho feliz e pelo menos um erro', 'Consigo explicar cada trecho do código', 'plano.md e trilhas.md atualizados', 'Vou testar em produção logo após o merge'];
+  function mesclar(id) {
+    const d = (D.demandas || []).find(x => x.id === id); if (!d) return; const x = d.dados || {}, b = x.bpm || {}, pr = x.pr;
+    const repo = (d.issue_url || '').split('/').slice(3, 5).join('/');
+    const links = [pr?.url && `<a class="btn btn-g" style="font-size:10.5px;" href="${esc(pr.url)}/files" target="_blank" rel="noopener">Ver o diff do PR #${pr.numero}</a>`,
+      pr?.url && `<a class="btn btn-g" style="font-size:10.5px;" href="${esc(pr.url)}/checks" target="_blank" rel="noopener">Gates automáticos (CI)</a>`,
+      repo && b.id && x.branch && `<a class="btn btn-g" style="font-size:10.5px;" href="https://github.com/${esc(repo)}/tree/${esc(x.branch)}/partitura/trilhas/${esc(b.id)}" target="_blank" rel="noopener">Spec · plano · mixagem.md</a>`].filter(Boolean).join('');
+    modal(`<div style="padding:14px 18px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px;"><div style="flex:1;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">🎚 Mixagem — ${esc(d.titulo)}</div>
+        <div style="font-size:10.5px;color:var(--t2);margin-top:2px;">${chipTrilha(b.trilha)} ${b.id ? '· ID <code>' + esc(b.id) + '</code>' : ''} · gate humano (Engenheiro de Mixagem). Depois do seu OK o robô roda os gates automáticos (escopo, banco, versão, segredos, sintaxe e carga da página) e só publica se passarem.</div></div>
+        <button class="btn btn-g" onclick="document.getElementById('demModal').remove()">✕</button></div>
+      <div style="padding:10px 18px;">
+        ${x.claude?.estado === 'erro' ? '<div style="font-size:11.5px;color:var(--red);margin-bottom:8px;">⚠ O Claude parou com ERRO nesta tarefa — o PR pode estar incompleto.</div>' : ''}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">${links}</div>
+        ${(x.criterios_aceite || []).length ? `<div style="font-size:10.5px;color:var(--t2);margin-bottom:6px;"><b>Critérios de aceite da spec:</b>${x.criterios_aceite.map(c => '<div>• ' + esc(c) + '</div>').join('')}</div>` : ''}
+        <div id="demMix">${MIX.map((t, i) => `<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;margin:5px 0;cursor:pointer;"><input type="checkbox" data-i="${i}" onchange="DEM._mixAtualizar()"/> ${esc(t)}</label>`).join('')}</div>
+        <div style="margin-top:8px;font-size:10.5px;color:var(--t2);">Ressalva (obrigatória se algum item ficar desmarcado — fica registrada no PR)</div>
+        <textarea class="fta" id="demMixRes" style="min-height:48px;font-size:12px;" oninput="DEM._mixAtualizar()" placeholder="ex.: plano.md será atualizado na próxima trilha; testado só no preview"></textarea></div>
+      <div style="padding:12px 18px;border-top:1px solid var(--bd);display:flex;gap:8px;align-items:center;background:var(--bg3);border-radius:0 0 12px 12px;">
+        <button class="btn btn-gn" id="demMixOk" disabled onclick="DEM._mixConfirmar('${d.id}')">✅ Mesclar e publicar</button><span id="demMixInfo" style="font-size:10.5px;color:var(--t2);"></span></div>`);
+    _mixAtualizar();
+  }
+  function _mixAtualizar() {
+    const cks = [...document.querySelectorAll('#demMix input')], abertos = cks.filter(c => !c.checked).length, res = ($('demMixRes')?.value || '').trim();
+    const ok = !abertos || res.length >= 15; const b = $('demMixOk'); if (b) b.disabled = !ok;
+    const i = $('demMixInfo'); if (i) i.textContent = !abertos ? 'Checklist completo' : ok ? abertos + ' item(ns) em aberto — vai com ressalva' : abertos + ' item(ns) em aberto — marque ou escreva a ressalva';
+  }
+  async function _mixConfirmar(id) {
     const d = (D.demandas || []).find(x => x.id === id); const x = d?.dados || {};
-    let mesmo = false;
-    if (x.claude?.estado === 'erro') { if (!confirm('ATENÇÃO: o Claude parou com ERRO nesta tarefa e o PR pode estar incompleto.\n\nMesclar mesmo assim?')) return; mesmo = true; }
-    else if (!confirm('Aprovar e mesclar ' + (x.pr?.estado === 'open' ? 'o PR #' + x.pr.numero : 'o trabalho do Claude (o PR é aberto agora)') + '?\n\nO robô do GitHub atualiza o PR com a versão atual do sistema (resolve sozinho o conflito de versão), valida (sintaxe + carga da página) e só então mescla e publica. Se houver conflito de verdade, ele pede ao Claude para resolver e tenta de novo.')) return;
-    try { const r = await api('mesclar', { id, mesmo_assim: mesmo }); $('demModal')?.remove(); nota(r.via === 'comando' ? 'Aprovado — pedido enviado ao robô do GitHub (abre o PR, valida e publica em alguns minutos)' : 'Aprovado — o merge começa em instantes (acompanhe no card)'); await carregar(); }
+    const itens = [...document.querySelectorAll('#demMix input')].map(c => ({ txt: MIX[+c.dataset.i], ok: c.checked }));
+    const ressalva = ($('demMixRes')?.value || '').trim(), mesmo = x.claude?.estado === 'erro';
+    try { const r = await api('mesclar', { id, mesmo_assim: mesmo, mixagem: { itens, ressalva } }); $('demModal')?.remove(); nota(r.via === 'comando' ? 'Aprovado — pedido enviado ao robô do GitHub (abre o PR, valida e publica em alguns minutos)' : 'Aprovado — o merge começa em instantes (acompanhe no card)'); await carregar(); }
     catch (e) { erroGithub(e); }
   }
   async function mover(id, status) { try { await api('mover', { id, status }); $('demModal')?.remove(); await carregar(); } catch (e) { nota(e.message, 'error'); } }
@@ -286,5 +385,5 @@
       if (el) el.innerHTML = txt + (falhas.length ? '<br><b style="color:var(--gold);">Como resolver:</b> em github.com → Settings → Developer settings → Fine-grained tokens, edite o token do Atlantyx OS (repositório ' + esc(r.repo) + ') e marque <b>Issues: Read and write</b>' + (r.teste.pull_requests_escrever?.ok === false ? ', <b>Pull requests: Read and write</b> e <b>Contents: Read</b>' : '') + '. Se o erro for 401, gere um token novo e troque o <b>GITHUB_TOKEN</b> no Vercel (e faça Redeploy). Enquanto isso, o merge funciona pelo robô do GitHub desde que "tarefas" esteja ✅.' : ''); }
     catch (e) { if (el) el.innerHTML = '<span style="color:var(--red);">' + esc(e.message) + '</span>'; }
   }
-  window.DEM = { abrir, tarefa, testarGithub, carregar, filtrar, detalhe, decidir, mesclar, mover, excluir, editar, salvarEdicao, nova, salvarNova, pensar, salvarCfg, _render: render, _estado: () => D };
+  window.DEM = { trilha, bpmSalvar, _mixAtualizar, _mixConfirmar, abrir, tarefa, testarGithub, carregar, filtrar, detalhe, decidir, mesclar, mover, excluir, editar, salvarEdicao, nova, salvarNova, pensar, salvarCfg, _render: render, _estado: () => D };
 })();

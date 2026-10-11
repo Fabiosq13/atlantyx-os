@@ -119,7 +119,7 @@
     },
     "api/agente-ideias.js": {
       "maxDuration": 180,
-      "includeFiles": "public/index.html"
+      "includeFiles": "{public/index.html,partitura/escopos.json}"
     },
     "api/analytics.js": {
       "maxDuration": 60

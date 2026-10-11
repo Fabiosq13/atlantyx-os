@@ -34,6 +34,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
+      # v3.145 · Método B.P.M.: a trilha da tarefa (linha "BPM-Trilha:") vira BPM_TRILHA/.bpm-trilha — o hook
+      # .claude/hooks/escopo-trilha.mjs bloqueia edição fora do escopo, DDL fora da T5 e mudança de versão
+      - name: Trilha B.P.M. da tarefa
+        env:
+          CORPO: ${{ github.event.issue.body }}
+        run: |
+          T=$(printf '%s' "$CORPO" | grep -oE '^BPM-Trilha:[[:space:]]*T[0-9]' | head -1 | grep -oE 'T[0-9]' || true)
+          I=$(printf '%s' "$CORPO" | grep -oE '^BPM-ID:[[:space:]]*[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9-]+' | head -1 | sed -E 's/^BPM-ID:[[:space:]]*//' || true)
+          if [ -n "$T" ]; then printf '%s\n%s\n' "$T" "$I" > .bpm-trilha; echo "BPM_TRILHA=$T" >> "$GITHUB_ENV"; echo "BPM_ID=$I" >> "$GITHUB_ENV"; echo "Trilha $T · $I"; else echo "Tarefa sem trilha B.P.M. (correção noturna ou pedido avulso)"; fi
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
