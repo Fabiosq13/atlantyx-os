@@ -280,7 +280,7 @@ async function decidir({ id, decisao, obs = '', ...opcoes } = {}, usuario) {
     const crit = (r.dados.criterios_aceite || []).filter(x => String(x).trim());
     const trilha = r.dados.bpm?.trilha;
     const faltas = [!crit.length && 'critérios de aceite verificáveis', !trilhaValida(trilha) && 'trilha (T1…T6)'].filter(Boolean);
-    if (faltas.length) { const e = new Error('Partitura incompleta — falta: ' + faltas.join(' e ') + '. Use ✎ Editar antes de aprovar.'); e.codigo = 'partitura'; throw e; }
+    if (faltas.length) { const e = new Error('Partitura incompleta — falta: ' + faltas.join(' e ') + (!crit.length ? '. Use ✎ Editar para escrever os critérios.' : '') + (!trilhaValida(trilha) ? ' Escolha a trilha na caixa "🎼 Partitura", no topo do detalhe da demanda.' : '')); e.codigo = 'partitura'; throw e; }
     const cfg = await config(), lim = resumoBpm(cfg).limite;
     const ativas = new Set((await sql`SELECT dados FROM agente_demandas WHERE status = 'em_execucao' AND squad <> 'qa' AND id <> ${id}`).map(x => (parse(x.dados) || {}).bpm?.trilha).filter(Boolean));
     if (!ativas.has(trilha) && ativas.size >= lim && !opcoes.forcar_paralelismo) {
@@ -526,6 +526,10 @@ async function handler(req, res) {
         // sincroniza com o GitHub no máximo a cada 3 min, ou na hora com { sync: true } (PR mesclado → card vai para Implementadas)
         const us = await kvGet('agente:ideias:ultima_sync'); if (b.sync || !us || Date.now() - Date.parse(us.em) > 180000) { await kvSet('agente:ideias:ultima_sync', { em: new Date().toISOString() }); try { await sincronizar(); } catch (_) {} }
         const rows = (await sql`SELECT * FROM agente_demandas ORDER BY CASE status WHEN 'sugerida' THEN 0 WHEN 'aprovada' THEN 1 WHEN 'em_execucao' THEN 2 ELSE 3 END, prioridade DESC, criado_em DESC LIMIT 400`).map(linha);
+        // v3.149: demandas criadas antes do Método B.P.M. não tinham trilha — sugere pela área/arquivos citados (o fundador confere)
+        for (const r of rows.filter(r => ['sugerida', 'aprovada'].includes(r.status) && r.squad !== 'qa' && !r.dados?.bpm?.trilha)) {
+          try { const t = sugerirTrilha(r.dados); if (t) { r.dados.bpm = { ...(r.dados.bpm || {}), trilha: t, trilha_origem: 'sugerida' };
+            await sql`UPDATE agente_demandas SET dados = ${JSON.stringify(r.dados)} WHERE id = ${r.id}`; } } catch (_) {} }
         const cfgL = await config();
         return { demandas: rows, config: cfgL, bpm: resumoBpm(cfgL), ultimo_ciclo: await kvGet('agente:ideias:ultimo_ciclo'), ultima_noite: await kvGet('agente:qa:ultima_noite'), github: !!process.env.GITHUB_TOKEN };
       },

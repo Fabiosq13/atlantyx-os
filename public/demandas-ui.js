@@ -329,12 +329,13 @@
     const campo = (k, rot, v, alto) => `<div class="fg"><label class="fl">${rot}</label>${alto ? `<textarea class="fta" id="demE_${k}" style="min-height:${alto}px;font-size:12px;">${esc(v || '')}</textarea>` : `<input class="fi" id="demE_${k}" value="${esc(v || '')}"/>`}</div>`;
     modal(`<div style="padding:14px 18px;border-bottom:1px solid var(--bd);font-family:var(--H);font-size:14px;font-weight:700;">✎ Editar demanda</div><div style="padding:12px 18px;">
       ${campo('titulo', 'Título', d.titulo)}${campo('problema', 'Problema', x.problema, 70)}${campo('proposta', 'Proposta', x.proposta, 100)}${campo('criterios', 'Critérios de aceite (um por linha)', (x.criterios_aceite || []).join('\n'), 70)}${campo('como', 'Como implementar', x.como_implementar, 90)}
+      <div class="fg"><label class="fl">Trilha (dona dos arquivos — Método B.P.M.)</label><select class="fsel" id="demE_trilha"><option value="">— escolha —</option>${Object.entries(D.bpm?.trilhas || {}).map(([k, t]) => `<option value="${k}" ${k === x.bpm?.trilha ? 'selected' : ''}>${k} · ${esc(t.nome)} — ${esc(t.escopo)}</option>`).join('')}</select></div>
       <div style="display:flex;gap:10px;"><div class="fg"><label class="fl">Impacto (1-5)</label><input class="fi" id="demE_imp" type="number" min="1" max="5" value="${esc(x.impacto || d.prioridade || 3)}"/></div><div class="fg"><label class="fl">Esforço</label><select class="fsel" id="demE_esf">${['P', 'M', 'G'].map(o => `<option ${o === x.esforco ? 'selected' : ''}>${o}</option>`).join('')}</select></div></div></div>
       <div style="padding:12px 18px;border-top:1px solid var(--bd);display:flex;gap:8px;"><button class="btn btn-p" onclick="DEM.salvarEdicao('${id}')">💾 Salvar</button><button class="btn btn-g" onclick="DEM.detalhe('${id}')">Cancelar</button></div>`);
   }
   async function salvarEdicao(id) {
     const v = k => $('demE_' + k)?.value ?? '';
-    try { await api('editar', { id, campos: { titulo: v('titulo'), problema: v('problema'), proposta: v('proposta'), como_implementar: v('como'), criterios_aceite: v('criterios').split('\n').map(s => s.trim()).filter(Boolean), prioridade: v('imp'), esforco: v('esf') } });
+    try { await api('editar', { id, campos: { titulo: v('titulo'), problema: v('problema'), proposta: v('proposta'), como_implementar: v('como'), criterios_aceite: v('criterios').split('\n').map(s => s.trim()).filter(Boolean), prioridade: v('imp'), esforco: v('esf'), ...(v('trilha') ? { trilha: v('trilha') } : {}) } });
       nota('Demanda atualizada'); await carregar(); detalhe(id); } catch (e) { nota(e.message, 'error'); }
   }
   function nova() {
