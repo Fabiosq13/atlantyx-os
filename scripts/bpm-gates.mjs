@@ -14,7 +14,7 @@
 import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { podeAlterar, contaDDL, checaDDL, RX_SEGREDO, escopos } from '../lib/bpm.js';
+import { podeAlterar, contaDDL, checaDDL, RX_SEGREDO, escopos, normTrilha, trilhaInfo } from '../lib/bpm.js';
 
 const arg = (k, def = null) => { const i = process.argv.indexOf('--' + k); return i > 0 ? (process.argv[i + 1] && !process.argv[i + 1].startsWith('--') ? process.argv[i + 1] : true) : def; };
 const raiz = path.resolve(arg('raiz') || process.env.ATX_RAIZ || process.cwd());
@@ -35,7 +35,7 @@ const nIssue = (branch.match(/^claude\/issue-(\d+)-/) || [])[1];
 if ((!trilha || !id) && nIssue) { const j = gh('issue', 'view', nIssue, ...(repo ? ['-R', repo] : []), '--json', 'body,labels');
   if (j) { const d = JSON.parse(j); trilha = trilha || lerLinha(d.body, 'BPM-Trilha'); id = id || lerLinha(d.body, 'BPM-ID'); origemTrilha = origemTrilha || (trilha ? 'tarefa #' + nIssue : null); rotulos.push(...(d.labels || []).map(l => l.name)); } }
 if (!trilha) { trilha = process.env.BPM_TRILHA || null; try { if (!trilha) { const [t, i] = fs.readFileSync(path.join(raiz, '.bpm-trilha'), 'utf8').split(/\r?\n/); trilha = t?.trim() || null; id = id || i?.trim() || null; } } catch (_) {} if (trilha) origemTrilha = origemTrilha || 'local'; }
-trilha = trilha ? String(trilha).toUpperCase() : null;
+trilha = trilha ? normTrilha(trilha) : null;
 const noturna = rotulos.includes('correcao-noturna') || /^\[Correção noturna\]/.test(corpo);
 
 // ── diff ──
@@ -56,7 +56,7 @@ const gate = (nome, status, itens = []) => res.gates.push({ nome, status, itens 
 
 // escopo
 if (trilha) {
-  if (!E.trilhas[trilha]) gate('escopo', 'erro', [`trilha "${trilha}" não existe em partitura/escopos.json`]);
+  if (!trilhaInfo(trilha)) gate('escopo', 'erro', [`trilha "${trilha}" não existe em partitura/escopos.json (nem é trilha de produto P-<pasta>)`]);
   else { const fora = [], comp = [];
     for (const f of arquivos) { const r = podeAlterar(trilha, f, { id }); if (!r.ok) fora.push(r.motivo); else if (r.compartilhado) comp.push(f + ' (compartilhado: o revisor confere se só a seção da tela da trilha mudou)'); }
     gate('escopo', fora.length ? 'erro' : comp.length ? 'aviso' : 'ok', [...fora, ...comp]); }
@@ -92,7 +92,7 @@ res.resultado = erros ? 'reprovado' : 'aprovado';
 if (arg('json')) { console.log(JSON.stringify(res, null, 2)); process.exit(erros ? 1 : 0); }
 const ICO = { ok: '✅', aviso: '⚠️', erro: '❌' };
 const md = [`### Gates B.P.M. — ${erros ? '❌ reprovado' : '✅ aprovado'}`,
-  `Trilha: **${trilha ? trilha + ' ' + (E.trilhas[trilha]?.nome || '') : '—'}**${id ? ' · ID `' + id + '`' : ''}${origemTrilha ? ' (de: ' + origemTrilha + ')' : ''} · branch \`${branch}\` · ${arquivos.length} arquivo(s)`, '',
+  `Trilha: **${trilha ? trilha + ' ' + (trilhaInfo(trilha)?.nome || '') : '—'}**${id ? ' · ID `' + id + '`' : ''}${origemTrilha ? ' (de: ' + origemTrilha + ')' : ''} · branch \`${branch}\` · ${arquivos.length} arquivo(s)`, '',
   '| Gate | Resultado | Detalhe |', '|---|---|---|',
   ...res.gates.map(g => `| ${g.nome} | ${ICO[g.status]} ${g.status} | ${g.itens.slice(0, 8).join('<br>').replace(/\|/g, '/') || '—'}${g.itens.length > 8 ? '<br>… +' + (g.itens.length - 8) : ''} |`)].join('\n');
 console.log(md);

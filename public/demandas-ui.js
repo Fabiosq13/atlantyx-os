@@ -113,7 +113,7 @@
       <div class="panel" style="margin-bottom:12px;"><div class="pb" id="demBatida">Carregando a Batida…</div></div>
       <div class="panel" style="margin-bottom:12px;"><div class="pb" id="demCfg">Carregando...</div></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
-        <div class="seg" id="demFiltro">${[['todas', 'Todas'], ['produto', '💡 Agente de Produto'], ['qa', '🌙 Correções da madrugada'], ['fundador', '✍ Minhas']].map(([k, r]) => `<button data-f="${k}" class="${k === filtro ? 'on' : ''}" onclick="DEM.filtrar('${k}')">${r}</button>`).join('')}</div>
+        <div class="seg" id="demFiltro">${[['todas', 'Todas'], ['produto', '💡 Agente de Produto'], ['fabrica', '🏭 Construção de produtos'], ['qa', '🌙 Correções da madrugada'], ['fundador', '✍ Minhas']].map(([k, r]) => `<button data-f="${k}" class="${k === filtro ? 'on' : ''}" onclick="DEM.filtrar('${k}')">${r}</button>`).join('')}</div>
         <span style="flex:1;"></span>
         <button class="btn btn-g" style="font-size:10.5px;" onclick="DEM.nova()">＋ Nova demanda</button>
         <button class="btn btn-g" style="font-size:10.5px;" onclick="DEM.carregar(true)">↻ Atualizar</button>
@@ -159,7 +159,8 @@
   }
   // ── v3.145 · 🥁 BATIDA — trilhas ativas, bloqueios, paralelismo, métricas e fases da implantação ──
   const NAIPE_COR = { T1: '#4f7cff', T2: '#f5a623', T3: '#22d3a3', T4: '#b98cff', T5: '#ff7aa8', T6: '#00c4cc' };
-  const chipTrilha = (t, mini) => { const T = D.bpm?.trilhas?.[t]; return t ? `<span title="${esc(T ? T.naipe + ' · ' + T.escopo : '')}" style="font-size:${mini ? '8.5px' : '10px'};font-family:var(--M);padding:1px 5px;border-radius:3px;background:${NAIPE_COR[t] || '#888'}26;color:${NAIPE_COR[t] || 'var(--t2)'};white-space:nowrap;">${esc(t)}${T && !mini ? ' ' + esc(T.nome) : ''}</span>` : `<span style="font-size:8.5px;font-family:var(--M);padding:1px 5px;border-radius:3px;background:rgba(255,77,109,.15);color:var(--red);">sem trilha</span>`; };
+  const infoT = t => D.bpm?.trilhas?.[t] || (/^P-/.test(t || '') ? { nome: 'Produto ' + t.slice(2), naipe: 'Fábrica', escopo: 'sistema separado em produtos/' + t.slice(2) + '/' } : null);
+  const chipTrilha = (t, mini) => { const T = infoT(t); return t ? `<span title="${esc(T ? T.naipe + ' · ' + T.escopo : '')}" style="font-size:${mini ? '8.5px' : '10px'};font-family:var(--M);padding:1px 5px;border-radius:3px;background:${NAIPE_COR[t] || '#888'}26;color:${NAIPE_COR[t] || 'var(--t2)'};white-space:nowrap;">${esc(t)}${T && !mini ? ' ' + esc(T.nome) : ''}</span>` : `<span style="font-size:8.5px;font-family:var(--M);padding:1px 5px;border-radius:3px;background:rgba(255,77,109,.15);color:var(--red);">sem trilha</span>`; };
   function bloqueioDe(d) {
     const x = d.dados || {}, c = x.claude, pr = x.pr, rot = pr?.rotulos || [];
     if (pr && rot.includes('precisa-revisao')) return 'Mixagem devolveu o PR #' + pr.numero + ' (gate automático/validação)';
@@ -177,7 +178,8 @@
     const ativas = [...new Set(dem.filter(d => d.status === 'em_execucao').map(d => d.dados?.bpm?.trilha).filter(Boolean))];
     const lim = B.limite, dia = 864e5, desde = Date.now() - 60 * dia;
     const lead = d => { const a = Date.parse(d.dados?.bpm?.spec_aprovada_em || d.dados?.versao_aprovada_em || d.decidido_em), b = Date.parse(d.dados?.implementada_em); return a && b && b > a ? (b - a) / dia : null; };
-    const linhas = Object.entries(B.trilhas).map(([t, T]) => {
+    const prodT = [...new Set(dem.map(d => d.dados?.bpm?.trilha).filter(t => /^P-/.test(t || '')))];
+    const linhas = [...Object.entries(B.trilhas), ...prodT.map(t => [t, infoT(t)])].map(([t, T]) => {
       const L = dem.filter(d => d.dados?.bpm?.trilha === t);
       const exe = L.filter(d => d.status === 'em_execucao'), fila = L.filter(d => ['sugerida', 'aprovada'].includes(d.status));
       const feitas = L.filter(d => d.status === 'implementada' && Date.parse(d.dados?.implementada_em || d.atualizado_em) > desde);
@@ -208,7 +210,7 @@
     const x = d.dados || {}; const qa = d.squad === 'qa';
     const n = qa ? (x.achados_qa || []).length + (x.achados_seguranca || []).length : 0;
     return `<div onclick="DEM.detalhe('${d.id}')" style="background:var(--bg3);border:1px solid ${d.status === 'sugerida' ? 'rgba(245,166,35,.45)' : 'var(--bd)'};border-radius:6px;padding:8px;margin-bottom:6px;cursor:pointer;">
-      <div style="display:flex;gap:4px;align-items:center;margin-bottom:3px;"><span style="font-size:8.5px;font-family:var(--M);padding:1px 5px;border-radius:3px;background:${qa ? 'rgba(156,109,255,.18);color:#b9a0ff' : x.origem === 'fundador' ? 'rgba(34,211,163,.15);color:var(--green)' : 'rgba(79,124,255,.15);color:var(--blue)'};">${qa ? '🌙 QA madrugada' : x.origem === 'fundador' ? '✍ Fundador' : '💡 Produto'}</span>
+      <div style="display:flex;gap:4px;align-items:center;margin-bottom:3px;"><span style="font-size:8.5px;font-family:var(--M);padding:1px 5px;border-radius:3px;background:${qa ? 'rgba(156,109,255,.18);color:#b9a0ff' : x.origem === 'fundador' ? 'rgba(34,211,163,.15);color:var(--green)' : 'rgba(79,124,255,.15);color:var(--blue)'};">${qa ? '🌙 QA madrugada' : x.origem === 'fundador' ? '✍ Fundador' : x.origem === 'fabrica' ? '🏭 ' + esc(x.fabrica?.nome || 'Fábrica') : '💡 Produto'}</span>
         ${camposAlterados(d).length ? '<span style="font-size:8.5px;font-family:var(--M);padding:1px 5px;border-radius:3px;background:rgba(245,166,35,.18);color:var(--gold);" title="Há uma versão alterada aguardando sua aprovação — abra para ver o que mudou">⚠ alterado</span>' : ''}
         ${qa ? '' : chipTrilha(x.bpm?.trilha, true)}${x.area ? `<span style="font-size:8.5px;color:var(--t3);">${esc(x.area)}</span>` : ''}<span style="flex:1;"></span><span style="font-size:8.5px;color:var(--t3);">${quando(d.criado_em)}</span></div>
       <div style="font-size:11px;font-weight:600;line-height:1.35;">${esc(d.titulo)}</div>

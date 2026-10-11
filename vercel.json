@@ -164,7 +164,8 @@
       "maxDuration": 60
     },
     "api/fabrica.js": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "includeFiles": "partitura/escopos.json"
     },
     "api/tendencias.js": {
       "maxDuration": 300

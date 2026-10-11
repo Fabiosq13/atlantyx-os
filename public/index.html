@@ -28407,7 +28407,7 @@ async function metasCadastroSalvar() {
 // Plano de Projeto, Plano de Testes com IA (Word), Kanban da Fábrica, robôs de QA seguindo o plano e painel do cliente ═══
 let _fb = { lista: null, pid: null, aba: 'visao', proj: null, docs: null, itens: null, casos: null, painel: null, gerando: {}, filtroTipo: '', filtroSt: '' };
 const _fbEsc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const FB_ABAS = [['visao', 'Visão e gates'], ['docs', 'Documentos'], ['arq', 'Arquitetura e FinOps'], ['kanban', 'Kanban da Fábrica'], ['casos', 'Planos de Teste'], ['robos', 'Robôs de QA'], ['painel', 'Painel do cliente']];
+const FB_ABAS = [['visao', 'Visão e gates'], ['docs', 'Documentos'], ['arq', 'Arquitetura e FinOps'], ['kanban', 'Kanban da Fábrica'], ['construcao', '🏗 Construção (Claude)'], ['casos', 'Planos de Teste'], ['robos', 'Robôs de QA'], ['painel', 'Painel do cliente']];
 const FB_DOC_GRUPOS = [['Etapa 2 · Planejamento', ['plano_projeto']], ['Etapa 3 · Especificação', ['erf', 'modelo_ert', 'ert']], ['Etapa 4 · Arquitetura, dados, volumetria e FinOps', ['arquitetura', 'modelo_dados', 'volumetria', 'finops']],
   ['Etapas 7 e 8 · Planos de teste (um por família)', ['plano_testes', 'plano_testes_integracao', 'plano_testes_usabilidade', 'plano_testes_seguranca', 'plano_testes_desempenho']], ['Etapa 7 · Resultado', ['relatorio_qualidade']]];
 const FB_DOC_ORDEM = FB_DOC_GRUPOS.flatMap(g => g[1]);
@@ -28432,7 +28432,7 @@ const FB_ST = { nao_executado: ['Não executado', 'var(--t3)'], passou: ['Aprova
 const FB_PR = { alta: 'var(--fv2-crit)', media: 'var(--fv2-warn)', baixa: 'var(--t3)' };
 async function fbApi(action, body = {}) {
   const r = await fetch('/api/fabrica', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(typeof authHeaders === 'function' ? authHeaders() : {}) }, body: JSON.stringify({ action, ...body }) });
-  const d = await r.json().catch(() => ({})); if (!r.ok || !d.success) { const e = new Error(d.error || ('HTTP ' + r.status)); e.precisa_forcar = !!d.precisa_forcar; throw e; } return d;
+  const d = await r.json().catch(() => ({})); if (!r.ok || !d.success) { const e = new Error(d.error || ('HTTP ' + r.status)); e.precisa_forcar = !!d.precisa_forcar; e.codigo = d.codigo || null; throw e; } return d;
 }
 function _fbBox() { return document.getElementById('fbApp'); }
 async function fbCarregar(manterAba) {
@@ -28456,6 +28456,7 @@ async function fbIrAba(k) {
     if (k === 'visao') { _fb.painel = await fbApi('painel', { projeto_id: _fb.pid }); _fbVisao(); }
     else if (k === 'docs') { const r = await fbApi('projeto_obter', { id: _fb.pid }); _fb.proj = r.projeto; _fb.docs = r.documentos; _fbDocs(); }
     else if (k === 'kanban') { const r = await fbApi('itens', { projeto_id: _fb.pid }); _fb.itens = r.itens; _fbKanban(); }
+    else if (k === 'construcao') { _fb.cons = await fbApi('construcao_obter', { projeto_id: _fb.pid }); _fbConstrucao(); }
     else if (k === 'arq') { const [r, o] = await Promise.all([fbApi('arq_obter', { projeto_id: _fb.pid }), fbApi('projeto_obter', { id: _fb.pid })]); _fb.arq = r.arquitetura || {}; _fb.calc = r.calculo; _fb.docs = o.documentos; _fbArq(); }
     else if (k === 'casos') { const [r, i] = await Promise.all([fbApi('casos', { projeto_id: _fb.pid }), fbApi('itens', { projeto_id: _fb.pid })]); _fb.casos = r; _fb.itens = i.itens; _fbCasos(); }
     else if (k === 'robos') { _fb.painel = await fbApi('painel', { projeto_id: _fb.pid }); _fbRobos(); }
@@ -28647,6 +28648,60 @@ function _fbBaixar(r) { const bin = atob(r.base64), u = new Uint8Array(bin.lengt
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([u], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })); a.download = r.nome; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500); }
 async function fbWord(tipo) { try { toast('Gerando Word…'); _fbBaixar(await fbApi('doc_word', { projeto_id: _fb.pid, tipo })); } catch (e) { toast(e.message, 'error'); } }
 async function fbPacote() { try { toast('Montando o pacote para a fábrica…'); _fbBaixar(await fbApi('pacote_word', { projeto_id: _fb.pid })); } catch (e) { toast(e.message, 'error'); } }
+// ── v3.146 · 🏗 CONSTRUÇÃO PELO CLAUDE (Método B.P.M.) — a fundação e cada item do Kanban viram tarefas para o Claude ──
+function _fbDemSt(d) {
+  if (!d) return '<span class="fv2-pq">—</span>';
+  const pr = d.pr, link = (u, t) => u ? '<a href="' + _fbEsc(u) + '" target="_blank" rel="noopener">' + t + '</a>' : t;
+  if (d.status === 'implementada') return '<span style="color:var(--fv2-ok);font-weight:600;">🚀 No ar</span>' + (pr ? ' · ' + link(pr.url, 'PR #' + pr.numero) : '');
+  if (pr && (pr.rotulos || []).includes('precisa-revisao')) return '<span style="color:var(--fv2-crit);">❌ Mixagem devolveu o ' + link(pr.url, 'PR #' + pr.numero) + '</span>';
+  if (pr && d.merge_pedido) return '<span style="color:var(--blue);">🔄 Mesclando o ' + link(pr.url, 'PR #' + pr.numero) + '</span>';
+  if (pr && pr.estado === 'open') return '<span style="color:var(--gold);">📬 ' + link(pr.url, 'PR #' + pr.numero) + ' aguarda a SUA Mixagem</span> <a href="#" onclick="event.preventDefault();nav(\'s0demandas\',document.querySelector(\'.sbi[onclick*=s0demandas]\'))">abrir Esteira</a>';
+  if (d.claude === 'erro') return '<span style="color:var(--fv2-crit);">❌ Claude parou com erro</span> · ' + link(d.issue_url, 'tarefa #' + d.issue_numero);
+  if (d.claude === 'trabalhando') return '<span style="color:var(--blue);">⚙ Claude construindo</span> · ' + link(d.issue_url, 'tarefa #' + d.issue_numero);
+  if (d.status === 'em_execucao') return '<span class="fv2-pq">⏳ Na fila do Claude</span> · ' + link(d.issue_url, 'tarefa #' + d.issue_numero);
+  return _fbEsc(d.status);
+}
+function _fbConstrucao() {
+  const C = _fb.cons, f = C.fundacao, fOk = f?.status === 'implementada';
+  const col = Object.fromEntries((_fb.lista?.colunas || []).map(([k, n]) => [k, n]));
+  _fbBox().innerHTML = '<div class="fv2-aviso" style="margin-bottom:10px;">O Claude constrói o sistema <b>' + _fbEsc(C.projeto.nome) + '</b> numa pasta própria do repositório (<code>produtos/' + _fbEsc(C.pasta) + '/</code>), seguindo o Método B.P.M.: '
+      + '① a <b>fundação</b> (estrutura, tecnologia da arquitetura, acesso, layout, deploy) e depois ② <b>um item do Kanban por vez</b>. Cada entrega vira um PR que passa pela <b>sua Mixagem</b> na Esteira de Demandas; ao mesclar, o item volta para <b>Em QA (robôs)</b>. '
+      + 'O robô baixa a ERF, a ERT, a arquitetura, o backlog e os casos de teste aprovados para a pasta do produto antes de o Claude começar.</div>'
+    + '<div class="fb-g3" style="margin-bottom:12px;"><div class="fb-gate ' + (C.liberado ? 'ok' : 'pend') + '"><div class="fb-gh">Pré-requisitos<span>' + (C.liberado ? '✔ liberado' : 'pendências') + '</span></div>'
+      + C.pre.map(x => '<div class="fb-gc">' + (x.ok ? '✔' : '✖') + ' ' + _fbEsc(x.txt) + '</div>').join('')
+      + '<div class="fv2-pq" style="margin-top:6px;">Também vão para o Claude, se existirem: ' + C.docs_opcionais.map(d => _fbEsc(d.nome) + (d.status ? ' (' + (d.status === 'aprovado' ? 'aprovado' : 'rascunho') + ')' : ' (não há)')).join(' · ') + '</div></div>'
+    + '<div class="fb-gate ' + (fOk ? 'ok' : '') + '"><div class="fb-gh">① Fundação do sistema<span>' + (f ? (fOk ? '✔ no ar' : 'em andamento') : 'não enviada') + '</span></div>'
+      + (f ? '<div class="fb-gc">' + _fbDemSt(f) + '</div>'
+        : '<label class="fb-lbl">Pasta do produto no repositório<input id="fbConsPasta" value="' + _fbEsc(C.pasta) + '" ' + (C.pasta_travada ? 'disabled' : '') + ' placeholder="ex.: crm-jelta"></label>'
+          + '<label class="fb-lbl">Orientação para o Claude (opcional)<textarea id="fbConsObs" rows="3" placeholder="ex.: use o Supabase que o cliente já tem; telas em português; priorize celular"></textarea></label>'
+          + '<button class="btn btn-gn" onclick="fbConsEnviar()" ' + (C.liberado ? '' : 'disabled') + '>🏗 Enviar fundação para o Claude</button>')
+      + '</div></div>'
+    + '<div class="fh-cab">② Itens do Kanban <span class="fv2-pq">' + C.itens.length + ' item(ns) · ' + C.itens.filter(i => i.demanda?.status === 'implementada').length + ' construído(s) · ' + C.itens.filter(i => i.demanda && i.demanda.status !== 'implementada').length + ' com o Claude'
+      + (f && !fOk ? ' · aguarde a fundação ir ao ar antes de enviar itens' : '') + '</span></div>'
+    + (C.itens.length ? '<div class="fv2-tabwrap"><table class="fb-tb"><tr><th>Item</th><th>Coluna no Kanban</th><th>Construção</th><th></th></tr>' + C.itens.map(i => '<tr><td><b>' + _fbEsc(i.codigo) + '</b> ' + _fbEsc(i.titulo) + '</td><td>' + _fbEsc(col[i.coluna] || i.coluna) + '</td><td>' + _fbDemSt(i.demanda) + '</td><td style="white-space:nowrap;">'
+        + (!i.demanda || i.demanda.status === 'implementada' ? (i.demanda ? '' : '<button class="btn btn-g" ' + (f ? '' : 'disabled title="Envie a fundação primeiro"') + ' onclick="fbConsItem(\'' + i.id + '\')">🤖 Construir</button>') : '') + '</td></tr>').join('') + '</table></div>'
+      : '<div class="fv2-aviso">Sem itens — gere o backlog no Kanban da Fábrica.</div>')
+    + '<details style="margin-top:12px;"><summary style="cursor:pointer;">③ Publicar e testar o sistema (uma vez, depois da fundação)</summary><ol style="font-size:12px;line-height:1.7;margin:8px 0 0 18px;">'
+      + '<li>Na Vercel: <b>Add New → Project</b>, escolha o mesmo repositório e em <b>Root Directory</b> coloque <code>produtos/' + _fbEsc(C.pasta) + '</code>.</li>'
+      + '<li>Cadastre as variáveis de ambiente que o README do produto lista (valores só na Vercel).</li>'
+      + '<li>Em <b>S6 · QA de Produtos</b>, cadastre o sistema com o endereço publicado e um usuário de teste, e ligue o projeto a ele (✎ do projeto nesta Esteira) — os robôs passam a executar os casos de teste.</li>'
+      + '<li>Cada item mesclado vai para <b>Em QA (robôs)</b>; com os casos aprovados ele segue sozinho para <b>Aprovado no QA</b>.</li></ol></details>';
+}
+async function fbConsEnviar(forcar) {
+  const pasta = (document.getElementById('fbConsPasta')?.value || '').trim(), instrucoes = document.getElementById('fbConsObs')?.value || '';
+  if (!forcar && !confirm('Enviar a fundação do sistema para o Claude?\n\nEle cria a base em produtos/' + pasta + '/ seguindo a ERT e a arquitetura aprovadas e abre um PR — que só vai para o ar depois da SUA Mixagem na Esteira de Demandas.')) return;
+  try { const r = await fbApi('construcao_enviar', { projeto_id: _fb.pid, pasta, instrucoes, forcar_paralelismo: !!forcar });
+    toast(r.issue ? 'Fundação enviada — tarefa #' + r.issue + ' aberta para o Claude' : (r.aviso || 'Fundação registrada'), r.aviso ? 'error' : 'success'); fbIrAba('construcao'); }
+  catch (e) { if (e.codigo === 'limite' && confirm(e.message + '\n\nAbrir mais uma trilha assim mesmo?')) return fbConsEnviar(true); toast(e.message, 'error'); }
+}
+async function fbConsItem(id, forcar, forcarPar) {
+  const it = _fb.cons.itens.find(i => i.id === id); if (!it) return;
+  if (!forcar && !forcarPar && !confirm('Mandar o item ' + it.codigo + ' para o Claude construir?\n\nOs critérios de aceite vêm do item e dos casos de teste ligados a ele.')) return;
+  try { const r = await fbApi('construcao_item', { projeto_id: _fb.pid, item_id: id, forcar: !!forcar, forcar_paralelismo: !!forcarPar });
+    toast(r.issue ? it.codigo + ' com o Claude — tarefa #' + r.issue : (r.aviso || 'Registrado'), r.aviso ? 'error' : 'success'); fbIrAba('construcao'); }
+  catch (e) { if (e.precisa_forcar && confirm(e.message + '\n\nEnviar mesmo assim?')) return fbConsItem(id, true, forcarPar);
+    if (e.codigo === 'limite' && confirm(e.message + '\n\nAbrir mais uma trilha assim mesmo?')) return fbConsItem(id, forcar, true); toast(e.message, 'error'); }
+}
 // ── Kanban da fábrica ──
 function _fbKanban() {
   const I = _fb.itens || [], C = _fb.lista.colunas, h = I.reduce((s, i) => s + (+i.estimativa_h || 0), 0);
@@ -32243,7 +32298,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.145] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.146] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -32259,7 +32314,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.145';
+window.__ATX_BUILD_ID__ = 'ATX-v3.146';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

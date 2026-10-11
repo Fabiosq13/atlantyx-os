@@ -23,7 +23,7 @@ import { comGuarda } from '../lib/qa-guard.js';
 
 import fs from 'fs';
 import path from 'path';
-import { escopos, sugerirTrilha, idTrilha } from '../lib/bpm.js';
+import { escopos, sugerirTrilha, idTrilha, trilhaInfo, trilhaExiste } from '../lib/bpm.js';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -52,7 +52,7 @@ function resumoBpm(cfg) {
     trilhas: Object.fromEntries(Object.entries(E.trilhas).map(([k, t]) => [k, { nome: t.nome, naipe: t.naipe, escopo: t.escopo, pode_alterar: t.pode_alterar, restricao: t.restricao || null }])),
     compartilhados: E.compartilhados };
 }
-const trilhaValida = t => { try { return !!escopos().trilhas[t]; } catch (_) { return false; } };
+const trilhaValida = t => trilhaExiste(t); // T1…T6 ou trilha de produto P-<pasta> (v3.146)
 
 let _sql = null;
 async function getSql() {
@@ -199,20 +199,36 @@ async function gerar({ squad = 'produto', foco = '', origem = 'manual' } = {}) {
 function corpoIssue(r) {
   const d = r.dados || {};
   const lista = a => (Array.isArray(a) && a.length ? a.map(x => '- ' + x).join('\n') : '-');
-  const b = d.bpm || {}; let T = null; try { T = b.trilha ? escopos().trilhas[b.trilha] : null; } catch (_) {}
+  const b = d.bpm || {}; let T = null; try { T = b.trilha ? trilhaInfo(b.trilha) : null; } catch (_) {}
+  const F = d.fabrica || null, pasta = T?.produto || F?.pasta;
   const metodo = b.trilha && b.id ? `BPM-Trilha: ${b.trilha}
 BPM-ID: ${b.id}
 
 ## Método B.P.M. (obrigatório — leia o CLAUDE.md)
 Você é a trilha **${b.trilha} ${T?.nome || ''}** (${T?.naipe || ''}). Antes de tocar no código:
 1. Crie \`partitura/trilhas/${b.id}/spec.md\` com a seção "Partitura" abaixo (status: aprovada, aprovada pelo fundador) e \`plano.md\` em fases, a partir dos modelos em \`partitura/trilhas/_modelo/\`.
-2. Altere **só** os arquivos da trilha ${b.trilha}: ${(T?.pode_alterar || []).map(x => '`' + x + '`').join(', ') || '(ver partitura/escopos.json)'}${T?.restricao ? ' — ' + T.restricao : ''}. Em \`public/index.html\` (compartilhado) mexa só na seção da tela desta demanda. O hook bloqueia o resto.
+2. Altere **só** os arquivos da trilha ${b.trilha}: ${(T?.pode_alterar || []).map(x => '`' + x + '`').join(', ') || '(ver partitura/escopos.json)'}${T?.restricao ? ' — ' + T.restricao : ''}.${pasta ? '' : ' Em \`public/index.html\` (compartilhado) mexa só na seção da tela desta demanda.'} O hook bloqueia o resto.
 3. Precisa de arquivo de outra trilha, de tabela/coluna nova ou de mudar contrato? **Não edite**: registre em "Interseções" do plano.md (banco → peça ao subagent afinador uma proposta em partitura/contratos/banco.md) e conclua o que couber na trilha.
 4. Ao terminar: marque o plano.md, preencha \`partitura/trilhas/${b.id}/mixagem.md\` com o resultado de \`node scripts/validar.mjs --sem-navegador\` e \`node scripts/bpm-gates.mjs --local\`, e no corpo do PR mantenha as linhas "BPM-Trilha: ${b.trilha}" e "BPM-ID: ${b.id}".
 
 ` : '';
+  // v3.146: sistema construído pela Esteira de Entrega — produto separado, numa pasta própria
+  const produto = pasta && F ? `BPM-Produto: ${F.projeto_id}
+
+## Produto da Esteira de Entrega — ${F.nome || pasta}${F.cliente ? ' (cliente ' + F.cliente + ')' : ''}
+Você está construindo um **sistema separado do Atlantyx OS**, que vive só em \`produtos/${pasta}/\`${F.tipo === 'fundacao' ? ' — esta é a **FUNDAÇÃO** (a base do sistema)' : ' — esta tarefa é o item **' + (F.item_codigo || '') + '** do Kanban da fábrica'}.
+- Os documentos aprovados (ERF, ERT, arquitetura, modelo de dados, volumetria, FinOps, plano do projeto, backlog e casos de teste) foram baixados pelo robô em \`produtos/${pasta}/partitura/\` antes de você começar. **Leia-os primeiro: eles mandam.** Commite essa pasta junto.
+- Nunca altere nada fora de \`produtos/${pasta}/\` (nem api/, lib/, public/ ou scripts/ do Atlantyx OS) — o hook bloqueia.
+- O sistema roda sozinho na Vercel com **Root Directory = produtos/${pasta}**: package.json próprio, vercel.json se precisar e um README com como rodar, como publicar e as variáveis de ambiente (só os nomes, nunca valores).
+- Siga a tecnologia e a estrutura do Documento de Arquitetura aprovado. Se ele pedir algo que não roda na Vercel, ou se ERT e arquitetura divergirem, **PARE** e registre em Interseções do plano.md.
+- O schema do banco do produto é do produto (fica em produtos/${pasta}/). Só dados sintéticos — nunca dados reais do cliente.
+- Cubra os critérios de aceite com testes do próprio produto. Os casos de teste da Esteira estão em \`produtos/${pasta}/partitura/casos.md\`: os robôs de QA da Atlantyx executam depois do deploy, então mantenha os textos das telas e botões que eles citam.
+${F.tipo === 'fundacao' ? '- Fundação = estrutura do projeto, tecnologia, autenticação e layout base, navegação, conexão com o banco, deploy funcionando e README. Não implemente os itens do backlog — cada um vem numa tarefa própria.\n' : '- A fundação já está no ar: reaproveite a estrutura existente em produtos/' + pasta + '/ e implemente só este item.\n'}
+` : '';
+  const regras = pasta ? `Regras: não altere o que não estiver relacionado a este item; valide (o build/testes do próprio produto + \`node scripts/bpm-gates.mjs --local\` na raiz); NÃO altere a versão ATX-vX.YY do Atlantyx OS; descreva no PR o que mudou e como testar. Nada vai para produção sem o merge do fundador.`
+    : `Regras: não altere o que não estiver relacionado; mantenha o comportamento das telas que funcionam; valide a sintaxe (node --check nas APIs e nos blocos <script> de public/index.html); NÃO altere a versão ATX-vX.YY / ATLANTYX vX.YY (o merge pela Esteira sobe a versão — mudar aqui gera conflito entre PRs); descreva no PR o que mudou e como testar. Nada vai para produção sem o merge do fundador.`;
   return `@claude implemente esta demanda APROVADA pelo fundador na Esteira de Demandas do Atlantyx OS e abra um pull request para revisão.
-${metodo}Regras: não altere o que não estiver relacionado; mantenha o comportamento das telas que funcionam; valide a sintaxe (node --check nas APIs e nos blocos <script> de public/index.html); NÃO altere a versão ATX-vX.YY / ATLANTYX vX.YY (o merge pela Esteira sobe a versão — mudar aqui gera conflito entre PRs); descreva no PR o que mudou e como testar. Nada vai para produção sem o merge do fundador.
+${metodo}${produto}${regras}
 
 ## ${r.titulo}
 **Área:** ${d.area || '-'} · **Impacto:** ${d.impacto || '-'}/5 · **Esforço:** ${d.esforco || '-'} · **Risco:** ${d.risco || '-'}
@@ -330,6 +346,8 @@ async function sincronizar() {
       const descartada = !implementada && iss.state === 'closed' && (iss.state_reason === 'not_planned' || (pr && pr.estado === 'closed' && !pr.merged));
       if (descartada) d.arquivada_em = iss.closed_at || new Date().toISOString();
       await sql`UPDATE agente_demandas SET dados = ${JSON.stringify(d)}, status = ${implementada ? 'implementada' : descartada ? 'arquivada' : 'em_execucao'}, atualizado_em = NOW() WHERE id = ${r.id}`;
+      // v3.146: item da Esteira de Entrega mesclado → volta ao Kanban da fábrica em "Em QA (robôs)"
+      if (implementada && d.fabrica?.item_id) { try { await sql`UPDATE fab_itens SET coluna = 'qa', em_qa_em = NOW(), nota = ${'Construído pelo Claude — PR #' + (pr?.numero || '?') + ' mesclado; aguardando os robôs de QA'}, atualizado_em = NOW() WHERE id = ${d.fabrica.item_id} AND coluna IN ('backlog', 'especificado', 'desenvolvimento', 'revisao')`; } catch (_) {} }
       if (implementada) mudou++;
     } catch (_) {}
   }
@@ -607,5 +625,20 @@ async function handler(req, res) {
   }
 }
 
-export { telasDoSistema, corpoIssue };
+// v3.146: a Esteira de Entrega manda a fundação e os itens do Kanban para o Claude construir (squad "fabrica")
+async function demandaProduto({ titulo, problema, proposta, criterios = [], como_implementar = '', trilha, fabrica }, usuario, opcoes = {}) {
+  const sql = await getSql(); if (!trilhaValida(trilha)) throw new Error('Trilha do produto inválida: ' + trilha);
+  const id = novoId();
+  const dados = { problema, proposta, criterios_aceite: criterios.map(c => String(c).substring(0, 400)).filter(Boolean).slice(0, 20), como_implementar, area: 'produto', origem: 'fabrica',
+    impacto: 4, esforco: fabrica?.tipo === 'fundacao' ? 'G' : 'M', risco: 'medio', fabrica, bpm: { trilha, trilha_origem: 'fabrica' } };
+  await sql`INSERT INTO agente_demandas (id, squad, tipo, titulo, status, prioridade, dados) VALUES (${id}, 'fabrica', 'implementacao', ${String(titulo).substring(0, 200)}, 'aprovada', 4, ${JSON.stringify(dados)})`;
+  try { return { id, ...(await decidir({ id, decisao: 'enviar', obs: 'Enviado pela Esteira de Entrega', ...opcoes }, usuario)) }; }
+  catch (e) { await sql`DELETE FROM agente_demandas WHERE id = ${id}`; throw e; }
+}
+async function demandasDaFabrica(projeto_id) {
+  const sql = await getSql();
+  return (await sql`SELECT * FROM agente_demandas WHERE squad = 'fabrica' AND dados->'fabrica'->>'projeto_id' = ${projeto_id} ORDER BY criado_em`).map(linha);
+}
+
+export { telasDoSistema, corpoIssue, demandaProduto, demandasDaFabrica };
 export default comGuarda(handler, 'agente-ideias');

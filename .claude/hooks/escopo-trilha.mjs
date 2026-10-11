@@ -5,13 +5,13 @@
 // Trilha: variável BPM_TRILHA, ou arquivo .bpm-trilha na raiz ("T3" na 1ª linha, ID na 2ª). Sem trilha = Maestro → libera.
 import fs from 'fs';
 import path from 'path';
-import { podeAlterar, contaDDL, checaDDL, versoes, normalizar } from '../../lib/bpm.js';
+import { podeAlterar, contaDDL, checaDDL, versoes, normalizar, normTrilha } from '../../lib/bpm.js';
 
 let entrada = {};
 try { entrada = JSON.parse(fs.readFileSync(0, 'utf8') || '{}'); } catch (_) { process.exit(0); }
 const raiz = process.env.CLAUDE_PROJECT_DIR || entrada.cwd || process.cwd();
-let trilha = (process.env.BPM_TRILHA || '').trim().toUpperCase(), id = (process.env.BPM_ID || '').trim();
-if (!trilha) { try { const [t, i] = fs.readFileSync(path.join(raiz, '.bpm-trilha'), 'utf8').split(/\r?\n/); trilha = (t || '').trim().toUpperCase(); id = id || (i || '').trim(); } catch (_) {} }
+let trilha = normTrilha(process.env.BPM_TRILHA), id = (process.env.BPM_ID || '').trim();
+if (!trilha) { try { const [t, i] = fs.readFileSync(path.join(raiz, '.bpm-trilha'), 'utf8').split(/\r?\n/); trilha = normTrilha(t); id = id || (i || '').trim(); } catch (_) {} }
 if (!trilha) process.exit(0);
 
 const ti = entrada.tool_input || {};
