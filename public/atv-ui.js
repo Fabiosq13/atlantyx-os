@@ -118,7 +118,7 @@
   async function enviar(inp) {
     const f = inp.files?.[0]; inp.value = ''; if (!f) return; const t = prompt('Título do vídeo na tela:', f.name.replace(/\.[^.]+$/, '')) || f.name; const st = $('atvUp');
     const lu = URL.createObjectURL(f); const dur = await medir(lu); URL.revokeObjectURL(lu);
-    try { const PM = 3400000, n = Math.ceil(f.size / PM); const r = await api('midia_iniciar', { nome: f.name, titulo: t, content_type: f.type || 'video/mp4', tamanho: f.size, partes: n });
+    try { const PM = Math.round(2.4 * 1048576), n = Math.ceil(f.size / PM); const r = await api('midia_iniciar', { nome: f.name, titulo: t, content_type: f.type || 'video/mp4', tamanho: f.size, partes: n });
       for (let i = 0; i < n; i++) { st.textContent = `⏳ Enviando ${f.name}: parte ${i + 1} de ${n} (${mb(Math.min(f.size, (i + 1) * PM))} de ${mb(f.size)})…`;
         const dado = await b64(f.slice(i * PM, (i + 1) * PM)); let ok = false, er = null; for (let k = 0; k < 3 && !ok; k++) { try { await api('midia_parte', { id: r.id, i, b64: dado }); ok = true; } catch (e) { er = e; await new Promise(x => setTimeout(x, 1500)); } } if (!ok) throw er; }
       await api('midia_concluir', { id: r.id }); lerCampos(); cfg.playlist.push(novoIt({ fonte: 'upload', midia_id: r.id, titulo: t, duracao_s: dur })); st.textContent = '✅ ' + f.name + ' enviado (' + mb(f.size) + '). Salvando a playlist…'; await salvar();
@@ -235,7 +235,7 @@
   // Abertura (6 s) → vídeo dentro do layout (topo, lateral com produtos/serviços, faixa de título, letreiro) → encerramento (5 s).
   // Grava em tempo real (canvas + áudio do vídeo) com o MediaRecorder; sem cotações/notícias (ficariam velhas no vídeo).
   async function enviarBlob(blob, nome, titulo, onP) {
-    const PM = 3400000, n = Math.ceil(blob.size / PM); const r = await api('midia_iniciar', { nome, titulo, content_type: (blob.type || 'video/webm').split(';')[0], tamanho: blob.size, partes: n });
+    const PM = Math.round(2.4 * 1048576), n = Math.ceil(blob.size / PM); const r = await api('midia_iniciar', { nome, titulo, content_type: (blob.type || 'video/webm').split(';')[0], tamanho: blob.size, partes: n });
     for (let i = 0; i < n; i++) { onP && onP(i, n); const dado = await b64(blob.slice(i * PM, (i + 1) * PM)); let ok = false, er = null;
       for (let k = 0; k < 3 && !ok; k++) { try { await api('midia_parte', { id: r.id, i, b64: dado }); ok = true; } catch (e) { er = e; await new Promise(x => setTimeout(x, 1500)); } } if (!ok) throw er; }
     await api('midia_concluir', { id: r.id }); return r.id;

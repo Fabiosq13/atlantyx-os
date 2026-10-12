@@ -22,7 +22,7 @@ import crypto from 'node:crypto';
 // ele ligou). Página pública mostra só conteúdo institucional + cotações + notícias: nada financeiro interno.
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
-const PARTE_MAX = 3400000; // bytes por parte (base64 cabe no limite de 4,5 MB do corpo da Vercel)
+const PARTE_MAX = Math.round(2.4 * 1048576); // v3.157: bytes por parte — em base64 (+33%) fica em ~3,4 MB, abaixo do limite de 4,5 MB do corpo da Vercel (3,4 MB davam HTTP 413)
 const CFG_PADRAO = {
   codigo: null, criado_em: null, nome: 'Atlantyx TV', slogan: 'Dados, IA e tecnologia para decisões melhores',
   youtube_canal: 'https://www.youtube.com/@atlantyx', playlist: [],
@@ -333,10 +333,14 @@ async function ytFonte(it) {
 async function ytLerFaixa(f, ini, fim) { // bytes [ini, fim] (inclusive)
   if (f.tipo === 'url') { const r = await fetch(f.url, { headers: { Range: `bytes=${ini}-${fim}` } }); if (!(r.status === 206 || r.status === 200)) throw new Error('Falha ao ler o vídeo (' + r.status + ')');
     let b = Buffer.from(await r.arrayBuffer()); if (r.status === 200) b = b.subarray(ini, fim + 1); return b; }
-  const sql = await getSql(), p0 = Math.floor(ini / PARTE_MAX), p1 = Math.floor(fim / PARTE_MAX), bufs = [];
-  for (let i = p0; i <= p1; i++) { const r = f.tabela === 'atv' ? (await sql`SELECT b64 FROM atv_partes WHERE midia_id=${f.id} AND i=${i}`)[0] : (await sql`SELECT b64 FROM tend_envio_partes WHERE envio_id=${f.id} AND i=${i}`)[0];
-    if (!r) throw new Error('Parte ' + i + ' do vídeo não encontrada'); bufs.push(Buffer.from(r.b64, 'base64')); }
-  const tudo = Buffer.concat(bufs), base0 = p0 * PARTE_MAX; return tudo.subarray(ini - base0, fim - base0 + 1);
+  // offsets pelas partes reais gravadas (o tamanho da parte pode variar entre versões e módulos)
+  const sql = await getSql();
+  if (!f.mapa) { const L = f.tabela === 'atv' ? await sql`SELECT i, length(b64) AS n, right(b64, 2) AS fimb FROM atv_partes WHERE midia_id=${f.id} ORDER BY i` : await sql`SELECT i, length(b64) AS n, right(b64, 2) AS fimb FROM tend_envio_partes WHERE envio_id=${f.id} ORDER BY i`;
+    let o = 0; f.mapa = L.map(x => { const tam = Math.floor(Number(x.n) * 3 / 4) - (String(x.fimb).match(/=/g) || []).length; const r = { i: x.i, ini: o, tam }; o += tam; return r; }); }
+  const ps = f.mapa.filter(x => x.ini + x.tam > ini && x.ini <= fim), bufs = [];
+  for (const x of ps) { const r = f.tabela === 'atv' ? (await sql`SELECT b64 FROM atv_partes WHERE midia_id=${f.id} AND i=${x.i}`)[0] : (await sql`SELECT b64 FROM tend_envio_partes WHERE envio_id=${f.id} AND i=${x.i}`)[0];
+    if (!r) throw new Error('Parte ' + x.i + ' do vídeo não encontrada'); bufs.push(Buffer.from(r.b64, 'base64')); }
+  const tudo = Buffer.concat(bufs), base0 = ps.length ? ps[0].ini : 0; return tudo.subarray(ini - base0, fim - base0 + 1);
 }
 async function ytPublicarIniciar(b) {
   const cfg = await config(), it = (cfg.playlist || []).find(x => x.id === b.item_id); if (!it) throw new Error('Vídeo não está na playlist');
