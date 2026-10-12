@@ -29886,7 +29886,7 @@ async function carregarResultadoLive(forcar) {
   const pinta2 = k => {
     const brl = v => (v == null || isNaN(v)) ? '—' : fmtBRL(v), rw = k.runway_meses;
     const semCor = { verde: ['🟢 Saudável', 'var(--green)'], amarelo: ['🟡 Atenção', 'var(--gold)'], vermelho: ['🔴 Crítico', 'var(--red)'], cinza: ['⚪ Sem dados', 'var(--t3)'] }[k.semaforo || 'cinza'];
-    const fk = '\n\nFonte: KPIs de Saúde — saldo pelo extrato do QuickBooks (mesma base do Fluxo Detalhado), a receber/pagar = faturas e contas em aberto no QuickBooks, gastos e faturamento médios dos 3 últimos meses fechados (DRE).';
+    const fk = '\n\nFonte: KPIs de Saúde — saldo pelo extrato do QuickBooks (mesma base do Fluxo Detalhado), a receber/pagar = faturas e contas em aberto no QuickBooks (a pagar inclui também as despesas que só existem na Agenda, vencidas e dos próximos 30 dias), gastos e faturamento médios dos 3 últimos meses fechados (DRE).';
     const TK = {
       caixa: '**Saldo em caixa** hoje = saldo de abertura do mês nas contas bancárias (balanço do QuickBooks) + entradas − saídas do mês até hoje. Simulações não entram.\n\nSaldo: ' + brl(k.saldo_caixa) + '\nA receber (faturas em aberto): ' + brl(k.contas_receber) + '\nA pagar (contas em aberto): ' + brl(k.contas_pagar) + fk,
       folego: '**Fôlego de caixa** = saldo em caixa ÷ queima líquida mensal.\nQueima líquida = gasto médio mensal − faturamento médio mensal (3 últimos meses fechados).\n\n' + (rw >= 999 ? 'Faturamento médio ' + brl(k.media_receita_3m) + ' ≥ gasto médio ' + brl(k.media_gastos_3m) + ' → não há queima (∞).' : brl(k.saldo_caixa) + ' ÷ ' + brl(k.burn_liquido_mensal) + ' = ' + (rw == null ? '—' : String(rw).replace('.', ',') + ' meses')) + '\n\nCor: verde ≥ 12 meses · amarelo ≥ 6 · vermelho abaixo.' + fk,
@@ -32453,7 +32453,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.163] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.164] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -32469,7 +32469,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.163';
+window.__ATX_BUILD_ID__ = 'ATX-v3.164';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

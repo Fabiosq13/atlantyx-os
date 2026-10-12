@@ -2709,6 +2709,16 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
       .forEach(x => { termoPorInv[String(x.qb_invoice_id)] = { termo_id: x.id, termo_numero: x.numero_termo, termo_projeto: x.projeto }; }); } } catch (_) {}
   const _qbBase = process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
   const soma = (l, f) => round(l.filter(f || (() => true)).reduce((a, x) => a + (x.valor || 0), 0));
+  // v3.164: despesas que só existem na Agenda (vencidas até 60 dias + próximos 30 dias) também são "a pagar" — regra única:
+  // se a mesma despesa já está no QuickBooks, vale a Bill; se só está na Agenda, vale a Agenda
+  let agendaPag = [];
+  if (!fut.erro) try { const sql = await getSql();
+    const rows = await sql`SELECT o.id, o.data_prevista, o.valor, o.qb_txn_id, d.descricao AS despesa_desc, d.fornecedor AS despesa_forn, d.categoria AS despesa_cat
+      FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
+      WHERE o.status NOT IN ('paga', 'cancelada') AND o.data_prevista >= ${_diasMais(hoje, -60)} AND o.data_prevista <= ${em30}`;
+    agendaPag = _agendaSemDuplicarQb(rows, fut.pagaveis || []).pendentes.map(r => { const dt = _dStr(r.data_prevista);
+      return { id: 'desp_' + r.id, data: dt, valor: round(parseFloat(r.valor) || 0), vencida: dt < hoje, fornecedor: r.despesa_forn || r.despesa_desc || 'Despesa programada', descricao: r.despesa_desc || 'Despesa programada', categoria: r.despesa_cat || '', doc: 'Agenda', origem: 'agenda' }; });
+  } catch (e) { console.warn('[baseCaixa] agenda:', e.message); }
   const valor = {
     hoje,
     saldo_hoje: ext._erro || ext.saldo_inicial_origem === 'zero' && !ext.qb_lancamentos ? null : round(ext.saldo_final),
@@ -2721,8 +2731,9 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
     // v3.85: faturas em aberto, uma a uma — alimenta os alertas de vencimento (A Receber + Dashboard LIVE)
     recebiveis_itens: fut.erro ? null : reais.map(r => { const qid = String(r.id || '').replace(/^inv_/, ''); return { id: r.id, cliente: r.cliente || String(r.descricao || '').split(' · ')[0], doc: r.doc || '', valor: round(r.valor || 0), vencimento: r.data, vencida: !!r.vencida,
       qb_id: qid || null, qb_url: qid ? `${_qbBase}/app/invoice?txnId=${qid}` : null, ...(termoPorInv[qid] || {}) }; }),
-    a_pagar: fut.erro ? null : soma(fut.pagaveis || []), a_pagar_vencido: fut.erro ? null : soma(fut.pagaveis || [], p => p.vencida), a_pagar_30d: fut.erro ? null : soma(fut.pagaveis || [], p => !p.vencida && p.data <= em30),
-    qtd_pagar: fut.erro ? null : (fut.pagaveis || []).length,
+    a_pagar: fut.erro ? null : round(soma(fut.pagaveis || []) + soma(agendaPag)), a_pagar_vencido: fut.erro ? null : round(soma(fut.pagaveis || [], p => p.vencida) + soma(agendaPag, p => p.vencida)), a_pagar_30d: fut.erro ? null : round(soma(fut.pagaveis || [], p => !p.vencida && p.data <= em30) + soma(agendaPag, p => !p.vencida)),
+    qtd_pagar: fut.erro ? null : (fut.pagaveis || []).length + agendaPag.length,
+    a_pagar_quickbooks: fut.erro ? null : soma(fut.pagaveis || []), a_pagar_agenda: fut.erro ? null : soma(agendaPag), agenda_pagar_itens: fut.erro ? null : agendaPag, // v3.164
     pagaveis_itens: fut.erro ? null : (fut.pagaveis || []).map(p => { const qid = String(p.id || '').replace(/^bill_/, ''); return { id: p.id, data: p.data, valor: round(p.valor || 0), valor_total: round(p.valor_total || 0),
       vencida: !!p.vencida, fornecedor: p.fornecedor || String(p.descricao || '').split(' · ')[0], doc: p.doc || '', conta: p.conta || '', memo: p.memo || '', emissao: p.emissao || null,
       qb_url: qid ? `${_qbBase}/app/bill?txnId=${qid}` : null }; }), // v3.122/v3.125: recorte pelo período + drill-down linha a linha
@@ -2743,7 +2754,7 @@ async function caixaDetalhe({ data_inicio = null, data_fim = null, mes = null, a
   const marca = (x, d) => ({ ...x, faixa: !d ? 'sem data' : (pIni && d >= pIni && d <= pFim) ? 'periodo' : (pIni && d < pIni) ? 'antes' : (pFim && d > pFim) ? 'depois' : 'periodo',
     em_30d: !!d && (d < hoje || d <= em30), dias: d ? Math.round((Date.parse(d + 'T12:00:00Z') - Date.parse(hoje + 'T12:00:00Z')) / 864e5) : null });
   const receber = (b.recebiveis_itens || []).map(r => marca({ ...r, data: r.vencimento }, r.vencimento)).sort((x, y) => String(x.data).localeCompare(String(y.data)));
-  const pagar = (b.pagaveis_itens || []).map(p => marca(p, p.data)).sort((x, y) => String(x.data).localeCompare(String(y.data)));
+  const pagar = (b.pagaveis_itens || []).concat(b.agenda_pagar_itens || []).map(p => marca(p, p.data)) /* v3.164: + despesas só da Agenda */.sort((x, y) => String(x.data).localeCompare(String(y.data)));
   return { caixa_detalhe: { hoje, periodo: pIni ? { de: pIni, ate: pFim } : null, saldo_hoje: b.saldo_hoje, receber, pagar, erro: b.erro || null,
     totais: { receber: b.a_receber, pagar: b.a_pagar, receber_vencido: b.a_receber_vencido, receber_30d: b.a_receber_30d, pagar_vencido: b.a_pagar_vencido, pagar_30d: b.a_pagar_30d } } };
 }
@@ -3862,11 +3873,11 @@ async function regerarOcorrencias(sql, despesaId, meses = 12) {
 // no mesmo mês (cada Bill cobre uma ocorrência — a de valor mais próximo). Sem QB (null), nada é descartado.
 function _agendaSemDuplicarQb(ocorrs, bills) {
   if (!Array.isArray(bills)) return { pendentes: ocorrs.slice(), cobertas: [] };
-  const livres = bills.map(b => ({ ym: String(b.data || b.data_prevista || '').slice(0, 7), k: _normDesp(b.fornecedor || b.descricao), v: Number(b.valor_total || b.valor) || 0, usado: false }));
+  const livres = bills.map(b => ({ ym: _dStr(b.data || b.data_prevista || '').slice(0, 7), k: _normDesp(b.fornecedor || b.descricao), v: Number(b.valor_total || b.valor) || 0, usado: false }));
   const pendentes = [], cobertas = [];
   for (const o of ocorrs) {
     if (o.qb_txn_id) { cobertas.push(o); continue; }
-    const ym = String(o.data_prevista || o.data || '').slice(0, 7), ks = [_normDesp(o.fornecedor || o.despesa_forn || o.desp_forn), _normDesp(o.descricao || o.despesa_desc || o.desp_desc)].filter(Boolean);
+    const ym = _dStr(o.data_prevista || o.data || '').slice(0, 7), ks = [_normDesp(o.fornecedor || o.despesa_forn || o.desp_forn), _normDesp(o.descricao || o.despesa_desc || o.desp_desc)].filter(Boolean);
     const v = Number(o.valor) || 0;
     const cand = livres.filter(b => !b.usado && b.ym === ym && b.k && ks.includes(b.k)).sort((a, b) => Math.abs(a.v - v) - Math.abs(b.v - v))[0];
     if (cand) { cand.usado = true; cobertas.push(o); } else pendentes.push(o);
