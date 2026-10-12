@@ -103,12 +103,29 @@
   }
   function proximos(n) { var o = [], k = idx; for (var j = 1; j < SEQ.length * 2 && o.length < n; j++) { var x = SEQ[(k + j) % SEQ.length]; if (x.tipo === 'video' || x.tipo === 'mercado' || x.tipo === 'noticias') o.push(x); } return o; }
   function limpar() { clearTimeout(timer); var t = $('tela'); var v = t.querySelector('video'); if (v) { try { v.pause(); v.removeAttribute('src'); v.load(); } catch (_) {} } t.innerHTML = ''; if (window.speechSynthesis) try { speechSynthesis.cancel(); } catch (_) {} }
-  function seguir(ms) { clearTimeout(timer); timer = setTimeout(function () { tocar(idx + 1); }, ms); }
-  function tocar(n) {
+  // ── v3.154: GRADE SINCRONIZADA PELO RELÓGIO — todo mundo vê o mesmo programa na mesma hora (como TV de verdade) ──
+  var cum = [], T = 0, skew = 0, t0 = 0, dentro0 = 0;
+  var GRADE = function () { return MODO === 'tv' && D && D.grade !== false && SEQ.length > 0; };
+  function durDe(x) { return x.tipo === 'video' ? (x.dur || 180) : (x.dur || 15); }
+  function preparar() { cum = []; T = 0; SEQ.forEach(function (x) { cum.push(T); T += durDe(x); }); }
+  function agora() { return Date.now() + skew; }
+  function ondeEstamos() { var e = Date.parse(D.grade_inicio) || 0, s = ((agora() - e) / 1000) % T; if (s < 0) s += T;
+    for (var i = SEQ.length - 1; i >= 0; i--) if (cum[i] <= s) return { i: i, dentro: s - cum[i] }; return { i: 0, dentro: 0 }; }
+  function sincronizar(ultimo) { if (!T) preparar(); var p = ondeEstamos();
+    if (ultimo != null && p.i === ultimo && SEQ[ultimo].tipo === 'video') { var resta = durDe(SEQ[ultimo]) - p.dentro; if (resta > 1.5) return tPreencher(ultimo, resta); }
+    tocar(p.i, p.dentro); }
+  function proxima() { if (GRADE()) sincronizar(idx); else tocar(idx + 1); }
+  function tPreencher(i, resta) { idx = i; limpar(); dentro0 = 0; tMercado({ dur: resta }); }
+  var hhmm = function (ms) { return new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }); };
+  function seguir(ms) { clearTimeout(timer); timer = setTimeout(proxima, Math.max(300, ms)); }
+  function restaMs(it) { return ((it.dur || durDe(it)) - dentro0) * 1000; }
+  function tocar(n, dentro) {
     if (!SEQ.length) return; if (n >= SEQ.length) { recarregar(true); return; }
-    idx = n; var it = SEQ[idx]; limpar(); faixa(null);
+    idx = n; dentro0 = GRADE() ? Math.max(0, dentro || 0) : 0; t0 = agora() - dentro0 * 1000; var it = SEQ[idx]; limpar(); faixa(null);
     $('prog').textContent = it.tipo === 'video' ? it.titulo : it.tipo === 'vinheta' ? (D.nome || 'Atlantyx TV') + ' · ' + (D.slogan || '') : it.titulo || '';
-    $('seg').innerHTML = proximos(4).map(function (x, i) { return '<div class="seg"><i>' + (i + 1) + '</i><span>' + esc(x.titulo) + '</span></div>'; }).join('');
+    if (GRADE()) { var o = [], ac = t0 + durDe(it) * 1000; for (var j = 1; j < SEQ.length * 2 && o.length < 4; j++) { var x = SEQ[(idx + j) % SEQ.length]; if (x.tipo === 'video' || x.tipo === 'mercado' || x.tipo === 'noticias') o.push({ x: x, h: ac }); ac += durDe(x) * 1000; }
+      $('segT').textContent = 'A SEGUIR · GRADE'; $('seg').innerHTML = o.map(function (y) { return '<div class="seg"><i style="min-width:3.6vw">' + hhmm(y.h) + '</i><span>' + esc(y.x.titulo) + '</span></div>'; }).join(''); }
+    else $('seg').innerHTML = proximos(4).map(function (x, i) { return '<div class="seg"><i>' + (i + 1) + '</i><span>' + esc(x.titulo) + '</span></div>'; }).join('');
     try { ({ video: tVideo, vinheta: tVinheta, mercado: tMercado, noticias: tNoticias, produto: tProduto })[it.tipo](it); } catch (e) { seguir(2000); }
     prefetch();
   }
@@ -129,9 +146,11 @@
     if (it.youtube_id) return tYoutube(it);
     var t = $('tela'); t.innerHTML = '<div class="msg">Carregando o vídeo…</div>' + botaoSom();
     var tocarSrc = function (src) { if (SEQ[idx] !== it) return; var v = document.createElement('video'); v.autoplay = true; v.playsInline = true; v.muted = !som; v.src = src;
-      v.onended = function () { tocar(idx + 1); }; v.onerror = function () { seguir(1500); };
+      var off = GRADE() ? (agora() - t0) / 1000 : 0; if (GRADE() && it.dur && off >= it.dur - 1) return proxima();
+      if (off > 1) v.addEventListener('loadedmetadata', function () { try { if (!v.duration || off < v.duration - 1) v.currentTime = off; } catch (_) {} }, { once: true });
+      v.onended = function () { proxima(); }; v.onerror = function () { seguir(1500); };
       t.innerHTML = botaoSom(); t.insertBefore(v, t.firstChild); v.play().catch(function () { v.muted = true; v.play().catch(function () { seguir(2000); }); });
-      seguir(3 * 3600000); };
+      seguir(GRADE() && it.dur ? (it.dur - off) * 1000 + 800 : 3 * 3600000); };
     if (it.url) return tocarSrc(it.url);
     blobDe(it).then(tocarSrc).catch(function () { seguir(1500); });
   }
@@ -139,9 +158,9 @@
   function tYoutube(it) {
     $('tela').innerHTML = '<div id="ytp"></div>' + botaoSom();
     carregarYT().then(function () { if (SEQ[idx] !== it || !window.YT || !YT.Player) return seguir(1000);
-      window._yt = new YT.Player('ytp', { videoId: it.youtube_id, playerVars: { autoplay: 1, mute: som ? 0 : 1, controls: 0, rel: 0, modestbranding: 1, playsinline: 1, iv_load_policy: 3 },
-        events: { onReady: function (e) { if (som) e.target.unMute(); e.target.playVideo(); }, onStateChange: function (e) { if (e.data === 0) tocar(idx + 1); }, onError: function () { seguir(1500); } } });
-      seguir(3 * 3600000); });
+      window._yt = new YT.Player('ytp', { videoId: it.youtube_id, playerVars: { autoplay: 1, mute: som ? 0 : 1, controls: 0, rel: 0, modestbranding: 1, playsinline: 1, iv_load_policy: 3, start: GRADE() ? Math.floor((agora() - t0) / 1000) : 0 },
+        events: { onReady: function (e) { if (som) e.target.unMute(); e.target.playVideo(); }, onStateChange: function (e) { if (e.data === 0) proxima(); }, onError: function () { seguir(1500); } } });
+      seguir(GRADE() && it.dur ? (it.dur - (agora() - t0) / 1000) * 1000 + 800 : 3 * 3600000); });
   }
   function jingle() { if (!som) return; try { var A = new (window.AudioContext || window.webkitAudioContext)(), t0 = A.currentTime + .05, g = A.createGain(); g.gain.value = .0001; g.connect(A.destination);
     g.gain.exponentialRampToValueAtTime(.18, t0 + .3); g.gain.exponentialRampToValueAtTime(.0001, t0 + 5.5);
@@ -151,25 +170,26 @@
   if (window.speechSynthesis) try { speechSynthesis.onvoiceschanged = function () { vozes = speechSynthesis.getVoices(); }; } catch (_) {}
   function tVinheta(it) {
     var a = it.alvo, d = it.depois, ms = (it.dur || 25) * 1000;
-    $('tela').innerHTML = '<div class="vin"><div class="bg"></div><div class="ln"></div><div class="ln b"></div><div class="ab" id="vab"><img src="' + LOGO + '" alt="Atlantyx" onerror="this.style.display=\'none\'"><div class="m">ATLANTYX <b>TV</b></div><div class="sl">' + esc(D.slogan || '') + '</div></div><div class="bar" style="animation-duration:' + ms + 'ms"></div></div>' + botaoSom();
+    $('tela').innerHTML = '<div class="vin"><div class="bg"></div><div class="ln"></div><div class="ln b"></div><div class="ab" id="vab"><img src="' + LOGO + '" alt="Atlantyx" onerror="this.style.display=\'none\'"><div class="m">ATLANTYX <b>TV</b></div><div class="sl">' + esc(D.slogan || '') + '</div></div><div class="bar" style="animation-duration:' + ms + 'ms;animation-delay:-' + Math.round(dentro0 * 1000) + 'ms"></div></div>' + botaoSom();
     jingle(); var fase = setTimeout(function () { if (SEQ[idx] !== it || !a) return; var ab = $('vab'); if (!ab) return;
       ab.innerHTML = '<div class="m" style="font-size:4vh;animation:none">ATLANTYX <b>TV</b></div><div class="a"><span>A SEGUIR</span><h3>' + esc(a.titulo) + '</h3><p>' + esc(a.chamada || a.subtitulo || '') + '</p></div>' + (d && d.id !== a.id ? '<div class="dp">Depois: <b>' + esc(d.titulo) + '</b></div>' : '');
-      falar('Você está na ' + (D.nome || 'Atlantyx TV') + '. A seguir: ' + a.titulo + '. ' + (a.chamada || '')); }, Math.min(7000, ms * .3));
-    if (!a) falar('Você está na ' + (D.nome || 'Atlantyx TV') + '. ' + (D.slogan || ''));
-    seguir(ms); void fase;
+      if (dentro0 < 3) falar('Você está na ' + (D.nome || 'Atlantyx TV') + '. A seguir: ' + a.titulo + '. ' + (a.chamada || '')); }, Math.max(0, Math.min(7000, ms * .3) - dentro0 * 1000));
+    if (!a && dentro0 < 3) falar('Você está na ' + (D.nome || 'Atlantyx TV') + '. ' + (D.slogan || ''));
+    seguir(ms - dentro0 * 1000); void fase;
   }
   function tMercado(it) { var M = D.mercado || {}, L = (M.moedas || []).map(function (m) { return { n: m.nome, v: m.valor, p: m.var_pct, d: m.par === 'BTC-BRL' ? 0 : 3 }; }).concat((M.acoes || []).map(function (a) { return { n: a.nome, v: a.valor, p: a.var_pct, d: a.simbolo === 'IBOV' ? 0 : 2, pts: a.simbolo === 'IBOV' }; }));
     $('tela').innerHTML = '<div class="card"><h2>MERCADOS <b>AGORA</b></h2><div class="sub">' + (M.em ? 'Cotações de ' + new Date(M.em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }) + ' · podem ter atraso' : '') + '</div>'
       + '<div class="gmk">' + L.slice(0, 9).map(function (x) { return '<div class="gk"><div class="l">' + esc(String(x.n).toUpperCase()) + '</div><div class="v">' + (x.pts ? '' : 'R$ ') + fmt(x.v, x.d) + (x.pts ? ' <small style="font-size:2.2vh;color:#8E9BC0">pts</small>' : '') + '</div>' + seta(x.p) + '</div>'; }).join('') + '</div></div>';
-    faixa('Mercados', 'Dólar, euro, bitcoin, Ibovespa e ações'); seguir((it.dur || 15) * 1000); }
+    faixa('Mercados', 'Dólar, euro, bitcoin, Ibovespa e ações'); seguir(restaMs(it)); }
   function tNoticias(it) { var N = (D.noticias || []).slice(0, 5);
     $('tela').innerHTML = '<div class="card"><h2>ÚLTIMAS <b>NOTÍCIAS</b></h2><div class="sub">Selecionadas e escritas pela IA da Atlantyx a partir das fontes citadas</div><div class="nt">' + N.map(function (n) { return '<div><em>' + esc(String(n.fonte).toUpperCase()) + '</em><b>' + esc(n.titulo) + '</b><span>' + esc(n.resumo || '') + '</span></div>'; }).join('') + '</div></div>';
-    seguir((it.dur || 20) * 1000); }
+    seguir(restaMs(it)); }
   function tProduto(it) { var p = it.p || {};
     $('tela').innerHTML = '<div class="card"><div class="pc"><div class="k">PRODUTOS ATLANTYX</div><div class="n">' + esc(p.nome) + '</div><div class="f">' + esc(p.frase) + '</div><ul>' + (D.servicos || []).slice(0, 6).map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ul></div></div>';
-    faixa(p.nome, 'Conheça na ' + (D.nome || 'Atlantyx TV')); seguir((it.dur || 12) * 1000); }
-  function recarregar(reiniciar) { return api(qDados()).then(function (d) { D = d; barras(); if (reiniciar || !SEQ.length) { SEQ = montarSeq(); tocar(0); } })
-    .catch(function (e) { if (!D) $('tela').innerHTML = '<div class="msg"><h2>Sem sinal</h2>' + esc(e.message) + '<br>Tentando de novo…</div>'; else if (reiniciar) { SEQ = montarSeq(); tocar(0); } setTimeout(function () { if (!D) recarregar(true); }, 20000); }); }
+    faixa(p.nome, 'Conheça na ' + (D.nome || 'Atlantyx TV')); seguir(restaMs(it)); }
+  function comecar() { SEQ = montarSeq(); preparar(); if (GRADE()) sincronizar(); else tocar(0); }
+  function recarregar(reiniciar) { var t1 = Date.now(); return api(qDados()).then(function (d) { if (d.agora) skew = d.agora - Math.round((t1 + Date.now()) / 2); D = d; barras(); if (reiniciar || !SEQ.length) comecar(); })
+    .catch(function (e) { if (!D) $('tela').innerHTML = '<div class="msg"><h2>Sem sinal</h2>' + esc(e.message) + '<br>Tentando de novo…</div>'; else if (reiniciar) comecar(); setTimeout(function () { if (!D) recarregar(true); }, 20000); }); }
 
   // ═════════ MODOS WEBINAR (LiveKit) ═════════
   function lk() { return window.LivekitClient; }
@@ -225,8 +245,10 @@
     $('bs').onclick = function () { room.disconnect(); }; desenharSala(); }
 
   esqueleto();
-  if (MODO === 'tv') { recarregar(true); setInterval(function () { api(qDados()).then(function (d) { var pl = JSON.stringify(D.playlist); D = d; barras(); if (JSON.stringify(d.playlist) !== pl) { SEQ = montarSeq(); if (idx >= SEQ.length) idx = -1; } }).catch(function () {}); }, 10 * 60000);
-    document.addEventListener('keydown', function (e) { if (e.keyCode === 39) tocar(idx + 1); if (e.keyCode === 37) tocar(Math.max(0, idx - 1)); });
+  if (MODO === 'tv') { recarregar(true); setInterval(function () { var t1 = Date.now(); api(qDados()).then(function (d) { if (d.agora) skew = d.agora - Math.round((t1 + Date.now()) / 2); var pl = JSON.stringify([D.playlist, D.intercalar, D.grade, D.grade_inicio]); D = d; barras();
+      if (JSON.stringify([d.playlist, d.intercalar, d.grade, d.grade_inicio]) !== pl) { SEQ = montarSeq(); preparar(); if (idx >= SEQ.length) idx = -1; } }).catch(function () {}); }, 10 * 60000);
+    document.addEventListener('keydown', function (e) { if (GRADE()) return; if (e.keyCode === 39) tocar(idx + 1); if (e.keyCode === 37) tocar(Math.max(0, idx - 1)); });
+    window.__atv = { onde: function () { return ondeEstamos(); }, seq: function () { return SEQ; }, idx: function () { return idx; }, T: function () { return T; } };
     setTimeout(function () { location.reload(); }, 12 * 3600000); }
   else api(qDados()).then(function (d) { D = d; barras(); return MODO === 'layout' ? modoLayout() : modoSala(); })
     .catch(function (e) { $('tela').innerHTML = '<div class="msg"><h2>Sem sinal</h2>' + esc(e.message) + '</div>'; });

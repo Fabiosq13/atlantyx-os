@@ -16,6 +16,9 @@
   const quando = v => v ? new Date(v).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
   const card = (titulo, corpo, extra) => `<div class="panel" style="margin-bottom:12px;"><div class="ph"><div class="pt">${titulo}</div>${extra || ''}</div><div class="pb">${corpo}</div></div>`;
   const rel = u => { try { const x = new URL(u); return x.pathname + x.search; } catch (_) { return u; } }; // prévia no mesmo domínio (funciona também em deploy de teste)
+  const mmss = s => { s = Math.round(+s || 0); if (!s) return ''; const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+  const seg = v => { const p = String(v || '').trim().split(':').map(Number); if (p.some(isNaN)) return null; return p.reduce((a, x) => a * 60 + x, 0) || null; };
+  const medir = src => new Promise(ok => { const v = document.createElement('video'); v.preload = 'metadata'; v.muted = true; const fim = d => { ok(d); try { v.removeAttribute('src'); v.load(); } catch (_) {} }; v.onloadedmetadata = () => fim(isFinite(v.duration) ? Math.round(v.duration) : null); v.onerror = () => fim(null); setTimeout(() => fim(null), 15000); v.src = src; });
   const lbl = t => `<label class="fl">${t}</label>`;
   const FONTE = { upload: ['enviado', 'var(--gn)'], youtube: ['YouTube', 'var(--red)'], url: ['link', 'var(--blue)'], reacao: ['reação S2', 'var(--pu)'] };
 
@@ -24,13 +27,13 @@
     box.innerHTML = `<div style="background:linear-gradient(135deg,rgba(0,196,204,.14),rgba(0,252,168,.05));border:1px solid rgba(0,196,204,.35);border-radius:10px;padding:14px 18px;margin-bottom:12px;">
       <div style="font-family:var(--H);font-size:15px;font-weight:700;">📡 Atlantyx TV &amp; Webinars ao vivo</div>
       <div style="font-size:11px;color:var(--t2);margin-top:3px;line-height:1.6;">Canal contínuo no layout estilo Bloomberg: <b>playlist circular</b> de reações, entrevistas e vídeos de produto, com <b>vinheta de 25 s</b> entre eles, <b>cotações</b> (dólar, euro, bitcoin, Ibovespa, ações), <b>últimas notícias escritas pela IA</b> e barras com produtos e serviços. Roda na TV do escritório pelo link e vai para o <b>YouTube</b>. Na aba Webinars você faz lives em <b>sala privada</b> ou ao mesmo tempo no <b>YouTube, LinkedIn e Instagram</b>, com o mesmo layout.</div></div>
-      <div class="seg" id="atvAbas" style="margin-bottom:10px;">${[['tv', '📺 Atlantyx TV'], ['youtube', '🔴 No YouTube 24h'], ['webinars', '🎙 Webinars ao vivo'], ['destinos', '🔑 Destinos']].map(([k, r]) => `<button class="${aba === k ? 'on' : ''}" data-a="${k}" onclick="ATV.aba('${k}')">${r}</button>`).join('')}</div>
+      <div class="seg" id="atvAbas" style="margin-bottom:10px;">${[['tv', '📺 Atlantyx TV'], ['youtube', '🔴 No YouTube 24h'], ['webinars', '🎙 Webinars ao vivo'], ['canal', '▶ Canal do YouTube'], ['destinos', '🔑 Destinos']].map(([k, r]) => `<button class="${aba === k ? 'on' : ''}" data-a="${k}" onclick="ATV.aba('${k}')">${r}</button>`).join('')}</div>
       <div id="atvCorpo"><div style="padding:30px;text-align:center;color:var(--t3);font-size:11px;">Carregando…</div></div>`;
     carregar();
   }
   async function carregar() { try { D = await api('inicio'); cfg = JSON.parse(JSON.stringify(D.config)); render(); } catch (e) { $('atvCorpo').innerHTML = `<div style="color:var(--red);font-size:12px;padding:12px;">${esc(e.message)}</div>`; } }
   function trocar(k) { if (est && k !== 'webinars') sairEstudio(); aba = k; document.querySelectorAll('#atvAbas button').forEach(b => b.classList.toggle('on', b.dataset.a === k)); render(); }
-  function render() { if (!D) return; ({ tv: rTv, youtube: rYoutube, webinars: rWebinars, destinos: rDestinos })[aba](); }
+  function render() { if (!D) return; ({ tv: rTv, youtube: rYoutube, webinars: rWebinars, canal: rCanal, destinos: rDestinos })[aba](); }
 
   // ═════════ ATLANTYX TV ═════════
   function rTv() {
@@ -47,7 +50,9 @@
       <td style="padding:6px 4px;"><input type="checkbox" ${it.ativo !== false ? 'checked' : ''} onchange="ATV.campo(${i},'ativo',this.checked)" title="no ar"></td>
       <td style="padding:6px 4px;min-width:200px;"><input class="fi" style="font-size:11.5px;" value="${esc(it.titulo)}" onchange="ATV.campo(${i},'titulo',this.value)" placeholder="Título"><input class="fi" style="font-size:10.5px;margin-top:3px;" value="${esc(it.subtitulo)}" onchange="ATV.campo(${i},'subtitulo',this.value)" placeholder="Subtítulo (faixa na tela)"></td>
       <td style="padding:6px 4px;min-width:220px;"><textarea class="fta" style="font-size:10.5px;min-height:44px;" onchange="ATV.campo(${i},'chamada',this.value)" placeholder="Chamada da vinheta (a IA escreve)">${esc(it.chamada)}</textarea></td>
-      <td style="padding:6px 4px;"><span style="font-size:9.5px;padding:2px 6px;border-radius:8px;border:1px solid ${f[1]};color:${f[1]};white-space:nowrap;">${f[0]}</span></td>
+      <td style="padding:6px 4px;white-space:nowrap;"><span style="font-size:9.5px;padding:2px 6px;border-radius:8px;border:1px solid ${f[1]};color:${f[1]};">${f[0]}</span>
+        <div style="margin-top:4px;"><input class="fi" style="width:64px;font-size:10.5px;padding:3px 5px;" value="${esc(mmss(it.duracao_s))}" placeholder="mm:ss" title="Duração (a grade usa para saber o horário de cada programa)" onchange="ATV.campo(${i},'duracao_s',ATV._seg(this.value))"></div>
+        <div style="margin-top:4px;">${it.yt_video_id ? `<a href="https://youtu.be/${esc(it.yt_video_id)}" target="_blank" rel="noopener" style="font-size:10px;color:var(--gn);">✓ no YouTube</a>` : (D.youtube?.conectado ? `<button class="btn btn-g" style="padding:2px 6px;font-size:10px;" onclick="ATV.ytPub(${i})">▶ Publicar</button>` : '')}</div></td>
       <td style="padding:6px 4px;"><button class="btn btn-g" style="padding:2px 7px;font-size:10px;color:var(--red);" onclick="ATV.tirar(${i})">✕</button></td></tr>`; }).join('');
     const reac = (D.reacoes || []).map(r => `<option value="${esc(r.peca_id)}">${esc(r.titulo)}${r.envio_id ? ' · completo' : ''}${r.reel_url ? ' · Reel' : ''}</option>`).join('');
     const num = (k, t, max) => `<div><label class="fl" style="font-size:10px;">${t}</label><input class="fi" type="number" min="0" max="${max}" style="width:80px;" value="${esc(I[k])}" onchange="ATV.inter('${k}',this.value)"></div>`;
@@ -62,9 +67,10 @@
           <div id="atvUp" style="font-size:11px;color:var(--t2);margin-top:6px;"></div>
           <div style="font-size:10.5px;color:var(--t3);margin-top:6px;line-height:1.6;">Vídeos do YouTube tocam na TV do escritório; para a transmissão no YouTube prefira vídeos enviados aqui (o YouTube não deixa retransmitir o próprio player). Só coloque vídeos da Atlantyx ou com autorização.</div>`)
       + card('Intercalação e vinheta', `<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;font-size:11.5px;">
+          <label style="display:flex;gap:6px;align-items:center;" title="Todo mundo vê o mesmo programa na mesma hora — quem abre no meio entra no meio, como TV"><input type="checkbox" ${c.grade !== false ? 'checked' : ''} onchange="ATV.gradeSet(this.checked)"> <b>Grade pelo relógio</b> (transmissão contínua)</label>
           <label style="display:flex;gap:6px;align-items:center;"><input type="checkbox" ${I.vinheta !== false ? 'checked' : ''} onchange="ATV.inter('vinheta',this.checked)"> Vinheta antes de cada vídeo</label>${num('vinheta_s', 'Vinheta (s)', 120)}
           ${num('mercado_cada', 'Cotações a cada N vídeos', 20)}${num('mercado_s', 'Cotações (s)', 120)}${num('noticias_cada', 'Notícias a cada N', 20)}${num('noticias_s', 'Notícias (s)', 120)}${num('produto_cada', 'Produto a cada N', 20)}${num('produto_s', 'Produto (s)', 120)}</div>
-          <div style="font-size:10.5px;color:var(--t3);margin-top:6px;">A vinheta mostra "Atlantyx TV", o slogan e "A seguir" com a chamada do próximo vídeo, com trilha sonora e locução do navegador. 0 desliga a intercalação.</div>`)
+          <div style="font-size:11px;color:var(--t2);margin-top:8px;">${cicloTxt()}</div><div style="font-size:10.5px;color:var(--t3);margin-top:6px;">A vinheta mostra "Atlantyx TV", o slogan e "A seguir" com a chamada do próximo vídeo, com trilha sonora e locução do navegador. 0 desliga a intercalação.</div>`)
       + card('Marca, produtos, serviços e faixa', `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;">
           <div>${lbl('Nome do canal')}<input class="fi" id="atvNome" value="${esc(c.nome)}"></div><div>${lbl('Slogan')}<input class="fi" id="atvSlogan" value="${esc(c.slogan)}"></div>
           <div>${lbl('Canal no YouTube')}<input class="fi" id="atvCanal" value="${esc(c.youtube_canal)}"></div></div>
@@ -101,18 +107,21 @@
   const novoIt = x => ({ id: 'it_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), tipo: 'video', ativo: true, subtitulo: '', chamada: '', ...x });
   function addYoutube() { const u = prompt('Cole o link do vídeo do YouTube (ex.: https://youtu.be/…):'); if (!u) return;
     const m = u.match(/(?:youtu\.be\/|v=|shorts\/|embed\/|live\/)([\w-]{11})/); if (!m) return nota('Não reconheci o link do YouTube', 'error');
-    const t = prompt('Título do vídeo na tela:', '') || 'Vídeo Atlantyx'; lerCampos(); cfg.playlist.push(novoIt({ fonte: 'youtube', youtube_id: m[1], titulo: t })); render(); nota('Adicionado — clique em Salvar e pôr no ar'); }
-  function addUrl() { const u = prompt('Link direto do vídeo (mp4/webm, público):'); if (!u) return; if (!/^https?:\/\//.test(u)) return nota('Link inválido', 'error');
-    const t = prompt('Título do vídeo na tela:', '') || 'Vídeo Atlantyx'; lerCampos(); cfg.playlist.push(novoIt({ fonte: 'url', url: u, titulo: t })); render(); }
-  function addReacao() { const id = $('atvReac')?.value; const r = (D.reacoes || []).find(x => x.peca_id === id); if (!r) return nota('Escolha a reação', 'error'); lerCampos();
-    cfg.playlist.push(novoIt({ fonte: 'reacao', peca_id: r.peca_id, envio_id: r.envio_id || null, url: r.envio_id ? null : r.reel_url, titulo: r.titulo, categoria: 'Reação' })); render(); nota('Reação adicionada' + (r.envio_id ? ' (vídeo completo)' : ' (Reel)') + ' — clique em Salvar'); }
+    const t = prompt('Título do vídeo na tela:', '') || 'Vídeo Atlantyx'; const d = seg(prompt('Duração do vídeo (mm:ss) — a grade usa para montar os horários:', '') || '');
+    lerCampos(); cfg.playlist.push(novoIt({ fonte: 'youtube', youtube_id: m[1], titulo: t, duracao_s: d })); render(); nota('Adicionado — clique em Salvar e pôr no ar'); }
+  async function addUrl() { const u = prompt('Link direto do vídeo (mp4/webm, público):'); if (!u) return; if (!/^https?:\/\//.test(u)) return nota('Link inválido', 'error');
+    const t = prompt('Título do vídeo na tela:', '') || 'Vídeo Atlantyx'; const d = await medir(u); lerCampos(); cfg.playlist.push(novoIt({ fonte: 'url', url: u, titulo: t, duracao_s: d })); render(); if (!d) nota('Não consegui medir a duração — preencha em mm:ss', 'warning'); }
+  async function addReacao() { const id = $('atvReac')?.value; const r = (D.reacoes || []).find(x => x.peca_id === id); if (!r) return nota('Escolha a reação', 'error'); lerCampos();
+    const d = !r.envio_id && r.reel_url ? await medir(r.reel_url) : null;
+    cfg.playlist.push(novoIt({ fonte: 'reacao', peca_id: r.peca_id, envio_id: r.envio_id || null, url: r.envio_id ? null : r.reel_url, titulo: r.titulo, categoria: 'Reação', duracao_s: d })); render(); nota('Reação adicionada' + (r.envio_id ? ' (vídeo completo)' : ' (Reel)') + ' — clique em Salvar'); }
   const b64 = blob => new Promise((ok, err) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = () => err(new Error('não consegui ler o arquivo')); fr.readAsDataURL(blob); });
   async function enviar(inp) {
     const f = inp.files?.[0]; inp.value = ''; if (!f) return; const t = prompt('Título do vídeo na tela:', f.name.replace(/\.[^.]+$/, '')) || f.name; const st = $('atvUp');
+    const lu = URL.createObjectURL(f); const dur = await medir(lu); URL.revokeObjectURL(lu);
     try { const PM = 3400000, n = Math.ceil(f.size / PM); const r = await api('midia_iniciar', { nome: f.name, titulo: t, content_type: f.type || 'video/mp4', tamanho: f.size, partes: n });
       for (let i = 0; i < n; i++) { st.textContent = `⏳ Enviando ${f.name}: parte ${i + 1} de ${n} (${mb(Math.min(f.size, (i + 1) * PM))} de ${mb(f.size)})…`;
         const dado = await b64(f.slice(i * PM, (i + 1) * PM)); let ok = false, er = null; for (let k = 0; k < 3 && !ok; k++) { try { await api('midia_parte', { id: r.id, i, b64: dado }); ok = true; } catch (e) { er = e; await new Promise(x => setTimeout(x, 1500)); } } if (!ok) throw er; }
-      await api('midia_concluir', { id: r.id }); lerCampos(); cfg.playlist.push(novoIt({ fonte: 'upload', midia_id: r.id, titulo: t })); st.textContent = '✅ ' + f.name + ' enviado (' + mb(f.size) + '). Salvando a playlist…'; await salvar();
+      await api('midia_concluir', { id: r.id }); lerCampos(); cfg.playlist.push(novoIt({ fonte: 'upload', midia_id: r.id, titulo: t, duracao_s: dur })); st.textContent = '✅ ' + f.name + ' enviado (' + mb(f.size) + '). Salvando a playlist…'; await salvar();
     } catch (e) { st.textContent = '⚠ ' + e.message; nota(e.message, 'error'); } }
   async function chamadas(b) { lerCampos(); b.disabled = true; b.textContent = '⏳ Escrevendo…'; try { await api('salvar', { config: cfg }); const r = await api('chamadas_gerar'); if (r.playlist) { cfg.playlist = r.playlist; D.config.playlist = r.playlist; } nota(r.geradas ? r.geradas + ' chamada(s) escritas' : 'Todos os vídeos já têm chamada'); render(); } catch (e) { nota(e.message, 'error'); b.disabled = false; b.textContent = '✍ IA escreve as chamadas'; } }
   async function atualizar(acao, b) { b.disabled = true; const t = b.textContent; b.textContent = '⏳ …'; try { const r = await api(acao); if (r.noticias) D.noticias = r.noticias; if (r.mercado) D.mercado = r.mercado; lerCampos(); render(); } catch (e) { nota(e.message, 'error'); b.disabled = false; b.textContent = t; } }
@@ -215,6 +224,65 @@
   async function eParar(encerrar, b) { if (encerrar && !confirm('Encerrar o webinar? A sala privada fecha e os links deixam de funcionar.')) return; b.disabled = true;
     try { const r = await api('webinar_parar', { id: est.w.id, encerrar }); est.w.status = r.status; if (encerrar) { try { est.room?.disconnect(); } catch (_) {} est = null; nota('Webinar encerrado'); await carregar(); } else { nota('Transmissão parada — a sala privada continua'); rEstudio(); } } catch (e) { nota(e.message, 'error'); b.disabled = false; } }
 
+  function gradeSet(v) { cfg.grade = !!v; }
+  function cicloTxt() { const I = cfg.intercalar || {}, V = (cfg.playlist || []).filter(x => x.ativo !== false); let t = 0, sem = 0, nv = 0;
+    V.forEach(v => { if (I.vinheta !== false) t += +I.vinheta_s || 25; t += +v.duracao_s || 180; if (!v.duracao_s) sem++; nv++;
+      if (I.mercado_cada && nv % I.mercado_cada === 0) t += +I.mercado_s || 15; if (I.noticias_cada && nv % I.noticias_cada === 0) t += +I.noticias_s || 20; if (I.produto_cada && nv % I.produto_cada === 0) t += +I.produto_s || 12; });
+    if (!V.length) return 'Sem vídeos: a grade roda vinheta, cotações, notícias e produtos.';
+    return `⏱ Uma volta completa da programação dura <b>${mmss(t)}</b>${sem ? ` · <span style="color:var(--gold);">${sem} vídeo(s) sem duração — a grade usa 3:00 para eles; preencha a duração para os horários baterem</span>` : ''}.`; }
+
+  // ═════════ CANAL DO YOUTUBE (publicar direto numa playlist) ═════════
+  let ytPls = null;
+  function rCanal() {
+    const y = D.youtube || {};
+    const passo = (n, t) => `<div style="display:flex;gap:8px;margin:5px 0;"><b style="color:var(--cyan,#00C4CC);min-width:16px;">${n}</b><div>${t}</div></div>`;
+    $('atvCorpo').innerHTML = (!y.configurado ? card('⚙ Ligar o YouTube ao sistema (uma vez só)', `<div style="font-size:11.5px;line-height:1.7;">
+        ${passo(1, 'No <b>Google Cloud Console</b> (console.cloud.google.com), crie um projeto "Atlantyx OS".')}
+        ${passo(2, 'Em <b>APIs e serviços → Biblioteca</b>, ative a <b>YouTube Data API v3</b>.')}
+        ${passo(3, 'Em <b>Tela de consentimento OAuth</b>: tipo Externo, nome "Atlantyx OS", seu e-mail; em Usuários de teste, adicione o e-mail da conta do canal.')}
+        ${passo(4, `Em <b>Credenciais → Criar credenciais → ID do cliente OAuth</b> → Aplicativo da Web → URI de redirecionamento autorizado:<br><code style="user-select:all;">${esc(y.retorno || '')}</code>`)}
+        ${passo(5, 'Copie o ID e a chave secreta do cliente para a Vercel → Environment Variables: <code>GOOGLE_CLIENT_ID</code> e <code>GOOGLE_CLIENT_SECRET</code> → Redeploy. Nunca cole a chave aqui no chat.')}
+        ${passo(6, 'Volte aqui e clique em <b>Conectar o canal</b>.')}</div>`) : '')
+      + card('Canal do YouTube', y.conectado ? `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><span style="font-size:13px;font-weight:700;color:var(--gn);">✓ Conectado${y.canal?.titulo ? ': ' + esc(y.canal.titulo) : ''}</span>
+          ${y.canal?.url ? `<a class="btn btn-g" href="${esc(y.canal.url)}" target="_blank" rel="noopener">↗ Abrir o canal</a>` : ''}<span style="font-size:10.5px;color:var(--t3);">desde ${quando(y.conectado_em)}</span><span style="flex:1"></span><button class="btn btn-g" style="color:var(--red);" onclick="ATV.ytSair()">Desconectar</button></div>`
+        : `<div style="font-size:12px;margin-bottom:8px;">O canal ainda não está conectado. Você autoriza na própria página do Google — o sistema não vê sua senha.</div><button class="btn btn-p" ${y.configurado ? '' : 'disabled'} onclick="ATV.ytConectar(this)">▶ Conectar o canal do YouTube</button>`)
+      + (y.conectado ? card('Playlists do canal', `<div id="ytPls" style="font-size:11.5px;">${ytPls ? ytPls.map(p => `<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd);"><b style="flex:1;">${esc(p.titulo)}</b><span style="color:var(--t3);">${p.videos ?? 0} vídeos · ${esc(p.privacidade)}</span><a href="https://www.youtube.com/playlist?list=${esc(p.id)}" target="_blank" rel="noopener">abrir ↗</a></div>`).join('') || '<span style="color:var(--t3);">nenhuma playlist</span>' : 'Carregando…'}</div>
+          <div style="display:flex;gap:6px;margin-top:10px;"><input class="fi" id="ytNova" placeholder="Nova playlist (ex.: Atlantyx TV)" style="flex:1;"><select class="fsel" id="ytNovaP" style="width:auto;"><option value="public">pública</option><option value="unlisted">não listada</option><option value="private">privada</option></select><button class="btn btn-g" onclick="ATV.ytCriarPl(this)">+ Criar playlist</button></div>
+          <div style="font-size:10.5px;color:var(--t3);margin-top:8px;">Para publicar: aba Atlantyx TV → em cada vídeo da playlist, botão <b>▶ Publicar</b>. O vídeo sobe para o canal e entra direto na playlist escolhida.</div>`) : '');
+    if (y.conectado && !ytPls) api('yt_playlists').then(r => { ytPls = r.playlists; if (aba === 'canal') rCanal(); }).catch(e => { const el = $('ytPls'); if (el) el.innerHTML = `<span style="color:var(--red);">${esc(e.message)}</span>`; });
+  }
+  async function ytConectar(b) { b.disabled = true; try { const r = await api('yt_conectar'); const w = window.open(r.url, 'atvYoutube', 'width=560,height=720');
+      const fim = ev => { if (ev.data && ev.data.atvYoutube !== undefined) { window.removeEventListener('message', fim); ytPls = null; carregar().then(() => trocar('canal')); nota(ev.data.atvYoutube ? 'Canal conectado' : 'Não conectou — tente de novo', ev.data.atvYoutube ? 'success' : 'error'); } };
+      window.addEventListener('message', fim); if (!w) { location.href = r.url; } setTimeout(() => { b.disabled = false; }, 4000); } catch (e) { nota(e.message, 'error'); b.disabled = false; } }
+  async function ytSair() { if (!confirm('Desconectar o canal do YouTube?')) return; try { await api('yt_desconectar'); ytPls = null; await carregar(); trocar('canal'); } catch (e) { nota(e.message, 'error'); } }
+  async function ytCriarPl(b) { const t = $('ytNova').value.trim(); if (!t) return nota('Dê um nome', 'error'); b.disabled = true; try { await api('yt_playlist_criar', { titulo: t, privacidade: $('ytNovaP').value }); ytPls = null; nota('Playlist criada'); rCanal(); } catch (e) { nota(e.message, 'error'); b.disabled = false; } }
+  function modalYt(html) { let m = $('atvModal'); if (m) m.remove(); m = document.createElement('div'); m.id = 'atvModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:24px 12px;';
+    m.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:12px;width:min(640px,100%);padding:16px 18px;">${html}</div>`; document.body.appendChild(m); return m; }
+  async function ytPub(i) {
+    lerCampos(); const it = cfg.playlist[i]; if (!it) return; if (JSON.stringify(cfg.playlist) !== JSON.stringify(D.config.playlist)) { try { await salvar(); } catch (_) {} }
+    if (!ytPls) { try { ytPls = (await api('yt_playlists')).playlists; } catch (e) { return nota(e.message, 'error'); } }
+    const ehYt = it.fonte === 'youtube';
+    modalYt(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><div style="font-family:var(--H);font-weight:700;font-size:14px;flex:1;">▶ ${ehYt ? 'Adicionar à playlist do YouTube' : 'Publicar no YouTube'}</div><button class="btn btn-g" onclick="document.getElementById('atvModal').remove()">✕</button></div>
+      ${ehYt ? '' : `${lbl('Título')}<input class="fi" id="ypT" value="${esc(it.titulo)}" maxlength="100">${lbl('Descrição')}<textarea class="fta" id="ypD" style="min-height:120px;">${esc([it.subtitulo, it.chamada].filter(Boolean).join('\n\n'))}</textarea>
+      <div style="display:flex;gap:6px;margin-top:4px;"><button class="btn btn-g" onclick="ATV.ytIA('${esc(it.id)}',this)">✍ IA escreve título e descrição</button><input class="fi" id="ypTags" placeholder="tags separadas por vírgula" style="flex:1;"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;"><div>${lbl('Visibilidade')}<select class="fsel" id="ypP"><option value="public">pública</option><option value="unlisted">não listada</option><option value="private">privada</option></select></div>
+      <div>${lbl('Agendar publicação (opcional)')}<input class="fi" type="datetime-local" id="ypA"></div></div>`}
+      ${lbl('Playlist')}<select class="fsel" id="ypL"><option value="">— nenhuma —</option>${(ytPls || []).map(p => `<option value="${esc(p.id)}" ${/atlantyx tv/i.test(p.titulo) ? 'selected' : ''}>${esc(p.titulo)}</option>`).join('')}</select>
+      <div id="ypS" style="font-size:11.5px;color:var(--t2);margin-top:10px;"></div><div style="height:8px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-top:6px;"><i id="ypB" style="display:block;height:100%;width:0;background:#00C4CC;"></i></div>
+      <div style="text-align:right;margin-top:12px;"><button class="btn btn-p" id="ypGo" onclick="ATV.ytEnviar('${esc(it.id)}')">${ehYt ? '+ Adicionar à playlist' : '▶ Publicar agora'}</button></div>`);
+  }
+  async function ytIA(id, b) { b.disabled = true; b.textContent = '⏳ Escrevendo…'; try { const r = await api('yt_descricao', { item_id: id }); $('ypT').value = r.titulo; $('ypD').value = r.descricao; $('ypTags').value = (r.tags || []).join(', '); } catch (e) { nota(e.message, 'error'); } b.disabled = false; b.textContent = '✍ IA escreve título e descrição'; }
+  async function ytEnviar(id) {
+    const go = $('ypGo'), st = $('ypS'), bar = $('ypB'); go.disabled = true;
+    const v = k => $(k) ? $(k).value : '';
+    try { const r = await api('yt_publicar_iniciar', { item_id: id, titulo: v('ypT'), descricao: v('ypD'), tags: v('ypTags').split(',').map(s => s.trim()).filter(Boolean), privacidade: v('ypP') || 'public', agendar: v('ypA') ? new Date(v('ypA')).toISOString() : null, playlist_id: v('ypL') || null });
+      let fim = r; if (!r.pronto) { let p = { offset: 0, tamanho: r.tamanho }; let erros = 0;
+        while (!p.pronto) { st.textContent = `⏳ Enviando para o YouTube: ${mb(p.offset)} de ${mb(p.tamanho)}…`; bar.style.width = Math.round((p.offset / p.tamanho) * 100) + '%';
+          try { p = await api('yt_publicar_passo', { job_id: r.job_id }); erros = 0; } catch (e) { if (++erros > 3) throw e; await new Promise(x => setTimeout(x, 2500)); } }
+        fim = p; }
+      bar.style.width = '100%'; st.innerHTML = `✅ ${fim.so_playlist ? 'Adicionado à playlist' : 'Publicado'}: <a href="https://youtu.be/${esc(fim.video_id)}" target="_blank" rel="noopener">youtu.be/${esc(fim.video_id)}</a>${fim.aviso ? `<br><span style="color:var(--gold);">⚠ ${esc(fim.aviso)}</span>` : ''}<br><span style="color:var(--t3);">O YouTube leva alguns minutos para processar o vídeo.</span>`;
+      ytPls = null; await carregar(); } catch (e) { st.innerHTML = `<span style="color:var(--red);">⚠ ${esc(e.message)}</span>`; go.disabled = false; } }
+
   // ═════════ DESTINOS ═════════
   const AJUDA = {
     youtube: 'YouTube Studio → Criar → Transmitir ao vivo → Stream. Copie a "Chave de transmissão" (a URL do servidor já vem preenchida). A primeira live do canal pode levar até 24 h para ser liberada pelo YouTube.',
@@ -233,5 +301,5 @@
   async function dLimpar(k) { if (!confirm('Apagar a chave?')) return; try { const r = await api('destinos_limpar', { plataforma: k }); D.destinos = r.destinos; rDestinos(); } catch (e) { nota(e.message, 'error'); } }
 
   window.ATV = { abrir, aba: trocar, link, salvar, campo, mover, tirar, inter, addYoutube, addUrl, addReacao, enviar, chamadas, atualizar, tv, janela,
-    wCriar, wExcluir, wReabrir, estudio, eEntrar, eToggle, eSair, sairEstudio, eFaixa, eTransmitir, eParar, dSalvar, dLimpar, _estado: () => ({ D, cfg, aba, est }) };
+    wCriar, wExcluir, gradeSet, ytConectar, ytSair, ytCriarPl, ytPub, ytIA, ytEnviar, _seg: seg, wReabrir, estudio, eEntrar, eToggle, eSair, sairEstudio, eFaixa, eTransmitir, eParar, dSalvar, dLimpar, _estado: () => ({ D, cfg, aba, est }) };
 })();

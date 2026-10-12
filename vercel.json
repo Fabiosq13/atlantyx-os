@@ -37,6 +37,10 @@
       "destination": "/api/tv?t=:t"
     },
     {
+      "source": "/atv-youtube-retorno",
+      "destination": "/api/atv?yt_cb=1"
+    },
+    {
       "source": "/atv/:t",
       "destination": "/api/atv?t=:t"
     },

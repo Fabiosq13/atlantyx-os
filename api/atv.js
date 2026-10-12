@@ -26,6 +26,7 @@ const PARTE_MAX = 3400000; // bytes por parte (base64 cabe no limite de 4,5 MB d
 const CFG_PADRAO = {
   codigo: null, criado_em: null, nome: 'Atlantyx TV', slogan: 'Dados, IA e tecnologia para decisões melhores',
   youtube_canal: 'https://www.youtube.com/@atlantyx', playlist: [],
+  grade: true, grade_inicio: '2026-10-12T09:00:00Z',
   intercalar: { vinheta: true, vinheta_s: 25, mercado_cada: 2, mercado_s: 15, noticias_cada: 3, noticias_s: 20, produto_cada: 2, produto_s: 12 },
   moedas: ['USD-BRL', 'EUR-BRL', 'BTC-BRL'], acoes: ['^BVSP', 'PETR4', 'VALE3', 'ITUB4'],
   temas_noticias: 'inteligência artificial, dados e analytics, energia, mercado financeiro do Brasil e dos EUA, tecnologia para empresas',
@@ -182,7 +183,7 @@ async function dadosPlayer(cfg) {
   const M = ids.length ? Object.fromEntries((await sql`SELECT id, content_type, partes FROM atv_midias WHERE id = ANY(${ids}) AND completo`).map(m => [m.id, m])) : {};
   let E = {}; try { if (envs.length) E = Object.fromEntries((await sql`SELECT id, content_type, partes FROM tend_envios WHERE id = ANY(${envs}) AND completo`).map(m => [m.id, m])); } catch (_) {}
   const playlist = P.map(x => {
-    const it = { id: x.id, tipo: 'video', titulo: x.titulo, subtitulo: x.subtitulo || '', chamada: x.chamada || '', categoria: x.categoria || '' };
+    const it = { id: x.id, tipo: 'video', titulo: x.titulo, subtitulo: x.subtitulo || '', chamada: x.chamada || '', categoria: x.categoria || '', dur: x.duracao_s || null };
     if (x.fonte === 'youtube' && /^[\w-]{11}$/.test(x.youtube_id || '')) return { ...it, youtube_id: x.youtube_id };
     if (x.fonte === 'upload' && M[x.midia_id]) return { ...it, partes: M[x.midia_id].partes, ct: M[x.midia_id].content_type, m: x.midia_id };
     if (x.envio_id && E[x.envio_id]) return { ...it, partes: E[x.envio_id].partes, ct: E[x.envio_id].content_type, e: x.envio_id };
@@ -190,7 +191,7 @@ async function dadosPlayer(cfg) {
     return null;
   }).filter(Boolean);
   const [mk, nt] = await Promise.all([mercado(false).catch(e => ({ erros: [e.message] })), noticias(false).catch(e => ({ itens: [], erro: e.message }))]);
-  return { nome: cfg.nome, slogan: cfg.slogan, canal: cfg.youtube_canal, intercalar: cfg.intercalar, playlist, produtos: cfg.produtos || [], servicos: cfg.servicos || [], faixa: cfg.faixa || [],
+  return { nome: cfg.nome, slogan: cfg.slogan, canal: cfg.youtube_canal, intercalar: cfg.intercalar, grade: cfg.grade !== false, grade_inicio: cfg.grade_inicio, agora: Date.now(), playlist, produtos: cfg.produtos || [], servicos: cfg.servicos || [], faixa: cfg.faixa || [],
     mercado: { em: mk.em, moedas: mk.moedas || [], acoes: mk.acoes || [] }, noticias: (nt.itens || []).map(x => ({ titulo: x.titulo, resumo: x.resumo, fonte: x.fonte })), gerado_em: new Date().toISOString() };
 }
 async function parteBin(cfg, q, res) {
@@ -255,6 +256,119 @@ async function ciclo() { // cron de hora em hora: notícias novas + janela autom
   return out;
 }
 
+// ── v3.154: CANAL DO YOUTUBE (OAuth do Google) — publicar vídeos direto numa playlist do canal ──
+// Configuração: Google Cloud → projeto → YouTube Data API v3 ativada → credencial OAuth "Aplicativo da Web" com o URI de
+// redirecionamento <base>/atv-youtube-retorno → GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET nas variáveis da Vercel.
+// O fundador clica em "Conectar o canal" e autoriza com a conta do canal — nenhuma senha passa pelo sistema; o token
+// de renovação fica cifrado. Envio "retomável" do YouTube em blocos de 24 MB (vários passos, sem estourar o tempo da função).
+const YT_ESCOPOS = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube';
+const YT_BLOCO = 96 * 262144; // 24 MB — múltiplo de 256 KB, exigido pelo envio retomável
+const ytOk = () => !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+const ytRetorno = () => base() + '/atv-youtube-retorno';
+async function ytAuthUrl() {
+  if (!ytOk()) throw new Error('Falta configurar GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET na Vercel (projeto no Google Cloud com a YouTube Data API v3).');
+  const state = tokenNovo(32); await kv('atv:yt_state', { state, em: Date.now() });
+  return 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({ client_id: process.env.GOOGLE_CLIENT_ID, redirect_uri: ytRetorno(), response_type: 'code', scope: YT_ESCOPOS,
+    access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state });
+}
+async function ytTokenReq(params) {
+  const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: process.env.GOOGLE_CLIENT_ID, client_secret: process.env.GOOGLE_CLIENT_SECRET, ...params }) });
+  const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error('Google: ' + (d.error_description || d.error || r.status)); return d;
+}
+let _ytAcc = null;
+async function ytAcesso() {
+  if (_ytAcc && _ytAcc.exp > Date.now() + 60000) return _ytAcc.tk;
+  const y = await kv('atv:youtube'); if (!y?.refresh_c) throw new Error('Conecte o canal do YouTube primeiro (aba Canal do YouTube)');
+  const d = await ytTokenReq({ grant_type: 'refresh_token', refresh_token: decifrar(y.refresh_c) }); _ytAcc = { tk: d.access_token, exp: Date.now() + (d.expires_in || 3600) * 1000 }; return _ytAcc.tk;
+}
+async function ytApi(caminho, { method = 'GET', body, query } = {}) {
+  const tk = await ytAcesso(), u = 'https://www.googleapis.com/youtube/v3/' + caminho + (query ? '?' + new URLSearchParams(query) : '');
+  const r = await fetch(u, { method, headers: { Authorization: 'Bearer ' + tk, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error('YouTube: ' + (d.error?.message || r.status)); return d;
+}
+async function ytRetornoPagina(q, res) {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.setHeader('Cache-Control', 'no-store');
+  const fim = (ok, msg) => res.status(ok ? 200 : 400).send(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Canal do YouTube · Atlantyx</title></head>
+<body style="margin:0;background:#0B1226;color:#EAF0FF;font-family:Montserrat,Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:20px;box-sizing:border-box">
+<div><div style="font-size:44px">${ok ? '✅' : '⚠️'}</div><h2>${escH(msg)}</h2><p style="color:#9fb0d8">${ok ? 'Pode fechar esta aba e voltar ao Atlantyx OS.' : 'Volte ao Atlantyx OS e tente conectar de novo.'}</p></div>
+<script>try{window.opener&&window.opener.postMessage({atvYoutube:${ok ? 'true' : 'false'}},'*')}catch(e){}${ok ? 'setTimeout(function(){window.close()},2500)' : ''}</script></body></html>`);
+  try {
+    const st = await kv('atv:yt_state'); if (!st || st.state !== q.state || Date.now() - st.em > 15 * 60000) return fim(false, 'Pedido expirado ou inválido');
+    await kv('atv:yt_state', { state: null, em: 0 });
+    if (q.error) return fim(false, 'Autorização cancelada no Google');
+    const d = await ytTokenReq({ grant_type: 'authorization_code', code: String(q.code || ''), redirect_uri: ytRetorno() });
+    if (!d.refresh_token) return fim(false, 'O Google não devolveu a permissão permanente — remova o acesso do app na conta Google e conecte de novo');
+    _ytAcc = { tk: d.access_token, exp: Date.now() + (d.expires_in || 3600) * 1000 };
+    let canal = null; try { const c = await ytApi('channels', { query: { part: 'snippet', mine: 'true' } }); const it = (c.items || [])[0]; if (it) canal = { id: it.id, titulo: it.snippet?.title, url: 'https://www.youtube.com/channel/' + it.id }; } catch (_) {}
+    await kv('atv:youtube', { refresh_c: cifrar(d.refresh_token), canal, conectado_em: new Date().toISOString() });
+    return fim(true, 'Canal ' + (canal?.titulo ? '"' + canal.titulo + '" ' : '') + 'conectado');
+  } catch (e) { return fim(false, e.message); }
+}
+async function ytStatus() { const y = await kv('atv:youtube'); return { configurado: ytOk(), conectado: !!y?.refresh_c, canal: y?.canal || null, conectado_em: y?.conectado_em || null, retorno: ytRetorno() }; }
+async function ytPlaylists() { const d = await ytApi('playlists', { query: { part: 'snippet,status,contentDetails', mine: 'true', maxResults: '50' } });
+  return (d.items || []).map(p => ({ id: p.id, titulo: p.snippet?.title, privacidade: p.status?.privacyStatus, videos: p.contentDetails?.itemCount })); }
+async function ytPlaylistCriar(b) { const t = String(b.titulo || '').trim(); if (t.length < 2) throw new Error('Dê um nome à playlist');
+  const p = await ytApi('playlists', { method: 'POST', query: { part: 'snippet,status' }, body: { snippet: { title: t.substring(0, 150), description: String(b.descricao || '').substring(0, 5000) }, status: { privacyStatus: ['public', 'unlisted', 'private'].includes(b.privacidade) ? b.privacidade : 'public' } } });
+  return { playlist: { id: p.id, titulo: p.snippet?.title } }; }
+async function ytAddPlaylist(playlistId, videoId) { if (!playlistId) return null; return ytApi('playlistItems', { method: 'POST', query: { part: 'snippet' }, body: { snippet: { playlistId, resourceId: { kind: 'youtube#video', videoId } } } }); }
+async function ytDescricao(b) {
+  const cfg = await config(), it = (cfg.playlist || []).find(x => x.id === b.item_id); if (!it) throw new Error('Vídeo não está na playlist');
+  try { const t = await claude(`Você escreve título e descrição de vídeo do YouTube para o canal da Atlantyx (empresa brasileira de IA, dados e analytics). Português do Brasil, tom profissional e direto, sem clickbait e sem inventar fatos além do que foi dado. Descrição: 2 parágrafos curtos + 3 a 5 hashtags no fim. Responda SOMENTE JSON {"titulo":"até 90 caracteres","descricao":"...","tags":["..."]}.`,
+      JSON.stringify({ titulo: it.titulo, subtitulo: it.subtitulo, chamada: it.chamada, categoria: it.categoria, canal: cfg.nome, slogan: cfg.slogan, produtos: (cfg.produtos || []).map(p => p.nome) }), 1200);
+    const j = json(t); return { titulo: String(j.titulo || it.titulo).substring(0, 100), descricao: String(j.descricao || '').substring(0, 4800), tags: (j.tags || []).slice(0, 12).map(s => String(s).substring(0, 30)) }; }
+  catch (_) { return { titulo: it.titulo, descricao: [it.subtitulo, it.chamada, cfg.slogan].filter(Boolean).join('\n\n'), tags: ['Atlantyx', 'IA', 'dados'] }; }
+}
+// fonte do vídeo para o envio: partes no banco (envio próprio ou reação completa) ou URL pública com Range
+async function ytFonte(it) {
+  const sql = await getSql();
+  if (it.fonte === 'upload' && it.midia_id) { const m = (await sql`SELECT tamanho, partes, content_type FROM atv_midias WHERE id=${it.midia_id} AND completo`)[0]; if (!m) throw new Error('Vídeo enviado não encontrado');
+    return { tipo: 'partes', tabela: 'atv', id: it.midia_id, tamanho: Number(m.tamanho), ct: m.content_type || 'video/mp4' }; }
+  if (it.envio_id) { const m = (await sql`SELECT tamanho, partes, content_type FROM tend_envios WHERE id=${it.envio_id} AND completo`)[0]; if (!m) throw new Error('Vídeo da reação não encontrado');
+    return { tipo: 'partes', tabela: 'tend', id: it.envio_id, tamanho: Number(m.tamanho), ct: m.content_type || 'video/mp4' }; }
+  if (/^https?:\/\//.test(it.url || '')) { const r = await fetch(it.url, { method: 'HEAD' }); const n = parseInt(r.headers.get('content-length')) || 0; if (!r.ok || !n) throw new Error('Não consegui ler o tamanho do vídeo do link');
+    return { tipo: 'url', url: it.url, tamanho: n, ct: (r.headers.get('content-type') || 'video/mp4').split(';')[0] }; }
+  throw new Error('Este item não tem arquivo de vídeo para enviar');
+}
+async function ytLerFaixa(f, ini, fim) { // bytes [ini, fim] (inclusive)
+  if (f.tipo === 'url') { const r = await fetch(f.url, { headers: { Range: `bytes=${ini}-${fim}` } }); if (!(r.status === 206 || r.status === 200)) throw new Error('Falha ao ler o vídeo (' + r.status + ')');
+    let b = Buffer.from(await r.arrayBuffer()); if (r.status === 200) b = b.subarray(ini, fim + 1); return b; }
+  const sql = await getSql(), p0 = Math.floor(ini / PARTE_MAX), p1 = Math.floor(fim / PARTE_MAX), bufs = [];
+  for (let i = p0; i <= p1; i++) { const r = f.tabela === 'atv' ? (await sql`SELECT b64 FROM atv_partes WHERE midia_id=${f.id} AND i=${i}`)[0] : (await sql`SELECT b64 FROM tend_envio_partes WHERE envio_id=${f.id} AND i=${i}`)[0];
+    if (!r) throw new Error('Parte ' + i + ' do vídeo não encontrada'); bufs.push(Buffer.from(r.b64, 'base64')); }
+  const tudo = Buffer.concat(bufs), base0 = p0 * PARTE_MAX; return tudo.subarray(ini - base0, fim - base0 + 1);
+}
+async function ytPublicarIniciar(b) {
+  const cfg = await config(), it = (cfg.playlist || []).find(x => x.id === b.item_id); if (!it) throw new Error('Vídeo não está na playlist');
+  const priv = ['public', 'unlisted', 'private'].includes(b.privacidade) ? b.privacidade : 'public';
+  let publishAt = null; if (b.agendar) { const d = new Date(b.agendar); if (isNaN(d) || d < Date.now() + 15 * 60000) throw new Error('Agende para pelo menos 15 minutos à frente'); publishAt = d.toISOString(); }
+  const job = { id: novoId('ytj'), item_id: it.id, playlist_id: b.playlist_id || null, criado_em: new Date().toISOString() };
+  if (it.fonte === 'youtube' && it.youtube_id) { await ytAddPlaylist(job.playlist_id, it.youtube_id); return { pronto: true, video_id: it.youtube_id, so_playlist: true }; }
+  const f = await ytFonte(it);
+  const meta = { snippet: { title: String(b.titulo || it.titulo).substring(0, 100), description: String(b.descricao || '').substring(0, 4900), tags: Array.isArray(b.tags) ? b.tags.slice(0, 12) : [], categoryId: '28', defaultLanguage: 'pt-BR', defaultAudioLanguage: 'pt-BR' },
+    status: { privacyStatus: publishAt ? 'private' : priv, ...(publishAt ? { publishAt } : {}), selfDeclaredMadeForKids: false } };
+  const tk = await ytAcesso();
+  const r = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', { method: 'POST',
+    headers: { Authorization: 'Bearer ' + tk, 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Length': String(f.tamanho), 'X-Upload-Content-Type': f.ct }, body: JSON.stringify(meta) });
+  if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error('YouTube: ' + (d.error?.message || r.status)); }
+  const loc = r.headers.get('location'); if (!loc) throw new Error('O YouTube não abriu a sessão de envio');
+  Object.assign(job, { fonte: f, sessao: loc, offset: 0, tamanho: f.tamanho, privacidade: publishAt ? 'agendado' : priv, publishAt });
+  await kv('atv:ytjob:' + job.id, job); return { job_id: job.id, tamanho: f.tamanho, offset: 0 };
+}
+async function ytPublicarPasso(b) {
+  const job = await kv('atv:ytjob:' + b.job_id); if (!job?.sessao) throw new Error('Envio não encontrado — comece de novo');
+  if (job.video_id) return { pronto: true, video_id: job.video_id };
+  const tk = await ytAcesso(), ini = job.offset, fim = Math.min(job.tamanho - 1, ini + YT_BLOCO - 1);
+  const pedaco = await ytLerFaixa(job.fonte, ini, fim);
+  const r = await fetch(job.sessao, { method: 'PUT', headers: { Authorization: 'Bearer ' + tk, 'Content-Length': String(pedaco.length), 'Content-Range': `bytes ${ini}-${fim}/${job.tamanho}` }, body: pedaco });
+  if (r.status === 308) { const rg = r.headers.get('range'); job.offset = rg ? parseInt(rg.split('-')[1]) + 1 : fim + 1; await kv('atv:ytjob:' + job.id, job); return { offset: job.offset, tamanho: job.tamanho }; }
+  const d = await r.json().catch(() => ({})); if (!(r.status === 200 || r.status === 201) || !d.id) throw new Error('YouTube: ' + (d.error?.message || r.status));
+  job.video_id = d.id; job.offset = job.tamanho; await kv('atv:ytjob:' + job.id, job);
+  let aviso = null; try { await ytAddPlaylist(job.playlist_id, d.id); } catch (e) { aviso = 'vídeo enviado, mas não entrou na playlist: ' + e.message; }
+  const cfg = await config(); cfg.playlist = (cfg.playlist || []).map(x => x.id === job.item_id ? { ...x, yt_video_id: d.id, yt_publicado_em: new Date().toISOString(), yt_privacidade: job.privacidade } : x); await kv('atv:config', cfg);
+  return { pronto: true, video_id: d.id, url: 'https://youtu.be/' + d.id, aviso };
+}
+
 // ── páginas públicas (shells; o render fica em /atv-player.js) ──
 const LK_CDN = 'https://cdn.jsdelivr.net/npm/livekit-client@2.15.0/dist/livekit-client.umd.js';
 function shell(titulo, cfgJs, comLk) {
@@ -301,6 +415,7 @@ async function handler(req, res) {
   try {
     const q = req.query || Object.fromEntries(new URL(req.url, 'http://x').searchParams);
     if (req.method === 'GET' && q.cron) return res.status(200).json({ success: true, ...(await ciclo()) });
+    if (req.method === 'GET' && q.yt_cb) return ytRetornoPagina(q, res);
     if (req.method === 'GET') return publico(req, res, q);
     const b = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body) || {};
     const acoes = {
@@ -308,18 +423,19 @@ async function handler(req, res) {
         const midias = (await sql`SELECT id, titulo, nome, tamanho, partes, completo, criado_em FROM atv_midias ORDER BY criado_em DESC LIMIT 80`).map(m => ({ ...m, tamanho: Number(m.tamanho) }));
         const t = (await kv('atv:transmissao')) || {};
         return { config: { ...cfg, link: cfg.codigo ? base() + '/atv/' + cfg.codigo : null }, midias, reacoes: await reacoes(), livekit: lkOk(), destinos: await destinosStatus(),
-          webinars: await webinars(), transmissao: { ...t, status: await egressStatus(t.egress_id) }, mercado: await kv('atv:mercado'), noticias: await kv('atv:noticias'), brapi_token: !!process.env.BRAPI_TOKEN }; },
+          youtube: await ytStatus(), webinars: await webinars(), transmissao: { ...t, status: await egressStatus(t.egress_id) }, mercado: await kv('atv:mercado'), noticias: await kv('atv:noticias'), brapi_token: !!process.env.BRAPI_TOKEN }; },
       gerar_link: async () => { const c = await config(); c.codigo = tokenNovo(14); c.criado_em = new Date().toISOString(); await kv('atv:config', c); return { link: base() + '/atv/' + c.codigo }; },
       revogar_link: async () => { const c = await config(); c.codigo = null; c.criado_em = null; await kv('atv:config', c); try { await tvParar(); } catch (_) {} return { ok: true }; },
       salvar: async () => { const c = await config(), x = b.config || {};
         const P = Array.isArray(x.playlist) ? x.playlist.slice(0, 200).map(i => ({ id: i.id || novoId('it'), tipo: 'video', fonte: ['upload', 'youtube', 'url', 'reacao'].includes(i.fonte) ? i.fonte : 'url',
           titulo: String(i.titulo || 'Sem título').substring(0, 120), subtitulo: String(i.subtitulo || '').substring(0, 160), chamada: String(i.chamada || '').substring(0, 160), categoria: String(i.categoria || '').substring(0, 40),
-          midia_id: i.midia_id || null, youtube_id: i.youtube_id || null, url: /^https?:\/\//.test(i.url || '') ? i.url : null, envio_id: i.envio_id || null, peca_id: i.peca_id || null, ativo: i.ativo !== false })) : c.playlist;
+          midia_id: i.midia_id || null, youtube_id: i.youtube_id || null, duracao_s: Math.max(0, Math.min(6 * 3600, Math.round(Number(i.duracao_s) || 0))) || null, yt_video_id: i.yt_video_id || null, yt_publicado_em: i.yt_publicado_em || null, yt_privacidade: i.yt_privacidade || null, url: /^https?:\/\//.test(i.url || '') ? i.url : null, envio_id: i.envio_id || null, peca_id: i.peca_id || null, ativo: i.ativo !== false })) : c.playlist;
         const lst = (v, n, m) => Array.isArray(v) ? v.map(s => String(s).trim()).filter(Boolean).slice(0, n).map(s => s.substring(0, m)) : null;
         const n = { ...c, playlist: P, nome: String(x.nome || c.nome).substring(0, 40), slogan: String(x.slogan ?? c.slogan).substring(0, 90), youtube_canal: String(x.youtube_canal ?? c.youtube_canal).substring(0, 200),
           temas_noticias: String(x.temas_noticias ?? c.temas_noticias).substring(0, 400), moedas: lst(x.moedas, 8, 10) || c.moedas, acoes: lst(x.acoes, 10, 10)?.map(s => s.toUpperCase()) || c.acoes,
           servicos: lst(x.servicos, 12, 80) || c.servicos, faixa: lst(x.faixa, 12, 120) || c.faixa,
           produtos: Array.isArray(x.produtos) ? x.produtos.filter(p => p?.nome).slice(0, 12).map(p => ({ nome: String(p.nome).substring(0, 40), frase: String(p.frase || '').substring(0, 140) })) : c.produtos,
+          grade: x.grade === undefined ? c.grade !== false : !!x.grade,
           intercalar: Object.fromEntries(Object.entries({ ...c.intercalar, ...(x.intercalar || {}) }).map(([k, v]) => [k, k === 'vinheta' ? v !== false : Math.max(0, Math.min(k.endsWith('_s') ? 120 : 20, parseInt(v) || 0))])) };
         if (n.intercalar.vinheta_s < 8) n.intercalar.vinheta_s = 25;
         await kv('atv:config', n); if (JSON.stringify(n.moedas) !== JSON.stringify(c.moedas) || JSON.stringify(n.acoes) !== JSON.stringify(c.acoes)) { try { await mercado(true); } catch (_) {} }
@@ -346,6 +462,9 @@ async function handler(req, res) {
         t.janela = { auto: !!j.auto, inicio: hm(j.inicio) || '08:00', fim: hm(j.fim) || '20:00', dias: (Array.isArray(j.dias) ? j.dias : [1, 2, 3, 4, 5]).map(Number).filter(d => d >= 0 && d <= 6) }; t.destinos = (b.destinos || t.destinos || ['youtube']).filter(k => DESTINOS[k]);
         await kv('atv:transmissao', t); return { transmissao: t }; },
       ciclo: () => ciclo(),
+      yt_status: () => ytStatus(), yt_conectar: async () => ({ url: await ytAuthUrl() }), yt_desconectar: async () => { await kv('atv:youtube', {}); _ytAcc = null; return { ok: true }; },
+      yt_playlists: async () => ({ playlists: await ytPlaylists() }), yt_playlist_criar: () => ytPlaylistCriar(b), yt_descricao: () => ytDescricao(b),
+      yt_publicar_iniciar: () => ytPublicarIniciar(b), yt_publicar_passo: () => ytPublicarPasso(b),
     };
     if (!acoes[b.action]) return res.status(400).json({ success: false, error: 'Ação desconhecida' });
     return res.status(200).json({ success: true, ...(await acoes[b.action]()) });

@@ -7,6 +7,11 @@ ID: 2026-10-11-atlantyx-tv-webinars · Trilha: T2
 - [x] public/atv-ui.js (abas Atlantyx TV, YouTube 24h, Webinars + estúdio, Destinos)
 - [x] Teste ponta a ponta (LiveKit, IA e cotações simulados)
 
+## Fase 2
+- [x] Grade pelo relógio no player + duração por vídeo (medida no envio)
+- [x] Canal do YouTube: conectar (OAuth), playlists, publicar em blocos, IA escreve título/descrição
+- [x] Teste (OAuth simulado, envio de 30 MB em 2 blocos, duas telas sincronizadas)
+
 ## Interseções
 - T1: lib/qa-guard.js (rota pública 'atv' e cron), vercel.json (rewrites /atv, /atvl, /ao-vivo, /convidado; função; cron de hora em hora)
 - T4: menu s0atv e página no index.html
@@ -15,4 +20,5 @@ ID: 2026-10-11-atlantyx-tv-webinars · Trilha: T2
 ## Registro da Batida
 | Data | Status | Bloqueio | Próximo passo |
 |---|---|---|---|
+| 2026-10-11 | no ar (v3.154) | Google Cloud: projeto + OAuth + GOOGLE_CLIENT_ID/SECRET na Vercel | conectar o canal e publicar os primeiros vídeos |
 | 2026-10-11 | no ar (v3.153) | LiveKit Cloud + chaves dos destinos a configurar pelo Fabio | criar projeto LiveKit, variáveis na Vercel, chave do YouTube |
