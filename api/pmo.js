@@ -766,6 +766,67 @@ async function apontamentoConfig({ salvar } = {}) {
   return { config: c, conectado: !!process.env.CRONOGRAMA_DATABASE_URL };
 }
 
+// ═══ v3.156: FAROL DOS PROJETOS PELO MÓDULO DE PROJETOS (Maestro · atlantyx-vercel-deploy) ═══
+// Lê a MESMA base do módulo de projetos (CRONOGRAMA_DATABASE_URL → atlx_store) e aplica a MESMA regra do
+// Painel/Dashboard de Projetos de lá: farol do status report da semana (até 7 dias antes da sexta de referência);
+// sem report recente, calcula: 🔴 marco vencido há +7 dias, avanço 10pp abaixo do planejado ou horas acima do contratado;
+// 🟡 marco vencido, avanço 5pp abaixo, termo parado há +30 dias ou horas acima de 85% do contratado; senão 🟢.
+let _maeCache = null;
+async function maestroPainel({ forcar } = {}) {
+  if (!forcar && _maeCache && Date.now() - _maeCache.em < 5 * 60000) return _maeCache.v;
+  const sql = await getSqlCrono();
+  let cfg = {}; try { const sqlCfg = await getSql(); (await sqlCfg`SELECT chave, valor FROM pmo_config WHERE chave LIKE 'cronodb_%'`).forEach(r => cfg[r.chave.replace('cronodb_', '')] = r.valor); } catch (_) {}
+  const tabela = cfg.chave && cfg.tabela ? cfg.tabela : 'atlx_store', ck = cfg.chave ? (cfg.col_chave || 'key') : 'key', cv = cfg.chave ? (cfg.col_valor || 'value') : 'value';
+  const chaves = ['atlx_projetos_cad', 'atlx_wbs_tasks', 'atlx_proj_marcos', 'atlx_proj_financeiro', 'atlx_apontamentos', 'atlx_status_reports'];
+  const rows = await _q(sql, `SELECT ${_id(ck)} AS k, (${_id(cv)})::text AS v FROM ${_id(tabela)} WHERE ${_id(ck)} = ANY($1)`, [chaves]);
+  const S = {}; rows.forEach(r => { try { S[r.k] = JSON.parse(r.v); } catch (_) {} });
+  const cad = Array.isArray(S.atlx_projetos_cad) ? S.atlx_projetos_cad : [], wbs = S.atlx_wbs_tasks && typeof S.atlx_wbs_tasks === 'object' ? S.atlx_wbs_tasks : {};
+  const marcos = Array.isArray(S.atlx_proj_marcos?.marcos) ? S.atlx_proj_marcos.marcos : [], fin = Array.isArray(S.atlx_proj_financeiro?.itens) ? S.atlx_proj_financeiro.itens : [];
+  const apt = Array.isArray(S.atlx_apontamentos) ? S.atlx_apontamentos : [], srs = Array.isArray(S.atlx_status_reports) ? S.atlx_status_reports : [];
+  const hojeD = new Date(Date.now() - 3 * 3600000), hoje = hojeD.toISOString().substring(0, 10);
+  const addDias = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().substring(0, 10); };
+  const sexta = (() => { const x = new Date(hoje + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 2) % 7)); return x.toISOString().substring(0, 10); })();
+  const dias = iso => Math.round((Date.parse(hoje + 'T00:00:00Z') - Date.parse(String(iso).substring(0, 10) + 'T00:00:00Z')) / 864e5);
+  const horasTarefa = {}; apt.forEach(a => { if (a.tarefaId) horasTarefa[a.tarefaId] = (horasTarefa[a.tarefaId] || 0) + (parseFloat(a.horas) || 0); });
+  const pctFolha = t => { if (t.status === 'Concluída' || parseInt(t.pct) >= 100) return 100; if (t.status === 'Cancelada') return null;
+    const he = parseFloat(t.horas) || 0, hr = horasTarefa[t.id] || 0; if (hr > 0) return he > 0 ? Math.min(100, Math.round(hr / he * 100)) : Math.max(parseInt(t.pct) || 0, 10); return parseInt(t.pct) || 0; };
+  const pctPrev = t => { let ini = String(t.inicio || '').slice(0, 10), fim = String(t.fim || '').slice(0, 10); if (!fim && !ini) return null; if (!fim) fim = ini; if (!ini) ini = fim;
+    if (hoje >= fim) return 100; if (hoje < ini) return 0; const d = x => Date.parse(x + 'T12:00:00Z'), tot = (d(fim) - d(ini)) / 864e5 + 1, dec = (d(hoje) - d(ini)) / 864e5 + 1; return Math.max(0, Math.min(100, Math.round(dec / tot * 100))); };
+  const avanco = nome => {
+    const ts = Array.isArray(wbs[nome]) ? wbs[nome] : [], folhas = ts.filter((t, i) => !(ts[i + 1] && (ts[i + 1].level || 0) > (t.level || 0)));
+    if (folhas.length) { let rp = 0, rw = 0, pp = 0, pw = 0; folhas.forEach(t => { let w = parseFloat(t.horas) || 0; if (!(w > 0)) w = 1; const r = pctFolha(t); if (r === null) return; rp += r * w; rw += w; const pv = pctPrev(t); if (pv !== null) { pp += pv * w; pw += w; } });
+      return { fonte: 'cronograma', fisico: rw ? Math.round(rp / rw) : 0, planejado: pw ? Math.round(pp / pw) : null, tarefas_atrasadas: folhas.filter(t => t.fim && String(t.fim).slice(0, 10) < hoje && t.status !== 'Concluída' && t.status !== 'Cancelada' && parseInt(t.pct || 0) < 100).length }; }
+    const ms = marcos.filter(m => m.proj === nome);
+    if (ms.length) { const cf = ms.filter(m => m.fim); return { fonte: 'marcos', fisico: Math.round(ms.reduce((s, m) => s + (m.status === 'Concluído' ? 100 : parseInt(m.pct || 0)), 0) / ms.length),
+      planejado: cf.length ? Math.round(cf.filter(m => m.fim <= hoje).length / cf.length * 100) : null, tarefas_atrasadas: 0 }; }
+    return { fonte: null, fisico: null, planejado: null, tarefas_atrasadas: 0 };
+  };
+  const nomes = [...new Set([...cad.map(p => p.nome), ...Object.keys(wbs).filter(k => (wbs[k] || []).length), ...marcos.map(m => m.proj), ...fin.map(f => f.proj)].filter(Boolean))].sort();
+  const projetos = nomes.map(nome => {
+    const c = cad.find(p => p.nome === nome) || {}, ativo = !/conclu|encerr|cancel|suspens/i.test(c.status || '');
+    const horas = apt.filter(a => (a.projeto || a.Projeto) === nome).reduce((s, a) => s + (parseFloat(a.horas || a.Horas) || 0), 0), horasC = parseFloat(c.horas) || 0;
+    const atras = marcos.filter(m => m.proj === nome && m.status !== 'Concluído' && m.fim && String(m.fim).slice(0, 10) < hoje).map(m => ({ nome: m.nome, dias: dias(m.fim) }));
+    const parados = fin.filter(f => f.proj === nome && !/pago|conclu/i.test(f.status || '') && f.data && dias(f.data) > 30).length;
+    const av = avanco(nome), r = srs.filter(x => x.projeto === nome).sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')))[0] || null;
+    const desvio = av.fisico != null && av.planejado != null ? Math.round(av.fisico - av.planejado) : (r && r.pct != null && r.pctPlan != null ? Math.round(parseFloat(r.pct) - parseFloat(r.pctPlan)) : null);
+    let farol = r && r.data >= addDias(sexta, -7) ? r.farol : null, origem = farol ? 'status report' : 'calculado';
+    const mot = [];
+    if (atras.length) mot.push(atras.length + ' marco(s) vencido(s)'); if (desvio != null && desvio < -5) mot.push('avanço ' + Math.abs(desvio) + 'pp abaixo do planejado');
+    if (horasC && horas > horasC * .85) mot.push('horas em ' + Math.round(horas / horasC * 100) + '% do contratado'); if (parados) mot.push(parados + ' termo(s) parado(s) +30 dias');
+    if (!farol) farol = (atras.some(m => m.dias > 7) || (desvio != null && desvio < -10) || (horasC && horas > horasC)) ? 'vermelho' : (atras.length || (desvio != null && desvio < -5) || parados || (horasC && horas > horasC * .85)) ? 'amarelo' : 'verde';
+    const ts = Array.isArray(wbs[nome]) ? wbs[nome] : [], fims = [c.fim, ...ts.map(t => t.fim), ...marcos.filter(m => m.proj === nome).map(m => m.fim)].map(x => String(x || '').slice(0, 10)).filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x)).sort();
+    const conclusao = String(c.fim || '').slice(0, 10).match(/^\d{4}-\d{2}-\d{2}$/) ? String(c.fim).slice(0, 10) : (fims[fims.length - 1] || null), pctF = av.fisico ?? null;
+    const dias_atraso = conclusao && conclusao < hoje && (pctF == null || pctF < 100) ? dias(conclusao) : 0;
+    if (dias_atraso) { mot.unshift('passou da data de conclusão há ' + dias_atraso + ' dia(s)'); if (origem === 'calculado') farol = 'vermelho'; }
+    return { nome, cliente: c.cliente || '', gerente: c.gerente || c.gp || '', status: c.status || '', ativo, farol, origem, conclusao, inicio: String(c.inicio || '').slice(0, 10) || null, dias_atraso, pct: av.fisico ?? (r?.pct != null ? parseFloat(r.pct) : null), planejado: av.planejado ?? (r?.pctPlan != null ? parseFloat(r.pctPlan) : null), desvio, motivos: mot, ultimo_report: r?.data || null, avanco_fonte: av.fonte };
+  });
+  const at = projetos.filter(p => p.ativo);
+  const fimMes = hoje.substring(0, 8) + '31', comAv = at.filter(p => p.pct != null), comPl = at.filter(p => p.planejado != null);
+  const v = { fonte: 'Módulo de projetos (Maestro)', em: new Date().toISOString(), projetos, resumo: { total: at.length, concluem_mes: at.filter(p => p.conclusao && p.conclusao >= hoje && p.conclusao <= fimMes).length,
+    vencidos: at.filter(p => p.dias_atraso > 0).length, avanco_medio: comAv.length ? Math.round(comAv.reduce((s, p) => s + p.pct, 0) / comAv.length) : null, planejado_medio: comPl.length ? Math.round(comPl.reduce((s, p) => s + p.planejado, 0) / comPl.length) : null, verde: at.filter(p => p.farol === 'verde').length, amarelo: at.filter(p => p.farol === 'amarelo').length, vermelho: at.filter(p => p.farol === 'vermelho').length, por_report: at.filter(p => p.origem === 'status report').length } };
+  _maeCache = { em: Date.now(), v }; return v;
+}
+
 // ═══ v1.95: RAIO-X DO PROJETO ═══
 // Cruza três dimensões: cronograma físico (módulo externo), performance da equipe
 // e retorno financeiro (receitas × despesas ao longo do projeto).
@@ -1362,6 +1423,7 @@ async function handler(req, res) {
     gerente_projeto:   () => gerenteProjetoIA(payload),
     alertas_projetos:  () => alertasProjetos(),
     painel_mestre:     () => painelMestre(payload),
+    maestro_painel:    () => maestroPainel(payload),
     raio_x_projeto:    () => raioXProjeto(payload),
     agenda_gp:         () => agendaGP(payload),
     compromisso_salvar:() => compromissoSalvar(payload),

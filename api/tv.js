@@ -21,9 +21,9 @@ async function kv(k, v) {
   await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; return v;
 }
 const CFG_PADRAO = { codigo: null, criado_em: null, rotacao_s: 25, slides: ['financeiro', 'comercial', 'qualidade'] };
-const SLIDES_OK = ['financeiro', 'comercial', 'qualidade'];
+const SLIDES_OK = ['financeiro', 'comercial', 'qualidade', 'projetos'];
 // v3.152: o slide Qualidade entra nas TVs já configuradas (uma vez; depois vale o que o usuário salvar)
-const config = async () => { const c = { ...CFG_PADRAO, ...((await kv('tv:config')) || {}) }; if (!c.v152) { c.slides = [...new Set([...(c.slides || []), 'qualidade'])]; c.v152 = true; } return c; };
+const config = async () => { const c = { ...CFG_PADRAO, ...((await kv('tv:config')) || {}) }; if (!c.v152) { c.slides = [...new Set([...(c.slides || []), 'qualidade'])]; c.v152 = true; } if (!c.v156) { c.slides = [...new Set([...(c.slides || []), 'projetos'])]; c.v156 = true; } if (c.nomes_projetos === undefined) c.nomes_projetos = true; return c; };
 const codigoNovo = () => { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'; const b = crypto.randomBytes(12); let s = ''; for (const x of b) s += a[x % a.length]; return s; };
 const base = () => { const b = process.env.MEDIA_PUBLIC_BASE || process.env.VERCEL_PROJECT_PRODUCTION_URL || 'atlantyx-os.vercel.app'; return (b.startsWith('http') ? b : 'https://' + b).replace(/\/$/, ''); };
 
@@ -41,7 +41,7 @@ const num = v => (v == null || isNaN(+v)) ? null : +v;
 // projetos → farol do último status report (Painel Mestre do PMO).
 const CHECKS_QB = ['qb_off', 'qb_token', 'conciliacao', 'bills_pagas', 'dup_qb', 'sem_categoria', 'prev_dup'];
 const TIPO_TERMO = { incompleto: 'cadastro incompleto', sem_nota: 'sem nota fiscal', sem_data_pagamento: 'sem data de pagamento', pagamento_vencido: 'pagamento vencido', em_atraso: 'parado há 35+ dias' };
-function qualidade(T, eT, H, eH, PM, ePM) {
+function qualidade(T, eT, H, eH, PM, ePM, MA) {
   const out = {};
   { const todos = Object.entries(T?.colunas || {}).flatMap(([st, l]) => (l || []).map(t => ({ ...t, status: t.status || st })));
     const abertos = todos.filter(t => !['pago', 'concluido'].includes(t.status)), errados = abertos.filter(t => (t.pendencias_criticas || []).length);
@@ -54,23 +54,31 @@ function qualidade(T, eT, H, eH, PM, ePM) {
     out.qb = { erro: eH || ((H?.erros || []).length ? H.erros.slice(0, 2).join(' · ') : null), checagens: CHECKS_QB.length, corretas: H ? CHECKS_QB.length - it.length : null, com_erro: H ? it.length : null,
       registros_errados: H ? it.reduce((a, x) => a + (+x.qtd || 0), 0) : null, problemas: it.slice(0, 4).map(x => ({ titulo: String(x.titulo || x.id).substring(0, 70), qtd: +x.qtd || 0, gravidade: x.gravidade })),
       farol: !H ? null : alta ? 'vermelho' : it.length ? 'amarelo' : 'verde' }; }
-  { const r = PM?.resumo || null;
-    out.projetos = { erro: ePM, total: r ? r.total : null, em_dia: r ? r.verde : null, atencao: r ? r.amarelo : null, atrasados: r ? r.vermelho : null, sem_report: r ? (r.sem_report || 0) : null,
+  if (MA?.resumo) { const r = MA.resumo; // v3.156: módulo de projetos (Maestro) — mesma regra de farol de lá
+    out.projetos = { erro: null, fonte: MA.fonte, total: r.total, em_dia: r.verde, atencao: r.amarelo, atrasados: r.vermelho, sem_report: r.total - (r.por_report || 0), com_bloqueio: r.vencidos, desatualizados: r.concluem_mes,
+      rotulos: ['Passaram da data de conclusão', 'Concluem este mês', 'Farol calculado (sem report da semana)'], farol: r.vermelho ? 'vermelho' : r.amarelo ? 'amarelo' : 'verde' };
+  } else { const r = PM?.resumo || null;
+    out.projetos = { fonte: PM?.fonte === 'externo' ? 'Sistema externo de projetos' : 'Base local do Atlantyx OS (módulo de projetos não respondeu)', erro: ePM, total: r ? r.total : null, em_dia: r ? r.verde : null, atencao: r ? r.amarelo : null, atrasados: r ? r.vermelho : null, sem_report: r ? (r.sem_report || 0) : null,
       // só contagens — a página da TV é pública (link) e não mostra nome de projeto ou cliente
       com_bloqueio: r ? (r.com_bloqueio || 0) : null, desatualizados: r ? (r.pendentes_de_atualizacao || 0) : null,
       farol: !r ? null : r.vermelho ? 'vermelho' : (r.amarelo || r.sem_report) ? 'amarelo' : 'verde' }; }
   return out;
 }
 async function montarDados() {
-  const [pr, kp, vd, fu, se, tq, hg, pm] = await Promise.allSettled([
+  const [pr, kp, vd, fu, se, tq, hg, pm, ma, cf] = await Promise.allSettled([
     chamar('financeiro', { action: 'painel_resumo', params: {} }), chamar('financeiro', { action: 'resultado_kpis', params: {} }, 45000),
     chamar('vendas', { action: 'painel', payload: {} }, 45000), chamar('crm', { action: 'funil_campanha', payload: { dias: 30 } }), chamar('crm', { action: 'comercial_semaforo', payload: {} }),
-    chamar('faturamento', { action: 'termo_list', payload: {} }), chamar('financeiro', { action: 'higienizacao_dados', params: {} }, 60000), chamar('pmo', { action: 'painel_mestre', payload: {} }, 45000)]);
+    chamar('faturamento', { action: 'termo_list', payload: {} }), chamar('financeiro', { action: 'higienizacao_dados', params: {} }, 60000), chamar('pmo', { action: 'painel_mestre', payload: {} }, 45000), chamar('pmo', { action: 'maestro_painel', payload: {} }, 45000), config()]);
   const v = p => p.status === 'fulfilled' ? p.value : null, erro = p => p.status === 'rejected' ? String(p.reason?.message || p.reason).substring(0, 120) : null;
   const P = v(pr) || {}, K = v(kp)?.resultado || {}, Pm = K.periodo_res || {}, A = K.ano_res || {}, M = K.metas_periodo || {};
   const V = v(vd) || {}, VM = V.metas || {}, VC = V.calculo || {}, VP = V.propostas || {}, F = v(fu) || {}, S = v(se) || {};
   const hoje = new Date(Date.now() - 3 * 3600000).toISOString().substring(0, 10);
-  return { qual: qualidade(v(tq), erro(tq), v(hg), erro(hg), v(pm), erro(pm)),
+  const MA = v(ma), CF = v(cf) || {}, rank = { vermelho: 0, amarelo: 1, verde: 2 };
+  const proj = MA ? { erro: null, fonte: MA.fonte, resumo: MA.resumo, nomes: CF.nomes_projetos !== false,
+      lista: MA.projetos.filter(p => p.ativo).sort((a, b) => (rank[a.farol] ?? 3) - (rank[b.farol] ?? 3) || String(a.conclusao || '9').localeCompare(String(b.conclusao || '9')))
+        .map((p, i) => ({ nome: CF.nomes_projetos !== false ? String(p.nome).substring(0, 60) : 'Projeto ' + (i + 1), gerente: CF.nomes_projetos !== false ? String(p.gerente || '').substring(0, 30) : '', conclusao: p.conclusao, pct: p.pct, planejado: p.planejado, desvio: p.desvio, farol: p.farol, dias_atraso: p.dias_atraso, motivo: p.origem === 'status report' ? 'farol do status report' + ((p.motivos || [])[0] ? ' · ' + p.motivos[0] : '') : ((p.motivos || [])[0] || null) })) }
+    : { erro: 'Módulo de projetos: ' + (erro(ma) || 'sem resposta'), lista: [], resumo: null };
+  return { qual: qualidade(v(tq), erro(tq), v(hg), erro(hg), v(pm), erro(pm), MA), proj,
     gerado_em: new Date().toISOString(), mes_ref: hoje.substring(0, 7),
     fin: { erro: [erro(pr), erro(kp)].filter(Boolean).join(' · ') || null,
       mes: { faturamento: num(Pm.faturamento), meta_faturamento: num(M.faturamento), lucro: num(Pm.lucro_liquido), margem_pct: num(Pm.margem_liquida_pct), meta_margem_pct: num(K.meta_margem?.pct), semaforo: K.semaforo_margem || null,
@@ -194,9 +202,28 @@ function sQual(){var Q=D.qual||{},T=Q.termos||{},B=Q.qb||{},P=Q.projetos||{};
   return '<div class="grade g3" style="flex:1;min-height:0">'
    +card('Termos de faturamento',T.farol,T.corretos,'termos corretos',T.errados,'termos com erro',(T.motivos||[]).map(function(m){return li(cor(T.farol),m.motivo,m.qtd)}).join('')||(T.errados===0?'<div class="s ok" style="font-size:2.2vh;margin-top:1vh">Todos os '+n(T.abertos)+' termos em aberto estão corretos.</div>':''),T.erro)
    +card('Dados no QuickBooks',B.farol,B.corretas==null?null:B.corretas+'/'+B.checagens,'verificações corretas',B.registros_errados,'registros com erro',(B.problemas||[]).map(function(p){return li(cor(p.gravidade==='alta'?'vermelho':'amarelo'),p.titulo,p.qtd)}).join('')||(B.com_erro===0?'<div class="s ok" style="font-size:2.2vh;margin-top:1vh">Conciliação, categorias, duplicidades e contas pagas: tudo certo.</div>':''),B.erro)
-   +card('Projetos',P.farol,P.em_dia,'em dia',nz(P.atrasados)?null:P.atrasados,'atrasados',(nz(P.total)?'':li(cor('vermelho'),'Atrasados (farol vermelho)',P.atrasados)+li(cor('amarelo'),'Em atenção (farol amarelo)',P.atencao)+li('#6E7BA0','Sem status report',P.sem_report)+li('#6E7BA0','Com bloqueio',P.com_bloqueio)+li('#6E7BA0','Report desatualizado na semana',P.desatualizados)),P.erro)
+   +card('Projetos',P.farol,P.em_dia,'em dia',nz(P.atrasados)?null:P.atrasados,'atrasados',(nz(P.total)?'':li(cor('vermelho'),'Atrasados (farol vermelho)',P.atrasados)+li(cor('amarelo'),'Em atenção (farol amarelo)',P.atencao)+(P.rotulos?li(cor('vermelho'),P.rotulos[0],P.com_bloqueio)+li('#6E7BA0',P.rotulos[1],P.desatualizados)+li('#6E7BA0',P.rotulos[2],P.sem_report):li('#6E7BA0','Sem status report',P.sem_report)+li('#6E7BA0','Com bloqueio',P.com_bloqueio)+li('#6E7BA0','Report desatualizado na semana',P.desatualizados))+(P.fonte?'<div style="font-size:1.5vh;color:#6E7BA0;margin-top:.8vh">fonte: '+esc(P.fonte)+'</div>':'')),P.erro)
    +'</div>'}
-var TIT={financeiro:'Financeiro',comercial:'Comercial',qualidade:'Qualidade'},REN={financeiro:sFin,comercial:sCom,qualidade:sQual};
+function sProj(){var J=D.proj||{},R=J.resumo||{},L=J.lista||[];
+  var dt=function(s){return s?s.split('-').reverse().join('/'):'—'};
+  var av=nz(R.avanco_medio)?'—':R.avanco_medio+'%';
+  var h='<div class="grade" style="grid-template-columns:repeat(5,1fr)">'+k('Projetos ativos',nz(R.total)?'—':R.total,J.fonte||'','big')
+   +k('Em dia','<span class="ok">'+(nz(R.verde)?'—':R.verde)+'</span>','farol verde','big')
+   +k('Atenção','<span class="at">'+(nz(R.amarelo)?'—':R.amarelo)+'</span>','farol amarelo','big')
+   +k('Atrasados','<span class="cr">'+(nz(R.vermelho)?'—':R.vermelho)+'</span>',(R.vencidos?(R.vencidos===1?'1 passou':R.vencidos+' passaram')+' da data de conclusão':'nenhum vencido'),'big')
+   +k('Avanço médio',av,(nz(R.planejado_medio)?'':'planejado '+R.planejado_medio+'%')+(R.concluem_mes?' · '+R.concluem_mes+' concluem no mês':''),'big',nz(R.avanco_medio)?'':barra(R.avanco_medio,nz(R.planejado_medio)?null:R.planejado_medio))+'</div>';
+  var max=11, mostra=L.slice(0,max);
+  h+='<div class="painel" style="flex:1;min-height:0"><h3>Projetos · data de conclusão e farol</h3>'
+   +'<div class="lin" style="font-size:1.6vh;color:#6E7BA0;border-bottom:1px solid #26335F"><span class="bola" style="background:transparent"></span><div class="n">PROJETO</div><div style="width:13vw">GERENTE</div><div style="width:9vw;text-align:right">CONCLUSÃO</div><div style="width:14vw;text-align:center">AVANÇO (REAL × PLAN.)</div><div style="width:8vw;text-align:right">DESVIO</div></div>'
+   +(mostra.map(function(p){var cor2=cor(p.farol);var d=nz(p.desvio)?'—':(p.desvio>0?'+':'')+p.desvio+'pp';
+     return '<div class="lin"><span class="bola" style="width:2.4vh;height:2.4vh;background:'+cor2+';box-shadow:0 0 1.2vh '+cor2+'"></span><div class="n">'+esc(p.nome)+(p.motivo&&(p.farol!=='verde'||/status report/.test(p.motivo))?' <span style="font-size:1.6vh;color:#8E9BC0;font-weight:500">· '+esc(p.motivo)+'</span>':'')+'</div>'
+      +'<div style="width:13vw;font-size:1.9vh;color:#AAB6D8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(p.gerente||'')+'</div>'
+      +'<div style="width:9vw;text-align:right" class="q '+(p.dias_atraso>0?'cr':'')+'">'+dt(p.conclusao)+(p.dias_atraso>0?'<div style="font-size:1.5vh">'+p.dias_atraso+' dias atrás</div>':'')+'</div>'
+      +'<div style="width:14vw;padding:0 1vw">'+(nz(p.pct)?'<div style="text-align:center;color:#6E7BA0">—</div>':'<div style="display:flex;justify-content:space-between;font-size:1.7vh"><b>'+p.pct+'%</b><span style="color:#8E9BC0">'+(nz(p.planejado)?'':p.planejado+'%')+'</span></div>'+barra(p.pct,nz(p.planejado)?null:p.planejado))+'</div>'
+      +'<div style="width:8vw;text-align:right" class="q '+(nz(p.desvio)?'':p.desvio<-10?'cr':p.desvio<-5?'at':'ok')+'">'+d+'</div></div>'}).join('')||'<div class="erro">'+esc(J.erro||'Sem projetos ativos no módulo de projetos.')+'</div>')
+   +(L.length>max?'<div style="font-size:1.7vh;color:#8E9BC0;margin-top:.6vh">+ '+(L.length-max)+' projeto(s) — os mais críticos aparecem primeiro</div>':'')+'</div>';
+  return h}
+var TIT={financeiro:'Financeiro',comercial:'Comercial',qualidade:'Qualidade',projetos:'Projetos'},REN={financeiro:sFin,comercial:sCom,qualidade:sQual,projetos:sProj};
 function render(){var p=$('palco');p.innerHTML=SLIDES.map(function(s,i){return '<div class="slide'+(i===idx?' on':'')+'">'+REN[s]()+'</div>'}).join('');
   $('dots').innerHTML=SLIDES.map(function(s,i){return '<span class="'+(i===idx?'on':'')+'"></span>'}).join('');$('tit').textContent='Gestão à vista · '+TIT[SLIDES[idx]];
   var g=new Date(D.gerado_em);$('atu').textContent='números de '+g.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+(D.aviso_cache?' · '+D.aviso_cache:'')+' · atualiza a cada 10 min'}
@@ -229,7 +256,7 @@ async function handler(req, res) {
       config: async () => { const c = await config(); return { config: { ...c, link: c.codigo ? base() + '/tv/' + c.codigo : null } }; },
       gerar: async () => { const c = await config(); const n = { ...c, codigo: codigoNovo(), criado_em: new Date().toISOString() }; await kv('tv:config', n); return { config: { ...n, link: base() + '/tv/' + n.codigo } }; },
       revogar: async () => { const c = await config(); await kv('tv:config', { ...c, codigo: null, criado_em: null }); return { ok: true }; },
-      salvar: async () => { const c = await config(); const n = { ...c, v152: true, rotacao_s: Math.max(8, Math.min(180, parseInt(b.rotacao_s) || c.rotacao_s)), slides: (b.slides || c.slides).filter(s => SLIDES_OK.includes(s)) };
+      salvar: async () => { const c = await config(); const n = { ...c, v152: true, v156: true, nomes_projetos: b.nomes_projetos === undefined ? c.nomes_projetos : !!b.nomes_projetos, rotacao_s: Math.max(8, Math.min(180, parseInt(b.rotacao_s) || c.rotacao_s)), slides: (b.slides || c.slides).filter(s => SLIDES_OK.includes(s)) };
         if (!n.slides.length) throw new Error('Escolha pelo menos um slide'); await kv('tv:config', n); return { config: { ...n, link: n.codigo ? base() + '/tv/' + n.codigo : null } }; },
       atualizar_dados: async () => ({ dados: await dados(true) }),
       conferir: () => conferir(),

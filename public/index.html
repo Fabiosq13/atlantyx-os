@@ -11045,7 +11045,7 @@ async function tvAbrir() { const box = document.getElementById('tvApp'); if (!bo
 function tvRender() {
   const c = _tv, e = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   document.getElementById('tvApp').innerHTML = '<div style="background:linear-gradient(135deg,rgba(0,196,204,.12),rgba(0,196,204,.03));border:1px solid rgba(0,196,204,.3);border-radius:10px;padding:14px 18px;margin-bottom:12px;">'
-    + '<div style="font-family:var(--H);font-size:15px;font-weight:700;">📺 Gestão à vista na TV</div><div style="font-size:11px;color:var(--t2);margin-top:3px;line-height:1.6;">Uma página em tela cheia para a TV da empresa, aberta por <b>link direto, sem login</b>. Os slides giram sozinhos — <b>Financeiro</b> (faturamento e lucro do mês contra a meta, margem, caixa, a receber e vencidos, evolução no ano) , <b>Comercial</b> (% da meta de faturamento do mês e do ano, propostas, win rate, funil de 30 dias e ritmo do time) e <b>Qualidade</b> (farol de termos de faturamento certos × com erro, dados do QuickBooks certos × com erro, projetos em dia × atrasados). Os números atualizam a cada 10 minutos. Só aparecem totais — nada de extrato ou cliente a cliente — e o link pode ser revogado a qualquer momento.</div></div>'
+    + '<div style="font-family:var(--H);font-size:15px;font-weight:700;">📺 Gestão à vista na TV</div><div style="font-size:11px;color:var(--t2);margin-top:3px;line-height:1.6;">Uma página em tela cheia para a TV da empresa, aberta por <b>link direto, sem login</b>. Os slides giram sozinhos — <b>Financeiro</b> (faturamento e lucro do mês contra a meta, margem, caixa, a receber e vencidos, evolução no ano) , <b>Comercial</b> (% da meta de faturamento do mês e do ano, propostas, win rate, funil de 30 dias e ritmo do time) <b>Qualidade</b> (farol de termos de faturamento certos × com erro, dados do QuickBooks certos × com erro, projetos em dia × atrasados) e <b>Projetos</b> (indicadores e a lista de projetos do módulo de projetos com data de conclusão e farol). Os números atualizam a cada 10 minutos. Só aparecem totais — nada de extrato ou cliente a cliente — e o link pode ser revogado a qualquer momento.</div></div>'
     + '<div class="panel" style="margin-bottom:12px;"><div class="pb">'
     + (c.link ? '<div style="font-size:10px;font-family:var(--M);text-transform:uppercase;color:var(--t2);margin-bottom:4px;">Link da TV</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><code id="tvLink" style="font-size:17px;padding:8px 12px;background:var(--bg3);border:1px solid var(--bd);border-radius:8px;user-select:all;">' + e(c.link) + '</code>'
         + '<button class="btn btn-gn" onclick="navigator.clipboard.writeText(_tv.link).then(()=>toast(\'Link copiado\',\'success\'))">📋 Copiar</button><a class="btn btn-g" href="' + e(c.link) + '" target="_blank" rel="noopener">↗ Abrir</a>'
@@ -11055,6 +11055,8 @@ function tvRender() {
     + '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-top:14px;font-size:12px;"><div><label class="fl">Trocar de slide a cada</label><select class="fsel" id="tvRot" style="width:auto;">' + [10, 15, 20, 25, 30, 45, 60, 90].map(s => '<option value="' + s + '"' + (+c.rotacao_s === s ? ' selected' : '') + '>' + s + ' segundos</option>').join('') + '</select></div>'
     + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSf"' + (c.slides.includes('financeiro') ? ' checked' : '') + '/> Financeiro</label><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSc"' + (c.slides.includes('comercial') ? ' checked' : '') + '/> Comercial</label>'
     + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSq"' + (c.slides.includes('qualidade') ? ' checked' : '') + '/> Qualidade (farol)</label>'
+    + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSp"' + (c.slides.includes('projetos') ? ' checked' : '') + '/> Projetos (lista com farol)</label>'
+    + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;" title="Desmarque se a TV fica em área com visitantes — mostra Projeto 1, 2, 3…"><input type="checkbox" id="tvSn"' + (c.nomes_projetos !== false ? ' checked' : '') + '/> mostrar nomes dos projetos</label>'
     + '<button class="btn btn-g" onclick="tvSalvar()">💾 Salvar</button><button class="btn btn-g" onclick="tvAtualizar(this)">↻ Atualizar os números agora</button><button class="btn btn-p" onclick="tvConferir(this)">🔍 Conferir os números (abrir o caixa)</button></div></div></div><div id="tvConf"></div>'
     + (c.link ? '<div class="panel" style="margin-bottom:12px;"><div class="pb"><div style="font-size:10px;font-family:var(--M);text-transform:uppercase;color:var(--t2);margin-bottom:6px;">Prévia (como aparece na TV)</div><div style="position:relative;width:100%;max-width:960px;aspect-ratio:16/9;border-radius:10px;overflow:hidden;border:1px solid var(--bd);background:#070B18;"><iframe id="tvPrev" src="' + e(c.link) + '" style="position:absolute;inset:0;width:100%;height:100%;border:0;" loading="lazy" title="Prévia da TV"></iframe></div></div></div>' : '')
     + '<div class="panel"><div class="pb" style="font-size:11.5px;line-height:1.75;"><b>Como colocar na TV</b><br>1. <b>Smart TV:</b> abra o navegador da TV e digite o link acima (é curto de propósito). Aperte OK na tela para ficar em tela cheia; as setas do controle trocam de slide.<br>'
@@ -11067,8 +11069,8 @@ async function tvAcao(a) {
   try { const r = await tvApi(a); if (a === 'revogar') _tv = (await tvApi('config')).config; else _tv = r.config; tvRender(); toast(a === 'revogar' ? 'Link revogado' : 'Link da TV pronto', 'success'); } catch (e) { toast(e.message, 'error'); }
 }
 async function tvSalvar() {
-  const slides = [document.getElementById('tvSf').checked && 'financeiro', document.getElementById('tvSc').checked && 'comercial', document.getElementById('tvSq')?.checked && 'qualidade'].filter(Boolean);
-  try { _tv = (await tvApi('salvar', { rotacao_s: document.getElementById('tvRot').value, slides })).config; tvRender(); toast('Salvo — a TV pega a mudança na próxima recarga (até 10 min) ou ao reabrir o link', 'success'); } catch (e) { toast(e.message, 'error'); }
+  const slides = [document.getElementById('tvSf').checked && 'financeiro', document.getElementById('tvSc').checked && 'comercial', document.getElementById('tvSq')?.checked && 'qualidade', document.getElementById('tvSp')?.checked && 'projetos'].filter(Boolean);
+  try { _tv = (await tvApi('salvar', { rotacao_s: document.getElementById('tvRot').value, slides, nomes_projetos: !!document.getElementById('tvSn')?.checked })).config; tvRender(); toast('Salvo — a TV pega a mudança na próxima recarga (até 10 min) ou ao reabrir o link', 'success'); } catch (e) { toast(e.message, 'error'); }
 }
 // v3.152: abre cada número da TV até a origem — caixa (abertura + entradas − saídas), faturamento e % da meta
 async function tvConferir(b) {
@@ -32402,7 +32404,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.155] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.156] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -32418,7 +32420,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.155';
+window.__ATX_BUILD_ID__ = 'ATX-v3.156';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
