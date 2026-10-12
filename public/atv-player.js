@@ -49,7 +49,7 @@
 
   function esqueleto() {
     var st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
-    $('atv').innerHTML = '<div class="atv"><div class="top"><img src="' + LOGO + '" alt="Atlantyx" onerror="this.style.display=\'none\'"><div class="marca">ATLANTYX <b>TV</b></div><div class="prog" id="prog"></div>'
+    $('atv').innerHTML = '<div class="atv"><div class="top"><img src="/atlantyx-tv-logo.png" alt="Atlantyx TV" style="height:4.4vh" onerror="this.outerHTML=\'<img src=&quot;' + LOGO + '&quot; alt=&quot;Atlantyx&quot;><div class=&quot;marca&quot;>ATLANTYX <b>TV</b></div>\'"><div class="prog" id="prog"></div>'
       + '<div class="live" id="live"><i></i>AO VIVO</div><div class="rel"><b id="hora">--:--</b><span id="data"></span></div></div>'
       + '<div class="meio"><div class="palco"><div id="tela"><div class="msg">Carregando a Atlantyx TV…</div></div><div class="lt" id="lt"><div class="lt1" id="lt1"></div><div class="lt2" id="lt2"></div></div>'
       + '<div class="bug"><img src="' + LOGO + '" alt="" onerror="this.style.display=\'none\'"><span>TV</span></div></div>'

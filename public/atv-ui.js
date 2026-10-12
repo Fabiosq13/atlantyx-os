@@ -253,6 +253,7 @@
     const W = 1920, H = 1080, FPS = 30, INTRO = 6, OUTRO = 5, C = '#00C4CC', V2 = '#00FCA8';
     cv.width = W; cv.height = H; const ctx = cv.getContext('2d');
     const logo = await new Promise(ok => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = '/logo-atlantyx-branco.png'; });
+    const logoTv = await new Promise(ok => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = '/atlantyx-tv-logo.png'; });
     const src = await fonteVideo(it); const v = document.createElement('video'); v.src = src; v.crossOrigin = 'anonymous'; v.playsInline = true; v.preload = 'auto';
     await new Promise((ok, err) => { v.onloadedmetadata = ok; v.onerror = () => err(new Error('não consegui abrir o vídeo')); setTimeout(() => err(new Error('o vídeo demorou para abrir')), 60000); });
     const dur = v.duration; if (!isFinite(dur) || dur < 1) throw new Error('Duração do vídeo inválida');
@@ -271,10 +272,10 @@
     const moldura = (tv) => {
       ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
       const gt = ctx.createLinearGradient(0, 0, 0, 84); gt.addColorStop(0, '#0A0F1F'); gt.addColorStop(1, '#000'); ctx.fillStyle = gt; ctx.fillRect(0, 0, W, 84); ctx.fillStyle = C; ctx.fillRect(0, 84, W, 5);
-      if (logo) ctx.drawImage(logo, 36, 22, 40 * logo.width / logo.height, 40);
-      const lx = logo ? 60 + 40 * logo.width / logo.height : 36; ctx.strokeStyle = '#1E2A52'; ctx.lineWidth = 2; ctx.strokeRect(lx, 18, 250, 50);
-      ctx.font = '800 28px Montserrat, Arial'; ctx.fillStyle = '#EAF0FF'; ctx.fillText('ATLANTYX', lx + 16, 53); ctx.fillStyle = C; ctx.fillText('TV', lx + 196, 53);
-      ctx.font = '600 26px Montserrat, Arial'; ctx.fillStyle = '#AAB6D8'; quebrar(ctx, titulo, lx + 280, 52, 1000, 30, 1);
+      let lx; if (logoTv) { const w = 46 * logoTv.width / logoTv.height; ctx.drawImage(logoTv, 34, 20, w, 46); lx = 34 + w + 30; }
+      else { if (logo) ctx.drawImage(logo, 36, 22, 40 * logo.width / logo.height, 40); lx = logo ? 60 + 40 * logo.width / logo.height : 36; ctx.strokeStyle = '#1E2A52'; ctx.lineWidth = 2; ctx.strokeRect(lx, 18, 250, 50);
+        ctx.font = '800 28px Montserrat, Arial'; ctx.fillStyle = '#EAF0FF'; ctx.fillText('ATLANTYX', lx + 16, 53); ctx.fillStyle = C; ctx.fillText('TV', lx + 196, 53); lx += 280; }
+      ctx.font = '600 26px Montserrat, Arial'; ctx.fillStyle = '#AAB6D8'; quebrar(ctx, titulo, lx, 52, 1000, 30, 1);
       ctx.font = '700 22px Montserrat, Arial'; ctx.fillStyle = '#8E9BC0'; ctx.textAlign = 'right'; ctx.fillText((cfg.youtube_canal || '').replace(/^https?:\/\/(www\.)?/, ''), W - 36, 52); ctx.textAlign = 'left';
       // vídeo
       ctx.fillStyle = '#05070F'; ctx.fillRect(20, 104, 1440, 836); ctx.strokeStyle = '#1E2A52'; ctx.strokeRect(20, 104, 1440, 836);
