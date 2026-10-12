@@ -275,7 +275,7 @@
       let lx; if (logoTv) { const w = 46 * logoTv.width / logoTv.height; ctx.drawImage(logoTv, 34, 20, w, 46); lx = 34 + w + 30; }
       else { if (logo) ctx.drawImage(logo, 36, 22, 40 * logo.width / logo.height, 40); lx = logo ? 60 + 40 * logo.width / logo.height : 36; ctx.strokeStyle = '#1E2A52'; ctx.lineWidth = 2; ctx.strokeRect(lx, 18, 250, 50);
         ctx.font = '800 28px Montserrat, Arial'; ctx.fillStyle = '#EAF0FF'; ctx.fillText('ATLANTYX', lx + 16, 53); ctx.fillStyle = C; ctx.fillText('TV', lx + 196, 53); lx += 280; }
-      ctx.font = '600 26px Montserrat, Arial'; ctx.fillStyle = '#AAB6D8'; quebrar(ctx, titulo, lx, 52, 1000, 30, 1);
+      void lx; // v3.160: o cabeçalho mostra só a logo Atlantyx TV (o título fica na faixa dos primeiros segundos)
       ctx.font = '700 22px Montserrat, Arial'; ctx.fillStyle = '#8E9BC0'; ctx.textAlign = 'right'; ctx.fillText((cfg.youtube_canal || '').replace(/^https?:\/\/(www\.)?/, ''), W - 36, 52); ctx.textAlign = 'left';
       // vídeo
       ctx.fillStyle = '#05070F'; ctx.fillRect(20, 104, 1440, 836); ctx.strokeStyle = '#1E2A52'; ctx.strokeRect(20, 104, 1440, 836);
@@ -292,8 +292,8 @@
       ctx.font = '800 20px Montserrat, Arial'; ctx.fillStyle = C; ctx.fillText('SERVIÇOS', 1504, 520);
       ctx.font = '500 24px Montserrat, Arial'; ctx.fillStyle = '#AAB6D8'; S.slice(0, 7).forEach((s, i) => { ctx.fillStyle = C; ctx.fillRect(1504, 552 + i * 52, 8, 8); ctx.fillStyle = '#AAB6D8'; quebrar(ctx, s, 1524, 562 + i * 52, 352, 26, 1); });
       // base
-      ctx.fillStyle = '#0A0F1F'; ctx.fillRect(0, 956, W, 62); ctx.fillStyle = C; ctx.fillRect(0, 956, 210, 62); ctx.fillStyle = '#000'; ctx.font = '800 26px Montserrat, Arial'; ctx.fillText('ATLANTYX', 34, 997);
-      ctx.fillStyle = '#EAF0FF'; ctx.font = '700 28px Montserrat, Arial'; quebrar(ctx, cfg.slogan || '', 236, 997, 1640, 30, 1);
+      ctx.fillStyle = '#0A0F1F'; ctx.fillRect(0, 956, W, 62); ctx.fillStyle = C; ctx.fillRect(0, 956, 10, 62);
+      ctx.fillStyle = '#EAF0FF'; ctx.font = '700 28px Montserrat, Arial'; quebrar(ctx, cfg.slogan || '', 40, 997, 1840, 30, 1);
       ctx.fillStyle = '#000'; ctx.fillRect(0, 1018, W, 62); ctx.save(); ctx.beginPath(); ctx.rect(0, 1018, W, 62); ctx.clip(); ctx.font = '600 34px Montserrat, Arial'; ctx.fillStyle = '#EAF0FF';
       const off = (tv * 110) % largLet; for (let x = -off; x < W; x += largLet) ctx.fillText(letreiro, x, 1061); ctx.restore();
     };
@@ -301,8 +301,7 @@
       const g = ctx.createRadialGradient(W / 2, H / 2, 50, W / 2, H / 2, 1100); g.addColorStop(0, '#00303A'); g.addColorStop(1, '#000'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
       const yy = ((t * 400) % (H + 200)) - 100; ctx.fillStyle = 'rgba(0,196,204,.6)'; ctx.fillRect(0, yy, W, 3);
       const a = Math.min(1, t / 1.2); ctx.globalAlpha = a; ctx.textAlign = 'center';
-      if (logo) { const s = .6 + .4 * Math.min(1, t / 1.5), h = 110 * s, w = h * logo.width / logo.height; ctx.drawImage(logo, (W - w) / 2, 300 - h / 2, w, h); }
-      ctx.font = '800 96px Montserrat, Arial'; ctx.fillStyle = '#EAF0FF'; ctx.fillText('ATLANTYX', W / 2 - 70, 470); ctx.fillStyle = C; ctx.fillText('TV', W / 2 + 290, 470);
+      const lg = logoTv || logo; if (lg) { const s = .7 + .3 * Math.min(1, t / 1.5), h = 150 * s, w = h * lg.width / lg.height; ctx.drawImage(lg, (W - w) / 2, 400 - h / 2, w, h); }
       ctx.font = '500 34px Montserrat, Arial'; ctx.fillStyle = '#AAB6D8'; ctx.fillText(cfg.slogan || '', W / 2, 530);
       if (intro && t > 1.8) { ctx.globalAlpha = Math.min(1, (t - 1.8) / .8); ctx.fillStyle = C; ctx.fillRect(W / 2 - 130, 600, 260, 52); ctx.fillStyle = '#000'; ctx.font = '800 28px Montserrat, Arial'; ctx.fillText('A SEGUIR', W / 2, 636);
         ctx.fillStyle = '#EAF0FF'; ctx.font = '800 58px Montserrat, Arial'; quebrar(ctx, titulo, W / 2, 730, 1500, 66, 2); }

@@ -13,7 +13,7 @@
   var CSS = '*{box-sizing:border-box}.atv{position:fixed;inset:0;display:grid;grid-template-rows:7.4vh 1fr 11.4vh;background:#000;color:#EAF0FF;font-family:Montserrat,Calibri,Arial,sans-serif}'
     + '.top{display:flex;align-items:center;gap:1.4vw;padding:0 1.6vw;background:linear-gradient(180deg,#0A0F1F,#000);border-bottom:.35vh solid #00C4CC}'
     + '.top img{height:3.6vh}.marca{font-weight:800;letter-spacing:.3vw;font-size:2.6vh;padding:.5vh .9vw;border:1px solid #1E2A52;border-radius:.6vh}.marca b{color:#00C4CC}'
-    + '.prog{flex:1;font-size:2.2vh;font-weight:600;color:#AAB6D8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.live{display:flex;align-items:center;gap:.5vw;font-weight:800;font-size:1.9vh;letter-spacing:.15vw;background:#E0123A;color:#fff;padding:.6vh .8vw;border-radius:.5vh}'
+    + '.prog{flex:1;visibility:hidden;font-size:2.2vh;font-weight:600;color:#AAB6D8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.live{display:flex;align-items:center;gap:.5vw;font-weight:800;font-size:1.9vh;letter-spacing:.15vw;background:#E0123A;color:#fff;padding:.6vh .8vw;border-radius:.5vh}'
     + '.live i{width:1.1vh;height:1.1vh;border-radius:50%;background:#fff;animation:pisca 1.2s infinite}@keyframes pisca{50%{opacity:.25}}.rel{text-align:right;font-variant-numeric:tabular-nums}.rel b{display:block;font-size:3vh}.rel span{font-size:1.5vh;color:#8E9BC0}'
     + '.meio{display:grid;grid-template-columns:1fr 25vw;gap:.8vw;padding:.9vh .9vw;min-height:0}'
     + '.palco{position:relative;background:#05070F;border:1px solid #1E2A52;border-radius:.8vh;overflow:hidden;min-height:0}#tela{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}'
@@ -52,7 +52,7 @@
     $('atv').innerHTML = '<div class="atv"><div class="top"><img src="/atlantyx-tv-logo.png" alt="Atlantyx TV" style="height:4.4vh" onerror="this.outerHTML=\'<img src=&quot;' + LOGO + '&quot; alt=&quot;Atlantyx&quot;><div class=&quot;marca&quot;>ATLANTYX <b>TV</b></div>\'"><div class="prog" id="prog"></div>'
       + '<div class="live" id="live"><i></i>AO VIVO</div><div class="rel"><b id="hora">--:--</b><span id="data"></span></div></div>'
       + '<div class="meio"><div class="palco"><div id="tela"><div class="msg">Carregando a Atlantyx TV…</div></div><div class="lt" id="lt"><div class="lt1" id="lt1"></div><div class="lt2" id="lt2"></div></div>'
-      + '<div class="bug"><img src="' + LOGO + '" alt="" onerror="this.style.display=\'none\'"><span>TV</span></div></div>'
+      + '<div class="bug"><img src="/atlantyx-tv-logo.png" alt="" style="height:2.6vh" onerror="this.style.display=\'none\'"></div></div>'
       + '<div class="lado"><div class="bloco"><h4>MERCADOS <small id="mkh"></small></h4><div id="mk"></div></div><div class="bloco"><h4 id="segT">A SEGUIR</h4><div id="seg"></div></div><div class="bloco prod" id="prod"></div></div></div>'
       + '<footer><div class="manch"><div class="tag">ÚLTIMAS</div><div id="manch"></div><div id="fonte"></div></div><div class="ticker"><div class="trilho" id="trilho"></div></div></footer></div>';
     relogio(); setInterval(relogio, 1000);
@@ -170,9 +170,9 @@
   if (window.speechSynthesis) try { speechSynthesis.onvoiceschanged = function () { vozes = speechSynthesis.getVoices(); }; } catch (_) {}
   function tVinheta(it) {
     var a = it.alvo, d = it.depois, ms = (it.dur || 25) * 1000;
-    $('tela').innerHTML = '<div class="vin"><div class="bg"></div><div class="ln"></div><div class="ln b"></div><div class="ab" id="vab"><img src="' + LOGO + '" alt="Atlantyx" onerror="this.style.display=\'none\'"><div class="m">ATLANTYX <b>TV</b></div><div class="sl">' + esc(D.slogan || '') + '</div></div><div class="bar" style="animation-duration:' + ms + 'ms;animation-delay:-' + Math.round(dentro0 * 1000) + 'ms"></div></div>' + botaoSom();
+    $('tela').innerHTML = '<div class="vin"><div class="bg"></div><div class="ln"></div><div class="ln b"></div><div class="ab" id="vab"><img src="/atlantyx-tv-logo.png" alt="Atlantyx TV" style="height:13vh" onerror="this.src=\'' + LOGO + '\'"><div class="sl" style="margin-top:3vh">' + esc(D.slogan || '') + '</div></div><div class="bar" style="animation-duration:' + ms + 'ms;animation-delay:-' + Math.round(dentro0 * 1000) + 'ms"></div></div>' + botaoSom();
     jingle(); var fase = setTimeout(function () { if (SEQ[idx] !== it || !a) return; var ab = $('vab'); if (!ab) return;
-      ab.innerHTML = '<div class="m" style="font-size:4vh;animation:none">ATLANTYX <b>TV</b></div><div class="a"><span>A SEGUIR</span><h3>' + esc(a.titulo) + '</h3><p>' + esc(a.chamada || a.subtitulo || '') + '</p></div>' + (d && d.id !== a.id ? '<div class="dp">Depois: <b>' + esc(d.titulo) + '</b></div>' : '');
+      ab.innerHTML = '<img src="/atlantyx-tv-logo.png" alt="Atlantyx TV" style="height:7vh;animation:none"><div class="a"><span>A SEGUIR</span><h3>' + esc(a.titulo) + '</h3><p>' + esc(a.chamada || a.subtitulo || '') + '</p></div>' + (d && d.id !== a.id ? '<div class="dp">Depois: <b>' + esc(d.titulo) + '</b></div>' : '');
       if (dentro0 < 3) falar('Você está na ' + (D.nome || 'Atlantyx TV') + '. A seguir: ' + a.titulo + '. ' + (a.chamada || '')); }, Math.max(0, Math.min(7000, ms * .3) - dentro0 * 1000));
     if (!a && dentro0 < 3) falar('Você está na ' + (D.nome || 'Atlantyx TV') + '. ' + (D.slogan || ''));
     seguir(ms - dentro0 * 1000); void fase;
