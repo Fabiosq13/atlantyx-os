@@ -31,6 +31,7 @@ _Gerado por `node scripts/bpm-inventario.mjs` a partir do código. Não edite ab
 | `*/15 * * * *` | `/api/campanha-disparo?cron=1` | T3 Agentes e Squads |
 | `0 */6 * * *` | `/api/agente-ideias?cron=1` | T1 Plataforma |
 | `0 11 * * *` | `/api/reunioes?cron=1` | T3 Agentes e Squads |
+| `20 * * * *` | `/api/atv?cron=1` | T2 Integrações |
 
 ### Workflows do GitHub Actions
 

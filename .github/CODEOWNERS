@@ -37,6 +37,9 @@
 /api/metricool.js  @Fabiosq13
 /api/media.js  @Fabiosq13
 /api/media-upload.js  @Fabiosq13
+/api/atv.js  @Fabiosq13
+/public/atv-ui.js  @Fabiosq13
+/public/atv-player.js  @Fabiosq13
 /api/media-upload-v1.10.3.js  @Fabiosq13
 /api/image-gen.js  @Fabiosq13
 /api/qb-oauth.js  @Fabiosq13

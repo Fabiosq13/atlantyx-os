@@ -19,7 +19,7 @@
       "nome": "Integrações",
       "naipe": "Metais",
       "escopo": "HubSpot, Gmail (só rascunhos), Google Calendar/Drive, QuickBooks OAuth, Metricool, Apollo, PNCP/Petronect, Ideogram, WhatsApp (Z-API), mídia",
-      "pode_alterar": ["api/hubspot.js", "api/apollo.js", "api/metricool.js", "api/media.js", "api/media-upload.js", "api/media-upload-v1.10.3.js", "api/image-gen.js",
+      "pode_alterar": ["api/hubspot.js", "api/apollo.js", "api/metricool.js", "api/media.js", "api/media-upload.js", "api/atv.js", "public/atv-ui.js", "public/atv-player.js", "api/media-upload-v1.10.3.js", "api/image-gen.js",
         "api/qb-oauth.js", "api/email-intel.js", "api/rfp-monitor.js", "api/phantom.js", "api/wa-response.js", "api/wa-batch-generate.js", "api/meeting-schedule.js",
         "lib/hubspot-sync.js", "api/media/**", "api/fonts/**"],
       "dono_humano": "@Fabiosq13"

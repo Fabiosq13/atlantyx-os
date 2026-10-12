@@ -37,6 +37,22 @@
       "destination": "/api/tv?t=:t"
     },
     {
+      "source": "/atv/:t",
+      "destination": "/api/atv?t=:t"
+    },
+    {
+      "source": "/atvl/:t/:w",
+      "destination": "/api/atv?t=:t&layout=:w"
+    },
+    {
+      "source": "/ao-vivo/:s",
+      "destination": "/api/atv?sala=:s"
+    },
+    {
+      "source": "/convidado/:c",
+      "destination": "/api/atv?convidado=:c"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/:path*"
     },
@@ -182,6 +198,9 @@
     },
     "api/estrategia.js": {
       "maxDuration": 300
+    },
+    "api/atv.js": {
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -240,6 +259,10 @@
     {
       "path": "/api/reunioes?cron=1",
       "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/atv?cron=1",
+      "schedule": "20 * * * *"
     }
   ],
   "headers": [

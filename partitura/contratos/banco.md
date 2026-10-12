@@ -30,6 +30,9 @@ _Gerado por `node scripts/bpm-inventario.mjs` a partir do código. Não edite ab
 | `agente_demandas` | T1 Plataforma | agente-ideias | agente-ideias | agente-ideias | — |
 | `apollo_telefones` | T2 Integrações | apollo | apollo | apollo | — |
 | `app_config` | T3 Agentes e Squads + T6 Financeiro ⚠ | business-plan, crm, financeiro, prospeccao, vendas | business-plan, crm, financeiro, prospeccao, vendas | business-plan, crm, financeiro, prospeccao, s1-intel, vendas | — |
+| `atv_midias` | T2 Integrações | atv | atv | atv | — |
+| `atv_partes` | T2 Integrações | atv | atv | atv | — |
+| `atv_webinars` | T2 Integrações | atv | atv | atv | — |
 | `atx_perfis` | T1 Plataforma | acesso | auth | acesso, auth | — |
 | `atx_telas` | T1 Plataforma | acesso | auth | auth | — |
 | `atx_usuarios` | T1 Plataforma | acesso | auth | acesso, auth | — |
@@ -67,7 +70,7 @@ _Gerado por `node scripts/bpm-inventario.mjs` a partir do código. Não edite ab
 | `funcionarios_projetos` | T3 Agentes e Squads | rh | rh | financeiro, rh, vendas | valor_hora (financeiro.js) |
 | `ideias` | T5 Dados ⚠ | db | business-plan, db, qa | agente-ideias, business-plan, db, qa, s1-strategy | — |
 | `kpis_diarios` | T5 Dados | db | db | db, rh | — |
-| `kv_store` | T5 Dados + T3 Agentes e Squads + T6 Financeiro + T2 Integrações + T4 Dashboard e Telas + T1 Plataforma ⚠ | acesso, db, estrategia, financeiro, metricool, rfp-monitor, tv | acesso, agente-ideias, analytics, business-plan, db, estrategia, fabrica, faturamento, financeiro, metricool, qa, rfp-monitor, tv | acesso, agente-ideias, analytics, business-plan, db, estrategia, fabrica, faturamento, financeiro, metricool, qa, rfp-monitor, s1-strategy, tv, vendas | — |
+| `kv_store` | T2 Integrações + T5 Dados + T3 Agentes e Squads + T6 Financeiro + T4 Dashboard e Telas + T1 Plataforma ⚠ | acesso, atv, db, estrategia, financeiro, metricool, rfp-monitor, tv | acesso, agente-ideias, analytics, atv, business-plan, db, estrategia, fabrica, faturamento, financeiro, metricool, qa, rfp-monitor, tv | acesso, agente-ideias, analytics, atv, business-plan, db, estrategia, fabrica, faturamento, financeiro, metricool, qa, rfp-monitor, s1-strategy, tv, vendas | — |
 | `lancamentos_ocultos` | T6 Financeiro | financeiro | financeiro | financeiro | — |
 | `lancamentos_simulados` | T6 Financeiro | financeiro | financeiro | financeiro | — |
 | `leads` | T5 Dados + T3 Agentes e Squads ⚠ | db, lead-capture | crm, db, lead-capture, qa | campanha-disparo, crm, db, hubspot, metricool, qa, rh, s1-intel | — |
@@ -101,9 +104,9 @@ _Gerado por `node scripts/bpm-inventario.mjs` a partir do código. Não edite ab
 | `squad_registros` | T5 Dados | db | db | db | — |
 | `status_reports` | T3 Agentes e Squads | pmo | pmo | pmo | — |
 | `tend_campanhas` | T3 Agentes e Squads | tendencias | tendencias | tendencias | — |
-| `tend_envio_partes` | T3 Agentes e Squads | tendencias | tendencias | tendencias | — |
-| `tend_envios` | T3 Agentes e Squads | tendencias | tendencias | tendencias | — |
-| `tend_pecas` | T3 Agentes e Squads | tendencias | tendencias | tendencias | — |
+| `tend_envio_partes` | T3 Agentes e Squads | tendencias | tendencias | atv, tendencias | — |
+| `tend_envios` | T3 Agentes e Squads | tendencias | tendencias | atv, tendencias | — |
+| `tend_pecas` | T3 Agentes e Squads | tendencias | tendencias | atv, tendencias | — |
 | `tend_videos` | T3 Agentes e Squads | tendencias | tendencias | tendencias | — |
 | `termos_empresas` | T6 Financeiro ⚠ | faturamento | faturamento, financeiro | faturamento, financeiro, termo-excel | qb_invoice_id (faturamento.js), qb_invoice_doc (faturamento.js), qb_lancado_em (faturamento.js), pagamento_obs (faturamento.js), pagamento_status (faturamento.js), cnpj (faturamento.js), qb_erro (faturamento.js), pagamento_origem (faturamento.js) |
 | `termos_faturamento` | T6 Financeiro ⚠ | faturamento | faturamento, financeiro | crm, faturamento, financeiro, pmo, rh, termo-excel | pago_em (faturamento.js), concluido_motivo (faturamento.js) |
