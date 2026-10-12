@@ -4692,7 +4692,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 
     <div class="kg k2">
       <div class="panel">
-        <div class="ph"><div class="pt">Calendario Mensal</div></div>
+        <div class="ph"><div class="pt">Calendario Mensal</div><button class="btn btn-g" onclick="despReplicarMesUI()" title="Copia as despesas do mês exibido (Agenda + contas a pagar do QuickBooks) para os 12 meses seguintes. Se a despesa já existe no mês, não cria de novo." style="font-size:9px;padding:3px 8px;">&#10697; Replicar este mês → 12 meses</button></div>
         <div class="pb" id="f_calendario"><div style="text-align:center;padding:24px;color:var(--t3);font-size:11px;">Carregando calendario...</div></div>
       </div>
       <div class="panel">
@@ -19409,6 +19409,23 @@ async function _despLancarQbUI(ocorrenciaId, dia) {
   } catch (e) { if (typeof toast === 'function') toast('Erro ao lançar no QB: ' + e.message, 'error'); if (btn) { btn.disabled = false; btn.textContent = '📤 Lançar no QuickBooks'; } }
 }
 
+// v3.162: replica as despesas do mês exibido nos 12 meses seguintes (sem duplicar as que já existem)
+async function despReplicarMesUI() {
+  const ym = _calMes.getFullYear() + '-' + String(_calMes.getMonth() + 1).padStart(2, '0');
+  const nomeMes = _calMes.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  try {
+    toast('Calculando o que será replicado...', 'success');
+    const s = await finApi('desp_replicar_mes', { mes: ym, meses: 12, simular: true });
+    if (!s.total_itens) { alert('Nenhuma despesa em ' + nomeMes + ' para replicar.'); return; }
+    const lin = s.itens.slice(0, 25).map(i => `• ${i.descricao} — ${fmtBRLcompleto(i.valor)} dia ${i.dia} · criar ${i.criar}` + (i.ja_existe ? ` · já existe em ${i.ja_existe}` : '')).join('\n');
+    if (!s.ocorrencias_a_criar) { alert(`Tudo já existe nos 12 meses seguintes a ${nomeMes}. Nada a criar.\n\n${lin}`); return; }
+    if (!confirm(`Replicar as despesas de ${nomeMes} até ${s.ate.split('-').reverse().join('/')}?\n\n${s.total_itens} despesa(s) · ${s.ocorrencias_a_criar} ocorrência(s) novas · ${s.ja_existentes} já existem (não serão criadas)${s.meses_passados ? ' · ' + s.meses_passados + ' em data passada (ignoradas)' : ''}\n\n${lin}${s.itens.length > 25 ? '\n…' : ''}\n\nNada é lançado no QuickBooks — ficam como previstas na Agenda.`)) return;
+    const d = await finApi('desp_replicar_mes', { mes: ym, meses: 12 });
+    toast(`${d.ocorrencias_criadas} ocorrência(s) criada(s) · ${d.ja_existentes} já existiam`, 'success');
+    await carregarDespesas();
+  } catch (e) { toast('Erro ao replicar: ' + e.message, 'error'); }
+}
+
 async function gerarOcorrenciasFuturas() {
   try {
     const d = await finApi('desp_gerar_ocorrencias', { meses: 12 });
@@ -32436,7 +32453,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.161] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.163] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -32452,7 +32469,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.161';
+window.__ATX_BUILD_ID__ = 'ATX-v3.163';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
