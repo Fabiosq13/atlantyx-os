@@ -231,6 +231,96 @@
     if (!V.length) return 'Sem vídeos: a grade roda vinheta, cotações, notícias e produtos.';
     return `⏱ Uma volta completa da programação dura <b>${mmss(t)}</b>${sem ? ` · <span style="color:var(--gold);">${sem} vídeo(s) sem duração — a grade usa 3:00 para eles; preencha a duração para os horários baterem</span>` : ''}.`; }
 
+  // ═════════ v3.155: MOLDURA ATLANTYX TV gravada no navegador (para o vídeo publicado no YouTube) ═════════
+  // Abertura (6 s) → vídeo dentro do layout (topo, lateral com produtos/serviços, faixa de título, letreiro) → encerramento (5 s).
+  // Grava em tempo real (canvas + áudio do vídeo) com o MediaRecorder; sem cotações/notícias (ficariam velhas no vídeo).
+  async function enviarBlob(blob, nome, titulo, onP) {
+    const PM = 3400000, n = Math.ceil(blob.size / PM); const r = await api('midia_iniciar', { nome, titulo, content_type: (blob.type || 'video/webm').split(';')[0], tamanho: blob.size, partes: n });
+    for (let i = 0; i < n; i++) { onP && onP(i, n); const dado = await b64(blob.slice(i * PM, (i + 1) * PM)); let ok = false, er = null;
+      for (let k = 0; k < 3 && !ok; k++) { try { await api('midia_parte', { id: r.id, i, b64: dado }); ok = true; } catch (e) { er = e; await new Promise(x => setTimeout(x, 1500)); } } if (!ok) throw er; }
+    await api('midia_concluir', { id: r.id }); return r.id;
+  }
+  async function fonteVideo(it) { // URL tocável no navegador para o vídeo original
+    if (it.url && !it.envio_id) return it.url;
+    const cod = (cfg.link || '').split('/').pop(); if (!cod) throw new Error('Gere o link da Atlantyx TV (aba Atlantyx TV) — a gravação lê o vídeo por ele');
+    const q = it.midia_id ? '&m=' + it.midia_id : it.envio_id ? '&e=' + it.envio_id : null; if (!q) throw new Error('Este item não tem vídeo próprio');
+    const n = it.midia_id ? (D.midias || []).find(m => m.id === it.midia_id)?.partes : null; const P = [];
+    for (let i = 0; n == null || i < n; i++) { const r = await fetch('/api/atv?t=' + encodeURIComponent(cod) + '&parte=' + i + q); if (!r.ok) { if (n == null && i > 0) break; throw new Error('não consegui ler o vídeo (parte ' + (i + 1) + ')'); } P.push(await r.blob()); }
+    return URL.createObjectURL(new Blob(P, { type: 'video/mp4' }));
+  }
+  function quebrar(ctx, txt, x, y, larg, alt, max) { const pal = String(txt || '').split(/\s+/); let l = '', n = 0; for (const p of pal) { const t = l ? l + ' ' + p : p; if (ctx.measureText(t).width > larg && l) { ctx.fillText(l, x, y + n * alt); l = p; if (++n >= max) return; } else l = t; } if (l && n < max) ctx.fillText(l, x, y + n * alt); }
+  async function gravarMoldura(it, titulo, subtitulo, cv, onP) {
+    const W = 1920, H = 1080, FPS = 30, INTRO = 6, OUTRO = 5, C = '#00C4CC', V2 = '#00FCA8';
+    cv.width = W; cv.height = H; const ctx = cv.getContext('2d');
+    const logo = await new Promise(ok => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = '/logo-atlantyx-branco.png'; });
+    const src = await fonteVideo(it); const v = document.createElement('video'); v.src = src; v.crossOrigin = 'anonymous'; v.playsInline = true; v.preload = 'auto';
+    await new Promise((ok, err) => { v.onloadedmetadata = ok; v.onerror = () => err(new Error('não consegui abrir o vídeo')); setTimeout(() => err(new Error('o vídeo demorou para abrir')), 60000); });
+    const dur = v.duration; if (!isFinite(dur) || dur < 1) throw new Error('Duração do vídeo inválida');
+    const A = new (window.AudioContext || window.webkitAudioContext)(), dest = A.createMediaStreamDestination();
+    try { A.createMediaElementSource(v).connect(dest); } catch (_) {} try { await A.resume(); } catch (_) {}
+    const jingle = t => { const g = A.createGain(); g.gain.value = .0001; g.connect(dest); const t0 = A.currentTime + t; g.gain.exponentialRampToValueAtTime(.2, t0 + .3); g.gain.exponentialRampToValueAtTime(.0001, t0 + 4.5);
+      [[523.25, 0], [659.25, .35], [783.99, .7], [1046.5, 1.05]].forEach(n => { const o = A.createOscillator(); o.type = 'triangle'; o.frequency.value = n[0]; o.connect(g); o.start(t0 + n[1]); o.stop(t0 + n[1] + 1.4); }); };
+    const stream = new MediaStream([...cv.captureStream(FPS).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+    const tipo = ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t));
+    if (!tipo) throw new Error('Este navegador não grava vídeo — use o Chrome ou o Edge no computador');
+    const rec = new MediaRecorder(stream, { mimeType: tipo, videoBitsPerSecond: 6000000, audioBitsPerSecond: 160000 }), partes = [];
+    rec.ondataavailable = e => { if (e.data && e.data.size) partes.push(e.data); };
+    const P = cfg.produtos || [], S = cfg.servicos || [], letreiro = [...(cfg.faixa || []), ...P.map(p => p.nome.toUpperCase() + ' — ' + p.frase), ...S.map(s => 'ATLANTYX · ' + s)].join('     •     ');
+    ctx.font = '600 34px Montserrat, Arial'; const largLet = ctx.measureText(letreiro + '     •     ').width || 1;
+    const total = INTRO + dur + OUTRO; let t0 = 0, fase = 'intro', tocou = false;
+    const moldura = (tv) => {
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+      const gt = ctx.createLinearGradient(0, 0, 0, 84); gt.addColorStop(0, '#0A0F1F'); gt.addColorStop(1, '#000'); ctx.fillStyle = gt; ctx.fillRect(0, 0, W, 84); ctx.fillStyle = C; ctx.fillRect(0, 84, W, 5);
+      if (logo) ctx.drawImage(logo, 36, 22, 40 * logo.width / logo.height, 40);
+      const lx = logo ? 60 + 40 * logo.width / logo.height : 36; ctx.strokeStyle = '#1E2A52'; ctx.lineWidth = 2; ctx.strokeRect(lx, 18, 250, 50);
+      ctx.font = '800 28px Montserrat, Arial'; ctx.fillStyle = '#EAF0FF'; ctx.fillText('ATLANTYX', lx + 16, 53); ctx.fillStyle = C; ctx.fillText('TV', lx + 196, 53);
+      ctx.font = '600 26px Montserrat, Arial'; ctx.fillStyle = '#AAB6D8'; quebrar(ctx, titulo, lx + 280, 52, 1000, 30, 1);
+      ctx.font = '700 22px Montserrat, Arial'; ctx.fillStyle = '#8E9BC0'; ctx.textAlign = 'right'; ctx.fillText((cfg.youtube_canal || '').replace(/^https?:\/\/(www\.)?/, ''), W - 36, 52); ctx.textAlign = 'left';
+      // vídeo
+      ctx.fillStyle = '#05070F'; ctx.fillRect(20, 104, 1440, 836); ctx.strokeStyle = '#1E2A52'; ctx.strokeRect(20, 104, 1440, 836);
+      if (v.videoWidth) { const r = Math.min(1440 / v.videoWidth, 836 / v.videoHeight), w = v.videoWidth * r, h = v.videoHeight * r; ctx.drawImage(v, 20 + (1440 - w) / 2, 104 + (836 - h) / 2, w, h); }
+      if (tv < 10) { const a = Math.min(1, tv / .6, (10 - tv) / .6); ctx.globalAlpha = a; ctx.font = '800 38px Montserrat, Arial'; const tw = Math.min(1200, ctx.measureText(String(titulo).toUpperCase()).width + 48);
+        ctx.fillStyle = C; ctx.fillRect(56, 780, tw, 66); ctx.fillStyle = '#000'; quebrar(ctx, String(titulo).toUpperCase(), 80, 826, tw - 40, 40, 1);
+        if (subtitulo) { ctx.font = '500 28px Montserrat, Arial'; const sw = Math.min(1200, ctx.measureText(subtitulo).width + 48); ctx.fillStyle = 'rgba(6,10,24,.92)'; ctx.fillRect(56, 846, sw, 52); ctx.fillStyle = V2; ctx.fillRect(56, 846, 8, 52); ctx.fillStyle = '#EAF0FF'; quebrar(ctx, subtitulo, 80, 882, sw - 40, 30, 1); }
+        ctx.globalAlpha = 1; }
+      // lateral
+      ctx.fillStyle = '#070B18'; ctx.fillRect(1480, 104, 420, 836); ctx.strokeStyle = '#1E2A52'; ctx.strokeRect(1480, 104, 420, 836);
+      ctx.font = '800 20px Montserrat, Arial'; ctx.fillStyle = C; ctx.fillText('PRODUTOS ATLANTYX', 1504, 146);
+      if (P.length) { const p = P[Math.floor(tv / 10) % P.length]; ctx.font = '800 40px Montserrat, Arial'; ctx.fillStyle = '#EAF0FF'; quebrar(ctx, p.nome, 1504, 204, 372, 46, 2);
+        ctx.font = '500 26px Montserrat, Arial'; ctx.fillStyle = '#C8D2EE'; quebrar(ctx, p.frase, 1504, 290, 372, 34, 5); }
+      ctx.font = '800 20px Montserrat, Arial'; ctx.fillStyle = C; ctx.fillText('SERVIÇOS', 1504, 520);
+      ctx.font = '500 24px Montserrat, Arial'; ctx.fillStyle = '#AAB6D8'; S.slice(0, 7).forEach((s, i) => { ctx.fillStyle = C; ctx.fillRect(1504, 552 + i * 52, 8, 8); ctx.fillStyle = '#AAB6D8'; quebrar(ctx, s, 1524, 562 + i * 52, 352, 26, 1); });
+      // base
+      ctx.fillStyle = '#0A0F1F'; ctx.fillRect(0, 956, W, 62); ctx.fillStyle = C; ctx.fillRect(0, 956, 210, 62); ctx.fillStyle = '#000'; ctx.font = '800 26px Montserrat, Arial'; ctx.fillText('ATLANTYX', 34, 997);
+      ctx.fillStyle = '#EAF0FF'; ctx.font = '700 28px Montserrat, Arial'; quebrar(ctx, cfg.slogan || '', 236, 997, 1640, 30, 1);
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 1018, W, 62); ctx.save(); ctx.beginPath(); ctx.rect(0, 1018, W, 62); ctx.clip(); ctx.font = '600 34px Montserrat, Arial'; ctx.fillStyle = '#EAF0FF';
+      const off = (tv * 110) % largLet; for (let x = -off; x < W; x += largLet) ctx.fillText(letreiro, x, 1061); ctx.restore();
+    };
+    const cartela = (t, intro) => { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+      const g = ctx.createRadialGradient(W / 2, H / 2, 50, W / 2, H / 2, 1100); g.addColorStop(0, '#00303A'); g.addColorStop(1, '#000'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      const yy = ((t * 400) % (H + 200)) - 100; ctx.fillStyle = 'rgba(0,196,204,.6)'; ctx.fillRect(0, yy, W, 3);
+      const a = Math.min(1, t / 1.2); ctx.globalAlpha = a; ctx.textAlign = 'center';
+      if (logo) { const s = .6 + .4 * Math.min(1, t / 1.5), h = 110 * s, w = h * logo.width / logo.height; ctx.drawImage(logo, (W - w) / 2, 300 - h / 2, w, h); }
+      ctx.font = '800 96px Montserrat, Arial'; ctx.fillStyle = '#EAF0FF'; ctx.fillText('ATLANTYX', W / 2 - 70, 470); ctx.fillStyle = C; ctx.fillText('TV', W / 2 + 290, 470);
+      ctx.font = '500 34px Montserrat, Arial'; ctx.fillStyle = '#AAB6D8'; ctx.fillText(cfg.slogan || '', W / 2, 530);
+      if (intro && t > 1.8) { ctx.globalAlpha = Math.min(1, (t - 1.8) / .8); ctx.fillStyle = C; ctx.fillRect(W / 2 - 130, 600, 260, 52); ctx.fillStyle = '#000'; ctx.font = '800 28px Montserrat, Arial'; ctx.fillText('A SEGUIR', W / 2, 636);
+        ctx.fillStyle = '#EAF0FF'; ctx.font = '800 58px Montserrat, Arial'; quebrar(ctx, titulo, W / 2, 730, 1500, 66, 2); }
+      if (!intro) { ctx.fillStyle = '#EAF0FF'; ctx.font = '800 54px Montserrat, Arial'; ctx.fillText('Inscreva-se e ative o sininho', W / 2, 660); ctx.font = '600 34px Montserrat, Arial'; ctx.fillStyle = C; ctx.fillText((cfg.youtube_canal || '').replace(/^https?:\/\/(www\.)?/, ''), W / 2, 720); }
+      ctx.textAlign = 'left'; ctx.globalAlpha = 1; };
+    return new Promise((ok, err) => {
+      let tm = null; const fim = () => { clearInterval(tm); try { rec.stop(); } catch (_) {} };
+      rec.onstop = () => { try { A.close(); } catch (_) {} if (src.startsWith('blob:')) URL.revokeObjectURL(src); ok(new Blob(partes, { type: tipo.split(';')[0] })); };
+      v.onerror = () => { fim(); err(new Error('o vídeo parou de tocar')); };
+      rec.start(1000); jingle(0.1); t0 = performance.now();
+      tm = setInterval(() => { const t = (performance.now() - t0) / 1000; onP && onP(Math.min(1, t / total), t, total);
+        if (t < INTRO) { cartela(t, true); return; }
+        if (fase === 'intro') { fase = 'video'; v.play().then(() => { tocou = true; }).catch(e => { fim(); err(new Error('não consegui tocar o vídeo: ' + e.message)); }); }
+        if (fase === 'video') { moldura(v.currentTime); if (v.ended || (tocou && v.currentTime >= dur - .05)) { fase = 'outro'; jingle(0); t0 = performance.now() - (INTRO + dur) * 1000; } return; }
+        const to = t - INTRO - dur; cartela(to, false); if (to >= OUTRO) fim();
+      }, 1000 / FPS);
+    });
+  }
+
   // ═════════ CANAL DO YOUTUBE (publicar direto numa playlist) ═════════
   let ytPls = null;
   function rCanal() {
@@ -267,6 +357,8 @@
       <div style="display:flex;gap:6px;margin-top:4px;"><button class="btn btn-g" onclick="ATV.ytIA('${esc(it.id)}',this)">✍ IA escreve título e descrição</button><input class="fi" id="ypTags" placeholder="tags separadas por vírgula" style="flex:1;"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;"><div>${lbl('Visibilidade')}<select class="fsel" id="ypP"><option value="public">pública</option><option value="unlisted">não listada</option><option value="private">privada</option></select></div>
       <div>${lbl('Agendar publicação (opcional)')}<input class="fi" type="datetime-local" id="ypA"></div></div>`}
+      ${ehYt ? '' : `<label style="display:flex;gap:6px;align-items:flex-start;margin-top:10px;font-size:12px;"><input type="checkbox" id="ypM" checked style="margin-top:2px;"> <span><b>🎬 Com a moldura Atlantyx TV</b> — abertura, faixa com o título, produtos e serviços na lateral, letreiro e encerramento "Inscreva-se". Grava aqui no navegador e leva o tempo do vídeo + 11 s: deixe esta aba aberta e visível.</span></label>
+      <canvas id="ypCv" style="display:none;width:100%;aspect-ratio:16/9;margin-top:8px;border-radius:8px;border:1px solid var(--bd);background:#000;"></canvas>`}
       ${lbl('Playlist')}<select class="fsel" id="ypL"><option value="">— nenhuma —</option>${(ytPls || []).map(p => `<option value="${esc(p.id)}" ${/atlantyx tv/i.test(p.titulo) ? 'selected' : ''}>${esc(p.titulo)}</option>`).join('')}</select>
       <div id="ypS" style="font-size:11.5px;color:var(--t2);margin-top:10px;"></div><div style="height:8px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-top:6px;"><i id="ypB" style="display:block;height:100%;width:0;background:#00C4CC;"></i></div>
       <div style="text-align:right;margin-top:12px;"><button class="btn btn-p" id="ypGo" onclick="ATV.ytEnviar('${esc(it.id)}')">${ehYt ? '+ Adicionar à playlist' : '▶ Publicar agora'}</button></div>`);
@@ -275,12 +367,19 @@
   async function ytEnviar(id) {
     const go = $('ypGo'), st = $('ypS'), bar = $('ypB'); go.disabled = true;
     const v = k => $(k) ? $(k).value : '';
-    try { const r = await api('yt_publicar_iniciar', { item_id: id, titulo: v('ypT'), descricao: v('ypD'), tags: v('ypTags').split(',').map(s => s.trim()).filter(Boolean), privacidade: v('ypP') || 'public', agendar: v('ypA') ? new Date(v('ypA')).toISOString() : null, playlist_id: v('ypL') || null });
+    let midiaMoldura = null;
+    try { if ($('ypM')?.checked) { const it = cfg.playlist.find(x => x.id === id), cv = $('ypCv'); cv.style.display = 'block';
+        st.textContent = '⏳ Preparando a gravação com a moldura…';
+        const blob = await gravarMoldura(it, v('ypT') || it.titulo, it.subtitulo || '', cv, (f, t, tot) => { st.textContent = `🎬 Gravando com a moldura: ${mmss(t)} de ${mmss(tot)} — não feche nem esconda esta aba`; bar.style.width = Math.round(f * 100) + '%'; });
+        st.textContent = '⏳ Guardando a versão com moldura no sistema…'; bar.style.width = '0%';
+        midiaMoldura = await enviarBlob(blob, (it.titulo || 'video') + ' (moldura).' + (blob.type.includes('mp4') ? 'mp4' : 'webm'), (it.titulo || '') + ' · moldura', (i, n) => { st.textContent = `⏳ Guardando a versão com moldura: parte ${i + 1} de ${n} (${mb(blob.size)})…`; bar.style.width = Math.round(i / n * 100) + '%'; }); }
+      const r = await api('yt_publicar_iniciar', { item_id: id, midia_id: midiaMoldura, titulo: v('ypT'), descricao: v('ypD'), tags: v('ypTags').split(',').map(s => s.trim()).filter(Boolean), privacidade: v('ypP') || 'public', agendar: v('ypA') ? new Date(v('ypA')).toISOString() : null, playlist_id: v('ypL') || null });
       let fim = r; if (!r.pronto) { let p = { offset: 0, tamanho: r.tamanho }; let erros = 0;
         while (!p.pronto) { st.textContent = `⏳ Enviando para o YouTube: ${mb(p.offset)} de ${mb(p.tamanho)}…`; bar.style.width = Math.round((p.offset / p.tamanho) * 100) + '%';
           try { p = await api('yt_publicar_passo', { job_id: r.job_id }); erros = 0; } catch (e) { if (++erros > 3) throw e; await new Promise(x => setTimeout(x, 2500)); } }
         fim = p; }
       bar.style.width = '100%'; st.innerHTML = `✅ ${fim.so_playlist ? 'Adicionado à playlist' : 'Publicado'}: <a href="https://youtu.be/${esc(fim.video_id)}" target="_blank" rel="noopener">youtu.be/${esc(fim.video_id)}</a>${fim.aviso ? `<br><span style="color:var(--gold);">⚠ ${esc(fim.aviso)}</span>` : ''}<br><span style="color:var(--t3);">O YouTube leva alguns minutos para processar o vídeo.</span>`;
+      if (midiaMoldura) { try { await api('midia_excluir', { id: midiaMoldura }); } catch (_) {} }
       ytPls = null; await carregar(); } catch (e) { st.innerHTML = `<span style="color:var(--red);">⚠ ${esc(e.message)}</span>`; go.disabled = false; } }
 
   // ═════════ DESTINOS ═════════
@@ -301,5 +400,5 @@
   async function dLimpar(k) { if (!confirm('Apagar a chave?')) return; try { const r = await api('destinos_limpar', { plataforma: k }); D.destinos = r.destinos; rDestinos(); } catch (e) { nota(e.message, 'error'); } }
 
   window.ATV = { abrir, aba: trocar, link, salvar, campo, mover, tirar, inter, addYoutube, addUrl, addReacao, enviar, chamadas, atualizar, tv, janela,
-    wCriar, wExcluir, gradeSet, ytConectar, ytSair, ytCriarPl, ytPub, ytIA, ytEnviar, _seg: seg, wReabrir, estudio, eEntrar, eToggle, eSair, sairEstudio, eFaixa, eTransmitir, eParar, dSalvar, dLimpar, _estado: () => ({ D, cfg, aba, est }) };
+    wCriar, wExcluir, gradeSet, _gravarMoldura: (it, t, s, cv, f) => gravarMoldura(it, t, s, cv, f), ytConectar, ytSair, ytCriarPl, ytPub, ytIA, ytEnviar, _seg: seg, wReabrir, estudio, eEntrar, eToggle, eSair, sairEstudio, eFaixa, eTransmitir, eParar, dSalvar, dLimpar, _estado: () => ({ D, cfg, aba, est }) };
 })();

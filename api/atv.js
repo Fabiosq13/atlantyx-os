@@ -344,7 +344,9 @@ async function ytPublicarIniciar(b) {
   let publishAt = null; if (b.agendar) { const d = new Date(b.agendar); if (isNaN(d) || d < Date.now() + 15 * 60000) throw new Error('Agende para pelo menos 15 minutos à frente'); publishAt = d.toISOString(); }
   const job = { id: novoId('ytj'), item_id: it.id, playlist_id: b.playlist_id || null, criado_em: new Date().toISOString() };
   if (it.fonte === 'youtube' && it.youtube_id) { await ytAddPlaylist(job.playlist_id, it.youtube_id); return { pronto: true, video_id: it.youtube_id, so_playlist: true }; }
-  const f = await ytFonte(it);
+  // v3.155: versão com a moldura Atlantyx TV gravada no navegador (mídia própria, enviada antes)
+  let f; if (b.midia_id) { const sql = await getSql(); const m = (await sql`SELECT tamanho, content_type FROM atv_midias WHERE id=${b.midia_id} AND completo`)[0]; if (!m) throw new Error('Versão com moldura não encontrada — grave de novo');
+    f = { tipo: 'partes', tabela: 'atv', id: b.midia_id, tamanho: Number(m.tamanho), ct: m.content_type || 'video/webm' }; } else f = await ytFonte(it);
   const meta = { snippet: { title: String(b.titulo || it.titulo).substring(0, 100), description: String(b.descricao || '').substring(0, 4900), tags: Array.isArray(b.tags) ? b.tags.slice(0, 12) : [], categoryId: '28', defaultLanguage: 'pt-BR', defaultAudioLanguage: 'pt-BR' },
     status: { privacyStatus: publishAt ? 'private' : priv, ...(publishAt ? { publishAt } : {}), selfDeclaredMadeForKids: false } };
   const tk = await ytAcesso();
