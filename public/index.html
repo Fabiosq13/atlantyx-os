@@ -29444,8 +29444,12 @@ async function trAcertarTudo() {
   trDiagnosticar();
 }
 // ── campanha ──
+// espelho de CFG_PADRAO/PALAVRAS_PADRAO (api/tendencias.js) — usado se a lista ainda não carregou ou falhou
+const TR_PADRAO = { config: { podtecno_email: '', podtecno_auto: true, inicio: null, dias: 21, reacoes_dia: 3, horarios: ['08:30', '12:30', '18:30'], carrosseis_semana: 3, carrossel_hora: '11:00', reels_tema_semana: 2, reel_tema_hora: '20:00', stories_dia: 1, story_hora: '10:00', redes: ['instagram'] },
+  palavras: ['IA para empresas', 'inteligência artificial nos negócios', 'engenharia de dados', 'business intelligence', 'IA generativa', 'data analytics', 'transformação digital', 'AI agents business'] };
 function trForm(id) {
-  const c = id ? _tr.dados?.campanha : null, P = _tr.lista.padrao, cfg = { ...P.config, ...(c?.config || {}) };
+  const c = id ? _tr.dados?.campanha : null, LP = _tr.lista?.padrao || {}, P = { config: { ...TR_PADRAO.config, ...(LP.config || {}) }, palavras: LP.palavras?.length ? LP.palavras : TR_PADRAO.palavras }, cfg = { ...P.config, ...(c?.config || {}) };
+  if (!Array.isArray(cfg.horarios)) cfg.horarios = TR_PADRAO.config.horarios; if (!Array.isArray(cfg.redes)) cfg.redes = TR_PADRAO.config.redes;
   const ov = _fbModal('<div class="qp-mh"><div class="fv2-pt">' + (c ? 'Campanha — ' + _trEsc(c.nome) : 'Nova campanha de reação a tendências') + '</div><button class="btn btn-g" onclick="_fbFechar()">Fechar ✕</button></div>'
     + '<div class="fb-form"><label class="fb-w">Nome<input id="trN" value="' + _trEsc(c?.nome || 'Reação a tendências — ' + new Date().toLocaleDateString('pt-BR', { month: 'long' })) + '"></label>'
     + '<label class="fb-w">Nicho<input id="trNi" value="' + _trEsc(c?.nicho || 'Dados, BI, engenharia de dados e IA para empresas') + '"></label>'
@@ -29479,7 +29483,7 @@ function _trRender() {
   const fmtV = n => n == null ? '—' : n >= 1e6 ? (n / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mi' : n >= 1e3 ? Math.round(n / 1e3) + ' mil' : n;
   const dias = [...new Set(P.map(p => p.data))];
   document.getElementById('trApp').innerHTML = _trDiagHtml()
-    + '<div class="fh-cab">② Vídeos mais vistos do nicho no mundo <span class="fv2-pq">' + esc.length + ' escolhido(s) de ' + V.length + ' · fonte: pesquisa na web pela IA' + (_tr.lista.youtube ? ' + YouTube' : ' (cadastre YOUTUBE_API_KEY no Vercel para números exatos do YouTube)') + '</span>'
+    + '<div class="fh-cab">② Vídeos mais vistos do nicho no mundo <span class="fv2-pq">' + esc.length + ' escolhido(s) de ' + V.length + ' · fonte: pesquisa na web pela IA' + (_tr.lista?.youtube ? ' + YouTube' : ' (cadastre YOUTUBE_API_KEY no Vercel para números exatos do YouTube)') + '</span>'
     + '<span class="mc-sug" style="margin-left:auto;"><button class="btn btn-gn" id="trBtBusca" onclick="trBuscar()">🔎 Buscar vídeos em alta</button><button class="btn btn-g" onclick="trAddVideo()">+ Colar link</button><button class="btn btn-g" onclick="trForm(\'' + c.id + '\')">⚙ Campanha</button></span></div>'
     + (V.length ? '<div class="fv2-tabwrap"><table class="fb-tb tr-vt"><tr><th></th><th>Vídeo</th><th>Criador</th><th>Visualizações</th><th>Publicado</th><th>Rede</th></tr>' + V.map(v => '<tr class="' + (v.escolhido ? 'tr-on' : '') + '"><td><input type="checkbox" ' + (v.escolhido ? 'checked' : '') + ' onchange="trEscolher(\'' + v.id + '\',this.checked)"></td>'
       + '<td><a href="' + _trEsc(v.url) + '" target="_blank" rel="noopener"><b>' + _trEsc(v.titulo) + '</b> ↗</a><div class="fv2-pq">' + _trEsc(String(v.resumo || '').substring(0, 160)) + '</div></td><td>' + _trEsc(v.criador) + (v.criador_handle ? '<div class="fv2-pq">' + _trEsc(v.criador_handle) + '</div>' : '') + '</td>'
