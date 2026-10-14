@@ -330,8 +330,10 @@ async function patrocinadoDiagnostico() {
     escopos = x.scopes || []; granular = x.granular_scopes || [];
     add(!!x.is_valid, 'Token válido', x.is_valid ? (x.type || '') + (x.expires_at ? (x.expires_at === 0 ? ' · não expira' : ' · expira em ' + new Date(x.expires_at * 1000).toISOString().slice(0, 10)) : ' · não expira') : (x.error?.message || 'inválido'), 'Gere um token novo no usuário do sistema');
   } catch (e) { add(false, 'Token', e.message, 'Gere um token novo no usuário do sistema e cadastre na Vercel'); }
-  for (const [perm, para] of [['ads_management', 'criar campanhas'], ['ads_read', 'ler resultados'], ['business_management', 'acessar o portfólio'], ['pages_read_engagement', 'ler a página'], ['pages_manage_ads', 'criar o anúncio em nome da página'], ['pages_show_list', 'listar páginas'], ['instagram_basic', 'usar o Instagram']])
+  for (const [perm, para] of [['ads_management', 'criar campanhas'], ['ads_read', 'ler resultados'], ['business_management', 'acessar o portfólio'], ['pages_read_engagement', 'ler a página'], ['pages_manage_ads', 'criar o anúncio em nome da página'], ['pages_show_list', 'listar páginas']])
     add(escopos.includes(perm), 'Permissão ' + perm, para, 'Gere um token novo marcando ' + perm);
+  // v3.178: instagram_basic é opcional — o anúncio no Instagram sai só com ads_management + pages_manage_ads (só informativo)
+  if (escopos.includes('instagram_basic')) add(true, 'Permissão instagram_basic', 'opcional');
   const gPag = granular.find(g => g.scope === 'pages_manage_ads');
   if (gPag && Array.isArray(gPag.target_ids) && gPag.target_ids.length) add(gPag.target_ids.includes(c.pagina), 'pages_manage_ads vale para a página ' + c.pagina, 'páginas liberadas: ' + gPag.target_ids.join(', '), 'Atribua a página Atlantyx ao usuário do sistema (controle total) e gere o token de novo');
   // 2. os ativos
