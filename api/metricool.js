@@ -24,12 +24,12 @@ async function corrigirImagensAgendadas({ blog_id, dias = 60, aplicar = false } 
   const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${ini}&end=${fim}&timezone=America/Sao_Paulo`, TOKEN);
   const lista = Array.isArray(r) ? r : (r?.data || r?.posts || []);
 
-  const { garantirPermanente, ehEfemera } = await import('./media.js');
+  const { garantirPermanente, ehEfemera, ehHostProtegido, hostProducao } = await import('./media.js');
   const afetados = [], corrigidos = [], erros = [];
 
   for (const p of lista) {
     const midias = p.media || p.medias || [];
-    const comProblema = (Array.isArray(midias) ? midias : []).filter(u => ehEfemera(u));
+    const comProblema = (Array.isArray(midias) ? midias : []).filter(u => ehEfemera(u) || ehHostProtegido(u)); // v3.180: + endereço protegido do deployment
     if (!comProblema.length) continue;
     const quando = p.publicationDate?.dateTime || p.publicationDate || '';
     afetados.push({ id: p.id, data: String(quando).substring(0,16).replace('T',' '),
@@ -37,7 +37,7 @@ async function corrigirImagensAgendadas({ blog_id, dias = 60, aplicar = false } 
     if (!aplicar) continue;
     try {
       const novas = [];
-      for (const u of midias) novas.push((await garantirPermanente({ url: u })).url);
+      for (const u of midias) novas.push(ehHostProtegido(u) ? hostProducao(u) : (await garantirPermanente({ url: u })).url);
       const corpo = _corpoPostMc(p, { media: novas, medias: novas }); // v3.80: corpo limpo e recriação sem duplicar
       await _recriarSemDuplicar(p.id, corpo, { USERID, BLOGID, TOKEN });
       corrigidos.push(p.id);
@@ -405,7 +405,7 @@ async function instagramParaBio({ aplicar = false, ids = null, blog_id, dias = 9
 async function trocarLinkAgendados({ aplicar = false, ids = null, blog_id, dias = 60, adicionar = false } = {}, req) {
   const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
   if (!TOKEN || !USERID || !BLOGID) throw new Error('Credenciais do Metricool ausentes');
-  const base = (process.env.MEDIA_PUBLIC_BASE || ('https://' + (req?.headers?.host || 'atlantyx-os.vercel.app'))).replace(/\/$/, '');
+  const base = (process.env.MEDIA_PUBLIC_BASE || ('https://' + (process.env.VERCEL_PROJECT_PRODUCTION_URL || 'atlantyx-os.vercel.app').replace(/^https?:\/\//, ''))).replace(/\/$/, ''); // v3.180: nunca o endereço protegido
   const reuniao = (process.env.LINK_REUNIAO || 'https://meetings.hubspot.com/atlantyx?uuid=eca883eb-276d-45cb-bda8-d7d5d2ae9219').trim();
   const agora = new Date(Date.now() + 10 * 60000), fim = new Date(Date.now() + dias * 864e5), f = d => d.toISOString().substring(0, 10);
   const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${f(agora)}T00:00:00&end=${f(fim)}T23:59:59&timezone=America/Sao_Paulo`, TOKEN);

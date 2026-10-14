@@ -157,9 +157,20 @@ Visual style: premium B2B tech corporate, dark navy blue (#1A3A8F) background, e
 // v3.22: as URLs do Ideogram/DALL·E são temporárias (expiram em horas) — eram gravadas assim nas campanhas
 // e no kanban, e depois apareciam como imagem quebrada. Agora cada imagem é copiada na hora para o
 // armazenamento permanente (/api/media → /m/<id>.jpg). Se a cópia falhar, devolve a original marcada.
-async function _persistir(imagens, req) {
+// v3.180: base PÚBLICA para gravar/servir imagens. O endereço de deployment da Vercel (project-xxx-…vercel.app)
+// fica atrás do "Deployment Protection": a cópia da imagem para o armazenamento permanente falhava (401) quando o
+// sistema era aberto por esse endereço, o post ficava com a URL temporária do Ideogram e, horas depois, "sem imagem".
+function _basePub(req) {
+  const env = (process.env.MEDIA_PUBLIC_BASE || '').trim().replace(/\/$/, '');
+  if (env) return env.startsWith('http') ? env : 'https://' + env;
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return 'https://' + process.env.VERCEL_PROJECT_PRODUCTION_URL.replace(/^https?:\/\//, '');
   const host = req.headers['x-forwarded-host'] || req.headers.host;
-  const base = process.env.MEDIA_PUBLIC_BASE ? process.env.MEDIA_PUBLIC_BASE.replace(/\/$/, '') : (host ? `https://${host}` : null);
+  if (host && /^localhost|^127\./.test(host)) return 'http://' + host;
+  if (host && !/-projects-|^project-|-git-/.test(host)) return 'https://' + host;
+  return 'https://atlantyx-os.vercel.app';
+}
+async function _persistir(imagens, req) {
+  const base = _basePub(req);
   if (!base) return imagens;
   return Promise.all(imagens.map(async img => {
     try {
@@ -174,14 +185,10 @@ async function _persistir(imagens, req) {
   }));
 }
 
-function _base(req) {
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  return process.env.MEDIA_PUBLIC_BASE ? process.env.MEDIA_PUBLIC_BASE.replace(/\/$/, '') : (host ? `${/^localhost|^127\./.test(host) ? 'http' : 'https'}://${host}` : null);
-}
+function _base(req) { return _basePub(req); }
 
 async function _salvarB64(b64, req) {
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  const base = process.env.MEDIA_PUBLIC_BASE ? process.env.MEDIA_PUBLIC_BASE.replace(/\/$/, '') : (host ? `https://${host}` : null);
+  const base = _basePub(req);
   if (!base) return null;
   try { const r = await fetch(base + '/api/media', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'salvar_base64', payload: { base64: b64, content_type: 'image/png', origem: 'image-gen', jpeg: true } }) });
     const m = await r.json().catch(() => ({})); return m.url || null; } catch (_) { return null; }
