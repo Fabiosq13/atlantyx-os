@@ -24594,7 +24594,8 @@ async function patCriar(soKit) {
   const b = document.getElementById('patBtnCriar'); if (b && !soKit) { b.disabled = true; b.textContent = 'Criando no Meta…'; }
   try { const d = await mcApi('patrocinado_criar', corpo);
     if (d.modo === 'kit') { patMostrarKit(d.kit); }
-    else { toast('Campanha criada (pausada) no Meta', 'success'); addLog('ok', '[Patrocinado] criada pausada: ' + d.campanha.nome + ' · ' + fmtBRLcompleto(d.campanha.orcamento_diario) + '/dia'); patListar(); } }
+    else { toast('Campanha criada (pausada) no Meta', 'success'); addLog('ok', '[Patrocinado] criada pausada: ' + d.campanha.nome + ' · ' + fmtBRLcompleto(d.campanha.orcamento_diario) + '/dia'); patListar();
+      alert('✅ Campanha criada no Meta — PAUSADA (nada é cobrado).\n\n' + d.campanha.nome + '\nID da campanha: ' + (d.campanha.id || '—') + '\n\nEla aparece na lista "Campanhas patrocinadas criadas pelo sistema" e no Gerenciador de Anúncios. Revise lá (Visualizar) e clique em "Ativar" quando quiser veicular.'); } } // v3.177: confirmação visível
   catch (e) { toast('Não criou: ' + e.message, 'error'); alert('Não criou a campanha:\n\n' + e.message); }
   if (b) { b.disabled = false; b.textContent = '📣 Criar campanha (pausada)'; }
 }
@@ -32769,7 +32770,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.176] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.177] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -32785,7 +32786,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.176';
+window.__ATX_BUILD_ID__ = 'ATX-v3.177';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
