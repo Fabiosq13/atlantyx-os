@@ -3552,7 +3552,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     </select>
     <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="compararSaldoPorConta()" title="Compara o saldo do Atlantyx com o saldo de cada conta no QuickBooks">&#9878; Comparar por conta</button>
     <button class="btn" style="font-size:10px;" onclick="verRazaoConta()" title="Razão contábil da conta no QuickBooks, com saldo inicial e final do período">&#128220; Razão da conta</button>
-    <button class="btn btn-gn" onclick="carregarFluxoDetalhado()">&#8635; Atualizar</button>
+    <button class="btn btn-gn" id="fd_btnAtualizar" onclick="carregarFluxoDetalhado()">&#8635; Atualizar</button>
     <div style="flex-basis:100%;display:flex;gap:6px;align-items:center;">
       <input type="search" id="fd_busca" class="fi" style="font-size:11px;max-width:380px;margin:0;" placeholder="🔎 Filtrar pela descrição do lançamento (ex.: aluguel, CPFL, imposto)" oninput="_fdBuscaMudou()" title="Mostra só os lançamentos cuja descrição contém todas as palavras digitadas (sem diferenciar acentos e maiúsculas)"/>
       <button class="btn" style="font-size:9px;" onclick="_fdBuscaLimpar()" title="Limpar o filtro">✕</button>
@@ -3578,7 +3578,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     <div class="pb" style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:700px;">
         <thead><tr style="border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">DATA</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">DESCRIÇÃO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">CATEGORIA</th><th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">VALOR</th><th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">SALDO ACUM.</th><th style="width:34px;"></th></tr></thead>
-        <tbody id="fd_tbodyPassado"><tr><td colspan="6" style="text-align:center;padding:20px;color:var(--t3);">Carregando...</td></tr></tbody>
+        <tbody id="fd_tbodyPassado"><tr><td colspan="6" style="padding:4px 6px;"><div class="skel" style="height:20px;margin:6px 0;"></div><div class="skel" style="height:20px;margin:6px 0;"></div><div class="skel" style="height:20px;margin:6px 0;"></div><div class="skel" style="height:20px;margin:6px 0;"></div></td></tr></tbody>
       </table>
     </div>
   </div>
@@ -3588,7 +3588,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     <div class="pb" style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:700px;">
         <thead><tr style="border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">DATA</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">DESCRIÇÃO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">CATEGORIA / FONTE</th><th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">VALOR</th><th style="text-align:right;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">SALDO PROJETADO</th><th style="width:60px;"></th></tr></thead>
-        <tbody id="fd_tbodyFuturo"><tr><td colspan="6" style="text-align:center;padding:20px;color:var(--t3);">Carregando...</td></tr></tbody>
+        <tbody id="fd_tbodyFuturo"><tr><td colspan="6" style="padding:4px 6px;"><div class="skel" style="height:20px;margin:6px 0;"></div><div class="skel" style="height:20px;margin:6px 0;"></div><div class="skel" style="height:20px;margin:6px 0;"></div><div class="skel" style="height:20px;margin:6px 0;"></div></td></tr></tbody>
       </table>
     </div>
     <div style="padding:10px 14px;font-size:9.5px;color:var(--t3);border-top:1px solid var(--bd);">Fonte "QuickBooks" = faturas (Invoice) e contas (Bill) em aberto reais, pela data de vencimento. Fonte "Atlantyx" = despesas programadas e lançamentos simulados futuros cadastrados no sistema. O projetado vai até onde houver dado — sem limite fixo de meses.</div>
@@ -21189,7 +21189,7 @@ async function verRazaoConta() {
   modal.style.display='flex';
   modal.innerHTML = '<div class="panel" style="width:860px;max-width:96vw;"><div class="pb" style="text-align:center;color:var(--t3);padding:30px;">⏳ Buscando o razão no QuickBooks...</div></div>';
   try {
-    const d = await finApi('qb_razao_conta', { conta_id: contaId, data_inicio: ini, data_fim: fim });
+    const d = await finApi('qb_razao_conta', { conta_id: contaId, data_inicio: ini, data_fim: fim }, { timeoutMs: 45000 }); // dem_mv2cg7stuynn: sem "⏳" infinito
     const r = d.razao || {};
     const saldoAtx = _fdUltimoSaldo != null ? _fdUltimoSaldo : null;
     const difRazao = (saldoAtx != null && r.saldo_final_razao != null) ? Math.round((saldoAtx - r.saldo_final_razao) * 100) / 100 : null;
@@ -21288,7 +21288,7 @@ async function compararSaldoPorConta() {
   modal.style.display='flex';
   modal.innerHTML = '<div class="panel" style="width:720px;max-width:96vw;"><div class="pb" style="text-align:center;color:var(--t3);padding:30px;">⏳ Consultando saldo por conta...</div></div>';
   try {
-    const d = await finApi('qb_saldo_por_conta', { data: dt });
+    const d = await finApi('qb_saldo_por_conta', { data: dt }, { timeoutMs: 45000 }); // dem_mv2cg7stuynn: sem "⏳" infinito
     const r = d.saldo_por_conta || {};
     modal.innerHTML = `<div class="panel" style="width:720px;max-width:96vw;max-height:90vh;overflow:auto;">
       <div class="ph"><div class="pt">⚖ Saldo por conta no QuickBooks</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('saldoContaModal').style.display='none'">✕</button></div>
@@ -21748,7 +21748,7 @@ async function _fdPopularContas() {
   if (_fdContasCarregadas) return;
   const sel = document.getElementById('fd_conta'); if (!sel) return;
   try {
-    const d = await finApi('qb_contas_filtro');
+    const d = await _fdFinApiComRetry('qb_contas_filtro', {}, { retries: 3, backoff: 2000, prazoMs: _FD_PRAZO_MS }); // dem_mv2cg7stuynn
     if (!d.contas?.length) return;
     _fdContasCarregadas = true;
     const atual = sel.value;
@@ -21811,22 +21811,77 @@ function _fdRenderTabelas() {
     }
   }
 }
+// ═══ dem_mv2cg7stuynn: retry com backoff + prazo total de 15s + skeleton (Fluxo Detalhado) ═══
+// O QA registrou HTTP 0, "Atualizar" falhando e spinner sem fim. Falha transitória (rede/HTTP 0, 5xx de gateway,
+// resposta não-JSON) é repetida até 3x com espera crescente (2s, 4s, 8s), sempre dentro do prazo total de 15s.
+// Estourou o prazo ou as tentativas → erro tratado com "↻ Tentar novamente". Nenhum estado de carregamento sem fim.
+const _FD_PRAZO_MS = 15000;
+function _fdErroTransitorio(e) {
+  if (!e || e.timeout) return false; // tempo esgotado já consumiu o prazo
+  const m = String(e.message || '');
+  if (/OAuth|invalid_grant|refresh_token|não conectado|REALM_ID|DESATUALIZADO|ENDPOINT AUSENTE/i.test(m)) return false; // repetir não resolve
+  return e.httpStatus === 0 || e.semConexao || e.httpStatus >= 500 || /não-JSON|tempo esgotado|falha de rede|Failed to fetch|NetworkError|Load failed/i.test(m);
+}
+async function _fdFinApiComRetry(action, params, o = {}) {
+  const retries = o.retries ?? 3, base = o.backoff ?? 2000, fim = Date.now() + (o.prazoMs || _FD_PRAZO_MS);
+  for (let t = 0; ; t++) {
+    try { return await finApi(action, params, { timeoutMs: Math.max(1000, fim - Date.now()) }); }
+    catch (e) {
+      const espera = base * Math.pow(2, t);
+      if (t >= retries || !_fdErroTransitorio(e) || Date.now() + espera + 1000 > fim) {
+        if (t > 0 && e && e.message && !/tentativa/.test(e.message)) e.message += ' (' + (t + 1) + ' tentativas em ' + Math.round((o.prazoMs || _FD_PRAZO_MS) / 1000) + 's)';
+        throw e;
+      }
+      addLog('warn', '[Fluxo Detalhado] ' + (e.httpStatus === 0 ? 'HTTP 0 (rede)' : e.message) + ' — nova tentativa em ' + (espera / 1000) + 's');
+      if (o.onTentativa) { try { o.onTentativa(t + 2, retries + 1); } catch (_) {} }
+      await new Promise(r => setTimeout(r, espera));
+    }
+  }
+}
+// Igual ao _finCarregarComFallback (cache local da última carga boa), mas com retry + prazo de 15s
+async function _fdCarregarDados(params, onTentativa) {
+  const chave = JSON.stringify(params);
+  try {
+    const d = await _fdFinApiComRetry('fluxo_detalhado', params, { retries: 3, backoff: 2000, prazoMs: _FD_PRAZO_MS, onTentativa });
+    _finCacheSalvar('s3fluxodet', chave, d);
+    return { d, cache: null };
+  } catch (e) {
+    const c = _finCacheLer('s3fluxodet', chave);
+    addLog(e.timeout ? 'warn' : 'err', '[s3fluxodet] ' + e.message + (c ? ' — exibindo dados salvos de ' + _finFmtTs(c.ts) : ' — sem cache local'));
+    if (!c) throw e;
+    return { d: c.dados, cache: { ts: c.ts, outroFiltro: c.outroFiltro, erro: e } };
+  }
+}
+const _FD_KPIS = ['fd_saldoHoje', 'fd_receber', 'fd_pagar', 'fd_saldoFinal'];
+function _fdSkeleton() {
+  _FD_KPIS.forEach(id => { const e = document.getElementById(id); if (e) e.innerHTML = '<span class="skel" style="display:inline-block;width:110px;height:20px;vertical-align:middle;"></span>'; });
+  const linhas = '<tr><td colspan="6" style="padding:4px 6px;">' + '<div class="skel" style="height:20px;margin:6px 0;"></div>'.repeat(4) + '</td></tr>';
+  ['fd_tbodyPassado', 'fd_tbodyFuturo'].forEach(id => { const tb = document.getElementById(id); if (tb) tb.innerHTML = linhas; });
+  ['fd_tagPassado', 'fd_tagFuturo'].forEach(id => { const tg = document.getElementById(id); if (tg) { tg.textContent = 'Carregando'; tg.className = 'tag off'; } });
+}
+let _fdSeq = 0; // só a carga mais recente desenha a tela (cliques repetidos em Atualizar/filtros)
 async function carregarFluxoDetalhado() {
+  const seq = ++_fdSeq;
   // v1.16.1: datas padrão (60 dias atrás → sem limite futuro) na primeira carga
   const iEl = document.getElementById('fd_dataInicio'), fEl = document.getElementById('fd_dataFim');
   if (iEl && !iEl.value) { const d = new Date(); d.setDate(d.getDate() - 60); iEl.value = _fdIso(d); }
   const st = document.getElementById('fdStatus');
   const tbP = document.getElementById('fd_tbodyPassado'), tbF = document.getElementById('fd_tbodyFuturo');
-  if (tbP) tbP.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Carregando... <span style="color:var(--t3);font-size:9px;">(consultando QuickBooks — limite de 12s)</span></td></tr>';
-  if (tbF) tbF.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Carregando...</td></tr>';
+  _fdSkeleton(); // dem_mv2cg7stuynn: skeleton síncrono, antes de qualquer await
   if (st) st.style.display = 'none';
+  const btnAt = document.getElementById('fd_btnAtualizar');
+  if (btnAt) { btnAt.disabled = true; btnAt.textContent = '⏳ Atualizando…'; }
   try {
     const incluirSim = document.getElementById('fd_incluirSim')?.checked !== false;
     const dIni = document.getElementById('fd_dataInicio')?.value || null;
     const dFim = document.getElementById('fd_dataFim')?.value || null;
     const contaSel = document.getElementById('fd_conta')?.value || null;
-    // v3.85: timeout de 12s; se falhar, usa a última carga boa salva no navegador
-    const { d, cache } = await _finCarregarComFallback('s3fluxodet', 'fluxo_detalhado', { data_inicio: dIni, data_fim: dFim, incluir_simulados: incluirSim, conta_id: contaSel });
+    // dem_mv2cg7stuynn: retry com backoff dentro de 15s; se falhar, usa a última carga boa salva no navegador (v3.85)
+    const { d, cache } = await _fdCarregarDados({ data_inicio: dIni, data_fim: dFim, incluir_simulados: incluirSim, conta_id: contaSel }, (n, max) => {
+      if (seq !== _fdSeq) return;
+      const tg = document.getElementById('fd_tagPassado'); if (tg) tg.textContent = 'Tentativa ' + n + '/' + max + '…';
+    });
+    if (seq !== _fdSeq) return; // uma carga mais nova já está em andamento
     _finAvisoFalha('fdStatus', 'carregarFluxoDetalhado', cache && cache.erro, cache);
     // v3.85: tempo de cada parte medido no servidor (realizado QB × futuro QB × Atlantyx) — aponta qual segmento está lento
     if (!cache && !(d._cache && d._cache.idade_s > 0) && d.tempos_ms && d.tempos_ms.total >= 8000) addLog('warn', '[Fluxo Detalhado] lento: ' + Object.entries(d.tempos_ms).map(([k, v]) => k + ' ' + (v / 1000).toFixed(1) + 's').join(' · '));
@@ -21988,12 +22043,19 @@ async function carregarFluxoDetalhado() {
     if (d.passado.qb_erro || d.futuro.qb_erro) { if (st) { st.style.display = 'block'; st.innerHTML = '<div style="background:rgba(255,80,80,.1);border:1px solid var(--red);border-radius:8px;padding:10px;font-size:11px;">⚠ QuickBooks: ' + (d.passado.qb_erro || d.futuro.qb_erro) + ' — <a style="color:var(--blue);cursor:pointer;" onclick="conectarQuickBooks()">reconectar</a></div>'; } }
     addLog('ok', '[Fluxo Detalhado] ' + pas.length + ' realizados + ' + fut.length + ' futuros · saldo hoje ' + fmtBRLcompleto(d.saldo_hoje) + ' → projetado ' + fmtBRLcompleto(d.saldo_projetado_final));
   } catch (e) {
-    // v3.85: sem cache local — o "Carregando..." dá lugar ao erro com botão de retry
-    _finAvisoFalha('fdStatus', 'carregarFluxoDetalhado', e, null);
-    if (tbP) tbP.innerHTML = '<tr><td colspan="5" style="color:var(--red);text-align:center;padding:20px;">Erro: ' + String(e.message).replace(/</g, '&lt;') + ' <button class="btn btn-gn" style="font-size:10px;margin-left:6px;" onclick="carregarFluxoDetalhado()">↻ Tentar novamente</button></td></tr>';
-    if (tbF) tbF.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--t3);">Não carregado.</td></tr>';
+    if (seq !== _fdSeq) return;
+    // v3.85: sem cache local — o skeleton dá lugar ao erro com botão de retry
+    const msgErr = (e && e.httpStatus === 0 ? 'Sem conexão com o servidor (HTTP 0 — rede instável, bloqueio ou servidor fora do ar). ' : '') + String((e && e.message) || e);
+    const eTela = Object.assign(new Error(msgErr), { timeout: e && e.timeout });
+    _finAvisoFalha('fdStatus', 'carregarFluxoDetalhado', eTela, null);
+    if (tbP) tbP.innerHTML = '<tr><td colspan="6" style="color:var(--red);text-align:center;padding:20px;">Erro: ' + msgErr.replace(/</g, '&lt;') + ' <button class="btn btn-gn" style="font-size:10px;margin-left:6px;" onclick="carregarFluxoDetalhado()">↻ Tentar novamente</button></td></tr>';
+    if (tbF) tbF.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--t3);">Não carregado.</td></tr>';
+    _FD_KPIS.forEach(id => { const el = document.getElementById(id); if (el && el.querySelector('.skel')) el.textContent = '—'; });
     ['fd_tagPassado', 'fd_tagFuturo'].forEach(id => { const tg = document.getElementById(id); if (tg) { tg.textContent = 'Erro'; tg.className = 'tag off'; } });
-    addLog('err', '[Fluxo Detalhado] ' + e.message);
+    addLog('err', '[Fluxo Detalhado] ' + msgErr);
+  } finally {
+    // dem_mv2cg7stuynn: o botão nunca fica preso em "Atualizando…" (só a carga mais recente o libera)
+    if (seq === _fdSeq && btnAt) { btnAt.disabled = false; btnAt.innerHTML = '&#8635; Atualizar'; }
   }
 }
 

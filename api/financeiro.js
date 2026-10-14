@@ -1584,6 +1584,7 @@ async function _qbFetchFila(endpoint, token) {
     }
   } finally { _qbAtivas--; const prox = _qbEspera.shift(); if (prox) prox(); }
 }
+const QB_TIMEOUT_MS = 25000; // por requisição ao QuickBooks (dem_mv2cg7stuynn)
 async function _qbFetchReal(endpoint, token, method = 'GET', body = null) {
   if (!_realmCache || Date.now() - _realmCache.em > 300000) _realmCache = { em: Date.now(), v: (await qbTokensLer())?.realm_id || process.env.QB_REALM_ID };
   const realmId = _realmCache.v;
@@ -1591,16 +1592,31 @@ async function _qbFetchReal(endpoint, token, method = 'GET', body = null) {
   const sep = endpoint.includes('?') ? '&' : '?';
   const url = `${qbBase()}/v3/company/${realmId}${endpoint}${endpoint.includes('minorversion') ? '' : sep + 'minorversion=65'}`;
   // v2.26: aceita POST com corpo — necessário para as operações de exclusão (delete via POST no QB)
-  const r = await fetch(url, {
-    method,
-    headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  });
-  if (!r.ok) {
-    const err = await r.json().catch(() => ({}));
-    throw new Error(`QB ${endpoint}: ${r.status} — ${JSON.stringify(err).substring(0, 200)}`);
-  }
-  return r.json();
+  // dem_mv2cg7stuynn: QB pendurado vira erro tratado (JSON success:false) antes do limite de 60s do Vercel —
+  // antes a função morria sem resposta e o navegador via HTTP 0 / 504 com spinner girando
+  const ctrl = new AbortController(); const tm = setTimeout(() => ctrl.abort(), QB_TIMEOUT_MS);
+  try {
+    let r;
+    try {
+      r = await fetch(url, {
+        method,
+        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+        signal: ctrl.signal,
+      });
+    } catch (e) {
+      if (ctrl.signal.aborted) throw new Error(`QB ${endpoint.substring(0, 60)}: tempo esgotado — o QuickBooks não respondeu em ${QB_TIMEOUT_MS / 1000}s`);
+      throw new Error(`QB ${endpoint.substring(0, 60)}: falha de rede ao falar com o QuickBooks — ${e.message}`);
+    }
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(`QB ${endpoint}: ${r.status} — ${JSON.stringify(err).substring(0, 200)}`);
+    }
+    return await r.json();
+  } catch (e) {
+    if (ctrl.signal.aborted && !/tempo esgotado/.test(e.message || '')) throw new Error(`QB ${endpoint.substring(0, 60)}: tempo esgotado — o QuickBooks não respondeu em ${QB_TIMEOUT_MS / 1000}s`);
+    throw e;
+  } finally { clearTimeout(tm); }
 }
 
 // v1.49: o QuickBooks limita requisições (429 ThrottleExceeded). Sem tratamento, a consulta
