@@ -33,6 +33,30 @@
       "destination": "/api/fabrica?action=painel_cliente&t=:t"
     },
     {
+      "source": "/tv/:t",
+      "destination": "/api/tv?t=:t"
+    },
+    {
+      "source": "/atv-youtube-retorno",
+      "destination": "/api/atv?yt_cb=1"
+    },
+    {
+      "source": "/atv/:t",
+      "destination": "/api/atv?t=:t"
+    },
+    {
+      "source": "/atvl/:t/:w",
+      "destination": "/api/atv?t=:t&layout=:w"
+    },
+    {
+      "source": "/ao-vivo/:s",
+      "destination": "/api/atv?sala=:s"
+    },
+    {
+      "source": "/convidado/:c",
+      "destination": "/api/atv?convidado=:c"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/:path*"
     },
@@ -119,7 +143,7 @@
     },
     "api/agente-ideias.js": {
       "maxDuration": 180,
-      "includeFiles": "public/index.html"
+      "includeFiles": "{public/index.html,partitura/escopos.json}"
     },
     "api/analytics.js": {
       "maxDuration": 60
@@ -164,6 +188,22 @@
       "maxDuration": 60
     },
     "api/fabrica.js": {
+      "maxDuration": 300,
+      "includeFiles": "partitura/escopos.json"
+    },
+    "api/tendencias.js": {
+      "maxDuration": 300
+    },
+    "api/reunioes.js": {
+      "maxDuration": 180
+    },
+    "api/tv.js": {
+      "maxDuration": 120
+    },
+    "api/estrategia.js": {
+      "maxDuration": 300
+    },
+    "api/atv.js": {
       "maxDuration": 300
     }
   },
@@ -219,6 +259,14 @@
     {
       "path": "/api/agente-ideias?cron=1",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/reunioes?cron=1",
+      "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/atv?cron=1",
+      "schedule": "20 * * * *"
     }
   ],
   "headers": [

@@ -1,0 +1,70 @@
+{
+  "_leia": "Propriedade de arquivos por trilha (Método B.P.M.). Lido pelo hook .claude/hooks/escopo-trilha.mjs, pelo CI (scripts/bpm-gates.mjs) e pela Esteira de Demandas. Só o Maestro altera este arquivo. Padrões: 'pasta/**' (tudo dentro), 'arquivo.js' (exato), '*' só no nome do arquivo.",
+  "sempre_permitido": ["partitura/trilhas/{ID}/**"],
+  "compartilhados": {
+    "public/index.html": "SPA de arquivo único: cada trilha edita APENAS a seção do seu módulo (blocos marcados com o comentário da tela). Estrutura, menu, CSS global e dashboard são da T4. O revisor confere."
+  },
+  "trilhas": {
+    "T1": {
+      "nome": "Plataforma",
+      "naipe": "Percussão",
+      "escopo": "Autenticação, perfis e acesso, guarda das APIs, deploy Vercel, CI, QA e a própria Esteira de Demandas/Fábrica",
+      "pode_alterar": ["api/auth.js", "api/health.js", "api/qa.js", "api/qa-externo.js", "api/fabrica.js", "api/dev-pipeline.js", "api/agente-ideias.js",
+        "lib/qa-guard.js", "lib/acesso.js", "lib/bpm.js", "lib/docx-md.js", "lib/fabrica-db.js",
+        "public/acesso-ui.js", "public/demandas-ui.js", "public/qa-agent.js",
+        "scripts/**", ".github/**", ".claude/**", "vercel.json", "package.json", "package-lock.json", "deploy.js", "README.md", "CHANGELOG-*.md"],
+      "dono_humano": "@Fabiosq13"
+    },
+    "T2": {
+      "nome": "Integrações",
+      "naipe": "Metais",
+      "escopo": "HubSpot, Gmail (só rascunhos), Google Calendar/Drive, QuickBooks OAuth, Metricool, Apollo, PNCP/Petronect, Ideogram, WhatsApp (Z-API), mídia",
+      "pode_alterar": ["api/hubspot.js", "api/apollo.js", "api/metricool.js", "api/media.js", "api/media-upload.js", "api/atv.js", "public/atv-ui.js", "public/atv-player.js", "api/media-upload-v1.10.3.js", "api/image-gen.js",
+        "api/qb-oauth.js", "api/email-intel.js", "api/rfp-monitor.js", "api/phantom.js", "api/wa-response.js", "api/wa-batch-generate.js", "api/meeting-schedule.js",
+        "lib/hubspot-sync.js", "api/media/**", "api/fonts/**"],
+      "dono_humano": "@Fabiosq13"
+    },
+    "T3": {
+      "nome": "Agentes e Squads",
+      "naipe": "Cordas",
+      "escopo": "Squads S1 (estratégia), S2 (marketing), S7 (vendas), S8 (RH), S9 (PMO), S5 (jurídico) e a orquestração dos agentes",
+      "pode_alterar": ["api/claude.js", "api/s1-data.js", "api/s1-intel.js", "api/s1-strategy.js", "api/s2-creative.js", "api/tendencias.js", "api/prospeccao.js", "api/prospect-scan.js",
+        "api/decisor-map.js", "api/vendas.js", "api/vendas-outbound.js", "api/campanha-disparo.js", "api/lead-capture.js", "api/followup-cron.js", "api/briefing-cron.js",
+        "api/outreach-batch.js", "api/crm.js", "api/reunioes.js", "api/estrategia.js", "api/pmo.js", "api/rh.js", "api/business-plan.js", "api/portal-cadastro.js", "api/analytics.js",
+        "lib/bp-calc.js", "lib/bp-excel.js", "lib/bp-ops.js", "lib/proposta-calc.js", "lib/historico-s1.js",
+        "public/vendas-ui.js", "public/reunioes-ui.js", "public/estrategia-ui.js", "public/juridico-ui.js", "public/disparo-ui.js", "public/bio.html", "public/captura.html", "public/cartao.html"],
+      "dono_humano": "@Fabiosq13"
+    },
+    "T4": {
+      "nome": "Dashboard e Telas",
+      "naipe": "Madeiras",
+      "escopo": "Dashboard ao vivo, KPIs, log diário, menu, CSS global e a estrutura do public/index.html",
+      "pode_alterar": ["public/index.html", "public/og-atlantyx.jpg", "api/tv.js"],
+      "dono_humano": "@Fabiosq13"
+    },
+    "T5": {
+      "nome": "Dados",
+      "naipe": "Afinação",
+      "escopo": "Schema (blocos CREATE/ALTER TABLE dentro das APIs), kv_store, api/db.js e os contratos — só com aprovação do Afinador",
+      "pode_alterar": ["api/db.js", "partitura/contratos/**", "api/**", "lib/**"],
+      "restricao": "Em api/** e lib/** fora de api/db.js a T5 só altera blocos de schema (CREATE/ALTER TABLE, índices). O revisor e o CI conferem.",
+      "dono_humano": "@Fabiosq13"
+    },
+    "T6": {
+      "nome": "Financeiro",
+      "naipe": "Teclado",
+      "escopo": "S1/S3 Financeiro: QuickBooks (lançamentos, conciliação), fluxo de caixa, agenda de pagamentos, faturamento e termos, CNAB, e-mail das 8h",
+      "pode_alterar": ["api/financeiro.js", "api/faturamento.js", "api/cnab.js", "api/termo-excel.js", "lib/termo-regras.js", "api/modelos/**"],
+      "dono_humano": "@Fabiosq13"
+    }
+  },
+  "legado_somente_leitura": ["analytics.js", "apollo.js", "claude.js", "db.js", "decisor-map.js", "email-intel.js", "faturamento.js", "financeiro.js", "followup-cron.js", "health.js", "hubspot.js", "index.html",
+    "lead-capture.js", "media-upload.js", "meeting-schedule.js", "metricool.js", "outreach-batch.js", "phantom.js", "portal-cadastro.js", "prospect-scan.js", "rfp-monitor.js",
+    "s1-data.js", "s1-intel.js", "s1-strategy.js", "s2-creative.js", "wa-batch-generate.js", "wa-response.js"],
+  "fases": {
+    "F1": { "nome": "Afinação", "semanas": "1–2", "limite_trilhas": 1 },
+    "F2": { "nome": "Trilha piloto", "semanas": "3", "limite_trilhas": 3 },
+    "F3": { "nome": "Ensaio", "semanas": "4–5", "limite_trilhas": 3 },
+    "F4": { "nome": "Regência", "semanas": "6", "limite_trilhas": 5 }
+  }
+}
