@@ -14,15 +14,45 @@ import { comGuarda } from '../lib/qa-guard.js';
 //   mover { id, status } (só para 'implementada'|'arquivada'|'sugerida') · excluir { id } · nova { dados }
 //   sincronizar (estado das tarefas no GitHub) · config · config_salvar { ... }
 // GET ?cron=1 — ciclo agendado (respeita a configuração: ligado/desligado, frequência, máximo por ciclo)
+//
+// v3.145 · MÉTODO B.P.M. (Batida · Partitura · Mixagem) — partitura/README.md
+//   Partitura: toda demanda tem trilha (T1…T6, partitura/escopos.json) e critérios de aceite; sem isso não é aprovada.
+//   Trilha:    a tarefa @claude leva "BPM-Trilha:"/"BPM-ID:" — o robô cria spec.md/plano.md e só edita o escopo da trilha.
+//   Mixagem:   "Aprovar e mesclar" exige o checklist humano (registrado no card e comentado no PR); o robô roda os gates.
+//   Batida:    listar devolve o resumo das trilhas, a fase da implantação e o limite de trilhas em paralelo.
 
 import fs from 'fs';
 import path from 'path';
+import { escopos, sugerirTrilha, idTrilha, trilhaInfo, trilhaExiste } from '../lib/bpm.js';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 const STATUS = ['sugerida', 'aprovada', 'em_execucao', 'implementada', 'recusada', 'arquivada'];
-const CFG_PADRAO = { ativo: true, frequencia_horas: 24, max_por_ciclo: 3, squads: { produto: true }, foco: '' };
+const CFG_PADRAO = { ativo: true, frequencia_horas: 24, max_por_ciclo: 3, squads: { produto: true }, foco: '', bpm: { fase: 'F1', checks: {} } };
+// v3.145: checklist de implantação (manual B.P.M., seção "Plano de implantação") — o que já veio pronto no kit
+const BPM_IMPLANTACAO = {
+  F1: [['partitura', 'Criar partitura/ com produto.md, stack.md e contratos de API, banco e eventos a partir do código atual', true],
+    ['claude_md', 'Escrever o CLAUDE.md e o .claude/settings.json', true], ['subagents', 'Criar os subagents afinador, revisor, testador e documentador', true],
+    ['comandos', 'Criar os comandos /bpm-nova-trilha, /bpm-batida e /bpm-mixagem', true], ['trilhas', 'Ajustar trilhas e banco.md às pastas e tabelas reais; gerar escopos.json e CODEOWNERS', true],
+    ['ci', 'Configurar CI (sintaxe, gates B.P.M.) e branch protection na main', false], ['gate_f1', 'GATE: o kit roda numa sessão de teste e o hook bloqueia uma edição fora do escopo', false]],
+  F2: [['piloto', 'Escolher uma feature pequena e real (sugestão: nova ação de um conector da T2)', false], ['ciclo', 'Rodar o ciclo completo: spec → plano → subagents → /bpm-mixagem → PR → merge', false],
+    ['medir', 'Registrar lead time, custo de tokens e problemas encontrados', false], ['gate_f2', 'GATE: o PR piloto passa pelos 3 gates de Mixagem sem exceções', false]],
+  F3: [['paralelo', 'Abrir até 3 trilhas em paralelo, incluindo uma com interseção de banco', false], ['teams', 'Ligar agent teams para a feature que cruza trilhas', false],
+    ['ritos', 'Rodar a Batida diária e a primeira Afinação semanal', false], ['gate_f3', 'GATE: duas semanas sem edição fora do escopo e sem conflito de merge entre trilhas', false]],
+  F4: [['cinco', 'Ampliar para até 5 trilhas ativas', false], ['rotinas', 'Batida e varredura de dívida técnica como rotinas repetíveis', false],
+    ['retro', 'Retrospectiva: metas das métricas e versão 2 do manual', false], ['treino', 'Treinar os analistas no método (manual + Manifesto Atlantyx)', false]],
+};
+function resumoBpm(cfg) {
+  let E; try { E = escopos(); } catch (e) { return { erro: 'partitura/escopos.json indisponível: ' + e.message }; }
+  const fase = (cfg.bpm && E.fases[cfg.bpm.fase]) ? cfg.bpm.fase : 'F1';
+  const checks = cfg.bpm?.checks || {};
+  const implantacao = Object.fromEntries(Object.entries(BPM_IMPLANTACAO).map(([f, L]) => [f, L.map(([k, txt, pronto]) => ({ k, txt, feito: checks[f + ':' + k] ?? pronto }))]));
+  return { fase, fases: E.fases, limite: cfg.bpm?.limite || E.fases[fase].limite_trilhas, implantacao,
+    trilhas: Object.fromEntries(Object.entries(E.trilhas).map(([k, t]) => [k, { nome: t.nome, naipe: t.naipe, escopo: t.escopo, pode_alterar: t.pode_alterar, restricao: t.restricao || null }])),
+    compartilhados: E.compartilhados };
+}
+const trilhaValida = t => trilhaExiste(t); // T1…T6 ou trilha de produto P-<pasta> (v3.146)
 
 let _sql = null;
 async function getSql() {
@@ -117,6 +147,7 @@ Regras:
 - NÃO repita demandas já sugeridas, aprovadas, implementadas ou recusadas (lista abaixo). Aprenda com os MOTIVOS das recusas.
 - Não proponha o que os commits recentes mostram que já foi feito.
 - Priorize pelo impacto para o negócio do fundador. Prefira poucas demandas boas a muitas médias.
+- Método B.P.M.: cada demanda precisa de CRITÉRIOS DE ACEITE VERIFICÁVEIS (3 a 6, cada um testável na tela) e deve caber numa única trilha de arquivos (financeiro, integrações, agentes/squads, dashboard, plataforma ou dados). Se exigir mudar banco (tabela/coluna), diga isso em "como_implementar".
 Responda SOMENTE com um array JSON:
 [{"titulo":"curto e claro","problema":"o que dói hoje, com evidência (tela, achado do QA, dado)","proposta":"o que construir, em 3-6 linhas","telas_afetadas":["ids"],"como_implementar":"orientação técnica para o desenvolvedor: arquivos (public/index.html, api/*.js, lib/*.js), APIs, tabelas, cuidados","criterios_aceite":["como saber que ficou pronto"],"impacto":1-5,"esforco":"P|M|G","risco":"baixo|medio|alto","area":"financeiro|vendas|marketing|pmo|ideias|juridico|rh|plataforma|seguranca","metrica_sucesso":"como medir o ganho"}]`;
 
@@ -156,7 +187,8 @@ async function gerar({ squad = 'produto', foco = '', origem = 'manual' } = {}) {
   for (const d of novas) {
     if (existentes.has(_chave(d.titulo))) continue; existentes.add(_chave(d.titulo));
     const id = novoId(); const pri = Math.max(1, Math.min(5, parseInt(d.impacto) || 3));
-    await sql`INSERT INTO agente_demandas (id, squad, tipo, titulo, status, prioridade, dados, ciclo) VALUES (${id}, 'produto', 'implementacao', ${String(d.titulo).substring(0, 200)}, 'sugerida', ${pri}, ${JSON.stringify({ ...d, origem })}, ${ciclo})`;
+    const bpm = { trilha: (() => { try { return sugerirTrilha(d); } catch (_) { return null; } })(), trilha_origem: 'sugerida' };
+    await sql`INSERT INTO agente_demandas (id, squad, tipo, titulo, status, prioridade, dados, ciclo) VALUES (${id}, 'produto', 'implementacao', ${String(d.titulo).substring(0, 200)}, 'sugerida', ${pri}, ${JSON.stringify({ ...d, origem, bpm })}, ${ciclo})`;
     criadas.push(id);
   }
   await kvSet('agente:ideias:ultimo_ciclo', { em: ciclo, squad, origem, criadas: criadas.length });
@@ -167,8 +199,36 @@ async function gerar({ squad = 'produto', foco = '', origem = 'manual' } = {}) {
 function corpoIssue(r) {
   const d = r.dados || {};
   const lista = a => (Array.isArray(a) && a.length ? a.map(x => '- ' + x).join('\n') : '-');
+  const b = d.bpm || {}; let T = null; try { T = b.trilha ? trilhaInfo(b.trilha) : null; } catch (_) {}
+  const F = d.fabrica || null, pasta = T?.produto || F?.pasta;
+  const metodo = b.trilha && b.id ? `BPM-Trilha: ${b.trilha}
+BPM-ID: ${b.id}
+
+## Método B.P.M. (obrigatório — leia o CLAUDE.md)
+Você é a trilha **${b.trilha} ${T?.nome || ''}** (${T?.naipe || ''}). Antes de tocar no código:
+1. Crie \`partitura/trilhas/${b.id}/spec.md\` com a seção "Partitura" abaixo (status: aprovada, aprovada pelo fundador) e \`plano.md\` em fases, a partir dos modelos em \`partitura/trilhas/_modelo/\`.
+2. Altere **só** os arquivos da trilha ${b.trilha}: ${(T?.pode_alterar || []).map(x => '`' + x + '`').join(', ') || '(ver partitura/escopos.json)'}${T?.restricao ? ' — ' + T.restricao : ''}.${pasta ? '' : ' Em \`public/index.html\` (compartilhado) mexa só na seção da tela desta demanda.'} O hook bloqueia o resto.
+3. Precisa de arquivo de outra trilha, de tabela/coluna nova ou de mudar contrato? **Não edite**: registre em "Interseções" do plano.md (banco → peça ao subagent afinador uma proposta em partitura/contratos/banco.md) e conclua o que couber na trilha.
+4. Ao terminar: marque o plano.md, preencha \`partitura/trilhas/${b.id}/mixagem.md\` com o resultado de \`node scripts/validar.mjs --sem-navegador\` e \`node scripts/bpm-gates.mjs --local\`, e no corpo do PR mantenha as linhas "BPM-Trilha: ${b.trilha}" e "BPM-ID: ${b.id}".
+
+` : '';
+  // v3.146: sistema construído pela Esteira de Entrega — produto separado, numa pasta própria
+  const produto = pasta && F ? `BPM-Produto: ${F.projeto_id}
+
+## Produto da Esteira de Entrega — ${F.nome || pasta}${F.cliente ? ' (cliente ' + F.cliente + ')' : ''}
+Você está construindo um **sistema separado do Atlantyx OS**, que vive só em \`produtos/${pasta}/\`${F.tipo === 'fundacao' ? ' — esta é a **FUNDAÇÃO** (a base do sistema)' : ' — esta tarefa é o item **' + (F.item_codigo || '') + '** do Kanban da fábrica'}.
+- Os documentos aprovados (ERF, ERT, arquitetura, modelo de dados, volumetria, FinOps, plano do projeto, backlog e casos de teste) foram baixados pelo robô em \`produtos/${pasta}/partitura/\` antes de você começar. **Leia-os primeiro: eles mandam.** Commite essa pasta junto.
+- Nunca altere nada fora de \`produtos/${pasta}/\` (nem api/, lib/, public/ ou scripts/ do Atlantyx OS) — o hook bloqueia.
+- O sistema roda sozinho na Vercel com **Root Directory = produtos/${pasta}**: package.json próprio, vercel.json se precisar e um README com como rodar, como publicar e as variáveis de ambiente (só os nomes, nunca valores).
+- Siga a tecnologia e a estrutura do Documento de Arquitetura aprovado. Se ele pedir algo que não roda na Vercel, ou se ERT e arquitetura divergirem, **PARE** e registre em Interseções do plano.md.
+- O schema do banco do produto é do produto (fica em produtos/${pasta}/). Só dados sintéticos — nunca dados reais do cliente.
+- Cubra os critérios de aceite com testes do próprio produto. Os casos de teste da Esteira estão em \`produtos/${pasta}/partitura/casos.md\`: os robôs de QA da Atlantyx executam depois do deploy, então mantenha os textos das telas e botões que eles citam.
+${F.tipo === 'fundacao' ? '- Fundação = estrutura do projeto, tecnologia, autenticação e layout base, navegação, conexão com o banco, deploy funcionando e README. Não implemente os itens do backlog — cada um vem numa tarefa própria.\n' : '- A fundação já está no ar: reaproveite a estrutura existente em produtos/' + pasta + '/ e implemente só este item.\n'}
+` : '';
+  const regras = pasta ? `Regras: não altere o que não estiver relacionado a este item; valide (o build/testes do próprio produto + \`node scripts/bpm-gates.mjs --local\` na raiz); NÃO altere a versão ATX-vX.YY do Atlantyx OS; descreva no PR o que mudou e como testar. Nada vai para produção sem o merge do fundador.`
+    : `Regras: não altere o que não estiver relacionado; mantenha o comportamento das telas que funcionam; valide a sintaxe (node --check nas APIs e nos blocos <script> de public/index.html); NÃO altere a versão ATX-vX.YY / ATLANTYX vX.YY (o merge pela Esteira sobe a versão — mudar aqui gera conflito entre PRs); descreva no PR o que mudou e como testar. Nada vai para produção sem o merge do fundador.`;
   return `@claude implemente esta demanda APROVADA pelo fundador na Esteira de Demandas do Atlantyx OS e abra um pull request para revisão.
-Regras: não altere o que não estiver relacionado; mantenha o comportamento das telas que funcionam; valide a sintaxe (node --check nas APIs e nos blocos <script> de public/index.html); NÃO altere a versão ATX-vX.YY / ATLANTYX vX.YY (o merge pela Esteira sobe a versão — mudar aqui gera conflito entre PRs); descreva no PR o que mudou e como testar. Nada vai para produção sem o merge do fundador.
+${metodo}${produto}${regras}
 
 ## ${r.titulo}
 **Área:** ${d.area || '-'} · **Impacto:** ${d.impacto || '-'}/5 · **Esforço:** ${d.esforco || '-'} · **Risco:** ${d.risco || '-'}
@@ -183,7 +243,7 @@ ${d.proposta || '-'}
 ### Como implementar (orientação)
 ${d.como_implementar || '-'}
 
-### Critérios de aceite
+### Critérios de aceite${b.id ? ' (Partitura aprovada — viram os checkboxes da spec.md)' : ''}
 ${lista(d.criterios_aceite)}
 
 ### Métrica de sucesso
@@ -204,7 +264,7 @@ async function abrirIssue(r) {
   return { numero: d.number, url: d.html_url };
 }
 
-async function decidir({ id, decisao, obs = '' } = {}, usuario) {
+async function decidir({ id, decisao, obs = '', ...opcoes } = {}, usuario) {
   const sql = await getSql();
   const [r0] = await sql`SELECT * FROM agente_demandas WHERE id = ${id}`; if (!r0) throw new Error('Demanda não encontrada');
   const r = linha(r0);
@@ -215,13 +275,26 @@ async function decidir({ id, decisao, obs = '' } = {}, usuario) {
   if (decisao !== 'aprovar' && decisao !== 'enviar') throw new Error('Decisão inválida');
   if (decisao === 'aprovar' && r.status !== 'sugerida') throw new Error('Só demandas sugeridas podem ser aprovadas');
   if (decisao === 'enviar' && r.status !== 'aprovada') throw new Error('Só demandas aprovadas podem ser enviadas para implementação');
+  // v3.145 · B.P.M. — Partitura: sem critérios de aceite e sem trilha a demanda não é aprovada
+  if (r.tipo === 'implementacao') {
+    const crit = (r.dados.criterios_aceite || []).filter(x => String(x).trim());
+    const trilha = r.dados.bpm?.trilha;
+    const faltas = [!crit.length && 'critérios de aceite verificáveis', !trilhaValida(trilha) && 'trilha (T1…T6)'].filter(Boolean);
+    if (faltas.length) { const e = new Error('Partitura incompleta — falta: ' + faltas.join(' e ') + (!crit.length ? '. Use ✎ Editar para escrever os critérios.' : '') + (!trilhaValida(trilha) ? ' Escolha a trilha na caixa "🎼 Partitura", no topo do detalhe da demanda.' : '')); e.codigo = 'partitura'; throw e; }
+    const cfg = await config(), lim = resumoBpm(cfg).limite;
+    const ativas = new Set((await sql`SELECT dados FROM agente_demandas WHERE status = 'em_execucao' AND squad <> 'qa' AND id <> ${id}`).map(x => (parse(x.dados) || {}).bpm?.trilha).filter(Boolean));
+    if (!ativas.has(trilha) && ativas.size >= lim && !opcoes.forcar_paralelismo) {
+      const e = new Error(`Limite de paralelismo da fase ${cfg.bpm?.fase || 'F1'}: ${ativas.size} trilha(s) ativa(s) (${[...ativas].join(', ')}) de ${lim}. Acima disso o gargalo vira a Mixagem humana.`); e.codigo = 'limite'; throw e; }
+  }
   const obsFinal = decisao === 'aprovar' ? String(obs || '').substring(0, 1000) : r.decisao_obs;
   // aprovação registra a versão aprovada e limpa a alteração pendente (some o badge "⚠ alterado")
   const { versao_anterior, ...dadosAprov } = r.dados;
   await sql`UPDATE agente_demandas SET status = 'aprovada', decisao_obs = ${obsFinal}, decidido_em = COALESCE(decidido_em, NOW()), atualizado_em = NOW(),
-    dados = ${JSON.stringify({ ...dadosAprov, aprovado_por: usuario || 'fundador', versao_aprovada: retrato(r0, r.dados), versao_aprovada_em: new Date().toISOString() })} WHERE id = ${id}`;
+    dados = ${JSON.stringify({ ...dadosAprov, aprovado_por: usuario || 'fundador', versao_aprovada: retrato(r0, r.dados), versao_aprovada_em: new Date().toISOString(),
+      bpm: { ...(dadosAprov.bpm || {}), id: dadosAprov.bpm?.id || idTrilha(r.titulo), spec_aprovada_em: dadosAprov.bpm?.spec_aprovada_em || new Date().toISOString(), spec_aprovada_por: usuario || 'fundador' } })} WHERE id = ${id}`;
   if (r.tipo !== 'implementacao') return { status: 'aprovada' };
-  const iss = await abrirIssue({ ...r, decisao_obs: obsFinal });
+  const [r1] = await sql`SELECT * FROM agente_demandas WHERE id = ${id}`;
+  const iss = await abrirIssue({ ...linha(r1), decisao_obs: obsFinal });
   if (iss.erro) return { status: 'aprovada', aviso: iss.erro };
   await sql`UPDATE agente_demandas SET status = 'em_execucao', issue_numero = ${iss.numero}, issue_url = ${iss.url}, atualizado_em = NOW() WHERE id = ${id}`;
   return { status: 'em_execucao', issue: iss.numero, url: iss.url };
@@ -258,6 +331,8 @@ async function sincronizar() {
           claude = { estado, inicio: c.created_at, atualizado: c.updated_at, duracao: (t.match(/task in ((?:\d+h )?(?:\d+m )?\d+s)/) || [])[1] || null, url: c.html_url,
             branch: (t.match(/\/tree\/(claude\/issue-\d+-[\w.-]+)/) || [])[1] || null }; } } catch (_) {}
       const ant = parse(r.dados) || {};
+      // v3.145 · B.P.M.: cada vez que o PR recebe "precisa-revisao" conta como devolução da Mixagem (métrica "% devolvidos")
+      if (pr && (pr.rotulos || []).includes('precisa-revisao') && !(ant.pr?.rotulos || []).includes('precisa-revisao')) ant.bpm = { ...(ant.bpm || {}), devolucoes: (ant.bpm?.devolucoes || 0) + 1 };
       const d = { ...ant, pr, claude, issue_estado: iss.state, issue_criada_em: iss.created_at || ant.issue_criada_em || null, branch: pr?.branch || claude?.branch || ant.branch || null };
       // v3.88: o robô de merge achou conflito de verdade → pede ao Claude (com o token do fundador, para disparar o GitHub Actions)
       if (pr && pr.estado === 'open' && (pr.rotulos || []).includes('conflito') && (!ant.conflito_pedido_em || Date.now() - Date.parse(ant.conflito_pedido_em) > 3 * 3600000)) {
@@ -271,6 +346,8 @@ async function sincronizar() {
       const descartada = !implementada && iss.state === 'closed' && (iss.state_reason === 'not_planned' || (pr && pr.estado === 'closed' && !pr.merged));
       if (descartada) d.arquivada_em = iss.closed_at || new Date().toISOString();
       await sql`UPDATE agente_demandas SET dados = ${JSON.stringify(d)}, status = ${implementada ? 'implementada' : descartada ? 'arquivada' : 'em_execucao'}, atualizado_em = NOW() WHERE id = ${r.id}`;
+      // v3.146: item da Esteira de Entrega mesclado → volta ao Kanban da fábrica em "Em QA (robôs)"
+      if (implementada && d.fabrica?.item_id) { try { await sql`UPDATE fab_itens SET coluna = 'qa', em_qa_em = NOW(), nota = ${'Construído pelo Claude — PR #' + (pr?.numero || '?') + ' mesclado; aguardando os robôs de QA'}, atualizado_em = NOW() WHERE id = ${d.fabrica.item_id} AND coluna IN ('backlog', 'especificado', 'desenvolvimento', 'revisao')`; } catch (_) {} }
       if (implementada) mudou++;
     } catch (_) {}
   }
@@ -449,7 +526,12 @@ async function handler(req, res) {
         // sincroniza com o GitHub no máximo a cada 3 min, ou na hora com { sync: true } (PR mesclado → card vai para Implementadas)
         const us = await kvGet('agente:ideias:ultima_sync'); if (b.sync || !us || Date.now() - Date.parse(us.em) > 180000) { await kvSet('agente:ideias:ultima_sync', { em: new Date().toISOString() }); try { await sincronizar(); } catch (_) {} }
         const rows = (await sql`SELECT * FROM agente_demandas ORDER BY CASE status WHEN 'sugerida' THEN 0 WHEN 'aprovada' THEN 1 WHEN 'em_execucao' THEN 2 ELSE 3 END, prioridade DESC, criado_em DESC LIMIT 400`).map(linha);
-        return { demandas: rows, config: await config(), ultimo_ciclo: await kvGet('agente:ideias:ultimo_ciclo'), ultima_noite: await kvGet('agente:qa:ultima_noite'), github: !!process.env.GITHUB_TOKEN };
+        // v3.149: demandas criadas antes do Método B.P.M. não tinham trilha — sugere pela área/arquivos citados (o fundador confere)
+        for (const r of rows.filter(r => ['sugerida', 'aprovada'].includes(r.status) && r.squad !== 'qa' && !r.dados?.bpm?.trilha)) {
+          try { const t = sugerirTrilha(r.dados); if (t) { r.dados.bpm = { ...(r.dados.bpm || {}), trilha: t, trilha_origem: 'sugerida' };
+            await sql`UPDATE agente_demandas SET dados = ${JSON.stringify(r.dados)} WHERE id = ${r.id}`; } } catch (_) {} }
+        const cfgL = await config();
+        return { demandas: rows, config: cfgL, bpm: resumoBpm(cfgL), ultimo_ciclo: await kvGet('agente:ideias:ultimo_ciclo'), ultima_noite: await kvGet('agente:qa:ultima_noite'), github: !!process.env.GITHUB_TOKEN };
       },
       gerar: () => gerar({ squad: b.squad || 'produto', foco: b.foco || '', origem: 'manual' }),
       decidir: () => decidir(b, req.usuario),
@@ -459,6 +541,7 @@ async function handler(req, res) {
         const c = b.campos || {}; const dados = { ...(parse(r0.dados) || {}) };
         ['problema', 'proposta', 'como_implementar', 'metrica_sucesso', 'esforco', 'risco', 'area'].forEach(k => { if (c[k] != null) dados[k] = String(c[k]).substring(0, 6000); });
         if (Array.isArray(c.criterios_aceite)) dados.criterios_aceite = c.criterios_aceite.map(x => String(x).substring(0, 400)).slice(0, 20);
+        if (c.trilha != null) { if (!trilhaValida(c.trilha)) throw new Error('Trilha inválida'); dados.bpm = { ...(dados.bpm || {}), trilha: c.trilha, trilha_origem: 'fundador' }; }
         const titulo = c.titulo ? String(c.titulo).substring(0, 200) : r0.titulo;
         const pri = c.prioridade ? Math.max(1, Math.min(5, parseInt(c.prioridade))) : r0.prioridade;
         // guarda a versão de antes da 1ª alteração pendente; se a edição voltar ao texto original, não há o que revisar
@@ -476,7 +559,8 @@ async function handler(req, res) {
       nova: async () => {
         const d = b.dados || {}; if (!d.titulo || !d.proposta) throw new Error('Informe título e proposta');
         const id = novoId();
-        await sql`INSERT INTO agente_demandas (id, squad, tipo, titulo, status, prioridade, dados) VALUES (${id}, ${d.squad || 'produto'}, 'implementacao', ${String(d.titulo).substring(0, 200)}, 'sugerida', ${Math.max(1, Math.min(5, parseInt(d.impacto) || 3))}, ${JSON.stringify({ ...d, origem: 'fundador' })})`;
+        const bpm = { trilha: trilhaValida(d.trilha) ? d.trilha : (() => { try { return sugerirTrilha(d); } catch (_) { return null; } })(), trilha_origem: trilhaValida(d.trilha) ? 'fundador' : 'sugerida' };
+        await sql`INSERT INTO agente_demandas (id, squad, tipo, titulo, status, prioridade, dados) VALUES (${id}, ${d.squad || 'produto'}, 'implementacao', ${String(d.titulo).substring(0, 200)}, 'sugerida', ${Math.max(1, Math.min(5, parseInt(d.impacto) || 3))}, ${JSON.stringify({ ...d, origem: 'fundador', bpm })})`;
         return { id };
       },
       sincronizar: () => sincronizar(),
@@ -489,6 +573,13 @@ async function handler(req, res) {
         const [rr] = await sql`SELECT issue_numero FROM agente_demandas WHERE id = ${b.id}`; const N = rr?.issue_numero;
         if (d.claude?.estado === 'erro' && !b.mesmo_assim) throw new Error('O Claude parou com erro nesta tarefa — o PR pode estar incompleto. Revise no GitHub antes.');
         if ((!pr?.numero || pr.estado !== 'open') && !d.branch) throw new Error('Esta demanda ainda não tem trabalho do Claude para mesclar');
+        // v3.145 · B.P.M. — gate humano da Mixagem: checklist completo ou ressalva escrita
+        const mx = b.mixagem || {}; const itens = Array.isArray(mx.itens) ? mx.itens : [];
+        const pendentes = itens.filter(i => !i.ok).map(i => i.txt);
+        const ressalva = String(mx.ressalva || '').trim();
+        if (!itens.length) throw new Error('Preencha o checklist de Mixagem antes de mesclar');
+        if (pendentes.length && ressalva.length < 15) throw new Error('Checklist de Mixagem com ' + pendentes.length + ' item(ns) em aberto — marque ou escreva a ressalva (por que vai assim mesmo)');
+        d.mixagem = { itens: itens.map(i => ({ txt: String(i.txt).substring(0, 200), ok: !!i.ok })), pendentes, ressalva: ressalva.substring(0, 1000) || null, por: req.sessao?.login || req.usuario || 'fundador', em: new Date().toISOString() };
         const gh = _gh(); let via = 'api';
         try {
           // v3.98: o Claude terminou e deixou a branch, mas o robô ainda não abriu o PR → abre agora
@@ -500,6 +591,8 @@ async function handler(req, res) {
           await _comando(gh, N, 'mesclar', req.sessao?.login || req.usuario); via = 'comando'; // o robô do GitHub faz com a permissão dele
         }
         d.merge_via = via;
+        // registra o checklist no PR (rastreabilidade da Mixagem) — sem travar o merge se o comentário falhar
+        try { const alvo = pr?.numero || N; if (alvo) await gh('/issues/' + alvo + '/comments', 'POST', { body: `### 🎚 Mixagem — gate humano (${d.mixagem.por}, ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })})\n` + d.mixagem.itens.map(i => `- [${i.ok ? 'x' : ' '}] ${i.txt}`).join('\n') + (d.mixagem.ressalva ? `\n\n**Ressalva:** ${d.mixagem.ressalva}` : '') + '\n\nO robô de merge roda agora os gates automáticos (B.P.M. + validação) e só publica se passarem.' }); } catch (_) {}
         d.merge_pedido_em = new Date().toISOString(); d.merge_pedido_por = req.sessao?.login || req.usuario || null;
         await sql`UPDATE agente_demandas SET dados = ${JSON.stringify(d)}, atualizado_em = NOW() WHERE id = ${row.id}`;
         return { ok: true, pr: pr?.numero || null, via };
@@ -522,17 +615,34 @@ async function handler(req, res) {
       config_salvar: async () => {
         const atual = await config(); const c = b.config || {};
         const nova = { ...atual, ativo: c.ativo != null ? !!c.ativo : atual.ativo, frequencia_horas: Math.max(6, Math.min(168, parseInt(c.frequencia_horas) || atual.frequencia_horas)),
-          max_por_ciclo: Math.max(1, Math.min(6, parseInt(c.max_por_ciclo) || atual.max_por_ciclo)), foco: c.foco != null ? String(c.foco).substring(0, 500) : atual.foco };
-        await kvSet('agente:ideias:config', nova); return { config: nova };
+          max_por_ciclo: Math.max(1, Math.min(6, parseInt(c.max_por_ciclo) || atual.max_por_ciclo)), foco: c.foco != null ? String(c.foco).substring(0, 500) : atual.foco,
+          bpm: c.bpm ? { fase: /^F[1-4]$/.test(c.bpm.fase) ? c.bpm.fase : (atual.bpm?.fase || 'F1'), limite: c.bpm.limite ? Math.max(1, Math.min(8, parseInt(c.bpm.limite))) : null,
+            checks: { ...(atual.bpm?.checks || {}), ...Object.fromEntries(Object.entries(c.bpm.checks || {}).filter(([k]) => /^F[1-4]:[a-z_0-9]+$/.test(k)).map(([k, v]) => [k, !!v])) } } : atual.bpm };
+        await kvSet('agente:ideias:config', nova); return { config: nova, bpm: resumoBpm(nova) };
       },
     };
     if (!acoes[b.action]) return res.status(400).json({ success: false, error: 'Ação desconhecida', disponiveis: Object.keys(acoes) });
     return res.status(200).json({ success: true, ...(await acoes[b.action]()) });
   } catch (e) {
     console.error('[agente-ideias]', e.message);
-    return res.status(500).json({ success: false, error: e.message });
+    return res.status(500).json({ success: false, error: e.message, codigo: e.codigo || null });
   }
 }
 
-export { telasDoSistema, corpoIssue };
+// v3.146: a Esteira de Entrega manda a fundação e os itens do Kanban para o Claude construir (squad "fabrica")
+async function demandaProduto({ titulo, problema, proposta, criterios = [], como_implementar = '', trilha, fabrica }, usuario, opcoes = {}) {
+  const sql = await getSql(); if (!trilhaValida(trilha)) throw new Error('Trilha do produto inválida: ' + trilha);
+  const id = novoId();
+  const dados = { problema, proposta, criterios_aceite: criterios.map(c => String(c).substring(0, 400)).filter(Boolean).slice(0, 20), como_implementar, area: 'produto', origem: 'fabrica',
+    impacto: 4, esforco: fabrica?.tipo === 'fundacao' ? 'G' : 'M', risco: 'medio', fabrica, bpm: { trilha, trilha_origem: 'fabrica' } };
+  await sql`INSERT INTO agente_demandas (id, squad, tipo, titulo, status, prioridade, dados) VALUES (${id}, 'fabrica', 'implementacao', ${String(titulo).substring(0, 200)}, 'aprovada', 4, ${JSON.stringify(dados)})`;
+  try { return { id, ...(await decidir({ id, decisao: 'enviar', obs: 'Enviado pela Esteira de Entrega', ...opcoes }, usuario)) }; }
+  catch (e) { await sql`DELETE FROM agente_demandas WHERE id = ${id}`; throw e; }
+}
+async function demandasDaFabrica(projeto_id) {
+  const sql = await getSql();
+  return (await sql`SELECT * FROM agente_demandas WHERE squad = 'fabrica' AND dados->'fabrica'->>'projeto_id' = ${projeto_id} ORDER BY criado_em`).map(linha);
+}
+
+export { telasDoSistema, corpoIssue, demandaProduto, demandasDaFabrica };
 export default comGuarda(handler, 'agente-ideias');

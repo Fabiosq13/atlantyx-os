@@ -179,12 +179,22 @@ async function contextoMetas(base) {
   const metas = (await kvGet('atx:metas')) || {};
   const anual = num(metas.anual, 18000000), mensal = num(metas.mensal, anual / 12);
   // v3.43: QuickBooks e HubSpot em paralelo, com limite de 20s cada (antes em sequência, até 50s cada)
-  const [fin, pipe, P] = await Promise.all([_api(base, '/api/financeiro', { action: 'kpis_saude', params: {} }, 20000), _api(base, '/api/analytics?tipo=pipeline', null, 20000), premissas()]);
-  const k = fin.kpis || {};
+  // v3.152: metas e realizado da MESMA fonte do Dashboard Financeiro e da TV — Metas da Empresa do ano (ou o padrão de
+  // 25% sobre o ano anterior) e a meta do mês (mês a mês do cadastro), contra o faturamento da DRE do QuickBooks.
+  // Antes: kv 'atx:metas'.anual com padrão fixo de R$ 18 mi e meta do mês = ano ÷ 12 — o % divergia do financeiro.
+  const [st, rm, pipe, P] = await Promise.all([_api(base, '/api/financeiro', { action: 'metas_empresa_status', params: { com_crm: false } }, 30000),
+    _api(base, '/api/financeiro', { action: 'resultado_kpis', params: {} }, 30000), _api(base, '/api/analytics?tipo=pipeline', null, 20000), premissas()]);
+  const S = st?.meta ? st : null, RM = rm?.resultado || null;
+  let k = {}, fonteRec = 'QuickBooks (DRE)';
+  if (!(S?.realizado) || !(RM?.periodo_res)) { const fin = await _api(base, '/api/financeiro', { action: 'kpis_saude', params: {} }, 20000); k = fin.kpis || {}; if (!fin.kpis) fonteRec = 'indisponível: ' + (fin.error || fin.erro || ''); }
+  const metaAno = num(S?.meta?.faturamento) || anual, metaMes = num(RM?.metas_periodo?.faturamento) || (S?.meta?.faturamento ? metaAno / 12 : mensal);
+  const realAno = S?.realizado ? num(S.realizado.faturamento) : num(k.receita_ano), realMes = RM?.periodo_res ? num(RM.periodo_res.faturamento) : num(k.receita_mes);
   const pipelineTotal = num(pipe?.pipeline?.total_valor);
-  return { meta_anual: anual, meta_mensal: mensal, realizado_ano: num(k.receita_ano), realizado_mes: num(k.receita_mes),
+  return { meta_anual: metaAno, meta_mensal: metaMes, realizado_ano: realAno, realizado_mes: realMes,
+    meta_fonte: { ano: S?.meta?.faturamento ? (S.meta.padrao ? 'meta padrão da empresa — ' + (S.meta.fonte || '') : 'Metas da Empresa') : (metas.anual ? 'meta antiga do Dashboard LIVE' : 'padrão fixo (cadastre em Planejamento → Metas da Empresa)'),
+      mes: RM?.metas_periodo?.fonte?.faturamento || 'meta do ano ÷ 12' },
     pipeline_total: pipelineTotal, pipeline_ponderado: r2(pipelineTotal * P.peso_pipeline / 100), deals_abertos: num(pipe?.pipeline?.total_deals),
-    etapas: pipe?.pipeline?.etapas || null, fonte: { receita: fin.kpis ? 'QuickBooks (DRE)' : 'indisponível: ' + (fin.error || fin.erro || ''), pipeline: pipe?.pipeline ? 'HubSpot' : 'indisponível' } };
+    etapas: pipe?.pipeline?.etapas || null, fonte: { receita: fonteRec, pipeline: pipe?.pipeline ? 'HubSpot' : 'indisponível' } };
 }
 
 // ═══════════════════════ MARGENS (projetos, sustentação, geral) ═══════════════════════
