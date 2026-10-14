@@ -53,6 +53,7 @@ jobs:
                 if [ -z "${BR:-}" ]; then gh issue comment "$NUM" -R "$REPO" --body "⚠ Não achei a branch do Claude desta tarefa (claude/issue-$N-…) — ele ainda não terminou. Use \"Reenviar ao Claude\" na Esteira."; exit 0; fi
                 TIT=$(gh issue view "$N" -R "$REPO" --json title -q .title)
                 printf 'Fixes #%s\n\nPull request aberto pela Esteira de Demandas a partir do trabalho do Claude na branch `%s`.\n\n**Aprovado pelo fundador na Esteira.**\n' "$N" "$BR" > /tmp/corpo.md
+                gh issue view "$N" -R "$REPO" --json body -q .body | grep -E '^BPM-(Trilha|ID):' | head -2 >> /tmp/corpo.md || true
                 gh pr create -R "$REPO" --base main --head "$BR" --title "$TIT" --body-file /tmp/corpo.md
                 PR=$(gh pr list -R "$REPO" --head "$BR" --state open --json number -q '.[0].number')
                 gh pr edit "$PR" -R "$REPO" --add-label demanda-aprovada || true

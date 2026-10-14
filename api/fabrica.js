@@ -16,6 +16,11 @@ import { fabSql, novoIdFab as novoId, ETAPAS, DOCS, COLUNAS_FAB, TIPOS_CASO, ROB
 //     rastreabilidade e os indicadores do item 9.5 da metodologia.
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
+// v3.146 · CONSTRUÇÃO PELO CLAUDE (Método B.P.M.): depois do G4, a fundação e cada item do Kanban viram tarefas
+// para o Claude numa pasta própria do produto (produtos/<pasta>/, trilha P-<pasta>). As tarefas passam pela
+// Esteira de Demandas (Mixagem) e o item volta ao Kanban em "Em QA (robôs)" quando mesclado.
+// Estado em kv_store 'fab:construcao:<projeto>' (sem mudança de schema).
+const RX_PASTA = /^[a-z0-9][a-z0-9-]{1,40}$/;
 const PRIOR = ['alta', 'media', 'baixa'];
 const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const mdc = v => String(v ?? '').replace(/\|/g, '/').replace(/\n+/g, ' ').trim();
@@ -822,7 +827,84 @@ ${D.unitarios ? `<p class="muted" style="margin-top:10px">Testes unitários da f
 </div></body></html>`;
 }
 
+// ═══════════════ v3.146 · CONSTRUÇÃO PELO CLAUDE ═══════════════
+async function _kvC(sql, pid, valor) {
+  const k = 'fab:construcao:' + pid;
+  if (valor === undefined) { try { const r = (await sql`SELECT value FROM kv_store WHERE key=${k}`)[0]; return r ? (typeof r.value === 'string' ? JSON.parse(r.value) : r.value) : {}; } catch (_) { return {}; } }
+  await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(valor)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; return valor;
+}
+const _pastaDe = n => String(n || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 40) || 'produto';
+const _resumoDem = d => d ? { id: d.id, status: d.status, issue_numero: d.issue_numero, issue_url: d.issue_url, pr: d.dados?.pr || null, claude: d.dados?.claude?.estado || null,
+  mixagem: !!d.dados?.mixagem, merge_pedido: !!d.dados?.merge_pedido_em, implementada_em: d.dados?.implementada_em || null } : null;
+async function construcaoObter({ projeto_id }) {
+  const sql = await fabSql(); const P = (await sql`SELECT * FROM fab_projetos WHERE id=${projeto_id}`)[0]; if (!P) throw new Error('Projeto não encontrado');
+  const docs = await sql`SELECT tipo, status FROM fab_documentos WHERE projeto_id=${projeto_id}`; const st = t => docs.find(d => d.tipo === t)?.status || null;
+  const I = await sql`SELECT id, codigo, titulo, coluna, prioridade, criterios FROM fab_itens WHERE projeto_id=${projeto_id} ORDER BY ordem, codigo`;
+  const { demandasDaFabrica } = await import('./agente-ideias.js'); const D = (await demandasDaFabrica(projeto_id)).filter(d => !['arquivada', 'recusada'].includes(d.status));
+  const est = await _kvC(sql, projeto_id);
+  const pre = [['erf', 'Especificação Funcional (ERF) aprovada', st('erf') === 'aprovado'], ['ert', 'Especificação Técnica (ERT) aprovada', st('ert') === 'aprovado'],
+    ['arquitetura', 'Documento de Arquitetura aprovado (G4)', st('arquitetura') === 'aprovado'], ['backlog', 'Backlog com itens no Kanban da fábrica', I.length > 0],
+    ['github', 'GitHub configurado no Vercel (GITHUB_TOKEN)', !!process.env.GITHUB_TOKEN]].map(([k, txt, ok]) => ({ k, txt, ok }));
+  const fund = D.filter(d => d.dados?.fabrica?.tipo === 'fundacao').pop();
+  return { projeto: { id: P.id, nome: P.nome, cliente: P.cliente }, pasta: est.pasta || _pastaDe(P.nome), pasta_travada: !!fund, pre, liberado: pre.every(x => x.ok),
+    docs_opcionais: ['modelo_dados', 'volumetria', 'finops', 'plano_projeto'].map(t => ({ tipo: t, nome: DOCS[t].nome, status: st(t) })),
+    fundacao: _resumoDem(fund), itens: I.map(i => ({ ...i, demanda: _resumoDem(D.filter(d => d.dados?.fabrica?.item_id === i.id).pop()) })) };
+}
+async function construcaoEnviar(b, usuario) {
+  const C = await construcaoObter(b), sql = await fabSql();
+  if (!C.liberado) throw new Error('Ainda falta: ' + C.pre.filter(x => !x.ok).map(x => x.txt).join(' · '));
+  if (C.fundacao) throw new Error('A fundação deste sistema já foi enviada (tarefa #' + (C.fundacao.issue_numero || '?') + ')');
+  const pasta = String(b.pasta || C.pasta).trim().toLowerCase(); if (!RX_PASTA.test(pasta)) throw new Error('Pasta inválida — use letras minúsculas, números e hífen (ex.: crm-jelta)');
+  await _kvC(sql, b.projeto_id, { ...(await _kvC(sql, b.projeto_id)), pasta, enviado_em: new Date().toISOString(), enviado_por: usuario || null });
+  const P = C.projeto; const { demandaProduto } = await import('./agente-ideias.js');
+  return demandaProduto({ titulo: 'Fundação do sistema ' + P.nome, problema: `Construir a base do sistema ${P.nome}${P.cliente ? ' para ' + P.cliente : ''}, conforme a ERT e o Documento de Arquitetura aprovados na Esteira de Entrega.`,
+    proposta: `Criar em produtos/${pasta}/ a estrutura do sistema na tecnologia definida pela arquitetura, com autenticação e layout base, navegação, conexão com o banco, deploy na Vercel (Root Directory = produtos/${pasta}) e README. Os itens do backlog vêm depois, um por tarefa.`,
+    criterios: ['O sistema roda localmente com os comandos do README', `Publica na Vercel com Root Directory = produtos/${pasta} sem erro de build`, 'Tecnologia e estrutura de pastas seguem o Documento de Arquitetura aprovado',
+      'Login/controle de acesso e layout base conforme a ERT', 'README lista as variáveis de ambiente (só os nomes) e o passo a passo de publicação', 'Nenhum dado real de cliente no código ou nos testes'],
+    como_implementar: `Documentos aprovados em produtos/${pasta}/partitura/ (ert.md, arquitetura.md, modelo_dados.md…).` + (b.instrucoes ? '\nOrientação do fundador: ' + String(b.instrucoes).substring(0, 1500) : ''),
+    trilha: 'P-' + pasta, fabrica: { projeto_id: P.id, nome: P.nome, cliente: P.cliente || null, pasta, tipo: 'fundacao' } }, usuario, { forcar_paralelismo: !!b.forcar_paralelismo });
+}
+async function construcaoItem(b, usuario) {
+  const C = await construcaoObter(b), sql = await fabSql();
+  if (!C.fundacao) throw new Error('Envie primeiro a fundação do sistema');
+  if (C.fundacao.status !== 'implementada' && !b.forcar) { const e = new Error('A fundação ainda não está no ar (status: ' + C.fundacao.status + '). Enviar o item agora pode gerar conflito com a estrutura que o Claude está criando.'); e.precisa_forcar = true; throw e; }
+  const it = C.itens.find(i => i.id === b.item_id); if (!it) throw new Error('Item não encontrado');
+  if (it.demanda && it.demanda.status !== 'implementada') throw new Error('Este item já está com o Claude (tarefa #' + (it.demanda.issue_numero || '?') + ')');
+  const I = (await sql`SELECT * FROM fab_itens WHERE id=${b.item_id}`)[0];
+  const casos = await sql`SELECT codigo, titulo, esperado FROM fab_casos WHERE projeto_id=${b.projeto_id} AND item_codigo=${I.codigo} ORDER BY codigo LIMIT 10`;
+  const crit = [...String(I.criterios || '').split(/\n+/).map(x => x.replace(/^[-*•\d.)\s]+/, '').trim()).filter(Boolean), ...casos.map(c => `${c.codigo}: ${c.titulo}${c.esperado ? ' → ' + c.esperado : ''}`)];
+  if (!crit.length) throw new Error('O item ' + I.codigo + ' não tem critérios de aceite nem casos de teste — complete o item (Kanban) ou gere os casos (Planos de Teste) antes');
+  const P = C.projeto, pasta = C.pasta; const { demandaProduto } = await import('./agente-ideias.js');
+  const r = await demandaProduto({ titulo: `${I.codigo} · ${I.titulo}`, problema: I.descricao || I.titulo, proposta: (I.descricao || I.titulo) + (I.requisito_ref ? `\n\nRequisito: ${I.requisito_ref}` : ''),
+    criterios: crit, como_implementar: `Item ${I.codigo} do Kanban da fábrica${I.requisito_ref ? ' · requisito ' + I.requisito_ref : ''}${I.estimativa_h ? ' · estimativa ' + I.estimativa_h + ' h' : ''}. Casos de teste ligados: ${casos.map(c => c.codigo).join(', ') || 'nenhum'} (produtos/${pasta}/partitura/casos.md).` + (b.instrucoes ? '\nOrientação do fundador: ' + String(b.instrucoes).substring(0, 1500) : ''),
+    trilha: 'P-' + pasta, fabrica: { projeto_id: P.id, nome: P.nome, cliente: P.cliente || null, pasta, tipo: 'item', item_id: I.id, item_codigo: I.codigo } }, usuario, { forcar_paralelismo: !!b.forcar_paralelismo });
+  if (r.status === 'em_execucao') await sql`UPDATE fab_itens SET coluna='desenvolvimento', responsavel='Claude (B.P.M.)', nota=${'Com o Claude — tarefa #' + r.issue}, atualizado_em=NOW() WHERE id=${I.id}`;
+  return r;
+}
+// pacote que o robô do GitHub baixa para produtos/<pasta>/partitura/ antes do Claude começar (GET com CRON_SECRET)
+async function construcaoPacote({ projeto_id }) {
+  const sql = await fabSql(); const P = (await sql`SELECT * FROM fab_projetos WHERE id=${projeto_id}`)[0]; if (!P) throw new Error('Projeto não encontrado');
+  const est = await _kvC(sql, projeto_id); const pasta = est.pasta || _pastaDe(P.nome);
+  const docs = await sql`SELECT tipo, titulo, conteudo_md, status, versao, aprovado_em FROM fab_documentos WHERE projeto_id=${projeto_id}`;
+  const arquivos = [];
+  for (const t of ['erf', 'ert', 'arquitetura', 'modelo_dados', 'volumetria', 'finops', 'plano_projeto', 'plano_testes', 'plano_testes_integracao', 'plano_testes_seguranca', 'plano_testes_desempenho', 'plano_testes_usabilidade']) {
+    const d = docs.find(x => x.tipo === t); if (!d || !d.conteudo_md) continue;
+    arquivos.push({ nome: t + '.md', conteudo: `<!-- ${DOCS[t].nome} · versão ${d.versao || 1} · ${d.status === 'aprovado' ? 'APROVADO em ' + new Date(d.aprovado_em).toLocaleDateString('pt-BR') : 'RASCUNHO (não aprovado — use com cautela)'} · baixado da Esteira de Entrega -->\n\n` + d.conteudo_md }); }
+  const I = await sql`SELECT codigo, titulo, descricao, criterios, prioridade, requisito_ref, coluna FROM fab_itens WHERE projeto_id=${projeto_id} ORDER BY ordem, codigo`;
+  arquivos.push({ nome: 'backlog.md', conteudo: `# Backlog — ${P.nome}\n\n` + I.map(i => `## ${i.codigo} · ${i.titulo}\nPrioridade: ${i.prioridade || '-'} · Requisito: ${i.requisito_ref || '-'} · Coluna: ${i.coluna}\n\n${i.descricao || ''}\n\n**Critérios de aceite**\n${i.criterios || '-'}\n`).join('\n') });
+  const K = await sql`SELECT codigo, titulo, tipo, requisito_ref, item_codigo, pre_condicao, passos, dados, esperado FROM fab_casos WHERE projeto_id=${projeto_id} ORDER BY codigo`;
+  arquivos.push({ nome: 'casos.md', conteudo: `# Casos de teste — ${P.nome}\n\nExecutados pelos robôs do QA de Produtos da Atlantyx depois do deploy. Mantenha os textos de telas e botões que eles citam.\n\n` + K.map(c => { const passos = Array.isArray(c.passos) ? c.passos : (() => { try { return JSON.parse(c.passos || '[]'); } catch (_) { return []; } })();
+    return `## ${c.codigo} · ${c.titulo}\nTipo: ${TIPOS_CASO[c.tipo]?.nome || c.tipo} · Item: ${c.item_codigo || '-'} · Requisito: ${c.requisito_ref || '-'}\n${c.pre_condicao ? 'Pré-condição: ' + c.pre_condicao + '\n' : ''}${passos.length ? passos.map((p, i) => `${i + 1}. ${typeof p === 'string' ? p : (p.acao || p.passo || JSON.stringify(p))}`).join('\n') + '\n' : ''}${c.dados ? 'Dados: ' + c.dados + '\n' : ''}Esperado: ${c.esperado || '-'}\n`; }).join('\n') });
+  arquivos.push({ nome: 'LEIA-ME.md', conteudo: `# Partitura do produto ${P.nome}\n\nDocumentos baixados da Esteira de Entrega do Atlantyx OS em ${new Date().toISOString()}. Eles mandam: em caso de divergência com o código, pare e registre em Interseções.\n\n` + arquivos.map(a => '- ' + a.nome).join('\n') + '\n' });
+  return { pasta, projeto: { id: P.id, nome: P.nome, cliente: P.cliente }, arquivos };
+}
+
 async function handler(req, res) {
+  // v3.146: o robô do GitHub (CRON_SECRET) baixa a partitura do produto antes do Claude construir
+  { const u0 = new URL(req.url || '/', 'http://x');
+    if (req.method === 'GET' && (u0.searchParams.get('action') || req.query?.action) === 'construcao_pacote') {
+      try { return res.status(200).json({ success: true, ...(await construcaoPacote({ projeto_id: u0.searchParams.get('projeto') || req.query?.projeto })) }); }
+      catch (e) { return res.status(500).json({ success: false, error: e.message }); } } }
   // GET público: painel do cliente pelo token (/qa/<token>)
   const url = new URL(req.url || '/', 'http://x');
   const viaRota = (url.pathname.match(/^\/qa\/([a-f0-9]+)/) || [])[1];
@@ -871,6 +953,10 @@ async function handler(req, res) {
       unitarios_importar: () => unitariosImportar(b),
       painel: () => painel({ projeto_id: b.projeto_id }),
       painel_token: async () => { const s = await sql(); const t = crypto.randomBytes(16).toString('hex'); await s`UPDATE fab_projetos SET token_publico=${t}, atualizado_em=NOW() WHERE id=${b.projeto_id}`; return { token: t }; },
+      construcao_obter: () => construcaoObter(b),
+      construcao_enviar: () => construcaoEnviar(b, req.sessao?.login || req.usuario),
+      construcao_item: () => construcaoItem(b, req.sessao?.login || req.usuario),
+      construcao_pacote: () => construcaoPacote(b),
       robos_executar: async () => { const s = await sql(); const p = (await s`SELECT qa_produto_id FROM fab_projetos WHERE id=${b.projeto_id}`)[0];
         if (!p?.qa_produto_id) throw new Error('Ligue o projeto a um produto do QA de Produtos (URL e usuário de teste) para os robôs rodarem.');
         const { executarQa } = await import('./qa-externo.js'); return executarQa({ produto_id: p.qa_produto_id, origem: 'esteira' }); },
@@ -879,7 +965,7 @@ async function handler(req, res) {
     return res.status(200).json({ success: true, ...(await acoes[b.action]()) });
   } catch (e) {
     console.error('[fabrica]', b.action, e.message);
-    return res.status(e.precisa_forcar ? 409 : 500).json({ success: false, error: e.message, precisa_forcar: !!e.precisa_forcar });
+    return res.status(e.precisa_forcar ? 409 : 500).json({ success: false, error: e.message, precisa_forcar: !!e.precisa_forcar, codigo: e.codigo || null });
   }
 }
 export default comGuarda(handler, 'fabrica');

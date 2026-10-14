@@ -157,6 +157,7 @@ async function handler(req, res) {
       qb_status:             () => qbStatus(params),
       relatorio_pagamentos:  () => relatorioPagamentosEnviar(params),
       alerta_termos_gps:     () => alertaTermosGpsEnviar(params), // v3.129
+      higienizacao_dados:    () => higienizacaoDados(params),     // v3.141
       email_diagnostico:     () => emailDiagnostico(params),
       versao:                () => ({ versao_api: VERSAO_API }),
       fluxo_detalhado:       () => fluxoDetalhado(params),
@@ -209,6 +210,7 @@ async function handler(req, res) {
       desp_lancar_qb:        () => despLancarQb(params),
       qb_fornecedores_list:  () => qbFornecedoresList(),
       desp_gerar_ocorrencias: () => despGerarOcorrencias(params),
+      desp_replicar_mes:     () => despReplicarMes(params), // v3.162
 
       // ── Saldo inicial (snapshots) ────────────────────────────────────────
       saldo_inicial_save:    () => saldoInicialSave(params),
@@ -960,35 +962,40 @@ async function pagamentosDoDiaEPendentes() {
   const fimMes = new Date(new Date(hoje).getFullYear(), new Date(hoje).getMonth() + 1, 0).toISOString().split('T')[0];
 
   // 1. Despesas do Atlantyx com vencimento HOJE
-  const doDia = await sql`SELECT o.*, d.descricao AS desp_desc, d.categoria AS desp_cat, d.fornecedor AS desp_forn
+  // v3.163: só as não pagas e não canceladas (antes a cancelada aparecia como pendente no e-mail e no dashboard)
+  let doDia = await sql`SELECT o.*, d.descricao AS desp_desc, d.categoria AS desp_cat, d.fornecedor AS desp_forn
     FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
-    WHERE o.data_prevista = ${hoje} ORDER BY o.valor DESC`;
+    WHERE o.data_prevista = ${hoje} AND o.status NOT IN ('paga', 'cancelada') ORDER BY o.valor DESC`;
 
   // 2. Pendentes do MÊS (não pagas, vencimento dentro do mês corrente) — inclui atrasadas do mês
-  const pendentesMes = await sql`SELECT o.*, d.descricao AS desp_desc, d.categoria AS desp_cat, d.fornecedor AS desp_forn
+  let pendentesMes = await sql`SELECT o.*, d.descricao AS desp_desc, d.categoria AS desp_cat, d.fornecedor AS desp_forn
     FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
-    WHERE o.status != 'paga' AND o.data_prevista >= ${inicioMes} AND o.data_prevista <= ${fimMes}
+    WHERE o.status NOT IN ('paga', 'cancelada') AND o.data_prevista >= ${inicioMes} AND o.data_prevista <= ${fimMes}
     ORDER BY o.data_prevista ASC`;
 
   // 3. Contas a pagar do QuickBooks (Bills em aberto) — mesmo período
-  let qbHoje = [], qbMes = [], qbErro = null;
+  let qbHoje = [], qbMes = [], qbErro = null, billsTodas = null;
   if (qbConfigurado()) {
     try {
       const token = await qbToken();
-      const data = await qbQuery(`select * from Bill where Balance > '0' and DueDate >= '${inicioMes}' and DueDate <= '${fimMes}' maxresults 500`, token);
-      const bills = (data?.QueryResponse?.Bill || []).map(b => ({
+      // v3.163: lê todas as Bills do mês (abertas e pagas) — a paga também prova que a despesa da Agenda já está no QuickBooks
+      const data = await qbQuery(`select * from Bill where DueDate >= '${inicioMes}' and DueDate <= '${fimMes}' maxresults 500`, token);
+      billsTodas = (data?.QueryResponse?.Bill || []).map(b => ({ data: b.DueDate || b.TxnDate, fornecedor: b.VendorRef?.name || '', valor: parseFloat(b.TotalAmt || 0) }));
+      const bills = (data?.QueryResponse?.Bill || []).filter(b => parseFloat(b.Balance ?? 0) > 0).map(b => ({
         descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''),
         fornecedor: b.VendorRef?.name || '', categoria: 'QuickBooks · Conta a pagar',
-        data_prevista: b.DueDate || b.TxnDate, valor: parseFloat(b.Balance ?? b.TotalAmt ?? 0), fonte: 'quickbooks',
+        data_prevista: b.DueDate || b.TxnDate, valor: parseFloat(b.Balance ?? b.TotalAmt ?? 0), fonte: 'quickbooks', qb_url: _qbUrlTxn('conta:' + b.Id),
       }));
       qbMes = bills;
       qbHoje = bills.filter(b => String(b.data_prevista).split('T')[0] === hoje);
     } catch (e) { qbErro = e.message; }
   }
 
+  // v3.163: regra única — o que já existe no QuickBooks vale pelo QuickBooks; o que só está na Agenda vale pela Agenda
+  if (billsTodas) { doDia = _agendaSemDuplicarQb(doDia, billsTodas).pendentes; pendentesMes = _agendaSemDuplicarQb(pendentesMes, billsTodas).pendentes; }
   const norm = r => ({ descricao: r.desp_desc || r.descricao || 'Despesa', fornecedor: r.desp_forn || r.fornecedor || '',
     categoria: r.desp_cat || r.categoria || '', data: String(r.data_prevista).split('T')[0],
-    valor: parseFloat(r.valor) || 0, status: r.status || 'prevista', fonte: r.fonte || 'atlantyx' });
+    valor: parseFloat(r.valor) || 0, status: r.status || 'prevista', fonte: r.fonte || 'atlantyx', qb_url: r.qb_url || null });
 
   const listaDia = [...doDia.map(norm), ...qbHoje.map(norm)].sort((a, b) => b.valor - a.valor);
   const listaMes = [...pendentesMes.map(norm), ...qbMes.map(norm)]
@@ -1013,12 +1020,16 @@ function _htmlRelatorioExtra(d) {
     + (nota ? `<div style="font-size:11.5px;color:#5a6478;margin:0 0 6px 12px;">${nota}</div>` : '')
     + ((lista || []).length ? `<table style="width:100%;border-collapse:collapse;">${th(cab)}${lista.slice(0, 40).map(linha).join('')}${lista.length > 40 ? `<tr><td colspan="${cab.length}" style="padding:6px 8px;font-size:11px;color:#8a93a8;">+ ${lista.length - 40} item(ns) — veja no sistema</td></tr>` : ''}</table>` : `<p style="color:#1FB287;font-size:12px;margin:4px 0 0 12px;">✓ ${vazio}</p>`);
   const T = d.termos || {}, V = d.vendas || {}, X = d.pagx || {};
+  // v3.142: links diretos — termo abre no Kanban de Faturamento do Atlantyx; lançamento abre no QuickBooks
+  const uTermo = t => d.app_url && t?.id ? `${d.app_url}/?tela=s3fatkanban&termo=${encodeURIComponent(t.id)}` : null;
+  const aLink = (url, txt, cor = '#1A3A8F') => url ? `<a href="${url}" style="color:${cor};text-decoration:underline;">${txt}</a>` : txt;
+  const uLanc = x => x?.qb_url || (x?.fonte !== 'quickbooks' && d.app_url ? `${d.app_url}/?tela=s3agenda` : null);
   const etapa = { elaboracao: 'Elaboração', aprovacao: 'Aprovação', emissao_nf: 'Emissão de NF', envio_nf: 'Envio de NF', pagamento: 'Pagamento', pago: 'Pago' };
-  const lT = (extra) => t => `<tr>${td(`<b>${esc(t.numero || '—')}</b>`)}${td(esc(t.projeto) + '<br><span style="color:#8a93a8;font-size:11px;">' + esc(t.cliente) + ' · ' + esc(t.periodo) + '</span>')}${td(etapa[t.status] || t.status)}${td(t.dias != null ? t.dias + ' dias' : '—', 'text-align:right;' + (t.dias >= PRAZO_TERMO_DIAS ? 'color:#D64545;font-weight:bold;' : ''))}${td(extra ? extra(t) : '')}${td(brl(t.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`;
+  const lT = (extra) => t => `<tr>${td(`<b>${aLink(uTermo(t), esc(t.numero || '—'))}</b>`)}${td(esc(t.projeto) + '<br><span style="color:#8a93a8;font-size:11px;">' + esc(t.cliente) + ' · ' + esc(t.periodo) + '</span>')}${td(etapa[t.status] || t.status)}${td(t.dias != null ? t.dias + ' dias' : '—', 'text-align:right;' + (t.dias >= PRAZO_TERMO_DIAS ? 'color:#D64545;font-weight:bold;' : ''))}${td(extra ? extra(t) : '')}${td(brl(t.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`;
   const cabT = (x) => ['Termo', 'Projeto / cliente', 'Etapa', 'Dias', x || '', 'Valor'];
-  const lF = f => `<tr>${td(`<a href="${f.qb_url}" style="color:#1A3A8F;">${esc(f.doc || f.id)}</a>`)}${td(esc(f.cliente))}${td(dt(f.vencimento))}${td(f.dias_atraso ? f.dias_atraso + ' dias' : '—', 'text-align:right;' + (f.dias_atraso > 30 ? 'color:#D64545;font-weight:bold;' : ''))}${td(f.termo ? esc(f.termo) + (f.nf ? ' · NF ' + esc(f.nf) : ' · <span style="color:#E0A422;">sem NF</span>') : '<span style="color:#E0A422;">sem termo</span>')}${td(brl(f.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`;
+  const lF = f => `<tr>${td(`<a href="${f.qb_url}" style="color:#1A3A8F;">${esc(f.doc || f.id)}</a>`)}${td(esc(f.cliente))}${td(dt(f.vencimento))}${td(f.dias_atraso ? f.dias_atraso + ' dias' : '—', 'text-align:right;' + (f.dias_atraso > 30 ? 'color:#D64545;font-weight:bold;' : ''))}${td(f.termo ? aLink(uTermo({ id: f.termo_id }), esc(f.termo)) + (f.nf ? ' · NF ' + esc(f.nf) : ' · <span style="color:#E0A422;">sem NF</span>') : '<span style="color:#E0A422;">sem termo</span>')}${td(brl(f.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`;
   const cabF = ['Fatura', 'Cliente', 'Vencimento', 'Dias de atraso', 'Termo / NF', 'Valor em aberto'];
-  const lP = x => `<tr>${td(dt(x.data))}${td(esc(x.descricao) + (x.fornecedor && !String(x.descricao).includes(x.fornecedor) ? '<br><span style="color:#8a93a8;font-size:11px;">' + esc(x.fornecedor) + '</span>' : ''))}${td(esc(x.categoria) + (x.fonte === 'quickbooks' ? ' <span style="color:#1FB287;">(QB)</span>' : ''))}${td(brl(x.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`;
+  const lP = x => `<tr>${td(dt(x.data))}${td(aLink(uLanc(x), esc(x.descricao)) + (x.fornecedor && !String(x.descricao).includes(x.fornecedor) ? '<br><span style="color:#8a93a8;font-size:11px;">' + esc(x.fornecedor) + '</span>' : ''))}${td(esc(x.categoria) + (x.fonte === 'quickbooks' ? ' <span style="color:#1FB287;">(QB)</span>' : ''))}${td(brl(x.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`;
   const idx = [['Termos com pendência', T.criticos], ['Termos em atraso', T.em_atraso], ['Termos a confirmar na CPFL', T.a_confirmar_cpfl], ['Faturas vencidas', V.atraso], ['Pagamentos em atraso', d.atrasadas], ['Possíveis duplicados', X.duplicados]];
   const resumo = `<table style="width:100%;border-collapse:collapse;margin:22px 0 4px;"><tr>${idx.map(([t, l]) => { const n = (l || []).length; return `<td style="padding:8px;background:${n ? '#FDEDED' : '#EAFBF5'};border-radius:6px;border:3px solid #fff;"><div style="font-size:10px;color:#5a6478;text-transform:uppercase;">${t}</div><div style="font-size:17px;font-weight:bold;color:${n ? '#D64545' : '#1FB287'};">${n}</div><div style="font-size:10.5px;color:#8a93a8;">${brl(t === 'Possíveis duplicados' ? soma(l) : soma(l))}</div></td>`; }).join('')}</tr></table>`;
   if (d._soResumo) return resumo;
@@ -1026,7 +1037,7 @@ function _htmlRelatorioExtra(d) {
   const urgente = C.length ? `<div style="background:#FDEDED;border:2px solid #D64545;border-radius:8px;padding:12px 14px;margin:10px 0 14px;">
       <div style="font-size:14.5px;font-weight:bold;color:#B42318;">🚨 URGENTE — ${C.length} termo(s) com pendência · ${brl(soma(C))}</div>
       <div style="font-size:12.5px;color:#7A271A;margin:4px 0 8px;">Preencher o que falta no sistema e tomar providências <b>hoje</b> com o <b>Julio (CTO)</b> e os <b>GPs</b> junto ao cliente: emitir/registrar as notas, completar o termo e obter a data de pagamento — ou cobrar o pagamento vencido. Os GPs e o CTO recebem este alerta diariamente.</div>
-      <table style="width:100%;border-collapse:collapse;">${th(['Termo', 'Projeto / cliente', 'Etapa', 'O que falta / problema', 'Valor'])}${C.map(t => `<tr style="background:#fff5f5;">${td(`<b style="color:#B42318;">${esc(t.numero || '—')}</b>`)}${td(esc(t.projeto) + '<br><span style="color:#8a93a8;font-size:11px;">' + esc(t.cliente) + ' · ' + esc(t.periodo) + '</span>')}${td(etapa[t.status] || t.status)}${td('<span style="color:#B42318;font-weight:bold;">' + t.pendencias.map(p => esc(p.texto) + (p.empresas?.length ? ' (' + p.empresas.map(esc).join(', ') + ')' : '')).join('<br>') + '</span>')}${td(brl(t.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`).join('')}</table></div>` : '';
+      <table style="width:100%;border-collapse:collapse;">${th(['Termo', 'Projeto / cliente', 'Etapa', 'O que falta / problema', 'Valor'])}${C.map(t => `<tr style="background:#fff5f5;">${td(`<b style="color:#B42318;">${aLink(uTermo(t), esc(t.numero || '—'), '#B42318')}</b>`)}${td(esc(t.projeto) + '<br><span style="color:#8a93a8;font-size:11px;">' + esc(t.cliente) + ' · ' + esc(t.periodo) + '</span>')}${td(etapa[t.status] || t.status)}${td('<span style="color:#B42318;font-weight:bold;">' + t.pendencias.map(p => esc(p.texto) + (p.empresas?.length ? ' (' + p.empresas.map(esc).join(', ') + ')' : '')).join('<br>') + '</span>')}${td(brl(t.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`).join('')}</table></div>` : '';
   return `<h2 style="font-size:15px;color:#17224a;border-bottom:2px solid #1A3A8F;padding-bottom:5px;margin-top:26px;">📄 Termos de faturamento</h2>`
     + urgente
     + (T.erro ? `<p style="color:#E0A422;font-size:12px;">⚠ Não consegui ler os termos: ${esc(T.erro)}</p>` : '')
@@ -1039,7 +1050,7 @@ function _htmlRelatorioExtra(d) {
     + `<h2 style="font-size:15px;color:#17224a;border-bottom:2px solid #E0A422;padding-bottom:5px;margin-top:28px;">💰 Pagamentos — situação do mês</h2>`
     + bloco('⚠', 'Pagamentos em atraso', '#D64545', d.atrasadas, ['Vencimento', 'Descrição', 'Categoria', 'Valor'], lP, 'Nenhum pagamento em atraso.')
     + bloco('⧉', 'Possíveis pagamentos duplicados', '#D64545', (X.duplicados || []).map(x => ({ ...x, valor: x.valor })), ['Lançamento 1', 'Lançamento 2', 'Situação', 'Valor'],
-      x => `<tr>${td(esc(x.a.descricao) + '<br><span style="color:#8a93a8;font-size:11px;">' + dt(x.a.data) + ' · ' + (x.a.fonte === 'quickbooks' ? 'QuickBooks' : 'Atlantyx') + '</span>')}${td(esc(x.b.descricao) + '<br><span style="color:#8a93a8;font-size:11px;">' + dt(x.b.data) + ' · ' + (x.b.fonte === 'quickbooks' ? 'QuickBooks' : 'Atlantyx') + '</span>')}${td(x.a.situacao + ' / ' + x.b.situacao)}${td(brl(x.valor), 'text-align:right;font-family:monospace;')}</tr>`,
+      x => `<tr>${td(aLink(uLanc(x.a), esc(x.a.descricao)) + '<br><span style="color:#8a93a8;font-size:11px;">' + dt(x.a.data) + ' · ' + (x.a.fonte === 'quickbooks' ? 'QuickBooks' : 'Atlantyx') + '</span>')}${td(aLink(uLanc(x.b), esc(x.b.descricao)) + '<br><span style="color:#8a93a8;font-size:11px;">' + dt(x.b.data) + ' · ' + (x.b.fonte === 'quickbooks' ? 'QuickBooks' : 'Atlantyx') + '</span>')}${td(x.a.situacao + ' / ' + x.b.situacao)}${td(brl(x.valor), 'text-align:right;font-family:monospace;')}</tr>`,
       'Nenhum lançamento com mesmo fornecedor e valor em até 5 dias.', 'Mesmo fornecedor/descrição e mesmo valor com até 5 dias de diferença — confira antes de pagar.')
     + bloco('⏳', 'Pagamentos pendentes do mês', '#E0A422', d.listaMes.filter(x => x.data >= d.hoje), ['Vencimento', 'Descrição', 'Categoria', 'Valor'], lP, 'Nenhum pagamento pendente a vencer no mês.')
     + bloco('✅', 'Pagamentos feitos no mês', '#1FB287', X.pagos_mes, ['Data', 'Descrição', 'Categoria', 'Valor'], lP, 'Nenhum pagamento registrado no mês.', X.erro_qb ? '⚠ QuickBooks: ' + esc(X.erro_qb) : null)
@@ -1058,7 +1069,7 @@ function _htmlRelatorioPagamentos(d) {
   const dataBR = s => String(s || '').split('-').reverse().join('/');
   const linha = (x, destacarAtraso) => `<tr${destacarAtraso && x.data < d.hoje ? ' style="background:#fdeded;"' : ''}>
     <td style="padding:7px 9px;border-bottom:1px solid #e4e8f2;font-family:monospace;white-space:nowrap;">${dataBR(x.data)}${destacarAtraso && x.data < d.hoje ? ' <span style="color:#c0392b;font-weight:bold;">⚠</span>' : ''}</td>
-    <td style="padding:7px 9px;border-bottom:1px solid #e4e8f2;">${x.descricao}${x.fornecedor ? '<br><span style="color:#8a93a8;font-size:11px;">' + x.fornecedor + '</span>' : ''}</td>
+    <td style="padding:7px 9px;border-bottom:1px solid #e4e8f2;">${x.qb_url ? `<a href="${x.qb_url}" style="color:#1A3A8F;text-decoration:underline;">${x.descricao}</a>` : d.app_url && x.fonte !== 'quickbooks' ? `<a href="${d.app_url}/?tela=s3agenda" style="color:#1A3A8F;text-decoration:underline;">${x.descricao}</a>` : x.descricao}${x.fornecedor ? '<br><span style="color:#8a93a8;font-size:11px;">' + x.fornecedor + '</span>' : ''}</td>
     <td style="padding:7px 9px;border-bottom:1px solid #e4e8f2;color:#5a6478;font-size:11px;">${x.categoria}${x.fonte === 'quickbooks' ? ' <span style="color:#1FB287;">(QB)</span>' : ''}</td>
     <td style="padding:7px 9px;border-bottom:1px solid #e4e8f2;text-align:right;font-family:monospace;white-space:nowrap;">${brl(x.valor)}</td>
     <td style="padding:7px 9px;border-bottom:1px solid #e4e8f2;font-size:11px;">${x.status === 'paga' ? '✅ paga' : x.status === 'lancada' ? '📤 lançada' : '⏳ prevista'}</td></tr>`;
@@ -1104,7 +1115,8 @@ function _htmlRelatorioPagamentos(d) {
 
 // Envio via SMTP do Gmail (atlanteambr@gmail.com) — reaproveita a senha de app já
 // configurada em EMAIL_IMAP_PASS. Cai para o Resend se o nodemailer não estiver instalado.
-async function enviarEmailGmail({ para, assunto, html }) {
+// v3.147: `ical` (texto .ics) vira convite de calendário de verdade (Gmail/Outlook mostram Aceitar/Recusar); `anexos` = [{ filename, content, contentType }]
+export async function enviarEmailGmail({ para, assunto, html, remetente, ical, anexos }) {
   const user = (process.env.EMAIL_SMTP_USER || process.env.EMAIL_IMAP_USER) || 'atlanteambr@gmail.com';
   const pass = process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS;
   const trilha = []; // v1.25.1: registra CADA tentativa, para o erro nunca ser silencioso
@@ -1119,7 +1131,8 @@ async function enviarEmailGmail({ para, assunto, html }) {
       // verify() falha rápido e com mensagem clara se a credencial estiver errada
       try { await transporter.verify(); trilha.push('SMTP Gmail: autenticação OK'); }
       catch (eV) { trilha.push('SMTP Gmail: autenticação FALHOU — ' + eV.message.substring(0, 120)); throw eV; }
-      const info = await transporter.sendMail({ from: `Atlantyx OS Financeiro <${user}>`, to: para.join(', '), subject: assunto, html });
+      const info = await transporter.sendMail({ from: `${remetente || 'Atlantyx OS Financeiro'} <${user}>`, to: para.join(', '), subject: assunto, html,
+        ...(ical ? { icalEvent: { method: (String(ical).match(/^METHOD:(\w+)/m) || [])[1] || 'REQUEST', filename: 'convite.ics', content: ical } } : {}), ...(anexos?.length ? { attachments: anexos } : {}) });
       trilha.push('SMTP Gmail: aceito pelo servidor · destinatários aceitos: ' + JSON.stringify(info.accepted || []) + (info.rejected?.length ? ' · REJEITADOS: ' + JSON.stringify(info.rejected) : ''));
       return { via: 'gmail-smtp', de: user, id: info.messageId, aceitos: info.accepted, rejeitados: info.rejected, resposta_servidor: info.response, trilha };
     } catch (eSmtp) {
@@ -1137,7 +1150,8 @@ async function enviarEmailGmail({ para, assunto, html }) {
   if (!key) { const err = new Error('Não foi possível enviar: nodemailer ausente ou senha não configurada, e sem RESEND_API_KEY de reserva.'); err.trilha = trilha;
     err.hint = 'Confirme que o package.json tem "nodemailer" nas dependencies (e que o deploy rodou depois disso) e que EMAIL_IMAP_PASS está preenchida no Vercel.'; throw err; }
   const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: process.env.RESEND_FROM || 'Atlantyx <noreply@atlantyx.com.br>', to: para, subject: assunto, html }) });
+    body: JSON.stringify({ from: process.env.RESEND_FROM || 'Atlantyx <noreply@atlantyx.com.br>', to: para, subject: assunto, html,
+      ...((ical || anexos?.length) ? { attachments: [...(ical ? [{ filename: 'convite.ics', content: Buffer.from(ical).toString('base64'), content_type: 'text/calendar; method=REQUEST' }] : []), ...(anexos || []).map(a => ({ filename: a.filename, content: Buffer.from(a.content).toString('base64'), content_type: a.contentType }))] } : {}) }) });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) {
     // v1.25.1: mostrar o MOTIVO do Resend (antes era só "HTTP 4xx", inútil para diagnosticar)
@@ -1213,12 +1227,12 @@ async function _relVendasFaturadas() {
     const [inv, pays, lig] = await Promise.all([
       qbQuery(`select * from Invoice where Balance > '0' orderby DueDate asc maxresults 1000`, token),
       qbQuery(`select * from Payment where TxnDate >= '${iniMes}' and TxnDate <= '${hoje}' maxresults 500`, token),
-      sql`SELECT e.qb_invoice_id, e.nf_numero, t.numero_termo, t.projeto FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id WHERE e.qb_invoice_id IS NOT NULL`.catch(() => []),
+      sql`SELECT e.qb_invoice_id, e.nf_numero, t.id AS termo_id, t.numero_termo, t.projeto FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id WHERE e.qb_invoice_id IS NOT NULL`.catch(() => []),
     ]);
     const porInv = {}; lig.forEach(x => { porInv[String(x.qb_invoice_id)] = x; });
     const map = i => { const l = porInv[String(i.Id)]; return { id: i.Id, doc: i.DocNumber || '', cliente: i.CustomerRef?.name || '', emissao: i.TxnDate, vencimento: i.DueDate || i.TxnDate,
       valor: round(parseFloat(i.Balance) || 0), total: round(parseFloat(i.TotalAmt) || 0), dias_atraso: i.DueDate && i.DueDate < hoje ? Math.floor((Date.parse(hoje) - Date.parse(i.DueDate)) / 864e5) : 0,
-      termo: l ? (l.numero_termo || '') + (l.projeto ? ' · ' + l.projeto : '') : null, nf: l?.nf_numero || null, qb_url: `${base}/app/invoice?txnId=${i.Id}` }; };
+      termo: l ? (l.numero_termo || '') + (l.projeto ? ' · ' + l.projeto : '') : null, termo_id: l?.termo_id || null, nf: l?.nf_numero || null, qb_url: `${base}/app/invoice?txnId=${i.Id}` }; };
     const abertas = (inv?.QueryResponse?.Invoice || []).map(map);
     out.atraso = abertas.filter(i => i.vencimento < hoje).sort((a, b) => b.dias_atraso - a.dias_atraso);
     out.em_dia = abertas.filter(i => i.vencimento >= hoje);
@@ -1242,8 +1256,8 @@ async function _relPagamentosExtra(d) {
   // QuickBooks: pagamentos de contas e despesas pagas no mês
   if (qbConfigurado()) { try { const token = await qbToken();
     const [bp, pu] = await Promise.all([qbQuery(`select * from BillPayment where TxnDate >= '${d.inicioMes}' and TxnDate <= '${hoje}' maxresults 500`, token), qbQuery(`select * from Purchase where TxnDate >= '${d.inicioMes}' and TxnDate <= '${hoje}' maxresults 500`, token)]);
-    (bp?.QueryResponse?.BillPayment || []).forEach(b => out.pagos_mes.push({ descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''), fornecedor: b.VendorRef?.name || '', categoria: 'QuickBooks · pagamento de conta', data: b.TxnDate, valor: round(parseFloat(b.TotalAmt) || 0), fonte: 'quickbooks' }));
-    (pu?.QueryResponse?.Purchase || []).forEach(b => out.pagos_mes.push({ descricao: (b.EntityRef?.name || 'Despesa') + (b.DocNumber ? ' · ' + b.DocNumber : ''), fornecedor: b.EntityRef?.name || '', categoria: 'QuickBooks · ' + ((b.Line || [])[0]?.AccountBasedExpenseLineDetail?.AccountRef?.name || 'despesa'), data: b.TxnDate, valor: round(parseFloat(b.TotalAmt) || 0), fonte: 'quickbooks' }));
+    (bp?.QueryResponse?.BillPayment || []).forEach(b => out.pagos_mes.push({ descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''), fornecedor: b.VendorRef?.name || '', categoria: 'QuickBooks · pagamento de conta', data: b.TxnDate, valor: round(parseFloat(b.TotalAmt) || 0), fonte: 'quickbooks', qb_url: _qbUrlTxn('pagto_conta:' + b.Id) }));
+    (pu?.QueryResponse?.Purchase || []).forEach(b => out.pagos_mes.push({ descricao: (b.EntityRef?.name || 'Despesa') + (b.DocNumber ? ' · ' + b.DocNumber : ''), fornecedor: b.EntityRef?.name || '', categoria: 'QuickBooks · ' + ((b.Line || [])[0]?.AccountBasedExpenseLineDetail?.AccountRef?.name || 'despesa'), data: b.TxnDate, valor: round(parseFloat(b.TotalAmt) || 0), fonte: 'quickbooks', qb_url: _qbUrlTxn((b.PaymentType === 'Check' ? 'cheque:' : 'despesa:') + b.Id) }));
   } catch (e) { out.erro_qb = e.message; } }
   // possíveis DUPLICADOS: mesmo valor e mesmo fornecedor/descrição com até 5 dias de diferença (pendentes e pagos do mês)
   const nrm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '').substring(0, 14);
@@ -1314,6 +1328,98 @@ async function relatorioPagamentosEnviar({ apenas_gerar, para } = {}) {
   let alerta_gps = null;
   if (!(para && para.length) && d.termos && !d.termos.erro) { try { alerta_gps = await alertaTermosGpsEnviar({ termos: d.termos }); } catch (e) { alerta_gps = { erro: e.message }; } }
   return { ...resumo, enviado: true, destinatarios, ...envio, alerta_gps };
+}
+
+
+// ═══ v3.141: HIGIENIZAÇÃO DE DADOS — pendências que deixam os números errados no dashboard financeiro (todos os
+// cards e abas) e nos demais módulos. Complementa o e-mail das 8h sem repetir o que ele já aponta (termos, faturas
+// vencidas/sem termo, pagamentos em atraso e possíveis duplicados por fornecedor/valor). Cada item diz o impacto
+// (quais números ficam errados), como corrigir e em que tela.
+async function higienizacaoDados({ _forcar } = {}) {
+  const sql = await getSql(), hoje = _hojeBR(), ano = parseInt(hoje), mesAtual = hoje.substring(0, 7);
+  if (!_forcar) { try { const c = (await sql`SELECT value, updated_at FROM kv_store WHERE key = 'higienizacao_dados' LIMIT 1`)[0];
+    if (c && Date.now() - new Date(c.updated_at).getTime() < 30 * 60000) { const v = typeof c.value === 'string' ? JSON.parse(c.value) : c.value; return { ...v, cache_min: Math.round((Date.now() - new Date(c.updated_at).getTime()) / 60000) }; } } catch (_) {} }
+  const lim = (p, ms = 40000) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('não respondeu a tempo')), ms))]);
+  const qb = qbConfigurado(), itens = [], erros = [];
+  const add = x => { if (x && (x.qtd || x.sempre)) itens.push(x); };
+  const dataBR = d => String(d || '').substring(0, 10).split('-').reverse().join('/');
+  const chk = async (nome, f) => { try { await lim(f()); } catch (e) { erros.push(nome + ': ' + e.message); } };
+  const mesIni = m => m + '-01', mesFim = m => { const [a, mm] = m.split('-').map(Number); return new Date(Date.UTC(a, mm, 0)).toISOString().substring(0, 10); };
+  const meses = [0, 1, 2, 3].map(k => { const d = new Date(Date.UTC(ano, parseInt(hoje.substring(5, 7)) - 1 - k, 1)); return d.toISOString().substring(0, 7); });
+  // duplicados que o e-mail já aponta (para não repetir)
+  // (roda em paralelo com as verificações, para caber no tempo da função)
+  const dupEmailP = (async () => { const set = new Set(); try { const d0 = await lim(pagamentosDoDiaEPendentes(), 18000); const px = await lim(_relPagamentosExtra(d0), 12000);
+    (px.duplicados || []).forEach(x => set.add(Math.round(x.valor))); } catch (_) {} return set; })();
+
+  await Promise.all([
+    // 1. QuickBooks desconectado: todos os cards ficam sem base
+    chk('QuickBooks', async () => { if (!qb) add({ id: 'qb_off', sistema: 'QuickBooks', gravidade: 'alta', titulo: 'QuickBooks não está conectado', qtd: 1, impacto: 'Todos os cards do Dashboard Financeiro, DRE, fluxo de caixa e conciliação ficam sem dados', acao: 'Conecte o QuickBooks em Financeiro → Configurações', tela: 's3dashboard', itens: [] });
+      else { try { await qbToken(); } catch (e) { add({ id: 'qb_token', sistema: 'QuickBooks', gravidade: 'alta', titulo: 'Conexão com o QuickBooks expirada', qtd: 1, impacto: 'Todos os números do financeiro param de atualizar', acao: 'Reconecte o QuickBooks (autorizar de novo)', tela: 's3dashboard', itens: [{ texto: e.message }] }); } } }),
+    // 2. conciliação bancária pendente (mês atual e 3 anteriores)
+    chk('Conciliação', async () => { if (!qb) return; const R = await Promise.all(meses.map(async m => { const fim = m === mesAtual ? hoje : mesFim(m); const r = await qbConciliacaoStatus({ data_inicio: mesIni(m), data_fim: fim }); return { m, r }; }));
+      const pend = R.filter(x => x.r && x.r.pendentes > 0 && x.m !== mesAtual);
+      if (pend.length) add({ id: 'conciliacao', sistema: 'QuickBooks · Bancos', gravidade: 'alta', titulo: 'Meses fechados com lançamentos bancários não conciliados', qtd: pend.reduce((a, x) => a + x.r.pendentes, 0), valor: round(pend.reduce((a, x) => a + x.r.valor_pendente, 0)),
+        impacto: 'Saldo em caixa, fôlego de caixa, conciliação % e DRE de caixa podem estar errados', acao: 'Conciliar no QuickBooks (Banking → Reconcile) ou na tela de Conciliação Bancária', tela: 's3conciliacao',
+        itens: pend.map(x => ({ texto: `${x.m.split('-').reverse().join('/')}: ${x.r.pendentes} de ${x.r.movimentos} movimentos não conciliados`, valor: x.r.valor_pendente, detalhe: (x.r.pendentes_amostra || []).slice(0, 5).map(l => `${dataBR(l.data)} ${l.tipo || ''} ${l.nome || ''} R$ ${l.valor}`).join(' · ') })) }); }),
+    // 3. contas a pagar (Bill) em aberto que já foram pagas no extrato — inflam o "A pagar" e os "pagamentos em atraso"
+    chk('Bills pagas', async () => { if (!qb) return; const L = []; for (const m of meses.slice(0, 2)) { const [a, mm] = m.split('-'); const r = await despesasDuplicadas({ mes: parseInt(mm), ano: parseInt(a) }); (r.duplicadas || []).forEach(x => L.push(x)); }
+      if (L.length) add({ id: 'bills_pagas', sistema: 'QuickBooks · Contas a pagar', gravidade: 'alta', titulo: 'Contas a pagar em aberto que já aparecem pagas no extrato', qtd: L.length, valor: round(L.reduce((a, x) => a + x.valor, 0)),
+        impacto: 'Infla o card "A pagar", os pagamentos em atraso do e-mail e o fluxo de caixa futuro', acao: 'Registrar o pagamento (Pay bills) ou excluir a Bill duplicada — tela Conciliação → Despesas duplicadas', tela: 's3conciliacao',
+        itens: L.slice(0, 30).map(x => ({ texto: `${x.fornecedor || ''} · venc. ${dataBR(x.vencimento)} · pago no extrato em ${dataBR(x.extrato_data)} (${x.confianca})`, valor: x.valor, link: x.bill_id ? _qbUrlTxn('conta:' + x.bill_id) : null })) }); }),
+    // 4. duplicidades reais no QuickBooks (90 dias) — exceto as que o e-mail já mostra
+    chk('Duplicidades QB', async () => { if (!qb) return; const [r, dupEmail] = await Promise.all([qbVarrerDuplicados({}), dupEmailP]); const S = (r.varredura?.suspeitos || []).filter(x => x.classificacao === 'duplicidade_real' && !dupEmail.has(Math.round(x.valor)));
+      if (S.length) add({ id: 'dup_qb', sistema: 'QuickBooks', gravidade: 'alta', titulo: 'Lançamentos registrados em duplicidade no QuickBooks (90 dias)', qtd: S.length, valor: round(S.reduce((a, x) => a + (x.impacto_no_caixa || 0), 0)),
+        impacto: 'Receita/despesa e caixa contados duas vezes — DRE, margem, EBITDA e saldo', acao: 'Excluir a cópia no QuickBooks (tela Fluxo Detalhado → Procurar duplicados)', tela: 's3fluxodet',
+        itens: S.slice(0, 25).map(x => ({ texto: `${x.contraparte} · ${x.registros.length} registros iguais (${x.registros.map(g => dataBR(g.data) + ' ' + (g.entidade || g.tipo || '')).join(', ')})`, valor: x.valor })) }); }),
+    // 5. contas sem categoria no resultado do ano
+    chk('Sem categoria', async () => { if (!qb) return; const r = await dreArvore({ data_inicio: ano + '-01-01', data_fim: hoje }); const L = [];
+      const anda = n => { (n || []).forEach(x => { if (x.tipo === 'conta' || x.tipo === 'secao') { if (/uncategori|n[aã]o categoriz|sem categoria|ask my accountant|pergunte ao contador|opening balance|saldo de abertura|suspense|a classificar/i.test(x.nome) && Math.abs(x.total) > 0.009) L.push(x); } anda(x.filhos); }); };
+      anda(r.dre?.arvore);
+      if (L.length) add({ id: 'sem_categoria', sistema: 'QuickBooks · DRE', gravidade: 'media', titulo: `Valores em contas sem categoria no resultado de ${ano}`, qtd: L.length, valor: round(L.reduce((a, x) => a + Math.abs(x.total), 0)),
+        impacto: 'DRE, custos × despesas, margem bruta e EBITDA distorcidos; cards de Pessoas/Projetos/Produtos sem a parte não classificada', acao: 'Reclassificar os lançamentos para a conta correta (abra o DRE e clique na conta para ver cada lançamento)', tela: 's3dashboard', abrir_dre: true,
+        itens: L.map(x => ({ texto: x.nome, valor: Math.abs(x.total), conta_id: x.conta_id })) }); }),
+    // 6. saídas recorrentes do extrato sem despesa programada — o fluxo futuro não as enxerga
+    chk('Despesas não cadastradas', async () => { const r = await despesasNaoCadastradas({ meses: 3 }); const L = (r.candidatas || []).filter(c => c.ocorrencias >= 2);
+      if (L.length) add({ id: 'desp_nao_cad', sistema: 'Financeiro · Agenda de despesas', gravidade: 'media', titulo: 'Despesas recorrentes pagas que não estão na agenda de despesas', qtd: L.length, valor: round(L.reduce((a, x) => a + x.valor, 0)),
+        impacto: 'Fluxo de caixa futuro, "A pagar" projetado e fôlego de caixa ficam otimistas (essas saídas não entram na projeção)', acao: 'Cadastrar como despesa programada (Agenda de Despesas → Despesas não cadastradas)', tela: 's3agenda',
+        itens: L.slice(0, 25).map(x => ({ texto: `${x.descricao} · ${x.ocorrencias}x nos últimos 3 meses · dia ~${x.dia_vencimento_sugerido}`, valor: x.valor })) }); }),
+    // 7. despesas programadas incompletas
+    chk('Despesas programadas', async () => { const L = await sql`SELECT id, descricao, fornecedor, valor, categoria FROM despesas_programadas WHERE ativa = true AND (COALESCE(valor,0) <= 0 OR COALESCE(TRIM(categoria),'') = '' OR COALESCE(TRIM(fornecedor),'') = '')`;
+      if (L.length) add({ id: 'desp_incompletas', sistema: 'Financeiro · Agenda de despesas', gravidade: 'baixa', titulo: 'Despesas programadas sem valor, categoria ou fornecedor', qtd: L.length, valor: round(L.reduce((a, x) => a + (parseFloat(x.valor) || 0), 0)),
+        impacto: 'Agenda de pagamentos, gastos por categoria e e-mail do financeiro com linhas incompletas', acao: 'Completar o cadastro na Agenda de Despesas', tela: 's3agenda',
+        itens: L.slice(0, 30).map(x => ({ texto: `${x.descricao || '(sem descrição)'} — falta: ${[!(parseFloat(x.valor) > 0) && 'valor', !String(x.categoria || '').trim() && 'categoria', !String(x.fornecedor || '').trim() && 'fornecedor'].filter(Boolean).join(', ')}`, valor: parseFloat(x.valor) || 0 })) }); }),
+    // 8. marcos de projeto sem data ou sem valor (previsão de receita e Kanban de marcos)
+    chk('Marcos', async () => { let L = []; try { L = await sql`SELECT m.id, m.descricao, m.valor, m.data_entrega, p.nome AS projeto FROM projetos_marcos m JOIN projetos_financeiros p ON p.id = m.projeto_id
+        WHERE m.status_kanban <> 'concluido' AND m.data_pagamento IS NULL AND COALESCE(p.status,'ativo') NOT IN ('cancelado','encerrado','inativo') AND (m.data_entrega IS NULL OR COALESCE(m.valor,0) <= 0)`; } catch (_) { return; }
+      if (L.length) add({ id: 'marcos_incompletos', sistema: 'Projetos · Marcos de faturamento', gravidade: 'media', titulo: 'Marcos de projeto sem data de entrega ou sem valor', qtd: L.length,
+        impacto: 'Receita futura do fluxo de caixa, previsão de faturamento e metas do ano subestimadas', acao: 'Completar data e valor no Kanban de Marcos', tela: 's3marcoskanban',
+        itens: L.slice(0, 30).map(x => ({ texto: `${x.projeto} · ${x.descricao || 'marco'} — falta: ${[!x.data_entrega && 'data de entrega', !(parseFloat(x.valor) > 0) && 'valor'].filter(Boolean).join(' e ')}`, valor: parseFloat(x.valor) || 0 })) }); }),
+    // 9. previsões de faturamento duplicadas no QuickBooks (estimativas dos marcos)
+    chk('Previsões duplicadas', async () => { if (!qb) return; const t = await qbToken(); const P = await _qbPrevisoesTodas(t); const g = {}; P.forEach(e => { if (e.marco) (g[e.marco] = g[e.marco] || []).push(e); });
+      const D = Object.values(g).filter(l => l.length > 1);
+      if (D.length) add({ id: 'prev_dup', sistema: 'QuickBooks · Previsões de faturamento', gravidade: 'media', titulo: 'Previsões de faturamento duplicadas no QuickBooks', qtd: D.reduce((a, l) => a + l.length - 1, 0), valor: round(D.reduce((a, l) => a + l.slice(1).reduce((s2, e) => s2 + e.valor, 0), 0)),
+        impacto: 'Receita prevista e fluxo de caixa futuro contados em dobro', acao: 'Projetos & Marcos → "Limpar previsões duplicadas"', tela: 's3projetos',
+        itens: D.slice(0, 20).map(l => ({ texto: `${l[0].cliente || ''} · ${l.length} estimativas para o mesmo marco (${l.map(e => e.doc || e.id).join(', ')})`, valor: l[0].valor })) }); }),
+    // 10. orçamento do ano ausente no QuickBooks
+    chk('Orçamento', async () => { if (!qb) return; const r = await qbOrcamento({ ano }); const ok = r?.orcamento && String(r.orcamento.inicio || r.orcamento.StartDate || r.orcamento.periodo || '').includes(String(ano));
+      if (!r?.orcamento || r.motivo) add({ id: 'orcamento', sistema: 'Planejamento · Orçamento', gravidade: 'media', titulo: `Sem orçamento de ${ano} no QuickBooks`, qtd: 1, impacto: 'Card "Planejado × realizado" e metas de gastos do Dashboard ficam vazios ou usam outro ano', acao: 'Cadastrar o orçamento do ano (Orçamento Anual / Budgets no QuickBooks)', tela: 's3orcamento', itens: [{ texto: r?.motivo || 'nenhum orçamento encontrado' }] }); }),
+    // 11. metas do ano não cadastradas (usa o padrão)
+    chk('Metas', async () => { const m = await _metasComPadrao([ano]); const cad = m.por_ano?.[String(ano)];
+      if (!cad || cad.padrao) add({ id: 'metas', sistema: 'Planejamento · Metas', gravidade: 'baixa', titulo: `Metas de ${ano} não cadastradas — o sistema está usando o padrão (crescimento e margem)`, qtd: 1, impacto: 'Metas ao lado dos KPIs, semáforos e "falta para a meta" usam valores calculados, não os aprovados', acao: 'Cadastrar em Planejamento → Metas da Empresa (com a distribuição mensal)', tela: 's1metas', itens: [] });
+      else if (!Array.isArray(cad.mensal) || cad.mensal.filter(x => parseFloat(x) > 0).length < 12) add({ id: 'metas_mensal', sistema: 'Planejamento · Metas', gravidade: 'baixa', titulo: `Meta de ${ano} sem distribuição mensal completa`, qtd: 1, impacto: 'Meta do mês nos cards é a anual ÷ 12 (sem sazonalidade)', acao: 'Distribuir a meta por mês em Metas da Empresa', tela: 's1metas', itens: [] }); }),
+    // 12. saldo inicial do caixa
+    chk('Saldo inicial', async () => { let n = 0; try { n = (await sql`SELECT COUNT(*)::int AS n FROM saldos_iniciais`)[0].n; } catch (_) { n = 0; }
+      if (!n) add({ id: 'saldo_inicial', sistema: 'Financeiro · Fluxo de caixa', gravidade: 'baixa', titulo: 'Saldo inicial do fluxo de caixa não cadastrado', qtd: 1, impacto: 'Saldo projetado do Fluxo Futuro parte de zero quando o QuickBooks não responde', acao: 'Cadastrar o saldo inicial no Fluxo Futuro', tela: 's3fluxo', itens: [] }); }),
+    // 13. CRM: negócios abertos sem data de fechamento ou sem valor
+    chk('CRM', async () => { const r = await _crmPipelineAno(ano); const L = (r.negocios || []).filter(x => !x.fechamento || !x.valor);
+      if (L.length) add({ id: 'crm', sistema: 'Comercial · HubSpot', gravidade: 'baixa', titulo: 'Negócios em aberto sem data de fechamento ou sem valor', qtd: L.length, impacto: 'Pipeline ponderado, projeção de fechamento do ano e cobertura da meta subestimados', acao: 'Completar valor e data de fechamento no HubSpot', tela: 's7painel',
+        itens: L.slice(0, 30).map(x => ({ texto: `${x.nome} (${x.etapa}) — falta: ${[!x.fechamento && 'data de fechamento', !x.valor && 'valor'].filter(Boolean).join(' e ')}`, valor: x.valor || 0, link: x.link })) }); }),
+  ]);
+  const ordem = { alta: 0, media: 1, baixa: 2 };
+  itens.sort((a, b) => ordem[a.gravidade] - ordem[b.gravidade] || (b.valor || 0) - (a.valor || 0));
+  const out = { gerado_em: new Date().toISOString(), itens, erros, total: itens.reduce((a, x) => a + (x.qtd || 0), 0) };
+  try { await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('higienizacao_dados', ${JSON.stringify(out)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {}
+  return out;
 }
 
 // v1.26.3: versão do arquivo — permite detectar deploy desatualizado sem adivinhação
@@ -2604,6 +2710,16 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
       .forEach(x => { termoPorInv[String(x.qb_invoice_id)] = { termo_id: x.id, termo_numero: x.numero_termo, termo_projeto: x.projeto }; }); } } catch (_) {}
   const _qbBase = process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
   const soma = (l, f) => round(l.filter(f || (() => true)).reduce((a, x) => a + (x.valor || 0), 0));
+  // v3.164: despesas que só existem na Agenda (vencidas até 60 dias + próximos 30 dias) também são "a pagar" — regra única:
+  // se a mesma despesa já está no QuickBooks, vale a Bill; se só está na Agenda, vale a Agenda
+  let agendaPag = [];
+  if (!fut.erro) try { const sql = await getSql();
+    const rows = await sql`SELECT o.id, o.data_prevista, o.valor, o.qb_txn_id, d.descricao AS despesa_desc, d.fornecedor AS despesa_forn, d.categoria AS despesa_cat
+      FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
+      WHERE o.status NOT IN ('paga', 'cancelada') AND o.data_prevista >= ${_diasMais(hoje, -60)} AND o.data_prevista <= ${em30}`;
+    agendaPag = _agendaSemDuplicarQb(rows, fut.pagaveis || []).pendentes.map(r => { const dt = _dStr(r.data_prevista);
+      return { id: 'desp_' + r.id, data: dt, valor: round(parseFloat(r.valor) || 0), vencida: dt < hoje, fornecedor: r.despesa_forn || r.despesa_desc || 'Despesa programada', descricao: r.despesa_desc || 'Despesa programada', categoria: r.despesa_cat || '', doc: 'Agenda', origem: 'agenda' }; });
+  } catch (e) { console.warn('[baseCaixa] agenda:', e.message); }
   const valor = {
     hoje,
     saldo_hoje: ext._erro || ext.saldo_inicial_origem === 'zero' && !ext.qb_lancamentos ? null : round(ext.saldo_final),
@@ -2616,8 +2732,9 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
     // v3.85: faturas em aberto, uma a uma — alimenta os alertas de vencimento (A Receber + Dashboard LIVE)
     recebiveis_itens: fut.erro ? null : reais.map(r => { const qid = String(r.id || '').replace(/^inv_/, ''); return { id: r.id, cliente: r.cliente || String(r.descricao || '').split(' · ')[0], doc: r.doc || '', valor: round(r.valor || 0), vencimento: r.data, vencida: !!r.vencida,
       qb_id: qid || null, qb_url: qid ? `${_qbBase}/app/invoice?txnId=${qid}` : null, ...(termoPorInv[qid] || {}) }; }),
-    a_pagar: fut.erro ? null : soma(fut.pagaveis || []), a_pagar_vencido: fut.erro ? null : soma(fut.pagaveis || [], p => p.vencida), a_pagar_30d: fut.erro ? null : soma(fut.pagaveis || [], p => !p.vencida && p.data <= em30),
-    qtd_pagar: fut.erro ? null : (fut.pagaveis || []).length,
+    a_pagar: fut.erro ? null : round(soma(fut.pagaveis || []) + soma(agendaPag)), a_pagar_vencido: fut.erro ? null : round(soma(fut.pagaveis || [], p => p.vencida) + soma(agendaPag, p => p.vencida)), a_pagar_30d: fut.erro ? null : round(soma(fut.pagaveis || [], p => !p.vencida && p.data <= em30) + soma(agendaPag, p => !p.vencida)),
+    qtd_pagar: fut.erro ? null : (fut.pagaveis || []).length + agendaPag.length,
+    a_pagar_quickbooks: fut.erro ? null : soma(fut.pagaveis || []), a_pagar_agenda: fut.erro ? null : soma(agendaPag), agenda_pagar_itens: fut.erro ? null : agendaPag, // v3.164
     pagaveis_itens: fut.erro ? null : (fut.pagaveis || []).map(p => { const qid = String(p.id || '').replace(/^bill_/, ''); return { id: p.id, data: p.data, valor: round(p.valor || 0), valor_total: round(p.valor_total || 0),
       vencida: !!p.vencida, fornecedor: p.fornecedor || String(p.descricao || '').split(' · ')[0], doc: p.doc || '', conta: p.conta || '', memo: p.memo || '', emissao: p.emissao || null,
       qb_url: qid ? `${_qbBase}/app/bill?txnId=${qid}` : null }; }), // v3.122/v3.125: recorte pelo período + drill-down linha a linha
@@ -2638,7 +2755,7 @@ async function caixaDetalhe({ data_inicio = null, data_fim = null, mes = null, a
   const marca = (x, d) => ({ ...x, faixa: !d ? 'sem data' : (pIni && d >= pIni && d <= pFim) ? 'periodo' : (pIni && d < pIni) ? 'antes' : (pFim && d > pFim) ? 'depois' : 'periodo',
     em_30d: !!d && (d < hoje || d <= em30), dias: d ? Math.round((Date.parse(d + 'T12:00:00Z') - Date.parse(hoje + 'T12:00:00Z')) / 864e5) : null });
   const receber = (b.recebiveis_itens || []).map(r => marca({ ...r, data: r.vencimento }, r.vencimento)).sort((x, y) => String(x.data).localeCompare(String(y.data)));
-  const pagar = (b.pagaveis_itens || []).map(p => marca(p, p.data)).sort((x, y) => String(x.data).localeCompare(String(y.data)));
+  const pagar = (b.pagaveis_itens || []).concat(b.agenda_pagar_itens || []).map(p => marca(p, p.data)) /* v3.164: + despesas só da Agenda */.sort((x, y) => String(x.data).localeCompare(String(y.data)));
   return { caixa_detalhe: { hoje, periodo: pIni ? { de: pIni, ate: pFim } : null, saldo_hoje: b.saldo_hoje, receber, pagar, erro: b.erro || null,
     totais: { receber: b.a_receber, pagar: b.a_pagar, receber_vencido: b.a_receber_vencido, receber_30d: b.a_receber_30d, pagar_vencido: b.a_pagar_vencido, pagar_30d: b.a_pagar_30d } } };
 }
@@ -3252,14 +3369,16 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
     // Antes sumia de toda projeção. Com o período começando no futuro, parte do início do período.
     const desde = ini > hoje ? ini : _diasMais(hoje, -60);
     const rows = fim
-      ? await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat
+      ? await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat, d.fornecedor AS despesa_forn
           FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
           WHERE o.data_prevista >= ${desde} AND o.data_prevista <= ${fim} AND o.status NOT IN ('paga', 'cancelada') AND o.qb_txn_id IS NULL ORDER BY o.data_prevista ASC`
-      : await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat
+      : await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat, d.fornecedor AS despesa_forn
           FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
           WHERE o.data_prevista >= ${desde} AND o.status NOT IN ('paga', 'cancelada') AND o.qb_txn_id IS NULL ORDER BY o.data_prevista ASC`;
     // v3.109: a ocorrência já lançada no QuickBooks (qb_txn_id) aparece pela conta a pagar (Bill) — antes contava duas vezes
-    despFuturas = rows.map(r => ({ id: 'desp_' + r.id, data: _dStr(r.data_prevista), vencida: _dStr(r.data_prevista) < hoje, descricao: r.despesa_desc || 'Despesa programada', categoria: r.despesa_cat || 'Despesa', valor: parseFloat(r.valor), tipo: 'saida', origem: 'atlantyx_futuro' }));
+    // v3.163: a mesma despesa já como Bill no QuickBooks (mesmo fornecedor, mesmo mês) entra pela Bill — não pela Agenda
+    const semDup = (fut.erro || !qbConfigurado()) ? rows : _agendaSemDuplicarQb(rows, fut.pagaveis || []).pendentes;
+    despFuturas = semDup.map(r => ({ id: 'desp_' + r.id, data: _dStr(r.data_prevista), vencida: _dStr(r.data_prevista) < hoje, descricao: r.despesa_desc || 'Despesa programada', categoria: r.despesa_cat || 'Despesa', valor: parseFloat(r.valor), tipo: 'saida', origem: 'atlantyx_futuro' }));
   } catch (e) { console.warn('[FluxoDetalhado] despesas futuras:', e.message); }
 
   // 4. Simulados futuros (lançamentos manuais com data > hoje)
@@ -3564,12 +3683,12 @@ async function despOcorrencias({ data_inicio, data_fim, status, incluir_qb = tru
     } catch (e) { qbErro = e.message; console.warn('[Agenda] Bills QB:', e.message); }
   }
   const rows = status
-    ? await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat
+    ? await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat, d.fornecedor AS despesa_forn
                 FROM despesas_ocorrencias o
                 LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
                 WHERE o.data_prevista >= ${ini} AND o.data_prevista <= ${fim} AND o.status = ${status}
                 ORDER BY o.data_prevista ASC`
-    : await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat
+    : await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat, d.fornecedor AS despesa_forn
                 FROM despesas_ocorrencias o
                 LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
                 WHERE o.data_prevista >= ${ini} AND o.data_prevista <= ${fim}
@@ -3578,6 +3697,7 @@ async function despOcorrencias({ data_inicio, data_fim, status, incluir_qb = tru
       id: r.id,
       despesa_id: r.despesa_id,
       descricao: r.despesa_desc,
+      fornecedor: r.despesa_forn || null,
       categoria: r.despesa_cat,
       data_prevista: _dStr(r.data_prevista),
       valor: parseFloat(r.valor),
@@ -3597,8 +3717,16 @@ async function despOcorrencias({ data_inicio, data_fim, status, incluir_qb = tru
       try { await sql`UPDATE despesas_ocorrencias SET status = 'paga', data_pagamento = COALESCE(data_pagamento, ${_hojeBR()}) WHERE id = ${o.id} AND status IN ('prevista', 'lancada')`; } catch (_) {} }
     else if (b.saldo_aberto < o.valor - 0.01) { o.valor_original = o.valor; o.valor = b.saldo_aberto; } }
   qbBills = qbBills.filter(b => !lancadasQb.has(String(b.id).replace(/^qb_/, '')));
+  // v3.163: ocorrência pendente da Agenda com Bill do mesmo fornecedor no mesmo mês → vale a do QuickBooks (some daqui)
+  let cobertasQb = 0;
+  if (incluir_qb && qbConfigurado() && !qbErro) {
+    const abertas = locais.filter(o => (o.status === 'prevista' || o.status === 'lancada') && !o.qb_txn_id);
+    const { cobertas } = _agendaSemDuplicarQb(abertas, qbBills.map(b => ({ ...b, data: b.data_prevista, fornecedor: String(b.descricao || '').split(' · ')[0] })));
+    const fora = new Set(cobertas.map(o => o.id)); cobertasQb = fora.size;
+    if (fora.size) for (let i = locais.length - 1; i >= 0; i--) if (fora.has(locais[i].id)) locais.splice(i, 1);
+  }
   const filtQb = status ? qbBills.filter(b => b.status === status) : qbBills;
-  return { ocorrencias: locais.concat(filtQb).sort((a, b) => String(a.data_prevista).localeCompare(String(b.data_prevista))), qb_bills: qbBills.length, qb_erro: qbErro };
+  return { agenda_cobertas_qb: cobertasQb, ocorrencias: locais.concat(filtQb).sort((a, b) => String(a.data_prevista).localeCompare(String(b.data_prevista))), qb_bills: qbBills.length, qb_erro: qbErro };
 }
 
 async function despMarcarPaga({ id, data_pagamento, qb_txn_id } = {}) {
@@ -3713,8 +3841,10 @@ async function regerarOcorrencias(sql, despesaId, meses = 12) {
   // As 'paga' são preservadas (histórico real não se mexe).
   // v3.113: as 'lancada' (já viraram conta a pagar no QuickBooks) NÃO são apagadas — apagar e recriar como 'prevista'
   // perdia o vínculo com o Bill e a mesma conta aparecia duas vezes (e o botão "Lançar no QB" voltava).
+  // v3.162: só apaga dentro da janela que será regerada — ocorrências além dela (ex.: replicadas até o 12º mês) ficam
+  const _lim = new Date(); _lim.setMonth(_lim.getMonth() + meses); const limiteStr = _lim.toISOString().split('T')[0];
   await sql`DELETE FROM despesas_ocorrencias
-    WHERE despesa_id = ${despesaId} AND status = 'prevista' AND data_prevista >= ${hoje}`;
+    WHERE despesa_id = ${despesaId} AND status = 'prevista' AND data_prevista >= ${hoje} AND data_prevista <= ${limiteStr}`;
   const mesesOcupados = new Set((await sql`SELECT data_prevista FROM despesas_ocorrencias WHERE despesa_id = ${despesaId} AND status IN ('lancada', 'paga')`)
     .map(x => _dStr(x.data_prevista).substring(0, 7)));
 
@@ -3729,6 +3859,96 @@ async function regerarOcorrencias(sql, despesaId, meses = 12) {
     count++;
   }
   return count;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v3.162: REPLICAR AS DESPESAS DE UM MÊS NOS 12 MESES SEGUINTES
+// Fonte = tudo que a Agenda mostra no mês (despesas programadas + contas a pagar do QuickBooks).
+// Em cada mês de destino, se já existe despesa com o mesmo nome/fornecedor (no Atlantyx ou Bill no
+// QuickBooks), NÃO cria — grava a ocorrência como 'cancelada' (marcador), assim o "Regerar" não a recria.
+// Cada item replicado vira UMA despesa programada mensal com início/fim na janela. simular=true só calcula.
+// ═══════════════════════════════════════════════════════════════════════════
+// v3.163: REGRA ÚNICA das despesas pendentes — "se já existe no QuickBooks, vale o QuickBooks; se só existe na Agenda, vale a Agenda".
+// ocorrs: ocorrências da Agenda ainda não pagas; bills: contas a pagar do QuickBooks (Bill) no período, ou null se o QB não respondeu.
+// Uma ocorrência é coberta pelo QB quando: (a) já foi lançada nele (qb_txn_id) ou (b) existe Bill do mesmo fornecedor/descrição
+// no mesmo mês (cada Bill cobre uma ocorrência — a de valor mais próximo). Sem QB (null), nada é descartado.
+function _agendaSemDuplicarQb(ocorrs, bills) {
+  if (!Array.isArray(bills)) return { pendentes: ocorrs.slice(), cobertas: [] };
+  const livres = bills.map(b => ({ ym: _dStr(b.data || b.data_prevista || '').slice(0, 7), k: _normDesp(b.fornecedor || b.descricao), v: Number(b.valor_total || b.valor) || 0, usado: false }));
+  const pendentes = [], cobertas = [];
+  for (const o of ocorrs) {
+    if (o.qb_txn_id) { cobertas.push(o); continue; }
+    const ym = _dStr(o.data_prevista || o.data || '').slice(0, 7), ks = [_normDesp(o.fornecedor || o.despesa_forn || o.desp_forn), _normDesp(o.descricao || o.despesa_desc || o.desp_desc)].filter(Boolean);
+    const v = Number(o.valor) || 0;
+    const cand = livres.filter(b => !b.usado && b.ym === ym && b.k && ks.includes(b.k)).sort((a, b) => Math.abs(a.v - v) - Math.abs(b.v - v))[0];
+    if (cand) { cand.usado = true; cobertas.push(o); } else pendentes.push(o);
+  }
+  return { pendentes, cobertas };
+}
+function _normDesp(x) { return String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+·\s+.*$/, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
+function _dataNoMes(ym, dia) { const [y, m] = ym.split('-').map(Number); const ult = new Date(Date.UTC(y, m, 0)).getUTCDate(); return `${ym}-${String(Math.min(Math.max(1, dia || 1), ult)).padStart(2, '0')}`; }
+
+async function despReplicarMes({ mes, meses = 12, simular = false } = {}) {
+  if (!/^\d{4}-\d{2}$/.test(String(mes || ''))) throw new Error('mes obrigatório (AAAA-MM)');
+  meses = Math.min(Math.max(parseInt(meses) || 12, 1), 24);
+  const sql = await getSql();
+  const hoje = _hojeBR();
+  const ultimo = _mesMais(mes, meses);
+  const ag = await despOcorrencias({ data_inicio: `${mes}-01`, data_fim: _dataNoMes(ultimo, 31), incluir_qb: true });
+  const progs = await sql`SELECT id, descricao, fornecedor, categoria, conta_pagamento FROM despesas_programadas`;
+  const progPorId = new Map(progs.map(p => [p.id, p]));
+  // as canceladas também contam como "já existe" no mês (o usuário tirou de propósito)
+  const canc = await sql`SELECT o.data_prevista, o.despesa_id FROM despesas_ocorrencias o WHERE o.status = 'cancelada' AND o.data_prevista >= ${`${mes}-01`} AND o.data_prevista <= ${_dataNoMes(ultimo, 31)}`;
+  const todos = (ag.ocorrencias || []).concat(canc.map(c => ({ despesa_id: c.despesa_id, data_prevista: _dStr(c.data_prevista), fonte: 'atlantyx', status: 'cancelada' })));
+  const chaves = o => { const p = o.despesa_id && progPorId.get(o.despesa_id); const k = new Set();
+    if (o.fonte === 'quickbooks') k.add(_normDesp(o.descricao)); else { k.add(_normDesp(p?.descricao || o.descricao)); if (p?.fornecedor) k.add(_normDesp(p.fornecedor)); }
+    k.delete(''); return k; };
+  const porMes = new Map(); // 'AAAA-MM' -> Set de chaves existentes
+  for (const o of todos) { const ym = String(o.data_prevista).slice(0, 7); if (!porMes.has(ym)) porMes.set(ym, new Set()); for (const k of chaves(o)) porMes.get(ym).add(k); }
+
+  const fonte = (ag.ocorrencias || []).filter(o => String(o.data_prevista).slice(0, 7) === mes && o.status !== 'cancelada' && Number(o.valor) > 0);
+  const vistos = new Set(), itens = [];
+  let criar = 0, existentes = 0, passados = 0;
+  for (const o of fonte) {
+    const p = o.despesa_id && progPorId.get(o.despesa_id);
+    const ks = chaves(o); const kPrin = [...ks][0]; if (!kPrin || vistos.has(kPrin)) continue; vistos.add(kPrin);
+    const dia = parseInt(String(o.data_prevista).slice(8, 10)) || 1;
+    const nome = o.fonte === 'quickbooks' ? String(o.descricao || '').replace(/\s+·\s+.*$/, '') : (p?.descricao || o.descricao || 'Despesa');
+    const valor = Number(o.valor_total || o.valor_original || o.valor) || 0;
+    const plano = [];
+    for (let i = 1; i <= meses; i++) {
+      const ym = _mesMais(mes, i), data = _dataNoMes(ym, dia);
+      const ex = porMes.get(ym); const jaExiste = !!ex && [...ks].some(k => ex.has(k));
+      if (data < hoje) { passados++; plano.push({ data, acao: 'passado' }); continue; }
+      if (jaExiste) { existentes++; plano.push({ data, acao: 'ja_existe' }); continue; }
+      criar++; plano.push({ data, acao: 'criar' });
+    }
+    itens.push({ descricao: nome, fornecedor: o.fonte === 'quickbooks' ? nome : (p?.fornecedor || null), categoria: o.fonte === 'quickbooks' ? 'Despesa' : (p?.categoria || o.categoria || null),
+      conta_pagamento: p?.conta_pagamento || null, origem: o.fonte === 'quickbooks' ? 'QuickBooks' : 'Agenda', valor, dia, plano,
+      criar: plano.filter(x => x.acao === 'criar').length, ja_existe: plano.filter(x => x.acao === 'ja_existe').length });
+  }
+  const res = { mes, meses, ate: ultimo, itens, total_itens: itens.length, ocorrencias_a_criar: criar, ja_existentes: existentes, meses_passados: passados, simulado: !!simular };
+  if (simular) return res;
+
+  let criadas = 0, despesasCriadas = 0;
+  for (const it of itens) {
+    const datasCriar = it.plano.filter(x => x.acao === 'criar').map(x => x.data);
+    if (!datasCriar.length) continue;
+    const id = `desp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const ini = datasCriar[0], fim = it.plano[it.plano.length - 1].data;
+    await sql`INSERT INTO despesas_programadas (id, descricao, categoria, valor, recorrencia, dia_vencimento, data_inicio, data_fim, ativa, fornecedor, conta_pagamento, observacoes, atualizado_em)
+      VALUES (${id}, ${it.descricao}, ${it.categoria}, ${it.valor}, 'mensal', ${it.dia}, ${ini}, ${fim}, true, ${it.fornecedor}, ${it.conta_pagamento}, ${`Replicada de ${mes} (${it.origem}) em ${hoje}`}, NOW())`;
+    despesasCriadas++;
+    for (const x of it.plano) {
+      if (x.acao === 'passado' || x.data < ini) continue;
+      const st = x.acao === 'criar' ? 'prevista' : 'cancelada';
+      await sql`INSERT INTO despesas_ocorrencias (id, despesa_id, data_prevista, valor, status, observacoes)
+        VALUES (${`oco_${id}_${x.data}`}, ${id}, ${x.data}, ${it.valor}, ${st}, ${st === 'cancelada' ? 'Já existia no mês — não replicada' : null})
+        ON CONFLICT (id) DO NOTHING`;
+      if (st === 'prevista') criadas++;
+    }
+  }
+  return { ...res, ocorrencias_criadas: criadas, despesas_criadas: despesasCriadas };
 }
 
 function gerarDatasRecorrencia(d, meses) {
@@ -4282,9 +4502,14 @@ async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}
     // v1.20.7 FIX: contar 'prevista' E 'lancada' (só excluir as já pagas) — antes só somava
     // 'prevista', então despesas já lançadas no QuickBooks (status vira 'lancada') sumiam
     // deste cálculo mesmo continuando por pagar, subestimando a cobertura de despesas fixas.
-    const r = await sql`SELECT COALESCE(SUM(valor), 0) AS total FROM despesas_ocorrencias
-      WHERE status NOT IN ('paga', 'cancelada') AND data_prevista >= ${inicio} AND data_prevista <= ${fim}`;
-    const despFixas = parseFloat(r[0]?.total || 0);
+    // v3.163: pendentes do mês pela regra única (Bills do QuickBooks + o que só está na Agenda, sem contar duas vezes)
+    let despFixas = 0;
+    try { const pm = await pagamentosDoDiaEPendentes(); despFixas = pm.qb_erro ? NaN : pm.total_mes_pendente; } catch (_) { despFixas = NaN; }
+    if (!Number.isFinite(despFixas)) {
+      const r = await sql`SELECT COALESCE(SUM(valor), 0) AS total FROM despesas_ocorrencias
+        WHERE status NOT IN ('paga', 'cancelada') AND data_prevista >= ${inicio} AND data_prevista <= ${fim}`;
+      despFixas = parseFloat(r[0]?.total || 0);
+    }
     if (despFixas > 0) {
       kpis.cobertura_despesas_fixas = round(kpis.saldo_caixa / despFixas, 1);
     }
@@ -7845,12 +8070,13 @@ async function _fv2Caixa({ P, met, cfg, L, token, base }) {
   const [bc, ks, pl90, desp] = await Promise.allSettled([
     baseCaixaHoje({}), kpisSaude({ metodo: met }), qbPL(i90, hoje, token, '', 'Accrual'),
     sql`SELECT o.id, o.data_prevista, o.valor, o.status, d.descricao, d.fornecedor FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
-        WHERE o.status <> 'paga' AND o.qb_txn_id IS NULL AND o.data_prevista >= ${hoje} AND o.data_prevista <= ${_diasMais(hoje, 91)}`,
+        WHERE o.status NOT IN ('paga', 'cancelada') AND o.qb_txn_id IS NULL AND o.data_prevista >= ${hoje} AND o.data_prevista <= ${_diasMais(hoje, 91)}`,
   ]);
   const B = bc.status === 'fulfilled' ? bc.value : (base.erros.push('Base de caixa: ' + bc.reason?.message), {});
   const K = ks.status === 'fulfilled' ? ks.value.kpis || {} : {};
   const D90 = pl90.status === 'fulfilled' ? dreResumo(pl90.value) : null;
-  const rec = B.recebiveis_itens || [], pag = B.pagaveis_itens || [], DP = desp.status === 'fulfilled' ? desp.value : [];
+  const rec = B.recebiveis_itens || [], pag = B.pagaveis_itens || [], DP0 = desp.status === 'fulfilled' ? desp.value : [];
+  const DP = Array.isArray(B.pagaveis_itens) ? _agendaSemDuplicarQb(DP0, B.pagaveis_itens).pendentes : DP0; // v3.163: sem contar duas vezes
   const recDia = D90 && D90.faturamento > 0 ? D90.faturamento / 90 : null, cusDia = D90 && D90.gastos_totais > 0 ? D90.gastos_totais / 90 : null;
   const dso = recDia && B.a_receber != null ? Math.round(B.a_receber / recDia) : null, dpo = cusDia && B.a_pagar != null ? Math.round(B.a_pagar / cusDia) : null;
   const dias = d => d ? Math.round((Date.parse(hoje) - Date.parse(d)) / 864e5) : null;
