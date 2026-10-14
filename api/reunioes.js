@@ -329,4 +329,4 @@ async function handler(req, res) {
   } catch (e) { console.error('[reunioes]', e.message); return res.status(500).json({ success: false, error: e.message, hint: e.hint || null }); }
 }
 export default comGuarda(handler, 'reunioes');
-export { ics as _ics, proximaData as _proximaData };
+export { ics as _ics, proximaData as _proximaData, FONTES as fontesPauta };

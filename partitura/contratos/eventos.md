@@ -31,6 +31,7 @@ _Gerado por `node scripts/bpm-inventario.mjs` a partir do código. Não edite ab
 | `*/15 * * * *` | `/api/campanha-disparo?cron=1` | T3 Agentes e Squads |
 | `0 */6 * * *` | `/api/agente-ideias?cron=1` | T1 Plataforma |
 | `0 11 * * *` | `/api/reunioes?cron=1` | T3 Agentes e Squads |
+| `20 * * * *` | `/api/atv?cron=1` | T2 Integrações |
 
 ### Workflows do GitHub Actions
 
@@ -48,6 +49,8 @@ _Gerado por `node scripts/bpm-inventario.mjs` a partir do código. Não edite ab
 | De | Importa | Trilha de origem → destino |
 |---|---|---|
 | `api/business-plan.js` | `api/financeiro.js` | T3 → T6 (interseção) |
+| `api/estrategia.js` | `api/tv.js` | T3 → T4 (interseção) |
+| `api/estrategia.js` | `api/reunioes.js` | T3 → T3 |
 | `api/fabrica.js` | `api/agente-ideias.js` | T1 → T1 |
 | `api/fabrica.js` | `api/agente-ideias.js` | T1 → T1 |
 | `api/fabrica.js` | `api/agente-ideias.js` | T1 → T1 |

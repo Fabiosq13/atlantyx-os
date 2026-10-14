@@ -19,7 +19,7 @@
       "nome": "Integrações",
       "naipe": "Metais",
       "escopo": "HubSpot, Gmail (só rascunhos), Google Calendar/Drive, QuickBooks OAuth, Metricool, Apollo, PNCP/Petronect, Ideogram, WhatsApp (Z-API), mídia",
-      "pode_alterar": ["api/hubspot.js", "api/apollo.js", "api/metricool.js", "api/media.js", "api/media-upload.js", "api/media-upload-v1.10.3.js", "api/image-gen.js",
+      "pode_alterar": ["api/hubspot.js", "api/apollo.js", "api/metricool.js", "api/media.js", "api/media-upload.js", "api/atv.js", "public/atv-ui.js", "public/atv-player.js", "api/media-upload-v1.10.3.js", "api/image-gen.js",
         "api/qb-oauth.js", "api/email-intel.js", "api/rfp-monitor.js", "api/phantom.js", "api/wa-response.js", "api/wa-batch-generate.js", "api/meeting-schedule.js",
         "lib/hubspot-sync.js", "api/media/**", "api/fonts/**"],
       "dono_humano": "@Fabiosq13"
@@ -30,16 +30,16 @@
       "escopo": "Squads S1 (estratégia), S2 (marketing), S7 (vendas), S8 (RH), S9 (PMO), S5 (jurídico) e a orquestração dos agentes",
       "pode_alterar": ["api/claude.js", "api/s1-data.js", "api/s1-intel.js", "api/s1-strategy.js", "api/s2-creative.js", "api/tendencias.js", "api/prospeccao.js", "api/prospect-scan.js",
         "api/decisor-map.js", "api/vendas.js", "api/vendas-outbound.js", "api/campanha-disparo.js", "api/lead-capture.js", "api/followup-cron.js", "api/briefing-cron.js",
-        "api/outreach-batch.js", "api/crm.js", "api/reunioes.js", "api/pmo.js", "api/rh.js", "api/business-plan.js", "api/portal-cadastro.js", "api/analytics.js",
+        "api/outreach-batch.js", "api/crm.js", "api/reunioes.js", "api/estrategia.js", "api/pmo.js", "api/rh.js", "api/business-plan.js", "api/portal-cadastro.js", "api/analytics.js",
         "lib/bp-calc.js", "lib/bp-excel.js", "lib/bp-ops.js", "lib/proposta-calc.js", "lib/historico-s1.js",
-        "public/vendas-ui.js", "public/reunioes-ui.js", "public/juridico-ui.js", "public/disparo-ui.js", "public/bio.html", "public/captura.html", "public/cartao.html"],
+        "public/vendas-ui.js", "public/reunioes-ui.js", "public/estrategia-ui.js", "public/juridico-ui.js", "public/disparo-ui.js", "public/bio.html", "public/captura.html", "public/cartao.html"],
       "dono_humano": "@Fabiosq13"
     },
     "T4": {
       "nome": "Dashboard e Telas",
       "naipe": "Madeiras",
       "escopo": "Dashboard ao vivo, KPIs, log diário, menu, CSS global e a estrutura do public/index.html",
-      "pode_alterar": ["public/index.html", "public/og-atlantyx.jpg"],
+      "pode_alterar": ["public/index.html", "public/og-atlantyx.jpg", "api/tv.js"],
       "dono_humano": "@Fabiosq13"
     },
     "T5": {
