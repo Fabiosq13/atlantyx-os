@@ -319,6 +319,29 @@ async function patrocinadoEstado({ id, estado } = {}) {
   reg.estado = estado; reg[estado === 'ACTIVE' ? 'ativado_em' : 'pausado_em'] = new Date().toISOString(); await _kvMc('mkt:patrocinados', lista);
   return { ok: true, estado };
 }
+// v3.176: DIAGNÓSTICO — confere no Meta, sem criar nada, se o token enxerga conta, página e Instagram e tem as permissões
+async function patrocinadoDiagnostico() {
+  const c = _metaCfg(); const itens = [];
+  const add = (ok, item, detalhe, correcao) => itens.push({ ok, item, detalhe: detalhe || '', correcao: ok ? '' : (correcao || '') });
+  if (!c.token) return { itens: [{ ok: false, item: 'Token', detalhe: 'META_ADS_TOKEN não configurado na Vercel', correcao: 'Gere o token do usuário do sistema e cadastre na Vercel' }] };
+  // 1. o que o token tem (debug_token devolve as permissões e em quais páginas/contas cada uma vale)
+  let escopos = [], granular = [];
+  try { const d = await _meta('debug_token?input_token=' + encodeURIComponent(c.token)); const x = d.data || {};
+    escopos = x.scopes || []; granular = x.granular_scopes || [];
+    add(!!x.is_valid, 'Token válido', x.is_valid ? (x.type || '') + (x.expires_at ? (x.expires_at === 0 ? ' · não expira' : ' · expira em ' + new Date(x.expires_at * 1000).toISOString().slice(0, 10)) : ' · não expira') : (x.error?.message || 'inválido'), 'Gere um token novo no usuário do sistema');
+  } catch (e) { add(false, 'Token', e.message, 'Gere um token novo no usuário do sistema e cadastre na Vercel'); }
+  for (const [perm, para] of [['ads_management', 'criar campanhas'], ['ads_read', 'ler resultados'], ['business_management', 'acessar o portfólio'], ['pages_read_engagement', 'ler a página'], ['pages_manage_ads', 'criar o anúncio em nome da página'], ['pages_show_list', 'listar páginas'], ['instagram_basic', 'usar o Instagram']])
+    add(escopos.includes(perm), 'Permissão ' + perm, para, 'Gere um token novo marcando ' + perm);
+  const gPag = granular.find(g => g.scope === 'pages_manage_ads');
+  if (gPag && Array.isArray(gPag.target_ids) && gPag.target_ids.length) add(gPag.target_ids.includes(c.pagina), 'pages_manage_ads vale para a página ' + c.pagina, 'páginas liberadas: ' + gPag.target_ids.join(', '), 'Atribua a página Atlantyx ao usuário do sistema (controle total) e gere o token de novo');
+  // 2. os ativos
+  try { const a = await _meta('act_' + c.conta + '?fields=name,account_status,currency'); add(a.account_status === 1, 'Conta de anúncios', a.name + ' · ' + a.currency + (a.account_status === 1 ? ' · ativa' : ' · status ' + a.account_status), 'Verifique pagamento/restrições da conta no Gerenciador de Anúncios'); }
+  catch (e) { add(false, 'Conta de anúncios act_' + c.conta, e.message, 'Atribua a conta de anúncios ao usuário do sistema (controle total)'); }
+  try { const pg = await _meta(c.pagina + '?fields=name'); add(true, 'Página', pg.name); } catch (e) { add(false, 'Página ' + c.pagina, e.message, 'Atribua a página ao usuário do sistema (controle total)'); }
+  try { const pg = await _meta(c.pagina + '?fields=tasks'); const t = pg.tasks || []; if (t.length) add(t.includes('ADVERTISE') || t.includes('MANAGE'), 'Função na página', t.join(', '), 'Em Configurações → Páginas → Atlantyx → Atribuir pessoas → usuário do sistema → controle total (ou "Criar anúncios")'); } catch (_) {}
+  try { const ig = await _meta(c.ig + '?fields=username'); add(true, 'Instagram', '@' + ig.username); } catch (e) { add(false, 'Instagram ' + c.ig, e.message, 'Atribua a conta do Instagram ao usuário do sistema e confira se está ligada à página'); }
+  return { itens, ok: itens.every(i => i.ok) };
+}
 async function patrocinadoListar() {
   const lista = (await _kvMc('mkt:patrocinados')) || []; const c = _metaCfg();
   if (c.token && lista.length) { await Promise.all(lista.slice(0, 15).map(async r => { try { const i = await _meta(`${r.id}/insights?fields=spend,impressions,clicks,inline_link_clicks,ctr,cpc&date_preset=maximum`); const x = (i.data || [])[0] || {};
@@ -1258,6 +1281,7 @@ async function handler(req, res) {
     instagram_para_bio:     () => instagramParaBio(payload, req), // v3.106
     // v3.108: campanha PATROCINADA no Instagram com botão "Saiba mais" → landing page
     patrocinado_status:     () => patrocinadoStatus(req),
+    patrocinado_diagnostico: () => patrocinadoDiagnostico(), // v3.176
     patrocinado_copy:       () => patrocinadoCopy(payload),
     patrocinado_criar:      () => patrocinadoCriar(payload, req),
     patrocinado_estado:     () => patrocinadoEstado(payload),

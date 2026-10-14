@@ -4526,6 +4526,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
             <div style="font-size:10px;color:var(--t3);margin-top:3px;">Vazio = página de captura de leads (captura.html). O sistema acrescenta o rastreamento UTM da campanha.</div></div>
           <div id="patResumo" style="margin-top:8px;font-size:10.5px;color:var(--t2);line-height:1.6;"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+            <button class="btn" id="patBtnDiag" onclick="patDiagnostico()" title="Confere no Meta (sem criar nada) se o token tem as permissões e enxerga conta, página e Instagram">🔎 Verificar conexão no Meta</button>
             <button class="btn btn-gn" id="patBtnCriar" onclick="patCriar()">📣 Criar campanha (pausada)</button>
             <button class="btn" onclick="patCriar(true)" title="Monta o kit (texto, título, imagem, link, orçamento e público) para criar no Metricool → Ads">🧰 Kit para criar no Metricool Ads</button>
           </div>
@@ -24577,6 +24578,15 @@ async function patGerarImagem() {
   catch (e) { toast('Imagem não gerada: ' + e.message, 'error'); }
   if (b) { b.disabled = false; b.textContent = '🎨 Gerar imagem nova'; }
 }
+// v3.176: diagnóstico da conexão com o Meta (não cria nada)
+async function patDiagnostico() {
+  const b = document.getElementById('patBtnDiag'); if (b) { b.disabled = true; b.textContent = 'Verificando…'; }
+  try { const d = await mcApi('patrocinado_diagnostico');
+    const l = (d.itens || []).map(i => (i.ok ? '✅ ' : '❌ ') + i.item + (i.detalhe ? ' — ' + i.detalhe : '') + (!i.ok && i.correcao ? '\n     → ' + i.correcao : '')).join('\n');
+    alert((d.ok ? 'Tudo certo com a conexão no Meta.\n\n' : 'Encontrei pendências na conexão com o Meta:\n\n') + l);
+  } catch (e) { alert('Não consegui verificar: ' + e.message); }
+  if (b) { b.disabled = false; b.textContent = '🔎 Verificar conexão no Meta'; }
+}
 async function patCriar(soKit) {
   const v = id => (document.getElementById(id)?.value || '').trim();
   const corpo = { nome: v('patNome'), texto: v('patTexto'), titulo: v('patTitulo'), descricao: v('patDesc'), imagem: v('patImg'), link: v('patLink'), orcamento_diario: v('patDiario'), inicio: v('patIni'), fim: v('patFim'), idade_min: v('patIdMin'), idade_max: v('patIdMax'), so_kit: !!soKit };
@@ -32759,7 +32769,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.175] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.176] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -32775,7 +32785,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.175';
+window.__ATX_BUILD_ID__ = 'ATX-v3.176';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
