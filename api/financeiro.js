@@ -4387,6 +4387,7 @@ async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}
     timestamp: new Date().toISOString(),
   };
 
+  let _pmP = null; // pendentes do mês (iniciado em paralelo no bloco do QuickBooks)
   if (qbConfigurado()) {
     try {
       const token = await qbToken();
@@ -4397,6 +4398,10 @@ async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}
       const inicioMes = hojeStr.substring(0, 8) + '01', inicioAno = hojeStr.substring(0, 4) + '-01-01';
       const m3 = new Date(Date.UTC(parseInt(hojeStr.substring(0, 4)), parseInt(hojeStr.substring(5, 7)) - 4, 1)).toISOString().substring(0, 10);
       const fimMesAnt = _diasMais(inicioMes, -1);
+      // correção noturna 14/10: base de caixa e pendentes do mês rodam junto com os relatórios (antes eram sequenciais
+      // e a soma passava dos 8s do semáforo de Gestão de Riscos) — o token já está em cache, sem corrida de refresh
+      const _bP = baseCaixaHoje({ conta_id }).catch(() => null);
+      _pmP = pagamentosDoDiaEPendentes().catch(() => null);
 
       const [contas, dreM, dreA, ar, ap, bs, dre3] = await Promise.allSettled([
         qbQuery(`select * from Account where AccountType = 'Bank'`, token),
@@ -4414,7 +4419,7 @@ async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}
           .reduce((s, a) => s + parseFloat(a.CurrentBalance || 0), 0);
       }
       // v3.21: base única (mesma do Fluxo Detalhado) — substitui CurrentBalance e aging
-      let _b = null; try { _b = await baseCaixaHoje({ conta_id }); } catch (_) {}
+      const _b = await _bP;
 
       if (dreM.status === 'fulfilled') {
         const r = dreResumo(dreM.value);
@@ -4515,7 +4520,7 @@ async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}
     // deste cálculo mesmo continuando por pagar, subestimando a cobertura de despesas fixas.
     // v3.163: pendentes do mês pela regra única (Bills do QuickBooks + o que só está na Agenda, sem contar duas vezes)
     let despFixas = 0;
-    try { const pm = await pagamentosDoDiaEPendentes(); despFixas = pm.qb_erro ? NaN : pm.total_mes_pendente; } catch (_) { despFixas = NaN; }
+    try { const pm = await (_pmP || pagamentosDoDiaEPendentes()); despFixas = !pm || pm.qb_erro ? NaN : pm.total_mes_pendente; } catch (_) { despFixas = NaN; }
     if (!Number.isFinite(despFixas)) {
       const r = await sql`SELECT COALESCE(SUM(valor), 0) AS total FROM despesas_ocorrencias
         WHERE status NOT IN ('paga', 'cancelada') AND data_prevista >= ${inicio} AND data_prevista <= ${fim}`;
