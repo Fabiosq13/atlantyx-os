@@ -1005,9 +1005,14 @@ async function _slotsOcupados({ de, ate, blogId }) {
     const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${de}T00:00:00&end=${ate}T23:59:59&timezone=America/Sao_Paulo`, TOKEN);
     const lista = Array.isArray(r) ? r : (r?.data || r?.posts || []);
     const ocupados = new Set();
+    let ignorados = 0;
     lista.forEach(p => {
       const dt = p.publicationDate?.dateTime || p.data || p.publicationDate;
       if (!dt) return;
+      // v3.182: rascunho ou post que falhou em todas as redes não vai sair — o horário fica livre para a autocampanha
+      const provs = Array.isArray(p.providers) ? p.providers : [];
+      const falhouTudo = provs.length && provs.every(x => /ERROR|FAIL|REJECT/i.test(String(x.status || x.state || '')));
+      if (p.draft === true || falhouTudo) { ignorados++; return; }
       const s = String(dt);
       const dia = s.substring(0, 10);
       const hora = s.substring(11, 16);
@@ -1016,7 +1021,7 @@ async function _slotsOcupados({ de, ate, blogId }) {
       const [H, M] = hora.split(':').map(Number);
       ocupados.add(`${dia}|${H * 60 + M}`);
     });
-    return { ocupados, total: lista.length, erro: null };
+    return { ocupados, total: lista.length, ignorados, erro: null };
   } catch (e) { return { ocupados: new Set(), total: 0, erro: e.message }; }
 }
 

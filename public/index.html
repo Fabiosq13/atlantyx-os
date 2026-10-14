@@ -24143,7 +24143,7 @@ async function acListar(forcar) {
       const futuros = grupos.filter(g => !g.publicado && !g.erro && new Date(g.quando).getTime() > agora); const prox = futuros[0];
       const saidas = grupos.filter(g => new Date(g.quando).getTime() <= agora && !g.erro).length, falhas = grupos.filter(g => g.erro).length;
       const datasPub = grupos.map(g => _dia(new Date(g.quando))).filter(Boolean).sort();
-      const pIni = c.data_inicio || datasPub[0] || null, pFim = c.data_fim || datasPub[datasPub.length - 1] || null;
+      const pIni = datasPub[0] || _dia(c.data_inicio) || null, pFim = datasPub[datasPub.length - 1] || _dia(c.data_fim) || null; // v3.182: período real das publicações (antes '— → —' quando a data gravada vinha em outro formato)
       const situacao = futuros.length ? '<span style="color:var(--green,#22d3a3);">em andamento</span>' : grupos.length ? '<span style="color:var(--t2);">concluída</span>' : '<span style="color:var(--gold);">' + e(c.status === 'aprovada' ? 'sem publicações' : (c.status || 'rascunho')) + '</span>';
       const nPosts = Math.max(pecas.length, (c.data?.copy?.versoes || []).length);
       const formatos = [c.stories?.length && 'Stories', c.carrossel?.slides?.length && 'Carrossel', c.reel?.slides?.length && 'Reel'].filter(Boolean).join(' · ');
@@ -24376,7 +24376,12 @@ async function acExecutar(rascunho) {
     const vagos = (plano?.vagos || []).filter(v => v.data && v.hora).filter(v => { const t = Date.parse(v.data + 'T' + v.hora + ':00-03:00'); return !_ocupLocal.some(o => Math.abs(o - t) <= 45 * 60000); });
     if (!vagos.length) { box.innerHTML = '<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:20px;">Nenhum horário vago — a agenda já está completa no período.</div></div>'; return; }
     const minutos = Math.ceil(vagos.length * (comImagem ? 0.5 : 0.25) + vagos.length / 3 * 0.4);
-    if (!confirm(`${rascunho ? 'Gerar como RASCUNHO' : 'Gerar e AGENDAR no Metricool'}: ${vagos.length} post(s) nos horários vagos de ${c.dias} dia(s) a partir de ${(vagos[0]?.data || '').split('-').reverse().join('/')}.\n\n`
+    // v3.182: mostra os dias que ficaram sem post e por quê (horários já ocupados no Metricool / fim de semana)
+    const _diasVagos = new Set(vagos.map(v => v.data)), _ocupPorDia = {};
+    (plano?.ja_agendados || []).forEach(j => { if (!_diasVagos.has(j.data)) _ocupPorDia[j.data] = (_ocupPorDia[j.data] || 0) + 1; });
+    const _semPost = Object.keys(_ocupPorDia).sort().map(d => d.split('-').reverse().slice(0, 2).join('/') + ' (' + _ocupPorDia[d] + ' horário(s) já ocupado(s))');
+    const _txtSem = _semPost.length ? `\nSem post desta autocampanha: ${_semPost.join(', ')}${plano?.pular_fim_de_semana ? ' · fins de semana pulados' : ''}.\n` : '';
+    if (!confirm(`${rascunho ? 'Gerar como RASCUNHO' : 'Gerar e AGENDAR no Metricool'}: ${vagos.length} post(s) nos horários vagos de ${c.dias} dia(s) a partir de ${(vagos[0]?.data || '').split('-').reverse().join('/')}.\n${_txtSem}\n`
       + `Usa o mesmo processo do botão Auto-campanha do Kanban: plano da IA com as métricas do Metricool, ${comImagem ? 'imagem por post, ' : ''}campanha em "Minhas Campanhas" e peças no Kanban`
       + `${rascunho ? ' (em Gerado, para você revisar — nada vai ao Metricool)' : ' já agendadas'}.${formatos ? '\n+ Stories, Reel e Carrossel no final.' : ''}\n\nLeva cerca de ${minutos} min — mantenha a aba aberta. Continuar?`)) { box.innerHTML = ''; return; }
     const r = await gerarCampanhaAutomatica({ slots: vagos, rascunho: !!rascunho, tema: c.tema, redes: c.redes, comImagem, formatos, onProgress: prog, pularFds: c.pular_fim_de_semana });
@@ -32847,7 +32852,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.181] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.182] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -32863,7 +32868,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.181';
+window.__ATX_BUILD_ID__ = 'ATX-v3.182';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
