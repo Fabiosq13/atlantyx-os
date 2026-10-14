@@ -31650,6 +31650,20 @@ function _autoSelo(on) { try { let el = document.getElementById('autoSelo');
   if (!el) { el = document.createElement('div'); el.id = 'autoSelo'; el.style.cssText = 'position:fixed;right:14px;bottom:14px;z-index:9999;background:var(--bg2);border:1px solid var(--gold);color:var(--t1);border-radius:8px;padding:8px 12px;font-size:11px;box-shadow:0 4px 16px rgba(0,0,0,.3);cursor:pointer;';
     el.innerHTML = '⏳ <b>Autocampanha gerando</b> — pode trocar de tela, mas <b>não feche nem recarregue</b> esta aba'; el.onclick = () => nav('s2auto', document.querySelector('.sbi[onclick*="s2auto"]')); document.body.appendChild(el); } } catch (_) {} }
 window.addEventListener('beforeunload', e => { if (window._autoGerando) { e.preventDefault(); e.returnValue = 'A autocampanha ainda está sendo gerada — se sair agora, ela para no meio.'; } });
+// v3.183: Stories/Reel/Carrossel da autocampanha iam em horário fixo (18:00 e 12:00) — colavam nos posts do feed
+// das 17:30 e 12:15 e o Metricool mostrava "duplicidade". Agora escolhe o 1º horário do dia sem post a menos de
+// 45 min (agenda do sistema + Metricool); se o dia estiver cheio, tenta o dia seguinte. dur = minutos que o formato ocupa.
+function _acHorarioLivre(dia, candidatos, dur = 0) {
+  const ocup = (_publicacoes || []).filter(p => !p.nao_encontrado && p.status !== 'erro').map(p => new Date(p.agendado_para || p.data).getTime()).filter(t => !isNaN(t));
+  const agora = Date.now() + 30 * 60000;
+  for (let k = 0; k < 4; k++) {
+    const d0 = new Date(dia.getTime() + k * 864e5);
+    for (const h of candidatos) { const [hh, mm] = h.split(':').map(Number); const t = new Date(d0); t.setHours(hh, mm, 0, 0);
+      if (t.getTime() < agora) continue;
+      if (!ocup.some(o => o > t.getTime() - 45 * 60000 && o < t.getTime() + (45 + dur) * 60000)) return t; }
+  }
+  return dia;
+}
 async function _gerarCampanhaAutomaticaImpl(opts = {}) {
   window._acDiaReel = null; window._acDiaStories = null;
   // v2.94: a Autocampanha (7 dias) usa ESTA mesma função, passando os horários vagos do período.
@@ -31851,7 +31865,7 @@ async function _gerarCampanhaAutomaticaImpl(opts = {}) {
         if (campAtiva.stories.every(x => x.imagem_composta)) {
           const okc = true;
           if (okc && temMc2) {
-            let dS = new Date(base); dS.setHours(18, 0, 0, 0); if (dS <= new Date()) dS.setDate(dS.getDate() + 1); dS = _fdsPular(dS, opts.pularFds); window._acDiaStories = dS.getTime();
+            let dS = new Date(base); dS.setHours(18, 0, 0, 0); if (dS <= new Date()) dS.setDate(dS.getDate() + 1); dS = _fdsPular(dS, opts.pularFds); dS = _acHorarioLivre(dS, ['19:30', '10:30', '15:00', '20:30'], 15); window._acDiaStories = dS.getTime(); // v3.183: longe dos posts do feed
             window._autoAgendaStories = _localDT(dS);
             await publicarStories();
           } else if (!temMc2) addLog('info', '[Auto-IA] Stories prontos (Metricool off — publique manualmente com as artes compostas)');
@@ -31868,7 +31882,7 @@ async function _gerarCampanhaAutomaticaImpl(opts = {}) {
           if (window._reelBlob) {
             await hospedarReel();
             if (campAtiva.reel.video_url && temMc2) {
-              let dR = new Date(base + 864e5); dR.setHours(12, 0, 0, 0); if (dR <= new Date()) dR.setDate(dR.getDate() + 1); dR = _fdsPular(dR, opts.pularFds); window._acDiaReel = dR.getTime();
+              let dR = new Date(base + 864e5); dR.setHours(12, 0, 0, 0); if (dR <= new Date()) dR.setDate(dR.getDate() + 1); dR = _fdsPular(dR, opts.pularFds); dR = _acHorarioLivre(dR, ['10:30', '15:00', '19:30', '20:30']); window._acDiaReel = dR.getTime(); // v3.183
               window._autoAgendaReel = _localDT(dR);
               await publicarReel();
             }
@@ -31886,7 +31900,7 @@ async function _gerarCampanhaAutomaticaImpl(opts = {}) {
           if (campAtiva.carrossel.slides.every(x => x.imagem_composta)) {
             const okc = true;
             if (okc && temMc2) {
-              let dC = new Date(base + 2 * 864e5); dC.setHours(12, 0, 0, 0); if (dC <= new Date()) dC.setDate(dC.getDate() + 1); dC = _fdsPular(dC, opts.pularFds); if (window._acDiaReel && dC.getTime() <= window._acDiaReel) { dC = new Date(window._acDiaReel + 864e5); dC = _fdsPular(dC, opts.pularFds); }
+              let dC = new Date(base + 2 * 864e5); dC.setHours(12, 0, 0, 0); if (dC <= new Date()) dC.setDate(dC.getDate() + 1); dC = _fdsPular(dC, opts.pularFds); if (window._acDiaReel && dC.getTime() <= window._acDiaReel) { dC = new Date(window._acDiaReel + 864e5); dC = _fdsPular(dC, opts.pularFds); } dC = _acHorarioLivre(dC, ['15:00', '10:30', '19:30', '20:30']); // v3.183
               window._autoAgendaCarr = _localDT(dC);
               await publicarCarrossel();
             } else if (!temMc2) addLog('info', '[Auto-IA] Carrossel pronto (Metricool off — publique manualmente com as artes compostas)');
@@ -32852,7 +32866,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.182] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.183] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -32868,7 +32882,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.182';
+window.__ATX_BUILD_ID__ = 'ATX-v3.183';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
