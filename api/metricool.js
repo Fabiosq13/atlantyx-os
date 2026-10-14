@@ -268,7 +268,9 @@ function _linkPago(base, nome) {
   return base + '/captura.html?utm_source=instagram&utm_medium=pago&utm_campaign=' + slug + '&utm_content=saiba_mais';
 }
 async function patrocinadoCriar(p = {}, req) {
-  const base = (process.env.MEDIA_PUBLIC_BASE || ('https://' + (req?.headers?.host || 'atlantyx-os.vercel.app'))).replace(/\/$/, '');
+  // v3.174: o link do anúncio nunca aponta para um endereço de deploy temporário da Vercel (…-projects-….vercel.app)
+  const _host = req?.headers?.host || '';
+  const base = (process.env.MEDIA_PUBLIC_BASE || process.env.APP_URL || (/^[\w.-]+$/.test(_host) && !/-projects-|^project-/.test(_host) ? 'https://' + _host : 'https://atlantyx-os.vercel.app')).replace(/\/$/, '');
   const nome = String(p.nome || '').trim().substring(0, 80) || 'Instagram · Saiba mais · ' + new Date().toISOString().substring(0, 10);
   const texto = String(p.texto || '').trim(), titulo = String(p.titulo || '').trim().substring(0, 40), descricao = String(p.descricao || '').trim().substring(0, 30);
   const imagem = String(p.imagem || '').trim();
@@ -281,7 +283,9 @@ async function patrocinadoCriar(p = {}, req) {
   if (!(diario >= 6)) throw err('Orçamento diário mínimo: R$ 6,00');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ini) || !/^\d{4}-\d{2}-\d{2}$/.test(fim) || fim < ini) throw err('Informe início e fim da campanha (fim depois do início)');
   const dias = Math.round((new Date(fim) - new Date(ini)) / 864e5) + 1;
-  const link = p.link && /^https:\/\//.test(p.link) ? p.link : _linkPago(base, nome);
+  // v3.174: link escolhido na tela (com UTM acrescentado se não tiver) ou a página de captura de leads
+  let link = _linkPago(base, nome);
+  if (p.link && /^https:\/\//.test(String(p.link).trim())) { try { const u = new URL(String(p.link).trim()); if (!u.searchParams.get('utm_source')) { const ref = new URL(link); ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].forEach(k => u.searchParams.set(k, ref.searchParams.get(k))); } link = u.toString(); } catch (_) {} }
   const kit = { nome, objetivo: 'Tráfego (cliques no link)', posicionamentos: 'Instagram — Feed, Stories e Reels', botao: 'Saiba mais', link, texto, titulo, descricao, imagem,
     orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, publico: `Brasil · ${idMin} a ${idMax} anos` };
   const c = _metaCfg();
@@ -293,7 +297,8 @@ async function patrocinadoCriar(p = {}, req) {
     const adset = await _meta(`act_${c.conta}/adsets`, 'POST', { name: nome + ' · Instagram', campaign_id: camp.id, daily_budget: Math.round(diario * 100), billing_event: 'IMPRESSIONS',
       optimization_goal: 'LINK_CLICKS', bid_strategy: 'LOWEST_COST_WITHOUT_CAP', destination_type: 'WEBSITE', status: 'PAUSED',
       start_time: ini + 'T08:00:00-0300', end_time: fim + 'T23:59:00-0300',
-      targeting: { geo_locations: { countries: ['BR'] }, age_min: idMin, age_max: idMax, publisher_platforms: ['instagram'], instagram_positions: ['stream', 'story', 'reels'] } });
+      targeting: { geo_locations: { countries: ['BR'] }, age_min: idMin, age_max: idMax, publisher_platforms: ['instagram'], instagram_positions: ['stream', 'story', 'reels'],
+        targeting_automation: { advantage_audience: 0 } } }); // v3.174: o Meta passou a exigir o sinalizador (0 = respeita idade/local escolhidos)
     let imgHash = null;
     try { const ri = await fetch(imagem); if (ri.ok) { const b64 = Buffer.from(await ri.arrayBuffer()).toString('base64'); const up = await _meta(`act_${c.conta}/adimages`, 'POST', { bytes: b64 }); imgHash = Object.values(up.images || {})[0]?.hash || null; } } catch (_) {}
     const link_data = { link, message: texto, name: titulo, ...(descricao ? { description: descricao } : {}), ...(imgHash ? { image_hash: imgHash } : { picture: imagem }), call_to_action: { type: 'LEARN_MORE', value: { link } } };

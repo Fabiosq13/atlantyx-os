@@ -4521,6 +4521,9 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
             <div><label class="fl" for="patFim">Fim</label><input type="date" class="fi" id="patFim" oninput="patPrev()" title="Último dia em que o anúncio roda"/></div>
             <div><label class="fl" for="patIdMin">Idade (mín.–máx.)</label><div style="display:flex;gap:4px;"><input class="fi" id="patIdMin" value="25" style="padding:6px;min-width:0;" oninput="patPrev()" placeholder="mín." title="Idade mínima do público" aria-label="Idade mínima do público"/><input class="fi" id="patIdMax" value="60" style="padding:6px;min-width:0;" oninput="patPrev()" placeholder="máx." title="Idade máxima do público" aria-label="Idade máxima do público"/></div></div>
           </div>
+          <div style="margin-top:8px;"><label class="fl" for="patLink">Link do botão "Saiba mais" (página de destino)</label>
+            <input class="fi" id="patLink" style="font-size:11px;" placeholder="https://atlantyx-os.vercel.app/captura.html" title="Para onde o botão Saiba mais leva. Vazio = página de captura de leads da Atlantyx (com UTM da campanha)" oninput="patPrev()"/>
+            <div style="font-size:10px;color:var(--t3);margin-top:3px;">Vazio = página de captura de leads (captura.html). O sistema acrescenta o rastreamento UTM da campanha.</div></div>
           <div id="patResumo" style="margin-top:8px;font-size:10.5px;color:var(--t2);line-height:1.6;"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
             <button class="btn btn-gn" id="patBtnCriar" onclick="patCriar()">📣 Criar campanha (pausada)</button>
@@ -24576,7 +24579,7 @@ async function patGerarImagem() {
 }
 async function patCriar(soKit) {
   const v = id => (document.getElementById(id)?.value || '').trim();
-  const corpo = { nome: v('patNome'), texto: v('patTexto'), titulo: v('patTitulo'), descricao: v('patDesc'), imagem: v('patImg'), orcamento_diario: v('patDiario'), inicio: v('patIni'), fim: v('patFim'), idade_min: v('patIdMin'), idade_max: v('patIdMax'), so_kit: !!soKit };
+  const corpo = { nome: v('patNome'), texto: v('patTexto'), titulo: v('patTitulo'), descricao: v('patDesc'), imagem: v('patImg'), link: v('patLink'), orcamento_diario: v('patDiario'), inicio: v('patIni'), fim: v('patFim'), idade_min: v('patIdMin'), idade_max: v('patIdMax'), so_kit: !!soKit };
   if (!soKit && !confirm('Criar no Meta (Instagram) a campanha "' + (corpo.nome || 'sem nome') + '"?\n\nEla é criada PAUSADA — nada é cobrado agora. Você revisa e clica em "Ativar" quando quiser.')) return;
   const b = document.getElementById('patBtnCriar'); if (b && !soKit) { b.disabled = true; b.textContent = 'Criando no Meta…'; }
   try { const d = await mcApi('patrocinado_criar', corpo);
@@ -32756,7 +32759,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.173] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.174] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -32772,7 +32775,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.173';
+window.__ATX_BUILD_ID__ = 'ATX-v3.174';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
