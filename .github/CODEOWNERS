@@ -1,0 +1,115 @@
+# Método B.P.M. — dono humano de cada trilha. GERADO de partitura/escopos.json por node scripts/bpm-inventario.mjs (não edite à mão).
+# Troque "dono_humano" no escopos.json quando o papel for delegado e rode o script de novo.
+# A aprovação do dono só vira obrigatória quando a branch protection da main exigir "review from Code Owners".
+
+# Padrão: Maestro
+*  @Fabiosq13
+
+# T1 Plataforma (Percussão)
+/api/auth.js  @Fabiosq13
+/api/health.js  @Fabiosq13
+/api/qa.js  @Fabiosq13
+/api/qa-externo.js  @Fabiosq13
+/api/fabrica.js  @Fabiosq13
+/api/dev-pipeline.js  @Fabiosq13
+/api/agente-ideias.js  @Fabiosq13
+/lib/qa-guard.js  @Fabiosq13
+/lib/acesso.js  @Fabiosq13
+/lib/bpm.js  @Fabiosq13
+/lib/docx-md.js  @Fabiosq13
+/lib/fabrica-db.js  @Fabiosq13
+/public/acesso-ui.js  @Fabiosq13
+/public/demandas-ui.js  @Fabiosq13
+/public/qa-agent.js  @Fabiosq13
+/scripts/  @Fabiosq13
+/.github/  @Fabiosq13
+/.claude/  @Fabiosq13
+/vercel.json  @Fabiosq13
+/package.json  @Fabiosq13
+/package-lock.json  @Fabiosq13
+/deploy.js  @Fabiosq13
+/README.md  @Fabiosq13
+/CHANGELOG-*.md  @Fabiosq13
+
+# T2 Integrações (Metais)
+/api/hubspot.js  @Fabiosq13
+/api/apollo.js  @Fabiosq13
+/api/metricool.js  @Fabiosq13
+/api/media.js  @Fabiosq13
+/api/media-upload.js  @Fabiosq13
+/api/atv.js  @Fabiosq13
+/public/atv-ui.js  @Fabiosq13
+/public/atv-player.js  @Fabiosq13
+/api/media-upload-v1.10.3.js  @Fabiosq13
+/api/image-gen.js  @Fabiosq13
+/api/qb-oauth.js  @Fabiosq13
+/api/email-intel.js  @Fabiosq13
+/api/rfp-monitor.js  @Fabiosq13
+/api/phantom.js  @Fabiosq13
+/api/wa-response.js  @Fabiosq13
+/api/wa-batch-generate.js  @Fabiosq13
+/api/meeting-schedule.js  @Fabiosq13
+/lib/hubspot-sync.js  @Fabiosq13
+/api/media/  @Fabiosq13
+/api/fonts/  @Fabiosq13
+
+# T3 Agentes e Squads (Cordas)
+/api/claude.js  @Fabiosq13
+/api/s1-data.js  @Fabiosq13
+/api/s1-intel.js  @Fabiosq13
+/api/s1-strategy.js  @Fabiosq13
+/api/s2-creative.js  @Fabiosq13
+/api/tendencias.js  @Fabiosq13
+/api/prospeccao.js  @Fabiosq13
+/api/prospect-scan.js  @Fabiosq13
+/api/decisor-map.js  @Fabiosq13
+/api/vendas.js  @Fabiosq13
+/api/vendas-outbound.js  @Fabiosq13
+/api/campanha-disparo.js  @Fabiosq13
+/api/lead-capture.js  @Fabiosq13
+/api/followup-cron.js  @Fabiosq13
+/api/briefing-cron.js  @Fabiosq13
+/api/outreach-batch.js  @Fabiosq13
+/api/crm.js  @Fabiosq13
+/api/reunioes.js  @Fabiosq13
+/api/estrategia.js  @Fabiosq13
+/api/pmo.js  @Fabiosq13
+/api/rh.js  @Fabiosq13
+/api/business-plan.js  @Fabiosq13
+/api/portal-cadastro.js  @Fabiosq13
+/api/analytics.js  @Fabiosq13
+/lib/bp-calc.js  @Fabiosq13
+/lib/bp-excel.js  @Fabiosq13
+/lib/bp-ops.js  @Fabiosq13
+/lib/proposta-calc.js  @Fabiosq13
+/lib/historico-s1.js  @Fabiosq13
+/public/vendas-ui.js  @Fabiosq13
+/public/reunioes-ui.js  @Fabiosq13
+/public/estrategia-ui.js  @Fabiosq13
+/public/juridico-ui.js  @Fabiosq13
+/public/disparo-ui.js  @Fabiosq13
+/public/bio.html  @Fabiosq13
+/public/captura.html  @Fabiosq13
+/public/cartao.html  @Fabiosq13
+
+# T4 Dashboard e Telas (Madeiras)
+/public/index.html  @Fabiosq13
+/public/og-atlantyx.jpg  @Fabiosq13
+/api/tv.js  @Fabiosq13
+
+# T5 Dados (Afinação) — contratos e schema
+/api/db.js  @Fabiosq13
+/partitura/contratos/  @Fabiosq13
+
+# T6 Financeiro (Teclado)
+/api/financeiro.js  @Fabiosq13
+/api/faturamento.js  @Fabiosq13
+/api/cnab.js  @Fabiosq13
+/api/termo-excel.js  @Fabiosq13
+/lib/termo-regras.js  @Fabiosq13
+/api/modelos/  @Fabiosq13
+
+# Partitura-mestre — Maestro
+/CLAUDE.md  @Fabiosq13
+/partitura/escopos.json  @Fabiosq13
+/partitura/trilhas.md  @Fabiosq13

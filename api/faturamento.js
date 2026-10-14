@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { termoPendencias, PRAZO_TERMO_DIAS as _PRAZO_TERMO } from '../lib/termo-regras.js'; // v3.129
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
 // SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
@@ -496,6 +497,7 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
     const datasPag = emp.map(e => e.pagamento_data).filter(Boolean).sort();
     porColuna[t.status].push({ ...t, valor_total_termo: num(t.valor_total_termo), nf_soma: num(t.nf_soma), nf_diferenca: num(t.nf_diferenca),
       n_empresas: emp.length, n_nf_encontradas: emp.filter(e => e.nf_status === 'encontrada').length, n_pagas: emp.filter(e => e.pagamento_status === 'pago').length,
+      pendencias_criticas: termoPendencias(t, emp), // v3.129: card vermelho no Kanban
       nf_numeros: emp.map(e => e.nf_numero).filter(Boolean),   // v2.44: para o card destacar a NF filtrada
       nf_soma: num(t.nf_soma), nf_status_termo: t.nf_status || null,
       // v2.56: data-base do prazo, na ordem: informada → derivada do período → NF mais antiga → criação
