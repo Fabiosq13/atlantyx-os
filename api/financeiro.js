@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { termoPendencias } from '../lib/termo-regras.js'; // v3.129
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
 // SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
@@ -155,6 +156,8 @@ async function handler(req, res) {
       qb_saldo_contas:       () => qbSaldoContas(params),
       qb_status:             () => qbStatus(params),
       relatorio_pagamentos:  () => relatorioPagamentosEnviar(params),
+      alerta_termos_gps:     () => alertaTermosGpsEnviar(params), // v3.129
+      higienizacao_dados:    () => higienizacaoDados(params),     // v3.141
       email_diagnostico:     () => emailDiagnostico(params),
       versao:                () => ({ versao_api: VERSAO_API }),
       fluxo_detalhado:       () => fluxoDetalhado(params),
@@ -207,6 +210,7 @@ async function handler(req, res) {
       desp_lancar_qb:        () => despLancarQb(params),
       qb_fornecedores_list:  () => qbFornecedoresList(),
       desp_gerar_ocorrencias: () => despGerarOcorrencias(params),
+      desp_replicar_mes:     () => despReplicarMes(params), // v3.162
 
       // ── Saldo inicial (snapshots) ────────────────────────────────────────
       saldo_inicial_save:    () => saldoInicialSave(params),
@@ -214,10 +218,13 @@ async function handler(req, res) {
 
       // ── Motor de fluxo futuro mês a mês ──────────────────────────────────
       fluxo_futuro:          () => fluxoFuturo(params),
+      projetado_fontes:      () => projetadoFontes(params),   // dem_mv0x0jbvp5sp: colunas Recorrente / Propostas (pond.) da tela Projetado
       // v3.04: DRE mensal real (QuickBooks) — base do Business Plan dinâmico da Atlantyx
       dre_mensal:            () => dreMensal(params),
       dre_arvore:            () => dreArvore(params),        // v3.122: DRE completa com drill-down
-      caixa_detalhe:         () => caixaDetalhe(params),     // v3.125: cartões A receber / A pagar / Fôlego linha a linha
+      caixa_detalhe:         () => caixaDetalhe(params),
+      fin_v2:                () => finV2(params),            // v3.127: Dashboard Financeiro v2 (especificação · 6 telas)
+      fin_v2_cfg_salvar:     () => finV2CfgSalvar(params),     // v3.125: cartões A receber / A pagar / Fôlego linha a linha
       dre_conta_lancamentos: () => dreContaLancamentos(params),
 
       // ── KPIs determinísticos de saúde ────────────────────────────────────
@@ -225,6 +232,8 @@ async function handler(req, res) {
       resultado_kpis:        () => resultadoKpis(params), // v3.112: faturamento, lucro, margens e EBITDA (período + ano)
       metas_empresa_status:  () => metasEmpresaStatus(params), // v3.113: metas do ano (faturamento e % de lucro), falta, semáforo e CRM
       metas_empresa_salvar:  () => metasEmpresaSalvar(params),
+      metas_empresa_ler:     () => metasEmpresaLer(params),
+      metas_padrao_salvar:   () => metasPadraoSalvar(params), // v3.131: cadastro completo (Planejamento → Metas da Empresa)
 
       // ── Conciliação bancária ─────────────────────────────────────────────
       conc_sugestoes:        () => conciliacaoSugestoes(params),
@@ -300,7 +309,7 @@ async function handler(req, res) {
     // v3.69: telas que consultam o QuickBooks levavam ~10s a cada abertura (QA-001/006/009/016/019/021).
     // Resultado guardado no banco: até 3 min devolve na hora; até 12h devolve o último na hora marcado como
     // "desatualizado" e a tela pede a versão nova em seguida (params._forcar). Botão Atualizar força.
-    const CACHE_FIN = { dashboard_financeiro: 1, fluxo_detalhado: 1, extrato_diario: 1, extrato_mensal: 1, painel_resumo: 1, resultado_kpis: 1 };
+    const CACHE_FIN = { dashboard_financeiro: 1, fluxo_detalhado: 1, extrato_diario: 1, extrato_mensal: 1, painel_resumo: 1, resultado_kpis: 1, fin_v2: 1 };
     if (CACHE_FIN[action]) {
       const { _forcar, ...pChave } = params || {};
       const chave = 'cache:fin:' + action + ':' + JSON.stringify(pChave).substring(0, 400);
@@ -942,8 +951,9 @@ async function qbDiagnostico() {
 // Enviado VIA atlanteambr@gmail.com (SMTP do Gmail, mesma senha de app já usada
 // para ler as notas fiscais) para financeiro@atlanteam.com.br e contato@atlanteam.com.br
 // ═══════════════════════════════════════════════════════════════════════════
-const DEST_RELATORIO = (process.env.RELATORIO_PAGAMENTOS_PARA || 'financeiro@atlanteam.com.br,contato@atlanteam.com.br')
-  .split(',').map(s => s.trim()).filter(Boolean);
+// v3.130: financeiro, contato e o CTO (Julio) recebem sempre — mesmo que RELATORIO_PAGAMENTOS_PARA esteja definida no Vercel
+const DEST_RELATORIO = [...new Set([...(process.env.RELATORIO_PAGAMENTOS_PARA || '').split(','), 'financeiro@atlanteam.com.br', 'contato@atlanteam.com.br', 'julio.castro@atlanteam.com.br']
+  .map(s => s.trim().toLowerCase()).filter(Boolean))];
 
 async function pagamentosDoDiaEPendentes() {
   const sql = await getSql();
@@ -952,35 +962,40 @@ async function pagamentosDoDiaEPendentes() {
   const fimMes = new Date(new Date(hoje).getFullYear(), new Date(hoje).getMonth() + 1, 0).toISOString().split('T')[0];
 
   // 1. Despesas do Atlantyx com vencimento HOJE
-  const doDia = await sql`SELECT o.*, d.descricao AS desp_desc, d.categoria AS desp_cat, d.fornecedor AS desp_forn
+  // v3.163: só as não pagas e não canceladas (antes a cancelada aparecia como pendente no e-mail e no dashboard)
+  let doDia = await sql`SELECT o.*, d.descricao AS desp_desc, d.categoria AS desp_cat, d.fornecedor AS desp_forn
     FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
-    WHERE o.data_prevista = ${hoje} ORDER BY o.valor DESC`;
+    WHERE o.data_prevista = ${hoje} AND o.status NOT IN ('paga', 'cancelada') ORDER BY o.valor DESC`;
 
   // 2. Pendentes do MÊS (não pagas, vencimento dentro do mês corrente) — inclui atrasadas do mês
-  const pendentesMes = await sql`SELECT o.*, d.descricao AS desp_desc, d.categoria AS desp_cat, d.fornecedor AS desp_forn
+  let pendentesMes = await sql`SELECT o.*, d.descricao AS desp_desc, d.categoria AS desp_cat, d.fornecedor AS desp_forn
     FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
-    WHERE o.status != 'paga' AND o.data_prevista >= ${inicioMes} AND o.data_prevista <= ${fimMes}
+    WHERE o.status NOT IN ('paga', 'cancelada') AND o.data_prevista >= ${inicioMes} AND o.data_prevista <= ${fimMes}
     ORDER BY o.data_prevista ASC`;
 
   // 3. Contas a pagar do QuickBooks (Bills em aberto) — mesmo período
-  let qbHoje = [], qbMes = [], qbErro = null;
+  let qbHoje = [], qbMes = [], qbErro = null, billsTodas = null;
   if (qbConfigurado()) {
     try {
       const token = await qbToken();
-      const data = await qbQuery(`select * from Bill where Balance > '0' and DueDate >= '${inicioMes}' and DueDate <= '${fimMes}' maxresults 500`, token);
-      const bills = (data?.QueryResponse?.Bill || []).map(b => ({
+      // v3.163: lê todas as Bills do mês (abertas e pagas) — a paga também prova que a despesa da Agenda já está no QuickBooks
+      const data = await qbQuery(`select * from Bill where DueDate >= '${inicioMes}' and DueDate <= '${fimMes}' maxresults 500`, token);
+      billsTodas = (data?.QueryResponse?.Bill || []).map(b => ({ data: b.DueDate || b.TxnDate, fornecedor: b.VendorRef?.name || '', valor: parseFloat(b.TotalAmt || 0) }));
+      const bills = (data?.QueryResponse?.Bill || []).filter(b => parseFloat(b.Balance ?? 0) > 0).map(b => ({
         descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''),
         fornecedor: b.VendorRef?.name || '', categoria: 'QuickBooks · Conta a pagar',
-        data_prevista: b.DueDate || b.TxnDate, valor: parseFloat(b.Balance ?? b.TotalAmt ?? 0), fonte: 'quickbooks',
+        data_prevista: b.DueDate || b.TxnDate, valor: parseFloat(b.Balance ?? b.TotalAmt ?? 0), fonte: 'quickbooks', qb_url: _qbUrlTxn('conta:' + b.Id),
       }));
       qbMes = bills;
       qbHoje = bills.filter(b => String(b.data_prevista).split('T')[0] === hoje);
     } catch (e) { qbErro = e.message; }
   }
 
+  // v3.163: regra única — o que já existe no QuickBooks vale pelo QuickBooks; o que só está na Agenda vale pela Agenda
+  if (billsTodas) { doDia = _agendaSemDuplicarQb(doDia, billsTodas).pendentes; pendentesMes = _agendaSemDuplicarQb(pendentesMes, billsTodas).pendentes; }
   const norm = r => ({ descricao: r.desp_desc || r.descricao || 'Despesa', fornecedor: r.desp_forn || r.fornecedor || '',
     categoria: r.desp_cat || r.categoria || '', data: String(r.data_prevista).split('T')[0],
-    valor: parseFloat(r.valor) || 0, status: r.status || 'prevista', fonte: r.fonte || 'atlantyx' });
+    valor: parseFloat(r.valor) || 0, status: r.status || 'prevista', fonte: r.fonte || 'atlantyx', qb_url: r.qb_url || null });
 
   const listaDia = [...doDia.map(norm), ...qbHoje.map(norm)].sort((a, b) => b.valor - a.valor);
   const listaMes = [...pendentesMes.map(norm), ...qbMes.map(norm)]
@@ -993,12 +1008,68 @@ async function pagamentosDoDiaEPendentes() {
     total_dia: soma(listaDia), total_mes_pendente: soma(listaMes), total_atrasado: soma(atrasadas), qb_erro: qbErro };
 }
 
+// v3.128: seções novas do e-mail — índice no topo, termos, pagamentos (duplicados e pagos) e vendas faturadas
+function _htmlRelatorioExtra(d) {
+  const brl = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const dt = s => s ? String(s).substring(0, 10).split('-').reverse().join('/') : '—';
+  const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const soma = l => (l || []).reduce((s, x) => s + (x.valor || 0), 0);
+  const td = (v, o = '') => `<td style="padding:6px 8px;border-bottom:1px solid #e4e8f2;font-size:12px;${o}">${v}</td>`;
+  const th = c => `<tr style="background:#eef1f8;color:#3a4560;">${c.map(x => `<th style="padding:6px 8px;text-align:${/valor|dias/i.test(x) ? 'right' : 'left'};font-size:10.5px;text-transform:uppercase;">${x}</th>`).join('')}</tr>`;
+  const bloco = (ico, titulo, cor, lista, cab, linha, vazio, nota) => `<h3 style="font-size:13.5px;color:#17224a;margin:20px 0 6px;border-left:4px solid ${cor};padding-left:8px;">${ico} ${titulo} <span style="color:#8a93a8;font-weight:normal;">· ${(lista || []).length} · ${brl(soma(lista))}</span></h3>`
+    + (nota ? `<div style="font-size:11.5px;color:#5a6478;margin:0 0 6px 12px;">${nota}</div>` : '')
+    + ((lista || []).length ? `<table style="width:100%;border-collapse:collapse;">${th(cab)}${lista.slice(0, 40).map(linha).join('')}${lista.length > 40 ? `<tr><td colspan="${cab.length}" style="padding:6px 8px;font-size:11px;color:#8a93a8;">+ ${lista.length - 40} item(ns) — veja no sistema</td></tr>` : ''}</table>` : `<p style="color:#1FB287;font-size:12px;margin:4px 0 0 12px;">✓ ${vazio}</p>`);
+  const T = d.termos || {}, V = d.vendas || {}, X = d.pagx || {};
+  // v3.142: links diretos — termo abre no Kanban de Faturamento do Atlantyx; lançamento abre no QuickBooks
+  const uTermo = t => d.app_url && t?.id ? `${d.app_url}/?tela=s3fatkanban&termo=${encodeURIComponent(t.id)}` : null;
+  const aLink = (url, txt, cor = '#1A3A8F') => url ? `<a href="${url}" style="color:${cor};text-decoration:underline;">${txt}</a>` : txt;
+  const uLanc = x => x?.qb_url || (x?.fonte !== 'quickbooks' && d.app_url ? `${d.app_url}/?tela=s3agenda` : null);
+  const etapa = { elaboracao: 'Elaboração', aprovacao: 'Aprovação', emissao_nf: 'Emissão de NF', envio_nf: 'Envio de NF', pagamento: 'Pagamento', pago: 'Pago' };
+  const lT = (extra) => t => `<tr>${td(`<b>${aLink(uTermo(t), esc(t.numero || '—'))}</b>`)}${td(esc(t.projeto) + '<br><span style="color:#8a93a8;font-size:11px;">' + esc(t.cliente) + ' · ' + esc(t.periodo) + '</span>')}${td(etapa[t.status] || t.status)}${td(t.dias != null ? t.dias + ' dias' : '—', 'text-align:right;' + (t.dias >= PRAZO_TERMO_DIAS ? 'color:#D64545;font-weight:bold;' : ''))}${td(extra ? extra(t) : '')}${td(brl(t.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`;
+  const cabT = (x) => ['Termo', 'Projeto / cliente', 'Etapa', 'Dias', x || '', 'Valor'];
+  const lF = f => `<tr>${td(`<a href="${f.qb_url}" style="color:#1A3A8F;">${esc(f.doc || f.id)}</a>`)}${td(esc(f.cliente))}${td(dt(f.vencimento))}${td(f.dias_atraso ? f.dias_atraso + ' dias' : '—', 'text-align:right;' + (f.dias_atraso > 30 ? 'color:#D64545;font-weight:bold;' : ''))}${td(f.termo ? aLink(uTermo({ id: f.termo_id }), esc(f.termo)) + (f.nf ? ' · NF ' + esc(f.nf) : ' · <span style="color:#E0A422;">sem NF</span>') : '<span style="color:#E0A422;">sem termo</span>')}${td(brl(f.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`;
+  const cabF = ['Fatura', 'Cliente', 'Vencimento', 'Dias de atraso', 'Termo / NF', 'Valor em aberto'];
+  const lP = x => `<tr>${td(dt(x.data))}${td(aLink(uLanc(x), esc(x.descricao)) + (x.fornecedor && !String(x.descricao).includes(x.fornecedor) ? '<br><span style="color:#8a93a8;font-size:11px;">' + esc(x.fornecedor) + '</span>' : ''))}${td(esc(x.categoria) + (x.fonte === 'quickbooks' ? ' <span style="color:#1FB287;">(QB)</span>' : ''))}${td(brl(x.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`;
+  const idx = [['Termos com pendência', T.criticos], ['Termos em atraso', T.em_atraso], ['Termos a confirmar na CPFL', T.a_confirmar_cpfl], ['Faturas vencidas', V.atraso], ['Pagamentos em atraso', d.atrasadas], ['Possíveis duplicados', X.duplicados]];
+  const resumo = `<table style="width:100%;border-collapse:collapse;margin:22px 0 4px;"><tr>${idx.map(([t, l]) => { const n = (l || []).length; return `<td style="padding:8px;background:${n ? '#FDEDED' : '#EAFBF5'};border-radius:6px;border:3px solid #fff;"><div style="font-size:10px;color:#5a6478;text-transform:uppercase;">${t}</div><div style="font-size:17px;font-weight:bold;color:${n ? '#D64545' : '#1FB287'};">${n}</div><div style="font-size:10.5px;color:#8a93a8;">${brl(t === 'Possíveis duplicados' ? soma(l) : soma(l))}</div></td>`; }).join('')}</tr></table>`;
+  if (d._soResumo) return resumo;
+  const C = T.criticos || [];
+  const urgente = C.length ? `<div style="background:#FDEDED;border:2px solid #D64545;border-radius:8px;padding:12px 14px;margin:10px 0 14px;">
+      <div style="font-size:14.5px;font-weight:bold;color:#B42318;">🚨 URGENTE — ${C.length} termo(s) com pendência · ${brl(soma(C))}</div>
+      <div style="font-size:12.5px;color:#7A271A;margin:4px 0 8px;">Preencher o que falta no sistema e tomar providências <b>hoje</b> com o <b>Julio (CTO)</b> e os <b>GPs</b> junto ao cliente: emitir/registrar as notas, completar o termo e obter a data de pagamento — ou cobrar o pagamento vencido. Os GPs e o CTO recebem este alerta diariamente.</div>
+      <table style="width:100%;border-collapse:collapse;">${th(['Termo', 'Projeto / cliente', 'Etapa', 'O que falta / problema', 'Valor'])}${C.map(t => `<tr style="background:#fff5f5;">${td(`<b style="color:#B42318;">${aLink(uTermo(t), esc(t.numero || '—'), '#B42318')}</b>`)}${td(esc(t.projeto) + '<br><span style="color:#8a93a8;font-size:11px;">' + esc(t.cliente) + ' · ' + esc(t.periodo) + '</span>')}${td(etapa[t.status] || t.status)}${td('<span style="color:#B42318;font-weight:bold;">' + t.pendencias.map(p => esc(p.texto) + (p.empresas?.length ? ' (' + p.empresas.map(esc).join(', ') + ')' : '')).join('<br>') + '</span>')}${td(brl(t.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`).join('')}</table></div>` : '';
+  return `<h2 style="font-size:15px;color:#17224a;border-bottom:2px solid #1A3A8F;padding-bottom:5px;margin-top:26px;">📄 Termos de faturamento</h2>`
+    + urgente
+    + (T.erro ? `<p style="color:#E0A422;font-size:12px;">⚠ Não consegui ler os termos: ${esc(T.erro)}</p>` : '')
+    + bloco('⏰', 'Termos em atraso (' + PRAZO_TERMO_DIAS + '+ dias sem pagamento)', '#D64545', T.em_atraso, cabT('Previsão CPFL'), lT(t => t.previsao ? dt(t.previsao) : '—'), 'Nenhum termo em atraso.')
+    + bloco('🏢', 'Termos a confirmar notas na CPFL', '#E0A422', T.a_confirmar_cpfl, cabT(''), lT(), 'Todos os termos em pagamento estão confirmados no portal da CPFL.', 'Termos na etapa Pagamento cujas notas ainda não foram confirmadas como entregues e aprovadas no portal de fornecedores.')
+    + bloco('✍', 'Termos pendentes de aprovação', '#4F7CFF', T.pendentes_aprovacao, cabT(''), lT(), 'Nenhum termo aguardando aprovação.', 'Termos em elaboração ou aguardando aprovação do cliente.')
+    + bloco('🧾', 'Termos com rateio sem nota', '#E0A422', T.rateio_sem_nota, cabT('Empresas sem NF'), lT(t => t.sem_nota.map(e => esc(e.empresa) + ' (' + brl(e.valor) + ')').join('<br>')), 'Todas as empresas dos rateios já têm nota.', 'Termos já em emissão/envio/pagamento em que alguma empresa do rateio ainda não tem número de nota fiscal.')
+    + bloco('💳', 'Termos com pagamento pendente', '#4F7CFF', T.pagamento_pendente, cabT('CPFL'), lT(t => t.cpfl_confirmado ? '✓ confirmado' + (t.previsao ? ' · prev. ' + dt(t.previsao) : '') : '<span style="color:#E0A422;">a confirmar</span>'), 'Nenhum termo aguardando pagamento.')
+    + bloco('📌', 'Termos não pagos (todas as etapas)', '#8a93a8', T.nao_pagos, cabT(''), lT(), 'Todos os termos estão pagos.')
+    + `<h2 style="font-size:15px;color:#17224a;border-bottom:2px solid #E0A422;padding-bottom:5px;margin-top:28px;">💰 Pagamentos — situação do mês</h2>`
+    + bloco('⚠', 'Pagamentos em atraso', '#D64545', d.atrasadas, ['Vencimento', 'Descrição', 'Categoria', 'Valor'], lP, 'Nenhum pagamento em atraso.')
+    + bloco('⧉', 'Possíveis pagamentos duplicados', '#D64545', (X.duplicados || []).map(x => ({ ...x, valor: x.valor })), ['Lançamento 1', 'Lançamento 2', 'Situação', 'Valor'],
+      x => `<tr>${td(aLink(uLanc(x.a), esc(x.a.descricao)) + '<br><span style="color:#8a93a8;font-size:11px;">' + dt(x.a.data) + ' · ' + (x.a.fonte === 'quickbooks' ? 'QuickBooks' : 'Atlantyx') + '</span>')}${td(aLink(uLanc(x.b), esc(x.b.descricao)) + '<br><span style="color:#8a93a8;font-size:11px;">' + dt(x.b.data) + ' · ' + (x.b.fonte === 'quickbooks' ? 'QuickBooks' : 'Atlantyx') + '</span>')}${td(x.a.situacao + ' / ' + x.b.situacao)}${td(brl(x.valor), 'text-align:right;font-family:monospace;')}</tr>`,
+      'Nenhum lançamento com mesmo fornecedor e valor em até 5 dias.', 'Mesmo fornecedor/descrição e mesmo valor com até 5 dias de diferença — confira antes de pagar.')
+    + bloco('⏳', 'Pagamentos pendentes do mês', '#E0A422', d.listaMes.filter(x => x.data >= d.hoje), ['Vencimento', 'Descrição', 'Categoria', 'Valor'], lP, 'Nenhum pagamento pendente a vencer no mês.')
+    + bloco('✅', 'Pagamentos feitos no mês', '#1FB287', X.pagos_mes, ['Data', 'Descrição', 'Categoria', 'Valor'], lP, 'Nenhum pagamento registrado no mês.', X.erro_qb ? '⚠ QuickBooks: ' + esc(X.erro_qb) : null)
+    + `<h2 style="font-size:15px;color:#17224a;border-bottom:2px solid #1FB287;padding-bottom:5px;margin-top:28px;">🧾 Vendas faturadas (QuickBooks)</h2>`
+    + (V.erro ? `<p style="color:#E0A422;font-size:12px;">⚠ ${esc(V.erro)}</p>` : '')
+    + bloco('⏰', 'Faturas em atraso não pagas', '#D64545', V.atraso, cabF, lF, 'Nenhuma fatura vencida.')
+    + bloco('📅', 'Faturas em dia não pagas (a vencer)', '#4F7CFF', V.em_dia, cabF, lF, 'Nenhuma fatura a vencer.')
+    + bloco('❓', 'Faturas sem nota ou termo correspondente', '#E0A422', V.sem_termo, cabF, lF, 'Todas as faturas em aberto têm termo e nota.', 'Faturas em aberto que não estão ligadas a um termo de faturamento ou cujo termo ainda não tem número de NF.')
+    + bloco('✅', 'Faturas pagas no mês', '#1FB287', V.pagas_mes, ['Fatura', 'Cliente', 'Pago em', 'Vencimento', 'Situação', 'Valor'],
+      f => `<tr>${td(`<a href="${f.qb_url}" style="color:#1A3A8F;">${esc(f.doc)}</a>`)}${td(esc(f.cliente))}${td(dt(f.pago_em))}${td(dt(f.vencimento))}${td(f.dias_atraso ? '<span style="color:#E0A422;">pago com ' + f.dias_atraso + ' dias de atraso</span>' : '<span style="color:#1FB287;">em dia</span>')}${td(brl(f.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`,
+      'Nenhum recebimento de fatura no mês.')
+    + (d.app_url ? `<p style="margin-top:18px;"><a href="${d.app_url}" style="background:#1A3A8F;color:#fff;padding:9px 16px;border-radius:6px;text-decoration:none;font-size:12.5px;">Abrir o Atlantyx OS</a></p>` : '');
+}
 function _htmlRelatorioPagamentos(d) {
   const brl = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const dataBR = s => String(s || '').split('-').reverse().join('/');
   const linha = (x, destacarAtraso) => `<tr${destacarAtraso && x.data < d.hoje ? ' style="background:#fdeded;"' : ''}>
     <td style="padding:7px 9px;border-bottom:1px solid #e4e8f2;font-family:monospace;white-space:nowrap;">${dataBR(x.data)}${destacarAtraso && x.data < d.hoje ? ' <span style="color:#c0392b;font-weight:bold;">⚠</span>' : ''}</td>
-    <td style="padding:7px 9px;border-bottom:1px solid #e4e8f2;">${x.descricao}${x.fornecedor ? '<br><span style="color:#8a93a8;font-size:11px;">' + x.fornecedor + '</span>' : ''}</td>
+    <td style="padding:7px 9px;border-bottom:1px solid #e4e8f2;">${x.qb_url ? `<a href="${x.qb_url}" style="color:#1A3A8F;text-decoration:underline;">${x.descricao}</a>` : d.app_url && x.fonte !== 'quickbooks' ? `<a href="${d.app_url}/?tela=s3agenda" style="color:#1A3A8F;text-decoration:underline;">${x.descricao}</a>` : x.descricao}${x.fornecedor ? '<br><span style="color:#8a93a8;font-size:11px;">' + x.fornecedor + '</span>' : ''}</td>
     <td style="padding:7px 9px;border-bottom:1px solid #e4e8f2;color:#5a6478;font-size:11px;">${x.categoria}${x.fonte === 'quickbooks' ? ' <span style="color:#1FB287;">(QB)</span>' : ''}</td>
     <td style="padding:7px 9px;border-bottom:1px solid #e4e8f2;text-align:right;font-family:monospace;white-space:nowrap;">${brl(x.valor)}</td>
     <td style="padding:7px 9px;border-bottom:1px solid #e4e8f2;font-size:11px;">${x.status === 'paga' ? '✅ paga' : x.status === 'lancada' ? '📤 lançada' : '⏳ prevista'}</td></tr>`;
@@ -1008,7 +1079,8 @@ function _htmlRelatorioPagamentos(d) {
   <body style="margin:0;padding:0;background:#f4f6fb;"><div style="font-family:Arial,Helvetica,sans-serif;color:#1c2333;max-width:820px;">
   <div style="background:linear-gradient(135deg,#0B1226,#1A3A8F);color:#fff;padding:18px 22px;border-radius:10px 10px 0 0;">
     <div style="font-size:12px;letter-spacing:2px;color:#8fb0ff;">ATLANTYX OS · FINANCEIRO</div>
-    <div style="font-size:21px;font-weight:bold;margin-top:4px;">Pagamentos de ${dataBR(d.hoje)}</div>
+    <div style="font-size:21px;font-weight:bold;margin-top:4px;">Relatório financeiro de ${dataBR(d.hoje)}</div>
+    <div style="font-size:12px;color:#c9d6ff;margin-top:3px;">Pagamentos · termos de faturamento · vendas faturadas</div>
   </div>
   <div style="border:1px solid #e4e8f2;border-top:none;padding:18px 22px;border-radius:0 0 10px 10px;">
     <div style="display:block;margin-bottom:18px;">
@@ -1021,6 +1093,7 @@ function _htmlRelatorioPagamentos(d) {
       </tr></table>
     </div>
 
+    ${d.termos ? _htmlRelatorioExtra({ ...d, _soResumo: true }) : ''}
     <h2 style="font-size:15px;color:#17224a;border-bottom:2px solid #4F7CFF;padding-bottom:5px;">💰 Pagamentos de hoje (${dataBR(d.hoje)})</h2>
     ${d.listaDia.length ? `<table style="width:100%;border-collapse:collapse;font-size:13px;">${cab}${d.listaDia.map(x => linha(x, false)).join('')}
       <tr style="background:#f7f9fe;font-weight:bold;"><td colspan="3" style="padding:8px 9px;">TOTAL DO DIA</td><td style="padding:8px 9px;text-align:right;font-family:monospace;">${brl(d.total_dia)}</td><td></td></tr></table>`
@@ -1032,16 +1105,18 @@ function _htmlRelatorioPagamentos(d) {
       <tr style="background:#f7f9fe;font-weight:bold;"><td colspan="3" style="padding:8px 9px;">TOTAL PENDENTE NO MÊS</td><td style="padding:8px 9px;text-align:right;font-family:monospace;">${brl(d.total_mes_pendente)}</td><td></td></tr></table>`
       : '<p style="color:#5a6478;font-size:13px;padding:10px 0;">Nenhum pagamento pendente no mês.</p>'}
 
+    ${d.termos ? _htmlRelatorioExtra(d) : ''}
     ${d.qb_erro ? `<p style="color:#E0A422;font-size:12px;margin-top:14px;">⚠ Não foi possível consultar o QuickBooks nesta execução (${d.qb_erro}) — a lista pode estar incompleta.</p>` : ''}
     <p style="color:#8a93a8;font-size:11px;margin-top:20px;border-top:1px solid #e4e8f2;padding-top:10px;">
-      Enviado automaticamente pelo Atlantyx OS · Inclui despesas programadas do sistema e contas a pagar do QuickBooks (todos os fornecedores).
+      Enviado automaticamente pelo Atlantyx OS · Pagamentos: despesas programadas do sistema e contas a pagar do QuickBooks · Termos: Kanban de Faturamento (prazo de ${PRAZO_TERMO_DIAS} dias a partir da data do termo ou da inclusão) · Vendas: faturas do QuickBooks.
     </p>
   </div></div></body></html>`;
 }
 
 // Envio via SMTP do Gmail (atlanteambr@gmail.com) — reaproveita a senha de app já
 // configurada em EMAIL_IMAP_PASS. Cai para o Resend se o nodemailer não estiver instalado.
-async function enviarEmailGmail({ para, assunto, html }) {
+// v3.147: `ical` (texto .ics) vira convite de calendário de verdade (Gmail/Outlook mostram Aceitar/Recusar); `anexos` = [{ filename, content, contentType }]
+export async function enviarEmailGmail({ para, assunto, html, remetente, ical, anexos }) {
   const user = (process.env.EMAIL_SMTP_USER || process.env.EMAIL_IMAP_USER) || 'atlanteambr@gmail.com';
   const pass = process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS;
   const trilha = []; // v1.25.1: registra CADA tentativa, para o erro nunca ser silencioso
@@ -1056,7 +1131,8 @@ async function enviarEmailGmail({ para, assunto, html }) {
       // verify() falha rápido e com mensagem clara se a credencial estiver errada
       try { await transporter.verify(); trilha.push('SMTP Gmail: autenticação OK'); }
       catch (eV) { trilha.push('SMTP Gmail: autenticação FALHOU — ' + eV.message.substring(0, 120)); throw eV; }
-      const info = await transporter.sendMail({ from: `Atlantyx OS Financeiro <${user}>`, to: para.join(', '), subject: assunto, html });
+      const info = await transporter.sendMail({ from: `${remetente || 'Atlantyx OS Financeiro'} <${user}>`, to: para.join(', '), subject: assunto, html,
+        ...(ical ? { icalEvent: { method: (String(ical).match(/^METHOD:(\w+)/m) || [])[1] || 'REQUEST', filename: 'convite.ics', content: ical } } : {}), ...(anexos?.length ? { attachments: anexos } : {}) });
       trilha.push('SMTP Gmail: aceito pelo servidor · destinatários aceitos: ' + JSON.stringify(info.accepted || []) + (info.rejected?.length ? ' · REJEITADOS: ' + JSON.stringify(info.rejected) : ''));
       return { via: 'gmail-smtp', de: user, id: info.messageId, aceitos: info.accepted, rejeitados: info.rejected, resposta_servidor: info.response, trilha };
     } catch (eSmtp) {
@@ -1074,7 +1150,8 @@ async function enviarEmailGmail({ para, assunto, html }) {
   if (!key) { const err = new Error('Não foi possível enviar: nodemailer ausente ou senha não configurada, e sem RESEND_API_KEY de reserva.'); err.trilha = trilha;
     err.hint = 'Confirme que o package.json tem "nodemailer" nas dependencies (e que o deploy rodou depois disso) e que EMAIL_IMAP_PASS está preenchida no Vercel.'; throw err; }
   const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: process.env.RESEND_FROM || 'Atlantyx <noreply@atlantyx.com.br>', to: para, subject: assunto, html }) });
+    body: JSON.stringify({ from: process.env.RESEND_FROM || 'Atlantyx <noreply@atlantyx.com.br>', to: para, subject: assunto, html,
+      ...((ical || anexos?.length) ? { attachments: [...(ical ? [{ filename: 'convite.ics', content: Buffer.from(ical).toString('base64'), content_type: 'text/calendar; method=REQUEST' }] : []), ...(anexos || []).map(a => ({ filename: a.filename, content: Buffer.from(a.content).toString('base64'), content_type: a.contentType }))] } : {}) }) });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) {
     // v1.25.1: mostrar o MOTIVO do Resend (antes era só "HTTP 4xx", inútil para diagnosticar)
@@ -1113,18 +1190,236 @@ async function emailDiagnostico({ para } = {}) {
   return out;
 }
 
+// ═══ v3.128: RELATÓRIO DIÁRIO DO FINANCEIRO — além dos pagamentos do dia: TERMOS (a confirmar na CPFL, pendentes de
+// aprovação, rateio sem nota, pagamento pendente, não pagos, em atraso), PAGAMENTOS (em atraso, possíveis duplicados,
+// pagos no mês, pendentes) e VENDAS FATURADAS (em atraso não pagas, em dia não pagas, sem nota/termo, pagas no mês).
+const PRAZO_TERMO_DIAS = 35; // mesmo prazo do Kanban de Faturamento (data do termo ou inclusão no sistema)
+async function _relTermos() {
+  const sql = await getSql(), hoje = _hojeBR();
+  const T = await sql`SELECT id, numero_termo, projeto, contratante, periodo_medicao, valor_total_termo, status, cpfl_confirmado, cpfl_previsao_pagamento,
+      data_termo, criado_em, aprovado_em, entrou_em_envio_nf, atualizado_em, pagamento_status
+    FROM termos_faturamento WHERE status IS DISTINCT FROM 'concluido' ORDER BY criado_em ASC`;
+  const E = T.length ? await sql`SELECT termo_id, empresa, nf_numero, valor_parcela, pagamento_status, qb_invoice_id FROM termos_empresas WHERE termo_id = ANY(${T.map(t => t.id)})` : [];
+  const dia = x => x ? String(x instanceof Date ? x.toISOString() : x).substring(0, 10) : null;
+  const ts = T.map(t => { const base = dia(t.data_termo) || dia(t.criado_em); const dias = base ? Math.floor((Date.parse(hoje) - Date.parse(base)) / 864e5) : null;
+    const emp = E.filter(e => e.termo_id === t.id); const semNota = emp.filter(e => !e.nf_numero);
+    return { id: t.id, numero: t.numero_termo || '', projeto: t.projeto || '', cliente: t.contratante || '', periodo: t.periodo_medicao || '', valor: round(parseFloat(t.valor_total_termo) || 0),
+      status: t.status, dias, base, cpfl_confirmado: !!t.cpfl_confirmado, previsao: dia(t.cpfl_previsao_pagamento),
+      empresas: emp.length, sem_nota: semNota.map(e => ({ empresa: e.empresa, valor: round(parseFloat(e.valor_parcela) || 0) })), valor_sem_nota: round(semNota.reduce((s, e) => s + (parseFloat(e.valor_parcela) || 0), 0)),
+      pendencias: termoPendencias(t, emp, hoje) }; });
+  const naoPago = ts.filter(t => !['pago', 'concluido'].includes(t.status));
+  return {
+    criticos: ts.filter(t => t.pendencias.length), // v3.129: sem nota, incompleto, sem data de pagamento ou vencida, em atraso
+    a_confirmar_cpfl: ts.filter(t => t.status === 'pagamento' && !t.cpfl_confirmado),
+    pendentes_aprovacao: ts.filter(t => ['elaboracao', 'aprovacao'].includes(t.status)),
+    rateio_sem_nota: ts.filter(t => ['emissao_nf', 'envio_nf', 'pagamento', 'pago'].includes(t.status) && t.sem_nota.length),
+    pagamento_pendente: ts.filter(t => t.status === 'pagamento'),
+    nao_pagos: naoPago,
+    em_atraso: naoPago.filter(t => t.dias != null && t.dias >= PRAZO_TERMO_DIAS),
+  };
+}
+async function _relVendasFaturadas() {
+  const out = { atraso: [], em_dia: [], sem_termo: [], pagas_mes: [], erro: null };
+  if (!qbConfigurado()) { out.erro = 'QuickBooks não conectado'; return out; }
+  const hoje = _hojeBR(), iniMes = hoje.substring(0, 8) + '01', base = process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
+  try {
+    const token = await qbToken(), sql = await getSql();
+    const [inv, pays, lig] = await Promise.all([
+      qbQuery(`select * from Invoice where Balance > '0' orderby DueDate asc maxresults 1000`, token),
+      qbQuery(`select * from Payment where TxnDate >= '${iniMes}' and TxnDate <= '${hoje}' maxresults 500`, token),
+      sql`SELECT e.qb_invoice_id, e.nf_numero, t.id AS termo_id, t.numero_termo, t.projeto FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id WHERE e.qb_invoice_id IS NOT NULL`.catch(() => []),
+    ]);
+    const porInv = {}; lig.forEach(x => { porInv[String(x.qb_invoice_id)] = x; });
+    const map = i => { const l = porInv[String(i.Id)]; return { id: i.Id, doc: i.DocNumber || '', cliente: i.CustomerRef?.name || '', emissao: i.TxnDate, vencimento: i.DueDate || i.TxnDate,
+      valor: round(parseFloat(i.Balance) || 0), total: round(parseFloat(i.TotalAmt) || 0), dias_atraso: i.DueDate && i.DueDate < hoje ? Math.floor((Date.parse(hoje) - Date.parse(i.DueDate)) / 864e5) : 0,
+      termo: l ? (l.numero_termo || '') + (l.projeto ? ' · ' + l.projeto : '') : null, termo_id: l?.termo_id || null, nf: l?.nf_numero || null, qb_url: `${base}/app/invoice?txnId=${i.Id}` }; };
+    const abertas = (inv?.QueryResponse?.Invoice || []).map(map);
+    out.atraso = abertas.filter(i => i.vencimento < hoje).sort((a, b) => b.dias_atraso - a.dias_atraso);
+    out.em_dia = abertas.filter(i => i.vencimento >= hoje);
+    out.sem_termo = abertas.filter(i => !i.termo || !i.nf);
+    // pagas no mês: recebimentos (Payment) e as faturas que eles quitaram — em dia ou com atraso
+    const P = pays?.QueryResponse?.Payment || [];
+    const ids = [...new Set(P.flatMap(p => (p.Line || []).flatMap(l => (l.LinkedTxn || []).filter(x => x.TxnType === 'Invoice').map(x => x.TxnId))))];
+    let invPagas = {}; if (ids.length) { try { const r = await qbQuery(`select * from Invoice where Id in (${ids.slice(0, 200).map(x => `'${String(x).replace(/'/g, '')}'`).join(',')})`, token); (r?.QueryResponse?.Invoice || []).forEach(i => { invPagas[i.Id] = i; }); } catch (_) {} }
+    P.forEach(p => (p.Line || []).forEach(l => (l.LinkedTxn || []).filter(x => x.TxnType === 'Invoice').forEach(x => { const i = invPagas[x.TxnId] || {}; const venc = i.DueDate || null;
+      out.pagas_mes.push({ cliente: p.CustomerRef?.name || i.CustomerRef?.name || '', doc: i.DocNumber || x.TxnId, pago_em: p.TxnDate, vencimento: venc, valor: round(parseFloat(l.Amount) || 0),
+        dias_atraso: venc && p.TxnDate > venc ? Math.floor((Date.parse(p.TxnDate) - Date.parse(venc)) / 864e5) : 0, termo: porInv[String(x.TxnId)] ? (porInv[String(x.TxnId)].numero_termo || '') : null, qb_url: `${base}/app/invoice?txnId=${x.TxnId}` }); })));
+    out.pagas_mes.sort((a, b) => String(b.pago_em).localeCompare(String(a.pago_em)));
+  } catch (e) { out.erro = e.message; }
+  return out;
+}
+async function _relPagamentosExtra(d) {
+  const sql = await getSql(), hoje = d.hoje, out = { pagos_mes: [], duplicados: [] };
+  try { const r = await sql`SELECT o.*, d.descricao AS desp_desc, d.fornecedor AS desp_forn, d.categoria AS desp_cat FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
+      WHERE o.status = 'paga' AND COALESCE(o.data_pagamento, o.data_prevista) >= ${d.inicioMes} AND COALESCE(o.data_pagamento, o.data_prevista) <= ${hoje} ORDER BY COALESCE(o.data_pagamento, o.data_prevista) DESC`;
+    out.pagos_mes = r.map(x => ({ descricao: x.desp_desc || 'Despesa', fornecedor: x.desp_forn || '', categoria: x.desp_cat || '', data: String(x.data_pagamento || x.data_prevista).substring(0, 10), valor: round(parseFloat(x.valor) || 0), fonte: 'atlantyx' })); } catch (_) {}
+  // QuickBooks: pagamentos de contas e despesas pagas no mês
+  if (qbConfigurado()) { try { const token = await qbToken();
+    const [bp, pu] = await Promise.all([qbQuery(`select * from BillPayment where TxnDate >= '${d.inicioMes}' and TxnDate <= '${hoje}' maxresults 500`, token), qbQuery(`select * from Purchase where TxnDate >= '${d.inicioMes}' and TxnDate <= '${hoje}' maxresults 500`, token)]);
+    (bp?.QueryResponse?.BillPayment || []).forEach(b => out.pagos_mes.push({ descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''), fornecedor: b.VendorRef?.name || '', categoria: 'QuickBooks · pagamento de conta', data: b.TxnDate, valor: round(parseFloat(b.TotalAmt) || 0), fonte: 'quickbooks', qb_url: _qbUrlTxn('pagto_conta:' + b.Id) }));
+    (pu?.QueryResponse?.Purchase || []).forEach(b => out.pagos_mes.push({ descricao: (b.EntityRef?.name || 'Despesa') + (b.DocNumber ? ' · ' + b.DocNumber : ''), fornecedor: b.EntityRef?.name || '', categoria: 'QuickBooks · ' + ((b.Line || [])[0]?.AccountBasedExpenseLineDetail?.AccountRef?.name || 'despesa'), data: b.TxnDate, valor: round(parseFloat(b.TotalAmt) || 0), fonte: 'quickbooks', qb_url: _qbUrlTxn((b.PaymentType === 'Check' ? 'cheque:' : 'despesa:') + b.Id) }));
+  } catch (e) { out.erro_qb = e.message; } }
+  // possíveis DUPLICADOS: mesmo valor e mesmo fornecedor/descrição com até 5 dias de diferença (pendentes e pagos do mês)
+  const nrm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '').substring(0, 14);
+  const todos = [...d.listaMes.map(x => ({ ...x, situacao: 'pendente' })), ...out.pagos_mes.map(x => ({ ...x, situacao: 'pago' }))];
+  const vistos = new Set();
+  for (let i = 0; i < todos.length; i++) for (let j = i + 1; j < todos.length; j++) { const a = todos[i], b = todos[j];
+    if (!a.valor || Math.abs(a.valor - b.valor) > 0.01) continue;
+    const quem = nrm(a.fornecedor || a.descricao), quem2 = nrm(b.fornecedor || b.descricao); if (!quem || quem !== quem2) continue;
+    if (Math.abs(Date.parse(a.data) - Date.parse(b.data)) / 864e5 > 5) continue;
+    if (a.fonte === b.fonte && a.situacao === b.situacao && a.data === b.data && a.descricao === b.descricao && a.fonte === 'quickbooks') { /* mesma linha listada 2x por consultas diferentes */ }
+    const k = [a.descricao, a.data, b.descricao, b.data, a.valor].join('|'); if (vistos.has(k)) continue; vistos.add(k);
+    out.duplicados.push({ a, b, valor: a.valor }); }
+  out.pagos_mes.sort((a, b) => String(b.data).localeCompare(String(a.data)));
+  return out;
+}
+// ═══ v3.129: ALERTA DIÁRIO AOS GPs E AO CTO — termos com pendência, SEM valores: não pagamento, atraso, falta de nota
+// ou de data de pagamento, pedindo providência e cobrança junto ao cliente. Vai junto com o relatório do financeiro.
+const DEST_ALERTA_TERMOS = (process.env.ALERTA_TERMOS_PARA || 'ademir.souza@atlanteam.com.br,estevan.risek@atlanteam.com.br,vinicius.cosmo@atlanteam.com.br,julio.castro@atlanteam.com.br')
+  .split(',').map(s => s.trim()).filter(Boolean);
+function _htmlAlertaTermosGps(C, hoje, appUrl) {
+  const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;'), dt = s => String(s || '').split('-').reverse().join('/');
+  const etapa = { elaboracao: 'Elaboração', aprovacao: 'Aprovação', emissao_nf: 'Emissão de NF', envio_nf: 'Envio de NF', pagamento: 'Aguardando pagamento' };
+  const acao = p => ({ incompleto: 'completar o termo', sem_nota: 'providenciar a emissão/registro da nota', sem_data_pagamento: 'obter com o cliente a data de pagamento', pagamento_vencido: 'cobrar o cliente — pagamento vencido', em_atraso: 'cobrar o cliente — termo em atraso' }[p.tipo] || 'verificar');
+  const td = (v, o = '') => `<td style="padding:7px 9px;border-bottom:1px solid #f1d0d0;font-size:12.5px;vertical-align:top;${o}">${v}</td>`;
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:0;background:#f4f6fb;">
+  <div style="font-family:Arial,Helvetica,sans-serif;color:#1c2333;max-width:780px;">
+  <div style="background:#B42318;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0;"><div style="font-size:12px;letter-spacing:2px;color:#ffd6d1;">ATLANTYX OS · FATURAMENTO</div>
+    <div style="font-size:20px;font-weight:bold;margin-top:4px;">🚨 ${C.length} termo(s) precisam de providência — ${dt(hoje)}</div></div>
+  <div style="border:1px solid #e4e8f2;border-top:none;padding:16px 20px;border-radius:0 0 10px 10px;background:#fff;">
+  <p style="font-size:13px;line-height:1.55;margin:0 0 12px;">Olá, GPs e Julio,<br>os termos abaixo estão <b>sem pagamento, em atraso, sem nota ou sem data de pagamento</b>. Por favor, tomem providência <b>hoje</b> junto ao cliente — <b>cobrança, confirmação da data de pagamento e envio das notas</b> — e completem o que falta no sistema. O financeiro acompanha.</p>
+  <table style="width:100%;border-collapse:collapse;"><tr style="background:#FDEDED;color:#7A271A;">${['Termo', 'Projeto / cliente', 'Etapa', 'Situação', 'Providência'].map(h => `<th style="padding:7px 9px;text-align:left;font-size:10.5px;text-transform:uppercase;">${h}</th>`).join('')}</tr>
+  ${C.map(t => `<tr>${td('<b>' + esc(t.numero || '—') + '</b>')}${td(esc(t.projeto) + '<br><span style="color:#8a93a8;font-size:11px;">' + esc(t.cliente) + (t.periodo ? ' · ' + esc(t.periodo) : '') + '</span>')}${td(etapa[t.status] || esc(t.status))}${td('<span style="color:#B42318;font-weight:bold;">' + t.pendencias.map(p => esc(p.texto) + (p.empresas?.length ? ' (' + p.empresas.map(esc).join(', ') + ')' : '')).join('<br>') + '</span>')}${td([...new Set(t.pendencias.map(acao))].join('<br>'))}</tr>`).join('')}</table>
+  ${appUrl ? `<p style="margin-top:16px;"><a href="${appUrl}" style="background:#B42318;color:#fff;padding:9px 16px;border-radius:6px;text-decoration:none;font-size:12.5px;">Abrir o Kanban de Faturamento</a></p>` : ''}
+  <p style="color:#8a93a8;font-size:11px;margin-top:16px;border-top:1px solid #e4e8f2;padding-top:10px;">Alerta diário automático do Atlantyx OS. Valores não são exibidos neste e-mail. Prazo de referência: ${35} dias a partir da data do termo.</p>
+  </div></div></body></html>`;
+}
+async function alertaTermosGpsEnviar({ apenas_gerar, para, termos } = {}) {
+  const T = termos || await _relTermos();
+  const C = T.criticos || [], hoje = _hojeBR();
+  const html = _htmlAlertaTermosGps(C, hoje, _baseUrlInterna());
+  if (apenas_gerar) return { qtd: C.length, html, enviado: false };
+  if (!C.length) return { qtd: 0, enviado: false, motivo: 'nenhum termo com pendência' };
+  const dest = (para && para.length) ? para : DEST_ALERTA_TERMOS;
+  const envio = await enviarEmailGmail({ para: dest, assunto: `[Atlantyx] 🚨 ${C.length} termo(s) sem pagamento, em atraso ou sem nota/data — providência hoje (${hoje.split('-').reverse().join('/')})`, html });
+  return { qtd: C.length, enviado: true, destinatarios: dest, via: envio.via };
+}
 async function relatorioPagamentosEnviar({ apenas_gerar, para } = {}) {
   const d = await pagamentosDoDiaEPendentes();
+  const [tR, vR, pR] = await Promise.allSettled([_relTermos(), _relVendasFaturadas(), _relPagamentosExtra(d)]);
+  d.termos = tR.status === 'fulfilled' ? tR.value : { erro: tR.reason?.message };
+  d.vendas = vR.status === 'fulfilled' ? vR.value : { erro: vR.reason?.message };
+  d.pagx = pR.status === 'fulfilled' ? pR.value : { erro: pR.reason?.message, pagos_mes: [], duplicados: [] };
+  d.app_url = _baseUrlInterna();
   const html = _htmlRelatorioPagamentos(d);
   const resumo = { data: d.hoje, total_dia: d.total_dia, qtd_dia: d.listaDia.length,
-    total_mes_pendente: d.total_mes_pendente, qtd_mes: d.listaMes.length, total_atrasado: d.total_atrasado, qtd_atrasadas: d.atrasadas.length, qb_erro: d.qb_erro };
+    total_mes_pendente: d.total_mes_pendente, qtd_mes: d.listaMes.length, total_atrasado: d.total_atrasado, qtd_atrasadas: d.atrasadas.length, qb_erro: d.qb_erro,
+    termos: d.termos && !d.termos.erro ? Object.fromEntries(Object.entries(d.termos).map(([k, v]) => [k, Array.isArray(v) ? v.length : v])) : d.termos,
+    vendas: d.vendas ? { atraso: d.vendas.atraso?.length, em_dia: d.vendas.em_dia?.length, sem_termo: d.vendas.sem_termo?.length, pagas_mes: d.vendas.pagas_mes?.length, erro: d.vendas.erro } : null,
+    pagamentos: { duplicados: d.pagx?.duplicados?.length || 0, pagos_mes: d.pagx?.pagos_mes?.length || 0 } };
   if (apenas_gerar) return { ...resumo, html, enviado: false };
   const destinatarios = (para && para.length) ? para : DEST_RELATORIO;
   const dataBR = d.hoje.split('-').reverse().join('/');
-  const assunto = `[Atlantyx] Pagamentos de ${dataBR} — hoje R$ ${d.total_dia.toLocaleString('pt-BR',{minimumFractionDigits:2})} · pendente no mês R$ ${d.total_mes_pendente.toLocaleString('pt-BR',{minimumFractionDigits:2})}${d.total_atrasado > 0 ? ' · ⚠ ' + d.atrasadas.length + ' em atraso' : ''}`;
+  const nTA = d.termos?.em_atraso?.length || 0, nFA = d.vendas?.atraso?.length || 0;
+  const assunto = `[Atlantyx] Financeiro ${dataBR} — pagar hoje R$ ${d.total_dia.toLocaleString('pt-BR',{minimumFractionDigits:2})}${d.total_atrasado > 0 ? ' · ⚠ ' + d.atrasadas.length + ' pagamento(s) em atraso' : ''}${nTA ? ' · ' + nTA + ' termo(s) em atraso' : ''}${nFA ? ' · ' + nFA + ' fatura(s) vencida(s)' : ''}`;
   const envio = await enviarEmailGmail({ para: destinatarios, assunto, html });
   console.log(`[Financeiro] Relatório diário enviado para ${destinatarios.join(', ')} via ${envio.via}`);
-  return { ...resumo, enviado: true, destinatarios, ...envio };
+  // v3.129: no envio normal (não no teste "só para mim"), o alerta dos termos vai também aos GPs e ao CTO
+  let alerta_gps = null;
+  if (!(para && para.length) && d.termos && !d.termos.erro) { try { alerta_gps = await alertaTermosGpsEnviar({ termos: d.termos }); } catch (e) { alerta_gps = { erro: e.message }; } }
+  return { ...resumo, enviado: true, destinatarios, ...envio, alerta_gps };
+}
+
+
+// ═══ v3.141: HIGIENIZAÇÃO DE DADOS — pendências que deixam os números errados no dashboard financeiro (todos os
+// cards e abas) e nos demais módulos. Complementa o e-mail das 8h sem repetir o que ele já aponta (termos, faturas
+// vencidas/sem termo, pagamentos em atraso e possíveis duplicados por fornecedor/valor). Cada item diz o impacto
+// (quais números ficam errados), como corrigir e em que tela.
+async function higienizacaoDados({ _forcar } = {}) {
+  const sql = await getSql(), hoje = _hojeBR(), ano = parseInt(hoje), mesAtual = hoje.substring(0, 7);
+  if (!_forcar) { try { const c = (await sql`SELECT value, updated_at FROM kv_store WHERE key = 'higienizacao_dados' LIMIT 1`)[0];
+    if (c && Date.now() - new Date(c.updated_at).getTime() < 30 * 60000) { const v = typeof c.value === 'string' ? JSON.parse(c.value) : c.value; return { ...v, cache_min: Math.round((Date.now() - new Date(c.updated_at).getTime()) / 60000) }; } } catch (_) {} }
+  const lim = (p, ms = 40000) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('não respondeu a tempo')), ms))]);
+  const qb = qbConfigurado(), itens = [], erros = [];
+  const add = x => { if (x && (x.qtd || x.sempre)) itens.push(x); };
+  const dataBR = d => String(d || '').substring(0, 10).split('-').reverse().join('/');
+  const chk = async (nome, f) => { try { await lim(f()); } catch (e) { erros.push(nome + ': ' + e.message); } };
+  const mesIni = m => m + '-01', mesFim = m => { const [a, mm] = m.split('-').map(Number); return new Date(Date.UTC(a, mm, 0)).toISOString().substring(0, 10); };
+  const meses = [0, 1, 2, 3].map(k => { const d = new Date(Date.UTC(ano, parseInt(hoje.substring(5, 7)) - 1 - k, 1)); return d.toISOString().substring(0, 7); });
+  // duplicados que o e-mail já aponta (para não repetir)
+  // (roda em paralelo com as verificações, para caber no tempo da função)
+  const dupEmailP = (async () => { const set = new Set(); try { const d0 = await lim(pagamentosDoDiaEPendentes(), 18000); const px = await lim(_relPagamentosExtra(d0), 12000);
+    (px.duplicados || []).forEach(x => set.add(Math.round(x.valor))); } catch (_) {} return set; })();
+
+  await Promise.all([
+    // 1. QuickBooks desconectado: todos os cards ficam sem base
+    chk('QuickBooks', async () => { if (!qb) add({ id: 'qb_off', sistema: 'QuickBooks', gravidade: 'alta', titulo: 'QuickBooks não está conectado', qtd: 1, impacto: 'Todos os cards do Dashboard Financeiro, DRE, fluxo de caixa e conciliação ficam sem dados', acao: 'Conecte o QuickBooks em Financeiro → Configurações', tela: 's3dashboard', itens: [] });
+      else { try { await qbToken(); } catch (e) { add({ id: 'qb_token', sistema: 'QuickBooks', gravidade: 'alta', titulo: 'Conexão com o QuickBooks expirada', qtd: 1, impacto: 'Todos os números do financeiro param de atualizar', acao: 'Reconecte o QuickBooks (autorizar de novo)', tela: 's3dashboard', itens: [{ texto: e.message }] }); } } }),
+    // 2. conciliação bancária pendente (mês atual e 3 anteriores)
+    chk('Conciliação', async () => { if (!qb) return; const R = await Promise.all(meses.map(async m => { const fim = m === mesAtual ? hoje : mesFim(m); const r = await qbConciliacaoStatus({ data_inicio: mesIni(m), data_fim: fim }); return { m, r }; }));
+      const pend = R.filter(x => x.r && x.r.pendentes > 0 && x.m !== mesAtual);
+      if (pend.length) add({ id: 'conciliacao', sistema: 'QuickBooks · Bancos', gravidade: 'alta', titulo: 'Meses fechados com lançamentos bancários não conciliados', qtd: pend.reduce((a, x) => a + x.r.pendentes, 0), valor: round(pend.reduce((a, x) => a + x.r.valor_pendente, 0)),
+        impacto: 'Saldo em caixa, fôlego de caixa, conciliação % e DRE de caixa podem estar errados', acao: 'Conciliar no QuickBooks (Banking → Reconcile) ou na tela de Conciliação Bancária', tela: 's3conciliacao',
+        itens: pend.map(x => ({ texto: `${x.m.split('-').reverse().join('/')}: ${x.r.pendentes} de ${x.r.movimentos} movimentos não conciliados`, valor: x.r.valor_pendente, detalhe: (x.r.pendentes_amostra || []).slice(0, 5).map(l => `${dataBR(l.data)} ${l.tipo || ''} ${l.nome || ''} R$ ${l.valor}`).join(' · ') })) }); }),
+    // 3. contas a pagar (Bill) em aberto que já foram pagas no extrato — inflam o "A pagar" e os "pagamentos em atraso"
+    chk('Bills pagas', async () => { if (!qb) return; const L = []; for (const m of meses.slice(0, 2)) { const [a, mm] = m.split('-'); const r = await despesasDuplicadas({ mes: parseInt(mm), ano: parseInt(a) }); (r.duplicadas || []).forEach(x => L.push(x)); }
+      if (L.length) add({ id: 'bills_pagas', sistema: 'QuickBooks · Contas a pagar', gravidade: 'alta', titulo: 'Contas a pagar em aberto que já aparecem pagas no extrato', qtd: L.length, valor: round(L.reduce((a, x) => a + x.valor, 0)),
+        impacto: 'Infla o card "A pagar", os pagamentos em atraso do e-mail e o fluxo de caixa futuro', acao: 'Registrar o pagamento (Pay bills) ou excluir a Bill duplicada — tela Conciliação → Despesas duplicadas', tela: 's3conciliacao',
+        itens: L.slice(0, 30).map(x => ({ texto: `${x.fornecedor || ''} · venc. ${dataBR(x.vencimento)} · pago no extrato em ${dataBR(x.extrato_data)} (${x.confianca})`, valor: x.valor, link: x.bill_id ? _qbUrlTxn('conta:' + x.bill_id) : null })) }); }),
+    // 4. duplicidades reais no QuickBooks (90 dias) — exceto as que o e-mail já mostra
+    chk('Duplicidades QB', async () => { if (!qb) return; const [r, dupEmail] = await Promise.all([qbVarrerDuplicados({}), dupEmailP]); const S = (r.varredura?.suspeitos || []).filter(x => x.classificacao === 'duplicidade_real' && !dupEmail.has(Math.round(x.valor)));
+      if (S.length) add({ id: 'dup_qb', sistema: 'QuickBooks', gravidade: 'alta', titulo: 'Lançamentos registrados em duplicidade no QuickBooks (90 dias)', qtd: S.length, valor: round(S.reduce((a, x) => a + (x.impacto_no_caixa || 0), 0)),
+        impacto: 'Receita/despesa e caixa contados duas vezes — DRE, margem, EBITDA e saldo', acao: 'Excluir a cópia no QuickBooks (tela Fluxo Detalhado → Procurar duplicados)', tela: 's3fluxodet',
+        itens: S.slice(0, 25).map(x => ({ texto: `${x.contraparte} · ${x.registros.length} registros iguais (${x.registros.map(g => dataBR(g.data) + ' ' + (g.entidade || g.tipo || '')).join(', ')})`, valor: x.valor })) }); }),
+    // 5. contas sem categoria no resultado do ano
+    chk('Sem categoria', async () => { if (!qb) return; const r = await dreArvore({ data_inicio: ano + '-01-01', data_fim: hoje }); const L = [];
+      const anda = n => { (n || []).forEach(x => { if (x.tipo === 'conta' || x.tipo === 'secao') { if (/uncategori|n[aã]o categoriz|sem categoria|ask my accountant|pergunte ao contador|opening balance|saldo de abertura|suspense|a classificar/i.test(x.nome) && Math.abs(x.total) > 0.009) L.push(x); } anda(x.filhos); }); };
+      anda(r.dre?.arvore);
+      if (L.length) add({ id: 'sem_categoria', sistema: 'QuickBooks · DRE', gravidade: 'media', titulo: `Valores em contas sem categoria no resultado de ${ano}`, qtd: L.length, valor: round(L.reduce((a, x) => a + Math.abs(x.total), 0)),
+        impacto: 'DRE, custos × despesas, margem bruta e EBITDA distorcidos; cards de Pessoas/Projetos/Produtos sem a parte não classificada', acao: 'Reclassificar os lançamentos para a conta correta (abra o DRE e clique na conta para ver cada lançamento)', tela: 's3dashboard', abrir_dre: true,
+        itens: L.map(x => ({ texto: x.nome, valor: Math.abs(x.total), conta_id: x.conta_id })) }); }),
+    // 6. saídas recorrentes do extrato sem despesa programada — o fluxo futuro não as enxerga
+    chk('Despesas não cadastradas', async () => { const r = await despesasNaoCadastradas({ meses: 3 }); const L = (r.candidatas || []).filter(c => c.ocorrencias >= 2);
+      if (L.length) add({ id: 'desp_nao_cad', sistema: 'Financeiro · Agenda de despesas', gravidade: 'media', titulo: 'Despesas recorrentes pagas que não estão na agenda de despesas', qtd: L.length, valor: round(L.reduce((a, x) => a + x.valor, 0)),
+        impacto: 'Fluxo de caixa futuro, "A pagar" projetado e fôlego de caixa ficam otimistas (essas saídas não entram na projeção)', acao: 'Cadastrar como despesa programada (Agenda de Despesas → Despesas não cadastradas)', tela: 's3agenda',
+        itens: L.slice(0, 25).map(x => ({ texto: `${x.descricao} · ${x.ocorrencias}x nos últimos 3 meses · dia ~${x.dia_vencimento_sugerido}`, valor: x.valor })) }); }),
+    // 7. despesas programadas incompletas
+    chk('Despesas programadas', async () => { const L = await sql`SELECT id, descricao, fornecedor, valor, categoria FROM despesas_programadas WHERE ativa = true AND (COALESCE(valor,0) <= 0 OR COALESCE(TRIM(categoria),'') = '' OR COALESCE(TRIM(fornecedor),'') = '')`;
+      if (L.length) add({ id: 'desp_incompletas', sistema: 'Financeiro · Agenda de despesas', gravidade: 'baixa', titulo: 'Despesas programadas sem valor, categoria ou fornecedor', qtd: L.length, valor: round(L.reduce((a, x) => a + (parseFloat(x.valor) || 0), 0)),
+        impacto: 'Agenda de pagamentos, gastos por categoria e e-mail do financeiro com linhas incompletas', acao: 'Completar o cadastro na Agenda de Despesas', tela: 's3agenda',
+        itens: L.slice(0, 30).map(x => ({ texto: `${x.descricao || '(sem descrição)'} — falta: ${[!(parseFloat(x.valor) > 0) && 'valor', !String(x.categoria || '').trim() && 'categoria', !String(x.fornecedor || '').trim() && 'fornecedor'].filter(Boolean).join(', ')}`, valor: parseFloat(x.valor) || 0 })) }); }),
+    // 8. marcos de projeto sem data ou sem valor (previsão de receita e Kanban de marcos)
+    chk('Marcos', async () => { let L = []; try { L = await sql`SELECT m.id, m.descricao, m.valor, m.data_entrega, p.nome AS projeto FROM projetos_marcos m JOIN projetos_financeiros p ON p.id = m.projeto_id
+        WHERE m.status_kanban <> 'concluido' AND m.data_pagamento IS NULL AND COALESCE(p.status,'ativo') NOT IN ('cancelado','encerrado','inativo') AND (m.data_entrega IS NULL OR COALESCE(m.valor,0) <= 0)`; } catch (_) { return; }
+      if (L.length) add({ id: 'marcos_incompletos', sistema: 'Projetos · Marcos de faturamento', gravidade: 'media', titulo: 'Marcos de projeto sem data de entrega ou sem valor', qtd: L.length,
+        impacto: 'Receita futura do fluxo de caixa, previsão de faturamento e metas do ano subestimadas', acao: 'Completar data e valor no Kanban de Marcos', tela: 's3marcoskanban',
+        itens: L.slice(0, 30).map(x => ({ texto: `${x.projeto} · ${x.descricao || 'marco'} — falta: ${[!x.data_entrega && 'data de entrega', !(parseFloat(x.valor) > 0) && 'valor'].filter(Boolean).join(' e ')}`, valor: parseFloat(x.valor) || 0 })) }); }),
+    // 9. previsões de faturamento duplicadas no QuickBooks (estimativas dos marcos)
+    chk('Previsões duplicadas', async () => { if (!qb) return; const t = await qbToken(); const P = await _qbPrevisoesTodas(t); const g = {}; P.forEach(e => { if (e.marco) (g[e.marco] = g[e.marco] || []).push(e); });
+      const D = Object.values(g).filter(l => l.length > 1);
+      if (D.length) add({ id: 'prev_dup', sistema: 'QuickBooks · Previsões de faturamento', gravidade: 'media', titulo: 'Previsões de faturamento duplicadas no QuickBooks', qtd: D.reduce((a, l) => a + l.length - 1, 0), valor: round(D.reduce((a, l) => a + l.slice(1).reduce((s2, e) => s2 + e.valor, 0), 0)),
+        impacto: 'Receita prevista e fluxo de caixa futuro contados em dobro', acao: 'Projetos & Marcos → "Limpar previsões duplicadas"', tela: 's3projetos',
+        itens: D.slice(0, 20).map(l => ({ texto: `${l[0].cliente || ''} · ${l.length} estimativas para o mesmo marco (${l.map(e => e.doc || e.id).join(', ')})`, valor: l[0].valor })) }); }),
+    // 10. orçamento do ano ausente no QuickBooks
+    chk('Orçamento', async () => { if (!qb) return; const r = await qbOrcamento({ ano }); const ok = r?.orcamento && String(r.orcamento.inicio || r.orcamento.StartDate || r.orcamento.periodo || '').includes(String(ano));
+      if (!r?.orcamento || r.motivo) add({ id: 'orcamento', sistema: 'Planejamento · Orçamento', gravidade: 'media', titulo: `Sem orçamento de ${ano} no QuickBooks`, qtd: 1, impacto: 'Card "Planejado × realizado" e metas de gastos do Dashboard ficam vazios ou usam outro ano', acao: 'Cadastrar o orçamento do ano (Orçamento Anual / Budgets no QuickBooks)', tela: 's3orcamento', itens: [{ texto: r?.motivo || 'nenhum orçamento encontrado' }] }); }),
+    // 11. metas do ano não cadastradas (usa o padrão)
+    chk('Metas', async () => { const m = await _metasComPadrao([ano]); const cad = m.por_ano?.[String(ano)];
+      if (!cad || cad.padrao) add({ id: 'metas', sistema: 'Planejamento · Metas', gravidade: 'baixa', titulo: `Metas de ${ano} não cadastradas — o sistema está usando o padrão (crescimento e margem)`, qtd: 1, impacto: 'Metas ao lado dos KPIs, semáforos e "falta para a meta" usam valores calculados, não os aprovados', acao: 'Cadastrar em Planejamento → Metas da Empresa (com a distribuição mensal)', tela: 's1metas', itens: [] });
+      else if (!Array.isArray(cad.mensal) || cad.mensal.filter(x => parseFloat(x) > 0).length < 12) add({ id: 'metas_mensal', sistema: 'Planejamento · Metas', gravidade: 'baixa', titulo: `Meta de ${ano} sem distribuição mensal completa`, qtd: 1, impacto: 'Meta do mês nos cards é a anual ÷ 12 (sem sazonalidade)', acao: 'Distribuir a meta por mês em Metas da Empresa', tela: 's1metas', itens: [] }); }),
+    // 12. saldo inicial do caixa
+    chk('Saldo inicial', async () => { let n = 0; try { n = (await sql`SELECT COUNT(*)::int AS n FROM saldos_iniciais`)[0].n; } catch (_) { n = 0; }
+      if (!n) add({ id: 'saldo_inicial', sistema: 'Financeiro · Fluxo de caixa', gravidade: 'baixa', titulo: 'Saldo inicial do fluxo de caixa não cadastrado', qtd: 1, impacto: 'Saldo projetado do Fluxo Futuro parte de zero quando o QuickBooks não responde', acao: 'Cadastrar o saldo inicial no Fluxo Futuro', tela: 's3fluxo', itens: [] }); }),
+    // 13. CRM: negócios abertos sem data de fechamento ou sem valor
+    chk('CRM', async () => { const r = await _crmPipelineAno(ano); const L = (r.negocios || []).filter(x => !x.fechamento || !x.valor);
+      if (L.length) add({ id: 'crm', sistema: 'Comercial · HubSpot', gravidade: 'baixa', titulo: 'Negócios em aberto sem data de fechamento ou sem valor', qtd: L.length, impacto: 'Pipeline ponderado, projeção de fechamento do ano e cobertura da meta subestimados', acao: 'Completar valor e data de fechamento no HubSpot', tela: 's7painel',
+        itens: L.slice(0, 30).map(x => ({ texto: `${x.nome} (${x.etapa}) — falta: ${[!x.fechamento && 'data de fechamento', !x.valor && 'valor'].filter(Boolean).join(' e ')}`, valor: x.valor || 0, link: x.link })) }); }),
+  ]);
+  const ordem = { alta: 0, media: 1, baixa: 2 };
+  itens.sort((a, b) => ordem[a.gravidade] - ordem[b.gravidade] || (b.valor || 0) - (a.valor || 0));
+  const out = { gerado_em: new Date().toISOString(), itens, erros, total: itens.reduce((a, x) => a + (x.qtd || 0), 0) };
+  try { await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('higienizacao_dados', ${JSON.stringify(out)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {}
+  return out;
 }
 
 // v1.26.3: versão do arquivo — permite detectar deploy desatualizado sem adivinhação
@@ -2415,6 +2710,16 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
       .forEach(x => { termoPorInv[String(x.qb_invoice_id)] = { termo_id: x.id, termo_numero: x.numero_termo, termo_projeto: x.projeto }; }); } } catch (_) {}
   const _qbBase = process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
   const soma = (l, f) => round(l.filter(f || (() => true)).reduce((a, x) => a + (x.valor || 0), 0));
+  // v3.164: despesas que só existem na Agenda (vencidas até 60 dias + próximos 30 dias) também são "a pagar" — regra única:
+  // se a mesma despesa já está no QuickBooks, vale a Bill; se só está na Agenda, vale a Agenda
+  let agendaPag = [];
+  if (!fut.erro) try { const sql = await getSql();
+    const rows = await sql`SELECT o.id, o.data_prevista, o.valor, o.qb_txn_id, d.descricao AS despesa_desc, d.fornecedor AS despesa_forn, d.categoria AS despesa_cat
+      FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
+      WHERE o.status NOT IN ('paga', 'cancelada') AND o.data_prevista >= ${_diasMais(hoje, -60)} AND o.data_prevista <= ${em30}`;
+    agendaPag = _agendaSemDuplicarQb(rows, fut.pagaveis || []).pendentes.map(r => { const dt = _dStr(r.data_prevista);
+      return { id: 'desp_' + r.id, data: dt, valor: round(parseFloat(r.valor) || 0), vencida: dt < hoje, fornecedor: r.despesa_forn || r.despesa_desc || 'Despesa programada', descricao: r.despesa_desc || 'Despesa programada', categoria: r.despesa_cat || '', doc: 'Agenda', origem: 'agenda' }; });
+  } catch (e) { console.warn('[baseCaixa] agenda:', e.message); }
   const valor = {
     hoje,
     saldo_hoje: ext._erro || ext.saldo_inicial_origem === 'zero' && !ext.qb_lancamentos ? null : round(ext.saldo_final),
@@ -2427,8 +2732,9 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
     // v3.85: faturas em aberto, uma a uma — alimenta os alertas de vencimento (A Receber + Dashboard LIVE)
     recebiveis_itens: fut.erro ? null : reais.map(r => { const qid = String(r.id || '').replace(/^inv_/, ''); return { id: r.id, cliente: r.cliente || String(r.descricao || '').split(' · ')[0], doc: r.doc || '', valor: round(r.valor || 0), vencimento: r.data, vencida: !!r.vencida,
       qb_id: qid || null, qb_url: qid ? `${_qbBase}/app/invoice?txnId=${qid}` : null, ...(termoPorInv[qid] || {}) }; }),
-    a_pagar: fut.erro ? null : soma(fut.pagaveis || []), a_pagar_vencido: fut.erro ? null : soma(fut.pagaveis || [], p => p.vencida), a_pagar_30d: fut.erro ? null : soma(fut.pagaveis || [], p => !p.vencida && p.data <= em30),
-    qtd_pagar: fut.erro ? null : (fut.pagaveis || []).length,
+    a_pagar: fut.erro ? null : round(soma(fut.pagaveis || []) + soma(agendaPag)), a_pagar_vencido: fut.erro ? null : round(soma(fut.pagaveis || [], p => p.vencida) + soma(agendaPag, p => p.vencida)), a_pagar_30d: fut.erro ? null : round(soma(fut.pagaveis || [], p => !p.vencida && p.data <= em30) + soma(agendaPag, p => !p.vencida)),
+    qtd_pagar: fut.erro ? null : (fut.pagaveis || []).length + agendaPag.length,
+    a_pagar_quickbooks: fut.erro ? null : soma(fut.pagaveis || []), a_pagar_agenda: fut.erro ? null : soma(agendaPag), agenda_pagar_itens: fut.erro ? null : agendaPag, // v3.164
     pagaveis_itens: fut.erro ? null : (fut.pagaveis || []).map(p => { const qid = String(p.id || '').replace(/^bill_/, ''); return { id: p.id, data: p.data, valor: round(p.valor || 0), valor_total: round(p.valor_total || 0),
       vencida: !!p.vencida, fornecedor: p.fornecedor || String(p.descricao || '').split(' · ')[0], doc: p.doc || '', conta: p.conta || '', memo: p.memo || '', emissao: p.emissao || null,
       qb_url: qid ? `${_qbBase}/app/bill?txnId=${qid}` : null }; }), // v3.122/v3.125: recorte pelo período + drill-down linha a linha
@@ -2449,7 +2755,7 @@ async function caixaDetalhe({ data_inicio = null, data_fim = null, mes = null, a
   const marca = (x, d) => ({ ...x, faixa: !d ? 'sem data' : (pIni && d >= pIni && d <= pFim) ? 'periodo' : (pIni && d < pIni) ? 'antes' : (pFim && d > pFim) ? 'depois' : 'periodo',
     em_30d: !!d && (d < hoje || d <= em30), dias: d ? Math.round((Date.parse(d + 'T12:00:00Z') - Date.parse(hoje + 'T12:00:00Z')) / 864e5) : null });
   const receber = (b.recebiveis_itens || []).map(r => marca({ ...r, data: r.vencimento }, r.vencimento)).sort((x, y) => String(x.data).localeCompare(String(y.data)));
-  const pagar = (b.pagaveis_itens || []).map(p => marca(p, p.data)).sort((x, y) => String(x.data).localeCompare(String(y.data)));
+  const pagar = (b.pagaveis_itens || []).concat(b.agenda_pagar_itens || []).map(p => marca(p, p.data)) /* v3.164: + despesas só da Agenda */.sort((x, y) => String(x.data).localeCompare(String(y.data)));
   return { caixa_detalhe: { hoje, periodo: pIni ? { de: pIni, ate: pFim } : null, saldo_hoje: b.saldo_hoje, receber, pagar, erro: b.erro || null,
     totais: { receber: b.a_receber, pagar: b.a_pagar, receber_vencido: b.a_receber_vencido, receber_30d: b.a_receber_30d, pagar_vencido: b.a_pagar_vencido, pagar_30d: b.a_pagar_30d } } };
 }
@@ -2808,7 +3114,7 @@ function _descLinhasFatura(inv) {
 }
 // v3.00: TRANSAÇÕES RECORRENTES do QuickBooks (modelos agendados) projetadas nas próximas datas.
 // O QuickBooks conta com elas na previsão; o Atlantyx ignorava. Só modelos ativos e agendados.
-async function qbRecorrentesProjecao({ ate } = {}) {
+async function qbRecorrentesProjecao({ ate, receitas = false } = {}) {   // receitas: true só na tela Projetado (coluna Recorrente)
   if (!qbConfigurado()) return { itens: [], erro: null };
   const token = await qbToken();
   const d = await qbQuery(`select * from RecurringTransaction maxresults 500`, token);
@@ -2824,7 +3130,7 @@ async function qbRecorrentesProjecao({ ate } = {}) {
     const dir = ENT[tipoEnt]; if (!dir) continue;
     // v3.02: modelos recorrentes de RECEITA não são projetados — a receita da Atlantyx entra pelas
     // faturas dos termos (e previsões dos marcos); projetar o modelo contava a mesma receita duas vezes.
-    if (dir === 'entrada') continue;
+    if (dir === 'entrada' && !receitas) continue;
     if (ri.Active === false || /unscheduled/i.test(String(ri.RecurType || ''))) continue;   // inativo ou sem agenda: não projeta
     const valor = parseFloat(t.TotalAmt || 0); if (!valor) continue;
     let prox = si.NextDate || si.StartDate; if (!prox) continue;
@@ -2835,7 +3141,7 @@ async function qbRecorrentesProjecao({ ate } = {}) {
     const desc = tipoEnt === 'Invoice' || tipoEnt === 'SalesReceipt' ? _descLinhasFatura(t) : (t.PrivateNote ? ' · ' + String(t.PrivateNote).substring(0, 80) : '');
     for (let k = 0; k < 400 && restantes > 0 && prox <= lim && prox <= fimModelo; k++) {
       if (prox > hojeS) itens.push({ id: `rec_${t.Id || ri.Name}_${prox}`, data: prox, descricao: `${nome}${desc} (recorrente: ${ri.Name || tipoEnt})`,
-        categoria: 'Recorrente QB (' + tipoEnt + ')', valor, tipo: dir, origem: 'quickbooks_recorrente', no_periodo: true });
+        categoria: 'Recorrente QB (' + tipoEnt + ')', valor, tipo: dir, origem: 'quickbooks_recorrente', no_periodo: true, cliente: nome });
       restantes--;
       if (/daily/i.test(tipo)) prox = _diasMais(prox, n);
       else if (/weekly/i.test(tipo)) prox = _diasMais(prox, 7 * n);
@@ -3063,14 +3369,16 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
     // Antes sumia de toda projeção. Com o período começando no futuro, parte do início do período.
     const desde = ini > hoje ? ini : _diasMais(hoje, -60);
     const rows = fim
-      ? await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat
+      ? await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat, d.fornecedor AS despesa_forn
           FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
           WHERE o.data_prevista >= ${desde} AND o.data_prevista <= ${fim} AND o.status NOT IN ('paga', 'cancelada') AND o.qb_txn_id IS NULL ORDER BY o.data_prevista ASC`
-      : await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat
+      : await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat, d.fornecedor AS despesa_forn
           FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
           WHERE o.data_prevista >= ${desde} AND o.status NOT IN ('paga', 'cancelada') AND o.qb_txn_id IS NULL ORDER BY o.data_prevista ASC`;
     // v3.109: a ocorrência já lançada no QuickBooks (qb_txn_id) aparece pela conta a pagar (Bill) — antes contava duas vezes
-    despFuturas = rows.map(r => ({ id: 'desp_' + r.id, data: _dStr(r.data_prevista), vencida: _dStr(r.data_prevista) < hoje, descricao: r.despesa_desc || 'Despesa programada', categoria: r.despesa_cat || 'Despesa', valor: parseFloat(r.valor), tipo: 'saida', origem: 'atlantyx_futuro' }));
+    // v3.163: a mesma despesa já como Bill no QuickBooks (mesmo fornecedor, mesmo mês) entra pela Bill — não pela Agenda
+    const semDup = (fut.erro || !qbConfigurado()) ? rows : _agendaSemDuplicarQb(rows, fut.pagaveis || []).pendentes;
+    despFuturas = semDup.map(r => ({ id: 'desp_' + r.id, data: _dStr(r.data_prevista), vencida: _dStr(r.data_prevista) < hoje, descricao: r.despesa_desc || 'Despesa programada', categoria: r.despesa_cat || 'Despesa', valor: parseFloat(r.valor), tipo: 'saida', origem: 'atlantyx_futuro' }));
   } catch (e) { console.warn('[FluxoDetalhado] despesas futuras:', e.message); }
 
   // 4. Simulados futuros (lançamentos manuais com data > hoje)
@@ -3115,7 +3423,17 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   if (qbExtraErro) fut.erro = (fut.erro ? fut.erro + ' | ' : '') + qbExtraErro;
   // v3.109: faturas/contas VENCIDAS e o que vence HOJE entram (antes a regra "data > hoje" escondia os dois — a seção
   // "Vencidos e não pagos" nunca aparecia). O que está em aberto mas FORA do período aparece na lista sem mexer no saldo.
-  const futTodos = [...fut.recebiveis, ...fut.pagaveis, ...despFuturas, ...simFuturos, ...qbLancFuturos, ...qbRecorrentes]
+  // Demanda dem_mv0x0jf8vqaw: o mesmo lançamento não pode entrar duas vezes na Tabela 2 (distorce o saldo acumulado).
+  // Chave natural = id da origem (+ tipo, para não fundir os dois lados de uma transferência); sem id, data+valor+tipo+descrição.
+  const _chaveFut = l => (l.id != null && l.id !== '' ? String(l.id) : `${String(l.data).substring(0, 10)}|${Math.abs(l.valor || 0).toFixed(2)}|${l.descricao || ''}`) + '|' + (l.tipo || '');
+  const _vistosFut = new Map(), duplicatasFut = [];
+  [...fut.recebiveis, ...fut.pagaveis, ...despFuturas, ...simFuturos, ...qbLancFuturos, ...qbRecorrentes].forEach(l => {
+    const k = _chaveFut(l);
+    if (_vistosFut.has(k)) duplicatasFut.push({ id: l.id ?? null, data: l.data, descricao: l.descricao, valor: l.valor, tipo: l.tipo, origem: l.origem, origem_mantida: _vistosFut.get(k).origem });
+    else _vistosFut.set(k, l);
+  });
+  if (duplicatasFut.length) console.warn('[FluxoDetalhado] lançamento(s) duplicado(s) removido(s) da projeção:', JSON.stringify(duplicatasFut.map(x => ({ id: x.id, data: x.data, valor: x.valor }))));
+  const futTodos = [..._vistosFut.values()]
     .filter(l => l.data && (l.data >= hoje || l.vencida))
     .sort((a, b) => (b.vencida ? 1 : 0) - (a.vencida ? 1 : 0) || (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
   let saldoCorrente = extrato.saldo_final || 0;
@@ -3226,7 +3544,8 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
       qtd_recebiveis_vencidos: fut.recebiveis.filter(r => r.vencida).length,
       qtd_pagaveis_vencidos: fut.pagaveis.filter(p => p.vencida).length,
       qb_erro: fut.erro, ate: ultimaData,
-      filtro_conta_nao_aplicavel: !!conta_id },
+      filtro_conta_nao_aplicavel: !!conta_id,
+      duplicatas_removidas: duplicatasFut },
     saldo_projetado_final: noSaldo.length ? noSaldo[noSaldo.length - 1].saldo_acumulado : (extrato.saldo_final || 0),
     menor_saldo_projetado: menorSaldo ? { valor: menorSaldo.saldo_acumulado, data: menorSaldo.data, descricao: menorSaldo.descricao } : null,
   };
@@ -3375,12 +3694,12 @@ async function despOcorrencias({ data_inicio, data_fim, status, incluir_qb = tru
     } catch (e) { qbErro = e.message; console.warn('[Agenda] Bills QB:', e.message); }
   }
   const rows = status
-    ? await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat
+    ? await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat, d.fornecedor AS despesa_forn
                 FROM despesas_ocorrencias o
                 LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
                 WHERE o.data_prevista >= ${ini} AND o.data_prevista <= ${fim} AND o.status = ${status}
                 ORDER BY o.data_prevista ASC`
-    : await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat
+    : await sql`SELECT o.*, d.descricao AS despesa_desc, d.categoria AS despesa_cat, d.fornecedor AS despesa_forn
                 FROM despesas_ocorrencias o
                 LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
                 WHERE o.data_prevista >= ${ini} AND o.data_prevista <= ${fim}
@@ -3389,6 +3708,7 @@ async function despOcorrencias({ data_inicio, data_fim, status, incluir_qb = tru
       id: r.id,
       despesa_id: r.despesa_id,
       descricao: r.despesa_desc,
+      fornecedor: r.despesa_forn || null,
       categoria: r.despesa_cat,
       data_prevista: _dStr(r.data_prevista),
       valor: parseFloat(r.valor),
@@ -3408,8 +3728,16 @@ async function despOcorrencias({ data_inicio, data_fim, status, incluir_qb = tru
       try { await sql`UPDATE despesas_ocorrencias SET status = 'paga', data_pagamento = COALESCE(data_pagamento, ${_hojeBR()}) WHERE id = ${o.id} AND status IN ('prevista', 'lancada')`; } catch (_) {} }
     else if (b.saldo_aberto < o.valor - 0.01) { o.valor_original = o.valor; o.valor = b.saldo_aberto; } }
   qbBills = qbBills.filter(b => !lancadasQb.has(String(b.id).replace(/^qb_/, '')));
+  // v3.163: ocorrência pendente da Agenda com Bill do mesmo fornecedor no mesmo mês → vale a do QuickBooks (some daqui)
+  let cobertasQb = 0;
+  if (incluir_qb && qbConfigurado() && !qbErro) {
+    const abertas = locais.filter(o => (o.status === 'prevista' || o.status === 'lancada') && !o.qb_txn_id);
+    const { cobertas } = _agendaSemDuplicarQb(abertas, qbBills.map(b => ({ ...b, data: b.data_prevista, fornecedor: String(b.descricao || '').split(' · ')[0] })));
+    const fora = new Set(cobertas.map(o => o.id)); cobertasQb = fora.size;
+    if (fora.size) for (let i = locais.length - 1; i >= 0; i--) if (fora.has(locais[i].id)) locais.splice(i, 1);
+  }
   const filtQb = status ? qbBills.filter(b => b.status === status) : qbBills;
-  return { ocorrencias: locais.concat(filtQb).sort((a, b) => String(a.data_prevista).localeCompare(String(b.data_prevista))), qb_bills: qbBills.length, qb_erro: qbErro };
+  return { agenda_cobertas_qb: cobertasQb, ocorrencias: locais.concat(filtQb).sort((a, b) => String(a.data_prevista).localeCompare(String(b.data_prevista))), qb_bills: qbBills.length, qb_erro: qbErro };
 }
 
 async function despMarcarPaga({ id, data_pagamento, qb_txn_id } = {}) {
@@ -3524,8 +3852,10 @@ async function regerarOcorrencias(sql, despesaId, meses = 12) {
   // As 'paga' são preservadas (histórico real não se mexe).
   // v3.113: as 'lancada' (já viraram conta a pagar no QuickBooks) NÃO são apagadas — apagar e recriar como 'prevista'
   // perdia o vínculo com o Bill e a mesma conta aparecia duas vezes (e o botão "Lançar no QB" voltava).
+  // v3.162: só apaga dentro da janela que será regerada — ocorrências além dela (ex.: replicadas até o 12º mês) ficam
+  const _lim = new Date(); _lim.setMonth(_lim.getMonth() + meses); const limiteStr = _lim.toISOString().split('T')[0];
   await sql`DELETE FROM despesas_ocorrencias
-    WHERE despesa_id = ${despesaId} AND status = 'prevista' AND data_prevista >= ${hoje}`;
+    WHERE despesa_id = ${despesaId} AND status = 'prevista' AND data_prevista >= ${hoje} AND data_prevista <= ${limiteStr}`;
   const mesesOcupados = new Set((await sql`SELECT data_prevista FROM despesas_ocorrencias WHERE despesa_id = ${despesaId} AND status IN ('lancada', 'paga')`)
     .map(x => _dStr(x.data_prevista).substring(0, 7)));
 
@@ -3540,6 +3870,96 @@ async function regerarOcorrencias(sql, despesaId, meses = 12) {
     count++;
   }
   return count;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v3.162: REPLICAR AS DESPESAS DE UM MÊS NOS 12 MESES SEGUINTES
+// Fonte = tudo que a Agenda mostra no mês (despesas programadas + contas a pagar do QuickBooks).
+// Em cada mês de destino, se já existe despesa com o mesmo nome/fornecedor (no Atlantyx ou Bill no
+// QuickBooks), NÃO cria — grava a ocorrência como 'cancelada' (marcador), assim o "Regerar" não a recria.
+// Cada item replicado vira UMA despesa programada mensal com início/fim na janela. simular=true só calcula.
+// ═══════════════════════════════════════════════════════════════════════════
+// v3.163: REGRA ÚNICA das despesas pendentes — "se já existe no QuickBooks, vale o QuickBooks; se só existe na Agenda, vale a Agenda".
+// ocorrs: ocorrências da Agenda ainda não pagas; bills: contas a pagar do QuickBooks (Bill) no período, ou null se o QB não respondeu.
+// Uma ocorrência é coberta pelo QB quando: (a) já foi lançada nele (qb_txn_id) ou (b) existe Bill do mesmo fornecedor/descrição
+// no mesmo mês (cada Bill cobre uma ocorrência — a de valor mais próximo). Sem QB (null), nada é descartado.
+function _agendaSemDuplicarQb(ocorrs, bills) {
+  if (!Array.isArray(bills)) return { pendentes: ocorrs.slice(), cobertas: [] };
+  const livres = bills.map(b => ({ ym: _dStr(b.data || b.data_prevista || '').slice(0, 7), k: _normDesp(b.fornecedor || b.descricao), v: Number(b.valor_total || b.valor) || 0, usado: false }));
+  const pendentes = [], cobertas = [];
+  for (const o of ocorrs) {
+    if (o.qb_txn_id) { cobertas.push(o); continue; }
+    const ym = _dStr(o.data_prevista || o.data || '').slice(0, 7), ks = [_normDesp(o.fornecedor || o.despesa_forn || o.desp_forn), _normDesp(o.descricao || o.despesa_desc || o.desp_desc)].filter(Boolean);
+    const v = Number(o.valor) || 0;
+    const cand = livres.filter(b => !b.usado && b.ym === ym && b.k && ks.includes(b.k)).sort((a, b) => Math.abs(a.v - v) - Math.abs(b.v - v))[0];
+    if (cand) { cand.usado = true; cobertas.push(o); } else pendentes.push(o);
+  }
+  return { pendentes, cobertas };
+}
+function _normDesp(x) { return String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+·\s+.*$/, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
+function _dataNoMes(ym, dia) { const [y, m] = ym.split('-').map(Number); const ult = new Date(Date.UTC(y, m, 0)).getUTCDate(); return `${ym}-${String(Math.min(Math.max(1, dia || 1), ult)).padStart(2, '0')}`; }
+
+async function despReplicarMes({ mes, meses = 12, simular = false } = {}) {
+  if (!/^\d{4}-\d{2}$/.test(String(mes || ''))) throw new Error('mes obrigatório (AAAA-MM)');
+  meses = Math.min(Math.max(parseInt(meses) || 12, 1), 24);
+  const sql = await getSql();
+  const hoje = _hojeBR();
+  const ultimo = _mesMais(mes, meses);
+  const ag = await despOcorrencias({ data_inicio: `${mes}-01`, data_fim: _dataNoMes(ultimo, 31), incluir_qb: true });
+  const progs = await sql`SELECT id, descricao, fornecedor, categoria, conta_pagamento FROM despesas_programadas`;
+  const progPorId = new Map(progs.map(p => [p.id, p]));
+  // as canceladas também contam como "já existe" no mês (o usuário tirou de propósito)
+  const canc = await sql`SELECT o.data_prevista, o.despesa_id FROM despesas_ocorrencias o WHERE o.status = 'cancelada' AND o.data_prevista >= ${`${mes}-01`} AND o.data_prevista <= ${_dataNoMes(ultimo, 31)}`;
+  const todos = (ag.ocorrencias || []).concat(canc.map(c => ({ despesa_id: c.despesa_id, data_prevista: _dStr(c.data_prevista), fonte: 'atlantyx', status: 'cancelada' })));
+  const chaves = o => { const p = o.despesa_id && progPorId.get(o.despesa_id); const k = new Set();
+    if (o.fonte === 'quickbooks') k.add(_normDesp(o.descricao)); else { k.add(_normDesp(p?.descricao || o.descricao)); if (p?.fornecedor) k.add(_normDesp(p.fornecedor)); }
+    k.delete(''); return k; };
+  const porMes = new Map(); // 'AAAA-MM' -> Set de chaves existentes
+  for (const o of todos) { const ym = String(o.data_prevista).slice(0, 7); if (!porMes.has(ym)) porMes.set(ym, new Set()); for (const k of chaves(o)) porMes.get(ym).add(k); }
+
+  const fonte = (ag.ocorrencias || []).filter(o => String(o.data_prevista).slice(0, 7) === mes && o.status !== 'cancelada' && Number(o.valor) > 0);
+  const vistos = new Set(), itens = [];
+  let criar = 0, existentes = 0, passados = 0;
+  for (const o of fonte) {
+    const p = o.despesa_id && progPorId.get(o.despesa_id);
+    const ks = chaves(o); const kPrin = [...ks][0]; if (!kPrin || vistos.has(kPrin)) continue; vistos.add(kPrin);
+    const dia = parseInt(String(o.data_prevista).slice(8, 10)) || 1;
+    const nome = o.fonte === 'quickbooks' ? String(o.descricao || '').replace(/\s+·\s+.*$/, '') : (p?.descricao || o.descricao || 'Despesa');
+    const valor = Number(o.valor_total || o.valor_original || o.valor) || 0;
+    const plano = [];
+    for (let i = 1; i <= meses; i++) {
+      const ym = _mesMais(mes, i), data = _dataNoMes(ym, dia);
+      const ex = porMes.get(ym); const jaExiste = !!ex && [...ks].some(k => ex.has(k));
+      if (data < hoje) { passados++; plano.push({ data, acao: 'passado' }); continue; }
+      if (jaExiste) { existentes++; plano.push({ data, acao: 'ja_existe' }); continue; }
+      criar++; plano.push({ data, acao: 'criar' });
+    }
+    itens.push({ descricao: nome, fornecedor: o.fonte === 'quickbooks' ? nome : (p?.fornecedor || null), categoria: o.fonte === 'quickbooks' ? 'Despesa' : (p?.categoria || o.categoria || null),
+      conta_pagamento: p?.conta_pagamento || null, origem: o.fonte === 'quickbooks' ? 'QuickBooks' : 'Agenda', valor, dia, plano,
+      criar: plano.filter(x => x.acao === 'criar').length, ja_existe: plano.filter(x => x.acao === 'ja_existe').length });
+  }
+  const res = { mes, meses, ate: ultimo, itens, total_itens: itens.length, ocorrencias_a_criar: criar, ja_existentes: existentes, meses_passados: passados, simulado: !!simular };
+  if (simular) return res;
+
+  let criadas = 0, despesasCriadas = 0;
+  for (const it of itens) {
+    const datasCriar = it.plano.filter(x => x.acao === 'criar').map(x => x.data);
+    if (!datasCriar.length) continue;
+    const id = `desp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const ini = datasCriar[0], fim = it.plano[it.plano.length - 1].data;
+    await sql`INSERT INTO despesas_programadas (id, descricao, categoria, valor, recorrencia, dia_vencimento, data_inicio, data_fim, ativa, fornecedor, conta_pagamento, observacoes, atualizado_em)
+      VALUES (${id}, ${it.descricao}, ${it.categoria}, ${it.valor}, 'mensal', ${it.dia}, ${ini}, ${fim}, true, ${it.fornecedor}, ${it.conta_pagamento}, ${`Replicada de ${mes} (${it.origem}) em ${hoje}`}, NOW())`;
+    despesasCriadas++;
+    for (const x of it.plano) {
+      if (x.acao === 'passado' || x.data < ini) continue;
+      const st = x.acao === 'criar' ? 'prevista' : 'cancelada';
+      await sql`INSERT INTO despesas_ocorrencias (id, despesa_id, data_prevista, valor, status, observacoes)
+        VALUES (${`oco_${id}_${x.data}`}, ${id}, ${x.data}, ${it.valor}, ${st}, ${st === 'cancelada' ? 'Já existia no mês — não replicada' : null})
+        ON CONFLICT (id) DO NOTHING`;
+      if (st === 'prevista') criadas++;
+    }
+  }
+  return { ...res, ocorrencias_criadas: criadas, despesas_criadas: despesasCriadas };
 }
 
 function gerarDatasRecorrencia(d, meses) {
@@ -4093,9 +4513,14 @@ async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}
     // v1.20.7 FIX: contar 'prevista' E 'lancada' (só excluir as já pagas) — antes só somava
     // 'prevista', então despesas já lançadas no QuickBooks (status vira 'lancada') sumiam
     // deste cálculo mesmo continuando por pagar, subestimando a cobertura de despesas fixas.
-    const r = await sql`SELECT COALESCE(SUM(valor), 0) AS total FROM despesas_ocorrencias
-      WHERE status NOT IN ('paga', 'cancelada') AND data_prevista >= ${inicio} AND data_prevista <= ${fim}`;
-    const despFixas = parseFloat(r[0]?.total || 0);
+    // v3.163: pendentes do mês pela regra única (Bills do QuickBooks + o que só está na Agenda, sem contar duas vezes)
+    let despFixas = 0;
+    try { const pm = await pagamentosDoDiaEPendentes(); despFixas = pm.qb_erro ? NaN : pm.total_mes_pendente; } catch (_) { despFixas = NaN; }
+    if (!Number.isFinite(despFixas)) {
+      const r = await sql`SELECT COALESCE(SUM(valor), 0) AS total FROM despesas_ocorrencias
+        WHERE status NOT IN ('paga', 'cancelada') AND data_prevista >= ${inicio} AND data_prevista <= ${fim}`;
+      despFixas = parseFloat(r[0]?.total || 0);
+    }
     if (despFixas > 0) {
       kpis.cobertura_despesas_fixas = round(kpis.saldo_caixa / despFixas, 1);
     }
@@ -4306,26 +4731,96 @@ function dreResumo(rep) {
 // o que existe no CRM (HubSpot) em aberto para cumprir. As metas ficam no mesmo registro do Dashboard LIVE (kv 'atx:metas').
 async function _kvMetas() { const sql = await getSql(); const r = await sql`SELECT value FROM kv_store WHERE key = 'atx:metas' LIMIT 1`;
   const v = r[0]?.value; return (typeof v === 'string' ? JSON.parse(v) : v) || {}; }
-async function metasEmpresaSalvar({ ano, faturamento, margem_pct } = {}) {
+// v3.131: METAS PADRÃO DA EMPRESA (definidas pelo CEO em 09/10/2026): crescimento do faturamento de 25% ao ano e margem
+// de lucro líquido de 35%. Valem para todo ano SEM cadastro próprio em Planejamento → Metas da Empresa:
+// faturamento = realizado do ano anterior (DRE do QuickBooks) × 1,25 · margem = 35%. Editáveis na mesma tela.
+const METAS_PADRAO = { crescimento_pct: 25, margem_pct: 35 };
+// metas definidas pelo CEO (09/10/2026) — entram no cadastro enquanto o ano não for salvo pela tela (que passa a valer)
+const METAS_DEFINIDAS = { '2027': { faturamento: 6500000, margem_pct: 35, crescimento_pct: 25, fonte: 'definida pelo CEO em 09/10/2026', atualizado_em: '2026-10-09T10:02:00.000Z' } };
+const _fatAnoCache = new Map();
+async function _faturamentoAno(a) {
+  const c = _fatAnoCache.get(a); if (c && Date.now() - c.em < 3600000) return c.v;
+  if (!qbConfigurado()) return null;
+  const token = await qbToken(); const hoje = _hojeBR();
+  const fim = String(a) === hoje.substring(0, 4) ? hoje : `${a}-12-31`;
+  const v = dreResumo(await qbPL(`${a}-01-01`, fim, token)).faturamento; _fatAnoCache.set(a, { em: Date.now(), v }); return v;
+}
+async function _metasComPadrao(anos = []) {
+  const m = await _kvMetas().catch(() => ({}));
+  const pad = { ...METAS_PADRAO, ...(m.padrao || {}) };
+  m.por_ano = { ...(m.por_ano || {}) }; m.padrao_efetivo = pad;
+  for (const a of [...new Set(anos.map(x => parseInt(x)).filter(Boolean))]) {
+    const k = String(a); if (!m.por_ano[k]?.faturamento && METAS_DEFINIDAS[k]) m.por_ano[k] = { ...METAS_DEFINIDAS[k] };
+    const cad = m.por_ano[k];
+    if (cad?.faturamento) { if (cad.margem_pct == null) cad.margem_pct = pad.margem_pct; continue; }
+    let base = null; try { base = await _faturamentoAno(a - 1); } catch (_) {}
+    // ano seguinte ao corrente sem realizado completo: cresce sobre a meta (cadastrada ou padrão) do ano anterior
+    if (!(base > 0) && m.por_ano[String(a - 1)]?.faturamento) base = m.por_ano[String(a - 1)].faturamento;
+    if (base > 0) m.por_ano[k] = { faturamento: round(base * (1 + pad.crescimento_pct / 100)), margem_pct: pad.margem_pct, crescimento_pct: pad.crescimento_pct,
+      fonte: `padrão da empresa: ${a - 1} × ${1 + pad.crescimento_pct / 100} (crescimento de ${pad.crescimento_pct}%) e margem de ${pad.margem_pct}%`, padrao: true };
+    else m.por_ano[k] = { faturamento: null, margem_pct: pad.margem_pct, crescimento_pct: pad.crescimento_pct, fonte: 'padrão da empresa (sem faturamento do ano anterior para aplicar o crescimento)', padrao: true };
+  }
+  return m;
+}
+async function metasPadraoSalvar({ crescimento_pct, margem_pct } = {}) {
+  const c = Number(crescimento_pct), mg = Number(margem_pct);
+  if (!isFinite(c) || c < -50 || c > 500) throw new Error('Crescimento (%) inválido'); if (!isFinite(mg) || mg < -100 || mg > 100) throw new Error('Margem (%) inválida');
+  const sql = await getSql(); const m = await _kvMetas(); m.padrao = { crescimento_pct: round(c, 1), margem_pct: round(mg, 1), atualizado_em: new Date().toISOString() };
+  await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('atx:metas', ${JSON.stringify(m)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
+  try { _resCache.clear(); } catch (_) {} return { padrao: m.padrao };
+}
+// v3.131: cadastro COMPLETO de metas por ano (tela Planejamento → Metas da Empresa): faturamento, margem líquida,
+// margem EBITDA, receita recorrente (ARR ÷ receita), receita por motor, caixa mínimo e distribuição mês a mês.
+// Mesmo registro (kv 'atx:metas') lido pelo Dashboard Financeiro, Dashboard LIVE, Metas do ano e Estratégia.
+async function metasEmpresaSalvar({ ano, faturamento, margem_pct, margem_ebitda_pct, recorrencia_pct, motores, mensal, caixa_minimo, fonte, observacao, crescimento_pct } = {}) {
   const a = String(parseInt(ano) || parseInt(_hojeBR()));
   const fat = Number(faturamento), mg = Number(margem_pct);
   if (!(fat > 0)) throw new Error('Informe a meta de faturamento do ano (maior que zero)');
   if (!isFinite(mg) || mg < -100 || mg > 100) throw new Error('Meta de lucro (%) inválida');
+  const opt = (v, mn, mx) => { if (v === '' || v == null) return null; const n = Number(v); if (!isFinite(n) || n < mn || n > mx) throw new Error('Valor de meta inválido: ' + v); return round(n, 1); };
   const sql = await getSql(); const m = await _kvMetas();
-  m.por_ano = { ...(m.por_ano || {}), [a]: { faturamento: round(fat), margem_pct: round(mg, 1), atualizado_em: new Date().toISOString() } };
+  let mens = null;
+  if (Array.isArray(mensal) && mensal.length === 12) { mens = mensal.map(v => round(Math.max(0, Number(v) || 0)));
+    const t = mens.reduce((x, y) => x + y, 0); if (t > 0 && Math.abs(t - fat) > Math.max(1, fat * 0.005)) mens = mens.map(v => round(v / t * fat)); } // a soma dos meses sempre fecha o ano
+  const mot = motores && typeof motores === 'object' ? Object.fromEntries(['pessoas', 'projetos', 'produtos'].map(k => [k, motores[k] === '' || motores[k] == null ? null : round(Number(motores[k]) || 0)])) : (m.por_ano?.[a]?.motores || null);
+  m.por_ano = { ...(m.por_ano || {}), [a]: { faturamento: round(fat), margem_pct: round(mg, 1), margem_ebitda_pct: opt(margem_ebitda_pct, -100, 100), recorrencia_pct: opt(recorrencia_pct, 0, 100),
+    crescimento_pct: crescimento_pct === '' || crescimento_pct == null ? null : round(Number(crescimento_pct) || 0, 1), motores: mot, mensal: mens, caixa_minimo: caixa_minimo === '' || caixa_minimo == null ? null : round(Number(caixa_minimo) || 0), fonte: fonte || 'manual', observacao: observacao || null, atualizado_em: new Date().toISOString() } };
   if (a === _hojeBR().substring(0, 4)) { m.anual = round(fat); m.mensal = round(fat / 12); m.margem_pct = round(mg, 1); } // mesma meta nas barras do Dashboard LIVE
   await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('atx:metas', ${JSON.stringify(m)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
   try { _resCache.clear(); } catch (_) {} // v3.123: metas novas aparecem já nos cartões do resultado
   return { metas: m.por_ano[a], ano: a };
 }
+// v3.131: leitura do cadastro + realizado mês a mês (QuickBooks) e sugestões (orçamento do QuickBooks e histórico)
+async function metasEmpresaLer({ ano, metodo } = {}) {
+  const a = parseInt(ano) || parseInt(_hojeBR()), m = await _metasComPadrao([a]), hoje = _hojeBR();
+  const cad = m.por_ano?.[String(a)] || null;
+  const out = { ano: a, metas: cad && !cad.padrao ? cad : null, meta_padrao: cad?.padrao ? cad : null, padrao: m.padrao_efetivo, todos_anos: m.por_ano || {}, realizado: null, sugestoes: {}, erros: [] };
+  const [rA, rP, orc] = await Promise.allSettled([
+    a <= parseInt(hoje) ? resultadoKpis({ data_inicio: `${a}-01-01`, data_fim: `${a}-12-31`, metodo }) : Promise.resolve(null),
+    resultadoKpis({ data_inicio: `${a - 1}-01-01`, data_fim: `${a - 1}-12-31`, metodo }),
+    Promise.race([orcamentoConsolidado({ ano: a }), new Promise((_, r) => setTimeout(() => r(new Error('orçamento não respondeu')), 9000))]),
+  ]);
+  const mesesDe = (R, ano) => { const mm = Array(12).fill(null); (R?.resultado?.mensal || []).forEach(x => { if (parseInt(x.mes) === ano) mm[parseInt(x.mes.substring(5, 7)) - 1] = { faturamento: x.faturamento, lucro: x.lucro_liquido, margem: x.margem_liquida_pct }; }); return mm; };
+  if (rA.status === 'fulfilled' && rA.value) out.realizado = { mensal: mesesDe(rA.value, a), ano: rA.value.resultado?.periodo_res || null };
+  else if (rA.status === 'rejected') out.erros.push('Realizado: ' + rA.reason?.message);
+  if (rP.status === 'fulfilled' && rP.value) { const P = rP.value.resultado?.periodo_res, mm = mesesDe(rP.value, a - 1);
+    out.ano_anterior = { faturamento: P?.faturamento ?? null, margem_pct: P?.margem_liquida_pct ?? null, margem_ebitda_pct: P?.margem_ebitda_pct ?? null, mensal: mm.map(x => x?.faturamento ?? null) };
+    const tot = mm.reduce((s, x) => s + (x?.faturamento || 0), 0); if (tot > 0) out.sugestoes.sazonalidade = mm.map(x => Math.round((x?.faturamento || 0) / tot * 10000) / 10000); }
+  if (orc.status === 'fulfilled' && orc.value) { const pt = orc.value.por_tipo || {}, mr = Array(12).fill(0), md = Array(12).fill(0);
+    Object.entries(pt.receita?.meses || {}).forEach(([k, v]) => { if (parseInt(k) === a) mr[parseInt(k.substring(5, 7)) - 1] += v.orcado || 0; });
+    Object.entries(pt.despesa?.meses || {}).forEach(([k, v]) => { if (parseInt(k) === a) md[parseInt(k.substring(5, 7)) - 1] += Math.abs(v.orcado || 0); });
+    const R = mr.reduce((x, y) => x + y, 0), D = md.reduce((x, y) => x + y, 0);
+    if (R > 0) out.sugestoes.orcamento = { nome: orc.value.budget_nome || 'Orçamento do QuickBooks', faturamento: round(R), margem_pct: Math.round((R - D) / R * 1000) / 10, mensal: mr.map(v => round(v)) }; }
+  return { metas_cadastro: out };
+}
 async function metasEmpresaStatus({ ano, com_crm = true, _forcar = false, metodo = null } = {}) {
   const hoje = _hojeBR(), anoAtual = parseInt(hoje), a = parseInt(ano) || anoAtual;
-  const m = await _kvMetas().catch(() => ({}));
+  const m = await _metasComPadrao([a]).catch(() => ({}));
   const def = m.por_ano?.[String(a)] || null;
-  const metaFat = def?.faturamento ?? (a === anoAtual && m.anual ? Number(m.anual) : null);
-  const metaMg = def?.margem_pct ?? (a === anoAtual && m.margem_pct != null ? Number(m.margem_pct) : null);
+  const metaFat = def?.faturamento ?? null;
+  const metaMg = def?.margem_pct ?? null;
   const out = { ano: a, situacao: a < anoAtual ? 'encerrado' : a === anoAtual ? 'em_curso' : 'futuro',
-    meta: { faturamento: metaFat, margem_pct: metaMg, definida: !!def || (a === anoAtual && !!m.anual) },
+    meta: { faturamento: metaFat, margem_pct: metaMg, definida: !!def?.faturamento, padrao: !!def?.padrao, fonte: def?.fonte || null },
     realizado: null, faturamento: null, margem: null, crm: null, erros: [] };
   // fração do ano decorrida (para o ritmo esperado)
   const ini = Date.UTC(a, 0, 1), fim = Date.UTC(a + 1, 0, 1), agora = Date.UTC(anoAtual, parseInt(hoje.substring(5, 7)) - 1, parseInt(hoje.substring(8, 10)) + 1);
@@ -4408,7 +4903,7 @@ async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, 
     comTempo(orcamentoConsolidado({ ano: parseInt(anoIni) }), 8000, 'orçamento não respondeu em 8s'),
     // v3.114: o mesmo período pelo regime de CAIXA — quanto de receita efetivamente entrou (recebimentos)
     futuro ? Promise.resolve(null) : qbPL(ini, fim, token, '', outro), // v3.124: o mesmo período no OUTRO regime (comparação)
-    _kvMetas().catch(() => ({})),
+    _metasComPadrao([parseInt(anoIni), parseInt(ini), parseInt(fimPedido)]).catch(() => ({})),
   ]);
   const vazio = dreResumo({});
   if (doAno && pA.status === 'fulfilled' && pA.value) {
@@ -4428,7 +4923,7 @@ async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, 
   // Meta de margem: 1º a meta de lucro definida em "Metas do ano"; 2º a margem orçada do período no Orçamento Anual; senão 20%
   out.meta_margem = { pct: 20, fonte: 'meta padrão (defina em Metas do ano)' };
   const mUser = mt.status === 'fulfilled' ? mt.value?.por_ano?.[anoIni.substring(0, 4)]?.margem_pct : null;
-  if (mUser != null) out.meta_margem = { pct: Number(mUser), fonte: 'meta de lucro de ' + anoIni.substring(0, 4) + ' (Metas do ano)' };
+  if (mUser != null) out.meta_margem = { pct: Number(mUser), fonte: 'meta de lucro de ' + anoIni.substring(0, 4) + (mt.value?.por_ano?.[anoIni.substring(0, 4)]?.padrao ? ' (padrão da empresa)' : ' (Metas da Empresa)') };
   else if (orc.status === 'fulfilled') {
     const pt = orc.value?.por_tipo || {}, mi = ini.substring(0, 7), mf = (futuro ? fimPedido : fim).substring(0, 7);
     const soma = t => Object.entries(pt[t]?.meses || {}).filter(([k]) => k >= mi && k <= mf).reduce((a, [, v]) => a + (v.orcado || 0), 0);
@@ -4452,7 +4947,11 @@ async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, 
     const Ro = round(somaO('receita')), Do = round(Math.abs(somaO('despesa'))), nomeOrc = 'Orçamento ' + (orc.value?.budget_nome || 'QuickBooks');
     const M = { meses: nMeses, faturamento: null, gastos: null, lucro: null, margem_pct: null, fonte: {} };
     if (mUserAno?.faturamento) {
-      M.faturamento = round(mUserAno.faturamento / 12 * nMeses); M.fonte.faturamento = `Metas do ano ${aRef}: ${fmtBR(mUserAno.faturamento)} ÷ 12 × ${nMeses} ${nMeses === 1 ? 'mês' : 'meses'}`;
+      if (Array.isArray(mUserAno.mensal) && mUserAno.mensal.length === 12 && parseInt(pFim) === parseInt(aRef)) { // v3.131: distribuição mês a mês do cadastro
+        const i0 = parseInt(ini.substring(5, 7)) - 1, i1 = parseInt(pFim.substring(5, 7)) - 1; M.faturamento = round(mUserAno.mensal.slice(i0, i1 + 1).reduce((x, y) => x + (y || 0), 0));
+        M.fonte.faturamento = `Metas da Empresa ${aRef} — meta mês a mês (${nMeses} ${nMeses === 1 ? 'mês' : 'meses'})`;
+      } else { M.faturamento = round(mUserAno.faturamento / 12 * nMeses); M.fonte.faturamento = `${mUserAno.padrao ? 'Meta padrão da empresa (' + (mUserAno.crescimento_pct ?? 25) + '% sobre o ano anterior)' : 'Metas da Empresa'} ${aRef}: ${fmtBR(mUserAno.faturamento)} ÷ 12 × ${nMeses} ${nMeses === 1 ? 'mês' : 'meses'}`; }
+      if (mUserAno.margem_ebitda_pct != null) { M.margem_ebitda_pct = mUserAno.margem_ebitda_pct; M.ebitda = round(M.faturamento * mUserAno.margem_ebitda_pct / 100); M.fonte.ebitda = `Metas da Empresa ${aRef} (margem EBITDA ${mUserAno.margem_ebitda_pct}%)`; }
       if (mUserAno.margem_pct != null) { M.margem_pct = Number(mUserAno.margem_pct); M.lucro = round(M.faturamento * M.margem_pct / 100); M.fonte.lucro = `faturamento meta × ${M.margem_pct}% (meta de lucro)`; M.fonte.margem = `Metas do ano ${aRef}`; }
     } else if (Ro > 0) { M.faturamento = Ro; M.fonte.faturamento = `${nomeOrc} — receita orçada nos meses do período`; }
     if (Do > 0) { M.gastos = Do; M.fonte.gastos = `${nomeOrc} — despesa orçada nos meses do período`; }
@@ -6067,6 +6566,120 @@ async function _crmPropostas(etapas) {
   }
   return out;
 }
+
+// dem_mv0x0jbvp5sp: fontes das colunas RECORRENTE e PROPOSTAS (POND.) da tela Projetado + Contratos (s3projetado).
+// Só leitura — o Fluxo Futuro (s3fluxo) continua com a mesma conta; esta ação só alimenta a tela de projeção de receita.
+//  · RECORRENTE = modelos recorrentes de RECEITA do QuickBooks + projetos recorrentes (sustentação, mesma regra do painel
+//    de vendas) com contrato vigente (valor do projeto ÷ meses de vigência). Mês em que o cliente já tem fatura em aberto
+//    ou previsão de marco não conta de novo — esse valor já aparece em "Faturas em aberto" / "Marcos previstos".
+//  · PROPOSTAS (POND.) = negócios abertos do HubSpot × probabilidade da etapa, no mês do fechamento previsto
+//    (fechamento já passado ou sem data → mês corrente; depois do horizonte fica de fora, com aviso).
+//  · SIMULADOS continuam vindo dos lançamentos simulados do Fluxo Futuro; aqui só a contagem, para a tela orientar.
+async function projetadoFontes({ meses = 12 } = {}) {
+  const N = Math.max(1, Math.min(24, parseInt(meses) || 12));
+  const hoje = _hojeBR(), mesHoje = hoje.substring(0, 7);
+  const lista = []; { const [a, m] = mesHoje.split('-').map(Number); for (let i = 0; i < N; i++) { const d = new Date(a, m - 1 + i, 1); lista.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')); } }
+  const ultimo = lista[lista.length - 1];
+  const zeros = () => Object.fromEntries(lista.map(m => [m, 0]));
+  const out = { meses: lista, recorrente: zeros(), propostas_pond: zeros(), detalhe: { recorrente: [], propostas: [] }, simulados_qtd: 0, avisos: [] };
+  const _nc = s => String(s || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, '');   // NFD + só a-z0-9 = sem acentos
+  const _mesesEntre = (a, b) => { const [a1, m1] = a.split('-').map(Number), [a2, m2] = b.split('-').map(Number); return (a2 - a1) * 12 + (m2 - m1) + 1; };
+  // clientes que já têm fatura em aberto / previsão de marco em cada mês (evita contar a mesma receita duas vezes)
+  const jaPrevisto = {};
+  const marca = (mes, cli) => { const c = _nc(cli); if (mes && c.length >= 3) (jaPrevisto[mes] = jaPrevisto[mes] || []).push(c); };
+  const temPrevisto = (mes, cli) => { const c = _nc(cli); if (c.length < 3) return false; const p = c.substring(0, 6);
+    return (jaPrevisto[mes] || []).some(x => x.startsWith(p) || c.startsWith(x.substring(0, 6))); };
+  const recQB = [];
+
+  const qbParte = async () => {
+    if (!qbConfigurado()) { out.avisos.push('QuickBooks não conectado — recorrentes do QuickBooks ficam de fora.'); return; }
+    try {
+      const token = await qbToken();
+      const inv = (await qbQuery(`select * from Invoice where Balance > '0' maxresults 1000`, token))?.QueryResponse?.Invoice || [];
+      inv.forEach(i => marca(String(i.DueDate || i.TxnDate || '').substring(0, 7), i.CustomerRef?.name));
+      try { (await _qbEstimativasPrevisao(token)).forEach(e => marca(String(e.data || '').substring(0, 7), e.cliente)); } catch (_) {}
+      const fim = `${ultimo}-${String(new Date(+ultimo.substring(0, 4), +ultimo.substring(5, 7), 0).getDate()).padStart(2, '0')}`;
+      const rc = await qbRecorrentesProjecao({ ate: fim, receitas: true });
+      (rc.itens || []).filter(l => l.tipo === 'entrada').forEach(l => recQB.push(l));
+    } catch (e) { out.avisos.push('QuickBooks: ' + e.message); }
+  };
+  const hsParte = async () => {
+    if (!process.env.HUBSPOT_TOKEN) { out.avisos.push('HubSpot não configurado (HUBSPOT_TOKEN) — a coluna Propostas (pond.) usa só o valor informado na tela.'); return; }
+    try {
+      const et = await crmEtapas(); const abertas = [], probEtapa = {};
+      (et.pipelines || []).forEach(p => (p.etapas || []).forEach(e => { if (!e.fechada) { abertas.push(String(e.id)); probEtapa[e.id] = e.probabilidade; } }));
+      if (!abertas.length) return;
+      let fora = 0;
+      for (const p of await _crmPropostas(abertas)) {
+        if (!(p.valor > 0)) continue;
+        let prob = p.probabilidade != null ? p.probabilidade : probEtapa[p.etapa];
+        if (prob == null || isNaN(prob)) continue;
+        if (prob > 1) prob = prob / 100;   // etapa cadastrada em % em vez de fração
+        const mes = p.fechamento && p.fechamento.substring(0, 7) > mesHoje ? p.fechamento.substring(0, 7) : mesHoje;
+        if (mes > ultimo) { fora += p.valor * prob; continue; }
+        const v = round(p.valor * prob);
+        out.propostas_pond[mes] = round(out.propostas_pond[mes] + v);
+        out.detalhe.propostas.push({ id: p.id, nome: p.nome, valor: round(p.valor), probabilidade: round(prob * 100, 1), ponderado: v, mes,
+          atrasada: !!(p.fechamento && p.fechamento.substring(0, 7) < mesHoje), sem_data: !p.fechamento });
+      }
+      out.detalhe.propostas.sort((a, b) => b.ponderado - a.ponderado);
+      if (fora > 0) out.avisos.push(`${round(fora).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} ponderados em propostas com fechamento depois de ${ultimo.substring(5, 7)}/${ultimo.substring(0, 4)} — fora do horizonte.`);
+    } catch (e) { out.avisos.push('HubSpot: ' + e.message); }
+  };
+  await Promise.all([qbParte(), hsParte()]);
+
+  // recorrentes do QuickBooks (modelos agendados de fatura/recibo/depósito)
+  const porModelo = {}, usadosQB = [];
+  for (const l of recQB) {
+    const mes = String(l.data).substring(0, 7); if (!(mes in out.recorrente)) continue;
+    if (temPrevisto(mes, l.cliente)) continue;
+    out.recorrente[mes] = round(out.recorrente[mes] + l.valor); usadosQB.push([mes, l.cliente]);
+    const k = l.descricao; (porModelo[k] = porModelo[k] || { origem: 'quickbooks', nome: l.descricao, cliente: l.cliente, mensal: round(l.valor), meses: 0 }).meses++;
+  }
+  usadosQB.forEach(([mes, cli]) => marca(mes, cli));   // contrato do mesmo cliente não soma de novo nesses meses
+  out.detalhe.recorrente.push(...Object.values(porModelo));
+
+  // projetos recorrentes com contrato vigente
+  try {
+    const sql = await getSql();
+    const q = async f => { try { return await f(); } catch (_) { return []; } };
+    const projetos = await q(() => sql`SELECT id, nome, cliente, valor_total, status FROM projetos_financeiros WHERE COALESCE(status,'ativo') NOT IN ('cancelado')`);
+    const contratos = await q(() => sql`SELECT projeto, projeto_id, data_inicio, data_vencimento, prazo_meses FROM contratos_financeiros`);
+    const cfg = await q(() => sql`SELECT projeto_nome, tipo_projeto FROM pmo_projetos_config`);
+    const recorrenteP = p => { const c = cfg.find(x => String(x.projeto_nome).toLowerCase() === String(p.nome).toLowerCase());
+      return c?.tipo_projeto === 'sustentacao' || /sustent|suporte|ams|sla/i.test(p.nome); };
+    let semVigencia = 0;
+    for (const p of projetos) {
+      const valor = parseFloat(p.valor_total) || 0; if (!(valor > 0) || !recorrenteP(p)) continue;
+      const cs = contratos.filter(c => (c.projeto_id && c.projeto_id === p.id) || (!c.projeto_id && _nc(c.projeto) && _nc(c.projeto) === _nc(p.nome)));
+      if (!cs.length) continue;
+      let ini = null, fim = null;
+      for (const c of cs) {
+        const i = c.data_inicio ? _dStr(c.data_inicio).substring(0, 7) : null; if (!i) continue;
+        const f = c.data_vencimento ? _dStr(c.data_vencimento).substring(0, 7) : (parseInt(c.prazo_meses) > 0 ? _addMesesData(_dStr(c.data_inicio), parseInt(c.prazo_meses) - 1).substring(0, 7) : null);
+        if (!f || f < i) continue;
+        if (!ini || i < ini) ini = i; if (!fim || f > fim) fim = f;
+      }
+      if (!ini) { semVigencia++; continue; }
+      if (fim < mesHoje) continue;   // contrato já encerrado
+      const mensal = round(valor / _mesesEntre(ini, fim));
+      let n = 0;
+      for (const mes of lista) {
+        if (mes < ini || mes > fim || temPrevisto(mes, p.cliente || p.nome)) continue;
+        out.recorrente[mes] = round(out.recorrente[mes] + mensal); n++;
+      }
+      if (n) out.detalhe.recorrente.push({ origem: 'contrato', nome: p.nome, cliente: p.cliente, mensal, meses: n, vigencia: { inicio: ini, fim } });
+    }
+    if (semVigencia) out.avisos.push(`${semVigencia} projeto(s) recorrente(s) com contrato sem data de início/vencimento — cadastre a vigência em Contratos para entrar na coluna Recorrente.`);
+  } catch (e) { out.avisos.push('Contratos: ' + e.message); }
+
+  try {
+    const amanha = new Date(new Date(hoje + 'T12:00:00Z').getTime() + 864e5).toISOString().substring(0, 10);
+    const fim = `${ultimo}-${String(new Date(+ultimo.substring(0, 4), +ultimo.substring(5, 7), 0).getDate()).padStart(2, '0')}`;
+    out.simulados_qtd = ((await simList({ data_inicio: amanha, data_fim: fim })).simulados || []).filter(s => s.tipo === 'entrada').length;
+  } catch (_) {}
+  return out;
+}
 async function orcamentoDre({ inicio, meses: nMeses = 12, crm = null } = {}) {
   const hoje = _hojeBR(), mesHoje = hoje.substring(0, 7);
   const ini = /^\d{4}-\d{2}$/.test(String(inicio || '')) ? inicio : (() => { const d = new Date(hoje + 'T12:00:00'); d.setMonth(d.getMonth() - 5); return d.toISOString().substring(0, 7); })();
@@ -7231,6 +7844,493 @@ function emailTplLembreteFinanceiro(m, tentativa) {
     <p style="color:#666;font-size:12px;">Atlantyx OS — lembrete automático a cada 3 dias até a conclusão.</p>
   </div>`;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
+// v3.127: DASHBOARD FINANCEIRO v2 — "Especificação · Dashboard Financeiro Atlantyx" (08/10/2026)
+// Seis telas (executiva, caixa e liquidez, pessoas, projetos, produtos, clientes e risco), no máximo 10 KPIs cada,
+// todo KPI com meta, período anterior, tendência, semáforo configurável, fonte/atualização e drill-down.
+// Fontes: QuickBooks (DRE, faturas, contas, CustomerIncome, razão), cadastro de funcionários/alocação (S8),
+// projetos e marcos (S3), HubSpot (CRM). O que ainda não tem fonte integrada aparece rotulado como tal — nunca inventado.
+// Rateio de custo compartilhado entre motores: proporcional à receita de cada motor no período (custo DIRETO é o das
+// contas mapeadas para o motor em Configurar; o restante é compartilhado).
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
+const FV2_LIMITES = {
+  runway: { verde: 6, amarelo: 3, maior_melhor: true, unidade: 'meses' },
+  orcado_receita: { verde: 5, amarelo: 10, desvio: true, unidade: '%' },
+  dso: { verde: 45, amarelo: 60, maior_melhor: false, unidade: 'dias' },
+  alocacao: { verde: 85, amarelo: 75, maior_melhor: true, unidade: '%' },
+  margem_projeto: { amarelo: 5, unidade: 'p.p. abaixo do orçado' },
+  churn: { verde: 2, amarelo: 4, maior_melhor: false, unidade: '% ao mês' },
+  concentracao: { verde: 60, amarelo: 75, maior_melhor: false, unidade: '%' },
+  ltv_cac: { verde: 3, amarelo: 2, maior_melhor: true, unidade: 'x' },
+  vencido60: { verde: 5, amarelo: 10, maior_melhor: false, unidade: '% do a receber' },
+  ciclo_caixa: { verde: 30, amarelo: 45, maior_melhor: false, unidade: 'dias' },
+  nrr: { verde: 100, amarelo: 95, maior_melhor: true, unidade: '%' },
+  cac_payback: { verde: 12, amarelo: 18, maior_melhor: false, unidade: 'meses' },
+  rule40: { verde: 40, amarelo: 25, maior_melhor: true, unidade: '%' },
+  bench: { verde: 10, amarelo: 20, maior_melhor: false, unidade: '% do time' },
+  backlog_cobertura: { verde: 3, amarelo: 1.5, maior_melhor: true, unidade: 'meses' },
+  desvio_esforco: { verde: 110, amarelo: 120, maior_melhor: false, unidade: '%' },
+  recorrencia_meta_2027: 30, recorrencia_meta_2031: 60,
+};
+const FV2_ANCORAS = [['CPFL Energia', /cpfl/i], ['Enel', /\benel\b/i], ['Grupo Jelta Veículos', /jelta/i], ['Caixa Capitalização', /caixa cap|caixa capitaliza/i]];
+const FV2_PRODUTOS = [['Maestro', /maestro|mestro/i], ['Sentinel', /sentinel/i], ['ConnEX', /connex/i], ['BRATECC Connect AI', /bratecc/i], ['Atlantyx OS', /atlantyx ?os\b|plataforma atlantyx/i]];
+const FV2_RX = {
+  produtos: /licen[cç]|assinatura|saas|software|subscri|recorr|plataforma|atlantyx ?os|maestro|mestro|sentinel|connex|bratecc|mensalidade/i,
+  pessoas: /aloca[cç]|outsourc|staff|body ?shop|terceiriz|m[aã]o de obra|horas? t[eé]cnic|banco de horas|squad|aloca/i,
+  comercial: /marketing|comercial|vendas|publicidade|propaganda|an[uú]ncio|\bads\b|comiss[aã]o|eventos|feiras|crm|prospec/i,
+};
+async function _fv2Cfg() {
+  let v = {}; try { const sql = await getSql(); const r = await sql`SELECT value FROM kv_store WHERE key = 'atx:fin_v2_cfg' LIMIT 1`; v = r[0]?.value; v = (typeof v === 'string' ? JSON.parse(v) : v) || {}; } catch (_) {}
+  const lim = JSON.parse(JSON.stringify(FV2_LIMITES)); for (const [k, o] of Object.entries(v.limites || {})) if (lim[k] && typeof o === 'object') Object.assign(lim[k], o); else if (k in lim) lim[k] = o;
+  return { limites: lim, motores: v.motores || {}, produtos: v.produtos || {}, atualizado_em: v.atualizado_em || null };
+}
+async function finV2CfgSalvar({ limites, motores, produtos } = {}) {
+  const sql = await getSql(); const atual = await _fv2Cfg();
+  const novo = { limites: limites || {}, motores: motores || atual.motores, produtos: produtos || atual.produtos, atualizado_em: new Date().toISOString() };
+  for (const [k, m] of Object.entries(novo.motores)) if (!['pessoas', 'projetos', 'produtos', 'compartilhado', 'auto'].includes(m)) delete novo.motores[k]; else if (m === 'auto') delete novo.motores[k];
+  await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('atx:fin_v2_cfg', ${JSON.stringify(novo)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
+  return { cfg: await _fv2Cfg() };
+}
+function _fv2Sem(v, lim) {
+  if (v == null || !isFinite(v) || !lim) return 'cinza';
+  if (lim.desvio) { const a = Math.abs(v); return a <= lim.verde ? 'verde' : a <= lim.amarelo ? 'amarelo' : 'vermelho'; }
+  if (lim.maior_melhor) return v >= lim.verde ? 'verde' : v >= lim.amarelo ? 'amarelo' : 'vermelho';
+  return v <= lim.verde ? 'verde' : v <= lim.amarelo ? 'amarelo' : 'vermelho';
+}
+const _fv2Mes = d => d.substring(0, 7);
+function _fv2AddMes(m, n) { const [a, mm] = m.split('-').map(Number); const d = new Date(Date.UTC(a, mm - 1 + n, 1)); return d.toISOString().substring(0, 7); }
+function _fv2Periodo({ data_inicio, data_fim, mes, ano } = {}) {
+  const hoje = _hojeBR();
+  if (!data_inicio && (mes || ano)) { const a = parseInt(ano) || parseInt(hoje), m = parseInt(mes) || null;
+    data_inicio = m ? `${a}-${String(m).padStart(2, '0')}-01` : `${a}-01-01`; data_fim = m ? _fimDoMes(data_inicio) : `${a}-12-31`; }
+  const ini = data_inicio || hoje.substring(0, 8) + '01', fimPedido = data_fim || _fimDoMes(hoje.substring(0, 8) + '01');
+  const fim = fimPedido > hoje ? hoje : fimPedido;
+  const dias = Math.round((Date.parse(fimPedido) - Date.parse(ini)) / 864e5) + 1;
+  // período anterior de mesmo tamanho (mês → mês anterior; trimestre → trimestre anterior)
+  const mesesInteiros = ini.endsWith('-01') && fimPedido === _fimDoMes(fimPedido.substring(0, 8) + '01');
+  const nM = (parseInt(fimPedido) - parseInt(ini)) * 12 + parseInt(fimPedido.substring(5, 7)) - parseInt(ini.substring(5, 7)) + 1;
+  let antIni, antFim;
+  if (mesesInteiros) { antIni = _fv2AddMes(_fv2Mes(ini), -nM) + '-01'; antFim = _fimDoMes(_fv2AddMes(_fv2Mes(fimPedido), -nM) + '-01'); }
+  else { antFim = _diasMais(ini, -1); antIni = _diasMais(antFim, -(dias - 1)); }
+  // mês corrente pela metade: compara com o MESMO trecho do período anterior (1º a dia X)
+  const decorridos = Math.round((Date.parse(fim) - Date.parse(ini)) / 864e5) + 1;
+  const antFimCmp = fim < fimPedido ? _diasMais(antIni, decorridos - 1) : antFim;
+  const yoy = d => `${parseInt(d) - 1}${d.substring(4)}`;
+  return { hoje, ini, fim, fimPedido, parcial: fim < fimPedido, nMeses: nM, antIni, antFim: antFimCmp, yoyIni: yoy(ini), yoyFim: yoy(fim).endsWith('-02-29') ? yoy(fim).replace('-29', '-28') : yoy(fim) };
+}
+// folhas da DRE (contas) com o grupo de topo e o valor de cada coluna
+function _fv2Folhas(rep) {
+  const cols = (rep?.Columns?.Column || []).map(c => c.ColTitle || '');
+  const out = [];
+  const andar = (rows, grupo) => (rows || []).forEach(r => { const g = r.group && /^(Income|COGS|Expenses|OtherIncome|OtherExpenses)$/.test(r.group) ? r.group : grupo;
+    if (r.type === 'Data' && r.ColData) { const cd = r.ColData; out.push({ nome: cd[0]?.value || '', id: cd[0]?.id || null, grupo: g, cols: cd.slice(1).map(x => { const v = parseFloat(x?.value); return isFinite(v) ? v : 0; }) }); }
+    if (r.Rows?.Row) andar(r.Rows.Row, g); });
+  andar(rep?.Rows?.Row, null);
+  return { cols, folhas: out.filter(f => f.grupo) };
+}
+function _fv2MotorConta(nome, grupo, cfg) {
+  if (cfg.motores[nome]) return cfg.motores[nome];
+  if (grupo === 'Income') return FV2_RX.produtos.test(nome) ? 'produtos' : FV2_RX.pessoas.test(nome) ? 'pessoas' : 'projetos';
+  if (grupo === 'COGS') return FV2_RX.produtos.test(nome) ? 'produtos' : FV2_RX.pessoas.test(nome) ? 'pessoas' : 'compartilhado';
+  return 'compartilhado';
+}
+function _fv2ProdutoConta(nome, cfg) { if (cfg.produtos[nome]) return cfg.produtos[nome]; const p = FV2_PRODUTOS.find(([, re]) => re.test(nome)); return p ? p[0] : 'Não identificado'; }
+// receita, custo direto e margem por motor de um conjunto de folhas (coluna idx; -1 = última)
+function _fv2Motores(folhas, cfg, idx = -1) {
+  const M = { pessoas: { receita: 0, custo_direto: 0 }, projetos: { receita: 0, custo_direto: 0 }, produtos: { receita: 0, custo_direto: 0 } };
+  let comp = 0, recTot = 0;
+  for (const f of folhas) { const v = idx < 0 ? f.cols[f.cols.length - 1] : (f.cols[idx] || 0); if (!v) continue; const mo = _fv2MotorConta(f.nome, f.grupo, cfg);
+    if (f.grupo === 'Income') { (M[mo] || M.projetos).receita += v; recTot += v; }
+    else if (f.grupo === 'COGS' || f.grupo === 'Expenses' || f.grupo === 'OtherExpenses') { if (M[mo]) M[mo].custo_direto += v; else if (f.grupo === 'COGS') comp += v; } }
+  for (const [k, m] of Object.entries(M)) { const share = recTot > 0 ? m.receita / recTot : 0; m.custo_rateado = round(comp * share); m.receita = round(m.receita); m.custo_direto = round(m.custo_direto);
+    m.margem_bruta_pct = m.receita > 0 ? Math.round((m.receita - m.custo_direto - m.custo_rateado) / m.receita * 1000) / 10 : null; m.participacao_pct = recTot > 0 ? Math.round(m.receita / recTot * 1000) / 10 : null; }
+  return { motores: M, custo_compartilhado_direto: round(comp), receita_total: round(recTot) };
+}
+function _fv2Var(a, b) { return a != null && b != null && b !== 0 ? Math.round((a - b) / Math.abs(b) * 1000) / 10 : null; }
+function _fv2Kpi(o) { return { fonte: 'QuickBooks', ...o, semaforo: o.semaforo || 'cinza' }; }
+async function _fv2Clientes(ini, fim, met, token) {
+  const rep = await qbFetch(`/reports/CustomerIncome?start_date=${ini}&end_date=${fim}&accounting_method=${met}`, token);
+  const cols = (rep?.Columns?.Column || []).map(c => String(c.ColTitle || '').toLowerCase());
+  const iR = Math.max(1, cols.findIndex(t => /income|receita/.test(t) && !/net|l[ií]quid/.test(t))), iD = cols.findIndex(t => /expense|despesa|custo/.test(t)), iN = cols.findIndex(t => /net|l[ií]quid|lucro/.test(t));
+  const out = [];
+  const andar = rows => (rows || []).forEach(r => { if (r.type === 'Data' && r.ColData) { const cd = r.ColData, n = i => { const v = parseFloat(cd[i]?.value); return isFinite(v) ? v : 0; };
+    const nome = cd[0]?.value || ''; if (!nome || /^total/i.test(nome)) return;
+    out.push({ cliente: nome, id: cd[0]?.id || null, receita: round(n(iR)), custo: iD > 0 ? round(n(iD)) : null, resultado: iN > 0 ? round(n(iN)) : null }); }
+    if (r.Rows?.Row) andar(r.Rows.Row); });
+  andar(rep?.Rows?.Row);
+  return out.filter(c => c.receita || c.custo);
+}
+const _fv2QbBase = () => process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
+
+async function finV2({ tela = 'executiva', data_inicio, data_fim, mes, ano, metodo } = {}) {
+  if (!qbConfigurado()) return { fin_v2: { tela, erro: 'QuickBooks não conectado' } };
+  const met = _met(metodo), P = _fv2Periodo({ data_inicio, data_fim, mes, ano }), cfg = await _fv2Cfg(), L = cfg.limites;
+  const token = await qbToken();
+  const base = { tela, periodo: { de: P.ini, ate: P.fim, ate_pedido: P.fimPedido, parcial: P.parcial, anterior: { de: P.antIni, ate: P.antFim }, yoy: { de: P.yoyIni, ate: P.yoyFim } },
+    regime: met === 'Cash' ? 'caixa' : 'competência', atualizado_em: new Date().toISOString(), limites: L, erros: [], avisos: [] };
+  const fn = { executiva: _fv2Executiva, caixa: _fv2Caixa, pessoas: _fv2Pessoas, projetos: _fv2Projetos, produtos: _fv2Produtos, clientes: _fv2ClientesTela, config: _fv2Config }[tela];
+  if (!fn) throw new Error('tela desconhecida: ' + tela);
+  const [r, conc] = await Promise.allSettled([fn({ P, met, cfg, L, token, base }), tela === 'executiva' || tela === 'caixa' ? qbConciliacaoStatus({ data_inicio: P.ini, data_fim: P.fim }) : Promise.resolve(null)]);
+  if (r.status === 'rejected') { base.erros.push(r.reason?.message || 'falhou'); return { fin_v2: base }; }
+  const c = conc.status === 'fulfilled' ? conc.value : null;
+  if (c && c.movimentos != null) base.conciliacao = { pct: c.movimentos ? Math.round((c.reconciliados + c.compensados) / c.movimentos * 100) : null, pendentes: c.pendentes, movimentos: c.movimentos, de: P.ini, ate: P.fim };
+  return { fin_v2: { ...base, ...r.value } };
+}
+
+// ── TELA 1 · VISÃO EXECUTIVA ── "Estamos bem este mês?"
+async function _fv2Executiva({ P, met, cfg, L, token, base }) {
+  const m13 = _fv2AddMes(_fv2Mes(P.fim), -12) + '-01';
+  const anoA = parseInt(P.fim), anoB = parseInt(m13);
+  const [pAt, pAnt, pYoy, serie, caixaK, orcA, orcB, fco, fluxo, cli, cliAnt] = await Promise.allSettled([
+    qbPL(P.ini, P.fim, token, '', met), qbPL(P.antIni, P.antFim, token, '', met), qbPL(P.yoyIni, P.yoyFim, token, '', met),
+    qbPL(m13, P.fim, token, '&summarize_column_by=Month', met),
+    kpisSaude({ metodo: met }),
+    Promise.race([orcamentoConsolidado({ ano: anoA }), new Promise((_, r) => setTimeout(() => r(new Error('orçamento não respondeu')), 9000))]),
+    anoB !== anoA ? Promise.race([orcamentoConsolidado({ ano: anoB }), new Promise((_, r) => setTimeout(() => r(new Error('orçamento não respondeu')), 9000))]) : Promise.resolve(null),
+    qbPL(P.ini, P.fim, token, '', 'Cash'),
+    fluxoFuturo({ meses: 12 }),
+    _fv2Clientes(P.ini, P.fim, met, token), _fv2Clientes(P.antIni, P.antFim, met, token),
+  ]);
+  const ok = p => p.status === 'fulfilled' ? p.value : (base.erros.push(p.reason?.message || 'falhou'), null);
+  const A = ok(pAt) ? dreResumo(pAt.value) : null, B = ok(pAnt) ? dreResumo(pAnt.value) : null, Y = ok(pYoy) ? dreResumo(pYoy.value) : null;
+  const S = ok(serie), K = ok(caixaK)?.kpis || {}, OA = ok(orcA), OB = orcB.status === 'fulfilled' ? orcB.value : null;
+  // série mensal: receita, margem bruta, EBITDA, por motor
+  const serieM = []; let F = null;
+  if (S) { F = _fv2Folhas(S); const cols = F.cols.slice(1);
+    cols.forEach((t, i) => { if (/total/i.test(t)) return; const mm = _mesDaColunaQB(t, anoB, i + 1); if (!mm) return; const sub = _plColunasMeses(S, mm, mm, parseInt(mm)); const d = sub ? dreResumo(sub) : null;
+      const mo = _fv2Motores(F.folhas, cfg, i).motores;
+      serieM.push({ mes: mm, receita: d?.faturamento ?? 0, margem_bruta_pct: d?.margem_bruta_pct ?? null, margem_ebitda_pct: d?.margem_ebitda_pct ?? null, ebitda: d?.ebitda ?? 0, lucro: d?.lucro_liquido ?? 0,
+        pessoas: mo.pessoas.receita, projetos: mo.projetos.receita, produtos: mo.produtos.receita }); }); }
+  const orcMes = {}; [OA, OB].filter(Boolean).forEach(o => Object.entries(o.por_tipo?.receita?.meses || {}).forEach(([k, v]) => { orcMes[k] = (orcMes[k] || 0) + (v.orcado || 0); }));
+  serieM.forEach(s => { s.orcado = orcMes[s.mes] != null ? round(orcMes[s.mes]) : null; });
+  const tend = k => serieM.slice(-7).map(s => ({ mes: s.mes, v: s[k] }));
+  const kpis = [];
+  // 1 receita e crescimento
+  // v3.131: meta de receita — 1º Metas da Empresa (mês a mês ou anual ÷ 12), 2º Orçamento do QuickBooks
+  let MT = {}; try { MT = (await _metasComPadrao([parseInt(m13), parseInt(P.ini), parseInt(P.fimPedido)])).por_ano || {}; } catch (_) {}
+  const metaCad = (() => { let t = 0, ok = false; let m = _fv2Mes(P.ini); const mf = _fv2Mes(P.fimPedido);
+    while (m <= mf) { const y = MT[m.substring(0, 4)]; if (y?.faturamento) { ok = true; t += Array.isArray(y.mensal) && y.mensal.length === 12 ? (y.mensal[parseInt(m.substring(5, 7)) - 1] || 0) : y.faturamento / 12; } m = _fv2AddMes(m, 1); }
+    return ok ? round(t) : null; })();
+  serieM.forEach(s => { const y = MT[s.mes.substring(0, 4)]; if (y?.faturamento) s.meta = round(Array.isArray(y.mensal) && y.mensal.length === 12 ? y.mensal[parseInt(s.mes.substring(5, 7)) - 1] : y.faturamento / 12); });
+  const metaRec = metaCad ?? (() => { const mi = _fv2Mes(P.ini), mf = _fv2Mes(P.fimPedido); let t = 0, achou = false; for (const [k, v] of Object.entries(orcMes)) if (k >= mi && k <= mf) { t += v; achou = true; } return achou && t > 0 ? round(t) : null; })();
+  const metaAno = MT[P.ini.substring(0, 4)] || {};
+  const recFrac = P.parcial ? (Math.round((Date.parse(P.fim) - Date.parse(P.ini)) / 864e5) + 1) / (Math.round((Date.parse(P.fimPedido) - Date.parse(P.ini)) / 864e5) + 1) : 1;
+  kpis.push(_fv2Kpi({ id: 'receita', titulo: 'Receita', valor: A?.faturamento, fmt: 'brl', meta: metaRec != null ? { valor: metaRec, texto: fmtBR(metaRec) + (metaCad != null ? (MT[P.ini.substring(0, 4)]?.padrao ? ' (meta padrão: +25% a.a.)' : ' (Metas da Empresa)') : ' (orçado no período)'), esperado_ate_hoje: P.parcial ? round(metaRec * recFrac) : null } : null,
+    anterior: { valor: B?.faturamento, var_pct: _fv2Var(A?.faturamento, B?.faturamento), rotulo: P.parcial ? 'mesmo trecho do período anterior' : 'período anterior' },
+    yoy: { valor: Y?.faturamento, var_pct: _fv2Var(A?.faturamento, Y?.faturamento) }, tendencia: tend('receita'),
+    semaforo: metaRec ? _fv2Sem(_fv2Var(A?.faturamento, metaRec * recFrac), L.orcado_receita) : 'cinza', drill: { tipo: 'dre' }, formula: 'Receita do período (grupo Receita da DRE) vs. período anterior (MoM) e mesmo período do ano anterior (YoY)' }));
+  // 2 margem bruta
+  kpis.push(_fv2Kpi({ id: 'margem_bruta', titulo: 'Margem bruta', valor: A?.margem_bruta_pct, fmt: 'pct', meta: null,
+    anterior: { valor: B?.margem_bruta_pct, var_pp: A && B && A.margem_bruta_pct != null && B.margem_bruta_pct != null ? Math.round((A.margem_bruta_pct - B.margem_bruta_pct) * 10) / 10 : null },
+    yoy: { valor: Y?.margem_bruta_pct }, tendencia: tend('margem_bruta_pct'), drill: { tipo: 'dre' }, formula: '(Receita − custo direto/COGS) ÷ Receita',
+    nota: !(A?.custos > 0) ? 'Não há custo direto (COGS) separado no QuickBooks — margem bruta = 100%. Classifique o custo dos serviços em contas de Custo para medir de verdade.' : null }));
+  // 3 margem EBITDA
+  kpis.push(_fv2Kpi({ id: 'margem_ebitda', titulo: 'Margem EBITDA', valor: A?.margem_ebitda_pct, fmt: 'pct', valor2: A?.ebitda, meta: metaAno.margem_ebitda_pct != null ? { valor: metaAno.margem_ebitda_pct, texto: metaAno.margem_ebitda_pct + '% (Metas da Empresa)' } : null,
+    semaforo: metaAno.margem_ebitda_pct != null && A?.margem_ebitda_pct != null ? (A.margem_ebitda_pct >= metaAno.margem_ebitda_pct ? 'verde' : A.margem_ebitda_pct >= metaAno.margem_ebitda_pct - 5 ? 'amarelo' : 'vermelho') : 'cinza',
+    anterior: { valor: B?.margem_ebitda_pct, var_pp: A && B && A.margem_ebitda_pct != null && B.margem_ebitda_pct != null ? Math.round((A.margem_ebitda_pct - B.margem_ebitda_pct) * 10) / 10 : null },
+    yoy: { valor: Y?.margem_ebitda_pct }, tendencia: tend('margem_ebitda_pct'), drill: { tipo: 'dre' }, formula: 'EBITDA ÷ Receita · EBITDA = lucro líquido + depreciação + juros + IR/CSLL − receitas financeiras' }));
+  // 4 caixa e runway
+  const rw = K.runway_meses, rwVal = rw == null ? null : rw >= 999 ? null : rw;
+  kpis.push(_fv2Kpi({ id: 'runway', titulo: 'Caixa e runway', valor: K.saldo_caixa, fmt: 'brl', valor2_txt: rw == null ? '—' : rw >= 999 ? 'sem queima líquida' : String(rw).replace('.', ',') + ' meses de runway',
+    meta: { valor: L.runway.verde, texto: 'runway acima de ' + L.runway.verde + ' meses' }, anterior: null,
+    extra: { cobertura_meses: K.cobertura_caixa_meses, caixa_30d: K.caixa_30d, queima_liquida: K.burn_liquido_mensal, gasto_medio: K.burn_rate_mensal },
+    semaforo: rw >= 999 ? 'verde' : _fv2Sem(rwVal, L.runway), drill: { tipo: 'caixa', sub: 'folego' }, formula: 'Runway = caixa ÷ queima líquida média dos 3 últimos meses fechados (gastos − receita)', fonte: 'QuickBooks (extrato + DRE)' }));
+  // 5 FCO
+  const C = fco.status === 'fulfilled' ? dreResumo(fco.value) : null;
+  kpis.push(_fv2Kpi({ id: 'fco', titulo: 'Fluxo de caixa operacional', valor: C?.lucro_liquido, fmt: 'brl', meta: { valor: 0, texto: 'positivo' },
+    extra: { entradas: C?.faturamento, saidas: C ? round(C.faturamento - C.lucro_liquido) : null }, semaforo: C ? (C.lucro_liquido >= 0 ? 'verde' : 'vermelho') : 'cinza', drill: { tipo: 'dre', metodo: 'Cash' },
+    formula: 'Entradas − saídas operacionais do período (DRE em regime de caixa: recebimentos − pagamentos de custos e despesas; transferências e empréstimos não entram)' }));
+  // 6 realizado vs orçado
+  const desv = metaRec ? _fv2Var(A?.faturamento, metaRec * recFrac) : null;
+  kpis.push(_fv2Kpi({ id: 'orcado', titulo: 'Realizado vs. orçado (receita)', valor: desv, fmt: 'pct_sinal', meta: { valor: 0, texto: 'dentro de ±' + L.orcado_receita.verde + '%' },
+    extra: { realizado: A?.faturamento, orcado: metaRec, orcamento: OA?.budget_nome || null, proporcional: P.parcial }, semaforo: _fv2Sem(desv, L.orcado_receita), drill: { tipo: 'dre' },
+    formula: '(Realizado − orçado) ÷ orçado' + (P.parcial ? ' — mês em curso: orçado proporcional aos dias decorridos' : ''), nota: metaRec ? null : 'Sem orçamento de receita cadastrado no QuickBooks para o período.' }));
+  // 7 forecast rolling 12m
+  const FL = ok(fluxo); const fm = (FL?.meses || []).map(k => ({ mes: k, saldo: FL.linhas?.['= Saldo Final']?.[k] ?? null, entradas: FL.linhas?.['= Total Entradas']?.[k] ?? 0, saidas: FL.linhas?.['= Total Saídas']?.[k] ?? 0 }));
+  const minS = fm.filter(x => x.saldo != null).reduce((a, x) => (a == null || x.saldo < a.saldo ? x : a), null);
+  kpis.push(_fv2Kpi({ id: 'forecast', titulo: 'Forecast de caixa (12 meses)', valor: fm.length ? fm[fm.length - 1].saldo : null, fmt: 'brl', meta: { valor: 0, texto: 'saldo sempre positivo' },
+    extra: { menor_saldo: minS?.saldo, menor_mes: minS?.mes, meses: fm }, semaforo: minS ? (minS.saldo < 0 ? 'vermelho' : 'verde') : 'cinza', drill: { tipo: 'fluxo' }, fonte: 'Fluxo Futuro (QuickBooks + despesas programadas + marcos)',
+    formula: 'Saldo de hoje + recebíveis, marcos previstos e receitas recorrentes − contas, despesas programadas e folha, mês a mês, recalculado a cada atualização' }));
+  // 8 concentração
+  const CL = ok(cli) || [], CLa = cliAnt.status === 'fulfilled' ? cliAnt.value : [];
+  const conc = lst => { const t = lst.reduce((a, c) => a + Math.max(0, c.receita), 0); const top = [...lst].sort((a, b) => b.receita - a.receita).slice(0, 5); return t > 0 ? Math.round(top.reduce((a, c) => a + Math.max(0, c.receita), 0) / t * 1000) / 10 : null; };
+  const cA = conc(CL), cB = conc(CLa);
+  kpis.push(_fv2Kpi({ id: 'concentracao', titulo: 'Concentração (5 maiores clientes)', valor: cA, fmt: 'pct', meta: { valor: L.concentracao.verde, texto: 'abaixo de ' + L.concentracao.verde + '%' },
+    anterior: { valor: cB, var_pp: cA != null && cB != null ? Math.round((cA - cB) * 10) / 10 : null }, semaforo: _fv2Sem(cA, L.concentracao), drill: { tipo: 'tela', tela: 'clientes' },
+    extra: { top: [...CL].sort((a, b) => b.receita - a.receita).slice(0, 5).map(c => ({ cliente: c.cliente, receita: c.receita })) }, formula: '% da receita do período nos 5 maiores clientes (relatório Receita por Cliente do QuickBooks)' }));
+  // 9 recorrência (ARR ÷ receita) vs meta 30%
+  const ult12 = serieM.filter(s => s.mes < _fv2Mes(P.hoje)).slice(-12), rec12 = ult12.reduce((a, s) => a + s.receita, 0), ultM = ult12[ult12.length - 1];
+  const arr = ultM ? round(ultM.produtos * 12) : null, recPct = rec12 > 0 && arr != null ? Math.round(arr / rec12 * 1000) / 10 : null;
+  const metaRecor = metaAno.recorrencia_pct ?? L.recorrencia_meta_2027;
+  kpis.push(_fv2Kpi({ id: 'recorrencia', titulo: 'Receita recorrente (ARR ÷ receita)', valor: recPct, fmt: 'pct', meta: { valor: metaRecor, texto: metaAno.recorrencia_pct != null ? metaRecor + '% em ' + P.ini.substring(0, 4) + ' (Metas da Empresa) · ' + L.recorrencia_meta_2027 + '% até 2027' : L.recorrencia_meta_2027 + '% até o fim de 2027 · ' + L.recorrencia_meta_2031 + '% até 2031' },
+    extra: { arr, receita_12m: round(rec12), mes_base: ultM?.mes }, semaforo: recPct == null ? 'cinza' : recPct >= metaRecor ? 'verde' : recPct >= metaRecor / 2 ? 'amarelo' : 'vermelho',
+    tendencia: serieM.slice(-7).map(s => ({ mes: s.mes, v: s.receita > 0 ? Math.round(s.produtos / s.receita * 1000) / 10 : null })), drill: { tipo: 'tela', tela: 'produtos' },
+    formula: 'ARR (receita de produtos do último mês fechado × 12) ÷ receita dos últimos 12 meses fechados' }));
+  // margem por motor no período (decisão: onde alocar foco)
+  let motores = null; if (ok(pAt)) { const fp = _fv2Folhas(pAt.value); motores = _fv2Motores(fp.folhas, cfg); }
+  const alertas = kpis.filter(k => k.semaforo === 'vermelho' || k.semaforo === 'amarelo').map(k => ({ id: k.id, titulo: k.titulo, semaforo: k.semaforo }));
+  return { kpis, serie: serieM, forecast: fm, motores, alertas, orcamento_nome: OA?.budget_nome || null,
+    criterio_rateio: 'Custo direto = contas de custo mapeadas ao motor (Configurar). Custo compartilhado (COGS sem motor) rateado proporcionalmente à receita de cada motor.' };
+}
+
+// ── TELA 2 · CAIXA E LIQUIDEZ ── "Temos caixa para os próximos meses?"
+async function _fv2Caixa({ P, met, cfg, L, token, base }) {
+  const hoje = P.hoje, i90 = _diasMais(hoje, -90);
+  const sql = await getSql();
+  const [bc, ks, pl90, desp] = await Promise.allSettled([
+    baseCaixaHoje({}), kpisSaude({ metodo: met }), qbPL(i90, hoje, token, '', 'Accrual'),
+    sql`SELECT o.id, o.data_prevista, o.valor, o.status, d.descricao, d.fornecedor FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
+        WHERE o.status NOT IN ('paga', 'cancelada') AND o.qb_txn_id IS NULL AND o.data_prevista >= ${hoje} AND o.data_prevista <= ${_diasMais(hoje, 91)}`,
+  ]);
+  const B = bc.status === 'fulfilled' ? bc.value : (base.erros.push('Base de caixa: ' + bc.reason?.message), {});
+  const K = ks.status === 'fulfilled' ? ks.value.kpis || {} : {};
+  const D90 = pl90.status === 'fulfilled' ? dreResumo(pl90.value) : null;
+  const rec = B.recebiveis_itens || [], pag = B.pagaveis_itens || [], DP0 = desp.status === 'fulfilled' ? desp.value : [];
+  const DP = Array.isArray(B.pagaveis_itens) ? _agendaSemDuplicarQb(DP0, B.pagaveis_itens).pendentes : DP0; // v3.163: sem contar duas vezes
+  const recDia = D90 && D90.faturamento > 0 ? D90.faturamento / 90 : null, cusDia = D90 && D90.gastos_totais > 0 ? D90.gastos_totais / 90 : null;
+  const dso = recDia && B.a_receber != null ? Math.round(B.a_receber / recDia) : null, dpo = cusDia && B.a_pagar != null ? Math.round(B.a_pagar / cusDia) : null;
+  const dias = d => d ? Math.round((Date.parse(hoje) - Date.parse(d)) / 864e5) : null;
+  const faixas = [['a vencer', x => x <= 0], ['1–30', x => x >= 1 && x <= 30], ['31–60', x => x >= 31 && x <= 60], ['61–90', x => x >= 61 && x <= 90], ['mais de 90', x => x > 90]];
+  const aging = itens => faixas.map(([f, t]) => { const l = itens.filter(i => t(dias(i.data ?? i.vencimento) ?? 0)); return { faixa: f, valor: round(l.reduce((a, i) => a + (i.valor || 0), 0)), qtd: l.length }; });
+  const agR = aging(rec), agP = aging(pag);
+  const totR = rec.reduce((a, i) => a + i.valor, 0), venc60 = rec.filter(i => dias(i.vencimento) > 60).reduce((a, i) => a + i.valor, 0);
+  const v60pct = totR > 0 ? Math.round(venc60 / totR * 1000) / 10 : null;
+  // projeção de 13 semanas: semana 1 começa hoje; vencidos entram na semana 1
+  const sem = Array.from({ length: 13 }, (_, i) => ({ semana: i + 1, de: _diasMais(hoje, i * 7), ate: _diasMais(hoje, i * 7 + 6), entradas: 0, saidas: 0 }));
+  const idx = d => { if (!d || d <= hoje) return 0; const k = Math.floor((Date.parse(d) - Date.parse(hoje)) / (7 * 864e5)); return k < 13 ? k : -1; };
+  rec.forEach(i => { const k = idx(i.vencimento); if (k >= 0) sem[k].entradas += i.valor; });
+  pag.forEach(i => { const k = idx(i.data); if (k >= 0) sem[k].saidas += i.valor; });
+  DP.forEach(o => { const k = idx(String(o.data_prevista).substring(0, 10)); if (k >= 0) sem[k].saidas += Math.abs(parseFloat(o.valor) || 0); });
+  let s = B.saldo_hoje || 0; sem.forEach(w => { w.entradas = round(w.entradas); w.saidas = round(w.saidas); s += w.entradas - w.saidas; w.saldo = round(s); });
+  const minW = sem.reduce((a, w) => (a == null || w.saldo < a.saldo ? w : a), null);
+  const rw = K.runway_meses;
+  const kpis = [
+    _fv2Kpi({ id: 'saldo', titulo: 'Saldo de caixa hoje', valor: B.saldo_hoje, fmt: 'brl', semaforo: B.saldo_hoje == null ? 'cinza' : B.saldo_hoje < 0 ? 'vermelho' : 'verde', drill: { tipo: 'nav', tela: 's3fluxodet' }, formula: 'Saldo de abertura do mês nas contas bancárias + entradas − saídas até hoje (extrato)', fonte: 'QuickBooks (extrato)' }),
+    _fv2Kpi({ id: 'runway', titulo: 'Runway', valor: rw >= 999 ? null : rw, valor_txt: rw >= 999 ? 'sem queima' : null, fmt: 'meses', meta: { valor: L.runway.verde, texto: 'acima de ' + L.runway.verde + ' meses' }, semaforo: rw >= 999 ? 'verde' : _fv2Sem(rw, L.runway),
+      extra: { cobertura_meses: K.cobertura_caixa_meses, queima_liquida: K.burn_liquido_mensal }, drill: { tipo: 'caixa', sub: 'folego' }, formula: 'Caixa ÷ queima líquida média de 3 meses' }),
+    _fv2Kpi({ id: 'projecao13', titulo: 'Menor saldo em 13 semanas', valor: minW?.saldo, fmt: 'brl', meta: { valor: 0, texto: 'sempre positivo' }, semaforo: minW ? (minW.saldo < 0 ? 'vermelho' : minW.saldo < (K.burn_rate_mensal || 0) ? 'amarelo' : 'verde') : 'cinza',
+      extra: { semana: minW?.semana, de: minW?.de }, drill: { tipo: 'caixa', sub: 'folego' }, formula: 'Saldo de hoje + faturas a receber − contas a pagar − despesas programadas ainda não lançadas, semana a semana' }),
+    _fv2Kpi({ id: 'dso', titulo: 'DSO (prazo de recebimento)', valor: dso, fmt: 'dias', meta: { valor: L.dso.verde, texto: 'abaixo de ' + L.dso.verde + ' dias' }, semaforo: _fv2Sem(dso, L.dso), drill: { tipo: 'caixa', sub: 'receber' },
+      formula: 'Contas a receber ÷ receita diária média (90 dias)', extra: { a_receber: B.a_receber, receita_90d: D90?.faturamento } }),
+    _fv2Kpi({ id: 'dpo', titulo: 'DPO (prazo de pagamento)', valor: dpo, fmt: 'dias', meta: { valor: dso, texto: 'alinhado ao DSO' }, semaforo: dpo == null || dso == null ? 'cinza' : dpo >= dso * 0.8 ? 'verde' : dpo >= dso * 0.5 ? 'amarelo' : 'vermelho', drill: { tipo: 'caixa', sub: 'pagar' },
+      formula: 'Contas a pagar ÷ custo diário médio (90 dias)', extra: { a_pagar: B.a_pagar, gastos_90d: D90?.gastos_totais } }),
+    _fv2Kpi({ id: 'ciclo', titulo: 'Ciclo de caixa', valor: dso != null && dpo != null ? dso - dpo : null, fmt: 'dias', meta: { valor: L.ciclo_caixa.verde, texto: 'menor que ' + L.ciclo_caixa.verde + ' dias' }, semaforo: _fv2Sem(dso != null && dpo != null ? dso - dpo : null, L.ciclo_caixa), formula: 'DSO − DPO' }),
+    _fv2Kpi({ id: 'vencido60', titulo: 'Inadimplência (vencido > 60 dias)', valor: v60pct, fmt: 'pct', valor2: round(venc60), meta: { valor: L.vencido60.verde, texto: 'abaixo de ' + L.vencido60.verde + '% do a receber' }, semaforo: _fv2Sem(v60pct, L.vencido60), drill: { tipo: 'caixa', sub: 'receber' },
+      formula: 'Recebíveis vencidos há mais de 60 dias ÷ total a receber' }),
+    _fv2Kpi({ id: 'pagar13', titulo: 'A pagar nas 13 semanas', valor: round(sem.reduce((a, w) => a + w.saidas, 0)), fmt: 'brl', extra: { a_receber_13: round(sem.reduce((a, w) => a + w.entradas, 0)) }, drill: { tipo: 'caixa', sub: 'pagar' },
+      formula: 'Contas a pagar (Bills) + despesas programadas ainda não lançadas no QuickBooks com vencimento nas próximas 13 semanas (vencidas entram na 1ª)' }),
+  ];
+  return { kpis, semanas: sem, aging_receber: agR, aging_pagar: agP, dso, dpo };
+}
+
+// ── TELA 3 · MOTOR PESSOAS ── "Estamos alocando bem o time?"
+async function _fv2Pessoas({ P, met, cfg, L, token, base }) {
+  const sql = await getSql();
+  try { await sql`ALTER TABLE funcionarios_projetos ADD COLUMN IF NOT EXISTS valor_hora NUMERIC`; } catch (_) {}
+  const [fq, aq, plq, cliq] = await Promise.allSettled([
+    sql`SELECT id, nome, cargo, custo_hora, horas_mensais_padrao, ativo FROM funcionarios WHERE ativo IS NOT FALSE ORDER BY nome`,
+    sql`SELECT fp.funcionario_id, fp.projeto_id, fp.alocacao_pct, fp.papel, fp.valor_hora, p.nome AS projeto, p.cliente, p.status FROM funcionarios_projetos fp LEFT JOIN projetos_financeiros p ON p.id = fp.projeto_id`,
+    qbPL(P.ini, P.fim, token, '', met), _fv2Clientes(P.ini, P.fim, met, token),
+  ]);
+  if (fq.status === 'rejected') { base.avisos.push('Cadastro de funcionários indisponível: ' + fq.reason?.message); }
+  const F = fq.status === 'fulfilled' ? fq.value : [], A = aq.status === 'fulfilled' ? aq.value : [];
+  const meses = Math.max(1, (Math.round((Date.parse(P.fim) - Date.parse(P.ini)) / 864e5) + 1) / 30.4);
+  const motor = plq.status === 'fulfilled' ? _fv2Motores(_fv2Folhas(plq.value).folhas, cfg).motores.pessoas : null;
+  const CL = cliq.status === 'fulfilled' ? cliq.value : [];
+  const prof = F.map(f => { const al = A.filter(a => a.funcionario_id === f.id && String(a.status || 'ativo') !== 'encerrado');
+    const pct = Math.min(100, al.reduce((s, a) => s + (parseFloat(a.alocacao_pct) || 0), 0)), h = parseFloat(f.horas_mensais_padrao) || 160, ch = parseFloat(f.custo_hora) || 0;
+    const vh = al.length ? al.reduce((s, a) => s + (parseFloat(a.valor_hora) || 0) * (parseFloat(a.alocacao_pct) || 0), 0) / Math.max(1, al.reduce((s, a) => s + (parseFloat(a.alocacao_pct) || 0), 0)) : 0;
+    return { id: f.id, nome: f.nome, cargo: f.cargo || '', alocacao_pct: Math.round(pct), clientes: [...new Set(al.map(a => a.cliente).filter(Boolean))], projetos: al.map(a => a.projeto).filter(Boolean),
+      custo_hora: ch, horas_mes: h, custo_mes: round(ch * h), valor_hora: vh ? round(vh) : null, margem_pct: vh && ch ? Math.round((vh - ch) / vh * 1000) / 10 : null,
+      custo_ocioso_mes: round(ch * h * (1 - pct / 100)) }; });
+  const ativos = prof.length, hDisp = prof.reduce((s, p) => s + p.horas_mes, 0), hAloc = prof.reduce((s, p) => s + p.horas_mes * p.alocacao_pct / 100, 0);
+  const taxa = hDisp ? Math.round(hAloc / hDisp * 1000) / 10 : null;
+  const bench = prof.filter(p => p.alocacao_pct < 50), benchPct = ativos ? Math.round(bench.length / ativos * 1000) / 10 : null;
+  const custoBench = round(prof.reduce((s, p) => s + p.custo_ocioso_mes, 0));
+  const alocados = prof.filter(p => p.alocacao_pct >= 50).length;
+  const recProf = motor && alocados ? round(motor.receita / alocados / meses) : null;
+  const comVH = prof.filter(p => p.margem_pct != null), margemMed = comVH.length ? Math.round(comVH.reduce((s, p) => s + p.margem_pct, 0) / comVH.length * 10) / 10 : null;
+  // por cliente: custo do time alocado × receita do cliente no período
+  const porCli = {}; A.forEach(a => { const f = prof.find(p => p.id === a.funcionario_id); if (!f || !a.cliente) return; const k = a.cliente;
+    porCli[k] = porCli[k] || { cliente: k, profissionais: 0, custo_mes: 0 }; porCli[k].profissionais++; porCli[k].custo_mes += f.custo_hora * f.horas_mes * (parseFloat(a.alocacao_pct) || 0) / 100; });
+  const normal = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+  const clientes = Object.values(porCli).map(c => { const q = CL.find(x => normal(x.cliente).includes(normal(c.cliente).substring(0, 6)) || normal(c.cliente).includes(normal(x.cliente).substring(0, 6)));
+    const recM = q ? q.receita / meses : null; return { ...c, custo_mes: round(c.custo_mes), receita_mes: recM != null ? round(recM) : null, margem_pct: recM ? Math.round((recM - c.custo_mes) / recM * 1000) / 10 : null }; })
+    .sort((a, b) => b.custo_mes - a.custo_mes);
+  const kpis = [
+    _fv2Kpi({ id: 'alocacao', titulo: 'Taxa de alocação', valor: taxa, fmt: 'pct', meta: { valor: L.alocacao.verde, texto: 'acima de ' + L.alocacao.verde + '%' }, semaforo: _fv2Sem(taxa, L.alocacao), fonte: 'Cadastro de funcionários × projetos (S8)',
+      formula: 'Horas alocadas ÷ horas disponíveis (alocação cadastrada × horas mensais de cada profissional)', nota: 'Horas faturadas reais ainda não integradas (timesheet/Maestro) — usa a alocação cadastrada.' }),
+    _fv2Kpi({ id: 'bench', titulo: 'Bench (sem alocação)', valor: bench.length, fmt: 'num', valor2: custoBench, valor2_rot: 'custo ocioso/mês', meta: { valor: L.bench.verde, texto: 'menos de ' + L.bench.verde + '% do time' }, semaforo: _fv2Sem(benchPct, L.bench),
+      fonte: 'Cadastro de funcionários × projetos (S8)', formula: 'Profissionais ativos com menos de 50% de alocação · custo = custo/hora × horas não alocadas', drill: { tipo: 'nav', tela: 's8funcionarios' } }),
+    _fv2Kpi({ id: 'receita_prof', titulo: 'Receita por profissional (mês)', valor: recProf, fmt: 'brl', fonte: 'QuickBooks + cadastro S8', formula: 'Receita do motor Pessoas no período ÷ profissionais alocados ÷ meses', extra: { receita_motor: motor?.receita, alocados }, drill: { tipo: 'dre' },
+      nota: motor && !motor.receita ? 'Nenhuma conta de receita classificada como Pessoas — ajuste em Configurar.' : null }),
+    _fv2Kpi({ id: 'margem_prof', titulo: 'Margem por profissional (média)', valor: margemMed, fmt: 'pct', fonte: 'Cadastro S8 (valor/hora e custo/hora)', formula: '(Valor/hora faturado − custo/hora) ÷ valor/hora faturado',
+      nota: comVH.length ? null : 'Cadastre o valor/hora faturado de cada alocação (funcionário × projeto) para calcular.' }),
+    _fv2Kpi({ id: 'time', titulo: 'Profissionais ativos', valor: ativos, fmt: 'num', valor2: round(prof.reduce((s, p) => s + p.custo_mes, 0)), valor2_rot: 'custo mensal do time', fonte: 'Cadastro de funcionários (S8)', drill: { tipo: 'nav', tela: 's8funcionarios' } }),
+    _fv2Kpi({ id: 'margem_motor', titulo: 'Margem bruta do motor Pessoas', valor: motor?.margem_bruta_pct, fmt: 'pct', valor2: motor?.receita, valor2_rot: 'receita no período', formula: '(Receita do motor − custo direto − custo compartilhado rateado) ÷ receita', drill: { tipo: 'dre' } }),
+  ];
+  return { kpis, profissionais: prof, clientes };
+}
+
+// ── TELA 4 · MOTOR PROJETOS ── "Os projetos dão a margem prometida?"
+async function _fv2Projetos({ P, met, cfg, L, token, base }) {
+  const sql = await getSql(), hoje = P.hoje, i90 = _diasMais(hoje, -90);
+  const [pq, mq, aq, pl90] = await Promise.allSettled([
+    sql`SELECT id, nome, cliente, valor_total, status, criado_em FROM projetos_financeiros ORDER BY nome`,
+    sql`SELECT id, projeto_id, descricao, data_entrega, valor, status_kanban, concluido_em FROM projetos_marcos`,
+    sql`SELECT fp.projeto_id, fp.alocacao_pct, f.custo_hora, f.horas_mensais_padrao FROM funcionarios_projetos fp JOIN funcionarios f ON f.id = fp.funcionario_id WHERE f.ativo IS NOT FALSE`,
+    qbPL(i90, hoje, token, '', met),
+  ]);
+  const PR = pq.status === 'fulfilled' ? pq.value : [], MK = mq.status === 'fulfilled' ? mq.value : [], AL = aq.status === 'fulfilled' ? aq.value : [];
+  if (pq.status === 'rejected') base.avisos.push('Projetos indisponíveis: ' + pq.reason?.message);
+  const motor90 = pl90.status === 'fulfilled' ? _fv2Motores(_fv2Folhas(pl90.value).folhas, cfg).motores.projetos : null;
+  const recMesMotor = motor90 ? motor90.receita / 3 : null;
+  const d = x => x ? String(x instanceof Date ? x.toISOString() : x).substring(0, 10) : null;
+  const projetos = PR.map(p => { const ms = MK.filter(m => m.projeto_id === p.id), conc = ms.filter(m => m.status_kanban === 'concluido'), abertos = ms.filter(m => m.status_kanban !== 'concluido');
+    const faturado = conc.reduce((s, m) => s + (parseFloat(m.valor) || 0), 0), valorTot = parseFloat(p.valor_total) || ms.reduce((s, m) => s + (parseFloat(m.valor) || 0), 0);
+    const backlog = abertos.length ? abertos.reduce((s, m) => s + (parseFloat(m.valor) || 0), 0) : Math.max(0, valorTot - faturado);
+    const atr = abertos.filter(m => d(m.data_entrega) && d(m.data_entrega) < hoje);
+    const custoMes = AL.filter(a => a.projeto_id === p.id).reduce((s, a) => s + (parseFloat(a.custo_hora) || 0) * (parseFloat(a.horas_mensais_padrao) || 160) * (parseFloat(a.alocacao_pct) || 0) / 100, 0);
+    const rec90 = conc.filter(m => d(m.concluido_em) && d(m.concluido_em) >= i90).reduce((s, m) => s + (parseFloat(m.valor) || 0), 0);
+    const recMes = rec90 / 3;
+    return { id: p.id, nome: p.nome, cliente: p.cliente || '', status: p.status || 'ativo', valor_contratado: round(valorTot), faturado: round(faturado), backlog: round(backlog),
+      marcos: ms.length, marcos_atrasados: atr.length, valor_atrasado: round(atr.reduce((s, m) => s + (parseFloat(m.valor) || 0), 0)),
+      atrasados: atr.map(m => ({ descricao: m.descricao, data_entrega: d(m.data_entrega), valor: round(parseFloat(m.valor) || 0), status: m.status_kanban })),
+      custo_equipe_mes: round(custoMes), receita_mes_90d: round(recMes), margem_estimada_pct: recMes > 0 ? Math.round((recMes - custoMes) / recMes * 1000) / 10 : null }; })
+    .filter(p => p.status !== 'encerrado' || p.backlog > 0);
+  const backlog = round(projetos.reduce((s, p) => s + p.backlog, 0)), cob = recMesMotor > 0 ? Math.round(backlog / recMesMotor * 10) / 10 : null;
+  const atrQ = projetos.reduce((s, p) => s + p.marcos_atrasados, 0), atrV = round(projetos.reduce((s, p) => s + p.valor_atrasado, 0));
+  const comM = projetos.filter(p => p.margem_estimada_pct != null), mMed = comM.length ? Math.round(comM.reduce((s, p) => s + p.margem_estimada_pct, 0) / comM.length * 10) / 10 : null;
+  const kpis = [
+    _fv2Kpi({ id: 'backlog', titulo: 'Receita a reconhecer (backlog)', valor: backlog, fmt: 'brl', valor2_txt: cob != null ? String(cob).replace('.', ',') + ' meses de cobertura' : null, meta: { valor: L.backlog_cobertura.verde, texto: 'cobertura acima de ' + L.backlog_cobertura.verde + ' meses' },
+      semaforo: projetos.length ? _fv2Sem(cob, L.backlog_cobertura) : 'cinza', fonte: 'Projetos e marcos (S3) + QuickBooks', formula: 'Valor dos marcos ainda não concluídos (ou contratado − faturado) · cobertura = backlog ÷ receita mensal média do motor Projetos (90 dias)', drill: { tipo: 'nav', tela: 's3marcoskanban' } }),
+    _fv2Kpi({ id: 'marcos_atraso', titulo: 'Marcos faturáveis em atraso', valor: atrQ, fmt: 'num', valor2: atrV, valor2_rot: 'valor em atraso', meta: { valor: 0, texto: 'zero' }, semaforo: atrQ === 0 ? 'verde' : atrQ <= 2 ? 'amarelo' : 'vermelho',
+      fonte: 'Kanban de marcos (S3)', formula: 'Marcos com data de entrega vencida e ainda não concluídos/faturados', drill: { tipo: 'nav', tela: 's3marcoskanban' } }),
+    _fv2Kpi({ id: 'margem_projeto', titulo: 'Margem estimada por projeto (média)', valor: mMed, fmt: 'pct', fonte: 'Marcos concluídos (90 dias) × custo da equipe alocada (S8)', formula: '(Receita mensal dos marcos concluídos nos últimos 90 dias − custo mensal da equipe alocada) ÷ receita',
+      nota: 'Estimativa: custo real por projeto (horas reais × custo) depende da integração com o Maestro.' }),
+    _fv2Kpi({ id: 'desvio_esforco', titulo: 'Desvio de esforço', valor: null, fmt: 'pct', meta: { valor: L.desvio_esforco.verde, texto: 'até ' + L.desvio_esforco.verde + '%' }, fonte: 'Maestro (a integrar)', formula: 'Horas reais ÷ horas orçadas', nota: 'Horas reais e orçadas por projeto ainda não integradas (Maestro).' }),
+    _fv2Kpi({ id: 'margem_motor', titulo: 'Margem bruta do motor Projetos (90 dias)', valor: motor90?.margem_bruta_pct, fmt: 'pct', valor2: motor90?.receita, valor2_rot: 'receita 90 dias', formula: '(Receita do motor − custo direto − compartilhado rateado) ÷ receita', drill: { tipo: 'dre' } }),
+    _fv2Kpi({ id: 'projetos_ativos', titulo: 'Projetos com saldo a entregar', valor: projetos.filter(p => p.backlog > 0).length, fmt: 'num', fonte: 'Projetos (S3)', drill: { tipo: 'nav', tela: 's3projetos' } }),
+  ];
+  return { kpis, projetos: projetos.sort((a, b) => b.backlog - a.backlog) };
+}
+
+// ── TELA 5 · MOTOR PRODUTOS ── "O recorrente está crescendo?"
+async function _fv2Produtos({ P, met, cfg, L, token, base }) {
+  const hoje = P.hoje, mesH = _fv2Mes(hoje), m13 = _fv2AddMes(mesH, -13) + '-01', fimFech = _diasMais(mesH + '-01', -1);
+  const m24 = _fv2AddMes(mesH, -24) + '-01', m12 = _fv2AddMes(mesH, -12) + '-01';
+  const [serie, p12, p24] = await Promise.allSettled([qbPL(m13, fimFech, token, '&summarize_column_by=Month', met), qbPL(m12, fimFech, token, '', met), qbPL(m24, _diasMais(m12, -1), token, '', met)]);
+  if (serie.status === 'rejected') throw serie.reason;
+  const F = _fv2Folhas(serie.value), cols = F.cols.slice(1); const mesesCol = cols.map((t, i) => /total/i.test(t) ? null : _mesDaColunaQB(t, parseInt(m13), i + 1));
+  const contasProd = F.folhas.filter(f => f.grupo === 'Income' && _fv2MotorConta(f.nome, 'Income', cfg) === 'produtos');
+  const mrrMes = mesesCol.map((m, i) => m ? { mes: m, mrr: round(contasProd.reduce((s, f) => s + (f.cols[i] || 0), 0)) } : null).filter(Boolean);
+  const porProd = {}; contasProd.forEach(f => { const pn = _fv2ProdutoConta(f.nome, cfg); const iU = mesesCol.findIndex(m => m === mrrMes[mrrMes.length - 1]?.mes); porProd[pn] = (porProd[pn] || 0) + (iU >= 0 ? f.cols[iU] || 0 : 0); });
+  const mrr = mrrMes.length ? mrrMes[mrrMes.length - 1].mrr : 0, arr = round(mrr * 12);
+  const R12 = p12.status === 'fulfilled' ? dreResumo(p12.value) : null, R24 = p24.status === 'fulfilled' ? dreResumo(p24.value) : null;
+  const recPct = R12?.faturamento > 0 ? Math.round(arr / R12.faturamento * 1000) / 10 : null;
+  // nível cliente: razão das contas de produto (13 meses) → MRR por cliente por mês
+  let porCliMes = {}, glOk = false;
+  const ids = contasProd.map(f => f.id).filter(Boolean);
+  if (ids.length) { try {
+    const rep = await qbFetch(`/reports/GeneralLedger?start_date=${m13}&end_date=${fimFech}&accounting_method=${met}&account=${ids.join(',')}&columns=tx_date,name,subt_nat_amount`, token);
+    const cs = (rep?.Columns?.Column || []).map(c => (c.MetaData || []).find(m => m.Name === 'ColKey')?.Value || c.ColTitle || '');
+    const iD = cs.indexOf('tx_date'), iN = cs.indexOf('name'), iV = cs.indexOf('subt_nat_amount');
+    const andar = rows => (rows || []).forEach(r => { if (r.type === 'Data' && r.ColData) { const dt = r.ColData[iD]?.value, nm = r.ColData[iN]?.value || '(sem cliente)', v = parseFloat(r.ColData[iV]?.value);
+      if (dt && /^\d{4}-\d{2}/.test(dt) && isFinite(v)) { const m = dt.substring(0, 7); porCliMes[nm] = porCliMes[nm] || {}; porCliMes[nm][m] = (porCliMes[nm][m] || 0) + v; } } if (r.Rows?.Row) andar(r.Rows.Row); });
+    andar(rep?.Rows?.Row); glOk = true; } catch (e) { base.avisos.push('Razão das contas de produto: ' + e.message); } }
+  const meses = mrrMes.map(x => x.mes);
+  const churnM = [], nrrM = [], novosM = [];
+  for (let i = 1; i < meses.length; i++) { const a = meses[i - 1], b = meses[i]; let baseA = 0, retido = 0, perdidos = 0, ativosA = 0, perdMRR = 0, novos = 0;
+    for (const c of Object.values(porCliMes)) { const va = c[a] || 0, vb = c[b] || 0; if (va > 0) { ativosA++; baseA += va; retido += vb; if (vb <= 0) { perdidos++; perdMRR += va; } }
+      else if (vb > 0 && !meses.slice(0, i).some(m => (c[m] || 0) > 0)) novos++; }
+    if (ativosA) { churnM.push({ mes: b, logos_pct: Math.round(perdidos / ativosA * 1000) / 10, receita_pct: baseA ? Math.round(perdMRR / baseA * 1000) / 10 : null }); nrrM.push({ mes: b, nrr: baseA ? Math.round(retido / baseA * 1000) / 10 : null }); }
+    novosM.push({ mes: b, novos }); }
+  const med = (arrv, k) => { const l = arrv.slice(-3).map(x => x[k]).filter(v => v != null); return l.length ? Math.round(l.reduce((s, v) => s + v, 0) / l.length * 10) / 10 : null; };
+  const churnRec = med(churnM, 'receita_pct'), churnLog = med(churnM, 'logos_pct'), nrr = med(nrrM, 'nrr');
+  const ativosUlt = Object.values(porCliMes).filter(c => (c[meses[meses.length - 1]] || 0) > 0).length;
+  const arpa = ativosUlt ? mrr / ativosUlt : null;
+  // CAC: gasto comercial/marketing (3 meses fechados) ÷ novos clientes de produto (3 meses)
+  const i3 = mesesCol.map((m, i) => (m && meses.slice(-3).includes(m) ? i : -1)).filter(i => i >= 0);
+  const gastoCom = F.folhas.filter(f => (f.grupo === 'Expenses' || f.grupo === 'COGS') && FV2_RX.comercial.test(f.nome)).reduce((s, f) => s + i3.reduce((a, i) => a + (f.cols[i] || 0), 0), 0);
+  const novos3 = novosM.slice(-3).reduce((s, x) => s + x.novos, 0);
+  const cac = novos3 ? round(gastoCom / novos3) : null;
+  const mProd = _fv2Motores(F.folhas, cfg).motores.produtos, mb = mProd.margem_bruta_pct != null ? mProd.margem_bruta_pct / 100 : null;
+  const churnDec = churnLog != null ? Math.max(churnLog, 0.5) / 100 : null; // piso 0,5% a.m. (vida máx. 200 meses) para não dar LTV infinito
+  const ltv = arpa && mb != null && churnDec ? round(arpa * mb / churnDec) : null;
+  const ltvCac = ltv && cac ? Math.round(ltv / cac * 10) / 10 : null, payback = cac && arpa && mb ? Math.round(cac / (arpa * mb) * 10) / 10 : null;
+  const cresc = R12 && R24 && R24.faturamento > 0 ? Math.round((R12.faturamento - R24.faturamento) / R24.faturamento * 1000) / 10 : null;
+  const r40 = cresc != null && R12?.margem_ebitda_pct != null ? Math.round((cresc + R12.margem_ebitda_pct) * 10) / 10 : null;
+  const arrProd = Object.entries(porProd).map(([produto, v]) => ({ produto, arr: round(v * 12) })).filter(x => x.arr).sort((a, b) => b.arr - a.arr);
+  const tot = arrProd.reduce((s, x) => s + x.arr, 0); let acc = 0; const ancoras = arrProd.filter(x => { const dentro = acc < tot * 0.8; acc += x.arr; return dentro; }).length;
+  const semBilling = 'Billing dos produtos ainda não definido: MRR, churn e NRR lidos das contas de receita de produto do QuickBooks (razão por cliente).';
+  const kpis = [
+    _fv2Kpi({ id: 'mrr', titulo: 'MRR', valor: mrr, fmt: 'brl', anterior: mrrMes.length > 1 ? { valor: mrrMes[mrrMes.length - 2].mrr, var_pct: _fv2Var(mrr, mrrMes[mrrMes.length - 2].mrr) } : null, tendencia: mrrMes.slice(-7).map(x => ({ mes: x.mes, v: x.mrr })),
+      formula: 'Receita das contas de produto no último mês fechado (' + (meses[meses.length - 1] || '—') + ')', drill: { tipo: 'dre' }, nota: contasProd.length ? null : 'Nenhuma conta de receita classificada como Produtos — ajuste em Configurar.' }),
+    _fv2Kpi({ id: 'arr', titulo: 'ARR', valor: arr, fmt: 'brl', formula: 'MRR × 12', drill: { tipo: 'dre' } }),
+    _fv2Kpi({ id: 'recorrencia', titulo: 'ARR ÷ receita', valor: recPct, fmt: 'pct', meta: { valor: L.recorrencia_meta_2027, texto: L.recorrencia_meta_2027 + '% até 2027 · ' + L.recorrencia_meta_2031 + '% até 2031' },
+      semaforo: recPct == null ? 'cinza' : recPct >= L.recorrencia_meta_2027 ? 'verde' : recPct >= L.recorrencia_meta_2027 / 2 ? 'amarelo' : 'vermelho', formula: 'ARR ÷ receita dos últimos 12 meses fechados', extra: { receita_12m: R12?.faturamento } }),
+    _fv2Kpi({ id: 'nrr', titulo: 'Net Revenue Retention', valor: nrr, fmt: 'pct', meta: { valor: L.nrr.verde, texto: 'acima de ' + L.nrr.verde + '%' }, semaforo: _fv2Sem(nrr, L.nrr), tendencia: nrrM.slice(-7).map(x => ({ mes: x.mes, v: x.nrr })),
+      formula: '(MRR inicial + expansão − contração − churn) ÷ MRR inicial — média mensal dos 3 últimos meses', nota: glOk ? null : semBilling }),
+    _fv2Kpi({ id: 'churn', titulo: 'Churn de receita (MRR)', valor: churnRec, fmt: 'pct', valor2_txt: churnLog != null ? 'logos: ' + String(churnLog).replace('.', ',') + '% ao mês' : null, meta: { valor: L.churn.verde, texto: 'menor que ' + L.churn.verde + '% ao mês' }, semaforo: _fv2Sem(churnRec, L.churn),
+      formula: 'MRR (e clientes) perdidos ÷ base inicial do mês — média dos 3 últimos meses' }),
+    _fv2Kpi({ id: 'cac', titulo: 'CAC', valor: cac, fmt: 'brl', extra: { gasto_comercial_3m: round(gastoCom), novos_clientes_3m: novos3 }, formula: 'Gasto comercial e de marketing (3 meses) ÷ novos clientes de produto (3 meses)',
+      nota: novos3 ? null : 'Nenhum cliente novo de produto nos últimos 3 meses.' }),
+    _fv2Kpi({ id: 'ltv_cac', titulo: 'LTV / CAC', valor: ltvCac, fmt: 'x', meta: { valor: L.ltv_cac.verde, texto: 'acima de ' + L.ltv_cac.verde + 'x' }, semaforo: _fv2Sem(ltvCac, L.ltv_cac), extra: { ltv, arpa: arpa ? round(arpa) : null },
+      formula: 'LTV = ARPA × margem bruta do motor ÷ churn mensal de logos (piso 0,5%) · LTV ÷ CAC' }),
+    _fv2Kpi({ id: 'cac_payback', titulo: 'CAC payback', valor: payback, fmt: 'meses', meta: { valor: L.cac_payback.verde, texto: 'abaixo de ' + L.cac_payback.verde + ' meses' }, semaforo: _fv2Sem(payback, L.cac_payback), formula: 'CAC ÷ margem bruta mensal por cliente' }),
+    _fv2Kpi({ id: 'rule40', titulo: 'Rule of 40', valor: r40, fmt: 'pct', meta: { valor: L.rule40.verde, texto: 'acima de ' + L.rule40.verde + '%' }, semaforo: _fv2Sem(r40, L.rule40), extra: { crescimento_pct: cresc, margem_ebitda_pct: R12?.margem_ebitda_pct },
+      formula: 'Crescimento anual da receita (12 meses vs. 12 anteriores) + margem EBITDA dos 12 meses' }),
+    _fv2Kpi({ id: 'foco', titulo: 'Produtos-âncora (80% do ARR)', valor: arrProd.length ? ancoras : null, fmt: 'num', meta: { valor: 2, texto: '1 a 2 âncoras em 18 meses' }, semaforo: !arrProd.length ? 'cinza' : ancoras <= 2 ? 'verde' : ancoras === 3 ? 'amarelo' : 'vermelho',
+      formula: 'Quantos produtos somam 80% do ARR', extra: { produtos: arrProd.length } }),
+  ];
+  return { kpis, mrr_mensal: mrrMes, arr_produto: arrProd, churn_mensal: churnM, nrr_mensal: nrrM, contas_produto: contasProd.map(f => f.nome), billing: semBilling };
+}
+
+// ── TELA 6 · CLIENTES E RISCO ── "Onde está o risco?"
+async function _fv2ClientesTela({ P, met, cfg, L, token, base }) {
+  const [cq, bc] = await Promise.allSettled([_fv2Clientes(P.ini, P.fim, met, token), baseCaixaHoje({})]);
+  if (cq.status === 'rejected') throw cq.reason;
+  const CL = cq.value, B = bc.status === 'fulfilled' ? bc.value : {};
+  const rec = B.recebiveis_itens || [], hoje = P.hoje;
+  const normal = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+  const tot = CL.reduce((s, c) => s + Math.max(0, c.receita), 0);
+  let acc = 0;
+  const lista = [...CL].sort((a, b) => b.receita - a.receita).map(c => { acc += Math.max(0, c.receita);
+    const inv = rec.filter(r => normal(r.cliente) === normal(c.cliente) || normal(r.cliente).startsWith(normal(c.cliente).substring(0, 8)));
+    const venc = inv.filter(r => r.vencimento && r.vencimento < hoje), v60 = inv.filter(r => r.vencimento && (Date.parse(hoje) - Date.parse(r.vencimento)) / 864e5 > 60);
+    const anc = FV2_ANCORAS.find(([, re]) => re.test(c.cliente));
+    return { ...c, participacao_pct: tot > 0 ? Math.round(Math.max(0, c.receita) / tot * 1000) / 10 : null, acumulado_pct: tot > 0 ? Math.round(acc / tot * 1000) / 10 : null,
+      margem_pct: c.receita > 0 && c.custo != null ? Math.round((c.receita - c.custo) / c.receita * 1000) / 10 : null, a_receber: round(inv.reduce((s, r) => s + r.valor, 0)),
+      vencido: round(venc.reduce((s, r) => s + r.valor, 0)), vencido_60: round(v60.reduce((s, r) => s + r.valor, 0)), ancora: anc ? anc[0] : null,
+      qb_url: c.id ? `${_fv2QbBase()}/app/customerdetail?nameId=${c.id}` : null }; });
+  const top5 = lista.slice(0, 5).reduce((s, c) => s + Math.max(0, c.receita), 0), c5 = tot > 0 ? Math.round(top5 / tot * 1000) / 10 : null;
+  const anc = tot > 0 ? Math.round(lista.filter(c => c.ancora).reduce((s, c) => s + Math.max(0, c.receita), 0) / tot * 1000) / 10 : null;
+  const totAR = rec.reduce((s, r) => s + r.valor, 0), v60 = rec.filter(r => r.vencimento && (Date.parse(hoje) - Date.parse(r.vencimento)) / 864e5 > 60).reduce((s, r) => s + r.valor, 0);
+  const comMg = lista.filter(c => c.margem_pct != null && c.custo), mgMed = comMg.length && tot ? Math.round(comMg.reduce((s, c) => s + c.margem_pct * c.receita, 0) / comMg.reduce((s, c) => s + c.receita, 0) * 10) / 10 : null;
+  const ancorasPresentes = FV2_ANCORAS.map(([n]) => { const c = lista.find(x => x.ancora === n); return { ancora: n, receita: c?.receita || 0, participacao_pct: c?.participacao_pct || 0, vencido: c?.vencido || 0, presente: !!c }; });
+  const kpis = [
+    _fv2Kpi({ id: 'concentracao', titulo: 'Concentração nos 5 maiores', valor: c5, fmt: 'pct', meta: { valor: L.concentracao.verde, texto: 'abaixo de ' + L.concentracao.verde + '%' }, semaforo: _fv2Sem(c5, L.concentracao), formula: '% da receita do período nos 5 maiores clientes' }),
+    _fv2Kpi({ id: 'maior', titulo: 'Maior cliente', valor: lista[0]?.participacao_pct ?? null, fmt: 'pct', valor2_txt: lista[0]?.cliente || null, formula: '% da receita do período no maior cliente' }),
+    _fv2Kpi({ id: 'ancoras', titulo: 'Receita nas 4 âncoras', valor: anc, fmt: 'pct', formula: 'CPFL Energia, Enel, Grupo Jelta Veículos e Caixa Capitalização ÷ receita do período' }),
+    _fv2Kpi({ id: 'inadimplencia', titulo: 'Vencido há mais de 60 dias', valor: round(v60), fmt: 'brl', valor2_txt: totAR > 0 ? String(Math.round(v60 / totAR * 1000) / 10).replace('.', ',') + '% do a receber' : null,
+      meta: { valor: L.vencido60.verde, texto: 'abaixo de ' + L.vencido60.verde + '% do a receber' }, semaforo: _fv2Sem(totAR > 0 ? v60 / totAR * 100 : null, L.vencido60), drill: { tipo: 'caixa', sub: 'receber' }, formula: 'Faturas vencidas há mais de 60 dias' }),
+    _fv2Kpi({ id: 'margem_cliente', titulo: 'Margem média por cliente', valor: mgMed, fmt: 'pct', formula: '(Receita − despesas atribuídas ao cliente) ÷ receita, ponderada pela receita', nota: comMg.length ? null : 'Nenhuma despesa atribuída a clientes no QuickBooks (campo Cliente nos lançamentos de custo).' }),
+    _fv2Kpi({ id: 'ativos', titulo: 'Clientes com receita no período', valor: lista.filter(c => c.receita > 0).length, fmt: 'num' }),
+  ];
+  return { kpis, clientes: lista.slice(0, 60), ancoras: ancorasPresentes, total_receita: round(tot) };
+}
+
+// ── CONFIGURAR: contas de receita/custo por motor e produto + limites ──
+async function _fv2Config({ P, met, cfg, L, token, base }) {
+  const rep = await qbPL(_fv2AddMes(_fv2Mes(P.hoje), -12) + '-01', P.hoje, token, '', 'Accrual');
+  const F = _fv2Folhas(rep);
+  const contas = F.folhas.filter(f => ['Income', 'COGS', 'Expenses', 'OtherExpenses'].includes(f.grupo)).map(f => ({ nome: f.nome, grupo: f.grupo, valor_12m: round(f.cols[f.cols.length - 1]),
+    motor: _fv2MotorConta(f.nome, f.grupo, cfg), motor_manual: !!cfg.motores[f.nome], produto: f.grupo === 'Income' ? _fv2ProdutoConta(f.nome, cfg) : null }))
+    .sort((a, b) => (a.grupo === 'Income' ? 0 : 1) - (b.grupo === 'Income' ? 0 : 1) || Math.abs(b.valor_12m) - Math.abs(a.valor_12m));
+  return { contas, motores_cfg: cfg.motores, produtos_cfg: cfg.produtos, limites_padrao: FV2_LIMITES, criterio_rateio: 'Custo compartilhado rateado proporcionalmente à receita de cada motor no período.' };
+}
+
 
 // v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
 export default comGuarda(handler, 'financeiro');

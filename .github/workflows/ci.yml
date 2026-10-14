@@ -1,0 +1,47 @@
+# Gate automático da Mixagem (Método B.P.M.) — roda em todo pull request para a main.
+# As REGRAS vêm da main (checkout "regras"): o PR não consegue afrouxar o próprio gate.
+#   1) sintaxe: node --check em api/, lib/, public/*.js e nos <script> de public/index.html
+#   2) bpm-gates: escopo da trilha, partitura (spec/plano), banco (DDL só na T5), versão, segredos
+#   3) inventário dos contratos em dia (só aviso)
+name: Gates B.P.M.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, labeled]
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+concurrency:
+  group: bpm-gates-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: pr
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/checkout@v4
+        with:
+          path: regras
+          ref: ${{ github.event.pull_request.base.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Sintaxe
+        run: ATX_RAIZ=pr node regras/scripts/validar.mjs --sem-navegador
+      - name: Gates B.P.M. (escopo · partitura · banco · versão · segredos)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ ! -f regras/scripts/bpm-gates.mjs ]; then echo "main ainda sem bpm-gates — pulando"; exit 0; fi
+          node regras/scripts/bpm-gates.mjs --raiz pr --base "${{ github.event.pull_request.base.sha }}" --pr "${{ github.event.pull_request.number }}"
+      - name: Inventário dos contratos (aviso)
+        continue-on-error: true
+        run: |
+          cd pr && [ -f scripts/bpm-inventario.mjs ] && node scripts/bpm-inventario.mjs --checar || echo "::warning title=B.P.M. · contratos::inventário desatualizado — rode node scripts/bpm-inventario.mjs (o Afinador revisa)"
