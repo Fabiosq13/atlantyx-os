@@ -233,7 +233,9 @@ function _corpoPostMc(fonte, extra) {
 //     aparecem no Metricool (Ads) porque a conta de anúncios é a mesma.
 //  2) Sem Meta: monta o KIT (texto, título, imagem, link com UTM, orçamento, público) para criar no Metricool → Ads.
 const META_V = process.env.META_API_VERSION || 'v21.0';
-const _metaCfg = () => ({ token: process.env.META_ADS_TOKEN || '', conta: String(process.env.META_AD_ACCOUNT_ID || '').replace(/^act_/, ''), pagina: process.env.META_PAGE_ID || '', ig: process.env.META_IG_USER_ID || '' });
+// v3.173: tira espaços/aspas/quebras coladas por engano nas variáveis da Vercel (ex.: "META_AD_ACCOUNT_ID= 1066…" virava act_%20…)
+const _envLimpo = k => String(process.env[k] || '').trim().replace(/^["']|["']$/g, '').trim();
+const _metaCfg = () => ({ token: _envLimpo('META_ADS_TOKEN'), conta: _envLimpo('META_AD_ACCOUNT_ID').replace(/^act_/i, '').replace(/\D/g, ''), pagina: _envLimpo('META_PAGE_ID').replace(/\D/g, ''), ig: _envLimpo('META_IG_USER_ID').replace(/\D/g, '') });
 async function _meta(caminho, metodo = 'GET', corpo = null) {
   const c = _metaCfg(); const url = `https://graph.facebook.com/${META_V}/${caminho}`;
   const op = { method: metodo, headers: {} };
