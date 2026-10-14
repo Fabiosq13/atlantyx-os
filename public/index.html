@@ -13357,7 +13357,7 @@ nav = function(p, el) {
 // dem_muzhkv58n9ak: HTTP 0 / timeout tenta de novo (até 3x, 2s entre elas) dentro de um prazo total de 15s; se tudo falhar,
 // mostra a última leitura boa (localStorage 'cache_riscos') com a tag [dados offline] — o botão nunca fica girando para sempre.
 const RSK_TIMEOUT_MS = 8000, RSK_DIAS_CRITICO = 15, RSK_MARGEM_PADRAO = 20;
-const RSK_PRAZO_MS = 15000, RSK_TENTATIVAS = 3, RSK_BACKOFF_MS = 2000, RSK_CACHE = 'cache_riscos';
+const RSK_PRAZO_MS = 15000, RSK_PRAZO_KPIS_MS = 30000, RSK_TENTATIVAS = 3, RSK_BACKOFF_MS = 2000, RSK_CACHE = 'cache_riscos';
 const RSK_COR = { verde: 'var(--green)', amarelo: 'var(--gold)', vermelho: 'var(--red)', cinza: 'var(--t3)' };
 const RSK_FUNDO = { verde: 'var(--g2)', amarelo: 'var(--go2)', vermelho: 'var(--r2)', cinza: 'var(--bg3)' };
 const RSK_ROTULO = { verde: 'Verde', amarelo: 'Amarelo', vermelho: 'Vermelho', cinza: 'Dado indisponível' };
@@ -13371,12 +13371,12 @@ function _rskErroLegivel(e) {
   n.timeout = e.timeout; n.httpStatus = 0; n.semConexao = true; return n;
 }
 // finApi com retry: cada tentativa respeita o que sobra do prazo total (fim), então a leitura sempre termina até lá
-async function _rskComRetry(action, params, fim) {
+async function _rskComRetry(action, params, fim, timeoutMs) {
   let ult = null;
   for (let t = 0; t < RSK_TENTATIVAS; t++) {
     const resta = fim - Date.now();
     if (resta < 1000) break;
-    try { return await finApi(action, params, { timeoutMs: Math.min(RSK_TIMEOUT_MS, resta) }); }
+    try { return await finApi(action, params, { timeoutMs: Math.min(timeoutMs || RSK_TIMEOUT_MS, resta) }); }
     catch (e) { ult = e; if (!_rskErroRede(e)) throw e; }
     if (t < RSK_TENTATIVAS - 1) { if (fim - Date.now() < RSK_BACKOFF_MS + 1000) break; await new Promise(r => setTimeout(r, RSK_BACKOFF_MS)); }
   }
@@ -13522,8 +13522,9 @@ async function carregarSinaisRisco(forcar) {
   const fim = Date.now() + RSK_PRAZO_MS;
   _rskCarregando = (async () => {
     // 4 leituras em paralelo, cada uma com retry e prazo total de 15s; a que falhar vira "dado indisponível" sem travar as outras
+    // kpis_saude (vários relatórios do QuickBooks) passava dos 8s e era abortado: uma tentativa de até 30s, como no Dashboard LIVE
     const leituras = await Promise.allSettled([
-      _rskComRetry('painel_resumo', {}, fim), _rskComRetry('marcos_kanban', {}, fim), _rskComRetry('kpis_saude', {}, fim), _rskComRetry('orcamento_consolidado', { ano: new Date().getFullYear() }, fim)]);
+      _rskComRetry('painel_resumo', {}, fim), _rskComRetry('marcos_kanban', {}, fim), _rskComRetry('kpis_saude', {}, Date.now() + RSK_PRAZO_KPIS_MS, RSK_PRAZO_KPIS_MS), _rskComRetry('orcamento_consolidado', { ano: new Date().getFullYear() }, fim)]);
     const [rec, mar, kpi, orc] = leituras;
     const seguro = (fn, titulo, tela) => { try { return fn(); } catch (e) { return { chave: tela, titulo, origem: tela, tela, itens: [], nivel: 'cinza', resumo: 'Dado indisponível — ' + _recEsc(e.message) }; } };
     const sinais = [seguro(() => _rskLiquidez(rec), 'Risco de liquidez', 's3receber'), seguro(() => _rskEntrega(mar), 'Risco de entrega', 's3marcoskanban'), seguro(() => _rskFinanceiro(kpi, orc), 'Risco financeiro', 's3kpis')];
