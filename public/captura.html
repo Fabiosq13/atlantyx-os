@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Atlantyx — Tecnologia, dados e produtos para a sua operação</title>
-<meta name="description" content="Há 17 anos a Atlantyx entrega tecnologia, dados, software e produtos próprios para grandes empresas. Agende uma conversa com um especialista.">
+<meta name="description" content="Há 17 anos a Atlantyx entrega tecnologia, dados, software e produtos próprios para grandes empresas. Fale com um especialista.">
 <!-- v3.51: prévia do link no LinkedIn/WhatsApp/Facebook ("Não é possível extrair a imagem do link") -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Atlantyx">
@@ -15,11 +15,11 @@
 <meta property="og:image:type" content="image/jpeg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="627">
-<meta property="og:image:alt" content="Atlantyx — tecnologia e dados para a sua operação. Agende uma conversa.">
+<meta property="og:image:alt" content="Atlantyx — tecnologia e dados para a sua operação. Fale com um especialista.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://atlantyx-os.vercel.app/og-atlantyx.jpg">
 <meta property="og:title" content="Atlantyx — Tecnologia, dados e produtos para a sua operação">
-<meta property="og:description" content="Agende uma conversa gratuita: um especialista entende o seu cenário e mostra onde a Atlantyx gera resultado na sua operação.">
+<meta property="og:description" content="Conversa gratuita: um especialista entende o seu cenário e mostra onde a Atlantyx gera resultado na sua operação.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -173,21 +173,23 @@
 
     <div class="card" id="cardForm">
       <div class="card-marca"><svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect x="6" y="9" width="17" height="17" rx="5" transform="rotate(45 14.5 17.5)" stroke="#00C4CC" stroke-width="3"/><rect x="17" y="14" width="17" height="17" rx="5" transform="rotate(45 25.5 22.5)" stroke="#00FCA8" stroke-width="3"/></svg><span>ATLANTYX<span style="color:var(--petroleo)">.</span></span></div>
-      <div id="form">
-        <h2>Agende uma conversa</h2>
-        <p class="ajuda">Leva menos de um minuto. Em seguida você escolhe o horário.</p>
+      <!-- v3.187: <form> com name/autocomplete padrão — o navegador do Instagram/Facebook e o Chrome oferecem
+           "Preencher automaticamente com informações salvas" (nome, e-mail, telefone, empresa, cargo) -->
+      <form id="form" method="post" action="#" autocomplete="on" novalidate onsubmit="event.preventDefault(); enviar();">
+        <h2>Solicitar uma conversa</h2>
+        <p class="ajuda">Leva menos de um minuto. Um especialista retorna em até um dia útil.</p>
         <div class="linha2">
-          <div><label for="nome">Nome</label><input id="nome" autocomplete="name" required></div>
-          <div><label for="cargo">Cargo</label><input id="cargo" autocomplete="organization-title" placeholder="Ex.: Diretor de TI"></div>
+          <div><label for="nome">Nome</label><input id="nome" name="name" autocomplete="name" required></div>
+          <div><label for="cargo">Cargo</label><input id="cargo" name="job_title" autocomplete="organization-title" placeholder="Ex.: Diretor de TI"></div>
         </div>
         <label for="empresa">Empresa</label>
-        <input id="empresa" autocomplete="organization" required>
+        <input id="empresa" name="company" autocomplete="organization" required>
         <label for="email">E-mail corporativo</label>
-        <input id="email" type="email" autocomplete="email" required placeholder="nome@empresa.com.br">
+        <input id="email" name="email" type="email" inputmode="email" autocomplete="email" required placeholder="nome@empresa.com.br">
         <div class="linha2">
-          <div><label for="telefone">WhatsApp <small>(opcional)</small></label><input id="telefone" type="tel" autocomplete="tel" placeholder="(11) 99999-9999"></div>
+          <div><label for="telefone">WhatsApp <small>(opcional)</small></label><input id="telefone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(11) 99999-9999"></div>
           <div><label for="interesse">Principal desafio <small>(opcional)</small></label>
-            <select id="interesse">
+            <select id="interesse" name="interesse">
               <option value="">Selecione</option>
               <option>Dados dispersos e relatórios manuais</option>
               <option>Indicadores e painéis executivos</option>
@@ -198,11 +200,11 @@
               <option>Outro</option>
             </select></div>
         </div>
-        <button class="btn" id="btn" onclick="enviar()">Quero conversar <span class="seta">→</span></button>
+        <button class="btn" id="btn" type="submit">Quero conversar <span class="seta">→</span></button>
         <div class="erro" id="erro" role="alert"></div>
         <div class="lgpd"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" style="flex:0 0 14px;margin-top:1px"><rect x="4" y="9" width="12" height="9" rx="2" stroke="#7a8692" stroke-width="1.6"/><path d="M7 9V6.5a3 3 0 016 0V9" stroke="#7a8692" stroke-width="1.6"/></svg>
-          Seus dados são usados apenas para este contato, conforme a LGPD. Sem lista de e-mails.</div>
-      </div>
+          <span>Ao clicar em "Quero conversar", você concorda em receber comunicações da Atlantyx por e-mail, ligação, WhatsApp ou SMS sobre este contato e sobre soluções relacionadas. Seus dados são tratados conforme a LGPD. Veja nossa <a href="/privacidade.html" target="_blank" rel="noopener" style="color:#56626e;text-decoration:underline;">Política de Privacidade</a>.</span></div>
+      </form>
       <div class="ok" id="ok">
         <div class="check"><svg width="26" height="26" viewBox="0 0 20 20" fill="none"><path d="M5 10.5l3.2 3L15 6.5" stroke="#047857" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <h2 id="okTitulo">Recebemos seu contato.</h2>
@@ -281,7 +283,7 @@
         body: JSON.stringify({
           name: g('nome'), company: g('empresa'), title: g('cargo'), email: g('email'), phone: g('telefone'), interesse: g('interesse'),
           source: utm.source, campaign_name: utm.campaign || 'captura', utm,
-          page: location.href, form_name: 'captura-publica', oferta: 'diagnostico_gratuito', rapido: true, // v3.60 · v3.184: resposta imediata
+          page: location.href, form_name: 'captura-publica', oferta: 'diagnostico_gratuito', rapido: true, consentimento: { aceito: true, versao: '2026-10-15', canais: ['email', 'ligacao', 'whatsapp', 'sms'], em: new Date().toISOString() }, // v3.60 · v3.184: resposta imediata
         }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || d.success === false) throw new Error(d.error || 'HTTP ' + r.status);

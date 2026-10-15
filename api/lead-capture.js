@@ -74,6 +74,7 @@ async function handler(req, res) {
     lead.utm = body.utm || { source: body.source || body.utm_source || null, medium: body.utm_medium || null, campaign: body.campaign_name || body.utm_campaign || null, content: body.utm_content || null };
     lead.campanha = lead.utm.campaign || body.campaign_name || null;
     lead.origem = lead.utm.source || body.source || 'formulario';
+    if (body.consentimento && typeof body.consentimento === 'object') lead.consentimento = { aceito: !!body.consentimento.aceito, versao: String(body.consentimento.versao || '').substring(0, 20), canais: (body.consentimento.canais || []).slice(0, 6), em: String(body.consentimento.em || '').substring(0, 30) }; // v3.187: registro do aceite (LGPD)
     console.log(`[S2] Lead recebido: ${lead.name} | ${lead.company} | origem ${lead.origem} · ${lead.campanha || 'sem campanha'} | Score: ${lead.score_label}`);
 
     // ── v2.32 — 1b. GRAVAR NO BANCO PRIMEIRO, SEMPRE. ──
