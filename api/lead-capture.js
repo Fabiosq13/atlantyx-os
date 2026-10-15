@@ -44,6 +44,15 @@ async function handler(req, res) {
   }
   if (req.method !== 'POST') return res.status(405).end();
 
+  // v3.184: 2º passo do formulário do site — roda as integrações (alerta, IA, HubSpot, WhatsApp, follow-up) do lead
+  // já gravado. Só um processamento por lead (trava no banco), então chamar duas vezes não duplica nada.
+  if (req.body && req.body.evento === 'processar') {
+    const id = String(req.body.lead_id || '').replace(/[^a-z0-9_]/gi, '').substring(0, 40);
+    if (!id) return res.status(400).json({ success: false, error: 'lead_id obrigatório' });
+    try { const r = await processarLeadGravado(id); return res.status(200).json({ success: true, ...r }); }
+    catch (e) { console.error('[S2] processar lead:', e.message); return res.status(200).json({ success: false, error: e.message }); }
+  }
+
   // v3.13: VISITA à página de captura (sem dados pessoais) — mede o passo clique → página → lead.
   // Antes só o lead era registrado; sem a visita não dá para saber se o clique chega na página.
   if (req.body && req.body.evento === 'visita') {
@@ -83,6 +92,15 @@ async function handler(req, res) {
       ['alerta', 'mensagem', 'hubspot', 'whatsapp', 'followup'].forEach(k => etapas[k] = 'pulado (teste QA)');
       return res.status(200).json({ success: true, qa_teste: true, lead_id: leadId, origem: lead.origem, campanha: lead.campanha, utm: lead.utm, score: lead.score_label, etapas,
         whatsapp: _whatsComercial(), agenda: (process.env.LINK_REUNIAO || 'https://meetings.hubspot.com/atlantyx?uuid=eca883eb-276d-45cb-bda8-d7d5d2ae9219').trim() });
+    }
+
+    // v3.184: formulário do SITE — responde assim que o lead está gravado (antes esperava e-mail, IA, HubSpot e
+    // WhatsApp: 10–20 s com o botão "Enviando..."). As integrações rodam no 2º passo ({evento:'processar'}), que a
+    // própria página dispara, e também aqui logo depois da resposta; a trava no banco garante uma execução só.
+    if (body.rapido === true && leadId) {
+      res.status(200).json({ success: true, lead_id: leadId, origem: lead.origem, campanha: lead.campanha, whatsapp: _whatsComercial() });
+      try { await processarLeadGravado(leadId); } catch (e) { console.warn('[S2] processamento pós-resposta:', e.message); }
+      return;
     }
 
     // ── 1c. ALERTA IMEDIATO por e-mail — "novo lead da campanha X" ──
@@ -135,6 +153,9 @@ async function handler(req, res) {
 async function gravarLeadLocal(lead) {
   const { neon } = await import('@neondatabase/serverless');
   const sql = neon(process.env.DATABASE_URL);
+  // v3.184: caminho rápido — 1 consulta só (antes: CREATE TABLE + ~10 ALTER TABLE a cada lead, antes do INSERT)
+  const id0 = 'ld_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  try { await _inserirLead(sql, id0, lead); return id0; } catch (e) { console.warn('[S2] insert rápido falhou, ajustando a tabela:', e.message); }
   await sql`CREATE TABLE IF NOT EXISTS leads (
     id TEXT PRIMARY KEY, nome TEXT, empresa TEXT, cargo TEXT, setor TEXT, score TEXT, data JSONB,
     criado_em TIMESTAMPTZ DEFAULT NOW())`;
@@ -142,12 +163,47 @@ async function gravarLeadLocal(lead) {
     try { await _q(sql, `ALTER TABLE leads ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
   }
   const id = 'ld_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  await _inserirLead(sql, id, lead);
+  return id;
+}
+async function _inserirLead(sql, id, lead) {
   await sql`INSERT INTO leads (id, nome, empresa, cargo, setor, score, data, origem, campanha, utm, email, telefone, status)
     VALUES (${id}, ${lead.name}, ${lead.company}, ${lead.title || null}, ${lead.sector || null}, ${lead.score_label || null},
       ${JSON.stringify(lead)}, ${lead.origem || null}, ${lead.campanha || null}, ${JSON.stringify(lead.utm || {})},
       ${lead.email || null}, ${lead.phone || null}, 'novo')`;
-  return id;
 }
+// v3.184: integrações de um lead já gravado (2º passo do formulário do site). A trava (etapas → 'processando')
+// garante uma execução só, mesmo com a página e o servidor chamando ao mesmo tempo.
+async function processarLeadGravado(leadId) {
+  const { neon } = await import('@neondatabase/serverless');
+  const sql = neon(process.env.DATABASE_URL);
+  const got = await sql`UPDATE leads SET etapas = ${JSON.stringify({ processando: new Date().toISOString() })}::jsonb
+    WHERE id = ${leadId} AND (etapas IS NULL OR etapas = 'null'::jsonb) RETURNING data`;
+  if (!got.length) return { lead_id: leadId, ja_processado: true };
+  let lead = got[0].data; if (typeof lead === 'string') { try { lead = JSON.parse(lead); } catch (_) { lead = {}; } }
+  const etapas = { banco: 'ok', mensagem: null, hubspot: null, whatsapp: null, followup: null, alerta: null };
+  let mensagem = null, contactId = null, dealId = null;
+  // alerta, IA e HubSpot em paralelo (eram em sequência)
+  const [al, msg, hs] = await Promise.allSettled([
+    alertarNovoLead(lead),
+    gerarMensagemClaude(lead),
+    (async () => { const { enviarContatoHubSpot } = await import('../lib/hubspot-sync.js');
+      return enviarContatoHubSpot({ nome: lead.name, email: lead.email, telefone: lead.phone, empresa: lead.company, cargo: lead.job_title || lead.title, score: lead.score_label, origem: lead.origem || lead.source },
+        { nota: `<b>Lead capturado</b><br>Origem: ${lead.origem || '?'} · campanha: ${lead.campanha || '—'}`, origem: 'Captura · ' + (lead.origem || 'formulário') }); })(),
+  ]);
+  etapas.alerta = al.status === 'fulfilled' ? 'ok' : 'falha: ' + al.reason?.message;
+  if (msg.status === 'fulfilled') { mensagem = msg.value; etapas.mensagem = 'ok'; } else etapas.mensagem = 'falha: ' + msg.reason?.message;
+  if (hs.status === 'fulfilled') { contactId = hs.value.contato_id; dealId = hs.value.negocio_id || null; etapas.hubspot = `ok — contato ${hs.value.acao}`; } else etapas.hubspot = 'falha: ' + hs.reason?.message;
+  if (lead.phone && mensagem) {
+    try { await enviarWhatsApp(lead.phone, mensagem); etapas.whatsapp = 'ok'; if (dealId) await atualizarDealHubSpot(dealId, 'ABORDADO').catch(() => {}); }
+    catch (e) { etapas.whatsapp = 'falha: ' + e.message; }
+  } else etapas.whatsapp = lead.phone ? 'sem mensagem' : 'sem telefone';
+  try { if (mensagem) { await agendarFollowUp(lead, dealId, mensagem); etapas.followup = 'ok'; } else etapas.followup = 'sem mensagem'; }
+  catch (e) { etapas.followup = 'falha: ' + e.message; }
+  try { await atualizarLeadLocal(leadId, { hubspot_contact: contactId, hubspot_deal: dealId, etapas }); } catch (_) {}
+  return { lead_id: leadId, etapas, hubspot_contact: contactId, hubspot_deal: dealId };
+}
+
 async function atualizarLeadLocal(id, campos) {
   const { neon } = await import('@neondatabase/serverless');
   const sql = neon(process.env.DATABASE_URL);
