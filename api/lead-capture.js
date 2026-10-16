@@ -63,17 +63,26 @@ async function handler(req, res) {
       const u = req.body.utm || {};
       await sql`INSERT INTO captura_visitas (origem, meio, campanha, conteudo, pagina) VALUES (${String(u.source || 'direto').substring(0, 60)}, ${String(u.medium || '').substring(0, 60)}, ${String(u.campaign || '').substring(0, 120)}, ${String(u.content || '').substring(0, 120)}, ${String(req.body.page || '').substring(0, 300)})`;
     } catch (e) { console.warn('[captura] visita:', e.message); }
-    return res.status(200).json({ success: true, whatsapp: _whatsComercial() });
+    return res.status(200).json({ success: true, whatsapp: _whatsComercial(), pixel: String(process.env.META_PIXEL_ID || '').replace(/\D/g, '') || null }); // v3.190: Pixel do Meta (opcional)
   }
 
   try {
     const body = req.body;
 
     // ── 1. NORMALIZAR DADOS DO LEAD (Meta, LinkedIn ou formulário próprio) ──
+    // v3.190: ANTI-ROBÔ do formulário do site — campo invisível preenchido ou envio em menos de 3 s = robô.
+    // Responde "ok" (o robô não aprende a contornar) mas não grava nem dispara nada.
+    if (body.form_name === 'captura-publica' && (String(body.website || '').trim() || (Number(body.t_preenchimento_ms) > 0 && Number(body.t_preenchimento_ms) < 3000))) {
+      console.warn('[S2] envio descartado (robô):', String(body.email || '').substring(0, 60));
+      return res.status(200).json({ success: true, lead_id: null });
+    }
     const lead = normalizeLead(body);
     lead.utm = body.utm || { source: body.source || body.utm_source || null, medium: body.utm_medium || null, campaign: body.campaign_name || body.utm_campaign || null, content: body.utm_content || null };
     lead.campanha = lead.utm.campaign || body.campaign_name || null;
     lead.origem = lead.utm.source || body.source || 'formulario';
+    // v3.190: qualidade — e-mail pessoal (gmail, hotmail…) costuma ser pessoa física; o lead entra, marcado
+    lead.email_pessoal = /@(gmail|hotmail|outlook|live|yahoo|bol|uol|terra|icloud|msn|ig)\.(com|com\.br)$/i.test(String(lead.email || ''));
+    if (lead.email_pessoal) lead.qualidade = 'e-mail pessoal';
     if (body.consentimento && typeof body.consentimento === 'object') lead.consentimento = { aceito: !!body.consentimento.aceito, versao: String(body.consentimento.versao || '').substring(0, 20), canais: (body.consentimento.canais || []).slice(0, 6), em: String(body.consentimento.em || '').substring(0, 30) }; // v3.187: registro do aceite (LGPD)
     console.log(`[S2] Lead recebido: ${lead.name} | ${lead.company} | origem ${lead.origem} · ${lead.campanha || 'sem campanha'} | Score: ${lead.score_label}`);
 
@@ -222,7 +231,7 @@ async function alertarNovoLead(lead) {
   const t = nodemailer.createTransport(_smtpConfig(user, pass));
   const u = lead.utm || {};
   await t.sendMail({ from: `Atlantyx OS <${user}>`, to: para,
-    subject: `🎯 Novo lead: ${lead.name} (${lead.company}) — via ${lead.origem || '?'}${lead.campanha ? ' · ' + lead.campanha : ''}`,
+    subject: `${lead.email_pessoal ? '⚪ Novo lead (e-mail pessoal)' : '🎯 Novo lead'}: ${lead.name} (${lead.company}) — via ${lead.origem || '?'}${lead.campanha ? ' · ' + lead.campanha : ''}`,
     html: `<div style="font-family:Arial;max-width:560px;">
       <h2 style="color:#1A3A8F;margin:0 0 6px;">Novo lead capturado</h2>
       <table style="font-size:13px;border-collapse:collapse;">

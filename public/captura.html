@@ -200,6 +200,7 @@
               <option>Outro</option>
             </select></div>
         </div>
+        <div aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;"><label for="website">Site</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
         <button class="btn" id="btn" type="submit">Quero conversar <span class="seta">→</span></button>
         <div class="erro" id="erro" role="alert"></div>
         <div class="lgpd"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" style="flex:0 0 14px;margin-top:1px"><rect x="4" y="9" width="12" height="9" rx="2" stroke="#7a8692" stroke-width="1.6"/><path d="M7 9V6.5a3 3 0 016 0V9" stroke="#7a8692" stroke-width="1.6"/></svg>
@@ -267,9 +268,11 @@
   if (q.get('t')) document.getElementById('titulo').textContent = q.get('t');
   if (q.get('s')) document.getElementById('sub').textContent = q.get('s');
   // Registra a VISITA (sem dados pessoais) para medir clique → página → lead
-  let whatsComercial = null, agendaServidor = null;
+  let whatsComercial = null, agendaServidor = null; const _t0 = Date.now(); // v3.190: tempo de preenchimento (anti-robô)
+  // v3.190: Pixel do Meta (se configurado no servidor) — PageView e Lead, para o anúncio otimizar por cadastro real
+  function _pixel(id) { if (!id || window.fbq) return; !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js'); fbq('init', id); fbq('track', 'PageView'); }
   fetch('/api/lead-capture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ evento: 'visita', utm, page: location.pathname + location.search }) })
-    .then(r => r.json()).then(d => { whatsComercial = d && d.whatsapp; agendaServidor = d && d.agenda; }).catch(() => {});
+    .then(r => r.json()).then(d => { whatsComercial = d && d.whatsapp; agendaServidor = d && d.agenda; try { _pixel(d && d.pixel); } catch (_) {} }).catch(() => {});
 
   async function enviar() {
     const g = id => document.getElementById(id).value.trim();
@@ -283,7 +286,7 @@
         body: JSON.stringify({
           name: g('nome'), company: g('empresa'), title: g('cargo'), email: g('email'), phone: g('telefone'), interesse: g('interesse'),
           source: utm.source, campaign_name: utm.campaign || 'captura', utm,
-          page: location.href, form_name: 'captura-publica', oferta: 'diagnostico_gratuito', rapido: true, consentimento: { aceito: true, versao: '2026-10-15', canais: ['email', 'ligacao', 'whatsapp', 'sms'], em: new Date().toISOString() }, // v3.60 · v3.184: resposta imediata
+          page: location.href, form_name: 'captura-publica', oferta: 'diagnostico_gratuito', rapido: true, website: g('website'), t_preenchimento_ms: Date.now() - _t0, consentimento: { aceito: true, versao: '2026-10-15', canais: ['email', 'ligacao', 'whatsapp', 'sms'], em: new Date().toISOString() }, // v3.60 · v3.184: resposta imediata
         }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || d.success === false) throw new Error(d.error || 'HTTP ' + r.status);
@@ -293,6 +296,7 @@
       document.getElementById('okTitulo').textContent = 'Obrigado, ' + primeiro + '.';
       // v3.184: não abre mais a agenda depois do cadastro — o especialista entra em contato.
       // As integrações (alerta, HubSpot, WhatsApp) rodam num 2º passo, sem segurar a tela do visitante.
+      try { if (window.fbq) fbq('track', 'Lead'); } catch (_) {}
       if (d && d.lead_id) { try { fetch('/api/lead-capture', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ evento: 'processar', lead_id: d.lead_id }) }).catch(() => {}); } catch (_) {} }
       const numero = (d && d.whatsapp) || whatsComercial;
       const wa = document.getElementById('wa');

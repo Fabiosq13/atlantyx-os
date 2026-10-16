@@ -258,10 +258,24 @@ async function patrocinadoStatus(req) {
   return out;
 }
 async function patrocinadoCopy({ tema = '', oferta = '', publico = '' } = {}) {
-  const sys = 'Você escreve anúncios pagos de Instagram para a Atlantyx (empresa brasileira B2B de tecnologia: engenharia de dados, indicadores/BI, software sob medida, produtos próprios e especialistas; 17 anos; clientes como CPFL, Enel, Caixa Capitalização). Público: diretores e gerentes de grandes empresas. O anúncio tem botão "Saiba mais" que leva para a página onde a pessoa agenda uma conversa gratuita. Português do Brasil, direto, sem clichês, sem prometer o que não está no tema.';
+  const sys = 'Você escreve anúncios pagos de Instagram para a Atlantyx (empresa brasileira B2B de tecnologia: engenharia de dados, indicadores/BI, software sob medida, produtos próprios e especialistas; 17 anos; clientes como CPFL, Enel, Caixa Capitalização). Público: diretores e gerentes de grandes empresas. O texto deve QUALIFICAR quem clica (ex.: "Para líderes de TI, operações e finanças de empresas de médio e grande porte") — afaste pessoa física, quem procura emprego ou curso. O anúncio tem botão "Saiba mais" que leva para a página onde a pessoa pede uma conversa gratuita com um especialista. Português do Brasil, direto, sem clichês, sem prometer o que não está no tema.';
   const usr = `Tema/oferta: ${String(tema || oferta || 'conversa gratuita com especialista').substring(0, 600)}\n${publico ? 'Público: ' + String(publico).substring(0, 200) + '\n' : ''}Devolva JSON: {"texto":"texto principal do anúncio, até 220 caracteres, 1ª frase = gancho, termina convidando a clicar em Saiba mais","titulo":"título curto, até 40 caracteres","descricao":"linha de apoio, até 30 caracteres","prompt_imagem":"cena quadrada 1:1 em inglês, 35-55 palavras, sem texto, profissional, tons escuros com ciano e verde"}`;
   const j = JSON.parse(await _claudeAuto(sys, usr, 500));
   return { texto: String(j.texto || '').substring(0, 500), titulo: String(j.titulo || '').substring(0, 60), descricao: String(j.descricao || '').substring(0, 60), prompt_imagem: j.prompt_imagem || '' };
+}
+// v3.190: PÚBLICO B2B. O anúncio ia para "Brasil, 25–60 anos" sem interesse nenhum e otimizado para clique — o Meta
+// entrega para quem clica mais barato (pessoa física, clique acidental, robô). Agora: capitais de negócio + interesses
+// de decisores/tecnologia (resolvidos pela busca do próprio Meta, com cache) e, com o Pixel, otimização para LEAD.
+const _B2B_CIDADES = ['São Paulo', 'Rio de Janeiro', 'Belo Horizonte', 'Curitiba', 'Porto Alegre', 'Campinas', 'Brasília', 'Recife', 'Salvador', 'Florianópolis', 'Goiânia', 'Fortaleza'];
+const _B2B_INTERESSES = ['Business intelligence', 'Data analysis', 'Big data', 'Power BI', 'SAP', 'Enterprise resource planning', 'Chief executive officer', 'Chief information officer', 'Chief financial officer', 'Management consulting', 'Business management', 'Digital transformation'];
+async function _publicoB2B() {
+  const ck = await _kvMc('mkt:meta:publico_b2b');
+  if (ck && ck.em && Date.now() - ck.em < 30 * 864e5 && (ck.cidades || []).length) return ck;
+  const cidades = [], interesses = [];
+  for (const nome of _B2B_CIDADES) { try { const r = await _meta(`search?type=adgeolocation&location_types=${encodeURIComponent('["city"]')}&country_code=BR&limit=3&q=${encodeURIComponent(nome)}`);
+    const x = (r.data || []).find(d => d.country_code === 'BR' && d.type === 'city'); if (x) cidades.push({ key: String(x.key), radius: 40, distance_unit: 'kilometer', nome: x.name }); } catch (_) {} }
+  for (const q of _B2B_INTERESSES) { try { const r = await _meta(`search?type=adinterest&limit=2&q=${encodeURIComponent(q)}`); const x = (r.data || [])[0]; if (x && !interesses.some(i => i.id === x.id)) interesses.push({ id: String(x.id), name: x.name }); } catch (_) {} }
+  const v = { cidades, interesses, em: Date.now() }; if (cidades.length) await _kvMc('mkt:meta:publico_b2b', v); return v;
 }
 function _linkPago(base, nome) {
   const slug = String(nome || 'patrocinado').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 40) || 'patrocinado';
@@ -276,7 +290,8 @@ async function patrocinadoCriar(p = {}, req) {
   const imagem = String(p.imagem || '').trim();
   const diario = Math.round(Number(String(p.orcamento_diario || '').replace(',', '.')) * 100) / 100;
   const ini = String(p.inicio || ''), fim = String(p.fim || '');
-  const idMin = Math.max(18, Math.min(65, parseInt(p.idade_min) || 25)), idMax = Math.max(idMin, Math.min(65, parseInt(p.idade_max) || 60));
+  const idMin = Math.max(18, Math.min(65, parseInt(p.idade_min) || 30)), idMax = Math.max(idMin, Math.min(65, parseInt(p.idade_max) || 60));
+  const amplo = p.publico === 'amplo'; // v3.190: padrão = B2B (decisores); 'amplo' = Brasil inteiro sem interesse
   const err = m => Object.assign(new Error(m), { status: 400 });
   if (!texto) throw err('Escreva o texto do anúncio'); if (!titulo) throw err('Escreva o título');
   if (!/^https:\/\//.test(imagem)) throw err('Escolha ou gere a imagem do anúncio (precisa ser um endereço https público)');
@@ -287,17 +302,24 @@ async function patrocinadoCriar(p = {}, req) {
   let link = _linkPago(base, nome);
   if (p.link && /^https:\/\//.test(String(p.link).trim())) { try { const u = new URL(String(p.link).trim()); if (!u.searchParams.get('utm_source')) { const ref = new URL(link); ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].forEach(k => u.searchParams.set(k, ref.searchParams.get(k))); } link = u.toString(); } catch (_) {} }
   const kit = { nome, objetivo: 'Tráfego (cliques no link)', posicionamentos: 'Instagram — Feed, Stories e Reels', botao: 'Saiba mais', link, texto, titulo, descricao, imagem,
-    orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, publico: `Brasil · ${idMin} a ${idMax} anos` };
+    orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, publico: amplo ? `Brasil · ${idMin} a ${idMax} anos` : `B2B — capitais de negócio · ${idMin} a ${idMax} anos · interesses: gestão, BI/dados, ERP, C-level` };
   const c = _metaCfg();
   if (!(c.token && c.conta && c.pagina && c.ig) || p.so_kit) return { modo: 'kit', kit };
   // 1. campanha · 2. conjunto · 3. imagem · 4. criativo (Saiba mais) · 5. anúncio — tudo PAUSADO
-  const camp = await _meta(`act_${c.conta}/campaigns`, 'POST', { name: nome, objective: 'OUTCOME_TRAFFIC', status: 'PAUSED', special_ad_categories: [], is_adset_budget_sharing_enabled: false });
+  const pixel = String(process.env.META_PIXEL_ID || '').replace(/\D/g, '');
+  const camp = await _meta(`act_${c.conta}/campaigns`, 'POST', { name: nome, objective: pixel ? 'OUTCOME_LEADS' : 'OUTCOME_TRAFFIC', status: 'PAUSED', special_ad_categories: [], is_adset_budget_sharing_enabled: false });
   const desfazer = async () => { try { await _meta(camp.id, 'DELETE'); } catch (_) {} };
   try {
     const adset = await _meta(`act_${c.conta}/adsets`, 'POST', { name: nome + ' · Instagram', campaign_id: camp.id, daily_budget: Math.round(diario * 100), billing_event: 'IMPRESSIONS',
-      optimization_goal: 'LINK_CLICKS', bid_strategy: 'LOWEST_COST_WITHOUT_CAP', destination_type: 'WEBSITE', status: 'PAUSED',
+      // v3.190: com o Pixel (META_PIXEL_ID) → otimiza para LEAD (cadastro feito), o que filtra robô e clique acidental; sem Pixel → clique no link
+      optimization_goal: pixel ? 'OFFSITE_CONVERSIONS' : 'LINK_CLICKS', ...(pixel ? { promoted_object: { pixel_id: pixel, custom_event_type: 'LEAD' } } : {}),
+      bid_strategy: 'LOWEST_COST_WITHOUT_CAP', destination_type: 'WEBSITE', status: 'PAUSED',
       start_time: ini + 'T08:00:00-0300', end_time: fim + 'T23:59:00-0300',
-      targeting: { geo_locations: { countries: ['BR'] }, age_min: idMin, age_max: idMax, publisher_platforms: ['instagram'], instagram_positions: ['stream', 'story', 'reels'],
+      targeting: { ...(await (async () => { if (amplo) return { geo_locations: { countries: ['BR'] } };
+          const pb = await _publicoB2B().catch(() => ({ cidades: [], interesses: [] }));
+          return { geo_locations: pb.cidades.length ? { cities: pb.cidades.map(({ key, radius, distance_unit }) => ({ key, radius, distance_unit })), location_types: ['home', 'recent'] } : { countries: ['BR'] },
+            ...(pb.interesses.length ? { flexible_spec: [{ interests: pb.interesses.map(({ id, name }) => ({ id, name })) }] } : {}) }; })()),
+        age_min: idMin, age_max: idMax, publisher_platforms: ['instagram'], instagram_positions: ['stream', 'story', 'reels'],
         targeting_automation: { advantage_audience: 0 } } }); // v3.174: o Meta passou a exigir o sinalizador (0 = respeita idade/local escolhidos)
     let imgHash = null;
     try { const ri = await fetch(imagem); if (ri.ok) { const b64 = Buffer.from(await ri.arrayBuffer()).toString('base64'); const up = await _meta(`act_${c.conta}/adimages`, 'POST', { bytes: b64 }); imgHash = Object.values(up.images || {})[0]?.hash || null; } } catch (_) {}
