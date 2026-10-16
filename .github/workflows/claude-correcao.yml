@@ -31,9 +31,10 @@ jobs:
       issues: write
       id-token: write
     steps:
+      # v3.189: histórico completo — sem isso o Claude não consegue atualizar a branch de um PR em conflito com a main
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
       # v3.145 · Método B.P.M.: a trilha da tarefa (linha "BPM-Trilha:") vira BPM_TRILHA/.bpm-trilha — o hook
       # .claude/hooks/escopo-trilha.mjs bloqueia edição fora do escopo, DDL fora da T5 e mudança de versão
       - name: Trilha B.P.M. da tarefa
@@ -61,4 +62,8 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           trigger_phrase: "@claude"
-          claude_args: "--max-turns 80"
+          # v3.189: libera os comandos de git/node que o Claude precisa para atualizar branch em conflito e validar
+          # (antes "git fetch"/"git merge" eram negados e os PRs em conflito ficavam em laço a cada 6 h)
+          claude_args: >-
+            --max-turns 120
+            --allowedTools "Bash(git fetch:*),Bash(git merge:*),Bash(git checkout:*),Bash(git switch:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git rebase:*),Bash(git restore:*),Bash(git show:*),Bash(git branch:*),Bash(node:*),Bash(npm ci:*),Bash(npm install:*),Bash(ls:*),Bash(grep:*),Bash(sed -n:*),Bash(wc:*)"
