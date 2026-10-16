@@ -1,5 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
-import { termoPendencias } from '../lib/termo-regras.js'; // v3.129
+import { termoPendencias, etapaPrazo } from '../lib/termo-regras.js'; // v3.129 · v3.196 prazo por etapa
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
 // SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
@@ -1025,8 +1025,12 @@ function _htmlRelatorioExtra(d) {
   const aLink = (url, txt, cor = '#1A3A8F') => url ? `<a href="${url}" style="color:${cor};text-decoration:underline;">${txt}</a>` : txt;
   const uLanc = x => x?.qb_url || (x?.fonte !== 'quickbooks' && d.app_url ? `${d.app_url}/?tela=s3agenda` : null);
   const etapa = { elaboracao: 'Elaboração', aprovacao: 'Aprovação', emissao_nf: 'Emissão de NF', envio_nf: 'Envio de NF', pagamento: 'Pagamento', pago: 'Pago' };
-  const lT = (extra) => t => `<tr>${td(`<b>${aLink(uTermo(t), esc(t.numero || '—'))}</b>`)}${td(esc(t.projeto) + '<br><span style="color:#8a93a8;font-size:11px;">' + esc(t.cliente) + ' · ' + esc(t.periodo) + '</span>')}${td(etapa[t.status] || t.status)}${td(t.dias != null ? t.dias + ' dias' : '—', 'text-align:right;' + (t.dias >= PRAZO_TERMO_DIAS ? 'color:#D64545;font-weight:bold;' : ''))}${td(extra ? extra(t) : '')}${td(brl(t.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`;
-  const cabT = (x) => ['Termo', 'Projeto / cliente', 'Etapa', 'Dias', x || '', 'Valor'];
+  // v3.196: prazo da ETAPA do funil — margem em dias ou há quanto tempo estourou (limite acumulado desde a data-base)
+  const etapaCel = t => { const p = t.prazo_etapa; const nome = etapa[t.status] || t.status; if (!p) return nome;
+    const cor = p.estourado ? '#D64545' : p.margem <= 2 ? '#E0A422' : '#1FB287';
+    return nome + `<br><span style="font-size:11px;color:${cor};${p.estourado ? 'font-weight:bold;' : ''}" title="Limite da etapa: até o ${p.limite_dias}º dia desde a data-base do termo (hoje: ${p.decorridos}º dia)">${p.estourado ? '⚠ ' : '⏱ '}${p.texto}</span>`; };
+  const lT = (extra) => t => `<tr>${td(`<b>${aLink(uTermo(t), esc(t.numero || '—'))}</b>`)}${td(esc(t.projeto) + '<br><span style="color:#8a93a8;font-size:11px;">' + esc(t.cliente) + ' · ' + esc(t.periodo) + '</span>')}${td(etapaCel(t))}${td(t.dias != null ? t.dias + ' dias' : '—', 'text-align:right;' + (t.dias >= PRAZO_TERMO_DIAS ? 'color:#D64545;font-weight:bold;' : ''))}${td(extra ? extra(t) : '')}${td(brl(t.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`;
+  const cabT = (x) => ['Termo', 'Projeto / cliente', 'Etapa · prazo da etapa', 'Dias', x || '', 'Valor'];
   const lF = f => `<tr>${td(`<a href="${f.qb_url}" style="color:#1A3A8F;">${esc(f.doc || f.id)}</a>`)}${td(esc(f.cliente))}${td(dt(f.vencimento))}${td(f.dias_atraso ? f.dias_atraso + ' dias' : '—', 'text-align:right;' + (f.dias_atraso > 30 ? 'color:#D64545;font-weight:bold;' : ''))}${td(f.termo ? aLink(uTermo({ id: f.termo_id }), esc(f.termo)) + (f.nf ? ' · NF ' + esc(f.nf) : ' · <span style="color:#E0A422;">sem NF</span>') : '<span style="color:#E0A422;">sem termo</span>')}${td(brl(f.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`;
   const cabF = ['Fatura', 'Cliente', 'Vencimento', 'Dias de atraso', 'Termo / NF', 'Valor em aberto'];
   const lP = x => `<tr>${td(dt(x.data))}${td(aLink(uLanc(x), esc(x.descricao)) + (x.fornecedor && !String(x.descricao).includes(x.fornecedor) ? '<br><span style="color:#8a93a8;font-size:11px;">' + esc(x.fornecedor) + '</span>' : ''))}${td(esc(x.categoria) + (x.fonte === 'quickbooks' ? ' <span style="color:#1FB287;">(QB)</span>' : ''))}${td(brl(x.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`;
@@ -1037,8 +1041,9 @@ function _htmlRelatorioExtra(d) {
   const urgente = C.length ? `<div style="background:#FDEDED;border:2px solid #D64545;border-radius:8px;padding:12px 14px;margin:10px 0 14px;">
       <div style="font-size:14.5px;font-weight:bold;color:#B42318;">🚨 URGENTE — ${C.length} termo(s) com pendência · ${brl(soma(C))}</div>
       <div style="font-size:12.5px;color:#7A271A;margin:4px 0 8px;">Preencher o que falta no sistema e tomar providências <b>hoje</b> com o <b>Julio (CTO)</b> e os <b>GPs</b> junto ao cliente: emitir/registrar as notas, completar o termo e obter a data de pagamento — ou cobrar o pagamento vencido. Os GPs e o CTO recebem este alerta diariamente.</div>
-      <table style="width:100%;border-collapse:collapse;">${th(['Termo', 'Projeto / cliente', 'Etapa', 'O que falta / problema', 'Valor'])}${C.map(t => `<tr style="background:#fff5f5;">${td(`<b style="color:#B42318;">${aLink(uTermo(t), esc(t.numero || '—'), '#B42318')}</b>`)}${td(esc(t.projeto) + '<br><span style="color:#8a93a8;font-size:11px;">' + esc(t.cliente) + ' · ' + esc(t.periodo) + '</span>')}${td(etapa[t.status] || t.status)}${td('<span style="color:#B42318;font-weight:bold;">' + t.pendencias.map(p => esc(p.texto) + (p.empresas?.length ? ' (' + p.empresas.map(esc).join(', ') + ')' : '')).join('<br>') + '</span>')}${td(brl(t.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`).join('')}</table></div>` : '';
+      <table style="width:100%;border-collapse:collapse;">${th(['Termo', 'Projeto / cliente', 'Etapa · prazo da etapa', 'O que falta / problema', 'Valor'])}${C.map(t => `<tr style="background:#fff5f5;">${td(`<b style="color:#B42318;">${aLink(uTermo(t), esc(t.numero || '—'), '#B42318')}</b>`)}${td(esc(t.projeto) + '<br><span style="color:#8a93a8;font-size:11px;">' + esc(t.cliente) + ' · ' + esc(t.periodo) + '</span>')}${td(etapaCel(t))}${td('<span style="color:#B42318;font-weight:bold;">' + t.pendencias.map(p => esc(p.texto) + (p.empresas?.length ? ' (' + p.empresas.map(esc).join(', ') + ')' : '')).join('<br>') + '</span>')}${td(brl(t.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`).join('')}</table></div>` : '';
   return `<h2 style="font-size:15px;color:#17224a;border-bottom:2px solid #1A3A8F;padding-bottom:5px;margin-top:26px;">📄 Termos de faturamento</h2>`
+    + `<div style="font-size:11px;color:#5a6478;margin:4px 0 2px;">⏱ Prazo por etapa (dias corridos desde a data do termo/inclusão): Elaboração até o 3º dia · Aprovação até o 10º · Emissão de NF até o 15º · Envio de NF até o 20º · Pagamento até o 35º. <span style="color:#1FB287;">verde</span> = com folga · <span style="color:#E0A422;">amarelo</span> = 2 dias ou menos · <span style="color:#D64545;">vermelho</span> = estourado.</div>`
     + urgente
     + (T.erro ? `<p style="color:#E0A422;font-size:12px;">⚠ Não consegui ler os termos: ${esc(T.erro)}</p>` : '')
     + bloco('⏰', 'Termos em atraso (' + PRAZO_TERMO_DIAS + '+ dias sem pagamento)', '#D64545', T.em_atraso, cabT('Previsão CPFL'), lT(t => t.previsao ? dt(t.previsao) : '—'), 'Nenhum termo em atraso.')
@@ -1206,7 +1211,7 @@ async function _relTermos() {
     return { id: t.id, numero: t.numero_termo || '', projeto: t.projeto || '', cliente: t.contratante || '', periodo: t.periodo_medicao || '', valor: round(parseFloat(t.valor_total_termo) || 0),
       status: t.status, dias, base, cpfl_confirmado: !!t.cpfl_confirmado, previsao: dia(t.cpfl_previsao_pagamento),
       empresas: emp.length, sem_nota: semNota.map(e => ({ empresa: e.empresa, valor: round(parseFloat(e.valor_parcela) || 0) })), valor_sem_nota: round(semNota.reduce((s, e) => s + (parseFloat(e.valor_parcela) || 0), 0)),
-      pendencias: termoPendencias(t, emp, hoje) }; });
+      pendencias: termoPendencias(t, emp, hoje), prazo_etapa: etapaPrazo(t.status, dias) }; });
   const naoPago = ts.filter(t => !['pago', 'concluido'].includes(t.status));
   return {
     criticos: ts.filter(t => t.pendencias.length), // v3.129: sem nota, incompleto, sem data de pagamento ou vencida, em atraso
