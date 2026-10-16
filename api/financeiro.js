@@ -1199,7 +1199,7 @@ async function _relTermos() {
   const T = await sql`SELECT id, numero_termo, projeto, contratante, periodo_medicao, valor_total_termo, status, cpfl_confirmado, cpfl_previsao_pagamento,
       data_termo, criado_em, aprovado_em, entrou_em_envio_nf, atualizado_em, pagamento_status
     FROM termos_faturamento WHERE status IS DISTINCT FROM 'concluido' ORDER BY criado_em ASC`;
-  const E = T.length ? await sql`SELECT termo_id, empresa, nf_numero, valor_parcela, pagamento_status, qb_invoice_id FROM termos_empresas WHERE termo_id = ANY(${T.map(t => t.id)})` : [];
+  const E = T.length ? await sql`SELECT termo_id, empresa, nf_numero, valor_parcela, pagamento_status, pagamento_data, qb_invoice_id FROM termos_empresas WHERE termo_id = ANY(${T.map(t => t.id)})` : [];
   const dia = x => x ? String(x instanceof Date ? x.toISOString() : x).substring(0, 10) : null;
   const ts = T.map(t => { const base = dia(t.data_termo) || dia(t.criado_em); const dias = base ? Math.floor((Date.parse(hoje) - Date.parse(base)) / 864e5) : null;
     const emp = E.filter(e => e.termo_id === t.id); const semNota = emp.filter(e => !e.nf_numero);
