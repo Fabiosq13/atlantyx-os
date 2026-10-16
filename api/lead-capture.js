@@ -22,7 +22,7 @@ function _smtpConfig(user, pass) {
 // Agente S2-02 + S7-05
 // Recebe lead do Meta Ads / LinkedIn → Claude gera mensagem → HubSpot → WhatsApp
 
-const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
+const MODEL = process.env.CLAUDE_MODEL_RAPIDO || 'claude-haiku-4-5-20251001'; // v3.191 (custo): mensagem curta de WhatsApp → modelo rápido e barato
 async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');

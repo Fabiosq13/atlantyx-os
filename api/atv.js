@@ -124,13 +124,17 @@ async function mercado(forcar) {
 
 // ── notícias escritas pela IA a partir de fontes reais (busca na web) — cache 60 min ──
 async function noticias(forcar) {
-  const c = await kv('atv:noticias'); if (!forcar && c && Date.now() - Date.parse(c.em) < 60 * 60000) return c;
+  // v3.191 (custo): antes renovava de hora em hora, 24 h por dia, com até 6 buscas na web. Agora renova quando a última
+  // tem mais de 4 h, só em dia útil entre 6h e 18h (≈ 7h, 12h e 17h) e com até 3 buscas. Fora disso, usa a última.
+  const c = await kv('atv:noticias');
+  if (!forcar && c) { const sp = new Date(Date.now() - 3 * 3600000), h = sp.getUTCHours(), dia = sp.getUTCDay();
+    if (Date.now() - Date.parse(c.em) < 4 * 3600000 || dia === 0 || dia === 6 || h < 6 || h > 18) return c; }
   const cfg = await config(), hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   try {
     const t = await claude(`Você é o editor da ${cfg.nome}, canal corporativo da Atlantyx (empresa brasileira de IA, dados e analytics). Use a busca na web para achar as notícias MAIS RECENTES (últimas 24-48 h, hoje é ${hoje}) e escreva manchetes curtas em português do Brasil.
 Regras: só fatos que estão nas fontes — nunca invente número, empresa ou citação; cite o veículo; nada de política partidária, tragédia ou fofoca; tom de canal de negócios (estilo Bloomberg).
 Responda SOMENTE JSON: {"itens":[{"titulo":"manchete até 90 caracteres","resumo":"1 frase até 160 caracteres","fonte":"veículo","url":"https://...","tema":"IA|dados|energia|mercado|tecnologia"}]} com 8 a 10 itens.`,
-      `Temas: ${cfg.temas_noticias}.`, 3000, [{ type: 'web_search_20250305', name: 'web_search', max_uses: 6 }]);
+      `Temas: ${cfg.temas_noticias}.`, 3000, [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }]);
     const itens = (json(t).itens || []).filter(x => x.titulo && x.fonte).slice(0, 12).map(x => ({ titulo: String(x.titulo).substring(0, 110), resumo: String(x.resumo || '').substring(0, 200), fonte: String(x.fonte).substring(0, 40), url: /^https?:\/\//.test(x.url || '') ? x.url : null, tema: x.tema || null }));
     if (!itens.length) throw new Error('nenhuma notícia encontrada');
     return await kv('atv:noticias', { em: new Date().toISOString(), itens });

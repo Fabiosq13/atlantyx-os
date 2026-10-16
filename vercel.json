@@ -210,11 +210,11 @@
   "crons": [
     {
       "path": "/api/rfp-monitor",
-      "schedule": "0 */6 * * *"
+      "schedule": "0 10 * * 1-5"
     },
     {
       "path": "/api/rfp-monitor?acao=petronect",
-      "schedule": "30 */6 * * *"
+      "schedule": "30 10 * * 1-5"
     },
     {
       "path": "/api/followup-cron",

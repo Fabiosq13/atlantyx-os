@@ -30,7 +30,7 @@ async function genericAgentCall({ action, payload = {} }, squad) {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-opus-4-5',
+      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6', // v3.191 (custo): era Opus 4.5
       max_tokens: 2000,
       system: systemPrompt,
       messages: [{ role: 'user', content: `Execute a acao "${action}" com os dados fornecidos. Seja direto, estruturado e profissional. Responda em portugues.` }],
@@ -55,7 +55,7 @@ async function deAgentCall({ payload = {} }, tipoAgente) {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-opus-4-5',
+      model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6', // v3.191 (custo): era Opus 4.5
       max_tokens: 4000,
       system: 'Voce e arquiteto senior de Data Engineering e DBA. Gere codigo tecnico completo, detalhado e pronto para executar. Inclua comentarios, tratamento de erros e boas praticas. NUNCA use pseudocodigo — gere codigo real.',
       messages: [{ role: 'user', content: systemPrompt }],
