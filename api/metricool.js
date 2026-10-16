@@ -310,17 +310,32 @@ async function patrocinadoCriar(p = {}, req) {
   const camp = await _meta(`act_${c.conta}/campaigns`, 'POST', { name: nome, objective: pixel ? 'OUTCOME_LEADS' : 'OUTCOME_TRAFFIC', status: 'PAUSED', special_ad_categories: [], is_adset_budget_sharing_enabled: false });
   const desfazer = async () => { try { await _meta(camp.id, 'DELETE'); } catch (_) {} };
   try {
-    const adset = await _meta(`act_${c.conta}/adsets`, 'POST', { name: nome + ' · Instagram', campaign_id: camp.id, daily_budget: Math.round(diario * 100), billing_event: 'IMPRESSIONS',
-      // v3.190: com o Pixel (META_PIXEL_ID) → otimiza para LEAD (cadastro feito), o que filtra robô e clique acidental; sem Pixel → clique no link
-      optimization_goal: pixel ? 'OFFSITE_CONVERSIONS' : 'LINK_CLICKS', ...(pixel ? { promoted_object: { pixel_id: pixel, custom_event_type: 'LEAD' } } : {}),
-      bid_strategy: 'LOWEST_COST_WITHOUT_CAP', destination_type: 'WEBSITE', status: 'PAUSED',
-      start_time: ini + 'T08:00:00-0300', end_time: fim + 'T23:59:00-0300',
-      targeting: { ...(await (async () => { if (amplo) return { geo_locations: { countries: ['BR'] } };
-          const pb = await _publicoB2B().catch(() => ({ cidades: [], interesses: [] }));
-          return { geo_locations: pb.cidades.length ? { cities: pb.cidades.map(({ key, radius, distance_unit }) => ({ key, radius, distance_unit })), location_types: ['home', 'recent'] } : { countries: ['BR'] },
-            ...(pb.interesses.length ? { flexible_spec: [{ interests: pb.interesses.map(({ id, name }) => ({ id, name })) }] } : {}) }; })()),
-        age_min: idMin, age_max: idMax, publisher_platforms: ['instagram'], instagram_positions: ['stream', 'story', 'reels'],
-        targeting_automation: { advantage_audience: 0 } } }); // v3.174: o Meta passou a exigir o sinalizador (0 = respeita idade/local escolhidos)
+    // v3.192: o Meta aposenta interesses ("Algumas opções de direcionamento detalhado foram combinadas") e devolve
+    // o substituto no erro — troca pelo alternativo, grava no cache e tenta de novo (até 2 vezes)
+    const pb = amplo ? null : await _publicoB2B().catch(() => ({ cidades: [], interesses: [] }));
+    const _alvo = () => ({ ...(amplo ? { geo_locations: { countries: ['BR'] } } : {
+        geo_locations: pb.cidades.length ? { cities: pb.cidades.map(({ key, radius, distance_unit }) => ({ key, radius, distance_unit })), location_types: ['home', 'recent'] } : { countries: ['BR'] },
+        ...(pb.interesses.length ? { flexible_spec: [{ interests: pb.interesses.map(({ id, name }) => ({ id, name })) }] } : {}) }),
+      age_min: idMin, age_max: idMax, publisher_platforms: ['instagram'], instagram_positions: ['stream', 'story', 'reels'],
+      targeting_automation: { advantage_audience: 0 } }); // v3.174: o Meta exige o sinalizador (0 = respeita idade/local escolhidos)
+    let adset = null;
+    for (let tentativa = 0; tentativa < 3 && !adset; tentativa++) {
+      try {
+        adset = await _meta(`act_${c.conta}/adsets`, 'POST', { name: nome + ' · Instagram', campaign_id: camp.id, daily_budget: Math.round(diario * 100), billing_event: 'IMPRESSIONS',
+          // v3.190: com o Pixel (META_PIXEL_ID) → otimiza para LEAD (cadastro feito), o que filtra robô e clique acidental; sem Pixel → clique no link
+          optimization_goal: pixel ? 'OFFSITE_CONVERSIONS' : 'LINK_CLICKS', ...(pixel ? { promoted_object: { pixel_id: pixel, custom_event_type: 'LEAD' } } : {}),
+          bid_strategy: 'LOWEST_COST_WITHOUT_CAP', destination_type: 'WEBSITE', status: 'PAUSED',
+          start_time: ini + 'T08:00:00-0300', end_time: fim + 'T23:59:00-0300', targeting: _alvo() });
+      } catch (e) {
+        const m = String(e.message || '').match(/\[\s*\{\s*"deprecated_interest_id"[\s\S]*?\}\s*\]/);
+        let alt = []; try { alt = m ? JSON.parse(m[0]) : []; } catch (_) {}
+        if (!pb || !alt.length || tentativa >= 2) throw e;
+        const troca = new Map(alt.map(a => [String(a.deprecated_interest_id), a]));
+        const vistos = new Set(); pb.interesses = pb.interesses.map(x => { const a = troca.get(String(x.id)); return a && a.alternative_interest_id ? { id: String(a.alternative_interest_id), name: a.alternative_interest_name || x.name } : (a ? null : x); })
+          .filter(x => x && !vistos.has(x.id) && vistos.add(x.id));
+        try { await _kvMc('mkt:meta:publico_b2b', { ...pb, em: Date.now() }); } catch (_) {}
+      }
+    }
     let imgHash = null;
     try { const ri = await fetch(imagem); if (ri.ok) { const b64 = Buffer.from(await ri.arrayBuffer()).toString('base64'); const up = await _meta(`act_${c.conta}/adimages`, 'POST', { bytes: b64 }); imgHash = Object.values(up.images || {})[0]?.hash || null; } } catch (_) {}
     const link_data = { link, message: texto, name: titulo, ...(descricao ? { description: descricao } : {}), ...(imgHash ? { image_hash: imgHash } : { picture: imagem }), call_to_action: { type: 'LEARN_MORE', value: { link } } };
