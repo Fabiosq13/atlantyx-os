@@ -1303,6 +1303,95 @@ async function qbQueryFat(sqlQuery, token, realm, sandbox) {
   return d;
 }
 
+// v3.198: BUSCA EM TODO O SISTEMA por número de nota fiscal, fatura (invoice) ou termo — inclui termos concluídos,
+// notas recebidas por e-mail/XML e as faturas do QuickBooks (com e sem termo). Não depende dos filtros do Kanban.
+async function buscaGlobal({ q } = {}) {
+  const txt = String(q || '').trim().substring(0, 60); if (txt.length < 1) throw Object.assign(new Error('Digite um número para buscar'), { status: 400 });
+  const dig = txt.replace(/\D/g, ''), semZero = dig.replace(/^0+/, '') || dig, like = '%' + txt + '%';
+  const sql = await getSql(); const dia = x => x ? String(x instanceof Date ? x.toISOString() : x).substring(0, 10) : null;
+  const out = { q: txt, termos: [], notas_termos: [], notas_recebidas: [], faturas_qb: [], erro_qb: null };
+  // termos (todas as etapas, inclusive concluídos)
+  out.termos = (await sql`SELECT id, numero_termo, projeto, contratante, periodo_medicao, status, valor_total_termo FROM termos_faturamento
+      WHERE numero_termo ILIKE ${like} OR (${semZero} <> '' AND ltrim(regexp_replace(COALESCE(numero_termo,''), '[^0-9]', '', 'g'), '0') = ${semZero}) ORDER BY criado_em DESC LIMIT 30`)
+    .map(t => ({ id: t.id, numero: t.numero_termo, projeto: t.projeto, cliente: t.contratante, periodo: t.periodo_medicao, status: t.status, valor: num(t.valor_total_termo) }));
+  // notas e faturas lançadas nas empresas dos termos
+  out.notas_termos = (await sql`SELECT e.termo_id, e.empresa, e.nf_numero, e.nf_data, e.valor_parcela, e.qb_invoice_id, e.pagamento_status, e.pagamento_data, t.numero_termo, t.projeto, t.status
+      FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id
+      WHERE (${semZero} <> '' AND (ltrim(regexp_replace(COALESCE(e.nf_numero,''), '[^0-9]', '', 'g'), '0') = ${semZero} OR ltrim(COALESCE(e.qb_invoice_id,''), '0') = ${semZero}))
+         OR e.nf_numero ILIKE ${like} ORDER BY t.criado_em DESC LIMIT 50`)
+    .map(e => ({ termo_id: e.termo_id, termo: e.numero_termo, projeto: e.projeto, etapa: e.status, empresa: e.empresa, nf: e.nf_numero, nf_data: dia(e.nf_data), valor: num(e.valor_parcela), qb_invoice_id: e.qb_invoice_id, pagamento: e.pagamento_status, pagamento_data: dia(e.pagamento_data) }));
+  // notas recebidas (e-mail / XML importado)
+  try { out.notas_recebidas = (await sql`SELECT n.termo_id, n.nf_numero, n.nf_valor, n.nf_chave, n.origem, n.email_data, n.arquivo_url, t.numero_termo, t.projeto
+      FROM termos_notas_encontradas n LEFT JOIN termos_faturamento t ON t.id = n.termo_id
+      WHERE (${semZero} <> '' AND ltrim(regexp_replace(COALESCE(n.nf_numero,''), '[^0-9]', '', 'g'), '0') = ${semZero}) OR n.nf_numero ILIKE ${like} OR n.nf_chave ILIKE ${like}
+      ORDER BY n.criado_em DESC LIMIT 30`)
+    .map(n => ({ termo_id: n.termo_id, termo: n.numero_termo, projeto: n.projeto, nf: n.nf_numero, valor: num(n.nf_valor), origem: n.origem, data: dia(n.email_data), arquivo: n.arquivo_url })); } catch (_) {}
+  // faturas do QuickBooks (número da fatura = DocNumber, ou o Id interno)
+  try { const { token, realm } = await qbTokenFat(); const sandbox = process.env.QB_SANDBOX === 'true';
+    if (!realm) throw new Error('QB_REALM_ID ausente');
+    const cand = [...new Set([txt, dig, semZero].filter(Boolean))].map(x => "'" + x.replace(/'/g, '') + "'").join(',');
+    const r1 = await qbQueryFat(`select * from Invoice where DocNumber in (${cand}) maxresults 50`, token, realm, sandbox);
+    let inv = r1?.QueryResponse?.Invoice || [];
+    if (!inv.length && semZero) { try { const r2 = await qbQueryFat(`select * from Invoice where Id = '${semZero}'`, token, realm, sandbox); inv = r2?.QueryResponse?.Invoice || []; } catch (_) {} }
+    const base = sandbox ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
+    const ligados = inv.length ? await sql`SELECT e.qb_invoice_id, e.termo_id, t.numero_termo FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id WHERE e.qb_invoice_id = ANY(${inv.map(i => String(i.Id))})` : [];
+    out.faturas_qb = inv.map(i => { const l = ligados.find(x => String(x.qb_invoice_id) === String(i.Id));
+      return { id: i.Id, numero: i.DocNumber || i.Id, cliente: i.CustomerRef?.name || '', emissao: i.TxnDate, vencimento: i.DueDate, valor: num(i.TotalAmt), saldo: num(i.Balance),
+        situacao: num(i.Balance) <= 0 ? 'paga' : (i.DueDate && i.DueDate < new Date().toISOString().slice(0, 10) ? 'vencida' : 'em aberto'),
+        termo_id: l?.termo_id || null, termo: l?.numero_termo || null, url: `${base}/app/invoice?txnId=${i.Id}` }; });
+  } catch (e) { out.erro_qb = e.message; }
+  out.total = out.termos.length + out.notas_termos.length + out.notas_recebidas.length + out.faturas_qb.length;
+  return out;
+}
+
+// v3.198: FATURAS ÓRFÃS no QuickBooks — em aberto, sem termo ligado e sem nota fiscal com o mesmo número no sistema.
+// analisar: lista com o motivo de cada uma. limpar: confere TUDO de novo no servidor, uma a uma, logo antes de agir
+// (sem termo, sem nota, sem nenhum pagamento recebido) e só então exclui ou anula no QuickBooks. Tudo fica registrado.
+async function _faturasOrfas() {
+  const { token, realm } = await qbTokenFat(); const sandbox = process.env.QB_SANDBOX === 'true';
+  if (!realm) throw new Error('QB_REALM_ID ausente');
+  const sql = await getSql();
+  const r = await qbQueryFat(`select * from Invoice where Balance > '0' maxresults 1000`, token, realm, sandbox);
+  const inv = r?.QueryResponse?.Invoice || [];
+  const ligTermo = new Set((await sql`SELECT qb_invoice_id FROM termos_empresas WHERE qb_invoice_id IS NOT NULL`).map(x => String(x.qb_invoice_id)));
+  const norm = x => String(x || '').replace(/\D/g, '').replace(/^0+/, '');
+  const nfs = new Set([...(await sql`SELECT nf_numero FROM termos_empresas WHERE nf_numero IS NOT NULL`), ...(await sql`SELECT nf_numero FROM termos_notas_encontradas WHERE nf_numero IS NOT NULL`)].map(x => norm(x.nf_numero)).filter(Boolean));
+  const hoje = new Date().toISOString().slice(0, 10), base = sandbox ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
+  return { token, realm, sandbox, faturas: inv.map(i => {
+    const temTermo = ligTermo.has(String(i.Id)), temNota = nfs.has(norm(i.DocNumber)), recebido = num(i.TotalAmt) - num(i.Balance) > 0.009 || (i.LinkedTxn || []).some(l => /Payment|Deposit|CreditMemo/i.test(l.TxnType || ''));
+    return { id: String(i.Id), sync: i.SyncToken, numero: i.DocNumber || i.Id, cliente: i.CustomerRef?.name || '', emissao: i.TxnDate, vencimento: i.DueDate, valor: num(i.TotalAmt), saldo: num(i.Balance),
+      dias_atraso: i.DueDate && i.DueDate < hoje ? Math.floor((Date.parse(hoje) - Date.parse(i.DueDate)) / 864e5) : 0,
+      tem_termo: temTermo, tem_nota: temNota, recebeu_pagamento: recebido, pode_limpar: !temTermo && !temNota && !recebido,
+      motivo: temTermo ? 'ligada a um termo' : temNota ? 'há nota fiscal com este número no sistema' : recebido ? 'já recebeu pagamento (parcial)' : 'sem termo, sem nota e sem pagamento',
+      url: `${base}/app/invoice?txnId=${i.Id}` }; }) };
+}
+async function faturasOrfasAnalisar() {
+  const { faturas } = await _faturasOrfas();
+  const semTermo = faturas.filter(f => !f.tem_termo).sort((a, b) => b.dias_atraso - a.dias_atraso);
+  return { total_abertas: faturas.length, sem_termo: semTermo, candidatas: semTermo.filter(f => f.pode_limpar).length };
+}
+async function faturasOrfasLimpar({ ids = [], modo = 'excluir', por = 'financeiro' } = {}) {
+  if (!Array.isArray(ids) || !ids.length) throw Object.assign(new Error('Selecione as faturas'), { status: 400 });
+  if (!['excluir', 'anular'].includes(modo)) throw Object.assign(new Error('modo deve ser excluir ou anular'), { status: 400 });
+  const { token, realm, sandbox, faturas } = await _faturasOrfas();
+  const qbBase = sandbox ? 'https://sandbox-quickbooks.api.intuit.com' : 'https://quickbooks.api.intuit.com';
+  const feitas = [], recusadas = [];
+  for (const id of ids.slice(0, 50).map(String)) {
+    const f = faturas.find(x => x.id === id);
+    if (!f) { recusadas.push({ id, motivo: 'não está mais em aberto no QuickBooks' }); continue; }
+    if (!f.pode_limpar) { recusadas.push({ id, numero: f.numero, motivo: f.motivo }); continue; } // re-checado agora, no servidor
+    const op = modo === 'anular' ? 'void' : 'delete';
+    const resp = await fetch(`${qbBase}/v3/company/${realm}/invoice?operation=${op}&minorversion=65`, { method: 'POST', headers: { Authorization: 'Bearer ' + token, Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ Id: f.id, SyncToken: f.sync }) });
+    const d = await resp.json().catch(() => ({}));
+    if (!resp.ok) { recusadas.push({ id, numero: f.numero, motivo: 'QuickBooks: ' + (d.Fault?.Error?.[0]?.Detail || d.Fault?.Error?.[0]?.Message || 'HTTP ' + resp.status) }); continue; }
+    feitas.push({ id, numero: f.numero, cliente: f.cliente, valor: f.valor, vencimento: f.vencimento, acao: modo });
+  }
+  // trilha de auditoria (quem, quando, o quê)
+  try { const sql = await getSql(); const k = 'fat:faturas_orfas:log'; const r = await sql`SELECT value FROM kv_store WHERE key = ${k}`; const log = (r[0] && (typeof r[0].value === 'string' ? JSON.parse(r[0].value) : r[0].value)) || [];
+    log.unshift({ em: new Date().toISOString(), por, modo, feitas, recusadas }); await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(log.slice(0, 200))}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {}
+  return { feitas, recusadas, modo };
+}
+
 async function termoVerificarPagamento({ termo_id, tolerancia_pct } = {}) {
   if (!termo_id) throw new Error('termo_id obrigatório');
   const { termo, empresas } = await termoGet({ id: termo_id });
@@ -1595,6 +1684,9 @@ async function handler(req, res) {
   const { action, payload = {} } = body;
 
   const acoes = {
+    busca_global:      () => buscaGlobal(payload), // v3.198
+    faturas_orfas:     () => faturasOrfasAnalisar(), // v3.198
+    faturas_orfas_limpar: () => faturasOrfasLimpar(payload),
     cpfl_confirmar:    () => cpflConfirmar(payload),
     status_pendencias: () => statusPendencias(payload),
     termo_importar:          () => termoImportar(payload),

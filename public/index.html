@@ -987,6 +987,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 
     <!-- BANNER PROPOSITO (inserido pelo JS ao carregar) -->
     <div id="propDashWidget"></div>
+    <div id="dashAtualizadoEm" style="font-size:9.5px;color:var(--t3);text-align:right;margin:-4px 2px 6px;"></div>
 
     <!-- v3.140: o relatório financeiro diário (e-mail das 8h) ao vivo no dashboard, na mesma ordem do e-mail -->
     <div class="panel" id="finDiaPanel" style="margin-bottom:13px;">
@@ -3617,18 +3618,20 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     <select class="fsel" id="fatFiltroAno" title="Ano de referência" aria-label="Ano de referência" style="font-size:11px;width:auto;" onchange="carregarKanbanFaturamento()">
       <option value="">Todos os anos</option>
     </select>
-    <input class="fi" id="fatFiltroNf" placeholder="Nº NF / invoice" style="width:110px;font-size:10.5px;" onkeydown="if(event.key==='Enter')carregarKanbanFaturamento()" title="Filtra pelo numero da nota fiscal OU pelo numero da fatura no QuickBooks"/>
+    <input class="fi" id="fatFiltroNf" placeholder="Nº NF / invoice" style="width:110px;font-size:10.5px;" onkeydown="if(event.key==='Enter'){carregarKanbanFaturamento();fatBuscaGlobal();}" title="Filtra o Kanban e busca o número em TODAS as faturas (QuickBooks), notas e termos do sistema"/>
     <label style="font-size:9.5px;color:var(--t2);display:flex;align-items:center;gap:4px;white-space:nowrap;">pago de
       <input type="date" class="fi" id="fatPagDe" title="Pagamento de (data inicial)" aria-label="Pagamento de (data inicial)" style="width:128px;font-size:10px;padding:3px 5px;" onchange="carregarKanbanFaturamento()"/> ate
       <input type="date" class="fi" id="fatPagAte" title="Pagamento até (data final)" aria-label="Pagamento até (data final)" style="width:128px;font-size:10px;padding:3px 5px;" onchange="carregarKanbanFaturamento()"/></label>
     <input class="fi" id="fatFiltroTexto" style="font-size:11px;width:200px;" placeholder="buscar projeto, nº do termo, período..." onkeydown="if(event.key==='Enter')carregarKanbanFaturamento()"/>
-    <button class="btn" style="font-size:10px;" onclick="carregarKanbanFaturamento()">🔍 Aplicar</button>
+    <button class="btn" style="font-size:10px;" onclick="carregarKanbanFaturamento();fatBuscaGlobal()">🔍 Aplicar</button>
     <button class="btn" style="font-size:10px;" onclick="_fatLimparFiltros()">✕ Limpar</button>
+    <button class="btn" style="font-size:10px;" onclick="fatOrfasAbrir()" title="Faturas em aberto no QuickBooks sem termo e sem nota fiscal ligados">🧹 Faturas sem termo/nota</button>
     <span style="font-size:10px;color:var(--t3);margin-left:auto;" id="fatFiltroInfo"></span>
   </div>
   <div id="fatKbStatus" style="display:none;margin-bottom:10px;"></div>
   <div id="fatDiagLinha" style="font-size:9.5px;color:var(--t3);font-family:var(--M);margin-bottom:6px;"></div>
   <div id="fatKbTotais" class="fat-totais"></div>
+  <div id="fatBuscaRes"></div>
   <div id="fatKanbanBoard" class="fat-board"><!-- v3.85: em >=1280px as 7 colunas dividem a largura (sem rolagem lateral) e cada coluna rola na vertical -->
     <div style="grid-column:1/-1;text-align:center;color:var(--t3);font-size:11px;padding:24px;">Carregando...</div>
   </div>
@@ -6221,7 +6224,18 @@ const S7A=[{n:'S7-01',nm:'Prospeccao Ativa',d:'Recebe empresas do S2-02 e monta 
 function renderAg(ag,id){document.getElementById(id).innerHTML=ag.map((a,i)=>`<div class="ac ${a.on?'on':''}"><div class="ac-n">${a.n}</div><div class="ac-nm">${a.nm}</div><div class="ac-d">${a.d}</div><div class="ac-f"><div class="ac-st" style="color:${_corTxt(a.on?'var(--green)':'var(--gold)')}"><span style="width:5px;height:5px;border-radius:50%;background:${a.on?'var(--green)':'var(--gold)'};display:inline-block;${a.on?'animation:pulse 2s infinite':''}"></span>${a.on?'Ativo':'Standby'}</div><div style="display:flex;gap:4px;align-items:center;">${a.ep?`<button class="btn btn-g" style="font-size:9px;padding:2px 5px;" onclick="testEP('${a.ep}','${a.nm}')">&#9654;</button>`:''}<div class="tgl ${a.on?'on':''}" onclick="togAg('${id}',${i})"></div></div></div></div>`).join('');}
 function togAg(g,i){const ag=g==='s2-grid'?S2A:S7A;ag[i].on=!ag[i].on;renderAg(ag,g);addLog(ag[i].on?'success':'warn',(ag[i].on?'Ativado':'Pausado')+': '+ag[i].nm);toast((ag[i].on?'Ativado':'Pausado')+': '+ag[i].nm,ag[i].on?'success':'info');}
 async function testEP(ep,nome){addLog('info','[Teste] '+ep+'...');const r=await fetch(ep,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({test:true})});addLog(r.status===405||r.status<500?'success':'err','[Teste] '+nome+' HTTP '+r.status+(r.status!==500?' OK':' ERRO'));toast(nome+' '+(r.status!==500?'OK':'ERRO'),r.status!==500?'success':'error');}
-async function refreshAll(){addLog('info','[Sistema] Atualizando...');if(document.getElementById('page-dash')?.classList.contains('active')){try{carregarMarcosAlertaDash(true);}catch(_){}}await Promise.all([loadPipeline(),loadKPIs()]);}
+async function refreshAll(){addLog('info','[Sistema] Atualizando...');if(document.getElementById('page-dash')?.classList.contains('active')){try{carregarMarcosAlertaDash(true);}catch(_){}_dashAtualizarWidgets();}await Promise.all([loadPipeline(),loadKPIs()]);}
+// v3.198: o Dashboard ao vivo só atualizava pipeline/KPIs/marcos a cada 2 min — o relatório financeiro do dia, o resultado,
+// as metas, a receita em risco, as RFPs e a semana-foco ficavam parados desde a abertura. Agora todos se renovam a cada 10 min
+// (e ao voltar para a aba depois de 10 min fora), mostrando a hora da última atualização.
+let _dashWidgetsEm = Date.now();
+function _dashAtualizarWidgets(forcar) {
+  if (!forcar && Date.now() - _dashWidgetsEm < 600000) return; _dashWidgetsEm = Date.now();
+  try { carregarResultadoLive(); } catch (_) {} try { carregarMetasEmpresa(); } catch (_) {} try { if (typeof _fdUlt !== 'undefined' && _fdUlt) _fdUlt.em = 0; finDiaCarregar(); } catch (_) {}
+  try { carregarReceitaRiscoDash(); } catch (_) {} try { _dashRfpUrgentes(); } catch (_) {} try { carregarSemanaFoco(); } catch (_) {}
+  try { const el = document.getElementById('dashAtualizadoEm'); if (el) el.textContent = '⟳ atualizado às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + ' · renova a cada 10 min'; } catch (_) {}
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && document.getElementById('page-dash')?.classList.contains('active')) _dashAtualizarWidgets(); });
 
 //    WA BATCH GENERATOR -- TOTALMENTE AUTONOMO                                  
 let batchMensagens = [];
@@ -10353,7 +10367,7 @@ async function carregarReceitaRiscoDash(forcar) {
 // Dashboard LIVE é a tela inicial: carrega o widget ao abrir o sistema
 window.addEventListener('DOMContentLoaded', () => setTimeout(() => {
   const pg = document.getElementById('page-dash');
-  if (pg && pg.classList.contains('active')) { try { carregarResultadoLive(); } catch (_) {} try { carregarMetasEmpresa(); } catch (_) {} try { setTimeout(finDiaCarregar, 300); } catch (_) {} try { carregarReceitaRiscoDash(); } catch (_) {} try { _dashRfpUrgentes(); } catch (_) {} try { carregarMarcosAlertaDash(); } catch (_) {} try { carregarSemanaFoco(); } catch (_) {} }
+  if (pg && pg.classList.contains('active')) { try { carregarResultadoLive(); } catch (_) {} try { carregarMetasEmpresa(); } catch (_) {} try { setTimeout(finDiaCarregar, 300); } catch (_) {} try { carregarReceitaRiscoDash(); } catch (_) {} try { _dashRfpUrgentes(); } catch (_) {} try { carregarMarcosAlertaDash(); } catch (_) {} try { carregarSemanaFoco(); } catch (_) {} try { _dashWidgetsEm = Date.now(); document.getElementById('dashAtualizadoEm').textContent = '⟳ atualizado às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + ' · renova a cada 10 min'; } catch (_) {} }
 }, 2500));
 
 // ═══ dem_muwmozw1hkd7: SEMANA EM FOCO — resumo executivo semanal no Dashboard LIVE ═══
@@ -22001,6 +22015,67 @@ async function carregarFluxoDetalhado() {
 }
 
 // ═══ v1.17: KANBAN DE FATURAMENTO ═══
+// v3.198: busca em TODO o sistema (faturas QB, notas, termos) pelo número digitado em "Nº NF / invoice"
+const _fx = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const _fxR = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+async function fatBuscaGlobal() {
+  const box = document.getElementById('fatBuscaRes'); if (!box) return;
+  const q = (document.getElementById('fatFiltroNf')?.value || '').trim();
+  if (!q) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="panel" style="font-size:11px;color:var(--t3);margin-bottom:10px;">🔎 Buscando "' + _fx(q) + '" em todas as faturas, notas e termos…</div>';
+  try {
+    const d = await fatApi('busca_global', { q });
+    const lnkT = (id, txt) => id ? `<a href="#" onclick="abrirDetalheTermo(${Number(id)});return false;" style="color:var(--blue);">${_fx(txt || ('termo ' + id))}</a>` : '<span style="color:var(--red);">sem termo</span>';
+    const sec = (tit, linhas, cab) => linhas.length ? `<div style="margin-top:8px;"><div style="font-size:10.5px;font-weight:700;margin-bottom:4px;">${tit} (${linhas.length})</div><table style="width:100%;font-size:10.5px;border-collapse:collapse;"><tr style="color:var(--t3);text-align:left;">${cab.map(c => '<th style="padding:3px 6px;">' + c + '</th>').join('')}</tr>${linhas.join('')}</table></div>` : '';
+    const td = v => '<td style="padding:3px 6px;border-top:1px solid var(--bd);">' + v + '</td>';
+    let h = sec('💼 Faturas no QuickBooks', d.faturas_qb.map(f => '<tr>' + td('<a href="' + _fx(f.url) + '" target="_blank" rel="noopener" style="color:var(--blue);">' + _fx(f.numero) + '</a>') + td(_fx(f.cliente)) + td(_fx(f.emissao)) + td(_fx(f.vencimento)) + td(_fxR(f.valor)) + td(_fxR(f.saldo)) + td(_fx(f.situacao)) + td(lnkT(f.termo_id, f.termo)) + '</tr>'), ['Fatura', 'Cliente', 'Emissão', 'Vencimento', 'Valor', 'Saldo', 'Situação', 'Termo']);
+    h += sec('🧾 Notas nos termos', d.notas_termos.map(n => '<tr>' + td(_fx(n.nf || '—')) + td(_fx(n.empresa)) + td(_fx(n.nf_data || '')) + td(_fxR(n.valor)) + td(_fx(n.qb_invoice_id || '—')) + td(_fx(n.pagamento || '') + (n.pagamento_data ? ' ' + _fx(n.pagamento_data) : '')) + td(lnkT(n.termo_id, n.termo)) + td(_fx(n.etapa)) + '</tr>'), ['NF', 'Empresa', 'Data NF', 'Valor', 'Fatura QB', 'Pagamento', 'Termo', 'Etapa']);
+    h += sec('📥 Notas recebidas (e-mail/XML)', d.notas_recebidas.map(n => '<tr>' + td(_fx(n.nf)) + td(_fxR(n.valor)) + td(_fx(n.origem || '')) + td(_fx(n.data || '')) + td(n.arquivo ? '<a href="' + _fx(n.arquivo) + '" target="_blank" rel="noopener" style="color:var(--blue);">arquivo</a>' : '—') + td(lnkT(n.termo_id, n.termo)) + '</tr>'), ['NF', 'Valor', 'Origem', 'Data', 'Arquivo', 'Termo']);
+    h += sec('📄 Termos', d.termos.map(t => '<tr>' + td(lnkT(t.id, t.numero)) + td(_fx(t.projeto)) + td(_fx(t.cliente)) + td(_fx(t.periodo || '')) + td(_fx(t.status)) + td(_fxR(t.valor)) + '</tr>'), ['Termo', 'Projeto', 'Cliente', 'Período', 'Etapa', 'Valor']);
+    box.innerHTML = `<div class="panel" style="margin-bottom:10px;"><div style="display:flex;align-items:center;gap:8px;"><b style="font-size:12px;">🔎 Resultado em todo o sistema para "${_fx(d.q)}"</b><span style="font-size:10px;color:var(--t3);">${d.total} encontrado(s)</span><button class="btn" style="font-size:10px;margin-left:auto;" onclick="document.getElementById('fatBuscaRes').innerHTML=''">✕ fechar</button></div>`
+      + (d.erro_qb ? '<div style="font-size:10px;color:var(--gold);margin-top:4px;">QuickBooks não respondeu: ' + _fx(d.erro_qb) + '</div>' : '')
+      + (h || '<div style="font-size:11px;color:var(--t3);margin-top:6px;">Nada encontrado com esse número.</div>') + '</div>';
+  } catch (e) { box.innerHTML = '<div class="panel" style="font-size:11px;color:var(--red);margin-bottom:10px;">Erro na busca: ' + _fx(e.message) + '</div>'; }
+}
+
+// v3.198: faturas em aberto no QuickBooks sem termo e sem nota → analisar e (só no clique, com confirmação) excluir ou anular
+async function fatOrfasAbrir() {
+  let m = document.getElementById('fatOrfasModal');
+  if (!m) { m = document.createElement('div'); m.id = 'fatOrfasModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:30px 12px;overflow:auto;'; document.body.appendChild(m); }
+  m.innerHTML = '<div class="panel" style="max-width:980px;width:100%;font-size:11px;">Analisando faturas em aberto no QuickBooks…</div>';
+  m.onclick = ev => { if (ev.target === m) m.remove(); };
+  try {
+    const d = await fatApi('faturas_orfas');
+    window._fatOrfas = d.sem_termo;
+    const linhas = d.sem_termo.map(f => `<tr style="${f.pode_limpar ? '' : 'opacity:.6;'}"><td style="padding:3px 6px;">${f.pode_limpar ? `<input type="checkbox" class="fatOrfChk" value="${_fx(f.id)}">` : '🔒'}</td>
+      <td style="padding:3px 6px;"><a href="${_fx(f.url)}" target="_blank" rel="noopener" style="color:var(--blue);">${_fx(f.numero)}</a></td><td style="padding:3px 6px;">${_fx(f.cliente)}</td>
+      <td style="padding:3px 6px;">${_fx(f.emissao)}</td><td style="padding:3px 6px;">${_fx(f.vencimento)}${f.dias_atraso ? ' <span style="color:var(--red);">(' + f.dias_atraso + 'd)</span>' : ''}</td>
+      <td style="padding:3px 6px;text-align:right;">${_fxR(f.saldo)}</td><td style="padding:3px 6px;color:${f.pode_limpar ? 'var(--gold)' : 'var(--t3)'};">${_fx(f.motivo)}</td></tr>`).join('');
+    m.innerHTML = `<div class="panel" style="max-width:980px;width:100%;">
+      <div style="display:flex;align-items:center;gap:8px;"><b style="font-size:13px;">🧹 Faturas em aberto sem termo ligado</b><span style="font-size:10px;color:var(--t3);">${d.total_abertas} em aberto no QuickBooks · ${d.sem_termo.length} sem termo · ${d.candidatas} sem termo, sem nota e sem pagamento</span>
+      <button class="btn" style="font-size:10px;margin-left:auto;" onclick="document.getElementById('fatOrfasModal').remove()">✕</button></div>
+      <div style="font-size:10.5px;color:var(--t2);margin:6px 0;">Só dá para marcar as que não têm termo, não têm nota fiscal com o mesmo número no sistema e não receberam nenhum pagamento (🔒 = protegida). Antes de agir, o servidor confere tudo de novo. Confirme com a contabilidade: uma fatura real cuja nota ainda não foi importada também aparece aqui. <b>Anular</b> mantém o registro no QuickBooks com valor zero; <b>Excluir</b> apaga de vez.</div>
+      <div style="max-height:55vh;overflow:auto;"><table style="width:100%;font-size:10.5px;border-collapse:collapse;"><tr style="color:var(--t3);text-align:left;"><th><input type="checkbox" onchange="document.querySelectorAll('.fatOrfChk').forEach(c=>c.checked=this.checked)" title="marcar todas"></th><th style="padding:3px 6px;">Fatura</th><th style="padding:3px 6px;">Cliente</th><th style="padding:3px 6px;">Emissão</th><th style="padding:3px 6px;">Vencimento</th><th style="padding:3px 6px;text-align:right;">Saldo</th><th style="padding:3px 6px;">Situação</th></tr>${linhas || '<tr><td colspan="7" style="padding:10px;color:var(--t3);">Nenhuma fatura em aberto sem termo.</td></tr>'}</table></div>
+      <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end;"><button class="btn" style="font-size:10.5px;" onclick="fatOrfasLimpar('anular')">⊘ Anular selecionadas</button><button class="btn" style="font-size:10.5px;background:var(--red);color:#fff;" onclick="fatOrfasLimpar('excluir')">🗑 Excluir do QuickBooks</button></div>
+      <div id="fatOrfasRes" style="font-size:10.5px;margin-top:8px;"></div></div>`;
+  } catch (e) { m.innerHTML = '<div class="panel" style="max-width:600px;width:100%;font-size:11px;color:var(--red);">Erro: ' + _fx(e.message) + ' <button class="btn" style="font-size:10px;" onclick="document.getElementById(\'fatOrfasModal\').remove()">fechar</button></div>'; }
+}
+async function fatOrfasLimpar(modo) {
+  const ids = [...document.querySelectorAll('.fatOrfChk:checked')].map(c => c.value);
+  if (!ids.length) { alert('Marque ao menos uma fatura.'); return; }
+  const sel = (window._fatOrfas || []).filter(f => ids.includes(f.id));
+  const total = sel.reduce((a, f) => a + Number(f.saldo || 0), 0);
+  const verbo = modo === 'excluir' ? 'EXCLUIR DEFINITIVAMENTE do QuickBooks' : 'ANULAR no QuickBooks';
+  if (!confirm(`${verbo} ${ids.length} fatura(s) — total ${_fxR(total)}?\n\n${sel.map(f => '• ' + f.numero + ' · ' + f.cliente + ' · ' + _fxR(f.saldo)).join('\n')}\n\n${modo === 'excluir' ? 'Não dá para desfazer.' : ''}`)) return;
+  if (modo === 'excluir' && prompt('Para confirmar, digite EXCLUIR') !== 'EXCLUIR') return;
+  const res = document.getElementById('fatOrfasRes'); if (res) res.textContent = 'Processando…';
+  try {
+    const d = await fatApi('faturas_orfas_limpar', { ids, modo });
+    const msg = `✅ ${d.feitas.length} fatura(s) ${modo === 'excluir' ? 'excluída(s)' : 'anulada(s)'}: ${d.feitas.map(f => f.numero).join(', ') || '—'}` + (d.recusadas.length ? `\n⚠ ${d.recusadas.length} não processada(s): ` + d.recusadas.map(r => (r.numero || r.id) + ' (' + r.motivo + ')').join('; ') : '');
+    alert(msg); fatOrfasAbrir();
+  } catch (e) { if (res) res.innerHTML = '<span style="color:var(--red);">Erro: ' + _fx(e.message) + '</span>'; }
+}
+
 async function fatApi(action, params = {}) {
   let r;
   try { r = await fetch('/api/faturamento', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action, payload: params }) }); }
@@ -22292,6 +22367,7 @@ async function carregarKanbanFaturamento() {
   } catch (e) { board.innerHTML = '<div style="grid-column:1/-1;color:var(--red);text-align:center;padding:20px;font-size:11px;">Erro: ' + e.message + '</div>'; addLog('err', '[Faturamento] ' + e.message); }
 }
 async function _fatLimparFiltros() {
+  { const _b = document.getElementById('fatBuscaRes'); if (_b) _b.innerHTML = ''; }
   // v3.109: limpa TODOS os filtros (antes o "Limpar" deixava NF e datas de pagamento ativos)
   ['fatFiltroMes','fatFiltroAno','fatFiltroTexto','fatFiltroNf','fatPagDe','fatPagAte'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
   await carregarKanbanFaturamento(); // v1.32: await — sem ele o texto informativo ficava com o filtro antigo
@@ -32906,7 +32982,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.197] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.198] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -32922,7 +32998,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.197';
+window.__ATX_BUILD_ID__ = 'ATX-v3.198';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
