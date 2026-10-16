@@ -22052,7 +22052,7 @@ async function fatOrfasAbrir() {
       <td style="padding:3px 6px;">${_fx(f.emissao)}</td><td style="padding:3px 6px;">${_fx(f.vencimento)}${f.dias_atraso ? ' <span style="color:var(--red);">(' + f.dias_atraso + 'd)</span>' : ''}</td>
       <td style="padding:3px 6px;text-align:right;">${_fxR(f.saldo)}</td><td style="padding:3px 6px;color:${f.pode_limpar ? 'var(--gold)' : 'var(--t3)'};">${f.termo_nf ? `<a href="#" onclick="abrirDetalheTermo(${JSON.stringify(f.termo_nf.termo_id).replace(/"/g, '&quot;')});return false;" style="color:var(--blue);">${_fx(f.motivo)}</a>` : _fx(f.motivo)}${f.ligavel ? ` <button class="btn" style="font-size:9.5px;padding:1px 6px;" onclick="fatOrfasLigar(['${_fx(f.id)}'])">🔗 ligar</button>` : ''}</td></tr>`).join('');
     m.innerHTML = `<div class="panel" style="max-width:980px;width:100%;">
-      <div style="display:flex;align-items:center;gap:8px;"><b style="font-size:13px;">🧹 Faturas em aberto sem vínculo com termo</b><span style="font-size:10px;color:var(--t3);">${d.total_abertas} em aberto no QuickBooks · ${d.sem_termo.length} sem termo · ${d.candidatas} sem termo, sem nota e sem pagamento</span>
+      <div style="display:flex;align-items:center;gap:8px;"><b style="font-size:13px;">🧹 Faturas em aberto sem vínculo com termo</b><span style="font-size:10px;color:var(--t3);">${d.total_abertas} em aberto no QuickBooks · ${d.sem_termo.length} sem termo · ${d.ligaveis || 0} para ligar · ${d.candidatas} para anular/excluir</span>
       <button class="btn" style="font-size:10px;margin-left:auto;" onclick="document.getElementById('fatOrfasModal').remove()">✕</button></div>
       <div style="font-size:10.5px;color:var(--t2);margin:6px 0;">Faturas criadas direto no QuickBooks (fora do botão "Lançar no QB" do termo) não ganham o vínculo automático, mesmo com a NF de mesmo número no termo — use 🔗 ligar. Só dá para excluir/anular as que não têm termo, não têm nota fiscal com o mesmo número no sistema e não receberam nenhum pagamento (🔒 = protegida). Antes de agir, o servidor confere tudo de novo. Confirme com a contabilidade: uma fatura real cuja nota ainda não foi importada também aparece aqui. <b>Anular</b> mantém o registro no QuickBooks com valor zero; <b>Excluir</b> apaga de vez.</div>
       <div style="max-height:55vh;overflow:auto;"><table style="width:100%;font-size:10.5px;border-collapse:collapse;"><tr style="color:var(--t3);text-align:left;"><th><input type="checkbox" onchange="document.querySelectorAll('.fatOrfChk').forEach(c=>c.checked=this.checked)" title="marcar todas"></th><th style="padding:3px 6px;">Fatura</th><th style="padding:3px 6px;">Cliente</th><th style="padding:3px 6px;">Emissão</th><th style="padding:3px 6px;">Vencimento</th><th style="padding:3px 6px;text-align:right;">Saldo</th><th style="padding:3px 6px;">Situação</th></tr>${linhas || '<tr><td colspan="7" style="padding:10px;color:var(--t3);">Nenhuma fatura em aberto sem termo.</td></tr>'}</table></div>
@@ -32989,7 +32989,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.199] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.200] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -33005,7 +33005,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.199';
+window.__ATX_BUILD_ID__ = 'ATX-v3.200';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
