@@ -22050,7 +22050,7 @@ async function fatOrfasAbrir() {
     const linhas = d.sem_termo.map(f => `<tr style="${f.pode_limpar ? '' : 'opacity:.6;'}"><td style="padding:3px 6px;">${f.pode_limpar ? `<input type="checkbox" class="fatOrfChk" value="${_fx(f.id)}">` : '🔒'}</td>
       <td style="padding:3px 6px;"><a href="${_fx(f.url)}" target="_blank" rel="noopener" style="color:var(--blue);">${_fx(f.numero)}</a></td><td style="padding:3px 6px;">${_fx(f.cliente)}</td>
       <td style="padding:3px 6px;">${_fx(f.emissao)}</td><td style="padding:3px 6px;">${_fx(f.vencimento)}${f.dias_atraso ? ' <span style="color:var(--red);">(' + f.dias_atraso + 'd)</span>' : ''}</td>
-      <td style="padding:3px 6px;text-align:right;">${_fxR(f.saldo)}</td><td style="padding:3px 6px;color:${f.pode_limpar ? 'var(--gold)' : 'var(--t3)'};">${f.termo_nf ? `<a href="#" onclick="abrirDetalheTermo(${JSON.stringify(f.termo_nf.termo_id).replace(/"/g, '&quot;')});return false;" style="color:var(--blue);">${_fx(f.motivo)}</a>` : _fx(f.motivo)}${f.ligavel ? ` <button class="btn" style="font-size:9.5px;padding:1px 6px;" onclick="fatOrfasLigar(['${_fx(f.id)}'])">🔗 ligar</button>` : ''}</td></tr>`).join('');
+      <td style="padding:3px 6px;text-align:right;">${_fxR(f.saldo)}</td><td style="padding:3px 6px;color:${f.pode_limpar ? 'var(--gold)' : 'var(--t3)'};">${f.termo_nf ? `<a href="#" onclick="abrirDetalheTermo(${JSON.stringify(f.termo_nf.termo_id).replace(/"/g, '&quot;')});return false;" style="color:var(--blue);">${_fx(f.motivo)}</a>` : _fx(f.motivo)}${f.ligavel ? ` <button class="btn" style="font-size:9.5px;padding:1px 6px;" onclick="fatOrfasLigar(['${_fx(f.id)}'])">🔗 ligar</button>` : ` <button class="btn" style="font-size:9.5px;padding:1px 6px;" title="Escolher o termo (e a empresa do termo) desta fatura" onclick="fatLigarManual('${_fx(f.id)}')">🔗 ligar a termo…</button>`}</td></tr>`).join('');
     m.innerHTML = `<div class="panel" style="max-width:980px;width:100%;">
       <div style="display:flex;align-items:center;gap:8px;"><b style="font-size:13px;">🧹 Faturas em aberto sem vínculo com termo</b><span style="font-size:10px;color:var(--t3);">${d.total_abertas} em aberto no QuickBooks · ${d.sem_termo.length} sem termo · ${d.ligaveis || 0} para ligar · ${d.candidatas} para anular/excluir</span>
       <button class="btn" style="font-size:10px;margin-left:auto;" onclick="document.getElementById('fatOrfasModal').remove()">✕</button></div>
@@ -22059,6 +22059,21 @@ async function fatOrfasAbrir() {
       <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end;">${d.ligaveis ? `<button class="btn" style="font-size:10.5px;margin-right:auto;" onclick="fatOrfasLigar([])" title="Grava o vínculo fatura ↔ termo onde a NF do termo tem o mesmo número da fatura">🔗 Ligar ${d.ligaveis} fatura(s) aos termos pela NF</button>` : ''}<button class="btn" style="font-size:10.5px;" onclick="fatOrfasLimpar('anular')">⊘ Anular selecionadas</button><button class="btn" style="font-size:10.5px;background:var(--red);color:#fff;" onclick="fatOrfasLimpar('excluir')">🗑 Excluir do QuickBooks</button></div>
       <div id="fatOrfasRes" style="font-size:10.5px;margin-top:8px;"></div></div>`;
   } catch (e) { m.innerHTML = '<div class="panel" style="max-width:600px;width:100%;font-size:11px;color:var(--red);">Erro: ' + _fx(e.message) + ' <button class="btn" style="font-size:10px;" onclick="document.getElementById(\'fatOrfasModal\').remove()">fechar</button></div>'; }
+}
+// v3.201: ligar uma fatura a um termo escolhido pelo usuário
+async function fatLigarManual(invoiceId) {
+  const f = (window._fatOrfas || []).find(x => x.id === invoiceId) || {};
+  const num = prompt(`Ligar a fatura ${f.numero || invoiceId} (${f.cliente || ''} · ${_fxR(f.saldo)}) a qual termo? Digite o nº do termo:`, f.termo_sugerido?.numero || '');
+  if (!num) return;
+  try {
+    let p = { invoice_id: invoiceId, termo_numero: num.trim() };
+    let d = await fatApi('fatura_ligar_manual', p);
+    if (d.escolher_termo) { const i = prompt('Há mais de um termo nº ' + num + ':\n' + d.escolher_termo.map((t, k) => (k + 1) + ') ' + t.numero + ' · ' + (t.projeto || '')).join('\n') + '\n\nDigite o número da opção:'); const t = d.escolher_termo[Number(i) - 1]; if (!t) return; p = { invoice_id: invoiceId, termo_id: t.id }; d = await fatApi('fatura_ligar_manual', p); }
+    if (d.escolher) { const i = prompt(`Termo ${d.termo.numero} · ${d.termo.projeto || ''}\nA qual empresa do termo pertence a fatura ${d.fatura.numero} (${d.fatura.cliente} · ${_fxR(d.fatura.valor)})?\n\n` + d.escolher.map((e, k) => (k + 1) + ') ' + e.empresa + ' · NF ' + (e.nf || '—') + ' · ' + _fxR(e.valor) + (e.fatura_atual ? ' · já ligada à fatura ' + e.fatura_atual : '')).join('\n') + '\n\nDigite o número da opção:'); const e = d.escolher[Number(i) - 1]; if (!e) return;
+      if (e.fatura_atual && !confirm(`${e.empresa} já está ligada à fatura ${e.fatura_atual}. Trocar pela fatura ${d.fatura.numero}?`)) return;
+      d = await fatApi('fatura_ligar_manual', { invoice_id: invoiceId, termo_id: d.termo.id, empresa_id: e.id }); }
+    if (d.ligada) { alert(`🔗 Fatura ${d.fatura} ligada ao termo ${d.termo} (${d.empresa})` + (d.substituiu ? ` — substituiu a fatura ${d.substituiu}` : '')); fatOrfasAbrir(); }
+  } catch (e) { alert('Não liguei: ' + e.message); }
 }
 async function fatOrfasLigar(ids) {
   const sel = (window._fatOrfas || []).filter(f => f.ligavel && (!ids.length || ids.includes(f.id)));
@@ -32989,7 +33004,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.200] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.201] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -33005,7 +33020,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.200';
+window.__ATX_BUILD_ID__ = 'ATX-v3.201';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
