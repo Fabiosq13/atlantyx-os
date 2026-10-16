@@ -347,6 +347,28 @@ async function patrocinadoCriar(p = {}, req) {
     return { modo: 'meta', campanha: reg };
   } catch (e) { await desfazer(); throw new Error(e.message + ' (nada ficou criado no Meta)'); }
 }
+// v3.193: ALTERAR PERÍODO (e, opcional, R$/dia) de uma campanha patrocinada já criada — muda o conjunto no Meta.
+// O Meta não deixa mudar o início depois que a veiculação começou: nesse caso só o fim e o orçamento mudam.
+async function patrocinadoPeriodo({ id, inicio, fim, orcamento_diario } = {}) {
+  const err = m => Object.assign(new Error(m), { status: 400 });
+  const lista = (await _kvMc('mkt:patrocinados')) || []; const reg = lista.find(x => String(x.id) === String(id)); if (!reg) throw err('Campanha não encontrada');
+  if (!reg.adset_id) throw err('Esta campanha não tem conjunto de anúncios registrado');
+  const ini = String(inicio || reg.inicio || ''), fi = String(fim || reg.fim || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ini) || !/^\d{4}-\d{2}-\d{2}$/.test(fi) || fi < ini) throw err('Informe início e fim (fim depois do início)');
+  const hojeSP = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+  if (fi < hojeSP) throw err('A data de fim já passou');
+  const diario = orcamento_diario != null && orcamento_diario !== '' ? Math.round(Number(String(orcamento_diario).replace(',', '.')) * 100) / 100 : Number(reg.orcamento_diario);
+  if (!(diario >= 6)) throw err('Orçamento diário mínimo: R$ 6,00');
+  const jaComecou = reg.inicio && reg.inicio <= hojeSP && (reg.estado === 'ACTIVE' || reg.estado_meta === 'ACTIVE' || reg.ativado_em);
+  const corpo = { end_time: fi + 'T23:59:00-0300', daily_budget: Math.round(diario * 100) };
+  let inicioFinal = reg.inicio, avisoInicio = null;
+  if (ini !== reg.inicio) { if (jaComecou) avisoInicio = 'A veiculação já começou — o Meta não deixa mudar o início; mudei só o fim/orçamento.'; else { corpo.start_time = (ini < hojeSP ? hojeSP : ini) + 'T08:00:00-0300'; inicioFinal = ini < hojeSP ? hojeSP : ini; } }
+  await _meta(reg.adset_id, 'POST', corpo);
+  const dias = Math.round((new Date(fi) - new Date(inicioFinal)) / 864e5) + 1;
+  Object.assign(reg, { inicio: inicioFinal, fim: fi, orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, periodo_alterado_em: new Date().toISOString() });
+  await _kvMc('mkt:patrocinados', lista);
+  return { ok: true, campanha: reg, aviso: avisoInicio };
+}
 async function patrocinadoEstado({ id, estado } = {}) {
   if (!['ACTIVE', 'PAUSED'].includes(estado)) throw Object.assign(new Error('Estado inválido'), { status: 400 });
   const lista = (await _kvMc('mkt:patrocinados')) || []; const reg = lista.find(x => String(x.id) === String(id)); if (!reg) throw new Error('Campanha não encontrada');
@@ -1329,6 +1351,7 @@ async function handler(req, res) {
     patrocinado_copy:       () => patrocinadoCopy(payload),
     patrocinado_criar:      () => patrocinadoCriar(payload, req),
     patrocinado_estado:     () => patrocinadoEstado(payload),
+    patrocinado_periodo:    () => patrocinadoPeriodo(payload), // v3.193
     patrocinado_listar:     () => patrocinadoListar(),
     story_texto:            () => storyTexto(payload),
     autocampanha_agendar_um:() => autoCampanhaAgendarUm(payload),

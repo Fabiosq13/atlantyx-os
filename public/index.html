@@ -24682,8 +24682,41 @@ async function patListar() {
         + (r ? ' · gasto ' + fmtBRLcompleto(r.gasto) + ' · ' + r.impressoes.toLocaleString('pt-BR') + ' impressões · <b>' + r.cliques_link + ' cliques</b>' + (r.cpc ? ' · CPC ' + fmtBRLcompleto(r.cpc) : '') : '') + '</div></div>'
         + '<span class="tag ' + (at ? 'live' : 'off') + '">' + _patE(c.estado_meta || c.estado) + '</span>'
         + (at ? '<button class="btn" style="font-size:10px;" onclick="patEstado(\'' + c.id + '\',\'PAUSED\')">⏸ Pausar</button>' : '<button class="btn btn-gn" style="font-size:10px;" onclick="patEstado(\'' + c.id + '\',\'ACTIVE\',' + Number(c.total_maximo || 0) + ')">▶ Ativar</button>')
+        + '<button class="btn" style="font-size:10px;" onclick="patPeriodo(\'' + c.id + '\')" title="Alterar início, fim e R$/dia no Meta">📅 Período</button>' // v3.193
         + '<a class="btn" style="font-size:10px;text-decoration:none;" href="' + _patE(c.gerenciador) + '" target="_blank" rel="noopener">Gerenciador ↗</a></div>'; }).join('');
+    window._patLista = l;
   } catch (e) { el.innerHTML = '<div style="font-size:10.5px;color:var(--red);">' + _patE(e.message) + '</div>'; }
+}
+// v3.193: alterar período / R$ por dia de uma campanha patrocinada já criada (muda no Meta)
+function patPeriodo(id) {
+  const c = (window._patLista || []).find(x => String(x.id) === String(id)); if (!c) return;
+  let m = document.getElementById('patPerModal'); if (!m) { m = document.createElement('div'); m.id = 'patPerModal'; m.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;padding:12px;'; document.body.appendChild(m); m.addEventListener('click', e => { if (e.target === m) m.style.display = 'none'; }); }
+  m.style.display = 'flex';
+  m.innerHTML = '<div class="panel" style="width:420px;max-width:96vw;"><div class="ph"><div class="pt">📅 Período da campanha</div><button class="btn" style="font-size:10px;" onclick="document.getElementById(\'patPerModal\').style.display=\'none\'">✕</button></div><div class="pb">'
+    + '<div style="font-size:11px;color:var(--t2);margin-bottom:8px;">' + _patE(c.nome) + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">'
+    + '<div><label class="fl" for="ppIni">Início</label><input type="date" class="fi" id="ppIni" value="' + _patE(c.inicio) + '" oninput="patPerResumo()"/></div>'
+    + '<div><label class="fl" for="ppFim">Fim</label><input type="date" class="fi" id="ppFim" value="' + _patE(c.fim) + '" oninput="patPerResumo()"/></div>'
+    + '<div><label class="fl" for="ppDia">R$ por dia</label><input class="fi" id="ppDia" inputmode="decimal" value="' + Number(c.orcamento_diario || 0).toFixed(2).replace('.', ',') + '" oninput="patPerResumo()"/></div></div>'
+    + '<div id="ppResumo" style="font-size:11px;margin-top:8px;color:var(--t2);"></div>'
+    + '<div style="font-size:10px;color:var(--t3);margin-top:4px;">Se a veiculação já começou, o Meta não deixa mudar o início — muda só o fim e o valor por dia.</div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;"><button class="btn" onclick="document.getElementById(\'patPerModal\').style.display=\'none\'">Cancelar</button><button class="btn btn-gn" id="ppSalvar" onclick="patPeriodoSalvar(\'' + c.id + '\')">Salvar no Meta</button></div></div></div>';
+  patPerResumo();
+}
+function patPerResumo() {
+  const v = id => (document.getElementById(id)?.value || '').trim(), ini = v('ppIni'), fim = v('ppFim'), dia = Number(v('ppDia').replace(/\./g, '').replace(',', '.')) || 0;
+  const dias = ini && fim && fim >= ini ? Math.round((new Date(fim) - new Date(ini)) / 864e5) + 1 : 0;
+  const el = document.getElementById('ppResumo'); if (el) el.innerHTML = dias ? 'Novo máximo: <b>' + fmtBRLcompleto(dia * dias) + '</b> (' + fmtBRLcompleto(dia) + '/dia × ' + dias + ' dia' + (dias > 1 ? 's' : '') + ')' : '<span style="color:var(--gold);">Informe início e fim (fim depois do início).</span>';
+}
+async function patPeriodoSalvar(id) {
+  const v = k => (document.getElementById(k)?.value || '').trim(), b = document.getElementById('ppSalvar');
+  const corpo = { id, inicio: v('ppIni'), fim: v('ppFim'), orcamento_diario: v('ppDia').replace(/\./g, '').replace(',', '.') };
+  if (b) { b.disabled = true; b.textContent = 'Salvando…'; }
+  try { const d = await mcApi('patrocinado_periodo', corpo);
+    document.getElementById('patPerModal').style.display = 'none';
+    alert('✅ Período atualizado no Meta: ' + d.campanha.inicio.split('-').reverse().join('/') + ' a ' + d.campanha.fim.split('-').reverse().join('/') + ' · ' + fmtBRLcompleto(d.campanha.orcamento_diario) + '/dia · máx. ' + fmtBRLcompleto(d.campanha.total_maximo) + (d.aviso ? '\n\n' + d.aviso : ''));
+    patListar();
+  } catch (e) { alert('Não alterou: ' + e.message); if (b) { b.disabled = false; b.textContent = 'Salvar no Meta'; } }
 }
 async function patEstado(id, estado, total) {
   if (estado === 'ACTIVE' && !confirm('Ativar a campanha patrocinada?\n\nA partir de agora o Meta passa a cobrar — até ' + fmtBRLcompleto(total || 0) + ' no período configurado.')) return;
@@ -32873,7 +32906,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.192] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.193] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -32889,7 +32922,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.192';
+window.__ATX_BUILD_ID__ = 'ATX-v3.193';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
