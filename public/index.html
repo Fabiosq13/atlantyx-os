@@ -22063,16 +22063,25 @@ async function fatOrfasAbrir() {
 // v3.201: ligar uma fatura a um termo escolhido pelo usuário
 async function fatLigarManual(invoiceId) {
   const f = (window._fatOrfas || []).find(x => x.id === invoiceId) || {};
-  const num = prompt(`Ligar a fatura ${f.numero || invoiceId} (${f.cliente || ''} · ${_fxR(f.saldo)}) a qual termo? Digite o nº do termo:`, f.termo_sugerido?.numero || '');
-  if (!num) return;
+  const sug = f.termo_sugerido;
+  const numT = prompt(`Ligar a fatura ${f.numero || invoiceId} (${f.cliente || ''} · ${_fxR(f.saldo)}) a qual termo? Digite o nº do termo:`, sug?.numero || '');
+  if (!numT) return;
   try {
-    let p = { invoice_id: invoiceId, termo_numero: num.trim() };
+    // v3.202: se manteve o termo sugerido, usa o id dele (evita ambiguidade entre termos com o mesmo número)
+    let p = (sug && String(sug.numero) === numT.trim()) ? { invoice_id: invoiceId, termo_id: sug.id } : { invoice_id: invoiceId, termo_numero: numT.trim() };
     let d = await fatApi('fatura_ligar_manual', p);
-    if (d.escolher_termo) { const i = prompt('Há mais de um termo nº ' + num + ':\n' + d.escolher_termo.map((t, k) => (k + 1) + ') ' + t.numero + ' · ' + (t.projeto || '')).join('\n') + '\n\nDigite o número da opção:'); const t = d.escolher_termo[Number(i) - 1]; if (!t) return; p = { invoice_id: invoiceId, termo_id: t.id }; d = await fatApi('fatura_ligar_manual', p); }
-    if (d.escolher) { const i = prompt(`Termo ${d.termo.numero} · ${d.termo.projeto || ''}\nA qual empresa do termo pertence a fatura ${d.fatura.numero} (${d.fatura.cliente} · ${_fxR(d.fatura.valor)})?\n\n` + d.escolher.map((e, k) => (k + 1) + ') ' + e.empresa + ' · NF ' + (e.nf || '—') + ' · ' + _fxR(e.valor) + (e.fatura_atual ? ' · já ligada à fatura ' + e.fatura_atual : '')).join('\n') + '\n\nDigite o número da opção:'); const e = d.escolher[Number(i) - 1]; if (!e) return;
-      if (e.fatura_atual && !confirm(`${e.empresa} já está ligada à fatura ${e.fatura_atual}. Trocar pela fatura ${d.fatura.numero}?`)) return;
-      d = await fatApi('fatura_ligar_manual', { invoice_id: invoiceId, termo_id: d.termo.id, empresa_id: e.id }); }
-    if (d.ligada) { alert(`🔗 Fatura ${d.fatura} ligada ao termo ${d.termo} (${d.empresa})` + (d.substituiu ? ` — substituiu a fatura ${d.substituiu}` : '')); fatOrfasAbrir(); }
+    if (d.escolher_termo) { const i = prompt('Há mais de um termo nº ' + numT + ':\n' + d.escolher_termo.map((t, k) => (k + 1) + ') ' + t.numero + ' · ' + (t.projeto || '')).join('\n') + '\n\nDigite o número da opção:'); const t = d.escolher_termo[Number(i) - 1]; if (!t) { alert('Opção inválida — nada foi ligado.'); return; } p = { invoice_id: invoiceId, termo_id: t.id }; d = await fatApi('fatura_ligar_manual', p); }
+    if (d.escolher) {
+      const lista = d.escolher.map((e, k) => (k + 1) + ') ' + (e.empresa || '—') + ' · NF ' + (e.nf || '—') + ' · ' + _fxR(e.valor) + (e.fatura_atual ? ' · já ligada à fatura ' + e.fatura_atual : '')).join('\n');
+      const i = prompt(`Termo ${d.termo.numero} · ${d.termo.projeto || ''}\nA qual empresa do termo pertence a fatura ${d.fatura.numero} (${d.fatura.cliente} · ${_fxR(d.fatura.valor)})?\n\n${lista ? lista + '\n' : '(o termo não tem empresas cadastradas)\n'}0) criar uma linha nova no termo para esta fatura\n\nDigite o número da opção:`, d.escolher.length ? '' : '0');
+      if (i === null) return;
+      if (String(i).trim() === '0') d = await fatApi('fatura_ligar_manual', { invoice_id: invoiceId, termo_id: d.termo.id, criar_empresa: true });
+      else { const e = d.escolher[Number(i) - 1]; if (!e) { alert('Opção inválida — nada foi ligado.'); return; }
+        if (e.fatura_atual && !confirm(`${e.empresa} já está ligada à fatura ${e.fatura_atual}. Trocar pela fatura ${d.fatura.numero}?`)) return;
+        d = await fatApi('fatura_ligar_manual', { invoice_id: invoiceId, termo_id: d.termo.id, empresa_id: e.id }); }
+    }
+    if (d.ligada) { alert(`🔗 Fatura ${d.fatura} ligada ao termo ${d.termo} (${d.empresa})` + (d.criou_empresa ? ' — criada uma linha nova no termo' : '') + (d.substituiu ? ` — substituiu a fatura ${d.substituiu}` : '')); fatOrfasAbrir(); }
+    else alert('Não liguei — resposta inesperada: ' + JSON.stringify(d).slice(0, 300));
   } catch (e) { alert('Não liguei: ' + e.message); }
 }
 async function fatOrfasLigar(ids) {
@@ -33004,7 +33013,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.201] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.202] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -33020,7 +33029,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.201';
+window.__ATX_BUILD_ID__ = 'ATX-v3.202';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

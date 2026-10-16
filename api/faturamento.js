@@ -1389,7 +1389,7 @@ async function faturasOrfasAnalisar() {
 }
 // v3.201: liga MANUALMENTE uma fatura do QuickBooks a um termo (ex.: NF recebida no termo, mas a empresa do termo sem o nº da NF).
 // Se o termo tiver mais de uma empresa sem fatura, devolve a lista para o usuário escolher.
-async function faturaLigarManual({ invoice_id, termo_id, termo_numero, empresa_id } = {}) {
+async function faturaLigarManual({ invoice_id, termo_id, termo_numero, empresa_id, criar_empresa } = {}) {
   if (!invoice_id) throw Object.assign(new Error('invoice_id obrigatório'), { status: 400 });
   const sql = await getSql();
   let t = termo_id ? (await sql`SELECT id, numero_termo, projeto FROM termos_faturamento WHERE id = ${String(termo_id)}`)[0] : null;
@@ -1403,8 +1403,15 @@ async function faturaLigarManual({ invoice_id, termo_id, termo_numero, empresa_i
   if (ja.length) throw Object.assign(new Error(`A fatura ${inv.DocNumber || inv.Id} já está ligada ao termo ${ja[0].numero_termo}`), { status: 409 });
   const emps = await sql`SELECT id, empresa, nf_numero, valor_parcela, qb_invoice_id, qb_invoice_doc FROM termos_empresas WHERE termo_id = ${t.id} ORDER BY empresa`;
   let alvo = empresa_id ? emps.find(e => String(e.id) === String(empresa_id)) : null;
+  // v3.202: termo sem empresa livre (ou sem nenhuma empresa) → cria uma linha no termo para esta fatura
+  if (!alvo && criar_empresa) {
+    const id = 'emp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    await sql`INSERT INTO termos_empresas (id, termo_id, ordem, empresa, valor_parcela, nf_numero, nf_valor, nf_data, nf_status, qb_invoice_id, qb_invoice_doc, qb_lancado_em)
+      VALUES (${id}, ${t.id}, ${emps.length + 1}, ${inv.CustomerRef?.name || 'Cliente'}, ${num(inv.TotalAmt)}, ${String(inv.DocNumber || inv.Id)}, ${num(inv.TotalAmt)}, ${inv.TxnDate || null}, 'emitida', ${String(inv.Id)}, ${String(inv.DocNumber || inv.Id)}, NOW())`;
+    return { ligada: true, criou_empresa: true, fatura: inv.DocNumber || inv.Id, termo: t.numero_termo, empresa: inv.CustomerRef?.name || 'Cliente', substituiu: null };
+  }
   if (!alvo) { const livres = emps.filter(e => !e.qb_invoice_id);
-    if (livres.length === 1) alvo = livres[0];
+    if (livres.length === 1 && emps.length === 1) alvo = livres[0];
     else return { termo: { id: t.id, numero: t.numero_termo, projeto: t.projeto }, escolher: emps.map(e => ({ id: e.id, empresa: e.empresa, nf: e.nf_numero, valor: num(e.valor_parcela), fatura_atual: e.qb_invoice_doc || e.qb_invoice_id || null })), fatura: { id: inv.Id, numero: inv.DocNumber, cliente: inv.CustomerRef?.name, valor: num(inv.TotalAmt) } }; }
   await sql`UPDATE termos_empresas SET qb_invoice_id = ${String(inv.Id)}, qb_invoice_doc = ${String(inv.DocNumber || inv.Id)}, qb_erro = NULL, nf_numero = COALESCE(NULLIF(nf_numero, ''), ${String(inv.DocNumber || '') || null}) WHERE id = ${alvo.id}`;
   return { ligada: true, fatura: inv.DocNumber || inv.Id, termo: t.numero_termo, empresa: alvo.empresa, substituiu: alvo.qb_invoice_doc || alvo.qb_invoice_id || null };
