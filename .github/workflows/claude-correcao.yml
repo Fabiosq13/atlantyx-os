@@ -62,8 +62,11 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           trigger_phrase: "@claude"
+          # v3.190: modelo FIXO = Sonnet. Sem --model a action usava o modelo mais caro (Opus 5.5), que respondia por
+          # ~95% do consumo da conta Anthropic (até 35 milhões de tokens num dia). Turnos 120 → 60.
           # v3.189: libera os comandos de git/node que o Claude precisa para atualizar branch em conflito e validar
           # (antes "git fetch"/"git merge" eram negados e os PRs em conflito ficavam em laço a cada 6 h)
           claude_args: >-
-            --max-turns 120
+            --model claude-sonnet-4-6
+            --max-turns 60
             --allowedTools "Bash(git fetch:*),Bash(git merge:*),Bash(git checkout:*),Bash(git switch:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git rebase:*),Bash(git restore:*),Bash(git show:*),Bash(git branch:*),Bash(node:*),Bash(npm ci:*),Bash(npm install:*),Bash(ls:*),Bash(grep:*),Bash(sed -n:*),Bash(wc:*)"
