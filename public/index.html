@@ -22344,11 +22344,11 @@ function _fatCard(t, col) {
       <span onclick="event.stopPropagation();_fatMarcarPago('${t.id}')" title="Confirmar que o pagamento entrou — move para a coluna Pago"
         style="cursor:pointer;font-size:9px;display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:5px;margin-bottom:4px;background:rgba(34,211,163,.15);color:var(--green,#22d3a3);border:1px solid rgba(34,211,163,.4);">💵 marcar como pago</span><br>
       <span onclick="event.stopPropagation();_fatToggleCpfl('${t.id}', ${t.cpfl_confirmado ? 'false' : 'true'})"
-        title="${t.cpfl_confirmado ? 'Confirmado por ' + (t.cpfl_confirmado_por || '—') + (t.cpfl_confirmado_em ? ' em ' + String(t.cpfl_confirmado_em).substring(0,10).split('-').reverse().join('/') : '') + ' — clique para desmarcar' : 'Marcar que as notas estão no sistema da CPFL, programadas para pagamento'}"
+        title="${t.cpfl_confirmado ? 'Confirmado por ' + (t.cpfl_confirmado_por || '—') + (t.cpfl_confirmado_em ? ' em ' + String(t.cpfl_confirmado_em).substring(0,10).split('-').reverse().join('/') : '') + ' — clique para desmarcar' : 'Marcar que o cliente confirmou o recebimento das notas e o pagamento está programado para pagamento'}"
         style="cursor:pointer;font-size:9px;display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:5px;
           background:${t.cpfl_confirmado ? 'rgba(34,211,163,.15)' : 'rgba(255,80,80,.12)'};
           color:${_corTxt(t.cpfl_confirmado ? 'var(--green,#22d3a3)' : 'var(--red)')};border:1px solid ${t.cpfl_confirmado ? 'rgba(34,211,163,.4)' : 'rgba(255,80,80,.35)'};">
-        ${t.cpfl_confirmado ? '✅ CPFL confirmado' : '⬜ confirmar no sistema CPFL'}
+        ${t.cpfl_confirmado ? '✅ recebimento confirmado pelo cliente' : '⬜ confirmar recebimento pagamento pelo cliente'}
       </span>
       ${t.cpfl_previsao_pagamento ? `<span style="font-size:8.5px;color:var(--t3);margin-left:5px;">prev. ${String(t.cpfl_previsao_pagamento).substring(0,10).split('-').reverse().join('/')}</span>` : ''}
     </div>` : '';
@@ -22570,14 +22570,14 @@ async function _fatToggleCpfl(termoId, confirmar) {
   try {
     let obs = null, prev = null;
     if (confirmar) {
-      const r = prompt('Confirmar que as notas deste termo estão no sistema de fornecedores da CPFL, programadas para pagamento.\n\nOpcional — previsão de pagamento (AAAA-MM-DD) e observação, separados por |:', '');
+      const r = prompt('Confirmar recebimento pelo cliente: as notas deste termo foram recebidas e o pagamento está programado.\n\nOpcional — previsão de pagamento (AAAA-MM-DD) e observação, separados por |:', '');
       if (r === null) return;
       const [p, o] = r.split('|').map(x => (x || '').trim());
       if (p && /^\d{4}-\d{2}-\d{2}$/.test(p)) prev = p;
       obs = o || (p && !prev ? p : null);
     }
     await fatApi('cpfl_confirmar', { termo_id: termoId, confirmado: confirmar, por: 'financeiro', observacao: obs, previsao_pagamento: prev });
-    toast(confirmar ? 'Confirmado no sistema da CPFL' : 'Confirmação removida', confirmar ? 'success' : 'info');
+    toast(confirmar ? 'Recebimento confirmado pelo cliente' : 'Confirmação removida', confirmar ? 'success' : 'info');
     carregarKanbanFaturamento();
   } catch (e) {
     toast('Erro: ' + e.message, 'error');
@@ -32906,7 +32906,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.194] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.195] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -32922,7 +32922,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.194';
+window.__ATX_BUILD_ID__ = 'ATX-v3.195';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
