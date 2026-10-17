@@ -3722,8 +3722,9 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Contratos</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Número, vigência e vencimento de cada contrato — alimentado por importação de planilha</div></div>
     <button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="abrirImportarPM()">&#128194; Importar Planilha</button>
     <button class="btn btn-gn" onclick="abrirFormContrato()">+ Novo Contrato</button>
-    <button class="btn" onclick="carregarContratos()">&#8635; Atualizar</button>
+    <button class="btn" id="ctrBtnAtualizar" onclick="carregarContratos()">&#8635; Atualizar</button>
   </div>
+  <div id="ctrAlerta" role="alert" style="display:none;background:rgba(255,77,106,.08);border:1px solid var(--red);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:11px;color:var(--red);"></div>
   <div class="kg k4" style="margin-bottom:12px;">
     <div class="kpi bl"><div class="kl">Total de contratos</div><div class="kv" id="ctr_total">—</div></div>
     <div class="kpi gn"><div class="kl">Vigentes</div><div class="kv" id="ctr_vigente">—</div><div class="ks">venc. &gt; 60 dias</div></div>
@@ -23323,10 +23324,53 @@ async function confirmarImportarPM() {
 }
 
 // ── Tela de Contratos ──
-async function carregarContratos() {
+// dem_mv8f320bgm7t: ↻ Atualizar resiliente — 3 tentativas (1s entre elas) só em falha transitória (HTTP 0/rede, timeout, 5xx),
+// AbortController em cada tentativa e prazo total de 10s: o botão nunca fica carregando para sempre
+const CTR_TENTATIVAS = 3, CTR_ESPERA_MS = 1000, CTR_PRAZO_MS = 10000;
+let _ctrCarregando = null;
+function _ctrHttp(e) { if (!e) return null; if (e.httpStatus != null) return e.httpStatus; if (e.timeout) return 0; const m = /HTTP (\d{3})/.exec(e.message || ''); return m ? +m[1] : null; }
+function _ctrTransitorio(e) { const h = _ctrHttp(e); return !!(e && (e.timeout || e.semConexao || e.name === 'AbortError')) || h === 0 || (h >= 500 && h < 600); }
+async function _ctrComRetry(action, params) {
+  const fim = Date.now() + CTR_PRAZO_MS; let ult = null, t = 0;
+  while (t < CTR_TENTATIVAS) {
+    const resta = fim - Date.now(); if (resta < 500) break;
+    t++;
+    try { return await finApi(action, params, { timeoutMs: resta }); }
+    catch (e) {
+      ult = e;
+      console.warn('[contratos]', JSON.stringify({ action, tentativa: t, http: _ctrHttp(e), erro: e.message }));
+      if (!_ctrTransitorio(e)) break;
+    }
+    if (t < CTR_TENTATIVAS) { if (fim - Date.now() < CTR_ESPERA_MS + 500) break; await new Promise(r => setTimeout(r, CTR_ESPERA_MS)); }
+  }
+  if (!ult) { ult = new Error('Tempo esgotado: o servidor não respondeu em ' + (CTR_PRAZO_MS / 1000) + 's'); ult.timeout = true; }
+  ult.tentativas = t; throw ult;
+}
+function _ctrSkeleton() { return Array.from({ length: 5 }, (_, i) => `<div class="skel" style="height:${i ? 22 : 16}px;margin:8px 0;${i ? '' : 'width:55%;'}"></div>`).join(''); }
+function _ctrAlerta(e) {
+  const box = document.getElementById('ctrAlerta'); if (!box) return;
+  if (!e) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const h = _ctrHttp(e);
+  const cod = h === 0 ? 'HTTP 0 (' + (e.timeout ? 'tempo esgotado' : 'sem conexão com o servidor') + ')' : h != null ? 'HTTP ' + h : 'erro';
+  box.innerHTML = `<b>Não foi possível atualizar os contratos</b> — ${_recEsc(cod)} após ${e.tentativas || 1} tentativa(s).`
+    + `<div style="margin-top:4px;color:var(--t2);">${_recEsc(e.message)}${e.hint ? ' · ' + _recEsc(e.hint) : ''}</div>`
+    + '<button class="btn" style="margin-top:8px;font-size:10px;" onclick="carregarContratos()">&#8635; Tentar novamente</button>';
+  box.style.display = 'block';
+}
+function carregarContratos() {
+  if (_ctrCarregando) return _ctrCarregando; // cliques repetidos não disparam chamadas sobrepostas
+  _ctrCarregando = _ctrCarregar().finally(() => { _ctrCarregando = null; });
+  return _ctrCarregando;
+}
+async function _ctrCarregar() {
   const box = document.getElementById('ctrLista'); if (!box) return;
+  const btn = document.getElementById('ctrBtnAtualizar');
+  const anterior = box.querySelector('table') ? box.innerHTML : null; // em falha, mantém a última tabela carregada
+  if (btn) { btn.disabled = true; btn.innerHTML = '&#8635; Atualizando…'; }
+  box.innerHTML = _ctrSkeleton();
   try {
-    const d = await finApi('contrato_list');
+    const d = await _ctrComRetry('contrato_list');
+    _ctrAlerta(null);
     const u = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
     u('ctr_total', d.resumo.total); u('ctr_vigente', d.resumo.vigente); u('ctr_vencendo', d.resumo.vencendo); u('ctr_vencido', d.resumo.vencido);
     const badge = document.getElementById('ctrMenuCnt'); if (badge) badge.textContent = (d.resumo.vencendo + d.resumo.vencido) || '';
@@ -23343,7 +23387,12 @@ async function carregarContratos() {
         <td style="padding:6px;color:${_corTxt(cor[c.status_calc])};">${lbl[c.status_calc]}${c.dias_restantes!=null && c.status_calc!=='vencido' ? ' ('+c.dias_restantes+'d)' : c.dias_restantes!=null ? ' ('+Math.abs(c.dias_restantes)+'d atrás)' : ''}</td>
         <td style="padding:6px;"><button class="btn" style="font-size:9px;padding:1px 5px;color:var(--red);" onclick="_ctrExcluir('${c.id}')">🗑</button></td>
         </tr>`).join('')}</tbody></table>` : '<div style="text-align:center;color:var(--t3);padding:20px;">Nenhum contrato cadastrado — importe uma planilha ou clique em + Novo Contrato.</div>';
-  } catch (e) { box.innerHTML = '<div style="color:var(--red);text-align:center;padding:20px;">Erro: ' + e.message + '</div>'; }
+  } catch (e) {
+    _ctrAlerta(e);
+    box.innerHTML = anterior || '<div style="color:var(--t3);text-align:center;padding:20px;">Contratos indisponíveis no momento — veja o detalhe acima.</div>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '&#8635; Atualizar'; }
+  }
 }
 function abrirFormContrato() {
   ['ctNumero','ctProjeto','ctPrazoTexto','ctInicio','ctVencimento'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
