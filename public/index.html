@@ -2062,6 +2062,9 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     <div class="panel"><div class="ph"><div class="pt">Pipeline de Ideias — Kanban</div><span class="tag live">Ao Vivo</span><span style="font-size:10px;color:var(--t3);margin-left:8px;">clique na ideia para abrir e editar · arraste o card para mudar de etapa · 🗑 exclui</span></div>
       <div class="pb"><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:7px;" id="s1Kanban"><div style="font-size:9px;color:var(--t3);text-align:center;grid-column:1/-1;padding:20px;">Nenhuma ideia. Capture a primeira acima.</div></div></div>
     </div>
+    <div class="panel" id="s1ProxPanel" style="margin-top:11px;display:none;"><div class="ph"><div class="pt">Próximos Passos — ideias em Viabilidade</div><span class="tag on">Checklist</span><span style="font-size:10px;color:var(--t3);margin-left:8px;">marque o que já foi feito · fica salvo neste navegador</span></div>
+      <div class="pb" id="s1ProxLista"></div>
+    </div>
     <div class="panel" id="s1AnalisePanel" style="display:none;"><div class="ph"><div class="pt">Análise em Andamento</div><span class="tag live">IA</span><button class="btn btn-g" style="font-size:10px;padding:2px 8px;margin-left:8px;" onclick="document.getElementById('s1AnalisePanel').style.display='none'" title="Fechar este painel">✕</button></div><div class="pb" id="s1AnaliseResult"></div></div>
   </div>
 
@@ -11410,7 +11413,7 @@ function s1Soltar(ev, etapa) {
 }
 function renderKanbanS1(ideias) {
   const kanban = document.getElementById('s1Kanban');
-  if (kanban && ideias && !ideias.length) { kanban.innerHTML = '<div style="font-size:9px;color:var(--t3);text-align:center;grid-column:1/-1;padding:20px;">Nenhuma ideia. Capture a primeira acima.</div>'; try { _s1DupBarra(); } catch (_) {} return; }
+  if (kanban && ideias && !ideias.length) { kanban.innerHTML = '<div style="font-size:9px;color:var(--t3);text-align:center;grid-column:1/-1;padding:20px;">Nenhuma ideia. Capture a primeira acima.</div>'; try { _s1DupBarra(); } catch (_) {} try { _s1ProxRender(); } catch (_) {} return; }
   if (!kanban || !ideias || !ideias.length) return;
   window._s1IdeiasCache = [];
   const stages = ['Recebida','Em Análise','Pesquisa','Viabilidade','Comitê','Aguardando Fundador','Em Desenvolvimento'];
@@ -11433,12 +11436,74 @@ function renderKanbanS1(ideias) {
           return '<div draggable="true" ondragstart="s1Arrastar(event,' + k + ')" ondragend="this.style.opacity=\'\'" onclick="ideiaAbrir(' + k + ')" title="Clique para abrir e editar · arraste para mudar de etapa" style="background:var(--bg4);border:1px solid ' + (dup ? 'var(--gold)' : 'var(--bd)') + ';border-radius:5px;padding:7px;margin-bottom:4px;font-size:10px;cursor:grab;user-select:none;">'
             + (dup ? '<div style="font-family:var(--M);font-size:8.5px;color:var(--gold);font-weight:700;margin-bottom:3px;">DUPLICADA</div>' : '')
             + _limparTituloIdeia(i.titulo || 'Sem título').replace(/</g,'&lt;')
+            + (s === 'Viabilidade' ? _s1ProxBarra(i, k) : '')
             + '<div style="margin-top:5px;display:flex;gap:4px;align-items:center;"><span onclick="event.stopPropagation();' + (bp ? 'bpAbrirDaIdeia(' + k + ')' : 'bpGerarParaIdeia(' + k + ')') + '" style="cursor:pointer;font-family:var(--M);font-size:9px;padding:1px 5px;border-radius:3px;background:' + (bp ? 'rgba(0,200,120,.15);color:var(--green)' : 'var(--bg3);color:var(--t2)') + ';">&#128202; ' + (bp ? 'BP' + (bp.tir_anual != null ? ' · TIR ' + Math.round(bp.tir_anual * 100) + '%' : '') : 'gerar BP') + '</span>'
             + '<span style="flex:1;"></span><button onclick="ideiaChatAbrir(' + k + ',event)" title="Conversar com a IA sobre esta ideia (lê todo o material do card)" style="background:none;border:none;cursor:pointer;font-size:11px;padding:0 3px;">💬</button><button onclick="event.stopPropagation();ideiaAbrir(' + k + ')" title="Editar" style="background:none;border:none;cursor:pointer;color:var(--blue);font-size:11px;padding:0 3px;">✎</button>'
             + '<button onclick="s1ExcluirIdeia(' + k + ',event)" title="Excluir" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:11px;padding:0 3px;">🗑</button></div></div>'; }).join('')
       + '</div>';
   }).join('');
   try { _s1DupBarra(); } catch (_) {}
+  try { _s1ProxRender(); } catch (_) {}
+}
+// Próximos Passos das ideias em Viabilidade — checklist de 5 etapas por ideia (localStorage ideia_checklist_{id})
+const _S1_PROX_ETAPAS = ['Análise de Mercado', 'Benchmark Competitivo', 'Business Plan', 'Validação com Cliente', 'Decisão Go/No-Go'];
+const _s1ProxAbertos = new Set();
+const _s1ProxChave = i => 'ideia_checklist_' + (i.id != null && i.id !== '' ? i.id : _chaveTituloIdeia(i.titulo).replace(/ /g, '_'));
+function _s1ProxLer(i) {
+  try { const a = JSON.parse(localStorage.getItem(_s1ProxChave(i)) || '[]'); return _S1_PROX_ETAPAS.map((_, n) => !!(Array.isArray(a) && a[n])); }
+  catch (_) { return _S1_PROX_ETAPAS.map(() => false); }
+}
+const _s1ProxPct = i => Math.round(_s1ProxLer(i).filter(Boolean).length / _S1_PROX_ETAPAS.length * 100);
+function _s1ProxBarra(i, k) {
+  let p; try { p = _s1ProxPct(i); } catch (_) { return ''; }
+  const cor = p >= 100 ? 'var(--green)' : 'var(--blue)';
+  return '<div onclick="event.stopPropagation();s1ProxIr(' + k + ')" title="Próximos passos: ' + p + '% do checklist de viabilidade — clique para abrir" style="cursor:pointer;margin-top:5px;">'
+    + '<div style="display:flex;justify-content:space-between;font-family:var(--M);font-size:8.5px;color:var(--t2);"><span>checklist</span><span data-s1prox-pct="' + k + '">' + p + '%</span></div>'
+    + '<div style="height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;margin-top:2px;"><div data-s1prox-bar="' + k + '" style="height:100%;width:' + p + '%;background:' + cor + ';transition:width .2s;"></div></div></div>';
+}
+function _s1ProxRender() {
+  const pn = document.getElementById('s1ProxPanel'), el = document.getElementById('s1ProxLista'); if (!pn || !el) return;
+  const lista = (window._s1IdeiasCache || []).map((i, k) => ({ i, k })).filter(({ i }) => (i.stage || i.status) === 'Viabilidade');
+  if (!lista.length) { pn.style.display = 'none'; el.innerHTML = ''; return; }
+  pn.style.display = '';
+  el.innerHTML = lista.map(({ i, k }) => {
+    const marc = _s1ProxLer(i), p = _s1ProxPct(i), chave = _s1ProxChave(i), cor = p >= 100 ? 'var(--green)' : 'var(--blue)';
+    return '<details id="s1Prox_' + k + '" data-chave="' + _ie(chave) + '"' + (_s1ProxAbertos.has(chave) ? ' open' : '') + ' ontoggle="s1ProxToggle(this)" style="border:1px solid var(--bd);border-radius:6px;padding:7px 10px;margin-bottom:6px;background:var(--bg4);">'
+      + '<summary style="cursor:pointer;display:flex;align-items:center;gap:10px;font-size:11px;"><span style="flex:1;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _ie(_limparTituloIdeia(i.titulo || 'Sem título')) + '</span>'
+      + '<span style="width:120px;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;"><span data-s1prox-bar="' + k + '" style="display:block;height:100%;width:' + p + '%;background:' + cor + ';transition:width .2s;"></span></span>'
+      + '<span data-s1prox-pct="' + k + '" style="font-family:var(--M);font-size:10px;color:var(--t2);width:34px;text-align:right;">' + p + '%</span></summary>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin:9px 0 8px;">'
+      + _S1_PROX_ETAPAS.map((t, n) => '<label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;"><input type="checkbox"' + (marc[n] ? ' checked' : '') + ' onchange="s1ProxMarcar(' + k + ',' + n + ',this.checked)"/>' + (n + 1) + '. ' + t + '</label>').join('')
+      + '</div><div style="display:flex;gap:6px;flex-wrap:wrap;">'
+      + '<button class="btn btn-g" style="font-size:10px;padding:3px 9px;" onclick="s1ProxAnalisar(' + k + ')">&#9670; Analisar com IA</button>'
+      + '<button class="btn btn-g" style="font-size:10px;padding:3px 9px;" onclick="s1ProxBP(' + k + ')">&#128202; ' + (i.business_plan?.id ? 'Abrir Business Plan' : 'Criar Business Plan') + '</button></div></details>';
+  }).join('');
+}
+function s1ProxToggle(d) { const c = d.dataset.chave; if (d.open) _s1ProxAbertos.add(c); else _s1ProxAbertos.delete(c); }
+function s1ProxMarcar(k, n, v) {
+  const i = (window._s1IdeiasCache || [])[k]; if (!i) return;
+  const m = _s1ProxLer(i); m[n] = !!v;
+  try { localStorage.setItem(_s1ProxChave(i), JSON.stringify(m)); } catch (_) { toast('Não consegui salvar o checklist neste navegador', 'error'); }
+  const p = _s1ProxPct(i), cor = p >= 100 ? 'var(--green)' : 'var(--blue)';
+  document.querySelectorAll('[data-s1prox-bar="' + k + '"]').forEach(b => { b.style.width = p + '%'; b.style.background = cor; });
+  document.querySelectorAll('[data-s1prox-pct="' + k + '"]').forEach(b => { b.textContent = p + '%'; });
+}
+function s1ProxIr(k) { const d = document.getElementById('s1Prox_' + k); if (!d) return; d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+function s1ProxAnalisar(k) {
+  const i = (window._s1IdeiasCache || [])[k]; if (!i) return;
+  nav('s1analise', document.querySelector('.sbi[onclick*="s1analise"]'));
+  const t = document.getElementById('anTitulo'), d = document.getElementById('anDesc');
+  if (t) t.value = _limparTituloIdeia(i.titulo);
+  if (d) d.value = i.desc || i.descricao || '';
+  try { _rascunhoGravar('s1analise'); } catch (_) {}
+  if (t) t.focus();
+  toast('Ideia carregada no S1-03 — escolha o tipo de análise', 'success');
+}
+function s1ProxBP(k) {
+  const i = (window._s1IdeiasCache || [])[k]; if (!i) return;
+  if (i.business_plan?.id) return bpAbrirDaIdeia(k);
+  window._bpIdeiaPendente = { id: i.id, chave: _chaveTituloIdeia(i.titulo) };
+  nav('s1bp', document.querySelector('.sbi[onclick*="s1bp"]')); bpTab('ideia');
 }
 function _s1DupBarra() {
   const g = _s1Duplicadas(); let b = document.getElementById('s1DupBarra'); const kb = document.getElementById('s1Kanban'); if (!kb) return;
@@ -12744,6 +12809,12 @@ async function bpInit() {
   sel.innerHTML = (atual ? '<option value="__atual">★ ' + _bpE(atual.titulo) + ' (analisada agora no S1-03)</option>' : '')
     + _bpIdeias.map((x, k) => '<option value="' + k + '">' + _bpE(x.titulo) + (x.business_plan ? ' · já tem BP' : '') + '</option>').join('')
     || '<option value="">Nenhuma ideia cadastrada — cadastre no Pipeline ou analise no S1-03</option>';
+  const pend = window._bpIdeiaPendente; // vindo do "Criar Business Plan" dos Próximos Passos do Pipeline
+  if (pend) {
+    window._bpIdeiaPendente = null;
+    const k = _bpIdeias.findIndex(x => (pend.id != null && String(x.id) === String(pend.id)) || _chaveTituloIdeia(x.titulo) === pend.chave);
+    if (k >= 0) { sel.value = String(k); toast('Ideia "' + _limparTituloIdeia(_bpIdeias[k].titulo).substring(0, 40) + '" selecionada — clique em Gerar Business Plan', 'success'); document.getElementById('bpInstrucoes')?.focus(); }
+  }
 }
 
 async function bpListar() {
