@@ -335,10 +335,11 @@ async function sincronizar() {
       if (pr && (pr.rotulos || []).includes('precisa-revisao') && !(ant.pr?.rotulos || []).includes('precisa-revisao')) ant.bpm = { ...(ant.bpm || {}), devolucoes: (ant.bpm?.devolucoes || 0) + 1 };
       const d = { ...ant, pr, claude, issue_estado: iss.state, issue_criada_em: iss.created_at || ant.issue_criada_em || null, branch: pr?.branch || claude?.branch || ant.branch || null };
       // v3.88: o robô de merge achou conflito de verdade → pede ao Claude (com o token do fundador, para disparar o GitHub Actions)
-      if (pr && pr.estado === 'open' && (pr.rotulos || []).includes('conflito') && (!ant.conflito_pedido_em || Date.now() - Date.parse(ant.conflito_pedido_em) > 3 * 3600000)) {
+      // v3.190: no máximo 3 pedidos automáticos por PR e 1 por dia (antes: a cada 6 h, sem limite — 8+ tentativas por PR)
+      if (pr && pr.estado === 'open' && (pr.rotulos || []).includes('conflito') && (ant.conflito_tentativas || 0) < 3 && (!ant.conflito_pedido_em || Date.now() - Date.parse(ant.conflito_pedido_em) > 24 * 3600000)) {
         try { await fetch(`https://api.github.com/repos/${repo}/issues/${pr.numero}/comments`, { method: 'POST', headers: { ...H, 'Content-Type': 'application/json' },
             body: JSON.stringify({ body: '@claude esta branch está em conflito com a main. Faça `git merge origin/main` NESTA branch, resolva os conflitos mantendo as duas mudanças (a da main e a deste PR), NÃO altere a versão ATX-vX.YY, valide (node --check nas APIs e nos <script> de public/index.html) e faça push nesta mesma branch. Não abra outro PR.' }) });
-          d.conflito_pedido_em = new Date().toISOString(); } catch (_) {}
+          d.conflito_pedido_em = new Date().toISOString(); d.conflito_tentativas = (ant.conflito_tentativas || 0) + 1; } catch (_) {}
       }
       const implementada = iss.state === 'closed' && iss.state_reason !== 'not_planned' || (pr && pr.merged);
       if (implementada) d.implementada_em = pr?.merged_em || iss.closed_at || new Date().toISOString();

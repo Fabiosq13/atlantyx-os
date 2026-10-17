@@ -93,6 +93,7 @@ async function salvarDeUrl({ url, origem, jpeg = false } = {}) {
 // Garante URL permanente: se já for estável, devolve como está
 async function garantirPermanente({ url, req, forcar = false } = {}) {
   if (!url) return { url: null, convertida: false };
+  if (ehHostProtegido(url)) return { url: hostProducao(url), convertida: true, motivo: 'endereço protegido do deployment → domínio de produção' }; // v3.180
   const base = baseUrl(req);
   if (String(url).startsWith(base + '/api/media')) return { url, convertida: false, motivo: 'já é permanente' };
   if (!forcar && !ehEfemera(url)) return { url, convertida: false, motivo: 'URL parece estável' };
@@ -276,7 +277,15 @@ async function handler(req, res) {
   }
 }
 
-export { salvarDeUrl, garantirPermanente, ehEfemera, baseUrl };
+// v3.180: imagem gravada com o endereço protegido do deployment (project-xxx-…vercel.app) — o Metricool/Instagram
+// não conseguem abrir. O arquivo é o mesmo no domínio de produção (/m/… e /media/… vêm do banco), então basta trocar o host.
+function ehHostProtegido(url) { try { const h = new URL(String(url)).host; return /\.vercel\.app$/.test(h) && /-projects-|^project-|-git-/.test(h); } catch (_) { return false; } }
+function hostProducao(url) {
+  const env = (process.env.MEDIA_PUBLIC_BASE || '').trim().replace(/\/$/, '');
+  const base = env ? (env.startsWith('http') ? env : 'https://' + env) : 'https://' + String(process.env.VERCEL_PROJECT_PRODUCTION_URL || 'atlantyx-os.vercel.app').replace(/^https?:\/\//, '');
+  try { const u = new URL(String(url)); return base + u.pathname + u.search; } catch (_) { return url; }
+}
+export { salvarDeUrl, garantirPermanente, ehEfemera, baseUrl, ehHostProtegido, hostProducao };
 
 // v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
 export default comGuarda(handler, 'media');

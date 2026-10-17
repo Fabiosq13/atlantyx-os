@@ -24,12 +24,12 @@ async function corrigirImagensAgendadas({ blog_id, dias = 60, aplicar = false } 
   const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${ini}&end=${fim}&timezone=America/Sao_Paulo`, TOKEN);
   const lista = Array.isArray(r) ? r : (r?.data || r?.posts || []);
 
-  const { garantirPermanente, ehEfemera } = await import('./media.js');
+  const { garantirPermanente, ehEfemera, ehHostProtegido, hostProducao } = await import('./media.js');
   const afetados = [], corrigidos = [], erros = [];
 
   for (const p of lista) {
     const midias = p.media || p.medias || [];
-    const comProblema = (Array.isArray(midias) ? midias : []).filter(u => ehEfemera(u));
+    const comProblema = (Array.isArray(midias) ? midias : []).filter(u => ehEfemera(u) || ehHostProtegido(u)); // v3.180: + endereço protegido do deployment
     if (!comProblema.length) continue;
     const quando = p.publicationDate?.dateTime || p.publicationDate || '';
     afetados.push({ id: p.id, data: String(quando).substring(0,16).replace('T',' '),
@@ -37,7 +37,7 @@ async function corrigirImagensAgendadas({ blog_id, dias = 60, aplicar = false } 
     if (!aplicar) continue;
     try {
       const novas = [];
-      for (const u of midias) novas.push((await garantirPermanente({ url: u })).url);
+      for (const u of midias) novas.push(ehHostProtegido(u) ? hostProducao(u) : (await garantirPermanente({ url: u })).url);
       const corpo = _corpoPostMc(p, { media: novas, medias: novas }); // v3.80: corpo limpo e recriação sem duplicar
       await _recriarSemDuplicar(p.id, corpo, { USERID, BLOGID, TOKEN });
       corrigidos.push(p.id);
@@ -233,7 +233,9 @@ function _corpoPostMc(fonte, extra) {
 //     aparecem no Metricool (Ads) porque a conta de anúncios é a mesma.
 //  2) Sem Meta: monta o KIT (texto, título, imagem, link com UTM, orçamento, público) para criar no Metricool → Ads.
 const META_V = process.env.META_API_VERSION || 'v21.0';
-const _metaCfg = () => ({ token: process.env.META_ADS_TOKEN || '', conta: String(process.env.META_AD_ACCOUNT_ID || '').replace(/^act_/, ''), pagina: process.env.META_PAGE_ID || '', ig: process.env.META_IG_USER_ID || '' });
+// v3.173: tira espaços/aspas/quebras coladas por engano nas variáveis da Vercel (ex.: "META_AD_ACCOUNT_ID= 1066…" virava act_%20…)
+const _envLimpo = k => String(process.env[k] || '').trim().replace(/^["']|["']$/g, '').trim();
+const _metaCfg = () => ({ token: _envLimpo('META_ADS_TOKEN'), conta: _envLimpo('META_AD_ACCOUNT_ID').replace(/^act_/i, '').replace(/\D/g, ''), pagina: _envLimpo('META_PAGE_ID').replace(/\D/g, ''), ig: _envLimpo('META_IG_USER_ID').replace(/\D/g, '') });
 async function _meta(caminho, metodo = 'GET', corpo = null) {
   const c = _metaCfg(); const url = `https://graph.facebook.com/${META_V}/${caminho}`;
   const op = { method: metodo, headers: {} };
@@ -256,42 +258,84 @@ async function patrocinadoStatus(req) {
   return out;
 }
 async function patrocinadoCopy({ tema = '', oferta = '', publico = '' } = {}) {
-  const sys = 'Você escreve anúncios pagos de Instagram para a Atlantyx (empresa brasileira B2B de tecnologia: engenharia de dados, indicadores/BI, software sob medida, produtos próprios e especialistas; 17 anos; clientes como CPFL, Enel, Caixa Capitalização). Público: diretores e gerentes de grandes empresas. O anúncio tem botão "Saiba mais" que leva para a página onde a pessoa agenda uma conversa gratuita. Português do Brasil, direto, sem clichês, sem prometer o que não está no tema.';
+  const sys = 'Você escreve anúncios pagos de Instagram para a Atlantyx (empresa brasileira B2B de tecnologia: engenharia de dados, indicadores/BI, software sob medida, produtos próprios e especialistas; 17 anos; clientes como CPFL, Enel, Caixa Capitalização). Público: diretores e gerentes de grandes empresas. O texto deve QUALIFICAR quem clica (ex.: "Para líderes de TI, operações e finanças de empresas de médio e grande porte") — afaste pessoa física, quem procura emprego ou curso. O anúncio tem botão "Saiba mais" que leva para a página onde a pessoa pede uma conversa gratuita com um especialista. Português do Brasil, direto, sem clichês, sem prometer o que não está no tema.';
   const usr = `Tema/oferta: ${String(tema || oferta || 'conversa gratuita com especialista').substring(0, 600)}\n${publico ? 'Público: ' + String(publico).substring(0, 200) + '\n' : ''}Devolva JSON: {"texto":"texto principal do anúncio, até 220 caracteres, 1ª frase = gancho, termina convidando a clicar em Saiba mais","titulo":"título curto, até 40 caracteres","descricao":"linha de apoio, até 30 caracteres","prompt_imagem":"cena quadrada 1:1 em inglês, 35-55 palavras, sem texto, profissional, tons escuros com ciano e verde"}`;
   const j = JSON.parse(await _claudeAuto(sys, usr, 500));
   return { texto: String(j.texto || '').substring(0, 500), titulo: String(j.titulo || '').substring(0, 60), descricao: String(j.descricao || '').substring(0, 60), prompt_imagem: j.prompt_imagem || '' };
+}
+// v3.190: PÚBLICO B2B. O anúncio ia para "Brasil, 25–60 anos" sem interesse nenhum e otimizado para clique — o Meta
+// entrega para quem clica mais barato (pessoa física, clique acidental, robô). Agora: capitais de negócio + interesses
+// de decisores/tecnologia (resolvidos pela busca do próprio Meta, com cache) e, com o Pixel, otimização para LEAD.
+const _B2B_CIDADES = ['São Paulo', 'Rio de Janeiro', 'Belo Horizonte', 'Curitiba', 'Porto Alegre', 'Campinas', 'Brasília', 'Recife', 'Salvador', 'Florianópolis', 'Goiânia', 'Fortaleza'];
+const _B2B_INTERESSES = ['Business intelligence', 'Data analysis', 'Big data', 'Power BI', 'SAP', 'Enterprise resource planning', 'Chief executive officer', 'Chief information officer', 'Chief financial officer', 'Management consulting', 'Business management', 'Digital transformation'];
+async function _publicoB2B() {
+  const ck = await _kvMc('mkt:meta:publico_b2b');
+  if (ck && ck.em && Date.now() - ck.em < 30 * 864e5 && (ck.cidades || []).length) return ck;
+  const cidades = [], interesses = [];
+  for (const nome of _B2B_CIDADES) { try { const r = await _meta(`search?type=adgeolocation&location_types=${encodeURIComponent('["city"]')}&country_code=BR&limit=3&q=${encodeURIComponent(nome)}`);
+    const x = (r.data || []).find(d => d.country_code === 'BR' && d.type === 'city'); if (x) cidades.push({ key: String(x.key), radius: 40, distance_unit: 'kilometer', nome: x.name }); } catch (_) {} }
+  for (const q of _B2B_INTERESSES) { try { const r = await _meta(`search?type=adinterest&limit=2&q=${encodeURIComponent(q)}`); const x = (r.data || [])[0]; if (x && !interesses.some(i => i.id === x.id)) interesses.push({ id: String(x.id), name: x.name }); } catch (_) {} }
+  const v = { cidades, interesses, em: Date.now() }; if (cidades.length) await _kvMc('mkt:meta:publico_b2b', v); return v;
 }
 function _linkPago(base, nome) {
   const slug = String(nome || 'patrocinado').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 40) || 'patrocinado';
   return base + '/captura.html?utm_source=instagram&utm_medium=pago&utm_campaign=' + slug + '&utm_content=saiba_mais';
 }
 async function patrocinadoCriar(p = {}, req) {
-  const base = (process.env.MEDIA_PUBLIC_BASE || ('https://' + (req?.headers?.host || 'atlantyx-os.vercel.app'))).replace(/\/$/, '');
+  // v3.174: o link do anúncio nunca aponta para um endereço de deploy temporário da Vercel (…-projects-….vercel.app)
+  const _host = req?.headers?.host || '';
+  const base = (process.env.MEDIA_PUBLIC_BASE || process.env.APP_URL || (/^[\w.-]+$/.test(_host) && !/-projects-|^project-/.test(_host) ? 'https://' + _host : 'https://atlantyx-os.vercel.app')).replace(/\/$/, '');
   const nome = String(p.nome || '').trim().substring(0, 80) || 'Instagram · Saiba mais · ' + new Date().toISOString().substring(0, 10);
   const texto = String(p.texto || '').trim(), titulo = String(p.titulo || '').trim().substring(0, 40), descricao = String(p.descricao || '').trim().substring(0, 30);
   const imagem = String(p.imagem || '').trim();
   const diario = Math.round(Number(String(p.orcamento_diario || '').replace(',', '.')) * 100) / 100;
   const ini = String(p.inicio || ''), fim = String(p.fim || '');
-  const idMin = Math.max(18, Math.min(65, parseInt(p.idade_min) || 25)), idMax = Math.max(idMin, Math.min(65, parseInt(p.idade_max) || 60));
+  const idMin = Math.max(18, Math.min(65, parseInt(p.idade_min) || 30)), idMax = Math.max(idMin, Math.min(65, parseInt(p.idade_max) || 60));
+  const amplo = p.publico === 'amplo'; // v3.190: padrão = B2B (decisores); 'amplo' = Brasil inteiro sem interesse
   const err = m => Object.assign(new Error(m), { status: 400 });
   if (!texto) throw err('Escreva o texto do anúncio'); if (!titulo) throw err('Escreva o título');
   if (!/^https:\/\//.test(imagem)) throw err('Escolha ou gere a imagem do anúncio (precisa ser um endereço https público)');
   if (!(diario >= 6)) throw err('Orçamento diário mínimo: R$ 6,00');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ini) || !/^\d{4}-\d{2}-\d{2}$/.test(fim) || fim < ini) throw err('Informe início e fim da campanha (fim depois do início)');
   const dias = Math.round((new Date(fim) - new Date(ini)) / 864e5) + 1;
-  const link = p.link && /^https:\/\//.test(p.link) ? p.link : _linkPago(base, nome);
+  // v3.174: link escolhido na tela (com UTM acrescentado se não tiver) ou a página de captura de leads
+  let link = _linkPago(base, nome);
+  if (p.link && /^https:\/\//.test(String(p.link).trim())) { try { const u = new URL(String(p.link).trim()); if (!u.searchParams.get('utm_source')) { const ref = new URL(link); ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].forEach(k => u.searchParams.set(k, ref.searchParams.get(k))); } link = u.toString(); } catch (_) {} }
   const kit = { nome, objetivo: 'Tráfego (cliques no link)', posicionamentos: 'Instagram — Feed, Stories e Reels', botao: 'Saiba mais', link, texto, titulo, descricao, imagem,
-    orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, publico: `Brasil · ${idMin} a ${idMax} anos` };
+    orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, publico: amplo ? `Brasil · ${idMin} a ${idMax} anos` : `B2B — capitais de negócio · ${idMin} a ${idMax} anos · interesses: gestão, BI/dados, ERP, C-level` };
   const c = _metaCfg();
   if (!(c.token && c.conta && c.pagina && c.ig) || p.so_kit) return { modo: 'kit', kit };
   // 1. campanha · 2. conjunto · 3. imagem · 4. criativo (Saiba mais) · 5. anúncio — tudo PAUSADO
-  const camp = await _meta(`act_${c.conta}/campaigns`, 'POST', { name: nome, objective: 'OUTCOME_TRAFFIC', status: 'PAUSED', special_ad_categories: [], is_adset_budget_sharing_enabled: false });
+  const pixel = String(process.env.META_PIXEL_ID || '').replace(/\D/g, '');
+  const camp = await _meta(`act_${c.conta}/campaigns`, 'POST', { name: nome, objective: pixel ? 'OUTCOME_LEADS' : 'OUTCOME_TRAFFIC', status: 'PAUSED', special_ad_categories: [], is_adset_budget_sharing_enabled: false });
   const desfazer = async () => { try { await _meta(camp.id, 'DELETE'); } catch (_) {} };
   try {
-    const adset = await _meta(`act_${c.conta}/adsets`, 'POST', { name: nome + ' · Instagram', campaign_id: camp.id, daily_budget: Math.round(diario * 100), billing_event: 'IMPRESSIONS',
-      optimization_goal: 'LINK_CLICKS', bid_strategy: 'LOWEST_COST_WITHOUT_CAP', destination_type: 'WEBSITE', status: 'PAUSED',
-      start_time: ini + 'T08:00:00-0300', end_time: fim + 'T23:59:00-0300',
-      targeting: { geo_locations: { countries: ['BR'] }, age_min: idMin, age_max: idMax, publisher_platforms: ['instagram'], instagram_positions: ['stream', 'story', 'reels'] } });
+    // v3.192: o Meta aposenta interesses ("Algumas opções de direcionamento detalhado foram combinadas") e devolve
+    // o substituto no erro — troca pelo alternativo, grava no cache e tenta de novo (até 2 vezes)
+    const pb = amplo ? null : await _publicoB2B().catch(() => ({ cidades: [], interesses: [] }));
+    const _alvo = () => ({ ...(amplo ? { geo_locations: { countries: ['BR'] } } : {
+        geo_locations: pb.cidades.length ? { cities: pb.cidades.map(({ key, radius, distance_unit }) => ({ key, radius, distance_unit })), location_types: ['home', 'recent'] } : { countries: ['BR'] },
+        ...(pb.interesses.length ? { flexible_spec: [{ interests: pb.interesses.map(({ id, name }) => ({ id, name })) }] } : {}) }),
+      age_min: idMin, age_max: idMax, publisher_platforms: ['instagram'], instagram_positions: ['stream', 'story', 'reels'],
+      targeting_automation: { advantage_audience: 0 } }); // v3.174: o Meta exige o sinalizador (0 = respeita idade/local escolhidos)
+    let adset = null;
+    for (let tentativa = 0; tentativa < 3 && !adset; tentativa++) {
+      try {
+        adset = await _meta(`act_${c.conta}/adsets`, 'POST', { name: nome + ' · Instagram', campaign_id: camp.id, daily_budget: Math.round(diario * 100), billing_event: 'IMPRESSIONS',
+          // v3.190: com o Pixel (META_PIXEL_ID) → otimiza para LEAD (cadastro feito), o que filtra robô e clique acidental; sem Pixel → clique no link
+          optimization_goal: pixel ? 'OFFSITE_CONVERSIONS' : 'LINK_CLICKS', ...(pixel ? { promoted_object: { pixel_id: pixel, custom_event_type: 'LEAD' } } : {}),
+          bid_strategy: 'LOWEST_COST_WITHOUT_CAP', destination_type: 'WEBSITE', status: 'PAUSED',
+          start_time: ini + 'T08:00:00-0300', end_time: fim + 'T23:59:00-0300', targeting: _alvo() });
+      } catch (e) {
+        const m = String(e.message || '').match(/\[\s*\{\s*"deprecated_interest_id"[\s\S]*?\}\s*\]/);
+        let alt = []; try { alt = m ? JSON.parse(m[0]) : []; } catch (_) {}
+        if (!pb || !alt.length || tentativa >= 2) throw e;
+        const troca = new Map(alt.map(a => [String(a.deprecated_interest_id), a]));
+        const vistos = new Set(); pb.interesses = pb.interesses.map(x => { const a = troca.get(String(x.id)); return a && a.alternative_interest_id ? { id: String(a.alternative_interest_id), name: a.alternative_interest_name || x.name } : (a ? null : x); })
+          .filter(x => x && !vistos.has(x.id) && vistos.add(x.id));
+        try { await _kvMc('mkt:meta:publico_b2b', { ...pb, em: Date.now() }); } catch (_) {}
+      }
+    }
     let imgHash = null;
     try { const ri = await fetch(imagem); if (ri.ok) { const b64 = Buffer.from(await ri.arrayBuffer()).toString('base64'); const up = await _meta(`act_${c.conta}/adimages`, 'POST', { bytes: b64 }); imgHash = Object.values(up.images || {})[0]?.hash || null; } } catch (_) {}
     const link_data = { link, message: texto, name: titulo, ...(descricao ? { description: descricao } : {}), ...(imgHash ? { image_hash: imgHash } : { picture: imagem }), call_to_action: { type: 'LEARN_MORE', value: { link } } };
@@ -303,6 +347,28 @@ async function patrocinadoCriar(p = {}, req) {
     return { modo: 'meta', campanha: reg };
   } catch (e) { await desfazer(); throw new Error(e.message + ' (nada ficou criado no Meta)'); }
 }
+// v3.193: ALTERAR PERÍODO (e, opcional, R$/dia) de uma campanha patrocinada já criada — muda o conjunto no Meta.
+// O Meta não deixa mudar o início depois que a veiculação começou: nesse caso só o fim e o orçamento mudam.
+async function patrocinadoPeriodo({ id, inicio, fim, orcamento_diario } = {}) {
+  const err = m => Object.assign(new Error(m), { status: 400 });
+  const lista = (await _kvMc('mkt:patrocinados')) || []; const reg = lista.find(x => String(x.id) === String(id)); if (!reg) throw err('Campanha não encontrada');
+  if (!reg.adset_id) throw err('Esta campanha não tem conjunto de anúncios registrado');
+  const ini = String(inicio || reg.inicio || ''), fi = String(fim || reg.fim || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ini) || !/^\d{4}-\d{2}-\d{2}$/.test(fi) || fi < ini) throw err('Informe início e fim (fim depois do início)');
+  const hojeSP = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+  if (fi < hojeSP) throw err('A data de fim já passou');
+  const diario = orcamento_diario != null && orcamento_diario !== '' ? Math.round(Number(String(orcamento_diario).replace(',', '.')) * 100) / 100 : Number(reg.orcamento_diario);
+  if (!(diario >= 6)) throw err('Orçamento diário mínimo: R$ 6,00');
+  const jaComecou = reg.inicio && reg.inicio <= hojeSP && (reg.estado === 'ACTIVE' || reg.estado_meta === 'ACTIVE' || reg.ativado_em);
+  const corpo = { end_time: fi + 'T23:59:00-0300', daily_budget: Math.round(diario * 100) };
+  let inicioFinal = reg.inicio, avisoInicio = null;
+  if (ini !== reg.inicio) { if (jaComecou) avisoInicio = 'A veiculação já começou — o Meta não deixa mudar o início; mudei só o fim/orçamento.'; else { corpo.start_time = (ini < hojeSP ? hojeSP : ini) + 'T08:00:00-0300'; inicioFinal = ini < hojeSP ? hojeSP : ini; } }
+  await _meta(reg.adset_id, 'POST', corpo);
+  const dias = Math.round((new Date(fi) - new Date(inicioFinal)) / 864e5) + 1;
+  Object.assign(reg, { inicio: inicioFinal, fim: fi, orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, periodo_alterado_em: new Date().toISOString() });
+  await _kvMc('mkt:patrocinados', lista);
+  return { ok: true, campanha: reg, aviso: avisoInicio };
+}
 async function patrocinadoEstado({ id, estado } = {}) {
   if (!['ACTIVE', 'PAUSED'].includes(estado)) throw Object.assign(new Error('Estado inválido'), { status: 400 });
   const lista = (await _kvMc('mkt:patrocinados')) || []; const reg = lista.find(x => String(x.id) === String(id)); if (!reg) throw new Error('Campanha não encontrada');
@@ -311,6 +377,31 @@ async function patrocinadoEstado({ id, estado } = {}) {
   else await _meta(reg.id, 'POST', { status: 'PAUSED' });
   reg.estado = estado; reg[estado === 'ACTIVE' ? 'ativado_em' : 'pausado_em'] = new Date().toISOString(); await _kvMc('mkt:patrocinados', lista);
   return { ok: true, estado };
+}
+// v3.176: DIAGNÓSTICO — confere no Meta, sem criar nada, se o token enxerga conta, página e Instagram e tem as permissões
+async function patrocinadoDiagnostico() {
+  const c = _metaCfg(); const itens = [];
+  const add = (ok, item, detalhe, correcao) => itens.push({ ok, item, detalhe: detalhe || '', correcao: ok ? '' : (correcao || '') });
+  if (!c.token) return { itens: [{ ok: false, item: 'Token', detalhe: 'META_ADS_TOKEN não configurado na Vercel', correcao: 'Gere o token do usuário do sistema e cadastre na Vercel' }] };
+  // 1. o que o token tem (debug_token devolve as permissões e em quais páginas/contas cada uma vale)
+  let escopos = [], granular = [];
+  try { const d = await _meta('debug_token?input_token=' + encodeURIComponent(c.token)); const x = d.data || {};
+    escopos = x.scopes || []; granular = x.granular_scopes || [];
+    add(!!x.is_valid, 'Token válido', x.is_valid ? (x.type || '') + (x.expires_at ? (x.expires_at === 0 ? ' · não expira' : ' · expira em ' + new Date(x.expires_at * 1000).toISOString().slice(0, 10)) : ' · não expira') : (x.error?.message || 'inválido'), 'Gere um token novo no usuário do sistema');
+  } catch (e) { add(false, 'Token', e.message, 'Gere um token novo no usuário do sistema e cadastre na Vercel'); }
+  for (const [perm, para] of [['ads_management', 'criar campanhas'], ['ads_read', 'ler resultados'], ['business_management', 'acessar o portfólio'], ['pages_read_engagement', 'ler a página'], ['pages_manage_ads', 'criar o anúncio em nome da página'], ['pages_show_list', 'listar páginas']])
+    add(escopos.includes(perm), 'Permissão ' + perm, para, 'Gere um token novo marcando ' + perm);
+  // v3.178: instagram_basic é opcional — o anúncio no Instagram sai só com ads_management + pages_manage_ads (só informativo)
+  if (escopos.includes('instagram_basic')) add(true, 'Permissão instagram_basic', 'opcional');
+  const gPag = granular.find(g => g.scope === 'pages_manage_ads');
+  if (gPag && Array.isArray(gPag.target_ids) && gPag.target_ids.length) add(gPag.target_ids.includes(c.pagina), 'pages_manage_ads vale para a página ' + c.pagina, 'páginas liberadas: ' + gPag.target_ids.join(', '), 'Atribua a página Atlantyx ao usuário do sistema (controle total) e gere o token de novo');
+  // 2. os ativos
+  try { const a = await _meta('act_' + c.conta + '?fields=name,account_status,currency'); add(a.account_status === 1, 'Conta de anúncios', a.name + ' · ' + a.currency + (a.account_status === 1 ? ' · ativa' : ' · status ' + a.account_status), 'Verifique pagamento/restrições da conta no Gerenciador de Anúncios'); }
+  catch (e) { add(false, 'Conta de anúncios act_' + c.conta, e.message, 'Atribua a conta de anúncios ao usuário do sistema (controle total)'); }
+  try { const pg = await _meta(c.pagina + '?fields=name'); add(true, 'Página', pg.name); } catch (e) { add(false, 'Página ' + c.pagina, e.message, 'Atribua a página ao usuário do sistema (controle total)'); }
+  try { const pg = await _meta(c.pagina + '?fields=tasks'); const t = pg.tasks || []; if (t.length) add(t.includes('ADVERTISE') || t.includes('MANAGE'), 'Função na página', t.join(', '), 'Em Configurações → Páginas → Atlantyx → Atribuir pessoas → usuário do sistema → controle total (ou "Criar anúncios")'); } catch (_) {}
+  try { const ig = await _meta(c.ig + '?fields=username'); add(true, 'Instagram', '@' + ig.username); } catch (e) { add(false, 'Instagram ' + c.ig, e.message, 'Atribua a conta do Instagram ao usuário do sistema e confira se está ligada à página'); }
+  return { itens, ok: itens.every(i => i.ok) };
 }
 async function patrocinadoListar() {
   const lista = (await _kvMc('mkt:patrocinados')) || []; const c = _metaCfg();
@@ -373,7 +464,7 @@ async function instagramParaBio({ aplicar = false, ids = null, blog_id, dias = 9
 async function trocarLinkAgendados({ aplicar = false, ids = null, blog_id, dias = 60, adicionar = false } = {}, req) {
   const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
   if (!TOKEN || !USERID || !BLOGID) throw new Error('Credenciais do Metricool ausentes');
-  const base = (process.env.MEDIA_PUBLIC_BASE || ('https://' + (req?.headers?.host || 'atlantyx-os.vercel.app'))).replace(/\/$/, '');
+  const base = (process.env.MEDIA_PUBLIC_BASE || ('https://' + (process.env.VERCEL_PROJECT_PRODUCTION_URL || 'atlantyx-os.vercel.app').replace(/^https?:\/\//, ''))).replace(/\/$/, ''); // v3.180: nunca o endereço protegido
   const reuniao = (process.env.LINK_REUNIAO || 'https://meetings.hubspot.com/atlantyx?uuid=eca883eb-276d-45cb-bda8-d7d5d2ae9219').trim();
   const agora = new Date(Date.now() + 10 * 60000), fim = new Date(Date.now() + dias * 864e5), f = d => d.toISOString().substring(0, 10);
   const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${f(agora)}T00:00:00&end=${f(fim)}T23:59:59&timezone=America/Sao_Paulo`, TOKEN);
@@ -973,9 +1064,14 @@ async function _slotsOcupados({ de, ate, blogId }) {
     const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${de}T00:00:00&end=${ate}T23:59:59&timezone=America/Sao_Paulo`, TOKEN);
     const lista = Array.isArray(r) ? r : (r?.data || r?.posts || []);
     const ocupados = new Set();
+    let ignorados = 0;
     lista.forEach(p => {
       const dt = p.publicationDate?.dateTime || p.data || p.publicationDate;
       if (!dt) return;
+      // v3.182: rascunho ou post que falhou em todas as redes não vai sair — o horário fica livre para a autocampanha
+      const provs = Array.isArray(p.providers) ? p.providers : [];
+      const falhouTudo = provs.length && provs.every(x => /ERROR|FAIL|REJECT/i.test(String(x.status || x.state || '')));
+      if (p.draft === true || falhouTudo) { ignorados++; return; }
       const s = String(dt);
       const dia = s.substring(0, 10);
       const hora = s.substring(11, 16);
@@ -984,7 +1080,7 @@ async function _slotsOcupados({ de, ate, blogId }) {
       const [H, M] = hora.split(':').map(Number);
       ocupados.add(`${dia}|${H * 60 + M}`);
     });
-    return { ocupados, total: lista.length, erro: null };
+    return { ocupados, total: lista.length, ignorados, erro: null };
   } catch (e) { return { ocupados: new Set(), total: 0, erro: e.message }; }
 }
 
@@ -1251,9 +1347,11 @@ async function handler(req, res) {
     instagram_para_bio:     () => instagramParaBio(payload, req), // v3.106
     // v3.108: campanha PATROCINADA no Instagram com botão "Saiba mais" → landing page
     patrocinado_status:     () => patrocinadoStatus(req),
+    patrocinado_diagnostico: () => patrocinadoDiagnostico(), // v3.176
     patrocinado_copy:       () => patrocinadoCopy(payload),
     patrocinado_criar:      () => patrocinadoCriar(payload, req),
     patrocinado_estado:     () => patrocinadoEstado(payload),
+    patrocinado_periodo:    () => patrocinadoPeriodo(payload), // v3.193
     patrocinado_listar:     () => patrocinadoListar(),
     story_texto:            () => storyTexto(payload),
     autocampanha_agendar_um:() => autoCampanhaAgendarUm(payload),

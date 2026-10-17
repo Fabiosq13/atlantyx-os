@@ -22,7 +22,7 @@ function _smtpConfig(user, pass) {
 // Agente S2-02 + S7-05
 // Recebe lead do Meta Ads / LinkedIn → Claude gera mensagem → HubSpot → WhatsApp
 
-const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
+const MODEL = process.env.CLAUDE_MODEL_RAPIDO || 'claude-haiku-4-5-20251001'; // v3.191 (custo): mensagem curta de WhatsApp → modelo rápido e barato
 async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -44,6 +44,15 @@ async function handler(req, res) {
   }
   if (req.method !== 'POST') return res.status(405).end();
 
+  // v3.184: 2º passo do formulário do site — roda as integrações (alerta, IA, HubSpot, WhatsApp, follow-up) do lead
+  // já gravado. Só um processamento por lead (trava no banco), então chamar duas vezes não duplica nada.
+  if (req.body && req.body.evento === 'processar') {
+    const id = String(req.body.lead_id || '').replace(/[^a-z0-9_]/gi, '').substring(0, 40);
+    if (!id) return res.status(400).json({ success: false, error: 'lead_id obrigatório' });
+    try { const r = await processarLeadGravado(id); return res.status(200).json({ success: true, ...r }); }
+    catch (e) { console.error('[S2] processar lead:', e.message); return res.status(200).json({ success: false, error: e.message }); }
+  }
+
   // v3.13: VISITA à página de captura (sem dados pessoais) — mede o passo clique → página → lead.
   // Antes só o lead era registrado; sem a visita não dá para saber se o clique chega na página.
   if (req.body && req.body.evento === 'visita') {
@@ -54,17 +63,27 @@ async function handler(req, res) {
       const u = req.body.utm || {};
       await sql`INSERT INTO captura_visitas (origem, meio, campanha, conteudo, pagina) VALUES (${String(u.source || 'direto').substring(0, 60)}, ${String(u.medium || '').substring(0, 60)}, ${String(u.campaign || '').substring(0, 120)}, ${String(u.content || '').substring(0, 120)}, ${String(req.body.page || '').substring(0, 300)})`;
     } catch (e) { console.warn('[captura] visita:', e.message); }
-    return res.status(200).json({ success: true, whatsapp: _whatsComercial() });
+    return res.status(200).json({ success: true, whatsapp: _whatsComercial(), pixel: String(process.env.META_PIXEL_ID || '').replace(/\D/g, '') || null }); // v3.190: Pixel do Meta (opcional)
   }
 
   try {
     const body = req.body;
 
     // ── 1. NORMALIZAR DADOS DO LEAD (Meta, LinkedIn ou formulário próprio) ──
+    // v3.190: ANTI-ROBÔ do formulário do site — campo invisível preenchido ou envio em menos de 3 s = robô.
+    // Responde "ok" (o robô não aprende a contornar) mas não grava nem dispara nada.
+    if (body.form_name === 'captura-publica' && (String(body.website || '').trim() || (Number(body.t_preenchimento_ms) > 0 && Number(body.t_preenchimento_ms) < 3000))) {
+      console.warn('[S2] envio descartado (robô):', String(body.email || '').substring(0, 60));
+      return res.status(200).json({ success: true, lead_id: null });
+    }
     const lead = normalizeLead(body);
     lead.utm = body.utm || { source: body.source || body.utm_source || null, medium: body.utm_medium || null, campaign: body.campaign_name || body.utm_campaign || null, content: body.utm_content || null };
     lead.campanha = lead.utm.campaign || body.campaign_name || null;
     lead.origem = lead.utm.source || body.source || 'formulario';
+    // v3.190: qualidade — e-mail pessoal (gmail, hotmail…) costuma ser pessoa física; o lead entra, marcado
+    lead.email_pessoal = /@(gmail|hotmail|outlook|live|yahoo|bol|uol|terra|icloud|msn|ig)\.(com|com\.br)$/i.test(String(lead.email || ''));
+    if (lead.email_pessoal) lead.qualidade = 'e-mail pessoal';
+    if (body.consentimento && typeof body.consentimento === 'object') lead.consentimento = { aceito: !!body.consentimento.aceito, versao: String(body.consentimento.versao || '').substring(0, 20), canais: (body.consentimento.canais || []).slice(0, 6), em: String(body.consentimento.em || '').substring(0, 30) }; // v3.187: registro do aceite (LGPD)
     console.log(`[S2] Lead recebido: ${lead.name} | ${lead.company} | origem ${lead.origem} · ${lead.campanha || 'sem campanha'} | Score: ${lead.score_label}`);
 
     // ── v2.32 — 1b. GRAVAR NO BANCO PRIMEIRO, SEMPRE. ──
@@ -83,6 +102,15 @@ async function handler(req, res) {
       ['alerta', 'mensagem', 'hubspot', 'whatsapp', 'followup'].forEach(k => etapas[k] = 'pulado (teste QA)');
       return res.status(200).json({ success: true, qa_teste: true, lead_id: leadId, origem: lead.origem, campanha: lead.campanha, utm: lead.utm, score: lead.score_label, etapas,
         whatsapp: _whatsComercial(), agenda: (process.env.LINK_REUNIAO || 'https://meetings.hubspot.com/atlantyx?uuid=eca883eb-276d-45cb-bda8-d7d5d2ae9219').trim() });
+    }
+
+    // v3.184: formulário do SITE — responde assim que o lead está gravado (antes esperava e-mail, IA, HubSpot e
+    // WhatsApp: 10–20 s com o botão "Enviando..."). As integrações rodam no 2º passo ({evento:'processar'}), que a
+    // própria página dispara, e também aqui logo depois da resposta; a trava no banco garante uma execução só.
+    if (body.rapido === true && leadId) {
+      res.status(200).json({ success: true, lead_id: leadId, origem: lead.origem, campanha: lead.campanha, whatsapp: _whatsComercial() });
+      try { await processarLeadGravado(leadId); } catch (e) { console.warn('[S2] processamento pós-resposta:', e.message); }
+      return;
     }
 
     // ── 1c. ALERTA IMEDIATO por e-mail — "novo lead da campanha X" ──
@@ -135,6 +163,9 @@ async function handler(req, res) {
 async function gravarLeadLocal(lead) {
   const { neon } = await import('@neondatabase/serverless');
   const sql = neon(process.env.DATABASE_URL);
+  // v3.184: caminho rápido — 1 consulta só (antes: CREATE TABLE + ~10 ALTER TABLE a cada lead, antes do INSERT)
+  const id0 = 'ld_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  try { await _inserirLead(sql, id0, lead); return id0; } catch (e) { console.warn('[S2] insert rápido falhou, ajustando a tabela:', e.message); }
   await sql`CREATE TABLE IF NOT EXISTS leads (
     id TEXT PRIMARY KEY, nome TEXT, empresa TEXT, cargo TEXT, setor TEXT, score TEXT, data JSONB,
     criado_em TIMESTAMPTZ DEFAULT NOW())`;
@@ -142,12 +173,47 @@ async function gravarLeadLocal(lead) {
     try { await _q(sql, `ALTER TABLE leads ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
   }
   const id = 'ld_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  await _inserirLead(sql, id, lead);
+  return id;
+}
+async function _inserirLead(sql, id, lead) {
   await sql`INSERT INTO leads (id, nome, empresa, cargo, setor, score, data, origem, campanha, utm, email, telefone, status)
     VALUES (${id}, ${lead.name}, ${lead.company}, ${lead.title || null}, ${lead.sector || null}, ${lead.score_label || null},
       ${JSON.stringify(lead)}, ${lead.origem || null}, ${lead.campanha || null}, ${JSON.stringify(lead.utm || {})},
       ${lead.email || null}, ${lead.phone || null}, 'novo')`;
-  return id;
 }
+// v3.184: integrações de um lead já gravado (2º passo do formulário do site). A trava (etapas → 'processando')
+// garante uma execução só, mesmo com a página e o servidor chamando ao mesmo tempo.
+async function processarLeadGravado(leadId) {
+  const { neon } = await import('@neondatabase/serverless');
+  const sql = neon(process.env.DATABASE_URL);
+  const got = await sql`UPDATE leads SET etapas = ${JSON.stringify({ processando: new Date().toISOString() })}::jsonb
+    WHERE id = ${leadId} AND (etapas IS NULL OR etapas = 'null'::jsonb) RETURNING data`;
+  if (!got.length) return { lead_id: leadId, ja_processado: true };
+  let lead = got[0].data; if (typeof lead === 'string') { try { lead = JSON.parse(lead); } catch (_) { lead = {}; } }
+  const etapas = { banco: 'ok', mensagem: null, hubspot: null, whatsapp: null, followup: null, alerta: null };
+  let mensagem = null, contactId = null, dealId = null;
+  // alerta, IA e HubSpot em paralelo (eram em sequência)
+  const [al, msg, hs] = await Promise.allSettled([
+    alertarNovoLead(lead),
+    gerarMensagemClaude(lead),
+    (async () => { const { enviarContatoHubSpot } = await import('../lib/hubspot-sync.js');
+      return enviarContatoHubSpot({ nome: lead.name, email: lead.email, telefone: lead.phone, empresa: lead.company, cargo: lead.job_title || lead.title, score: lead.score_label, origem: lead.origem || lead.source },
+        { nota: `<b>Lead capturado</b><br>Origem: ${lead.origem || '?'} · campanha: ${lead.campanha || '—'}`, origem: 'Captura · ' + (lead.origem || 'formulário') }); })(),
+  ]);
+  etapas.alerta = al.status === 'fulfilled' ? 'ok' : 'falha: ' + al.reason?.message;
+  if (msg.status === 'fulfilled') { mensagem = msg.value; etapas.mensagem = 'ok'; } else etapas.mensagem = 'falha: ' + msg.reason?.message;
+  if (hs.status === 'fulfilled') { contactId = hs.value.contato_id; dealId = hs.value.negocio_id || null; etapas.hubspot = `ok — contato ${hs.value.acao}`; } else etapas.hubspot = 'falha: ' + hs.reason?.message;
+  if (lead.phone && mensagem) {
+    try { await enviarWhatsApp(lead.phone, mensagem); etapas.whatsapp = 'ok'; if (dealId) await atualizarDealHubSpot(dealId, 'ABORDADO').catch(() => {}); }
+    catch (e) { etapas.whatsapp = 'falha: ' + e.message; }
+  } else etapas.whatsapp = lead.phone ? 'sem mensagem' : 'sem telefone';
+  try { if (mensagem) { await agendarFollowUp(lead, dealId, mensagem); etapas.followup = 'ok'; } else etapas.followup = 'sem mensagem'; }
+  catch (e) { etapas.followup = 'falha: ' + e.message; }
+  try { await atualizarLeadLocal(leadId, { hubspot_contact: contactId, hubspot_deal: dealId, etapas }); } catch (_) {}
+  return { lead_id: leadId, etapas, hubspot_contact: contactId, hubspot_deal: dealId };
+}
+
 async function atualizarLeadLocal(id, campos) {
   const { neon } = await import('@neondatabase/serverless');
   const sql = neon(process.env.DATABASE_URL);
@@ -159,11 +225,13 @@ async function alertarNovoLead(lead) {
   const nodemailer = (await import('nodemailer')).default;
   const user = process.env.EMAIL_SMTP_USER || process.env.EMAIL_IMAP_USER || process.env.EMAIL_USER || process.env.SMTP_USER || process.env.GMAIL_USER, pass = (process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS || process.env.EMAIL_PASS || process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
   if (!user || !pass) throw new Error('EMAIL_IMAP_USER/EMAIL_SMTP_PASS não configurados');
-  const para = process.env.LEADS_ALERTA_PARA || process.env.RELATORIO_PAGAMENTOS_PARA || user;
+  // v3.188: destinatários fixos definidos pelo fundador — recebem sempre; LEADS_ALERTA_PARA (Vercel) acrescenta outros
+  const para = [...new Set(['atlanteambr@gmail.com', 'contato@atlanteam.com.br', 'ademir.souza@atlanteam.com.br', ...(process.env.LEADS_ALERTA_PARA || '').split(',')]
+    .map(x => x.trim().toLowerCase()).filter(x => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x)))].join(', ');
   const t = nodemailer.createTransport(_smtpConfig(user, pass));
   const u = lead.utm || {};
   await t.sendMail({ from: `Atlantyx OS <${user}>`, to: para,
-    subject: `🎯 Novo lead: ${lead.name} (${lead.company}) — via ${lead.origem || '?'}${lead.campanha ? ' · ' + lead.campanha : ''}`,
+    subject: `${lead.email_pessoal ? '⚪ Novo lead (e-mail pessoal)' : '🎯 Novo lead'}: ${lead.name} (${lead.company}) — via ${lead.origem || '?'}${lead.campanha ? ' · ' + lead.campanha : ''}`,
     html: `<div style="font-family:Arial;max-width:560px;">
       <h2 style="color:#1A3A8F;margin:0 0 6px;">Novo lead capturado</h2>
       <table style="font-size:13px;border-collapse:collapse;">

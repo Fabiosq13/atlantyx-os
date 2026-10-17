@@ -5,7 +5,7 @@ import { comGuarda } from '../lib/qa-guard.js';
 
 // Lista em memória dos follow-ups pendentes (em produção usar Vercel KV)
 // Para habilitar Vercel KV: vercel.com/docs/storage/vercel-kv
-const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
+const MODEL = process.env.CLAUDE_MODEL_RAPIDO || 'claude-haiku-4-5-20251001'; // v3.191 (custo): mensagem curta de WhatsApp → modelo rápido e barato
 const pendingFollowUps = new Map();
 
 async function handler(req, res) {
