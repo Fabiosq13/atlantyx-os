@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Atlantyx — Tecnologia, dados e produtos para a sua operação</title>
-<meta name="description" content="Há 17 anos a Atlantyx entrega tecnologia, dados, software e produtos próprios para grandes empresas. Agende uma conversa com um especialista.">
+<meta name="description" content="Há 17 anos a Atlantyx entrega tecnologia, dados, software e produtos próprios para grandes empresas. Fale com um especialista.">
 <!-- v3.51: prévia do link no LinkedIn/WhatsApp/Facebook ("Não é possível extrair a imagem do link") -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Atlantyx">
@@ -15,11 +15,11 @@
 <meta property="og:image:type" content="image/jpeg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="627">
-<meta property="og:image:alt" content="Atlantyx — tecnologia e dados para a sua operação. Agende uma conversa.">
+<meta property="og:image:alt" content="Atlantyx — tecnologia e dados para a sua operação. Fale com um especialista.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://atlantyx-os.vercel.app/og-atlantyx.jpg">
 <meta property="og:title" content="Atlantyx — Tecnologia, dados e produtos para a sua operação">
-<meta property="og:description" content="Agende uma conversa gratuita: um especialista entende o seu cenário e mostra onde a Atlantyx gera resultado na sua operação.">
+<meta property="og:description" content="Conversa gratuita: um especialista entende o seu cenário e mostra onde a Atlantyx gera resultado na sua operação.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -173,21 +173,23 @@
 
     <div class="card" id="cardForm">
       <div class="card-marca"><svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect x="6" y="9" width="17" height="17" rx="5" transform="rotate(45 14.5 17.5)" stroke="#00C4CC" stroke-width="3"/><rect x="17" y="14" width="17" height="17" rx="5" transform="rotate(45 25.5 22.5)" stroke="#00FCA8" stroke-width="3"/></svg><span>ATLANTYX<span style="color:var(--petroleo)">.</span></span></div>
-      <div id="form">
-        <h2>Agende uma conversa</h2>
-        <p class="ajuda">Leva menos de um minuto. Em seguida você escolhe o horário.</p>
+      <!-- v3.187: <form> com name/autocomplete padrão — o navegador do Instagram/Facebook e o Chrome oferecem
+           "Preencher automaticamente com informações salvas" (nome, e-mail, telefone, empresa, cargo) -->
+      <form id="form" method="post" action="#" autocomplete="on" novalidate onsubmit="event.preventDefault(); enviar();">
+        <h2>Solicitar uma conversa</h2>
+        <p class="ajuda">Leva menos de um minuto. Um especialista retorna em até um dia útil.</p>
         <div class="linha2">
-          <div><label for="nome">Nome</label><input id="nome" autocomplete="name" required></div>
-          <div><label for="cargo">Cargo</label><input id="cargo" autocomplete="organization-title" placeholder="Ex.: Diretor de TI"></div>
+          <div><label for="nome">Nome</label><input id="nome" name="name" autocomplete="name" required></div>
+          <div><label for="cargo">Cargo</label><input id="cargo" name="job_title" autocomplete="organization-title" placeholder="Ex.: Diretor de TI"></div>
         </div>
         <label for="empresa">Empresa</label>
-        <input id="empresa" autocomplete="organization" required>
+        <input id="empresa" name="company" autocomplete="organization" required>
         <label for="email">E-mail corporativo</label>
-        <input id="email" type="email" autocomplete="email" required placeholder="nome@empresa.com.br">
+        <input id="email" name="email" type="email" inputmode="email" autocomplete="email" required placeholder="nome@empresa.com.br">
         <div class="linha2">
-          <div><label for="telefone">WhatsApp <small>(opcional)</small></label><input id="telefone" type="tel" autocomplete="tel" placeholder="(11) 99999-9999"></div>
+          <div><label for="telefone">WhatsApp <small>(opcional)</small></label><input id="telefone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(11) 99999-9999"></div>
           <div><label for="interesse">Principal desafio <small>(opcional)</small></label>
-            <select id="interesse">
+            <select id="interesse" name="interesse">
               <option value="">Selecione</option>
               <option>Dados dispersos e relatórios manuais</option>
               <option>Indicadores e painéis executivos</option>
@@ -198,17 +200,16 @@
               <option>Outro</option>
             </select></div>
         </div>
-        <button class="btn" id="btn" onclick="enviar()">Quero conversar <span class="seta">→</span></button>
+        <div aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;"><label for="website">Site</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
+        <button class="btn" id="btn" type="submit">Quero conversar <span class="seta">→</span></button>
         <div class="erro" id="erro" role="alert"></div>
         <div class="lgpd"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" style="flex:0 0 14px;margin-top:1px"><rect x="4" y="9" width="12" height="9" rx="2" stroke="#7a8692" stroke-width="1.6"/><path d="M7 9V6.5a3 3 0 016 0V9" stroke="#7a8692" stroke-width="1.6"/></svg>
-          Seus dados são usados apenas para este contato, conforme a LGPD. Sem lista de e-mails.</div>
-      </div>
+          <span>Ao clicar em "Quero conversar", você concorda em receber comunicações da Atlantyx por e-mail, ligação, WhatsApp ou SMS sobre este contato e sobre soluções relacionadas. Seus dados são tratados conforme a LGPD. Veja nossa <a href="/privacidade.html" target="_blank" rel="noopener" style="color:#56626e;text-decoration:underline;">Política de Privacidade</a>.</span></div>
+      </form>
       <div class="ok" id="ok">
         <div class="check"><svg width="26" height="26" viewBox="0 0 20 20" fill="none"><path d="M5 10.5l3.2 3L15 6.5" stroke="#047857" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <h2 id="okTitulo">Recebemos seu contato.</h2>
-        <p id="okTexto">Escolha abaixo o melhor horário para a conversa. Se preferir, retornamos em até um dia útil.</p>
-        <iframe class="agenda-frame" id="agendaFrame" title="Agenda de reuniões Atlantyx" loading="lazy"></iframe>
-        <a class="btn-sec" id="agenda" href="#" target="_blank" rel="noopener">Abrir a agenda em nova aba</a>
+        <p id="okTexto">Um especialista da Atlantyx vai entrar em contato em até um dia útil para combinar a conversa.</p>
         <a class="btn-sec" id="wa" href="#" target="_blank" rel="noopener">Falar agora pelo WhatsApp</a>
       </div>
     </div>
@@ -220,7 +221,7 @@
     <div class="titulo-sec">Como funciona</div>
     <h3 class="h">Uma conversa objetiva, com encaminhamento claro.</h3>
     <div class="passos">
-      <div class="passo"><div class="n">1</div><h4>Você agenda</h4><p>Escolhe o horário que funciona para você, na hora, logo depois do cadastro.</p></div>
+      <div class="passo"><div class="n">1</div><h4>Você se cadastra</h4><p>Em menos de um minuto. Um especialista entra em contato em até um dia útil para combinar o melhor horário.</p></div>
       <div class="passo"><div class="n">2</div><h4>Entendemos o cenário</h4><p>Seus sistemas, dados, processos, indicadores e metas — e onde estão os gargalos.</p></div>
       <div class="passo"><div class="n">3</div><h4>Próximos passos</h4><p>Recomendações priorizadas por impacto. Proposta apenas se fizer sentido.</p></div>
     </div>
@@ -253,7 +254,7 @@
     <div class="final-marca"><svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect x="6" y="9" width="17" height="17" rx="5" transform="rotate(45 14.5 17.5)" stroke="#00C4CC" stroke-width="3"/><rect x="17" y="14" width="17" height="17" rx="5" transform="rotate(45 25.5 22.5)" stroke="#00FCA8" stroke-width="3"/></svg><span>ATLANTYX<span style="color:var(--verde)">.</span></span></div>
     <h3>Vamos olhar o seu cenário?</h3>
     <p>Uma conversa com especialista, sem custo e sem compromisso.</p>
-    <a href="#cardForm" onclick="setTimeout(()=>document.getElementById('nome').focus(),350)">Agendar conversa <span style="color:var(--petroleo)">→</span></a>
+    <a href="#cardForm" onclick="setTimeout(()=>document.getElementById('nome').focus(),350)">Quero conversar <span style="color:var(--petroleo)">→</span></a>
   </div>
 </div>
 
@@ -267,9 +268,11 @@
   if (q.get('t')) document.getElementById('titulo').textContent = q.get('t');
   if (q.get('s')) document.getElementById('sub').textContent = q.get('s');
   // Registra a VISITA (sem dados pessoais) para medir clique → página → lead
-  let whatsComercial = null, agendaServidor = null;
+  let whatsComercial = null, agendaServidor = null; const _t0 = Date.now(); // v3.190: tempo de preenchimento (anti-robô)
+  // v3.190: Pixel do Meta (se configurado no servidor) — PageView e Lead, para o anúncio otimizar por cadastro real
+  function _pixel(id) { if (!id || window.fbq) return; !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js'); fbq('init', id); fbq('track', 'PageView'); }
   fetch('/api/lead-capture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ evento: 'visita', utm, page: location.pathname + location.search }) })
-    .then(r => r.json()).then(d => { whatsComercial = d && d.whatsapp; agendaServidor = d && d.agenda; }).catch(() => {});
+    .then(r => r.json()).then(d => { whatsComercial = d && d.whatsapp; agendaServidor = d && d.agenda; try { _pixel(d && d.pixel); } catch (_) {} }).catch(() => {});
 
   async function enviar() {
     const g = id => document.getElementById(id).value.trim();
@@ -283,7 +286,7 @@
         body: JSON.stringify({
           name: g('nome'), company: g('empresa'), title: g('cargo'), email: g('email'), phone: g('telefone'), interesse: g('interesse'),
           source: utm.source, campaign_name: utm.campaign || 'captura', utm,
-          page: location.href, form_name: 'captura-publica', oferta: 'diagnostico_gratuito', // v3.60
+          page: location.href, form_name: 'captura-publica', oferta: 'diagnostico_gratuito', rapido: true, website: g('website'), t_preenchimento_ms: Date.now() - _t0, consentimento: { aceito: true, versao: '2026-10-15', canais: ['email', 'ligacao', 'whatsapp', 'sms'], em: new Date().toISOString() }, // v3.60 · v3.184: resposta imediata
         }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || d.success === false) throw new Error(d.error || 'HTTP ' + r.status);
@@ -291,18 +294,10 @@
       document.getElementById('ok').style.display = 'block';
       const primeiro = g('nome').split(' ')[0];
       document.getElementById('okTitulo').textContent = 'Obrigado, ' + primeiro + '.';
-      // agenda: parâmetro r do link da campanha, ou configurada no servidor (LINK_REUNIAO) — abre embutida
-      const ag = q.get('r') || (d && d.agenda) || agendaServidor || '';
-      if (/^https:\/\//i.test(ag)) {
-        const sobrenome = g('nome').split(' ').slice(1).join(' ');
-        const url = ag + (ag.includes('?') ? '&' : '?') + 'email=' + encodeURIComponent(g('email')) + '&firstName=' + encodeURIComponent(primeiro) + (sobrenome ? '&lastName=' + encodeURIComponent(sobrenome) : '') + (g('empresa') ? '&company=' + encodeURIComponent(g('empresa')) : '');
-        const fr = document.getElementById('agendaFrame');
-        if (/meetings\.hubspot\.com/i.test(ag)) { fr.src = url + '&embed=true'; fr.style.display = 'block'; }
-        const a = document.getElementById('agenda'); a.href = url; a.style.display = 'block';
-        if (fr.style.display === 'block') a.textContent = 'Agenda não carregou? Abrir em nova aba';
-      } else {
-        document.getElementById('okTexto').textContent = 'Um especialista retorna em até um dia útil para combinar a conversa.';
-      }
+      // v3.184: não abre mais a agenda depois do cadastro — o especialista entra em contato.
+      // As integrações (alerta, HubSpot, WhatsApp) rodam num 2º passo, sem segurar a tela do visitante.
+      try { if (window.fbq) fbq('track', 'Lead'); } catch (_) {}
+      if (d && d.lead_id) { try { fetch('/api/lead-capture', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ evento: 'processar', lead_id: d.lead_id }) }).catch(() => {}); } catch (_) {} }
       const numero = (d && d.whatsapp) || whatsComercial;
       const wa = document.getElementById('wa');
       if (numero) { wa.href = 'https://wa.me/' + numero + '?text=' + encodeURIComponent(`Olá, sou ${g('nome')}, da ${g('empresa')}. Acabei de solicitar uma conversa com a Atlantyx.`); wa.style.display = 'block'; }

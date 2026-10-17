@@ -72,6 +72,17 @@ jobs:
               fi
             fi
             if [ "$PW_OK" = "0" ]; then npm i --no-save --no-audit --no-fund playwright@1.48.2 >/dev/null 2>&1 && npx playwright install --with-deps chromium >/dev/null 2>&1 && PW_OK=1; fi
+            # v3.145 · Método B.P.M.: gate automático da Mixagem com as REGRAS da main (escopo da trilha, partitura, banco, versão, segredos)
+            mkdir -p /tmp/bpm-main/scripts /tmp/bpm-main/lib /tmp/bpm-main/partitura
+            if git show origin/main:scripts/bpm-gates.mjs > /tmp/bpm-main/scripts/bpm-gates.mjs 2>/dev/null && git show origin/main:lib/bpm.js > /tmp/bpm-main/lib/bpm.js 2>/dev/null && git show origin/main:partitura/escopos.json > /tmp/bpm-main/partitura/escopos.json 2>/dev/null; then
+              if ! GH_TOKEN="$GH_TOKEN" REPO="$REPO" node /tmp/bpm-main/scripts/bpm-gates.mjs --raiz . --base origin/main --pr "$PR" > /tmp/bpm.md 2>&1; then
+                git checkout -q main
+                gh pr edit "$PR" -R "$REPO" --add-label precisa-revisao --remove-label aprovado-merge || true
+                { echo "❌ Mixagem · gate automático B.P.M. reprovado — o PR NÃO foi mesclado."; echo; cat /tmp/bpm.md; echo; echo "Corrija na própria trilha (\"🛠 Pedir correção ao Claude\" na Esteira). Mudança de banco precisa do rótulo afinacao-aprovada (Afinador)."; } > /tmp/falha.md
+                gh pr comment "$PR" -R "$REPO" --body-file /tmp/falha.md || true
+                return 1
+              fi
+            fi
             if ! ATX_RAIZ=. node .validar-main.mjs > /tmp/val.txt 2>&1; then
               git checkout -q main
               gh pr edit "$PR" -R "$REPO" --add-label precisa-revisao --remove-label aprovado-merge || true
@@ -103,6 +114,9 @@ jobs:
               if [ -z "$PR" ]; then
                 TIT=$(gh issue view "$N" -R "$REPO" --json title -q .title)
                 printf 'Fixes #%s\n\nPull request aberto automaticamente a partir do trabalho do Claude na branch `%s`.\n' "$N" "$BR" > /tmp/corpo.md
+                # v3.145 · B.P.M.: o PR herda a trilha e o ID da tarefa (o CI e a Esteira leem estas linhas) + checklist de Mixagem
+                gh issue view "$N" -R "$REPO" --json body -q .body | grep -E '^BPM-(Trilha|ID):' | head -2 > /tmp/bpm-linhas.txt || true
+                if [ -s /tmp/bpm-linhas.txt ]; then { echo; cat /tmp/bpm-linhas.txt; echo; sed -n '/^## Checklist de Mixagem/,$p' .github/pull_request_template.md 2>/dev/null | grep -v '^<!--'; } >> /tmp/corpo.md; fi
                 [ "$LABEL" = "demanda-aprovada" ] && printf '\n**Demanda aprovada na Esteira — revise e faça o merge quando estiver de acordo.**\n' >> /tmp/corpo.md
                 gh pr create -R "$REPO" --base main --head "$BR" --title "$TIT" --body-file /tmp/corpo.md || continue
                 PR=$(gh pr list -R "$REPO" --head "$BR" --state open --json number -q '.[0].number')
