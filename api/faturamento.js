@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { termoPendencias, PRAZO_TERMO_DIAS as _PRAZO_TERMO } from '../lib/termo-regras.js'; // v3.129
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
 // SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
@@ -496,6 +497,7 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
     const datasPag = emp.map(e => e.pagamento_data).filter(Boolean).sort();
     porColuna[t.status].push({ ...t, valor_total_termo: num(t.valor_total_termo), nf_soma: num(t.nf_soma), nf_diferenca: num(t.nf_diferenca),
       n_empresas: emp.length, n_nf_encontradas: emp.filter(e => e.nf_status === 'encontrada').length, n_pagas: emp.filter(e => e.pagamento_status === 'pago').length,
+      pendencias_criticas: termoPendencias(t, emp), // v3.129: card vermelho no Kanban
       nf_numeros: emp.map(e => e.nf_numero).filter(Boolean),   // v2.44: para o card destacar a NF filtrada
       nf_soma: num(t.nf_soma), nf_status_termo: t.nf_status || null,
       // v2.56: data-base do prazo, na ordem: informada → derivada do período → NF mais antiga → criação
@@ -1301,6 +1303,153 @@ async function qbQueryFat(sqlQuery, token, realm, sandbox) {
   return d;
 }
 
+// v3.198: BUSCA EM TODO O SISTEMA por número de nota fiscal, fatura (invoice) ou termo — inclui termos concluídos,
+// notas recebidas por e-mail/XML e as faturas do QuickBooks (com e sem termo). Não depende dos filtros do Kanban.
+async function buscaGlobal({ q } = {}) {
+  const txt = String(q || '').trim().substring(0, 60); if (txt.length < 1) throw Object.assign(new Error('Digite um número para buscar'), { status: 400 });
+  const dig = txt.replace(/\D/g, ''), semZero = dig.replace(/^0+/, '') || dig, like = '%' + txt + '%';
+  const sql = await getSql(); const dia = x => x ? String(x instanceof Date ? x.toISOString() : x).substring(0, 10) : null;
+  const out = { q: txt, termos: [], notas_termos: [], notas_recebidas: [], faturas_qb: [], erro_qb: null };
+  // termos (todas as etapas, inclusive concluídos)
+  out.termos = (await sql`SELECT id, numero_termo, projeto, contratante, periodo_medicao, status, valor_total_termo FROM termos_faturamento
+      WHERE numero_termo ILIKE ${like} OR (${semZero} <> '' AND ltrim(regexp_replace(COALESCE(numero_termo,''), '[^0-9]', '', 'g'), '0') = ${semZero}) ORDER BY criado_em DESC LIMIT 30`)
+    .map(t => ({ id: t.id, numero: t.numero_termo, projeto: t.projeto, cliente: t.contratante, periodo: t.periodo_medicao, status: t.status, valor: num(t.valor_total_termo) }));
+  // notas e faturas lançadas nas empresas dos termos
+  out.notas_termos = (await sql`SELECT e.termo_id, e.empresa, e.nf_numero, e.nf_data, e.valor_parcela, e.qb_invoice_id, e.pagamento_status, e.pagamento_data, t.numero_termo, t.projeto, t.status
+      FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id
+      WHERE (${semZero} <> '' AND (ltrim(regexp_replace(COALESCE(e.nf_numero,''), '[^0-9]', '', 'g'), '0') = ${semZero} OR ltrim(COALESCE(e.qb_invoice_id,''), '0') = ${semZero}))
+         OR e.nf_numero ILIKE ${like} ORDER BY t.criado_em DESC LIMIT 50`)
+    .map(e => ({ termo_id: e.termo_id, termo: e.numero_termo, projeto: e.projeto, etapa: e.status, empresa: e.empresa, nf: e.nf_numero, nf_data: dia(e.nf_data), valor: num(e.valor_parcela), qb_invoice_id: e.qb_invoice_id, pagamento: e.pagamento_status, pagamento_data: dia(e.pagamento_data) }));
+  // notas recebidas (e-mail / XML importado)
+  try { out.notas_recebidas = (await sql`SELECT n.termo_id, n.nf_numero, n.nf_valor, n.nf_chave, n.origem, n.email_data, n.arquivo_url, t.numero_termo, t.projeto
+      FROM termos_notas_encontradas n LEFT JOIN termos_faturamento t ON t.id = n.termo_id
+      WHERE (${semZero} <> '' AND ltrim(regexp_replace(COALESCE(n.nf_numero,''), '[^0-9]', '', 'g'), '0') = ${semZero}) OR n.nf_numero ILIKE ${like} OR n.nf_chave ILIKE ${like}
+      ORDER BY n.criado_em DESC LIMIT 30`)
+    .map(n => ({ termo_id: n.termo_id, termo: n.numero_termo, projeto: n.projeto, nf: n.nf_numero, valor: num(n.nf_valor), origem: n.origem, data: dia(n.email_data), arquivo: n.arquivo_url })); } catch (_) {}
+  // faturas do QuickBooks (número da fatura = DocNumber, ou o Id interno)
+  try { const { token, realm } = await qbTokenFat(); const sandbox = process.env.QB_SANDBOX === 'true';
+    if (!realm) throw new Error('QB_REALM_ID ausente');
+    const cand = [...new Set([txt, dig, semZero].filter(Boolean))].map(x => "'" + x.replace(/'/g, '') + "'").join(',');
+    const r1 = await qbQueryFat(`select * from Invoice where DocNumber in (${cand}) maxresults 50`, token, realm, sandbox);
+    let inv = r1?.QueryResponse?.Invoice || [];
+    if (!inv.length && semZero) { try { const r2 = await qbQueryFat(`select * from Invoice where Id = '${semZero}'`, token, realm, sandbox); inv = r2?.QueryResponse?.Invoice || []; } catch (_) {} }
+    const base = sandbox ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
+    const ligados = inv.length ? await sql`SELECT e.qb_invoice_id, e.termo_id, t.numero_termo FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id WHERE e.qb_invoice_id = ANY(${inv.map(i => String(i.Id))})` : [];
+    out.faturas_qb = inv.map(i => { const l = ligados.find(x => String(x.qb_invoice_id) === String(i.Id));
+      return { id: i.Id, numero: i.DocNumber || i.Id, cliente: i.CustomerRef?.name || '', emissao: i.TxnDate, vencimento: i.DueDate, valor: num(i.TotalAmt), saldo: num(i.Balance),
+        situacao: num(i.Balance) <= 0 ? 'paga' : (i.DueDate && i.DueDate < new Date().toISOString().slice(0, 10) ? 'vencida' : 'em aberto'),
+        termo_id: l?.termo_id || null, termo: l?.numero_termo || null, url: `${base}/app/invoice?txnId=${i.Id}` }; });
+  } catch (e) { out.erro_qb = e.message; }
+  out.total = out.termos.length + out.notas_termos.length + out.notas_recebidas.length + out.faturas_qb.length;
+  return out;
+}
+
+// v3.198: FATURAS ÓRFÃS no QuickBooks — em aberto, sem termo ligado e sem nota fiscal com o mesmo número no sistema.
+// analisar: lista com o motivo de cada uma. limpar: confere TUDO de novo no servidor, uma a uma, logo antes de agir
+// (sem termo, sem nota, sem nenhum pagamento recebido) e só então exclui ou anula no QuickBooks. Tudo fica registrado.
+async function _faturasOrfas() {
+  const { token, realm } = await qbTokenFat(); const sandbox = process.env.QB_SANDBOX === 'true';
+  if (!realm) throw new Error('QB_REALM_ID ausente');
+  const sql = await getSql();
+  const r = await qbQueryFat(`select * from Invoice where Balance > '0' maxresults 1000`, token, realm, sandbox);
+  const inv = r?.QueryResponse?.Invoice || [];
+  const ligTermo = new Set((await sql`SELECT qb_invoice_id FROM termos_empresas WHERE qb_invoice_id IS NOT NULL`).map(x => String(x.qb_invoice_id)));
+  const norm = x => String(x || '').replace(/\D/g, '').replace(/^0+/, '');
+  // v3.199: guarda ONDE está a nota — a fatura criada direto no QuickBooks (fora do botão "Lançar no QB") nunca ganha o vínculo
+  // qb_invoice_id no termo, embora a NF com o mesmo número esteja lá. Assim dá para mostrar o termo e ligar.
+  const nfTermo = new Map(), nfRecebida = new Map();
+  for (const e of await sql`SELECT e.id, e.termo_id, e.empresa, e.nf_numero, e.qb_invoice_id, e.qb_invoice_doc, e.valor_parcela, t.numero_termo, t.projeto, t.contratante FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id WHERE e.nf_numero IS NOT NULL`) { const k = norm(e.nf_numero); if (k) (nfTermo.get(k) || nfTermo.set(k, []).get(k)).push(e); }
+  try { for (const n of await sql`SELECT n.nf_numero, n.termo_id, n.origem, t.numero_termo FROM termos_notas_encontradas n LEFT JOIN termos_faturamento t ON t.id = n.termo_id WHERE n.nf_numero IS NOT NULL`) { const k = norm(n.nf_numero); if (k && !nfRecebida.has(k)) nfRecebida.set(k, n); } } catch (_) {}
+  // v3.200: a fatura ligada ao termo ainda existe no QuickBooks? Se foi apagada, o vínculo está quebrado e pode ser refeito.
+  const abertas = new Set(inv.map(i => String(i.Id))), existe = new Set(abertas);
+  const ligadosIds = [...new Set([...nfTermo.values()].flat().map(e => e.qb_invoice_id).filter(x => x && !abertas.has(String(x))).map(String))];
+  for (let k = 0; k < ligadosIds.length; k += 40) { try { const rr = await qbQueryFat(`select Id from Invoice where Id in (${ligadosIds.slice(k, k + 40).map(x => "'" + x.replace(/'/g, '') + "'").join(',')})`, token, realm, sandbox); (rr?.QueryResponse?.Invoice || []).forEach(x => existe.add(String(x.Id))); } catch (_) { ligadosIds.slice(k, k + 40).forEach(x => existe.add(x)); } }
+  const hoje = new Date().toISOString().slice(0, 10), base = sandbox ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
+  return { token, realm, sandbox, faturas: inv.map(i => {
+    // v3.200: o número da fatura no QuickBooks pode coincidir com a NF de OUTRO cliente — só vale se o cliente bate
+    const _n = x => String(x || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9 ]/g, ' ');
+    const palavras = _n(i.CustomerRef?.name).split(/\s+/).filter(w => w.length >= 4 && !/^(cliente|companhia|empresa|energia|veiculos|servicos|solucoes|ltda|brasil|grupo)$/.test(w));
+    const doCliente = e => !palavras.length || palavras.some(w => _n([e.empresa, e.projeto, e.contratante].join(' ')).includes(w));
+    const cands = nfTermo.get(norm(i.DocNumber)) || [], ntOk = cands.filter(doCliente), outroCli = !ntOk.length && cands.length ? cands[0] : null;
+    const livre = e => !e.qb_invoice_id || !existe.has(String(e.qb_invoice_id)); // sem fatura ou fatura ligada já não existe
+    const nt = ntOk.find(livre) || ntOk[0] || null, nr = nfRecebida.get(norm(i.DocNumber)), duplicada = !!nt && !livre(nt);
+    const temTermo = ligTermo.has(String(i.Id)), temNota = !!nt || !!nr, recebido = num(i.TotalAmt) - num(i.Balance) > 0.009 || (i.LinkedTxn || []).some(l => /Payment|Deposit|CreditMemo/i.test(l.TxnType || ''));
+    return { id: String(i.Id), sync: i.SyncToken, numero: i.DocNumber || i.Id, cliente: i.CustomerRef?.name || '', emissao: i.TxnDate, vencimento: i.DueDate, valor: num(i.TotalAmt), saldo: num(i.Balance),
+      dias_atraso: i.DueDate && i.DueDate < hoje ? Math.floor((Date.parse(hoje) - Date.parse(i.DueDate)) / 864e5) : 0,
+      tem_termo: temTermo, tem_nota: temNota, recebeu_pagamento: recebido, pode_limpar: !temTermo && !recebido && (duplicada || (!temNota && !outroCli)), duplicada, cliente_diferente: !!outroCli,
+      motivo: temTermo ? 'ligada a um termo' : recebido ? 'já recebeu pagamento (parcial)' : duplicada ? `⚠ NF ${nt.nf_numero} do termo ${nt.numero_termo || ''} (${nt.empresa || ''}) já está ligada à fatura ${nt.qb_invoice_doc || nt.qb_invoice_id} — esta parece DUPLICADA` : nt ? `NF ${nt.nf_numero} está no termo ${nt.numero_termo || ''} (${nt.empresa || nt.projeto || ''}) — falta o vínculo da fatura${nt.qb_invoice_id ? ' (o vínculo antigo aponta para uma fatura que não existe mais)' : ''}` : nr ? `NF ${nr.nf_numero} recebida (${nr.origem || 'e-mail/XML'})${nr.numero_termo ? ' no termo ' + nr.numero_termo : ' sem termo'}` : recebido ? 'já recebeu pagamento (parcial)' : outroCli ? `⚠ o número bate com a NF ${outroCli.nf_numero} do termo ${outroCli.numero_termo || ''}, mas ela é de ${outroCli.empresa || outroCli.contratante || 'outro cliente'} — confira o cliente no QuickBooks` : 'sem termo, sem nota e sem pagamento',
+      termo_nf: nt ? { empresa_id: nt.id, termo_id: nt.termo_id, termo: nt.numero_termo, empresa: nt.empresa, projeto: nt.projeto, ja_tem_outra_fatura: !!nt.qb_invoice_id, fatura_ligada: nt.qb_invoice_doc || nt.qb_invoice_id || null, fatura_ligada_id: nt.qb_invoice_id || null } : null,
+      ligavel: !temTermo && !!nt && !duplicada, termo_sugerido: nt ? null : (nr && nr.termo_id ? { id: nr.termo_id, numero: nr.numero_termo } : null),
+      url: `${base}/app/invoice?txnId=${i.Id}` }; }) };
+}
+async function faturasOrfasAnalisar() {
+  const { faturas } = await _faturasOrfas();
+  const semTermo = faturas.filter(f => !f.tem_termo).sort((a, b) => b.dias_atraso - a.dias_atraso);
+  return { total_abertas: faturas.length, sem_termo: semTermo, candidatas: semTermo.filter(f => f.pode_limpar).length, ligaveis: semTermo.filter(f => f.ligavel).length };
+}
+// v3.201: liga MANUALMENTE uma fatura do QuickBooks a um termo (ex.: NF recebida no termo, mas a empresa do termo sem o nº da NF).
+// Se o termo tiver mais de uma empresa sem fatura, devolve a lista para o usuário escolher.
+async function faturaLigarManual({ invoice_id, termo_id, termo_numero, empresa_id, criar_empresa } = {}) {
+  if (!invoice_id) throw Object.assign(new Error('invoice_id obrigatório'), { status: 400 });
+  const sql = await getSql();
+  let t = termo_id ? (await sql`SELECT id, numero_termo, projeto FROM termos_faturamento WHERE id = ${String(termo_id)}`)[0] : null;
+  if (!t && termo_numero) { const r = await sql`SELECT id, numero_termo, projeto FROM termos_faturamento WHERE ltrim(regexp_replace(COALESCE(numero_termo,''), '[^0-9]', '', 'g'), '0') = ${String(termo_numero).replace(/[^0-9]/g, '').replace(/^0+/, '')} ORDER BY criado_em DESC`;
+    if (r.length > 1 && !empresa_id) return { escolher_termo: r.map(x => ({ id: x.id, numero: x.numero_termo, projeto: x.projeto })) }; t = r[0]; }
+  if (!t) throw Object.assign(new Error('Termo não encontrado'), { status: 404 });
+  const { token, realm } = await qbTokenFat(); const sandbox = process.env.QB_SANDBOX === 'true';
+  const inv = (await qbQueryFat(`select * from Invoice where Id = '${String(invoice_id).replace(/'/g, '')}'`, token, realm, sandbox))?.QueryResponse?.Invoice?.[0];
+  if (!inv) throw Object.assign(new Error('Fatura não encontrada no QuickBooks'), { status: 404 });
+  const ja = await sql`SELECT e.id, t.numero_termo FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id WHERE e.qb_invoice_id = ${String(inv.Id)}`;
+  if (ja.length) throw Object.assign(new Error(`A fatura ${inv.DocNumber || inv.Id} já está ligada ao termo ${ja[0].numero_termo}`), { status: 409 });
+  const emps = await sql`SELECT id, empresa, nf_numero, valor_parcela, qb_invoice_id, qb_invoice_doc FROM termos_empresas WHERE termo_id = ${t.id} ORDER BY empresa`;
+  let alvo = empresa_id ? emps.find(e => String(e.id) === String(empresa_id)) : null;
+  // v3.202: termo sem empresa livre (ou sem nenhuma empresa) → cria uma linha no termo para esta fatura
+  if (!alvo && criar_empresa) {
+    const id = 'emp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    await sql`INSERT INTO termos_empresas (id, termo_id, ordem, empresa, valor_parcela, nf_numero, nf_valor, nf_data, nf_status, qb_invoice_id, qb_invoice_doc, qb_lancado_em)
+      VALUES (${id}, ${t.id}, ${emps.length + 1}, ${inv.CustomerRef?.name || 'Cliente'}, ${num(inv.TotalAmt)}, ${String(inv.DocNumber || inv.Id)}, ${num(inv.TotalAmt)}, ${inv.TxnDate || null}, 'emitida', ${String(inv.Id)}, ${String(inv.DocNumber || inv.Id)}, NOW())`;
+    return { ligada: true, criou_empresa: true, fatura: inv.DocNumber || inv.Id, termo: t.numero_termo, empresa: inv.CustomerRef?.name || 'Cliente', substituiu: null };
+  }
+  if (!alvo) { const livres = emps.filter(e => !e.qb_invoice_id);
+    if (livres.length === 1 && emps.length === 1) alvo = livres[0];
+    else return { termo: { id: t.id, numero: t.numero_termo, projeto: t.projeto }, escolher: emps.map(e => ({ id: e.id, empresa: e.empresa, nf: e.nf_numero, valor: num(e.valor_parcela), fatura_atual: e.qb_invoice_doc || e.qb_invoice_id || null })), fatura: { id: inv.Id, numero: inv.DocNumber, cliente: inv.CustomerRef?.name, valor: num(inv.TotalAmt) } }; }
+  await sql`UPDATE termos_empresas SET qb_invoice_id = ${String(inv.Id)}, qb_invoice_doc = ${String(inv.DocNumber || inv.Id)}, qb_erro = NULL, nf_numero = COALESCE(NULLIF(nf_numero, ''), ${String(inv.DocNumber || '') || null}) WHERE id = ${alvo.id}`;
+  return { ligada: true, fatura: inv.DocNumber || inv.Id, termo: t.numero_termo, empresa: alvo.empresa, substituiu: alvo.qb_invoice_doc || alvo.qb_invoice_id || null };
+}
+// v3.199: liga a fatura do QuickBooks ao termo que tem a NF com o mesmo número (só onde o termo ainda não tem fatura ligada)
+async function faturasOrfasLigar({ ids = [] } = {}) {
+  const { faturas } = await _faturasOrfas(); const sql = await getSql();
+  const alvo = (Array.isArray(ids) && ids.length ? faturas.filter(f => ids.map(String).includes(f.id)) : faturas).filter(f => f.ligavel);
+  const ligadas = [], usados = new Set();
+  for (const f of alvo) {
+    if (usados.has(f.termo_nf.empresa_id)) continue; usados.add(f.termo_nf.empresa_id);
+    const r = await sql`UPDATE termos_empresas SET qb_invoice_id = ${f.id}, qb_invoice_doc = ${String(f.numero)}, qb_erro = NULL WHERE id = ${f.termo_nf.empresa_id} AND (qb_invoice_id IS NULL OR qb_invoice_id = '' OR qb_invoice_id = ${f.termo_nf.fatura_ligada_id || ''}) RETURNING id`;
+    if (r.length) ligadas.push({ fatura: f.numero, termo: f.termo_nf.termo, empresa: f.termo_nf.empresa });
+  }
+  return { ligadas };
+}
+async function faturasOrfasLimpar({ ids = [], modo = 'excluir', por = 'financeiro' } = {}) {
+  if (!Array.isArray(ids) || !ids.length) throw Object.assign(new Error('Selecione as faturas'), { status: 400 });
+  if (!['excluir', 'anular'].includes(modo)) throw Object.assign(new Error('modo deve ser excluir ou anular'), { status: 400 });
+  const { token, realm, sandbox, faturas } = await _faturasOrfas();
+  const qbBase = sandbox ? 'https://sandbox-quickbooks.api.intuit.com' : 'https://quickbooks.api.intuit.com';
+  const feitas = [], recusadas = [];
+  for (const id of ids.slice(0, 50).map(String)) {
+    const f = faturas.find(x => x.id === id);
+    if (!f) { recusadas.push({ id, motivo: 'não está mais em aberto no QuickBooks' }); continue; }
+    if (!f.pode_limpar) { recusadas.push({ id, numero: f.numero, motivo: f.motivo }); continue; } // re-checado agora, no servidor
+    const op = modo === 'anular' ? 'void' : 'delete';
+    const resp = await fetch(`${qbBase}/v3/company/${realm}/invoice?operation=${op}&minorversion=65`, { method: 'POST', headers: { Authorization: 'Bearer ' + token, Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ Id: f.id, SyncToken: f.sync }) });
+    const d = await resp.json().catch(() => ({}));
+    if (!resp.ok) { recusadas.push({ id, numero: f.numero, motivo: 'QuickBooks: ' + (d.Fault?.Error?.[0]?.Detail || d.Fault?.Error?.[0]?.Message || 'HTTP ' + resp.status) }); continue; }
+    feitas.push({ id, numero: f.numero, cliente: f.cliente, valor: f.valor, vencimento: f.vencimento, acao: modo });
+  }
+  // trilha de auditoria (quem, quando, o quê)
+  try { const sql = await getSql(); const k = 'fat:faturas_orfas:log'; const r = await sql`SELECT value FROM kv_store WHERE key = ${k}`; const log = (r[0] && (typeof r[0].value === 'string' ? JSON.parse(r[0].value) : r[0].value)) || [];
+    log.unshift({ em: new Date().toISOString(), por, modo, feitas, recusadas }); await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(log.slice(0, 200))}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {}
+  return { feitas, recusadas, modo };
+}
+
 async function termoVerificarPagamento({ termo_id, tolerancia_pct } = {}) {
   if (!termo_id) throw new Error('termo_id obrigatório');
   const { termo, empresas } = await termoGet({ id: termo_id });
@@ -1593,6 +1742,11 @@ async function handler(req, res) {
   const { action, payload = {} } = body;
 
   const acoes = {
+    busca_global:      () => buscaGlobal(payload), // v3.198
+    faturas_orfas:     () => faturasOrfasAnalisar(), // v3.198
+    faturas_orfas_limpar: () => faturasOrfasLimpar(payload),
+    faturas_orfas_ligar: () => faturasOrfasLigar(payload),
+    fatura_ligar_manual: () => faturaLigarManual(payload),
     cpfl_confirmar:    () => cpflConfirmar(payload),
     status_pendencias: () => statusPendencias(payload),
     termo_importar:          () => termoImportar(payload),

@@ -161,7 +161,7 @@ async function handler(req, res) {
         if (!porCampanha[camp]) porCampanha[camp] = { total: 0, por_rede: {}, pagos: 0 };
         porCampanha[camp].total++; fonte_hubspot++;
         porCampanha[camp].por_rede[rede] = (porCampanha[camp].por_rede[rede] || 0) + 1;
-        if (medium === 'paid' || medium === 'cpc' || medium === 'ads') porCampanha[camp].pagos++;
+        if (['paid', 'cpc', 'ads', 'pago'].includes(medium)) porCampanha[camp].pagos++;
       }
 
       // v3.46: a fonte principal agora é a tabela de leads do próprio sistema (página de captura grava a
@@ -180,7 +180,7 @@ async function handler(req, res) {
             const camp = String(l.campanha), rede = String((u && u.source) || l.origem || 'desconhecida').toLowerCase(), medium = String((u && u.medium) || '').toLowerCase();
             if (!porCampanha[camp]) porCampanha[camp] = { total: 0, por_rede: {}, pagos: 0 };
             porCampanha[camp].total++; porCampanha[camp].por_rede[rede] = (porCampanha[camp].por_rede[rede] || 0) + 1;
-            if (['paid', 'cpc', 'ads'].includes(medium)) porCampanha[camp].pagos++;
+            if (['paid', 'cpc', 'ads', 'pago'].includes(medium)) porCampanha[camp].pagos++;
             neon++;
           }
         }
