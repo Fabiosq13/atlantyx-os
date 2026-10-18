@@ -302,12 +302,174 @@ async function achadoTarefa({ id }) {
   return { url: d.html_url };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// v3.203 · ANÁLISE ESTÁTICA DE CÓDIGO (upload avulso ou repositório GitHub)
+// O código NUNCA é executado (não há ambiente, e não rodamos no ambiente do cliente): a IA lê e aponta erros.
+// O código também NÃO é guardado — passa em lotes pela análise; só os apontamentos ficam salvos (kv_store).
+// Segredos encontrados (chaves, senhas, tokens) viram apontamento CRÍTICO e são MASCARADOS antes de ir para a IA.
+// Acesso: tela própria 's6qacodigo' — dá para liberar só esta ação a um perfil (Acesso → Perfis).
+// ═══════════════════════════════════════════════════════════════════════════
+const COD_TELA = 's6qacodigo';
+const COD_EXT = /\.(js|mjs|cjs|jsx|ts|tsx|vue|svelte|py|java|kt|kts|scala|cs|vb|fs|go|rb|php|rs|swift|m|mm|c|cc|cpp|h|hpp|sql|pks|pkb|prc|fnc|sh|bash|ps1|bat|html?|css|scss|sass|less|ya?ml|json|xml|tf|hcl|gradle|properties|ini|toml|r|dart|lua|pl|groovy|abap|cbl|cob|ipynb)$/i;
+const COD_NOME = /(^|\/)(dockerfile|makefile|jenkinsfile|procfile|\.env\.example)$/i;
+const COD_IGNORA = /(^|\/)(node_modules|\.git|dist|build|out|target|bin|obj|vendor|coverage|\.next|\.nuxt|\.svelte-kit|__pycache__|\.venv|venv|env|\.idea|\.vscode|\.terraform)\//i;
+const COD_IGNORA_ARQ = /(\.min\.(js|css)|\.map|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|composer\.lock|poetry\.lock|\.lock|\.snap|\.d\.ts)$/i;
+const COD_ENV = /(^|\/)\.env(\.[a-z0-9_-]+)?$/i; // .env versionado (exceto .env.example)
+const COD_MAX_ARQ = 150000, COD_MAX_TOTAL = 400, COD_LOTE_CHARS = 45000;
+const COD_SEGREDOS = [
+  ['Chave privada', /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/g],
+  ['Chave de acesso AWS', /\bAKIA[0-9A-Z]{16}\b/g],
+  ['Token do GitHub', /\bgh[pousr]_[A-Za-z0-9]{30,}\b/g],
+  ['Chave do Google', /\bAIza[0-9A-Za-z_-]{35}\b/g],
+  ['Token do Slack', /\bxox[baprs]-[0-9A-Za-z-]{10,}\b/g],
+  ['Chave Stripe', /\b(?:sk|rk)_live_[0-9A-Za-z]{20,}\b/g],
+  ['Chave Anthropic', /\bsk-ant-[A-Za-z0-9_-]{20,}\b/g],
+  ['Chave OpenAI', /\bsk-(?:proj-)?[A-Za-z0-9_-]{32,}\b/g],
+  ['Senha em string de conexão', /\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|amqp|mssql|sqlserver):\/\/[^:\s'"\/]+:[^@\s'"]{3,}@/gi],
+  ['Senha/segredo fixo no código', /\b(?:password|passwd|pwd|senha|secret|client_secret|api[_-]?key|apikey|access[_-]?token|auth[_-]?token)\b["']?\s*[:=]\s*["'][^"'\s]{8,}["']/gi],
+];
+function _podeCodigo(req) { const s = req?.sessao; if (!s) return true; const t = s.telas || []; return !!s.admin || t.includes('*') || t.includes(COD_TELA); }
+const _mascara = v => { const x = String(v); return x.length <= 8 ? '••••' : x.slice(0, 4) + '••••' + x.slice(-2); };
+function codFiltrar(lista) {
+  const analisar = [], ignorados = { pasta: 0, tipo: 0, grande: 0, excesso: 0 }, envs = [];
+  for (const a of lista) {
+    const path = String(a.path || '').replace(/^\.?\//, ''); if (!path) continue;
+    if (COD_IGNORA.test('/' + path)) { ignorados.pasta++; continue; }
+    if (COD_ENV.test(path) && !/\.example$|\.sample$|\.template$/i.test(path)) { envs.push(path); continue; }
+    if (COD_IGNORA_ARQ.test(path) || !(COD_EXT.test(path) || COD_NOME.test(path))) { ignorados.tipo++; continue; }
+    if ((a.size || 0) > COD_MAX_ARQ) { ignorados.grande++; continue; }
+    analisar.push({ path, size: a.size || 0 });
+  }
+  // prioriza código de aplicação sobre configuração quando passa do limite
+  const peso = p => /\.(json|ya?ml|xml|toml|ini|properties|html?|css|scss|less|sass)$/i.test(p) ? 1 : 0;
+  analisar.sort((x, y) => peso(x.path) - peso(y.path) || x.path.localeCompare(y.path));
+  if (analisar.length > COD_MAX_TOTAL) { ignorados.excesso = analisar.length - COD_MAX_TOTAL; analisar.length = COD_MAX_TOTAL; }
+  analisar.sort((x, y) => x.path.localeCompare(y.path));
+  return { analisar, ignorados, envs };
+}
+function codSegredos(path, txt) {
+  const achados = []; let limpo = String(txt);
+  for (const [nome, re] of COD_SEGREDOS) {
+    limpo = limpo.replace(re, (m, ...rest) => {
+      const off = rest.at(-2); const linha = String(txt).slice(0, typeof off === 'number' ? off : 0).split('\n').length;
+      achados.push({ arquivo: path, linha, severidade: 'critica', categoria: 'seguranca', titulo: 'Segredo exposto no código: ' + nome,
+        descricao: 'Há um segredo escrito no código-fonte. Quem tem acesso ao repositório (ou ao histórico do Git) pode usá-lo.',
+        evidencia: _mascara(m), correcao: 'Revogue/troque este segredo agora, remova-o do código (e do histórico do Git) e leia de uma variável de ambiente ou cofre de segredos.', confianca: 'alta', origem: 'regra' });
+      return '[SEGREDO_MASCARADO]';
+    });
+  }
+  return { achados, limpo };
+}
+const _numera = t => String(t).split('\n').map((l, i) => String(i + 1).padStart(4, ' ') + '| ' + l).join('\n');
+async function codIA(arquivos, ctx) {
+  const sistema = `Você é um revisor sênior de código fazendo ANÁLISE ESTÁTICA: o código NÃO é executado. Leia os arquivos e aponte DEFEITOS REAIS: bugs e erros de lógica, exceções não tratadas, falhas de segurança (injeção de SQL/comando, XSS, autenticação/autorização ausente, dados sensíveis expostos, criptografia fraca, CORS aberto, desserialização insegura), condições de corrida, vazamento de recursos, problemas de desempenho graves (consulta em laço, N+1, carga sem limite), tratamento de dados incorreto (datas, moeda, nulos, fuso), código morto que esconde erro e violações graves de boas práticas que causam defeito.
+Regras: só aponte o que você consegue mostrar no código recebido; NÃO invente arquivos, funções ou linhas; use a numeração de linha mostrada ("  12| ..."); ignore estilo e formatação puros; se depender de algo que não está no lote, diga isso na descrição e use confiança "baixa"; [SEGREDO_MASCARADO] já foi tratado — não aponte de novo; no máximo 25 apontamentos, os mais graves primeiro; textos em português do Brasil, curtos e diretos.
+Responda SOMENTE com JSON: {"achados":[{"arquivo":"caminho exato","linha":12,"severidade":"critica|alta|media|baixa","categoria":"bug|seguranca|desempenho|logica|dados|manutencao|boas_praticas","titulo":"até 90 caracteres","descricao":"o problema e o impacto, até 400 caracteres","evidencia":"trecho curto do código","correcao":"como corrigir, com código curto se ajudar","confianca":"alta|media|baixa"}]}`;
+  const corpo = (ctx.contexto ? 'CONTEXTO DO SISTEMA (dado pelo usuário): ' + String(ctx.contexto).slice(0, 1500) + '\n' : '')
+    + (ctx.foco ? 'FOCO DA ANÁLISE: ' + String(ctx.foco).slice(0, 300) + '\n' : '')
+    + (ctx.estrutura?.length ? 'ESTRUTURA DO PROJETO (só caminhos, para contexto):\n' + ctx.estrutura.slice(0, 250).join('\n') + '\n' : '')
+    + '\nARQUIVOS DESTE LOTE:\n' + arquivos.map(a => '=== ' + a.path + ' ===\n' + _numera(a.conteudo)).join('\n\n');
+  const r = await _ia(sistema, corpo, 6000);
+  const validos = new Set(arquivos.map(a => a.path));
+  return (Array.isArray(r?.achados) ? r.achados : []).filter(a => a && a.titulo).slice(0, 25).map(a => ({
+    arquivo: validos.has(a.arquivo) ? a.arquivo : (arquivos.find(x => String(a.arquivo || '').endsWith(x.path) || x.path.endsWith(String(a.arquivo || '')))?.path || String(a.arquivo || '').slice(0, 300)),
+    linha: Number.isFinite(Number(a.linha)) ? Number(a.linha) : null, severidade: SEV.includes(a.severidade) ? a.severidade : 'media',
+    categoria: String(a.categoria || 'bug').slice(0, 30), titulo: String(a.titulo).slice(0, 140), descricao: String(a.descricao || '').slice(0, 900),
+    evidencia: String(a.evidencia || '').slice(0, 600), correcao: String(a.correcao || '').slice(0, 1500), confianca: ['alta', 'media', 'baixa'].includes(a.confianca) ? a.confianca : 'media', origem: 'ia' }));
+}
+// ── GitHub (somente leitura) ──
+function _ghRepo(url) { const m = String(url || '').trim().match(/github\.com[/:]([^/\s]+)\/([^/\s#?]+?)(?:\.git)?(?:\/tree\/([^\s#?]+))?\/?$/i) || String(url || '').trim().match(/^([\w.-]+)\/([\w.-]+)$/); if (!m) throw new Error('Informe o repositório como https://github.com/dono/repo ou dono/repo'); return { dono: m[1], repo: m[2], ramo: m[3] || null }; }
+async function _gh(caminho, token, raw) {
+  const r = await fetch('https://api.github.com' + caminho, { headers: { Accept: raw ? 'application/vnd.github.raw' : 'application/vnd.github+json', 'User-Agent': 'atlantyx-qa-codigo', ...(token ? { Authorization: 'Bearer ' + token } : {}) } });
+  if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(r.status === 404 ? 'Repositório ou arquivo não encontrado (se for privado, informe um token de leitura)' : r.status === 403 && /rate limit/i.test(d.message || '') ? 'Limite de consultas do GitHub atingido — informe um token de leitura e tente de novo' : 'GitHub ' + r.status + ': ' + (d.message || '')); }
+  return raw ? r.text() : r.json();
+}
+const _codKey = id => 'qa:codigo:' + id;
+async function _kvLer(sql, k) { const r = await sql`SELECT value FROM kv_store WHERE key = ${k}`; if (!r[0]) return null; return typeof r[0].value === 'string' ? JSON.parse(r[0].value) : r[0].value; }
+async function _kvGravar(sql, k, v) { await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; }
+async function _codIndice(sql, item, remover) {
+  const lista = (await _kvLer(sql, 'qa:codigo:indice')) || [];
+  const nova = lista.filter(x => x.id !== (item?.id || remover)); if (item) nova.unshift(item);
+  await _kvGravar(sql, 'qa:codigo:indice', nova.slice(0, 200));
+}
+const _codResumo = a => ({ id: a.id, nome: a.nome, origem: a.origem, repo: a.repo || null, ramo: a.ramo || null, status: a.status, criado_em: a.criado_em, criado_por: a.criado_por || null,
+  arquivos_total: a.arquivos_total, arquivos_analisados: a.arquivos_analisados, contagem: ['critica', 'alta', 'media', 'baixa'].reduce((o, k) => (o[k] = (a.achados || []).filter(x => x.severidade === k && !['falso_positivo', 'corrigido'].includes(x.status)).length, o), {}) });
+// 1) preparar: lista os arquivos (upload: o navegador manda a lista; repo: lê a árvore no GitHub) e cria a análise
+async function codigoPreparar(b, req) {
+  const sql = await getSql(); const id = novoId('cod'); const agora = new Date().toISOString();
+  let lista, meta = {};
+  if (b.origem === 'repo') {
+    const { dono, repo, ramo } = _ghRepo(b.repo); const token = String(b.token || '').trim() || null;
+    const info = await _gh(`/repos/${dono}/${repo}`, token); const ref = String(b.ramo || ramo || info.default_branch || 'main');
+    const arv = await _gh(`/repos/${dono}/${repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`, token);
+    lista = (arv.tree || []).filter(x => x.type === 'blob').map(x => ({ path: x.path, size: x.size }));
+    meta = { repo: `${dono}/${repo}`, ramo: ref, commit: arv.sha, truncado: !!arv.truncated, privado: !!info.private };
+  } else lista = (Array.isArray(b.arquivos) ? b.arquivos : []).map(x => ({ path: x.path, size: x.size }));
+  if (!lista.length) throw new Error('Nenhum arquivo recebido');
+  const f = codFiltrar(lista);
+  const achados = f.envs.map(p => ({ arquivo: p, linha: null, severidade: 'critica', categoria: 'seguranca', titulo: 'Arquivo .env versionado/enviado', descricao: 'Arquivos .env costumam guardar senhas e chaves. O conteúdo NÃO foi lido nem enviado para a IA.', evidencia: p, correcao: 'Tire o arquivo do repositório (e do histórico), adicione ao .gitignore, troque os segredos que estavam nele e mantenha só um .env.example sem valores.', confianca: 'alta', origem: 'regra' }));
+  const an = { id, nome: String(b.nome || meta.repo || 'Análise avulsa').slice(0, 120), origem: b.origem === 'repo' ? 'repo' : 'upload', ...meta, contexto: String(b.contexto || '').slice(0, 1500), foco: String(b.foco || '').slice(0, 300),
+    status: 'analisando', criado_em: agora, criado_por: req?.usuario || null, arquivos_total: f.analisar.length, arquivos_analisados: 0, ignorados: f.ignorados,
+    pendentes: f.analisar.map(x => x.path), estrutura: lista.map(x => x.path).filter(p => !COD_IGNORA.test('/' + p)).slice(0, 400), lotes: 0, erros: [],
+    achados: achados.map((a, i) => ({ ...a, id: 'a' + i, status: 'aberto' })) };
+  await _kvGravar(sql, _codKey(id), an); await _codIndice(sql, _codResumo(an));
+  return { analise: { ...an, pendentes: undefined }, arquivos: f.analisar.map(x => x.path), ignorados: f.ignorados };
+}
+// 2) lote: analisa o próximo lote. Upload → o navegador manda o conteúdo; repo → o servidor baixa do GitHub
+async function codigoLote(b) {
+  const sql = await getSql(); const an = await _kvLer(sql, _codKey(b.id)); if (!an) throw new Error('Análise não encontrada');
+  if (an.status !== 'analisando') return { analise: _codResumo(an), fim: true };
+  let arquivos = [];
+  if (an.origem === 'repo') {
+    const token = String(b.token || '').trim() || null; const [dono, repo] = an.repo.split('/'); let soma = 0;
+    while (an.pendentes.length && soma < COD_LOTE_CHARS && arquivos.length < 25) {
+      const path = an.pendentes.shift();
+      try { const enc = path.split('/').map(encodeURIComponent).join('/'), ref = encodeURIComponent(an.commit || an.ramo);
+        // sem token (repositório público): raw.githubusercontent.com não consome o limite de 60 chamadas/hora da API
+        const txt = token ? await _gh(`/repos/${dono}/${repo}/contents/${enc}?ref=${ref}`, token, true)
+          : await fetch(`https://raw.githubusercontent.com/${dono}/${repo}/${ref}/${enc}`, { headers: { 'User-Agent': 'atlantyx-qa-codigo' } }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); });
+        if (/\u0000/.test(txt.slice(0, 2000))) continue; arquivos.push({ path, conteudo: txt }); soma += txt.length; }
+      catch (e) { an.erros.push(path + ': ' + e.message); }
+    }
+  } else {
+    const rec = (Array.isArray(b.arquivos) ? b.arquivos : []).filter(x => an.pendentes.includes(x.path));
+    for (const x of rec) { an.pendentes = an.pendentes.filter(p => p !== x.path); if (!/\u0000/.test(String(x.conteudo || '').slice(0, 2000))) arquivos.push({ path: x.path, conteudo: String(x.conteudo || '').slice(0, COD_MAX_ARQ) }); }
+  }
+  const novos = [];
+  for (const a of arquivos) { const s = codSegredos(a.path, a.conteudo); a.conteudo = s.limpo; novos.push(...s.achados); }
+  if (arquivos.length) {
+    try { novos.push(...await codIA(arquivos, { contexto: an.contexto, foco: an.foco, estrutura: an.estrutura })); }
+    catch (e) { an.erros.push('lote ' + (an.lotes + 1) + ': ' + e.message); }
+  }
+  const base = an.achados.length; an.achados.push(...novos.map((a, i) => ({ ...a, id: 'a' + (base + i), status: 'aberto' })));
+  an.arquivos_analisados += arquivos.length; an.lotes++;
+  if (!an.pendentes.length) an.status = 'concluida';
+  await _kvGravar(sql, _codKey(an.id), an); await _codIndice(sql, _codResumo(an));
+  return { analise: _codResumo(an), novos: novos.length, pendentes: an.pendentes.length, fim: !an.pendentes.length, erros: an.erros.slice(-3) };
+}
+async function codigoObter({ id }) { const sql = await getSql(); const an = await _kvLer(sql, _codKey(id)); if (!an) throw new Error('Análise não encontrada'); const { pendentes, estrutura, ...resto } = an; return { analise: { ...resto, pendentes: (pendentes || []).length } }; }
+async function codigoStatus({ id, achado_id, status, nota }) {
+  if (!['aberto', 'confirmado', 'corrigido', 'falso_positivo'].includes(status)) throw new Error('status inválido');
+  const sql = await getSql(); const an = await _kvLer(sql, _codKey(id)); if (!an) throw new Error('Análise não encontrada');
+  const a = an.achados.find(x => x.id === achado_id); if (!a) throw new Error('Apontamento não encontrado');
+  a.status = status; if (nota != null) a.nota = String(nota).slice(0, 500);
+  await _kvGravar(sql, _codKey(id), an); await _codIndice(sql, _codResumo(an)); return { ok: true };
+}
+
 async function handler(req, res) {
   const b = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body) || {};
   try {
     const robo = _ehRobo(req);
     const soRobo = f => async () => { if (!robo) { const e = new Error('Só o robô de QA (CRON_SECRET) pode chamar esta ação'); e.code = 403; throw e; } return f(); };
+    // v3.203: análise de código só para quem tem a tela 'QA · Análise de Código' no perfil (ou admin)
+    if (String(b.action || '').startsWith('codigo_') && !_podeCodigo(req)) { const e = new Error('Seu perfil não tem acesso à Análise de Código'); e.code = 403; throw e; }
     const acoes = {
+      codigo_listar: async () => { const sql = await getSql(); return { analises: (await _kvLer(sql, 'qa:codigo:indice')) || [] }; },
+      codigo_preparar: () => codigoPreparar(b, req),
+      codigo_lote: () => codigoLote(b),
+      codigo_obter: () => codigoObter(b),
+      codigo_status: () => codigoStatus(b),
+      codigo_excluir: async () => { const sql = await getSql(); await sql`DELETE FROM kv_store WHERE key = ${_codKey(b.id)}`; await _codIndice(sql, null, b.id); return { ok: true }; },
       kanban: () => kanban(),
       produto_salvar: () => produtoSalvar(b),
       produto_obter: async () => { const sql = await getSql(); const p = (await sql`SELECT * FROM qa_produtos WHERE id=${b.id}`)[0]; if (!p) throw new Error('não encontrado'); return { produto: _semSenha(p) }; },
