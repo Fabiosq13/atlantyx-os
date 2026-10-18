@@ -185,7 +185,7 @@
       "maxDuration": 60
     },
     "api/qa-externo.js": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "api/fabrica.js": {
       "maxDuration": 300,
