@@ -164,6 +164,11 @@ async function handler(req, res) {
       // v3.110: Orçamento em DRE de 12 meses móveis (orçado × realizado/projetado) + propostas do CRM
       orcamento_dre:         () => orcamentoDre(params),
       crm_etapas:            () => crmEtapas(),
+      // v3.206: funil de vendas do dashboard (realizado × meta por etapa), clientes da faixa e metas por etapa
+      funil_vendas:          () => funilVendas(params),
+      funil_contatos:        () => funilContatos(params),
+      funil_metas_ler:       () => funilMetasLer(),
+      funil_metas_salvar:    () => funilMetasSalvar(params),
       // v3.105: incluir / excluir lançamento futuro direto da tela do fluxo — grava no QuickBooks
       fluxo_lancamento_excluir: () => fluxoLancamentoExcluir(params),
       fluxo_lancamento_incluir: () => fluxoLancamentoIncluir(params),
@@ -6561,6 +6566,163 @@ async function _hs(caminho, metodo = 'GET', corpo = null) {
   const r = await fetch(_crmBase + caminho, { method: metodo, headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }, body: corpo ? JSON.stringify(corpo) : undefined });
   const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error('HubSpot ' + r.status + ': ' + (d.message || '')); return d;
 }
+// ═══════════════════════════════════════════════════════════════════════════
+// v3.206 · FUNIL DE VENDAS DO DASHBOARD (HubSpot) — realizado × meta por etapa, em R$ e quantidade
+// REALIZADO de uma etapa = negócios que ENTRARAM nela no período (propriedade hs_date_entered_<etapa> do HubSpot);
+// sem essa data, vale a regra de reserva: negócio que está na etapa ou depois dela (e não foi perdido) conta pela data
+// de criação. META = cadastro por etapa (kv 'vendas:funil_metas', por mês) ou, sem cadastro, derivada da meta de
+// faturamento do período: fechados (R$) = meta de faturamento; quantidade = R$ ÷ ticket médio; cada etapa anterior
+// precisa de fechados ÷ probabilidade da etapa (a probabilidade cadastrada no HubSpot). Período em andamento: a meta
+// é proporcional aos dias já corridos. FAROL: ≥ 100% verde · ≥ 80% amarelo · abaixo vermelho (pior entre R$ e qtd).
+// PENDÊNCIAS: negócios abertos parados na etapa há 21+ dias, sem próxima atividade, sem contato há 14+ dias,
+// com fechamento vencido, sem valor ou sem data — separados em Prospecção (etapas iniciais) e Vendas.
+// ═══════════════════════════════════════════════════════════════════════════
+const _FUNIL_KV = 'vendas:funil_metas';
+async function _kvFin(k) { const sql = await getSql(); const r = await sql`SELECT value FROM kv_store WHERE key = ${k} LIMIT 1`; const v = r[0]?.value; return (typeof v === 'string' ? JSON.parse(v) : v) || null; }
+async function _kvFinSet(k, v) { const sql = await getSql(); await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; }
+const _MESES_PT = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+function _funilPeriodo(tipo, ref) {
+  const hoje = _hojeBR(), ay = parseInt(hoje.slice(0, 4)), am = parseInt(hoje.slice(5, 7)), p2 = n => String(n).padStart(2, '0');
+  const ult = (a, m) => new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10);
+  tipo = ['mes', 'trimestre', 'ano'].includes(tipo) ? tipo : 'mes';
+  let a, m1, meses, rotulo, refN;
+  if (tipo === 'ano') { a = parseInt(ref) || ay; m1 = 1; meses = 12; rotulo = String(a); refN = String(a); }
+  else if (tipo === 'trimestre') { const x = String(ref || '').match(/^(\d{4})-T([1-4])$/); a = x ? +x[1] : ay; const t = x ? +x[2] : Math.ceil(am / 3); m1 = (t - 1) * 3 + 1; meses = 3; rotulo = `${t}º tri/${a}`; refN = `${a}-T${t}`; }
+  else { const x = String(ref || '').match(/^(\d{4})-(\d{2})$/); a = x ? +x[1] : ay; m1 = x ? +x[2] : am; meses = 1; rotulo = `${_MESES_PT[m1 - 1]}/${a}`; refN = `${a}-${p2(m1)}`; }
+  const ini = `${a}-${p2(m1)}-01`, fim = ult(a, m1 + meses - 1);
+  const tIni = Date.parse(ini + 'T00:00:00-03:00'), tFim = Date.parse(fim + 'T23:59:59-03:00'), agora = Date.now();
+  const decorrido = agora >= tFim ? 1 : agora < tIni ? 0 : (agora - tIni) / (tFim - tIni);
+  return { tipo, ref: refN, ini, fim, rotulo, meses, mes_ini: m1, ano: a, tIni, tFim, decorrido };
+}
+const _tsHs = v => { if (v == null || v === '') return null; const n = Number(v); const t = Number.isFinite(n) && String(v).length >= 12 ? n : Date.parse(v); return Number.isFinite(t) ? t : null; };
+async function _funilDeals(pid, etapas, tIni) {
+  const props = ['dealname', 'amount', 'dealstage', 'pipeline', 'createdate', 'closedate', 'hubspot_owner_id', 'notes_last_contacted', 'notes_next_activity_date', 'hs_lastmodifieddate', 'hs_is_closed_won', 'hs_is_closed'];
+  for (const e of etapas) props.push('hs_date_entered_' + e.id, 'hs_v2_date_entered_' + e.id);
+  const abertas = etapas.filter(e => !e.fechada).map(e => e.id);
+  const buscas = [
+    [{ propertyName: 'pipeline', operator: 'EQ', value: pid }, { propertyName: 'hs_lastmodifieddate', operator: 'GTE', value: String(tIni) }],
+    ...(abertas.length ? [[{ propertyName: 'pipeline', operator: 'EQ', value: pid }, { propertyName: 'dealstage', operator: 'IN', values: abertas }]] : []),
+  ];
+  const mapa = new Map();
+  for (const filters of buscas) {
+    let after;
+    for (let pg = 0; pg < 30; pg++) {
+      const d = await _hs('/crm/v3/objects/deals/search', 'POST', { filterGroups: [{ filters }], properties: props, limit: 100, sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }], ...(after ? { after } : {}) });
+      for (const x of d.results || []) mapa.set(x.id, x);
+      after = d.paging?.next?.after; if (!after) break;
+    }
+  }
+  return [...mapa.values()];
+}
+async function funilVendas({ tipo, ref, pipeline } = {}) {
+  if (!process.env.HUBSPOT_TOKEN) return { indisponivel: 'HUBSPOT_TOKEN não configurado no Vercel' };
+  const P = _funilPeriodo(tipo, ref);
+  const { pipelines } = await crmEtapas();
+  const pip = pipelines.find(x => x.id === (pipeline || process.env.HUBSPOT_PIPELINE_ID)) || pipelines[0];
+  if (!pip) return { indisponivel: 'Nenhum pipeline de negócios no HubSpot' };
+  const etapas = pip.etapas.map((e, i) => ({ ...e, ordem: i, ganho: e.fechada && (e.probabilidade ?? 0) >= 1, perdido: e.fechada && !((e.probabilidade ?? 0) >= 1) }));
+  const funil = etapas.filter(e => !e.perdido);
+  const ordem = Object.fromEntries(etapas.map(e => [e.id, e.ordem]));
+  const deals = await _funilDeals(pip.id, etapas, P.tIni);
+  // ── metas ──
+  const cad = (await _kvFin(_FUNIL_KV).catch(() => null)) || {};
+  const metasEt = (cad.pipeline === pip.id ? cad.etapas : null) || {};
+  const m = await _metasComPadrao([P.ano]).catch(() => ({})); const def = m.por_ano?.[String(P.ano)] || {};
+  let metaFat = null;
+  if (Array.isArray(def.mensal) && def.mensal.some(v => Number(v) > 0)) metaFat = def.mensal.slice(P.mes_ini - 1, P.mes_ini - 1 + P.meses).reduce((s, v) => s + (Number(v) || 0), 0);
+  else if (def.faturamento) metaFat = def.faturamento * P.meses / 12;
+  const ganhos12 = deals.filter(d => etapas.find(e => e.id === d.properties?.dealstage)?.ganho && Number(d.properties?.amount) > 0 && (_tsHs(d.properties?.closedate) || 0) > Date.now() - 365 * 864e5);
+  const comValor = deals.filter(d => Number(d.properties?.amount) > 0);
+  const media = l => l.length ? l.reduce((s, d) => s + Number(d.properties.amount), 0) / l.length : null;
+  const ticket = Number(cad.ticket_medio) > 0 ? Number(cad.ticket_medio) : (media(ganhos12) || media(comValor));
+  const ganho = funil.find(e => e.ganho);
+  // ── realizado por etapa ──
+  const det = {}; const perdidos = { qtd: 0, valor: 0 };
+  const linhas = funil.map(e => ({ id: e.id, nome: e.nome, ordem: e.ordem, probabilidade: e.probabilidade, ganho: e.ganho, real: { qtd: 0, valor: 0 }, ids: [] }));
+  for (const d of deals) {
+    const pr = d.properties || {}, atual = etapas.find(e => e.id === pr.dealstage); const valor = Number(pr.amount) || 0; const criado = _tsHs(pr.createdate);
+    if (atual?.perdido) { const t = _tsHs(pr['hs_v2_date_entered_' + atual.id] || pr['hs_date_entered_' + atual.id]) || _tsHs(pr.closedate); if (t >= P.tIni && t <= P.tFim) { perdidos.qtd++; perdidos.valor += valor; } }
+    let entrou = false;
+    for (const L of linhas) {
+      let t = _tsHs(pr['hs_v2_date_entered_' + L.id] || pr['hs_date_entered_' + L.id]);
+      if (t == null && atual && !atual.perdido && ordem[atual.id] >= L.ordem) t = L.ganho ? (_tsHs(pr.closedate) || criado) : criado;
+      if (t == null && L.ordem === funil[0].ordem && atual?.perdido) t = criado; // perdido sem histórico: conta na entrada do funil
+      if (t != null && t >= P.tIni && t <= P.tFim) { L.real.qtd++; L.real.valor += valor; L.ids.push(d.id); entrou = true; }
+    }
+    if (entrou) det[d.id] = { id: d.id, nome: pr.dealname || 'Negócio', valor, etapa: atual?.nome || pr.dealstage, criado: pr.createdate ? String(pr.createdate).slice(0, 10) : null, fechamento: pr.closedate ? String(pr.closedate).slice(0, 10) : null, owner: pr.hubspot_owner_id || null };
+  }
+  const prop = P.decorrido > 0 ? P.decorrido : 1;
+  // base da derivação: meta da etapa GANHO (cadastrada, se houver; senão a meta de faturamento do período)
+  const cg = ganho ? (metasEt[ganho.id] || {}) : {};
+  const baseV = Number(cg.valor_mes) > 0 ? Number(cg.valor_mes) * P.meses : (Number(cg.qtd_mes) > 0 && ticket ? Number(cg.qtd_mes) * P.meses * ticket : metaFat);
+  const baseQ = Number(cg.qtd_mes) > 0 ? Number(cg.qtd_mes) * P.meses : (baseV && ticket ? baseV / ticket : null);
+  for (const L of linhas) {
+    const c = metasEt[L.id] || {}; let fonte = 'cadastrada';
+    let mq = Number(c.qtd_mes) > 0 ? Number(c.qtd_mes) * P.meses : null, mv = Number(c.valor_mes) > 0 ? Number(c.valor_mes) * P.meses : null;
+    if (mq == null && mv == null) {
+      fonte = 'derivada';
+      const p = L.ganho ? 1 : (L.probabilidade > 0 ? L.probabilidade : null);
+      if (baseV && p) mv = baseV / p;
+      if (baseQ && p) mq = baseQ / p;
+      if (mq == null && mv != null && ticket) mq = mv / ticket;
+      if (mq == null && mv == null) fonte = null;
+    }
+    const mqH = mq != null ? mq * prop : null, mvH = mv != null ? mv * prop : null;
+    const pq = mqH ? L.real.qtd / mqH * 100 : null, pv = mvH ? L.real.valor / mvH * 100 : null;
+    const pior = [pq, pv].filter(x => x != null); const pmin = pior.length ? Math.min(...pior) : null;
+    L.meta = { qtd: mq != null ? Math.round(mq * 10) / 10 : null, valor: mv != null ? round(mv) : null, qtd_ate_hoje: mqH != null ? Math.round(mqH * 10) / 10 : null, valor_ate_hoje: mvH != null ? round(mvH) : null, fonte };
+    L.pct_qtd = pq != null ? Math.round(pq) : null; L.pct_valor = pv != null ? Math.round(pv) : null;
+    L.farol = pmin == null ? 'sem_meta' : pmin >= 100 ? 'verde' : pmin >= 80 ? 'amarelo' : 'vermelho';
+    L.real.valor = round(L.real.valor);
+  }
+  linhas.forEach((L, i) => { L.conversao = i && linhas[i - 1].real.qtd ? Math.round(L.real.qtd / linhas[i - 1].real.qtd * 100) : null; });
+  // ── pendências (negócios abertos, qualquer período) ──
+  const agora = Date.now(), dia = 864e5, iniciais = new Set(funil.filter(e => !e.ganho).slice(0, Math.max(1, Math.ceil(funil.filter(e => !e.ganho).length / 2))).map(e => e.id));
+  const pend = [];
+  for (const d of deals) {
+    const pr = d.properties || {}, atual = etapas.find(e => e.id === pr.dealstage); if (!atual || atual.fechada) continue;
+    const motivos = [];
+    const entrouAtual = _tsHs(pr['hs_v2_date_entered_' + atual.id] || pr['hs_date_entered_' + atual.id]) || _tsHs(pr.createdate);
+    const diasEtapa = entrouAtual ? Math.floor((agora - entrouAtual) / dia) : null;
+    if (diasEtapa != null && diasEtapa >= 21) motivos.push({ k: 'parado', txt: `parado na etapa há ${diasEtapa} dias` });
+    const fech = _tsHs(pr.closedate); if (fech && fech < agora - dia) motivos.push({ k: 'fechamento_vencido', txt: `fechamento previsto vencido (${String(pr.closedate).slice(0, 10)})` });
+    if (!fech) motivos.push({ k: 'sem_data', txt: 'sem data de fechamento' });
+    if (!(Number(pr.amount) > 0)) motivos.push({ k: 'sem_valor', txt: 'sem valor' });
+    const prox = _tsHs(pr.notes_next_activity_date); if (!prox || prox < agora - dia) motivos.push({ k: 'sem_proxima', txt: prox ? 'próxima atividade vencida' : 'sem próxima atividade agendada' });
+    const ult = _tsHs(pr.notes_last_contacted); if (!ult || ult < agora - 14 * dia) motivos.push({ k: 'sem_contato', txt: ult ? `sem contato há ${Math.floor((agora - ult) / dia)} dias` : 'nunca contatado' });
+    if (!motivos.length) continue;
+    pend.push({ id: d.id, nome: pr.dealname || 'Negócio', valor: Number(pr.amount) || 0, etapa: atual.nome, grupo: iniciais.has(atual.id) ? 'prospeccao' : 'vendas', dias_na_etapa: diasEtapa, fechamento: pr.closedate ? String(pr.closedate).slice(0, 10) : null, motivos,
+      gravidade: motivos.some(x => ['parado', 'fechamento_vencido'].includes(x.k)) ? 2 : 1 });
+  }
+  pend.sort((x, y) => y.gravidade - x.gravidade || y.valor - x.valor);
+  const portal = process.env.HUBSPOT_PORTAL_ID || null;
+  return { periodo: { tipo: P.tipo, ref: P.ref, rotulo: P.rotulo, ini: P.ini, fim: P.fim, decorrido_pct: Math.round(P.decorrido * 100) },
+    pipeline: { id: pip.id, nome: pip.nome }, pipelines: pipelines.map(x => ({ id: x.id, nome: x.nome })),
+    etapas: linhas, perdidos: { qtd: perdidos.qtd, valor: round(perdidos.valor) }, negocios: det,
+    meta_base: { faturamento_periodo: metaFat != null ? round(metaFat) : null, ticket_medio: ticket ? round(ticket) : null, ticket_fonte: Number(cad.ticket_medio) > 0 ? 'cadastrado' : ganhos12.length ? `média de ${ganhos12.length} negócio(s) ganho(s) em 12 meses` : 'média dos negócios com valor', fonte_faturamento: def.fonte || (def.faturamento ? 'Metas da Empresa' : null), cadastro_etapas: Object.keys(metasEt).length > 0 },
+    pendencias: pend.slice(0, 300), total_pendencias: pend.length, hubspot_portal: portal, total_negocios_lidos: deals.length };
+}
+// clientes de uma faixa do funil: empresa e contatos associados a cada negócio (nome, e-mail, telefone, cargo)
+async function funilContatos({ ids = [] } = {}) {
+  const lista = [...new Set((Array.isArray(ids) ? ids : []).map(String))].slice(0, 100); if (!lista.length) return { negocios: {} };
+  const assoc = async tipo => { try { const d = await _hs(`/crm/v4/associations/deals/${tipo}/batch/read`, 'POST', { inputs: lista.map(id => ({ id })) }); const o = {}; for (const r of d.results || []) o[String(r.from?.id)] = (r.to || []).map(t => String(t.toObjectId)).slice(0, 5); return o; } catch (_) { return {}; } };
+  const [ac, at] = await Promise.all([assoc('companies'), assoc('contacts')]);
+  const ler = async (obj, ids, props) => { const u = [...new Set(ids)]; const out = {}; for (let i = 0; i < u.length; i += 100) { try { const d = await _hs(`/crm/v3/objects/${obj}/batch/read`, 'POST', { inputs: u.slice(i, i + 100).map(id => ({ id })), properties: props }); for (const r of d.results || []) out[r.id] = r.properties || {}; } catch (_) {} } return out; };
+  const [emp, con] = await Promise.all([ler('companies', Object.values(ac).flat(), ['name', 'domain', 'phone', 'city', 'state']), ler('contacts', Object.values(at).flat(), ['firstname', 'lastname', 'email', 'phone', 'mobilephone', 'jobtitle'])]);
+  const negocios = {};
+  for (const id of lista) negocios[id] = {
+    empresas: (ac[id] || []).map(e => emp[e] ? { id: e, nome: emp[e].name || '', site: emp[e].domain || '', telefone: emp[e].phone || '', cidade: [emp[e].city, emp[e].state].filter(Boolean).join('/') } : null).filter(Boolean),
+    contatos: (at[id] || []).map(c => con[c] ? { id: c, nome: [con[c].firstname, con[c].lastname].filter(Boolean).join(' ') || con[c].email || '', email: con[c].email || '', telefone: con[c].mobilephone || con[c].phone || '', cargo: con[c].jobtitle || '' } : null).filter(Boolean) };
+  return { negocios };
+}
+async function funilMetasSalvar({ pipeline, etapas, ticket_medio } = {}) {
+  if (!pipeline) throw new Error('pipeline obrigatório');
+  const limpo = {}; for (const [k, v] of Object.entries(etapas || {})) { const q = Number(v?.qtd_mes), val = Number(v?.valor_mes); if (q > 0 || val > 0) limpo[String(k)] = { qtd_mes: q > 0 ? q : null, valor_mes: val > 0 ? val : null }; }
+  const reg = { pipeline: String(pipeline), etapas: limpo, ticket_medio: Number(ticket_medio) > 0 ? Number(ticket_medio) : null, atualizado_em: new Date().toISOString() };
+  await _kvFinSet(_FUNIL_KV, reg); return { ok: true, metas: reg };
+}
+async function funilMetasLer() { return { metas: (await _kvFin(_FUNIL_KV).catch(() => null)) || null }; }
+
 async function crmEtapas() {
   const d = await _hs('/crm/v3/pipelines/deals');
   return { pipelines: (d.results || []).map(p => ({ id: p.id, nome: p.label, etapas: (p.stages || []).sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0)).map(e => ({ id: e.id, nome: e.label, probabilidade: e.metadata?.probability != null ? Number(e.metadata.probability) : null, fechada: e.metadata?.isClosed === 'true' })) })) };

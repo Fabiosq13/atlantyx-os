@@ -463,6 +463,12 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 .fv2-aba{background:none;border:0;border-bottom:3px solid transparent;color:var(--t2);font:600 11.5px Montserrat,sans-serif;padding:9px 12px;cursor:pointer;white-space:nowrap;}
 .fv2-aba:hover{color:var(--t1);}
 .fv2-aba.on{color:var(--t1);border-bottom-color:var(--fv2-brand);}
+.dash-badge{display:inline-block;min-width:16px;padding:0 5px;margin-left:4px;border-radius:9px;font-size:9.5px;line-height:16px;background:var(--red);color:#fff;text-align:center;}.dash-badge:empty{display:none;}
+.fn-row{display:grid;grid-template-columns:150px 1fr 230px;gap:10px;align-items:center;margin-bottom:6px;cursor:pointer;}
+.fn-row:hover .fn-bar{filter:brightness(1.12);}
+.fn-bar{height:34px;border-radius:6px;margin:0 auto;display:flex;align-items:center;justify-content:center;color:#fff;font:700 11.5px Montserrat,sans-serif;min-width:44px;transition:width .4s;}
+.fn-luz{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle;}
+@media (max-width:700px){.fn-row{grid-template-columns:90px 1fr;}.fn-row .fn-num{grid-column:1/-1;}}
 .fv2-aba.fv2-acao{font-weight:500;font-size:10.5px;color:var(--t3);}
 .fv2-cab{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:10.5px;color:var(--t2);margin-bottom:10px;}
 .fv2-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:14px;}
@@ -988,42 +994,26 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 
     <!-- BANNER PROPOSITO (inserido pelo JS ao carregar) -->
     <div id="propDashWidget"></div>
-    <div id="dashAtualizadoEm" style="font-size:9.5px;color:var(--t3);text-align:right;margin:-4px 2px 6px;"></div>
-
-    <!-- v3.140: o relatório financeiro diário (e-mail das 8h) ao vivo no dashboard, na mesma ordem do e-mail -->
-    <div class="panel" id="finDiaPanel" style="margin-bottom:13px;">
-      <div class="ph" style="flex-wrap:wrap;gap:6px;"><div class="pt">&#128231; Financeiro do dia — conteúdo do e-mail das 8h (ao vivo)</div>
-        <span id="finDiaMeta" style="font-family:var(--M);font-size:9px;color:var(--t3);"></span>
-        <div style="margin-left:auto;display:flex;gap:6px;">
-          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="finDiaCarregar(true)">&#8635; Atualizar</button>
-          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="finDiaAbrir()">&#8599; Tela cheia</button>
-          <button class="btn btn-g" id="finDiaBtnMin" style="font-size:9px;padding:3px 9px;" onclick="finDiaMinimizar()">&#9650; Recolher</button>
-        </div></div>
-      <div id="finDiaResumo" class="fd-resumo"></div>
-      <div id="finDiaCorpo"><div class="fv2-load">Carregando o relatório financeiro do dia…</div></div>
-      <div id="finHigCorpo"></div>
-    </div>
-    <!-- v3.85: widget de recebíveis em risco (vencidos / vencendo em ≤7 dias) -->
-    <div id="recAlertaDashWidget"></div>
-
-    <!-- Demanda #21: alerta de RFPs com prazo em ≤ 3 dias -->
-    <div id="rfpUrgDashWidget"></div>
-    <!-- Receita em Risco: recebíveis vencidos há 7+ dias + propostas paradas há 15+ dias, com semáforo vs meta mensal -->
-    <div id="receitaRiscoDashWidget"></div>
-    <!-- Marcos de projeto com prazo de faturamento vencido ou em até 14 dias (fonte: Kanban de Marcos) -->
-    <div id="marcosAlertaDashWidget"></div>
-    <!-- dem_muwmozw1hkd7: SEMANA EM FOCO — resumo executivo semanal gerado pela IA (cache no KV: resumo_semanal) -->
-    <div class="panel" id="semanaFocoPanel" style="margin-bottom:13px;">
-      <div class="ph"><div class="pt">&#9733; Semana em Foco</div><span class="tag on">Claude IA</span>
-        <span id="sfMeta" style="font-family:var(--M);font-size:9px;color:var(--t3);margin-left:8px;"></span>
-        <div style="margin-left:auto;display:flex;gap:6px;">
-          <button class="btn btn-g" id="sfBtnAtualizar" style="font-size:9px;padding:3px 9px;white-space:nowrap;" onclick="carregarSemanaFoco(true)">&#8635; Atualizar Resumo</button>
-          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;white-space:nowrap;" onclick="nav('s1relatorio',document.querySelector('.sbi[onclick*=&quot;s1relatorio&quot;]'))">Ver relatório completo &#8594;</button>
-        </div>
+    <!-- v3.206: dashboard dividido em ABAS (antes era uma página única muito longa) -->
+    <div style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
+      <div class="fv2-abas" id="dashAbas" style="flex:1;margin-bottom:12px;">
+        <button class="fv2-aba on" data-aba="geral" onclick="dashAba('geral')">&#128202; Visão geral</button>
+        <button class="fv2-aba" data-aba="financeiro" onclick="dashAba('financeiro')">&#128176; Financeiro <span class="dash-badge" id="dashBadgeFin"></span></button>
+        <button class="fv2-aba" data-aba="vendas" onclick="dashAba('vendas')">&#127919; Funil de vendas</button>
+        <button class="fv2-aba" data-aba="pendencias" onclick="dashAba('pendencias')">&#9888;&#65039; Pendências de vendas e prospecção <span class="dash-badge" id="dashBadgePend"></span></button>
       </div>
-      <div class="pb" id="sfConteudo"><div style="font-family:var(--M);font-size:10px;color:var(--t3);">Carregando resumo da semana…</div></div>
+      <div id="dashAtualizadoEm" style="font-size:9.5px;color:var(--t3);text-align:right;margin:0 2px 16px;"></div>
     </div>
 
+    <section class="dash-aba" data-aba="geral">
+    <!-- KPIS OPERACIONAIS -->
+    <div class="kg k5" style="margin-bottom:12px;">
+      <div class="kpi or"><div class="kl">Leads Mapeados<span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**Leads mapeados** = contatos criados no HubSpot nos últimos 30 dias.">i</span></div><div class="kv" id="kLeads">—</div><div class="ks" id="kLeadsSub">HubSpot · 30 dias</div></div>
+      <div class="kpi bl"><div class="kl">Score A<span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**Score A** = leads com pontuação alta (quentes) na qualificação do HubSpot.">i</span></div><div class="kv" id="kScoreA">—</div><div class="ks up">quentes</div></div>
+      <div class="kpi gn"><div class="kl">Reunioes<span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**Reuniões** = reuniões agendadas registradas no HubSpot.">i</span></div><div class="kv" id="kMeet">—</div><div class="ks" id="kMeetSub">agendadas</div></div>
+      <div class="kpi pk"><div class="kl">Pipeline<span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**Pipeline** = soma do valor dos negócios abertos no HubSpot (todas as etapas não fechadas).">i</span></div><div class="kv" id="kPipe">—</div><div class="ks" id="kPipeSub"></div></div>
+      <div class="kpi gd"><div class="kl">RFPs<span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**RFPs** = editais aderentes identificados na última varredura do Monitor de RFPs (PNCP + e-mails Petronect).">i</span></div><div class="kv" id="kRfp">—</div><div class="ks">identificados</div></div>
+    </div>
     <!-- v3.112: RESULTADO DA EMPRESA AO VIVO — faturamento, lucro, EBITDA, margens (QuickBooks) + caixa, fôlego, liquidez e ROE -->
     <div class="panel" id="liveResPanel" style="margin-bottom:13px;border-color:rgba(34,211,163,.35);">
       <div class="ph" style="flex-wrap:wrap;row-gap:6px;"><div class="pt">&#128200; Resultado da empresa · ao vivo<span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**Resultado da empresa** — DRE do QuickBooks em competência: mês corrente até hoje e acumulado do ano. Segunda linha: caixa, fôlego, liquidez, ROE e saúde (KPIs de Saúde). Passe o mouse no ⓘ de cada cartão para ver a conta com os valores.">i</span></div><span class="tag live">QuickBooks</span>
@@ -1044,6 +1034,19 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
       <button class="btn btn-g" style="font-size:9px;padding:3px 9px;margin-left:auto;" onclick="metasEditar('live')">&#9998; Definir metas</button></div>
       <div class="pb"><div class="res-grid" id="live_metas"><div style="color:var(--t3);font-size:11px;padding:8px;">Carregando metas...</div></div></div></div>
 
+    <!-- dem_muwmozw1hkd7: SEMANA EM FOCO — resumo executivo semanal gerado pela IA (cache no KV: resumo_semanal) -->
+    <div class="panel" id="semanaFocoPanel" style="margin-bottom:13px;">
+      <div class="ph"><div class="pt">&#9733; Semana em Foco</div><span class="tag on">Claude IA</span>
+        <span id="sfMeta" style="font-family:var(--M);font-size:9px;color:var(--t3);margin-left:8px;"></span>
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn btn-g" id="sfBtnAtualizar" style="font-size:9px;padding:3px 9px;white-space:nowrap;" onclick="carregarSemanaFoco(true)">&#8635; Atualizar Resumo</button>
+          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;white-space:nowrap;" onclick="nav('s1relatorio',document.querySelector('.sbi[onclick*=&quot;s1relatorio&quot;]'))">Ver relatório completo &#8594;</button>
+        </div>
+      </div>
+      <div class="pb" id="sfConteudo"><div style="font-family:var(--M);font-size:10px;color:var(--t3);">Carregando resumo da semana…</div></div>
+    </div>
+
+    <details class="panel" style="margin-bottom:13px;padding:10px 14px;"><summary style="cursor:pointer;font-size:11px;color:var(--t2);">Meta manual antiga (ARR/MRR) e atividade dos agentes</summary><div style="margin-top:10px;">
     <!-- META FINANCEIRA UNICA DA EMPRESA -->
     <div style="background:linear-gradient(135deg,rgba(34,211,163,.12),rgba(79,124,255,.08));border:1px solid rgba(34,211,163,.2);border-radius:10px;padding:14px 18px;margin-bottom:13px;">
       <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
@@ -1102,19 +1105,66 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
       </div>
     </div>
 
-    <!-- KPIS OPERACIONAIS -->
-    <div class="kg k5" style="margin-bottom:12px;">
-      <div class="kpi or"><div class="kl">Leads Mapeados<span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**Leads mapeados** = contatos criados no HubSpot nos últimos 30 dias.">i</span></div><div class="kv" id="kLeads">—</div><div class="ks" id="kLeadsSub">HubSpot · 30 dias</div></div>
-      <div class="kpi bl"><div class="kl">Score A<span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**Score A** = leads com pontuação alta (quentes) na qualificação do HubSpot.">i</span></div><div class="kv" id="kScoreA">—</div><div class="ks up">quentes</div></div>
-      <div class="kpi gn"><div class="kl">Reunioes<span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**Reuniões** = reuniões agendadas registradas no HubSpot.">i</span></div><div class="kv" id="kMeet">—</div><div class="ks" id="kMeetSub">agendadas</div></div>
-      <div class="kpi pk"><div class="kl">Pipeline<span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**Pipeline** = soma do valor dos negócios abertos no HubSpot (todas as etapas não fechadas).">i</span></div><div class="kv" id="kPipe">—</div><div class="ks" id="kPipeSub"></div></div>
-      <div class="kpi gd"><div class="kl">RFPs<span class="tip-i" tabindex="0" role="button" aria-label="Como é calculado" data-tip="**RFPs** = editais aderentes identificados na última varredura do Monitor de RFPs (PNCP + e-mails Petronect).">i</span></div><div class="kv" id="kRfp">—</div><div class="ks">identificados</div></div>
+    <div class="panel"><div class="ph"><div class="pt">Atividade dos Agentes</div><span class="tag live">LIVE</span></div><div class="pb"><div class="log-box" id="dash-log"></div></div></div>
+    </div></details>
+    </section>
+
+    <section class="dash-aba" data-aba="financeiro" style="display:none;">
+    <!-- v3.140: o relatório financeiro diário (e-mail das 8h) ao vivo no dashboard, na mesma ordem do e-mail -->
+    <div class="panel" id="finDiaPanel" style="margin-bottom:13px;">
+      <div class="ph" style="flex-wrap:wrap;gap:6px;"><div class="pt">&#128231; Financeiro do dia — conteúdo do e-mail das 8h (ao vivo)</div>
+        <span id="finDiaMeta" style="font-family:var(--M);font-size:9px;color:var(--t3);"></span>
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="finDiaCarregar(true)">&#8635; Atualizar</button>
+          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="finDiaAbrir()">&#8599; Tela cheia</button>
+          <button class="btn btn-g" id="finDiaBtnMin" style="font-size:9px;padding:3px 9px;" onclick="finDiaMinimizar()">&#9650; Recolher</button>
+        </div></div>
+      <div id="finDiaResumo" class="fd-resumo"></div>
+      <div id="finDiaCorpo"><div class="fv2-load">Carregando o relatório financeiro do dia…</div></div>
+      <div id="finHigCorpo"></div>
     </div>
-    <div class="kg k2">
-      <div class="panel"><div class="ph"><div class="pt">Pipeline por Etapa — HubSpot</div><span class="tag live">LIVE</span></div><div class="pb" id="dash-pipeline"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando HubSpot...</div></div></div>
+    <!-- v3.85: widget de recebíveis em risco (vencidos / vencendo em ≤7 dias) -->
+    <div id="recAlertaDashWidget"></div>
+
+    <!-- Receita em Risco: recebíveis vencidos há 7+ dias + propostas paradas há 15+ dias, com semáforo vs meta mensal -->
+    <div id="receitaRiscoDashWidget"></div>
+    <!-- Marcos de projeto com prazo de faturamento vencido ou em até 14 dias (fonte: Kanban de Marcos) -->
+    <div id="marcosAlertaDashWidget"></div>
+    </section>
+
+    <section class="dash-aba" data-aba="vendas" style="display:none;">
+    <!-- v3.206: FUNIL DE VENDAS — realizado × meta por etapa (R$ e quantidade), filtros, farol e clientes da faixa -->
+    <div class="panel" id="funilPanel" style="margin-bottom:13px;">
+      <div class="ph" style="flex-wrap:wrap;row-gap:6px;"><div class="pt" style="white-space:nowrap;">&#127919; Funil de vendas — realizado × meta</div>
+        <span id="funilMeta" style="display:none;"></span>
+        <div style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <div class="seg" id="funilTipo"><button class="on" data-t="mes" onclick="funilTipo('mes')">Mês</button><button data-t="trimestre" onclick="funilTipo('trimestre')">Trimestre</button><button data-t="ano" onclick="funilTipo('ano')">Ano</button></div>
+          <select class="fsel" id="funilRef" style="font-size:10px;width:auto;padding:2px 6px;" onchange="funilCarregar()"></select>
+          <div class="seg" id="funilModo"><button class="on" data-m="valor" onclick="funilModo('valor')">R$</button><button data-m="qtd" onclick="funilModo('qtd')">Quantidade</button></div>
+          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="funilMetasEditar()">&#9998; Metas por etapa</button>
+          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="funilCarregar(true)">&#8635;</button>
+        </div></div>
+      <div class="pb" id="funilCorpo"><div class="fv2-load">Abra esta aba para carregar o funil do HubSpot…</div></div>
+    </div>
+    <div>
+      <div class="panel" style="display:none;"><div class="ph"><div class="pt">Pipeline por Etapa — HubSpot</div><span class="tag live">LIVE</span></div><div class="pb" id="dash-pipeline"><div style="color:var(--t3);font-size:11px;text-align:center;padding:20px;">Carregando HubSpot...</div></div></div>
       <div class="panel"><div class="ph"><div class="pt">Analise S2-09 com IA</div><span class="tag on">Claude</span><button class="btn btn-g" style="font-size:9px;padding:3px 8px;" onclick="loadAnalytics()">&#8635;</button></div><div class="pb" id="dash-insights" style="color:var(--t3);font-size:11px;">Clique em &#8635; para analise...</div></div>
     </div>
-    <div class="panel"><div class="ph"><div class="pt">Atividade dos Agentes</div><span class="tag live">LIVE</span></div><div class="pb"><div class="log-box" id="dash-log"></div></div></div>
+    </section>
+
+    <section class="dash-aba" data-aba="pendencias" style="display:none;">
+    <!-- Demanda #21: alerta de RFPs com prazo em ≤ 3 dias -->
+    <div id="rfpUrgDashWidget"></div>
+    <div class="panel" id="pendPanel" style="margin-bottom:13px;">
+      <div class="ph" style="flex-wrap:wrap;row-gap:6px;"><div class="pt" style="white-space:nowrap;">&#9888;&#65039; Pendências de vendas e prospecção (HubSpot)</div>
+        <span id="pendMeta" style="font-family:var(--M);font-size:9px;color:var(--t3);margin-left:8px;"></span>
+        <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+          <div class="seg" id="pendGrupo"><button class="on" data-g="" onclick="pendGrupo('')">Todas</button><button data-g="prospeccao" onclick="pendGrupo('prospeccao')">Prospecção</button><button data-g="vendas" onclick="pendGrupo('vendas')">Vendas</button></div>
+          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="funilCarregar(true)">&#8635;</button>
+        </div></div>
+      <div class="pb" id="pendCorpo"><div class="fv2-load">Carregando…</div></div>
+    </div>
+    </section>
   </div>
 
   <!-- v3.16: Agente de QA + Agente de Segurança (código em /qa-agent.js, carregado ao abrir) -->
@@ -6247,6 +6297,7 @@ function _dashAtualizarWidgets(forcar) {
   if (!forcar && Date.now() - _dashWidgetsEm < 600000) return; _dashWidgetsEm = Date.now();
   try { carregarResultadoLive(); } catch (_) {} try { carregarMetasEmpresa(); } catch (_) {} try { if (typeof _fdUlt !== 'undefined' && _fdUlt) _fdUlt.em = 0; finDiaCarregar(); } catch (_) {}
   try { carregarReceitaRiscoDash(); } catch (_) {} try { _dashRfpUrgentes(); } catch (_) {} try { carregarSemanaFoco(); } catch (_) {}
+  try { if (_fn.dados) funilCarregar(); } catch (_) {}
   try { const el = document.getElementById('dashAtualizadoEm'); if (el) el.textContent = '⟳ atualizado às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + ' · renova a cada 10 min'; } catch (_) {}
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && document.getElementById('page-dash')?.classList.contains('active')) _dashAtualizarWidgets(); });
@@ -10494,7 +10545,7 @@ async function carregarAlertasPropostas(forcar) {
 // Dashboard LIVE é a tela inicial: carrega o widget ao abrir o sistema
 window.addEventListener('DOMContentLoaded', () => setTimeout(() => {
   const pg = document.getElementById('page-dash');
-  if (pg && pg.classList.contains('active')) { try { carregarResultadoLive(); } catch (_) {} try { carregarMetasEmpresa(); } catch (_) {} try { setTimeout(finDiaCarregar, 300); } catch (_) {} try { carregarReceitaRiscoDash(); } catch (_) {} try { _dashRfpUrgentes(); } catch (_) {} try { carregarMarcosAlertaDash(); } catch (_) {} try { carregarSemanaFoco(); } catch (_) {} try { _dashWidgetsEm = Date.now(); document.getElementById('dashAtualizadoEm').textContent = '⟳ atualizado às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + ' · renova a cada 10 min'; } catch (_) {} }
+  if (pg && pg.classList.contains('active')) { try { carregarResultadoLive(); } catch (_) {} try { carregarMetasEmpresa(); } catch (_) {} try { setTimeout(finDiaCarregar, 300); } catch (_) {} try { carregarReceitaRiscoDash(); } catch (_) {} try { _dashRfpUrgentes(); } catch (_) {} try { carregarMarcosAlertaDash(); } catch (_) {} try { carregarSemanaFoco(); } catch (_) {} try { let ab = 'geral'; try { ab = localStorage.getItem('atx_dash_aba') || 'geral'; } catch (_) {} dashAba(ab); setTimeout(() => { if (!_fn.dados) funilCarregar(); }, 4000); } catch (_) {} try { _dashWidgetsEm = Date.now(); document.getElementById('dashAtualizadoEm').textContent = '⟳ atualizado às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + ' · renova a cada 10 min'; } catch (_) {} }
 }, 2500));
 
 // ═══ dem_muwmozw1hkd7: SEMANA EM FOCO — resumo executivo semanal no Dashboard LIVE ═══
@@ -30141,6 +30192,139 @@ let _qpDados = null, _qpProd = null, _qpAchados = null, _qpFiltro = 'pendentes';
 const _qpEsc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const _QP_SEV = { critica: ['Crítica', 'var(--fv2-crit)'], alta: ['Alta', '#e0662f'], media: ['Média', 'var(--fv2-warn)'], baixa: ['Baixa', 'var(--t3)'] };
 const _QP_ST = { aberto: 'Aberto', em_correcao: 'Em correção', corrigido: 'Corrigido · retestar', validado: 'Validado no reteste', falso_positivo: 'Falso positivo', aceito: 'Risco aceito' };
+// ═══ v3.206 · DASHBOARD EM ABAS + FUNIL DE VENDAS + PENDÊNCIAS ═══
+function dashAba(a) {
+  document.querySelectorAll('#dashAbas .fv2-aba').forEach(b => b.classList.toggle('on', b.dataset.aba === a));
+  document.querySelectorAll('#page-dash .dash-aba').forEach(sct => sct.style.display = sct.dataset.aba === a ? '' : 'none');
+  try { localStorage.setItem('atx_dash_aba', a); } catch (_) {}
+  if ((a === 'vendas' || a === 'pendencias') && !_fn.dados && !_fn.carregando) funilCarregar();
+  else if (a === 'vendas' || a === 'pendencias') { funilRender(); pendRender(); }
+}
+let _fn = { tipo: 'mes', modo: 'valor', grupo: '', dados: null, carregando: false, em: 0 };
+const _fnR = v => { v = Number(v) || 0; const a = Math.abs(v); return 'R$ ' + (a >= 1e6 ? (v / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' mi' : a >= 1e4 ? Math.round(v / 1e3).toLocaleString('pt-BR') + ' mil' : v.toLocaleString('pt-BR', { maximumFractionDigits: 0 })); };
+const _fnRc = v => 'R$ ' + (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const _fnE = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const _fnLuz = { verde: 'var(--green)', amarelo: 'var(--gold)', vermelho: 'var(--red)', sem_meta: 'var(--bd2)' };
+function _funilRefs(tipo) {
+  const h = new Date(), a = h.getFullYear(), m = h.getMonth() + 1, out = [], M = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  if (tipo === 'ano') for (let y = a + 1; y >= a - 2; y--) out.push([String(y), String(y)]);
+  else if (tipo === 'trimestre') { let t = Math.ceil(m / 3), y = a; t++; if (t > 4) { t = 1; y++; } for (let i = 0; i < 8; i++) { out.push([y + '-T' + t, t + 'º tri/' + y]); t--; if (!t) { t = 4; y--; } } }
+  else { let y = a, mm = m + 2; if (mm > 12) { mm -= 12; y++; } for (let i = 0; i < 16; i++) { out.push([y + '-' + String(mm).padStart(2, '0'), M[mm - 1] + '/' + y]); mm--; if (!mm) { mm = 12; y--; } } }
+  return out;
+}
+function _funilAtual(tipo) { const h = new Date(), a = h.getFullYear(), m = h.getMonth() + 1; return tipo === 'ano' ? String(a) : tipo === 'trimestre' ? a + '-T' + Math.ceil(m / 3) : a + '-' + String(m).padStart(2, '0'); }
+function _funilSelRef() { const sel = document.getElementById('funilRef'); if (!sel) return; const atual = sel.dataset.tipo === _fn.tipo ? sel.value : _funilAtual(_fn.tipo); sel.innerHTML = _funilRefs(_fn.tipo).map(([v, t]) => '<option value="' + v + '"' + (v === atual ? ' selected' : '') + '>' + t + '</option>').join(''); sel.dataset.tipo = _fn.tipo; }
+function funilTipo(t) { _fn.tipo = t; document.querySelectorAll('#funilTipo button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); _funilSelRef(); funilCarregar(true); }
+function funilModo(mo) { _fn.modo = mo; document.querySelectorAll('#funilModo button').forEach(b => b.classList.toggle('on', b.dataset.m === mo)); funilRender(); }
+function pendGrupo(g) { _fn.grupo = g; document.querySelectorAll('#pendGrupo button').forEach(b => b.classList.toggle('on', b.dataset.g === g)); pendRender(); }
+async function funilCarregar(forcar) {
+  if (_fn.carregando) return; _funilSelRef();
+  const ref = document.getElementById('funilRef')?.value || _funilAtual(_fn.tipo);
+  _fn.carregando = true; const c = document.getElementById('funilCorpo'); if (c && (!_fn.dados || forcar)) c.innerHTML = '<div class="fv2-load">Lendo os negócios do HubSpot…</div>';
+  try { _fn.dados = await finApi('funil_vendas', { tipo: _fn.tipo, ref }, { timeoutMs: 58000 }); _fn.em = Date.now(); }
+  catch (e) { if (c) c.innerHTML = '<div class="fv2-erro">Não consegui montar o funil: ' + _fnE(e.message) + '</div>'; const pc = document.getElementById('pendCorpo'); if (pc) pc.innerHTML = '<div class="fv2-erro">' + _fnE(e.message) + '</div>'; }
+  _fn.carregando = false; funilRender(); pendRender();
+}
+function funilRender() {
+  const D = _fn.dados, c = document.getElementById('funilCorpo'); if (!D || !c) return;
+  if (D.indisponivel) { c.innerHTML = '<div class="fv2-erro">' + _fnE(D.indisponivel) + '</div>'; return; }
+  const v = _fn.modo === 'valor', E = D.etapas || [];
+  const real = e => v ? e.real.valor : e.real.qtd, meta = e => v ? e.meta.valor : e.meta.qtd, metaH = e => v ? e.meta.valor_ate_hoje : e.meta.qtd_ate_hoje;
+  const maxR = Math.max(1, ...E.map(real));
+  const fmt = x => x == null ? '—' : v ? _fnR(x) : Number(x).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+  const luz = pct => pct == null ? 'sem_meta' : pct >= 100 ? 'verde' : pct >= 80 ? 'amarelo' : 'vermelho';
+  const cores = ['#2a78d6', '#2f86e0', '#3591e6', '#3b9cec', '#41a7f2', '#22b3a3', '#1baf7a'];
+  document.getElementById('funilMeta').textContent = D.periodo.rotulo + ' · pipeline ' + (D.pipeline?.nome || '') + (D.periodo.decorrido_pct > 0 && D.periodo.decorrido_pct < 100 ? ' · ' + D.periodo.decorrido_pct + '% do período decorrido: a meta é proporcional até hoje' : '') + ' · atualizado às ' + new Date(_fn.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const linhas = E.map((e, i) => {
+    const w = Math.max(10, Math.round(real(e) / maxR * 100)), pct = v ? e.pct_valor : e.pct_qtd, f = luz(pct), cor = _fnLuz[f];
+    return (i && e.conversao != null ? '<div style="text-align:center;font-size:9.5px;color:var(--t3);margin:-2px 0 2px;">↓ ' + e.conversao + '% da etapa anterior</div>' : '')
+      + '<div class="fn-row" onclick="funilFaixa(\'' + _fnE(e.id) + '\')" title="Clique para ver os clientes desta faixa">'
+      + '<div style="font-size:11.5px;font-weight:600;text-align:right;">' + _fnE(e.nome) + (e.ganho ? ' ✓' : '') + '<div style="font-weight:400;font-size:9.5px;color:var(--t3);">' + (v ? e.real.qtd + ' negócio(s)' : _fnR(e.real.valor)) + '</div></div>'
+      + '<div><div class="fn-bar" style="width:' + w + '%;background:' + cores[Math.min(i, cores.length - 1)] + ';">' + fmt(real(e)) + '</div></div>'
+      + '<div class="fn-num" style="font-size:10.5px;"><div><span class="fn-luz" style="background:' + cor + ';" title="' + ({ verde: 'meta batida', amarelo: '80–99% da meta', vermelho: 'abaixo de 80% da meta', sem_meta: 'sem meta' }[f]) + '"></span>'
+      + (metaH(e) != null ? 'meta até hoje <b>' + fmt(metaH(e)) + '</b> · <b style="color:' + cor + ';">' + pct + '%</b>' : '<span style="color:var(--t3);">sem meta</span>') + '</div>'
+      + (metaH(e) != null ? '<div style="height:5px;background:var(--bg4);border-radius:3px;margin:4px 0 2px 16px;overflow:hidden;"><i style="display:block;height:100%;width:' + Math.min(100, pct || 0) + '%;background:' + cor + ';"></i></div>' : '')
+      + '<div style="color:var(--t3);font-size:9.5px;margin-left:16px;">' + (meta(e) != null ? 'meta do período ' + fmt(meta(e)) + (e.meta.fonte === 'derivada' ? ' (derivada)' : '') : '') + '</div></div></div>';
+  }).join('');
+  const mb = D.meta_base || {};
+  c.innerHTML = '<div style="font-size:10px;color:var(--t3);margin:-2px 0 10px;">' + _fnE(document.getElementById('funilMeta').textContent) + '</div>'
+    + (E.length ? linhas : '<div style="color:var(--t3);font-size:11px;">Nenhuma etapa no pipeline.</div>')
+    + '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:var(--t3);margin-top:10px;border-top:1px solid var(--bd);padding-top:8px;">'
+    + '<span>Perdidos no período: <b>' + D.perdidos.qtd + '</b> (' + _fnR(D.perdidos.valor) + ')</span>'
+    + '<span>Meta de faturamento do período: <b>' + (mb.faturamento_periodo != null ? _fnR(mb.faturamento_periodo) : 'não definida') + '</b></span>'
+    + '<span>Ticket médio: <b>' + (mb.ticket_medio ? _fnR(mb.ticket_medio) : '—') + '</b> (' + _fnE(mb.ticket_fonte || '') + ')</span>'
+    + '<span><span class="fn-luz" style="background:var(--green)"></span>meta batida <span class="fn-luz" style="background:var(--gold);margin-left:6px;"></span>80–99% <span class="fn-luz" style="background:var(--red);margin-left:6px;"></span>abaixo de 80%</span>'
+    + '<span>' + (mb.cadastro_etapas ? 'Metas por etapa cadastradas (as em branco são derivadas)' : 'Metas derivadas da meta de faturamento e da probabilidade de cada etapa no HubSpot — ajuste em ✎ Metas por etapa') + '</span></div>';
+}
+async function funilFaixa(id) {
+  const D = _fn.dados; const e = (D?.etapas || []).find(x => x.id === id); if (!e) return;
+  const negs = e.ids.map(i => D.negocios[i]).filter(Boolean).sort((a, b) => b.valor - a.valor);
+  document.getElementById('fnModal')?.remove();
+  const m = document.createElement('div'); m.id = 'fnModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:30px 12px;overflow:auto;'; m.onclick = ev => { if (ev.target === m) m.remove(); };
+  const _pc = _fn.modo === 'valor' ? e.pct_valor : e.pct_qtd, _f = _pc == null ? 'sem_meta' : _pc >= 100 ? 'verde' : _pc >= 80 ? 'amarelo' : 'vermelho';
+  m.innerHTML = '<div class="panel" style="max-width:1100px;width:100%;"><div style="display:flex;align-items:center;gap:8px;"><span class="fn-luz" style="background:' + _fnLuz[_f] + ';"></span><b style="font-size:13px;">' + _fnE(e.nome) + ' — ' + D.periodo.rotulo + '</b><span style="font-size:10.5px;color:var(--t3);">' + negs.length + ' negócio(s) · ' + _fnR(e.real.valor) + '</span><button class="btn btn-g" style="margin-left:auto;font-size:10px;" onclick="document.getElementById(\'fnModal\').remove()">✕</button></div><div id="fnModalCorpo" style="margin-top:10px;"><div class="fv2-load">Buscando empresas e contatos no HubSpot…</div></div></div>';
+  document.body.appendChild(m);
+  if (!negs.length) { document.getElementById('fnModalCorpo').innerHTML = '<div style="color:var(--t3);font-size:11px;padding:10px;">Nenhum negócio nesta faixa no período.</div>'; return; }
+  let ct = {}; try { ct = (await finApi('funil_contatos', { ids: negs.slice(0, 100).map(n => n.id) })).negocios || {}; } catch (er) { toast('Contatos indisponíveis: ' + er.message, 'error'); }
+  _fnTabela(negs, ct, D.hubspot_portal, document.getElementById('fnModalCorpo'), true);
+}
+function _fnTabela(negs, ct, portal, box, comEtapa) {
+  if (!box) return;
+  const tel = t => { const d = String(t || '').replace(/\D/g, ''); return t ? _fnE(t) + (d.length >= 10 ? ' <a href="https://wa.me/' + (d.length <= 11 ? '55' + d : d) + '" target="_blank" rel="noopener" title="WhatsApp">💬</a>' : '') : ''; };
+  box.innerHTML = '<div style="overflow:auto;max-height:65vh;"><table style="width:100%;border-collapse:collapse;font-size:10.5px;"><tr style="color:var(--t3);text-align:left;position:sticky;top:0;background:var(--bg2);"><th style="padding:5px;">Negócio</th><th>Empresa</th><th>Contato</th><th>E-mail</th><th>Telefone</th><th style="text-align:right;">Valor alvo</th>' + (comEtapa ? '<th>Etapa atual</th>' : '') + '<th>Fechamento</th></tr>'
+    + negs.map(n => { const c = ct[n.id] || {}, emp = c.empresas?.[0], cons = c.contatos || [];
+      const nomeNeg = portal ? '<a href="https://app.hubspot.com/contacts/' + _fnE(portal) + '/deal/' + _fnE(n.id) + '" target="_blank" rel="noopener" style="color:var(--blue);">' + _fnE(n.nome) + '</a>' : _fnE(n.nome);
+      return '<tr style="border-top:1px solid var(--bd);vertical-align:top;"><td style="padding:5px;font-weight:600;">' + nomeNeg + (n.motivos ? '<div style="font-weight:400;color:var(--gold);font-size:9.5px;">' + n.motivos.map(x => _fnE(x.txt)).join(' · ') + '</div>' : '') + '</td>'
+        + '<td>' + (emp ? _fnE(emp.nome) + (emp.cidade ? '<div style="color:var(--t3);font-size:9.5px;">' + _fnE(emp.cidade) + '</div>' : '') + (emp.telefone ? '<div style="font-size:9.5px;">' + tel(emp.telefone) + '</div>' : '') : '<span style="color:var(--t3);">—</span>') + '</td>'
+        + '<td>' + (cons.map(x => _fnE(x.nome) + (x.cargo ? '<div style="color:var(--t3);font-size:9.5px;">' + _fnE(x.cargo) + '</div>' : '')).join('<hr style="border:0;border-top:1px dashed var(--bd);margin:3px 0;">') || '<span style="color:var(--t3);">—</span>') + '</td>'
+        + '<td>' + (cons.filter(x => x.email).map(x => '<a href="mailto:' + _fnE(x.email) + '" style="color:var(--blue);">' + _fnE(x.email) + '</a>').join('<br>') || '—') + '</td>'
+        + '<td>' + (cons.filter(x => x.telefone).map(x => tel(x.telefone)).join('<br>') || '—') + '</td>'
+        + '<td style="text-align:right;white-space:nowrap;">' + (n.valor ? _fnRc(n.valor) : '<span style="color:var(--t3);">sem valor</span>') + '</td>' + (comEtapa ? '<td>' + _fnE(n.etapa) + '</td>' : '') + '<td>' + (n.fechamento ? n.fechamento.split('-').reverse().join('/') : '—') + '</td></tr>'; }).join('') + '</table></div>'
+    + (negs.length > 100 ? '<div style="font-size:9.5px;color:var(--t3);margin-top:4px;">Contatos carregados para os 100 maiores negócios.</div>' : '');
+}
+function pendRender() {
+  const D = _fn.dados, c = document.getElementById('pendCorpo'); const bd = document.getElementById('dashBadgePend');
+  if (!D || D.indisponivel) { if (c && D?.indisponivel) c.innerHTML = '<div class="fv2-erro">' + _fnE(D.indisponivel) + '</div>'; return; }
+  const P = D.pendencias || []; if (bd) bd.textContent = P.filter(p => p.gravidade >= 2).length || '';
+  if (!c) return;
+  const L = P.filter(p => !_fn.grupo || p.grupo === _fn.grupo);
+  const cnt = k => P.filter(p => p.motivos.some(m => m.k === k)).length;
+  const tot = g => P.filter(p => p.grupo === g).length;
+  document.getElementById('pendMeta').textContent = D.total_pendencias + ' negócio(s) com pendência · ' + tot('prospeccao') + ' em prospecção · ' + tot('vendas') + ' em vendas';
+  const chip = (t, n, cor) => '<div style="flex:1;min-width:120px;border:1px solid var(--bd);border-radius:8px;padding:7px 10px;"><div style="font-size:9.5px;color:var(--t3);">' + t + '</div><div style="font-size:18px;font-weight:700;color:' + (n ? cor : 'var(--green)') + ';">' + n + '</div></div>';
+  c.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">' + chip('Parados na etapa 21+ dias', cnt('parado'), 'var(--red)') + chip('Fechamento vencido', cnt('fechamento_vencido'), 'var(--red)') + chip('Sem próxima atividade', cnt('sem_proxima'), 'var(--gold)') + chip('Sem contato 14+ dias', cnt('sem_contato'), 'var(--gold)') + chip('Sem valor ou sem data', P.filter(p => p.motivos.some(m => m.k === 'sem_valor' || m.k === 'sem_data')).length, 'var(--gold)') + '</div>'
+    + (L.length ? '<div style="font-size:10px;color:var(--t3);margin-bottom:6px;">Clique em "ver contatos" para carregar empresa, contato, e-mail e telefone (HubSpot).</div><table style="width:100%;border-collapse:collapse;font-size:10.5px;"><tr style="color:var(--t3);text-align:left;"><th style="padding:5px;">Negócio</th><th>Grupo</th><th>Etapa</th><th style="text-align:right;">Valor</th><th>Pendências</th><th></th></tr>'
+      + L.slice(0, 150).map(p => '<tr style="border-top:1px solid var(--bd);"><td style="padding:5px;font-weight:600;">' + (p.gravidade >= 2 ? '<span class="fn-luz" style="background:var(--red);"></span>' : '<span class="fn-luz" style="background:var(--gold);"></span>') + _fnE(p.nome) + '</td><td>' + (p.grupo === 'prospeccao' ? 'Prospecção' : 'Vendas') + '</td><td>' + _fnE(p.etapa) + (p.dias_na_etapa != null ? '<div style="color:var(--t3);font-size:9.5px;">' + p.dias_na_etapa + ' dias</div>' : '') + '</td><td style="text-align:right;white-space:nowrap;">' + (p.valor ? _fnR(p.valor) : '—') + '</td><td style="color:var(--t2);">' + p.motivos.map(m => _fnE(m.txt)).join(' · ') + '</td><td><button class="btn btn-g" style="font-size:9.5px;" onclick="pendContatos(\'' + _fnE(p.id) + '\')">ver contatos</button></td></tr>').join('') + '</table>' + (L.length > 150 ? '<div style="font-size:9.5px;color:var(--t3);margin-top:4px;">Mostrando os 150 mais graves de ' + L.length + '.</div>' : '')
+      : '<div style="text-align:center;padding:20px;color:var(--green);font-size:12px;">✅ Nenhuma pendência' + (_fn.grupo ? ' neste grupo' : '') + '.</div>');
+}
+async function pendContatos(id) {
+  const p = (_fn.dados?.pendencias || []).find(x => x.id === id); if (!p) return;
+  document.getElementById('fnModal')?.remove();
+  const m = document.createElement('div'); m.id = 'fnModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:30px 12px;overflow:auto;'; m.onclick = ev => { if (ev.target === m) m.remove(); };
+  m.innerHTML = '<div class="panel" style="max-width:1000px;width:100%;"><div style="display:flex;align-items:center;"><b style="font-size:13px;">' + _fnE(p.nome) + '</b><button class="btn btn-g" style="margin-left:auto;font-size:10px;" onclick="document.getElementById(\'fnModal\').remove()">✕</button></div><div id="fnModalCorpo" style="margin-top:10px;"><div class="fv2-load">Buscando no HubSpot…</div></div></div>';
+  document.body.appendChild(m);
+  let ct = {}; try { ct = (await finApi('funil_contatos', { ids: [id] })).negocios || {}; } catch (er) { toast(er.message, 'error'); }
+  _fnTabela([p], ct, _fn.dados.hubspot_portal, document.getElementById('fnModalCorpo'), true);
+}
+async function funilMetasEditar() {
+  const D = _fn.dados; if (!D?.etapas) return toast('Carregue o funil primeiro', 'error');
+  let cad = null; try { cad = (await finApi('funil_metas_ler')).metas; } catch (_) {}
+  const et = (cad && cad.pipeline === D.pipeline.id ? cad.etapas : {}) || {}, mesesP = { mes: 1, trimestre: 3, ano: 12 }[D.periodo.tipo] || 1;
+  document.getElementById('fnModal')?.remove();
+  const m = document.createElement('div'); m.id = 'fnModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:30px 12px;overflow:auto;';
+  m.innerHTML = '<div class="panel" style="max-width:640px;width:100%;"><div style="display:flex;align-items:center;"><b style="font-size:13px;">✎ Metas do funil — por mês</b><button class="btn btn-g" style="margin-left:auto;font-size:10px;" onclick="document.getElementById(\'fnModal\').remove()">✕</button></div>'
+    + '<div style="font-size:10.5px;color:var(--t2);margin:6px 0 10px;">Meta MENSAL de cada etapa (o trimestre usa ×3 e o ano ×12). Em branco = a meta é derivada da meta de faturamento ÷ ticket médio ÷ probabilidade da etapa no HubSpot (valor sugerido em cinza).</div>'
+    + '<table style="width:100%;font-size:11px;border-collapse:collapse;"><tr style="color:var(--t3);text-align:left;"><th>Etapa</th><th>Qtd / mês</th><th>R$ / mês</th></tr>'
+    + D.etapas.map(e => { const c = et[e.id] || {}; const sq = e.meta.qtd != null ? (e.meta.qtd / mesesP).toFixed(1) : '', sv = e.meta.valor != null ? Math.round(e.meta.valor / mesesP) : '';
+      return '<tr><td style="padding:4px 0;">' + _fnE(e.nome) + '</td><td><input class="fi fnMq" data-id="' + _fnE(e.id) + '" type="number" min="0" step="0.5" style="width:90px;" value="' + (c.qtd_mes ?? '') + '" placeholder="' + sq + '"></td><td><input class="fi fnMv" data-id="' + _fnE(e.id) + '" type="number" min="0" step="1000" style="width:140px;" value="' + (c.valor_mes ?? '') + '" placeholder="' + sv + '"></td></tr>'; }).join('')
+    + '</table><div style="margin-top:8px;font-size:11px;">Ticket médio (opcional): <input class="fi" id="fnTicket" type="number" min="0" step="1000" style="width:140px;" value="' + (cad?.ticket_medio ?? '') + '" placeholder="' + (D.meta_base?.ticket_medio || '') + '"></div>'
+    + '<div style="display:flex;justify-content:flex-end;margin-top:12px;"><button class="btn btn-gn" onclick="funilMetasSalvar()">Salvar metas</button></div></div>';
+  document.body.appendChild(m);
+}
+async function funilMetasSalvar() {
+  const et = {}; document.querySelectorAll('.fnMq').forEach(i => { (et[i.dataset.id] = et[i.dataset.id] || {}).qtd_mes = i.value; }); document.querySelectorAll('.fnMv').forEach(i => { (et[i.dataset.id] = et[i.dataset.id] || {}).valor_mes = i.value; });
+  try { await finApi('funil_metas_salvar', { pipeline: _fn.dados.pipeline.id, etapas: et, ticket_medio: document.getElementById('fnTicket').value }); document.getElementById('fnModal')?.remove(); toast('Metas do funil salvas', 'success'); funilCarregar(true); } catch (e) { toast(e.message, 'error'); }
+}
 // ═══ v3.203 · QA · ANÁLISE DE CÓDIGO (estática: nada é executado; o código não é guardado) ═══
 let _qc = { lista: [], atual: null, fontes: new Map(), rodando: false, filtro: { sev: '', st: 'abertos', q: '' } };
 const _qcE = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -33354,7 +33538,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.206] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.207] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -33370,7 +33554,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.206';
+window.__ATX_BUILD_ID__ = 'ATX-v3.207';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
