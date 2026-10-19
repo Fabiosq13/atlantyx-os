@@ -58,6 +58,8 @@ const RITOS_PADRAO = () => [
     participantes: ['julio.castro@atlanteam.com.br', 'ademir.souza@atlanteam.com.br', 'estevan.risek@atlanteam.com.br', 'vinicius.cosmo@atlanteam.com.br'], ativo: true, ordem: 1 },
   { nome: 'Funil e vendas', objetivo: 'Revisar o pipeline, as propostas paradas, o ritmo contra a meta, o funil por campanha e a atividade comercial de cada papel.',
     dia_semana: 2, hora: '09:00', duracao_min: 45, fontes: ['vendas', 'funil'], participantes: ['contato@atlanteam.com.br'], ativo: true, ordem: 2 },
+  { nome: 'Reunião financeira', objetivo: 'Caixa, recebíveis e pagamentos em atraso, resultado e margem contra a meta, carteira prevista, fluxo dos próximos meses e termos de faturamento travados.',
+    dia_semana: 4, hora: '10:00', duracao_min: 45, fontes: ['financeiro'], participantes: ['atlanteambr@gmail.com'], ativo: true, ordem: 2.5 },
   { nome: 'Ideias e produto', objetivo: 'Decidir as ideias que aguardam o fundador, priorizar demandas do Atlantyx OS e acompanhar a Batida do Método B.P.M.',
     dia_semana: 3, hora: '16:00', duracao_min: 45, fontes: ['ideias', 'esteira_demandas'], participantes: ['julio.castro@atlanteam.com.br'], ativo: true, ordem: 3 },
   { nome: 'Ensaio geral (entregas da semana)', objetivo: 'Demonstrar o que entrou no ar na semana, trilhas encerradas e abertas (Método B.P.M.).',
@@ -132,6 +134,38 @@ const FONTES = {
       assuntos: [...vermelhos.slice(0, 5).map(c => ({ titulo: `${c.nome || c.papel || c.id} — semáforo ${c.farol}`, contexto: c.motivo || `${c.pct_contatos ?? '—'}% dos contatos e ${c.pct_reunioes ?? '—'}% das reuniões da meta`, responsavel: c.nome || '', tipo: 'acompanhamento', origem: 'Comercial' })),
         ...camp.filter(c => c.leads >= 5 && !c.reunioes).slice(0, 3).map(c => ({ titulo: `Campanha ${c.campanha}: ${c.leads} leads e nenhuma reunião`, contexto: 'Rever abordagem ou cortar a campanha', responsavel: 'Marketing', tipo: 'decisao', origem: 'Funil' }))] };
   } },
+  // v3.212: RESUMO FINANCEIRO para a reunião financeira — caixa, a receber/a pagar, resultado e metas do ano,
+  // carteira prevista (Agenda de Receitas), fluxo dos próximos 3 meses, termos e faturas em atraso, pagamentos do mês
+  financeiro: { nome: 'Financeiro (resumo: caixa, receber/pagar, resultado, metas, fluxo, termos)', async coletar() {
+    const fin = (action, params = {}, ms = 50000) => chamar('financeiro', { action, params }, ms);
+    const [pR, mR, rR, aR, fR] = await Promise.allSettled([fin('painel_resumo'), fin('metas_empresa_status', {}), fin('relatorio_pagamentos', { apenas_gerar: true }, 60000), fin('receitas_agenda', { meses: 4 }), fin('fluxo_futuro', { meses: 3 }, 60000)]);
+    const P = pR.value || {}, M = mR.value?.metas || {}, R = rR.value || {}, A = aR.value?.agenda || {}, F = fR.value || {};
+    const erros = [['painel', pR], ['metas', mR], ['relatório do dia', rR], ['agenda de receitas', aR], ['fluxo', fR]].filter(([, x]) => x.status === 'rejected').map(([n, x]) => n + ': ' + x.reason?.message);
+    const CR = P.contasReceber || {}, CP = P.contasPagar || {}, FT = M.faturamento || {}, MG = M.margem || {}, K = M.carteira || {}, T = R.termos || {}, V = R.vendas || {};
+    const pct = v => v == null ? '—' : String(v).replace('.', ',') + '%';
+    const resumo = [
+      `Caixa hoje: ${brl(P.saldoCaixa)} · a receber ${brl(CR.total)} (vencido ${brl(CR.vencido)}) · a pagar ${brl(CP.total)} (vencido ${brl(CP.vencido)})`,
+      FT.meta ? `Faturamento ${M.ano}: ${brl(FT.realizado)} de ${brl(FT.meta)} (${pct(FT.pct_atingido)}) · esperado até hoje ${brl(FT.esperado_ate_hoje)} · semáforo ${FT.semaforo || '—'}` : 'Meta de faturamento do ano não definida',
+      MG.meta_pct != null ? `Margem líquida: ${pct(MG.realizado_pct)} (meta ${pct(MG.meta_pct)})` : '',
+      K.prevista != null ? `Carteira prevista até dez: ${brl(K.prevista)} (marcos ${brl(K.marcos)} · sustentações ${brl(K.sustentacoes)}${K.avulsas ? ' · avulsas ' + brl(K.avulsas) : ''})${K.cobre_pct != null ? ' — cobre ' + pct(K.cobre_pct) + ' do que falta da meta' : ''}` : '',
+      R.data ? `Pagamentos: hoje ${brl(R.total_dia)} · pendente no mês ${brl(R.total_mes_pendente)} · em atraso ${brl(R.total_atrasado)} (${R.qtd_atrasadas || 0})` : '',
+    ].filter(Boolean).concat(erros.length ? ['⚠ indisponível: ' + erros.join(' · ')] : []);
+    // fluxo dos próximos meses (saldo final projetado)
+    const L = F.linhas || {}, meses = Object.keys(L['= Saldo Final'] || {}).slice(0, 3);
+    const tabela = meses.length ? { cab: ['Mês', 'Entradas', 'Saídas', 'Resultado', 'Saldo final'], linhas: meses.map(m => [m.split('-').reverse().join('/'), brl(L['= Total Entradas']?.[m]), brl(L['= Total Saídas']?.[m]), brl(L['= Resultado do Mês']?.[m]), brl(L['= Saldo Final']?.[m])]) } : null;
+    const assuntos = [];
+    if (FT.semaforo === 'vermelho' || FT.semaforo === 'amarelo') assuntos.push({ titulo: `Faturamento do ano em ${pct(FT.pct_atingido)} da meta (${FT.semaforo})`, contexto: `Falta ${brl(FT.falta)} — ${brl(FT.por_mes_necessario)}/mês nos ${FT.meses_restantes ?? '?'} meses restantes. Carteira prevista ${brl(K.prevista)}. Plano para fechar a diferença.`, responsavel: 'Fabio', tipo: 'decisao', origem: 'Financeiro' });
+    if ((MG.diferenca_pp ?? 0) < 0) assuntos.push({ titulo: `Margem ${pct(MG.realizado_pct)} abaixo da meta de ${pct(MG.meta_pct)}`, contexto: `${String(MG.diferenca_pp).replace('.', ',')} p.p. — revisar custos e preço dos contratos`, responsavel: 'Fabio', tipo: 'decisao', origem: 'Financeiro' });
+    if (+CR.vencido > 0) assuntos.push({ titulo: `Recebíveis vencidos: ${brl(CR.vencido)}`, contexto: `${V.atraso ?? '?'} fatura(s) em atraso — definir cobrança de cada uma (quem, como, até quando)`, responsavel: 'Financeiro', tipo: 'decisao', origem: 'Financeiro' });
+    if (+R.total_atrasado > 0) assuntos.push({ titulo: `${R.qtd_atrasadas} pagamento(s) em atraso: ${brl(R.total_atrasado)}`, contexto: 'Priorizar e renegociar o que não couber no caixa', responsavel: 'Financeiro', tipo: 'decisao', origem: 'Financeiro' });
+    if (+T.em_atraso > 0 || +T.criticos > 0) assuntos.push({ titulo: `Termos de faturamento: ${T.criticos || 0} com pendência · ${T.em_atraso || 0} em atraso`, contexto: `${T.a_confirmar_cpfl || 0} a confirmar recebimento pelo cliente · ${T.rateio_sem_nota || 0} com rateio sem nota — destravar com o CTO e os GPs`, responsavel: 'Julio (CTO)', tipo: 'acompanhamento', origem: 'Financeiro' });
+    const atr = (A.ativas || []).filter(o => o.status === 'atrasada');
+    if (atr.length) assuntos.push({ titulo: `${atr.length} receita(s) prevista(s) vencida(s) sem fatura: ${brl(atr.reduce((t, o) => t + o.valor, 0))}`, contexto: atr.slice(0, 5).map(o => `${o.cliente} · ${o.descricao} (${brl(o.valor)})`).join('; ') + ' — faturar ou reprogramar na Agenda de Receitas', responsavel: 'Financeiro', tipo: 'decisao', origem: 'Financeiro' });
+    const neg = meses.filter(m => (L['= Saldo Final']?.[m] ?? 0) < 0);
+    if (neg.length) assuntos.push({ titulo: `Caixa projetado negativo em ${neg.map(m => m.split('-').reverse().join('/')).join(', ')}`, contexto: `Saldo final ${neg.map(m => brl(L['= Saldo Final'][m])).join(' / ')} — antecipar recebimentos, renegociar pagamentos ou captar`, responsavel: 'Fabio', tipo: 'risco', origem: 'Financeiro' });
+    if (+V.sem_termo > 0) assuntos.push({ titulo: `${V.sem_termo} fatura(s) em aberto sem termo ou nota`, contexto: 'Ligar ao termo (🧹 Faturas sem termo/nota no Kanban de Faturamento) ou anular', responsavel: 'Financeiro', tipo: 'acompanhamento', origem: 'Financeiro' });
+    return { titulo: 'Financeiro — resumo', resumo, tabela, assuntos };
+  } },
 };
 
 async function claude(system, content, maxTokens = 3000) {
@@ -153,6 +187,10 @@ async function ritos() {
   const sql = await getSql();
   let R = await sql`SELECT * FROM reu_ritos ORDER BY ordem, criado_em`;
   if (!R.length) { for (const p of RITOS_PADRAO()) await ritoSalvar(p, true); R = await sql`SELECT * FROM reu_ritos ORDER BY ordem, criado_em`; }
+  // v3.212: bases que já tinham ritos ganham a Reunião financeira uma única vez (se for excluída, não volta)
+  try { const k = (await sql`SELECT 1 FROM kv_store WHERE key = 'reu:rito_financeiro_semeado'`).length;
+    if (!k) { if (!R.some(r => (r.fontes || []).includes('financeiro'))) { await ritoSalvar(RITOS_PADRAO().find(p => p.fontes.includes('financeiro')), true); R = await sql`SELECT * FROM reu_ritos ORDER BY ordem, criado_em`; }
+      await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('reu:rito_financeiro_semeado', '"1"', NOW()) ON CONFLICT (key) DO NOTHING`; } } catch (_) {}
   const U = await sql`SELECT id, rito_id, data, status, pauta_enviada_em, assuntos, ata FROM reu_reunioes ORDER BY data DESC LIMIT 80`;
   return { ritos: R.map(r => linhaRito(r, U)), fontes: Object.fromEntries(Object.entries(FONTES).map(([k, f]) => [k, f.nome])), dias: DIAS, remetente: remetente(), email_ok: !!(process.env.EMAIL_SMTP_PASS || process.env.EMAIL_IMAP_PASS || process.env.RESEND_API_KEY) };
 }
