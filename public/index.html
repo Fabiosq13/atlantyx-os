@@ -5055,6 +5055,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
       <div style="flex:1;min-width:240px;"><div style="font-family:var(--H);font-size:15px;font-weight:700">Kanban Marcos de Projeto</div><div style="font-size:10.5px;color:var(--t2);margin-top:2px">Fluxo: Aguardando Entrega → Liberação GP → Aprovado pelo GP → Elaborando Termo → Termo Pronto/Enviado → Concluído · NF e pagamento são acompanhados no Kanban de Faturamento</div></div>
       <select class="fsel" id="kanbanFiltroProjeto" onchange="carregarKanbanMarcos()" style="width:200px;"><option value="">Todos os projetos</option></select>
       <button class="btn btn-p" style="font-size:10px;" onclick="gerarTermoDeMarcos()" id="btnTermoMarcos" title="Marque os marcos e gere o termo de faturamento">&#128203; Gerar termo <span id="mkSelCnt" style="font-family:var(--M);"></span></button>
+      <button class="btn" style="font-size:10px;" onclick="marcoCopiarAbrir([..._mkSelecionados])" title="Cria marcos novos a partir dos marcados (ex.: parcelas dos próximos meses)">&#10697; Copiar marcados</button>
       <button class="btn btn-gn" onclick="carregarKanbanMarcos()">&#8635; Atualizar</button>
     </div>
 
@@ -20821,6 +20822,7 @@ function renderMarcosLista() {
         <td style="padding:7px;text-align:center;"><span style="font-size:9px;padding:2px 6px;border:1px solid ${k.c};color:${_corTxt(k.c)};border-radius:3px;">${k.l}</span></td>
         <td style="text-align:right;padding:7px;">
           <button class="btn" style="font-size:9px;padding:3px 8px;" onclick="abrirFormMarco('${m.id}')">Editar</button>
+          <button class="btn" style="font-size:9px;padding:3px 8px;" onclick="marcoCopiarAbrir(['${m.id}'])" title="Copiar este marco">⧉</button>
           <button class="btn" style="font-size:9px;padding:3px 8px;color:var(--red);" onclick="excluirMarco('${m.id}')">×</button>
         </td>
       </tr>`;
@@ -20984,6 +20986,7 @@ function renderKanbanMarcos(d) {
 }
 
 function renderMarcoCard(m, colKey) {
+  (window._mkTodos = window._mkTodos || {})[m.id] = m;
   const diasParaEntrega = m.data_entrega ? Math.ceil((new Date(m.data_entrega) - new Date()) / 86400000) : null;
   const urgente = diasParaEntrega != null && diasParaEntrega <= 10;
   let acoes = '';
@@ -21014,6 +21017,7 @@ function renderMarcoCard(m, colKey) {
       <button class="btn btn-gn" style="font-size:9px;padding:4px 10px;width:100%;margin-top:4px;" onclick="moverMarco('${m.id}','concluido','Financeiro')">✓ Concluir (NF/pagamento no Kanban de Faturamento)</button>`;
   }
   acoes += voltar;
+  acoes += `<button class="btn" style="font-size:8.5px;padding:2px 8px;margin-top:4px;margin-left:4px;" onclick="event.stopPropagation();marcoCopiarAbrir(['${m.id}'])" title="Copiar este marco (cria marcos novos)">⧉ copiar</button>`;
   return `<div data-mkid="${m.id}" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${m.id}');event.dataTransfer.effectAllowed='move';this.style.opacity='.5'" ondragend="this.style.opacity=''" title="Arraste para outra etapa"
     style="cursor:grab;background:var(--bg3);border:1px solid ${urgente && colKey === 'aguardando_entrega' ? 'var(--gold)' : 'var(--bd)'};border-radius:6px;padding:8px;margin-bottom:6px;font-size:10px;">
     <div style="font-weight:600;font-size:11px;margin-bottom:3px;color:var(--t1);">${m.descricao}</div>
@@ -25757,6 +25761,36 @@ let _mkSelecionados = new Set(), _mkSelecionaveis = {};
 function _mkToggle(id, on) {
   if (on) _mkSelecionados.add(id); else _mkSelecionados.delete(id);
   const c = document.getElementById('mkSelCnt'); if (c) c.textContent = _mkSelecionados.size ? `(${_mkSelecionados.size})` : '';
+}
+// ═══ v3.213 · COPIAR MARCOS (cria marcos novos a partir de existentes) ═══
+async function marcoCopiarAbrir(ids) {
+  ids = (ids || []).filter(Boolean); if (!ids.length) { toast('Marque ao menos um marco ("incluir no termo") ou use ⧉ copiar no cartão', 'error'); return; }
+  let projs = []; try { projs = (await finApi('projeto_list', {})).projetos || []; } catch (_) {}
+  const nomes = ids.map(id => (_mkSelecionaveis[id] || (_projetoAberto?.marcos || []).find(m => m.id === id) || (window._mkTodos || {})[id] || {}).descricao).filter(Boolean);
+  document.getElementById('mcpModal')?.remove();
+  const m = document.createElement('div'); m.id = 'mcpModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:50px 12px;overflow:auto;';
+  m.onclick = ev => { if (ev.target === m) m.remove(); };
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  m.innerHTML = '<div class="panel" style="max-width:480px;width:100%;"><div style="display:flex;align-items:center;"><b style="font-size:13px;">⧉ Copiar ' + ids.length + ' marco(s)</b><button class="btn btn-g" style="margin-left:auto;font-size:10px;" onclick="document.getElementById(\'mcpModal\').remove()">✕</button></div>'
+    + (nomes.length ? '<div style="font-size:10.5px;color:var(--t2);margin:6px 0 2px;">' + nomes.slice(0, 6).map(esc).join('<br>') + (nomes.length > 6 ? '<br>…' : '') + '</div>' : '')
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;font-size:11px;">'
+    + '<div><label class="fl">Quantas cópias de cada</label><input class="fi" id="mcpN" type="number" min="1" max="36" value="1"></div>'
+    + '<div><label class="fl">A cada quantos meses</label><input class="fi" id="mcpPasso" type="number" min="0" max="24" value="1" title="0 = mesma data do original"></div>'
+    + '<div style="grid-column:1/-1;"><label class="fl">Data de entrega da 1ª cópia (opcional)</label><input class="fi" id="mcpData" type="date"><div style="font-size:9.5px;color:var(--t3);margin-top:2px;">Vazio = data do original + o intervalo. O mês/ano escrito na descrição (ex.: "out/2026") acompanha a nova data.</div></div>'
+    + '<div style="grid-column:1/-1;"><label class="fl">Projeto</label><select class="fi" id="mcpProj"><option value="">o mesmo do marco original</option>' + projs.map(p => '<option value="' + esc(p.id) + '">' + esc(p.nome) + '</option>').join('') + '</select></div></div>'
+    + '<div style="font-size:10px;color:var(--t3);margin-top:8px;">As cópias entram em "Aguardando entrega", sem nota, pagamento ou termo, e já aparecem na Agenda de Receitas.</div>'
+    + '<div style="display:flex;justify-content:flex-end;margin-top:12px;"><button class="btn btn-gn" id="mcpBtn" onclick="marcoCopiarExec(' + esc(JSON.stringify(ids)) + ')">Criar cópias</button></div></div>';
+  document.body.appendChild(m);
+}
+async function marcoCopiarExec(ids) {
+  const b = document.getElementById('mcpBtn'); if (b) { b.disabled = true; b.textContent = 'Criando…'; }
+  try {
+    const r = await finApi('marco_copiar', { ids, copias: document.getElementById('mcpN').value, intervalo_meses: document.getElementById('mcpPasso').value, data_inicial: document.getElementById('mcpData').value || null, projeto_destino: document.getElementById('mcpProj').value || null });
+    document.getElementById('mcpModal')?.remove();
+    alert('✅ ' + r.total + ' marco(s) criado(s) · ' + fmtBRLcompleto(r.valor_total) + '\n\n' + r.criados.slice(0, 12).map(c => '• ' + c.descricao + ' — ' + c.data_entrega.split('-').reverse().join('/') + ' — ' + fmtBRLcompleto(c.valor)).join('\n') + (r.criados.length > 12 ? '\n…' : ''));
+    _mkSelecionados = new Set(); const c = document.getElementById('mkSelCnt'); if (c) c.textContent = '';
+    try { carregarKanbanMarcos(); } catch (_) {} try { if (_projetoAberto) await abrirProjeto(_projetoAberto.id); } catch (_) {}
+  } catch (e) { toast('Não copiou: ' + e.message, 'error'); if (b) { b.disabled = false; b.textContent = 'Criar cópias'; } }
 }
 async function gerarTermoDeMarcos() {
   const sel = [..._mkSelecionados].map(id => _mkSelecionaveis[id]).filter(Boolean);
@@ -33714,7 +33748,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.212] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.213] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -33730,7 +33764,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.212';
+window.__ATX_BUILD_ID__ = 'ATX-v3.213';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

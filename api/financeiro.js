@@ -281,6 +281,7 @@ async function handler(req, res) {
       projeto_get:           () => projetoGet(params),
       projeto_delete:        () => projetoDelete(params),
       marco_save:            () => marcoSave(params),
+      marco_copiar:          () => marcoCopiar(params), // v3.213
       marco_list:            () => marcoList(params),
       marco_get:             () => marcoGet(params),
       marco_delete:          () => marcoDelete(params),
@@ -7628,6 +7629,45 @@ async function contratosImportarPlanilha({ linhas = [] } = {}) {
 }
 
 // ─── CRUD Marco ───────────────────────────────────────────────────────────
+// v3.213: COPIAR MARCOS — cria marcos novos a partir de existentes (ex.: parcelas mensais de um projeto).
+// Copia descrição, valor, % e observações; a data de entrega anda "intervalo" meses a cada cópia; o mês/ano escrito na
+// descrição (out/2026, 10/2026, Outubro 2026) acompanha a nova data. A cópia nasce em "Aguardando entrega", sem NF,
+// pagamento, termo ou previsão — e entra sozinha na Agenda de Receitas.
+const _MESES_EXT = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+function _marcoDescNova(desc, de, para) {
+  if (!de || !para || de === para) return desc;
+  const [a1, m1] = de.split('-').map(Number), [a2, m2] = para.split('-').map(Number); let mudou = false, t = String(desc || '');
+  const cap = (orig, novo) => orig[0] === orig[0].toUpperCase() ? (orig === orig.toUpperCase() ? novo.toUpperCase() : novo[0].toUpperCase() + novo.slice(1)) : novo;
+  t = t.replace(new RegExp('\\b(' + _MESES_EXT[m1 - 1] + ')(\\s*(?:de\\s*|/\\s*)?)(' + a1 + ')\\b', 'i'), (x, mm, sep) => { mudou = true; return cap(mm, _MESES_EXT[m2 - 1]) + sep + a2; });
+  if (!mudou) t = t.replace(new RegExp('\\b(' + _MESES_PT[m1 - 1] + ')(\\s*[/\\-]\\s*)(' + a1 + '|' + String(a1).slice(2) + ')\\b', 'i'), (x, mm, sep, aa) => { mudou = true; return cap(mm, _MESES_PT[m2 - 1]) + sep + (aa.length === 2 ? String(a2).slice(2) : a2); });
+  if (!mudou) t = t.replace(new RegExp('\\b0?' + m1 + '([/\\-])(' + a1 + '|' + String(a1).slice(2) + ')\\b'), (x, sep, aa) => { mudou = true; return String(m2).padStart(2, '0') + sep + (aa.length === 2 ? String(a2).slice(2) : a2); });
+  if (!mudou) t = t.replace(new RegExp('\\b' + a1 + '-0?' + m1 + '\\b'), () => { mudou = true; return a2 + '-' + String(m2).padStart(2, '0'); });
+  return mudou ? t : t + ' · ' + _MESES_PT[m2 - 1] + '/' + a2;
+}
+async function marcoCopiar({ ids = [], copias = 1, intervalo_meses = 1, projeto_destino = null, data_inicial = null } = {}) {
+  const lista = [...new Set((Array.isArray(ids) ? ids : [ids]).map(String))].filter(Boolean).slice(0, 50);
+  if (!lista.length) throw new Error('Selecione ao menos um marco');
+  const n = Math.max(1, Math.min(36, parseInt(copias) || 1)), passo = Math.max(0, Math.min(24, parseInt(intervalo_meses) || 0));
+  const sql = await getSql();
+  const origem = await sql`SELECT * FROM projetos_marcos WHERE id = ANY(${lista})`;
+  if (!origem.length) throw new Error('Marcos não encontrados');
+  if (projeto_destino) { const pd = await sql`SELECT id FROM projetos_financeiros WHERE id = ${projeto_destino}`; if (!pd.length) throw new Error('Projeto de destino não encontrado'); }
+  const criados = [];
+  for (const m of origem.sort((a, b) => _dStr(a.data_entrega).localeCompare(_dStr(b.data_entrega)))) {
+    const base = _dStr(m.data_entrega) || _hojeBR();
+    for (let k = 1; k <= n; k++) {
+      // data_inicial (opcional) = data da 1ª cópia; senão, data do original + passo × k meses
+      const data = /^\d{4}-\d{2}-\d{2}$/.test(data_inicial || '') ? _addMesesData(data_inicial, passo * (k - 1)) : _addMesesData(base, passo * k);
+      const id = `mar_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const desc = _marcoDescNova(m.descricao, base.substring(0, 7), data.substring(0, 7)) + (passo === 0 && !data_inicial ? ' (cópia' + (n > 1 ? ' ' + k : '') + ')' : '');
+      await sql`INSERT INTO projetos_marcos (id, projeto_id, descricao, data_entrega, percentual, valor, nota_fiscal, data_pagamento, status_kanban, observacoes, atualizado_em)
+        VALUES (${id}, ${projeto_destino || m.projeto_id}, ${desc.substring(0, 300)}, ${data}, ${m.percentual ?? null}, ${m.valor}, ${null}, ${null}, 'aguardando_entrega', ${m.observacoes || null}, NOW())`;
+      criados.push({ id, origem_id: m.id, descricao: desc, data_entrega: data, valor: num(m.valor) });
+    }
+  }
+  try { _rpCache.v = null; } catch (_) {}
+  return { criados, total: criados.length, valor_total: round(criados.reduce((s, c) => s + c.valor, 0)) };
+}
 async function marcoSave(p = {}) {
   if (!p.projeto_id) throw new Error('projeto_id obrigatório');
   if (!p.descricao) throw new Error('descricao obrigatória');
