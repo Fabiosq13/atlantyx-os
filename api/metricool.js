@@ -259,9 +259,21 @@ async function patrocinadoStatus(req) {
 }
 async function patrocinadoCopy({ tema = '', oferta = '', publico = '' } = {}) {
   const sys = 'Você escreve anúncios pagos de Instagram para a Atlantyx (empresa brasileira B2B de tecnologia: engenharia de dados, indicadores/BI, software sob medida, produtos próprios e especialistas; 17 anos; clientes como CPFL, Enel, Caixa Capitalização). Público: diretores e gerentes de grandes empresas. O texto deve QUALIFICAR quem clica (ex.: "Para líderes de TI, operações e finanças de empresas de médio e grande porte") — afaste pessoa física, quem procura emprego ou curso. O anúncio tem botão "Saiba mais" que leva para a página onde a pessoa pede uma conversa gratuita com um especialista. Português do Brasil, direto, sem clichês, sem prometer o que não está no tema.';
-  const usr = `Tema/oferta: ${String(tema || oferta || 'conversa gratuita com especialista').substring(0, 600)}\n${publico ? 'Público: ' + String(publico).substring(0, 200) + '\n' : ''}Devolva JSON: {"texto":"texto principal do anúncio, até 220 caracteres, 1ª frase = gancho, termina convidando a clicar em Saiba mais","titulo":"título curto, até 40 caracteres","descricao":"linha de apoio, até 30 caracteres","prompt_imagem":"cena quadrada 1:1 em inglês, 35-55 palavras, sem texto, profissional, tons escuros com ciano e verde"}`;
-  const j = JSON.parse(await _claudeAuto(sys, usr, 500));
-  return { texto: String(j.texto || '').substring(0, 500), titulo: String(j.titulo || '').substring(0, 60), descricao: String(j.descricao || '').substring(0, 60), prompt_imagem: j.prompt_imagem || '' };
+  // v3.208: texto no padrão "pergunta-gancho → Simples: resposta → ✅ 3 benefícios → parágrafo de ganho → CTA" e
+  // os campos da ARTE no padrão (manchete com palavras em destaque + lista de benefícios com ✓ + tela do sistema)
+  const usr = `Tema/oferta: ${String(tema || oferta || 'conversa gratuita com especialista').substring(0, 600)}\n${publico ? 'Público: ' + String(publico).substring(0, 200) + '\n' : ''}
+Siga EXATAMENTE este padrão de anúncio (estrutura e ritmo, com conteúdo da Atlantyx — não copie marcas de terceiros):
+TEXTO PRINCIPAL, em blocos separados por UMA linha em branco:
+1) Pergunta-gancho que nomeia o público e a mudança (ex.: "Por que diretores financeiros de grandes empresas estão trocando planilhas por indicadores ao vivo?")
+2) "Simples: " + a resposta em 1 frase (o que a Atlantyx resolve)
+3) Três linhas, cada uma começando com "✅ " e no máximo 55 caracteres (dor eliminada: "Chega de…", "Fim de…", "Adeus a…")
+4) Um parágrafo de 1–2 frases com o ganho concreto para quem decide (tempo, custo, risco, controle) — termine com a palavra mais importante EM MAIÚSCULAS se fizer sentido
+5) Chamada final: "Clique em Saiba mais e agende uma conversa gratuita com um especialista."
+ARTE (imagem): manchete curta em MAIÚSCULAS no mesmo formato da pergunta-gancho (até 70 caracteres), marcando com **asteriscos duplos** os 2 ou 3 trechos em destaque (quem é o público, o verbo da mudança e a solução/Atlantyx); e 4 ou 5 benefícios curtíssimos (até 28 caracteres cada, sem verbo no início quando possível, ex.: "Indicadores ao vivo", "Fim das planilhas").
+Devolva JSON: {"texto":"texto principal completo no padrão acima, com quebras de linha \\n","titulo":"título curto, até 40 caracteres","descricao":"linha de apoio, até 30 caracteres","manchete":"POR QUE **…** ESTÃO **…** PARA A **ATLANTYX?**","beneficios":["…","…","…","…"],"prompt_imagem":"cena quadrada 1:1 em inglês, 35-55 palavras, sem texto, profissional, tons escuros com ciano e verde"}`;
+  const j = JSON.parse(await _claudeAuto(sys, usr, 1100));
+  return { texto: String(j.texto || '').substring(0, 1200), titulo: String(j.titulo || '').substring(0, 60), descricao: String(j.descricao || '').substring(0, 60), prompt_imagem: j.prompt_imagem || '',
+    arte: { manchete: String(j.manchete || j.titulo || '').substring(0, 120), beneficios: (Array.isArray(j.beneficios) ? j.beneficios : []).map(x => String(x).substring(0, 40)).filter(Boolean).slice(0, 5) } };
 }
 // v3.190: PÚBLICO B2B. O anúncio ia para "Brasil, 25–60 anos" sem interesse nenhum e otimizado para clique — o Meta
 // entrega para quem clica mais barato (pessoa física, clique acidental, robô). Agora: capitais de negócio + interesses

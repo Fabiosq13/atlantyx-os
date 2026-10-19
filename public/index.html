@@ -182,7 +182,7 @@ function alternarTema() {
 document.addEventListener('DOMContentLoaded', _temaIcone);
 </script>
 <title>Atlantyx OS — Monitor de Agentes</title>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&family=Montserrat:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#07080f;--bg2:#0c0d18;--bg3:#101120;--bg4:#151628;--bd:rgba(255,255,255,0.065);--bd2:rgba(255,255,255,0.12);--t1:#eceefa;--t2:#7a7c9e;--t3:#42445a;--blue:#4f7cff;--b2:rgba(79,124,255,0.12);--green:#22d3a3;--g2:rgba(34,211,163,0.1);--red:#ff5b5b;--r2:rgba(255,91,91,0.1);--gold:#f5a623;--go2:rgba(245,166,35,0.1);--pu:#9c6dff;--pu2:rgba(156,109,255,0.1);--or:#f07030;--or2:rgba(240,112,48,0.12);--s7:#f03070;--s72:rgba(240,48,112,0.12);--H:Syne,sans-serif;--B:DM Sans,sans-serif;--M:DM Mono,monospace;--SB:222px;--s1c:#6b9fff;--ei:#00cfc8;color-scheme:dark;}
 /* ═══ v3.10 TEMA CLARO — identidade Atlantyx (Montserrat · preto/branco · ciano #00C4CC/#00C2E4 · verde #00FCA8) ═══
@@ -4577,13 +4577,15 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
           <label class="fl" for="patNome">Nome da campanha</label><input class="fi" id="patNome" placeholder="ex.: Instagram · Conversa gratuita · Outubro"/>
           <label class="fl" for="patTema" style="margin-top:8px;">Tema / oferta do anúncio</label><textarea class="fta" id="patTema" style="min-height:52px;font-size:11.5px;" title="Assunto e oferta que a IA usa para escrever o anúncio">Conversa gratuita com um especialista da Atlantyx: entendemos o seu cenário e mostramos onde tecnologia, dados, software sob medida e os nossos produtos geram resultado na operação.</textarea>
           <button class="btn btn-p" style="font-size:10.5px;margin-top:6px;" id="patBtnCopy" onclick="patEscrever()">✨ Escrever texto, título e imagem com IA</button>
-          <label class="fl" for="patTexto" style="margin-top:8px;">Texto principal <small style="color:var(--t3);" id="patTxtN"></small></label><textarea class="fta" id="patTexto" style="min-height:70px;font-size:11.5px;" maxlength="500" oninput="patPrev()" placeholder="Texto que aparece acima da imagem no anúncio (ideal até 125 caracteres)"></textarea>
+          <label class="fl" for="patTexto" style="margin-top:8px;">Texto principal <small style="color:var(--t3);" id="patTxtN"></small></label><textarea class="fta" id="patTexto" style="min-height:150px;font-size:11.5px;" maxlength="1200" oninput="patPrev()" placeholder="Texto que aparece acima da imagem no anúncio (ideal até 125 caracteres)"></textarea>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             <div><label class="fl" for="patTitulo">Título (até 40)</label><input class="fi" id="patTitulo" maxlength="40" oninput="patPrev()" placeholder="Título ao lado do botão Saiba mais"/></div>
             <div><label class="fl" for="patDesc">Descrição (até 30)</label><input class="fi" id="patDesc" maxlength="30" oninput="patPrev()" placeholder="Linha abaixo do título"/></div></div>
           <label class="fl" for="patImgSel" style="margin-top:8px;">Imagem</label>
           <div style="display:flex;gap:6px;flex-wrap:wrap;"><select class="fsel" id="patImgSel" title="Reaproveitar a imagem de um post já gerado" style="flex:1;min-width:180px;font-size:11px;" onchange="if(this.value){document.getElementById('patImg').value=this.value;patPrev();}"><option value="">Usar imagem de um post já gerado…</option></select>
-            <button class="btn" style="font-size:10px;" id="patBtnImg" onclick="patGerarImagem()">🎨 Gerar imagem nova</button></div>
+            <button class="btn btn-p" style="font-size:10px;" id="patBtnArte" onclick="patArte()" title="Arte no padrão de anúncio: manchete com destaques, lista de benefícios com ✓, tela do sistema e 'Clique no Saiba mais'">🖼 Arte no padrão</button>
+            <button class="btn" style="font-size:10px;" id="patBtnImg" onclick="patGerarImagem()">🎨 Gerar imagem (IA)</button></div>
+          <div style="font-size:10px;color:var(--t3);margin-top:4px;">Tela do sistema na arte: <label style="cursor:pointer;color:var(--blue);text-decoration:underline;">enviar print<input type="file" accept="image/*" style="display:none;" onchange="patArteTela(this.files[0])"></label> <span id="patTelaInfo">(sem print = tela ilustrativa do Atlantyx OS)</span></div>
           <input class="fi" id="patImg" style="margin-top:6px;font-size:11px;" placeholder="https://… (endereço público da imagem quadrada)" oninput="patPrev()"/>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-top:8px;">
             <div><label class="fl" for="patDiario">R$ por dia</label><input class="fi" id="patDiario" inputmode="decimal" value="30" oninput="patPrev()" placeholder="ex.: 30" title="Orçamento diário do anúncio, em reais"/></div>
@@ -24897,7 +24899,7 @@ async function patAbrir() {
 }
 function patPrev() {
   const v = id => (document.getElementById(id)?.value || '').trim();
-  const n = document.getElementById('patTxtN'); if (n) n.textContent = '(' + v('patTexto').length + ' caracteres — ideal até 125 aparecer inteiro)';
+  const n = document.getElementById('patTxtN'); if (n) n.textContent = '(' + v('patTexto').length + ' caracteres — as 2 primeiras linhas aparecem antes do "mais")';
   const pv = document.getElementById('patPrevia');
   if (pv) pv.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;"><div style="width:28px;height:28px;border-radius:50%;background:#05080c;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 40 40" width="18" height="18" fill="none"><rect x="6" y="9" width="17" height="17" rx="5" transform="rotate(45 14.5 17.5)" stroke="#00C4CC" stroke-width="3"/><rect x="17" y="14" width="17" height="17" rx="5" transform="rotate(45 25.5 22.5)" stroke="#00FCA8" stroke-width="3"/></svg></div><div style="font-size:12px;"><b>atlantyx</b><div style="font-size:10px;color:#666;">Patrocinado</div></div></div>'
     + (v('patImg') ? '<img src="' + _patE(v('patImg')) + '" style="width:100%;aspect-ratio:1/1;object-fit:cover;display:block;background:#eee;" onerror="this.style.opacity=.2">' : '<div style="aspect-ratio:1/1;background:#e9edf1;display:flex;align-items:center;justify-content:center;color:#888;font-size:12px;">imagem do anúncio</div>')
@@ -24909,8 +24911,8 @@ function patPrev() {
 async function patEscrever() {
   const b = document.getElementById('patBtnCopy'); if (b) { b.disabled = true; b.textContent = 'Escrevendo…'; }
   try { const d = await mcApi('patrocinado_copy', { tema: document.getElementById('patTema')?.value || '' });
-    const set = (id, x) => { const e = document.getElementById(id); if (e && x) e.value = x; }; set('patTexto', d.texto); set('patTitulo', d.titulo); set('patDesc', d.descricao); window._patPromptImg = d.prompt_imagem || ''; patPrev();
-    if (!document.getElementById('patImg')?.value && d.prompt_imagem) await patGerarImagem(); }
+    const set = (id, x) => { const e = document.getElementById(id); if (e && x) e.value = x; }; set('patTexto', d.texto); set('patTitulo', d.titulo); set('patDesc', d.descricao); window._patPromptImg = d.prompt_imagem || ''; window._patArteIA = d.arte || null; patPrev();
+    await patArte(); }
   catch (e) { toast('Não escreveu: ' + e.message, 'error'); }
   if (b) { b.disabled = false; b.textContent = '✨ Escrever texto, título e imagem com IA'; }
 }
@@ -24924,6 +24926,89 @@ async function patGerarImagem() {
     if (!u) throw new Error(d.error || 'sem imagem'); document.getElementById('patImg').value = u; patPrev(); }
   catch (e) { toast('Imagem não gerada: ' + e.message, 'error'); }
   if (b) { b.disabled = false; b.textContent = '🎨 Gerar imagem nova'; }
+}
+// ═══ v3.208 · ARTE DO ANÚNCIO NO PADRÃO: manchete com destaques + lista ✓ + tela do sistema + "CLIQUE NO SAIBA MAIS" ═══
+window._patTela = null;
+function patArteTela(f) { if (!f) return; const img = new Image(); img.onload = () => { window._patTela = img; const i = document.getElementById('patTelaInfo'); if (i) i.textContent = '✓ print carregado: ' + f.name; if (window._patArteUltima) patArte(); }; img.src = URL.createObjectURL(f); }
+function _patArteDados() {
+  const a = window._patArteIA || {}; const tx = document.getElementById('patTexto')?.value || '', tit = document.getElementById('patTitulo')?.value || '';
+  let man = a.manchete || ''; if (!man) { const p1 = tx.split('\n').map(x => x.trim()).find(x => x.endsWith('?')) || tit || 'Dados que viram decisão'; man = p1.toUpperCase(); }
+  let ben = (a.beneficios || []).slice(0, 5);
+  if (!ben.length) ben = tx.split('\n').map(x => x.trim()).filter(x => /^✅|^✔|^-/.test(x)).map(x => x.replace(/^(✅|✔|-)\s*/, '')).slice(0, 5);
+  if (!ben.length) ben = ['Indicadores ao vivo', 'Dados integrados', 'Decisão mais rápida', 'Especialistas sêniores'];
+  return { man: man.toUpperCase().replace(/\*\*\s*/g, '**').replace(/\s*\*\*(?=\s|$|[?!.,])/g, '**'), ben };
+}
+function _patLogo(ctx, x, y, esc) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(esc, esc); ctx.lineWidth = 3.2; ctx.strokeStyle = '#00C4CC';
+  const losango = (cx, cy) => { ctx.save(); ctx.translate(cx, cy); ctx.rotate(Math.PI / 4); ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(-8.5, -8.5, 17, 17, 5); else ctx.rect(-8.5, -8.5, 17, 17); ctx.stroke(); ctx.restore(); };
+  losango(12, 14); ctx.strokeStyle = '#00FCA8'; losango(24, 14); ctx.restore();
+  ctx.fillStyle = '#fff'; ctx.font = '700 ' + Math.round(30 * esc) + 'px Montserrat, Arial, sans-serif'; ctx.textBaseline = 'middle'; ctx.fillText('ATLANTYX', x + 46 * esc, y + 15 * esc);
+  const w = ctx.measureText('ATLANTYX').width; ctx.fillStyle = '#00C4CC'; ctx.fillText('.', x + 46 * esc + w, y + 15 * esc); ctx.textBaseline = 'alphabetic';
+}
+// manchete com trechos em destaque (**…**): palavra a palavra, peso 300 / 800, quebra pela largura
+function _patManchete(ctx, txt, x, y, larg, tam) {
+  const pal = []; String(txt).split(/(\*\*[^*]+\*\*)/).forEach(seg => { const b = /^\*\*/.test(seg); seg.replace(/\*\*/g, '').split(/\s+/).filter(Boolean).forEach(w => pal.push({ w, b })); });
+  const fonte = b => (b ? '800 ' : '300 ') + tam + 'px Montserrat, Arial, sans-serif';
+  const linhas = [[]]; let lw = 0; const esp = tam * 0.28;
+  pal.forEach(p => { ctx.font = fonte(p.b); const w = ctx.measureText(p.w).width; if (lw + w > larg && linhas.at(-1).length) { linhas.push([]); lw = 0; } linhas.at(-1).push({ ...p, wd: w }); lw += w + esp; });
+  const lh = tam * 1.12; linhas.forEach((l, i) => { let cx = x; l.forEach(p => { ctx.font = fonte(p.b); ctx.fillStyle = p.b ? '#ffffff' : 'rgba(255,255,255,.92)'; ctx.fillText(p.w, cx, y + i * lh); cx += p.wd + esp; }); });
+  return y + (linhas.length - 1) * lh;
+}
+function _patWrap(ctx, t, larg) { const out = [], ws = String(t).split(/\s+/); let l = ''; ws.forEach(w => { const tt = l ? l + ' ' + w : w; if (ctx.measureText(tt).width > larg && l) { out.push(l); l = w; } else l = tt; }); if (l) out.push(l); return out; }
+// tela ilustrativa do sistema (sem dados reais) quando não há print
+function _patTelaFake(ctx, x, y, w, h) {
+  ctx.fillStyle = '#f6f8fa'; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, w * 0.2, h); ctx.fillStyle = '#e8edf2'; ctx.fillRect(x + w * 0.2, y, 1, h);
+  ctx.fillStyle = '#00708A'; ctx.font = '700 ' + Math.round(h * 0.035) + 'px Montserrat, Arial'; ctx.fillText('ATLANTYX OS', x + w * 0.025, y + h * 0.07);
+  const menu = ['Dashboard', 'Funil de vendas', 'Financeiro', 'Projetos', 'Indicadores', 'Relatórios'];
+  menu.forEach((m, i) => { if (!i) { ctx.fillStyle = 'rgba(0,196,204,.18)'; ctx.fillRect(x + w * 0.015, y + h * (0.12 + i * 0.075) - h * 0.035, w * 0.17, h * 0.055); } ctx.fillStyle = i ? '#5b6670' : '#00708A'; ctx.font = (i ? '500 ' : '700 ') + Math.round(h * 0.03) + 'px Montserrat, Arial'; ctx.fillText(m, x + w * 0.03, y + h * (0.12 + i * 0.075)); });
+  const cx0 = x + w * 0.23, cw = (w * 0.75) / 4 - w * 0.012;
+  const kpis = [['Receita', '+18%', '#047857'], ['Margem', '35%', '#00708A'], ['Pipeline', '3,2x', '#00708A'], ['Prazo médio', '-22%', '#047857']];
+  kpis.forEach((k, i) => { const kx = cx0 + i * (cw + w * 0.012), ky = y + h * 0.05; ctx.fillStyle = '#fff'; ctx.fillRect(kx, ky, cw, h * 0.2); ctx.strokeStyle = '#e3e8ee'; ctx.strokeRect(kx, ky, cw, h * 0.2);
+    ctx.fillStyle = '#7b8792'; ctx.font = '600 ' + Math.round(h * 0.026) + 'px Montserrat, Arial'; ctx.fillText(k[0], kx + cw * 0.08, ky + h * 0.06); ctx.fillStyle = k[2]; ctx.font = '800 ' + Math.round(h * 0.055) + 'px Montserrat, Arial'; ctx.fillText(k[1], kx + cw * 0.08, ky + h * 0.15); });
+  const gx = cx0, gy = y + h * 0.3, gw = w * 0.46, gh = h * 0.62; ctx.fillStyle = '#fff'; ctx.fillRect(gx, gy, gw, gh); ctx.strokeStyle = '#e3e8ee'; ctx.strokeRect(gx, gy, gw, gh);
+  ctx.fillStyle = '#5b6670'; ctx.font = '700 ' + Math.round(h * 0.03) + 'px Montserrat, Arial'; ctx.fillText('Resultado mensal', gx + gw * 0.05, gy + h * 0.06);
+  const bars = [0.42, 0.5, 0.47, 0.58, 0.63, 0.6, 0.71, 0.78, 0.84]; bars.forEach((b, i) => { const bw = gw * 0.07, bx = gx + gw * 0.07 + i * gw * 0.098, bh = gh * 0.7 * b; ctx.fillStyle = i === bars.length - 1 ? '#00C4CC' : '#9fdfe3'; ctx.fillRect(bx, gy + gh * 0.92 - bh, bw, bh); });
+  const fx = gx + gw + w * 0.015, fw = w * 0.75 - gw - w * 0.015; ctx.fillStyle = '#fff'; ctx.fillRect(fx, gy, fw, gh); ctx.strokeStyle = '#e3e8ee'; ctx.strokeRect(fx, gy, fw, gh);
+  ctx.fillStyle = '#5b6670'; ctx.fillText('Funil de vendas', fx + fw * 0.08, gy + h * 0.06);
+  [1, 0.78, 0.56, 0.36].forEach((f, i) => { const bw = fw * 0.8 * f; ctx.fillStyle = ['#2a78d6', '#3591e6', '#22b3a3', '#1baf7a'].at(i); ctx.fillRect(fx + (fw - bw) / 2, gy + gh * (0.18 + i * 0.19), bw, gh * 0.14); });
+}
+async function patArte() {
+  const b = document.getElementById('patBtnArte'); if (b) { b.disabled = true; b.textContent = 'Montando…'; }
+  try {
+    try { await Promise.all(['300 60px Montserrat', '800 60px Montserrat', '400 30px Montserrat', '700 30px Montserrat', '600 30px Montserrat'].map(f => document.fonts.load(f))); } catch (_) {}
+    const W = 1080, H = 1080, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const ctx = cv.getContext('2d');
+    // fundo: degradê petróleo → preto com brilho ciano (identidade Atlantyx)
+    const g = ctx.createRadialGradient(W * 0.72, H * 0.42, 40, W * 0.6, H * 0.5, W * 0.95); g.addColorStop(0, '#0b8a9c'); g.addColorStop(0.45, '#05414d'); g.addColorStop(1, '#03080c');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    const gl = ctx.createRadialGradient(W * 0.85, H * 0.2, 10, W * 0.85, H * 0.2, 420); gl.addColorStop(0, 'rgba(0,252,168,.18)'); gl.addColorStop(1, 'rgba(0,252,168,0)'); ctx.fillStyle = gl; ctx.fillRect(0, 0, W, H);
+    const { man, ben } = _patArteDados(); window._patArteUltima = true;
+    _patLogo(ctx, 80, 74, 1.1);
+    // manchete
+    let tam = 62; ctx.textBaseline = 'alphabetic'; let fimMan;
+    for (; tam >= 44; tam -= 4) { const c2 = document.createElement('canvas').getContext('2d'); fimMan = _patManchete(c2, man, 80, 205, 820, tam); if (fimMan < 470) break; }
+    fimMan = _patManchete(ctx, man, 80, 205, 820, tam);
+    // lista de benefícios com ✓
+    const yLista = Math.max(fimMan + 80, 470); let yy = yLista; ctx.font = '400 30px Montserrat, Arial, sans-serif';
+    ben.forEach(t => { const ls = _patWrap(ctx, t, 300); ctx.beginPath(); ctx.lineWidth = 3.5; ctx.strokeStyle = '#fff'; ctx.arc(100, yy - 10, 18, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.strokeStyle = '#00FCA8'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.moveTo(91, yy - 11); ctx.lineTo(99, yy - 2); ctx.lineTo(116, yy - 24); ctx.stroke();
+      ctx.fillStyle = '#fff'; ls.forEach((l, i) => ctx.fillText(l, 132, yy + i * 34)); yy += ls.length * 34 + 30; });
+    // monitor com a tela do sistema (canto inferior direito, sangrando para fora)
+    const mx = 470, my = Math.max(yLista - 20, 500), mw = 680, mh = Math.min(400, 960 - my - 70);
+    ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(mx + 12, my + 16, mw, mh); ctx.fillStyle = '#0d1115'; if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 14); ctx.fill(); } else ctx.fillRect(mx, my, mw, mh);
+    const sx = mx + 14, sy = my + 14, sw = mw - 28, sh = mh - 28; ctx.save(); ctx.beginPath(); ctx.rect(sx, sy, sw, sh); ctx.clip();
+    if (window._patTela) { const im = window._patTela, r = Math.max(sw / im.width, sh / im.height); ctx.drawImage(im, sx, sy, im.width * r, im.height * r); } else _patTelaFake(ctx, sx, sy, sw, sh);
+    ctx.restore();
+    const pe = ctx.createLinearGradient(0, my + mh, 0, my + mh + 60); pe.addColorStop(0, '#c9d1d8'); pe.addColorStop(1, '#8c959d'); ctx.fillStyle = pe; ctx.fillRect(mx + mw * 0.42, my + mh, mw * 0.16, Math.min(60, 960 - my - mh)); 
+    // faixa do rodapé
+    ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(0, 975, W, 105); ctx.fillStyle = 'rgba(0,196,204,.9)'; ctx.fillRect(0, 975, W, 3);
+    ctx.fillStyle = '#ffffff'; ctx.font = '600 30px Montserrat, Arial, sans-serif'; ctx.textAlign = 'center'; if ('letterSpacing' in ctx) ctx.letterSpacing = '10px'; ctx.fillText('CLIQUE NO SAIBA MAIS', W / 2 + 5, 1040); if ('letterSpacing' in ctx) ctx.letterSpacing = '0px'; ctx.textAlign = 'left';
+    const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92));
+    window._patArteBlob = blob; const pv = URL.createObjectURL(blob); document.getElementById('patImg').value = pv; patPrev();
+    const url = await _trSubir(blob, 'anuncio-' + Date.now() + '.jpg', 'patrocinado', 'jpg', 'image');
+    document.getElementById('patImg').value = url; patPrev(); toast('Arte montada e hospedada', 'success');
+  } catch (e) { toast('Arte não montada: ' + e.message, 'error'); }
+  if (b) { b.disabled = false; b.textContent = '🖼 Arte no padrão'; }
 }
 // v3.176: diagnóstico da conexão com o Meta (não cria nada)
 async function patDiagnostico() {
@@ -33538,7 +33623,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.208] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.209] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -33554,7 +33639,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.208';
+window.__ATX_BUILD_ID__ = 'ATX-v3.209';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
