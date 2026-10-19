@@ -1,5 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
-import { carregar, limparCache, authAtiva, primeiroAcesso, lerSessao, conferirLogin, criarSessao, cookieSessao, hashSenha, senhaForte, sql as sqlAcesso, novoId } from '../lib/acesso.js';
+import { carregar, limparCache, authAtiva, primeiroAcesso, bancoIndisponivel, lerSessao, conferirLogin, criarSessao, cookieSessao, hashSenha, senhaForte, sql as sqlAcesso, novoId } from '../lib/acesso.js';
 // api/auth.js — v3.81 · Login, usuários, perfis e telas do Atlantyx OS
 // GET                          → { ativa, logado, primeiro_acesso, usuario: { login, nome, admin, perfil, telas } }
 // POST login {login, senha}    → cookie de sessão (HttpOnly, 30 dias)
@@ -34,6 +34,7 @@ async function handler(req, res) {
     const t = tentativas.get(ip);
     if (t && t.n >= 8 && t.ate > Date.now()) return res.status(429).json({ success: false, error: 'Muitas tentativas. Aguarde 15 minutos.' });
     const u = await conferirLogin(b.login || b.email, b.senha);
+    if (!u && await bancoIndisponivel()) return res.status(503).json({ success: false, error: 'O banco de dados está indisponível no momento (' + String(await bancoIndisponivel()).substring(0, 120) + '). O login volta assim que o banco responder.' });
     if (!u) { const n = (t && t.ate > Date.now() ? t.n : 0) + 1; tentativas.set(ip, { n, ate: Date.now() + 15 * 60000 }); await sleep(600); return res.status(401).json({ success: false, error: 'Login ou senha incorretos.' }); }
     tentativas.delete(ip);
     const d = await carregar();
