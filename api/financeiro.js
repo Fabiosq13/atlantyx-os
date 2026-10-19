@@ -164,6 +164,12 @@ async function handler(req, res) {
       // v3.110: Orçamento em DRE de 12 meses móveis (orçado × realizado/projetado) + propostas do CRM
       orcamento_dre:         () => orcamentoDre(params),
       crm_etapas:            () => crmEtapas(),
+      // v3.211: Agenda de Receitas (marcos + sustentações + avulsas, sem lançar no QuickBooks)
+      receitas_agenda:            () => receitasAgenda(params),
+      receita_manual_salvar:      () => receitaManualSalvar(params),
+      receita_manual_excluir:     () => receitaManualExcluir(params),
+      receita_sustentacao_ajustar:() => receitaSustentacaoAjustar(params),
+      receita_ocorrencia_ajustar: () => receitaOcorrenciaAjustar(params),
       // v3.206: funil de vendas do dashboard (realizado × meta por etapa), clientes da faixa e metas por etapa
       funil_vendas:          () => funilVendas(params),
       funil_contatos:        () => funilContatos(params),
@@ -1072,6 +1078,11 @@ function _htmlRelatorioExtra(d) {
     + bloco('✅', 'Faturas pagas no mês', '#1FB287', V.pagas_mes, ['Fatura', 'Cliente', 'Pago em', 'Vencimento', 'Situação', 'Valor'],
       f => `<tr>${td(`<a href="${f.qb_url}" style="color:#1A3A8F;">${esc(f.doc)}</a>`)}${td(esc(f.cliente))}${td(dt(f.pago_em))}${td(dt(f.vencimento))}${td(f.dias_atraso ? '<span style="color:#E0A422;">pago com ' + f.dias_atraso + ' dias de atraso</span>' : '<span style="color:#1FB287;">em dia</span>')}${td(brl(f.valor), 'text-align:right;font-family:monospace;white-space:nowrap;')}</tr>`,
       'Nenhum recebimento de fatura no mês.')
+    // v3.211: receitas previstas da Agenda de Receitas (sem fatura ainda) — próximos 30 dias e previsões atrasadas
+    + (d.receitas ? `<h2 style="font-size:15px;color:#17224a;border-bottom:2px solid #7B61FF;padding-bottom:5px;margin-top:28px;">📅 Receitas previstas — Agenda de Receitas</h2>`
+      + (d.receitas.erro ? `<p style="color:#E0A422;font-size:12px;">⚠ ${esc(d.receitas.erro)}</p>` : '')
+      + bloco('⚠', 'Previsões vencidas sem fatura no QuickBooks', '#D64545', d.receitas.atrasadas || [], ['Previsto para', 'Cliente / projeto', 'Origem', 'Valor'], o => `<tr>${td(dt(o.data_prevista || o.data))}${td(esc(o.cliente) + '<br><span style="color:#8a93a8;font-size:11px;">' + esc(o.descricao) + (o.projeto ? ' · ' + esc(o.projeto) : '') + '</span>')}${td({ marco: 'Marco', sustentacao: 'Sustentação', manual: 'Agenda' }[o.origem] || o.origem)}${td(brl(o.valor), 'text-align:right;')}</tr>`, 'Nenhuma previsão vencida sem fatura.', 'Receita que já deveria ter sido faturada: emita a fatura no QuickBooks ou ajuste a data/valor na Agenda de Receitas.')
+      + bloco('📆', 'A faturar nos próximos 30 dias', '#7B61FF', d.receitas.proximas || [], ['Previsto para', 'Cliente / projeto', 'Origem', 'Valor'], o => `<tr>${td(dt(o.data))}${td(esc(o.cliente) + '<br><span style="color:#8a93a8;font-size:11px;">' + esc(o.descricao) + (o.projeto ? ' · ' + esc(o.projeto) : '') + '</span>')}${td({ marco: 'Marco', sustentacao: 'Sustentação', manual: 'Agenda' }[o.origem] || o.origem)}${td(brl(o.valor), 'text-align:right;')}</tr>`, 'Nenhuma receita prevista nos próximos 30 dias.') : '')
     + (d.app_url ? `<p style="margin-top:18px;"><a href="${d.app_url}" style="background:#1A3A8F;color:#fff;padding:9px 16px;border-radius:6px;text-decoration:none;font-size:12.5px;">Abrir o Atlantyx OS</a></p>` : '');
 }
 function _htmlRelatorioPagamentos(d) {
@@ -1321,6 +1332,9 @@ async function relatorioPagamentosEnviar({ apenas_gerar, para } = {}) {
   d.vendas = vR.status === 'fulfilled' ? vR.value : { erro: vR.reason?.message };
   d.pagx = pR.status === 'fulfilled' ? pR.value : { erro: pR.reason?.message, pagos_mes: [], duplicados: [] };
   d.app_url = _baseUrlInterna();
+  try { const rp = await receitasPrevistas({ meses: 3 }); const lim = _diasMais(d.hoje, 30);
+    d.receitas = { atrasadas: rp.ativas.filter(o => o.status === 'atrasada'), proximas: rp.ativas.filter(o => o.status === 'prevista' && o.data <= lim) }; }
+  catch (e) { d.receitas = { erro: 'Agenda de receitas: ' + e.message, atrasadas: [], proximas: [] }; }
   const html = _htmlRelatorioPagamentos(d);
   const resumo = { data: d.hoje, total_dia: d.total_dia, qtd_dia: d.listaDia.length,
     total_mes_pendente: d.total_mes_pendente, qtd_mes: d.listaMes.length, total_atrasado: d.total_atrasado, qtd_atrasadas: d.atrasadas.length, qb_erro: d.qb_erro,
@@ -3161,7 +3175,15 @@ async function qbRecorrentesProjecao({ ate, receitas = false } = {}) {   // rece
   }
   return { itens, modelos: lista.length };
 }
-async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
+async function qbFuturosDetalhado(args = {}) {
+  // v3.211: receita prevista vem da AGENDA DE RECEITAS (marcos + sustentações + avulsas, sem Estimate no QuickBooks).
+  // Se a agenda falhar (ex.: banco fora), volta ao comportamento antigo (Estimates de previsão do QuickBooks).
+  let rp = null; try { rp = await receitasPrevistas({ meses: 24 }); } catch (e) { console.warn('[qbFuturosDetalhado] agenda de receitas:', e.message); }
+  const out = await _qbFuturosDetalhadoQB({ ...args, sem_estimativas: !!rp });
+  if (rp) { out.recebiveis.push(..._rpComoRecebiveis(rp, args.data_inicio, args.data_fim)); out.agenda_receitas = { total: rp.total_ativo, qtd: rp.ativas.length, qb_conferido: rp.qb_conferido }; }
+  return out;
+}
+async function _qbFuturosDetalhadoQB({ data_inicio, data_fim, sem_estimativas = false } = {}) {
   // Recebíveis (Invoice em aberto) e Pagáveis (Bill em aberto) do QuickBooks,
   // um lançamento por documento — não agregado por mês.
   const out = { recebiveis: [], pagaveis: [], erro: null };
@@ -3177,7 +3199,7 @@ async function qbFuturosDetalhado({ data_inicio, data_fim } = {}) {
     const [inv, bill, prevs] = await Promise.all([
       qbQuery(`select * from Invoice where Balance > '0' ${limIni} ${limFim} orderby DueDate asc maxresults 1000`, token).catch(e => ({ _erro: e.message })),
       qbQuery(`select * from Bill where Balance > '0' ${limIni} ${limFim} orderby DueDate asc maxresults 1000`, token).catch(e => ({ _erro: e.message })),
-      _qbEstimativasPrevisao(token).catch(e => ({ _erro: e.message })),   // v2.95
+      sem_estimativas ? Promise.resolve([]) : _qbEstimativasPrevisao(token).catch(e => ({ _erro: e.message })),   // v2.95 (v3.211: substituído pela Agenda de Receitas)
     ]);
     if (inv?._erro) out.erro = (out.erro ? out.erro + ' | ' : '') + 'Invoice: ' + inv._erro;
     else out.recebiveis = (inv?.QueryResponse?.Invoice || []).map(i => ({
@@ -3521,7 +3543,7 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
       ? 'Não foi possível obter o saldo contábil na data inicial (o QuickBooks pode ter limitado as consultas). A coluna de saldo está partindo de zero — recarregue em alguns segundos.'
       : null,
     a_receber_total: totalReceitas,
-    a_receber_composicao: { recebido: recebidoPeriodo, previsto: aReceberFut, qtd_previstos: noSaldo.filter(l => l.tipo === 'entrada').length, previsao_marcos: round(noSaldo.filter(l => l.origem === 'quickbooks_previsao').reduce((s, l) => s + l.valor, 0)) },
+    a_receber_composicao: { recebido: recebidoPeriodo, previsto: aReceberFut, qtd_previstos: noSaldo.filter(l => l.tipo === 'entrada').length, previsao_marcos: round(noSaldo.filter(l => l.origem === 'quickbooks_previsao' || l.origem === 'agenda_receitas').reduce((s, l) => s + l.valor, 0)) },
     a_pagar_total: totalDespesas,
     a_pagar_composicao: { pago: pagoPeriodo, a_pagar: aPagarFut, qtd_a_pagar: noSaldo.filter(l => l.tipo === 'saida').length },
     saldo_projetado: saldoProjetadoNovo,
@@ -4118,7 +4140,14 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
   //  (c) faturas com vencimento além dos 12 meses inflavam buckets inexistentes.
   // Agora: vencidas viram uma linha própria (o dinheiro está atrasado, não é projeção),
   // e o que passa do horizonte é somado no último mês, com aviso.
-  let aReceberPorMes = {}, previstoMarcosPorMes = {};
+  let aReceberPorMes = {}, previstoMarcosPorMes = {}, mrrAgendaPorMes = {}, usouAgenda = false;
+  // v3.211: receita prevista = AGENDA DE RECEITAS (marcos e avulsas na linha "Receita Prevista"; sustentações e
+  // recorrentes cadastradas na linha "Receita Recorrente (MRR)"). Previsão atrasada (sem fatura) entra no mês corrente.
+  try { const rp = await receitasPrevistas({ meses: Math.max(13, meses + 1) }); usouAgenda = true;
+    for (const o of rp.ativas) { const mes = o.data.substring(0, 7); if (mes < mesAtual || !listaMeses.includes(mes)) continue;
+      if (o.origem === 'sustentacao' || (o.origem === 'manual' && o.recorrencia && o.recorrencia !== 'unica')) mrrAgendaPorMes[mes] = round((mrrAgendaPorMes[mes] || 0) + o.valor);
+      else previstoMarcosPorMes[mes] = round((previstoMarcosPorMes[mes] || 0) + o.valor); } }
+  catch (e) { console.warn('[fluxoFuturo] agenda de receitas:', e.message); }
   let aReceberVencido = 0, aReceberForaHorizonte = 0;
   const ultimoMes = listaMeses[listaMeses.length - 1];
   if (qbConfigurado()) {
@@ -4137,7 +4166,7 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
       }
       // v2.95: receita prevista dos marcos (estimativas) — em linha própria, separada do que já é fatura
       const _nc = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
-      try { for (const e of await _qbEstimativasPrevisao(token)) { const mes = (e.data || '').substring(0, 7); if (!mes || mes < mesAtual) continue;
+      if (!usouAgenda) try { for (const e of await _qbEstimativasPrevisao(token)) { const mes = (e.data || '').substring(0, 7); if (!mes || mes < mesAtual) continue;
         // v3.02: previsão de marco que já virou fatura em aberto (mesmo cliente, valor ±2%, até 45 dias) não conta de novo
         if (invoices.some(inv => Math.abs(parseFloat(inv.Balance || 0) - e.valor) <= Math.max(1, e.valor * 0.02) && Math.abs((new Date(inv.DueDate || inv.TxnDate) - new Date(e.data)) / 864e5) <= 45
           && (_nc(inv.CustomerRef?.name).startsWith(_nc(e.cliente)) || _nc(e.cliente).startsWith(_nc(inv.CustomerRef?.name).substring(0, 6))))) continue;
@@ -4249,7 +4278,7 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
     // v3.113: o realizado do mês corrente vai numa linha própria — antes entrava em "+ A Receber QB" (inclusive lançamentos
     // manuais, empréstimos e transferências) e a tela Projetado tratava isso como receita a receber
     const aReceberM = ovM['+ A Receber QB'] ?? (aReceberPorMes[mes] || 0);
-    const mrrM = ovM['+ Receita Recorrente (MRR)'] ?? (overrides._mrr || 0);
+    const mrrM = ovM['+ Receita Recorrente (MRR)'] ?? ((mrrAgendaPorMes[mes] || 0) + (overrides._mrr || 0));
 
     const entradasSim = simulados.filter(s => s.data.startsWith(mes) && s.tipo === 'entrada')
       .reduce((s, x) => s + x.valor, 0);
@@ -4871,6 +4900,14 @@ async function metasEmpresaStatus({ ano, com_crm = true, _forcar = false, metodo
     if (f != null) { out.crm.cobre_pct_ponderado = f > 0 ? Math.round(crm.value.total_ponderado / f * 1000) / 10 : null; out.crm.cobre_pct_aberto = f > 0 ? Math.round(crm.value.total_aberto / f * 1000) / 10 : null; }
   } else if (crm.status === 'rejected') out.erros.push('CRM: ' + crm.reason?.message);
   else if (!process.env.HUBSPOT_TOKEN && out.situacao !== 'encerrado') out.crm = { indisponivel: 'HUBSPOT_TOKEN não configurado' };
+  // v3.211: carteira prevista do ano (Agenda de Receitas: marcos não faturados, sustentações e receitas cadastradas)
+  if (out.situacao !== 'encerrado') try { const rp = await receitasPrevistas({ meses: 13 }); const ini = `${a}-01-01`, fimA = `${a}-12-31`;
+    const L = rp.ativas.filter(o => o.data >= ini && o.data <= fimA); const soma = k => round(L.filter(o => !k || o.origem === k).reduce((t, o) => t + o.valor, 0));
+    out.carteira = { prevista: soma(), marcos: soma('marco'), sustentacoes: soma('sustentacao'), avulsas: soma('manual'), qtd: L.length, qb_conferido: rp.qb_conferido };
+    if (out.faturamento) { const real = Number(out.faturamento.realizado) || 0, falta = Number(out.faturamento.falta) || 0;
+      out.faturamento.projecao_com_carteira = round(real + out.carteira.prevista);
+      out.carteira.cobre_pct = falta > 0 ? Math.round(out.carteira.prevista / falta * 1000) / 10 : null; }
+  } catch (e) { out.erros.push('Agenda de receitas: ' + e.message); }
   return { metas: out };
 }
 // Negócios ABERTOS no HubSpot (etapas com probabilidade entre 0 e 100%) com fechamento previsto no ano — ou sem data
@@ -6747,6 +6784,143 @@ async function _crmPropostas(etapas) {
 //  · PROPOSTAS (POND.) = negócios abertos do HubSpot × probabilidade da etapa, no mês do fechamento previsto
 //    (fechamento já passado ou sem data → mês corrente; depois do horizonte fica de fora, com aviso).
 //  · SIMULADOS continuam vindo dos lançamentos simulados do Fluxo Futuro; aqui só a contagem, para a tela orientar.
+// ═══════════════════════════════════════════════════════════════════════════
+// v3.211 · AGENDA DE RECEITAS — receita futura SEM lançar nada no QuickBooks
+// Três fontes, todas lidas direto do sistema:
+//   • MARCOS de projeto ainda não faturados (Kanban de Marcos) — data = data manual do marco, ou a previsão já
+//     calculada, ou o mês seguinte à entrega no dia de recebimento padrão (Previsão de marcos: dia 25 + dias extras);
+//   • SUSTENTAÇÕES (projetos recorrentes com contrato vigente) — valor mensal SUGERIDO = valor do projeto ÷ meses do
+//     contrato, com ajuste por contrato (valor, dia, início/fim, ativo) em 'fin:receitas_sustentacao';
+//   • AVULSAS/RECORRENTES cadastradas à mão em 'fin:receitas_manuais' (única, mensal, trimestral, anual).
+// REGRA "QUICKBOOKS VENCE" (a mesma da Agenda de Despesas): quando a fatura real aparece no QuickBooks (em aberto ou
+// já paga) do mesmo cliente, a até 31 dias e com valor entre metade e o dobro, a ocorrência prevista sai das contas —
+// cada fatura cobre no máximo UMA ocorrência (a de valor mais próximo). Previsão vencida sem fatura entra hoje
+// (status "atrasada"). Ajustes por ocorrência (recebida, cancelada, valor, data) em 'fin:receitas_ocorrencias'.
+// As Estimates de previsão no QuickBooks deixam de ser necessárias: as telas usam esta agenda no lugar delas.
+// ═══════════════════════════════════════════════════════════════════════════
+const _RP_MAN = 'fin:receitas_manuais', _RP_SUS = 'fin:receitas_sustentacao', _RP_OC = 'fin:receitas_ocorrencias';
+const _rpNc = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+const _rpMesmoCliente = (a, b) => { const x = _rpNc(a), y = _rpNc(b); if (x.length < 3 || y.length < 3) return false; return x.startsWith(y.substring(0, 6)) || y.startsWith(x.substring(0, 6)); };
+const _rpUltimoDia = ym => { const [a, m] = ym.split('-').map(Number); return `${ym}-${String(new Date(a, m, 0).getDate()).padStart(2, '0')}`; };
+const _rpDia = (ym, dia) => { const [a, m] = ym.split('-').map(Number); const ult = new Date(a, m, 0).getDate(); return `${ym}-${String(Math.max(1, Math.min(ult, parseInt(dia) || 25))).padStart(2, '0')}`; };
+let _rpCache = { em: 0, chave: '', v: null };
+async function _rpSustentacoesBase(sql) {
+  const q = async f => { try { return await f(); } catch (_) { return []; } };
+  const projetos = await q(() => sql`SELECT id, nome, cliente, valor_total, status FROM projetos_financeiros WHERE COALESCE(status,'ativo') NOT IN ('cancelado')`);
+  const contratos = await q(() => sql`SELECT projeto, projeto_id, data_inicio, data_vencimento, prazo_meses FROM contratos_financeiros`);
+  const cfg = await q(() => sql`SELECT projeto_nome, tipo_projeto FROM pmo_projetos_config`);
+  const recorrenteP = p => { const c = cfg.find(x => String(x.projeto_nome).toLowerCase() === String(p.nome).toLowerCase()); return c?.tipo_projeto === 'sustentacao' || /sustent|suporte|ams|sla/i.test(p.nome); };
+  const mesesEntre = (a, b) => { const [a1, m1] = a.split('-').map(Number), [a2, m2] = b.split('-').map(Number); return (a2 - a1) * 12 + (m2 - m1) + 1; };
+  const out = [];
+  for (const p of projetos) {
+    if (!recorrenteP(p)) continue; const valor = parseFloat(p.valor_total) || 0;
+    const cs = contratos.filter(c => (c.projeto_id && c.projeto_id === p.id) || (!c.projeto_id && _rpNc(c.projeto) && _rpNc(c.projeto) === _rpNc(p.nome)));
+    let ini = null, fim = null;
+    for (const c of cs) { const i = c.data_inicio ? _dStr(c.data_inicio).substring(0, 7) : null; if (!i) continue;
+      const f = c.data_vencimento ? _dStr(c.data_vencimento).substring(0, 7) : (parseInt(c.prazo_meses) > 0 ? _addMesesData(_dStr(c.data_inicio), parseInt(c.prazo_meses) - 1).substring(0, 7) : null);
+      if (!f || f < i) continue; if (!ini || i < ini) ini = i; if (!fim || f > fim) fim = f; }
+    out.push({ id: String(p.id), projeto: p.nome, cliente: p.cliente || p.nome, valor_projeto: round(valor), inicio: ini, fim, sugerido: ini && valor > 0 ? round(valor / mesesEntre(ini, fim)) : null, sem_contrato: !cs.length, sem_vigencia: !!cs.length && !ini });
+  }
+  return out;
+}
+async function _rpFaturasQB(desde) {
+  if (!qbConfigurado()) return null;
+  try { const token = await qbToken();
+    const [a, b] = await Promise.all([qbQuery(`select * from Invoice where Balance > '0' maxresults 1000`, token), qbQuery(`select * from Invoice where TxnDate >= '${desde}' maxresults 1000`, token)]);
+    const m = new Map(); [...(a?.QueryResponse?.Invoice || []), ...(b?.QueryResponse?.Invoice || [])].forEach(i => m.set(i.Id, i));
+    return [...m.values()].map(i => ({ id: String(i.Id), doc: i.DocNumber || i.Id, cliente: i.CustomerRef?.name || '', data: i.DueDate || i.TxnDate, emissao: i.TxnDate, valor: num(i.TotalAmt), saldo: num(i.Balance) }));
+  } catch (_) { return null; }
+}
+async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
+  const N = Math.max(1, Math.min(36, parseInt(meses) || 13)), hoje = _hojeBR(), mesHoje = hoje.substring(0, 7), ultimo = _mesMais(mesHoje, N - 1), fimHor = _rpUltimoDia(ultimo);
+  const chave = N + '|' + hoje; if (!_forcar && _rpCache.v && _rpCache.chave === chave && Date.now() - _rpCache.em < 60000) return _rpCache.v;
+  const sql = await getSql(); const avisos = [];
+  const [man, susCfg, ocCfg, prevCfg] = await Promise.all([_kvFin(_RP_MAN).catch(() => null), _kvFin(_RP_SUS).catch(() => null), _kvFin(_RP_OC).catch(() => null), _prevCfg(sql).catch(() => ({}))]);
+  const diaPad = Math.max(1, Math.min(28, parseInt(prevCfg.dia_recebimento) || 25)), diasAd = Math.max(0, parseInt(prevCfg.dias_adicionais) || 0);
+  const oc = [];
+  // 1) marcos
+  try {
+    const marcos = await _marcosNaoFaturados(sql); const seq = {};
+    for (const m of marcos) {
+      const i = (seq[m.projeto_id] = (seq[m.projeto_id] || 0) + 1) - 1; let data = _dStr(m.previsao_receb_manual) || _dStr(m.previsao_recebimento), base = data ? (m.previsao_receb_manual ? 'data definida no marco' : 'previsão do marco') : '';
+      if (!data && m.data_entrega) { data = _diasMais(_rpDia(_mesMais(_dStr(m.data_entrega).substring(0, 7), 1), diaPad), diasAd); base = 'entrega + recebimento no dia ' + diaPad; }
+      if (!data) { data = _diasMais(_rpDia(_mesMais(mesHoje, 1 + i), diaPad), diasAd); base = 'sem data: sequência mensal do projeto'; }
+      oc.push({ id: 'mrc_' + m.id, origem: 'marco', ref_id: String(m.id), projeto: m.projeto_nome, cliente: m.projeto_cliente || m.projeto_nome, descricao: m.descricao || 'Marco', valor: num(m.valor), data, base_data: base, status_kanban: m.status_kanban });
+    }
+  } catch (e) { avisos.push('Marcos: ' + e.message); }
+  // 2) sustentações
+  let sustentacoes = [];
+  try {
+    sustentacoes = await _rpSustentacoesBase(sql); const cfg = susCfg || {};
+    for (const s of sustentacoes) {
+      const c = cfg[s.id] || {}; s.ajuste = c; const ativo = c.ativo !== false; const valor = Number(c.valor_mensal) > 0 ? Number(c.valor_mensal) : s.sugerido;
+      const ini = /^\d{4}-\d{2}$/.test(c.inicio || '') ? c.inicio : s.inicio, fim = /^\d{4}-\d{2}$/.test(c.fim || '') ? c.fim : s.fim, dia = parseInt(c.dia) || diaPad;
+      s.efetivo = { ativo, valor_mensal: valor, inicio: ini, fim, dia };
+      if (!ativo || !(valor > 0) || !ini || !fim) continue;
+      for (let mes = ini < mesHoje ? mesHoje : ini; mes <= fim && mes <= ultimo; mes = _mesMais(mes, 1))
+        oc.push({ id: `sus_${s.id}_${mes}`, origem: 'sustentacao', ref_id: s.id, projeto: s.projeto, cliente: s.cliente, descricao: 'Sustentação ' + _MESES_PT[+mes.substring(5, 7) - 1] + '/' + mes.substring(0, 4), valor: round(valor), data: _rpDia(mes, dia), base_data: Number(c.valor_mensal) > 0 ? 'valor ajustado' : 'valor sugerido (projeto ÷ meses do contrato)' });
+    }
+  } catch (e) { avisos.push('Sustentações: ' + e.message); }
+  // 3) avulsas / recorrentes manuais
+  const manuais = Array.isArray(man) ? man : [];
+  for (const r of manuais) {
+    if (r.ativo === false || !(Number(r.valor) > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(r.inicio || '')) continue;
+    const passo = { unica: 0, mensal: 1, trimestral: 3, semestral: 6, anual: 12 }[r.recorrencia] ?? 0; const dia = r.inicio.substring(8, 10);
+    if (!passo) { oc.push({ id: `man_${r.id}_${r.inicio}`, origem: 'manual', ref_id: r.id, projeto: r.projeto || '', cliente: r.cliente || '', descricao: r.descricao || 'Receita avulsa', valor: round(Number(r.valor)), data: r.inicio, recorrencia: 'unica' }); continue; }
+    const fimR = /^\d{4}-\d{2}-\d{2}$/.test(r.fim || '') ? r.fim.substring(0, 7) : ultimo;
+    for (let mes = r.inicio.substring(0, 7); mes <= fimR && mes <= ultimo; mes = _mesMais(mes, passo)) { if (mes < mesHoje) continue;
+      oc.push({ id: `man_${r.id}_${mes}`, origem: 'manual', ref_id: r.id, projeto: r.projeto || '', cliente: r.cliente || '', descricao: r.descricao || 'Receita recorrente', valor: round(Number(r.valor)), data: _rpDia(mes, dia), recorrencia: r.recorrencia }); }
+  }
+  // ajustes por ocorrência
+  const aj = ocCfg || {};
+  for (const o of oc) { const a = aj[o.id]; if (!a) continue; if (Number(a.valor) > 0) { o.valor_original = o.valor; o.valor = round(Number(a.valor)); } if (/^\d{4}-\d{2}-\d{2}$/.test(a.data || '')) { o.data_original = o.data; o.data = a.data; } if (a.status) o.status_manual = a.status; if (a.nota) o.nota = a.nota; }
+  // QuickBooks vence
+  const desde = _diasMais(mesHoje + '-01', -75), faturas = await _rpFaturasQB(desde);
+  if (!faturas) avisos.push('QuickBooks indisponível: a agenda não pôde ser conferida com as faturas reais (nada foi descartado).');
+  for (const o of oc) o.status = o.status_manual === 'recebida' ? 'recebida' : o.status_manual === 'cancelada' ? 'cancelada' : null;
+  if (faturas) {
+    for (const f of faturas.sort((a, b) => String(a.data).localeCompare(String(b.data)))) {
+      const cand = oc.filter(o => !o.status && !o.coberta_por && _rpMesmoCliente(o.cliente, f.cliente) && Math.abs((Date.parse(o.data) - Date.parse(f.data || f.emissao)) / 864e5) <= 31 && f.valor >= o.valor * 0.5 && f.valor <= o.valor * 2);
+      if (!cand.length) continue; cand.sort((a, b) => Math.abs(a.valor - f.valor) - Math.abs(b.valor - f.valor));
+      cand[0].coberta_por = { fatura: f.doc, id: f.id, valor: f.valor, data: f.data, em_aberto: f.saldo > 0 }; cand[0].status = 'coberta';
+    }
+  }
+  for (const o of oc) if (!o.status) { if (o.data < hoje) { o.status = 'atrasada'; o.data_prevista = o.data; o.data = hoje; } else o.status = 'prevista'; }
+  const ativas = oc.filter(o => (o.status === 'prevista' || o.status === 'atrasada') && o.data <= fimHor);
+  const porMes = {}; for (const o of ativas) { const k = o.data.substring(0, 7); const p = (porMes[k] = porMes[k] || { mes: k, total: 0, marco: 0, sustentacao: 0, manual: 0 }); p.total = round(p.total + o.valor); p[o.origem] = round(p[o.origem] + o.valor); }
+  const v = { hoje, ate: fimHor, ocorrencias: oc.sort((a, b) => a.data.localeCompare(b.data)), ativas, por_mes: Object.values(porMes).sort((a, b) => a.mes.localeCompare(b.mes)),
+    total_ativo: round(ativas.reduce((s, o) => s + o.valor, 0)), sustentacoes, manuais, dia_padrao: diaPad, qb_conferido: !!faturas, avisos };
+  _rpCache = { em: Date.now(), chave, v }; return v;
+}
+// itens no formato dos recebíveis do fluxo (para o Fluxo Detalhado, extratos, painel e KPIs)
+function _rpComoRecebiveis(rp, data_inicio, data_fim) {
+  const cat = { marco: 'Receita prevista (marco)', sustentacao: 'Receita prevista (sustentação)', manual: 'Receita prevista (agenda)' };
+  return (rp?.ativas || []).map(o => ({ id: 'rp_' + o.id, data: o.data, descricao: (o.cliente ? o.cliente + ' · ' : '') + o.descricao + ' (previsão)', categoria: cat[o.origem] || 'Receita prevista',
+    valor: o.valor, valor_total: o.valor, tipo: 'entrada', origem: 'agenda_receitas', origem_detalhe: o.origem, previsao: true, vencida: false, atrasada: o.status === 'atrasada', emissao: o.data,
+    cliente: o.cliente, no_periodo: (!data_inicio || o.data >= data_inicio) && (!data_fim || o.data <= data_fim) }));
+}
+async function receitasAgenda({ meses = 13 } = {}) { const r = await receitasPrevistas({ meses, _forcar: true }); return { agenda: r }; }
+async function receitaManualSalvar({ item } = {}) {
+  const x = item || {}; if (!(Number(x.valor) > 0)) throw new Error('Informe o valor'); if (!/^\d{4}-\d{2}-\d{2}$/.test(x.inicio || '')) throw new Error('Informe a data (início)');
+  const lista = (await _kvFin(_RP_MAN).catch(() => null)) || []; const id = x.id || ('rm_' + Date.now().toString(36));
+  const reg = { id, cliente: String(x.cliente || '').slice(0, 120), projeto: String(x.projeto || '').slice(0, 120), descricao: String(x.descricao || '').slice(0, 200), valor: round(Number(x.valor)),
+    recorrencia: ['unica', 'mensal', 'trimestral', 'semestral', 'anual'].includes(x.recorrencia) ? x.recorrencia : 'unica', inicio: x.inicio, fim: /^\d{4}-\d{2}-\d{2}$/.test(x.fim || '') ? x.fim : null, ativo: x.ativo !== false, atualizado_em: new Date().toISOString() };
+  const i = lista.findIndex(r => r.id === id); if (i >= 0) lista[i] = reg; else lista.push(reg);
+  await _kvFinSet(_RP_MAN, lista); _rpCache.v = null; return { ok: true, item: reg };
+}
+async function receitaManualExcluir({ id } = {}) { const lista = ((await _kvFin(_RP_MAN).catch(() => null)) || []).filter(r => r.id !== id); await _kvFinSet(_RP_MAN, lista); _rpCache.v = null; return { ok: true }; }
+async function receitaSustentacaoAjustar({ id, valor_mensal, dia, inicio, fim, ativo } = {}) {
+  if (!id) throw new Error('id obrigatório'); const cfg = (await _kvFin(_RP_SUS).catch(() => null)) || {};
+  cfg[String(id)] = { valor_mensal: Number(valor_mensal) > 0 ? round(Number(valor_mensal)) : null, dia: parseInt(dia) >= 1 && parseInt(dia) <= 31 ? parseInt(dia) : null,
+    inicio: /^\d{4}-\d{2}$/.test(inicio || '') ? inicio : null, fim: /^\d{4}-\d{2}$/.test(fim || '') ? fim : null, ativo: ativo !== false, atualizado_em: new Date().toISOString() };
+  await _kvFinSet(_RP_SUS, cfg); _rpCache.v = null; return { ok: true, ajuste: cfg[String(id)] };
+}
+async function receitaOcorrenciaAjustar({ id, status, valor, data, nota, limpar } = {}) {
+  if (!id) throw new Error('id obrigatório'); const cfg = (await _kvFin(_RP_OC).catch(() => null)) || {};
+  if (limpar) delete cfg[id]; else cfg[id] = { status: ['recebida', 'cancelada'].includes(status) ? status : null, valor: Number(valor) > 0 ? round(Number(valor)) : null, data: /^\d{4}-\d{2}-\d{2}$/.test(data || '') ? data : null, nota: nota ? String(nota).slice(0, 300) : null, em: new Date().toISOString() };
+  await _kvFinSet(_RP_OC, cfg); _rpCache.v = null; return { ok: true };
+}
+
 async function projetadoFontes({ meses = 12 } = {}) {
   const N = Math.max(1, Math.min(24, parseInt(meses) || 12));
   const hoje = _hojeBR(), mesHoje = hoje.substring(0, 7);
@@ -6799,6 +6973,9 @@ async function projetadoFontes({ meses = 12 } = {}) {
     } catch (e) { out.avisos.push('HubSpot: ' + e.message); }
   };
   await Promise.all([qbParte(), hsParte()]);
+  // v3.211: a Agenda de Receitas (marcos, sustentações, avulsas) já entra pelo Fluxo Futuro (linhas Receita Prevista e
+  // MRR) — aqui só marca cliente/mês para um modelo recorrente do QuickBooks do mesmo cliente não somar de novo
+  let agendaOk = false; try { const rp = await receitasPrevistas({ meses: N + 1 }); rp.ativas.forEach(o => marca(o.data.substring(0, 7), o.cliente)); agendaOk = true; } catch (e) { out.avisos.push('Agenda de receitas: ' + e.message); }
 
   // recorrentes do QuickBooks (modelos agendados de fatura/recibo/depósito)
   const porModelo = {}, usadosQB = [];
@@ -6811,8 +6988,8 @@ async function projetadoFontes({ meses = 12 } = {}) {
   usadosQB.forEach(([mes, cli]) => marca(mes, cli));   // contrato do mesmo cliente não soma de novo nesses meses
   out.detalhe.recorrente.push(...Object.values(porModelo));
 
-  // projetos recorrentes com contrato vigente
-  try {
+  // projetos recorrentes com contrato vigente (v3.211: só quando a Agenda de Receitas não respondeu — ela já projeta as sustentações)
+  if (!agendaOk) try {
     const sql = await getSql();
     const q = async f => { try { return await f(); } catch (_) { return []; } };
     const projetos = await q(() => sql`SELECT id, nome, cliente, valor_total, status FROM projetos_financeiros WHERE COALESCE(status,'ativo') NOT IN ('cancelado')`);
@@ -6852,7 +7029,7 @@ async function projetadoFontes({ meses = 12 } = {}) {
   } catch (_) {}
   return out;
 }
-async function orcamentoDre({ inicio, meses: nMeses = 12, crm = null } = {}) {
+async function orcamentoDre({ inicio, meses: nMeses = 12, crm = null, prevista = true } = {}) {
   const hoje = _hojeBR(), mesHoje = hoje.substring(0, 7);
   const ini = /^\d{4}-\d{2}$/.test(String(inicio || '')) ? inicio : (() => { const d = new Date(hoje + 'T12:00:00'); d.setMonth(d.getMonth() - 5); return d.toISOString().substring(0, 7); })();
   const N = Math.max(3, Math.min(24, parseInt(nMeses) || 12));
@@ -6921,13 +7098,26 @@ async function orcamentoDre({ inicio, meses: nMeses = 12, crm = null } = {}) {
       out.crm = { qtd: det.length, valor_total: round(det.reduce((a, p) => a + p.valor, 0)), valor_ponderado_janela: round(det.reduce((a, p) => a + p.valor_na_janela, 0)), custo_pct: custoPct * 100, distribuir_meses: dist, ponderar: pond, propostas: det.sort((a, b) => b.valor - a.valor).slice(0, 80) };
     } catch (e) { out.avisos.push('Propostas do CRM: ' + e.message); }
   }
+  // v3.211: RECEITA PREVISTA da Agenda de Receitas (marcos, sustentações, avulsas). Com ela ligada, a receita projetada
+  // dos meses futuros (e do resto do mês corrente) passa a ser a carteira prevista — o orçado continua na coluna Orçado.
+  let usarPrev = false;
+  if (prevista !== false && prevista !== 'false') {
+    try { const rp = await receitasPrevistas({ meses: 36 });
+      const rec = { chave: 'agenda_receita', nome: 'Receita prevista (Agenda de Receitas: marcos, sustentações, avulsas)', grupo: 'receitas', crm: true, agenda: true, orcado: {}, real: {} };
+      for (const o of rp.ativas) { const m = o.data.substring(0, 7); if (!meses.includes(m) || m < mesHoje) continue; rec.real[m] = round((rec.real[m] || 0) + o.valor); }
+      linhas.agenda_receita = rec; usarPrev = true;
+      out.agenda = { total_janela: round(Object.values(rec.real).reduce((a, v) => a + v, 0)), qb_conferido: rp.qb_conferido };
+      out.avisos.push('Receita dos meses futuros = Agenda de Receitas (marcos não faturados, sustentações e receitas cadastradas); o orçado do QuickBooks fica na coluna Orçado.');
+    } catch (e) { out.avisos.push('Agenda de receitas: ' + e.message); }
+  }
   // MONTAGEM — por grupo e totais; meses futuros: real = projetado (orçado), CRM soma por cima
   const ehFuturo = m => m > mesHoje;
   const ORDEM = ['receitas', 'custos', 'despesas', 'outras_receitas', 'outras_despesas'];
   // v3.113: mês corrente = realizado até hoje + orçado dos dias que faltam (antes só o parcial — os totais de 12 meses ficavam
   // curtos e o mês aparecia "abaixo do orçado" só porque ainda não terminou)
   const _dH = parseInt(hoje.substring(8, 10)), _dM = new Date(Date.UTC(parseInt(hoje), parseInt(hoje.substring(5, 7)), 0)).getUTCDate(), _resto = Math.max(0, 1 - _dH / _dM);
-  const valorMes = (l, m) => { const o = round(l.orcado[m] || 0); const r = l.crm ? round(l.real[m] || 0) : ehFuturo(m) ? o : m === mesHoje ? round((l.real[m] || 0) + o * _resto) : round(l.real[m] || 0); return { orcado: l.crm ? 0 : o, real: r }; };
+  const valorMes = (l, m) => { const o = round(l.orcado[m] || 0); const pv = usarPrev && l.grupo === 'receitas' && !l.crm; // receita futura vem da agenda
+    const r = l.crm ? round(l.real[m] || 0) : ehFuturo(m) ? (pv ? 0 : o) : m === mesHoje ? round((l.real[m] || 0) + (pv ? 0 : o * _resto)) : round(l.real[m] || 0); return { orcado: l.crm ? 0 : o, real: r }; };
   if (meses.includes(mesHoje)) out.avisos.push(`Mês corrente (${mesHoje.substring(5, 7)}/${mesHoje.substring(0, 4)}): realizado até hoje + orçado dos ${_dM - _dH} dia(s) restantes.`);
   for (const g of ORDEM) {
     const ls = Object.values(linhas).filter(l => l.grupo === g).map(l => { const mm = Object.fromEntries(meses.map(m => [m, valorMes(l, m)]));
