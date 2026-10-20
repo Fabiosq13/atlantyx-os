@@ -1124,6 +1124,13 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
       <div id="finDiaCorpo"><div class="fv2-load">Carregando o relatório financeiro do dia…</div></div>
       <div id="finHigCorpo"></div>
     </div>
+    <!-- v3.219: vencidos em aberto no QuickBooks — saíram do extrato projetado (não têm data para acontecer) -->
+    <div class="panel" id="vencDashPanel" style="margin-bottom:13px;">
+      <div class="ph" style="flex-wrap:wrap;gap:6px;"><div class="pt">&#9888;&#65039; Vencidos em aberto (QuickBooks)</div>
+        <span id="vencDashMeta" style="font-family:var(--M);font-size:9px;color:var(--t3);"></span>
+        <button class="btn btn-g" style="font-size:9px;padding:3px 9px;margin-left:auto;" onclick="vencDashCarregar(true)">&#8635; Atualizar</button></div>
+      <div class="pb" id="vencDashCorpo"><div class="fv2-load">Carregando…</div></div>
+    </div>
     <!-- v3.85: widget de recebíveis em risco (vencidos / vencendo em ≤7 dias) -->
     <div id="recAlertaDashWidget"></div>
 
@@ -22040,22 +22047,17 @@ function _fdRenderTabelas() {
   // v2.04: separa o que vence no período do que está em aberto fora dele — os dois importam,
   // mas por motivos diferentes. Vencido e não pago é o mais urgente e vinha sumindo.
   if (tbF) {
-    // v3.217: conta a pagar vencida cujo pagamento já está no extrato fica numa seção própria, fora do saldo
-    // v3.218: formato de extrato — a lista segue do último dia do realizado (hoje) em diante. Vencida em aberto entra HOJE,
-    // no meio do fluxo; vencida há mais de 60 dias e já paga no extrato ficam no fim, fora do saldo, para conferência.
-    const jaPagas = fut.filter(l => l.ja_paga);
-    const antigas = fut.filter(l => l.vencida_antiga);
-    const vencidos = [];
-    const noPer = fut.filter(l => !l.ja_paga && !l.vencida_antiga && (l.vencida || l.no_periodo !== false));
-    const foraPer = fut.filter(l => !l.vencida && !l.ja_paga && l.no_periodo === false);
+    // v3.219: formato de extrato — só o que acontece de hoje em diante. Vencidos em aberto não entram aqui:
+    // ficam no Dashboard → Financeiro → "Vencidos em aberto". Um aviso no topo mostra quanto ficou de fora.
+    const noPer = fut.filter(l => !l.ja_paga && l.no_periodo !== false);
+    const foraPer = fut.filter(l => !l.ja_paga && l.no_periodo === false);
     const secao = (titulo, lista, cor, nota, rotulo) => lista.length ? `<tr><td colspan="6" style="padding:7px 6px 4px;font-size:10px;color:${_corTxt(cor)};font-weight:600;border-top:1px solid var(--bd);">${titulo} · ${lista.length} lançamento(s) · <span style="color:var(--green,#22d3a3);">+${fmtBRLcompleto(lista.filter(x=>x.tipo==='entrada').reduce((a,x)=>a+x.valor,0))}</span> <span style="color:var(--red);">−${fmtBRLcompleto(lista.filter(x=>x.tipo==='saida').reduce((a,x)=>a+x.valor,0))}</span>${nota?` <span style="font-weight:400;color:var(--t3);">${nota}</span>`:''}</td></tr>`
       + _fdComQuebraMes(lista, cor, rotulo) : '';
-    tbF.innerHTML = fut.length
-      ? secao('⚠ VENCIDOS E NÃO PAGOS', vencidos, 'var(--red)', '— cobrar primeiro', 'vencidos')
-        + secao('NO PERÍODO CONSULTADO', noPer, 'var(--blue,#4f7cff)', '', 'no período')
+    const vf = d.futuro.vencidos_fora_do_extrato;
+    const avisoVenc = vf && (vf.receber.qtd || vf.pagar.qtd) ? `<tr><td colspan="6" style="padding:8px;font-size:10px;color:var(--t2);background:rgba(245,185,75,.07);border-bottom:1px solid var(--bd);">ℹ Fora deste extrato (vencidos em aberto no QuickBooks, sem data para acontecer): <b>${vf.receber.qtd}</b> fatura(s) a receber · ${fmtBRLcompleto(vf.receber.valor)} e <b>${vf.pagar.qtd}</b> conta(s) a pagar · ${fmtBRLcompleto(vf.pagar.valor)}${vf.ja_pagas_no_extrato ? ' · ' + vf.ja_pagas_no_extrato + ' conta(s) a pagar já paga(s) no extrato' : ''}. <a href="#" onclick="event.preventDefault();_irVencidosDash()" style="color:var(--blue);">Ver no Dashboard → Financeiro → Vencidos em aberto</a></td></tr>` : '';
+    tbF.innerHTML = fut.length || avisoVenc
+      ? avisoVenc + secao('NO PERÍODO CONSULTADO', noPer, 'var(--blue,#4f7cff)', '', 'no período')
         + secao('EM ABERTO, FORA DO PERÍODO', foraPer, 'var(--t3)', '— aparecem porque continuam a receber/pagar', 'fora do período')
-        + secao('⚠ VENCIDAS HÁ MAIS DE 60 DIAS — FORA DO SALDO, CONFERIR', antigas, 'var(--red)', '— provavelmente pagas e não baixadas no QuickBooks (ou dívida antiga): confira e exclua (🗑) ou registre o pagamento lá.', 'vencidas antigas')
-        + secao('✓ JÁ PAGAS NO EXTRATO — FALTA LIGAR NO QUICKBOOKS', jaPagas, 'var(--gold)', '— não entram no saldo: o pagamento foi lançado como despesa avulsa e a conta a pagar ficou aberta no QuickBooks. Abra o 🔎 para ver o pagamento; o 🗑 exclui a conta duplicada.', 'já pagas')
       : (busca ? semNada('Nenhum lançamento futuro com "' + busca.replace(/</g, '&lt;') + '" na descrição.')
         : semNada('Nenhum recebível/pagável futuro encontrado no QuickBooks' + (d.futuro.qb_erro ? ' · ⚠ ' + d.futuro.qb_erro : ' (sem faturas/contas em aberto, sem despesas programadas futuras e sem simulados futuros)') + '.'));
   }
@@ -30487,10 +30489,36 @@ async function arManualSalvar(id) { const g = k => document.getElementById('arM'
     document.getElementById('arModal')?.remove(); toast('Receita salva', 'success'); _ar.aba = 'manuais'; await arCarregar(); } catch (e) { toast(e.message, 'error'); } }
 async function arManualExcluir(id) { if (!confirm('Excluir esta receita prevista?')) return; try { await finApi('receita_manual_excluir', { id }); await arCarregar(); } catch (e) { toast(e.message, 'error'); } }
 // ═══ v3.206 · DASHBOARD EM ABAS + FUNIL DE VENDAS + PENDÊNCIAS ═══
+// v3.219: vencidos em aberto — faturas a receber e contas a pagar com vencimento passado (fora do extrato projetado)
+let _vd = { dados: null, em: 0, carregando: false };
+function _irVencidosDash() { try { nav('dash', document.querySelector('.sbi[onclick*="\'dash\'"]')); } catch (_) {} setTimeout(() => { dashAba('financeiro'); document.getElementById('vencDashPanel')?.scrollIntoView({ behavior: 'smooth' }); }, 400); }
+async function vencDashCarregar(forcar) {
+  const el = document.getElementById('vencDashCorpo'); if (!el || _vd.carregando) return;
+  if (!forcar && _vd.dados && Date.now() - _vd.em < 10 * 60000) return vencDashRender();
+  _vd.carregando = true;
+  try { _vd.dados = await finApi('vencidos_painel', {}, { timeoutMs: 45000 }); _vd.em = Date.now(); vencDashRender(); }
+  catch (e) { el.innerHTML = '<div style="color:var(--red);font-size:11px;">Não consegui ler os vencidos: ' + _fnE(e.message) + '</div>'; }
+  finally { _vd.carregando = false; }
+}
+function vencDashRender() {
+  const d = _vd.dados, el = document.getElementById('vencDashCorpo'); if (!d || !el) return;
+  const dt = x => String(x || '').split('-').reverse().join('/');
+  const tab = (titulo, cor, lista, tot, vazio, extra) => `<div style="margin-bottom:12px;"><div style="font-size:11px;font-weight:700;color:${cor};margin-bottom:5px;">${titulo} · ${lista.length} · ${_fnRc(tot)}</div>`
+    + (lista.length ? `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:10.5px;"><thead><tr style="color:var(--t3);text-align:left;"><th style="padding:4px;">Vencimento</th><th style="padding:4px;">Doc.</th><th style="padding:4px;">Cliente / fornecedor</th><th style="padding:4px;text-align:right;">Total</th><th style="padding:4px;text-align:right;">Em aberto</th><th style="padding:4px;">Observação</th></tr></thead><tbody>`
+      + lista.map(x => `<tr style="border-top:1px solid var(--bd);"><td style="padding:4px;font-family:var(--M);white-space:nowrap;">${dt(x.vencimento)}<br><span style="color:var(--red);font-size:9px;">${x.dias} dia(s)</span></td><td style="padding:4px;">${_fnE(x.doc || '—')}</td><td style="padding:4px;">${_fnE(x.contraparte)}</td><td style="padding:4px;text-align:right;font-family:var(--M);">${_fnRc(x.valor_total)}</td><td style="padding:4px;text-align:right;font-family:var(--M);font-weight:600;">${_fnRc(x.valor)}</td><td style="padding:4px;font-size:9.5px;color:var(--t2);">${x.obs ? _fnE(x.obs) : ''}</td></tr>`).join('')
+      + '</tbody></table></div>' : `<div style="font-size:10.5px;color:var(--t3);">${vazio}</div>`) + (extra || '') + '</div>';
+  const ret = d.receber.filter(x => x.retencao_provavel);
+  el.innerHTML = (ret.length ? `<div style="font-size:10.5px;line-height:1.6;padding:8px 10px;margin-bottom:10px;border:1px solid var(--gold);border-radius:7px;background:rgba(245,185,75,.08);">ℹ <b>${ret.length} fatura(s)</b> (${_fnRc(ret.reduce((a, x) => a + x.valor, 0))}) estão "pagas parcialmente" com um resto que bate com <b>imposto retido na fonte</b> pelo cliente (IR 1,5% e/ou PIS/COFINS/CSLL 4,65%). Esse valor não vai entrar no caixa: no QuickBooks, registre a retenção no recebimento da fatura (conta de impostos a recuperar) para ela fechar.</div>` : '')
+    + tab('A receber — faturas vencidas', 'var(--green,#22d3a3)', d.receber, d.total_receber, 'Nenhuma fatura vencida em aberto.')
+    + tab('A pagar — contas vencidas', 'var(--red)', d.pagar, d.total_pagar, 'Nenhuma conta a pagar vencida em aberto.',
+      d.ja_pagas.length ? `<div style="font-size:10px;color:var(--t3);margin-top:5px;">+ ${d.ja_pagas.length} conta(s) a pagar vencida(s) (${_fnRc(d.ja_pagas.reduce((a, x) => a + x.valor, 0))}) já aparecem pagas no extrato — falta ligar o pagamento no QuickBooks: ${d.ja_pagas.map(x => _fnE(x.contraparte) + ' (' + dt(x.vencimento) + ')').join(', ')}.</div>` : '');
+  const m = document.getElementById('vencDashMeta'); if (m) m.textContent = 'atualizado às ' + new Date(_vd.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + (d.erro ? ' · ⚠ ' + d.erro : '');
+}
 function dashAba(a) {
   document.querySelectorAll('#dashAbas .fv2-aba').forEach(b => b.classList.toggle('on', b.dataset.aba === a));
   document.querySelectorAll('#page-dash .dash-aba').forEach(sct => sct.style.display = sct.dataset.aba === a ? '' : 'none');
   try { localStorage.setItem('atx_dash_aba', a); } catch (_) {}
+  if (a === 'financeiro') vencDashCarregar();
   if ((a === 'vendas' || a === 'pendencias') && !_fn.dados && !_fn.carregando) funilCarregar();
   else if (a === 'vendas' || a === 'pendencias') { funilRender(); pendRender(); }
 }
@@ -33836,7 +33864,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.218] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.219] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -33852,7 +33880,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.218';
+window.__ATX_BUILD_ID__ = 'ATX-v3.219';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

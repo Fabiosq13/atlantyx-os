@@ -161,6 +161,7 @@ async function handler(req, res) {
       email_diagnostico:     () => emailDiagnostico(params),
       versao:                () => ({ versao_api: VERSAO_API }),
       fluxo_detalhado:       () => fluxoDetalhado(params),
+      vencidos_painel:       () => vencidosPainel(params), // v3.219
       // v3.110: Orçamento em DRE de 12 meses móveis (orçado × realizado/projetado) + propostas do CRM
       orcamento_dre:         () => orcamentoDre(params),
       crm_etapas:            () => crmEtapas(),
@@ -3441,6 +3442,31 @@ async function fluxoLancamentoIncluir({ tipo, data, valor, descricao, contrapart
   return { criado: true, onde: 'QuickBooks', entidade: 'Fatura a receber (Invoice)', id: 'inv_' + r?.Invoice?.Id, doc: r?.Invoice?.DocNumber || r?.Invoice?.Id, contraparte: cli.nome, contraparte_criada: criado, item: item.Name };
 }
 
+// v3.219: VENCIDOS EM ABERTO — saíram do extrato projetado (não têm data para acontecer) e ficam no Dashboard → Financeiro.
+// Fatura "paga parcialmente" com resto = imposto retido na fonte (IR 1,5% · CSRF 4,65% · os dois 6,15% · com ISS) é marcada:
+// esse resto não entra no caixa — falta registrar a retenção no recebimento no QuickBooks.
+const _RETENCOES = [[0.015, 'IR 1,5%'], [0.0465, 'PIS/COFINS/CSLL 4,65%'], [0.0615, 'IR 1,5% + PIS/COFINS/CSLL 4,65%'], [0.0815, 'IR + CSRF + ISS 2%'], [0.1115, 'IR + CSRF + ISS 5%'], [0.065, 'CSRF + ISS 2%'], [0.0965, 'CSRF + ISS 5%'], [0.035, 'IR + ISS 2%'], [0.02, 'ISS 2%'], [0.05, 'ISS 5%'], [0.11, 'INSS 11%']];
+function _retencaoProvavel(aberto, total) {
+  if (!(aberto > 0) || !(total > aberto)) return null;
+  const r = aberto / total; const hit = _RETENCOES.find(([p]) => Math.abs(r - p) <= 0.0006);
+  return hit ? hit[1] : null;
+}
+async function vencidosPainel() {
+  const hoje = _hojeBR();
+  const fut = await qbFuturosDetalhado({ data_inicio: hoje, data_fim: null });
+  const dias = d => Math.round((new Date(hoje + 'T12:00:00') - new Date(String(d).substring(0, 10) + 'T12:00:00')) / 864e5);
+  const receber = (fut.recebiveis || []).filter(l => l.origem === 'quickbooks_futuro' && String(l.data).substring(0, 10) < hoje).map(l => {
+    const ret = _retencaoProvavel(l.valor, l.valor_total);
+    return { id: l.id, vencimento: String(l.data).substring(0, 10), dias: dias(l.data), doc: l.doc || '', contraparte: l.cliente || String(l.descricao).split(' · ')[0], valor: round(l.valor), valor_total: round(l.valor_total || l.valor),
+      retencao_provavel: ret, obs: ret ? 'Resto = imposto retido (' + ret + ') — não entra no caixa' : (l.valor_total > l.valor + 0.01 ? 'Pago parcialmente' : '') };
+  }).sort((a, b) => b.dias - a.dias);
+  const pagar = (fut.pagaveis || []).filter(l => String(l.data).substring(0, 10) < hoje).map(l => ({ id: l.id, vencimento: String(l.data).substring(0, 10), dias: dias(l.data), doc: l.doc || '', contraparte: l.fornecedor || String(l.descricao).split(' · ')[0],
+    valor: round(l.valor), valor_total: round(l.valor_total || l.valor), obs: dias(l.data) > 60 ? 'Há mais de 60 dias — confira se já foi paga e não baixada' : '' })).sort((a, b) => b.dias - a.dias);
+  const ja_pagas = (fut.pagaveis_ja_pagas || []).map(l => ({ id: l.id, vencimento: String(l.data).substring(0, 10), contraparte: l.fornecedor || String(l.descricao).split(' · ')[0], valor: round(l.valor), pago_em: l.ja_paga?.data }));
+  return { hoje, receber, pagar, ja_pagas, total_receber: round(receber.reduce((a, x) => a + x.valor, 0)), total_pagar: round(pagar.reduce((a, x) => a + x.valor, 0)),
+    retencoes: { qtd: receber.filter(x => x.retencao_provavel).length, valor: round(receber.filter(x => x.retencao_provavel).reduce((a, x) => a + x.valor, 0)) }, erro: fut.erro || null };
+}
+
 async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, incluir_simulados = true, conta_id = null } = {}) {
   const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
   // v1.16.1: filtro de período explícito. Se data_inicio/data_fim vierem, o "hoje" divisório
@@ -3538,18 +3564,18 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
     else _vistosFut.set(k, l);
   });
   if (duplicatasFut.length) console.warn('[FluxoDetalhado] lançamento(s) duplicado(s) removido(s) da projeção:', JSON.stringify(duplicatasFut.map(x => ({ id: x.id, data: x.data, valor: x.valor }))));
-  // v3.218: o projetado é a CONTINUAÇÃO do extrato — começa no último dia do realizado (hoje), nunca em meses passados.
-  // O que venceu e segue em aberto é cobrado/pago HOJE (data = hoje, vencimento original guardado). Vencida há mais de
-  // 60 dias não entra no saldo (mesmo corte da agenda): quase sempre é conta paga e não baixada — vai para conferência.
-  const DIAS_VENC_SALDO = 60;
-  const futTodos = [..._vistosFut.values()]
-    .filter(l => l.data && (l.data >= hoje || l.vencida))
-    .map(l => { const d0 = String(l.data).substring(0, 10); if (d0 >= hoje) return l;
-      const dias = Math.round((new Date(hoje + 'T12:00:00') - new Date(d0 + 'T12:00:00')) / 864e5);
-      return { ...l, data: hoje, vencimento_original: d0, dias_atraso: dias, vencida_antiga: !l.ja_paga && dias > DIAS_VENC_SALDO }; })
-    .sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0) || (b.vencida ? 1 : 0) - (a.vencida ? 1 : 0) || String(a.vencimento_original || '').localeCompare(String(b.vencimento_original || '')));
+  // v3.219: o projetado é a CONTINUAÇÃO do extrato — só o que tem data de hoje em diante. Fatura/conta VENCIDA em aberto
+  // não entra (nem na lista nem no saldo): não tem data para acontecer e não é agendamento do QuickBooks. Ela fica no
+  // Dashboard → Financeiro → "Vencidos em aberto" (action vencidos_painel). Aqui só vai o resumo, para o aviso da tela.
+  const _todosFut = [..._vistosFut.values()];
+  const _venc = _todosFut.filter(l => l.data && String(l.data).substring(0, 10) < hoje);
+  const vencidosFora = { receber: { qtd: _venc.filter(l => l.tipo === 'entrada' && !l.ja_paga).length, valor: round(_venc.filter(l => l.tipo === 'entrada' && !l.ja_paga).reduce((x, l) => x + (l.valor || 0), 0)) },
+    pagar: { qtd: _venc.filter(l => l.tipo === 'saida' && !l.ja_paga).length, valor: round(_venc.filter(l => l.tipo === 'saida' && !l.ja_paga).reduce((x, l) => x + (l.valor || 0), 0)) },
+    ja_pagas_no_extrato: _venc.filter(l => l.ja_paga).length };
+  const futTodos = _todosFut.filter(l => l.data && String(l.data).substring(0, 10) >= hoje)
+    .sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
   let saldoCorrente = extrato.saldo_final || 0;
-  const conta = l => !l.ja_paga && !l.vencida_antiga && (l.vencida || l.no_periodo !== false); // v3.217: já paga no extrato não sai de novo
+  const conta = l => !l.ja_paga && l.no_periodo !== false;
   const futuroComSaldo = futTodos.map(l => {
     if (!conta(l)) return { ...l, saldo_acumulado: null, fora_do_saldo: true };
     if (l.tipo === 'entrada') saldoCorrente += l.valor;
@@ -3641,7 +3667,7 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
     divergencia_relevante: divergencia != null && Math.abs(divergencia) > 1,
     passado: { saldo_inicial: extrato.saldo_inicial, saldo_inicial_data: extrato.saldo_inicial_data, saldo_inicial_detalhe: extrato.saldo_inicial_detalhe, lancamentos: await vincularReceitasATermos(extrato.lancamentos || []), total_entradas: extrato.total_entradas, total_saidas: extrato.total_saidas, qb_erro: extrato.qb_erro },
     saldo_hoje: extrato.saldo_final || 0,
-    futuro: { lancamentos: futuroComSaldo, vencidas_antigas: { qtd: futuroComSaldo.filter(l => l.vencida_antiga).length, valor: round(futuroComSaldo.filter(l => l.vencida_antiga).reduce((a, l) => a + (l.valor || 0), 0)), corte_dias: DIAS_VENC_SALDO }, ja_pagas_no_extrato: { qtd: (fut.pagaveis_ja_pagas || []).length, valor: round((fut.pagaveis_ja_pagas || []).reduce((a, l) => a + (l.valor || 0), 0)) },
+    futuro: { lancamentos: futuroComSaldo, vencidos_fora_do_extrato: vencidosFora, ja_pagas_no_extrato: { qtd: (fut.pagaveis_ja_pagas || []).length, valor: round((fut.pagaveis_ja_pagas || []).reduce((a, l) => a + (l.valor || 0), 0)) },
       total_recebiveis: round(fut.recebiveis.reduce((s, l) => s + l.valor, 0)),
       total_pagaveis: round(fut.pagaveis.reduce((s, l) => s + l.valor, 0)),
       // v1.61 FIX: qtd_qb somava recebíveis + pagáveis num número só, e a tela exibia esse
