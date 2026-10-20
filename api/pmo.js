@@ -214,6 +214,15 @@ async function projetosLocais() {
 }
 
 async function projetosListar() {
+  // v3.215: a fonte oficial dos projetos é o módulo de projetos (Maestro · CRONOGRAMA_DATABASE_URL). Antes as telas S9 só
+  // olhavam um endereço de API externo (quase nunca configurado) e caíam nos projetos do financeiro, com 0% e sem gerente.
+  if (process.env.CRONOGRAMA_DATABASE_URL) {
+    try { const M = await maestroPainel();
+      const ps = (M.projetos || []).filter(p => p.ativo);
+      if (ps.length) return { fonte: 'maestro', aviso: null, projetos: ps.map(p => ({ id: p.nome, nome: p.nome, cliente: p.cliente || null, gerente: p.gerente || null, status: p.status || null,
+        inicio: p.inicio || null, fim: p.conclusao || null, pct: p.pct ?? null, pct_planejado: p.planejado ?? null, farol: p.farol || null, horas_previstas: p.horas_contratadas ?? null, horas_realizadas: p.horas ?? null, _maestro: p })) };
+    } catch (e) { console.warn('[pmo] Maestro indisponível:', e.message); }
+  }
   const ext = await projetosExternos();
   if (ext.projetos?.length) return { ...ext, aviso: null };
   const loc = await projetosLocais();
@@ -451,15 +460,17 @@ async function agendaGP({ dias = 30 } = {}) {
 
   // 1. Marcos de projeto (financeiro) — com data prevista no horizonte OU atrasados
   try {
-    const marcos = await sql`SELECT m.id, m.descricao, m.data_prevista, m.valor, m.status, m.projeto_id,
-        p.nome AS projeto FROM projetos_marcos m LEFT JOIN projetos p ON p.id = m.projeto_id
-      WHERE m.status NOT IN ('concluido','faturado','pago','cancelado')
-        AND m.data_prevista IS NOT NULL AND m.data_prevista <= ${fim}
-      ORDER BY m.data_prevista`;
+    // v3.215: as colunas certas são data_entrega/status_kanban e a tabela projetos_financeiros (antes a consulta falhava
+    // calada e nenhum marco aparecia na agenda)
+    const marcos = await sql`SELECT m.id, m.descricao, m.data_entrega, m.valor, m.status_kanban, m.projeto_id,
+        p.nome AS projeto FROM projetos_marcos m LEFT JOIN projetos_financeiros p ON p.id = m.projeto_id
+      WHERE COALESCE(m.status_kanban,'') NOT IN ('concluido','cancelado') AND m.data_pagamento IS NULL
+        AND m.data_entrega IS NOT NULL AND m.data_entrega <= ${fim}
+      ORDER BY m.data_entrega`;
     marcos.forEach(m => {
-      const d = String(m.data_prevista).substring(0, 10);
+      const d = (m.data_entrega instanceof Date ? m.data_entrega.toISOString() : String(m.data_entrega)).substring(0, 10);
       itens.push({ tipo: 'marco', data: d, titulo: m.descricao, projeto: m.projeto, valor: num(m.valor),
-        status: m.status, atrasado: d < hoje, id: m.id, acao: 's3marcoskanban' });
+        status: m.status_kanban, atrasado: d < hoje, id: m.id, acao: 's3marcoskanban' });
     });
   } catch (e) { console.warn('[agenda] marcos:', e.message); }
 
@@ -798,7 +809,7 @@ async function maestroPainel({ forcar } = {}) {
       return { fonte: 'cronograma', fisico: rw ? Math.round(rp / rw) : 0, planejado: pw ? Math.round(pp / pw) : null, tarefas_atrasadas: folhas.filter(t => t.fim && String(t.fim).slice(0, 10) < hoje && t.status !== 'Concluída' && t.status !== 'Cancelada' && parseInt(t.pct || 0) < 100).length }; }
     const ms = marcos.filter(m => m.proj === nome);
     if (ms.length) { const cf = ms.filter(m => m.fim); return { fonte: 'marcos', fisico: Math.round(ms.reduce((s, m) => s + (m.status === 'Concluído' ? 100 : parseInt(m.pct || 0)), 0) / ms.length),
-      planejado: cf.length ? Math.round(cf.filter(m => m.fim <= hoje).length / cf.length * 100) : null, tarefas_atrasadas: 0 }; }
+      planejado: cf.length ? Math.round(cf.filter(m => String(m.fim).slice(0, 10) <= hoje).length / cf.length * 100) : null, tarefas_atrasadas: 0 }; }
     return { fonte: null, fisico: null, planejado: null, tarefas_atrasadas: 0 };
   };
   const nomes = [...new Set([...cad.map(p => p.nome), ...Object.keys(wbs).filter(k => (wbs[k] || []).length), ...marcos.map(m => m.proj), ...fin.map(f => f.proj)].filter(Boolean))].sort();
@@ -907,7 +918,11 @@ async function cronogramaBuscarBanco({ projeto } = {}) {
     const bruto = r[0]?.v;
     if (!bruto) return { tarefas: [], erro: `Chave "${cfg.chave}" não encontrada em ${cfg.tabela}` };
     let j; try { j = JSON.parse(bruto); } catch (e) { return { tarefas: [], erro: 'O valor da chave não é JSON válido' }; }
-    lista = Array.isArray(j) ? j : (j.tarefas || j.cronograma || j.atividades || j.items || j.data || []);
+    // v3.215: no Maestro o cronograma (atlx_wbs_tasks) é um objeto { "<nome do projeto>": [tarefas] } — marca cada
+    // tarefa com o projeto (antes pegava só o primeiro projeto do objeto e mostrava o cronograma errado)
+    if (j && !Array.isArray(j) && typeof j === 'object' && Object.values(j).some(v => Array.isArray(v)) && !j.tarefas && !j.cronograma && !j.atividades && !j.items && !j.data)
+      lista = Object.entries(j).flatMap(([proj, ts]) => Array.isArray(ts) ? ts.filter((t, i) => !(ts[i + 1] && (ts[i + 1].level || 0) > (t.level || 0))).map(t => ({ projeto: proj, ...t })) : []);
+    else lista = Array.isArray(j) ? j : (j.tarefas || j.cronograma || j.atividades || j.items || j.data || []);
     // pode estar aninhado: { projetos: [ { tarefas: [...] } ] }
     if (!Array.isArray(lista) || !lista.length) {
       const cand = Object.values(j || {}).find(v => Array.isArray(v) && v.length);
@@ -1193,27 +1208,35 @@ async function painelMestre({ semana } = {}) {
   } catch (_) {}
 
   // Une o que vem do sistema externo com o que só existe em report
-  const nomes = new Set([...projetos.map(p => p.nome), ...ultimos.map(u => u.projeto_nome), ...cfg.map(c => c.projeto_nome)]);
+  // v3.215: farol, avanço, planejado, gerente e último report vêm do Maestro (mesma regra do painel de lá);
+  // um status report local mais recente continua valendo por cima (com riscos, bloqueios e ações)
+  const mae = {}; try { if (process.env.CRONOGRAMA_DATABASE_URL) (await maestroPainel()).projetos.forEach(p => { mae[norm(p.nome)] = p; }); } catch (_) {}
+  const usarMae = Object.keys(mae).length > 0;
+  const nomes = new Set([...projetos.map(p => p.nome), ...ultimos.map(u => u.projeto_nome), ...(usarMae ? [] : cfg.map(c => c.projeto_nome))].filter(n => !usarMae || !mae[norm(n)] || mae[norm(n)].ativo));
   const linhas = [...nomes].map(nome => {
     const p = projetos.find(x => x.nome === nome) || {};
     const r = porNome[nome] || null;
     const c = cfgPorNome[nome] || {};
     const tipo = r?.tipo_projeto || c.tipo_projeto || 'entrega';
     const diasSemReport = r?.data_report ? Math.floor((new Date(hoje) - new Date(r.data_report)) / 86400000) : null;
-    const f = fin[norm(nome)] || {};
-    const pctReal = r?.pct_concluido ?? (p.pct || (f.pct_real ?? null));
-    const pctPlan = r?.pct_planejado ?? f.pct_plan ?? null;
+    const f = fin[norm(nome)] || {}; const M = mae[norm(nome)] || null;
+    const ultRep = [r?.data_report, M?.ultimo_report].filter(Boolean).map(x => String(x).substring(0, 10)).sort().pop() || null;
+    const localMaisNovo = r?.data_report && (!M?.ultimo_report || String(r.data_report).substring(0, 10) >= String(M.ultimo_report).substring(0, 10));
+    const pctReal = (localMaisNovo ? num(r?.pct_concluido) : null) ?? M?.pct ?? r?.pct_concluido ?? (p.pct || (f.pct_real ?? null));
+    const pctPlan = (localMaisNovo ? num(r?.pct_planejado) : null) ?? M?.planejado ?? (r?.pct_planejado != null ? num(r.pct_planejado) : null) ?? f.pct_plan ?? null;
     const desvio = (pctReal != null && pctPlan != null) ? Math.round((pctReal - pctPlan) * 10) / 10 : null;
     const proxRep = r?.marcos_proximos || [];
     return {
       projeto: nome,
       tipo,
-      gerente: r?.gerente || p.gerente || c.gerente || f.gerente || null,
-      farol: r?.farol || null,
+      gerente: r?.gerente || M?.gerente || p.gerente || c.gerente || f.gerente || null,
+      farol: (localMaisNovo ? r?.farol : null) || M?.farol || r?.farol || null,
+      farol_origem: localMaisNovo && r?.farol ? 'status report (Atlantyx OS)' : M?.farol ? (M.origem === 'status report' ? 'status report (Maestro)' : 'calculado pelo Maestro') : null,
+      motivos: M?.motivos || [], conclusao: M?.conclusao || null, dias_atraso: M?.dias_atraso || 0, cliente: M?.cliente || p.cliente || null,
       pct_concluido: pctReal,
       pct_planejado: pctPlan,
       desvio_pct: desvio,
-      avanco_fonte: r?.pct_concluido != null ? 'status_report' : (f.pct_real != null ? 'marcos' : null),
+      avanco_fonte: localMaisNovo && r?.pct_concluido != null ? 'status_report' : M?.pct != null ? 'maestro_' + (M.avanco_fonte || 'calculo') : r?.pct_concluido != null ? 'status_report' : (f.pct_real != null ? 'marcos' : null),
       marcos_proximos: proxRep.length ? proxRep : (f.proximo ? [{ descricao: f.proximo.descricao + ' (' + f.proximo.data.split('-').reverse().join('/') + ')', data: f.proximo.data }] : []),
       tem_report: !!r,
       riscos: (r?.riscos || []).length,
@@ -1224,11 +1247,11 @@ async function painelMestre({ semana } = {}) {
       sla_cumprido_pct: r?.sla_cumprido_pct ?? null,
       sla_violacoes: r?.sla_violacoes ?? null,
       // controle de cadência
-      ultimo_report: r?.data_report || null,
-      dias_sem_report: diasSemReport,
-      atualizado_na_semana: r?.data_report ? r.data_report >= semanaAtual : false,
+      ultimo_report: ultRep,
+      dias_sem_report: ultRep ? Math.floor((new Date(hoje) - new Date(ultRep)) / 86400000) : diasSemReport,
+      atualizado_na_semana: ultRep ? ultRep >= semanaAtual : false,
       report_id: r?.id || null,
-      resumo: r?.resumo || null,
+      resumo: r?.resumo || (M?.motivos?.length ? M.motivos.join(' · ') : null),
       horas_previstas: r?.horas_previstas ?? p.horas_previstas ?? null,
       horas_realizadas: r?.horas_realizadas ?? p.horas_realizadas ?? null,
     };
@@ -1240,7 +1263,7 @@ async function painelMestre({ semana } = {}) {
 
   const pendentes = linhas.filter(l => !l.atualizado_na_semana);
   return {
-    painel: linhas, fonte, aviso, semana_ref: semanaAtual,
+    painel: linhas, fonte: usarMae ? 'maestro' : fonte, aviso, semana_ref: semanaAtual,
     resumo: {
       total: linhas.length,
       verde: linhas.filter(l => l.farol === 'verde').length,

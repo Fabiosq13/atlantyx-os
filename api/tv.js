@@ -60,7 +60,7 @@ function qualidade(T, eT, H, eH, PM, ePM, MA) {
   } else { const r = PM?.resumo || null;
     out.projetos = { fonte: PM?.fonte === 'externo' ? 'Sistema externo de projetos' : 'Base local do Atlantyx OS (módulo de projetos não respondeu)', erro: ePM, total: r ? r.total : null, em_dia: r ? r.verde : null, atencao: r ? r.amarelo : null, atrasados: r ? r.vermelho : null, sem_report: r ? (r.sem_report || 0) : null,
       // só contagens — a página da TV é pública (link) e não mostra nome de projeto ou cliente
-      com_bloqueio: r ? (r.com_bloqueio || 0) : null, desatualizados: r ? (r.pendentes_de_atualizacao || 0) : null,
+      com_bloqueio: r ? (r.com_bloqueio || 0) : null, desatualizados: r ? (Array.isArray(r.pendentes_de_atualizacao) ? r.pendentes_de_atualizacao.length : (r.pendentes_de_atualizacao || 0)) : null,
       farol: !r ? null : r.vermelho ? 'vermelho' : (r.amarelo || r.sem_report) ? 'amarelo' : 'verde' }; }
   return out;
 }

@@ -58,91 +58,78 @@ async function getAnaliseClaude(req, res) {
   return res.status(200).json({ success: true, analise, pipeline, kpis });
 }
 
+// v3.215: etapas reais do HubSpot (rótulo, ordem, fechada/ganha) — antes agrupava pelo id da etapa e a tela procurava
+// rótulos fixos em português ("Mapeado", "Proposta"…) que nunca batiam: tudo aparecia zerado.
+async function _hsEtapas(token) {
+  const r = await _fetchHS('https://api.hubapi.com/crm/v3/pipelines/deals', { headers: { Authorization: `Bearer ${token}` } });
+  if (!r.ok) return [];
+  const d = await r.json(); const out = [];
+  for (const p of d.results || []) (p.stages || []).sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0)).forEach((e, i) => out.push({ id: String(e.id), nome: e.label, pipeline: String(p.id), ordem: i,
+    fechada: e.metadata?.isClosed === 'true' || e.metadata?.isClosed === true, ganha: (e.metadata?.isClosed === 'true' || e.metadata?.isClosed === true) && Number(e.metadata?.probability) >= 1, prob: e.metadata?.probability != null ? Number(e.metadata.probability) : null }));
+  return out;
+}
+async function _hsBuscarTodos(token, objeto, corpo, maxPag = 20) {
+  const out = []; let after, total = null;
+  for (let i = 0; i < maxPag; i++) {
+    const r = await _fetchHS(`https://api.hubapi.com/crm/v3/objects/${objeto}/search`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...corpo, limit: 100, ...(after ? { after } : {}) }) });
+    if (!r.ok) { if (!i) throw new Error('HubSpot ' + r.status); break; }
+    const d = await r.json(); if (total == null) total = d.total ?? null; out.push(...(d.results || [])); after = d.paging?.next?.after; if (!after) break;
+  }
+  return { itens: out, total: total ?? out.length };
+}
 async function fetchPipelineHubSpot() {
   const token = process.env.HUBSPOT_TOKEN;
-  if (!token) return { etapas: [], total_valor: 0, total_deals: 0 };
-
-  const r = await _fetchHS('https://api.hubapi.com/crm/v3/objects/deals/search', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify({
-      filterGroups: [{ filters: [{ propertyName: 'pipeline', operator: 'EQ', value: process.env.HUBSPOT_PIPELINE_ID || '' }] }],
-      properties: ['dealname', 'dealstage', 'amount', 'hs_priority', 'createdate', 'closedate'],
-      limit: 100,
-    })
-  });
-
-  if (!r.ok) return { etapas: [], total_valor: 0, total_deals: 0 };
-  const d = await r.json();
-  const deals = d.results || [];
-
-  // Agrupar por etapa
-  const etapas = {};
-  let total_valor = 0;
-
+  if (!token) return { etapas: {}, lista_etapas: [], total_valor: 0, total_deals: 0, erro: 'HUBSPOT_TOKEN não configurado' };
+  const todas = await _hsEtapas(token).catch(() => []);
+  const pid = process.env.HUBSPOT_PIPELINE_ID || (todas[0]?.pipeline || null);
+  const etapasPip = todas.filter(e => !pid || e.pipeline === pid);
+  // só negócios ABERTOS (antes somava ganhos e perdidos como se fossem pipeline)
+  const abertas = etapasPip.filter(e => !e.fechada).map(e => e.id);
+  const filtros = [...(pid ? [{ propertyName: 'pipeline', operator: 'EQ', value: pid }] : []), ...(abertas.length ? [{ propertyName: 'dealstage', operator: 'IN', values: abertas }] : [{ propertyName: 'hs_is_closed', operator: 'EQ', value: 'false' }])];
+  const { itens: deals } = await _hsBuscarTodos(token, 'deals', { filterGroups: [{ filters: filtros }], properties: ['dealname', 'dealstage', 'amount', 'hs_priority', 'createdate', 'closedate'] });
+  const nomeEt = Object.fromEntries(etapasPip.map(e => [e.id, e]));
+  const etapas = {}; let total_valor = 0;
   for (const deal of deals) {
-    const etapa = deal.properties.dealstage;
-    if (!etapas[etapa]) etapas[etapa] = { count: 0, valor: 0, deals: [] };
-    etapas[etapa].count++;
+    const e = nomeEt[deal.properties.dealstage]; const chave = e ? e.nome : deal.properties.dealstage;
+    if (!etapas[chave]) etapas[chave] = { id: deal.properties.dealstage, ordem: e ? e.ordem : 99, count: 0, valor: 0, deals: [] };
     const valor = parseFloat(deal.properties.amount || 0);
-    etapas[etapa].valor += valor;
-    total_valor += valor;
-    etapas[etapa].deals.push({
-      id: deal.id,
-      nome: deal.properties.dealname,
-      valor,
-      prioridade: deal.properties.hs_priority,
-    });
+    etapas[chave].count++; etapas[chave].valor += valor; total_valor += valor;
+    etapas[chave].deals.push({ id: deal.id, nome: deal.properties.dealname, valor, prioridade: deal.properties.hs_priority, fechamento: deal.properties.closedate || null });
   }
-
-  return { etapas, total_valor, total_deals: deals.length };
+  // todas as etapas abertas aparecem, mesmo vazias, na ordem do HubSpot
+  for (const e of etapasPip.filter(x => !x.fechada)) if (!etapas[e.nome]) etapas[e.nome] = { id: e.id, ordem: e.ordem, count: 0, valor: 0, deals: [] };
+  const lista_etapas = Object.entries(etapas).map(([nome, v]) => ({ nome, ...v, deals: undefined })).sort((a, b) => a.ordem - b.ordem);
+  return { etapas, lista_etapas, total_valor, total_deals: deals.length, pipeline_id: pid };
 }
 
 async function fetchKPIsHubSpot() {
   const token = process.env.HUBSPOT_TOKEN;
   if (!token) return {};
-
-  // Buscar contatos criados nos últimos 30 dias
   const trintaDiasAtras = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-
-  const [contatosRes, dealsRes] = await Promise.all([
-    _fetchHS('https://api.hubapi.com/crm/v3/objects/contacts/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({
-        filterGroups: [{ filters: [{ propertyName: 'createdate', operator: 'GTE', value: trintaDiasAtras }] }],
-        properties: ['hs_lead_status', 'icp_score', 'createdate'],
-        limit: 200,
-      })
-    }),
-    _fetchHS('https://api.hubapi.com/crm/v3/objects/deals/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({
-        filterGroups: [{ filters: [{ propertyName: 'createdate', operator: 'GTE', value: trintaDiasAtras }] }],
-        properties: ['dealstage', 'amount', 'hs_priority'],
-        limit: 200,
-      })
-    }),
+  const [ct, dl, et] = await Promise.all([
+    _hsBuscarTodos(token, 'contacts', { filterGroups: [{ filters: [{ propertyName: 'createdate', operator: 'GTE', value: trintaDiasAtras }] }], properties: ['hs_lead_status', 'icp_score', 'createdate'] }, 10).catch(() => ({ itens: [], total: 0 })),
+    _hsBuscarTodos(token, 'deals', { filterGroups: [{ filters: [{ propertyName: 'createdate', operator: 'GTE', value: trintaDiasAtras }] }], properties: ['dealstage', 'amount', 'hs_priority'] }, 10).catch(() => ({ itens: [], total: 0 })),
+    _hsEtapas(token).catch(() => []),
   ]);
-
-  const contatos = contatosRes.ok ? (await contatosRes.json()).results || [] : [];
-  const deals = dealsRes.ok ? (await dealsRes.json()).results || [] : [];
-
+  const contatos = ct.itens, deals = dl.itens;
   const scoreA = contatos.filter(c => c.properties.icp_score === 'A').length;
   const scoreB = contatos.filter(c => c.properties.icp_score === 'B').length;
-  const reunioes = deals.filter(d => d.properties.dealstage === process.env.HUBSPOT_STAGE_REUNIAO).length;
-  const propostas = deals.filter(d => d.properties.dealstage === process.env.HUBSPOT_STAGE_PROPOSTA).length;
-
+  // reunião/proposta: pela variável (se existir) ou pelo NOME da etapa no HubSpot (antes ficava 0 sem a variável)
+  const idsPor = (env, rx) => env ? [env] : et.filter(e => rx.test(e.nome || '')).map(e => e.id);
+  const idsReu = idsPor(process.env.HUBSPOT_STAGE_REUNIAO, /reuni|meeting|agend|apresenta|appointment/i), idsProp = idsPor(process.env.HUBSPOT_STAGE_PROPOSTA, /proposta|proposal|or[cç]amento|negocia/i);
+  const reunioes = deals.filter(d => idsReu.includes(d.properties.dealstage)).length;
+  const propostas = deals.filter(d => idsProp.includes(d.properties.dealstage)).length;
+  let pipe = null; try { pipe = await fetchPipelineHubSpot(); } catch (_) {}
   return {
-    leads_30_dias: contatos.length,
-    score_a: scoreA,
-    score_b: scoreB,
+    leads_30_dias: ct.total ?? contatos.length,
+    score_a: scoreA, score_b: scoreB,
     taxa_qualificacao: contatos.length > 0 ? Math.round((scoreA / contatos.length) * 100) : 0,
-    deals_30_dias: deals.length,
-    reunioes_agendadas: reunioes,
-    propostas_enviadas: propostas,
-    pipeline_valor: deals.reduce((s, d) => s + parseFloat(d.properties.amount || 0), 0),
+    deals_30_dias: dl.total ?? deals.length,
+    reunioes_agendadas: reunioes, propostas_enviadas: propostas,
+    // pipeline = valor dos negócios ABERTOS (antes: só os criados nos últimos 30 dias)
+    pipeline_valor: pipe ? pipe.total_valor : deals.reduce((s, d) => s + parseFloat(d.properties.amount || 0), 0),
+    pipeline_negocios: pipe ? pipe.total_deals : null,
+    valor_criado_30_dias: deals.reduce((s, d) => s + parseFloat(d.properties.amount || 0), 0),
   };
 }
 
@@ -167,7 +154,7 @@ Retorne JSON:
   "alertas": ["alerta urgente 1", "alerta 2"],
   "recomendacao_principal": "uma ação principal para esta semana",
   "tendencia": "POSITIVA | NEUTRA | NEGATIVA",
-  "meta_progresso": "como está o progresso em relação à meta de R$5M"
+  "meta_progresso": "como está o pipeline aberto em relação ao ritmo de vendas necessário"
 }`
       }]
     })
@@ -194,7 +181,7 @@ async function _cacheGravar(nome, v) { try { const sql = await _sql(); if (!sql)
 function _memo(nome, fn, ms = 300000) {
   return async (...a) => {
     const c = _memoHS.get(nome); if (c && Date.now() - c.em < ms) return c.p;
-    const buscar = () => { const p = fn(...a).then(v => { if (v && (v.total_deals || v.leads_30_dias != null || Object.keys(v).length)) _cacheGravar(nome, v); return v; }); _memoHS.set(nome, { em: Date.now(), p }); p.catch(() => _memoHS.delete(nome)); return p; };
+    const buscar = () => { const p = fn(...a).then(v => { if (v && (v.total_deals || v.leads_30_dias)) _cacheGravar(nome, v); return v; }); _memoHS.set(nome, { em: Date.now(), p }); p.catch(() => _memoHS.delete(nome)); return p; };
     const db = await _cacheLer(nome);
     if (db && Date.now() - db.em < ms) { const p = Promise.resolve(db.v); _memoHS.set(nome, { em: db.em, p }); return p; }
     if (db && Date.now() - db.em < 3600000) { buscar().catch(() => {}); return db.v; } // devolve o recente e atualiza em segundo plano
