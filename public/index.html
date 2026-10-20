@@ -30507,8 +30507,8 @@ function vencDashRender() {
     + (lista.length ? `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:10.5px;"><thead><tr style="color:var(--t3);text-align:left;"><th style="padding:4px;">Vencimento</th><th style="padding:4px;">Doc.</th><th style="padding:4px;">Cliente / fornecedor</th><th style="padding:4px;text-align:right;">Total</th><th style="padding:4px;text-align:right;">Em aberto</th><th style="padding:4px;">Observação</th></tr></thead><tbody>`
       + lista.map(x => `<tr style="border-top:1px solid var(--bd);"><td style="padding:4px;font-family:var(--M);white-space:nowrap;">${dt(x.vencimento)}<br><span style="color:var(--red);font-size:9px;">${x.dias} dia(s)</span></td><td style="padding:4px;">${_fnE(x.doc || '—')}</td><td style="padding:4px;">${_fnE(x.contraparte)}</td><td style="padding:4px;text-align:right;font-family:var(--M);">${_fnRc(x.valor_total)}</td><td style="padding:4px;text-align:right;font-family:var(--M);font-weight:600;">${_fnRc(x.valor)}</td><td style="padding:4px;font-size:9.5px;color:var(--t2);">${x.obs ? _fnE(x.obs) : ''}</td></tr>`).join('')
       + '</tbody></table></div>' : `<div style="font-size:10.5px;color:var(--t3);">${vazio}</div>`) + (extra || '') + '</div>';
-  const ret = d.receber.filter(x => x.retencao_provavel);
-  el.innerHTML = (ret.length ? `<div style="font-size:10.5px;line-height:1.6;padding:8px 10px;margin-bottom:10px;border:1px solid var(--gold);border-radius:7px;background:rgba(245,185,75,.08);">ℹ <b>${ret.length} fatura(s)</b> (${_fnRc(ret.reduce((a, x) => a + x.valor, 0))}) estão "pagas parcialmente" com um resto que bate com <b>imposto retido na fonte</b> pelo cliente (IR 1,5% e/ou PIS/COFINS/CSLL 4,65%). Esse valor não vai entrar no caixa: no QuickBooks, registre a retenção no recebimento da fatura (conta de impostos a recuperar) para ela fechar.</div>` : '')
+  const ret = d.retidas || [];
+  el.innerHTML = (ret.length ? `<div style="font-size:10.5px;line-height:1.6;padding:8px 10px;margin-bottom:10px;border:1px solid var(--gold);border-radius:7px;background:rgba(245,185,75,.08);">✓ <b>${ret.length} fatura(s) consideradas PAGAS</b>: o que resta em aberto no QuickBooks (${_fnRc(ret.reduce((a, x) => a + x.valor, 0))}) é só imposto retido na fonte pelo cliente, que não entra no caixa. Não aparecem como vencidas nem no fluxo. Para fechar no QuickBooks, registre a retenção no recebimento (conta de impostos a recuperar): ${ret.map(x => 'Fat. ' + _fnE(x.doc) + ' · ' + _fnE(x.contraparte) + ' · ' + _fnRc(x.valor) + ' (' + _fnE(x.retencao) + ')').join('; ')}.</div>` : '')
     + tab('A receber — faturas vencidas', 'var(--green,#22d3a3)', d.receber, d.total_receber, 'Nenhuma fatura vencida em aberto.')
     + tab('A pagar — contas vencidas', 'var(--red)', d.pagar, d.total_pagar, 'Nenhuma conta a pagar vencida em aberto.',
       d.ja_pagas.length ? `<div style="font-size:10px;color:var(--t3);margin-top:5px;">+ ${d.ja_pagas.length} conta(s) a pagar vencida(s) (${_fnRc(d.ja_pagas.reduce((a, x) => a + x.valor, 0))}) já aparecem pagas no extrato — falta ligar o pagamento no QuickBooks: ${d.ja_pagas.map(x => _fnE(x.contraparte) + ' (' + dt(x.vencimento) + ')').join(', ')}.</div>` : '');
@@ -33864,7 +33864,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.219] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.220] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -33880,7 +33880,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.219';
+window.__ATX_BUILD_ID__ = 'ATX-v3.220';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

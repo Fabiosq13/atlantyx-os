@@ -1635,8 +1635,23 @@ async function _qbFetchReal(endpoint, token, method = 'GET', body = null) {
 // v1.49: o QuickBooks limita requisições (429 ThrottleExceeded). Sem tratamento, a consulta
 // falhava em silêncio e o extrato saía incompleto — com saldo errado.
 async function qbEsperar(ms) { return new Promise(r => setTimeout(r, ms)); }
+// v3.220: fatura em aberto cujo saldo é SÓ o imposto retido na fonte pelo cliente (IR/CSRF/ISS) conta como PAGA em todo o
+// sistema — o resto nunca entra no caixa (falta só registrar a retenção no recebimento no QuickBooks). Vale para toda
+// consulta de faturas em aberto (Balance > '0'): fluxo, a receber, vencidos, cobrança/WhatsApp, metas, DRE. As que
+// saíram ficam em _retencaoUltimas para o painel de vencidos mostrar "fechar no QuickBooks".
+let _retencaoUltimas = { t: 0, lista: [] };
+function _semRetencao(sqlQuery, r) {
+  if (!/from\s+Invoice\b/i.test(sqlQuery) || !/Balance\s*>\s*'0'/i.test(sqlQuery)) return r;
+  const lista = r?.QueryResponse?.Invoice; if (!Array.isArray(lista) || !lista.length) return r;
+  const fora = [], ficam = [];
+  lista.forEach(i => { const ret = _retencaoProvavel(parseFloat(i.Balance || 0), parseFloat(i.TotalAmt || 0)); (ret ? fora : ficam).push(ret ? { i, ret } : i); });
+  if (!fora.length) return r;
+  _retencaoUltimas = { t: Date.now(), lista: fora.map(({ i, ret }) => ({ id: 'inv_' + i.Id, doc: i.DocNumber || '', contraparte: i.CustomerRef?.name || '', vencimento: i.DueDate || i.TxnDate,
+    valor: round(parseFloat(i.Balance || 0)), valor_total: round(parseFloat(i.TotalAmt || 0)), retencao: ret })) };
+  return { ...r, QueryResponse: { ...r.QueryResponse, Invoice: ficam } };
+}
 async function qbQuery(sqlQuery, token, _tentativa = 0) {
-  try { return await _qbQueryInterno(sqlQuery, token); }
+  try { return _semRetencao(sqlQuery, await _qbQueryInterno(sqlQuery, token)); }
   catch (e) {
     const ehThrottle = /throttle|429/i.test(e.message || '');
     if (ehThrottle && _tentativa < 1) { // v3.119: as repetições principais já acontecem na fila do qbFetch
@@ -3463,7 +3478,8 @@ async function vencidosPainel() {
   const pagar = (fut.pagaveis || []).filter(l => String(l.data).substring(0, 10) < hoje).map(l => ({ id: l.id, vencimento: String(l.data).substring(0, 10), dias: dias(l.data), doc: l.doc || '', contraparte: l.fornecedor || String(l.descricao).split(' · ')[0],
     valor: round(l.valor), valor_total: round(l.valor_total || l.valor), obs: dias(l.data) > 60 ? 'Há mais de 60 dias — confira se já foi paga e não baixada' : '' })).sort((a, b) => b.dias - a.dias);
   const ja_pagas = (fut.pagaveis_ja_pagas || []).map(l => ({ id: l.id, vencimento: String(l.data).substring(0, 10), contraparte: l.fornecedor || String(l.descricao).split(' · ')[0], valor: round(l.valor), pago_em: l.ja_paga?.data }));
-  return { hoje, receber, pagar, ja_pagas, total_receber: round(receber.reduce((a, x) => a + x.valor, 0)), total_pagar: round(pagar.reduce((a, x) => a + x.valor, 0)),
+  const retidas = Date.now() - _retencaoUltimas.t < 15 * 60000 ? _retencaoUltimas.lista : [];
+  return { hoje, receber, pagar, ja_pagas, retidas, total_receber: round(receber.reduce((a, x) => a + x.valor, 0)), total_pagar: round(pagar.reduce((a, x) => a + x.valor, 0)),
     retencoes: { qtd: receber.filter(x => x.retencao_provavel).length, valor: round(receber.filter(x => x.retencao_provavel).reduce((a, x) => a + x.valor, 0)) }, erro: fut.erro || null };
 }
 
