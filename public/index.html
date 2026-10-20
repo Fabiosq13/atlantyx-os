@@ -4592,7 +4592,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
             <div><label class="fl" for="patDiario">R$ por dia</label><input class="fi" id="patDiario" inputmode="decimal" value="30" oninput="patPrev()" placeholder="ex.: 30" title="Orçamento diário do anúncio, em reais"/></div>
             <div><label class="fl" for="patIni">Início</label><input type="date" class="fi" id="patIni" oninput="patPrev()" title="Primeiro dia em que o anúncio roda"/></div>
             <div><label class="fl" for="patFim">Fim</label><input type="date" class="fi" id="patFim" oninput="patPrev()" title="Último dia em que o anúncio roda"/></div>
-            <div><label class="fl" for="patIdMin">Idade (mín.–máx.)</label><div style="display:flex;gap:4px;"><input class="fi" id="patIdMin" value="30" style="padding:6px;min-width:0;" oninput="patPrev()" placeholder="mín." title="Idade mínima do público" aria-label="Idade mínima do público"/><input class="fi" id="patIdMax" value="60" style="padding:6px;min-width:0;" oninput="patPrev()" placeholder="máx." title="Idade máxima do público" aria-label="Idade máxima do público"/></div></div>
+            <div><label class="fl" for="patIdMin">Idade (mín.–máx.)</label><div style="display:flex;gap:4px;"><input class="fi" id="patIdMin" value="35" style="padding:6px;min-width:0;" oninput="patPrev()" placeholder="mín." title="Idade mínima do público" aria-label="Idade mínima do público"/><input class="fi" id="patIdMax" value="60" style="padding:6px;min-width:0;" oninput="patPrev()" placeholder="máx." title="Idade máxima do público" aria-label="Idade máxima do público"/></div></div>
           </div>
           <div style="margin-top:8px;"><label class="fl" for="patPublico">Público</label>
             <select class="fi" id="patPublico" onchange="patPrev()" title="B2B = capitais de negócio + interesses de decisores e tecnologia (evita pessoa física e clique de robô)"><option value="b2b">B2B — decisores de empresas (recomendado)</option><option value="amplo">Amplo — Brasil inteiro, sem interesse</option></select></div>
@@ -4602,6 +4602,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
           <div id="patResumo" style="margin-top:8px;font-size:10.5px;color:var(--t2);line-height:1.6;"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
             <button class="btn" id="patBtnDiag" onclick="patDiagnostico()" title="Confere no Meta (sem criar nada) se o token tem as permissões e enxerga conta, página e Instagram">🔎 Verificar conexão no Meta</button>
+            <button class="btn" id="patBtnPublico" onclick="patPublicoCorrigir()" title="Aplica o público de decisores (C-level / donos de média e grande empresa) nas campanhas que já existem no Meta">🎯 Corrigir público das campanhas atuais</button>
             <button class="btn btn-gn" id="patBtnCriar" onclick="patCriar()">📣 Criar campanha (pausada)</button>
             <button class="btn" onclick="patCriar(true)" title="Monta o kit (texto, título, imagem, link, orçamento e público) para criar no Metricool → Ads">🧰 Kit para criar no Metricool Ads</button>
           </div>
@@ -24920,7 +24921,7 @@ function patPrev() {
     + '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#f2f4f6;border-bottom:1px solid #e3e6ea;"><div style="font-size:12px;min-width:0;"><b style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _patE(v('patTitulo') || 'Título do anúncio') + '</b><span style="color:#666;font-size:11px;">' + _patE(v('patDesc') || location.host) + '</span></div><span style="background:#0095f6;color:#fff;font-weight:700;font-size:12px;padding:7px 12px;border-radius:8px;white-space:nowrap;">Saiba mais</span></div>'
     + '<div style="padding:9px 12px;font-size:12px;line-height:1.45;"><b>atlantyx</b> ' + _patE(v('patTexto') || 'Texto principal do anúncio…').replace(/\n/g, '<br>') + '</div>';
   const ini = v('patIni'), fim = v('patFim'), dia = parseFloat(v('patDiario').replace(',', '.')) || 0; const dias = ini && fim && fim >= ini ? Math.round((new Date(fim) - new Date(ini)) / 864e5) + 1 : 0;
-  const r = document.getElementById('patResumo'); if (r) r.innerHTML = dias ? 'Investimento máximo: <b>' + fmtBRLcompleto(dia * dias) + '</b> (' + fmtBRLcompleto(dia) + '/dia × ' + dias + ' dias) · Instagram (feed, stories e reels) · ' + (v('patPublico') === 'amplo' ? 'Brasil inteiro' : '<b>B2B</b>: capitais de negócio + interesses de gestão, BI/dados, ERP e C-level') + ', ' + (v('patIdMin') || 30) + '–' + (v('patIdMax') || 60) + ' anos · botão <b>Saiba mais</b> → página de cadastro (com rastreio da campanha nos leads)' : '<span style="color:var(--gold);">Informe início e fim.</span>';
+  const r = document.getElementById('patResumo'); if (r) r.innerHTML = dias ? 'Investimento máximo: <b>' + fmtBRLcompleto(dia * dias) + '</b> (' + fmtBRLcompleto(dia) + '/dia × ' + dias + ' dias) · Instagram (feed, stories e reels) · ' + (v('patPublico') === 'amplo' ? 'Brasil inteiro' : '<b>Decisores B2B</b>: capitais de negócio + interesse em gestão/dados/ERP <b>e</b> perfil de dono/administrador de empresa ou setor de gestão/TI, sem quem procura emprego/concurso · só Feed e Explorar') + ', ' + (v('patIdMin') || 30) + '–' + (v('patIdMax') || 60) + ' anos · botão <b>Saiba mais</b> → página de cadastro (com rastreio da campanha nos leads)' : '<span style="color:var(--gold);">Informe início e fim.</span>';
 }
 async function patEscrever() {
   const b = document.getElementById('patBtnCopy'); if (b) { b.disabled = true; b.textContent = 'Escrevendo…'; }
@@ -25023,6 +25024,22 @@ async function patArte() {
     document.getElementById('patImg').value = url; patPrev(); toast('Arte montada e hospedada', 'success');
   } catch (e) { toast('Arte não montada: ' + e.message, 'error'); }
   if (b) { b.disabled = false; b.textContent = '🖼 Arte no padrão'; }
+}
+// v3.214: aplica o público de decisores nas campanhas já criadas (lê direto do Meta; status não muda)
+async function patPublicoCorrigir() {
+  const b = document.getElementById('patBtnPublico'); const rot = b?.textContent; if (b) { b.disabled = true; b.textContent = 'Lendo campanhas no Meta…'; }
+  try {
+    const d = await mcApi('patrocinado_publico_atualizar', { aplicar: false });
+    if (!d.total) { alert('Nenhum conjunto de anúncios do Instagram encontrado na conta do Meta.'); return; }
+    const P = d.publico || {};
+    if (!confirm(`Aplicar o público de DECISORES em ${d.total} conjunto(s) de anúncios?\n\n${d.conjuntos.map(c => '• ' + c.nome + ' (' + c.estado + ') — hoje: idade ' + c.antes.idade + ', posições ' + c.antes.posicoes + ', ' + c.antes.local).join('\n')}\n\nNovo público:\n• ${P.cidades || 0} capitais de negócio · idade a partir de 35\n• interesse: ${(P.interesses || []).slice(0, 6).join(', ')}${(P.interesses || []).length > 6 ? '…' : ''}\n• E decisor: ${[...(P.comportamentos || []), ...(P.setores || [])].join(', ') || '(o Meta não devolveu comportamentos/setores — só interesses)'}\n• excluídos: ${(P.excluidos || []).join(', ') || '—'}\n• só Feed e Explorar (sem Stories/Reels)\n\nAtiva/pausada não muda. O Meta reinicia o aprendizado desses conjuntos.`)) return;
+    if (b) b.textContent = 'Aplicando…';
+    const r = await mcApi('patrocinado_publico_atualizar', { aplicar: true });
+    const ok = r.conjuntos.filter(c => c.ok), er = r.conjuntos.filter(c => !c.ok);
+    alert(`✅ Público atualizado em ${ok.length} de ${r.total} conjunto(s).` + (ok.some(c => c.aviso) ? '\n\n⚠ ' + ok.filter(c => c.aviso).map(c => c.nome + ': ' + c.aviso).join('\n') : '') + (er.length ? '\n\n❌ Não atualizados:\n' + er.map(c => c.nome + ': ' + c.erro).join('\n') : ''));
+    try { patListar(); } catch (_) {}
+  } catch (e) { alert('Não consegui atualizar: ' + e.message); }
+  finally { if (b) { b.disabled = false; b.textContent = rot; } }
 }
 // v3.176: diagnóstico da conexão com o Meta (não cria nada)
 async function patDiagnostico() {
@@ -33748,7 +33765,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.213] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.214] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -33764,7 +33781,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.213';
+window.__ATX_BUILD_ID__ = 'ATX-v3.214';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

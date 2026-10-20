@@ -281,13 +281,29 @@ Devolva JSON: {"texto":"texto principal completo no padrão acima, com quebras d
 const _B2B_CIDADES = ['São Paulo', 'Rio de Janeiro', 'Belo Horizonte', 'Curitiba', 'Porto Alegre', 'Campinas', 'Brasília', 'Recife', 'Salvador', 'Florianópolis', 'Goiânia', 'Fortaleza'];
 const _B2B_INTERESSES = ['Business intelligence', 'Data analysis', 'Big data', 'Power BI', 'SAP', 'Enterprise resource planning', 'Chief executive officer', 'Chief information officer', 'Chief financial officer', 'Management consulting', 'Business management', 'Digital transformation'];
 async function _publicoB2B() {
-  const ck = await _kvMc('mkt:meta:publico_b2b');
+  const ck = await _kvMc('mkt:meta:publico_b2b').catch(() => null);
   if (ck && ck.em && Date.now() - ck.em < 30 * 864e5 && (ck.cidades || []).length) return ck;
   const cidades = [], interesses = [];
   for (const nome of _B2B_CIDADES) { try { const r = await _meta(`search?type=adgeolocation&location_types=${encodeURIComponent('["city"]')}&country_code=BR&limit=3&q=${encodeURIComponent(nome)}`);
     const x = (r.data || []).find(d => d.country_code === 'BR' && d.type === 'city'); if (x) cidades.push({ key: String(x.key), radius: 40, distance_unit: 'kilometer', nome: x.name }); } catch (_) {} }
   for (const q of _B2B_INTERESSES) { try { const r = await _meta(`search?type=adinterest&limit=2&q=${encodeURIComponent(q)}`); const x = (r.data || [])[0]; if (x && !interesses.some(i => i.id === x.id)) interesses.push({ id: String(x.id), name: x.name }); } catch (_) {} }
-  const v = { cidades, interesses, em: Date.now() }; if (cidades.length) await _kvMc('mkt:meta:publico_b2b', v); return v;
+  const v = { cidades, interesses, em: Date.now() }; if (cidades.length) await _kvMc('mkt:meta:publico_b2b', v).catch(() => {}); return v;
+}
+// v3.214: CAMADA DE DECISOR + EXCLUSÕES. Interesse sozinho ("Business intelligence", "Gestão") pega estudante,
+// curioso e quem procura emprego. Agora o público é INTERESSE DO TEMA **E** (comportamento de dono/administrador de
+// empresa OU setor de atuação em gestão/negócios/TI), excluindo quem procura emprego, concurso e estágio.
+// Os IDs vêm da busca do próprio Meta (com cache de 30 dias); o que o Meta não achar fica de fora sem quebrar.
+const _DEC_COMPORT = /business page admin|small business owner|propriet[aá]rio|administrador(es)? de p[aá]gina|page admins|empreendedor/i;
+const _DEC_SETOR = /^(management|gest[aã]o|business and finance|neg[oó]cios e finan[cç]as|it and technical|ti e servi[cç]os t[eé]cnicos|computation and mathematics|computa[cç][aã]o e matem[aá]tica|legal services|architecture and engineering|arquitetura e engenharia)/i;
+const _EXCLUIR = ['Job hunting', 'Concurso público', 'Vagas de emprego', 'Estágio', 'Jovem aprendiz', 'Apostas esportivas'];
+async function _publicoDecisores() {
+  const ck = await _kvMc('mkt:meta:publico_decisores').catch(() => null);
+  if (ck && ck.em && Date.now() - ck.em < 30 * 864e5) return ck;
+  const comportamentos = [], setores = [], excluir = [];
+  try { const r = await _meta('search?type=adTargetingCategory&class=behaviors&limit=500'); (r.data || []).filter(b => _DEC_COMPORT.test(b.name || '') || _DEC_COMPORT.test((b.path || []).join(' '))).slice(0, 6).forEach(b => comportamentos.push({ id: String(b.id), name: b.name })); } catch (_) {}
+  try { const r = await _meta('search?type=adTargetingCategory&class=industries&limit=200'); (r.data || []).filter(b => _DEC_SETOR.test(b.name || '')).slice(0, 8).forEach(b => setores.push({ id: String(b.id), name: b.name })); } catch (_) {}
+  for (const q of _EXCLUIR) { try { const r = await _meta(`search?type=adinterest&limit=1&q=${encodeURIComponent(q)}`); const x = (r.data || [])[0]; if (x && !excluir.some(i => i.id === String(x.id))) excluir.push({ id: String(x.id), name: x.name }); } catch (_) {} }
+  const v = { comportamentos, setores, excluir, em: Date.now() }; await _kvMc('mkt:meta:publico_decisores', v).catch(() => {}); return v;
 }
 function _linkPago(base, nome) {
   const slug = String(nome || 'patrocinado').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 40) || 'patrocinado';
@@ -302,7 +318,7 @@ async function patrocinadoCriar(p = {}, req) {
   const imagem = String(p.imagem || '').trim();
   const diario = Math.round(Number(String(p.orcamento_diario || '').replace(',', '.')) * 100) / 100;
   const ini = String(p.inicio || ''), fim = String(p.fim || '');
-  const idMin = Math.max(18, Math.min(65, parseInt(p.idade_min) || 30)), idMax = Math.max(idMin, Math.min(65, parseInt(p.idade_max) || 60));
+  const idMin = Math.max(18, Math.min(65, parseInt(p.idade_min) || 35)), idMax = Math.max(idMin, Math.min(65, parseInt(p.idade_max) || 60));
   const amplo = p.publico === 'amplo'; // v3.190: padrão = B2B (decisores); 'amplo' = Brasil inteiro sem interesse
   const err = m => Object.assign(new Error(m), { status: 400 });
   if (!texto) throw err('Escreva o texto do anúncio'); if (!titulo) throw err('Escreva o título');
@@ -325,10 +341,14 @@ async function patrocinadoCriar(p = {}, req) {
     // v3.192: o Meta aposenta interesses ("Algumas opções de direcionamento detalhado foram combinadas") e devolve
     // o substituto no erro — troca pelo alternativo, grava no cache e tenta de novo (até 2 vezes)
     const pb = amplo ? null : await _publicoB2B().catch(() => ({ cidades: [], interesses: [] }));
+    let dec = amplo ? null : await _publicoDecisores().catch(() => null); // v3.214
+    const _camadaDec = () => dec && (dec.comportamentos.length || dec.setores.length) ? [{ ...(dec.comportamentos.length ? { behaviors: dec.comportamentos.map(({ id, name }) => ({ id, name })) } : {}), ...(dec.setores.length ? { industries: dec.setores.map(({ id, name }) => ({ id, name })) } : {}) }] : [];
     const _alvo = () => ({ ...(amplo ? { geo_locations: { countries: ['BR'] } } : {
         geo_locations: pb.cidades.length ? { cities: pb.cidades.map(({ key, radius, distance_unit }) => ({ key, radius, distance_unit })), location_types: ['home', 'recent'] } : { countries: ['BR'] },
-        ...(pb.interesses.length ? { flexible_spec: [{ interests: pb.interesses.map(({ id, name }) => ({ id, name })) }] } : {}) }),
-      age_min: idMin, age_max: idMax, publisher_platforms: ['instagram'], instagram_positions: ['stream', 'story', 'reels'],
+        ...((pb.interesses.length || _camadaDec().length) ? { flexible_spec: [...(pb.interesses.length ? [{ interests: pb.interesses.map(({ id, name }) => ({ id, name })) }] : []), ..._camadaDec()] } : {}),
+        ...(dec?.excluir?.length ? { exclusions: { interests: dec.excluir.map(({ id, name }) => ({ id, name })) } } : {}) }),
+      // v3.214: só FEED e EXPLORAR — Stories e Reels geram curtida/seguidor de quem não é decisor
+      age_min: idMin, age_max: idMax, publisher_platforms: ['instagram'], instagram_positions: ['stream', 'explore'],
       targeting_automation: { advantage_audience: 0 } }); // v3.174: o Meta exige o sinalizador (0 = respeita idade/local escolhidos)
     let adset = null;
     for (let tentativa = 0; tentativa < 3 && !adset; tentativa++) {
@@ -341,6 +361,8 @@ async function patrocinadoCriar(p = {}, req) {
       } catch (e) {
         const m = String(e.message || '').match(/\[\s*\{\s*"deprecated_interest_id"[\s\S]*?\}\s*\]/);
         let alt = []; try { alt = m ? JSON.parse(m[0]) : []; } catch (_) {}
+        // v3.214: o Meta recusou comportamento/setor/exclusão → tenta de novo sem a camada de decisor (e limpa o cache)
+        if (!alt.length && dec && tentativa < 2) { dec = null; try { await _kvMc('mkt:meta:publico_decisores', { comportamentos: [], setores: [], excluir: [], em: 0 }); } catch (_) {} continue; }
         if (!pb || !alt.length || tentativa >= 2) throw e;
         const troca = new Map(alt.map(a => [String(a.deprecated_interest_id), a]));
         const vistos = new Set(); pb.interesses = pb.interesses.map(x => { const a = troca.get(String(x.id)); return a && a.alternative_interest_id ? { id: String(a.alternative_interest_id), name: a.alternative_interest_name || x.name } : (a ? null : x); })
@@ -414,6 +436,34 @@ async function patrocinadoDiagnostico() {
   try { const pg = await _meta(c.pagina + '?fields=tasks'); const t = pg.tasks || []; if (t.length) add(t.includes('ADVERTISE') || t.includes('MANAGE'), 'Função na página', t.join(', '), 'Em Configurações → Páginas → Atlantyx → Atribuir pessoas → usuário do sistema → controle total (ou "Criar anúncios")'); } catch (_) {}
   try { const ig = await _meta(c.ig + '?fields=username'); add(true, 'Instagram', '@' + ig.username); } catch (e) { add(false, 'Instagram ' + c.ig, e.message, 'Atribua a conta do Instagram ao usuário do sistema e confira se está ligada à página'); }
   return { itens, ok: itens.every(i => i.ok) };
+}
+// v3.214: CORRIGIR O PÚBLICO DAS CAMPANHAS JÁ CRIADAS — lê os conjuntos de anúncios direto da conta no Meta (não
+// depende do banco), mantém idade (mínimo 35) e aplica: capitais de negócio, interesse do tema E camada de decisor,
+// exclusões (emprego, concurso, estágio) e só Feed/Explorar. aplicar:false só lista. Status (ativa/pausada) não muda.
+async function patrocinadoPublicoAtualizar({ aplicar = false, ids = null } = {}) {
+  const c = _metaCfg(); if (!c.token || !c.conta) throw new Error('Meta não configurado (META_ADS_TOKEN / META_AD_ACCOUNT_ID)');
+  const r = await _meta(`act_${c.conta}/adsets?fields=id,name,campaign_id,effective_status,targeting&limit=100`);
+  const conj = (r.data || []).filter(x => !['DELETED', 'ARCHIVED'].includes(x.effective_status) && (x.targeting?.publisher_platforms || ['instagram']).includes('instagram'))
+    .filter(x => !ids || ids.map(String).includes(String(x.id)));
+  const pb = await _publicoB2B().catch(() => ({ cidades: [], interesses: [] }));
+  let dec = await _publicoDecisores().catch(() => null);
+  const novo = (t, comDec) => { const L = []; if (pb.interesses.length) L.push({ interests: pb.interesses.map(({ id, name }) => ({ id, name })) });
+    if (comDec && dec && (dec.comportamentos.length || dec.setores.length)) L.push({ ...(dec.comportamentos.length ? { behaviors: dec.comportamentos.map(({ id, name }) => ({ id, name })) } : {}), ...(dec.setores.length ? { industries: dec.setores.map(({ id, name }) => ({ id, name })) } : {}) });
+    const geo = pb.cidades.length ? { cities: pb.cidades.map(({ key, radius, distance_unit }) => ({ key, radius, distance_unit })), location_types: ['home', 'recent'] } : (t.geo_locations || { countries: ['BR'] });
+    return { geo_locations: geo, age_min: Math.max(35, parseInt(t.age_min) || 35), age_max: Math.max(Math.max(35, parseInt(t.age_min) || 35), parseInt(t.age_max) || 65),
+      ...(L.length ? { flexible_spec: L } : {}), ...(comDec && dec?.excluir?.length ? { exclusions: { interests: dec.excluir.map(({ id, name }) => ({ id, name })) } } : {}),
+      publisher_platforms: ['instagram'], instagram_positions: ['stream', 'explore'], targeting_automation: { advantage_audience: 0 } }; };
+  const itens = [];
+  for (const x of conj) {
+    const t = x.targeting || {}; const antes = { idade: `${t.age_min || '?'}–${t.age_max || '?'}`, posicoes: (t.instagram_positions || []).join(', ') || 'automático', local: t.geo_locations?.cities ? t.geo_locations.cities.length + ' cidade(s)' : (t.geo_locations?.countries || []).join(',') || '—', interesses: (t.flexible_spec || []).reduce((s, f) => s + (f.interests || []).length, 0), exclusoes: !!t.exclusions };
+    const it = { id: x.id, nome: x.name, estado: x.effective_status, antes };
+    if (aplicar) {
+      try { await _meta(x.id, 'POST', { targeting: novo(t, true) }); it.ok = true; it.camada_decisor = !!dec; }
+      catch (e) { try { await _meta(x.id, 'POST', { targeting: novo(t, false) }); it.ok = true; it.camada_decisor = false; it.aviso = 'aplicado sem a camada de decisor/exclusões: ' + e.message; } catch (e2) { it.ok = false; it.erro = e2.message; } }
+    }
+    itens.push(it);
+  }
+  return { conjuntos: itens, total: itens.length, aplicado: !!aplicar, publico: { cidades: pb.cidades.length, interesses: pb.interesses.map(i => i.name), comportamentos: (dec?.comportamentos || []).map(i => i.name), setores: (dec?.setores || []).map(i => i.name), excluidos: (dec?.excluir || []).map(i => i.name) } };
 }
 async function patrocinadoListar() {
   const lista = (await _kvMc('mkt:patrocinados')) || []; const c = _metaCfg();
@@ -1365,6 +1415,7 @@ async function handler(req, res) {
     patrocinado_estado:     () => patrocinadoEstado(payload),
     patrocinado_periodo:    () => patrocinadoPeriodo(payload), // v3.193
     patrocinado_listar:     () => patrocinadoListar(),
+    patrocinado_publico_atualizar: () => patrocinadoPublicoAtualizar(payload), // v3.214
     story_texto:            () => storyTexto(payload),
     autocampanha_agendar_um:() => autoCampanhaAgendarUm(payload),
     fila_enfileirar:        () => filaEnfileirar(payload),
