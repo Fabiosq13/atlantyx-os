@@ -465,6 +465,36 @@ async function patrocinadoPublicoAtualizar({ aplicar = false, ids = null } = {})
   }
   return { conjuntos: itens, total: itens.length, aplicado: !!aplicar, publico: { cidades: pb.cidades.length, interesses: pb.interesses.map(i => i.name), comportamentos: (dec?.comportamentos || []).map(i => i.name), setores: (dec?.setores || []).map(i => i.name), excluidos: (dec?.excluir || []).map(i => i.name) } };
 }
+// v3.216: KPIs DE MÍDIA PAGA (tela S2 KPIs) — Meta Ads (gasto, cliques, CTR, leads do Pixel/formulário) × HubSpot
+// (negócios ganhos e a origem PAID_SOCIAL/PAID_SEARCH). ROAS/ROI usam a receita dos negócios ganhos em 90 dias cuja
+// origem é mídia paga; CAC de mídia = gasto 90 dias ÷ clientes ganhos de mídia paga (ou de todas as origens, com aviso).
+async function metaKpis() {
+  const c = _metaCfg(); const out = { meta_ok: !!(c.token && c.conta), erros: [] };
+  const ins = async preset => { const r = await _meta(`act_${c.conta}/insights?fields=spend,impressions,clicks,inline_link_clicks,ctr,cpc,actions&date_preset=${preset}`); return (r.data || [])[0] || {}; };
+  const leadsDe = x => (x.actions || []).filter(a => /^(lead|offsite_conversion\.fb_pixel_lead|onsite_conversion\.lead_grouped|leadgen_grouped)$/.test(a.action_type)).reduce((m, a) => Math.max(m, Number(a.value) || 0), 0);
+  if (out.meta_ok) {
+    try { const [a30, a90] = await Promise.all([ins('last_30d'), ins('last_90d')]);
+      out.d30 = { gasto: Number(a30.spend || 0), impressoes: Number(a30.impressions || 0), cliques_link: Number(a30.inline_link_clicks || 0), ctr: a30.ctr != null ? Number(a30.ctr) : null, cpc: a30.cpc != null ? Number(a30.cpc) : null, leads: leadsDe(a30) };
+      out.d90 = { gasto: Number(a90.spend || 0), leads: leadsDe(a90) };
+      out.cpl = out.d30.leads ? Math.round(out.d30.gasto / out.d30.leads * 100) / 100 : null;
+    } catch (e) { out.erros.push('Meta: ' + e.message); }
+  } else out.erros.push('Meta Ads não configurado (META_ADS_TOKEN / META_AD_ACCOUNT_ID)');
+  const tk = process.env.HUBSPOT_TOKEN;
+  if (tk) {
+    try { const ganhos = []; let after;
+      for (let i = 0; i < 10; i++) { const r = await fetch('https://api.hubapi.com/crm/v3/objects/deals/search', { method: 'POST', headers: { Authorization: `Bearer ${tk}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filterGroups: [{ filters: [{ propertyName: 'closedate', operator: 'GTE', value: String(Date.now() - 90 * 864e5) }, { propertyName: 'hs_is_closed_won', operator: 'EQ', value: 'true' }] }], properties: ['amount', 'hs_analytics_source', 'dealname'], limit: 100, ...(after ? { after } : {}) }) });
+        const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.message || 'HTTP ' + r.status); ganhos.push(...(d.results || [])); after = d.paging?.next?.after; if (!after) break; }
+      const pago = ganhos.filter(g => /^PAID_(SOCIAL|SEARCH)$/i.test(g.properties?.hs_analytics_source || ''));
+      const soma = l => l.reduce((t, g) => t + (parseFloat(g.properties?.amount) || 0), 0);
+      out.hubspot = { ganhos_90d: ganhos.length, receita_90d: Math.round(soma(ganhos)), ganhos_pagos_90d: pago.length, receita_paga_90d: Math.round(soma(pago)) };
+    } catch (e) { out.erros.push('HubSpot: ' + e.message); }
+  }
+  const g90 = out.d90?.gasto || 0, H = out.hubspot || {};
+  if (g90 > 0 && H.receita_paga_90d != null) { out.roas = Math.round(H.receita_paga_90d / g90 * 100) / 100; out.roi_pct = Math.round((H.receita_paga_90d - g90) / g90 * 1000) / 10; }
+  if (g90 > 0 && (H.ganhos_pagos_90d || H.ganhos_90d)) { out.cac = Math.round(g90 / (H.ganhos_pagos_90d || H.ganhos_90d) * 100) / 100; out.cac_base = H.ganhos_pagos_90d ? 'clientes ganhos de mídia paga' : 'todos os clientes ganhos (nenhum com origem de mídia paga no HubSpot)'; }
+  return out;
+}
 async function patrocinadoListar() {
   const lista = (await _kvMc('mkt:patrocinados')) || []; const c = _metaCfg();
   if (c.token && lista.length) { await Promise.all(lista.slice(0, 15).map(async r => { try { const i = await _meta(`${r.id}/insights?fields=spend,impressions,clicks,inline_link_clicks,ctr,cpc&date_preset=maximum`); const x = (i.data || [])[0] || {};
@@ -1415,6 +1445,7 @@ async function handler(req, res) {
     patrocinado_estado:     () => patrocinadoEstado(payload),
     patrocinado_periodo:    () => patrocinadoPeriodo(payload), // v3.193
     patrocinado_listar:     () => patrocinadoListar(),
+    meta_kpis:              () => metaKpis(), // v3.216
     patrocinado_publico_atualizar: () => patrocinadoPublicoAtualizar(payload), // v3.214
     story_texto:            () => storyTexto(payload),
     autocampanha_agendar_um:() => autoCampanhaAgendarUm(payload),
