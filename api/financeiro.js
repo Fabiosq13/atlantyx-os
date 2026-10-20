@@ -993,11 +993,14 @@ async function pagamentosDoDiaEPendentes() {
       // v3.163: lê todas as Bills do mês (abertas e pagas) — a paga também prova que a despesa da Agenda já está no QuickBooks
       const data = await qbQuery(`select * from Bill where DueDate >= '${inicioMes}' and DueDate <= '${fimMes}' maxresults 500`, token);
       billsTodas = (data?.QueryResponse?.Bill || []).map(b => ({ data: b.DueDate || b.TxnDate, fornecedor: b.VendorRef?.name || '', valor: parseFloat(b.TotalAmt || 0) }));
-      const bills = (data?.QueryResponse?.Bill || []).filter(b => parseFloat(b.Balance ?? 0) > 0).map(b => ({
+      let bills = (data?.QueryResponse?.Bill || []).filter(b => parseFloat(b.Balance ?? 0) > 0).map(b => ({
         descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''),
         fornecedor: b.VendorRef?.name || '', categoria: 'QuickBooks · Conta a pagar',
-        data_prevista: b.DueDate || b.TxnDate, valor: parseFloat(b.Balance ?? b.TotalAmt ?? 0), fonte: 'quickbooks', qb_url: _qbUrlTxn('conta:' + b.Id),
+        data_prevista: b.DueDate || b.TxnDate, valor: parseFloat(b.Balance ?? b.TotalAmt ?? 0), fonte: 'quickbooks', qb_url: _qbUrlTxn('conta:' + b.Id), bill_id: b.Id,
       }));
+      // v3.217: Bill vencida já paga no extrato (lançada como despesa avulsa) não é atraso — nem alerta de WhatsApp
+      try { const jp = await _billsPagasPorFora(bills.map(b => ({ id: b.bill_id, data: b.data_prevista, valor: b.valor, fornecedor: b.fornecedor, descricao: b.descricao })), { timeoutMs: 5000 });
+        if (jp.size) bills = bills.filter(b => !jp.has(_bpfId(b.bill_id))); } catch (_) {}
       qbMes = bills;
       qbHoje = bills.filter(b => String(b.data_prevista).split('T')[0] === hoje);
     } catch (e) { qbErro = e.message; }
@@ -3184,6 +3187,69 @@ async function qbFuturosDetalhado(args = {}) {
   if (rp) { out.recebiveis.push(..._rpComoRecebiveis(rp, args.data_inicio, args.data_fim)); out.agenda_receitas = { total: rp.total_ativo, qtd: rp.ativas.length, qb_conferido: rp.qb_conferido }; }
   return out;
 }
+// ═══ v3.217: CONTA A PAGAR EM ABERTO QUE JÁ FOI PAGA PELO EXTRATO ═══
+// Padrão da conciliação: o PIX/débito entra no QuickBooks como Despesa nova ("Adicionar") em vez de "Corresponder"
+// à conta a pagar (Bill). O caixa já saiu, mas a Bill segue em aberto — e o fluxo projetava a saída de novo, como
+// "vencida e não paga" (havia contas de janeiro). Casa cada Bill VENCIDA com uma saída do extrato do mesmo fornecedor,
+// mesmo valor e data próxima (um-para-um). Pagamento de conta (BillPayment) não entra: esse já está ligado a uma Bill.
+const _bpfCache = new Map();
+const _bpfId = id => String(id || '').replace(/^(bill_|qb_)/, ''); // a mesma Bill tem id 'bill_9', 'qb_9' ou '9' conforme a tela
+const _bpfStop = new Set(['ltda', 'eireli', 'epp', 'cia', 'servicos', 'servico', 'comercio', 'brasil', 'internet', 'tecnologia', 'solucoes', 'consultoria', 'pagamento', 'enviado', 'recebido', 'transferencia', 'para', 'pix', 'ted', 'doc', 'santos', 'silva', 'souza', 'oliveira']);
+const _bpfTokens = s => [...new Set(String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length >= 4 && !_bpfStop.has(w)))];
+async function _billsPagasPorFora(contas, { timeoutMs = 7000, tolerancia_dias = 45 } = {}) {
+  const mapa = new Map();
+  const hoje = _hojeBR();
+  const vencidas = (contas || []).filter(b => b && b.id && b.data && String(b.data).substring(0, 10) < hoje && (parseFloat(b.valor) || 0) > 0);
+  if (!vencidas.length || !qbConfigurado()) return mapa;
+  const limite = _diasMais(hoje, -550);
+  const minVenc = vencidas.reduce((m, b) => { const d = String(b.data).substring(0, 10); return d < m ? d : m; }, hoje);
+  const ini = _diasMais(minVenc < limite ? limite : minVenc, -tolerancia_dias);
+  const chave = ini + '|' + hoje;
+  let c = _bpfCache.get(chave);
+  if (!c || Date.now() - c.t > 10 * 60000) {
+    const p = extratoConsolidado({ data_inicio: ini, data_fim: hoje, incluir_simulados: false })
+      .then(ext => (ext.lancamentos || []).filter(l => l.tipo === 'saida' && (parseFloat(l.valor) || 0) > 0 && l.qb_txn_id && !String(l.qb_txn_id).startsWith('pagto_conta:')));
+    c = { t: Date.now(), p }; _bpfCache.set(chave, c);
+    p.catch(() => _bpfCache.delete(chave));
+  }
+  const saidas = await Promise.race([c.p, new Promise(r => setTimeout(() => r(null), timeoutMs))]).catch(() => null);
+  if (!saidas) { // extrato longo ainda carregando: usa o último resultado gravado (até 12h) e deixa o cache esquentando
+    try { const kv = await _kvFin('fin:bills_pagas_extrato');
+      if (kv?.t && Date.now() - kv.t < 12 * 3600e3) vencidas.forEach(b => { const m = kv.mapa?.[_bpfId(b.id)]; if (m) mapa.set(_bpfId(b.id), m); }); } catch (_) {}
+    return mapa;
+  }
+  const usadas = new Set();
+  [...vencidas].sort((a, b) => String(a.data).localeCompare(String(b.data))).forEach(b => {
+    const venc = String(b.data).substring(0, 10);
+    const valores = [parseFloat(b.valor) || 0, parseFloat(b.valor_total) || 0].filter(v => v > 0);
+    const toks = _bpfTokens(b.fornecedor || String(b.descricao || '').split(' · ')[0]);
+    if (!toks.length) return;
+    let melhor = null;
+    for (const s of saidas) {
+      if (usadas.has(s.qb_txn_id)) continue;
+      const v = parseFloat(s.valor) || 0;
+      const exato = valores.some(x => Math.abs(x - v) <= 0.01);
+      if (!exato && !valores.some(x => Math.abs(x - v) <= Math.max(0.5, x * 0.005))) continue;
+      const dist = Math.abs((new Date(s.data + 'T12:00:00') - new Date(venc + 'T12:00:00')) / 864e5);
+      if (dist > tolerancia_dias) continue;
+      const alvo = new Set(_bpfTokens([s.descricao, s.contraparte, s.memo, s.fornecedor].filter(Boolean).join(' ')));
+      const m = toks.filter(t => alvo.has(t)).length;
+      const ok = m >= 2 || (m === 1 && toks.length === 1) || (m === 1 && exato && dist <= 10);
+      if (!ok) continue;
+      const score = m * 10 + (exato ? 5 : 0) - dist / 10;
+      if (!melhor || score > melhor.score) melhor = { s, score, dist, m };
+    }
+    if (melhor) {
+      usadas.add(melhor.s.qb_txn_id);
+      mapa.set(_bpfId(b.id), { data: melhor.s.data, descricao: melhor.s.descricao || '', valor: round(parseFloat(melhor.s.valor) || 0), conta: melhor.s.conta || '',
+        qb_txn_id: melhor.s.qb_txn_id, dias: Math.round(melhor.dist), confianca: melhor.m >= 2 || toks.length === 1 ? 'alta' : 'media' });
+    }
+  });
+  if (mapa.size) _kvFin('fin:bills_pagas_extrato').catch(() => null).then(kv => _kvFinSet('fin:bills_pagas_extrato', { t: Date.now(), mapa: { ...(kv?.t && Date.now() - kv.t < 12 * 3600e3 ? kv.mapa : {}), ...Object.fromEntries(mapa) } })).catch(() => {});
+  return mapa;
+}
+const _bpfNota = m => `Pagamento já encontrado no extrato: ${String(m.data).split('-').reverse().join('/')} · ${m.descricao}${m.conta ? ' (' + m.conta + ')' : ''} · ${_brl(m.valor)}. A conta a pagar continua EM ABERTO no QuickBooks porque o pagamento foi lançado como despesa avulsa, sem ser ligado a ela — por isso não entra no saldo projetado. Para corrigir no QuickBooks: exclua esta conta a pagar (🗑, a despesa do extrato fica) ou apague a despesa avulsa e registre o pagamento na conta.`;
+
 async function _qbFuturosDetalhadoQB({ data_inicio, data_fim, sem_estimativas = false } = {}) {
   // Recebíveis (Invoice em aberto) e Pagáveis (Bill em aberto) do QuickBooks,
   // um lançamento por documento — não agregado por mês.
@@ -3231,6 +3297,12 @@ async function _qbFuturosDetalhadoQB({ data_inicio, data_fim, sem_estimativas = 
       fornecedor: b.VendorRef?.name || '', doc: b.DocNumber || '', emissao: b.TxnDate, memo: b.PrivateNote || '', // v3.125: drill-down do cartão A pagar
       conta: [...new Set((b.Line || []).map(l => l.AccountBasedExpenseLineDetail?.AccountRef?.name).filter(Boolean))].join(', '),
     }));
+    // v3.217: Bill vencida cujo pagamento já está no extrato sai dos "a pagar" (vai para pagaveis_ja_pagas, só para exibir)
+    out.pagaveis_ja_pagas = [];
+    try { const jp = await _billsPagasPorFora(out.pagaveis);
+      if (jp.size) out.pagaveis = out.pagaveis.filter(p => { const m = jp.get(_bpfId(p.id)); if (!m) return true;
+        out.pagaveis_ja_pagas.push({ ...p, ja_paga: m, nota_dedup: _bpfNota(m) }); return false; });
+    } catch (e) { console.warn('[qbFuturos] contas já pagas no extrato:', e.message); }
   } catch (e) { out.erro = e.message; }
   return out;
 }
@@ -3460,7 +3532,7 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   // Chave natural = id da origem (+ tipo, para não fundir os dois lados de uma transferência); sem id, data+valor+tipo+descrição.
   const _chaveFut = l => (l.id != null && l.id !== '' ? String(l.id) : `${String(l.data).substring(0, 10)}|${Math.abs(l.valor || 0).toFixed(2)}|${l.descricao || ''}`) + '|' + (l.tipo || '');
   const _vistosFut = new Map(), duplicatasFut = [];
-  [...fut.recebiveis, ...fut.pagaveis, ...despFuturas, ...simFuturos, ...qbLancFuturos, ...qbRecorrentes].forEach(l => {
+  [...fut.recebiveis, ...fut.pagaveis, ...(fut.pagaveis_ja_pagas || []), ...despFuturas, ...simFuturos, ...qbLancFuturos, ...qbRecorrentes].forEach(l => {
     const k = _chaveFut(l);
     if (_vistosFut.has(k)) duplicatasFut.push({ id: l.id ?? null, data: l.data, descricao: l.descricao, valor: l.valor, tipo: l.tipo, origem: l.origem, origem_mantida: _vistosFut.get(k).origem });
     else _vistosFut.set(k, l);
@@ -3470,7 +3542,7 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
     .filter(l => l.data && (l.data >= hoje || l.vencida))
     .sort((a, b) => (b.vencida ? 1 : 0) - (a.vencida ? 1 : 0) || (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
   let saldoCorrente = extrato.saldo_final || 0;
-  const conta = l => l.vencida || l.no_periodo !== false;
+  const conta = l => !l.ja_paga && (l.vencida || l.no_periodo !== false); // v3.217: já paga no extrato não sai de novo
   const futuroComSaldo = futTodos.map(l => {
     if (!conta(l)) return { ...l, saldo_acumulado: null, fora_do_saldo: true };
     if (l.tipo === 'entrada') saldoCorrente += l.valor;
@@ -3562,7 +3634,7 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
     divergencia_relevante: divergencia != null && Math.abs(divergencia) > 1,
     passado: { saldo_inicial: extrato.saldo_inicial, saldo_inicial_data: extrato.saldo_inicial_data, saldo_inicial_detalhe: extrato.saldo_inicial_detalhe, lancamentos: await vincularReceitasATermos(extrato.lancamentos || []), total_entradas: extrato.total_entradas, total_saidas: extrato.total_saidas, qb_erro: extrato.qb_erro },
     saldo_hoje: extrato.saldo_final || 0,
-    futuro: { lancamentos: futuroComSaldo,
+    futuro: { lancamentos: futuroComSaldo, ja_pagas_no_extrato: { qtd: (fut.pagaveis_ja_pagas || []).length, valor: round((fut.pagaveis_ja_pagas || []).reduce((a, l) => a + (l.valor || 0), 0)) },
       total_recebiveis: round(fut.recebiveis.reduce((s, l) => s + l.valor, 0)),
       total_pagaveis: round(fut.pagaveis.reduce((s, l) => s + l.valor, 0)),
       // v1.61 FIX: qtd_qb somava recebíveis + pagáveis num número só, e a tela exibia esse
@@ -3724,6 +3796,10 @@ async function despOcorrencias({ data_inicio, data_fim, status, incluir_qb = tru
       const iniQ = data_inicio || new Date(Date.now() - 90 * 86400 * 1000).toISOString().split('T')[0]; // inclui vencidas recentes
       const data = await qbQuery(`select * from Bill where DueDate >= '${iniQ}' and DueDate <= '${fim}' maxresults 500`, token);
       qbBills = (data?.QueryResponse?.Bill || []).map(b => ({ id: 'qb_' + b.Id, despesa_id: null, descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''), categoria: 'QuickBooks · Conta a pagar', data_prevista: b.DueDate || b.TxnDate, valor: parseFloat(b.Balance ?? 0) > 0 ? parseFloat(b.Balance) : parseFloat(b.TotalAmt || 0), saldo_aberto: parseFloat(b.Balance ?? 0), valor_total: parseFloat(b.TotalAmt || 0), status: parseFloat(b.Balance ?? 0) > 0 ? 'prevista' : 'paga', data_pagamento: null, fonte: 'quickbooks', moeda: b.CurrencyRef?.value || null }));
+      // v3.217: Bill vencida cujo pagamento já está no extrato aparece como paga (falta só ligar no QuickBooks)
+      try { const jp = await _billsPagasPorFora(qbBills.filter(b => b.saldo_aberto > 0).map(b => ({ id: b.id, data: b.data_prevista, valor: b.saldo_aberto, valor_total: b.valor_total, fornecedor: String(b.descricao).split(' · ')[0] })), { timeoutMs: 5000 });
+        qbBills.forEach(b => { const m = jp.get(_bpfId(b.id)); if (!m) return; b.status = 'paga'; b.data_pagamento = m.data; b.pago_no_extrato = m;
+          b.categoria = 'QuickBooks · Conta a pagar · paga no extrato, falta ligar no QB'; b.nota = _bpfNota(m); }); } catch (_) {}
     } catch (e) { qbErro = e.message; console.warn('[Agenda] Bills QB:', e.message); }
   }
   const rows = status
