@@ -6926,6 +6926,8 @@ async function _crmPropostas(etapas) {
 // ═══════════════════════════════════════════════════════════════════════════
 const _RP_MAN = 'fin:receitas_manuais', _RP_SUS = 'fin:receitas_sustentacao', _RP_OC = 'fin:receitas_ocorrencias';
 const _rpNc = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+const _RP_GENERICAS = new Set(['sustentacao', 'alocacao', 'horas', 'servicos', 'servico', 'projeto', 'projetos', 'desenvolvimento', 'receita', 'mensal', 'mensalidade', 'previsao', 'consultoria', 'evolutivas', 'evolutiva', 'analytics', 'dados', 'fatura', 'termo', 'parcela', 'marco', 'janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro', 'atlanteam', 'atlantyx', 'energia', 'brasil', 'ltda', 'licenca', 'suporte']);
+const _rpTokens = s => [...new Set(String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length >= 5 && !/^\d+$/.test(w) && !_RP_GENERICAS.has(w)))];
 const _rpMesmoCliente = (a, b) => { const x = _rpNc(a), y = _rpNc(b); if (x.length < 3 || y.length < 3) return false; return x.startsWith(y.substring(0, 6)) || y.startsWith(x.substring(0, 6)); };
 const _rpUltimoDia = ym => { const [a, m] = ym.split('-').map(Number); return `${ym}-${String(new Date(a, m, 0).getDate()).padStart(2, '0')}`; };
 const _rpDia = (ym, dia) => { const [a, m] = ym.split('-').map(Number); const ult = new Date(a, m, 0).getDate(); return `${ym}-${String(Math.max(1, Math.min(ult, parseInt(dia) || 25))).padStart(2, '0')}`; };
@@ -6954,7 +6956,9 @@ async function _rpFaturasQB(desde) {
   try { const token = await qbToken();
     const [a, b] = await Promise.all([qbQuery(`select * from Invoice where Balance > '0' maxresults 1000`, token), qbQuery(`select * from Invoice where TxnDate >= '${desde}' maxresults 1000`, token)]);
     const m = new Map(); [...(a?.QueryResponse?.Invoice || []), ...(b?.QueryResponse?.Invoice || [])].forEach(i => m.set(i.Id, i));
-    return [...m.values()].map(i => ({ id: String(i.Id), doc: i.DocNumber || i.Id, cliente: i.CustomerRef?.name || '', data: i.DueDate || i.TxnDate, emissao: i.TxnDate, valor: num(i.TotalAmt), saldo: num(i.Balance) }));
+    return [...m.values()].map(i => ({ id: String(i.Id), doc: i.DocNumber || i.Id, cliente: i.CustomerRef?.name || '', data: i.DueDate || i.TxnDate, emissao: i.TxnDate, valor: num(i.TotalAmt), saldo: num(i.Balance),
+      // v3.221: texto da fatura (linhas, memorando) — casa a previsão pelo assunto quando o cliente foi cadastrado com outro nome
+      texto: [i.CustomerRef?.name, i.CustomerMemo?.value, i.PrivateNote, ...(i.Line || []).map(l => [l.Description, l.SalesItemLineDetail?.ItemRef?.name].join(' '))].filter(Boolean).join(' ') }));
   } catch (_) { return null; }
 }
 async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
@@ -7004,11 +7008,26 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   const desde = _diasMais(mesHoje + '-01', -75), faturas = await _rpFaturasQB(desde);
   if (!faturas) avisos.push('QuickBooks indisponível: a agenda não pôde ser conferida com as faturas reais (nada foi descartado).');
   for (const o of oc) o.status = o.status_manual === 'recebida' ? 'recebida' : o.status_manual === 'cancelada' ? 'cancelada' : null;
+  // v3.221: previsão ligada à mão a uma fatura ("já faturada → fatura nº") — o QuickBooks manda, a previsão sai
+  for (const o of oc) { const a = aj[o.id]; if (!a?.fatura) continue;
+    const f = (faturas || []).find(x => String(x.doc) === String(a.fatura) || String(x.id) === String(a.fatura));
+    o.coberta_por = f ? { fatura: f.doc, id: f.id, valor: f.valor, data: f.data, em_aberto: f.saldo > 0, manual: true } : { fatura: a.fatura, manual: true, nao_localizada: !!faturas };
+    o.status = 'coberta'; if (f) f._usada = true; }
   if (faturas) {
-    for (const f of faturas.sort((a, b) => String(a.data).localeCompare(String(b.data)))) {
-      const cand = oc.filter(o => !o.status && !o.coberta_por && _rpMesmoCliente(o.cliente, f.cliente) && Math.abs((Date.parse(o.data) - Date.parse(f.data || f.emissao)) / 864e5) <= 31 && f.valor >= o.valor * 0.5 && f.valor <= o.valor * 2);
-      if (!cand.length) continue; cand.sort((a, b) => Math.abs(a.valor - f.valor) - Math.abs(b.valor - f.valor));
-      cand[0].coberta_por = { fatura: f.doc, id: f.id, valor: f.valor, data: f.data, em_aberto: f.saldo > 0 }; cand[0].status = 'coberta';
+    const janela = (o, f, dias) => Math.abs((Date.parse(o.data) - Date.parse(f.data || f.emissao)) / 864e5) <= dias || Math.abs((Date.parse(o.data) - Date.parse(f.emissao || f.data)) / 864e5) <= dias;
+    const valorOk = (o, f) => f.valor >= o.valor * 0.5 && f.valor <= o.valor * 2;
+    const cobrir = (o, f, como) => { o.coberta_por = { fatura: f.doc, id: f.id, valor: f.valor, data: f.data, em_aberto: f.saldo > 0, casou_por: como }; o.status = 'coberta'; f._usada = true; };
+    const ord = faturas.filter(f => !f._usada).sort((a, b) => String(a.data).localeCompare(String(b.data)));
+    for (const f of ord) {
+      const cand = oc.filter(o => !o.status && !o.coberta_por && _rpMesmoCliente(o.cliente, f.cliente) && janela(o, f, 31) && valorOk(o, f));
+      if (!cand.length) continue; cand.sort((a, b) => Math.abs(a.valor - f.valor) - Math.abs(b.valor - f.valor)); cobrir(cand[0], f, 'cliente');
+    }
+    // v3.221: pelo ASSUNTO — palavra distintiva da previsão (ex.: "anaplan") no texto da fatura, valor compatível, até 60 dias.
+    // Cobre a previsão cadastrada com o nome do serviço no lugar do cliente (a fatura sai no nome do cliente real).
+    for (const f of ord.filter(x => !x._usada)) {
+      const txt = new Set(_rpTokens(f.texto));
+      const cand = oc.filter(o => !o.status && !o.coberta_por && janela(o, f, 60) && valorOk(o, f) && _rpTokens([o.cliente, o.projeto, o.descricao].join(' ')).some(t => txt.has(t)));
+      if (!cand.length) continue; cand.sort((a, b) => Math.abs(a.valor - f.valor) - Math.abs(b.valor - f.valor)); cobrir(cand[0], f, 'assunto');
     }
   }
   for (const o of oc) if (!o.status) { if (o.data < hoje) { o.status = 'atrasada'; o.data_prevista = o.data; o.data = hoje; } else o.status = 'prevista'; }
@@ -7043,7 +7062,7 @@ async function receitaSustentacaoAjustar({ id, valor_mensal, dia, inicio, fim, a
 }
 async function receitaOcorrenciaAjustar({ id, status, valor, data, nota, limpar } = {}) {
   if (!id) throw new Error('id obrigatório'); const cfg = (await _kvFin(_RP_OC).catch(() => null)) || {};
-  if (limpar) delete cfg[id]; else cfg[id] = { status: ['recebida', 'cancelada'].includes(status) ? status : null, valor: Number(valor) > 0 ? round(Number(valor)) : null, data: /^\d{4}-\d{2}-\d{2}$/.test(data || '') ? data : null, nota: nota ? String(nota).slice(0, 300) : null, em: new Date().toISOString() };
+  if (limpar) delete cfg[id]; else cfg[id] = { fatura: arguments[0].fatura ? String(arguments[0].fatura).replace(/[^\w\-\/]/g, '').substring(0, 30) || null : null, status: ['recebida', 'cancelada'].includes(status) ? status : null, valor: Number(valor) > 0 ? round(Number(valor)) : null, data: /^\d{4}-\d{2}-\d{2}$/.test(data || '') ? data : null, nota: nota ? String(nota).slice(0, 300) : null, em: new Date().toISOString() };
   await _kvFinSet(_RP_OC, cfg); _rpCache.v = null; return { ok: true };
 }
 

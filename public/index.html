@@ -21955,10 +21955,13 @@ function _fdDetalhe(json) {
       ${l.nota_dedup ? `<div style="margin-top:10px;padding:9px;background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:7px;font-size:10px;line-height:1.6;">ℹ ${l.nota_dedup}</div>` : ''}
       ${l.valor_documento && l.valor_documento !== l.valor ? linha('Valor original do documento', fmtBRLcompleto(l.valor_documento)) : ''}
       ${l.qb_txn_id ? `<div style="margin-top:12px;padding:9px;background:var(--bg4);border-radius:7px;font-size:10px;color:var(--t2);line-height:1.6;">Para ver este lançamento no QuickBooks, procure por <b>${(l.descricao||'').substring(0,30)}</b> na data ${l.data ? l.data.split('-').reverse().join('/') : ''}. O identificador acima (<code>${l.qb_txn_id}</code>) indica o tipo e o número do documento lá.</div>` : ''}
+      ${l.origem === 'agenda_receitas' ? `<button class="btn" style="width:100%;margin-top:10px;font-size:10.5px;" onclick='_fdLigarFatura(${JSON.stringify(JSON.stringify(String(l.id || '').replace(/^rp_/, '')))})'>🧾 Já foi faturada? Ligar à fatura do QuickBooks (sai da previsão)</button>` : ''}
       <button class="btn btn-p" style="width:100%;margin-top:10px;font-size:10.5px;" onclick='_rastrearDuplicado(${JSON.stringify(JSON.stringify({data:l.data, valor:l.valor, cliente:(l.descricao||'').split('·')[0].trim()}))})'>🔍 Este lançamento está duplicado? Rastrear no QuickBooks</button>
       ${l.qb_txn_id ? `<button class="btn" style="width:100%;margin-top:6px;font-size:10.5px;color:var(--red);border-color:var(--red);" onclick="_excluirNoQb('${l.qb_txn_id}')">🗑 Excluir este lançamento no QuickBooks</button>` : ''}
     </div></div>`;
 }
+async function _fdLigarFatura(id) { const n = prompt('Nº da fatura no QuickBooks que cobre esta previsão (ex.: 202):', ''); if (!n || !n.trim()) return;
+  try { await finApi('receita_ocorrencia_ajustar', { id, fatura: n.trim() }); toast('Ligada à fatura ' + n.trim() + ' — a previsão sai do fluxo', 'success'); document.getElementById('fdDetalheModal').style.display = 'none'; carregarFluxoDetalhado(); } catch (e) { toast(e.message, 'error'); } }
 function _fdIso(d) { return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().substring(0, 10); }
 function _fdPreset(diasPassado, diasFuturo, limpar) {
   const hoje = new Date();
@@ -30440,9 +30443,9 @@ function arRender() {
       + '<table style="width:100%;border-collapse:collapse;font-size:10.5px;">' + meses[m].map(o => { const [on, oc] = _arOri[o.origem] || [o.origem, 'var(--t2)'], [sn, sc] = _arSt[o.status] || [o.status, 'var(--t2)'];
         return '<tr style="border-bottom:1px solid var(--bd);"><td style="padding:5px 4px;white-space:nowrap;">' + _arDt(o.data) + (o.data_prevista ? '<div style="font-size:9px;color:var(--red);">previsto ' + _arDt(o.data_prevista) + '</div>' : '') + (o.data_original ? '<div style="font-size:9px;color:var(--t3);">era ' + _arDt(o.data_original) + '</div>' : '') + '</td>'
           + '<td><b>' + _arE(o.cliente) + '</b><div style="color:var(--t3);font-size:9.5px;">' + _arE(o.descricao) + (o.projeto && o.projeto !== o.cliente ? ' · ' + _arE(o.projeto) : '') + (o.base_data ? ' · ' + _arE(o.base_data) : '') + '</div></td>'
-          + '<td><span style="font-size:9.5px;font-weight:700;color:' + oc + ';">' + on + '</span></td><td style="color:' + sc + ';font-size:10px;">' + sn + (o.coberta_por ? ' · fatura ' + _arE(o.coberta_por.fatura) + ' (' + _arR(o.coberta_por.valor) + ')' : '') + (o.nota ? '<div style="color:var(--t3);">' + _arE(o.nota) + '</div>' : '') + '</td>'
+          + '<td><span style="font-size:9.5px;font-weight:700;color:' + oc + ';">' + on + '</span></td><td style="color:' + sc + ';font-size:10px;">' + sn + (o.coberta_por ? ' · fatura ' + _arE(o.coberta_por.fatura) + (o.coberta_por.valor ? ' (' + _arR(o.coberta_por.valor) + ')' : '') + (o.coberta_por.manual ? ' · ligada à mão' : o.coberta_por.casou_por === 'assunto' ? ' · casada pelo assunto' : '') + (o.coberta_por.nao_localizada ? ' · ⚠ fatura não encontrada no QuickBooks' : '') : '') + (o.nota ? '<div style="color:var(--t3);">' + _arE(o.nota) + '</div>' : '') + '</td>'
           + '<td style="text-align:right;white-space:nowrap;font-weight:600;">' + _arR(o.valor) + (o.valor_original ? '<div style="font-size:9px;color:var(--t3);font-weight:400;">era ' + _arR(o.valor_original) + '</div>' : '') + '</td>'
-          + '<td style="text-align:right;white-space:nowrap;">' + (['prevista', 'atrasada'].includes(o.status) ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Ajustar valor ou data" onclick="arOcAjustar(\'' + _arE(o.id) + '\')">✎</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Marcar como recebida (sai da previsão)" onclick="arOcStatus(\'' + _arE(o.id) + '\',\'recebida\')">✓</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Cancelar esta previsão" onclick="arOcStatus(\'' + _arE(o.id) + '\',\'cancelada\')">✕</button>' : (o.status_manual || o.valor_original || o.data_original ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Desfazer o ajuste" onclick="arOcLimpar(\'' + _arE(o.id) + '\')">↺</button>' : '')) + '</td></tr>'; }).join('') + '</table></div>').join('') || '<div style="padding:20px;text-align:center;color:var(--t3);font-size:11.5px;">Nada aqui.</div>';
+          + '<td style="text-align:right;white-space:nowrap;">' + (['prevista', 'atrasada'].includes(o.status) ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Ajustar valor ou data" onclick="arOcAjustar(\'' + _arE(o.id) + '\')">✎</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Marcar como recebida (sai da previsão)" onclick="arOcStatus(\'' + _arE(o.id) + '\',\'recebida\')">✓</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Já faturada: ligar à fatura do QuickBooks (sai da previsão)" onclick="arOcFatura(\'' + _arE(o.id) + '\')">🧾</button> <button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Cancelar esta previsão" onclick="arOcStatus(\'' + _arE(o.id) + '\',\'cancelada\')">✕</button>' : (o.status_manual || o.valor_original || o.data_original ? '<button class="btn btn-g" style="font-size:9px;padding:2px 6px;" title="Desfazer o ajuste" onclick="arOcLimpar(\'' + _arE(o.id) + '\')">↺</button>' : '')) + '</td></tr>'; }).join('') + '</table></div>').join('') || '<div style="padding:20px;text-align:center;color:var(--t3);font-size:11.5px;">Nada aqui.</div>';
   } else if (_ar.aba === 'sustentacoes') {
     corpo = '<div style="font-size:10.5px;color:var(--t2);margin:8px 0;">Projetos de sustentação/recorrentes com contrato. O valor mensal sugerido é o valor do projeto ÷ meses do contrato; ajuste valor, dia de recebimento e vigência quando for diferente. Desmarque "ativa" para tirar da previsão.</div>'
       + '<table style="width:100%;border-collapse:collapse;font-size:10.5px;"><tr style="color:var(--t3);text-align:left;"><th style="padding:4px;">Projeto / cliente</th><th>Contrato</th><th style="text-align:right;">Sugerido/mês</th><th>Valor/mês</th><th>Dia</th><th>Início (mês)</th><th>Fim (mês)</th><th>Ativa</th><th></th></tr>'
@@ -30465,6 +30468,8 @@ function arRender() {
 }
 async function _arAj(body, msg) { try { await finApi('receita_ocorrencia_ajustar', body); toast(msg, 'success'); await arCarregar(); } catch (e) { toast(e.message, 'error'); } }
 function arOcStatus(id, st) { const nota = st === 'cancelada' ? prompt('Motivo do cancelamento (opcional):', '') : ''; if (nota === null) return; _arAj({ id, status: st, nota }, st === 'recebida' ? 'Marcada como recebida' : 'Previsão cancelada'); }
+// v3.221: previsão que já virou fatura no QuickBooks — liga ao nº da fatura e sai da previsão (o QuickBooks passa a valer)
+function arOcFatura(id) { const n = prompt('Esta previsão já foi faturada? Informe o nº da fatura no QuickBooks (ex.: 202):', ''); if (!n || !n.trim()) return; _arAj({ id, fatura: n.trim() }, 'Ligada à fatura ' + n.trim() + ' — a previsão sai e vale o QuickBooks'); }
 function arOcLimpar(id) { _arAj({ id, limpar: true }, 'Ajuste desfeito'); }
 function arOcAjustar(id) { const o = (_ar.d?.ocorrencias || []).find(x => x.id === id); if (!o) return;
   const v = prompt('Valor previsto (R$) para ' + o.cliente + ' — ' + o.descricao + ':', String(o.valor).replace('.', ',')); if (v === null) return;
@@ -33864,7 +33869,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.220] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.221] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -33880,7 +33885,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.220';
+window.__ATX_BUILD_ID__ = 'ATX-v3.221';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
