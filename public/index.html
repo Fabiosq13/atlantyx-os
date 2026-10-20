@@ -22060,7 +22060,7 @@ function _fdRenderTabelas() {
     const avisoVenc = vf && (vf.receber.qtd || vf.pagar.qtd) ? `<tr><td colspan="6" style="padding:8px;font-size:10px;color:var(--t2);background:rgba(245,185,75,.07);border-bottom:1px solid var(--bd);">ℹ Fora deste extrato (vencidos em aberto no QuickBooks, sem data para acontecer): <b>${vf.receber.qtd}</b> fatura(s) a receber · ${fmtBRLcompleto(vf.receber.valor)} e <b>${vf.pagar.qtd}</b> conta(s) a pagar · ${fmtBRLcompleto(vf.pagar.valor)}${vf.ja_pagas_no_extrato ? ' · ' + vf.ja_pagas_no_extrato + ' conta(s) a pagar já paga(s) no extrato' : ''}. <a href="#" onclick="event.preventDefault();_irVencidosDash()" style="color:var(--blue);">Ver no Dashboard → Financeiro → Vencidos em aberto</a></td></tr>` : '';
     tbF.innerHTML = fut.length || avisoVenc
       ? avisoVenc + secao('NO PERÍODO CONSULTADO', noPer, 'var(--blue,#4f7cff)', '', 'no período')
-        + secao('EM ABERTO, FORA DO PERÍODO', foraPer, 'var(--t3)', '— aparecem porque continuam a receber/pagar', 'fora do período')
+        + secao('DEPOIS DO PERÍODO CONSULTADO', foraPer, 'var(--t3)', '— o saldo continua acumulando; os totais do período (cartões acima) não incluem estes', 'depois do período')
       : (busca ? semNada('Nenhum lançamento futuro com "' + busca.replace(/</g, '&lt;') + '" na descrição.')
         : semNada('Nenhum recebível/pagável futuro encontrado no QuickBooks' + (d.futuro.qb_erro ? ' · ⚠ ' + d.futuro.qb_erro : ' (sem faturas/contas em aberto, sem despesas programadas futuras e sem simulados futuros)') + '.'));
   }
@@ -33869,7 +33869,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.221] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.222] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -33885,7 +33885,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.221';
+window.__ATX_BUILD_ID__ = 'ATX-v3.222';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

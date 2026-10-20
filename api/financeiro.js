@@ -3592,11 +3592,14 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
     .sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
   let saldoCorrente = extrato.saldo_final || 0;
   const conta = l => !l.ja_paga && l.no_periodo !== false;
+  // v3.222: formato de extrato — o saldo acumulado CONTINUA depois do fim do período (dezembro, janeiro…), em ordem de data.
+  // 'fora_do_saldo' segue marcando o que está fora do período, só para os totais/indicadores do período não somarem.
   const futuroComSaldo = futTodos.map(l => {
-    if (!conta(l)) return { ...l, saldo_acumulado: null, fora_do_saldo: true };
+    if (l.ja_paga) return { ...l, saldo_acumulado: null, fora_do_saldo: true };
     if (l.tipo === 'entrada') saldoCorrente += l.valor;
     else if (l.tipo === 'saida') saldoCorrente -= l.valor;
-    return { ...l, saldo_acumulado: Math.round(saldoCorrente * 100) / 100 };
+    const sa = Math.round(saldoCorrente * 100) / 100;
+    return conta(l) ? { ...l, saldo_acumulado: sa } : { ...l, saldo_acumulado: sa, fora_do_saldo: true, fora_do_periodo: true };
   });
   const noSaldo = futuroComSaldo.filter(l => !l.fora_do_saldo);
 
