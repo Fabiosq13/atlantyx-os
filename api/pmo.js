@@ -869,7 +869,7 @@ const _mNum = v => { if (typeof v === 'number') return v; let t = String(v || ''
 const _mData = v => { const t = v instanceof Date ? v.toISOString().slice(0, 10) : String(v || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null; };
 const _MK_KEY = { 'Aguardando Entrega': 'aguardando_entrega', 'Liberação GP': 'liberacao_gp', 'Aprovado pelo GP': 'aprovado_gp', 'Elaborando Termo': 'elaborando_termo', 'Termo Pronto': 'termo_pronto', 'Concluído': 'concluido' };
 const _MK_ORD = ['aguardando_entrega', 'liberacao_gp', 'aprovado_gp', 'elaborando_termo', 'termo_pronto', 'concluido'];
-async function maestroImportarMarcos({ executar = false, incluir_sem_valor = false } = {}, req) {
+async function maestroImportarMarcos({ executar = false, incluir_sem_valor = false, projeto_id = null } = {}, req) {
   if (executar) { let s = null; try { s = await lerSessao(req); } catch (_) {}
     if (s && !(s.perfil?.admin || (s.perfil?.telas || []).includes('s3marcoskanban'))) { const e = new Error('Seu perfil não pode importar marcos (precisa da tela Kanban de Marcos).'); e.status = 403; throw e; } }
   const crono = await getSqlCrono(), sql = await getSql();
@@ -883,7 +883,15 @@ async function maestroImportarMarcos({ executar = false, incluir_sem_valor = fal
     const parc = projs.filter(p => { const x = _mNorm(p.nome); return x && (x.includes(n) || n.includes(x)); }); return parc.length === 1 ? parc[0] : null; };
   const R = { executado: !!executar, projetos_novos: [], marcos_novos: [], marcos_atualizados: [], duplicados_apagados: [], ignorados: [], sem_valor: 0 };
   // 1) projetos do Maestro que não existem aqui
-  const nomesMaestro = [...new Set([...cad.map(c => c.nome), ...mk.map(m => m.proj)].filter(Boolean))];
+  let nomesMaestro = [...new Set([...cad.map(c => c.nome), ...mk.map(m => m.proj)].filter(Boolean))];
+  // v3.229: só um projeto (botão do card) — só os marcos do Maestro que pertencem a ele; nenhum projeto é criado
+  let projAlvo = null;
+  if (projeto_id) {
+    projAlvo = projs.find(p => p.id === projeto_id); if (!projAlvo) throw new Error('Projeto não encontrado aqui.');
+    nomesMaestro = nomesMaestro.filter(n => { const a = acharProj(n); return a && a.id === projAlvo.id; });
+    if (!nomesMaestro.length) { const e = new Error('O projeto "' + projAlvo.nome + '" não foi encontrado no Maestro (nenhum projeto lá com esse nome).'); e.status = 404; throw e; }
+    R.projeto = { id: projAlvo.id, nome: projAlvo.nome, no_maestro: nomesMaestro };
+  }
   const mapaProj = new Map();
   for (const nome of nomesMaestro) {
     const ex = acharProj(nome); if (ex) { mapaProj.set(nome, ex.id); continue; }
@@ -902,6 +910,7 @@ async function maestroImportarMarcos({ executar = false, incluir_sem_valor = fal
   const manuais = atuais.filter(m => !String(m.id).startsWith('mk_dash_'));
   const usados = new Set();
   for (const m of mk) {
+    if (projAlvo && !nomesMaestro.includes(m.proj)) continue;
     const nome = String(m.nome || '').trim(), valor = _mNum(m.valor ?? m.aceite_valor), data = _mData(m.fim);
     if (!m.id || !nome) { R.ignorados.push({ marco: nome || '(sem nome)', projeto: m.proj || '', motivo: 'sem nome' }); continue; }
     if (!(valor > 0) && !incluir_sem_valor) { R.sem_valor++; continue; }

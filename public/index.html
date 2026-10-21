@@ -20819,8 +20819,9 @@ function renderProjetos() {
       const pctConcl = ag.total_marcos > 0 ? Math.round((ag.concluidos / ag.total_marcos) * 100) : 0;
       const pctVal = ag.total_valor > 0 ? Math.round((ag.valor_concluido / ag.total_valor) * 100) : 0;
       return `<div style="position:relative;background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;cursor:pointer;" onclick="abrirProjeto('${p.id}')">
+        <button title="Importar do Maestro os marcos de faturamento deste projeto" onclick='event.stopPropagation();maeImportarAbrir(${_dsE(JSON.stringify(p.id))})' style="position:absolute;top:8px;right:38px;background:transparent;border:1px solid transparent;border-radius:5px;color:var(--t3);cursor:pointer;font-size:13px;padding:1px 6px;" onmouseover="this.style.color='var(--blue)';this.style.borderColor='var(--blue)'" onmouseout="this.style.color='var(--t3)';this.style.borderColor='transparent'">&#8681;</button>
         <button title="Excluir projeto" onclick='event.stopPropagation();excluirProjeto(${_dsE(JSON.stringify(p.id))})' style="position:absolute;top:8px;right:8px;background:transparent;border:1px solid transparent;border-radius:5px;color:var(--t3);cursor:pointer;font-size:13px;padding:1px 6px;" onmouseover="this.style.color='var(--red)';this.style.borderColor='var(--red)'" onmouseout="this.style.color='var(--t3)';this.style.borderColor='transparent'">&#128465;</button>
-        <div style="font-family:var(--H);font-size:13px;font-weight:600;margin-bottom:4px;padding-right:26px;">${_dsE(p.nome)}</div>
+        <div style="font-family:var(--H);font-size:13px;font-weight:600;margin-bottom:4px;padding-right:60px;">${_dsE(p.nome)}</div>
         <div style="font-size:10px;color:var(--t2);margin-bottom:8px;">${p.cliente || 'Sem cliente'}</div>
         <div style="font-size:10px;color:var(--t2);margin-bottom:3px;">GP: ${p.gerente_projeto_nome || '-'}</div>
         <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:6px;">
@@ -21067,18 +21068,20 @@ async function excluirMarco(id) {
 // KANBAN FINANCEIRO DE MARCOS
 // ═══════════════════════════════════════════════════════════════════════════
 // v3.226: importação do Maestro — prévia primeiro, grava só no clique
-async function maeImportarAbrir() {
+let _maeProj = null; // v3.229: importação de um projeto só (botão ⇩ do card de Projetos & Marcos)
+async function maeImportarAbrir(projetoId) {
+  _maeProj = typeof projetoId === 'string' ? projetoId : null;
   let m = document.getElementById('maeImpModal');
   if (!m) { m = document.createElement('div'); m.id = 'maeImpModal'; m.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:999;align-items:center;justify-content:center;overflow:auto;padding:12px;'; document.body.appendChild(m); }
   m.style.display = 'flex'; m.innerHTML = '<div class="panel" style="width:820px;max-width:96vw;"><div class="pb"><div class="fv2-load">Lendo o Maestro e comparando com os marcos daqui…</div></div></div>';
-  try { const r = await pmoApi('maestro_importar_marcos', {}); maeImportarRender(r); }
+  try { const r = await pmoApi('maestro_importar_marcos', _maeProj ? { projeto_id: _maeProj } : {}); maeImportarRender(r); }
   catch (e) { m.innerHTML = '<div class="panel" style="width:560px;max-width:96vw;"><div class="pb" style="color:var(--red);font-size:11px;">Não consegui ler o Maestro: ' + _dsE(e.message) + '<div style="margin-top:10px;"><button class="btn" onclick="document.getElementById(\'maeImpModal\').style.display=\'none\'">Fechar</button></div></div></div>'; }
 }
 function maeImportarRender(r, feito) {
   const m = document.getElementById('maeImpModal'); if (!m) return; const R = r.resumo || {};
   const dt = x => x ? String(x).split('-').reverse().join('/') : '—', brl = v => fmtBRLcompleto(v || 0);
   const tab = (titulo, cor, L, cols, linha) => L.length ? '<div style="margin-top:12px;"><div style="font-size:11px;font-weight:700;color:' + cor + ';margin-bottom:4px;">' + titulo + ' · ' + L.length + '</div><div style="overflow-x:auto;max-height:220px;overflow-y:auto;"><table style="width:100%;border-collapse:collapse;font-size:10.5px;"><tr style="color:var(--t3);text-align:left;">' + cols.map(c => '<th style="padding:3px 5px;">' + c + '</th>').join('') + '</tr>' + L.map(x => '<tr style="border-top:1px solid var(--bd);">' + linha(x).map(c => '<td style="padding:3px 5px;">' + c + '</td>').join('') + '</tr>').join('') + '</table></div></div>' : '';
-  m.innerHTML = '<div class="panel" style="width:820px;max-width:96vw;max-height:90vh;overflow:auto;"><div class="ph"><div class="pt">⇩ ' + (feito ? 'Importado do Maestro' : 'Importar do Maestro — prévia') + '</div><button class="btn" style="margin-left:auto;font-size:10px;" onclick="document.getElementById(\'maeImpModal\').style.display=\'none\'">✕</button></div><div class="pb">'
+  m.innerHTML = '<div class="panel" style="width:820px;max-width:96vw;max-height:90vh;overflow:auto;"><div class="ph"><div class="pt">⇩ ' + (feito ? 'Importado do Maestro' : 'Importar do Maestro — prévia') + (r.projeto ? ' · ' + _dsE(r.projeto.nome) : '') + '</div><button class="btn" style="margin-left:auto;font-size:10px;" onclick="document.getElementById(\'maeImpModal\').style.display=\'none\'">✕</button></div><div class="pb">'
     + '<div class="kg k4" style="margin-bottom:6px;"><div class="kpi bl"><div class="kl">Projetos novos</div><div class="kv">' + (R.projetos_novos || 0) + '</div></div><div class="kpi gn"><div class="kl">Marcos novos</div><div class="kv">' + (R.marcos_novos || 0) + '</div></div><div class="kpi gd"><div class="kl">Marcos atualizados</div><div class="kv">' + (R.marcos_atualizados || 0) + '</div></div><div class="kpi rd"><div class="kl">Iguais daqui apagados</div><div class="kv">' + (R.duplicados_apagados || 0) + '</div></div></div>'
     + '<div style="font-size:10px;color:var(--t2);line-height:1.6;">Só marcos <b>com valor</b> (de faturamento)' + (R.sem_valor ? ' — ' + R.sem_valor + ' marco(s) sem valor ficaram de fora' : '') + '. Valor, data e descrição vêm do Maestro; a etapa aqui nunca volta. O marco igual criado aqui é apagado depois que o andamento dele (etapa, NF, pagamento, termo, previsão e histórico) passa para o importado. Importar de novo atualiza — não duplica.</div>'
     + tab('Projetos que serão criados', 'var(--blue)', r.projetos_novos || [], ['Projeto', 'Cliente', 'GP', 'Valor'], x => [_dsE(x.nome), _dsE(x.cliente), _dsE(x.gerente), brl(x.valor_total)])
@@ -21086,12 +21089,12 @@ function maeImportarRender(r, feito) {
     + tab('Marcos novos', 'var(--green)', r.marcos_novos || [], ['Projeto', 'Marco', 'Valor', 'Data'], x => [_dsE(x.projeto), _dsE(x.descricao), brl(x.valor), dt(x.data_entrega)])
     + tab('Marcos já importados antes (atualizados)', 'var(--gold)', r.marcos_atualizados || [], ['Projeto', 'Marco', 'Valor', 'Data'], x => [_dsE(x.projeto), _dsE(x.descricao), brl(x.valor) + (x.antes && Math.abs((x.antes.valor || 0) - x.valor) > 0.01 ? ' <span style="color:var(--t3);">(era ' + brl(x.antes.valor) + ')</span>' : ''), dt(x.data_entrega) + (x.antes && x.antes.data_entrega && x.antes.data_entrega !== x.data_entrega ? ' <span style="color:var(--t3);">(era ' + dt(x.antes.data_entrega) + ')</span>' : '')])
     + tab('Ignorados', 'var(--t3)', r.ignorados || [], ['Projeto', 'Marco', 'Motivo'], x => [_dsE(x.projeto), _dsE(x.marco), _dsE(x.motivo)])
-    + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">' + (feito ? '<button class="btn btn-p" onclick="document.getElementById(\'maeImpModal\').style.display=\'none\';carregarKanbanMarcos()">Fechar</button>'
+    + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">' + (feito ? '<button class="btn btn-p" onclick="document.getElementById(\'maeImpModal\').style.display=\'none\';try{carregarKanbanMarcos()}catch(_){}try{if(document.getElementById(\'page-s3projetos\')?.classList.contains(\'active\'))carregarProjetos()}catch(_){}">Fechar</button>'
       : '<button class="btn" onclick="document.getElementById(\'maeImpModal\').style.display=\'none\'">Cancelar</button><button class="btn btn-p" ' + ((R.projetos_novos || R.marcos_novos || R.marcos_atualizados || R.duplicados_apagados) ? '' : 'disabled ') + 'onclick="maeImportarExec()">Importar' + (R.duplicados_apagados ? ' e apagar ' + R.duplicados_apagados + ' igual(is)' : '') + '</button>') + '</div></div></div>';
 }
 async function maeImportarExec() {
   const m = document.getElementById('maeImpModal'); const b = m?.querySelector('.btn-p'); if (b) { b.disabled = true; b.textContent = 'Importando…'; }
-  try { const r = await pmoApi('maestro_importar_marcos', { executar: true }); maeImportarRender(r, true); toast('Maestro: ' + r.resumo.marcos_novos + ' marco(s) novo(s), ' + r.resumo.marcos_atualizados + ' atualizado(s), ' + r.resumo.projetos_novos + ' projeto(s) novo(s), ' + r.resumo.duplicados_apagados + ' igual(is) apagado(s)', 'success'); }
+  try { const r = await pmoApi('maestro_importar_marcos', _maeProj ? { executar: true, projeto_id: _maeProj } : { executar: true }); maeImportarRender(r, true); toast('Maestro: ' + r.resumo.marcos_novos + ' marco(s) novo(s), ' + r.resumo.marcos_atualizados + ' atualizado(s), ' + r.resumo.projetos_novos + ' projeto(s) novo(s), ' + r.resumo.duplicados_apagados + ' igual(is) apagado(s)', 'success'); }
   catch (e) { toast('Erro: ' + e.message, 'error'); if (b) { b.disabled = false; b.textContent = 'Importar'; } }
 }
 async function carregarKanbanMarcos() {
@@ -33994,7 +33997,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.228] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.229] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -34010,7 +34013,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.228';
+window.__ATX_BUILD_ID__ = 'ATX-v3.229';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
