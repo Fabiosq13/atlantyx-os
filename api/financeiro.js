@@ -124,8 +124,10 @@ async function handler(req, res) {
       const authR = req.headers?.authorization || '';
       if (process.env.CRON_SECRET && authR !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'CRON_SECRET inválido' });
       // v3.225: o alerta de contas a pagar por WhatsApp sai mesmo se o e-mail falhar (só se estiver ativado na Agenda)
+      // em paralelo com o e-mail — a função tem 60 s e os dois consultam o QuickBooks
+      const waP = alertaPagarWaEnviar({ origem: 'cron' }).catch(e => { console.warn('[CRON alerta_pagar_wa]', e.message); return { erro: e.message }; });
       let r = null, erroEmail = null; try { r = await relatorioPagamentosEnviar({}); } catch (e) { erroEmail = e.message; console.error('[CRON relatorio_pagamentos]', e.message); }
-      let wa = null; try { wa = await alertaPagarWaEnviar({ origem: 'cron' }); } catch (e) { wa = { erro: e.message }; console.warn('[CRON alerta_pagar_wa]', e.message); }
+      const wa = await waP;
       if (erroEmail) return res.status(500).json({ success: false, error: erroEmail, alerta_whatsapp: wa });
       return res.status(200).json({ success: true, ...r, alerta_whatsapp: wa });
     }
