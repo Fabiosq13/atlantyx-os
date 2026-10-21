@@ -384,9 +384,9 @@ async function contextoFinanceiroDireto() {
   const out = { fonte: 'banco_direto' };
   try {
     const sql = await getSql();
-    const hoje = new Date().toISOString().split('T')[0];
+    const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // v3.224: Brasília
     const inicioMes = hoje.substring(0, 8) + '01';
-    const fim90 = new Date(Date.now() + 90 * 86400000).toISOString().split('T')[0];
+    const fim90 = new Date(Date.parse(hoje + 'T12:00:00Z') + 90 * 86400000).toISOString().split('T')[0];
 
     const [despMes, despFuturas, marcos, termos, contratos, projetos] = await Promise.all([
       // Despesas do mês corrente (pagas e a pagar)
@@ -394,7 +394,7 @@ async function contextoFinanceiroDireto() {
           WHERE data_prevista >= ${inicioMes} AND data_prevista <= ${hoje} GROUP BY status`,
       // Compromissos dos próximos 90 dias (o que ainda vai sair do caixa)
       sql`SELECT COALESCE(SUM(valor),0) AS total, COUNT(*)::int AS qtd FROM despesas_ocorrencias
-          WHERE status != 'paga' AND data_prevista > ${hoje} AND data_prevista <= ${fim90}`,
+          WHERE status NOT IN ('paga', 'cancelada') AND data_prevista > ${hoje} AND data_prevista <= ${fim90}`, // v3.224: cancelada não sai do caixa
       // Marcos de projeto: o que está por receber e em que etapa
       sql`SELECT status_kanban, COALESCE(SUM(valor),0) AS total, COUNT(*)::int AS qtd
           FROM projetos_marcos GROUP BY status_kanban`,

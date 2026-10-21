@@ -19431,7 +19431,8 @@ async function carregarExtrato() {
     const contaSel = document.getElementById('ext_conta')?.value || null;
     const comPrev = !!document.getElementById('f_ext_previstos')?.checked;
     const _hj = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10), _fimPrev = fim && fim > _hj ? fim : new Date(Date.now() - 3 * 3600000 + 90 * 864e5).toISOString().slice(0, 10);
-    const [d, fp] = await Promise.all([finApi('extrato_consolidado', { data_inicio: ini, data_fim: fim, incluir_simulados: incluirSim, conta_id: contaSel }),
+    // v3.224: com "previstos", o extrato vai só até hoje — os lançamentos com data futura já vêm nos previstos (antes contavam 2x)
+    const [d, fp] = await Promise.all([finApi('extrato_consolidado', { data_inicio: ini, data_fim: comPrev && fim && fim > _hj ? _hj : fim, incluir_simulados: incluirSim, conta_id: contaSel }),
       comPrev ? finApi('fluxo_detalhado', { data_inicio: _hj, data_fim: _fimPrev, conta_id: contaSel, incluir_simulados: false }).catch(e => ({ _erro: e.message })) : Promise.resolve(null)]);
     // v3.161: previstos depois de hoje (mesma base do Fluxo Detalhado) — saldo projetado continua do saldo final do extrato
     d._previstos = fp ? { erro: fp._erro || null, ate: _fimPrev, hoje: _hj, itens: ((fp.futuro || {}).lancamentos || []).filter(l => !l.fora_do_saldo) } : null;
@@ -20514,7 +20515,7 @@ async function aprovarConciliacao(idx) {
   const s = window._concSugestoes?.[idx];
   if (!s || !s.sugestao) return;
   try {
-    await finApi('conc_aprovar', {
+    const _rAp = await finApi('conc_aprovar', {
       real_id: s.real_id,
       ref_id: s.sugestao.ref_id,
       ref_tipo: s.sugestao.ref_tipo,
@@ -20526,6 +20527,7 @@ async function aprovarConciliacao(idx) {
         ref_tipo: s.sugestao.ref_tipo, score: s.sugestao.score,
       },
     });
+    if (_rAp?.aviso) alert('⚠ ' + _rAp.aviso); // v3.224
     if (typeof toast === 'function') toast('Conciliado!', 'success');
     await carregarConciliacao();
   } catch (e) {
@@ -21296,7 +21298,11 @@ async function carregarCnab() {
     const d = await cnabApi('pagamentos_disponiveis', {});
     _cnabPagamentos = d.pagamentos || [];
     const formaLbl = { '01':'Crédito Itaú', '41':'TED', '30':'Boleto' };
-    box.innerHTML = _cnabPagamentos.length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;">
+    // v3.224: o que saiu da lista por já estar pago no QuickBooks / no extrato, e aviso quando não deu para conferir
+    const _cnE = v => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const avisoConf = (d.aviso_conferencia ? `<div style="background:rgba(245,185,75,.1);border:1px solid var(--gold);border-radius:8px;padding:8px 12px;font-size:10.5px;margin-bottom:8px;">⚠ ${_cnE(d.aviso_conferencia)}</div>` : '')
+      + ((d.ja_pagos_removidos || []).length ? `<details style="font-size:10.5px;color:var(--t2);margin-bottom:8px;"><summary style="cursor:pointer;">✓ ${d.ja_pagos_removidos.length} despesa(s) fora da lista por já estarem pagas (QuickBooks/extrato)</summary>${d.ja_pagos_removidos.map(x => `<div style="padding:2px 0;">${x.data.split('-').reverse().join('/')} · ${_cnE(x.descricao)} · ${fmtBRLcompleto(x.valor)} — ${_cnE(x.motivo)}</div>`).join('')}</details>` : '');
+    box.innerHTML = avisoConf + (_cnabPagamentos.length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;">
       <thead><tr style="border-bottom:1px solid var(--bd);">
         <th style="padding:5px;width:26px;"><input type="checkbox" onchange="_cnabMarcarTodos(this.checked)"/></th>
         <th style="text-align:left;padding:5px;color:var(--t2);font-family:var(--M);font-size:9px;">VENC.</th>
@@ -21313,7 +21319,7 @@ async function carregarCnab() {
         <td style="padding:5px;font-size:10px;">${formaLbl[p.forma_pagamento]||p.forma_pagamento}</td>
         <td style="padding:5px;text-align:right;font-family:var(--M);">${fmtBRLcompleto(p.valor)}</td>
         <td style="padding:5px;white-space:nowrap;">${p.pronto ? '<span style="color:var(--green,#22d3a3);font-size:9px;">✓ pronto</span>' : `<button class="btn" style="font-size:9px;padding:1px 5px;color:var(--gold);" onclick="abrirDadosBancarios('${p.despesa_id}','${(p.fornecedor||'').replace(/'/g,'')}')" title="Falta: ${p.faltando.join(', ')}">⚠ completar</button>`}</td>
-        </tr>`).join('')}</tbody></table>` : '<div style="text-align:center;color:var(--t3);padding:20px;">Nenhum pagamento pendente no período.</div>';
+        </tr>`).join('')}</tbody></table>` : '<div style="text-align:center;color:var(--t3);padding:20px;">Nenhum pagamento pendente no período.</div>');
     _cnabAtualizaInfo();
     const rem = await cnabApi('remessa_list');
     const bx = document.getElementById('cnabRemessas');
@@ -21873,7 +21879,7 @@ function _fdLinha(l, corSaldo) {
       style="cursor:pointer;font-size:9px;padding:1px 6px;border-radius:4px;background:rgba(245,185,75,.15);color:var(--gold);border:1px solid rgba(245,185,75,.4);white-space:nowrap;">📋 Termo ${l.termo_numero || ''}${l.termo_confianca === 'media' ? ' ?' : ''}</span>` : '';
   // v1.38: botão para abrir o detalhe completo do lançamento
   const acao = '<button class="btn" style="font-size:9px;padding:1px 6px;" onclick=\'_fdDetalhe(' + JSON.stringify(JSON.stringify(l)) + ')\' title="Ver detalhes deste lançamento">🔎</button>'
-    + (_fdExcluivel(l) ? ' <button class="btn" style="font-size:9px;padding:1px 6px;color:var(--red);border-color:rgba(255,77,109,.5);" onclick=\'_fdExcluir(' + JSON.stringify(JSON.stringify({ id: l.id, qb_txn_id: l.qb_txn_id || null, origem: l.origem || '', descricao: l.descricao, valor: l.valor, data: l.data })) + ')\' title="Excluir este lançamento futuro (no QuickBooks, quando vier de lá)">🗑</button>' : '');
+    + (_fdExcluivel(l) ? ' <button class="btn" style="font-size:9px;padding:1px 6px;color:var(--red);border-color:rgba(255,77,109,.5);" onclick=\'_fdExcluir(' + JSON.stringify(JSON.stringify({ id: l.id, qb_txn_id: l.qb_txn_id || null, origem: l.origem || '', descricao: l.descricao, valor: l.valor, data: l.data, pago_em: l.ja_paga ? l.ja_paga.data : null })) + ')\' title="Excluir este lançamento futuro (no QuickBooks, quando vier de lá)">🗑</button>' : '');
   return '<tr style="border-bottom:1px solid var(--bd);' + (ehRef ? 'opacity:.6;' : '') + '">'
     + '<td style="padding:6px;font-family:var(--M);color:var(--t2);white-space:nowrap;">' + (l.data || '') + '</td>'
     + '<td style="padding:6px;">' + (l.descricao || '') + venc + refTag + repTag + termoTag + '</td>'
@@ -21921,7 +21927,7 @@ async function _fdExcluir(json) {
 }
 async function _fdExcluirConfirmar() {
   const l = window._fdExcluirAlvo; if (!l) return; const b = document.getElementById('fdExcBtn'); if (b) { b.disabled = true; b.textContent = 'Excluindo…'; }
-  try { const r = await finApi('fluxo_lancamento_excluir', { id: l.id, qb_txn_id: l.qb_txn_id, origem: l.origem, confirmar: true, motivo: document.getElementById('fdExcMotivo')?.value || '' });
+  try { const r = await finApi('fluxo_lancamento_excluir', { id: l.id, qb_txn_id: l.qb_txn_id, origem: l.origem, confirmar: true, pago_em: l.pago_em || null, motivo: document.getElementById('fdExcMotivo')?.value || '' });
     document.getElementById('fdAcaoModal').style.display = 'none'; toast('Excluído ' + (r.onde ? '(' + r.onde + ')' : ''), 'success'); addLog('ok', '[Fluxo] excluído: ' + (l.descricao || '') + ' · ' + fmtBRLcompleto(l.valor) + ' · ' + (r.onde || ''));
     carregarFluxoDetalhado(); }
   catch (e) { if (b) { b.disabled = false; b.textContent = '🗑 Excluir'; } toast('Não excluiu: ' + e.message, 'error'); }
@@ -27494,26 +27500,26 @@ async function concExcluirInvoice(id, doc, cliente, valor) {
 }
 // 3. Despesas duplicadas — Bill em aberto já paga no extrato (mês anterior)
 async function concDespesasDup() {
-  _concBox('<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ Cruzando contas a pagar com o extrato do mês anterior...</div></div>');
+  _concBox('<div class="panel"><div class="pb" style="text-align:center;color:var(--t3);padding:24px;">⏳ Cruzando as contas a pagar vencidas com o extrato...</div></div>');
   try {
     const d = await finApi('conc_despesas_dup', {});
-    _concBox(`<div class="panel"><div class="ph"><div class="pt">💳 Contas a pagar em aberto que JÁ foram pagas · ${String(d.mes).padStart(2,'0')}/${d.ano}</div>
+    _concBox(`<div class="panel"><div class="ph"><div class="pt">💳 Contas a pagar em aberto que JÁ foram pagas${d.mes ? ' · ' + String(d.mes).padStart(2,'0') + '/' + d.ano : ' · todas as vencidas'}</div>
         <span style="font-size:10px;color:var(--t2);">${d.total} de ${d.bills_no_mes} · ${fmtBRLcompleto(d.valor_total||0)}</span></div>
-      <div class="pb"><div style="font-size:10.5px;color:var(--t2);margin-bottom:8px;line-height:1.6;">${d.aviso||''} Só o mês anterior ao vigente — o mês corrente nunca é tocado.</div>
+      <div class="pb"><div style="font-size:10.5px;color:var(--t2);margin-bottom:8px;line-height:1.6;">${d.aviso||''} Mesma regra do fluxo de caixa e da Agenda (mesmo fornecedor, mesmo valor, até 45 dias; pagamento de outra conta não conta).</div>
         ${(d.duplicadas||[]).length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="border-bottom:1px solid var(--bd);">${['FORNECEDOR','DOC','VALOR','VENC.','PAGO NO EXTRATO','CONF.',''].map(h=>`<th style="text-align:left;padding:5px;color:var(--t2);font-size:9px;">${h}</th>`).join('')}</tr></thead>
         <tbody>${d.duplicadas.map(x => `<tr style="border-bottom:1px solid var(--bd);">
           <td style="padding:5px;">${x.fornecedor||'—'}</td><td style="padding:5px;font-family:var(--M);">${x.doc||x.bill_id}</td>
           <td style="padding:5px;font-family:var(--M);">${fmtBRLcompleto(x.valor)}</td><td style="padding:5px;">${_dt(x.vencimento)}</td>
           <td style="padding:5px;font-size:10px;">${_dt(x.extrato_data)} · ${(x.extrato_descricao||'').substring(0,34)} (${x.dias}d)</td>
           <td style="padding:5px;">${x.confianca==='alta'?'<span style="color:var(--green,#22d3a3);">alta</span>':'<span style="color:var(--gold);">média ?</span>'}</td>
-          <td style="padding:5px;"><button class="btn" style="font-size:9px;color:var(--red);border-color:var(--red);" onclick="concExcluirBill('${x.bill_id}','${String(x.doc||'').replace(/'/g,'')}','${(x.fornecedor||'').replace(/'/g,'')}',${x.valor})">🗑 excluir do QB</button></td></tr>`).join('')}</tbody></table>`
-        : '<div style="text-align:center;color:var(--green,#22d3a3);padding:16px;">Nenhuma conta a pagar duplicada com o extrato no mês anterior.</div>'}</div></div>`);
+          <td style="padding:5px;"><button class="btn" style="font-size:9px;color:var(--red);border-color:var(--red);" onclick="concExcluirBill('${x.bill_id}','${String(x.doc||'').replace(/['"<]/g,'')}','${(x.fornecedor||'').replace(/['"<]/g,'')}',${x.valor},'${x.extrato_data||''}')">🗑 excluir do QB</button></td></tr>`).join('')}</tbody></table>`
+        : '<div style="text-align:center;color:var(--green,#22d3a3);padding:16px;">Nenhuma conta a pagar vencida duplicada com o extrato.</div>'}</div></div>`);
   } catch (e) { _concErro(e); }
 }
-async function concExcluirBill(id, doc, forn, valor) {
+async function concExcluirBill(id, doc, forn, valor, pagoEm) {
   const c = prompt(`EXCLUIR a conta a pagar ${doc||id} de ${forn} (${fmtBRLcompleto(valor)}) do QuickBooks?\n\nO pagamento real no extrato fica. Só some a duplicidade do "a pagar". IRREVERSÍVEL.\n\nDigite EXCLUIR para confirmar:`, '');
   if (c !== 'EXCLUIR') { if (c !== null) toast('Não excluído — confirmação não bateu', 'error'); return; }
-  try { const r = await finApi('conc_excluir_bill', { bill_id: id, confirmar: 'EXCLUIR', motivo: 'duplicada com o extrato' }); toast(`Conta ${r.doc||''} de ${r.fornecedor||''} excluída`, 'success'); addLog('warn', `[Conciliação] bill ${r.doc} (${r.fornecedor}) excluída`); concDespesasDup(); }
+  try { const r = await finApi('conc_excluir_bill', { bill_id: id, confirmar: 'EXCLUIR', motivo: 'duplicada com o extrato', pago_em: pagoEm || null }); toast(`Conta ${r.doc||''} de ${r.fornecedor||''} excluída`, 'success'); addLog('warn', `[Conciliação] bill ${r.doc} (${r.fornecedor}) excluída`); concDespesasDup(); }
   catch (e) { toast('Erro: ' + e.message, 'error'); alert(e.message); }
 }
 // 6. Conferência linha a linha com o razão do QuickBooks
@@ -33913,7 +33919,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.223] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.224] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -33929,7 +33935,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.223';
+window.__ATX_BUILD_ID__ = 'ATX-v3.224';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

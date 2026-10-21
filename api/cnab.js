@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { despOcorrenciasConferidas } from './financeiro.js';
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
 // SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
@@ -243,6 +244,23 @@ async function pagamentosDisponiveis({ data_inicio, data_fim } = {}) {
     FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
     WHERE o.status NOT IN ('paga', 'cancelada') AND o.data_prevista >= ${ini} AND o.data_prevista <= ${fim}
     ORDER BY o.data_prevista ASC`;
+  // v3.224: confere com o QuickBooks antes de oferecer — antes lia o banco cru e oferecia (e pagava de novo) despesa já paga no
+  // QuickBooks, paga no extrato como despesa avulsa, ou coberta por conta a pagar já paga. Conta a pagar paga em parte = só o saldo.
+  let conferencia = null, avisoConf = null;
+  try {
+    const ag = await despOcorrenciasConferidas({ data_inicio: ini, data_fim: fim });
+    if (ag.qb_erro) avisoConf = 'QuickBooks não respondeu: a lista não foi conferida com os pagamentos de lá — confira antes de gerar a remessa.';
+    else conferencia = { porId: new Map((ag.ocorrencias || []).filter(o => o.fonte === 'atlantyx').map(o => [o.id, o])), cobertas: new Map((ag.cobertas_qb || []).map(c => [c.id, c])) };
+  } catch (e) { avisoConf = 'Não consegui conferir com o QuickBooks (' + e.message + ') — confira antes de gerar a remessa.'; }
+  const removidos = [];
+  if (conferencia) {
+    for (let i = rows.length - 1; i >= 0; i--) { const r = rows[i], o = conferencia.porId.get(r.id), c = conferencia.cobertas.get(r.id);
+      let motivo = null;
+      if (c) { if (c.bill_paga) motivo = 'já paga no QuickBooks (conta a pagar do mesmo fornecedor no mês)'; }
+      else if (!o) motivo = 'não está mais na agenda';
+      else if (o.status === 'paga') motivo = o.pago_no_extrato ? 'pagamento já está no extrato' : 'já paga no QuickBooks';
+      if (motivo) { removidos.push({ id: r.id, descricao: r.descricao || r.fornecedor, data: String(r.data_prevista).split('T')[0], valor: parseFloat(r.valor) || 0, motivo }); rows.splice(i, 1); continue; }
+      if (o && o.valor_original && o.valor < parseFloat(r.valor)) r.valor = o.valor; } }
   // v3.109: o que já foi para uma remessa (evita pagar duas vezes)
   const jaRem = {};
   try { (await sql`SELECT id, arquivo_nome, criado_em, ocorrencias_ids FROM cnab_remessas ORDER BY criado_em DESC LIMIT 200`).forEach(r => {
@@ -261,6 +279,7 @@ async function pagamentosDisponiveis({ data_inicio, data_fim } = {}) {
         vencido: String(r.data_prevista).split('T')[0] < hoje, ja_em_remessa: jaRem[r.id] || null };
     }),
     periodo: { data_inicio: ini, data_fim: fim },
+    conferido_qb: !!conferencia, aviso_conferencia: avisoConf, ja_pagos_removidos: removidos,
   };
 }
 
@@ -294,7 +313,7 @@ async function gerarRemessa({ ocorrencias_ids = [], data_pagamento, repetir = fa
   }
 
   const agora = new Date();
-  const dataPagto = data_pagamento || agora.toISOString().split('T')[0];
+  const dataPagto = data_pagamento || agora.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // v3.224: Brasília
   const nsaRow = await sql`SELECT COALESCE(MAX(nsa),0)+1 AS prox FROM cnab_remessas`;
   const nsa = nsaRow[0].prox;
 
