@@ -20818,8 +20818,9 @@ function renderProjetos() {
       const ag = p.agregados || {};
       const pctConcl = ag.total_marcos > 0 ? Math.round((ag.concluidos / ag.total_marcos) * 100) : 0;
       const pctVal = ag.total_valor > 0 ? Math.round((ag.valor_concluido / ag.total_valor) * 100) : 0;
-      return `<div style="background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;cursor:pointer;" onclick="abrirProjeto('${p.id}')">
-        <div style="font-family:var(--H);font-size:13px;font-weight:600;margin-bottom:4px;">${p.nome}</div>
+      return `<div style="position:relative;background:var(--bg4);border:1px solid var(--bd);border-radius:8px;padding:12px;cursor:pointer;" onclick="abrirProjeto('${p.id}')">
+        <button title="Excluir projeto" onclick='event.stopPropagation();excluirProjeto(${_dsE(JSON.stringify(p.id))})' style="position:absolute;top:8px;right:8px;background:transparent;border:1px solid transparent;border-radius:5px;color:var(--t3);cursor:pointer;font-size:13px;padding:1px 6px;" onmouseover="this.style.color='var(--red)';this.style.borderColor='var(--red)'" onmouseout="this.style.color='var(--t3)';this.style.borderColor='transparent'">&#128465;</button>
+        <div style="font-family:var(--H);font-size:13px;font-weight:600;margin-bottom:4px;padding-right:26px;">${_dsE(p.nome)}</div>
         <div style="font-size:10px;color:var(--t2);margin-bottom:8px;">${p.cliente || 'Sem cliente'}</div>
         <div style="font-size:10px;color:var(--t2);margin-bottom:3px;">GP: ${p.gerente_projeto_nome || '-'}</div>
         <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:6px;">
@@ -20915,10 +20916,15 @@ async function abrirProjeto(id) {
 }
 
 async function excluirProjeto(id) {
-  if (!confirm('Excluir o projeto e TODOS os marcos? Não dá pra desfazer.')) return;
+  // v3.228: confirmação com o nome e o que vai junto; com marco já faturado/concluído, pede para digitar EXCLUIR
+  const p = (_projetos || []).find(x => x.id === id) || _projetoAberto || {}; const ag = p.agregados || {};
+  const nome = p.nome || 'este projeto', nM = ag.total_marcos ?? (p.marcos || []).length ?? 0, nC = ag.concluidos || 0;
+  const msg = 'Excluir o projeto "' + nome + '"?\n\n' + (nM ? nM + ' marco(s) serão apagados junto' + (nC ? ' — ' + nC + ' deles já concluído(s)/faturado(s)' : '') + ', com o histórico.\n' : 'O projeto não tem marcos.\n') + '\nNão dá para desfazer. Faturas e termos no QuickBooks não são afetados.';
+  if (nC) { const t = prompt(msg + '\n\nDigite EXCLUIR para confirmar:', ''); if (t !== 'EXCLUIR') { if (t !== null) toast('Não excluído — confirmação não bateu', 'error'); return; } }
+  else if (!confirm(msg)) return;
   try {
     await finApi('projeto_delete', { id });
-    if (typeof toast === 'function') toast('Excluído', 'success');
+    if (typeof toast === 'function') toast('Projeto "' + nome + '" excluído', 'success');
     document.getElementById('projetoDetalhePanel').style.display = 'none';
     await carregarProjetos();
   } catch (e) {
@@ -33988,7 +33994,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.227] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.228] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -34004,7 +34010,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.227';
+window.__ATX_BUILD_ID__ = 'ATX-v3.228';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
