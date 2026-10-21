@@ -838,6 +838,99 @@ async function maestroPainel({ forcar } = {}) {
   _maeCache = { em: Date.now(), v }; return v;
 }
 
+// ═══ v3.226: IMPORTAR DO MAESTRO (módulo de projetos) — marcos de faturamento + projetos novos ═══
+// Fonte: a mesma base do Maestro (CRONOGRAMA_DATABASE_URL → atlx_store: atlx_projetos_cad e atlx_proj_marcos).
+// • Projeto do Maestro que não existe aqui é criado (id proj_dash_<nome>, o mesmo que o Maestro usa ao enviar).
+// • Marco com valor (de faturamento) entra/atualiza com id mk_dash_<id do Maestro> — o mesmo do envio do Maestro, então
+//   importar de novo atualiza e não duplica. Valor, data e descrição vêm do Maestro; a etapa aqui nunca volta.
+// • Marco IGUAL criado aqui à mão (mesmo projeto e mesma descrição, ou mesmo valor com data até 20 dias) é APAGADO —
+//   antes, o andamento dele (etapa, NF, pagamento, termo, previsão, histórico) passa para o importado.
+// Sempre em 2 passos: sem executar = prévia; com executar = grava.
+const _mNorm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const _mNum = v => { if (typeof v === 'number') return v; let t = String(v || '').replace(/[R$\s]/g, ''); if (t.indexOf(',') >= 0) t = t.replace(/\./g, '').replace(',', '.'); return parseFloat(t) || 0; };
+const _mData = v => { const t = v instanceof Date ? v.toISOString().slice(0, 10) : String(v || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null; };
+const _MK_KEY = { 'Aguardando Entrega': 'aguardando_entrega', 'Liberação GP': 'liberacao_gp', 'Aprovado pelo GP': 'aprovado_gp', 'Elaborando Termo': 'elaborando_termo', 'Termo Pronto': 'termo_pronto', 'Concluído': 'concluido' };
+const _MK_ORD = ['aguardando_entrega', 'liberacao_gp', 'aprovado_gp', 'elaborando_termo', 'termo_pronto', 'concluido'];
+async function maestroImportarMarcos({ executar = false, incluir_sem_valor = false } = {}, req) {
+  if (executar) { let s = null; try { s = await lerSessao(req); } catch (_) {}
+    if (s && !(s.perfil?.admin || (s.perfil?.telas || []).includes('s3marcoskanban'))) { const e = new Error('Seu perfil não pode importar marcos (precisa da tela Kanban de Marcos).'); e.status = 403; throw e; } }
+  const crono = await getSqlCrono(), sql = await getSql();
+  const rows = await _q(crono, `SELECT key AS k, (value)::text AS v FROM atlx_store WHERE key = ANY($1)`, [['atlx_projetos_cad', 'atlx_proj_marcos']]);
+  const S = {}; rows.forEach(r => { try { S[r.k] = JSON.parse(r.v); } catch (_) {} });
+  const cad = Array.isArray(S.atlx_projetos_cad) ? S.atlx_projetos_cad : [];
+  const mk = Array.isArray(S.atlx_proj_marcos?.marcos) ? S.atlx_proj_marcos.marcos : (Array.isArray(S.atlx_proj_marcos) ? S.atlx_proj_marcos : []);
+  const projs = await sql`SELECT id, nome, cliente, valor_total, status FROM projetos_financeiros`;
+  const porNome = new Map(projs.map(p => [_mNorm(p.nome), p]));
+  const acharProj = nome => { const n = _mNorm(nome); if (!n) return null; if (porNome.has(n)) return porNome.get(n);
+    const parc = projs.filter(p => { const x = _mNorm(p.nome); return x && (x.includes(n) || n.includes(x)); }); return parc.length === 1 ? parc[0] : null; };
+  const R = { executado: !!executar, projetos_novos: [], marcos_novos: [], marcos_atualizados: [], duplicados_apagados: [], ignorados: [], sem_valor: 0 };
+  // 1) projetos do Maestro que não existem aqui
+  const nomesMaestro = [...new Set([...cad.map(c => c.nome), ...mk.map(m => m.proj)].filter(Boolean))];
+  const mapaProj = new Map();
+  for (const nome of nomesMaestro) {
+    const ex = acharProj(nome); if (ex) { mapaProj.set(nome, ex.id); continue; }
+    const c = cad.find(x => x.nome === nome) || {};
+    const id = 'proj_dash_' + _mNorm(nome).replace(/[^a-z0-9]+/g, '_').slice(0, 50);
+    const st = /cancel/i.test(c.status || '') ? 'cancelado' : /conclu|encerr/i.test(c.status || '') ? 'concluido' : 'ativo';
+    R.projetos_novos.push({ id, nome, cliente: c.cliente || '', gerente: c.gerente || c.gp || '', valor_total: _mNum(c.valor), status: st });
+    mapaProj.set(nome, id);
+    if (executar) await sql`INSERT INTO projetos_financeiros (id, nome, cliente, gerente_projeto_nome, valor_total, status, descricao)
+      VALUES (${id}, ${String(nome).slice(0, 200)}, ${String(c.cliente || '').slice(0, 200) || null}, ${String(c.gerente || c.gp || '').slice(0, 200) || null}, ${_mNum(c.valor)}, ${st}, ${'Importado do Maestro'})
+      ON CONFLICT (id) DO NOTHING`;
+  }
+  // 2) marcos
+  const atuais = await sql`SELECT * FROM projetos_marcos`;
+  const porId = new Map(atuais.map(m => [m.id, m]));
+  const manuais = atuais.filter(m => !String(m.id).startsWith('mk_dash_'));
+  const usados = new Set();
+  for (const m of mk) {
+    const nome = String(m.nome || '').trim(), valor = _mNum(m.valor ?? m.aceite_valor), data = _mData(m.fim);
+    if (!m.id || !nome) { R.ignorados.push({ marco: nome || '(sem nome)', projeto: m.proj || '', motivo: 'sem nome' }); continue; }
+    if (!(valor > 0) && !incluir_sem_valor) { R.sem_valor++; continue; }
+    if (!data) { R.ignorados.push({ marco: nome, projeto: m.proj || '', motivo: 'sem data' }); continue; }
+    const pid = mapaProj.get(m.proj); if (!pid) { R.ignorados.push({ marco: nome, projeto: m.proj || '', motivo: 'sem projeto' }); continue; }
+    const id = 'mk_dash_' + String(m.id).replace(/[^\w-]/g, '').slice(0, 60);
+    const ex = porId.get(id);
+    // marco igual criado aqui (não veio do Maestro)
+    // (mesmo nome repetido em meses diferentes — ex.: "Sustentação" — só casa com data até 45 dias)
+    const dist = x => Math.abs((Date.parse(_mData(x.data_entrega) || '1900-01-01') - Date.parse(data)) / 864e5);
+    const cands = manuais.filter(x => !usados.has(x.id) && x.projeto_id === pid && ((_mNorm(x.descricao) === _mNorm(nome) && dist(x) <= 45) || (Math.abs(_mNum(x.valor) - valor) <= Math.max(1, valor * 0.01) && dist(x) <= 20)));
+    const dup = cands.sort((a, b) => (_mNorm(b.descricao) === _mNorm(nome)) - (_mNorm(a.descricao) === _mNorm(nome)) || dist(a) - dist(b))[0] || null;
+    let st = _MK_KEY[m.status] || 'aguardando_entrega';
+    const base = ex || dup; if (base && _MK_ORD.indexOf(base.status_kanban) > _MK_ORD.indexOf(st)) st = base.status_kanban; // nunca volta de etapa
+    const item = { id, projeto: m.proj, descricao: nome, valor, data_entrega: data, etapa: st };
+    if (ex) R.marcos_atualizados.push({ ...item, antes: { valor: _mNum(ex.valor), data_entrega: _mData(ex.data_entrega) } }); else R.marcos_novos.push(item);
+    if (dup) { usados.add(dup.id); R.duplicados_apagados.push({ id: dup.id, projeto: m.proj, descricao: dup.descricao, valor: _mNum(dup.valor), data_entrega: _mData(dup.data_entrega), etapa: dup.status_kanban, substituido_por: id }); }
+    if (!executar) continue;
+    const pct = m.pct === '' || m.pct == null ? null : Math.max(0, Math.min(100, parseFloat(m.pct) || 0));
+    await sql`INSERT INTO projetos_marcos (id, projeto_id, descricao, data_entrega, percentual, valor, nota_fiscal, data_pagamento, status_kanban, observacoes)
+      VALUES (${id}, ${pid}, ${nome.slice(0, 300)}, ${data}, ${pct}, ${valor}, ${dup?.nota_fiscal || (m.nf ? String(m.nf).slice(0, 100) : null)}, ${dup?.data_pagamento || _mData(m.dataPag)}, ${st}, ${'[Importado do Maestro] ' + String(m.obs || '').slice(0, 900)})
+      ON CONFLICT (id) DO UPDATE SET projeto_id = EXCLUDED.projeto_id, descricao = EXCLUDED.descricao, data_entrega = EXCLUDED.data_entrega, valor = EXCLUDED.valor,
+        percentual = COALESCE(EXCLUDED.percentual, projetos_marcos.percentual), nota_fiscal = COALESCE(projetos_marcos.nota_fiscal, EXCLUDED.nota_fiscal),
+        data_pagamento = COALESCE(projetos_marcos.data_pagamento, EXCLUDED.data_pagamento), status_kanban = EXCLUDED.status_kanban, atualizado_em = NOW()`;
+    if (dup) {
+      // o andamento do marco daqui passa para o importado, depois ele sai
+      await sql`UPDATE projetos_marcos n SET arquivo_termo_url = COALESCE(n.arquivo_termo_url, d.arquivo_termo_url), arquivo_termo_nome = COALESCE(n.arquivo_termo_nome, d.arquivo_termo_nome),
+          arquivo_termo_base64 = COALESCE(n.arquivo_termo_base64, d.arquivo_termo_base64), gp_liberacao_aviso_em = COALESCE(n.gp_liberacao_aviso_em, d.gp_liberacao_aviso_em),
+          gp_aprovado_em = COALESCE(n.gp_aprovado_em, d.gp_aprovado_em), gp_aprovado_por = COALESCE(n.gp_aprovado_por, d.gp_aprovado_por), fin_termo_iniciado_em = COALESCE(n.fin_termo_iniciado_em, d.fin_termo_iniciado_em),
+          fin_termo_pronto_em = COALESCE(n.fin_termo_pronto_em, d.fin_termo_pronto_em), termo_enviado_cliente_em = COALESCE(n.termo_enviado_cliente_em, d.termo_enviado_cliente_em),
+          fin_nf_emitida_em = COALESCE(n.fin_nf_emitida_em, d.fin_nf_emitida_em), concluido_em = COALESCE(n.concluido_em, d.concluido_em),
+          previsao_receb_manual = COALESCE(n.previsao_receb_manual, d.previsao_receb_manual), previsao_qb_estimate_id = COALESCE(n.previsao_qb_estimate_id, d.previsao_qb_estimate_id),
+          previsao_qb_doc = COALESCE(n.previsao_qb_doc, d.previsao_qb_doc), previsao_recebimento = COALESCE(n.previsao_recebimento, d.previsao_recebimento)
+        FROM projetos_marcos d WHERE n.id = ${id} AND d.id = ${dup.id}`;
+      try { await sql`UPDATE projetos_marcos_log SET marco_id = ${id} WHERE marco_id = ${dup.id}`; } catch (_) {}
+      try { await sql`INSERT INTO projetos_marcos_log (id, marco_id, tipo, descricao, ator, criado_em) VALUES (${'log_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)}, ${id}, 'importacao', ${'Substituiu o marco "' + String(dup.descricao).slice(0, 120) + '" (' + dup.id + ') criado aqui — importado do Maestro'}, 'Importação do Maestro', NOW())`; } catch (_) {}
+      // ajustes feitos na Agenda de Receitas para o marco apagado passam para o novo
+      try { const kv = await sql`SELECT value FROM kv_store WHERE key = 'fin:receitas_ocorrencias'`; let cfg = kv[0]?.value; if (typeof cfg === 'string') cfg = JSON.parse(cfg);
+        if (cfg && cfg['mrc_' + dup.id]) { cfg['mrc_' + id] = cfg['mrc_' + id] || cfg['mrc_' + dup.id]; delete cfg['mrc_' + dup.id];
+          await sql`UPDATE kv_store SET value = ${JSON.stringify(cfg)}, updated_at = NOW() WHERE key = 'fin:receitas_ocorrencias'`; } } catch (_) {}
+      await sql`DELETE FROM projetos_marcos WHERE id = ${dup.id}`;
+    }
+  }
+  R.resumo = { projetos_novos: R.projetos_novos.length, marcos_novos: R.marcos_novos.length, marcos_atualizados: R.marcos_atualizados.length, duplicados_apagados: R.duplicados_apagados.length, ignorados: R.ignorados.length, sem_valor: R.sem_valor };
+  return R;
+}
+
 // ═══ v1.95: RAIO-X DO PROJETO ═══
 // Cruza três dimensões: cronograma físico (módulo externo), performance da equipe
 // e retorno financeiro (receitas × despesas ao longo do projeto).
@@ -1447,6 +1540,7 @@ async function handler(req, res) {
     alertas_projetos:  () => alertasProjetos(),
     painel_mestre:     () => painelMestre(payload),
     maestro_painel:    () => maestroPainel(payload),
+    maestro_importar_marcos: () => maestroImportarMarcos(payload, req), // v3.226
     raio_x_projeto:    () => raioXProjeto(payload),
     agenda_gp:         () => agendaGP(payload),
     compromisso_salvar:() => compromissoSalvar(payload),
