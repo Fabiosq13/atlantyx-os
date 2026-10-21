@@ -10149,7 +10149,7 @@ function renderReceberTable() {
       <span style="font-size:11px;color:var(--gold);">${_recEsc(_recDataBR(l.vencimento) || '—')}</span>
       <span>${_recBadge(l.dias)}</span>
       <span style="display:flex;gap:4px;">
-        <button class="btn btn-g" style="font-size:9px;padding:2px 7px;" onclick="cobrarRecebivelWA('${l.origem}',${l.idx})" title="Abre o WhatsApp IA com a mensagem de cobrança pronta">Cobrar via WhatsApp</button>
+        <button class="btn btn-g" style="font-size:9px;padding:2px 7px;" onclick='cobrarRecebivelWA(${_recEsc(JSON.stringify(l.origem))},${l.idx},${_recEsc(JSON.stringify(l.ref || ""))})' title="Abre o WhatsApp IA com a mensagem de cobrança pronta">Cobrar via WhatsApp</button>
         ${l.origem === 'manual' ? `<button class="btn btn-gn" style="font-size:9px;padding:2px 7px;" onclick="marcarRecebido(${l.idx})">Recebido</button>` : ''}
       </span>
     </div>`).join('');
@@ -10232,8 +10232,14 @@ function _recBadge(dias) {
 function _recLinhas() {
   const man = (Array.isArray(receberItems) ? receberItems : []).map((it, i) => ({ origem: 'manual', idx: i, cliente: it.cliente, doc: '', valorTxt: it.valor, valor: _recNum(it.valor), vencimento: it.vencimento }));
   const qb = (Array.isArray(receberQBItems) ? receberQBItems : []).map((it, i) => ({ origem: 'qb', idx: i, cliente: it.cliente || 'Cliente', doc: it.doc || '', valorTxt: _recFmt(it.valor), valor: Number(it.valor) || 0, vencimento: it.vencimento,
-    qb_url: it.qb_url || null, termo_id: it.termo_id || null, termo_numero: it.termo_numero || null })); // v3.114: links para a fatura e o termo
-  return man.concat(qb).map(l => { l.dias = _recDias(l.vencimento); l.status = _recStatus(l.dias); return l; });
+    qb_url: it.qb_url || null, termo_id: it.termo_id || null, termo_numero: it.termo_numero || null, ref: String(it.id || [it.cliente, it.doc, it.vencimento, it.valor].join('|')) })); // v3.114: links para a fatura e o termo · v3.231: ref estável
+  man.forEach(l => { l.ref = 'man|' + [l.cliente, l.vencimento, l.valor].join('|'); });
+  // v3.231: recebível digitado à mão que depois virou fatura no QuickBooks (mesmo cliente, valor ±2%, vencimento ±10 dias)
+  // não entra de novo — antes somava duas vezes nos cartões do A Receber
+  const _n = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+  const manOk = man.filter(m => !qb.some(q => { const a = _n(m.cliente), b = _n(q.cliente); if (!a || !b || !(a.includes(b.slice(0, 6)) || b.includes(a.slice(0, 6)))) return false;
+    if (Math.abs(q.valor - m.valor) > Math.max(1, m.valor * 0.02)) return false; const d1 = Date.parse(m.vencimento), d2 = Date.parse(q.vencimento); return !isFinite(d1) || !isFinite(d2) || Math.abs(d1 - d2) <= 10 * 864e5; }));
+  return manOk.concat(qb).map(l => { l.dias = _recDias(l.vencimento); l.status = _recStatus(l.dias); return l; });
 }
 // v3.114: atalhos para o objeto do lançamento — fatura no QuickBooks e termo de faturamento
 function _recLinksHtml(l) {
@@ -10391,8 +10397,9 @@ function _mkFocarCard() {
 }
 
 // Botão "Cobrar via WhatsApp": abre a tela s2wa com cliente, valor, vencimento e mensagem já preenchidos
-function cobrarRecebivelWA(origem, idx) {
-  const l = _recLinhas().find(x => x.origem === origem && x.idx === idx);
+function cobrarRecebivelWA(origem, idx, ref) {
+  // v3.231: procura pela referência estável da fatura — a lista é recarregada a cada 60 s e o índice podia apontar para outra
+  const l = _recLinhas().find(x => x.origem === origem && (ref ? x.ref === ref : x.idx === idx));
   if (!l) { toast('Recebível não encontrado — atualize a tela', 'error'); return; }
   const venc = _recDataBR(l.vencimento) || 'data não informada';
   const valor = _recFmt(l.valor);
@@ -10495,7 +10502,7 @@ async function renderReceitaRiscoDash() {
   else if (!d.venc.length) recHtml = vazio(`Nenhum recebível vencido há ${RR_DIAS_VENCIDO}+ dias.`);
   else recHtml = d.venc.slice(0, MAX).map(l => linha(
     `<div style="flex:1;min-width:0;">${l.qb_url ? `<a href="${_recEsc(l.qb_url)}" target="_blank" rel="noopener" style="color:inherit;" title="Abrir a fatura no QuickBooks"><b>${_recEsc(l.cliente)}</b></a>` : `<b>${_recEsc(l.cliente)}</b>`}${l.doc ? ` <span style="font-family:var(--M);font-size:9px;color:var(--t3);">${_recEsc(l.doc)}</span>` : ''}${_recLinksHtml(l)}<div style="font-family:var(--M);font-size:9.5px;color:var(--red);">vencido há ${-l.dias}d · ${_recDataBR(l.vencimento)}</div></div>`,
-    `<span style="font-family:var(--M);white-space:nowrap;">${_recFmt(l.valor)}</span><button class="btn btn-g" style="${mini}" onclick="cobrarRecebivelWA('${l.origem}',${l.idx})" title="Abre o WhatsApp IA com a mensagem de cobrança pronta">Cobrar via WhatsApp</button>`)).join('') + mais(d.venc.length, 's3receber', 'ver em A Receber');
+    `<span style="font-family:var(--M);white-space:nowrap;">${_recFmt(l.valor)}</span><button class="btn btn-g" style="${mini}" onclick='cobrarRecebivelWA(${_recEsc(JSON.stringify(l.origem))},${l.idx},${_recEsc(JSON.stringify(l.ref || ""))})' title="Abre o WhatsApp IA com a mensagem de cobrança pronta">Cobrar via WhatsApp</button>`)).join('') + mais(d.venc.length, 's3receber', 'ver em A Receber');
 
   let propHtml;
   if (_rrPropsErro && !_rrProps) propHtml = `<div style="font-size:10px;color:var(--t3);">Não foi possível consultar as propostas — ${_recEsc(_rrPropsErro.substring(0, 120))}</div>`;
@@ -20469,8 +20476,8 @@ async function carregarConciliacao() {
   let ini = document.getElementById('conc_ini')?.value;
   let fim = document.getElementById('conc_fim')?.value;
   if (!ini || !fim) {
-    fim = new Date().toISOString().split('T')[0];
-    ini = new Date(Date.now() - 60 * 86400 * 1000).toISOString().split('T')[0];
+    fim = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+    ini = new Date(Date.now() - 60 * 86400 * 1000).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
     if (document.getElementById('conc_ini')) document.getElementById('conc_ini').value = ini;
     if (document.getElementById('conc_fim')) document.getElementById('conc_fim').value = fim;
   }
@@ -22405,7 +22412,7 @@ async function fatBuscaGlobal() {
   box.innerHTML = '<div class="panel" style="font-size:11px;color:var(--t3);margin-bottom:10px;">🔎 Buscando "' + _fx(q) + '" em todas as faturas, notas e termos…</div>';
   try {
     const d = await fatApi('busca_global', { q });
-    const lnkT = (id, txt) => id ? `<a href="#" onclick="abrirDetalheTermo(${Number(id)});return false;" style="color:var(--blue);">${_fx(txt || ('termo ' + id))}</a>` : '<span style="color:var(--red);">sem termo</span>';
+    const lnkT = (id, txt) => id ? `<a href="#" onclick="abrirDetalheTermo(${_fx(JSON.stringify(String(id)))});return false;" style="color:var(--blue);">${_fx(txt || ('termo ' + id))}</a>` : '<span style="color:var(--red);">sem termo</span>';
     const sec = (tit, linhas, cab) => linhas.length ? `<div style="margin-top:8px;"><div style="font-size:10.5px;font-weight:700;margin-bottom:4px;">${tit} (${linhas.length})</div><table style="width:100%;font-size:10.5px;border-collapse:collapse;"><tr style="color:var(--t3);text-align:left;">${cab.map(c => '<th style="padding:3px 6px;">' + c + '</th>').join('')}</tr>${linhas.join('')}</table></div>` : '';
     const td = v => '<td style="padding:3px 6px;border-top:1px solid var(--bd);">' + v + '</td>';
     let h = sec('💼 Faturas no QuickBooks', d.faturas_qb.map(f => '<tr>' + td('<a href="' + _fx(f.url) + '" target="_blank" rel="noopener" style="color:var(--blue);">' + _fx(f.numero) + '</a>') + td(_fx(f.cliente)) + td(_fx(f.emissao)) + td(_fx(f.vencimento)) + td(_fxR(f.valor)) + td(_fxR(f.saldo)) + td(_fx(f.situacao)) + td(lnkT(f.termo_id, f.termo)) + '</tr>'), ['Fatura', 'Cliente', 'Emissão', 'Vencimento', 'Valor', 'Saldo', 'Situação', 'Termo']);
@@ -29196,7 +29203,7 @@ function _fv2Var(k) {
   return out.filter(Boolean).join('');
 }
 function _fv2Card(k, D) {
-  const sub = k.valor2_txt || (k.valor2 != null ? (k.valor2_rot ? _fv2Esc(k.valor2_rot) + ': ' : '') + fmtBRL(k.valor2) : '');
+  const sub = (k.valor2_txt ? _fv2Esc(k.valor2_txt) : '') || (k.valor2 != null ? (k.valor2_rot ? _fv2Esc(k.valor2_rot) + ': ' : '') + fmtBRL(k.valor2) : '');
   const meta = k.meta ? '<div class="fv2-meta">Meta: <b>' + _fv2Esc(k.meta.texto || _fv2Fmt(k.meta.valor, k.fmt)) + '</b>'
     + (k.meta.esperado_ate_hoje ? ' · esperado até hoje ' + fmtBRL(k.meta.esperado_ate_hoje) : '') + '</div>' : '';
   const tip = '**' + k.titulo + '**\n\nFórmula: ' + (k.formula || '—') + (k.meta ? '\nMeta: ' + (k.meta.texto || _fv2Fmt(k.meta.valor, k.fmt)) : '')
@@ -29341,8 +29348,9 @@ function _fv2Graficos(aba, D) {
     const W = D.semanas || [], el = document.getElementById('fv2_13');
     if (el) { _fv2Barras(el, { cats: W.map(w => 'S' + w.semana), series: [{ nome: 'Entradas', cor: cor(1), v: W.map(w => w.entradas) }, { nome: 'Saídas', cor: cor(2), v: W.map(w => w.saidas) }], linha: { nome: 'Saldo projetado', cor: 'var(--t1)', v: W.map(w => w.saldo) } });
       const mn = W.reduce((a, w) => (a == null || w.saldo < a.saldo ? w : a), null), t = document.getElementById('fv2_13_t');
+      if (t && W.length && W[0].saldo == null) t.textContent = 'Saldo de hoje indisponível (QuickBooks) — veja só entradas e saídas por semana.'; else
       if (t && mn) t.textContent = mn.saldo < 0 ? 'Caixa fica negativo na semana ' + mn.semana + ' (' + mn.de.split('-').reverse().slice(0, 2).join('/') + '): ' + _fv2K(mn.saldo) : 'Caixa positivo nas 13 semanas · menor saldo ' + _fv2K(mn.saldo) + ' na semana ' + mn.semana;
-      _fv2Tabs.fv2_13 = _fv2TabHtml(['Semana', 'De', 'Até', 'Entradas', 'Saídas', 'Saldo'], W.map(w => [w.semana, w.de.split('-').reverse().join('/'), w.ate.split('-').reverse().join('/'), fmtBRL(w.entradas), fmtBRL(w.saidas), fmtBRL(w.saldo)])); }
+      _fv2Tabs.fv2_13 = _fv2TabHtml(['Semana', 'De', 'Até', 'Entradas', 'Saídas', 'Saldo'], W.map(w => [w.semana, w.de.split('-').reverse().join('/'), w.ate.split('-').reverse().join('/'), fmtBRL(w.entradas), fmtBRL(w.saidas), w.saldo == null ? '—' : fmtBRL(w.saldo)])); }
     const seq = ['#9ec5f4', '#5598e7', '#2a78d6', '#1c5cab', '#104281'];
     [['fv2_agr', D.aging_receber, 'receber'], ['fv2_agp', D.aging_pagar, 'pagar']].forEach(([id, A, sub]) => { const e = document.getElementById(id); if (!e || !A) return;
       _fv2BarrasH(e, A.map((a, i) => ({ rot: a.faixa === 'a vencer' ? 'a vencer' : a.faixa + ' dias', v: a.valor, extra: a.qtd + ' item(ns)', cor: i === 0 ? 'var(--t3)' : seq[Math.min(4, i)] })));
@@ -34010,7 +34018,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.230] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.231] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -34026,7 +34034,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.230';
+window.__ATX_BUILD_ID__ = 'ATX-v3.231';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

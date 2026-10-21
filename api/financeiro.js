@@ -151,6 +151,8 @@ async function handler(req, res) {
 
   try {
     const { action, params = {} } = req.body || {};
+    // v3.231: conta_id vai para consultas e URLs do QuickBooks — só número (antes entrava sem filtro)
+    if (params && params.conta_id != null && params.conta_id !== '' && !/^\d+$/.test(String(params.conta_id))) return res.status(400).json({ success: false, error: 'conta_id inválido' });
     if (!action) return res.status(400).json({ error: 'action obrigatório' });
 
     const acoes = {
@@ -333,7 +335,8 @@ async function handler(req, res) {
     const CACHE_FIN = { dashboard_financeiro: 1, fluxo_detalhado: 1, extrato_diario: 1, extrato_mensal: 1, painel_resumo: 1, resultado_kpis: 1, fin_v2: 1 };
     if (CACHE_FIN[action]) {
       const { _forcar, ...pChave } = params || {};
-      const chave = 'cache:fin:' + action + ':' + JSON.stringify(pChave).substring(0, 400);
+      // v3.231: a data de hoje entra na chave — pedidos sem datas ("mês atual") não servem mais o mês anterior na virada
+      const chave = 'cache:fin:' + action + ':' + _hojeBR() + ':' + JSON.stringify(pChave).substring(0, 380);
       let sqlC = null; try { sqlC = await getSql(); } catch (_) {}
       if (sqlC && !_forcar) {
         try { const c = await sqlC`SELECT value, updated_at FROM kv_store WHERE key = ${chave} LIMIT 1`;
@@ -341,13 +344,15 @@ async function handler(req, res) {
             if (idade < 12 * 3600 && v) return res.status(200).json({ success: true, action, ...v, _cache: { idade_s: Math.round(idade), stale: idade > 180 } }); } } catch (_) {}
       }
       const resultado = await acoes[action]();
-      if (sqlC) { try { await sqlC`INSERT INTO kv_store (key, value, updated_at) VALUES (${chave}, ${JSON.stringify(resultado)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {} }
+      // v3.231: resultado com erro/incompleto (QuickBooks fora, limite de chamadas, saldo inicial não lido) não vai para o cache
+      const _falho = r => !r || r.qb_erro || r.erro || r.dados_incompletos || (Array.isArray(r.erros) && r.erros.length) || r.saldo_inicial_origem === 'zero' || r.passado?.qb_erro || r.passado?.dados_incompletos;
+      if (sqlC && !_falho(resultado)) { try { await sqlC`INSERT INTO kv_store (key, value, updated_at) VALUES (${chave}, ${JSON.stringify(resultado)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {} }
       return res.status(200).json({ success: true, action, ...resultado, _cache: { idade_s: 0, stale: false } });
     }
     const resultado = await acoes[action]();
     // v3.109: qualquer gravação invalida o cache das telas financeiras (antes: lançar/ocultar/editar e a tela seguia
     // mostrando o número velho por até 3 min — e até 12h como "desatualizado")
-    if (/save|salvar|delete|excluir|ocultar|desocultar|marcar|aprovar|rejeitar|lancar|incluir|importar|criar|editar|mover|replicar|gerar|baixar|conciliar|vincular|ajustar/i.test(action)) await _limparCacheFin();
+    if (/save|salvar|delete|excluir|ocultar|desocultar|marcar|aprovar|rejeitar|lancar|incluir|importar|criar|editar|mover|replicar|gerar|baixar|conciliar|vincular|ajustar|dedup|previsao_data|copiar|pagar|limpar/i.test(action)) await _limparCacheFin();
     return res.status(200).json({ success: true, action, ...resultado });
 
   } catch (error) {
@@ -735,8 +740,8 @@ async function vincularReceitasATermos(lancamentos = []) {
     termos = await sql`SELECT id, numero_termo, projeto, contratante, periodo_medicao, valor_total_termo, status
       FROM termos_faturamento WHERE status NOT IN ('elaboracao') ORDER BY criado_em DESC LIMIT 400`;
     const ids = termos.map(t => t.id);
-    if (ids.length) empresas = await sql`SELECT termo_id, empresa, valor_parcela, pagamento_data, pago
-      FROM termos_empresas WHERE termo_id = ANY(${ids})`;
+    if (ids.length) empresas = await sql`SELECT termo_id, empresa, valor_parcela, pagamento_data, (pagamento_status = 'pago') AS pago
+      FROM termos_empresas WHERE termo_id = ANY(${ids})`; // v3.231: a coluna "pago" não existe — a consulta falhava e nada era vinculado
   } catch (e) { console.warn('[vincular] termos:', e.message); return lancamentos; }
   if (!termos.length) return lancamentos;
 
@@ -1592,9 +1597,20 @@ async function qbTrocarTokens(bodyForm) {
   if (!r.ok || !d.access_token) throw new Error(`QB OAuth: ${d.error_description || d.error || ('HTTP ' + r.status)}`);
   return d;
 }
+// v3.231: o refresh token novo fica também na memória da instância (e mais recente vence) — se o banco não gravar,
+// a próxima renovação usa o da memória em vez do antigo do banco (era o que derrubava a conexão: invalid_grant).
+// Renovações simultâneas na mesma instância compartilham uma só chamada ao Intuit.
+let _qbRefreshMem = null, _qbRefreshEmAndamento = null, _qbRealmMem = null;
 async function qbToken() {
   if (_qbTokCache && _qbTokCache.expira_em > Date.now() + 60000) return _qbTokCache.access_token;
-  const salvo = await qbTokensLer();
+  if (_qbRefreshEmAndamento) return _qbRefreshEmAndamento;
+  _qbRefreshEmAndamento = _qbTokenRenovar().finally(() => { _qbRefreshEmAndamento = null; });
+  return _qbRefreshEmAndamento;
+}
+async function _qbTokenRenovar() {
+  let salvo = null; try { salvo = await qbTokensLer(); } catch (_) {}
+  if (salvo?.realm_id) _qbRealmMem = salvo.realm_id;
+  if (_qbRefreshMem && (!salvo?.atualizado_em || _qbRefreshMem.em > (Number(salvo.atualizado_em) || Date.parse(salvo.atualizado_em) || 0))) salvo = { ...(salvo || {}), refresh_token: _qbRefreshMem.token, realm_id: salvo?.realm_id || _qbRefreshMem.realm_id };
   const refreshToken = salvo?.refresh_token || process.env.QB_REFRESH_TOKEN;
   if (!refreshToken) throw new Error('QuickBooks não conectado — use "Conectar QuickBooks" (ou defina QB_REFRESH_TOKEN)');
   let d;
@@ -1606,17 +1622,23 @@ async function qbToken() {
     } else throw new Error(e.message + ' — reconecte em Financeiro → "Conectar QuickBooks"');
   }
   const agora = Date.now();
-  const novo = { access_token: d.access_token, refresh_token: d.refresh_token || refreshToken, expira_em: agora + ((d.expires_in || 3600) * 1000), refresh_expira_em: agora + ((d.x_refresh_token_expires_in || 8640000) * 1000), realm_id: salvo?.realm_id || process.env.QB_REALM_ID || null, atualizado_em: new Date(agora).toISOString() };
-  await qbTokensGravar(novo);
+  const novo = { atualizado_em: Date.now(), access_token: d.access_token, refresh_token: d.refresh_token || refreshToken, expira_em: agora + ((d.expires_in || 3600) * 1000), refresh_expira_em: agora + ((d.x_refresh_token_expires_in || 8640000) * 1000), realm_id: salvo?.realm_id || process.env.QB_REALM_ID || null, atualizado_em: new Date(agora).toISOString() };
+  _qbRefreshMem = { token: novo.refresh_token, em: novo.atualizado_em, realm_id: novo.realm_id || salvo?.realm_id || null };
+  let gravou = false; for (let i = 0; i < 3 && !gravou; i++) { gravou = await qbTokensGravar(novo); if (!gravou) await new Promise(r => setTimeout(r, 400 * (i + 1))); }
+  if (!gravou) console.error('[QB] ⚠ ATENÇÃO: o refresh token novo NÃO foi gravado no banco (3 tentativas) — fica só na memória desta instância. Se o banco seguir fora, reconecte o QuickBooks depois.');
   _qbTokCache = { access_token: novo.access_token, expira_em: novo.expira_em };
   return novo.access_token;
 }
-function qbRealmId() { return process.env.QB_REALM_ID; }
+// v3.231: a empresa (realm) vem do banco (conexão pelo botão OAuth) e só depois da variável — antes as gravações (conta a
+// pagar, exclusão) usavam só a variável e podiam ir para /company/undefined ou para outra empresa
+function qbRealmId() { return _qbRealmMem || _qbRefreshMem?.realm_id || process.env.QB_REALM_ID; }
 // v3.89: outras APIs (ex.: s1-data, tela "Dados Reais QB") usam o MESMO token do banco — antes elas só liam
 // QB_REFRESH_TOKEN do Vercel e diziam "não configurado" com o QuickBooks conectado pelo OAuth
 export async function qbTokenCompartilhado() { return qbToken(); }
 // v3.224: a Agenda já conferida com o QuickBooks (pago lá / pago no extrato / coberto por conta a pagar) — usada pelo CNAB
 export async function despOcorrenciasConferidas(p = {}) { return despOcorrencias({ ...p, incluir_qb: true }); }
+// v3.231: a mesma regra de imposto retido na fonte para o faturamento (termos)
+export function retencaoProvavelCompartilhado(aberto, total) { return _retencaoProvavel(aberto, total); }
 export async function qbRealmCompartilhado() { return (await qbTokensLer())?.realm_id || process.env.QB_REALM_ID || null; }
 // OAuth: URL de autorização (o usuário clica, autoriza no Intuit, volta para /api/financeiro?qb_callback=1)
 function qbRedirectUri(req) {
@@ -1808,13 +1830,23 @@ async function qbLancamentos({ data_inicio, data_fim, limite = 200, conta_id = n
   // compra — sai quando a fatura do cartão é paga (CreditCardPayment). Lançamento manual (JournalEntry) só
   // mexe no caixa pelas linhas das contas bancárias. Transferência banco → não-banco (e o contrário) mexe no caixa.
   const bancos = await _qbContasBanco(token);
+  // v3.231: sem a lista de contas bancárias o extrato muda de regra (lançamento manual, cartão e "fundos não depositados"
+  // passam a contar como caixa) — agora isso vira aviso visível em vez de acontecer em silêncio
+  if (bancos === null) { erros.push('Não consegui ler as contas bancárias do QuickBooks — saldo e classificação deste extrato podem estar imprecisos; atualize em instantes.'); incompletoPorThrottle = true; }
   const ehBanco = id => !!(bancos && id && bancos.has(String(id)));
   const vistos = new Set(); // trava extra contra duplicidade (mesmo id não entra duas vezes)
   for (const [idx, { tipo, entidade, q }] of queries.entries()) {
     try {
       if (idx > 0) await qbEsperar(120); // v1.49: evita estourar o limite do QuickBooks
-      const data = await qbQuery(q, token);
-      const items = data?.QueryResponse?.[entidade] || [];
+      // v3.231: paginado — antes uma consulta só (500/1000): no limite, o QuickBooks devolvia um pedaço qualquer e o extrato
+      // perdia lançamentos sem aviso
+      const items = [];
+      for (let pag = 0, pos = 1; pag < 8; pag++, pos += limite) {
+        const d0 = await qbQuery(q.replace(/maxresults (\d+)$/, `startposition ${pos} maxresults ${limite}`), token);
+        const L = d0?.QueryResponse?.[entidade] || []; items.push(...L);
+        if (L.length < limite) break;
+        if (pag === 7) { erros.push(`${entidade}: mais de ${8 * limite} lançamentos no período — parte ficou de fora; use um período menor`); incompletoPorThrottle = true; }
+      }
       for (const item of items) {
         const chave = `${entidade}:${item.Id}`;
         if (vistos.has(chave)) continue;
@@ -2188,7 +2220,7 @@ function normEmpresaFin(s) {
 async function qbRastrearDuplicados({ data, valor, cliente } = {}) {
   if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
   const token = await qbToken();
-  const dia = (data || new Date().toISOString().split('T')[0]).substring(0, 10);
+  const dia = (data || _hojeBR()).substring(0, 10);
   const alvoValor = valor != null ? parseFloat(valor) : null;
   const out = { data: dia, valor_procurado: alvoValor, cliente_procurado: cliente || null, achados: [], conclusao: null };
 
@@ -2255,7 +2287,7 @@ async function qbExcluirLancamento({ qb_txn_id, confirmar = false } = {}) {
   if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
   const [tipo, id] = String(qb_txn_id).split(':');
   const entidade = ENTIDADE_POR_TIPO[tipo];
-  if (!entidade || !id) throw new Error(`Identificador inválido: ${qb_txn_id}`);
+  if (!entidade || !id || !/^\d+$/.test(id)) throw new Error(`Identificador inválido: ${String(qb_txn_id).substring(0, 40)}`); // v3.231: só número (vai para a consulta e para a exclusão)
 
   const token = await qbToken();
   const realm = qbRealmId();
@@ -2317,7 +2349,7 @@ let _saldoAberturaTruncado = false; // v1.59
 let _ultimaOrigemSaldo = null, _ultimoErroSaldo = null; // v1.60.1 diagnóstico
 async function qbSaldoContaNaData({ conta_id = null, data } = {}) {
   if (!qbConfigurado() || !data) return null;
-  _ultimaOrigemSaldo = null; _ultimoErroSaldo = null; // v1.60.1
+  _ultimaOrigemSaldo = null; _ultimoErroSaldo = null; _saldoAberturaTruncado = false; // v1.60.1 · v3.231: o aviso de histórico truncado não fica preso na instância
   const chave = `${conta_id || 'todas'}|${data}`;
   // v1.60.1: só reaproveita o cache se o valor for VÁLIDO. Antes, se a primeira consulta
   // falhasse (throttle, timing), o null ficava guardado e todas as chamadas seguintes
@@ -2670,7 +2702,7 @@ async function qbContasParaFiltro() {
 async function qbSaldoPorContaNaData({ data } = {}) {
   if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
   const token = await qbToken();
-  const alvo = (data || new Date().toISOString().split('T')[0]).substring(0, 10);
+  const alvo = (data || _hojeBR()).substring(0, 10);
   const out = { data: alvo, contas: [], saldo_total_hoje: 0, observacoes: [] };
   try {
     // Saldo ATUAL de cada conta
@@ -2749,7 +2781,7 @@ async function qbContasDiagnostico() {
 // último dia do fluxo, não o de hoje. (Confirmado: o QB mostrava -R$ 454.854,52 considerando
 // os compromissos já lançados à frente.) Esta função devolve o saldo REAL até uma data.
 async function qbSaldoRealAte({ data, conta_id = null } = {}) {
-  const alvo = data || new Date().toISOString().split('T')[0];
+  const alvo = data || _hojeBR();
   const s = await qbSaldoContaNaData({ conta_id, data: alvo });
   if (s != null) return { saldo: s, data: alvo, fonte: 'balanco_na_data', inclui_futuros: false };
   try {
@@ -3079,7 +3111,7 @@ async function extratoConsolidado({ data_inicio, data_fim, incluir_simulados = t
     // A fonte correta é o QuickBooks. Só recuamos no tempo quando o período pedido é PASSADO,
     // e aí subtraímos do saldo atual o que aconteceu depois — que é uma conta bem menor e verificável.
     const ateAnterior = new Date(new Date(ini + 'T12:00:00').getTime() - 86400000).toISOString().split('T')[0];
-    const hojeStr2 = new Date().toISOString().split('T')[0];
+    const hojeStr2 = _hojeBR(); // v3.231: Brasília
 
     // v1.57: FONTE PRIMÁRIA = saldo do Balanço Patrimonial no dia anterior ao período.
     // É o número que o QuickBooks mostra no razão como saldo de abertura — sem contaminação
@@ -3250,7 +3282,7 @@ async function qbRecorrentesProjecao({ ate, receitas = false } = {}) {   // rece
   const token = await qbToken();
   const d = await qbQuery(`select * from RecurringTransaction maxresults 500`, token);
   const lista = d?.QueryResponse?.RecurringTransaction || [];
-  const hojeS = new Date().toISOString().substring(0, 10);
+  const hojeS = _hojeBR();
   const lim = ate || _diasMais(hojeS, 366);
   const ENT = { Invoice: 'entrada', SalesReceipt: 'entrada', Deposit: 'entrada', Estimate: null, Bill: 'saida', Purchase: 'saida', Check: 'saida', CreditCardCredit: null, JournalEntry: null, Transfer: null, VendorCredit: null, CreditMemo: null, RefundReceipt: 'saida', PurchaseOrder: null };
   const itens = [];
@@ -3476,7 +3508,7 @@ async function fluxoLancamentoExcluir({ id, qb_txn_id = null, origem = '', confi
     if (!confirmar) return { previa: true, sera_excluido: reg, onde: 'QuickBooks', aviso: vinc.length ? '⚠ Esta fatura está vinculada ao termo de faturamento nº ' + vinc.map(v => v.numero_termo + ' (' + v.empresa + ')').join(', ') + ' — o vínculo será desfeito.' : null,
       irreversivel: 'A exclusão é feita direto no QuickBooks e NÃO pode ser desfeita pelo Atlantyx.' };
     await qbFetch('/invoice?operation=delete', token, 'POST', { Id: inv.Id, SyncToken: inv.SyncToken });
-    try { await sql`UPDATE termos_empresas SET qb_invoice_id = NULL, qb_invoice_doc = NULL, qb_erro = ${'fatura excluída do QB pelo fluxo de caixa em ' + new Date().toISOString().substring(0, 10) + (motivo ? ': ' + motivo : '')} WHERE qb_invoice_id = ${inv.Id}`; } catch (_) {}
+    try { await sql`UPDATE termos_empresas SET qb_invoice_id = NULL, qb_invoice_doc = NULL, qb_erro = ${'fatura excluída do QB pelo fluxo de caixa em ' + _hojeBR() + (motivo ? ': ' + motivo : '')} WHERE qb_invoice_id = ${inv.Id}`; } catch (_) {}
     return feito({ registro: reg, onde: 'QuickBooks' });
   }
   if (pref === 'bill') {
@@ -3581,7 +3613,12 @@ async function vencidosPainel() {
         obs: 'Só na Agenda (não lançada no QuickBooks)' + (dias(dv) > 60 ? ' · há mais de 60 dias — confira se já foi paga' : '') }); });
     pagar.sort((a, b) => b.dias - a.dias); } catch (_) {}
   const ja_pagas = (fut.pagaveis_ja_pagas || []).map(l => ({ id: l.id, vencimento: String(l.data).substring(0, 10), contraparte: l.fornecedor || String(l.descricao).split(' · ')[0], valor: round(l.valor), pago_em: l.ja_paga?.data }));
-  const retidas = Date.now() - _retencaoUltimas.t < 15 * 60000 ? _retencaoUltimas.lista : [];
+  // v3.231: consulta própria (sem o filtro automático de retenção) — antes lia um resultado guardado na memória da instância
+  let retidas = [];
+  try { const token = await qbToken(); const d = await qbQuery(`select * from Invoice where Balance > '0.009' maxresults 1000`, token);
+    retidas = (d?.QueryResponse?.Invoice || []).map(i => ({ i, ret: _retencaoProvavel(parseFloat(i.Balance || 0), parseFloat(i.TotalAmt || 0)) })).filter(x => x.ret)
+      .map(({ i, ret }) => ({ id: 'inv_' + i.Id, doc: i.DocNumber || '', contraparte: i.CustomerRef?.name || '', vencimento: i.DueDate || i.TxnDate, valor: round(parseFloat(i.Balance || 0)), valor_total: round(parseFloat(i.TotalAmt || 0)), retencao: ret })); }
+  catch (_) { retidas = Date.now() - _retencaoUltimas.t < 15 * 60000 ? _retencaoUltimas.lista : []; }
   return { hoje, receber, pagar, ja_pagas, retidas, total_receber: round(receber.reduce((a, x) => a + x.valor, 0)), total_pagar: round(pagar.reduce((a, x) => a + x.valor, 0)),
     retencoes: { qtd: receber.filter(x => x.retencao_provavel).length, valor: round(receber.filter(x => x.retencao_provavel).reduce((a, x) => a + x.valor, 0)) }, erro: fut.erro || null };
 }
@@ -4029,6 +4066,13 @@ async function despOcorrencias({ data_inicio, data_fim, status, incluir_qb = tru
   return { agenda_cobertas_qb: cobertasQb, cobertas_qb: cobertasDet, ocorrencias: locais.concat(filtQb).sort((a, b) => String(a.data_prevista).localeCompare(String(b.data_prevista))), qb_bills: qbBills.length, qb_erro: qbErro };
 }
 
+// v3.231: trava curta no banco (2 min) para ações que gravam no QuickBooks e não podem rodar 2x
+async function _travar(sql, chave) {
+  try { await sql`DELETE FROM kv_store WHERE key = ${'lock:' + chave} AND updated_at < NOW() - INTERVAL '2 minutes'`;
+    const r = await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${'lock:' + chave}, ${JSON.stringify({ em: new Date().toISOString() })}, NOW()) ON CONFLICT (key) DO NOTHING RETURNING key`;
+    return r.length > 0; } catch (_) { return true; }
+}
+async function _destravar(sql, chave) { try { await sql`DELETE FROM kv_store WHERE key = ${'lock:' + chave}`; } catch (_) {} }
 async function despMarcarPaga({ id, data_pagamento, qb_txn_id, conta_banco_id, so_no_sistema = false } = {}) {
   if (!id) throw new Error('id obrigatório');
   const sql = await getSql();
@@ -4038,7 +4082,12 @@ async function despMarcarPaga({ id, data_pagamento, qb_txn_id, conta_banco_id, s
   if (!oc) throw new Error('Ocorrência não encontrada');
   if (oc.qb_txn_id && !so_no_sistema) {
     if (!conta_banco_id) throw new Error('Esta despesa já é conta a pagar no QuickBooks — escolha a conta bancária do pagamento para registrar a baixa lá também.');
-    const r = await qbPagarBill({ bill_id: oc.qb_txn_id, conta_banco_id, data: data_pagamento || _hojeBR() });
+    if (oc.status === 'paga') return { id, paga: true, ja_estava_paga: true };
+    if (!/^\d+$/.test(String(conta_banco_id))) throw new Error('conta bancária inválida');
+    // v3.231: trava — clique duplo ou nova tentativa depois do tempo esgotado não registra 2 pagamentos
+    if (!(await _travar(sql, 'pagar:' + id))) throw new Error('Este pagamento já está sendo registrado — aguarde alguns segundos e atualize a tela.');
+    let r; try { try { _qbCache.clear(); } catch (_) {} r = await qbPagarBill({ bill_id: oc.qb_txn_id, conta_banco_id, data: data_pagamento || _hojeBR() }); }
+    finally { await _destravar(sql, 'pagar:' + id); }
     await sql`UPDATE despesas_ocorrencias SET status = 'paga', data_pagamento = ${data_pagamento || _hojeBR()} WHERE id = ${id}`;
     try { _resCache.clear(); _qbCache.clear(); } catch (_) {}
     return { id, paga: true, qb_pagamento: r };
@@ -4132,6 +4181,12 @@ async function despLancarQb({ ocorrencia_id } = {}) {
   // v1.20.6: idempotente — se essa OCORRÊNCIA específica já tem qb_txn_id, não lança de novo
   // (cada mês de uma despesa recorrente é uma ocorrência própria, então isso nunca bloqueia o próximo mês)
   if (o.qb_txn_id) return { ja_lancado: true, qb_txn_id: o.qb_txn_id };
+  // v3.231: trava — clique duplo não cria 2 contas a pagar
+  if (!(await _travar(sql, 'lancar:' + ocorrencia_id))) throw new Error('Esta despesa já está sendo lançada no QuickBooks — aguarde e atualize a tela.');
+  try { return await _despLancarQbExec(sql, o, ocorrencia_id); } finally { await _destravar(sql, 'lancar:' + ocorrencia_id); }
+}
+async function _despLancarQbExec(sql, o, ocorrencia_id) {
+  { const ja = await sql`SELECT qb_txn_id FROM despesas_ocorrencias WHERE id = ${ocorrencia_id}`; if (ja[0]?.qb_txn_id) return { ja_lancado: true, qb_txn_id: ja[0].qb_txn_id }; }
   if (!o.desp_fornecedor) throw new Error('Esta despesa não tem "Fornecedor" cadastrado — edite a despesa programada e informe o fornecedor (precisa bater com o nome no QuickBooks) antes de lançar.');
   const token = await qbToken();
   const realm = qbRealmId();
@@ -4551,7 +4606,7 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
   // movimentos que já estão lançados no banco (BillPayment, Purchase, Payment, Deposit).
   const jaLancadoPorMes = {};
   try {
-    const hojeStrFF2 = new Date().toISOString().split('T')[0];
+    const hojeStrFF2 = _hojeBR();
     const ultimoMesFF = listaMeses[listaMeses.length - 1];
     if (ultimoMesFF) {
       const [aaF, mmF] = ultimoMesFF.split('-').map(Number);
@@ -4655,6 +4710,10 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
       (origemSaldo.negativas?.length ? ` Contas negativas no QuickBooks: ${origemSaldo.negativas.map(c => c.nome + ' (' + c.saldo.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) + ')').join(', ')}.` : '') });
   if (aReceberVencido > 0) alertas.push({ tipo: 'vencido',
     mensagem: `R$ ${aReceberVencido.toLocaleString('pt-BR',{minimumFractionDigits:2})} em faturas JÁ VENCIDAS não entram na projeção (o vencimento passou). Cobre esses recebíveis ou renegocie a data no QuickBooks.` });
+  // v3.231: contas a pagar vencidas de meses anteriores também não entram na matriz — antes sumiam sem aviso (a projeção
+  // ficava otimista e divergia do card "A pagar"). Já pagas no extrato não contam.
+  try { const vp = await vencidosPainel(); const ant = (vp.pagar || []).filter(x => String(x.vencimento) < mesAtual + '-01'); const tot = round(ant.reduce((a, x) => a + (x.valor || 0), 0));
+    if (tot > 0) alertas.push({ tipo: 'vencido', mensagem: `R$ ${tot.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} em ${ant.length} conta(s) a pagar VENCIDA(S) de meses anteriores não entram na projeção. Pague, renegocie ou, se já foram pagas, baixe no QuickBooks (Dashboard → Financeiro → Vencidos em aberto).` }); } catch (_) {}
   if (aReceberForaHorizonte > 0) alertas.push({ tipo: 'fora_horizonte',
     mensagem: `R$ ${aReceberForaHorizonte.toLocaleString('pt-BR',{minimumFractionDigits:2})} a receber com vencimento além dos ${meses} meses — fora deste horizonte.` });
   const saldosFinais = listaMeses.map(m => linhas['= Saldo Final'][m]);
@@ -5226,7 +5285,7 @@ async function metasEmpresaStatus({ ano, com_crm = true, _forcar = false, metodo
   } else if (crm.status === 'rejected') out.erros.push('CRM: ' + crm.reason?.message);
   else if (!process.env.HUBSPOT_TOKEN && out.situacao !== 'encerrado') out.crm = { indisponivel: 'HUBSPOT_TOKEN não configurado' };
   // v3.211: carteira prevista do ano (Agenda de Receitas: marcos não faturados, sustentações e receitas cadastradas)
-  if (out.situacao !== 'encerrado') try { const rp = await receitasPrevistas({ meses: 13 }); const ini = `${a}-01-01`, fimA = `${a}-12-31`;
+  if (out.situacao !== 'encerrado') try { const rp = await receitasPrevistas({ meses: Math.min(36, Math.max(13, (a - anoAtual) * 12 + 13 - parseInt(hoje.substring(5, 7)))) }); /* v3.231: até dezembro do ano escolhido */ const ini = `${a}-01-01`, fimA = `${a}-12-31`;
     const L = rp.ativas.filter(o => o.data >= ini && o.data <= fimA); const soma = k => round(L.filter(o => !k || o.origem === k).reduce((t, o) => t + o.valor, 0));
     out.carteira = { prevista: soma(), marcos: soma('marco'), sustentacoes: soma('sustentacao'), avulsas: soma('manual'), qtd: L.length, qb_conferido: rp.qb_conferido };
     if (out.faturamento) { const real = Number(out.faturamento.realizado) || 0, falta = Number(out.faturamento.falta) || 0;
@@ -5266,7 +5325,7 @@ async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, 
     periodo: { de: ini, ate: futuro ? fimPedido : fim, ate_pedido: fimPedido, futuro, parcial: fimPedido > hoje && !futuro },
     ano: { de: anoIni, ate: anoFim }, periodo_res: null, ano_res: null, meta_margem: null, erros: [] };
   if (!out.qb_configurado) { out.erros.push('QuickBooks não configurado'); return { resultado: out }; }
-  const chave = `${ini}|${fim}|${futuro}|${met}`, c = _resCache.get(chave);
+  const chave = `${ini}|${fim}|${fimPedido}|${futuro}|${met}` /* v3.231: + fim pedido — mês, trimestre e ano até hoje não se misturam */, c = _resCache.get(chave);
   if (!_forcar && c && Date.now() - c.em < 300000) return { resultado: c.v };
   const token = await qbToken();
   const comTempo = (p, ms, msg) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error(msg)), ms))]);
@@ -5604,7 +5663,7 @@ async function alertaTermosDoMes({ forcar = false, para, mes, ano } = {}) {
 // acha quais são, em vez de deixar você deduzir.
 async function conferirComRazao({ conta_id, data_inicio, data_fim } = {}) {
   if (!conta_id) throw new Error('Escolha uma conta — a conferência é por conta.');
-  const hoje = new Date().toISOString().substring(0, 10);
+  const hoje = _hojeBR();
   const ini = data_inicio || `${hoje.substring(0, 8)}01`, fim = data_fim || hoje;
   const [razaoR, ext] = await Promise.all([
     qbRazaoConta({ conta_id, data_inicio: ini, data_fim: fim }),
@@ -6051,6 +6110,8 @@ async function conciliarOfx({ ofx_texto, conta_id = null, tolerancia_dias = 3 } 
   if (!ofx_texto) throw new Error('Envie o conteúdo do arquivo OFX');
   const ofx = parseOfx(ofx_texto);
   if (!ofx.total) throw new Error('Nenhum lançamento encontrado no OFX — confira se é um extrato de conta corrente.');
+  // v3.231: o OFX é de UMA conta — comparar com todas as contas somadas dava sempre "divergente"
+  if (!conta_id) throw new Error('Escolha no filtro a conta bancária deste arquivo OFX (o extrato do banco é de uma conta só).');
   const de = ofx.periodo.de || ofx.lancamentos.reduce((s, l) => l.data < s ? l.data : s, ofx.lancamentos[0].data);
   const ate = ofx.periodo.ate || ofx.lancamentos.reduce((s, l) => l.data > s ? l.data : s, ofx.lancamentos[0].data);
   const ext = await extratoConsolidado({ data_inicio: de, data_fim: ate, conta_id, incluir_simulados: false });
@@ -6189,7 +6250,7 @@ async function conciliarTermo({ termo_id } = {}) {
       const d2 = new Date(parseInt(ano), parseInt(mes) - 1, 1); meses.add(`${d2.getFullYear()}-${d2.getMonth() + 1}`); } });
   let itens = [];
   for (const k of meses) { const [a, m] = k.split('-').map(Number);
-    const r = await conciliacaoNotasExtrato({ mes: m, ano: a, aplicar: true });
+    const r = await conciliacaoNotasExtrato({ mes: m, ano: a, aplicar: true, termo_id });
     itens.push(...(r.notas || []).filter(x => x.termo_id === termo_id)); }
   const vistos = new Set(); itens = itens.filter(x => !vistos.has(x.empresa_id) && vistos.add(x.empresa_id));
   const t = await sql`SELECT conciliado, conciliado_em FROM termos_faturamento WHERE id = ${termo_id}`;
@@ -6198,7 +6259,7 @@ async function conciliarTermo({ termo_id } = {}) {
       em_atraso: itens.filter(x => x.situacao === 'em_atraso').length } };
 }
 
-async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_dias = 10, tolerancia_pct = 2, aplicar = true, conta_id = null } = {}) {
+async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_dias = 10, tolerancia_pct = 2, aplicar = true, conta_id = null, termo_id = null } = {}) {
   const sql = await getSql();
   for (const col of ['conciliado_em TIMESTAMPTZ', 'conciliado_extrato_id TEXT', 'conciliado_extrato_data TEXT', 'conciliado_obs TEXT', 'cnpj TEXT']) {
     try { await _q(sql, `ALTER TABLE termos_empresas ADD COLUMN IF NOT EXISTS ${col}`); } catch (_) {}
@@ -6220,7 +6281,7 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
 
   // 1. Notas cujo pagamento ESPERADO (emissão + prazo) cai no mês, mais as ainda não conciliadas de meses anteriores
   const notas = await sql`SELECT e.id, e.termo_id, e.empresa, e.cnpj, e.nf_numero, e.nf_valor, e.nf_data, e.pagamento_status, e.pagamento_data,
-      e.conciliado_em, t.numero_termo, t.projeto, t.contratante, t.status AS termo_status
+      e.conciliado_em, e.conciliado_extrato_id, t.numero_termo, t.projeto, t.contratante, t.status AS termo_status
     FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id
     WHERE e.nf_numero IS NOT NULL AND e.nf_valor IS NOT NULL AND e.nf_valor > 0
       AND t.status NOT IN ('elaboracao','aprovacao')
@@ -6232,7 +6293,8 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
     const emissao = parseData(n.nf_data);
     const esperado = emissao ? addDias(emissao, prazo_dias) : null;
     return { ...n, emissao, esperado, janela_ini: esperado ? addDias(esperado, -tolerancia_dias) : null, janela_fim: esperado ? addDias(esperado, tolerancia_dias) : null };
-  }).filter(n => n.esperado && (n.esperado >= mesIni && n.esperado <= mesFim || (!n.conciliado_em && n.esperado < mesIni)));
+  }).filter(n => n.esperado && (n.esperado >= mesIni && n.esperado <= mesFim || (!n.conciliado_em && n.esperado < mesIni)))
+    .filter(n => !termo_id || n.termo_id === termo_id); // v3.231: conciliar UM termo não mexe nos outros termos do mês
 
   if (!candidatas.length) return { mes: m, ano: a, notas: [], resumo: { total: 0 }, aviso: 'Nenhuma nota com pagamento esperado neste mês.' };
 
@@ -6243,7 +6305,8 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
   candidatas.forEach(n => { const dp = parseData(n.pagamento_data); if (dp) { if (addDias(dp, -3) < ini) ini = addDias(dp, -3); if (addDias(dp, 3) > fim) fim = addDias(dp, 3); } });
   const ext = await extratoConsolidado({ data_inicio: ini, data_fim: fim, conta_id, incluir_simulados: false });
   const receitas = (ext.lancamentos || []).filter(l => l.tipo === 'entrada' && l.valor > 0);
-  const usadas = new Set();
+  // v3.231: o recebimento de uma nota JÁ conciliada fica reservado — antes outra nota do mesmo valor podia "pegar" ele
+  const usadas = new Set(candidatas.filter(n => n.conciliado_em && n.conciliado_extrato_id).map(n => String(n.conciliado_extrato_id)));
   const normN = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ');
   // v2.41: CNPJ dos clientes do QuickBooks (nome → CNPJ), para casar pela identidade fiscal.
   // A receita do extrato traz a contraparte (nome do cliente); o cliente no QB tem o CNPJ.
@@ -6277,6 +6340,10 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
   const resultado = [];
   for (const n of candidatas) {
     const valor = num(n.nf_valor), tol = Math.max(valor * tolerancia_pct / 100, 1);
+    // v3.231: nota já conciliada mantém o recebimento dela (não é casada de novo)
+    if (n.conciliado_em && n.conciliado_extrato_id) { const r0 = receitas.find(r => String(r.id) === String(n.conciliado_extrato_id));
+      resultado.push({ empresa_id: n.id, termo_id: n.termo_id, termo: n.numero_termo, projeto: n.projeto, cliente: n.contratante, empresa: n.empresa, nf: n.nf_numero, valor, emissao: n.emissao, esperado: n.esperado,
+        ja_conciliada: true, situacao: 'conciliada', extrato_data: r0?.data || n.conciliado_extrato_data || null, extrato_valor: r0?.valor ?? null, extrato_descricao: r0?.descricao || '', confianca: 'alta' }); continue; }
     let melhor = null;
     // 3a. pelo número da nota na descrição
     for (const r of receitas) {
@@ -6371,6 +6438,8 @@ async function conciliacaoNotasExtrato({ mes, ano, prazo_dias = 30, tolerancia_d
       termosConciliados.push(tid);
       if (aplicar) await sql`UPDATE termos_faturamento SET conciliado = true, conciliado_em = COALESCE(conciliado_em, NOW()) WHERE id = ${tid}`;
     }
+    // v3.231: as empresas pagas pelo extrato atualizam o status do TERMO (antes ficava em "pagamento" e seguia nos alertas)
+    if (aplicar && itens.some(x => x.situacao === 'conciliada')) { try { const fat = await import('./faturamento.js'); await fat.recalcularPagamentoTermo(tid); } catch (e) { console.warn('[conc] recalcular termo', tid, e.message); } }
   }
 
   // 5. Receitas do mês que não casaram com nota nenhuma
@@ -6404,7 +6473,7 @@ async function conciliacaoRecebiveis({ tolerancia_valor_pct = 2, tolerancia_dias
     termos = await sql`SELECT t.id, t.numero_termo, t.projeto, t.contratante, t.periodo_medicao,
         t.valor_total_termo, t.status, t.aprovado_em, t.nf_soma
       FROM termos_faturamento t
-      WHERE t.status IN ('aprovado','nf_recebida','pagamento','concluido')
+      WHERE t.status IN ('emissao_nf','envio_nf','pagamento','pago','concluido') /* v3.231: status atuais do Kanban */
       ORDER BY t.aprovado_em DESC NULLS LAST LIMIT 200`;
   } catch (e) { return { erro: 'Não consegui ler os termos: ' + e.message }; }
   if (!termos.length) return { termos: [], resumo: { total: 0 }, aviso: 'Nenhum termo aprovado encontrado.' };
@@ -6809,7 +6878,7 @@ async function qbConciliacaoStatus({ data_inicio, data_fim, conta_id = null } = 
 async function conciliacaoStatus({ data_inicio, data_fim, conta_id = null } = {}) {
   const sql = await getSql();
   const ini = data_inicio || new Date(Date.now() - 60*86400*1000).toISOString().split('T')[0];
-  const fim = data_fim || new Date().toISOString().split('T')[0];
+  const fim = data_fim || _hojeBR();
   const rows = await sql`SELECT status, COUNT(*) as cnt, COALESCE(SUM(real_valor), 0) as total
     FROM conciliacoes
     WHERE criado_em >= ${ini}::date AND criado_em <= ${fim}::date + interval '1 day'
@@ -7679,7 +7748,7 @@ async function extratoMensal({ ano, conta_id = null } = {}) {
   // v3.21: mesma fonte da tela Fluxo Detalhado (extrato real + previsto). Meses passados = realizado
   // do extrato; mês corrente = realizado até hoje + previsto; meses futuros = previsto (faturas e contas
   // em aberto, despesas programadas, simulados, lançamentos futuros e recorrentes do QuickBooks).
-  const anoRef = parseInt(ano) || new Date().getFullYear();
+  const anoRef = parseInt(ano) || parseInt(_hojeBR().slice(0, 4));
   const inicio = `${anoRef}-01-01`, fim = `${anoRef}-12-31`;
   const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
   if (inicio > hoje) return extratoMensalLegado({ ano: anoRef, conta_id });
@@ -7695,7 +7764,7 @@ async function extratoMensal({ ano, conta_id = null } = {}) {
     m.lancamentos_count++; };
   (fd.passado?.lancamentos || []).forEach(l => somar(l, false));
   // v3.113: previsto vencido entra no mês corrente (antes caía no mês do vencimento, como se já tivesse acontecido)
-  (fd.futuro?.lancamentos || []).filter(l => !l.fora_do_saldo || l.data <= fim).forEach(l => { const d = l.data < hoje ? hoje : l.data; if (d <= fim) somar({ ...l, data: d }, true); });
+  (fd.futuro?.lancamentos || []).filter(l => !l.fora_do_saldo) /* v3.231: já paga no extrato também é fora_do_saldo — não conta de novo */.forEach(l => { const d = l.data < hoje ? hoje : l.data; if (d <= fim) somar({ ...l, data: d }, true); });
   let saldoCorrente = fd.saldo_inicial || 0;
   for (const k of Object.keys(porMes).sort()) { const m = porMes[k];
     m.saldo_inicio = round(saldoCorrente); m.resultado = round(m.entradas - m.saidas); saldoCorrente += m.resultado; m.saldo_fim = round(saldoCorrente);
@@ -7716,7 +7785,7 @@ async function extratoMensal({ ano, conta_id = null } = {}) {
 }
 
 async function extratoMensalLegado({ ano, conta_id = null } = {}) {
-  const anoRef = ano || new Date().getFullYear();
+  const anoRef = ano || parseInt(_hojeBR().slice(0, 4));
   const inicio = `${anoRef}-01-01`;
   const fim = `${anoRef}-12-31`;
 
@@ -7934,7 +8003,7 @@ async function marcosImportarPlanilha({ linhas = [] } = {}) {
         projetosCache[nomeProj.toLowerCase()] = projId;
       }
       const marcoId = `mar_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      const dataEntrega = l.data_solicitacao || l.data_pagamento || new Date().toISOString().substring(0, 10);
+      const dataEntrega = l.data_solicitacao || l.data_pagamento || _hojeBR();
       const semDataOriginal = !l.data_solicitacao;
       // v3.109: só "pago" conclui; o resto entra em "Aguardando entrega" (antes virava 'aguardando_pagamento', que não é coluna — e ia para concluído no reinício)
       const statusKanban = /pago/i.test(l.status || '') ? 'concluido' : /fatur|nf emitida|nota emitida|termo/i.test(l.status || '') ? 'termo_pronto' : 'aguardando_entrega';
@@ -8760,7 +8829,7 @@ async function _fv2Executiva({ P, met, cfg, L, token, base }) {
   kpis.push(_fv2Kpi({ id: 'receita', titulo: 'Receita', valor: A?.faturamento, fmt: 'brl', meta: metaRec != null ? { valor: metaRec, texto: fmtBR(metaRec) + (metaCad != null ? (MT[P.ini.substring(0, 4)]?.padrao ? ' (meta padrão: +25% a.a.)' : ' (Metas da Empresa)') : ' (orçado no período)'), esperado_ate_hoje: P.parcial ? round(metaRec * recFrac) : null } : null,
     anterior: { valor: B?.faturamento, var_pct: _fv2Var(A?.faturamento, B?.faturamento), rotulo: P.parcial ? 'mesmo trecho do período anterior' : 'período anterior' },
     yoy: { valor: Y?.faturamento, var_pct: _fv2Var(A?.faturamento, Y?.faturamento) }, tendencia: tend('receita'),
-    semaforo: metaRec ? _fv2Sem(_fv2Var(A?.faturamento, metaRec * recFrac), L.orcado_receita) : 'cinza', drill: { tipo: 'dre' }, formula: 'Receita do período (grupo Receita da DRE) vs. período anterior (MoM) e mesmo período do ano anterior (YoY)' }));
+    semaforo: metaRec ? _fv2Sem(_fv2Var(A?.faturamento, metaRec * recFrac), { verde: -(L.orcado_receita?.verde ?? 5), amarelo: -(L.orcado_receita?.amarelo ?? 10), maior_melhor: true }) /* v3.231: receita ACIMA da meta é verde (antes o desvio nos dois sentidos deixava vermelho) */ : 'cinza', drill: { tipo: 'dre' }, formula: 'Receita do período (grupo Receita da DRE) vs. período anterior (MoM) e mesmo período do ano anterior (YoY)' }));
   // 2 margem bruta
   kpis.push(_fv2Kpi({ id: 'margem_bruta', titulo: 'Margem bruta', valor: A?.margem_bruta_pct, fmt: 'pct', meta: null,
     anterior: { valor: B?.margem_bruta_pct, var_pp: A && B && A.margem_bruta_pct != null && B.margem_bruta_pct != null ? Math.round((A.margem_bruta_pct - B.margem_bruta_pct) * 10) / 10 : null },
@@ -8822,7 +8891,7 @@ async function _fv2Caixa({ P, met, cfg, L, token, base }) {
   const [bc, ks, pl90, desp] = await Promise.allSettled([
     baseCaixaHoje({}), kpisSaude({ metodo: met }), qbPL(i90, hoje, token, '', 'Accrual'),
     sql`SELECT o.id, o.data_prevista, o.valor, o.status, d.descricao, d.fornecedor FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
-        WHERE o.status NOT IN ('paga', 'cancelada') AND o.qb_txn_id IS NULL AND o.data_prevista >= ${hoje} AND o.data_prevista <= ${_diasMais(hoje, 91)}`,
+        WHERE o.status NOT IN ('paga', 'cancelada') AND o.qb_txn_id IS NULL AND o.data_prevista >= ${_diasMais(hoje, -60)} AND o.data_prevista <= ${_diasMais(hoje, 91)}`, /* v3.231: vencidas até 60 dias entram na semana 1, como diz a fórmula */
   ]);
   const B = bc.status === 'fulfilled' ? bc.value : (base.erros.push('Base de caixa: ' + bc.reason?.message), {});
   const K = ks.status === 'fulfilled' ? ks.value.kpis || {} : {};
@@ -8843,8 +8912,10 @@ async function _fv2Caixa({ P, met, cfg, L, token, base }) {
   rec.forEach(i => { const k = idx(i.vencimento); if (k >= 0) sem[k].entradas += i.valor; });
   pag.forEach(i => { const k = idx(i.data); if (k >= 0) sem[k].saidas += i.valor; });
   DP.forEach(o => { const k = idx(String(o.data_prevista).substring(0, 10)); if (k >= 0) sem[k].saidas += Math.abs(parseFloat(o.valor) || 0); });
-  let s = B.saldo_hoje || 0; sem.forEach(w => { w.entradas = round(w.entradas); w.saidas = round(w.saidas); s += w.entradas - w.saidas; w.saldo = round(s); });
-  const minW = sem.reduce((a, w) => (a == null || w.saldo < a.saldo ? w : a), null);
+  // v3.231: sem o saldo de hoje a projeção não parte de R$ 0 (mostrava um "menor saldo" falso) — fica sem saldo
+  const temSaldo = B.saldo_hoje != null;
+  let s = B.saldo_hoje || 0; sem.forEach(w => { w.entradas = round(w.entradas); w.saidas = round(w.saidas); s += w.entradas - w.saidas; w.saldo = temSaldo ? round(s) : null; });
+  const minW = temSaldo ? sem.reduce((a, w) => (a == null || w.saldo < a.saldo ? w : a), null) : null;
   const rw = K.runway_meses;
   const kpis = [
     _fv2Kpi({ id: 'saldo', titulo: 'Saldo de caixa hoje', valor: B.saldo_hoje, fmt: 'brl', semaforo: B.saldo_hoje == null ? 'cinza' : B.saldo_hoje < 0 ? 'vermelho' : 'verde', drill: { tipo: 'nav', tela: 's3fluxodet' }, formula: 'Saldo de abertura do mês nas contas bancárias + entradas − saídas até hoje (extrato)', fonte: 'QuickBooks (extrato)' }),

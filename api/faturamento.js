@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+const _hojeBRf = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // v3.231: hoje em Brasília
 import { termoPendencias, PRAZO_TERMO_DIAS as _PRAZO_TERMO } from '../lib/termo-regras.js'; // v3.129
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
@@ -662,7 +663,7 @@ async function termoEmpresaMarcarNf({ empresa_id, nf_numero, nf_valor, nf_data, 
 async function termoEmpresaMarcarPago({ empresa_id, pagamento_status, pagamento_data } = {}) {
   if (!empresa_id) throw new Error('empresa_id obrigatório');
   const sql = await getSql();
-  await sql`UPDATE termos_empresas SET pagamento_status = ${pagamento_status || 'pago'}, pagamento_data = ${pagamento_data || new Date().toISOString().substring(0, 10)} WHERE id = ${empresa_id}`;
+  await sql`UPDATE termos_empresas SET pagamento_status = ${pagamento_status || 'pago'}, pagamento_data = ${pagamento_data || _hojeBRf()} WHERE id = ${empresa_id}`;
   const rows = await sql`SELECT termo_id FROM termos_empresas WHERE id = ${empresa_id} LIMIT 1`;
   if (rows[0]) await recalcularPagamento(rows[0].termo_id);
   return { atualizado: true };
@@ -737,6 +738,8 @@ async function recalcularNf(termoId) {
   return { soma, diff, status, notas_contadas: notas.length, por_empresa: porEmpresa };
 }
 
+// v3.231: usado também pela conciliação de notas × extrato (financeiro)
+export async function recalcularPagamentoTermo(termoId) { return recalcularPagamento(termoId); }
 async function recalcularPagamento(termoId) {
   const sql = await getSql();
   const empresas = await sql`SELECT pagamento_status FROM termos_empresas WHERE termo_id = ${termoId}`;
@@ -894,7 +897,7 @@ async function termoRecomputarNotas({ termo_id } = {}) {
     if (e) {
       await sql`UPDATE termos_notas_encontradas SET empresa_id = ${e.id} WHERE id = ${n.id}`;
       await sql`UPDATE termos_empresas SET nf_numero = COALESCE(nf_numero, ${n.nf_numero || null}), nf_status = 'encontrada',
-        nf_data = COALESCE(nf_data, ${new Date().toISOString().substring(0, 10)}) WHERE id = ${e.id}`;
+        nf_data = COALESCE(nf_data, ${_hojeBRf()}) WHERE id = ${e.id}`;
       vinculadas.push({ nf: n.nf_numero, valor: num(n.nf_valor), empresa: e.empresa, via: e.via });
     } else sem.push({ nf: n.nf_numero, valor: num(n.nf_valor) });
   }
@@ -1281,19 +1284,13 @@ async function qbTokensLer() {
   try { const sql = await getSql(); const rows = await sql`SELECT value FROM kv_store WHERE key = 'qb:tokens' LIMIT 1`; if (rows.length && rows[0].value) return typeof rows[0].value === 'string' ? JSON.parse(rows[0].value) : rows[0].value; } catch (_) {}
   return null;
 }
+// v3.231: usa a MESMA renovação de token do financeiro (com memória, trava e nova tentativa de gravação). Antes este
+// arquivo renovava por conta própria a cada chamada, sem cache: duas renovações paralelas trocavam o refresh token e uma
+// delas gravava um token já substituído — derrubando a conexão do QuickBooks ("invalid refresh token").
 async function qbTokenFat() {
-  const salvo = await qbTokensLer();
-  const refreshToken = salvo?.refresh_token || process.env.QB_REFRESH_TOKEN;
-  const clientId = process.env.QB_CLIENT_ID, clientSecret = process.env.QB_CLIENT_SECRET;
-  if (!refreshToken || !clientId || !clientSecret) throw new Error('QuickBooks não conectado (configure em S1 Financeiro → Realizado QuickBooks)');
-  const creds = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const r = await fetch('https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer', { method: 'POST', headers: { 'Authorization': `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}` });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok || !d.access_token) throw new Error('QB OAuth: ' + (d.error_description || d.error || ('HTTP ' + r.status)));
-  const sql = await getSql();
-  const novo = { ...salvo, access_token: d.access_token, refresh_token: d.refresh_token || refreshToken, atualizado_em: new Date().toISOString() };
-  try { await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('qb:tokens', ${JSON.stringify(novo)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {}
-  return { token: d.access_token, realm: salvo?.realm_id || process.env.QB_REALM_ID };
+  const fin = await import('./financeiro.js');
+  const token = await fin.qbTokenCompartilhado();
+  return { token, realm: await fin.qbRealmCompartilhado() };
 }
 async function qbQueryFat(sqlQuery, token, realm, sandbox) {
   const base = sandbox ? 'https://sandbox-quickbooks.api.intuit.com' : 'https://quickbooks.api.intuit.com';
@@ -1337,7 +1334,7 @@ async function buscaGlobal({ q } = {}) {
     const ligados = inv.length ? await sql`SELECT e.qb_invoice_id, e.termo_id, t.numero_termo FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id WHERE e.qb_invoice_id = ANY(${inv.map(i => String(i.Id))})` : [];
     out.faturas_qb = inv.map(i => { const l = ligados.find(x => String(x.qb_invoice_id) === String(i.Id));
       return { id: i.Id, numero: i.DocNumber || i.Id, cliente: i.CustomerRef?.name || '', emissao: i.TxnDate, vencimento: i.DueDate, valor: num(i.TotalAmt), saldo: num(i.Balance),
-        situacao: num(i.Balance) <= 0 ? 'paga' : (i.DueDate && i.DueDate < new Date().toISOString().slice(0, 10) ? 'vencida' : 'em aberto'),
+        situacao: num(i.Balance) <= 0 ? 'paga' : (i.DueDate && i.DueDate < _hojeBRf() ? 'vencida' : 'em aberto'),
         termo_id: l?.termo_id || null, termo: l?.numero_termo || null, url: `${base}/app/invoice?txnId=${i.Id}` }; });
   } catch (e) { out.erro_qb = e.message; }
   out.total = out.termos.length + out.notas_termos.length + out.notas_recebidas.length + out.faturas_qb.length;
@@ -1364,7 +1361,7 @@ async function _faturasOrfas() {
   const abertas = new Set(inv.map(i => String(i.Id))), existe = new Set(abertas);
   const ligadosIds = [...new Set([...nfTermo.values()].flat().map(e => e.qb_invoice_id).filter(x => x && !abertas.has(String(x))).map(String))];
   for (let k = 0; k < ligadosIds.length; k += 40) { try { const rr = await qbQueryFat(`select Id from Invoice where Id in (${ligadosIds.slice(k, k + 40).map(x => "'" + x.replace(/'/g, '') + "'").join(',')})`, token, realm, sandbox); (rr?.QueryResponse?.Invoice || []).forEach(x => existe.add(String(x.Id))); } catch (_) { ligadosIds.slice(k, k + 40).forEach(x => existe.add(x)); } }
-  const hoje = new Date().toISOString().slice(0, 10), base = sandbox ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
+  const hoje = _hojeBRf(), base = sandbox ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
   return { token, realm, sandbox, faturas: inv.map(i => {
     // v3.200: o número da fatura no QuickBooks pode coincidir com a NF de OUTRO cliente — só vale se o cliente bate
     const _n = x => String(x || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9 ]/g, ' ');
@@ -1461,21 +1458,50 @@ async function termoVerificarPagamento({ termo_id, tolerancia_pct } = {}) {
   // v1.34: tolerância configurável (padrão 2%) — cobre retenção de imposto e arredondamento
   const tolPct = tolerancia_pct != null ? parseFloat(tolerancia_pct) : parseFloat(process.env.FAT_TOLERANCIA_PAGTO_PCT || '2');
   const dentroTolerancia = (recebido, esperado) => Math.abs(num(recebido) - num(esperado)) <= Math.max(1, num(esperado) * (tolPct / 100));
+  // v3.231: no extrato, recebimento líquido de imposto retido (IR/CSRF/ISS) também conta
+  const _finR = await import('./financeiro.js');
+  const recebeuLiquido = (recebido, esperado) => dentroTolerancia(recebido, esperado) || (num(recebido) < num(esperado) && !!_finR.retencaoProvavelCompartilhado(num(esperado) - num(recebido), num(esperado)));
 
   let atualizadas = 0, erroQ = null;
   const detalhes = [], naoEncontradas = [];
 
   // ── ETAPA 1: fatura baixada no QuickBooks (caminho principal) ──
+  // v3.231: (a) termo com fatura ligada é conferido pela PRÓPRIA fatura (antes valia qualquer fatura paga do cliente com
+  // valor parecido — a de outro mês marcava este como pago); (b) fatura cujo saldo é só o imposto retido conta como paga;
+  // (c) a data é a do RECEBIMENTO (Payment), não a da emissão; (d) sem fatura ligada, uma fatura só serve a um termo,
+  // nome vazio não casa com tudo, e a busca é ordenada e paginada (antes: 1000 faturas quaisquer).
+  const fin = await import('./financeiro.js');
+  const retido = (aberto, total) => num(aberto) > 0.009 && !!fin.retencaoProvavelCompartilhado(num(aberto), num(total));
+  const pagaInv = inv => num(inv.Balance) <= 0.009 || retido(inv.Balance, inv.TotalAmt);
+  const dataReceb = async inv => { const pids = (inv.LinkedTxn || []).filter(l => l.TxnType === 'Payment').map(l => String(l.TxnId).replace(/\D/g, '')).filter(Boolean);
+    if (pids.length) { try { const dp = await qbQueryFat(`select * from Payment where Id in (${pids.slice(0, 20).map(x => "'" + x + "'").join(',')})`, token, realm, sandbox);
+      const ds = (dp?.QueryResponse?.Payment || []).map(p => p.TxnDate).filter(Boolean).sort(); if (ds.length) return ds[ds.length - 1]; } catch (_) {} }
+    return (inv.MetaData?.LastUpdatedTime || inv.TxnDate || '').substring(0, 10); };
   try {
-    const data = await qbQueryFat(`select * from Invoice where Balance = '0' maxresults 1000`, token, realm, sandbox);
-    const pagas = data?.QueryResponse?.Invoice || [];
+    const ligadas = empresas.filter(e => e.pagamento_status !== 'pago' && e.qb_invoice_id && /^\d+$/.test(String(e.qb_invoice_id)));
+    const porId = {};
+    for (let k = 0; k < ligadas.length; k += 40) { const ids = ligadas.slice(k, k + 40).map(e => "'" + e.qb_invoice_id + "'").join(',');
+      const d = await qbQueryFat(`select * from Invoice where Id in (${ids}) maxresults 100`, token, realm, sandbox); (d?.QueryResponse?.Invoice || []).forEach(i => { porId[String(i.Id)] = i; }); }
+    const usadas = new Set(Object.keys(porId));
+    let pagas = null;
     for (const e of empresas) {
       if (e.pagamento_status === 'pago') continue;
-      const alvo = normEmpresa(e.empresa);
-      const achou = pagas.find(inv => normEmpresa(inv.CustomerRef?.name || '').includes(alvo) && dentroTolerancia(inv.TotalAmt, e.valor_parcela));
+      let achou = null, via = 'fatura baixada no QuickBooks';
+      if (e.qb_invoice_id && porId[String(e.qb_invoice_id)]) { const inv = porId[String(e.qb_invoice_id)]; if (pagaInv(inv)) { achou = inv; if (num(inv.Balance) > 0.009) via = 'fatura recebida (saldo = imposto retido na fonte)'; } }
+      else if (!e.qb_invoice_id) {
+        const alvo = normEmpresa(e.empresa);
+        if (alvo && alvo.length >= 3) {
+          if (!pagas) { pagas = []; const desde = new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
+            for (let pos = 1; pos <= 4001; pos += 1000) { const d = await qbQueryFat(`select * from Invoice where TxnDate >= '${desde}' orderby TxnDate desc startposition ${pos} maxresults 1000`, token, realm, sandbox);
+              const L = d?.QueryResponse?.Invoice || []; pagas.push(...L.filter(pagaInv)); if (L.length < 1000) break; } }
+          achou = pagas.find(inv => !usadas.has(String(inv.Id)) && normEmpresa(inv.CustomerRef?.name || '').includes(alvo) && dentroTolerancia(inv.TotalAmt, e.valor_parcela)) || null;
+          if (achou) usadas.add(String(achou.Id));
+        }
+      }
       if (achou) {
-        await sql`UPDATE termos_empresas SET pagamento_status = 'pago', pagamento_data = ${(achou.TxnDate || '').substring(0, 10)}, pagamento_origem = 'fatura_baixada' WHERE id = ${e.id}`;
-        atualizadas++; detalhes.push({ empresa: e.empresa, via: 'fatura baixada no QuickBooks', data: (achou.TxnDate || '').substring(0, 10), valor: num(achou.TotalAmt) });
+        const dt = await dataReceb(achou);
+        await sql`UPDATE termos_empresas SET pagamento_status = 'pago', pagamento_data = ${dt}, pagamento_origem = 'fatura_baixada' WHERE id = ${e.id}`;
+        atualizadas++; detalhes.push({ empresa: e.empresa, via, data: dt, valor: num(achou.TotalAmt), fatura: achou.DocNumber || achou.Id });
       } else naoEncontradas.push(e);
     }
   } catch (e) { erroQ = e.message; }
@@ -1498,8 +1524,9 @@ async function termoVerificarPagamento({ termo_id, tolerancia_pct } = {}) {
 
     for (const e of naoEncontradas) {
       const alvo = normEmpresa(e.empresa);
+      if (!alvo) continue; // v3.231: empresa sem nome não casa com qualquer recebimento
       // 2a. Payment do cliente com valor compatível (recebimento registrado, mesmo sem baixar a fatura)
-      let achou = pagamentos.find(p => normEmpresa(p.CustomerRef?.name || '').includes(alvo) && dentroTolerancia(p.TotalAmt, e.valor_parcela));
+      let achou = alvo ? pagamentos.find(p => normEmpresa(p.CustomerRef?.name || '').includes(alvo) && recebeuLiquido(p.TotalAmt, e.valor_parcela)) : null;
       let via = 'recebimento (Payment) no QuickBooks';
       // 2b. Depósito com linha do cliente ou valor batendo (dinheiro que entrou na conta)
       if (!achou) {
@@ -1601,7 +1628,7 @@ async function qbCriarInvoice({ customerId, itemId, valor, descricao, docNumber 
   const base = sandbox ? 'https://sandbox-quickbooks.api.intuit.com' : 'https://quickbooks.api.intuit.com';
   const body = {
     CustomerRef: { value: String(customerId) },
-    TxnDate: new Date().toISOString().substring(0, 10),
+    TxnDate: _hojeBRf(),
     PrivateNote: descricao,
     Line: [{ Amount: num(valor), DetailType: 'SalesItemLineDetail', Description: descricao, SalesItemLineDetail: { ItemRef: { value: String(itemId) }, Qty: 1, UnitPrice: num(valor) } }],
     ...(docNumber ? { DocNumber: String(docNumber).substring(0, 21) } : {}),
@@ -1785,6 +1812,8 @@ async function handler(req, res) {
   if (!acoes[action]) return res.status(400).json({ success: false, error: 'Ação inválida. Disponíveis: ' + Object.keys(acoes).join(', ') });
   try {
     const resultado = await acoes[action]();
+    // v3.231: gravações do faturamento (fatura/nota/pagamento/termo) também invalidam o cache das telas financeiras
+    if (!/listar|list|buscar|busca|get|ler|status|analisar|previa|diagnost|relatorio|exportar|pdf|docx/i.test(action) || /limpar|ligar|excluir|lancar|criar|salvar/i.test(action)) { try { const sq = await getSql(); await sq`DELETE FROM kv_store WHERE key LIKE 'cache:fin:%'`; } catch (_) {} }
     return res.status(200).json({ success: true, action, ...resultado });
   } catch (error) {
     console.error('[ERRO faturamento]', action, error.message);

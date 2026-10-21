@@ -184,7 +184,7 @@ async function contextoMetas(base) {
   // Antes: kv 'atx:metas'.anual com padrão fixo de R$ 18 mi e meta do mês = ano ÷ 12 — o % divergia do financeiro.
   const [st, rm, pipe, P] = await Promise.all([_api(base, '/api/financeiro', { action: 'metas_empresa_status', params: { com_crm: false } }, 30000),
     _api(base, '/api/financeiro', { action: 'resultado_kpis', params: {} }, 30000), _api(base, '/api/analytics?tipo=pipeline', null, 20000), premissas()]);
-  const S = st?.meta ? st : null, RM = rm?.resultado || null;
+  const S = st?.metas?.meta ? st.metas : (st?.meta ? st : null), RM = rm?.resultado || null; // v3.231: a resposta vem em { metas: { meta, realizado } }
   let k = {}, fonteRec = 'QuickBooks (DRE)';
   if (!(S?.realizado) || !(RM?.periodo_res)) { const fin = await _api(base, '/api/financeiro', { action: 'kpis_saude', params: {} }, 20000); k = fin.kpis || {}; if (!fin.kpis) fonteRec = 'indisponível: ' + (fin.error || fin.erro || ''); }
   const metaAno = num(S?.meta?.faturamento) || anual, metaMes = num(RM?.metas_periodo?.faturamento) || (S?.meta?.faturamento ? metaAno / 12 : mensal);

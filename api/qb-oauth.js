@@ -109,20 +109,18 @@ async function handler(req, res) {
       throw new Error(d.error_description || d.error || 'resposta sem refresh_token');
     }
 
+    // v3.231: o refresh token NÃO é mais exibido na página (segredo na tela/no histórico do navegador). Ele é gravado
+    // direto no banco (kv qb:tokens), no mesmo formato da conexão pelo botão do Financeiro — nada para copiar para a Vercel.
+    try {
+      const { neon } = await import('@neondatabase/serverless'); const sql = neon(process.env.DATABASE_URL);
+      const agora = Date.now();
+      const novo = { atualizado_em: agora, access_token: d.access_token, refresh_token: d.refresh_token, expira_em: agora + ((d.expires_in || 3600) * 1000), refresh_expira_em: agora + ((d.x_refresh_token_expires_in || 8640000) * 1000), realm_id: realmId || null };
+      await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('qb:tokens', ${JSON.stringify(novo)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
+    } catch (e) { throw new Error('autorizado no Intuit, mas não consegui gravar a conexão no banco (' + e.message + '). Tente de novo pelo botão "Conectar QuickBooks" do Financeiro.'); }
     return res.status(200).send(page('Pronto', `
-      <h1>Pronto — copie os dois valores</h1>
-      <div class="box"><div class="lbl">QB_REFRESH_TOKEN</div>
-        <div class="val">${d.refresh_token}</div></div>
-      <div class="box"><div class="lbl">QB_REALM_ID</div>
-        <div class="val">${realmId || '(nao veio no retorno — pegue em Configuracoes > Informacoes da empresa no QuickBooks)'}</div></div>
-      <div class="box warn"><strong>Agora:</strong>
-      <ol>
-        <li>Vercel &rarr; Settings &rarr; Environment Variables &rarr; Production</li>
-        <li>Cadastre <code>QB_REFRESH_TOKEN</code> e <code>QB_REALM_ID</code> com os valores acima</li>
-        <li>Redeploy (variavel nova nao vale para deploy existente)</li>
-      </ol>
-      Este refresh token vence em 100 dias sem uso. Se der <code>invalid_grant</code>,
-      volte em <code>/api/qb-oauth?start=1</code> e repita.</div>`));
+      <h1>QuickBooks conectado</h1>
+      <div class="box">A conexão foi gravada no Atlantyx OS${realmId ? ' (empresa ' + String(realmId).replace(/[^0-9]/g, '') + ')' : ''}. Não é preciso copiar nada para a Vercel.</div>
+      <div class="box warn">Pode fechar esta página e voltar ao sistema. Se algum dia aparecer <code>invalid_grant</code>, reconecte pelo botão "Conectar QuickBooks" do Financeiro.</div>`));
 
   } catch (e) {
     return res.status(500).send(page('Falhou a troca', `
