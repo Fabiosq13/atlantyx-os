@@ -182,13 +182,23 @@ async function roboResultado(b) {
   let casosR = null;
   if (Array.isArray(b.casos_resultados) && b.casos_resultados.length) { try { casosR = await aplicarResultadosCasos(await fabSql(), e.id, b.casos_resultados); } catch (err) { console.error('[qa-externo] casos_resultados', err.message); } }
   const completa = Number(b.cobertura_pct) >= 100 && !b.erro;
+  // v3.230: só valida achado de camada que RODOU por inteiro nesta execução — antes, se a IA falhava (ou não dava tempo),
+  // os achados de layout, lógica, dados, macaco e jornadas "sumiam" como se tivessem sido corrigidos
+  const R = (b.resumo && b.resumo.robos) || {}, ok = k => !R[k] || !R[k].status || R[k].status === 'executado';
+  const CAMADA = { logica: ['logica_ia'], dados: ['logica_ia', 'exploratorio'], layout: ['layout'], jornada: ['jornadas'], macaco: ['macaco'], plano: ['plano'], governanca: ['governanca'], integracao: ['integracao'],
+    seguranca: ['seguranca'], desempenho: ['exploratorio'], tela: ['exploratorio'], api: ['exploratorio'], responsivo: ['exploratorio'], crud: ['exploratorio'], acesso: ['exploratorio'] };
+  const camadaOk = tipo => (CAMADA[tipo] || ['exploratorio']).every(ok);
+  const naoRodaram = Object.entries(R).filter(([, v]) => v && v.status && v.status !== 'executado').map(([k, v]) => ({ camada: k, status: v.status, motivo: v.motivo || '' }));
   let validados = 0;
-  if (completa) { const pend = await sql`SELECT id, assinatura FROM qa_achados WHERE produto_id=${pid} AND status IN ('aberto','corrigido','em_correcao')`;
-    for (const x of pend) if (!vistos.has(x.assinatura)) { await sql`UPDATE qa_achados SET status='validado', nota='não reproduzido no reteste completo de ' || ${new Date().toLocaleDateString('pt-BR')}, atualizado_em=NOW() WHERE id=${x.id}`; validados++; } }
+  if (completa) { const pend = await sql`SELECT id, assinatura, tipo FROM qa_achados WHERE produto_id=${pid} AND status IN ('aberto','corrigido','em_correcao')`;
+    for (const x of pend) if (!vistos.has(x.assinatura) && camadaOk(x.tipo)) { await sql`UPDATE qa_achados SET status='validado', nota='não reproduzido no reteste completo de ' || ${new Date().toLocaleDateString('pt-BR')}, atualizado_em=NOW() WHERE id=${x.id}`; validados++; } }
   await sql`UPDATE qa_execucoes SET status=${b.erro ? 'erro' : 'concluida'}, terminado_em=NOW(), telas_descobertas=${parseInt(b.telas_descobertas) || 0}, telas_testadas=${parseInt(b.telas_testadas) || 0},
-    cobertura_pct=${Number(b.cobertura_pct) || 0}, resumo=${JSON.stringify({ ...(b.resumo || {}), achados: achados.length, validados, casos: casosR })}, erro=${b.erro || null} WHERE id=${e.id}`;
-  return { gravados: achados.length, validados, casos: casosR };
+    cobertura_pct=${Number(b.cobertura_pct) || 0}, resumo=${JSON.stringify({ ...(b.resumo || {}), achados: achados.length, validados, casos: casosR, camadas_incompletas: naoRodaram })}, erro=${b.erro || null} WHERE id=${e.id}`;
+  return { gravados: achados.length, validados, casos: casosR, camadas_incompletas: naoRodaram };
 }
+// v3.230: a IA não sabe a data de hoje (achava que era 2024/2025 e marcava "data no futuro" em 2026) — vai em todo prompt
+const _hojeQA = () => { const d = new Date(); return { iso: d.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }), br: d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) }; };
+const _dataCtx = () => { const h = _hojeQA(); return `DATA DE HOJE: ${h.br} (${h.iso}, horário de Brasília). Use esta data como referência: datas até hoje são passado/presente; só é "futuro" o que vem depois de ${h.br}. Não considere datas de ${h.iso.slice(0, 4)} como futuras por estarem depois do que você conhece.`; };
 // IA: crítica da lógica de uma tela (chamada pelo robô) — devolve achados de lógica/dados
 async function roboCriticar({ produto, tela }) {
   const key = process.env.ANTHROPIC_API_KEY; if (!key) return { achados: [], aviso: 'ANTHROPIC_API_KEY ausente' };
@@ -199,7 +209,7 @@ async function roboCriticar({ produto, tela }) {
 - dados incoerentes (totais que não batem com a soma, percentuais acima de 100% sem sentido, datas no futuro/passado impossíveis, valores negativos indevidos, duplicidades).
 Não invente; se não houver problema, devolva lista vazia. Para cada achado gere também um "prompt_correcao" em português, pronto para colar numa ferramenta de construção de apps (ex.: Lovable), descrevendo a tela, o problema e o comportamento esperado.
 Responda SOMENTE JSON: {"achados":[{"tipo":"logica|dados","severidade":"critica|alta|media|baixa","titulo":"...","descricao":"...","evidencia":"trecho exato da tela","prompt_correcao":"..."}]}`;
-  const user = `PRODUTO: ${produto?.nome || ''}\nCONTEXTO DO NEGÓCIO (informado pela Atlantyx): ${String(produto?.contexto || 'não informado').substring(0, 3000)}\n\nTELA: ${tela?.titulo || ''} (${tela?.url || ''})\n\n${String(tela?.conteudo || '').substring(0, 14000)}`;
+  const user = `${_dataCtx()}\n\nPRODUTO: ${produto?.nome || ''}\nCONTEXTO DO NEGÓCIO (informado pela Atlantyx): ${String(produto?.contexto || 'não informado').substring(0, 3000)}\n\nTELA: ${tela?.titulo || ''} (${tela?.url || ''})\n\n${String(tela?.conteudo || '').substring(0, 14000)}`;
   const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
     body: JSON.stringify({ model: IA_MODEL, max_tokens: 2500, system: sistema, messages: [{ role: 'user', content: user }] }) });
   const d = await r.json().catch(() => ({})); if (!r.ok) return { achados: [], aviso: 'IA: ' + (d.error?.message || r.status) };
@@ -238,7 +248,7 @@ Ações: "clicar" (alvo = texto exato de um item da lista de clicáveis), "preen
 Ao concluir: veredito "passou" se o resultado esperado está visível/comprovado na tela; "falhou" se a tela mostra resultado diferente do esperado, erro, ou o fluxo não permite cumprir o passo; "bloqueado" se falta pré-condição/dado/acesso fora do controle do teste (ex.: tela inexistente para este usuário).
 Regras: use só alvos que existem no estado; dados de teste fictícios; nunca clique em sair/logout, excluir conta, pagar, comprar ou disparar envios em massa; não repita a mesma ação mais de 2 vezes; se o caso já cumpriu todos os passos, conclua.
 Responda SOMENTE JSON: {"acao":"clicar|preencher|selecionar|navegar|aguardar|concluir","alvo":"","valor":"","passo_do_caso":1,"veredito":"passou|falhou|bloqueado|","motivo":"frase curta explicando (no concluir: o que foi observado vs esperado)"}`;
-  const user = `CASO ${caso?.codigo || ''} — ${caso?.titulo || ''}\nTipo: ${caso?.tipo || ''}\nPré-condição: ${caso?.pre_condicao || '—'}\nDados: ${caso?.dados || '—'}\nPassos:\n${(caso?.passos || []).map((p, i) => (i + 1) + '. ' + p).join('\n')}\nResultado esperado: ${caso?.esperado || '—'}\n\nHISTÓRICO:\n${historico.slice(-14).map((h, i) => (i + 1) + '. ' + h).join('\n') || '(nenhuma ação ainda)'}\n\nESTADO ATUAL:\nURL: ${estado?.url || ''}\nTítulo: ${estado?.titulo || ''}\nClicáveis: ${(estado?.clicaveis || []).slice(0, 80).join(' | ')}\nCampos: ${(estado?.campos || []).slice(0, 40).join(' | ')}\nMensagens/erros: ${(estado?.alertas || []).join(' | ') || '—'}\nTexto visível:\n${String(estado?.texto || '').substring(0, 6000)}`;
+  const user = `${_dataCtx()}\n\nCASO ${caso?.codigo || ''} — ${caso?.titulo || ''}\nTipo: ${caso?.tipo || ''}\nPré-condição: ${caso?.pre_condicao || '—'}\nDados: ${caso?.dados || '—'}\nPassos:\n${(caso?.passos || []).map((p, i) => (i + 1) + '. ' + p).join('\n')}\nResultado esperado: ${caso?.esperado || '—'}\n\nHISTÓRICO:\n${historico.slice(-14).map((h, i) => (i + 1) + '. ' + h).join('\n') || '(nenhuma ação ainda)'}\n\nESTADO ATUAL:\nURL: ${estado?.url || ''}\nTítulo: ${estado?.titulo || ''}\nClicáveis: ${(estado?.clicaveis || []).slice(0, 80).join(' | ')}\nCampos: ${(estado?.campos || []).slice(0, 40).join(' | ')}\nMensagens/erros: ${(estado?.alertas || []).join(' | ') || '—'}\nTexto visível:\n${String(estado?.texto || '').substring(0, 6000)}`;
   try { return await _ia(sistema, user, 600); } catch (e) { return { acao: 'concluir', veredito: 'bloqueado', motivo: 'IA indisponível: ' + e.message }; }
 }
 // v3.138 · Robô Usuário IA: monta jornadas como uma pessoa usaria o produto, a partir das telas descobertas
@@ -249,7 +259,7 @@ ${permitir_gravacao ? 'Pode incluir cadastros de teste com nomes começando por 
 Nunca: pagar, comprar, fazer pedido real, curtir, seguir, convidar, enviar mensagem a pessoas reais, sair da conta, excluir conta.
 Passos em linguagem de usuário com nomes de telas/botões/campos como aparecem. Resultado esperado verificável na tela.
 Responda SOMENTE JSON: {"jornadas":[{"titulo":"...","tipo":"mundo_ideal|limite|logica","passos":["Abrir /rota","Clicar em \"...\"","Preencher \"Campo\" com \"...\""],"esperado":"...","por_que":"risco ao negócio"}]}`;
-  const user = `PRODUTO: ${produto?.nome || ''}\nCONTEXTO DO NEGÓCIO: ${String(produto?.contexto || 'não informado').substring(0, 3000)}\nQUANTIDADE: até ${Math.min(15, quantidade)} jornadas\n\nTELAS:\n${telas.slice(0, 40).map(t => `- ${t.titulo} (${t.url}): ${String(t.trecho || '').replace(/\s+/g, ' ').substring(0, 500)}`).join('\n')}`;
+  const user = `${_dataCtx()}\n\nPRODUTO: ${produto?.nome || ''}\nCONTEXTO DO NEGÓCIO: ${String(produto?.contexto || 'não informado').substring(0, 3000)}\nQUANTIDADE: até ${Math.min(15, quantidade)} jornadas\n\nTELAS:\n${telas.slice(0, 40).map(t => `- ${t.titulo} (${t.url}): ${String(t.trecho || '').replace(/\s+/g, ' ').substring(0, 500)}`).join('\n')}`;
   try { const j = await _ia(sistema, user, 5000); return { jornadas: (j.jornadas || []).slice(0, 15) }; } catch (e) { return { jornadas: [], aviso: e.message }; }
 }
 // v3.134 · Robô de Layout de Saída: IA com visão analisa a tela no computador e no celular
@@ -257,10 +267,23 @@ async function roboLayout({ produto, tela, imagens = [] }) {
   const sistema = `Você é especialista em UX/UI e revisa o LAYOUT DE SAÍDA de telas de um sistema da Atlantyx (prints do computador e do celular). Aponte só problemas VISÍVEIS e concretos: texto cortado ou sobreposto, elementos desalinhados ou fora da tela, tabelas ilegíveis, números truncados, contraste insuficiente, botões escondidos, estados vazios sem mensagem, gráficos sem legenda/rótulo, inconsistência de fontes/cores, hierarquia confusa, formatação errada de moeda/data/percentual (padrão brasileiro: R$ 1.234,56; 31/12/2026). Não invente; tela boa → lista vazia.
 Responda SOMENTE JSON: {"achados":[{"severidade":"alta|media|baixa","titulo":"...","descricao":"onde e o quê","dispositivo":"computador|celular","prompt_correcao":"instrução pronta para a ferramenta do app (ex.: Lovable) corrigir"}]}`;
   const content = [...imagens.slice(0, 2).map(src => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: String(src).replace(/^data:image\/\w+;base64,/, '') } })),
-    { type: 'text', text: `PRODUTO: ${produto?.nome || ''}\nTELA: ${tela?.titulo || ''} (${tela?.url || ''})\nImagem 1 = computador (1440px); imagem 2 = celular (390px).` }];
+    { type: 'text', text: `${_dataCtx()}\n\nPRODUTO: ${produto?.nome || ''}\nTELA: ${tela?.titulo || ''} (${tela?.url || ''})\nImagem 1 = computador (1440px); imagem 2 = celular (390px).` }];
   try { const j = await _ia(sistema, content, 1800); return { achados: (j.achados || []).slice(0, 8) }; } catch (e) { return { achados: [], aviso: e.message }; }
 }
 // v3.139: relatório geral de erros em Word, com o prompt de correção de cada achado para colar no Lovable
+// v3.230: quais camadas rodaram na última execução — sem isso não dava para saber se um tipo de achado sumiu
+// porque foi corrigido ou porque a camada não rodou (ex.: IA indisponível)
+const _CAMADAS_NOME = { exploratorio: 'Exploração das telas (erros, APIs, dados, celular)', logica_ia: 'Lógica de negócio e dados (IA)', plano: 'Plano de testes', jornadas: 'Jornadas do usuário (IA)', macaco: 'Teste do macaco',
+  layout: 'Layout de saída (IA com visão)', governanca: 'Governança (LGPD)', integracao: 'Integração (APIs)', seguranca: 'Segurança', desempenho: 'Desempenho', carga: 'Carga e estresse' };
+const _CAMADAS_ST = { executado: '✅ executada', parcial: '⚠ parcial', falhou: '❌ falhou', nao_executado: '⏸ não executada' };
+function _camadasMd(E) {
+  let res = E?.resumo; if (typeof res === 'string') { try { res = JSON.parse(res); } catch (_) { res = null; } }
+  const R = res?.robos; if (!R) return [];
+  const L = Object.entries(_CAMADAS_NOME).filter(([k]) => R[k]).map(([k, n]) => `| ${n} | ${_CAMADAS_ST[R[k].status] || (k === 'carga' ? '—' : '✅ executada')} | ${String(R[k].motivo || R[k].texto || '').replace(/\|/g, '/').replace(/\s+/g, ' ').substring(0, 220)} |`);
+  const inc = Object.entries(R).filter(([k, v]) => k !== 'carga' && v?.status && v.status !== 'executado');
+  return ['### Camadas da última execução', '', '| Camada | Situação | Detalhe |', '|---|---|---|', ...L, '',
+    inc.length ? `> ⚠ **${inc.length} camada(s) não rodaram por inteiro** (${inc.map(([k]) => _CAMADAS_NOME[k] || k).join(', ')}). Achados desses tipos que não aparecem aqui NÃO foram dados como corrigidos — reexecute antes de considerar o produto limpo.` : '> Todas as camadas rodaram por inteiro nesta execução.', ''];
+}
 async function relatorioWord({ produto_id, incluir_fechados }) {
   const sql = await getSql(); const P = (await sql`SELECT * FROM qa_produtos WHERE id=${produto_id}`)[0]; if (!P) throw new Error('Produto não encontrado');
   const A = (await sql`SELECT tipo, severidade, titulo, descricao, tela, url, evidencia, como_reproduzir, prompt_correcao, status, ocorrencias, criado_em FROM qa_achados WHERE produto_id=${produto_id} ORDER BY CASE severidade WHEN 'critica' THEN 0 WHEN 'alta' THEN 1 WHEN 'media' THEN 2 ELSE 3 END, tipo, criado_em`)
@@ -274,6 +297,7 @@ async function relatorioWord({ produto_id, incluir_fechados }) {
     '## 1. Resumo', '', '| Indicador | Valor |', '|---|---|', `| Achados ${incluir_fechados ? 'no total' : 'pendentes'} | ${A.length} |`, `| Críticos / altos / médios / baixos | ${cont('critica')} / ${cont('alta')} / ${cont('media')} / ${cont('baixa')} |`,
     ...(E ? [`| Última execução | ${new Date(E.terminado_em || E.pedido_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }).substring(0, 16)} · ${E.telas_testadas ?? 0} de ${E.telas_descobertas ?? 0} telas (${Number(E.cobertura_pct || 0)}%) |`] : []), '',
     '| Tipo | Achados |', '|---|---|', ...porTipo.map(([t, n]) => `| ${TIPOS[t] || t} | ${n} |`), '',
+    ..._camadasMd(E),
     '## 2. Como usar este relatório no Lovable', '', '- Corrija na ordem: críticos, depois altos, médios e baixos.', '- Para cada achado, copie o bloco **Prompt para o Lovable** e cole no chat do projeto no Lovable — um achado por vez, conferindo o resultado.', '- Depois de corrigir, marque o achado como **Corrigido — retestar** no Atlantyx OS (QA de Produtos) e rode o teste de novo: o robô valida ou reabre cada correção.', '- Achados de **segurança** e **dados** pedem atenção também no Supabase (regras de acesso/RLS, chaves e políticas).', '',
     '## 3. Lista de achados', '', '| # | Severidade | Tipo | Achado | Tela | Situação |', '|---|---|---|---|---|---|',
     ...A.map((a, i) => `| ${i + 1} | ${SEV[a.severidade] || a.severidade} | ${TIPOS[a.tipo] || a.tipo} | ${mdc(a.titulo)} | ${mdc(a.tela) || '—'} | ${ST[a.status] || a.status}${a.ocorrencias > 1 ? ' (visto ' + a.ocorrencias + 'x)' : ''} |`), '', '<!-- quebra -->', '', '## 4. Detalhe e correção de cada achado', ''];

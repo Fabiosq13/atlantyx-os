@@ -32,6 +32,16 @@ const api = async (action, body = {}) => {
   const d = await r.json().catch(() => ({})); if (!r.ok || !d.success) throw new Error(action + ': ' + (d.error || r.status)); return d;
 };
 const espera = ms => new Promise(r => setTimeout(r, ms));
+// v3.230: placar das chamadas de IA por camada — antes a falha da IA era silenciosa (a camada "sumia" do relatório
+// e os achados antigos dela eram dados como validados). Agora cada camada diz se rodou, rodou em parte ou falhou.
+let IA = {};
+const iaConta = (camada, ok, erro) => { const c = IA[camada] = IA[camada] || { ok: 0, falha: 0, erro: null }; if (ok) c.ok++; else { c.falha++; c.erro = String(erro || 'sem resposta').substring(0, 200); } };
+const statusCamada = (camada, { tentou = true, motivo = '' } = {}) => { const c = IA[camada] || { ok: 0, falha: 0 };
+  if (!tentou) return { status: 'nao_executado', motivo };
+  if (c.ok && !c.falha) return { status: 'executado' };
+  if (c.ok && c.falha) return { status: 'parcial', motivo: `${c.falha} de ${c.ok + c.falha} chamada(s) de IA falharam: ${c.erro}` };
+  if (c.falha) return { status: 'falhou', motivo: `IA indisponível em todas as ${c.falha} chamada(s): ${c.erro}` };
+  return { status: 'nao_executado', motivo: motivo || 'nada para analisar' }; };
 // andamento para a tela (no máximo 1 envio a cada 4 s, sem travar o robô)
 let _execAtual = null, _ultProg = 0, _progEstado = {};
 // cada linha do console também vai para o log da execução (últimas 150 linhas)
@@ -72,9 +82,15 @@ await browser.close();
 
 async function testarProduto(P, execId, casos = []) {
   const t0 = Date.now(), fimEm = t0 + ORC_MIN * 60000, marca = 'QA-ATX-' + execId.slice(-6);
+  IA = {};
+  // v3.230: a exploração das telas para em 60% do tempo — o resto fica reservado para jornadas, macaco, layout,
+  // governança, integração e segurança (antes a exploração podia consumir tudo e essas camadas não rodavam)
+  const fimExpl = t0 + ORC_MIN * 60000 * 0.6;
   const A = []; const add = a => { A.push(a); progresso({ achados: A.length }); };
   const origem = new URL(P.url).origin;
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: false });
+  // v3.230: área de transferência liberada — sem isso, "copiar" no app dava NotAllowedError (falso achado do macaco)
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: false, permissions: ['clipboard-read', 'clipboard-write'] });
+  try { await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(P.url).origin }); } catch (_) {}
   const pg = await ctx.newPage();
   let consoleErros = [], chamadas = [];
   pg.on('console', m => { if (m.type() === 'error') consoleErros.push(m.text().substring(0, 300)); });
@@ -135,18 +151,21 @@ async function testarProduto(P, execId, casos = []) {
     const cont = (L) => ({ casos: L.length, passou: L.filter(x => x.status === 'passou').length, falhou: L.filter(x => x.status === 'falhou').length, bloqueado: L.filter(x => x.status === 'bloqueado').length });
     const tx = k => `${k.casos} caso(s): ${k.passou} aprovado(s), ${k.falhou} reprovado(s), ${k.bloqueado} bloqueado(s)`;
     const a = cont(casosRes), mi = cont(casosRes.filter(x => x.tipo === 'mundo_ideal'));
-    robos.plano = { ...a, texto: tx(a) }; if (mi.casos) robos.mundo_ideal = { ...mi, texto: tx(mi) };
+    robos.plano = { ...statusCamada('passo', { tentou: true }), ...a, texto: tx(a) }; if (mi.casos) robos.mundo_ideal = { ...mi, texto: tx(mi) };
     await pg.goto(urlInicial, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {}); await espera(1500);
     if (await temCampoSenha(pg)) await login(pg, P, add).catch(() => {});
   }
 
+  if (!casos.length) robos.plano = { status: 'nao_executado', motivo: 'nenhum plano de testes aprovado na Esteira de Entrega', texto: 'sem plano de testes aprovado' };
   // ── 2. descoberta e teste das telas ──
   const visitadas = new Map(); // chave → { titulo, url }
   const fila = [{ url: urlInicial, via: null, caminho: 'tela inicial após login' }];
   const chaveTela = async () => { const u = new URL(pg.url()); const h = await pg.evaluate(() => (document.querySelector('h1,h2,[role=heading]')?.innerText || document.title || '').trim().substring(0, 80)).catch(() => ''); return u.pathname + u.hash + '|' + h; };
   let iaUsadas = 0, crudFeitos = 0;
   const telasInfo = [];
+  let exploracaoCortada = false;
   while (fila.length && visitadas.size < (P.max_telas || 60) && Date.now() < fimEm) {
+    if (Date.now() > fimExpl) { exploracaoCortada = true; console.log('  (exploração encerrada em 60% do tempo — o restante fica para as outras camadas)'); break; }
     const item = fila.shift();
     consoleErros = []; chamadas = [];
     const ini = Date.now();
@@ -209,8 +228,9 @@ async function testarProduto(P, execId, casos = []) {
       const apis = chamadas.filter(c => c.status && c.status < 400 && c.corpo).slice(0, 6).map(c => `${c.metodo} ${new URL(c.url).pathname} → ${c.status}: ${c.corpo.substring(0, 700)}`).join('\n');
       const conteudo = `TEXTO DA TELA:\n${info.txt.substring(0, 7000)}\n\nTABELAS:\n${info.tabelas.join('\n---\n').substring(0, 3000)}\n\nCAMPOS DE FORMULÁRIO: ${info.forms.join(', ')}\n\nRESPOSTAS DAS APIs DESTA TELA:\n${apis.substring(0, 3500)}`;
       try { const r = await api('robo_criticar', { produto: { nome: P.nome, contexto: P.contexto }, tela: { titulo: nomeTela, url: pg.url(), conteudo } });
+        iaConta('logica_ia', !r.aviso, r.aviso);
         let pr = null; for (const a of r.achados || []) { pr = pr || await print(); add({ ...a, tipo: a.tipo === 'dados' ? 'dados' : 'logica', tela: nomeTela, url: pg.url(), chave: 'ia:' + String(a.titulo).substring(0, 70), print: pr, como_reproduzir: comoChegar }); } }
-      catch (e) { console.log('    IA:', e.message); } }
+      catch (e) { iaConta('logica_ia', false, e.message); console.log('    IA:', e.message); } }
     // 2f. cadastros (incluir → alterar → excluir)
     if (P.permitir_gravacao && crudFeitos < 12 && Date.now() < fimEm - 120000) {
       const botoes = await textosClicaveis(pg); const novo = botoes.find(t => RX_NOVO.test(t));
@@ -225,12 +245,14 @@ async function testarProduto(P, execId, casos = []) {
     for (const t of nav.slice(0, 25)) if (!fila.some(f => f.via === t)) fila.push({ via: t, base, caminho: 'menu "' + t + '"' });
   }
   const descobertas = visitadas.size + fila.length, testadas = visitadas.size;
-  robos.exploratorio = { telas: testadas, ciclos_cadastro: crudFeitos, analises_ia: iaUsadas, texto: `${testadas} de ${descobertas} telas · ${crudFeitos} ciclo(s) incluir/alterar/excluir · ${iaUsadas} tela(s) criticadas pela IA` };
+  robos.logica_ia = { ...statusCamada('logica_ia', { tentou: iaUsadas > 0, motivo: 'nenhuma tela com conteúdo para a IA criticar' }), analises: iaUsadas, texto: `lógica de negócio e dados incoerentes (IA) · ${iaUsadas} tela(s) enviadas` + (IA.logica_ia ? ` · ${IA.logica_ia.ok} ok, ${IA.logica_ia.falha} falha(s)` : '') };
+  robos.exploratorio = { status: testadas ? (exploracaoCortada ? 'parcial' : 'executado') : 'falhou', motivo: exploracaoCortada ? 'exploração encerrada em 60% do tempo (telas restantes ficam para a próxima execução)' : undefined, telas: testadas, ciclos_cadastro: crudFeitos, analises_ia: iaUsadas, texto: `${testadas} de ${descobertas} telas · ${crudFeitos} ciclo(s) incluir/alterar/excluir · ${iaUsadas} tela(s) criticadas pela IA` };
   // ── 2g2. Robô Usuário IA — jornadas como uma pessoa usaria ──
   let jorn = [], jRes = [];
   if (MAX_JORNADAS > 0 && telasInfo.length && Date.now() < fimEm - 300000) {
     progresso({ etapa: 'Robô Usuário IA — montando jornadas', pct: 76 }, true);
-    try { jorn = (await api('robo_jornadas', { produto: { nome: P.nome, contexto: P.contexto }, telas: telasInfo, permitir_gravacao: P.permitir_gravacao, quantidade: MAX_JORNADAS })).jornadas || []; } catch (e) { console.log('    jornadas:', e.message); }
+    try { const rj = await api('robo_jornadas', { produto: { nome: P.nome, contexto: P.contexto }, telas: telasInfo, permitir_gravacao: P.permitir_gravacao, quantidade: MAX_JORNADAS }); jorn = rj.jornadas || [];
+      iaConta('jornadas', !rj.aviso && jorn.length > 0, rj.aviso || 'a IA não devolveu jornadas'); } catch (e) { iaConta('jornadas', false, e.message); console.log('    jornadas:', e.message); }
     for (const [i, J] of jorn.slice(0, MAX_JORNADAS).entries()) {
       if (Date.now() > fimEm - 240000) break;
       const C = { codigo: 'J-' + String(i + 1).padStart(2, '0'), titulo: J.titulo, tipo: J.tipo, passos: J.passos || [], esperado: J.esperado };
@@ -247,7 +269,8 @@ async function testarProduto(P, execId, casos = []) {
     }
     await pg.goto(urlInicial, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
   }
-  robos.jornadas = { jornadas: jRes.length, passou: jRes.filter(x => x === 'passou').length, falhou: jRes.filter(x => x === 'falhou').length, texto: `${jRes.length} jornada(s) de usuário montadas pela IA: ${jRes.filter(x => x === 'passou').length} ok, ${jRes.filter(x => x === 'falhou').length} com problema, ${jRes.filter(x => x === 'bloqueado').length} bloqueada(s)` };
+  const jTentou = MAX_JORNADAS > 0 && telasInfo.length > 0 && !!IA.jornadas;
+  robos.jornadas = { ...statusCamada('jornadas', { tentou: jTentou, motivo: MAX_JORNADAS <= 0 ? 'desligado (QA_MAX_JORNADAS=0)' : !telasInfo.length ? 'nenhuma tela testada' : 'sem tempo restante no orçamento de ' + ORC_MIN + ' min' }), jornadas: jRes.length, passou: jRes.filter(x => x === 'passou').length, falhou: jRes.filter(x => x === 'falhou').length, texto: `${jRes.length} jornada(s) de usuário montadas pela IA: ${jRes.filter(x => x === 'passou').length} ok, ${jRes.filter(x => x === 'falhou').length} com problema, ${jRes.filter(x => x === 'bloqueado').length} bloqueada(s)` };
   // ── 2h. Robô Macaco ──
   progresso({ etapa: 'Robô Macaco — uso fora do roteiro', pct: 78 }, true);
   let macAcoes = 0, macProb = 0;
@@ -279,15 +302,16 @@ async function testarProduto(P, execId, casos = []) {
         break; }
     }
   }
-  robos.macaco = { telas: Math.min(MACACO_TELAS, visitadas.size), acoes: macAcoes, problemas: macProb, texto: `${macAcoes} ação(ões) aleatória(s) em ${Math.min(MACACO_TELAS, visitadas.size)} tela(s) · ${macProb} quebra(s)` };
+  robos.macaco = { status: macAcoes ? 'executado' : 'nao_executado', motivo: macAcoes ? undefined : (visitadas.size ? 'sem tempo restante' : 'nenhuma tela testada'), telas: Math.min(MACACO_TELAS, visitadas.size), acoes: macAcoes, problemas: macProb, texto: `${macAcoes} ação(ões) aleatória(s) em ${Math.min(MACACO_TELAS, visitadas.size)} tela(s) · ${macProb} quebra(s)` };
   // ── 2i. Robô de Layout de Saída (IA com visão) ──
   progresso({ etapa: 'Robô de Layout — IA analisando os prints', pct: 83 }, true);
   let layAch = 0;
   for (const L of layoutFila) { if (Date.now() > fimEm - 45000) break;
     try { const r = await api('robo_layout', { produto: { nome: P.nome }, tela: { titulo: L.titulo, url: L.url }, imagens: L.imagens });
+      iaConta('layout', !r.aviso, r.aviso);
       for (const a of r.achados || []) { layAch++; add({ tipo: 'layout', severidade: ['alta', 'media', 'baixa'].includes(a.severidade) ? a.severidade : 'baixa', titulo: `${a.titulo} — "${L.titulo}"${a.dispositivo === 'celular' ? ' (celular)' : ''}`.substring(0, 280), descricao: a.descricao, tela: L.titulo, url: L.url, chave: 'layout:' + String(a.titulo).substring(0, 60), print: a.dispositivo === 'celular' ? L.imagens[1] : L.imagens[0], prompt_correcao: a.prompt_correcao }); } }
-    catch (e) { console.log('    layout:', e.message); } }
-  robos.layout = { telas: layoutFila.length, achados: layAch, texto: `${layoutFila.length} tela(s) analisadas no computador e no celular · ${layAch} problema(s) de layout` };
+    catch (e) { iaConta('layout', false, e.message); console.log('    layout:', e.message); } }
+  robos.layout = { ...statusCamada('layout', { tentou: layoutFila.length > 0 && !!IA.layout, motivo: layoutFila.length ? 'sem tempo restante' : 'nenhum print de tela' }), telas: layoutFila.length, achados: layAch, texto: `${layoutFila.length} tela(s) analisadas no computador e no celular · ${layAch} problema(s) de layout` };
   // ── 2j. Robô de Governança (LGPD) ──
   progresso({ etapa: 'Robô de Governança (LGPD)', pct: 88 }, true);
   let govN = 0; for (const a of govTexto.values()) { add(a); govN++; }
@@ -301,12 +325,13 @@ async function testarProduto(P, execId, casos = []) {
     if (rastreio.length && !/cookie/i.test(t)) { govN++; add({ tipo: 'governanca', severidade: 'media', titulo: 'Cookies de rastreio sem aviso de consentimento', descricao: 'Gravados ao abrir a página, sem banner de cookies: ' + rastreio.map(c => c.name).join(', '), tela: 'Login', url: P.url, chave: 'gov-cookies',
       prompt_correcao: 'Só carregue ferramentas de análise/marketing (Google Analytics, pixel etc.) depois do consentimento do usuário, com um banner de cookies (aceitar/recusar).' }); }
     await pv.close(); } catch (_) {}
-  robos.governanca = { achados: govN, texto: `dados pessoais nas telas, segredos nas APIs, política de privacidade e cookies · ${govN} achado(s)` };
+  robos.governanca = { status: 'executado', achados: govN, texto: `dados pessoais nas telas, segredos nas APIs, política de privacidade e cookies · ${govN} achado(s)` };
   // ── 2k. Robô de Integração (APIs que as telas chamaram) ──
   progresso({ etapa: 'Robô de Integração — reexecutando as APIs', pct: 91 }, true);
   let intN = 0, intRe = 0; const anon = await pwRequest.newContext({ ignoreHTTPSErrors: false }).catch(() => null);
   for (const [cam, A2] of [...apisVistas.entries()].slice(0, 20)) { if (Date.now() > fimEm - 30000) break;
-    const hdr = Object.fromEntries(Object.entries(A2.headers || {}).filter(([k]) => !/^(host|content-length|connection|accept-encoding)$/i.test(k)));
+    // v3.230: cabeçalhos internos do HTTP/2 (":authority", ":path"…) não podem ser reenviados — davam 13 falsos "API não responde"
+    const hdr = Object.fromEntries(Object.entries(A2.headers || {}).filter(([k]) => !k.startsWith(':') && !/^(host|content-length|connection|accept-encoding)$/i.test(k)));
     try { intRe++; const t1 = Date.now(); const r = await ctx.request.get(A2.url, { headers: hdr, timeout: 20000 }); const ms = Date.now() - t1; const txt = await r.text();
       // contrato: mesmo formato (lista × objeto) e campos em comum (os dados podem ter mudado entre as chamadas)
       let ok = true; try { const a = JSON.parse(A2.corpo), b = JSON.parse(txt); if (Array.isArray(a) !== Array.isArray(b)) ok = false; else { const ka = Object.keys(Array.isArray(a) ? a[0] || {} : a), kb = Object.keys(Array.isArray(b) ? b[0] || {} : b); if (ka.length && kb.length && !ka.some(k => kb.includes(k))) ok = false; } } catch (_) { ok = A2.corpo.length >= 1500 || /^\s*[\[{]/.test(txt); }
@@ -331,7 +356,7 @@ async function testarProduto(P, execId, casos = []) {
     let ruptura = null;
     for (const u of degraus) {
       const lat = []; let err = 0, k = 0; const fim = Date.now() + DUR;
-      await Promise.all(Array.from({ length: u }, async () => { while (Date.now() < fim) { const A2 = alvos[k++ % alvos.length]; const h = Object.fromEntries(Object.entries(A2.headers || {}).filter(([x]) => !/^(host|content-length|connection|accept-encoding)$/i.test(x)));
+      await Promise.all(Array.from({ length: u }, async () => { while (Date.now() < fim) { const A2 = alvos[k++ % alvos.length]; const h = Object.fromEntries(Object.entries(A2.headers || {}).filter(([x]) => !x.startsWith(':') && !/^(host|content-length|connection|accept-encoding)$/i.test(x)));
         const t1 = Date.now(); try { const r = await ctx.request.get(A2.url, { headers: h, timeout: 20000 }); if (r.status() >= 400) err++; await r.body().catch(() => {}); } catch (_) { err++; } lat.push(Date.now() - t1); } }));
       lat.sort((a, b) => a - b); const p95 = lat[Math.floor(lat.length * 0.95)] || 0, erroPct = lat.length ? Math.round(err / lat.length * 1000) / 10 : 100;
       med.push({ usuarios: u, req: lat.length, rps: Math.round(lat.length / (DUR / 1000) * 10) / 10, p50: lat[Math.floor(lat.length / 2)] || 0, p95, erro_pct: erroPct });
@@ -347,16 +372,21 @@ async function testarProduto(P, execId, casos = []) {
       evidencia: `Robô de Carga — APIs: ${alvos.map(a => new URL(a.url).pathname).join(', ')}\n${tab}\n${ruptura ? 'Ponto de ruptura: ' + ruptura + ' usuários simultâneos' : 'Sem ruptura até ' + degraus[degraus.length - 1] + ' usuários'}` });
     robos.carga = { degraus: med, nominal: nom, ruptura, texto: `${med.length} degrau(s) até ${med[med.length - 1]?.usuarios} usuários · nominal ${nom}: ${nomM ? 'p95 ' + nomM.p95 + ' ms, erro ' + nomM.erro_pct + '%' : '—'} · ${ruptura ? 'ruptura em ' + ruptura + ' usuários' : 'sem ruptura'}` };
   } else robos.carga = { texto: P.permitir_carga ? 'nenhuma API capturada para medir' : 'desligado — libere "teste de carga" no cadastro do produto (use ambiente de homologação)' };
-  robos.integracao = { apis: apisVistas.size, reexecutadas: intRe, achados: intN, texto: `${intRe} API(s) reexecutadas (status, contrato, tempo e acesso sem login) · ${intN} achado(s)` };
+  robos.integracao = { status: intRe ? 'executado' : 'nao_executado', motivo: intRe ? undefined : (apisVistas.size ? 'sem tempo restante' : 'nenhuma API capturada nas telas'), apis: apisVistas.size, reexecutadas: intRe, achados: intN, texto: `${intRe} API(s) reexecutadas (status, contrato, tempo e acesso sem login) · ${intN} achado(s)` };
   // ── 3. segurança: telas internas exigem login? (sessão anônima, só leitura) ──
   progresso({ etapa: 'Robô de Segurança — acesso sem login', pct: 96 }, true);
   try { const anon = await browser.newContext(); const pa = await anon.newPage(); let abertas = [];
+    // v3.230: páginas que DEVEM ser públicas não contam (política de privacidade, termos, login, cadastro, recuperar senha…)
+    // e a raiz "/" só conta se abrir a mesma tela de quem está logado (uma página inicial pública/landing é normal)
+    const RX_PUBLICA = /\/(privacidade|privacy|politica|pol%C3%ADtica|termos|terms|lgpd|cookies|login|entrar|signin|sign-in|cadastro|cadastrar|signup|sign-up|registrar|register|recuperar|esqueci|forgot|reset|redefinir|sobre|about|contato|contact|ajuda|help|faq|suporte|landing)(\/|$|\?|#)/i;
     for (const v of [...visitadas.values()].slice(0, 12)) { const u = v.url; if (u.split('#')[0] === (P.url_login || P.url).split('#')[0]) continue;
+      if (RX_PUBLICA.test(new URL(u).pathname)) continue;
+      const raiz = /^\/?$/.test(new URL(u).pathname);
       await pa.goto(u, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}); await espera(2500);
       const pedeLogin = await temCampoSenha(pa) || /login|entrar|sign[- ]?in|auth/i.test(new URL(pa.url()).pathname);
       const vis = await pa.evaluate(() => ({ n: (document.body?.innerText || '').trim().length, h: (document.querySelector('h1,h2,[role=heading]')?.innerText || document.title || '').trim().substring(0, 80) })).catch(() => ({ n: 0, h: '' }));
       // a mesma tela (mesmo título) ou uma tela com conteúdo, aberta sem sessão e sem pedir login = acesso indevido
-      if (!pedeLogin && (vis.h && vis.h === v.titulo || vis.n > 150)) abertas.push(v.titulo + ' (' + u + ')'); }
+      if (!pedeLogin && (raiz ? (vis.h && vis.h === v.titulo && !/entrar|login|cadastr|criar conta|sign/i.test(await pa.evaluate(() => document.body?.innerText || '').catch(() => ''))) : (vis.h && vis.h === v.titulo || vis.n > 150))) abertas.push(v.titulo + ' (' + u + ')'); }
     await anon.close();
     if (abertas.length) add({ tipo: 'seguranca', severidade: 'critica', titulo: 'Telas internas abrem sem login', descricao: 'Abertas numa sessão anônima, sem pedir login:\n' + abertas.join('\n'), tela: 'Controle de acesso', url: P.url, chave: 'sem-login',
       prompt_correcao: 'Proteja todas as rotas internas do app: sem sessão válida, redirecione para a tela de login e não carregue dados (verifique também as regras de acesso das tabelas no backend).' });
@@ -393,8 +423,8 @@ async function testarProduto(P, execId, casos = []) {
   } catch (e) { console.log('    segurança ampliada:', e.message); }
   await ctx.close();
   const nTipo = t => A.filter(a => a.tipo === t).length;
-  robos.seguranca = { achados: nTipo('seguranca'), texto: `HTTPS, cabeçalhos, cookies de sessão, telas e APIs sem login · ${nTipo('seguranca')} achado(s)` };
-  robos.desempenho = { achados: nTipo('desempenho'), texto: `tempo de carga das telas e das APIs · ${nTipo('desempenho')} achado(s)` };
+  robos.seguranca = { status: 'executado', achados: nTipo('seguranca'), texto: `HTTPS, cabeçalhos, cookies de sessão, telas e APIs sem login · ${nTipo('seguranca')} achado(s)` };
+  robos.desempenho = { status: 'executado', achados: nTipo('desempenho'), texto: `tempo de carga das telas e das APIs · ${nTipo('desempenho')} achado(s)` };
   // remove achados repetidos da mesma execução
   const uniq = new Map(); for (const a of A) { const k = a.tipo + '|' + (a.chave || a.titulo) + '|' + (a.tela || ''); if (!uniq.has(k)) uniq.set(k, a); }
   const achados = [...uniq.values()];
@@ -428,7 +458,7 @@ async function executarCaso(pg, C, P, origem, urlInicial) {
   const hist = []; const repet = new Map();
   for (let k = 0; k < MAX_PASSOS; k++) {
     const estado = await lerEstado(pg);
-    let d; try { d = await api('robo_passo', { caso: C, estado, historico: hist }); } catch (e) { return { veredito: 'bloqueado', motivo: 'IA indisponível: ' + e.message, hist }; }
+    let d; try { d = await api('robo_passo', { caso: C, estado, historico: hist }); iaConta('passo', !/IA indispon/i.test(d.motivo || ''), d.motivo); } catch (e) { iaConta('passo', false, e.message); return { veredito: 'bloqueado', motivo: 'IA indisponível: ' + e.message, hist }; }
     if (d.acao === 'concluir') return { veredito: ['passou', 'falhou', 'bloqueado'].includes(d.veredito) ? d.veredito : 'bloqueado', motivo: d.motivo || '', hist };
     const ch = d.acao + '|' + d.alvo + '|' + (d.valor || ''); repet.set(ch, (repet.get(ch) || 0) + 1);
     if (repet.get(ch) > 2) return { veredito: 'falhou', motivo: `o fluxo não avança: a ação "${d.acao} ${d.alvo}" foi repetida sem efeito`, hist };
