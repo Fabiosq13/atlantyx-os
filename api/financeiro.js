@@ -3831,23 +3831,44 @@ async function despList({ ativa } = {}) {
 async function despDelete({ id } = {}) {
   if (!id) throw new Error('id obrigatório');
   const sql = await getSql();
-  await sql`DELETE FROM despesas_programadas WHERE id = ${id}`;
-  // cascade limpa as ocorrências
-  return { id, deletada: true };
+  // v3.223: excluir não apaga mais o HISTÓRICO (pagas / lançadas no QuickBooks) — antes o cascade levava tudo e "pagos do mês",
+  // histórico e indicadores perdiam dados. Saem só as ocorrências ainda previstas; com histórico, a despesa fica pausada.
+  await sql`DELETE FROM despesas_ocorrencias WHERE despesa_id = ${id} AND status IN ('prevista', 'pendente', 'cancelada')`;
+  const resto = await sql`SELECT COUNT(*)::int AS n FROM despesas_ocorrencias WHERE despesa_id = ${id}`;
+  if (!(resto[0]?.n > 0)) { await sql`DELETE FROM despesas_programadas WHERE id = ${id}`; return { id, deletada: true }; }
+  await sql`UPDATE despesas_programadas SET ativa = false, atualizado_em = NOW() WHERE id = ${id}`;
+  return { id, deletada: false, pausada: true, historico_mantido: resto[0].n };
 }
 
+let _despStatusNormalizado = false;
+async function _despNormalizarStatus(sql) {
+  // v3.223: "cadastrar/ajustar e replicar" gravavam 'pendente', status que o resto do sistema não conhece (sumia do fluxo,
+  // não casava com a conta a pagar do QuickBooks e o CNAB podia pagar de novo). Agora tudo é 'prevista'; corrige o legado uma vez.
+  if (_despStatusNormalizado) return; _despStatusNormalizado = true;
+  try { await sql`UPDATE despesas_ocorrencias SET status = CASE WHEN qb_txn_id IS NOT NULL THEN 'lancada' ELSE 'prevista' END WHERE status = 'pendente'`; } catch (_) { _despStatusNormalizado = false; }
+}
+async function _qbBillsPaginado(where, token) {
+  // v3.223: a agenda carrega ~25 meses — 500 contas a pagar não bastavam (a que ficava de fora duplicava com a da agenda)
+  const todas = [];
+  for (let pos = 1; pos <= 5001; pos += 1000) {
+    const d = await qbQuery(`select * from Bill where ${where} startposition ${pos} maxresults 1000`, token);
+    const L = d?.QueryResponse?.Bill || []; todas.push(...L); if (L.length < 1000) break;
+  }
+  return todas;
+}
 async function despOcorrencias({ data_inicio, data_fim, status, incluir_qb = true } = {}) {
   const sql = await getSql();
+  await _despNormalizarStatus(sql);
   const ini = data_inicio || _hojeBR();
-  const fim = data_fim || new Date(Date.now() + 365 * 86400 * 1000).toISOString().split('T')[0];
+  const fim = data_fim || _diasMais(_hojeBR(), 365);
   // v1.15: contas a pagar do QuickBooks (Bills) no período entram na agenda como ocorrências fonte 'quickbooks'
   let qbBills = [], qbErro = null;
   if (incluir_qb && qbConfigurado()) {
     try {
       const token = await qbToken();
-      const iniQ = data_inicio || new Date(Date.now() - 90 * 86400 * 1000).toISOString().split('T')[0]; // inclui vencidas recentes
-      const data = await qbQuery(`select * from Bill where DueDate >= '${iniQ}' and DueDate <= '${fim}' maxresults 500`, token);
-      qbBills = (data?.QueryResponse?.Bill || []).map(b => ({ id: 'qb_' + b.Id, despesa_id: null, descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''), categoria: 'QuickBooks · Conta a pagar', data_prevista: b.DueDate || b.TxnDate, valor: parseFloat(b.Balance ?? 0) > 0 ? parseFloat(b.Balance) : parseFloat(b.TotalAmt || 0), saldo_aberto: parseFloat(b.Balance ?? 0), valor_total: parseFloat(b.TotalAmt || 0), status: parseFloat(b.Balance ?? 0) > 0 ? 'prevista' : 'paga', data_pagamento: null, fonte: 'quickbooks', moeda: b.CurrencyRef?.value || null }));
+      const iniQ = data_inicio || _diasMais(_hojeBR(), -90); // inclui vencidas recentes
+      const billsQ = await _qbBillsPaginado(`DueDate >= '${iniQ}' and DueDate <= '${fim}'`, token);
+      qbBills = billsQ.map(b => ({ id: 'qb_' + b.Id, despesa_id: null, descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''), categoria: 'QuickBooks · Conta a pagar', data_prevista: b.DueDate || b.TxnDate, valor: parseFloat(b.Balance ?? 0) > 0 ? parseFloat(b.Balance) : parseFloat(b.TotalAmt || 0), saldo_aberto: parseFloat(b.Balance ?? 0), valor_total: parseFloat(b.TotalAmt || 0), status: parseFloat(b.Balance ?? 0) > 0 ? 'prevista' : 'paga', data_pagamento: null, fonte: 'quickbooks', moeda: b.CurrencyRef?.value || null }));
       // v3.217: Bill vencida cujo pagamento já está no extrato aparece como paga (falta só ligar no QuickBooks)
       try { const jp = await _billsPagasPorFora(qbBills.filter(b => b.saldo_aberto > 0).map(b => ({ id: b.id, data: b.data_prevista, valor: b.saldo_aberto, valor_total: b.valor_total, fornecedor: String(b.descricao).split(' · ')[0] })), { timeoutMs: 5000 });
         qbBills.forEach(b => { const m = jp.get(_bpfId(b.id)); if (!m) return; b.status = 'paga'; b.data_pagamento = m.data; b.pago_no_extrato = m;
@@ -3884,6 +3905,8 @@ async function despOcorrencias({ data_inicio, data_fim, status, incluir_qb = tru
   // "lançada" = a pagar/atrasada na agenda, no fluxo e no CNAB); pago em parte = só o saldo em aberto entra no fluxo
   const billPorId = new Map(qbBills.map(b => [String(b.id).replace(/^qb_/, ''), b]));
   for (const o of locais) { const b = o.qb_txn_id && billPorId.get(String(o.qb_txn_id)); if (!b || o.status === 'paga' || o.status === 'cancelada') continue;
+    // v3.223: pago no extrato como despesa avulsa (v3.217) — a ocorrência aparece paga (não grava: a conta segue aberta no QB)
+    if (b.pago_no_extrato) { o.status = 'paga'; o.data_pagamento = b.data_pagamento; o.pago_no_extrato = b.pago_no_extrato; o.nota = b.nota; continue; }
     if (b.saldo_aberto <= 0) { o.status = 'paga'; o.pago_no_quickbooks = true;
       // grava a baixa — assim o CNAB e as outras telas que leem o banco também param de tratar como "a pagar"
       try { await sql`UPDATE despesas_ocorrencias SET status = 'paga', data_pagamento = COALESCE(data_pagamento, ${_hojeBR()}) WHERE id = ${o.id} AND status IN ('prevista', 'lancada')`; } catch (_) {} }
@@ -3898,17 +3921,46 @@ async function despOcorrencias({ data_inicio, data_fim, status, incluir_qb = tru
     if (fora.size) for (let i = locais.length - 1; i >= 0; i--) if (fora.has(locais[i].id)) locais.splice(i, 1);
   }
   const filtQb = status ? qbBills.filter(b => b.status === status) : qbBills;
+  if (status) for (let i = locais.length - 1; i >= 0; i--) if (locais[i].status !== status) locais.splice(i, 1); // v3.223: filtra depois da sincronização com o QB
   return { agenda_cobertas_qb: cobertasQb, ocorrencias: locais.concat(filtQb).sort((a, b) => String(a.data_prevista).localeCompare(String(b.data_prevista))), qb_bills: qbBills.length, qb_erro: qbErro };
 }
 
-async function despMarcarPaga({ id, data_pagamento, qb_txn_id } = {}) {
+async function despMarcarPaga({ id, data_pagamento, qb_txn_id, conta_banco_id, so_no_sistema = false } = {}) {
   if (!id) throw new Error('id obrigatório');
   const sql = await getSql();
+  // v3.223: despesa já lançada como conta a pagar no QuickBooks — marcar paga só aqui deixava a conta ABERTA lá, e o fluxo,
+  // o painel "a pagar" e o alerta das 8h continuavam cobrando. Agora registra o pagamento (BillPayment) ligado à conta.
+  const [oc] = await sql`SELECT * FROM despesas_ocorrencias WHERE id = ${id} LIMIT 1`;
+  if (!oc) throw new Error('Ocorrência não encontrada');
+  if (oc.qb_txn_id && !so_no_sistema) {
+    if (!conta_banco_id) throw new Error('Esta despesa já é conta a pagar no QuickBooks — escolha a conta bancária do pagamento para registrar a baixa lá também.');
+    const r = await qbPagarBill({ bill_id: oc.qb_txn_id, conta_banco_id, data: data_pagamento || _hojeBR() });
+    await sql`UPDATE despesas_ocorrencias SET status = 'paga', data_pagamento = ${data_pagamento || _hojeBR()} WHERE id = ${id}`;
+    try { _resCache.clear(); _qbCache.clear(); } catch (_) {}
+    return { id, paga: true, qb_pagamento: r };
+  }
   await sql`UPDATE despesas_ocorrencias
     SET status = 'paga', data_pagamento = ${data_pagamento || _hojeBR()},
         qb_txn_id = COALESCE(${qb_txn_id || null}, qb_txn_id)
     WHERE id = ${id}`;
   return { id, paga: true };
+}
+
+// v3.223: paga uma conta a pagar (Bill) no QuickBooks — BillPayment pelo saldo em aberto, a partir de uma conta bancária
+async function qbPagarBill({ bill_id, conta_banco_id, data } = {}) {
+  if (!bill_id || !conta_banco_id) throw new Error('bill_id e conta_banco_id obrigatórios');
+  const token = await qbToken();
+  const b = (await qbQuery(`select * from Bill where Id = '${String(bill_id).replace(/'/g, '')}'`, token))?.QueryResponse?.Bill?.[0];
+  if (!b) throw new Error('Conta a pagar #' + bill_id + ' não encontrada no QuickBooks (excluída?) — use "só no sistema".');
+  const saldo = round(parseFloat(b.Balance || 0));
+  if (saldo <= 0) return { ja_paga_no_qb: true };
+  const pg = await qbFetch('/billpayment?minorversion=65', token, 'POST', {
+    VendorRef: { value: b.VendorRef.value }, PayType: 'Check', TotalAmt: saldo, TxnDate: data || _hojeBR(),
+    CheckPayment: { BankAccountRef: { value: String(conta_banco_id) } },
+    Line: [{ Amount: saldo, LinkedTxn: [{ TxnId: String(b.Id), TxnType: 'Bill' }] }],
+    PrivateNote: 'Baixa registrada pela Agenda de Pagamentos do Atlantyx OS' });
+  console.log(`[QB] Bill ${b.Id} (${b.VendorRef?.name}) paga via Agenda: ${saldo}`);
+  return { bill_id: b.Id, fornecedor: b.VendorRef?.name, valor: saldo, billpayment_id: pg?.BillPayment?.Id || null };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3941,11 +3993,11 @@ async function qbBuscarFornecedor(nome, token, realm, sandbox) {
 async function qbContaDespesaPadrao(token, realm, sandbox, categoria) {
   const sql = await getSql();
   const chave = 'qb:conta_despesa_padrao';
-  try { const cache = await sql`SELECT value FROM kv_store WHERE key = ${chave} LIMIT 1`; if (cache.length && cache[0].value) { const v = typeof cache[0].value === 'string' ? JSON.parse(cache[0].value) : cache[0].value; if (v?.id) return v; } } catch (_) {}
+  if (!categoria) try { const cache = await sql`SELECT value FROM kv_store WHERE key = ${chave} LIMIT 1`; if (cache.length && cache[0].value) { const v = typeof cache[0].value === 'string' ? JSON.parse(cache[0].value) : cache[0].value; if (v?.id) return v; } } catch (_) {}
   const nomeEnv = process.env.QB_DEFAULT_EXPENSE_ACCOUNT_NAME;
   let conta = null;
-  if (categoria) { const data = await qbQuery(`select * from Account where AccountType = 'Expense' and Name like '%${String(categoria).replace(/'/g, "\'")}%' maxresults 1`, token); conta = (data?.QueryResponse?.Account || [])[0]; }
-  if (!conta && nomeEnv) { const data = await qbQuery(`select * from Account where Name = '${nomeEnv.replace(/'/g, "\'")}' maxresults 1`, token); conta = (data?.QueryResponse?.Account || [])[0]; }
+  if (categoria) { const data = await qbQuery(`select * from Account where AccountType = 'Expense' and Name like '%${String(categoria).replace(/'/g, "\\'")}%' maxresults 1`, token); conta = (data?.QueryResponse?.Account || [])[0]; }
+  if (!conta && nomeEnv) { const data = await qbQuery(`select * from Account where Name = '${nomeEnv.replace(/'/g, "\\'")}' maxresults 1`, token); conta = (data?.QueryResponse?.Account || [])[0]; }
   if (!conta) { const data = await qbQuery(`select * from Account where AccountType = 'Expense' maxresults 1`, token); conta = (data?.QueryResponse?.Account || [])[0]; }
   if (!conta) throw new Error('Nenhuma conta de despesa encontrada no QuickBooks. Cadastre uma conta (ex.: "Despesas Operacionais") ou defina QB_DEFAULT_EXPENSE_ACCOUNT_NAME.');
   const out = { id: conta.Id, nome: conta.Name };
@@ -3956,7 +4008,7 @@ async function qbCriarBill({ vendorId, accountId, valor, descricao, dataVencimen
   const base = sandbox ? 'https://sandbox-quickbooks.api.intuit.com' : 'https://quickbooks.api.intuit.com';
   const body = {
     VendorRef: { value: String(vendorId) },
-    TxnDate: new Date().toISOString().substring(0, 10),
+    TxnDate: _hojeBR(),
     ...(dataVencimento ? { DueDate: dataVencimento } : {}),
     PrivateNote: descricao,
     Line: [{ Amount: parseFloat(valor), DetailType: 'AccountBasedExpenseLineDetail', Description: descricao, AccountBasedExpenseLineDetail: { AccountRef: { value: String(accountId) } } }],
@@ -4014,14 +4066,17 @@ async function regerarOcorrencias(sql, despesaId, meses = 12) {
   // v3.113: as 'lancada' (já viraram conta a pagar no QuickBooks) NÃO são apagadas — apagar e recriar como 'prevista'
   // perdia o vínculo com o Bill e a mesma conta aparecia duas vezes (e o botão "Lançar no QB" voltava).
   // v3.162: só apaga dentro da janela que será regerada — ocorrências além dela (ex.: replicadas até o 12º mês) ficam
-  const _lim = new Date(); _lim.setMonth(_lim.getMonth() + meses); const limiteStr = _lim.toISOString().split('T')[0];
+  const limiteStr = _addMesesData(hoje, meses);
   await sql`DELETE FROM despesas_ocorrencias
     WHERE despesa_id = ${despesaId} AND status = 'prevista' AND data_prevista >= ${hoje} AND data_prevista <= ${limiteStr}`;
-  const mesesOcupados = new Set((await sql`SELECT data_prevista FROM despesas_ocorrencias WHERE despesa_id = ${despesaId} AND status IN ('lancada', 'paga')`)
+  // v3.223: mês ocupado = qualquer ocorrência que sobrou (lançada, paga, cancelada de propósito, prevista fora da janela) —
+  // antes só lançada/paga: as 'pendente' e as canceladas pela replicação voltavam em dobro no "Regerar"
+  const mesesOcupados = new Set((await sql`SELECT data_prevista FROM despesas_ocorrencias WHERE despesa_id = ${despesaId}`)
     .map(x => _dStr(x.data_prevista).substring(0, 7)));
 
   // v3.113: só gera de hoje em diante (antes, despesa nova com início no passado criava meses passados "a pagar" = atrasados falsos)
-  const datas = gerarDatasRecorrencia(d, meses).filter(dt => dt >= hoje && !mesesOcupados.has(String(dt).substring(0, 7)));
+  // v3.223: despesa ÚNICA com data passada entra (vencida) — antes não gerava nada e a despesa sumia do calendário e dos atrasos
+  const datas = gerarDatasRecorrencia(d, meses).filter(dt => (dt >= hoje || d.recorrencia === 'unica') && !mesesOcupados.has(String(dt).substring(0, 7)));
   let count = 0;
   for (const data of datas) {
     const ocoId = `oco_${despesaId}_${data}`;
@@ -4060,52 +4115,86 @@ function _agendaSemDuplicarQb(ocorrs, bills) {
 function _normDesp(x) { return String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+·\s+.*$/, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
 function _dataNoMes(ym, dia) { const [y, m] = ym.split('-').map(Number); const ult = new Date(Date.UTC(y, m, 0)).getUTCDate(); return `${ym}-${String(Math.min(Math.max(1, dia || 1), ult)).padStart(2, '0')}`; }
 
-async function despReplicarMes({ mes, meses = 12, simular = false } = {}) {
+async function despReplicarMes({ mes, meses = 12, simular = false, chaves = null } = {}) {
+  // v3.223: revisão — (1) despesa recorrente MENSAL da Agenda estende a PRÓPRIA despesa (antes criava uma cópia paralela que
+  // duplicava quando a janela do "Regerar" avançava); (2) anual/trimestral não vira mensal (ficam de fora: a recorrência
+  // delas já cuida); (3) avulsa (única) só replica se você marcar; (4) itens distintos com o mesmo nome e valores diferentes
+  // não se engolem mais; (5) dá para escolher os itens (chaves) e o número de meses (1–24).
   if (!/^\d{4}-\d{2}$/.test(String(mes || ''))) throw new Error('mes obrigatório (AAAA-MM)');
   meses = Math.min(Math.max(parseInt(meses) || 12, 1), 24);
   const sql = await getSql();
   const hoje = _hojeBR();
   const ultimo = _mesMais(mes, meses);
   const ag = await despOcorrencias({ data_inicio: `${mes}-01`, data_fim: _dataNoMes(ultimo, 31), incluir_qb: true });
-  const progs = await sql`SELECT id, descricao, fornecedor, categoria, conta_pagamento FROM despesas_programadas`;
+  const progs = await sql`SELECT id, descricao, fornecedor, categoria, conta_pagamento, recorrencia, ativa, data_fim, valor FROM despesas_programadas`;
   const progPorId = new Map(progs.map(p => [p.id, p]));
-  // as canceladas também contam como "já existe" no mês (o usuário tirou de propósito)
   const canc = await sql`SELECT o.data_prevista, o.despesa_id FROM despesas_ocorrencias o WHERE o.status = 'cancelada' AND o.data_prevista >= ${`${mes}-01`} AND o.data_prevista <= ${_dataNoMes(ultimo, 31)}`;
   const todos = (ag.ocorrencias || []).concat(canc.map(c => ({ despesa_id: c.despesa_id, data_prevista: _dStr(c.data_prevista), fonte: 'atlantyx', status: 'cancelada' })));
-  const chaves = o => { const p = o.despesa_id && progPorId.get(o.despesa_id); const k = new Set();
+  const chavesDe = o => { const p = o.despesa_id && progPorId.get(o.despesa_id); const k = new Set();
     if (o.fonte === 'quickbooks') k.add(_normDesp(o.descricao)); else { k.add(_normDesp(p?.descricao || o.descricao)); if (p?.fornecedor) k.add(_normDesp(p.fornecedor)); }
     k.delete(''); return k; };
-  const porMes = new Map(); // 'AAAA-MM' -> Set de chaves existentes
-  for (const o of todos) { const ym = String(o.data_prevista).slice(0, 7); if (!porMes.has(ym)) porMes.set(ym, new Set()); for (const k of chaves(o)) porMes.get(ym).add(k); }
+  // por mês de destino: chaves existentes (com valor) e despesas programadas que já têm ocorrência
+  const porMes = new Map(), despNoMes = new Map();
+  for (const o of todos) { const ym = String(o.data_prevista).slice(0, 7);
+    if (!porMes.has(ym)) porMes.set(ym, []); porMes.get(ym).push({ ks: chavesDe(o), v: Number(o.valor_total || o.valor) || 0 });
+    if (o.despesa_id) { if (!despNoMes.has(ym)) despNoMes.set(ym, new Set()); despNoMes.get(ym).add(o.despesa_id); } }
+  const jaTem = (ym, ks, v) => (porMes.get(ym) || []).some(e => [...ks].some(k => e.ks.has(k)) && (!v || !e.v || Math.abs(e.v - v) <= Math.max(1, v * 0.3)));
 
   const fonte = (ag.ocorrencias || []).filter(o => String(o.data_prevista).slice(0, 7) === mes && o.status !== 'cancelada' && Number(o.valor) > 0);
   const vistos = new Set(), itens = [];
   let criar = 0, existentes = 0, passados = 0;
   for (const o of fonte) {
     const p = o.despesa_id && progPorId.get(o.despesa_id);
-    const ks = chaves(o); const kPrin = [...ks][0]; if (!kPrin || vistos.has(kPrin)) continue; vistos.add(kPrin);
+    const ks = chavesDe(o); const kPrin = [...ks][0]; if (!kPrin) continue;
+    const valor = round(Number(o.valor_total || o.valor_original || o.valor) || 0);
+    const chave = (o.despesa_id ? 'd:' + o.despesa_id : 'q:' + kPrin + ':' + Math.round(valor));
+    if (vistos.has(chave)) continue; vistos.add(chave);
     const dia = parseInt(String(o.data_prevista).slice(8, 10)) || 1;
     const nome = o.fonte === 'quickbooks' ? String(o.descricao || '').replace(/\s+·\s+.*$/, '') : (p?.descricao || o.descricao || 'Despesa');
-    const valor = Number(o.valor_total || o.valor_original || o.valor) || 0;
+    const rec = p ? p.recorrencia : null;
+    // modo: 'estender' (mensal da agenda) · 'nova' (conta a pagar do QB ou avulsa → nova despesa mensal) · 'fora' (anual/trimestral)
+    const modo = p ? (rec === 'mensal' ? (p.ativa === false ? 'nova' : 'estender') : rec === 'unica' ? 'nova' : 'fora') : 'nova';
+    const padrao = modo === 'estender' || (modo === 'nova' && !p);
+    const motivo = modo === 'fora' ? `recorrência ${rec} — a própria despesa já gera os meses dela` : rec === 'unica' ? 'despesa avulsa (única) — marque se ela se repete todo mês' : modo === 'estender' ? 'despesa mensal da Agenda — estende ela mesma' : 'conta a pagar do QuickBooks — vira despesa mensal na Agenda';
+    const fimDesp = modo === 'estender' && p.data_fim ? _dStr(p.data_fim) : null;
     const plano = [];
     for (let i = 1; i <= meses; i++) {
       const ym = _mesMais(mes, i), data = _dataNoMes(ym, dia);
-      const ex = porMes.get(ym); const jaExiste = !!ex && [...ks].some(k => ex.has(k));
-      if (data < hoje) { passados++; plano.push({ data, acao: 'passado' }); continue; }
-      if (jaExiste) { existentes++; plano.push({ data, acao: 'ja_existe' }); continue; }
-      criar++; plano.push({ data, acao: 'criar' });
+      if (data < hoje) { plano.push({ data, acao: 'passado' }); continue; }
+      if (modo === 'fora') { plano.push({ data, acao: 'fora' }); continue; }
+      if (modo === 'estender' && (despNoMes.get(ym) || new Set()).has(o.despesa_id)) { plano.push({ data, acao: 'ja_existe' }); continue; }
+      if (fimDesp && data > fimDesp) { plano.push({ data, acao: 'fim_da_despesa' }); continue; }
+      if (jaTem(ym, ks, valor) && !(modo === 'estender')) { plano.push({ data, acao: 'ja_existe' }); continue; }
+      if (modo === 'estender' && jaTem(ym, new Set([...ks].filter(Boolean)), valor) && !(despNoMes.get(ym) || new Set()).has(o.despesa_id)) {
+        // a mesma despesa já está no mês como conta a pagar do QuickBooks
+        const qbMes = (ag.ocorrencias || []).some(x => x.fonte === 'quickbooks' && String(x.data_prevista).slice(0, 7) === ym && [...chavesDe(x)].some(k => ks.has(k)));
+        if (qbMes) { plano.push({ data, acao: 'ja_existe' }); continue; } }
+      plano.push({ data, acao: 'criar' });
     }
-    itens.push({ descricao: nome, fornecedor: o.fonte === 'quickbooks' ? nome : (p?.fornecedor || null), categoria: o.fonte === 'quickbooks' ? 'Despesa' : (p?.categoria || o.categoria || null),
-      conta_pagamento: p?.conta_pagamento || null, origem: o.fonte === 'quickbooks' ? 'QuickBooks' : 'Agenda', valor, dia, plano,
-      criar: plano.filter(x => x.acao === 'criar').length, ja_existe: plano.filter(x => x.acao === 'ja_existe').length });
+    const it = { chave, descricao: nome, fornecedor: o.fonte === 'quickbooks' ? nome : (p?.fornecedor || null), categoria: o.fonte === 'quickbooks' ? 'Despesa' : (p?.categoria || o.categoria || null),
+      conta_pagamento: p?.conta_pagamento || null, origem: o.fonte === 'quickbooks' ? 'QuickBooks' : 'Agenda', recorrencia: rec, modo, motivo, despesa_id: o.despesa_id || null,
+      valor, dia, plano, selecionado_padrao: padrao,
+      criar: plano.filter(x => x.acao === 'criar').length, ja_existe: plano.filter(x => x.acao === 'ja_existe').length };
+    itens.push(it);
   }
-  const res = { mes, meses, ate: ultimo, itens, total_itens: itens.length, ocorrencias_a_criar: criar, ja_existentes: existentes, meses_passados: passados, simulado: !!simular };
+  const escolhidos = Array.isArray(chaves) ? new Set(chaves.map(String)) : null;
+  itens.forEach(it => { it.selecionado = escolhidos ? escolhidos.has(it.chave) && it.modo !== 'fora' : it.selecionado_padrao; });
+  for (const it of itens) if (it.selecionado) { criar += it.criar; existentes += it.ja_existe; passados += it.plano.filter(x => x.acao === 'passado').length; }
+  const res = { mes, meses, ate: ultimo, itens, total_itens: itens.length, selecionados: itens.filter(i => i.selecionado).length, ocorrencias_a_criar: criar, ja_existentes: existentes, meses_passados: passados, simulado: !!simular };
   if (simular) return res;
 
-  let criadas = 0, despesasCriadas = 0;
-  for (const it of itens) {
+  let criadas = 0, despesasCriadas = 0, estendidas = 0;
+  for (const it of itens.filter(i => i.selecionado)) {
     const datasCriar = it.plano.filter(x => x.acao === 'criar').map(x => x.data);
     if (!datasCriar.length) continue;
+    if (it.modo === 'estender') {
+      for (const data of datasCriar) {
+        const r = await sql`INSERT INTO despesas_ocorrencias (id, despesa_id, data_prevista, valor, status, observacoes)
+          VALUES (${`oco_${it.despesa_id}_${data}`}, ${it.despesa_id}, ${data}, ${it.valor}, 'prevista', ${`Replicada de ${mes} em ${hoje}`}) ON CONFLICT (id) DO NOTHING RETURNING id`;
+        if (r.length) criadas++;
+      }
+      estendidas++; continue;
+    }
     const id = `desp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const ini = datasCriar[0], fim = it.plano[it.plano.length - 1].data;
     await sql`INSERT INTO despesas_programadas (id, descricao, categoria, valor, recorrencia, dia_vencimento, data_inicio, data_fim, ativa, fornecedor, conta_pagamento, observacoes, atualizado_em)
@@ -4120,7 +4209,8 @@ async function despReplicarMes({ mes, meses = 12, simular = false } = {}) {
       if (st === 'prevista') criadas++;
     }
   }
-  return { ...res, ocorrencias_criadas: criadas, despesas_criadas: despesasCriadas };
+  try { _resCache.clear(); } catch (_) {}
+  return { ...res, ocorrencias_criadas: criadas, despesas_criadas: despesasCriadas, despesas_estendidas: estendidas };
 }
 
 function gerarDatasRecorrencia(d, meses) {
@@ -5732,21 +5822,23 @@ async function despesasNaoCadastradas({ meses = 3, tolerancia_pct = 5 } = {}) {
 async function despesaCriarReplicar({ descricao, fornecedor, valor, dia_vencimento, categoria, recorrencia = 'mensal', data_inicio, meses = 12, lancar_qb = false } = {}) {
   if (!descricao || !valor) throw new Error('descricao e valor obrigatórios');
   const sql = await getSql();
-  const hoje = new Date().toISOString().substring(0, 10);
-  const dia = parseInt(dia_vencimento) || parseInt(hoje.substring(8, 10));
-  let inicio = data_inicio || `${hoje.substring(0, 7)}-${String(dia).padStart(2, '0')}`;
-  if (inicio < hoje) inicio = _addMesesData(inicio, 1);
+  const hoje = _hojeBR(); // v3.223: horário de Brasília
+  const dia = Math.min(31, Math.max(1, parseInt(dia_vencimento) || parseInt(hoje.substring(8, 10))));
+  // v3.223: dia 29–31 limitado ao fim do mês (antes "2026-02-31" quebrava o cadastro)
+  let inicio = _addMesesData(data_inicio || `${hoje.substring(0, 7)}-${String(dia).padStart(2, '0')}`, 0);
+  if (inicio < hoje) inicio = _addMesesData(`${inicio.substring(0, 7)}-${String(dia).padStart(2, '0')}`, 1);
   const id = 'dp_' + Date.now().toString(36);
   await sql`INSERT INTO despesas_programadas (id, descricao, categoria, valor, recorrencia, dia_vencimento, data_inicio, ativa, fornecedor, criado_em, atualizado_em)
     VALUES (${id}, ${descricao}, ${categoria || 'Despesa recorrente'}, ${num(valor)}, ${recorrencia}, ${dia}, ${inicio}, true, ${fornecedor || descricao}, NOW(), NOW())`;
-  const n = recorrencia === 'unica' ? 1 : Math.min(parseInt(meses) || 12, 24);
   const passo = recorrencia === 'trimestral' ? 3 : recorrencia === 'anual' ? 12 : 1;
+  // v3.223: "12 meses" = ocorrências DENTRO de 12 meses (antes anual criava 12 anos e trimestral 3 anos — e 12 Bills no QB)
+  const n = recorrencia === 'unica' ? 1 : Math.max(1, Math.ceil(Math.min(parseInt(meses) || 12, 24) / passo));
   const criadas = [];
   for (let i = 0; i < n; i++) {
-    const dt = _addMesesData(inicio, i * passo);
-    const oid = `${id}_${dt.substring(0, 7)}`;
+    const dt = _addMesesData(`${inicio.substring(0, 7)}-${String(dia).padStart(2, '0')}`, i * passo);
+    const oid = `oco_${id}_${dt}`; // v3.223: mesmo padrão do "Regerar" (ids diferentes duplicavam tudo)
     await sql`INSERT INTO despesas_ocorrencias (id, despesa_id, data_prevista, valor, status, criado_em)
-      VALUES (${oid}, ${id}, ${dt}, ${num(valor)}, 'pendente', NOW()) ON CONFLICT (id) DO NOTHING`;
+      VALUES (${oid}, ${id}, ${dt}, ${num(valor)}, 'prevista', NOW()) ON CONFLICT (id) DO NOTHING`;
     criadas.push({ id: oid, data: dt });
   }
   let lancadas = 0, errosQb = [];
@@ -5766,7 +5858,7 @@ async function despesaAjustarReplicar({ despesa_id, valor, dia_vencimento, a_par
   const sql = await getSql();
   const d = (await sql`SELECT * FROM despesas_programadas WHERE id = ${despesa_id}`)[0];
   if (!d) throw new Error('Despesa não encontrada');
-  const hoje = new Date().toISOString().substring(0, 10);
+  const hoje = _hojeBR(); // v3.223
   const desde = a_partir_de || hoje;
   const novoValor = valor != null ? num(valor) : num(d.valor);
   const novoDia = parseInt(dia_vencimento) || parseInt(d.dia_vencimento) || parseInt(desde.substring(8, 10));
@@ -5774,12 +5866,13 @@ async function despesaAjustarReplicar({ despesa_id, valor, dia_vencimento, a_par
 
   // ocorrências futuras pendentes: ajusta valor e dia
   const futuras = await sql`SELECT id, data_prevista, qb_txn_id FROM despesas_ocorrencias
-    WHERE despesa_id = ${despesa_id} AND data_prevista >= ${desde} AND status = 'pendente' ORDER BY data_prevista`;
+    WHERE despesa_id = ${despesa_id} AND data_prevista >= ${desde} AND status IN ('prevista', 'lancada', 'pendente') ORDER BY data_prevista`; // v3.223: antes só 'pendente' — ajustava 0
   let ajustadas = 0, criadas = 0, qbAtualizadas = 0, errosQb = [];
   for (const o of futuras) {
-    const dt = String(o.data_prevista).substring(0, 10);
+    const dt = _dStr(o.data_prevista); // v3.223: o banco devolve Date — String() dava "Fri Oct" e quebrava o ajuste
     const ultimo = new Date(parseInt(dt.substring(0, 4)), parseInt(dt.substring(5, 7)), 0).getDate();
-    const novaData = `${dt.substring(0, 7)}-${String(Math.min(novoDia, ultimo)).padStart(2, '0')}`;
+    let novaData = `${dt.substring(0, 7)}-${String(Math.min(novoDia, ultimo)).padStart(2, '0')}`;
+    if (novaData < hoje && dt >= hoje) novaData = dt; // v3.223: o novo dia já passou neste mês — não cria "atraso" falso; vale do próximo mês
     await sql`UPDATE despesas_ocorrencias SET valor = ${novoValor}, data_prevista = ${novaData} WHERE id = ${o.id}`;
     ajustadas++;
     if (atualizar_qb && o.qb_txn_id) {
@@ -5799,9 +5892,10 @@ async function despesaAjustarReplicar({ despesa_id, valor, dia_vencimento, a_par
       const ultimo = new Date(parseInt(mes.substring(0, 4)), parseInt(mes.substring(5, 7)), 0).getDate();
       const dt = `${mes}-${String(Math.min(novoDia, ultimo)).padStart(2, '0')}`;
       if (dt < hoje) continue;
-      const oid = `${despesa_id}_${mes}`;
+      if (d.data_fim && dt > _dStr(d.data_fim)) continue; // v3.223: respeita o fim da despesa
+      const oid = `oco_${despesa_id}_${dt}`;
       await sql`INSERT INTO despesas_ocorrencias (id, despesa_id, data_prevista, valor, status, criado_em)
-        VALUES (${oid}, ${despesa_id}, ${dt}, ${novoValor}, 'pendente', NOW()) ON CONFLICT (id) DO NOTHING`;
+        VALUES (${oid}, ${despesa_id}, ${dt}, ${novoValor}, 'prevista', NOW()) ON CONFLICT (id) DO NOTHING`;
       criadas++;
       if (lancar_qb) { try { await despLancarQb({ ocorrencia_id: oid }); await qbEsperar(250); } catch (e) { errosQb.push(`${dt}: ${e.message.substring(0, 80)}`); } }
     }
@@ -5816,6 +5910,7 @@ async function _qbAtualizarBill(billId, { valor, dataVencimento }) {
   const atual = (await qbQuery(`select * from Bill where Id = '${String(billId).replace(/'/g, '')}'`, token))?.QueryResponse?.Bill?.[0];
   if (!atual) throw new Error('Bill não encontrada no QuickBooks');
   if (parseFloat(atual.Balance || 0) <= 0) throw new Error('Bill já paga — não altera');
+  if ((atual.Line || []).filter(l => l.DetailType !== 'SubTotalLineDetail').length > 1) throw new Error('conta a pagar com várias linhas no QuickBooks — ajuste lá (o sistema não reescreve linhas)'); // v3.223
   const linha = (atual.Line || []).find(l => l.DetailType === 'AccountBasedExpenseLineDetail') || atual.Line?.[0];
   const corpo = { ...atual, sparse: true, DueDate: dataVencimento || atual.DueDate, TotalAmt: valor,
     Line: [{ ...linha, Amount: valor }] };

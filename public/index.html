@@ -4789,7 +4789,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 
     <div class="kg k2">
       <div class="panel">
-        <div class="ph"><div class="pt">Calendario Mensal</div><button class="btn btn-g" onclick="despReplicarMesUI()" title="Copia as despesas do mês exibido (Agenda + contas a pagar do QuickBooks) para os 12 meses seguintes. Se a despesa já existe no mês, não cria de novo." style="font-size:9px;padding:3px 8px;">&#10697; Replicar este mês → 12 meses</button></div>
+        <div class="ph"><div class="pt">Calendario Mensal</div><button class="btn btn-g" onclick="despReplicarMesUI()" title="Copia as despesas do mês exibido (Agenda + contas a pagar do QuickBooks) para os meses seguintes — você escolhe os itens e quantos meses. Se a despesa já existe no mês, não cria de novo." style="font-size:9px;padding:3px 8px;">&#10697; Replicar este mês…</button></div>
         <div class="pb" id="f_calendario"><div style="text-align:center;padding:24px;color:var(--t3);font-size:11px;">Carregando calendario...</div></div>
       </div>
       <div class="panel">
@@ -19645,6 +19645,8 @@ async function _carregarFornecedoresQb() {
   } catch (e) { addLog('warn', '[Despesas] fornecedores QB: ' + e.message); }
   return _fornecedoresQbCache || [];
 }
+// v3.223: escape para nomes que vêm do QuickBooks/cadastro (aspas e < quebravam a tela e os botões)
+const _dsE = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 async function carregarDespesas() {
   _carregarFornecedoresQb(); // v1.20.8: popula o combo de fornecedores (não bloqueia o resto da tela)
   try {
@@ -19656,7 +19658,7 @@ async function carregarDespesas() {
     _ocoJanela = _calMes.getFullYear() * 12 + _calMes.getMonth();
     _despCache = d.despesas;
     _ocoCache = o.ocorrencias;
-    try { const nQb = o.qb_bills || 0; addLog('info', '[Agenda] ' + (_ocoCache.length) + ' ocorrência(s) · ' + nQb + ' conta(s) a pagar do QuickBooks' + (o.qb_erro ? ' · QB: ' + o.qb_erro : '')); const hd = document.querySelector('#page-s3agenda .pt'); if (hd && !document.getElementById('agendaQbBadge')) { const b = document.createElement('span'); b.id = 'agendaQbBadge'; b.className = 'nbx gn'; b.style.marginLeft = '8px'; hd.appendChild(b); } const bd = document.getElementById('agendaQbBadge'); if (bd) bd.textContent = 'QB: ' + nQb; } catch(_) {}
+    try { const nQb = o.qb_bills || 0; addLog('info', '[Agenda] ' + (_ocoCache.length) + ' ocorrência(s) · ' + nQb + ' conta(s) a pagar do QuickBooks' + (o.qb_erro ? ' · QB: ' + o.qb_erro : '')); const hd = document.querySelector('#f_calendario')?.closest('.panel')?.querySelector('.pt'); if (hd && !document.getElementById('agendaQbBadge')) { const b = document.createElement('span'); b.id = 'agendaQbBadge'; b.className = 'nbx gn'; b.style.marginLeft = '8px'; hd.appendChild(b); } const bd = document.getElementById('agendaQbBadge'); if (bd) bd.textContent = 'QB: ' + nQb; } catch(_) {}
     renderDespesasLista();
     renderCalendario();
   } catch (e) {
@@ -19672,7 +19674,7 @@ async function ajustarDespesaReplicar(id, descricao, valorAtual, diaAtual) {
   const [valor, dia, desde, atQb, lancQb] = r.split('|').map(x => x.trim());
   try {
     toast('Ajustando e replicando...', 'success');
-    const d = await finApi('desp_ajustar_replicar', { despesa_id: id, valor: parseFloat(valor), dia_vencimento: parseInt(dia),
+    const d = await finApi('desp_ajustar_replicar', { despesa_id: id, valor: _numBR(valor), dia_vencimento: parseInt(dia),
       a_partir_de: desde || null, meses: 12, atualizar_qb: /^s/i.test(atQb||''), lancar_qb: /^s/i.test(lancQb||'') });
     alert(`✅ "${descricao}" ajustada para ${fmtBRLcompleto(d.valor)} no dia ${d.dia_vencimento}.\n\n${d.ocorrencias_ajustadas} ocorrência(s) futura(s) ajustada(s)\n${d.ocorrencias_criadas} nova(s) criada(s) até completar 12 meses${d.bills_atualizadas_qb ? '\n' + d.bills_atualizadas_qb + ' Bill(s) atualizada(s) no QuickBooks' : ''}${(d.erros_qb||[]).length ? '\n\nFalhas no QB:\n' + d.erros_qb.join('\n') : ''}`);
     if (typeof carregarDespesas === 'function') carregarDespesas(); // v3.109: a função antiga não existia — a tela não atualizava
@@ -19699,8 +19701,8 @@ function renderDespesasLista() {
       <tbody>
         ${_despCache.map(d => `
           <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
-            <td style="padding:7px;">${d.descricao}</td>
-            <td style="padding:7px;color:var(--t3);">${d.categoria || '-'}</td>
+            <td style="padding:7px;">${_dsE(d.descricao)}${d.fornecedor && d.fornecedor !== d.descricao ? '<div style="font-size:9px;color:var(--t3);">' + _dsE(d.fornecedor) + '</div>' : ''}</td>
+            <td style="padding:7px;color:var(--t3);">${_dsE(d.categoria || '-')}</td>
             <td style="padding:7px;font-size:10px;color:var(--blue);">${d.recorrencia}</td>
             <td style="padding:7px;text-align:right;font-family:var(--M);">${fmtBRLcompleto(d.valor)}</td>
             <td style="padding:7px;text-align:center;color:var(--t3);font-size:10px;">${d.data_inicio}</td>
@@ -19710,8 +19712,8 @@ function renderDespesasLista() {
               </span>
             </td>
             <td style="text-align:center;">
-              <button onclick="ajustarDespesaReplicar('${d.id}','${String(d.descricao||'').replace(/'/g,'')}',${parseFloat(d.valor)||0},${parseInt(d.dia_vencimento)||1})" title="Ajustar valor/dia e replicar nos próximos 12 meses" style="background:transparent;border:none;color:var(--gold);cursor:pointer;font-size:12px;margin-right:4px;">✎↻</button>
-              <button onclick="excluirDespesa('${d.id}')" style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:14px;">×</button>
+              <button onclick='ajustarDespesaReplicar(${_dsE(JSON.stringify(d.id))},${_dsE(JSON.stringify(String(d.descricao||"")))},${parseFloat(d.valor)||0},${parseInt(d.dia_vencimento)||1})' title="Ajustar valor/dia e replicar nos próximos 12 meses" style="background:transparent;border:none;color:var(--gold);cursor:pointer;font-size:12px;margin-right:4px;">✎↻</button>
+              <button onclick='excluirDespesa(${_dsE(JSON.stringify(d.id))})' style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:14px;">×</button>
             </td>
           </tr>
         `).join('')}
@@ -19750,10 +19752,10 @@ async function adicionarDespesa() {
 }
 
 async function excluirDespesa(id) {
-  if (!confirm('Excluir esta despesa programada? Ocorrências futuras também serão removidas.')) return;
+  if (!confirm('Excluir esta despesa programada?\n\nSaem as ocorrências ainda PREVISTAS. As já pagas ou lançadas no QuickBooks ficam como histórico (a despesa fica pausada).')) return;
   try {
-    await finApi('desp_delete', { id });
-    if (typeof toast === 'function') toast('Excluída', 'success');
+    const r = await finApi('desp_delete', { id });
+    if (typeof toast === 'function') toast(r.pausada ? 'Previstas removidas · despesa pausada (histórico de ' + r.historico_mantido + ' ocorrência(s) mantido)' : 'Excluída', 'success');
     await carregarDespesas();
   } catch (e) {
     if (typeof toast === 'function') toast('Erro: ' + e.message, 'error');
@@ -19813,7 +19815,7 @@ function renderCalendario() {
       <div style="background:${isHoje ? 'rgba(79,124,255,.15)' : 'var(--bg4)'};border:1px solid ${isHoje ? 'var(--blue)' : 'var(--bd)'};border-radius:5px;padding:5px;min-height:62px;font-size:10px;cursor:${ocs.length ? 'pointer' : 'default'};" ${ocs.length ? `onclick="mostrarDetalhesDia(${dia})"` : ''}>
         <div style="font-family:var(--M);font-size:10px;color:var(--t1);margin-bottom:3px;">${dia}</div>
         ${ocs.slice(0, 2).map(o => `
-          <div style="background:rgba(255,79,79,.12);color:var(--red);padding:2px 4px;border-radius:3px;margin-bottom:2px;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.descricao}</div>
+          <div style="background:rgba(255,79,79,.12);color:var(--red);padding:2px 4px;border-radius:3px;margin-bottom:2px;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${o.status === 'paga' ? 'opacity:.55;text-decoration:line-through;' : ''}">${_dsE(o.descricao)}</div>
         `).join('')}
         ${ocs.length > 2 ? `<div style="font-size:9px;color:var(--t3);">+${ocs.length - 2} mais</div>` : ''}
         ${total > 0 ? `<div style="font-family:var(--M);font-size:9px;color:var(--red);margin-top:2px;">${fmtBRL(total)}</div>` : ''}
@@ -19858,15 +19860,16 @@ function mostrarDetalhesDia(dia) {
     document.body.appendChild(modal);
   }
   modal.style.display = 'flex';
-  const statusLbl = { prevista: '⏳ prevista', lancada: '📤 lançada no QB', paga: '✅ paga' };
+  const statusLbl = { prevista: '⏳ prevista', pendente: '⏳ prevista', lancada: '📤 lançada no QB (conta a pagar)', paga: '✅ paga', cancelada: '✕ cancelada' };
   modal.innerHTML = `<div class="panel" style="width:520px;max-width:95vw;max-height:85vh;overflow:auto;">
     <div class="ph"><div class="pt">Despesas em ${dia}/${mes+1}/${ano}</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('despDiaModal').style.display='none'">✕</button></div>
     <div class="pb">
       ${ocs.map(o => `<div style="border-bottom:1px solid var(--bd);padding:8px 0;">
-        <div style="display:flex;justify-content:space-between;font-size:11.5px;"><b>${o.descricao}</b><span style="font-family:var(--M);color:var(--red);">${fmtBRLcompleto(o.valor)}</span></div>
-        <div style="font-size:9.5px;color:var(--t2);margin-top:2px;">${statusLbl[o.status] || o.status}${o.fonte === 'quickbooks' ? ' · já é conta a pagar no QuickBooks' : ''}${o.qb_txn_id ? ' · QB #' + o.qb_txn_id : ''}</div>
+        <div style="display:flex;justify-content:space-between;font-size:11.5px;"><b>${_dsE(o.descricao)}</b><span style="font-family:var(--M);color:var(--red);">${fmtBRLcompleto(o.valor)}</span></div>
+        <div style="font-size:9.5px;color:var(--t2);margin-top:2px;">${statusLbl[o.status] || o.status}${o.fonte === 'quickbooks' ? ' · já é conta a pagar no QuickBooks' : ''}${o.qb_txn_id ? ' · QB #' + _dsE(o.qb_txn_id) : ''}${o.data_pagamento && o.status === 'paga' ? ' · paga em ' + String(o.data_pagamento).split('-').reverse().join('/') : ''}</div>
+        ${o.nota ? `<div style="font-size:9.5px;color:var(--gold);margin-top:3px;line-height:1.5;">ℹ ${_dsE(o.nota)}</div>` : ''}
         ${o.fonte !== 'quickbooks' && o.status !== 'paga' ? `<div style="display:flex;gap:6px;margin-top:5px;">
-          <button class="btn btn-gn" style="font-size:9px;padding:3px 8px;" onclick="_despMarcarPagaUI('${o.id}', ${dia})">✓ Marcar como paga</button>
+          <button class="btn btn-gn" style="font-size:9px;padding:3px 8px;" onclick='_despMarcarPagaUI(${_dsE(JSON.stringify(o.id))}, ${dia}, ${o.qb_txn_id ? 1 : 0})'>✓ Marcar como paga${o.qb_txn_id ? ' (baixa no QB)' : ''}</button>
           ${!o.qb_txn_id ? `<button class="btn" style="font-size:9px;padding:3px 8px;color:var(--gold);border-color:var(--gold);" onclick="_despLancarQbUI('${o.id}', ${dia})" id="btnDespQb_${o.id}">📤 Lançar no QuickBooks</button>` : ''}
         </div>` : ''}
       </div>`).join('') || '<div style="text-align:center;color:var(--t3);padding:16px;">Sem despesas neste dia.</div>'}
@@ -19874,9 +19877,24 @@ function mostrarDetalhesDia(dia) {
     </div>
   </div>`;
 }
-async function _despMarcarPagaUI(ocorrenciaId, dia) {
-  try { await finApi('desp_marcar_paga', { id: ocorrenciaId }); if (typeof toast === 'function') toast('Marcada como paga', 'success'); await carregarDespesas(); mostrarDetalhesDia(dia); }
-  catch (e) { if (typeof toast === 'function') toast('Erro: ' + e.message, 'error'); }
+// v3.223: despesa já lançada no QuickBooks → a baixa também é registrada lá (pagamento ligado à conta a pagar), senão a
+// conta seguia aberta e o fluxo/alertas continuavam cobrando
+async function _despMarcarPagaUI(ocorrenciaId, dia, temQb) {
+  const hj = new Date().toLocaleDateString('sv-SE');
+  try {
+    if (!temQb) { await finApi('desp_marcar_paga', { id: ocorrenciaId }); toast('Marcada como paga', 'success'); await carregarDespesas(); mostrarDetalhesDia(dia); return; }
+    let contas = []; try { contas = (await finApi('qb_contas_filtro')).contas || []; } catch (_) {}
+    const lista = contas.map((c, i) => (i + 1) + ') ' + c.nome).join('\n');
+    const esc = prompt('Esta despesa já é CONTA A PAGAR no QuickBooks. A baixa será registrada lá também (pagamento ligado à conta).\n\n⚠ Se o pagamento já entrou no QuickBooks pela conciliação bancária, NÃO registre aqui: na conciliação use "Corresponder" com a conta a pagar.\n\nDe qual conta saiu o pagamento? Digite o número' + (contas.length ? ':\n' + lista : ' (QuickBooks sem contas listadas)') + '\n\nOu digite S para marcar paga SÓ no sistema.', contas.length === 1 ? '1' : '');
+    if (esc == null || !esc.trim()) return;
+    if (/^s$/i.test(esc.trim())) { await finApi('desp_marcar_paga', { id: ocorrenciaId, so_no_sistema: true }); toast('Marcada como paga só no sistema — a conta segue aberta no QuickBooks', 'success'); await carregarDespesas(); mostrarDetalhesDia(dia); return; }
+    const c = contas[parseInt(esc) - 1]; if (!c) { toast('Conta inválida', 'error'); return; }
+    const dt = prompt('Data do pagamento (DD/MM/AAAA):', hj.split('-').reverse().join('/')); if (dt == null) return;
+    const m = dt.match(/^(\d{2})\/(\d{2})\/(\d{4})$/); if (!m) { toast('Data inválida', 'error'); return; }
+    const r = await finApi('desp_marcar_paga', { id: ocorrenciaId, conta_banco_id: c.id, data_pagamento: m[3] + '-' + m[2] + '-' + m[1] });
+    toast(r.qb_pagamento?.ja_paga_no_qb ? 'Já estava paga no QuickBooks — marcada aqui' : 'Paga · baixa registrada no QuickBooks (' + c.nome + ')', 'success');
+    await carregarDespesas(); mostrarDetalhesDia(dia);
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
 async function _despLancarQbUI(ocorrenciaId, dia) {
   const btn = document.getElementById('btnDespQb_' + ocorrenciaId); if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
@@ -19887,19 +19905,45 @@ async function _despLancarQbUI(ocorrenciaId, dia) {
   } catch (e) { if (typeof toast === 'function') toast('Erro ao lançar no QB: ' + e.message, 'error'); if (btn) { btn.disabled = false; btn.textContent = '📤 Lançar no QuickBooks'; } }
 }
 
-// v3.162: replica as despesas do mês exibido nos 12 meses seguintes (sem duplicar as que já existem)
-async function despReplicarMesUI() {
+// v3.162 / v3.223: replica as despesas do mês exibido nos meses seguintes — agora numa janela onde você escolhe os itens e
+// quantos meses. Mensal da Agenda estende a própria despesa; conta a pagar do QB vira despesa mensal; anual/trimestral ficam fora.
+let _drp = null;
+async function despReplicarMesUI(meses) {
   const ym = _calMes.getFullYear() + '-' + String(_calMes.getMonth() + 1).padStart(2, '0');
   const nomeMes = _calMes.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  meses = parseInt(meses) || (_drp && _drp.ym === ym ? _drp.meses : 12);
+  let m = document.getElementById('despRepModal');
+  if (!m) { m = document.createElement('div'); m.id = 'despRepModal'; m.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:999;align-items:center;justify-content:center;overflow:auto;padding:12px;'; document.body.appendChild(m); }
+  m.style.display = 'flex';
+  m.innerHTML = '<div class="panel" style="width:760px;max-width:96vw;"><div class="pb"><div class="fv2-load">Calculando o que será replicado de ' + _dsE(nomeMes) + '…</div></div></div>';
   try {
-    toast('Calculando o que será replicado...', 'success');
-    const s = await finApi('desp_replicar_mes', { mes: ym, meses: 12, simular: true });
-    if (!s.total_itens) { alert('Nenhuma despesa em ' + nomeMes + ' para replicar.'); return; }
-    const lin = s.itens.slice(0, 25).map(i => `• ${i.descricao} — ${fmtBRLcompleto(i.valor)} dia ${i.dia} · criar ${i.criar}` + (i.ja_existe ? ` · já existe em ${i.ja_existe}` : '')).join('\n');
-    if (!s.ocorrencias_a_criar) { alert(`Tudo já existe nos 12 meses seguintes a ${nomeMes}. Nada a criar.\n\n${lin}`); return; }
-    if (!confirm(`Replicar as despesas de ${nomeMes} até ${s.ate.split('-').reverse().join('/')}?\n\n${s.total_itens} despesa(s) · ${s.ocorrencias_a_criar} ocorrência(s) novas · ${s.ja_existentes} já existem (não serão criadas)${s.meses_passados ? ' · ' + s.meses_passados + ' em data passada (ignoradas)' : ''}\n\n${lin}${s.itens.length > 25 ? '\n…' : ''}\n\nNada é lançado no QuickBooks — ficam como previstas na Agenda.`)) return;
-    const d = await finApi('desp_replicar_mes', { mes: ym, meses: 12 });
-    toast(`${d.ocorrencias_criadas} ocorrência(s) criada(s) · ${d.ja_existentes} já existiam`, 'success');
+    const s = await finApi('desp_replicar_mes', { mes: ym, meses, simular: true });
+    _drp = { ym, meses, s, nomeMes };
+    despReplicarRender();
+  } catch (e) { m.innerHTML = '<div class="panel" style="width:520px;max-width:96vw;"><div class="pb" style="color:var(--red);">Erro: ' + _dsE(e.message) + ' <button class="btn" onclick="document.getElementById(\'despRepModal\').style.display=\'none\'">Fechar</button></div></div>'; }
+}
+function despReplicarRender() {
+  const m = document.getElementById('despRepModal'); if (!m || !_drp) return; const { s, nomeMes, meses } = _drp;
+  const sel = new Set([...document.querySelectorAll('#despRepModal input[data-ch]')].length ? [...document.querySelectorAll('#despRepModal input[data-ch]:checked')].map(x => x.dataset.ch) : s.itens.filter(i => i.selecionado).map(i => i.chave));
+  const tot = s.itens.filter(i => sel.has(i.chave)).reduce((a, i) => a + i.criar, 0);
+  const linhas = s.itens.map(i => '<tr style="border-top:1px solid var(--bd);' + (i.modo === 'fora' ? 'opacity:.55;' : '') + '"><td style="padding:5px;"><input type="checkbox" data-ch="' + _dsE(i.chave) + '"' + (sel.has(i.chave) ? ' checked' : '') + (i.modo === 'fora' ? ' disabled' : '') + ' onchange="despReplicarRender()"></td>'
+    + '<td style="padding:5px;"><b>' + _dsE(i.descricao) + '</b><div style="font-size:9px;color:var(--t3);">' + _dsE(i.motivo) + '</div></td>'
+    + '<td style="padding:5px;text-align:right;font-family:var(--M);">' + fmtBRLcompleto(i.valor) + '</td><td style="padding:5px;text-align:center;">' + i.dia + '</td>'
+    + '<td style="padding:5px;text-align:center;color:var(--green);font-weight:600;">' + (i.modo === 'fora' ? '—' : i.criar) + '</td><td style="padding:5px;text-align:center;color:var(--t3);">' + (i.ja_existe || '') + '</td></tr>').join('');
+  m.innerHTML = '<div class="panel" style="width:760px;max-width:96vw;max-height:90vh;overflow:auto;"><div class="ph" style="flex-wrap:wrap;gap:6px;"><div class="pt">⧉ Replicar a agenda de ' + _dsE(nomeMes) + '</div><button class="btn" style="margin-left:auto;font-size:10px;" onclick="document.getElementById(\'despRepModal\').style.display=\'none\'">✕</button></div><div class="pb">'
+    + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;margin-bottom:8px;">Replicar para os próximos <select class="fsel" style="width:auto;" onchange="despReplicarMesUI(this.value)">' + [1, 2, 3, 6, 12, 18, 24].map(n => '<option value="' + n + '"' + (n === meses ? ' selected' : '') + '>' + n + ' ' + (n === 1 ? 'mês' : 'meses') + '</option>').join('') + '</select> · até ' + s.ate.split('-').reverse().join('/')
+    + ' <span style="margin-left:auto;display:flex;gap:6px;"><button class="btn btn-g" style="font-size:9px;" onclick="document.querySelectorAll(\'#despRepModal input[data-ch]:not(:disabled)\').forEach(x=>x.checked=true);despReplicarRender()">marcar todos</button><button class="btn btn-g" style="font-size:9px;" onclick="document.querySelectorAll(\'#despRepModal input[data-ch]\').forEach(x=>x.checked=false);despReplicarRender()">desmarcar</button></span></div>'
+    + '<div style="font-size:10px;color:var(--t2);line-height:1.6;margin-bottom:8px;">Não duplica: mês que já tem a despesa (na Agenda ou como conta a pagar no QuickBooks) fica como está. Nada é lançado no QuickBooks — depois use 📤 em cada dia ou o "✎↻" da despesa.</div>'
+    + (s.itens.length ? '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:10.5px;"><tr style="color:var(--t3);text-align:left;"><th></th><th style="padding:5px;">Despesa</th><th style="padding:5px;text-align:right;">Valor</th><th style="padding:5px;">Dia</th><th style="padding:5px;">Meses a criar</th><th style="padding:5px;">Já existem</th></tr>' + linhas + '</table></div>' : '<div style="color:var(--t3);font-size:11px;">Nenhuma despesa neste mês para replicar.</div>')
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;flex-wrap:wrap;gap:8px;"><span style="font-size:11px;"><b>' + tot + '</b> ocorrência(s) serão criadas</span><button class="btn btn-p" ' + (tot ? '' : 'disabled ') + 'onclick="despReplicarExec()">Replicar ' + tot + ' ocorrência(s)</button></div></div></div>';
+}
+async function despReplicarExec() {
+  if (!_drp) return; const chaves = [...document.querySelectorAll('#despRepModal input[data-ch]:checked')].map(x => x.dataset.ch);
+  if (!chaves.length) return;
+  try {
+    const d = await finApi('desp_replicar_mes', { mes: _drp.ym, meses: _drp.meses, chaves });
+    document.getElementById('despRepModal').style.display = 'none';
+    toast(d.ocorrencias_criadas + ' ocorrência(s) criada(s)' + (d.despesas_estendidas ? ' · ' + d.despesas_estendidas + ' despesa(s) mensal(is) estendida(s)' : '') + (d.despesas_criadas ? ' · ' + d.despesas_criadas + ' nova(s) na agenda' : ''), 'success');
     await carregarDespesas();
   } catch (e) { toast('Erro ao replicar: ' + e.message, 'error'); }
 }
@@ -27529,7 +27573,7 @@ async function concCriarDespesa(i) {
   if (lancarQb && !confirm(`Vai criar até 12 contas a pagar no QuickBooks para "${descricao}". O fornecedor precisa existir lá. Continuar?`)) return;
   try {
     toast('Criando despesa e ocorrências...', 'success');
-    const d = await finApi('desp_criar_replicar', { descricao, fornecedor, valor: parseFloat(valor), dia_vencimento: parseInt(dia), recorrencia: rec || 'mensal', meses: 12, lancar_qb: lancarQb });
+    const d = await finApi('desp_criar_replicar', { descricao, fornecedor, valor: _numBR(valor), dia_vencimento: parseInt(dia), recorrencia: rec || 'mensal', meses: 12, lancar_qb: lancarQb });
     alert(`✅ Despesa criada.\n\n${d.ocorrencias} ocorrência(s) de ${_dt(d.primeira)} a ${_dt(d.ultima)}.${lancarQb ? `\n${d.lancadas_no_qb} lançada(s) no QuickBooks.` : ''}${(d.erros_qb||[]).length ? '\n\nFalhas no QB:\n' + d.erros_qb.join('\n') : ''}`);
     concDespesasNovas();
   } catch (e) { toast('Erro: ' + e.message, 'error'); alert(e.message); }
@@ -33869,7 +33913,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.222] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.223] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -33885,7 +33929,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.222';
+window.__ATX_BUILD_ID__ = 'ATX-v3.223';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
