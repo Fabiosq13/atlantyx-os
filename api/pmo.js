@@ -550,8 +550,26 @@ async function getSqlCrono() {
   }
   if (_sqlCrono) return _sqlCrono;
   const { neon } = await import('@neondatabase/serverless');
-  _sqlCrono = neon(url);
-  return _sqlCrono;
+  // v3.227: se o banco do fim da URL não existe (ex.: "atlantyx-db"), acha sozinho o banco deste servidor que tem a base do
+  // Maestro (tabela atlx_store) e usa ele — o nome escolhido fica gravado em pmo_config (cronodb_banco_auto)
+  const trocaBanco = nome => url.replace(/\/[^/?]+(\?|$)/, `/${nome}$1`);
+  let salvo = null; try { const r = await (await getSql())`SELECT valor FROM pmo_config WHERE chave = 'cronodb_banco_auto'`; salvo = r[0]?.valor || null; } catch (_) {}
+  const tentar = async u => { const s = neon(u); await s`SELECT 1`; return s; };
+  try { _sqlCrono = await tentar(url); return _sqlCrono; }
+  catch (e) {
+    if (!/does not exist/i.test(e.message)) throw e;
+    if (salvo) { try { _sqlCrono = await tentar(trocaBanco(salvo)); return _sqlCrono; } catch (_) {} }
+    let lista = null; try { lista = await cronoListarBancos(); } catch (_) {}
+    for (const b of (lista?.bancos || [])) {
+      try { const s = neon(trocaBanco(b.nome)); const t = await s`SELECT to_regclass('public.atlx_store') AS t`; if (!t[0]?.t) continue;
+        try { const sq = await getSql(); await sq`INSERT INTO pmo_config (chave, valor, atualizado_em) VALUES ('cronodb_banco_auto', ${b.nome}, NOW()) ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = NOW()`; } catch (_) {}
+        console.warn(`[Maestro] banco "${lista.banco_na_url}" da CRONOGRAMA_DATABASE_URL não existe — usando "${b.nome}" (tem a atlx_store)`);
+        _sqlCrono = s; return _sqlCrono; } catch (_) {}
+    }
+    const err = new Error(e.message + (lista?.bancos?.length ? ` — nenhum banco deste servidor tem a base do Maestro (atlx_store). Bancos: ${lista.bancos.map(b => b.nome).join(', ')}` : ''));
+    err.dica = 'Confira a CRONOGRAMA_DATABASE_URL no Vercel: ela precisa apontar para o banco do Maestro (atlantyx-vercel-deploy → Storage → .env.local → DATABASE_URL).';
+    throw err;
+  }
 }
 
 // v2.03: quando o banco do nome não existe, conecta num que sabidamente existe e lista os
