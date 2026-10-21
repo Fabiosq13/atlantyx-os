@@ -123,8 +123,11 @@ async function handler(req, res) {
     if (action === 'relatorio_pagamentos') {
       const authR = req.headers?.authorization || '';
       if (process.env.CRON_SECRET && authR !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'CRON_SECRET inválido' });
-      try { const r = await relatorioPagamentosEnviar({}); return res.status(200).json({ success: true, ...r }); }
-      catch (e) { console.error('[CRON relatorio_pagamentos]', e.message); return res.status(500).json({ success: false, error: e.message }); }
+      // v3.225: o alerta de contas a pagar por WhatsApp sai mesmo se o e-mail falhar (só se estiver ativado na Agenda)
+      let r = null, erroEmail = null; try { r = await relatorioPagamentosEnviar({}); } catch (e) { erroEmail = e.message; console.error('[CRON relatorio_pagamentos]', e.message); }
+      let wa = null; try { wa = await alertaPagarWaEnviar({ origem: 'cron' }); } catch (e) { wa = { erro: e.message }; console.warn('[CRON alerta_pagar_wa]', e.message); }
+      if (erroEmail) return res.status(500).json({ success: false, error: erroEmail, alerta_whatsapp: wa });
+      return res.status(200).json({ success: true, ...r, alerta_whatsapp: wa });
     }
     if (action !== 'marcos_processar_alertas') {
       return res.status(400).json({ error: 'GET só aceito para marcos_processar_alertas e relatorio_pagamentos' });
@@ -156,6 +159,9 @@ async function handler(req, res) {
       qb_saldo_contas:       () => qbSaldoContas(params),
       qb_status:             () => qbStatus(params),
       relatorio_pagamentos:  () => relatorioPagamentosEnviar(params),
+      alerta_pagar_wa_config:        () => alertaPagarWaConfig(params),   // v3.225
+      alerta_pagar_wa_config_salvar: () => alertaPagarWaConfigSalvar(params),
+      alerta_pagar_wa_enviar:        () => alertaPagarWaEnviar(params),
       alerta_termos_gps:     () => alertaTermosGpsEnviar(params), // v3.129
       higienizacao_dados:    () => higienizacaoDados(params),     // v3.141
       email_diagnostico:     () => emailDiagnostico(params),
@@ -1341,6 +1347,71 @@ async function alertaTermosGpsEnviar({ apenas_gerar, para, termos } = {}) {
   const envio = await enviarEmailGmail({ para: dest, assunto: `[Atlantyx] 🚨 ${C.length} termo(s) sem pagamento, em atraso ou sem nota/data — providência hoje (${hoje.split('-').reverse().join('/')})`, html });
   return { qtd: C.length, enviado: true, destinatarios: dest, via: envio.via };
 }
+// ═══ v3.225: ALERTA DIÁRIO DE CONTAS A PAGAR POR WHATSAPP (equipe interna) ═══
+// Vai junto com o e-mail das 8h, para os números cadastrados na Agenda de Despesas. Desligado até alguém ativar.
+// Conteúdo: o que vence hoje, nos próximos dias e o que está vencido — já conferido com o QuickBooks (pago lá ou pago
+// no extrato não aparece). Só mensagem interna: nada é enviado a fornecedor.
+const _WA_PAGAR_KEY = 'fin:alerta_pagar_wa';
+const _waNum = n => { let d = String(n || '').replace(/\D/g, ''); if (d.length === 10 || d.length === 11) d = '55' + d; return d.length >= 12 && d.length <= 13 ? d : null; };
+async function alertaPagarWaConfig() {
+  const c = (await _kvFin(_WA_PAGAR_KEY).catch(() => null)) || {};
+  return { config: { ativo: !!c.ativo, numeros: c.numeros || [], dias_a_frente: c.dias_a_frente ?? 3, so_dias_uteis: c.so_dias_uteis !== false, ultimo_envio: c.ultimo_envio || null, ultimo_resultado: c.ultimo_resultado || null },
+    whatsapp_configurado: !!(process.env.ZAPI_INSTANCE && process.env.ZAPI_TOKEN) };
+}
+async function alertaPagarWaConfigSalvar({ ativo, numeros, dias_a_frente, so_dias_uteis } = {}) {
+  const atual = (await _kvFin(_WA_PAGAR_KEY).catch(() => null)) || {};
+  const lista = (Array.isArray(numeros) ? numeros : String(numeros || '').split(/[,;\n]/)).map(x => String(x).trim()).filter(Boolean);
+  const validos = [...new Set(lista.map(_waNum).filter(Boolean))], invalidos = lista.filter(x => !_waNum(x));
+  if (ativo && !validos.length) throw new Error('Informe ao menos um número de WhatsApp válido (com DDD) para ativar o alerta.');
+  const nova = { ...atual, ativo: !!ativo, numeros: validos, dias_a_frente: Math.max(0, Math.min(15, parseInt(dias_a_frente ?? 3) || 0)), so_dias_uteis: so_dias_uteis !== false, atualizado_em: new Date().toISOString() };
+  await _kvFinSet(_WA_PAGAR_KEY, nova);
+  return { ok: true, config: nova, invalidos };
+}
+async function _alertaPagarTexto(diasFrente = 3) {
+  const hoje = _hojeBR(), ate = _diasMais(hoje, diasFrente), dt = x => String(x).substring(0, 10).split('-').reverse().slice(0, 2).join('/');
+  // a vencer: Bills em aberto + Agenda (mesma base do card "A pagar": já sem o que está pago no QB ou no extrato)
+  const b = await baseCaixaHoje({});
+  const itens = [...(b.pagaveis_itens || []).map(p => ({ data: p.data, nome: p.fornecedor || p.descricao, valor: p.valor })), ...(b.agenda_pagar_itens || []).map(p => ({ data: p.data, nome: p.fornecedor || p.descricao, valor: p.valor }))];
+  const hojeL = itens.filter(i => i.data === hoje), prox = itens.filter(i => i.data > hoje && i.data <= ate).sort((x, y) => x.data.localeCompare(y.data));
+  let venc = []; try { venc = (await vencidosPainel()).pagar || []; } catch (_) {}
+  const soma = L => round(L.reduce((a, i) => a + (i.valor || 0), 0));
+  const lin = (L, f, max = 12) => L.slice(0, max).map(f).join('\n') + (L.length > max ? `\n… e mais ${L.length - max}` : '');
+  if (!hojeL.length && !prox.length && !venc.length) return { texto: null, vazio: true };
+  const partes = [`*Atlantyx · Contas a pagar · ${dt(hoje)}*`];
+  if (hojeL.length) partes.push(`\n📌 *Vencem hoje* (${hojeL.length}) · ${_brl(soma(hojeL))}\n` + lin(hojeL, i => `• ${i.nome} — ${_brl(i.valor)}`));
+  if (prox.length) partes.push(`\n🗓 *Próximos ${diasFrente} dia(s)* (${prox.length}) · ${_brl(soma(prox))}\n` + lin(prox, i => `• ${dt(i.data)} ${i.nome} — ${_brl(i.valor)}`));
+  if (venc.length) partes.push(`\n⚠ *Vencidas em aberto* (${venc.length}) · ${_brl(soma(venc))}\n` + lin(venc, i => `• ${dt(i.vencimento)} ${i.contraparte} — ${_brl(i.valor)} (${i.dias}d)`, 8)
+    + `\n_Se alguma já foi paga, confira a conciliação no QuickBooks (use "Corresponder")._`);
+  if (!hojeL.length && !prox.length) partes.push('\n✓ Nada vence hoje nem nos próximos dias.');
+  partes.push(`\nDetalhes: ${_baseUrlInterna()} → Agenda de Despesas`);
+  return { texto: partes.join('\n'), hoje: hojeL.length, proximos: prox.length, vencidas: venc.length };
+}
+async function alertaPagarWaEnviar({ previa = false, teste = false, origem = 'manual' } = {}) {
+  const c = (await _kvFin(_WA_PAGAR_KEY).catch(() => null)) || {};
+  if (origem === 'cron') {
+    if (!c.ativo) return { enviado: false, motivo: 'alerta desativado' };
+    const dow = new Date(_hojeBR() + 'T12:00:00').getDay(); if (c.so_dias_uteis !== false && (dow === 0 || dow === 6)) return { enviado: false, motivo: 'fim de semana' };
+    if (c.ultimo_envio && String(c.ultimo_envio).substring(0, 10) === _hojeBR()) return { enviado: false, motivo: 'já enviado hoje' };
+  }
+  const m = await _alertaPagarTexto(c.dias_a_frente ?? 3);
+  if (previa) return { previa: true, texto: m.texto || 'Nada a pagar hoje, nos próximos dias nem vencido — neste caso o alerta não é enviado.', vazio: !!m.vazio };
+  if (m.vazio && !teste) return { enviado: false, motivo: 'nada a pagar' };
+  const numeros = (c.numeros || []).map(_waNum).filter(Boolean);
+  if (!numeros.length) throw new Error('Nenhum número cadastrado para o alerta.');
+  if (!process.env.ZAPI_INSTANCE || !process.env.ZAPI_TOKEN) throw new Error('WhatsApp não configurado (ZAPI_INSTANCE / ZAPI_TOKEN no Vercel).');
+  const texto = (teste ? '🧪 _Teste do alerta_\n\n' : '') + (m.texto || '*Atlantyx · Contas a pagar*\nNada a pagar hoje, nos próximos dias nem vencido.');
+  const res = [];
+  for (const n of numeros) {
+    try { const r = await fetch(`https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-text`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(process.env.ZAPI_CLIENT_TOKEN ? { 'Client-Token': process.env.ZAPI_CLIENT_TOKEN } : {}) }, body: JSON.stringify({ phone: n, message: texto }) });
+      res.push({ numero: n.slice(0, 4) + '…' + n.slice(-4), ok: r.ok, status: r.status }); }
+    catch (e) { res.push({ numero: n.slice(0, 4) + '…' + n.slice(-4), ok: false, erro: e.message }); }
+  }
+  const ok = res.filter(x => x.ok).length;
+  if (!teste) { try { await _kvFinSet(_WA_PAGAR_KEY, { ...c, ultimo_envio: new Date().toISOString(), ultimo_resultado: `${ok}/${res.length} enviado(s)` }); } catch (_) {} }
+  return { enviado: ok > 0, enviados: ok, total: res.length, resultados: res, hoje: m.hoje, proximos: m.proximos, vencidas: m.vencidas };
+}
+
 async function relatorioPagamentosEnviar({ apenas_gerar, para } = {}) {
   const d = await pagamentosDoDiaEPendentes();
   const [tR, vR, pR] = await Promise.allSettled([_relTermos(), _relVendasFaturadas(), _relPagamentosExtra(d)]);

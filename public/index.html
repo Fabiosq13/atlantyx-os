@@ -4765,6 +4765,12 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
       <div style="font-size:10.5px;color:var(--t2);margin-top:2px">Calendario + lista · Recorrencia mensal/trimestral/anual · Alimenta o fluxo futuro</div>
     </div>
 
+    <!-- v3.225: alerta diário de contas a pagar por WhatsApp (equipe interna) -->
+    <div class="panel" id="waPagarPanel" style="margin-bottom:12px;">
+      <div class="ph" style="flex-wrap:wrap;gap:6px;"><div class="pt">&#128276; Alerta diário de contas a pagar por WhatsApp</div><span id="waPagarStatus" style="font-size:9.5px;color:var(--t3);"></span></div>
+      <div class="pb" id="waPagarCorpo"><div style="font-size:10.5px;color:var(--t3);">Carregando…</div></div>
+    </div>
+
     <div class="panel" style="margin-bottom:12px;">
       <div class="ph"><div class="pt">+ Nova Despesa Programada</div></div>
       <div class="pb">
@@ -19648,7 +19654,41 @@ async function _carregarFornecedoresQb() {
 }
 // v3.223: escape para nomes que vêm do QuickBooks/cadastro (aspas e < quebravam a tela e os botões)
 const _dsE = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+// v3.225: alerta diário de contas a pagar por WhatsApp — vai às 8h, junto com o e-mail do financeiro
+async function waPagarCarregar() {
+  const el = document.getElementById('waPagarCorpo'); if (!el) return;
+  try {
+    const d = await finApi('alerta_pagar_wa_config', {}); const c = d.config || {};
+    const st = document.getElementById('waPagarStatus');
+    if (st) st.innerHTML = c.ativo ? '<span style="color:var(--green);">● ativo</span>' + (c.ultimo_envio ? ' · último envio ' + new Date(c.ultimo_envio).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + (c.ultimo_resultado ? ' (' + _dsE(c.ultimo_resultado) + ')' : '') : '') : '<span style="color:var(--t3);">○ desligado</span>';
+    el.innerHTML = (d.whatsapp_configurado ? '' : '<div style="font-size:10.5px;color:var(--gold);margin-bottom:8px;">⚠ WhatsApp (Z-API) não configurado no Vercel — o alerta não consegue enviar.</div>')
+      + '<div style="font-size:10.5px;color:var(--t2);line-height:1.6;margin-bottom:8px;">Todo dia às 8h (junto com o e-mail do financeiro), uma mensagem com o que <b>vence hoje</b>, nos <b>próximos dias</b> e o que está <b>vencido</b> — já conferido com o QuickBooks (pago lá ou pago no extrato não aparece). Mensagem só para a equipe; nada vai para fornecedor. Dia sem nada a pagar não envia.</div>'
+      + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">'
+      + '<label style="flex:1;min-width:240px;font-size:10px;color:var(--t2);">Números (com DDD, separados por vírgula)<input id="waPagarNums" class="fsel" style="width:100%;margin-top:3px;" placeholder="21 99999-0000, 11 98888-0000" value="' + _dsE((c.numeros || []).map(n => n.replace(/^55/, '')).join(', ')) + '"></label>'
+      + '<label style="font-size:10px;color:var(--t2);">Próximos<select id="waPagarDias" class="fsel" style="margin-top:3px;width:auto;">' + [0, 1, 2, 3, 5, 7].map(n => '<option value="' + n + '"' + (n === (c.dias_a_frente ?? 3) ? ' selected' : '') + '>' + n + ' dia(s)</option>').join('') + '</select></label>'
+      + '<label style="font-size:10.5px;display:flex;gap:5px;align-items:center;"><input type="checkbox" id="waPagarUteis"' + (c.so_dias_uteis !== false ? ' checked' : '') + '> só dias úteis</label>'
+      + '<label style="font-size:10.5px;display:flex;gap:5px;align-items:center;"><input type="checkbox" id="waPagarAtivo"' + (c.ativo ? ' checked' : '') + '> <b>ativo</b></label>'
+      + '<button class="btn btn-p" style="font-size:10px;" onclick="waPagarSalvar()">Salvar</button>'
+      + '<button class="btn btn-g" style="font-size:10px;" onclick="waPagarPrevia()">👁 Ver prévia</button>'
+      + '<button class="btn btn-g" style="font-size:10px;" onclick="waPagarTeste()">📤 Enviar teste agora</button></div>'
+      + '<pre id="waPagarPrev" style="display:none;margin-top:10px;white-space:pre-wrap;font-size:10.5px;background:var(--bg4);border:1px solid var(--bd);border-radius:7px;padding:10px;max-height:320px;overflow:auto;"></pre>';
+  } catch (e) { el.innerHTML = '<div style="font-size:10.5px;color:var(--red);">Não consegui ler a configuração: ' + _dsE(e.message) + '</div>'; }
+}
+async function waPagarSalvar() {
+  try { const r = await finApi('alerta_pagar_wa_config_salvar', { numeros: document.getElementById('waPagarNums').value, dias_a_frente: parseInt(document.getElementById('waPagarDias').value), so_dias_uteis: document.getElementById('waPagarUteis').checked, ativo: document.getElementById('waPagarAtivo').checked });
+    toast('Alerta ' + (r.config.ativo ? 'ATIVO' : 'salvo (desligado)') + ' · ' + r.config.numeros.length + ' número(s)' + ((r.invalidos || []).length ? ' · ignorado(s): ' + r.invalidos.join(', ') : ''), 'success'); waPagarCarregar(); }
+  catch (e) { toast(e.message, 'error'); }
+}
+async function waPagarPrevia() {
+  const pre = document.getElementById('waPagarPrev'); if (!pre) return; pre.style.display = 'block'; pre.textContent = 'Montando a mensagem…';
+  try { const r = await finApi('alerta_pagar_wa_enviar', { previa: true }, { timeoutMs: 60000 }); pre.textContent = r.texto; } catch (e) { pre.textContent = 'Erro: ' + e.message; }
+}
+async function waPagarTeste() {
+  if (!confirm('Enviar agora a mensagem de teste para os números SALVOS?')) return;
+  try { const r = await finApi('alerta_pagar_wa_enviar', { teste: true }, { timeoutMs: 60000 }); toast(r.enviados + ' de ' + r.total + ' mensagem(ns) enviada(s)', r.enviados ? 'success' : 'error'); waPagarCarregar(); } catch (e) { toast(e.message, 'error'); }
+}
 async function carregarDespesas() {
+  setTimeout(waPagarCarregar, 300);
   _carregarFornecedoresQb(); // v1.20.8: popula o combo de fornecedores (não bloqueia o resto da tela)
   try {
     const [d, o] = await Promise.all([
@@ -33919,7 +33959,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.224] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.225] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -33935,7 +33975,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.224';
+window.__ATX_BUILD_ID__ = 'ATX-v3.225';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
