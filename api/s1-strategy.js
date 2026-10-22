@@ -617,7 +617,7 @@ async function fundadorDecide({ titulo, decisao, justificativa }) {
 }
 
 // ── S1-07: HANDOFF PARA DESENVOLVIMENTO ─────────────────────────────────────
-async function handoffDev({ titulo, descricao, analises }) {
+async function handoffDev({ titulo, descricao, analises, ideia_id }) {
   const system = `Você é o Agente S1-07 de Handoff para Desenvolvimento da Atlantyx.
 Transforme a ideia aprovada em um briefing técnico completo para o Squad de Dev (S6).
 Seja específico, detalhado e acionável. Retorne APENAS JSON válido.`;
@@ -651,6 +651,11 @@ Retorne:
   );
 
   console.log(`[S1-07] Handoff concluído: ${titulo} → ${briefing.epico_nome}`);
+  // v3.238: o briefing fica GRAVADO na ideia (antes se perdia) e vira a base do projeto na Esteira de Entrega
+  if (ideia_id) { try { const { neon } = await import('@neondatabase/serverless'); const sq = neon(process.env.DATABASE_URL);
+    const r = (await sq`SELECT data FROM ideias WHERE id = ${String(ideia_id)}`)[0]; let I = r?.data; if (typeof I === 'string') I = JSON.parse(I);
+    if (I) { I.handoff = { ...briefing, gerado_em: new Date().toISOString() }; I.stage = 'Em Desenvolvimento';
+      await sq`UPDATE ideias SET data = ${JSON.stringify(I)}::jsonb, status = 'Em Desenvolvimento', atualizado_em = NOW() WHERE id = ${String(ideia_id)}`; } } catch (e) { console.warn('[S1-07] gravar handoff:', e.message); } }
   return { briefing, pipeline_stage: 'Em Desenvolvimento' };
 }
 

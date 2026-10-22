@@ -350,8 +350,11 @@ async function sincronizar() {
       // v3.146: item da Esteira de Entrega mesclado → volta ao Kanban da fábrica em "Em QA (robôs)"
       if (implementada && d.fabrica?.item_id) { try { await sql`UPDATE fab_itens SET coluna = 'qa', em_qa_em = NOW(), nota = ${'Construído pelo Claude — PR #' + (pr?.numero || '?') + ' mesclado; aguardando os robôs de QA'}, atualizado_em = NOW() WHERE id = ${d.fabrica.item_id} AND coluna IN ('backlog', 'especificado', 'desenvolvimento', 'revisao')`; } catch (_) {} }
       if (implementada) mudou++;
+      if (implementada && d.fabrica?.projeto_id) (globalThis.__fabSinc = globalThis.__fabSinc || new Set()).add(d.fabrica.projeto_id); // v3.238
     } catch (_) {}
   }
+  // v3.238: progresso da entrega volta para a ideia de origem
+  try { if (globalThis.__fabSinc?.size) { const { sincronizarIdeiasFabrica } = await import('./fabrica.js'); await sincronizarIdeiasFabrica([...globalThis.__fabSinc]); globalThis.__fabSinc.clear(); } } catch (_) {}
   return { verificadas: rows.length, implementadas: mudou };
 }
 

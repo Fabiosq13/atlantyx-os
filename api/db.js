@@ -268,7 +268,10 @@ async function handler(req, res) {
       // salvar a ideia com uma cópia antiga da tela apagava esse vínculo (o plano/contraproposta "sumia" ao reabrir)
       try { const at = (await sql`SELECT data FROM ideias WHERE id = ${String(ideia.id)} LIMIT 1`)[0]?.data; const o = typeof at === 'string' ? JSON.parse(at) : at;
         if (o) for (const k of ['business_plan', 'contraproposta_bp']) { const srv = o[k], cli = ideia[k];
-          if (srv && (!cli || String(srv.atualizado_em || '') > String(cli.atualizado_em || ''))) ideia[k] = srv; } } catch (_) {}
+          if (srv && (!cli || String(srv.atualizado_em || '') > String(cli.atualizado_em || ''))) ideia[k] = srv; }
+        // v3.238: vínculo com a Esteira de Entrega, briefing de handoff e progresso da entrega são gravados pelo servidor
+        if (o) for (const k of ['fabrica', 'entrega', 'handoff']) { if (o[k] && (!ideia[k] || String(o[k].atualizado_em || o[k].gerado_em || o[k].criado_em || '') > String(ideia[k].atualizado_em || ideia[k].gerado_em || ideia[k].criado_em || ''))) ideia[k] = o[k]; }
+        if (o?.fabrica && ['Recebida', 'Em Análise', 'Pesquisa', 'Viabilidade', 'Comitê', 'Aguardando Fundador', 'Aprovada Squad'].includes(ideia.stage) && ['Em Desenvolvimento', 'Entregue'].includes(o.stage)) ideia.stage = o.stage; } catch (_) {}
       await sql`INSERT INTO ideias (id,titulo,status,data,atualizado_em)
         VALUES (${ideia.id},${ideia.titulo||''},${ideia.stage||ideia.status||'Recebida'},${jsonSeguro(ideia)},NOW())
         ON CONFLICT (id) DO UPDATE SET titulo=EXCLUDED.titulo, status=EXCLUDED.status, data=EXCLUDED.data, atualizado_em=NOW()`;

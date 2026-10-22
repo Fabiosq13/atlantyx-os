@@ -1,6 +1,7 @@
 import { comGuarda } from '../lib/qa-guard.js';
 import crypto from 'node:crypto';
 import { fabSql, novoIdFab as novoId, ETAPAS, DOCS, COLUNAS_FAB, TIPOS_CASO, ROBOS, PLANOS, planoDoTipo, moverItensPorCasos } from '../lib/fabrica-db.js';
+import { COMPONENTES, STACKS, BANCOS, AUTH, perfilPadrao, perfilNormalizar, perfilTexto, perfilMd, stackDe, subpasta } from '../lib/fabrica-perfil.js';
 // api/fabrica.js — v3.134 · ESTEIRA DE ENTREGA (Fábrica) — Metodologia Atlantyx v4
 // Do documento ao aceite, num só lugar, para cada projeto:
 //   • Gates G1–G12 das 12 etapas, com critérios de aprovação e quem aprova.
@@ -144,8 +145,76 @@ async function gateAprovar({ projeto_id, gate, aprovado_por, observacao, reabrir
   if (reabrir) delete g[gate]; else g[gate] = { status: 'aprovado', em: new Date().toISOString(), por: aprovado_por || 'Atlantyx', obs: observacao || null };
   let etapa = 1; for (const e of ETAPAS) { if (g[e.gate]?.status === 'aprovado') etapa = Math.min(12, e.n + 1); else break; }
   await sql`UPDATE fab_projetos SET gates=${JSON.stringify(g)}, etapa=${etapa}, atualizado_em=NOW() WHERE id=${projeto_id}`;
+  await _sincIdeia(sql, projeto_id); // v3.238
   return { gates: g, etapa };
 }
+
+
+// ═══════════════ v3.238 · perfil do sistema, ideia → esteira e status de volta na ideia ═══════════════
+async function _kvF(sql, k, v) {
+  if (v === undefined) { try { const r = (await sql`SELECT value FROM kv_store WHERE key=${k}`)[0]; return r ? (typeof r.value === 'string' ? JSON.parse(r.value) : r.value) : null; } catch (_) { return null; } }
+  await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; return v;
+}
+async function _perfil(sql, pid) { return perfilNormalizar(await _kvF(sql, 'fab:perfil:' + pid)); }
+async function _perfilTxt(sql, P) { const pf = await _perfil(sql, P.id); if (!pf.definido) return ''; const est = (await _kvF(sql, 'fab:construcao:' + P.id)) || {}; return '\n' + perfilTexto(pf, est.pasta || _pastaDe(P.nome)) + '\n'; }
+async function perfilObter({ projeto_id }) {
+  const sql = await fabSql(); const pf = await _perfil(sql, projeto_id);
+  return { perfil: pf, componentes: COMPONENTES, stacks: STACKS, bancos: BANCOS, auth: AUTH };
+}
+async function perfilSalvar({ projeto_id, perfil }) {
+  const sql = await fabSql(); if (!(await sql`SELECT 1 FROM fab_projetos WHERE id=${projeto_id}`).length) throw new Error('Projeto não encontrado');
+  const pf = perfilNormalizar(perfil); if (!pf.definido) throw new Error('Escolha ao menos um componente (front, retaguarda, API, aplicativo, cargas…)');
+  const atual = await _perfil(sql, projeto_id); const est = (await _kvF(sql, 'fab:construcao:' + projeto_id)) || {};
+  // componente com fundação já enviada não pode sair do perfil (o código já existe)
+  const enviados = Object.keys(est.fundacoes || {}); const tirou = enviados.filter(c => !pf.componentes.some(x => x.id === c));
+  if (tirou.length) throw new Error('Não dá para remover ' + tirou.map(c => COMPONENTES[c]?.nome || c).join(', ') + ': a fundação já foi enviada para o Claude.');
+  await _kvF(sql, 'fab:perfil:' + projeto_id, { ...pf, atualizado_em: new Date().toISOString(), anterior: atual.definido ? atual.componentes.map(c => c.id) : [] });
+  await sql`UPDATE fab_projetos SET atualizado_em=NOW() WHERE id=${projeto_id}`;
+  return { perfil: pf };
+}
+async function perfilSugerir({ projeto_id, instrucoes }) {
+  const sql = await fabSql(); const P = (await sql`SELECT * FROM fab_projetos WHERE id=${projeto_id}`)[0]; if (!P) throw new Error('Projeto não encontrado');
+  const erf = await _doc(sql, P.id, 'erf'), ert = await _doc(sql, P.id, 'ert');
+  const ops = Object.entries(STACKS).map(([k, L]) => `${k} (${COMPONENTES[k].nome}): ${L.map(x => x.id + ' = ' + x.nome).join(' | ')}`).join('\n');
+  const txt = await claude(SYS_BASE + `\nTarefa: definir o PERFIL DO SISTEMA — quais componentes ele precisa e a stack de cada um, escolhendo SOMENTE entre as opções abaixo. Inclua só o que a especificação pede (ex.: aplicativo só se houver uso em celular/campo; cargas/ETL só se houver integração periódica de dados). Responda SOMENTE JSON: {"componentes":[{"id":"web","stack":"react-vite","obs":"por quê, 1 frase"}],"banco":"${BANCOS[0]}","auth":"${AUTH[0]}","obs":"premissas em 1-2 frases"}\nOPÇÕES:\n${ops}\nBANCOS: ${BANCOS.join(' | ')}\nACESSO: ${AUTH.join(' | ')}`,
+    `PROJETO: ${P.nome} · CLIENTE: ${P.cliente || '—'}\n${P.descricao ? 'DESCRIÇÃO: ' + P.descricao + '\n' : ''}${instrucoes ? 'INSTRUÇÕES: ' + instrucoes + '\n' : ''}\nERF:\n${String(erf?.conteudo_md || '(sem ERF)').substring(0, 30000)}\n\nERT:\n${String(ert?.conteudo_md || '(sem ERT)').substring(0, 20000)}`, 2500, 120000);
+  const pf = perfilNormalizar(json(txt)); if (!pf.definido) throw new Error('A IA não conseguiu sugerir os componentes — escolha manualmente.');
+  return { perfil: pf, sugerido: true };
+}
+// ideia aprovada (S1) → projeto na Esteira, com o briefing de handoff, o perfil inicial e o vínculo nos dois sentidos
+async function projetoDeIdeia({ ideia_id, tipos, instrucoes, gp }, usuario) {
+  const sql = await fabSql();
+  const row = (await sql`SELECT id, titulo, data FROM ideias WHERE id=${String(ideia_id)}`)[0]; if (!row) throw new Error('Ideia não encontrada');
+  let I = row.data; if (typeof I === 'string') { try { I = JSON.parse(I); } catch (_) { I = {}; } } I = I || {};
+  if (I.fabrica?.projeto_id && (await sql`SELECT 1 FROM fab_projetos WHERE id=${I.fabrica.projeto_id}`).length) return { projeto_id: I.fabrica.projeto_id, ja_existia: true };
+  const H = I.handoff || {}; const A = I.analise_completa || I.analise || {};
+  const lista = (t, v) => Array.isArray(v) && v.length ? `\n${t}:\n` + v.map(x => '- ' + (typeof x === 'string' ? x : JSON.stringify(x))).join('\n') : '';
+  const desc = [String(I.desc || I.descricao || '').substring(0, 6000), H.objetivo ? '\nOBJETIVO: ' + H.objetivo : '', lista('ESCOPO', H.escopo), lista('FORA DO ESCOPO', H.fora_do_escopo),
+    lista('REQUISITOS FUNCIONAIS', H.requisitos_funcionais), lista('REQUISITOS NÃO FUNCIONAIS', H.requisitos_nao_funcionais), lista('CRITÉRIOS DE ACEITE', H.criterios_de_aceite),
+    H.prazo_sugerido ? '\nPRAZO SUGERIDO: ' + H.prazo_sugerido : '', I.notas ? '\nNOTAS DO FUNDADOR: ' + String(I.notas).substring(0, 2000) : '', instrucoes ? '\nINSTRUÇÕES: ' + instrucoes : ''].join('');
+  const id = novoId('fpj'); const nome = String(I.titulo || row.titulo || 'Sistema').replace(/^\s*\[[^\]]*\]\s*/, '').substring(0, 120);
+  await sql`INSERT INTO fab_projetos (id, nome, cliente, descricao, gp, fabrica, token_publico) VALUES (${id}, ${nome}, ${'Atlantyx (produto interno)'}, ${desc.substring(0, 20000)}, ${gp || I.responsavel || null}, ${'Squad de Desenvolvimento (Claude · B.P.M.)'}, ${crypto.randomBytes(16).toString('hex')})`;
+  await _kvF(sql, 'fab:origem:' + id, { ideia_id: row.id, criado_em: new Date().toISOString(), por: usuario || null });
+  if (Array.isArray(tipos) && tipos.length) await _kvF(sql, 'fab:perfil:' + id, { ...perfilPadrao(tipos), atualizado_em: new Date().toISOString() });
+  I.fabrica = { projeto_id: id, criado_em: new Date().toISOString() }; I.stage = 'Em Desenvolvimento';
+  await sql`UPDATE ideias SET data=${JSON.stringify(I)}::jsonb, status='Em Desenvolvimento', atualizado_em=NOW() WHERE id=${row.id}`;
+  return { projeto_id: id, nome };
+}
+// progresso da entrega gravado na ideia de origem (aparece no card do Pipeline de Ideias)
+async function _sincIdeia(sql, pid) {
+  try { const o = await _kvF(sql, 'fab:origem:' + pid); if (!o?.ideia_id) return null;
+    const P = (await sql`SELECT etapa, gates FROM fab_projetos WHERE id=${pid}`)[0]; if (!P) return null;
+    const it = (await sql`SELECT coluna, COUNT(*)::int AS n FROM fab_itens WHERE projeto_id=${pid} GROUP BY coluna`); const tot = it.reduce((s, x) => s + x.n, 0);
+    const ent = it.filter(x => ['aprovado_qa', 'homologacao', 'entregue'].includes(x.coluna)).reduce((s, x) => s + x.n, 0);
+    const cs = (await sql`SELECT status, COUNT(*)::int AS n FROM fab_casos WHERE projeto_id=${pid} GROUP BY status`); const cT = cs.reduce((s, x) => s + x.n, 0), cP = cs.find(x => x.status === 'passou')?.n || 0;
+    const gates = Object.values(P.gates || {}).filter(g => g?.status === 'aprovado').length;
+    const entrega = { projeto_id: pid, etapa: P.etapa, gates_ok: gates, itens_total: tot, itens_entregues: ent, casos_total: cT, casos_aprovados: cP, pct: tot ? Math.round(ent / tot * 100) : 0, atualizado_em: new Date().toISOString() };
+    const row = (await sql`SELECT data FROM ideias WHERE id=${String(o.ideia_id)}`)[0]; if (!row) return null; let I = row.data; if (typeof I === 'string') I = JSON.parse(I);
+    I.entrega = entrega; if (P.gates?.G11?.status === 'aprovado' && I.stage !== 'Entregue') I.stage = 'Entregue';
+    await sql`UPDATE ideias SET data=${JSON.stringify(I)}::jsonb, status=${I.stage || 'Em Desenvolvimento'}, atualizado_em=NOW() WHERE id=${String(o.ideia_id)}`;
+    return entrega; } catch (e) { console.warn('[fabrica] sinc ideia:', e.message); return null; }
+}
+export async function sincronizarIdeiasFabrica(pids) { const sql = await fabSql(); for (const pid of [...new Set(pids || [])]) await _sincIdeia(sql, pid); }
 
 // ═══════════════ documentos ═══════════════
 async function _docGravar(sql, pid, tipo, conteudo, { origem, titulo, arquivo_nome, fase, comentarios } = {}) {
@@ -283,7 +352,7 @@ async function gerarErt(sql, P, b) {
   const mod = await _doc(sql, P.id, 'modelo_ert');
   const modelo = mod?.conteudo_md ? `MODELO DE ERT DO CLIENTE — siga EXATAMENTE esta estrutura (mesmos títulos, mesma ordem e numeração, mesmo estilo de tabelas e de linguagem). Seções que não se aplicarem ficam com "Não se aplica — motivo". Itens da metodologia Atlantyx que o modelo não tiver entram como subseções na seção mais próxima.\n\n${String(mod.conteudo_md).substring(0, 30000)}`
     : `O cliente não enviou modelo de ERT: use a estrutura padrão da metodologia Atlantyx (15.3.1):\n${ESTRUTURA_ERT}`;
-  const base = `PROJETO: ${P.nome} · CLIENTE: ${P.cliente || '—'}\n${P.descricao ? 'DESCRIÇÃO: ' + P.descricao + '\n' : ''}${b.instrucoes ? 'INSTRUÇÕES DO ARQUITETO: ' + b.instrucoes + '\n' : ''}\nESPECIFICAÇÃO FUNCIONAL (ERF — conceitual):\n${String(erf.conteudo_md).substring(0, 70000)}`;
+  const base = `PROJETO: ${P.nome} · CLIENTE: ${P.cliente || '—'}\n${P.descricao ? 'DESCRIÇÃO: ' + P.descricao + '\n' : ''}${b.instrucoes ? 'INSTRUÇÕES DO ARQUITETO: ' + b.instrucoes + '\n' : ''}${await _perfilTxt(sql, P)}\nESPECIFICAÇÃO FUNCIONAL (ERF — conceitual):\n${String(erf.conteudo_md).substring(0, 70000)}`;
   const [corpo, analise] = await Promise.all([
     claude(SYS_BASE + `\nTarefa: escrever a ESPECIFICAÇÃO DE REQUISITOS TÉCNICOS (ERT) completa a partir da ERF. Para cada requisito técnico use identificador RT-NN e cite os RF/regras da ERF que ele atende. Inclua modelo de dados com dicionário, contratos de integração e requisitos não funcionais mensuráveis. Comece direto pelo título do documento.`,
       `${modelo}\n\n${base}`, 14000),
@@ -408,12 +477,14 @@ const EXTRA_CASOS = {
 const planoTipos = docTipo => PLANOS[docTipo]?.tipos || PLANOS.plano_testes.tipos;
 async function gerarPlanoTestes(sql, P, b, docTipo = 'plano_testes') {
   const fonte = await _fonteSpec(sql, P.id);
-  const base = planoTipos(docTipo);
+  const pf = await _perfil(sql, P.id), comps = new Set(pf.componentes.map(c => c.id));
+  // v3.238: tipos ligados a componente (API, cargas, aplicativo) só entram se o sistema tiver esse componente
+  const base = planoTipos(docTipo).filter(t => !TIPOS_CASO[t]?.componente || !pf.definido || TIPOS_CASO[t].componente.some(c => comps.has(c)));
   const tipos = Array.isArray(b.tipos) && b.tipos.length ? b.tipos.filter(t => base.includes(t)) : base;
   if (!tipos.length) throw new Error('Escolha ao menos um tipo de teste deste plano');
   const qtd = Math.min(80, parseInt(b.quantidade) || (docTipo === 'plano_testes' ? 40 : 20));
   const metade = tipos.length > 2 ? [tipos.slice(0, Math.ceil(tipos.length / 2)), tipos.slice(Math.ceil(tipos.length / 2))] : [tipos];
-  const instr = [b.instrucoes, EXTRA_CASOS[docTipo]].filter(Boolean).join('\n');
+  const instr = [b.instrucoes, EXTRA_CASOS[docTipo], (await _perfilTxt(sql, P)).trim()].filter(Boolean).join('\n');
   const [estrategia, ...grupos] = await Promise.all([
     claude(SYS_BASE + `\nTarefa: escrever as seções de ESTRATÉGIA do "${DOCS[docTipo].nome}" (metodologia, itens 9.3.1 a 9.3.4). Os casos detalhados são gerados à parte — não os liste.`,
       `PROJETO: ${P.nome} · CLIENTE: ${P.cliente || '—'}\n${b.instrucoes ? 'INSTRUÇÕES: ' + b.instrucoes + '\n' : ''}ROBÔS DE QA DA ATLANTYX:\n${Object.values(ROBOS).map(r => '- ' + r).join('\n')}\n\n${fonte.substring(0, 50000)}\n\nEscreva em Markdown, com estes títulos:\n${ESTRATEGIA_PLANO[docTipo]}`, 6000),
@@ -480,6 +551,9 @@ async function docGerar(b) {
   const sql = await fabSql(); const P = (await sql`SELECT * FROM fab_projetos WHERE id=${b.projeto_id}`)[0]; if (!P) throw new Error('Projeto não encontrado');
   let md, extra = {};
   if (b.tipo === 'ert') md = await gerarErt(sql, P, b);
+  else if (b.tipo === 'erf') md = await gerarErf(sql, P, b); // v3.238: ERF gerada a partir da ideia/descrição (projeto interno sem ERF de parceiro)
+  else if (b.tipo === 'ddl') md = await gerarDdl(sql, P, b);
+  else if (b.tipo === 'guia_implantacao') md = await gerarGuiaImplantacao(sql, P, b);
   else if (b.tipo === 'plano_projeto') md = await gerarPlanoProjeto(sql, P, b);
   else if (PLANOS[b.tipo]) { if (b.so_atualizar) md = await planoTestesMd(sql, P, null, b.tipo); else { const r = await gerarPlanoTestes(sql, P, b, b.tipo); md = r.md; extra.casos_gerados = r.casos_gerados; } }
   else if (b.tipo === 'relatorio_qualidade') md = await gerarRelatorioQualidade(sql, P);
@@ -568,11 +642,36 @@ function tabelaVolumetriaMd(C) { return ['| ID | Item | Unidade | Atual | Cresc.
 function tabelaFinopsMd(C) { return ['| Serviço | Provedor | Categoria | Ambiente | Base de custo | Custo/mês hoje | Em 12 meses | Em 24 meses | Em 36 meses |', '|---|---|---|---|---|---|---|---|---|',
   ...C.servicos.map(x => `| ${mdc(x.servico)} | ${mdc(x.provedor)} | ${mdc(x.categoria)} | ${mdc(x.ambiente)} | ${x.driver && x.driver !== 'fixo' ? `${x.moeda === 'USD' ? 'US$' : 'R$'} ${String(x.custo_unitario).replace('.', ',')} por ${mdc(x.unidade_custo) || 'unidade'} × ${x.driver}${x.fator !== 1 ? ' × ' + String(x.fator).replace('.', ',') : ''}` : 'fixo'}${x.fixo_mensal ? ' + fixo ' + (x.moeda === 'USD' ? 'US$ ' : 'R$ ') + nbr(x.fixo_mensal) : ''} | ${brl(x.mensal[0])} | ${brl(x.mensal[12])} | ${brl(x.mensal[24])} | ${brl(x.mensal[36])} |`),
   `| **Total** | | | | | **${brl(C.totais.mensal[0])}** | **${brl(C.totais.mensal[12])}** | **${brl(C.totais.mensal[24])}** | **${brl(C.totais.mensal[36])}** |`].join('\n'); }
+
+// v3.238: ERF gerada pela IA a partir da descrição do projeto (e da ideia de origem com o briefing de handoff)
+async function gerarErf(sql, P, b) {
+  const atual = await _doc(sql, P.id, 'erf'); if (atual?.status === 'aprovado' && !b.forcar) throw new Error('A ERF já está aprovada — reabra a aprovação para gerar outra.');
+  let ideia = ''; try { const o = await _kvF(sql, 'fab:origem:' + P.id); if (o?.ideia_id) { const r = (await sql`SELECT data FROM ideias WHERE id=${String(o.ideia_id)}`)[0]; let I = r?.data; if (typeof I === 'string') I = JSON.parse(I);
+    if (I) ideia = `\nIDEIA DE ORIGEM (Pipeline de Ideias): ${I.titulo || ''}\n${String(I.desc || I.descricao || '').substring(0, 8000)}\n${I.handoff ? 'BRIEFING DE HANDOFF: ' + JSON.stringify(I.handoff).substring(0, 6000) : ''}\n${I.business_plan?.resumo ? 'BUSINESS PLAN: ' + JSON.stringify(I.business_plan.resumo).substring(0, 3000) : ''}`; } } catch (_) {}
+  if (!P.descricao && !ideia) throw new Error('Descreva o projeto (✎) ou crie-o a partir de uma ideia aprovada antes de gerar a ERF.');
+  return limpaMd(await claude(SYS_BASE + `\nTarefa: escrever a ESPECIFICAÇÃO DE REQUISITOS FUNCIONAIS (ERF — conceitual, linguagem de negócio) completa e testável. Requisitos RF-NN com critérios de aceite Dado/Quando/Então; regras de negócio RN-NN; não invente integrações que não foram citadas — marque como "a confirmar".`,
+    `PROJETO: ${P.nome} · CLIENTE: ${P.cliente || '—'}\n${b.instrucoes ? 'INSTRUÇÕES: ' + b.instrucoes + '\n' : ''}${P.descricao ? 'DESCRIÇÃO: ' + String(P.descricao).substring(0, 20000) + '\n' : ''}${ideia}${await _perfilTxt(sql, P)}\n\nEstrutura (títulos):\n# Especificação Funcional (ERF)\n## 1. Controle do documento\n## 2. Contexto, problema e objetivos (indicadores de sucesso)\n## 3. Escopo e fora do escopo\n## 4. Perfis de usuário e permissões (tabela)\n## 5. Jornadas e processos (passo a passo por perfil)\n## 6. Requisitos funcionais (tabela RF-NN: descrição, perfil, prioridade, critérios de aceite)\n## 7. Regras de negócio (RN-NN)\n## 8. Dados e cadastros (entidades de negócio, campos, origem, dado pessoal)\n## 9. Relatórios, painéis e notificações\n## 10. Integrações e cargas de dados (origem, frequência, volume — a confirmar)\n## 11. Requisitos não funcionais de negócio (disponibilidade, tempo de resposta, auditoria, LGPD)\n## 12. Premissas, restrições, riscos e pendências`, 14000));
+}
+// v3.238: migrações SQL + seed sintético + mapeamento de cargas, a partir do modelo de dados aprovado e do perfil
+async function gerarDdl(sql, P, b) {
+  const md = await _doc(sql, P.id, 'modelo_dados'), ert = await _doc(sql, P.id, 'ert');
+  if (!md?.conteudo_md && !ert?.conteudo_md) throw new Error('Gere o Modelo de Dados (ou ao menos a ERT) antes das migrações.');
+  const pf = await _perfil(sql, P.id), temEtl = pf.componentes.some(c => c.id === 'etl' || c.id === 'integracao');
+  return limpaMd(await claude(SYS_BASE + `\nTarefa: produzir o pacote de BANCO DE DADOS que o Claude vai aplicar no produto: migrações SQL versionadas, seed com dados 100% SINTÉTICOS${temEtl ? ' e o mapeamento de cargas origem → destino (staging, chaves, regras, incremental, reconciliação)' : ''}. Banco: ${pf.banco || 'Postgres'}.`,
+    `PROJETO: ${P.nome}\n${b.instrucoes ? 'INSTRUÇÕES: ' + b.instrucoes + '\n' : ''}${await _perfilTxt(sql, P)}\nMODELO DE DADOS:\n${String(md?.conteudo_md || '').substring(0, 40000)}\n\nERT:\n${String(ert?.conteudo_md || '').substring(0, 20000)}\n\nEstrutura:\n# Banco de Dados — Migrações e Cargas\n## 1. Convenções (nomes, chaves, auditoria criado_em/atualizado_em, soft delete, tipos)\n## 2. Migrações (um bloco \`\`\`sql por arquivo, com o nome do arquivo db/migrations/NNN_descricao.sql antes do bloco; inclua índices e constraints)\n## 3. Seed sintético (db/seed.sql — nada de dados reais)\n${temEtl ? '## 4. Mapeamento de cargas (tabela: origem, campo, destino, regra, chave, frequência, incremental/watermark, tratamento de rejeitados)\n## 5. Reconciliação e qualidade (contagens e somas por carga)\n' : ''}## ${temEtl ? 6 : 4}. Ordem de aplicação e retorno (rollback)`, 14000));
+}
+// v3.238: guia de implantação por componente (G11) — substitui o texto fixo "crie o projeto na Vercel"
+async function gerarGuiaImplantacao(sql, P, b) {
+  const pf = await _perfil(sql, P.id); if (!pf.definido) throw new Error('Defina o perfil do sistema (aba Construção) antes do guia de implantação.');
+  const arq = await _doc(sql, P.id, 'arquitetura'), est = (await _kvF(sql, 'fab:construcao:' + P.id)) || {}, pasta = est.pasta || _pastaDe(P.nome);
+  return limpaMd(await claude(SYS_BASE + `\nTarefa: escrever o GUIA DE IMPLANTAÇÃO por componente (etapa 11, gate G11). Concreto, passo a passo, sem segredos (só NOMES de variáveis).`,
+    `PROJETO: ${P.nome}\n${b.instrucoes ? 'INSTRUÇÕES: ' + b.instrucoes + '\n' : ''}${perfilTexto(pf, pasta)}\n\nARQUITETURA:\n${String(arq?.conteudo_md || '(não gerada)').substring(0, 25000)}\n\nEstrutura:\n# Guia de Implantação\n## 1. Ambientes (desenvolvimento, homologação, produção) e repositório (produtos/${pasta}/)\n## 2. Por componente — um subtítulo por componente com: pré-requisitos, publicação (ex.: Vercel com Root Directory; Expo EAS build/submit com perfis; agenda das cargas por vercel.json cron ou GitHub Actions schedule), variáveis de ambiente (nomes), migrações, verificação pós-publicação (smoke test)\n## 3. Ordem de implantação entre componentes\n## 4. Cargas iniciais e backfill (se houver)\n## 5. Monitoramento e alertas\n## 6. Plano de retorno (rollback) por componente\n## 7. Checklist do G11`, 9000));
+}
 async function gerarArquitetura(sql, P, b, tipo) {
   const ert = await _doc(sql, P.id, 'ert'), erf = await _doc(sql, P.id, 'erf'), arq = await _doc(sql, P.id, 'arquitetura');
   if (!ert?.conteudo_md && !erf?.conteudo_md) throw new Error('Importe a ERF (e de preferência gere a ERT) antes da arquitetura.');
   const C = calcularFinops(P.arquitetura || {});
-  const fonte = `PROJETO: ${P.nome} · CLIENTE: ${P.cliente || '—'}\n${b.instrucoes ? 'INSTRUÇÕES DO ARQUITETO: ' + b.instrucoes + '\n' : ''}\nERT:\n${String(ert?.conteudo_md || '').substring(0, 40000)}\n\nERF:\n${String(erf?.conteudo_md || '').substring(0, 20000)}`;
+  const fonte = `PROJETO: ${P.nome} · CLIENTE: ${P.cliente || '—'}\n${b.instrucoes ? 'INSTRUÇÕES DO ARQUITETO: ' + b.instrucoes + '\n' : ''}${await _perfilTxt(sql, P)}${(await _perfilTxt(sql, P)) ? 'A arquitetura deve detalhar CADA componente do perfil (responsabilidade, stack, pasta, comunicação entre eles, ambientes, CI/CD e publicação de cada um).\n' : ''}\nERT:\n${String(ert?.conteudo_md || '').substring(0, 40000)}\n\nERF:\n${String(erf?.conteudo_md || '').substring(0, 20000)}`;
   if (tipo === 'arquitetura') return limpaMd(await claude(SYS_BASE + `\nTarefa: escrever o DOCUMENTO DE ARQUITETURA (etapa 4 da metodologia, critérios do G4).`, `${fonte}${C.volumetria.length ? '\n\nVOLUMETRIA:\n' + tabelaVolumetriaMd(C) : ''}\n\nEstrutura (use estes títulos):\n# Documento de Arquitetura\n## 1. Controle do documento\n## 2. Visão geral e princípios de arquitetura\n## 3. Arquitetura lógica — componentes e responsabilidades (tabela) e diagrama de componentes em texto (bloco com setas →)\n## 4. Arquitetura de dados (camadas, fluxos, armazenamento)\n## 5. Integrações (contratos, padrões, filas/APIs, tratamento de falhas)\n## 6. Infraestrutura e ambientes (desenvolvimento, homologação, produção; dimensionamento a partir da volumetria)\n## 7. Segurança e privacidade (identidade e acesso, criptografia, segredos, rede, registros, LGPD)\n## 8. Continuidade (alta disponibilidade, backup, recuperação, RTO/RPO)\n## 9. Observabilidade e operação\n## 10. Escalabilidade e capacidade\n## 11. Registro de decisões de arquitetura (ADR: decisão, alternativas, motivo, consequências)\n## 12. Riscos técnicos e pontos únicos de falha (tabela com mitigação)\n## 13. Aderência às políticas do cliente e pendências`, 12000));
   if (tipo === 'modelo_dados') return limpaMd(await claude(SYS_BASE + `\nTarefa: escrever o MODELO DE DADOS E BANCO (ERT 15.3.1 item 4 e etapa 4).`, `${fonte}\n\nARQUITETURA:\n${String(arq?.conteudo_md || 'não gerada').substring(0, 15000)}${C.volumetria.length ? '\n\nVOLUMETRIA:\n' + tabelaVolumetriaMd(C) : ''}\n\nEstrutura:\n# Modelo de Dados e Banco\n## 1. Modelo conceitual (entidades e relacionamentos — tabela)\n## 2. Modelo lógico (tabela por entidade: atributos, tipo, chave, obrigatório, regra)\n## 3. Dicionário de dados (tabela: entidade, campo, descrição, tipo, tamanho, domínio/valores, origem, dado pessoal LGPD sim/não, mascaramento)\n## 4. Modelo físico e tecnologia de banco (escolha justificada; DDL de referência em bloco de código das tabelas principais)\n## 5. Índices, particionamento e retenção (a partir da volumetria)\n## 6. Regras de qualidade de dados e reconciliação\n## 7. Segurança dos dados (perfis de acesso, criptografia, auditoria)\n## 8. Backup, restauração e arquivamento\n## 9. Pendências`, 12000));
   if (tipo === 'volumetria') {
@@ -608,7 +707,8 @@ async function itens({ projeto_id }) {
   const sql = await fabSql();
   const I = await sql`SELECT * FROM fab_itens WHERE projeto_id=${projeto_id} ORDER BY ordem, codigo`;
   const C = await sql`SELECT item_codigo, status, COUNT(*)::int AS n FROM fab_casos WHERE projeto_id=${projeto_id} AND item_codigo IS NOT NULL GROUP BY item_codigo, status`;
-  return { itens: I.map(i => { const x = {}; C.filter(c => c.item_codigo === i.codigo).forEach(c => { x[c.status] = c.n; }); return { ...i, casos: x }; }), colunas: COLUNAS_FAB };
+  const M = (await _kvF(sql, 'fab:itens_meta:' + projeto_id)) || {}; // v3.238: papel, componente e dependências
+  return { itens: I.map(i => { const x = {}; C.filter(c => c.item_codigo === i.codigo).forEach(c => { x[c.status] = c.n; }); return { ...i, casos: x, meta: M[i.codigo] || null }; }), colunas: COLUNAS_FAB };
 }
 async function itemSalvar(b) {
   const sql = await fabSql();
@@ -627,16 +727,24 @@ async function itemMover({ id, coluna }) {
   await sql`UPDATE fab_itens SET coluna=${coluna}, em_qa_em=CASE WHEN ${coluna}='qa' THEN NOW() ELSE em_qa_em END, nota=NULL, atualizado_em=NOW() WHERE id=${id}`;
   // ao entrar em QA, os casos ligados voltam a "não executado" para o próximo reteste
   if (coluna === 'qa') { const it = (await sql`SELECT projeto_id, codigo FROM fab_itens WHERE id=${id}`)[0]; if (it) await sql`UPDATE fab_casos SET status='nao_executado', atualizado_em=NOW() WHERE projeto_id=${it.projeto_id} AND item_codigo=${it.codigo} AND status<>'passou'`; }
+  try { const it2 = (await sql`SELECT projeto_id FROM fab_itens WHERE id=${id}`)[0]; if (it2) await _sincIdeia(sql, it2.projeto_id); } catch (_) {} // v3.238
   return { ok: true };
 }
 async function itensGerar(b) {
   const sql = await fabSql(); const P = (await sql`SELECT * FROM fab_projetos WHERE id=${b.projeto_id}`)[0]; if (!P) throw new Error('Projeto não encontrado');
   const ert = await _doc(sql, P.id, 'ert'), erf = await _doc(sql, P.id, 'erf'); if (!ert?.conteudo_md && !erf?.conteudo_md) throw new Error('Importe a ERF e gere a ERT antes do backlog.');
-  const txt = await claude(SYS_BASE + `\nTarefa: quebrar a especificação no BACKLOG DA FÁBRICA DE DESENVOLVIMENTO (itens de construção do tamanho de 4 a 40 horas, verticais e testáveis). Responda SOMENTE JSON: {"itens":[{"titulo":"...","descricao":"o que construir (telas, regras, integrações)","criterios":"critérios de aceite, um por linha, no formato Dado/Quando/Então","tipo":"funcionalidade|integracao|dados|ia|seguranca|infra|relatorio","prioridade":"alta|media|baixa","estimativa_h":16,"requisito_ref":"RF-01, RT-03"}]}`,
-    `PROJETO: ${P.nome}\n${b.instrucoes ? 'INSTRUÇÕES: ' + b.instrucoes + '\n' : ''}\nERF:\n${String(erf?.conteudo_md || '').substring(0, 40000)}\n\nERT:\n${String(ert?.conteudo_md || '').substring(0, 30000)}`, 12000);
+  const txt = await claude(SYS_BASE + `\nTarefa: quebrar a especificação no BACKLOG DA FÁBRICA DE DESENVOLVIMENTO (itens de construção do tamanho de 4 a 40 horas, verticais e testáveis). Responda SOMENTE JSON: {"itens":[{"titulo":"...","descricao":"o que construir (telas, regras, integrações)","criterios":"critérios de aceite, um por linha, no formato Dado/Quando/Então","tipo":"front|back|mobile|dados_etl|integracao|qa|devops","componente":"web|backoffice|api|mobile|etl|integracao|ia","depende_de":["título exato de outro item que precisa estar pronto antes"],"prioridade":"alta|media|baixa","estimativa_h":16,"requisito_ref":"RF-01, RT-03"}]}\nRegras: "tipo" é o PAPEL do squad que constrói (front, back, mobile, dados_etl, integracao, qa, devops); "componente" é um dos componentes do PERFIL DO SISTEMA; ordene do alicerce para cima (modelo de dados/migrações e APIs antes das telas que as usam; cargas depois das tabelas de destino); itens de devops para CI/publicação de cada componente.`,
+    `PROJETO: ${P.nome}\n${b.instrucoes ? 'INSTRUÇÕES: ' + b.instrucoes + '\n' : ''}${await _perfilTxt(sql, P)}\nERF:\n${String(erf?.conteudo_md || '').substring(0, 40000)}\n\nERT:\n${String(ert?.conteudo_md || '').substring(0, 30000)}`, 12000);
   const j = json(txt); const L = (Array.isArray(j) ? j : j.itens || []).filter(x => x?.titulo);
+  const pf = await _perfil(sql, P.id), compsOk = new Set(pf.componentes.map(c => c.id));
   if (b.substituir) await sql`DELETE FROM fab_itens WHERE projeto_id=${P.id} AND origem='ia' AND coluna='backlog'`;
-  let n = 0; for (const x of L.slice(0, 120)) { await itemSalvar({ ...x, projeto_id: P.id, origem: 'ia', criterios: Array.isArray(x.criterios) ? x.criterios.join('\n') : x.criterios }); n++; }
+  let n = 0; const meta = (await _kvF(sql, 'fab:itens_meta:' + P.id)) || {}; const porTitulo = {};
+  for (const x of L.slice(0, 120)) { const r = await itemSalvar({ ...x, projeto_id: P.id, origem: 'ia', criterios: Array.isArray(x.criterios) ? x.criterios.join('\n') : x.criterios }); n++;
+    const cod = (await sql`SELECT codigo FROM fab_itens WHERE id=${r.id}`)[0]?.codigo; if (cod) { porTitulo[String(x.titulo).trim().toLowerCase()] = cod;
+      meta[cod] = { papel: String(x.tipo || '').substring(0, 20) || null, componente: compsOk.has(x.componente) ? x.componente : (pf.componentes[0]?.id || null), _dep: Array.isArray(x.depende_de) ? x.depende_de : [] }; } }
+  // v3.238: dependências por código (a IA cita pelo título) — o item só vai para o Claude depois das suas dependências
+  for (const k of Object.keys(meta)) { if (!meta[k]._dep) continue; meta[k].depende_de = meta[k]._dep.map(t => porTitulo[String(t).trim().toLowerCase()]).filter(c => c && c !== k); delete meta[k]._dep; }
+  await _kvF(sql, 'fab:itens_meta:' + P.id, meta);
   // liga casos já existentes aos itens pelo requisito
   const I = await sql`SELECT codigo, requisito_ref FROM fab_itens WHERE projeto_id=${P.id} AND requisito_ref IS NOT NULL`;
   const C = await sql`SELECT id, requisito_ref FROM fab_casos WHERE projeto_id=${P.id} AND item_codigo IS NULL AND requisito_ref IS NOT NULL`;
@@ -841,42 +949,61 @@ async function construcaoObter({ projeto_id }) {
   const docs = await sql`SELECT tipo, status FROM fab_documentos WHERE projeto_id=${projeto_id}`; const st = t => docs.find(d => d.tipo === t)?.status || null;
   const I = await sql`SELECT id, codigo, titulo, coluna, prioridade, criterios FROM fab_itens WHERE projeto_id=${projeto_id} ORDER BY ordem, codigo`;
   const { demandasDaFabrica } = await import('./agente-ideias.js'); const D = (await demandasDaFabrica(projeto_id)).filter(d => !['arquivada', 'recusada'].includes(d.status));
-  const est = await _kvC(sql, projeto_id);
-  const pre = [['erf', 'Especificação Funcional (ERF) aprovada', st('erf') === 'aprovado'], ['ert', 'Especificação Técnica (ERT) aprovada', st('ert') === 'aprovado'],
+  const est = await _kvC(sql, projeto_id); const pf = await _perfil(sql, projeto_id);
+  try { await _sincIdeia(sql, projeto_id); } catch (_) {}
+  const pre = [['perfil', 'Perfil do sistema definido (componentes e stacks)', pf.definido], ['erf', 'Especificação Funcional (ERF) aprovada', st('erf') === 'aprovado'], ['ert', 'Especificação Técnica (ERT) aprovada', st('ert') === 'aprovado'],
     ['arquitetura', 'Documento de Arquitetura aprovado (G4)', st('arquitetura') === 'aprovado'], ['backlog', 'Backlog com itens no Kanban da fábrica', I.length > 0],
     ['github', 'GitHub configurado no Vercel (GITHUB_TOKEN)', !!process.env.GITHUB_TOKEN]].map(([k, txt, ok]) => ({ k, txt, ok }));
-  const fund = D.filter(d => d.dados?.fabrica?.tipo === 'fundacao').pop();
-  return { projeto: { id: P.id, nome: P.nome, cliente: P.cliente }, pasta: est.pasta || _pastaDe(P.nome), pasta_travada: !!fund, pre, liberado: pre.every(x => x.ok),
-    docs_opcionais: ['modelo_dados', 'volumetria', 'finops', 'plano_projeto'].map(t => ({ tipo: t, nome: DOCS[t].nome, status: st(t) })),
-    fundacao: _resumoDem(fund), itens: I.map(i => ({ ...i, demanda: _resumoDem(D.filter(d => d.dados?.fabrica?.item_id === i.id).pop()) })) };
+  const fundsAll = D.filter(d => d.dados?.fabrica?.tipo === 'fundacao');
+  const fund = fundsAll.filter(d => !d.dados?.fabrica?.componente).pop() || fundsAll[0] || null;
+  // v3.238: uma fundação por componente do perfil (sistemas com front + retaguarda + app + cargas não cabem numa tarefa só)
+  const fundacoes = pf.componentes.map(c => { const d = fundsAll.filter(x => x.dados?.fabrica?.componente === c.id).pop() || (pf.componentes.length === 1 ? fund : null); const s = stackDe(c);
+    return { componente: c.id, nome: COMPONENTES[c.id].nome, icone: COMPONENTES[c.id].icone, stack: s.nome, deploy: s.deploy, subpasta: subpasta(pf, c), demanda: _resumoDem(d) }; });
+  const M = (await _kvF(sql, 'fab:itens_meta:' + projeto_id)) || {};
+  return { projeto: { id: P.id, nome: P.nome, cliente: P.cliente }, pasta: est.pasta || _pastaDe(P.nome), pasta_travada: !!fundsAll.length, pre, liberado: pre.every(x => x.ok), perfil: pf,
+    docs_opcionais: ['modelo_dados', 'ddl', 'volumetria', 'finops', 'plano_projeto', 'guia_implantacao'].map(t => ({ tipo: t, nome: DOCS[t].nome, status: st(t) })),
+    fundacao: _resumoDem(fund), fundacoes, itens: I.map(i => ({ ...i, meta: M[i.codigo] || null, demanda: _resumoDem(D.filter(d => d.dados?.fabrica?.item_id === i.id).pop()) })) };
 }
 async function construcaoEnviar(b, usuario) {
   const C = await construcaoObter(b), sql = await fabSql();
   if (!C.liberado) throw new Error('Ainda falta: ' + C.pre.filter(x => !x.ok).map(x => x.txt).join(' · '));
-  if (C.fundacao) throw new Error('A fundação deste sistema já foi enviada (tarefa #' + (C.fundacao.issue_numero || '?') + ')');
   const pasta = String(b.pasta || C.pasta).trim().toLowerCase(); if (!RX_PASTA.test(pasta)) throw new Error('Pasta inválida — use letras minúsculas, números e hífen (ex.: crm-jelta)');
-  await _kvC(sql, b.projeto_id, { ...(await _kvC(sql, b.projeto_id)), pasta, enviado_em: new Date().toISOString(), enviado_por: usuario || null });
-  const P = C.projeto; const { demandaProduto } = await import('./agente-ideias.js');
-  return demandaProduto({ titulo: 'Fundação do sistema ' + P.nome, problema: `Construir a base do sistema ${P.nome}${P.cliente ? ' para ' + P.cliente : ''}, conforme a ERT e o Documento de Arquitetura aprovados na Esteira de Entrega.`,
-    proposta: `Criar em produtos/${pasta}/ a estrutura do sistema na tecnologia definida pela arquitetura, com autenticação e layout base, navegação, conexão com o banco, deploy na Vercel (Root Directory = produtos/${pasta}) e README. Os itens do backlog vêm depois, um por tarefa.`,
-    criterios: ['O sistema roda localmente com os comandos do README', `Publica na Vercel com Root Directory = produtos/${pasta} sem erro de build`, 'Tecnologia e estrutura de pastas seguem o Documento de Arquitetura aprovado',
-      'Login/controle de acesso e layout base conforme a ERT', 'README lista as variáveis de ambiente (só os nomes) e o passo a passo de publicação', 'Nenhum dado real de cliente no código ou nos testes'],
-    como_implementar: `Documentos aprovados em produtos/${pasta}/partitura/ (ert.md, arquitetura.md, modelo_dados.md…).` + (b.instrucoes ? '\nOrientação do fundador: ' + String(b.instrucoes).substring(0, 1500) : ''),
-    trilha: 'P-' + pasta, fabrica: { projeto_id: P.id, nome: P.nome, cliente: P.cliente || null, pasta, tipo: 'fundacao' } }, usuario, { forcar_paralelismo: !!b.forcar_paralelismo });
+  // v3.238: fundação POR COMPONENTE (b.componente) — sem componente, envia a do primeiro que ainda não foi
+  const alvo = b.componente ? C.fundacoes.find(f => f.componente === b.componente) : C.fundacoes.find(f => !f.demanda);
+  if (!alvo) throw new Error(b.componente ? 'Componente não está no perfil do sistema' : 'Todas as fundações já foram enviadas');
+  if (alvo.demanda && !['recusada', 'arquivada'].includes(alvo.demanda.status)) throw new Error('A fundação de ' + alvo.nome + ' já foi enviada (tarefa #' + (alvo.demanda.issue_numero || '?') + ')');
+  const est = await _kvC(sql, b.projeto_id);
+  await _kvC(sql, b.projeto_id, { ...est, pasta, enviado_em: est.enviado_em || new Date().toISOString(), enviado_por: usuario || null, fundacoes: { ...(est.fundacoes || {}), [alvo.componente]: new Date().toISOString() } });
+  const P = C.projeto, pf = C.perfil, comp = pf.componentes.find(c => c.id === alvo.componente), s = stackDe(comp), dir = `produtos/${pasta}${alvo.subpasta ? '/' + alvo.subpasta : ''}`;
+  const outros = pf.componentes.filter(c => c.id !== comp.id).map(c => `${COMPONENTES[c.id].nome} em produtos/${pasta}/${subpasta(pf, c)}`).join('; ');
+  const { demandaProduto } = await import('./agente-ideias.js');
+  return demandaProduto({ titulo: `Fundação · ${COMPONENTES[comp.id].nome} · ${P.nome}`,
+    problema: `Construir a base do componente "${COMPONENTES[comp.id].nome}" do sistema ${P.nome}${P.cliente ? ' para ' + P.cliente : ''}, conforme ERF, ERT, arquitetura e perfil aprovados na Esteira de Entrega.`,
+    proposta: `Criar em ${dir}/ a estrutura do componente com a stack ${s.nome}. Estrutura: ${s.estrutura}. Publicação: ${s.deploy}.${outros ? ' Outros componentes do sistema (não mexer nesta tarefa): ' + outros + '.' : ''} Os itens do backlog vêm depois, um por tarefa.`,
+    criterios: [`Estrutura e stack do componente conforme o perfil (produtos/${pasta}/partitura/perfil.md)`, ...s.fundacao, `Testes passam com: ${s.testes}`, `Build sem erro: ${s.build}`,
+      `package.json (ou equivalente) em ${dir}/ com os scripts "test" e "build" — a CI do produto roda os dois em todo PR`, 'README do componente: como rodar, variáveis de ambiente (só os nomes) e publicação', 'Nenhum dado real de cliente no código, nos testes ou no seed'],
+    como_implementar: `Documentos em produtos/${pasta}/partitura/ (perfil.md, erf.md, ert.md, arquitetura.md, modelo_dados.md, ddl.md, guia_implantacao.md, backlog.md, casos.md).` + (b.instrucoes ? '\nOrientação do fundador: ' + String(b.instrucoes).substring(0, 1500) : ''),
+    trilha: 'P-' + pasta, fabrica: { projeto_id: P.id, nome: P.nome, cliente: P.cliente || null, pasta, tipo: 'fundacao', componente: comp.id, subpasta: alvo.subpasta } }, usuario, { forcar_paralelismo: !!b.forcar_paralelismo });
 }
 async function construcaoItem(b, usuario) {
   const C = await construcaoObter(b), sql = await fabSql();
-  if (!C.fundacao) throw new Error('Envie primeiro a fundação do sistema');
-  if (C.fundacao.status !== 'implementada' && !b.forcar) { const e = new Error('A fundação ainda não está no ar (status: ' + C.fundacao.status + '). Enviar o item agora pode gerar conflito com a estrutura que o Claude está criando.'); e.precisa_forcar = true; throw e; }
   const it = C.itens.find(i => i.id === b.item_id); if (!it) throw new Error('Item não encontrado');
+  // v3.238: a fundação que importa é a do COMPONENTE do item; e as dependências do item precisam estar construídas
+  const compIt = it.meta?.componente || C.fundacoes[0]?.componente; const fIt = C.fundacoes.find(f => f.componente === compIt) || C.fundacoes[0];
+  const fd = C.fundacoes.length ? fIt?.demanda : C.fundacao; // perfil definido: só vale a fundação do componente do item
+  if (!fd) throw new Error('Envie primeiro a fundação de ' + (fIt?.nome || 'o sistema'));
+  if (fd.status !== 'implementada' && !b.forcar) { const e = new Error('A fundação de ' + (fIt?.nome || 'o sistema') + ' ainda não está no ar (status: ' + fd.status + '). Enviar o item agora pode gerar conflito com a estrutura que o Claude está criando.'); e.precisa_forcar = true; throw e; }
+  const pend = (it.meta?.depende_de || []).filter(cod => { const d = C.itens.find(x => x.codigo === cod); return d && !(d.demanda?.status === 'implementada' || ['aprovado_qa', 'homologacao', 'entregue'].includes(d.coluna)); });
+  if (pend.length && !b.forcar) { const e = new Error('O item ' + it.codigo + ' depende de ' + pend.join(', ') + ', que ainda não foi(ram) construído(s).'); e.precisa_forcar = true; throw e; }
   if (it.demanda && it.demanda.status !== 'implementada') throw new Error('Este item já está com o Claude (tarefa #' + (it.demanda.issue_numero || '?') + ')');
   const I = (await sql`SELECT * FROM fab_itens WHERE id=${b.item_id}`)[0];
   const casos = await sql`SELECT codigo, titulo, esperado FROM fab_casos WHERE projeto_id=${b.projeto_id} AND item_codigo=${I.codigo} ORDER BY codigo LIMIT 10`;
   const crit = [...String(I.criterios || '').split(/\n+/).map(x => x.replace(/^[-*•\d.)\s]+/, '').trim()).filter(Boolean), ...casos.map(c => `${c.codigo}: ${c.titulo}${c.esperado ? ' → ' + c.esperado : ''}`)];
   if (!crit.length) throw new Error('O item ' + I.codigo + ' não tem critérios de aceite nem casos de teste — complete o item (Kanban) ou gere os casos (Planos de Teste) antes');
   const P = C.projeto, pasta = C.pasta; const { demandaProduto } = await import('./agente-ideias.js');
+  const dirIt = `produtos/${pasta}${fIt?.subpasta ? '/' + fIt.subpasta : ''}`;
   const r = await demandaProduto({ titulo: `${I.codigo} · ${I.titulo}`, problema: I.descricao || I.titulo, proposta: (I.descricao || I.titulo) + (I.requisito_ref ? `\n\nRequisito: ${I.requisito_ref}` : ''),
-    criterios: crit, como_implementar: `Item ${I.codigo} do Kanban da fábrica${I.requisito_ref ? ' · requisito ' + I.requisito_ref : ''}${I.estimativa_h ? ' · estimativa ' + I.estimativa_h + ' h' : ''}. Casos de teste ligados: ${casos.map(c => c.codigo).join(', ') || 'nenhum'} (produtos/${pasta}/partitura/casos.md).` + (b.instrucoes ? '\nOrientação do fundador: ' + String(b.instrucoes).substring(0, 1500) : ''),
+    criterios: crit, como_implementar: `Item ${I.codigo} do Kanban da fábrica${I.requisito_ref ? ' · requisito ' + I.requisito_ref : ''}${I.estimativa_h ? ' · estimativa ' + I.estimativa_h + ' h' : ''}. Casos de teste ligados: ${casos.map(c => c.codigo).join(', ') || 'nenhum'} (produtos/${pasta}/partitura/casos.md). Componente: ${fIt ? fIt.nome + ' em ' + dirIt + '/ (' + fIt.stack + ')' : 'ver perfil.md'}${it.meta?.papel ? ' · papel: ' + it.meta.papel : ''}. Inclua os testes automatizados do item no componente.` + (b.instrucoes ? '\nOrientação do fundador: ' + String(b.instrucoes).substring(0, 1500) : ''),
     trilha: 'P-' + pasta, fabrica: { projeto_id: P.id, nome: P.nome, cliente: P.cliente || null, pasta, tipo: 'item', item_id: I.id, item_codigo: I.codigo } }, usuario, { forcar_paralelismo: !!b.forcar_paralelismo });
   if (r.status === 'em_execucao') await sql`UPDATE fab_itens SET coluna='desenvolvimento', responsavel='Claude (B.P.M.)', nota=${'Com o Claude — tarefa #' + r.issue}, atualizado_em=NOW() WHERE id=${I.id}`;
   return r;
@@ -887,7 +1014,8 @@ async function construcaoPacote({ projeto_id }) {
   const est = await _kvC(sql, projeto_id); const pasta = est.pasta || _pastaDe(P.nome);
   const docs = await sql`SELECT tipo, titulo, conteudo_md, status, versao, aprovado_em FROM fab_documentos WHERE projeto_id=${projeto_id}`;
   const arquivos = [];
-  for (const t of ['erf', 'ert', 'arquitetura', 'modelo_dados', 'volumetria', 'finops', 'plano_projeto', 'plano_testes', 'plano_testes_integracao', 'plano_testes_seguranca', 'plano_testes_desempenho', 'plano_testes_usabilidade']) {
+  const pf = await _perfil(sql, projeto_id); if (pf.definido) arquivos.push({ nome: 'perfil.md', conteudo: perfilMd(pf, pasta, P.nome) }); // v3.238
+  for (const t of ['erf', 'ert', 'arquitetura', 'modelo_dados', 'ddl', 'volumetria', 'finops', 'plano_projeto', 'guia_implantacao', 'plano_testes', 'plano_testes_integracao', 'plano_testes_seguranca', 'plano_testes_desempenho', 'plano_testes_usabilidade']) {
     const d = docs.find(x => x.tipo === t); if (!d || !d.conteudo_md) continue;
     arquivos.push({ nome: t + '.md', conteudo: `<!-- ${DOCS[t].nome} · versão ${d.versao || 1} · ${d.status === 'aprovado' ? 'APROVADO em ' + new Date(d.aprovado_em).toLocaleDateString('pt-BR') : 'RASCUNHO (não aprovado — use com cautela)'} · baixado da Esteira de Entrega -->\n\n` + d.conteudo_md }); }
   const I = await sql`SELECT codigo, titulo, descricao, criterios, prioridade, requisito_ref, coluna FROM fab_itens WHERE projeto_id=${projeto_id} ORDER BY ordem, codigo`;
@@ -959,6 +1087,8 @@ async function handler(req, res) {
       construcao_enviar: () => construcaoEnviar(b, req.sessao?.login || req.usuario),
       construcao_item: () => construcaoItem(b, req.sessao?.login || req.usuario),
       construcao_pacote: () => construcaoPacote(b),
+      perfil_obter: () => perfilObter(b), perfil_salvar: () => perfilSalvar(b), perfil_sugerir: () => perfilSugerir(b), // v3.238
+      projeto_de_ideia: () => projetoDeIdeia(b, req.sessao?.login || req.usuario),
       robos_executar: async () => { const s = await sql(); const p = (await s`SELECT qa_produto_id FROM fab_projetos WHERE id=${b.projeto_id}`)[0];
         if (!p?.qa_produto_id) throw new Error('Ligue o projeto a um produto do QA de Produtos (URL e usuário de teste) para os robôs rodarem.');
         const { executarQa } = await import('./qa-externo.js'); return executarQa({ produto_id: p.qa_produto_id, origem: 'esteira' }); },

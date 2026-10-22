@@ -1,0 +1,35 @@
+# v3.238 · CI DOS PRODUTOS construídos pela Esteira de Entrega (produtos/<pasta>/<componente>/)
+# Em todo PR que mexe em produtos/**: instala, testa e faz o build de cada componente afetado (web, retaguarda, API,
+# aplicativo Expo, cargas/ETL em Node ou Python). O merge automático (claude-pr.yml) também roda este script e não
+# mescla o PR se algum componente falhar.
+name: CI dos produtos
+on:
+  pull_request:
+    branches: [main]
+    paths: ['produtos/**']
+  push:
+    branches: [main]
+    paths: ['produtos/**']
+permissions:
+  contents: read
+concurrency:
+  group: produto-ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+jobs:
+  componentes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Testes e build dos componentes alterados
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then BASE="origin/${{ github.base_ref }}"; else BASE="${{ github.event.before }}"; fi
+          node scripts/produto-ci.mjs --base "$BASE"

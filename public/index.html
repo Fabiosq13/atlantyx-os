@@ -1002,6 +1002,8 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
         <button class="fv2-aba" data-aba="financeiro" onclick="dashAba('financeiro')">&#128176; Financeiro <span class="dash-badge" id="dashBadgeFin"></span></button>
         <button class="fv2-aba" data-aba="vendas" onclick="dashAba('vendas')">&#127919; Funil de vendas</button>
         <button class="fv2-aba" data-aba="pendencias" onclick="dashAba('pendencias')">&#9888;&#65039; Pendências de vendas e prospecção <span class="dash-badge" id="dashBadgePend"></span></button>
+        <button class="fv2-aba" data-aba="projetos" onclick="dashAba('projetos')">&#128193; Projetos <span class="dash-badge" id="dashBadgeProj"></span></button>
+        <button class="fv2-aba" data-aba="rfps" onclick="dashAba('rfps')">&#128209; RFPs e editais <span class="dash-badge" id="dashBadgeRfp"></span></button>
       </div>
       <div id="dashAtualizadoEm" style="font-size:9.5px;color:var(--t3);text-align:right;margin:0 2px 16px;"></div>
     </div>
@@ -1171,6 +1173,32 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
           <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="funilCarregar(true)">&#8635;</button>
         </div></div>
       <div class="pb" id="pendCorpo"><div class="fv2-load">Carregando…</div></div>
+    </div>
+    </section>
+
+    <!-- v3.238: STATUS DOS PROJETOS no Dashboard (mesma base do Painel Mestre: farol, avanço × planejado, próximo marco, report) -->
+    <section class="dash-aba" data-aba="projetos" style="display:none;">
+    <div class="panel" style="margin-bottom:13px;">
+      <div class="ph" style="flex-wrap:wrap;row-gap:6px;"><div class="pt">&#128193; Status dos projetos</div>
+        <span id="dpjMeta" style="font-family:var(--M);font-size:9px;color:var(--t3);margin-left:8px;"></span>
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="dashProjCarregar(true)">&#8635;</button>
+          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="nav('s9painel',document.querySelector('.sbi[onclick*=&quot;s9painel&quot;]'))">Painel Mestre &#8594;</button>
+        </div></div>
+      <div class="pb" id="dpjCorpo"><div class="fv2-load">Abra esta aba para carregar os projetos…</div></div>
+    </div>
+    </section>
+
+    <!-- v3.238: VISÃO DE RFPs / EDITAIS (última varredura do Monitor de RFPs — PNCP + Petronect) -->
+    <section class="dash-aba" data-aba="rfps" style="display:none;">
+    <div class="panel" style="margin-bottom:13px;">
+      <div class="ph" style="flex-wrap:wrap;row-gap:6px;"><div class="pt">&#128209; RFPs e editais aderentes</div>
+        <span id="drfMeta" style="font-family:var(--M);font-size:9px;color:var(--t3);margin-left:8px;"></span>
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="dashRfpCarregar(true)">&#8635;</button>
+          <button class="btn btn-g" style="font-size:9px;padding:3px 9px;" onclick="nav('s2rfps',document.querySelector('.sbi[onclick*=&quot;s2rfps&quot;]'))">Monitor de RFPs &#8594;</button>
+        </div></div>
+      <div class="pb" id="drfCorpo"><div class="fv2-load">Abra esta aba para carregar os editais…</div></div>
     </div>
     </section>
   </div>
@@ -7026,9 +7054,9 @@ async function fundadorDecide(decisao) {
   if (panel) panel.style.display = 'block';
 
   if (decisao === 'APROVADO') {
-    // Move ideia no pipeline
-    const ideia = S1_PIPELINE.find(i => i.titulo.includes(titulo.substring(0,15)));
-    if (ideia) { ideia.stage = 'Aprovada'; renderS1Kanban(); }
+    // v3.238: acha a ideia pelo título completo (antes: 15 primeiros caracteres) e GRAVA a etapa (antes só mudava na tela)
+    const ideia = S1_PIPELINE.find(i => i.stage === 'Aguardando Fundador' && _limparTituloIdeia(i.titulo) === _limparTituloIdeia(titulo)) || S1_PIPELINE.find(i => _limparTituloIdeia(i.titulo) === _limparTituloIdeia(titulo)) || S1_PIPELINE.find(i => i.titulo.includes(titulo.substring(0, 15)));
+    if (ideia) { ideia.stage = 'Em Desenvolvimento'; renderS1Kanban(); try { await salvarIdeiaS1(ideia); } catch (_) {} }
 
     if (msg) msg.textContent = 'OK APROVADO\n' + titulo + '\nAgente S1-07 iniciando Briefing Técnico para o Squad de Dev S6...';
     addLog('success', '[FUNDADOR] APROVADO: ' + titulo + ' -> Iniciando Handoff Dev');
@@ -7036,11 +7064,11 @@ async function fundadorDecide(decisao) {
 
     // Auto-handoff
     setTimeout(async () => {
-      const handoffData = await api('/api/s1-strategy', 'POST', { action: 'handoff_dev', titulo, descricao: desc });
+      const handoffData = await api('/api/s1-strategy', 'POST', { action: 'handoff_dev', titulo, descricao: desc || ideia?.desc || ideia?.descricao || '', ideia_id: ideia?.id || null });
       if (handoffData?.success && msg) {
         const b = handoffData.briefing;
-        const ideia2 = S1_PIPELINE.find(i => i.titulo.includes(titulo.substring(0,15)));
-        if (ideia2) { ideia2.stage = 'Em Dev'; renderS1Kanban(); }
+        if (ideia) { ideia.stage = 'Em Desenvolvimento'; ideia.handoff = { ...b, gerado_em: new Date().toISOString() }; renderS1Kanban(); }
+        if (ideia && !ideia.fabrica?.projeto_id && confirm('Briefing técnico pronto.\n\nCriar agora o projeto na Esteira de Entrega para o Squad de Desenvolvimento construir o sistema?')) { _ideiaEd = ideia; ideiaEnviarEsteira(); }
         msg.textContent = 'OK Handoff para Dev Concluído!\nÉpico: ' + b.epico_nome + '\nPrazo: ' + b.prazo_sugerido + '\nPrioridade: ' + b.prioridade + '\nEscopo:\n' + (b.escopo||[]).map((e,i) => (i+1)+'. '+e).join('\n');
         addLog('success', '[S1-07] Handoff Dev: ' + b.epico_nome + ' | ' + b.prazo_sugerido);
         toast('Briefing técnico criado e enviado ao Squad Dev!', 'success');
@@ -7049,8 +7077,8 @@ async function fundadorDecide(decisao) {
 
   } else {
     if (msg) msg.textContent = 'x REJEITADO\n' + titulo + '\nIdeia arquivada com justificativa para aprendizado futuro.';
-    const ideia = S1_PIPELINE.find(i => i.titulo.includes(titulo.substring(0,15)));
-    if (ideia) { ideia.stage = 'Recebida'; renderS1Kanban(); }
+    const ideia = S1_PIPELINE.find(i => _limparTituloIdeia(i.titulo) === _limparTituloIdeia(titulo)) || S1_PIPELINE.find(i => i.titulo.includes(titulo.substring(0,15)));
+    if (ideia) { ideia.stage = 'Arquivada'; renderS1Kanban(); try { await salvarIdeiaS1(ideia); } catch (_) {} }
     addLog('warn', '[FUNDADOR] REJEITADO: ' + titulo);
     toast('Rejeitado. Arquivado com justificativa.', 'info');
   }
@@ -11173,7 +11201,7 @@ async function initS1() {
 // v3.09 — IDEIA EDITÁVEL (duplo clique no kanban) + RELATÓRIO PDF DA AVALIAÇÃO
 // ══════════════════════════════════════════════════════════════════════════════
 let _ideiaEd = null, _ideiaEdSujo = false;
-const _S1_ETAPAS = ['Recebida', 'Em Análise', 'Pesquisa', 'Viabilidade', 'Comitê', 'Aguardando Fundador', 'Em Desenvolvimento', 'Aprovada Squad', 'Arquivada'];
+const _S1_ETAPAS = ['Recebida', 'Em Análise', 'Pesquisa', 'Viabilidade', 'Comitê', 'Aguardando Fundador', 'Em Desenvolvimento', 'Entregue', 'Aprovada Squad', 'Arquivada'];
 const _ie = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 
 function ideiaAbrir(k) {
@@ -11247,10 +11275,40 @@ function ideiaRender() {
     + '<button class="btn btn-gn" id="btnIdeiaPdf" onclick="ideiaPdf()">&#128196; Gerar PDF — relatório completo + resumo financeiro</button>'
     + '<button class="btn btn-g" id="btnIdeiaAnalisar" onclick="ideiaAnalisar()">&#9670; ' + ((x.analise_completa || x.analise) ? 'Reanalisar' : 'Analisar') + ' com IA</button>'
     + '<button class="btn btn-g" onclick="ideiaBP()">&#128202; ' + (x.business_plan ? 'Abrir' : 'Gerar') + ' Business Plan</button>'
+    + (x.fabrica?.projeto_id ? '<button class="btn btn-g" onclick="ideiaIrEsteira(\'' + String(x.fabrica.projeto_id).replace(/[^\w-]/g, '') + '\')">&#127981; Abrir na Esteira' + (x.entrega ? ' · ' + x.entrega.pct + '%' : '') + '</button>'
+      : '<button class="btn btn-gn" onclick="ideiaEnviarEsteira()" title="Cria o projeto na Esteira de Entrega (Squad de Desenvolvimento) com a descrição, o briefing e o tipo de sistema">&#127981; Enviar para desenvolvimento</button>')
     + '<div style="flex:1;min-width:0;"></div><button class="btn btn-g" style="color:var(--red);" onclick="ideiaExcluirAberta()">&#128465; Excluir</button><button class="btn btn-g" onclick="ideiaFechar()">Fechar</button></div></div>';
   try { ichatRender('ed'); } catch (_) {} // v3.37
   try { if (window._cp.ed?.bp && window._cp.ed.bp.id === x.contraproposta_bp?.id) cpRender('ed'); else if (x.contraproposta_bp?.id) cpCarregarSalva('ed', x.contraproposta_bp.id); else window._cp.ed = null; } catch (_) {} // v3.44
 }
+// v3.238: IDEIA APROVADA → ESTEIRA DE ENTREGA (Squad de Desenvolvimento). Escolhe os componentes do sistema
+// (front, retaguarda, API, aplicativo, cargas/ETL, integrações, IA) e cria o projeto com a descrição e o briefing
+const _IDEIA_COMP = [['web', '🖥 Front-end web'], ['backoffice', '🗂 Retaguarda / painel'], ['api', '🔌 API / back-end'], ['mobile', '📱 Aplicativo'], ['etl', '🔄 Cargas / ETL / jobs'], ['integracao', '🔗 Integrações'], ['ia', '🤖 Agente de IA']];
+function ideiaEnviarEsteira() {
+  const x = _ideiaEd; if (!x) return;
+  let m = document.getElementById('ideiaEstModal'); if (!m) { m = document.createElement('div'); m.id = 'ideiaEstModal'; m.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1001;align-items:center;justify-content:center;padding:12px;'; document.body.appendChild(m); }
+  m.style.display = 'flex';
+  m.innerHTML = '<div class="panel" style="width:560px;max-width:96vw;"><div class="ph"><div class="pt">🏭 Enviar para desenvolvimento</div><button class="btn btn-g" style="font-size:10px;" onclick="document.getElementById(\'ideiaEstModal\').style.display=\'none\'">✕</button></div><div class="pb">'
+    + '<div style="font-size:11.5px;margin-bottom:8px;"><b>' + _ie(_limparTituloIdeia(x.titulo)) + '</b></div>'
+    + '<div style="font-size:10.5px;color:var(--t2);margin-bottom:8px;">Que partes o sistema terá? (dá para ajustar depois na aba Construção da Esteira — ou pedir para a IA sugerir a partir da especificação)</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">' + _IDEIA_COMP.map(([k, t]) => '<label style="display:flex;gap:6px;align-items:center;font-size:11.5px;border:1px solid var(--bd);border-radius:6px;padding:6px 8px;cursor:pointer;"><input type="checkbox" class="ideiaEstComp" value="' + k + '"' + (['web', 'api'].includes(k) ? ' checked' : '') + '> ' + t + '</label>').join('') + '</div>'
+    + '<label class="fl" style="margin-top:10px;">Orientações para o squad (opcional)</label><textarea class="fta" id="ideiaEstObs" style="min-height:60px;font-size:11.5px;" placeholder="ex.: uso principal no celular em campo; integrar com o SAP do cliente; carga diária às 6h"></textarea>'
+    + '<div style="font-size:10px;color:var(--t3);margin-top:6px;">Próximos passos na Esteira: gerar a ERF a partir da ideia → ERT → arquitetura e banco → backlog por papel (front, back, app, cargas, QA, DevOps) → planos de teste → o Claude constrói cada componente e cada item, com CI e QA.</div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;"><button class="btn" onclick="document.getElementById(\'ideiaEstModal\').style.display=\'none\'">Cancelar</button><button class="btn btn-gn" id="ideiaEstBtn" onclick="ideiaEnviarEsteiraOk()">Criar projeto na Esteira</button></div></div></div>';
+}
+async function ideiaEnviarEsteiraOk() {
+  const x = _ideiaEd; if (!x) return; const b = document.getElementById('ideiaEstBtn');
+  const tipos = [...document.querySelectorAll('.ideiaEstComp:checked')].map(i => i.value); if (!tipos.length) return toast('Marque ao menos uma parte do sistema', 'error');
+  if (b) { b.disabled = true; b.textContent = 'Criando…'; }
+  try { if (typeof ideiaSalvar === 'function' && _ideiaEdSujo) await ideiaSalvar();
+    const r = await fbApi('projeto_de_ideia', { ideia_id: x.id, tipos, instrucoes: document.getElementById('ideiaEstObs')?.value || '' });
+    x.fabrica = { projeto_id: r.projeto_id, criado_em: new Date().toISOString() }; x.stage = 'Em Desenvolvimento';
+    const i = S1_PIPELINE.findIndex(y => String(y.id) === String(x.id)); if (i >= 0) { S1_PIPELINE[i].fabrica = x.fabrica; S1_PIPELINE[i].stage = x.stage; }
+    document.getElementById('ideiaEstModal').style.display = 'none'; toast(r.ja_existia ? 'A ideia já estava na Esteira' : 'Projeto criado na Esteira de Entrega', 'success');
+    try { renderS1Kanban(); } catch (_) {} ideiaIrEsteira(r.projeto_id, 'docs');
+  } catch (e) { toast('Não criei: ' + e.message, 'error'); if (b) { b.disabled = false; b.textContent = 'Criar projeto na Esteira'; } }
+}
+function ideiaIrEsteira(pid, aba) { try { ideiaFechar && ideiaFechar(true); } catch (_) {} _fb.pid = pid; _fb.aba = aba || 'construcao'; nav('s6fabrica', document.querySelector('.sbi[onclick*="s6fabrica"]')); }
 // v3.36: excluir pela janela da ideia
 async function ideiaExcluirAberta() {
   const x = _ideiaEd; if (!x) return;
@@ -11702,7 +11760,7 @@ function renderKanbanS1(ideias) {
   stages.forEach(s => byStage[s] = []);
   ideias.forEach(i => {
     const s = i.stage || i.status || 'Recebida';
-    const mapa = { 'Aprovada Squad': 'Comitê', 'Aprovado': 'Em Desenvolvimento', 'Análise': 'Em Análise', 'Fundador': 'Aguardando Fundador' };
+    const mapa = { 'Aprovada Squad': 'Comitê', 'Aprovado': 'Em Desenvolvimento', 'Aprovada': 'Em Desenvolvimento', 'Em Dev': 'Em Desenvolvimento', 'Entregue': 'Em Desenvolvimento', 'Análise': 'Em Análise', 'Fundador': 'Aguardando Fundador' };
     const s2 = byStage[s] ? s : mapa[s];
     if (s2 && byStage[s2]) byStage[s2].push(i);
     else byStage['Recebida'].push(i);
@@ -11716,6 +11774,7 @@ function renderKanbanS1(ideias) {
           return '<div draggable="true" ondragstart="s1Arrastar(event,' + k + ')" ondragend="this.style.opacity=\'\'" onclick="ideiaAbrir(' + k + ')" title="Clique para abrir e editar · arraste para mudar de etapa" style="background:var(--bg4);border:1px solid ' + (dup ? 'var(--gold)' : 'var(--bd)') + ';border-radius:5px;padding:7px;margin-bottom:4px;font-size:10px;cursor:grab;user-select:none;">'
             + (dup ? '<div style="font-family:var(--M);font-size:8.5px;color:var(--gold);font-weight:700;margin-bottom:3px;">DUPLICADA</div>' : '')
             + _limparTituloIdeia(i.titulo || 'Sem título').replace(/</g,'&lt;')
+            + (i.fabrica?.projeto_id ? '<div onclick="event.stopPropagation();ideiaIrEsteira(\'' + String(i.fabrica.projeto_id).replace(/[^\w-]/g, '') + '\')" title="Abrir na Esteira de Entrega" style="cursor:pointer;margin-top:4px;font-family:var(--M);font-size:8.5px;color:' + (i.stage === 'Entregue' ? 'var(--green,#22d3a3)' : 'var(--blue)') + ';">🏭 ' + (i.stage === 'Entregue' ? 'entregue' : i.entrega ? 'etapa ' + i.entrega.etapa + '/12 · ' + i.entrega.itens_entregues + '/' + i.entrega.itens_total + ' itens (' + i.entrega.pct + '%)' : 'na Esteira de Entrega') + '</div>' : '')
             + '<div style="margin-top:5px;display:flex;gap:4px;align-items:center;"><span onclick="event.stopPropagation();' + (bp ? 'bpAbrirDaIdeia(' + k + ')' : 'bpGerarParaIdeia(' + k + ')') + '" style="cursor:pointer;font-family:var(--M);font-size:9px;padding:1px 5px;border-radius:3px;background:' + (bp ? 'rgba(0,200,120,.15);color:var(--green)' : 'var(--bg3);color:var(--t2)') + ';">&#128202; ' + (bp ? 'BP' + (bp.tir_anual != null ? ' · TIR ' + Math.round(bp.tir_anual * 100) + '%' : '') : 'gerar BP') + '</span>'
             + '<span style="flex:1;"></span><button onclick="ideiaChatAbrir(' + k + ',event)" title="Conversar com a IA sobre esta ideia (lê todo o material do card)" style="background:none;border:none;cursor:pointer;font-size:11px;padding:0 3px;">💬</button><button onclick="event.stopPropagation();ideiaAbrir(' + k + ')" title="Editar" style="background:none;border:none;cursor:pointer;color:var(--blue);font-size:11px;padding:0 3px;">✎</button>'
             + '<button onclick="s1ExcluirIdeia(' + k + ',event)" title="Excluir" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:11px;padding:0 3px;">🗑</button></div></div>'; }).join('')
@@ -29633,12 +29692,14 @@ async function metasCadastroSalvar() {
 let _fb = { lista: null, pid: null, aba: 'visao', proj: null, docs: null, itens: null, casos: null, painel: null, gerando: {}, filtroTipo: '', filtroSt: '' };
 const _fbEsc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const FB_ABAS = [['visao', 'Visão e gates'], ['docs', 'Documentos'], ['arq', 'Arquitetura e FinOps'], ['kanban', 'Kanban da Fábrica'], ['construcao', '🏗 Construção (Claude)'], ['casos', 'Planos de Teste'], ['robos', 'Robôs de QA'], ['painel', 'Painel do cliente']];
-const FB_DOC_GRUPOS = [['Etapa 2 · Planejamento', ['plano_projeto']], ['Etapa 3 · Especificação', ['erf', 'modelo_ert', 'ert']], ['Etapa 4 · Arquitetura, dados, volumetria e FinOps', ['arquitetura', 'modelo_dados', 'volumetria', 'finops']],
-  ['Etapas 7 e 8 · Planos de teste (um por família)', ['plano_testes', 'plano_testes_integracao', 'plano_testes_usabilidade', 'plano_testes_seguranca', 'plano_testes_desempenho']], ['Etapa 7 · Resultado', ['relatorio_qualidade']]];
+const FB_DOC_GRUPOS = [['Etapa 2 · Planejamento', ['plano_projeto']], ['Etapa 3 · Especificação', ['erf', 'modelo_ert', 'ert']], ['Etapa 4 · Arquitetura, dados, volumetria e FinOps', ['arquitetura', 'modelo_dados', 'ddl', 'volumetria', 'finops']],
+  ['Etapas 7 e 8 · Planos de teste (um por família)', ['plano_testes', 'plano_testes_integracao', 'plano_testes_usabilidade', 'plano_testes_seguranca', 'plano_testes_desempenho']], ['Etapa 7 · Resultado', ['relatorio_qualidade']], ['Etapa 11 · Implantação', ['guia_implantacao']]];
 const FB_DOC_ORDEM = FB_DOC_GRUPOS.flatMap(g => g[1]);
 const FB_FASES = [['rascunho', 'Rascunho'], ['analisado', 'Analisado pela IA'], ['em_revisao', 'Em revisão do cliente'], ['ajustes_recebidos', 'Ajustes recebidos'], ['reanalisado', 'Reanalisado pela IA'], ['aprovado', 'Aprovado']];
 const FB_DOC_INFO = {
-  erf: { icone: '📥', como: 'Importada (Word/PDF) — especificação conceitual do parceiro de processos ou do cliente.', importa: true },
+  erf: { icone: '📥', como: 'Importada (Word/PDF) do parceiro/cliente — ou GERADA pela IA a partir da descrição do projeto e da ideia aprovada (com o briefing de handoff).', importa: true, gera: true },
+  ddl: { icone: '🧱', como: 'Gerado pela IA do modelo de dados e do perfil: migrações SQL versionadas, seed sintético e, com cargas/ETL, o mapeamento origem → destino e a reconciliação.', gera: true, importa: true },
+  guia_implantacao: { icone: '🚀', como: 'Gerado pela IA por componente: publicação (Vercel, Expo EAS, agenda das cargas), variáveis, migrações, verificação, monitoramento e retorno — base do G11.', gera: true, importa: true },
   modelo_ert: { icone: '📐', como: 'Importado — modelo/padrão de ERT do cliente. A IA escreve a ERT com os mesmos títulos e ordem.', importa: true },
   ert: { icone: '🧠', como: 'Gerada pela IA lendo a ERF no padrão do cliente + análise de consistência, ambiguidades e rastreabilidade.', gera: true, importa: true },
   plano_projeto: { icone: '🗓', como: 'Gerado pela IA: 12 etapas, gates G1–G12, cronograma, RACI, riscos e governança.', gera: true, importa: true },
@@ -29680,8 +29741,8 @@ async function fbIrAba(k) {
   try {
     if (k === 'visao') { _fb.painel = await fbApi('painel', { projeto_id: _fb.pid }); _fbVisao(); }
     else if (k === 'docs') { const r = await fbApi('projeto_obter', { id: _fb.pid }); _fb.proj = r.projeto; _fb.docs = r.documentos; _fbDocs(); }
-    else if (k === 'kanban') { const r = await fbApi('itens', { projeto_id: _fb.pid }); _fb.itens = r.itens; _fbKanban(); }
-    else if (k === 'construcao') { _fb.cons = await fbApi('construcao_obter', { projeto_id: _fb.pid }); _fbConstrucao(); }
+    else if (k === 'kanban') { const [r, pf] = await Promise.all([fbApi('itens', { projeto_id: _fb.pid }), fbApi('perfil_obter', { projeto_id: _fb.pid }).catch(() => null)]); _fb.itens = r.itens; if (pf) _fb.perfilCat = pf; _fbKanban(); }
+    else if (k === 'construcao') { const [c, pf] = await Promise.all([fbApi('construcao_obter', { projeto_id: _fb.pid }), fbApi('perfil_obter', { projeto_id: _fb.pid })]); _fb.cons = c; _fb.perfilCat = pf; _fbConstrucao(); }
     else if (k === 'arq') { const [r, o] = await Promise.all([fbApi('arq_obter', { projeto_id: _fb.pid }), fbApi('projeto_obter', { id: _fb.pid })]); _fb.arq = r.arquitetura || {}; _fb.calc = r.calculo; _fb.docs = o.documentos; _fbArq(); }
     else if (k === 'casos') { const [r, i] = await Promise.all([fbApi('casos', { projeto_id: _fb.pid }), fbApi('itens', { projeto_id: _fb.pid })]); _fb.casos = r; _fb.itens = i.itens; _fbCasos(); }
     else if (k === 'robos') { _fb.painel = await fbApi('painel', { projeto_id: _fb.pid }); _fbRobos(); }
@@ -29889,21 +29950,24 @@ function _fbDemSt(d) {
 function _fbConstrucao() {
   const C = _fb.cons, f = C.fundacao, fOk = f?.status === 'implementada';
   const col = Object.fromEntries((_fb.lista?.colunas || []).map(([k, n]) => [k, n]));
-  _fbBox().innerHTML = '<div class="fv2-aviso" style="margin-bottom:10px;">O Claude constrói o sistema <b>' + _fbEsc(C.projeto.nome) + '</b> numa pasta própria do repositório (<code>produtos/' + _fbEsc(C.pasta) + '/</code>), seguindo o Método B.P.M.: '
+  _fbBox().innerHTML = _fbPerfilHtml(C) + '<div class="fv2-aviso" style="margin-bottom:10px;">O Claude constrói o sistema <b>' + _fbEsc(C.projeto.nome) + '</b> numa pasta própria do repositório (<code>produtos/' + _fbEsc(C.pasta) + '/</code>), seguindo o Método B.P.M.: '
       + '① a <b>fundação</b> (estrutura, tecnologia da arquitetura, acesso, layout, deploy) e depois ② <b>um item do Kanban por vez</b>. Cada entrega vira um PR que passa pela <b>sua Mixagem</b> na Esteira de Demandas; ao mesclar, o item volta para <b>Em QA (robôs)</b>. '
       + 'O robô baixa a ERF, a ERT, a arquitetura, o backlog e os casos de teste aprovados para a pasta do produto antes de o Claude começar.</div>'
     + '<div class="fb-g3" style="margin-bottom:12px;"><div class="fb-gate ' + (C.liberado ? 'ok' : 'pend') + '"><div class="fb-gh">Pré-requisitos<span>' + (C.liberado ? '✔ liberado' : 'pendências') + '</span></div>'
       + C.pre.map(x => '<div class="fb-gc">' + (x.ok ? '✔' : '✖') + ' ' + _fbEsc(x.txt) + '</div>').join('')
       + '<div class="fv2-pq" style="margin-top:6px;">Também vão para o Claude, se existirem: ' + C.docs_opcionais.map(d => _fbEsc(d.nome) + (d.status ? ' (' + (d.status === 'aprovado' ? 'aprovado' : 'rascunho') + ')' : ' (não há)')).join(' · ') + '</div></div>'
-    + '<div class="fb-gate ' + (fOk ? 'ok' : '') + '"><div class="fb-gh">① Fundação do sistema<span>' + (f ? (fOk ? '✔ no ar' : 'em andamento') : 'não enviada') + '</span></div>'
-      + (f ? '<div class="fb-gc">' + _fbDemSt(f) + '</div>'
-        : '<label class="fb-lbl">Pasta do produto no repositório<input id="fbConsPasta" value="' + _fbEsc(C.pasta) + '" ' + (C.pasta_travada ? 'disabled' : '') + ' placeholder="ex.: crm-jelta"></label>'
-          + '<label class="fb-lbl">Orientação para o Claude (opcional)<textarea id="fbConsObs" rows="3" placeholder="ex.: use o Supabase que o cliente já tem; telas em português; priorize celular"></textarea></label>'
-          + '<button class="btn btn-gn" onclick="fbConsEnviar()" ' + (C.liberado ? '' : 'disabled') + '>🏗 Enviar fundação para o Claude</button>')
-      + '</div></div>'
+    + (C.fundacoes && C.fundacoes.length
+      ? '<div class="fb-gate"><div class="fb-gh">① Fundação de cada componente<span>' + C.fundacoes.filter(x => x.demanda?.status === 'implementada').length + '/' + C.fundacoes.length + ' no ar</span></div>'
+        + (C.pasta_travada ? '<div class="fb-gc">Pasta: <code>produtos/' + _fbEsc(C.pasta) + '/</code></div>' : '<label class="fb-lbl">Pasta do produto no repositório<input id="fbConsPasta" value="' + _fbEsc(C.pasta) + '" placeholder="ex.: crm-jelta"></label>')
+        + '<label class="fb-lbl">Orientação para o Claude (opcional)<textarea id="fbConsObs" rows="2" placeholder="ex.: use o Supabase que o cliente já tem; telas em português; priorize celular"></textarea></label>'
+        + C.fundacoes.map(x => '<div class="fb-gc" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><span>' + x.icone + ' <b>' + _fbEsc(x.nome) + '</b> <span class="fv2-pq">' + _fbEsc(x.stack) + ' · ' + _fbEsc(x.deploy) + (x.subpasta ? ' · /' + _fbEsc(x.subpasta) : '') + '</span></span><span style="margin-left:auto;">'
+          + (x.demanda ? _fbDemSt(x.demanda) : '<button class="btn btn-gn" style="font-size:10px;" ' + (C.liberado ? '' : 'disabled title="Complete os pré-requisitos"') + ' onclick="fbConsEnviar(false,\'' + x.componente + '\')">🏗 Enviar fundação</button>') + '</span></div>').join('')
+        + '</div></div>'
+      : '<div class="fb-gate ' + (fOk ? 'ok' : '') + '"><div class="fb-gh">① Fundação do sistema<span>' + (f ? (fOk ? '✔ no ar' : 'em andamento') : 'defina o perfil') + '</span></div>'
+        + (f ? '<div class="fb-gc">' + _fbDemSt(f) + '</div>' : '<div class="fb-gc">Defina o perfil do sistema acima para liberar a fundação de cada componente.</div>') + '</div></div>')
     + '<div class="fh-cab">② Itens do Kanban <span class="fv2-pq">' + C.itens.length + ' item(ns) · ' + C.itens.filter(i => i.demanda?.status === 'implementada').length + ' construído(s) · ' + C.itens.filter(i => i.demanda && i.demanda.status !== 'implementada').length + ' com o Claude'
       + (f && !fOk ? ' · aguarde a fundação ir ao ar antes de enviar itens' : '') + '</span></div>'
-    + (C.itens.length ? '<div class="fv2-tabwrap"><table class="fb-tb"><tr><th>Item</th><th>Coluna no Kanban</th><th>Construção</th><th></th></tr>' + C.itens.map(i => '<tr><td><b>' + _fbEsc(i.codigo) + '</b> ' + _fbEsc(i.titulo) + '</td><td>' + _fbEsc(col[i.coluna] || i.coluna) + '</td><td>' + _fbDemSt(i.demanda) + '</td><td style="white-space:nowrap;">'
+    + (C.itens.length ? '<div class="fv2-tabwrap"><table class="fb-tb"><tr><th>Item</th><th>Coluna no Kanban</th><th>Construção</th><th></th></tr>' + C.itens.map(i => '<tr><td><b>' + _fbEsc(i.codigo) + '</b> ' + _fbEsc(i.titulo) + _fbMetaBadges(i.meta) + '</td><td>' + _fbEsc(col[i.coluna] || i.coluna) + '</td><td>' + _fbDemSt(i.demanda) + '</td><td style="white-space:nowrap;">'
         + (!i.demanda || i.demanda.status === 'implementada' ? (i.demanda ? '' : '<button class="btn btn-g" ' + (f ? '' : 'disabled title="Envie a fundação primeiro"') + ' onclick="fbConsItem(\'' + i.id + '\')">🤖 Construir</button>') : '') + '</td></tr>').join('') + '</table></div>'
       : '<div class="fv2-aviso">Sem itens — gere o backlog no Kanban da Fábrica.</div>')
     + '<details style="margin-top:12px;"><summary style="cursor:pointer;">③ Publicar e testar o sistema (uma vez, depois da fundação)</summary><ol style="font-size:12px;line-height:1.7;margin:8px 0 0 18px;">'
@@ -29912,13 +29976,38 @@ function _fbConstrucao() {
       + '<li>Em <b>S6 · QA de Produtos</b>, cadastre o sistema com o endereço publicado e um usuário de teste, e ligue o projeto a ele (✎ do projeto nesta Esteira) — os robôs passam a executar os casos de teste.</li>'
       + '<li>Cada item mesclado vai para <b>Em QA (robôs)</b>; com os casos aprovados ele segue sozinho para <b>Aprovado no QA</b>.</li></ol></details>';
 }
-async function fbConsEnviar(forcar) {
-  const pasta = (document.getElementById('fbConsPasta')?.value || '').trim(), instrucoes = document.getElementById('fbConsObs')?.value || '';
-  if (!forcar && !confirm('Enviar a fundação do sistema para o Claude?\n\nEle cria a base em produtos/' + pasta + '/ seguindo a ERT e a arquitetura aprovadas e abre um PR — que só vai para o ar depois da SUA Mixagem na Esteira de Demandas.')) return;
-  try { const r = await fbApi('construcao_enviar', { projeto_id: _fb.pid, pasta, instrucoes, forcar_paralelismo: !!forcar });
+async function fbConsEnviar(forcar, componente) {
+  const pasta = (document.getElementById('fbConsPasta')?.value || _fb.cons?.pasta || '').trim(), instrucoes = document.getElementById('fbConsObs')?.value || '';
+  const fx = (_fb.cons?.fundacoes || []).find(x => x.componente === componente);
+  if (!forcar && !confirm('Enviar a fundação' + (fx ? ' de ' + fx.nome + ' (' + fx.stack + ')' : ' do sistema') + ' para o Claude?\n\nEle cria a base em produtos/' + pasta + '/' + (fx?.subpasta ? fx.subpasta + '/' : '') + ' seguindo o perfil, a ERT e a arquitetura aprovadas e abre um PR — que só vai para o ar depois da SUA Mixagem na Esteira de Demandas.')) return;
+  try { const r = await fbApi('construcao_enviar', { projeto_id: _fb.pid, pasta, instrucoes, componente: componente || null, forcar_paralelismo: !!forcar });
     toast(r.issue ? 'Fundação enviada — tarefa #' + r.issue + ' aberta para o Claude' : (r.aviso || 'Fundação registrada'), r.aviso ? 'error' : 'success'); fbIrAba('construcao'); }
-  catch (e) { if (e.codigo === 'limite' && confirm(e.message + '\n\nAbrir mais uma trilha assim mesmo?')) return fbConsEnviar(true); toast(e.message, 'error'); }
+  catch (e) { if (e.codigo === 'limite' && confirm(e.message + '\n\nAbrir mais uma trilha assim mesmo?')) return fbConsEnviar(true, componente); toast(e.message, 'error'); }
 }
+// v3.238: PERFIL DO SISTEMA — componentes (front, retaguarda, API, app, cargas, integrações, IA) e a stack de cada um
+function _fbMetaBadges(m) { if (!m) return ''; const C = _fb.perfilCat?.componentes || {};
+  return ' <span class="fv2-pq">' + (m.componente ? (C[m.componente]?.icone || '') + ' ' + _fbEsc(C[m.componente]?.nome || m.componente) : '') + (m.papel ? ' · ' + _fbEsc(m.papel) : '') + ((m.depende_de || []).length ? ' · depende de ' + _fbEsc(m.depende_de.join(', ')) : '') + '</span>'; }
+function _fbPerfilHtml(C) {
+  const cat = _fb.perfilCat || {}; const pf = C.perfil || cat.perfil || { componentes: [] }; const comps = cat.componentes || {}, stacks = cat.stacks || {};
+  const tem = id => pf.componentes.find(c => c.id === id);
+  const travado = id => (C.fundacoes || []).some(f => f.componente === id && f.demanda);
+  return '<div class="fb-gate ' + (pf.definido ? 'ok' : 'pend') + '" style="margin-bottom:12px;"><div class="fb-gh">🧩 Perfil do sistema — que partes ele tem<span>' + (pf.definido ? pf.componentes.length + ' componente(s)' : 'defina para liberar a construção') + '</span></div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:6px;margin:6px 0;">' + Object.entries(comps).map(([id, c]) => { const x = tem(id);
+      return '<div style="border:1px solid ' + (x ? 'var(--blue)' : 'var(--bd)') + ';border-radius:7px;padding:6px 8px;"><label style="display:flex;gap:6px;align-items:center;font-size:11.5px;cursor:pointer;"><input type="checkbox" class="fbPfComp" value="' + id + '"' + (x ? ' checked' : '') + (travado(id) ? ' disabled title="fundação já enviada"' : '') + '> ' + c.icone + ' ' + _fbEsc(c.nome) + '</label>'
+        + '<select class="fsel fbPfStack" data-c="' + id + '" style="font-size:10px;margin-top:4px;width:100%;">' + (stacks[id] || []).map(st => '<option value="' + st.id + '"' + (x?.stack === st.id ? ' selected' : '') + '>' + _fbEsc(st.nome) + '</option>').join('') + '</select></div>'; }).join('') + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;"><label class="fb-lbl">Banco<select class="fsel" id="fbPfBanco">' + (cat.bancos || []).map(v => '<option' + (pf.banco === v ? ' selected' : '') + '>' + _fbEsc(v) + '</option>').join('') + '</select></label>'
+    + '<label class="fb-lbl">Acesso / login<select class="fsel" id="fbPfAuth">' + (cat.auth || []).map(v => '<option' + (pf.auth === v ? ' selected' : '') + '>' + _fbEsc(v) + '</option>').join('') + '</select></label></div>'
+    + '<label class="fb-lbl">Observações de arquitetura (opcional)<input id="fbPfObs" value="' + _fbEsc(pf.obs || '') + '" placeholder="ex.: o app funciona offline e sincroniza; cargas diárias do SAP às 6h"></label>'
+    + '<div style="display:flex;gap:6px;margin-top:6px;"><button class="btn btn-gn" style="font-size:10.5px;" onclick="fbPerfilSalvar()">💾 Salvar perfil</button><button class="btn btn-g" style="font-size:10.5px;" id="fbPfSug" onclick="fbPerfilSugerir()">✨ IA sugere pela especificação</button></div>'
+    + '<div class="fv2-pq" style="margin-top:4px;">O perfil entra na ERF/ERT, na arquitetura, no banco (DDL), no backlog (por papel: front, back, app, cargas, QA, DevOps), nos planos de teste, no guia de implantação e no que o Claude recebe para construir — cada componente com sua fundação, testes e CI.</div></div>';
+}
+function _fbPerfilLer() { return { componentes: [...document.querySelectorAll('.fbPfComp:checked')].map(i => ({ id: i.value, stack: document.querySelector('.fbPfStack[data-c="' + i.value + '"]')?.value })),
+  banco: document.getElementById('fbPfBanco')?.value, auth: document.getElementById('fbPfAuth')?.value, obs: document.getElementById('fbPfObs')?.value || '' }; }
+async function fbPerfilSalvar(pf) { try { await fbApi('perfil_salvar', { projeto_id: _fb.pid, perfil: pf || _fbPerfilLer() }); toast('Perfil do sistema salvo', 'success'); fbIrAba('construcao'); } catch (e) { toast(e.message, 'error'); } }
+async function fbPerfilSugerir() { const b = document.getElementById('fbPfSug'); if (b) { b.disabled = true; b.textContent = 'Lendo a especificação…'; }
+  try { const r = await fbApi('perfil_sugerir', { projeto_id: _fb.pid }); const C = _fb.perfilCat?.componentes || {};
+    if (confirm('A IA sugere:\n\n' + r.perfil.componentes.map(c => '• ' + (C[c.id]?.nome || c.id) + ' — ' + c.stack + (c.obs ? ' (' + c.obs + ')' : '')).join('\n') + '\n\nBanco: ' + r.perfil.banco + ' · Acesso: ' + r.perfil.auth + '\n\nAplicar?')) await fbPerfilSalvar(r.perfil); }
+  catch (e) { toast(e.message, 'error'); } finally { if (b) { b.disabled = false; b.textContent = '✨ IA sugere pela especificação'; } } }
 async function fbConsItem(id, forcar, forcarPar) {
   const it = _fb.cons.itens.find(i => i.id === id); if (!it) return;
   if (!forcar && !forcarPar && !confirm('Mandar o item ' + it.codigo + ' para o Claude construir?\n\nOs critérios de aceite vêm do item e dos casos de teste ligados a ele.')) return;
@@ -29935,7 +30024,7 @@ function _fbKanban() {
     + '<div class="fb-board">' + C.map(([k, n]) => { const L = I.filter(i => i.coluna === k);
       return '<div class="qp-col fb-col fb-c-' + k + '" ondragover="event.preventDefault();this.classList.add(\'fb-drop\')" ondragleave="this.classList.remove(\'fb-drop\')" ondrop="fbSoltar(event,\'' + k + '\',this)"><div class="qp-colh">' + n + ' <span>' + L.length + '</span></div>'
         + (L.length ? L.map(i => { const c = i.casos || {};
-          return '<div class="qp-card fb-card" draggable="true" ondragstart="event.dataTransfer.setData(\'text/plain\',\'' + i.id + '\')" onclick="fbItemForm(\'' + i.id + '\')"><div class="fb-cc"><b>' + _fbEsc(i.codigo) + '</b><span class="fb-pr" style="--c:' + (FB_PR[i.prioridade] || 'var(--t3)') + '">' + _fbEsc(i.prioridade) + '</span></div><div class="qp-cn" style="font-size:11.5px;">' + _fbEsc(i.titulo) + '</div>'
+          return '<div class="qp-card fb-card" draggable="true" ondragstart="event.dataTransfer.setData(\'text/plain\',\'' + i.id + '\')" onclick="fbItemForm(\'' + i.id + '\')"><div class="fb-cc"><b>' + _fbEsc(i.codigo) + '</b><span class="fb-pr" style="--c:' + (FB_PR[i.prioridade] || 'var(--t3)') + '">' + _fbEsc(i.prioridade) + '</span></div><div class="qp-cn" style="font-size:11.5px;">' + _fbEsc(i.titulo) + (i.meta ? '<div style="font-size:9.5px;margin-top:2px;">' + _fbMetaBadges(i.meta) + '</div>' : '') + '</div>'
             + '<div class="qp-cm">' + (i.requisito_ref ? _fbEsc(i.requisito_ref) + ' · ' : '') + (i.estimativa_h != null ? i.estimativa_h + ' h' : '') + (i.responsavel ? ' · ' + _fbEsc(i.responsavel) : '') + '</div>'
             + ((c.passou || c.falhou || c.nao_executado || c.bloqueado) ? '<div class="qp-tags">' + (c.passou ? '<span style="--c:var(--fv2-ok)">✔ ' + c.passou + '</span>' : '') + (c.falhou ? '<span style="--c:var(--fv2-crit)">✖ ' + c.falhou + '</span>' : '') + (c.bloqueado ? '<span style="--c:var(--fv2-warn)">⏸ ' + c.bloqueado + '</span>' : '') + (c.nao_executado ? '<span style="--c:var(--t3)">○ ' + c.nao_executado + '</span>' : '') + '</div>' : '')
             + (i.nota ? '<div class="fv2-pq" style="margin-top:4px;">ℹ ' + _fbEsc(i.nota) + '</div>' : '') + '</div>'; }).join('') : '<div class="qp-vazio">—</div>') + '</div>'; }).join('') + '</div>';
@@ -30723,11 +30812,76 @@ function vencDashRender() {
       d.ja_pagas.length ? `<div style="font-size:10px;color:var(--t3);margin-top:5px;">+ ${d.ja_pagas.length} conta(s) a pagar vencida(s) (${_fnRc(d.ja_pagas.reduce((a, x) => a + x.valor, 0))}) já aparecem pagas no extrato — falta ligar o pagamento no QuickBooks: ${d.ja_pagas.map(x => _fnE(x.contraparte) + ' (' + dt(x.vencimento) + ')').join(', ')}.</div>` : '');
   const m = document.getElementById('vencDashMeta'); if (m) m.textContent = 'atualizado às ' + new Date(_vd.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + (d.erro ? ' · ⚠ ' + d.erro : '');
 }
+// v3.238: aba Projetos do Dashboard — farol, avanço × planejado, desvio, próximo marco e atualização do status report
+let _dpj = { d: null, em: 0 };
+async function dashProjCarregar(forcar) {
+  const c = document.getElementById('dpjCorpo'); if (!c) return;
+  if (!forcar && _dpj.d && Date.now() - _dpj.em < 300000) return dashProjRender();
+  if (!_dpj.d) c.innerHTML = '<div class="fv2-load">Lendo os projetos…</div>';
+  try { _dpj.d = await pmoApi('painel_mestre'); _dpj.em = Date.now(); dashProjRender(); }
+  catch (e) { c.innerHTML = '<div class="fv2-erro">Não consegui ler os projetos: ' + _dsE(e.message) + '</div>'; }
+}
+function dashProjRender() {
+  const c = document.getElementById('dpjCorpo'), d = _dpj.d; if (!c || !d) return;
+  const r = d.resumo || {}, L = d.painel || [];
+  const ico = f => f === 'verde' ? '🟢' : f === 'amarelo' ? '🟡' : f === 'vermelho' ? '🔴' : '⚪';
+  const ordem = { vermelho: 0, amarelo: 1, '': 2, verde: 3 };
+  const lista = [...L].sort((x, y) => (ordem[x.farol || ''] ?? 2) - (ordem[y.farol || ''] ?? 2));
+  const bad = document.getElementById('dashBadgeProj'); if (bad) bad.textContent = (r.vermelho || 0) ? String(r.vermelho) : '';
+  const m = document.getElementById('dpjMeta'); if (m) m.textContent = (r.total || L.length) + ' projeto(s) · ' + (r.atualizados_na_semana ?? 0) + ' com report na semana';
+  const kpi = (rot, v, cor) => '<div style="flex:1;min-width:110px;background:var(--bg4);border-radius:8px;padding:9px 11px;"><div style="font-size:9.5px;color:var(--t3);text-transform:uppercase;font-family:var(--M);">' + rot + '</div><div style="font-size:20px;font-weight:700;color:' + cor + ';">' + v + '</div></div>';
+  c.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">' + kpi('No prazo', r.verde ?? 0, 'var(--green,#22d3a3)') + kpi('Atenção', r.amarelo ?? 0, 'var(--gold)') + kpi('Crítico', r.vermelho ?? 0, 'var(--red)') + kpi('Com bloqueio', r.com_bloqueio ?? 0, 'var(--red)') + kpi('Sem report na semana', (r.pendentes_de_atualizacao || []).length, 'var(--gold)') + '</div>'
+    + (d.aviso ? '<div style="font-size:10.5px;color:var(--gold);margin-bottom:8px;">⚠ ' + _dsE(d.aviso) + '</div>' : '')
+    + (lista.length ? '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:760px;"><thead><tr style="border-bottom:1px solid var(--bd);">'
+      + ['Projeto', 'Gerente', 'Farol', 'Avanço / planejado', 'Desvio', 'Próximo marco', 'Último report'].map(h => '<th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">' + h.toUpperCase() + '</th>').join('') + '</tr></thead><tbody>'
+      + lista.map(l => { const sust = l.tipo === 'sustentacao'; const pm = (l.marcos_proximos || [])[0];
+        const pmTxt = pm ? (typeof pm === 'string' ? pm : (pm.descricao || pm.desc || (pm.data ? String(pm.data).split('-').reverse().join('/') : '—'))) : '—';
+        const av = sust ? (l.sla_cumprido_pct != null ? 'SLA ' + l.sla_cumprido_pct + '%' : '—') : (l.pct_concluido != null ? l.pct_concluido + '%' : '—') + (!sust && l.pct_planejado != null ? ' / ' + l.pct_planejado + '%' : '');
+        const dv = l.desvio_pct != null ? '<span style="color:' + (l.desvio_pct < -5 ? 'var(--red)' : l.desvio_pct < 0 ? 'var(--gold)' : 'var(--green,#22d3a3)') + ';">' + (l.desvio_pct > 0 ? '+' : '') + l.desvio_pct + 'pp</span>' : '—';
+        const rep = l.dias_sem_report != null ? (l.dias_sem_report === 0 ? 'hoje' : l.dias_sem_report + ' dia(s)') : (l.atualizado_na_semana ? 'nesta semana' : 'sem report');
+        return '<tr style="border-bottom:1px solid var(--bd);"><td style="padding:6px;font-weight:600;">' + _dsE(l.projeto) + (sust ? ' <span style="font-size:9px;color:var(--t3);">sustentação</span>' : '') + (l.bloqueios || l.com_bloqueio ? ' <span title="bloqueio aberto">⛔</span>' : '') + '</td>'
+          + '<td style="padding:6px;color:var(--t2);">' + _dsE(l.gerente || '—') + '</td><td style="padding:6px;white-space:nowrap;">' + ico(l.farol) + ' ' + _dsE(l.farol || 'sem report') + '</td>'
+          + '<td style="padding:6px;font-family:var(--M);">' + av + '</td><td style="padding:6px;font-family:var(--M);">' + dv + '</td>'
+          + '<td style="padding:6px;color:var(--t2);font-size:10.5px;">' + _dsE(pmTxt) + '</td><td style="padding:6px;color:' + (l.atualizado_na_semana ? 'var(--t2)' : 'var(--gold)') + ';font-size:10.5px;">' + _dsE(rep) + '</td></tr>'; }).join('')
+      + '</tbody></table></div>' : '<div style="color:var(--t3);font-size:11px;">Nenhum projeto cadastrado no PMO.</div>');
+}
+// v3.238: aba RFPs do Dashboard — editais aderentes da última varredura, ordenados por prazo, com aderência e link
+let _drf = { d: null, em: 0 };
+async function dashRfpCarregar(forcar) {
+  const c = document.getElementById('drfCorpo'); if (!c) return;
+  if (!forcar && _drf.d && Date.now() - _drf.em < 300000) return dashRfpRender();
+  if (!_drf.d) c.innerHTML = '<div class="fv2-load">Lendo a última varredura de editais…</div>';
+  try { const r = await fetch('/api/rfp-monitor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ somente_cache: true }) });
+    _drf.d = await r.json().catch(() => ({})); _drf.em = Date.now(); dashRfpRender(); }
+  catch (e) { c.innerHTML = '<div class="fv2-erro">Não consegui ler os editais: ' + _dsE(e.message) + '</div>'; }
+}
+function dashRfpRender() {
+  const c = document.getElementById('drfCorpo'), d = _drf.d; if (!c || !d) return;
+  const L = (Array.isArray(d.rfps) ? d.rfps : []).slice().sort((a, b) => String(a.prazo_iso || '9999').localeCompare(String(b.prazo_iso || '9999')));
+  const hoje = Date.now(), dias = iso => iso ? Math.ceil((Date.parse(iso) - hoje) / 864e5) : null;
+  const abertos = L.filter(x => { const n = dias(x.prazo_iso); return n == null || n >= 0; });
+  const urg = abertos.filter(x => { const n = dias(x.prazo_iso); return n != null && n <= 7; });
+  const bad = document.getElementById('dashBadgeRfp'); if (bad) bad.textContent = urg.length ? String(urg.length) : '';
+  const m = document.getElementById('drfMeta'); if (m) m.textContent = abertos.length + ' aberto(s)' + (d.data_consulta ? ' · varredura de ' + d.data_consulta : '') + (urg.length ? ' · ' + urg.length + ' com prazo em até 7 dias' : '');
+  const valor = abertos.reduce((s, x) => s + (Number(x.valor_num) || 0), 0);
+  const kpi = (rot, v, cor) => '<div style="flex:1;min-width:120px;background:var(--bg4);border-radius:8px;padding:9px 11px;"><div style="font-size:9.5px;color:var(--t3);text-transform:uppercase;font-family:var(--M);">' + rot + '</div><div style="font-size:18px;font-weight:700;color:' + cor + ';">' + v + '</div></div>';
+  c.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">' + kpi('Editais abertos', abertos.length, 'var(--blue)') + kpi('Prazo em até 7 dias', urg.length, urg.length ? 'var(--red)' : 'var(--t2)') + kpi('Aderência ≥ 75%', abertos.filter(x => (x.compatibilidade || 0) >= 75).length, 'var(--green,#22d3a3)') + kpi('Valor estimado', valor ? fmtBRLcompleto(valor) : '—', 'var(--gold)') + '</div>'
+    + (abertos.length ? abertos.map(x => { const n = dias(x.prazo_iso); const cor = n == null ? 'var(--t3)' : n <= 3 ? 'var(--red)' : n <= 7 ? 'var(--gold)' : 'var(--t2)';
+        const link = x.link_acesso || x.link_pncp || x.link_origem;
+        return '<div style="border:1px solid var(--bd);border-left:3px solid ' + ((x.compatibilidade || 0) >= 75 ? 'var(--green,#22d3a3)' : 'var(--bd2)') + ';border-radius:8px;padding:8px 11px;margin-bottom:7px;">'
+          + '<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;"><b style="font-size:11.5px;">' + _dsE(x.titulo) + '</b><span style="margin-left:auto;font-family:var(--M);font-size:10px;color:' + cor + ';">' + (n == null ? 'prazo não informado' : n === 0 ? 'vence hoje' : 'faltam ' + n + ' dia(s)') + '</span></div>'
+          + '<div style="font-size:10.5px;color:var(--t2);margin-top:2px;">' + _dsE(x.empresa) + (x.uf ? ' · ' + _dsE(x.uf) : '') + ' · ' + _dsE(x.modalidade || '') + ' · ' + _dsE(x.valor || '') + ' · aderência <b>' + (x.compatibilidade ?? '—') + '%</b>' + (x.fonte ? ' · ' + _dsE(x.fonte) : '') + '</div>'
+          + (x.justificativa ? '<div style="font-size:10.5px;margin-top:3px;">' + _dsE(String(x.justificativa).substring(0, 240)) + '</div>' : '')
+          + (link && /^https?:/.test(link) ? '<a href="' + _dsE(link) + '" target="_blank" rel="noopener" style="font-size:10px;">abrir edital ↗</a>' : '') + '</div>'; }).join('')
+      : '<div style="color:var(--t3);font-size:11px;">' + (d.aviso ? _dsE(d.aviso) : 'Nenhum edital aberto na última varredura.') + ' Rode uma varredura no Monitor de RFPs.</div>');
+}
 function dashAba(a) {
   document.querySelectorAll('#dashAbas .fv2-aba').forEach(b => b.classList.toggle('on', b.dataset.aba === a));
   document.querySelectorAll('#page-dash .dash-aba').forEach(sct => sct.style.display = sct.dataset.aba === a ? '' : 'none');
   try { localStorage.setItem('atx_dash_aba', a); } catch (_) {}
   if (a === 'financeiro') vencDashCarregar();
+  if (a === 'projetos') dashProjCarregar();
+  if (a === 'rfps') dashRfpCarregar();
   if ((a === 'vendas' || a === 'pendencias') && !_fn.dados && !_fn.carregando) funilCarregar();
   else if (a === 'vendas' || a === 'pendencias') { funilRender(); pendRender(); }
 }
@@ -34089,7 +34243,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.237] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.238] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -34105,7 +34259,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.237';
+window.__ATX_BUILD_ID__ = 'ATX-v3.238';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

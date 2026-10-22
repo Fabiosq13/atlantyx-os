@@ -83,6 +83,18 @@ jobs:
                 return 1
               fi
             fi
+            # v3.238: PR de produto da Esteira (produtos/**) → testes e build de cada componente alterado antes de mesclar
+            local ARQS; ARQS=$(git diff --name-only origin/main...HEAD 2>/dev/null || true)
+            local SO_PROD=0; if [ -n "$ARQS" ] && ! echo "$ARQS" | grep -qv '^produtos/'; then SO_PROD=1; fi
+            if echo "$ARQS" | grep -q '^produtos/' && git show origin/main:scripts/produto-ci.mjs > /tmp/produto-ci.mjs 2>/dev/null; then
+              if ! node /tmp/produto-ci.mjs --base origin/main --resumo /tmp/prodci.md > /tmp/prodci.log 2>&1; then
+                git checkout -q main
+                gh pr edit "$PR" -R "$REPO" --add-label precisa-revisao --remove-label aprovado-merge || true
+                { echo "❌ CI do produto reprovada — o PR NÃO foi mesclado."; echo; cat /tmp/prodci.md 2>/dev/null || tail -40 /tmp/prodci.log; echo; echo "Peça a correção ao Claude na própria trilha (\"🛠 Pedir correção ao Claude\" na Esteira)."; } > /tmp/falha.md
+                gh pr comment "$PR" -R "$REPO" --body-file /tmp/falha.md || true
+                return 1
+              fi
+            fi
             if ! ATX_RAIZ=. node .validar-main.mjs > /tmp/val.txt 2>&1; then
               git checkout -q main
               gh pr edit "$PR" -R "$REPO" --add-label precisa-revisao --remove-label aprovado-merge || true
@@ -93,6 +105,11 @@ jobs:
             git push -q origin "HEAD:$BR" || { git checkout -q main; return 1; }
             gh pr edit "$PR" -R "$REPO" --remove-label conflito >/dev/null 2>&1 || true
             if ! gh pr merge "$PR" -R "$REPO" --merge --delete-branch; then git checkout -q main; return 1; fi
+            # v3.238: PR só de produto (produtos/**) não muda a versão do Atlantyx OS
+            if [ "$SO_PROD" = "1" ]; then
+              [ -n "$N" ] && gh issue comment "$N" -R "$REPO" --body "✅ $TIPO: PR #$PR do produto validado (CI do produto) e mesclado." || true
+              git checkout -q main; git reset -q --hard origin/main; return 0
+            fi
             # sobe a versão na main (os PRs não mexem mais nela — é o que evitava os conflitos)
             git fetch -q origin main && git checkout -q -B _versao origin/main
             local V; V=$(grep -o "ATX-v[0-9]*\.[0-9]*" public/index.html | head -1 | sed 's/ATX-v//')
