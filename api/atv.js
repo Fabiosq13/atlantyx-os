@@ -129,6 +129,8 @@ async function noticias(forcar) {
   const c = await kv('atv:noticias');
   if (!forcar && c) { const sp = new Date(Date.now() - 3 * 3600000), h = sp.getUTCHours(), dia = sp.getUTCDay();
     if (Date.now() - Date.parse(c.em) < 4 * 3600000 || dia === 0 || dia === 6 || h < 6 || h > 18) return c; }
+  // v3.253: várias TVs/abas pedindo ao mesmo tempo não disparam várias buscas com IA — uma só, as outras usam a última
+  if (c) { const tr = await kv('atv:noticias_trava'); if (tr && Date.now() - Date.parse(tr.em) < 3 * 60000) return c; await kv('atv:noticias_trava', { em: new Date().toISOString() }); }
   const cfg = await config(), hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   try {
     const t = await claude(`Você é o editor da ${cfg.nome}, canal corporativo da Atlantyx (empresa brasileira de IA, dados e analytics). Use a busca na web para achar as notícias MAIS RECENTES (últimas 24-48 h, hoje é ${hoje}) e escreva manchetes curtas em português do Brasil.
@@ -146,10 +148,10 @@ async function chamadasGerar() {
   const cfg = await config(), P = cfg.playlist || [], alvo = P.filter(x => x.tipo === 'video' && !x.chamada);
   if (!alvo.length) return { geradas: 0 };
   let res = {};
-  try { const t = await claude(`Você escreve as chamadas da vinheta da ${cfg.nome} (canal da Atlantyx). Para cada vídeo, uma chamada de até 130 caracteres, em português, que dê vontade de assistir, sem exagero e sem inventar fatos que o título não diz. Responda SOMENTE JSON {"chamadas":{"<id>":"texto"}}.`,
+  try { const t = await claude(`Você escreve as chamadas da vinheta da ${cfg.nome} (canal da Atlantyx). Para cada vídeo, uma chamada de até 130 caracteres, em português, que dê vontade de assistir, sem exagero e sem inventar fatos que o título não diz. Responda SOMENTE JSON {"chamadas":{"<id>":"texto"}}. A vinheta anuncia o que vem A SEGUIR: nunca escreva "assista agora" — use "assista em breve" ou equivalente.`,
       JSON.stringify(alvo.map(x => ({ id: x.id, titulo: x.titulo, subtitulo: x.subtitulo || '' }))), 1500); res = json(t).chamadas || {}; }
   catch (_) {}
-  cfg.playlist = P.map(x => alvo.find(a => a.id === x.id) ? { ...x, chamada: String(res[x.id] || x.subtitulo || 'Assista agora na ' + cfg.nome).substring(0, 160) } : x);
+  cfg.playlist = P.map(x => alvo.find(a => a.id === x.id) ? { ...x, chamada: String(res[x.id] || x.subtitulo || 'Assista em breve na ' + cfg.nome).substring(0, 160) } : x);
   await kv('atv:config', cfg); return { geradas: alvo.length, playlist: cfg.playlist };
 }
 
@@ -187,7 +189,7 @@ async function dadosPlayer(cfg) {
   const M = ids.length ? Object.fromEntries((await sql`SELECT id, content_type, partes FROM atv_midias WHERE id = ANY(${ids}) AND completo`).map(m => [m.id, m])) : {};
   let E = {}; try { if (envs.length) E = Object.fromEntries((await sql`SELECT id, content_type, partes FROM tend_envios WHERE id = ANY(${envs}) AND completo`).map(m => [m.id, m])); } catch (_) {}
   const playlist = P.map(x => {
-    const it = { id: x.id, tipo: 'video', titulo: x.titulo, subtitulo: x.subtitulo || '', chamada: x.chamada || '', categoria: x.categoria || '', dur: x.duracao_s || null };
+    const it = { id: x.id, tipo: 'video', titulo: x.titulo, subtitulo: x.subtitulo || '', chamada: String(x.chamada || '').replace(/assist(a|ir) agora/gi, 'Assista em breve'), categoria: x.categoria || '', dur: x.duracao_s || null };
     if (x.fonte === 'youtube' && /^[\w-]{11}$/.test(x.youtube_id || '')) return { ...it, youtube_id: x.youtube_id };
     if (x.fonte === 'upload' && M[x.midia_id]) return { ...it, partes: M[x.midia_id].partes, ct: M[x.midia_id].content_type, m: x.midia_id };
     if (x.envio_id && E[x.envio_id]) return { ...it, partes: E[x.envio_id].partes, ct: E[x.envio_id].content_type, e: x.envio_id };
@@ -203,7 +205,40 @@ async function parteBin(cfg, q, res) {
   if (q.m && P.some(x => x.midia_id === q.m)) r = (await sql`SELECT b64 FROM atv_partes WHERE midia_id=${q.m} AND i=${i}`)[0];
   else if (q.e && P.some(x => x.envio_id === q.e)) { try { r = (await sql`SELECT b64 FROM tend_envio_partes WHERE envio_id=${q.e} AND i=${i}`)[0]; } catch (_) {} }
   if (!r) return res.status(404).end();
-  const buf = Buffer.from(r.b64, 'base64'); res.setHeader('Content-Type', 'application/octet-stream'); res.setHeader('Cache-Control', 'private, max-age=86400'); res.setHeader('Content-Length', String(buf.length)); return res.status(200).send(buf);
+  const buf = Buffer.from(r.b64, 'base64'); res.setHeader('Content-Type', 'application/octet-stream'); res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=2592000, immutable'); // v3.253: CDN guarda — o banco não é lido a cada TV res.setHeader('Content-Length', String(buf.length)); return res.status(200).send(buf);
+}
+
+// v3.253: VÍDEO POR FAIXAS (HTTP Range) — antes o player baixava o vídeo INTEIRO em partes antes de tocar (e o próximo
+// junto, "pré-carregando"); com vídeos grandes a TV travava sem memória e, se uma parte falhava, recomeçava do zero a
+// cada 1,5 s: dezenas de leituras de 3 MB no banco por minuto, derrubando o site. Agora cada pedido lê 1 parte só.
+const _mapas = new Map(); // mapa de offsets por vídeo (memória da instância) — também guardado em kv
+async function videoStream(cfg, q, req, res) {
+  const P = cfg.playlist || [], m = String(q.m || ''), e = String(q.e || '');
+  let f;
+  if (m && P.some(x => x.midia_id === m)) f = { tipo: 'partes', tabela: 'atv', id: m };
+  else if (e && P.some(x => x.envio_id === e)) f = { tipo: 'partes', tabela: 'tend', id: e };
+  else return res.status(404).end();
+  const chave = f.tabela + ':' + f.id;
+  let info = _mapas.get(chave) || (await kv('atv:mapa:' + chave));
+  if (!info?.mapa?.length) {
+    const sql = await getSql();
+    const meta = f.tabela === 'atv' ? (await sql`SELECT content_type FROM atv_midias WHERE id=${f.id} AND completo`)[0] : (await sql`SELECT content_type FROM tend_envios WHERE id=${f.id} AND completo`)[0];
+    if (!meta) return res.status(404).end();
+    await ytLerFaixa(f, 0, 0); // monta f.mapa pelas partes reais
+    info = { mapa: f.mapa, ct: meta.content_type || 'video/mp4' }; await kv('atv:mapa:' + chave, info);
+  }
+  _mapas.set(chave, info); f.mapa = info.mapa;
+  const total = info.mapa.reduce((s, x) => s + x.tam, 0);
+  const rg = String(req.headers?.range || '').match(/bytes=(\d*)-(\d*)/);
+  let ini = rg && rg[1] !== '' ? parseInt(rg[1]) : 0;
+  if (rg && rg[1] === '' && rg[2]) ini = Math.max(0, total - parseInt(rg[2]));
+  if (!(ini >= 0 && ini < total)) { res.setHeader('Content-Range', `bytes */${total}`); return res.status(416).end(); }
+  const parte = info.mapa.find(x => x.ini <= ini && ini < x.ini + x.tam); // no máximo 1 parte por resposta (cabe no limite da Vercel)
+  let fim = parte.ini + parte.tam - 1; if (rg && rg[2] && rg[1] !== '') fim = Math.min(fim, parseInt(rg[2]));
+  const buf = await ytLerFaixa(f, ini, fim);
+  res.setHeader('Content-Type', info.ct); res.setHeader('Accept-Ranges', 'bytes'); res.setHeader('Content-Length', String(buf.length));
+  res.setHeader('Content-Range', `bytes ${ini}-${ini + buf.length - 1}/${total}`); res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=2592000, immutable');
+  return res.status(206).send(buf);
 }
 
 // ── webinars ──
@@ -412,8 +447,9 @@ async function publico(req, res, q) {
     return html(200, shell(w.titulo + ' · Atlantyx TV', { modo: q.sala ? 'sala' : 'convidado', tok, webinar: { titulo: w.titulo, inicio: w.inicio, status: w.status } }, true));
   }
   const cfg = await config(), cod = String(q.t || ''), valido = !!cfg.codigo && cod.length === cfg.codigo.length && crypto.timingSafeEqual(Buffer.from(cod), Buffer.from(cfg.codigo));
-  if (!valido) return q.dados || q.parte != null ? res.status(404).json({ success: false, error: 'Link da Atlantyx TV inválido ou revogado' }) : html(404, paginaErro('Este link da Atlantyx TV foi revogado ou não existe.'));
+  if (!valido) return q.dados || q.parte != null || q.video ? res.status(404).json({ success: false, error: 'Link da Atlantyx TV inválido ou revogado' }) : html(404, paginaErro('Este link da Atlantyx TV foi revogado ou não existe.'));
   if (q.parte != null) return parteBin(cfg, q, res);
+  if (q.video) return videoStream(cfg, q, req, res); // v3.253: o <video> toca direto, por faixas (Range), sem baixar o arquivo inteiro
   if (q.layout) { // template do Egress do webinar (e prévia no estúdio): conecta na sala com ?url=&token=
     const sql = await getSql(), w = (await sql`SELECT id, titulo, faixa, status FROM atv_webinars WHERE id=${String(q.layout)}`)[0]; if (!w) return html(404, paginaErro('Webinar não encontrado.'));
     if (q.dados) { const d = await dadosPlayer(cfg); return res.status(200).json({ success: true, dados: { ...d, playlist: [], webinar: { titulo: w.titulo, faixa: w.faixa, status: w.status } } }); }

@@ -126,8 +126,7 @@
     if (GRADE()) { var o = [], ac = t0 + durDe(it) * 1000; for (var j = 1; j < SEQ.length * 2 && o.length < 4; j++) { var x = SEQ[(idx + j) % SEQ.length]; if (x.tipo === 'video' || x.tipo === 'mercado' || x.tipo === 'noticias') o.push({ x: x, h: ac }); ac += durDe(x) * 1000; }
       $('segT').textContent = 'A SEGUIR · GRADE'; $('seg').innerHTML = o.map(function (y) { return '<div class="seg"><i style="min-width:3.6vw">' + hhmm(y.h) + '</i><span>' + esc(y.x.titulo) + '</span></div>'; }).join(''); }
     else $('seg').innerHTML = proximos(4).map(function (x, i) { return '<div class="seg"><i>' + (i + 1) + '</i><span>' + esc(x.titulo) + '</span></div>'; }).join('');
-    try { ({ video: tVideo, vinheta: tVinheta, mercado: tMercado, noticias: tNoticias, produto: tProduto })[it.tipo](it); } catch (e) { seguir(2000); }
-    prefetch();
+    try { ({ video: tVideo, vinheta: tVinheta, mercado: tMercado, noticias: tNoticias, produto: tProduto })[it.tipo](it); } catch (e) { falhou(it); }
   }
   function botaoSom() { if (som || C.transmissao) return ''; return '<div class="somp" id="somp">🔇 toque para ligar o som</div>'; }
   document.addEventListener('click', function () { if (MODO !== 'tv' || som) return; som = true; var v = $('tela').querySelector('video'); if (v) { v.muted = false; v.play().catch(function () {}); } if (window._yt) try { _yt.unMute(); } catch (_) {} var b = $('somp'); if (b) b.remove();
@@ -140,26 +139,40 @@
     var ks = Object.keys(cache); if (ks.length > 3) { var velho = ks[0]; Promise.resolve(cache[velho]).then(function (u) { try { URL.revokeObjectURL(u); } catch (_) {} }); delete cache[velho]; }
     return cache[k];
   }
+  // v3.253: vídeo com falha não é tentado de novo na hora (antes: nova tentativa a cada 1,5 s, baixando tudo de novo e
+  // derrubando o site). Fica 15 min de castigo; no lugar entra o quadro de mercados até o próximo item.
+  var falhas = {}, errosSeguidos = 0;
+  function chaveIt(it) { return it.m || it.e || it.youtube_id || it.url || it.id; }
+  function emCastigo(it) { var t = falhas[chaveIt(it)]; return t && Date.now() - t < 15 * 60000; }
+  function falhou(it) { if (it && it.tipo === 'video') falhas[chaveIt(it)] = Date.now(); errosSeguidos++;
+    var espera = Math.min(120, 5 * Math.pow(2, Math.min(errosSeguidos, 5))); // 10 s, 20 s, 40 s… até 2 min
+    if (SEQ[idx] === it) { limpar(); dentro0 = 0; tMercado({ dur: espera }); } else seguir(espera * 1000); }
   function prefetch() { for (var j = 1; j < 4; j++) { var x = SEQ[(idx + j) % SEQ.length]; if (x && x.tipo === 'video' && x.partes) { blobDe(x).catch(function () {}); break; } } }
+  function srcStream(it) { return '/api/atv?t=' + encodeURIComponent(C.cod) + '&video=1' + (it.m ? '&m=' + encodeURIComponent(it.m) : '&e=' + encodeURIComponent(it.e)); }
   function tVideo(it) {
+    if (emCastigo(it)) { limpar(); dentro0 = 0; return tMercado({ dur: Math.min(durDe(it), 60) }); }
     faixa(it.titulo, it.subtitulo || it.chamada); setTimeout(function () { if (SEQ[idx] === it) $('lt').className = 'lt'; }, 9000);
     if (it.youtube_id) return tYoutube(it);
     var t = $('tela'); t.innerHTML = '<div class="msg">Carregando o vídeo…</div>' + botaoSom();
     var tocarSrc = function (src) { if (SEQ[idx] !== it) return; var v = document.createElement('video'); v.autoplay = true; v.playsInline = true; v.muted = !som; v.src = src;
       var off = GRADE() ? (agora() - t0) / 1000 : 0; if (GRADE() && it.dur && off >= it.dur - 1) return proxima();
       if (off > 1) v.addEventListener('loadedmetadata', function () { try { if (!v.duration || off < v.duration - 1) v.currentTime = off; } catch (_) {} }, { once: true });
-      v.onended = function () { proxima(); }; v.onerror = function () { seguir(1500); };
+      v.onended = function () { errosSeguidos = 0; proxima(); }; v.onerror = function () { falhou(it); }; v.onplaying = function () { errosSeguidos = 0; };
+      // sem começar a tocar em 45 s (rede lenta, arquivo com problema): pula, sem travar a tela
+      var guarda = setTimeout(function () { if (SEQ[idx] === it && v.readyState < 3 && v.currentTime < 0.5) falhou(it); }, 45000); v.addEventListener('playing', function () { clearTimeout(guarda); }, { once: true });
       t.innerHTML = botaoSom(); t.insertBefore(v, t.firstChild); v.play().catch(function () { v.muted = true; v.play().catch(function () { seguir(2000); }); });
       seguir(GRADE() && it.dur ? (it.dur - off) * 1000 + 800 : 3 * 3600000); };
     if (it.url) return tocarSrc(it.url);
-    blobDe(it).then(tocarSrc).catch(function () { seguir(1500); });
+    if (it.partes) return tocarSrc(srcStream(it)); // v3.253: toca por faixas direto do servidor (nada de baixar o arquivo inteiro)
+    falhou(it);
   }
   function carregarYT() { if (ytPronto) return ytPronto; ytPronto = new Promise(function (ok) { window.onYouTubeIframeAPIReady = ok; var s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s); setTimeout(ok, 8000); }); return ytPronto; }
   function tYoutube(it) {
+    try { if (window._yt && _yt.destroy) _yt.destroy(); } catch (_) {} window._yt = null;
     $('tela').innerHTML = '<div id="ytp"></div>' + botaoSom();
     carregarYT().then(function () { if (SEQ[idx] !== it || !window.YT || !YT.Player) return seguir(1000);
       window._yt = new YT.Player('ytp', { videoId: it.youtube_id, playerVars: { autoplay: 1, mute: som ? 0 : 1, controls: 0, rel: 0, modestbranding: 1, playsinline: 1, iv_load_policy: 3, start: GRADE() ? Math.floor((agora() - t0) / 1000) : 0 },
-        events: { onReady: function (e) { if (som) e.target.unMute(); e.target.playVideo(); }, onStateChange: function (e) { if (e.data === 0) proxima(); }, onError: function () { seguir(1500); } } });
+        events: { onReady: function (e) { if (som) e.target.unMute(); e.target.playVideo(); }, onStateChange: function (e) { if (e.data === 1) errosSeguidos = 0; if (e.data === 0) proxima(); }, onError: function () { falhou(it); } } });
       seguir(GRADE() && it.dur ? (it.dur - (agora() - t0) / 1000) * 1000 + 800 : 3 * 3600000); });
   }
   function jingle() { if (!som) return; try { var A = new (window.AudioContext || window.webkitAudioContext)(), t0 = A.currentTime + .05, g = A.createGain(); g.gain.value = .0001; g.connect(A.destination);
