@@ -1,5 +1,6 @@
 import { comGuarda } from '../lib/qa-guard.js';
 import { RE_CONTEUDO_FORA_ICP } from '../lib/icp.js';
+import { META_CARGOS, classificarCargo as _clsCargo } from '../lib/icp.js';
 import { ICP_TEXTO, ICP_VERSAO, META_IDADE_MIN, META_IDADE_MAX, META_INTERESSES, META_COMPORT, META_SETOR, META_EXCLUIR } from '../lib/icp.js';
 // api/metricool.js
 // Integração Metricool — publicação automática + métricas de redes sociais
@@ -312,14 +313,16 @@ const _B2B_INTERESSES = META_INTERESSES;
 const _KV_PB = 'mkt:meta:publico_b2b:' + ICP_VERSAO, _KV_DEC = 'mkt:meta:publico_decisores:' + ICP_VERSAO; // chave nova = cache antigo (com público técnico) não vale mais
 async function _publicoB2B() {
   const ck = await _kvMc(_KV_PB).catch(() => null);
-  if (ck && ck.em && Date.now() - ck.em < 30 * 864e5 && (ck.cidades || []).length) return ck;
-  const cidades = [], interesses = [];
+  if (ck && ck.em && Date.now() - ck.em < 30 * 864e5 && (ck.cidades || []).length && Array.isArray(ck.cargos)) return ck;
+  const cidades = [], interesses = [], cargos = [];
   for (const nome of _B2B_CIDADES) { try { const r = await _meta(`search?type=adgeolocation&location_types=${encodeURIComponent('["city"]')}&country_code=BR&limit=3&q=${encodeURIComponent(nome)}`);
     const x = (r.data || []).find(d => d.country_code === 'BR' && d.type === 'city'); if (x) cidades.push({ key: String(x.key), radius: 40, distance_unit: 'kilometer', nome: x.name }); } catch (_) {} }
   const _n = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
-  for (const q of _B2B_INTERESSES) { try { const r = await _meta(`search?type=adinterest&limit=5&q=${encodeURIComponent(q)}`); const x = (r.data || []).find(d => _n(d.name) === _n(q)) || (r.data || []).find(d => _n(d.name).startsWith(_n(q)));
-    if (x && !interesses.some(i => i.id === String(x.id))) interesses.push({ id: String(x.id), name: x.name }); } catch (_) {} }
-  const v = { cidades, interesses, em: Date.now() }; if (cidades.length) await _kvMc(_KV_PB, v).catch(() => {}); return v;
+  // v3.236: CARGO ATUAL (work_positions) no lugar de interesse — só títulos que são de dono/C-level/diretor
+  for (const q of META_CARGOS) { try { const r = await _meta(`search?type=adworkposition&limit=10&q=${encodeURIComponent(q)}`);
+    (r.data || []).filter(d => _n(d.name) === _n(q) || (_n(d.name).startsWith(_n(q)) && _clsCargo(d.name) === 'decisor')).filter(d => _clsCargo(d.name) === 'decisor').slice(0, 3)
+      .forEach(x => { if (!cargos.some(i => i.id === String(x.id))) cargos.push({ id: String(x.id), name: x.name }); }); } catch (_) {} }
+  const v = { cidades, interesses, cargos, em: Date.now() }; if (cidades.length) await _kvMc(_KV_PB, v).catch(() => {}); return v;
 }
 // v3.214: CAMADA DE DECISOR + EXCLUSÕES. Interesse sozinho ("Business intelligence", "Gestão") pega estudante,
 // curioso e quem procura emprego. Agora o público é INTERESSE DO TEMA **E** (comportamento de dono/administrador de
@@ -365,7 +368,7 @@ async function patrocinadoCriar(p = {}, req) {
   let link = _linkPago(base, nome);
   if (p.link && /^https:\/\//.test(String(p.link).trim())) { try { const u = new URL(String(p.link).trim()); if (!u.searchParams.get('utm_source')) { const ref = new URL(link); ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].forEach(k => u.searchParams.set(k, ref.searchParams.get(k))); } link = u.toString(); } catch (_) {} }
   const kit = { nome, objetivo: 'Tráfego (cliques no link)', posicionamentos: 'Instagram — Feed e Explorar', botao: 'Saiba mais', link, texto, titulo, descricao, imagem,
-    orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, publico: `ICP C-level — donos, sócios, C-levels e diretores · capitais de negócio · ${idMin} a ${idMax} anos · interesses de cargo executivo E camada de decisor · exclui emprego, estudo e público técnico`, icp_versao: ICP_VERSAO };
+    orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, publico: `Quem OCUPA o cargo: donos, sócios e C-levels (cargo atual no perfil) · capitais de negócio · ${idMin} a ${idMax} anos · sem direcionamento por interesse`, icp_versao: ICP_VERSAO };
   const c = _metaCfg();
   if (!(c.token && c.conta && c.pagina && c.ig) || p.so_kit) return { modo: 'kit', kit };
   // 1. campanha · 2. conjunto · 3. imagem · 4. criativo (Saiba mais) · 5. anúncio — tudo PAUSADO
@@ -377,14 +380,19 @@ async function patrocinadoCriar(p = {}, req) {
     // o substituto no erro — troca pelo alternativo, grava no cache e tenta de novo (até 2 vezes)
     const pb = amplo ? null : await _publicoB2B().catch(() => ({ cidades: [], interesses: [] }));
     let dec = amplo ? null : await _publicoDecisores().catch(() => null); // v3.214
-    const _camadaDec = () => dec && (dec.comportamentos.length || dec.setores.length) ? [{ ...(dec.comportamentos.length ? { behaviors: dec.comportamentos.map(({ id, name }) => ({ id, name })) } : {}), ...(dec.setores.length ? { industries: dec.setores.map(({ id, name }) => ({ id, name })) } : {}) }] : [];
+    // v3.236: o filtro é o CARGO que a pessoa ocupa (work_positions). Sem cargo resolvido, o setor de atuação em gestão
+    // (industries = área em que a pessoa trabalha). Interesse nunca — interesse alcança quem só se interessa pelo tema.
+    const _camadaDec = () => pb?.cargos?.length ? [{ work_positions: pb.cargos.map(({ id, name }) => ({ id, name })) }]
+      : (dec?.setores?.length ? [{ industries: dec.setores.map(({ id, name }) => ({ id, name })) }] : []);
     const _alvo = () => ({ ...(amplo ? { geo_locations: { countries: ['BR'] } } : {
         geo_locations: pb.cidades.length ? { cities: pb.cidades.map(({ key, radius, distance_unit }) => ({ key, radius, distance_unit })), location_types: ['home', 'recent'] } : { countries: ['BR'] },
-        ...((pb.interesses.length || _camadaDec().length) ? { flexible_spec: [...(pb.interesses.length ? [{ interests: pb.interesses.map(({ id, name }) => ({ id, name })) }] : []), ..._camadaDec()] } : {}),
+        ...(_camadaDec().length ? { flexible_spec: _camadaDec() } : {}),
         ...(dec?.excluir?.length ? { exclusions: { interests: dec.excluir.map(({ id, name }) => ({ id, name })) } } : {}) }),
       // v3.214: só FEED e EXPLORAR — Stories e Reels geram curtida/seguidor de quem não é decisor
       age_min: idMin, age_max: idMax, publisher_platforms: ['instagram'], instagram_positions: ['stream', 'explore'],
       targeting_automation: { advantage_audience: 0 } }); // v3.174: o Meta exige o sinalizador (0 = respeita idade/local escolhidos)
+    // v3.236: nunca cria conjunto sem filtro de cargo/área — sem ele o Meta entrega para qualquer pessoa
+    if (!amplo && !_camadaDec().length) throw err('Não consegui montar o filtro de cargo (donos/C-levels) no Meta agora — nada foi criado. Tente de novo em alguns minutos.');
     let adset = null;
     for (let tentativa = 0; tentativa < 3 && !adset; tentativa++) {
       try {
@@ -396,6 +404,8 @@ async function patrocinadoCriar(p = {}, req) {
       } catch (e) {
         const m = String(e.message || '').match(/\[\s*\{\s*"deprecated_interest_id"[\s\S]*?\}\s*\]/);
         let alt = []; try { alt = m ? JSON.parse(m[0]) : []; } catch (_) {}
+        // v3.236: o Meta recusou o filtro de cargo → tenta pelo setor de atuação (gestão)
+        if (pb?.cargos?.length && /work_position|job title|cargo|position/i.test(String(e.message || '')) && tentativa < 2) { pb.cargos = []; continue; }
         // v3.214: o Meta recusou comportamento/setor/exclusão → tenta de novo sem a camada de decisor (e limpa o cache)
         if (!alt.length && dec && tentativa < 2) { dec = null; try { await _kvMc(_KV_DEC, { comportamentos: [], setores: [], excluir: [], em: 0 }); } catch (_) {} continue; }
         if (!pb || !alt.length || tentativa >= 2) throw e;
@@ -485,10 +495,14 @@ function _icpConforme(t = {}, pb, dec) {
   if (!(parseInt(t.age_min) >= META_IDADE_MIN)) motivos.push('idade mínima ' + (t.age_min || 18) + ' (ICP: ' + META_IDADE_MIN + '+)');
   if (t.targeting_automation?.advantage_audience !== 0) motivos.push('Advantage+ de público ligado (o Meta amplia para qualquer pessoa)');
   const ints = new Set((t.flexible_spec || []).flatMap(f => (f.interests || []).map(i => String(i.id))));
+  // v3.236: interesse não é cargo — quem se interessa por "CEO" não é CEO
+  const qtdInt = (t.flexible_spec || []).reduce((n, f) => n + (f.interests || []).length, 0) + (t.interests || []).length;
+  if (qtdInt) motivos.push('direciona por INTERESSE (' + qtdInt + ') — alcança quem se interessa pelo tema, não quem ocupa o cargo');
+  const temCargo = (t.flexible_spec || []).some(f => (f.work_positions || []).length) || (t.work_positions || []).length;
+  if (pb?.cargos?.length && !temCargo) motivos.push('sem filtro de cargo atual (dono, sócio, C-level)');
   const tecnicos = (t.flexible_spec || []).flatMap(f => [...(f.interests || []), ...(f.industries || []), ...(f.behaviors || [])]).filter(i => /data analysis|big data|power bi|\bsap\b|business intelligence|programa|software|developer|engineer|engenh|computa|technical|t[eé]cnic|small business|page admin|administrador de p/i.test(i.name || ''));
   if (tecnicos.length) motivos.push('mira público técnico/pequeno negócio: ' + tecnicos.map(i => i.name).slice(0, 4).join(', '));
-  if (pb?.interesses?.length && !pb.interesses.some(i => ints.has(String(i.id)))) motivos.push('sem os interesses de cargo executivo');
-  if (dec && (dec.comportamentos.length || dec.setores.length) && (t.flexible_spec || []).length < 2) motivos.push('sem a camada de decisor (interesse E cargo/setor de gestão)');
+  if (!pb?.cargos?.length && dec?.setores?.length && !(t.flexible_spec || []).some(f => (f.industries || []).length)) motivos.push('sem filtro de área de atuação em gestão');
   if (dec?.excluir?.length && !(t.exclusions?.interests || []).length) motivos.push('sem exclusões (emprego, estudo, programação)');
   if (!t.geo_locations) motivos.push('sem localização');
   return { ok: !motivos.length, motivos };
@@ -501,8 +515,11 @@ async function patrocinadoPublicoAtualizar({ aplicar = false, ids = null, soment
     .filter(x => !ids || ids.map(String).includes(String(x.id)));
   const pb = await _publicoB2B().catch(() => ({ cidades: [], interesses: [] }));
   let dec = await _publicoDecisores().catch(() => null);
-  const novo = (t, comDec) => { const L = []; if (pb.interesses.length) L.push({ interests: pb.interesses.map(({ id, name }) => ({ id, name })) });
-    if (comDec && dec && (dec.comportamentos.length || dec.setores.length)) L.push({ ...(dec.comportamentos.length ? { behaviors: dec.comportamentos.map(({ id, name }) => ({ id, name })) } : {}), ...(dec.setores.length ? { industries: dec.setores.map(({ id, name }) => ({ id, name })) } : {}) });
+  const novo = (t, comDec) => { const L = [];
+    // v3.236: cargo atual (work_positions); sem ele, área de atuação em gestão. Interesse nunca.
+    if (comDec && pb.cargos?.length) L.push({ work_positions: pb.cargos.map(({ id, name }) => ({ id, name })) });
+    else if (dec?.setores?.length) L.push({ industries: dec.setores.map(({ id, name }) => ({ id, name })) });
+    if (!L.length) throw new Error('sem filtro de cargo/área disponível no Meta — conjunto não alterado');
     const geo = pb.cidades.length ? { cities: pb.cidades.map(({ key, radius, distance_unit }) => ({ key, radius, distance_unit })), location_types: ['home', 'recent'] } : (t.geo_locations || { countries: ['BR'] });
     const aMin = Math.max(META_IDADE_MIN, parseInt(t.age_min) || META_IDADE_MIN);
     const plat = Array.isArray(t.publisher_platforms) && t.publisher_platforms.length ? t.publisher_platforms : ['instagram'];
@@ -520,15 +537,15 @@ async function patrocinadoPublicoAtualizar({ aplicar = false, ids = null, soment
     const it = { id: x.id, nome: x.name, estado: x.effective_status, antes, no_icp: conf.ok, motivos: conf.motivos };
     if (somente_fora && conf.ok) { it.pulado = 'já no ICP'; itens.push(it); continue; }
     if (aplicar) {
-      try { await _meta(x.id, 'POST', { targeting: novo(t, true) }); it.ok = true; it.camada_decisor = !!dec; }
-      catch (e) { try { await _meta(x.id, 'POST', { targeting: novo(t, false) }); it.ok = true; it.camada_decisor = false; it.aviso = 'aplicado sem a camada de decisor/exclusões: ' + e.message; } catch (e2) { it.ok = false; it.erro = e2.message; } }
+      try { await _meta(x.id, 'POST', { targeting: novo(t, true) }); it.ok = true; it.filtro = pb.cargos?.length ? 'cargo atual' : 'área de atuação'; }
+      catch (e) { try { await _meta(x.id, 'POST', { targeting: novo(t, false) }); it.ok = true; it.camada_decisor = false; it.aviso = 'o Meta recusou o filtro de cargo — aplicado pela área de atuação em gestão: ' + e.message; } catch (e2) { it.ok = false; it.erro = e2.message; } }
       if (it.ok) reg[x.id] = { versao: ICP_VERSAO, em: new Date().toISOString() };
     }
     itens.push(it);
   }
   if (aplicar) await _kvMc('mkt:meta:icp_aplicado', reg).catch(() => {});
   return { conjuntos: itens, total: itens.length, fora_do_icp: itens.filter(i => !i.no_icp).length, aplicado: !!aplicar, icp_versao: ICP_VERSAO,
-    publico: { cidades: pb.cidades.length, idade_min: META_IDADE_MIN, interesses: pb.interesses.map(i => i.name), comportamentos: (dec?.comportamentos || []).map(i => i.name), setores: (dec?.setores || []).map(i => i.name), excluidos: (dec?.excluir || []).map(i => i.name) } };
+    publico: { cidades: pb.cidades.length, idade_min: META_IDADE_MIN, cargos: (pb.cargos || []).map(i => i.name), interesses: [], comportamentos: (dec?.comportamentos || []).map(i => i.name), setores: (dec?.setores || []).map(i => i.name), excluidos: (dec?.excluir || []).map(i => i.name) } };
 }
 // v3.234: GUARDIÃO DO ICP — a cada 1 h (v3.235; era 6 h) (no cron da fila) confere os conjuntos da conta e reaplica o público C-level
 // nos que estiverem fora (campanha nova criada direto no Gerenciador, idade alterada, Advantage+ religado…).
@@ -591,10 +608,10 @@ async function _icpConteudoGuardiao() {
 async function _icpGuardiao({ forcar = false } = {}) {
   const c = _metaCfg(); if (!c.token || !c.conta) return { pulado: 'Meta não configurado' };
   const ult = await _kvMc('mkt:meta:icp_guarda').catch(() => null);
-  if (!forcar && ult?.em && Date.now() - Date.parse(ult.em) < 3600e3) return { pulado: 'executado há menos de 1 h' }; // v3.235: de hora em hora (era 6 h)
+  if (!forcar && ult?.em && ult.versao === ICP_VERSAO && Date.now() - Date.parse(ult.em) < 3600e3) return { pulado: 'executado há menos de 1 h' }; // v3.235: de hora em hora (era 6 h)
   await _kvMc('mkt:meta:icp_guarda', { ...(ult || {}), em: new Date().toISOString(), rodando: true });
   try { const r = await patrocinadoPublicoAtualizar({ aplicar: true, somente_fora: true });
-    const v = { em: new Date().toISOString(), conjuntos: r.total, corrigidos: r.conjuntos.filter(i => i.ok).map(i => ({ id: i.id, nome: i.nome, motivos: i.motivos })), erros: r.conjuntos.filter(i => i.ok === false).map(i => ({ nome: i.nome, erro: i.erro })) };
+    const v = { em: new Date().toISOString(), versao: ICP_VERSAO, conjuntos: r.total, corrigidos: r.conjuntos.filter(i => i.ok).map(i => ({ id: i.id, nome: i.nome, motivos: i.motivos })), erros: r.conjuntos.filter(i => i.ok === false).map(i => ({ nome: i.nome, erro: i.erro })) };
     await _kvMc('mkt:meta:icp_guarda', v); return v;
   } catch (e) { const v = { em: new Date().toISOString(), erro: e.message }; await _kvMc('mkt:meta:icp_guarda', v).catch(() => {}); return v; }
 }

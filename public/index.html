@@ -25158,7 +25158,7 @@ function patPrev() {
     + '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#f2f4f6;border-bottom:1px solid #e3e6ea;"><div style="font-size:12px;min-width:0;"><b style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _patE(v('patTitulo') || 'Título do anúncio') + '</b><span style="color:#666;font-size:11px;">' + _patE(v('patDesc') || location.host) + '</span></div><span style="background:#0095f6;color:#fff;font-weight:700;font-size:12px;padding:7px 12px;border-radius:8px;white-space:nowrap;">Saiba mais</span></div>'
     + '<div style="padding:9px 12px;font-size:12px;line-height:1.45;"><b>atlantyx</b> ' + _patE(v('patTexto') || 'Texto principal do anúncio…').replace(/\n/g, '<br>') + '</div>';
   const ini = v('patIni'), fim = v('patFim'), dia = parseFloat(v('patDiario').replace(',', '.')) || 0; const dias = ini && fim && fim >= ini ? Math.round((new Date(fim) - new Date(ini)) / 864e5) + 1 : 0;
-  const r = document.getElementById('patResumo'); if (r) r.innerHTML = dias ? 'Investimento máximo: <b>' + fmtBRLcompleto(dia * dias) + '</b> (' + fmtBRLcompleto(dia) + '/dia × ' + dias + ' dias) · Instagram (Feed e Explorar) · <b>ICP C-level</b>: donos, sócios, C-levels e diretores — capitais de negócio, interesse de cargo executivo <b>e</b> setor/perfil de gestão, sem quem procura emprego, estudante, programação ou curso, ' + Math.max(35, parseInt(v('patIdMin')) || 35) + '–' + (v('patIdMax') || 60) + ' anos · botão <b>Saiba mais</b> → página de cadastro (com rastreio da campanha nos leads)' : '<span style="color:var(--gold);">Informe início e fim.</span>';
+  const r = document.getElementById('patResumo'); if (r) r.innerHTML = dias ? 'Investimento máximo: <b>' + fmtBRLcompleto(dia * dias) + '</b> (' + fmtBRLcompleto(dia) + '/dia × ' + dias + ' dias) · Instagram (Feed e Explorar) · <b>Quem ocupa o cargo</b>: donos, sócios e C-levels pelo <b>cargo atual</b> do perfil (sem direcionamento por interesse) — capitais de negócio, ' + Math.max(35, parseInt(v('patIdMin')) || 35) + '–' + (v('patIdMax') || 60) + ' anos · botão <b>Saiba mais</b> → página de cadastro (com rastreio da campanha nos leads)' : '<span style="color:var(--gold);">Informe início e fim.</span>';
 }
 async function patEscrever() {
   const b = document.getElementById('patBtnCopy'); if (b) { b.disabled = true; b.textContent = 'Escrevendo…'; }
@@ -25269,7 +25269,7 @@ async function patPublicoCorrigir() {
     const d = await mcApi('patrocinado_publico_atualizar', { aplicar: false });
     if (!d.total) { alert('Nenhum conjunto de anúncios encontrado na conta do Meta.'); return; }
     if (!d.fora_do_icp) { alert('✅ Todos os ' + d.total + ' conjunto(s) de anúncios já estão no ICP C-level.'); return; } // v3.234
-    if (!confirm('ICP C-level — ' + d.fora_do_icp + ' de ' + d.total + ' conjunto(s) FORA do público:\n\n' + d.conjuntos.filter(c => !c.no_icp).map(c => '• ' + c.nome + ' (' + c.estado + '): ' + (c.motivos || []).join('; ')).join('\n').substring(0, 1800) + '\n\nAplicar agora o público de donos, sócios, C-levels e diretores (35+ anos, interesse de cargo executivo E setor de gestão, sem emprego/estudo/programação)? Status e orçamento não mudam.')) return;
+    if (!confirm('ICP C-level — ' + d.fora_do_icp + ' de ' + d.total + ' conjunto(s) FORA do público:\n\n' + d.conjuntos.filter(c => !c.no_icp).map(c => '• ' + c.nome + ' (' + c.estado + '): ' + (c.motivos || []).join('; ')).join('\n').substring(0, 1800) + '\n\nAplicar agora o filtro pelo CARGO ATUAL (donos, sócios e C-levels — quem ocupa o cargo, não quem se interessa pelo tema), 35+ anos, sem direcionamento por interesse? Status e orçamento não mudam.')) return;
     if (b) b.textContent = 'Aplicando…';
     const r0 = await mcApi('patrocinado_publico_atualizar', { aplicar: true, somente_fora: true });
     const ok0 = r0.conjuntos.filter(c => c.ok), er0 = r0.conjuntos.filter(c => c.ok === false);
@@ -34091,7 +34091,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.235] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.236] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -34107,7 +34107,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.235';
+window.__ATX_BUILD_ID__ = 'ATX-v3.236';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
