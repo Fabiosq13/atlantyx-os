@@ -31064,7 +31064,9 @@ function pfRender() {
   el.innerHTML = (D.qb_erro ? '<div style="font-size:10.5px;color:var(--fv2-crit);margin-bottom:6px;">QuickBooks indisponível: ' + _qpEsc(D.qb_erro) + '</div>' : '') + ((D.erros || []).length ? '<div class="fv2-pq" style="margin-bottom:6px;">Não verificado agora: ' + _qpEsc(D.erros.join(' · ')) + '</div>' : '')
     + L.slice(0, lim).map((i, k) => '<div class="pf-l"><i style="width:9px;height:9px;border-radius:50%;background:' + cor[i.gravidade] + ';" title="' + ({ alta: 'urgente', media: 'atenção', baixa: 'acertar quando possível' }[i.gravidade]) + '"></i>'
       + '<div><b>' + _qpEsc(i.titulo) + '</b> <span class="pf-d">· ' + _qpEsc(_PF_G[i.grupo]?.[0] || '') + '</span><div class="pf-d">' + _qpEsc(i.detalhe || '') + '</div></div>'
-      + '<div class="pf-v">' + (i.valor ? brl(i.valor) : '') + '</div><div class="pf-a">' + (i.grupo === 'duplicado' ? (i.oco_id && /segue a pagar/.test(i.titulo) ? '<button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="pfDupBaixar(' + todos.indexOf(i) + ')">✓ Baixar na Agenda</button> ' : '') + '<button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="pfDupIgnorar(' + todos.indexOf(i) + ')">Não é duplicado</button> ' : '') + '<button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="pfIr(' + todos.indexOf(i) + ')">Resolver ↗</button></div></div>').join('')
+      + '<div class="pf-v">' + (i.valor ? brl(i.valor) : '') + '</div><div class="pf-a">' + (i.grupo === 'duplicado' ? (i.oco_id && /segue a pagar/.test(i.titulo) ? '<button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="pfDupBaixar(' + todos.indexOf(i) + ')">✓ Baixar na Agenda</button> ' : '') + '<button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="pfDupIgnorar(' + todos.indexOf(i) + ')">Não é duplicado</button> ' : '')
+      + (i.links || []).filter(l => /^https:\/\//.test(l.url)).map(l => '<a class="btn btn-g" style="font-size:9.5px;padding:2px 8px;text-decoration:none;" href="' + _qpEsc(l.url) + '" target="_blank" rel="noopener">' + _qpEsc(l.rot) + ' ↗</a> ').join('')
+      + (i.grupo === 'duplicado' && !i.tela ? '' : '<button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="pfIr(' + todos.indexOf(i) + ')">' + (i.grupo === 'duplicado' ? 'Abrir a Agenda ↗' : 'Resolver ↗') + '</button>') + '</div></div>').join('')
     + (L.length > lim ? '<div style="font-size:10.5px;color:var(--t3);padding:6px 4px;">+ ' + (L.length - lim) + ' pendência(s) — clique numa categoria acima para ver todas.</div>' : '');
   _pf.lista = todos;
 }
@@ -35134,7 +35136,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.248] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.249] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35150,7 +35152,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.248';
+window.__ATX_BUILD_ID__ = 'ATX-v3.249';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

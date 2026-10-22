@@ -1329,8 +1329,9 @@ async function _relPagamentosExtra(d) {
   // QuickBooks: pagamentos de contas e despesas pagas no mês
   if (qbConfigurado()) { try { const token = await qbToken();
     const [bp, pu] = await Promise.all([qbQuery(`select * from BillPayment where TxnDate >= '${d.inicioMes}' and TxnDate <= '${hoje}' maxresults 500`, token), qbQuery(`select * from Purchase where TxnDate >= '${d.inicioMes}' and TxnDate <= '${hoje}' maxresults 500`, token)]);
-    (bp?.QueryResponse?.BillPayment || []).forEach(b => out.pagos_mes.push({ descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''), fornecedor: b.VendorRef?.name || '', categoria: 'QuickBooks · pagamento de conta', data: b.TxnDate, valor: round(parseFloat(b.TotalAmt) || 0), fonte: 'quickbooks', qb_url: _qbUrlTxn('pagto_conta:' + b.Id) }));
-    (pu?.QueryResponse?.Purchase || []).forEach(b => out.pagos_mes.push({ descricao: (b.EntityRef?.name || 'Despesa') + (b.DocNumber ? ' · ' + b.DocNumber : ''), fornecedor: b.EntityRef?.name || '', categoria: 'QuickBooks · ' + ((b.Line || [])[0]?.AccountBasedExpenseLineDetail?.AccountRef?.name || 'despesa'), data: b.TxnDate, valor: round(parseFloat(b.TotalAmt) || 0), fonte: 'quickbooks', qb_url: _qbUrlTxn((b.PaymentType === 'Check' ? 'cheque:' : 'despesa:') + b.Id) }));
+    (bp?.QueryResponse?.BillPayment || []).forEach(b => out.pagos_mes.push({ descricao: (b.VendorRef?.name || 'Fornecedor') + (b.DocNumber ? ' · ' + b.DocNumber : ''), fornecedor: b.VendorRef?.name || '', categoria: 'QuickBooks · pagamento de conta', data: b.TxnDate, valor: round(parseFloat(b.TotalAmt) || 0), fonte: 'quickbooks', qb_url: _qbUrlTxn('pagto_conta:' + b.Id), qb_id: 'bp' + b.Id }));
+    (pu?.QueryResponse?.Purchase || []).forEach(b => out.pagos_mes.push({ descricao: (b.EntityRef?.name || 'Despesa') + (b.DocNumber ? ' · ' + b.DocNumber : ''), fornecedor: b.EntityRef?.name || '', categoria: 'QuickBooks · ' + ((b.Line || [])[0]?.AccountBasedExpenseLineDetail?.AccountRef?.name || 'despesa'), data: b.TxnDate, valor: round(parseFloat(b.TotalAmt) || 0), fonte: 'quickbooks', qb_url: _qbUrlTxn((b.PaymentType === 'Check' ? 'cheque:' : 'despesa:') + b.Id), qb_id: 'pu' + b.Id,
+      conta: b.AccountRef?.name || '', memo: String(b.PrivateNote || (b.Line || [])[0]?.Description || '').substring(0, 80) }));
   } catch (e) { out.erro_qb = e.message; } }
   // v3.224: com o QuickBooks lido, o pagamento da Agenda que JÁ está lá (conta lançada pela Agenda, ou mesmo fornecedor e
   // valor em até 5 dias) não entra de novo — antes cada pagamento aparecia 2x, inflava o total e caía em "duplicados"
@@ -1346,7 +1347,7 @@ async function _relPagamentosExtra(d) {
     if (!a.valor || Math.abs(a.valor - b.valor) > 0.01) continue;
     const quem = nrm(a.fornecedor || a.descricao), quem2 = nrm(b.fornecedor || b.descricao); if (!quem || quem !== quem2) continue;
     if (Math.abs(Date.parse(a.data) - Date.parse(b.data)) / 864e5 > 5) continue;
-    if (a.fonte === b.fonte && a.situacao === b.situacao && a.data === b.data && a.descricao === b.descricao && a.fonte === 'quickbooks') { /* mesma linha listada 2x por consultas diferentes */ }
+    if (a.qb_id && a.qb_id === b.qb_id) continue; // v3.249: a mesma transação lida duas vezes não é duplicado (antes o teste não pulava nada)
     const k = [a.descricao, a.data, b.descricao, b.data, a.valor].join('|'); if (vistos.has(k)) continue; vistos.add(k);
     // v3.248: um pendente + um pago do mesmo fornecedor e valor quase sempre é a MESMA conta já paga e não baixada na Agenda
     out.duplicados.push({ a, b, valor: a.valor, tipo: a.situacao !== b.situacao ? 'baixa' : 'duplicado', chave: [nrm(a.fornecedor || a.descricao), a.valor.toFixed(2), [a.data, b.data].sort().join('_')].join('|') }); }
@@ -3666,12 +3667,14 @@ async function pendenciasFin() {
     detalhe: (x.pendencias || []).map(p => typeof p === 'string' ? p : (p.texto || p.titulo || p.msg || '')).filter(Boolean).slice(0, 3).join(' · ') + (x.prazo_etapa?.estourado ? ' · etapa ' + x.prazo_etapa.etapa + ' ' + x.prazo_etapa.texto : '') || 'pendência no termo', valor: x.valor, dias: x.dias, tela: 's3fatkanban', termo_id: x.id });
   // possíveis pagamentos duplicados no mês
   try { if (d) { const px = await _relPagamentosExtra(d); const ign = new Set(Object.keys((await _kvFin('fin:dup_ignorados')) || {}));
-    const ori = x => (x.fonte === 'quickbooks' ? 'QuickBooks' + (/pagamento de conta/i.test(x.categoria || '') ? ' (pagamento de conta)' : /conta a pagar/i.test(x.categoria || '') ? ' (conta a pagar)' : ' (despesa paga)') : 'Agenda') + ' · ' + x.situacao + ' em ' + String(x.data).split('-').reverse().join('/') + (x.descricao && x.descricao !== x.fornecedor ? ' · “' + x.descricao + '”' : '');
+    const ori = x => (x.fonte === 'quickbooks' ? 'QuickBooks' + (/pagamento de conta/i.test(x.categoria || '') ? ' (pagamento de conta)' : /conta a pagar/i.test(x.categoria || '') ? ' (conta a pagar)' : ' (despesa paga' + (x.conta ? ' pela conta ' + x.conta : '') + ')') : 'Agenda') + ' · ' + x.situacao + ' em ' + String(x.data).split('-').reverse().join('/')
+      + (x.fonte === 'quickbooks' ? ' · ' + String(x.categoria || '').replace(/^QuickBooks · /, '') : '') + (x.memo ? ' · “' + x.memo + '”' : x.descricao && x.descricao !== x.fornecedor ? ' · “' + x.descricao + '”' : '');
     for (const p of px.duplicados || []) { if (ign.has(p.chave)) continue;
       const pend = [p.a, p.b].find(x => x.situacao === 'pendente' && x.fonte !== 'quickbooks' && x.id);
       itens.push({ grupo: 'duplicado', gravidade: 'media', titulo: (p.a.fornecedor || p.a.descricao) + (p.tipo === 'baixa' ? ' — pago, mas segue a pagar na Agenda' : ' — possível pagamento em dobro'),
         detalhe: (p.tipo === 'baixa' ? 'Mesmo fornecedor e valor: ' : 'Mesmo fornecedor e valor em até 5 dias: ') + ori(p.a) + '  ×  ' + ori(p.b) + (p.tipo === 'baixa' ? ' — se é a mesma conta, marque a da Agenda como paga (ou exclua)' : ' — confira se pagou duas vezes'),
-        valor: p.valor, tela: 's3agenda', dup_chave: p.chave, oco_id: pend?.id || null, oco_data: pend?.data || null }); } } } catch (e) { erros.push('duplicados: ' + e.message); }
+        valor: p.valor, tela: [p.a, p.b].some(x => x.fonte !== 'quickbooks') ? 's3agenda' : null, dup_chave: p.chave, oco_id: pend?.id || null, oco_data: pend?.data || null,
+        links: [p.a, p.b].map((x, k) => x.qb_url ? { rot: (k ? '2º' : '1º') + ' no QuickBooks', url: x.qb_url } : null).filter(Boolean) }); } } } catch (e) { erros.push('duplicados: ' + e.message); }
   const peso = { alta: 0, media: 1, baixa: 2 };
   itens.sort((a, b) => peso[a.gravidade] - peso[b.gravidade] || (b.valor || 0) - (a.valor || 0));
   const soma = g => { const l = itens.filter(i => i.grupo === g); return { qtd: l.length, valor: round(l.reduce((s, i) => s + (i.valor || 0), 0)) }; };
