@@ -15,7 +15,9 @@ const _id = n => { const v = String(n ?? ''); if (!/^[A-Za-z_][A-Za-z0-9_]{0,62}
 let _sql = null;
 async function getSql() {
   if (_sql) return _sql;
-  const { neon } = await import('@neondatabase/serverless');
+  const { neon, types } = await import('@neondatabase/serverless');
+  // v3.237: colunas DATE voltam como 'AAAA-MM-DD' (o driver devolvia Date e String(data) virava "Wed Oct 21" — datas e KPIs errados)
+  try { types?.setTypeParser?.(1082, v => v); } catch (_) {}
   _sql = neon(process.env.DATABASE_URL);
   await ensureTabelas(_sql);
   return _sql;
@@ -454,8 +456,8 @@ async function agendaGP({ dias = 30 } = {}) {
     projeto TEXT, tipo TEXT DEFAULT 'compromisso', notas TEXT, concluido BOOLEAN DEFAULT false,
     criado_em TIMESTAMPTZ DEFAULT NOW()
   )`;
-  const hoje = new Date().toISOString().split('T')[0];
-  const fim = new Date(Date.now() + dias * 86400000).toISOString().split('T')[0];
+  const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // v3.237: dia de Brasília
+  const fim = new Date(Date.now() + dias * 86400000).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
   const itens = [];
 
   // 1. Marcos de projeto (financeiro) — com data prevista no horizonte OU atrasados
@@ -1145,7 +1147,7 @@ async function cronogramaBuscarApi({ projeto } = {}) {
 // Análise do cronograma: avanço físico real × planejado
 function _analisarCronograma(tarefas) {
   if (!tarefas.length) return null;
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // v3.237: dia de Brasília
   const pesoTotal = tarefas.reduce((s, t) => s + (t.peso || 1), 0) || 1;
   const avancoReal = round(tarefas.reduce((s, t) => s + (t.pct || 0) * (t.peso || 1), 0) / pesoTotal);
 
@@ -1191,7 +1193,7 @@ function _performanceEquipe(tarefas) {
     const r = porPessoa[p];
     r.total++; r.soma_pct += (t.pct || 0) * (t.peso || 1); r.peso += (t.peso || 1);
     if ((t.pct || 0) >= 100) r.concluidas++;
-    const hoje = new Date().toISOString().split('T')[0];
+    const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // v3.237: dia de Brasília
     if (t.fim_prev && t.fim_prev < hoje && (t.pct || 0) < 100) r.atrasadas++;
   });
   return Object.values(porPessoa).map(r => ({
@@ -1304,7 +1306,7 @@ async function painelMestre({ semana } = {}) {
   const cfgPorNome = {};
   cfg.forEach(c => cfgPorNome[c.projeto_nome] = c);
 
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // v3.237: dia de Brasília
   const semanaAtual = semana || semanaDe(hoje);
   const porNome = {};
   ultimos.forEach(r => porNome[r.projeto_nome] = r);
@@ -1473,7 +1475,7 @@ ${JSON.stringify(dados).substring(0, 4000)}`;
 async function alertasProjetos() {
   const { projetos } = await projetosListar();
   const { ultimos } = await reportList({ limite: 100 });
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // v3.237: dia de Brasília
   const alertas = [];
   const diasDesde = (d) => d ? Math.floor((new Date(hoje) - new Date(d)) / 86400000) : null;
 

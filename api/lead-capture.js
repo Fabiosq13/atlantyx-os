@@ -111,9 +111,10 @@ async function handler(req, res) {
     // WhatsApp: 10–20 s com o botão "Enviando..."). As integrações rodam no 2º passo ({evento:'processar'}), que a
     // própria página dispara, e também aqui logo depois da resposta; a trava no banco garante uma execução só.
     if (body.rapido === true && leadId) {
-      res.status(200).json({ success: true, lead_id: leadId, origem: lead.origem, campanha: lead.campanha, whatsapp: _whatsComercial() });
-      try { await processarLeadGravado(leadId); } catch (e) { console.warn('[S2] processamento pós-resposta:', e.message); }
-      return;
+      // v3.237: não processa mais DEPOIS da resposta — a Vercel congela a função e o lead ficava travado em "processando"
+      // (a chamada da página encontrava a trava e desistia). Agora quem processa é o 2º passo da página; se a pessoa fechar
+      // a aba antes, a varredura de hora em hora (followup-cron) processa os leads que ficaram para trás.
+      return res.status(200).json({ success: true, lead_id: leadId, origem: lead.origem, campanha: lead.campanha, whatsapp: _whatsComercial() });
     }
 
     // ── 1c. ALERTA IMEDIATO por e-mail — "novo lead da campanha X" ──
@@ -214,7 +215,7 @@ async function _inserirLead(sql, id, lead) {
 }
 // v3.184: integrações de um lead já gravado (2º passo do formulário do site). A trava (etapas → 'processando')
 // garante uma execução só, mesmo com a página e o servidor chamando ao mesmo tempo.
-async function processarLeadGravado(leadId) {
+export async function processarLeadGravado(leadId) {
   const { neon } = await import('@neondatabase/serverless');
   const sql = neon(process.env.DATABASE_URL);
   const got = await sql`UPDATE leads SET etapas = ${JSON.stringify({ processando: new Date().toISOString() })}::jsonb
@@ -490,4 +491,15 @@ async function agendarFollowUp(lead, dealId, mensagemOriginal) {
 }
 
 // v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
+// v3.237: varredura — leads gravados que não foram processados (aba fechada antes do 2º passo, função cortada)
+export async function processarLeadsPendentes({ limite = 5 } = {}) {
+  const { neon } = await import('@neondatabase/serverless'); const sql = neon(process.env.DATABASE_URL);
+  const L = await sql`SELECT id FROM leads WHERE criado_em > NOW() - INTERVAL '2 days' AND criado_em < NOW() - INTERVAL '3 minutes'
+    AND COALESCE(status, 'novo') <> 'qa_teste' AND (etapas IS NULL OR etapas = 'null'::jsonb
+      OR (etapas ? 'processando' AND NOT (etapas ? 'whatsapp') AND (etapas->>'processando')::timestamptz < NOW() - INTERVAL '5 minutes'))
+    ORDER BY criado_em LIMIT ${limite}`.catch(() => []);
+  const out = [];
+  for (const r of L) { try { out.push(await processarLeadGravado(r.id)); } catch (e) { out.push({ lead_id: r.id, erro: e.message }); } }
+  return { processados: out.length, itens: out };
+}
 export default comGuarda(handler, 'lead-capture');

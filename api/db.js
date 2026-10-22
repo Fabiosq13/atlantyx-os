@@ -9,7 +9,7 @@ async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();
   // v3.29 (SEC-002/004): chaves de credencial (tokens OAuth do QuickBooks etc.) nunca saem nem entram pelo navegador
-  { const b0 = req.body || {}; if (['get', 'set', 'delete', 'del'].includes(b0.action) && /^qb:|token|secret|senha|password|oauth|credencia|api[_-]?key/i.test(String(b0.key || '')))
+  { const b0 = req.body || {}; if (['get', 'set', 'delete', 'del'].includes(b0.action) && /^qb:|^atx:sessao|^atx:usuarios?$|^acesso:|token|secret|segredo|senha|password|oauth|credencia|api[_-]?key|chave_?privada/i.test(String(b0.key || ''))  /* v3.237: + segredo de sessão */)
     return res.status(403).json({ success: false, error: 'Chave protegida — credenciais não são acessíveis por esta rota.' }); }
 
   const DATABASE_URL = process.env.DATABASE_URL;

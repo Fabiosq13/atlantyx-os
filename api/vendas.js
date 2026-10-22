@@ -15,7 +15,7 @@ import { calcularFormatos, PARAMS_PADRAO, FORMATOS } from '../lib/proposta-calc.
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 let _sql = null;
-async function getSql() { if (_sql) return _sql; const { neon } = await import('@neondatabase/serverless'); _sql = neon(process.env.DATABASE_URL); return _sql; }
+async function getSql() { if (_sql) return _sql; const { neon, types } = await import('@neondatabase/serverless'); try { types?.setTypeParser?.(1082, v => v); } catch (_) {} /* v3.237: DATE como 'AAAA-MM-DD' */ _sql = neon(process.env.DATABASE_URL); return _sql; }
 const num = (v, d = 0) => { if (v == null || v === '') return d; const x = parseFloat(String(v).replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.')); return isFinite(x) ? x : d; };
 const r2 = v => Math.round((+v || 0) * 100) / 100;
 const novoId = p => p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);

@@ -156,10 +156,18 @@ async function handler(req, res) {
     let alvo; try { alvo = new URL(target); } catch (_) { return res.status(400).json({ success: false, error: 'url inválida' }); }
     if (/^(localhost|0\.|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[|metadata)/i.test(alvo.hostname) || /\.internal$|\.local$/i.test(alvo.hostname)) return res.status(400).json({ success: false, error: 'endereço não permitido' });
     try {
-      const r = await fetch(target, { headers: { 'User-Agent': 'AtlantyxOS/1.9' }, redirect: 'follow' });
-      if (!r.ok) return res.status(r.status).json({ success: false, error: 'origem respondeu ' + r.status });
+      // v3.237: segue no máximo 3 redirecionamentos conferindo CADA destino (antes um redirect levava a endereço interno)
+      // e lê no máximo 10 MB mesmo sem content-length
+      const _interno = h => /^(localhost|0\.|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[|metadata)/i.test(h) || /\.internal$|\.local$/i.test(h);
+      let atual = target, r = null;
+      for (let i = 0; i < 4; i++) { r = await fetch(atual, { headers: { 'User-Agent': 'AtlantyxOS/1.9' }, redirect: 'manual', signal: AbortSignal.timeout(20000) });
+        if (r.status >= 300 && r.status < 400 && r.headers.get('location')) { const prox = new URL(r.headers.get('location'), atual); if (!/^https?:$/.test(prox.protocol) || _interno(prox.hostname)) return res.status(400).json({ success: false, error: 'redirecionamento para endereço não permitido' }); atual = prox.toString(); continue; }
+        break; }
+      if (!r.ok) return res.status(r.status >= 300 && r.status < 400 ? 508 : r.status).json({ success: false, error: 'origem respondeu ' + r.status });
       if (+(r.headers.get('content-length') || 0) > 10 * 1048576) return res.status(413).json({ success: false, error: 'arquivo grande demais' });
-      const buf = Buffer.from(await r.arrayBuffer());
+      const partes = []; let tam = 0; const leitor = r.body.getReader();
+      for (;;) { const { done, value } = await leitor.read(); if (done) break; tam += value.length; if (tam > 10 * 1048576) { try { leitor.cancel(); } catch (_) {} return res.status(413).json({ success: false, error: 'arquivo grande demais' }); } partes.push(Buffer.from(value)); }
+      const buf = Buffer.concat(partes);
       const tipo = tipoReal(buf);
       if (!tipo || !/^(image|video)\//.test(tipo) || buf.length > 10 * 1048576) return res.status(415).json({ success: false, error: 'o proxy só repassa imagens e vídeos' });
       res.setHeader('Content-Type', tipo);

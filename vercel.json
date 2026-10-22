@@ -106,6 +106,9 @@
     "api/metricool.js": {
       "maxDuration": 60
     },
+    "api/briefing-cron.js": {
+      "maxDuration": 60
+    },
     "api/termo-excel.js": {
       "maxDuration": 30,
       "includeFiles": "api/modelos/**"
@@ -226,7 +229,7 @@
     },
     {
       "path": "/api/financeiro?action=marcos_processar_alertas",
-      "schedule": "0 9 * * *"
+      "schedule": "0 12 * * 1-5"
     },
     {
       "path": "/api/health?full=1",
@@ -234,7 +237,7 @@
     },
     {
       "path": "/api/financeiro?action=relatorio_pagamentos",
-      "schedule": "0 11 * * *"
+      "schedule": "0 11 * * 1-5"
     },
     {
       "path": "/api/financeiro?cron=termos_obrigatorios",

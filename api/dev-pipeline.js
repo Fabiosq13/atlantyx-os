@@ -86,7 +86,9 @@ const AGENTE_PROMPT = {
 let _sql = null;
 async function getSql() {
   if (_sql) return _sql;
-  const { neon } = await import('@neondatabase/serverless');
+  const { neon, types } = await import('@neondatabase/serverless');
+  // v3.237: colunas DATE voltam como 'AAAA-MM-DD' (o driver devolvia Date e String(data) virava "Wed Oct 21" — datas e KPIs errados)
+  try { types?.setTypeParser?.(1082, v => v); } catch (_) {}
   _sql = neon(process.env.DATABASE_URL);
   await ensureTabelas(_sql);
   return _sql;

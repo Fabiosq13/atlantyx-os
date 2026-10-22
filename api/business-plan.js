@@ -27,7 +27,7 @@ import { gerarExcel, lerPremissasExcel } from '../lib/bp-excel.js';
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
-const mesAtual = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+const mesAtual = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }).substring(0, 7); // v3.237: mês de Brasília
 
 // ── Banco ────────────────────────────────────────────────────────────────
 let _sql = null, _temTabela = null;

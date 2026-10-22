@@ -91,7 +91,7 @@ async function lkEgress(metodo, corpo) {
   const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error('LiveKit ' + metodo + ': ' + (d.msg || d.message || r.status)); return d;
 }
 const egressAtivo = st => [0, 1, 'EGRESS_STARTING', 'EGRESS_ACTIVE'].includes(st);
-async function egressStatus(id) { if (!id || !lkOk()) return null; try { const d = await lkEgress('ListEgress', { egress_id: id }); const it = (d.items || [])[0]; return it ? { status: it.status, ativo: egressAtivo(it.status), erro: it.error || null } : null; } catch (e) { return { erro: e.message }; } }
+async function egressStatus(id) { if (!id || !lkOk()) return null; try { const d = await lkEgress('ListEgress', { egress_id: id }); const it = (d.items || [])[0]; return it ? { status: it.status, ativo: egressAtivo(it.status), erro: it.error || null } : null; } catch (e) { return { erro: e.message, falha_consulta: true }; } }
 
 // ── IA ──
 async function claude(system, content, maxTokens = 2500, tools) {
@@ -245,6 +245,8 @@ async function tvTransmitir(b) {
   const cfg = await config(); if (!cfg.codigo) throw new Error('Gere primeiro o link da Atlantyx TV');
   const dest = (b.destinos || ['youtube']).filter(k => DESTINOS[k]); const urls = await urlsDestinos(dest);
   const t = (await kv('atv:transmissao')) || {}; const st = await egressStatus(t.egress_id); if (st?.ativo) return { ja_no_ar: true, egress_id: t.egress_id };
+  // v3.237: sem conseguir consultar a transmissão atual, não liga outra (a anterior podia continuar no ar sem controle e em dobro)
+  if (st?.falha_consulta) throw new Error('Não consegui consultar a transmissão atual (' + st.erro + ') — nada foi iniciado para não duplicar.');
   const d = await lkEgress('StartWebEgress', { url: `${base()}/atv/${cfg.codigo}?modo=transmissao`, stream_outputs: [{ protocol: 'RTMP', urls }] });
   await kv('atv:transmissao', { ...t, egress_id: d.egress_id || d.egressId || null, desde: new Date().toISOString(), destinos: dest }); return { egress_id: d.egress_id || d.egressId || null };
 }
@@ -252,11 +254,11 @@ async function tvParar() { const t = (await kv('atv:transmissao')) || {}; if (t.
 function dentroJanela(j) { if (!j?.auto) return null; const a = new Date(Date.now() - 3 * 3600000), d = a.getUTCDay(), hm = a.toISOString().substring(11, 16);
   return (j.dias || [1, 2, 3, 4, 5]).includes(d) && hm >= (j.inicio || '08:00') && hm < (j.fim || '20:00'); }
 async function ciclo() { // cron de hora em hora: notícias novas + janela automática da TV no YouTube
-  const out = {}; try { out.noticias = (await noticias(true)).itens?.length || 0; } catch (e) { out.noticias_erro = e.message; }
+  const out = {}; try { out.noticias = (await noticias(false)).itens?.length || 0; } catch (e) { out.noticias_erro = e.message; } // v3.237: respeita o limitador de custo (antes forçava busca com IA 24x/dia)
   try { await mercado(true); } catch (_) {}
   const t = (await kv('atv:transmissao')) || {}, dentro = dentroJanela(t.janela);
   if (dentro !== null && lkOk()) { const st = await egressStatus(t.egress_id);
-    try { if (dentro && !st?.ativo) out.tv = (await tvTransmitir({ destinos: t.destinos || ['youtube'] })) && 'ligada'; else if (!dentro && st?.ativo) { await tvParar(); out.tv = 'desligada'; } } catch (e) { out.tv_erro = e.message; } }
+    try { if (st?.falha_consulta) out.tv = 'sem leitura da transmissão — nada alterado'; else if (dentro && !st?.ativo) out.tv = (await tvTransmitir({ destinos: t.destinos || ['youtube'] })) && 'ligada'; else if (!dentro && st?.ativo) { await tvParar(); out.tv = 'desligada'; } } catch (e) { out.tv_erro = e.message; } }
   return out;
 }
 

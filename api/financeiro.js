@@ -43,6 +43,7 @@ async function handler(req, res) {
     try {
       const r = await alertaPendenciasFaturamento({});
       console.log('[cron pendências]', r.resumo || r.erro, '| enviado:', r.enviado);
+      if (r?.erro || r?.erro_envio) return res.status(500).json({ success: false, cron: 'pendencias_faturamento', ...r }); // v3.237: falha aparece no log do cron (antes saía 200)
       return res.status(200).json({ success: true, cron: 'pendencias_faturamento', ...r });
     } catch (e) {
       console.error('[cron pendências] erro:', e.message);
@@ -99,6 +100,7 @@ async function handler(req, res) {
     try {
       const r = await alertaTermosDoMes({});
       console.log('[cron termos]', r.resumo, '| enviado:', r.enviado, r.motivo || '');
+      if (r?.erro || r?.erro_envio) return res.status(500).json({ success: false, cron: 'termos_obrigatorios', ...r }); // v3.237: falha aparece no log do cron (antes saía 200)
       return res.status(200).json({ success: true, cron: 'termos_obrigatorios', ...r });
     } catch (e) {
       console.error('[cron termos] erro:', e.message);
@@ -126,7 +128,11 @@ async function handler(req, res) {
       // v3.225: o alerta de contas a pagar por WhatsApp sai mesmo se o e-mail falhar (só se estiver ativado na Agenda)
       // em paralelo com o e-mail — a função tem 60 s e os dois consultam o QuickBooks
       const waP = alertaPagarWaEnviar({ origem: 'cron' }).catch(e => { console.warn('[CRON alerta_pagar_wa]', e.message); return { erro: e.message }; });
-      let r = null, erroEmail = null; try { r = await relatorioPagamentosEnviar({}); } catch (e) { erroEmail = e.message; console.error('[CRON relatorio_pagamentos]', e.message); }
+      // v3.237: uma vez por dia — entrega duplicada do cron (a Vercel avisa que pode acontecer) não manda o e-mail de novo
+      let r = null, erroEmail = null; const hojeR = _hojeBR(); let jaFoi = false;
+      try { jaFoi = (await _kvFin('fin:relatorio_ultimo_envio'))?.dia === hojeR; } catch (_) {}
+      if (jaFoi && !req.query?.forcar) r = { pulado: 'relatório de hoje já enviado' };
+      else { try { r = await relatorioPagamentosEnviar({}); try { await _kvFinSet('fin:relatorio_ultimo_envio', { dia: hojeR, em: new Date().toISOString() }); } catch (_) {} } catch (e) { erroEmail = e.message; console.error('[CRON relatorio_pagamentos]', e.message); } }
       const wa = await waP;
       if (erroEmail) return res.status(500).json({ success: false, error: erroEmail, alerta_whatsapp: wa });
       return res.status(200).json({ success: true, ...r, alerta_whatsapp: wa });
@@ -5634,7 +5640,11 @@ async function alertaTermosDoMes({ forcar = false, para, mes, ano } = {}) {
   const v = await verificarTermosDoMes({ mes, ano });
   if (v.erro) return v;
   if (!v.deve_alertar && !forcar) return { ...v, enviado: false, motivo: 'Todos os termos estão lançados — nenhum alerta necessário.' };
-  if (!v.na_janela && !forcar) {
+  // v3.237: depois do dia limite o alerta CONTINUA (vira "ATRASADO") — antes parava no dia 10 e a escalada nunca saía;
+  // fora do prazo só em dia útil
+  const _dsp = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getDay();
+  if (!forcar && v.dia_hoje > v.dia_limite && (_dsp === 0 || _dsp === 6)) return { ...v, enviado: false, motivo: 'Fim de semana — o alerta de termos atrasados volta no próximo dia útil.' };
+  if (v.dia_hoje < v.dia_inicio && !forcar) {
     return { ...v, enviado: false,
       motivo: `Hoje é dia ${v.dia_hoje}. O alerta começa no dia ${v.dia_inicio} — antes disso é cedo, os termos ainda estão sendo preparados.` };
   }
@@ -8471,7 +8481,7 @@ async function marcosProcessarAlertas() {
   }
 
   // ── B. LEMBRETE A CADA 3 DIAS PRO CLIENTE (status: aguardando_cliente) ──
-  const limite3dias = new Date(hoje.getTime() - 3 * 86400 * 1000).toISOString();
+  const limite3dias = new Date(hoje.getTime() - 3 * 86400 * 1000 + 2 * 3600 * 1000).toISOString(); // v3.237: folga de 2 h — o carimbo é gravado segundos depois do início e a cadência de 3 dias virava 4
   const paraCliente = await sql`SELECT m.*, p.nome AS projeto_nome,
                                        p.cliente_responsavel_nome, p.cliente_responsavel_email,
                                        p.financeiro_email

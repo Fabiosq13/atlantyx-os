@@ -16,9 +16,9 @@ async function handler(req, res) {
 
     const acoes = {
       scan:          () => scanEmails(limite, filtro),
-      processar_rfp: () => processarRFP(req.body),
+      processar_rfp: () => processarRFPEmail(req.body.email || req.body), // v3.237: a função chamada não existia (erro 500)
       resposta_venda:() => processarRespostaVenda(req.body),
-      projeto:       () => processarProjeto(req.body),
+      projeto:       () => processarProjetoEmail(req.body.email || req.body),
       relatorio:     () => gerarRelatorio(req.body),
     };
 
@@ -279,8 +279,13 @@ Para cada um retorne:
 // ── ROTEAR PARA OS AGENTES ────────────────────────────────────────────────────
 async function rotearParaAgentes(emails) {
   const acoes = [];
+  // v3.237: cada e-mail é roteado UMA vez (antes cada varredura de 7 dias repetia nota no HubSpot e alerta de WhatsApp)
+  const { neon } = await import('@neondatabase/serverless'); const sqlE = neon(process.env.DATABASE_URL);
+  let feitos = {}; try { const r0 = await sqlE`SELECT value FROM kv_store WHERE key = 'email_intel:roteados' LIMIT 1`; feitos = (typeof r0[0]?.value === 'string' ? JSON.parse(r0[0].value) : r0[0]?.value) || {}; } catch (_) {}
 
   for (const email of emails) {
+    if (email.id && feitos[email.id]) { acoes.push({ email_id: email.id, acao: 'já roteado antes — ignorado', agente: '-' }); continue; }
+    if (email.id) feitos[email.id] = new Date().toISOString().slice(0, 10);
     try {
       switch (email.categoria) {
 
@@ -327,6 +332,8 @@ async function rotearParaAgentes(emails) {
     }
   }
 
+  try { const lim = Date.now() - 30 * 864e5; for (const [k, d] of Object.entries(feitos)) if (Date.parse(d) < lim) delete feitos[k];
+    await sqlE`INSERT INTO kv_store (key, value, updated_at) VALUES ('email_intel:roteados', ${JSON.stringify(feitos)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {}
   return acoes;
 }
 

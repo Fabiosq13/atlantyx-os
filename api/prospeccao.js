@@ -134,7 +134,7 @@ Responda SOMENTE com JSON:
  "oportunidades":[{"dor":"...","solucao":"solução Atlantyx","como_ajuda":"1 frase concreta","caso":"caso Atlantyx parecido, se houver"}],
  "gancho":"1 frase para abrir a conversa conectando o momento da empresa a uma dor","fontes":["url1","url2"]}`;
   try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST',
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: AbortSignal.timeout(25000), /* v3.237: sem prazo a função passava dos 60 s */
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1400, system,
         tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
@@ -156,7 +156,7 @@ async function gerarTexto(c, cfg, canal, analise = null) {
     : `Olá ${c.nome}, aqui é o Fabio Quintanilha, da Atlantyx. Trabalhamos com dados e IA para grandes operações (CPFL, Enel, Caixa). Posso te mandar uma apresentação curta? Se preferir, aqui está o link: ${cfg.apresentacao_url || baseUrl() + '/captura.html?utm_source=whatsapp&utm_medium=prospeccao'}`;
   if (!key) return fallback;
   try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST',
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: AbortSignal.timeout(25000), /* v3.237: sem prazo a função passava dos 60 s */
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 900, system: canal === 'email'
         ? `Escreva um e-mail de apresentação da Atlantyx (17 anos, dados/analytics/IA para grandes empresas; clientes CPFL, Enel, Caixa, Jelta) para um contato novo.
@@ -295,11 +295,16 @@ async function enviarEmail(c, cfg, corpo, over = {}) {
 async function enviarWhatsApp(telefone, mensagem) {
   const instance = process.env.ZAPI_INSTANCE, token = process.env.ZAPI_TOKEN, clientToken = process.env.ZAPI_CLIENT_TOKEN;
   if (!instance || !token) throw new Error('ZAPI_INSTANCE/ZAPI_TOKEN não configurados');
+  // v3.237: respeita o descadastro (quem respondeu SAIR / recusou) antes de qualquer envio
+  try { const sql = await getSql(); const { normTelefone, garantirTabelas } = await import('./campanha-disparo.js'); await garantirTabelas(sql);
+    const d0 = normTelefone(telefone) || String(telefone || '').replace(/\D/g, '');
+    if ((await sql`SELECT 1 FROM disparo_optout WHERE destino = ${d0} LIMIT 1`).length) throw Object.assign(new Error('Contato descadastrado (pediu para não receber mensagens) — não enviado'), { optout: true }); }
+  catch (e) { if (e.optout) throw e; }
   const r = await fetch(`https://api.z-api.io/instances/${instance}/token/${token}/send-text`, { method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(clientToken ? { 'Client-Token': clientToken } : {}) },
     body: JSON.stringify({ phone: telefone, message: mensagem }) });
   const d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(d.message || d.error || 'HTTP ' + r.status);
+  if (!r.ok || d.error || !(d.zaapId || d.messageId || d.id)) throw new Error('Z-API não enviou: ' + (d.error || d.message || 'HTTP ' + r.status)); // v3.237: 200 com erro (instância desconectada) contava como enviado
   return d;
 }
 

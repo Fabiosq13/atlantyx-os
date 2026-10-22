@@ -903,6 +903,8 @@ async function handler(req, res) {
   // v3.146: o robô do GitHub (CRON_SECRET) baixa a partitura do produto antes do Claude construir
   { const u0 = new URL(req.url || '/', 'http://x');
     if (req.method === 'GET' && (u0.searchParams.get('action') || req.query?.action) === 'construcao_pacote') {
+      // v3.237: o pacote (ERF, backlog, testes) nunca sai por rota pública (/qa/<token> passava como "painel do cliente")
+      if (req.atxCred === 'publica') return res.status(401).json({ success: false, error: 'Acesso restrito' });
       try { return res.status(200).json({ success: true, ...(await construcaoPacote({ projeto_id: u0.searchParams.get('projeto') || req.query?.projeto })) }); }
       catch (e) { return res.status(500).json({ success: false, error: e.message }); } } }
   // GET público: painel do cliente pelo token (/qa/<token>)

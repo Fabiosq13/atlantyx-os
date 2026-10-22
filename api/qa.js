@@ -59,7 +59,7 @@ async function crudSuite() {
     resultados.push(r);
   };
   const exige = (cond, msg) => { if (!cond) throw new Error(msg); };
-  const hoje = new Date().toISOString().substring(0, 10);
+  const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // v3.237
 
   await teste('Despesas programadas (financeiro)', async (passo, ctx) => {
     await passo('incluir', async () => { const d = await chamar('financeiro', { action: 'desp_save', params: { descricao: marca, valor: 1.23, recorrencia: 'unica', data_inicio: hoje, categoria: 'QA' } });

@@ -267,7 +267,7 @@ async function lerRespostas({ dias = 14 } = {}) {
   try { ({ ImapFlow } = await import('imapflow')); } catch { return { erro: 'Pacote imapflow não instalado (npm i imapflow)' }; }
 
   const sql = await getSql();
-  const leads = await sql`SELECT id, empresa, email, contato_nome FROM out_leads WHERE email IS NOT NULL AND status IN ('enviado','respondido','interessado')`;
+  const leads = await sql`SELECT id, empresa, email, telefone, contato_nome, status, respondido_em FROM out_leads WHERE email IS NOT NULL AND status IN ('enviado','respondido','interessado')`;
   if (!leads.length) return { verificados: 0, respostas: [] };
   const porEmail = {};
   leads.forEach(l => porEmail[String(l.email).toLowerCase().trim()] = l);
@@ -279,13 +279,25 @@ async function lerRespostas({ dias = 14 } = {}) {
     const lock = await client.getMailboxLock('INBOX');
     try {
       const desde = new Date(Date.now() - dias * 86400000);
-      for await (const msg of client.fetch({ since: desde }, { envelope: true, source: true })) {
+      // v3.237: 1º passo só cabeçalhos (antes baixava o conteúdo de TODO e-mail da caixa em 14 dias e passava dos 60 s);
+      // só as mensagens de leads, e só as que chegaram depois da última resposta já lida (sem reprocessar/duplicar)
+      const alvos = [];
+      for await (const msg of client.fetch({ since: desde }, { envelope: true, uid: true })) {
         const de = (msg.envelope?.from?.[0]?.address || '').toLowerCase().trim();
-        const lead = porEmail[de];
-        if (!lead) continue;
-        const texto = String(msg.source || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').substring(0, 3000);
-        achadas.push({ lead_id: lead.id, empresa: lead.empresa, de,
-          assunto: msg.envelope?.subject || '', data: msg.envelope?.date, texto });
+        const lead = porEmail[de]; if (!lead) continue;
+        const dt = msg.envelope?.date ? new Date(msg.envelope.date) : null;
+        if (lead.respondido_em && dt && dt <= new Date(lead.respondido_em)) continue;
+        alvos.push({ uid: msg.uid, lead, de, assunto: msg.envelope?.subject || '', data: dt });
+      }
+      const _decod = (t) => { let x = String(t || '');
+        if (/^[A-Za-z0-9+/=\r\n]+$/.test(x.trim()) && x.trim().length > 40) { try { x = Buffer.from(x, 'base64').toString('utf8'); } catch (_) {} }
+        else if (/=\r?\n|=[0-9A-F]{2}/.test(x)) x = x.replace(/=\r?\n/g, '').replace(/=([0-9A-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+        return x.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(); };
+      for (const a of alvos.slice(0, 15)) {
+        let texto = '';
+        try { const m = await client.fetchOne(String(a.uid), { bodyParts: ['1', 'TEXT'] }, { uid: true });
+          const bp = m?.bodyParts; texto = _decod(bp?.get?.('1') || bp?.get?.('text') || bp?.get?.('TEXT') || ''); } catch (_) {}
+        achadas.push({ lead_id: a.lead.id, lead: a.lead, empresa: a.lead.empresa, de: a.de, assunto: a.assunto, data: a.data, texto: texto.substring(0, 3000) });
       }
     } finally { lock.release(); }
     await client.logout();
@@ -294,7 +306,7 @@ async function lerRespostas({ dias = 14 } = {}) {
   // Classificar a intenção de cada resposta
   const resultados = [];
   for (const a of achadas) {
-    let intencao = 'neutro', resumo = '', proxima_acao = '';
+    let intencao = null, resumo = '', proxima_acao = '';
     try {
       const system = `Classifique a intenção da resposta a um e-mail de prospecção. Devolva SOMENTE JSON:
 {"intencao":"positivo|neutro|negativo|pedir_depois","resumo":"até 20 palavras","disponibilidade":"o que a pessoa disse sobre data/hora, ou vazio","proxima_acao":"o que fazer agora, em uma frase"}
@@ -309,12 +321,20 @@ Nunca classifique como positivo uma resposta automática de ausência.`;
       intencao = d.intencao || 'neutro'; resumo = d.resumo || ''; proxima_acao = d.proxima_acao || '';
       a.disponibilidade = d.disponibilidade || '';
     } catch (_) {}
-    const novoStatus = intencao === 'positivo' ? 'interessado' : intencao === 'negativo' ? 'descartado' : 'respondido';
-    await sql`UPDATE out_leads SET status = ${novoStatus}, intencao = ${intencao}, respondido_em = NOW(),
+    // v3.237: status só AVANÇA (um "interessado" não volta a "respondido" por uma resposta neutra ou falha da IA);
+    // sem classificação (IA falhou) só registra a mensagem; recusa → descadastro também nos disparos
+    const ordem = { enviado: 0, respondido: 1, interessado: 2 };
+    let novoStatus = a.lead.status;
+    if (intencao === 'negativo') novoStatus = 'descartado';
+    else if (intencao) { const cand = intencao === 'positivo' ? 'interessado' : 'respondido'; if ((ordem[cand] ?? 0) > (ordem[a.lead.status] ?? 0)) novoStatus = cand; }
+    await sql`UPDATE out_leads SET status = ${novoStatus}, intencao = COALESCE(${intencao}, intencao), respondido_em = ${a.data ? a.data.toISOString() : new Date().toISOString()},
       ultima_resposta = ${resumo || a.assunto}, atualizado_em = NOW() WHERE id = ${a.lead_id}`;
+    if (intencao === 'negativo') { try { const { normTelefone, normEmail, garantirTabelas } = await import('./campanha-disparo.js'); await garantirTabelas(sql);
+      const dests = [[normEmail ? normEmail(a.de) : a.de, 'email'], ...(a.lead.telefone ? [[normTelefone(a.lead.telefone), 'whatsapp']] : [])].filter(([d]) => d);
+      for (const [d, c] of dests) await sql`INSERT INTO disparo_optout (destino, canal, motivo) VALUES (${d}, ${c}, 'recusou na resposta ao outbound') ON CONFLICT (destino) DO NOTHING`; } catch (_) {} }
     await sql`INSERT INTO out_mensagens (id, lead_id, direcao, assunto, corpo)
       VALUES (${novoId('msg')}, ${a.lead_id}, 'entrada', ${a.assunto}, ${a.texto.substring(0, 2000)})`;
-    resultados.push({ empresa: a.empresa, intencao, resumo, disponibilidade: a.disponibilidade, proxima_acao });
+    resultados.push({ empresa: a.empresa, intencao: intencao || 'não classificada', resumo, disponibilidade: a.disponibilidade, proxima_acao });
   }
   return { verificados: achadas.length, respostas: resultados,
     positivos: resultados.filter(r => r.intencao === 'positivo').length };

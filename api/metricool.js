@@ -23,7 +23,7 @@ async function icpAuditarPlanejados({ blog_id, dias = 60 } = {}) {
   const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
   const fora = [], avisos = []; let conferidos = 0;
   if (TOKEN && USERID && BLOGID) {
-    try { const hoje = new Date(); const ini = hoje.toISOString().substring(0, 10) + 'T00:00:00', fim = new Date(hoje.getTime() + Math.min(120, dias) * 864e5).toISOString().substring(0, 10) + 'T23:59:59';
+    try { const hoje = new Date(); const _sp = d => d.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); const ini = _sp(hoje) + 'T00:00:00', fim = _sp(new Date(hoje.getTime() + Math.min(120, dias) * 864e5)) + 'T23:59:59'; // v3.237: dia de Brasília
       const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${ini}&end=${fim}&timezone=America/Sao_Paulo`, TOKEN);
       const lista = Array.isArray(r) ? r : (r?.data || r?.posts || []);
       for (const p of lista) { conferidos++; const tr = _icpTexto(p.text); if (tr) fora.push({ origem: 'Metricool (agendado)', id: p.id, data: String(p.publicationDate?.dateTime || p.publicationDate || '').substring(0, 16).replace('T', ' '), redes: (p.providers || []).map(x => x.network || x).join(', '), trecho: tr, texto: String(p.text || '').substring(0, 220) }); }
@@ -34,6 +34,18 @@ async function icpAuditarPlanejados({ blog_id, dias = 60 } = {}) {
     for (const it of q) { conferidos++; const tr = _icpTexto(it.texto) || _icpTexto(it.tema); if (tr) fora.push({ origem: 'Fila da autocampanha', id: it.id, data: String(it.data).substring(0, 10) + ' ' + (it.hora || ''), trecho: tr, texto: String(it.texto || it.tema || '').substring(0, 220) }); }
     const t = await sql`SELECT id, data, hora, tipo, tema, roteiro, legenda FROM tend_pecas WHERE COALESCE(status, '') NOT IN ('publicada', 'excluida') AND data >= ${ontem} ORDER BY data LIMIT 300`.catch(() => []);
     for (const it of t) { conferidos++; const txt = [it.tema, it.legenda, typeof it.roteiro === 'string' ? it.roteiro : JSON.stringify(it.roteiro || '')].filter(Boolean).join(' · '); const tr = _icpTexto(txt); if (tr) fora.push({ origem: 'Tendências (' + (it.tipo || 'peça') + ')', id: it.id, data: String(it.data).substring(0, 10) + ' ' + (it.hora || ''), trecho: tr, texto: txt.substring(0, 220) }); }
+    // v3.237: também os rascunhos que ainda não foram para o Metricool — peças do Kanban, textos por rede das campanhas
+    // e lotes de disparo (WhatsApp/e-mail) com envios pendentes
+    const kb = await _kvMc('atx:kanban:pecas').catch(() => null);
+    for (const pc of (Array.isArray(kb) ? kb : [])) { if (['Publicado', 'Agendado'].includes(pc.status)) continue; conferidos++;
+      const tr = _icpTexto(pc.copy) || _icpTexto(pc.titulo); if (tr) fora.push({ origem: 'Kanban (peça)', id: pc.id, data: String(pc.data_planejada || pc.agendado_para || '').substring(0, 16), trecho: tr, texto: String(pc.copy || pc.titulo || '').substring(0, 220) }); }
+    const camps = await sql`SELECT id, nome, data FROM campanhas WHERE COALESCE(atualizado_em, criado_em) > NOW() - INTERVAL '120 days' ORDER BY atualizado_em DESC LIMIT 150`.catch(() => []);
+    for (const c of camps) { let d = c.data; if (typeof d === 'string') { try { d = JSON.parse(d); } catch (_) { d = {}; } }
+      const cpr = d?.data?.copy_por_rede || {};
+      for (const [rede, v] of Object.entries(cpr)) { const txt = typeof v === 'string' ? v : v?.texto; if (!txt) continue; conferidos++;
+        const tr = _icpTexto(txt); if (tr) fora.push({ origem: 'Campanha (' + rede + ')', id: c.id + '|' + rede, data: c.nome || '', trecho: tr, texto: String(txt).substring(0, 220) }); } }
+    const lotes = await sql`SELECT l.id, l.canal, l.texto, l.campanha_nome FROM disparo_lotes l WHERE l.status = 'ativo' AND EXISTS (SELECT 1 FROM disparo_envios e WHERE e.lote_id = l.id AND e.status = 'pendente') LIMIT 50`.catch(() => []);
+    for (const l of lotes) { conferidos++; const tr = _icpTexto(l.texto); if (tr) fora.push({ origem: 'Disparo (' + (l.canal || '') + ')', id: l.id, data: l.campanha_nome || '', trecho: tr, texto: String(l.texto || '').substring(0, 220) }); }
   } catch (e) { avisos.push('Banco: ' + e.message); }
   return { conferidos, fora_do_icp: fora, total_fora: fora.length, avisos };
 }
@@ -46,7 +58,7 @@ async function corrigirImagensAgendadas({ blog_id, dias = 60, aplicar = false } 
   if (!TOKEN || !USERID || !BLOGID) throw new Error('Credenciais do Metricool ausentes');
 
   const hoje = new Date();
-  const ini = hoje.toISOString().substring(0,10) + 'T00:00:00'; // v3.54: formato ISO (o compacto podia vir vazio)
+  const ini = hoje.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }) + 'T00:00:00'; // v3.54: formato ISO · v3.237: dia de Brasília (depois das 21h o dia UTC já é amanhã)
   const fim = new Date(hoje.getTime() + dias*86400000).toISOString().substring(0,10) + 'T23:59:59';
   const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${ini}&end=${fim}&timezone=America/Sao_Paulo`, TOKEN);
   const lista = Array.isArray(r) ? r : (r?.data || r?.posts || []);
@@ -214,7 +226,7 @@ async function _recriarSemDuplicar(idAntigo, corpo, { USERID, BLOGID, TOKEN }) {
 async function removerDuplicados({ aplicar = false, dias = 60, blog_id, ids = null } = {}) {
   const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
   if (!TOKEN || !USERID || !BLOGID) throw new Error('Credenciais do Metricool ausentes');
-  const ag = new Date(), fim = new Date(Date.now() + dias * 864e5), f = d => d.toISOString().substring(0, 10);
+  const ag = new Date(), fim = new Date(Date.now() + dias * 864e5), f = d => d.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // v3.237: dia de Brasília
   const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${f(ag)}T00:00:00&end=${f(fim)}T23:59:59&timezone=America/Sao_Paulo`, TOKEN);
   const lista = (Array.isArray(r) ? r : (r?.data || [])).filter(p => !p.published && new Date(String(p.publicationDate?.dateTime || p.publicationDate || '').substring(0, 19) + '-03:00') > ag);
   const norm = t => String(t || '').replace(/(https?:\/\/)?[a-z0-9.-]+\.[a-z]{2,}(\/[^\s]*)?/gi, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().toLowerCase().substring(0, 300);
@@ -322,7 +334,7 @@ async function _publicoB2B() {
   for (const q of META_CARGOS) { try { const r = await _meta(`search?type=adworkposition&limit=10&q=${encodeURIComponent(q)}`);
     (r.data || []).filter(d => _n(d.name) === _n(q) || (_n(d.name).startsWith(_n(q)) && _clsCargo(d.name) === 'decisor')).filter(d => _clsCargo(d.name) === 'decisor').slice(0, 3)
       .forEach(x => { if (!cargos.some(i => i.id === String(x.id))) cargos.push({ id: String(x.id), name: x.name }); }); } catch (_) {} }
-  const v = { cidades, interesses, cargos, em: Date.now() }; if (cidades.length) await _kvMc(_KV_PB, v).catch(() => {}); return v;
+  const v = { cidades, interesses, cargos, em: Date.now() }; if (cidades.length && cargos.length) await _kvMc(_KV_PB, v).catch(() => {}); return v; // v3.237: sem cargo resolvido não guarda (tenta de novo na próxima)
 }
 // v3.214: CAMADA DE DECISOR + EXCLUSÕES. Interesse sozinho ("Business intelligence", "Gestão") pega estudante,
 // curioso e quem procura emprego. Agora o público é INTERESSE DO TEMA **E** (comportamento de dono/administrador de
@@ -395,6 +407,7 @@ async function patrocinadoCriar(p = {}, req) {
     if (!amplo && !_camadaDec().length) throw err('Não consegui montar o filtro de cargo (donos/C-levels) no Meta agora — nada foi criado. Tente de novo em alguns minutos.');
     let adset = null;
     for (let tentativa = 0; tentativa < 3 && !adset; tentativa++) {
+      if (!amplo && !_camadaDec().length) throw err('O Meta recusou o filtro de cargo e o de área de atuação — nada foi criado (sem filtro o anúncio iria para qualquer pessoa).'); // v3.237: confere a cada tentativa
       try {
         adset = await _meta(`act_${c.conta}/adsets`, 'POST', { name: nome + ' · Instagram', campaign_id: camp.id, daily_budget: Math.round(diario * 100), billing_event: 'IMPRESSIONS',
           // v3.190: com o Pixel (META_PIXEL_ID) → otimiza para LEAD (cadastro feito), o que filtra robô e clique acidental; sem Pixel → clique no link
@@ -536,10 +549,13 @@ async function patrocinadoPublicoAtualizar({ aplicar = false, ids = null, soment
     const antes = { idade: `${t.age_min || '?'}–${t.age_max || '?'}`, posicoes: (t.instagram_positions || []).join(', ') || 'automático', local: t.geo_locations?.cities ? t.geo_locations.cities.length + ' cidade(s)' : (t.geo_locations?.countries || []).join(',') || '—', interesses: (t.flexible_spec || []).reduce((s, f) => s + (f.interests || []).length, 0), exclusoes: !!t.exclusions };
     const it = { id: x.id, nome: x.name, estado: x.effective_status, antes, no_icp: conf.ok, motivos: conf.motivos };
     if (somente_fora && conf.ok) { it.pulado = 'já no ICP'; itens.push(it); continue; }
+    // v3.237: já recebeu o ajuste possível nesta versão da regra (ex.: Meta não aceita cargo → área de atuação) — não
+    // reaplica de hora em hora (cada alteração reinicia o aprendizado do Meta)
+    if (somente_fora && reg[x.id]?.versao === ICP_VERSAO && reg[x.id]?.fallback && conf.motivos.every(m => /cargo atual/.test(m))) { it.pulado = 'ajuste possível já aplicado'; itens.push(it); continue; }
     if (aplicar) {
       try { await _meta(x.id, 'POST', { targeting: novo(t, true) }); it.ok = true; it.filtro = pb.cargos?.length ? 'cargo atual' : 'área de atuação'; }
       catch (e) { try { await _meta(x.id, 'POST', { targeting: novo(t, false) }); it.ok = true; it.camada_decisor = false; it.aviso = 'o Meta recusou o filtro de cargo — aplicado pela área de atuação em gestão: ' + e.message; } catch (e2) { it.ok = false; it.erro = e2.message; } }
-      if (it.ok) reg[x.id] = { versao: ICP_VERSAO, em: new Date().toISOString() };
+      if (it.ok) reg[x.id] = { versao: ICP_VERSAO, em: new Date().toISOString(), fallback: it.camada_decisor === false };
     }
     itens.push(it);
   }
@@ -559,11 +575,11 @@ async function patrocinadoPublicoAtualizar({ aplicar = false, ids = null, soment
 // Tudo fica registrado (antes → depois) em 'mkt:icp_conteudo_log'.
 async function _icpRevisarTexto(texto) {
   const urls = String(texto || '').match(/https?:\/\/\S+|\b[\w-]+\.(?:com|com\.br|app|io)\/\S*/gi) || [];
-  const sys = ICP_TEXTO + '\nVocê revisa posts de redes sociais da Atlantyx (dados, BI e IA para empresas). Se o texto JÁ fala com donos e C-levels de médias e grandes empresas, devolva {"ok":true}. Se fala com público técnico, estudante, iniciante, quem procura emprego/curso ou pessoa física, REESCREVA para donos e C-levels: mesmo assunto e idioma, tamanho parecido (±20%), foco em resultado de negócio (dinheiro, risco, prazo, controle), sem jargão de ferramenta; mantenha EXATAMENTE os links/URLs, a chamada final e no máximo as mesmas hashtags. Devolva {"ok":false,"texto":"texto reescrito","motivo":"1 frase"}.';
+  const sys = ICP_TEXTO + '\nVocê revisa posts de redes sociais da Atlantyx (dados, BI e IA para empresas). Se o texto JÁ fala com donos e C-levels de médias e grandes empresas, devolva {"ok":true}. Se fala com público técnico, estudante, iniciante, quem procura emprego/curso ou pessoa física, REESCREVA para donos e C-levels: mesmo assunto e idioma, tamanho parecido (±20%), foco em resultado de negócio (dinheiro, risco, prazo, controle), sem jargão de ferramenta; mantenha EXATAMENTE os links/URLs, as variáveis entre chaves duplas (ex.: {{nome}}), a chamada final e no máximo as mesmas hashtags. Devolva {"ok":false,"texto":"texto reescrito","motivo":"1 frase"}.';
   const j = JSON.parse(await _claudeAuto(sys, 'TEXTO:\n' + String(texto || '').substring(0, 3000), 1200));
   if (j.ok || !j.texto) return { ok: true };
   const novo = String(j.texto).trim();
-  const faltam = urls.filter(u => !novo.includes(u.replace(/[).,;]+$/, '')));
+  const faltam = [...urls.filter(u => !novo.includes(u.replace(/[).,;]+$/, ''))), ...(String(texto || '').match(/\{\{\s*\w+\s*\}\}/g) || []).filter(v => !novo.includes(v))]; // v3.237: + variáveis {{nome}} dos disparos
   if (faltam.length) return { ok: false, erro: 'reescrita perdeu link(s) — post mantido: ' + faltam.slice(0, 2).join(', ') };
   return { ok: false, texto: novo, motivo: String(j.motivo || '').substring(0, 200) };
 }
@@ -576,7 +592,9 @@ async function _icpConteudoGuardiao() {
     await _kvMc('mkt:icp_conteudo', v); return { varreu: v.pendentes.length };
   }
   const it = (est.pendentes || []).shift(); if (!it) return { ocioso: true };
-  await _kvMc('mkt:icp_conteudo', est); // tira da lista antes de mexer (nunca processa o mesmo item duas vezes)
+  // tira da lista E marca como feito ANTES de mexer — se a função for cortada no meio, o item não é reescrito de novo
+  est.feitos = [...(est.feitos || []), { origem: it.origem, id: it.id }].slice(-300);
+  await _kvMc('mkt:icp_conteudo', est);
   const log = (await _kvMc('mkt:icp_conteudo_log').catch(() => null)) || []; const reg = { em: new Date().toISOString(), origem: it.origem, id: it.id, data: it.data, trecho: it.trecho };
   try {
     if (/^Metricool/.test(it.origem)) {
@@ -594,14 +612,38 @@ async function _icpConteudoGuardiao() {
       const sql = await getSql();
       const r = await sql`UPDATE autocampanha_fila SET etapa = 'texto', status = 'pendente', texto = NULL, erro = NULL, atualizado_em = NOW() WHERE id = ${it.id} AND metricool_id IS NULL AND status <> 'processando' RETURNING id`;
       reg.acao = r.length ? 'texto descartado — será regerado com o ICP' : 'já agendado — tratado pelo post no Metricool';
+    } else if (/^Kanban/.test(it.origem)) {
+      const kb = await _kvMc('atx:kanban:pecas'); const pc = (Array.isArray(kb) ? kb : []).find(x => x.id === it.id);
+      if (!pc || ['Publicado', 'Agendado'].includes(pc.status)) reg.acao = 'peça já agendada/publicada ou removida — mantida';
+      else { const rv = await _icpRevisarTexto(pc.copy || ''); if (rv.ok) reg.acao = 'IA conferiu: já está no ICP — mantida'; else if (rv.erro) reg.acao = rv.erro;
+        else { const kb2 = await _kvMc('atx:kanban:pecas'); const p2 = (kb2 || []).find(x => x.id === it.id); // relê para não perder alteração feita no meio
+          if (p2) { reg.antes = String(p2.copy || '').substring(0, 400); p2.copy = rv.texto; p2.atualizado_em = new Date().toISOString(); p2.icp_revisado_em = p2.atualizado_em; await _kvMc('atx:kanban:pecas', kb2);
+            reg.acao = 'texto da peça reescrito para donos/C-levels'; reg.depois = rv.texto.substring(0, 400); reg.motivo = rv.motivo; } } }
+    } else if (/^Campanha/.test(it.origem)) {
+      const [cid, rede] = String(it.id).split('|'); const sql = await getSql();
+      const c = (await sql`SELECT data FROM campanhas WHERE id = ${cid}`)[0]; let d = c?.data; if (typeof d === 'string') { try { d = JSON.parse(d); } catch (_) { d = null; } }
+      const v = d?.data?.copy_por_rede?.[rede]; const txt = typeof v === 'string' ? v : v?.texto;
+      if (!txt) reg.acao = 'texto não encontrado — mantido';
+      else { const rv = await _icpRevisarTexto(txt); if (rv.ok) reg.acao = 'IA conferiu: já está no ICP — mantido'; else if (rv.erro) reg.acao = rv.erro;
+        else { if (typeof v === 'string') d.data.copy_por_rede[rede] = rv.texto; else v.texto = rv.texto; d.atualizado_em = new Date().toISOString();
+          await sql`UPDATE campanhas SET data = ${JSON.stringify(d)}::jsonb, atualizado_em = NOW() WHERE id = ${cid}`;
+          reg.acao = 'texto de ' + rede + ' da campanha reescrito para donos/C-levels'; reg.antes = String(txt).substring(0, 400); reg.depois = rv.texto.substring(0, 400); reg.motivo = rv.motivo; } }
+    } else if (/^Disparo/.test(it.origem)) {
+      const sql = await getSql(); const l = (await sql`SELECT texto FROM disparo_lotes WHERE id = ${it.id} AND status = 'ativo'`)[0];
+      if (!l?.texto) reg.acao = 'lote encerrado — mantido';
+      else { const rv = await _icpRevisarTexto(l.texto); if (rv.ok) reg.acao = 'IA conferiu: já está no ICP — mantido'; else if (rv.erro) reg.acao = rv.erro;
+        else { await sql`UPDATE disparo_lotes SET texto = ${rv.texto} WHERE id = ${it.id} AND status = 'ativo'`;
+          reg.acao = 'texto do disparo (envios pendentes) reescrito para donos/C-levels'; reg.antes = String(l.texto).substring(0, 400); reg.depois = rv.texto.substring(0, 400); reg.motivo = rv.motivo; } }
     } else if (/^Tend/.test(it.origem)) {
       const sql = await getSql();
+      // v3.237: nunca apaga vídeo gravado — o reel do Fabio fica em roteiro.video_proprio / video_completo (midia_urls vazio)
       const r = await sql`UPDATE tend_pecas SET roteiro = NULL, legenda = NULL, status = 'planejada', atualizado_em = NOW() WHERE id = ${it.id} AND metricool_id IS NULL
-        AND COALESCE(jsonb_array_length(midia_urls), 0) = 0 AND COALESCE(status, '') NOT IN ('publicada', 'agendada') RETURNING id`;
+        AND COALESCE(jsonb_array_length(midia_urls), 0) = 0 AND COALESCE(status, '') NOT IN ('publicada', 'agendada')
+        AND (roteiro IS NULL OR (roteiro->'video_proprio' IS NULL AND roteiro->'video_completo' IS NULL AND roteiro->'video' IS NULL)) RETURNING id`;
       reg.acao = r.length ? 'roteiro descartado — será refeito com o ICP' : 'já tem vídeo ou agendamento — mantido (revise na tela de Tendências)';
     }
   } catch (e) { reg.acao = 'erro: ' + String(e.message).substring(0, 200); }
-  est.feitos = [...(est.feitos || []), { origem: it.origem, id: it.id }, ...(reg.novo_id ? [{ origem: it.origem, id: String(reg.novo_id) }] : [])].slice(-300); await _kvMc('mkt:icp_conteudo', est);
+  if (reg.novo_id) { est.feitos = [...(est.feitos || []), { origem: it.origem, id: String(reg.novo_id) }].slice(-300); await _kvMc('mkt:icp_conteudo', est); }
   log.unshift(reg); await _kvMc('mkt:icp_conteudo_log', log.slice(0, 100));
   return { corrigiu: reg };
 }
@@ -1535,12 +1577,16 @@ Evite repetir o mesmo ângulo de outros posts da semana.`;
 async function handler(req, res) {
   // v2.68: cron da fila — um passo por minuto, em segundo plano
   if (req.method === 'GET' && req.query?.cron === 'fila') {
-    try { const out = []; for (let i = 0; i < 2; i++) { const r = await filaProcessar({}); out.push(r); if (r.ocioso) break; }
-      let icp = null, icpConteudo = null;
-      if (out.every(r => r.ocioso)) { // v3.234/v3.235: guardiões do ICP (anúncios de hora em hora; conteúdo: 1 item por minuto livre)
-        try { icp = await _icpGuardiao(); } catch (e) { icp = { erro: e.message }; }
-        if (icp?.pulado) { try { icpConteudo = await _icpConteudoGuardiao(); } catch (e) { icpConteudo = { erro: e.message }; } } } // conteúdo só no minuto em que os anúncios não rodaram (limite de 60 s)
-      return res.status(200).json({ success: true, passos: out, icp, icp_conteudo: icpConteudo }); }
+    // v3.237: UM passo por chamada (dois passos + guardiões passavam dos 60 s e a função era cortada no meio)
+    try { const t0 = Date.now(); const out = [await filaProcessar({})];
+      let icp = null, icpConteudo = null, leads = null;
+      if (out[0].ocioso) {
+        // leads que ficaram sem processar (aba fechada antes do 2º passo) — 1 por minuto
+        try { const { processarLeadsPendentes } = await import('./lead-capture.js'); leads = await processarLeadsPendentes({ limite: 1 }); } catch (e) { leads = { erro: e.message }; }
+        if (!leads?.processados) { // v3.234/v3.235: guardiões do ICP (anúncios de hora em hora; conteúdo: 1 item por minuto livre)
+          try { icp = await _icpGuardiao(); } catch (e) { icp = { erro: e.message }; }
+          if (icp?.pulado && Date.now() - t0 < 15000) { try { icpConteudo = await _icpConteudoGuardiao(); } catch (e) { icpConteudo = { erro: e.message }; } } } }
+      return res.status(200).json({ success: true, passos: out, leads, icp, icp_conteudo: icpConteudo }); }
     catch (e) { return res.status(500).json({ success: false, error: e.message }); }
   }
   res.setHeader('Access-Control-Allow-Origin', '*');

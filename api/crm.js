@@ -18,7 +18,9 @@ function _smtpConfig(user, pass) {
 let _sql = null;
 async function getSql() {
   if (_sql) return _sql;
-  const { neon } = await import('@neondatabase/serverless');
+  const { neon, types } = await import('@neondatabase/serverless');
+  // v3.237: colunas DATE voltam como 'AAAA-MM-DD' (o driver devolvia Date e String(data) virava "Wed Oct 21" — datas e KPIs errados)
+  try { types?.setTypeParser?.(1082, v => v); } catch (_) {}
   _sql = neon(process.env.DATABASE_URL);
   return _sql;
 }
@@ -521,7 +523,7 @@ async function _atividadePorPapel(sql, papeis) {
       id TEXT PRIMARY KEY, papel_id TEXT, data DATE, contatos INT DEFAULT 0, reunioes INT DEFAULT 0, fechamentos INT DEFAULT 0,
       obs TEXT, criado_em TIMESTAMPTZ DEFAULT NOW())`;
     const rows = await sql`SELECT papel_id, SUM(contatos)::int AS c, SUM(reunioes)::int AS r, SUM(fechamentos)::int AS f,
-        MAX(data) AS ultimo FROM comercial_atividade WHERE data >= CURRENT_DATE - INTERVAL '7 days' GROUP BY papel_id`;
+        MAX(data) AS ultimo FROM comercial_atividade WHERE data >= (NOW() AT TIME ZONE 'America/Sao_Paulo')::date - 7 GROUP BY papel_id`;
     rows.forEach(r => out[r.papel_id] = { contatos: r.c, reunioes: r.r, fechamentos: r.f, ultimo: r.ultimo ? String(r.ultimo).substring(0, 10) : null });
   } catch (_) {}
   papeis.forEach(p => { if (!out[p.id]) out[p.id] = { contatos: 0, reunioes: 0, fechamentos: 0, ultimo: null }; });
@@ -551,7 +553,7 @@ async function registrarAtividade({ papel_id, data, contatos = 0, reunioes = 0, 
   if (!papel_id) throw new Error('papel_id obrigatório');
   const sql = await getSql();
   await _atividadePorPapel(sql, []);   // garante a tabela
-  const d = data || new Date().toISOString().substring(0, 10);
+  const d = data || new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // v3.237: dia de Brasília
   const id = `${papel_id}_${d}`;
   await sql`INSERT INTO comercial_atividade (id, papel_id, data, contatos, reunioes, fechamentos, obs)
     VALUES (${id}, ${papel_id}, ${d}, ${parseInt(contatos)||0}, ${parseInt(reunioes)||0}, ${parseInt(fechamentos)||0}, ${obs || null})

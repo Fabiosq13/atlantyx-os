@@ -162,7 +162,8 @@ async function publico({ fonte = 'leads', canal = 'whatsapp', dias = 365, status
   } else if (fonte === 'out_leads') {
     try {
       const r = await sql`SELECT contato_nome, empresa, email, telefone, status FROM out_leads ORDER BY empresa LIMIT 3000`;
-      lista = r.filter(x => !status || x.status === status).map(x => ({ nome: x.contato_nome, empresa: x.empresa, email: x.email, telefone: x.telefone, origem: 'Base outbound' }));
+      // v3.237: "descartado" = respondeu que não quer contato — nunca entra em disparo, nem com filtro "Todos"
+      lista = r.filter(x => x.status !== 'descartado' && (!status || x.status === status)).map(x => ({ nome: x.contato_nome, empresa: x.empresa, email: x.email, telefone: x.telefone, origem: 'Base outbound' }));
     } catch (_) { lista = []; }
   } else if (fonte === 'hubspot') {
     if (!process.env.HUBSPOT_TOKEN) throw new Error('HUBSPOT_TOKEN não configurado');
@@ -293,7 +294,9 @@ async function processar({ lote_id = null, segundos = 50, cron = false }) {
     if (!n) await sql`UPDATE disparo_lotes SET status = 'concluido', concluido_em = NOW() WHERE id = ${lote.id}`;
   }
   // envios presos em "enviando" há mais de 5 min (função caiu no meio) voltam para a fila
-  await sql`UPDATE disparo_envios SET status = 'pendente' WHERE status = 'enviando' AND pegou_em < NOW() - INTERVAL '5 minutes'`;
+  // v3.237: preso em "enviando" = a função caiu no meio — a mensagem PODE ter saído. Vai para "erro" (revisão + botão Retomar)
+  // em vez de voltar sozinho para a fila e mandar a mesma campanha duas vezes
+  await sql`UPDATE disparo_envios SET status = 'erro', erro = 'interrompido durante o envio — confira se saiu antes de retomar' WHERE status = 'enviando' AND pegou_em < NOW() - INTERVAL '5 minutes'`;
   const restantes = lote_id ? (await sql`SELECT COUNT(*)::int AS n FROM disparo_envios WHERE lote_id = ${lote_id} AND status IN ('pendente','enviando')`)[0].n : null;
   return { success: true, enviados, erros, restantes };
 }
@@ -339,6 +342,11 @@ async function handler(req, res) {
         return res.status(200).send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
       }
       if (q.sair) { // descadastro
+        // v3.237: o GET só mostra o botão de confirmação — antivírus/antispam (ex.: Safe Links) abrem todo link do e-mail e
+        // descadastravam a pessoa sozinhos; o descadastro de 1 clique do Gmail/Outlook vem por POST (abaixo)
+        if (q.ok !== '1') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.setHeader('Cache-Control', 'no-store');
+          const id = String(q.sair).replace(/[^\w-]/g, '');
+          return res.status(200).send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Descadastro</title><body style="font-family:Arial,sans-serif;background:#f3f5fa;display:flex;align-items:center;justify-content:center;min-height:90vh;margin:0;"><form method="get" action="/api/campanha-disparo" style="background:#fff;padding:28px 32px;border-radius:10px;max-width:420px;text-align:center;box-shadow:0 2px 12px rgba(0,0,0,.08);"><input type="hidden" name="sair" value="${id}"><input type="hidden" name="ok" value="1"><h2 style="color:#1A3A8F;margin:0 0 10px;">Parar de receber nossas mensagens?</h2><p style="color:#5a6478;font-size:14px;">Clique para confirmar o descadastro.</p><button style="background:#1A3A8F;color:#fff;border:0;border-radius:6px;padding:10px 22px;font-size:15px;cursor:pointer;">Confirmar descadastro</button></form></body>`); }
         const sql = await getSql();
         const [ev] = await sql`SELECT destino, canal FROM disparo_envios WHERE id = ${String(q.sair)}`;
         if (ev) {
@@ -356,6 +364,11 @@ async function handler(req, res) {
       return res.status(200).json({ success: true, config: configCanais() });
     }
     if (req.method !== 'POST') return res.status(405).end();
+    // v3.237: descadastro de 1 clique (RFC 8058 — botão "Cancelar inscrição" do Gmail/Outlook manda POST ?sair=<id>)
+    if (q.sair) { const sql = await getSql(); const [ev] = await sql`SELECT destino, canal FROM disparo_envios WHERE id = ${String(q.sair)}`;
+      if (ev) { await sql`INSERT INTO disparo_optout (destino, canal, motivo) VALUES (${ev.destino}, ${ev.canal}, 'descadastro 1 clique') ON CONFLICT (destino) DO NOTHING`;
+        await sql`UPDATE disparo_envios SET status = 'descadastrado' WHERE destino = ${ev.destino} AND status = 'pendente'`; }
+      return res.status(200).json({ success: true }); }
     const b = req.body || {};
     switch (b.action) {
       case 'config': return res.status(200).json({ success: true, config: configCanais() });

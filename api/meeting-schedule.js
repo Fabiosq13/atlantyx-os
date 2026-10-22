@@ -82,19 +82,22 @@ async function confirmarReuniao(req, res) {
   const msgLead = `Perfeito, ${lead_name.split(' ')[0]}! Reunião confirmada.
 
 Data: ${data_hora}
-Formato: Google Meet
-Link: https://meet.google.com/atlantyx-${Math.random().toString(36).substr(2, 6)}
+Formato: online — o convite com o link da sala chega no seu e-mail.
 
 Nossa equipe vai preparar um material sobre ${lead_company} antes da conversa. Qualquer dúvida, é só falar!`;
 
   // Enviar confirmação ao lead
   let p = lead_phone.replace(/[^0-9]/g, '');
   if (!p.startsWith('55')) p = '55' + p;
-  await fetch(`https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-text`, {
+  // v3.237: o link do Meet era INVENTADO (código aleatório que não abre sala nenhuma) — o convite com link real sai por
+  // e-mail pela tela de Reuniões; e a resposta da Z-API é conferida (antes dizia "notificações enviadas" mesmo com falha)
+  const rz = await fetch(`https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-text`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Client-Token': process.env.ZAPI_CLIENT_TOKEN },
     body: JSON.stringify({ phone: p, message: msgLead }),
   });
+  const jz = await rz.json().catch(() => ({}));
+  const whatsOk = rz.ok && !jz.error && !!(jz.zaapId || jz.messageId || jz.id);
 
   // Notificar fundador e closer
   const msgInterna = `[S7-07 · REUNIÃO CONFIRMADA]\n\nLead: ${lead_name}\nEmpresa: ${lead_company}\nCargo: ${lead_cargo}\nData: ${data_hora}\nWhatsApp: +${p}\n\nO Agente S7-08 vai gerar o briefing 24h antes.`;
@@ -102,7 +105,7 @@ Nossa equipe vai preparar um material sobre ${lead_company} antes da conversa. Q
 
   // Atualizar HubSpot
   if (deal_id) {
-    await fetch(`https://api.hubapi.com/crm/v3/objects/deals/${deal_id}`, {
+    var rh = await fetch(`https://api.hubapi.com/crm/v3/objects/deals/${deal_id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.HUBSPOT_TOKEN}` },
       body: JSON.stringify({
@@ -121,7 +124,7 @@ Nossa equipe vai preparar um material sobre ${lead_company} antes da conversa. Q
     acao: 'reuniao_confirmada',
     lead: lead_name,
     data_hora,
-    notificacoes_enviadas: true,
+    notificacoes_enviadas: whatsOk, whatsapp_lead: whatsOk ? 'enviado' : ('falhou: ' + (jz.error || jz.message || rz.status)), hubspot: deal_id ? (typeof rh !== 'undefined' && rh?.ok ? 'atualizado' : 'falhou') : 'sem negócio',
   });
 }
 

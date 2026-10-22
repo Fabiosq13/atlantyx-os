@@ -55,6 +55,10 @@ async function handler(req, res) {
   // Status agregado — se qualquer check crítico falhou, retorna 503
   const anyError = Object.values(checks).some(c => c.status === 'error');
   const httpStatus = anyError ? 503 : 200;
+  // v3.237: o 503 do cron não gera aviso nenhum na Vercel — com falha, avisa o fundador por e-mail interno
+  if (anyError && isCron) { try { const { enviarEmailGmail } = await import('./financeiro.js');
+    const falhas = Object.entries(checks).filter(([, c]) => c.status === 'error').map(([k, c]) => `<li><b>${k}</b>: ${String(c.message || '').replace(/</g, '&lt;')}</li>`).join('');
+    await enviarEmailGmail({ para: [process.env.ALERTA_SISTEMA_PARA || 'atlanteambr@gmail.com'], assunto: '[Atlantyx OS] ⚠ Verificação semanal encontrou falha', html: `<p>A verificação semanal do sistema falhou:</p><ul>${falhas}</ul>`, remetente: 'Atlantyx OS · Saúde' }); } catch (e) { console.warn('[health] aviso não enviado:', e.message); } }
 
   return res.status(httpStatus).json({
     status: anyError ? 'unhealthy' : 'healthy',

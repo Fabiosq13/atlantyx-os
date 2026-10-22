@@ -13,7 +13,9 @@ import { comGuarda } from '../lib/qa-guard.js';
 let _sql = null;
 async function getSql() {
   if (_sql) return _sql;
-  const { neon } = await import('@neondatabase/serverless');
+  const { neon, types } = await import('@neondatabase/serverless');
+  // v3.237: colunas DATE voltam como 'AAAA-MM-DD' (o driver devolvia Date e String(data) virava "Wed Oct 21" — datas e KPIs errados)
+  try { types?.setTypeParser?.(1082, v => v); } catch (_) {}
   _sql = neon(process.env.DATABASE_URL);
   await ensureTabelas(_sql);
   return _sql;
@@ -396,14 +398,15 @@ async function contextoFinanceiroDireto() {
       sql`SELECT COALESCE(SUM(valor),0) AS total, COUNT(*)::int AS qtd FROM despesas_ocorrencias
           WHERE status NOT IN ('paga', 'cancelada') AND data_prevista > ${hoje} AND data_prevista <= ${fim90}`, // v3.224: cancelada não sai do caixa
       // Marcos de projeto: o que está por receber e em que etapa
+      // v3.237: só marcos ainda a receber (sem cancelados e sem os já pagos)
       sql`SELECT status_kanban, COALESCE(SUM(valor),0) AS total, COUNT(*)::int AS qtd
-          FROM projetos_marcos GROUP BY status_kanban`,
+          FROM projetos_marcos WHERE COALESCE(status_kanban, '') NOT IN ('cancelado') AND data_pagamento IS NULL GROUP BY status_kanban`,
       // Faturamento em andamento
       sql`SELECT status, COALESCE(SUM(valor_total_termo),0) AS total, COUNT(*)::int AS qtd
           FROM termos_faturamento GROUP BY status`,
       // Contratos vencendo nos próximos 90 dias (risco de receita)
       sql`SELECT numero_contrato, projeto, data_vencimento FROM contratos_financeiros
-          WHERE data_vencimento IS NOT NULL AND data_vencimento <= ${fim90} ORDER BY data_vencimento LIMIT 10`,
+          WHERE data_vencimento IS NOT NULL AND data_vencimento >= ${new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' })} AND data_vencimento <= ${fim90} ORDER BY data_vencimento LIMIT 10`, // v3.237: sem os já vencidos
       sql`SELECT status, COUNT(*)::int AS qtd, COALESCE(SUM(valor_total),0) AS total
           FROM projetos_financeiros GROUP BY status`,
     ]);
@@ -615,6 +618,12 @@ async function handler(req, res) {
   };
 
   if (!acoes[action]) return res.status(400).json({ success: false, error: 'Ação inválida. Disponíveis: ' + Object.keys(acoes).join(', ') });
+  // v3.237: dados de funcionários (salário, custo/hora) só para perfis com tela de RH — antes qualquer usuário logado lia
+  // chamando a API direto (a restrição por tela era só na interface)
+  if (/^funcionario/.test(String(action)) && req.sessao && !req.sessao.admin && !req.sessao.perfil?.admin) {
+    const telas = req.sessao.telas || req.sessao.perfil?.telas || [];
+    if (!telas.includes('*') && !telas.some(t => /^s8(rh|funcionarios|organograma|gerente)$/.test(t))) return res.status(403).json({ success: false, error: 'Seu perfil não tem acesso aos dados de funcionários.' });
+  }
   try {
     const resultado = await acoes[action]();
     return res.status(200).json({ success: true, action, ...resultado });

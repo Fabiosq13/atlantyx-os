@@ -120,7 +120,15 @@ async function handler(req, res) {
     const rfps = relevantes.map(formatarSaida);
 
     // 5. WhatsApp só para editais reais e aderentes (cron)
-    if (isCron && process.env.ZAPI_INSTANCE) for (const r of rfps.filter(r => r.compatibilidade >= 75).slice(0, 3)) await notificarWhatsApp(r);
+    // v3.237: só os editais ainda NÃO avisados (antes o mesmo edital ia por WhatsApp todo dia útil até o prazo)
+    if (isCron && process.env.ZAPI_INSTANCE) {
+      const { neon } = await import('@neondatabase/serverless'); const sqlN = neon(process.env.DATABASE_URL);
+      let avisados = {}; try { const r0 = await sqlN`SELECT value FROM kv_store WHERE key = 'rfp:notificados' LIMIT 1`; avisados = (typeof r0[0]?.value === 'string' ? JSON.parse(r0[0].value) : r0[0]?.value) || {}; } catch (_) {}
+      const novos = rfps.filter(r => r.compatibilidade >= 75).filter(r => { const k = chaveRfp(r) || r.link || r.titulo; return k && !avisados[k]; }).slice(0, 3);
+      for (const r of novos) { try { await notificarWhatsApp(r); avisados[chaveRfp(r) || r.link || r.titulo] = new Date().toISOString().slice(0, 10); } catch (_) {} }
+      if (novos.length) { const lim = Date.now() - 120 * 864e5; for (const [k, d] of Object.entries(avisados)) if (Date.parse(d) < lim) delete avisados[k];
+        try { await sqlN`INSERT INTO kv_store (key, value, updated_at) VALUES ('rfp:notificados', ${JSON.stringify(avisados)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {} }
+    }
 
     const saida0 = {
       success: true,

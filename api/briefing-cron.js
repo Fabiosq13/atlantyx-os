@@ -4,7 +4,7 @@ import { comGuarda } from '../lib/qa-guard.js';
 // Chamado a cada hora pelo Vercel Cron
 
 async function handler(req, res) {
-  if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) { // v3.237
     return res.status(401).json({ error: 'Não autorizado' });
   }
 
@@ -16,10 +16,17 @@ async function handler(req, res) {
     console.log(`[S7-08] ${deals.length} reuniões nas próximas 24h`);
 
     const briefingsGerados = [];
+    // v3.237: marca própria por deal no banco (antes qualquer nota do deal contava como "briefing feito", e uma falha
+    // silenciosa do HubSpot fazia reenviar o briefing por WhatsApp de hora em hora); até 3 por execução (limite de tempo)
+    const { neon } = await import('@neondatabase/serverless'); const sqlB = neon(process.env.DATABASE_URL);
+    const marcado = async id => { try { return !!(await sqlB`SELECT 1 FROM kv_store WHERE key = ${'briefing:' + id} LIMIT 1`).length; } catch (_) { return false; } };
+    const marcar = async id => { try { await sqlB`INSERT INTO kv_store (key, value, updated_at) VALUES (${'briefing:' + id}, ${JSON.stringify({ em: new Date().toISOString() })}, NOW()) ON CONFLICT (key) DO NOTHING`; } catch (_) {} };
+    let feitos = 0;
     for (const deal of deals) {
+      if (feitos >= 3) break;
       try {
-        // Verificar se briefing já foi gerado (nota existente)
-        const jaGerado = await verificarBriefingGerado(deal.id);
+        if (await marcado(deal.id)) continue;
+        const jaGerado = false;
         if (jaGerado) {
           console.log(`[S7-08] Briefing já gerado para deal ${deal.id}`);
           continue;
@@ -30,7 +37,8 @@ async function handler(req, res) {
           ? `https://${process.env.VERCEL_URL}`
           : `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
 
-        await fetch(`${baseUrl}/api/meeting-schedule`, {
+        await marcar(deal.id); feitos++; // marca ANTES de notificar: se algo falhar no meio, não repete o WhatsApp a cada hora
+        const rb = await fetch(`${baseUrl}/api/meeting-schedule`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -44,6 +52,8 @@ async function handler(req, res) {
           })
         });
 
+        const jb = await rb.json().catch(() => ({}));
+        if (!rb.ok || jb.success === false) { console.error(`[S7-08] briefing falhou para ${deal.id}: ${jb.error || rb.status}`); continue; }
         briefingsGerados.push({ deal: deal.id, lead: deal.lead_name });
         console.log(`[S7-08] Briefing gerado: ${deal.lead_name}`);
       } catch (e) {

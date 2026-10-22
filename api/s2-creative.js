@@ -118,7 +118,7 @@ JSON: {"slides":[{"ordem":1,"texto_tela":"...","destaque":"palavra ou número a 
         const { narrativa = {}, copy = {}, link = '', canal = 'Instagram' } = payload;
         const v0 = copy.versoes?.[0] || {};
         const base = (v0.headline ? v0.headline + '\n' : '') + (v0.corpo || copy.raw || '').substring(0, 900);
-        const sys = `Você é o Social Media da Atlantyx (${BRAND.proposta_valor}). Tom: ${BRAND.tom_de_voz}. Stories são vistos por quem JÁ SEGUE — foco em conversão (clique no link) e proximidade. Responda APENAS JSON válido.`;
+        const sys = `Você é o Social Media da Atlantyx (${BRAND.proposta_valor}). Tom: ${BRAND.tom_de_voz}. ICP: ${BRAND.icp}. Stories são vistos por quem JÁ SEGUE — foco em conversão (clique no link) e proximidade. Responda APENAS JSON válido.`;
         const usr = `NARRATIVA: ${narrativa.tema_central || ''} | Gancho: ${narrativa.gancho_principal || ''}
 COPY BASE:\n${base}
 LINK (sticker do último story): ${link || '(sem link)'}
@@ -227,6 +227,7 @@ const BRAND = {
 // ── S2 STORYTELLER — Narrativa Estratégica ────────────────────────────────────
 async function agStoryteller({ campanha, objetivo, canal, publico, contexto }) {
   const system = `Você é o Agente Storyteller da Atlantyx — especialista em narrativas estratégicas B2B.
+Público (ICP): ${BRAND.icp}
 Sua missão: criar a narrativa que o Copywriter e o Designer vão transformar em peças concretas.
 Tom da Atlantyx: ${BRAND.tom_de_voz}
 Problema que a Atlantyx resolve: ${BRAND.problema_central}
@@ -313,6 +314,7 @@ Retorne:
 // ── S2 DESIGNER — Especificação Visual das Peças ─────────────────────────────
 async function agDesigner({ copy, canal, formato, dimensoes }) {
   const system = `Você é o Agente Designer da Atlantyx — especialista em design B2B premium.
+Público (ICP): ${BRAND.icp}
 Estilo visual: ${BRAND.estilo_visual}
 Cores OBRIGATÓRIAS: ${BRAND.cores} — use sempre azul navy #1A3A8F e azul elétrico #4F7CFF.
 Fontes: ${BRAND.fontes}
@@ -365,6 +367,7 @@ SEJA CONCISO — cada campo texto em no máximo 2 frases. Retorne:
 // ── S2 MOTION DESIGNER — Vídeos ───────────────────────────────────────────────
 async function agMotion({ copy, narrativa, duracao, tipo }) {
   const system = `Você é o Agente Motion Designer da Atlantyx.
+Público (ICP): ${BRAND.icp}
 Referência de estilo: Premium B2B corporate — vídeos clean, dados animados, tipografia forte, fundo escuro, cortes rápidos.
 Padrão: https://www.youtube.com/watch?v=0r5YDowCCQ0
 Estilo Atlantyx: ${BRAND.estilo_visual}
@@ -444,6 +447,7 @@ async function agSocialPost({ copy, design, rede, data_hora, canal_hubspot }) {
 // ── S2 SOCIAL MONITOR — Métricas ─────────────────────────────────────────────
 async function agSocialMonitor({ periodo = '7 dias' }) {
   const system = `Você é o Agente de Social Media Monitor da Atlantyx.
+Público (ICP): ${BRAND.icp}
 Analise métricas de social media e gere insights acionáveis.
 Retorne APENAS JSON válido.`;
 
@@ -568,6 +572,7 @@ Retorne:
 // ── S2 EMAIL CADÊNCIA ─────────────────────────────────────────────────────────
 async function agEmailCadencia({ assunto, objetivo, segmento, num_emails = 5, intervalo_dias = 3 }) {
   const system = `Você é o Agente de Cadência de E-mails da Atlantyx.
+Público (ICP): ${BRAND.icp}
 Crie sequências de e-mail que nutrem o lead até a reunião.
 Tom: consultivo, nunca agressivo. Cada e-mail tem um único objetivo.
 Retorne APENAS JSON válido.`;
@@ -723,6 +728,7 @@ Retorne:
 // ── S2 SEO ANÁLISE ────────────────────────────────────────────────────────────
 async function agSEO({ url, foco, concorrentes }) {
   const system = `Você é o Agente de SEO da Atlantyx.
+Público (ICP): ${BRAND.icp}
 Analise e otimize o posicionamento orgânico para o ICP B2B de grandes empresas.
 Retorne APENAS JSON válido.`;
 
@@ -827,7 +833,7 @@ async function campanhaFase2({ campanha, canal, narrativa, copy, redes = [] }) {
     try {
       const base = copy.versoes?.[0] || {};
       const baseTexto = (base.headline ? base.headline + '\n\n' : '') + (base.corpo || copy.raw || '');
-      const sys = 'Você é o Copywriter da Atlantyx. Adapte a copy abaixo para cada rede, respeitando formato e tom nativos de cada uma. Responda APENAS JSON válido, sem markdown.';
+      const sys = 'Você é o Copywriter da Atlantyx. ' + ICP_TEXTO + ' Adapte a copy abaixo para cada rede, respeitando formato e tom nativos de cada uma, sempre falando com donos e C-levels. Responda APENAS JSON válido, sem markdown.'; // v3.237: ICP também no texto por rede (WhatsApp/e-mail dos disparos saem daqui)
       const usr = `COPY BASE:\n${baseTexto.substring(0, 1800)}\n\nNARRATIVA: ${narrativa?.tema_central || ''}\n\nGere JSON exatamente neste formato para as redes [${redesValidas.join(', ')}]:\n{${redesValidas.map(rd => rd === 'email' ? '"email": {"assunto": "...", "texto": "..."}' : `"${rd}": {"texto": "..."}`).join(', ')}}\n\nRegras por rede: linkedin = profissional, 1200-2200 chars, 3-5 hashtags no fim; instagram = leve, emojis moderados, até 1500 chars, hashtags; facebook = conversacional, até 900 chars; whatsapp = direto e pessoal, até 500 chars, sem hashtag; email = assunto curto (max 60 chars) + texto 400-800 chars.`;
       const rr = await claude(sys, usr, 1800);
       const parsed = parseJSON(rr);
@@ -866,7 +872,7 @@ async function campanhaCompleta({ campanha, objetivo, canal, orcamento, publico,
     try {
       const base = copy.versoes?.[0] || {};
       const baseTexto = (base.headline ? base.headline + '\n\n' : '') + (base.corpo || copy.raw || '');
-      const sys = 'Você é o Copywriter da Atlantyx. Adapte a copy abaixo para cada rede, respeitando formato e tom nativos de cada uma. Responda APENAS JSON válido, sem markdown.';
+      const sys = 'Você é o Copywriter da Atlantyx. ' + ICP_TEXTO + ' Adapte a copy abaixo para cada rede, respeitando formato e tom nativos de cada uma, sempre falando com donos e C-levels. Responda APENAS JSON válido, sem markdown.'; // v3.237: ICP também no texto por rede (WhatsApp/e-mail dos disparos saem daqui)
       const usr = `COPY BASE:\n${baseTexto.substring(0, 1800)}\n\nNARRATIVA: ${narrativa.tema_central || ''}\n\nGere JSON exatamente neste formato para as redes [${redesValidas.join(', ')}]:\n{${redesValidas.map(rd => rd === 'email' ? '"email": {"assunto": "...", "texto": "..."}' : `"${rd}": {"texto": "..."}`).join(', ')}}\n\nRegras por rede: linkedin = profissional, 1200-2200 chars, 3-5 hashtags no fim; instagram = leve, emojis moderados, até 1500 chars, hashtags; facebook = conversacional, até 900 chars; whatsapp = direto e pessoal, até 500 chars, sem hashtag; email = assunto curto (max 60 chars) + texto 400-800 chars.`;
       const rr = await claude(sys, usr, 1800);
       const parsed = parseJSON(rr);

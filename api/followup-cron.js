@@ -9,7 +9,7 @@ const MODEL = process.env.CLAUDE_MODEL_RAPIDO || 'claude-haiku-4-5-20251001'; //
 const pendingFollowUps = new Map();
 
 async function handler(req, res) {
-  if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) { // v3.237: sem CRON_SECRET, "Bearer undefined" passava
     return res.status(401).json({ error: 'Não autorizado' });
   }
 
@@ -26,13 +26,20 @@ async function handler(req, res) {
     // que nunca era preenchido — nenhum follow-up saía)
     const { neon } = await import('@neondatabase/serverless');
     const sql = neon(process.env.DATABASE_URL);
-    let devidos = [];
-    try { devidos = await sql`SELECT * FROM followups WHERE status = 'pendente' AND send_at <= NOW() ORDER BY send_at ASC LIMIT 20`; } catch (_) { devidos = []; }
+    // v3.237: WhatsApp a prospect só em horário comercial (seg–sex, 8h–19h de Brasília) — antes saía de madrugada e no fim de semana
+    const sp = new Date(agora.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    if (!(sp.getDay() >= 1 && sp.getDay() <= 5 && sp.getHours() >= 8 && sp.getHours() < 19)) return res.status(200).json({ success: true, fora_do_horario: true, followups_enviados: 0 });
+    // v3.237: itens presos em "enviando" (função cortada) vão para revisão — nunca reenvio automático
+    try { await sql`UPDATE followups SET status = 'erro', erro = 'interrompido durante o envio — confira se a mensagem saiu antes de reenviar' WHERE status = 'enviando' AND COALESCE(enviado_em, send_at) < NOW() - INTERVAL '10 minutes'`; } catch (_) {}
+    const t0 = Date.now(); let devidos = [];
     // v3.233: respeita o descadastro (LGPD) — quem respondeu SAIR não recebe o follow-up
     let optout = new Set();
     try { const { normTelefone } = await import('./campanha-disparo.js'); optout = new Set((await sql`SELECT destino FROM disparo_optout`).map(r => r.destino)); optout._norm = normTelefone; } catch (_) {}
     const pulados = [];
-    for (const f of devidos) {
+    for (let k = 0; k < 8 && Date.now() - t0 < 40000; k++) {
+      // reserva atômica de UM item por vez (duas execuções juntas não mandam o mesmo follow-up)
+      let f = null; try { f = (await sql`UPDATE followups SET status = 'enviando', enviado_em = NOW() WHERE id = (SELECT id FROM followups WHERE status = 'pendente' AND send_at <= NOW() ORDER BY send_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED) AND status = 'pendente' RETURNING *`)[0]; } catch (_) { f = null; }
+      if (!f) break; devidos.push(f);
       const dest = optout._norm ? (optout._norm(f.phone) || String(f.phone || '').replace(/\D/g, '')) : String(f.phone || '').replace(/\D/g, '');
       if (optout.has(dest)) { await sql`UPDATE followups SET status = 'descadastrado' WHERE id = ${f.id}`; pulados.push(f.phone); continue; }
       try {
