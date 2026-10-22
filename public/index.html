@@ -31128,7 +31128,7 @@ function _fhRender() {
     + '<button class="btn btn-g" style="font-size:9px;padding:3px 9px;margin-left:auto;" onclick="finHigCarregar(true)">&#8635; Verificar de novo</button></div>'
     + D.itens.map((x, i) => '<details class="fh-item" style="--c:' + cor[x.gravidade] + '"><summary><span class="fh-sev">' + nomeG[x.gravidade] + '</span><span class="fh-sis">' + _qpEsc(x.sistema) + '</span><b>' + _qpEsc(x.titulo) + '</b><span class="fh-n">' + (x.qtd > 1 || x.valor ? x.qtd + (x.valor ? ' · ' + brl(x.valor) : '') : '') + '</span></summary>'
       + '<div class="fh-det"><div><b>Impacto:</b> ' + _qpEsc(x.impacto) + '</div><div><b>Como corrigir:</b> ' + _qpEsc(x.acao) + '</div>'
-      + (x.itens?.length ? '<div class="fh-lista">' + x.itens.map(it => '<div>• ' + _qpEsc(it.texto) + (it.valor ? ' <span class="fh-v">' + brl(it.valor) + '</span>' : '') + (it.link ? ' <a href="' + _qpEsc(it.link) + '" target="_blank" rel="noopener">abrir ↗</a>' : '') + (it.detalhe ? '<div class="fv2-pq" style="margin-left:10px;">' + _qpEsc(it.detalhe) + '</div>' : '') + '</div>').join('') + '</div>' : '')
+      + (x.itens?.length ? '<div class="fh-lista">' + x.itens.map(it => '<div>• ' + _qpEsc(it.texto) + (it.valor ? ' <span class="fh-v">' + brl(it.valor) + '</span>' : '') + (it.link ? ' <a href="' + _qpEsc(it.link) + '" target="_blank" rel="noopener">abrir ↗</a>' : '') + (it.links?.length ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:3px 0 4px 10px;">' + it.links.filter(l => /^https:\/\//.test(l.url)).map(l => '<a class="btn btn-g" style="font-size:9.5px;padding:2px 8px;text-decoration:none;" href="' + _qpEsc(l.url) + '" target="_blank" rel="noopener" title="' + _qpEsc(l.memo || 'abrir no QuickBooks') + '">' + _qpEsc(l.rot) + ' ↗</a>').join('') + '</div>' : '') + (it.detalhe ? '<div class="fv2-pq" style="margin-left:10px;">' + _qpEsc(it.detalhe) + '</div>' : '') + '</div>').join('') + '</div>' : '')
       + (x.tela ? '<button class="btn btn-g" style="font-size:10px;margin-top:6px;" onclick="finHigIr(' + i + ')">Ir para a tela ↗</button>' : '') + '</div></details>').join('')
     + (D.erros?.length ? '<div class="fv2-pq" style="margin-top:6px;">Não verificado agora: ' + _qpEsc(D.erros.join(' · ')) + '</div>' : '');
 }
@@ -35136,7 +35136,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.249] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.250] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35152,7 +35152,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.249';
+window.__ATX_BUILD_ID__ = 'ATX-v3.250';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

@@ -1519,7 +1519,9 @@ async function higienizacaoDados({ _forcar } = {}) {
     chk('Duplicidades QB', async () => { if (!qb) return; const [r, dupEmail] = await Promise.all([qbVarrerDuplicados({}), dupEmailP]); const S = (r.varredura?.suspeitos || []).filter(x => x.classificacao === 'duplicidade_real' && !dupEmail.has(Math.round(x.valor)));
       if (S.length) add({ id: 'dup_qb', sistema: 'QuickBooks', gravidade: 'alta', titulo: 'Lançamentos registrados em duplicidade no QuickBooks (90 dias)', qtd: S.length, valor: round(S.reduce((a, x) => a + (x.impacto_no_caixa || 0), 0)),
         impacto: 'Receita/despesa e caixa contados duas vezes — DRE, margem, EBITDA e saldo', acao: 'Excluir a cópia no QuickBooks (tela Fluxo Detalhado → Procurar duplicados)', tela: 's3fluxodet',
-        itens: S.slice(0, 25).map(x => ({ texto: `${x.contraparte} · ${x.registros.length} registros iguais (${x.registros.map(g => dataBR(g.data) + ' ' + (g.entidade || g.tipo || '')).join(', ')})`, valor: x.valor })) }); }),
+        itens: S.slice(0, 25).map(x => ({ texto: `${x.contraparte} · ${x.registros.length} registros iguais (${x.registros.map(g => dataBR(g.data) + ' ' + (_QB_ENT_PT[g.entidade] || g.entidade || g.tipo || '')).join(', ')})`, valor: x.valor,
+          // v3.250: um link por registro — abre cada lançamento no QuickBooks para comparar e excluir a cópia
+          links: x.registros.map((g, k) => { const u = g.id && _QB_ENT_TELA[g.entidade] ? _qbUrlTxn(_QB_ENT_TELA[g.entidade] + ':' + g.id) : null; return u ? { rot: (k + 1) + 'º ' + (_QB_ENT_PT[g.entidade] || '') + ' ' + dataBR(g.data) + (g.doc ? ' nº ' + g.doc : ''), url: u, memo: g.memo || '' } : null; }).filter(Boolean) })) }); }),
     // 5. contas sem categoria no resultado do ano
     chk('Sem categoria', async () => { if (!qb) return; const r = await dreArvore({ data_inicio: ano + '-01-01', data_fim: hoje }); const L = [];
       const anda = n => { (n || []).forEach(x => { if (x.tipo === 'conta' || x.tipo === 'secao') { if (/uncategori|n[aã]o categoriz|sem categoria|ask my accountant|pergunte ao contador|opening balance|saldo de abertura|suspense|a classificar/i.test(x.nome) && Math.abs(x.total) > 0.009) L.push(x); } anda(x.filhos); }); };
@@ -5162,6 +5164,8 @@ const RX_EB_IR = /\bIRPJ\b|\bCSLL\b|imposto de renda|contribui[cç][aã]o social
 const RX_EB_REC_FIN = /rendimento|juros|interest|aplica[cç][aã]o financeira|receitas? financeiras?/i;
 // v3.114: link direto para a transação no QuickBooks ("tipo:Id" do qbLancamentos → tela do QBO)
 const _QB_TELA = { invoice: 'invoice', pagamento: 'recvpayment', deposito: 'deposit', despesa: 'expense', pagto_conta: 'billpayment', conta: 'bill', venda: 'salesreceipt', lancamento: 'journal', transferencia: 'transfer', pagto_cartao: 'creditcardpayment', reembolso: 'refundreceipt', cheque: 'check' };
+const _QB_ENT_TELA = { Purchase: 'despesa', Deposit: 'deposito', Invoice: 'invoice', Bill: 'conta', Payment: 'pagamento', JournalEntry: 'lancamento', SalesReceipt: 'venda', BillPayment: 'pagto_conta', Transfer: 'transferencia', RefundReceipt: 'reembolso', CreditCardPayment: 'pagto_cartao' };
+const _QB_ENT_PT = { Purchase: 'despesa', Deposit: 'depósito', Invoice: 'fatura', Bill: 'conta a pagar', Payment: 'recebimento', JournalEntry: 'lançamento contábil', SalesReceipt: 'venda', BillPayment: 'pagamento de conta', Transfer: 'transferência', RefundReceipt: 'reembolso', CreditCardPayment: 'pagamento de cartão' };
 function _qbUrlTxn(txn) { const m = String(txn || '').match(/^([a-z_]+):(\w+)$/); if (!m || !_QB_TELA[m[1]]) return null;
   return (process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com') + '/app/' + _QB_TELA[m[1]] + '?txnId=' + m[2]; }
 // ═══ v3.122: DRE COM DRILL-DOWN — grupo → conta → lançamentos (com link para o lançamento no QuickBooks) ═══
