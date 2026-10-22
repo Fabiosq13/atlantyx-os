@@ -530,13 +530,68 @@ async function patrocinadoPublicoAtualizar({ aplicar = false, ids = null, soment
   return { conjuntos: itens, total: itens.length, fora_do_icp: itens.filter(i => !i.no_icp).length, aplicado: !!aplicar, icp_versao: ICP_VERSAO,
     publico: { cidades: pb.cidades.length, idade_min: META_IDADE_MIN, interesses: pb.interesses.map(i => i.name), comportamentos: (dec?.comportamentos || []).map(i => i.name), setores: (dec?.setores || []).map(i => i.name), excluidos: (dec?.excluir || []).map(i => i.name) } };
 }
-// v3.234: GUARDIÃO DO ICP — a cada 6 h (no cron da fila) confere os conjuntos da conta e reaplica o público C-level
+// v3.234: GUARDIÃO DO ICP — a cada 1 h (v3.235; era 6 h) (no cron da fila) confere os conjuntos da conta e reaplica o público C-level
 // nos que estiverem fora (campanha nova criada direto no Gerenciador, idade alterada, Advantage+ religado…).
 // Não ativa, não pausa e não mexe em orçamento. Registro do que fez em 'mkt:meta:icp_guarda'.
+// v3.235: GUARDIÃO DO ICP NO CONTEÚDO PLANEJADO — aplica direto, sem botão. De hora em hora varre o que está agendado
+// no Metricool, a fila da autocampanha e as peças de tendências; a cada minuto livre do cron corrige UM item:
+//  · post agendado no Metricool → a IA confere e, se fala com público técnico/estudante/emprego, REESCREVE para donos e
+//    C-levels mantendo data, redes, imagem, links e CTA (recria o post sem duplicar); se já está no ICP, mantém
+//  · item da fila ainda não agendado → volta para "texto" e é regerado já com o prompt do ICP
+//  · peça de tendências com roteiro, sem vídeo e sem agendamento → roteiro limpo para ser refeito com o ICP
+// Tudo fica registrado (antes → depois) em 'mkt:icp_conteudo_log'.
+async function _icpRevisarTexto(texto) {
+  const urls = String(texto || '').match(/https?:\/\/\S+|\b[\w-]+\.(?:com|com\.br|app|io)\/\S*/gi) || [];
+  const sys = ICP_TEXTO + '\nVocê revisa posts de redes sociais da Atlantyx (dados, BI e IA para empresas). Se o texto JÁ fala com donos e C-levels de médias e grandes empresas, devolva {"ok":true}. Se fala com público técnico, estudante, iniciante, quem procura emprego/curso ou pessoa física, REESCREVA para donos e C-levels: mesmo assunto e idioma, tamanho parecido (±20%), foco em resultado de negócio (dinheiro, risco, prazo, controle), sem jargão de ferramenta; mantenha EXATAMENTE os links/URLs, a chamada final e no máximo as mesmas hashtags. Devolva {"ok":false,"texto":"texto reescrito","motivo":"1 frase"}.';
+  const j = JSON.parse(await _claudeAuto(sys, 'TEXTO:\n' + String(texto || '').substring(0, 3000), 1200));
+  if (j.ok || !j.texto) return { ok: true };
+  const novo = String(j.texto).trim();
+  const faltam = urls.filter(u => !novo.includes(u.replace(/[).,;]+$/, '')));
+  if (faltam.length) return { ok: false, erro: 'reescrita perdeu link(s) — post mantido: ' + faltam.slice(0, 2).join(', ') };
+  return { ok: false, texto: novo, motivo: String(j.motivo || '').substring(0, 200) };
+}
+async function _icpConteudoGuardiao() {
+  const agora = Date.now(); const est = (await _kvMc('mkt:icp_conteudo').catch(() => null)) || {};
+  if (!est.varrido_em || agora - Date.parse(est.varrido_em) > 3600e3) {
+    const a = await icpAuditarPlanejados({ dias: 60 });
+    const ja = new Set((est.feitos || []).map(x => x.origem + '|' + x.id));
+    const v = { varrido_em: new Date().toISOString(), pendentes: (a.fora_do_icp || []).filter(x => !ja.has(x.origem + '|' + x.id)).map(x => ({ origem: x.origem, id: x.id, data: x.data, trecho: x.trecho })), feitos: (est.feitos || []).slice(-300), avisos: a.avisos };
+    await _kvMc('mkt:icp_conteudo', v); return { varreu: v.pendentes.length };
+  }
+  const it = (est.pendentes || []).shift(); if (!it) return { ocioso: true };
+  await _kvMc('mkt:icp_conteudo', est); // tira da lista antes de mexer (nunca processa o mesmo item duas vezes)
+  const log = (await _kvMc('mkt:icp_conteudo_log').catch(() => null)) || []; const reg = { em: new Date().toISOString(), origem: it.origem, id: it.id, data: it.data, trecho: it.trecho };
+  try {
+    if (/^Metricool/.test(it.origem)) {
+      const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = process.env.METRICOOL_BLOG_ID;
+      const g = await mc(`/v2/scheduler/posts/${it.id}?userId=${USERID}&blogId=${BLOGID}`, TOKEN); const p = g?.data || g?.post || g;
+      const quando = Date.parse(String(p?.publicationDate?.dateTime || p?.publicationDate || '').substring(0, 19) + '-03:00');
+      if (!p || !p.text) { reg.acao = 'post não encontrado (já publicado ou excluído)'; }
+      else if (quando && quando - Date.now() < 30 * 60e3) { reg.acao = 'publica em menos de 30 min — mantido'; }
+      else { const rv = await _icpRevisarTexto(p.text);
+        if (rv.ok) reg.acao = 'IA conferiu: já está no ICP — mantido';
+        else if (rv.erro) reg.acao = rv.erro;
+        else { const novoId = await _recriarSemDuplicar(p.id, _corpoPostMc(p, { text: rv.texto, draft: !!p.draft, ...(p.autoPublish !== undefined ? { autoPublish: p.autoPublish } : {}) }), { USERID, BLOGID, TOKEN });
+          reg.acao = 'reescrito para donos/C-levels (mesma data, redes, imagem e links)'; reg.novo_id = novoId; reg.antes = String(p.text).substring(0, 400); reg.depois = rv.texto.substring(0, 400); reg.motivo = rv.motivo; } }
+    } else if (/^Fila/.test(it.origem)) {
+      const sql = await getSql();
+      const r = await sql`UPDATE autocampanha_fila SET etapa = 'texto', status = 'pendente', texto = NULL, erro = NULL, atualizado_em = NOW() WHERE id = ${it.id} AND metricool_id IS NULL AND status <> 'processando' RETURNING id`;
+      reg.acao = r.length ? 'texto descartado — será regerado com o ICP' : 'já agendado — tratado pelo post no Metricool';
+    } else if (/^Tend/.test(it.origem)) {
+      const sql = await getSql();
+      const r = await sql`UPDATE tend_pecas SET roteiro = NULL, legenda = NULL, status = 'planejada', atualizado_em = NOW() WHERE id = ${it.id} AND metricool_id IS NULL
+        AND COALESCE(jsonb_array_length(midia_urls), 0) = 0 AND COALESCE(status, '') NOT IN ('publicada', 'agendada') RETURNING id`;
+      reg.acao = r.length ? 'roteiro descartado — será refeito com o ICP' : 'já tem vídeo ou agendamento — mantido (revise na tela de Tendências)';
+    }
+  } catch (e) { reg.acao = 'erro: ' + String(e.message).substring(0, 200); }
+  est.feitos = [...(est.feitos || []), { origem: it.origem, id: it.id }, ...(reg.novo_id ? [{ origem: it.origem, id: String(reg.novo_id) }] : [])].slice(-300); await _kvMc('mkt:icp_conteudo', est);
+  log.unshift(reg); await _kvMc('mkt:icp_conteudo_log', log.slice(0, 100));
+  return { corrigiu: reg };
+}
 async function _icpGuardiao({ forcar = false } = {}) {
   const c = _metaCfg(); if (!c.token || !c.conta) return { pulado: 'Meta não configurado' };
   const ult = await _kvMc('mkt:meta:icp_guarda').catch(() => null);
-  if (!forcar && ult?.em && Date.now() - Date.parse(ult.em) < 6 * 3600e3) return { pulado: 'executado há menos de 6 h' };
+  if (!forcar && ult?.em && Date.now() - Date.parse(ult.em) < 3600e3) return { pulado: 'executado há menos de 1 h' }; // v3.235: de hora em hora (era 6 h)
   await _kvMc('mkt:meta:icp_guarda', { ...(ult || {}), em: new Date().toISOString(), rodando: true });
   try { const r = await patrocinadoPublicoAtualizar({ aplicar: true, somente_fora: true });
     const v = { em: new Date().toISOString(), conjuntos: r.total, corrigidos: r.conjuntos.filter(i => i.ok).map(i => ({ id: i.id, nome: i.nome, motivos: i.motivos })), erros: r.conjuntos.filter(i => i.ok === false).map(i => ({ nome: i.nome, erro: i.erro })) };
@@ -1464,8 +1519,11 @@ async function handler(req, res) {
   // v2.68: cron da fila — um passo por minuto, em segundo plano
   if (req.method === 'GET' && req.query?.cron === 'fila') {
     try { const out = []; for (let i = 0; i < 2; i++) { const r = await filaProcessar({}); out.push(r); if (r.ocioso) break; }
-      let icp = null; if (out.every(r => r.ocioso)) { try { icp = await _icpGuardiao(); } catch (e) { icp = { erro: e.message }; } } // v3.234: guardião do ICP (a cada 6 h, só com a fila parada)
-      return res.status(200).json({ success: true, passos: out, icp }); }
+      let icp = null, icpConteudo = null;
+      if (out.every(r => r.ocioso)) { // v3.234/v3.235: guardiões do ICP (anúncios de hora em hora; conteúdo: 1 item por minuto livre)
+        try { icp = await _icpGuardiao(); } catch (e) { icp = { erro: e.message }; }
+        if (icp?.pulado) { try { icpConteudo = await _icpConteudoGuardiao(); } catch (e) { icpConteudo = { erro: e.message }; } } } // conteúdo só no minuto em que os anúncios não rodaram (limite de 60 s)
+      return res.status(200).json({ success: true, passos: out, icp, icp_conteudo: icpConteudo }); }
     catch (e) { return res.status(500).json({ success: false, error: e.message }); }
   }
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -1548,6 +1606,7 @@ async function handler(req, res) {
     meta_kpis:              () => metaKpis(), // v3.216
     patrocinado_publico_atualizar: () => patrocinadoPublicoAtualizar(payload), // v3.214
     icp_auditar_planejados: () => icpAuditarPlanejados(payload), // v3.234
+    icp_conteudo_log: async () => ({ log: (await _kvMc('mkt:icp_conteudo_log').catch(() => null)) || [], estado: await _kvMc('mkt:icp_conteudo').catch(() => null) }), // v3.235
     icp_guardiao: async () => ({ guarda: payload.executar ? await _icpGuardiao({ forcar: true }) : await _kvMc('mkt:meta:icp_guarda').catch(() => null) }), // v3.234
     story_texto:            () => storyTexto(payload),
     autocampanha_agendar_um:() => autoCampanhaAgendarUm(payload),

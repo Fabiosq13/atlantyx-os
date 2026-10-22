@@ -19,9 +19,10 @@
 | Dashboard ao vivo | resultado do dia, financeiro do dia, metas, alertas | T4 |
 
 ## ICP — público-alvo (regra do fundador)
-Donos, sócios, C-levels (CEO, CFO, COO, CIO, CTO, CDO) e diretores/VPs de **médias e grandes empresas** (energia e utilities, bancos e seguradoras, indústria, infraestrutura, varejo e serviços de grande porte). Nunca pessoa física, estudante, quem procura emprego nem público técnico/operacional (analista, desenvolvedor, engenheiro, técnico, coordenador, estagiário).
+**Donos e sócios de empresas médias e grandes** (200+ funcionários) e **os C-levels dessas empresas** (CEO, CFO, COO, CIO, CTO, CDO; no Brasil também diretores estatutários) (energia e utilities, bancos e seguradoras, indústria, infraestrutura, varejo e serviços de grande porte). Nunca pessoa física, estudante, quem procura emprego nem público técnico/operacional (analista, desenvolvedor, engenheiro, técnico, coordenador, estagiário).
 - Fonte única no código: `lib/icp.js` (texto dos prompts, cargos, Apollo, Meta Ads, negativas de busca, `classificarCargo`). Toda campanha, prompt, prospecção, score de lead e abordagem automática lê dali.
-- Meta Ads: 35+ anos, interesse de cargo executivo **e** camada de decisor (setor de gestão), exclusões de emprego/estudo/programação, Advantage+ de público desligado; guardião a cada 6 h corrige conjuntos fora do ICP.
+- Meta Ads: 35+ anos, interesse de cargo executivo **e** camada de decisor (setor de gestão), exclusões de emprego/estudo/programação, Advantage+ de público desligado; guardião de hora em hora corrige conjuntos fora do ICP, sem botão.
+- Conteúdo planejado: guardião automático reescreve posts agendados fora do ICP (mesma data/imagem/links), regera a fila e refaz roteiros de tendências sem vídeo; registro em `mkt:icp_conteudo_log`.
 - WhatsApp automático só para lead A (ou B com cargo de decisor e e-mail corporativo).
 
 ## Glossário

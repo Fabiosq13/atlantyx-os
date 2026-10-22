@@ -4610,7 +4610,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
             <button class="btn" id="patBtnDiag" onclick="patDiagnostico()" title="Confere no Meta (sem criar nada) se o token tem as permissões e enxerga conta, página e Instagram">🔎 Verificar conexão no Meta</button>
             <button class="btn" id="patBtnPublico" onclick="patPublicoCorrigir()" title="Confere TODAS as campanhas da conta no Meta e aplica o ICP C-level (donos, sócios, C-levels e diretores de média e grande empresa) nas que estiverem fora — status e orçamento não mudam">🎯 Aplicar ICP C-level nas campanhas no ar</button>
-            <button class="btn" id="patBtnIcpPosts" onclick="icpAuditarPlanejadosUI()" title="Confere os posts agendados no Metricool, a fila da autocampanha e as peças de tendências e aponta texto para público técnico, estudante ou quem procura emprego">🔍 Conferir ICP dos posts planejados</button>
+            <button class="btn" id="patBtnIcpPosts" onclick="icpAuditarPlanejadosUI()" title="Confere os posts agendados no Metricool, a fila da autocampanha e as peças de tendências e aponta texto para público técnico, estudante ou quem procura emprego">🔍 ICP dos posts planejados (correção automática)</button>
             <button class="btn btn-gn" id="patBtnCriar" onclick="patCriar()">📣 Criar campanha (pausada)</button>
             <button class="btn" onclick="patCriar(true)" title="Monta o kit (texto, título, imagem, link, orçamento e público) para criar no Metricool → Ads">🧰 Kit para criar no Metricool Ads</button>
           </div>
@@ -25288,7 +25288,12 @@ async function icpAuditarPlanejadosUI() {
     m.innerHTML = '<div class="panel" style="width:760px;max-width:96vw;max-height:88vh;overflow:auto;"><div class="ph"><div class="pt">🔍 ICP C-level nos posts planejados</div><button class="btn" style="font-size:10px;" onclick="document.getElementById(\'icpAudModal\').style.display=\'none\'">✕</button></div><div class="pb">'
       + '<div style="font-size:11px;color:var(--t2);margin-bottom:8px;">' + (d.conferidos || 0) + ' item(ns) conferido(s) · <b style="color:' + (L.length ? 'var(--gold)' : 'var(--green,#22d3a3)') + ';">' + (L.length ? L.length + ' com sinal de público fora do ICP' : 'nenhum fora do ICP') + '</b>' + ((d.avisos || []).length ? '<br><span style="color:var(--t3);">' + _patE(d.avisos.join(' · ')) + '</span>' : '') + '</div>'
       + L.map(x => '<div style="border:1px solid var(--bd);border-radius:6px;padding:7px 9px;margin-bottom:6px;font-size:11px;"><div style="font-family:var(--M);font-size:9.5px;color:var(--t3);">' + _patE(x.origem) + ' · ' + _patE(x.data || '') + (x.redes ? ' · ' + _patE(x.redes) : '') + ' · termo: <b style="color:var(--gold);">' + _patE(x.trecho) + '</b></div><div style="margin-top:3px;">' + _patE(x.texto) + '</div></div>').join('')
-      + (L.length ? '<div style="font-size:10px;color:var(--t3);margin-top:6px;">Revise e edite/exclua no Calendário (Metricool), na Fila da autocampanha ou na campanha de Tendências. Os novos textos já saem com o ICP C-level.</div>' : '') + '</div></div>';
+      + (L.length ? '<div style="font-size:10px;color:var(--t3);margin-top:6px;">O sistema corrige sozinho: a cada minuto livre reescreve um post agendado para donos e C-levels (mesma data, imagem e links), regera os da fila e refaz roteiros de tendências sem vídeo.</div>' : '')
+      + '<div id="icpAudLog" style="margin-top:12px;"></div></div></div>';
+    // v3.235: o que o guardião do ICP já corrigiu sozinho
+    try { const g = await mcApi('icp_conteudo_log'); const lg = (g.log || []).slice(0, 30); const el = document.getElementById('icpAudLog');
+      if (el) el.innerHTML = '<div style="font-family:var(--M);font-size:9.5px;text-transform:uppercase;color:var(--t2);margin-bottom:5px;">Correções automáticas (' + lg.length + ')' + (g.estado?.pendentes?.length ? ' · ' + g.estado.pendentes.length + ' na fila de correção' : '') + '</div>'
+        + (lg.length ? lg.map(x => '<div style="border-left:2px solid var(--blue);padding:4px 8px;margin-bottom:5px;font-size:10.5px;"><span style="color:var(--t3);">' + new Date(x.em).toLocaleString('pt-BR') + ' · ' + _patE(x.origem) + ' · ' + _patE(x.data || '') + '</span><br><b>' + _patE(x.acao || '') + '</b>' + (x.depois ? '<div style="color:var(--t3);margin-top:3px;">antes: ' + _patE(String(x.antes || '').substring(0, 160)) + '…</div><div style="margin-top:2px;">depois: ' + _patE(String(x.depois).substring(0, 220)) + '…</div>' : '') + '</div>').join('') : '<div style="font-size:10.5px;color:var(--t3);">Nenhuma correção automática ainda — a primeira varredura roda no próximo minuto livre do agendador.</div>'); } catch (_) {}
   } catch (e) { alert('Não consegui conferir: ' + e.message); }
   finally { if (b) { b.disabled = false; b.textContent = rot; } }
 }
@@ -34086,7 +34091,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.234] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.235] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -34102,7 +34107,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.234';
+window.__ATX_BUILD_ID__ = 'ATX-v3.235';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
