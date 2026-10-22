@@ -209,7 +209,8 @@ async function projetosExternos() {
 async function projetosLocais() {
   try {
     const sql = await getSql();
-    const rows = await sql`SELECT id, nome, status, valor_total, atualizado_em FROM projetos_financeiros ORDER BY nome`;
+    const rows = (await sql`SELECT id, nome, status, valor_total, atualizado_em FROM projetos_financeiros ORDER BY nome`)
+      .filter(p => !/conclu|encerr|cancel|inativ|finaliz/i.test(p.status || '')); // v3.241: encerrado não aparece no painel
     return { fonte: 'atlantyx', projetos: rows.map(p => ({ id: p.id, nome: p.nome, status: p.status,
       valor: num(p.valor_total), gerente: null, pct: 0 })) };
   } catch (e) { return { fonte: 'atlantyx', projetos: [], erro: e.message }; }
@@ -832,7 +833,13 @@ async function maestroPainel({ forcar } = {}) {
       planejado: cf.length ? Math.round(cf.filter(m => String(m.fim).slice(0, 10) <= hoje).length / cf.length * 100) : null, tarefas_atrasadas: 0 }; }
     return { fonte: null, fisico: null, planejado: null, tarefas_atrasadas: 0 };
   };
-  const nomes = [...new Set([...cad.map(p => p.nome), ...Object.keys(wbs).filter(k => (wbs[k] || []).length), ...marcos.map(m => m.proj), ...fin.map(f => f.proj)].filter(Boolean))].sort();
+  // v3.241: projeto = o que está no CADASTRO do Maestro. Antes também virava projeto qualquer nome que sobrou no cronograma,
+  // nos marcos ou no financeiro (projeto apagado ou renomeado) — aparecia projeto que não existe mais e o mesmo projeto
+  // duas vezes (nome antigo + nome novo). Sem cadastro nenhum, mantém o comportamento antigo.
+  const _nm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+  const _cadVistos = new Set();
+  const nomes = cad.length ? cad.map(p => String(p.nome || '').trim()).filter(n => n && !_cadVistos.has(_nm(n)) && _cadVistos.add(_nm(n))).sort()
+    : [...new Set([...Object.keys(wbs).filter(k => (wbs[k] || []).length), ...marcos.map(m => m.proj), ...fin.map(f => f.proj)].filter(Boolean))].sort();
   const projetos = nomes.map(nome => {
     const c = cad.find(p => p.nome === nome) || {}, ativo = !/conclu|encerr|cancel|suspens/i.test(c.status || '');
     const horas = apt.filter(a => (a.projeto || a.Projeto) === nome).reduce((s, a) => s + (parseFloat(a.horas || a.Horas) || 0), 0), horasC = parseFloat(c.horas) || 0;
@@ -1334,11 +1341,35 @@ async function painelMestre({ semana } = {}) {
   // um status report local mais recente continua valendo por cima (com riscos, bloqueios e ações)
   const mae = {}; try { if (process.env.CRONOGRAMA_DATABASE_URL) (await maestroPainel()).projetos.forEach(p => { mae[norm(p.nome)] = p; }); } catch (_) {}
   const usarMae = Object.keys(mae).length > 0;
-  const nomes = new Set([...projetos.map(p => p.nome), ...ultimos.map(u => u.projeto_nome), ...(usarMae ? [] : cfg.map(c => c.projeto_nome))].filter(n => !usarMae || !mae[norm(n)] || mae[norm(n)].ativo));
-  const linhas = [...nomes].map(nome => {
-    const p = projetos.find(x => x.nome === nome) || {};
-    const r = porNome[nome] || null;
-    const c = cfgPorNome[nome] || {};
+  // v3.241: SEM DUPLICADOS E SEM PROJETO ENCERRADO. Antes a lista era a soma de três fontes com o nome escrito igual:
+  // projetos do Maestro + o nome de TODO status report já salvo aqui (inclusive de projeto encerrado ou com nome antigo)
+  // + a configuração do PMO. "TPG" e "CPFL - TPG" viravam duas linhas e projeto encerrado continuava aparecendo.
+  // Agora: com o Maestro (ou outra fonte oficial) a lista é SÓ a dele (ativos); cada status report local é ligado ao
+  // projeto pelo nome (igual, contido ou mesmas palavras) e report sem projeto ativo correspondente fica de fora.
+  // Sem fonte oficial: projetos locais ativos + reports dos últimos 60 dias, juntando nomes equivalentes.
+  const _tk = t => new Set(String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^a-z0-9]+/).filter(w => w.length > 1 && !['de', 'da', 'do', 'e', 'projeto', 'proj', 'the'].includes(w)));
+  const nota = (a, b) => { const x = norm(a), y = norm(b); if (!x || !y) return 0; if (x === y) return 3;
+    if (Math.min(x.length, y.length) >= 3 && (x.includes(y) || y.includes(x))) return 2;
+    const A = _tk(a), B = _tk(b); if (!A.size || !B.size) return 0; let i = 0; A.forEach(w => { if (B.has(w)) i++; });
+    return i && i / Math.min(A.size, B.size) >= 0.75 && i / Math.max(A.size, B.size) >= 0.5 ? 1 : 0; };
+  const melhor = (nome, alvos) => { let top = 0, ganhadores = []; for (const a of alvos) { const n = nota(nome, a); if (n > top) { top = n; ganhadores = [a]; } else if (n && n === top) ganhadores.push(a); }
+    return top && ganhadores.length === 1 ? ganhadores[0] : null; };
+  const _dk = v => { if (v instanceof Date) return v.toISOString().slice(0, 10); const t = String(v || ''); if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10); const d = Date.parse(t); return isNaN(d) ? '' : new Date(d).toISOString().slice(0, 10); };
+  const oficial = fonte !== 'atlantyx' && projetos.length > 0; // Maestro ou sistema externo
+  let base;
+  if (usarMae || oficial) base = usarMae ? Object.values(mae).filter(m => m.ativo).map(m => m.nome) : projetos.map(p => p.nome);
+  else { const limite = new Date(Date.now() - 60 * 864e5).toISOString().substring(0, 10);
+    base = [...projetos.map(p => p.nome), ...cfg.map(c => c.projeto_nome), ...ultimos.filter(u => _dk(u.data_report) >= limite).map(u => u.projeto_nome)]; }
+  const nomesUnicos = []; for (const n of base.filter(Boolean)) { if (!nomesUnicos.some(x => nota(x, n) >= 2)) nomesUnicos.push(n); } // junta "TPG" e "TPG" / "CPFL TPG"
+  const repDe = {}, cfgDe = {}; let reportsFora = 0;
+  for (const u of ultimos) { const alvo = melhor(u.projeto_nome, nomesUnicos); if (!alvo) { reportsFora++; continue; }
+    if (!repDe[alvo] || _dk(u.data_report) > _dk(repDe[alvo].data_report)) repDe[alvo] = u; }
+  for (const c of cfg) { const alvo = melhor(c.projeto_nome, nomesUnicos); if (alvo && !cfgDe[alvo]) cfgDe[alvo] = c; }
+  const avisoFinal = [aviso, reportsFora && (usarMae || oficial) ? reportsFora + ' status report(s) de projetos que não estão ativos no ' + (usarMae ? 'Maestro' : 'sistema de projetos') + ' ficaram fora do painel' : null].filter(Boolean).join(' · ') || null;
+  const linhas = nomesUnicos.map(nome => {
+    const p = projetos.find(x => x.nome === nome) || projetos.find(x => melhor(x.nome, [nome])) || {};
+    const r = repDe[nome] || null;
+    const c = cfgDe[nome] || cfgPorNome[nome] || {};
     const tipo = r?.tipo_projeto || c.tipo_projeto || 'entrega';
     const diasSemReport = r?.data_report ? Math.floor((new Date(hoje) - new Date(r.data_report)) / 86400000) : null;
     const f = fin[norm(nome)] || {}; const M = mae[norm(nome)] || null;
@@ -1385,7 +1416,7 @@ async function painelMestre({ semana } = {}) {
 
   const pendentes = linhas.filter(l => !l.atualizado_na_semana);
   return {
-    painel: linhas, fonte: usarMae ? 'maestro' : fonte, aviso, semana_ref: semanaAtual,
+    painel: linhas, fonte: usarMae ? 'maestro' : fonte, aviso: avisoFinal, semana_ref: semanaAtual,
     resumo: {
       total: linhas.length,
       verde: linhas.filter(l => l.farol === 'verde').length,

@@ -7077,75 +7077,125 @@ async function _funilDeals(pid, etapas, tIni) {
   }
   return [...mapa.values()];
 }
+// v3.241 · FUNIL REMODELADO. Antes: um pipeline só (o 1º do HubSpot ou HUBSPOT_PIPELINE_ID — no caso, o da prospecção do robô,
+// com negócios sem valor), só "entradas no período" (negócio parado numa etapa não aparecia) e meta por etapa derivada
+// da probabilidade (R$ 71 mi para "Mapeado"). Agora:
+//  · PIPELINE: "todos" (padrão) junta os pipelines em 5 etapas-padrão — Prospecção, Qualificado/reunião, Proposta,
+//    Negociação, Ganho — pelo nome e pela probabilidade de cada etapa; ou um pipeline específico com as etapas dele
+//  · DUAS VISÕES: "agora" = negócios abertos em cada etapa (qtd, R$ e R$ ponderado pela probabilidade) e "período" =
+//    negócios que entraram em cada etapa no período (+ ganhos e perdidos no período)
+//  · META: só onde faz sentido — faturamento do período × ganho; cobertura = pipeline ponderado ÷ o que falta; pipeline
+//    necessário = o que falta ÷ taxa de ganho. Meta por etapa só se cadastrada (✎ Metas por etapa)
+//  · LEADS: captados pelo sistema no período (score A/B e reuniões marcadas), no topo do funil
+const _FN_MACROS = [
+  { id: 'm_prospeccao', nome: 'Prospecção / lead', probabilidade: 0.1 },
+  { id: 'm_qualificado', nome: 'Qualificado / reunião', probabilidade: 0.3 },
+  { id: 'm_proposta', nome: 'Proposta enviada', probabilidade: 0.5 },
+  { id: 'm_negociacao', nome: 'Negociação', probabilidade: 0.75 },
+  { id: 'm_ganho', nome: 'Fechado ganho', probabilidade: 1, ganho: true }];
+function _fnMacroDe(e, idx, total) {
+  if (e.ganho) return 'm_ganho';
+  const n = String(e.nome || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (/negocia|contrato|juridic|aprovac|fechamento/.test(n)) return 'm_negociacao';
+  if (/propost|orcament|cotac/.test(n)) return 'm_proposta';
+  if (/reuni|qualific|diagnost|demo|interess|respond|agend|descoberta/.test(n)) return 'm_qualificado';
+  if (/mapead|lead|prospec|abordad|contat|novo|enviad|frio|entrada|cadenc/.test(n)) return 'm_prospeccao';
+  const p = e.probabilidade; if (p != null) return p < 0.2 ? 'm_prospeccao' : p < 0.4 ? 'm_qualificado' : p < 0.7 ? 'm_proposta' : 'm_negociacao';
+  return _FN_MACROS[Math.min(3, Math.floor(idx / Math.max(1, total - 1) * 4))].id;
+}
 async function funilVendas({ tipo, ref, pipeline } = {}) {
   if (!process.env.HUBSPOT_TOKEN) return { indisponivel: 'HUBSPOT_TOKEN não configurado no Vercel' };
   const P = _funilPeriodo(tipo, ref);
   const { pipelines } = await crmEtapas();
-  const pip = pipelines.find(x => x.id === (pipeline || process.env.HUBSPOT_PIPELINE_ID)) || pipelines[0];
-  if (!pip) return { indisponivel: 'Nenhum pipeline de negócios no HubSpot' };
-  const etapas = pip.etapas.map((e, i) => ({ ...e, ordem: i, ganho: e.fechada && (e.probabilidade ?? 0) >= 1, perdido: e.fechada && !((e.probabilidade ?? 0) >= 1) }));
-  const funil = etapas.filter(e => !e.perdido);
-  const ordem = Object.fromEntries(etapas.map(e => [e.id, e.ordem]));
-  const deals = await _funilDeals(pip.id, etapas, P.tIni);
+  if (!pipelines.length) return { indisponivel: 'Nenhum pipeline de negócios no HubSpot' };
+  const todos = !pipeline || pipeline === 'todos' || !pipelines.some(x => x.id === pipeline);
+  const usados = todos ? pipelines : pipelines.filter(x => x.id === pipeline);
+  // etapas de cada pipeline (ganho / perdido pela probabilidade 100% / 0% fechada)
+  const etapas = []; // { id, nome, pipeline, ordem, probabilidade, ganho, perdido, fechada, col }
+  for (const pp of usados) pp.etapas.forEach((e, i) => { const ganho = e.fechada && (e.probabilidade ?? 0) >= 1, perdido = e.fechada && !ganho;
+    etapas.push({ ...e, pipeline: pp.id, ordem: i, ganho, perdido, fechada: !!e.fechada }); });
+  const abertasPorPip = {}; usados.forEach(pp => { abertasPorPip[pp.id] = etapas.filter(e => e.pipeline === pp.id && !e.perdido); });
+  // colunas do funil
+  let colunas;
+  if (todos) { colunas = _FN_MACROS.map((m, i) => ({ ...m, ordem: i, etapas: [] }));
+    usados.forEach(pp => { const L = abertasPorPip[pp.id]; L.forEach((e, i) => { const c = colunas.find(x => x.id === _fnMacroDe(e, i, L.length)); c.etapas.push(e.id); e.col = c.ordem; }); }); }
+  else { const L = abertasPorPip[usados[0].id]; colunas = L.map((e, i) => ({ id: e.id, nome: e.nome, ordem: i, probabilidade: e.ganho ? 1 : e.probabilidade, ganho: e.ganho, etapas: [e.id] })); L.forEach((e, i) => { e.col = i; }); }
+  const porId = Object.fromEntries(etapas.map(e => [e.id, e]));
+  const deals = [];
+  for (const pp of usados) { try { deals.push(...await _funilDeals(pp.id, etapas.filter(e => e.pipeline === pp.id), P.tIni)); } catch (e) { if (!todos) throw e; } }
   // ── metas ──
   const cad = (await _kvFin(_FUNIL_KV).catch(() => null)) || {};
-  const metasEt = (cad.pipeline === pip.id ? cad.etapas : null) || {};
+  const pipId = todos ? 'todos' : usados[0].id;
+  const metasEt = (cad.pipeline === pipId ? cad.etapas : null) || {};
   const m = await _metasComPadrao([P.ano]).catch(() => ({})); const def = m.por_ano?.[String(P.ano)] || {};
   let metaFat = null;
   if (Array.isArray(def.mensal) && def.mensal.some(v => Number(v) > 0)) metaFat = def.mensal.slice(P.mes_ini - 1, P.mes_ini - 1 + P.meses).reduce((s, v) => s + (Number(v) || 0), 0);
   else if (def.faturamento) metaFat = def.faturamento * P.meses / 12;
-  const ganhos12 = deals.filter(d => etapas.find(e => e.id === d.properties?.dealstage)?.ganho && Number(d.properties?.amount) > 0 && (_tsHs(d.properties?.closedate) || 0) > Date.now() - 365 * 864e5);
-  const comValor = deals.filter(d => Number(d.properties?.amount) > 0);
-  const media = l => l.length ? l.reduce((s, d) => s + Number(d.properties.amount), 0) / l.length : null;
-  const ticket = Number(cad.ticket_medio) > 0 ? Number(cad.ticket_medio) : (media(ganhos12) || media(comValor));
-  const ganho = funil.find(e => e.ganho);
-  // ── realizado por etapa ──
-  const det = {}; const perdidos = { qtd: 0, valor: 0 };
-  const linhas = funil.map(e => ({ id: e.id, nome: e.nome, ordem: e.ordem, probabilidade: e.probabilidade, ganho: e.ganho, real: { qtd: 0, valor: 0 }, ids: [] }));
+  const val = d => Number(d.properties?.amount) || 0, ent = (d, id) => _tsHs(d.properties?.['hs_v2_date_entered_' + id] || d.properties?.['hs_date_entered_' + id]);
+  const ano = Date.now() - 365 * 864e5;
+  const ganhos12 = deals.filter(d => porId[d.properties?.dealstage]?.ganho && (_tsHs(d.properties?.closedate) || 0) > ano);
+  const perd12 = deals.filter(d => porId[d.properties?.dealstage]?.perdido && (_tsHs(d.properties?.closedate) || 0) > ano);
+  const media = l => { const c = l.filter(d => val(d) > 0); return c.length ? c.reduce((s, d) => s + val(d), 0) / c.length : null; };
+  const ticket = Number(cad.ticket_medio) > 0 ? Number(cad.ticket_medio) : (media(ganhos12) || media(deals));
+  const taxaGanho = ganhos12.length + perd12.length >= 3 ? ganhos12.length / (ganhos12.length + perd12.length) : null;
+  // ── por coluna: agora (abertos) e período (entradas) ──
+  const linhas = colunas.map(c => ({ id: c.id, nome: c.nome, ordem: c.ordem, probabilidade: c.probabilidade ?? null, ganho: !!c.ganho, etapas_hubspot: c.etapas.map(id => porId[id]?.nome).filter(Boolean),
+    agora: { qtd: 0, valor: 0, ponderado: 0, sem_valor: 0 }, real: { qtd: 0, valor: 0 }, ids: [], ids_agora: [] }));
+  const det = {}, perdidos = { qtd: 0, valor: 0 }, ganhosPer = { qtd: 0, valor: 0, ids: [] };
+  const regDet = (d, atual) => { const pr = d.properties || {}; det[d.id] = { id: d.id, nome: pr.dealname || 'Negócio', valor: val(d), etapa: atual?.nome || pr.dealstage, pipeline: pipelines.find(x => x.id === pr.pipeline)?.nome || '', criado: pr.createdate ? String(pr.createdate).slice(0, 10) : null, fechamento: pr.closedate ? String(pr.closedate).slice(0, 10) : null, owner: pr.hubspot_owner_id || null }; };
   for (const d of deals) {
-    const pr = d.properties || {}, atual = etapas.find(e => e.id === pr.dealstage); const valor = Number(pr.amount) || 0; const criado = _tsHs(pr.createdate);
-    if (atual?.perdido) { const t = _tsHs(pr['hs_v2_date_entered_' + atual.id] || pr['hs_date_entered_' + atual.id]) || _tsHs(pr.closedate); if (t >= P.tIni && t <= P.tFim) { perdidos.qtd++; perdidos.valor += valor; } }
-    let entrou = false;
+    const pr = d.properties || {}, atual = porId[pr.dealstage]; if (!atual) continue; const v = val(d), criado = _tsHs(pr.createdate);
+    const tFech = _tsHs(pr.closedate) || ent(d, atual.id);
+    if (atual.perdido) { const t = ent(d, atual.id) || _tsHs(pr.closedate); if (t >= P.tIni && t <= P.tFim) { perdidos.qtd++; perdidos.valor += v; } }
+    if (atual.ganho && tFech >= P.tIni && tFech <= P.tFim) { ganhosPer.qtd++; ganhosPer.valor += v; ganhosPer.ids.push(d.id); regDet(d, atual); }
+    // agora: abertos na etapa (a coluna Ganho mostra os ganhos do período)
+    if (!atual.fechada && atual.col != null) { const L = linhas[atual.col]; const p = atual.probabilidade ?? colunas[atual.col].probabilidade ?? 0;
+      L.agora.qtd++; L.agora.valor += v; L.agora.ponderado += v * p; if (!v) L.agora.sem_valor++; L.ids_agora.push(d.id); regDet(d, atual); }
+    // período: entrou na coluna (data de entrada em alguma etapa dela; sem histórico, quem está nela ou depois conta pela criação)
+    const colAtual = atual.perdido ? null : atual.col;
     for (const L of linhas) {
-      let t = _tsHs(pr['hs_v2_date_entered_' + L.id] || pr['hs_date_entered_' + L.id]);
-      if (t == null && atual && !atual.perdido && ordem[atual.id] >= L.ordem) t = L.ganho ? (_tsHs(pr.closedate) || criado) : criado;
-      if (t == null && L.ordem === funil[0].ordem && atual?.perdido) t = criado; // perdido sem histórico: conta na entrada do funil
-      if (t != null && t >= P.tIni && t <= P.tFim) { L.real.qtd++; L.real.valor += valor; L.ids.push(d.id); entrou = true; }
+      let t = null; for (const id of colunas[L.ordem].etapas) { const x = ent(d, id); if (x != null && (t == null || x < t)) t = x; }
+      if (t == null && colAtual != null && colAtual >= L.ordem) t = L.ganho ? (tFech || criado) : criado;
+      if (t == null && L.ordem === 0 && atual.perdido) t = criado;
+      if (t != null && t >= P.tIni && t <= P.tFim) { L.real.qtd++; L.real.valor += v; L.ids.push(d.id); regDet(d, atual); }
     }
-    if (entrou) det[d.id] = { id: d.id, nome: pr.dealname || 'Negócio', valor, etapa: atual?.nome || pr.dealstage, criado: pr.createdate ? String(pr.createdate).slice(0, 10) : null, fechamento: pr.closedate ? String(pr.closedate).slice(0, 10) : null, owner: pr.hubspot_owner_id || null };
   }
+  const gl = linhas.find(L => L.ganho); if (gl) { gl.agora = { qtd: ganhosPer.qtd, valor: round(ganhosPer.valor), ponderado: round(ganhosPer.valor), sem_valor: 0, e_ganho_do_periodo: true }; gl.ids_agora = ganhosPer.ids; }
   const prop = P.decorrido > 0 ? P.decorrido : 1;
-  // base da derivação: meta da etapa GANHO (cadastrada, se houver; senão a meta de faturamento do período)
-  const cg = ganho ? (metasEt[ganho.id] || {}) : {};
-  const baseV = Number(cg.valor_mes) > 0 ? Number(cg.valor_mes) * P.meses : (Number(cg.qtd_mes) > 0 && ticket ? Number(cg.qtd_mes) * P.meses * ticket : metaFat);
-  const baseQ = Number(cg.qtd_mes) > 0 ? Number(cg.qtd_mes) * P.meses : (baseV && ticket ? baseV / ticket : null);
   for (const L of linhas) {
-    const c = metasEt[L.id] || {}; let fonte = 'cadastrada';
-    let mq = Number(c.qtd_mes) > 0 ? Number(c.qtd_mes) * P.meses : null, mv = Number(c.valor_mes) > 0 ? Number(c.valor_mes) * P.meses : null;
-    if (mq == null && mv == null) {
-      fonte = 'derivada';
-      const p = L.ganho ? 1 : (L.probabilidade > 0 ? L.probabilidade : null);
-      if (baseV && p) mv = baseV / p;
-      if (baseQ && p) mq = baseQ / p;
-      if (mq == null && mv != null && ticket) mq = mv / ticket;
-      if (mq == null && mv == null) fonte = null;
-    }
+    const c = metasEt[L.id] || {};
+    const mq = Number(c.qtd_mes) > 0 ? Number(c.qtd_mes) * P.meses : null;
+    let mv = Number(c.valor_mes) > 0 ? Number(c.valor_mes) * P.meses : null, fonte = mq != null || mv != null ? 'cadastrada' : null;
+    if (L.ganho && mv == null && metaFat) { mv = metaFat; fonte = 'meta de faturamento'; }
     const mqH = mq != null ? mq * prop : null, mvH = mv != null ? mv * prop : null;
     const pq = mqH ? L.real.qtd / mqH * 100 : null, pv = mvH ? L.real.valor / mvH * 100 : null;
-    const pior = [pq, pv].filter(x => x != null); const pmin = pior.length ? Math.min(...pior) : null;
-    L.meta = { qtd: mq != null ? Math.round(mq * 10) / 10 : null, valor: mv != null ? round(mv) : null, qtd_ate_hoje: mqH != null ? Math.round(mqH * 10) / 10 : null, valor_ate_hoje: mvH != null ? round(mvH) : null, fonte };
+    const pior = [pq, pv].filter(x => x != null), pmin = pior.length ? Math.min(...pior) : null;
+    L.meta = { qtd: mq, valor: mv != null ? round(mv) : null, qtd_ate_hoje: mqH != null ? Math.round(mqH * 10) / 10 : null, valor_ate_hoje: mvH != null ? round(mvH) : null, fonte };
     L.pct_qtd = pq != null ? Math.round(pq) : null; L.pct_valor = pv != null ? Math.round(pv) : null;
     L.farol = pmin == null ? 'sem_meta' : pmin >= 100 ? 'verde' : pmin >= 80 ? 'amarelo' : 'vermelho';
-    L.real.valor = round(L.real.valor);
+    L.real.valor = round(L.real.valor); L.agora.valor = round(L.agora.valor); L.agora.ponderado = round(L.agora.ponderado);
   }
   linhas.forEach((L, i) => { L.conversao = i && linhas[i - 1].real.qtd ? Math.round(L.real.qtd / linhas[i - 1].real.qtd * 100) : null; });
+  // ── resumo executivo ──
+  const abertos = linhas.filter(L => !L.ganho), aberto = { qtd: abertos.reduce((s, L) => s + L.agora.qtd, 0), valor: round(abertos.reduce((s, L) => s + L.agora.valor, 0)), ponderado: round(abertos.reduce((s, L) => s + L.agora.ponderado, 0)), sem_valor: abertos.reduce((s, L) => s + L.agora.sem_valor, 0) };
+  const falta = metaFat != null ? Math.max(0, metaFat - ganhosPer.valor) : null;
+  const tg = taxaGanho ?? 0.25;
+  const resumo = { aberto, ganho: { qtd: ganhosPer.qtd, valor: round(ganhosPer.valor) }, meta: metaFat != null ? round(metaFat) : null, meta_ate_hoje: metaFat != null ? round(metaFat * prop) : null,
+    pct_meta: metaFat ? Math.round(ganhosPer.valor / metaFat * 100) : null, falta: falta != null ? round(falta) : null,
+    cobertura_pct: falta ? Math.round(aberto.ponderado / falta * 100) : null, taxa_ganho_pct: Math.round(tg * 100), taxa_ganho_fonte: taxaGanho != null ? `${ganhos12.length} ganhos × ${perd12.length} perdidos em 12 meses` : 'padrão 25% (menos de 3 negócios fechados em 12 meses)',
+    pipeline_necessario: falta ? round(falta / tg) : null, perdidos: { qtd: perdidos.qtd, valor: round(perdidos.valor) } };
+  // ── leads captados pelo sistema no período ──
+  let leads = null;
+  try { const sql = await getSql(); const r = (await sql`SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE score IN ('A','B'))::int AS ab, COUNT(reuniao_marcada_em)::int AS reunioes FROM leads
+      WHERE criado_em >= ${new Date(P.tIni).toISOString()} AND criado_em <= ${new Date(P.tFim).toISOString()} AND COALESCE(status,'') <> 'qa_teste'`)[0];
+    leads = { total: r?.n || 0, ab: r?.ab || 0, reunioes: r?.reunioes || 0 }; } catch (_) { leads = null; }
   // ── pendências (negócios abertos, qualquer período) ──
-  const agora = Date.now(), dia = 864e5, iniciais = new Set(funil.filter(e => !e.ganho).slice(0, Math.max(1, Math.ceil(funil.filter(e => !e.ganho).length / 2))).map(e => e.id));
+  const agora = Date.now(), dia = 864e5;
   const pend = [];
   for (const d of deals) {
-    const pr = d.properties || {}, atual = etapas.find(e => e.id === pr.dealstage); if (!atual || atual.fechada) continue;
+    const pr = d.properties || {}, atual = porId[pr.dealstage]; if (!atual || atual.fechada) continue;
     const motivos = [];
-    const entrouAtual = _tsHs(pr['hs_v2_date_entered_' + atual.id] || pr['hs_date_entered_' + atual.id]) || _tsHs(pr.createdate);
+    const entrouAtual = ent(d, atual.id) || _tsHs(pr.createdate);
     const diasEtapa = entrouAtual ? Math.floor((agora - entrouAtual) / dia) : null;
     if (diasEtapa != null && diasEtapa >= 21) motivos.push({ k: 'parado', txt: `parado na etapa há ${diasEtapa} dias` });
     const fech = _tsHs(pr.closedate); if (fech && fech < agora - dia) motivos.push({ k: 'fechamento_vencido', txt: `fechamento previsto vencido (${String(pr.closedate).slice(0, 10)})` });
@@ -7154,15 +7204,17 @@ async function funilVendas({ tipo, ref, pipeline } = {}) {
     const prox = _tsHs(pr.notes_next_activity_date); if (!prox || prox < agora - dia) motivos.push({ k: 'sem_proxima', txt: prox ? 'próxima atividade vencida' : 'sem próxima atividade agendada' });
     const ult = _tsHs(pr.notes_last_contacted); if (!ult || ult < agora - 14 * dia) motivos.push({ k: 'sem_contato', txt: ult ? `sem contato há ${Math.floor((agora - ult) / dia)} dias` : 'nunca contatado' });
     if (!motivos.length) continue;
-    pend.push({ id: d.id, nome: pr.dealname || 'Negócio', valor: Number(pr.amount) || 0, etapa: atual.nome, grupo: iniciais.has(atual.id) ? 'prospeccao' : 'vendas', dias_na_etapa: diasEtapa, fechamento: pr.closedate ? String(pr.closedate).slice(0, 10) : null, motivos,
+    pend.push({ id: d.id, nome: pr.dealname || 'Negócio', valor: Number(pr.amount) || 0, etapa: atual.nome, pipeline: pipelines.find(x => x.id === pr.pipeline)?.nome || '', grupo: (atual.col ?? 0) <= 1 ? 'prospeccao' : 'vendas', dias_na_etapa: diasEtapa, fechamento: pr.closedate ? String(pr.closedate).slice(0, 10) : null, motivos,
       gravidade: motivos.some(x => ['parado', 'fechamento_vencido'].includes(x.k)) ? 2 : 1 });
   }
   pend.sort((x, y) => y.gravidade - x.gravidade || y.valor - x.valor);
   const portal = process.env.HUBSPOT_PORTAL_ID || null;
   return { periodo: { tipo: P.tipo, ref: P.ref, rotulo: P.rotulo, ini: P.ini, fim: P.fim, decorrido_pct: Math.round(P.decorrido * 100) },
-    pipeline: { id: pip.id, nome: pip.nome }, pipelines: pipelines.map(x => ({ id: x.id, nome: x.nome })),
-    etapas: linhas, perdidos: { qtd: perdidos.qtd, valor: round(perdidos.valor) }, negocios: det,
-    meta_base: { faturamento_periodo: metaFat != null ? round(metaFat) : null, ticket_medio: ticket ? round(ticket) : null, ticket_fonte: Number(cad.ticket_medio) > 0 ? 'cadastrado' : ganhos12.length ? `média de ${ganhos12.length} negócio(s) ganho(s) em 12 meses` : 'média dos negócios com valor', fonte_faturamento: def.fonte || (def.faturamento ? 'Metas da Empresa' : null), cadastro_etapas: Object.keys(metasEt).length > 0 },
+    pipeline: { id: pipId, nome: todos ? 'Todos os pipelines' : usados[0].nome }, pipelines: pipelines.map(x => ({ id: x.id, nome: x.nome })),
+    por_pipeline: todos ? pipelines.map(pp => ({ id: pp.id, nome: pp.nome, abertos: deals.filter(d => d.properties?.pipeline === pp.id && porId[d.properties?.dealstage] && !porId[d.properties.dealstage].fechada).length,
+      valor: round(deals.filter(d => d.properties?.pipeline === pp.id && porId[d.properties?.dealstage] && !porId[d.properties.dealstage].fechada).reduce((s, d) => s + val(d), 0)) })) : null,
+    etapas: linhas, perdidos: resumo.perdidos, negocios: det, resumo, leads,
+    meta_base: { faturamento_periodo: metaFat != null ? round(metaFat) : null, ticket_medio: ticket ? round(ticket) : null, ticket_fonte: Number(cad.ticket_medio) > 0 ? 'cadastrado' : ganhos12.length ? `média de ${ganhos12.length} negócio(s) ganho(s) em 12 meses` : 'média dos negócios com valor', fonte_faturamento: def.fonte || null, cadastro_etapas: Object.keys(metasEt).length > 0 },
     pendencias: pend.slice(0, 300), total_pendencias: pend.length, hubspot_portal: portal, total_negocios_lidos: deals.length };
 }
 // clientes de uma faixa do funil: empresa e contatos associados a cada negócio (nome, e-mail, telefone, cargo)

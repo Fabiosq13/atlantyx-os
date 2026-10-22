@@ -1145,9 +1145,11 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     <section class="dash-aba" data-aba="vendas" style="display:none;">
     <!-- v3.206: FUNIL DE VENDAS — realizado × meta por etapa (R$ e quantidade), filtros, farol e clientes da faixa -->
     <div class="panel" id="funilPanel" style="margin-bottom:13px;">
-      <div class="ph" style="flex-wrap:wrap;row-gap:6px;"><div class="pt" style="white-space:nowrap;">&#127919; Funil de vendas — realizado × meta</div>
+      <div class="ph" style="flex-wrap:wrap;row-gap:6px;"><div class="pt" style="white-space:nowrap;">&#127919; Funil de vendas</div>
         <span id="funilMeta" style="display:none;"></span>
         <div style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <select class="fsel" id="funilPipe" style="font-size:10px;width:auto;max-width:200px;padding:2px 6px;" onchange="funilPipe(this.value)" aria-label="Pipeline"><option value="todos">Todos os pipelines</option></select>
+          <div class="seg" id="funilVisao"><button class="on" data-v="agora" onclick="funilVisao('agora')" title="Negócios abertos em cada etapa agora">Pipeline agora</button><button data-v="periodo" onclick="funilVisao('periodo')" title="Negócios que entraram em cada etapa no período">Entradas no período</button></div>
           <div class="seg" id="funilTipo"><button class="on" data-t="mes" onclick="funilTipo('mes')">Mês</button><button data-t="trimestre" onclick="funilTipo('trimestre')">Trimestre</button><button data-t="ano" onclick="funilTipo('ano')">Ano</button></div>
           <select class="fsel" id="funilRef" style="font-size:10px;width:auto;padding:2px 6px;" onchange="funilCarregar()"></select>
           <div class="seg" id="funilModo"><button class="on" data-m="valor" onclick="funilModo('valor')">R$</button><button data-m="qtd" onclick="funilModo('qtd')">Quantidade</button></div>
@@ -31233,7 +31235,9 @@ function dashAba(a) {
   if ((a === 'vendas' || a === 'pendencias') && !_fn.dados && !_fn.carregando) funilCarregar();
   else if (a === 'vendas' || a === 'pendencias') { funilRender(); pendRender(); }
 }
-let _fn = { tipo: 'mes', modo: 'valor', grupo: '', dados: null, carregando: false, em: 0 };
+let _fn = { tipo: 'mes', modo: 'valor', grupo: '', dados: null, carregando: false, em: 0, visao: 'agora', pipe: (() => { try { return localStorage.getItem('atx_funil_pipe') || 'todos'; } catch (_) { return 'todos'; } })() };
+function funilVisao(v) { _fn.visao = v; document.querySelectorAll('#funilVisao button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); funilRender(); }
+function funilPipe(p) { _fn.pipe = p || 'todos'; try { localStorage.setItem('atx_funil_pipe', _fn.pipe); } catch (_) {} funilCarregar(true); }
 const _fnR = v => { v = Number(v) || 0; const a = Math.abs(v); return 'R$ ' + (a >= 1e6 ? (v / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' mi' : a >= 1e4 ? Math.round(v / 1e3).toLocaleString('pt-BR') + ' mil' : v.toLocaleString('pt-BR', { maximumFractionDigits: 0 })); };
 const _fnRc = v => 'R$ ' + (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const _fnE = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -31254,44 +31258,62 @@ async function funilCarregar(forcar) {
   if (_fn.carregando) return; _funilSelRef();
   const ref = document.getElementById('funilRef')?.value || _funilAtual(_fn.tipo);
   _fn.carregando = true; const c = document.getElementById('funilCorpo'); if (c && (!_fn.dados || forcar)) c.innerHTML = '<div class="fv2-load">Lendo os negócios do HubSpot…</div>';
-  try { _fn.dados = await finApi('funil_vendas', { tipo: _fn.tipo, ref }, { timeoutMs: 58000 }); _fn.em = Date.now(); }
+  try { _fn.dados = await finApi('funil_vendas', { tipo: _fn.tipo, ref, pipeline: _fn.pipe }, { timeoutMs: 58000 }); _fn.em = Date.now();
+    const ps = document.getElementById('funilPipe'); if (ps && _fn.dados?.pipelines) { ps.innerHTML = '<option value="todos">Todos os pipelines</option>' + _fn.dados.pipelines.map(p => '<option value="' + _fnE(p.id) + '">' + _fnE(p.nome) + '</option>').join(''); ps.value = _fn.dados.pipeline?.id || 'todos'; } }
   catch (e) { if (c) c.innerHTML = '<div class="fv2-erro">Não consegui montar o funil: ' + _fnE(e.message) + '</div>'; const pc = document.getElementById('pendCorpo'); if (pc) pc.innerHTML = '<div class="fv2-erro">' + _fnE(e.message) + '</div>'; }
   _fn.carregando = false; funilRender(); pendRender();
 }
 function funilRender() {
+  // v3.241: funil remodelado — resumo executivo, pipeline aberto agora × entradas no período, todos os pipelines juntos
   const D = _fn.dados, c = document.getElementById('funilCorpo'); if (!D || !c) return;
   if (D.indisponivel) { c.innerHTML = '<div class="fv2-erro">' + _fnE(D.indisponivel) + '</div>'; return; }
-  const v = _fn.modo === 'valor', E = D.etapas || [];
-  const real = e => v ? e.real.valor : e.real.qtd, meta = e => v ? e.meta.valor : e.meta.qtd, metaH = e => v ? e.meta.valor_ate_hoje : e.meta.qtd_ate_hoje;
-  const maxR = Math.max(1, ...E.map(real));
+  const v = _fn.modo === 'valor', ag = _fn.visao === 'agora', E = D.etapas || [], R = D.resumo || {}, A = R.aberto || {};
+  const num = e => ag ? (v ? e.agora.valor : e.agora.qtd) : (v ? e.real.valor : e.real.qtd);
   const fmt = x => x == null ? '—' : v ? _fnR(x) : Number(x).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
-  const luz = pct => pct == null ? 'sem_meta' : pct >= 100 ? 'verde' : pct >= 80 ? 'amarelo' : 'vermelho';
-  const cores = ['#2a78d6', '#2f86e0', '#3591e6', '#3b9cec', '#41a7f2', '#22b3a3', '#1baf7a'];
-  document.getElementById('funilMeta').textContent = D.periodo.rotulo + ' · pipeline ' + (D.pipeline?.nome || '') + (D.periodo.decorrido_pct > 0 && D.periodo.decorrido_pct < 100 ? ' · ' + D.periodo.decorrido_pct + '% do período decorrido: a meta é proporcional até hoje' : '') + ' · atualizado às ' + new Date(_fn.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const maxR = Math.max(1, ...E.map(num));
+  const card = (rot, val, sub, cor) => '<div style="flex:1;min-width:150px;background:var(--bg4);border-radius:9px;padding:9px 12px;"><div style="font-size:9.5px;color:var(--t3);text-transform:uppercase;font-family:var(--M);">' + rot + '</div><div style="font-size:19px;font-weight:700;color:' + (cor || 'var(--t1)') + ';margin:2px 0;">' + val + '</div><div style="font-size:10px;color:var(--t2);line-height:1.4;">' + sub + '</div></div>';
+  const pm = R.pct_meta, corMeta = pm == null ? 'var(--t1)' : pm >= 100 ? 'var(--green)' : pm >= 80 ? 'var(--gold)' : 'var(--red)';
+  const cob = R.cobertura_pct, corCob = cob == null ? 'var(--t1)' : cob >= 100 ? 'var(--green)' : cob >= 60 ? 'var(--gold)' : 'var(--red)';
+  const L = D.leads;
+  const cards = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">'
+    + card('Pipeline aberto', _fnR(A.valor), (A.qtd || 0) + ' negócio(s) abertos' + (A.sem_valor ? ' · <b style="color:var(--gold);">' + A.sem_valor + ' sem valor</b>' : ''))
+    + card('Ponderado', _fnR(A.ponderado), 'valor × probabilidade da etapa')
+    + card('Ganho em ' + _fnE(D.periodo.rotulo), _fnR(R.ganho?.valor), (R.ganho?.qtd || 0) + ' negócio(s)' + (R.meta != null ? ' · <b style="color:' + corMeta + ';">' + (pm ?? 0) + '%</b> da meta de ' + _fnR(R.meta) : ' · meta de faturamento não cadastrada'), corMeta)
+    + card('Falta para a meta', R.falta != null ? _fnR(R.falta) : '—', cob != null ? 'cobertura do ponderado: <b style="color:' + corCob + ';">' + cob + '%</b>' : (R.meta == null ? 'cadastre em Planejamento → Metas' : 'meta batida'), R.falta ? corCob : 'var(--green)')
+    + card('Taxa de ganho', (R.taxa_ganho_pct ?? '—') + '%', (R.pipeline_necessario ? 'precisa de ' + _fnR(R.pipeline_necessario) + ' em pipeline · ' : '') + '<span title="' + _fnE(R.taxa_ganho_fonte || '') + '">' + _fnE(R.taxa_ganho_fonte || '') + '</span>')
+    + (L ? card('Leads captados', L.total, L.ab + ' com score A/B · ' + L.reunioes + ' reunião(ões) marcada(s) no período') : '')
+    + '</div>';
+  const semValorAviso = v && A.qtd && !A.valor ? '<div style="font-size:11px;color:var(--gold);border:1px solid rgba(245,185,75,.35);border-radius:7px;padding:7px 10px;margin-bottom:10px;">⚠ Os ' + A.qtd + ' negócio(s) abertos estão <b>sem valor</b> no HubSpot, por isso o funil em R$ fica zerado. Preencha o valor (aba Pendências → sem valor) ou veja em <a href="#" onclick="funilModo(\'qtd\');return false;">Quantidade</a>.</div>'
+    : (v && A.sem_valor ? '<div style="font-size:10.5px;color:var(--t3);margin-bottom:8px;">' + A.sem_valor + ' negócio(s) aberto(s) sem valor não somam em R$ — veja na aba Pendências.</div>' : '');
+  const porPipe = (D.por_pipeline || []).filter(p => p.abertos).length > 1 ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;font-size:10.5px;">' + D.por_pipeline.filter(p => p.abertos).map(p => '<button class="btn" style="font-size:10px;padding:2px 8px;" onclick="funilPipe(\'' + _fnE(p.id) + '\')" title="Ver só este pipeline">' + _fnE(p.nome) + ' · ' + p.abertos + ' · ' + _fnR(p.valor) + '</button>').join('') + '</div>' : '';
+  const cores = ['#2a78d6', '#3189e2', '#3b9cec', '#22b3a3', '#1baf7a', '#169a6b', '#12875d'];
   const linhas = E.map((e, i) => {
-    const w = Math.max(10, Math.round(real(e) / maxR * 100)), pct = v ? e.pct_valor : e.pct_qtd, f = luz(pct), cor = _fnLuz[f];
-    return (i && e.conversao != null ? '<div style="text-align:center;font-size:9.5px;color:var(--t3);margin:-2px 0 2px;">↓ ' + e.conversao + '% da etapa anterior</div>' : '')
-      + '<div class="fn-row" onclick="funilFaixa(\'' + _fnE(e.id) + '\')" title="Clique para ver os clientes desta faixa">'
-      + '<div style="font-size:11.5px;font-weight:600;text-align:right;">' + _fnE(e.nome) + (e.ganho ? ' ✓' : '') + '<div style="font-weight:400;font-size:9.5px;color:var(--t3);">' + (v ? e.real.qtd + ' negócio(s)' : _fnR(e.real.valor)) + '</div></div>'
-      + '<div><div class="fn-bar" style="width:' + w + '%;background:' + cores[Math.min(i, cores.length - 1)] + ';">' + fmt(real(e)) + '</div></div>'
-      + '<div class="fn-num" style="font-size:10.5px;"><div><span class="fn-luz" style="background:' + cor + ';" title="' + ({ verde: 'meta batida', amarelo: '80–99% da meta', vermelho: 'abaixo de 80% da meta', sem_meta: 'sem meta' }[f]) + '"></span>'
-      + (metaH(e) != null ? 'meta até hoje <b>' + fmt(metaH(e)) + '</b> · <b style="color:' + cor + ';">' + pct + '%</b>' : '<span style="color:var(--t3);">sem meta</span>') + '</div>'
-      + (metaH(e) != null ? '<div style="height:5px;background:var(--bg4);border-radius:3px;margin:4px 0 2px 16px;overflow:hidden;"><i style="display:block;height:100%;width:' + Math.min(100, pct || 0) + '%;background:' + cor + ';"></i></div>' : '')
-      + '<div style="color:var(--t3);font-size:9.5px;margin-left:16px;">' + (meta(e) != null ? 'meta do período ' + fmt(meta(e)) + (e.meta.fonte === 'derivada' ? ' (derivada)' : '') : '') + '</div></div></div>';
+    const n = num(e), w = Math.max(14, Math.round(n / maxR * 100)), pct = v ? e.pct_valor : e.pct_qtd, f = pct == null ? 'sem_meta' : pct >= 100 ? 'verde' : pct >= 80 ? 'amarelo' : 'vermelho', cor = _fnLuz[f];
+    const sub = ag ? (e.ganho ? (v ? e.agora.qtd + ' ganho(s) no período' : _fnR(e.agora.valor) + ' ganho(s)') : (v ? e.agora.qtd + ' negócio(s)' + (e.agora.sem_valor ? ' · ' + e.agora.sem_valor + ' sem valor' : '') : _fnR(e.agora.valor)))
+      : (v ? e.real.qtd + ' entrada(s)' : _fnR(e.real.valor));
+    const dir = e.ganho && e.meta?.valor != null ? '<span class="fn-luz" style="background:' + cor + ';"></span>meta ' + (D.periodo.decorrido_pct < 100 ? 'até hoje ' + fmt(v ? e.meta.valor_ate_hoje : e.meta.qtd_ate_hoje) : fmt(v ? e.meta.valor : e.meta.qtd)) + ' · <b style="color:' + cor + ';">' + (pct ?? '—') + '%</b>'
+      : (e.meta?.fonte === 'cadastrada' ? '<span class="fn-luz" style="background:' + cor + ';"></span>meta ' + fmt(v ? e.meta.valor_ate_hoje : e.meta.qtd_ate_hoje) + ' · <b style="color:' + cor + ';">' + (pct ?? '—') + '%</b>'
+      : (ag && !e.ganho && v && e.agora.ponderado ? '<span style="color:var(--t3);">ponderado ' + _fnR(e.agora.ponderado) + (e.probabilidade != null ? ' (' + Math.round(e.probabilidade * 100) + '%)' : '') + '</span>' : (!ag && e.conversao != null ? '<span style="color:var(--t3);">' + e.conversao + '% da etapa anterior</span>' : '')));
+    return '<div class="fn-row" onclick="funilFaixa(\'' + _fnE(e.id) + '\')" title="Clique para ver os negócios e contatos">'
+      + '<div style="font-size:11.5px;font-weight:600;text-align:right;">' + _fnE(e.nome) + (e.ganho ? ' ✓' : '') + '<div style="font-weight:400;font-size:9.5px;color:var(--t3);">' + sub + '</div>'
+      + (D.pipeline?.id === 'todos' && e.etapas_hubspot?.length ? '<div style="font-weight:400;font-size:9px;color:var(--t3);opacity:.8;" title="Etapas do HubSpot nesta faixa">' + _fnE(e.etapas_hubspot.slice(0, 4).join(' · ')) + (e.etapas_hubspot.length > 4 ? '…' : '') + '</div>' : '') + '</div>'
+      + '<div style="display:flex;justify-content:center;"><div class="fn-bar" style="width:' + w + '%;background:' + cores[Math.min(i, cores.length - 1)] + ';">' + fmt(n) + '</div></div>'
+      + '<div class="fn-num" style="font-size:10.5px;">' + dir + '</div></div>';
   }).join('');
   const mb = D.meta_base || {};
-  c.innerHTML = '<div style="font-size:10px;color:var(--t3);margin:-2px 0 10px;">' + _fnE(document.getElementById('funilMeta').textContent) + '</div>'
+  const titulo = (ag ? 'Pipeline agora — negócios abertos em cada etapa (a faixa Ganho mostra os ganhos de ' + _fnE(D.periodo.rotulo) + ')' : 'Entradas em ' + _fnE(D.periodo.rotulo) + ' — negócios que chegaram a cada etapa no período');
+  c.innerHTML = '<div style="font-size:10px;color:var(--t3);margin:-2px 0 10px;">' + _fnE(D.pipeline?.nome || '') + ' · ' + D.total_negocios_lidos + ' negócio(s) lido(s) do HubSpot · atualizado às ' + new Date(_fn.em || Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + '</div>'
+    + cards + porPipe + semValorAviso
+    + '<div style="font-size:10.5px;color:var(--t2);font-weight:600;margin-bottom:6px;">' + titulo + '</div>'
     + (E.length ? linhas : '<div style="color:var(--t3);font-size:11px;">Nenhuma etapa no pipeline.</div>')
     + '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:var(--t3);margin-top:10px;border-top:1px solid var(--bd);padding-top:8px;">'
-    + '<span>Perdidos no período: <b>' + D.perdidos.qtd + '</b> (' + _fnR(D.perdidos.valor) + ')</span>'
-    + '<span>Meta de faturamento do período: <b>' + (mb.faturamento_periodo != null ? _fnR(mb.faturamento_periodo) : 'não definida') + '</b></span>'
+    + '<span>Perdidos em ' + _fnE(D.periodo.rotulo) + ': <b>' + D.perdidos.qtd + '</b> (' + _fnR(D.perdidos.valor) + ')</span>'
     + '<span>Ticket médio: <b>' + (mb.ticket_medio ? _fnR(mb.ticket_medio) : '—') + '</b> (' + _fnE(mb.ticket_fonte || '') + ')</span>'
-    + '<span><span class="fn-luz" style="background:var(--green)"></span>meta batida <span class="fn-luz" style="background:var(--gold);margin-left:6px;"></span>80–99% <span class="fn-luz" style="background:var(--red);margin-left:6px;"></span>abaixo de 80%</span>'
-    + '<span>' + (mb.cadastro_etapas ? 'Metas por etapa cadastradas (as em branco são derivadas)' : 'Metas derivadas da meta de faturamento e da probabilidade de cada etapa no HubSpot — ajuste em ✎ Metas por etapa') + '</span></div>';
+    + '<span>Meta do Ganho = meta de faturamento do período' + (mb.cadastro_etapas ? '; demais etapas com meta cadastrada em ✎ Metas por etapa' : ' (metas das outras etapas só se cadastradas em ✎ Metas por etapa)') + '</span></div>';
 }
 async function funilFaixa(id) {
   const D = _fn.dados; const e = (D?.etapas || []).find(x => x.id === id); if (!e) return;
-  const negs = e.ids.map(i => D.negocios[i]).filter(Boolean).sort((a, b) => b.valor - a.valor);
+  const negs = (_fn.visao === 'agora' ? (e.ids_agora || []) : e.ids).map(i => D.negocios[i]).filter(Boolean).sort((a, b) => b.valor - a.valor);
   document.getElementById('fnModal')?.remove();
   const m = document.createElement('div'); m.id = 'fnModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:30px 12px;overflow:auto;'; m.onclick = ev => { if (ev.target === m) m.remove(); };
   const _pc = _fn.modo === 'valor' ? e.pct_valor : e.pct_qtd, _f = _pc == null ? 'sem_meta' : _pc >= 100 ? 'verde' : _pc >= 80 ? 'amarelo' : 'vermelho';
@@ -34591,7 +34613,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.240] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.241] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -34607,7 +34629,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.240';
+window.__ATX_BUILD_ID__ = 'ATX-v3.241';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
