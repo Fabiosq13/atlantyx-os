@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { casarReceitas, casarDespesas, compararReceitasSistema, compararDespesasSistema, resumoComparacao, identificarRetencao } from '../lib/conciliacao-mes.js'; // v3.242
 import { termoPendencias, etapaPrazo } from '../lib/termo-regras.js'; // v3.129 · v3.196 prazo por etapa
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
@@ -284,6 +285,11 @@ async function handler(req, res) {
       conc_aprovar:          () => conciliacaoAprovar(params),
       conc_rejeitar:         () => conciliacaoRejeitar(params),
       conc_status:           () => conciliacaoStatus(params),
+      // v3.242: conciliação do mês em 2 etapas
+      conc2_etapa1:          () => conc2Etapa1(params),
+      conc2_etapa2:          () => conc2Etapa2(params),
+      conc2_confirmar:       () => conc2Confirmar(params),
+      conc2_aplicar_sistema: () => conc2AplicarSistema(params),
 
       // ── Orçamento (QB + interno) ─────────────────────────────────────────
       orcamento_consolidado: () => orcamentoConsolidado(params),
@@ -6882,6 +6888,182 @@ async function conciliacaoRejeitar({ real_id, motivo } = {}) {
   await sql`INSERT INTO conciliacoes (id, tipo, real_id, status, rejeitada_em, motivo_rejeicao)
     VALUES (${id}, 'rejeicao', ${real_id}, 'rejeitada', NOW(), ${motivo || null})`;
   return { id, status: 'rejeitada' };
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v3.242 · CONCILIAÇÃO DO MÊS EM 2 ETAPAS (tela S3 · Conciliação Bancária)
+// ETAPA 1 · BANCO × QUICKBOOKS (uma tela, abas Receitas e Despesas)
+//   "Pendente de conciliação" = lançamento da conta bancária no QuickBooks ainda não compensado nem reconciliado
+//   (relatório TransactionList com o filtro cleared). A API do QuickBooks NÃO dá acesso aos itens "Para revisar" do feed
+//   bancário — com o arquivo OFX do banco a tela usa as linhas do extrato que ainda não batem com lançamento conciliado.
+//   Receitas: crédito pendente × faturas do mês (em aberto até o fim do mês, inclusive vencidas), aceitando o líquido de
+//   retenção (IR/CSRF/ISS/INSS) e mostrando o valor retido. Despesas: débito pendente × despesas lançadas no QuickBooks
+//   (contas a pagar em aberto e, com OFX, despesas/pagamentos de conta ainda não conciliados).
+// ETAPA 2 · QUICKBOOKS × SISTEMA
+//   Recebimentos do mês no QuickBooks × notas dos termos; despesas pagas no mês × agenda de despesas → match ou diferença.
+// Nada é gravado no QuickBooks. Confirmar um par grava na tabela de conciliações; "acertar no sistema" atualiza a nota do
+// termo ou a ocorrência da agenda (só no Atlantyx), sempre por clique.
+// ═══════════════════════════════════════════════════════════════════════════
+function _c2Mes(mes, ano) {
+  const h = _hojeBR(); const m = parseInt(mes) || parseInt(h.slice(5, 7)), a = parseInt(ano) || parseInt(h.slice(0, 4)), p2 = n => String(n).padStart(2, '0');
+  return { m, a, ini: `${a}-${p2(m)}-01`, fim: `${a}-${p2(m)}-${p2(new Date(a, m, 0).getDate())}`, ref: `${a}-${p2(m)}` };
+}
+const _c2Dias = (d, n) => { const x = new Date(String(d).slice(0, 10) + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+// lançamentos da conta bancária no QB, separados em conciliados (C/R) e pendentes, com o id e o tipo da transação
+async function _c2RegistroBanco({ ini, fim, conta_id, token }) {
+  let nomeConta = null;
+  if (conta_id) { try { nomeConta = (await qbFetch(`/account/${conta_id}`, token))?.Account?.Name || null; } catch (_) {} }
+  const base = `/reports/TransactionList?start_date=${ini}&end_date=${fim}&source_account_type=Bank&columns=tx_date,txn_type,doc_num,name,memo,account_name,subt_nat_amount`;
+  const ler = async extra => {
+    const rep = await qbFetch(base + extra, token);
+    const cols = (rep?.Columns?.Column || []).map(c => (c.MetaData || []).find(m => m.Name === 'ColKey')?.Value || c.ColTitle || '');
+    const ix = k => cols.indexOf(k);
+    const linhas = []; const andar = rows => (rows || []).forEach(r => { if (r.type === 'Data' || (!r.type && r.ColData)) linhas.push(r); if (r.Rows?.Row) andar(r.Rows.Row); });
+    andar(rep?.Rows?.Row);
+    return linhas.map(r => { const cd = r.ColData || []; const g = k => ix(k) >= 0 ? cd[ix(k)] : null;
+      return { txn: g('txn_type')?.id || g('tx_date')?.id || null, tipo: g('txn_type')?.value || '', data: String(g('tx_date')?.value || '').slice(0, 10), doc: g('doc_num')?.value || '',
+        nome: g('name')?.value || '', descricao: g('memo')?.value || '', conta: g('account_name')?.value || '', valor: parseFloat(g('subt_nat_amount')?.value) || 0 }; })
+      .filter(l => l.data && (!nomeConta || !l.conta || l.conta === nomeConta || String(l.conta).endsWith(':' + nomeConta)));
+  };
+  const [tod, rec, cle] = await Promise.all([ler(''), ler('&cleared=Reconciled'), ler('&cleared=Cleared')]);
+  const chave = l => (l.txn || '') + '|' + l.tipo + '|' + l.data + '|' + l.valor;
+  const ok = new Set([...rec, ...cle].map(chave));
+  const pend = tod.filter(l => !ok.has(chave(l))).map(l => ({ ...l, id: 'qb_' + (l.tipo || 'txn').replace(/\W+/g, '').toLowerCase() + '_' + (l.txn || l.data + '_' + l.valor) }));
+  return { todos: tod, conciliados: [...rec, ...cle], pendentes: pend };
+}
+// v3.242: entrada ou saída pelo TIPO da transação (o valor do relatório não traz sinal confiável); tipo ambíguo usa o sinal
+const _c2Entrada = l => { const t = String(l.tipo || '').toLowerCase();
+  if (/bill payment|pagamento de conta|credit card payment|pagamento de cart|expense|despesa|check|cheque|purchase|compra|refund|reembolso/.test(t)) return false;
+  if (/deposit|dep[oó]sito|payment|pagamento|recebimento|sales receipt|venda/.test(t)) return true;
+  return l.valor > 0; };
+const _c2In = ids => ids.map(x => `'${String(x).replace(/\D/g, '')}'`).join(',');
+async function conc2Etapa1({ mes, ano, conta_id = null, ofx_texto = null } = {}) {
+  if (!qbConfigurado()) return { indisponivel: 'QuickBooks não conectado' };
+  const P = _c2Mes(mes, ano), token = await qbToken(), avisos = [];
+  const reg = await _c2RegistroBanco({ ini: _c2Dias(P.ini, -5), fim: P.fim, conta_id, token });
+  // pendentes do banco: QB não conciliado (padrão) ou linhas do OFX que não batem com lançamento já conciliado no QB
+  let fonte = 'quickbooks', pendCred = [], pendDeb = [];
+  if (ofx_texto) {
+    const ofx = parseOfx(ofx_texto); if (!ofx.total) throw Object.assign(new Error('O arquivo OFX não tem lançamentos'), { status: 400 });
+    fonte = 'ofx'; const usados = new Set();
+    const conc = reg.conciliados.map((l, i) => ({ ...l, i }));
+    for (const b of ofx.lancamentos.filter(l => l.data >= _c2Dias(P.ini, -5) && l.data <= P.fim)) {
+      const sinal = b.tipo === 'entrada' ? 1 : -1;
+      const ja = conc.find(c => !usados.has(c.i) && _c2Entrada(c) === (sinal > 0) && Math.abs(Math.abs(c.valor) - b.valor) <= 0.01 && Math.abs(Date.parse(c.data) - Date.parse(b.data)) <= 4 * 864e5);
+      if (ja) { usados.add(ja.i); continue; }
+      const item = { id: 'ofx_' + (b.fitid || b.data + '_' + b.valor), data: b.data, valor: b.valor, nome: b.descricao.split(' · ')[0] || '', descricao: b.descricao, origem: 'extrato (OFX)' };
+      (b.tipo === 'entrada' ? pendCred : pendDeb).push(item);
+    }
+  } else {
+    for (const l of reg.pendentes) { const item = { id: l.id, txn: l.txn, tipo_qb: l.tipo, data: l.data, valor: Math.abs(l.valor), nome: l.nome, descricao: [l.doc ? 'doc ' + l.doc : '', l.descricao].filter(Boolean).join(' · '), origem: 'QuickBooks · ' + l.tipo };
+      (_c2Entrada(l) ? pendCred : pendDeb).push(item); }
+  }
+  // recebimentos pendentes que JÁ são pagamento de fatura no QB: guarda as faturas vinculadas
+  const pagIds = pendCred.filter(p => /payment|pagamento/i.test(p.tipo_qb || '') && p.txn).map(p => p.txn);
+  const vinculos = {};
+  if (pagIds.length) { try { const pg = (await qbQuery(`select * from Payment where Id in (${_c2In(pagIds.slice(0, 200))})`, token))?.QueryResponse?.Payment || [];
+    pg.forEach(x => { vinculos[x.Id] = (x.Line || []).flatMap(li => (li.LinkedTxn || []).filter(t => t.TxnType === 'Invoice').map(t => 'inv_' + t.TxnId)); }); } catch (e) { avisos.push('Pagamentos do QB: ' + e.message); } }
+  pendCred.forEach(p => { p.faturas_vinculadas = p.txn ? (vinculos[p.txn] || []) : []; });
+  // faturas do mês: em aberto até o fim do mês (inclusive vencidas) + as vinculadas aos pagamentos pendentes
+  const inv = []; const vist = new Set();
+  const addInv = i => { if (vist.has(i.Id)) return; vist.add(i.Id); inv.push({ id: 'inv_' + i.Id, doc: i.DocNumber || i.Id, cliente: i.CustomerRef?.name || '', total: parseFloat(i.TotalAmt || 0), saldo: parseFloat(i.Balance || 0), vencimento: i.DueDate || i.TxnDate, emissao: i.TxnDate }); };
+  try { ((await qbQuery(`select * from Invoice where Balance > '0' and DueDate <= '${P.fim}' maxresults 1000`, token))?.QueryResponse?.Invoice || []).forEach(addInv); } catch (e) { avisos.push('Faturas: ' + e.message); }
+  const vincIds = [...new Set(Object.values(vinculos).flat().map(x => x.replace('inv_', '')))].filter(id => !vist.has(id));
+  if (vincIds.length) { try { ((await qbQuery(`select * from Invoice where Id in (${_c2In(vincIds.slice(0, 200))})`, token))?.QueryResponse?.Invoice || []).forEach(addInv); } catch (_) {} }
+  // despesas lançadas no QB: contas a pagar em aberto até o fim do mês; com OFX também despesas e pagamentos de conta não conciliados
+  const desp = [];
+  try { ((await qbQuery(`select * from Bill where Balance > '0' and DueDate <= '${P.fim}' maxresults 1000`, token))?.QueryResponse?.Bill || [])
+    .forEach(b => desp.push({ id: 'bill_' + b.Id, tipo: 'Conta a pagar', fornecedor: b.VendorRef?.name || '', valor: parseFloat(b.Balance || 0), data: b.DueDate || b.TxnDate, doc: b.DocNumber || '' })); } catch (e) { avisos.push('Contas a pagar: ' + e.message); }
+  if (fonte === 'ofx') reg.pendentes.filter(l => !_c2Entrada(l)).forEach(l => desp.push({ id: l.id, tipo: l.tipo || 'Despesa', fornecedor: l.nome, valor: Math.abs(l.valor), data: l.data, doc: l.doc, nao_conciliado_qb: true }));
+  // já confirmados nesta tela
+  const sql = await getSql(); let conf = [];
+  try { const ids = [...pendCred, ...pendDeb].map(p => p.id); if (ids.length) conf = await sql`SELECT real_id, referencia_id FROM conciliacoes WHERE status = 'aprovada' AND real_id = ANY(${ids})`; } catch (_) {}
+  const confMap = Object.fromEntries(conf.map(c => [c.real_id, c.referencia_id]));
+  const R = casarReceitas(pendCred, inv), D = casarDespesas(pendDeb, desp);
+  const marca = x => ({ ...x, confirmado: confMap[x.pendente.id] ? true : false });
+  const receitas = { casados: R.casados.map(marca), sem_par: R.pendentes_sem_par, faturas_sem_par: R.faturas_sem_par.filter(f => f.vencimento >= P.ini || f.saldo > 0) };
+  const despesas = { casados: D.casados.map(marca), sem_par: D.pendentes_sem_par, despesas_sem_par: D.despesas_sem_par };
+  const retido = R.casados.reduce((s, c) => s + (c.retencao?.retido || 0), 0);
+  return { periodo: P, fonte, receitas, despesas, avisos,
+    resumo: { pend_receitas: pendCred.length, pend_despesas: pendDeb.length, valor_receitas: round(pendCred.reduce((s, p) => s + p.valor, 0)), valor_despesas: round(pendDeb.reduce((s, p) => s + p.valor, 0)),
+      receitas_casadas: R.casados.length, despesas_casadas: D.casados.length, retido_identificado: round(retido), faturas_do_mes: inv.length, conciliados_qb_no_mes: reg.conciliados.length } };
+}
+async function conc2Confirmar({ real_id, ref_id, tipo, real_valor, ref_valor, real_data, ref_data, real_descricao, ref_descricao, score, retido } = {}) {
+  if (!real_id || !ref_id) throw Object.assign(new Error('Par incompleto'), { status: 400 });
+  return conciliacaoAprovar({ real_id, ref_id, ref_tipo: tipo === 'despesa' ? 'qb_despesa' : 'qb_fatura', sugestao: { real_origem: 'conc2', real_data, real_valor: Number(real_valor) || null,
+    real_descricao: String(real_descricao || '').substring(0, 300), ref_data, ref_valor: Number(ref_valor) || null, ref_descricao: String((ref_descricao || '') + (retido ? ` · retido R$ ${retido}` : '')).substring(0, 300), score: Number(score) || null } });
+}
+async function conc2Etapa2({ mes, ano } = {}) {
+  if (!qbConfigurado()) return { indisponivel: 'QuickBooks não conectado' };
+  const P = _c2Mes(mes, ano), token = await qbToken(), sql = await getSql(), avisos = [];
+  // conciliados no banco no mês (para marcar o que já está batido no QuickBooks)
+  let concSet = new Set();
+  try { const reg = await _c2RegistroBanco({ ini: P.ini, fim: P.fim, conta_id: null, token }); concSet = new Set(reg.conciliados.map(l => String(l.txn))); } catch (e) { avisos.push('Status do banco: ' + e.message); }
+  // RECEITAS recebidas no QB no mês: pagamentos de fatura (por fatura) + vendas avulsas
+  const recebidas = [];
+  try {
+    const pgs = (await qbQuery(`select * from Payment where TxnDate >= '${P.ini}' and TxnDate <= '${P.fim}' maxresults 1000`, token))?.QueryResponse?.Payment || [];
+    const porInv = {};
+    for (const p of pgs) for (const li of p.Line || []) for (const t of (li.LinkedTxn || []).filter(t => t.TxnType === 'Invoice')) {
+      const k = t.TxnId; porInv[k] = porInv[k] || { recebido: 0, data: p.TxnDate, pagamentos: [], banco: false }; porInv[k].recebido += parseFloat(li.Amount || 0); porInv[k].pagamentos.push(p.Id); if (concSet.has(String(p.Id))) porInv[k].banco = true; }
+    const ids = Object.keys(porInv);
+    for (let i = 0; i < ids.length; i += 150) { const invs = (await qbQuery(`select * from Invoice where Id in (${_c2In(ids.slice(i, i + 150))})`, token))?.QueryResponse?.Invoice || [];
+      invs.forEach(v => { const x = porInv[v.Id]; recebidas.push({ id: 'inv_' + v.Id, doc: v.DocNumber || v.Id, cliente: v.CustomerRef?.name || '', total: parseFloat(v.TotalAmt || 0), saldo: parseFloat(v.Balance || 0), recebido: round(x.recebido), data: x.data, conciliado_banco: x.banco }); }); }
+    ((await qbQuery(`select * from SalesReceipt where TxnDate >= '${P.ini}' and TxnDate <= '${P.fim}' maxresults 500`, token))?.QueryResponse?.SalesReceipt || [])
+      .forEach(v => recebidas.push({ id: 'sr_' + v.Id, doc: v.DocNumber || v.Id, cliente: v.CustomerRef?.name || '', total: parseFloat(v.TotalAmt || 0), saldo: 0, recebido: parseFloat(v.TotalAmt || 0), data: v.TxnDate, conciliado_banco: concSet.has(String(v.Id)), venda_avulsa: true }));
+  } catch (e) { avisos.push('Recebimentos do QB: ' + e.message); }
+  // notas dos termos (sistema): emitidas nos 6 meses anteriores ao fim do mês
+  let notas = [];
+  try { const rows = await sql`SELECT e.id, e.termo_id, e.empresa, e.nf_numero, e.nf_valor, e.nf_data, e.pagamento_status, e.pagamento_data, t.numero_termo, t.projeto, t.contratante
+      FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id WHERE e.nf_numero IS NOT NULL AND e.nf_valor > 0`;
+    const lim = _c2Dias(P.ini, -185), dt = v => { const m = String(v || '').match(/(\d{4})-(\d{2})-(\d{2})/) || String(v || '').match(/(\d{2})\/(\d{2})\/(\d{4})/); return m ? (m[0].includes('/') ? `${m[3]}-${m[2]}-${m[1]}` : m[0]) : null; };
+    notas = rows.map(n => ({ id: n.id, termo_id: n.termo_id, nf: n.nf_numero, empresa: n.empresa || n.contratante || '', valor: num(n.nf_valor), nf_data: dt(n.nf_data), pago: n.pagamento_status === 'pago', pagamento_data: dt(n.pagamento_data), termo: n.numero_termo, projeto: n.projeto }))
+      .filter(n => (n.nf_data && n.nf_data >= lim && n.nf_data <= P.fim) || (n.pagamento_data && n.pagamento_data >= P.ini && n.pagamento_data <= P.fim))
+      .map(n => ({ ...n, no_mes: !!(n.pagamento_data && n.pagamento_data >= P.ini && n.pagamento_data <= P.fim) }));
+  } catch (e) { avisos.push('Notas dos termos: ' + e.message); }
+  // DESPESAS pagas no QB no mês: despesas (Purchase) e pagamentos de conta (BillPayment, com as contas que quitam)
+  const pagas = [];
+  try {
+    ((await qbQuery(`select * from Purchase where TxnDate >= '${P.ini}' and TxnDate <= '${P.fim}' maxresults 1000`, token))?.QueryResponse?.Purchase || [])
+      .forEach(p => pagas.push({ id: 'pur_' + p.Id, tipo: 'Despesa', fornecedor: p.EntityRef?.name || (p.Line || [])[0]?.Description || '', valor: parseFloat(p.TotalAmt || 0), data: p.TxnDate, conciliado_banco: concSet.has(String(p.Id)) }));
+    ((await qbQuery(`select * from BillPayment where TxnDate >= '${P.ini}' and TxnDate <= '${P.fim}' maxresults 1000`, token))?.QueryResponse?.BillPayment || [])
+      .forEach(p => pagas.push({ id: 'bp_' + p.Id, tipo: 'Pagamento de conta', fornecedor: p.VendorRef?.name || '', valor: parseFloat(p.TotalAmt || 0), data: p.TxnDate, conciliado_banco: concSet.has(String(p.Id)),
+        bill_ids: (p.Line || []).flatMap(li => (li.LinkedTxn || []).filter(t => t.TxnType === 'Bill').map(t => String(t.TxnId))) }));
+  } catch (e) { avisos.push('Despesas do QB: ' + e.message); }
+  // agenda de despesas (sistema): ocorrências previstas ou pagas no mês
+  let agenda = [];
+  try { const rows = await sql`SELECT o.id, o.valor, o.status, o.data_prevista, o.data_pagamento, o.qb_txn_id, d.descricao, d.fornecedor FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
+      WHERE (o.data_prevista BETWEEN ${_c2Dias(P.ini, -10)} AND ${P.fim}) OR (o.data_pagamento BETWEEN ${P.ini} AND ${P.fim})`;
+    const d10 = v => v ? (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10)) : null;
+    agenda = rows.map(o => ({ id: o.id, descricao: o.descricao || '', fornecedor: o.fornecedor || '', valor: num(o.valor), status: o.status, data_prevista: d10(o.data_prevista), data_pagamento: d10(o.data_pagamento), qb_txn_id: o.qb_txn_id }))
+      .map(o => ({ ...o, no_mes: (o.data_pagamento && o.data_pagamento >= P.ini && o.data_pagamento <= P.fim) || (o.data_prevista >= P.ini && o.data_prevista <= P.fim) }));
+  } catch (e) { avisos.push('Agenda de despesas: ' + e.message); }
+  const rec = compararReceitasSistema(recebidas, notas), desp = compararDespesasSistema(pagas, agenda);
+  const out = { periodo: P, receitas: rec, despesas: desp, resumo: { receitas: resumoComparacao(rec), despesas: resumoComparacao(desp) }, avisos, gerado_em: new Date().toISOString() };
+  // notificação: guarda o resultado (painel e próximos avisos) e registra quando há diferença
+  try { await _kvFinSet('fin:conc2:' + P.ref, { em: out.gerado_em, resumo: out.resumo }); } catch (_) {}
+  const dif = out.resumo.receitas.diferenca + out.resumo.receitas.so_qb + out.resumo.receitas.so_sistema + out.resumo.despesas.diferenca + out.resumo.despesas.so_qb + out.resumo.despesas.so_sistema;
+  out.notificacao = dif ? { tipo: 'diferenca', texto: `${dif} item(ns) com diferença entre o QuickBooks e o sistema em ${P.ref.split('-').reverse().join('/')}` } : { tipo: 'match', texto: 'QuickBooks e sistema batem em ' + P.ref.split('-').reverse().join('/') };
+  return out;
+}
+// acerta o SISTEMA a partir do QuickBooks (só no Atlantyx, por clique): nota do termo → paga; ocorrência da agenda → paga
+async function conc2AplicarSistema({ tipo, sistema_id, qb_id, data, valor } = {}) {
+  const sql = await getSql(); const d = String(data || '').slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw Object.assign(new Error('Data inválida'), { status: 400 });
+  if (tipo === 'receita') {
+    let r; try { r = await sql`UPDATE termos_empresas SET pagamento_status = 'pago', pagamento_data = COALESCE(pagamento_data, ${d}), conciliado_em = COALESCE(conciliado_em, NOW()), conciliado_obs = ${'QuickBooks ' + String(qb_id || '').substring(0, 40)} WHERE id = ${sistema_id} RETURNING termo_id`; }
+    catch (_) { r = await sql`UPDATE termos_empresas SET pagamento_status = 'pago', pagamento_data = COALESCE(pagamento_data, ${d}) WHERE id = ${sistema_id} RETURNING termo_id`; } // base sem as colunas de conciliação
+    if (!r.length) throw Object.assign(new Error('Nota não encontrada'), { status: 404 });
+    try { const fat = await import('./faturamento.js'); await fat.recalcularPagamentoTermo(r[0].termo_id); } catch (_) {}
+    return { ok: true };
+  }
+  if (tipo === 'despesa') {
+    const qid = String(qb_id || '').replace(/^bp_|^pur_/, '');
+    const r = await sql`UPDATE despesas_ocorrencias SET status = 'paga', data_pagamento = ${d}, observacoes = COALESCE(observacoes, '') || ${' · conciliado com QuickBooks ' + String(qb_id || '').substring(0, 40)} WHERE id = ${sistema_id} AND status <> 'cancelada' RETURNING id`;
+    if (!r.length) throw Object.assign(new Error('Ocorrência não encontrada (ou cancelada)'), { status: 404 });
+    return { ok: true, qb: qid };
+  }
+  throw Object.assign(new Error('Tipo inválido'), { status: 400 });
 }
 
 // v3.119: status de conciliação direto do QuickBooks — relatório TransactionList das contas bancárias, contado por

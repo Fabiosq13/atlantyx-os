@@ -54,7 +54,7 @@
       "nome": "Financeiro",
       "naipe": "Teclado",
       "escopo": "S1/S3 Financeiro: QuickBooks (lançamentos, conciliação), fluxo de caixa, agenda de pagamentos, faturamento e termos, CNAB, e-mail das 8h",
-      "pode_alterar": ["api/financeiro.js", "api/faturamento.js", "api/cnab.js", "api/termo-excel.js", "lib/termo-regras.js", "api/modelos/**"],
+      "pode_alterar": ["api/financeiro.js", "lib/conciliacao-mes.js", "api/faturamento.js", "api/cnab.js", "api/termo-excel.js", "lib/termo-regras.js", "api/modelos/**"],
       "dono_humano": "@Fabiosq13"
     }
   },
