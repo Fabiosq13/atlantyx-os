@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { classificarCargo } from '../lib/icp.js';
 // api/outreach-batch.js
 // S7-05 Agente de Outreach via WhatsApp — Envio em Lote
 // Recebe lista de leads aprovados → Claude gera mensagem individual → Z-API envia → HubSpot atualiza
@@ -45,6 +46,10 @@ async function handler(req, res) {
     // v3.233: a função tem 60 s — com intervalo de 30–60 s entre envios ela era cortada no meio e a nova tentativa
     // reenviava para os primeiros. Agora para antes do limite e devolve os leads que faltam; a tela chama de novo só com eles.
     const t0 = Date.now(); let pendentes = [];
+    // v3.234: respeita o descadastro (quem respondeu SAIR) e o ICP (cargo técnico/operacional não recebe abordagem fria)
+    let optout = new Set(), normTel = v => String(v || '').replace(/\D/g, '');
+    try { const { neon } = await import('@neondatabase/serverless'); const sq = neon(process.env.DATABASE_URL); const cd = await import('./campanha-disparo.js'); normTel = v => cd.normTelefone(v) || String(v || '').replace(/\D/g, '');
+      optout = new Set((await sq`SELECT destino FROM disparo_optout`).map(r => r.destino)); } catch (_) {}
 
     for (let i = 0; i < leads.length; i++) {
       const lead = leads[i];
@@ -55,6 +60,8 @@ async function handler(req, res) {
           resultados.push({ nome: lead.name, status: 'SEM_TELEFONE' });
           continue;
         }
+        if (optout.has(normTel(lead.phone))) { resultados.push({ nome: lead.name, empresa: lead.company, status: 'DESCADASTRADO' }); continue; }
+        if (classificarCargo(lead.job_title || lead.cargo || lead.title) === 'fora') { resultados.push({ nome: lead.name, empresa: lead.company, status: 'FORA_DO_ICP', erro: 'cargo técnico/operacional: ' + (lead.job_title || lead.cargo || lead.title) }); continue; }
 
         // Delay entre envios para parecer natural e evitar bloqueio
         if (i > 0) await sleep(delay_segundos * 1000);

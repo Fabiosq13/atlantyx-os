@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { classificarCargo, ICP_TEXTO } from '../lib/icp.js';
 // api/prospect-scan.js
 // S2-02 Mapeamento de Contas — Prospecção de leads NOVOS com dados completos
 // Fonte: Claude com base em dados públicos (LinkedIn, sites, notícias, relatórios setoriais)
@@ -20,7 +21,7 @@ async function handler(req, res) {
       setor = 'Energia',
       regiao = 'Sudeste',
       faturamento_min = '100M',
-      cargo_decisor = 'CIO, CTO, Diretor de TI',
+      cargo_decisor = 'todos_clevel', // v3.234: ICP C-level (antes só CIO/CTO/Diretor de TI)
       quantidade = 15,
       iniciar_outreach = false,
       incluir_crm = false,
@@ -29,7 +30,7 @@ async function handler(req, res) {
     // ── MODO CADEIA C-LEVEL ──────────────────────────────────────────────────
     if (modo === 'cadeia_clevel') {
       const empresa = empresa_alvo || 'Empresa nao informada';
-      const cargosAlvo = cargos || ['CIO / Diretor de TI', 'CTO', 'Dir. Transformacao Digital'];
+      const cargosAlvo = (cargos || ['CEO / Presidente', 'CFO', 'COO', 'CIO / Diretor de TI', 'CTO', 'Sócio / Fundador']).filter(c => classificarCargo(c) !== 'fora');
       console.log(`[S2-02+S7-04] Cadeia C-Level: ${empresa}`);
       const decisores = await mapearCadeiaCLevel(empresa, setor, cargosAlvo);
       return res.status(200).json({ success: true, modo: 'cadeia_clevel', empresa, decisores, total: decisores.length });
@@ -37,11 +38,10 @@ async function handler(req, res) {
 
     // ── EXPANDIR CARGO SE "TODOS" ─────────────────────────────────────────────
     let cargoFinal = cargo_decisor;
-    if (cargo_decisor === 'todos_clevel') {
-      cargoFinal = 'CIO, CTO, CFO, CEO, COO, Diretor de TI, Diretor de Tecnologia, Diretor de Transformacao Digital, Diretor de Analytics, Diretor de Dados, VP de Tecnologia';
-    } else if (cargo_decisor === 'todos') {
-      cargoFinal = 'CIO, CTO, CFO, CEO, COO, Diretor de TI, Gerente de TI, Coordenador de TI, Diretor de Transformacao Digital, Diretor de Analytics, VP de Tecnologia, Head de Dados, Gerente de BI';
-    }
+    // v3.234: ICP C-level — "todos" não inclui mais gerente/coordenador de TI, head de dados nem gerente de BI
+    if (cargo_decisor === 'todos_clevel' || cargo_decisor === 'todos') {
+      cargoFinal = 'Dono/Sócio/Fundador, CEO/Presidente, CFO, COO, CIO, CTO, CDO, Diretor de TI, Diretor de Tecnologia, Diretor Financeiro, Diretor de Operações, Diretor de Transformacao Digital, VP de Tecnologia';
+    } else if (classificarCargo(cargo_decisor) === 'fora') cargoFinal = 'CEO, CFO, COO, CIO, CTO, Diretor';
 
     console.log(`[S2-02] Prospectando: ${setor} | ${regiao} | ${cargoFinal} | ${quantidade} leads novos`);
 
@@ -124,6 +124,8 @@ CRITÉRIOS DE BUSCA:
 - Região: ${regiao}
 - Faturamento mínimo: R$${faturamento_min}/ano
 - Cargo do decisor alvo: ${cargo_decisor}
+- ${ICP_TEXTO}
+- Empresa média ou grande (200+ funcionários); o decisor indicado é SEMPRE dono/sócio, C-level ou diretor/VP — nunca gerente, coordenador, analista ou engenheiro
 
 A ATLANTYX RESOLVE: dados desconectados → decisões erradas → perda financeira
 SOLUÇÃO: BI, Engenharia de Dados, Analytics, IA, Dashboards, Integração de Sistemas
@@ -185,6 +187,8 @@ Retorne array JSON com ${quantidade} empresas reais, ordenadas por score A → B
   const todas = res.filter(x => x.status === 'fulfilled').flatMap(x => x.value);
   if (!todas.length && erros.length) throw new Error('IA falhou: ' + erros[0]);
   const vistos = new Set();
+  // v3.234: decisor com cargo técnico/operacional não entra (a IA às vezes devolve "Coordenador de TI", "Gerente de BI")
+  todas.forEach(e => { if (classificarCargo(e.decisor_cargo) === 'fora') { e.decisor_cargo_original = e.decisor_cargo; e.decisor_cargo = 'CEO / CFO / Diretor (a identificar)'; e.decisor_nome = 'A identificar via LinkedIn'; e.decisor_linkedin = null; e.decisor_email = null; e.decisor_phone = null; } });
   return todas.filter(e => { const k = String(e.nome || e.empresa || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, ''); if (!k || vistos.has(k)) return false; vistos.add(k); return true; }).slice(0, qtd);
 }
 

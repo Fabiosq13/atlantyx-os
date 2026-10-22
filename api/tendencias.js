@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { ICP_TEXTO, RE_CONTEUDO_FORA_ICP } from '../lib/icp.js';
 import crypto from 'node:crypto';
 // api/tendencias.js — v3.143 · S2 · REAÇÃO A TENDÊNCIAS (3 semanas)
 // Técnica: achar os vídeos mais vistos do nicho no mundo, publicar a REAÇÃO da Atlantyx a eles (3 por dia) e,
@@ -31,7 +32,8 @@ async function getSql() {
 const novoId = p => p + '_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
 const CFG_PADRAO = { podtecno_email: '', podtecno_auto: true, inicio: null, dias: 21, reacoes_dia: 3, horarios: ['08:30', '12:30', '18:30'], carrosseis_semana: 3, carrossel_hora: '11:00', reels_tema_semana: 2, reel_tema_hora: '20:00',
   stories_dia: 1, story_hora: '10:00', redes: ['instagram'], rascunho: false };
-const PALAVRAS_PADRAO = ['IA para empresas', 'inteligência artificial nos negócios', 'engenharia de dados', 'business intelligence', 'IA generativa', 'data analytics', 'transformação digital', 'AI agents business'];
+// v3.234: ICP C-level — palavras de NEGÓCIO/diretoria (antes "engenharia de dados" e "data analytics" traziam tutorial e vídeo de carreira)
+const PALAVRAS_PADRAO = ['IA para empresas', 'inteligência artificial nos negócios', 'AI strategy for CEOs', 'IA na diretoria', 'transformação digital resultados', 'AI agents business', 'CFO inteligência artificial', 'data-driven leadership'];
 
 async function claude(system, content, maxTokens = 4000, tools) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
@@ -78,7 +80,7 @@ async function _youtube(palavras, dias) {
   const lista = [...ids.keys()]; const out = [];
   for (let i = 0; i < lista.length; i += 50) {
     const r = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id=${lista.slice(i, i + 50).join(',')}&key=${key}`); const d = await r.json().catch(() => ({}));
-    (d.items || []).forEach(v => out.push({ plataforma: 'YouTube', url: 'https://www.youtube.com/watch?v=' + v.id, titulo: v.snippet?.title, criador: v.snippet?.channelTitle, views: parseInt(v.statistics?.viewCount) || 0,
+    (d.items || []).filter(v => !RE_CONTEUDO_FORA_ICP.test((v.snippet?.title || '') + ' ' + String(v.snippet?.description || '').substring(0, 200))).forEach(v => out.push({ // v3.234: sem tutorial/curso/vaga/carreira plataforma: 'YouTube', url: 'https://www.youtube.com/watch?v=' + v.id, titulo: v.snippet?.title, criador: v.snippet?.channelTitle, views: parseInt(v.statistics?.viewCount) || 0,
       publicado_em: (v.snippet?.publishedAt || '').substring(0, 10), resumo: String(v.snippet?.description || '').substring(0, 400), idioma: v.snippet?.defaultAudioLanguage || v.snippet?.defaultLanguage || '', fonte: 'youtube_api' }));
   }
   return out;
@@ -136,9 +138,10 @@ async function planoGerar({ campanha_id, substituir = true }) { const sql = awai
 }
 
 // ── roteiros com IA ──
-const SYS_REACAO = `Você é o estrategista de conteúdo da Atlantyx (17 anos de dados, BI, engenharia de dados e IA para grandes empresas brasileiras — CPFL, Enel, Caixa). Escreve REAÇÕES da Atlantyx a vídeos em alta no mundo, em português do Brasil, tom de especialista que opina com respeito: concorda, discorda ou completa, sempre trazendo para a realidade das empresas brasileiras e terminando com uma provocação que gere comentários.
+const SYS_REACAO = `${ICP_TEXTO}
+Você é o estrategista de conteúdo da Atlantyx (17 anos de dados, BI, engenharia de dados e IA para grandes empresas brasileiras — CPFL, Enel, Caixa). Escreve REAÇÕES da Atlantyx a vídeos em alta no mundo, em português do Brasil, tom de especialista que opina com respeito: concorda, discorda ou completa, sempre trazendo para a realidade das empresas brasileiras e terminando com uma provocação que gere comentários.
 Regras: não copie falas do vídeo além de uma citação curta entre aspas; dê crédito ao criador; não prometa resultados; nada de clickbait enganoso.
-Formato do Reel (texto na tela, 1 frase curta por slide, máx. 12 palavras): slide 1 = gancho com o número de visualizações ou a afirmação polêmica do vídeo; slide 2 = o que o vídeo diz; slides 3-4 = a reação/opinião da Atlantyx com um ponto prático; slide 5 = provocação/pergunta + "comenta aqui".`;
+Formato do Reel (texto na tela, 1 frase curta por slide, máx. 12 palavras): slide 1 = gancho com o número de visualizações ou a afirmação polêmica do vídeo; slide 2 = o que o vídeo diz; slides 3-4 = a reação/opinião da Atlantyx com um ponto prático; slide 5 = pergunta para quem decide (impacto no resultado da empresa) + convite para conversar com a Atlantyx — sem pedir comentário/curtida.`;
 async function roteirosGerar({ campanha_id, ids, limite = 8 }) { const sql = await getSql();
   const c = (await sql`SELECT * FROM tend_campanhas WHERE id=${campanha_id}`)[0]; if (!c) throw new Error('Campanha não encontrada');
   let P = ids?.length ? await sql`SELECT * FROM tend_pecas WHERE id = ANY(${ids})` : await sql`SELECT * FROM tend_pecas WHERE campanha_id=${campanha_id} AND status='planejada' ORDER BY data, hora LIMIT ${Math.min(12, limite)}`;

@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { ICP_TEXTO, ICP_RESUMO, NEGATIVAS_BUSCA, classificarCargo, META_IDADE_MIN } from '../lib/icp.js';
 
 // v3.32: o CTA do Instagram vem da configuração da campanha (link curto, palavra no Direct, WhatsApp ou bio)
 const ctaIgDe = p => String((p && p.cta_instagram) || '').trim() || '🔗 Link na bio → agende uma conversa com a nossa equipe'; // v3.106: no Instagram, link só na bio
@@ -138,7 +139,7 @@ JSON: {"stories":[{"ordem":1,"papel":"gancho","texto_tela":"...","cta_sticker":"
 "${texto.substring(0, 600)}"
 Link de destino: ${link}
 
-REGRAS (v1.12): B2B no Meta NÃO se segmenta bem por cargo/interesse — o Turbinar do celular sai do ICP. Portanto: (1) objetivo Leads ou Conversões (nunca Engajamento); (2) públicos próprios obrigatórios: Público Personalizado com a lista de leads/clientes do HubSpot + Lookalike 1% dela + retargeting de visitantes do site (Pixel); interesses só como complemento; (3) exclusões: clientes atuais, funcionários, quem já converteu; (4) copy com LINHA QUALIFICADORA no início ("Para CIOs/CFOs de empresas com +R$100M em receita...") para afastar quem não é o perfil; (5) formulário com cargo e porte obrigatórios.
+REGRAS (v3.234 · ICP C-level): faixa etária mínima ${META_IDADE_MIN} anos; cargos SÓ donos, sócios, C-levels e diretores/VPs (nunca analista, coordenador, gerente técnico, desenvolvedor); interesses de cargo executivo/gestão, nunca de ferramenta técnica (Power BI, SAP, programação). REGRAS (v1.12): B2B no Meta NÃO se segmenta bem por cargo/interesse — o Turbinar do celular sai do ICP. Portanto: (1) objetivo Leads ou Conversões (nunca Engajamento); (2) públicos próprios obrigatórios: Público Personalizado com a lista de leads/clientes do HubSpot + Lookalike 1% dela + retargeting de visitantes do site (Pixel); interesses só como complemento; (3) exclusões: clientes atuais, funcionários, quem já converteu; (4) copy com LINHA QUALIFICADORA no início ("Para CIOs/CFOs de empresas com +R$100M em receita...") para afastar quem não é o perfil; (5) formulário com cargo e porte obrigatórios.
 Gere o plano de impulsionamento em JSON:
 {"objetivo_campanha":"Leads|Conversões — qual e por quê (1 frase)","publicos_proprios":["Personalizado: lista HubSpot (clientes+leads)","Lookalike 1% da lista","Retargeting site 90d"],"exclusoes":["clientes atuais","funcionários","já converteram"],"linha_qualificadora":"1 frase que abre a copy e filtra o público",
 "cta_botao":"o CTA ideal do Meta (ex: Agendar horário)",
@@ -202,11 +203,19 @@ Gere o plano de impulsionamento em JSON:
 }
 
 // ── CONTEXTO BASE DA ATLANTYX ─────────────────────────────────────────────────
+// v3.234: o público escolhido na tela chega como código ("todos_clevel") — vira texto e SEMPRE leva o ICP junto
+function _publicoTexto(p) {
+  const v = String(p || '').trim();
+  const mapa = { todos_clevel: 'Todos os C-levels e donos', todos: 'Todos os C-levels e donos', '': 'Todos os C-levels e donos' };
+  const rot = mapa[v] ?? v.replace(/_/g, ' ');
+  return rot + ' — ' + ICP_RESUMO + '. ' + 'Nunca público técnico/operacional nem pessoa física.';
+}
 const BRAND = {
   empresa: 'Atlantyx',
   segmento: 'BI, Engenharia de Dados e IA para grandes empresas',
-  tom_de_voz: 'Direto, confiante, técnico mas acessível, sem jargões desnecessários. Não usamos frases feitas ou clichês de startup.',
-  icp: 'CIO, CTO, CFO, Diretor de TI e Transformação Digital em empresas com R$100M–R$5B, setores: Energia, Automotivo, Varejo, Indústria',
+  tom_de_voz: 'Direto, confiante e executivo — fala de resultado de negócio (dinheiro, risco, prazo, controle), sem jargão técnico de ferramenta. Não usamos frases feitas ou clichês de startup.',
+  // v3.234: ICP único (lib/icp.js) — donos, sócios, C-levels e diretores de médias e grandes empresas; nunca técnico/PF
+  icp: ICP_TEXTO,
   proposta_valor: 'Transformamos dados complexos em inteligência acionável — Quick Wins em semanas, integra com sistemas existentes, ROI mensurável',
   problema_central: 'Empresas tomam decisões com dados atrasados ou inconsistentes, gerando perda financeira real',
   cores: 'Azul profundo (#1A3A8F), azul elétrico (#4F7CFF), branco, cinza escuro. Sem cores berrantes.',
@@ -227,7 +236,7 @@ Retorne APENAS JSON válido.`;
 Campanha: ${campanha || 'Prospecção de grandes contas'}
 Objetivo: ${objetivo || 'Gerar interesse e reuniões com C-levels'}
 Canal: ${canal || 'LinkedIn + Instagram'}
-Público: ${publico || BRAND.icp}
+Público: ${_publicoTexto(publico)}
 ${contexto ? 'INSTRUCAO PRIORITARIA - siga exatamente: ' + contexto + '. Esta instrucao deve guiar TODA a narrativa.' : 'Contexto: prospeccao ativa B2B no ICP da Atlantyx.'}
 
 SEJA CONCISO: cada campo em NO MÁXIMO 1-2 frases. Retorne:
@@ -603,9 +612,10 @@ Retorne APENAS JSON válido.`;
 
   const user = `Crie a estrutura completa de campanha Google Ads:
 Campanha: ${campanha || 'Prospecção BI e Analytics para grandes empresas'}
-Keywords base: ${keywords || 'BI empresarial, analytics corporativo, engenharia de dados'}
+Keywords base: ${keywords || 'consultoria de dados para diretoria, indicadores para CFO, painel executivo de resultados, inteligência de negócio para grandes empresas'}
+REGRA ICP C-level: palavras com intenção de COMPRA de quem decide (empresa/diretoria/resultado), nunca de quem aprende ou procura emprego; negativas obrigatórias: ${NEGATIVAS_BUSCA.join(', ')}
 Orçamento: ${orcamento || 'R$5.000/mês'}
-Objetivo: ${objetivo || 'Leads qualificados — CIOs e CTOs'}
+Objetivo: ${objetivo || 'Leads qualificados — donos, sócios e C-levels de médias e grandes empresas'}
 
 Retorne:
 {
@@ -636,7 +646,7 @@ Retorne:
   "publico_alvo": {
     "segmentacao_in_market": ["B2B Software", "Enterprise Software"],
     "remarketing": "usuários que visitaram o site",
-    "exclusoes": ["pequenas empresas", "estudantes"]
+    "exclusoes": ["pequenas empresas", "estudantes", "quem procura emprego", "público técnico"]
   },
   "landing_page_brief": "o que a LP precisa ter para converter",
   "kpis_meta": {"cpc_max": "R$X", "cpa_alvo": "R$X", "taxa_conversao_alvo": "X%"},
@@ -645,6 +655,8 @@ Retorne:
 
   const r = await claude(system, user, 2500);
   const ads = parseJSON(r);
+  // v3.234: negativas do ICP em todo grupo (vaga, curso, estágio, tutorial…) — a IA nem sempre punha
+  try { (ads.grupos_de_anuncios || []).forEach(g => { g.negative_keywords = [...new Set([...(Array.isArray(g.negative_keywords) ? g.negative_keywords : []), ...NEGATIVAS_BUSCA])]; }); } catch (_) {}
   console.log(`[S2-GoogleAds] Campanha criada: "${ads.nome_campanha}"`);
   return { ads, agente: 'S2-GoogleAds' };
 }
@@ -658,7 +670,8 @@ Retorne APENAS JSON válido.`;
 
   const user = `Crie a estrutura completa de campanha LinkedIn Ads:
 Campanha: ${campanha || 'Prospecção C-Level Energia e Indústria'}
-Segmentação: ${segmentacao || 'CIO, CTO, Diretor de TI — empresas 500+ funcionários — Energia, Automotivo, Varejo'}
+Segmentação: ${segmentacao || 'Donos/sócios, CEO, CFO, COO, CIO, CTO, CDO e diretores/VPs — senioridade Owner, Partner, CXO, VP, Director — empresas 500+ funcionários — Energia/Utilities, Bancos/Seguros, Indústria, Infraestrutura, Varejo'}
+REGRA ICP C-level: nunca segmente por cargos técnicos/operacionais (analista, engenheiro, desenvolvedor, coordenador, gerente técnico) nem por habilidades técnicas.
 Orçamento: ${orcamento || 'R$5.000/mês'}
 Formato: ${formato || 'Single Image + Lead Gen Form'}
 
@@ -669,11 +682,12 @@ Retorne:
   "orcamento_diario": "R$X",
   "bid": "Automated | Manual CPC | CPM",
   "segmentacao": {
-    "cargos": ["CIO", "CTO", "Diretor de TI"],
-    "setores": ["Energia", "Automotivo", "Varejo", "Indústria"],
+    "cargos": ["CEO", "CFO", "COO", "CIO", "CTO", "Diretor"],
+    "senioridade": ["Owner", "Partner", "CXO", "VP", "Director"],
+    "setores": ["Energia e Utilities", "Bancos e Seguros", "Indústria", "Infraestrutura", "Varejo"],
     "tamanho_empresa": "501-1000, 1001-5000, 5001-10000+",
     "localizacao": "Brasil — SP, RJ, MG prioritários",
-    "exclusoes": ["estudantes", "autônomos"]
+    "exclusoes": ["estudantes", "autônomos", "cargos técnicos/operacionais", "quem procura emprego"]
   },
   "anuncios": [
     {
@@ -698,6 +712,10 @@ Retorne:
 
   const r = await claude(system, user, 2000);
   const liads = parseJSON(r);
+  // v3.234: garante o ICP no resultado — tira cargo técnico/operacional que a IA sugerir e força a senioridade executiva
+  try { if (liads.segmentacao) { const sg = liads.segmentacao;
+    if (Array.isArray(sg.cargos)) { const antes = sg.cargos.length; sg.cargos = sg.cargos.filter(c => classificarCargo(c) === 'decisor'); if (!sg.cargos.length) sg.cargos = ['CEO', 'CFO', 'COO', 'CIO', 'CTO', 'Diretor']; if (sg.cargos.length < antes) liads.aviso_icp = 'Cargos fora do ICP removidos da segmentação.'; }
+    sg.senioridade = ['Owner', 'Partner', 'CXO', 'VP', 'Director']; } } catch (_) {}
   console.log(`[S2-LinkedInAds] Campanha criada: "${liads.nome_campanha}"`);
   return { liads, agente: 'S2-LinkedInAds' };
 }

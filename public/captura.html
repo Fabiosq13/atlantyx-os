@@ -180,10 +180,12 @@
         <p class="ajuda">Leva menos de um minuto. Um especialista retorna em até um dia útil.</p>
         <div class="linha2">
           <div><label for="nome">Nome</label><input id="nome" name="name" autocomplete="name" required></div>
-          <div><label for="cargo">Cargo</label><input id="cargo" name="job_title" autocomplete="organization-title" placeholder="Ex.: Diretor de TI"></div>
+          <div><label for="cargo">Cargo</label><input id="cargo" name="job_title" autocomplete="organization-title" required placeholder="Ex.: CEO, Sócio, Diretor Financeiro"></div>
         </div>
-        <label for="empresa">Empresa</label>
-        <input id="empresa" name="company" autocomplete="organization" required>
+        <div class="linha2">
+          <div><label for="empresa">Empresa</label><input id="empresa" name="company" autocomplete="organization" required></div>
+          <div><label for="porte">Nº de funcionários</label><select id="porte" name="porte" required><option value="">Selecione</option><option value="ate_50">Até 50</option><option value="51_200">51 a 200</option><option value="201_1000">201 a 1.000</option><option value="1001_5000">1.001 a 5.000</option><option value="5000_mais">Mais de 5.000</option></select></div>
+        </div>
         <label for="email">E-mail corporativo</label>
         <input id="email" name="email" type="email" inputmode="email" autocomplete="email" required placeholder="nome@empresa.com.br">
         <div class="linha2">
@@ -278,13 +280,13 @@
     const g = id => document.getElementById(id).value.trim();
     const erro = document.getElementById('erro');
     erro.style.display = 'none';
-    if (!g('nome') || !g('empresa') || !g('email')) { erro.textContent = 'Preencha nome, empresa e e-mail.'; erro.style.display = 'block'; return; }
+    if (!g('nome') || !g('empresa') || !g('email') || !g('cargo') || !g('porte')) { erro.textContent = 'Preencha nome, cargo, empresa, nº de funcionários e e-mail.'; erro.style.display = 'block'; return; }
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(g('email'))) { erro.textContent = 'Confira o e-mail informado.'; erro.style.display = 'block'; return; }
     const btn = document.getElementById('btn'); btn.disabled = true; btn.textContent = 'Enviando...';
     try {
       const r = await fetch('/api/lead-capture', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: g('nome'), company: g('empresa'), title: g('cargo'), email: g('email'), phone: g('telefone'), interesse: g('interesse'),
+          name: g('nome'), company: g('empresa'), title: g('cargo'), porte: g('porte'), email: g('email'), phone: g('telefone'), interesse: g('interesse'),
           source: utm.source, campaign_name: utm.campaign || 'captura', utm,
           page: location.href, form_name: 'captura-publica', oferta: 'diagnostico_gratuito', rapido: true, website: g('website'), t_preenchimento_ms: Date.now() - _t0, consentimento: { aceito: true, versao: '2026-10-15', canais: ['email', 'ligacao', 'whatsapp', 'sms'], em: new Date().toISOString() }, // v3.60 · v3.184: resposta imediata
         }) });

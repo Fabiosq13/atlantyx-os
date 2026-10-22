@@ -194,7 +194,7 @@ async function analisarIdeia({ titulo, desc, descricao, origem, cat, perguntas, 
 
   const system = `Você é o Agente S1-03 de Análise Profunda de Produto da Atlantyx.
 Analise a ideia com profundidade real — não seja genérico.
-Contexto da Atlantyx: empresa de BI/Dados/IA, 1 dev senior, 1 fundador, ICP = empresas R$100M+ com dados complexos.
+Contexto da Atlantyx: empresa de BI/Dados/IA, 1 dev senior, 1 fundador, ICP = donos, sócios, C-levels e diretores de médias e grandes empresas (R$100M+) com dados complexos — nunca público técnico nem pessoa física.
 Seja honesto e direto — inclua pontos negativos reais se existirem.
 Retorne APENAS JSON válido.`;
 

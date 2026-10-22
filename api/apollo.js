@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { APOLLO_SENIORIDADES, APOLLO_PORTES, classificarCargo } from '../lib/icp.js';
 // api/apollo.js — Enriquecimento via /people/bulk_match com details[{id}]
 // Hardened: try/catch em JSON.parse, action person_match adicionada
 
@@ -119,7 +120,12 @@ async function handler(req, res) {
       const qs = new URLSearchParams();
       if (params.revenue_min) qs.set('revenue_range[min]', String(parseInt(params.revenue_min)));
       if (params.revenue_max) qs.set('revenue_range[max]', String(parseInt(params.revenue_max)));
-      if (params.person_seniorities?.length) body.person_seniorities = params.person_seniorities;
+      // v3.234: ICP C-level SEMPRE — senioridade dono/sócio/C-level/VP/diretor e porte médio/grande (201+ funcionários).
+      // Antes "Todos os cargos" não mandava filtro nenhum (vinha analista, desenvolvedor, estagiário) e o porte nunca ia.
+      const buscaPessoa = !!params.nome_exato || !!params.q_organization_domains_list?.length && !!params.q_keywords;
+      body.person_seniorities = params.person_seniorities?.length ? params.person_seniorities : (buscaPessoa ? undefined : APOLLO_SENIORIDADES);
+      if (!body.person_seniorities) delete body.person_seniorities;
+      if (!buscaPessoa) body.organization_num_employees_ranges = params.organization_num_employees_ranges?.length ? params.organization_num_employees_ranges : APOLLO_PORTES;
       if (params.q_keywords) body.q_keywords = params.q_keywords;
       if (params.q_organization_domains_list?.length) body.q_organization_domains_list = params.q_organization_domains_list;
 
@@ -134,11 +140,20 @@ async function handler(req, res) {
       const SIGLAS = { ceo: ['ceo', 'chief executive', 'presidente', 'diretor presidente', 'president'], cio: ['cio', 'chief information'], cto: ['cto', 'chief technology'],
         cfo: ['cfo', 'chief financial', 'diretor financeiro', 'diretora financeira'], coo: ['coo', 'chief operat', 'diretor de operac'], cdo: ['cdo', 'chief data', 'chief digital'],
         cmo: ['cmo', 'chief marketing'], cso: ['cso', 'chief strateg', 'chief sales'] };
-      const removidos = { cargo: 0, local: 0, nome: 0 };
+      const removidos = { cargo: 0, local: 0, nome: 0, fora_icp: 0 };
       if (titulos.length && params.cargo_estrito !== false) {
-        const alvos = titulos.flatMap(t => SIGLAS[norm(t)] || [norm(t)]);
-        people = people.filter(p => { const ok = alvos.some(a => new RegExp('(^|[^a-z])' + a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(norm(p.title))); if (!ok) removidos.cargo++; return ok; });
+        // v3.234: cargo de várias palavras ("Diretor TI", "VP Technology") casa por PALAVRA — antes exigia a frase
+        // literal e "Diretor de TI" / "VP of Technology" eram descartados (0 resultados)
+        const VAZIAS = new Set(['de', 'da', 'do', 'of', 'the', 'e', 'and', '&']);
+        const esc = a => a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const sin = { ti: ['ti', 'it', 'tecnologia', 'technology', 'information'], technology: ['technology', 'tecnologia', 'ti', 'it'], data: ['data', 'dados', 'analytics'], diretor: ['diretor', 'diretora', 'director'], vp: ['vp', 'vice'] };
+        const testes = titulos.map(t => { const n = norm(t); if (SIGLAS[n]) return tt => SIGLAS[n].some(a => new RegExp('(^|[^a-z])' + esc(a)).test(tt));
+          const palavras = n.split(/[^a-z0-9]+/).filter(w => w && !VAZIAS.has(w));
+          return tt => palavras.every(w => (sin[w] || [w]).some(a => new RegExp('(^|[^a-z])' + esc(a) + '($|[^a-z])').test(tt))); });
+        people = people.filter(p => { const ok = testes.some(f => f(norm(p.title))); if (!ok) removidos.cargo++; return ok; });
       }
+      // v3.234: nunca devolve cargo técnico/operacional (analista, engenheiro, desenvolvedor, coordenador, estagiário…)
+      if (!params.nome_exato) people = people.filter(p => { const ok = !['fora', 'gerencia'].includes(classificarCargo(p.title)); if (!ok) removidos.fora_icp++; return ok; });
       if (locais.length) {
         const ls = locais.map(norm);
         people = people.filter(p => { const onde = norm([p.city, p.state, p.country, p.location_city, p.location_country].filter(Boolean).join(' '));

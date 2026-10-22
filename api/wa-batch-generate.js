@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { classificarCargo } from '../lib/icp.js';
 // api/wa-batch-generate.js
 // S2-02 + S7-05 — Busca leads do HubSpot (gerados pela prospecção) e gera mensagens em lote
 // Retorna lista completa com mensagem principal + follow-up 48h prontos para revisar/enviar
@@ -15,8 +16,17 @@ async function handler(req, res) {
     const { filtro = 'novos', enviar = false, tom = 'Direto e objetivo' } = req.query;
     console.log(`[S2-02+S7-05] Buscando leads HubSpot, filtro: ${filtro}`);
 
-    const leads = await buscarLeadsHubSpot(filtro);
+    const { leads: leads0, aviso: avisoBusca } = await buscarLeadsHubSpot(filtro);
+    // v3.234: ICP C-level — só dono/sócio/C-level/diretor; cargo técnico, gerência ou sem cargo ficam de fora do lote
+    // automático; também quem pediu SAIR (descadastro)
+    let optout = new Set(), normTel = v => String(v || '').replace(/\D/g, '');
+    try { const { neon } = await import('@neondatabase/serverless'); const sq = neon(process.env.DATABASE_URL); const cd = await import('./campanha-disparo.js'); normTel = v => cd.normTelefone(v) || String(v || '').replace(/\D/g, '');
+      optout = new Set((await sq`SELECT destino FROM disparo_optout`).map(r => r.destino)); } catch (_) {}
+    const foraIcp = [], descad = [];
+    const leads = leads0.filter(l => { if (classificarCargo(l.job_title) !== 'decisor') { foraIcp.push(l.name + (l.job_title ? ' (' + l.job_title + ')' : ' (sem cargo)')); return false; }
+      if (l.phone && optout.has(normTel(l.phone))) { descad.push(l.name); return false; } return true; });
     if (!leads.length) {
+      if (leads0.length) return res.status(200).json({ success: true, total: 0, mensagens: [], fora_do_icp: foraIcp, descadastrados: descad.length, aviso: (avisoBusca ? avisoBusca + ' ' : '') + `Nenhum dos ${leads0.length} contato(s) é decisor do ICP (dono, sócio, C-level ou diretor) — nada foi gerado.` });
       return res.status(200).json({ success: true, total: 0, mensagens: [], aviso: 'Nenhum lead encontrado. Execute a prospecção primeiro.' });
     }
 
@@ -54,7 +64,8 @@ async function handler(req, res) {
       total: leads.length,
       enviados: enviar === 'true' ? enviados : 0,
       pendentes_aprovacao: enviar !== 'true' ? leads.length : naoEnviados,
-      aviso: naoEnviados ? `${naoEnviados} mensagem(ns) ficaram para revisão — envie pelo Outreach em lote (limite de tempo do envio direto).` : undefined,
+      aviso: [avisoBusca, naoEnviados ? `${naoEnviados} mensagem(ns) ficaram para revisão — envie pelo Outreach em lote (limite de tempo do envio direto).` : '', foraIcp.length ? `${foraIcp.length} contato(s) fora do ICP não entraram (cargo não é dono/C-level/diretor).` : '', descad.length ? `${descad.length} descadastrado(s) (SAIR) não entraram.` : ''].filter(Boolean).join(' ') || undefined,
+      fora_do_icp: foraIcp, descadastrados: descad.length,
       mensagens,
     });
 
@@ -68,7 +79,7 @@ async function handler(req, res) {
 
 async function buscarLeadsHubSpot(filtro) {
   const token = process.env.HUBSPOT_TOKEN;
-  if (!token) return [];
+  if (!token) return { leads: [], aviso: 'HUBSPOT_TOKEN não configurado' };
 
   // Filtros disponíveis: 'novos' (não abordados), 'todos', 'score_a', 'sem_mensagem'
   const filtros = {
@@ -99,15 +110,17 @@ async function buscarLeadsHubSpot(filtro) {
     body: JSON.stringify(body),
   });
   // v2.91: se o portal não tem a propriedade icp_score, refaz sem ela em vez de falhar
+  let aviso = null;
   if (r.status === 400 && filtro === 'score_a') {
     body.filterGroups = [{ filters: filtros.novos }];
     r = await fetch('https://api.hubapi.com/crm/v3/objects/contacts/search', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(body) });
+    aviso = 'O HubSpot não tem a propriedade icp_score: o filtro "Score A" virou "novos" (a conferência de cargo do ICP continua valendo).'; // v3.234: antes trocava em silêncio
   }
 
   if (!r.ok) { const t = await r.text(); throw new Error('HubSpot ' + r.status + ': ' + t.substring(0, 200)); }   // v2.91: antes o erro virava "nenhum lead"
   const data = await r.json();
 
-  return (data.results || []).map(c => {
+  return { aviso, leads: (data.results || []).map(c => {
     const p = c.properties;
     return {
       contact_id: c.id,
@@ -123,7 +136,7 @@ async function buscarLeadsHubSpot(filtro) {
       melhor_angulo: p.melhor_angulo || '',
       canal: p.canal_recomendado || 'WHATSAPP',
     };
-  }).filter(l => l.name !== '' && (l.phone || l.email));
+  }).filter(l => l.name !== '' && (l.phone || l.email)) };
 }
 
 async function gerarMensagensEmLote(leads, tom) {

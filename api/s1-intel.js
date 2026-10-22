@@ -57,7 +57,7 @@ function ctxAtlantyx(extra = {}) {
     segmento: 'B2B — IA, analytics, BI e engenharia de dados para grandes empresas',
     motores_de_negocio: ['Alocação de profissionais (pessoas)', 'Projetos sob medida (dados, BI, IA)', 'Suíte própria de produtos de IA (Atlantyx OS)'],
     clientes_chave: ['CPFL Energia', 'Enel', 'Grupo Jelta Veículos', 'Caixa Capitalização'],
-    icp: { setores: ['Energia', 'Automotivo', 'Financeiro/seguros', 'Varejo', 'Indústria'], porte: 'grandes empresas', decisores: 'CIO, CTO, CFO, Dir. de Dados/Transformação Digital' },
+    icp: { setores: ['Energia e utilities', 'Bancos e seguradoras', 'Indústria', 'Infraestrutura', 'Varejo', 'Automotivo'], porte: 'médias e grandes empresas', decisores: 'donos, sócios, CEO, CFO, COO, CIO, CTO, CDO e diretores/VPs (v3.234: nunca público técnico/operacional nem pessoa física)' },
     diferenciais: ['Quick wins em semanas', 'Integra com os sistemas existentes', 'ROI mensurável', 'Experiência em energia'],
     ...extra,
   };

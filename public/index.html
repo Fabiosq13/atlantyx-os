@@ -1241,7 +1241,6 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
               <option value="industria">C-Level — Industria / Manufatura</option>
               <option value="financeiro">C-Level — Financeiro / Bancario</option>
               <option value="tecnologia">C-Level — Tecnologia</option>
-              <option value="todos">Gerentes Senior e acima</option>
             </select>
           </div>
           <div class="kg k2" style="gap:8px;">
@@ -1326,7 +1325,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
             <div>
               <div class="fg" style="margin-bottom:8px;"><label class="fl">Cargo / Título</label>
                 <select class="fsel" id="liCargo">
-                  <option value="todos">Todos os cargos</option>
+                  <option value="todos">Todos os decisores — donos, sócios, C-levels, VPs e diretores</option>
                   <option value="CEO">CEO — Chief Executive Officer</option>
                   <option value="CIO">CIO — Chief Information Officer</option>
                   <option value="CTO">CTO — Chief Technology Officer</option>
@@ -1336,9 +1335,8 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
                   <option value="VP Technology">VP de Tecnologia</option>
                   <option value="VP Data">VP de Dados / Analytics</option>
                   <option value="Diretor TI">Diretor de TI</option>
-                  <option value="Gerente TI">Gerente de TI Sênior</option>
                   <option value="Director">Director</option>
-                  <option value="Head">Head of</option>
+                  <option value="Sócio">Sócio / Fundador</option>
                   <option value="President">President</option>
                   <option value="custom">Cargo personalizado...</option>
                 </select>
@@ -1346,7 +1344,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
               </div>
               <div class="fg" style="margin-bottom:8px;" id="liCargoCustomDiv" style="display:none;">
                 <label class="fl">Cargo personalizado</label>
-                <input class="fi" id="liCargoCustom" placeholder="Ex: Head of Data, Analytics Manager..."/>
+                <input class="fi" id="liCargoCustom" placeholder="Ex: Diretor de Operações, Chief Digital Officer… (cargos técnicos são descartados)"/>
               </div>
               <div class="fg" style="margin-bottom:8px;"><label class="fl">Setor</label>
                 <select class="fsel" id="liSetor">
@@ -1620,7 +1618,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
             <div class="fg"><label class="fl">Faturamento Minimo</label><select class="fsel" id="pFat"><option value="5000000">R$5M+</option><option value="10000000">R$10M+</option><option value="20000000">R$20M+</option><option value="30000000">R$30M+</option><option value="40000000">R$40M+</option><option value="50000000">R$50M+</option><option value="60000000">R$60M+</option><option value="70000000">R$70M+</option><option value="80000000">R$80M+</option><option value="90000000">R$90M+</option><option value="100000000">R$100M+</option><option value="120000000">R$120M+</option><option value="150000000">R$150M+</option><option value="200000000">R$200M+</option><option value="250000000">R$250M+</option><option value="300000000">R$300M+</option><option value="400000000">R$400M+</option><option value="500000000">R$500M+</option><option value="700000000">R$700M+</option><option value="1000000000">R$1B+</option><option value="2000000000">R$2B+</option><option value="5000000000">R$5B+</option></select></div>
             <div class="fg"><label class="fl">Cargo Decisor</label><select class="fsel" id="pCargo">
   <option value="todos_clevel">★ Todos os C-Levels (CIO, CTO, CFO, CEO, COO, Dir. Digital)</option>
-  <option value="todos">★★ Todos — C-Level + Gerentes + Coordenadores</option>
+  <option value="Sócio / Fundador">Dono / Sócio / Fundador</option>
   <option value="CIO / Diretor de TI">CIO / Diretor de TI</option>
   <option value="CTO / Dir. Tecnologia">CTO / Dir. Tecnologia</option>
   <option value="Dir. Transformacao Digital">Dir. Transformacao Digital</option>
@@ -1628,7 +1626,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
   <option value="CEO">CEO / Presidente</option>
   <option value="COO">COO / Dir. Operacoes</option>
   <option value="Dir. Analytics / Dados">Dir. Analytics / Dados</option>
-  <option value="VP TI">VP / Gerente Senior de TI</option>
+  <option value="VP TI">VP de TI / Tecnologia</option>
 </select></div>
             <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;padding:8px 11px;background:var(--g2);border-radius:6px;border-left:3px solid var(--green);">
               <span style="font-size:11px;color:var(--green);">&#10003;</span>
@@ -2896,6 +2894,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
                 <option value="CIO/CTO — Industria">CIO/CTO — Industria</option>
                 <option value="CFO — Grandes Empresas">CFO — Grandes Empresas</option>
                 <option value="CEO — Empresas R$100M+">CEO — Empresas R$100M+</option>
+                <option value="Donos e sócios — médias e grandes empresas">Donos e sócios — médias e grandes empresas</option>
               </select>
             </div>
             <div class="fg"><label class="fl">Orçamento</label>
@@ -4600,17 +4599,18 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
             <div><label class="fl" for="patDiario">R$ por dia</label><input class="fi" id="patDiario" inputmode="decimal" value="30" oninput="patPrev()" placeholder="ex.: 30" title="Orçamento diário do anúncio, em reais"/></div>
             <div><label class="fl" for="patIni">Início</label><input type="date" class="fi" id="patIni" oninput="patPrev()" title="Primeiro dia em que o anúncio roda"/></div>
             <div><label class="fl" for="patFim">Fim</label><input type="date" class="fi" id="patFim" oninput="patPrev()" title="Último dia em que o anúncio roda"/></div>
-            <div><label class="fl" for="patIdMin">Idade (mín.–máx.)</label><div style="display:flex;gap:4px;"><input class="fi" id="patIdMin" value="35" style="padding:6px;min-width:0;" oninput="patPrev()" placeholder="mín." title="Idade mínima do público" aria-label="Idade mínima do público"/><input class="fi" id="patIdMax" value="60" style="padding:6px;min-width:0;" oninput="patPrev()" placeholder="máx." title="Idade máxima do público" aria-label="Idade máxima do público"/></div></div>
+            <div><label class="fl" for="patIdMin">Idade (mín.–máx.)</label><div style="display:flex;gap:4px;"><input class="fi" id="patIdMin" value="35" type="number" min="35" max="65" style="padding:6px;min-width:0;" oninput="patPrev()" placeholder="mín." title="Idade mínima do público (ICP C-level: 35 ou mais)" aria-label="Idade mínima do público"/><input class="fi" id="patIdMax" value="60" style="padding:6px;min-width:0;" oninput="patPrev()" placeholder="máx." title="Idade máxima do público" aria-label="Idade máxima do público"/></div></div>
           </div>
           <div style="margin-top:8px;"><label class="fl" for="patPublico">Público</label>
-            <select class="fi" id="patPublico" onchange="patPrev()" title="B2B = capitais de negócio + interesses de decisores e tecnologia (evita pessoa física e clique de robô)"><option value="b2b">B2B — decisores de empresas (recomendado)</option><option value="amplo">Amplo — Brasil inteiro, sem interesse</option></select></div>
+            <select class="fi" id="patPublico" onchange="patPrev()" title="ICP da Atlantyx: donos, sócios, C-levels e diretores de médias e grandes empresas — nunca pessoa física nem público técnico"><option value="b2b">ICP C-level — donos, sócios, C-levels e diretores (único público permitido)</option></select></div>
           <div style="margin-top:8px;"><label class="fl" for="patLink">Link do botão "Saiba mais" (página de destino)</label>
             <input class="fi" id="patLink" style="font-size:11px;" placeholder="https://atlantyx-os.vercel.app/captura.html" title="Para onde o botão Saiba mais leva. Vazio = página de captura de leads da Atlantyx (com UTM da campanha)" oninput="patPrev()"/>
             <div style="font-size:10px;color:var(--t3);margin-top:3px;">Vazio = página de captura de leads (captura.html). O sistema acrescenta o rastreamento UTM da campanha.</div></div>
           <div id="patResumo" style="margin-top:8px;font-size:10.5px;color:var(--t2);line-height:1.6;"></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
             <button class="btn" id="patBtnDiag" onclick="patDiagnostico()" title="Confere no Meta (sem criar nada) se o token tem as permissões e enxerga conta, página e Instagram">🔎 Verificar conexão no Meta</button>
-            <button class="btn" id="patBtnPublico" onclick="patPublicoCorrigir()" title="Aplica o público de decisores (C-level / donos de média e grande empresa) nas campanhas que já existem no Meta">🎯 Corrigir público das campanhas atuais</button>
+            <button class="btn" id="patBtnPublico" onclick="patPublicoCorrigir()" title="Confere TODAS as campanhas da conta no Meta e aplica o ICP C-level (donos, sócios, C-levels e diretores de média e grande empresa) nas que estiverem fora — status e orçamento não mudam">🎯 Aplicar ICP C-level nas campanhas no ar</button>
+            <button class="btn" id="patBtnIcpPosts" onclick="icpAuditarPlanejadosUI()" title="Confere os posts agendados no Metricool, a fila da autocampanha e as peças de tendências e aponta texto para público técnico, estudante ou quem procura emprego">🔍 Conferir ICP dos posts planejados</button>
             <button class="btn btn-gn" id="patBtnCriar" onclick="patCriar()">📣 Criar campanha (pausada)</button>
             <button class="btn" onclick="patCriar(true)" title="Monta o kit (texto, título, imagem, link, orçamento e público) para criar no Metricool → Ads">🧰 Kit para criar no Metricool Ads</button>
           </div>
@@ -6295,7 +6295,7 @@ async function s2KpisCarregar() {
   _setTx('k_cpl', d.cpl != null ? fm(d.cpl) : '—'); _setTx('k_cpl_s', D.gasto != null ? fm(D.gasto) + ' gastos · ' + (D.leads || 0) + ' lead(s) no Meta (30d)' : 'sem dados do Meta');
   _setTx('k_roas', d.roas != null ? d.roas.toFixed(2).replace('.', ',') + 'x' : '—'); _setTx('k_roas_s', H.receita_paga_90d != null ? fm(H.receita_paga_90d) + ' ganhos de mídia paga ÷ ' + fm(d.d90?.gasto) + ' gastos (90d)' : 'precisa do HubSpot');
   _setTx('k_roi', d.roi_pct != null ? String(d.roi_pct).replace('.', ',') + '%' : '—');
-  _setTx('k_cac', d.cac != null ? fm(d.cac) : '—'); _setTx('k_cac_s', d.cac_base ? 'gasto 90d ÷ ' + (H.ganhos_pagos_90d || H.ganhos_90d) + ' ' + d.cac_base : 'sem cliente ganho em 90 dias');
+  _setTx('k_cac', d.cac != null ? fm(d.cac) : '—'); _setTx('k_cac_s', d.cac != null ? 'gasto 90d ÷ ' + H.ganhos_pagos_90d + ' ' + d.cac_base : (d.cac_base || 'sem cliente ganho em 90 dias'));
   let ltv = null, fonteLtv = ''; try { const c = await fetch('/api/crm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'comercial_cac', payload: {} }) }).then(r => r.json()); if (c?.ltv_medio) { ltv = c.ltv_medio; fonteLtv = 'LTV da política comercial'; } } catch (_) {}
   if (!ltv && window._s7Painel?.calculo?.ticket_medio) { ltv = window._s7Painel.calculo.ticket_medio; fonteLtv = 'LTV ≈ ticket médio'; }
   _setTx('k_ltv', ltv && d.cac ? (ltv / d.cac).toFixed(1).replace('.', ',') + 'x' : '—'); _setTx('k_ltv_s', ltv ? fonteLtv + ' ' + fm(ltv) + ' · alvo ≥ 3x' : 'defina o LTV na Política Comercial');
@@ -11132,7 +11132,7 @@ let campVersoesCopy = [];
 
 renderAg(S2A,'s2-grid');renderAg(S7A,'s7-grid');
 addLog('success','Atlantyx OS iniciado - Monitor de Agentes ativo');
-addLog('info','ICP: Energia · Automotivo · Varejo · Industria · R$100M+');
+addLog('info','ICP: donos, sócios, C-levels e diretores · Energia · Bancos · Indústria · Infraestrutura · Varejo · R$100M+');
 addLog('info','Endpoints ativos: '+[...S2A,...S7A].filter(a=>a.on&&a.ep).length+' agentes com API');
 
 // ── S1 INICIALIZAÇÃO ─────────────────────────────────────────────────────────
@@ -25158,7 +25158,7 @@ function patPrev() {
     + '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#f2f4f6;border-bottom:1px solid #e3e6ea;"><div style="font-size:12px;min-width:0;"><b style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _patE(v('patTitulo') || 'Título do anúncio') + '</b><span style="color:#666;font-size:11px;">' + _patE(v('patDesc') || location.host) + '</span></div><span style="background:#0095f6;color:#fff;font-weight:700;font-size:12px;padding:7px 12px;border-radius:8px;white-space:nowrap;">Saiba mais</span></div>'
     + '<div style="padding:9px 12px;font-size:12px;line-height:1.45;"><b>atlantyx</b> ' + _patE(v('patTexto') || 'Texto principal do anúncio…').replace(/\n/g, '<br>') + '</div>';
   const ini = v('patIni'), fim = v('patFim'), dia = parseFloat(v('patDiario').replace(',', '.')) || 0; const dias = ini && fim && fim >= ini ? Math.round((new Date(fim) - new Date(ini)) / 864e5) + 1 : 0;
-  const r = document.getElementById('patResumo'); if (r) r.innerHTML = dias ? 'Investimento máximo: <b>' + fmtBRLcompleto(dia * dias) + '</b> (' + fmtBRLcompleto(dia) + '/dia × ' + dias + ' dias) · Instagram (feed, stories e reels) · ' + (v('patPublico') === 'amplo' ? 'Brasil inteiro' : '<b>Decisores B2B</b>: capitais de negócio + interesse em gestão/dados/ERP <b>e</b> perfil de dono/administrador de empresa ou setor de gestão/TI, sem quem procura emprego/concurso · só Feed e Explorar') + ', ' + (v('patIdMin') || 30) + '–' + (v('patIdMax') || 60) + ' anos · botão <b>Saiba mais</b> → página de cadastro (com rastreio da campanha nos leads)' : '<span style="color:var(--gold);">Informe início e fim.</span>';
+  const r = document.getElementById('patResumo'); if (r) r.innerHTML = dias ? 'Investimento máximo: <b>' + fmtBRLcompleto(dia * dias) + '</b> (' + fmtBRLcompleto(dia) + '/dia × ' + dias + ' dias) · Instagram (Feed e Explorar) · <b>ICP C-level</b>: donos, sócios, C-levels e diretores — capitais de negócio, interesse de cargo executivo <b>e</b> setor/perfil de gestão, sem quem procura emprego, estudante, programação ou curso, ' + Math.max(35, parseInt(v('patIdMin')) || 35) + '–' + (v('patIdMax') || 60) + ' anos · botão <b>Saiba mais</b> → página de cadastro (com rastreio da campanha nos leads)' : '<span style="color:var(--gold);">Informe início e fim.</span>';
 }
 async function patEscrever() {
   const b = document.getElementById('patBtnCopy'); if (b) { b.disabled = true; b.textContent = 'Escrevendo…'; }
@@ -25267,15 +25267,29 @@ async function patPublicoCorrigir() {
   const b = document.getElementById('patBtnPublico'); const rot = b?.textContent; if (b) { b.disabled = true; b.textContent = 'Lendo campanhas no Meta…'; }
   try {
     const d = await mcApi('patrocinado_publico_atualizar', { aplicar: false });
-    if (!d.total) { alert('Nenhum conjunto de anúncios do Instagram encontrado na conta do Meta.'); return; }
-    const P = d.publico || {};
-    if (!confirm(`Aplicar o público de DECISORES em ${d.total} conjunto(s) de anúncios?\n\n${d.conjuntos.map(c => '• ' + c.nome + ' (' + c.estado + ') — hoje: idade ' + c.antes.idade + ', posições ' + c.antes.posicoes + ', ' + c.antes.local).join('\n')}\n\nNovo público:\n• ${P.cidades || 0} capitais de negócio · idade a partir de 35\n• interesse: ${(P.interesses || []).slice(0, 6).join(', ')}${(P.interesses || []).length > 6 ? '…' : ''}\n• E decisor: ${[...(P.comportamentos || []), ...(P.setores || [])].join(', ') || '(o Meta não devolveu comportamentos/setores — só interesses)'}\n• excluídos: ${(P.excluidos || []).join(', ') || '—'}\n• só Feed e Explorar (sem Stories/Reels)\n\nAtiva/pausada não muda. O Meta reinicia o aprendizado desses conjuntos.`)) return;
+    if (!d.total) { alert('Nenhum conjunto de anúncios encontrado na conta do Meta.'); return; }
+    if (!d.fora_do_icp) { alert('✅ Todos os ' + d.total + ' conjunto(s) de anúncios já estão no ICP C-level.'); return; } // v3.234
+    if (!confirm('ICP C-level — ' + d.fora_do_icp + ' de ' + d.total + ' conjunto(s) FORA do público:\n\n' + d.conjuntos.filter(c => !c.no_icp).map(c => '• ' + c.nome + ' (' + c.estado + '): ' + (c.motivos || []).join('; ')).join('\n').substring(0, 1800) + '\n\nAplicar agora o público de donos, sócios, C-levels e diretores (35+ anos, interesse de cargo executivo E setor de gestão, sem emprego/estudo/programação)? Status e orçamento não mudam.')) return;
     if (b) b.textContent = 'Aplicando…';
-    const r = await mcApi('patrocinado_publico_atualizar', { aplicar: true });
-    const ok = r.conjuntos.filter(c => c.ok), er = r.conjuntos.filter(c => !c.ok);
-    alert(`✅ Público atualizado em ${ok.length} de ${r.total} conjunto(s).` + (ok.some(c => c.aviso) ? '\n\n⚠ ' + ok.filter(c => c.aviso).map(c => c.nome + ': ' + c.aviso).join('\n') : '') + (er.length ? '\n\n❌ Não atualizados:\n' + er.map(c => c.nome + ': ' + c.erro).join('\n') : ''));
+    const r0 = await mcApi('patrocinado_publico_atualizar', { aplicar: true, somente_fora: true });
+    const ok0 = r0.conjuntos.filter(c => c.ok), er0 = r0.conjuntos.filter(c => c.ok === false);
+    alert(`✅ ICP C-level aplicado em ${ok0.length} conjunto(s).` + (ok0.some(c => c.aviso) ? '\n\n⚠ ' + ok0.filter(c => c.aviso).map(c => c.nome + ': ' + c.aviso).join('\n') : '') + (er0.length ? '\n\n❌ Não atualizados:\n' + er0.map(c => c.nome + ': ' + c.erro).join('\n') : '') + '\n\nO sistema confere de novo a cada 6 h e corrige campanha que sair do ICP.');
     try { patListar(); } catch (_) {}
   } catch (e) { alert('Não consegui atualizar: ' + e.message); }
+  finally { if (b) { b.disabled = false; b.textContent = rot; } }
+}
+// v3.234: auditoria do ICP C-level nos posts planejados (só lista — editar/excluir continua na tela de cada um)
+async function icpAuditarPlanejadosUI() {
+  const b = document.getElementById('patBtnIcpPosts'); const rot = b?.textContent; if (b) { b.disabled = true; b.textContent = 'Conferindo…'; }
+  try { const d = await mcApi('icp_auditar_planejados', { dias: 60 });
+    let m = document.getElementById('icpAudModal'); if (!m) { m = document.createElement('div'); m.id = 'icpAudModal'; m.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;padding:12px;'; document.body.appendChild(m); m.addEventListener('click', e => { if (e.target === m) m.style.display = 'none'; }); }
+    m.style.display = 'flex';
+    const L = d.fora_do_icp || [];
+    m.innerHTML = '<div class="panel" style="width:760px;max-width:96vw;max-height:88vh;overflow:auto;"><div class="ph"><div class="pt">🔍 ICP C-level nos posts planejados</div><button class="btn" style="font-size:10px;" onclick="document.getElementById(\'icpAudModal\').style.display=\'none\'">✕</button></div><div class="pb">'
+      + '<div style="font-size:11px;color:var(--t2);margin-bottom:8px;">' + (d.conferidos || 0) + ' item(ns) conferido(s) · <b style="color:' + (L.length ? 'var(--gold)' : 'var(--green,#22d3a3)') + ';">' + (L.length ? L.length + ' com sinal de público fora do ICP' : 'nenhum fora do ICP') + '</b>' + ((d.avisos || []).length ? '<br><span style="color:var(--t3);">' + _patE(d.avisos.join(' · ')) + '</span>' : '') + '</div>'
+      + L.map(x => '<div style="border:1px solid var(--bd);border-radius:6px;padding:7px 9px;margin-bottom:6px;font-size:11px;"><div style="font-family:var(--M);font-size:9.5px;color:var(--t3);">' + _patE(x.origem) + ' · ' + _patE(x.data || '') + (x.redes ? ' · ' + _patE(x.redes) : '') + ' · termo: <b style="color:var(--gold);">' + _patE(x.trecho) + '</b></div><div style="margin-top:3px;">' + _patE(x.texto) + '</div></div>').join('')
+      + (L.length ? '<div style="font-size:10px;color:var(--t3);margin-top:6px;">Revise e edite/exclua no Calendário (Metricool), na Fila da autocampanha ou na campanha de Tendências. Os novos textos já saem com o ICP C-level.</div>' : '') + '</div></div>';
+  } catch (e) { alert('Não consegui conferir: ' + e.message); }
   finally { if (b) { b.disabled = false; b.textContent = rot; } }
 }
 // v3.176: diagnóstico da conexão com o Meta (não cria nada)
@@ -25323,6 +25337,8 @@ async function patListar() {
         + '<button class="btn" style="font-size:10px;" onclick="patPeriodo(\'' + c.id + '\')" title="Alterar início, fim e R$/dia no Meta">📅 Período</button>' // v3.193
         + '<a class="btn" style="font-size:10px;text-decoration:none;" href="' + _patE(c.gerenciador) + '" target="_blank" rel="noopener">Gerenciador ↗</a></div>'; }).join('');
     window._patLista = l;
+    // v3.234: guardião do ICP C-level (confere as campanhas da conta a cada 6 h e corrige as que saírem do público)
+    try { const g = (await mcApi('icp_guardiao')).guarda; if (g && g.em) el.insertAdjacentHTML('beforeend', '<div style="font-size:10px;color:var(--t3);margin-top:4px;">🎯 Guardião do ICP C-level: conferido em ' + new Date(g.em).toLocaleString('pt-BR') + (g.erro ? ' · <span style="color:var(--red);">' + _patE(g.erro) + '</span>' : ' · ' + (g.conjuntos || 0) + ' conjunto(s) · ' + ((g.corrigidos || []).length ? '<b>' + g.corrigidos.length + ' corrigido(s)</b>: ' + _patE(g.corrigidos.map(x => x.nome).join(', ')) : 'todos no ICP')) + '</div>'); } catch (_) {}
   } catch (e) { el.innerHTML = '<div style="font-size:10.5px;color:var(--red);">' + _patE(e.message) + '</div>'; }
 }
 // v3.193: alterar período / R$ por dia de uma campanha patrocinada já criada (muda no Meta)
@@ -34070,7 +34086,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.233] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.234] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -34086,7 +34102,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.233';
+window.__ATX_BUILD_ID__ = 'ATX-v3.234';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

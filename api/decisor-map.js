@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { classificarCargo, ICP_TEXTO } from '../lib/icp.js';
 // api/decisor-map.js
 // S7-04 Agente de Mapeamento de Decisores
 // Recebe empresa → busca decisores C-level → enriquece no HubSpot → prepara para outreach
@@ -62,10 +63,12 @@ async function mapearDecisores(empresa, setor) {
   const system = `Você é o Agente S7-04 de Mapeamento de Decisores da Atlantyx.
 Missão: identificar os executivos C-level que decidem a compra de soluções de BI, Dados e IA.
 
-HIERARQUIA DE DECISORES PARA A ATLANTYX:
-- PRIMARIO (fecha o contrato): CIO, CTO, Diretor de TI, Diretor de Transformação Digital
-- INFLUENCIADOR (pressiona a compra): CFO, Diretor de Operações, Diretor Comercial  
-- USUARIO (usa a solução): Gerente de BI, Head de Dados, Coordenador de TI
+${ICP_TEXTO}
+
+HIERARQUIA DE DECISORES PARA A ATLANTYX (v3.234 — só donos, sócios, C-levels e diretores/VPs):
+- PRIMARIO (fecha o contrato): dono/sócio, CEO/Presidente, CFO, COO, CIO, CTO, CDO
+- INFLUENCIADOR (patrocina a compra): Diretores e VPs (TI, Transformação Digital, Operações, Financeiro, Comercial)
+- NÃO MAPEIE gerentes, coordenadores, analistas, engenheiros ou desenvolvedores — não são público da Atlantyx
 
 CANAIS DE ABORDAGEM:
 - WhatsApp: melhor para CIO/CTO com perfil executivo ativo
@@ -82,8 +85,8 @@ Para cada decisor identificado:
 {
   "nome": "Nome completo se conhecido ou 'Decisor de TI da [empresa]'",
   "cargo": "Cargo exato",
-  "nivel": "C-LEVEL | DIRETOR | GERENTE",
-  "prioridade": "PRIMARIO | INFLUENCIADOR | USUARIO",
+  "nivel": "DONO | C-LEVEL | DIRETOR",
+  "prioridade": "PRIMARIO | INFLUENCIADOR",
   "linkedin_url": "URL LinkedIn se disponível",
   "email_provavel": "padrao@empresa.com.br se deduzível",
   "canal_recomendado": "WHATSAPP | LINKEDIN | EMAIL",
@@ -100,7 +103,10 @@ Para cada decisor identificado:
   const d = await r.json();
   try {
     const text = d.content[0].text.replace(/```json|```/g, '').trim();
-    return JSON.parse(text);
+    const lista = JSON.parse(text);
+    // v3.234: só decisores do ICP vão para o HubSpot (antes Gerente de BI / Coordenador de TI entravam com score B
+    // e caíam nos lotes de WhatsApp)
+    return (Array.isArray(lista) ? lista : []).filter(x => classificarCargo(x.cargo) === 'decisor' || (classificarCargo(x.cargo) === 'indefinido' && /C-LEVEL|DONO|DIRETOR/i.test(x.nivel || '')));
   } catch { return []; }
 }
 

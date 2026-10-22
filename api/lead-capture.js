@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { classificarCargo, ICP_TEXTO } from '../lib/icp.js';
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
 // SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
@@ -77,7 +78,8 @@ async function handler(req, res) {
       return res.status(200).json({ success: true, lead_id: null });
     }
     const lead = normalizeLead(body);
-    lead.utm = body.utm || { source: body.source || body.utm_source || null, medium: body.utm_medium || null, campaign: body.campaign_name || body.utm_campaign || null, content: body.utm_content || null };
+    lead.title = lead.job_title || null; // v3.234: banco e alerta liam lead.title (sempre vazio) — cargo nunca aparecia
+  lead.utm = body.utm || { source: body.source || body.utm_source || null, medium: body.utm_medium || null, campaign: body.campaign_name || body.utm_campaign || null, content: body.utm_content || null };
     lead.campanha = lead.utm.campaign || body.campaign_name || null;
     lead.origem = lead.utm.source || body.source || 'formulario';
     // v3.190: qualidade — e-mail pessoal (gmail, hotmail…) costuma ser pessoa física; o lead entra, marcado
@@ -165,6 +167,9 @@ async function handler(req, res) {
 // descadastro e sem abordagem automática ao mesmo número nas últimas 24 h (reenvio do formulário não gera 2ª mensagem)
 async function _podeWhats(lead, leadId) {
   if (!lead.phone) return { ok: false, motivo: 'sem telefone' };
+  // v3.234: abordagem AUTOMÁTICA só para o ICP — A, ou B com cargo de decisor e e-mail corporativo. O resto o time avalia.
+  if (lead.score_label === 'C' || lead.icp_cargo === 'fora') return { ok: false, motivo: 'fora do ICP (score ' + (lead.score_label || '?') + ') — avaliação humana' };
+  if (lead.score_label !== 'A' && !(lead.score_label === 'B' && lead.icp_cargo === 'decisor' && !lead.email_pessoal)) return { ok: false, motivo: 'score ' + lead.score_label + ' sem cargo de decisor confirmado — avaliação humana' };
   if (lead.form_name === 'captura-publica' || lead.exige_consentimento) {
     const c = lead.consentimento;
     if (!c || !c.aceito || (Array.isArray(c.canais) && c.canais.length && !c.canais.includes('whatsapp'))) return { ok: false, motivo: 'sem consentimento para WhatsApp' };
@@ -213,7 +218,8 @@ async function processarLeadGravado(leadId) {
   const { neon } = await import('@neondatabase/serverless');
   const sql = neon(process.env.DATABASE_URL);
   const got = await sql`UPDATE leads SET etapas = ${JSON.stringify({ processando: new Date().toISOString() })}::jsonb
-    WHERE id = ${leadId} AND (etapas IS NULL OR etapas = 'null'::jsonb) RETURNING data`;
+    WHERE id = ${leadId} AND (etapas IS NULL OR etapas = 'null'::jsonb
+      OR (etapas ? 'processando' AND NOT (etapas ? 'whatsapp') AND (etapas->>'processando')::timestamptz < NOW() - INTERVAL '5 minutes')) RETURNING data`; // v3.234: retoma trava esquecida (função cortada no meio)
   if (!got.length) return { lead_id: leadId, ja_processado: true };
   let lead = got[0].data; if (typeof lead === 'string') { try { lead = JSON.parse(lead); } catch (_) { lead = {}; } }
   const etapas = { banco: 'ok', mensagem: null, hubspot: null, whatsapp: null, followup: null, alerta: null };
@@ -280,6 +286,7 @@ function normalizeLead(body) {
     phone:     body.phone || body.whatsapp || body.telefone || body.field_data?.find(f => f.name === 'phone_number')?.values?.[0] || '',
     company:   body.company || body.company_name || body.empresa || body.field_data?.find(f => f.name === 'company_name')?.values?.[0] || '',
     job_title: body.job_title || body.cargo || body.title || body.field_data?.find(f => f.name === 'job_title')?.values?.[0] || '',
+    porte:     String(body.porte || body.field_data?.find(f => f.name === 'company_size')?.values?.[0] || '').substring(0, 30) || null, // v3.234
     source:    body.source || body.ad_name || body.campaign_name || body.form_name || 'Campanha Digital',
     // v3.60: a oferta que trouxe o lead (diagnóstico gratuito) vai junto do desafio — aparece no nome do negócio no HubSpot
     interesse: ([body.oferta === 'diagnostico_gratuito' ? 'Diagnóstico gratuito' : '', String(body.interesse || body.desafio || '')].filter(Boolean).join(' · ')).substring(0, 200) || null, // v3.32: desafio escolhido na página de captura
@@ -296,8 +303,12 @@ function normalizeLead(body) {
   pontosPossiveis += 20; if (lead.company) { score += 20; criterios.push('empresa informada (+20)'); } else criterios.push('empresa ausente');
   const temCargo = lead.job_title != null && String(lead.job_title).trim() !== '';
   if (temCargo) { pontosPossiveis += 40;
-    if (/CIO|CTO|CFO|CEO|Diretor|Director|VP|Head|Gerente|Coordenador|Superintendente|S[oó]cio|Owner|Founder|Presidente/i.test(lead.job_title)) { score += 40; criterios.push('cargo decisor (+40)'); }
-    else criterios.push(`cargo "${lead.job_title}" não é de decisão`);
+    // v3.234: ICP C-level (lib/icp.js) — antes Gerente/Coordenador/Head valiam +40 e /CIO/ sem limite de palavra casava
+    // "Negócios"/"Comércio" (um "Analista de Negócios" virava decisor)
+    lead.icp_cargo = classificarCargo(lead.job_title);
+    if (lead.icp_cargo === 'decisor') { score += 40; criterios.push('cargo decisor — dono/C-level/diretor (+40)'); }
+    else if (lead.icp_cargo === 'head' || lead.icp_cargo === 'gerencia') { score += 15; criterios.push(`cargo "${lead.job_title}" é gestão, mas não C-level (+15)`); }
+    else criterios.push(`cargo "${lead.job_title}" fora do ICP (técnico/operacional)`);
   } else criterios.push('⚠ CARGO NÃO CAPTURADO — critério de maior peso (40 pts) não pôde ser avaliado');
   const temTelefone = lead.phone != null && String(lead.phone).trim() !== '';
   if (temTelefone) { pontosPossiveis += 20; score += 20; criterios.push('telefone informado (+20)'); }
@@ -314,13 +325,19 @@ function normalizeLead(body) {
   const pct = pontosPossiveis > 0 ? (score / pontosPossiveis) * 100 : 0;
   lead.score_pct = Math.round(pct);
   lead.score_label = pct >= 70 ? 'A' : pct >= 45 ? 'B' : 'C';
+  // v3.234: travas do ICP — cargo técnico/operacional ou empresa pequena = C; gestão sem C-level ou e-mail pessoal ≤ B
+  const pequena = ['ate_50', '51_200'].includes(lead.porte);
+  if (lead.icp_cargo === 'fora' || pequena) { lead.score_label = 'C'; criterios.push(pequena ? 'empresa pequena (até 200 funcionários) — fora do ICP' : 'cargo fora do ICP → C'); }
+  else if (lead.score_label === 'A' && (lead.icp_cargo !== 'decisor' || /@(gmail|hotmail|yahoo|outlook|live|bol|uol|terra|icloud)\./i.test(lead.email || ''))) lead.score_label = 'B';
+  lead.no_icp = lead.icp_cargo === 'decisor' && !pequena;
   lead.score_confiavel = pontosPossiveis >= 80; // sem cargo, a classificação é pouco confiável
   if (!lead.score_confiavel) lead.score_aviso = 'Score pouco confiável: o formulário não capturou cargo (e/ou telefone). Adicione esses campos para o scoring funcionar de verdade.';
 
   // Formatar telefone para WhatsApp
   if (lead.phone) {
     let phone = lead.phone.replace(/[^0-9]/g, '');
-    if (!phone.startsWith('55')) phone = '55' + phone;
+    if (phone.startsWith('00')) phone = phone.slice(2);
+    if (phone.length <= 11) phone = '55' + phone; // v3.234: DDD 55 (RS) sem o código do país ficava sem o 55
     lead.phone = phone;
   }
 

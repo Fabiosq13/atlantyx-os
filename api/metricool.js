@@ -1,4 +1,6 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { RE_CONTEUDO_FORA_ICP } from '../lib/icp.js';
+import { ICP_TEXTO, ICP_VERSAO, META_IDADE_MIN, META_IDADE_MAX, META_INTERESSES, META_COMPORT, META_SETOR, META_EXCLUIR } from '../lib/icp.js';
 // api/metricool.js
 // Integração Metricool — publicação automática + métricas de redes sociais
 // Env vars necessárias (Vercel):
@@ -10,6 +12,30 @@ import { comGuarda } from '../lib/qa-guard.js';
 // frontend cai no modo manual. Nada quebra.
 
 const MC_BASE = 'https://app.metricool.com/api';
+
+// v3.234: AUDITORIA DO ICP NOS POSTS PLANEJADOS — lê o que está agendado no Metricool (próximos dias), a fila da
+// autocampanha e as peças da campanha de tendências, e aponta o texto que fala com público técnico, estudante ou quem
+// procura emprego (fora do ICP C-level). Só lista — a correção é decisão do fundador (editar/excluir na tela).
+const _RE_PUBLICO_TECNICO = /\b(analistas?|desenvolvedor(es|as)?|devs?\b|programador(es|as)?|engenheir[oa]s? de dados|cientistas? de dados|estudantes?|j[uú]nior(es)?|iniciantes?|aprenda|aprender a|passo a passo|tutorial|curso|certifica[cç][aã]o|vaga|vagas|carreira|curr[ií]culo|primeiro emprego|seu chefe|para devs|stack t[eé]cnic[oa]|c[oó]digo[- ]fonte|sql\b|python\b)/i;
+function _icpTexto(t) { const x = String(t || ''); const m = x.match(_RE_PUBLICO_TECNICO) || x.match(RE_CONTEUDO_FORA_ICP); return m ? m[0] : null; }
+async function icpAuditarPlanejados({ blog_id, dias = 60 } = {}) {
+  const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID, BLOGID = blog_id || process.env.METRICOOL_BLOG_ID;
+  const fora = [], avisos = []; let conferidos = 0;
+  if (TOKEN && USERID && BLOGID) {
+    try { const hoje = new Date(); const ini = hoje.toISOString().substring(0, 10) + 'T00:00:00', fim = new Date(hoje.getTime() + Math.min(120, dias) * 864e5).toISOString().substring(0, 10) + 'T23:59:59';
+      const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}&start=${ini}&end=${fim}&timezone=America/Sao_Paulo`, TOKEN);
+      const lista = Array.isArray(r) ? r : (r?.data || r?.posts || []);
+      for (const p of lista) { conferidos++; const tr = _icpTexto(p.text); if (tr) fora.push({ origem: 'Metricool (agendado)', id: p.id, data: String(p.publicationDate?.dateTime || p.publicationDate || '').substring(0, 16).replace('T', ' '), redes: (p.providers || []).map(x => x.network || x).join(', '), trecho: tr, texto: String(p.text || '').substring(0, 220) }); }
+    } catch (e) { avisos.push('Metricool: ' + e.message); }
+  } else avisos.push('Metricool não configurado — posts agendados não conferidos');
+  try { const sql = await getSql(); const ontem = new Date(Date.now() - 864e5).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+    const q = await sql`SELECT id, data, hora, texto, tema FROM autocampanha_fila WHERE data >= ${ontem} ORDER BY data, hora LIMIT 300`.catch(() => []);
+    for (const it of q) { conferidos++; const tr = _icpTexto(it.texto) || _icpTexto(it.tema); if (tr) fora.push({ origem: 'Fila da autocampanha', id: it.id, data: String(it.data).substring(0, 10) + ' ' + (it.hora || ''), trecho: tr, texto: String(it.texto || it.tema || '').substring(0, 220) }); }
+    const t = await sql`SELECT id, data, hora, tipo, tema, roteiro, legenda FROM tend_pecas WHERE COALESCE(status, '') NOT IN ('publicada', 'excluida') AND data >= ${ontem} ORDER BY data LIMIT 300`.catch(() => []);
+    for (const it of t) { conferidos++; const txt = [it.tema, it.legenda, typeof it.roteiro === 'string' ? it.roteiro : JSON.stringify(it.roteiro || '')].filter(Boolean).join(' · '); const tr = _icpTexto(txt); if (tr) fora.push({ origem: 'Tendências (' + (it.tipo || 'peça') + ')', id: it.id, data: String(it.data).substring(0, 10) + ' ' + (it.hora || ''), trecho: tr, texto: txt.substring(0, 220) }); }
+  } catch (e) { avisos.push('Banco: ' + e.message); }
+  return { conferidos, fora_do_icp: fora, total_fora: fora.length, avisos };
+}
 
 // v1.80: corrige os posts JÁ AGENDADOS que apontam para imagem efêmera.
 // Sem isso, tudo que foi agendado antes desta versão continua falhando na data.
@@ -258,7 +284,7 @@ async function patrocinadoStatus(req) {
   return out;
 }
 async function patrocinadoCopy({ tema = '', oferta = '', publico = '' } = {}) {
-  const sys = 'Você escreve anúncios pagos de Instagram para a Atlantyx (empresa brasileira B2B de tecnologia: engenharia de dados, indicadores/BI, software sob medida, produtos próprios e especialistas; 17 anos; clientes como CPFL, Enel, Caixa Capitalização). Público: diretores e gerentes de grandes empresas. O texto deve QUALIFICAR quem clica (ex.: "Para líderes de TI, operações e finanças de empresas de médio e grande porte") — afaste pessoa física, quem procura emprego ou curso. O anúncio tem botão "Saiba mais" que leva para a página onde a pessoa pede uma conversa gratuita com um especialista. Português do Brasil, direto, sem clichês, sem prometer o que não está no tema.';
+  const sys = 'Você escreve anúncios pagos de Instagram para a Atlantyx (empresa brasileira B2B de tecnologia: engenharia de dados, indicadores/BI, software sob medida, produtos próprios e especialistas; 17 anos; clientes como CPFL, Enel, Caixa Capitalização). ' + ICP_TEXTO + ' O texto deve QUALIFICAR quem clica (ex.: "Para CEOs, CFOs e diretores de empresas de médio e grande porte") — afaste pessoa física, quem procura emprego ou curso e o público técnico. O anúncio tem botão "Saiba mais" que leva para a página onde a pessoa pede uma conversa gratuita com um especialista. Português do Brasil, direto, sem clichês, sem prometer o que não está no tema.';
   // v3.208: texto no padrão "pergunta-gancho → Simples: resposta → ✅ 3 benefícios → parágrafo de ganho → CTA" e
   // os campos da ARTE no padrão (manchete com palavras em destaque + lista de benefícios com ✓ + tela do sistema)
   const usr = `Tema/oferta: ${String(tema || oferta || 'conversa gratuita com especialista').substring(0, 600)}\n${publico ? 'Público: ' + String(publico).substring(0, 200) + '\n' : ''}
@@ -279,31 +305,39 @@ Devolva JSON: {"texto":"texto principal completo no padrão acima, com quebras d
 // entrega para quem clica mais barato (pessoa física, clique acidental, robô). Agora: capitais de negócio + interesses
 // de decisores/tecnologia (resolvidos pela busca do próprio Meta, com cache) e, com o Pixel, otimização para LEAD.
 const _B2B_CIDADES = ['São Paulo', 'Rio de Janeiro', 'Belo Horizonte', 'Curitiba', 'Porto Alegre', 'Campinas', 'Brasília', 'Recife', 'Salvador', 'Florianópolis', 'Goiânia', 'Fortaleza'];
-const _B2B_INTERESSES = ['Business intelligence', 'Data analysis', 'Big data', 'Power BI', 'SAP', 'Enterprise resource planning', 'Chief executive officer', 'Chief information officer', 'Chief financial officer', 'Management consulting', 'Business management', 'Digital transformation'];
+// v3.234: ICP C-LEVEL (lib/icp.js) — saíram "Data analysis", "Big data", "Power BI", "SAP", "Business intelligence": no
+// Meta esses interesses entregam para analista, desenvolvedor de BI e estudante. Só interesses de cargo executivo e
+// gestão. A busca do Meta só aceita resultado com o MESMO nome (antes pegava o 1º resultado, às vezes outro assunto).
+const _B2B_INTERESSES = META_INTERESSES;
+const _KV_PB = 'mkt:meta:publico_b2b:' + ICP_VERSAO, _KV_DEC = 'mkt:meta:publico_decisores:' + ICP_VERSAO; // chave nova = cache antigo (com público técnico) não vale mais
 async function _publicoB2B() {
-  const ck = await _kvMc('mkt:meta:publico_b2b').catch(() => null);
+  const ck = await _kvMc(_KV_PB).catch(() => null);
   if (ck && ck.em && Date.now() - ck.em < 30 * 864e5 && (ck.cidades || []).length) return ck;
   const cidades = [], interesses = [];
   for (const nome of _B2B_CIDADES) { try { const r = await _meta(`search?type=adgeolocation&location_types=${encodeURIComponent('["city"]')}&country_code=BR&limit=3&q=${encodeURIComponent(nome)}`);
     const x = (r.data || []).find(d => d.country_code === 'BR' && d.type === 'city'); if (x) cidades.push({ key: String(x.key), radius: 40, distance_unit: 'kilometer', nome: x.name }); } catch (_) {} }
-  for (const q of _B2B_INTERESSES) { try { const r = await _meta(`search?type=adinterest&limit=2&q=${encodeURIComponent(q)}`); const x = (r.data || [])[0]; if (x && !interesses.some(i => i.id === x.id)) interesses.push({ id: String(x.id), name: x.name }); } catch (_) {} }
-  const v = { cidades, interesses, em: Date.now() }; if (cidades.length) await _kvMc('mkt:meta:publico_b2b', v).catch(() => {}); return v;
+  const _n = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
+  for (const q of _B2B_INTERESSES) { try { const r = await _meta(`search?type=adinterest&limit=5&q=${encodeURIComponent(q)}`); const x = (r.data || []).find(d => _n(d.name) === _n(q)) || (r.data || []).find(d => _n(d.name).startsWith(_n(q)));
+    if (x && !interesses.some(i => i.id === String(x.id))) interesses.push({ id: String(x.id), name: x.name }); } catch (_) {} }
+  const v = { cidades, interesses, em: Date.now() }; if (cidades.length) await _kvMc(_KV_PB, v).catch(() => {}); return v;
 }
 // v3.214: CAMADA DE DECISOR + EXCLUSÕES. Interesse sozinho ("Business intelligence", "Gestão") pega estudante,
 // curioso e quem procura emprego. Agora o público é INTERESSE DO TEMA **E** (comportamento de dono/administrador de
 // empresa OU setor de atuação em gestão/negócios/TI), excluindo quem procura emprego, concurso e estágio.
 // Os IDs vêm da busca do próprio Meta (com cache de 30 dias); o que o Meta não achar fica de fora sem quebrar.
-const _DEC_COMPORT = /business page admin|small business owner|propriet[aá]rio|administrador(es)? de p[aá]gina|page admins|empreendedor/i;
-const _DEC_SETOR = /^(management|gest[aã]o|business and finance|neg[oó]cios e finan[cç]as|it and technical|ti e servi[cç]os t[eé]cnicos|computation and mathematics|computa[cç][aã]o e matem[aá]tica|legal services|architecture and engineering|arquitetura e engenharia)/i;
-const _EXCLUIR = ['Job hunting', 'Concurso público', 'Vagas de emprego', 'Estágio', 'Jovem aprendiz', 'Apostas esportivas'];
+// v3.234: sem "TI e serviços técnicos", "Computação e matemática", "Arquitetura e engenharia" (setores de quem EXECUTA),
+// sem "dono de pequena empresa" e "administrador de página" (pequeno negócio / social media). Só gestão e decisores.
+const _DEC_COMPORT = META_COMPORT;
+const _DEC_SETOR = META_SETOR;
+const _EXCLUIR = META_EXCLUIR;
 async function _publicoDecisores() {
-  const ck = await _kvMc('mkt:meta:publico_decisores').catch(() => null);
+  const ck = await _kvMc(_KV_DEC).catch(() => null);
   if (ck && ck.em && Date.now() - ck.em < 30 * 864e5) return ck;
   const comportamentos = [], setores = [], excluir = [];
   try { const r = await _meta('search?type=adTargetingCategory&class=behaviors&limit=500'); (r.data || []).filter(b => _DEC_COMPORT.test(b.name || '') || _DEC_COMPORT.test((b.path || []).join(' '))).slice(0, 6).forEach(b => comportamentos.push({ id: String(b.id), name: b.name })); } catch (_) {}
   try { const r = await _meta('search?type=adTargetingCategory&class=industries&limit=200'); (r.data || []).filter(b => _DEC_SETOR.test(b.name || '')).slice(0, 8).forEach(b => setores.push({ id: String(b.id), name: b.name })); } catch (_) {}
   for (const q of _EXCLUIR) { try { const r = await _meta(`search?type=adinterest&limit=1&q=${encodeURIComponent(q)}`); const x = (r.data || [])[0]; if (x && !excluir.some(i => i.id === String(x.id))) excluir.push({ id: String(x.id), name: x.name }); } catch (_) {} }
-  const v = { comportamentos, setores, excluir, em: Date.now() }; await _kvMc('mkt:meta:publico_decisores', v).catch(() => {}); return v;
+  const v = { comportamentos, setores, excluir, em: Date.now() }; await _kvMc(_KV_DEC, v).catch(() => {}); return v;
 }
 function _linkPago(base, nome) {
   const slug = String(nome || 'patrocinado').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 40) || 'patrocinado';
@@ -318,8 +352,9 @@ async function patrocinadoCriar(p = {}, req) {
   const imagem = String(p.imagem || '').trim();
   const diario = Math.round(Number(String(p.orcamento_diario || '').replace(',', '.')) * 100) / 100;
   const ini = String(p.inicio || ''), fim = String(p.fim || '');
-  const idMin = Math.max(18, Math.min(65, parseInt(p.idade_min) || 35)), idMax = Math.max(idMin, Math.min(65, parseInt(p.idade_max) || 60));
-  const amplo = p.publico === 'amplo'; // v3.190: padrão = B2B (decisores); 'amplo' = Brasil inteiro sem interesse
+  // v3.234: ICP C-level — idade mínima 35 e sem a opção "amplo" (Brasil inteiro, sem interesse = pessoa física)
+  const idMin = Math.max(META_IDADE_MIN, Math.min(META_IDADE_MAX, parseInt(p.idade_min) || META_IDADE_MIN)), idMax = Math.max(idMin, Math.min(META_IDADE_MAX, parseInt(p.idade_max) || 60));
+  const amplo = false;
   const err = m => Object.assign(new Error(m), { status: 400 });
   if (!texto) throw err('Escreva o texto do anúncio'); if (!titulo) throw err('Escreva o título');
   if (!/^https:\/\//.test(imagem)) throw err('Escolha ou gere a imagem do anúncio (precisa ser um endereço https público)');
@@ -329,8 +364,8 @@ async function patrocinadoCriar(p = {}, req) {
   // v3.174: link escolhido na tela (com UTM acrescentado se não tiver) ou a página de captura de leads
   let link = _linkPago(base, nome);
   if (p.link && /^https:\/\//.test(String(p.link).trim())) { try { const u = new URL(String(p.link).trim()); if (!u.searchParams.get('utm_source')) { const ref = new URL(link); ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].forEach(k => u.searchParams.set(k, ref.searchParams.get(k))); } link = u.toString(); } catch (_) {} }
-  const kit = { nome, objetivo: 'Tráfego (cliques no link)', posicionamentos: 'Instagram — Feed, Stories e Reels', botao: 'Saiba mais', link, texto, titulo, descricao, imagem,
-    orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, publico: amplo ? `Brasil · ${idMin} a ${idMax} anos` : `B2B — capitais de negócio · ${idMin} a ${idMax} anos · interesses: gestão, BI/dados, ERP, C-level` };
+  const kit = { nome, objetivo: 'Tráfego (cliques no link)', posicionamentos: 'Instagram — Feed e Explorar', botao: 'Saiba mais', link, texto, titulo, descricao, imagem,
+    orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, publico: `ICP C-level — donos, sócios, C-levels e diretores · capitais de negócio · ${idMin} a ${idMax} anos · interesses de cargo executivo E camada de decisor · exclui emprego, estudo e público técnico`, icp_versao: ICP_VERSAO };
   const c = _metaCfg();
   if (!(c.token && c.conta && c.pagina && c.ig) || p.so_kit) return { modo: 'kit', kit };
   // 1. campanha · 2. conjunto · 3. imagem · 4. criativo (Saiba mais) · 5. anúncio — tudo PAUSADO
@@ -362,12 +397,12 @@ async function patrocinadoCriar(p = {}, req) {
         const m = String(e.message || '').match(/\[\s*\{\s*"deprecated_interest_id"[\s\S]*?\}\s*\]/);
         let alt = []; try { alt = m ? JSON.parse(m[0]) : []; } catch (_) {}
         // v3.214: o Meta recusou comportamento/setor/exclusão → tenta de novo sem a camada de decisor (e limpa o cache)
-        if (!alt.length && dec && tentativa < 2) { dec = null; try { await _kvMc('mkt:meta:publico_decisores', { comportamentos: [], setores: [], excluir: [], em: 0 }); } catch (_) {} continue; }
+        if (!alt.length && dec && tentativa < 2) { dec = null; try { await _kvMc(_KV_DEC, { comportamentos: [], setores: [], excluir: [], em: 0 }); } catch (_) {} continue; }
         if (!pb || !alt.length || tentativa >= 2) throw e;
         const troca = new Map(alt.map(a => [String(a.deprecated_interest_id), a]));
         const vistos = new Set(); pb.interesses = pb.interesses.map(x => { const a = troca.get(String(x.id)); return a && a.alternative_interest_id ? { id: String(a.alternative_interest_id), name: a.alternative_interest_name || x.name } : (a ? null : x); })
           .filter(x => x && !vistos.has(x.id) && vistos.add(x.id));
-        try { await _kvMc('mkt:meta:publico_b2b', { ...pb, em: Date.now() }); } catch (_) {}
+        try { await _kvMc(_KV_PB, { ...pb, em: Date.now() }); } catch (_) {}
       }
     }
     let imgHash = null;
@@ -440,30 +475,73 @@ async function patrocinadoDiagnostico() {
 // v3.214: CORRIGIR O PÚBLICO DAS CAMPANHAS JÁ CRIADAS — lê os conjuntos de anúncios direto da conta no Meta (não
 // depende do banco), mantém idade (mínimo 35) e aplica: capitais de negócio, interesse do tema E camada de decisor,
 // exclusões (emprego, concurso, estágio) e só Feed/Explorar. aplicar:false só lista. Status (ativa/pausada) não muda.
-async function patrocinadoPublicoAtualizar({ aplicar = false, ids = null } = {}) {
+// v3.234: ICP C-LEVEL NAS CAMPANHAS NO AR — lê TODOS os conjuntos de anúncios da conta (com paginação; antes só 100) e
+// aplica o público de decisores MESCLANDO com o direcionamento atual: mantém públicos personalizados/semelhantes,
+// exclusões de público e as plataformas (antes trocava tudo e tirava o Facebook de conjunto que rodava nos dois).
+// Idade mínima 35, Advantage+ de público desligado, interesse de cargo executivo E camada de decisor, exclusões de
+// emprego/estudo/programação. Status (ativa/pausada) e orçamento não mudam. somente_fora: só os que não estão no ICP.
+function _icpConforme(t = {}, pb, dec) {
+  const motivos = [];
+  if (!(parseInt(t.age_min) >= META_IDADE_MIN)) motivos.push('idade mínima ' + (t.age_min || 18) + ' (ICP: ' + META_IDADE_MIN + '+)');
+  if (t.targeting_automation?.advantage_audience !== 0) motivos.push('Advantage+ de público ligado (o Meta amplia para qualquer pessoa)');
+  const ints = new Set((t.flexible_spec || []).flatMap(f => (f.interests || []).map(i => String(i.id))));
+  const tecnicos = (t.flexible_spec || []).flatMap(f => [...(f.interests || []), ...(f.industries || []), ...(f.behaviors || [])]).filter(i => /data analysis|big data|power bi|\bsap\b|business intelligence|programa|software|developer|engineer|engenh|computa|technical|t[eé]cnic|small business|page admin|administrador de p/i.test(i.name || ''));
+  if (tecnicos.length) motivos.push('mira público técnico/pequeno negócio: ' + tecnicos.map(i => i.name).slice(0, 4).join(', '));
+  if (pb?.interesses?.length && !pb.interesses.some(i => ints.has(String(i.id)))) motivos.push('sem os interesses de cargo executivo');
+  if (dec && (dec.comportamentos.length || dec.setores.length) && (t.flexible_spec || []).length < 2) motivos.push('sem a camada de decisor (interesse E cargo/setor de gestão)');
+  if (dec?.excluir?.length && !(t.exclusions?.interests || []).length) motivos.push('sem exclusões (emprego, estudo, programação)');
+  if (!t.geo_locations) motivos.push('sem localização');
+  return { ok: !motivos.length, motivos };
+}
+async function patrocinadoPublicoAtualizar({ aplicar = false, ids = null, somente_fora = false } = {}) {
   const c = _metaCfg(); if (!c.token || !c.conta) throw new Error('Meta não configurado (META_ADS_TOKEN / META_AD_ACCOUNT_ID)');
-  const r = await _meta(`act_${c.conta}/adsets?fields=id,name,campaign_id,effective_status,targeting&limit=100`);
-  const conj = (r.data || []).filter(x => !['DELETED', 'ARCHIVED'].includes(x.effective_status) && (x.targeting?.publisher_platforms || ['instagram']).includes('instagram'))
+  let conjTodos = [], prox = `act_${c.conta}/adsets?fields=id,name,campaign_id,effective_status,targeting&limit=200`;
+  for (let i = 0; i < 10 && prox; i++) { const r = await _meta(prox); conjTodos.push(...(r.data || [])); const n = r.paging?.next; prox = n ? n.replace(/^https:\/\/graph\.facebook\.com\/v[\d.]+\//, '') : null; }
+  const conj = conjTodos.filter(x => !['DELETED', 'ARCHIVED'].includes(x.effective_status) && !/COMPLETED/.test(x.effective_status || ''))
     .filter(x => !ids || ids.map(String).includes(String(x.id)));
   const pb = await _publicoB2B().catch(() => ({ cidades: [], interesses: [] }));
   let dec = await _publicoDecisores().catch(() => null);
   const novo = (t, comDec) => { const L = []; if (pb.interesses.length) L.push({ interests: pb.interesses.map(({ id, name }) => ({ id, name })) });
     if (comDec && dec && (dec.comportamentos.length || dec.setores.length)) L.push({ ...(dec.comportamentos.length ? { behaviors: dec.comportamentos.map(({ id, name }) => ({ id, name })) } : {}), ...(dec.setores.length ? { industries: dec.setores.map(({ id, name }) => ({ id, name })) } : {}) });
     const geo = pb.cidades.length ? { cities: pb.cidades.map(({ key, radius, distance_unit }) => ({ key, radius, distance_unit })), location_types: ['home', 'recent'] } : (t.geo_locations || { countries: ['BR'] });
-    return { geo_locations: geo, age_min: Math.max(35, parseInt(t.age_min) || 35), age_max: Math.max(Math.max(35, parseInt(t.age_min) || 35), parseInt(t.age_max) || 65),
-      ...(L.length ? { flexible_spec: L } : {}), ...(comDec && dec?.excluir?.length ? { exclusions: { interests: dec.excluir.map(({ id, name }) => ({ id, name })) } } : {}),
-      publisher_platforms: ['instagram'], instagram_positions: ['stream', 'explore'], targeting_automation: { advantage_audience: 0 } }; };
-  const itens = [];
+    const aMin = Math.max(META_IDADE_MIN, parseInt(t.age_min) || META_IDADE_MIN);
+    const plat = Array.isArray(t.publisher_platforms) && t.publisher_platforms.length ? t.publisher_platforms : ['instagram'];
+    const out = { ...t, geo_locations: geo, age_min: aMin, age_max: Math.min(META_IDADE_MAX, Math.max(aMin, parseInt(t.age_max) || META_IDADE_MAX)),
+      targeting_automation: { advantage_audience: 0 }, publisher_platforms: plat };
+    delete out.age_range; delete out.flexible_spec; delete out.exclusions; delete out.interests; delete out.behaviors; delete out.industries; delete out.work_positions;
+    if (L.length) out.flexible_spec = L;
+    if (comDec && dec?.excluir?.length) out.exclusions = { interests: dec.excluir.map(({ id, name }) => ({ id, name })) };
+    if (plat.includes('instagram')) out.instagram_positions = ['stream', 'explore']; // Stories/Reels = curtida de quem não decide
+    return out; };
+  const itens = []; const reg = (await _kvMc('mkt:meta:icp_aplicado').catch(() => null)) || {};
   for (const x of conj) {
-    const t = x.targeting || {}; const antes = { idade: `${t.age_min || '?'}–${t.age_max || '?'}`, posicoes: (t.instagram_positions || []).join(', ') || 'automático', local: t.geo_locations?.cities ? t.geo_locations.cities.length + ' cidade(s)' : (t.geo_locations?.countries || []).join(',') || '—', interesses: (t.flexible_spec || []).reduce((s, f) => s + (f.interests || []).length, 0), exclusoes: !!t.exclusions };
-    const it = { id: x.id, nome: x.name, estado: x.effective_status, antes };
+    const t = x.targeting || {}; const conf = _icpConforme(t, pb, dec);
+    const antes = { idade: `${t.age_min || '?'}–${t.age_max || '?'}`, posicoes: (t.instagram_positions || []).join(', ') || 'automático', local: t.geo_locations?.cities ? t.geo_locations.cities.length + ' cidade(s)' : (t.geo_locations?.countries || []).join(',') || '—', interesses: (t.flexible_spec || []).reduce((s, f) => s + (f.interests || []).length, 0), exclusoes: !!t.exclusions };
+    const it = { id: x.id, nome: x.name, estado: x.effective_status, antes, no_icp: conf.ok, motivos: conf.motivos };
+    if (somente_fora && conf.ok) { it.pulado = 'já no ICP'; itens.push(it); continue; }
     if (aplicar) {
       try { await _meta(x.id, 'POST', { targeting: novo(t, true) }); it.ok = true; it.camada_decisor = !!dec; }
       catch (e) { try { await _meta(x.id, 'POST', { targeting: novo(t, false) }); it.ok = true; it.camada_decisor = false; it.aviso = 'aplicado sem a camada de decisor/exclusões: ' + e.message; } catch (e2) { it.ok = false; it.erro = e2.message; } }
+      if (it.ok) reg[x.id] = { versao: ICP_VERSAO, em: new Date().toISOString() };
     }
     itens.push(it);
   }
-  return { conjuntos: itens, total: itens.length, aplicado: !!aplicar, publico: { cidades: pb.cidades.length, interesses: pb.interesses.map(i => i.name), comportamentos: (dec?.comportamentos || []).map(i => i.name), setores: (dec?.setores || []).map(i => i.name), excluidos: (dec?.excluir || []).map(i => i.name) } };
+  if (aplicar) await _kvMc('mkt:meta:icp_aplicado', reg).catch(() => {});
+  return { conjuntos: itens, total: itens.length, fora_do_icp: itens.filter(i => !i.no_icp).length, aplicado: !!aplicar, icp_versao: ICP_VERSAO,
+    publico: { cidades: pb.cidades.length, idade_min: META_IDADE_MIN, interesses: pb.interesses.map(i => i.name), comportamentos: (dec?.comportamentos || []).map(i => i.name), setores: (dec?.setores || []).map(i => i.name), excluidos: (dec?.excluir || []).map(i => i.name) } };
+}
+// v3.234: GUARDIÃO DO ICP — a cada 6 h (no cron da fila) confere os conjuntos da conta e reaplica o público C-level
+// nos que estiverem fora (campanha nova criada direto no Gerenciador, idade alterada, Advantage+ religado…).
+// Não ativa, não pausa e não mexe em orçamento. Registro do que fez em 'mkt:meta:icp_guarda'.
+async function _icpGuardiao({ forcar = false } = {}) {
+  const c = _metaCfg(); if (!c.token || !c.conta) return { pulado: 'Meta não configurado' };
+  const ult = await _kvMc('mkt:meta:icp_guarda').catch(() => null);
+  if (!forcar && ult?.em && Date.now() - Date.parse(ult.em) < 6 * 3600e3) return { pulado: 'executado há menos de 6 h' };
+  await _kvMc('mkt:meta:icp_guarda', { ...(ult || {}), em: new Date().toISOString(), rodando: true });
+  try { const r = await patrocinadoPublicoAtualizar({ aplicar: true, somente_fora: true });
+    const v = { em: new Date().toISOString(), conjuntos: r.total, corrigidos: r.conjuntos.filter(i => i.ok).map(i => ({ id: i.id, nome: i.nome, motivos: i.motivos })), erros: r.conjuntos.filter(i => i.ok === false).map(i => ({ nome: i.nome, erro: i.erro })) };
+    await _kvMc('mkt:meta:icp_guarda', v); return v;
+  } catch (e) { const v = { em: new Date().toISOString(), erro: e.message }; await _kvMc('mkt:meta:icp_guarda', v).catch(() => {}); return v; }
 }
 // v3.216: KPIs DE MÍDIA PAGA (tela S2 KPIs) — Meta Ads (gasto, cliques, CTR, leads do Pixel/formulário) × HubSpot
 // (negócios ganhos e a origem PAID_SOCIAL/PAID_SEARCH). ROAS/ROI usam a receita dos negócios ganhos em 90 dias cuja
@@ -495,7 +573,10 @@ async function metaKpis() {
   }
   const g90 = out.d90?.gasto || 0, H = out.hubspot || {};
   if (g90 > 0 && H.receita_paga_90d != null) { out.roas = Math.round(H.receita_paga_90d / g90 * 100) / 100; out.roi_pct = Math.round((H.receita_paga_90d - g90) / g90 * 1000) / 10; }
-  if (g90 > 0 && (H.ganhos_pagos_90d || H.ganhos_90d)) { out.cac = Math.round(g90 / (H.ganhos_pagos_90d || H.ganhos_90d) * 100) / 100; out.cac_base = H.ganhos_pagos_90d ? 'clientes ganhos de mídia paga' : 'todos os clientes ganhos (nenhum com origem de mídia paga no HubSpot)'; }
+  // v3.234: CAC de mídia só com cliente atribuído à mídia paga — antes dividia pelo total de clientes (de qualquer origem)
+  // e mostrava um CAC baixo que a mídia não gerou
+  if (g90 > 0 && H.ganhos_pagos_90d) { out.cac = Math.round(g90 / H.ganhos_pagos_90d * 100) / 100; out.cac_base = 'clientes ganhos de mídia paga'; }
+  else if (g90 > 0 && H.ganhos_90d != null) { out.cac = null; out.cac_base = 'sem cliente ganho com origem de mídia paga em 90 dias (gasto de R$ ' + g90.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) + ' sem retorno atribuído)'; }
   return out;
 }
 async function patrocinadoListar() {
@@ -782,6 +863,7 @@ async function auditoriaFunil({ dias = 30 } = {}) {
 // a API do Instagram não aceita sticker via automação. O QR garante o caminho mesmo sem o sticker.
 async function storyTexto({ tema, oferta } = {}) {
   const system = `Você escreve o texto de um STORY de Instagram para a Atlantyx (dados e IA para grandes empresas).
+${ICP_TEXTO}
 REGRAS: título de até 6 palavras que para o dedo; uma frase de apoio de até 14 palavras; uma chamada de até 5 palavras
 apontando para o link (ex.: "Toque no link", "Arraste para cima"). Sem hashtag, sem emoji além de 1. Português do Brasil.
 Escreva também, EM INGLÊS, uma cena fotográfica VERTICAL e concreta do mundo corporativo real (sala de controle de energia, data center, subestação, turbinas, dashboards), sem animais, sem pessoas em close, sem texto.
@@ -1134,7 +1216,7 @@ async function _claudeAuto(system, user, maxTokens = 700) {
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     // v2.66: Haiku para os textos da autocampanha — o Sonnet levava 8–14s e estourava o limite de
     // 10s do plano Hobby do Vercel ("Failed to fetch" em todo post). Haiku responde em 2–4s.
-    body: JSON.stringify({ model: _modeloRapido, max_tokens: Math.min(maxTokens, 500),
+    body: JSON.stringify({ model: _modeloRapido, max_tokens: Math.min(maxTokens, 1500), // v3.234: o anúncio pago pede 1100 — com teto de 500 o JSON vinha cortado ("Não escreveu")
       system: system + '\n\nIMPORTANTE: responda SOMENTE com o JSON pedido, começando por "{". Nunca peça mais informações — se faltar algo, escolha você mesmo um ângulo plausível e escreva.',
       // v2.93: pré-preenchimento só em modelos que aceitam — Opus/Sonnet 4.6+ e os modelos 5 respondem 400
       messages: _aceitaPrefill ? [{ role: 'user', content: user }, { role: 'assistant', content: '{' }] : [{ role: 'user', content: user }] }) });
@@ -1239,6 +1321,8 @@ async function autoCampanhaPlanejar({ dias, horarios, pular_fim_de_semana, blog_
 async function autoCampanhaExecutar({ dias, horarios, pular_fim_de_semana, tema, redes, blog_id, apenas_rascunho = false, limite = 21, slots = null, cta_instagram = '', data_inicio = null } = {}) {
   const _t0 = Date.now();
   const cfg = await autoCampanhaConfig();
+  // v3.234: o CTA do Instagram escolhido na tela fica guardado — a fila (cron) gerava os posts sem ele e usava a URL longa
+  try { if (cta_instagram) await _kvMc('mkt:cta_instagram', { texto: String(cta_instagram).substring(0, 400), em: new Date().toISOString() }); else cta_instagram = (await _kvMc('mkt:cta_instagram'))?.texto || ''; } catch (_) {}
   // v2.16: quando o navegador manda `slots`, gera só esses (lote). Evita o "Failed to fetch":
   // 15 posts de uma vez levavam ~90s e a função era cortada pelo limite do Vercel.
   let plano, alvos;
@@ -1276,15 +1360,16 @@ async function autoCampanhaExecutar({ dias, horarios, pular_fim_de_semana, tema,
   // v2.67: sem tema, o modelo respondia "preciso de mais informação" em vez de escrever. Agora há
   // um tema padrão concreto e um cardápio de ângulos que o modelo pode escolher.
   const temaBase = (tema && tema.trim()) || (cfg.tema_base && cfg.tema_base.trim()) ||
-    'Dados, analytics e IA aplicados à operação de grandes empresas (energia, bancos, indústria): sustentação de plataformas de dados, governança, automação com IA, decisões com dados confiáveis. Ângulos possíveis: um erro comum que custa caro; o que muda quando o dado é confiável; IA que resolve um problema chato e específico; por que projetos de dados atrasam; o que um CEO deveria perguntar ao time de dados.';
+    'Resultado de negócio com dados e IA em médias e grandes empresas (energia, bancos, indústria, infraestrutura), do ponto de vista de quem DECIDE: margem, caixa, risco, prazo e controle. Ângulos possíveis: a decisão de diretoria que custa caro por falta de número confiável; o que o CFO/CEO deveria cobrar do time de dados; quanto custa uma semana de atraso no fechamento; IA que tira um gargalo da operação e o ganho em R$; por que projetos de dados atrasam e como a diretoria evita.'; // v3.234: ICP C-level (antes o tema padrão puxava assunto técnico)
   const redesAlvo = (Array.isArray(redes) && redes.length ? redes : cfg.redes);
   const criados = [], erros = [];
 
   for (const slot of alvos) {
     try {
-      const system = `Você escreve posts de LinkedIn para a Atlantyx — consultoria brasileira de dados e IA, 17 anos de mercado, clientes como CPFL Energia, Enel e Caixa Capitalização. Público: executivos e gestores de grandes empresas.
+      const system = `Você escreve posts de LinkedIn para a Atlantyx — consultoria brasileira de dados e IA, 17 anos de mercado, clientes como CPFL Energia, Enel e Caixa Capitalização. ${ICP_TEXTO}
 
 REGRAS:
+- Escreva para o dono/C-level: comece pela consequência de negócio (dinheiro, risco, prazo), não pela ferramenta; sem tutorial, sem "como fazer" técnico, sem vaga/carreira.
 - Entre 60 e 130 palavras. Primeira linha precisa parar o scroll — sem "Você sabia que".
 - Uma ideia só por post, concreta. Traga um exemplo, um número ou uma situação real de projeto.
 - Sem emoji em excesso (no máximo 1), sem hashtag genérica, sem "revolucionar", "transformar digitalmente", "game changer".
@@ -1379,7 +1464,8 @@ async function handler(req, res) {
   // v2.68: cron da fila — um passo por minuto, em segundo plano
   if (req.method === 'GET' && req.query?.cron === 'fila') {
     try { const out = []; for (let i = 0; i < 2; i++) { const r = await filaProcessar({}); out.push(r); if (r.ocioso) break; }
-      return res.status(200).json({ success: true, passos: out }); }
+      let icp = null; if (out.every(r => r.ocioso)) { try { icp = await _icpGuardiao(); } catch (e) { icp = { erro: e.message }; } } // v3.234: guardião do ICP (a cada 6 h, só com a fila parada)
+      return res.status(200).json({ success: true, passos: out, icp }); }
     catch (e) { return res.status(500).json({ success: false, error: e.message }); }
   }
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -1461,6 +1547,8 @@ async function handler(req, res) {
     patrocinado_listar:     () => patrocinadoListar(),
     meta_kpis:              () => metaKpis(), // v3.216
     patrocinado_publico_atualizar: () => patrocinadoPublicoAtualizar(payload), // v3.214
+    icp_auditar_planejados: () => icpAuditarPlanejados(payload), // v3.234
+    icp_guardiao: async () => ({ guarda: payload.executar ? await _icpGuardiao({ forcar: true }) : await _kvMc('mkt:meta:icp_guarda').catch(() => null) }), // v3.234
     story_texto:            () => storyTexto(payload),
     autocampanha_agendar_um:() => autoCampanhaAgendarUm(payload),
     fila_enfileirar:        () => filaEnfileirar(payload),

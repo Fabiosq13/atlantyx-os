@@ -18,6 +18,12 @@
 | S8 RH / S9 PMO | funcionários, organograma, conselho; status report, painel mestre, agenda do GP | T3 |
 | Dashboard ao vivo | resultado do dia, financeiro do dia, metas, alertas | T4 |
 
+## ICP — público-alvo (regra do fundador)
+Donos, sócios, C-levels (CEO, CFO, COO, CIO, CTO, CDO) e diretores/VPs de **médias e grandes empresas** (energia e utilities, bancos e seguradoras, indústria, infraestrutura, varejo e serviços de grande porte). Nunca pessoa física, estudante, quem procura emprego nem público técnico/operacional (analista, desenvolvedor, engenheiro, técnico, coordenador, estagiário).
+- Fonte única no código: `lib/icp.js` (texto dos prompts, cargos, Apollo, Meta Ads, negativas de busca, `classificarCargo`). Toda campanha, prompt, prospecção, score de lead e abordagem automática lê dali.
+- Meta Ads: 35+ anos, interesse de cargo executivo **e** camada de decisor (setor de gestão), exclusões de emprego/estudo/programação, Advantage+ de público desligado; guardião a cada 6 h corrige conjuntos fora do ICP.
+- WhatsApp automático só para lead A (ou B com cargo de decisor e e-mail corporativo).
+
 ## Glossário
 - **Demanda:** pedido de mudança no sistema, sugerido pelo Agente de Produto ou criado pelo fundador, aprovado na Esteira de Demandas.
 - **Trilha:** unidade de trabalho com dono e escopo de arquivos (T1…T6 permanentes; trilhas de feature herdam o escopo de uma permanente e têm ID `aaaa-mm-dd-slug`).
