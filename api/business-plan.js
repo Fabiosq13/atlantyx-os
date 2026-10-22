@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { K_VIGENTE, planoSimular, planoResumoTexto } from '../lib/plano-estrategico.js'; // v3.240
 import { salvarHistorico } from '../lib/historico-s1.js';
 // api/business-plan.js — v3.04
 // Business Plan completo (DRE, fluxo de caixa 36 meses, TIR, VPL, payback, margens, cenários)
@@ -215,6 +216,14 @@ async function lerAjustes() {
   try { const sql = await getSql(); const r = await sql`SELECT valor FROM app_config WHERE chave = 'bp_atlantyx_ajustes' LIMIT 1`; return r[0]?.valor || {}; } catch (_) { return {}; }
 }
 
+// v3.240: lê o PLANO ESTRATÉGICO VIGENTE e devolve a simulação por alavanca (receita, margem, recorrente) para comparar com
+// o Business Plan. Só leitura; sem plano ou com erro devolve null e o BP segue igual.
+async function _planoEstrBP() {
+  try { const sql = await getSql(); const r = await sql`SELECT value FROM kv_store WHERE key = ${K_VIGENTE} LIMIT 1`; let v = r[0]?.value; if (typeof v === 'string') v = JSON.parse(v);
+    if (!v?.plano) return null; const sim = planoSimular(v.plano);
+    return { versao: v.versao, aprovado_em: v.aprovado_em, nome: v.plano.nome, metas: v.plano.metas, total: sim.total, linhas: sim.linhas.map(l => ({ id: l.id, nome: l.nome, receita: l.receita, lucro: l.lucro, recorrente: l.recorrente })), resumo: planoResumoTexto(v.plano, v) };
+  } catch (_) { return null; }
+}
 async function planoAtlantyx({ overrides } = {}) {
   const salvos = await lerAjustes();
   const ov = { ...salvos, ...(overrides || {}) };
@@ -299,8 +308,9 @@ async function planoAtlantyx({ overrides } = {}) {
   };
   const resultado = { ...calcularBP(premissas), cenarios: cenariosBP(premissas) };
   const histDespesas = hm.map((m, k) => r2(Number(G.Expenses?.[m] || 0) + Number(G.OtherExpenses?.[m] || 0)));
+  const plano_estrategico = await _planoEstrBP(); // v3.240: mix por alavanca do plano estratégico vigente (só leitura)
   return {
-    tipo: 'atlantyx', titulo: 'Business Plan Atlantyx (dinâmico)', premissas, resultado,
+    tipo: 'atlantyx', titulo: 'Business Plan Atlantyx (dinâmico)', premissas, resultado, plano_estrategico,
     atualizado_em: new Date().toISOString(), ajustes: ov, avisos,
     diagnostico: {
       receita_media_6m: r2(rec6), receita_media_12m: r2(rec12), receita_12m: r2(recTotHist),
@@ -555,6 +565,7 @@ async function _bpParaIA({ id, overrides } = {}) {
   const ctx = { titulo: bp.titulo, tipo: bp.tipo, atualizado_em: bp.atualizado_em, indicadores: I, anos, cenarios: cen,
     premissas_resumo: { inicio: bp.premissas?.inicio, meses: bp.premissas?.meses, crescimento: bp.premissas?.crescimento || bp.ajustes, deducoes_pct: bp.premissas?.deducoes_pct, taxa_desconto: bp.premissas?.taxa_desconto_anual,
       receitas: (bp.premissas?.receitas || []).slice(0, 12).map(x => ({ nome: x.nome, tipo: x.tipo, valor: x.valor || x.preco, volume: x.volume })), despesas_fixas: (bp.premissas?.despesas_fixas || []).slice(0, 25).map(x => ({ nome: x.nome, valor: x.valor_mensal || x.valor })) },
+    plano_estrategico_vigente: bp.plano_estrategico?.resumo || null, // v3.240
     diagnostico_dados_reais: bp.diagnostico || null, avisos: bp.avisos || [], historico_12m: bp.historico || null, narrativa: bp.narrativa ? { resumo_executivo: bp.narrativa.resumo_executivo, riscos: bp.narrativa.riscos } : null };
   return { bp, ctx, chave: id || 'atlantyx' };
 }

@@ -1,6 +1,7 @@
 import { comGuarda } from '../lib/qa-guard.js';
 import { liUsarKv, liStatus, liUrlConectar, liCallback, liCriar, liEstado, liPeriodo, liLer, liPublicoEnviar, liPublicoLer } from '../lib/linkedin-ads.js'; // v3.239
 import { linhasMeta, SCHEMA_META, listaObter, listaGravar } from '../lib/publico-lista.js'; // v3.239
+import { K_VIGENTE as K_PLANO_VIGENTE, escolherTrilha, briefingTrilha, trilhasCampanha } from '../lib/plano-estrategico.js'; // v3.240
 import { RE_CONTEUDO_FORA_ICP } from '../lib/icp.js';
 import { META_CARGOS, classificarCargo as _clsCargo } from '../lib/icp.js';
 import { ICP_TEXTO, ICP_VERSAO, META_IDADE_MIN, META_IDADE_MAX, META_INTERESSES, META_COMPORT, META_SETOR, META_EXCLUIR } from '../lib/icp.js';
@@ -293,6 +294,12 @@ async function _kvMc(k, v) {
   await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; return v;
 }
 liUsarKv((k, v) => _kvMc(k, v)); // v3.239: tokens e conta do LinkedIn Ads ficam no kv_store
+// v3.240: PLANO ESTRATÉGICO VIGENTE → trilhas da campanha. Só acrescenta foco ao post/anúncio; sem plano aprovado, com a
+// opção desligada na tela ou com erro de leitura, a autocampanha e a campanha patrocinada funcionam exatamente como antes.
+async function _planoMc({ ignorarOpcao = false } = {}) {
+  try { if (!ignorarOpcao && (await _kvMc('mkt:autocampanha_plano'))?.usar === false) return null; const v = await _kvMc(K_PLANO_VIGENTE); return v?.plano ? v : null; } catch (_) { return null; }
+}
+async function _trilhaPorId(id) { if (!id) return null; const v = await _planoMc({ ignorarOpcao: true }); return v ? trilhasCampanha(v.plano).find(t => t.id === id) || (v.plano.alavancas || []).find(t => t.id === id) || null : null; }
 // v3.174/v3.239: endereço público do sistema (nunca um deploy temporário …-projects-….vercel.app)
 function _baseDe(req) {
   const _host = req?.headers?.host || '';
@@ -305,7 +312,9 @@ async function patrocinadoStatus(req) {
   try { out.linkedin = await liStatus(_baseDe(req)); } catch (e) { out.linkedin = { configurado: false, erro: e.message }; } // v3.239
   return out;
 }
-async function patrocinadoCopy({ tema = '', oferta = '', publico = '' } = {}) {
+async function patrocinadoCopy({ tema = '', oferta = '', publico = '', trilha = '' } = {}) {
+  const _tr = await _trilhaPorId(trilha).catch(() => null); // v3.240: trilha do plano estratégico dá foco (público, dor, oferta, prova)
+  if (_tr) { tema = [tema, briefingTrilha(_tr)].filter(Boolean).join('\n'); if (!publico) publico = _tr.publico; }
   const sys = 'Você escreve anúncios pagos de Instagram para a Atlantyx (empresa brasileira B2B de tecnologia: engenharia de dados, indicadores/BI, software sob medida, produtos próprios e especialistas; 17 anos; clientes como CPFL, Enel, Caixa Capitalização). ' + ICP_TEXTO + ' O texto deve QUALIFICAR quem clica (ex.: "Para CEOs, CFOs e diretores de empresas de médio e grande porte") — afaste pessoa física, quem procura emprego ou curso e o público técnico. O anúncio tem botão "Saiba mais" que leva para a página onde a pessoa pede uma conversa gratuita com um especialista. Português do Brasil, direto, sem clichês, sem prometer o que não está no tema.';
   // v3.208: texto no padrão "pergunta-gancho → Simples: resposta → ✅ 3 benefícios → parágrafo de ganho → CTA" e
   // os campos da ARTE no padrão (manchete com palavras em destaque + lista de benefícios com ✓ + tela do sistema)
@@ -363,8 +372,8 @@ async function _publicoDecisores() {
   for (const q of _EXCLUIR) { try { const r = await _meta(`search?type=adinterest&limit=1&q=${encodeURIComponent(q)}`); const x = (r.data || [])[0]; if (x && !excluir.some(i => i.id === String(x.id))) excluir.push({ id: String(x.id), name: x.name }); } catch (_) {} }
   const v = { comportamentos, setores, excluir, em: Date.now() }; await _kvMc(_KV_DEC, v).catch(() => {}); return v;
 }
-function _linkPago(base, nome, rede = 'instagram') {
-  const slug = String(nome || 'patrocinado').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 40) || 'patrocinado';
+function _linkPago(base, nome, rede = 'instagram', trilhaId = null) {
+  const slug = (trilhaId ? 'alv-' + trilhaId + '_' : '') + String(nome || 'patrocinado').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 70) || 'patrocinado';
   return base + '/captura.html?utm_source=' + rede + '&utm_medium=pago&utm_campaign=' + slug + '&utm_content=saiba_mais';
 }
 async function patrocinadoCriar(p = {}, req) {
@@ -389,13 +398,13 @@ async function patrocinadoCriar(p = {}, req) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ini) || !/^\d{4}-\d{2}-\d{2}$/.test(fim) || fim < ini) throw err('Informe início e fim da campanha (fim depois do início)');
   const dias = Math.round((new Date(fim) - new Date(ini)) / 864e5) + 1;
   // v3.174: link escolhido na tela (com UTM acrescentado se não tiver) ou a página de captura de leads
-  let link = _linkPago(base, nome);
+  let link = _linkPago(base, nome, 'instagram', p.trilha ? String(p.trilha).replace(/[^a-z0-9-]/g, '') : null);
   if (p.link && /^https:\/\//.test(String(p.link).trim())) { try { const u = new URL(String(p.link).trim()); if (!u.searchParams.get('utm_source')) { const ref = new URL(link); ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].forEach(k => u.searchParams.set(k, ref.searchParams.get(k))); } link = u.toString(); } catch (_) {} }
   const kit = { nome, objetivo: 'Tráfego (cliques no link)', posicionamentos: 'Instagram — Feed e Explorar', botao: 'Saiba mais', link, texto, titulo, descricao, imagem,
     orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, icp_versao: ICP_VERSAO,
     publico: lista ? `Lista do Apollo "${lista.nome}" (${(lista.pessoas || []).length} decisores selecionados) — público personalizado no Meta · Brasil · 25 a 65 anos · Instagram e Facebook (feed)`
       : `Quem OCUPA o cargo: donos, sócios e C-levels (cargo atual no perfil) · capitais de negócio · ${idMin} a ${idMax} anos · sem direcionamento por interesse`,
-    ...(lista ? { publico_lista: lista.id, publico_lista_nome: lista.nome, posicionamentos: 'Instagram (Feed e Explorar) e Facebook (Feed)' } : {}) };
+    ...(lista ? { publico_lista: lista.id, publico_lista_nome: lista.nome, posicionamentos: 'Instagram (Feed e Explorar) e Facebook (Feed)' } : {}), ...(p.trilha ? { trilha: String(p.trilha).substring(0, 40) } : {}) };
   const c = _metaCfg();
   if (!(c.token && c.conta && c.pagina && c.ig) || p.so_kit) return { modo: 'kit', kit };
   // 1. campanha · 2. conjunto · 3. imagem · 4. criativo (Saiba mais) · 5. anúncio — tudo PAUSADO
@@ -470,13 +479,13 @@ async function patrocinadoCriarLinkedin(p, base) {
   if (!(diario >= 10)) throw err('Orçamento diário mínimo no LinkedIn: 10,00 na moeda da conta (o LinkedIn pode exigir mais)');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ini) || !/^\d{4}-\d{2}-\d{2}$/.test(fim) || fim < ini) throw err('Informe início e fim da campanha (fim depois do início)');
   const dias = Math.round((new Date(fim) - new Date(ini)) / 864e5) + 1;
-  let link = _linkPago(base, nome, 'linkedin');
+  let link = _linkPago(base, nome, 'linkedin', p.trilha ? String(p.trilha).replace(/[^a-z0-9-]/g, '') : null);
   if (p.link && /^https:\/\//.test(String(p.link).trim())) { try { const u = new URL(String(p.link).trim()); if (!u.searchParams.get('utm_source')) { const ref = new URL(link); ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].forEach(k => u.searchParams.set(k, ref.searchParams.get(k))); } link = u.toString(); } catch (_) {} }
   const lista = p.publico_lista ? await listaObter(_kvMc, p.publico_lista) : null;
   const kit = { rede: 'linkedin', nome, objetivo: 'Visitas ao site (cliques no link)', posicionamentos: 'LinkedIn — feed (anúncio de imagem única)', botao: 'Saiba mais', link, texto, titulo, descricao: '', imagem,
     orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, icp_versao: ICP_VERSAO,
     publico: lista ? `Lista do Apollo "${lista.nome}" (${(lista.pessoas || []).length} decisores) — Matched Audience · Brasil` : 'Senioridade Dono, Sócio, CXO, VP e Diretor · empresas com 201+ funcionários · Brasil · sem expansão de público',
-    ...(lista ? { publico_lista: lista.id, publico_lista_nome: lista.nome } : {}) };
+    ...(lista ? { publico_lista: lista.id, publico_lista_nome: lista.nome } : {}), ...(p.trilha ? { trilha: String(p.trilha).substring(0, 40) } : {}) };
   const st = await liStatus(base).catch(() => ({}));
   if (!st.conectado || p.so_kit) return { modo: 'kit', kit };
   let segmento = null, aviso = null;
@@ -1576,9 +1585,11 @@ async function autoCampanhaExecutar({ dias, horarios, pular_fim_de_semana, tema,
     'Resultado de negócio com dados e IA em médias e grandes empresas (energia, bancos, indústria, infraestrutura), do ponto de vista de quem DECIDE: margem, caixa, risco, prazo e controle. Ângulos possíveis: a decisão de diretoria que custa caro por falta de número confiável; o que o CFO/CEO deveria cobrar do time de dados; quanto custa uma semana de atraso no fechamento; IA que tira um gargalo da operação e o ganho em R$; por que projetos de dados atrasam e como a diretoria evita.'; // v3.234: ICP C-level (antes o tema padrão puxava assunto técnico)
   const redesAlvo = (Array.isArray(redes) && redes.length ? redes : cfg.redes);
   const criados = [], erros = [];
+  const _plv = await _planoMc(); // v3.240: trilhas do plano estratégico vigente (null = como antes)
 
   for (const slot of alvos) {
     try {
+      const trilha = _plv ? escolherTrilha(_plv.plano, slot.data + '_' + slot.hora) : null;
       const system = `Você escreve posts de LinkedIn para a Atlantyx — consultoria brasileira de dados e IA, 17 anos de mercado, clientes como CPFL Energia, Enel e Caixa Capitalização. ${ICP_TEXTO}
 
 REGRAS:
@@ -1606,7 +1617,7 @@ Data da publicação: ${slot.data} (${slot.dia_semana}) às ${slot.hora}
 ${slot.hora < '11:00' ? 'Horário da manhã: pode ser um post mais analítico, para quem abre o feed começando o dia.'
   : slot.hora < '15:00' ? 'Horário do meio-dia: leitura rápida, algo que se lê entre uma reunião e outra.'
   : 'Fim de tarde: bom para reflexão ou balanço, quando o executivo está fechando o dia.'}
-Evite repetir o mesmo ângulo de outros posts da semana.`;
+Evite repetir o mesmo ângulo de outros posts da semana.${trilha ? '\n' + briefingTrilha(trilha) + ' Este post serve a ESTA trilha (a oferta do final é a dela), dentro do tema geral.' : ''}`;
       const txt = await _claudeAuto(system, user, 700);
       let j;
       try { j = JSON.parse(String(txt).replace(/```json|```/g, '').trim()); }
@@ -1619,7 +1630,7 @@ Evite repetir o mesmo ângulo de outros posts da semana.`;
       // v2.15: link de captura com UTM — é o que transforma o post em fonte rastreável de lead
       const base = (process.env.MEDIA_PUBLIC_BASE || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
       const utm = new URLSearchParams({ utm_source: 'linkedin', utm_medium: 'autocampanha',
-        utm_campaign: `${slot.data}_${slot.hora.replace(':', '')}`, utm_content: (j.angulo || '').substring(0, 40).replace(/\s+/g, '-').toLowerCase() });
+        utm_campaign: `${trilha ? 'alv-' + trilha.id + '_' : ''}${slot.data}_${slot.hora.replace(':', '')}`, utm_content: (j.angulo || '').substring(0, 40).replace(/\s+/g, '-').toLowerCase() });
       j.link = `${base}/captura.html?${utm.toString()}`;
       j.comentario = `${j.oferta ? j.oferta.charAt(0).toUpperCase() + j.oferta.slice(1) + ' → ' : ''}${j.link}`;
       // v2.30: cada rede tem o seu caminho para o link.
@@ -1641,7 +1652,7 @@ Evite repetir o mesmo ângulo de outros posts da semana.`;
       }
 
       if (apenas_rascunho) {
-        criados.push({ ...slot, texto: j.texto, angulo: j.angulo, oferta: j.oferta, imagem_prompt: j.imagem || null, link: j.link, link_instagram: j.link_instagram, link_bio: j.link_bio, comentario: j.comentario, status: 'rascunho' });
+        criados.push({ ...slot, trilha: trilha?.id || null, trilha_nome: trilha?.nome || null, texto: j.texto, angulo: j.angulo, oferta: j.oferta, imagem_prompt: j.imagem || null, link: j.link, link_instagram: j.link_instagram, link_bio: j.link_bio, comentario: j.comentario, status: 'rascunho' });
       } else {
         const quando = `${slot.data}T${slot.hora}:00`;
         const TOKEN = process.env.METRICOOL_USER_TOKEN, USERID = process.env.METRICOOL_USER_ID;
@@ -1665,7 +1676,7 @@ Evite repetir o mesmo ângulo de outros posts da semana.`;
           body.media = conv; body.medias = conv;
         }
         const r = await mc(`/v2/scheduler/posts?userId=${USERID}&blogId=${BLOGID}`, TOKEN, 'POST', body);
-        criados.push({ ...slot, texto: j.texto, angulo: j.angulo, oferta: j.oferta, imagem_prompt: j.imagem || null, link: j.link, link_instagram: j.link_instagram, link_bio: j.link_bio, comentario: j.comentario, status: 'agendado', metricool_id: r?.id || r?.data?.id || null });
+        criados.push({ ...slot, trilha: trilha?.id || null, trilha_nome: trilha?.nome || null, texto: j.texto, angulo: j.angulo, oferta: j.oferta, imagem_prompt: j.imagem || null, link: j.link, link_instagram: j.link_instagram, link_bio: j.link_bio, comentario: j.comentario, status: 'agendado', metricool_id: r?.id || r?.data?.id || null });
       }
     } catch (e) { erros.push(`${slot.data} ${slot.hora}: ${e.message}`); }
   }
@@ -1773,6 +1784,10 @@ async function handler(req, res) {
     patrocinado_listar:     () => patrocinadoListar(),
     // v3.239: LinkedIn Ads + públicos por lista (Apollo → Meta / LinkedIn)
     li_conectar:            () => liUrlConectar(_baseDe(req)),
+    // v3.240: trilhas do plano estratégico vigente na campanha
+    plano_trilhas:          async () => { const v = await _planoMc({ ignorarOpcao: true }); const op = await _kvMc('mkt:autocampanha_plano').catch(() => null);
+      return { vigente: v ? { versao: v.versao, nome: v.plano.nome, aprovado_em: v.aprovado_em } : null, usar: op?.usar !== false, trilhas: v ? trilhasCampanha(v.plano).map(t => ({ id: t.id, nome: t.nome, peso: t.peso_campanha, oferta: t.oferta, publico: t.publico, dor: t.dor, prova: t.prova })) : [] }; },
+    plano_trilhas_usar:     async () => { await _kvMc('mkt:autocampanha_plano', { usar: payload.usar !== false, em: new Date().toISOString() }); return { usar: payload.usar !== false }; },
     li_status:              () => liStatus(_baseDe(req)),
     li_desconectar:         async () => { await _kvMc('li:oauth:tokens', { access_token: null }); await _kvMc('li:ads:conta', null); return { ok: true }; },
     publico_meta_enviar:    () => publicoMetaEnviar(payload),

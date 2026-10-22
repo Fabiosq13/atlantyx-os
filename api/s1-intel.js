@@ -1,4 +1,5 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { K_VIGENTE, planoResumoTexto } from '../lib/plano-estrategico.js'; // v3.240
 import { salvarHistorico, listarHistorico, obterHistorico } from '../lib/historico-s1.js';
 // api/s1-intel.js
 // S1 · Inteligência Estratégica Contínua da Atlantyx
@@ -91,8 +92,13 @@ async function ctxReal(extra = {}) {
     real.vendas = vv; }
   else faltou.push('vendas: ' + (vendR.reason?.message || 'sem cálculo salvo'));
   if (leadsR.status === 'fulfilled' && leadsR.value) { fontes.push('Leads (captura)'); real.leads = leadsR.value; } else faltou.push('leads: ' + (leadsR.reason?.message || ''));
+  // v3.240: PLANO ESTRATÉGICO VIGENTE (cadastrado e aprovado pelo fundador) — Plano Estratégico, Plano de Ação 90d e OKRs
+  // partem dele. Sem plano aprovado (ou se a leitura falhar) segue como antes, só com os dados reais.
+  let planoTxt = null;
+  try { const sql = await _sqlS1(); if (sql) { const r = await sql`SELECT value FROM kv_store WHERE key = ${K_VIGENTE} LIMIT 1`; let v = r[0]?.value; if (typeof v === 'string') v = JSON.parse(v);
+    if (v?.plano) { planoTxt = planoResumoTexto(v.plano, v); fontes.push('Plano estratégico vigente (v' + v.versao + ')'); } } } catch (_) {}
   _ultimasFontes = { fontes, faltou };
-  return { ctx: ctxAtlantyx({ dados_reais: real, data_de_hoje: new Date().toISOString().slice(0, 10), ...extra }), fontes, faltou };
+  return { ctx: ctxAtlantyx({ dados_reais: real, data_de_hoje: new Date().toISOString().slice(0, 10), ...(planoTxt ? { plano_estrategico_vigente: planoTxt, instrucao_plano: 'Parta do plano estratégico vigente: detalhe e execute as alavancas, metas e prioridades aprovadas; se os dados reais contradisserem o plano, aponte a diferença e sugira o ajuste em vez de criar outra estratégia do zero.' } : {}), ...extra }), fontes, faltou };
 }
 let _ultimasFontes = null;
 const CONCISO = '\nSeja conciso: no máximo 4 itens por lista, frases curtas, valores em R$. Use os DADOS REAIS do contexto (dados_reais); se faltar um dado, diga que faltou — não invente números.';

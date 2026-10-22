@@ -1,5 +1,6 @@
 import { comGuarda } from '../lib/qa-guard.js';
 import crypto from 'node:crypto';
+import { K_VIGENTE, K_RASCUNHO, K_VERSOES, K_AJUSTES, planoInicial, planoNormalizar, planoSimular, planoResumoTexto, STATUS as ALV_STATUS } from '../lib/plano-estrategico.js'; // v3.240
 // api/estrategia.js — v3.151 · ESTRATÉGIA IA · trilha T3
 // • ATLAS, o estrategista-chefe: conversa por chat ou voz, com os números vivos da empresa (financeiro, comercial,
 //   projetos, ideias, Esteira de Demandas), as premissas estratégicas e o plano vigente.
@@ -68,6 +69,12 @@ async function propositoPessoal() {
   return { proposito: p || null, metas_dashboard: m || null, plano_alinhamento: (await kv('norte:plano')) || null };
 }
 async function premissas() { return (await kv('est:premissas'))?.texto || PREMISSAS_PADRAO; }
+// v3.240: premissas + PLANO ESTRATÉGICO CADASTRADO (alavancas, metas, pesos) para os prompts — sem plano, só as premissas
+async function premissasCtx() {
+  const prem = await premissas();
+  try { const v = await kv(K_VIGENTE); if (v?.plano) return prem + '\n\n' + planoResumoTexto(v.plano, v); } catch (_) {}
+  return prem;
+}
 async function planoVigente() { return await kv('est:plano'); }
 function resumoCtx(ctx) { // compacto para o prompt
   const f = ctx.financeiro || {}, c = ctx.comercial || {};
@@ -91,7 +98,7 @@ async function chat({ conversa_id, mensagem, voz, persona }) {
   let conv = conversa_id ? (await sql`SELECT * FROM est_conversas WHERE id=${conversa_id}`)[0] : null;
   const quem = persona === 'norte' ? 'norte' : 'atlas';
   if (!conv) { const id = novoId('conv'); await sql`INSERT INTO est_conversas (id, titulo) VALUES (${id}, ${(quem === 'norte' ? '🧭 ' : '') + m.substring(0, 80)})`; conv = { id, mensagens: [] }; }
-  const [ctx, prem, plano] = await Promise.all([contexto(), premissas(), planoVigente()]);
+  const [ctx, prem, plano] = await Promise.all([contexto(), premissasCtx(), planoVigente()]);
   const hist = (conv.mensagens || []).slice(-16).map(x => ({ role: x.role, content: x.content }));
   const system = `Você é ATLAS, o estrategista-chefe de IA da Atlantyx, conversando com o fundador e CEO (Fabio). Papel: ${AGENTES.atlas.foco}
 ${REGRAS}
@@ -121,13 +128,92 @@ RESULTADO DA EMPRESA (financeiro e comercial): ${JSON.stringify({ financeiro: { 
 }
 // plano de alinhamento propósito × metas (NORTE)
 async function nortePlano() {
-  const [pp, prem, plano, ctx] = await Promise.all([propositoPessoal(), premissas(), planoVigente(), contexto()]);
+  const [pp, prem, plano, ctx] = await Promise.all([propositoPessoal(), premissasCtx(), planoVigente(), contexto()]);
   if (!pp.proposito) throw new Error('Preencha primeiro "S1 · Propósito e Metas Pessoais" (propósito de vida, legado, metas) — o NORTE parte dele');
   const t = await claude(`Você é NORTE, mentor de propósito e metas do fundador da Atlantyx. Monte o PLANO DE ALINHAMENTO entre o propósito pessoal, as metas pessoais e as metas da empresa. Use só o que foi cadastrado; onde faltar, deixe a pergunta. Português do Brasil.
 Responda SOMENTE JSON: {"proposito_em_uma_frase":"...","como_a_atlantyx_serve_ao_proposito":"2-3 frases","metas_pessoais":[{"meta":"SMART com número e prazo","area":"vida|família|saúde|finanças|legado|social|desenvolvimento","liga_ao_proposito":"por quê"}],"metas_empresa_que_importam":[{"meta":"...","por_que_importa_pra_voce":"..."}],"tensoes":[{"entre":"meta pessoal × meta da empresa","troca_sugerida":"..."}],"rituais":[{"ritual":"...","frequencia":"semanal|mensal|trimestral"}],"proximos_30_dias":["..."],"perguntas_em_aberto":["..."]}`,
     [{ role: 'user', content: JSON.stringify({ proposito_e_metas_pessoais: pp, premissas_empresa: prem, plano_estrategico: plano?.sintese || null, resultado_empresa: { mes: ctx.financeiro?.mes, ano: ctx.financeiro?.ano } }).substring(0, 16000) }], 3000);
   const j = json(t); if (!j?.proposito_em_uma_frase) throw new Error('A IA não devolveu o plano no formato esperado — tente de novo');
   const out = { ...j, gerado_em: new Date().toISOString() }; await kv('norte:plano', out); return { plano: out };
+}
+
+
+// ═══ v3.240: PLANO ESTRATÉGICO CADASTRADO — rascunho → aprovação → vigente (com histórico) e ajuste fino ═══
+const _hoje = () => new Date().toISOString();
+async function planoEstrObter() {
+  const [vig, ras, vers, aj] = await Promise.all([kv(K_VIGENTE), kv(K_RASCUNHO), kv(K_VERSOES), kv(K_AJUSTES)]);
+  const rascunho = ras?.plano ? ras : { plano: vig?.plano || planoInicial(), nao_salvo: true, base_versao: vig?.versao || null };
+  let realizado = null; try { realizado = await planoEstrRealizado(vig?.plano || rascunho.plano); } catch (e) { realizado = { erro: e.message }; }
+  return { vigente: vig || null, rascunho, versoes: (vers || []).map(v => ({ versao: v.versao, aprovado_em: v.aprovado_em, aprovado_por: v.aprovado_por, comentario: v.comentario, nome: v.plano?.nome })),
+    ajustes: (aj || []).slice(0, 30), sim_rascunho: planoSimular(rascunho.plano), sim_vigente: vig?.plano ? planoSimular(vig.plano) : null, realizado, status_opcoes: ALV_STATUS };
+}
+async function planoEstrSalvar({ plano, comentario }, usuario) {
+  if (!plano || !Array.isArray(plano.alavancas)) throw Object.assign(new Error('Plano inválido'), { status: 400 });
+  const vig = await kv(K_VIGENTE);
+  const v = { plano: planoNormalizar(plano), salvo_em: _hoje(), salvo_por: usuario || 'fundador', comentario: String(comentario || '').substring(0, 500), base_versao: vig?.versao || null };
+  await kv(K_RASCUNHO, v); return { rascunho: v, sim: planoSimular(v.plano) };
+}
+async function _vigenteNovo(plano, usuario, comentario, origem) {
+  const vig = await kv(K_VIGENTE);
+  if (vig?.plano) { const h = (await kv(K_VERSOES)) || []; await kv(K_VERSOES, [vig, ...h].slice(0, 24)); }
+  const novo = { plano: planoNormalizar(plano), versao: (vig?.versao || 0) + 1, aprovado_em: _hoje(), aprovado_por: usuario || 'fundador', comentario: String(comentario || '').substring(0, 500), origem: origem || 'tela' };
+  await kv(K_VIGENTE, novo); return novo;
+}
+async function planoEstrAprovar({ comentario, plano }, usuario) {
+  let ras = await kv(K_RASCUNHO);
+  if (plano) ras = { plano: planoNormalizar(plano) }; // aprova o que está na tela (salva e aprova de uma vez)
+  if (!ras?.plano) { const vig = await kv(K_VIGENTE); if (vig) throw Object.assign(new Error('Não há rascunho com mudanças para aprovar'), { status: 400 }); ras = { plano: planoInicial() }; }
+  const novo = await _vigenteNovo(ras.plano, usuario, comentario, 'aprovação do rascunho');
+  await kv(K_RASCUNHO, { plano: novo.plano, salvo_em: _hoje(), base_versao: novo.versao, nao_salvo: true });
+  return { vigente: novo, sim: planoSimular(novo.plano) };
+}
+async function planoEstrRestaurar({ versao }) {
+  const vers = (await kv(K_VERSOES)) || []; const v = vers.find(x => Number(x.versao) === Number(versao));
+  if (!v) throw Object.assign(new Error('Versão não encontrada'), { status: 404 });
+  const r = { plano: v.plano, salvo_em: _hoje(), comentario: 'Restaurado da versão ' + v.versao, base_versao: v.versao };
+  await kv(K_RASCUNHO, r); return { rascunho: r, sim: planoSimular(r.plano) };
+}
+// REALIZADO por alavanca: leads e reuniões que vieram das trilhas (utm_campaign começa com "alv-<id>") e a receita
+// informada na tela. (Receita automática por alavanca depende de classificar cliente/projeto no QuickBooks — próximo passo.)
+async function planoEstrRealizado(plano) {
+  const sql = await getSql(); const P = planoNormalizar(plano || {});
+  let rows = [];
+  try { rows = await sql`SELECT substring(utm->>'campaign' from '^alv-([a-z0-9-]+?)_') AS alv, COUNT(*)::int AS leads, COUNT(reuniao_marcada_em)::int AS reunioes,
+      COUNT(*) FILTER (WHERE criado_em > NOW() - INTERVAL '30 days')::int AS leads_30d
+    FROM leads WHERE criado_em > NOW() - INTERVAL '90 days' AND COALESCE(status,'') <> 'qa_teste' AND utm->>'campaign' LIKE 'alv-%' GROUP BY 1`; }
+  catch (_) { rows = []; } // tabela de leads ainda não existe — sem realizado, sem erro
+  const por = Object.fromEntries(rows.filter(r => r.alv).map(r => [r.alv, r]));
+  return { janela: '90 dias', alavancas: P.alavancas.map(a => ({ id: a.id, leads_90d: por[a.id]?.leads || 0, leads_30d: por[a.id]?.leads_30d || 0, reunioes_90d: por[a.id]?.reunioes || 0, receita_realizada: a.receita_realizada })),
+    sem_trilha_aviso: rows.length ? null : 'Nenhum lead com trilha ainda — os posts e anúncios passam a marcar a trilha (utm_campaign "alv-…") a partir desta versão.' };
+}
+// ATLAS sugere o AJUSTE FINO (pesos, metas, status) a partir do realizado — fica PENDENTE até o fundador aprovar
+async function planoEstrSugerir({ automatico = false } = {}) {
+  const vig = await kv(K_VIGENTE); if (!vig?.plano) throw Object.assign(new Error('Aprove um plano primeiro — a sugestão de ajuste parte do plano vigente'), { status: 400 });
+  const [ctx, real] = await Promise.all([contexto(), planoEstrRealizado(vig.plano)]);
+  const P = vig.plano;
+  const t = await claude(`Você é ATLAS, estrategista-chefe da Atlantyx. Faça o AJUSTE FINO do plano estratégico vigente comparando o planejado com o realizado. ${REGRAS}
+Proponha no máximo 5 mudanças, só onde o dado justifica (ex.: trilha com muitos leads e nenhuma reunião → revisar oferta; trilha sem lead em 60 dias → baixar peso; meta fora do alcance → ajustar). Campos que pode mudar por alavanca: peso_campanha (0–100), status (${Object.keys(ALV_STATUS).join('|')}), receita_meta, margem_pct, taxa_fechamento, oferta. Se faltar dado para decidir, diga isso em vez de mudar.
+Responda SOMENTE JSON: {"resumo":"2 frases","mudancas":[{"alavanca":"id","campo":"...","de":"valor atual","para":"novo valor","por_que":"1 frase com o dado"}],"faltam_dados":["..."]}`,
+    [{ role: 'user', content: JSON.stringify({ plano_vigente: { versao: vig.versao, ...P }, simulacao: planoSimular(P), realizado: real, contexto: JSON.parse(resumoCtx(ctx)) }).substring(0, 22000) }], 1800);
+  const j = json(t); if (!j || !Array.isArray(j.mudancas)) throw new Error('A IA não devolveu a sugestão no formato esperado — tente de novo');
+  const ids = new Set(P.alavancas.map(a => a.id)), CAMPOS = ['peso_campanha', 'status', 'receita_meta', 'margem_pct', 'taxa_fechamento', 'oferta'];
+  const mud = j.mudancas.filter(m => ids.has(m.alavanca) && CAMPOS.includes(m.campo)).slice(0, 5)
+    .map(m => ({ alavanca: m.alavanca, nome: P.alavancas.find(a => a.id === m.alavanca)?.nome, campo: m.campo, de: P.alavancas.find(a => a.id === m.alavanca)?.[m.campo], para: m.para, por_que: String(m.por_que || '').substring(0, 300) }));
+  const aj = { id: novoId('aj'), em: _hoje(), base_versao: vig.versao, resumo: String(j.resumo || '').substring(0, 600), mudancas: mud, faltam_dados: (j.faltam_dados || []).slice(0, 5), status: 'pendente', automatico: !!automatico };
+  const L = (await kv(K_AJUSTES)) || []; await kv(K_AJUSTES, [aj, ...L].slice(0, 40)); return { ajuste: aj };
+}
+async function planoEstrAjusteDecidir({ id, decisao }, usuario) {
+  const L = (await kv(K_AJUSTES)) || []; const aj = L.find(x => x.id === id);
+  if (!aj || aj.status !== 'pendente') throw Object.assign(new Error('Sugestão não encontrada ou já decidida'), { status: 400 });
+  aj.status = decisao === 'aprovar' ? 'aprovado' : 'recusado'; aj.decidido_em = _hoje(); aj.decidido_por = usuario || 'fundador';
+  let novo = null;
+  if (aj.status === 'aprovado') {
+    const aplicar = pl => { const p = JSON.parse(JSON.stringify(pl)); for (const m of aj.mudancas) { const a = (p.alavancas || []).find(x => x.id === m.alavanca); if (a) a[m.campo] = ['status', 'oferta'].includes(m.campo) ? m.para : Number(String(m.para).replace(',', '.')); } return p; };
+    const vig = await kv(K_VIGENTE); novo = await _vigenteNovo(aplicar(vig.plano), usuario, 'Ajuste fino da ATLAS: ' + aj.resumo.substring(0, 200), 'ajuste ' + aj.id);
+    const ras = await kv(K_RASCUNHO); await kv(K_RASCUNHO, { ...(ras || {}), plano: aplicar(ras?.plano || vig.plano), base_versao: novo.versao, salvo_em: _hoje() });
+    aj.virou_versao = novo.versao;
+  }
+  await kv(K_AJUSTES, L); return { ajuste: aj, vigente: novo };
 }
 
 // ── Sala de Estratégia ──
@@ -143,7 +229,7 @@ async function salaRodada({ sessao_id, intervencao }) {
   const sql = await getSql(); const s = (await sql`SELECT * FROM est_sessoes WHERE id=${sessao_id}`)[0]; if (!s) throw new Error('Sessão não encontrada');
   const F = s.falas || []; const rodada = F.reduce((m, f) => Math.max(m, f.rodada || 0), 0) + 1;
   if (String(intervencao || '').trim()) F.push({ autor: 'fundador', texto: String(intervencao).trim().substring(0, 2000), rodada, em: new Date().toISOString() });
-  const [ctx, prem, plano] = await Promise.all([contexto(), premissas(), planoVigente()]);
+  const [ctx, prem, plano] = await Promise.all([contexto(), premissasCtx(), planoVigente()]);
   const base = `SALA DE ESTRATÉGIA DA ATLANTYX — tema: "${s.tema}"${s.objetivo ? '\nObjetivo da sessão: ' + s.objetivo : ''}
 
 PREMISSAS ESTRATÉGICAS: ${prem}
@@ -168,7 +254,7 @@ Fale SÓ da sua lente, tome posição clara (concorde ou discorde dos outros, ci
 async function salaSintese({ sessao_id }) {
   const sql = await getSql(); const s = (await sql`SELECT * FROM est_sessoes WHERE id=${sessao_id}`)[0]; if (!s) throw new Error('Sessão não encontrada');
   if (!(s.falas || []).length) throw new Error('Rode pelo menos uma rodada de debate antes da síntese');
-  const [ctx, prem] = await Promise.all([contexto(), premissas()]);
+  const [ctx, prem] = await Promise.all([contexto(), premissasCtx()]);
   const t = await claude(`Você é ATLAS, estrategista-chefe da Atlantyx. Feche a Sala de Estratégia num PLANO acionável, baseado SÓ no debate e no contexto. ${REGRAS}
 Responda SOMENTE JSON: {"decisao":"a escolha central em 1-2 frases","racional":"por que (3-4 frases, com os números)","objetivos":[{"objetivo":"...","kr":["resultado-chave mensurável com número e prazo"]}],"iniciativas":[{"titulo":"ação concreta","dono":"área ou papel","prazo":"AAAA-MM ou trimestre","impacto":"alto|medio|baixo","esforco":"P|M|G","destino_sugerido":"demanda|ideia|pauta"}],"riscos":[{"risco":"...","mitigacao":"..."}],"nao_fazer":["o que deixa de fazer para manter o foco"],"proximos_90_dias":["semana/mês: entrega"],"divergencias":["onde o comitê não concordou"],"pergunta_ao_fundador":"a decisão que só o fundador pode tomar"}
 destino_sugerido: "demanda" = mudança no sistema Atlantyx OS; "ideia" = novo negócio/produto a estudar; "pauta" = assunto para decidir na reunião semanal.`,
@@ -219,6 +305,14 @@ async function salaAcoes({ sessao_id, itens = [], rito_id }) {
 }
 
 async function handler(req, res) {
+  // v3.240: cron mensal — a ATLAS sugere o ajuste fino do plano vigente (fica pendente, nada muda sem o fundador)
+  if (req.method === 'GET' && req.query?.cron === 'ajuste_plano') {
+    try { const L = (await kv(K_AJUSTES)) || []; const ult = L.find(x => x.automatico);
+      if (ult && Date.now() - Date.parse(ult.em) < 25 * 864e5) return res.status(200).json({ success: true, pulado: 'sugestão automática recente' });
+      if (!(await kv(K_VIGENTE))?.plano) return res.status(200).json({ success: true, pulado: 'sem plano vigente' });
+      return res.status(200).json({ success: true, ...(await planoEstrSugerir({ automatico: true })) }); }
+    catch (e) { return res.status(500).json({ success: false, error: e.message }); }
+  }
   try {
     const b = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body) || {}; const sql = await getSql();
     const usuario = req.sessao?.login || req.usuario || null;
@@ -234,10 +328,15 @@ async function handler(req, res) {
       sala_abrir: () => salaAbrir(b), sala_rodada: () => salaRodada(b), sala_sintese: () => salaSintese(b), sala_aprovar: () => salaAprovar(b, usuario), sala_acoes: () => salaAcoes(b),
       sala_obter: async () => ({ sessao: (await sql`SELECT * FROM est_sessoes WHERE id=${b.id}`)[0] || null }),
       sala_excluir: async () => { await sql`DELETE FROM est_sessoes WHERE id=${b.id}`; return { ok: true }; },
+      // v3.240: plano estratégico cadastrado
+      plano_estr_obter: () => planoEstrObter(), plano_estr_simular: async () => ({ sim: planoSimular(b.plano || {}) }),
+      plano_estr_salvar: () => planoEstrSalvar(b, usuario), plano_estr_aprovar: () => planoEstrAprovar(b, usuario),
+      plano_estr_restaurar: () => planoEstrRestaurar(b), plano_estr_inicial: async () => ({ plano: planoInicial() }),
+      plano_estr_sugerir: () => planoEstrSugerir(), plano_estr_ajuste_decidir: () => planoEstrAjusteDecidir(b, usuario),
       ritos: async () => { try { const r = await chamar('reunioes', { action: 'ritos' }); return { ritos: (r.ritos || []).filter(x => x.ativo).map(x => ({ id: x.id, nome: x.nome, proxima_br: x.proxima_br })) }; } catch (_) { return { ritos: [] }; } },
     };
     if (!acoes[b.action]) return res.status(400).json({ success: false, error: 'Ação desconhecida' });
     return res.status(200).json({ success: true, ...(await acoes[b.action]()) });
-  } catch (e) { console.error('[estrategia]', e.message); return res.status(500).json({ success: false, error: e.message }); }
+  } catch (e) { console.error('[estrategia]', e.message); return res.status(e.status || 500).json({ success: false, error: e.message }); }
 }
 export default comGuarda(handler, 'estrategia');

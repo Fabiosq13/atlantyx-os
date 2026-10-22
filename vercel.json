@@ -270,6 +270,10 @@
     {
       "path": "/api/atv?cron=1",
       "schedule": "20 * * * *"
+    },
+    {
+      "path": "/api/estrategia?cron=ajuste_plano",
+      "schedule": "7 12 1 * *"
     }
   ],
   "headers": [
