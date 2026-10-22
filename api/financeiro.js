@@ -1,5 +1,6 @@
 import { comGuarda } from '../lib/qa-guard.js';
 import { casarReceitas, casarDespesas, compararReceitasSistema, compararDespesasSistema, resumoComparacao, identificarRetencao } from '../lib/conciliacao-mes.js'; // v3.242
+import { veredito as dupVeredito, chaveGrupo as dupChave, ROTULO as DUP_ROT } from '../lib/duplicidade-qb.js'; // v3.252
 import { termoPendencias, etapaPrazo } from '../lib/termo-regras.js'; // v3.129 · v3.196 prazo por etapa
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
@@ -246,6 +247,7 @@ async function handler(req, res) {
       desp_delete:           () => despDelete(params),
       desp_oco_editar:       () => despOcoEditar(params),   // v3.248
       dup_ignorar:           () => dupIgnorar(params),      // v3.248
+      dup_qb_marcar:         () => dupQbMarcar(params),     // v3.252
       desp_oco_excluir:      () => despOcoExcluir(params),  // v3.248
       desp_oco_desfazer:     () => despOcoDesfazer(params), // v3.248
       desp_ocorrencias:      () => despOcorrencias(params),
@@ -1484,7 +1486,7 @@ async function relatorioPagamentosEnviar({ apenas_gerar, para } = {}) {
 // cards e abas) e nos demais módulos. Complementa o e-mail das 8h sem repetir o que ele já aponta (termos, faturas
 // vencidas/sem termo, pagamentos em atraso e possíveis duplicados por fornecedor/valor). Cada item diz o impacto
 // (quais números ficam errados), como corrigir e em que tela.
-const _HIG_FORMATO = 2; // v3.251: muda quando o formato dos itens muda (ex.: links por lançamento) — o resultado guardado no formato antigo é refeito
+const _HIG_FORMATO = 5; // v3.251: muda quando o formato dos itens muda (ex.: links por lançamento) — o resultado guardado no formato antigo é refeito
 async function higienizacaoDados({ _forcar } = {}) {
   const sql = await getSql(), hoje = _hojeBR(), ano = parseInt(hoje), mesAtual = hoje.substring(0, 7);
   if (!_forcar) { try { const c = (await sql`SELECT value, updated_at FROM kv_store WHERE key = 'higienizacao_dados' LIMIT 1`)[0];
@@ -1509,32 +1511,47 @@ async function higienizacaoDados({ _forcar } = {}) {
     chk('Conciliação', async () => { if (!qb) return; const R = await Promise.all(meses.map(async m => { const fim = m === mesAtual ? hoje : mesFim(m); const r = await qbConciliacaoStatus({ data_inicio: mesIni(m), data_fim: fim }); return { m, r }; }));
       const pend = R.filter(x => x.r && x.r.pendentes > 0 && x.m !== mesAtual);
       if (pend.length) add({ id: 'conciliacao', sistema: 'QuickBooks · Bancos', gravidade: 'alta', titulo: 'Meses fechados com lançamentos bancários não conciliados', qtd: pend.reduce((a, x) => a + x.r.pendentes, 0), valor: round(pend.reduce((a, x) => a + x.r.valor_pendente, 0)),
-        impacto: 'Saldo em caixa, fôlego de caixa, conciliação % e DRE de caixa podem estar errados', acao: 'Conciliar no QuickBooks (Banking → Reconcile) ou na tela de Conciliação Bancária', tela: 's3conciliacao',
-        itens: pend.map(x => ({ texto: `${x.m.split('-').reverse().join('/')}: ${x.r.pendentes} de ${x.r.movimentos} movimentos não conciliados`, valor: x.r.valor_pendente, detalhe: (x.r.pendentes_amostra || []).slice(0, 5).map(l => `${dataBR(l.data)} ${l.tipo || ''} ${l.nome || ''} R$ ${l.valor}`).join(' · ') })) }); }),
+        impacto: 'Saldo em caixa, fôlego de caixa, conciliação % e DRE de caixa podem estar errados', acao: 'Conciliar no QuickBooks (menu Contabilidade → Conciliar, ou o botão “Conciliar” em Transações → Transações bancárias) ou na tela de Conciliação Bancária', link: (process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com') + '/app/reconcile', link_rot: 'Abrir “Conciliar” no QuickBooks', tela: 's3conciliacao',
+        itens: pend.map(x => ({ texto: `${x.m.split('-').reverse().join('/')}: ${x.r.pendentes} de ${x.r.movimentos} movimentos não conciliados`, valor: x.r.valor_pendente,
+          lancs: (x.r.pendentes_amostra || []).map(l => ({ texto: `${dataBR(l.data)} · ${l.tipo || ''} · ${l.nome || '(sem nome)'}${l.conta ? ' · ' + l.conta : ''}${l.memo ? ' · “' + String(l.memo).substring(0, 50) + '”' : ''}`, valor: Math.abs(l.valor || 0), url: l.qb_url })) })) }); }),
     // 3. contas a pagar (Bill) em aberto que já foram pagas no extrato — inflam o "A pagar" e os "pagamentos em atraso"
     chk('Bills pagas', async () => { if (!qb) return; const L = []; { const r = await despesasDuplicadas({}); (r.duplicadas || []).forEach(x => L.push(x)); } // v3.224: todas as vencidas
       if (L.length) add({ id: 'bills_pagas', sistema: 'QuickBooks · Contas a pagar', gravidade: 'alta', titulo: 'Contas a pagar em aberto que já aparecem pagas no extrato', qtd: L.length, valor: round(L.reduce((a, x) => a + x.valor, 0)),
-        impacto: 'Infla o card "A pagar", os pagamentos em atraso do e-mail e o fluxo de caixa futuro', acao: 'Registrar o pagamento (Pay bills) ou excluir a Bill duplicada — tela Conciliação → Despesas duplicadas', tela: 's3conciliacao',
+        impacto: 'Infla o card "A pagar", os pagamentos em atraso do e-mail e o fluxo de caixa futuro', acao: 'Registrar o pagamento (QuickBooks: + Novo → Pagar contas) ou excluir a conta a pagar duplicada — tela Conciliação → Despesas duplicadas', tela: 's3conciliacao',
         itens: L.slice(0, 30).map(x => ({ texto: `${x.fornecedor || ''} · venc. ${dataBR(x.vencimento)} · pago no extrato em ${dataBR(x.extrato_data)} (${x.confianca})`, valor: x.valor, link: x.bill_id ? _qbUrlTxn('conta:' + x.bill_id) : null })) }); }),
     // 4. duplicidades reais no QuickBooks (90 dias) — exceto as que o e-mail já mostra
-    chk('Duplicidades QB', async () => { if (!qb) return; const [r, dupEmail] = await Promise.all([qbVarrerDuplicados({}), dupEmailP]); const S = (r.varredura?.suspeitos || []).filter(x => x.classificacao === 'duplicidade_real' && !dupEmail.has(Math.round(x.valor)));
-      if (S.length) add({ id: 'dup_qb', sistema: 'QuickBooks', gravidade: 'alta', titulo: 'Lançamentos registrados em duplicidade no QuickBooks (90 dias)', qtd: S.length, valor: round(S.reduce((a, x) => a + (x.impacto_no_caixa || 0), 0)),
-        impacto: 'Receita/despesa e caixa contados duas vezes — DRE, margem, EBITDA e saldo', acao: 'Excluir a cópia no QuickBooks (tela Fluxo Detalhado → Procurar duplicados)', tela: 's3fluxodet',
-        itens: S.slice(0, 25).map(x => ({ texto: `${x.contraparte} · ${x.registros.length} registros iguais (${x.registros.map(g => dataBR(g.data) + ' ' + (_QB_ENT_PT[g.entidade] || g.entidade || g.tipo || '')).join(', ')})`, valor: x.valor,
+    chk('Duplicidades QB', async () => { if (!qb) return; const [r, dupEmail] = await Promise.all([qbVarrerDuplicados({}), dupEmailP]);
+      // v3.252: veredito por grupo (é cópia mesmo?) + o que a pessoa já marcou na tela
+      const marcas = (await _kvFin('fin:dup_qb_marcas')) || {};
+      const S = (r.varredura?.suspeitos || []).filter(x => x.classificacao !== 'vinculado' && !dupEmail.has(Math.round(x.valor)))
+        .map(x => { const ch = dupChave(x.registros), m = marcas[ch]; const v = m ? { tipo: m.marca === 'sim' ? 'duplicado' : 'nao_e', texto: (m.marca === 'sim' ? 'confirmado como duplicado' : 'marcado como não duplicado') + ' na tela em ' + dataBR(String(m.em).slice(0, 10)), marcado: true } : dupVeredito(x.registros); return { ...x, ch, v }; })
+        .filter(x => x.v.tipo !== 'nao_e');
+      const ordem = { duplicado: 0, provavel: 1, conferir: 2 }; S.sort((a, b) => ordem[a.v.tipo] - ordem[b.v.tipo] || b.valor - a.valor);
+      const certos = S.filter(x => x.v.tipo !== 'conferir');
+      if (S.length) add({ id: 'dup_qb', sistema: 'QuickBooks', gravidade: certos.length ? 'alta' : 'media', titulo: 'Lançamentos registrados em duplicidade no QuickBooks (90 dias)', qtd: S.length, valor: round(certos.reduce((a, x) => a + x.valor * (x.registros.length - 1), 0)),
+        impacto: 'Receita/despesa e caixa contados duas vezes — DRE, margem, EBITDA e saldo', acao: 'Abra os lançamentos de cada linha no QuickBooks e exclua a cópia; o que não for cópia, marque "Não é duplicado"', tela: 's3fluxodet',
+        itens: S.slice(0, 40).map(x => ({ texto: `${x.contraparte} · ${x.registros.length} registros iguais (${x.registros.map(g => dataBR(g.data) + ' ' + (_QB_ENT_PT[g.entidade] || g.entidade || g.tipo || '')).join(', ')})`, valor: x.valor,
+          veredito: { tipo: x.v.tipo, rotulo: DUP_ROT[x.v.tipo], texto: x.v.texto, marcado: !!x.v.marcado }, dup_chave: x.ch,
           // v3.250: um link por registro — abre cada lançamento no QuickBooks para comparar e excluir a cópia
-          links: x.registros.map((g, k) => { const u = g.id && _QB_ENT_TELA[g.entidade] ? _qbUrlTxn(_QB_ENT_TELA[g.entidade] + ':' + g.id) : null; return u ? { rot: (k + 1) + 'º ' + (_QB_ENT_PT[g.entidade] || '') + ' ' + dataBR(g.data) + (g.doc ? ' nº ' + g.doc : ''), url: u, memo: g.memo || '' } : null; }).filter(Boolean) })) }); }),
+          links: x.registros.map((g, k) => { const u = g.id && _QB_ENT_TELA[g.entidade] ? _qbUrlTxn(_QB_ENT_TELA[g.entidade] + ':' + g.id) : null; return u ? { rot: (k + 1) + 'º ' + (_QB_ENT_PT[g.entidade] || '') + ' ' + dataBR(g.data) + (g.doc ? ' nº ' + g.doc : ''), url: u, memo: [g.conta, g.memo].filter(Boolean).join(' · ') } : null; }).filter(Boolean) })) }); }),
     // 5. contas sem categoria no resultado do ano
     chk('Sem categoria', async () => { if (!qb) return; const r = await dreArvore({ data_inicio: ano + '-01-01', data_fim: hoje }); const L = [];
       const anda = n => { (n || []).forEach(x => { if (x.tipo === 'conta' || x.tipo === 'secao') { if (/uncategori|n[aã]o categoriz|sem categoria|ask my accountant|pergunte ao contador|opening balance|saldo de abertura|suspense|a classificar/i.test(x.nome) && Math.abs(x.total) > 0.009) L.push(x); } anda(x.filhos); }); };
       anda(r.dre?.arvore);
       if (L.length) add({ id: 'sem_categoria', sistema: 'QuickBooks · DRE', gravidade: 'media', titulo: `Valores em contas sem categoria no resultado de ${ano}`, qtd: L.length, valor: round(L.reduce((a, x) => a + Math.abs(x.total), 0)),
         impacto: 'DRE, custos × despesas, margem bruta e EBITDA distorcidos; cards de Pessoas/Projetos/Produtos sem a parte não classificada', acao: 'Reclassificar os lançamentos para a conta correta (abra o DRE e clique na conta para ver cada lançamento)', tela: 's3dashboard', abrir_dre: true,
-        itens: L.map(x => ({ texto: x.nome, valor: Math.abs(x.total), conta_id: x.conta_id })) }); }),
+        itens: await Promise.all(L.map(async x => { let lancs = [];
+          if (x.conta_id) { try { const g = await lim(dreContaLancamentos({ conta_id: x.conta_id, data_inicio: ano + '-01-01', data_fim: hoje }), 15000);
+            lancs = (g.lancamentos || []).slice(0, 40).map(l => ({ texto: `${dataBR(l.data)} · ${l.tipo || ''}${l.doc ? ' nº ' + l.doc : ''} · ${l.nome || '(sem nome)'}${l.memo ? ' · “' + String(l.memo).substring(0, 50) + '”' : ''}${l.contrapartida ? ' · contrapartida ' + l.contrapartida : ''}`, valor: Math.abs(l.valor), url: l.qb_url })); } catch (_) {} }
+          return { texto: x.nome + (lancs.length ? ' · ' + lancs.length + ' lançamento(s) — abra cada um e troque a categoria' : ''), valor: Math.abs(x.total), conta_id: x.conta_id, lancs }; })) }); }),
     // 6. saídas recorrentes do extrato sem despesa programada — o fluxo futuro não as enxerga
     chk('Despesas não cadastradas', async () => { const r = await despesasNaoCadastradas({ meses: 3 }); const L = (r.candidatas || []).filter(c => c.ocorrencias >= 2);
       if (L.length) add({ id: 'desp_nao_cad', sistema: 'Financeiro · Agenda de despesas', gravidade: 'media', titulo: 'Despesas recorrentes pagas que não estão na agenda de despesas', qtd: L.length, valor: round(L.reduce((a, x) => a + x.valor, 0)),
         impacto: 'Fluxo de caixa futuro, "A pagar" projetado e fôlego de caixa ficam otimistas (essas saídas não entram na projeção)', acao: 'Cadastrar como despesa programada (Agenda de Despesas → Despesas não cadastradas)', tela: 's3agenda',
-        itens: L.slice(0, 25).map(x => ({ texto: `${x.descricao} · ${x.ocorrencias}x nos últimos 3 meses · dia ~${x.dia_vencimento_sugerido}`, valor: x.valor })) }); }),
+        itens: L.slice(0, 40).map(x => { // v3.252: dados prontos para o cadastro na Agenda (nome limpo do extrato)
+          const nome = String(x.descricao || '').replace(/^(sa[ií]da\s+)?(pix|ted|doc|transf\w*)\s+(enviad[oa]|recebid[oa])?\s*/i, '').replace(/\b\d{2,3}[.\s]?\d{3}[.\s]?\d{3}[\/\-.\s]?\d{0,4}[-\s]?\d{2}\b/g, '').replace(/\s{2,}/g, ' ').trim() || x.descricao;
+          return { texto: `${x.descricao} · ${x.ocorrencias}x nos últimos 3 meses · dia ~${x.dia_vencimento_sugerido}`, valor: x.valor,
+            cadastro: { descricao: nome.substring(0, 120), fornecedor: nome.substring(0, 100), valor: x.valor, dia: x.dia_vencimento_sugerido, recorrencia: x.recorrencia_sugerida || 'mensal' } }; }) }); }),
     // 7. despesas programadas incompletas
     chk('Despesas programadas', async () => { const L = await sql`SELECT id, descricao, fornecedor, valor, categoria FROM despesas_programadas WHERE ativa = true AND (COALESCE(valor,0) <= 0 OR COALESCE(TRIM(categoria),'') = '' OR COALESCE(TRIM(fornecedor),'') = '')`;
       if (L.length) add({ id: 'desp_incompletas', sistema: 'Financeiro · Agenda de despesas', gravidade: 'baixa', titulo: 'Despesas programadas sem valor, categoria ou fornecedor', qtd: L.length, valor: round(L.reduce((a, x) => a + (parseFloat(x.valor) || 0), 0)),
@@ -1551,7 +1568,8 @@ async function higienizacaoDados({ _forcar } = {}) {
       const D = Object.values(g).filter(l => l.length > 1);
       if (D.length) add({ id: 'prev_dup', sistema: 'QuickBooks · Previsões de faturamento', gravidade: 'media', titulo: 'Previsões de faturamento duplicadas no QuickBooks', qtd: D.reduce((a, l) => a + l.length - 1, 0), valor: round(D.reduce((a, l) => a + l.slice(1).reduce((s2, e) => s2 + e.valor, 0), 0)),
         impacto: 'Receita prevista e fluxo de caixa futuro contados em dobro', acao: 'Projetos & Marcos → "Limpar previsões duplicadas"', tela: 's3projetos',
-        itens: D.slice(0, 20).map(l => ({ texto: `${l[0].cliente || ''} · ${l.length} estimativas para o mesmo marco (${l.map(e => e.doc || e.id).join(', ')})`, valor: l[0].valor })) }); }),
+        itens: D.slice(0, 20).map(l => ({ texto: `${l[0].cliente || ''} · ${l.length} estimativas para o mesmo marco (${l.map(e => e.doc || e.id).join(', ')})`, valor: l[0].valor,
+          links: l.map((e, k) => ({ rot: (k + 1) + 'ª estimativa ' + (e.doc ? 'nº ' + e.doc : '#' + e.id), url: (process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com') + '/app/estimate?txnId=' + e.id })) })) }); }),
     // 10. orçamento do ano ausente no QuickBooks
     chk('Orçamento', async () => { if (!qb) return; const r = await qbOrcamento({ ano }); const ok = r?.orcamento && String(r.orcamento.inicio || r.orcamento.StartDate || r.orcamento.periodo || '').includes(String(ano));
       if (!r?.orcamento || r.motivo) add({ id: 'orcamento', sistema: 'Planejamento · Orçamento', gravidade: 'media', titulo: `Sem orçamento de ${ano} no QuickBooks`, qtd: 1, impacto: 'Card "Planejado × realizado" e metas de gastos do Dashboard ficam vazios ou usam outro ano', acao: 'Cadastrar o orçamento do ano (Orçamento Anual / Budgets no QuickBooks)', tela: 's3orcamento', itens: [{ texto: r?.motivo || 'nenhum orçamento encontrado' }] }); }),
@@ -2189,7 +2207,8 @@ async function qbVarrerDuplicados({ data_inicio, data_fim, tolerancia_dias = 3 }
           valor: Math.round(parseFloat(it.TotalAmt || 0) * 100) / 100,
           contraparte: it.CustomerRef?.name || it.VendorRef?.name || it.EntityRef?.name || '',
           vinculos, criado_em: it.MetaData?.CreateTime || null,
-          memo: (it.PrivateNote || it.CustomerMemo?.value || '').substring(0, 80) });
+          conta: it.AccountRef?.name || it.DepositToAccountRef?.name || it.APAccountRef?.name || it.CheckPayment?.BankAccountRef?.name || it.CreditCardPayment?.CCAccountRef?.name || '', // v3.252
+          memo: (it.PrivateNote || it.CustomerMemo?.value || (it.Line || [])[0]?.Description || '').substring(0, 80) });
       });
     } catch (e) { errosConsulta.push(`${ent}: ${e.message}`); }
   }
@@ -4109,6 +4128,9 @@ async function despOcoDesfazer({ id } = {}) {
 async function _kvFin2(k, v) { const sql = await getSql();
   if (v === undefined) { try { const r = await sql`SELECT value FROM kv_store WHERE key = ${k}`; const x = r[0]?.value; return x == null ? null : (typeof x === 'string' ? JSON.parse(x) : x); } catch (_) { return null; } }
   await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; return v; }
+async function dupQbMarcar({ chave, marca } = {}) { if (!chave || !['sim', 'nao', 'limpar'].includes(marca)) throw Object.assign(new Error('chave e marca (sim|nao|limpar) obrigatórias'), { status: 400 });
+  const m = (await _kvFin2('fin:dup_qb_marcas')) || {}; const k = String(chave).substring(0, 400); if (marca === 'limpar') delete m[k]; else m[k] = { marca, em: new Date().toISOString() };
+  await _kvFin2('fin:dup_qb_marcas', m); try { const sql = await getSql(); await sql`DELETE FROM kv_store WHERE key = 'higienizacao_dados'`; } catch (_) {} return { ok: true }; }
 async function dupIgnorar({ chave } = {}) { if (!chave) throw Object.assign(new Error('chave obrigatória'), { status: 400 });
   const m = (await _kvFin2('fin:dup_ignorados')) || {}; m[String(chave).substring(0, 200)] = new Date().toISOString(); await _kvFin2('fin:dup_ignorados', m); return { ok: true }; }
 
@@ -7196,15 +7218,22 @@ async function qbConciliacaoStatus({ data_inicio, data_fim, conta_id = null } = 
   const token = await qbToken();
   let nomeConta = null;
   if (conta_id) { try { const a = await qbFetch(`/account/${conta_id}`, token); nomeConta = a?.Account?.Name || null; } catch (_) {} }
-  const base = `/reports/TransactionList?start_date=${data_inicio}&end_date=${data_fim}&source_account_type=Bank&columns=tx_date,txn_type,doc_num,name,memo,account_name,subt_nat_amount`;
+  const base = `/reports/TransactionList?start_date=${data_inicio}&end_date=${data_fim}&source_account_type=Bank&columns=tx_date,txn_type,doc_num,name,memo,account_name,subt_nat_amount,nat_amount`;
   const ler = async (extra) => {
     const rep = await qbFetch(base + extra, token);
     const cols = (rep?.Columns?.Column || []).map(c => (c.MetaData || []).find(m => m.Name === 'ColKey')?.Value || c.ColTitle || '');
-    const iC = cols.indexOf('account_name'), iV = cols.indexOf('subt_nat_amount'), iD = cols.indexOf('tx_date'), iT = cols.indexOf('txn_type'), iN = cols.indexOf('name');
+    const titulos = (rep?.Columns?.Column || []).map(c => String(c.ColTitle || ''));
+    // v3.252: a coluna de valor do TransactionList nem sempre vem como subt_nat_amount (e o valor saía R$ 0)
+    let iV = ['subt_nat_amount', 'nat_amount', 'amount', 'subt_nat_home_amount'].map(k => cols.indexOf(k)).find(i => i >= 0) ?? -1;
+    if (iV < 0) iV = titulos.findIndex(t => /amount|valor|quantia|montante/i.test(t));
+    const iC = cols.indexOf('account_name'), iD = cols.indexOf('tx_date'), iT = cols.indexOf('txn_type'), iN = cols.indexOf('name');
     const linhas = []; const andar = rows => (rows || []).forEach(r => { if (r.type === 'Data' || (!r.type && r.ColData)) linhas.push(r); if (r.Rows?.Row) andar(r.Rows.Row); });
     andar(rep?.Rows?.Row);
-    return linhas.map(r => { const cd = r.ColData || []; return { id: cd[iD >= 0 ? iD : 0]?.id || cd[iT >= 0 ? iT : 1]?.id || null, data: cd[iD]?.value, tipo: cd[iT]?.value, nome: cd[iN]?.value,
-      conta: iC >= 0 ? cd[iC]?.value : null, valor: parseFloat(cd[iV]?.value) || 0 }; })
+    return linhas.map(r => { const cd = r.ColData || []; const tid = cd[iT >= 0 ? iT : 1]?.id || cd[iD >= 0 ? iD : 0]?.id || null, tipo = cd[iT]?.value;
+      const tela = (_QB_TIPO_TELA.find(([re]) => re.test(String(tipo || ''))) || [])[1];
+      return { id: tid, data: cd[iD]?.value, tipo, nome: cd[iN]?.value, memo: cols.indexOf('memo') >= 0 ? cd[cols.indexOf('memo')]?.value || '' : '',
+      conta: iC >= 0 ? cd[iC]?.value : null, valor: iV >= 0 ? parseFloat(String(cd[iV]?.value || '').replace(/,/g, '')) || 0 : 0,
+      qb_url: tid && tela ? (process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com') + '/app/' + tela + '?txnId=' + tid : null }; })
       .filter(l => !nomeConta || !l.conta || l.conta === nomeConta || String(l.conta).endsWith(':' + nomeConta));
   };
   const [tod, rec, cle] = await Promise.all([ler(''), ler('&cleared=Reconciled'), ler('&cleared=Cleared')]);
@@ -7213,7 +7242,7 @@ async function qbConciliacaoStatus({ data_inicio, data_fim, conta_id = null } = 
   const pend = tod.filter(l => !ok.has(chave(l)));
   return { movimentos: tod.length, reconciliados: rec.length, compensados: cle.length, pendentes: Math.max(0, tod.length - rec.length - cle.length),
     valor_pendente: round(pend.reduce((s, l) => s + Math.abs(l.valor), 0)),
-    pendentes_amostra: pend.slice(0, 15).map(l => ({ data: l.data, tipo: l.tipo, nome: l.nome, conta: l.conta, valor: l.valor })) };
+    pendentes_amostra: pend.slice(0, 40).map(l => ({ data: l.data, tipo: l.tipo, nome: l.nome, conta: l.conta, valor: l.valor, memo: l.memo, qb_url: l.qb_url })) };
 }
 async function conciliacaoStatus({ data_inicio, data_fim, conta_id = null } = {}) {
   const sql = await getSql();

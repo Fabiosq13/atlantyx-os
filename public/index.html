@@ -31128,11 +31128,34 @@ function _fhRender() {
     + '<button class="btn btn-g" style="font-size:9px;padding:3px 9px;margin-left:auto;" onclick="finHigCarregar(true)">&#8635; Verificar de novo</button></div>'
     + D.itens.map((x, i) => '<details class="fh-item" style="--c:' + cor[x.gravidade] + '"><summary><span class="fh-sev">' + nomeG[x.gravidade] + '</span><span class="fh-sis">' + _qpEsc(x.sistema) + '</span><b>' + _qpEsc(x.titulo) + '</b><span class="fh-n">' + (x.qtd > 1 || x.valor ? x.qtd + (x.valor ? ' · ' + brl(x.valor) : '') : '') + '</span></summary>'
       + '<div class="fh-det"><div><b>Impacto:</b> ' + _qpEsc(x.impacto) + '</div><div><b>Como corrigir:</b> ' + _qpEsc(x.acao) + '</div>'
-      + (x.itens?.length ? '<div class="fh-lista">' + x.itens.map(it => '<div>• ' + _qpEsc(it.texto) + (it.valor ? ' <span class="fh-v">' + brl(it.valor) + '</span>' : '') + (it.link ? ' <a href="' + _qpEsc(it.link) + '" target="_blank" rel="noopener">abrir ↗</a>' : '') + (it.links?.length ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:3px 0 4px 10px;">' + it.links.filter(l => /^https:\/\//.test(l.url)).map(l => '<a class="btn btn-g" style="font-size:9.5px;padding:2px 8px;text-decoration:none;" href="' + _qpEsc(l.url) + '" target="_blank" rel="noopener" title="' + _qpEsc(l.memo || 'abrir no QuickBooks') + '">' + _qpEsc(l.rot) + ' ↗</a>').join('') + '</div>' : '') + (it.detalhe ? '<div class="fv2-pq" style="margin-left:10px;">' + _qpEsc(it.detalhe) + '</div>' : '') + '</div>').join('') + '</div>' : '')
-      + (x.tela ? '<button class="btn btn-g" style="font-size:10px;margin-top:6px;" onclick="finHigIr(' + i + ')">Ir para a tela ↗</button>' : '') + '</div></details>').join('')
+      + (x.itens?.length ? '<div class="fh-lista">' + x.itens.map((it, j) => '<div>• ' + (it.veredito ? '<span style="display:inline-block;font-size:9.5px;font-weight:700;padding:1px 7px;border-radius:8px;margin-right:5px;background:' + ({ duplicado: 'rgba(255,79,79,.15)', provavel: 'rgba(255,140,60,.15)', conferir: 'rgba(245,185,75,.15)' }[it.veredito.tipo] || 'rgba(34,211,163,.15)') + ';color:' + ({ duplicado: 'var(--fv2-crit)', provavel: 'var(--fv2-crit)', conferir: 'var(--fv2-warn)' }[it.veredito.tipo] || 'var(--fv2-ok)') + ';">' + _qpEsc(it.veredito.rotulo) + '</span>' : '') + _qpEsc(it.texto) + (it.valor ? ' <span class="fh-v">' + brl(it.valor) + '</span>' : '')
+      + (it.veredito ? '<div class="fv2-pq" style="margin-left:10px;">' + _qpEsc(it.veredito.texto) + '</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin:3px 0 2px 10px;">' + (it.veredito.marcado ? '<button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="fhDupMarcar(' + i + ',' + j + ',\'limpar\')">↺ Desfazer marcação</button>'
+        : '<button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;color:var(--fv2-crit);" onclick="fhDupMarcar(' + i + ',' + j + ',\'sim\')">✓ É duplicado mesmo</button><button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="fhDupMarcar(' + i + ',' + j + ',\'nao\')">✕ Não é duplicado</button>') + '</div>' : '') + (it.link ? ' <a href="' + _qpEsc(it.link) + '" target="_blank" rel="noopener">abrir ↗</a>' : '') + (it.links?.length ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:3px 0 4px 10px;">' + it.links.filter(l => /^https:\/\//.test(l.url)).map(l => '<a class="btn btn-g" style="font-size:9.5px;padding:2px 8px;text-decoration:none;" href="' + _qpEsc(l.url) + '" target="_blank" rel="noopener" title="' + _qpEsc(l.memo || 'abrir no QuickBooks') + '">' + _qpEsc(l.rot) + ' ↗</a>').join('') + '</div>' : '') + (it.detalhe ? '<div class="fv2-pq" style="margin-left:10px;">' + _qpEsc(it.detalhe) + '</div>' : '') + (it.conta_id ? ' <a href="#" onclick="finHigDre(' + i + ',' + j + ');return false;">ver na DRE ↗</a>' : '') + (it.cadastro ? ' <a href="#" onclick="finHigCadastrar(' + i + ',' + j + ');return false;">+ cadastrar na Agenda ↗</a>' : '') + (it.lancs?.length ? '<div style="margin:3px 0 4px 12px;border-left:2px solid var(--bd);padding-left:8px;">' + it.lancs.map(l => '<div style="font-size:10.5px;display:flex;gap:8px;align-items:baseline;padding:1px 0;"><span style="flex:1;">' + _qpEsc(l.texto) + '</span>' + (l.valor ? '<span class="fh-v" style="white-space:nowrap;">' + brl(l.valor) + '</span>' : '') + (l.url && /^https:\/\//.test(l.url) ? '<a href="' + _qpEsc(l.url) + '" target="_blank" rel="noopener" style="white-space:nowrap;">abrir no QuickBooks ↗</a>' : '<span style="color:var(--t3);font-size:9.5px;">sem link</span>') + '</div>').join('') + '</div>' : '') + '</div>').join('') + '</div>' : '')
+      + (x.link && /^https:\/\//.test(x.link) ? '<a class="btn btn-g" style="font-size:10px;margin-top:6px;margin-right:6px;text-decoration:none;display:inline-block;" href="' + _qpEsc(x.link) + '" target="_blank" rel="noopener">' + _qpEsc(x.link_rot || 'Abrir no QuickBooks') + ' ↗</a>' : '')+ (x.tela ? '<button class="btn btn-g" style="font-size:10px;margin-top:6px;" onclick="finHigIr(' + i + ')">Ir para a tela ↗</button>' : '') + '</div></details>').join('')
     + (D.erros?.length ? '<div class="fv2-pq" style="margin-top:6px;">Não verificado agora: ' + _qpEsc(D.erros.join(' · ')) + '</div>' : '');
 }
-function finHigIr(i) { const x = _fhUlt?.itens?.[i]; if (!x) return; nav(x.tela, document.querySelector('.sbi[onclick*="' + x.tela + '"]')); if (x.abrir_dre) setTimeout(() => { try { dreAbrir(); } catch (_) {} }, 1500); }
+// v3.252: marcar na Higienização se é cópia mesmo (some da lista) ou confirmar (fica marcado até ser excluído no QuickBooks)
+async function fhDupMarcar(i, j, marca) { const it = _fhUlt?.itens?.[i]?.itens?.[j]; if (!it?.dup_chave) return;
+  if (marca === 'nao' && !confirm('Marcar como "não é duplicado"? A linha sai da lista.')) return;
+  try { await finApi('dup_qb_marcar', { chave: it.dup_chave, marca }); toast(marca === 'sim' ? 'Confirmado como duplicado — exclua a cópia no QuickBooks pelos botões' : marca === 'nao' ? 'Ok — não aparece mais' : 'Marcação desfeita', 'success'); finHigCarregar(true); }
+  catch (e) { toast('Erro: ' + e.message, 'error'); } }
+function finHigIr(i) { const x = _fhUlt?.itens?.[i]; if (!x) return;
+  // v3.252: contas sem categoria → abre a DRE no período verificado (ano até hoje), já na conta e com os lançamentos
+  if (x.abrir_dre) { const hj = new Date().toLocaleDateString('sv-SE'); const c = (x.itens || []).find(t => t.conta_id);
+    return dreAbrir({ data_inicio: hj.slice(0, 4) + '-01-01', data_fim: hj }, 'Cash', c ? { conta_id: c.conta_id } : { nome: 'uncategori|n[aã]o categoriz|sem categoria|a classificar' }); }
+  nav(x.tela, document.querySelector('.sbi[onclick*="' + x.tela + '"]')); }
+// v3.252: abre a Agenda de Despesas com o cadastro já preenchido (a pessoa confere e clica em + Cadastrar)
+function finHigCadastrar(i, j) { const c = _fhUlt?.itens?.[i]?.itens?.[j]?.cadastro; if (!c) return;
+  nav('s3agenda', document.querySelector('.sbi[onclick*="\'s3agenda\'"]'));
+  setTimeout(() => { const set = (id, v) => { const e = document.getElementById(id); if (e) { e.value = v ?? ''; e.style.boxShadow = '0 0 0 2px var(--gold)'; setTimeout(() => e.style.boxShadow = '', 4000); } };
+    const hj = new Date(), dia = Math.min(28, Math.max(1, parseInt(c.dia) || 10)); let ini = new Date(hj.getFullYear(), hj.getMonth(), dia); if (ini < new Date(hj.getFullYear(), hj.getMonth(), hj.getDate())) ini = new Date(hj.getFullYear(), hj.getMonth() + 1, dia);
+    set('f_desp_desc', c.descricao); set('f_desp_forn', c.fornecedor); set('f_desp_valor', Number(c.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })); set('f_desp_dia', dia);
+    set('f_desp_inicio', ini.toLocaleDateString('sv-SE'));
+    const chk = document.getElementById('f_desp_recorrente'); if (chk && c.recorrencia !== 'unica') { chk.checked = true; try { _despToggleRecorrencia(); } catch (_) {} const r = document.getElementById('f_desp_rec'); if (r) r.value = c.recorrencia; }
+    const cat = document.getElementById('f_desp_cat'); if (cat) { cat.focus(); cat.scrollIntoView({ block: 'center' }); cat.style.boxShadow = '0 0 0 2px var(--gold)'; setTimeout(() => cat.style.boxShadow = '', 4000); }
+    toast('Cadastro preenchido — informe a categoria, confira e clique em + Cadastrar', 'success'); }, 700); }
+function finHigDre(i, j) { const it = _fhUlt?.itens?.[i]?.itens?.[j]; if (!it?.conta_id) return; const hj = new Date().toLocaleDateString('sv-SE');
+  dreAbrir({ data_inicio: hj.slice(0, 4) + '-01-01', data_fim: hj }, 'Cash', { conta_id: it.conta_id }); }
 function finDiaAbrir() { const d = _fdUlt?.d; if (!d) return finDiaCarregar(true); const w = window.open('', '_blank'); if (w) { w.document.write(d.html); w.document.close(); } }
 function _fdMin(min) { const c = document.getElementById('finDiaCorpo'), r = document.getElementById('finDiaResumo'), b = document.getElementById('finDiaBtnMin'); if (!c) return; c.style.display = min ? 'none' : ''; if (b) b.innerHTML = min ? '&#9660; Mostrar' : '&#9650; Recolher'; }
 function finDiaMinimizar() { const min = document.getElementById('finDiaCorpo').style.display !== 'none'; _fdMin(min); try { localStorage.setItem('atx_findia_min', min ? '1' : '0'); } catch (_) {} if (!min) finDiaCarregar(); }
@@ -32257,7 +32280,7 @@ function _dreCliqueCartoes(box, per) {
   box.querySelectorAll('.res-card').forEach(c => { if (c.closest('#liveRes2')) return; c.style.cursor = 'pointer'; c.title = 'Clique para abrir a DRE e ver de onde vem o valor'; });
   box.onclick = e => { if (e.target.closest('.tip-i, a, button')) return; const c = e.target.closest('.res-card'); if (!c || c.closest('#liveRes2')) return; dreAbrir(per()); };
 }
-async function dreAbrir(per, metodo) {
+async function dreAbrir(per, metodo, foco) { // v3.252: foco = { conta_id | nome } → abre já na conta, com os lançamentos
   per = per || {}; metodo = metodo || _finMetodo();
   const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   let ov = document.getElementById('dreModal'); if (ov) ov.remove();
@@ -32286,7 +32309,20 @@ async function dreAbrir(per, metodo) {
     const marca = (n, path) => { (n.filhos || []).forEach((f, i) => marca(f, path + '.' + i)); };
     D.arvore.forEach((n, i) => { if (n.filhos?.length) _dreEstado.abertos.add(String(i)); marca(n, String(i)); });
     _dreRender();
+    if (foco) setTimeout(() => _dreFocar(foco), 50);
   } catch (e) { document.getElementById('dreCorpo').innerHTML = '<div style="color:var(--red);font-size:11px;padding:16px;">Não consegui abrir a DRE: ' + esc(_errQbAmigavel(e.message)) + '</div>'; }
+}
+function _dreFocar(foco) {
+  const { D } = _dreEstado; let alvo = null;
+  const re = foco.nome ? new RegExp(foco.nome, 'i') : null;
+  const busca = (n, p) => { if (alvo) return; if ((foco.conta_id && String(n.conta_id) === String(foco.conta_id)) || (re && n.conta_id && re.test(n.nome))) { alvo = { n, p }; return; } (n.filhos || []).forEach((f, i) => busca(f, p + '.' + i)); };
+  D.arvore.forEach((n, i) => busca(n, String(i)));
+  if (!alvo) { toast('A conta não aparece neste período da DRE', 'error'); return; }
+  const partes = alvo.p.split('.'); for (let k = 1; k < partes.length; k++) _dreEstado.abertos.add(partes.slice(0, k).join('.'));
+  _dreRender();
+  const tr = document.getElementById('dreL_' + alvo.p.replace(/\./g, '_')); const linha = tr?.previousElementSibling;
+  if (linha) { linha.style.outline = '2px solid var(--gold)'; linha.style.background = 'rgba(245,185,75,.12)'; linha.scrollIntoView({ block: 'center' }); }
+  dreConta(alvo.n.conta_id, String(alvo.n.nome || '').replace(/'/g, ''), null, alvo.p);
 }
 function dreExpandirTudo() { if (!_dreEstado) return; const S = _dreEstado.abertos; const tudo = (n, p) => { if (n.filhos?.length) { S.add(p); n.filhos.forEach((f, i) => tudo(f, p + '.' + i)); } }; _dreEstado.D.arvore.forEach((n, i) => tudo(n, String(i))); _dreRender(); }
 function _dreToggle(p) { const S = _dreEstado.abertos; S.has(p) ? S.delete(p) : S.add(p); _dreRender(); }
@@ -35136,7 +35172,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.251] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.252] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35152,7 +35188,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.251';
+window.__ATX_BUILD_ID__ = 'ATX-v3.252';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
