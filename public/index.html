@@ -21250,7 +21250,7 @@ function renderMarcosLista() {
     </tr></thead>
     <tbody>${_projetoAberto.marcos.map(m => {
       const k = KL[m.status_kanban] || { l: m.status_kanban, c: '#888' };
-      return `<tr style="border-bottom:1px solid rgba(255,255,255,.03);">
+      return `<tr style="border-bottom:1px solid rgba(255,255,255,.03);cursor:pointer;" title="Duplo clique para editar" ondblclick="if(!event.target.closest('button'))abrirFormMarco('${m.id}')">
         <td style="padding:7px;">${_dsE(m.descricao)}</td>
         <td style="padding:7px;text-align:center;font-family:var(--M);font-size:10px;color:var(--t2);">${m.data_entrega || '-'}</td>
         <td style="padding:7px;text-align:right;font-family:var(--M);font-weight:600;">${fmtBRLcompleto(m.valor)}</td>
@@ -21490,7 +21490,7 @@ function renderMarcoCard(m, colKey) {
   }
   acoes += voltar;
   acoes += `<button class="btn" style="font-size:8.5px;padding:2px 8px;margin-top:4px;margin-left:4px;" onclick="event.stopPropagation();marcoCopiarAbrir(['${m.id}'])" title="Copiar este marco (cria marcos novos)">⧉ copiar</button>`;
-  return `<div data-mkid="${m.id}" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${m.id}');event.dataTransfer.effectAllowed='move';this.style.opacity='.5'" ondragend="this.style.opacity=''" title="Arraste para outra etapa"
+  return `<div data-mkid="${m.id}" ondblclick="if(!event.target.closest('button,input,label,select,a'))marcoEditarModal('${m.id}')" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${m.id}');event.dataTransfer.effectAllowed='move';this.style.opacity='.5'" ondragend="this.style.opacity=''" title="Arraste para outra etapa · duplo clique para editar"
     style="cursor:grab;background:var(--bg3);border:1px solid ${urgente && colKey === 'aguardando_entrega' ? 'var(--gold)' : 'var(--bd)'};border-radius:6px;padding:8px;margin-bottom:6px;font-size:10px;">
     <div style="font-weight:600;font-size:11px;margin-bottom:3px;color:var(--t1);">${_dsE(m.descricao)}</div>
     <div style="font-size:9px;color:var(--t2);margin-bottom:4px;">${_dsE(m.projeto_nome)} · ${_dsE(m.projeto_cliente || '')}</div>
@@ -26811,6 +26811,45 @@ async function pcEmail() {
     await pcCarregar(d.mes, 'email', { para, pdf });
     toast('✓ Lista enviada para ' + para, 'success');
   } catch (_) {}
+}
+// v3.247: editar o marco direto no Kanban (duplo clique no card) — mesmos campos de Projetos & Marcos
+function marcoEditarModal(id) {
+  const m = (window._mkTodos || {})[id] || _mkSelecionaveis[id]; if (!m) { toast('Marco não encontrado — atualize o Kanban', 'error'); return; }
+  let md = document.getElementById('mkEdModal');
+  if (!md) { md = document.createElement('div'); md.id = 'mkEdModal'; md.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center;padding:16px;';
+    md.onclick = e => { if (e.target === md) md.style.display = 'none'; }; document.body.appendChild(md); }
+  md.style.display = 'flex';
+  const v = x => String(x ?? '').replace(/"/g, '&quot;');
+  const ETAPAS = [['aguardando_entrega', 'Aguardando Entrega'], ['liberacao_gp', 'Liberação GP'], ['aprovado_gp', 'Aprovado pelo GP'], ['elaborando_termo', 'Elaborando Termo'], ['termo_pronto', 'Termo Pronto/Enviado'], ['concluido', 'Concluído']];
+  md.innerHTML = `<div class="panel" style="width:640px;max-width:100%;"><div class="ph"><div class="pt">✏ Editar marco</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('mkEdModal').style.display='none'">✕</button></div>
+    <div class="pb" style="display:block;"><div style="font-size:10.5px;color:var(--t2);margin-bottom:10px;">${_dsE(m.projeto_nome || '')}${m.projeto_cliente ? ' · ' + _dsE(m.projeto_cliente) : ''}${String(m.id).startsWith('mk_dash_') ? ' · <span style="color:var(--gold);">veio do Maestro: descrição, data e valor voltam a ser os do Maestro na próxima importação</span>' : ''}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;">
+      <div class="fg" style="grid-column:span 2;margin:0;"><label class="fl">Descrição do marco *</label><input class="fi" id="mkeDesc" value="${v(m.descricao)}"></div>
+      <div class="fg" style="margin:0;"><label class="fl">Data de entrega *</label><input class="fi" type="date" id="mkeData" value="${v(m.data_entrega)}"></div>
+      <div class="fg" style="margin:0;"><label class="fl">Valor R$ *</label><input class="fi" id="mkeValor" value="${m.valor ? Number(m.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}"></div>
+      <div class="fg" style="margin:0;"><label class="fl">% do contrato</label><input class="fi" id="mkePct" value="${v(m.percentual)}"></div>
+      <div class="fg" style="margin:0;"><label class="fl">Etapa</label><select class="fsel" id="mkeEtapa">${ETAPAS.map(([k, l]) => `<option value="${k}"${k === m.status_kanban ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="fg" style="margin:0;"><label class="fl">Nota fiscal</label><input class="fi" id="mkeNF" value="${v(m.nota_fiscal)}"></div>
+      <div class="fg" style="margin:0;"><label class="fl">Data de pagamento</label><input class="fi" type="date" id="mkeDataPag" value="${v(m.data_pagamento)}"></div>
+      <div class="fg" style="grid-column:span 2;margin:0;"><label class="fl">Observações</label><textarea class="fi" id="mkeObs" rows="3">${_dsE(m.observacoes || '')}</textarea></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;"><button class="btn" onclick="document.getElementById('mkEdModal').style.display='none'">Cancelar</button><button class="btn btn-p" id="mkeSalvar" onclick="marcoEditarSalvar('${m.id}')">Salvar</button></div></div></div>`;
+  setTimeout(() => document.getElementById('mkeDesc')?.focus(), 50);
+}
+async function marcoEditarSalvar(id) {
+  const m = (window._mkTodos || {})[id] || _mkSelecionaveis[id]; if (!m) return;
+  const g = i => document.getElementById(i)?.value?.trim() || '';
+  const p = { id, projeto_id: m.projeto_id, descricao: g('mkeDesc'), data_entrega: g('mkeData'), valor: _numBR(g('mkeValor') || '0'),
+    percentual: g('mkePct') ? parseFloat(g('mkePct').replace(',', '.')) : null, nota_fiscal: g('mkeNF') || null, data_pagamento: g('mkeDataPag') || null, observacoes: g('mkeObs') || null };
+  const falta = [!p.descricao && 'Descrição', !p.data_entrega && 'Data de entrega', !p.valor && 'Valor'].filter(Boolean);
+  if (falta.length) { toast('Preencha: ' + falta.join(', '), 'error'); return; }
+  if (!p.projeto_id) { toast('Marco sem projeto — edite em Projetos & Marcos', 'error'); return; }
+  const bt = document.getElementById('mkeSalvar'); if (bt) { bt.disabled = true; bt.textContent = 'Salvando…'; }
+  try {
+    await finApi('marco_save', p);
+    const etapa = g('mkeEtapa'); if (etapa && etapa !== m.status_kanban) await finApi('marco_mover_status', { id, novo_status: etapa, ator: 'edição no Kanban' });
+    document.getElementById('mkEdModal').style.display = 'none'; toast('Marco salvo', 'success'); carregarKanbanMarcos();
+  } catch (e) { toast('Erro ao salvar: ' + e.message, 'error'); if (bt) { bt.disabled = false; bt.textContent = 'Salvar'; } }
 }
 // v3.245: marcos aprovados pelo GP no Maestro → aqui em "Elaborando Termo" (o servidor também faz isso a cada 10 min)
 let _mkMaeUlt = 0;
@@ -35035,7 +35074,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.246] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.247] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35051,7 +35090,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.246';
+window.__ATX_BUILD_ID__ = 'ATX-v3.247';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
