@@ -474,7 +474,10 @@ async function metaKpis() {
   const leadsDe = x => (x.actions || []).filter(a => /^(lead|offsite_conversion\.fb_pixel_lead|onsite_conversion\.lead_grouped|leadgen_grouped)$/.test(a.action_type)).reduce((m, a) => Math.max(m, Number(a.value) || 0), 0);
   if (out.meta_ok) {
     try { const [a30, a90] = await Promise.all([ins('last_30d'), ins('last_90d')]);
-      out.d30 = { gasto: Number(a30.spend || 0), impressoes: Number(a30.impressions || 0), cliques_link: Number(a30.inline_link_clicks || 0), ctr: a30.ctr != null ? Number(a30.ctr) : null, cpc: a30.cpc != null ? Number(a30.cpc) : null, leads: leadsDe(a30) };
+      out.d30 = { gasto: Number(a30.spend || 0), impressoes: Number(a30.impressions || 0), cliques_link: Number(a30.inline_link_clicks || 0), ctr: null, cpc: null, leads: leadsDe(a30) };
+      // v3.233: CTR/CPC de LINK (o 'ctr'/'cpc' do Meta contam qualquer clique — curtir, ver perfil — e inflavam o CTR)
+      if (out.d30.impressoes > 0) out.d30.ctr = Math.round(out.d30.cliques_link / out.d30.impressoes * 10000) / 100;
+      if (out.d30.cliques_link > 0) out.d30.cpc = Math.round(out.d30.gasto / out.d30.cliques_link * 100) / 100;
       out.d90 = { gasto: Number(a90.spend || 0), leads: leadsDe(a90) };
       out.cpl = out.d30.leads ? Math.round(out.d30.gasto / out.d30.leads * 100) / 100 : null;
     } catch (e) { out.erros.push('Meta: ' + e.message); }
@@ -497,9 +500,20 @@ async function metaKpis() {
 }
 async function patrocinadoListar() {
   const lista = (await _kvMc('mkt:patrocinados')) || []; const c = _metaCfg();
-  if (c.token && lista.length) { await Promise.all(lista.slice(0, 15).map(async r => { try { const i = await _meta(`${r.id}/insights?fields=spend,impressions,clicks,inline_link_clicks,ctr,cpc&date_preset=maximum`); const x = (i.data || [])[0] || {};
-    r.resultado = { gasto: Number(x.spend || 0), impressoes: Number(x.impressions || 0), cliques_link: Number(x.inline_link_clicks || 0), cpc: x.cpc ? Number(x.cpc) : null };
-    const st = await _meta(`${r.id}?fields=effective_status`); r.estado_meta = st.effective_status; } catch (_) {} })); }
+  // v3.233: status e resultado em consultas independentes (antes, falha nos insights deixava o status antigo — "ACTIVE"
+  // de quando foi ativada — e a tela mostrava ativa uma campanha pausada no Meta). Status = o mais restritivo entre
+  // campanha e conjuntos (campanha ACTIVE com conjunto pausado não veicula). CPC por clique no link.
+  if (c.token && lista.length) { await Promise.all(lista.slice(0, 15).map(async r => {
+    try { const i = await _meta(`${r.id}/insights?fields=spend,impressions,inline_link_clicks&date_preset=maximum`); const x = (i.data || [])[0] || {};
+      const g = Number(x.spend || 0), cl = Number(x.inline_link_clicks || 0);
+      r.resultado = { gasto: g, impressoes: Number(x.impressions || 0), cliques_link: cl, cpc: cl > 0 ? Math.round(g / cl * 100) / 100 : null }; } catch (_) {}
+    try { const st = await _meta(`${r.id}?fields=effective_status,stop_time,adsets.limit(10){effective_status}`); let e = st.effective_status || null;
+      const cj = (st.adsets?.data || []).map(a => a.effective_status);
+      if (e === 'ACTIVE' && cj.length && !cj.includes('ACTIVE')) e = cj.find(x => /REVIEW|PROCESS|ISSUES|DISAPPROVED/.test(x)) || 'ADSET_PAUSED';
+      r.estado_meta = e; r.estado_lido_em = new Date().toISOString();
+      if (st.stop_time && new Date(st.stop_time) < new Date() && e === 'ACTIVE') r.encerrada = true;
+    } catch (e) { r.estado_meta = null; r.estado_erro = String(e.message || e).substring(0, 160); }
+  })); }
   return { campanhas: lista };
 }
 

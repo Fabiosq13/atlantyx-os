@@ -26,14 +26,18 @@ async function handler(req, res) {
     const mensagens = await gerarMensagensEmLote(leads, tom);
 
     // ── 3. Se enviar=true, disparar via Z-API imediatamente ──
-    let enviados = 0;
+    let enviados = 0, naoEnviados = 0;
     if (enviar === 'true') {
+      // v3.233: a função tem 60 s — antes o laço de 30 s por envio era cortado (≈1 envio) e o resto sumia. Agora envia o que
+      // cabe no tempo e devolve os demais como "pendentes de aprovação" para seguir pelo Outreach em lote (com revisão).
+      const t0 = Date.now();
       for (let i = 0; i < mensagens.length; i++) {
         const m = mensagens[i];
         if (m.phone) {
+          if (enviados > 0 && Date.now() - t0 > 20000) { mensagens[i].enviado = false; mensagens[i].pendente = true; naoEnviados++; continue; }
           try {
             await enviarWhatsApp(m.phone, m.mensagem);
-            await sleep(30000); // 30s entre envios
+            if (i < mensagens.length - 1) await sleep(15000); // intervalo entre envios
             await atualizarHubSpot(m.deal_id, m.contact_id);
             mensagens[i].enviado = true;
             enviados++;
@@ -49,7 +53,8 @@ async function handler(req, res) {
       success: true,
       total: leads.length,
       enviados: enviar === 'true' ? enviados : 0,
-      pendentes_aprovacao: enviar !== 'true' ? leads.length : 0,
+      pendentes_aprovacao: enviar !== 'true' ? leads.length : naoEnviados,
+      aviso: naoEnviados ? `${naoEnviados} mensagem(ns) ficaram para revisão — envie pelo Outreach em lote (limite de tempo do envio direto).` : undefined,
       mensagens,
     });
 
@@ -177,11 +182,13 @@ Retorne APENAS JSON (sem markdown):
 async function enviarWhatsApp(phone, message) {
   let p = phone.replace(/[^0-9]/g, '');
   if (!p.startsWith('55')) p = '55' + p;
-  await fetch(`https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-text`, {
+  const r = await fetch(`https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-text`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Client-Token': process.env.ZAPI_CLIENT_TOKEN },
     body: JSON.stringify({ phone: p, message }),
   });
+  const d = await r.json().catch(() => ({})); // v3.233: falha da Z-API não conta como enviado
+  if (!r.ok || d.error) throw new Error('Z-API: ' + (d.error || d.message || 'HTTP ' + r.status));
 }
 
 async function atualizarHubSpot(dealId, contactId) {

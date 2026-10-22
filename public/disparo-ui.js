@@ -265,7 +265,9 @@
         <div style="font-size:10.5px;color:var(--t2);margin-top:5px;">${feitos}/${total} processados · <b style="color:var(--green);">${env} enviados</b>${err ? ` · <b style="color:var(--red);">${err} com erro</b>` : ''}${avisos ? ' · ' + esc(avisos) : ''}${erroCfg ? `<div style="color:var(--red);margin-top:4px;">${esc(erroCfg)}</div>` : ''}</div>`; };
     pint();
     while (S.rodando && rest > 0) {
-      try { const r = await api('processar', { lote_id: loteId, segundos: 50 }); env += r.enviados || 0; err += r.erros || 0; rest = r.restantes ?? 0; }
+      try { const r = await api('processar', { lote_id: loteId, segundos: 50 });
+        if (r.aguardando_agendamento) { erroCfg = 'lote agendado para ' + new Date(r.agendar_para).toLocaleString('pt-BR') + ' — ele sai sozinho no horário'; break; } // v3.233
+        env += r.enviados || 0; err += r.erros || 0; rest = r.restantes ?? 0; }
       catch (e) { erroCfg = e.message; break; }
       pint();
     }
@@ -284,7 +286,7 @@
         ${l.map(x => `<tr><td>${dt(x.criado_em)}${x.agendar_para ? '<br><span style="color:var(--gold);font-size:9.5px;">agendado ' + dt(x.agendar_para) + '</span>' : ''}</td>
           <td>${x.canal === 'email' ? '✉ E-mail' : '☎ WhatsApp'}</td><td>${esc(x.status)}</td><td><b>${x.enviados}</b>/${x.total}</td><td>${x.pendentes}</td>
           <td style="color:${x.erros ? 'var(--red)' : 'inherit'};">${x.erros}</td><td>${x.canal === 'email' ? x.abertos : '—'}</td><td><b>${x.clicados}</b></td>
-          <td style="white-space:nowrap;">${x.pendentes && x.status === 'ativo' ? `<button class="btn btn-g" style="font-size:9.5px;padding:2px 7px;" onclick="DISP.continuar('${x.id}',${x.total})">Continuar</button> <button class="btn btn-g" style="font-size:9.5px;padding:2px 7px;" onclick="DISP.cancelar('${x.id}')">Cancelar</button>` : ''}
+          <td style="white-space:nowrap;">${x.pendentes && x.status === 'ativo' && !(x.agendar_para && new Date(x.agendar_para) > new Date()) ? `<button class="btn btn-g" style="font-size:9.5px;padding:2px 7px;" onclick="DISP.continuar('${x.id}',${x.total})">Continuar</button> <button class="btn btn-g" style="font-size:9.5px;padding:2px 7px;" onclick="DISP.cancelar('${x.id}')">Cancelar</button>` : ''}
             ${x.erros ? `<button class="btn btn-g" style="font-size:9.5px;padding:2px 7px;" onclick="DISP.retomar('${x.id}',${x.total})">Reenviar erros</button>` : ''}
             <button class="btn btn-g" style="font-size:9.5px;padding:2px 7px;" onclick="DISP.envios('${x.id}')">Ver</button></td></tr>
           <tr id="dpEnv_${x.id}" style="display:none;"><td colspan="9"></td></tr>`).join('')}</table></div>`;

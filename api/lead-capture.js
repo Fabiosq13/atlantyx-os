@@ -83,6 +83,7 @@ async function handler(req, res) {
     // v3.190: qualidade — e-mail pessoal (gmail, hotmail…) costuma ser pessoa física; o lead entra, marcado
     lead.email_pessoal = /@(gmail|hotmail|outlook|live|yahoo|bol|uol|terra|icloud|msn|ig)\.(com|com\.br)$/i.test(String(lead.email || ''));
     if (lead.email_pessoal) lead.qualidade = 'e-mail pessoal';
+    lead.form_name = body.form_name ? String(body.form_name).substring(0, 60) : null;
     if (body.consentimento && typeof body.consentimento === 'object') lead.consentimento = { aceito: !!body.consentimento.aceito, versao: String(body.consentimento.versao || '').substring(0, 20), canais: (body.consentimento.canais || []).slice(0, 6), em: String(body.consentimento.em || '').substring(0, 30) }; // v3.187: registro do aceite (LGPD)
     console.log(`[S2] Lead recebido: ${lead.name} | ${lead.company} | origem ${lead.origem} · ${lead.campanha || 'sem campanha'} | Score: ${lead.score_label}`);
 
@@ -128,12 +129,13 @@ async function handler(req, res) {
       contactId = hsr.contato_id; dealId = hsr.negocio_id || null; etapas.hubspot = `ok — contato ${hsr.acao}`; }
     catch (e) { etapas.hubspot = 'falha: ' + e.message; }
 
-    if (lead.phone && mensagem) {
+    const podeA = await _podeWhats(lead, leadId);
+    if (podeA.ok && mensagem) {
       try { await enviarWhatsApp(lead.phone, mensagem); etapas.whatsapp = 'ok'; if (dealId) await atualizarDealHubSpot(dealId, 'ABORDADO').catch(() => {}); }
       catch (e) { etapas.whatsapp = 'falha: ' + e.message; }
-    } else etapas.whatsapp = lead.phone ? 'sem mensagem' : 'sem telefone';
+    } else etapas.whatsapp = !podeA.ok ? 'pulado: ' + podeA.motivo : 'sem mensagem';
 
-    try { if (mensagem) { await agendarFollowUp(lead, dealId, mensagem); etapas.followup = 'ok'; } else etapas.followup = 'sem mensagem'; }
+    try { if (mensagem && etapas.whatsapp === 'ok') { await agendarFollowUp(lead, dealId, mensagem); etapas.followup = 'ok'; } else etapas.followup = 'sem 1ª mensagem no WhatsApp'; }
     catch (e) { etapas.followup = 'falha: ' + e.message; }
 
     // registra no lead o que deu certo e o que não
@@ -158,6 +160,29 @@ async function handler(req, res) {
 }
 
 // ── FUNÇÕES ───────────────────────────────────────────────────────────────────
+
+// v3.233: só aborda por WhatsApp quem pode receber — consentimento do formulário do site (LGPD), fora da lista de
+// descadastro e sem abordagem automática ao mesmo número nas últimas 24 h (reenvio do formulário não gera 2ª mensagem)
+async function _podeWhats(lead, leadId) {
+  if (!lead.phone) return { ok: false, motivo: 'sem telefone' };
+  if (lead.form_name === 'captura-publica' || lead.exige_consentimento) {
+    const c = lead.consentimento;
+    if (!c || !c.aceito || (Array.isArray(c.canais) && c.canais.length && !c.canais.includes('whatsapp'))) return { ok: false, motivo: 'sem consentimento para WhatsApp' };
+  }
+  try {
+    const { neon } = await import('@neondatabase/serverless');
+    const sql = neon(process.env.DATABASE_URL);
+    const { normTelefone } = await import('./campanha-disparo.js');
+    const dest = normTelefone(lead.phone) || String(lead.phone).replace(/\D/g, '');
+    try { const o = await sql`SELECT 1 FROM disparo_optout WHERE destino = ${dest} LIMIT 1`; if (o.length) return { ok: false, motivo: 'descadastrado (SAIR)' }; } catch (_) {}
+    const fim = dest.slice(-10);
+    const rec = await sql`SELECT 1 FROM leads WHERE id <> ${leadId || ''} AND criado_em > NOW() - INTERVAL '24 hours'
+      AND right(regexp_replace(COALESCE(telefone, ''), '[^0-9]', '', 'g'), 10) = ${fim} AND etapas->>'whatsapp' = 'ok' LIMIT 1`;
+    if (rec.length) return { ok: false, motivo: 'já abordado nas últimas 24 h' };
+  } catch (_) {}
+  return { ok: true };
+}
+const _esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // v2.32: registro local do lead — a fonte de verdade da tela e da auditoria
 async function gravarLeadLocal(lead) {
@@ -204,11 +229,12 @@ async function processarLeadGravado(leadId) {
   etapas.alerta = al.status === 'fulfilled' ? 'ok' : 'falha: ' + al.reason?.message;
   if (msg.status === 'fulfilled') { mensagem = msg.value; etapas.mensagem = 'ok'; } else etapas.mensagem = 'falha: ' + msg.reason?.message;
   if (hs.status === 'fulfilled') { contactId = hs.value.contato_id; dealId = hs.value.negocio_id || null; etapas.hubspot = `ok — contato ${hs.value.acao}`; } else etapas.hubspot = 'falha: ' + hs.reason?.message;
-  if (lead.phone && mensagem) {
+  const podeB = await _podeWhats(lead, leadId);
+  if (podeB.ok && mensagem) {
     try { await enviarWhatsApp(lead.phone, mensagem); etapas.whatsapp = 'ok'; if (dealId) await atualizarDealHubSpot(dealId, 'ABORDADO').catch(() => {}); }
     catch (e) { etapas.whatsapp = 'falha: ' + e.message; }
-  } else etapas.whatsapp = lead.phone ? 'sem mensagem' : 'sem telefone';
-  try { if (mensagem) { await agendarFollowUp(lead, dealId, mensagem); etapas.followup = 'ok'; } else etapas.followup = 'sem mensagem'; }
+  } else etapas.whatsapp = !podeB.ok ? 'pulado: ' + podeB.motivo : 'sem mensagem';
+  try { if (mensagem && etapas.whatsapp === 'ok') { await agendarFollowUp(lead, dealId, mensagem); etapas.followup = 'ok'; } else etapas.followup = 'sem 1ª mensagem no WhatsApp'; }
   catch (e) { etapas.followup = 'falha: ' + e.message; }
   try { await atualizarLeadLocal(leadId, { hubspot_contact: contactId, hubspot_deal: dealId, etapas }); } catch (_) {}
   return { lead_id: leadId, etapas, hubspot_contact: contactId, hubspot_deal: dealId };
@@ -231,19 +257,19 @@ async function alertarNovoLead(lead) {
   const t = nodemailer.createTransport(_smtpConfig(user, pass));
   const u = lead.utm || {};
   await t.sendMail({ from: `Atlantyx OS <${user}>`, to: para,
-    subject: `${lead.email_pessoal ? '⚪ Novo lead (e-mail pessoal)' : '🎯 Novo lead'}: ${lead.name} (${lead.company}) — via ${lead.origem || '?'}${lead.campanha ? ' · ' + lead.campanha : ''}`,
+    subject: `${lead.email_pessoal ? '⚪ Novo lead (e-mail pessoal)' : '🎯 Novo lead'}: ${String(lead.name || '').replace(/[\r\n]/g, ' ')} (${String(lead.company || '').replace(/[\r\n]/g, ' ')}) — via ${lead.origem || '?'}${lead.campanha ? ' · ' + lead.campanha : ''}`,
     html: `<div style="font-family:Arial;max-width:560px;">
       <h2 style="color:#1A3A8F;margin:0 0 6px;">Novo lead capturado</h2>
       <table style="font-size:13px;border-collapse:collapse;">
-        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">Nome</td><td><b>${lead.name}</b></td></tr>
-        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">Empresa</td><td>${lead.company || '—'}</td></tr>
-        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">Cargo</td><td>${lead.title || '—'}</td></tr>
-        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">E-mail</td><td>${lead.email || '—'}</td></tr>
-        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">WhatsApp</td><td>${lead.phone || '—'}</td></tr>
-        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">Score</td><td>${lead.score_label || '—'}</td></tr>
+        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">Nome</td><td><b>${_esc(lead.name)}</b></td></tr>
+        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">Empresa</td><td>${_esc(lead.company || '—')}</td></tr>
+        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">Cargo</td><td>${_esc(lead.title || '—')}</td></tr>
+        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">E-mail</td><td>${_esc(lead.email || '—')}</td></tr>
+        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">WhatsApp</td><td>${_esc(lead.phone || '—')}</td></tr>
+        <tr><td style="padding:4px 10px 4px 0;color:#5a6478;">Score</td><td>${_esc(lead.score_label || '—')}</td></tr>
       </table>
       <div style="margin-top:12px;padding:10px;background:#EAF7F1;border-left:3px solid #1FB287;font-size:13px;">
-        <b>Origem:</b> ${lead.origem || '?'} · <b>Campanha:</b> ${lead.campanha || 'não identificada'}${u.medium ? ' · ' + u.medium : ''}${u.content ? '<br><span style="color:#5a6478;font-size:12px;">post: ' + u.content + '</span>' : ''}</div>
+        <b>Origem:</b> ${_esc(lead.origem || '?')} · <b>Campanha:</b> ${_esc(lead.campanha || 'não identificada')}${u.medium ? ' · ' + _esc(u.medium) : ''}${u.content ? '<br><span style="color:#5a6478;font-size:12px;">post: ' + _esc(u.content) + '</span>' : ''}</div>
       <p style="font-size:12px;color:#8a93a8;margin-top:14px;">Atlantyx OS · alerta automático de captura</p></div>` });
 }
 
@@ -411,11 +437,9 @@ async function enviarWhatsApp(phone, message) {
     body: JSON.stringify({ phone, message }),
   });
 
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(`Z-API WhatsApp: ${JSON.stringify(err)}`);
-  }
-  return res.json();
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || j.error || !(j.zaapId || j.messageId || j.id)) throw new Error(`Z-API WhatsApp: ${j.error || j.message || 'HTTP ' + res.status}`);
+  return j;
 }
 
 async function atualizarDealHubSpot(dealId, etapa) {

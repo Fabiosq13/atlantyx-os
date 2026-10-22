@@ -5860,7 +5860,8 @@ async function marcosPrevisaoGerar({ mes_inicio, prazo_dias = 35, dia_recebiment
   for (const p of plano.projetos) {
     let cli = p.cliente_qb;
     for (const x of p.marcos) {
-      if (x.acao === 'manter') { out.mantidas++; continue; }
+      // v3.233: 'manter' só quando a estimativa no QuickBooks também tem o MESMO valor (marco com valor alterado ficava com a previsão antiga)
+      if (x.acao === 'manter') { const ex = (noQb[x.marco_id] || [])[0]; if (!ex || Math.abs((ex.valor || 0) - x.valor) < 0.01) { out.mantidas++; continue; } x.acao = 'atualizar'; }
       if (feitos >= limite) { out.pendentes++; continue; }
       try {
         if (!cli?.id) { const c = await qbClienteCriar({ nome: p.cliente, notas: 'Cliente criado pelo Atlantyx OS para a previsão de faturamento dos marcos' }); cli = { id: c.id, nome: c.nome, existe: true }; p.cliente_qb = cli; if (c.criado) out.clientes_criados.push(c.nome); }
@@ -7264,21 +7265,26 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
       const i = (seq[m.projeto_id] = (seq[m.projeto_id] || 0) + 1) - 1; let data = _dStr(m.previsao_receb_manual) || _dStr(m.previsao_recebimento), base = data ? (m.previsao_receb_manual ? 'data definida no marco' : 'previsão do marco') : '';
       if (!data && m.data_entrega) { data = _diasMais(_rpDia(_mesMais(_dStr(m.data_entrega).substring(0, 7), 1), diaPad), diasAd); base = 'entrega + recebimento no dia ' + diaPad; }
       if (!data) { data = _diasMais(_rpDia(_mesMais(mesHoje, 1 + i), diaPad), diasAd); base = 'sem data: sequência mensal do projeto'; }
-      oc.push({ id: 'mrc_' + m.id, origem: 'marco', ref_id: String(m.id), projeto: m.projeto_nome, cliente: m.projeto_cliente || m.projeto_nome, descricao: m.descricao || 'Marco', valor: num(m.valor), data, base_data: base, status_kanban: m.status_kanban });
+      oc.push({ id: 'mrc_' + m.id, origem: 'marco', ref_id: String(m.id), projeto_id: String(m.projeto_id ?? ''), projeto: m.projeto_nome, cliente: m.projeto_cliente || m.projeto_nome, descricao: m.descricao || 'Marco', valor: num(m.valor), data, base_data: base, status_kanban: m.status_kanban });
     }
   } catch (e) { avisos.push('Marcos: ' + e.message); }
   // 2) sustentações
   let sustentacoes = [];
   try {
     sustentacoes = await _rpSustentacoesBase(sql); const cfg = susCfg || {};
+    // v3.233: projeto de sustentação com marco cadastrado no mês → o marco É a cobrança daquele mês (antes somava
+    // marco + mensalidade e a receita prevista do mês saía em dobro)
+    const mesComMarco = new Set(oc.filter(o => o.origem === 'marco' && o.projeto_id).map(o => o.projeto_id + '|' + o.data.substring(0, 7)));
+    let susPuladas = 0;
     for (const s of sustentacoes) {
       const c = cfg[s.id] || {}; s.ajuste = c; const ativo = c.ativo !== false; const valor = Number(c.valor_mensal) > 0 ? Number(c.valor_mensal) : s.sugerido;
       const ini = /^\d{4}-\d{2}$/.test(c.inicio || '') ? c.inicio : s.inicio, fim = /^\d{4}-\d{2}$/.test(c.fim || '') ? c.fim : s.fim, dia = parseInt(c.dia) || diaPad;
       s.efetivo = { ativo, valor_mensal: valor, inicio: ini, fim, dia };
       if (!ativo || !(valor > 0) || !ini || !fim) continue;
       for (let mes = ini < mesHoje ? mesHoje : ini; mes <= fim && mes <= ultimo; mes = _mesMais(mes, 1))
-        oc.push({ id: `sus_${s.id}_${mes}`, origem: 'sustentacao', ref_id: s.id, projeto: s.projeto, cliente: s.cliente, descricao: 'Sustentação ' + _MESES_PT[+mes.substring(5, 7) - 1] + '/' + mes.substring(0, 4), valor: round(valor), data: _rpDia(mes, dia), base_data: Number(c.valor_mensal) > 0 ? 'valor ajustado' : 'valor sugerido (projeto ÷ meses do contrato)' });
+        if (mesComMarco.has(s.id + '|' + mes)) susPuladas++; else oc.push({ id: `sus_${s.id}_${mes}`, origem: 'sustentacao', ref_id: s.id, projeto: s.projeto, cliente: s.cliente, descricao: 'Sustentação ' + _MESES_PT[+mes.substring(5, 7) - 1] + '/' + mes.substring(0, 4), valor: round(valor), data: _rpDia(mes, dia), base_data: Number(c.valor_mensal) > 0 ? 'valor ajustado' : 'valor sugerido (projeto ÷ meses do contrato)' });
     }
+    if (susPuladas) avisos.push(susPuladas + ' mensalidade(s) de sustentação não projetada(s): o projeto já tem marco de faturamento no mesmo mês (o marco é a cobrança).');
   } catch (e) { avisos.push('Sustentações: ' + e.message); }
   // 3) avulsas / recorrentes manuais
   const manuais = Array.isArray(man) ? man : [];
@@ -7880,6 +7886,9 @@ async function projetoSave(p = {}) {
   if (!p.nome) throw new Error('nome obrigatório');
   const sql = await getSql();
   const id = p.id || `proj_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  // v3.233: campo não enviado na edição mantém o valor gravado (antes status voltava para 'ativo', moeda para BRL e valor para 0)
+  const st = p.status ? String(p.status) : null, moeda = p.moeda ? String(p.moeda) : null;
+  const vt = p.valor_total === undefined || p.valor_total === null || p.valor_total === '' ? null : (Number(p.valor_total) || 0);
   await sql`INSERT INTO projetos_financeiros
     (id, nome, cliente, cliente_responsavel_nome, cliente_responsavel_email,
      gerente_projeto_nome, gerente_projeto_email, financeiro_email,
@@ -7888,16 +7897,17 @@ async function projetoSave(p = {}) {
             ${p.cliente_responsavel_nome || null}, ${p.cliente_responsavel_email || null},
             ${p.gerente_projeto_nome || null}, ${p.gerente_projeto_email || null},
             ${p.financeiro_email || null}, ${p.descricao || null},
-            ${p.valor_total || 0}, ${p.moeda || 'BRL'}, ${p.status || 'ativo'}, NOW())
+            ${vt ?? 0}, ${moeda || 'BRL'}, ${st || 'ativo'}, NOW())
     ON CONFLICT (id) DO UPDATE SET
-      nome=EXCLUDED.nome, cliente=EXCLUDED.cliente,
-      cliente_responsavel_nome=EXCLUDED.cliente_responsavel_nome,
-      cliente_responsavel_email=EXCLUDED.cliente_responsavel_email,
-      gerente_projeto_nome=EXCLUDED.gerente_projeto_nome,
-      gerente_projeto_email=EXCLUDED.gerente_projeto_email,
-      financeiro_email=EXCLUDED.financeiro_email,
-      descricao=EXCLUDED.descricao, valor_total=EXCLUDED.valor_total,
-      moeda=EXCLUDED.moeda, status=EXCLUDED.status, atualizado_em=NOW()`;
+      nome=EXCLUDED.nome,
+      cliente=CASE WHEN ${'cliente' in p} THEN EXCLUDED.cliente ELSE projetos_financeiros.cliente END,
+      cliente_responsavel_nome=CASE WHEN ${'cliente_responsavel_nome' in p} THEN EXCLUDED.cliente_responsavel_nome ELSE projetos_financeiros.cliente_responsavel_nome END,
+      cliente_responsavel_email=CASE WHEN ${'cliente_responsavel_email' in p} THEN EXCLUDED.cliente_responsavel_email ELSE projetos_financeiros.cliente_responsavel_email END,
+      gerente_projeto_nome=CASE WHEN ${'gerente_projeto_nome' in p} THEN EXCLUDED.gerente_projeto_nome ELSE projetos_financeiros.gerente_projeto_nome END,
+      gerente_projeto_email=CASE WHEN ${'gerente_projeto_email' in p} THEN EXCLUDED.gerente_projeto_email ELSE projetos_financeiros.gerente_projeto_email END,
+      financeiro_email=CASE WHEN ${'financeiro_email' in p} THEN EXCLUDED.financeiro_email ELSE projetos_financeiros.financeiro_email END,
+      descricao=CASE WHEN ${'descricao' in p} THEN EXCLUDED.descricao ELSE projetos_financeiros.descricao END, valor_total=COALESCE(${vt}::numeric, projetos_financeiros.valor_total),
+      moeda=COALESCE(${moeda}::text, projetos_financeiros.moeda), status=COALESCE(${st}::text, projetos_financeiros.status), atualizado_em=NOW()`;
   return { id };
 }
 
@@ -8031,10 +8041,17 @@ async function marcosImportarPlanilha({ linhas = [] } = {}) {
       const dataEntrega = l.data_solicitacao || l.data_pagamento || _hojeBR();
       const semDataOriginal = !l.data_solicitacao;
       // v3.109: só "pago" conclui; o resto entra em "Aguardando entrega" (antes virava 'aguardando_pagamento', que não é coluna — e ia para concluído no reinício)
-      const statusKanban = /pago/i.test(l.status || '') ? 'concluido' : /fatur|nf emitida|nota emitida|termo/i.test(l.status || '') ? 'termo_pronto' : 'aguardando_entrega';
+      // v3.233: "não pago" / "pagamento pendente" não concluem (antes qualquer texto com "pago" virava concluído)
+      const stTxt = String(l.status || '').toLowerCase();
+      const ehPago = /\bpag[oa]\b|\bquitad|\brecebid/.test(stTxt) && !/n[aã]o\s+(pag|receb|quit)|pendente|a\s+pagar|parcial/.test(stTxt);
+      const statusKanban = ehPago ? 'concluido' : /fatur|nf emitida|nota emitida|termo/i.test(l.status || '') ? 'termo_pronto' : 'aguardando_entrega';
       const obs = [l.observacoes, semDataOriginal ? 'Data de entrega não informada na planilha original — ajuste se necessário.' : null, l.gp_responsavel ? 'GP: ' + l.gp_responsavel : null].filter(Boolean).join(' · ');
+      // v3.233: reimportar a mesma planilha não duplica — mesmo projeto + descrição + valor (+ data, quando informada)
+      const dup = await sql`SELECT id FROM projetos_marcos WHERE projeto_id = ${projId} AND LOWER(TRIM(descricao)) = ${String(l.marco).trim().toLowerCase()}
+        AND ROUND(COALESCE(valor, 0)::numeric, 2) = ROUND(${num(l.valor)}::numeric, 2) AND (${semDataOriginal} OR data_entrega = ${dataEntrega}::date) LIMIT 1`;
+      if (dup.length) { resultado.repetidos = (resultado.repetidos || 0) + 1; continue; }
       await sql`INSERT INTO projetos_marcos (id, projeto_id, descricao, data_entrega, valor, status_kanban, data_pagamento, observacoes, atualizado_em)
-        VALUES (${marcoId}, ${projId}, ${String(l.marco).trim()}, ${dataEntrega}, ${num(l.valor)}, ${statusKanban}, ${l.data_pagamento || null}, ${obs || null}, NOW())`;
+        VALUES (${marcoId}, ${projId}, ${String(l.marco).trim()}, ${dataEntrega}, ${num(l.valor)}, ${statusKanban}, ${ehPago ? (l.data_pagamento || null) : null}, ${obs || null}, NOW())`;
       resultado.marcos_criados++;
     } catch (e) { resultado.erros.push({ linha: l, erro: e.message }); }
   }
@@ -8051,6 +8068,8 @@ async function contratosImportarPlanilha({ linhas = [] } = {}) {
       if (!l.numero_contrato) { resultado.erros.push({ linha: l, erro: 'número do contrato vazio' }); continue; }
       let projId = null;
       if (l.projeto) { const achado = await sql`SELECT id FROM projetos_financeiros WHERE LOWER(nome) = ${String(l.projeto).trim().toLowerCase()} LIMIT 1`; if (achado.length) projId = achado[0].id; }
+      const ja = await sql`SELECT id FROM contratos_financeiros WHERE LOWER(TRIM(numero_contrato)) = ${String(l.numero_contrato).trim().toLowerCase()} LIMIT 1`;
+      if (ja.length) { resultado.repetidos = (resultado.repetidos || 0) + 1; continue; } // v3.233: reimportação não duplica o contrato
       const id = `ctr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       await sql`INSERT INTO contratos_financeiros (id, numero_contrato, projeto, projeto_id, data_inicio, data_vencimento, prazo_meses, prazo_texto, atualizado_em)
         VALUES (${id}, ${String(l.numero_contrato).trim()}, ${l.projeto || null}, ${projId}, ${l.data_inicio || null}, ${l.data_vencimento || null}, ${l.prazo_meses || null}, ${l.prazo_texto || null}, NOW())`;
@@ -8214,7 +8233,8 @@ async function marcoMoverStatus({ id, novo_status, ator, observacao } = {}) {
   }
 
   const sql = await getSql();
-  const r = await sql`SELECT * FROM projetos_marcos WHERE id = ${id}`;
+  // v3.233: junta o projeto — o e-mail "aprovado pelo GP" saía com "Projeto: undefined" e sem o e-mail do financeiro do projeto
+  const r = await sql`SELECT m.*, p.nome AS projeto_nome, p.cliente, p.financeiro_email FROM projetos_marcos m LEFT JOIN projetos_financeiros p ON p.id = m.projeto_id WHERE m.id = ${id}`;
   if (!r[0]) throw new Error('marco não encontrado');
   const marco = r[0];
   const statusAnt = marco.status_kanban;
@@ -8301,7 +8321,7 @@ async function marcoEnviarTermo({ id, mensagem_extra } = {}) {
     throw new Error('Faça upload do termo antes de enviar');
   }
 
-  await emailEnviar({
+  const ev = await emailEnviar({
     sql,
     marco_id: id,
     to: marco.cliente_responsavel_email,
@@ -8312,6 +8332,7 @@ async function marcoEnviarTermo({ id, mensagem_extra } = {}) {
     anexo_base64: marco.arquivo_termo_base64,
     anexo_nome: marco.arquivo_termo_nome || 'termo.pdf',
   });
+  if (!ev.ok) throw new Error('O e-mail com o termo não saiu (' + ev.status + ') — o marco não foi marcado como enviado.');
 
   await sql`UPDATE projetos_marcos
     SET status_kanban='termo_pronto', termo_enviado_cliente_em=NOW(), atualizado_em=NOW()
@@ -8394,6 +8415,7 @@ async function marcosKanban({ projeto_id } = {}) {
 // Ou via Vercel Cron (vercel.json):
 //   { "crons": [{ "path": "/api/financeiro?action=marcos_processar_alertas", "schedule": "0 9 * * *" }] }
 
+const _MAX_LEMBRETES_CLIENTE = 5;
 async function marcosProcessarAlertas() {
   // v2.95: fecha no QuickBooks as estimativas de previsão de marcos que já foram faturados/concluídos
   try { const sql0 = await getSql(); const n = (await sql0`SELECT COUNT(*)::int AS n FROM projetos_marcos WHERE previsao_qb_estimate_id IS NOT NULL
@@ -8416,9 +8438,9 @@ async function marcosProcessarAlertas() {
                                   p.gerente_projeto_nome, p.gerente_projeto_email,
                                   p.financeiro_email
     FROM projetos_marcos m JOIN projetos_financeiros p ON p.id = m.projeto_id
-    WHERE m.status_kanban = 'aguardando_entrega'
+    WHERE COALESCE(p.status, 'ativo') NOT IN ('cancelado', 'encerrado', 'inativo') AND m.status_kanban = 'aguardando_entrega'
       AND m.data_entrega <= ${limite10dias}::date
-      AND m.gp_liberacao_aviso_em IS NULL`;
+      AND m.gp_liberacao_aviso_em IS NULL AND m.data_pagamento IS NULL AND COALESCE(TRIM(m.nota_fiscal), '') = ''`; // v3.233: projeto encerrado/cancelado e marco já faturado não geram aviso
 
   for (const marco of paraGP) {
     try {
@@ -8427,7 +8449,7 @@ async function marcosProcessarAlertas() {
         continue;
       }
       const diasParaEntrega = Math.ceil((new Date(marco.data_entrega) - hoje) / 86400000);
-      await emailEnviar({
+      const ev = await emailEnviar({
         sql,
         marco_id: marco.id,
         to: marco.gerente_projeto_email,
@@ -8436,6 +8458,7 @@ async function marcosProcessarAlertas() {
         assunto: `[Atlantyx] Marco em ${diasParaEntrega} dias — sua liberação é necessária — ${marco.descricao}`,
         corpo: emailTplGP10dias(marco, diasParaEntrega),
       });
+      if (!ev.ok) { stats.erros.push(`Marco ${marco.id} GP: e-mail não saiu (${ev.status}) — tenta de novo no próximo ciclo`); continue; }
       // Move para 'liberacao_gp' e marca o carimbo
       await sql`UPDATE projetos_marcos
         SET status_kanban='liberacao_gp', gp_liberacao_aviso_em=NOW(), atualizado_em=NOW()
@@ -8453,7 +8476,7 @@ async function marcosProcessarAlertas() {
                                        p.cliente_responsavel_nome, p.cliente_responsavel_email,
                                        p.financeiro_email
     FROM projetos_marcos m JOIN projetos_financeiros p ON p.id = m.projeto_id
-    WHERE (m.status_kanban = 'aguardando_cliente' OR (m.status_kanban = 'termo_pronto' AND m.termo_enviado_cliente_em IS NOT NULL))
+    WHERE COALESCE(p.status, 'ativo') NOT IN ('cancelado', 'encerrado', 'inativo') AND (m.status_kanban = 'aguardando_cliente' OR (m.status_kanban = 'termo_pronto' AND m.termo_enviado_cliente_em IS NOT NULL))
       AND (m.cliente_ultimo_lembrete_em IS NULL OR m.cliente_ultimo_lembrete_em < ${limite3dias}::timestamptz)`;
 
   for (const marco of paraCliente) {
@@ -8463,7 +8486,9 @@ async function marcosProcessarAlertas() {
         continue;
       }
       const tentativa = (marco.cliente_lembretes_count || 0) + 1;
-      await emailEnviar({
+      // v3.233: no máximo 5 lembretes automáticos ao cliente (antes seguia a cada 3 dias para sempre)
+      if (tentativa > _MAX_LEMBRETES_CLIENTE) { stats.cliente_limite = (stats.cliente_limite || 0) + 1; continue; }
+      const ev = await emailEnviar({
         sql,
         marco_id: marco.id,
         to: marco.cliente_responsavel_email,
@@ -8472,6 +8497,7 @@ async function marcosProcessarAlertas() {
         assunto: `[Atlantyx] Lembrete: termo aguardando sua aprovação — ${marco.projeto_nome}`,
         corpo: emailTplLembreteCliente(marco, tentativa),
       });
+      if (!ev.ok) { stats.erros.push(`Marco ${marco.id} cliente: e-mail não saiu (${ev.status})`); continue; }
       await sql`UPDATE projetos_marcos
         SET cliente_ultimo_lembrete_em=NOW(), cliente_lembretes_count=${tentativa}, atualizado_em=NOW()
         WHERE id=${marco.id}`;
@@ -8485,7 +8511,7 @@ async function marcosProcessarAlertas() {
   const paraFin = await sql`SELECT m.*, p.nome AS projeto_nome,
                                    p.gerente_projeto_email, p.financeiro_email
     FROM projetos_marcos m JOIN projetos_financeiros p ON p.id = m.projeto_id
-    WHERE m.status_kanban IN ('nf_emitida', 'aguardando_pagamento')
+    WHERE COALESCE(p.status, 'ativo') NOT IN ('cancelado', 'encerrado', 'inativo') AND m.status_kanban IN ('nf_emitida', 'aguardando_pagamento')
       AND (m.fin_ultimo_lembrete_em IS NULL OR m.fin_ultimo_lembrete_em < ${limite3dias}::timestamptz)`;
 
   for (const marco of paraFin) {
@@ -8493,7 +8519,7 @@ async function marcosProcessarAlertas() {
       const finEmail = marco.financeiro_email || process.env.FINANCEIRO_EMAIL;
       if (!finEmail) { stats.erros.push(`Marco ${marco.id}: sem email do financeiro`); continue; }
       const tentativa = (marco.fin_lembretes_count || 0) + 1;
-      await emailEnviar({
+      const ev = await emailEnviar({
         sql,
         marco_id: marco.id,
         to: finEmail,
@@ -8501,6 +8527,7 @@ async function marcosProcessarAlertas() {
         assunto: `[Atlantyx] Lembrete: confirmar pagamento — ${marco.projeto_nome} — ${marco.descricao}`,
         corpo: emailTplLembreteFinanceiro(marco, tentativa),
       });
+      if (!ev.ok) { stats.erros.push(`Marco ${marco.id} financeiro: e-mail não saiu (${ev.status})`); continue; }
       // Se ainda está em nf_emitida, move pra aguardando_pagamento
       if (marco.status_kanban === 'nf_emitida') {
         await sql`UPDATE projetos_marcos
@@ -8531,79 +8558,56 @@ async function marcosProcessarAlertas() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function emailEnviar({ sql, marco_id, to, cc, tipo, assunto, corpo, anexo_base64, anexo_nome }) {
-  let status = 'tentando';
-  let providerUsed = 'nenhum';
-
-  try {
-    if (process.env.RESEND_API_KEY) {
-      providerUsed = 'resend';
-      const body = {
-        from: process.env.RESEND_FROM || 'Atlantyx <noreply@atlantyx.com.br>',
-        to: [to],
-        subject: assunto,
-        html: corpo,
-      };
-      if (cc) body.cc = [cc];
-      if (anexo_base64) body.attachments = [{ filename: anexo_nome || 'arquivo.pdf', content: anexo_base64 }];
-
-      const r = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      });
-      const data = await r.json();
-      if (r.ok) status = 'enviado'; else status = `erro_${r.status}: ${(data.message || '').substring(0, 100)}`;
-    } else if (process.env.GMAIL_TOKEN || process.env.GOOGLE_REFRESH_TOKEN) {
-      providerUsed = 'gmail';
-      // Fallback: tenta postar pro endpoint gmail interno se existir
-      const r = await fetch((process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '') + '/api/gmail-send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to, cc, subject: assunto, html: corpo, anexo_base64, anexo_nome }),
-      });
-      status = r.ok ? 'enviado' : `erro_${r.status}`;
-    } else if (process.env.EMAIL_WEBHOOK_URL) {
-      providerUsed = 'webhook';
-      const r = await fetch(process.env.EMAIL_WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to, cc, subject: assunto, html: corpo, anexo_base64, anexo_nome }),
-      });
-      status = r.ok ? 'enviado' : `erro_${r.status}`;
-    } else {
-      status = 'sem_provider';
-      console.log(`[email NOT SENT — sem RESEND_API_KEY/GMAIL_TOKEN/EMAIL_WEBHOOK_URL] to=${to}, assunto=${assunto}`);
+  // v3.233: usa o mesmo envio do resto do sistema (SMTP do Gmail → Resend de reserva). Antes só tentava o Resend ou um
+  // endpoint /api/gmail-send que não existe — sem RESEND_API_KEY o e-mail do marco 'falhava' em silêncio e o cron
+  // seguia como se tivesse avisado (marcava o carimbo e mudava o status do marco).
+  let status = 'tentando', providerUsed = 'nenhum';
+  if (!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(to).trim())) status = 'erro: destinatário inválido';
+  else {
+    try {
+      const para = [...new Set([to, cc].filter(x => x && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(x).trim())).map(x => String(x).trim()))];
+      const anexos = anexo_base64 ? [{ filename: anexo_nome || 'arquivo.pdf', content: Buffer.from(String(anexo_base64).replace(/^data:[^,]*,/, ''), 'base64') }] : undefined;
+      const r = await enviarEmailGmail({ para, assunto, html: corpo, remetente: 'Atlantyx · Faturamento', anexos });
+      providerUsed = r.via || 'gmail'; status = r.rejeitados?.length && !(r.aceitos || []).length ? 'erro: destinatário rejeitado' : 'enviado';
+    } catch (e) {
+      if (process.env.EMAIL_WEBHOOK_URL) {
+        try { providerUsed = 'webhook';
+          const r = await fetch(process.env.EMAIL_WEBHOOK_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ to, cc, subject: assunto, html: corpo, anexo_base64, anexo_nome }) });
+          status = r.ok ? 'enviado' : `erro_${r.status}`;
+        } catch (e2) { status = 'erro: ' + String(e2.message).substring(0, 100); }
+      } else status = 'erro: ' + String(e.message).substring(0, 140);
     }
-  } catch (e) {
-    status = 'erro: ' + e.message.substring(0, 100);
   }
+  const ok = status === 'enviado';
 
   await logMarco(sql, marco_id, 'email', null, null,
                  `[${providerUsed}] ${tipo} para ${to}: ${status}`,
                  'sistema', to, status, { tipo, cc, has_anexo: !!anexo_base64 });
-  return { status, providerUsed };
+  if (!ok) console.warn('[marcos e-mail]', tipo, to, status);
+  return { status, providerUsed, ok };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 16. TEMPLATES DE EMAIL
 // ═══════════════════════════════════════════════════════════════════════════
 
+// v3.233: dados do marco/projeto escapados nos e-mails (nome com "<" ou "&" quebrava o HTML) e data em dd/mm/aaaa
+const _eH = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const _eDt = v => { const d = _dStr(v); return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d.split('-').reverse().join('/') : _eH(v || '-'); };
 function emailTplGP10dias(m, dias) {
   const valor = parseFloat(m.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `
   <div style="font-family:Arial,sans-serif;max-width:600px;color:#333;">
-    <h2 style="color:#1a3a8f;">Olá ${m.gerente_projeto_nome || 'Gerente'},</h2>
+    <h2 style="color:#1a3a8f;">Olá ${_eH(m.gerente_projeto_nome || 'Gerente')},</h2>
     <p>Faltam <strong>${dias} dia${dias === 1 ? '' : 's'}</strong> para a entrega do marco abaixo. Por favor revise e libere para o próximo passo:</p>
     <table style="border:1px solid #ddd;border-collapse:collapse;width:100%;margin:14px 0;">
-      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Projeto</strong></td><td style="padding:8px;border:1px solid #ddd;">${m.projeto_nome}</td></tr>
-      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Cliente</strong></td><td style="padding:8px;border:1px solid #ddd;">${m.cliente || '-'}</td></tr>
-      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Marco</strong></td><td style="padding:8px;border:1px solid #ddd;">${m.descricao}</td></tr>
-      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Data de entrega</strong></td><td style="padding:8px;border:1px solid #ddd;">${m.data_entrega}</td></tr>
+      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Projeto</strong></td><td style="padding:8px;border:1px solid #ddd;">${_eH(m.projeto_nome || '-')}</td></tr>
+      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Cliente</strong></td><td style="padding:8px;border:1px solid #ddd;">${_eH(m.cliente || '-')}</td></tr>
+      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Marco</strong></td><td style="padding:8px;border:1px solid #ddd;">${_eH(m.descricao)}</td></tr>
+      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Data de entrega</strong></td><td style="padding:8px;border:1px solid #ddd;">${_eDt(m.data_entrega)}</td></tr>
       <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Valor</strong></td><td style="padding:8px;border:1px solid #ddd;">R$ ${valor}</td></tr>
-      ${m.percentual ? `<tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Percentual</strong></td><td style="padding:8px;border:1px solid #ddd;">${m.percentual}%</td></tr>` : ''}
+      ${m.percentual ? `<tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Percentual</strong></td><td style="padding:8px;border:1px solid #ddd;">${_eH(m.percentual)}%</td></tr>` : ''}
     </table>
     <p>Acesse o Atlantyx OS para liberar este marco no Kanban Financeiro.</p>
     <p style="color:#666;font-size:12px;">Este é um aviso automático do Atlantyx OS.</p>
@@ -8615,11 +8619,11 @@ function emailTplFinanceiroAposGP(m, ator) {
   return `
   <div style="font-family:Arial,sans-serif;max-width:600px;color:#333;">
     <h2 style="color:#22d3a3;">Marco aprovado pelo Gerente de Projeto</h2>
-    <p>O marco abaixo foi liberado por <strong>${ator || 'GP'}</strong>. Por favor, prepare o termo de aceite:</p>
+    <p>O marco abaixo foi liberado por <strong>${_eH(ator || 'GP')}</strong>. Por favor, prepare o termo de aceite:</p>
     <table style="border:1px solid #ddd;border-collapse:collapse;width:100%;margin:14px 0;">
-      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Projeto</strong></td><td style="padding:8px;border:1px solid #ddd;">${m.projeto_nome}</td></tr>
-      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Cliente</strong></td><td style="padding:8px;border:1px solid #ddd;">${m.cliente || '-'}</td></tr>
-      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Marco</strong></td><td style="padding:8px;border:1px solid #ddd;">${m.descricao}</td></tr>
+      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Projeto</strong></td><td style="padding:8px;border:1px solid #ddd;">${_eH(m.projeto_nome || '-')}</td></tr>
+      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Cliente</strong></td><td style="padding:8px;border:1px solid #ddd;">${_eH(m.cliente || '-')}</td></tr>
+      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Marco</strong></td><td style="padding:8px;border:1px solid #ddd;">${_eH(m.descricao)}</td></tr>
       <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Valor</strong></td><td style="padding:8px;border:1px solid #ddd;">R$ ${valor}</td></tr>
     </table>
     <p><strong>Próximos passos no Kanban Financeiro:</strong></p>
@@ -8637,14 +8641,14 @@ function emailTplTermoCliente(m, mensagem) {
   return `
   <div style="font-family:Arial,sans-serif;max-width:600px;color:#333;">
     <h2 style="color:#1a3a8f;">Termo para sua aprovação</h2>
-    <p>Olá ${m.cliente_responsavel_nome || ''},</p>
-    <p>Segue em anexo o <strong>termo de aceite</strong> referente ao marco abaixo do projeto <strong>${m.projeto_nome}</strong>:</p>
+    <p>Olá ${_eH(m.cliente_responsavel_nome || '')},</p>
+    <p>Segue em anexo o <strong>termo de aceite</strong> referente ao marco abaixo do projeto <strong>${_eH(m.projeto_nome || '-')}</strong>:</p>
     <table style="border:1px solid #ddd;border-collapse:collapse;width:100%;margin:14px 0;">
-      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Marco</strong></td><td style="padding:8px;border:1px solid #ddd;">${m.descricao}</td></tr>
+      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Marco</strong></td><td style="padding:8px;border:1px solid #ddd;">${_eH(m.descricao)}</td></tr>
       <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Valor</strong></td><td style="padding:8px;border:1px solid #ddd;">R$ ${valor}</td></tr>
-      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Data prevista</strong></td><td style="padding:8px;border:1px solid #ddd;">${m.data_entrega}</td></tr>
+      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Data prevista</strong></td><td style="padding:8px;border:1px solid #ddd;">${_eDt(m.data_entrega)}</td></tr>
     </table>
-    ${mensagem ? `<p>${mensagem}</p>` : ''}
+    ${mensagem ? `<p>${_eH(mensagem)}</p>` : ''}
     <p>Por favor, revise e nos retorne a aprovação para emitirmos a nota fiscal.</p>
     <p>Qualquer dúvida, estamos à disposição.</p>
     <p>Atenciosamente,<br/><strong>Atlantyx</strong></p>
@@ -8655,8 +8659,8 @@ function emailTplLembreteCliente(m, tentativa) {
   return `
   <div style="font-family:Arial,sans-serif;max-width:600px;color:#333;">
     <h2 style="color:#f59e0b;">Lembrete: termo aguardando sua aprovação</h2>
-    <p>Olá ${m.cliente_responsavel_nome || ''},</p>
-    <p>Este é o <strong>lembrete nº ${tentativa}</strong> sobre o termo do marco <strong>${m.descricao}</strong> do projeto <strong>${m.projeto_nome}</strong>, enviado em ${m.termo_enviado_cliente_em ? new Date(m.termo_enviado_cliente_em).toLocaleDateString('pt-BR') : '-'}.</p>
+    <p>Olá ${_eH(m.cliente_responsavel_nome || '')},</p>
+    <p>Este é o <strong>lembrete nº ${tentativa}</strong> sobre o termo do marco <strong>${_eH(m.descricao)}</strong> do projeto <strong>${_eH(m.projeto_nome || '-')}</strong>, enviado em ${m.termo_enviado_cliente_em ? new Date(m.termo_enviado_cliente_em).toLocaleDateString('pt-BR') : '-'}.</p>
     <p>Aguardamos seu retorno para prosseguir com a emissão da nota fiscal.</p>
     <p>Se já aprovou, por favor desconsidere este email.</p>
     <p>Atenciosamente,<br/><strong>Atlantyx</strong></p>
@@ -8671,10 +8675,10 @@ function emailTplLembreteFinanceiro(m, tentativa) {
     <h2 style="color:#3b82f6;">Lembrete financeiro #${tentativa}</h2>
     <p>O marco abaixo está em <strong>${ehNF ? 'NF Emitida' : 'Aguardando Pagamento'}</strong>. Atualize o Kanban quando o pagamento for confirmado e marque como <em>Concluído</em>:</p>
     <table style="border:1px solid #ddd;border-collapse:collapse;width:100%;margin:14px 0;">
-      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Projeto</strong></td><td style="padding:8px;border:1px solid #ddd;">${m.projeto_nome}</td></tr>
-      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Marco</strong></td><td style="padding:8px;border:1px solid #ddd;">${m.descricao}</td></tr>
+      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Projeto</strong></td><td style="padding:8px;border:1px solid #ddd;">${_eH(m.projeto_nome || '-')}</td></tr>
+      <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Marco</strong></td><td style="padding:8px;border:1px solid #ddd;">${_eH(m.descricao)}</td></tr>
       <tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>Valor</strong></td><td style="padding:8px;border:1px solid #ddd;">R$ ${valor}</td></tr>
-      ${m.nota_fiscal ? `<tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>NF</strong></td><td style="padding:8px;border:1px solid #ddd;">${m.nota_fiscal}</td></tr>` : ''}
+      ${m.nota_fiscal ? `<tr><td style="background:#f5f5f5;padding:8px;border:1px solid #ddd;"><strong>NF</strong></td><td style="padding:8px;border:1px solid #ddd;">${_eH(m.nota_fiscal)}</td></tr>` : ''}
     </table>
     <p style="color:#666;font-size:12px;">Atlantyx OS — lembrete automático a cada 3 dias até a conclusão.</p>
   </div>`;

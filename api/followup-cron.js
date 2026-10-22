@@ -28,7 +28,13 @@ async function handler(req, res) {
     const sql = neon(process.env.DATABASE_URL);
     let devidos = [];
     try { devidos = await sql`SELECT * FROM followups WHERE status = 'pendente' AND send_at <= NOW() ORDER BY send_at ASC LIMIT 20`; } catch (_) { devidos = []; }
+    // v3.233: respeita o descadastro (LGPD) — quem respondeu SAIR não recebe o follow-up
+    let optout = new Set();
+    try { const { normTelefone } = await import('./campanha-disparo.js'); optout = new Set((await sql`SELECT destino FROM disparo_optout`).map(r => r.destino)); optout._norm = normTelefone; } catch (_) {}
+    const pulados = [];
     for (const f of devidos) {
+      const dest = optout._norm ? (optout._norm(f.phone) || String(f.phone || '').replace(/\D/g, '')) : String(f.phone || '').replace(/\D/g, '');
+      if (optout.has(dest)) { await sql`UPDATE followups SET status = 'descadastrado' WHERE id = ${f.id}`; pulados.push(f.phone); continue; }
       try {
         await enviarFollowUp({ phone: f.phone, name: f.name, company: f.company, job_title: f.job_title, mensagemOriginal: f.mensagem_original });
         await sql`UPDATE followups SET status = 'enviado', enviado_em = NOW() WHERE id = ${f.id}`;
@@ -40,6 +46,7 @@ async function handler(req, res) {
       success: true,
       hora: agora.toISOString(),
       followups_enviados: enviados.length,
+      descadastrados_pulados: pulados.length,
       enviados
     });
 
@@ -73,18 +80,23 @@ Retorne APENAS o texto do follow-up.`
   });
 
   const data = await res.json();
-  const followupMsg = data.content[0].text;
+  const followupMsg = String(data?.content?.[0]?.text || '').trim();
+  if (!followupMsg) throw new Error('IA não gerou o follow-up: ' + (data?.error?.message || 'resposta vazia'));
 
   // Enviar via Z-API
   const instance = process.env.ZAPI_INSTANCE;
   const token = process.env.ZAPI_TOKEN;
   const clientToken = process.env.ZAPI_CLIENT_TOKEN;
 
-  await fetch(`https://api.z-api.io/instances/${instance}/token/${token}/send-text`, {
+  if (!instance || !token) throw new Error('Z-API não configurada');
+  const rz = await fetch(`https://api.z-api.io/instances/${instance}/token/${token}/send-text`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Client-Token': clientToken },
     body: JSON.stringify({ phone: followup.phone, message: followupMsg }),
   });
+  // v3.233: antes marcava 'enviado' mesmo com a instância desconectada
+  const jz = await rz.json().catch(() => ({}));
+  if (!rz.ok || jz.error || !(jz.zaapId || jz.messageId || jz.id)) throw new Error('Z-API não enviou: ' + (jz.error || jz.message || ('HTTP ' + rz.status)));
 
   console.log(`[S7-05] Follow-up enviado para ${followup.phone} (${followup.name})`);
 }

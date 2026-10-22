@@ -42,9 +42,13 @@ async function handler(req, res) {
     const resultados = [];
     let enviados = 0;
     let erros = 0;
+    // v3.233: a função tem 60 s — com intervalo de 30–60 s entre envios ela era cortada no meio e a nova tentativa
+    // reenviava para os primeiros. Agora para antes do limite e devolve os leads que faltam; a tela chama de novo só com eles.
+    const t0 = Date.now(); let pendentes = [];
 
     for (let i = 0; i < leads.length; i++) {
       const lead = leads[i];
+      if (i > 0 && lead.phone && Date.now() - t0 + delay_segundos * 1000 > 45000) { pendentes = leads.slice(i); break; }
 
       try {
         if (!lead.phone) {
@@ -99,6 +103,7 @@ async function handler(req, res) {
       enviados,
       erros,
       resultados,
+      pendentes, // v3.233: leads que ficaram para a próxima chamada (limite de tempo da função)
       lote,
     });
 
@@ -142,11 +147,14 @@ Regras:
 async function enviarWhatsApp(phone, message) {
   let p = phone.replace(/[^0-9]/g, '');
   if (!p.startsWith('55')) p = '55' + p;
-  await fetch(`https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-text`, {
+  // v3.233: confere a resposta da Z-API — antes instância desconectada aparecia como ENVIADO e movia o deal no HubSpot
+  const r = await fetch(`https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-text`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Client-Token': process.env.ZAPI_CLIENT_TOKEN },
     body: JSON.stringify({ phone: p, message }),
   });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.error) throw new Error('Z-API: ' + (d.error || d.message || 'HTTP ' + r.status));
 }
 
 async function moverDealHubSpot(dealId, etapa) {

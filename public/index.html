@@ -4073,7 +4073,8 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
         </div>
       </div>
       <div id="cbBlocoBoleto" style="display:none;">
-        <div class="fg" style="margin:0;"><label class="fl">Código de barras (44 dígitos)</label><input class="fi" id="cbCodBarras" placeholder="só números"/></div>
+        <div class="fg" style="margin:0;"><label class="fl">Código de barras (44) ou linha digitável (47) do boleto deste mês</label><input class="fi" id="cbCodBarras" placeholder="só números — o sistema confere o dígito"/></div>
+        <div style="font-size:9.5px;color:var(--t3);margin-top:4px;">O código vale só para este pagamento (cada mês tem um boleto novo). Conta de consumo/tributo (começa com 8) não entra no arquivo.</div>
       </div>
       <button class="btn btn-gn" style="width:100%;margin-top:12px;" onclick="salvarDadosBancarios()">Salvar</button>
     </div>
@@ -6351,7 +6352,7 @@ async function runBatch(){let leads;try{leads=JSON.parse(document.getElementById
   if(vaoReceber>0){_batchPend={leads,tom,delay};btnOk.disabled=false;btnOk.textContent='Confirmar e Disparar ('+vaoReceber+')';}
   else btnOk.textContent='Confirmar e Disparar';}
 function _batchConfirmar(){const p=_batchPend;if(!p)return;_batchPreviewFechar();_batchExecutar(p);}
-async function _batchExecutar(p){const btn=document.getElementById('btnBatch');const st=document.getElementById('batchStatus');const res=document.getElementById('batchResult');const log=document.getElementById('batchLog');const leads=p.leads;const confirmadoEm=new Date().toISOString();btn.disabled=true;btn.textContent='Enviando...';st.textContent='Enviando';st.className='tag on';res.innerHTML='<div style="color:var(--blue);font-size:11px;">Iniciando outreach '+leads.length+' leads...</div>';log.innerHTML='';addLog('info','[S7-05] Outreach lote confirmado em '+new Date(confirmadoEm).toLocaleString('pt-BR')+': '+leads.length+' leads');const data=await api('/api/outreach-batch','POST',{leads,tom:p.tom,delay_segundos:p.delay});if(data&&data.error){toast('Erro: '+data.error,'error');st.textContent='Erro';st.className='tag off';}else if(data){st.textContent=data.enviados+'/'+data.total;st.className=data.erros>0?'tag gd':'tag live';res.innerHTML='<div class="kg k3" style="margin-bottom:10px;"><div class="kpi gn"><div class="kl">Enviados</div><div class="kv">'+data.enviados+'</div></div><div class="kpi rd" style=""><div class="kl">Erros</div><div class="kv">'+data.erros+'</div></div><div class="kpi bl"><div class="kl">Total</div><div class="kv">'+data.total+'</div></div></div>';(data.resultados||[]).forEach(r=>{log.insertAdjacentHTML('beforeend','<div class="le '+(r.status==='ENVIADO'?'success':r.status==='SEM_TELEFONE'?'warn':'err')+'">'+r.nome+' -- '+r.status+(r.status==='VARIAVEL_FALTANDO'&&r.erro?' ('+_batchEsc(r.erro)+')':'')+'</div>');});const lote=Object.assign({usuario:'fundador',total:data.total,enviados:data.enviados},data.lote||{},{confirmado_em:confirmadoEm,erros:data.erros});addLog('success','[S7-05] Outreach: '+data.enviados+' enviados de '+data.total+' · usuario '+lote.usuario+' · '+new Date().toLocaleString('pt-BR'));try{const hist=JSON.parse(localStorage.getItem('atx:outreach_lotes')||'[]');hist.unshift(lote);if(typeof DB!=='undefined')DB.set('outreach_lotes',hist.slice(0,100));}catch(e){}toast(data.enviados+' mensagens enviadas!','success');}btn.disabled=false;btn.innerHTML='&#9654; Executar Outreach em Lote';}
+async function _batchExecutar(p){const btn=document.getElementById('btnBatch');const st=document.getElementById('batchStatus');const res=document.getElementById('batchResult');const log=document.getElementById('batchLog');const leads=p.leads;const confirmadoEm=new Date().toISOString();btn.disabled=true;btn.textContent='Enviando...';st.textContent='Enviando';st.className='tag on';res.innerHTML='<div style="color:var(--blue);font-size:11px;">Iniciando outreach '+leads.length+' leads...</div>';log.innerHTML='';addLog('info','[S7-05] Outreach lote confirmado em '+new Date(confirmadoEm).toLocaleString('pt-BR')+': '+leads.length+' leads');/* v3.233: envia em partes (a função tem 60 s) — cada chamada devolve os que faltam e só eles são reenviados */let data=null;{let fila=leads,acc={success:true,total:leads.length,enviados:0,erros:0,resultados:[]};for(let k=0;k<200&&fila.length;k++){const d=await api('/api/outreach-batch','POST',{leads:fila,tom:p.tom,delay_segundos:p.delay});if(!d||d.error){acc=d&&d.error?Object.assign(acc,{error:d.error}):acc;break;}acc.enviados+=d.enviados||0;acc.erros+=d.erros||0;acc.resultados=acc.resultados.concat(d.resultados||[]);acc.lote=d.lote;fila=d.pendentes||[];res.innerHTML='<div style="color:var(--blue);font-size:11px;">Enviando… '+acc.enviados+' enviado(s), '+fila.length+' na fila</div>';if(fila.length)await new Promise(r=>setTimeout(r,(p.delay||30)*1000));}data=acc.error&&!acc.enviados?{error:acc.error}:acc;}if(data&&data.error){toast('Erro: '+data.error,'error');st.textContent='Erro';st.className='tag off';}else if(data){st.textContent=data.enviados+'/'+data.total;st.className=data.erros>0?'tag gd':'tag live';res.innerHTML='<div class="kg k3" style="margin-bottom:10px;"><div class="kpi gn"><div class="kl">Enviados</div><div class="kv">'+data.enviados+'</div></div><div class="kpi rd" style=""><div class="kl">Erros</div><div class="kv">'+data.erros+'</div></div><div class="kpi bl"><div class="kl">Total</div><div class="kv">'+data.total+'</div></div></div>';(data.resultados||[]).forEach(r=>{log.insertAdjacentHTML('beforeend','<div class="le '+(r.status==='ENVIADO'?'success':r.status==='SEM_TELEFONE'?'warn':'err')+'">'+r.nome+' -- '+r.status+(r.status==='VARIAVEL_FALTANDO'&&r.erro?' ('+_batchEsc(r.erro)+')':'')+'</div>');});const lote=Object.assign({usuario:'fundador',total:data.total,enviados:data.enviados},data.lote||{},{confirmado_em:confirmadoEm,erros:data.erros});addLog('success','[S7-05] Outreach: '+data.enviados+' enviados de '+data.total+' · usuario '+lote.usuario+' · '+new Date().toLocaleString('pt-BR'));try{const hist=JSON.parse(localStorage.getItem('atx:outreach_lotes')||'[]');hist.unshift(lote);if(typeof DB!=='undefined')DB.set('outreach_lotes',hist.slice(0,100));}catch(e){}toast(data.enviados+' mensagens enviadas!','success');}btn.disabled=false;btn.innerHTML='&#9654; Executar Outreach em Lote';}
 async function meetAction(action){const st=document.getElementById('meetStatus');const res=document.getElementById('meetResult');st.textContent='Executando...';st.className='tag on';res.innerHTML='<span style="color:var(--blue);font-family:var(--M);">Processando...</span>';addLog('info','[S7-07/08] '+action+': '+document.getElementById('mComp').value);const data=await api('/api/meeting-schedule','POST',{action,lead_name:document.getElementById('mName').value,lead_company:document.getElementById('mComp').value,lead_cargo:document.getElementById('mCargo').value,lead_phone:document.getElementById('mPhone').value,lead_setor:document.getElementById('mSetor').value,data_hora:document.getElementById('mData').value,deal_id:document.getElementById('mDeal').value||null});if(data){st.textContent='Concluido';st.className='tag live';if(action==='gerar_briefing'&&data.briefing){res.textContent=data.briefing;_briefSalvar(data.briefing);}else{res.innerHTML='<div style="color:var(--green);font-size:12px;margin-bottom:8px;">OK '+(action==='propor_horarios'?'Horarios enviados via WA':action==='confirmar'?'Reuniao confirmada!':'Briefing gerado e enviado.')+'</div>'+(data.opcoes?'<div style="font-size:11px;color:var(--t2);">'+data.opcoes.join('<br>')+'</div>':'');}addLog('success','[S7-07] '+action+' - '+document.getElementById('mComp').value);toast('Concluido: '+action,'success');}else{st.textContent='Erro';st.className='tag hot';res.innerHTML='<span style="color:var(--red);">Erro - verifique variaveis de ambiente</span>';}}
 const S2A=[{n:'S2-01',nm:'Inteligencia de Mercado',d:'Varre portais e plataformas identificando RFPs e oportunidades aderentes ao portfolio.',on:true,ep:'/api/rfp-monitor'},{n:'S2-02',nm:'Mapeamento de Contas',d:'Mapeia empresas-alvo pelo ICP com score A/B/C, decisores e sinal de compra. Cria no HubSpot.',on:true,ep:'/api/prospect-scan'},{n:'S2-03',nm:'Cadastro em Portais',d:'Analisa e instrui cadastro da Atlantyx como fornecedora em portais de grandes empresas.',on:false,ep:'/api/portal-cadastro'},{n:'S2-04',nm:'Monitoramento de RFPs',d:'Cron automatico 6h. Busca editais reais com propostas abertas no PNCP (Portal Nacional de Contratacoes Publicas), com link do edital e do portal de origem.',on:true,ep:'/api/rfp-monitor'},{n:'S2-05',nm:'Campanhas Pagas',d:'Cria e otimiza campanhas Google Ads e LinkedIn Ads com gestao autonoma de ROAS.',on:false,ep:null},{n:'S2-06',nm:'Conteudo e Autoridade',d:'Produz artigos, cases e whitepapers posicionando a Atlantyx nos setores do ICP.',on:false,ep:null},{n:'S2-07',nm:'SEO',d:'Audita posicionamento organico. Monitora Core Web Vitals, Domain Authority e backlinks.',on:false,ep:null},{n:'S2-08',nm:'Nutricao de Leads',d:'Executa sequencias de email personalizadas por cargo, setor e momento da jornada.',on:false,ep:null},{n:'S2-09',nm:'Analytics',d:'Monitora KPIs em tempo real e gera analise com insights acionaveis via Claude IA.',on:false,ep:'/api/analytics'}];
 const S7A=[{n:'S7-01',nm:'Prospeccao Ativa',d:'Recebe empresas do S2-02 e monta dossie de abordagem com perfil, dores e historico.',on:true,ep:'/api/prospect-scan'},{n:'S7-02',nm:'Identificacao de RFPs',d:'Analisa compatibilidade de RFPs e estima probabilidade de vitoria.',on:false,ep:null},{n:'S7-03',nm:'Resposta a RFPs',d:'Com aprovacao humana, elabora resposta tecnica e comercial completa ao edital.',on:false,ep:null},{n:'S7-04',nm:'Mapeamento de Decisores',d:'Identifica C-levels com cargo, LinkedIn, canal recomendado e melhor angulo.',on:true,ep:'/api/decisor-map'},{n:'S7-05',nm:'Outreach via WhatsApp',d:'Gera e envia mensagens personalizadas. Monitora resposta. Follow-up automatico 48h.',on:true,ep:'/api/outreach-batch'},{n:'S7-06',nm:'Outreach via Ligacao',d:'Gera scripts personalizados e agenda ligacoes com Voz IA.',on:false,ep:null},{n:'S7-07',nm:'Agendamento de Reunioes',d:'Propoe horarios, confirma reuniao, envia convite e registra no HubSpot.',on:true,ep:'/api/meeting-schedule'},{n:'S7-08',nm:'Preparacao de Reuniao',d:'24h antes gera dossie: perfil, dores, produtos aderentes, perguntas e objecoes.',on:false,ep:'/api/meeting-schedule'},{n:'S7-09',nm:'Pipeline',d:'Monitora deals parados e sugere acoes de desbloqueio.',on:false,ep:null},{n:'S7-10',nm:'Propostas',d:'Gera propostas comerciais com escopo, prazo e precificacao.',on:false,ep:null},{n:'S7-11',nm:'Forecast',d:'Calcula previsao semana/mes/trimestre com cenarios P/R/O.',on:false,ep:null},{n:'S7-12',nm:'Expansao',d:'Identifica upsell e cross-sell na carteira ativa.',on:false,ep:null}];
@@ -8001,9 +8002,21 @@ function _kbPagosDaColuna(col) {
     return !(_kbFiltro.de && ref < _kbFiltro.de) && !(_kbFiltro.ate && ref > _kbFiltro.ate);
   }).sort((a, b) => String(b.criado_em || '').localeCompare(String(a.criado_em || '')));
 }
+// v3.233: status real da campanha patrocinada no Meta (effective_status) — antes qualquer coisa ≠ ACTIVE virava "pausado"
+// (inclusive em análise, com problema ou rejeitada) e uma campanha sem leitura do Meta mostrava o status gravado na criação
+function _patStatus(c) {
+  const e = String(c.estado_meta || '').toUpperCase();
+  if (!e) return { rot: c.estado_erro ? 'sem leitura do Meta' : String(c.estado || 'PAUSED').toUpperCase() === 'ACTIVE' ? 'ativo (não confirmado)' : 'pausado', cls: 'off', veicula: String(c.estado || '').toUpperCase() === 'ACTIVE', confirmado: false };
+  if (e === 'ACTIVE') return c.encerrada ? { rot: 'encerrada', cls: 'off', veicula: false, confirmado: true } : { rot: 'ativo', cls: 'live', veicula: true, confirmado: true };
+  if (/REVIEW|PROCESS|PENDING/.test(e)) return { rot: 'em análise', cls: 'off', veicula: true, confirmado: true };
+  if (/ISSUES/.test(e)) return { rot: 'com problema', cls: 'off', veicula: true, confirmado: true };
+  if (/DISAPPROVED/.test(e)) return { rot: 'rejeitado', cls: 'off', veicula: false, confirmado: true };
+  if (/ARCHIVED|DELETED/.test(e)) return { rot: 'arquivado', cls: 'off', veicula: false, confirmado: true };
+  return { rot: 'pausado', cls: 'off', veicula: false, confirmado: true };
+}
 function _kbCardPago(r) {
-  const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), R = r.resultado || {}, e = String(r.estado_meta || r.estado || '').toUpperCase();
-  const est = e === 'ACTIVE' ? 'ativo' : /REVIEW|PENDING/.test(e) ? 'em análise' : /DISAPPROVED/.test(e) ? 'rejeitado' : 'pausado';
+  const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), R = r.resultado || {};
+  const est = _patStatus(r).rot;
   const dt = s => String(s || '').split('-').reverse().join('/');
   const url = 'https://adsmanager.facebook.com/adsmanager/manage/campaigns?selected_campaign_ids=' + encodeURIComponent(r.id || '');
   return `<div style="background:var(--bg3);border:1px solid rgba(220,39,67,.45);border-radius:6px;padding:9px;margin-bottom:6px;">
@@ -10121,7 +10134,7 @@ async function addReceber() {
   const valor = document.getElementById('f_recValor')?.value?.trim();
   const venc = document.getElementById('f_recVenc')?.value?.trim();
   if (!cliente || !valor) { toast('Informe cliente e valor', 'error'); return; }
-  if (!(parseFloat(String(valor).replace(/\./g, '').replace(',', '.')) > 0)) { toast('Valor inválido', 'error'); document.getElementById('f_recValor')?.focus(); return; }
+  if (!(_numBR(valor) > 0)) { toast('Valor inválido', 'error'); document.getElementById('f_recValor')?.focus(); return; }
   if (!venc) { toast('Informe o vencimento', 'error'); document.getElementById('f_recVenc')?.focus(); return; }
 
   receberItems.push({ cliente, valor, vencimento: venc, status: 'pendente', id: Date.now() });
@@ -19070,7 +19083,7 @@ async function pvSimular() {
       <div style="margin-bottom:12px;">${d.recebimento_por_mes.map(x => `<div style="display:flex;align-items:center;gap:8px;font-size:10.5px;padding:2px 0;"><span style="width:56px;color:var(--t2);">${_pvMes(x.mes)}</span><div style="flex:1;height:10px;background:var(--bd);border-radius:3px;overflow:hidden;"><div style="height:100%;width:${Math.round(x.valor / mx * 100)}%;background:var(--green,#22d3a3);"></div></div><span style="width:120px;text-align:right;font-family:var(--M);">${_pvBRL(x.valor)}</span></div>`).join('')}</div>
       <div style="max-height:42vh;overflow-y:auto;border:1px solid var(--bd);border-radius:8px;">
         ${d.projetos.map(p => `<div style="padding:9px 12px;border-bottom:1px solid var(--bd);">
-          <div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;"><span><b>${p.projeto}</b> · <span style="color:var(--t2);">${p.cliente}</span>
+          <div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;"><span><b>${_dsE(p.projeto)}</b> · <span style="color:var(--t2);">${_dsE(p.cliente)}</span>
             ${p.cliente_qb ? (p.cliente_qb.existe ? `<span style="font-size:9.5px;color:var(--t3);"> → QB: ${p.cliente_qb.nome}</span>` : '<span style="font-size:9.5px;color:var(--gold);"> → cliente será criado no QB</span>') : ''}</span><b>${_pvBRL(p.total)}</b></div>
           <table style="width:100%;font-size:10.5px;margin-top:5px;border-collapse:collapse;">${p.marcos.map(x => `<tr style="border-top:1px solid var(--bd);">
             <td style="padding:3px 4px;width:62px;font-weight:600;">${_pvMes(x.mes)}</td><td style="padding:3px 4px;">${x.descricao}</td>
@@ -20845,8 +20858,8 @@ function renderProjetos() {
         <button title="Importar do Maestro os marcos de faturamento deste projeto" onclick='event.stopPropagation();maeImportarAbrir(${_dsE(JSON.stringify(p.id))})' style="position:absolute;top:8px;right:38px;background:transparent;border:1px solid transparent;border-radius:5px;color:var(--t3);cursor:pointer;font-size:13px;padding:1px 6px;" onmouseover="this.style.color='var(--blue)';this.style.borderColor='var(--blue)'" onmouseout="this.style.color='var(--t3)';this.style.borderColor='transparent'">&#8681;</button>
         <button title="Excluir projeto" onclick='event.stopPropagation();excluirProjeto(${_dsE(JSON.stringify(p.id))})' style="position:absolute;top:8px;right:8px;background:transparent;border:1px solid transparent;border-radius:5px;color:var(--t3);cursor:pointer;font-size:13px;padding:1px 6px;" onmouseover="this.style.color='var(--red)';this.style.borderColor='var(--red)'" onmouseout="this.style.color='var(--t3)';this.style.borderColor='transparent'">&#128465;</button>
         <div style="font-family:var(--H);font-size:13px;font-weight:600;margin-bottom:4px;padding-right:60px;">${_dsE(p.nome)}</div>
-        <div style="font-size:10px;color:var(--t2);margin-bottom:8px;">${p.cliente || 'Sem cliente'}</div>
-        <div style="font-size:10px;color:var(--t2);margin-bottom:3px;">GP: ${p.gerente_projeto_nome || '-'}</div>
+        <div style="font-size:10px;color:var(--t2);margin-bottom:8px;">${_dsE(p.cliente || 'Sem cliente')}</div>
+        <div style="font-size:10px;color:var(--t2);margin-bottom:3px;">GP: ${_dsE(p.gerente_projeto_nome || '-')}</div>
         <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:6px;">
           <span style="color:var(--t2);">Marcos:</span>
           <span><strong>${ag.concluidos}</strong>/${ag.total_marcos} (${pctConcl}%)</span>
@@ -20982,7 +20995,7 @@ function renderMarcosLista() {
     <tbody>${_projetoAberto.marcos.map(m => {
       const k = KL[m.status_kanban] || { l: m.status_kanban, c: '#888' };
       return `<tr style="border-bottom:1px solid rgba(255,255,255,.03);">
-        <td style="padding:7px;">${m.descricao}</td>
+        <td style="padding:7px;">${_dsE(m.descricao)}</td>
         <td style="padding:7px;text-align:center;font-family:var(--M);font-size:10px;color:var(--t2);">${m.data_entrega || '-'}</td>
         <td style="padding:7px;text-align:right;font-family:var(--M);font-weight:600;">${fmtBRLcompleto(m.valor)}</td>
         <td style="padding:7px;text-align:center;color:var(--t2);">${m.percentual != null ? m.percentual+'%' : '-'}</td>
@@ -21219,8 +21232,8 @@ function renderMarcoCard(m, colKey) {
   acoes += `<button class="btn" style="font-size:8.5px;padding:2px 8px;margin-top:4px;margin-left:4px;" onclick="event.stopPropagation();marcoCopiarAbrir(['${m.id}'])" title="Copiar este marco (cria marcos novos)">⧉ copiar</button>`;
   return `<div data-mkid="${m.id}" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${m.id}');event.dataTransfer.effectAllowed='move';this.style.opacity='.5'" ondragend="this.style.opacity=''" title="Arraste para outra etapa"
     style="cursor:grab;background:var(--bg3);border:1px solid ${urgente && colKey === 'aguardando_entrega' ? 'var(--gold)' : 'var(--bd)'};border-radius:6px;padding:8px;margin-bottom:6px;font-size:10px;">
-    <div style="font-weight:600;font-size:11px;margin-bottom:3px;color:var(--t1);">${m.descricao}</div>
-    <div style="font-size:9px;color:var(--t2);margin-bottom:4px;">${m.projeto_nome} · ${m.projeto_cliente || ''}</div>
+    <div style="font-weight:600;font-size:11px;margin-bottom:3px;color:var(--t1);">${_dsE(m.descricao)}</div>
+    <div style="font-size:9px;color:var(--t2);margin-bottom:4px;">${_dsE(m.projeto_nome)} · ${_dsE(m.projeto_cliente || '')}</div>
     <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t2);">
       <span>📅 ${m.data_entrega || '-'}${diasParaEntrega != null ? ` <span style="color:${_corTxt(urgente ? 'var(--gold)' : 'var(--t3)')};">(${diasParaEntrega >= 0 ? diasParaEntrega + 'd' : 'atrasado'})</span>` : ''}</span>
       <span style="font-family:var(--M);font-weight:600;color:var(--t1);">${fmtBRL(m.valor)}</span>
@@ -21258,7 +21271,8 @@ async function uploadTermo(id) {
   input.onchange = async (ev) => {
     const f = ev.target.files[0];
     if (!f) return;
-    if (f.size > 10 * 1024 * 1024) { if (typeof toast === 'function') toast('Arquivo > 10MB', 'error'); return; }
+    // v3.233: o servidor recebe no máximo ~4,5 MB por envio (o arquivo vai em base64, +33%) — o limite real é 3 MB
+    if (f.size > 3.2 * 1024 * 1024) { if (typeof toast === 'function') toast('Arquivo acima de 3 MB — o servidor não aceita. Comprima o PDF e tente de novo.', 'error'); return; }
     const reader = new FileReader();
     reader.onload = async () => {
       const base64 = reader.result.split(',')[1];
@@ -21419,7 +21433,7 @@ async function carregarCnab() {
         <td style="padding:5px;color:var(--t2);">${p.fornecedor||'<span style="color:var(--red);">sem fornecedor</span>'}</td>
         <td style="padding:5px;font-size:10px;">${formaLbl[p.forma_pagamento]||p.forma_pagamento}</td>
         <td style="padding:5px;text-align:right;font-family:var(--M);">${fmtBRLcompleto(p.valor)}</td>
-        <td style="padding:5px;white-space:nowrap;">${p.pronto ? '<span style="color:var(--green,#22d3a3);font-size:9px;">✓ pronto</span>' : `<button class="btn" style="font-size:9px;padding:1px 5px;color:var(--gold);" onclick="abrirDadosBancarios('${p.despesa_id}','${(p.fornecedor||'').replace(/'/g,'')}')" title="Falta: ${p.faltando.join(', ')}">⚠ completar</button>`}</td>
+        <td style="padding:5px;white-space:nowrap;">${p.pronto ? '<span style="color:var(--green,#22d3a3);font-size:9px;">✓ pronto</span>' : `<button class="btn" style="font-size:9px;padding:1px 5px;color:var(--gold);" onclick="abrirDadosBancarios('${p.despesa_id}','${(p.fornecedor||'').replace(/['"\\<>]/g,'')}','${p.id}')" title="Falta: ${p.faltando.join(', ')}">⚠ completar</button>`}</td>
         </tr>`).join('')}</tbody></table>` : '<div style="text-align:center;color:var(--t3);padding:20px;">Nenhum pagamento pendente no período.</div>');
     _cnabAtualizaInfo();
     const rem = await cnabApi('remessa_list');
@@ -21460,8 +21474,9 @@ function _cnabDownload(nome, conteudo) {
   document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 100);
 }
 async function _cnabBaixar(id) { try { const d = await cnabApi('remessa_get', { id }); _cnabDownload(d.remessa.arquivo_nome, d.remessa.conteudo); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
-function abrirDadosBancarios(despesaId, fornecedor) {
-  const p = _cnabPagamentos.find(x => x.despesa_id === despesaId) || {};
+function abrirDadosBancarios(despesaId, fornecedor, ocorrenciaId) {
+  const p = (ocorrenciaId && _cnabPagamentos.find(x => x.id === ocorrenciaId)) || _cnabPagamentos.find(x => x.despesa_id === despesaId) || {};
+  window._cbOcorrenciaId = ocorrenciaId || null; // v3.233: o código de barras é do boleto DESTE mês
   document.getElementById('cbDespesaId').value = despesaId;
   document.getElementById('cbFornecedorNome').textContent = fornecedor || '(sem fornecedor cadastrado)';
   document.getElementById('cbForma').value = p.forma_pagamento || '41';
@@ -21470,7 +21485,8 @@ function abrirDadosBancarios(despesaId, fornecedor) {
   document.getElementById('cbAgencia').value = p.forn_agencia || '';
   document.getElementById('cbConta').value = p.forn_conta || '';
   document.getElementById('cbDac').value = p.forn_conta_dac || '';
-  document.getElementById('cbCodBarras').value = p.forn_codigo_barras || '';
+  document.getElementById('cbCodBarras').value = p.codigo_barras_ocorrencia || '';
+  const cbF = document.getElementById('cbForma'); if (cbF && ['30', '31'].includes(p.forma_pagamento)) cbF.value = '30';
   _cbToggleForma();
   document.getElementById('cnabBancoModal').style.display = 'flex';
 }
@@ -21489,7 +21505,8 @@ async function salvarDadosBancarios() {
       forn_agencia: document.getElementById('cbAgencia').value.replace(/\D/g,''),
       forn_conta: document.getElementById('cbConta').value.replace(/\D/g,''),
       forn_conta_dac: document.getElementById('cbDac').value.replace(/\D/g,''),
-      forn_codigo_barras: document.getElementById('cbCodBarras').value.replace(/\D/g,''),
+      forn_codigo_barras: document.getElementById('cbForma').value === '30' ? document.getElementById('cbCodBarras').value.replace(/\D/g,'') : '',
+      ocorrencia_id: window._cbOcorrenciaId || undefined,
     });
     toast('Dados bancários salvos', 'success');
     document.getElementById('cnabBancoModal').style.display = 'none';
@@ -22598,7 +22615,7 @@ function _fatParseTermo(ws, XLSX) {
   cabecalho.parcela = String(_fatValorDoRotulo(ws, XLSX, 'Parcela', MAXR, MAXC) || (posTermo ? _fatAcharParcelaNaLinha(ws, XLSX, posTermo.r, posTermo.c, MAXC) : ''));
   const valMensalTxt = _fatValorDoRotulo(ws, XLSX, 'Valor mensal', MAXR, MAXC) || _fatValorDoRotulo(ws, XLSX, 'Valor Base mensal', MAXR, MAXC);
   const mVal = String(valMensalTxt || '').match(/([\d.,]+)\s*$/);
-  if (mVal) cabecalho.valor_mensal_sustentacao = parseFloat(mVal[1].replace(/\./g, '').replace(',', '.')) || parseFloat(mVal[1]) || 0;
+  if (mVal) cabecalho.valor_mensal_sustentacao = _numBR(mVal[1]) || 0; // v3.233: "1500.00" virava 150000
 
   // localizar a linha do cabeçalho "EMPRESA" varrendo a coluna A
   let headerRow = -1;
@@ -23536,7 +23553,7 @@ async function _fatEditarData(empresaId, tipo) {
 async function _fatMarcarNfManual(empresaId) {
   const numero = prompt('Número da NF:', ''); if (numero === null) return;
   const valor = prompt('Valor da NF (R$):', ''); if (valor === null) return;
-  try { await fatApi('termo_empresa_marcar_nf', { empresa_id: empresaId, nf_numero: numero, nf_valor: parseFloat(valor.replace(',','.'))||0, nf_status: 'encontrada' }); toast('NF marcada', 'success'); }
+  try { await fatApi('termo_empresa_marcar_nf', { empresa_id: empresaId, nf_numero: numero, nf_valor: _numBR(valor) || 0, nf_status: 'encontrada' }); toast('NF marcada', 'success'); }
   catch (e) { toast('Erro: ' + e.message, 'error'); }
   finally { if (_fatTermoAberto) await abrirDetalheTermo(_fatTermoAberto); carregarKanbanFaturamento(); }
 }
@@ -23618,7 +23635,12 @@ function _pmParseDataPt(v) {
   const s2 = String(v).trim().toLowerCase().replace(/\.$/, '');
   // "06 de junho de 2024"
   const m = s2.match(/(\d{1,2})\s*(?:de)?\s*([a-zçã]+)\s*(?:de)?\s*(\d{4})/);
-  if (m && MESES_PT[m[2]] != null) { const d = new Date(parseInt(m[3]), MESES_PT[m[2]], parseInt(m[1])); return d.toISOString().substring(0, 10); }
+  const _p2 = n => String(n).padStart(2, '0');
+  if (m && MESES_PT[m[2]] != null) return m[3] + '-' + _p2(MESES_PT[m[2]] + 1) + '-' + _p2(parseInt(m[1])); // v3.233: sem toISOString (fuso deslocava o dia)
+  // v3.233: dd/mm/aaaa (antes caía no new Date(), que lê mm/dd — 05/03 virava 3 de maio)
+  const mBR = s2.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/); if (mBR) { const a = mBR[3].length === 2 ? '20' + mBR[3] : mBR[3]; if (+mBR[2] >= 1 && +mBR[2] <= 12 && +mBR[1] >= 1 && +mBR[1] <= 31) return a + '-' + _p2(mBR[2]) + '-' + _p2(mBR[1]); }
+  // número serial do Excel (dias desde 30/12/1899)
+  if (typeof v === 'number' || /^\d{5}(\.\d+)?$/.test(s2)) { const n = Number(v); if (n > 20000 && n < 80000) return new Date(Date.UTC(1899, 11, 30) + Math.floor(n) * 864e5).toISOString().substring(0, 10); }
   // ISO ou serial do Excel já tratado pelo SheetJS como string tipo "2025-12-08 00:00:00"
   const m2 = s2.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m2) return m2[0].substring(0,10);
   const d2 = new Date(v); if (!isNaN(d2)) return d2.toISOString().substring(0, 10);
@@ -23629,6 +23651,7 @@ function _pmParseValorBR(v) {
   if (typeof v === 'number') return v;
   let s2 = String(v).trim().replace(/^R\$\s*/i, '');
   if (/,\d{1,2}$/.test(s2)) s2 = s2.replace(/\./g, '').replace(',', '.');
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(s2)) s2 = s2.replace(/\./g, ''); // v3.233: "12.500" = doze mil e quinhentos (antes 12,5)
   else s2 = s2.replace(/,/g, '');
   const n = parseFloat(s2); return isNaN(n) ? 0 : n;
 }
@@ -23720,8 +23743,8 @@ async function confirmarImportarPM() {
   const btn = document.getElementById('pmBtnConfirmarImport'); btn.disabled = true; btn.textContent = 'Importando...';
   try {
     let msgs = [];
-    if (_pmParsed.marcos.length) { const r = await finApi('marcos_importar', { linhas: _pmParsed.marcos }); msgs.push(r.marcos_criados + ' marco(s)' + (r.projetos_criados?.length ? ' · ' + r.projetos_criados.length + ' projeto(s) novo(s)' : '') + (r.erros?.length ? ' · ' + r.erros.length + ' erro(s)' : '')); }
-    if (_pmParsed.contratos.length) { const r2 = await finApi('contratos_importar', { linhas: _pmParsed.contratos }); msgs.push(r2.contratos_criados + ' contrato(s)' + (r2.erros?.length ? ' · ' + r2.erros.length + ' erro(s)' : '')); }
+    if (_pmParsed.marcos.length) { const r = await finApi('marcos_importar', { linhas: _pmParsed.marcos }); msgs.push(r.marcos_criados + ' marco(s)' + (r.projetos_criados?.length ? ' · ' + r.projetos_criados.length + ' projeto(s) novo(s)' : '') + (r.repetidos ? ' · ' + r.repetidos + ' já existia(m)' : '') + (r.erros?.length ? ' · ' + r.erros.length + ' erro(s)' : '')); }
+    if (_pmParsed.contratos.length) { const r2 = await finApi('contratos_importar', { linhas: _pmParsed.contratos }); msgs.push(r2.contratos_criados + ' contrato(s)' + (r2.repetidos ? ' · ' + r2.repetidos + ' já existia(m)' : '') + (r2.erros?.length ? ' · ' + r2.erros.length + ' erro(s)' : '')); }
     document.getElementById('pmImportModal').style.display = 'none';
     toast('Importado: ' + msgs.join(' · '), 'success');
     addLog('ok', '[Importação] ' + msgs.join(' · '));
@@ -23744,11 +23767,11 @@ async function carregarContratos() {
     box.innerHTML = d.contratos.length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;">
       <thead><tr style="border-bottom:1px solid var(--bd);"><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">Nº CONTRATO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">PROJETO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">INÍCIO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">VENCIMENTO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">PRAZO</th><th style="text-align:left;padding:6px;color:var(--t2);font-family:var(--M);font-size:9px;">STATUS</th><th></th></tr></thead>
       <tbody>${d.contratos.map(c => `<tr style="border-bottom:1px solid var(--bd);">
-        <td style="padding:6px;font-family:var(--M);">${c.numero_contrato}</td>
-        <td style="padding:6px;">${c.projeto||'—'}</td>
+        <td style="padding:6px;font-family:var(--M);">${_dsE(c.numero_contrato)}</td>
+        <td style="padding:6px;">${_dsE(c.projeto||'—')}</td>
         <td style="padding:6px;color:var(--t2);">${c.data_inicio ? c.data_inicio.split('-').reverse().join('/') : '—'}</td>
         <td style="padding:6px;color:var(--t2);">${c.data_vencimento ? c.data_vencimento.split('-').reverse().join('/') : '—'}</td>
-        <td style="padding:6px;color:var(--t2);">${c.prazo_texto||(c.prazo_meses?c.prazo_meses+' meses':'—')}</td>
+        <td style="padding:6px;color:var(--t2);">${_dsE(c.prazo_texto||(c.prazo_meses?c.prazo_meses+' meses':'—'))}</td>
         <td style="padding:6px;color:${_corTxt(cor[c.status_calc])};">${lbl[c.status_calc]}${c.dias_restantes!=null && c.status_calc!=='vencido' ? ' ('+c.dias_restantes+'d)' : c.dias_restantes!=null ? ' ('+Math.abs(c.dias_restantes)+'d atrás)' : ''}</td>
         <td style="padding:6px;"><button class="btn" style="font-size:9px;padding:1px 5px;color:var(--red);" onclick="_ctrExcluir('${c.id}')">🗑</button></td>
         </tr>`).join('')}</tbody></table>` : '<div style="text-align:center;color:var(--t3);padding:20px;">Nenhum contrato cadastrado — importe uma planilha ou clique em + Novo Contrato.</div>';
@@ -25291,11 +25314,11 @@ async function patListar() {
   const el = document.getElementById('patLista'); if (!el) return;
   try { const d = await mcApi('patrocinado_listar'); const l = d.campanhas || [];
     if (!l.length) { el.innerHTML = ''; return; }
-    el.innerHTML = '<div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);margin-bottom:5px;">Campanhas patrocinadas criadas pelo sistema</div>' + l.map(c => { const at = (c.estado_meta || c.estado) === 'ACTIVE'; const r = c.resultado;
+    el.innerHTML = '<div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);margin-bottom:5px;">Campanhas patrocinadas criadas pelo sistema</div>' + l.map(c => { const ps = _patStatus(c), at = ps.veicula; const r = c.resultado;
       return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--bd);border-radius:7px;margin-bottom:6px;font-size:11px;">'
         + '<div style="flex:1;min-width:220px;"><b>' + _patE(c.nome) + '</b><div style="font-size:10px;color:var(--t2);">' + fmtBRLcompleto(c.orcamento_diario) + '/dia · ' + c.inicio.split('-').reverse().join('/') + ' a ' + c.fim.split('-').reverse().join('/') + ' · máx. ' + fmtBRLcompleto(c.total_maximo)
-        + (r ? ' · gasto ' + fmtBRLcompleto(r.gasto) + ' · ' + r.impressoes.toLocaleString('pt-BR') + ' impressões · <b>' + r.cliques_link + ' cliques</b>' + (r.cpc ? ' · CPC ' + fmtBRLcompleto(r.cpc) : '') : '') + '</div></div>'
-        + '<span class="tag ' + (at ? 'live' : 'off') + '">' + _patE(c.estado_meta || c.estado) + '</span>'
+        + (r ? ' · gasto ' + fmtBRLcompleto(r.gasto) + ' · ' + Number(r.impressoes || 0).toLocaleString('pt-BR') + ' impressões · <b>' + Number(r.cliques_link || 0) + ' cliques</b>' + (r.cpc ? ' · CPC ' + fmtBRLcompleto(r.cpc) : '') : '') + '</div></div>'
+        + '<span class="tag ' + ps.cls + '"' + (c.estado_erro ? ' title="' + _patE(c.estado_erro) + '"' : '') + '>' + _patE(ps.rot) + '</span>'
         + (at ? '<button class="btn" style="font-size:10px;" onclick="patEstado(\'' + c.id + '\',\'PAUSED\')">⏸ Pausar</button>' : '<button class="btn btn-gn" style="font-size:10px;" onclick="patEstado(\'' + c.id + '\',\'ACTIVE\',' + Number(c.total_maximo || 0) + ')">▶ Ativar</button>')
         + '<button class="btn" style="font-size:10px;" onclick="patPeriodo(\'' + c.id + '\')" title="Alterar início, fim e R$/dia no Meta">📅 Período</button>' // v3.193
         + '<a class="btn" style="font-size:10px;text-decoration:none;" href="' + _patE(c.gerenciador) + '" target="_blank" rel="noopener">Gerenciador ↗</a></div>'; }).join('');
@@ -25319,13 +25342,13 @@ function patPeriodo(id) {
   patPerResumo();
 }
 function patPerResumo() {
-  const v = id => (document.getElementById(id)?.value || '').trim(), ini = v('ppIni'), fim = v('ppFim'), dia = Number(v('ppDia').replace(/\./g, '').replace(',', '.')) || 0;
+  const v = id => (document.getElementById(id)?.value || '').trim(), ini = v('ppIni'), fim = v('ppFim'), dia = _numBR(v('ppDia')) || 0; // v3.233: "50.00" virava 5000
   const dias = ini && fim && fim >= ini ? Math.round((new Date(fim) - new Date(ini)) / 864e5) + 1 : 0;
   const el = document.getElementById('ppResumo'); if (el) el.innerHTML = dias ? 'Novo máximo: <b>' + fmtBRLcompleto(dia * dias) + '</b> (' + fmtBRLcompleto(dia) + '/dia × ' + dias + ' dia' + (dias > 1 ? 's' : '') + ')' : '<span style="color:var(--gold);">Informe início e fim (fim depois do início).</span>';
 }
 async function patPeriodoSalvar(id) {
   const v = k => (document.getElementById(k)?.value || '').trim(), b = document.getElementById('ppSalvar');
-  const corpo = { id, inicio: v('ppIni'), fim: v('ppFim'), orcamento_diario: v('ppDia').replace(/\./g, '').replace(',', '.') };
+  const corpo = { id, inicio: v('ppIni'), fim: v('ppFim'), orcamento_diario: String(_numBR(v('ppDia'))) };
   if (b) { b.disabled = true; b.textContent = 'Salvando…'; }
   try { const d = await mcApi('patrocinado_periodo', corpo);
     document.getElementById('patPerModal').style.display = 'none';
@@ -26079,8 +26102,8 @@ async function gerarTermoDeMarcos() {
 function _tmRecalc(inputPct) {
   // se mexeu no %, recalcula a parcela dessa linha sobre o valor base (total das parcelas informado ou o total atual)
   const linhas = [...document.querySelectorAll('#tm_linhas tr')];
-  const v = (tr, c) => parseFloat(String(tr.querySelector(`[data-c="${c}"]`)?.value || '').replace(',', '.')) || 0;
-  if (inputPct) { const tr = inputPct.closest('tr'); const base = parseFloat(document.getElementById('tm_valor_mensal')?.value) || 0;
+  const v = (tr, c) => _numBR(tr.querySelector(`[data-c="${c}"]`)?.value || '') || 0; // v3.233: "1.234,56" virava 1,234
+  if (inputPct) { const tr = inputPct.closest('tr'); const base = _numBR(document.getElementById('tm_valor_mensal')?.value || '') || 0;
     if (base > 0) { const p = v(tr, 'percentual') / 100; tr.querySelector('[data-c="valor_parcela"]').value = (base * p).toFixed(2); } }
   let t = 0;
   linhas.forEach(tr => { const parcela = v(tr, 'valor_parcela'); t += parcela;
@@ -26093,9 +26116,9 @@ function _tmLinhaHtml(e = {}) {
   const pct = e.percentual != null && e.percentual !== '' ? (Number(e.percentual) <= 1 ? Number(e.percentual)*100 : Number(e.percentual)) : '';
   return `<tr>
     <td style="padding:3px;min-width:130px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;" value="${String(e.empresa||'').replace(/"/g,'&quot;')}" data-c="empresa"/></td>
-    <td style="padding:3px;width:120px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;" value="${String(e.cnpj||'')}" data-c="cnpj"/></td>
-    <td style="padding:3px;width:90px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;" value="${String(e.contrato||'')}" data-c="contrato"/></td>
-    <td style="padding:3px;width:60px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;" value="${String(e.ncm||'')}" data-c="ncm"/></td>
+    <td style="padding:3px;width:120px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;" value="${String(e.cnpj||'').replace(/"/g,'&quot;')}" data-c="cnpj"/></td>
+    <td style="padding:3px;width:90px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;" value="${String(e.contrato||'').replace(/"/g,'&quot;')}" data-c="contrato"/></td>
+    <td style="padding:3px;width:60px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;" value="${String(e.ncm||'').replace(/"/g,'&quot;')}" data-c="ncm"/></td>
     <td style="padding:3px;width:100px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;font-family:var(--M);" value="${N(e.valor_total_contrato)}" data-c="valor_total_contrato" oninput="_tmRecalc()"/></td>
     <td style="padding:3px;width:60px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;font-family:var(--M);" value="${pct===''?'':Number(pct).toFixed(2)}" data-c="percentual" oninput="_tmRecalc(this)"/></td>
     <td style="padding:3px;width:100px;"><input class="fi" style="padding:4px 6px;font-size:10.5px;font-family:var(--M);" value="${N(e.valor_ja_faturado ?? 0)}" data-c="ja_faturado" oninput="_tmRecalc()"/></td>
@@ -26126,7 +26149,7 @@ function _tmColetar() {
     valor_mensal_sustentacao: g('tm_valor_mensal'), marco_projeto: g('tm_marco') };
   const empresas = [...document.querySelectorAll('#tm_linhas tr')].map(tr => {
     const v = c => tr.querySelector(`input[data-c="${c}"]`)?.value?.trim() || '';
-    const n = c => parseFloat(String(v(c)).replace(',', '.')) || 0;
+    const n = c => _numBR(v(c)) || 0; // v3.233: padrão brasileiro (antes "12.500,00" virava 12,5)
     const parcela = n('valor_parcela');
     return { empresa: v('empresa'), cnpj: v('cnpj'), contrato: v('contrato'), ncm: v('ncm'),
       valor_total_contrato: n('valor_total_contrato'), percentual: n('percentual') / 100,
@@ -34047,7 +34070,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.232] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.233] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -34063,7 +34086,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.232';
+window.__ATX_BUILD_ID__ = 'ATX-v3.233';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

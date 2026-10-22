@@ -217,7 +217,9 @@ async function criarLote(b) {
   if (!dests.length) throw new Error('Nenhum destinatário selecionado');
   const campanha_id = String(b.campanha_id || 'avulsa_' + Date.now().toString(36));
   const id = novoId('lt_');
-  const agendar = b.agendar_para ? new Date(b.agendar_para) : null;
+  // v3.233: hora sem fuso ("2026-10-22T09:00") é hora de Brasília — antes o servidor (UTC) lia como 09:00 UTC = 06:00 BRT
+  const _ag = String(b.agendar_para || '').trim();
+  const agendar = _ag ? new Date(/[zZ]|[+-]\d{2}:?\d{2}$/.test(_ag) || !/T\d/.test(_ag) ? _ag : _ag + (/T\d{2}:\d{2}$/.test(_ag) ? ':00' : '') + '-03:00') : null;
   await sql`INSERT INTO disparo_lotes (id, campanha_id, campanha_nome, canal, texto, assunto, link_destino, base_url, total, agendar_para)
     VALUES (${id}, ${campanha_id}, ${b.campanha_nome || campanha_id}, ${canal}, ${b.texto}, ${b.assunto || null}, ${b.link_destino || null},
       ${String(b.base_url || '').replace(/\/$/, '') || null}, 0, ${agendar && !isNaN(agendar) ? agendar.toISOString() : null})`;
@@ -255,7 +257,8 @@ async function processar({ lote_id = null, segundos = 50, cron = false }) {
   let enviados = 0, erros = 0;
   for (const lote of lotes) {
     if (lote.status !== 'ativo') continue;
-    if (lote.agendar_para && new Date(lote.agendar_para) > new Date() && !lote_id) continue;
+    // v3.233: lote agendado não sai antes da hora — nem pelo botão "Continuar" (antes o lote_id pulava esta checagem)
+    if (lote.agendar_para && new Date(lote.agendar_para) > new Date()) { if (lote_id) return { success: true, aguardando_agendamento: true, agendar_para: lote.agendar_para, enviados: 0, erros: 0 }; continue; }
     const optout = new Set((await sql`SELECT destino FROM disparo_optout`).map(r => r.destino));
     while (Date.now() - ini < lim - (lote.canal === 'whatsapp' ? (intervaloWa + 8) * 1000 : 8000)) {
       const [ev] = await sql`UPDATE disparo_envios SET status = 'enviando', pegou_em = NOW() WHERE id = (

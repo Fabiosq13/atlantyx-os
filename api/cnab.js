@@ -17,6 +17,34 @@ const _q = (db, texto, params) => (typeof db.query === 'function' ? db.query(tex
 //   41 = TED (outro banco)
 //   30 = Boleto (via Segmento J, com código de barras)
 
+// ─── v3.233: CÓDIGO DE BARRAS DO BOLETO ─────────────────────────────────────────────────────────────────────────
+// O boleto muda todo mês, então o código é guardado POR OCORRÊNCIA (kv 'cnab:cb_ocorrencias'); o da despesa só vale
+// para a ocorrência cujo valor e vencimento batem com o próprio código. Aceita a linha digitável (47) e converte.
+const _KV_CB = 'cnab:cb_ocorrencias';
+async function _kvGet(sql, k) { try { const r = await sql`SELECT value FROM kv_store WHERE key = ${k} LIMIT 1`; const v = r[0]?.value; return (typeof v === 'string' ? JSON.parse(v) : v) || null; } catch (_) { return null; } }
+async function _kvSet(sql, k, v) { await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; }
+function _cbDv(cb43) { let soma = 0, peso = 2; for (let i = cb43.length - 1; i >= 0; i--) { soma += +cb43[i] * peso; peso = peso === 9 ? 2 : peso + 1; } const d = 11 - (soma % 11); return d === 0 || d === 10 || d === 11 ? 1 : d; }
+export function normalizarCodigoBarras(v) {
+  const d = String(v || '').replace(/\D/g, '');
+  if (!d) return { ok: false, erro: 'vazio' };
+  if (d[0] === '8') return { ok: false, erro: 'é conta de consumo/tributo (começa com 8) — o arquivo de pagamentos só paga boleto bancário' };
+  let cb = null;
+  if (d.length === 44) cb = d;
+  else if (d.length === 47) cb = d.substring(0, 4) + d[32] + d.substring(33, 47) + d.substring(4, 9) + d.substring(10, 20) + d.substring(21, 31);
+  else return { ok: false, erro: `tem ${d.length} dígitos (código de barras = 44, linha digitável = 47)` };
+  if (_cbDv(cb.substring(0, 4) + cb.substring(5)) !== +cb[4]) return { ok: false, erro: 'dígito verificador não confere — confira a digitação' };
+  const fator = +cb.substring(5, 9), valor = +cb.substring(9, 19) / 100;
+  // fator de vencimento: reiniciou em 1000 em 22/02/2025
+  const venc = fator >= 1000 ? new Date(Date.UTC(2025, 1, 22) + (fator - 1000) * 864e5).toISOString().substring(0, 10) : null;
+  return { ok: true, codigo: cb, banco: cb.substring(0, 3), valor, vencimento: venc };
+}
+function _cbConfere(info, valor, data) {
+  if (!info?.ok) return false;
+  if (info.valor > 0 && Math.abs(info.valor - valor) > 0.01) return false;
+  if (info.vencimento && data && Math.abs(new Date(info.vencimento) - new Date(String(data).substring(0, 10))) > 10 * 864e5) return false;
+  return true;
+}
+
 let _sql = null;
 async function getSql() {
   if (_sql) return _sql;
@@ -138,7 +166,7 @@ function headerLote(emp, lote, formaPagto, agora) {
     + 'C'                               // 009 tipo operação (C = crédito)
     + N(20, 2)                          // 010-011 tipo serviço (20 = pagamento fornecedor)
     + N(formaPagto, 2)                  // 012-013 forma de lançamento
-    + N(40, 3)                          // 014-016 versão layout do lote
+    + N(['30', '31'].includes(String(formaPagto)) ? 30 : 40, 3) // 014-016 versão do layout do lote (030 boletos · 040 créditos)
     + ' '                               // 017 branco
     + '2'                               // 018 tipo inscrição (2 = CNPJ)
     + N(emp.cnpj, 14)                   // 019-032 CNPJ
@@ -195,10 +223,41 @@ function segmentoA(emp, lote, seq, pag) {
     + ''.padEnd(10, ' ');                // 231-240 ocorrências (retorno)
   return l;
 }
+// v3.233: Segmento B — dados do favorecido (CPF/CNPJ). Antes o arquivo ia sem a inscrição do favorecido, que o banco exige.
+function segmentoB(emp, lote, seq, pag) {
+  const doc = String(pag.forn_cnpj_cpf || '').replace(/\D/g, '');
+  const l = N(emp.banco, 3) + N(lote, 4) + '3' + N(seq, 5) + 'B'   // 001-014
+    + ''.padEnd(3, ' ')                  // 015-017 uso FEBRABAN
+    + (doc.length === 11 ? '1' : '2')    // 018 tipo de inscrição (1 CPF · 2 CNPJ)
+    + N(doc, 14)                         // 019-032 CPF/CNPJ do favorecido
+    + ''.padEnd(30, ' ') + N(0, 5) + ''.padEnd(15, ' ') + ''.padEnd(15, ' ') + ''.padEnd(20, ' ') // 033-117 endereço
+    + N(0, 5) + ''.padEnd(3, ' ') + ''.padEnd(2, ' ') // 118-127 CEP, sufixo, UF
+    + dataDDMMAAAA(pag.data_pagamento)   // 128-135 vencimento
+    + V(pag.valor, 15)                   // 136-150 valor do documento
+    + V(0, 15) + V(0, 15) + V(0, 15) + V(0, 15) // 151-210 abatimento, desconto, mora, multa
+    + ''.padEnd(15, ' ')                 // 211-225 código do documento no favorecido
+    + '0'                                // 226 aviso ao favorecido
+    + N(0, 6)                            // 227-232 código UG/SIAPE
+    + ''.padEnd(8, ' ');                 // 233-240 uso FEBRABAN
+  return l;
+}
+// v3.233: Segmento J-52 — pagador e beneficiário do boleto (CPF/CNPJ), obrigatório para boleto registrado
+function segmentoJ52(emp, lote, seq, pag) {
+  const doc = String(pag.forn_cnpj_cpf || '').replace(/\D/g, '');
+  const l = N(emp.banco, 3) + N(lote, 4) + '3' + N(seq, 5) + 'J'   // 001-014
+    + ' '                                // 015 uso FEBRABAN
+    + N(0, 2)                            // 016-017 código de movimento
+    + '52'                               // 018-019 identificação do registro opcional
+    + '2' + N(emp.cnpj, 15) + A(emp.nome, 40)                         // 020-075 pagador
+    + (doc.length === 11 ? '1' : '2') + N(doc, 15) + A(pag.favorecido_nome, 40) // 076-131 beneficiário
+    + '0' + N(0, 15) + ''.padEnd(40, ' ')                             // 132-187 sacador/avalista
+    + ''.padEnd(53, ' ');                // 188-240 uso FEBRABAN
+  return l;
+}
 // Segmento J: pagamento de boleto (código de barras)
 function segmentoJ(emp, lote, seq, pag) {
   // Posições FEBRABAN 240 — detalhe segmento J (boleto com código de barras). Total: 240.
-  const cb = String(pag.forn_codigo_barras || '').replace(/\D/g, '').padEnd(44, '0').substring(0, 44);
+  const cb = String(pag.codigo_barras_44 || ''); if (cb.length !== 44) throw new Error('Código de barras inválido para ' + (pag.favorecido_nome || pag.id)); // v3.233: antes completava com zeros
   const l = N(emp.banco, 3)             // 001-003 banco
     + N(lote, 4)                         // 004-007 lote
     + '3'                                // 008 tipo registro
@@ -266,13 +325,25 @@ async function pagamentosDisponiveis({ data_inicio, data_fim } = {}) {
   try { (await sql`SELECT id, arquivo_nome, criado_em, ocorrencias_ids FROM cnab_remessas ORDER BY criado_em DESC LIMIT 200`).forEach(r => {
     let ids = r.ocorrencias_ids; if (typeof ids === 'string') { try { ids = JSON.parse(ids); } catch (_) { ids = []; } }
     (ids || []).forEach(i => { if (!jaRem[i]) jaRem[i] = { arquivo: r.arquivo_nome, em: r.criado_em }; }); }); } catch (_) {}
+  const cbOc = (await _kvGet(sql, _KV_CB)) || {};
   return {
     pagamentos: rows.map(r => {
-      const forma = r.forma_pagamento || (r.forn_codigo_barras ? '30' : (r.forn_banco === '341' ? '01' : '41'));
+      const forma = ['30', '31'].includes(r.forma_pagamento) ? '30' : r.forma_pagamento || (r.forn_codigo_barras ? '30' : (r.forn_banco === '341' ? '01' : '41'));
       const faltando = [];
       if (!r.fornecedor) faltando.push('fornecedor');
-      if (!r.forn_cnpj_cpf) faltando.push('CNPJ/CPF');
-      if (forma === '30') { if (!r.forn_codigo_barras) faltando.push('código de barras'); }
+      const docN = String(r.forn_cnpj_cpf || '').replace(/\D/g, '');
+      if (!docN) faltando.push('CNPJ/CPF'); else if (docN.length !== 11 && docN.length !== 14) faltando.push('CNPJ/CPF válido (11 ou 14 dígitos)');
+      let cbInfo = null, cbOrigem = null;
+      if (forma === '30') {
+        const doMes = cbOc[r.id] ? normalizarCodigoBarras(cbOc[r.id]) : null;
+        const daDesp = r.forn_codigo_barras ? normalizarCodigoBarras(r.forn_codigo_barras) : null;
+        if (doMes?.ok) { cbInfo = doMes; cbOrigem = 'ocorrencia'; }
+        else if (daDesp?.ok && _cbConfere(daDesp, parseFloat(r.valor) || 0, r.data_prevista)) { cbInfo = daDesp; cbOrigem = 'despesa'; }
+        if (!cbInfo) faltando.push(doMes && !doMes.ok ? 'código de barras (' + doMes.erro + ')' : 'código de barras deste boleto');
+      }
+      r.codigo_barras_44 = cbInfo?.codigo || null; r.codigo_barras_origem = cbOrigem; r.codigo_barras_ocorrencia = cbOc[r.id] || null;
+      if (cbInfo) r.forma_cnab = cbInfo.banco === '341' ? '30' : '31'; // v3.233: 30 = boleto do Itaú · 31 = boleto de outro banco
+      if (forma === '30') {}
       else { if (!r.forn_banco) faltando.push('banco'); if (!r.forn_agencia) faltando.push('agência'); if (!r.forn_conta) faltando.push('conta'); }
       return { ...r, data_prevista: String(r.data_prevista).split('T')[0], valor: parseFloat(r.valor) || 0,
         forma_pagamento: forma, pronto: faltando.length === 0, faltando,
@@ -286,11 +357,20 @@ async function pagamentosDisponiveis({ data_inicio, data_fim } = {}) {
 async function dadosBancariosSalvar(p = {}) {
   if (!p.despesa_id) throw new Error('despesa_id obrigatório');
   const sql = await getSql();
+  const doc = String(p.forn_cnpj_cpf || '').replace(/\D/g, '');
+  if (doc && doc.length !== 11 && doc.length !== 14) throw new Error('CNPJ/CPF deve ter 11 (CPF) ou 14 (CNPJ) dígitos');
+  // v3.233: boleto → o código vale para ESTA ocorrência (o boleto de cada mês é outro); valida DV e aceita a linha digitável
+  if (p.forn_codigo_barras) {
+    const info = normalizarCodigoBarras(p.forn_codigo_barras);
+    if (!info.ok) throw new Error('Código de barras: ' + info.erro);
+    if (p.ocorrencia_id) { const m = (await _kvGet(sql, _KV_CB)) || {}; m[String(p.ocorrencia_id)] = info.codigo; await _kvSet(sql, _KV_CB, m); p = { ...p, forn_codigo_barras: undefined }; }
+    else p = { ...p, forn_codigo_barras: info.codigo };
+  }
   await sql`UPDATE despesas_programadas SET
     forn_cnpj_cpf = ${p.forn_cnpj_cpf || null}, forn_banco = ${p.forn_banco || null},
     forn_agencia = ${p.forn_agencia || null}, forn_conta = ${p.forn_conta || null},
     forn_conta_dac = ${p.forn_conta_dac || null}, forn_tipo_conta = ${p.forn_tipo_conta || 'CC'},
-    forn_codigo_barras = ${p.forn_codigo_barras || null}, forma_pagamento = ${p.forma_pagamento || null}
+    forn_codigo_barras = CASE WHEN ${p.forn_codigo_barras === undefined} THEN forn_codigo_barras ELSE ${p.forn_codigo_barras || null} END, forma_pagamento = ${p.forma_pagamento || null}
     WHERE id = ${p.despesa_id}`;
   return { salvo: true };
 }
@@ -323,7 +403,7 @@ async function gerarRemessa({ ocorrencias_ids = [], data_pagamento, repetir = fa
 
   // Um lote por forma de pagamento (o banco exige lotes homogêneos)
   const porForma = {};
-  selecionados.forEach(p => { (porForma[p.forma_pagamento] = porForma[p.forma_pagamento] || []).push(p); });
+  selecionados.forEach(p => { const f = p.forma_cnab || p.forma_pagamento; (porForma[f] = porForma[f] || []).push(p); });
 
   for (const [forma, itens] of Object.entries(porForma)) {
     lote++;
@@ -333,8 +413,10 @@ async function gerarRemessa({ ocorrencias_ids = [], data_pagamento, repetir = fa
       seq++;
       const dados = { ...p, id: p.id, favorecido_nome: p.fornecedor, data_pagamento: dataPagto,
         data_vencimento: p.data_prevista, observacao: p.descricao, seu_numero: p.id.substring(0, 20) };
-      linhas.push(forma === '30' ? segmentoJ(emp, lote, seq, dados) : segmentoA(emp, lote, seq, dados));
-      totalRegistros++; valorLote += p.valor;
+      // v3.233: cada pagamento leva 2 registros — A + B (crédito/TED) ou J + J-52 (boleto) — com o CPF/CNPJ do favorecido
+      if (forma === '30' || forma === '31') { linhas.push(segmentoJ(emp, lote, seq, dados)); seq++; linhas.push(segmentoJ52(emp, lote, seq, dados)); }
+      else { linhas.push(segmentoA(emp, lote, seq, dados)); seq++; linhas.push(segmentoB(emp, lote, seq, dados)); }
+      totalRegistros += 2; valorLote += p.valor;
     }
     linhas.push(trailerLote(emp, lote, seq + 2, valorLote)); totalRegistros++;
     valorTotalArquivo += valorLote;

@@ -15,7 +15,8 @@ async function handler(req, res) {
     const body = req.body;
 
     // Verificar se é uma mensagem recebida (não enviada)
-    if (body.type !== 'ReceivedCallback' && body.fromMe) {
+    // v3.233: só mensagens recebidas de contato individual (ignora as próprias, grupos e status)
+    if ((body.type && body.type !== 'ReceivedCallback') || body.fromMe || body.isGroup || body.isNewsletter || body.broadcast || /@g\.us|-group/.test(String(body.phone || ''))) {
       return res.status(200).json({ ignored: true, reason: 'Mensagem enviada pela Atlantyx, não pelo lead' });
     }
 
@@ -36,14 +37,24 @@ async function handler(req, res) {
         const destino = normTelefone(phone) || String(phone).replace(/\D/g, '');
         await sql`INSERT INTO disparo_optout (destino, canal, motivo) VALUES (${destino}, 'whatsapp', 'respondeu SAIR') ON CONFLICT (destino) DO NOTHING`;
         await sql`UPDATE disparo_envios SET status = 'descadastrado' WHERE destino = ${destino} AND status = 'pendente'`;
-        if (process.env.ZAPI_INSTANCE) await fetch(`https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-text`, {
+        if (process.env.ZAPI_INSTANCE) { const rz = await fetch(`https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE}/token/${process.env.ZAPI_TOKEN}/send-text`, {
           method: 'POST', headers: { 'Content-Type': 'application/json', 'Client-Token': process.env.ZAPI_CLIENT_TOKEN },
           body: JSON.stringify({ phone: destino, message: 'Pronto, você não vai mais receber nossas mensagens. Obrigado!' }) });
+          if (!rz.ok) console.warn('[wa-response] confirmação de descadastro não enviada: HTTP ' + rz.status); }
       } catch (e) { console.warn('[wa-response] optout falhou:', e.message); }
       return res.status(200).json({ success: true, optout: true });
     }
 
     console.log(`[S7-05] Resposta recebida de ${phone}: "${mensagemRecebida.substring(0, 50)}..."`);
+
+    // v3.233: lead respondeu → cancela o follow-up automático pendente (antes ele recebia o "2º toque" mesmo já em conversa)
+    try {
+      const { neon } = await import('@neondatabase/serverless');
+      const sqlF = neon(process.env.DATABASE_URL);
+      const dig = String(phone).replace(/\D/g, '');
+      const fim = dig.slice(-10);
+      if (fim.length >= 10) await sqlF`UPDATE followups SET status = 'respondido' WHERE status = 'pendente' AND right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = ${fim}`;
+    } catch (_) { /* tabela pode não existir ainda */ }
 
     // ── 1. BUSCAR CONTATO NO HUBSPOT pelo telefone ──
     const contato = await buscarContatoPorTelefone(phone);
@@ -295,11 +306,16 @@ async function enviarWhatsApp(phone, message) {
   const instance = process.env.ZAPI_INSTANCE;
   const token = process.env.ZAPI_TOKEN;
   const clientToken = process.env.ZAPI_CLIENT_TOKEN;
-  await fetch(`https://api.z-api.io/instances/${instance}/token/${token}/send-text`, {
+  if (!instance || !token) throw new Error('Z-API não configurada');
+  const r = await fetch(`https://api.z-api.io/instances/${instance}/token/${token}/send-text`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Client-Token': clientToken },
     body: JSON.stringify({ phone, message }),
   });
+  // v3.233: a Z-API responde 200 com {error} quando a instância está desconectada
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error || !(j.zaapId || j.messageId || j.id)) throw new Error('Z-API não enviou: ' + (j.error || j.message || ('HTTP ' + r.status)));
+  return j;
 }
 
 async function notificarFundador(contato, phone) {
