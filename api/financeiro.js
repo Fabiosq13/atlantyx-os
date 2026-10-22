@@ -179,6 +179,7 @@ async function handler(req, res) {
       versao:                () => ({ versao_api: VERSAO_API }),
       fluxo_detalhado:       () => fluxoDetalhado(params),
       vencidos_painel:       () => vencidosPainel(params), // v3.219
+      pendencias_fin:        () => pendenciasFin(params), // v3.244
       // v3.110: Orçamento em DRE de 12 meses móveis (orçado × realizado/projetado) + propostas do CRM
       orcamento_dre:         () => orcamentoDre(params),
       crm_etapas:            () => crmEtapas(),
@@ -3608,6 +3609,49 @@ function _retencaoProvavel(aberto, total) {
   if (!(aberto > 0) || !(total > aberto)) return null;
   const r = aberto / total; const hit = _RETENCOES.find(([p]) => Math.abs(r - p) <= 0.0006);
   return hit ? hit[1] : null;
+}
+
+// ═══ v3.244: PENDÊNCIAS FINANCEIRAS — UMA lista, sem repetição, para o Dashboard → Financeiro ═══
+// Antes a aba mostrava o e-mail das 8h inteiro + "Vencidos em aberto" + "Recebíveis em risco" + "Receita em risco" + marcos:
+// o mesmo atraso aparecia em 3 ou 4 quadros. Aqui cada pendência aparece uma vez, com o que fazer:
+//  · a pagar vencido (QuickBooks + agenda) · a pagar hoje · a receber vencido (fatura do QuickBooks) · fatura com saldo
+//    = imposto retido (fechar no QuickBooks) · receita prevista atrasada sem fatura · termo com pendência · possível duplicado
+async function pendenciasFin() {
+  const hoje = _hojeBR(); const itens = [], erros = [];
+  const [dR, vR, tR] = await Promise.allSettled([pagamentosDoDiaEPendentes(), vencidosPainel(), _relTermos()]);
+  const d = dR.status === 'fulfilled' ? dR.value : null; if (!d) erros.push('pagamentos: ' + (dR.reason?.message || ''));
+  const v = vR.status === 'fulfilled' ? vR.value : null; if (!v) erros.push('vencidos: ' + (vR.reason?.message || ''));
+  const t = tR.status === 'fulfilled' ? tR.value : null; if (!t) erros.push('termos: ' + (tR.reason?.message || ''));
+  const nrm = x => String(x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '').substring(0, 14);
+  const chaves = new Set(); const unico = (k) => { if (chaves.has(k)) return false; chaves.add(k); return true; };
+  // a pagar vencido (o painel de vencidos já junta QuickBooks e agenda, sem repetir)
+  for (const x of v?.pagar || []) if (unico('p|' + nrm(x.contraparte) + '|' + round(x.valor))) itens.push({ grupo: 'pagar_vencido', gravidade: x.dias > 7 ? 'alta' : 'media', titulo: x.contraparte || 'Conta a pagar',
+    detalhe: 'venceu em ' + x.vencimento.split('-').reverse().join('/') + ' (' + x.dias + ' dia' + (x.dias > 1 ? 's' : '') + ')' + (x.doc ? ' · ' + x.doc : '') + (x.obs ? ' · ' + x.obs : ''), valor: x.valor, dias: x.dias, tela: 's3agenda' });
+  // a pagar hoje
+  for (const x of d?.listaDia || []) if (unico('p|' + nrm(x.fornecedor || x.descricao) + '|' + round(x.valor))) itens.push({ grupo: 'pagar_hoje', gravidade: 'media', titulo: x.fornecedor || x.descricao,
+    detalhe: 'vence hoje' + (x.categoria ? ' · ' + x.categoria : ''), valor: x.valor, dias: 0, tela: 's3agenda', link: x.qb_url || null });
+  // a receber vencido (fatura em aberto) e fatura cujo saldo é só a retenção
+  for (const x of v?.receber || []) { if (!unico('r|' + nrm(x.contraparte) + '|' + round(x.valor))) continue;
+    if (x.retencao_provavel) itens.push({ grupo: 'retencao', gravidade: 'baixa', titulo: x.contraparte + (x.doc ? ' · fatura ' + x.doc : ''), detalhe: 'saldo = imposto retido (' + x.retencao_provavel + ') — registrar a retenção no recebimento no QuickBooks', valor: x.valor, dias: x.dias, tela: 's3conciliacao' });
+    else itens.push({ grupo: 'receber_vencido', gravidade: x.dias > 15 ? 'alta' : 'media', titulo: x.contraparte + (x.doc ? ' · fatura ' + x.doc : ''), detalhe: 'venceu em ' + x.vencimento.split('-').reverse().join('/') + ' (' + x.dias + ' dia' + (x.dias > 1 ? 's' : '') + ')' + (x.obs ? ' · ' + x.obs : ''), valor: x.valor, dias: x.dias, tela: 's3conciliacao' }); }
+  for (const x of v?.retidas || []) if (unico('r|' + nrm(x.contraparte) + '|' + round(x.valor))) itens.push({ grupo: 'retencao', gravidade: 'baixa', titulo: x.contraparte + (x.doc ? ' · fatura ' + x.doc : ''), detalhe: 'saldo = imposto retido (' + x.retencao + ') — registrar a retenção no QuickBooks', valor: x.valor, tela: 's3conciliacao' });
+  // receita prevista atrasada que ainda não virou fatura
+  try { const rp = await receitasPrevistas({ meses: 3 });
+    for (const o of (rp.ativas || []).filter(o => o.status === 'atrasada')) if (unico('r|' + nrm(o.cliente || o.descricao) + '|' + round(o.valor))) {
+      const dd = o.data_prevista ? Math.round((Date.parse(hoje) - Date.parse(o.data_prevista)) / 864e5) : null;
+      itens.push({ grupo: 'receita_atrasada', gravidade: dd > 15 ? 'alta' : 'media', titulo: (o.cliente ? o.cliente + ' · ' : '') + (o.descricao || 'Receita prevista'), detalhe: 'prevista para ' + String(o.data_prevista || '').split('-').reverse().join('/') + ' e ainda sem fatura no QuickBooks', valor: round(o.valor), dias: dd, tela: 's3agendarec' }); } }
+  catch (e) { erros.push('receitas previstas: ' + e.message); }
+  // termos com pendência (sem nota, sem data de pagamento, atrasado…) — um item por termo
+  for (const x of t?.criticos || []) itens.push({ grupo: 'termo', gravidade: (x.prazo_etapa?.estourado || (x.dias != null && x.dias >= 30)) ? 'alta' : 'media', titulo: 'Termo ' + (x.numero || '') + ' · ' + (x.cliente || x.projeto || ''),
+    detalhe: (x.pendencias || []).map(p => typeof p === 'string' ? p : (p.texto || p.titulo || p.msg || '')).filter(Boolean).slice(0, 3).join(' · ') + (x.prazo_etapa?.estourado ? ' · etapa ' + x.prazo_etapa.etapa + ' ' + x.prazo_etapa.texto : '') || 'pendência no termo', valor: x.valor, dias: x.dias, tela: 's3fatkanban', termo_id: x.id });
+  // possíveis pagamentos duplicados no mês
+  try { if (d) { const px = await _relPagamentosExtra(d); for (const p of px.duplicados || []) itens.push({ grupo: 'duplicado', gravidade: 'media', titulo: (p.a.fornecedor || p.a.descricao) + ' — possível duplicado',
+    detalhe: p.a.data.split('-').reverse().join('/') + ' (' + p.a.situacao + ') e ' + p.b.data.split('-').reverse().join('/') + ' (' + p.b.situacao + '), mesmo valor', valor: p.valor, tela: 's3agenda' }); } } catch (e) { erros.push('duplicados: ' + e.message); }
+  const peso = { alta: 0, media: 1, baixa: 2 };
+  itens.sort((a, b) => peso[a.gravidade] - peso[b.gravidade] || (b.valor || 0) - (a.valor || 0));
+  const soma = g => { const l = itens.filter(i => i.grupo === g); return { qtd: l.length, valor: round(l.reduce((s, i) => s + (i.valor || 0), 0)) }; };
+  return { hoje, itens, numeros: { pagar_vencido: soma('pagar_vencido'), pagar_hoje: soma('pagar_hoje'), receber_vencido: soma('receber_vencido'), receita_atrasada: soma('receita_atrasada'), termo: soma('termo'), retencao: soma('retencao'), duplicado: soma('duplicado') },
+    total_alta: itens.filter(i => i.gravidade === 'alta').length, qb_erro: d?.qb_erro || null, erros, gerado_em: new Date().toISOString() };
 }
 async function vencidosPainel() {
   const hoje = _hojeBR();
