@@ -1484,10 +1484,11 @@ async function relatorioPagamentosEnviar({ apenas_gerar, para } = {}) {
 // cards e abas) e nos demais módulos. Complementa o e-mail das 8h sem repetir o que ele já aponta (termos, faturas
 // vencidas/sem termo, pagamentos em atraso e possíveis duplicados por fornecedor/valor). Cada item diz o impacto
 // (quais números ficam errados), como corrigir e em que tela.
+const _HIG_FORMATO = 2; // v3.251: muda quando o formato dos itens muda (ex.: links por lançamento) — o resultado guardado no formato antigo é refeito
 async function higienizacaoDados({ _forcar } = {}) {
   const sql = await getSql(), hoje = _hojeBR(), ano = parseInt(hoje), mesAtual = hoje.substring(0, 7);
   if (!_forcar) { try { const c = (await sql`SELECT value, updated_at FROM kv_store WHERE key = 'higienizacao_dados' LIMIT 1`)[0];
-    if (c && Date.now() - new Date(c.updated_at).getTime() < 30 * 60000) { const v = typeof c.value === 'string' ? JSON.parse(c.value) : c.value; return { ...v, cache_min: Math.round((Date.now() - new Date(c.updated_at).getTime()) / 60000) }; } } catch (_) {} }
+    if (c && Date.now() - new Date(c.updated_at).getTime() < 30 * 60000) { const v = typeof c.value === 'string' ? JSON.parse(c.value) : c.value; if (v?.formato === _HIG_FORMATO) return { ...v, cache_min: Math.round((Date.now() - new Date(c.updated_at).getTime()) / 60000) }; } } catch (_) {} }
   const lim = (p, ms = 40000) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('não respondeu a tempo')), ms))]);
   const qb = qbConfigurado(), itens = [], erros = [];
   const add = x => { if (x && (x.qtd || x.sempre)) itens.push(x); };
@@ -1569,6 +1570,7 @@ async function higienizacaoDados({ _forcar } = {}) {
   const ordem = { alta: 0, media: 1, baixa: 2 };
   itens.sort((a, b) => ordem[a.gravidade] - ordem[b.gravidade] || (b.valor || 0) - (a.valor || 0));
   const out = { gerado_em: new Date().toISOString(), itens, erros, total: itens.reduce((a, x) => a + (x.qtd || 0), 0) };
+  out.formato = _HIG_FORMATO;
   try { await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('higienizacao_dados', ${JSON.stringify(out)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; } catch (_) {}
   return out;
 }
