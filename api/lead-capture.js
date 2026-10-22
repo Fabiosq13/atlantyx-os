@@ -39,8 +39,25 @@ async function handler(req, res) {
     const conteudo = String(req.query.p || '').replace(/[^a-z0-9_-]/gi, '').substring(0, 40);
     const utm = 'utm_source=' + fonte + '&utm_medium=' + (fonte === 'instagram' ? 'link_curto' : 'social') + (c ? '&utm_campaign=' + c : '') + (conteudo ? '&utm_content=' + conteudo : '');
     const reuniao = (process.env.LINK_REUNIAO || 'https://meetings.hubspot.com/atlantyx?uuid=eca883eb-276d-45cb-bda8-d7d5d2ae9219').trim();
-    const destino = req.query.atalho === 'reuniao' ? reuniao + (reuniao.includes('?') ? '&' : '?') + utm : '/captura.html?' + utm;
+    // v3.243: destino ABSOLUTO e pré-visualização direta para robôs. O LinkedIn (via Metricool) avisava "não foi possível
+    // obter a imagem vinculada da mensagem de texto": o link curto respondia 302 para um endereço RELATIVO e o robô de
+    // pré-visualização não chegava à página com a imagem (og:image). Agora o robô recebe a própria página de prévia
+    // (título, descrição e imagem) com status 200; a pessoa continua sendo levada direto ao destino.
+    const _host = String(req.headers?.host || '');
+    const base = (process.env.MEDIA_PUBLIC_BASE || process.env.APP_URL || (/^[\w.-]+$/.test(_host) && !/-projects-|^project-/.test(_host) ? 'https://' + _host : 'https://atlantyx-os.vercel.app')).replace(/\/$/, '');
+    const destino = req.query.atalho === 'reuniao' ? reuniao + (reuniao.includes('?') ? '&' : '?') + utm : base + '/captura.html?' + utm;
     res.setHeader('Cache-Control', 'no-store');
+    const ua = String(req.headers?.['user-agent'] || '');
+    if (/bot|crawler|spider|preview|facebookexternalhit|linkedin|whatsapp|telegram|slack|discord|twitter|skype|metricool|embedly|vkshare|pinterest|google-structured|bitly|redditbot|applebot|curl|python|okhttp|http-client|java\//i.test(ua)) {
+      const titulo = 'Atlantyx — Tecnologia, dados e produtos para a sua operação', desc = 'Conversa gratuita: um especialista entende o seu cenário e mostra onde a Atlantyx gera resultado na sua operação.';
+      const img = base + '/og-atlantyx.jpg', esc = v => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.status(200).end(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(titulo)}</title><meta name="description" content="${esc(desc)}">`
+        + `<meta property="og:type" content="website"><meta property="og:site_name" content="Atlantyx"><meta property="og:locale" content="pt_BR"><meta property="og:url" content="${esc(base + '/captura.html')}">`
+        + `<meta property="og:title" content="${esc(titulo)}"><meta property="og:description" content="${esc(desc)}"><meta property="og:image" content="${esc(img)}"><meta property="og:image:secure_url" content="${esc(img)}">`
+        + `<meta property="og:image:type" content="image/jpeg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="627"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${esc(img)}">`
+        + `<link rel="canonical" href="${esc(base + '/captura.html')}"><meta http-equiv="refresh" content="0;url=${esc(destino)}"></head><body><a href="${esc(destino)}">Continuar</a></body></html>`);
+    }
     return res.redirect(302, destino);
   }
   if (req.method !== 'POST') return res.status(405).end();
