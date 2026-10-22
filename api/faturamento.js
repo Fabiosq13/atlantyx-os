@@ -1,6 +1,7 @@
 import { comGuarda } from '../lib/qa-guard.js';
 const _hojeBRf = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // v3.231: hoje em Brasília
 import { termoPendencias, PRAZO_TERMO_DIAS as _PRAZO_TERMO } from '../lib/termo-regras.js'; // v3.129
+import * as RET from '../lib/retencao-fatura.js'; // v3.246: fatura já descontada do imposto retido
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
 // SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
@@ -300,6 +301,7 @@ async function nfseImportar({ xml, aplicar = true } = {}) {
         try { await sql`INSERT INTO termos_notas_encontradas (id, termo_id, empresa_id, nf_numero, nf_valor, nf_chave, tipo_arquivo, anexo_nome, encontrado_em)
           VALUES (${novoId('nfe')}, ${melhor.e.termo_id}, ${melhor.e.id}, ${n.numero}, ${n.valor_servico}, ${n.chave}, 'xml-nfse', 'nfse-gov', NOW()) ON CONFLICT DO NOTHING`; } catch (_) {}
         try { await recalcularNf(melhor.e.termo_id); } catch (_) {}
+        try { const ret = RET.retidoDaNota(n); if (ret > 0) await _retNfGravar(melhor.e.id, { retido: ret, nf: n.numero, bruto: n.valor_servico, liquido: n.valor_liquido }); } catch (_) {} // v3.246
         item.gravada = true;
       }
       resultado.push(item);
@@ -1624,13 +1626,14 @@ async function qbItemPadrao(token, realm, sandbox) {
   return out;
 }
 
-async function qbCriarInvoice({ customerId, itemId, valor, descricao, docNumber }, token, realm, sandbox) {
+async function qbCriarInvoice({ customerId, itemId, valor, descricao, docNumber, retencao }, token, realm, sandbox) {
   const base = sandbox ? 'https://sandbox-quickbooks.api.intuit.com' : 'https://quickbooks.api.intuit.com';
   const body = {
     CustomerRef: { value: String(customerId) },
     TxnDate: _hojeBRf(),
     PrivateNote: descricao,
-    Line: [{ Amount: num(valor), DetailType: 'SalesItemLineDetail', Description: descricao, SalesItemLineDetail: { ItemRef: { value: String(itemId) }, Qty: 1, UnitPrice: num(valor) } }],
+    Line: [{ Amount: num(valor), DetailType: 'SalesItemLineDetail', Description: descricao, SalesItemLineDetail: { ItemRef: { value: String(itemId) }, Qty: 1, UnitPrice: num(valor) } },
+      ...(retencao?.valor > 0 ? [RET.linhaRetencao(retencao.itemId, retencao.valor, RET.NOME_ITEM + (retencao.origem ? ' (' + retencao.origem + ')' : ''))] : [])], // v3.246
     ...(docNumber ? { DocNumber: String(docNumber).substring(0, 21) } : {}),
   };
   const r = await fetch(`${base}/v3/company/${realm}/invoice?minorversion=65`, { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) });
@@ -1678,6 +1681,13 @@ async function termoEmpresaLancarQb({ empresa_id } = {}) {
   }
   const item = await qbItemPadrao(token, realm, sandbox);
   const valor = e.nf_valor != null ? num(e.nf_valor) : num(e.valor_parcela);
+  // v3.246: a fatura sai já descontada do imposto retido na fonte (linha negativa) — total = líquido que o cliente paga
+  const ret = await _retEmpresa(e, valor), cfgRet = await _retCfg();
+  if (ret.valor > 0 && !cfgRet.item_id) {
+    const msg = 'Retenção de ' + ret.valor.toFixed(2).replace('.', ',') + ' (' + ret.origem + ') não descontada: escolha antes a conta da retenção em Kanban de Faturamento → 🧾 Retenções.';
+    await sql`UPDATE termos_empresas SET qb_erro = ${msg} WHERE id = ${empresa_id}`; throw Object.assign(new Error(msg), { status: 400 });
+  }
+  const liquido = Math.round((valor - ret.valor) * 100) / 100;
   const descricao = `${e.projeto || ''} — ${e.periodo_medicao || ''} — Termo ${e.numero_termo || ''}/${e.parcela || ''} — ${e.empresa}`;
   let invoice;
   // v2.22: antes de criar, verifica se já existe fatura com esse número. Se for do mesmo cliente
@@ -1687,7 +1697,7 @@ async function termoEmpresaLancarQb({ empresa_id } = {}) {
       const docN = String(e.nf_numero).substring(0, 21).replace(/'/g, "''");
       const ex = await qbQueryFat(`select * from Invoice where DocNumber = '${docN}' maxresults 5`, token, realm, sandbox);
       const lista = ex?.QueryResponse?.Invoice || [];
-      const mesma = lista.find(i => String(i.CustomerRef?.value) === String(cliente.id) && Math.abs(num(i.TotalAmt) - valor) < 1);
+      const mesma = lista.find(i => String(i.CustomerRef?.value) === String(cliente.id) && (Math.abs(num(i.TotalAmt) - valor) < 1 || Math.abs(num(i.TotalAmt) - liquido) < 1));
       if (mesma) {
         await sql`UPDATE termos_empresas SET qb_invoice_id = ${mesma.Id}, qb_invoice_doc = ${mesma.DocNumber || null}, qb_erro = NULL, qb_lancado_em = NOW() WHERE id = ${empresa_id}`;
         console.log(`[FAT] Fatura ${mesma.DocNumber} já existia no QuickBooks para ${e.empresa} — vinculada sem duplicar`);
@@ -1697,11 +1707,108 @@ async function termoEmpresaLancarQb({ empresa_id } = {}) {
       if (lista.length) console.log(`[FAT] DocNumber ${docN} já usado por outro cliente/valor — vou lançar sem número fixo`);
     } catch (err) { console.warn('[FAT] verificação de fatura existente:', err.message); }
   }
-  try { invoice = await qbCriarInvoice({ customerId: cliente.id, itemId: item.id, valor, descricao, docNumber: e.nf_numero }, token, realm, sandbox); }
+  try { invoice = await qbCriarInvoice({ customerId: cliente.id, itemId: item.id, valor, descricao, docNumber: e.nf_numero, retencao: ret.valor > 0 ? { valor: ret.valor, itemId: cfgRet.item_id, origem: ret.origem } : null }, token, realm, sandbox); }
   catch (err) { await sql`UPDATE termos_empresas SET qb_erro = ${err.message} WHERE id = ${empresa_id}`; throw err; }
   await sql`UPDATE termos_empresas SET qb_invoice_id = ${invoice.Id}, qb_invoice_doc = ${invoice.DocNumber || invoice.Id}, qb_lancado_em = NOW(), qb_erro = NULL WHERE id = ${empresa_id}`;
   console.log(`[Faturamento] Invoice lançada no QB: empresa=${e.empresa} valor=${valor} invoice=${invoice.Id}`);
-  return { lancado: true, qb_invoice_id: invoice.Id, qb_invoice_doc: invoice.DocNumber || invoice.Id, cliente: cliente.nome, valor, cliente_criado: clienteCriado, cliente_nome: cliente.nome };
+  return { lancado: true, qb_invoice_id: invoice.Id, qb_invoice_doc: invoice.DocNumber || invoice.Id, cliente: cliente.nome, valor, retencao: ret.valor, retencao_origem: ret.origem, valor_fatura: liquido, cliente_criado: clienteCriado, cliente_nome: cliente.nome };
+}
+
+// ═══ v3.246: RETENÇÃO NA FONTE NAS FATURAS DO QUICKBOOKS ═══
+// kv 'fat:retencao_cfg'  { item_id, item_nome, conta_id, conta_nome, regras: { 'cnpj:…'|'nome:…': { pct, nome } } }
+// kv 'fat:retencao_emp'  { <empresa_id>: { manual?: { valor, em, por }, nf?: { retido, nf, bruto, liquido, em } } }
+// kv 'fat:retencao_log'  últimos ajustes feitos em faturas já geradas
+async function _kvF(k, v) { const sql = await getSql();
+  if (v === undefined) { try { const r = await sql`SELECT value FROM kv_store WHERE key = ${k}`; const x = r[0]?.value; return x == null ? null : (typeof x === 'string' ? JSON.parse(x) : x); } catch (_) { return null; } }
+  await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; return v; }
+async function _retCfg() { return { regras: {}, ...((await _kvF('fat:retencao_cfg')) || {}) }; }
+async function _retNfGravar(empresaId, nf) { const m = (await _kvF('fat:retencao_emp')) || {}; m[empresaId] = { ...(m[empresaId] || {}), nf: { ...nf, em: new Date().toISOString() } }; await _kvF('fat:retencao_emp', m); }
+async function _retEmpresa(e, bruto, mapa, cfg) {
+  mapa = mapa || (await _kvF('fat:retencao_emp')) || {}; cfg = cfg || await _retCfg();
+  const x = mapa[e.id] || {};
+  return RET.retencaoDe({ bruto, manual: x.manual, nf: x.nf, regra: RET.regraDoCliente(cfg.regras, e.empresa || e.contratante, e.cnpj) });
+}
+async function _qbPostFat(caminho, body, token, realm, sandbox) {
+  const base = sandbox ? 'https://sandbox-quickbooks.api.intuit.com' : 'https://quickbooks.api.intuit.com';
+  const r = await fetch(`${base}/v3/company/${realm}${caminho}${caminho.includes('?') ? '&' : '?'}minorversion=65`, { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) });
+  const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error('QuickBooks [' + r.status + ']: ' + (d.Fault?.Error?.[0]?.Detail || d.Fault?.Error?.[0]?.Message || JSON.stringify(d).substring(0, 160))); return d;
+}
+// configuração: lista as contas do QuickBooks e as regras; salvar cria (ou reaproveita) o item "Retenção de impostos na fonte"
+async function retencaoCfg({ salvar = false, conta_id, regras } = {}) {
+  const cfg = await _retCfg(); const sandbox = process.env.QB_SANDBOX === 'true';
+  let token, realm; try { const t = await qbTokenFat(); token = t.token; realm = t.realm; } catch (e) { return { ...cfg, contas: [], qb_erro: e.message }; }
+  const contas = ((await qbQueryFat(`select Id, Name, FullyQualifiedName, AccountType, Classification from Account where Active = true maxresults 1000`, token, realm, sandbox))?.QueryResponse?.Account || [])
+    .map(a => ({ id: a.Id, nome: a.FullyQualifiedName || a.Name, tipo: a.AccountType, classificacao: a.Classification })).sort((a, b) => a.nome.localeCompare(b.nome));
+  if (salvar) {
+    if (regras && typeof regras === 'object') { const R = {}; for (const [k, v] of Object.entries(regras)) { const pct = Number(String(v?.pct ?? '').replace(',', '.')); if (/^(cnpj|nome):.{3,}$/.test(k) && pct > 0 && pct < 30) R[k] = { pct: Math.round(pct * 100) / 100, nome: String(v.nome || '').substring(0, 120) }; } cfg.regras = R; }
+    if (conta_id && String(conta_id) !== String(cfg.conta_id || '')) {
+      const conta = contas.find(c => String(c.id) === String(conta_id)); if (!conta) throw Object.assign(new Error('Conta não encontrada no QuickBooks'), { status: 400 });
+      const nomeQ = RET.NOME_ITEM.replace(/'/g, "\\'");
+      let it = ((await qbQueryFat(`select * from Item where Name = '${nomeQ}' maxresults 1`, token, realm, sandbox))?.QueryResponse?.Item || [])[0];
+      if (!it) it = (await _qbPostFat('/item', { Name: RET.NOME_ITEM, Type: 'Service', IncomeAccountRef: { value: String(conta.id) }, Description: 'Imposto retido na fonte pelo cliente (IR, CSRF, ISS, INSS) — linha negativa na fatura (Atlantyx OS)' }, token, realm, sandbox)).Item;
+      else if (String(it.IncomeAccountRef?.value || '') !== String(conta.id)) it = (await _qbPostFat('/item', { Id: it.Id, SyncToken: it.SyncToken, sparse: true, IncomeAccountRef: { value: String(conta.id) } }, token, realm, sandbox)).Item;
+      Object.assign(cfg, { item_id: it.Id, item_nome: it.Name, conta_id: conta.id, conta_nome: conta.nome, configurado_em: new Date().toISOString() });
+    }
+    await _kvF('fat:retencao_cfg', cfg);
+  }
+  return { ...cfg, contas, sugerida: cfg.conta_id ? null : RET.contaSugerida(contas) };
+}
+async function retencaoInformar({ empresa_id, valor } = {}) {
+  if (!empresa_id) throw Object.assign(new Error('empresa_id obrigatório'), { status: 400 });
+  const m = (await _kvF('fat:retencao_emp')) || {}; const x = m[empresa_id] = m[empresa_id] || {};
+  if (valor === null || valor === '' || valor === undefined) delete x.manual; else x.manual = { valor: Math.round(Number(String(valor).replace(',', '.')) * 100) / 100, em: new Date().toISOString() };
+  await _kvF('fat:retencao_emp', m); return { ok: true };
+}
+// faturas já geradas: prévia (sem executar) e ajuste no QuickBooks (com executar + ids escolhidos na tela)
+async function retencaoFaturas({ executar = false, itens = [] } = {}) {
+  const sql = await getSql(), cfg = await _retCfg(), mapa = (await _kvF('fat:retencao_emp')) || {}, sandbox = process.env.QB_SANDBOX === 'true';
+  const { token, realm } = await qbTokenFat();
+  const emps = await sql`SELECT e.id, e.empresa, e.cnpj, e.qb_invoice_id, e.nf_valor, e.valor_parcela, t.numero_termo, t.projeto, t.contratante FROM termos_empresas e JOIN termos_faturamento t ON t.id = e.termo_id WHERE COALESCE(e.qb_invoice_id, '') <> ''`;
+  const porInv = new Map(emps.map(e => [String(e.qb_invoice_id), e]));
+  const buscar = async ids => { const out = []; for (let i = 0; i < ids.length; i += 40) { const lote = ids.slice(i, i + 40).map(x => `'${String(x).replace(/'/g, '')}'`).join(',');
+    out.push(...(((await qbQueryFat(`select * from Invoice where Id in (${lote}) maxresults 100`, token, realm, sandbox))?.QueryResponse?.Invoice) || [])); } return out; };
+  if (!executar) {
+    const desde = new Date(Date.now() - 540 * 864e5).toISOString().slice(0, 10);
+    const ligadas = await buscar([...porInv.keys()]);
+    const abertas = ((await qbQueryFat(`select * from Invoice where Balance > '0.009' and TxnDate >= '${desde}' maxresults 1000`, token, realm, sandbox))?.QueryResponse?.Invoice) || [];
+    const todas = new Map([...ligadas, ...abertas].map(i => [String(i.Id), i]));
+    const lista = [];
+    for (const inv of todas.values()) {
+      const e = porInv.get(String(inv.Id)); const retE = e ? await _retEmpresa(e, num(inv.TotalAmt), mapa, cfg) : null;
+      const pl = RET.planoAjuste(inv, { itemId: cfg.item_id, retEmpresa: retE });
+      if (!e && pl.situacao === 'sem_retencao') continue; // fatura avulsa sem sinal de retenção: fora da lista
+      lista.push({ ...pl, empresa_id: e?.id || null, termo: e ? (e.numero_termo || '') + (e.projeto ? ' · ' + e.projeto : '') : null });
+    }
+    const ordem = { ajustar: 0, sem_retencao: 1, bloqueada: 2, ja_ajustada: 3 };
+    lista.sort((a, b) => ordem[a.situacao] - ordem[b.situacao] || String(b.data || '').localeCompare(String(a.data || '')));
+    const c = s => lista.filter(x => x.situacao === s).length;
+    return { configurado: !!cfg.item_id, conta: cfg.conta_nome || null, faturas: lista, resumo: { ajustar: c('ajustar'), sem_retencao: c('sem_retencao'), bloqueada: c('bloqueada'), ja_ajustada: c('ja_ajustada'),
+      retencao_total: Math.round(lista.filter(x => x.situacao === 'ajustar').reduce((s, x) => s + x.retencao, 0) * 100) / 100 } };
+  }
+  if (!cfg.item_id) throw Object.assign(new Error('Escolha antes a conta da retenção (configuração acima).'), { status: 400 });
+  const pedidos = (Array.isArray(itens) ? itens : []).slice(0, 100).filter(x => x && x.invoice_id);
+  if (!pedidos.length) throw Object.assign(new Error('Marque ao menos uma fatura'), { status: 400 });
+  // valor informado na tela vira "retenção informada" da empresa do termo (fica valendo para a próxima vez)
+  for (const p of pedidos) { const e = porInv.get(String(p.invoice_id)); if (e && p.valor != null && p.valor !== '') { const x = mapa[e.id] = mapa[e.id] || {}; x.manual = { valor: Math.round(Number(String(p.valor).replace(',', '.')) * 100) / 100, em: new Date().toISOString() }; } }
+  await _kvF('fat:retencao_emp', mapa);
+  const frescas = await buscar(pedidos.map(p => p.invoice_id)); const res = [];
+  for (const p of pedidos) {
+    const inv = frescas.find(i => String(i.Id) === String(p.invoice_id)); if (!inv) { res.push({ invoice_id: p.invoice_id, ok: false, erro: 'fatura não encontrada no QuickBooks' }); continue; }
+    const e = porInv.get(String(inv.Id));
+    let retE = e ? await _retEmpresa(e, num(inv.TotalAmt), mapa, cfg) : null;
+    if (!e && p.valor != null && p.valor !== '') retE = RET.retencaoDe({ bruto: num(inv.TotalAmt), manual: { valor: p.valor } });
+    const pl = RET.planoAjuste(inv, { itemId: cfg.item_id, retEmpresa: retE }); // nova conferência no servidor, com a fatura de agora
+    if (pl.situacao !== 'ajustar') { res.push({ invoice_id: p.invoice_id, doc: pl.doc, ok: false, erro: pl.texto }); continue; }
+    const somaLinhas = (inv.Line || []).filter(l => l.DetailType !== 'SubTotalLineDetail').reduce((t, l) => t + num(l.Amount), 0);
+    if (Math.abs(somaLinhas - num(inv.TotalAmt)) > 0.05) { res.push({ invoice_id: inv.Id, doc: pl.doc, ok: false, erro: 'as linhas da fatura não somam o total (há imposto/desconto) — ajuste no QuickBooks' }); continue; }
+    try {
+      const d = await _qbPostFat('/invoice', { Id: inv.Id, SyncToken: inv.SyncToken, sparse: true, Line: RET.linhasComRetencao(inv, cfg.item_id, pl.retencao) }, token, realm, sandbox);
+      res.push({ invoice_id: inv.Id, doc: pl.doc, cliente: pl.cliente, ok: true, retencao: pl.retencao, total_antes: pl.total, total_depois: num(d.Invoice?.TotalAmt), saldo_depois: num(d.Invoice?.Balance) });
+    } catch (err) { res.push({ invoice_id: inv.Id, doc: pl.doc, ok: false, erro: err.message }); }
+  }
+  try { const log = (await _kvF('fat:retencao_log')) || []; log.unshift({ em: new Date().toISOString(), ajustadas: res.filter(r => r.ok).map(r => ({ doc: r.doc, retencao: r.retencao, antes: r.total_antes, depois: r.total_depois })), erros: res.filter(r => !r.ok).length }); await _kvF('fat:retencao_log', log.slice(0, 100)); } catch (_) {}
+  try { await sql`DELETE FROM kv_store WHERE key LIKE 'cache:fin:%'`; } catch (_) {}
+  return { resultados: res, ajustadas: res.filter(r => r.ok).length, erros: res.filter(r => !r.ok).length };
 }
 
 async function termoLancarTodasQb({ termo_id } = {}) {
@@ -1804,6 +1911,9 @@ async function handler(req, res) {
     termo_verificar_email:     () => termoVerificarEmail(payload),
     termo_verificar_pagamento: () => termoVerificarPagamento(payload),
     termo_empresa_lancar_qb:   () => termoEmpresaLancarQb(payload),
+    retencao_cfg:              () => retencaoCfg(payload),      // v3.246
+    retencao_informar:         () => retencaoInformar(payload), // v3.246
+    retencao_faturas:          () => retencaoFaturas(payload),  // v3.246
     termo_lancar_todas_qb:     () => termoLancarTodasQb(payload),
     termo_qb_diagnostico:      () => termoQbDiagnostico(),
     status:                    () => ({ ok: true, modulo: 'faturamento', colunas: STATUS }),

@@ -3716,6 +3716,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     <button class="btn" onclick="carregarKanbanFaturamento()">&#8635; Atualizar</button>
     <button class="btn" style="color:var(--gold);border-color:var(--gold);" onclick="verificarTermosObrigatorios()" title="Confere se os termos obrigatorios do mes estao lancados">&#9888; Termos do mes</button>
     <button class="btn" onclick="diagnosticoTermos()" title="Mostra o que esta no banco, sem nenhum filtro">&#128270; Diagnostico</button>
+    <button class="btn" style="color:var(--green);border-color:var(--green);" onclick="retAbrir()" title="Fatura no QuickBooks já descontada do imposto retido na fonte (IR, CSRF, ISS, INSS) — configurar e ajustar as faturas já geradas">&#129534; Retenções</button>
     <label class="btn btn-gn" style="cursor:pointer;" title="Sobe o XML exportado do emissor nacional NFS-e (gov.br) e atrela cada nota ao termo pelo CNPJ do tomador e valor">&#129534; Importar NFS-e (XML)<input type="file" accept=".xml,.XML,.zip" multiple style="display:none;" onchange="fatImportarNfse(this)"/></label>
   </div>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;padding:9px 12px;background:var(--bg4);border-radius:8px;">
@@ -26628,6 +26629,77 @@ async function marcoCopiarExec(ids) {
     try { carregarKanbanMarcos(); } catch (_) {} try { if (_projetoAberto) await abrirProjeto(_projetoAberto.id); } catch (_) {}
   } catch (e) { toast('Não copiou: ' + e.message, 'error'); if (b) { b.disabled = false; b.textContent = 'Criar cópias'; } }
 }
+// ═══ v3.246: RETENÇÕES NA FONTE NAS FATURAS DO QUICKBOOKS ═══
+let _ret = { cfg: null, lista: null };
+const _retBRL = v => 'R$ ' + (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function _retModal() {
+  let m = document.getElementById('retModal');
+  if (!m) { m = document.createElement('div'); m.id = 'retModal'; m.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:1000;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px;';
+    m.onclick = e => { if (e.target === m) m.style.display = 'none'; }; document.body.appendChild(m); }
+  m.style.display = 'flex'; return m;
+}
+async function retAbrir() {
+  const m = _retModal();
+  m.innerHTML = `<div class="panel" style="width:1100px;max-width:100%;"><div class="ph"><div class="pt">🧾 Retenção na fonte nas faturas do QuickBooks</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('retModal').style.display='none'">✕</button></div>
+    <div class="pb" style="display:block;"><div style="font-size:11px;color:var(--t2);line-height:1.6;margin-bottom:10px;">A fatura sai com a linha do serviço pelo valor <b>bruto</b> e uma linha negativa <b>“Retenção de impostos na fonte”</b>: o total da fatura fica igual ao <b>líquido</b> que o cliente deposita. A retenção vem do valor informado, da nota fiscal (bruto − líquido do XML) ou da regra % do cliente.</div>
+    <div id="retCfg"><div class="fv2-load">Lendo as contas do QuickBooks…</div></div>
+    <div style="margin-top:14px;font-size:12px;font-weight:700;">Faturas já geradas</div><div id="retLista"><div class="fv2-load">Conferindo as faturas no QuickBooks…</div></div></div></div>`;
+  retCfgCarregar(); retListar();
+}
+async function retCfgCarregar(salvarPayload) {
+  const box = document.getElementById('retCfg'); if (!box) return;
+  try { _ret.cfg = await fatApi('retencao_cfg', salvarPayload || {}); } catch (e) { box.innerHTML = `<div class="fv2-erro">${_dsE(e.message)}</div>`; return; }
+  const c = _ret.cfg, sel = c.conta_id || c.sugerida?.id || '';
+  const regras = Object.entries(c.regras || {});
+  box.innerHTML = `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:8px;background:var(--bg4);">
+      <span style="font-size:11px;">Conta da retenção no QuickBooks:</span>
+      <select class="fsel" id="retConta" style="min-width:320px;font-size:11px;">${c.conta_id ? '' : '<option value="">— escolha a conta —</option>'}${(c.contas || []).map(a => `<option value="${_dsE(a.id)}"${String(a.id) === String(sel) ? ' selected' : ''}>${_dsE(a.nome)} · ${_dsE(a.tipo || '')}</option>`).join('')}</select>
+      <button class="btn btn-gn" style="font-size:10px;" onclick="retCfgSalvar()">${c.item_id ? 'Trocar conta' : 'Usar esta conta'}</button>
+      <span style="font-size:10.5px;color:${c.item_id ? 'var(--green)' : 'var(--gold)'};">${c.item_id ? '✓ item “' + _dsE(c.item_nome) + '” → ' + _dsE(c.conta_nome) : (c.sugerida ? 'sugestão: ' + _dsE(c.sugerida.nome) + ' — confira e confirme' : 'ainda não configurado — sem isso as faturas novas não são lançadas')}</span>
+      ${c.qb_erro ? `<span class="fv2-erro">${_dsE(c.qb_erro)}</span>` : ''}</div>
+    <div style="margin-top:8px;font-size:11px;"><b>Regras por cliente</b> <span style="color:var(--t3);">— % retido quando a nota não traz o líquido (ex.: 6,15 = IR 1,5% + CSRF 4,65%)</span></div>
+    <div id="retRegras" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">${regras.map(([k, r]) => `<span class="chip" style="font-size:10.5px;">${_dsE(r.nome || k)} · ${String(r.pct).replace('.', ',')}% <a href="#" onclick="retRegraTirar('${_dsE(k)}');return false;" style="color:var(--red);">✕</a></span>`).join('') || '<span style="font-size:10.5px;color:var(--t3);">nenhuma regra</span>'}</div>
+    <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;"><input class="fi" id="retRNome" placeholder="cliente (nome como no termo)" style="width:260px;font-size:11px;"><input class="fi" id="retRCnpj" placeholder="CNPJ (opcional)" style="width:170px;font-size:11px;"><input class="fi" id="retRPct" placeholder="% retido" style="width:90px;font-size:11px;"><button class="btn" style="font-size:10px;" onclick="retRegraAdd()">+ regra</button></div>`;
+}
+function _retChave(nome, cnpj) { const d = String(cnpj || '').replace(/\D/g, ''); return d.length >= 11 ? 'cnpj:' + d : 'nome:' + String(nome || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '').substring(0, 40); }
+async function retCfgSalvar() { const id = document.getElementById('retConta')?.value; if (!id) { toast('Escolha a conta', 'error'); return; }
+  if (!confirm('Usar esta conta para o item “Retenção de impostos na fonte” no QuickBooks?\n\nO item é criado no QuickBooks (ou reaproveitado se já existir) e entra como linha negativa nas faturas.')) return;
+  await retCfgCarregar({ salvar: true, conta_id: id }); toast('Conta da retenção configurada', 'success'); retListar(); }
+async function retRegraAdd() { const nome = document.getElementById('retRNome').value.trim(), cnpj = document.getElementById('retRCnpj').value.trim(), pct = document.getElementById('retRPct').value.trim();
+  if (!nome || !pct) { toast('Informe o cliente e o %', 'error'); return; }
+  const R = { ...(_ret.cfg?.regras || {}) }; R[_retChave(nome, cnpj)] = { pct, nome }; await retCfgCarregar({ salvar: true, regras: R }); retListar(); }
+async function retRegraTirar(k) { const R = { ...(_ret.cfg?.regras || {}) }; delete R[k]; await retCfgCarregar({ salvar: true, regras: R }); retListar(); }
+async function retListar() {
+  const box = document.getElementById('retLista'); if (!box) return;
+  box.innerHTML = '<div class="fv2-load">Conferindo as faturas no QuickBooks…</div>';
+  try { _ret.lista = await fatApi('retencao_faturas', {}, { timeoutMs: 58000 }); } catch (e) { box.innerHTML = `<div class="fv2-erro">${_dsE(e.message)}</div>`; return; }
+  const d = _ret.lista, F = d.faturas || [], R = d.resumo || {};
+  const cor = { ajustar: 'var(--green)', sem_retencao: 'var(--gold)', bloqueada: 'var(--red)', ja_ajustada: 'var(--t3)' }, rot = { ajustar: 'a ajustar', sem_retencao: 'sem retenção conhecida', bloqueada: 'não dá para ajustar', ja_ajustada: 'já ajustada' };
+  box.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 8px;font-size:11px;">
+      <span class="chip">${R.ajustar || 0} a ajustar · ${_retBRL(R.retencao_total)}</span><span class="chip">${R.sem_retencao || 0} sem retenção conhecida</span><span class="chip">${R.bloqueada || 0} bloqueada(s)</span><span class="chip">${R.ja_ajustada || 0} já ajustada(s)</span>
+      <button class="btn btn-gn" style="margin-left:auto;font-size:10.5px;" onclick="retAplicar()" ${d.configurado ? '' : 'disabled title="Escolha a conta da retenção primeiro"'}>✓ Ajustar as marcadas no QuickBooks</button></div>
+    ${F.length ? `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:900px;"><thead><tr style="color:var(--t3);font-size:9.5px;text-align:left;"><th style="padding:5px;"><input type="checkbox" onchange="document.querySelectorAll('.retChk:not(:disabled)').forEach(c=>c.checked=this.checked)"></th><th>FATURA</th><th>CLIENTE / TERMO</th><th style="text-align:right;">TOTAL</th><th style="text-align:right;">RECEBIDO</th><th style="text-align:right;">RETENÇÃO</th><th style="text-align:right;">NOVO TOTAL</th><th>SITUAÇÃO</th></tr></thead><tbody>
+      ${F.map((x, i) => { const pode = x.situacao === 'ajustar' || (x.situacao === 'sem_retencao' && x.empresa_id);
+        return `<tr style="border-top:1px solid var(--bd);"><td style="padding:5px;"><input type="checkbox" class="retChk" data-i="${i}" ${x.situacao === 'ajustar' ? 'checked' : ''} ${pode ? '' : 'disabled'}></td>
+        <td>${_dsE(x.doc)}<div style="font-size:9.5px;color:var(--t3);">${_dsE(String(x.data || '').split('-').reverse().join('/'))}</div></td>
+        <td>${_dsE(x.cliente)}${x.termo ? `<div style="font-size:9.5px;color:var(--t3);">Termo ${_dsE(x.termo)}</div>` : ''}</td>
+        <td style="text-align:right;font-family:var(--M);white-space:nowrap;">${_retBRL(x.total)}</td><td style="text-align:right;font-family:var(--M);white-space:nowrap;">${_retBRL(x.pago)}</td>
+        <td style="text-align:right;">${pode ? `<input class="fi retVal" data-i="${i}" value="${x.retencao ? Number(x.retencao).toFixed(2).replace('.', ',') : ''}" placeholder="valor" style="width:100px;font-size:11px;text-align:right;">` : (x.retencao ? _retBRL(x.retencao) : '—')}${x.origem ? `<div style="font-size:9px;color:var(--t3);">${_dsE(x.origem)}</div>` : ''}</td>
+        <td style="text-align:right;font-family:var(--M);white-space:nowrap;">${x.novo_total != null ? _retBRL(x.novo_total) : '—'}</td>
+        <td style="color:${cor[x.situacao]};font-size:10.5px;">${rot[x.situacao]}${x.texto && x.situacao !== 'ajustar' ? `<div style="font-size:9.5px;color:var(--t3);">${_dsE(x.texto)}</div>` : ''}</td></tr>`; }).join('')}</tbody></table></div>`
+      : '<div style="font-size:11px;color:var(--t3);">Nenhuma fatura com retenção a ajustar.</div>'}
+    <div style="font-size:10px;color:var(--t3);margin-top:6px;">Antes de gravar, o sistema lê cada fatura de novo no QuickBooks e confere: sem linha de retenção, retenção menor que o total e o já recebido cabendo no novo total. Valor digitado aqui passa a valer para a empresa do termo.</div>`;
+}
+async function retAplicar() {
+  const F = _ret.lista?.faturas || []; const itens = [...document.querySelectorAll('.retChk:checked')].map(c => { const x = F[+c.dataset.i]; const v = document.querySelector(`.retVal[data-i="${c.dataset.i}"]`)?.value?.trim();
+    return { invoice_id: x.invoice_id, valor: v ? v.replace(/\./g, '').replace(',', '.') : null, doc: x.doc, total: x.total, ret: v || x.retencao }; });
+  if (!itens.length) { toast('Marque ao menos uma fatura', 'error'); return; }
+  if (!confirm(`Ajustar ${itens.length} fatura(s) no QuickBooks?\n\n${itens.slice(0, 12).map(x => '• ' + x.doc + ': ' + _retBRL(x.total) + ' − retenção ' + x.ret).join('\n')}${itens.length > 12 ? '\n…' : ''}\n\nCada fatura ganha a linha negativa "Retenção de impostos na fonte" e o total passa a ser o líquido.`)) return;
+  try { const r = await fatApi('retencao_faturas', { executar: true, itens: itens.map(x => ({ invoice_id: x.invoice_id, valor: x.valor })) }, { timeoutMs: 58000 });
+    toast(`${r.ajustadas} fatura(s) ajustada(s) no QuickBooks${r.erros ? ' · ' + r.erros + ' com erro' : ''}`, r.erros ? 'error' : 'success');
+    if (r.erros) alert('Não ajustadas:\n' + r.resultados.filter(x => !x.ok).map(x => '• ' + (x.doc || x.invoice_id) + ': ' + x.erro).join('\n'));
+    retListar(); } catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
 // ═══ v3.245: PAGAMENTO MENSAL DE COLABORADORES (tela do Maestro trazida para o Financeiro) ═══
 let _pc = null;
 const _pcNf = v => (Math.round((Number(v) || 0) * 100) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -34963,7 +35035,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.245] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.246] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -34979,7 +35051,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.245';
+window.__ATX_BUILD_ID__ = 'ATX-v3.246';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

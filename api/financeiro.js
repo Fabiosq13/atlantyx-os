@@ -3635,16 +3635,18 @@ async function pendenciasFin() {
   const nrm = x => String(x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '').substring(0, 14);
   const chaves = new Set(); const unico = (k) => { if (chaves.has(k)) return false; chaves.add(k); return true; };
   // a pagar vencido (o painel de vencidos já junta QuickBooks e agenda, sem repetir)
-  for (const x of v?.pagar || []) if (unico('p|' + nrm(x.contraparte) + '|' + round(x.valor))) itens.push({ grupo: 'pagar_vencido', gravidade: x.dias > 7 ? 'alta' : 'media', titulo: x.contraparte || 'Conta a pagar',
+  // v3.246: pago parcialmente não é pendência (fatura/conta com parte já paga, inclusive saldo = imposto retido)
+  const parcial = x => Number(x.valor_total) > Number(x.valor) + 0.01;
+  for (const x of v?.pagar || []) if (!parcial(x) && unico('p|' + nrm(x.contraparte) + '|' + round(x.valor))) itens.push({ grupo: 'pagar_vencido', gravidade: x.dias > 7 ? 'alta' : 'media', titulo: x.contraparte || 'Conta a pagar',
     detalhe: 'venceu em ' + x.vencimento.split('-').reverse().join('/') + ' (' + x.dias + ' dia' + (x.dias > 1 ? 's' : '') + ')' + (x.doc ? ' · ' + x.doc : '') + (x.obs ? ' · ' + x.obs : ''), valor: x.valor, dias: x.dias, tela: 's3agenda' });
   // a pagar hoje
   for (const x of d?.listaDia || []) if (unico('p|' + nrm(x.fornecedor || x.descricao) + '|' + round(x.valor))) itens.push({ grupo: 'pagar_hoje', gravidade: 'media', titulo: x.fornecedor || x.descricao,
     detalhe: 'vence hoje' + (x.categoria ? ' · ' + x.categoria : ''), valor: x.valor, dias: 0, tela: 's3agenda', link: x.qb_url || null });
   // a receber vencido (fatura em aberto) e fatura cujo saldo é só a retenção
-  for (const x of v?.receber || []) { if (!unico('r|' + nrm(x.contraparte) + '|' + round(x.valor))) continue;
+  for (const x of v?.receber || []) { if (parcial(x) || x.retencao_provavel || !unico('r|' + nrm(x.contraparte) + '|' + round(x.valor))) continue;
     if (x.retencao_provavel) itens.push({ grupo: 'retencao', gravidade: 'baixa', titulo: x.contraparte + (x.doc ? ' · fatura ' + x.doc : ''), detalhe: 'saldo = imposto retido (' + x.retencao_provavel + ') — registrar a retenção no recebimento no QuickBooks', valor: x.valor, dias: x.dias, tela: 's3conciliacao' });
     else itens.push({ grupo: 'receber_vencido', gravidade: x.dias > 15 ? 'alta' : 'media', titulo: x.contraparte + (x.doc ? ' · fatura ' + x.doc : ''), detalhe: 'venceu em ' + x.vencimento.split('-').reverse().join('/') + ' (' + x.dias + ' dia' + (x.dias > 1 ? 's' : '') + ')' + (x.obs ? ' · ' + x.obs : ''), valor: x.valor, dias: x.dias, tela: 's3conciliacao' }); }
-  for (const x of v?.retidas || []) if (unico('r|' + nrm(x.contraparte) + '|' + round(x.valor))) itens.push({ grupo: 'retencao', gravidade: 'baixa', titulo: x.contraparte + (x.doc ? ' · fatura ' + x.doc : ''), detalhe: 'saldo = imposto retido (' + x.retencao + ') — registrar a retenção no QuickBooks', valor: x.valor, tela: 's3conciliacao' });
+  // v3.246: faturas com saldo = imposto retido também são pagas parcialmente — saem da lista (ajuste em Kanban de Faturamento → 🧾 Retenções)
   // receita prevista atrasada que ainda não virou fatura
   try { const rp = await receitasPrevistas({ meses: 3 });
     for (const o of (rp.ativas || []).filter(o => o.status === 'atrasada')) if (unico('r|' + nrm(o.cliente || o.descricao) + '|' + round(o.valor))) {
@@ -3652,7 +3654,10 @@ async function pendenciasFin() {
       itens.push({ grupo: 'receita_atrasada', gravidade: dd > 15 ? 'alta' : 'media', titulo: (o.cliente ? o.cliente + ' · ' : '') + (o.descricao || 'Receita prevista'), detalhe: 'prevista para ' + String(o.data_prevista || '').split('-').reverse().join('/') + ' e ainda sem fatura no QuickBooks', valor: round(o.valor), dias: dd, tela: 's3agendarec' }); } }
   catch (e) { erros.push('receitas previstas: ' + e.message); }
   // termos com pendência (sem nota, sem data de pagamento, atrasado…) — um item por termo
-  for (const x of t?.criticos || []) itens.push({ grupo: 'termo', gravidade: (x.prazo_etapa?.estourado || (x.dias != null && x.dias >= 30)) ? 'alta' : 'media', titulo: 'Termo ' + (x.numero || '') + ' · ' + (x.cliente || x.projeto || ''),
+  let termosParciais = new Set(); try { const ids = (t?.criticos || []).map(x => x.id).filter(Boolean); if (ids.length) { const sq = await getSql();
+    termosParciais = new Set((await sq`SELECT DISTINCT termo_id FROM termos_empresas WHERE termo_id = ANY(${ids}) AND (pagamento_status IN ('pago', 'parcial') OR pagamento_valor > 0)`).map(r => r.termo_id)); } } catch (_) {
+    try { const ids = (t?.criticos || []).map(x => x.id).filter(Boolean); if (ids.length) { const sq = await getSql(); termosParciais = new Set((await sq`SELECT DISTINCT termo_id FROM termos_empresas WHERE termo_id = ANY(${ids}) AND pagamento_status IN ('pago', 'parcial')`).map(r => r.termo_id)); } } catch (_) {} }
+  for (const x of (t?.criticos || []).filter(x => !termosParciais.has(x.id))) itens.push({ grupo: 'termo', gravidade: (x.prazo_etapa?.estourado || (x.dias != null && x.dias >= 30)) ? 'alta' : 'media', titulo: 'Termo ' + (x.numero || '') + ' · ' + (x.cliente || x.projeto || ''),
     detalhe: (x.pendencias || []).map(p => typeof p === 'string' ? p : (p.texto || p.titulo || p.msg || '')).filter(Boolean).slice(0, 3).join(' · ') + (x.prazo_etapa?.estourado ? ' · etapa ' + x.prazo_etapa.etapa + ' ' + x.prazo_etapa.texto : '') || 'pendência no termo', valor: x.valor, dias: x.dias, tela: 's3fatkanban', termo_id: x.id });
   // possíveis pagamentos duplicados no mês
   try { if (d) { const px = await _relPagamentosExtra(d); for (const p of px.duplicados || []) itens.push({ grupo: 'duplicado', gravidade: 'media', titulo: (p.a.fornecedor || p.a.descricao) + ' — possível duplicado',
