@@ -1,4 +1,6 @@
 import { comGuarda } from '../lib/qa-guard.js';
+import { liUsarKv, liStatus, liUrlConectar, liCallback, liCriar, liEstado, liPeriodo, liLer, liPublicoEnviar, liPublicoLer } from '../lib/linkedin-ads.js'; // v3.239
+import { linhasMeta, SCHEMA_META, listaObter, listaGravar } from '../lib/publico-lista.js'; // v3.239
 import { RE_CONTEUDO_FORA_ICP } from '../lib/icp.js';
 import { META_CARGOS, classificarCargo as _clsCargo } from '../lib/icp.js';
 import { ICP_TEXTO, ICP_VERSAO, META_IDADE_MIN, META_IDADE_MAX, META_INTERESSES, META_COMPORT, META_SETOR, META_EXCLUIR } from '../lib/icp.js';
@@ -290,10 +292,17 @@ async function _kvMc(k, v) {
   if (v === undefined) { const r = await sql`SELECT value FROM kv_store WHERE key = ${k} LIMIT 1`; const x = r[0]?.value; return typeof x === 'string' ? JSON.parse(x) : (x ?? null); }
   await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; return v;
 }
+liUsarKv((k, v) => _kvMc(k, v)); // v3.239: tokens e conta do LinkedIn Ads ficam no kv_store
+// v3.174/v3.239: endereço público do sistema (nunca um deploy temporário …-projects-….vercel.app)
+function _baseDe(req) {
+  const _host = req?.headers?.host || '';
+  return (process.env.MEDIA_PUBLIC_BASE || process.env.APP_URL || (/^[\w.-]+$/.test(_host) && !/-projects-|^project-/.test(_host) ? 'https://' + _host : 'https://atlantyx-os.vercel.app')).replace(/\/$/, '');
+}
 async function patrocinadoStatus(req) {
   const c = _metaCfg(); const falta = [['META_ADS_TOKEN', c.token], ['META_AD_ACCOUNT_ID', c.conta], ['META_PAGE_ID', c.pagina], ['META_IG_USER_ID', c.ig]].filter(([, v]) => !v).map(([k]) => k);
   const out = { meta_configurado: !falta.length, falta, conta: c.conta ? 'act_' + c.conta : null };
   if (!falta.length) { try { const a = await _meta('act_' + c.conta + '?fields=name,currency,account_status,amount_spent'); out.conta_nome = a.name; out.moeda = a.currency; out.conta_ativa = a.account_status === 1; } catch (e) { out.erro = e.message; } }
+  try { out.linkedin = await liStatus(_baseDe(req)); } catch (e) { out.linkedin = { configurado: false, erro: e.message }; } // v3.239
   return out;
 }
 async function patrocinadoCopy({ tema = '', oferta = '', publico = '' } = {}) {
@@ -354,14 +363,17 @@ async function _publicoDecisores() {
   for (const q of _EXCLUIR) { try { const r = await _meta(`search?type=adinterest&limit=1&q=${encodeURIComponent(q)}`); const x = (r.data || [])[0]; if (x && !excluir.some(i => i.id === String(x.id))) excluir.push({ id: String(x.id), name: x.name }); } catch (_) {} }
   const v = { comportamentos, setores, excluir, em: Date.now() }; await _kvMc(_KV_DEC, v).catch(() => {}); return v;
 }
-function _linkPago(base, nome) {
+function _linkPago(base, nome, rede = 'instagram') {
   const slug = String(nome || 'patrocinado').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 40) || 'patrocinado';
-  return base + '/captura.html?utm_source=instagram&utm_medium=pago&utm_campaign=' + slug + '&utm_content=saiba_mais';
+  return base + '/captura.html?utm_source=' + rede + '&utm_medium=pago&utm_campaign=' + slug + '&utm_content=saiba_mais';
 }
 async function patrocinadoCriar(p = {}, req) {
   // v3.174: o link do anúncio nunca aponta para um endereço de deploy temporário da Vercel (…-projects-….vercel.app)
-  const _host = req?.headers?.host || '';
-  const base = (process.env.MEDIA_PUBLIC_BASE || process.env.APP_URL || (/^[\w.-]+$/.test(_host) && !/-projects-|^project-/.test(_host) ? 'https://' + _host : 'https://atlantyx-os.vercel.app')).replace(/\/$/, '');
+  const base = _baseDe(req);
+  if (String(p.rede || '') === 'linkedin') return patrocinadoCriarLinkedin(p, base); // v3.239
+  // v3.239: público = LISTA de pessoas selecionadas no Apollo (público personalizado do Meta) em vez do filtro de cargo
+  const lista = p.publico_lista ? await listaObter(_kvMc, p.publico_lista) : null;
+  if (lista && !lista.meta?.audience_id && !p.so_kit) throw Object.assign(new Error('Envie a lista "' + lista.nome + '" ao Meta antes (aba Públicos do Apollo → Enviar ao Meta)'), { status: 400 });
   const nome = String(p.nome || '').trim().substring(0, 80) || 'Instagram · Saiba mais · ' + new Date().toISOString().substring(0, 10);
   const texto = String(p.texto || '').trim(), titulo = String(p.titulo || '').trim().substring(0, 40), descricao = String(p.descricao || '').trim().substring(0, 30);
   const imagem = String(p.imagem || '').trim();
@@ -380,7 +392,10 @@ async function patrocinadoCriar(p = {}, req) {
   let link = _linkPago(base, nome);
   if (p.link && /^https:\/\//.test(String(p.link).trim())) { try { const u = new URL(String(p.link).trim()); if (!u.searchParams.get('utm_source')) { const ref = new URL(link); ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].forEach(k => u.searchParams.set(k, ref.searchParams.get(k))); } link = u.toString(); } catch (_) {} }
   const kit = { nome, objetivo: 'Tráfego (cliques no link)', posicionamentos: 'Instagram — Feed e Explorar', botao: 'Saiba mais', link, texto, titulo, descricao, imagem,
-    orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, publico: `Quem OCUPA o cargo: donos, sócios e C-levels (cargo atual no perfil) · capitais de negócio · ${idMin} a ${idMax} anos · sem direcionamento por interesse`, icp_versao: ICP_VERSAO };
+    orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, icp_versao: ICP_VERSAO,
+    publico: lista ? `Lista do Apollo "${lista.nome}" (${(lista.pessoas || []).length} decisores selecionados) — público personalizado no Meta · Brasil · 25 a 65 anos · Instagram e Facebook (feed)`
+      : `Quem OCUPA o cargo: donos, sócios e C-levels (cargo atual no perfil) · capitais de negócio · ${idMin} a ${idMax} anos · sem direcionamento por interesse`,
+    ...(lista ? { publico_lista: lista.id, publico_lista_nome: lista.nome, posicionamentos: 'Instagram (Feed e Explorar) e Facebook (Feed)' } : {}) };
   const c = _metaCfg();
   if (!(c.token && c.conta && c.pagina && c.ig) || p.so_kit) return { modo: 'kit', kit };
   // 1. campanha · 2. conjunto · 3. imagem · 4. criativo (Saiba mais) · 5. anúncio — tudo PAUSADO
@@ -390,13 +405,15 @@ async function patrocinadoCriar(p = {}, req) {
   try {
     // v3.192: o Meta aposenta interesses ("Algumas opções de direcionamento detalhado foram combinadas") e devolve
     // o substituto no erro — troca pelo alternativo, grava no cache e tenta de novo (até 2 vezes)
-    const pb = amplo ? null : await _publicoB2B().catch(() => ({ cidades: [], interesses: [] }));
-    let dec = amplo ? null : await _publicoDecisores().catch(() => null); // v3.214
+    const pb = amplo || lista ? null : await _publicoB2B().catch(() => ({ cidades: [], interesses: [] }));
+    let dec = amplo || lista ? null : await _publicoDecisores().catch(() => null); // v3.214
     // v3.236: o filtro é o CARGO que a pessoa ocupa (work_positions). Sem cargo resolvido, o setor de atuação em gestão
     // (industries = área em que a pessoa trabalha). Interesse nunca — interesse alcança quem só se interessa pelo tema.
     const _camadaDec = () => pb?.cargos?.length ? [{ work_positions: pb.cargos.map(({ id, name }) => ({ id, name })) }]
       : (dec?.setores?.length ? [{ industries: dec.setores.map(({ id, name }) => ({ id, name })) }] : []);
-    const _alvo = () => ({ ...(amplo ? { geo_locations: { countries: ['BR'] } } : {
+    // v3.239: com lista do Apollo o público É a lista (já são decisores escolhidos) — Brasil, 25–65, Instagram + Facebook feed
+    const _alvo = () => lista ? { geo_locations: { countries: ['BR'] }, custom_audiences: [{ id: lista.meta.audience_id }], age_min: 25, age_max: 65,
+        publisher_platforms: ['instagram', 'facebook'], instagram_positions: ['stream', 'explore'], facebook_positions: ['feed'], targeting_automation: { advantage_audience: 0 } } : ({ ...(amplo ? { geo_locations: { countries: ['BR'] } } : {
         geo_locations: pb.cidades.length ? { cities: pb.cidades.map(({ key, radius, distance_unit }) => ({ key, radius, distance_unit })), location_types: ['home', 'recent'] } : { countries: ['BR'] },
         ...(_camadaDec().length ? { flexible_spec: _camadaDec() } : {}),
         ...(dec?.excluir?.length ? { exclusions: { interests: dec.excluir.map(({ id, name }) => ({ id, name })) } } : {}) }),
@@ -404,12 +421,12 @@ async function patrocinadoCriar(p = {}, req) {
       age_min: idMin, age_max: idMax, publisher_platforms: ['instagram'], instagram_positions: ['stream', 'explore'],
       targeting_automation: { advantage_audience: 0 } }); // v3.174: o Meta exige o sinalizador (0 = respeita idade/local escolhidos)
     // v3.236: nunca cria conjunto sem filtro de cargo/área — sem ele o Meta entrega para qualquer pessoa
-    if (!amplo && !_camadaDec().length) throw err('Não consegui montar o filtro de cargo (donos/C-levels) no Meta agora — nada foi criado. Tente de novo em alguns minutos.');
+    if (!amplo && !lista && !_camadaDec().length) throw err('Não consegui montar o filtro de cargo (donos/C-levels) no Meta agora — nada foi criado. Tente de novo em alguns minutos.');
     let adset = null;
     for (let tentativa = 0; tentativa < 3 && !adset; tentativa++) {
-      if (!amplo && !_camadaDec().length) throw err('O Meta recusou o filtro de cargo e o de área de atuação — nada foi criado (sem filtro o anúncio iria para qualquer pessoa).'); // v3.237: confere a cada tentativa
+      if (!amplo && !lista && !_camadaDec().length) throw err('O Meta recusou o filtro de cargo e o de área de atuação — nada foi criado (sem filtro o anúncio iria para qualquer pessoa).'); // v3.237: confere a cada tentativa
       try {
-        adset = await _meta(`act_${c.conta}/adsets`, 'POST', { name: nome + ' · Instagram', campaign_id: camp.id, daily_budget: Math.round(diario * 100), billing_event: 'IMPRESSIONS',
+        adset = await _meta(`act_${c.conta}/adsets`, 'POST', { name: nome + (lista ? ' · Lista Apollo' : ' · Instagram'), campaign_id: camp.id, daily_budget: Math.round(diario * 100), billing_event: 'IMPRESSIONS',
           // v3.190: com o Pixel (META_PIXEL_ID) → otimiza para LEAD (cadastro feito), o que filtra robô e clique acidental; sem Pixel → clique no link
           optimization_goal: pixel ? 'OFFSITE_CONVERSIONS' : 'LINK_CLICKS', ...(pixel ? { promoted_object: { pixel_id: pixel, custom_event_type: 'LEAD' } } : {}),
           bid_strategy: 'LOWEST_COST_WITHOUT_CAP', destination_type: 'WEBSITE', status: 'PAUSED',
@@ -422,6 +439,7 @@ async function patrocinadoCriar(p = {}, req) {
         // v3.214: o Meta recusou comportamento/setor/exclusão → tenta de novo sem a camada de decisor (e limpa o cache)
         if (!alt.length && dec && tentativa < 2) { dec = null; try { await _kvMc(_KV_DEC, { comportamentos: [], setores: [], excluir: [], em: 0 }); } catch (_) {} continue; }
         if (!pb || !alt.length || tentativa >= 2) throw e;
+        // (com lista não há interesse a trocar — o erro sobe)
         const troca = new Map(alt.map(a => [String(a.deprecated_interest_id), a]));
         const vistos = new Set(); pb.interesses = pb.interesses.map(x => { const a = troca.get(String(x.id)); return a && a.alternative_interest_id ? { id: String(a.alternative_interest_id), name: a.alternative_interest_name || x.name } : (a ? null : x); })
           .filter(x => x && !vistos.has(x.id) && vistos.add(x.id));
@@ -435,27 +453,98 @@ async function patrocinadoCriar(p = {}, req) {
     const ad = await _meta(`act_${c.conta}/ads`, 'POST', { name: nome + ' · anúncio', adset_id: adset.id, creative: { creative_id: cr.id }, status: 'PAUSED' });
     const reg = { id: camp.id, adset_id: adset.id, ad_id: ad.id, creative_id: cr.id, criado_em: new Date().toISOString(), estado: 'PAUSED', ...kit,
       gerenciador: `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${c.conta}&selected_campaign_ids=${camp.id}` };
-    const lista = (await _kvMc('mkt:patrocinados')) || []; lista.unshift(reg); await _kvMc('mkt:patrocinados', lista.slice(0, 100));
+    const regs = (await _kvMc('mkt:patrocinados')) || []; regs.unshift(reg); await _kvMc('mkt:patrocinados', regs.slice(0, 100)); // v3.239: 'lista' agora é a lista do Apollo
     return { modo: 'meta', campanha: reg };
   } catch (e) { await desfazer(); throw new Error(e.message + ' (nada ficou criado no Meta)'); }
+}
+// ═══ v3.239: CAMPANHA PAGA NO LINKEDIN — grupo → campanha → anúncio de imagem com "Saiba mais", tudo PAUSADO.
+// Público: ICP C-level pelos filtros do LinkedIn (senioridade Dono/Sócio/CXO/VP/Diretor + empresas 201+ + Brasil) ou a
+// lista do Apollo (Matched Audience). Sem o LinkedIn conectado devolve o KIT (texto, imagem, link, orçamento, público).
+async function patrocinadoCriarLinkedin(p, base) {
+  const err = m => Object.assign(new Error(m), { status: 400 });
+  const nome = String(p.nome || '').trim().substring(0, 80) || 'LinkedIn · Saiba mais · ' + new Date().toISOString().substring(0, 10);
+  const texto = String(p.texto || '').trim().substring(0, 3000), titulo = String(p.titulo || '').trim().substring(0, 70), imagem = String(p.imagem || '').trim();
+  const diario = Math.round(Number(String(p.orcamento_diario || '').replace(',', '.')) * 100) / 100, ini = String(p.inicio || ''), fim = String(p.fim || '');
+  if (!texto) throw err('Escreva o texto do anúncio'); if (!titulo) throw err('Escreva o título');
+  if (!/^https:\/\//.test(imagem)) throw err('Escolha ou gere a imagem do anúncio (endereço https público)');
+  if (!(diario >= 10)) throw err('Orçamento diário mínimo no LinkedIn: 10,00 na moeda da conta (o LinkedIn pode exigir mais)');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ini) || !/^\d{4}-\d{2}-\d{2}$/.test(fim) || fim < ini) throw err('Informe início e fim da campanha (fim depois do início)');
+  const dias = Math.round((new Date(fim) - new Date(ini)) / 864e5) + 1;
+  let link = _linkPago(base, nome, 'linkedin');
+  if (p.link && /^https:\/\//.test(String(p.link).trim())) { try { const u = new URL(String(p.link).trim()); if (!u.searchParams.get('utm_source')) { const ref = new URL(link); ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'].forEach(k => u.searchParams.set(k, ref.searchParams.get(k))); } link = u.toString(); } catch (_) {} }
+  const lista = p.publico_lista ? await listaObter(_kvMc, p.publico_lista) : null;
+  const kit = { rede: 'linkedin', nome, objetivo: 'Visitas ao site (cliques no link)', posicionamentos: 'LinkedIn — feed (anúncio de imagem única)', botao: 'Saiba mais', link, texto, titulo, descricao: '', imagem,
+    orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, inicio: ini, fim, icp_versao: ICP_VERSAO,
+    publico: lista ? `Lista do Apollo "${lista.nome}" (${(lista.pessoas || []).length} decisores) — Matched Audience · Brasil` : 'Senioridade Dono, Sócio, CXO, VP e Diretor · empresas com 201+ funcionários · Brasil · sem expansão de público',
+    ...(lista ? { publico_lista: lista.id, publico_lista_nome: lista.nome } : {}) };
+  const st = await liStatus(base).catch(() => ({}));
+  if (!st.conectado || p.so_kit) return { modo: 'kit', kit };
+  let segmento = null, aviso = null;
+  if (lista) {
+    if (!lista.linkedin?.segmento_id) throw err('Envie a lista "' + lista.nome + '" ao LinkedIn antes (aba Públicos do Apollo → Enviar ao LinkedIn)');
+    const s = await liPublicoLer(lista.linkedin.segmento_id);
+    if (!s.ad_segment) throw err('O LinkedIn ainda está processando a lista "' + lista.nome + '" (leva até 48 h) — tente mais tarde');
+    segmento = s.ad_segment; if (s.casados != null && s.casados < 300) aviso = 'O LinkedIn casou ' + s.casados + ' membro(s) — ele só veicula com 300 ou mais. Aumente a lista antes de ativar.';
+  }
+  const r = await liCriar({ nome, texto, titulo, imagem, link, orcamento_diario: diario, inicio: ini, fim, segmento });
+  const reg = { ...r, criado_em: new Date().toISOString(), estado: 'PAUSED', ...kit };
+  const L = (await _kvMc('mkt:patrocinados')) || []; L.unshift(reg); await _kvMc('mkt:patrocinados', L.slice(0, 100));
+  return { modo: 'linkedin', campanha: reg, aviso };
+}
+// ═══ v3.239: LISTA DO APOLLO → PÚBLICO PERSONALIZADO NO META (lista de clientes). O sistema normaliza e manda só o
+// HASH SHA-256 de e-mail, telefone, nome, cidade, estado e país (o que o Meta usa para achar a pessoa). Reenviar a mesma
+// lista acrescenta quem entrou depois (o Meta não duplica).
+async function publicoMetaEnviar({ lista_id } = {}) {
+  const c = _metaCfg(); if (!c.token || !c.conta) throw Object.assign(new Error('Meta não configurado (META_ADS_TOKEN / META_AD_ACCOUNT_ID)'), { status: 400 });
+  const lista = await listaObter(_kvMc, lista_id);
+  const linhas = linhasMeta(lista.pessoas);
+  if (!linhas.length) throw Object.assign(new Error('Ninguém da lista tem e-mail ou telefone — clique em "Buscar e-mails no Apollo" antes'), { status: 400 });
+  let aud = lista.meta?.audience_id || null;
+  if (aud) { try { await _meta(aud + '?fields=id'); } catch (_) { aud = null; } } // apagado no Gerenciador → cria outro
+  if (!aud) {
+    try { aud = (await _meta(`act_${c.conta}/customaudiences`, 'POST', { name: ('Apollo · ' + lista.nome).substring(0, 100), subtype: 'CUSTOM', description: 'Decisores selecionados no Apollo pelo Atlantyx OS', customer_file_source: 'USER_PROVIDED_ONLY' })).id; }
+    catch (e) { if (/terms|termos|tos\b/i.test(e.message)) throw Object.assign(new Error('Aceite uma vez os Termos de Públicos Personalizados do Meta: https://business.facebook.com/ads/manage/customaudiences/tos/?act=' + c.conta + ' — depois clique de novo em Enviar ao Meta'), { status: 400 }); throw e; }
+  }
+  for (let i = 0; i < linhas.length; i += 5000) await _meta(aud + '/users', 'POST', { payload: { schema: SCHEMA_META, data: linhas.slice(i, i + 5000) } });
+  lista.meta = { audience_id: aud, linhas: linhas.length, pessoas: (lista.pessoas || []).length, enviado_em: new Date().toISOString(), conta: c.conta };
+  try { Object.assign(lista.meta, await publicoMetaLer(aud)); } catch (_) {}
+  const resumo = await listaGravar(_kvMc, lista);
+  return { lista: resumo };
+}
+async function publicoMetaLer(aud) {
+  const a = await _meta(aud + '?fields=approximate_count_lower_bound,approximate_count_upper_bound,operation_status,delivery_status');
+  return { tamanho_min: a.approximate_count_lower_bound ?? null, tamanho_max: a.approximate_count_upper_bound ?? null, situacao: a.operation_status?.description || null, entrega: a.delivery_status?.description || null, lido_em: new Date().toISOString() };
+}
+async function publicoLiEnviar({ lista_id } = {}) {
+  const lista = await listaObter(_kvMc, lista_id);
+  lista.linkedin = { ...(lista.linkedin || {}), ...(await liPublicoEnviar(lista)) };
+  return { lista: await listaGravar(_kvMc, lista) };
+}
+// atualiza o tamanho/estado dos públicos já enviados (Meta e LinkedIn) de uma lista
+async function publicoPlataformasLer({ lista_id } = {}) {
+  const lista = await listaObter(_kvMc, lista_id); const erros = [];
+  if (lista.meta?.audience_id) { try { Object.assign(lista.meta, await publicoMetaLer(lista.meta.audience_id)); } catch (e) { erros.push('Meta: ' + e.message); } }
+  if (lista.linkedin?.segmento_id) { try { Object.assign(lista.linkedin, await liPublicoLer(lista.linkedin.segmento_id), { lido_em: new Date().toISOString() }); } catch (e) { erros.push('LinkedIn: ' + e.message); } }
+  return { lista: await listaGravar(_kvMc, lista), erros };
 }
 // v3.193: ALTERAR PERÍODO (e, opcional, R$/dia) de uma campanha patrocinada já criada — muda o conjunto no Meta.
 // O Meta não deixa mudar o início depois que a veiculação começou: nesse caso só o fim e o orçamento mudam.
 async function patrocinadoPeriodo({ id, inicio, fim, orcamento_diario } = {}) {
   const err = m => Object.assign(new Error(m), { status: 400 });
   const lista = (await _kvMc('mkt:patrocinados')) || []; const reg = lista.find(x => String(x.id) === String(id)); if (!reg) throw err('Campanha não encontrada');
-  if (!reg.adset_id) throw err('Esta campanha não tem conjunto de anúncios registrado');
+  if (!reg.adset_id && reg.rede !== 'linkedin') throw err('Esta campanha não tem conjunto de anúncios registrado');
   const ini = String(inicio || reg.inicio || ''), fi = String(fim || reg.fim || '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ini) || !/^\d{4}-\d{2}-\d{2}$/.test(fi) || fi < ini) throw err('Informe início e fim (fim depois do início)');
   const hojeSP = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
   if (fi < hojeSP) throw err('A data de fim já passou');
   const diario = orcamento_diario != null && orcamento_diario !== '' ? Math.round(Number(String(orcamento_diario).replace(',', '.')) * 100) / 100 : Number(reg.orcamento_diario);
-  if (!(diario >= 6)) throw err('Orçamento diário mínimo: R$ 6,00');
+  if (!(diario >= (reg.rede === 'linkedin' ? 10 : 6))) throw err('Orçamento diário mínimo: ' + (reg.rede === 'linkedin' ? '10,00 no LinkedIn' : 'R$ 6,00'));
   const jaComecou = reg.inicio && reg.inicio <= hojeSP && (reg.estado === 'ACTIVE' || reg.estado_meta === 'ACTIVE' || reg.ativado_em);
   const corpo = { end_time: fi + 'T23:59:00-0300', daily_budget: Math.round(diario * 100) };
   let inicioFinal = reg.inicio, avisoInicio = null;
   if (ini !== reg.inicio) { if (jaComecou) avisoInicio = 'A veiculação já começou — o Meta não deixa mudar o início; mudei só o fim/orçamento.'; else { corpo.start_time = (ini < hojeSP ? hojeSP : ini) + 'T08:00:00-0300'; inicioFinal = ini < hojeSP ? hojeSP : ini; } }
-  await _meta(reg.adset_id, 'POST', corpo);
+  if (reg.rede === 'linkedin') await liPeriodo(reg, { inicio: inicioFinal, fim: fi, diario, mudarInicio: !!corpo.start_time }); // v3.239
+  else await _meta(reg.adset_id, 'POST', corpo);
   const dias = Math.round((new Date(fi) - new Date(inicioFinal)) / 864e5) + 1;
   Object.assign(reg, { inicio: inicioFinal, fim: fi, orcamento_diario: diario, dias, total_maximo: Math.round(diario * dias * 100) / 100, periodo_alterado_em: new Date().toISOString() });
   await _kvMc('mkt:patrocinados', lista);
@@ -465,7 +554,8 @@ async function patrocinadoEstado({ id, estado } = {}) {
   if (!['ACTIVE', 'PAUSED'].includes(estado)) throw Object.assign(new Error('Estado inválido'), { status: 400 });
   const lista = (await _kvMc('mkt:patrocinados')) || []; const reg = lista.find(x => String(x.id) === String(id)); if (!reg) throw new Error('Campanha não encontrada');
   // ativar liga os três níveis; pausar desliga a campanha (o resto fica como está)
-  if (estado === 'ACTIVE') { for (const k of [reg.ad_id, reg.adset_id, reg.id]) await _meta(k, 'POST', { status: 'ACTIVE' }); }
+  if (reg.rede === 'linkedin') await liEstado(reg, estado); // v3.239
+  else if (estado === 'ACTIVE') { for (const k of [reg.ad_id, reg.adset_id, reg.id]) await _meta(k, 'POST', { status: 'ACTIVE' }); }
   else await _meta(reg.id, 'POST', { status: 'PAUSED' });
   reg.estado = estado; reg[estado === 'ACTIVE' ? 'ativado_em' : 'pausado_em'] = new Date().toISOString(); await _kvMc('mkt:patrocinados', lista);
   return { ok: true, estado };
@@ -504,6 +594,8 @@ async function patrocinadoDiagnostico() {
 // Idade mínima 35, Advantage+ de público desligado, interesse de cargo executivo E camada de decisor, exclusões de
 // emprego/estudo/programação. Status (ativa/pausada) e orçamento não mudam. somente_fora: só os que não estão no ICP.
 function _icpConforme(t = {}, pb, dec) {
+  // v3.239: público por LISTA (Apollo/clientes) — a lista já são os decisores; filtro de cargo/idade só encolheria o público
+  if ((t.custom_audiences || []).length) return { ok: true, motivos: [], lista: true };
   const motivos = [];
   if (!(parseInt(t.age_min) >= META_IDADE_MIN)) motivos.push('idade mínima ' + (t.age_min || 18) + ' (ICP: ' + META_IDADE_MIN + '+)');
   if (t.targeting_automation?.advantage_audience !== 0) motivos.push('Advantage+ de público ligado (o Meta amplia para qualquer pessoa)');
@@ -548,6 +640,7 @@ async function patrocinadoPublicoAtualizar({ aplicar = false, ids = null, soment
     const t = x.targeting || {}; const conf = _icpConforme(t, pb, dec);
     const antes = { idade: `${t.age_min || '?'}–${t.age_max || '?'}`, posicoes: (t.instagram_positions || []).join(', ') || 'automático', local: t.geo_locations?.cities ? t.geo_locations.cities.length + ' cidade(s)' : (t.geo_locations?.countries || []).join(',') || '—', interesses: (t.flexible_spec || []).reduce((s, f) => s + (f.interests || []).length, 0), exclusoes: !!t.exclusions };
     const it = { id: x.id, nome: x.name, estado: x.effective_status, antes, no_icp: conf.ok, motivos: conf.motivos };
+    if (conf.lista) { it.pulado = 'público por lista (a lista já é o filtro)'; itens.push(it); continue; } // v3.239
     if (somente_fora && conf.ok) { it.pulado = 'já no ICP'; itens.push(it); continue; }
     // v3.237: já recebeu o ajuste possível nesta versão da regra (ex.: Meta não aceita cargo → área de atuação) — não
     // reaplica de hora em hora (cada alteração reinicia o aprendizado do Meta)
@@ -698,7 +791,13 @@ async function patrocinadoListar() {
   // v3.233: status e resultado em consultas independentes (antes, falha nos insights deixava o status antigo — "ACTIVE"
   // de quando foi ativada — e a tela mostrava ativa uma campanha pausada no Meta). Status = o mais restritivo entre
   // campanha e conjuntos (campanha ACTIVE com conjunto pausado não veicula). CPC por clique no link.
-  if (c.token && lista.length) { await Promise.all(lista.slice(0, 15).map(async r => {
+  if (lista.length) { await Promise.all(lista.slice(0, 15).map(async r => {
+    if (r.rede === 'linkedin') { // v3.239
+      try { const x = await liLer(r); if (x.resultado) r.resultado = x.resultado;
+        if (x.estado) { r.estado_meta = x.estado === 'COMPLETED' ? 'ACTIVE' : x.estado; r.encerrada = x.estado === 'COMPLETED'; r.estado_lido_em = new Date().toISOString(); r.estado_erro = null; }
+        else if (x.erro) { r.estado_meta = null; r.estado_erro = String(x.erro).substring(0, 160); } } catch (e) { r.estado_meta = null; r.estado_erro = String(e.message || e).substring(0, 160); }
+      return; }
+    if (!c.token) return;
     try { const i = await _meta(`${r.id}/insights?fields=spend,impressions,inline_link_clicks&date_preset=maximum`); const x = (i.data || [])[0] || {};
       const g = Number(x.spend || 0), cl = Number(x.inline_link_clicks || 0);
       r.resultado = { gasto: g, impressoes: Number(x.impressions || 0), cliques_link: cl, cpc: cl > 0 ? Math.round(g / cl * 100) / 100 : null }; } catch (_) {}
@@ -1575,6 +1674,12 @@ Evite repetir o mesmo ângulo de outros posts da semana.`;
 }
 
 async function handler(req, res) {
+  // v3.239: volta do login do LinkedIn (OAuth) — página simples que fecha/volta para o sistema
+  if (req.method === 'GET' && req.query?.li === 'callback') {
+    const pg = (ok, msg) => res.status(ok ? 200 : 400).setHeader('Content-Type', 'text/html; charset=utf-8').end('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LinkedIn</title><body style="font-family:system-ui,sans-serif;background:#05080c;color:#e8eef3;display:flex;align-items:center;justify-content:center;min-height:90vh;margin:0;padding:16px;"><div style="max-width:460px;text-align:center;"><div style="font-size:40px;">' + (ok ? '✅' : '⚠️') + '</div><h2 style="font-size:18px;">' + (ok ? 'LinkedIn conectado' : 'LinkedIn não conectado') + '</h2><p style="font-size:14px;line-height:1.5;color:#9fb0bf;">' + String(msg).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c])) + '</p><p><a href="/" style="color:#00C4CC;">Voltar ao Atlantyx OS</a></p></div><script>try{window.opener&&window.opener.postMessage({atxLinkedin:' + (ok ? 'true' : 'false') + '},location.origin)}catch(e){}</script>');
+    try { await liCallback(req.query || {}, _baseDe(req)); return pg(true, 'A conta de anúncios foi ligada ao sistema. Pode fechar esta aba e voltar para a campanha patrocinada.'); }
+    catch (e) { return pg(false, e.message); }
+  }
   // v2.68: cron da fila — um passo por minuto, em segundo plano
   if (req.method === 'GET' && req.query?.cron === 'fila') {
     // v3.237: UM passo por chamada (dois passos + guardiões passavam dos 60 s e a função era cortada no meio)
@@ -1666,6 +1771,13 @@ async function handler(req, res) {
     patrocinado_estado:     () => patrocinadoEstado(payload),
     patrocinado_periodo:    () => patrocinadoPeriodo(payload), // v3.193
     patrocinado_listar:     () => patrocinadoListar(),
+    // v3.239: LinkedIn Ads + públicos por lista (Apollo → Meta / LinkedIn)
+    li_conectar:            () => liUrlConectar(_baseDe(req)),
+    li_status:              () => liStatus(_baseDe(req)),
+    li_desconectar:         async () => { await _kvMc('li:oauth:tokens', { access_token: null }); await _kvMc('li:ads:conta', null); return { ok: true }; },
+    publico_meta_enviar:    () => publicoMetaEnviar(payload),
+    publico_li_enviar:      () => publicoLiEnviar(payload),
+    publico_plataformas_ler: () => publicoPlataformasLer(payload),
     meta_kpis:              () => metaKpis(), // v3.216
     patrocinado_publico_atualizar: () => patrocinadoPublicoAtualizar(payload), // v3.214
     icp_auditar_planejados: () => icpAuditarPlanejados(payload), // v3.234

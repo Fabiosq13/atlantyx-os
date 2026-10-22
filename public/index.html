@@ -4605,11 +4605,22 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
   <!-- v3.108: campanha PATROCINADA no Instagram com botão "Saiba mais" → landing page -->
   <style>@media (max-width: 820px) { .pat-grid { grid-template-columns:1fr !important; } } #patPanel > summary::-webkit-details-marker { display:none; } #patPanel:not([open]) > .pb { display:none; } /* fechado: o conteúdo oculto ainda tinha posição e contava como botões sobrepostos (como no QA-014) */</style>
   <details class="panel" id="patPanel" style="margin-bottom:12px;border:1px solid rgba(0,196,204,.35);" ontoggle="if(this.open)patAbrir()">
-    <summary style="cursor:pointer;padding:12px 16px;font-weight:700;font-size:12.5px;list-style:none;display:flex;gap:10px;align-items:center;">📣 Campanha patrocinada no Instagram <span style="font-weight:400;font-size:10.5px;color:var(--t2);">anúncio pago com botão <b>Saiba mais</b> → página de agendamento</span><span id="patStatusTag" class="tag off" style="margin-left:auto;">configurar</span></summary>
+    <summary style="cursor:pointer;padding:12px 16px;font-weight:700;font-size:12.5px;list-style:none;display:flex;gap:10px;align-items:center;">📣 Campanha patrocinada — Instagram e LinkedIn <span style="font-weight:400;font-size:10.5px;color:var(--t2);">anúncio pago com botão <b>Saiba mais</b> · público ICP ou lista de decisores do Apollo</span><span id="patStatusTag" class="tag off" style="margin-left:auto;">configurar</span></summary>
     <div class="pb" style="padding-top:0;">
       <div id="patStatus" style="font-size:10.5px;color:var(--t2);line-height:1.6;margin-bottom:10px;"></div>
+      <!-- v3.239: abas Campanha | Públicos do Apollo -->
+      <div style="display:flex;gap:6px;margin-bottom:10px;border-bottom:1px solid var(--bd);" role="tablist">
+        <button class="btn btn-p" id="patTabCamp" role="tab" aria-selected="true" style="font-size:11px;border-radius:7px 7px 0 0;" onclick="patAba('camp')">📣 Campanha</button>
+        <button class="btn" id="patTabPub" role="tab" aria-selected="false" style="font-size:11px;border-radius:7px 7px 0 0;" onclick="patAba('pub')">🎯 Públicos do Apollo</button>
+      </div>
+      <div id="patAbaCamp">
       <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:14px;" class="pat-grid">
         <div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+            <div><label class="fl" for="patRede">Rede</label><select class="fi" id="patRede" onchange="patRedeMudou()" title="Onde o anúncio pago vai rodar"><option value="instagram">Instagram (Meta)</option><option value="linkedin">LinkedIn</option></select></div>
+            <div><label class="fl" for="patPublico">Público</label>
+              <select class="fi" id="patPublico" onchange="patPrev()" title="ICP C-level (filtro de cargo da própria rede) ou uma lista de decisores escolhidos no Apollo"><option value="b2b">ICP C-level — donos, sócios, C-levels e diretores</option></select></div>
+          </div>
           <label class="fl" for="patNome">Nome da campanha</label><input class="fi" id="patNome" placeholder="ex.: Instagram · Conversa gratuita · Outubro"/>
           <label class="fl" for="patTema" style="margin-top:8px;">Tema / oferta do anúncio</label><textarea class="fta" id="patTema" style="min-height:52px;font-size:11.5px;" title="Assunto e oferta que a IA usa para escrever o anúncio">Conversa gratuita com um especialista da Atlantyx: entendemos o seu cenário e mostramos onde tecnologia, dados, software sob medida e os nossos produtos geram resultado na operação.</textarea>
           <button class="btn btn-p" style="font-size:10.5px;margin-top:6px;" id="patBtnCopy" onclick="patEscrever()">✨ Escrever texto, título e imagem com IA</button>
@@ -4629,8 +4640,6 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
             <div><label class="fl" for="patFim">Fim</label><input type="date" class="fi" id="patFim" oninput="patPrev()" title="Último dia em que o anúncio roda"/></div>
             <div><label class="fl" for="patIdMin">Idade (mín.–máx.)</label><div style="display:flex;gap:4px;"><input class="fi" id="patIdMin" value="35" type="number" min="35" max="65" style="padding:6px;min-width:0;" oninput="patPrev()" placeholder="mín." title="Idade mínima do público (ICP C-level: 35 ou mais)" aria-label="Idade mínima do público"/><input class="fi" id="patIdMax" value="60" style="padding:6px;min-width:0;" oninput="patPrev()" placeholder="máx." title="Idade máxima do público" aria-label="Idade máxima do público"/></div></div>
           </div>
-          <div style="margin-top:8px;"><label class="fl" for="patPublico">Público</label>
-            <select class="fi" id="patPublico" onchange="patPrev()" title="ICP da Atlantyx: donos, sócios, C-levels e diretores de médias e grandes empresas — nunca pessoa física nem público técnico"><option value="b2b">ICP C-level — donos, sócios, C-levels e diretores (único público permitido)</option></select></div>
           <div style="margin-top:8px;"><label class="fl" for="patLink">Link do botão "Saiba mais" (página de destino)</label>
             <input class="fi" id="patLink" style="font-size:11px;" placeholder="https://atlantyx-os.vercel.app/captura.html" title="Para onde o botão Saiba mais leva. Vazio = página de captura de leads da Atlantyx (com UTM da campanha)" oninput="patPrev()"/>
             <div style="font-size:10px;color:var(--t3);margin-top:3px;">Vazio = página de captura de leads (captura.html). O sistema acrescenta o rastreamento UTM da campanha.</div></div>
@@ -4640,15 +4649,41 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
             <button class="btn" id="patBtnPublico" onclick="patPublicoCorrigir()" title="Confere TODAS as campanhas da conta no Meta e aplica o ICP C-level (donos, sócios, C-levels e diretores de média e grande empresa) nas que estiverem fora — status e orçamento não mudam">🎯 Aplicar ICP C-level nas campanhas no ar</button>
             <button class="btn" id="patBtnIcpPosts" onclick="icpAuditarPlanejadosUI()" title="Confere os posts agendados no Metricool, a fila da autocampanha e as peças de tendências e aponta texto para público técnico, estudante ou quem procura emprego">🔍 ICP dos posts planejados (correção automática)</button>
             <button class="btn btn-gn" id="patBtnCriar" onclick="patCriar()">📣 Criar campanha (pausada)</button>
-            <button class="btn" onclick="patCriar(true)" title="Monta o kit (texto, título, imagem, link, orçamento e público) para criar no Metricool → Ads">🧰 Kit para criar no Metricool Ads</button>
+            <button class="btn" onclick="patCriar(true)" title="Monta o kit (texto, título, imagem, link, orçamento e público) para criar à mão no Metricool Ads ou no Campaign Manager do LinkedIn">🧰 Kit para criar à mão</button>
           </div>
         </div>
         <div>
-          <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);margin-bottom:5px;">Prévia no Instagram</div>
+          <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);margin-bottom:5px;" id="patPreviaRot">Prévia no Instagram</div>
           <div id="patPrevia" style="background:#fff;color:#111;border-radius:10px;overflow:hidden;border:1px solid var(--bd);max-width:340px;font-family:-apple-system,Segoe UI,Arial,sans-serif;"></div>
         </div>
       </div>
       <div id="patLista" style="margin-top:14px;"></div>
+      </div>
+      <!-- v3.239: PÚBLICOS DO APOLLO — decisores filtrados por área de atuação, cargo, porte… → lista → Meta / LinkedIn -->
+      <div id="patAbaPub" style="display:none;">
+        <div style="font-size:10.5px;color:var(--t2);line-height:1.6;margin-bottom:8px;">Monte uma lista de <b>decisores reais</b> no Apollo e direcione a campanha paga só para eles. A busca não consome crédito; buscar o <b>e-mail</b> (o que Meta e LinkedIn usam para achar a pessoa) consome 1 crédito do Apollo por pessoa, e quem já foi buscado não é pago de novo. Para o Meta e o LinkedIn vai só o <b>hash SHA-256</b> dos dados, nunca o e-mail aberto.</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;">
+          <div><label class="fl" for="pubSetores">Área de atuação (setores)</label><textarea class="fta" id="pubSetores" style="min-height:44px;font-size:11px;" placeholder="ex.: energia, utilities, bancos"></textarea>
+            <div id="pubSetChips" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;"></div></div>
+          <div><label class="fl" for="pubCargos">Cargos</label><textarea class="fta" id="pubCargos" style="min-height:44px;font-size:11px;" placeholder="ex.: CEO, CFO, Diretor de TI (vazio = todos os decisores)"></textarea>
+            <div id="pubCargoChips" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;"></div></div>
+          <div><span class="fl">Senioridade</span><div id="pubSen" style="display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11px;"></div></div>
+          <div><span class="fl">Porte (funcionários)</span><div id="pubPorte" style="display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11px;"></div></div>
+          <div><label class="fl" for="pubLocal">Localização</label><input class="fi" id="pubLocal" value="Brazil" style="font-size:11px;" title="País, estado ou cidade (em inglês, como no Apollo). Vários separados por vírgula: São Paulo, Brazil; Rio de Janeiro, Brazil"/>
+            <label class="fl" for="pubPalavras" style="margin-top:6px;">Palavras-chave</label><input class="fi" id="pubPalavras" style="font-size:11px;" placeholder="ex.: transformação digital"/></div>
+          <div><label class="fl" for="pubDominios">Empresas-alvo (domínios, opcional)</label><textarea class="fta" id="pubDominios" style="min-height:44px;font-size:11px;" placeholder="um por linha: empresa.com.br — campanha só para essas contas (ABM)"></textarea>
+            <div style="display:flex;gap:6px;margin-top:4px;"><input class="fi" id="pubFatMin" inputmode="numeric" placeholder="Faturamento mín. (US$)" style="font-size:11px;" title="Faturamento anual mínimo da empresa, em dólares (como o Apollo informa)"/>
+            <select class="fsel" id="pubQtd" style="font-size:11px;" title="Quantas pessoas trazer (páginas de 100)" aria-label="Quantas pessoas trazer"><option value="1">até 100</option><option value="2">até 200</option><option value="3" selected>até 300</option><option value="5">até 500</option></select></div></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;">
+          <button class="btn btn-p" id="pubBtnBuscar" onclick="pubBuscar()">🔎 Buscar decisores no Apollo</button>
+          <span id="pubInfo" style="font-size:10.5px;color:var(--t2);"></span>
+        </div>
+        <div id="pubRes" style="margin-top:10px;"></div>
+        <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);margin:14px 0 5px;">Listas salvas</div>
+        <div id="pubListas" style="font-size:11px;"></div>
+        <div style="font-size:10px;color:var(--t3);margin-top:6px;line-height:1.5;">Tamanho mínimo para veicular: Meta precisa de ~100 pessoas encontradas (o e-mail corporativo casa pouco no Instagram/Facebook — buscar também o e-mail pessoal ajuda); LinkedIn só veicula com 300 ou mais membros casados e processa a lista em até 48 h. Use apenas contatos profissionais; quem pedir é retirado da lista.</div>
+      </div>
     </div>
   </details>
   <div class="panel" style="margin-bottom:12px;">
@@ -25204,18 +25239,184 @@ async function patAbrir() {
     if (st) st.innerHTML = (_patSt.erro ? '<b style="color:var(--red);">' + _patE(_patSt.erro) + '</b><br>' : '') + 'A API do Metricool só agenda posts e lê relatórios de anúncios — <b>criar anúncio é pela tela do Metricool</b> (Ads → Criar campanha). Use <b>🧰 Kit para criar no Metricool Ads</b>: o sistema monta tudo (texto, título, imagem, link com rastreio, orçamento, público) para você colar.'
       + '<br>Para o sistema criar sozinho no Meta (pausado, você ativa), configure no Vercel: ' + (_patSt.falta || []).map(x => '<code>' + x + '</code>').join(', ') + '.';
     if (b) b.style.display = 'none'; }
+  patStatusLinkedin(); patRedeMudou(); // v3.239 (ajusta botões/público para a rede escolhida)
   patListar();
+}
+// ═══ v3.239: LINKEDIN ADS + PÚBLICOS DO APOLLO ═══
+function patAba(a) {
+  const pub = a === 'pub';
+  document.getElementById('patAbaCamp').style.display = pub ? 'none' : ''; document.getElementById('patAbaPub').style.display = pub ? '' : 'none';
+  const tc = document.getElementById('patTabCamp'), tp = document.getElementById('patTabPub');
+  tc.className = 'btn' + (pub ? '' : ' btn-p'); tp.className = 'btn' + (pub ? ' btn-p' : ''); tc.setAttribute('aria-selected', String(!pub)); tp.setAttribute('aria-selected', String(pub));
+  if (pub) pubIniciar();
+}
+function patStatusLinkedin() {
+  const st = document.getElementById('patStatus'); if (!st || !_patSt) return;
+  const L = _patSt.linkedin || {}; let h = '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--bd);">';
+  if (!L.configurado) h += '🔗 <b>LinkedIn</b>: para criar campanha pelo sistema, crie um app em <a href="https://www.linkedin.com/developers/apps" target="_blank" rel="noopener">linkedin.com/developers</a> com os produtos <b>Advertising API</b> e <b>Matched Audiences</b>, cadastre <code>LINKEDIN_CLIENT_ID</code> e <code>LINKEDIN_CLIENT_SECRET</code> na Vercel e registre este endereço de retorno no app: <code>' + _patE(L.redirect_uri || location.origin + '/api/metricool?li=callback') + '</code>. Enquanto isso, o botão 🧰 monta o kit para criar à mão no Campaign Manager.';
+  else if (!L.conectado) h += '🔗 <b>LinkedIn</b>: app configurado. <button class="btn btn-p" style="font-size:10px;padding:2px 9px;" onclick="patLiConectar()">Conectar LinkedIn</button> <span style="color:var(--t3);">(entre com o usuário que administra a conta de anúncios; retorno: <code>' + _patE(L.redirect_uri) + '</code>)</span>';
+  else h += '✅ <b>LinkedIn</b>: conta de anúncios <b>' + _patE(L.conta?.nome || L.conta?.id || '—') + '</b>' + (L.conta?.moeda ? ' (' + _patE(L.conta.moeda) + ')' : '') + (L.erro ? ' · <b style="color:var(--red);">' + _patE(L.erro) + '</b>' : '') + (L.aviso ? ' · <span style="color:var(--gold);">' + _patE(L.aviso) + '</span>' : '') + (L.renova_sozinho ? '' : (L.expira_em ? ' · conexão vale até ' + new Date(L.expira_em).toLocaleDateString('pt-BR') : '')) + ' · <button class="btn" style="font-size:9.5px;padding:1px 7px;" onclick="patLiConectar()">reconectar</button>';
+  st.insertAdjacentHTML('beforeend', h + '</div>');
+}
+async function patLiConectar() {
+  try { const d = await mcApi('li_conectar'); const w = window.open(d.url, 'atx_li', 'width=620,height=760');
+    if (!w) { location.href = d.url; return; }
+    const ouvir = ev => { if (ev.origin !== location.origin || ev.data?.atxLinkedin === undefined) return; window.removeEventListener('message', ouvir); toast(ev.data.atxLinkedin ? 'LinkedIn conectado' : 'LinkedIn não conectou', ev.data.atxLinkedin ? 'success' : 'error'); patAbrir(); };
+    window.addEventListener('message', ouvir);
+  } catch (e) { alert('Não abri a conexão com o LinkedIn:\n\n' + e.message); }
+}
+function patRedeMudou() {
+  const li = document.getElementById('patRede')?.value === 'linkedin';
+  const b = document.getElementById('patBtnCriar'), L = _patSt?.linkedin || {};
+  if (b) { b.style.display = (li ? L.conectado : (_patSt?.meta_configurado && !_patSt?.erro)) ? '' : 'none'; b.textContent = li ? '📣 Criar no LinkedIn (pausada)' : '📣 Criar campanha (pausada)'; }
+  const d = document.getElementById('patDiario'); if (d && li && (parseFloat(String(d.value).replace(',', '.')) || 0) < 50) d.value = '50';
+  ['patBtnPublico', 'patBtnIcpPosts', 'patBtnDiag'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = li ? 'none' : ''; });
+  const idade = document.getElementById('patIdMin')?.closest('div')?.parentElement; if (idade) idade.style.display = li ? 'none' : '';
+  patPubOpcoes(); patPrev();
+}
+async function patPubOpcoes() {
+  const sel = document.getElementById('patPublico'); if (!sel) return; const atual = sel.value;
+  let L = window._pubListas; if (!L) { try { L = window._pubListas = (await apApi('publico_listar')).listas || []; } catch (_) { L = []; } }
+  const li = document.getElementById('patRede')?.value === 'linkedin';
+  sel.innerHTML = '<option value="b2b">ICP C-level — ' + (li ? 'senioridade Dono/Sócio/CXO/VP/Diretor · empresas 201+' : 'donos, sócios e C-levels pelo cargo atual') + '</option>'
+    + L.map(l => { const env = li ? l.linkedin?.segmento_id : l.meta?.audience_id; return '<option value="lista:' + _patE(l.id) + '">Lista Apollo: ' + _patE(l.nome) + ' (' + l.total + ' pessoas' + (env ? '' : ' · ainda não enviada ao ' + (li ? 'LinkedIn' : 'Meta')) + ')</option>'; }).join('');
+  if ([...sel.options].some(o => o.value === atual)) sel.value = atual;
+}
+async function apApi(action, params = {}) {
+  const k = (typeof getLICredenciais === 'function' ? (getLICredenciais() || {}).apolloKey : '') || undefined;
+  const r = await fetch('/api/apollo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, api_key: k, ...params }) });
+  const d = await r.json().catch(() => ({ success: false, error: 'Resposta inválida (HTTP ' + r.status + ')' }));
+  if (!r.ok || d.success === false) throw new Error(d.error || 'HTTP ' + r.status); return d;
+}
+const _PUB_SETORES = ['Energia', 'Utilities', 'Óleo e gás', 'Bancos', 'Seguros', 'Serviços financeiros', 'Indústria', 'Mineração', 'Infraestrutura', 'Logística', 'Varejo', 'Saúde', 'Telecom', 'Agronegócio', 'Construção'];
+const _PUB_SETOR_EN = { 'Energia': 'energy', 'Utilities': 'utilities', 'Óleo e gás': 'oil & energy', 'Bancos': 'banking', 'Seguros': 'insurance', 'Serviços financeiros': 'financial services', 'Indústria': 'manufacturing', 'Mineração': 'mining & metals', 'Infraestrutura': 'construction', 'Logística': 'logistics & supply chain', 'Varejo': 'retail', 'Saúde': 'hospital & health care', 'Telecom': 'telecommunications', 'Agronegócio': 'farming', 'Construção': 'construction' };
+const _PUB_CARGOS = ['CEO', 'CFO', 'COO', 'CIO', 'CTO', 'CDO', 'Presidente', 'Diretor de TI', 'Diretor Financeiro', 'Diretor de Operações', 'Sócio', 'Fundador'];
+const _PUB_SEN = [['owner', 'Dono'], ['founder', 'Fundador'], ['c_suite', 'C-level'], ['partner', 'Sócio'], ['vp', 'VP'], ['director', 'Diretor'], ['head', 'Head (fora do ICP padrão)']];
+const _PUB_PORTE = [['51,200', '51–200 (fora do ICP)'], ['201,500', '201–500'], ['501,1000', '501–1.000'], ['1001,2000', '1.001–2.000'], ['2001,5000', '2.001–5.000'], ['5001,10000', '5.001–10.000'], ['10001,', '10.001+']];
+let _pubRes = [], _pubSel = new Set();
+function pubIniciar() {
+  const chip = (alvo, txt, val) => '<button class="btn" style="font-size:9.5px;padding:1px 7px;" onclick="pubChip(\'' + alvo + '\',\'' + _patE(val).replace(/'/g, "\\'") + '\')">+ ' + _patE(txt) + '</button>';
+  const sc = document.getElementById('pubSetChips'); if (sc && !sc.innerHTML) sc.innerHTML = _PUB_SETORES.map(x => chip('pubSetores', x, _PUB_SETOR_EN[x] || x)).join('');
+  const cc = document.getElementById('pubCargoChips'); if (cc && !cc.innerHTML) cc.innerHTML = _PUB_CARGOS.map(x => chip('pubCargos', x, x)).join('');
+  const se = document.getElementById('pubSen'); if (se && !se.innerHTML) se.innerHTML = _PUB_SEN.map(([v, t]) => '<label style="cursor:pointer;"><input type="checkbox" value="' + v + '"' + (v === 'head' ? '' : ' checked') + '> ' + t + '</label>').join('');
+  const po = document.getElementById('pubPorte'); if (po && !po.innerHTML) po.innerHTML = _PUB_PORTE.map(([v, t]) => '<label style="cursor:pointer;"><input type="checkbox" value="' + v + '"' + (v === '51,200' ? '' : ' checked') + '> ' + t + '</label>').join('');
+  pubListas();
+}
+function pubChip(alvo, val) { const e = document.getElementById(alvo); if (!e) return; const it = e.value.split(/[\n,;]+/).map(x => x.trim()).filter(Boolean); if (!it.some(x => x.toLowerCase() === val.toLowerCase())) it.push(val); e.value = it.join(', '); }
+async function pubBuscar() {
+  const v = id => (document.getElementById(id)?.value || '').trim(), marc = id => [...document.querySelectorAll('#' + id + ' input:checked')].map(i => i.value);
+  const corpo = { setores: v('pubSetores'), cargos: v('pubCargos'), senioridades: marc('pubSen'), portes: marc('pubPorte'), locais: v('pubLocal'), palavras: v('pubPalavras'), dominios: v('pubDominios'), faturamento_min: v('pubFatMin').replace(/\D/g, ''), paginas: v('pubQtd') };
+  if (!corpo.senioridades.length) { alert('Marque ao menos uma senioridade.'); return; }
+  const b = document.getElementById('pubBtnBuscar'), inf = document.getElementById('pubInfo'); b.disabled = true; b.textContent = 'Buscando…'; if (inf) inf.textContent = '';
+  try { const d = await apApi('publico_buscar', corpo); _pubRes = d.pessoas || []; _pubSel = new Set(_pubRes.map(p => p.apollo_id)); window._pubFiltros = corpo;
+    const ds = d.descartados || {}, desc = (ds.cargo || 0) + (ds.local || 0) + (ds.fora_icp || 0);
+    if (inf) inf.innerHTML = '<b>' + _pubRes.length + '</b> decisor(es) trazidos' + (d.total_apollo != null ? ' de ' + Number(d.total_apollo).toLocaleString('pt-BR') + ' no Apollo' : '') + (desc ? ' · ' + desc + ' descartado(s) na conferência (cargo técnico, local ou cargo diferente)' : '');
+    pubRender(); }
+  catch (e) { toast('Busca no Apollo falhou: ' + e.message, 'error'); if (inf) inf.innerHTML = '<span style="color:var(--red);">' + _patE(e.message) + '</span>'; }
+  b.disabled = false; b.textContent = '🔎 Buscar decisores no Apollo';
+}
+function pubRender() {
+  const el = document.getElementById('pubRes'); if (!el) return;
+  if (!_pubRes.length) { el.innerHTML = '<div style="font-size:11px;color:var(--t3);">Nenhum decisor com esses filtros.</div>'; return; }
+  const L = window._pubListas || [];
+  el.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px;font-size:11px;"><label style="cursor:pointer;"><input type="checkbox" ' + (_pubSel.size === _pubRes.length ? 'checked' : '') + ' onchange="pubTodos(this.checked)"> todos</label><b id="pubSelN">' + _pubSel.size + '</b> selecionado(s)'
+    + '<input class="fi" id="pubNomeLista" placeholder="Nome da lista (ex.: CFOs de energia SP)" style="flex:1;min-width:180px;font-size:11px;"/>'
+    + '<select class="fsel" id="pubDestino" style="font-size:11px;" aria-label="Salvar em"><option value="">Nova lista</option>' + L.map(l => '<option value="' + _patE(l.id) + '">Acrescentar a: ' + _patE(l.nome) + '</option>').join('') + '</select>'
+    + '<button class="btn btn-gn" style="font-size:10.5px;" onclick="pubSalvar()">💾 Salvar selecionados</button></div>'
+    + '<div style="max-height:360px;overflow:auto;border:1px solid var(--bd);border-radius:7px;"><table style="width:100%;border-collapse:collapse;font-size:10.5px;"><thead><tr style="position:sticky;top:0;background:var(--s1,#0b1118);"><th></th><th style="text-align:left;padding:5px;">Nome</th><th style="text-align:left;">Cargo</th><th style="text-align:left;">Empresa</th><th style="text-align:left;">Setor</th><th style="text-align:left;">Local</th><th>E-mail</th></tr></thead><tbody>'
+    + _pubRes.map((p, i) => '<tr style="border-top:1px solid var(--bd);"><td style="padding:4px;"><input type="checkbox" aria-label="Selecionar ' + _patE(p.nome) + '" ' + (_pubSel.has(p.apollo_id) ? 'checked' : '') + ' onchange="pubMarcar(' + i + ',this.checked)"></td>'
+      + '<td style="padding:4px;">' + (p.linkedin_url ? '<a href="' + _patE(p.linkedin_url) + '" target="_blank" rel="noopener">' + _patE(p.nome) + '</a>' : _patE(p.nome)) + '</td><td>' + _patE(p.cargo) + '</td><td>' + _patE(p.empresa) + (p.funcionarios ? ' <span style="color:var(--t3);">(' + Number(p.funcionarios).toLocaleString('pt-BR') + ')</span>' : '') + '</td><td>' + _patE(p.setor) + '</td><td>' + _patE([p.cidade, p.estado].filter(Boolean).join(', ')) + '</td>'
+      + '<td style="text-align:center;" title="' + (p.email ? 'e-mail já conhecido' : p.tem_email ? 'o Apollo tem o e-mail (busca consome crédito)' : 'sem e-mail conhecido') + '">' + (p.email ? '✅' : p.tem_email ? '🔒' : '—') + '</td></tr>').join('') + '</tbody></table></div>';
+}
+function pubMarcar(i, on) { const id = _pubRes[i]?.apollo_id; if (!id) return; on ? _pubSel.add(id) : _pubSel.delete(id); const n = document.getElementById('pubSelN'); if (n) n.textContent = _pubSel.size; }
+function pubTodos(on) { _pubSel = on ? new Set(_pubRes.map(p => p.apollo_id)) : new Set(); pubRender(); }
+async function pubSalvar() {
+  const pessoas = _pubRes.filter(p => _pubSel.has(p.apollo_id)); if (!pessoas.length) { alert('Selecione ao menos uma pessoa.'); return; }
+  const id = document.getElementById('pubDestino')?.value || '', nome = (document.getElementById('pubNomeLista')?.value || '').trim();
+  if (!id && !nome) { alert('Dê um nome para a lista.'); return; }
+  try { const d = await apApi('publico_salvar', { id: id || undefined, nome: nome || undefined, filtros: window._pubFiltros || {}, pessoas });
+    toast('Lista "' + d.lista.nome + '" salva: ' + d.lista.total + ' pessoa(s)', 'success'); addLog('ok', '[Público Apollo] ' + d.lista.nome + ' · ' + d.lista.total + ' pessoas');
+    window._pubListas = null; await pubListas(); patPubOpcoes(); }
+  catch (e) { alert('Não salvou: ' + e.message); }
+}
+async function pubListas() {
+  const el = document.getElementById('pubListas'); if (!el) return;
+  try { const L = window._pubListas = (await apApi('publico_listar')).listas || [];
+    if (!L.length) { el.innerHTML = '<div style="color:var(--t3);">Nenhuma lista ainda — busque, selecione e salve.</div>'; return; }
+    const M = _patSt?.meta_configurado && !_patSt?.erro, LI = _patSt?.linkedin?.conectado;
+    el.innerHTML = L.map(l => { const sem = l.total - (l.enriquecidos || 0), m = l.meta, k = l.linkedin;
+      const mTxt = m ? 'Meta: ' + (m.tamanho_min != null ? '≈ ' + Number(m.tamanho_min).toLocaleString('pt-BR') + (m.tamanho_max ? '–' + Number(m.tamanho_max).toLocaleString('pt-BR') : '') + ' pessoas' : m.linhas + ' linha(s) enviadas') + (m.situacao ? ' · ' + m.situacao : '') : 'Meta: não enviada';
+      const kTxt = k ? 'LinkedIn: ' + (k.casados != null ? k.casados + ' casados' : k.enviados + ' enviados') + (k.status ? ' · ' + k.status : '') : 'LinkedIn: não enviada';
+      return '<div style="border:1px solid var(--bd);border-radius:7px;padding:8px 10px;margin-bottom:6px;"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><b style="flex:1;min-width:160px;">' + _patE(l.nome) + '</b><span>' + l.total + ' pessoa(s) · <b>' + (l.com_email || 0) + '</b> com e-mail</span></div>'
+        + '<div style="font-size:10px;color:var(--t2);margin:3px 0 6px;">' + _patE(mTxt) + ' · ' + _patE(kTxt) + '</div><div style="display:flex;gap:5px;flex-wrap:wrap;">'
+        + (sem > 0 ? '<button class="btn btn-p" style="font-size:10px;" onclick="pubEnriquecer(\'' + l.id + '\',' + sem + ')" title="Busca o e-mail no Apollo — consome 1 crédito por pessoa ainda não buscada">📧 Buscar e-mails (' + sem + ')</button>' : '')
+        + '<button class="btn" style="font-size:10px;" ' + (M ? '' : 'disabled title="Meta não configurado"') + ' onclick="pubEnviar(\'' + l.id + '\',\'meta\')">↗ ' + (m ? 'Reenviar' : 'Enviar') + ' ao Meta</button>'
+        + '<button class="btn" style="font-size:10px;" ' + (LI ? '' : 'disabled title="Conecte o LinkedIn na aba Campanha"') + ' onclick="pubEnviar(\'' + l.id + '\',\'linkedin\')">↗ ' + (k ? 'Reenviar' : 'Enviar') + ' ao LinkedIn</button>'
+        + (m || k ? '<button class="btn" style="font-size:10px;" onclick="pubAtualizar(\'' + l.id + '\')" title="Lê de novo o tamanho do público no Meta e no LinkedIn">↻</button>' : '')
+        + '<button class="btn" style="font-size:10px;" onclick="pubCsv(\'' + l.id + '\',\'meta\')" title="Arquivo para subir à mão em Públicos do Meta">⬇ CSV Meta</button>'
+        + '<button class="btn" style="font-size:10px;" onclick="pubCsv(\'' + l.id + '\',\'linkedin\')" title="Arquivo para subir à mão no Campaign Manager (Públicos → Lista de contatos)">⬇ CSV LinkedIn</button>'
+        + '<button class="btn btn-gn" style="font-size:10px;" onclick="pubUsar(\'' + l.id + '\')">📣 Usar na campanha</button>'
+        + '<button class="btn" style="font-size:10px;" onclick="pubExcluir(\'' + l.id + '\')" aria-label="Excluir lista">🗑</button></div></div>'; }).join('');
+  } catch (e) { el.innerHTML = '<span style="color:var(--red);">' + _patE(e.message) + '</span>'; }
+}
+async function pubEnriquecer(id, n) {
+  const pess = confirm('Buscar o e-mail de ' + n + ' pessoa(s) no Apollo?\n\nConsome até ' + n + ' crédito(s) de e-mail do Apollo (quem já foi buscado antes não é cobrado de novo).\n\nOK = também buscar o e-mail PESSOAL (melhora muito o alcance no Instagram/Facebook; pode consumir mais créditos)\nCancelar = escolher só o e-mail profissional');
+  if (!pess && !confirm('Buscar só o e-mail profissional de ' + n + ' pessoa(s)?')) return;
+  let feitos = 0;
+  try { for (let i = 0; i < 600; i++) { const d = await apApi('publico_enriquecer', { id, emails_pessoais: pess }); feitos += d.buscados_agora || 0;
+      toast('E-mails: ' + feitos + ' buscado(s) · faltam ' + d.faltam, 'info'); if (!d.faltam || !d.buscados_agora) break; }
+    toast('E-mails buscados: ' + feitos, 'success'); }
+  catch (e) { alert('Parou a busca de e-mails: ' + e.message + (feitos ? '\n\n' + feitos + ' já foram buscados e ficaram salvos.' : '')); }
+  window._pubListas = null; pubListas(); patPubOpcoes();
+}
+async function pubEnviar(id, rede) {
+  const l = (window._pubListas || []).find(x => x.id === id); if (!l) return;
+  if (!l.com_email && !confirm('Ninguém desta lista tem e-mail ainda — ' + (rede === 'meta' ? 'o Meta não consegue achar ninguém sem e-mail ou telefone.' : 'o LinkedIn vai tentar casar só por nome + empresa (casa bem menos).') + '\n\nEnviar mesmo assim?')) return;
+  if (!confirm('Enviar a lista "' + l.nome + '" (' + l.total + ' pessoas) como público ' + (rede === 'meta' ? 'personalizado no Meta' : 'de contatos no LinkedIn') + '?\n\nVai só o hash SHA-256 dos dados (e-mail, nome, cidade…). Nenhum anúncio é criado ou ativado agora.')) return;
+  try { await mcApi(rede === 'meta' ? 'publico_meta_enviar' : 'publico_li_enviar', { lista_id: id }); toast('Lista enviada ao ' + (rede === 'meta' ? 'Meta' : 'LinkedIn'), 'success'); addLog('ok', '[Público Apollo] ' + l.nome + ' → ' + rede); }
+  catch (e) { alert('Não enviou: ' + e.message); }
+  window._pubListas = null; pubListas(); patPubOpcoes();
+}
+async function pubAtualizar(id) {
+  try { const d = await mcApi('publico_plataformas_ler', { lista_id: id }); if ((d.erros || []).length) toast(d.erros.join(' · '), 'error'); } catch (e) { toast(e.message, 'error'); }
+  window._pubListas = null; pubListas();
+}
+async function pubCsv(id, rede) {
+  try { const l = (await apApi('publico_obter', { id })).lista; const P = l.pessoas || [];
+    const cel = v => { const s = String(v ?? ''); return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const pais = p => /^bra[sz]il$/i.test(String(p.pais || 'Brazil')) || !p.pais ? 'BR' : String(p.pais).substring(0, 2).toUpperCase();
+    const em = p => [p.email, ...(p.emails_pessoais || [])].filter(Boolean);
+    const linhas = rede === 'meta' ? [['email', 'email', 'phone', 'fn', 'ln', 'ct', 'st', 'country'], ...P.map(p => [em(p)[0] || '', em(p)[1] || '', p.telefone || '', p.primeiro_nome, p.sobrenome, p.cidade, p.estado, pais(p)])]
+      : [['email', 'firstname', 'lastname', 'jobtitle', 'employeecompany', 'country'], ...P.map(p => [em(p)[0] || '', p.primeiro_nome, p.sobrenome, p.cargo, p.empresa, pais(p)])];
+    const blob = new Blob(['\ufeff' + linhas.map(r => r.map(cel).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'publico-' + rede + '-' + String(l.nome).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-') + '.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  } catch (e) { alert('Não gerou o CSV: ' + e.message); }
+}
+function pubUsar(id) { patAba('camp'); const s = document.getElementById('patPublico'); patPubOpcoes().then(() => { if (s) { s.value = 'lista:' + id; patPrev(); } }); }
+async function pubExcluir(id) {
+  const l = (window._pubListas || []).find(x => x.id === id); if (!l || !confirm('Excluir a lista "' + l.nome + '" do sistema?\n\nOs públicos já enviados ao Meta/LinkedIn continuam lá (apague no Gerenciador, se quiser).')) return;
+  try { await apApi('publico_excluir', { id }); window._pubListas = null; pubListas(); patPubOpcoes(); } catch (e) { alert(e.message); }
 }
 function patPrev() {
   const v = id => (document.getElementById(id)?.value || '').trim();
   const n = document.getElementById('patTxtN'); if (n) n.textContent = '(' + v('patTexto').length + ' caracteres — as 2 primeiras linhas aparecem antes do "mais")';
   const pv = document.getElementById('patPrevia');
-  if (pv) pv.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;"><div style="width:28px;height:28px;border-radius:50%;background:#05080c;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 40 40" width="18" height="18" fill="none"><rect x="6" y="9" width="17" height="17" rx="5" transform="rotate(45 14.5 17.5)" stroke="#00C4CC" stroke-width="3"/><rect x="17" y="14" width="17" height="17" rx="5" transform="rotate(45 25.5 22.5)" stroke="#00FCA8" stroke-width="3"/></svg></div><div style="font-size:12px;"><b>atlantyx</b><div style="font-size:10px;color:#666;">Patrocinado</div></div></div>'
+  const _li = v('patRede') === 'linkedin', _pl = v('patPublico'), _lst = _pl.startsWith('lista:') ? (window._pubListas || []).find(x => 'lista:' + x.id === _pl) : null; // v3.239
+  const pr = document.getElementById('patPreviaRot'); if (pr) pr.textContent = _li ? 'Prévia no LinkedIn' : 'Prévia no Instagram';
+  if (pv && _li) pv.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;"><div style="width:34px;height:34px;border-radius:4px;background:#05080c;display:flex;align-items:center;justify-content:center;color:#00C4CC;font-weight:800;">A</div><div style="font-size:12px;"><b>Atlantyx</b><div style="font-size:10px;color:#666;">Promovido</div></div></div>'
+    + '<div style="padding:0 12px 9px;font-size:12px;line-height:1.45;">' + _patE(v('patTexto') || 'Texto do anúncio…').replace(/\n/g, '<br>') + '</div>'
+    + (v('patImg') ? '<img src="' + _patE(v('patImg')) + '" style="width:100%;aspect-ratio:1/1;object-fit:cover;display:block;background:#eee;" onerror="this.style.opacity=.2">' : '<div style="aspect-ratio:1/1;background:#e9edf1;display:flex;align-items:center;justify-content:center;color:#888;font-size:12px;">imagem do anúncio</div>')
+    + '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;background:#eef3f8;"><b style="font-size:12px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _patE(v('patTitulo') || 'Título do anúncio') + '</b><span style="border:1px solid #0a66c2;color:#0a66c2;font-weight:700;font-size:12px;padding:5px 12px;border-radius:16px;white-space:nowrap;">Saiba mais</span></div>';
+  else if (pv) pv.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;"><div style="width:28px;height:28px;border-radius:50%;background:#05080c;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 40 40" width="18" height="18" fill="none"><rect x="6" y="9" width="17" height="17" rx="5" transform="rotate(45 14.5 17.5)" stroke="#00C4CC" stroke-width="3"/><rect x="17" y="14" width="17" height="17" rx="5" transform="rotate(45 25.5 22.5)" stroke="#00FCA8" stroke-width="3"/></svg></div><div style="font-size:12px;"><b>atlantyx</b><div style="font-size:10px;color:#666;">Patrocinado</div></div></div>'
     + (v('patImg') ? '<img src="' + _patE(v('patImg')) + '" style="width:100%;aspect-ratio:1/1;object-fit:cover;display:block;background:#eee;" onerror="this.style.opacity=.2">' : '<div style="aspect-ratio:1/1;background:#e9edf1;display:flex;align-items:center;justify-content:center;color:#888;font-size:12px;">imagem do anúncio</div>')
     + '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#f2f4f6;border-bottom:1px solid #e3e6ea;"><div style="font-size:12px;min-width:0;"><b style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _patE(v('patTitulo') || 'Título do anúncio') + '</b><span style="color:#666;font-size:11px;">' + _patE(v('patDesc') || location.host) + '</span></div><span style="background:#0095f6;color:#fff;font-weight:700;font-size:12px;padding:7px 12px;border-radius:8px;white-space:nowrap;">Saiba mais</span></div>'
     + '<div style="padding:9px 12px;font-size:12px;line-height:1.45;"><b>atlantyx</b> ' + _patE(v('patTexto') || 'Texto principal do anúncio…').replace(/\n/g, '<br>') + '</div>';
   const ini = v('patIni'), fim = v('patFim'), dia = parseFloat(v('patDiario').replace(',', '.')) || 0; const dias = ini && fim && fim >= ini ? Math.round((new Date(fim) - new Date(ini)) / 864e5) + 1 : 0;
-  const r = document.getElementById('patResumo'); if (r) r.innerHTML = dias ? 'Investimento máximo: <b>' + fmtBRLcompleto(dia * dias) + '</b> (' + fmtBRLcompleto(dia) + '/dia × ' + dias + ' dias) · Instagram (Feed e Explorar) · <b>Quem ocupa o cargo</b>: donos, sócios e C-levels pelo <b>cargo atual</b> do perfil (sem direcionamento por interesse) — capitais de negócio, ' + Math.max(35, parseInt(v('patIdMin')) || 35) + '–' + (v('patIdMax') || 60) + ' anos · botão <b>Saiba mais</b> → página de cadastro (com rastreio da campanha nos leads)' : '<span style="color:var(--gold);">Informe início e fim.</span>';
+  const _pubTxt = _lst ? '<b>Lista do Apollo "' + _patE(_lst.nome) + '"</b> (' + _lst.total + ' decisores, ' + (_lst.com_email || 0) + ' com e-mail' + ((_li ? _lst.linkedin : _lst.meta) ? '' : ' · <span style="color:var(--gold);">envie ao ' + (_li ? 'LinkedIn' : 'Meta') + ' antes de criar</span>') + ')' : null;
+  const r = document.getElementById('patResumo');
+  if (r && _li) r.innerHTML = dias ? 'Investimento máximo: <b>' + fmtBRLcompleto(dia * dias) + '</b> (' + fmtBRLcompleto(dia) + '/dia × ' + dias + ' dias) · LinkedIn (feed) · ' + (_pubTxt || '<b>Senioridade</b> Dono, Sócio, CXO, VP e Diretor em empresas com <b>201+ funcionários</b>, Brasil, sem expansão de público') + ' · botão <b>Saiba mais</b> → página de cadastro' : '<span style="color:var(--gold);">Informe início e fim.</span>';
+  else if (r && _pubTxt) r.innerHTML = dias ? 'Investimento máximo: <b>' + fmtBRLcompleto(dia * dias) + '</b> (' + fmtBRLcompleto(dia) + '/dia × ' + dias + ' dias) · Instagram (Feed e Explorar) e Facebook (Feed) · ' + _pubTxt + ' · botão <b>Saiba mais</b> → página de cadastro' : '<span style="color:var(--gold);">Informe início e fim.</span>';
+  else if (r) r.innerHTML = dias ? 'Investimento máximo: <b>' + fmtBRLcompleto(dia * dias) + '</b> (' + fmtBRLcompleto(dia) + '/dia × ' + dias + ' dias) · Instagram (Feed e Explorar) · <b>Quem ocupa o cargo</b>: donos, sócios e C-levels pelo <b>cargo atual</b> do perfil (sem direcionamento por interesse) — capitais de negócio, ' + Math.max(35, parseInt(v('patIdMin')) || 35) + '–' + (v('patIdMax') || 60) + ' anos · botão <b>Saiba mais</b> → página de cadastro (com rastreio da campanha nos leads)' : '<span style="color:var(--gold);">Informe início e fim.</span>';
 }
 async function patEscrever() {
   const b = document.getElementById('patBtnCopy'); if (b) { b.disabled = true; b.textContent = 'Escrevendo…'; }
@@ -25365,22 +25566,26 @@ async function patDiagnostico() {
 }
 async function patCriar(soKit) {
   const v = id => (document.getElementById(id)?.value || '').trim();
-  const corpo = { nome: v('patNome'), texto: v('patTexto'), titulo: v('patTitulo'), descricao: v('patDesc'), imagem: v('patImg'), link: v('patLink'), publico: v('patPublico') || 'b2b', orcamento_diario: v('patDiario'), inicio: v('patIni'), fim: v('patFim'), idade_min: v('patIdMin'), idade_max: v('patIdMax'), so_kit: !!soKit };
-  if (!soKit && !confirm('Criar no Meta (Instagram) a campanha "' + (corpo.nome || 'sem nome') + '"?\n\nEla é criada PAUSADA — nada é cobrado agora. Você revisa e clica em "Ativar" quando quiser.')) return;
-  const b = document.getElementById('patBtnCriar'); if (b && !soKit) { b.disabled = true; b.textContent = 'Criando no Meta…'; }
+  const _pl = v('patPublico'), rede = v('patRede') || 'instagram', onde = rede === 'linkedin' ? 'LinkedIn' : 'Meta';
+  const corpo = { rede, nome: v('patNome'), texto: v('patTexto'), titulo: v('patTitulo'), descricao: v('patDesc'), imagem: v('patImg'), link: v('patLink'), publico: _pl.startsWith('lista:') ? 'lista' : 'b2b', publico_lista: _pl.startsWith('lista:') ? _pl.substring(6) : undefined, orcamento_diario: v('patDiario'), inicio: v('patIni'), fim: v('patFim'), idade_min: v('patIdMin'), idade_max: v('patIdMax'), so_kit: !!soKit };
+  if (!soKit && !confirm('Criar no ' + (rede === 'linkedin' ? 'LinkedIn' : 'Meta (Instagram)') + ' a campanha "' + (corpo.nome || 'sem nome') + '"?\n\nEla é criada PAUSADA — nada é cobrado agora. Você revisa e clica em "Ativar" quando quiser.')) return;
+  const b = document.getElementById('patBtnCriar'); const _rotB = b ? b.textContent : ''; if (b && !soKit) { b.disabled = true; b.textContent = 'Criando no ' + onde + '…'; }
   try { const d = await mcApi('patrocinado_criar', corpo);
     if (d.modo === 'kit') { patMostrarKit(d.kit); }
+    else if (d.modo === 'linkedin') { toast('Campanha criada (pausada) no LinkedIn', 'success'); addLog('ok', '[Patrocinado LinkedIn] criada pausada: ' + d.campanha.nome); patListar();
+      alert('✅ Campanha criada no LinkedIn — PAUSADA (nada é cobrado).\n\n' + d.campanha.nome + '\nCampanha: ' + d.campanha.campanha_id + (d.aviso ? '\n\n⚠ ' + d.aviso : '') + '\n\nRevise no Campaign Manager e clique em "Ativar" aqui quando quiser veicular.'); }
     else { toast('Campanha criada (pausada) no Meta', 'success'); addLog('ok', '[Patrocinado] criada pausada: ' + d.campanha.nome + ' · ' + fmtBRLcompleto(d.campanha.orcamento_diario) + '/dia'); patListar();
       alert('✅ Campanha criada no Meta — PAUSADA (nada é cobrado).\n\n' + d.campanha.nome + '\nID da campanha: ' + (d.campanha.id || '—') + '\n\nEla aparece na lista "Campanhas patrocinadas criadas pelo sistema" e no Gerenciador de Anúncios. Revise lá (Visualizar) e clique em "Ativar" quando quiser veicular.'); } } // v3.177: confirmação visível
   catch (e) { toast('Não criou: ' + e.message, 'error'); alert('Não criou a campanha:\n\n' + e.message); }
-  if (b) { b.disabled = false; b.textContent = '📣 Criar campanha (pausada)'; }
+  if (b) { b.disabled = false; b.textContent = _rotB || '📣 Criar campanha (pausada)'; }
 }
 function patMostrarKit(k) {
   const lin = (rot, val, copiar) => '<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;gap:8px;align-items:center;"><span style="font-size:10px;color:var(--t2);flex:1;">' + rot + '</span>' + (copiar ? '<button class="btn" style="font-size:9px;padding:1px 7px;" data-c="' + _patE(val) + '" onclick="atxCopiar(this.dataset.c,\'Copiado\')">copiar</button>' : '') + '</div><div style="font-size:11.5px;word-break:break-word;">' + _patE(val).replace(/\n/g, '<br>') + '</div></div>';
   let m = document.getElementById('patKitModal'); if (!m) { m = document.createElement('div'); m.id = 'patKitModal'; m.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:1000;align-items:center;justify-content:center;padding:12px;'; document.body.appendChild(m); m.addEventListener('click', e => { if (e.target === m) m.style.display = 'none'; }); }
   m.style.display = 'flex';
-  m.innerHTML = '<div class="panel" style="width:560px;max-width:96vw;max-height:90vh;overflow:auto;"><div class="ph"><div class="pt">🧰 Kit da campanha patrocinada — Metricool Ads</div><button class="btn" style="font-size:10px;" onclick="document.getElementById(\'patKitModal\').style.display=\'none\'">✕</button></div><div class="pb">'
-    + '<div style="font-size:10.5px;color:var(--t2);line-height:1.6;margin-bottom:8px;">No Metricool: <b>Ads → + Criar campanha</b> → plataforma <b>Meta</b> → objetivo <b>Tráfego</b> → posicionamento <b>Instagram</b> (Feed e Stories) → cole os campos abaixo. Botão de ação: <b>Saiba mais</b>.</div>'
+  m.innerHTML = '<div class="panel" style="width:560px;max-width:96vw;max-height:90vh;overflow:auto;"><div class="ph"><div class="pt">🧰 Kit da campanha patrocinada — ' + (k.rede === 'linkedin' ? 'LinkedIn Campaign Manager' : 'Metricool Ads') + '</div><button class="btn" style="font-size:10px;" onclick="document.getElementById(\'patKitModal\').style.display=\'none\'">✕</button></div><div class="pb">'
+    + (k.rede === 'linkedin' ? '<div style="font-size:10.5px;color:var(--t2);line-height:1.6;margin-bottom:8px;">No <a href="https://www.linkedin.com/campaignmanager" target="_blank" rel="noopener">Campaign Manager</a>: <b>Criar → Campanha</b> → objetivo <b>Visitas ao site</b> → público: ' + (k.publico_lista ? '<b>Públicos → Lista de contatos</b> (suba o ⬇ CSV LinkedIn da lista "' + _patE(k.publico_lista_nome || '') + '")' : '<b>Senioridade</b> Proprietário, Sócio, CXO, VP e Diretor + <b>Tamanho da empresa</b> 201+ + Brasil') + ', <b>desligue a expansão de público</b> → formato <b>Imagem única</b> → cole os campos abaixo, botão <b>Saiba mais</b>. Deixe a campanha <b>pausada</b> até revisar.</div>'
+      : '<div style="font-size:10.5px;color:var(--t2);line-height:1.6;margin-bottom:8px;">No Metricool: <b>Ads → + Criar campanha</b> → plataforma <b>Meta</b> → objetivo <b>Tráfego</b> → posicionamento <b>Instagram</b> (Feed e Stories) → cole os campos abaixo. Botão de ação: <b>Saiba mais</b>.' + (k.publico_lista ? ' Público: <b>Personalizado → Lista de clientes</b> com o ⬇ CSV Meta da lista "' + _patE(k.publico_lista_nome || '') + '".' : '') + '</div>')
     + lin('Nome da campanha', k.nome, true) + lin('Objetivo', k.objetivo) + lin('Posicionamentos', k.posicionamentos) + lin('Público', k.publico) + lin('Orçamento', fmtBRLcompleto(k.orcamento_diario) + ' por dia · ' + k.dias + ' dias · máximo ' + fmtBRLcompleto(k.total_maximo) + ' · de ' + k.inicio.split('-').reverse().join('/') + ' a ' + k.fim.split('-').reverse().join('/'))
     + lin('URL de destino (com rastreio)', k.link, true) + lin('Texto principal', k.texto, true) + lin('Título', k.titulo, true) + (k.descricao ? lin('Descrição', k.descricao, true) : '') + lin('Botão', k.botao)
     + '<div style="padding:6px 0;"><div style="font-size:10px;color:var(--t2);margin-bottom:4px;">Imagem (baixe e envie no Metricool)</div><img src="' + _patE(k.imagem) + '" style="width:160px;border-radius:8px;display:block;"><a href="' + _patE(k.imagem) + '" target="_blank" rel="noopener" download style="font-size:10.5px;">⬇ baixar imagem</a></div>'
@@ -25392,7 +25597,7 @@ async function patListar() {
     if (!l.length) { el.innerHTML = ''; return; }
     el.innerHTML = '<div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:var(--t2);margin-bottom:5px;">Campanhas patrocinadas criadas pelo sistema</div>' + l.map(c => { const ps = _patStatus(c), at = ps.veicula; const r = c.resultado;
       return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--bd);border-radius:7px;margin-bottom:6px;font-size:11px;">'
-        + '<div style="flex:1;min-width:220px;"><b>' + _patE(c.nome) + '</b><div style="font-size:10px;color:var(--t2);">' + fmtBRLcompleto(c.orcamento_diario) + '/dia · ' + c.inicio.split('-').reverse().join('/') + ' a ' + c.fim.split('-').reverse().join('/') + ' · máx. ' + fmtBRLcompleto(c.total_maximo)
+        + '<div style="flex:1;min-width:220px;"><span class="tag" style="margin-right:5px;">' + (c.rede === 'linkedin' ? 'LinkedIn' : 'Instagram') + '</span>' + (c.publico_lista_nome ? '<span class="tag" style="margin-right:5px;" title="Público: lista do Apollo">🎯 ' + _patE(c.publico_lista_nome) + '</span>' : '') + '<b>' + _patE(c.nome) + '</b><div style="font-size:10px;color:var(--t2);">' + fmtBRLcompleto(c.orcamento_diario) + '/dia · ' + c.inicio.split('-').reverse().join('/') + ' a ' + c.fim.split('-').reverse().join('/') + ' · máx. ' + fmtBRLcompleto(c.total_maximo)
         + (r ? ' · gasto ' + fmtBRLcompleto(r.gasto) + ' · ' + Number(r.impressoes || 0).toLocaleString('pt-BR') + ' impressões · <b>' + Number(r.cliques_link || 0) + ' cliques</b>' + (r.cpc ? ' · CPC ' + fmtBRLcompleto(r.cpc) : '') : '') + '</div></div>'
         + '<span class="tag ' + ps.cls + '"' + (c.estado_erro ? ' title="' + _patE(c.estado_erro) + '"' : '') + '>' + _patE(ps.rot) + '</span>'
         + (at ? '<button class="btn" style="font-size:10px;" onclick="patEstado(\'' + c.id + '\',\'PAUSED\')">⏸ Pausar</button>' : '<button class="btn btn-gn" style="font-size:10px;" onclick="patEstado(\'' + c.id + '\',\'ACTIVE\',' + Number(c.total_maximo || 0) + ')">▶ Ativar</button>')
@@ -34243,7 +34448,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.238] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.239] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -34259,7 +34464,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.238';
+window.__ATX_BUILD_ID__ = 'ATX-v3.239';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

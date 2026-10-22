@@ -1,5 +1,6 @@
 import { comGuarda } from '../lib/qa-guard.js';
 import { APOLLO_SENIORIDADES, APOLLO_PORTES, classificarCargo } from '../lib/icp.js';
+import { K_INDICE, kLista, listaResumo, listaGravar, listaObter } from '../lib/publico-lista.js'; // v3.239
 // api/apollo.js — Enriquecimento via /people/bulk_match com details[{id}]
 // Hardened: try/catch em JSON.parse, action person_match adicionada
 
@@ -69,7 +70,7 @@ async function handler(req, res) {
 
   const { action, api_key, ...params } = req.body || {};
   const apolloKey = api_key || process.env.APOLLO_API_KEY;
-  if (!apolloKey) return res.status(400).json({ success: false, error: 'APOLLO_API_KEY não configurada' });
+  if (!apolloKey && !/^publico_(listar|obter|excluir|salvar)$/.test(String(action || ''))) return res.status(400).json({ success: false, error: 'APOLLO_API_KEY não configurada' }); // v3.239: listas salvas não precisam da chave
 
   const headers = {
     'Content-Type': 'application/json',
@@ -104,7 +105,8 @@ async function handler(req, res) {
   try {
 
     // ── BUSCA PRINCIPAL ───────────────────────────────────────────────────────
-    if (action === 'people_search') {
+    // v3.239: a busca virou função (usada pela busca de pessoas e pela montagem de PÚBLICO para campanha paga)
+    const _peopleSearch = async (params) => {
       // v2.89: parâmetros CORRETOS da API de busca de pessoas do Apollo + conferência do resultado.
       // Antes: setor ia em "q_organization_industries" (não existe → ignorado), país/cidade/faturamento
       // nunca eram enviados, e o cargo trazia "títulos semelhantes" — por isso o filtro não era respeitado.
@@ -131,7 +133,7 @@ async function handler(req, res) {
 
       const r = await fetch('https://api.apollo.io/api/v1/mixed_people/api_search' + (qs.toString() ? '?' + qs.toString() : ''), { method: 'POST', headers, body: JSON.stringify(body) });
       const text = await r.text();
-      if (!r.ok) return res.status(r.status).json({ success: false, error: 'Apollo ' + r.status + ': ' + text.substring(0, 300), enviado: body });
+      if (!r.ok) throw Object.assign(new Error('Apollo ' + r.status + ': ' + text.substring(0, 300)), { status: r.status, enviado: body });
       const data = safeJsonParse(text, 'people_search');
       let people = data.people || [];
 
@@ -174,7 +176,107 @@ async function handler(req, res) {
         apos_conferencia: people.length, descartados: removidos, com_li_pessoa: people.filter(p => !!p.linkedin_url).length };
       data._filtros_enviados = { ...body, ...(qs.toString() ? { url: qs.toString() } : {}) };
       console.log('[Apollo] busca', JSON.stringify(body).substring(0, 300), '→', JSON.stringify(data._stats));
-      return res.status(200).json({ success: true, ...data });
+      return data;
+    };
+    if (action === 'people_search') {
+      try { const data = await _peopleSearch(params); return res.status(200).json({ success: true, ...data }); }
+      catch (e) { if (e.enviado) return res.status(e.status || 500).json({ success: false, error: e.message, enviado: e.enviado }); throw e; }
+    }
+
+
+    // ═══ v3.239: PÚBLICO DO APOLLO PARA CAMPANHA PAGA (Meta e LinkedIn) ═══
+    // 1) publico_buscar — filtros de área de atuação, cargo, senioridade, porte, local, palavras-chave, faturamento e
+    //    empresas-alvo (domínios); traz até 5 páginas de 100. A busca NÃO consome crédito do Apollo.
+    // 2) publico_salvar — guarda as pessoas escolhidas como uma lista com nome (kv_store, sem DDL).
+    // 3) publico_enriquecer — busca e-mail (e, se pedido, e-mail pessoal) de até 10 por chamada no Apollo. CONSOME
+    //    CRÉDITO; quem já foi buscado (nesta ou em outra lista) não é buscado de novo.
+    // O envio ao Meta/LinkedIn (hash SHA-256) fica em api/metricool.js (publico_meta_enviar / publico_li_enviar).
+    const _kvA = async (k, v) => { const sql = await sqlA();
+      await sql`CREATE TABLE IF NOT EXISTS kv_store (key TEXT PRIMARY KEY, value JSONB, updated_at TIMESTAMPTZ DEFAULT NOW())`;
+      if (v === undefined) { const r = await sql`SELECT value FROM kv_store WHERE key = ${k} LIMIT 1`; const x = r[0]?.value; return typeof x === 'string' ? JSON.parse(x) : (x ?? null); }
+      await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; return v; };
+    const _emailOk = e => { const x = String(e || '').trim().toLowerCase(); return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x) && !/not_unlocked|domain\.com$|example\./.test(x) ? x : null; };
+    const _pessoa = p => { const o = p.organization || {};
+      return { apollo_id: p.id, primeiro_nome: p.first_name || '', sobrenome: p.last_name || '', sobrenome_oculto: !p.last_name && !!p.last_name_obfuscated,
+        nome: [p.first_name, p.last_name || p.last_name_obfuscated].filter(Boolean).join(' ') || p.name || '', cargo: p.title || '', senioridade: p.seniority || null,
+        empresa: o.name || p.organization_name || '', dominio: o.primary_domain || o.website_url || '', setor: o.industry || '', funcionarios: o.estimated_num_employees || null,
+        cidade: p.city || '', estado: p.state || '', pais: p.country || '', linkedin_url: p.linkedin_url || null,
+        email: _emailOk(p.email), tem_email: p.has_email ?? (p.email_status ? p.email_status !== 'unavailable' : null) }; };
+
+    if (action === 'publico_buscar') {
+      const lista = v => (Array.isArray(v) ? v : String(v || '').split(/[\n,;]+/)).map(x => String(x).trim()).filter(Boolean);
+      const setores = lista(params.setores), cargos = lista(params.cargos), locais = lista(params.locais).length ? lista(params.locais) : ['Brazil'];
+      const dominios = lista(params.dominios).map(d => d.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '').toLowerCase());
+      const sen = lista(params.senioridades).filter(x => ['owner', 'founder', 'c_suite', 'partner', 'vp', 'director', 'head'].includes(x));
+      const portes = lista(params.portes).filter(x => /^\d+,\d*$/.test(x));
+      const paginas = Math.max(1, Math.min(5, parseInt(params.paginas) || 1));
+      const base = { per_page: 100, person_titles: cargos, cargo_estrito: params.cargo_estrito !== false, setores, person_locations: locais,
+        person_seniorities: sen.length ? sen : APOLLO_SENIORIDADES, organization_num_employees_ranges: portes.length ? portes : APOLLO_PORTES,
+        ...(params.palavras ? { q_keywords: String(params.palavras).substring(0, 200) } : {}), ...(dominios.length ? { q_organization_domains_list: dominios.slice(0, 200) } : {}),
+        ...(params.faturamento_min ? { revenue_min: params.faturamento_min } : {}), ...(params.faturamento_max ? { revenue_max: params.faturamento_max } : {}) };
+      const pessoas = [], vistos = new Set(); let total = null; const descartes = { cargo: 0, local: 0, fora_icp: 0 };
+      for (let pg = 1; pg <= paginas; pg++) {
+        const d = await _peopleSearch({ ...base, page: pg });
+        if (total == null) total = d._stats?.total_apollo ?? null;
+        Object.keys(descartes).forEach(k => { descartes[k] += d._stats?.descartados?.[k] || 0; });
+        for (const p of d.people || []) if (p.id && !vistos.has(p.id)) { vistos.add(p.id); pessoas.push(_pessoa(p)); }
+        if ((d._stats?.retornados_apollo || 0) + (d._stats?.descartados?.fora_icp || 0) < 100) break; // página incompleta = acabou
+      }
+      // quem já teve o e-mail buscado antes (cache) volta com o e-mail — não paga de novo
+      const cache = (await _kvA('mkt:apollo_enriq').catch(() => null)) || {};
+      pessoas.forEach(p => { const c = cache[p.apollo_id]; if (c) Object.assign(p, { email: p.email || c.email || null, emails_pessoais: c.emails_pessoais || [], primeiro_nome: c.primeiro_nome || p.primeiro_nome, sobrenome: c.sobrenome || p.sobrenome, telefone: c.telefone || null, enriquecido_em: c.em }); });
+      return res.status(200).json({ success: true, pessoas, total_apollo: total, descartados: descartes, filtros: base });
+    }
+
+    if (action === 'publico_listar') return res.status(200).json({ success: true, listas: (await _kvA(K_INDICE)) || [] });
+    if (action === 'publico_obter') { const l = await listaObter(_kvA, params.id); return res.status(200).json({ success: true, lista: l, resumo: listaResumo(l) }); }
+    if (action === 'publico_excluir') {
+      const ind = ((await _kvA(K_INDICE)) || []).filter(x => x.id !== params.id); await _kvA(K_INDICE, ind); await _kvA(kLista(String(params.id || '')), null);
+      return res.status(200).json({ success: true, listas: ind });
+    }
+    if (action === 'publico_salvar') {
+      // nova lista ou acrescenta pessoas a uma existente (sem duplicar); remove = apollo_ids para tirar
+      const nome = String(params.nome || '').trim().substring(0, 80);
+      const entrada = (Array.isArray(params.pessoas) ? params.pessoas : []).filter(p => p && p.apollo_id).slice(0, 2000).map(p => ({
+        apollo_id: String(p.apollo_id), primeiro_nome: String(p.primeiro_nome || '').substring(0, 60), sobrenome: String(p.sobrenome || '').substring(0, 80), nome: String(p.nome || '').substring(0, 120),
+        cargo: String(p.cargo || '').substring(0, 150), empresa: String(p.empresa || '').substring(0, 150), dominio: String(p.dominio || '').substring(0, 120), setor: String(p.setor || '').substring(0, 80),
+        funcionarios: p.funcionarios || null, cidade: String(p.cidade || '').substring(0, 80), estado: String(p.estado || '').substring(0, 80), pais: String(p.pais || '').substring(0, 60),
+        linkedin_url: p.linkedin_url || null, email: _emailOk(p.email), emails_pessoais: (p.emails_pessoais || []).map(_emailOk).filter(Boolean).slice(0, 3), telefone: p.telefone || null, enriquecido_em: p.enriquecido_em || null }));
+      let l;
+      if (params.id) { l = await listaObter(_kvA, params.id); if (nome) l.nome = nome; }
+      else { if (!nome) return res.status(400).json({ success: false, error: 'Dê um nome para a lista' }); l = { id: 'pub_' + Date.now().toString(36), nome, criado_em: new Date().toISOString(), filtros: params.filtros || {}, pessoas: [] }; }
+      const tirar = new Set((params.remover || []).map(String));
+      const ja = new Map(l.pessoas.filter(p => !tirar.has(p.apollo_id)).map(p => [p.apollo_id, p]));
+      for (const p of entrada) ja.set(p.apollo_id, { ...(ja.get(p.apollo_id) || {}), ...p, email: p.email || ja.get(p.apollo_id)?.email || null });
+      l.pessoas = [...ja.values()].slice(0, 5000);
+      return res.status(200).json({ success: true, lista: await listaGravar(_kvA, l) });
+    }
+    if (action === 'publico_enriquecer') {
+      const l = await listaObter(_kvA, params.id);
+      const cache = (await _kvA('mkt:apollo_enriq').catch(() => null)) || {};
+      const pessoais = !!params.emails_pessoais;
+      // já buscados (aqui ou em outra lista) entram do cache, sem crédito
+      l.pessoas.forEach(p => { const c = cache[p.apollo_id]; if (!p.enriquecido_em && c) Object.assign(p, { email: p.email || c.email, emails_pessoais: c.emails_pessoais || [], primeiro_nome: c.primeiro_nome || p.primeiro_nome, sobrenome: c.sobrenome || p.sobrenome, telefone: p.telefone || c.telefone || null, enriquecido_em: c.em }); });
+      const fila = l.pessoas.filter(p => !p.enriquecido_em).slice(0, 10);
+      if (fila.length) {
+        const r = await fetch('https://api.apollo.io/api/v1/people/bulk_match', { method: 'POST', headers, body: JSON.stringify({ details: fila.map(p => ({ id: p.apollo_id })), reveal_personal_emails: pessoais }) });
+        const text = await r.text();
+        if (!r.ok) return res.status(200).json({ success: false, error: r.status === 402 || /credit/i.test(text) ? 'Sem créditos de e-mail no Apollo' : 'Apollo ' + r.status + ': ' + text.substring(0, 200) });
+        const d = safeJsonParse(text, 'publico_enriquecer'); const ms = d.matches || d.people || [];
+        const agora = new Date().toISOString();
+        for (const p of fila) {
+          const m = ms.find(x => (x?.id || x?.person?.id) === p.apollo_id); const q = m?.person || m || null;
+          if (q) { p.email = _emailOk(q.email) || p.email; p.emails_pessoais = (q.personal_emails || []).map(_emailOk).filter(Boolean).slice(0, 3);
+            p.primeiro_nome = q.first_name || p.primeiro_nome; p.sobrenome = q.last_name || p.sobrenome; p.sobrenome_oculto = false; p.nome = [p.primeiro_nome, p.sobrenome].filter(Boolean).join(' ');
+            p.linkedin_url = q.linkedin_url || p.linkedin_url; p.cidade = q.city || p.cidade; p.estado = q.state || p.estado; p.pais = q.country || p.pais; p.cargo = q.title || p.cargo; }
+          p.enriquecido_em = agora;
+          cache[p.apollo_id] = { email: p.email || null, emails_pessoais: p.emails_pessoais || [], primeiro_nome: p.primeiro_nome, sobrenome: p.sobrenome, telefone: p.telefone || null, em: agora };
+        }
+        const ks = Object.keys(cache); if (ks.length > 8000) ks.slice(0, ks.length - 8000).forEach(k => delete cache[k]);
+        await _kvA('mkt:apollo_enriq', cache);
+      }
+      const resumo = await listaGravar(_kvA, l);
+      return res.status(200).json({ success: true, lista: resumo, buscados_agora: fila.length, faltam: l.pessoas.filter(p => !p.enriquecido_em).length });
     }
 
     // ── v2.91: TELEFONE para o WhatsApp ──
@@ -333,7 +435,7 @@ async function handler(req, res) {
     return res.status(400).json({
       success: false,
       error: 'Ação inválida: ' + action,
-      disponiveis: ['people_search', 'person_match', 'enrich_batch'],
+      disponiveis: ['people_search', 'person_match', 'enrich_batch', 'publico_buscar', 'publico_salvar', 'publico_listar', 'publico_obter', 'publico_excluir', 'publico_enriquecer'],
     });
 
   } catch (e) {

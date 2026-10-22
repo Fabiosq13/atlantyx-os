@@ -30,7 +30,7 @@
 - Sem novas dependências npm sem aprovação da T1 (package.json é da T1).
 
 ## Variáveis de ambiente (nomes — valores só na Vercel/GitHub)
-Core: `DATABASE_URL`, `ANTHROPIC_API_KEY`, `CLAUDE_MODEL`, `CRON_SECRET`, `MEDIA_PUBLIC_BASE` · QuickBooks: `QB_CLIENT_ID`, `QB_CLIENT_SECRET`, `QB_SANDBOX`, `QB_REDIRECT_URI` · GitHub: `GITHUB_TOKEN`, `GITHUB_REPO` · E-mail: `EMAIL_IMAP_USER`, `EMAIL_IMAP_PASS`, `EMAIL_SMTP_*`, `RESEND_API_KEY`, `RESEND_FROM` · Marketing: `METRICOOL_*`, `IDEOGRAM_API_KEY`, `YOUTUBE_API_KEY` · Vendas: `HUBSPOT_*`, `APOLLO_API_KEY`, `PHANTOM_*` · WhatsApp: `ZAPI_*` · QA: `QA_CRIPTO_KEY`, `QA_IA_MODEL` · GitHub Actions secrets: `ANTHROPIC_API_KEY`, `CRON_SECRET`, `ATX_QA_EMAIL`, `ATX_QA_SENHA`.
+Core: `DATABASE_URL`, `ANTHROPIC_API_KEY`, `CLAUDE_MODEL`, `CRON_SECRET`, `MEDIA_PUBLIC_BASE` · QuickBooks: `QB_CLIENT_ID`, `QB_CLIENT_SECRET`, `QB_SANDBOX`, `QB_REDIRECT_URI` · GitHub: `GITHUB_TOKEN`, `GITHUB_REPO` · E-mail: `EMAIL_IMAP_USER`, `EMAIL_IMAP_PASS`, `EMAIL_SMTP_*`, `RESEND_API_KEY`, `RESEND_FROM` · Marketing: `METRICOOL_*`, `IDEOGRAM_API_KEY`, `YOUTUBE_API_KEY`, `META_ADS_TOKEN`, `META_AD_ACCOUNT_ID`, `META_PAGE_ID`, `META_IG_USER_ID`, `META_PIXEL_ID` · LinkedIn Ads (v3.239): `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` (opcionais `LINKEDIN_AD_ACCOUNT_ID`, `LINKEDIN_ORG_ID`, `LINKEDIN_API_VERSION`, `LINKEDIN_SCOPES`; o token do OAuth fica no kv_store, nunca em variável) · Vendas: `HUBSPOT_*`, `APOLLO_API_KEY`, `PHANTOM_*` · WhatsApp: `ZAPI_*` · QA: `QA_CRIPTO_KEY`, `QA_IA_MODEL` · GitHub Actions secrets: `ANTHROPIC_API_KEY`, `CRON_SECRET`, `ATX_QA_EMAIL`, `ATX_QA_SENHA`.
 Nova variável = linha aqui + cadastro na Vercel pela T1, no mesmo PR.
 
 ## Lições que valem para todas as trilhas
