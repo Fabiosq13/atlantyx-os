@@ -1,5 +1,6 @@
 import { comGuarda } from '../lib/qa-guard.js';
-import { lerSessao } from '../lib/acesso.js';
+import { lerSessao, authAtiva } from '../lib/acesso.js';
+import * as PAG from '../lib/pag-colab.js'; // v3.245
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
 // SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
@@ -544,7 +545,7 @@ async function compromissoSalvar({ id, titulo, data, hora, projeto, notas, concl
 // Ler o banco direto é melhor que consumir API: não depende de o outro projeto expor
 // endpoints, e dá acesso a qualquer tabela. Basta a connection string em CRONOGRAMA_DATABASE_URL.
 let _sqlCrono = null;
-async function getSqlCrono() {
+export async function getSqlCrono() {
   const url = process.env.CRONOGRAMA_DATABASE_URL;
   if (!url) {
     const e = new Error('CRONOGRAMA_DATABASE_URL não configurada.');
@@ -965,6 +966,161 @@ async function maestroImportarMarcos({ executar = false, incluir_sem_valor = fal
   }
   R.resumo = { projetos_novos: R.projetos_novos.length, marcos_novos: R.marcos_novos.length, marcos_atualizados: R.marcos_atualizados.length, duplicados_apagados: R.duplicados_apagados.length, ignorados: R.ignorados.length, sem_valor: R.sem_valor };
   return R;
+}
+
+// ═══ v3.245: MARCO APROVADO PELO GP NO MAESTRO → KANBAN DE MARCOS DAQUI EM "ELABORANDO TERMO" (sozinho) ═══
+// Lê a lista de marcos do Maestro (só leitura) e, para cada marco que acabou de chegar em "Aprovado pelo GP"
+// (ou "Elaborando Termo") lá, coloca o marco aqui na etapa elaborando_termo — pronto para marcar e gerar o termo.
+// Não destrói nada: marco igual criado aqui à mão é só movido (não é apagado); marco que aqui já está mais adiante não volta;
+// e cada aprovação é tratada UMA vez (se alguém voltar o marco aqui, a sincronização não o empurra de novo).
+// Liga/desliga: kv 'pmo:maestro_aprov_cfg' { ativo } (padrão ligado). Roda no cron (a cada 10 min) e ao abrir o Kanban.
+const _MAE_APROV = new Set(['Aprovado pelo GP', 'Elaborando Termo']);
+const K_APROV_CFG = 'pmo:maestro_aprov_cfg', K_APROV_VISTOS = 'pmo:maestro_aprov_vistos', K_APROV_ULTIMA = 'pmo:maestro_aprov_ultima';
+async function _kvLer(sql, k) { try { const r = await sql`SELECT value FROM kv_store WHERE key = ${k}`; let v = r[0]?.value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (_) {} } return v ?? null; } catch (_) { return null; } }
+async function _kvGravar(sql, k, v) { await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; }
+export async function maestroAprovadosSinc({ executar = false, origem = 'manual', ativo } = {}, req) {
+  const sql = await getSql();
+  if (req && (executar || ativo !== undefined)) { let s = null; try { s = await lerSessao(req); } catch (_) {}
+    if (s && !(s.perfil?.admin || (s.perfil?.telas || []).includes('s3marcoskanban'))) { const e = new Error('Seu perfil não pode mexer no Kanban de Marcos.'); e.status = 403; throw e; } }
+  const cfg = { ativo: true, ...((await _kvLer(sql, K_APROV_CFG)) || {}) };
+  if (ativo !== undefined) { cfg.ativo = !!ativo; cfg.alterado_em = new Date().toISOString(); await _kvGravar(sql, K_APROV_CFG, cfg); }
+  const R = { ativo: cfg.ativo, executado: !!executar, origem, novos: [], movidos: [], ja_adiante: 0, ignorados: [], projetos_novos: [] };
+  if (!cfg.ativo && origem === 'cron') { R.desligado = true; return R; }
+  if (!executar) { R.ultima = await _kvLer(sql, K_APROV_ULTIMA); if (ativo !== undefined) return R; }
+  let crono; try { crono = await getSqlCrono(); } catch (e) { R.erro = e.message; R.dica = e.dica; if (executar) await _kvGravar(sql, K_APROV_ULTIMA, { em: new Date().toISOString(), origem, erro: e.message }); return R; }
+  const rows = await _q(crono, `SELECT key AS k, (value)::text AS v FROM atlx_store WHERE key = ANY($1)`, [['atlx_projetos_cad', 'atlx_proj_marcos']]);
+  const S = {}; rows.forEach(r => { try { S[r.k] = JSON.parse(r.v); } catch (_) {} });
+  const cad = Array.isArray(S.atlx_projetos_cad) ? S.atlx_projetos_cad : [];
+  const mk = Array.isArray(S.atlx_proj_marcos?.marcos) ? S.atlx_proj_marcos.marcos : (Array.isArray(S.atlx_proj_marcos) ? S.atlx_proj_marcos : []);
+  const vistos = (await _kvLer(sql, K_APROV_VISTOS)) || {};
+  // marco que saiu das etapas aprovadas no Maestro (voltou) deixa de constar: se for aprovado de novo, entra de novo
+  const aprovIds = new Set(mk.filter(m => m && m.id != null && _MAE_APROV.has(m.status)).map(m => String(m.id)));
+  for (const id of Object.keys(vistos)) if (!aprovIds.has(id)) delete vistos[id];
+  const pend = mk.filter(m => m && m.id != null && _MAE_APROV.has(m.status) && !vistos[String(m.id)]);
+  R.total_aprovados_maestro = aprovIds.size; R.pendentes = pend.length;
+  if (!pend.length) { if (executar) { await _kvGravar(sql, K_APROV_VISTOS, vistos); await _kvGravar(sql, K_APROV_ULTIMA, { em: new Date().toISOString(), origem, novos: 0, movidos: 0 }); } return R; }
+  const projs = await sql`SELECT id, nome FROM projetos_financeiros`;
+  const porNome = new Map(projs.map(p => [_mNorm(p.nome), p]));
+  const acharProj = nome => { const n = _mNorm(nome); if (!n) return null; if (porNome.has(n)) return porNome.get(n);
+    const parc = projs.filter(p => { const x = _mNorm(p.nome); return x && (x.includes(n) || n.includes(x)); }); return parc.length === 1 ? parc[0] : null; };
+  const atuais = await sql`SELECT id, projeto_id, descricao, valor, data_entrega, status_kanban FROM projetos_marcos`;
+  const porId = new Map(atuais.map(m => [m.id, m]));
+  const manuais = atuais.filter(m => !String(m.id).startsWith('mk_dash_'));
+  const usados = new Set(), alvo = 'elaborando_termo', iAlvo = _MK_ORD.indexOf(alvo);
+  const logar = async (id, txt) => { try { await sql`INSERT INTO projetos_marcos_log (id, marco_id, tipo, descricao, ator, criado_em) VALUES (${'log_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)}, ${id}, 'maestro_aprovado', ${txt}, ${'Maestro (sincronização)'}, NOW())`; } catch (_) {} };
+  for (const m of pend) {
+    const nome = String(m.nome || '').trim(), valor = _mNum(m.valor ?? m.aceite_valor), data = _mData(m.fim) || new Date().toISOString().slice(0, 10), mid = String(m.id);
+    if (!nome) { R.ignorados.push({ marco: '(sem nome)', projeto: m.proj || '', motivo: 'sem nome' }); if (executar) vistos[mid] = { em: new Date().toISOString(), ignorado: 'sem nome' }; continue; }
+    let pid = acharProj(m.proj)?.id || null;
+    if (!pid && m.proj) {
+      const c = cad.find(x => x.nome === m.proj) || {};
+      pid = 'proj_dash_' + _mNorm(m.proj).replace(/[^a-z0-9]+/g, '_').slice(0, 50);
+      if (!R.projetos_novos.some(x => x.id === pid)) R.projetos_novos.push({ id: pid, nome: m.proj });
+      if (executar) { await sql`INSERT INTO projetos_financeiros (id, nome, cliente, gerente_projeto_nome, valor_total, status, descricao)
+        VALUES (${pid}, ${String(m.proj).slice(0, 200)}, ${String(c.cliente || '').slice(0, 200) || null}, ${String(c.gerente || c.gp || '').slice(0, 200) || null}, ${_mNum(c.valor)}, 'ativo', ${'Importado do Maestro (marco aprovado pelo GP)'})
+        ON CONFLICT (id) DO NOTHING`; const novoP = { id: pid, nome: m.proj }; projs.push(novoP); porNome.set(_mNorm(m.proj), novoP); }
+    }
+    if (!pid) { R.ignorados.push({ marco: nome, projeto: '', motivo: 'sem projeto' }); if (executar) vistos[mid] = { em: new Date().toISOString(), ignorado: 'sem projeto' }; continue; }
+    const id = 'mk_dash_' + mid.replace(/[^\w-]/g, '').slice(0, 60);
+    let alvoId = porId.has(id) ? id : null;
+    if (!alvoId) { // marco igual criado aqui à mão: usa ele (não cria outro nem apaga)
+      const dist = x => Math.abs((Date.parse(_mData(x.data_entrega) || '1900-01-01') - Date.parse(data)) / 864e5);
+      const cands = manuais.filter(x => !usados.has(x.id) && x.projeto_id === pid && ((_mNorm(x.descricao) === _mNorm(nome) && dist(x) <= 45) || (valor > 0 && Math.abs(_mNum(x.valor) - valor) <= Math.max(1, valor * 0.01) && dist(x) <= 20)));
+      const dup = cands.sort((a, b) => (_mNorm(b.descricao) === _mNorm(nome)) - (_mNorm(a.descricao) === _mNorm(nome)) || dist(a) - dist(b))[0];
+      if (dup) { alvoId = dup.id; usados.add(dup.id); }
+    }
+    const item = { maestro_id: mid, id: alvoId || id, projeto: m.proj || '', descricao: nome, valor, data_entrega: data, status_maestro: m.status };
+    if (alvoId) {
+      const at = porId.get(alvoId);
+      if (_MK_ORD.indexOf(at.status_kanban) >= iAlvo) { R.ja_adiante++; if (executar) vistos[mid] = { em: new Date().toISOString(), id: alvoId, ja_adiante: at.status_kanban }; continue; }
+      R.movidos.push({ ...item, de: at.status_kanban });
+      if (executar) { await sql`UPDATE projetos_marcos SET status_kanban = ${alvo}, gp_aprovado_em = COALESCE(gp_aprovado_em, NOW()), gp_aprovado_por = COALESCE(gp_aprovado_por, ${'GP (Maestro)'}),
+          fin_termo_iniciado_em = COALESCE(fin_termo_iniciado_em, NOW()), atualizado_em = NOW() WHERE id = ${alvoId}`;
+        await logar(alvoId, 'Aprovado pelo GP no Maestro → movido de "' + at.status_kanban + '" para "Elaborando Termo"'); }
+    } else {
+      R.novos.push(item);
+      if (executar) { const pct = m.pct === '' || m.pct == null ? null : Math.max(0, Math.min(100, parseFloat(m.pct) || 0));
+        await sql`INSERT INTO projetos_marcos (id, projeto_id, descricao, data_entrega, percentual, valor, nota_fiscal, data_pagamento, status_kanban, observacoes, gp_aprovado_em, gp_aprovado_por, fin_termo_iniciado_em)
+          VALUES (${id}, ${pid}, ${nome.slice(0, 300)}, ${data}, ${pct}, ${valor}, ${m.nf ? String(m.nf).slice(0, 100) : null}, ${_mData(m.dataPag)}, ${alvo}, ${'[Aprovado pelo GP no Maestro] ' + String(m.obs || '').slice(0, 900)}, NOW(), ${'GP (Maestro)'}, NOW())
+          ON CONFLICT (id) DO NOTHING`;
+        await logar(id, 'Aprovado pelo GP no Maestro → criado em "Elaborando Termo"'); }
+    }
+    if (executar) vistos[mid] = { em: new Date().toISOString(), id: alvoId || id };
+  }
+  if (executar) { await _kvGravar(sql, K_APROV_VISTOS, vistos);
+    await _kvGravar(sql, K_APROV_ULTIMA, { em: new Date().toISOString(), origem, novos: R.novos.length, movidos: R.movidos.length, projetos_novos: R.projetos_novos.length, ignorados: R.ignorados.length }); }
+  R.resumo = { novos: R.novos.length, movidos: R.movidos.length, ja_adiante: R.ja_adiante, ignorados: R.ignorados.length, projetos_novos: R.projetos_novos.length };
+  return R;
+}
+
+// ═══ v3.245: PAGAMENTO MENSAL DE COLABORADORES (a tela do Maestro, aqui no menu Financeiro) ═══
+// Mesmos dados do Maestro: cadastro de analistas (com dados bancários), apontamentos de horas e a folha 'atlx_pag_mensal'.
+// A folha é gravada no próprio Maestro (com verificação de versão — se alguém gravou no meio, relê e refaz), então as
+// duas telas mostram sempre a mesma folha. Só administrador (tem dados bancários).
+const PAG_DOMINIOS = (process.env.PAG_EMAIL_DOMINIOS || 'atlanteam.com.br,atlantyx.io,atlantyx.com.br').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+async function _pagAdmin(req) {
+  let s = null; try { s = await lerSessao(req); } catch (_) {}
+  if (s?.admin || s?.perfil?.admin) return s;
+  let ativa = true; try { ativa = await authAtiva(); } catch (_) {}
+  if (!ativa) return s || { nome: '' };
+  const e = new Error('Somente administradores (a folha tem dados bancários).'); e.status = 403; throw e;
+}
+async function _pagLer(crono) {
+  const rows = await _q(crono, `SELECT key AS k, (value)::text AS v, COALESCE(ver,0) AS ver FROM atlx_store WHERE key = ANY($1)`, [['atlx_analistas_cad', 'atlx_apontamentos', 'atlx_pag_mensal']]);
+  const S = {}, V = {}; rows.forEach(r => { try { let v = JSON.parse(r.v); if (typeof v === 'string') v = JSON.parse(v); S[r.k] = v; } catch (_) {} V[r.k] = Number(r.ver) || 0; });
+  const ana = Array.isArray(S.atlx_analistas_cad) ? S.atlx_analistas_cad : (Array.isArray(S.atlx_analistas_cad?.itens) ? S.atlx_analistas_cad.itens : []);
+  const apts = Array.isArray(S.atlx_apontamentos) ? S.atlx_apontamentos : (Array.isArray(S.atlx_apontamentos?.itens) ? S.atlx_apontamentos.itens : []);
+  return { ana, apts, st: PAG.store(S.atlx_pag_mensal), existe: 'atlx_pag_mensal' in V, ver: V.atlx_pag_mensal || 0 };
+}
+async function _pagMudar(crono, mudar) {
+  for (let t = 0; t < 6; t++) {
+    const D = await _pagLer(crono); const st = mudar(D);
+    const j = JSON.stringify(st);
+    const r = D.existe
+      ? await _q(crono, `UPDATE atlx_store SET value = $1, updated_at = NOW(), ver = COALESCE(ver,0) + 1 WHERE key = 'atlx_pag_mensal' AND COALESCE(ver,0) = $2 RETURNING key`, [j, D.ver])
+      : await _q(crono, `INSERT INTO atlx_store (key, value, updated_at, ver) VALUES ('atlx_pag_mensal', $1, NOW(), 1) ON CONFLICT (key) DO NOTHING RETURNING key`, [j]);
+    if ((r?.rows || r || []).length) return;
+    await new Promise(ok => setTimeout(ok, 40 + Math.random() * 120));
+  }
+  throw new Error('Outra pessoa está gravando a folha no Maestro agora — tente de novo em instantes.');
+}
+function _pagResposta(D, mes, hoje) {
+  const L = PAG.linhas(D.ana, D.apts, D.st, mes), fo = D.st.folhas[mes] || {}, H = PAG.historico(D.ana, D.apts, D.st, hoje);
+  return { mes, mes_label: PAG.mesLabel(mes), mes_anterior: PAG.mesAnterior(hoje), gravada: PAG.gravada(D.st, mes), status: (H.find(x => x.mes === mes) || { status: 'não gravada' }).status,
+    snap: fo.snap ? { em: fo.snap.em, por: fo.snap.por, versao: fo.snap.versao } : null, atualizado_em: fo.atualizadoEm || null, por: fo.por || '',
+    linhas: L, totais: PAG.totais(L), historico: H, analistas: D.ana.length };
+}
+async function pagColab({ op = 'ler', mes, id, campo, valor, para, pdf } = {}, req) {
+  const s = await _pagAdmin(req), quem = s?.nome || s?.login || '';
+  const hoje = new Date().toISOString().slice(0, 10);
+  mes = /^\d{4}-\d{2}$/.test(String(mes || '')) ? String(mes) : PAG.mesAnterior(hoje);
+  const crono = await getSqlCrono();
+  if (op === 'editar') await _pagMudar(crono, D => PAG.editarCampo(D.st, mes, String(id || ''), campo, valor, quem));
+  else if (op === 'recalcular') await _pagMudar(crono, D => PAG.recalcular(D.st, mes, quem));
+  else if (op === 'gravar') await _pagMudar(crono, D => PAG.gravar(D.st, mes, PAG.linhasVivas(D.ana, D.apts, D.st, mes), quem));
+  else if (op === 'reabrir') await _pagMudar(crono, D => PAG.reabrir(D.st, mes, quem));
+  else if (op === 'email') {
+    const dest = String(para || '').split(/[;,\s]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
+    if (!dest.length || dest.length > 5) { const e = new Error('Informe de 1 a 5 destinatários.'); e.status = 400; throw e; }
+    const ruim = dest.filter(e => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) || !PAG_DOMINIOS.includes(e.split('@')[1]));
+    if (ruim.length) { const e = new Error('Destinatário fora dos domínios da empresa (' + PAG_DOMINIOS.join(', ') + '): ' + ruim.join(', ')); e.status = 400; throw e; }
+    let buf = null; if (pdf) { buf = Buffer.from(String(pdf), 'base64'); if (buf.length > 8 * 1024 * 1024 || buf.slice(0, 4).toString() !== '%PDF') { const e = new Error('PDF inválido.'); e.status = 400; throw e; } }
+    let D = await _pagLer(crono);
+    if (!PAG.gravada(D.st, mes)) { await _pagMudar(crono, X => PAG.gravar(X.st, mes, PAG.linhasVivas(X.ana, X.apts, X.st, mes), quem)); D = await _pagLer(crono); }
+    const L = PAG.linhas(D.ana, D.apts, D.st, mes), T = PAG.totais(L), lab = PAG.mesLabel(mes);
+    const esc = x => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const brl = v => 'R$ ' + (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#111"><p>Olá, financeiro.</p><p>Segue a lista de pagamento dos colaboradores referente a <b>${esc(lab)}</b>: <b>${brl(T.total)}</b> para ${T.qtd} colaborador(es).${buf ? ' O PDF vai em anexo.' : ''}</p>
+      <table cellpadding="6" style="border-collapse:collapse;font-size:12px"><tr style="background:#0077B6;color:#fff"><th align="left">Colaborador</th><th align="right">Horas</th><th align="right">Valor hora</th><th align="right">Valor a pagar</th><th align="left">Dados bancários</th></tr>
+      ${L.filter(l => l.valor > 0).map(l => `<tr style="border-top:1px solid #ddd"><td>${esc(l.nome)}</td><td align="right">${(Number(l.horas) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}</td><td align="right">${brl(l.vh)}</td><td align="right"><b>${brl(l.valor)}</b></td><td>${esc(l.banco)}${l.obs ? '<br><i>' + esc(l.obs) + '</i>' : ''}</td></tr>`).join('')}
+      <tr style="border-top:2px solid #333"><td><b>TOTAL</b></td><td></td><td></td><td align="right"><b>${brl(T.total)}</b></td><td></td></tr></table>
+      <p style="color:#666;font-size:11px">Enviado pelo Atlantyx OS${quem ? ' por ' + esc(quem) : ''}. Documento confidencial.</p></div>`;
+    const { enviarEmailGmail } = await import('./financeiro.js');
+    await enviarEmailGmail({ para: dest, assunto: `Pagamento colaboradores — ${lab} — ${brl(T.total)}`, html, remetente: 'Atlantyx OS Financeiro',
+      anexos: buf ? [{ filename: `pagamento_colaboradores_${mes}.pdf`, content: buf, contentType: 'application/pdf' }] : [] });
+    await _pagMudar(crono, X => PAG.registrarEnvio(X.st, mes, dest.join(', '), quem, T.total));
+  } else if (op !== 'ler') { const e = new Error('op inválida'); e.status = 400; throw e; }
+  return _pagResposta(await _pagLer(crono), mes, hoje);
 }
 
 // ═══ v1.95: RAIO-X DO PROJETO ═══
@@ -1601,6 +1757,8 @@ async function handler(req, res) {
     painel_mestre:     () => painelMestre(payload),
     maestro_painel:    () => maestroPainel(payload),
     maestro_importar_marcos: () => maestroImportarMarcos(payload, req), // v3.226
+    maestro_aprovados_sinc: () => maestroAprovadosSinc(payload, req), // v3.245
+    pag_colab:         () => pagColab(payload, req), // v3.245
     raio_x_projeto:    () => raioXProjeto(payload),
     agenda_gp:         () => agendaGP(payload),
     compromisso_salvar:() => compromissoSalvar(payload),

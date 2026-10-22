@@ -97,6 +97,15 @@ async function handler(req, res) {
       return res.status(200).json({ success: true, cron: 'conciliar_notas', ...r });
     } catch (e) { console.error('[cron conciliar_notas]', e.message); return res.status(500).json({ success: false, error: e.message }); }
   }
+  // v3.245: marcos aprovados pelo GP no Maestro → Kanban de Marcos em "Elaborando Termo" (a cada 10 min)
+  if (req.query?.cron === 'maestro_aprovados') {
+    try {
+      const { maestroAprovadosSinc } = await import('./pmo.js');
+      const r = await maestroAprovadosSinc({ executar: true, origem: 'cron' });
+      console.log('[cron maestro_aprovados]', JSON.stringify(r.resumo || { desligado: r.desligado, erro: r.erro }));
+      return res.status(r.erro ? 500 : 200).json({ success: !r.erro, cron: 'maestro_aprovados', ...(r.resumo || {}), desligado: r.desligado || false, erro: r.erro || null });
+    } catch (e) { console.error('[cron maestro_aprovados]', e.message); return res.status(500).json({ success: false, error: e.message }); }
+  }
   if (req.query?.cron === 'termos_obrigatorios') {
     try {
       const r = await alertaTermosDoMes({});
@@ -310,6 +319,7 @@ async function handler(req, res) {
       marco_get:             () => marcoGet(params),
       marco_delete:          () => marcoDelete(params),
       marco_mover_status:    () => marcoMoverStatus(params),
+      marcos_vincular_termo: () => marcosVincularTermo(params), // v3.245
       marco_upload_termo:    () => marcoUploadTermo(params),
       marco_enviar_termo:    () => marcoEnviarTermo(params),
       marco_log:             () => marcoLog(params),
@@ -8650,6 +8660,19 @@ async function logMarco(sql, marco_id, tipo, de, para, descricao, ator, email_de
 }
 
 // ─── Kanban: agregação por coluna ─────────────────────────────────────────
+// v3.245: liga os marcos marcados ao termo gerado (Gerar termo) — kv 'fin:marco_termo' { <marco_id>: { termo_id, numero, em } }
+async function marcosVincularTermo({ ids = [], termo_id, numero } = {}) {
+  ids = (Array.isArray(ids) ? ids : []).map(String).filter(Boolean).slice(0, 200);
+  if (!ids.length || !termo_id) throw new Error('ids e termo_id obrigatórios');
+  const sql = await getSql();
+  let m = {}; try { const kv = await sql`SELECT value FROM kv_store WHERE key = 'fin:marco_termo'`; m = (typeof kv[0]?.value === 'string' ? JSON.parse(kv[0].value) : kv[0]?.value) || {}; } catch (_) {}
+  const em = new Date().toISOString();
+  for (const id of ids) m[id] = { termo_id: String(termo_id), numero: numero ? String(numero).slice(0, 40) : null, em };
+  await sql`INSERT INTO kv_store (key, value, updated_at) VALUES ('fin:marco_termo', ${JSON.stringify(m)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
+  for (const id of ids) { try { await sql`INSERT INTO projetos_marcos_log (id, marco_id, tipo, descricao, ator, criado_em) VALUES (${'log_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)}, ${id}, 'termo', ${'Termo ' + (numero || termo_id) + ' gerado a partir deste marco'}, ${'Financeiro'}, NOW())`; } catch (_) {} }
+  return { vinculados: ids.length };
+}
+
 async function marcosKanban({ projeto_id } = {}) {
   const sql = await getSql();
   const rows = projeto_id
@@ -8668,6 +8691,7 @@ async function marcosKanban({ projeto_id } = {}) {
         WHERE COALESCE(p.status, 'ativo') NOT IN ('cancelado', 'encerrado', 'inativo') -- v3.113: projeto cancelado/encerrado não conta "em fluxo"
         ORDER BY m.data_entrega ASC`;
 
+  let _vinc = {}; try { const kv = await sql`SELECT value FROM kv_store WHERE key = 'fin:marco_termo'`; _vinc = (typeof kv[0]?.value === 'string' ? JSON.parse(kv[0].value) : kv[0]?.value) || {}; } catch (_) {} // v3.245
   const colunas = {};
   for (const c of KANBAN_COLUNAS) {
     colunas[c] = { label: KANBAN_LABEL[c].label, cor: KANBAN_LABEL[c].cor, marcos: [] };
@@ -8680,6 +8704,8 @@ async function marcosKanban({ projeto_id } = {}) {
       data_entrega: r.data_entrega ? String(r.data_entrega).split('T')[0] : null,
       data_pagamento: r.data_pagamento ? String(r.data_pagamento).split('T')[0] : null,
       tem_termo: !!r.arquivo_termo_base64,
+      termo_gerado: _vinc[r.id] || null, // v3.245: termo gerado a partir deste marco (Gerar termo)
+      do_maestro: String(r.id).startsWith('mk_dash_'),
     };
     delete m.arquivo_termo_base64;
     if (colunas[r.status_kanban]) colunas[r.status_kanban].marcos.push(m);
