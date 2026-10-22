@@ -334,14 +334,16 @@ async function handler(req, res) {
     // "desatualizado" e a tela pede a versão nova em seguida (params._forcar). Botão Atualizar força.
     const CACHE_FIN = { dashboard_financeiro: 1, fluxo_detalhado: 1, extrato_diario: 1, extrato_mensal: 1, painel_resumo: 1, resultado_kpis: 1, fin_v2: 1 };
     if (CACHE_FIN[action]) {
-      const { _forcar, ...pChave } = params || {};
+      const { _forcar, _max_idade, ...pChave } = params || {};
+      // v3.232: chamadas internas (TV, vendas, rito) pedem dado de no máximo alguns minutos — antes aceitavam até 12 h
+      const maxIdade = Math.max(30, Math.min(12 * 3600, Number(_max_idade) || 12 * 3600));
       // v3.231: a data de hoje entra na chave — pedidos sem datas ("mês atual") não servem mais o mês anterior na virada
       const chave = 'cache:fin:' + action + ':' + _hojeBR() + ':' + JSON.stringify(pChave).substring(0, 380);
       let sqlC = null; try { sqlC = await getSql(); } catch (_) {}
       if (sqlC && !_forcar) {
         try { const c = await sqlC`SELECT value, updated_at FROM kv_store WHERE key = ${chave} LIMIT 1`;
           if (c[0]) { const idade = (Date.now() - new Date(c[0].updated_at).getTime()) / 1000; const v = typeof c[0].value === 'string' ? JSON.parse(c[0].value) : c[0].value;
-            if (idade < 12 * 3600 && v) return res.status(200).json({ success: true, action, ...v, _cache: { idade_s: Math.round(idade), stale: idade > 180 } }); } } catch (_) {}
+            if (idade < maxIdade && v) return res.status(200).json({ success: true, action, ...v, _cache: { idade_s: Math.round(idade), stale: idade > 180 } }); } } catch (_) {}
       }
       const resultado = await acoes[action]();
       // v3.231: resultado com erro/incompleto (QuickBooks fora, limite de chamadas, saldo inicial não lido) não vai para o cache
@@ -1087,7 +1089,7 @@ function _htmlRelatorioExtra(d) {
     + bloco('💳', 'Termos com pagamento pendente', '#4F7CFF', T.pagamento_pendente, cabT('Recebimento pelo cliente'), lT(t => t.cpfl_confirmado ? '✓ confirmado' + (t.previsao ? ' · prev. ' + dt(t.previsao) : '') : '<span style="color:#E0A422;">a confirmar</span>'), 'Nenhum termo aguardando pagamento.')
     + bloco('📌', 'Termos não pagos (todas as etapas)', '#8a93a8', T.nao_pagos, cabT(''), lT(), 'Todos os termos estão pagos.')
     + `<h2 style="font-size:15px;color:#17224a;border-bottom:2px solid #E0A422;padding-bottom:5px;margin-top:28px;">💰 Pagamentos — situação do mês</h2>`
-    + bloco('⚠', 'Pagamentos em atraso', '#D64545', d.atrasadas, ['Vencimento', 'Descrição', 'Categoria', 'Valor'], lP, 'Nenhum pagamento em atraso.')
+    + bloco('⚠', 'Pagamentos em atraso neste mês', '#D64545', d.atrasadas, ['Vencimento', 'Descrição', 'Categoria', 'Valor'], lP, 'Nenhum pagamento em atraso neste mês.', 'Vencidos de meses anteriores: Dashboard → Financeiro → Vencidos em aberto.')
     + bloco('⧉', 'Possíveis pagamentos duplicados', '#D64545', (X.duplicados || []).map(x => ({ ...x, valor: x.valor })), ['Lançamento 1', 'Lançamento 2', 'Situação', 'Valor'],
       x => `<tr>${td(aLink(uLanc(x.a), esc(x.a.descricao)) + '<br><span style="color:#8a93a8;font-size:11px;">' + dt(x.a.data) + ' · ' + (x.a.fonte === 'quickbooks' ? 'QuickBooks' : 'Atlantyx') + '</span>')}${td(aLink(uLanc(x.b), esc(x.b.descricao)) + '<br><span style="color:#8a93a8;font-size:11px;">' + dt(x.b.data) + ' · ' + (x.b.fonte === 'quickbooks' ? 'QuickBooks' : 'Atlantyx') + '</span>')}${td(x.a.situacao + ' / ' + x.b.situacao)}${td(brl(x.valor), 'text-align:right;font-family:monospace;')}</tr>`,
       'Nenhum lançamento com mesmo fornecedor e valor em até 5 dias.', 'Mesmo fornecedor/descrição e mesmo valor com até 5 dias de diferença — confira antes de pagar.')
@@ -4562,7 +4564,8 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
   let saldoPartida = null;
   try {
     const ini = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
-    const ext = await extratoConsolidado({ data_inicio: ini, data_fim: hoje.toISOString().split('T')[0], incluir_simulados: true, conta_id });
+    // v3.232: saldo de partida SEM simulações passadas (igual ao "Saldo hoje" do Dashboard/TV); as futuras entram na projeção
+    const ext = await extratoConsolidado({ data_inicio: ini, data_fim: _hojeBR(), incluir_simulados: false, conta_id });
     realizadoMesCorrente = { entradas: ext.total_entradas || 0, saidas: ext.total_saidas || 0 };
     if (ext.saldo_inicial != null && ext.saldo_inicial_origem !== 'zero') {
       saldoPartida = round(ext.saldo_inicial);
@@ -4784,6 +4787,11 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
 // 9. KPIs determinísticos de saúde
 // ═══════════════════════════════════════════════════════════════════════════
 
+// v3.232: UMA regra de semáforo para runway e para margem, usada em todas as telas (antes eram três de cada)
+//  runway: ≥ 12 meses (ou sem queima e caixa cobrindo ≥ 1 mês de gastos) verde · 6–12 amarelo · < 6 vermelho
+//  margem: ≥ meta verde · até 5 p.p. abaixo amarelo · pior vermelho (sem meta: ≥ 15% verde · ≥ 0% amarelo)
+function _runwaySem(rw, cobertura) { if (rw == null || !isFinite(rw)) return 'cinza'; if (rw >= 999) return cobertura != null && cobertura < 1 ? 'amarelo' : 'verde'; return rw >= 12 ? 'verde' : rw >= 6 ? 'amarelo' : 'vermelho'; }
+function _margemSem(mg, meta) { if (mg == null || !isFinite(mg)) return 'cinza'; if (meta != null && isFinite(meta)) return mg >= meta ? 'verde' : mg >= meta - 5 ? 'amarelo' : 'vermelho'; return mg >= 15 ? 'verde' : mg >= 0 ? 'amarelo' : 'vermelho'; }
 async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}) {
   const kpis = {
     saldo_caixa: 0,
@@ -4957,6 +4965,7 @@ async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}
   // Semáforo de saúde
   const motivos = [];
   let score = 0;
+  kpis.runway_semaforo = _runwaySem(kpis.runway_meses, kpis.cobertura_caixa_meses);
   if (kpis.runway_meses !== null) {
     if (kpis.runway_meses === 999 && kpis.cobertura_caixa_meses != null && kpis.cobertura_caixa_meses < 1) { score += 1; motivos.push(`Sem queima líquida, mas o caixa cobre só ${String(kpis.cobertura_caixa_meses).replace('.', ',')} mês de gastos ⚠`); }
     else if (kpis.runway_meses >= 12) { score += 2; motivos.push(kpis.runway_meses === 999 ? 'Sem queima de caixa (faturamento cobre os gastos) ✓' : 'Runway > 12 meses ✓'); }
@@ -4964,10 +4973,12 @@ async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}
     else motivos.push(`Runway curto: ${kpis.runway_meses} meses ⚠`);
   }
   { const mg = kpis.margem_liquida_ano_pct ?? kpis.margem_liquida_pct; // v3.112: margem acumulada no ano (mês corrente é parcial)
+    let metaMg = null; try { metaMg = (await _metasComPadrao([parseInt(_hojeBR())])).por_ano?.[_hojeBR().slice(0, 4)]?.margem_pct ?? null; } catch (_) {}
+    kpis.margem_semaforo = _margemSem(mg, metaMg); kpis.margem_meta_pct = metaMg;
     if (mg != null) {
-      if (mg >= 15) { score += 2; motivos.push(`Margem no ano ${mg}% ✓`); }
-      else if (mg >= 0) { score += 1; motivos.push(`Margem no ano ${mg}%`); }
-      else motivos.push(`Margem negativa no ano ${mg}% ⚠`);
+      if (kpis.margem_semaforo === 'verde') { score += 2; motivos.push(`Margem no ano ${mg}% ✓`); }
+      else if (kpis.margem_semaforo === 'amarelo') { score += 1; motivos.push(`Margem no ano ${mg}%${metaMg != null ? ' (meta ' + metaMg + '%)' : ''}`); }
+      else motivos.push(`Margem no ano ${mg}%${metaMg != null ? ' — abaixo da meta de ' + metaMg + '%' : ''} ⚠`);
     } }
   if (kpis.liquidez_corrente === null && !(kpis.contas_pagar > 0) && (kpis.saldo_caixa + kpis.contas_receber) > 0) {
     score += 2; motivos.push('Sem contas a pagar em aberto ✓'); // v3.112: antes ficava sem nota e o semáforo nunca chegava ao verde
@@ -5035,12 +5046,12 @@ function _drePeriodo({ data_inicio, data_fim, mes, ano } = {}) {
 }
 const _DRE_GRUPOS = { Income: 'Receita', COGS: 'Custo dos serviços', GrossProfit: 'Lucro bruto', Expenses: 'Despesas operacionais', NetOperatingIncome: 'Resultado operacional',
   OtherIncome: 'Outras receitas', OtherExpenses: 'Outras despesas', NetOtherIncome: 'Resultado não operacional', NetIncome: 'Lucro líquido' };
-async function dreArvore({ data_inicio, data_fim, mes, ano, metodo = 'Accrual' } = {}) {
+async function dreArvore({ data_inicio, data_fim, mes, ano, metodo = 'Cash' } = {}) {
   if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
   const { ini, fim } = _drePeriodo({ data_inicio, data_fim, mes, ano });
   const token = await qbToken();
   const multi = ini.substring(0, 7) !== fim.substring(0, 7);
-  const rep = await qbPL(ini, fim, token, multi ? '&summarize_column_by=Month' : '', metodo === 'Cash' ? 'Cash' : 'Accrual');
+  const rep = await qbPL(ini, fim, token, multi ? '&summarize_column_by=Month' : '', _met(metodo));
   const cols = (rep?.Columns?.Column || []).map(c => c.ColTitle || '');
   const nV = Math.max(1, cols.length - 1);
   const vals = cd => Array.from({ length: nV }, (_, i) => { const x = parseFloat(cd?.[i + 1]?.value); return isFinite(x) ? round(x) : 0; });
@@ -5062,13 +5073,13 @@ const _QB_TIPO_TELA = [[/^(invoice|fatura)/i, 'invoice'], [/^(bill payment|pagam
   [/^(check|cheque)/i, 'check'], [/^(deposit|dep[oó]sito)/i, 'deposit'], [/^(journal|lan[cç]amento|di[aá]rio)/i, 'journal'], [/^(payment|recebimento|pagamento)/i, 'recvpayment'],
   [/^(sales receipt|recibo de venda)/i, 'salesreceipt'], [/^(transfer|transfer[eê]ncia)/i, 'transfer'], [/^(credit card|cart[aã]o)/i, 'creditcardcredit'], [/^(vendor credit|cr[eé]dito de fornecedor)/i, 'vendorcredit'],
   [/^(credit memo|nota de cr[eé]dito)/i, 'creditmemo'], [/^(refund|reembolso)/i, 'refundreceipt']];
-async function dreContaLancamentos({ conta_id, data_inicio, data_fim, mes, ano, metodo = 'Accrual' } = {}) {
+async function dreContaLancamentos({ conta_id, data_inicio, data_fim, mes, ano, metodo = 'Cash' } = {}) {
   if (!conta_id) throw new Error('conta_id obrigatório');
   if (!qbConfigurado()) return { erro: 'QuickBooks não configurado' };
   const { ini, fim } = _drePeriodo({ data_inicio, data_fim, mes, ano });
   const token = await qbToken();
   const id = String(conta_id).replace(/[^\w]/g, '');
-  const rep = await qbFetch(`/reports/GeneralLedger?start_date=${ini}&end_date=${fim}&accounting_method=${metodo === 'Cash' ? 'Cash' : 'Accrual'}&account=${id}&columns=tx_date,txn_type,doc_num,name,memo,split_acc,subt_nat_amount`, token);
+  const rep = await qbFetch(`/reports/GeneralLedger?start_date=${ini}&end_date=${fim}&accounting_method=${_met(metodo)}&account=${id}&columns=tx_date,txn_type,doc_num,name,memo,split_acc,subt_nat_amount`, token);
   const cols = (rep?.Columns?.Column || []).map(c => (c.MetaData || []).find(m => m.Name === 'ColKey')?.Value || c.ColTitle || '');
   const ix = k => cols.indexOf(k);
   const base = process.env.QB_SANDBOX === 'true' ? 'https://app.sandbox.qbo.intuit.com' : 'https://app.qbo.intuit.com';
@@ -5090,8 +5101,9 @@ async function dreContaLancamentos({ conta_id, data_inicio, data_fim, mes, ano, 
   return { conta_id: id, conta, de: ini, ate: fim, qtd: lanc.length, total: round(lanc.reduce((a, l) => a + l.valor, 0)), lancamentos: lanc.slice(0, 500) };
 }
 // v3.124: regime escolhido na tela (competência = Accrual, padrão · caixa = Cash) — vale para todos os indicadores da DRE
-const _met = m => /^(cash|caixa)$/i.test(String(m || '')) ? 'Cash' : 'Accrual';
-function qbPL(ini, fim, token, extra = '', metodo = 'Accrual') {
+// v3.232: padrão da Atlantyx = REGIME DE CAIXA; competência só quando pedida explicitamente
+const _met = m => /^(accrual|competencia|competência)$/i.test(String(m || '')) ? 'Accrual' : 'Cash';
+function qbPL(ini, fim, token, extra = '', metodo = 'Cash') {
   return qbFetch(`/reports/ProfitAndLoss?start_date=${ini}&end_date=${fim}&accounting_method=${metodo}${extra}`, token);
 }
 // v3.114: série mensal (faturamento, gastos e lucro por mês) da DRE pedida com summarize_column_by=Month
@@ -5181,7 +5193,8 @@ async function _metasComPadrao(anos = []) {
     const k = String(a); if (!m.por_ano[k]?.faturamento && METAS_DEFINIDAS[k]) m.por_ano[k] = { ...METAS_DEFINIDAS[k] };
     const cad = m.por_ano[k];
     if (cad?.faturamento) { if (cad.margem_pct == null) cad.margem_pct = pad.margem_pct; continue; }
-    let base = null; try { base = await _faturamentoAno(a - 1); } catch (_) {}
+    // v3.232: só usa o faturamento do ano anterior se ele já FECHOU (antes, em 2027, a meta de 2028 cresceria sobre o 2027 parcial)
+    let base = null; if (a - 1 < parseInt(_hojeBR())) { try { base = await _faturamentoAno(a - 1); } catch (_) {} }
     // ano seguinte ao corrente sem realizado completo: cresce sobre a meta (cadastrada ou padrão) do ano anterior
     if (!(base > 0) && m.por_ano[String(a - 1)]?.faturamento) base = m.por_ano[String(a - 1)].faturamento;
     if (base > 0) m.por_ano[k] = { faturamento: round(base * (1 + pad.crescimento_pct / 100)), margem_pct: pad.margem_pct, crescimento_pct: pad.crescimento_pct,
@@ -5264,9 +5277,16 @@ async function metasEmpresaStatus({ ano, com_crm = true, _forcar = false, metodo
   out.realizado = P ? { faturamento: P.faturamento, lucro_liquido: P.lucro_liquido, margem_pct: P.margem_liquida_pct } : (a > anoAtual ? { faturamento: 0, lucro_liquido: 0, margem_pct: null } : null);
   if (R?.erros?.length) out.erros.push(...R.erros);
   if (metaFat && real != null) {
-    const esperado = metaFat * frac, falta = Math.max(0, metaFat - real);
+    // v3.232: com meta mês a mês cadastrada, o "esperado até hoje" segue essa distribuição (meses fechados + fração do mês
+    // atual) — o mesmo critério do Dashboard/LIVE/fv2; sem ela, continua proporcional aos dias do ano
+    let fracMeta = frac;
+    const mens = Array.isArray(def?.mensal) && def.mensal.length === 12 && def.mensal.some(v => Number(v) > 0) ? def.mensal.map(v => Number(v) || 0) : null;
+    if (mens && a === anoAtual) { const mi = parseInt(hoje.substring(5, 7)) - 1, dia = parseInt(hoje.substring(8, 10)), dm = new Date(a, mi + 1, 0).getDate();
+      const tot = mens.reduce((x, y) => x + y, 0); if (tot > 0) fracMeta = (mens.slice(0, mi).reduce((x, y) => x + y, 0) + mens[mi] * dia / dm) / tot; }
+    else if (mens && a < anoAtual) fracMeta = 1;
+    const esperado = metaFat * fracMeta, falta = Math.max(0, metaFat - real);
     const ritmo = esperado > 0 ? real / esperado : null;
-    const projecao = frac > 0.05 && a === anoAtual ? real / frac : null;
+    const projecao = fracMeta > 0.05 && a === anoAtual ? real / fracMeta : null;
     out.faturamento = { meta: metaFat, realizado: real, pct_atingido: Math.round(real / metaFat * 1000) / 10, esperado_ate_hoje: round(esperado),
       falta: round(falta), ritmo_pct: ritmo != null ? Math.round(ritmo * 1000) / 10 : null, projecao_fechamento: projecao != null ? round(projecao) : null,
       meses_restantes: a === anoAtual ? 12 - parseInt(hoje.substring(5, 7)) + 1 : a > anoAtual ? 12 : 0,
@@ -5277,7 +5297,7 @@ async function metasEmpresaStatus({ ano, com_crm = true, _forcar = false, metodo
     const mg = out.realizado?.margem_pct;
     out.margem = { meta_pct: metaMg, realizado_pct: mg ?? null, diferenca_pp: mg != null ? Math.round((mg - metaMg) * 10) / 10 : null,
       lucro_meta: metaFat ? round(metaFat * metaMg / 100) : null, lucro_realizado: out.realizado?.lucro_liquido ?? null,
-      semaforo: mg == null ? 'cinza' : mg >= metaMg ? 'verde' : mg >= metaMg - 5 ? 'amarelo' : 'vermelho' };
+      semaforo: _margemSem(mg, metaMg) };
   }
   if (crm.status === 'fulfilled' && crm.value) {
     out.crm = crm.value; const f = out.faturamento?.falta;
@@ -5288,6 +5308,11 @@ async function metasEmpresaStatus({ ano, com_crm = true, _forcar = false, metodo
   if (out.situacao !== 'encerrado') try { const rp = await receitasPrevistas({ meses: Math.min(36, Math.max(13, (a - anoAtual) * 12 + 13 - parseInt(hoje.substring(5, 7)))) }); /* v3.231: até dezembro do ano escolhido */ const ini = `${a}-01-01`, fimA = `${a}-12-31`;
     const L = rp.ativas.filter(o => o.data >= ini && o.data <= fimA); const soma = k => round(L.filter(o => !k || o.origem === k).reduce((t, o) => t + o.valor, 0));
     out.carteira = { prevista: soma(), marcos: soma('marco'), sustentacoes: soma('sustentacao'), avulsas: soma('manual'), qtd: L.length, qb_conferido: rp.qb_conferido };
+    // v3.232: no regime de CAIXA, a fatura emitida e ainda não recebida (vence até 31/12) também é carteira — ela saiu da
+    // previsão quando virou fatura e só entra no realizado quando for paga (antes não aparecia em nenhum dos dois)
+    if (_met(metodo) === 'Cash' && qbConfigurado()) { try { const token = await qbToken(); const d = await qbQuery(`select * from Invoice where Balance > '0' maxresults 1000`, token);
+      const fat = (d?.QueryResponse?.Invoice || []).filter(i => String(i.DueDate || i.TxnDate) <= fimA); out.carteira.faturas_a_receber = round(fat.reduce((t, i) => t + parseFloat(i.Balance || 0), 0)); out.carteira.qtd_faturas = fat.length;
+      out.carteira.prevista = round(out.carteira.prevista + out.carteira.faturas_a_receber); } catch (e) { out.erros.push('Faturas a receber (carteira): ' + e.message); } }
     if (out.faturamento) { const real = Number(out.faturamento.realizado) || 0, falta = Number(out.faturamento.falta) || 0;
       out.faturamento.projecao_com_carteira = round(real + out.carteira.prevista);
       out.carteira.cobre_pct = falta > 0 ? Math.round(out.carteira.prevista / falta * 1000) / 10 : null; }
@@ -5370,7 +5395,7 @@ async function resultadoKpis({ data_inicio = null, data_fim = null, mes = null, 
   const p = out.periodo_res;
   if (p && p.margem_liquida_pct != null) {
     const m = p.margem_liquida_pct, meta = out.meta_margem.pct;
-    out.semaforo_margem = m < 0 ? 'vermelho' : m < meta ? 'amarelo' : 'verde';
+    out.semaforo_margem = _margemSem(m, meta); // v3.232: mesma regra das Metas e da Saúde
   } else out.semaforo_margem = 'cinza';
   // v3.123: METAS DO PERÍODO ao lado de cada indicador — 1º as Metas do ano (faturamento anual ÷ 12 × meses do período,
   // lucro = faturamento × % de lucro); 2º o Orçamento Anual do QuickBooks (receita e despesa orçadas nos meses do período).
@@ -6954,14 +6979,14 @@ function _mesDaColunaQB(titulo, anoRef, indiceColuna) {
 async function dreMensal({ meses = 12 } = {}) {
   if (!qbConfigurado()) return { disponivel: false, motivo: 'QuickBooks não conectado', meses: [], grupos: {}, contas: [] };
   const n = Math.max(3, Math.min(24, Number(meses) || 12));
-  const hoje = new Date();
+  const hoje = new Date(_hojeBR() + 'T12:00:00'); // v3.232: Brasília
   const fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0);
   const ini = new Date(fim.getFullYear(), fim.getMonth() - n + 1, 1);
   const ds = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const listaMeses = [];
   for (let i = 0; i < n; i++) { const d = new Date(ini.getFullYear(), ini.getMonth() + i, 1); listaMeses.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); }
   const token = await qbToken();
-  const data = await qbFetch(`/reports/ProfitAndLoss?start_date=${ds(ini)}&end_date=${ds(fim)}&summarize_column_by=Month`, token);
+  const data = await qbFetch(`/reports/ProfitAndLoss?start_date=${ds(ini)}&end_date=${ds(fim)}&summarize_column_by=Month&accounting_method=Cash`, token); // v3.232: caixa (antes o padrão da empresa no QB)
   const colNames = (data?.Columns?.Column || []).map(c => c.ColTitle || c.MetaData?.[0]?.Value || '');
   const colMes = colNames.map((t, i) => (i === 0 ? null : _mesDaColunaQB(t, ini.getFullYear(), i)));
   const val = v => parseFloat(String(v || '0').replace(/[^\d.-]/g, '')) || 0;
@@ -7438,7 +7463,7 @@ async function projetadoFontes({ meses = 12 } = {}) {
   } catch (_) {}
   return out;
 }
-async function orcamentoDre({ inicio, meses: nMeses = 12, crm = null, prevista = true } = {}) {
+async function orcamentoDre({ inicio, meses: nMeses = 12, crm = null, prevista = true, metodo = 'Cash' } = {}) {
   const hoje = _hojeBR(), mesHoje = hoje.substring(0, 7);
   const ini = /^\d{4}-\d{2}$/.test(String(inicio || '')) ? inicio : (() => { const d = new Date(hoje + 'T12:00:00'); d.setMonth(d.getMonth() - 5); return d.toISOString().substring(0, 7); })();
   const N = Math.max(3, Math.min(24, parseInt(nMeses) || 12));
@@ -7473,7 +7498,7 @@ async function orcamentoDre({ inicio, meses: nMeses = 12, crm = null, prevista =
     // REALIZADO — DRE mensal do início da janela até o mês atual
     const fimReal = mesHoje < fimJanela ? hoje : ultimoDia(fimJanela);
     if (ini <= mesHoje) try {
-      const data = await qbFetch(`/reports/ProfitAndLoss?start_date=${ini}-01&end_date=${fimReal}&summarize_column_by=Month&accounting_method=Accrual`, token);
+      const data = await qbFetch(`/reports/ProfitAndLoss?start_date=${ini}-01&end_date=${fimReal}&summarize_column_by=Month&accounting_method=${_met(metodo)}`, token); /* v3.232: orçamento × real em regime de caixa (padrão) */
       const cols = (data?.Columns?.Column || []).map(c => c.ColTitle || ''); const mesCol = cols.map((t, i) => i === 0 ? null : (_mesDaColunaQB(t, ini.substring(0, 4), -1) || meses[i - 1] || null));
       const walk = (row, grupoQB) => {
         if (row.type === 'Section' || row.Rows) { const g = row.group || grupoQB; (row.Rows?.Row || []).forEach(r => walk(r, g)); return; }
@@ -7550,7 +7575,7 @@ async function orcamentoDre({ inicio, meses: nMeses = 12, crm = null, prevista =
   return out;
 }
 
-async function orcamentoConsolidado({ ano } = {}) {
+async function orcamentoConsolidado({ ano, metodo = 'Cash' } = {}) {
   const anoRef = parseInt(ano) || parseInt(_hojeBR().substring(0, 4)); // v3.113: ano em texto ('2026') não batia com o ano corrente
   const inicioAno = `${anoRef}-01-01`;
   const fimAno = `${anoRef}-12-31`;
@@ -7577,7 +7602,7 @@ async function orcamentoConsolidado({ ano } = {}) {
     try {
       const token = await qbToken();
       // Buscar DRE do ano todo, agrupado por mês
-      const data = await qbFetch(`/reports/ProfitAndLoss?start_date=${inicioAno}&end_date=${String(anoRef) === hoje.substring(0, 4) ? hoje : fimAno}&summarize_column_by=Month&accounting_method=Accrual`, token); // v3.112: competência
+      const data = await qbFetch(`/reports/ProfitAndLoss?start_date=${inicioAno}&end_date=${String(anoRef) === hoje.substring(0, 4) ? hoje : fimAno}&summarize_column_by=Month&accounting_method=${_met(metodo)}`, token); // v3.112: competência
       const rows = data?.Rows?.Row || [];
       const colNames = (data?.Columns?.Column || []).map(c => c.ColTitle || c.MetaData?.[0]?.Value || '');
 
@@ -8665,7 +8690,7 @@ function emailTplLembreteFinanceiro(m, tentativa) {
 // contas mapeadas para o motor em Configurar; o restante é compartilhado).
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
 const FV2_LIMITES = {
-  runway: { verde: 6, amarelo: 3, maior_melhor: true, unidade: 'meses' },
+  runway: { verde: 12, amarelo: 6, maior_melhor: true, unidade: 'meses' }, // v3.232: mesma régua da Saúde
   orcado_receita: { verde: 5, amarelo: 10, desvio: true, unidade: '%' },
   dso: { verde: 45, amarelo: 60, maior_melhor: false, unidade: 'dias' },
   alocacao: { verde: 85, amarelo: 75, maior_melhor: true, unidade: '%' },
@@ -8845,7 +8870,7 @@ async function _fv2Executiva({ P, met, cfg, L, token, base }) {
   kpis.push(_fv2Kpi({ id: 'runway', titulo: 'Caixa e runway', valor: K.saldo_caixa, fmt: 'brl', valor2_txt: rw == null ? '—' : rw >= 999 ? 'sem queima líquida' : String(rw).replace('.', ',') + ' meses de runway',
     meta: { valor: L.runway.verde, texto: 'runway acima de ' + L.runway.verde + ' meses' }, anterior: null,
     extra: { cobertura_meses: K.cobertura_caixa_meses, caixa_30d: K.caixa_30d, queima_liquida: K.burn_liquido_mensal, gasto_medio: K.burn_rate_mensal },
-    semaforo: rw >= 999 ? 'verde' : _fv2Sem(rwVal, L.runway), drill: { tipo: 'caixa', sub: 'folego' }, formula: 'Runway = caixa ÷ queima líquida média dos 3 últimos meses fechados (gastos − receita)', fonte: 'QuickBooks (extrato + DRE)' }));
+    semaforo: K.runway_semaforo || _runwaySem(rw, K.cobertura_caixa_meses), drill: { tipo: 'caixa', sub: 'folego' }, formula: 'Runway = caixa ÷ queima líquida média dos 3 últimos meses fechados (gastos − receita)', fonte: 'QuickBooks (extrato + DRE)' }));
   // 5 FCO
   const C = fco.status === 'fulfilled' ? dreResumo(fco.value) : null;
   kpis.push(_fv2Kpi({ id: 'fco', titulo: 'Fluxo de caixa operacional', valor: C?.lucro_liquido, fmt: 'brl', meta: { valor: 0, texto: 'positivo' },
@@ -8854,7 +8879,7 @@ async function _fv2Executiva({ P, met, cfg, L, token, base }) {
   // 6 realizado vs orçado
   const desv = metaRec ? _fv2Var(A?.faturamento, metaRec * recFrac) : null;
   kpis.push(_fv2Kpi({ id: 'orcado', titulo: 'Realizado vs. orçado (receita)', valor: desv, fmt: 'pct_sinal', meta: { valor: 0, texto: 'dentro de ±' + L.orcado_receita.verde + '%' },
-    extra: { realizado: A?.faturamento, orcado: metaRec, orcamento: OA?.budget_nome || null, proporcional: P.parcial }, semaforo: _fv2Sem(desv, L.orcado_receita), drill: { tipo: 'dre' },
+    extra: { realizado: A?.faturamento, orcado: metaRec, orcamento: OA?.budget_nome || null, proporcional: P.parcial }, semaforo: _fv2Sem(desv, { verde: -(L.orcado_receita?.verde ?? 5), amarelo: -(L.orcado_receita?.amarelo ?? 10), maior_melhor: true }) /* v3.232: acima do orçado é verde */, drill: { tipo: 'dre' },
     formula: '(Realizado − orçado) ÷ orçado' + (P.parcial ? ' — mês em curso: orçado proporcional aos dias decorridos' : ''), nota: metaRec ? null : 'Sem orçamento de receita cadastrado no QuickBooks para o período.' }));
   // 7 forecast rolling 12m
   const FL = ok(fluxo); const fm = (FL?.meses || []).map(k => ({ mes: k, saldo: FL.linhas?.['= Saldo Final']?.[k] ?? null, entradas: FL.linhas?.['= Total Entradas']?.[k] ?? 0, saidas: FL.linhas?.['= Total Saídas']?.[k] ?? 0 }));
@@ -8889,7 +8914,7 @@ async function _fv2Caixa({ P, met, cfg, L, token, base }) {
   const hoje = P.hoje, i90 = _diasMais(hoje, -90);
   const sql = await getSql();
   const [bc, ks, pl90, desp] = await Promise.allSettled([
-    baseCaixaHoje({}), kpisSaude({ metodo: met }), qbPL(i90, hoje, token, '', 'Accrual'),
+    baseCaixaHoje({}), kpisSaude({ metodo: met }), qbPL(i90, hoje, token, '', 'Accrual'), /* DSO/DPO: a receber e a pagar em aberto ÷ receita e custo por COMPETÊNCIA (é a base correta para prazo médio) */
     sql`SELECT o.id, o.data_prevista, o.valor, o.status, d.descricao, d.fornecedor FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
         WHERE o.status NOT IN ('paga', 'cancelada') AND o.qb_txn_id IS NULL AND o.data_prevista >= ${_diasMais(hoje, -60)} AND o.data_prevista <= ${_diasMais(hoje, 91)}`, /* v3.231: vencidas até 60 dias entram na semana 1, como diz a fórmula */
   ]);
@@ -8919,7 +8944,7 @@ async function _fv2Caixa({ P, met, cfg, L, token, base }) {
   const rw = K.runway_meses;
   const kpis = [
     _fv2Kpi({ id: 'saldo', titulo: 'Saldo de caixa hoje', valor: B.saldo_hoje, fmt: 'brl', semaforo: B.saldo_hoje == null ? 'cinza' : B.saldo_hoje < 0 ? 'vermelho' : 'verde', drill: { tipo: 'nav', tela: 's3fluxodet' }, formula: 'Saldo de abertura do mês nas contas bancárias + entradas − saídas até hoje (extrato)', fonte: 'QuickBooks (extrato)' }),
-    _fv2Kpi({ id: 'runway', titulo: 'Runway', valor: rw >= 999 ? null : rw, valor_txt: rw >= 999 ? 'sem queima' : null, fmt: 'meses', meta: { valor: L.runway.verde, texto: 'acima de ' + L.runway.verde + ' meses' }, semaforo: rw >= 999 ? 'verde' : _fv2Sem(rw, L.runway),
+    _fv2Kpi({ id: 'runway', titulo: 'Runway', valor: rw >= 999 ? null : rw, valor_txt: rw >= 999 ? 'sem queima' : null, fmt: 'meses', meta: { valor: L.runway.verde, texto: 'acima de ' + L.runway.verde + ' meses' }, semaforo: K.runway_semaforo || _runwaySem(rw, K.cobertura_caixa_meses),
       extra: { cobertura_meses: K.cobertura_caixa_meses, queima_liquida: K.burn_liquido_mensal }, drill: { tipo: 'caixa', sub: 'folego' }, formula: 'Caixa ÷ queima líquida média de 3 meses' }),
     _fv2Kpi({ id: 'projecao13', titulo: 'Menor saldo em 13 semanas', valor: minW?.saldo, fmt: 'brl', meta: { valor: 0, texto: 'sempre positivo' }, semaforo: minW ? (minW.saldo < 0 ? 'vermelho' : minW.saldo < (K.burn_rate_mensal || 0) ? 'amarelo' : 'verde') : 'cinza',
       extra: { semana: minW?.semana, de: minW?.de }, drill: { tipo: 'caixa', sub: 'folego' }, formula: 'Saldo de hoje + faturas a receber − contas a pagar − despesas programadas ainda não lançadas, semana a semana' }),
@@ -9135,7 +9160,7 @@ async function _fv2ClientesTela({ P, met, cfg, L, token, base }) {
 
 // ── CONFIGURAR: contas de receita/custo por motor e produto + limites ──
 async function _fv2Config({ P, met, cfg, L, token, base }) {
-  const rep = await qbPL(_fv2AddMes(_fv2Mes(P.hoje), -12) + '-01', P.hoje, token, '', 'Accrual');
+  const rep = await qbPL(_fv2AddMes(_fv2Mes(P.hoje), -12) + '-01', P.hoje, token, '', P.met || 'Cash');
   const F = _fv2Folhas(rep);
   const contas = F.folhas.filter(f => ['Income', 'COGS', 'Expenses', 'OtherExpenses'].includes(f.grupo)).map(f => ({ nome: f.nome, grupo: f.grupo, valor_12m: round(f.cols[f.cols.length - 1]),
     motor: _fv2MotorConta(f.nome, f.grupo, cfg), motor_manual: !!cfg.motores[f.nome], produto: f.grupo === 'Income' ? _fv2ProdutoConta(f.nome, cfg) : null }))

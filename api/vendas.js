@@ -183,7 +183,7 @@ async function contextoMetas(base) {
   // 25% sobre o ano anterior) e a meta do mês (mês a mês do cadastro), contra o faturamento da DRE do QuickBooks.
   // Antes: kv 'atx:metas'.anual com padrão fixo de R$ 18 mi e meta do mês = ano ÷ 12 — o % divergia do financeiro.
   const [st, rm, pipe, P] = await Promise.all([_api(base, '/api/financeiro', { action: 'metas_empresa_status', params: { com_crm: false } }, 30000),
-    _api(base, '/api/financeiro', { action: 'resultado_kpis', params: {} }, 30000), _api(base, '/api/analytics?tipo=pipeline', null, 20000), premissas()]);
+    _api(base, '/api/financeiro', { action: 'resultado_kpis', params: { _max_idade: 300 } }, 30000), _api(base, '/api/analytics?tipo=pipeline', null, 20000), premissas()]);
   const S = st?.metas?.meta ? st.metas : (st?.meta ? st : null), RM = rm?.resultado || null; // v3.231: a resposta vem em { metas: { meta, realizado } }
   let k = {}, fonteRec = 'QuickBooks (DRE)';
   if (!(S?.realizado) || !(RM?.periodo_res)) { const fin = await _api(base, '/api/financeiro', { action: 'kpis_saude', params: {} }, 20000); k = fin.kpis || {}; if (!fin.kpis) fonteRec = 'indisponível: ' + (fin.error || fin.erro || ''); }
@@ -273,7 +273,7 @@ async function _painelCalc(base) {
   const win = (ganhas.length + perdidas.length) >= 4 ? ganhas.length / (ganhas.length + perdidas.length) * 100 : P.win_rate_padrao;
   const ciclos = ganhas.filter(p => p.fechada_em && p.criado_em).map(p => (new Date(p.fechada_em) - new Date(p.criado_em)) / 864e5);
   const ciclo = ciclos.length >= 2 ? ciclos.reduce((a, b) => a + b, 0) / ciclos.length : P.ciclo_dias_padrao;
-  const hoje = new Date(); const fimAno = new Date(hoje.getFullYear(), 11, 31), fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+  const hoje = new Date(Date.now() - 3 * 3600000); /* v3.232: Brasília */ const fimAno = new Date(hoje.getFullYear(), 11, 31), fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
   const mesesRestAno = 12 - hoje.getMonth() - (hoje.getDate() / fimMes.getDate());
   const gapAno = Math.max(0, M.meta_anual - M.realizado_ano), gapMes = Math.max(0, M.meta_mensal - M.realizado_mes);
   // receita que UMA venda fechada hoje gera até o fim do ano: começa após o ciclo, é reconhecida ao longo da duração

@@ -66,7 +66,7 @@ function qualidade(T, eT, H, eH, PM, ePM, MA) {
 }
 async function montarDados() {
   const [pr, kp, vd, fu, se, tq, hg, pm, ma, cf] = await Promise.allSettled([
-    chamar('financeiro', { action: 'painel_resumo', params: {} }), chamar('financeiro', { action: 'resultado_kpis', params: {} }, 45000),
+    chamar('financeiro', { action: 'painel_resumo', params: { _max_idade: 300 } }), chamar('financeiro', { action: 'resultado_kpis', params: { _max_idade: 300 } }, 45000),
     chamar('vendas', { action: 'painel', payload: {} }, 45000), chamar('crm', { action: 'funil_campanha', payload: { dias: 30 } }), chamar('crm', { action: 'comercial_semaforo', payload: {} }),
     chamar('faturamento', { action: 'termo_list', payload: {} }), chamar('financeiro', { action: 'higienizacao_dados', params: {} }, 60000), chamar('pmo', { action: 'painel_mestre', payload: {} }, 45000), chamar('pmo', { action: 'maestro_painel', payload: {} }, 45000), config()]);
   const v = p => p.status === 'fulfilled' ? p.value : null, erro = p => p.status === 'rejected' ? String(p.reason?.message || p.reason).substring(0, 120) : null;
@@ -99,7 +99,7 @@ async function conferir() {
   const hoje = new Date(Date.now() - 3 * 3600000).toISOString().substring(0, 10), ini = hoje.substring(0, 8) + '01';
   const [ex, pr, rk, vd] = await Promise.allSettled([
     chamar('financeiro', { action: 'extrato_consolidado', params: { data_inicio: ini, data_fim: hoje, incluir_simulados: false } }, 45000),
-    chamar('financeiro', { action: 'painel_resumo', params: {} }), chamar('financeiro', { action: 'resultado_kpis', params: {} }, 45000),
+    chamar('financeiro', { action: 'painel_resumo', params: { _max_idade: 300 } }), chamar('financeiro', { action: 'resultado_kpis', params: { _max_idade: 300 } }, 45000),
     chamar('vendas', { action: 'painel', payload: {} }, 45000)]);
   const v = p => p.status === 'fulfilled' ? p.value : null, er = p => p.status === 'rejected' ? String(p.reason?.message || p.reason).substring(0, 160) : null;
   const E = v(ex) || {}, P = v(pr) || {}, K = v(rk)?.resultado || {}, VM = v(vd)?.metas || {}, tv = await kv('tv:dados');

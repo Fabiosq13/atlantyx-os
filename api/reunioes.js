@@ -138,7 +138,7 @@ const FONTES = {
   // carteira prevista (Agenda de Receitas), fluxo dos próximos 3 meses, termos e faturas em atraso, pagamentos do mês
   financeiro: { nome: 'Financeiro (resumo: caixa, receber/pagar, resultado, metas, fluxo, termos)', async coletar() {
     const fin = (action, params = {}, ms = 50000) => chamar('financeiro', { action, params }, ms);
-    const [pR, mR, rR, aR, fR] = await Promise.allSettled([fin('painel_resumo'), fin('metas_empresa_status', {}), fin('relatorio_pagamentos', { apenas_gerar: true }, 60000), fin('receitas_agenda', { meses: 4 }), fin('fluxo_futuro', { meses: 3 }, 60000)]);
+    const [pR, mR, rR, aR, fR] = await Promise.allSettled([fin('painel_resumo', { _max_idade: 300 }), fin('metas_empresa_status', {}), fin('relatorio_pagamentos', { apenas_gerar: true }, 60000), fin('receitas_agenda', { meses: 4 }), fin('fluxo_futuro', { meses: 3 }, 60000)]);
     const P = pR.value || {}, M = mR.value?.metas || {}, R = rR.value || {}, A = aR.value?.agenda || {}, F = fR.value || {};
     const erros = [['painel', pR], ['metas', mR], ['relatório do dia', rR], ['agenda de receitas', aR], ['fluxo', fR]].filter(([, x]) => x.status === 'rejected').map(([n, x]) => n + ': ' + x.reason?.message);
     const CR = P.contasReceber || {}, CP = P.contasPagar || {}, FT = M.faturamento || {}, MG = M.margem || {}, K = M.carteira || {}, T = R.termos || {}, V = R.vendas || {};
@@ -148,7 +148,9 @@ const FONTES = {
       FT.meta ? `Faturamento ${M.ano}: ${brl(FT.realizado)} de ${brl(FT.meta)} (${pct(FT.pct_atingido)}) · esperado até hoje ${brl(FT.esperado_ate_hoje)} · semáforo ${FT.semaforo || '—'}` : 'Meta de faturamento do ano não definida',
       MG.meta_pct != null ? `Margem líquida: ${pct(MG.realizado_pct)} (meta ${pct(MG.meta_pct)})` : '',
       K.prevista != null ? `Carteira prevista até dez: ${brl(K.prevista)} (marcos ${brl(K.marcos)} · sustentações ${brl(K.sustentacoes)}${K.avulsas ? ' · avulsas ' + brl(K.avulsas) : ''})${K.cobre_pct != null ? ' — cobre ' + pct(K.cobre_pct) + ' do que falta da meta' : ''}` : '',
-      R.data ? `Pagamentos: hoje ${brl(R.total_dia)} · pendente no mês ${brl(R.total_mes_pendente)} · em atraso ${brl(R.total_atrasado)} (${R.qtd_atrasadas || 0})` : '',
+      // v3.232: "em atraso" aqui é só do mês corrente; o vencido total já está na linha do caixa (evita dois números diferentes)
+      R.data ? `Pagamentos do mês: hoje ${brl(R.total_dia)} · pendente ${brl(R.total_mes_pendente)} · vencidos neste mês ${brl(R.total_atrasado)} (${R.qtd_atrasadas || 0})` : '',
+      K.faturas_a_receber ? `Carteira inclui ${brl(K.faturas_a_receber)} em ${K.qtd_faturas} fatura(s) já emitidas e ainda não recebidas (regime de caixa)` : '',
     ].filter(Boolean).concat(erros.length ? ['⚠ indisponível: ' + erros.join(' · ')] : []);
     // fluxo dos próximos meses (saldo final projetado)
     const L = F.linhas || {}, meses = Object.keys(L['= Saldo Final'] || {}).slice(0, 3);

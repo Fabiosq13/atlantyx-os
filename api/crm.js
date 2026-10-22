@@ -482,7 +482,7 @@ async function comercialConfigGet() {
     const r = await fetch(base + '/api/financeiro', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'kpis_saude', params: {} }) });
     const d = await r.json().catch(() => ({}));
-    const rec = d?.kpis?.receita_mes ?? d?.receita_mes ?? d?.kpis?.receita_mensal ?? null;
+    const rec = d?.kpis?.media_receita_3m ?? d?.kpis?.receita_mes ?? null; // v3.232: média dos 3 meses fechados (o mês corrente é parcial — no dia 2 dava quase zero)
     if (typeof rec === 'number' && rec > 0) faturamentoReal = Math.round(rec * 100) / 100;
   } catch (_) {}
   if (faturamentoReal && politica.faturamento_origem !== 'manual') politica.faturamento_mensal_referencia = faturamentoReal;

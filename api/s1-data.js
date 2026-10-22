@@ -88,7 +88,7 @@ async function qbFetch(endpoint, token) {
 // DRE — Demonstrativo de Resultados
 async function qbDRE({ periodo = 'This Fiscal Year' } = {}) {
   const token = await qbToken();
-  const data = await qbFetch(`/reports/ProfitAndLoss?date_macro=${encodeURIComponent(periodo)}&summarize_column_by=Month`, token);
+  const data = await qbFetch(`/reports/ProfitAndLoss?date_macro=${encodeURIComponent(periodo)}&summarize_column_by=Month&accounting_method=Cash`, token);
 
   const linhas = extrairLinhasRelatorio(data);
   console.log(`[QB] DRE carregado: ${linhas.length} linhas`);
@@ -139,7 +139,7 @@ async function qbRelatorioCompleto() {
 
   // Buscar DRE, Clientes e Contas a Receber em paralelo
   const [dreData, clientesData, crData] = await Promise.allSettled([
-    qbFetch('/reports/ProfitAndLoss?date_macro=This+Fiscal+Year&summarize_column_by=Month', token),
+    qbFetch('/reports/ProfitAndLoss?date_macro=This+Fiscal+Year&summarize_column_by=Month&accounting_method=Cash', token),
     qbFetch('/reports/CustomerSales?date_macro=This+Fiscal+Year', token),
     qbFetch('/reports/AgedReceivables?date_macro=Today', token),
   ]);
