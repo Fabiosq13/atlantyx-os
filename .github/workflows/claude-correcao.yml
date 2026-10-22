@@ -58,7 +58,19 @@ jobs:
           CODE=$(curl -s -o /tmp/pacote.json -w '%{http_code}' -H "Authorization: Bearer $CRON_SECRET" "$URL/api/fabrica?action=construcao_pacote&projeto=$P" || echo 000)
           if [ "$CODE" != "200" ]; then echo "::warning title=Partitura do produto::HTTP $CODE ao baixar os documentos do projeto $P (CRON_SECRET igual ao do Vercel? ATX_URL correta?) — o Claude segue só com o corpo da tarefa"; exit 0; fi
           node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync('/tmp/pacote.json','utf8'));if(!/^[a-z0-9][a-z0-9-]{1,40}$/.test(d.pasta||''))throw new Error('pasta inválida');const dir='produtos/'+d.pasta+'/partitura';fs.mkdirSync(dir,{recursive:true});for(const a of d.arquivos||[]){if(!/^[\\w.-]+\\.md$/.test(a.nome))continue;fs.writeFileSync(dir+'/'+a.nome,a.conteudo);}console.log((d.arquivos||[]).length+' documento(s) em '+dir);"
+      # v3.253: confere a chave e os créditos da Anthropic ANTES — sem isso o robô "parava com erro após 1s" e a Esteira
+      # não dizia o motivo (créditos esgotados, chave inválida, limite de gasto, modelo indisponível…)
+      - name: Conferir acesso à API da Anthropic
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then echo "ANTHROPIC_ERRO=o secret ANTHROPIC_API_KEY está vazio no GitHub (Settings → Secrets and variables → Actions)" >> "$GITHUB_ENV"; echo "::error title=Anthropic::secret ANTHROPIC_API_KEY vazio"; exit 1; fi
+          CODE=$(curl -s -o /tmp/ping.json -w '%{http_code}' https://api.anthropic.com/v1/messages -H "x-api-key: $ANTHROPIC_API_KEY" -H 'anthropic-version: 2023-06-01' -H 'content-type: application/json' -d '{"model":"claude-sonnet-4-6","max_tokens":1,"messages":[{"role":"user","content":"ok"}]}' || echo 000)
+          MSG=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/tmp/ping.json','utf8'));console.log(d.error?(d.error.type+': '+d.error.message).replace(/[\r\n]+/g,' ').slice(0,300):'ok')}catch(e){console.log('sem resposta da API')}")
+          if [ "$CODE" != "200" ]; then echo "ANTHROPIC_ERRO=HTTP $CODE — $MSG" >> "$GITHUB_ENV"; echo "::error title=Anthropic HTTP $CODE::$MSG"; exit 1; fi
+          echo "API da Anthropic OK (modelo claude-sonnet-4-6)"
       - uses: anthropics/claude-code-action@v1
+        id: claude
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           trigger_phrase: "@claude"
@@ -70,3 +82,19 @@ jobs:
             --model claude-sonnet-4-6
             --max-turns 60
             --allowedTools "Bash(git fetch:*),Bash(git merge:*),Bash(git checkout:*),Bash(git switch:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git rebase:*),Bash(git restore:*),Bash(git show:*),Bash(git branch:*),Bash(node:*),Bash(npm ci:*),Bash(npm install:*),Bash(ls:*),Bash(grep:*),Bash(sed -n:*),Bash(wc:*)"
+      # v3.253: quando falha, escreve o MOTIVO na tarefa (aparece na Esteira) — antes só "Claude encountered an error"
+      - name: Motivo da falha na tarefa
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXEC: ${{ steps.claude.outputs.execution_file }}
+          ISSUE: ${{ github.event.issue.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          M="$ANTHROPIC_ERRO"
+          if [ -z "$M" ] && [ -n "$EXEC" ] && [ -f "$EXEC" ]; then
+            M=$(node -e "try{const L=JSON.parse(require('fs').readFileSync(process.env.EXEC,'utf8'));const r=[...L].reverse().find(x=>x&&x.type==='result')||{};const a=[...L].reverse().find(x=>x&&x.type==='assistant');const t=r.result||(a&&a.message&&(a.message.content||[]).map(c=>c.text||'').join(' '))||r.subtype||'';console.log(String(t).replace(/[\r\n]+/g,' ').slice(0,400))}catch(e){console.log('')}")
+          fi
+          [ -z "$M" ] && M="sem detalhe (abra o log do passo do Claude)"
+          echo "::error title=Motivo::$M"
+          gh issue comment "$ISSUE" --body "⚠️ **O robô parou.** Motivo: $M — [ver execução]($RUN_URL)" || true
