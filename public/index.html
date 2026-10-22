@@ -19960,7 +19960,8 @@ function renderDespesasLista() {
             </td>
             <td style="text-align:center;">
               <button onclick='ajustarDespesaReplicar(${_dsE(JSON.stringify(d.id))},${_dsE(JSON.stringify(String(d.descricao||"")))},${parseFloat(d.valor)||0},${parseInt(d.dia_vencimento)||1})' title="Ajustar valor/dia e replicar nos próximos 12 meses" style="background:transparent;border:none;color:var(--gold);cursor:pointer;font-size:12px;margin-right:4px;">✎↻</button>
-              <button onclick='excluirDespesa(${_dsE(JSON.stringify(d.id))})' style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:14px;">×</button>
+              <button onclick='despEditarUI(${_dsE(JSON.stringify(d.id))})' title="Editar a despesa (descrição, fornecedor, valor, dia, recorrência, período)" style="background:transparent;border:none;color:var(--t2);cursor:pointer;font-size:13px;">✏</button>
+              <button onclick='excluirDespesa(${_dsE(JSON.stringify(d.id))})' title="Excluir a despesa programada" style="background:transparent;border:none;color:var(--red);cursor:pointer;font-size:14px;">×</button>
             </td>
           </tr>
         `).join('')}
@@ -20095,6 +20096,7 @@ function mostrarDetalhesDia(dia) {
   const ano = _calMes.getFullYear();
   const mes = _calMes.getMonth();
   const ocs = _ocoCache.filter(o => {
+    if (o.status === 'cancelada') return false; // v3.248: excluída na Agenda
     const dt = _dLocal(o.data_prevista); // v3.109
     return dt.getFullYear() === ano && dt.getMonth() === mes && dt.getDate() === dia;
   });
@@ -20115,6 +20117,10 @@ function mostrarDetalhesDia(dia) {
         <div style="display:flex;justify-content:space-between;font-size:11.5px;"><b>${_dsE(o.descricao)}</b><span style="font-family:var(--M);color:var(--red);">${fmtBRLcompleto(o.valor)}</span></div>
         <div style="font-size:9.5px;color:var(--t2);margin-top:2px;">${statusLbl[o.status] || o.status}${o.fonte === 'quickbooks' ? ' · já é conta a pagar no QuickBooks' : ''}${o.qb_txn_id ? ' · QB #' + _dsE(o.qb_txn_id) : ''}${o.data_pagamento && o.status === 'paga' ? ' · paga em ' + String(o.data_pagamento).split('-').reverse().join('/') : ''}</div>
         ${o.nota ? `<div style="font-size:9.5px;color:var(--gold);margin-top:3px;line-height:1.5;">ℹ ${_dsE(o.nota)}</div>` : ''}
+        ${o.fonte === 'quickbooks' ? `<div style="font-size:9.5px;color:var(--t3);margin-top:4px;">Conta do QuickBooks — editar ou excluir lá: <a href="https://app.qbo.intuit.com/app/bill?txnId=${_dsE(String(o.id).replace(/^qb_/, ''))}" target="_blank" rel="noopener">abrir no QuickBooks ↗</a></div>`
+          : `<div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap;"><button class="btn" style="font-size:9px;padding:3px 8px;" onclick='_despOcoEditarUI(${_dsE(JSON.stringify(o.id))}, ${dia})'>✏ Editar</button>
+            ${o.status === 'paga' ? `<button class="btn" style="font-size:9px;padding:3px 8px;" onclick='_despOcoDesfazerUI(${_dsE(JSON.stringify(o.id))}, ${dia})'>↩ Desfazer pagamento</button>` : `<button class="btn" style="font-size:9px;padding:3px 8px;color:var(--red);" onclick='_despOcoExcluirUI(${_dsE(JSON.stringify(o.id))}, ${dia})'>🗑 Excluir</button>`}
+            ${o.editada ? '<span style="font-size:9px;color:var(--gold);align-self:center;">editada à mão</span>' : ''}${o.obs ? '<span style="font-size:9px;color:var(--t3);align-self:center;">' + _dsE(o.obs) + '</span>' : ''}</div>`}
         ${o.fonte !== 'quickbooks' && o.status !== 'paga' ? `<div style="display:flex;gap:6px;margin-top:5px;">
           <button class="btn btn-gn" style="font-size:9px;padding:3px 8px;" onclick='_despMarcarPagaUI(${_dsE(JSON.stringify(o.id))}, ${dia}, ${o.qb_txn_id ? 1 : 0})'>✓ Marcar como paga${o.qb_txn_id ? ' (baixa no QB)' : ''}</button>
           ${!o.qb_txn_id ? `<button class="btn" style="font-size:9px;padding:3px 8px;color:var(--gold);border-color:var(--gold);" onclick="_despLancarQbUI('${o.id}', ${dia})" id="btnDespQb_${o.id}">📤 Lançar no QuickBooks</button>` : ''}
@@ -26629,6 +26635,60 @@ async function marcoCopiarExec(ids) {
     try { carregarKanbanMarcos(); } catch (_) {} try { if (_projetoAberto) await abrirProjeto(_projetoAberto.id); } catch (_) {}
   } catch (e) { toast('Não copiou: ' + e.message, 'error'); if (b) { b.disabled = false; b.textContent = 'Criar cópias'; } }
 }
+// ═══ v3.248: EDITAR / EXCLUIR pagamentos da Agenda ═══
+function _despFormModal(titulo, campos, onSalvar) {
+  let md = document.getElementById('despEdModal');
+  if (!md) { md = document.createElement('div'); md.id = 'despEdModal'; md.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1001;align-items:center;justify-content:center;padding:16px;';
+    md.onclick = e => { if (e.target === md) md.style.display = 'none'; }; document.body.appendChild(md); }
+  md.style.display = 'flex'; const v = x => String(x ?? '').replace(/"/g, '&quot;');
+  md.innerHTML = `<div class="panel" style="width:600px;max-width:100%;"><div class="ph"><div class="pt">${titulo}</div><button class="btn" style="font-size:10px;" onclick="document.getElementById('despEdModal').style.display='none'">✕</button></div>
+    <div class="pb" style="display:block;"><div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;">${campos.map(c => `<div class="fg" style="margin:0;${c.largo ? 'grid-column:span 2;' : ''}"><label class="fl">${c.rot}</label>${c.ops
+      ? `<select class="fsel" id="${c.id}">${c.ops.map(([k, l]) => `<option value="${k}"${String(k) === String(c.val) ? ' selected' : ''}>${l}</option>`).join('')}</select>`
+      : `<input class="fi" id="${c.id}" ${c.tipo ? 'type="' + c.tipo + '"' : ''} value="${v(c.val)}">`}${c.dica ? `<div style="font-size:9.5px;color:var(--t3);margin-top:3px;">${c.dica}</div>` : ''}</div>`).join('')}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;"><button class="btn" onclick="document.getElementById('despEdModal').style.display='none'">Cancelar</button><button class="btn btn-p" id="despEdSalvar">Salvar</button></div></div></div>`;
+  document.getElementById('despEdSalvar').onclick = async () => { const b = document.getElementById('despEdSalvar'); b.disabled = true; b.textContent = 'Salvando…';
+    try { await onSalvar(id => document.getElementById(id)?.value?.trim() ?? ''); md.style.display = 'none'; } catch (e) { toast('Erro: ' + e.message, 'error'); b.disabled = false; b.textContent = 'Salvar'; } };
+}
+function _despOcoEditarUI(id, dia) {
+  const o = (_ocoCache || []).find(x => x.id === id); if (!o) return;
+  const paga = o.status === 'paga';
+  _despFormModal('✏ Editar pagamento · ' + _dsE(o.descricao || ''), [
+    { id: 'deValor', rot: 'Valor R$', val: Number(o.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) },
+    { id: 'deData', rot: 'Vencimento', tipo: 'date', val: String(o.data_prevista).slice(0, 10) },
+    ...(paga ? [{ id: 'deDataPag', rot: 'Data do pagamento', tipo: 'date', val: o.data_pagamento ? String(o.data_pagamento).slice(0, 10) : '' }] : []),
+    { id: 'deObs', rot: 'Observação', largo: true, val: o.obs || '', dica: 'Só este mês muda. Para mudar todos os meses, edite a despesa (✏ na lista de despesas programadas).' + (o.qb_txn_id ? ' <b style="color:var(--gold);">Já é conta a pagar no QuickBooks: ajuste lá também.</b>' : '') }],
+    async g => { const r = await finApi('desp_oco_editar', { id, valor: _numBR(g('deValor')), data_prevista: g('deData'), data_pagamento: paga ? g('deDataPag') || null : null, observacoes: g('deObs') });
+      toast('Pagamento atualizado', 'success'); if (r.aviso) alert(r.aviso); await carregarDespesas(); const d2 = _dLocal(r.data_prevista); if (d2.getMonth() === _calMes.getMonth()) mostrarDetalhesDia(d2.getDate()); else mostrarDetalhesDia(dia); });
+}
+async function _despOcoExcluirUI(id, dia) {
+  const o = (_ocoCache || []).find(x => x.id === id); if (!o) return;
+  if (!confirm(`Excluir da Agenda o pagamento "${o.descricao || ''}" de ${fmtBRLcompleto(o.valor)} (${String(o.data_prevista).slice(0, 10).split('-').reverse().join('/')})?\n\nSó este mês sai; os outros meses da despesa continuam.`)) return;
+  try { const r = await finApi('desp_oco_excluir', { id }); toast('Pagamento excluído da Agenda', 'success'); if (r.aviso) alert(r.aviso); await carregarDespesas(); mostrarDetalhesDia(dia); }
+  catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+async function _despOcoDesfazerUI(id, dia) {
+  if (!confirm('Desfazer o pagamento? Volta a ficar a pagar na Agenda.')) return;
+  try { const r = await finApi('desp_oco_desfazer', { id }); toast('Pagamento desfeito', 'success'); if (r.aviso) alert(r.aviso); await carregarDespesas(); mostrarDetalhesDia(dia); }
+  catch (e) { toast('Erro: ' + e.message, 'error'); }
+}
+function despEditarUI(id) {
+  const d = (_despCache || []).find(x => x.id === id); if (!d) return;
+  _despFormModal('✏ Editar despesa programada', [
+    { id: 'dpDesc', rot: 'Descrição', largo: true, val: d.descricao }, { id: 'dpForn', rot: 'Fornecedor', val: d.fornecedor || '' }, { id: 'dpCat', rot: 'Categoria', val: d.categoria || '' },
+    { id: 'dpValor', rot: 'Valor R$', val: Number(d.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) }, { id: 'dpDia', rot: 'Dia do vencimento', val: d.dia_vencimento || '' },
+    { id: 'dpRec', rot: 'Recorrência', val: d.recorrencia, ops: [['unica', 'Única'], ['mensal', 'Mensal'], ['trimestral', 'Trimestral'], ['anual', 'Anual']] },
+    { id: 'dpAtiva', rot: 'Situação', val: d.ativa ? '1' : '0', ops: [['1', 'Ativa'], ['0', 'Pausada']] },
+    { id: 'dpIni', rot: 'Início', tipo: 'date', val: d.data_inicio }, { id: 'dpFim', rot: 'Fim (opcional)', tipo: 'date', val: d.data_fim || '',
+      dica: 'Ao salvar, os meses futuros ainda a pagar são refeitos com o novo valor/dia. Meses pagos, lançados no QuickBooks ou editados à mão ficam como estão.' }],
+    async g => { const p = { id, descricao: g('dpDesc'), fornecedor: g('dpForn') || null, categoria: g('dpCat') || null, valor: _numBR(g('dpValor')), dia_vencimento: parseInt(g('dpDia')) || null,
+        recorrencia: g('dpRec'), data_inicio: g('dpIni'), data_fim: g('dpFim') || null, ativa: g('dpAtiva') === '1', conta_pagamento: d.conta_pagamento || null, observacoes: d.observacoes || null };
+      if (!p.descricao || !p.valor || !p.data_inicio) throw new Error('Preencha descrição, valor e início');
+      await finApi('desp_save', p); toast('Despesa atualizada', 'success'); await carregarDespesas(); });
+}
+async function pfDupIgnorar(k) { const i = _pf.lista?.[k]; if (!i?.dup_chave) return; if (!confirm('Marcar como "não é duplicado"? Este par sai da lista de pendências.')) return;
+  try { await finApi('dup_ignorar', { chave: i.dup_chave }); toast('Ok — não aparece mais', 'success'); pfCarregar(true); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
+async function pfDupBaixar(k) { const i = _pf.lista?.[k]; if (!i?.oco_id) return; if (!confirm('Marcar o lançamento da Agenda (' + String(i.oco_data || '').split('-').reverse().join('/') + ') como pago? Ele é a mesma conta já paga.')) return;
+  try { await finApi('desp_marcar_paga', { id: i.oco_id, so_no_sistema: true }); toast('Baixado na Agenda', 'success'); pfCarregar(true); } catch (e) { toast('Erro: ' + e.message, 'error'); } }
 // ═══ v3.246: RETENÇÕES NA FONTE NAS FATURAS DO QUICKBOOKS ═══
 let _ret = { cfg: null, lista: null };
 const _retBRL = v => 'R$ ' + (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -31004,7 +31064,7 @@ function pfRender() {
   el.innerHTML = (D.qb_erro ? '<div style="font-size:10.5px;color:var(--fv2-crit);margin-bottom:6px;">QuickBooks indisponível: ' + _qpEsc(D.qb_erro) + '</div>' : '') + ((D.erros || []).length ? '<div class="fv2-pq" style="margin-bottom:6px;">Não verificado agora: ' + _qpEsc(D.erros.join(' · ')) + '</div>' : '')
     + L.slice(0, lim).map((i, k) => '<div class="pf-l"><i style="width:9px;height:9px;border-radius:50%;background:' + cor[i.gravidade] + ';" title="' + ({ alta: 'urgente', media: 'atenção', baixa: 'acertar quando possível' }[i.gravidade]) + '"></i>'
       + '<div><b>' + _qpEsc(i.titulo) + '</b> <span class="pf-d">· ' + _qpEsc(_PF_G[i.grupo]?.[0] || '') + '</span><div class="pf-d">' + _qpEsc(i.detalhe || '') + '</div></div>'
-      + '<div class="pf-v">' + (i.valor ? brl(i.valor) : '') + '</div><div class="pf-a"><button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="pfIr(' + todos.indexOf(i) + ')">Resolver ↗</button></div></div>').join('')
+      + '<div class="pf-v">' + (i.valor ? brl(i.valor) : '') + '</div><div class="pf-a">' + (i.grupo === 'duplicado' ? (i.oco_id && /segue a pagar/.test(i.titulo) ? '<button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="pfDupBaixar(' + todos.indexOf(i) + ')">✓ Baixar na Agenda</button> ' : '') + '<button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="pfDupIgnorar(' + todos.indexOf(i) + ')">Não é duplicado</button> ' : '') + '<button class="btn btn-g" style="font-size:9.5px;padding:2px 8px;" onclick="pfIr(' + todos.indexOf(i) + ')">Resolver ↗</button></div></div>').join('')
     + (L.length > lim ? '<div style="font-size:10.5px;color:var(--t3);padding:6px 4px;">+ ' + (L.length - lim) + ' pendência(s) — clique numa categoria acima para ver todas.</div>' : '');
   _pf.lista = todos;
 }
@@ -35074,7 +35134,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.247] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.248] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35090,7 +35150,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.247';
+window.__ATX_BUILD_ID__ = 'ATX-v3.248';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

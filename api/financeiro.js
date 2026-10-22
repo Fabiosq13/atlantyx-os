@@ -244,6 +244,10 @@ async function handler(req, res) {
       desp_save:             () => despSave(params),
       desp_list:             () => despList(params),
       desp_delete:           () => despDelete(params),
+      desp_oco_editar:       () => despOcoEditar(params),   // v3.248
+      dup_ignorar:           () => dupIgnorar(params),      // v3.248
+      desp_oco_excluir:      () => despOcoExcluir(params),  // v3.248
+      desp_oco_desfazer:     () => despOcoDesfazer(params), // v3.248
       desp_ocorrencias:      () => despOcorrencias(params),
       desp_marcar_paga:      () => despMarcarPaga(params),
       desp_lancar_qb:        () => despLancarQb(params),
@@ -1054,7 +1058,7 @@ async function pagamentosDoDiaEPendentes() {
   if (billsTodas) { doDia = _agendaSemDuplicarQb(doDia, billsTodas).pendentes; pendentesMes = _agendaSemDuplicarQb(pendentesMes, billsTodas).pendentes; }
   const norm = r => ({ descricao: r.desp_desc || r.descricao || 'Despesa', fornecedor: r.desp_forn || r.fornecedor || '',
     categoria: r.desp_cat || r.categoria || '', data: String(r.data_prevista).split('T')[0],
-    valor: parseFloat(r.valor) || 0, status: r.status || 'prevista', fonte: r.fonte || 'atlantyx', qb_url: r.qb_url || null });
+    valor: parseFloat(r.valor) || 0, status: r.status || 'prevista', fonte: r.fonte || 'atlantyx', qb_url: r.qb_url || null, id: r.bill_id ? 'qb_' + r.bill_id : (r.id || null) });
 
   const listaDia = [...doDia.map(norm), ...qbHoje.map(norm)].sort((a, b) => b.valor - a.valor);
   const listaMes = [...pendentesMes.map(norm), ...qbMes.map(norm)]
@@ -1344,7 +1348,8 @@ async function _relPagamentosExtra(d) {
     if (Math.abs(Date.parse(a.data) - Date.parse(b.data)) / 864e5 > 5) continue;
     if (a.fonte === b.fonte && a.situacao === b.situacao && a.data === b.data && a.descricao === b.descricao && a.fonte === 'quickbooks') { /* mesma linha listada 2x por consultas diferentes */ }
     const k = [a.descricao, a.data, b.descricao, b.data, a.valor].join('|'); if (vistos.has(k)) continue; vistos.add(k);
-    out.duplicados.push({ a, b, valor: a.valor }); }
+    // v3.248: um pendente + um pago do mesmo fornecedor e valor quase sempre é a MESMA conta já paga e não baixada na Agenda
+    out.duplicados.push({ a, b, valor: a.valor, tipo: a.situacao !== b.situacao ? 'baixa' : 'duplicado', chave: [nrm(a.fornecedor || a.descricao), a.valor.toFixed(2), [a.data, b.data].sort().join('_')].join('|') }); }
   out.pagos_mes.sort((a, b) => String(b.data).localeCompare(String(a.data)));
   return out;
 }
@@ -3660,8 +3665,13 @@ async function pendenciasFin() {
   for (const x of (t?.criticos || []).filter(x => !termosParciais.has(x.id))) itens.push({ grupo: 'termo', gravidade: (x.prazo_etapa?.estourado || (x.dias != null && x.dias >= 30)) ? 'alta' : 'media', titulo: 'Termo ' + (x.numero || '') + ' · ' + (x.cliente || x.projeto || ''),
     detalhe: (x.pendencias || []).map(p => typeof p === 'string' ? p : (p.texto || p.titulo || p.msg || '')).filter(Boolean).slice(0, 3).join(' · ') + (x.prazo_etapa?.estourado ? ' · etapa ' + x.prazo_etapa.etapa + ' ' + x.prazo_etapa.texto : '') || 'pendência no termo', valor: x.valor, dias: x.dias, tela: 's3fatkanban', termo_id: x.id });
   // possíveis pagamentos duplicados no mês
-  try { if (d) { const px = await _relPagamentosExtra(d); for (const p of px.duplicados || []) itens.push({ grupo: 'duplicado', gravidade: 'media', titulo: (p.a.fornecedor || p.a.descricao) + ' — possível duplicado',
-    detalhe: p.a.data.split('-').reverse().join('/') + ' (' + p.a.situacao + ') e ' + p.b.data.split('-').reverse().join('/') + ' (' + p.b.situacao + '), mesmo valor', valor: p.valor, tela: 's3agenda' }); } } catch (e) { erros.push('duplicados: ' + e.message); }
+  try { if (d) { const px = await _relPagamentosExtra(d); const ign = new Set(Object.keys((await _kvFin('fin:dup_ignorados')) || {}));
+    const ori = x => (x.fonte === 'quickbooks' ? 'QuickBooks' + (/pagamento de conta/i.test(x.categoria || '') ? ' (pagamento de conta)' : /conta a pagar/i.test(x.categoria || '') ? ' (conta a pagar)' : ' (despesa paga)') : 'Agenda') + ' · ' + x.situacao + ' em ' + String(x.data).split('-').reverse().join('/') + (x.descricao && x.descricao !== x.fornecedor ? ' · “' + x.descricao + '”' : '');
+    for (const p of px.duplicados || []) { if (ign.has(p.chave)) continue;
+      const pend = [p.a, p.b].find(x => x.situacao === 'pendente' && x.fonte !== 'quickbooks' && x.id);
+      itens.push({ grupo: 'duplicado', gravidade: 'media', titulo: (p.a.fornecedor || p.a.descricao) + (p.tipo === 'baixa' ? ' — pago, mas segue a pagar na Agenda' : ' — possível pagamento em dobro'),
+        detalhe: (p.tipo === 'baixa' ? 'Mesmo fornecedor e valor: ' : 'Mesmo fornecedor e valor em até 5 dias: ') + ori(p.a) + '  ×  ' + ori(p.b) + (p.tipo === 'baixa' ? ' — se é a mesma conta, marque a da Agenda como paga (ou exclua)' : ' — confira se pagou duas vezes'),
+        valor: p.valor, tela: 's3agenda', dup_chave: p.chave, oco_id: pend?.id || null, oco_data: pend?.data || null }); } } } catch (e) { erros.push('duplicados: ' + e.message); }
   const peso = { alta: 0, media: 1, baixa: 2 };
   itens.sort((a, b) => peso[a.gravidade] - peso[b.gravidade] || (b.valor || 0) - (a.valor || 0));
   const soma = g => { const l = itens.filter(i => i.grupo === g); return { qtd: l.length, valor: round(l.reduce((s, i) => s + (i.valor || 0), 0)) }; };
@@ -4053,6 +4063,48 @@ async function despDelete({ id } = {}) {
   return { id, deletada: false, pausada: true, historico_mantido: resto[0].n };
 }
 
+// ═══ v3.248: EDITAR / EXCLUIR / DESFAZER PAGAMENTO de uma ocorrência da Agenda (as do QuickBooks se mexem lá) ═══
+async function _despOco(sql, id) {
+  if (!id || String(id).startsWith('qb_')) throw Object.assign(new Error('Esta conta vem do QuickBooks — edite ou exclua lá (Despesas → Contas a pagar).'), { status: 400 });
+  const r = await sql`SELECT o.*, d.recorrencia FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id WHERE o.id = ${id}`;
+  if (!r[0]) throw Object.assign(new Error('Pagamento não encontrado na Agenda (atualize a tela)'), { status: 404 }); return r[0];
+}
+async function despOcoEditar({ id, valor, data_prevista, data_pagamento, observacoes } = {}) {
+  const sql = await getSql(), o = await _despOco(sql, id);
+  const v = valor == null || valor === '' ? Number(o.valor) : Math.round(Number(String(valor).replace(',', '.')) * 100) / 100;
+  if (!(v > 0)) throw Object.assign(new Error('Informe um valor maior que zero'), { status: 400 });
+  const dp = data_prevista ? String(data_prevista).slice(0, 10) : _dStr(o.data_prevista);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dp)) throw Object.assign(new Error('Data de vencimento inválida'), { status: 400 });
+  const dpag = o.status === 'paga' ? (data_pagamento ? String(data_pagamento).slice(0, 10) : (o.data_pagamento ? _dStr(o.data_pagamento) : null)) : null;
+  const obsLivre = String(observacoes ?? String(o.observacoes || '').replace(/^\[editada\]\s*/, '')).substring(0, 500);
+  await sql`UPDATE despesas_ocorrencias SET valor = ${v}, data_prevista = ${dp}, data_pagamento = ${dpag}, observacoes = ${'[editada] ' + obsLivre} WHERE id = ${id}`;
+  await _limparCacheFin();
+  return { ok: true, id, valor: v, data_prevista: dp, aviso: o.qb_txn_id ? 'Esta despesa já é conta a pagar no QuickBooks: lá o valor/vencimento não mudou — ajuste a conta no QuickBooks também.' : null };
+}
+async function despOcoExcluir({ id } = {}) {
+  const sql = await getSql(), o = await _despOco(sql, id);
+  if (o.status === 'paga') throw Object.assign(new Error('Pagamento já marcado como pago — use "Desfazer pagamento" antes de excluir.'), { status: 400 });
+  // recorrente: vira 'cancelada' (o mês fica ocupado e a recorrência não recria); única: sai de vez
+  if (o.despesa_id && o.recorrencia && o.recorrencia !== 'unica') await sql`UPDATE despesas_ocorrencias SET status = 'cancelada', observacoes = ${'[excluída na Agenda em ' + _hojeBR() + '] ' + String(o.observacoes || '').substring(0, 400)} WHERE id = ${id}`;
+  else { await sql`DELETE FROM despesas_ocorrencias WHERE id = ${id}`;
+    if (o.despesa_id) { const n = (await sql`SELECT COUNT(*)::int AS n FROM despesas_ocorrencias WHERE despesa_id = ${o.despesa_id}`)[0]?.n || 0; if (!n) await sql`DELETE FROM despesas_programadas WHERE id = ${o.despesa_id}`; } }
+  await _limparCacheFin();
+  return { ok: true, id, aviso: o.qb_txn_id ? 'Saiu da Agenda, mas a conta a pagar continua no QuickBooks — exclua lá também, senão ela volta a aparecer como conta do QuickBooks.' : null };
+}
+async function despOcoDesfazer({ id } = {}) {
+  const sql = await getSql(), o = await _despOco(sql, id);
+  if (o.status !== 'paga') throw Object.assign(new Error('Este pagamento não está marcado como pago'), { status: 400 });
+  await sql`UPDATE despesas_ocorrencias SET status = ${o.qb_txn_id ? 'lancada' : 'prevista'}, data_pagamento = NULL WHERE id = ${id}`;
+  await _limparCacheFin();
+  return { ok: true, id, aviso: o.qb_txn_id ? 'Desfeito no sistema. Se a baixa foi registrada no QuickBooks (pagamento da conta), exclua esse pagamento lá também.' : null };
+}
+
+async function _kvFin2(k, v) { const sql = await getSql();
+  if (v === undefined) { try { const r = await sql`SELECT value FROM kv_store WHERE key = ${k}`; const x = r[0]?.value; return x == null ? null : (typeof x === 'string' ? JSON.parse(x) : x); } catch (_) { return null; } }
+  await sql`INSERT INTO kv_store (key, value, updated_at) VALUES (${k}, ${JSON.stringify(v)}, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`; return v; }
+async function dupIgnorar({ chave } = {}) { if (!chave) throw Object.assign(new Error('chave obrigatória'), { status: 400 });
+  const m = (await _kvFin2('fin:dup_ignorados')) || {}; m[String(chave).substring(0, 200)] = new Date().toISOString(); await _kvFin2('fin:dup_ignorados', m); return { ok: true }; }
+
 let _despStatusNormalizado = false;
 async function _despNormalizarStatus(sql) {
   // v3.223: "cadastrar/ajustar e replicar" gravavam 'pendente', status que o resto do sistema não conhece (sumia do fluxo,
@@ -4102,6 +4154,7 @@ async function despOcorrencias({ data_inicio, data_fim, status, incluir_qb = tru
   const locais = rows.map(r => ({
       id: r.id,
       despesa_id: r.despesa_id,
+      obs: String(r.observacoes || '').replace(/^\[editada\]\s*/, '') || null, editada: /^\[editada\]/.test(String(r.observacoes || '')), // v3.248
       descricao: r.despesa_desc,
       fornecedor: r.despesa_forn || null,
       categoria: r.despesa_cat,
@@ -4299,8 +4352,9 @@ async function regerarOcorrencias(sql, despesaId, meses = 12) {
   // perdia o vínculo com o Bill e a mesma conta aparecia duas vezes (e o botão "Lançar no QB" voltava).
   // v3.162: só apaga dentro da janela que será regerada — ocorrências além dela (ex.: replicadas até o 12º mês) ficam
   const limiteStr = _addMesesData(hoje, meses);
+  // v3.248: ocorrência editada à mão (valor/data) fica — não volta ao valor da despesa ao regerar
   await sql`DELETE FROM despesas_ocorrencias
-    WHERE despesa_id = ${despesaId} AND status = 'prevista' AND data_prevista >= ${hoje} AND data_prevista <= ${limiteStr}`;
+    WHERE despesa_id = ${despesaId} AND status = 'prevista' AND data_prevista >= ${hoje} AND data_prevista <= ${limiteStr} AND COALESCE(observacoes, '') NOT LIKE '[editada]%'`;
   // v3.223: mês ocupado = qualquer ocorrência que sobrou (lançada, paga, cancelada de propósito, prevista fora da janela) —
   // antes só lançada/paga: as 'pendente' e as canceladas pela replicação voltavam em dobro no "Regerar"
   const mesesOcupados = new Set((await sql`SELECT data_prevista FROM despesas_ocorrencias WHERE despesa_id = ${despesaId}`)
