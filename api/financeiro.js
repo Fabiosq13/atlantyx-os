@@ -1,6 +1,7 @@
 import { comGuarda } from '../lib/qa-guard.js';
 import { casarReceitas, casarDespesas, compararReceitasSistema, compararDespesasSistema, resumoComparacao, identificarRetencao } from '../lib/conciliacao-mes.js'; // v3.242
 import { veredito as dupVeredito, chaveGrupo as dupChave, ROTULO as DUP_ROT } from '../lib/duplicidade-qb.js'; // v3.252
+import { analisar as impAnalisar, proximoVencimento as impProxVenc, jaCadastrada as impJaCad } from '../lib/impostos-recorrentes.js'; // v3.266
 import { termoPendencias, etapaPrazo } from '../lib/termo-regras.js'; // v3.129 · v3.196 prazo por etapa
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
@@ -291,6 +292,7 @@ async function handler(req, res) {
       conc_razao:            () => conferirComRazao(params),
       qb_cliente_criar:      () => qbClienteCriar(params),
       desp_nao_cadastradas:  () => despesasNaoCadastradas(params),
+      impostos_recorrentes:  () => impostosRecorrentes(params), impostos_cadastrar: () => impostosCadastrar(params), // v3.266
       desp_criar_replicar:   () => despesaCriarReplicar(params),
       desp_ajustar_replicar: () => despesaAjustarReplicar(params),
       conc_excluir_invoice:  () => qbExcluirInvoice(params),
@@ -6284,6 +6286,40 @@ async function despesasNaoCadastradas({ meses = 3, tolerancia_pct = 5 } = {}) {
     aviso: 'Saídas do extrato sem despesa programada correspondente. As que se repetem são quase certamente recorrentes — cadastrar evita que o fluxo futuro as ignore.' };
 }
 
+// ═══ v3.266: IMPOSTOS RECORRENTES — parcelamentos, trimestrais e mensais (Prefeitura e federais) a partir dos pagamentos do último ano ═══
+async function impostosRecorrentes({ meses = 13 } = {}) {
+  if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
+  const token = await qbToken(), hoje = _hojeBR(), ini = _addMesesData(hoje, -Math.min(24, Math.max(6, parseInt(meses) || 13)));
+  const ler = async (ent, q) => { const out = []; for (let pag = 0, pos = 1; pag < 10; pag++, pos += 500) { const d = await qbQuery(`${q} startposition ${pos} maxresults 500`, token); const L = d?.QueryResponse?.[ent] || []; out.push(...L); if (L.length < 500) break; await qbEsperar(150); } return out; };
+  const [compras, contas] = [await ler('Purchase', `select * from Purchase where TxnDate >= '${ini}' and TxnDate <= '${hoje}'`), await ler('Bill', `select * from Bill where TxnDate >= '${ini}' and TxnDate <= '${hoje}'`)];
+  const texto = x => [x.EntityRef?.name, x.VendorRef?.name, x.PrivateNote, ...(x.Line || []).flatMap(l => [l.Description, l.AccountBasedExpenseLineDetail?.AccountRef?.name, l.ItemBasedExpenseLineDetail?.ItemRef?.name])].filter(Boolean).join(' · ');
+  const pagamentos = [
+    ...compras.filter(x => x.Credit !== true).map(x => ({ data: x.TxnDate, valor: round(parseFloat(x.TotalAmt || 0)), texto: texto(x), ref: 'despesa:' + x.Id })),
+    ...contas.map(x => ({ data: x.DueDate || x.TxnDate, valor: round(parseFloat(x.TotalAmt || 0)), texto: texto(x), ref: 'conta:' + x.Id })),
+  ].filter(p => p.data && p.valor > 0);
+  const sugestoes = impAnalisar(pagamentos, hoje);
+  const sql = await getSql(); const desp = await sql`SELECT id, descricao, categoria, fornecedor, valor, recorrencia, dia_vencimento FROM despesas_programadas WHERE ativa = true`;
+  const lista = sugestoes.map(s => { const j = impJaCad(s, desp); return { ...s, cadastrada: j ? { id: j.id, descricao: j.descricao, valor: num(j.valor) } : null, proximo: impProxVenc(s.recorrencia, s.dia, hoje),
+    ultimo: s.ultimo ? { data: s.ultimo.data, valor: s.ultimo.valor, texto: String(s.ultimo.texto || '').substring(0, 160), qb_url: _qbUrlTxn(s.ultimo.ref) } : null }; });
+  const rec = lista.filter(x => ['mensal', 'trimestral'].includes(x.recorrencia));
+  return { periodo: { de: ini, ate: hoje }, analisados: pagamentos.length, sugestoes: lista,
+    resumo: { mensal: round(rec.filter(x => x.recorrencia === 'mensal').reduce((a, x) => a + x.valor, 0)), trimestral: round(rec.filter(x => x.recorrencia === 'trimestral').reduce((a, x) => a + x.valor, 0)), a_cadastrar: rec.filter(x => !x.cadastrada).length } };
+}
+async function impostosCadastrar({ itens = [] } = {}) {
+  if (!Array.isArray(itens) || !itens.length) throw new Error('Escolha pelo menos um imposto');
+  const hoje = _hojeBR(), feitos = [], erros = [];
+  for (const it of itens.slice(0, 40)) {
+    try {
+      const rec = ['mensal', 'trimestral'].includes(it.recorrencia) ? it.recorrencia : null; if (!rec) throw new Error('recorrência inválida');
+      const valor = num(it.valor); if (!(valor > 0)) throw new Error('valor inválido');
+      const dia = Math.min(28, Math.max(1, parseInt(it.dia) || 20));
+      const r = await despesaCriarReplicar({ descricao: String(it.descricao || it.tributo).substring(0, 120), fornecedor: String(it.fornecedor || it.tributo).substring(0, 120), valor, dia_vencimento: dia,
+        categoria: String(it.categoria || 'Impostos').substring(0, 80), recorrencia: rec, data_inicio: impProxVenc(rec, dia, hoje), meses: 12, lancar_qb: false });
+      feitos.push({ tributo: it.tributo, despesa_id: r.despesa_id, ocorrencias: r.ocorrencias, primeira: r.primeira });
+    } catch (e) { erros.push((it.tributo || '?') + ': ' + e.message); }
+  }
+  return { cadastrados: feitos.length, feitos, erros };
+}
 // 2. Cria a despesa programada + 12 ocorrências + (opcional) 12 Bills no QuickBooks
 async function despesaCriarReplicar({ descricao, fornecedor, valor, dia_vencimento, categoria, recorrencia = 'mensal', data_inicio, meses = 12, lancar_qb = false } = {}) {
   if (!descricao || !valor) throw new Error('descricao e valor obrigatórios');
