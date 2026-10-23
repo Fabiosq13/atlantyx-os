@@ -19729,7 +19729,7 @@ function renderExtrato(d) {
   let prevHtml = '', prevResumo = '';
   if (PV) {
     let sp = Number(d.saldo_final) || 0, ent = 0, sai = 0;
-    const ORI = { quickbooks_futuro: l => l.tipo === 'entrada' ? ['A RECEBER', 'var(--green)'] : ['A PAGAR', 'var(--red)'], quickbooks_previsao: () => ['MARCO', 'var(--pu)'], agenda_receitas: l => [({ marco: 'MARCO', sustentacao: 'SUSTENTAÇÃO', manual: 'AGENDA REC.' })[l.origem_detalhe] || 'PREVISTO', 'var(--pu)'], atlantyx_futuro: () => ['AGENDA', 'var(--gold)'], simulado: () => ['SIM', 'var(--gold)'] };
+    const ORI = { quickbooks_futuro: l => l.tipo === 'entrada' ? ['A RECEBER', 'var(--green)'] : ['A PAGAR', 'var(--red)'], quickbooks_previsao: () => ['MARCO', 'var(--pu)'], agenda_receitas: l => [({ marco: 'MARCO', termo: 'TERMO', sustentacao: 'SUSTENTAÇÃO', manual: 'AGENDA REC.' })[l.origem_detalhe] || 'PREVISTO', 'var(--pu)'], atlantyx_futuro: () => ['AGENDA', 'var(--gold)'], simulado: () => ['SIM', 'var(--gold)'] };
     const linhas = PV.itens.slice().sort((a, b) => String(a.vencida ? PV.hoje : a.data).localeCompare(String(b.vencida ? PV.hoje : b.data))).map(l => {
       const v = Number(l.valor) || 0; if (l.tipo === 'entrada') { sp += v; ent += v; } else { sp -= v; sai += v; }
       const o = (ORI[l.origem] || (() => ['PREVISTO', 'var(--t3)']))(l), dt = String(l.data || '').slice(0, 10);
@@ -22352,7 +22352,7 @@ function _fdLinha(l, corSaldo) {
   // v1.38: 'referencia' = nota fiscal emitida (competência) — não movimenta caixa
   const ehRef = l.tipo === 'referencia';
   const cor = ehRef ? 'var(--t3)' : (l.tipo === 'entrada' ? 'var(--green,#22d3a3)' : 'var(--red)');
-  const fonte = l.origem === 'quickbooks' ? '🔗 QuickBooks' : l.origem === 'quickbooks_futuro' ? '🔗 QuickBooks' : l.origem === 'quickbooks_previsao' ? '📅 Previsão (estimativa QB)' : l.origem === 'agenda_receitas' ? '📅 Agenda de Receitas (' + ({ marco: 'marco', sustentacao: 'sustentação', manual: 'avulsa' }[l.origem_detalhe] || 'previsão') + (l.atrasada ? ', atrasada' : '') + ')' : l.origem === 'quickbooks_recorrente' ? '🔁 Recorrente (QuickBooks)' : l.origem === 'quickbooks_lancado_futuro' ? '🔗 QuickBooks · data futura' : l.origem === 'simulado' || l.origem === 'simulado_futuro' ? '✎ Simulado' : l.origem === 'atlantyx_futuro' ? '📋 Atlantyx' : (l.origem || '');
+  const fonte = l.origem === 'quickbooks' ? '🔗 QuickBooks' : l.origem === 'quickbooks_futuro' ? '🔗 QuickBooks' : l.origem === 'quickbooks_previsao' ? '📅 Previsão (estimativa QB)' : l.origem === 'agenda_receitas' ? '📅 Agenda de Receitas (' + ({ marco: 'marco', termo: 'termo no faturamento', sustentacao: 'sustentação', manual: 'avulsa' }[l.origem_detalhe] || 'previsão') + (l.atrasada ? ', atrasada' : '') + ')' : l.origem === 'quickbooks_recorrente' ? '🔁 Recorrente (QuickBooks)' : l.origem === 'quickbooks_lancado_futuro' ? '🔗 QuickBooks · data futura' : l.origem === 'simulado' || l.origem === 'simulado_futuro' ? '✎ Simulado' : l.origem === 'atlantyx_futuro' ? '📋 Atlantyx' : (l.origem || '');
   const venc = l.ja_paga ? ' <span style="color:var(--gold);font-size:9px;" title="' + String(l.nota_dedup || '').replace(/"/g, '&quot;') + '">✓ paga no extrato em ' + String(l.ja_paga.data || '').split('-').reverse().join('/') + (l.ja_paga.confianca === 'media' ? ' (confira)' : '') + '</span>'
     : l.vencida ? ' <span style="color:var(--red);font-size:9px;">⚠ vencida' + (l.vencimento_original ? ' em ' + l.vencimento_original.split('-').reverse().join('/') + ' (' + l.dias_atraso + ' dias)' : '') + '</span>' : '';
   const refTag = ehRef ? ' <span style="color:var(--t3);font-size:9px;" title="Nota fiscal emitida — o caixa só muda quando o pagamento entra">📄 emissão (não move o caixa)</span>' : '';
@@ -31700,7 +31700,7 @@ let _ar = { d: null, aba: 'proximas' };
 const _arE = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const _arR = v => 'R$ ' + (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const _arDt = d => d ? String(d).slice(0, 10).split('-').reverse().join('/') : '—';
-const _arOri = { marco: ['Marco', 'var(--blue)'], sustentacao: ['Sustentação', 'var(--green)'], manual: ['Avulsa/recorrente', 'var(--pu)'] };
+const _arOri = { marco: ['Marco', 'var(--blue)'], termo: ['Termo (faturamento)', 'var(--gold)'], sustentacao: ['Sustentação', 'var(--green)'], manual: ['Avulsa/recorrente', 'var(--pu)'] };
 const _arSt = { prevista: ['prevista', 'var(--t2)'], atrasada: ['⚠ atrasada (sem fatura)', 'var(--red)'], coberta: ['✓ faturada no QuickBooks', 'var(--green)'], recebida: ['✓ marcada recebida', 'var(--green)'], cancelada: ['✕ cancelada', 'var(--t3)'] };
 async function arCarregar() {
   const box = document.getElementById('arApp'); if (!box) return; if (!_ar.d) box.innerHTML = '<div class="fv2-load">Lendo marcos, sustentações e faturas do QuickBooks…</div>';
@@ -31742,7 +31742,7 @@ function arRender() {
       + (D.manuais || []).map(r => '<tr style="border-top:1px solid var(--bd);"><td style="padding:5px 4px;"><b>' + _arE(r.cliente) + '</b><div style="color:var(--t3);font-size:9.5px;">' + _arE(r.descricao) + (r.projeto ? ' · ' + _arE(r.projeto) : '') + '</div></td><td>' + (rec[r.recorrencia] || r.recorrencia) + '</td><td>' + _arDt(r.inicio) + '</td><td>' + _arDt(r.fim) + '</td><td style="text-align:right;">' + _arR(r.valor) + '</td><td>' + (r.ativo === false ? 'inativa' : 'ativa') + '</td><td style="text-align:right;white-space:nowrap;"><button class="btn btn-g" style="font-size:9.5px;" onclick="arManualForm(\'' + _arE(r.id) + '\')">✎</button> <button class="btn btn-g" style="font-size:9.5px;" onclick="arManualExcluir(\'' + _arE(r.id) + '\')">🗑</button></td></tr>').join('') + '</table>'
       + ((D.manuais || []).length ? '' : '<div style="padding:16px;color:var(--t3);font-size:11px;">Nenhuma receita cadastrada. Use <b>+ Receita avulsa ou recorrente</b> (ex.: contrato de alocação mensal, licença anual, parcela de projeto fora do Kanban).</div>');
   }
-  box.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">' + card('Previsto (13 meses)', _arR(D.total_ativo), A.length + ' recebimento(s) previstos') + card('Marcos', _arR(soma(por('marco'))), por('marco').length + ' marco(s) não faturados') + card('Sustentações', _arR(soma(por('sustentacao'))), por('sustentacao').length + ' mensalidade(s)') + card('Avulsas e recorrentes', _arR(soma(por('manual'))), por('manual').length + ' lançamento(s)')
+  box.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">' + card('Previsto (13 meses)', _arR(D.total_ativo), A.length + ' recebimento(s) previstos') + card('Marcos sem termo', _arR(soma(por('marco'))), por('marco').length + ' marco(s) ainda sem termo') + card('Termos no faturamento', _arR(soma(por('termo'))), por('termo').length + ' empresa(s) de termo sem fatura no QuickBooks') + card('Sustentações', _arR(soma(por('sustentacao'))), por('sustentacao').length + ' mensalidade(s)') + card('Avulsas e recorrentes', _arR(soma(por('manual'))), por('manual').length + ' lançamento(s)')
     + card('Atrasadas (sem fatura)', _arR(soma(atr)), atr.length + ' — já deviam ter sido faturadas', atr.length ? 'var(--red)' : 'var(--green)') + card('Já faturadas', String(cob.length), 'saíram da previsão (QuickBooks vence)', 'var(--green)') + '</div>'
     + ((D.avisos || []).length ? '<div style="font-size:10px;color:var(--gold);margin-bottom:8px;">' + D.avisos.map(_arE).join('<br>') + '</div>' : '')
     + '<div class="fv2-abas">' + abas.map(([k, t]) => '<button class="fv2-aba' + (_ar.aba === k ? ' on' : '') + '" onclick="arAba(\'' + k + '\')">' + t + '</button>').join('') + '</div>' + corpo;
@@ -35272,7 +35272,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.272] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.273] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35288,7 +35288,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.272';
+window.__ATX_BUILD_ID__ = 'ATX-v3.273';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

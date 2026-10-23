@@ -6140,15 +6140,32 @@ async function _marcosParaReceita(sql) {
   if (termoIds.length) try { (await sql`SELECT termo_id, qb_invoice_id, nf_numero, pagamento_status FROM termos_empresas WHERE termo_id = ANY(${termoIds})`)
     .forEach(e => { const t = String(e.termo_id); faturado[t] = faturado[t] || { fat: false, pago: false }; if (e.qb_invoice_id || String(e.nf_numero || '').trim()) faturado[t].fat = true; if (e.pagamento_status === 'pago') faturado[t].pago = true; }); } catch (_) {}
   const seisMeses = _addMesesData(hoje, -6), out = [];
+  let termosProj = []; try { termosProj = (await sql`SELECT projeto, COALESCE(data_termo, criado_em::date) AS em FROM termos_faturamento WHERE COALESCE(status,'') <> 'cancelado'`).map(t => ({ p: _normDesp(t.projeto), em: _dStr(t.em) })).filter(t => t.p); } catch (_) {}
   for (const m of rows) {
     const tid = vinc[m.id]?.termo_id ? String(vinc[m.id].termo_id) : null, f = tid ? faturado[tid] : null;
-    if (f && (f.fat || f.pago)) continue;                               // já virou fatura/NF (ou foi pago) pelo termo
+    if (tid) continue;                                                   // v3.273: virou termo → entra pelo TERMO (Kanban de Faturamento), não pelo marco
+    if (f && (f.fat || f.pago)) continue;
     if (String(m.nota_fiscal || '').trim()) continue;                    // nota fiscal emitida no marco → entra pela fatura
-    if (m.status_kanban === 'concluido' && !tid) { const ref = _dStr(m.concluido_em) || _dStr(m.data_entrega); if (ref && ref < seisMeses) continue; }
+    if (m.status_kanban === 'concluido' && !tid) { const ref = _dStr(m.concluido_em) || _dStr(m.data_entrega); if (ref && ref < seisMeses) continue;
+      // v3.273: concluído sem ligação explícita — se já existe termo do mesmo projeto criado depois da conclusão, o termo representa o marco
+      const np = _normDesp(m.projeto_nome), desde = ref ? _diasMais(ref, -30) : null;
+      if (np && termosProj.some(t => (t.p.includes(np) || np.includes(t.p)) && (!desde || t.em >= desde))) continue; }
     m._situacao = m.status_kanban === 'concluido' ? (tid ? 'termo gerado, sem fatura ainda' : 'concluído no Kanban de Marcos, sem fatura ainda') : null;
     out.push(m);
   }
   return out;
+}
+// v3.273: TERMOS NO KANBAN DE FATURAMENTO que ainda não viraram fatura no QuickBooks — receita prevista por empresa do termo.
+// Com fatura no QuickBooks (qb_invoice_id), a fatura em aberto é que conta (A Receber); pago/concluído/cancelado sai.
+async function _termosParaReceita(sql) {
+  const rows = await sql`SELECT t.*, e.id AS emp_id, e.empresa, e.valor_parcela, e.nf_valor, e.nf_numero, e.qb_invoice_id, e.pagamento_status AS emp_pag
+    FROM termos_faturamento t JOIN termos_empresas e ON e.termo_id = t.id
+    WHERE COALESCE(t.status, '') NOT IN ('pago', 'cancelado', 'concluido') AND COALESCE(t.pagamento_status, 'pendente') <> 'pago'
+      AND e.qb_invoice_id IS NULL AND COALESCE(e.pagamento_status, 'pendente') <> 'pago'`;
+  return rows.map(r => { const valor = num(r.nf_valor) > 0 ? num(r.nf_valor) : num(r.valor_parcela); const base = _dStr(r.data_termo) || _dStr(r.criado_em);
+    const prev = _dStr(r.cpfl_previsao_pagamento);
+    return { ...r, valor, data: prev || (base ? _diasMais(base, 35) : null), base_data: prev ? 'previsão de pagamento confirmada' : base ? 'termo de ' + base.split('-').reverse().join('/') + ' + 35 dias' : 'termo sem data' }; })
+    .filter(r => r.valor > 0);
 }
 async function _qbClientePrevisao(nome, token, cache) {
   const alvo = String(nome || '').trim(); if (!alvo) return null;
@@ -7942,6 +7959,11 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
       oc.push({ id: 'mrc_' + m.id, origem: 'marco', ref_id: String(m.id), projeto_id: String(m.projeto_id ?? ''), projeto: m.projeto_nome, cliente: m.projeto_cliente || m.projeto_nome, descricao: m.descricao || 'Marco', valor: num(m.valor), data, base_data: base, status_kanban: m.status_kanban });
     }
   } catch (e) { avisos.push('Marcos: ' + e.message); }
+  // 1b) v3.273: termos no Kanban de Faturamento sem fatura no QuickBooks (marco que já gerou termo entra por aqui)
+  try { for (const t of await _termosParaReceita(sql)) {
+      oc.push({ id: 'trm_' + t.emp_id, origem: 'termo', ref_id: String(t.id), projeto: t.projeto || '', cliente: t.empresa || t.contratante || t.projeto || '', descricao: 'Termo ' + (t.numero_termo || '') + (t.marco_projeto ? ' · ' + t.marco_projeto : t.parcela ? ' · ' + t.parcela : '') + (t.nf_numero ? ' · NF ' + t.nf_numero : ''),
+        valor: round(t.valor), data: t.data || _diasMais(hoje, 35), base_data: t.base_data + ' · etapa ' + (t.status || '?'), status_termo: t.status }); } }
+  catch (e) { avisos.push('Termos: ' + e.message); }
   // 2) sustentações
   let sustentacoes = [];
   try {
@@ -8001,7 +8023,7 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   }
   for (const o of oc) if (!o.status) { if (o.data < hoje) { o.status = 'atrasada'; o.data_prevista = o.data; o.data = hoje; } else o.status = 'prevista'; }
   const ativas = oc.filter(o => (o.status === 'prevista' || o.status === 'atrasada') && o.data <= fimHor);
-  const porMes = {}; for (const o of ativas) { const k = o.data.substring(0, 7); const p = (porMes[k] = porMes[k] || { mes: k, total: 0, marco: 0, sustentacao: 0, manual: 0 }); p.total = round(p.total + o.valor); p[o.origem] = round(p[o.origem] + o.valor); }
+  const porMes = {}; for (const o of ativas) { const k = o.data.substring(0, 7); const p = (porMes[k] = porMes[k] || { mes: k, total: 0, marco: 0, termo: 0, sustentacao: 0, manual: 0 }); p.total = round(p.total + o.valor); p[o.origem] = round(p[o.origem] + o.valor); }
   const v = { hoje, ate: fimHor, ocorrencias: oc.sort((a, b) => a.data.localeCompare(b.data)), ativas, por_mes: Object.values(porMes).sort((a, b) => a.mes.localeCompare(b.mes)),
     total_ativo: round(ativas.reduce((s, o) => s + o.valor, 0)), sustentacoes, manuais, dia_padrao: diaPad, qb_conferido: !!faturas, avisos };
   _rpCache = { em: Date.now(), chave, v }; return v;
