@@ -2427,8 +2427,22 @@ async function qbTrocarData({ qb_txn_id, de, para, valor, conta_id } = {}) {
   if (v && Math.abs(total - v) > 0.01 && !(item.Line || []).some(l => Math.abs(round(parseFloat(l.Amount || 0)) - v) <= 0.01)) dif.push('o valor');
   if (conta_id && !ctas.includes(String(conta_id))) dif.push('a conta bancária');
   if (dif.length) throw new Error('O lançamento mudou no QuickBooks desde a comparação (' + dif.join(', ') + ') — a data não foi trocada. Refaça a comparação.');
-  const resp = await qbFetch('/' + entidade.toLowerCase() + '?minorversion=65', token, 'POST', { Id: item.Id, SyncToken: item.SyncToken, sparse: true, TxnDate: para });
-  const novo = resp?.[entidade]; if (!novo?.Id) throw new Error('O QuickBooks não confirmou a troca da data');
+  // v3.262: chamada direta (para ler a mensagem inteira do QuickBooks). Primeiro a atualização parcial (só a data);
+  // se o QuickBooks recusar, manda o lançamento completo com a data nova (alguns tipos exigem o objeto inteiro).
+  const base = process.env.QB_SANDBOX === 'true' ? 'https://sandbox-quickbooks.api.intuit.com' : 'https://quickbooks.api.intuit.com';
+  const enviar = async corpo => { const rr = await fetch(`${base}/v3/company/${qbRealmId()}/${entidade.toLowerCase()}?minorversion=65`, { method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(corpo) });
+    const j = await rr.json().catch(() => ({})); const f = j.Fault?.Error?.[0];
+    return rr.ok && j[entidade] ? { ok: j[entidade] } : { erro: [f?.Message, f?.Detail].filter(Boolean).join(' — ') || ('HTTP ' + rr.status), codigo: f?.code || null }; };
+  let res = await enviar({ Id: item.Id, SyncToken: item.SyncToken, sparse: true, TxnDate: para });
+  if (res.erro) { const { MetaData, domain, sparse, ...cheio } = item; const r2 = await enviar({ ...cheio, TxnDate: para }); if (r2.ok) res = r2; else res = { erro: r2.erro || res.erro, codigo: r2.codigo || res.codigo }; }
+  try { _qbCache.clear(); } catch (_) {}
+  if (res.erro) {
+    if (/correspond|matched|bank feed|banking/i.test(res.erro)) return { trocada: false, bloqueado_correspondencia: true, qb_url: _qbUrlTxn(qb_txn_id),
+      mensagem: 'Este lançamento está correspondido (match) a uma transação do feed bancário — o QuickBooks não deixa mudar a data pela API. Abra no QuickBooks e mude a data lá.' };
+    throw new Error('O QuickBooks recusou a troca da data: ' + res.erro.substring(0, 400));
+  }
+  const novo = res.ok;
   try { _resCache.clear(); } catch (_) {}
   console.log(`[Financeiro] DATA TROCADA no QuickBooks: ${entidade}#${id} ${de} → ${para}`);
   return { trocada: true, entidade, id: item.Id, de, para: novo.TxnDate };

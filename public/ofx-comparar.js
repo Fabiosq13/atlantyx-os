@@ -274,8 +274,8 @@
       ${explicacaoHtml()}
       <div style="font-size:10.5px;color:var(--t2);margin-bottom:12px;line-height:1.6;">Como ler: a diferença de saldo de um dia é <b>banco − sistema</b>. Quando ela muda de um dia para o outro, o motivo está nos lançamentos daquele dia (faltando, sobrando ou com valor diferente). Diferença já no saldo inicial vem de antes do período — compare um extrato mais antigo.</div>
       <div style="display:grid;grid-template-columns:1fr;gap:14px;">
-        <div><div style="font-weight:700;font-size:12px;margin-bottom:4px;">🏦 Só no banco — faltam no sistema (${RES.so_banco.length})</div>${tb(th('Data') + th('Descrição no banco') + th('Valor', 1) + th(''), soB, '✓ Tudo o que está no banco está no sistema.')}</div>
-        <div><div style="font-weight:700;font-size:12px;margin-bottom:4px;">📒 Só no sistema — não aparecem no banco (${RES.so_sistema.length})</div>${tb(th('Data') + th('Descrição no sistema') + th('Valor', 1) + th(''), soS, '✓ Tudo o que está no sistema aparece no banco.')}</div></div>
+        <div><div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;"><div style="font-weight:700;font-size:12px;">🏦 Só no banco — faltam no sistema (${RES.so_banco.length})</div>${RES.so_banco.length > 1 ? '<button class="btn btn-gn" style="font-size:10px;" onclick="OFXCMP.loteIncluirAbrir()">＋ Incluir todos</button>' : ''}</div><div id="ofxLoteInc"></div>${tb(th('Data') + th('Descrição no banco') + th('Valor', 1) + th(''), soB, '✓ Tudo o que está no banco está no sistema.')}</div>
+        <div><div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;"><div style="font-weight:700;font-size:12px;">📒 Só no sistema — não aparecem no banco (${RES.so_sistema.length})</div>${RES.so_sistema.filter(x => x.qb_txn_id).length > 1 ? '<button class="btn" style="font-size:10px;color:var(--red);border-color:var(--red);" onclick="OFXCMP.loteExcluirAbrir()">🗑 Excluir todos</button>' : ''}</div><div id="ofxLoteExc"></div>${tb(th('Data') + th('Descrição no sistema') + th('Valor', 1) + th(''), soS, '✓ Tudo o que está no sistema aparece no banco.')}</div></div>
       ${RES.grupos.length ? `<div style="font-weight:700;font-size:12px;margin:14px 0 4px;">🧩 Batem somando vários lançamentos (${RES.grupos.length})</div>${tb(th('Regra') + th('No banco') + th('No sistema') + th('Valor', 1), RES.grupos.map(g => `<tr style="border-bottom:1px solid var(--bd);vertical-align:top;"><td style="padding:5px;font-size:10px;color:var(--t2);white-space:nowrap;">${esc(g.regra)}</td><td style="padding:5px;">${g.banco.map(x => dt(x.data) + ' · ' + esc(x.descricao) + ' · ' + sinal(x.c)).join('<br>')}</td><td style="padding:5px;">${g.sistema.map(x => dt(x.data) + ' · ' + esc(x.descricao) + ' · ' + sinal(x.c)).join('<br>')}</td><td style="padding:5px;text-align:right;">${sinal(g.banco.reduce((a, x) => a + x.c, 0))}</td></tr>`), '')}` : ''}
       ${dif.length ? `<div style="display:flex;align-items:center;gap:10px;margin:14px 0 4px;"><div style="font-weight:700;font-size:12px;">📅 Batem no valor, mas com data diferente (${dif.length})</div><button class="btn btn-gn" style="font-size:10px;" onclick="OFXCMP.trocarTodas(this)">📅 Usar a data do banco em todos</button></div>${tb(th('No banco') + th('No sistema') + th('Descrição') + th('Valor', 1) + th(''), dif, '')}` : ''}
       <div style="display:flex;align-items:center;gap:10px;margin:14px 0 4px;"><div style="font-weight:700;font-size:12px;">💰 Saldo de fim de dia — banco × sistema</div><label style="font-size:10.5px;color:var(--t2);display:flex;gap:5px;align-items:center;"><input type="checkbox" ${todosDias ? 'checked' : ''} onchange="OFXCMP._todos(this.checked)"> mostrar todos os dias com movimento</label></div>
@@ -297,18 +297,67 @@
   // a cada ajuste (incluir, excluir, trocar data) relê o QuickBooks e redesenha banco × sistema no mesmo lugar da tela
   async function atualizar(btn) { const y = window.scrollY; if (btn) { btn.disabled = true; btn.textContent = '⏳ Atualizando…'; }
     const ok = await recomparar(); if (ok) { RES.atualizado_em = new Date(); desenhar(); window.scrollTo(0, y); } else if (btn) { btn.disabled = false; btn.textContent = '↻ Atualizar'; } return ok; }
+  // ── em lote: incluir tudo o que só está no banco (categoria sugerida por linha, revisável) e excluir o que só está no sistema ──
+  async function loteIncluirAbrir() {
+    const box2 = $('ofxLoteInc'); if (!box2) return; if (box2.innerHTML) { box2.innerHTML = ''; return; }
+    let C; try { C = await categorias(); } catch (e) { return toast(e.message, 'error'); }
+    const linhas = RES.so_banco.map(x => { const saida = x.c < 0, cart = saida && /cartao|card|fatura/.test(norm(x.descricao)), L = saida ? [...(C.cartoes || []).map(c => ({ ...c, nome: '💳 ' + c.nome + ' (pagamento da fatura)' })), ...C.saida] : C.entrada;
+      const sug = cart && (C.cartoes || []).length ? C.cartoes[0] : sugerir(L, x.descricao, saida);
+      return `<tr style="border-bottom:1px solid var(--bd);"><td style="padding:4px;"><input type="checkbox" class="ofxLI" value="${esc(x.id)}" checked></td><td style="padding:4px;white-space:nowrap;">${dt(x.data)}</td><td style="padding:4px;">${esc(x.descricao)}</td><td style="padding:4px;text-align:right;">${sinal(x.c)}</td>
+        <td style="padding:4px;"><select class="fsel" id="ofxLC_${esc(x.id)}" style="font-size:10.5px;max-width:240px;"><option value="">— escolha —</option>${L.map(c => `<option value="${esc(c.id)}" ${sug && sug.id === c.id ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></td></tr>`; }).join('');
+    box2.innerHTML = `<div style="background:var(--bg4);border:1px solid var(--green);border-radius:8px;padding:8px;margin-bottom:8px;"><div style="font-size:11px;margin-bottom:6px;">Confira a categoria de cada linha (vem sugerida) e desmarque o que não quer incluir.</div>
+      <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:560px;"><tbody>${linhas}</tbody></table></div>
+      <div style="display:flex;gap:6px;margin-top:8px;"><button class="btn btn-p" style="font-size:10.5px;" onclick="OFXCMP.loteIncluir(this)">✓ Incluir os marcados no QuickBooks</button><button class="btn" style="font-size:10.5px;" onclick="document.getElementById('ofxLoteInc').innerHTML=''">Cancelar</button></div><div id="ofxLoteIncMsg" style="font-size:11px;margin-top:6px;"></div></div>`;
+  }
+  async function loteIncluir(btn) {
+    const ids = [...document.querySelectorAll('.ofxLI:checked')].map(i => i.value); if (!ids.length) return toast('Marque pelo menos uma linha', 'error');
+    const semCat = ids.filter(id => !$('ofxLC_' + id)?.value); if (semCat.length) return toast(semCat.length + ' linha(s) sem categoria — escolha ou desmarque', 'error');
+    btn.disabled = true; let ok = 0, ja = 0; const erros = [];
+    for (const id of ids) { const x = RES.so_banco.find(b => b.id === id); if (!x) continue; btn.textContent = '⏳ ' + (ok + ja + erros.length + 1) + ' de ' + ids.length + '…';
+      try { const r = await finApi('ofx_incluir', { conta_id: ALVO.conta, data: x.data, valor: x.c / 100, descricao: x.descricao, categoria_id: $('ofxLC_' + id).value, fitid: x.fitid }); if (r.ja_existe) ja++; else ok++; }
+      catch (e) { erros.push(dt(x.data) + ' ' + x.descricao + ': ' + e.message); } }
+    try { addLog('info', '[Extrato OFX] inclusão em lote: ' + ok + ' incluído(s), ' + ja + ' já existia(m), ' + erros.length + ' erro(s)'); } catch (_) {}
+    toast(ok + ' incluído(s) no QuickBooks' + (ja ? ' · ' + ja + ' já existia(m)' : '') + (erros.length ? ' · ' + erros.length + ' com erro' : ''), erros.length ? 'error' : 'success');
+    await atualizar(); if (erros.length) avisoLote('Não incluídos', erros);
+  }
+  function loteExcluirAbrir() {
+    const box2 = $('ofxLoteExc'); if (!box2) return; if (box2.innerHTML) { box2.innerHTML = ''; return; }
+    const L = RES.so_sistema.filter(x => x.qb_txn_id);
+    box2.innerHTML = `<div style="background:rgba(255,80,80,.08);border:1px solid var(--red);border-radius:8px;padding:8px;margin-bottom:8px;"><div style="font-size:11px;margin-bottom:6px;">Serão excluídos <b>no QuickBooks</b> os lançamentos marcados. Desmarque o que estiver em outra conta ou fora do período do extrato. A exclusão não pode ser desfeita pelo Atlantyx.</div>
+      ${L.map(x => `<label style="display:flex;gap:6px;align-items:center;font-size:11px;padding:2px 0;"><input type="checkbox" class="ofxLE" value="${esc(x.id)}" ${/duplicidade/.test(x.pista || '') ? 'checked' : ''}> ${dt(x.data)} · ${esc(x.descricao)} · ${sinal(x.c)}${x.pista ? ' <span style="color:var(--gold);font-size:10px;">' + esc(x.pista) + '</span>' : ''}</label>`).join('')}
+      <div style="display:flex;gap:6px;margin-top:8px;"><button class="btn" style="font-size:10.5px;" onclick="document.querySelectorAll('.ofxLE').forEach(c=>c.checked=true)">Marcar todos</button><button class="btn btn-rd" style="font-size:10.5px;" onclick="OFXCMP.loteExcluir(this)">🗑 Excluir os marcados no QuickBooks</button><button class="btn" style="font-size:10.5px;" onclick="document.getElementById('ofxLoteExc').innerHTML=''">Cancelar</button></div></div>`;
+  }
+  async function loteExcluir(btn) {
+    const ids = [...document.querySelectorAll('.ofxLE:checked')].map(i => i.value); if (!ids.length) return toast('Marque pelo menos um lançamento', 'error');
+    btn.disabled = true; let ok = 0; const erros = [], abrir = [];
+    for (const id of ids) { const x = RES.so_sistema.find(s => s.id === id); if (!x) continue; btn.textContent = '⏳ ' + (ok + erros.length + abrir.length + 1) + ' de ' + ids.length + '…';
+      try { const d = await finApi('qb_excluir_lancamento', { qb_txn_id: x.qb_txn_id, confirmar: true, esperado: { valor: Math.abs(x.c) / 100, data: x.data, conta_id: ALVO.conta } }, { timeoutMs: 45000 });
+        if (d.bloqueado_correspondencia) abrir.push({ x, url: d.qb_url }); else if (d.excluido) ok++; else erros.push(dt(x.data) + ' ' + x.descricao + ': o QuickBooks não confirmou'); }
+      catch (e) { erros.push(dt(x.data) + ' ' + x.descricao + ': ' + e.message); } }
+    try { addLog('warn', '[Extrato OFX] exclusão em lote no QuickBooks: ' + ok + ' excluído(s), ' + abrir.length + ' correspondido(s) ao feed, ' + erros.length + ' erro(s)'); } catch (_) {}
+    toast(ok + ' excluído(s) no QuickBooks' + (abrir.length ? ' · ' + abrir.length + ' precisam ser excluídos na tela do QuickBooks' : '') + (erros.length ? ' · ' + erros.length + ' com erro' : ''), erros.length ? 'error' : 'success');
+    await atualizar();
+    if (abrir.length) avisoLote('Correspondidos ao feed bancário — exclua na tela do QuickBooks', abrir.map(a => dt(a.x.data) + ' ' + a.x.descricao + ' ' + brl(Math.abs(a.x.c) / 100)), abrir.map(a => a.url));
+    if (erros.length) avisoLote('Não excluídos', erros);
+  }
+  function avisoLote(titulo, itens, urls) { const d = document.createElement('div'); d.style.cssText = 'background:var(--bg4);border:1px solid var(--gold);border-radius:8px;padding:8px 11px;margin:0 0 10px;font-size:11px;line-height:1.7;';
+    d.innerHTML = '<b>' + esc(titulo) + '</b><br>' + itens.map((t, i) => esc(t) + (urls && urls[i] ? ` <a href="${esc(urls[i])}" target="_blank" rel="noopener" style="color:var(--blue);">↗ abrir no QuickBooks</a>` : '')).join('<br>') + '<div><button class="btn" style="font-size:10px;margin-top:4px;" onclick="OFXCMP.atualizar(this)">↻ Atualizar depois de ajustar</button></div>';
+    const pb = box().querySelector('.pb'); if (pb) pb.prepend(d); }
   // ── trocar no QuickBooks a data do lançamento para a do banco ──
   async function trocarUma(p) { return finApi('qb_trocar_data', { qb_txn_id: p.sistema.qb_txn_id, de: p.sistema.data, para: p.banco.data, valor: Math.abs(p.sistema.c) / 100, conta_id: ALVO.conta }, { timeoutMs: 45000 }); }
   async function trocarData(id, btn) {
     const p = RES.pares.find(x => x.sistema.id === id && x.dias > 0); if (!p) return; btn.disabled = true; btn.textContent = '⏳ Trocando…';
-    try { const r = await trocarUma(p); toast(r.ja_estava ? 'Já estava em ' + dt(p.banco.data) : 'Data trocada no QuickBooks: ' + dt(p.sistema.data) + ' → ' + dt(r.para), 'success');
+    try { const r = await trocarUma(p);
+      if (r.bloqueado_correspondencia) { const td = btn.parentNode; td.innerHTML = `<div style="font-size:10.5px;color:var(--gold);max-width:320px;white-space:normal;">⚠ ${esc(r.mensagem)}</div>${r.qb_url ? `<a class="btn btn-p" style="font-size:10px;" href="${esc(r.qb_url)}" target="_blank" rel="noopener">↗ Abrir no QuickBooks</a> <button class="btn" style="font-size:10px;" onclick="OFXCMP.atualizar(this)">↻ Já mudei — atualizar</button>` : ''}`; return; }
+      toast(r.ja_estava ? 'Já estava em ' + dt(p.banco.data) : 'Data trocada no QuickBooks: ' + dt(p.sistema.data) + ' → ' + dt(r.para), 'success');
       try { addLog('info', '[Extrato OFX] data trocada no QuickBooks: ' + p.sistema.qb_txn_id + ' ' + p.sistema.data + ' → ' + p.banco.data); } catch (_) {}
       await atualizar();
-    } catch (e) { toast('Não trocou a data: ' + e.message, 'error'); btn.disabled = false; btn.textContent = '⛔ ' + e.message.substring(0, 60); btn.title = e.message; } }
+    } catch (e) { toast('Não trocou a data: ' + e.message, 'error'); const td = btn.parentNode; btn.disabled = false; btn.textContent = '📅 Tentar de novo';
+      let er = td.querySelector('.ofxErr'); if (!er) { er = document.createElement('div'); er.className = 'ofxErr'; er.style.cssText = 'font-size:10.5px;color:var(--red);max-width:340px;white-space:normal;margin-top:4px;'; td.appendChild(er); } er.textContent = '⛔ ' + e.message; } }
   async function trocarTodas(btn) {
     const L = RES.pares.filter(p => p.dias > 0 && p.sistema.qb_txn_id); if (!L.length) return;
     btn.disabled = true; let ok = 0; const erros = [];
-    for (const p of L) { btn.textContent = '⏳ ' + (ok + erros.length + 1) + ' de ' + L.length + '…'; try { await trocarUma(p); ok++; } catch (e) { erros.push(dt(p.sistema.data) + ' ' + p.sistema.descricao + ': ' + e.message); } }
+    for (const p of L) { btn.textContent = '⏳ ' + (ok + erros.length + 1) + ' de ' + L.length + '…'; try { const r = await trocarUma(p); if (r.bloqueado_correspondencia) erros.push(dt(p.sistema.data) + ' ' + p.sistema.descricao + ': correspondido ao feed bancário — mude a data no QuickBooks'); else ok++; } catch (e) { erros.push(dt(p.sistema.data) + ' ' + p.sistema.descricao + ': ' + e.message); } }
     toast(ok + ' data(s) trocada(s) no QuickBooks' + (erros.length ? ' · ' + erros.length + ' não trocada(s)' : ''), erros.length ? 'error' : 'success');
     try { addLog('info', '[Extrato OFX] ' + ok + ' data(s) trocada(s) no QuickBooks' + (erros.length ? ' · erros: ' + erros.join(' | ') : '')); } catch (_) {}
     await atualizar();
@@ -332,5 +381,5 @@
   }
   function fechar() { const b = $('fd_ofxBox'); if (b) b.remove(); OFX = null; RES = null; }
 
-  G.OFXCMP = { atualizar, trocarData, trocarTodas, parse, decodificar, saldosOfx, ancoraOfx, comparar, _ancora: ancorar, escolher, ler, rodar, fechar, incluirAbrir, incluir, excluirAbrir, excluir, _todos: v => { todosDias = !!v; desenhar(); }, _estado: () => ({ OFX, RES }) };
+  G.OFXCMP = { loteIncluirAbrir, loteIncluir, loteExcluirAbrir, loteExcluir, atualizar, trocarData, trocarTodas, parse, decodificar, saldosOfx, ancoraOfx, comparar, _ancora: ancorar, escolher, ler, rodar, fechar, incluirAbrir, incluir, excluirAbrir, excluir, _todos: v => { todosDias = !!v; desenhar(); }, _estado: () => ({ OFX, RES }) };
 })(typeof window !== 'undefined' ? window : globalThis);
