@@ -2395,6 +2395,9 @@ async function qbExcluirLancamento({ qb_txn_id, confirmar = false, esperado = nu
     const msg = d.Fault?.Error?.[0]?.Message || d.Fault?.Error?.[0]?.Detail || JSON.stringify(d).substring(0, 200);
     throw new Error(`QuickBooks recusou a exclusão: ${msg}`);
   }
+  // v3.260: a exclusão vai direto à API (fora do qbFetch) — limpa o cache das consultas, senão o extrato relido logo em
+  // seguida ainda trazia o lançamento apagado e parecia que "não excluiu"
+  try { _qbCache.clear(); } catch (_) {} try { _resCache.clear(); } catch (_) {}
   console.log(`[Financeiro] EXCLUÍDO no QuickBooks: ${entidade}#${id} · ${resumo.valor} · ${resumo.contraparte}`);
   return { excluido: true, registro: resumo, resposta_qb: d[entidade]?.status || 'Deleted' };
 }

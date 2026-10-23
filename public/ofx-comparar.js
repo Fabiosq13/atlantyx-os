@@ -223,7 +223,7 @@
     try { const r = await finApi('ofx_incluir', { conta_id: ALVO.conta, data: x.data, valor: x.c / 100, descricao: $('ofxDesc_' + id)?.value || x.descricao, categoria_id: cat, fitid: x.fitid });
       if (r.ja_existe) toast(r.aviso, 'info'); else { toast('Incluído no QuickBooks (' + ({ Purchase: 'despesa', Deposit: 'depósito', Transfer: 'pagamento do cartão' }[r.entidade] || r.entidade) + ' #' + r.id + ')', 'success'); try { addLog('info', '[Extrato OFX] incluído no QuickBooks: ' + r.qb_txn_id + ' · ' + brl(x.c / 100)); } catch (_) {} }
       if (await recomparar()) desenhar();
-    } catch (e) { toast(e.message, 'error'); btn.disabled = false; btn.textContent = '✓ Incluir no QuickBooks'; } }
+    } catch (e) { toast(e.message, 'error'); btn.disabled = false; btn.textContent = '✓ Incluir no QuickBooks'; const c = document.getElementById('ofxInc_' + id); if (c) { let er = c.querySelector('.ofxErr'); if (!er) { er = document.createElement('div'); er.className = 'ofxErr'; er.style.cssText = 'color:var(--red);font-size:11px;margin-top:5px;font-weight:600;'; c.firstElementChild.appendChild(er); } er.textContent = '⛔ ' + e.message; } } }
   // ── excluir no QuickBooks o que não está no banco ──
   async function excluirAbrir(id) {
     const x = RES.so_sistema.find(s => s.id === id); if (!x || !x.qb_txn_id) return; const ja = document.getElementById('ofxExc_' + id); if (ja) { ja.remove(); return; }
@@ -237,10 +237,15 @@
     } catch (e) { f.innerHTML = `<td colspan="4" style="padding:8px;color:var(--red);font-size:11px;">${esc(e.message)}</td>`; } }
   async function excluir(id, btn) {
     const x = RES.so_sistema.find(s => s.id === id); if (!x) return; btn.disabled = true; btn.textContent = '⏳ Excluindo…';
-    try { const d = await finApi('qb_excluir_lancamento', { qb_txn_id: x.qb_txn_id, confirmar: true, esperado: { valor: Math.abs(x.c) / 100, data: x.data, conta_id: ALVO.conta } });
-      toast('Excluído no QuickBooks: ' + brl(d.registro?.valor || 0), 'success'); try { addLog('warn', '[Extrato OFX] EXCLUÍDO no QuickBooks: ' + d.registro?.entidade + '#' + d.registro?.id + ' · ' + brl(d.registro?.valor || 0)); } catch (_) {}
-      if (await recomparar()) desenhar();
-    } catch (e) { toast(e.message, 'error'); btn.disabled = false; btn.textContent = '🗑 Excluir no QuickBooks'; } }
+    const msg = (t, cor) => { const c = document.getElementById('ofxExc_' + id); if (c) c.innerHTML = `<td colspan="4" style="padding:8px;font-size:11.5px;font-weight:600;color:${cor};background:var(--bg4);">${t}</td>`; };
+    let d;
+    try { d = await finApi('qb_excluir_lancamento', { qb_txn_id: x.qb_txn_id, confirmar: true, esperado: { valor: Math.abs(x.c) / 100, data: x.data, conta_id: ALVO.conta } }, { timeoutMs: 45000 }); }
+    catch (e) { msg('⛔ O QuickBooks não excluiu: ' + esc(e.message), 'var(--red)'); toast('Não excluiu: ' + e.message, 'error'); return; }
+    if (!d || !d.excluido) { msg('⛔ O QuickBooks não confirmou a exclusão' + (d && d.erro ? ': ' + esc(d.erro) : '') + '. Nada mudou.', 'var(--red)'); return; }
+    toast('Excluído no QuickBooks: ' + brl(d.registro?.valor || 0), 'success'); try { addLog('warn', '[Extrato OFX] EXCLUÍDO no QuickBooks: ' + d.registro?.entidade + '#' + d.registro?.id + ' · ' + brl(d.registro?.valor || 0)); } catch (_) {}
+    msg('✓ Excluído no QuickBooks (' + esc(d.registro?.entidade || '') + ' #' + esc(d.registro?.id || '') + ') — atualizando a comparação…', 'var(--green)');
+    if (await recomparar()) { const ainda = RES.so_sistema.some(s => s.qb_txn_id === x.qb_txn_id); desenhar();
+      if (ainda) toast('O QuickBooks confirmou a exclusão, mas a leitura ainda trouxe o lançamento — clique em Comparar de novo em alguns segundos', 'info'); } }
   function desenhar() {
     const R = RES.resumo, b = box(), okSaldo = R.diferenca_final != null && Math.abs(R.diferenca_final) < 0.01;
     const chip = (t, v, cor, s) => `<div style="background:var(--bg3);border:1px solid ${cor || 'var(--bd)'};border-radius:8px;padding:8px 11px;min-width:150px;"><div style="font-size:9.5px;color:var(--t3);text-transform:uppercase;letter-spacing:.05em;">${t}</div><div style="font-size:15px;font-weight:700;margin-top:2px;">${v}</div>${s ? `<div style="font-size:9.5px;color:var(--t3);">${s}</div>` : ''}</div>`;
