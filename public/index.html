@@ -3667,6 +3667,8 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
     </select>
     <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="compararSaldoPorConta()" title="Compara o saldo do Atlantyx com o saldo de cada conta no QuickBooks">&#9878; Comparar por conta</button>
     <button class="btn" style="font-size:10px;" onclick="verRazaoConta()" title="Razão contábil da conta no QuickBooks, com saldo inicial e final do período">&#128220; Razão da conta</button>
+    <button class="btn" style="font-size:10px;color:var(--gold);border-color:var(--gold);" onclick="document.getElementById('fd_ofxArq').click()" title="Lê o extrato OFX do banco (sem enviar nem gravar) e compara lançamentos e saldo diário com o QuickBooks">&#127974; Comparar com extrato OFX</button>
+    <input type="file" id="fd_ofxArq" accept=".ofx,.OFX" style="display:none;" onchange="ofxComparar(this)"/>
     <button class="btn btn-gn" onclick="carregarFluxoDetalhado()">&#8635; Atualizar</button>
     <div style="flex-basis:100%;display:flex;gap:6px;align-items:center;">
       <input type="search" id="fd_busca" class="fi" style="font-size:11px;max-width:380px;margin:0;" placeholder="🔎 Filtrar pela descrição do lançamento (ex.: aluguel, CPFL, imposto)" oninput="_fdBuscaMudou()" title="Mostra só os lançamentos cuja descrição contém todas as palavras digitadas (sem diferenciar acentos e maiúsculas)"/>
@@ -11745,6 +11747,13 @@ function cmpAbrir() {
   const s = document.createElement('script'); s.src = '/campanhas-ui.js?v=' + encodeURIComponent(window.__ATX_BUILD_ID__ || Date.now()); s.onload = () => window.CMP && CMP.abrir();
   s.onerror = () => { const a = document.getElementById('cmpApp'); if (a) a.innerHTML = '<div style="color:var(--red);padding:20px;">Não consegui carregar /campanhas-ui.js</div>'; };
   document.head.appendChild(s);
+}
+// v3.256: comparar o extrato OFX com o Fluxo Detalhado (módulo sob demanda: o arquivo é lido só no navegador)
+function ofxComparar(inp) {
+  const f = inp && inp.files && inp.files[0]; if (inp) inp.value = ''; if (!f) return;
+  if (window.OFXCMP) return OFXCMP.ler(f);
+  const s = document.createElement('script'); s.src = '/ofx-comparar.js?v=' + encodeURIComponent(window.__ATX_BUILD_ID__ || Date.now()); s.onload = () => window.OFXCMP && OFXCMP.ler(f);
+  s.onerror = () => toast('Não consegui carregar /ofx-comparar.js', 'error'); document.head.appendChild(s);
 }
 // v3.153: Atlantyx TV (canal estilo Bloomberg) + webinars ao vivo (sala privada / YouTube · LinkedIn · Instagram)
 function atvAbrir(aba) {
@@ -35181,7 +35190,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.255] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.256] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35197,7 +35206,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.255';
+window.__ATX_BUILD_ID__ = 'ATX-v3.256';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

@@ -211,6 +211,7 @@ async function handler(req, res) {
       qb_contas_diagnostico: () => qbContasDiagnostico(),
       qb_contas_filtro:      () => qbContasParaFiltro(),
       qb_excluir_lancamento: () => qbExcluirLancamento(params),
+      ofx_categorias:        () => ofxCategorias(), ofx_incluir: () => ofxIncluir(params), // v3.256: comparar o extrato OFX — incluir o que só está no banco
       qb_razao_conta:        () => qbRazaoConta(params),
       executar_tarefa:       () => executarTarefaFin(params),
       config_get:            () => configAppGet(params),
@@ -2336,7 +2337,7 @@ const ENTIDADE_POR_TIPO = {
   venda: 'SalesReceipt', transferencia: 'Transfer', lancamento: 'JournalEntry',
   pagto_cartao: 'CreditCardPayment', reembolso: 'RefundReceipt', invoice: 'Invoice',
 };
-async function qbExcluirLancamento({ qb_txn_id, confirmar = false } = {}) {
+async function qbExcluirLancamento({ qb_txn_id, confirmar = false, esperado = null } = {}) {
   if (!qb_txn_id) throw new Error('qb_txn_id obrigatório');
   if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
   const [tipo, id] = String(qb_txn_id).split(':');
@@ -2363,6 +2364,17 @@ async function qbExcluirLancamento({ qb_txn_id, confirmar = false } = {}) {
   };
   (item.Line || []).forEach(l => (l.LinkedTxn || []).forEach(lt => resumo.vinculos.push(`${lt.TxnType}#${lt.TxnId}`)));
 
+  // v3.256: exclusão a partir da comparação com o extrato — o servidor confere que o lançamento ainda é o que a tela mostrou
+  // (mesmo valor, mesma data e mesma conta bancária); se mudou no QuickBooks desde a comparação, não exclui
+  if (esperado) {
+    const ctas = [item.AccountRef?.value, item.DepositToAccountRef?.value, item.BankAccountRef?.value, item.CheckPayment?.BankAccountRef?.value, item.FromAccountRef?.value, item.ToAccountRef?.value,
+      ...(item.Line || []).map(l => l.JournalEntryLineDetail?.AccountRef?.value)].filter(Boolean).map(String);
+    const dif = [];
+    if (esperado.valor != null && Math.abs(round(parseFloat(item.TotalAmt || item.Amount || 0)) - round(Math.abs(Number(esperado.valor)))) > 0.01 && !(item.Line || []).some(l => Math.abs(round(parseFloat(l.Amount || 0)) - round(Math.abs(Number(esperado.valor)))) <= 0.01)) dif.push('o valor');
+    if (esperado.data && item.TxnDate !== String(esperado.data).slice(0, 10)) dif.push('a data');
+    if (esperado.conta_id && !ctas.includes(String(esperado.conta_id))) dif.push('a conta bancária');
+    if (dif.length) throw new Error('O lançamento mudou no QuickBooks desde a comparação (' + dif.join(', ') + ') — nada foi excluído. Refaça a comparação.');
+  }
   // 2. Sem confirmação, devolve a prévia — a tela mostra e pede o "sim"
   if (!confirmar) {
     return { previa: true, sera_excluido: resumo,
@@ -2387,6 +2399,45 @@ async function qbExcluirLancamento({ qb_txn_id, confirmar = false } = {}) {
   return { excluido: true, registro: resumo, resposta_qb: d[entidade]?.status || 'Deleted' };
 }
 
+// ═══ v3.256: COMPARAR O EXTRATO OFX — incluir no QuickBooks o lançamento que só está no banco ═══
+// O OFX é lido no navegador; aqui chega só a linha que a pessoa clicou. O servidor confere a conta bancária e a categoria,
+// e se já existe no QuickBooks lançamento igual (mesma conta, data e valor) não cria de novo.
+async function ofxCategorias() {
+  if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
+  const token = await qbToken();
+  const d = await qbQuery(`select * from Account where Active = true maxresults 1000`, token);
+  const A = (d?.QueryResponse?.Account || []).filter(a => !['Bank', 'Credit Card', 'Accounts Receivable', 'Accounts Payable'].includes(a.AccountType));
+  const m = a => ({ id: a.Id, nome: a.FullyQualifiedName || a.Name, tipo: a.AccountType });
+  const ord = (x, y) => x.nome.localeCompare(y.nome);
+  return { saida: A.filter(a => ['Expense', 'Other Expense', 'Cost of Goods Sold', 'Other Current Liability', 'Other Current Asset', 'Long Term Liability', 'Equity'].includes(a.AccountType)).map(m).sort(ord),
+    entrada: A.filter(a => ['Income', 'Other Income', 'Other Current Liability', 'Other Current Asset', 'Equity', 'Long Term Liability'].includes(a.AccountType)).map(m).sort(ord) };
+}
+async function ofxIncluir({ conta_id, data, valor, descricao, categoria_id, fitid, forcar = false } = {}) {
+  if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
+  if (!/^\d+$/.test(String(conta_id || ''))) throw new Error('Conta bancária inválida');
+  if (!/^\d+$/.test(String(categoria_id || ''))) throw new Error('Escolha a categoria (conta contábil) do lançamento');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data || ''))) throw new Error('Data inválida');
+  const v = round(Number(valor)); if (!v || !isFinite(v) || Math.abs(v) > 1e9) throw new Error('Valor inválido');
+  const token = await qbToken();
+  const [cb, cc] = await Promise.all([qbQuery(`select * from Account where Id = '${conta_id}'`, token), qbQuery(`select * from Account where Id = '${categoria_id}'`, token)]);
+  const banco = (cb?.QueryResponse?.Account || [])[0], cat = (cc?.QueryResponse?.Account || [])[0];
+  if (!banco || banco.AccountType !== 'Bank') throw new Error('A conta escolhida não é uma conta bancária no QuickBooks');
+  if (!cat || ['Bank', 'Credit Card', 'Accounts Receivable', 'Accounts Payable'].includes(cat.AccountType)) throw new Error('Categoria inválida para este lançamento');
+  const saida = v < 0, abs = Math.abs(v), entidade = saida ? 'Purchase' : 'Deposit';
+  if (!forcar) {
+    const q = await qbQuery(`select * from ${entidade} where TxnDate = '${data}' maxresults 200`, token);
+    const igual = (q?.QueryResponse?.[entidade] || []).find(x => Math.abs(round(parseFloat(x.TotalAmt || 0)) - abs) <= 0.01 && String(saida ? x.AccountRef?.value : x.DepositToAccountRef?.value) === String(conta_id));
+    if (igual) return { ja_existe: true, qb_txn_id: (saida ? 'despesa:' : 'deposito:') + igual.Id, aviso: `Já existe no QuickBooks ${saida ? 'uma despesa' : 'um depósito'} de ${abs.toFixed(2).replace('.', ',')} nesta conta em ${data.split('-').reverse().join('/')} (#${igual.Id}). Nada foi criado.` };
+  }
+  const nota = (String(descricao || 'Lançamento do extrato').substring(0, 300) + ' · incluído pela comparação com o extrato' + (fitid ? ' (FITID ' + String(fitid).replace(/[^\w.-]/g, '').substring(0, 40) + ')' : '')).substring(0, 4000);
+  const corpo = saida
+    ? { PaymentType: 'Cash', AccountRef: { value: String(conta_id) }, TxnDate: data, PrivateNote: nota, Line: [{ DetailType: 'AccountBasedExpenseLineDetail', Amount: abs, Description: String(descricao || '').substring(0, 400), AccountBasedExpenseLineDetail: { AccountRef: { value: String(categoria_id) } } }] }
+    : { DepositToAccountRef: { value: String(conta_id) }, TxnDate: data, PrivateNote: nota, Line: [{ DetailType: 'DepositLineDetail', Amount: abs, Description: String(descricao || '').substring(0, 400), DepositLineDetail: { AccountRef: { value: String(categoria_id) } } }] };
+  const r = await qbFetch('/' + entidade.toLowerCase() + '?minorversion=65', token, 'POST', corpo);
+  const x = r?.[entidade]; if (!x?.Id) throw new Error('O QuickBooks não confirmou a inclusão' + (r?.Fault ? ': ' + (r.Fault.Error?.[0]?.Detail || r.Fault.Error?.[0]?.Message || '') : ''));
+  console.log(`[Financeiro] INCLUÍDO pelo extrato OFX: ${entidade}#${x.Id} · ${v} · ${banco.Name}`);
+  return { criado: true, entidade, id: x.Id, qb_txn_id: (saida ? 'despesa:' : 'deposito:') + x.Id, conta: banco.Name, categoria: cat.Name };
+}
 // v1.55: razão (General Ledger) de uma conta numa data — dá o saldo REAL do razão,
 // que é diferente do CurrentBalance e do saldo do banco.
 // v1.57: saldo REAL de uma conta numa data, pelo Balanço Patrimonial.
