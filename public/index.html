@@ -4895,7 +4895,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 
     <div class="kg k2">
       <div class="panel">
-        <div class="ph"><div class="pt">Calendario Mensal</div><button class="btn btn-g" onclick="despReplicarMesUI()" title="Copia as despesas do mês exibido (Agenda + contas a pagar do QuickBooks) para os meses seguintes — você escolhe os itens e quantos meses. Se a despesa já existe no mês, não cria de novo." style="font-size:9px;padding:3px 8px;">&#10697; Replicar este mês…</button></div>
+        <div class="ph"><div class="pt">Calendario Mensal</div><button class="btn btn-g" onclick="despReplicarMesUI()" title="Copia as despesas do mês exibido (Agenda + contas a pagar do QuickBooks) para os meses seguintes — você escolhe os itens e quantos meses. Se a despesa já existe no mês, não cria de novo." style="font-size:9px;padding:3px 8px;">&#10697; Replicar este mês…</button><button class="btn btn-g" onclick="despMesQbUI()" title="Lança as despesas previstas do mês exibido como contas a pagar no QuickBooks — com prévia, você escolhe quais" style="font-size:9px;padding:3px 8px;margin-left:6px;">&#129534; Lançar o mês no QuickBooks…</button></div>
         <div class="pb" id="f_calendario"><div style="text-align:center;padding:24px;color:var(--t3);font-size:11px;">Carregando calendario...</div></div>
       </div>
       <div class="panel">
@@ -20227,6 +20227,39 @@ async function _despLancarQbUI(ocorrenciaId, dia) {
 // v3.162 / v3.223: replica as despesas do mês exibido nos meses seguintes — agora numa janela onde você escolhe os itens e
 // quantos meses. Mensal da Agenda estende a própria despesa; conta a pagar do QB vira despesa mensal; anual/trimestral ficam fora.
 let _drp = null;
+// v3.271: LANÇAR A PREVISÃO DO MÊS NO QUICKBOOKS (contas a pagar) — prévia, escolha e lançamento em lote
+let _dmq = null;
+async function despMesQbUI() {
+  const ym = _calMes.getFullYear() + '-' + String(_calMes.getMonth() + 1).padStart(2, '0'), nomeMes = _calMes.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  let m = document.getElementById('despMqModal');
+  if (!m) { m = document.createElement('div'); m.id = 'despMqModal'; m.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:999;align-items:flex-start;justify-content:center;overflow:auto;padding:30px 12px;'; m.addEventListener('click', e => { if (e.target === m) m.style.display = 'none'; }); document.body.appendChild(m); }
+  m.style.display = 'flex';
+  m.innerHTML = '<div class="panel" style="width:880px;max-width:96vw;"><div class="pb" style="color:var(--t3);font-size:12px;">⏳ Conferindo as despesas de ' + _dsE(nomeMes) + ' no QuickBooks (fornecedor, conta e contas a pagar que já existem)…</div></div>';
+  try { const d = await finApi('desp_mes_qb_previa', { mes: ym }, { timeoutMs: 90000 }); _dmq = { ym, nomeMes, d }; _despMesQbRender(); }
+  catch (e) { m.innerHTML = '<div class="panel" style="width:600px;max-width:96vw;"><div class="pb" style="color:var(--red);font-size:12px;">' + _dsE(e.message) + '<br><br><button class="btn" onclick="document.getElementById(\'despMqModal\').style.display=\'none\'">Fechar</button></div></div>'; }
+}
+function _despMesQbRender(resultado) {
+  const m = document.getElementById('despMqModal'), { nomeMes, d } = _dmq, R = d.resumo, e = _dsE;
+  const COR = { pronta: 'var(--green)', ja_lancada: 'var(--t3)', ja_no_qb: 'var(--gold)', sem_fornecedor: 'var(--red)', fornecedor_nao_existe: 'var(--red)', sem_conta: 'var(--red)' };
+  const linhas = d.itens.map((x, i) => '<tr style="border-bottom:1px solid var(--bd);' + (x.situacao === 'pronta' ? '' : 'color:var(--t2);') + '"><td style="padding:5px;">' + (x.situacao === 'pronta' ? '<input type="checkbox" class="dmqSel" value="' + e(x.id) + '" checked>' : '') + '</td>'
+    + '<td style="padding:5px;white-space:nowrap;">' + x.data.split('-').reverse().join('/') + '</td><td style="padding:5px;"><b>' + e(x.descricao) + '</b>' + (x.estimado ? ' <span style="font-size:9.5px;color:var(--gold);" title="Imposto de valor variável: o valor é a previsão — ajuste no QuickBooks quando sair a guia">valor estimado</span>' : '') + '<div style="font-size:10px;color:' + COR[x.situacao] + ';">' + e(x.texto) + (x.qb_url ? ' <a href="' + e(x.qb_url) + '" target="_blank" rel="noopener" style="color:var(--blue);">↗</a>' : '') + '</div></td>'
+    + '<td style="padding:5px;text-align:right;font-family:var(--M);white-space:nowrap;">' + fmtBRLcompleto(x.valor) + '</td></tr>').join('');
+  const res = resultado ? '<div style="background:var(--bg4);border:1px solid ' + (resultado.erros.length ? 'var(--gold)' : 'var(--green)') + ';border-radius:8px;padding:8px 11px;margin-bottom:10px;font-size:11.5px;">✓ ' + resultado.lancadas + ' conta(s) a pagar criada(s) no QuickBooks' + (resultado.ja_lancadas ? ' · ' + resultado.ja_lancadas + ' já estavam lançadas' : '') + (resultado.erros.length ? '<div style="color:var(--red);margin-top:4px;">' + resultado.erros.map(x => '• ' + e((d.itens.find(i => i.id === x.id) || {}).descricao || x.id) + ': ' + e(x.erro)).join('<br>') + '</div>' : '') + '</div>' : '';
+  m.innerHTML = '<div class="panel" style="width:880px;max-width:96vw;margin:0;"><div class="ph"><div class="pt">🧾 Lançar ' + e(nomeMes) + ' no QuickBooks</div><button class="btn" style="font-size:10px;" onclick="document.getElementById(\'despMqModal\').style.display=\'none\'">✕</button></div><div class="pb">' + res
+    + '<div style="font-size:11px;color:var(--t2);margin-bottom:8px;line-height:1.6;">Cada despesa marcada vira uma <b>conta a pagar (Bill)</b> no QuickBooks, ligada à ocorrência da Agenda (não lança duas vezes). Quando o pagamento entrar pelo feed do banco, o QuickBooks sugere casar com a conta a pagar. <b>' + R.prontas + '</b> pronta(s) · ' + fmtBRLcompleto(R.valor) + (R.ja_lancadas ? ' · ' + R.ja_lancadas + ' já lançada(s)' : '') + (R.ja_no_qb ? ' · ' + R.ja_no_qb + ' já existe(m) no QuickBooks' : '') + (R.com_problema ? ' · <span style="color:var(--red);">' + R.com_problema + ' com problema de cadastro</span>' : '') + '</div>'
+    + (d.itens.length ? '<div style="overflow-x:auto;max-height:55vh;overflow-y:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:600px;"><tbody>' + linhas + '</tbody></table></div>' : '<div style="font-size:12px;color:var(--t3);">Nenhuma despesa prevista neste mês.</div>')
+    + '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center;">' + (R.prontas ? '<button class="btn btn-p" onclick="_despMesQbLancar(this)">🧾 Lançar as marcadas no QuickBooks</button>' : '') + '<button class="btn" onclick="document.getElementById(\'despMqModal\').style.display=\'none\'">Fechar</button><span style="font-size:10px;color:var(--t3);">Impostos de valor variável entram pela previsão — ajuste o valor no QuickBooks quando sair a guia.</span></div></div></div>';
+}
+async function _despMesQbLancar(btn) {
+  const ids = [...document.querySelectorAll('.dmqSel:checked')].map(c => c.value); if (!ids.length) return toast('Marque pelo menos uma despesa', 'error');
+  btn.disabled = true; btn.textContent = '⏳ Lançando ' + ids.length + ' no QuickBooks…';
+  try { const r = await finApi('desp_mes_qb_lancar', { ids }, { timeoutMs: 120000 });
+    try { addLog('info', '[Agenda] ' + _dmq.nomeMes + ' lançado no QuickBooks: ' + r.lancadas + ' conta(s) a pagar' + (r.erros.length ? ' · ' + r.erros.length + ' erro(s)' : '')); } catch (_) {}
+    toast(r.lancadas + ' conta(s) a pagar criada(s) no QuickBooks' + (r.erros.length ? ' · ' + r.erros.length + ' com erro' : ''), r.erros.length ? 'error' : 'success');
+    try { _dmq.d = await finApi('desp_mes_qb_previa', { mes: _dmq.ym }, { timeoutMs: 90000 }); } catch (_) {}
+    _despMesQbRender(r); if (typeof carregarDespesas === 'function') carregarDespesas();
+  } catch (e) { toast(e.message, 'error'); btn.disabled = false; btn.textContent = '🧾 Lançar as marcadas no QuickBooks'; }
+}
 async function despReplicarMesUI(meses) {
   const ym = _calMes.getFullYear() + '-' + String(_calMes.getMonth() + 1).padStart(2, '0');
   const nomeMes = _calMes.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
@@ -35239,7 +35272,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.270] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.271] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35255,7 +35288,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.270';
+window.__ATX_BUILD_ID__ = 'ATX-v3.271';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

@@ -255,6 +255,7 @@ async function handler(req, res) {
       desp_ocorrencias:      () => despOcorrencias(params),
       desp_marcar_paga:      () => despMarcarPaga(params),
       desp_lancar_qb:        () => despLancarQb(params),
+      desp_mes_qb_previa:    () => despMesQbPrevia(params), desp_mes_qb_lancar: () => despMesQbLancar(params), // v3.271
       qb_fornecedores_list:  () => qbFornecedoresList(),
       desp_gerar_ocorrencias: () => despGerarOcorrencias(params),
       desp_replicar_mes:     () => despReplicarMes(params), // v3.162
@@ -4500,6 +4501,51 @@ async function _despLancarQbExec(sql, o, ocorrencia_id) {
   return { lancado: true, qb_bill_id: bill.Id, fornecedor: fornecedor.nome, valor: parseFloat(o.valor) };
 }
 
+// ═══ v3.271: LANÇAR A PREVISÃO DO MÊS NO QUICKBOOKS EM LOTE — ocorrências da Agenda viram contas a pagar (Bill) ═══
+// Prévia: cada despesa prevista do mês, ainda não lançada, com o fornecedor e a conta encontrados no QuickBooks e o aviso
+// de conta a pagar que já existe lá (mesmo fornecedor, mesmo mês). Lançar: usa o lançamento de uma ocorrência (idempotente,
+// com trava contra clique duplo), uma por vez.
+async function despMesQbPrevia({ mes } = {}) {
+  if (!/^\d{4}-\d{2}$/.test(String(mes || ''))) throw new Error('mes obrigatório (AAAA-MM)');
+  if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
+  const sql = await getSql(); try { await _despGarantirHorizonte(sql); } catch (_) {}
+  const ini = mes + '-01', fim = _fimDoMes(ini);
+  const rows = await sql`SELECT o.id, o.data_prevista, o.valor, o.status, o.qb_txn_id, o.observacoes, d.descricao AS despesa_desc, d.fornecedor AS despesa_forn, d.categoria AS despesa_cat, d.recorrencia
+    FROM despesas_ocorrencias o JOIN despesas_programadas d ON d.id = o.despesa_id
+    WHERE o.data_prevista >= ${ini} AND o.data_prevista <= ${fim} AND o.status NOT IN ('paga', 'cancelada') ORDER BY o.data_prevista, d.descricao`;
+  const token = await qbToken(), realm = qbRealmId(), sandbox = process.env.QB_SANDBOX === 'true';
+  const vend = (await qbQuery(`select * from Vendor where Active = true maxresults 1000`, token))?.QueryResponse?.Vendor || [];
+  const nv = x => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+  const acharForn = nome => { const a = nv(nome); if (!a) return null; const v = vend.find(x => nv(x.DisplayName) === a) || vend.find(x => { const n = nv(x.DisplayName); return n && (n.includes(a) || a.includes(n)); }); return v ? { id: v.Id, nome: v.DisplayName } : null; };
+  const contas = {}; const conta = async cat => { const k = cat || ''; if (!(k in contas)) { try { contas[k] = await qbContaDespesaPadrao(token, realm, sandbox, cat); } catch (e) { contas[k] = { erro: e.message }; } } return contas[k]; };
+  let bills = null; try { bills = (await _qbBillsPaginado(`DueDate >= '${ini}' and DueDate <= '${fim}'`, token)).map(b => ({ data: b.DueDate, fornecedor: b.VendorRef?.name || '', valor_total: parseFloat(b.TotalAmt || 0), id: b.Id })); } catch (_) {}
+  const pend = rows.filter(r => !r.qb_txn_id), { cobertas } = _agendaSemDuplicarQb(pend.map(r => ({ ...r })), bills);
+  const cobId = new Set(cobertas.map(c => c.id)), cobPor = Object.fromEntries(cobertas.map(c => [c.id, c._coberta_por]));
+  const itens = [];
+  for (const r of rows) {
+    const base = { id: r.id, data: _dStr(r.data_prevista), valor: round(parseFloat(r.valor) || 0), descricao: r.despesa_desc || 'Despesa', fornecedor: r.despesa_forn || '', categoria: r.despesa_cat || '', recorrencia: r.recorrencia,
+      estimado: /imposto|iss|darf|prefeit|receita federal/i.test([r.despesa_desc, r.despesa_cat].join(' ')) && !/parcel/i.test([r.despesa_desc, r.despesa_cat].join(' ')) };
+    if (r.qb_txn_id) { itens.push({ ...base, situacao: 'ja_lancada', texto: 'já lançada no QuickBooks (conta a pagar #' + r.qb_txn_id + ')', qb_url: _qbUrlTxn('conta:' + r.qb_txn_id) }); continue; }
+    if (cobId.has(r.id)) { const b = cobPor[r.id] || {}; itens.push({ ...base, situacao: 'ja_no_qb', texto: 'já existe conta a pagar de ' + (b.fornecedor || 'mesmo fornecedor') + ' neste mês no QuickBooks (' + (b.valor_total || 0).toFixed(2).replace('.', ',') + ')', qb_url: b.id ? _qbUrlTxn('conta:' + b.id) : null }); continue; }
+    if (!r.despesa_forn) { itens.push({ ...base, situacao: 'sem_fornecedor', texto: 'a despesa não tem fornecedor cadastrado — edite na Agenda' }); continue; }
+    const f = acharForn(r.despesa_forn); if (!f) { itens.push({ ...base, situacao: 'fornecedor_nao_existe', texto: 'fornecedor "' + r.despesa_forn + '" não existe no QuickBooks — cadastre lá com esse nome' }); continue; }
+    const c = await conta(r.despesa_cat);
+    itens.push({ ...base, situacao: c.erro ? 'sem_conta' : 'pronta', fornecedor_qb: f.nome, conta_qb: c.nome || null, texto: c.erro || ('conta a pagar para ' + f.nome + ' · conta ' + c.nome) });
+  }
+  const pr = itens.filter(i => i.situacao === 'pronta');
+  return { mes, itens, resumo: { prontas: pr.length, valor: round(pr.reduce((a, i) => a + i.valor, 0)), ja_lancadas: itens.filter(i => i.situacao === 'ja_lancada').length, ja_no_qb: itens.filter(i => i.situacao === 'ja_no_qb').length,
+    com_problema: itens.filter(i => ['sem_fornecedor', 'fornecedor_nao_existe', 'sem_conta'].includes(i.situacao)).length } };
+}
+async function despMesQbLancar({ ids = [] } = {}) {
+  if (!Array.isArray(ids) || !ids.length) throw new Error('Escolha as despesas a lançar');
+  const feitos = [], erros = [];
+  for (const id of ids.slice(0, 80)) {
+    try { const r = await despLancarQb({ ocorrencia_id: String(id) }); feitos.push({ id, ...r }); await qbEsperar(250); }
+    catch (e) { erros.push({ id, erro: e.message }); }
+  }
+  console.log(`[Financeiro] lançamento do mês no QuickBooks: ${feitos.filter(f => f.lancado).length} conta(s) a pagar criada(s), ${erros.length} erro(s)`);
+  return { lancadas: feitos.filter(f => f.lancado).length, ja_lancadas: feitos.filter(f => f.ja_lancado).length, feitos, erros };
+}
 async function despGerarOcorrencias({ meses = 12 } = {}) {
   const sql = await getSql();
   try { await _despGarantirHorizonte(sql, 24, true); } catch (_) {} // v3.270
