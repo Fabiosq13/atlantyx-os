@@ -6118,6 +6118,38 @@ async function _marcosNaoFaturados(sql, projeto_ids) {
     ORDER BY p.nome, m.data_entrega NULLS LAST, m.criado_em`;
   return projeto_ids?.length ? rows.filter(r => projeto_ids.includes(r.projeto_id)) : rows;
 }
+// v3.272: MARCOS QUE ENTRAM NA RECEITA PREVISTA (Agenda de Receitas → Fluxo Detalhado, Fluxo Futuro, metas, dashboards).
+// Antes só entravam os marcos ainda no Kanban de Marcos, sem data de pagamento e sem nota fiscal. Ficavam de fora:
+//  • o marco CONCLUÍDO no Kanban de Marcos (termo pronto → foi para o Kanban de Faturamento) enquanto a fatura não existe no
+//    QuickBooks — a receita sumia de todas as projeções até alguém emitir a fatura;
+//  • o marco com DATA DE PAGAMENTO FUTURA preenchida (usada como data prevista de recebimento) — sumia como se já tivesse sido pago.
+// Regra agora: entra todo marco com valor de projeto ativo, menos (a) o já pago (data de pagamento até hoje), (b) o que já virou
+// fatura (termo com fatura/NF no QuickBooks, ou nota fiscal no marco — aí a fatura em aberto é que entra no "a receber") e
+// (c) concluído há mais de 6 meses sem termo ligado (histórico antigo). A conferência com as faturas do QuickBooks continua
+// (previsão coberta por fatura sai), então nada conta duas vezes.
+async function _marcosParaReceita(sql) {
+  const hoje = _hojeBR();
+  const rows = await sql`SELECT m.*, p.nome AS projeto_nome, p.cliente AS projeto_cliente, p.status AS projeto_status
+    FROM projetos_marcos m JOIN projetos_financeiros p ON p.id = m.projeto_id
+    WHERE COALESCE(m.valor, 0) > 0 AND COALESCE(p.status, 'ativo') NOT IN ('cancelado', 'encerrado', 'inativo')
+      AND (m.data_pagamento IS NULL OR m.data_pagamento > ${hoje})
+    ORDER BY p.nome, m.data_entrega NULLS LAST, m.criado_em`;
+  let vinc = {}; try { const kv = await sql`SELECT value FROM kv_store WHERE key = 'fin:marco_termo'`; vinc = (typeof kv[0]?.value === 'string' ? JSON.parse(kv[0].value) : kv[0]?.value) || {}; } catch (_) {}
+  const termoIds = [...new Set(Object.values(vinc).map(v => v?.termo_id).filter(Boolean).map(String))];
+  const faturado = {};
+  if (termoIds.length) try { (await sql`SELECT termo_id, qb_invoice_id, nf_numero, pagamento_status FROM termos_empresas WHERE termo_id = ANY(${termoIds})`)
+    .forEach(e => { const t = String(e.termo_id); faturado[t] = faturado[t] || { fat: false, pago: false }; if (e.qb_invoice_id || String(e.nf_numero || '').trim()) faturado[t].fat = true; if (e.pagamento_status === 'pago') faturado[t].pago = true; }); } catch (_) {}
+  const seisMeses = _addMesesData(hoje, -6), out = [];
+  for (const m of rows) {
+    const tid = vinc[m.id]?.termo_id ? String(vinc[m.id].termo_id) : null, f = tid ? faturado[tid] : null;
+    if (f && (f.fat || f.pago)) continue;                               // já virou fatura/NF (ou foi pago) pelo termo
+    if (String(m.nota_fiscal || '').trim()) continue;                    // nota fiscal emitida no marco → entra pela fatura
+    if (m.status_kanban === 'concluido' && !tid) { const ref = _dStr(m.concluido_em) || _dStr(m.data_entrega); if (ref && ref < seisMeses) continue; }
+    m._situacao = m.status_kanban === 'concluido' ? (tid ? 'termo gerado, sem fatura ainda' : 'concluído no Kanban de Marcos, sem fatura ainda') : null;
+    out.push(m);
+  }
+  return out;
+}
 async function _qbClientePrevisao(nome, token, cache) {
   const alvo = String(nome || '').trim(); if (!alvo) return null;
   if (cache[alvo] !== undefined) return cache[alvo];
@@ -7900,11 +7932,13 @@ async function receitasPrevistas({ meses = 13, _forcar = false } = {}) {
   const oc = [];
   // 1) marcos
   try {
-    const marcos = await _marcosNaoFaturados(sql); const seq = {};
+    const marcos = await _marcosParaReceita(sql); const seq = {}; // v3.272
     for (const m of marcos) {
-      const i = (seq[m.projeto_id] = (seq[m.projeto_id] || 0) + 1) - 1; let data = _dStr(m.previsao_receb_manual) || _dStr(m.previsao_recebimento), base = data ? (m.previsao_receb_manual ? 'data definida no marco' : 'previsão do marco') : '';
+      const i = (seq[m.projeto_id] = (seq[m.projeto_id] || 0) + 1) - 1;
+      let data = _dStr(m.previsao_receb_manual) || _dStr(m.data_pagamento) || _dStr(m.previsao_recebimento), base = data ? (m.previsao_receb_manual ? 'data definida no marco' : m.data_pagamento && data === _dStr(m.data_pagamento) ? 'data de pagamento informada no marco' : 'previsão do marco') : '';
       if (!data && m.data_entrega) { data = _diasMais(_rpDia(_mesMais(_dStr(m.data_entrega).substring(0, 7), 1), diaPad), diasAd); base = 'entrega + recebimento no dia ' + diaPad; }
       if (!data) { data = _diasMais(_rpDia(_mesMais(mesHoje, 1 + i), diaPad), diasAd); base = 'sem data: sequência mensal do projeto'; }
+      if (m._situacao) base += ' · ' + m._situacao;
       oc.push({ id: 'mrc_' + m.id, origem: 'marco', ref_id: String(m.id), projeto_id: String(m.projeto_id ?? ''), projeto: m.projeto_nome, cliente: m.projeto_cliente || m.projeto_nome, descricao: m.descricao || 'Marco', valor: num(m.valor), data, base_data: base, status_kanban: m.status_kanban });
     }
   } catch (e) { avisos.push('Marcos: ' + e.message); }
