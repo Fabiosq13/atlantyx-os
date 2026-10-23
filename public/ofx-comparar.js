@@ -110,6 +110,10 @@
       soSistema.filter(x => x.data === d).forEach(x => { const m = /^([a-z_]+):(\w+)$/.exec(String(x.qb_txn_id || '')); M.push({ efeito: -x.c, txt: 'só no sistema: ' + x.descricao + ' ' + v(x.c) + (m ? ' (' + m[1].replace('_', ' ') + ' #' + m[2] + ')' : '') + (x.pista ? ' — ' + x.pista : '') }); });
       pares.filter(p => p.dias > 0 && (p.banco.data === d || p.sistema.data === d)).forEach(p => M.push({ efeito: (p.banco.data === d ? p.banco.c : 0) - (p.sistema.data === d ? p.sistema.c : 0),
         txt: p.banco.descricao + ' ' + v(p.banco.c) + ' — no banco em ' + p.banco.data.split('-').reverse().join('/') + ', no sistema em ' + p.sistema.data.split('-').reverse().join('/') }));
+      // contagem por valor no dia: deixa claro quando um lado tem mais lançamentos iguais que o outro (ex.: banco 3 × 149,17, sistema 5 × 149,17)
+      const vals = new Set([...soBanco, ...soSistema].filter(x => x.data === d).map(x => x.c));
+      vals.forEach(c => { const nb = B.filter(b => b.data === d && b.c === c).length, sl = S.filter(x => x.data === d && x.c === c);
+        if (nb && sl.length && nb !== sl.length) M.push({ efeito: 0, txt: 'neste dia o banco tem ' + nb + ' × ' + v(c).replace(/^[+−]/, '') + ' e o sistema tem ' + sl.length + ' × (' + sl.map(x => { const m = /^([a-z_]+):(\w+)$/.exec(String(x.qb_txn_id || '')); return m ? m[1].replace('_', ' ') + ' #' + m[2] : x.descricao; }).join(', ') + ')' }); });
       grupos.forEach(g => { const eb = g.banco.filter(x => x.data === d).reduce((a, x) => a + x.c, 0), es = g.sistema.filter(x => x.data === d).reduce((a, x) => a + x.c, 0);
         if (eb !== es) M.push({ efeito: eb - es, txt: 'soma (' + g.regra + ') em dias diferentes: ' + g.banco[0].descricao }); });
       return M; };
