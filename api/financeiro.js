@@ -1,7 +1,7 @@
 import { comGuarda } from '../lib/qa-guard.js';
 import { casarReceitas, casarDespesas, compararReceitasSistema, compararDespesasSistema, resumoComparacao, identificarRetencao } from '../lib/conciliacao-mes.js'; // v3.242
 import { veredito as dupVeredito, chaveGrupo as dupChave, ROTULO as DUP_ROT } from '../lib/duplicidade-qb.js'; // v3.252
-import { analisar as impAnalisar, proximoVencimento as impProxVenc, jaCadastrada as impJaCad } from '../lib/impostos-recorrentes.js'; // v3.266
+import { analisar as impAnalisar, proximoVencimento as impProxVenc, jaCadastrada as impJaCad, classificar as impClassificar } from '../lib/impostos-recorrentes.js'; // v3.266
 import { termoPendencias, etapaPrazo } from '../lib/termo-regras.js'; // v3.129 · v3.196 prazo por etapa
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
@@ -1489,7 +1489,7 @@ async function relatorioPagamentosEnviar({ apenas_gerar, para } = {}) {
 // cards e abas) e nos demais módulos. Complementa o e-mail das 8h sem repetir o que ele já aponta (termos, faturas
 // vencidas/sem termo, pagamentos em atraso e possíveis duplicados por fornecedor/valor). Cada item diz o impacto
 // (quais números ficam errados), como corrigir e em que tela.
-const _HIG_FORMATO = 5; // v3.251: muda quando o formato dos itens muda (ex.: links por lançamento) — o resultado guardado no formato antigo é refeito
+const _HIG_FORMATO = 6; // v3.251: muda quando o formato dos itens muda (ex.: links por lançamento) — o resultado guardado no formato antigo é refeito
 async function higienizacaoDados({ _forcar } = {}) {
   const sql = await getSql(), hoje = _hojeBR(), ano = parseInt(hoje), mesAtual = hoje.substring(0, 7);
   if (!_forcar) { try { const c = (await sql`SELECT value, updated_at FROM kv_store WHERE key = 'higienizacao_dados' LIMIT 1`)[0];
@@ -1553,6 +1553,8 @@ async function higienizacaoDados({ _forcar } = {}) {
         impacto: 'Fluxo de caixa futuro, "A pagar" projetado e fôlego de caixa ficam otimistas (essas saídas não entram na projeção)', acao: 'Cadastrar como despesa programada (Agenda de Despesas → Despesas não cadastradas)', tela: 's3agenda',
         itens: L.slice(0, 40).map(x => { // v3.252: dados prontos para o cadastro na Agenda (nome limpo do extrato)
           const nome = String(x.descricao || '').replace(/^(sa[ií]da\s+)?(pix|ted|doc|transf\w*)\s+(enviad[oa]|recebid[oa])?\s*/i, '').replace(/\b\d{2,3}[.\s]?\d{3}[.\s]?\d{3}[\/\-.\s]?\d{0,4}[-\s]?\d{2}\b/g, '').replace(/\s{2,}/g, ' ').trim() || x.descricao;
+          if (x.origem) return { texto: `${x.origem === 'viagem' ? '✈' : '🏛'} ${x.descricao} · ${x.recorrencia_sugerida} · ${x.criterio} · próximo ${dataBR(x.proximo)}`, valor: x.valor,
+            cadastro: { descricao: x.descricao.substring(0, 120), fornecedor: x.fornecedor, valor: x.valor, dia: x.dia_vencimento_sugerido, recorrencia: x.recorrencia_sugerida, categoria: x.categoria, data_inicio: x.proximo } };
           return { texto: `${x.descricao} · ${x.ocorrencias}x nos últimos 3 meses · dia ~${x.dia_vencimento_sugerido}`, valor: x.valor,
             cadastro: { descricao: nome.substring(0, 120), fornecedor: nome.substring(0, 100), valor: x.valor, dia: x.dia_vencimento_sugerido, recorrencia: x.recorrencia_sugerida || 'mensal' } }; }) }); }),
     // 7. despesas programadas incompletas
@@ -6252,8 +6254,16 @@ async function despesasNaoCadastradas({ meses = 3, tolerancia_pct = 5 } = {}) {
   const ini = _addMesesData(hoje.toISOString().substring(0, 10), -meses).substring(0, 8) + '01';
   const fim = hoje.toISOString().substring(0, 10);
   const ext = await extratoConsolidado({ data_inicio: ini, data_fim: fim, incluir_simulados: false });
-  const saidas = (ext.lancamentos || []).filter(l => l.tipo === 'saida' && l.valor >= 50);
-  const desp = await sql`SELECT id, descricao, fornecedor, valor, recorrencia FROM despesas_programadas WHERE ativa = true`;
+  // v3.267: impostos e viagens (MaxMilhas) saem desta lista genérica — entram pela análise própria (recorrência e valor certos)
+  const saidas = (ext.lancamentos || []).filter(l => l.tipo === 'saida' && l.valor >= 50 && !impClassificar([l.descricao, l.categoria, l.contraparte].filter(Boolean).join(' ')));
+  const desp = await sql`SELECT id, descricao, fornecedor, valor, recorrencia, categoria FROM despesas_programadas WHERE ativa = true`;
+  // v3.267: ocorrências da Agenda no período (pagas ou previstas) — a saída que bate com uma delas já está na Agenda
+  const ocos = await sql`SELECT o.despesa_id, o.data_prevista, o.data_pagamento, o.valor, o.qb_txn_id, o.status FROM despesas_ocorrencias o JOIN despesas_programadas d ON d.id = o.despesa_id
+    WHERE d.ativa = true AND o.data_prevista >= ${_addMesesData(ini, -1)} AND o.data_prevista <= ${_addMesesData(fim, 1)} AND COALESCE(o.status,'') <> 'cancelada'`.catch(() => []);
+  const ocoQb = new Set(ocos.map(o => String(o.qb_txn_id || '')).filter(Boolean));
+  const _d = v => String(v instanceof Date ? v.toISOString() : v || '').slice(0, 10);
+  const bateOco = l => ocoQb.has(String(l.qb_txn_id || '')) || ocos.some(o => { const dt = _d(o.data_pagamento) || _d(o.data_prevista);
+    return Math.abs(num(o.valor) - l.valor) <= Math.max(1, l.valor * 0.02) && dt && Math.abs(new Date(dt) - new Date(l.data)) <= 7 * 864e5; });
   const normN = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/\b(ltda|s\.?a\.?|me|eireli|epp|cia|pagamento|pgto|ted|pix|doc|debito|deb|aut|ref)\b/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
   const chaveDe = s => normN(s).split(' ').filter(w => w.length >= 4).slice(0, 2).join(' ');
@@ -6266,10 +6276,12 @@ async function despesasNaoCadastradas({ meses = 3, tolerancia_pct = 5 } = {}) {
     const gk = k + '|' + vk;
     (grupos[gk] = grupos[gk] || { chave: k, valor: l.valor, itens: [] }).itens.push(l);
   });
-  const jaCadastrada = (g) => desp.some(d => {
-    const kd = chaveDe(d.fornecedor || d.descricao);
-    const tol = Math.max(num(d.valor) * tolerancia_pct / 100, 5);
-    return kd && (g.chave.includes(kd) || kd.includes(g.chave)) && Math.abs(num(d.valor) - g.valor) <= tol;
+  // v3.267: já está na Agenda se (a) o nome bate e o valor está perto (35% — conta de consumo e imposto variam), ou
+  // (b) as saídas do grupo batem com ocorrências da Agenda (mesmo lançamento do QuickBooks, ou mesmo valor em até 7 dias)
+  const jaCadastrada = (g) => g.itens.every(bateOco) || desp.some(d => {
+    const kds = [chaveDe(d.fornecedor), chaveDe(d.descricao)].filter(Boolean);
+    const tol = Math.max(num(d.valor) * Math.max(tolerancia_pct, 35) / 100, 5);
+    return kds.some(kd => g.chave.includes(kd) || kd.includes(g.chave) || kd.split(' ')[0] === g.chave.split(' ')[0] && kd.split(' ')[0].length >= 5) && Math.abs(num(d.valor) - g.valor) <= tol;
   });
   const candidatas = Object.values(grupos).filter(g => !jaCadastrada(g)).map(g => {
     const datas = g.itens.map(i => i.data).sort();
@@ -6280,6 +6292,15 @@ async function despesasNaoCadastradas({ meses = 3, tolerancia_pct = 5 } = {}) {
       recorrencia_sugerida: g.itens.length >= 2 ? 'mensal' : 'unica',
       confianca: g.itens.length >= 3 ? 'alta' : g.itens.length === 2 ? 'media' : 'baixa' };
   }).sort((a, b) => b.ocorrencias - a.ocorrencias || b.valor - a.valor);
+  // v3.267: impostos (parcelamentos, trimestrais, Prefeitura, federais) e viagens que ainda não estão na Agenda entram como pendentes de cadastro
+  try { const imp = await impostosRecorrentes({ meses: 13 });
+    for (const x of (imp.sugestoes || []).filter(x => ['mensal', 'trimestral'].includes(x.recorrencia) && !x.cadastrada)) {
+      const via = x.grupo === 'viagem';
+      candidatas.unshift({ chave: x.tributo, descricao: via ? 'Despesas de viagem · MaxMilhas (média mensal)' : (x.grupo === 'parcelamento' ? '' : 'Imposto · ') + x.tributo + (x.recorrencia === 'trimestral' ? ' (trimestral)' : ''),
+        valor: x.valor, ocorrencias: x.pagamentos, datas: Object.keys(x.por_mes || {}).slice(-6).map(m => m + '-' + String(x.dia).padStart(2, '0')), dia_vencimento_sugerido: x.dia,
+        recorrencia_sugerida: x.recorrencia, confianca: x.confianca, origem: via ? 'viagem' : 'imposto', grupo: x.grupo, criterio: x.criterio, proximo: x.proximo,
+        categoria: via ? 'Despesas de viagem' : x.grupo === 'parcelamento' ? 'Impostos — parcelamento' : 'Impostos', fornecedor: via ? 'MaxMilhas' : x.grupo === 'municipal' ? 'Prefeitura' : x.grupo === 'estadual' ? 'SEFAZ' : /PGFN/.test(x.tributo) ? 'PGFN' : 'Receita Federal' });
+    } } catch (e) { console.warn('[desp_nao_cad] impostos:', e.message); }
   return { periodo: { de: ini, ate: fim }, candidatas, total: candidatas.length,
     recorrentes_provaveis: candidatas.filter(c => c.ocorrencias >= 2).length,
     valor_mensal_nao_cadastrado: round(candidatas.filter(c => c.ocorrencias >= 2).reduce((s, c) => s + c.valor, 0)),

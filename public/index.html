@@ -28665,14 +28665,14 @@ async function concDespesasNovas() {
 async function concCriarDespesa(i) {
   const c = (window._concCand||[])[i]; if (!c) return;
   const r = prompt(`Cadastrar como despesa programada e replicar 12 meses.\n\nSepare por | : descrição | fornecedor | valor | dia do vencimento | recorrência (mensal/trimestral/anual/unica) | lançar no QuickBooks? (sim/não)`,
-    `${(c.descricao||'').substring(0,40)} | ${c.chave} | ${c.valor.toFixed(2)} | ${c.dia_vencimento_sugerido} | ${c.recorrencia_sugerida} | não`);
+    `${(c.descricao||'').substring(0,60)} | ${c.fornecedor || c.chave} | ${c.valor.toFixed(2)} | ${c.dia_vencimento_sugerido} | ${c.recorrencia_sugerida} | não`);
   if (!r) return;
   const [descricao, fornecedor, valor, dia, rec, qb] = r.split('|').map(x => x.trim());
   const lancarQb = /^s/i.test(qb || '');
   if (lancarQb && !confirm(`Vai criar até 12 contas a pagar no QuickBooks para "${descricao}". O fornecedor precisa existir lá. Continuar?`)) return;
   try {
     toast('Criando despesa e ocorrências...', 'success');
-    const d = await finApi('desp_criar_replicar', { descricao, fornecedor, valor: _numBR(valor), dia_vencimento: parseInt(dia), recorrencia: rec || 'mensal', meses: 12, lancar_qb: lancarQb });
+    const d = await finApi('desp_criar_replicar', { descricao, fornecedor, valor: _numBR(valor), dia_vencimento: parseInt(dia), recorrencia: rec || 'mensal', meses: 12, lancar_qb: lancarQb, ...(c.categoria ? { categoria: c.categoria } : {}), ...(c.proximo ? { data_inicio: c.proximo } : {}) });
     alert(`✅ Despesa criada.\n\n${d.ocorrencias} ocorrência(s) de ${_dt(d.primeira)} a ${_dt(d.ultima)}.${lancarQb ? `\n${d.lancadas_no_qb} lançada(s) no QuickBooks.` : ''}${(d.erros_qb||[]).length ? '\n\nFalhas no QB:\n' + d.erros_qb.join('\n') : ''}`);
     concDespesasNovas();
   } catch (e) { toast('Erro: ' + e.message, 'error'); alert(e.message); }
@@ -31216,7 +31216,8 @@ function finHigCadastrar(i, j) { const c = _fhUlt?.itens?.[i]?.itens?.[j]?.cadas
   setTimeout(() => { const set = (id, v) => { const e = document.getElementById(id); if (e) { e.value = v ?? ''; e.style.boxShadow = '0 0 0 2px var(--gold)'; setTimeout(() => e.style.boxShadow = '', 4000); } };
     const hj = new Date(), dia = Math.min(28, Math.max(1, parseInt(c.dia) || 10)); let ini = new Date(hj.getFullYear(), hj.getMonth(), dia); if (ini < new Date(hj.getFullYear(), hj.getMonth(), hj.getDate())) ini = new Date(hj.getFullYear(), hj.getMonth() + 1, dia);
     set('f_desp_desc', c.descricao); set('f_desp_forn', c.fornecedor); set('f_desp_valor', Number(c.valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })); set('f_desp_dia', dia);
-    set('f_desp_inicio', ini.toLocaleDateString('sv-SE'));
+    set('f_desp_inicio', c.data_inicio || ini.toLocaleDateString('sv-SE'));
+    if (c.categoria) { const cs = document.getElementById('f_desp_cat'); if (cs) { if (cs.tagName === 'SELECT' && ![...cs.options].some(o => o.value === c.categoria)) cs.add(new Option(c.categoria, c.categoria)); cs.value = c.categoria; } } // v3.267
     const chk = document.getElementById('f_desp_recorrente'); if (chk && c.recorrencia !== 'unica') { chk.checked = true; try { _despToggleRecorrencia(); } catch (_) {} const r = document.getElementById('f_desp_rec'); if (r) r.value = c.recorrencia; }
     const cat = document.getElementById('f_desp_cat'); if (cat) { cat.focus(); cat.scrollIntoView({ block: 'center' }); cat.style.boxShadow = '0 0 0 2px var(--gold)'; setTimeout(() => cat.style.boxShadow = '', 4000); }
     toast('Cadastro preenchido — informe a categoria, confira e clique em + Cadastrar', 'success'); }, 700); }
@@ -35238,7 +35239,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.266] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.267] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35254,7 +35255,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.266';
+window.__ATX_BUILD_ID__ = 'ATX-v3.267';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
