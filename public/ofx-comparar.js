@@ -48,17 +48,19 @@
   // Ordem: âncora informada na tela → saldos do dia que o próprio banco mandou no arquivo → saldo anterior → LEDGERBAL.
   // O LEDGERBAL de vários bancos é o saldo do DIA DA EXPORTAÇÃO, não o do fim do extrato: se a data dele passa do fim
   // do extrato, ele não serve (faltam no arquivo os lançamentos entre uma data e outra) e a tela pede o saldo.
-  function ancoraOfx(ofx) {
+  function ancoraOfx(ofx, fimPeriodo) {
     const D = Object.keys(ofx.saldos_dia || {}).sort();
     if (D.length) { const d = D[D.length - 1]; return { data: d, valor: ofx.saldos_dia[d], fim_do_dia: true, origem: 'saldo do dia informado no próprio extrato (' + D.length + ' dia' + (D.length > 1 ? 's' : '') + ')' }; }
     if (ofx.saldo_anterior) return { data: ofx.saldo_anterior.data, valor: ofx.saldo_anterior.valor, fim_do_dia: false, origem: 'saldo anterior informado no extrato' };
     if (ofx.saldo_final == null) return null;
     const ult = ofx.lancamentos[ofx.lancamentos.length - 1]?.data || ofx.fim, d = ofx.saldo_final_data || ult;
     if (ofx.fim && d > iso(dia(ofx.fim) + 3 * 864e5)) return { data: d, valor: ofx.saldo_final, fim_do_dia: true, origem: 'saldo do arquivo (LEDGERBAL)', duvidoso: 'O saldo do arquivo é de ' + d.split('-').reverse().join('/') + ', depois do fim do extrato (' + ofx.fim.split('-').reverse().join('/') + ') — costuma ser o saldo do dia em que o arquivo foi baixado. Informe o saldo do banco no fim do extrato.' };
-    return { data: d < ult ? ult : d, valor: ofx.saldo_final, fim_do_dia: true, origem: 'saldo final do arquivo (LEDGERBAL)' };
+    const fp = fimPeriodo || ofx.fim, longe = fp && d > iso(dia(fp) + 7 * 864e5);
+    return { data: d < ult ? ult : d, valor: ofx.saldo_final, fim_do_dia: true, origem: 'saldo final do arquivo (LEDGERBAL)',
+      distante: longe ? 'Esse saldo é de ' + d.split('-').reverse().join('/') + ', bem depois do período comparado: o saldo de cada dia foi recalculado para trás com todos os lançamentos do arquivo até lá. Se faltar algum no arquivo (ex.: aplicação automática), todos os dias ficam deslocados. Para ter certeza, informe o "saldo total disponível dia" de um dia do período.' : null };
   }
-  function saldosOfx(ofx, ancora) {
-    const A = ancora || ancoraOfx(ofx); if (!A || A.valor == null || A.duvidoso) return null;
+  function saldosOfx(ofx, ancora, fimPeriodo) {
+    const A = ancora || ancoraOfx(ofx, fimPeriodo); if (!A || A.valor == null || A.duvidoso) return null;
     const L = ofx.lancamentos, ate = A.fim_do_dia ? A.data : iso(dia(A.data) - 864e5);
     const soma = L.filter(l => l.data <= ate).reduce((s, l) => s + cent(l.valor), 0);
     const inicial = (cent(A.valor) - soma) / 100;
@@ -102,7 +104,16 @@
       return null; };
     soBanco.forEach(b => { b.pista = pista(b, soSistema, true); }); soSistema.forEach(s => { s.pista = pista(s, soBanco, false); });
     // saldo de fim de dia: banco × sistema
-    const anc = opc.ancora || ancoraOfx(ofx), so = saldosOfx(ofx, opc.ancora), dias = []; let sb = so ? cent(so.inicial) : null, ss = cent(saldoInicial);
+    // o que mexe na diferença (banco − sistema) em cada dia: lançamento só de um lado, ou o mesmo lançamento em dias diferentes
+    const motivosDia = d => { const M = [], v = c => (c < 0 ? '−' : '+') + 'R$ ' + (Math.abs(c) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+      soBanco.filter(b => b.data === d).forEach(b => M.push({ efeito: b.c, txt: 'só no banco: ' + b.descricao + ' ' + v(b.c) }));
+      soSistema.filter(x => x.data === d).forEach(x => M.push({ efeito: -x.c, txt: 'só no sistema: ' + x.descricao + ' ' + v(x.c) }));
+      pares.filter(p => p.dias > 0 && (p.banco.data === d || p.sistema.data === d)).forEach(p => M.push({ efeito: (p.banco.data === d ? p.banco.c : 0) - (p.sistema.data === d ? p.sistema.c : 0),
+        txt: p.banco.descricao + ' ' + v(p.banco.c) + ' — no banco em ' + p.banco.data.split('-').reverse().join('/') + ', no sistema em ' + p.sistema.data.split('-').reverse().join('/') }));
+      grupos.forEach(g => { const eb = g.banco.filter(x => x.data === d).reduce((a, x) => a + x.c, 0), es = g.sistema.filter(x => x.data === d).reduce((a, x) => a + x.c, 0);
+        if (eb !== es) M.push({ efeito: eb - es, txt: 'soma (' + g.regra + ') em dias diferentes: ' + g.banco[0].descricao }); });
+      return M; };
+    const anc = opc.ancora || ancoraOfx(ofx, fim), so = saldosOfx(ofx, opc.ancora, fim), dias = []; let sb = so ? cent(so.inicial) : null, ss = cent(saldoInicial);
     const inf = ofx.saldos_dia || {};
     const movS = {}; S.forEach(s => { movS[s.data] = (movS[s.data] || 0) + s.c; });
     const movB = {}; B.forEach(b => { movB[b.data] = (movB[b.data] || 0) + b.c; });
@@ -115,7 +126,7 @@
       const incomp = inf[d] != null && sb != null && Math.abs(inf[d] * 100 - sb) >= 1; if (inf[d] != null) sb = Math.round(inf[d] * 100);
       const dif = sb != null ? sb - ss : null;
       dias.push({ data: d, banco: sb != null ? sb / 100 : null, sistema: ss / 100, diferenca: dif != null ? dif / 100 : null, mudou: dif != null && dif !== difAnt, variacao: dif != null && difAnt != null ? (dif - difAnt) / 100 : null,
-        so_banco: soBanco.filter(b => b.data === d).length, so_sistema: soSistema.filter(s => s.data === d).length,
+        motivos: motivosDia(d), so_banco: soBanco.filter(b => b.data === d).length, so_sistema: soSistema.filter(s => s.data === d).length,
         banco_informado: inf[d] ?? null, arquivo_incompleto: incomp }); difAnt = dif; }
     const somaC = L => r2(L.reduce((s, x) => s + x.c, 0) / 100);
     const ult = dias[dias.length - 1] || null;
@@ -124,7 +135,10 @@
         saldo_inicial_banco: inicialBanco, saldo_inicial_sistema: r2(saldoInicial), diferenca_inicial: inicialBanco != null ? r2(inicialBanco - saldoInicial) : null,
         saldo_final_banco: ult?.banco ?? null, saldo_final_sistema: ult?.sistema ?? r2(saldoInicial), diferenca_final: ult?.diferenca ?? null, dias_com_diferenca: dias.filter(x => x.diferenca && Math.abs(x.diferenca) >= 0.01).length,
         movimento_banco: somaC(B), movimento_sistema: somaC(S), sem_saldo_no_ofx: !so, grupos_qtd: grupos.length,
-        arquivo_incompleto: dias.some(x => x.arquivo_incompleto) },
+        arquivo_incompleto: dias.some(x => x.arquivo_incompleto),
+        explicacao: (() => { if (inicialBanco == null || !ult) return null; const a = r2(inicialBanco - saldoInicial), b2 = somaC(soBanco), c2 = somaC(soSistema), f = ult.diferenca;
+          const datas = r2(pares.filter(p => p.dias > 0).reduce((t, p) => t + (p.banco.data <= fim ? p.banco.c : 0) - (p.sistema.data <= fim ? p.sistema.c : 0), 0) / 100);
+          return { final: f, antes: a, so_banco: b2, so_sistema: c2, datas, sem_explicacao: r2(f - a - b2 + c2 - datas) }; })() },
       ancora: so ? so.ancora : anc, pares, grupos, so_banco: soBanco, so_sistema: soSistema, dias };
   }
 
@@ -237,7 +251,7 @@
     const dif = RES.pares.filter(p => p.dias > 0).map(p => `<tr style="border-bottom:1px solid var(--bd);"><td style="padding:5px;white-space:nowrap;">${dt(p.banco.data)}</td><td style="padding:5px;white-space:nowrap;">${dt(p.sistema.data)}</td><td style="padding:5px;">${esc(p.banco.descricao)}<div style="font-size:10px;color:var(--t3);">sistema: ${esc(p.sistema.descricao)}</div></td><td style="padding:5px;text-align:right;">${sinal(p.banco.c)}</td><td style="padding:5px;">${tdet(p.sistema)}</td></tr>`);
     const D = todosDias ? RES.dias : RES.dias.filter(x => x.mudou || (x.diferenca != null && Math.abs(x.diferenca) >= 0.01) || x.arquivo_incompleto);
     const dias = D.map(x => { const tem = x.diferenca != null && Math.abs(x.diferenca) >= 0.01; return `<tr style="border-bottom:1px solid var(--bd);${tem ? '' : 'color:var(--t2);'}"><td style="padding:5px;white-space:nowrap;">${dt(x.data)}</td><td style="padding:5px;text-align:right;font-family:var(--M);">${brl(x.banco)}${x.arquivo_incompleto ? `<div style="font-size:9.5px;color:var(--red);">saldo informado pelo banco — os lançamentos do arquivo não chegam nele</div>` : x.banco_informado != null ? '<div style="font-size:9.5px;color:var(--t3);">informado pelo banco</div>' : ''}</td><td style="padding:5px;text-align:right;font-family:var(--M);">${brl(x.sistema)}</td>
-      <td style="padding:5px;text-align:right;font-family:var(--M);font-weight:700;color:${tem ? 'var(--gold)' : 'var(--green)'};">${tem ? brl(x.diferenca) : '✓ bate'}</td><td style="padding:5px;font-size:10px;color:var(--t2);">${x.mudou && x.variacao != null ? 'a diferença ' + (x.variacao > 0 ? 'aumentou' : 'diminuiu') + ' ' + brl(Math.abs(x.variacao)) + ' neste dia' : ''}${x.so_banco ? ' · ' + x.so_banco + ' só no banco' : ''}${x.so_sistema ? ' · ' + x.so_sistema + ' só no sistema' : ''}</td></tr>`; });
+      <td style="padding:5px;text-align:right;font-family:var(--M);font-weight:700;color:${tem ? 'var(--gold)' : 'var(--green)'};">${tem ? brl(x.diferenca) : '✓ bate'}</td><td style="padding:5px;font-size:10px;color:var(--t2);">${x.mudou && x.variacao != null ? '<b>a diferença ' + (x.variacao > 0 ? 'aumentou' : 'diminuiu') + ' ' + brl(Math.abs(x.variacao)) + ' neste dia</b>' : (tem ? 'mesma diferença do dia anterior' : '')}${(x.motivos || []).map(m => '<div>• ' + esc(m.txt) + '</div>').join('')}${x.mudou && x.arquivo_incompleto ? '<div style="color:var(--red);">• parte da mudança não vem de lançamento: o saldo informado pelo banco não bate com os lançamentos do arquivo</div>' : ''}</td></tr>`; });
     const corDif = v => v == null ? 'var(--red)' : Math.abs(v) < 0.01 ? 'var(--green)' : 'var(--gold)';
     b.innerHTML = `<div class="panel" style="margin-bottom:12px;border:1px solid ${okSaldo && !RES.so_banco.length && !RES.so_sistema.length ? 'var(--green)' : 'rgba(245,185,75,.45)'};"><div class="ph"><div class="pt">🏦 Extrato do banco × sistema — ${esc(RES.conta_nome.split('·')[0])} · ${dt(RES.periodo.inicio)} a ${dt(RES.periodo.fim)}</div>
       <div style="display:flex;gap:6px;"><button class="btn" style="font-size:10px;" onclick="OFXCMP.escolher()">📂 Outro OFX</button><button class="btn" style="font-size:10px;" onclick="OFXCMP.fechar()">✕ Fechar</button></div></div><div class="pb">
@@ -250,6 +264,7 @@
         ${chip('Saldo final', R.diferenca_final == null ? 'não comparado' : okSaldo ? '✓ bate' : brl(R.diferenca_final), corDif(R.diferenca_final), 'banco ' + brl(R.saldo_final_banco) + ' · sistema ' + brl(R.saldo_final_sistema))}
         ${chip('Dias com saldo diferente', R.dias_com_diferenca, R.dias_com_diferenca ? 'var(--gold)' : 'var(--green)', 'dos ' + RES.dias.length + ' dias com movimento')}</div>
       ${ancoraHtml()}
+      ${explicacaoHtml()}
       <div style="font-size:10.5px;color:var(--t2);margin-bottom:12px;line-height:1.6;">Como ler: a diferença de saldo de um dia é <b>banco − sistema</b>. Quando ela muda de um dia para o outro, o motivo está nos lançamentos daquele dia (faltando, sobrando ou com valor diferente). Diferença já no saldo inicial vem de antes do período — compare um extrato mais antigo.</div>
       <div style="display:grid;grid-template-columns:1fr;gap:14px;">
         <div><div style="font-weight:700;font-size:12px;margin-bottom:4px;">🏦 Só no banco — faltam no sistema (${RES.so_banco.length})</div>${tb(th('Data') + th('Descrição no banco') + th('Valor', 1) + th(''), soB, '✓ Tudo o que está no banco está no sistema.')}</div>
@@ -260,13 +275,25 @@
       ${tb(th('Dia') + th('Saldo no banco', 1) + th('Saldo no sistema', 1) + th('Diferença', 1) + th('O que mudou'), dias, R.diferenca_inicial != null && Math.abs(R.diferenca_inicial) < 0.01 ? '✓ O saldo bate em todos os dias.' : 'A diferença é a mesma desde o início do período — vem do saldo inicial.')}
       </div></div>`;
   }
+  function explicacaoHtml() {
+    const E = RES.resumo.explicacao; if (!E || Math.abs(E.final) < 0.01) return '';
+    const it = (t, v, dica) => Math.abs(v) < 0.01 ? '' : `<tr><td style="padding:3px 8px 3px 0;">${t}${dica ? `<div style="font-size:10px;color:var(--t3);">${dica}</div>` : ''}</td><td style="padding:3px 0;text-align:right;font-family:var(--M);white-space:nowrap;font-weight:600;">${brl(v)}</td></tr>`;
+    const di = RES.dias[0]?.data ? dt(RES.dias[0].data) : dt(RES.periodo.inicio);
+    return `<div style="background:rgba(245,185,75,.07);border:1px solid rgba(245,185,75,.4);border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:11.5px;">
+      <div style="font-weight:700;margin-bottom:4px;">De onde vem a diferença de ${brl(E.final)} no fim do período (banco − sistema)</div><table style="border-collapse:collapse;min-width:min(560px,100%);">
+      ${it('Já vinha de antes do período', E.antes, 'o saldo de abertura em ' + dt(RES.periodo.inicio) + ' não bate — a origem está antes de ' + di + ': compare o extrato do mês anterior')}
+      ${it('Lançamentos só no banco (faltam no sistema)', E.so_banco, 'lista abaixo — "＋ Incluir"')}
+      ${it('Lançamentos só no sistema (não estão no banco)', -E.so_sistema, 'lista abaixo — conferir ou "🗑 Excluir"')}
+      ${it('Mesmo lançamento em datas diferentes ainda abertas no fim', E.datas, '')}
+      ${it('Não explicado pelos lançamentos', E.sem_explicacao, 'o saldo do banco usado não bate com os lançamentos do arquivo — confira o saldo informado ou se o OFX está completo')}</table></div>`;
+  }
   function ancoraHtml() {
     const A = RES.ancora, R = RES.resumo;
     const aviso = !A ? '<b style="color:var(--red);">O extrato não traz saldo — informe o saldo do banco numa data para comparar os saldos.</b>'
       : A.duvidoso ? '<b style="color:var(--red);">' + esc(A.duvidoso) + '</b>'
-      : 'Saldo do banco usado: <b>' + brl(A.valor) + '</b> ' + (A.fim_do_dia ? 'no fim de ' : 'no início de ') + dt(A.data) + ' <span style="color:var(--t3);">(' + esc(A.origem) + ')</span>';
-    return `<div style="background:var(--bg4);border:1px solid ${!A || A.duvidoso ? 'var(--red)' : 'var(--bd)'};border-radius:8px;padding:8px 11px;margin-bottom:10px;font-size:11px;line-height:1.7;">${aviso}
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px;"><span>Saldo do banco no fim do dia</span><input type="date" class="fsel" id="ofxAncD" style="font-size:11px;width:auto;" value="${esc((A && A.data) || RES.periodo.fim)}">
+      : 'Saldo do banco usado: <b>' + brl(A.valor) + '</b> ' + (A.fim_do_dia ? 'no fim de ' : 'no início de ') + dt(A.data) + ' <span style="color:var(--t3);">(' + esc(A.origem) + ')</span>' + (A.distante ? '<div style="color:var(--gold);">⚠ ' + esc(A.distante) + '</div>' : '');
+    return `<div style="background:var(--bg4);border:1px solid ${!A || A.duvidoso ? 'var(--red)' : A.distante ? 'var(--gold)' : 'var(--bd)'};border-radius:8px;padding:8px 11px;margin-bottom:10px;font-size:11px;line-height:1.7;">${aviso}
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px;"><span>Saldo do banco no fim do dia</span><input type="date" class="fsel" id="ofxAncD" style="font-size:11px;width:auto;" value="${esc(A && A.data && A.data <= RES.periodo.fim && !A.distante ? A.data : RES.periodo.fim)}">
         <input class="fi" id="ofxAncV" style="font-size:11px;margin:0;width:140px;" placeholder="ex.: 233.115,95" value="${A && !A.duvidoso && A.manual ? esc(String(A.valor).replace('.', ',')) : ''}"><button class="btn" style="font-size:10px;" onclick="OFXCMP._ancora()">↻ Recalcular com este saldo</button>
         <span style="color:var(--t3);font-size:10px;">use o "saldo total disponível dia" do extrato do banco</span></div>${R.arquivo_incompleto ? '<div style="color:var(--red);margin-top:4px;">⚠ Em algum dia o saldo informado pelo banco não bate com a soma dos lançamentos do arquivo — o OFX está incompleto (baixe de novo o período inteiro).</div>' : ''}</div>`;
   }
