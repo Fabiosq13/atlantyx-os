@@ -222,7 +222,7 @@
     btn.disabled = true; btn.textContent = '⏳ Incluindo…';
     try { const r = await finApi('ofx_incluir', { conta_id: ALVO.conta, data: x.data, valor: x.c / 100, descricao: $('ofxDesc_' + id)?.value || x.descricao, categoria_id: cat, fitid: x.fitid });
       if (r.ja_existe) toast(r.aviso, 'info'); else { toast('Incluído no QuickBooks (' + ({ Purchase: 'despesa', Deposit: 'depósito', Transfer: 'pagamento do cartão' }[r.entidade] || r.entidade) + ' #' + r.id + ')', 'success'); try { addLog('info', '[Extrato OFX] incluído no QuickBooks: ' + r.qb_txn_id + ' · ' + brl(x.c / 100)); } catch (_) {} }
-      if (await recomparar()) desenhar();
+      await atualizar();
     } catch (e) { toast(e.message, 'error'); btn.disabled = false; btn.textContent = '✓ Incluir no QuickBooks'; const c = document.getElementById('ofxInc_' + id); if (c) { let er = c.querySelector('.ofxErr'); if (!er) { er = document.createElement('div'); er.className = 'ofxErr'; er.style.cssText = 'color:var(--red);font-size:11px;margin-top:5px;font-weight:600;'; c.firstElementChild.appendChild(er); } er.textContent = '⛔ ' + e.message; } } }
   // ── excluir no QuickBooks o que não está no banco ──
   async function excluirAbrir(id) {
@@ -244,7 +244,7 @@
     if (!d || !d.excluido) { msg('⛔ O QuickBooks não confirmou a exclusão' + (d && d.erro ? ': ' + esc(d.erro) : '') + '. Nada mudou.', 'var(--red)'); return; }
     toast('Excluído no QuickBooks: ' + brl(d.registro?.valor || 0), 'success'); try { addLog('warn', '[Extrato OFX] EXCLUÍDO no QuickBooks: ' + d.registro?.entidade + '#' + d.registro?.id + ' · ' + brl(d.registro?.valor || 0)); } catch (_) {}
     msg('✓ Excluído no QuickBooks (' + esc(d.registro?.entidade || '') + ' #' + esc(d.registro?.id || '') + ') — atualizando a comparação…', 'var(--green)');
-    if (await recomparar()) { const ainda = RES.so_sistema.some(s => s.qb_txn_id === x.qb_txn_id); desenhar();
+    if (await atualizar()) { const ainda = RES.so_sistema.some(s => s.qb_txn_id === x.qb_txn_id);
       if (ainda) toast('O QuickBooks confirmou a exclusão, mas a leitura ainda trouxe o lançamento — clique em Comparar de novo em alguns segundos', 'info'); } }
   function desenhar() {
     const R = RES.resumo, b = box(), okSaldo = R.diferenca_final != null && Math.abs(R.diferenca_final) < 0.01;
@@ -254,13 +254,13 @@
     const tdet = l => `<button class="btn" style="font-size:9px;padding:1px 6px;" onclick='_fdDetalhe(${JSON.stringify(JSON.stringify(l)).replace(/'/g, '&#39;')})' title="Ver o lançamento no sistema">🔎</button>`;
     const soB = RES.so_banco.map(x => `<tr data-ofx="${esc(x.id)}" style="border-bottom:1px solid var(--bd);"><td style="padding:5px;white-space:nowrap;">${dt(x.data)}</td><td style="padding:5px;">${esc(x.descricao)}${x.doc ? ' <span style="color:var(--t3);">doc ' + esc(x.doc) + '</span>' : ''}${x.pista ? `<div style="font-size:10px;color:var(--gold);">${esc(x.pista)}</div>` : ''}</td><td style="padding:5px;text-align:right;">${sinal(x.c)}</td><td style="padding:5px;white-space:nowrap;"><button class="btn btn-gn" style="font-size:9.5px;padding:2px 7px;" onclick="OFXCMP.incluirAbrir('${esc(x.id)}')" title="Incluir este lançamento do banco no QuickBooks">＋ Incluir</button></td></tr>`);
     const soS = RES.so_sistema.map(x => `<tr data-ofx="${esc(x.id)}" style="border-bottom:1px solid var(--bd);"><td style="padding:5px;white-space:nowrap;">${dt(x.data)}</td><td style="padding:5px;">${esc(x.descricao)} <span style="color:var(--t3);font-size:10px;">${esc(x.categoria || '')}</span>${x.pista ? `<div style="font-size:10px;color:var(--gold);">${esc(x.pista)}</div>` : ''}</td><td style="padding:5px;text-align:right;">${sinal(x.c)}</td><td style="padding:5px;white-space:nowrap;">${tdet(x)}${x.qb_txn_id ? ` <button class="btn" style="font-size:9.5px;padding:2px 7px;color:var(--red);border-color:var(--red);" onclick="OFXCMP.excluirAbrir('${esc(x.id)}')" title="Excluir este lançamento no QuickBooks">🗑 Excluir</button>` : ''}</td></tr>`);
-    const dif = RES.pares.filter(p => p.dias > 0).map(p => `<tr style="border-bottom:1px solid var(--bd);"><td style="padding:5px;white-space:nowrap;">${dt(p.banco.data)}</td><td style="padding:5px;white-space:nowrap;">${dt(p.sistema.data)}</td><td style="padding:5px;">${esc(p.banco.descricao)}<div style="font-size:10px;color:var(--t3);">sistema: ${esc(p.sistema.descricao)}</div></td><td style="padding:5px;text-align:right;">${sinal(p.banco.c)}</td><td style="padding:5px;">${tdet(p.sistema)}</td></tr>`);
+    const dif = RES.pares.filter(p => p.dias > 0).map(p => `<tr style="border-bottom:1px solid var(--bd);"><td style="padding:5px;white-space:nowrap;">${dt(p.banco.data)}</td><td style="padding:5px;white-space:nowrap;">${dt(p.sistema.data)}</td><td style="padding:5px;">${esc(p.banco.descricao)}<div style="font-size:10px;color:var(--t3);">sistema: ${esc(p.sistema.descricao)}</div></td><td style="padding:5px;text-align:right;">${sinal(p.banco.c)}</td><td style="padding:5px;white-space:nowrap;">${tdet(p.sistema)}${p.sistema.qb_txn_id ? ` <button class="btn btn-gn" style="font-size:9.5px;padding:2px 7px;" data-dt="${esc(p.sistema.id)}" onclick="OFXCMP.trocarData('${esc(p.sistema.id)}',this)" title="Muda a data do lançamento no QuickBooks para ${dt(p.banco.data)}">📅 Usar ${dt(p.banco.data)}</button>` : ''}</td></tr>`);
     const D = todosDias ? RES.dias : RES.dias.filter(x => x.mudou || (x.diferenca != null && Math.abs(x.diferenca) >= 0.01) || x.arquivo_incompleto);
     const dias = D.map(x => { const tem = x.diferenca != null && Math.abs(x.diferenca) >= 0.01; return `<tr style="border-bottom:1px solid var(--bd);${tem ? '' : 'color:var(--t2);'}"><td style="padding:5px;white-space:nowrap;">${dt(x.data)}</td><td style="padding:5px;text-align:right;font-family:var(--M);">${brl(x.banco)}${x.arquivo_incompleto ? `<div style="font-size:9.5px;color:var(--red);">saldo informado pelo banco — os lançamentos do arquivo não chegam nele</div>` : x.banco_informado != null ? '<div style="font-size:9.5px;color:var(--t3);">informado pelo banco</div>' : ''}</td><td style="padding:5px;text-align:right;font-family:var(--M);">${brl(x.sistema)}</td>
       <td style="padding:5px;text-align:right;font-family:var(--M);font-weight:700;color:${tem ? 'var(--gold)' : 'var(--green)'};">${tem ? brl(x.diferenca) : '✓ bate'}</td><td style="padding:5px;font-size:10px;color:var(--t2);">${x.mudou && x.variacao != null ? '<b>a diferença ' + (x.variacao > 0 ? 'aumentou' : 'diminuiu') + ' ' + brl(Math.abs(x.variacao)) + ' neste dia</b>' : (tem ? 'mesma diferença do dia anterior' : '')}${(x.motivos || []).map(m => '<div>• ' + esc(m.txt) + '</div>').join('')}${x.mudou && x.arquivo_incompleto ? '<div style="color:var(--red);">• parte da mudança não vem de lançamento: o saldo informado pelo banco não bate com os lançamentos do arquivo</div>' : ''}</td></tr>`; });
     const corDif = v => v == null ? 'var(--red)' : Math.abs(v) < 0.01 ? 'var(--green)' : 'var(--gold)';
     b.innerHTML = `<div class="panel" style="margin-bottom:12px;border:1px solid ${okSaldo && !RES.so_banco.length && !RES.so_sistema.length ? 'var(--green)' : 'rgba(245,185,75,.45)'};"><div class="ph"><div class="pt">🏦 Extrato do banco × sistema — ${esc(RES.conta_nome.split('·')[0])} · ${dt(RES.periodo.inicio)} a ${dt(RES.periodo.fim)}</div>
-      <div style="display:flex;gap:6px;"><button class="btn" style="font-size:10px;" onclick="OFXCMP.escolher()">📂 Outro OFX</button><button class="btn" style="font-size:10px;" onclick="OFXCMP.fechar()">✕ Fechar</button></div></div><div class="pb">
+      <div style="display:flex;gap:6px;align-items:center;">${RES.atualizado_em ? `<span style="font-size:10px;color:var(--t3);">saldos atualizados às ${RES.atualizado_em.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>` : ''}<button class="btn" style="font-size:10px;" onclick="OFXCMP.atualizar(this)">↻ Atualizar</button><button class="btn" style="font-size:10px;" onclick="OFXCMP.escolher()">📂 Outro OFX</button><button class="btn" style="font-size:10px;" onclick="OFXCMP.fechar()">✕ Fechar</button></div></div><div class="pb">
       ${RES.incompleto ? '<div style="color:var(--red);font-size:11px;margin-bottom:8px;">⛔ O QuickBooks devolveu dados incompletos nesta carga — atualize antes de confiar na comparação.</div>' : ''}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
         ${chip('Lançamentos que batem', RES.pares.length + ' de ' + R.banco_qtd, 'var(--bd)', R.com_data_diferente ? R.com_data_diferente + ' com data diferente' : 'banco × sistema')}
@@ -276,7 +276,7 @@
         <div><div style="font-weight:700;font-size:12px;margin-bottom:4px;">🏦 Só no banco — faltam no sistema (${RES.so_banco.length})</div>${tb(th('Data') + th('Descrição no banco') + th('Valor', 1) + th(''), soB, '✓ Tudo o que está no banco está no sistema.')}</div>
         <div><div style="font-weight:700;font-size:12px;margin-bottom:4px;">📒 Só no sistema — não aparecem no banco (${RES.so_sistema.length})</div>${tb(th('Data') + th('Descrição no sistema') + th('Valor', 1) + th(''), soS, '✓ Tudo o que está no sistema aparece no banco.')}</div></div>
       ${RES.grupos.length ? `<div style="font-weight:700;font-size:12px;margin:14px 0 4px;">🧩 Batem somando vários lançamentos (${RES.grupos.length})</div>${tb(th('Regra') + th('No banco') + th('No sistema') + th('Valor', 1), RES.grupos.map(g => `<tr style="border-bottom:1px solid var(--bd);vertical-align:top;"><td style="padding:5px;font-size:10px;color:var(--t2);white-space:nowrap;">${esc(g.regra)}</td><td style="padding:5px;">${g.banco.map(x => dt(x.data) + ' · ' + esc(x.descricao) + ' · ' + sinal(x.c)).join('<br>')}</td><td style="padding:5px;">${g.sistema.map(x => dt(x.data) + ' · ' + esc(x.descricao) + ' · ' + sinal(x.c)).join('<br>')}</td><td style="padding:5px;text-align:right;">${sinal(g.banco.reduce((a, x) => a + x.c, 0))}</td></tr>`), '')}` : ''}
-      ${dif.length ? `<div style="font-weight:700;font-size:12px;margin:14px 0 4px;">📅 Batem no valor, mas com data diferente (${dif.length})</div>${tb(th('No banco') + th('No sistema') + th('Descrição') + th('Valor', 1) + th(''), dif, '')}` : ''}
+      ${dif.length ? `<div style="display:flex;align-items:center;gap:10px;margin:14px 0 4px;"><div style="font-weight:700;font-size:12px;">📅 Batem no valor, mas com data diferente (${dif.length})</div><button class="btn btn-gn" style="font-size:10px;" onclick="OFXCMP.trocarTodas(this)">📅 Usar a data do banco em todos</button></div>${tb(th('No banco') + th('No sistema') + th('Descrição') + th('Valor', 1) + th(''), dif, '')}` : ''}
       <div style="display:flex;align-items:center;gap:10px;margin:14px 0 4px;"><div style="font-weight:700;font-size:12px;">💰 Saldo de fim de dia — banco × sistema</div><label style="font-size:10.5px;color:var(--t2);display:flex;gap:5px;align-items:center;"><input type="checkbox" ${todosDias ? 'checked' : ''} onchange="OFXCMP._todos(this.checked)"> mostrar todos os dias com movimento</label></div>
       ${tb(th('Dia') + th('Saldo no banco', 1) + th('Saldo no sistema', 1) + th('Diferença', 1) + th('O que mudou'), dias, R.diferenca_inicial != null && Math.abs(R.diferenca_inicial) < 0.01 ? '✓ O saldo bate em todos os dias.' : 'A diferença é a mesma desde o início do período — vem do saldo inicial.')}
       </div></div>`;
@@ -293,6 +293,25 @@
       ${it('Mesmo lançamento em datas diferentes ainda abertas no fim', E.datas, '')}
       ${it('Não explicado pelos lançamentos', E.sem_explicacao, 'o saldo do banco usado não bate com os lançamentos do arquivo — confira o saldo informado ou se o OFX está completo')}</table></div>`;
   }
+  // a cada ajuste (incluir, excluir, trocar data) relê o QuickBooks e redesenha banco × sistema no mesmo lugar da tela
+  async function atualizar(btn) { const y = window.scrollY; if (btn) { btn.disabled = true; btn.textContent = '⏳ Atualizando…'; }
+    const ok = await recomparar(); if (ok) { RES.atualizado_em = new Date(); desenhar(); window.scrollTo(0, y); } else if (btn) { btn.disabled = false; btn.textContent = '↻ Atualizar'; } return ok; }
+  // ── trocar no QuickBooks a data do lançamento para a do banco ──
+  async function trocarUma(p) { return finApi('qb_trocar_data', { qb_txn_id: p.sistema.qb_txn_id, de: p.sistema.data, para: p.banco.data, valor: Math.abs(p.sistema.c) / 100, conta_id: ALVO.conta }, { timeoutMs: 45000 }); }
+  async function trocarData(id, btn) {
+    const p = RES.pares.find(x => x.sistema.id === id && x.dias > 0); if (!p) return; btn.disabled = true; btn.textContent = '⏳ Trocando…';
+    try { const r = await trocarUma(p); toast(r.ja_estava ? 'Já estava em ' + dt(p.banco.data) : 'Data trocada no QuickBooks: ' + dt(p.sistema.data) + ' → ' + dt(r.para), 'success');
+      try { addLog('info', '[Extrato OFX] data trocada no QuickBooks: ' + p.sistema.qb_txn_id + ' ' + p.sistema.data + ' → ' + p.banco.data); } catch (_) {}
+      await atualizar();
+    } catch (e) { toast('Não trocou a data: ' + e.message, 'error'); btn.disabled = false; btn.textContent = '⛔ ' + e.message.substring(0, 60); btn.title = e.message; } }
+  async function trocarTodas(btn) {
+    const L = RES.pares.filter(p => p.dias > 0 && p.sistema.qb_txn_id); if (!L.length) return;
+    btn.disabled = true; let ok = 0; const erros = [];
+    for (const p of L) { btn.textContent = '⏳ ' + (ok + erros.length + 1) + ' de ' + L.length + '…'; try { await trocarUma(p); ok++; } catch (e) { erros.push(dt(p.sistema.data) + ' ' + p.sistema.descricao + ': ' + e.message); } }
+    toast(ok + ' data(s) trocada(s) no QuickBooks' + (erros.length ? ' · ' + erros.length + ' não trocada(s)' : ''), erros.length ? 'error' : 'success');
+    try { addLog('info', '[Extrato OFX] ' + ok + ' data(s) trocada(s) no QuickBooks' + (erros.length ? ' · erros: ' + erros.join(' | ') : '')); } catch (_) {}
+    await atualizar();
+    if (erros.length) { const b = box(); const d = document.createElement('div'); d.style.cssText = 'color:var(--red);font-size:11px;margin:0 0 10px;'; d.innerHTML = '⛔ Não trocadas: ' + erros.map(esc).join('<br>'); b.prepend(d); } }
   function ancoraHtml() {
     const A = RES.ancora, R = RES.resumo;
     const aviso = !A ? '<b style="color:var(--red);">O extrato não traz saldo — informe o saldo do banco numa data para comparar os saldos.</b>'
@@ -312,5 +331,5 @@
   }
   function fechar() { const b = $('fd_ofxBox'); if (b) b.remove(); OFX = null; RES = null; }
 
-  G.OFXCMP = { parse, decodificar, saldosOfx, ancoraOfx, comparar, _ancora: ancorar, escolher, ler, rodar, fechar, incluirAbrir, incluir, excluirAbrir, excluir, _todos: v => { todosDias = !!v; desenhar(); }, _estado: () => ({ OFX, RES }) };
+  G.OFXCMP = { atualizar, trocarData, trocarTodas, parse, decodificar, saldosOfx, ancoraOfx, comparar, _ancora: ancorar, escolher, ler, rodar, fechar, incluirAbrir, incluir, excluirAbrir, excluir, _todos: v => { todosDias = !!v; desenhar(); }, _estado: () => ({ OFX, RES }) };
 })(typeof window !== 'undefined' ? window : globalThis);

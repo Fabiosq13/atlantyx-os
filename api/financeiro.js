@@ -211,7 +211,7 @@ async function handler(req, res) {
       qb_contas_diagnostico: () => qbContasDiagnostico(),
       qb_contas_filtro:      () => qbContasParaFiltro(),
       qb_excluir_lancamento: () => qbExcluirLancamento(params),
-      ofx_categorias:        () => ofxCategorias(), ofx_incluir: () => ofxIncluir(params), // v3.256: comparar o extrato OFX — incluir o que só está no banco
+      ofx_categorias:        () => ofxCategorias(), ofx_incluir: () => ofxIncluir(params), qb_trocar_data: () => qbTrocarData(params), // v3.261 // v3.256: comparar o extrato OFX — incluir o que só está no banco
       qb_razao_conta:        () => qbRazaoConta(params),
       executar_tarefa:       () => executarTarefaFin(params),
       config_get:            () => configAppGet(params),
@@ -2402,6 +2402,31 @@ async function qbExcluirLancamento({ qb_txn_id, confirmar = false, esperado = nu
   return { excluido: true, registro: resumo, resposta_qb: d[entidade]?.status || 'Deleted' };
 }
 
+// v3.261: TROCAR A DATA de um lançamento no QuickBooks para a data do banco (comparação com o extrato OFX).
+// O servidor relê o lançamento e só troca se ainda estiver na data, no valor e na conta que a tela mostrou.
+async function qbTrocarData({ qb_txn_id, de, para, valor, conta_id } = {}) {
+  if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
+  const [tipo, id] = String(qb_txn_id || '').split(':'), entidade = ENTIDADE_POR_TIPO[tipo];
+  if (!entidade || !/^\d+$/.test(id || '') || entidade === 'Invoice') throw new Error('Lançamento inválido para trocar a data');
+  const dd = x => /^\d{4}-\d{2}-\d{2}$/.test(String(x || '')); if (!dd(de) || !dd(para)) throw new Error('Data inválida');
+  const token = await qbToken();
+  const r = await qbQuery(`select * from ${entidade} where Id = '${id}'`, token); const item = (r?.QueryResponse?.[entidade] || [])[0];
+  if (!item) throw new Error(`Lançamento ${entidade} #${id} não encontrado no QuickBooks`);
+  if (item.TxnDate === para) return { ja_estava: true, data: para };
+  const total = round(parseFloat(item.TotalAmt ?? item.Amount ?? 0)), v = round(Math.abs(Number(valor) || 0));
+  const ctas = [item.AccountRef?.value, item.DepositToAccountRef?.value, item.BankAccountRef?.value, item.CheckPayment?.BankAccountRef?.value, item.FromAccountRef?.value, item.ToAccountRef?.value,
+    ...(item.Line || []).map(l => l.JournalEntryLineDetail?.AccountRef?.value)].filter(Boolean).map(String);
+  const dif = [];
+  if (item.TxnDate !== de) dif.push('a data (está ' + String(item.TxnDate).split('-').reverse().join('/') + ')');
+  if (v && Math.abs(total - v) > 0.01 && !(item.Line || []).some(l => Math.abs(round(parseFloat(l.Amount || 0)) - v) <= 0.01)) dif.push('o valor');
+  if (conta_id && !ctas.includes(String(conta_id))) dif.push('a conta bancária');
+  if (dif.length) throw new Error('O lançamento mudou no QuickBooks desde a comparação (' + dif.join(', ') + ') — a data não foi trocada. Refaça a comparação.');
+  const resp = await qbFetch('/' + entidade.toLowerCase() + '?minorversion=65', token, 'POST', { Id: item.Id, SyncToken: item.SyncToken, sparse: true, TxnDate: para });
+  const novo = resp?.[entidade]; if (!novo?.Id) throw new Error('O QuickBooks não confirmou a troca da data');
+  try { _resCache.clear(); } catch (_) {}
+  console.log(`[Financeiro] DATA TROCADA no QuickBooks: ${entidade}#${id} ${de} → ${para}`);
+  return { trocada: true, entidade, id: item.Id, de, para: novo.TxnDate };
+}
 // ═══ v3.256: COMPARAR O EXTRATO OFX — incluir no QuickBooks o lançamento que só está no banco ═══
 // O OFX é lido no navegador; aqui chega só a linha que a pessoa clicou. O servidor confere a conta bancária e a categoria,
 // e se já existe no QuickBooks lançamento igual (mesma conta, data e valor) não cria de novo.
