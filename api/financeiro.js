@@ -2406,10 +2406,12 @@ async function ofxCategorias() {
   if (!qbConfigurado()) throw new Error('QuickBooks não configurado');
   const token = await qbToken();
   const d = await qbQuery(`select * from Account where Active = true maxresults 1000`, token);
-  const A = (d?.QueryResponse?.Account || []).filter(a => !['Bank', 'Credit Card', 'Accounts Receivable', 'Accounts Payable'].includes(a.AccountType));
+  const todas = d?.QueryResponse?.Account || [];
+  const A = todas.filter(a => !['Bank', 'Credit Card', 'Accounts Receivable', 'Accounts Payable'].includes(a.AccountType));
   const m = a => ({ id: a.Id, nome: a.FullyQualifiedName || a.Name, tipo: a.AccountType });
   const ord = (x, y) => x.nome.localeCompare(y.nome);
-  return { saida: A.filter(a => ['Expense', 'Other Expense', 'Cost of Goods Sold', 'Other Current Liability', 'Other Current Asset', 'Long Term Liability', 'Equity'].includes(a.AccountType)).map(m).sort(ord),
+  // v3.259: pagamento da fatura do cartão (ex.: "INT ITAUCARD") não é despesa — é transferência do banco para a conta do cartão
+  return { cartoes: todas.filter(a => a.AccountType === 'Credit Card').map(m).sort(ord), saida: A.filter(a => ['Expense', 'Other Expense', 'Cost of Goods Sold', 'Other Current Liability', 'Other Current Asset', 'Long Term Liability', 'Equity'].includes(a.AccountType)).map(m).sort(ord),
     entrada: A.filter(a => ['Income', 'Other Income', 'Other Current Liability', 'Other Current Asset', 'Equity', 'Long Term Liability'].includes(a.AccountType)).map(m).sort(ord) };
 }
 async function ofxIncluir({ conta_id, data, valor, descricao, categoria_id, fitid, forcar = false } = {}) {
@@ -2422,8 +2424,22 @@ async function ofxIncluir({ conta_id, data, valor, descricao, categoria_id, fiti
   const [cb, cc] = await Promise.all([qbQuery(`select * from Account where Id = '${conta_id}'`, token), qbQuery(`select * from Account where Id = '${categoria_id}'`, token)]);
   const banco = (cb?.QueryResponse?.Account || [])[0], cat = (cc?.QueryResponse?.Account || [])[0];
   if (!banco || banco.AccountType !== 'Bank') throw new Error('A conta escolhida não é uma conta bancária no QuickBooks');
-  if (!cat || ['Bank', 'Credit Card', 'Accounts Receivable', 'Accounts Payable'].includes(cat.AccountType)) throw new Error('Categoria inválida para este lançamento');
-  const saida = v < 0, abs = Math.abs(v), entidade = saida ? 'Purchase' : 'Deposit';
+  const cartao = cat?.AccountType === 'Credit Card';
+  if (!cat || ['Bank', 'Accounts Receivable', 'Accounts Payable'].includes(cat.AccountType) || (cartao && v > 0)) throw new Error('Categoria inválida para este lançamento');
+  const saida = v < 0, abs = Math.abs(v);
+  if (cartao) { // fatura do cartão paga pelo banco = Transfer (banco → cartão)
+    if (!forcar) { const q = await qbQuery(`select * from Transfer where TxnDate = '${data}' maxresults 200`, token);
+      const q2 = await qbQuery(`select * from CreditCardPayment where TxnDate = '${data}' maxresults 200`, token).catch(() => null);
+      const igual = (q?.QueryResponse?.Transfer || []).find(x => Math.abs(round(parseFloat(x.Amount || 0)) - abs) <= 0.01 && String(x.FromAccountRef?.value) === String(conta_id))
+        || (q2?.QueryResponse?.CreditCardPayment || []).find(x => Math.abs(round(parseFloat(x.Amount || 0)) - abs) <= 0.01 && String(x.BankAccountRef?.value) === String(conta_id));
+      if (igual) return { ja_existe: true, aviso: `Já existe no QuickBooks o pagamento de cartão de ${abs.toFixed(2).replace('.', ',')} nesta conta em ${data.split('-').reverse().join('/')} (#${igual.Id}). Nada foi criado.` }; }
+    const r = await qbFetch('/transfer?minorversion=65', token, 'POST', { FromAccountRef: { value: String(conta_id) }, ToAccountRef: { value: String(categoria_id) }, Amount: abs, TxnDate: data,
+      PrivateNote: (String(descricao || 'Pagamento da fatura do cartão').substring(0, 300) + ' · incluído pela comparação com o extrato' + (fitid ? ' (FITID ' + String(fitid).replace(/[^\w.-]/g, '').substring(0, 40) + ')' : '')) });
+    const x = r?.Transfer; if (!x?.Id) throw new Error('O QuickBooks não confirmou a inclusão');
+    console.log(`[Financeiro] INCLUÍDO pelo extrato OFX: Transfer#${x.Id} · ${v} · ${banco.Name} → ${cat.Name}`);
+    return { criado: true, entidade: 'Transfer', id: x.Id, qb_txn_id: 'transferencia:' + x.Id, conta: banco.Name, categoria: cat.Name };
+  }
+  const entidade = saida ? 'Purchase' : 'Deposit';
   if (!forcar) {
     const q = await qbQuery(`select * from ${entidade} where TxnDate = '${data}' maxresults 200`, token);
     const igual = (q?.QueryResponse?.[entidade] || []).find(x => Math.abs(round(parseFloat(x.TotalAmt || 0)) - abs) <= 0.01 && String(saida ? x.AccountRef?.value : x.DepositToAccountRef?.value) === String(conta_id));

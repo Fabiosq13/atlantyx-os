@@ -206,11 +206,12 @@
   async function incluirAbrir(id) {
     const x = RES.so_banco.find(b => b.id === id); if (!x) return;
     let C; try { C = await categorias(); } catch (e) { return toast(e.message, 'error'); }
-    const saida = x.c < 0, L = saida ? C.saida : C.entrada, sug = sugerir(L, x.descricao, saida);
+    const saida = x.c < 0, cartaoTxt = saida && /cartao|card|fatura/.test(norm(x.descricao)), L = saida ? [...(C.cartoes || []).map(c => ({ ...c, nome: '💳 ' + c.nome + ' (pagamento da fatura)' })), ...C.saida] : C.entrada;
+    const sug = cartaoTxt && (C.cartoes || []).length ? { id: (C.cartoes.find(c => norm(c.nome).split(' ').some(w => w.length > 3 && norm(x.descricao).includes(w))) || C.cartoes[0]).id } : sugerir(L, x.descricao, saida);
     const tr = document.querySelector('[data-ofx="' + id + '"]'); if (!tr) return; const ja = document.getElementById('ofxInc_' + id); if (ja) { ja.remove(); return; }
     const f = document.createElement('tr'); f.id = 'ofxInc_' + id;
     f.innerHTML = `<td colspan="4" style="padding:6px 5px 10px;background:var(--bg4);"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px;">
-      <span>${saida ? 'Despesa' : 'Depósito'} de <b>${brl(Math.abs(x.c) / 100)}</b> em ${dt(x.data)} na conta do banco · categoria:</span>
+      <span>${saida ? (cartaoTxt ? 'Pagamento do cartão / despesa' : 'Despesa') : 'Depósito'} de <b>${brl(Math.abs(x.c) / 100)}</b> em ${dt(x.data)} na conta do banco · categoria:</span>
       <select class="fsel" id="ofxCat_${id}" style="font-size:11px;max-width:260px;"><option value="">— escolha —</option>${L.map(c => `<option value="${esc(c.id)}" ${sug && sug.id === c.id ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</select>
       <input class="fi" id="ofxDesc_${id}" style="font-size:11px;margin:0;max-width:260px;" maxlength="300" value="${esc(x.descricao)}">
       <button class="btn btn-p" style="font-size:10.5px;" onclick="OFXCMP.incluir('${id}',this)">✓ Incluir no QuickBooks</button></div></td>`;
@@ -220,7 +221,7 @@
     const x = RES.so_banco.find(b => b.id === id); if (!x) return; const cat = $('ofxCat_' + id)?.value; if (!cat) return toast('Escolha a categoria', 'error');
     btn.disabled = true; btn.textContent = '⏳ Incluindo…';
     try { const r = await finApi('ofx_incluir', { conta_id: ALVO.conta, data: x.data, valor: x.c / 100, descricao: $('ofxDesc_' + id)?.value || x.descricao, categoria_id: cat, fitid: x.fitid });
-      if (r.ja_existe) toast(r.aviso, 'info'); else { toast('Incluído no QuickBooks (' + (r.entidade === 'Purchase' ? 'despesa' : 'depósito') + ' #' + r.id + ')', 'success'); try { addLog('info', '[Extrato OFX] incluído no QuickBooks: ' + r.qb_txn_id + ' · ' + brl(x.c / 100)); } catch (_) {} }
+      if (r.ja_existe) toast(r.aviso, 'info'); else { toast('Incluído no QuickBooks (' + ({ Purchase: 'despesa', Deposit: 'depósito', Transfer: 'pagamento do cartão' }[r.entidade] || r.entidade) + ' #' + r.id + ')', 'success'); try { addLog('info', '[Extrato OFX] incluído no QuickBooks: ' + r.qb_txn_id + ' · ' + brl(x.c / 100)); } catch (_) {} }
       if (await recomparar()) desenhar();
     } catch (e) { toast(e.message, 'error'); btn.disabled = false; btn.textContent = '✓ Incluir no QuickBooks'; } }
   // ── excluir no QuickBooks o que não está no banco ──
