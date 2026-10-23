@@ -416,6 +416,47 @@ async function ytPublicarPasso(b) {
   return { pronto: true, video_id: d.id, url: 'https://youtu.be/' + d.id, aviso };
 }
 
+// ── v3.254 · PLANTÃO AO VIVO (break news): interrompe a programação, toca a vinheta e entra a câmera do apresentador ──
+// kv atv:plantao = { ativo, id, room, titulo, subtitulo, inicio (fim da vinheta), criado_em, fim_em } · histórico em atv:plantao_hist
+const PLANTAO_VINHETA_S = 8;
+let _plMem = null;
+async function plantaoLer(fresco) { if (!fresco && _plMem && Date.now() - _plMem.em < 2500) return _plMem.v; const v = (await kv('atv:plantao')) || { ativo: false }; _plMem = { em: Date.now(), v }; return v; }
+async function plantaoGravar(v) { await kv('atv:plantao', v); _plMem = { em: Date.now(), v }; return v; }
+const plantaoPublico = p => p?.ativo ? { ativo: true, id: p.id, titulo: p.titulo, subtitulo: p.subtitulo || '', inicio: p.inicio, agora: Date.now() } : { ativo: false, id: p?.id || null, fim_em: p?.fim_em || null, agora: Date.now() };
+const plTxt = (v, n) => String(v || '').replace(/\s+/g, ' ').trim().substring(0, n);
+function plantaoHost(p, nome) {
+  return { url: process.env.LIVEKIT_URL, token: lkToken('atx-host-' + crypto.randomBytes(3).toString('hex'), plTxt(nome, 60) || 'Atlantyx', { room: p.room, roomJoin: true, canPublish: true, canSubscribe: false, canPublishData: true }, 4) };
+}
+async function plantaoIniciar(b) {
+  if (!lkOk()) lkToken('x', 'x', {}); // lança a mensagem de "configure o LiveKit"
+  const cfg = await config(); if (!cfg.codigo) throw new Error('Gere antes o link da Atlantyx TV — o plantão entra no ar por ele');
+  const atual = await plantaoLer(true);
+  if (atual.ativo) return { plantao: atual, vinheta_s: 0, ...plantaoHost(atual, b.nome) }; // já no ar: só reentra com a câmera
+  const titulo = plTxt(b.titulo, 90); if (!titulo) throw new Error('Escreva a manchete do plantão');
+  const id = novoId('pl'), seg = b.vinheta === false ? 0 : PLANTAO_VINHETA_S;
+  const p = { ativo: true, id, room: 'plantao-' + id, titulo, subtitulo: plTxt(b.subtitulo, 140), criado_em: new Date().toISOString(), inicio: new Date(Date.now() + seg * 1000).toISOString() };
+  await plantaoGravar(p);
+  return { plantao: p, vinheta_s: seg, ...plantaoHost(p, b.nome) };
+}
+async function plantaoEncerrar() {
+  const p = await plantaoLer(true); if (!p.ativo) return { plantao: p };
+  const fim = { ...p, ativo: false, fim_em: new Date().toISOString() }; await plantaoGravar(fim);
+  const h = (await kv('atv:plantao_hist')) || []; h.unshift({ id: p.id, titulo: p.titulo, inicio: p.inicio, fim_em: fim.fim_em, midia_id: null }); await kv('atv:plantao_hist', h.slice(0, 30));
+  return { plantao: fim };
+}
+async function plantaoFaixa(b) { const p = await plantaoLer(true); if (!p.ativo) throw new Error('Nenhum plantão no ar');
+  return { plantao: await plantaoGravar({ ...p, titulo: plTxt(b.titulo, 90) || p.titulo, subtitulo: plTxt(b.subtitulo, 140) }) }; }
+async function plantaoGravacao(b) { const h = (await kv('atv:plantao_hist')) || []; const x = h.find(i => i.id === b.id); if (x) { x.midia_id = String(b.midia_id || '').substring(0, 60) || null; await kv('atv:plantao_hist', h); } return { ok: true }; }
+// público (link da TV): status leve (cache curto na borda) e token de espectador só para assistir, invisível na sala
+async function plantaoPublicoRota(q, res) {
+  const p = await plantaoLer();
+  if (q.tk) { res.setHeader('Cache-Control', 'no-store');
+    if (!p.ativo || !lkOk()) return res.status(409).json({ success: false, error: 'Sem plantão no ar' });
+    return res.status(200).json({ success: true, url: process.env.LIVEKIT_URL, token: lkToken('atx-tv-' + crypto.randomBytes(5).toString('hex'), 'Atlantyx TV', { room: p.room, roomJoin: true, canPublish: false, canSubscribe: true, canPublishData: false, hidden: true }, 4) }); }
+  res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=3');
+  return res.status(200).json({ success: true, plantao: plantaoPublico(p) });
+}
+
 // ── páginas públicas (shells; o render fica em /atv-player.js) ──
 const LK_CDN = 'https://cdn.jsdelivr.net/npm/livekit-client@2.15.0/dist/livekit-client.umd.js';
 function shell(titulo, cfgJs, comLk) {
@@ -447,8 +488,9 @@ async function publico(req, res, q) {
     return html(200, shell(w.titulo + ' · Atlantyx TV', { modo: q.sala ? 'sala' : 'convidado', tok, webinar: { titulo: w.titulo, inicio: w.inicio, status: w.status } }, true));
   }
   const cfg = await config(), cod = String(q.t || ''), valido = !!cfg.codigo && cod.length === cfg.codigo.length && crypto.timingSafeEqual(Buffer.from(cod), Buffer.from(cfg.codigo));
-  if (!valido) return q.dados || q.parte != null || q.video ? res.status(404).json({ success: false, error: 'Link da Atlantyx TV inválido ou revogado' }) : html(404, paginaErro('Este link da Atlantyx TV foi revogado ou não existe.'));
+  if (!valido) return q.dados || q.parte != null || q.video || q.plantao ? res.status(404).json({ success: false, error: 'Link da Atlantyx TV inválido ou revogado' }) : html(404, paginaErro('Este link da Atlantyx TV foi revogado ou não existe.'));
   if (q.parte != null) return parteBin(cfg, q, res);
+  if (q.plantao) return plantaoPublicoRota(q, res); // v3.254: plantão ao vivo
   if (q.video) return videoStream(cfg, q, req, res); // v3.253: o <video> toca direto, por faixas (Range), sem baixar o arquivo inteiro
   if (q.layout) { // template do Egress do webinar (e prévia no estúdio): conecta na sala com ?url=&token=
     const sql = await getSql(), w = (await sql`SELECT id, titulo, faixa, status FROM atv_webinars WHERE id=${String(q.layout)}`)[0]; if (!w) return html(404, paginaErro('Webinar não encontrado.'));
@@ -471,7 +513,7 @@ async function handler(req, res) {
         const midias = (await sql`SELECT id, titulo, nome, tamanho, partes, completo, criado_em FROM atv_midias ORDER BY criado_em DESC LIMIT 80`).map(m => ({ ...m, tamanho: Number(m.tamanho) }));
         const t = (await kv('atv:transmissao')) || {};
         return { config: { ...cfg, link: cfg.codigo ? base() + '/atv/' + cfg.codigo : null }, midias, reacoes: await reacoes(), livekit: lkOk(), destinos: await destinosStatus(),
-          youtube: await ytStatus(), webinars: await webinars(), transmissao: { ...t, status: await egressStatus(t.egress_id) }, mercado: await kv('atv:mercado'), noticias: await kv('atv:noticias'), brapi_token: !!process.env.BRAPI_TOKEN }; },
+          youtube: await ytStatus(), webinars: await webinars(), transmissao: { ...t, status: await egressStatus(t.egress_id) }, plantao: await plantaoLer(true), plantao_hist: ((await kv('atv:plantao_hist')) || []).slice(0, 5), mercado: await kv('atv:mercado'), noticias: await kv('atv:noticias'), brapi_token: !!process.env.BRAPI_TOKEN }; },
       gerar_link: async () => { const c = await config(); c.codigo = tokenNovo(14); c.criado_em = new Date().toISOString(); await kv('atv:config', c); return { link: base() + '/atv/' + c.codigo }; },
       revogar_link: async () => { const c = await config(); c.codigo = null; c.criado_em = null; await kv('atv:config', c); try { await tvParar(); } catch (_) {} return { ok: true }; },
       salvar: async () => { const c = await config(), x = b.config || {};
@@ -505,6 +547,8 @@ async function handler(req, res) {
       webinar_faixa: async () => { const sql = await getSql(); await sql`UPDATE atv_webinars SET faixa=${JSON.stringify({ titulo: String(b.titulo || '').substring(0, 90), subtitulo: String(b.subtitulo || '').substring(0, 140) })}, atualizado_em=NOW() WHERE id=${b.id}`; return { ok: true }; },
       webinar_token: () => webinarTokenHost(b), webinar_transmitir: () => webinarTransmitir(b), webinar_parar: () => webinarParar(b),
       webinar_reabrir: async () => { const sql = await getSql(); await sql`UPDATE atv_webinars SET status='aberto', sala_token=${tokenNovo(24)}, convidado_token=${tokenNovo(24)}, atualizado_em=NOW() WHERE id=${b.id}`; return { ok: true }; },
+      plantao_iniciar: () => plantaoIniciar(b), plantao_encerrar: () => plantaoEncerrar(), plantao_faixa: () => plantaoFaixa(b), plantao_gravacao: () => plantaoGravacao(b),
+      plantao_status: async () => ({ plantao: await plantaoLer(true), historico: (await kv('atv:plantao_hist')) || [] }),
       tv_transmitir: () => tvTransmitir(b), tv_parar: () => tvParar(),
       tv_janela: async () => { const t = (await kv('atv:transmissao')) || {}; const j = b.janela || {}; const hm = s => /^\d\d:\d\d$/.test(s || '') ? s : null;
         t.janela = { auto: !!j.auto, inicio: hm(j.inicio) || '08:00', fim: hm(j.fim) || '20:00', dias: (Array.isArray(j.dias) ? j.dias : [1, 2, 3, 4, 5]).map(Number).filter(d => d >= 0 && d <= 6) }; t.destinos = (b.destinos || t.destinos || ['youtube']).filter(k => DESTINOS[k]);

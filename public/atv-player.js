@@ -1,9 +1,9 @@
-/* Atlantyx TV — player e layout estilo Bloomberg (v3.153)
+/* Atlantyx TV — player e layout estilo Bloomberg (v3.153 · plantão ao vivo v3.254)
  * modos: tv (playlist circular) · layout (template do Egress do webinar / prévia) · sala (público do webinar) · convidado (entrevistado)
  * Sem dependências além do livekit-client (UMD, só nos modos de webinar) e da API de iframe do YouTube (só se houver vídeo do YouTube). */
 (function () {
   'use strict';
-  var C = window.ATV_CFG || {}, MODO = C.modo || 'tv', D = null, SEQ = [], idx = -1, timer = null, som = !!C.transmissao, ytPronto = null, cache = {}, room = null, vozes = [];
+  var PL = null, C = window.ATV_CFG || {}, MODO = C.modo || 'tv', D = null, SEQ = [], idx = -1, timer = null, som = !!C.transmissao, ytPronto = null, cache = {}, room = null, vozes = [];
   var $ = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
   var fmt = function (v, d) { return v == null ? '—' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: d == null ? 2 : d, maximumFractionDigits: d == null ? 2 : d }); };
@@ -45,7 +45,24 @@
     + '.nome{position:absolute;left:.8vw;bottom:.8vh;background:rgba(0,0,0,.7);font-size:1.6vh;padding:.3vh .6vw;border-radius:.4vh}.cel{position:relative;min-height:0}'
     + '.msg{margin:auto;text-align:center;color:#8E9BC0;font-size:2.4vh;padding:2vh}.msg h2{color:#EAF0FF;font-size:4vh;margin:0 0 1vh}.msg input{font:inherit;font-size:2.2vh;padding:1.2vh 1vw;border-radius:.8vh;border:1px solid #1E2A52;background:#0A1024;color:#fff;margin-top:2vh;width:60%}'
     + '.msg button,.ctl button{font:inherit;font-weight:800;font-size:2.1vh;background:#00C4CC;color:#000;border:0;border-radius:.8vh;padding:1.2vh 1.6vw;margin-top:2vh;cursor:pointer}.ctl{position:absolute;left:50%;transform:translateX(-50%);bottom:1.6vh;display:flex;gap:.6vw;z-index:6}.ctl button{margin:0;background:#0A1024;color:#fff;border:1px solid #1E2A52}.ctl button.off{background:#E0123A}'
-    + '.prev{position:absolute;inset:0;object-fit:cover;width:100%;height:100%;opacity:.35}';
+    + '.prev{position:absolute;inset:0;object-fit:cover;width:100%;height:100%;opacity:.35}'
+    // v3.254 · plantão ao vivo — vinheta na identidade Atlantyx (preto, ciano→verde, losangos arredondados do logo, Montserrat); vermelho só no ponto "ao vivo"
+    + '.plv{position:fixed;inset:0;z-index:80;background:radial-gradient(ellipse at 50% 42%,#06223A 0%,#020611 55%,#000 100%);overflow:hidden;display:flex;align-items:center;justify-content:center;animation:plIn .45s ease both;font-family:Montserrat,Calibri,Arial,sans-serif;color:#EAF0FF}'
+    + '@keyframes plIn{from{opacity:0}}.plv.out{animation:plOut .6s ease forwards}@keyframes plOut{to{opacity:0;transform:scale(1.04)}}'
+    + '.plg{position:absolute;inset:0;background-image:linear-gradient(rgba(0,196,204,.09) 1px,transparent 1px),linear-gradient(90deg,rgba(0,196,204,.09) 1px,transparent 1px);background-size:6vh 6vh;-webkit-mask-image:radial-gradient(ellipse at center,#000 25%,transparent 72%);mask-image:radial-gradient(ellipse at center,#000 25%,transparent 72%);animation:plGrid 6s linear infinite}@keyframes plGrid{to{background-position:0 6vh}}'
+    + '.pld{position:absolute;left:50%;top:50%;border-radius:20%;border:.45vh solid #00C2E4;opacity:0;animation:plDia 1.5s cubic-bezier(.2,.8,.2,1) forwards,plRod 40s linear 1.5s infinite}'
+    + '.pld.d1{width:46vh;height:46vh;box-shadow:0 0 4vh rgba(0,194,228,.35),inset 0 0 4vh rgba(0,194,228,.25)}.pld.d2{width:70vh;height:70vh;border-color:rgba(0,252,168,.55);animation-delay:.15s,1.65s;animation-direction:normal,reverse}.pld.d3{width:98vh;height:98vh;border-color:rgba(0,196,204,.22);animation-delay:.3s,1.8s}'
+    + '@keyframes plDia{from{transform:translate(-50%,-50%) rotate(-45deg) scale(0);opacity:0}to{transform:translate(-50%,-50%) rotate(45deg) scale(1);opacity:1}}@keyframes plRod{from{transform:translate(-50%,-50%) rotate(45deg);opacity:1}to{transform:translate(-50%,-50%) rotate(405deg);opacity:1}}'
+    + '.plsw{position:absolute;top:-20%;left:0;height:140%;width:34vw;transform:skewX(-20deg) translateX(-60vw);background:linear-gradient(90deg,transparent,rgba(0,194,228,.6),rgba(0,252,168,.4),transparent);filter:blur(.5vh);animation:plSw 1.3s cubic-bezier(.6,0,.3,1) forwards;z-index:3}.plsw.b{animation-delay:.3s;opacity:.55}@keyframes plSw{to{transform:skewX(-20deg) translateX(140vw)}}'
+    + '.plc{position:relative;text-align:center;z-index:2}.pll{height:6.5vh;animation:plUp .8s .4s both}'
+    + '.plk{display:inline-flex;align-items:center;gap:1vh;margin-top:3vh;padding:.8vh 1.8vh;border:1px solid rgba(255,255,255,.35);border-radius:4vh;font-weight:800;font-size:2vh;letter-spacing:.5vh;background:rgba(0,0,0,.55);animation:plUp .7s .7s both}.plk i{width:1.3vh;height:1.3vh;border-radius:50%;background:#E0123A;box-shadow:0 0 1.5vh #E0123A;animation:pisca 1s infinite}'
+    + '.plt{font-weight:800;font-size:17vh;line-height:1.05;letter-spacing:1vh;padding-left:1vh;margin-top:1.6vh;background:linear-gradient(90deg,#00C2E4,#00FCA8 55%,#00C4CC);-webkit-background-clip:text;background-clip:text;color:transparent;animation:plZoom 1s .8s cubic-bezier(.2,.8,.2,1) both}@keyframes plZoom{from{transform:scale(1.6);opacity:0;filter:blur(2vh)}}'
+    + '.plt.p{font-size:12vh}.pls{display:flex;align-items:center;justify-content:center;gap:2.4vh;font-weight:700;font-size:3.2vh;letter-spacing:2.2vh;padding-left:2.2vh;margin-top:1.2vh;animation:plUp .8s 1.2s both}.pls:before,.pls:after{content:"";width:12vh;height:.3vh;background:linear-gradient(90deg,transparent,#00C2E4)}.pls:after{transform:scaleX(-1)}'
+    + '.plh{display:inline-block;margin-top:4vh;max-width:70vw;font-size:4.2vh;font-weight:700;color:#fff;padding:1.4vh 3vh;border-left:.8vh solid #00FCA8;background:rgba(6,10,24,.78);text-align:left;animation:plUp .8s 1.7s both}@keyframes plUp{from{transform:translateY(3vh);opacity:0}}'
+    + '.plcd{position:absolute;right:4vw;bottom:5vh;font-size:1.9vh;font-weight:700;color:#8E9BC0;letter-spacing:.4vh;z-index:2;text-align:right;animation:plUp .6s 1.4s both}.plcd b{display:block;font-size:10vh;color:#fff;line-height:1;font-variant-numeric:tabular-nums}'
+    + '.plbar{position:absolute;left:0;bottom:0;height:.7vh;background:linear-gradient(90deg,#00C2E4,#00FCA8);animation:enche linear forwards;z-index:2}'
+    + '.plon .palco{border-color:#00C2E4;box-shadow:0 0 0 .15vh rgba(0,194,228,.45)}#tela video.plvid{object-fit:cover}.plkick{display:inline-flex;align-items:center;gap:.8vh;background:#000;border:1px solid #00C2E4;font-weight:800;font-size:1.7vh;letter-spacing:.3vw;padding:.5vh .9vw;margin-bottom:.3vh}.plkick i{width:1.1vh;height:1.1vh;border-radius:50%;background:#E0123A;animation:pisca 1s infinite}'
+    + '.plon .lt1{background:linear-gradient(90deg,#00C2E4,#00FCA8)}.plespera{margin:auto;text-align:center;color:#8E9BC0;font-size:2.4vh}.plespera b{display:block;color:#EAF0FF;font-size:4vh;margin-bottom:1vh}';
 
   function esqueleto() {
     var st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
@@ -111,15 +128,15 @@
   function agora() { return Date.now() + skew; }
   function ondeEstamos() { var e = Date.parse(D.grade_inicio) || 0, s = ((agora() - e) / 1000) % T; if (s < 0) s += T;
     for (var i = SEQ.length - 1; i >= 0; i--) if (cum[i] <= s) return { i: i, dentro: s - cum[i] }; return { i: 0, dentro: 0 }; }
-  function sincronizar(ultimo) { if (!T) preparar(); var p = ondeEstamos();
+  function sincronizar(ultimo) { if (PL) return; if (!T) preparar(); var p = ondeEstamos();
     if (ultimo != null && p.i === ultimo && SEQ[ultimo].tipo === 'video') { var resta = durDe(SEQ[ultimo]) - p.dentro; if (resta > 1.5) return tPreencher(ultimo, resta); }
     tocar(p.i, p.dentro); }
-  function proxima() { if (GRADE()) sincronizar(idx); else tocar(idx + 1); }
+  function proxima() { if (PL) return; if (GRADE()) sincronizar(idx); else tocar(idx + 1); }
   function tPreencher(i, resta) { idx = i; limpar(); dentro0 = 0; tMercado({ dur: resta }); }
   var hhmm = function (ms) { return new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }); };
-  function seguir(ms) { clearTimeout(timer); timer = setTimeout(proxima, Math.max(300, ms)); }
+  function seguir(ms) { clearTimeout(timer); if (PL) return; timer = setTimeout(proxima, Math.max(300, ms)); }
   function restaMs(it) { return ((it.dur || durDe(it)) - dentro0) * 1000; }
-  function tocar(n, dentro) {
+  function tocar(n, dentro) { if (PL) return;
     if (!SEQ.length) return; if (n >= SEQ.length) { recarregar(true); return; }
     idx = n; dentro0 = GRADE() ? Math.max(0, dentro || 0) : 0; t0 = agora() - dentro0 * 1000; var it = SEQ[idx]; limpar(); faixa(null);
     $('prog').textContent = it.tipo === 'video' ? it.titulo : it.tipo === 'vinheta' ? (D.nome || 'Atlantyx TV') + ' · ' + (D.slogan || '') : it.titulo || '';
@@ -129,7 +146,7 @@
     try { ({ video: tVideo, vinheta: tVinheta, mercado: tMercado, noticias: tNoticias, produto: tProduto })[it.tipo](it); } catch (e) { falhou(it); }
   }
   function botaoSom() { if (som || C.transmissao) return ''; return '<div class="somp" id="somp">🔇 toque para ligar o som</div>'; }
-  document.addEventListener('click', function () { if (MODO !== 'tv' || som) return; som = true; var v = $('tela').querySelector('video'); if (v) { v.muted = false; v.play().catch(function () {}); } if (window._yt) try { _yt.unMute(); } catch (_) {} var b = $('somp'); if (b) b.remove();
+  document.addEventListener('click', function () { if (MODO !== 'tv' || som) return; som = true; if (plRoom) plRoom.startAudio().catch(function () {}); var v = $('tela').querySelector('video'); if (v) { v.muted = false; v.play().catch(function () {}); } if (window._yt) try { _yt.unMute(); } catch (_) {} var b = $('somp'); if (b) b.remove();
     if (document.documentElement.requestFullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(function () {}); });
   function blobDe(it) {
     var k = it.m || it.e; if (cache[k]) return cache[k];
@@ -257,11 +274,70 @@
     $('bc').onclick = async function () { var on = room.localParticipant.isCameraEnabled; await room.localParticipant.setCameraEnabled(!on); this.className = on ? 'off' : ''; desenharSala(); };
     $('bs').onclick = function () { room.disconnect(); }; desenharSala(); }
 
+  // ── v3.254 · PLANTÃO AO VIVO (break news) — a TV consulta a cada ~5 s; ao entrar, para a programação, toca a vinheta e mostra a câmera ──
+  var plRoom = null, plSaindo = false, plNoAr = false, plAudios = [], plTimers = [];
+  var LK_CDN = 'https://cdn.jsdelivr.net/npm/livekit-client@2.15.0/dist/livekit-client.umd.js';
+  function carregarLk() { if (window.LivekitClient) return Promise.resolve(); return new Promise(function (ok, er) { var s = document.createElement('script'); s.src = LK_CDN; s.onload = ok; s.onerror = function () { er(new Error('módulo de vídeo')); }; document.head.appendChild(s); }); }
+  function plStatus() { return fetch('/api/atv?t=' + encodeURIComponent(C.cod) + '&plantao=1').then(function (r) { return r.json(); }).then(function (r) { return r.plantao; }); }
+  function plPoll() { plStatus().then(function (p) { if (!p) return;
+      if (p.ativo && (!PL || PL.id !== p.id)) plEntrar(p); else if (p.ativo && PL) plFaixa(p); else if (!p.ativo && PL && !plSaindo) plSair(); })
+    .catch(function () {}).then(function () { setTimeout(plPoll, PL ? 4000 : 5000); }); }
+  function plT(fn, ms) { plTimers.push(setTimeout(fn, ms)); }
+  function alerta(saida) { if (!som) return; try { var A = new (window.AudioContext || window.webkitAudioContext)(), t0 = A.currentTime + .05, M = A.createGain(); M.gain.value = .5; M.connect(A.destination);
+    var nota = function (f, ini, dur, tipo, vol) { var o = A.createOscillator(), g = A.createGain(); o.type = tipo || 'triangle'; o.frequency.value = f; g.gain.setValueAtTime(.0001, t0 + ini); g.gain.exponentialRampToValueAtTime(vol || .3, t0 + ini + .02); g.gain.exponentialRampToValueAtTime(.0001, t0 + ini + dur); o.connect(g); g.connect(M); o.start(t0 + ini); o.stop(t0 + ini + dur + .05); };
+    var imp = A.createOscillator(), ig = A.createGain(); imp.type = 'sine'; imp.frequency.setValueAtTime(110, t0); imp.frequency.exponentialRampToValueAtTime(38, t0 + .9); ig.gain.setValueAtTime(.8, t0); ig.gain.exponentialRampToValueAtTime(.0001, t0 + 1.1); imp.connect(ig); ig.connect(M); imp.start(t0); imp.stop(t0 + 1.2);
+    if (saida) { [[523.25, .3], [659.25, .55], [783.99, .8], [1046.5, 1.05]].forEach(function (n) { nota(n[0], n[1], 1.2); }); }
+    else { [0.9, 1.15, 1.4].forEach(function (x) { nota(880, x, .18, 'square', .12); }); [[523.25, 1.8], [659.25, 1.8], [783.99, 1.8], [1046.5, 2.2]].forEach(function (n) { nota(n[0], n[1], 2.4, 'sawtooth', .07); }); }
+    setTimeout(function () { A.close(); }, 5000); } catch (_) {} }
+  function tique() { if (!som) return; try { var A = new (window.AudioContext || window.webkitAudioContext)(), o = A.createOscillator(), g = A.createGain(); o.frequency.value = 1320; o.type = 'sine'; g.gain.setValueAtTime(.18, A.currentTime); g.gain.exponentialRampToValueAtTime(.0001, A.currentTime + .15); o.connect(g); g.connect(A.destination); o.start(); o.stop(A.currentTime + .2); setTimeout(function () { A.close(); }, 600); } catch (_) {} }
+  function vinhetaPl(ms, p, saida) {
+    var v = document.getElementById('plv'); if (v) v.remove(); v = document.createElement('div'); v.className = 'plv'; v.id = 'plv';
+    v.innerHTML = '<div class="plg"></div><div class="pld d3"></div><div class="pld d2"></div><div class="pld d1"></div><div class="plsw"></div><div class="plsw b"></div>'
+      + '<div class="plc"><img class="pll" src="/atlantyx-tv-logo.png" alt="Atlantyx TV" onerror="this.src=\'' + LOGO + '\'">'
+      + (saida ? '<br><div class="plt p">VOLTAMOS À</div><div class="pls">PROGRAMAÇÃO</div>'
+        : '<br><div class="plk"><i></i>AO VIVO</div><div class="plt">PLANTÃO</div><div class="pls">ATLANTYX</div>' + (p && p.titulo ? '<div class="plh">' + esc(p.titulo) + '</div>' : ''))
+      + '</div>' + (saida ? '' : '<div class="plcd">NO AR EM<b id="plcd"></b></div>') + '<div class="plbar" style="animation-duration:' + ms + 'ms"></div>';
+    document.body.appendChild(v); alerta(saida);
+    if (!saida) { var fim = Date.now() + ms, ult = null; var cd = setInterval(function () { var r = Math.ceil((fim - Date.now()) / 1000), el = document.getElementById('plcd'); if (!el || r < 1) return clearInterval(cd); if (r !== ult) { el.textContent = r; if (r <= 3) tique(); ult = r; } }, 200); plTimers.push(cd); }
+    return v;
+  }
+  function tirarVinheta() { var v = document.getElementById('plv'); if (!v) return; v.className = 'plv out'; setTimeout(function () { v.remove(); }, 650); }
+  function plFaixa(p) { PL = p; $('prog').textContent = 'PLANTÃO · ' + p.titulo; $('prog').style.visibility = 'visible';
+    $('segT').textContent = 'NO AR AGORA'; $('seg').innerHTML = '<div class="seg"><i>●</i><span>Plantão Atlantyx · ao vivo</span></div><div class="seg"><span>' + esc(p.titulo) + '</span></div><div class="seg"><span style="color:#8E9BC0">em seguida: programação normal</span></div>';
+    if (!plNoAr) return; var lt = $('lt'); if (!lt.querySelector('.plkick')) { var k = document.createElement('div'); k.className = 'plkick'; k.innerHTML = '<i></i>PLANTÃO · AO VIVO'; lt.insertBefore(k, lt.firstChild); }
+    if ($('lt1').textContent !== p.titulo || $('lt2').textContent !== (p.subtitulo || '')) faixa(p.titulo, p.subtitulo); }
+  function plDesenhar() { if (!plNoAr) return; var t = $('tela'), LK = window.LivekitClient, cam = null, tela = null;
+    if (plRoom && LK) plRoom.remoteParticipants.forEach(function (p) { p.trackPublications.forEach(function (pub) { if (!pub.track || pub.kind !== 'video' || pub.isMuted) return; if (pub.source === LK.Track.Source.ScreenShare) tela = pub.track; else cam = cam || pub.track; }); });
+    var tr = tela || cam, atual = t.querySelector('video.plvid');
+    if (tr && atual && atual.__tr === tr) return;
+    t.innerHTML = ''; if (!tr) { t.innerHTML = '<div class="plespera"><b>Plantão Atlantyx</b>Conectando ao vivo…</div>'; return; }
+    var v = tr.attach(); v.muted = true; v.className = 'plvid'; v.__tr = tr; if (tela) v.style.objectFit = 'contain'; t.appendChild(v); }
+  async function plConectar() { if (!PL || plSaindo) return; var id = PL.id;
+    try { await carregarLk(); var r = await fetch('/api/atv?t=' + encodeURIComponent(C.cod) + '&plantao=1&tk=1&_=' + Date.now()).then(function (x) { return x.json(); }); if (!r.success) throw new Error(r.error);
+      if (!PL || PL.id !== id || plSaindo) return; var LK = window.LivekitClient, room = new LK.Room({ adaptiveStream: true, dynacast: true }); plRoom = room;
+      room.on('trackSubscribed', function (tr) { if (tr.kind === 'audio') { var a = tr.attach(); a.style.display = 'none'; document.body.appendChild(a); plAudios.push(a); } plDesenhar(); });
+      ['trackUnsubscribed', 'participantConnected', 'participantDisconnected', 'trackMuted', 'trackUnmuted', 'trackPublished', 'trackUnpublished'].forEach(function (ev) { room.on(ev, plDesenhar); });
+      room.on('disconnected', function () { if (plRoom === room) plRoom = null; if (PL && PL.id === id && !plSaindo) plT(plConectar, 3000); });
+      await room.connect(r.url, r.token); if (som) room.startAudio().catch(function () {}); plDesenhar();
+    } catch (e) { if (PL && PL.id === id && !plSaindo) { if (plNoAr) $('tela').innerHTML = '<div class="plespera"><b>Plantão Atlantyx</b>Reconectando…</div>'; plT(plConectar, 4000); } } }
+  function plEntrar(p) { var trocar = !!PL; PL = p; plSaindo = false; clearTimeout(timer); limpar(); idx = -1; if (trocar && plRoom) { try { plRoom.disconnect(); } catch (_) {} }
+    document.querySelector('.atv').classList.add('plon'); $('lt').className = 'lt';
+    var resta = (Date.parse(p.inicio) || 0) - (p.agora || Date.now()), entra = function () { if (!PL || PL.id !== p.id) return; plNoAr = true; tirarVinheta(); plFaixa(PL); plDesenhar(); };
+    plNoAr = false; plFaixa(p); plConectar();
+    if (resta > -3000) { var ms = Math.max(resta, 4000); vinhetaPl(ms, p); plT(entra, ms); } else entra(); }
+  function plSair() { plSaindo = true; plTimers.forEach(clearTimeout); plTimers = [];
+    vinhetaPl(4200, null, true);
+    setTimeout(function () { try { if (plRoom) plRoom.disconnect(); } catch (_) {} plRoom = null; plAudios.forEach(function (a) { try { a.remove(); } catch (_) {} }); plAudios = [];
+      var k = $('lt').querySelector('.plkick'); if (k) k.remove(); faixa(null); document.querySelector('.atv').classList.remove('plon'); $('prog').style.visibility = ''; $('segT').textContent = 'A SEGUIR';
+      PL = null; plNoAr = false; limpar(); comecar(); }, 1200);
+    setTimeout(function () { tirarVinheta(); plSaindo = false; }, 4200); }
+
   esqueleto();
   if (MODO === 'tv') { recarregar(true); setInterval(function () { var t1 = Date.now(); api(qDados()).then(function (d) { if (d.agora) skew = d.agora - Math.round((t1 + Date.now()) / 2); var pl = JSON.stringify([D.playlist, D.intercalar, D.grade, D.grade_inicio]); D = d; barras();
       if (JSON.stringify([d.playlist, d.intercalar, d.grade, d.grade_inicio]) !== pl) { SEQ = montarSeq(); preparar(); if (idx >= SEQ.length) idx = -1; } }).catch(function () {}); }, 10 * 60000);
     document.addEventListener('keydown', function (e) { if (GRADE()) return; if (e.keyCode === 39) tocar(idx + 1); if (e.keyCode === 37) tocar(Math.max(0, idx - 1)); });
-    window.__atv = { onde: function () { return ondeEstamos(); }, seq: function () { return SEQ; }, idx: function () { return idx; }, T: function () { return T; } };
+    plPoll();
+    window.__atv = { pl: function () { return { PL: PL, noAr: plNoAr, room: !!plRoom, saindo: plSaindo }; }, onde: function () { return ondeEstamos(); }, seq: function () { return SEQ; }, idx: function () { return idx; }, T: function () { return T; } };
     setTimeout(function () { location.reload(); }, 12 * 3600000); }
   else api(qDados()).then(function (d) { D = d; barras(); return MODO === 'layout' ? modoLayout() : modoSala(); })
     .catch(function (e) { $('tela').innerHTML = '<div class="msg"><h2>Sem sinal</h2>' + esc(e.message) + '</div>'; });

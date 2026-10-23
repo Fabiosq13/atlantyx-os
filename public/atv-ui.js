@@ -33,7 +33,7 @@
   }
   async function carregar() { try { D = await api('inicio'); cfg = JSON.parse(JSON.stringify(D.config)); render(); } catch (e) { $('atvCorpo').innerHTML = `<div style="color:var(--red);font-size:12px;padding:12px;">${esc(e.message)}</div>`; } }
   function trocar(k) { if (est && k !== 'webinars') sairEstudio(); aba = k; document.querySelectorAll('#atvAbas button').forEach(b => b.classList.toggle('on', b.dataset.a === k)); render(); }
-  function render() { if (!D) return; ({ tv: rTv, youtube: rYoutube, webinars: rWebinars, canal: rCanal, destinos: rDestinos })[aba](); }
+  function render() { if (!D) return; ({ tv: rTv, youtube: rYoutube, webinars: rWebinars, canal: rCanal, destinos: rDestinos })[aba](); if (aba === 'tv') plRender(); }
 
   // ═════════ ATLANTYX TV ═════════
   function rTv() {
@@ -56,7 +56,7 @@
       <td style="padding:6px 4px;"><button class="btn btn-g" style="padding:2px 7px;font-size:10px;color:var(--red);" onclick="ATV.tirar(${i})">✕</button></td></tr>`; }).join('');
     const reac = (D.reacoes || []).map(r => `<option value="${esc(r.peca_id)}">${esc(r.titulo)}${r.envio_id ? ' · completo' : ''}${r.reel_url ? ' · Reel' : ''}</option>`).join('');
     const num = (k, t, max) => `<div><label class="fl" style="font-size:10px;">${t}</label><input class="fi" type="number" min="0" max="${max}" style="width:80px;" value="${esc(I[k])}" onchange="ATV.inter('${k}',this.value)"></div>`;
-    $('atvCorpo').innerHTML = card('Link da Atlantyx TV', link)
+    $('atvCorpo').innerHTML = '<div id="plBox"></div>' + card('Link da Atlantyx TV', link)
       + card(`Playlist circular <span style="font-weight:400;color:var(--t3);font-size:11px;">(${P.length} vídeo${P.length === 1 ? '' : 's'})</span>`,
         (P.length ? `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11.5px;">${linhas}</table></div>` : '<div style="font-size:11.5px;color:var(--t3);">Sem vídeos ainda — sem vídeos a TV roda vinheta, cotações, notícias e produtos.</div>')
         + `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center;">
@@ -405,6 +405,76 @@
   async function dSalvar(k, b) { b.disabled = true; try { const r = await api('destinos_salvar', { plataforma: k, rtmp: $('dR_' + k).value, chave: $('dK_' + k).value }); D.destinos = r.destinos; nota('Destino salvo'); rDestinos(); } catch (e) { nota(e.message, 'error'); b.disabled = false; } }
   async function dLimpar(k) { if (!confirm('Apagar a chave?')) return; try { const r = await api('destinos_limpar', { plataforma: k }); D.destinos = r.destinos; rDestinos(); } catch (e) { nota(e.message, 'error'); } }
 
+
+  // ── v3.254 · PLANTÃO AO VIVO (break news): interrompe a programação da TV (e do YouTube 24h), vinheta de 8 s e entra a sua câmera.
+  // A gravação é feita aqui no navegador (câmera + microfone) e, ao encerrar, vai para a biblioteca da Atlantyx TV.
+  const pl = { stream: null, room: null, rec: null, partes: [], mime: '', t0: 0, id: null, titulo: '', tick: null, envio: '', midia: null, blobUrl: null, gravar: true, entraEm: 0 };
+  const plMime = () => (window.MediaRecorder ? ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find(m => { try { return MediaRecorder.isTypeSupported(m); } catch (_) { return false; } }) : '') || '';
+  const hms = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return (s >= 3600 ? Math.floor(s / 3600) + ':' : '') + String(Math.floor(s % 3600 / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
+  function plRender() { const box = $('plBox'); if (!box || !D) return; const P = D.plantao || {}, no = !!P.ativo, minha = !!pl.room;
+    const bt = (txt, fn, cls, dis) => `<button class="btn ${cls || 'btn-g'}" ${dis ? 'disabled' : ''} onclick="${fn}">${txt}</button>`;
+    let corpo = '';
+    if (!D.livekit) corpo = avisoLk();
+    else if (!cfg.link) corpo = '<div style="font-size:12px;color:var(--t2);">Gere antes o link da Atlantyx TV (logo abaixo) — o plantão entra no ar por ele.</div>';
+    else if (no && minha) corpo = `<div style="display:grid;grid-template-columns:minmax(220px,340px) 1fr;gap:14px;align-items:start;">
+        <div style="position:relative;aspect-ratio:16/9;background:#000;border-radius:8px;overflow:hidden;border:2px solid var(--red);" id="plCam"></div>
+        <div><div style="font-size:15px;font-weight:800;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--red);margin-right:6px;animation:pulse 1s infinite;"></span><span id="plEst">NO AR</span> <span id="plTempo" style="font-variant-numeric:tabular-nums;color:var(--t2);font-weight:600;"></span></div>
+          <div style="font-size:11px;color:var(--t3);margin:3px 0 10px;">${pl.rec ? '⏺ Gravando (' + esc(pl.mime.split(';')[0]) + ') — vai para a biblioteca ao encerrar' : 'Sem gravação'}</div>
+          ${lbl('Manchete')}<input class="fi" id="plT2" maxlength="90" value="${esc(P.titulo)}">${lbl('Subtítulo')}<input class="fi" id="plS2" maxlength="140" value="${esc(P.subtitulo || '')}">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">${bt('✎ Atualizar faixa', 'ATV.plFaixa(this)')}${bt('🎤 Microfone', "ATV.plToggle('mic')", 'btn-g" id="plMic')}${bt('📷 Câmera', "ATV.plToggle('cam')", 'btn-g" id="plCamB')}
+            ${bt('⏹ Encerrar plantão', 'ATV.plEncerrar(this)', 'btn-p" style="background:var(--red);border-color:var(--red);')}</div></div></div>`;
+    else if (no) corpo = `<div style="font-size:12.5px;"><b style="color:var(--red);">● Plantão no ar</b> — "${esc(P.titulo)}" — sem a câmera desta aba (a página foi recarregada ou está em outro computador).</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">${bt('🎥 Reentrar com a câmera', 'ATV.plReentrar(this)', 'btn-p')}${bt('⏹ Encerrar plantão', 'ATV.plEncerrar(this)', 'btn-g" style="color:var(--red);')}</div>`;
+    else corpo = `<div style="display:grid;grid-template-columns:minmax(220px,340px) 1fr;gap:14px;align-items:start;">
+        <div style="position:relative;aspect-ratio:16/9;background:#000;border-radius:8px;overflow:hidden;border:1px solid var(--bd);" id="plCam">${pl.stream ? '' : '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:11px;text-align:center;padding:10px;">ligue a câmera para conferir o enquadramento</div>'}</div>
+        <div>${lbl('Manchete (aparece na vinheta e na faixa)')}<input class="fi" id="plT" maxlength="90" placeholder="Ex.: Atlantyx fecha parceria com…" value="${esc(pl.titulo)}">
+          ${lbl('Subtítulo (opcional)')}<input class="fi" id="plS" maxlength="140" placeholder="Ex.: Fabio Quintanilha comenta ao vivo" value="${esc(pl.sub || '')}">
+          <label style="display:flex;gap:6px;align-items:center;font-size:12px;margin-top:8px;"><input type="checkbox" id="plGrava" ${pl.gravar ? 'checked' : ''} onchange="ATV._plGrava(this.checked)"> ⏺ Gravar e salvar na biblioteca da Atlantyx TV ${plMime() ? '' : '<span style="color:var(--red);">(este navegador não grava — use o Chrome)</span>'}</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">${pl.stream ? bt('🔴 Entrar no ar (vinheta de 8 s)', 'ATV.plIniciar(this)', 'btn-p" style="background:var(--red);border-color:var(--red);') + bt('Desligar câmera', 'ATV.plDesligar()') : bt('🎥 Ligar câmera e microfone', 'ATV.plCamera(this)', 'btn-p')}</div>
+          <div style="font-size:10.5px;color:var(--t3);margin-top:8px;line-height:1.6;">A TV e a transmissão do YouTube interrompem o programa, tocam a vinheta "Plantão Atlantyx" e mostram você com a moldura (cotações, faixa e letreiro continuam). Ao encerrar, tocam "Voltamos à programação" e voltam para a grade no horário certo.</div></div></div>`;
+    const env = pl.envio ? `<div style="font-size:12px;margin-top:10px;padding:8px 10px;border-radius:8px;background:var(--bg3);border:1px solid var(--bd);">${pl.envio}${pl.midia ? ' ' + bt('➕ Pôr na programação (reprise)', 'ATV.plReprise(this)', 'btn-gn') : ''}${pl.blobUrl ? ` <a class="btn btn-g" href="${pl.blobUrl}" download="plantao-atlantyx.${/mp4/.test(pl.mime) ? 'mp4' : 'webm'}">⬇ Baixar gravação</a>` : ''}</div>` : '';
+    const H = (D.plantao_hist || []); const hist = H.length ? `<div style="font-size:10.5px;color:var(--t3);margin-top:10px;">Últimos: ${H.map(h => esc(h.titulo) + ' (' + quando(h.inicio) + (h.midia_id ? ', gravado' : '') + ')').join(' · ')}</div>` : '';
+    box.innerHTML = card(`🔴 Plantão ao vivo <span style="font-weight:400;color:var(--t3);font-size:11px;">· interrompe a programação com notícia urgente</span>`, corpo + env + hist);
+    plCamDesenhar(); plTempo(); }
+  function plCamDesenhar() { const b = $('plCam'); if (!b || !pl.stream) return; let v = b.querySelector('video'); if (!v) { v = document.createElement('video'); v.autoplay = true; v.muted = true; v.playsInline = true; v.style.cssText = 'width:100%;height:100%;object-fit:cover;transform:scaleX(-1)'; b.innerHTML = ''; b.appendChild(v); } if (v.srcObject !== pl.stream) v.srcObject = pl.stream;
+    const a = pl.stream.getAudioTracks()[0], c = pl.stream.getVideoTracks()[0], st = (id, on) => { const x = $(id); if (x) x.style.background = on ? '' : 'rgba(224,18,58,.25)'; }; st('plMic', a && a.enabled); st('plCamB', c && c.enabled); }
+  function plTempo() { const e = $('plTempo'), est = $('plEst'); if (!e || !pl.t0) return; const falta = pl.entraEm - Date.now(); if (falta > 0) { est.textContent = 'VINHETA NA TV — você entra em ' + Math.ceil(falta / 1000) + ' s'; e.textContent = ''; } else { est.textContent = 'NO AR'; e.textContent = hms(Date.now() - pl.entraEm); } }
+  async function plCamera(b) { if (b) { b.disabled = true; b.textContent = '⏳ Pedindo acesso…'; }
+    try { pl.titulo = $('plT')?.value || pl.titulo; pl.sub = $('plS')?.value ?? pl.sub; pl.stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } }, audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); plRender(); }
+    catch (e) { nota('Libere a câmera e o microfone no cadeado da barra de endereço (' + e.message + ')', 'error'); if (b) { b.disabled = false; b.textContent = '🎥 Ligar câmera e microfone'; } } }
+  function plDesligar() { try { pl.stream?.getTracks().forEach(t => t.stop()); } catch (_) {} pl.stream = null; plRender(); }
+  async function plPublicar(r) { await carregarLk(); const LK = window.LivekitClient; const room = new LK.Room({ adaptiveStream: false, dynacast: true }); pl.room = room;
+    room.on('disconnected', () => { if (pl.room === room) { pl.room = null; if ((D.plantao || {}).ativo) nota('A conexão do plantão caiu — clique em "Reentrar com a câmera"', 'error'); plRender(); } });
+    await room.connect(r.url, r.token);
+    const [v] = pl.stream.getVideoTracks(), [a] = pl.stream.getAudioTracks();
+    if (v) await room.localParticipant.publishTrack(v, { source: LK.Track.Source.Camera, simulcast: true });
+    if (a) await room.localParticipant.publishTrack(a, { source: LK.Track.Source.Microphone });
+    clearInterval(pl.tick); pl.tick = setInterval(plTempo, 500); window.addEventListener('beforeunload', plSairAviso); }
+  const plSairAviso = e => { if (pl.room) { e.preventDefault(); e.returnValue = 'O plantão está no ar.'; } };
+  function plGravar() { if (!pl.gravar || !plMime() || pl.rec) return; pl.mime = plMime(); pl.partes = [];
+    try { const rec = new MediaRecorder(pl.stream, { mimeType: pl.mime, videoBitsPerSecond: 2500000, audioBitsPerSecond: 128000 }); rec.ondataavailable = e => { if (e.data && e.data.size) pl.partes.push(e.data); }; rec.start(5000); pl.rec = rec; }
+    catch (e) { pl.rec = null; nota('Não consegui iniciar a gravação: ' + e.message, 'error'); } }
+  async function plIniciar(b) { const titulo = $('plT').value.trim(); if (!titulo) return nota('Escreva a manchete', 'error'); if (!confirm('Entrar no ar agora? A programação da TV e do YouTube é interrompida.')) return;
+    b.disabled = true; b.textContent = '⏳ Entrando…';
+    try { const r = await api('plantao_iniciar', { titulo, subtitulo: $('plS').value }); D.plantao = r.plantao; pl.id = r.plantao.id; pl.titulo = titulo; pl.envio = ''; pl.midia = null; if (pl.blobUrl) { URL.revokeObjectURL(pl.blobUrl); pl.blobUrl = null; }
+      pl.t0 = Date.now(); pl.entraEm = Date.now() + (r.vinheta_s || 0) * 1000; await plPublicar(r); plGravar(); plRender(); nota('Plantão no ar — a vinheta está tocando na TV'); }
+    catch (e) { nota(e.message, 'error'); try { pl.room?.disconnect(); } catch (_) {} pl.room = null; plRender(); } }
+  async function plReentrar(b) { b.disabled = true; try { if (!pl.stream) await plCamera(); if (!pl.stream) throw new Error('Sem câmera'); const r = await api('plantao_iniciar', {}); D.plantao = r.plantao; pl.id = r.plantao.id; pl.titulo = r.plantao.titulo; pl.t0 = pl.t0 || Date.now(); pl.entraEm = Date.parse(r.plantao.inicio) || Date.now(); await plPublicar(r); plGravar(); plRender(); } catch (e) { nota(e.message, 'error'); plRender(); } }
+  async function plFaixa(b) { b.disabled = true; try { const r = await api('plantao_faixa', { titulo: $('plT2').value, subtitulo: $('plS2').value }); D.plantao = r.plantao; nota('Faixa atualizada — aparece na TV em alguns segundos'); } catch (e) { nota(e.message, 'error'); } b.disabled = false; }
+  function plToggle(k) { const t = k === 'mic' ? pl.stream?.getAudioTracks()[0] : pl.stream?.getVideoTracks()[0]; if (!t) return; t.enabled = !t.enabled; plCamDesenhar(); }
+  async function plEncerrar(b) { if (!confirm('Encerrar o plantão e voltar à programação?')) return; b.disabled = true; b.textContent = '⏳ Encerrando…';
+    try { const r = await api('plantao_encerrar'); D.plantao = r.plantao; } catch (e) { nota(e.message, 'error'); b.disabled = false; b.textContent = '⏹ Encerrar plantão'; return; }
+    window.removeEventListener('beforeunload', plSairAviso); clearInterval(pl.tick); const dur = pl.entraEm ? Math.round((Date.now() - pl.entraEm) / 1000) : null, id = pl.id, titulo = pl.titulo;
+    const rec = pl.rec; pl.rec = null; const blob = rec ? await new Promise(ok => { rec.onstop = () => ok(new Blob(pl.partes, { type: pl.mime.split(';')[0] })); try { rec.stop(); } catch (_) { ok(new Blob(pl.partes, { type: pl.mime.split(';')[0] })); } }) : null;
+    try { pl.room?.disconnect(); } catch (_) {} pl.room = null; plDesligar(); pl.t0 = 0;
+    if (!blob || !blob.size) { pl.envio = '✅ Plantão encerrado — a TV volta à programação.'; plRender(); return; }
+    pl.blobUrl = URL.createObjectURL(blob); pl.dur = dur; pl.envio = '⏳ Salvando a gravação na biblioteca…'; plRender();
+    try { const nome = 'plantao-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + (/mp4/.test(pl.mime) ? '.mp4' : '.webm');
+      const mid = await enviarBlob(blob, nome, 'Plantão · ' + titulo, (i, n) => { pl.envio = `⏳ Salvando a gravação na biblioteca: parte ${i + 1} de ${n} (${mb(blob.size)})…`; const x = $('plBox'); if (x) plRender(); });
+      pl.midia = { id: mid, titulo: 'Plantão · ' + titulo, dur }; try { await api('plantao_gravacao', { id, midia_id: mid }); } catch (_) {}
+      pl.envio = '✅ Plantão encerrado e gravação salva na biblioteca (' + mb(blob.size) + ').'; const d = await api('inicio'); D.midias = d.midias; D.plantao_hist = d.plantao_hist; plRender();
+    } catch (e) { pl.envio = '⚠ A gravação não subiu (' + esc(e.message) + ') — baixe o arquivo para não perder.'; plRender(); } }
+  async function plReprise(b) { if (!pl.midia) return; b.disabled = true; lerCampos(); cfg.playlist.push(novoIt({ fonte: 'upload', midia_id: pl.midia.id, titulo: pl.midia.titulo, duracao_s: pl.dur || null, categoria: 'Plantão' })); pl.midia = null; pl.envio = '✅ Gravação colocada na programação.'; await salvar(); }
   window.ATV = { abrir, aba: trocar, link, salvar, campo, mover, tirar, inter, addYoutube, addUrl, addReacao, enviar, chamadas, atualizar, tv, janela,
-    wCriar, wExcluir, gradeSet, _gravarMoldura: (it, t, s, cv, f) => gravarMoldura(it, t, s, cv, f), ytConectar, ytSair, ytCriarPl, ytPub, ytIA, ytEnviar, _seg: seg, wReabrir, estudio, eEntrar, eToggle, eSair, sairEstudio, eFaixa, eTransmitir, eParar, dSalvar, dLimpar, _estado: () => ({ D, cfg, aba, est }) };
+    wCriar, wExcluir, gradeSet, _gravarMoldura: (it, t, s, cv, f) => gravarMoldura(it, t, s, cv, f), ytConectar, ytSair, ytCriarPl, ytPub, ytIA, ytEnviar, _seg: seg, wReabrir, estudio, eEntrar, eToggle, eSair, sairEstudio, eFaixa, eTransmitir, eParar, dSalvar, dLimpar, plCamera, plDesligar, plIniciar, plReentrar, plFaixa, plToggle, plEncerrar, plReprise, _plGrava: v => { pl.gravar = !!v; }, _estado: () => ({ D, cfg, aba, est }) };
 })();
