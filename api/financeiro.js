@@ -873,6 +873,7 @@ Regras:
 //    VENCIMENTO, pagas ou não (valor total), + despesas programadas do Atlantyx (sem conta no QB) + simulados.
 //    Para dias futuros usa o previsto do Fluxo Detalhado (em aberto + programado + recorrente).
 async function planejadoVsReal({ data_inicio, data_fim, conta_id = null } = {}) {
+  try { await _despGarantirHorizonte(await getSql()); } catch (_) {} // v3.270: despesas recorrentes até 24 meses à frente
   const hoje = _hojeBR(); // v3.109: hoje no horário de Brasília (antes UTC: depois das 21h já era amanhã)
   const ini = data_inicio, fim = data_fim;
   const meses = []; { let [a, m] = ini.split('-').map(Number); const [af, mf] = fim.split('-').map(Number);
@@ -3048,7 +3049,7 @@ async function baseCaixaHoje({ conta_id = null } = {}) {
   // v3.164: despesas que só existem na Agenda (vencidas até 60 dias + próximos 30 dias) também são "a pagar" — regra única:
   // se a mesma despesa já está no QuickBooks, vale a Bill; se só está na Agenda, vale a Agenda
   let agendaPag = [];
-  if (!fut.erro) try { const sql = await getSql();
+  if (!fut.erro) try { const sql = await getSql(); try { await _despGarantirHorizonte(sql); } catch (_) {} // v3.270
     const rows = await sql`SELECT o.id, o.data_prevista, o.valor, o.qb_txn_id, d.descricao AS despesa_desc, d.fornecedor AS despesa_forn, d.categoria AS despesa_cat
       FROM despesas_ocorrencias o LEFT JOIN despesas_programadas d ON d.id = o.despesa_id
       WHERE o.status NOT IN ('paga', 'cancelada') AND o.data_prevista >= ${_diasMais(hoje, -60)} AND o.data_prevista <= ${em30}`;
@@ -3880,6 +3881,7 @@ async function fluxoDetalhado({ data_inicio, data_fim, dias_passado = 60, inclui
   let despFuturas = [];
   try {
     const sql = await getSql();
+    try { await _despGarantirHorizonte(sql); } catch (_) {} // v3.270
     // v3.113: despesa programada VENCIDA e não paga (até 60 dias) também entra — como as contas vencidas do QuickBooks.
     // Antes sumia de toda projeção. Com o período começando no futuro, parte do início do período.
     const desde = ini > hoje ? ini : _diasMais(hoje, -60);
@@ -4269,9 +4271,32 @@ async function _qbBillsPaginado(where, token) {
   }
   return todas;
 }
+// v3.270: HORIZONTE DAS DESPESAS RECORRENTES — as ocorrências eram geradas só uma vez (12 meses a partir do cadastro) e só
+// eram refeitas ao editar a despesa. Com o tempo, os últimos meses do Fluxo Futuro, do Fluxo Detalhado, da Agenda e do Business
+// Plan ficavam sem as despesas recorrentes. Agora, ao ler a agenda/fluxo, toda despesa recorrente ativa é estendida até 24 meses
+// à frente (respeitando a data de fim e os meses já ocupados — paga, lançada, cancelada de propósito). Roda no máximo a cada 20 min.
+let _despHorizonteEm = 0;
+async function _despGarantirHorizonte(sql, meses = 24, forcar = false) {
+  if (!forcar && Date.now() - _despHorizonteEm < 20 * 60000) return 0;
+  _despHorizonteEm = Date.now();
+  const hoje = _hojeBR(), ate = _addMesesData(hoje, meses);
+  const L = await sql`SELECT d.*, (SELECT MAX(o.data_prevista) FROM despesas_ocorrencias o WHERE o.despesa_id = d.id) AS ultima
+    FROM despesas_programadas d WHERE d.ativa = true AND COALESCE(d.recorrencia, 'mensal') <> 'unica' AND (d.data_fim IS NULL OR d.data_fim >= ${hoje})`;
+  let criadas = 0;
+  for (const d of L) {
+    // preenche também os BURACOS no meio (mês sem nenhuma ocorrência); mês com ocorrência de qualquer status — inclusive
+    // cancelada de propósito (exclusão de uma ocorrência, replicação) — fica como está
+    const ocupados = new Set((await sql`SELECT TO_CHAR(data_prevista, 'YYYY-MM') AS m FROM despesas_ocorrencias WHERE despesa_id = ${d.id}`).map(r => r.m));
+    const datas = gerarDatasRecorrencia(d, meses).filter(dt => dt >= hoje && !ocupados.has(dt.substring(0, 7)));
+    for (const data of datas) { await sql`INSERT INTO despesas_ocorrencias (id, despesa_id, data_prevista, valor, status) VALUES (${'oco_' + d.id + '_' + data}, ${d.id}, ${data}, ${d.valor}, 'prevista') ON CONFLICT (id) DO NOTHING`; criadas++; }
+  }
+  if (criadas) console.log(`[Agenda] horizonte das despesas recorrentes: ${criadas} ocorrência(s) criada(s) até ${ate}`);
+  return criadas;
+}
 async function despOcorrencias({ data_inicio, data_fim, status, incluir_qb = true } = {}) {
   const sql = await getSql();
   await _despNormalizarStatus(sql);
+  try { await _despGarantirHorizonte(sql); } catch (e) { console.warn('[Agenda] horizonte:', e.message); }
   const ini = data_inicio || _hojeBR();
   const fim = data_fim || _diasMais(_hojeBR(), 365);
   // v1.15: contas a pagar do QuickBooks (Bills) no período entram na agenda como ocorrências fonte 'quickbooks'
@@ -4477,6 +4502,7 @@ async function _despLancarQbExec(sql, o, ocorrencia_id) {
 
 async function despGerarOcorrencias({ meses = 12 } = {}) {
   const sql = await getSql();
+  try { await _despGarantirHorizonte(sql, 24, true); } catch (_) {} // v3.270
   const desp = await sql`SELECT * FROM despesas_programadas WHERE ativa = true`;
   let geradas = 0;
   for (const d of desp) {
@@ -5066,6 +5092,7 @@ async function fluxoFuturo({ meses = 12, overrides = {}, conta_id = null } = {})
 function _runwaySem(rw, cobertura) { if (rw == null || !isFinite(rw)) return 'cinza'; if (rw >= 999) return cobertura != null && cobertura < 1 ? 'amarelo' : 'verde'; return rw >= 12 ? 'verde' : rw >= 6 ? 'amarelo' : 'vermelho'; }
 function _margemSem(mg, meta) { if (mg == null || !isFinite(mg)) return 'cinza'; if (meta != null && isFinite(meta)) return mg >= meta ? 'verde' : mg >= meta - 5 ? 'amarelo' : 'vermelho'; return mg >= 15 ? 'verde' : mg >= 0 ? 'amarelo' : 'vermelho'; }
 async function kpisSaude({ overrides = {}, conta_id = null, metodo = null } = {}) {
+  try { await _despGarantirHorizonte(await getSql()); } catch (_) {} // v3.270: despesas recorrentes até 24 meses à frente
   const kpis = {
     saldo_caixa: 0,
     roi_pct: null,
@@ -9498,6 +9525,7 @@ async function _fv2Executiva({ P, met, cfg, L, token, base }) {
 
 // ── TELA 2 · CAIXA E LIQUIDEZ ── "Temos caixa para os próximos meses?"
 async function _fv2Caixa({ P, met, cfg, L, token, base }) {
+  try { await _despGarantirHorizonte(await getSql()); } catch (_) {} // v3.270: despesas recorrentes até 24 meses à frente
   const hoje = P.hoje, i90 = _diasMais(hoje, -90);
   const sql = await getSql();
   const [bc, ks, pl90, desp] = await Promise.allSettled([
