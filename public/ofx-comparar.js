@@ -232,7 +232,7 @@
     const esperado = { valor: Math.abs(x.c) / 100, data: x.data, conta_id: ALVO.conta };
     try { const p = await finApi('qb_excluir_lancamento', { qb_txn_id: x.qb_txn_id, confirmar: false, esperado }); const r = p.sera_excluido || {};
       f.innerHTML = `<td colspan="4" style="padding:8px;background:rgba(255,80,80,.08);border:1px solid var(--red);"><div style="font-size:11px;line-height:1.6;">Excluir no QuickBooks: <b>${esc(r.entidade)} #${esc(r.id)}</b> · ${esc(r.contraparte || r.memo || '')} · ${brl(r.valor)} · ${dt(r.data)}${r.conta ? ' · ' + esc(r.conta) : ''}
-        ${(r.vinculos || []).length ? `<div style="color:var(--red);">⚠ ${esc(p.aviso)}</div>` : ''}<div style="color:var(--t3);">A exclusão é feita na contabilidade e não pode ser desfeita pelo Atlantyx.</div></div>
+        ${(r.vinculos || []).length ? `<div style="color:var(--red);">⚠ ${esc(p.aviso)}</div>` : ''}<div style="color:var(--t3);">A exclusão é feita na contabilidade e não pode ser desfeita pelo Atlantyx.${p.qb_url ? ` <a href="${esc(p.qb_url)}" target="_blank" rel="noopener" style="color:var(--blue);">ver no QuickBooks ↗</a>` : ''}</div></div>
         <div style="display:flex;gap:6px;margin-top:6px;"><button class="btn btn-rd" style="font-size:10.5px;" onclick="OFXCMP.excluir('${id}',this)">🗑 Excluir no QuickBooks</button><button class="btn" style="font-size:10.5px;" onclick="document.getElementById('ofxExc_${id}').remove()">Cancelar</button></div></td>`;
     } catch (e) { f.innerHTML = `<td colspan="4" style="padding:8px;color:var(--red);font-size:11px;">${esc(e.message)}</td>`; } }
   async function excluir(id, btn) {
@@ -241,6 +241,7 @@
     let d;
     try { d = await finApi('qb_excluir_lancamento', { qb_txn_id: x.qb_txn_id, confirmar: true, esperado: { valor: Math.abs(x.c) / 100, data: x.data, conta_id: ALVO.conta } }, { timeoutMs: 45000 }); }
     catch (e) { msg('⛔ O QuickBooks não excluiu: ' + esc(e.message), 'var(--red)'); toast('Não excluiu: ' + e.message, 'error'); return; }
+    if (d && d.bloqueado_correspondencia) { msg('⚠ ' + esc(d.mensagem) + (d.qb_url ? ` <a class="btn btn-p" style="font-size:10.5px;margin-left:6px;" href="${esc(d.qb_url)}" target="_blank" rel="noopener">↗ Abrir no QuickBooks</a> <button class="btn" style="font-size:10.5px;" onclick="OFXCMP.atualizar(this)">↻ Já excluí — atualizar</button>` : ''), 'var(--gold)'); return; }
     if (!d || !d.excluido) { msg('⛔ O QuickBooks não confirmou a exclusão' + (d && d.erro ? ': ' + esc(d.erro) : '') + '. Nada mudou.', 'var(--red)'); return; }
     toast('Excluído no QuickBooks: ' + brl(d.registro?.valor || 0), 'success'); try { addLog('warn', '[Extrato OFX] EXCLUÍDO no QuickBooks: ' + d.registro?.entidade + '#' + d.registro?.id + ' · ' + brl(d.registro?.valor || 0)); } catch (_) {}
     msg('✓ Excluído no QuickBooks (' + esc(d.registro?.entidade || '') + ' #' + esc(d.registro?.id || '') + ') — atualizando a comparação…', 'var(--green)');

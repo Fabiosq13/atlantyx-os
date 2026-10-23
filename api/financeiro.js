@@ -2377,7 +2377,7 @@ async function qbExcluirLancamento({ qb_txn_id, confirmar = false, esperado = nu
   }
   // 2. Sem confirmação, devolve a prévia — a tela mostra e pede o "sim"
   if (!confirmar) {
-    return { previa: true, sera_excluido: resumo,
+    return { previa: true, sera_excluido: resumo, qb_url: _qbUrlTxn(qb_txn_id),
       aviso: resumo.vinculos.length
         ? `⚠ Este lançamento está VINCULADO a: ${resumo.vinculos.join(', ')}. Excluí-lo pode deixar a fatura/conta ligada em aberto novamente.`
         : 'Nenhum vínculo com outros lançamentos.',
@@ -2393,6 +2393,12 @@ async function qbExcluirLancamento({ qb_txn_id, confirmar = false, esperado = nu
   const d = await resp.json().catch(() => ({}));
   if (!resp.ok) {
     const msg = d.Fault?.Error?.[0]?.Message || d.Fault?.Error?.[0]?.Detail || JSON.stringify(d).substring(0, 200);
+    // v3.262: lançamento que está CORRESPONDIDO (match) a uma transação do feed bancário. Na tela do QuickBooks ele pergunta
+    // "deseja desfazer a correspondência e excluir?"; pela API não existe essa confirmação — o QuickBooks sempre recusa.
+    if (/correspond|matched|bank feed|banking/i.test(msg + ' ' + (d.Fault?.Error?.[0]?.Detail || ''))) {
+      return { excluido: false, bloqueado_correspondencia: true, qb_url: _qbUrlTxn(qb_txn_id), registro: resumo,
+        mensagem: 'Este lançamento está correspondido (match) a uma transação do feed bancário do QuickBooks. A API do QuickBooks não permite desfazer essa correspondência — só a tela do QuickBooks, que pergunta e confirma. Abra o lançamento pelo link e exclua lá.' };
+    }
     throw new Error(`QuickBooks recusou a exclusão: ${msg}`);
   }
   // v3.260: a exclusão vai direto à API (fora do qbFetch) — limpa o cache das consultas, senão o extrato relido logo em
