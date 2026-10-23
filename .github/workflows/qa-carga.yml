@@ -1,0 +1,32 @@
+# v3.275 — Teste de carga do Atlantyx OS (N usuários simultâneos nas telas e na retaguarda).
+# Acionado pela tela Agente de QA › Teste de carga (precisa de GITHUB_TOKEN no Vercel com Actions: Read and write)
+# ou manualmente aqui (pega o teste que estiver na fila). Só leitura: gravação, envio e IA são bloqueados.
+# Secrets: CRON_SECRET, ATX_QA_EMAIL, ATX_QA_SENHA (os mesmos do QA noturno). Variável opcional: ATX_URL.
+name: Teste de carga — N usuários simultâneos
+on:
+  workflow_dispatch:
+    inputs:
+      id:
+        description: 'Id do teste agendado na tela (vazio = o que estiver na fila)'
+        required: false
+        default: ''
+concurrency:
+  group: qa-carga
+  cancel-in-progress: false
+jobs:
+  carga:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm i --no-save --no-audit --no-fund playwright@1.48.2 && npx playwright install --with-deps chromium
+      - run: node scripts/qa-carga.mjs
+        env:
+          ATX_URL: ${{ vars.ATX_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          ATX_QA_EMAIL: ${{ secrets.ATX_QA_EMAIL }}
+          ATX_QA_SENHA: ${{ secrets.ATX_QA_SENHA }}
+          CARGA_ID: ${{ inputs.id }}

@@ -615,6 +615,26 @@
           <button class="btn btn-or" style="margin-left:auto;" id="qaBtnMkt" onclick="QA.marketing()">▶ Rodar teste de marketing</button>
           <button class="btn btn-g" id="qaBtnLeads" onclick="QA.analiseLeads()">🔎 Só a análise de leads</button></div>
         <div id="qaMktPassos" style="margin-top:8px;"></div></div></div>
+      <div class="panel" style="border:1px solid var(--blue);"><div class="ph"><div class="pt">🚦 Teste de carga — N usuários simultâneos (IA de testes)</div><span style="font-size:10px;color:var(--t2);">só consultas · telas no robô · retaguarda aqui ou no robô</span></div><div class="pb" style="font-size:11px;color:var(--t2);line-height:1.6;">
+        Simula <b>N pessoas usando o sistema ao mesmo tempo</b>. <b>Telas:</b> navegadores de verdade no robô do GitHub abrem as telas de cada perfil (financeiro, comercial, marketing, gestor), esperam carregar e medem o tempo e os erros. <b>Retaguarda:</b> usuários virtuais chamando as APIs de consulta em paralelo (neste navegador, até ${100}, ou no robô, até 300). Tudo em <b>modo seguro</b>: nada é gravado, enviado ou gerado por IA. A IA monta o cenário a partir do objetivo e, no fim, diz se o sistema aguenta e onde está o gargalo.
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:8px;">
+          <div><label class="fl">Usuários nas telas (robô)</label><input class="fi" type="number" min="0" max="30" id="qcFront" value="5"/></div>
+          <div><label class="fl">Usuários na retaguarda</label><input class="fi" type="number" min="0" max="300" id="qcBack" value="20"/></div>
+          <div><label class="fl">Retaguarda roda</label><select class="fsel" id="qcOnde"><option value="navegador">neste navegador (até 100)</option><option value="robo">no robô (até 300)</option></select></div>
+          <div><label class="fl">Duração</label><select class="fsel" id="qcDur"><option value="1">1 min</option><option value="3" selected>3 min</option><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option></select></div>
+          <div><label class="fl">Rampa de entrada</label><select class="fsel" id="qcRampa"><option value="0">todos de uma vez</option><option value="30" selected>30 s</option><option value="60">60 s</option><option value="120">2 min</option></select></div>
+          <div><label class="fl">Pausa entre ações</label><select class="fsel" id="qcPensar"><option value="0,1">0–1 s (estresse)</option><option value="2,6" selected>2–6 s (uso normal)</option><option value="5,20">5–20 s (leitura)</option></select></div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px;"><span>Perfil dos usuários (%):</span>
+          ${['financeiro', 'comercial', 'marketing', 'gestor'].map(p => `<label>${p} <input class="fi qcMix" data-p="${p}" type="number" min="0" max="100" value="25" style="width:58px;display:inline-block;"/></label>`).join('')}</div>
+        <div style="display:flex;gap:6px;margin-top:8px;"><input class="fi" id="qcObjetivo" placeholder="Objetivo do teste para a IA (ex.: fechamento do mês com o time financeiro inteiro no sistema)" style="flex:1;"/></div>
+        <label style="display:block;margin-top:6px;"><input type="checkbox" id="qcExternos"/> Incluir telas e chamadas que consultam <b>QuickBooks/HubSpot</b> <span style="color:var(--gold);">(eles têm limite de uso: o teste segura 1 chamada externa a cada 3 s e no máximo 2 telas externas ao mesmo tempo)</span></label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
+          <button class="btn btn-g" id="qcBtnIA" onclick="QA.cargaIA()">🤖 IA monta o cenário</button>
+          <button class="btn btn-p" style="margin-left:auto;" id="qcBtnRodar" onclick="QA.cargaRodar()">▶ Rodar teste de carga</button>
+          <button class="btn" style="border-color:var(--red);color:var(--red);display:none;" id="qcBtnParar" onclick="QA.cargaParar()">■ Parar</button></div>
+        <div id="qcPlano" style="margin-top:8px;"></div><div id="qcVivo" style="margin-top:8px;"></div></div></div>
+      <div id="qcRes"></div>
       <div id="qaResultado"></div>
       <div class="panel"><div class="ph"><div class="pt">Execuções anteriores</div><button class="btn btn-g" style="font-size:9px;padding:3px 8px;" onclick="QA.historico()">↻</button></div><div class="pb" id="qaHist" style="font-size:11px;color:var(--t3);">—</div></div>`;
   }
@@ -739,10 +759,169 @@
     toast(MK.achados.length ? `Marketing: ${MK.achados.length} achado(s)` : 'Marketing: tudo OK', MK.achados.some(a => a.sev === 'crítica' || a.sev === 'alta') ? 'error' : 'success');
   }
 
+
+  // ── v3.275 Teste de carga ───────────────────────────────────────────────
+  const CG = { cat: null, plano: null, rodando: false, parar: false, regs: [], ini: 0, fim: 0, ativos: 0, hist: [], R: null };
+  const pctl = (arr, p) => { if (!arr.length) return 0; const s = [...arr].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
+  function cgAgregar(regs, ini, fim, ativosFn) {
+    const ms = regs.map(r => r.ms), erros = regs.filter(r => !r.ok).length, dur = Math.max(1, (fim - ini) / 1000);
+    const por = {}; regs.forEach(r => { const k = r.id; (por[k] = por[k] || { id: k, ms: [], erros: 0, erro_exemplo: null }); por[k].ms.push(r.ms); if (!r.ok) { por[k].erros++; por[k].erro_exemplo = por[k].erro_exemplo || r.erro; } });
+    const status = {}; regs.forEach(r => { status[r.status] = (status[r.status] || 0) + 1; });
+    const lt = []; for (let t = ini; t < fim; t += 10000) { const l = regs.filter(r => r.t >= t && r.t < t + 10000); lt.push({ s: Math.round((t - ini) / 1000), n: l.length, erros: l.filter(r => !r.ok).length, p95: pctl(l.map(r => r.ms), 0.95), ativos: ativosFn ? ativosFn(t + 5000) : null }); }
+    return { total: regs.length, erros, rps: +(regs.length / dur).toFixed(2), p50: pctl(ms, 0.5), p95: pctl(ms, 0.95), p99: pctl(ms, 0.99), max: ms.length ? Math.max(...ms) : 0, status,
+      por_chamada: Object.values(por).map(x => ({ id: x.id, n: x.ms.length, erros: x.erros, p50: pctl(x.ms, 0.5), p95: pctl(x.ms, 0.95), max: Math.max(...x.ms), erro_exemplo: x.erro_exemplo })).sort((a, b) => b.p95 - a.p95), linha_tempo: lt };
+  }
+  const seg = ms => ms >= 10000 ? Math.round(ms / 1000) + ' s' : (ms / 1000).toFixed(1) + ' s';
+  async function cgCatalogo() { if (!CG.cat) CG.cat = await api('carga_catalogo'); return CG.cat; }
+  function cgLer() {
+    const v = id => document.getElementById(id); const mix = {}; document.querySelectorAll('.qcMix').forEach(i => { mix[i.dataset.p] = Math.max(0, Number(i.value) || 0); });
+    const cfg = { usuarios_front: Number(v('qcFront').value) || 0, usuarios_back: Number(v('qcBack').value) || 0, onde: v('qcOnde').value, duracao_min: Number(v('qcDur').value), rampa_s: Number(v('qcRampa').value),
+      pensar_s: v('qcPensar').value.split(',').map(Number), mix, objetivo: v('qcObjetivo').value.trim(), externos: v('qcExternos').checked };
+    if (CG.plano && CG.plano.externos === cfg.externos) { cfg.pesos = CG.plano.pesos; cfg.telas = CG.plano.telas; }
+    try { localStorage.setItem('qa:carga_cfg', JSON.stringify(cfg)); } catch (_) {}
+    return cfg;
+  }
+  function cgPreencher(c) { if (!c) return; const v = id => document.getElementById(id); if (!v('qcFront')) return;
+    v('qcFront').value = c.usuarios_front ?? 5; v('qcBack').value = c.usuarios_back ?? 20; if (c.onde) v('qcOnde').value = c.onde; if (c.duracao_min) v('qcDur').value = String(c.duracao_min);
+    if (c.rampa_s != null && [...v('qcRampa').options].some(o => o.value === String(c.rampa_s))) v('qcRampa').value = String(c.rampa_s);
+    if (c.pensar_s && [...v('qcPensar').options].some(o => o.value === c.pensar_s.join(','))) v('qcPensar').value = c.pensar_s.join(',');
+    document.querySelectorAll('.qcMix').forEach(i => { if (c.mix && c.mix[i.dataset.p] != null) i.value = c.mix[i.dataset.p]; }); if (c.objetivo != null) v('qcObjetivo').value = c.objetivo; v('qcExternos').checked = !!c.externos; }
+  function cgPlanoHtml(P, cat) {
+    if (!P) return ''; const c = P.config; const telas = (c.telas || []).map(t => cat.telas.find(x => x.id === t)?.nome || t);
+    const pesos = Object.entries(c.pesos || {}).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    return `<div style="background:var(--bg4);border-radius:6px;padding:8px 10px;font-size:10.5px;line-height:1.6;"><b>${P.ia ? '🤖 Cenário montado pela IA' : 'Cenário padrão'}</b> — ${esc(P.justificativa || '')}
+      <div style="color:var(--t2);margin-top:3px;">Perfis: ${Object.entries(c.mix).map(([k, v]) => esc(k) + ' ' + v + '%').join(' · ')} · pausa ${c.pensar_s.join('–')} s · rampa ${c.rampa_s} s${telas.length ? '<br>Telas: ' + telas.map(esc).join(', ') : ''}${pesos.length ? '<br>Chamadas mais pesadas: ' + pesos.map(([k, v]) => esc(k) + ' ×' + v).join(', ') : ''}</div></div>`;
+  }
+  // retaguarda dentro deste navegador
+  async function cgBackNavegador(cfg, cat, onTick) {
+    const N = cfg.usuarios_back, FIM = Date.now() + cfg.duracao_min * 60000; CG.regs = []; CG.ini = Date.now(); CG.fim = FIM; CG.ativos = 0; CG.hist = [];
+    const tot = Object.values(cfg.mix).reduce((s, v) => s + v, 0) || 1;
+    const personaDe = i => { const x = (((i + 1) * 0.618034) % 1) * tot; let acc = 0; for (const [p, v] of Object.entries(cfg.mix)) { acc += v; if (x < acc) return p; } return 'gestor'; };
+    let proxExt = 0; const vezExt = async () => { const ag = Date.now(), m = Math.max(ag, proxExt); proxExt = m + 3000; if (m > ag) await sleep(m - ag); };
+    const f = _orig.fetch || window.fetch;
+    const usuario = async i => {
+      const p = personaDe(i), itens = cat.apis.filter(a => (a.persona === p || a.persona === 'todos') && (cfg.externos || !a.externo)).map(a => ({ ...a, peso: cfg.pesos?.[a.id] ?? a.peso })).filter(a => a.peso > 0);
+      await sleep(N > 1 ? (i / N) * cfg.rampa_s * 1000 : 0); if (Date.now() >= FIM || CG.parar || !itens.length) return;
+      CG.ativos++; CG.hist.push([Date.now(), 1]);
+      while (Date.now() < FIM && !CG.parar) {
+        const tot2 = itens.reduce((s, x) => s + x.peso, 0); let r = Math.random() * tot2, a = itens[itens.length - 1]; for (const x of itens) { r -= x.peso; if (r <= 0) { a = x; break; } }
+        if (a.externo) await vezExt(); if (Date.now() >= FIM || CG.parar) break;
+        const t = Date.now(), ac = new AbortController(), to = setTimeout(() => ac.abort(), 60000), reg = { id: a.id, t, ok: false, status: 0, ms: 0, erro: null };
+        try { const resp = await f(a.rota, a.metodo === 'GET' ? { cache: 'no-store', signal: ac.signal } : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: a.action, params: {} }), signal: ac.signal });
+          const txt = await resp.text(); reg.status = resp.status; let d = null; try { d = JSON.parse(txt); } catch (_) {}
+          reg.ok = resp.ok && !(d && d.success === false); if (!reg.ok) reg.erro = String(d?.error || txt.substring(0, 120) || 'HTTP ' + resp.status).substring(0, 160);
+        } catch (e) { reg.erro = e.name === 'AbortError' ? 'sem resposta em 60 s' : e.message; }
+        clearTimeout(to); reg.ms = Date.now() - t; CG.regs.push(reg);
+        const pausa = (cfg.pensar_s[0] + Math.random() * (cfg.pensar_s[1] - cfg.pensar_s[0])) * 1000, fimP = Date.now() + pausa; while (Date.now() < fimP && !CG.parar) await sleep(Math.min(500, fimP - Date.now()));
+      }
+      CG.ativos--; CG.hist.push([Date.now(), -1]);
+    };
+    const tick = setInterval(() => onTick && onTick(), 1000);
+    await Promise.all([...Array(N)].map((_, i) => usuario(i))); clearInterval(tick);
+    const fim = Date.now(), ativosEm = t => CG.hist.filter(h => h[0] <= t).reduce((s, h) => s + h[1], 0);
+    return { usuarios: N, onde: 'navegador', ...cgAgregar(CG.regs, CG.ini, fim, ativosEm) };
+  }
+  function cgBarras(lt, campo, cor, rot) {
+    if (!lt?.length) return ''; const max = Math.max(1, ...lt.map(x => x[campo] || 0));
+    return `<div style="font-size:9.5px;color:var(--t3);margin:6px 0 2px;">${rot} (a cada 10 s · máx ${campo === 'p95' ? seg(max) : max})</div><div style="display:flex;align-items:flex-end;gap:2px;height:46px;border-bottom:1px solid var(--bd);">${lt.map(x => `<div title="${x.s}s · ${campo === 'p95' ? seg(x[campo] || 0) : (x[campo] || 0)}${x.erros ? ' · ' + x.erros + ' erro(s)' : ''}${x.ativos != null ? ' · ' + x.ativos + ' usuários' : ''}" style="flex:1;min-width:2px;height:${Math.max(2, Math.round((x[campo] || 0) / max * 44))}px;background:${x.n && x.erros / x.n > 0.05 ? 'var(--red)' : x.erros ? 'var(--gold)' : cor};border-radius:2px 2px 0 0;"></div>`).join('')}</div>`;
+  }
+  function cgVivo(prog) {
+    const el = document.getElementById('qcVivo'); if (!el) return;
+    let h = '';
+    if (CG.rodandoBack) { const ag = Date.now(), ult = CG.regs.filter(r => r.t > ag - 10000), dec = Math.round((ag - CG.ini) / 1000), tot = Math.round((CG.fim - CG.ini) / 1000);
+      const lt = cgAgregar(CG.regs, CG.ini, ag).linha_tempo;
+      h += `<div style="font-size:11px;font-weight:700;margin-bottom:4px;">Retaguarda neste navegador — ${dec}/${tot} s</div><div class="kg k5">${[['usuários ativos', CG.ativos], ['chamadas', CG.regs.length], ['por segundo (10 s)', (ult.length / 10).toFixed(1)], ['p95 (10 s)', seg(pctl(ult.map(r => r.ms), 0.95))], ['erros', CG.regs.filter(r => !r.ok).length]].map(([k, v], i) => `<div class="kpi ${i === 4 && v ? 'or' : 'bl'}"><div class="kl">${k}</div><div class="kv">${v}</div></div>`).join('')}</div>${cgBarras(lt, 'p95', 'var(--blue)', 'tempo de resposta p95')}
+        <div style="font-size:9.5px;color:var(--gold);margin-top:4px;">Mantenha esta aba visível: o navegador desacelera abas em segundo plano e os tempos sairiam falsos.</div>`; }
+    if (CG.robo) { const f = CG.robo, p = f.progresso;
+      h += `<div style="font-size:11px;margin-top:8px;background:var(--bg4);border-radius:6px;padding:8px 10px;"><b>🤖 Robô</b> — ${({ na_fila: 'na fila: o GitHub está preparando os navegadores (1 a 3 min)…', rodando: 'rodando', concluido: 'concluído', cancelado: 'cancelado' })[f.status] || esc(f.status)}${CG.roboMsg ? ' · <span style="color:var(--gold);">' + esc(CG.roboMsg) + '</span>' : ''}
+        ${p ? `<div class="kg k5" style="margin-top:6px;">${[['decorrido', p.decorrido_s + '/' + p.total_s + ' s'], ['nas telas', p.front_ativos], ['telas abertas', p.telas_abertas + (p.telas_erro ? ' (' + p.telas_erro + ' c/ erro)' : '')], ['retaguarda', p.back_ativos + ' usuários'], ['chamadas · p95', p.req_back + ' · ' + seg(p.p95_back_15s || 0)]].map(([k, v]) => `<div class="kpi bl"><div class="kl">${k}</div><div class="kv" style="font-size:15px;">${v}</div></div>`).join('')}</div>` : ''}</div>`; }
+    el.innerHTML = h;
+  }
+  function cgResHtml(R) {
+    if (!R) return ''; const V = R.veredito || {}, B = R.back, F = R.front, cor = { aprovado: 'var(--green)', 'atenção': 'var(--gold)', reprovado: 'var(--red)' }[V.status] || 'var(--t2)';
+    const tab = (linhas, cols) => `<div style="max-height:40vh;overflow:auto;"><table style="width:100%;font-size:10.5px;border-collapse:collapse;"><tr style="color:var(--t3);text-align:left;">${cols.map(c => `<th style="padding:3px 6px;border-bottom:1px solid var(--bd);">${c}</th>`).join('')}</tr>${linhas.map(l => `<tr>${l.map(c => `<td style="padding:3px 6px;border-bottom:1px solid var(--bd);">${c}</td>`).join('')}</tr>`).join('')}</table></div>`;
+    const linhaCham = x => [esc(x.id), x.n, x.erros ? `<b style="color:var(--red);">${x.erros}</b>` : 0, seg(x.p50), `<b style="color:${x.p95 > 8000 ? 'var(--red)' : x.p95 > 3000 ? 'var(--gold)' : 'var(--t1)'};">${seg(x.p95)}</b>`, seg(x.max), `<span style="color:var(--t3);">${esc(x.erro_exemplo || '')}</span>`];
+    let h = `<div class="panel" style="border-left:4px solid ${cor};"><div class="ph"><div class="pt">🚦 Resultado do teste de carga — <span style="color:${cor};">${esc(V.status || '?')}</span></div><span style="font-size:10px;color:var(--t2);">${R.inicio ? new Date(R.inicio).toLocaleString('pt-BR') : ''} · ${R.config?.usuarios_front || 0} nas telas · ${R.config?.usuarios_back || 0} na retaguarda · ${R.config?.duracao_min || '?'} min${R.cancelado ? ' · interrompido' : ''}</span></div><div class="pb">
+      ${(V.motivos || []).length ? `<div style="font-size:11px;color:${cor};margin-bottom:8px;">${V.motivos.map(esc).join(' · ')}</div>` : '<div style="font-size:11px;color:var(--green);margin-bottom:8px;">Sem erros relevantes e tempos dentro do esperado para essa carga.</div>'}`;
+    if (B) h += `<div style="font-weight:700;font-size:11.5px;margin:6px 0;">Retaguarda (${B.onde === 'navegador' ? 'neste navegador' : 'robô'}) — ${B.usuarios} usuários</div><div class="kg k5">${[['chamadas', B.total], ['por segundo', B.rps], ['p50', seg(B.p50)], ['p95', seg(B.p95)], ['erros', B.erros + ' (' + (B.total ? (B.erros / B.total * 100).toFixed(1) : 0) + '%)']].map(([k, v], i) => `<div class="kpi ${i === 4 && B.erros ? 'or' : 'bl'}"><div class="kl">${k}</div><div class="kv">${v}</div></div>`).join('')}</div>
+      ${cgBarras(B.linha_tempo, 'p95', 'var(--blue)', 'p95 da retaguarda')}${cgBarras(B.linha_tempo, 'n', 'var(--green,#22d3a3)', 'chamadas')}
+      <details style="margin-top:6px;" open><summary style="cursor:pointer;font-size:11px;">Por chamada (mais lentas primeiro)</summary>${tab((B.por_chamada || []).map(linhaCham), ['chamada', 'n', 'erros', 'p50', 'p95', 'máx', 'exemplo de erro'])}</details>`;
+    if (F) h += `<div style="font-weight:700;font-size:11.5px;margin:12px 0 6px;">Telas (robô, navegadores reais) — ${F.usuarios} usuários</div><div class="kg k5">${[['telas abertas', F.telas_abertas], ['com erro', F.telas_com_erro], ['p50 para abrir', seg(F.p50)], ['p95 para abrir', seg(F.p95)], ['erros de JavaScript', (F.erros_js || []).reduce((s, e) => s + e.n, 0)]].map(([k, v], i) => `<div class="kpi ${(i === 1 || i === 4) && v ? 'or' : 'bl'}"><div class="kl">${k}</div><div class="kv">${v}</div></div>`).join('')}</div>
+      ${cgBarras(F.linha_tempo, 'p95', 'var(--pu,#a78bfa)', 'p95 para abrir as telas')}
+      <details style="margin-top:6px;" open><summary style="cursor:pointer;font-size:11px;">Por tela</summary>${tab((F.por_tela || []).map(linhaCham), ['tela', 'aberturas', 'com erro', 'p50', 'p95', 'máx', 'exemplo de erro'])}</details>
+      ${F.api?.por_chamada?.length ? `<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;">Chamadas feitas pelas telas (${F.api.total}, p95 ${seg(F.api.p95)}, ${F.api.erros} erro(s))</summary>${tab(F.api.por_chamada.slice(0, 40).map(linhaCham), ['chamada', 'n', 'erros', 'p50', 'p95', 'máx', 'exemplo de erro'])}</details>` : ''}
+      ${(F.erros_js || []).length ? `<details style="margin-top:6px;" open><summary style="cursor:pointer;font-size:11px;color:var(--red);">Erros de JavaScript sob carga</summary>${F.erros_js.map(e => `<div style="font-size:10.5px;font-family:var(--M);padding:2px 0;">${e.n}× ${esc(e.msg)} <span style="color:var(--t3);">(${e.telas.map(esc).join(', ')})</span></div>`).join('')}</details>` : ''}`;
+    h += `<div style="margin-top:10px;font-weight:700;font-size:11.5px;">🤖 Parecer da IA</div>${R.parecer ? `<div style="background:var(--bg4);border-radius:6px;padding:9px 11px;font-size:11px;white-space:pre-wrap;line-height:1.6;margin-top:4px;">${esc(R.parecer)}</div>` : `<button class="btn btn-g" style="margin-top:4px;" onclick="QA.cargaAnalisar()">🤖 Pedir o parecer da IA</button>`}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;"><button class="btn btn-g" onclick="QA.cargaBaixar()">⬇ Baixar .json</button><button class="btn btn-g" onclick="navigator.clipboard.writeText(QA._cargaMd());toast('Relatório copiado','success')">📋 Copiar relatório</button>
+        <button class="btn btn-p" style="margin-left:auto;" onclick="QA.cargaCorrigir()">✅ Enviar gargalos para correção automática</button></div><div id="qcCorrMsg" style="font-size:11px;margin-top:6px;"></div></div></div>`;
+    return h;
+  }
+  function cgMd(R) {
+    if (!R) return ''; const L = [`# Teste de carga do Atlantyx OS — ${R.veredito?.status || '?'}`, '', `- Quando: ${R.inicio ? new Date(R.inicio).toLocaleString('pt-BR') : '—'} · ${R.config?.usuarios_front || 0} usuários nas telas · ${R.config?.usuarios_back || 0} na retaguarda · ${R.config?.duracao_min} min · pausa ${(R.config?.pensar_s || []).join('–')} s`, `- Motivos: ${(R.veredito?.motivos || []).join('; ') || 'nenhum'}`, ''];
+    const tab = (t, l) => { L.push('## ' + t, '', '| item | n | erros | p50 | p95 | máx | exemplo de erro |', '|---|---|---|---|---|---|---|'); l.slice(0, 25).forEach(x => L.push(`| ${x.id} | ${x.n} | ${x.erros} | ${seg(x.p50)} | ${seg(x.p95)} | ${seg(x.max)} | ${String(x.erro_exemplo || '').replace(/\|/g, '/')} |`)); L.push(''); };
+    if (R.back) { L.push(`## Retaguarda: ${R.back.total} chamadas, ${R.back.rps}/s, p50 ${seg(R.back.p50)}, p95 ${seg(R.back.p95)}, ${R.back.erros} erros`, ''); tab('Chamadas da retaguarda', R.back.por_chamada || []); }
+    if (R.front) { L.push(`## Telas: ${R.front.telas_abertas} aberturas, p95 ${seg(R.front.p95)}, ${R.front.telas_com_erro} com erro`, ''); tab('Telas', R.front.por_tela || []); if (R.front.api) tab('Chamadas feitas pelas telas', R.front.api.por_chamada || []);
+      if ((R.front.erros_js || []).length) { L.push('## Erros de JavaScript sob carga', ''); R.front.erros_js.forEach(e => L.push(`- ${e.n}× \`${e.msg}\` (${e.telas.join(', ')})`)); L.push(''); } }
+    if (R.parecer) L.push('## Parecer da IA', '', R.parecer, '');
+    L.push('> Corrija os gargalos e erros acima (cache, consultas pesadas, índices, chamadas repetidas), sem mudar o comportamento das telas. Não crie tabela/coluna: peça ao afinador.');
+    return L.join('\n');
+  }
+  function cgMostrar() { const el = document.getElementById('qcRes'); if (el) el.innerHTML = cgResHtml(CG.R); }
+  function cgBotoes(rodando) { const a = document.getElementById('qcBtnRodar'), b = document.getElementById('qcBtnParar'); if (a) { a.disabled = rodando; a.textContent = rodando ? 'Rodando…' : '▶ Rodar teste de carga'; } if (b) b.style.display = rodando ? '' : 'none'; }
+  async function cgEsperarRobo(id, aoRodar) {
+    for (let i = 0; i < 400; i++) {
+      let f = null; try { f = (await api('carga_robo_status')).fila; } catch (_) {}
+      if (f && f.id === id) { CG.robo = f; if (f.status === 'rodando' && aoRodar) { const g = aoRodar; aoRodar = null; g(); } cgVivo(); if (['concluido', 'cancelado'].includes(f.status)) return f; }
+      if (i === 48 && f?.status === 'na_fila') CG.roboMsg = 'o robô ainda não começou — confira em GitHub → Actions → "Teste de carga"';
+      await sleep(5000);
+    }
+    return null;
+  }
+  async function cgRodar() {
+    if (CG.rodando) return; const cat = await cgCatalogo(); const cfg = cgLer();
+    const nav = cfg.onde === 'navegador', backAqui = nav && cfg.usuarios_back > 0, precisaRobo = cfg.usuarios_front > 0 || (!nav && cfg.usuarios_back > 0);
+    if (!backAqui && !precisaRobo) { toast('Informe usuários nas telas e/ou na retaguarda', 'error'); return; }
+    if (nav && cfg.usuarios_back > cat.limites.back_navegador) { toast('Neste navegador o limite é ' + cat.limites.back_navegador + ' usuários — use "no robô" para mais', 'error'); return; }
+    if (!confirm(`Rodar o teste de carga por ${cfg.duracao_min} min?\n\n• ${cfg.usuarios_front} usuário(s) nas telas (robô do GitHub)\n• ${cfg.usuarios_back} usuário(s) na retaguarda (${nav ? 'neste navegador' : 'robô'})\n\nSó consultas: nada é gravado, enviado ou gerado por IA. ${cfg.externos ? 'Inclui QuickBooks/HubSpot (com limite de ritmo).' : 'QuickBooks/HubSpot ficam de fora.'}\nO teste roda no sistema de produção: quem estiver usando pode sentir lentidão durante o teste.`)) return;
+    CG.rodando = true; CG.parar = false; CG.R = null; CG.robo = null; CG.roboMsg = ''; cgMostrar(); cgBotoes(true);
+    try {
+      let roboId = null, back = null;
+      if (precisaRobo) { const d = await api('carga_robo_agendar', { config: { ...cfg, usuarios_back: nav ? 0 : cfg.usuarios_back } }); roboId = d.id; CG.robo = { id: d.id, status: 'na_fila' };
+        if (!d.disparado) { CG.roboMsg = d.motivo || 'robô não acionado'; toast('Robô não acionado: ' + (d.motivo || ''), 'error'); } cgVivo(); }
+      const rodarBack = async () => { CG.rodandoBack = true; try { back = await cgBackNavegador(cfg, cat, () => cgVivo()); } finally { CG.rodandoBack = false; cgVivo(); } };
+      let fRobo = null;
+      if (roboId && backAqui) { let solta; const comecou = new Promise(r => { solta = r; }); const esp = cgEsperarRobo(roboId, () => solta()); // a retaguarda daqui começa junto com o robô
+        const ok = await Promise.race([comecou.then(() => true), sleep(6 * 60000).then(() => false), esp.then(() => false)]); if (ok && !CG.parar) await rodarBack(); fRobo = await esp; }
+      else if (roboId) fRobo = await cgEsperarRobo(roboId);
+      else await rodarBack();
+      let R = null;
+      if (fRobo?.status === 'concluido') { try { R = (await api('obter_execucao', { id: roboId })).relatorio; } catch (_) {} }
+      if (back) { R = R || { id: roboId || undefined, inicio: new Date(CG.ini).toISOString(), config: cfg, onde: 'navegador' }; R.back = back; R.config = { ...(R.config || cfg), usuarios_back: cfg.usuarios_back, onde: 'navegador' };
+        R.cancelado = R.cancelado || CG.parar; try { Object.assign(R, await api('carga_analisar', { resultado: R })); } catch (e) { R.parecer = null; }
+        const s = await api('carga_salvar', { resultado: R }); R.id = s.id; R.veredito = R.veredito || s.veredito; }
+      CG.R = R; if (!R) toast('O teste terminou sem resultado do robô' + (fRobo ? ' (' + fRobo.status + ')' : ''), 'error'); else toast('Teste de carga concluído: ' + (R.veredito?.status || ''), R.veredito?.status === 'reprovado' ? 'error' : 'success');
+    } catch (e) { toast('Teste de carga: ' + e.message, 'error'); }
+    CG.rodando = false; CG.robo = null; cgBotoes(false); const v = document.getElementById('qcVivo'); if (v) v.innerHTML = ''; cgMostrar(); try { QA.historico(); } catch (_) {}
+  }
+
   window.QA = {
     _classificar: (u, i) => classificar(u, i),
+    async cargaIA() { const b = document.getElementById('qcBtnIA'); b.disabled = true; b.textContent = '🤖 Montando…';
+      try { const cat = await cgCatalogo(); CG.plano = null; const cfg = cgLer(); const d = await api('carga_plano_ia', { config: cfg }); CG.plano = { ...d.config, externos: cfg.externos };
+        cgPreencher({ ...cfg, ...d.config, usuarios_front: cfg.usuarios_front, usuarios_back: cfg.usuarios_back, onde: cfg.onde, duracao_min: cfg.duracao_min }); document.getElementById('qcPlano').innerHTML = cgPlanoHtml(d, cat); }
+      catch (e) { toast('IA: ' + e.message, 'error'); } b.disabled = false; b.textContent = '🤖 IA monta o cenário'; },
+    cargaRodar() { cgRodar(); },
+    async cargaParar() { CG.parar = true; if (CG.robo?.id) { try { await api('carga_robo_cancelar'); } catch (_) {} } toast('Parando o teste de carga…', 'info'); },
+    async cargaAnalisar() { if (!CG.R) return; toast('Pedindo o parecer da IA…', 'info'); try { const d = await api('carga_analisar', { resultado: CG.R }); Object.assign(CG.R, d); await api('carga_salvar', { resultado: CG.R }); cgMostrar(); } catch (e) { toast('IA: ' + e.message, 'error'); } },
+    cargaBaixar() { if (CG.R) baixar('teste-carga-atlantyx-' + (CG.R.id || 'resultado') + '.json', JSON.stringify(CG.R, null, 2), 'application/json'); },
+    async cargaCorrigir() { const msg = document.getElementById('qcCorrMsg'); if (!CG.R || !confirm('Abrir uma tarefa no GitHub para o Claude corrigir os gargalos deste teste de carga?\n\nA nova versão só vai ao ar quando você aprovar o pull request.')) return;
+      try { const d = await api('abrir_correcao', { titulo: 'Gargalos do teste de carga — ' + (CG.R.veredito?.status || '') + ' (' + new Date().toLocaleDateString('pt-BR') + ')', corpo: cgMd(CG.R) });
+        msg.innerHTML = '<span style="color:var(--green);">✓ Tarefa #' + d.issue + ' aberta: <a href="' + esc(d.url) + '" target="_blank" rel="noopener" style="color:var(--blue);">' + esc(d.url) + '</a></span>'; }
+      catch (e) { msg.innerHTML = '<span style="color:var(--red);">Não foi possível abrir a tarefa: ' + esc(e.message) + '</span>'; } },
+    _cargaMd: () => cgMd(CG.R),
     _filtro: '',
     abrir() { const p = document.getElementById('qaApp'); if (p && !p.dataset.ok) { p.innerHTML = painelHtml(); p.dataset.ok = '1'; this.historico(true);
+        try { cgPreencher(JSON.parse(localStorage.getItem('qa:carga_cfg') || 'null')); } catch (_) {}
         try { const c = JSON.parse(localStorage.getItem('qa:real_contatos') || '{}'); if (c.fone) document.getElementById('qaRealFone').value = c.fone; if (c.email) document.getElementById('qaRealEmail').value = c.email; } catch (_) {} }
       try { const pc = JSON.parse(sessionStorage.getItem('qa_parcial') || 'null'); if (pc && !S.rodando) S.parcial = pc; } catch (_) {}
       render(); },
@@ -789,8 +968,8 @@
       try { const d = await api('seguranca'); delete d.success; d.versao = document.getElementById('sidebarBuildId')?.textContent || ''; S.seg = d; try { await api('salvar_execucao', { tipo: 'seguranca', relatorio: d }); } catch (_) {} toast('Varredura de segurança concluída', 'success'); }
       catch (e) { S.erro = 'Varredura de segurança não concluiu: ' + e.message; toast('Erro: ' + e.message, 'error'); } b.disabled = false; b.textContent = '🛡 Rodar varredura de segurança'; render(); this.historico(); },
     async historico(abrirUltima) { const el = document.getElementById('qaHist'); if (!el) return; try { const d = await api('listar_execucoes');
-      if (abrirUltima && !S.relatorio && !S.seg && (d.execucoes || []).length) { const u = d.execucoes[0]; this.carregar(u.id, u.tipo); } el.innerHTML = (d.execucoes || []).map(x => `<div style="padding:4px 0;border-bottom:1px solid var(--bd);display:flex;gap:8px;"><span>${x.tipo === 'seguranca' ? '🛡' : '🧪'} ${new Date(x.em).toLocaleString('pt-BR')}</span><span style="color:var(--t2);">${x.resumo ? Object.entries(x.resumo).map(([k, v]) => k + ': ' + v).join(' · ') : ''}</span><a href="#" style="margin-left:auto;color:var(--blue);" onclick="QA.carregar('${x.id}','${x.tipo}');return false;">abrir</a></div>`).join('') || 'Nenhuma execução ainda.'; } catch (e) { el.textContent = 'Histórico indisponível: ' + e.message; } },
-    async carregar(id, tipo) { try { const d = await api('obter_execucao', { id }); if (tipo === 'seguranca') S.seg = d.relatorio; else if (tipo === 'marketing') S.mkt = d.relatorio?.marketing || null; else { S.relatorio = d.relatorio; if (d.relatorio?.seguranca) S.seg = d.relatorio.seguranca; if (d.relatorio?.crud) S.crud = d.relatorio.crud; } render(); } catch (e) { toast('Erro: ' + e.message, 'error'); } },
+      if (abrirUltima && !S.relatorio && !S.seg && (d.execucoes || []).length) { const u = d.execucoes[0]; this.carregar(u.id, u.tipo); } el.innerHTML = (d.execucoes || []).map(x => `<div style="padding:4px 0;border-bottom:1px solid var(--bd);display:flex;gap:8px;"><span>${x.tipo === 'seguranca' ? '🛡' : x.tipo === 'carga' ? '🚦' : '🧪'} ${new Date(x.em).toLocaleString('pt-BR')}</span><span style="color:var(--t2);">${x.resumo ? Object.entries(x.resumo).map(([k, v]) => k + ': ' + v).join(' · ') : ''}</span><a href="#" style="margin-left:auto;color:var(--blue);" onclick="QA.carregar('${x.id}','${x.tipo}');return false;">abrir</a></div>`).join('') || 'Nenhuma execução ainda.'; } catch (e) { el.textContent = 'Histórico indisponível: ' + e.message; } },
+    async carregar(id, tipo) { try { const d = await api('obter_execucao', { id }); if (tipo === 'seguranca') S.seg = d.relatorio; else if (tipo === 'marketing') S.mkt = d.relatorio?.marketing || null; else if (tipo === 'carga') { CG.R = d.relatorio; cgMostrar(); document.getElementById('qcRes')?.scrollIntoView({ behavior: 'smooth' }); return; } else { S.relatorio = d.relatorio; if (d.relatorio?.seguranca) S.seg = d.relatorio.seguranca; if (d.relatorio?.crud) S.crud = d.relatorio.crud; } render(); } catch (e) { toast('Erro: ' + e.message, 'error'); } },
     baixarMd() { baixar('relatorio-correcao-atlantyx-' + new Date().toISOString().substring(0, 16).replace(/[:T]/g, '-') + '.md', document.getElementById('qaMd')?.value || markdown(), 'text/markdown'); },
     baixarJson() { baixar('relatorio-qa-atlantyx.json', JSON.stringify({ qa: S.relatorio, crud: S.crud, seguranca: S.seg, marketing: S.mkt }, null, 2), 'application/json'); },
     async aprovar() {

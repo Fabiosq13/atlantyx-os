@@ -602,6 +602,116 @@ async function analiseLeads(base, add) {
   return out;
 }
 
+
+// ═══════════════════════ v3.275 — TESTE DE CARGA (N usuários simultâneos) ═══════════════════════
+// Só LEITURA. Duas frentes:
+//  • retaguarda — N "usuários" virtuais chamando as APIs de consulta (no navegador de quem roda ou no robô);
+//  • telas      — N navegadores de verdade (robô do GitHub, Playwright) navegando pelas telas em modo seguro
+//                 (gravação, envio e IA bloqueados antes de sair do navegador).
+// Chamadas que vão ao QuickBooks/HubSpot ficam FORA por padrão (limite de uso deles afetaria a operação real);
+// quando incluídas, o executor limita a 1 chamada externa a cada 3 s no total.
+const CARGA_LIM = { back_navegador: 100, back_robo: 300, front_robo: 30, duracao_max_min: 15 };
+const CARGA_API = [
+  // persona, rota, action, peso, externo
+  ['financeiro', '/api/financeiro', 'desp_list', 3], ['financeiro', '/api/financeiro', 'desp_ocorrencias', 4], ['financeiro', '/api/financeiro', 'sim_list', 1],
+  ['financeiro', '/api/financeiro', 'list_ocultos', 1], ['financeiro', '/api/financeiro', 'versao', 1], ['financeiro', '/api/faturamento', 'termo_list', 4],
+  ['financeiro', '/api/financeiro', 'fluxo_detalhado', 3, true], ['financeiro', '/api/financeiro', 'receitas_agenda', 3, true], ['financeiro', '/api/financeiro', 'dashboard_financeiro', 2, true],
+  ['financeiro', '/api/financeiro', 'vencidos_painel', 1, true],
+  ['comercial', '/api/vendas', 'prop_listar', 3], ['comercial', '/api/vendas', 'base_listar', 1], ['comercial', '/api/vendas', 'estrategia_listar', 1], ['comercial', '/api/vendas', 'prop_config', 1],
+  ['comercial', '/api/crm', 'brief_listar', 2], ['comercial', '/api/crm', 'mapa_listar', 1], ['comercial', '/api/crm', 'comercial_config', 1],
+  ['comercial', '/api/crm', 'comercial_semaforo', 2, true], ['comercial', '/api/crm', 'clientes_listar', 2, true],
+  ['marketing', '/api/campanhas', 'inicio', 3], ['marketing', '/api/db', 'list_campanhas', 3], ['marketing', '/api/db', 'list_kpis', 2], ['marketing', '/api/db', 'list_ideias', 1],
+  ['gestor', '/api/pmo', 'report_list', 2], ['gestor', '/api/pmo', 'reuniao_list', 1], ['gestor', '/api/pmo', 'projetos_config_list', 1], ['gestor', '/api/estrategia', 'inicio', 2],
+  ['gestor', '/api/rh', 'funcionario_list', 2], ['gestor', '/api/rh', 'organograma', 1], ['gestor', '/api/rh', 'conselho_list', 1], ['gestor', '/api/pmo', 'painel_mestre', 2, true],
+  ['todos', '/', 'carregar o sistema (index.html)', 2], ['todos', '/api/health', 'status', 1],
+].map(([persona, rota, action, peso, externo]) => ({ id: (rota.replace(/^\/api\//, '').replace(/^\/$/, 'site')) + ':' + action.split(' ')[0], persona, rota, action, peso, externo: !!externo, metodo: rota === '/' || rota === '/api/health' ? 'GET' : 'POST' }));
+const CARGA_TELAS = [
+  ['financeiro', 's3agenda', 'Agenda de Despesas'], ['financeiro', 's3agendarec', 'Agenda de Receitas', true], ['financeiro', 's3fatkanban', 'Kanban de Faturamento'],
+  ['financeiro', 's3marcoskanban', 'Kanban de Marcos'], ['financeiro', 's3projetos', 'Projetos & Marcos'], ['financeiro', 's3fluxodet', 'Fluxo Detalhado', true],
+  ['financeiro', 's3dashboard', 'Dashboard Financeiro', true], ['financeiro', 's3kpis', 'KPIs de Saúde Financeira', true],
+  ['comercial', 's7painel', 'Painel de Vendas IA'], ['comercial', 's7propostas', 'Elaboração de Propostas'], ['comercial', 's7clientes', 'Clientes do CRM', true], ['comercial', 's7kpi', 'Metas comerciais', true],
+  ['marketing', 's2macro', 'Campanhas de Marketing'], ['marketing', 's2kanban', 'Kanban de Marketing'], ['marketing', 's2desempenho', 'Dashboard Desempenho', true],
+  ['gestor', 'dash', 'Dashboard ao Vivo', true], ['gestor', 's9painel', 'Painel Mestre', true], ['gestor', 's9status', 'Status Report'], ['gestor', 's0estrategia', 'Estratégia IA'],
+  ['gestor', 's1metas', 'Metas da Empresa'], ['gestor', 's8funcionarios', 'Funcionários'], ['gestor', 's8organograma', 'Organograma'],
+].map(([persona, id, nome, externo]) => ({ id, persona, nome, externo: !!externo }));
+const CARGA_PERSONAS = ['financeiro', 'comercial', 'marketing', 'gestor'];
+
+function _cargaCfg(c = {}) {
+  const n = (v, a, b, d) => { const x = Math.round(Number(v)); return Number.isFinite(x) ? Math.max(a, Math.min(b, x)) : d; };
+  const mix = {}; let tot = 0; for (const p of CARGA_PERSONAS) { const v = Math.max(0, Number(c.mix?.[p] ?? 25)) || 0; mix[p] = v; tot += v; }
+  if (!tot) CARGA_PERSONAS.forEach(p => { mix[p] = 25; });
+  return { usuarios_back: n(c.usuarios_back, 0, c.onde === 'robo' ? CARGA_LIM.back_robo : CARGA_LIM.back_navegador, 20), usuarios_front: n(c.usuarios_front, 0, CARGA_LIM.front_robo, 5),
+    duracao_min: n(c.duracao_min, 1, CARGA_LIM.duracao_max_min, 3), rampa_s: n(c.rampa_s, 0, 300, 30), pensar_s: [n(c.pensar_s?.[0], 0, 60, 2), n(c.pensar_s?.[1], 1, 120, 6)],
+    externos: !!c.externos, mix, objetivo: String(c.objetivo || '').substring(0, 400), onde: c.onde === 'robo' ? 'robo' : 'navegador',
+    pesos: c.pesos && typeof c.pesos === 'object' ? Object.fromEntries(Object.entries(c.pesos).filter(([k, v]) => CARGA_API.some(a => a.id === k) && Number(v) >= 0).map(([k, v]) => [k, Math.min(20, Number(v))])) : {},
+    telas: Array.isArray(c.telas) ? c.telas.filter(t => CARGA_TELAS.some(x => x.id === t)) : [] };
+}
+async function _claudeTexto(system, user, max = 1200) {
+  if (!process.env.ANTHROPIC_API_KEY) return null;
+  const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6', max_tokens: max, system, messages: [{ role: 'user', content: user }] }) });
+  const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error('IA: ' + (d.error?.message || 'HTTP ' + r.status));
+  return d.content?.[0]?.text || '';
+}
+// IA monta o cenário: distribuição de personas, pesos das chamadas e telas a partir do objetivo do teste
+async function cargaPlanoIA(b) {
+  const cfg = _cargaCfg(b.config || {});
+  const cat = { apis: CARGA_API.filter(a => cfg.externos || !a.externo).map(a => ({ id: a.id, persona: a.persona, externo: a.externo })), telas: CARGA_TELAS.filter(t => cfg.externos || !t.externo).map(t => ({ id: t.id, nome: t.nome, persona: t.persona })) };
+  let txt = null; try {
+    txt = await _claudeTexto('Você é engenheiro de testes de performance. Monte um cenário de teste de carga REALISTA para um sistema de gestão (ERP leve) usado por uma empresa B2B de ~30 pessoas. Responda SÓ com JSON válido, sem comentários: {"mix":{"financeiro":0-100,"comercial":0-100,"marketing":0-100,"gestor":0-100},"pesos":{"<id da api>":1-10},"telas":["<id da tela>"],"pensar_s":[min,max],"rampa_s":n,"justificativa":"até 4 linhas em português"}. Use APENAS ids do catálogo.',
+      'Objetivo do teste: ' + (cfg.objetivo || 'uso normal de um dia de semana, com pico no fechamento financeiro') + '\nUsuários: ' + cfg.usuarios_front + ' nas telas e ' + cfg.usuarios_back + ' na retaguarda, por ' + cfg.duracao_min + ' min.\nCatálogo: ' + JSON.stringify(cat), 900);
+  } catch (e) { return { config: cfg, ia: false, justificativa: 'IA indisponível (' + e.message + ') — cenário padrão.' }; }
+  if (!txt) return { config: cfg, ia: false, justificativa: 'ANTHROPIC_API_KEY não configurada — cenário padrão (25% por persona, pesos do catálogo).' };
+  let j = null; try { j = JSON.parse(txt.substring(txt.indexOf('{'), txt.lastIndexOf('}') + 1)); } catch (_) {}
+  if (!j) return { config: cfg, ia: false, justificativa: 'A IA não devolveu um cenário legível — cenário padrão.' };
+  const novo = _cargaCfg({ ...cfg, mix: j.mix || cfg.mix, pesos: j.pesos || {}, telas: j.telas || [], pensar_s: j.pensar_s || cfg.pensar_s, rampa_s: j.rampa_s ?? cfg.rampa_s });
+  if (!novo.externos) { novo.pesos = Object.fromEntries(Object.entries(novo.pesos).filter(([k]) => !CARGA_API.find(a => a.id === k)?.externo)); novo.telas = novo.telas.filter(t => !CARGA_TELAS.find(x => x.id === t)?.externo); }
+  return { config: novo, ia: true, justificativa: String(j.justificativa || '').substring(0, 600) };
+}
+// veredito objetivo + parecer da IA sobre o resultado
+function _cargaVeredito(R) {
+  const B = R.back || {}, F = R.front || {}, ach = [];
+  const taxa = (e, t) => t ? e / t : 0;
+  if (B.total) { const t = taxa(B.erros, B.total); if (t > 0.05) ach.push(['reprovado', `Retaguarda: ${(t * 100).toFixed(1)}% de erro`]); else if (t > 0.01) ach.push(['atenção', `Retaguarda: ${(t * 100).toFixed(1)}% de erro`]);
+    if (B.p95 > 8000) ach.push(['reprovado', `Retaguarda: p95 de ${(B.p95 / 1000).toFixed(1)} s`]); else if (B.p95 > 3000) ach.push(['atenção', `Retaguarda: p95 de ${(B.p95 / 1000).toFixed(1)} s`]); }
+  if (F.telas_abertas) { const t = taxa(F.telas_com_erro, F.telas_abertas); if (t > 0.1) ach.push(['reprovado', `Telas: ${(t * 100).toFixed(0)}% abriram com erro`]); else if (t > 0.02) ach.push(['atenção', `Telas: ${(t * 100).toFixed(0)}% abriram com erro`]);
+    if (F.p95 > 20000) ach.push(['reprovado', `Telas: p95 de ${(F.p95 / 1000).toFixed(0)} s para abrir`]); else if (F.p95 > 8000) ach.push(['atenção', `Telas: p95 de ${(F.p95 / 1000).toFixed(1)} s para abrir`]); }
+  return { status: ach.some(a => a[0] === 'reprovado') ? 'reprovado' : ach.length ? 'atenção' : 'aprovado', motivos: ach.map(a => a[1]) };
+}
+async function cargaAnalisar(R) {
+  const v = _cargaVeredito(R);
+  const resumo = { config: R.config, veredito: v, back: R.back && { ...R.back, por_chamada: (R.back.por_chamada || []).slice(0, 25), linha_tempo: (R.back.linha_tempo || []).slice(0, 60) },
+    front: R.front && { ...R.front, por_tela: (R.front.por_tela || []).slice(0, 25), erros_js: (R.front.erros_js || []).slice(0, 10), linha_tempo: (R.front.linha_tempo || []).slice(0, 60) } };
+  let parecer = null; try {
+    parecer = await _claudeTexto('Você é engenheiro de performance analisando um teste de carga do Atlantyx OS (Vercel serverless em Node + Postgres Neon + integrações QuickBooks/HubSpot com cache). Responda em português do Brasil, direto, com no máximo 14 linhas: 1) o sistema aguenta essa carga? 2) gargalos (cite chamadas/telas e números), separando lentidão de partida a frio (cold start) de lentidão real; 3) 3 a 5 correções em ordem de impacto (ex.: cache, índice, paginação, juntar chamadas); 4) próximo teste sugerido (quantos usuários).',
+      JSON.stringify(resumo).substring(0, 14000), 1100);
+  } catch (e) { parecer = 'Parecer da IA indisponível: ' + e.message; }
+  if (parecer === null) parecer = 'Parecer da IA indisponível: ANTHROPIC_API_KEY não configurada no Vercel.';
+  return { veredito: v, parecer };
+}
+async function _cargaDispararRobo(id) {
+  const token = process.env.GITHUB_TOKEN, repo = process.env.GITHUB_REPO || 'Fabiosq13/atlantyx-os';
+  if (!token) return { disparado: false, motivo: 'GITHUB_TOKEN não configurado no Vercel — sem ele o robô não é acionado. Rode a retaguarda pelo navegador ou acione "Teste de carga" em GitHub → Actions.' };
+  const r = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/qa-carga.yml/dispatches`, { method: 'POST', headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', 'User-Agent': 'atlantyx-os-qa' }, body: JSON.stringify({ ref: 'main', inputs: { id } }) });
+  if (r.ok || r.status === 204) return { disparado: true };
+  const d = await r.json().catch(() => ({})); return { disparado: false, motivo: 'GitHub recusou (' + r.status + '): ' + (d.message || '') + (r.status === 403 || r.status === 404 ? ' — o token precisa da permissão Actions: Read and write.' : '') };
+}
+async function cargaRoboAgendar(b) {
+  const cfg = _cargaCfg({ ...(b.config || {}), onde: 'robo' }); if (!cfg.usuarios_front && !cfg.usuarios_back) throw new Error('Informe usuários nas telas e/ou na retaguarda');
+  const atual = await kvGet('qa:carga:fila').catch(() => null);
+  if (atual && atual.status === 'rodando' && Date.now() - new Date(atual.inicio || atual.criado_em).getTime() < (atual.config.duracao_min + 20) * 60000) throw new Error('Já há um teste de carga rodando no robô (' + atual.id + ').');
+  const id = 'carga_' + Date.now().toString(36);
+  await kvSet('qa:carga:fila', { id, status: 'na_fila', criado_em: new Date().toISOString(), config: cfg, por: b.usuario || null });
+  return { id, ...(await _cargaDispararRobo(id)) };
+}
+async function cargaSalvar(R, tipo = 'carga') {
+  const id = R.id || ('carga_' + Date.now().toString(36)); R.id = id; R.veredito = R.veredito || _cargaVeredito(R);
+  await kvSet('qa:exec:' + id, R);
+  const hist = ((await kvGet('qa:historico').catch(() => null)) || []).filter(h => h.id !== id);
+  hist.unshift({ id, tipo, em: new Date().toISOString(), resumo: { veredito: R.veredito.status, telas: R.config?.usuarios_front || 0, retaguarda: R.config?.usuarios_back || 0, min: R.config?.duracao_min } });
+  await kvSet('qa:historico', hist.slice(0, 30)); return { id, veredito: R.veredito };
+}
+
 async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -624,6 +734,24 @@ async function handler(req, res) {
         await kvSet('qa:historico', hist.slice(0, 30));
         return { id };
       },
+      // v3.275 teste de carga
+      carga_catalogo: async () => ({ apis: CARGA_API, telas: CARGA_TELAS, personas: CARGA_PERSONAS, limites: CARGA_LIM, padrao: _cargaCfg({}) }),
+      carga_plano_ia: () => cargaPlanoIA(b),
+      carga_salvar: () => cargaSalvar({ ...(b.resultado || {}), config: _cargaCfg(b.resultado?.config || {}) }),
+      carga_analisar: () => cargaAnalisar(b.resultado || {}),
+      carga_robo_agendar: () => cargaRoboAgendar({ ...b, usuario: req.usuario || null }),
+      carga_robo_status: async () => ({ fila: await kvGet('qa:carga:fila').catch(() => null) }),
+      carga_robo_cancelar: async () => { const f = await kvGet('qa:carga:fila').catch(() => null); if (f) await kvSet('qa:carga:fila', { ...f, status: 'cancelado', fim: new Date().toISOString() }); return { ok: true }; },
+      // chamadas do robô (Bearer CRON_SECRET)
+      carga_robo_pegar: async () => { if (req.atxCred !== 'cron') throw new Error('só o robô'); const f = await kvGet('qa:carga:fila').catch(() => null);
+        if (!f || (b.id && f.id !== b.id) || !['na_fila', 'rodando'].includes(f.status)) return { fila: null };
+        await kvSet('qa:carga:fila', { ...f, status: 'rodando', inicio: new Date().toISOString() }); return { fila: f }; },
+      carga_robo_progresso: async () => { if (req.atxCred !== 'cron') throw new Error('só o robô'); const f = await kvGet('qa:carga:fila').catch(() => null);
+        if (!f || f.id !== b.id) return { cancelar: true }; await kvSet('qa:carga:fila', { ...f, progresso: b.progresso || null, atualizado: new Date().toISOString() }); return { cancelar: f.status === 'cancelado' }; },
+      carga_robo_resultado: async () => { if (req.atxCred !== 'cron') throw new Error('só o robô'); const f = await kvGet('qa:carga:fila').catch(() => null);
+        const R = { ...(b.resultado || {}), id: b.id, onde: 'robo', config: f?.config || _cargaCfg(b.resultado?.config || {}) };
+        try { Object.assign(R, await cargaAnalisar(R)); } catch (_) {}
+        const out = await cargaSalvar(R); if (f && f.id === b.id) await kvSet('qa:carga:fila', { ...f, status: 'concluido', fim: new Date().toISOString(), progresso: null, veredito: out.veredito.status }); return out; },
       listar_execucoes: async () => ({ execucoes: (await kvGet('qa:historico').catch(() => null)) || [] }),
       obter_execucao: async () => ({ relatorio: await kvGet('qa:exec:' + b.id) }),
       // Aprovação do relatório → abre uma issue no GitHub mencionando @claude; a automação
