@@ -208,6 +208,9 @@
     },
     "api/atv.js": {
       "maxDuration": 300
+    },
+    "api/campanhas.js": {
+      "maxDuration": 90
     }
   },
   "crons": [
