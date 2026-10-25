@@ -24,9 +24,10 @@ import { chromium, request as pwRequest } from 'playwright';
 const BASE = (process.env.ATX_URL || 'https://atlantyx-os.vercel.app').replace(/\/$/, '');
 const SEG = process.env.CRON_SECRET;
 if (!SEG) { console.error('Falta o secret CRON_SECRET no GitHub (o mesmo valor do Vercel).'); process.exit(1); }
-const MAX_IA = parseInt(process.env.QA_MAX_IA || '40'), ORC_MIN = parseInt(process.env.QA_MINUTOS_PRODUTO || '45');
-const MAX_CASOS = parseInt(process.env.QA_MAX_CASOS || '40'), MAX_PASSOS = parseInt(process.env.QA_MAX_PASSOS || '12'), MAX_LAYOUT = parseInt(process.env.QA_MAX_LAYOUT || '10');
-const MACACO_TELAS = parseInt(process.env.QA_MACACO_TELAS || '4'), MACACO_ACOES = parseInt(process.env.QA_MACACO_ACOES || '20'), MAX_JORNADAS = parseInt(process.env.QA_MAX_JORNADAS || '8');
+// v3.279: limites menores para reduzir o custo de IA (dá para subir pelas variáveis QA_* do workflow)
+const MAX_IA = parseInt(process.env.QA_MAX_IA || '20'), ORC_MIN = parseInt(process.env.QA_MINUTOS_PRODUTO || '45');
+const MAX_CASOS = parseInt(process.env.QA_MAX_CASOS || '25'), MAX_PASSOS = parseInt(process.env.QA_MAX_PASSOS || '8'), MAX_LAYOUT = parseInt(process.env.QA_MAX_LAYOUT || '4');
+const MACACO_TELAS = parseInt(process.env.QA_MACACO_TELAS || '4'), MACACO_ACOES = parseInt(process.env.QA_MACACO_ACOES || '20'), MAX_JORNADAS = parseInt(process.env.QA_MAX_JORNADAS || '3');
 const api = async (action, body = {}) => {
   const r = await fetch(BASE + '/api/qa-externo', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + SEG }, body: JSON.stringify({ action, ...body }) });
   const d = await r.json().catch(() => ({})); if (!r.ok || !d.success) throw new Error(action + ': ' + (d.error || r.status));

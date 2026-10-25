@@ -46,6 +46,8 @@ async function getSql() {
   return _sql;
 }
 const IA_MODEL = process.env.QA_IA_MODEL || 'claude-sonnet-4-6';
+// v3.279: modelo LEVE (mais barato) para decidir passo a passo os casos do plano e as jornadas — tarefa simples e a mais repetida
+const IA_MODEL_LEVE = process.env.QA_IA_MODEL_LEVE || 'claude-haiku-4-5';
 const novoId = p => p + '_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
 const SEV = ['critica', 'alta', 'media', 'baixa'];
 const TIPOS = { tela: 'Tela (front)', api: 'Retaguarda (API)', crud: 'Incluir/alterar/excluir', logica: 'Lógica de negócio (IA)', dados: 'Dados ausentes/incoerentes', seguranca: 'Configuração de segurança', desempenho: 'Desempenho', responsivo: 'Celular / layout', acesso: 'Login e acesso',
@@ -208,12 +210,15 @@ async function roboCriticar({ produto, tela }) {
 - dados incoerentes (totais que não batem com a soma, percentuais acima de 100% sem sentido, datas no futuro/passado impossíveis, valores negativos indevidos, duplicidades).
 Não invente; se não houver problema, devolva lista vazia. Para cada achado gere também um "prompt_correcao" em português, pronto para colar numa ferramenta de construção de apps (ex.: Lovable), descrevendo a tela, o problema e o comportamento esperado.
 Responda SOMENTE JSON: {"achados":[{"tipo":"logica|dados","severidade":"critica|alta|media|baixa","titulo":"...","descricao":"...","evidencia":"trecho exato da tela","prompt_correcao":"..."}]}`;
-  const user = `${_dataCtx()}\n\nPRODUTO: ${produto?.nome || ''}\nCONTEXTO DO NEGÓCIO (informado pela Atlantyx): ${String(produto?.contexto || 'não informado').substring(0, 3000)}\n\nTELA: ${tela?.titulo || ''} (${tela?.url || ''})\n\n${String(tela?.conteudo || '').substring(0, 14000)}`;
+  const user = `${_dataCtx()}\n\nPRODUTO: ${produto?.nome || ''}\nCONTEXTO DO NEGÓCIO (informado pela Atlantyx): ${String(produto?.contexto || 'não informado').substring(0, 2000)}\n\nTELA: ${tela?.titulo || ''} (${tela?.url || ''})\n\n${String(tela?.conteudo || '').substring(0, 9000)}`;
+  // v3.279: tela com o MESMO conteúdo já criticada nos últimos 14 dias → devolve a crítica guardada (não paga a IA de novo)
+  const hash = crypto.createHash('sha1').update([produto?.nome || '', tela?.titulo || '', String(tela?.conteudo || '').substring(0, 9000).replace(/\d{1,2}[:/]\d{2}([:/]\d{2,4})?/g, '')].join('|')).digest('hex');
+  let sqlC = null; try { sqlC = await getSql(); const c = await _kvLer(sqlC, 'qa:crit:' + hash); if (c && Date.now() - Date.parse(c.em) < 14 * 86400000) return { achados: c.achados || [], cache: true }; } catch (_) {}
   const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: IA_MODEL, max_tokens: 2500, system: sistema, messages: [{ role: 'user', content: user }] }) });
+    body: JSON.stringify({ model: IA_MODEL, max_tokens: 1500, system: sistema, messages: [{ role: 'user', content: user }] }) });
   const d = await r.json().catch(() => ({})); if (!r.ok) return { achados: [], aviso: 'IA: ' + (d.error?.message || r.status) };
   const t = d.content?.[0]?.text || ''; const m = t.match(/\{[\s\S]*\}/);
-  try { const j = JSON.parse(m ? m[0] : t); return { achados: (j.achados || []).slice(0, 12), uso: d.usage || null }; } catch (_) { return { achados: [], uso: d.usage || null }; }
+  try { const j = JSON.parse(m ? m[0] : t); const achados = (j.achados || []).slice(0, 12); if (sqlC) _kvGravar(sqlC, 'qa:crit:' + hash, { em: new Date().toISOString(), achados }).catch(() => {}); return { achados, uso: d.usage || null }; } catch (_) { return { achados: [], uso: d.usage || null }; }
 }
 async function achadosListar({ produto_id, status }) {
   const sql = await getSql();
@@ -233,11 +238,14 @@ async function achadoConfirmar({ id, ids, confirmado = true }) {
   for (const x of lista) await sql`UPDATE qa_achados SET confirmado=${!!confirmado}, atualizado_em=NOW() WHERE id=${x}`;
   return { atualizados: lista.length };
 }
-async function _ia(system, content, max = 1500, uso = null) { // v3.276: uso = { } recebe os tokens da chamada
+async function _ia(system, content, max = 1500, uso = null, modelo = IA_MODEL) { // v3.276: uso = { } recebe os tokens da chamada
   const key = process.env.ANTHROPIC_API_KEY; if (!key) throw new Error('ANTHROPIC_API_KEY ausente');
-  const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: IA_MODEL, max_tokens: max, system, messages: [{ role: 'user', content }] }) });
-  const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error('IA: ' + (d.error?.message || r.status));
+  const chamar = m => fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+    body: JSON.stringify({ model: m, max_tokens: max, system, messages: [{ role: 'user', content }] }) });
+  let r = await chamar(modelo), d = await r.json().catch(() => ({}));
+  // modelo leve indisponível nesta conta → usa o principal (não deixa o teste parar por causa do nome do modelo)
+  if (!r.ok && modelo !== IA_MODEL && (r.status === 404 || /model/i.test(d.error?.message || ''))) { r = await chamar(IA_MODEL); d = await r.json().catch(() => ({})); }
+  if (!r.ok) throw new Error('IA: ' + (d.error?.message || r.status));
   if (uso && d.usage) Object.assign(uso, d.usage);
   const t = (d.content || []).map(c => c.text || '').join(''); const m = t.match(/\{[\s\S]*\}/); return JSON.parse(m ? m[0] : t);
 }
@@ -249,7 +257,7 @@ Ao concluir: veredito "passou" se o resultado esperado está visível/comprovado
 Regras: use só alvos que existem no estado; dados de teste fictícios; nunca clique em sair/logout, excluir conta, pagar, comprar ou disparar envios em massa; não repita a mesma ação mais de 2 vezes; se o caso já cumpriu todos os passos, conclua.
 Responda SOMENTE JSON: {"acao":"clicar|preencher|selecionar|navegar|aguardar|concluir","alvo":"","valor":"","passo_do_caso":1,"veredito":"passou|falhou|bloqueado|","motivo":"frase curta explicando (no concluir: o que foi observado vs esperado)"}`;
   const user = `${_dataCtx()}\n\nCASO ${caso?.codigo || ''} — ${caso?.titulo || ''}\nTipo: ${caso?.tipo || ''}\nPré-condição: ${caso?.pre_condicao || '—'}\nDados: ${caso?.dados || '—'}\nPassos:\n${(caso?.passos || []).map((p, i) => (i + 1) + '. ' + p).join('\n')}\nResultado esperado: ${caso?.esperado || '—'}\n\nHISTÓRICO:\n${historico.slice(-14).map((h, i) => (i + 1) + '. ' + h).join('\n') || '(nenhuma ação ainda)'}\n\nESTADO ATUAL:\nURL: ${estado?.url || ''}\nTítulo: ${estado?.titulo || ''}\nClicáveis: ${(estado?.clicaveis || []).slice(0, 80).join(' | ')}\nCampos: ${(estado?.campos || []).slice(0, 40).join(' | ')}\nMensagens/erros: ${(estado?.alertas || []).join(' | ') || '—'}\nTexto visível:\n${String(estado?.texto || '').substring(0, 6000)}`;
-  const uso = {}; try { return { ...(await _ia(sistema, user, 600, uso)), uso }; } catch (e) { return { acao: 'concluir', veredito: 'bloqueado', motivo: 'IA indisponível: ' + e.message }; }
+  const uso = {}; try { return { ...(await _ia(sistema, user, 500, uso, IA_MODEL_LEVE)), uso }; } catch (e) { return { acao: 'concluir', veredito: 'bloqueado', motivo: 'IA indisponível: ' + e.message }; }
 }
 // v3.138 · Robô Usuário IA: monta jornadas como uma pessoa usaria o produto, a partir das telas descobertas
 async function roboJornadas({ produto, telas = [], permitir_gravacao, quantidade = 8 }) {
