@@ -214,7 +214,7 @@ Responda SOMENTE JSON: {"achados":[{"tipo":"logica|dados","severidade":"critica|
     body: JSON.stringify({ model: IA_MODEL, max_tokens: 2500, system: sistema, messages: [{ role: 'user', content: user }] }) });
   const d = await r.json().catch(() => ({})); if (!r.ok) return { achados: [], aviso: 'IA: ' + (d.error?.message || r.status) };
   const t = d.content?.[0]?.text || ''; const m = t.match(/\{[\s\S]*\}/);
-  try { const j = JSON.parse(m ? m[0] : t); return { achados: (j.achados || []).slice(0, 12) }; } catch (_) { return { achados: [] }; }
+  try { const j = JSON.parse(m ? m[0] : t); return { achados: (j.achados || []).slice(0, 12), uso: d.usage || null }; } catch (_) { return { achados: [], uso: d.usage || null }; }
 }
 async function achadosListar({ produto_id, status }) {
   const sql = await getSql();
@@ -234,11 +234,12 @@ async function achadoConfirmar({ id, ids, confirmado = true }) {
   for (const x of lista) await sql`UPDATE qa_achados SET confirmado=${!!confirmado}, atualizado_em=NOW() WHERE id=${x}`;
   return { atualizados: lista.length };
 }
-async function _ia(system, content, max = 1500) {
+async function _ia(system, content, max = 1500, uso = null) { // v3.276: uso = { } recebe os tokens da chamada
   const key = process.env.ANTHROPIC_API_KEY; if (!key) throw new Error('ANTHROPIC_API_KEY ausente');
   const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
     body: JSON.stringify({ model: IA_MODEL, max_tokens: max, system, messages: [{ role: 'user', content }] }) });
   const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error('IA: ' + (d.error?.message || r.status));
+  if (uso && d.usage) Object.assign(uso, d.usage);
   const t = (d.content || []).map(c => c.text || '').join(''); const m = t.match(/\{[\s\S]*\}/); return JSON.parse(m ? m[0] : t);
 }
 // v3.134 · Robô do Plano: decide o PRÓXIMO PASSO de um caso de teste a partir do estado da tela
@@ -249,7 +250,7 @@ Ao concluir: veredito "passou" se o resultado esperado está visível/comprovado
 Regras: use só alvos que existem no estado; dados de teste fictícios; nunca clique em sair/logout, excluir conta, pagar, comprar ou disparar envios em massa; não repita a mesma ação mais de 2 vezes; se o caso já cumpriu todos os passos, conclua.
 Responda SOMENTE JSON: {"acao":"clicar|preencher|selecionar|navegar|aguardar|concluir","alvo":"","valor":"","passo_do_caso":1,"veredito":"passou|falhou|bloqueado|","motivo":"frase curta explicando (no concluir: o que foi observado vs esperado)"}`;
   const user = `${_dataCtx()}\n\nCASO ${caso?.codigo || ''} — ${caso?.titulo || ''}\nTipo: ${caso?.tipo || ''}\nPré-condição: ${caso?.pre_condicao || '—'}\nDados: ${caso?.dados || '—'}\nPassos:\n${(caso?.passos || []).map((p, i) => (i + 1) + '. ' + p).join('\n')}\nResultado esperado: ${caso?.esperado || '—'}\n\nHISTÓRICO:\n${historico.slice(-14).map((h, i) => (i + 1) + '. ' + h).join('\n') || '(nenhuma ação ainda)'}\n\nESTADO ATUAL:\nURL: ${estado?.url || ''}\nTítulo: ${estado?.titulo || ''}\nClicáveis: ${(estado?.clicaveis || []).slice(0, 80).join(' | ')}\nCampos: ${(estado?.campos || []).slice(0, 40).join(' | ')}\nMensagens/erros: ${(estado?.alertas || []).join(' | ') || '—'}\nTexto visível:\n${String(estado?.texto || '').substring(0, 6000)}`;
-  try { return await _ia(sistema, user, 600); } catch (e) { return { acao: 'concluir', veredito: 'bloqueado', motivo: 'IA indisponível: ' + e.message }; }
+  const uso = {}; try { return { ...(await _ia(sistema, user, 600, uso)), uso }; } catch (e) { return { acao: 'concluir', veredito: 'bloqueado', motivo: 'IA indisponível: ' + e.message }; }
 }
 // v3.138 · Robô Usuário IA: monta jornadas como uma pessoa usaria o produto, a partir das telas descobertas
 async function roboJornadas({ produto, telas = [], permitir_gravacao, quantidade = 8 }) {
@@ -260,7 +261,7 @@ Nunca: pagar, comprar, fazer pedido real, curtir, seguir, convidar, enviar mensa
 Passos em linguagem de usuário com nomes de telas/botões/campos como aparecem. Resultado esperado verificável na tela.
 Responda SOMENTE JSON: {"jornadas":[{"titulo":"...","tipo":"mundo_ideal|limite|logica","passos":["Abrir /rota","Clicar em \"...\"","Preencher \"Campo\" com \"...\""],"esperado":"...","por_que":"risco ao negócio"}]}`;
   const user = `${_dataCtx()}\n\nPRODUTO: ${produto?.nome || ''}\nCONTEXTO DO NEGÓCIO: ${String(produto?.contexto || 'não informado').substring(0, 3000)}\nQUANTIDADE: até ${Math.min(15, quantidade)} jornadas\n\nTELAS:\n${telas.slice(0, 40).map(t => `- ${t.titulo} (${t.url}): ${String(t.trecho || '').replace(/\s+/g, ' ').substring(0, 500)}`).join('\n')}`;
-  try { const j = await _ia(sistema, user, 5000); return { jornadas: (j.jornadas || []).slice(0, 15) }; } catch (e) { return { jornadas: [], aviso: e.message }; }
+  const uso = {}; try { const j = await _ia(sistema, user, 5000, uso); return { jornadas: (j.jornadas || []).slice(0, 15), uso }; } catch (e) { return { jornadas: [], aviso: e.message }; }
 }
 // v3.134 · Robô de Layout de Saída: IA com visão analisa a tela no computador e no celular
 async function roboLayout({ produto, tela, imagens = [] }) {
@@ -268,7 +269,7 @@ async function roboLayout({ produto, tela, imagens = [] }) {
 Responda SOMENTE JSON: {"achados":[{"severidade":"alta|media|baixa","titulo":"...","descricao":"onde e o quê","dispositivo":"computador|celular","prompt_correcao":"instrução pronta para a ferramenta do app (ex.: Lovable) corrigir"}]}`;
   const content = [...imagens.slice(0, 2).map(src => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: String(src).replace(/^data:image\/\w+;base64,/, '') } })),
     { type: 'text', text: `${_dataCtx()}\n\nPRODUTO: ${produto?.nome || ''}\nTELA: ${tela?.titulo || ''} (${tela?.url || ''})\nImagem 1 = computador (1440px); imagem 2 = celular (390px).` }];
-  try { const j = await _ia(sistema, content, 1800); return { achados: (j.achados || []).slice(0, 8) }; } catch (e) { return { achados: [], aviso: e.message }; }
+  const uso = {}; try { const j = await _ia(sistema, content, 1800, uso); return { achados: (j.achados || []).slice(0, 8), uso }; } catch (e) { return { achados: [], aviso: e.message }; }
 }
 // v3.139: relatório geral de erros em Word, com o prompt de correção de cada achado para colar no Lovable
 // v3.230: quais camadas rodaram na última execução — sem isso não dava para saber se um tipo de achado sumiu

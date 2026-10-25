@@ -29,13 +29,19 @@ const MAX_CASOS = parseInt(process.env.QA_MAX_CASOS || '40'), MAX_PASSOS = parse
 const MACACO_TELAS = parseInt(process.env.QA_MACACO_TELAS || '4'), MACACO_ACOES = parseInt(process.env.QA_MACACO_ACOES || '20'), MAX_JORNADAS = parseInt(process.env.QA_MAX_JORNADAS || '8');
 const api = async (action, body = {}) => {
   const r = await fetch(BASE + '/api/qa-externo', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + SEG }, body: JSON.stringify({ action, ...body }) });
-  const d = await r.json().catch(() => ({})); if (!r.ok || !d.success) throw new Error(action + ': ' + (d.error || r.status)); return d;
+  const d = await r.json().catch(() => ({})); if (!r.ok || !d.success) throw new Error(action + ': ' + (d.error || r.status));
+  if (d.uso) { TOK.chamadas++; TOK.entrada += (d.uso.input_tokens || 0) + (d.uso.cache_creation_input_tokens || 0) + (d.uso.cache_read_input_tokens || 0); TOK.saida += d.uso.output_tokens || 0; }
+  return d;
 };
+// v3.276: contador de tokens da IA por execução + disjuntor: acabou o crédito da Anthropic (ou a chave foi recusada) →
+// para de chamar a IA no resto da execução (antes seguia tentando em todas as telas, jornadas e prints)
+let TOK = { chamadas: 0, entrada: 0, saida: 0 }, SEM_IA = null;
+const RX_SEM_IA = /credit balance|billing|purchase credits|insufficient|quota|invalid x-api-key|authentication_error|ANTHROPIC_API_KEY ausente/i;
 const espera = ms => new Promise(r => setTimeout(r, ms));
 // v3.230: placar das chamadas de IA por camada — antes a falha da IA era silenciosa (a camada "sumia" do relatório
 // e os achados antigos dela eram dados como validados). Agora cada camada diz se rodou, rodou em parte ou falhou.
 let IA = {};
-const iaConta = (camada, ok, erro) => { const c = IA[camada] = IA[camada] || { ok: 0, falha: 0, erro: null }; if (ok) c.ok++; else { c.falha++; c.erro = String(erro || 'sem resposta').substring(0, 200); } };
+const iaConta = (camada, ok, erro) => { const c = IA[camada] = IA[camada] || { ok: 0, falha: 0, erro: null }; if (ok) c.ok++; else { c.falha++; c.erro = String(erro || 'sem resposta').substring(0, 200); if (!SEM_IA && RX_SEM_IA.test(c.erro)) { SEM_IA = /credit|billing|purchase/i.test(c.erro) ? 'sem crédito na Anthropic (recarregue em console.anthropic.com → Plans & Billing)' : 'chave da IA recusada: ' + c.erro.substring(0, 120); console.log('  ⛔ IA desligada no resto desta execução: ' + SEM_IA); } } };
 const statusCamada = (camada, { tentou = true, motivo = '' } = {}) => { const c = IA[camada] || { ok: 0, falha: 0 };
   if (!tentou) return { status: 'nao_executado', motivo };
   if (c.ok && !c.falha) return { status: 'executado' };
@@ -82,7 +88,7 @@ await browser.close();
 
 async function testarProduto(P, execId, casos = []) {
   const t0 = Date.now(), fimEm = t0 + ORC_MIN * 60000, marca = 'QA-ATX-' + execId.slice(-6);
-  IA = {};
+  IA = {}; TOK = { chamadas: 0, entrada: 0, saida: 0 }; SEM_IA = null;
   // v3.230: a exploração das telas para em 60% do tempo — o resto fica reservado para jornadas, macaco, layout,
   // governança, integração e segurança (antes a exploração podia consumir tudo e essas camadas não rodavam)
   const fimExpl = t0 + ORC_MIN * 60000 * 0.6;
@@ -224,7 +230,7 @@ async function testarProduto(P, execId, casos = []) {
       prompt_correcao: `A tela "${nomeTela}" estoura a largura no celular (${larg}px em 390px). Torne o layout responsivo: tabelas com rolagem própria, grades que quebram em uma coluna, sem larguras fixas.` });
     await pg.setViewportSize({ width: 1440, height: 900 }); await espera(400);
     // 2e. lógica de negócio (IA)
-    if (iaUsadas < MAX_IA && info.txt.trim().length > 80) { iaUsadas++;
+    if (!SEM_IA && iaUsadas < MAX_IA && info.txt.trim().length > 80) { iaUsadas++;
       const apis = chamadas.filter(c => c.status && c.status < 400 && c.corpo).slice(0, 6).map(c => `${c.metodo} ${new URL(c.url).pathname} → ${c.status}: ${c.corpo.substring(0, 700)}`).join('\n');
       const conteudo = `TEXTO DA TELA:\n${info.txt.substring(0, 7000)}\n\nTABELAS:\n${info.tabelas.join('\n---\n').substring(0, 3000)}\n\nCAMPOS DE FORMULÁRIO: ${info.forms.join(', ')}\n\nRESPOSTAS DAS APIs DESTA TELA:\n${apis.substring(0, 3500)}`;
       try { const r = await api('robo_criticar', { produto: { nome: P.nome, contexto: P.contexto }, tela: { titulo: nomeTela, url: pg.url(), conteudo } });
@@ -245,16 +251,16 @@ async function testarProduto(P, execId, casos = []) {
     for (const t of nav.slice(0, 25)) if (!fila.some(f => f.via === t)) fila.push({ via: t, base, caminho: 'menu "' + t + '"' });
   }
   const descobertas = visitadas.size + fila.length, testadas = visitadas.size;
-  robos.logica_ia = { ...statusCamada('logica_ia', { tentou: iaUsadas > 0, motivo: 'nenhuma tela com conteúdo para a IA criticar' }), analises: iaUsadas, texto: `lógica de negócio e dados incoerentes (IA) · ${iaUsadas} tela(s) enviadas` + (IA.logica_ia ? ` · ${IA.logica_ia.ok} ok, ${IA.logica_ia.falha} falha(s)` : '') };
+  robos.logica_ia = { ...statusCamada('logica_ia', { tentou: iaUsadas > 0, motivo: SEM_IA ? 'não rodou: ' + SEM_IA : 'nenhuma tela com conteúdo para a IA criticar' }), analises: iaUsadas, texto: `lógica de negócio e dados incoerentes (IA) · ${iaUsadas} tela(s) enviadas` + (IA.logica_ia ? ` · ${IA.logica_ia.ok} ok, ${IA.logica_ia.falha} falha(s)` : '') };
   robos.exploratorio = { status: testadas ? (exploracaoCortada ? 'parcial' : 'executado') : 'falhou', motivo: exploracaoCortada ? 'exploração encerrada em 60% do tempo (telas restantes ficam para a próxima execução)' : undefined, telas: testadas, ciclos_cadastro: crudFeitos, analises_ia: iaUsadas, texto: `${testadas} de ${descobertas} telas · ${crudFeitos} ciclo(s) incluir/alterar/excluir · ${iaUsadas} tela(s) criticadas pela IA` };
   // ── 2g2. Robô Usuário IA — jornadas como uma pessoa usaria ──
   let jorn = [], jRes = [];
-  if (MAX_JORNADAS > 0 && telasInfo.length && Date.now() < fimEm - 300000) {
+  if (!SEM_IA && MAX_JORNADAS > 0 && telasInfo.length && Date.now() < fimEm - 300000) {
     progresso({ etapa: 'Robô Usuário IA — montando jornadas', pct: 76 }, true);
     try { const rj = await api('robo_jornadas', { produto: { nome: P.nome, contexto: P.contexto }, telas: telasInfo, permitir_gravacao: P.permitir_gravacao, quantidade: MAX_JORNADAS }); jorn = rj.jornadas || [];
       iaConta('jornadas', !rj.aviso && jorn.length > 0, rj.aviso || 'a IA não devolveu jornadas'); } catch (e) { iaConta('jornadas', false, e.message); console.log('    jornadas:', e.message); }
     for (const [i, J] of jorn.slice(0, MAX_JORNADAS).entries()) {
-      if (Date.now() > fimEm - 240000) break;
+      if (Date.now() > fimEm - 240000 || SEM_IA) break;
       const C = { codigo: 'J-' + String(i + 1).padStart(2, '0'), titulo: J.titulo, tipo: J.tipo, passos: J.passos || [], esperado: J.esperado };
       progresso({ etapa: `Robô Usuário IA — ${C.codigo} ${C.titulo}`.substring(0, 140), pct: 76, jornadas: (i + 1) + '/' + Math.min(MAX_JORNADAS, jorn.length) }, true);
       consoleErros = []; chamadas = [];
@@ -270,7 +276,7 @@ async function testarProduto(P, execId, casos = []) {
     await pg.goto(urlInicial, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
   }
   const jTentou = MAX_JORNADAS > 0 && telasInfo.length > 0 && !!IA.jornadas;
-  robos.jornadas = { ...statusCamada('jornadas', { tentou: jTentou, motivo: MAX_JORNADAS <= 0 ? 'desligado (QA_MAX_JORNADAS=0)' : !telasInfo.length ? 'nenhuma tela testada' : 'sem tempo restante no orçamento de ' + ORC_MIN + ' min' }), jornadas: jRes.length, passou: jRes.filter(x => x === 'passou').length, falhou: jRes.filter(x => x === 'falhou').length, texto: `${jRes.length} jornada(s) de usuário montadas pela IA: ${jRes.filter(x => x === 'passou').length} ok, ${jRes.filter(x => x === 'falhou').length} com problema, ${jRes.filter(x => x === 'bloqueado').length} bloqueada(s)` };
+  robos.jornadas = { ...statusCamada('jornadas', { tentou: jTentou, motivo: SEM_IA ? 'não rodou: ' + SEM_IA : MAX_JORNADAS <= 0 ? 'desligado (QA_MAX_JORNADAS=0)' : !telasInfo.length ? 'nenhuma tela testada' : 'sem tempo restante no orçamento de ' + ORC_MIN + ' min' }), jornadas: jRes.length, passou: jRes.filter(x => x === 'passou').length, falhou: jRes.filter(x => x === 'falhou').length, texto: `${jRes.length} jornada(s) de usuário montadas pela IA: ${jRes.filter(x => x === 'passou').length} ok, ${jRes.filter(x => x === 'falhou').length} com problema, ${jRes.filter(x => x === 'bloqueado').length} bloqueada(s)` };
   // ── 2h. Robô Macaco ──
   progresso({ etapa: 'Robô Macaco — uso fora do roteiro', pct: 78 }, true);
   let macAcoes = 0, macProb = 0;
@@ -306,12 +312,12 @@ async function testarProduto(P, execId, casos = []) {
   // ── 2i. Robô de Layout de Saída (IA com visão) ──
   progresso({ etapa: 'Robô de Layout — IA analisando os prints', pct: 83 }, true);
   let layAch = 0;
-  for (const L of layoutFila) { if (Date.now() > fimEm - 45000) break;
+  for (const L of layoutFila) { if (Date.now() > fimEm - 45000 || SEM_IA) break;
     try { const r = await api('robo_layout', { produto: { nome: P.nome }, tela: { titulo: L.titulo, url: L.url }, imagens: L.imagens });
       iaConta('layout', !r.aviso, r.aviso);
       for (const a of r.achados || []) { layAch++; add({ tipo: 'layout', severidade: ['alta', 'media', 'baixa'].includes(a.severidade) ? a.severidade : 'baixa', titulo: `${a.titulo} — "${L.titulo}"${a.dispositivo === 'celular' ? ' (celular)' : ''}`.substring(0, 280), descricao: a.descricao, tela: L.titulo, url: L.url, chave: 'layout:' + String(a.titulo).substring(0, 60), print: a.dispositivo === 'celular' ? L.imagens[1] : L.imagens[0], prompt_correcao: a.prompt_correcao }); } }
     catch (e) { iaConta('layout', false, e.message); console.log('    layout:', e.message); } }
-  robos.layout = { ...statusCamada('layout', { tentou: layoutFila.length > 0 && !!IA.layout, motivo: layoutFila.length ? 'sem tempo restante' : 'nenhum print de tela' }), telas: layoutFila.length, achados: layAch, texto: `${layoutFila.length} tela(s) analisadas no computador e no celular · ${layAch} problema(s) de layout` };
+  robos.layout = { ...statusCamada('layout', { tentou: layoutFila.length > 0 && !!IA.layout, motivo: SEM_IA ? 'não rodou: ' + SEM_IA : layoutFila.length ? 'sem tempo restante' : 'nenhum print de tela' }), telas: layoutFila.length, achados: layAch, texto: `${layoutFila.length} tela(s) analisadas no computador e no celular · ${layAch} problema(s) de layout` };
   // ── 2j. Robô de Governança (LGPD) ──
   progresso({ etapa: 'Robô de Governança (LGPD)', pct: 88 }, true);
   let govN = 0; for (const a of govTexto.values()) { add(a); govN++; }
@@ -431,7 +437,7 @@ async function testarProduto(P, execId, casos = []) {
   const cobertura = descobertas ? Math.round(testadas / descobertas * 1000) / 10 : 0;
   console.log(`  ${testadas}/${descobertas} telas · ${achados.length} achado(s) · ${crudFeitos} ciclo(s) de cadastro · ${iaUsadas} análise(s) de IA · ${Math.round((Date.now() - t0) / 1000)} s`);
   return { telas_descobertas: descobertas, telas_testadas: testadas, cobertura_pct: cobertura, achados, casos_resultados: casosRes,
-    resumo: { duracao_s: Math.round((Date.now() - t0) / 1000), ciclos_cadastro: crudFeitos, analises_ia: iaUsadas, telas: telasInfo.slice(0, 80), pendentes: fila.slice(0, 30).map(f => f.caminho), robos } };
+    resumo: { duracao_s: Math.round((Date.now() - t0) / 1000), ciclos_cadastro: crudFeitos, analises_ia: iaUsadas, ia_uso: { ...TOK, sem_ia: SEM_IA }, telas: telasInfo.slice(0, 80), pendentes: fila.slice(0, 30).map(f => f.caminho), robos } };
 }
 
 function luhn(n) { if (n.length < 15 || n.length > 16 || /^(\d)\1+$/.test(n)) return false; let s = 0; for (let i = 0; i < n.length; i++) { let d = +n[n.length - 1 - i]; if (i % 2) { d *= 2; if (d > 9) d -= 9; } s += d; } return s % 10 === 0; }
@@ -457,6 +463,7 @@ async function executarCaso(pg, C, P, origem, urlInicial) {
   await pg.goto(urlInicial, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {}); await pg.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {}); await espera(1000);
   const hist = []; const repet = new Map();
   for (let k = 0; k < MAX_PASSOS; k++) {
+    if (SEM_IA) return { veredito: 'bloqueado', motivo: 'IA desligada nesta execução: ' + SEM_IA, hist };
     const estado = await lerEstado(pg);
     let d; try { d = await api('robo_passo', { caso: C, estado, historico: hist }); iaConta('passo', !/IA indispon/i.test(d.motivo || ''), d.motivo); } catch (e) { iaConta('passo', false, e.message); return { veredito: 'bloqueado', motivo: 'IA indisponível: ' + e.message, hist }; }
     if (d.acao === 'concluir') return { veredito: ['passou', 'falhou', 'bloqueado'].includes(d.veredito) ? d.veredito : 'bloqueado', motivo: d.motivo || '', hist };

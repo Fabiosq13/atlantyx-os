@@ -32247,7 +32247,7 @@ function qpDetalhe() {
   const E = (_qpAchados.execucoes || [])[0];
   ov.querySelector('.qp-mod').innerHTML = '<div class="qp-mh"><div><div class="fv2-pt">' + _qpEsc(P.nome) + '</div><div class="fv2-pq"><a href="' + _qpEsc(P.url) + '" target="_blank" rel="noopener">' + _qpEsc(P.url) + ' ↗</a>' + (P.plataforma ? ' · ' + _qpEsc(P.plataforma) : '') + ' · usuário de teste: ' + _qpEsc(P.usuario || '—') + (P.tem_senha ? (P.senha_legivel === false ? ' · <b style="color:var(--fv2-crit);">senha ilegível — digite de novo no Cadastro</b>' : ' · senha guardada 🔒') : ' · <b style="color:var(--fv2-crit);">sem senha</b>') + '</div></div>'
     + '<div class="mc-sug"><button class="btn btn-gn" onclick="qpTestar(\'' + P.id + '\')">▶ Testar agora</button><button class="btn btn-g" onclick="qpRelatorio(\'' + P.id + '\')">⭳ Relatório Word (correções Lovable)</button><button class="btn btn-g" onclick="qpForm(_qpProd)">✎ Cadastro</button><button class="btn btn-g" onclick="document.getElementById(\'qpModal\').remove()">Fechar ✕</button></div></div>'
-    + (E ? '<div class="fv2-cab"><span>Última execução: <b>' + _qpEsc(E.status) + '</b> · ' + (E.terminado_em ? new Date(E.terminado_em).toLocaleString('pt-BR').substring(0, 16) : 'em andamento') + ' · ' + (E.telas_testadas ?? 0) + ' de ' + (E.telas_descobertas ?? 0) + ' telas (' + (E.cobertura_pct != null ? Number(E.cobertura_pct).toLocaleString('pt-BR') : 0) + '%)' + (E.resumo?.ciclos_cadastro != null ? ' · ' + E.resumo.ciclos_cadastro + ' ciclo(s) de cadastro · ' + (E.resumo.analises_ia || 0) + ' tela(s) analisadas pela IA' : '') + (E.erro ? ' · <b style="color:var(--fv2-crit);">' + _qpEsc(E.erro) + '</b>' : '') + '</span>'
+    + (E ? '<div class="fv2-cab"><span>Última execução: <b>' + _qpEsc(E.status) + '</b> · ' + (E.terminado_em ? new Date(E.terminado_em).toLocaleString('pt-BR').substring(0, 16) : 'em andamento') + ' · ' + (E.telas_testadas ?? 0) + ' de ' + (E.telas_descobertas ?? 0) + ' telas (' + (E.cobertura_pct != null ? Number(E.cobertura_pct).toLocaleString('pt-BR') : 0) + '%)' + (E.resumo?.ciclos_cadastro != null ? ' · ' + E.resumo.ciclos_cadastro + ' ciclo(s) de cadastro · ' + (E.resumo.analises_ia || 0) + ' tela(s) analisadas pela IA' : '') + (E.resumo?.ia_uso ? ' · IA: ' + E.resumo.ia_uso.chamadas + ' chamada(s), ' + Math.round(((E.resumo.ia_uso.entrada || 0) + (E.resumo.ia_uso.saida || 0)) / 1000).toLocaleString('pt-BR') + ' mil tokens' + (E.resumo.ia_uso.sem_ia ? ' · <b style="color:var(--fv2-crit);">⛔ ' + _qpEsc(E.resumo.ia_uso.sem_ia) + '</b>' : '') : '') + (E.erro ? ' · <b style="color:var(--fv2-crit);">' + _qpEsc(E.erro) + '</b>' : '') + '</span>'
       + '<span>Aprovação: 100% das telas e nenhum achado pendente</span></div>' : '<div class="fv2-aviso">Ainda não testado — clique em Testar agora.</div>')
     + _qpCamadas(E)
     + _qpLogHtml(E)
@@ -35272,7 +35272,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.275] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.276] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35288,7 +35288,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.275';
+window.__ATX_BUILD_ID__ = 'ATX-v3.276';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
