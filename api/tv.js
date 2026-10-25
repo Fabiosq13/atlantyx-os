@@ -64,34 +64,55 @@ function qualidade(T, eT, H, eH, PM, ePM, MA) {
       farol: !r ? null : r.vermelho ? 'vermelho' : (r.amarelo || r.sem_report) ? 'amarelo' : 'verde' }; }
   return out;
 }
+// v3.280: semáforo de meta pelo RITMO — mesma regra das Metas da Empresa (Dashboard ao vivo):
+// verde = bateu a meta ou ritmo ≥ 100% do esperado até hoje · amarelo ≥ 85% · vermelho abaixo
+function semMeta(real, meta, frac) {
+  if (real == null || !meta) return null; if (real >= meta) return 'verde';
+  const esp = meta * (frac == null ? 1 : Math.max(0.01, frac)); const r = real / esp;
+  return r >= 1 ? 'verde' : r >= 0.85 ? 'amarelo' : 'vermelho';
+}
+// v3.280: termos do Kanban de Faturamento — faturados no mês (NF emitida no mês), a faturar e aguardando pagamento
+function termosResumo(T, mes) {
+  const todos = Object.entries(T?.colunas || {}).flatMap(([st, l]) => (l || []).map(t => ({ ...t, status: t.status || st })));
+  const val = t => num(t.nf_soma) > 0 ? num(t.nf_soma) : (num(t.valor_total_termo) || 0), soma = L => Math.round(L.reduce((a, t) => a + val(t), 0) * 100) / 100;
+  const fat = todos.filter(t => String(t.data_emissao || '').substring(0, 7) === mes);
+  const aFat = todos.filter(t => ['elaboracao', 'aprovacao', 'emissao_nf'].includes(t.status));
+  const aPag = todos.filter(t => ['envio_nf', 'pagamento'].includes(t.status));
+  return { faturados_mes: { qtd: fat.length, valor: soma(fat) }, a_faturar: { qtd: aFat.length, valor: soma(aFat) }, aguardando_pagamento: { qtd: aPag.length, valor: soma(aPag) } };
+}
 async function montarDados() {
-  const [pr, kp, vd, fu, se, tq, hg, pm, ma, cf] = await Promise.allSettled([
+  const hoje = new Date(Date.now() - 3 * 3600000).toISOString().substring(0, 10), mes = hoje.substring(0, 7), ano = parseInt(hoje);
+  const [pr, kp, me, fn, tq, hg, pm, ma, cf] = await Promise.allSettled([
     chamar('financeiro', { action: 'painel_resumo', params: { _max_idade: 300 } }), chamar('financeiro', { action: 'resultado_kpis', params: { _max_idade: 300 } }, 45000),
-    chamar('vendas', { action: 'painel', payload: {} }, 45000), chamar('crm', { action: 'funil_campanha', payload: { dias: 30 } }), chamar('crm', { action: 'comercial_semaforo', payload: {} }),
+    // v3.280: metas do ano = as mesmas do Dashboard ao vivo (Metas da Empresa) · funil = o mesmo do Dashboard ao vivo (aba Vendas)
+    chamar('financeiro', { action: 'metas_empresa_status', params: { ano, com_crm: false } }, 45000),
+    chamar('financeiro', { action: 'funil_vendas', params: { tipo: 'mes', ref: mes, pipeline: 'todos' } }, 58000),
     chamar('faturamento', { action: 'termo_list', payload: {} }), chamar('financeiro', { action: 'higienizacao_dados', params: {} }, 60000), chamar('pmo', { action: 'painel_mestre', payload: {} }, 45000), chamar('pmo', { action: 'maestro_painel', payload: {} }, 45000), config()]);
   const v = p => p.status === 'fulfilled' ? p.value : null, erro = p => p.status === 'rejected' ? String(p.reason?.message || p.reason).substring(0, 120) : null;
-  const P = v(pr) || {}, K = v(kp)?.resultado || {}, Pm = K.periodo_res || {}, A = K.ano_res || {}, M = K.metas_periodo || {};
-  const V = v(vd) || {}, VM = V.metas || {}, VC = V.calculo || {}, VP = V.propostas || {}, F = v(fu) || {}, S = v(se) || {};
-  const hoje = new Date(Date.now() - 3 * 3600000).toISOString().substring(0, 10);
+  const P = v(pr) || {}, K = v(kp)?.resultado || {}, Pm = K.periodo_res || {}, M = K.metas_periodo || {};
+  const ME = v(me)?.metas || {}, FA = ME.faturamento || {}, FN = v(fn) || {};
   const MA = v(ma), CF = v(cf) || {}, rank = { vermelho: 0, amarelo: 1, verde: 2 };
   const proj = MA ? { erro: null, fonte: MA.fonte, resumo: MA.resumo, nomes: CF.nomes_projetos !== false,
       lista: MA.projetos.filter(p => p.ativo).sort((a, b) => (rank[a.farol] ?? 3) - (rank[b.farol] ?? 3) || String(a.conclusao || '9').localeCompare(String(b.conclusao || '9')))
         .map((p, i) => ({ nome: CF.nomes_projetos !== false ? String(p.nome).substring(0, 60) : 'Projeto ' + (i + 1), gerente: CF.nomes_projetos !== false ? String(p.gerente || '').substring(0, 30) : '', conclusao: p.conclusao, pct: p.pct, planejado: p.planejado, desvio: p.desvio, farol: p.farol, dias_atraso: p.dias_atraso, motivo: p.origem === 'status report' ? 'farol do status report' + ((p.motivos || [])[0] ? ' · ' + p.motivos[0] : '') : ((p.motivos || [])[0] || null) })) }
-    : { erro: 'Módulo de projetos: ' + (erro(ma) || 'sem resposta'), lista: [], resumo: null };
-  return { qual: qualidade(v(tq), erro(tq), v(hg), erro(hg), v(pm), erro(pm), MA), proj,
-    gerado_em: new Date().toISOString(), mes_ref: hoje.substring(0, 7),
-    fin: { erro: [erro(pr), erro(kp)].filter(Boolean).join(' · ') || null,
-      mes: { faturamento: num(Pm.faturamento), meta_faturamento: num(M.faturamento), lucro: num(Pm.lucro_liquido), margem_pct: num(Pm.margem_liquida_pct), meta_margem_pct: num(K.meta_margem?.pct), semaforo: K.semaforo_margem || null,
-        ebitda: num(Pm.ebitda), fracao_decorrida: num(M.fracao_decorrida), ultimo_fechado: K.ultimo_mes_fechado ? { mes: K.ultimo_mes_fechado.mes, faturamento: num(K.ultimo_mes_fechado.faturamento), margem_pct: num(K.ultimo_mes_fechado.margem_liquida_pct) } : null },
-      ano: { faturamento: num(A.faturamento), lucro: num(A.lucro_liquido), margem_pct: num(A.margem_liquida_pct) },
+    : (() => { const r = v(pm)?.resumo; return { erro: r ? null : 'Módulo de projetos: ' + (erro(ma) || 'sem resposta'), fonte: 'Base local do Atlantyx OS', resumo: r ? { total: r.total, verde: r.verde, amarelo: r.amarelo, vermelho: r.vermelho } : null, lista: [] }; })();
+  const realMes = num(Pm.faturamento), metaMes = num(M.faturamento), frMes = num(M.fracao_decorrida);
+  const qual = qualidade(v(tq), erro(tq), v(hg), erro(hg), v(pm), erro(pm), MA);
+  if (qual.termos && v(tq)) Object.assign(qual.termos, termosResumo(v(tq), mes));
+  return { qual, proj, gerado_em: new Date().toISOString(), mes_ref: mes,
+    fin: { erro: [erro(pr), erro(kp), erro(me)].filter(Boolean).join(' · ') || null, regime: K.regime || null,
+      mes: { faturamento: realMes, meta_faturamento: metaMes, pct: metaMes ? Math.round(realMes / metaMes * 1000) / 10 : null, esperado: metaMes && frMes != null ? Math.round(metaMes * frMes) : null, fracao_decorrida: frMes,
+        semaforo: semMeta(realMes, metaMes, frMes), meta_fonte: M.fonte?.faturamento || null,
+        lucro: num(Pm.lucro_liquido), margem_pct: num(Pm.margem_liquida_pct), meta_margem_pct: num(K.meta_margem?.pct), semaforo_margem: K.semaforo_margem || null },
+      ano: { ano, faturamento: num(FA.realizado ?? ME.realizado?.faturamento), meta_faturamento: num(FA.meta ?? ME.meta?.faturamento), pct: num(FA.pct_atingido), esperado: num(FA.esperado_ate_hoje), falta: num(FA.falta),
+        projecao: num(FA.projecao_fechamento), semaforo: FA.semaforo && FA.semaforo !== 'cinza' ? FA.semaforo : null, fracao_decorrida: num(ME.fracao_ano) != null ? num(ME.fracao_ano) / 100 : null,
+        lucro: num(ME.realizado?.lucro_liquido), margem_pct: num(ME.realizado?.margem_pct) },
       caixa: num(P.saldoCaixa), receber: num(P.contasReceber?.total ?? P.aReceber), receber_vencido: num(P.contasReceber?.vencido), receber_30d: num(P.contasReceber?.a_vencer_30d), pagar: num(P.contasPagar?.total ?? P.aPagar),
       mensal: (K.mensal || []).map(m => ({ mes: m.mes, faturamento: num(m.faturamento), lucro: num(m.lucro_liquido) })) },
-    com: { erro: [erro(vd), erro(fu), erro(se)].filter(Boolean).join(' · ') || null, aviso: V._cache?.stale ? 'números de vendas do último cálculo salvo' : null,
-      meta_mes_pct: num(VM.pct_mes), meta_ano_pct: num(VM.pct_ano), realizado_mes: num(VM.realizado_mes), meta_mes: num(VM.meta_mensal), realizado_ano: num(VM.realizado_ano), meta_ano: num(VM.meta_anual), gap_mes: num(VM.gap_mes), gap_ano: num(VM.gap_ano), dias_uteis_mes: num(VM.dias_uteis_mes),
-      propostas: { abertas: num(VP.abertas), valor_aberto: num(VP.valor_aberto), ganhas: num(VP.ganhas), perdidas: num(VP.perdidas), paradas: num(VP.paradas) },
-      win_rate_pct: num(VC.win_rate_pct), ciclo_dias: num(VC.ciclo_dias), cobertura: VC.cobertura_pipeline ?? null,
-      funil: { leads: num(F.total_leads), reunioes: num(F.total_reunioes), campanhas: (F.campanhas || []).slice(0, 5).map(c => ({ nome: String(c.campanha || '').substring(0, 40), leads: c.leads, reunioes: c.reunioes })) },
-      semaforo: (S.cards || []).slice(0, 8).map(c => ({ nome: String(c.nome || c.papel || c.id || '').substring(0, 40), farol: c.farol || null, contatos_pct: num(c.pct_contatos), reunioes_pct: num(c.pct_reunioes) })) },
+    com: { erro: erro(fn), indisponivel: FN.indisponivel || null,
+      funil: FN.etapas ? { rotulo: FN.periodo?.rotulo, decorrido_pct: FN.periodo?.decorrido_pct, pipeline: FN.pipeline?.nome || '', lidos: FN.total_negocios_lidos ?? null, resumo: FN.resumo || {}, leads: FN.leads || null, perdidos: FN.perdidos || null,
+        ticket: FN.meta_base?.ticket_medio ?? null,
+        etapas: FN.etapas.map(L => ({ nome: L.nome, ganho: !!L.ganho, agora: L.agora, pct_valor: L.pct_valor, meta: L.meta ? { valor: L.meta.valor, valor_ate_hoje: L.meta.valor_ate_hoje, fonte: L.meta.fonte } : null, probabilidade: L.probabilidade })) } : null },
   };
 }
 // v3.152: CONFERIR — abre cada número da TV até a origem (só no sistema, com login; a página da TV continua só com totais)
@@ -100,17 +121,18 @@ async function conferir() {
   const [ex, pr, rk, vd] = await Promise.allSettled([
     chamar('financeiro', { action: 'extrato_consolidado', params: { data_inicio: ini, data_fim: hoje, incluir_simulados: false } }, 45000),
     chamar('financeiro', { action: 'painel_resumo', params: { _max_idade: 300 } }), chamar('financeiro', { action: 'resultado_kpis', params: { _max_idade: 300 } }, 45000),
-    chamar('vendas', { action: 'painel', payload: {} }, 45000)]);
+    chamar('financeiro', { action: 'metas_empresa_status', params: { ano: parseInt(hoje), com_crm: false } }, 45000)]);
   const v = p => p.status === 'fulfilled' ? p.value : null, er = p => p.status === 'rejected' ? String(p.reason?.message || p.reason).substring(0, 160) : null;
-  const E = v(ex) || {}, P = v(pr) || {}, K = v(rk)?.resultado || {}, VM = v(vd)?.metas || {}, tv = await kv('tv:dados');
+  const E = v(ex) || {}, P = v(pr) || {}, K = v(rk)?.resultado || {}, ME = v(vd)?.metas || {}, FA = ME.faturamento || {}, tv = await kv('tv:dados');
   const L = (E.lancamentos || []).filter(l => l.origem !== 'simulado' && l.afeta_saldo !== false);
   const top = t => L.filter(l => l.tipo === t).sort((a, b) => (b.valor || 0) - (a.valor || 0)).slice(0, 12).map(l => ({ data: l.data, descricao: String(l.descricao || l.contraparte || l.nome || '').substring(0, 90), conta: l.conta || l.conta_nome || '', valor: num(l.valor) }));
-  return { conferir: { hoje, periodo: { de: ini, ate: hoje }, na_tv: tv ? { gerado_em: tv.gerado_em, caixa: tv.fin?.caixa, faturamento_mes: tv.fin?.mes?.faturamento, meta_mes_pct: tv.com?.meta_mes_pct, meta_ano_pct: tv.com?.meta_ano_pct } : null,
+  return { conferir: { hoje, periodo: { de: ini, ate: hoje }, na_tv: tv ? { gerado_em: tv.gerado_em, caixa: tv.fin?.caixa, faturamento_mes: tv.fin?.mes?.faturamento, meta_mes_pct: tv.fin?.mes?.pct, meta_ano_pct: tv.fin?.ano?.pct } : null,
     caixa: { erro: er(ex), saldo_abertura: num(E.saldo_inicial), abertura_data: E.saldo_inicial_data || ini, abertura_origem: E.saldo_inicial_origem || null, abertura_obs: E.saldo_inicial_detalhe?.observacao || null,
       conferencia_cadastro: E.saldo_inicial_conferencia || null, entradas: num(E.total_entradas), saidas: num(E.total_saidas), saldo_hoje: num(E.saldo_final), qtd_lancamentos: L.length,
       soma_contas_qb: num(P.saldoCaixaCurrentBalance), maiores_entradas: top('entrada'), maiores_saidas: top('saida') },
     faturamento: { erro: er(rk), regime: K.regime || null, mes: num(K.periodo_res?.faturamento), lucro_mes: num(K.periodo_res?.lucro_liquido), meta_mes: num(K.metas_periodo?.faturamento), meta_fonte: K.metas_periodo?.fonte?.faturamento || null },
-    vendas: { erro: er(vd), realizado_mes: num(VM.realizado_mes), meta_mes: num(VM.meta_mensal), pct_mes: num(VM.pct_mes), realizado_ano: num(VM.realizado_ano), meta_ano: num(VM.meta_anual), pct_ano: num(VM.pct_ano), meta_fonte: VM.meta_fonte || null },
+    vendas: { erro: er(vd) || er(rk), realizado_mes: num(K.periodo_res?.faturamento), meta_mes: num(K.metas_periodo?.faturamento), pct_mes: K.metas_periodo?.faturamento ? Math.round(num(K.periodo_res?.faturamento) / K.metas_periodo.faturamento * 1000) / 10 : null,
+      realizado_ano: num(FA.realizado), meta_ano: num(FA.meta), pct_ano: num(FA.pct_atingido), meta_fonte: ME.meta?.fonte || 'Metas da Empresa ' + parseInt(hoje) },
     receber: { total: num(P.contasReceber?.total), vencido: num(P.contasReceber?.vencido), em_30d: num(P.contasReceber?.a_vencer_30d) }, pagar: { total: num(P.contasPagar?.total), vencido: num(P.contasPagar?.vencido) } } };
 }
 async function dados(forcar) {
@@ -133,7 +155,7 @@ function pagina(cfg, cod) {
 .grade{display:grid;gap:1.6vh 1.2vw}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
 .k{background:#0F1630;border:1px solid #1E2A52;border-radius:1.6vh;padding:2vh 1.4vw;min-width:0}.k .l{font-size:1.9vh;color:#8E9BC0;font-weight:600;text-transform:uppercase;letter-spacing:.08vw}
 .k .v{font-size:5.4vh;font-weight:800;margin-top:.6vh;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.k .s{font-size:1.9vh;color:#AAB6D8;margin-top:.5vh}
-.k.big .v{font-size:7vh}.ok{color:#2EE6A6}.at{color:#FFB547}.cr{color:#FF5C7A}.az{color:#00C4CC}
+.k.big .v{font-size:7vh}.k.md .v{font-size:4.4vh}.ok{color:#2EE6A6}.at{color:#FFB547}.cr{color:#FF5C7A}.az{color:#00C4CC}
 .bar{height:1.3vh;background:#1E2A52;border-radius:1vh;margin-top:1.2vh;position:relative;overflow:hidden}.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:1vh;background:#00C4CC}.bar u{position:absolute;top:-.4vh;bottom:-.4vh;width:.25vw;background:#EAF0FF;opacity:.8}
 .painel{background:#0F1630;border:1px solid #1E2A52;border-radius:1.6vh;padding:1.8vh 1.4vw;min-height:0;display:flex;flex-direction:column}.painel h3{font-size:2vh;color:#8E9BC0;text-transform:uppercase;letter-spacing:.08vw;font-weight:600;margin-bottom:1vh}
 .baixo{flex:1;display:grid;grid-template-columns:1.7fr 1fr;gap:1.2vw;min-height:0}
@@ -170,47 +192,81 @@ function grafico(m){ if(!m||!m.length)return '<div class="erro">Sem a série men
     s+='<rect x="'+(cx+bw*.56)+'" y="'+(l>=0?y(l):y0)+'" width="'+(bw*.3)+'" height="'+Math.abs(y0-y(Math.abs(l)))+'" rx="4" fill="'+(l>=0?'#2EE6A6':'#FF5C7A')+'"/>';
     s+='<text x="'+(cx+bw/2)+'" y="'+(H-12)+'" text-anchor="middle" font-size="18" fill="#8E9BC0">'+(MES[mi]||x.mes)+'</text>'});
   return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;flex:1;min-height:0" preserveAspectRatio="none">'+s+'</svg><div style="font-size:1.7vh;color:#8E9BC0;margin-top:.6vh;"><span style="color:#00C4CC">■</span> faturamento &nbsp; <span style="color:#2EE6A6">■</span> lucro líquido (vermelho = prejuízo)</div>'}
-function sFin(){var F=D.fin||{},M=F.mes||{},A=F.ano||{};
-  var pm=(!nz(M.faturamento)&&M.meta_faturamento)?M.faturamento/M.meta_faturamento*100:null,mc=nz(M.margem_pct)?'':(M.semaforo==='verde'?'ok':M.semaforo==='amarelo'?'at':M.semaforo==='vermelho'?'cr':'');
-  var h='<div class="grade g4">'+k('Faturamento do mês',brl(M.faturamento),M.meta_faturamento?'meta '+brl(M.meta_faturamento)+' · '+pct(pm):(M.ultimo_fechado?'mês anterior: '+brl(M.ultimo_fechado.faturamento):''),'big',M.meta_faturamento?barra(pm,nz(M.fracao_decorrida)?null:M.fracao_decorrida*100):'')
-   +k('Lucro do mês','<span class="'+mc+'">'+brl(M.lucro)+'</span>','margem '+pct(M.margem_pct)+(nz(M.meta_margem_pct)?'':' · meta '+pct(M.meta_margem_pct)),'big')
-   +k('Faturamento no ano',brl(A.faturamento),'lucro '+brl(A.lucro)+' · margem '+pct(A.margem_pct),'big')
-   +k('Caixa hoje',brl(F.caixa),'saldo bancário (extrato do QuickBooks)','big')+'</div>'
-   +'<div class="baixo"><div class="painel"><h3>Evolução no ano</h3>'+grafico(F.mensal)+'</div><div class="grade" style="grid-template-rows:repeat(3,1fr);">'
-   +k('A receber',brl(F.receber),(nz(F.receber_30d)?'':'próximos 30 dias: '+brl(F.receber_30d)))
-   +k('Recebíveis vencidos','<span class="'+(F.receber_vencido>0?'cr':'ok')+'">'+brl(F.receber_vencido)+'</span>',F.receber_vencido>0?'cobrar esta semana':'nada vencido')
-   +k('A pagar',brl(F.pagar),'contas em aberto no QuickBooks')+'</div></div>'+(F.erro?'<div class="erro">⚠ '+esc(F.erro)+'</div>':'');
+function brlI(v){return nz(v)?'—':(v<0?'−':'')+'R$ '+Math.round(Math.abs(v)).toLocaleString('pt-BR')}
+function luz(f){return '<div class="luz">'+['vermelho','amarelo','verde'].map(function(c){return '<span style="background:'+(f===c?cor(c):'#1A2447')+';'+(f===c?'box-shadow:0 0 2.4vh '+cor(c):'')+'"></span>'}).join('')+'</div>'}
+function clsF(f){return f==='verde'?'ok':f==='amarelo'?'at':f==='vermelho'?'cr':''}
+function metaBox(tit,X,rotEsp){var f=X.semaforo,pc=X.pct;
+  return '<div class="painel" style="flex-direction:row;gap:1.6vw;align-items:center;padding:2vh 1.6vw">'+luz(f)
+   +'<div style="flex:1;min-width:0"><h3 style="margin-bottom:.6vh">'+tit+'</h3>'
+   +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1vw;align-items:end">'
+   +'<div><div class="s" style="font-size:1.9vh;color:#8E9BC0">META</div><div style="font-size:4.6vh;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap">'+brlI(X.meta_faturamento)+'</div></div>'
+   +'<div><div class="s" style="font-size:1.9vh;color:#8E9BC0">REALIZADO</div><div style="font-size:4.6vh;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap" class="'+clsF(f)+'">'+brlI(X.faturamento)+'</div></div>'
+   +'<div style="text-align:right"><div class="s" style="font-size:1.9vh;color:#8E9BC0">ATINGIDO</div><div style="font-size:6.4vh;font-weight:800;line-height:1" class="'+clsF(f)+'">'+pct(pc)+'</div></div></div>'
+   +barra(pc,nz(X.fracao_decorrida)?null:X.fracao_decorrida*100)
+   +'<div style="font-size:1.9vh;color:#AAB6D8;margin-top:.8vh">'+(nz(X.esperado)?'':'esperado até hoje '+brlI(X.esperado)+' ('+rotEsp+') · ')+(X.meta_faturamento?(X.faturamento>=X.meta_faturamento?'<span class="ok">meta batida</span>':'falta '+brlI(X.meta_faturamento-(X.faturamento||0))):'<span class="at">meta não cadastrada (Planejamento → Metas da Empresa)</span>')+(nz(X.projecao)?'':' · no ritmo atual fecha em '+brlI(X.projecao))+'</div></div></div>'}
+function sFin(){var F=D.fin||{},M=F.mes||{},A=F.ano||{};var MESN=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];var mi=parseInt(String(D.mes_ref||'').substring(5,7),10)-1;
+  var mc=clsF(M.semaforo_margem);
+  var h='<div class="grade" style="grid-template-columns:1fr 1fr">'+metaBox('Faturamento de '+(MESN[mi]||'mês'),M,'dias do mês')+metaBox('Faturamento de '+(A.ano||''),A,'meses do ano')+'</div>'
+   +'<div class="grade g4">'+k('Lucro do mês','<span class="'+mc+'">'+brl(M.lucro)+'</span>','margem '+pct(M.margem_pct)+(nz(M.meta_margem_pct)?'':' · meta '+pct(M.meta_margem_pct)))
+   +k('Caixa hoje',brl(F.caixa),'saldo bancário (QuickBooks)')
+   +k('A receber',brl(F.receber),'<span class="'+(F.receber_vencido>0?'cr':'ok')+'">vencido '+brl(F.receber_vencido)+'</span>'+(nz(F.receber_30d)?'':' · 30 dias '+brl(F.receber_30d)))
+   +k('A pagar',brl(F.pagar),'contas em aberto no QuickBooks')+'</div>'
+   +'<div class="painel" style="flex:1;min-height:0"><h3>Evolução no ano</h3>'+grafico(F.mensal)+'</div>'
+   +'<div style="font-size:1.5vh;color:#6E7BA0">Realizado = faturamento da DRE do QuickBooks'+(F.regime?' (regime '+esc(F.regime)+')':'')+' · metas de Planejamento → Metas da Empresa · farol pelo ritmo: verde ≥ 100% do esperado até hoje, amarelo ≥ 85%, vermelho abaixo</div>'
+   +(F.erro?'<div class="erro">⚠ '+esc(F.erro)+'</div>':'');
   return h}
-function sCom(){var C=D.com||{},P=C.propostas||{},Fu=C.funil||{},S=C.semaforo||[];
-  var mmc=nz(C.meta_mes_pct)?'':C.meta_mes_pct>=100?'ok':C.meta_mes_pct>=70?'at':'cr';
-  var h='<div class="grade g4">'+k('Meta do mês · faturado','<span class="'+mmc+'">'+pct(C.meta_mes_pct)+'</span>',(nz(C.realizado_mes)?'':brl(C.realizado_mes)+' de '+brl(C.meta_mes))+(nz(C.gap_mes)?'':' · falta '+brl(C.gap_mes))+(nz(C.dias_uteis_mes)?'':' · '+C.dias_uteis_mes+' dias úteis'),'big',barra(C.meta_mes_pct))
-   +k('Meta do ano · faturado',pct(C.meta_ano_pct),(nz(C.realizado_ano)?'':brl(C.realizado_ano)+' de '+brl(C.meta_ano))+(nz(C.gap_ano)?'':' · falta '+brl(C.gap_ano)),'big',barra(C.meta_ano_pct))
-   +k('Propostas em aberto',(nz(P.abertas)?'—':P.abertas)+' <span style="font-size:3.4vh;color:#AAB6D8">· '+brl(P.valor_aberto)+'</span>',(P.paradas?'<span class="at">'+P.paradas+' parada(s)</span> · ':'')+(nz(P.ganhas)?'':P.ganhas+' ganhas · '+P.perdidas+' perdidas'),'big')
-   +k('Win rate',pct(C.win_rate_pct),'ciclo médio '+(nz(C.ciclo_dias)?'—':C.ciclo_dias+' dias')+(C.cobertura!=null?' · cobertura '+esc(C.cobertura):''),'big')+'</div>'
-   +'<div class="baixo"><div class="painel"><h3>Funil — últimos 30 dias</h3><div style="display:flex;gap:2vw;align-items:flex-end;margin-bottom:1.6vh;"><div><div style="font-size:7vh;font-weight:800">'+(nz(Fu.leads)?'—':Fu.leads)+'</div><div class="s" style="font-size:2vh;color:#8E9BC0">leads</div></div><div style="font-size:5vh;color:#26335F;padding-bottom:2vh">→</div><div><div style="font-size:7vh;font-weight:800;color:#00C4CC">'+(nz(Fu.reunioes)?'—':Fu.reunioes)+'</div><div style="font-size:2vh;color:#8E9BC0">reuniões marcadas</div></div><div style="font-size:3vh;color:#AAB6D8;padding-bottom:2vh">'+(Fu.leads?pct(Fu.reunioes/Fu.leads*100)+' de conversão':'')+'</div></div>'
-   +((Fu.campanhas||[]).map(function(c){return '<div class="lin"><div class="n">'+esc(c.nome)+'</div><div class="q">'+c.leads+' → '+c.reunioes+'</div></div>'}).join('')||'<div class="erro">Sem leads no período.</div>')+'</div>'
-   +'<div class="painel"><h3>Ritmo do time comercial</h3>'+(S.map(function(c){return '<div class="lin"><span class="bola" style="background:'+cor(c.farol)+'"></span><div class="n">'+esc(c.nome)+'</div><div class="q" style="font-size:1.9vh;color:#AAB6D8">'+(nz(c.contatos_pct)?'':'contatos '+pct(c.contatos_pct))+(nz(c.reunioes_pct)?'':' · reuniões '+pct(c.reunioes_pct))+'</div></div>'}).join('')||'<div class="erro">Configure a política comercial em S1.</div>')+'</div></div>'
-   +(C.erro||C.aviso?'<div class="erro">⚠ '+esc(C.erro||C.aviso)+'</div>':'');
+// v3.280: o MESMO funil do Dashboard ao vivo (aba Vendas): pipeline aberto agora, em R$, todos os pipelines, mês atual
+function sCom(){var C=D.com||{},Fu=C.funil;
+  if(!Fu)return '<div class="erro" style="margin:auto;font-size:2.6vh">'+esc(C.indisponivel||C.erro||'Funil indisponível (HubSpot).')+'</div>';
+  var R=Fu.resumo||{},A=R.aberto||{},E=Fu.etapas||[],L=Fu.leads;
+  var pm=R.pct_meta,cm=nz(pm)?'':pm>=100?'ok':pm>=80?'at':'cr',cob=R.cobertura_pct,cc=nz(cob)?'':cob>=100?'ok':cob>=60?'at':'cr';
+  var h='<div class="grade" style="grid-template-columns:repeat('+(L?6:5)+',1fr)">'
+   +k('Pipeline aberto',brl(A.valor),(A.qtd||0)+' negócio(s)'+(A.sem_valor?' · <span class="at">'+A.sem_valor+' sem valor</span>':''),'md')
+   +k('Ponderado',brl(A.ponderado),'valor × probabilidade','md')
+   +k('Ganho em '+esc(Fu.rotulo||''),'<span class="'+cm+'">'+brl(R.ganho&&R.ganho.valor)+'</span>',((R.ganho&&R.ganho.qtd)||0)+' negócio(s)'+(nz(R.meta)?' · sem meta':' · <b class="'+cm+'">'+pm+'%</b> de '+brl(R.meta)),'md')
+   +k('Falta para a meta',nz(R.falta)?'—':'<span class="'+(R.falta?cc:'ok')+'">'+brl(R.falta)+'</span>',nz(cob)?(nz(R.meta)?'cadastre a meta':'meta batida'):'cobertura do ponderado <b class="'+cc+'">'+cob+'%</b>','md')
+   +k('Taxa de ganho',(nz(R.taxa_ganho_pct)?'—':R.taxa_ganho_pct+'%'),R.pipeline_necessario?'precisa de '+brl(R.pipeline_necessario)+' em pipeline':'','md')
+   +(L?k('Leads captados',L.total,L.ab+' score A/B · '+L.reunioes+' reunião(ões)','md'):'')+'</div>';
+  var grad=[['#1f5fbf','#3d8bf0'],['#2569cc','#4a98f2'],['#2b7bd6','#4fb0ef'],['#1f9fb0','#3cc6c9'],['#18a57f','#36c99a'],['#14916b','#2fb989'],['#0f7d5b','#28a679']];
+  var topo=E.length?(E[0].agora&&E[0].agora.valor)||0:0,n=E.length;
+  var linhas=E.map(function(e,i){var g=e.ganho?['#0f8a52','#2fcf86']:grad[Math.min(i,grad.length-1)],ag=e.agora||{},val=ag.valor||0;
+    var larg=function(x){return 100-62*x/Math.max(1,n)},a=(100-larg(i))/2,bq=(100-larg(i+1))/2;
+    var pc=e.pct_valor,f=nz(pc)?null:pc>=100?'verde':pc>=80?'amarelo':'vermelho';
+    var sub=e.ganho?((ag.qtd||0)+' ganho(s) no período'):((ag.qtd||0)+' negócio(s)'+(ag.sem_valor?' · '+ag.sem_valor+' sem valor':''));
+    var dir=e.meta&&e.meta.valor!=null&&(e.ganho||e.meta.fonte==='cadastrada')?'<span class="bola" style="display:inline-block;vertical-align:middle;margin-right:.5vw;background:'+cor(f)+'"></span>meta '+brl(Fu.decorrido_pct<100?e.meta.valor_ate_hoje:e.meta.valor)+(Fu.decorrido_pct<100?' até hoje':'')+' · <b class="'+clsF(f)+'">'+(nz(pc)?'—':pc+'%')+'</b>'
+      :(!e.ganho&&ag.ponderado?'<span style="color:#8E9BC0">ponderado <b style="color:#AAB6D8">'+brl(ag.ponderado)+'</b>'+(e.probabilidade!=null?' · '+Math.round(e.probabilidade*100)+'% de chance':'')+'</span>':'');
+    return '<div style="display:grid;grid-template-columns:18vw 1fr 22vw;gap:1.2vw;align-items:center;flex:1;min-height:0">'
+     +'<div style="font-size:2.3vh;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(e.nome)+(e.ganho?' ✓':'')+'<div style="font-size:1.7vh;color:#8E9BC0;font-weight:500">'+sub+'</div></div>'
+     +'<div style="height:100%;max-height:8vh;min-height:4vh;clip-path:polygon('+a+'% 0,'+(100-a)+'% 0,'+(100-bq)+'% 100%,'+bq+'% 100%);background:linear-gradient(180deg,'+g[1]+','+g[0]+');display:flex;flex-direction:column;align-items:center;justify-content:center">'
+     +'<div style="font-size:3vh;font-weight:800">'+brl(val)+'</div>'+(i>0&&topo>0?'<div style="font-size:1.5vh;opacity:.85">'+Math.round(val/topo*100)+'% do topo</div>':'<div style="font-size:1.5vh;opacity:.85">topo do funil</div>')+'</div>'
+     +'<div style="font-size:1.9vh">'+dir+'</div></div>'}).join('');
+  h+='<div class="painel" style="flex:1;min-height:0"><h3>Pipeline agora — negócios abertos em cada etapa (a faixa Ganho mostra os ganhos de '+esc(Fu.rotulo||'')+') · '+esc(Fu.pipeline||'')+'</h3><div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:.5vh">'+(linhas||'<div class="erro">Nenhuma etapa no pipeline.</div>')+'</div>'
+   +'<div style="display:flex;gap:2vw;font-size:1.7vh;color:#8E9BC0;margin-top:.8vh">'+(Fu.perdidos?'<span>Perdidos em '+esc(Fu.rotulo||'')+': <b>'+Fu.perdidos.qtd+'</b> ('+brl(Fu.perdidos.valor)+')</span>':'')+(Fu.ticket?'<span>Ticket médio: <b>'+brl(Fu.ticket)+'</b></span>':'')+(Fu.lidos!=null?'<span>'+Fu.lidos+' negócio(s) lidos do HubSpot</span>':'')+'</div></div>'
+   +(C.erro?'<div class="erro">⚠ '+esc(C.erro)+'</div>':'');
   return h}
-function sQual(){var Q=D.qual||{},T=Q.termos||{},B=Q.qb||{},P=Q.projetos||{};
-  function luz(f){return '<div class="luz">'+['vermelho','amarelo','verde'].map(function(c){return '<span style="background:'+(f===c?cor(c):'#1A2447')+';'+(f===c?'box-shadow:0 0 2.4vh '+cor(c):'')+'"></span>'}).join('')+'</div>'}
+function sQual(){var Q=D.qual||{},T=Q.termos||{},B=Q.qb||{};
   function n(v){return v==null||v===''?'—':v}
   function card(t,f,a,al,b,bl,lst,er){return '<div class="painel q"><div style="display:flex;align-items:center;gap:1.4vw"><h3 style="flex:1;margin:0">'+t+'</h3>'+luz(f)+'</div>'
     +'<div class="qn"><div><div class="v ok">'+n(a)+'</div><div class="s">'+al+'</div></div><div><div class="v '+(b>0?(f==='vermelho'?'cr':'at'):'ok')+'">'+n(b)+'</div><div class="s">'+bl+'</div></div></div>'
     +'<div style="flex:1;min-height:0;overflow:hidden">'+lst+'</div>'+(er?'<div class="erro">⚠ '+esc(er)+'</div>':'')+'</div>'}
   function li(c,txt,q){return '<div class="lin"><span class="bola" style="background:'+c+'"></span><div class="n">'+esc(txt)+'</div><div class="q">'+q+'</div></div>'}
-  return '<div class="grade g3" style="flex:1;min-height:0">'
-   +card('Termos de faturamento',T.farol,T.corretos,'termos corretos',T.errados,'termos com erro',(T.motivos||[]).map(function(m){return li(cor(T.farol),m.motivo,m.qtd)}).join('')||(T.errados===0?'<div class="s ok" style="font-size:2.2vh;margin-top:1vh">Todos os '+n(T.abertos)+' termos em aberto estão corretos.</div>':''),T.erro)
+  var fl=function(x,t){return x?li('#00C4CC',t+' ('+x.qtd+')',brl(x.valor)):''};
+  return '<div class="grade" style="grid-template-columns:1fr 1fr;flex:1;min-height:0">'
+   +card('Termos de faturamento',T.farol,T.corretos,'termos em aberto corretos',T.errados,'termos com pendência',
+     ((T.motivos||[]).map(function(m){return li(cor(T.farol),m.motivo,m.qtd)}).join('')||(T.errados===0?'<div class="s ok" style="font-size:2.2vh;margin-top:1vh">Todos os '+n(T.abertos)+' termos em aberto estão corretos.</div>':''))
+     +'<div style="font-size:1.7vh;color:#8E9BC0;margin:1.2vh 0 .4vh;text-transform:uppercase">Valores no Kanban de Faturamento</div>'+fl(T.faturados_mes,'Faturados no mês (NF emitida)')+fl(T.a_faturar,'A faturar (sem NF)')+fl(T.aguardando_pagamento,'NF emitida, aguardando pagamento'),T.erro)
    +card('Dados no QuickBooks',B.farol,B.corretas==null?null:B.corretas+'/'+B.checagens,'verificações corretas',B.registros_errados,'registros com erro',(B.problemas||[]).map(function(p){return li(cor(p.gravidade==='alta'?'vermelho':'amarelo'),p.titulo,p.qtd)}).join('')||(B.com_erro===0?'<div class="s ok" style="font-size:2.2vh;margin-top:1vh">Conciliação, categorias, duplicidades e contas pagas: tudo certo.</div>':''),B.erro)
-   +card('Projetos',P.farol,P.em_dia,'em dia',nz(P.atrasados)?null:P.atrasados,'atrasados',(nz(P.total)?'':li(cor('vermelho'),'Atrasados (farol vermelho)',P.atrasados)+li(cor('amarelo'),'Em atenção (farol amarelo)',P.atencao)+(P.rotulos?li(cor('vermelho'),P.rotulos[0],P.com_bloqueio)+li('#6E7BA0',P.rotulos[1],P.desatualizados)+li('#6E7BA0',P.rotulos[2],P.sem_report):li('#6E7BA0','Sem status report',P.sem_report)+li('#6E7BA0','Com bloqueio',P.com_bloqueio)+li('#6E7BA0','Report desatualizado na semana',P.desatualizados))+(P.fonte?'<div style="font-size:1.5vh;color:#6E7BA0;margin-top:.8vh">fonte: '+esc(P.fonte)+'</div>':'')),P.erro)
    +'</div>'}
 function sProj(){var J=D.proj||{},R=J.resumo||{},L=J.lista||[];
   var dt=function(s){return s?s.split('-').reverse().join('/'):'—'};
   var av=nz(R.avanco_medio)?'—':R.avanco_medio+'%';
-  var h='<div class="grade" style="grid-template-columns:repeat(5,1fr)">'+k('Projetos ativos',nz(R.total)?'—':R.total,J.fonte||'','big')
-   +k('Em dia','<span class="ok">'+(nz(R.verde)?'—':R.verde)+'</span>','farol verde','big')
-   +k('Atenção','<span class="at">'+(nz(R.amarelo)?'—':R.amarelo)+'</span>','farol amarelo','big')
-   +k('Atrasados','<span class="cr">'+(nz(R.vermelho)?'—':R.vermelho)+'</span>',(R.vencidos?(R.vencidos===1?'1 passou':R.vencidos+' passaram')+' da data de conclusão':'nenhum vencido'),'big')
+  var pd=R.total?Math.round((R.verde||0)/R.total*100):null,fp=nz(pd)?null:pd>=80?'verde':pd>=60?'amarelo':'vermelho';
+  var bo=function(c){return '<span class="bola" style="display:inline-block;vertical-align:middle;width:3.6vh;height:3.6vh;margin-right:.8vw;background:'+cor(c)+';box-shadow:0 0 1.6vh '+cor(c)+'"></span>'};
+  var h='<div class="grade" style="grid-template-columns:repeat(6,1fr)">'+k('Projetos ativos',nz(R.total)?'—':R.total,J.fonte||'','big')
+   +'<div class="k big" style="display:flex;gap:1vw;align-items:center">'+luz(fp)+'<div style="min-width:0"><div class="l">% em dia</div><div class="v '+clsF(fp)+'" style="font-size:6vh">'+(nz(pd)?'—':pd+'%')+'</div><div class="s">verde ≥ 80% · amarelo ≥ 60%</div></div></div>'
+   +k('Em dia',bo('verde')+'<span class="ok">'+(nz(R.verde)?'—':R.verde)+'</span>','farol verde','big')
+   +k('Atenção',bo('amarelo')+'<span class="at">'+(nz(R.amarelo)?'—':R.amarelo)+'</span>','farol amarelo','big')
+   +k('Atrasados',bo('vermelho')+'<span class="cr">'+(nz(R.vermelho)?'—':R.vermelho)+'</span>',(R.vencidos?(R.vencidos===1?'1 passou':R.vencidos+' passaram')+' da conclusão':'nenhum vencido'),'big')
    +k('Avanço médio',av,(nz(R.planejado_medio)?'':'planejado '+R.planejado_medio+'%')+(R.concluem_mes?' · '+R.concluem_mes+' concluem no mês':''),'big',nz(R.avanco_medio)?'':barra(R.avanco_medio,nz(R.planejado_medio)?null:R.planejado_medio))+'</div>';
   var max=11, mostra=L.slice(0,max);
   h+='<div class="painel" style="flex:1;min-height:0"><h3>Projetos · data de conclusão e farol</h3>'
@@ -223,7 +279,7 @@ function sProj(){var J=D.proj||{},R=J.resumo||{},L=J.lista||[];
       +'<div style="width:8vw;text-align:right" class="q '+(nz(p.desvio)?'':p.desvio<-10?'cr':p.desvio<-5?'at':'ok')+'">'+d+'</div></div>'}).join('')||'<div class="erro">'+esc(J.erro||'Sem projetos ativos no módulo de projetos.')+'</div>')
    +(L.length>max?'<div style="font-size:1.7vh;color:#8E9BC0;margin-top:.6vh">+ '+(L.length-max)+' projeto(s) — os mais críticos aparecem primeiro</div>':'')+'</div>';
   return h}
-var TIT={financeiro:'Financeiro',comercial:'Comercial',qualidade:'Qualidade',projetos:'Projetos'},REN={financeiro:sFin,comercial:sCom,qualidade:sQual,projetos:sProj};
+var TIT={financeiro:'Financeiro',comercial:'Vendas · funil',qualidade:'Qualidade',projetos:'Projetos'},REN={financeiro:sFin,comercial:sCom,qualidade:sQual,projetos:sProj};
 function render(){var p=$('palco');p.innerHTML=SLIDES.map(function(s,i){return '<div class="slide'+(i===idx?' on':'')+'">'+REN[s]()+'</div>'}).join('');
   $('dots').innerHTML=SLIDES.map(function(s,i){return '<span class="'+(i===idx?'on':'')+'"></span>'}).join('');$('tit').textContent='Gestão à vista · '+TIT[SLIDES[idx]];
   var g=new Date(D.gerado_em);$('atu').textContent='números de '+g.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+(D.aviso_cache?' · '+D.aviso_cache:'')+' · atualiza a cada 10 min'}

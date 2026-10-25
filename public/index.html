@@ -11693,8 +11693,8 @@ function tvRender() {
         + '<div style="font-size:10.5px;color:var(--t3);margin-top:6px;">Criado em ' + new Date(c.criado_em).toLocaleString('pt-BR') + '. Gerar um novo link desliga o anterior na hora.</div>'
       : '<div style="font-size:12px;margin-bottom:8px;">Nenhum link ativo.</div><button class="btn btn-gn" onclick="tvAcao(\'gerar\')">📺 Gerar o link da TV</button>')
     + '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-top:14px;font-size:12px;"><div><label class="fl">Trocar de slide a cada</label><select class="fsel" id="tvRot" style="width:auto;">' + [10, 15, 20, 25, 30, 45, 60, 90].map(s => '<option value="' + s + '"' + (+c.rotacao_s === s ? ' selected' : '') + '>' + s + ' segundos</option>').join('') + '</select></div>'
-    + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSf"' + (c.slides.includes('financeiro') ? ' checked' : '') + '/> Financeiro</label><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSc"' + (c.slides.includes('comercial') ? ' checked' : '') + '/> Comercial</label>'
-    + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSq"' + (c.slides.includes('qualidade') ? ' checked' : '') + '/> Qualidade (farol)</label>'
+    + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSf"' + (c.slides.includes('financeiro') ? ' checked' : '') + '/> Financeiro</label><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSc"' + (c.slides.includes('comercial') ? ' checked' : '') + '/> Vendas (funil)</label>'
+    + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSq"' + (c.slides.includes('qualidade') ? ' checked' : '') + '/> Qualidade (termos e QuickBooks)</label>'
     + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="checkbox" id="tvSp"' + (c.slides.includes('projetos') ? ' checked' : '') + '/> Projetos (lista com farol)</label>'
     + '<label style="display:flex;gap:6px;align-items:center;cursor:pointer;" title="Desmarque se a TV fica em área com visitantes — mostra Projeto 1, 2, 3…"><input type="checkbox" id="tvSn"' + (c.nomes_projetos !== false ? ' checked' : '') + '/> mostrar nomes dos projetos</label>'
     + '<button class="btn btn-g" onclick="tvSalvar()">💾 Salvar</button><button class="btn btn-g" onclick="tvAtualizar(this)">↻ Atualizar os números agora</button><button class="btn btn-p" onclick="tvConferir(this)">🔍 Conferir os números (abrir o caixa)</button></div></div></div><div id="tvConf"></div>'
@@ -11737,7 +11737,7 @@ async function tvConferir(b) {
       + '<div style="font-size:10.5px;margin-top:6px;"><a href="#" onclick="event.preventDefault();nav(\'s3extrato\',document.querySelector(\'.sbi[onclick*=s3extrato]\'))">Ver o extrato completo do mês →</a></div>'
       + '<div style="font-family:var(--H);font-size:13px;font-weight:700;margin:16px 0 6px;">📈 Faturamento e meta (slide Financeiro)</div>' + (F.erro ? '<div style="color:var(--red);font-size:11px;">⚠ ' + e(F.erro) + '</div>' : '')
       + '<table style="width:100%;border-collapse:collapse;font-size:12px;">' + lin('Faturamento do mês', R(F.mes), 'DRE do QuickBooks, regime ' + e(F.regime || '—')) + lin('Meta do mês', R(F.meta_mes), e(F.meta_fonte || '')) + lin('Lucro do mês', R(F.lucro_mes), '') + '</table>'
-      + '<div style="font-family:var(--H);font-size:13px;font-weight:700;margin:16px 0 6px;">🎯 % da meta (slide Comercial)</div>' + (V.erro ? '<div style="color:var(--red);font-size:11px;">⚠ ' + e(V.erro) + '</div>' : '')
+      + '<div style="font-family:var(--H);font-size:13px;font-weight:700;margin:16px 0 6px;">🎯 Metas do mês e do ano (slide Financeiro)</div>' + (V.erro ? '<div style="color:var(--red);font-size:11px;">⚠ ' + e(V.erro) + '</div>' : '')
       + '<table style="width:100%;border-collapse:collapse;font-size:12px;">' + lin('Meta do mês · faturado', P(V.pct_mes), R(V.realizado_mes) + ' faturado ÷ ' + R(V.meta_mes) + ' de meta — ' + e(V.meta_fonte?.mes || '')) + lin('Meta do ano · faturado', P(V.pct_ano), R(V.realizado_ano) + ' faturado ÷ ' + R(V.meta_ano) + ' de meta — ' + e(V.meta_fonte?.ano || '')) + '</table>'
       + '<div style="font-size:10.5px;color:var(--t3);margin-top:4px;">É o faturamento (notas no QuickBooks) contra a meta de faturamento — não o valor de contratos assinados no mês.</div>'
       + '</div></div>';
@@ -35284,7 +35284,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.279] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.280] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35300,7 +35300,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.279';
+window.__ATX_BUILD_ID__ = 'ATX-v3.280';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
