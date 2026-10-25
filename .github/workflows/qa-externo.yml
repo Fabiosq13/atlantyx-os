@@ -1,11 +1,10 @@
 # v3.133 — Robô de QA dos produtos da Atlantyx (caixa-preta: URL + usuário + senha de teste, sem código-fonte).
 # Fila: Atlantyx OS → S6 · QA de Produtos ("Testar agora" dispara este workflow; sem permissão de disparo,
-# a passagem a cada 30 min pega a fila). Toda madrugada (03:30 Brasília) enfileira os produtos marcados "rodar à noite".
+# a passagem a cada 30 min pega a fila). v3.277: sem passada noturna — só roda o que foi pedido.
 # Secret necessário (o mesmo do QA noturno): CRON_SECRET. Variável opcional: ATX_URL.
 name: QA de Produtos — robô de testes
 on:
   schedule:
-    - cron: '30 6 * * *'
     - cron: '*/30 * * * *'
   workflow_dispatch:
     inputs:

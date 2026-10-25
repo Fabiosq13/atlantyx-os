@@ -32303,14 +32303,14 @@ function qpForm(P) {
     + '<label class="mc-f" style="margin-top:10px;"><span>Contexto do negócio para a IA (regras, o que cada tela deve mostrar, cálculos esperados)</span><textarea class="fi" id="qpCtx" rows="5" placeholder="Ex.: O Maestro gerencia portfólio de projetos. Cada projeto tem orçamento, horas planejadas e realizadas; o % de avanço não pode passar de 100%; projeto concluído não pode ter tarefas abertas…">' + _qpEsc(P.contexto || '') + '</textarea></label>'
     + '<div class="mc-sug" style="margin:10px 0;"><label><input type="checkbox" id="qpGrav"' + (P.permitir_gravacao !== false ? ' checked' : '') + '> Testar incluir, alterar e excluir (registros marcados "QA-ATX-…", apagados ao final)</label>'
     + '<label title="Use só em ambiente de homologação/desempenho: o robô dispara usuários simultâneos contra as APIs"><input type="checkbox" id="qpCarga"' + (P.permitir_carga ? ' checked' : '') + '> Liberar teste de carga e estresse com <input id="qpUsu" type="number" min="1" max="200" value="' + (P.usuarios_simultaneos || 10) + '" style="width:58px;"> usuários simultâneos (nominal)</label>'
-    + '<label><input type="checkbox" id="qpNot"' + (P.rodar_noturno !== false ? ' checked' : '') + '> Testar toda madrugada</label><label><input type="checkbox" id="qpAtivo"' + (P.ativo !== false ? ' checked' : '') + '> Ativo</label></div>'
+    + '<span style="color:var(--t3);" title="Para não gastar crédito de IA testando o que não mudou">Testes só sob demanda (Testar agora)</span><label><input type="checkbox" id="qpAtivo"' + (P.ativo !== false ? ' checked' : '') + '> Ativo</label></div>'
     + '<div class="fv2-aviso">Use um <b>usuário de teste</b> e, de preferência, o ambiente de homologação. A senha fica criptografada no banco e nunca volta para a tela — só o robô a recebe na hora de testar.</div>'
     + '<div style="display:flex;gap:8px;justify-content:flex-end;">' + (P.id ? '<button class="btn btn-g" style="color:var(--fv2-crit);" onclick="qpExcluir(\'' + P.id + '\')">Excluir produto</button>' : '') + '<button class="btn btn-gn" onclick="qpSalvar(\'' + (P.id || '') + '\')">💾 Salvar</button></div>';
 }
 async function qpSalvar(id) {
   const v = i => document.getElementById(i)?.value?.trim() || '';
   try { const r = await qpApi('produto_salvar', { id: id || null, nome: v('qpNome'), url: v('qpUrl'), url_login: v('qpUrlLogin'), usuario: v('qpUser'), senha: document.getElementById('qpSenha').value || null, plataforma: v('qpPlat'), repo_github: v('qpRepo'), max_telas: v('qpMax'), contexto: v('qpCtx'),
-      permitir_gravacao: document.getElementById('qpGrav').checked, permitir_carga: document.getElementById('qpCarga').checked, usuarios_simultaneos: +document.getElementById('qpUsu').value || 10, rodar_noturno: document.getElementById('qpNot').checked, ativo: document.getElementById('qpAtivo').checked });
+      permitir_gravacao: document.getElementById('qpGrav').checked, permitir_carga: document.getElementById('qpCarga').checked, usuarios_simultaneos: +document.getElementById('qpUsu').value || 10, rodar_noturno: false, ativo: document.getElementById('qpAtivo').checked });
     toast('Produto salvo', 'success'); document.getElementById('qpModal')?.remove(); await qpCarregar(); if (!id && confirm('Testar este produto agora?')) qpTestar(r.id); }
   catch (e) { toast(e.message, 'error'); }
 }
@@ -35272,7 +35272,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.276] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.277] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35288,7 +35288,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.276';
+window.__ATX_BUILD_ID__ = 'ATX-v3.277';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

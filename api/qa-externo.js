@@ -100,14 +100,14 @@ async function produtoSalvar(b) {
   const senha = b.senha ? cifrar(b.senha) : null;
   if (b.id) {
     await sql`UPDATE qa_produtos SET nome=${b.nome}, url=${b.url}, url_login=${b.url_login || null}, usuario=${b.usuario || null}, plataforma=${b.plataforma || null}, repo_github=${b.repo_github || null},
-      contexto=${b.contexto || null}, ativo=${b.ativo !== false}, rodar_noturno=${b.rodar_noturno !== false}, permitir_gravacao=${b.permitir_gravacao !== false}, max_telas=${parseInt(b.max_telas) || 60},
+      contexto=${b.contexto || null}, ativo=${b.ativo !== false}, rodar_noturno=false, permitir_gravacao=${b.permitir_gravacao !== false}, max_telas=${parseInt(b.max_telas) || 60},
       permitir_carga=${!!b.permitir_carga}, usuarios_simultaneos=${Math.min(200, parseInt(b.usuarios_simultaneos) || 10)},
       senha_cripto=COALESCE(${senha}, senha_cripto), atualizado_em=NOW() WHERE id=${b.id}`;
     return { id: b.id };
   }
   const id = novoId('qap');
   await sql`INSERT INTO qa_produtos (id, nome, url, url_login, usuario, senha_cripto, plataforma, repo_github, contexto, ativo, rodar_noturno, permitir_gravacao, max_telas)
-    VALUES (${id}, ${b.nome}, ${b.url}, ${b.url_login || null}, ${b.usuario || null}, ${senha}, ${b.plataforma || null}, ${b.repo_github || null}, ${b.contexto || null}, ${b.ativo !== false}, ${b.rodar_noturno !== false}, ${b.permitir_gravacao !== false}, ${parseInt(b.max_telas) || 60})`;
+    VALUES (${id}, ${b.nome}, ${b.url}, ${b.url_login || null}, ${b.usuario || null}, ${senha}, ${b.plataforma || null}, ${b.repo_github || null}, ${b.contexto || null}, ${b.ativo !== false}, false, ${b.permitir_gravacao !== false}, ${parseInt(b.max_telas) || 60})`;
   if (b.permitir_carga) await sql`UPDATE qa_produtos SET permitir_carga=true, usuarios_simultaneos=${Math.min(200, parseInt(b.usuarios_simultaneos) || 10)} WHERE id=${id}`;
   return { id };
 }
@@ -126,16 +126,15 @@ async function executar({ produto_id, origem = 'manual' }) {
   return { execucao_id: id, ...(await _dispararRobo()) };
 }
 // ── robô (Bearer CRON_SECRET) ──
-async function roboEnfileirarNoturno() {
-  const sql = await getSql();
-  const P = await sql`SELECT id FROM qa_produtos WHERE ativo AND rodar_noturno`;
-  let n = 0; for (const p of P) { const ja = await sql`SELECT 1 FROM qa_execucoes WHERE produto_id=${p.id} AND status IN ('fila','rodando')`; if (!ja.length) { await sql`INSERT INTO qa_execucoes (id, produto_id, status, origem) VALUES (${novoId('qae')}, ${p.id}, 'fila', 'noturno')`; n++; } }
-  return { enfileirados: n };
-}
+// v3.277: QA de Produtos roda SÓ SOB DEMANDA ("Testar agora" ou robôs da Esteira) — a passada noturna gastava crédito de IA
+// testando produto que não mudou. A ação continua existindo para o workflow antigo não quebrar, mas não enfileira nada.
+async function roboEnfileirarNoturno() { return { enfileirados: 0, pulado: 'teste noturno desligado: o QA de Produtos roda só sob demanda' }; }
 async function roboProximo() {
   const sql = await getSql();
   // execução presa há mais de 2h volta a erro
   await sql`UPDATE qa_execucoes SET status='erro', erro='tempo esgotado (robô não terminou em 2h)', terminado_em=NOW() WHERE status='rodando' AND iniciado_em < NOW() - INTERVAL '2 hours'`;
+  // v3.277: execuções da passada noturna que ainda estavam na fila não rodam mais
+  await sql`UPDATE qa_execucoes SET status='erro', erro='cancelada: teste noturno desligado (só sob demanda)', terminado_em=NOW() WHERE status='fila' AND origem='noturno'`;
   const e = (await sql`UPDATE qa_execucoes SET status='rodando', iniciado_em=NOW() WHERE id = (SELECT id FROM qa_execucoes WHERE status='fila' ORDER BY pedido_em LIMIT 1) RETURNING *`)[0];
   if (!e) return { execucao: null };
   const p = (await sql`SELECT * FROM qa_produtos WHERE id=${e.produto_id}`)[0];
