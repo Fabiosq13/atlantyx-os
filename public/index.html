@@ -31692,6 +31692,17 @@ async function trProduzir(ids) {
 // ═══ v3.133: S6 · QA DE PRODUTOS — robô de testes caixa-preta dos produtos da Atlantyx + Kanban de QA ═══
 // Produto só vai para "Aprovado" com 100% das telas testadas e nenhum achado aberto, em correção ou a retestar.
 let _qpDados = null, _qpProd = null, _qpAchados = null, _qpFiltro = 'pendentes';
+// v3.278: consumo de IA aberto por etapa do teste (tokens e custo estimado pelo preço de tabela do Sonnet)
+function _qpIaEtapas(U) {
+  if (!U || !U.por_etapa || !Object.keys(U.por_etapa).length) return '';
+  const NOME = { logica_ia: 'Lógica/dados (IA)', plano: 'Plano de testes (casos)', jornadas: 'Jornadas (IA)', layout: 'Layout (IA, prints)' };
+  const usd = x => (x.entrada * 3 + x.saida * 15) / 1e6, fmt = n => Math.round(n).toLocaleString('pt-BR'), tot = Object.values(U.por_etapa).reduce((s, x) => s + usd(x), 0) || 1;
+  const L = Object.entries(U.por_etapa).sort((a, b) => usd(b[1]) - usd(a[1]));
+  return '<details style="margin:6px 0;"><summary style="cursor:pointer;font-size:11px;">🧮 Consumo de IA por etapa — ' + fmt(U.chamadas) + ' chamada(s) · ' + fmt((U.entrada + U.saida) / 1000) + ' mil tokens · ~US$ ' + tot.toFixed(2) + '</summary>'
+    + '<table style="width:100%;font-size:10.5px;border-collapse:collapse;margin-top:4px;"><tr style="color:var(--t3);text-align:left;"><th>Etapa</th><th>Chamadas</th><th>Tokens entrada</th><th>Tokens saída</th><th>~US$</th><th>% do custo</th></tr>'
+    + L.map(([k, x]) => '<tr><td>' + _qpEsc(NOME[k] || k) + '</td><td>' + fmt(x.chamadas) + '</td><td>' + fmt(x.entrada) + '</td><td>' + fmt(x.saida) + '</td><td>' + usd(x).toFixed(2) + '</td><td><b>' + Math.round(usd(x) / tot * 100) + '%</b></td></tr>').join('')
+    + '</table><div style="font-size:9.5px;color:var(--t3);margin-top:3px;">Custo estimado pelo preço de tabela do Claude Sonnet (US$ 3 por milhão de tokens de entrada e US$ 15 de saída); a fatura real está em console.anthropic.com.</div></details>';
+}
 const _qpEsc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const _QP_SEV = { critica: ['Crítica', 'var(--fv2-crit)'], alta: ['Alta', '#e0662f'], media: ['Média', 'var(--fv2-warn)'], baixa: ['Baixa', 'var(--t3)'] };
 const _QP_ST = { aberto: 'Aberto', em_correcao: 'Em correção', corrigido: 'Corrigido · retestar', validado: 'Validado no reteste', falso_positivo: 'Falso positivo', aceito: 'Risco aceito' };
@@ -32250,6 +32261,7 @@ function qpDetalhe() {
     + (E ? '<div class="fv2-cab"><span>Última execução: <b>' + _qpEsc(E.status) + '</b> · ' + (E.terminado_em ? new Date(E.terminado_em).toLocaleString('pt-BR').substring(0, 16) : 'em andamento') + ' · ' + (E.telas_testadas ?? 0) + ' de ' + (E.telas_descobertas ?? 0) + ' telas (' + (E.cobertura_pct != null ? Number(E.cobertura_pct).toLocaleString('pt-BR') : 0) + '%)' + (E.resumo?.ciclos_cadastro != null ? ' · ' + E.resumo.ciclos_cadastro + ' ciclo(s) de cadastro · ' + (E.resumo.analises_ia || 0) + ' tela(s) analisadas pela IA' : '') + (E.resumo?.ia_uso ? ' · IA: ' + E.resumo.ia_uso.chamadas + ' chamada(s), ' + Math.round(((E.resumo.ia_uso.entrada || 0) + (E.resumo.ia_uso.saida || 0)) / 1000).toLocaleString('pt-BR') + ' mil tokens' + (E.resumo.ia_uso.sem_ia ? ' · <b style="color:var(--fv2-crit);">⛔ ' + _qpEsc(E.resumo.ia_uso.sem_ia) + '</b>' : '') : '') + (E.erro ? ' · <b style="color:var(--fv2-crit);">' + _qpEsc(E.erro) + '</b>' : '') + '</span>'
       + '<span>Aprovação: 100% das telas e nenhum achado pendente</span></div>' : '<div class="fv2-aviso">Ainda não testado — clique em Testar agora.</div>')
     + _qpCamadas(E)
+    + _qpIaEtapas(E?.resumo?.ia_uso)
     + _qpLogHtml(E)
     + '<div class="fv2-abas">' + [['pendentes', 'Pendentes'], ['aberto', 'Abertos'], ['em_correcao', 'Em correção'], ['corrigido', 'A retestar'], ['fechados', 'Fechados'], ['todos', 'Todos']].map(([k, t]) => { const n = { pendentes: pend, aberto: A.filter(a => a.status === 'aberto'), em_correcao: A.filter(a => a.status === 'em_correcao'), corrigido: A.filter(a => a.status === 'corrigido'), fechados: A.filter(a => ['validado', 'falso_positivo', 'aceito'].includes(a.status)), todos: A }[k].length;
       return '<button class="fv2-aba' + (k === _qpFiltro ? ' on' : '') + '" onclick="_qpFiltro=\'' + k + '\';qpDetalhe()">' + t + ' (' + n + ')</button>'; }).join('')
@@ -35272,7 +35284,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.277] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.278] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35288,7 +35300,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.277';
+window.__ATX_BUILD_ID__ = 'ATX-v3.278';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

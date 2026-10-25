@@ -30,12 +30,16 @@ const MACACO_TELAS = parseInt(process.env.QA_MACACO_TELAS || '4'), MACACO_ACOES 
 const api = async (action, body = {}) => {
   const r = await fetch(BASE + '/api/qa-externo', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + SEG }, body: JSON.stringify({ action, ...body }) });
   const d = await r.json().catch(() => ({})); if (!r.ok || !d.success) throw new Error(action + ': ' + (d.error || r.status));
-  if (d.uso) { TOK.chamadas++; TOK.entrada += (d.uso.input_tokens || 0) + (d.uso.cache_creation_input_tokens || 0) + (d.uso.cache_read_input_tokens || 0); TOK.saida += d.uso.output_tokens || 0; }
+  if (d.uso) { const ent = (d.uso.input_tokens || 0) + (d.uso.cache_creation_input_tokens || 0) + (d.uso.cache_read_input_tokens || 0), sai = d.uso.output_tokens || 0;
+    TOK.chamadas++; TOK.entrada += ent; TOK.saida += sai;
+    // v3.278: consumo aberto por etapa do teste
+    const et = action === 'robo_passo' ? PASSO_ETAPA : ({ robo_criticar: 'logica_ia', robo_jornadas: 'jornadas', robo_layout: 'layout' })[action] || action;
+    const E = (TOK.por_etapa[et] = TOK.por_etapa[et] || { chamadas: 0, entrada: 0, saida: 0 }); E.chamadas++; E.entrada += ent; E.saida += sai; }
   return d;
 };
 // v3.276: contador de tokens da IA por execução + disjuntor: acabou o crédito da Anthropic (ou a chave foi recusada) →
 // para de chamar a IA no resto da execução (antes seguia tentando em todas as telas, jornadas e prints)
-let TOK = { chamadas: 0, entrada: 0, saida: 0 }, SEM_IA = null;
+let TOK = { chamadas: 0, entrada: 0, saida: 0, por_etapa: {} }, SEM_IA = null, PASSO_ETAPA = 'plano';
 const RX_SEM_IA = /credit balance|billing|purchase credits|insufficient|quota|invalid x-api-key|authentication_error|ANTHROPIC_API_KEY ausente/i;
 const espera = ms => new Promise(r => setTimeout(r, ms));
 // v3.230: placar das chamadas de IA por camada — antes a falha da IA era silenciosa (a camada "sumia" do relatório
@@ -88,7 +92,7 @@ await browser.close();
 
 async function testarProduto(P, execId, casos = []) {
   const t0 = Date.now(), fimEm = t0 + ORC_MIN * 60000, marca = 'QA-ATX-' + execId.slice(-6);
-  IA = {}; TOK = { chamadas: 0, entrada: 0, saida: 0 }; SEM_IA = null;
+  IA = {}; TOK = { chamadas: 0, entrada: 0, saida: 0, por_etapa: {} }; SEM_IA = null; PASSO_ETAPA = 'plano';
   // v3.230: a exploração das telas para em 60% do tempo — o resto fica reservado para jornadas, macaco, layout,
   // governança, integração e segurança (antes a exploração podia consumir tudo e essas camadas não rodavam)
   const fimExpl = t0 + ORC_MIN * 60000 * 0.6;
@@ -138,7 +142,7 @@ async function testarProduto(P, execId, casos = []) {
   const urlInicial = pg.url();
   const printPg = async () => { try { return 'data:image/jpeg;base64,' + (await pg.screenshot({ type: 'jpeg', quality: 45, fullPage: false })).toString('base64'); } catch (_) { return null; } };
   // ── 1b. Robô do Plano de Testes (mundo ideal primeiro) ──
-  if (casos.length) {
+  if (casos.length) { PASSO_ETAPA = 'plano';
     const limiteT = t0 + ORC_MIN * 60000 * 0.5;
     for (const C of casos.filter(c => !['carga', 'estresse'].includes(c.tipo)).slice(0, MAX_CASOS)) {
       if (Date.now() > limiteT) { console.log('  (tempo do plano esgotado — restantes ficam para a próxima execução)'); break; }
@@ -259,6 +263,7 @@ async function testarProduto(P, execId, casos = []) {
     progresso({ etapa: 'Robô Usuário IA — montando jornadas', pct: 76 }, true);
     try { const rj = await api('robo_jornadas', { produto: { nome: P.nome, contexto: P.contexto }, telas: telasInfo, permitir_gravacao: P.permitir_gravacao, quantidade: MAX_JORNADAS }); jorn = rj.jornadas || [];
       iaConta('jornadas', !rj.aviso && jorn.length > 0, rj.aviso || 'a IA não devolveu jornadas'); } catch (e) { iaConta('jornadas', false, e.message); console.log('    jornadas:', e.message); }
+    PASSO_ETAPA = 'jornadas';
     for (const [i, J] of jorn.slice(0, MAX_JORNADAS).entries()) {
       if (Date.now() > fimEm - 240000 || SEM_IA) break;
       const C = { codigo: 'J-' + String(i + 1).padStart(2, '0'), titulo: J.titulo, tipo: J.tipo, passos: J.passos || [], esperado: J.esperado };
