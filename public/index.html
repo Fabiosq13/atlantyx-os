@@ -710,6 +710,7 @@ html[data-theme="light"]{--fv2-s1:#2a78d6;--fv2-s1b:#9ec5f4;--fv2-s2:#eb6834;--f
 
 
 .kg.k5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.diag-it{border-radius:5px;transition:background .15s}.diag-it:hover{background:rgba(107,159,255,.08)}
 </style>
 </head>
 <body>
@@ -7340,7 +7341,7 @@ function renderIntelResult(action, data, resultId) {
   const el = document.getElementById(resultId);
   if (!el) return;
 
-  if (action === 'diagnostico_completo') renderDiagnostico(data.diagnostico, el);
+  if (action === 'diagnostico_completo') renderDiagnostico(data.diagnostico, el, data.dados_usados);
   else if (action === 'analise_riscos') renderRiscos(data.riscos, el);
   else if (action === 'analise_financeira') renderFinanceiro(data.financeiro, el);
   else if (action === 'analise_mercado') renderMercado(data.mercado, el);
@@ -7420,29 +7421,92 @@ function card(title, color, children) {
   </div>`;
 }
 
-function renderDiagnostico(d, el) {
+function renderDiagnostico(d, el, dados) {
   if (!d) { el.innerHTML = '<div style="color:var(--red);">Sem dados</div>'; return; }
+  // v3.289: guarda o diagnóstico e os dados que o pautaram — clique em qualquer item abre os valores
+  window._diagDados = window._diagDados || {}; if (!el.id) el.id = 'diag' + Date.now(); window._diagDados[el.id] = { d, dados: dados || (window._diagDados[el.id] || {}).dados || null }; el.dataset.diag = el.id;
   const sc = semCor(d.saude_geral);
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--bd);">
-      <div style="flex:1;"><div style="font-family:var(--H);font-size:18px;font-weight:700;">${d.headline||''}</div><div style="font-size:11px;color:var(--t2);margin-top:4px;">${d.momento||''}</div></div>
+      <div class="diag-it" onclick="diagEvid('evidencias_gerais',-1,this)" title="Clique para ver os valores que pautaram a análise" style="flex:1;cursor:pointer;"><div style="font-family:var(--H);font-size:18px;font-weight:700;">${d.headline||''}</div><div style="font-size:11px;color:var(--t2);margin-top:4px;">${d.momento||''}</div></div>
       <div style="text-align:center;"><div style="font-family:var(--M);font-size:26px;font-weight:700;color:${_corTxt(sc)};">${d.nota_geral||0}<span style="font-size:14px;">/10</span></div><div style="font-family:var(--M);font-size:9px;color:${_corTxt(sc)};">● ${(d.saude_geral) || '—'}</div></div>
     </div>
     <div class="kg k2" style="margin-bottom:12px;">
-      ${card('MAIOR OPORTUNIDADE AGORA','var(--green)',`<div style="font-size:12px;line-height:1.6;">${d.maior_oportunidade_agora||''}</div>`)}
-      ${card('MAIOR RISCO AGORA','var(--red)',`<div style="font-size:12px;line-height:1.6;">${d.maior_risco_agora||''}</div>`)}
+      ${card('MAIOR OPORTUNIDADE AGORA','var(--green)',`<div class="diag-it" onclick="diagEvid('evidencias_oportunidade',-1,this)" title="Clique para ver os valores" style="cursor:pointer;font-size:12px;line-height:1.6;">${d.maior_oportunidade_agora||''}</div>`)}
+      ${card('MAIOR RISCO AGORA','var(--red)',`<div class="diag-it" onclick="diagEvid('evidencias_risco',-1,this)" title="Clique para ver os valores" style="cursor:pointer;font-size:12px;line-height:1.6;">${d.maior_risco_agora||''}</div>`)}
     </div>
     <div class="kg k2" style="margin-bottom:12px;">
-      ${card('FORÇAS','var(--green)',(d.swot?.forcas||[]).map(f=>`<div style="padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;display:flex;justify-content:space-between;align-items:center;"><span>${f.item||f}</span><span style="font-family:var(--M);font-size:9px;color:${_corTxt(impCor(f.impacto))};">${f.impacto||''}</span></div>`).join(''))}
-      ${card('FRAQUEZAS','var(--red)',(d.swot?.fraquezas||[]).map(f=>`<div style="padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;"><div style="display:flex;justify-content:space-between;"><span>${f.item||f}</span><span style="font-family:var(--M);font-size:9px;color:var(--red);">${f.impacto||''}</span></div>${f.como_mitigar?`<div style="font-size:10px;color:var(--blue);margin-top:2px;">-> ${f.como_mitigar}</div>`:''}</div>`).join(''))}
+      ${card('FORÇAS','var(--green)',(d.swot?.forcas||[]).map((f,i)=>`<div class="diag-it" onclick="diagEvid('swot.forcas',${i},this)" title="Clique para ver os valores que sustentam este ponto" style="cursor:pointer;padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;display:flex;justify-content:space-between;align-items:center;"><span>${f.item||f}</span><span style="font-family:var(--M);font-size:9px;color:${_corTxt(impCor(f.impacto))};">${f.impacto||''}</span></div>`).join(''))}
+      ${card('FRAQUEZAS','var(--red)',(d.swot?.fraquezas||[]).map((f,i)=>`<div class="diag-it" onclick="diagEvid('swot.fraquezas',${i},this)" title="Clique para ver os valores que sustentam este ponto" style="cursor:pointer;padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;"><div style="display:flex;justify-content:space-between;"><span>${f.item||f}</span><span style="font-family:var(--M);font-size:9px;color:var(--red);">${f.impacto||''}</span></div>${f.como_mitigar?`<div style="font-size:10px;color:var(--blue);margin-top:2px;">-> ${f.como_mitigar}</div>`:''}</div>`).join(''))}
     </div>
     <div class="kg k2" style="margin-bottom:12px;">
-      ${card('OPORTUNIDADES','var(--blue)',(d.swot?.oportunidades||[]).map(o=>`<div style="padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;"><div>${o.item||o}</div>${o.acao?`<div style="font-size:10px;color:var(--green);margin-top:2px;">-> ${o.acao}</div>`:''}</div>`).join(''))}
-      ${card('AMEAÇAS','var(--gold)',(d.swot?.ameacas||[]).map(a=>`<div style="padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;"><div>${a.item||a}</div>${a.mitigacao?`<div style="font-size:10px;color:var(--gold);margin-top:2px;">  ${a.mitigacao}</div>`:''}</div>`).join(''))}
+      ${card('OPORTUNIDADES','var(--blue)',(d.swot?.oportunidades||[]).map((o,i)=>`<div class="diag-it" onclick="diagEvid('swot.oportunidades',${i},this)" title="Clique para ver os valores que sustentam este ponto" style="cursor:pointer;padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;"><div>${o.item||o}</div>${o.acao?`<div style="font-size:10px;color:var(--green);margin-top:2px;">-> ${o.acao}</div>`:''}</div>`).join(''))}
+      ${card('AMEAÇAS','var(--gold)',(d.swot?.ameacas||[]).map((a,i)=>`<div class="diag-it" onclick="diagEvid('swot.ameacas',${i},this)" title="Clique para ver os valores que sustentam este ponto" style="cursor:pointer;padding:4px 0;border-bottom:1px solid var(--bd);font-size:11px;"><div>${a.item||a}</div>${a.mitigacao?`<div style="font-size:10px;color:var(--gold);margin-top:2px;">  ${a.mitigacao}</div>`:''}</div>`).join(''))}
     </div>
-    ${card('GARGALOS CRÍTICOS -- O QUE ESTÁ TRAVANDO CRESCIMENTO','var(--red)',(d.gargalos_criticos||[]).map(g=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;"><strong style="font-size:11.5px;">${g.gargalo}</strong><span style="font-family:var(--M);font-size:9px;color:var(--red);">${g.impacto_receita||''}</span></div><div style="font-size:11px;color:var(--blue);">  ${g.solucao} <span style="color:var(--t3);">· ${g.prazo} · ${g.responsavel}</span></div></div>`).join(''))}
-    ${card('ALAVANCAS DE CRESCIMENTO','var(--green)',(d.alavancas_de_crescimento||[]).map(a=>`<div style="padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;align-items:center;"><strong style="font-size:11.5px;">${a.alavanca}</strong><span style="font-family:var(--M);font-size:9px;color:var(--green);">${a.potencial_receita||''}</span></div><div style="font-size:11px;color:var(--t2);margin-top:2px;">Esforço: <span style="color:${_corTxt(impCor(a.esforco))}">${a.esforco}</span> · ${a.prazo} · <span style="color:var(--blue);">${a.acao_imediata||''}</span></div></div>`).join(''))}
-    ${card('PRÓXIMOS 90 DIAS CRÍTICOS','var(--blue)',`<div style="font-size:12px;line-height:1.7;">${d.proximos_90_dias_criticos||''}</div>`)}`;
+    ${card('GARGALOS CRÍTICOS -- O QUE ESTÁ TRAVANDO CRESCIMENTO','var(--red)',(d.gargalos_criticos||[]).map((g,i)=>`<div class="diag-it" onclick="diagEvid('gargalos_criticos',${i},this)" title="Clique para ver os valores que sustentam este ponto" style="cursor:pointer;padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;"><strong style="font-size:11.5px;">${g.gargalo}</strong><span style="font-family:var(--M);font-size:9px;color:var(--red);">${g.impacto_receita||''}</span></div><div style="font-size:11px;color:var(--blue);">  ${g.solucao} <span style="color:var(--t3);">· ${g.prazo} · ${g.responsavel}</span></div></div>`).join(''))}
+    ${card('ALAVANCAS DE CRESCIMENTO','var(--green)',(d.alavancas_de_crescimento||[]).map((a,i)=>`<div class="diag-it" onclick="diagEvid('alavancas_de_crescimento',${i},this)" title="Clique para ver os valores que sustentam este ponto" style="cursor:pointer;padding:6px 0;border-bottom:1px solid var(--bd);"><div style="display:flex;justify-content:space-between;align-items:center;"><strong style="font-size:11.5px;">${a.alavanca}</strong><span style="font-family:var(--M);font-size:9px;color:var(--green);">${a.potencial_receita||''}</span></div><div style="font-size:11px;color:var(--t2);margin-top:2px;">Esforço: <span style="color:${_corTxt(impCor(a.esforco))}">${a.esforco}</span> · ${a.prazo} · <span style="color:var(--blue);">${a.acao_imediata||''}</span></div></div>`).join(''))}
+    ${card('PRÓXIMOS 90 DIAS CRÍTICOS','var(--blue)',`<div style="font-size:12px;line-height:1.7;">${d.proximos_90_dias_criticos||''}</div>`)}
+    <div style="font-size:10px;color:var(--t3);margin:4px 0 10px;">💡 Clique em qualquer ponto do diagnóstico para ver os valores que o sustentam e todos os dados que a IA recebeu.</div>
+    ${_diagAtlasHtml(el.id)}`;
+}
+
+
+// v3.289: valores que pautaram cada ponto do diagnóstico + ATLAS dentro da tela
+function _diagRaiz(btn) { const r = btn && btn.closest('[data-diag]'); return r ? (window._diagDados || {})[r.dataset.diag] : null; }
+function _diagFmt(v) { if (v == null) return '—'; if (typeof v === 'number') return Math.abs(v) >= 1000 ? v.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) : String(v); return String(v); }
+function _diagArvore(o, nivel = 0) {
+  if (o == null || typeof o !== 'object') return '<span>' + _diagFmt(o).replace(/</g, '&lt;') + '</span>';
+  const ent = Array.isArray(o) ? o.map((v, i) => [i + 1, v]) : Object.entries(o);
+  if (!ent.length) return '<span style="color:var(--t3);">vazio</span>';
+  return '<div style="padding-left:' + (nivel ? 12 : 0) + 'px;border-left:' + (nivel ? '1px solid var(--bd)' : '0') + ';">' + ent.slice(0, 80).map(([k, v]) => (v && typeof v === 'object')
+    ? '<details ' + (nivel < 1 ? 'open' : '') + ' style="margin:2px 0;"><summary style="cursor:pointer;font-size:10.5px;color:var(--t2);">' + String(k).replace(/_/g, ' ') + '</summary>' + _diagArvore(v, nivel + 1) + '</details>'
+    : '<div style="display:flex;gap:8px;font-size:10.5px;padding:1px 0;"><span style="color:var(--t3);min-width:150px;">' + String(k).replace(/_/g, ' ') + '</span><b style="font-family:var(--M);font-weight:600;">' + _diagFmt(v).replace(/</g, '&lt;') + '</b></div>').join('') + (ent.length > 80 ? '<div style="font-size:10px;color:var(--t3);">… +' + (ent.length - 80) + '</div>' : '') + '</div>';
+}
+function diagEvid(caminho, i, btn) {
+  const R = _diagRaiz(btn); if (!R) return; const d = R.d;
+  const alvo = caminho.split('.').reduce((o, k) => o?.[k], d);
+  const item = i >= 0 ? (alvo || [])[i] : null;
+  const ev = (item ? item.evidencias : alvo) || [];
+  const titulo = item ? (item.item || item.gargalo || item.alavanca || '') : ({ evidencias_gerais: d.headline, evidencias_risco: 'Maior risco: ' + (d.maior_risco_agora || ''), evidencias_oportunidade: 'Maior oportunidade: ' + (d.maior_oportunidade_agora || '') })[caminho] || '';
+  const extras = item ? Object.entries(item).filter(([k, v]) => !['evidencias', 'item', 'gargalo', 'alavanca'].includes(k) && v != null && typeof v !== 'object') : [];
+  document.getElementById('diagEvModal')?.remove();
+  const m = document.createElement('div'); m.id = 'diagEvModal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:28px 12px;overflow:auto;';
+  m.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:12px;width:min(860px,100%);">'
+    + '<div style="padding:14px 16px;border-bottom:1px solid var(--bd);display:flex;gap:10px;align-items:flex-start;"><div style="flex:1;"><div style="font-size:10px;color:var(--t3);text-transform:uppercase;font-family:var(--M);">' + caminho.replace('swot.', 'SWOT · ').replace(/_/g, ' ') + '</div><div style="font-family:var(--H);font-size:14px;font-weight:700;margin-top:2px;">' + String(titulo).replace(/</g, '&lt;') + '</div>'
+    + (extras.length ? '<div style="font-size:11px;color:var(--t2);margin-top:4px;">' + extras.map(([k, v]) => '<b>' + k.replace(/_/g, ' ') + ':</b> ' + String(v).replace(/</g, '&lt;')).join(' · ') + '</div>' : '') + '</div>'
+    + '<button class="btn btn-g" onclick="document.getElementById(\'diagEvModal\').remove()">✕</button></div><div style="padding:14px 16px;">'
+    + '<div style="font-size:11px;font-weight:700;margin-bottom:6px;">📊 Valores que sustentam este ponto</div>'
+    + (ev.length ? '<table style="width:100%;border-collapse:collapse;font-size:11px;"><tr style="color:var(--t3);text-align:left;font-size:9.5px;text-transform:uppercase;"><th style="padding:4px;">Indicador</th><th style="padding:4px;">Valor</th><th style="padding:4px;">Leitura</th><th style="padding:4px;">Origem</th></tr>'
+      + ev.map(e => '<tr style="border-top:1px solid var(--bd);"><td style="padding:5px 4px;">' + String(e.indicador || '').replace(/</g, '&lt;') + '</td><td style="padding:5px 4px;font-family:var(--M);font-weight:700;white-space:nowrap;">' + String(e.valor ?? '—').replace(/</g, '&lt;') + '</td><td style="padding:5px 4px;color:var(--t2);">' + String(e.leitura || '').replace(/</g, '&lt;') + '</td><td style="padding:5px 4px;color:var(--t3);font-size:10px;">' + String(e.fonte || '').replace(/</g, '&lt;') + '</td></tr>').join('') + '</table>'
+      : '<div style="font-size:11px;color:var(--gold);">Este diagnóstico foi gerado antes da versão que pede os valores a cada ponto — rode o diagnóstico de novo para ver as evidências item a item. Abaixo, todos os dados que a IA recebeu.</div>')
+    + '<details style="margin-top:12px;" ' + (ev.length ? '' : 'open') + '><summary style="cursor:pointer;font-size:11px;font-weight:700;">🗂 Todos os dados que a IA recebeu nesta análise</summary><div style="margin-top:6px;max-height:50vh;overflow:auto;">' + (R.dados ? _diagArvore(R.dados) : '<span style="font-size:11px;color:var(--t3);">Os dados de entrada não foram guardados neste diagnóstico (rode de novo).</span>') + '</div></details>'
+    + '<button class="btn btn-or" style="margin-top:12px;" onclick="document.getElementById(\'diagEvModal\').remove();diagAtlasPerguntar(' + JSON.stringify(btn.closest('[data-diag]').dataset.diag).replace(/"/g, '&quot;') + ', ' + JSON.stringify('Explique e confira este ponto do diagnóstico com os números da empresa: ' + titulo).replace(/"/g, '&quot;') + ')">🧠 Perguntar ao ATLAS sobre este ponto</button></div></div>';
+  m.onclick = e => { if (e.target === m) m.remove(); };
+  document.body.appendChild(m);
+}
+function _diagAtlasHtml(id) {
+  return '<div class="panel" style="margin:6px 0 0;border-left:3px solid var(--pu,#a78bfa);" id="' + id + 'Atlas"><div class="ph"><div class="pt">🧠 ATLAS — converse sobre este diagnóstico</div><span style="font-size:10px;color:var(--t2);">ele vê o diagnóstico e todos os números da empresa</span></div><div class="pb">'
+    + '<div id="' + id + 'AtlasMsgs" style="max-height:340px;overflow:auto;font-size:11.5px;line-height:1.6;"><div style="color:var(--t3);font-size:11px;">Pergunte, por exemplo: "o diagnóstico está coerente com o caixa?", "qual gargalo atacar primeiro?", "como chegar aos R$ 5 milhões?"</div></div>'
+    + '<div style="display:flex;gap:6px;margin-top:8px;"><input class="fi" id="' + id + 'AtlasIn" placeholder="Pergunte ao ATLAS…" style="flex:1;" onkeydown="if(event.key===\'Enter\')diagAtlasPerguntar(\'' + id + '\')"/>'
+    + '<button class="btn btn-p" id="' + id + 'AtlasBtn" onclick="diagAtlasPerguntar(\'' + id + '\')">Enviar</button></div></div></div>';
+}
+async function diagAtlasPerguntar(id, texto) {
+  const R = (window._diagDados || {})[id]; const inp = document.getElementById(id + 'AtlasIn'), box = document.getElementById(id + 'AtlasMsgs'), btn = document.getElementById(id + 'AtlasBtn');
+  const q = String(texto || inp?.value || '').trim(); if (!q || !box) return; if (inp) inp.value = '';
+  document.getElementById(id + 'Atlas')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (box.dataset.ini !== '1') { box.innerHTML = ''; box.dataset.ini = '1'; }
+  const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  box.insertAdjacentHTML('beforeend', '<div style="margin:6px 0;text-align:right;"><span style="display:inline-block;background:var(--bg4);border-radius:8px;padding:6px 10px;">' + esc(q) + '</span></div><div class="diag-pensando" style="color:var(--t3);margin:6px 0;">🧠 ATLAS analisando…</div>');
+  box.scrollTop = box.scrollHeight; if (btn) btn.disabled = true;
+  const D = R?.d || {}; const resumo = JSON.stringify({ nota: D.nota_geral, saude: D.saude_geral, headline: D.headline, momento: D.momento, swot: D.swot, gargalos: D.gargalos_criticos, alavancas: D.alavancas_de_crescimento, maior_risco: D.maior_risco_agora, maior_oportunidade: D.maior_oportunidade_agora, proximos_90_dias: D.proximos_90_dias_criticos });
+  try {
+    const r = await fetch('/api/estrategia', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'chat', conversa_id: R?.conv || null, mensagem: q, titulo_extra: 'Diagnóstico Completo da Empresa', contexto_extra: 'DIAGNÓSTICO NA TELA: ' + resumo + '\nDADOS QUE O DIAGNÓSTICO USOU: ' + JSON.stringify(R?.dados || {}).substring(0, 5000) }) });
+    const d = await r.json(); if (!d.success) throw new Error(d.error || 'falha'); if (R) R.conv = d.conversa_id;
+    box.querySelector('.diag-pensando')?.remove();
+    const html = esc(d.resposta).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+    box.insertAdjacentHTML('beforeend', '<div style="margin:6px 0;background:rgba(167,139,250,.08);border-radius:8px;padding:8px 10px;">' + html + '</div>');
+  } catch (e) { box.querySelector('.diag-pensando')?.remove(); box.insertAdjacentHTML('beforeend', '<div style="color:var(--red);margin:6px 0;">ATLAS: ' + esc(e.message) + '</div>'); }
+  if (btn) btn.disabled = false; box.scrollTop = box.scrollHeight;
 }
 
 function renderRiscos(d, el) {
@@ -35329,7 +35393,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.288] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.289] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35345,7 +35409,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.288';
+window.__ATX_BUILD_ID__ = 'ATX-v3.289';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

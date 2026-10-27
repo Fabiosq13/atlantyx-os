@@ -176,7 +176,7 @@ const json = t => { const s = String(t || '').replace(/```json|```/g, ''); const
 const REGRAS = `Regras: português do Brasil; use os números do CONTEXTO quando existirem e diga quando um dado falta — nunca invente número, cliente ou fato; seja específico para a Atlantyx (nada de conselho genérico); prefira poucas escolhas claras com o porquê e o próximo passo.`;
 
 // ── chat com o ATLAS ──
-async function chat({ conversa_id, mensagem, voz, persona }) {
+async function chat({ conversa_id, mensagem, voz, persona, contexto_extra, titulo_extra }) {
   const sql = await getSql(); const m = String(mensagem || '').trim(); if (!m) throw new Error('Escreva ou fale a sua pergunta');
   let conv = conversa_id ? (await sql`SELECT * FROM est_conversas WHERE id=${conversa_id}`)[0] : null;
   const quem = persona === 'norte' ? 'norte' : 'atlas';
@@ -195,7 +195,7 @@ ${prem}
 
 PLANO VIGENTE: ${plano ? JSON.stringify({ aprovado_em: plano.aprovado_em, tema: plano.tema, sintese: plano.sintese }).substring(0, 3500) : '(nenhum aprovado ainda)'}
 
-CONTEXTO VIVO DO ATLANTYX OS (JSON): ${resumoCtx(ctx)}`;
+CONTEXTO VIVO DO ATLANTYX OS (JSON): ${resumoCtx(ctx)}${contexto_extra ? `\n\nO FUNDADOR ESTÁ OLHANDO AGORA ${titulo_extra ? '(' + String(titulo_extra).substring(0, 80) + ')' : ''} — responda sobre isto, confrontando com os números acima e apontando se algo da análise não bate com os dados:\n${String(contexto_extra).substring(0, 9000)}` : ''}`;
   const sysNorte = quem === 'norte' ? `Você é NORTE, o mentor de propósito e metas do fundador e CEO da Atlantyx (Fabio). Seu trabalho: ajudar a viver o propósito dele e a alinhar as METAS PESSOAIS (vida, família, saúde, finanças pessoais, legado, causa social) com as METAS DA EMPRESA e o propósito da Atlantyx.
 Como você age: escuta antes de aconselhar; faz uma pergunta poderosa por vez quando faltar clareza; transforma propósito em metas concretas (SMART), hábitos e rituais (revisão semanal, trimestral); aponta com respeito quando uma meta pessoal e uma da empresa competem (tempo, energia, dinheiro) e propõe a troca consciente; celebra avanço real.
 Limites: você não é terapeuta nem médico — em temas de saúde ou emocionais, acolha e sugira um profissional. Não invente dados; use os do contexto. Português do Brasil, tom humano e direto.

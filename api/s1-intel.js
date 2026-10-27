@@ -123,28 +123,32 @@ Retorne:
   "headline": "frase de 1 linha resumindo o momento da empresa",
   "momento": "descrição do estágio atual em 3-4 linhas — onde está, o que está indo bem, o que está travando",
   "swot": {
-    "forcas": [{"item":"...","impacto":"Alto|Médio|Baixo","como_aproveitar":"..."}],
-    "fraquezas": [{"item":"...","impacto":"Alto|Médio|Baixo","como_mitigar":"..."}],
-    "oportunidades": [{"item":"...","janela":"Agora|6m|1ano","acao":"..."}],
-    "ameacas": [{"item":"...","probabilidade":"Alta|Média|Baixa","mitigacao":"..."}]
+    "forcas": [{"item":"...","impacto":"Alto|Médio|Baixo","como_aproveitar":"...","evidencias":[EV]}],
+    "fraquezas": [{"item":"...","impacto":"Alto|Médio|Baixo","como_mitigar":"...","evidencias":[EV]}],
+    "oportunidades": [{"item":"...","janela":"Agora|6m|1ano","acao":"...","evidencias":[EV]}],
+    "ameacas": [{"item":"...","probabilidade":"Alta|Média|Baixa","mitigacao":"...","evidencias":[EV]}]
   },
   "gargalos_criticos": [
-    {"gargalo":"...","impacto_receita":"R$X/mês perdidos","solucao":"...","prazo":"X semanas","responsavel":"..."}
+    {"gargalo":"...","impacto_receita":"R$X/mês perdidos","solucao":"...","prazo":"X semanas","responsavel":"...","evidencias":[EV]}
   ],
   "alavancas_de_crescimento": [
-    {"alavanca":"...","potencial_receita":"R$X","esforco":"Alto|Médio|Baixo","prazo":"...","acao_imediata":"..."}
+    {"alavanca":"...","potencial_receita":"R$X","esforco":"Alto|Médio|Baixo","prazo":"...","acao_imediata":"...","evidencias":[EV]}
   ],
+  "evidencias_gerais": [EV],
   "posicionamento_mercado": "análise do posicionamento atual vs. ideal",
   "vantagem_competitiva_real": "qual é a real vantagem defensável da Atlantyx hoje",
   "maior_risco_agora": "o risco número 1 que pode travar o crescimento nos próximos 90 dias",
   "maior_oportunidade_agora": "a oportunidade número 1 que pode acelerar o crescimento nos próximos 90 dias",
-  "proximos_90_dias_criticos": "o que precisa acontecer nos próximos 90 dias para a empresa atingir R$5M"
-}`;
+  "proximos_90_dias_criticos": "o que precisa acontecer nos próximos 90 dias para a empresa atingir R$5M",
+  "evidencias_risco": [EV], "evidencias_oportunidade": [EV]
+}
+EV = {"indicador":"nome do dado","valor":"valor EXATO como está no contexto (R$, %, quantidade)","fonte":"caminho no contexto, ex.: dados_reais.financeiro.caixa","leitura":"por que esse número sustenta o ponto (1 frase)"}.
+Cada item precisa de 1 a 3 evidências tiradas LITERALMENTE de dados_reais (ou do plano vigente). Se não houver número que sustente o item, use {"indicador":"sem dado","valor":"—","fonte":"","leitura":"inferência qualitativa"} — nunca invente valores.`;
 
-  const r = await claude(system, user, 3000);
+  const r = await claude(system, user, 5000);
   const diag = parseJSON(r);
   console.log(`[S1-Intel] Diagnóstico: ${diag.nota_geral}/10 — ${diag.saude_geral}`);
-  return { diagnostico: diag };
+  return { diagnostico: diag, dados_usados: ctx?.dados_reais ? { dados_reais: ctx.dados_reais, plano_estrategico_vigente: ctx.plano_estrategico_vigente || null, data_de_hoje: ctx.data_de_hoje } : ctx }; // v3.289: os valores que pautaram a análise
 }
 
 // ── ANÁLISE DE RISCOS ─────────────────────────────────────────────────────────
