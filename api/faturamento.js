@@ -1,6 +1,6 @@
 import { comGuarda } from '../lib/qa-guard.js';
 const _hojeBRf = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // v3.231: hoje em Brasília
-import { termoPendencias, PRAZO_TERMO_DIAS as _PRAZO_TERMO } from '../lib/termo-regras.js'; // v3.129
+import { termoPendencias, previsaoPagamento, dia as _diaT, PRAZO_TERMO_DIAS as _PRAZO_TERMO } from '../lib/termo-regras.js'; // v3.129
 import * as RET from '../lib/retencao-fatura.js'; // v3.246: fatura já descontada do imposto retido
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
@@ -129,7 +129,7 @@ async function cpflConfirmar({ termo_id, confirmado = true, por, observacao, pre
       cpfl_confirmado_em = ${confirmado ? new Date().toISOString() : null},
       cpfl_confirmado_por = ${confirmado ? (por || 'financeiro') : null},
       cpfl_observacao = ${observacao || null},
-      cpfl_previsao_pagamento = ${previsao_pagamento || null},
+      cpfl_previsao_pagamento = CASE WHEN ${!!confirmado} THEN COALESCE(${previsao_pagamento ? _diaT(previsao_pagamento) : null}::date, cpfl_previsao_pagamento) ELSE NULL END, -- v3.281: confirmar de novo sem data não apaga a previsão
       atualizado_em = NOW()
     WHERE id = ${termo_id}`;
   const r = await sql`SELECT id, numero_termo, cpfl_confirmado, cpfl_confirmado_em, cpfl_confirmado_por,
@@ -181,6 +181,7 @@ async function statusPendencias({ dias_limite_envio_nf = 5 } = {}) {
 
 function novoId(prefixo) { return (prefixo || 'id') + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 const num = v => { const n = parseFloat(v); return isNaN(n) ? 0 : Math.round(n * 100) / 100; };
+const pctNum = v => { const n = parseFloat(v); return isNaN(n) ? 0 : Math.round(n * 1e6) / 1e6; }; // v3.281: percentual do rateio (0–1) com 6 casas — num() arredondava 12,5% para 13%
 const normEmpresa = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -216,7 +217,7 @@ async function termoImportar({ arquivo_nome, cabecalho = {}, empresas = [], forc
     await sql`INSERT INTO termos_empresas
       (id, termo_id, ordem, empresa, contrato, ncm, centro_custo, diferimento, valor_total_contrato, percentual, valor_ja_faturado, valor_parcela_anterior, valor_parcela, saldo_contrato, cnpj)
       VALUES (${novoId('temp')}, ${id}, ${ordem++}, ${e.empresa || ''}, ${e.contrato || ''}, ${e.ncm || ''}, ${e.centro_custo || ''}, ${e.diferimento || ''},
-              ${num(e.valor_total_contrato)}, ${num(e.percentual)}, ${num(e.valor_ja_faturado)}, ${num(e.valor_parcela_anterior)}, ${num(e.valor_parcela)}, ${num(e.saldo_contrato)},
+              ${num(e.valor_total_contrato)}, ${pctNum(e.percentual)}, ${num(e.valor_ja_faturado)}, ${num(e.valor_parcela_anterior)}, ${num(e.valor_parcela)}, ${num(e.saldo_contrato)},
               ${String(e.cnpj || '').replace(/[^0-9]/g, '') || null})`;
   }
   console.log(`[Faturamento] Termo importado: ${id} · ${cabecalho.projeto} · ${empresas.length} empresa(s) · total R$ ${valorTotal}`);
@@ -467,7 +468,7 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
       // v2.44: pagamento_data é TEXT e pode vir como AAAA-MM-DD ou DD/MM/AAAA. Normaliza no SQL
       // antes de comparar — um único registro mal formatado derrubava o filtro inteiro.
       const pagas = idsT.length ? await sql`SELECT termo_id, id AS empresa_id, empresa, nf_numero, pagamento_data FROM termos_empresas
-        WHERE termo_id = ANY(${idsT}) AND pagamento_data IS NOT NULL AND pagamento_data <> ''
+        WHERE termo_id = ANY(${idsT}) AND pagamento_status = 'pago' AND pagamento_data IS NOT NULL AND pagamento_data <> ''
           AND (CASE WHEN pagamento_data ~ '^\\d{4}-\\d{2}-\\d{2}' THEN SUBSTRING(pagamento_data,1,10)::date
                     WHEN pagamento_data ~ '^\\d{2}/\\d{2}/\\d{4}' THEN TO_DATE(SUBSTRING(pagamento_data,1,10),'DD/MM/YYYY')
                     ELSE NULL END) BETWEEN COALESCE(${pag_de || null}::date, '1900-01-01'::date) AND COALESCE(${pag_ate || null}::date, '2999-12-31'::date)` : [];
@@ -496,8 +497,11 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
     const emp = empresasPorTermo[t.id] || [];
     porColuna[t.status] = porColuna[t.status] || [];
     // v1.33: datas consolidadas do termo — emissão = primeira NF emitida · pagamento = último pagamento recebido
-    const datasNf = emp.map(e => e.nf_data).filter(Boolean).sort();
-    const datasPag = emp.map(e => e.pagamento_data).filter(Boolean).sort();
+    // v3.281: datas normalizadas (texto DD/MM/AAAA ordenava errado) e "pagamento" só das empresas PAGAS — a data de uma
+    // empresa ainda não paga é a previsão, que vai em data_prevista_pagamento (antes aparecia como "último pagamento recebido")
+    const datasNf = emp.map(e => _diaT(e.nf_data)).filter(Boolean).sort();
+    const datasPag = emp.filter(e => e.pagamento_status === 'pago').map(e => _diaT(e.pagamento_data)).filter(Boolean).sort();
+    const _prev = previsaoPagamento(t, emp);
     porColuna[t.status].push({ ...t, valor_total_termo: num(t.valor_total_termo), nf_soma: num(t.nf_soma), nf_diferenca: num(t.nf_diferenca),
       n_empresas: emp.length, n_nf_encontradas: emp.filter(e => e.nf_status === 'encontrada').length, n_pagas: emp.filter(e => e.pagamento_status === 'pago').length,
       pendencias_criticas: termoPendencias(t, emp), // v3.129: card vermelho no Kanban
@@ -513,7 +517,8 @@ async function termoList({ status, mes, ano, periodo_texto, pag_de, pag_ate, nf 
       data_emissao: datasNf[0] ? String(datasNf[0]).split('T')[0] : null,
       data_emissao_ultima: datasNf.length > 1 ? String(datasNf[datasNf.length - 1]).split('T')[0] : null,
       data_pagamento: datasPag.length ? String(datasPag[datasPag.length - 1]).split('T')[0] : null,
-      pagamento_completo: emp.length > 0 && emp.every(e => e.pagamento_status === 'pago') });
+      pagamento_completo: emp.length > 0 && emp.every(e => e.pagamento_status === 'pago'),
+      data_prevista_pagamento: !['pago', 'concluido'].includes(t.status) ? _prev.data : null, data_prevista_origem: _prev.origem });
   }
   // v1.20.3: total em valor (e contagem) por etapa, para o cabeçalho do Kanban de Faturamento
   const totaisPorColuna = {};
@@ -538,15 +543,16 @@ async function termoGet({ id } = {}) {
   const termo = rows[0];
   const empresas = await sql`SELECT * FROM termos_empresas WHERE termo_id = ${id} ORDER BY ordem`;
   const notas = await sql`SELECT * FROM termos_notas_encontradas WHERE termo_id = ${id} ORDER BY criado_em DESC`;
-  const _datasNf = empresas.map(e => e.nf_data).filter(Boolean).sort();
-  const _datasPag = empresas.map(e => e.pagamento_data).filter(Boolean).sort();
+  const _datasNf = empresas.map(e => _diaT(e.nf_data)).filter(Boolean).sort();
+  const _datasPag = empresas.filter(e => e.pagamento_status === 'pago').map(e => _diaT(e.pagamento_data)).filter(Boolean).sort();
   return { termo: { ...termo, valor_total_termo: num(termo.valor_total_termo), nf_soma: num(termo.nf_soma), nf_diferenca: num(termo.nf_diferenca),
       data_termo: termo.data_termo ? _dataISO(termo.data_termo) : null, data_base_prazo: (termo.data_termo ? _dataISO(termo.data_termo) : null) || (termo.criado_em ? String(termo.criado_em).substring(0,10) : null), data_base_origem: termo.data_termo ? 'data do termo (informada)' : 'inclusão no sistema',
       // v1.33: datas consolidadas para exibição
       data_emissao: _datasNf[0] ? String(_datasNf[0]).split('T')[0] : null,
       data_emissao_ultima: _datasNf.length > 1 ? String(_datasNf[_datasNf.length - 1]).split('T')[0] : null,
       data_pagamento: _datasPag.length ? String(_datasPag[_datasPag.length - 1]).split('T')[0] : null,
-      pagamento_completo: empresas.length > 0 && empresas.every(e => e.pagamento_status === 'pago') },
+      pagamento_completo: empresas.length > 0 && empresas.every(e => e.pagamento_status === 'pago'),
+      data_prevista_pagamento: !['pago', 'concluido'].includes(termo.status) ? previsaoPagamento(termo, empresas).data : null, pendencias_criticas: termoPendencias(termo, empresas) },
     empresas: empresas.map(e => ({ ...e, valor_parcela: num(e.valor_parcela), valor_total_contrato: num(e.valor_total_contrato), saldo_contrato: num(e.saldo_contrato), nf_valor: e.nf_valor != null ? num(e.nf_valor) : null })),
     notas };
 }
@@ -555,16 +561,28 @@ async function termoMover({ id, status, pago_em, manual } = {}) {
   if (!id || !STATUS.includes(status)) throw new Error('id e status válido obrigatórios (' + STATUS.join(', ') + ')');
   const sql = await getSql();
   // v2.21: marcação manual de pago — grava a data informada e o motivo, separado do sync
+  const _atual = (await sql`SELECT status FROM termos_faturamento WHERE id = ${id}`)[0]?.status || null;
   if (status === 'pago') {
-    try {
-      await sql`UPDATE termos_faturamento SET pago_em = ${pago_em || null}::timestamptz,
+    // v3.281: data aceita DD/MM/AAAA (antes "05/10/2026" virava 10 de maio, e "27/10/2026" quebrava em silêncio)
+    const dataPago = pago_em ? _diaT(pago_em) : null;
+    if (pago_em && !dataPago) throw new Error('Data de pagamento inválida: use DD/MM/AAAA');
+    // voltar de Concluído para Pago (ou mover de novo para Pago) sem data nova não apaga a data real do pagamento
+    const jaPago = ['pago', 'concluido'].includes(_atual) && !dataPago && !manual;
+    if (!jaPago) try {
+      await sql`UPDATE termos_faturamento SET pago_em = ${dataPago ? dataPago + 'T12:00:00-03:00' : null}::timestamptz,
         concluido_motivo = ${manual ? 'pago — marcado manualmente' : 'pagamento detectado automaticamente'}
         WHERE id = ${id}`;
-      if (!pago_em) await sql`UPDATE termos_faturamento SET pago_em = NOW() WHERE id = ${id} AND pago_em IS NULL`;
-      // marca as empresas do rateio como pagas também, para a tela ficar coerente
-      await sql`UPDATE termos_empresas SET pagamento_status = 'pago', pagamento_data = COALESCE(pagamento_data, ${pago_em || null}, CURRENT_DATE::text)
+      if (!dataPago) await sql`UPDATE termos_faturamento SET pago_em = NOW() WHERE id = ${id} AND pago_em IS NULL`;
+      // marca as empresas do rateio como pagas também — com a data do PAGAMENTO (a data que estava nelas era a previsão)
+      await sql`UPDATE termos_empresas SET pagamento_status = 'pago', pagamento_data = ${dataPago || _hojeBRf()}
         WHERE termo_id = ${id} AND (pagamento_status IS NULL OR pagamento_status <> 'pago')`;
     } catch (e) { console.warn('[FAT] campos de pago indisponíveis:', e.message); }
+  }
+  // v3.281: sair de Pago/Concluído para uma etapa anterior = o pagamento NÃO entrou — desfaz as baixas
+  // (antes as empresas seguiam pagas e a próxima conferência devolvia o termo para Pago sozinho)
+  if (['pago', 'concluido'].includes(_atual) && !['pago', 'concluido'].includes(status)) {
+    try { await sql`UPDATE termos_faturamento SET pago_em = NULL, concluido_em = NULL, pagamento_status = 'pendente' WHERE id = ${id}`; } catch (_) {}
+    try { await sql`UPDATE termos_empresas SET pagamento_status = 'pendente', pagamento_data = NULL, pagamento_origem = NULL WHERE termo_id = ${id} AND pagamento_status = 'pago'`; } catch (_) {}
   }
   // v2.17 FIX: o movimento de status NÃO pode depender de coluna opcional. A v1.94 fazia o
   // UPDATE de status e de entrou_em_envio_nf na mesma instrução — se a migração que cria a
@@ -623,8 +641,10 @@ async function termoReabrir({ id, motivo } = {}) {
     atualizado_em = NOW() WHERE id = ${id}`;
   // v3.113: reaberto volta a ser "a receber" — antes seguia com data de pagamento e "N/N pagas" no card
   try { await sql`UPDATE termos_faturamento SET pago_em = NULL WHERE id = ${id}`; } catch (_) {}
-  try { await sql`UPDATE termos_empresas SET pagamento_status = 'pendente', pagamento_data = NULL
-    WHERE termo_id = ${id} AND pagamento_status = 'pago' AND pagamento_origem IS NULL`; } catch (_) {}
+  // v3.281: reabrir desfaz TODAS as baixas (inclusive as da conferência do QuickBooks) e o status de pagamento do termo
+  try { await sql`UPDATE termos_empresas SET pagamento_status = 'pendente', pagamento_data = NULL, pagamento_origem = NULL
+    WHERE termo_id = ${id} AND pagamento_status = 'pago'`; } catch (_) {}
+  try { await sql`UPDATE termos_faturamento SET pagamento_status = 'pendente' WHERE id = ${id}`; } catch (_) {}
   return await termoGet({ id });
 }
 
@@ -652,12 +672,12 @@ async function termoEmpresaMarcarNf({ empresa_id, nf_numero, nf_valor, nf_data, 
   // junto com as demais (antes ficava só no campo da empresa e podia ser sobrescrita)
   if (nf_valor != null && num(nf_valor) > 0) {
     const jaTem = await sql`SELECT id FROM termos_notas_encontradas
-      WHERE termo_id = ${termoId} AND empresa_id = ${empresa_id} AND origem = 'manual' AND COALESCE(nf_numero,'') = ${nf_numero || ''} LIMIT 1`;
+      WHERE termo_id = ${termoId} AND empresa_id = ${empresa_id} AND LTRIM(COALESCE(nf_numero,''), '0') = LTRIM(${nf_numero || ''}, '0') ORDER BY (origem = 'manual') DESC LIMIT 1`; // v3.281: a mesma NF vinda do XML/e-mail não é somada de novo
     if (jaTem.length) await sql`UPDATE termos_notas_encontradas SET nf_valor = ${num(nf_valor)} WHERE id = ${jaTem[0].id}`;
     else await sql`INSERT INTO termos_notas_encontradas (id, termo_id, empresa_id, email_assunto, email_remetente, anexo_nome, nf_numero, nf_valor, origem)
       VALUES (${novoId('nota')}, ${termoId}, ${empresa_id}, 'Marcação manual', 'manual', ${'NF ' + (nf_numero || 's/n')}, ${nf_numero || null}, ${num(nf_valor)}, 'manual')`;
   }
-  await sql`UPDATE termos_empresas SET nf_numero = ${nf_numero || null}, nf_data = ${nf_data || null}, nf_status = ${nf_status || 'encontrada'} WHERE id = ${empresa_id}`;
+  await sql`UPDATE termos_empresas SET nf_numero = ${nf_numero || null}, nf_data = COALESCE(${nf_data ? _diaT(nf_data) : null}, nf_data), nf_status = ${nf_status || 'encontrada'} WHERE id = ${empresa_id}`; // v3.281: não apaga a data de emissão
   const recalc = await recalcularNf(termoId);
   return { atualizado: true, ...recalc };
 }
@@ -665,7 +685,11 @@ async function termoEmpresaMarcarNf({ empresa_id, nf_numero, nf_valor, nf_data, 
 async function termoEmpresaMarcarPago({ empresa_id, pagamento_status, pagamento_data } = {}) {
   if (!empresa_id) throw new Error('empresa_id obrigatório');
   const sql = await getSql();
-  await sql`UPDATE termos_empresas SET pagamento_status = ${pagamento_status || 'pago'}, pagamento_data = ${pagamento_data || _hojeBRf()} WHERE id = ${empresa_id}`;
+  // v3.281: empresa já paga mantém a data real; data informada aceita DD/MM/AAAA; sem data = hoje (a data que estava era a previsão)
+  const _e = (await sql`SELECT pagamento_status, pagamento_data FROM termos_empresas WHERE id = ${empresa_id}`)[0] || {};
+  const _dt = pagamento_data ? _diaT(pagamento_data) : (_e.pagamento_status === 'pago' && _e.pagamento_data ? _diaT(_e.pagamento_data) : null) || _hojeBRf();
+  if (pagamento_data && !_diaT(pagamento_data)) throw new Error('Data de pagamento inválida: use DD/MM/AAAA');
+  await sql`UPDATE termos_empresas SET pagamento_status = ${pagamento_status || 'pago'}, pagamento_data = ${_dt} WHERE id = ${empresa_id}`;
   const rows = await sql`SELECT termo_id FROM termos_empresas WHERE id = ${empresa_id} LIMIT 1`;
   if (rows[0]) await recalcularPagamento(rows[0].termo_id);
   return { atualizado: true };
@@ -678,8 +702,8 @@ async function termoEmpresaDatas({ empresa_id, nf_data, pagamento_data } = {}) {
   const rows = await sql`SELECT termo_id FROM termos_empresas WHERE id = ${empresa_id} LIMIT 1`;
   if (!rows.length) throw new Error('Empresa não encontrada');
   await sql`UPDATE termos_empresas SET
-    nf_data = COALESCE(${nf_data ?? null}, nf_data),
-    pagamento_data = COALESCE(${pagamento_data ?? null}, pagamento_data)
+    nf_data = COALESCE(${nf_data ? _diaT(nf_data) : null}, nf_data),
+    pagamento_data = COALESCE(${pagamento_data ? _diaT(pagamento_data) : null}, pagamento_data)
     WHERE id = ${empresa_id}`;
   return await termoGet({ id: rows[0].termo_id });
 }
@@ -716,7 +740,9 @@ async function recalcularNf(termoId) {
   // Caso comum: uma empresa recebe 2 notas (serviço + material, ou nota complementar).
   const notas = await sql`SELECT empresa_id, nf_valor FROM termos_notas_encontradas
     WHERE termo_id = ${termoId} AND nf_valor IS NOT NULL`;
-  const soma = Math.round(notas.reduce((s, n) => s + num(n.nf_valor), 0) * 100) / 100;
+  // v3.281: só notas ligadas a uma empresa do rateio entram na soma (a tela já dizia que as "sem empresa vinculada" não contam)
+  const _idsEmp = new Set(empresas.map(e => e.id));
+  const soma = Math.round(notas.filter(n => n.empresa_id && _idsEmp.has(n.empresa_id)).reduce((s, n) => s + num(n.nf_valor), 0) * 100) / 100;
 
   // Por empresa: soma das notas vinculadas a ela (pode ser mais de uma)
   const porEmpresa = {};
@@ -842,7 +868,7 @@ async function termoEditar({ id, cabecalho = {}, empresas } = {}) {
       if (e.id) {
         await sql`UPDATE termos_empresas SET empresa = ${e.empresa || ''}, contrato = ${e.contrato || ''},
           ncm = ${e.ncm || ''}, centro_custo = ${e.centro_custo || ''}, diferimento = ${e.diferimento || ''},
-          valor_total_contrato = ${num(e.valor_total_contrato)}, percentual = ${num(e.percentual)},
+          valor_total_contrato = ${num(e.valor_total_contrato)}, percentual = ${pctNum(e.percentual)},
           valor_ja_faturado = ${num(e.valor_ja_faturado)}, valor_parcela_anterior = ${num(e.valor_parcela_anterior)},
           valor_parcela = ${valor}, saldo_contrato = ${num(e.saldo_contrato)}, ordem = ${ordem++}
           WHERE id = ${e.id}`;
@@ -1472,6 +1498,10 @@ async function termoVerificarPagamento({ termo_id, tolerancia_pct } = {}) {
   // valor parecido — a de outro mês marcava este como pago); (b) fatura cujo saldo é só o imposto retido conta como paga;
   // (c) a data é a do RECEBIMENTO (Payment), não a da emissão; (d) sem fatura ligada, uma fatura só serve a um termo,
   // nome vazio não casa com tudo, e a busca é ordenada e paginada (antes: 1000 faturas quaisquer).
+  // v3.281: só vale fatura/recebimento a partir da nota deste termo (15 dias de folga); sem nota, a partir da data do termo
+  const _desdeEmpresa = e => { const b = _diaT(e.nf_data) || _diaT(termo.data_termo) || (termo.criado_em ? String(termo.criado_em).substring(0, 10) : null);
+    if (!b) return null; const d = new Date(b + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - 15); return d.toISOString().substring(0, 10); };
+  let _invLigadas = new Set(); try { (await sql`SELECT DISTINCT qb_invoice_id FROM termos_empresas WHERE qb_invoice_id IS NOT NULL AND termo_id <> ${termo_id}`).forEach(r => _invLigadas.add(String(r.qb_invoice_id))); } catch (_) {}
   const fin = await import('./financeiro.js');
   const retido = (aberto, total) => num(aberto) > 0.009 && !!fin.retencaoProvavelCompartilhado(num(aberto), num(total));
   const pagaInv = inv => num(inv.Balance) <= 0.009 || retido(inv.Balance, inv.TotalAmt);
@@ -1485,6 +1515,9 @@ async function termoVerificarPagamento({ termo_id, tolerancia_pct } = {}) {
     for (let k = 0; k < ligadas.length; k += 40) { const ids = ligadas.slice(k, k + 40).map(e => "'" + e.qb_invoice_id + "'").join(',');
       const d = await qbQueryFat(`select * from Invoice where Id in (${ids}) maxresults 100`, token, realm, sandbox); (d?.QueryResponse?.Invoice || []).forEach(i => { porId[String(i.Id)] = i; }); }
     const usadas = new Set(Object.keys(porId));
+    // v3.281: fatura já ligada a QUALQUER outro termo não serve para este (antes a de setembro, mesma empresa e mesmo valor,
+    // marcava o termo de outubro como pago) e a fatura tem de ser da época da nota deste termo
+    try { (await sql`SELECT DISTINCT qb_invoice_id FROM termos_empresas WHERE qb_invoice_id IS NOT NULL AND termo_id <> ${termo_id}`).forEach(r => usadas.add(String(r.qb_invoice_id))); } catch (_) {}
     let pagas = null;
     for (const e of empresas) {
       if (e.pagamento_status === 'pago') continue;
@@ -1496,8 +1529,9 @@ async function termoVerificarPagamento({ termo_id, tolerancia_pct } = {}) {
           if (!pagas) { pagas = []; const desde = new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
             for (let pos = 1; pos <= 4001; pos += 1000) { const d = await qbQueryFat(`select * from Invoice where TxnDate >= '${desde}' orderby TxnDate desc startposition ${pos} maxresults 1000`, token, realm, sandbox);
               const L = d?.QueryResponse?.Invoice || []; pagas.push(...L.filter(pagaInv)); if (L.length < 1000) break; } }
-          achou = pagas.find(inv => !usadas.has(String(inv.Id)) && normEmpresa(inv.CustomerRef?.name || '').includes(alvo) && dentroTolerancia(inv.TotalAmt, e.valor_parcela)) || null;
-          if (achou) usadas.add(String(achou.Id));
+          const desdeE = _desdeEmpresa(e);
+          achou = pagas.find(inv => !usadas.has(String(inv.Id)) && (!desdeE || String(inv.TxnDate || '') >= desdeE) && normEmpresa(inv.CustomerRef?.name || '').includes(alvo) && dentroTolerancia(inv.TotalAmt, e.valor_parcela)) || null;
+          if (achou) { usadas.add(String(achou.Id)); try { await sql`UPDATE termos_empresas SET qb_invoice_id = ${String(achou.Id)}, qb_invoice_doc = COALESCE(qb_invoice_doc, ${achou.DocNumber || null}) WHERE id = ${e.id} AND qb_invoice_id IS NULL`; } catch (_) {} }
         }
       }
       if (achou) {
@@ -1524,22 +1558,28 @@ async function termoVerificarPagamento({ termo_id, tolerancia_pct } = {}) {
       depositos = dd?.QueryResponse?.Deposit || [];
     } catch (e) { console.warn('[Faturamento] Deposits:', e.message); }
 
+    const usadosRec = new Set();
+    // v3.281: Payment que quita fatura de OUTRO termo não serve; recebimento antes da nota deste termo também não
+    const pagaOutro = p => (p.Line || []).some(l => (l.LinkedTxn || []).some(x => x.TxnType === 'Invoice' && _invLigadas.has(String(x.TxnId))));
     for (const e of naoEncontradas) {
       const alvo = normEmpresa(e.empresa);
       if (!alvo) continue; // v3.231: empresa sem nome não casa com qualquer recebimento
+      const desdeE = _desdeEmpresa(e), okData = x => !desdeE || String(x.TxnDate || '') >= desdeE;
       // 2a. Payment do cliente com valor compatível (recebimento registrado, mesmo sem baixar a fatura)
-      let achou = alvo ? pagamentos.find(p => normEmpresa(p.CustomerRef?.name || '').includes(alvo) && recebeuLiquido(p.TotalAmt, e.valor_parcela)) : null;
+      let achou = alvo ? pagamentos.find(p => !usadosRec.has('p' + p.Id) && okData(p) && !pagaOutro(p) && normEmpresa(p.CustomerRef?.name || '').includes(alvo) && recebeuLiquido(p.TotalAmt, e.valor_parcela)) : null;
+      if (achou) usadosRec.add('p' + achou.Id);
       let via = 'recebimento (Payment) no QuickBooks';
       // 2b. Depósito com linha do cliente ou valor batendo (dinheiro que entrou na conta)
       if (!achou) {
         achou = depositos.find(d => {
+          if (usadosRec.has('d' + d.Id) || !okData(d)) return false;
           const linhas = d.Line || [];
           const porCliente = linhas.some(l => normEmpresa(l.DepositLineDetail?.Entity?.name || '').includes(alvo) && dentroTolerancia(l.Amount, e.valor_parcela));
           const porValorTotal = dentroTolerancia(d.TotalAmt, e.valor_parcela)
             && linhas.some(l => normEmpresa(l.DepositLineDetail?.Entity?.name || '').includes(alvo));
           return porCliente || porValorTotal;
         });
-        if (achou) via = 'depósito em conta (extrato) no QuickBooks';
+        if (achou) { via = 'depósito em conta (extrato) no QuickBooks'; usadosRec.add('d' + achou.Id); }
       }
       if (achou) {
         await sql`UPDATE termos_empresas SET pagamento_status = 'pago', pagamento_data = ${(achou.TxnDate || '').substring(0, 10)}, pagamento_origem = 'extrato' WHERE id = ${e.id}`;

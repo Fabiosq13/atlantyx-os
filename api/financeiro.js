@@ -2,7 +2,7 @@ import { comGuarda } from '../lib/qa-guard.js';
 import { casarReceitas, casarDespesas, compararReceitasSistema, compararDespesasSistema, resumoComparacao, identificarRetencao } from '../lib/conciliacao-mes.js'; // v3.242
 import { veredito as dupVeredito, chaveGrupo as dupChave, ROTULO as DUP_ROT } from '../lib/duplicidade-qb.js'; // v3.252
 import { analisar as impAnalisar, proximoVencimento as impProxVenc, jaCadastrada as impJaCad, classificar as impClassificar } from '../lib/impostos-recorrentes.js'; // v3.266
-import { termoPendencias, etapaPrazo } from '../lib/termo-regras.js'; // v3.129 · v3.196 prazo por etapa
+import { termoPendencias, etapaPrazo, previsaoPagamento } from '../lib/termo-regras.js'; // v3.129 · v3.196 prazo por etapa
 
 // v2.88: compatibilidade com o driver @neondatabase/serverless 0.10.x — nele NÃO existe sql.query();
 // SQL montado em texto é executado chamando sql(texto, params). Nas versões ≥1.0 é sql.query(texto, params).
@@ -1284,7 +1284,8 @@ async function _relTermos() {
   const ts = T.map(t => { const base = dia(t.data_termo) || dia(t.criado_em); const dias = base ? Math.floor((Date.parse(hoje) - Date.parse(base)) / 864e5) : null;
     const emp = E.filter(e => e.termo_id === t.id); const semNota = emp.filter(e => !e.nf_numero);
     return { id: t.id, numero: t.numero_termo || '', projeto: t.projeto || '', cliente: t.contratante || '', periodo: t.periodo_medicao || '', valor: round(parseFloat(t.valor_total_termo) || 0),
-      status: t.status, dias, base, cpfl_confirmado: !!t.cpfl_confirmado, previsao: dia(t.cpfl_previsao_pagamento),
+      status: t.status, dias, base, cpfl_confirmado: !!t.cpfl_confirmado, previsao: previsaoPagamento(t, emp).data, // v3.281: mesma previsão do card (confirmação do cliente × datas das empresas)
+     
       empresas: emp.length, sem_nota: semNota.map(e => ({ empresa: e.empresa, valor: round(parseFloat(e.valor_parcela) || 0) })), valor_sem_nota: round(semNota.reduce((s, e) => s + (parseFloat(e.valor_parcela) || 0), 0)),
       pendencias: termoPendencias(t, emp, hoje), prazo_etapa: etapaPrazo(t.status, dias) }; });
   const naoPago = ts.filter(t => !['pago', 'concluido'].includes(t.status));

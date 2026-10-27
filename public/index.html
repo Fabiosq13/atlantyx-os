@@ -23247,7 +23247,10 @@ function _fatCard(t, col) {
     </div>` : '';
   // v1.33: datas explícitas no card
   const _dt = d => d ? d.split('-').reverse().slice(0,2).join('/') : null;
-  const datasBadge = (t.data_emissao || t.data_pagamento) ? `<div style="display:flex;gap:8px;font-size:8.5px;margin-top:4px;padding-top:4px;border-top:1px solid var(--bd);">
+  // v3.281: previsão de pagamento (empresas ainda não pagas / confirmação do cliente) — separada do "último pagamento recebido"
+  const _hjF = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }), _prevP = t.data_prevista_pagamento;
+  const datasBadge = (t.data_emissao || t.data_pagamento || _prevP) ? `<div style="display:flex;gap:8px;font-size:8.5px;margin-top:4px;padding-top:4px;border-top:1px solid var(--bd);">
+      ${_prevP ? `<span title="Previsão de pagamento (${t.data_prevista_origem || ''})" style="color:${_corTxt(_prevP < _hjF ? 'var(--red)' : 'var(--t2)')};">📅 prev. ${_dt(_prevP)}${_prevP < _hjF ? ' vencida' : ''}</span>` : ''}
       ${t.data_emissao ? `<span title="Data de emissão da nota fiscal${t.data_emissao_ultima ? ' (primeira; última em ' + _dt(t.data_emissao_ultima) + ')' : ''}" style="color:var(--t2);">🧾 ${_dt(t.data_emissao)}${t.data_emissao_ultima ? '+' : ''}</span>` : ''}
       ${t.data_pagamento ? `<span title="${t.pagamento_completo ? 'Pagamento concluído' : 'Último pagamento recebido (parcial)'}" style="color:${_corTxt(t.pagamento_completo ? 'var(--green,#22d3a3)' : 'var(--gold)')};">💵 ${_dt(t.data_pagamento)}${t.pagamento_completo ? '' : '*'}</span>` : ''}
     </div>` : '';
@@ -23261,7 +23264,9 @@ function _fatCard(t, col) {
   // v2.58: base = inclusão no sistema (criado_em), salvo data do termo informada à mão
   const dataBase = t.data_termo || (t.criado_em ? String(t.criado_em).substring(0,10) : null) || t.data_base_prazo;
   const origemBase = t.data_termo ? 'data do termo (informada)' : 'inclusão no sistema';
-  const diasDecorridos = dataBase ? Math.floor((Date.now() - new Date(_dia(dataBase) + 'T12:00:00')) / 86400000) : null;
+  // v3.281: dias corridos pelo calendário de Brasília (igual ao servidor) — antes, de manhã, contava 1 dia a menos e o card ficava vermelho sem motivo
+  const _hjK = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const diasDecorridos = dataBase ? Math.floor((Date.parse(_hjK) - Date.parse(_dia(dataBase))) / 86400000) : null;
   const naoPago = !['pago', 'concluido'].includes(t.status);
   const estourou = naoPago && diasDecorridos != null && diasDecorridos >= PRAZO_DIAS;
   const prazoBadge = diasDecorridos != null && naoPago ? `<div style="font-size:9.5px;margin-top:4px;padding:2px 7px;border-radius:4px;display:inline-block;font-weight:700;${estourou ? 'background:rgba(255,80,80,.18);color:var(--red);' : 'background:rgba(34,211,163,.15);color:var(--green,#22d3a3);'}" title="Base: ${dataBase.split('-').reverse().join('/')} (${origemBase}) · prazo de ${PRAZO_DIAS} dias corridos para receber">
@@ -23423,7 +23428,7 @@ function _fatBarraProgressoNf(t) {
 // v2.21: marcação MANUAL de pago. Antes só o sync automático movia para Pago — se o pagamento
 // entrou por um caminho que o sync não reconhece, o termo ficava preso em Pagamento.
 async function _fatMarcarPago(termoId) {
-  const r = prompt('Confirmar que este termo foi PAGO?\n\nData do pagamento (AAAA-MM-DD) — deixe vazio para hoje:', new Date().toISOString().split('T')[0]);
+  const r = prompt('Confirmar que este termo foi PAGO?\n\nData do pagamento (DD/MM/AAAA) — deixe vazio para hoje:', new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })); // v3.281: hoje em Brasília e DD/MM/AAAA
   if (r === null) return;
   try {
     await fatApi('termo_mover', { id: termoId, status: 'pago', pago_em: (r || '').trim() || null, manual: true });
@@ -23463,10 +23468,10 @@ async function _fatToggleCpfl(termoId, confirmar) {
   try {
     let obs = null, prev = null;
     if (confirmar) {
-      const r = prompt('Confirmar recebimento pelo cliente: as notas deste termo foram recebidas e o pagamento está programado.\n\nOpcional — previsão de pagamento (AAAA-MM-DD) e observação, separados por |:', '');
+      const r = prompt('Confirmar recebimento pelo cliente: as notas deste termo foram recebidas e o pagamento está programado.\n\nOpcional — previsão de pagamento (DD/MM/AAAA) e observação, separados por |:', '');
       if (r === null) return;
       const [p, o] = r.split('|').map(x => (x || '').trim());
-      if (p && /^\d{4}-\d{2}-\d{2}$/.test(p)) prev = p;
+      if (p && /^\d{4}-\d{2}-\d{2}$/.test(p)) prev = p; else if (p && /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.test(p)) { const [d1, m1, a1] = p.split('/'); prev = a1 + '-' + m1.padStart(2, '0') + '-' + d1.padStart(2, '0'); } // v3.281: aceita DD/MM/AAAA
       obs = o || (p && !prev ? p : null);
     }
     await fatApi('cpfl_confirmar', { termo_id: termoId, confirmado: confirmar, por: 'financeiro', observacao: obs, previsao_pagamento: prev });
@@ -23905,10 +23910,10 @@ async function _fatDesmarcarPago(empresaId, empresa) {
 }
 async function _fatEditarData(empresaId, tipo) {
   const label = tipo === 'nf' ? 'emissão da nota fiscal' : 'pagamento';
-  const hoje = new Date().toISOString().split('T')[0];
-  const valor = prompt(`Data de ${label} (formato AAAA-MM-DD):`, hoje);
+  const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const valor = prompt(`Data de ${label} (DD/MM/AAAA):`, hoje);
   if (!valor) return;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(valor.trim())) { toast('Use o formato AAAA-MM-DD (ex.: 2026-08-25)', 'error'); return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(valor.trim()) && !/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(valor.trim())) { toast('Use o formato DD/MM/AAAA (ex.: 25/08/2026)', 'error'); return; }
   try {
     await fatApi('termo_empresa_datas', { empresa_id: empresaId, [tipo === 'nf' ? 'nf_data' : 'pagamento_data']: valor.trim() });
     toast('Data de ' + label + ' atualizada', 'success');
@@ -35284,7 +35289,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.280] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.281] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35300,7 +35305,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.280';
+window.__ATX_BUILD_ID__ = 'ATX-v3.281';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {
