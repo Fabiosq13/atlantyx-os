@@ -126,7 +126,7 @@
       "maxDuration": 300
     },
     "api/rfp-monitor.js": {
-      "maxDuration": 90
+      "maxDuration": 300
     },
     "api/qa.js": {
       "maxDuration": 120,

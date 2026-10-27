@@ -70,7 +70,7 @@ async function handler(req, res) {
     if (body.acao === 'enviar_email') return res.status(200).json({ success: true, ...(await enviarListaEmail(body)) });
     // v3.97: oportunidades da Petrobras (e-mails do Serviço de Notificação Petronect na caixa contato@)
     const acao = body.acao || req.query?.acao;
-    if (acao === 'petronect') { _prazo = Date.now() + 80000;
+    if (acao === 'petronect') { _prazo = Date.now() + 270000; // v3.296: era 80 s — a IA era abortada no meio da avaliação
       const r = await lerPetronect({ dias: Number(body.dias || req.query?.dias) || 90, reavaliar: !!body.reavaliar });
       // cron (a cada 6h): avisa no WhatsApp as oportunidades Petronect novas e bem aderentes
       const isCronP = !!(process.env.CRON_SECRET && req.headers.authorization === `Bearer ${process.env.CRON_SECRET}`);
@@ -338,10 +338,10 @@ async function _comPetronect(saida) {
 }
 async function _avaliarPetronect(emails) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
-  const ac = new AbortController(); const t = setTimeout(() => ac.abort(), Math.max(15000, restante() - 5000));
+  const ac = new AbortController(); const t = setTimeout(() => ac.abort(), Math.max(20000, Math.min(150000, restante() - 8000)));
   try {
     const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ac.signal, headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: MODEL, max_tokens: 6000,
+      body: JSON.stringify({ model: MODEL, max_tokens: 4000,
         system: `Você é o Agente de RFPs da Atlantyx: empresa brasileira B2B com 17 anos, que entrega BI, engenharia de dados, data warehouse/lakehouse, analytics, ciência de dados, IA/IA generativa, dashboards, integração de sistemas e dados, automação de processos com IA, desenvolvimento de software/sistemas sob medida, sustentação de dados e alocação de profissionais de TI/dados (outsourcing). Clientes: CPFL, Enel, Caixa Capitalização.
 Você recebe e-mails REAIS do "Serviço de Notificação Petronect" (portal de compras da Petrobras). Para cada e-mail, EXTRAIA as oportunidades listadas e AVALIE se cada uma está no escopo da Atlantyx.
 Regras: copie número, objeto/descrição e prazo EXATAMENTE como no e-mail (não invente; se não houver, deixe vazio). Não crie oportunidades que não estão no texto. Fora do escopo (obras, materiais, peças, equipamentos, serviços de engenharia civil/naval, logística, alimentação, etc.) = aderente false.
@@ -364,7 +364,7 @@ async function lerPetronect({ dias = 90, reavaliar = false } = {}) {
   const host = process.env.RFP_IMAP_HOST || (mesmaDoGmail ? process.env.EMAIL_IMAP_HOST : null) || (/@gmail\.com$/i.test(user) ? 'imap.gmail.com' : 'mail.' + user.split('@')[1]);
   const port = parseInt(process.env.RFP_IMAP_PORT || '993');
   const cache = (reavaliar ? null : await _kvGetRfp(KV_PETRONECT)) || { processados: {}, oportunidades: [] };
-  cache.processados = cache.processados || {}; cache.oportunidades = cache.oportunidades || []; cache.conta = user;
+  cache.processados = cache.processados || {}; cache.oportunidades = cache.oportunidades || []; cache.conta = user; if (/abort/i.test(cache.erro || '')) cache.erro = null; // v3.296: erro de tempo antigo não fica na tela
   const diag = { conta: user, pasta: null, encontrados: 0, novos: 0, avaliados_agora: 0, oportunidades_novas: 0, aderentes_novas: 0, faltam: 0 };
   if (!pass) { cache.erro = 'Falta a senha da caixa ' + user + ': no Vercel crie RFP_IMAP_PASS com a senha dessa caixa (servidor usado: ' + host + ':' + port + ' — se for outro, crie RFP_IMAP_HOST) e faça Redeploy'; await _kvSetRfp(KV_PETRONECT, cache).catch(() => {}); return { diag, erro: cache.erro, ...(await petronectCache()) }; }
   let ImapFlow; try { ({ ImapFlow } = await import('imapflow')); } catch (_) { return { diag, erro: 'Pacote imapflow não instalado', ...(await petronectCache()) }; }
@@ -384,7 +384,7 @@ async function lerPetronect({ dias = 90, reavaliar = false } = {}) {
       const uids = (await client.search({ since: desde, from: 'petronect.com.br' }, { uid: true })) || [];
       diag.encontrados += uids.length;
       for (const uid of uids.slice().reverse()) { // mais novos primeiro
-        if (restante() < 35000 || emails.length >= 40) { diag.faltam++; continue; }
+        if (restante() < 120000 || emails.length >= 20) { diag.faltam++; continue; } // v3.296: lê no máximo 20 por vez e guarda tempo para a IA
         let msg; try { msg = await client.fetchOne(uid, { envelope: true, bodyStructure: true }, { uid: true }); } catch (_) { continue; }
         const id = msg?.envelope?.messageId || ('uid:' + uid);
         if (cache.processados[id]) continue;
@@ -402,11 +402,14 @@ async function lerPetronect({ dias = 90, reavaliar = false } = {}) {
     cache.erro = 'IMAP ' + user + ' (' + host + '): ' + m + (/altnames|certificate|self.signed|CERT_|hostname/i.test(m) ? ' — o certificado do servidor não é de "' + host + '": no painel da HostGator (E-mail › Configurar cliente) veja o servidor seguro (ex.: br###.hostgator.com.br) e crie RFP_IMAP_HOST com ele no Vercel'
       : /auth|login|credential|invalid/i.test(m) ? ' — usuário ou senha recusados: confira RFP_IMAP_PASS (senha da caixa ' + user + ')' : /ENOTFOUND|ECONNREFUSED|ETIMEDOUT|timeout/i.test(m) ? ' — servidor não encontrado/sem resposta: confira RFP_IMAP_HOST e RFP_IMAP_PORT (993)' : ''); await _kvSetRfp(KV_PETRONECT, cache).catch(() => {}); try { await client.logout(); } catch (_) {} return { diag, erro: cache.erro, ...(await petronectCache()) }; }
   try { await client.logout(); } catch (_) {}
-  // avalia em lotes de 8 e-mails
-  for (let k = 0; k < emails.length; k += 8) {
-    if (restante() < 20000) { diag.faltam += emails.length - k; break; }
-    const lote = emails.slice(k, k + 8);
-    let res; try { res = await _avaliarPetronect(lote); } catch (e) { cache.erro = 'IA: ' + e.message; diag.faltam += emails.length - k; break; }
+  // avalia em lotes de 4 e-mails (v3.296: eram 8 — a resposta demorava e a chamada era abortada). Lote que estoura o tempo
+  // NÃO é erro: fica para a próxima leitura (a tela continua sozinha) e o que já foi avaliado fica salvo.
+  for (let k = 0; k < emails.length; k += 4) {
+    if (restante() < 30000) { diag.faltam += emails.length - k; break; }
+    const lote = emails.slice(k, k + 4);
+    let res; try { res = await _avaliarPetronect(lote); } catch (e) {
+      if (/abort/i.test(e.name + ' ' + e.message)) { diag.faltam += emails.length - k; diag.aviso = 'a IA demorou num lote — continua na próxima leitura'; break; }
+      cache.erro = 'IA: ' + e.message; diag.faltam += emails.length - k; break; }
     lote.forEach(e => { cache.processados[e.id] = e.data || true; });
     diag.avaliados_agora += lote.length;
     for (const o of res) { const e = lote[Number(o.email)]; if (!e || o.sem_oportunidade) continue;
