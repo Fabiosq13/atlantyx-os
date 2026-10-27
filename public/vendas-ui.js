@@ -36,7 +36,8 @@
         <div style="font-size:10.5px;color:var(--t2);">Quanto falta, quantas vendas você precisa, como estão as margens — e o que fazer hoje</div></div>
       <a href="#funil-propostas" class="btn btn-g" onclick="event.preventDefault();VD.funilIr()" title="Taxa de conversão, valor em aberto e tempo até fechamento das propostas">📊 Funil de propostas →</a>
       <button class="btn btn-g" id="vdBtnAtualizar" onclick="VD.painelCarregar(true)">↻ Atualizar</button>
-      <button class="btn btn-p" id="vdBtnCoach" onclick="VD.coach()">🤖 O que fazer hoje</button></div>
+      <button class="btn btn-p" id="vdBtnCoach" onclick="VD.coach()">🤖 O que fazer hoje</button>
+      <button class="btn btn-or" onclick="VD.vozAbrir()" title="Grave a oportunidade falando — a IA organiza e cria empresa, contato e negócio no HubSpot">🎙 Nova oportunidade por voz</button></div>
       <div id="painel-erro"></div><div id="vdPnStatus"></div><div id="vdCoach"></div><div id="vdPnCorpo">${painelSkeleton()}</div>`;
   }
   // v3.85: skeleton dos KPIs enquanto o painel carrega (antes: texto "Calculando..." sem prazo)
@@ -605,7 +606,85 @@
     try { CFG = await api('prop_config_salvar', { params }); nota('Parâmetros salvos'); } catch (e) { nota('Erro: ' + e.message, 'error'); }
   }
 
+
+  // ═══════════════════ v3.282 · NOVA OPORTUNIDADE POR VOZ → HUBSPOT ═══════════════════
+  const VZ = { rec: null, ouvindo: false, base: '', plp: null, ext: null };
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  function vozFechar() { vozParar(); $('vdVozModal')?.remove(); }
+  async function vozAbrir() {
+    $('vdVozModal')?.remove(); VZ.ext = null;
+    const m = document.createElement('div'); m.id = 'vdVozModal';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow:auto;';
+    m.onclick = e => { if (e.target === m) vozFechar(); };
+    m.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--bd2);border-radius:12px;width:min(820px,100%);">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--bd);display:flex;gap:10px;align-items:center;"><div style="flex:1;"><div style="font-family:var(--H);font-size:15px;font-weight:700;">🎙 Nova oportunidade por voz</div>
+        <div style="font-size:10.5px;color:var(--t2);">Fale como contaria a um colega: empresa, quem é o contato (cargo, e-mail, telefone), o que precisam, valor e quando fecha. A IA organiza e você confere antes de ir para o HubSpot.</div></div>
+        <button class="btn btn-g" onclick="VD.vozFechar()">✕</button></div>
+      <div style="padding:14px 16px;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+          <button class="btn btn-p" id="vzBtnRec" onclick="VD.vozGravar()" ${SR ? '' : 'disabled'}>🎙 Gravar</button>
+          <span id="vzStatus" style="font-size:11px;color:var(--t2);">${SR ? 'Clique em Gravar e fale. Pode parar e continuar.' : 'Este navegador não transcreve voz — use o Chrome/Edge, ou o microfone do teclado do celular para ditar no campo abaixo.'}</span></div>
+        <textarea class="fta" id="vzTexto" style="min-height:120px;" placeholder="Ex.: Conversei hoje com a Maria Souza, diretora de TI da Empresa Exemplo, e-mail maria@exemplo.com.br, telefone 21 99999-0000. Eles querem um painel de indicadores de manutenção integrado ao SAP, orçamento em torno de 180 mil, querem fechar até dezembro. Próximo passo: reunião técnica na semana que vem."></textarea>
+        <button class="btn btn-or" id="vzBtnIA" onclick="VD.vozExtrair()" style="width:100%;justify-content:center;margin-top:8px;">🤖 Organizar com IA</button>
+        <div id="vzForm" style="margin-top:12px;"></div></div></div>`;
+    document.body.appendChild(m);
+    if (!VZ.plp) api('oport_voz_inicio', {}, 30000).then(d => { VZ.plp = d; if (!d.hubspot) $('vzStatus').innerHTML = '<span style="color:var(--red);">HubSpot não configurado (HUBSPOT_TOKEN no Vercel) — dá para organizar, mas não para gravar no CRM.</span>'; }).catch(() => {});
+  }
+  function vozGravar() {
+    if (VZ.ouvindo) return vozParar();
+    const rec = new SR(); rec.lang = 'pt-BR'; rec.continuous = true; rec.interimResults = true;
+    VZ.base = ($('vzTexto').value.trim() ? $('vzTexto').value.trim() + ' ' : '');
+    rec.onresult = ev => { let fin = '', tmp = ''; for (let i = 0; i < ev.results.length; i++) { const t = ev.results[i][0].transcript; if (ev.results[i].isFinal) fin += t + ' '; else tmp += t; } $('vzTexto').value = (VZ.base + fin + tmp).replace(/\s+/g, ' '); };
+    rec.onerror = e => { $('vzStatus').innerHTML = '<span style="color:var(--red);">Microfone: ' + esc(e.error === 'not-allowed' ? 'permissão negada — libere o microfone no navegador' : e.error) + '</span>'; };
+    rec.onend = () => { if (VZ.ouvindo) { try { VZ.base = $('vzTexto').value.trim() + ' '; rec.start(); } catch (_) { vozParar(); } } };
+    try { rec.start(); } catch (e) { return nota('Não consegui abrir o microfone: ' + e.message, 'error'); }
+    VZ.rec = rec; VZ.ouvindo = true; $('vzBtnRec').innerHTML = '⏹ Parar'; $('vzBtnRec').classList.add('btn-or'); $('vzStatus').innerHTML = '<span style="color:var(--red);">● Gravando… fale normalmente</span>';
+  }
+  function vozParar() { VZ.ouvindo = false; try { VZ.rec?.stop(); } catch (_) {} VZ.rec = null; const b = $('vzBtnRec'); if (b) { b.innerHTML = '🎙 Gravar'; b.classList.remove('btn-or'); } const s = $('vzStatus'); if (s && SR) s.textContent = 'Gravação parada — revise o texto e clique em Organizar com IA.'; }
+  async function vozExtrair() {
+    vozParar(); const texto = $('vzTexto').value.trim(); if (texto.length < 15) return nota('Fale ou escreva um pouco mais sobre a oportunidade', 'error');
+    const fim = ocupado($('vzBtnIA'), '🤖 Organizando…');
+    try { const d = await api('oport_voz_extrair', { texto }, 70000); if (!VZ.plp) { try { VZ.plp = await api('oport_voz_inicio', {}, 30000); } catch (_) {} } VZ.ext = d; vozForm(); }
+    catch (e) { nota('Erro: ' + e.message, 'error'); } fim();
+  }
+  function vozForm() {
+    const d = VZ.ext, X = d.extraido || {}, E = X.empresa || {}, C = X.contato || {}, N = X.negocio || {}, ex = d.existentes || {}, pls = VZ.plp?.pipelines || [];
+    const inp = (id, rot, v, t) => `<div class="fg" style="margin:0;"><label class="fl">${rot}</label><input class="fi" id="${id}" ${t ? 'type="' + t + '"' : ''} value="${esc(v ?? '')}"/></div>`;
+    const opEmp = ex.empresas?.length ? `<div style="font-size:10.5px;margin:4px 0 6px;">${ex.empresas.map((c, i) => `<label style="display:block;"><input type="radio" name="vzEmp" value="${esc(c.id)}" ${i === 0 && c.exato ? 'checked' : ''}/> usar a que já existe: <b>${esc(c.nome)}</b>${c.dominio ? ' · ' + esc(c.dominio) : ''}</label>`).join('')}<label style="display:block;"><input type="radio" name="vzEmp" value="" ${ex.empresas[0]?.exato ? '' : 'checked'}/> criar empresa nova</label></div>` : '';
+    const opCon = ex.contatos?.length ? `<div style="font-size:10.5px;margin:4px 0 6px;">${ex.contatos.map((c, i) => `<label style="display:block;"><input type="radio" name="vzCon" value="${esc(c.id)}" ${i === 0 ? 'checked' : ''}/> usar o que já existe: <b>${esc(c.nome || c.email)}</b>${c.email ? ' · ' + esc(c.email) : ''}${c.empresa ? ' · ' + esc(c.empresa) : ''}</label>`).join('')}<label style="display:block;"><input type="radio" name="vzCon" value=""/> criar contato novo</label></div>` : '';
+    const plOpts = pls.map(p => `<option value="${esc(p.id)}" ${p.id === d.pipeline ? 'selected' : ''}>${esc(p.nome)}</option>`).join('');
+    $('vzForm').innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">
+      <div class="panel" style="margin:0;"><div class="ph"><div class="pt">🏢 Empresa</div></div><div class="pb" style="display:grid;gap:6px;">${opEmp}${inp('vzEN', 'Nome', E.nome)}${inp('vzED', 'Site / domínio', E.dominio)}${inp('vzEC', 'Cidade', E.cidade)}</div></div>
+      <div class="panel" style="margin:0;"><div class="ph"><div class="pt">👤 Contato</div></div><div class="pb" style="display:grid;gap:6px;">${opCon}${inp('vzCN', 'Nome', C.nome)}${inp('vzCC', 'Cargo', C.cargo)}${inp('vzCE', 'E-mail', C.email)}${inp('vzCT', 'Telefone', C.telefone)}</div></div></div>
+      <div class="panel" style="margin:12px 0 0;"><div class="ph"><div class="pt">💼 Negócio</div></div><div class="pb" style="display:grid;gap:6px;">
+        ${inp('vzNT', 'Título', N.titulo)}<div class="fg" style="margin:0;"><label class="fl">Descrição</label><textarea class="fta" id="vzND" style="min-height:60px;">${esc(N.descricao || '')}</textarea></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">${inp('vzNV', 'Valor (R$)', N.valor || '')}${inp('vzNF', 'Previsão de fechamento', N.data_fechamento || '', 'date')}
+          <div class="fg" style="margin:0;"><label class="fl">Funil (pipeline)</label><select class="fsel" id="vzPl" onchange="VD.vozEtapas()">${plOpts || '<option value="">HubSpot indisponível</option>'}</select></div>
+          <div class="fg" style="margin:0;"><label class="fl">Etapa</label><select class="fsel" id="vzEt"></select></div></div>
+        ${(X.proximos_passos || []).length ? `<div style="font-size:11px;"><b>Próximos passos</b> (vão como nota no negócio):<br>${X.proximos_passos.map(x => '• ' + esc(x)).join('<br>')}</div>` : ''}
+        ${(X.faltando || []).length ? `<div style="font-size:10.5px;color:var(--gold);">⚠ Não foi dito: ${esc(X.faltando.join(' · '))} — complete acima se souber.</div>` : ''}</div></div>
+      <button class="btn btn-gn" id="vzBtnCriar" onclick="VD.vozCriar()" style="width:100%;justify-content:center;margin-top:12px;font-weight:700;" ${pls.length ? '' : 'disabled'}>✅ Criar no HubSpot</button><div id="vzRes" style="margin-top:8px;font-size:11.5px;"></div>`;
+    vozEtapas(d.etapa);
+  }
+  function vozEtapas(sel) { const p = (VZ.plp?.pipelines || []).find(x => x.id === $('vzPl')?.value); const s = $('vzEt'); if (!s) return;
+    s.innerHTML = (p?.etapas || []).map(e => `<option value="${esc(e.id)}" ${e.id === sel ? 'selected' : ''}>${esc(e.nome)}${e.probabilidade != null ? ' (' + Math.round(e.probabilidade * 100) + '%)' : ''}</option>`).join(''); }
+  async function vozCriar() {
+    const v = id => ($(id)?.value || '').trim(), radio = n => document.querySelector(`input[name="${n}"]:checked`)?.value || null;
+    const valor = Number(v('vzNV').replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.')) || 0;
+    const corpo = { empresa_id: radio('vzEmp'), contato_id: radio('vzCon'), empresa: { nome: v('vzEN'), dominio: v('vzED'), cidade: v('vzEC') }, contato: { nome: v('vzCN'), cargo: v('vzCC'), email: v('vzCE'), telefone: v('vzCT') },
+      negocio: { titulo: v('vzNT'), descricao: v('vzND'), valor, data_fechamento: v('vzNF') }, pipeline: v('vzPl'), etapa: v('vzEt'), proximos_passos: VZ.ext?.extraido?.proximos_passos || [], texto: v('vzTexto') };
+    if (!corpo.empresa_id && !corpo.empresa.nome) return nota('Informe a empresa', 'error');
+    if (!corpo.negocio.titulo) return nota('Informe o título do negócio', 'error');
+    const fim = ocupado($('vzBtnCriar'), '⏳ Criando no HubSpot…');
+    try { const r = await api('oport_voz_criar', corpo, 60000);
+      $('vzRes').innerHTML = `<div style="background:rgba(34,211,163,.1);border:1px solid var(--green);border-radius:8px;padding:10px 12px;line-height:1.7;">✅ Negócio criado no HubSpot${r.link ? ` — <a href="${esc(r.link)}" target="_blank" rel="noopener" style="color:var(--blue);">abrir no HubSpot ↗</a>` : ''}<br>
+        Empresa ${r.empresa?.criada ? '<b>criada</b>' : 'reaproveitada'} · contato ${r.contato ? (r.contato.criado ? '<b>criado</b>' : 'reaproveitado') : 'não informado'} · relato salvo como nota${(r.avisos || []).length ? '<br><span style="color:var(--gold);">⚠ ' + esc(r.avisos.join(' · ')) + '</span>' : ''}</div>`;
+      $('vzBtnCriar').style.display = 'none'; nota('Oportunidade criada no HubSpot');
+      try { window._fn && (window._fn.dados = null); } catch (_) {}
+    } catch (e) { nota('Erro: ' + e.message, 'error'); $('vzRes').innerHTML = '<span style="color:var(--red);">' + esc(e.message) + '</span>'; } fim();
+  }
+
   window.VD = { painelAbrir, painelCarregar, rfCarregar, rfIr, funilIr, funilPeriodo, funilCarregar, coach, premissasSalvar, estRef, estAbrir, estSalvar, estExcluir, estSugerir,
     propAbrir, aba, nova, estimar, analisar, escolher, redigir, salvar, baixarPdf, baixarWord, mudarStatus, converter, abrirProp, excluir, addPerfil, perfilRC,
-    aprender, salvarInstrucoes, regerarPadrao, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar };
+    aprender, salvarInstrucoes, regerarPadrao, vozAbrir, vozFechar, vozGravar, vozExtrair, vozEtapas, vozCriar, baseRes, baseExcluir, rateLinha, rateSalvar, rateSugerir, rateImportar, paramsSalvar };
 })();

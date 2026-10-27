@@ -407,6 +407,99 @@ async function propConverter(base, { id } = {}) {
   return { projeto_id: pid, marcos_criados: n };
 }
 
+
+// ═══════════════════════ v3.282 — NOVA OPORTUNIDADE POR VOZ → HUBSPOT ═══════════════════════
+// O vendedor grava/dita a oportunidade; a IA separa empresa, contato e negócio; o usuário confere e só então
+// o sistema cria (ou reaproveita) empresa e contato no HubSpot, cria o negócio ligado aos dois e guarda o relato como nota.
+async function _hs(caminho, metodo = 'GET', corpo) {
+  if (!process.env.HUBSPOT_TOKEN) throw new Error('HUBSPOT_TOKEN não configurado no Vercel');
+  const r = await fetch('https://api.hubapi.com' + caminho, { method: metodo, headers: { Authorization: 'Bearer ' + process.env.HUBSPOT_TOKEN, 'Content-Type': 'application/json' }, body: corpo ? JSON.stringify(corpo) : undefined });
+  const d = r.status === 204 ? {} : await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error('HubSpot ' + r.status + ': ' + (d.message || 'erro'));
+  return d;
+}
+const _nrm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\b(ltda|s\.?a\.?|me|eireli|epp|grupo|cia)\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+async function _hsPipelines() {
+  const d = await _hs('/crm/v3/pipelines/deals');
+  return (d.results || []).map(p => ({ id: p.id, nome: p.label, etapas: (p.stages || []).sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0))
+    .filter(e => e.metadata?.isClosed !== 'true').map(e => ({ id: e.id, nome: e.label, probabilidade: e.metadata?.probability != null ? Number(e.metadata.probability) : null })) }));
+}
+async function _hsBuscarEmpresa(nome, dominio) {
+  const filtros = []; if (dominio) filtros.push({ filters: [{ propertyName: 'domain', operator: 'EQ', value: String(dominio).toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '') }] });
+  if (nome) filtros.push({ filters: [{ propertyName: 'name', operator: 'CONTAINS_TOKEN', value: String(nome).split(/\s+/).sort((a, b) => b.length - a.length)[0] }] });
+  if (!filtros.length) return [];
+  const d = await _hs('/crm/v3/objects/companies/search', 'POST', { filterGroups: filtros, properties: ['name', 'domain', 'city'], limit: 10 });
+  const alvo = _nrm(nome);
+  return (d.results || []).map(c => ({ id: c.id, nome: c.properties?.name || '', dominio: c.properties?.domain || '', cidade: c.properties?.city || '',
+    exato: !!alvo && (_nrm(c.properties?.name) === alvo || _nrm(c.properties?.name).includes(alvo) || alvo.includes(_nrm(c.properties?.name))) }))
+    .sort((a, b) => b.exato - a.exato).slice(0, 5);
+}
+async function _hsBuscarContato(c = {}) {
+  const grupos = [];
+  if (c.email) grupos.push({ filters: [{ propertyName: 'email', operator: 'EQ', value: String(c.email).toLowerCase() }] });
+  const [pn, ...resto] = String(c.nome || '').trim().split(/\s+/);
+  if (pn && resto.length) grupos.push({ filters: [{ propertyName: 'firstname', operator: 'EQ', value: pn }, { propertyName: 'lastname', operator: 'EQ', value: resto.join(' ') }] });
+  if (!grupos.length) return [];
+  const d = await _hs('/crm/v3/objects/contacts/search', 'POST', { filterGroups: grupos.slice(0, 3), properties: ['firstname', 'lastname', 'email', 'phone', 'jobtitle', 'company'], limit: 5 });
+  return (d.results || []).map(x => ({ id: x.id, nome: [x.properties?.firstname, x.properties?.lastname].filter(Boolean).join(' '), email: x.properties?.email || '', telefone: x.properties?.phone || '', cargo: x.properties?.jobtitle || '', empresa: x.properties?.company || '' }));
+}
+async function oportVozInicio() {
+  if (!process.env.HUBSPOT_TOKEN) return { hubspot: false, pipelines: [] };
+  return { hubspot: true, pipelines: await _hsPipelines() };
+}
+async function oportVozExtrair({ texto } = {}) {
+  const t = String(texto || '').trim(); if (t.length < 15) throw new Error('Fale ou escreva um pouco mais sobre a oportunidade');
+  const pls = process.env.HUBSPOT_TOKEN ? await _hsPipelines().catch(() => []) : [];
+  const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const sys = `Você é assistente comercial da Atlantyx (dados, BI, engenharia de dados e IA, B2B). Recebe o relato falado de um vendedor sobre uma oportunidade (transcrição de voz, pode ter erros de reconhecimento) e organiza para cadastrar no CRM. Hoje é ${hoje}. Responda SÓ JSON válido:
+{"empresa":{"nome":"","dominio":"","cidade":""},"contato":{"nome":"","cargo":"","email":"","telefone":""},"negocio":{"titulo":"curto: Empresa — o que querem","descricao":"2 a 4 linhas com a necessidade","valor":0,"data_fechamento":"AAAA-MM-DD ou vazio","etapa":"nome EXATO de uma etapa da lista ou vazio","solucao":"tipo de solução"},"proximos_passos":["..."],"faltando":["o que o vendedor não disse e é importante"]}
+Regras: não invente dados (e-mail, telefone, valor) — deixe vazio/0 se não foi dito; valores falados como "150 mil" = 150000, "1,2 milhão" = 1200000; datas relativas ("fim do ano", "dezembro", "em 3 meses") viram data concreta a partir de hoje; telefone só dígitos com DDD; corrija nomes de empresas conhecidas quando a transcrição errar óbvio.`;
+  const usr = 'ETAPAS DO FUNIL NO HUBSPOT: ' + JSON.stringify(pls.map(p => ({ pipeline: p.nome, etapas: p.etapas.map(e => e.nome) }))) + '\n\nRELATO DO VENDEDOR:\n' + t.substring(0, 6000);
+  const j = json(await claude(sys, usr, 1500, 45000));
+  // casa a etapa sugerida com o id do HubSpot
+  let pipeline = null, etapa = null; const alvo = _nrm(j.negocio?.etapa);
+  for (const p of pls) { const e = p.etapas.find(x => alvo && _nrm(x.nome) === alvo) || null; if (e) { pipeline = p.id; etapa = e.id; break; } }
+  if (!pipeline && pls[0]) { pipeline = pls[0].id; etapa = pls[0].etapas[0]?.id || null; }
+  const [empresas, contatos] = process.env.HUBSPOT_TOKEN ? await Promise.all([_hsBuscarEmpresa(j.empresa?.nome, j.empresa?.dominio).catch(() => []), _hsBuscarContato(j.contato || {}).catch(() => [])]) : [[], []];
+  return { extraido: j, pipeline, etapa, existentes: { empresas, contatos } };
+}
+async function oportVozCriar(p = {}, usuario) {
+  const E = p.empresa || {}, C = p.contato || {}, N = p.negocio || {};
+  if (!String(E.nome || '').trim() && !p.empresa_id) throw new Error('Informe a empresa');
+  if (!String(N.titulo || '').trim()) throw new Error('Informe o título do negócio');
+  if (!p.pipeline || !p.etapa) throw new Error('Escolha o funil e a etapa do HubSpot');
+  const feito = { empresa: null, contato: null, negocio: null, nota: null, avisos: [] };
+  // 1) empresa: reaproveita a escolhida; senão cria
+  let empresaId = p.empresa_id || null;
+  if (!empresaId) { const c = await _hs('/crm/v3/objects/companies', 'POST', { properties: { name: E.nome.trim(), ...(E.dominio ? { domain: String(E.dominio).replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '') } : {}), ...(E.cidade ? { city: E.cidade } : {}) } });
+    empresaId = c.id; feito.empresa = { id: c.id, criada: true }; } else feito.empresa = { id: empresaId, criada: false };
+  // 2) contato (opcional): reaproveita o escolhido; senão cria se tiver nome ou e-mail
+  let contatoId = p.contato_id || null;
+  if (!contatoId && (String(C.nome || '').trim() || String(C.email || '').trim())) {
+    const [pn, ...resto] = String(C.nome || '').trim().split(/\s+/);
+    try { const c = await _hs('/crm/v3/objects/contacts', 'POST', { properties: { firstname: pn || '', lastname: resto.join(' '), ...(C.email ? { email: String(C.email).toLowerCase() } : {}), ...(C.telefone ? { phone: C.telefone } : {}), ...(C.cargo ? { jobtitle: C.cargo } : {}), company: E.nome || '' } });
+      contatoId = c.id; feito.contato = { id: c.id, criado: true }; }
+    catch (e) { if (/409|already exists|existe/i.test(e.message)) { const ex = await _hsBuscarContato(C).catch(() => []); if (ex[0]) { contatoId = ex[0].id; feito.contato = { id: contatoId, criado: false }; } } if (!contatoId) feito.avisos.push('Contato não criado: ' + e.message); }
+  } else if (contatoId) feito.contato = { id: contatoId, criado: false };
+  if (contatoId && empresaId) await _hs(`/crm/v4/objects/contacts/${contatoId}/associations/default/companies/${empresaId}`, 'PUT').catch(e => feito.avisos.push('Ligação contato × empresa: ' + e.message));
+  // 3) negócio ligado à empresa e ao contato
+  const props = { dealname: N.titulo.trim().substring(0, 200), pipeline: p.pipeline, dealstage: p.etapa, ...(Number(N.valor) > 0 ? { amount: String(Math.round(Number(N.valor) * 100) / 100) } : {}),
+    ...(/^\d{4}-\d{2}-\d{2}$/.test(N.data_fechamento || '') ? { closedate: N.data_fechamento + 'T12:00:00.000Z' } : {}), ...(N.descricao ? { description: String(N.descricao).substring(0, 5000) } : {}) };
+  const d = await _hs('/crm/v3/objects/deals', 'POST', { properties: props });
+  feito.negocio = { id: d.id };
+  await _hs(`/crm/v4/objects/deals/${d.id}/associations/default/companies/${empresaId}`, 'PUT').catch(e => feito.avisos.push('Ligação negócio × empresa: ' + e.message));
+  if (contatoId) await _hs(`/crm/v4/objects/deals/${d.id}/associations/default/contacts/${contatoId}`, 'PUT').catch(e => feito.avisos.push('Ligação negócio × contato: ' + e.message));
+  // 4) o relato e os próximos passos viram nota do negócio
+  const corpo = `<p><b>Oportunidade registrada por voz no Atlantyx OS</b>${usuario ? ' por ' + String(usuario).replace(/</g, '') : ''}</p>` + (N.descricao ? `<p>${String(N.descricao).replace(/</g, '&lt;')}</p>` : '')
+    + ((p.proximos_passos || []).length ? '<p><b>Próximos passos</b><br>' + p.proximos_passos.map(x => '• ' + String(x).replace(/</g, '&lt;')).join('<br>') + '</p>' : '')
+    + (p.texto ? `<p><b>Relato do vendedor</b><br>${String(p.texto).substring(0, 6000).replace(/</g, '&lt;').replace(/\n/g, '<br>')}</p>` : '');
+  try { const n = await _hs('/crm/v3/objects/notes', 'POST', { properties: { hs_note_body: corpo, hs_timestamp: new Date().toISOString() } }); feito.nota = { id: n.id };
+    await _hs(`/crm/v4/objects/notes/${n.id}/associations/default/deals/${d.id}`, 'PUT').catch(() => {}); } catch (e) { feito.avisos.push('Nota não criada: ' + e.message); }
+  let portal = null; try { portal = (await _hs('/account-info/v3/details')).portalId; } catch (_) {}
+  if (portal) feito.link = `https://app.hubspot.com/contacts/${portal}/record/0-3/${d.id}`;
+  return feito;
+}
+
 async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -457,6 +550,10 @@ async function handler(req, res) {
       await sql`INSERT INTO vendas_estrategias (id, periodo_tipo, periodo_ref, titulo, texto, metas, atualizado_em) VALUES (${id}, ${payload.periodo_tipo || 'mensal'}, ${payload.periodo_ref || null}, ${payload.titulo || null}, ${payload.texto}, ${JSON.stringify(payload.metas || {})}, NOW())
         ON CONFLICT (id) DO UPDATE SET periodo_tipo = EXCLUDED.periodo_tipo, periodo_ref = EXCLUDED.periodo_ref, titulo = EXCLUDED.titulo, texto = EXCLUDED.texto, metas = EXCLUDED.metas, atualizado_em = NOW()`; return { id }; }),
     estrategia_listar: () => sqlRun(async sql => ({ estrategias: await sql`SELECT * FROM vendas_estrategias ORDER BY atualizado_em DESC LIMIT 50` })),
+    oport_voz_inicio: () => oportVozInicio(), // v3.282
+    oport_voz_extrair: () => oportVozExtrair(payload),
+    oport_voz_criar: () => oportVozCriar(payload, req.usuario || null),
+    oport_voz_buscar: async () => ({ empresas: await _hsBuscarEmpresa(payload.nome, payload.dominio), contatos: await _hsBuscarContato(payload.contato || {}) }),
     estrategia_excluir: () => sqlRun(async sql => { await sql`DELETE FROM vendas_estrategias WHERE id = ${payload.id}`; return { ok: true }; }),
   };
   if (!acoes[action]) return res.status(400).json({ success: false, error: 'Ação inválida. Disponíveis: ' + Object.keys(acoes).join(', ') });
