@@ -1,5 +1,6 @@
 import { comGuarda } from '../lib/qa-guard.js';
 import crypto from 'node:crypto';
+import { projetar as projetar3, premissasPadrao as premissas3Padrao, resumoTexto as projecao3Texto, MOTORES } from '../lib/projecao-3anos.js'; // v3.286
 import { K_VIGENTE, K_RASCUNHO, K_VERSOES, K_AJUSTES, planoInicial, planoNormalizar, planoSimular, planoResumoTexto, STATUS as ALV_STATUS } from '../lib/plano-estrategico.js'; // v3.240
 // api/estrategia.js — v3.151 · ESTRATÉGIA IA · trilha T3
 // • ATLAS, o estrategista-chefe: conversa por chat ou voz, com os números vivos da empresa (financeiro, comercial,
@@ -77,10 +78,92 @@ async function premissasCtx() {
 }
 async function planoVigente() { return await kv('est:plano'); }
 function resumoCtx(ctx) { // compacto para o prompt
-  const f = ctx.financeiro || {}, c = ctx.comercial || {};
-  return JSON.stringify({ atualizado_em: ctx.em, financeiro: { mes: f.mes, ano: f.ano, caixa: f.caixa, a_receber: f.receber, recebiveis_vencidos: f.receber_vencido, a_pagar: f.pagar, serie_mensal: (f.mensal || []).slice(-12), erro: f.erro },
-    comercial: c && { meta_mes_pct: c.meta_mes_pct, meta_ano_pct: c.meta_ano_pct, falta_mes: c.gap_mes, falta_ano: c.gap_ano, propostas: c.propostas, win_rate_pct: c.win_rate_pct, ciclo_dias: c.ciclo_dias, funil_30d: c.funil, ritmo_time: c.semaforo, erro: c.erro },
-    projetos: ctx.projetos, ideias: ctx.ideias, esteira_demandas: ctx.esteira_demandas, esteira_entrega: ctx.esteira_entrega }).substring(0, 14000);
+  const f = ctx.financeiro || {}, fu = ctx.comercial?.funil || null;
+  return JSON.stringify({ atualizado_em: ctx.em, financeiro: { mes: f.mes, ano: f.ano, caixa: f.caixa, a_receber: f.receber, recebiveis_vencidos: f.receber_vencido, a_pagar: f.pagar, serie_mensal: (f.mensal || []).slice(-12) },
+    funil_hubspot: fu && { periodo: fu.rotulo, aberto: fu.resumo?.aberto, ganho_mes: fu.resumo?.ganho, meta_mes: fu.resumo?.meta, pct_meta: fu.resumo?.pct_meta, taxa_ganho_pct: fu.resumo?.taxa_ganho_pct, cobertura_pct: fu.resumo?.cobertura_pct, leads: fu.leads, etapas: (fu.etapas || []).map(e => ({ etapa: e.nome, qtd: e.agora?.qtd, valor: e.agora?.valor })) },
+    projetos: ctx.projetos, ideias: ctx.ideias, esteira_demandas: ctx.esteira_demandas, esteira_entrega: ctx.esteira_entrega, empresa_ampla: ctx.amplo || null }).substring(0, 30000);
+}
+// v3.286: CONTEXTO AMPLO para o ATLAS e para a Projeção de 3 anos — histórico de resultado, metas por ano, carteira contratada,
+// despesas recorrentes, motores de negócio (margem), pessoas e custo, propostas, contratos e a projeção salva. Cache de 30 min.
+const _t = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('demorou')), ms))]);
+async function contextoAmplo(forcar) {
+  const c = await kv('est:contexto_amplo');
+  if (!forcar && c && Date.now() - Date.parse(c.em) < 30 * 60000) return c;
+  const sql = await getSql(), hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }), Y = parseInt(hoje), ini12 = (Y - 1) + hoje.substring(4, 8) + '01';
+  const fin = (action, params, ms = 45000) => _t(chamar('financeiro', { action, params }), ms);
+  const [me, ...rs] = await Promise.allSettled([fin('metas_empresa_status', { ano: Y, com_crm: false }), ...[Y - 3, Y - 2, Y - 1].map(a => fin('resultado_kpis', { ano: a }))]);
+  const [ag, mo] = await Promise.allSettled([fin('receitas_agenda', { meses: 13 }, 50000), fin('fin_v2', { tela: 'executiva', data_inicio: ini12, data_fim: hoje }, 50000)]);
+  const v = p => p.status === 'fulfilled' ? p.value : null, er = p => p.status === 'rejected' ? String(p.reason?.message || p.reason).substring(0, 100) : null;
+  const ME = v(me)?.metas || {}, erros = [];
+  const historico = rs.map((p, i) => { const R = v(p)?.resultado?.periodo_res; if (!R) { if (er(p)) erros.push('Resultado ' + (Y - 3 + i) + ': ' + er(p)); return null; } return { ano: Y - 3 + i, faturamento: R.faturamento, lucro: R.lucro_liquido, margem_pct: R.margem_liquida_pct, ebitda: R.ebitda }; }).filter(Boolean);
+  let metas = {}; try { const m = await fin('metas_empresa_ler', { ano: Y }, 30000); metas = Object.fromEntries(Object.entries(m.todos_anos || {}).filter(([a]) => +a >= Y - 1).map(([a, x]) => [a, { faturamento: x.faturamento, margem_pct: x.margem_pct, recorrencia_pct: x.recorrencia_pct, crescimento_pct: x.crescimento_pct, motores: x.motores, padrao: !!x.padrao }])); } catch (e) { erros.push('Metas: ' + e.message); }
+  const AG = v(ag)?.agenda; const carteira = AG ? { total_previsto_13m: AG.total_ativo, por_mes: (AG.por_mes || []).map(x => ({ mes: x.mes, total: x.total, marcos: x.marco, termos: x.termo, sustentacao: x.sustentacao, avulsas: x.manual })) } : null; if (!AG && er(ag)) erros.push('Carteira: ' + er(ag));
+  const MO = v(mo)?.fin_v2?.motores || null; if (!MO && er(mo)) erros.push('Motores: ' + er(mo));
+  const mult = { mensal: 1, bimestral: 0.5, trimestral: 1 / 3, semestral: 1 / 6, anual: 1 / 12, semanal: 4.33, quinzenal: 2 };
+  let despesas = null; try { const L = await sql`SELECT categoria, valor, recorrencia FROM despesas_programadas WHERE ativa AND (data_fim IS NULL OR data_fim >= ${hoje})`; const por = {};
+    L.forEach(d => { const k = d.categoria || 'Sem categoria'; por[k] = (por[k] || 0) + Number(d.valor || 0) * (mult[String(d.recorrencia || 'mensal').toLowerCase()] ?? 1); });
+    despesas = { mensal_equivalente: Math.round(Object.values(por).reduce((a, b) => a + b, 0)), por_categoria: Object.entries(por).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([k, x]) => ({ categoria: k, mensal: Math.round(x) })) }; } catch (_) {}
+  let pessoas = null; try { const F = await sql`SELECT cargo, COALESCE(custo_hora,0)::float ch, COALESCE(horas_mensais_padrao,160)::float h FROM funcionarios WHERE ativo`; const por = {};
+    F.forEach(x => { const k = x.cargo || 'Sem cargo'; por[k] = por[k] || { qtd: 0, custo: 0 }; por[k].qtd++; por[k].custo += x.ch * x.h; });
+    pessoas = { ativos: F.length, custo_mensal: Math.round(F.reduce((a, x) => a + x.ch * x.h, 0)), por_cargo: Object.entries(por).sort((a, b) => b[1].qtd - a[1].qtd).slice(0, 15).map(([k, x]) => ({ cargo: k, qtd: x.qtd, custo_mensal: Math.round(x.custo) })) }; } catch (_) {}
+  let propostas = null; try { const P = await sql`SELECT status, COUNT(*)::int n, COALESCE(SUM(valor_total),0)::float v FROM propostas WHERE criado_em >= NOW() - INTERVAL '12 months' GROUP BY status`; propostas = Object.fromEntries(P.map(x => [x.status, { qtd: x.n, valor: Math.round(x.v) }])); } catch (_) {}
+  let contratos = null; try { const C = await sql`SELECT COUNT(*)::int n, COUNT(*) FILTER (WHERE data_vencimento BETWEEN ${hoje}::date AND (${hoje}::date + 90))::int v90 FROM contratos_financeiros WHERE data_vencimento IS NULL OR data_vencimento >= ${hoje}::date`; contratos = { ativos: C[0]?.n || 0, vencem_90_dias: C[0]?.v90 || 0 }; } catch (_) {}
+  const proj = await kv('plan:projecao3');
+  const out = { em: new Date().toISOString(), hoje, ano_atual: { ano: Y, meta: ME.faturamento?.meta ?? ME.meta?.faturamento ?? null, realizado: ME.faturamento?.realizado ?? ME.realizado?.faturamento ?? null, pct: ME.faturamento?.pct_atingido ?? null,
+      projecao_fechamento: ME.faturamento?.projecao_fechamento ?? null, lucro: ME.realizado?.lucro_liquido ?? null, margem_pct: ME.realizado?.margem_pct ?? null, meta_margem_pct: ME.meta?.margem_pct ?? null },
+    historico, metas_por_ano: metas, carteira_contratada: carteira, motores_12m: MO, despesas_recorrentes: despesas, pessoas, propostas_12m: propostas, contratos,
+    projecao_3anos: proj?.projecao ? projecao3Texto(proj.projecao) : null, erros };
+  await kv('est:contexto_amplo', out); return out;
+}
+// base da projeção a partir dos dados reais
+async function baseProjecao(forcar) {
+  const A = await contextoAmplo(forcar), g = await contexto(false).catch(() => ({})), Y = A.ano_atual?.ano || new Date().getFullYear();
+  const M = A.motores_12m, recM = M ? Object.fromEntries(Object.keys(MOTORES).map(k => [k, Number(M[k]?.receita) || 0])) : null, tot = recM ? Object.values(recM).reduce((a, b) => a + b, 0) : 0;
+  const mix = tot > 0 ? Object.fromEntries(Object.entries(recM).map(([k, x]) => [k, Math.round(x / tot * 1000) / 10])) : null;
+  const mc = M ? Object.fromEntries(Object.keys(MOTORES).map(k => [k, M[k]?.margem_bruta_pct != null ? Math.max(0, Math.min(95, M[k].margem_bruta_pct)) : ({ pessoas: 25, projetos: 40, produtos: 70 })[k]])) : null;
+  const receita = A.ano_atual?.projecao_fechamento || A.ano_atual?.realizado || tot || (A.historico.at(-1)?.faturamento) || 0;
+  const margemLiq = A.ano_atual?.margem_pct ?? A.historico.at(-1)?.margem_pct ?? 10;
+  const mcTot = mc && mix ? Object.keys(MOTORES).reduce((s, k) => s + mix[k] * mc[k] / 100, 0) : 35;
+  const fixas = receita ? Math.max(0, receita * (mcTot - margemLiq) / 100) : null;
+  const pes = A.pessoas?.ativos || null, rpp = pes && recM?.pessoas ? Math.round(recM.pessoas / 12 / Math.max(1, pes - 3)) : null;
+  return { ano: Y, receita: Math.round(receita), mix_pct: mix || undefined, mc_pct: mc || undefined, despesas_fixas: fixas != null ? Math.round(fixas) : null, caixa: g?.financeiro?.caixa ?? null,
+    pessoas: pes, pessoas_estrutura: 3, receita_por_pessoa_mes: rpp, recorrencia_pct: A.metas_por_ano?.[Y]?.recorrencia_pct ?? 20,
+    fonte: { receita: A.ano_atual?.projecao_fechamento ? 'projeção de fechamento de ' + Y + ' (Metas da Empresa)' : 'realizado', mix: mix ? 'receita por motor nos últimos 12 meses (QuickBooks)' : 'padrão (motores sem classificação)', margem_liquida_pct: margemLiq },
+    historico: A.historico, metas_por_ano: A.metas_por_ano, erros: A.erros };
+}
+async function projecaoObter({ forcar } = {}) {
+  const base = await baseProjecao(!!forcar), salvo = await kv('plan:projecao3');
+  const prem = salvo?.premissas && salvo.premissas.ano_base === base.ano ? salvo.premissas : premissas3Padrao(base);
+  if (!(salvo?.premissas?.ano_base === base.ano)) { prem.receita_base = base.receita; if (base.despesas_fixas != null) prem.despesas_fixas_base = base.despesas_fixas; }
+  return { base, premissas: prem, projecao: projetar3(prem, base), salvo_em: salvo?.em || null, ia: salvo?.ia || null };
+}
+async function projecaoSalvar({ premissas: p, ia }, usuario) {
+  const base = await baseProjecao(false), proj = projetar3(p || {}, base);
+  await kv('plan:projecao3', { em: new Date().toISOString(), por: usuario || null, premissas: proj.premissas, projecao: proj, ia: ia || null });
+  try { const c = await kv('est:contexto_amplo'); if (c) { c.projecao_3anos = projecao3Texto(proj); await kv('est:contexto_amplo', c); } } catch (_) {}
+  return { projecao: proj };
+}
+async function projecaoIA({ premissas: p, pedido } = {}) {
+  const [A, prem, plano] = await Promise.all([contextoAmplo(false), premissasCtx(), planoVigente()]);
+  const base = await baseProjecao(false), atual = projetar3(p || premissas3Padrao(base), base);
+  const sys = `Você é ATLAS, estrategista-chefe e CFO de IA da Atlantyx (dados, BI, engenharia de dados e IA; três motores: alocação de pessoas, projetos e produtos próprios). Monte premissas REALISTAS para a projeção de 3 anos, coerentes com o histórico, a carteira contratada, o funil, as metas e o plano estratégico. Justifique cada número com os dados. Responda SÓ JSON válido:
+{"premissas":{"mix_pct":{"pessoas":0,"projetos":0,"produtos":0},"conversao_caixa_pct":85,"anos":[{"crescimento_pct":{"pessoas":0,"projetos":0,"produtos":0},"mc_pct":{"pessoas":0,"projetos":0,"produtos":0},"despesas_fixas_cresc_pct":0,"recorrencia_pct":0},{…},{…}]},"comentario":"até 10 linhas: leitura do cenário, riscos e as 3 alavancas que mais mudam o resultado","alavancas":["..."]}`;
+  const usr = `PEDIDO DO FUNDADOR: ${String(pedido || 'proponha o cenário base mais provável').substring(0, 1500)}\n\nPREMISSAS ESTRATÉGICAS: ${prem}\nPLANO VIGENTE: ${plano ? JSON.stringify(plano.sintese).substring(0, 2500) : '(nenhum)'}\nBASE CALCULADA DOS DADOS: ${JSON.stringify(base).substring(0, 5000)}\nPROJEÇÃO COM AS PREMISSAS ATUAIS: ${projecao3Texto(atual)}\nDADOS DA EMPRESA: ${JSON.stringify(A).substring(0, 16000)}`;
+  const txt = await claude(sys, [{ role: 'user', content: usr }], 2200);
+  let j; try { const t = txt.replace(/```json|```/g, ''); j = JSON.parse(t.substring(t.indexOf('{'), t.lastIndexOf('}') + 1)); } catch (_) { throw new Error('O ATLAS não devolveu premissas legíveis — tente de novo'); }
+  const novo = { ...(p || premissas3Padrao(base)), ...(j.premissas || {}), anos: (j.premissas?.anos || []).map((x, i) => ({ ...((p || premissas3Padrao(base)).anos || [])[i], ...x })) };
+  return { premissas: novo, projecao: projetar3(novo, base), comentario: String(j.comentario || '').substring(0, 3000), alavancas: (j.alavancas || []).slice(0, 6) };
+}
+async function projecaoParaMetas({ anos = [] } = {}) {
+  const salvo = await kv('plan:projecao3'); if (!salvo?.projecao) throw new Error('Salve a projeção antes');
+  const L = salvo.projecao.cenarios.base.filter(l => !anos.length || anos.includes(l.ano)), feitos = [];
+  let todos = {}; try { todos = (await chamar('financeiro', { action: 'metas_empresa_ler', params: {} })).todos_anos || {}; } catch (_) {}
+  for (const l of L) { const ex = todos[String(l.ano)] && !todos[String(l.ano)].padrao ? todos[String(l.ano)] : {}; // mantém o que já estava cadastrado (EBITDA, caixa mínimo); a distribuição mensal é refeita
+    const mot = { pessoas: l.por_motor.pessoas, projetos: l.por_motor.projetos, produtos: l.por_motor.produtos };
+    const r = await chamar('financeiro', { action: 'metas_empresa_salvar', params: { ano: l.ano, faturamento: l.receita, margem_pct: l.margem_pct ?? 0, recorrencia_pct: l.recorrencia_pct, motores: mot,
+      margem_ebitda_pct: ex.margem_ebitda_pct ?? null, caixa_minimo: ex.caixa_minimo ?? null, crescimento_pct: ex.crescimento_pct ?? null, fonte: 'Projeção 3 anos (Planejamento)' } });
+    feitos.push({ ano: l.ano, faturamento: l.receita, margem_pct: l.margem_pct, ok: !!r }); }
+  return { feitos };
 }
 async function claude(system, messages, maxTokens = 1500) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
@@ -99,11 +182,13 @@ async function chat({ conversa_id, mensagem, voz, persona }) {
   const quem = persona === 'norte' ? 'norte' : 'atlas';
   if (!conv) { const id = novoId('conv'); await sql`INSERT INTO est_conversas (id, titulo) VALUES (${id}, ${(quem === 'norte' ? '🧭 ' : '') + m.substring(0, 80)})`; conv = { id, mensagens: [] }; }
   const [ctx, prem, plano] = await Promise.all([contexto(), premissasCtx(), planoVigente()]);
+  try { ctx.amplo = ctx.amplo || await contextoAmplo(false); } catch (_) {}
   const hist = (conv.mensagens || []).slice(-16).map(x => ({ role: x.role, content: x.content }));
   const system = `Você é ATLAS, o estrategista-chefe de IA da Atlantyx, conversando com o fundador e CEO (Fabio). Papel: ${AGENTES.atlas.foco}
 ${REGRAS}
 ${voz ? 'A resposta será LIDA EM VOZ ALTA: frases curtas, sem markdown, sem tabelas, sem listas longas — no máximo 120 palavras, termine com uma pergunta ou próximo passo.' : 'Formato: markdown leve (negrito, listas curtas). Até 250 palavras, salvo se pedirem detalhe.'}
 Se o fundador quiser aprofundar com várias visões, sugira levar o tema à Sala de Estratégia.
+Você enxerga a empresa inteira em empresa_ampla: histórico de resultado por ano, metas por ano, carteira contratada (marcos, termos e sustentações dos próximos 13 meses), despesas recorrentes, margem por motor de negócio (alocação, projetos, produtos), pessoas e custo, propostas, contratos e a Projeção 3 anos salva. Use esses números ao recomendar estratégia ou projetar; para mudar a projeção, oriente a usar Planejamento › Projeção 3 anos (botão "ATLAS sugere premissas").
 
 PREMISSAS ESTRATÉGICAS (definidas pelo fundador):
 ${prem}
@@ -230,6 +315,7 @@ async function salaRodada({ sessao_id, intervencao }) {
   const F = s.falas || []; const rodada = F.reduce((m, f) => Math.max(m, f.rodada || 0), 0) + 1;
   if (String(intervencao || '').trim()) F.push({ autor: 'fundador', texto: String(intervencao).trim().substring(0, 2000), rodada, em: new Date().toISOString() });
   const [ctx, prem, plano] = await Promise.all([contexto(), premissasCtx(), planoVigente()]);
+  try { ctx.amplo = ctx.amplo || await contextoAmplo(false); } catch (_) {}
   const base = `SALA DE ESTRATÉGIA DA ATLANTYX — tema: "${s.tema}"${s.objetivo ? '\nObjetivo da sessão: ' + s.objetivo : ''}
 
 PREMISSAS ESTRATÉGICAS: ${prem}
@@ -255,6 +341,7 @@ async function salaSintese({ sessao_id }) {
   const sql = await getSql(); const s = (await sql`SELECT * FROM est_sessoes WHERE id=${sessao_id}`)[0]; if (!s) throw new Error('Sessão não encontrada');
   if (!(s.falas || []).length) throw new Error('Rode pelo menos uma rodada de debate antes da síntese');
   const [ctx, prem] = await Promise.all([contexto(), premissasCtx()]);
+  try { ctx.amplo = await contextoAmplo(false); } catch (_) {}
   const t = await claude(`Você é ATLAS, estrategista-chefe da Atlantyx. Feche a Sala de Estratégia num PLANO acionável, baseado SÓ no debate e no contexto. ${REGRAS}
 Responda SOMENTE JSON: {"decisao":"a escolha central em 1-2 frases","racional":"por que (3-4 frases, com os números)","objetivos":[{"objetivo":"...","kr":["resultado-chave mensurável com número e prazo"]}],"iniciativas":[{"titulo":"ação concreta","dono":"área ou papel","prazo":"AAAA-MM ou trimestre","impacto":"alto|medio|baixo","esforco":"P|M|G","destino_sugerido":"demanda|ideia|pauta"}],"riscos":[{"risco":"...","mitigacao":"..."}],"nao_fazer":["o que deixa de fazer para manter o foco"],"proximos_90_dias":["semana/mês: entrega"],"divergencias":["onde o comitê não concordou"],"pergunta_ao_fundador":"a decisão que só o fundador pode tomar"}
 destino_sugerido: "demanda" = mudança no sistema Atlantyx OS; "ideia" = novo negócio/produto a estudar; "pauta" = assunto para decidir na reunião semanal.`,
@@ -320,6 +407,9 @@ async function handler(req, res) {
       inicio: async () => { const [prem, plano, conv, sess] = await Promise.all([premissas(), planoVigente(), sql`SELECT id, titulo, atualizado_em FROM est_conversas ORDER BY atualizado_em DESC LIMIT 15`, sql`SELECT id, tema, status, agentes, atualizado_em FROM est_sessoes ORDER BY atualizado_em DESC LIMIT 15`]);
         return { agentes: AGENTES, comite_padrao: COMITE_PADRAO, premissas: prem, premissas_padrao: prem === PREMISSAS_PADRAO, plano, conversas: conv, sessoes: sess }; },
       contexto: async () => ({ contexto: await contexto(!!b.forcar) }),
+      contexto_amplo: async () => ({ contexto: await contextoAmplo(!!b.forcar) }), // v3.286
+      projecao_obter: () => projecaoObter(b), projecao_calcular: async () => ({ projecao: projetar3(b.premissas || {}, await baseProjecao(false)) }),
+      projecao_salvar: () => projecaoSalvar(b, usuario), projecao_ia: () => projecaoIA(b), projecao_para_metas: () => projecaoParaMetas(b),
       premissas_salvar: async () => { const t = String(b.texto || '').trim(); if (t.length < 30) throw new Error('Escreva as premissas (pelo menos algumas frases)'); await kv('est:premissas', { texto: t.substring(0, 6000), em: new Date().toISOString(), por: usuario }); return { ok: true }; },
       chat: () => chat(b),
       conversa: async () => ({ conversa: (await sql`SELECT * FROM est_conversas WHERE id=${b.id}`)[0] || null }),
