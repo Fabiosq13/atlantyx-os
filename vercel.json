@@ -120,7 +120,7 @@
       "maxDuration": 60
     },
     "api/s1-strategy.js": {
-      "maxDuration": 180
+      "maxDuration": 300
     },
     "api/business-plan.js": {
       "maxDuration": 300
@@ -158,10 +158,10 @@
       "maxDuration": 60
     },
     "api/s1-data.js": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "api/s1-intel.js": {
-      "maxDuration": 180
+      "maxDuration": 300
     },
     "api/meeting-schedule.js": {
       "maxDuration": 60

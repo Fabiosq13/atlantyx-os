@@ -1,7 +1,7 @@
 import { comGuarda } from '../lib/qa-guard.js';
 import crypto from 'node:crypto';
 import { projetar as projetar3, premissasPadrao as premissas3Padrao, resumoTexto as projecao3Texto, MOTORES } from '../lib/projecao-3anos.js'; // v3.286
-import { K_VIGENTE, K_RASCUNHO, K_VERSOES, K_AJUSTES, planoInicial, planoNormalizar, planoSimular, planoResumoTexto, STATUS as ALV_STATUS } from '../lib/plano-estrategico.js'; // v3.240
+import { K_VIGENTE, K_RASCUNHO, K_VERSOES, K_AJUSTES, planoInicial, planoNormalizar, planoSimular, planoResumoTexto, STATUS as ALV_STATUS, numBR } from '../lib/plano-estrategico.js'; // v3.240
 // api/estrategia.js — v3.151 · ESTRATÉGIA IA · trilha T3
 // • ATLAS, o estrategista-chefe: conversa por chat ou voz, com os números vivos da empresa (financeiro, comercial,
 //   projetos, ideias, Esteira de Demandas), as premissas estratégicas e o plano vigente.
@@ -89,16 +89,21 @@ const _t = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => 
 async function contextoAmplo(forcar) {
   const c = await kv('est:contexto_amplo');
   if (!forcar && c && Date.now() - Date.parse(c.em) < 30 * 60000) return c;
-  const sql = await getSql(), hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }), Y = parseInt(hoje), ini12 = (Y - 1) + hoje.substring(4, 8) + '01';
+  const sql = await getSql(), hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }), Y = parseInt(hoje), ini12 = (() => { const d = new Date(hoje + 'T12:00:00Z'); d.setUTCFullYear(d.getUTCFullYear() - 1); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); })(); // v3.294: 12 meses exatos (antes ~12,9)
   const fin = (action, params, ms = 45000) => _t(chamar('financeiro', { action, params }), ms);
   const [me, ...rs] = await Promise.allSettled([fin('metas_empresa_status', { ano: Y, com_crm: false }), ...[Y - 3, Y - 2, Y - 1].map(a => fin('resultado_kpis', { ano: a }))]);
   const [ag, mo] = await Promise.allSettled([fin('receitas_agenda', { meses: 13 }, 50000), fin('fin_v2', { tela: 'executiva', data_inicio: ini12, data_fim: hoje }, 50000)]);
   const v = p => p.status === 'fulfilled' ? p.value : null, er = p => p.status === 'rejected' ? String(p.reason?.message || p.reason).substring(0, 100) : null;
   const ME = v(me)?.metas || {}, erros = [];
+  // v3.294: QuickBooks fora devolve sucesso com 'erros' dentro — antes a tela mostrava zeros como se fossem reais
+  if (er(me)) erros.push('Metas do ano: ' + er(me)); (v(me)?.metas?.erros || v(me)?.erros || []).forEach(x => erros.push('Metas do ano: ' + x));
+  rs.forEach((p, i) => (v(p)?.resultado?.erros || []).forEach(x => erros.push('Resultado ' + (Y - 3 + i) + ': ' + x)));
   const historico = rs.map((p, i) => { const R = v(p)?.resultado?.periodo_res; if (!R) { if (er(p)) erros.push('Resultado ' + (Y - 3 + i) + ': ' + er(p)); return null; } return { ano: Y - 3 + i, faturamento: R.faturamento, lucro: R.lucro_liquido, margem_pct: R.margem_liquida_pct, ebitda: R.ebitda }; }).filter(Boolean);
-  let metas = {}; try { const m = await fin('metas_empresa_ler', { ano: Y }, 30000); metas = Object.fromEntries(Object.entries(m.todos_anos || {}).filter(([a]) => +a >= Y - 1).map(([a, x]) => [a, { faturamento: x.faturamento, margem_pct: x.margem_pct, recorrencia_pct: x.recorrencia_pct, crescimento_pct: x.crescimento_pct, motores: x.motores, padrao: !!x.padrao }])); } catch (e) { erros.push('Metas: ' + e.message); }
+  let metas = {}; try { const m = await fin('metas_empresa_ler', { ano: Y }, 30000); metas = Object.fromEntries(Object.entries(m.metas_cadastro?.todos_anos || m.todos_anos || {}).filter(([a]) => +a >= Y - 1).map(([a, x]) => [a, { faturamento: x.faturamento, margem_pct: x.margem_pct, recorrencia_pct: x.recorrencia_pct, crescimento_pct: x.crescimento_pct, motores: x.motores, padrao: !!x.padrao }])); } catch (e) { erros.push('Metas: ' + e.message); }
   const AG = v(ag)?.agenda; const carteira = AG ? { total_previsto_13m: AG.total_ativo, por_mes: (AG.por_mes || []).map(x => ({ mes: x.mes, total: x.total, marcos: x.marco, termos: x.termo, sustentacao: x.sustentacao, avulsas: x.manual })) } : null; if (!AG && er(ag)) erros.push('Carteira: ' + er(ag));
-  const MO = v(mo)?.fin_v2?.motores || null; if (!MO && er(mo)) erros.push('Motores: ' + er(mo));
+  const _mo = v(mo)?.fin_v2, MOw = _mo?.motores?.motores || null; // v3.294: fin_v2 devolve { motores: { pessoas, projetos, produtos }, camadas, … } — antes lia o invólucro e os motores saíam sempre vazios
+  const MO = MOw ? Object.fromEntries(Object.entries(MOw).map(([k, m]) => [k, { receita: m.receita, participacao_pct: m.participacao_pct, margem_bruta_pct: m.margem_bruta_pct, margem_contribuicao_pct: m.margem_contribuicao_pct }])) : null;
+  if (!MO) erros.push('Motores: ' + (er(mo) || _mo?.erro || 'sem dados')); else if (_mo?.erros?.length) erros.push('Motores: ' + _mo.erros.join('; '));
   const mult = { mensal: 1, bimestral: 0.5, trimestral: 1 / 3, semestral: 1 / 6, anual: 1 / 12, semanal: 4.33, quinzenal: 2 };
   let despesas = null; try { const L = await sql`SELECT categoria, valor, recorrencia FROM despesas_programadas WHERE ativa AND (data_fim IS NULL OR data_fim >= ${hoje})`; const por = {};
     L.forEach(d => { const k = d.categoria || 'Sem categoria'; por[k] = (por[k] || 0) + Number(d.valor || 0) * (mult[String(d.recorrencia || 'mensal').toLowerCase()] ?? 1); });
@@ -121,21 +126,26 @@ async function baseProjecao(forcar) {
   const M = A.motores_12m, recM = M ? Object.fromEntries(Object.keys(MOTORES).map(k => [k, Number(M[k]?.receita) || 0])) : null, tot = recM ? Object.values(recM).reduce((a, b) => a + b, 0) : 0;
   const mix = tot > 0 ? Object.fromEntries(Object.entries(recM).map(([k, x]) => [k, Math.round(x / tot * 1000) / 10])) : null;
   const mc = M ? Object.fromEntries(Object.keys(MOTORES).map(k => [k, M[k]?.margem_bruta_pct != null ? Math.max(0, Math.min(95, M[k].margem_bruta_pct)) : ({ pessoas: 25, projetos: 40, produtos: 70 })[k]])) : null;
-  const receita = A.ano_atual?.projecao_fechamento || A.ano_atual?.realizado || tot || (A.historico.at(-1)?.faturamento) || 0;
+  const _hj = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })), _fracAno = Math.max(0.05, ((_hj - new Date(_hj.getFullYear(), 0, 1)) / 864e5 + 1) / (((Y % 4 === 0 && Y % 100 !== 0) || Y % 400 === 0) ? 366 : 365));
+  // v3.294: sem projeção de fechamento, o realizado do ano é ANUALIZADO (antes entrava o acumulado até hoje como se fosse o ano todo)
+  const receita = A.ano_atual?.projecao_fechamento || (A.ano_atual?.realizado ? A.ano_atual.realizado / _fracAno : 0) || tot || (A.historico.at(-1)?.faturamento) || 0;
   const margemLiq = A.ano_atual?.margem_pct ?? A.historico.at(-1)?.margem_pct ?? 10;
   const mcTot = mc && mix ? Object.keys(MOTORES).reduce((s, k) => s + mix[k] * mc[k] / 100, 0) : 35;
   const fixas = receita ? Math.max(0, receita * (mcTot - margemLiq) / 100) : null;
   const pes = A.pessoas?.ativos || null, rpp = pes && recM?.pessoas ? Math.round(recM.pessoas / 12 / Math.max(1, pes - 3)) : null;
   return { ano: Y, receita: Math.round(receita), mix_pct: mix || undefined, mc_pct: mc || undefined, despesas_fixas: fixas != null ? Math.round(fixas) : null, caixa: g?.financeiro?.caixa ?? null,
     pessoas: pes, pessoas_estrutura: 3, receita_por_pessoa_mes: rpp, recorrencia_pct: A.metas_por_ano?.[Y]?.recorrencia_pct ?? 20,
-    fonte: { receita: A.ano_atual?.projecao_fechamento ? 'projeção de fechamento de ' + Y + ' (Metas da Empresa)' : 'realizado', mix: mix ? 'receita por motor nos últimos 12 meses (QuickBooks)' : 'padrão (motores sem classificação)', margem_liquida_pct: margemLiq },
+    fonte: { receita: A.ano_atual?.projecao_fechamento ? 'projeção de fechamento de ' + Y + ' (Metas da Empresa)' : A.ano_atual?.realizado ? 'realizado de ' + Y + ' anualizado' : tot ? 'receita dos últimos 12 meses' : 'sem dado de receita', mix: mix ? 'receita por motor nos últimos 12 meses (QuickBooks)' : 'padrão (motores sem classificação)', margem_liquida_pct: margemLiq },
     historico: A.historico, metas_por_ano: A.metas_por_ano, erros: A.erros };
 }
 async function projecaoObter({ forcar } = {}) {
   const base = await baseProjecao(!!forcar), salvo = await kv('plan:projecao3');
   const prem = salvo?.premissas && salvo.premissas.ano_base === base.ano ? salvo.premissas : premissas3Padrao(base);
   if (!(salvo?.premissas?.ano_base === base.ano)) { prem.receita_base = base.receita; if (base.despesas_fixas != null) prem.despesas_fixas_base = base.despesas_fixas; }
-  return { base, premissas: prem, projecao: projetar3(prem, base), salvo_em: salvo?.em || null, ia: salvo?.ia || null };
+  // v3.294: "↻ Dados" com projeção salva — mostra o que mudou nos dados reais (antes os números salvos ficavam e nada indicava a diferença)
+  const difBase = salvo?.premissas?.ano_base === base.ano ? { receita_base: { salvo: salvo.premissas.receita_base, dados: base.receita }, despesas_fixas_base: { salvo: salvo.premissas.despesas_fixas_base, dados: base.despesas_fixas }, caixa_inicial: { salvo: salvo.premissas.caixa_inicial, dados: base.caixa } } : null;
+  if (!base.receita) base.erros = [...(base.erros || []), 'Receita-base zerada: os dados do QuickBooks não vieram — a projeção não é confiável até atualizar.'];
+  return { base, premissas: prem, projecao: projetar3(prem, base), salvo_em: salvo?.em || null, ia: salvo?.ia || null, dif_base: difBase };
 }
 async function projecaoSalvar({ premissas: p, ia }, usuario) {
   const base = await baseProjecao(false), proj = projetar3(p || {}, base);
@@ -152,12 +162,13 @@ async function projecaoIA({ premissas: p, pedido } = {}) {
   const txt = await claude(sys, [{ role: 'user', content: usr }], 2200);
   let j; try { const t = txt.replace(/```json|```/g, ''); j = JSON.parse(t.substring(t.indexOf('{'), t.lastIndexOf('}') + 1)); } catch (_) { throw new Error('O ATLAS não devolveu premissas legíveis — tente de novo'); }
   const novo = { ...(p || premissas3Padrao(base)), ...(j.premissas || {}), anos: (j.premissas?.anos || []).map((x, i) => ({ ...((p || premissas3Padrao(base)).anos || [])[i], ...x })) };
-  return { premissas: novo, projecao: projetar3(novo, base), comentario: String(j.comentario || '').substring(0, 3000), alavancas: (j.alavancas || []).slice(0, 6) };
+  const pj = projetar3(novo, base); // v3.294: premissas da IA normalizadas (texto como "25%" virava 0)
+  return { premissas: pj.premissas, projecao: pj, comentario: String(j.comentario || '').substring(0, 3000), alavancas: (j.alavancas || []).slice(0, 6) };
 }
 async function projecaoParaMetas({ anos = [] } = {}) {
   const salvo = await kv('plan:projecao3'); if (!salvo?.projecao) throw new Error('Salve a projeção antes');
   const L = salvo.projecao.cenarios.base.filter(l => !anos.length || anos.includes(l.ano)), feitos = [];
-  let todos = {}; try { todos = (await chamar('financeiro', { action: 'metas_empresa_ler', params: {} })).todos_anos || {}; } catch (_) {}
+  let todos = {}; try { const _ml = await chamar('financeiro', { action: 'metas_empresa_ler', params: {} }); todos = _ml.metas_cadastro?.todos_anos || _ml.todos_anos || {}; /* v3.294: antes lia o lugar errado e apagava EBITDA/caixa mínimo */ } catch (_) {}
   for (const l of L) { const ex = todos[String(l.ano)] && !todos[String(l.ano)].padrao ? todos[String(l.ano)] : {}; // mantém o que já estava cadastrado (EBITDA, caixa mínimo); a distribuição mensal é refeita
     const mot = { pessoas: l.por_motor.pessoas, projetos: l.por_motor.projetos, produtos: l.por_motor.produtos };
     const r = await chamar('financeiro', { action: 'metas_empresa_salvar', params: { ano: l.ano, faturamento: l.receita, margem_pct: l.margem_pct ?? 0, recorrencia_pct: l.recorrencia_pct, motores: mot,
@@ -278,7 +289,7 @@ async function planoEstrSugerir({ automatico = false } = {}) {
   const P = vig.plano;
   const t = await claude(`Você é ATLAS, estrategista-chefe da Atlantyx. Faça o AJUSTE FINO do plano estratégico vigente comparando o planejado com o realizado. ${REGRAS}
 Proponha no máximo 5 mudanças, só onde o dado justifica (ex.: trilha com muitos leads e nenhuma reunião → revisar oferta; trilha sem lead em 60 dias → baixar peso; meta fora do alcance → ajustar). Campos que pode mudar por alavanca: peso_campanha (0–100), status (${Object.keys(ALV_STATUS).join('|')}), receita_meta, margem_pct, taxa_fechamento, oferta. Se faltar dado para decidir, diga isso em vez de mudar.
-Responda SOMENTE JSON: {"resumo":"2 frases","mudancas":[{"alavanca":"id","campo":"...","de":"valor atual","para":"novo valor","por_que":"1 frase com o dado"}],"faltam_dados":["..."]}`,
+Responda SOMENTE JSON: {"resumo":"2 frases","mudancas":[{"alavanca":"id","campo":"...","de":"valor atual","para":"novo valor (número simples sem R$ nem %, ex.: 400000 ou 35; texto só em status/oferta)","por_que":"1 frase com o dado"}],"faltam_dados":["..."]}`,
     [{ role: 'user', content: JSON.stringify({ plano_vigente: { versao: vig.versao, ...P }, simulacao: planoSimular(P), realizado: real, contexto: JSON.parse(resumoCtx(ctx)) }).substring(0, 22000) }], 1800);
   const j = json(t); if (!j || !Array.isArray(j.mudancas)) throw new Error('A IA não devolveu a sugestão no formato esperado — tente de novo');
   const ids = new Set(P.alavancas.map(a => a.id)), CAMPOS = ['peso_campanha', 'status', 'receita_meta', 'margem_pct', 'taxa_fechamento', 'oferta'];
@@ -290,10 +301,14 @@ Responda SOMENTE JSON: {"resumo":"2 frases","mudancas":[{"alavanca":"id","campo"
 async function planoEstrAjusteDecidir({ id, decisao }, usuario) {
   const L = (await kv(K_AJUSTES)) || []; const aj = L.find(x => x.id === id);
   if (!aj || aj.status !== 'pendente') throw Object.assign(new Error('Sugestão não encontrada ou já decidida'), { status: 400 });
+  // v3.294: sugestão feita sobre uma versão antiga não é aplicada por cima da versão nova (desfazia mudanças manuais)
+  if (decisao === 'aprovar') { const vg = await kv(K_VIGENTE); if (vg?.versao != null && aj.base_versao != null && vg.versao !== aj.base_versao) { aj.status = 'desatualizado'; await kv(K_AJUSTES, L);
+    throw Object.assign(new Error('Esta sugestão foi feita sobre a versão ' + aj.base_versao + ' e o plano vigente já é a versão ' + vg.versao + '. Peça um novo ajuste fino.'), { status: 409 }); }
+    for (const m of aj.mudancas) if (!['status', 'oferta'].includes(m.campo) && !Number.isFinite(numBR(m.para, NaN))) throw Object.assign(new Error('Valor sugerido ilegível em "' + m.campo + '" (' + m.para + ') — recuse e peça um novo ajuste'), { status: 400 }); }
   aj.status = decisao === 'aprovar' ? 'aprovado' : 'recusado'; aj.decidido_em = _hoje(); aj.decidido_por = usuario || 'fundador';
   let novo = null;
   if (aj.status === 'aprovado') {
-    const aplicar = pl => { const p = JSON.parse(JSON.stringify(pl)); for (const m of aj.mudancas) { const a = (p.alavancas || []).find(x => x.id === m.alavanca); if (a) a[m.campo] = ['status', 'oferta'].includes(m.campo) ? m.para : Number(String(m.para).replace(',', '.')); } return p; };
+    const aplicar = pl => { const p = JSON.parse(JSON.stringify(pl)); for (const m of aj.mudancas) { const a = (p.alavancas || []).find(x => x.id === m.alavanca); if (a) a[m.campo] = ['status', 'oferta'].includes(m.campo) ? m.para : numBR(m.para, a[m.campo]); } return p; };
     const vig = await kv(K_VIGENTE); novo = await _vigenteNovo(aplicar(vig.plano), usuario, 'Ajuste fino da ATLAS: ' + aj.resumo.substring(0, 200), 'ajuste ' + aj.id);
     const ras = await kv(K_RASCUNHO); await kv(K_RASCUNHO, { ...(ras || {}), plano: aplicar(ras?.plano || vig.plano), base_versao: novo.versao, salvo_em: _hoje() });
     aj.virou_versao = novo.versao;

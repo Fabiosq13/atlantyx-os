@@ -5525,7 +5525,7 @@ function dreMensalSerie(rep, anoRef) {
   const out = [];
   const FL = _fv2Folhas(rep).folhas, hj = _hojeBR(); // v3.291: lucro de cada mês pela apuração em 4 camadas
   idx.forEach((m, i) => { if (!m) return; const fat = v('Income', i);
-    const mes = m === hj.substring(0, 7) ? Math.round(parseInt(hj.substring(8)) / (365.25 / 12) * 100) / 100 : 1;
+    const mes = m === hj.substring(0, 7) ? Math.min(1, Math.round(parseInt(hj.substring(8)) / (365.25 / 12) * 100) / 100) : 1;
     const cam = FL.length ? _camApurar(FL, { idx: i - 1, meses: mes }) : null;
     const luc = cam ? cam.resultado_operacional : (G.NetIncome ? v('NetIncome', i) : fat - (v('COGS', i) + v('Expenses', i) + v('OtherExpenses', i)) + v('OtherIncome', i));
     const gastos = fat + v('OtherIncome', i) - luc;
@@ -5602,10 +5602,14 @@ async function _camPreparar(forcar) {
   }
   _camCtx = novo; return novo;
 }
-function _camMeses(rep) {
+function _camMeses(rep) { // v3.294: em meses de calendário (mês cheio = 1; mês em curso = dias decorridos ÷ dias do mês)
   const i = rep?.Header?.StartPeriod, f = rep?.Header?.EndPeriod; if (!i || !f) return null;
-  const fim = f > _hojeBR() ? _hojeBR() : f; const d = Math.round((Date.parse(fim) - Date.parse(i)) / 864e5) + 1;
-  return d > 0 ? Math.round(d / (365.25 / 12) * 100) / 100 : null;
+  const fim = f > _hojeBR() ? _hojeBR() : f; if (fim < i) return null;
+  const [ai, mi, di] = i.split('-').map(Number), [af, mf, df] = fim.split('-').map(Number), diasMes = (a, m) => new Date(Date.UTC(a, m, 0)).getUTCDate();
+  const entre = (af - ai) * 12 + (mf - mi); let meses;
+  if (!entre) meses = (df - di + 1) / diasMes(ai, mi);
+  else meses = (diasMes(ai, mi) - di + 1) / diasMes(ai, mi) + (entre - 1) + df / diasMes(af, mf);
+  return Math.max(0, Math.round(meses * 100) / 100) || null;
 }
 // folhas: as de _fv2Folhas; idx = coluna (−1 = última/total); meses = duração do período (escala alocação e agenda)
 function _camApurar(folhas, { idx = -1, meses = null, ctx = _camCtx } = {}) {
@@ -5736,7 +5740,11 @@ async function _metasComPadrao(anos = []) {
   const m = await _kvMetas().catch(() => ({}));
   const pad = { ...METAS_PADRAO, ...(m.padrao || {}) };
   m.por_ano = { ...(m.por_ano || {}) }; m.padrao_efetivo = pad;
-  for (const a of [...new Set(anos.map(x => parseInt(x)).filter(Boolean))]) {
+  // v3.294: ano futuro pedido sozinho (ex.: 2028) também calcula os anos entre o atual e ele, em ordem — a meta padrão de 2028
+  // cresce sobre a de 2027 (antes 2027 não era carregado e 2028–2031 ficavam sem meta)
+  const _aAtual = parseInt(_hojeBR()), _pedidos = [...new Set(anos.map(x => parseInt(x)).filter(Boolean))], _lista = new Set();
+  for (const a of _pedidos) { if (a > _aAtual) for (let y = _aAtual; y <= Math.min(a, _aAtual + 15); y++) _lista.add(y); _lista.add(a); }
+  for (const a of [..._lista].sort((x, y) => x - y)) {
     const k = String(a); if (!m.por_ano[k]?.faturamento && METAS_DEFINIDAS[k]) m.por_ano[k] = { ...METAS_DEFINIDAS[k] };
     const cad = m.por_ano[k];
     if (cad?.faturamento) { if (cad.margem_pct == null) cad.margem_pct = pad.margem_pct; continue; }
@@ -5834,7 +5842,7 @@ async function metasEmpresaStatus({ ano, com_crm = true, _forcar = false, metodo
     const esperado = metaFat * fracMeta, falta = Math.max(0, metaFat - real);
     const ritmo = esperado > 0 ? real / esperado : null;
     const projecao = fracMeta > 0.05 && a === anoAtual ? real / fracMeta : null;
-    out.faturamento = { meta: metaFat, realizado: real, pct_atingido: Math.round(real / metaFat * 1000) / 10, esperado_ate_hoje: round(esperado),
+    out.faturamento = { meta: metaFat, realizado: real, pct_atingido: Math.round(real / metaFat * 1000) / 10, esperado_ate_hoje: round(esperado), fracao_meta: Math.round(fracMeta * 1000) / 10, fracao_pela_meta_mensal: fracMeta !== frac, // v3.294
       falta: round(falta), ritmo_pct: ritmo != null ? Math.round(ritmo * 1000) / 10 : null, projecao_fechamento: projecao != null ? round(projecao) : null,
       meses_restantes: a === anoAtual ? 12 - parseInt(hoje.substring(5, 7)) + 1 : a > anoAtual ? 12 : 0,
       semaforo: out.situacao === 'futuro' ? 'cinza' : real >= metaFat ? 'verde' : ritmo == null ? 'cinza' : ritmo >= 1 ? 'verde' : ritmo >= 0.85 ? 'amarelo' : 'vermelho' };

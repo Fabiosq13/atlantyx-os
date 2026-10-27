@@ -139,7 +139,11 @@ async function handler(req, res) {
 
     if (!acoes[action]) return res.status(400).json({ error: `Ação inválida. Disponíveis: ${Object.keys(acoes).join(', ')}` });
 
-    const resultado = await acoes[action]();
+    const _r0 = await acoes[action](); // v3.294: sem HTML vindo da IA nas telas de planejamento (os agentes de código ficam como estão)
+    const resultado = ['status_okr', 'relatorio_executivo', 'plano_integrado_proposito'].includes(action) ? _semTags(_r0) : _r0;
+    // v3.294: resposta da IA ilegível → erro claro e NÃO grava no histórico (antes gravava uma versão vazia por cima da boa)
+    if (['status_okr', 'relatorio_executivo'].includes(action) && Object.values(resultado || {}).some(v => v && v.erro === 'JSON inválido'))
+      return res.status(502).json({ success: false, error: 'A IA devolveu uma resposta que não deu para ler — clique de novo em gerar.' });
     // v3.90: guarda as análises de planejamento para consulta posterior (botão "🕘 Histórico" nas telas)
     const historico_id = ['status_okr', 'relatorio_executivo'].includes(action) ? await salvarHistorico(action, resultado, req.sessao?.login) : null;
     return res.status(200).json({ success: true, action, historico_id, ...resultado });
@@ -672,7 +676,7 @@ Retorne APENAS JSON válido.`;
   // fixos no código ("Pipeline de R$7.6M", "50 leads/mês", "resposta 17%") e avaliava números inventados.
   let okrsAtivos = objetivos, origemOkr = 'informados na chamada';
   if (!okrsAtivos) { try { const { listarHistorico, obterHistorico } = await import('../lib/historico-s1.js'); const [u] = await listarHistorico(['okr_gerador'], 1);
-    const h = u ? await obterHistorico(u.id) : null, d = h?.dados?.okrs || h?.dados; okrsAtivos = d?.objetivos || null; if (okrsAtivos) { origemOkr = 'OKRs gerados em ' + String(u.criado_em).slice(0, 10); trimestre = trimestre || d?.trimestre; } } catch (_) {} }
+    const h = u ? await obterHistorico(u.id) : null, d = h?.dados?.okrs || h?.dados; okrsAtivos = d?.objetivos || null; if (okrsAtivos) { origemOkr = 'OKRs gerados em ' + String(u.criado_em).slice(0, 10); origemOkr += d?.trimestre ? ' para ' + d.trimestre : ''; } } catch (_) {} }
   if (!okrsAtivos?.length) return { okr: { saude_geral: null, aviso: 'Nenhum OKR cadastrado — gere os OKRs em Planejamento › OKRs antes de avaliar o status.', objetivos: [] } };
   let fatos = null; try { const { ctxComFatos } = await import('./s1-intel.js'); fatos = (await ctxComFatos({})).ctx.fatos_verificados; } catch (_) {}
 
@@ -700,7 +704,7 @@ Retorne:
   "recomendacoes": ["ação 1", "ação 2"]
 }`;
 
-  const r = await claude(system, user, 1500);
+  const r = await claude(system, user, 4000); // v3.294: 1500 cortava a resposta com 4 objetivos
   const okr = parseJSON(r);
   console.log(`[S1-09] OKR status: ${okr.saude_geral}`);
   return { okr };
@@ -732,7 +736,7 @@ Retorne:
   "nota_semana": 0-10
 }`;
 
-  const r = await claude(system, user, 1000);
+  const r = await claude(system, user, 2500);
   const relatorio = parseJSON(r);
   console.log(`[S1-10] Relatório executivo gerado: ${relatorio.headline}`);
   return { relatorio };
@@ -750,12 +754,30 @@ async function claude(system, user, maxTokens = 1000) {
   return d.content[0].text;
 }
 
+// v3.294: texto da IA vai para innerHTML nas telas do S1 (e fica no histórico) — sem "<" e ">" não vira HTML/script.
+// Usa ‹ › (parecidos) para o texto continuar legível em qualquer lugar onde for mostrado.
+function _semTags(o, n = 0) { if (n > 12 || o == null) return o; if (typeof o === 'string') return o.replace(/</g, '‹').replace(/>/g, '›');
+  if (Array.isArray(o)) return o.map(x => _semTags(x, n + 1)); if (typeof o === 'object') { for (const k of Object.keys(o)) o[k] = _semTags(o[k], n + 1); return o; } return o; }
+function _consertarJSON(t) { // v3.294: JSON cortado no meio é consertado (mesma regra do s1-intel) em vez de virar {erro}
+  let s = t, i0 = s.indexOf('{'); if (i0 < 0) return null; s = s.slice(i0);
+  for (let corte = 0; corte < 400 && s.length > 2; corte++) {
+    const pilha = []; let str = false, esc = false;
+    for (const ch of s) { if (str) { if (esc) esc = false; else if (ch === '\\') esc = true; else if (ch === '"') str = false; continue; }
+      if (ch === '"') str = true; else if (ch === '{' || ch === '[') pilha.push(ch); else if (ch === '}' || ch === ']') pilha.pop(); }
+    let x = s + (str ? '"' : ''); x = x.replace(/[,:\s]+$/, '').replace(/,\s*"[^"]*"\s*$/, '');
+    x += pilha.reverse().map(c => c === '{' ? '}' : ']').join('');
+    try { return JSON.parse(x); } catch (_) {}
+    s = s.replace(/[,{[]?[^,{[\]}]*$/, '');
+  }
+  return null;
+}
 function parseJSON(text) {
   const t = String(text || '').replace(/```json|```/g, '').trim();
   try { return JSON.parse(t); } catch (_) {}
   // v3.03: tolera texto antes/depois do JSON
   const i = t.indexOf('{'), j = t.lastIndexOf('}');
   if (i >= 0 && j > i) { try { return JSON.parse(t.substring(i, j + 1)); } catch (_) {} }
+  const c = _consertarJSON(t); if (c) { c._incompleto = true; return c; }
   return { erro: 'JSON inválido', raw: t.substring(0, 200) };
 }
 

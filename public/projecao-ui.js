@@ -10,7 +10,7 @@
   const nota = (t, c) => (window.toast ? toast(t, c || 'success') : alert(t));
   const MOT = { pessoas: 'Alocação de pessoas', projetos: 'Projetos', produtos: 'Produtos' };
   const COR = { pessimista: 'var(--red)', base: 'var(--blue)', otimista: 'var(--green,#22d3a3)' };
-  const S = { d: null, prem: null, proj: null, cen: 'base', ia: null, t: null, sujo: false };
+  const S = { d: null, prem: null, proj: null, cen: 'base', ia: null, t: null, sujo: false, seq: 0 };
   async function api(action, body = {}, ms = 90000) {
     const ac = new AbortController(), tm = setTimeout(() => ac.abort(), ms);
     try { const r = await fetch('/api/estrategia', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...body }), signal: ac.signal });
@@ -21,6 +21,8 @@
 
   async function abrir(forcar) {
     const box = $('pjApp'); if (!box) return;
+    // v3.294: voltar à tela não descarta premissas editadas/sugeridas e ainda não salvas
+    if (S.sujo && S.d) { if (!forcar) return render(); if (!confirm('Há premissas não salvas. Reler os dados descarta essas alterações. Continuar?')) return render(); }
     if (!S.d || forcar) box.innerHTML = '<div class="panel"><div class="pb" style="color:var(--t3);font-size:12px;text-align:center;padding:30px;">⏳ Lendo o histórico, a carteira, os motores de negócio e as pessoas (QuickBooks, HubSpot e cadastros)…</div></div>';
     try { const d = await api('projecao_obter', { forcar: !!forcar }); S.d = d; S.prem = JSON.parse(JSON.stringify(d.premissas)); S.proj = d.projecao; S.ia = d.ia; S.sujo = false; render(); }
     catch (e) { box.innerHTML = '<div class="panel"><div class="pb" style="color:var(--red);font-size:12px;">Não consegui montar a projeção: ' + esc(e.message) + ' <button class="btn btn-g" onclick="PJ.abrir(true)">Tentar de novo</button></div></div>'; }
@@ -28,7 +30,7 @@
   function render() {
     const d = S.d, B = d.base || {}, pr = S.prem, pj = S.proj, Rs = pj.resumo || {};
     const anos = pr.anos.map(a => a.ano), metas = B.metas_por_ano || {};
-    const inp = (path, v, w = 62, title = '') => `<input class="fi" data-p="${path}" value="${v ?? ''}" title="${esc(title)}" style="width:${w}px;padding:4px 6px;font-size:11px;text-align:right;" oninput="PJ.mudou(this)"/>`;
+    const inp = (path, v, w = 62, title = '') => `<input class="fi" data-p="${path}" value="${esc(v ?? '')}" title="${esc(title)}" style="width:${w}px;padding:4px 6px;font-size:11px;text-align:right;" oninput="PJ.mudou(this)"/>`;
     const lin = (rot, cel) => `<tr><td style="padding:4px 6px;font-size:11px;white-space:nowrap;">${rot}</td>${cel}</tr>`;
     const C = pj.cenarios[S.cen];
     const h = `<div class="cp-top" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
@@ -40,8 +42,10 @@
         <button class="btn btn-p" id="pjBtnSalvar" onclick="PJ.salvar()">💾 Salvar${S.sujo ? ' *' : ''}</button>
         <button class="btn btn-gn" onclick="PJ.metas()" title="Grava o cenário base como metas de faturamento e margem dos 3 anos (Metas da Empresa)">🎯 Usar como metas</button></div>
       ${(B.erros || []).length ? `<div style="font-size:10.5px;color:var(--gold);margin-bottom:8px;">⚠ Dados parciais: ${esc(B.erros.join(' · '))}</div>` : ''}
+      ${(() => { const D = d.dif_base; if (!D) return ''; const dif = Object.entries(D).filter(([, x]) => x.dados != null && x.salvo != null && Math.abs(x.dados - x.salvo) > Math.max(1, Math.abs(x.salvo) * 0.02)); /* v3.294 */
+        return dif.length ? `<div style="font-size:10.5px;color:var(--blue);margin-bottom:8px;">ℹ Os dados reais mudaram desde que a projeção foi salva: ${dif.map(([k, x]) => ({ receita_base: 'receita-base', despesas_fixas_base: 'despesas fixas', caixa_inicial: 'caixa' })[k] + ' ' + R(x.salvo) + ' → ' + R(x.dados)).join(' · ')}. <a href="#" onclick="event.preventDefault();PJ.usarDados()" style="color:var(--blue);">usar os dados atuais</a></div>` : ''; })()}
       <div class="kg k5" style="margin-bottom:10px;">
-        ${[['Receita-base ' + pr.ano_base, Rk(Rs.receita_base), 'realizado + fechamento previsto'], ['Receita ' + anos[2], Rk(Rs.receita_final), 'cenário base'], ['Crescimento ao ano (CAGR)', P(Rs.cagr_pct), 'cenário base'],
+        ${[['Receita-base ' + pr.ano_base, Rk(Rs.receita_base), B.fonte?.receita || 'realizado + fechamento previsto'], ['Receita ' + anos[2], Rk(Rs.receita_final), 'cenário base'], ['Crescimento ao ano (CAGR)', P(Rs.cagr_pct), 'cenário base'],
           ['Resultado ' + anos[2], Rk(Rs.resultado_final), 'margem ' + P(Rs.margem_final_pct)], ['Recorrente ' + anos[2], Rk(Rs.recorrente_final), 'receita recorrente no ano']].map(([k, v, s]) => `<div class="kpi bl"><div class="kl">${k}</div><div class="kv" style="font-size:19px;">${v}</div><div class="ks" style="font-size:10px;color:var(--t2);">${s}</div></div>`).join('')}</div>
       ${(pj.alertas || []).length ? `<div style="background:rgba(245,185,75,.08);border:1px solid rgba(245,185,75,.35);border-radius:8px;padding:8px 12px;font-size:11px;color:var(--gold);margin-bottom:10px;">⚠ ${pj.alertas.map(esc).join('<br>⚠ ')}</div>` : ''}
       <div class="panel"><div class="ph"><div class="pt">Resultado projetado</div><div class="seg" id="pjCen">${['pessimista', 'base', 'otimista'].map(c => `<button class="${S.cen === c ? 'on' : ''}" onclick="PJ.cenario('${c}')">${c}</button>`).join('')}</div></div><div class="pb">
@@ -95,11 +99,14 @@
     return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-height:240px;">${s}</svg><div style="font-size:10px;color:var(--t2);display:flex;gap:14px;flex-wrap:wrap;"><span><b style="color:var(--t3);">■</b> realizado / ano-base</span><span><b style="color:var(--red);">■</b> pessimista</span><span><b style="color:var(--blue);">■</b> base</span><span><b style="color:var(--green,#22d3a3);">■</b> otimista</span><span><b style="color:var(--gold);">- -</b> meta cadastrada</span></div>`;
   }
   function setPath(o, path, v) { const ks = path.split('.'); let x = o; for (let i = 0; i < ks.length - 1; i++) x = x[ks[i]]; x[ks[ks.length - 1]] = v; }
+  function usarDados() { const D = S.d?.dif_base; if (!D) return; if (D.receita_base.dados != null) S.prem.receita_base = D.receita_base.dados; if (D.despesas_fixas_base.dados != null) S.prem.despesas_fixas_base = D.despesas_fixas_base.dados; if (D.caixa_inicial.dados != null) S.prem.caixa_inicial = D.caixa_inicial.dados;
+    S.d.dif_base = null; S.sujo = true; const meu = ++S.seq; api('projecao_calcular', { premissas: S.prem }, 40000).then(d => { if (meu === S.seq) { S.proj = d.projecao; render(); } }).catch(e => nota(e.message, 'error')); render(); }
   function mudou(el) {
     const t0 = String(el.value).trim(); const raw = /,/.test(t0) ? t0.replace(/\./g, '').replace(',', '.') : /^-?\d{1,3}(\.\d{3})+$/.test(t0) ? t0.replace(/\./g, '') : t0; // 1.234.567 · 12,5 · 0.5
     const v = raw === '' ? null : Number(raw); if (raw !== '' && !isFinite(v)) return;
     setPath(S.prem, el.dataset.p, v); S.sujo = true; clearTimeout(S.t);
-    S.t = setTimeout(async () => { try { const d = await api('projecao_calcular', { premissas: S.prem }, 40000); S.proj = d.projecao; const foco = document.activeElement?.dataset?.p, pos = document.activeElement?.selectionStart; render();
+    const meu = ++S.seq; // v3.294: resposta de um cálculo anterior que chegar depois é descartada
+    S.t = setTimeout(async () => { try { const d = await api('projecao_calcular', { premissas: S.prem }, 40000); if (meu !== S.seq) return; S.proj = d.projecao; const foco = document.activeElement?.dataset?.p, pos = document.activeElement?.selectionStart; render();
       if (foco) { const e = document.querySelector(`[data-p="${foco}"]`); if (e) { e.focus(); try { e.setSelectionRange(pos, pos); } catch (_) {} } } } catch (e) { nota('Não recalculou: ' + e.message, 'error'); } }, 500);
   }
   function cenario(c) { S.cen = c; render(); }
@@ -115,5 +122,5 @@
     const L = S.proj.cenarios.base; if (!confirm('Gravar o cenário BASE como metas da empresa?\n\n' + L.map(l => `${l.ano}: faturamento ${R(l.receita)} · margem ${P(l.margem_pct)}`).join('\n') + '\n\nAs metas desses anos em Metas da Empresa serão substituídas.')) return;
     try { const d = await api('projecao_para_metas', { anos: L.map(l => l.ano) }); nota('Metas gravadas: ' + d.feitos.map(f => f.ano).join(', ')); abrir(); } catch (e) { nota('Erro: ' + e.message, 'error'); }
   }
-  window.PJ = { abrir, mudou, cenario, salvar, ia, metas };
+  window.PJ = { abrir, mudou, cenario, salvar, ia, metas, usarDados };
 })();

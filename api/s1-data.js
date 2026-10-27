@@ -437,27 +437,13 @@ Retorne análise financeira estratégica:
 async function contextoEstrategico() {
   const resultados = {};
 
-  // 1. QuickBooks — dados financeiros
-  try {
-    const { analise_financeira } = await analisarFinanceiro();
-    resultados.financeiro = analise_financeira;
-  } catch (e) {
-    resultados.financeiro = { erro: e.message };
-  }
-
-  // 2. Google Drive — documentos estratégicos
+  // v3.294: QuickBooks e Drive EM PARALELO (antes um depois do outro — com as 2 chamadas de IA estourava o limite da função)
   const folderId = process.env.DRIVE_FOLDER_ID;
-  if (folderId) {
-    try {
-      const driveData = await driveResumirPasta({
-        folder_id: folderId,
-        pergunta: 'Quais são os dados mais relevantes para o planejamento estratégico da Atlantyx?'
-      });
-      resultados.documentos_drive = driveData;
-    } catch (e) {
-      resultados.documentos_drive = { erro: e.message };
-    }
-  }
+  const [fin, drv] = await Promise.allSettled([
+    analisarFinanceiro(),
+    folderId ? driveResumirPasta({ folder_id: folderId, pergunta: 'Quais são os dados mais relevantes para o planejamento estratégico da Atlantyx?' }) : Promise.resolve(null)]);
+  resultados.financeiro = fin.status === 'fulfilled' ? fin.value?.analise_financeira : { erro: fin.reason?.message || 'falhou' };
+  if (folderId) resultados.documentos_drive = drv.status === 'fulfilled' ? drv.value : { erro: drv.reason?.message || 'falhou' };
 
   // 3. Claude S1 consolida tudo em contexto estratégico
   const r = await fetch('https://api.anthropic.com/v1/messages', {

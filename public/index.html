@@ -7208,7 +7208,7 @@ async function loadOKR(salvo) {
   const renderOKR = (id) => {
     const el = document.getElementById(id);
     if (!el) return;
-    if (!data?.success) { el.innerHTML = '<div style="color:var(--red);font-size:11px;">Erro ao carregar OKRs</div>'; return; }
+    if (!data?.success) { el.innerHTML = '<div style="color:var(--red);font-size:11px;">Erro ao carregar OKRs: ' + String(data?.error || 'sem resposta do servidor').replace(/</g, '&lt;') + '</div>'; return; }
     const okr = data.okr || {}; okr.saude_geral = okr.saude_geral || 'sem avaliação'; okr.trimestre = okr.trimestre || ''; document.querySelectorAll('.okrTri').forEach(x => { if (okr.trimestre) x.textContent = okr.trimestre; });
     setTimeout(() => _semUndef(el), 0);
     const corSaude = okr.saude_geral === 'Verde' ? 'var(--green)' : okr.saude_geral === 'Amarelo' ? 'var(--gold)' : 'var(--red)';
@@ -7228,7 +7228,7 @@ async function loadOKR(salvo) {
       el.innerHTML = `<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
         <span style="font-family:var(--H);font-size:18px;font-weight:700;color:${_corTxt(corSaude)};">● ${(okr.saude_geral) || '—'}</span>
         <span style="font-size:11px;color:var(--t2);">${okr.trimestre}</span>
-      </div>` + (okr.objetivos||[]).map(o => `
+      </div>` + (okr.aviso ? '<div style="font-size:11.5px;color:var(--gold);padding:6px 0;">' + String(okr.aviso).replace(/</g, '&lt;') + '</div>' : '') + (okr.objetivos||[]).map(o => `
         <div style="background:var(--bg4);border-radius:7px;padding:12px;margin-bottom:8px;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
             <span style="font-size:12.5px;font-weight:600;">${o.objetivo}</span>
@@ -7258,9 +7258,9 @@ async function loadRelatorio(periodo, salvo) {
   if (result) result.innerHTML = '<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:20px;text-align:center;">Agente S1-10 gerando relatório...</div>';
 
   const data = salvo ? { success: true, ...salvo } : await api('/api/s1-strategy', 'POST', { action: 'relatorio_executivo', periodo }); // v3.90
-  if (!data?.success) { if(result) result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:20px;">Erro ao gerar</div>'; return; }
+  if (!data?.success) { if(result) result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:20px;">Erro ao gerar: ' + String(data?.error || 'sem resposta do servidor').replace(/</g, '&lt;') + '</div>'; return; }
 
-  const r = data.relatorio;
+  const r = data.relatorio || {}; setTimeout(() => result && _semUndef(result), 0); // v3.294
   const saude = r.saude_do_negocio;
   const corS = saude === 'Verde' ? 'var(--green)' : saude === 'Amarelo' ? 'var(--gold)' : 'var(--red)';
 
@@ -7273,7 +7273,7 @@ async function loadRelatorio(periodo, salvo) {
     <div class="kg k4" style="margin-bottom:12px;">
       <div class="kpi bl"><div class="kl">Leads</div><div class="kv">${r.metricas_chave?.leads||0}</div></div>
       <div class="kpi gn"><div class="kl">Reuniões</div><div class="kv">${r.metricas_chave?.reunioes||0}</div></div>
-      <div class="kpi pk"><div class="kl">Pipeline</div><div class="kv">R$${((r.metricas_chave?.pipeline_rs||0)/1000000).toFixed(1)}M</div></div>
+      <div class="kpi pk"><div class="kl">Pipeline</div><div class="kv">${(() => { const v = typeof r.metricas_chave?.pipeline_rs === 'number' ? r.metricas_chave.pipeline_rs : (typeof _recNum === 'function' ? _recNum(r.metricas_chave?.pipeline_rs) : NaN); return isFinite(v) && v ? 'R$' + (v / 1e6).toFixed(1).replace('.', ',') + 'M' : '—'; })()}</div></div>
       <div class="kpi gd"><div class="kl">Propostas</div><div class="kv">${r.metricas_chave?.propostas||0}</div></div>
     </div>
     <div class="kg k2">
@@ -7719,7 +7719,7 @@ function renderCenarios(d, el) {
           <div style="font-size:10.5px;color:var(--t2);margin-bottom:8px;">${c.descricao||''}</div>
           <div style="font-size:10px;color:var(--t3);margin-bottom:4px;">${emp.clientes||0} clientes · ${emp.time||''}</div>
           <div style="font-family:var(--M);font-size:9px;text-transform:uppercase;color:${_corTxt(cor)};margin-top:8px;margin-bottom:4px;">COMO ${nome==='pessimista'?'EVITAR':'CHEGAR AQUI'}</div>
-          ${(nome==='pessimista'?c.como_evitar:c.como_chegar_aqui||c.acelerador&&[c.acelerador]||[]).map?.(a=>`<div style="font-size:10.5px;margin-bottom:3px;">-> ${a}</div>`).join('')||''}
+          ${[].concat((nome==='pessimista'?c.como_evitar:c.como_chegar_aqui||(c.acelerador&&[c.acelerador]))||[]).map(a=>`<div style="font-size:10.5px;margin-bottom:3px;">-> ${a}</div>`).join('')||''}
         </div>`;
       }).join('')}
     </div>
@@ -9750,36 +9750,8 @@ async function salvarEGerarPlano() {
   result.innerHTML = '<div style="color:var(--blue);font-family:var(--M);font-size:11px;padding:20px;text-align:center;">Claude integrando seu proposito pessoal com a estrategia da Atlantyx...</div>';
   addLog('info', '[S1] Gerando plano integrado proposito + empresa...');
 
-  try {
-    const r = await fetch('/api/s1-intel', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'plano_integrado_proposito',
-        contexto: {
-          fundador: dados,
-          empresa: {
-            nome: 'Atlantyx',
-            segmento: 'BI, Dados e IA para grandes empresas',
-            // v3.293: antes "meta R$5M em 90 dias" e "semana 1 de operação" (fixos e falsos) — a meta real vem do servidor
-            historia: '17 anos de mercado'
-          }
-        }
-      })
-    });
-    const data = await r.json();
-
-    if (data?.plano) {
-      renderPlanoIntegrado(data.plano, dados);
-      addLog('ok', '[S1] Plano integrado gerado — proposito + empresa unificados');
-      toast('Plano integrado criado! Metas pessoais e empresa agora alinhadas.', 'success');
-    } else if (data?.error) {
-      // Gerar localmente se endpoint nao tiver a acao
-      await gerarPlanoLocal(dados);
-    }
-  } catch(e) {
-    await gerarPlanoLocal(dados);
-  }
+  // v3.294: a ação fica no /api/s1-strategy (o /api/s1-intel não a tem — antes sempre dava erro 400 antes de cair aqui)
+  await gerarPlanoLocal(dados);
 
   btn.disabled = false;
   btn.textContent = 'Salvar e Gerar Plano Estrategico Integrado com IA';
@@ -10167,9 +10139,9 @@ async function editarMetas() {
   // Modal simples para editar as metas alvo
   const metas = await DB.get('metas', { ...METAS_DEFAULT });
 
-  const metaAnual = prompt('Meta Anual 2026 (ex: 18M ou 18000000):', formatarMoeda(metas.anual));
+  const metaAnual = prompt('Meta Anual ' + new Date().getFullYear() + ' (ex: 6,5M ou 6500000):', formatarMoeda(metas.anual));
   if (metaAnual === null) return;
-  const metaMensal = prompt('Meta Mensal (ex: 1.5M ou 1500000):', formatarMoeda(metas.mensal));
+  const metaMensal = prompt('Meta Mensal (ex: 540k ou 540000):', formatarMoeda(metas.mensal));
   if (metaMensal === null) return;
 
   metas.anual = parseMoeda(metaAnual) || metas.anual;
@@ -10245,7 +10217,7 @@ async function gerarAnaliseFin() {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ action:'analise_financeira', payload:{ acao:'analise_financeira', dados:{
         receita_anual: metas.realAnual||0, receita_mensal: metas.realMensal||0,
-        meta_anual: metas.anual||18000000, meta_mensal: metas.mensal||1500000,
+        meta_anual: metas.anual || 'não cadastrada — use Planejamento › Metas da Empresa', meta_mensal: metas.mensal || (metas.anual ? Math.round(metas.anual / 12) : 'não cadastrada'), // v3.294: antes 18 mi / 1,5 mi fixos
         empresa:'Atlantyx — B2B BI, Dados e IA'
       }}})
     });
@@ -11020,7 +10992,7 @@ async function loadContextoEstrategico() {
   btn.disabled = false; btn.textContent = 'Contexto Estrategico Completo (QB + Drive)';
 
   if (!data?.success) {
-    if (result) result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:16px;">Erro ao carregar. Verifique QB_CLIENT_ID e DRIVE_ACCESS_TOKEN no Vercel.</div>';
+    if (result) result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:16px;">Erro ao carregar: ' + String(data?.error || 'o servidor não respondeu (pode ter demorado demais) — tente de novo').replace(/</g, '&lt;') + '</div>'; // v3.294: mostra o erro real
     return;
   }
 
@@ -11104,14 +11076,14 @@ async function loadDrivePasta() {
   btn.disabled = false; btn.textContent = 'Ler Pasta do Drive';
 
   if (!data?.success) {
-    if (result) result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Erro. Configure DRIVE_ACCESS_TOKEN e DRIVE_FOLDER_ID no Vercel.</div>';
+    if (result) result.innerHTML = '<div style="color:var(--red);font-size:11px;padding:12px;">Erro: ' + String(data?.error || 'o servidor não respondeu — tente de novo').replace(/</g, '&lt;') + '</div>';
     addLog('err', '[Drive] Erro ao conectar');
     return;
   }
 
   renderDriveResult(data);
-  document.getElementById('driveStatus').textContent = data.total_arquivos + ' docs';
-  addLog('ok', '[Drive] ' + data.documentos_analisados + ' documentos analisados');
+  document.getElementById('driveStatus').textContent = (data.total_arquivos ?? (data.documentos || []).length ?? 0) + ' docs'; // v3.294: pasta vazia mostrava "undefined docs"
+  addLog('ok', '[Drive] ' + (data.documentos_analisados ?? 0) + ' documentos analisados');
 }
 
 function renderDriveResult(data) {
@@ -25729,19 +25701,23 @@ function peSimular() { clearTimeout(_peSimT); _peSimT = setTimeout(async () => {
       + '<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:10.5px;color:var(--t2);">Funil por alavanca</summary><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-top:5px;"><thead><tr style="color:var(--t2);text-align:left;"><th>Alavanca</th><th>Receita</th><th>Lucro</th><th>Contratos</th><th>Propostas</th><th>Reuniões</th><th>Leads/ano</th></tr></thead><tbody>'
       + S.linhas.map(l => '<tr style="border-top:1px solid var(--bd);"><td>' + _peE(l.nome) + '</td><td>' + _peR(l.receita) + '</td><td>' + _peR(l.lucro) + '</td><td>' + l.contratos + '</td><td>' + l.propostas + '</td><td>' + l.reunioes + '</td><td>' + l.leads + '</td></tr>').join('') + '</tbody></table></div></details></div></div>';
   } catch (e) { el.innerHTML = '<div style="color:var(--red);font-size:11px;">' + _peE(e.message) + '</div>'; } }, 250); }
+// v3.294: ações que recarregam o plano (ajuste fino, aprovar/recusar ajuste, restaurar versão) salvam antes o rascunho editado
+function _peSujo() { try { return !!(_pe && _pePlano && JSON.stringify(_pePlano) !== JSON.stringify(_pe.rascunho?.plano)); } catch (_) { return false; } }
+async function _peSalvarSeSujo() { if (!_peSujo()) return; await estApiPE('plano_estr_salvar', { plano: _pePlano }); toast('Suas alterações no rascunho foram salvas antes', 'success'); }
 async function peSalvar() { try { await estApiPE('plano_estr_salvar', { plano: _pePlano }); toast('Rascunho salvo (ainda não vale até ser aprovado)', 'success'); await peAbrir(); } catch (e) { alert('Não salvou: ' + e.message); } }
 async function peAprovar() {
   const c = prompt('Aprovar este plano como VIGENTE?\n\nA partir de agora ATLAS, Plano/OKRs, Business Plan, autocampanha e campanha patrocinada partem dele (a versão atual fica guardada).\n\nComentário da versão (opcional):', ''); if (c === null) return;
   try { const d = await estApiPE('plano_estr_aprovar', { plano: _pePlano, comentario: c }); toast('Plano aprovado — versão ' + d.vigente.versao + ' vigente', 'success'); addLog('ok', '[Plano estratégico] v' + d.vigente.versao + ' aprovado'); await peAbrir(); } catch (e) { alert('Não aprovou: ' + e.message); }
 }
 async function peRestaurar() { const v = document.getElementById('peVersao')?.value; if (!v) return; if (!confirm('Trazer a versão ' + v + ' para o rascunho? O vigente não muda até você aprovar.')) return;
+  if (_peSujo() && !confirm('Você tem alterações não salvas no rascunho — restaurar a versão ' + v + ' substitui essas alterações. Continuar?')) return;
   try { await estApiPE('plano_estr_restaurar', { versao: v }); await peAbrir(); toast('Versão ' + v + ' no rascunho', 'success'); } catch (e) { alert(e.message); } }
 async function peDescartar() { if (!confirm('Descartar as mudanças não aprovadas do rascunho?')) return;
   try { const base = _pe.vigente ? _pe.vigente.plano : (await estApiPE('plano_estr_inicial')).plano; await estApiPE('plano_estr_salvar', { plano: base, comentario: 'descartado' }); await peAbrir(); } catch (e) { alert(e.message); } }
 async function peSugerir() { const b = document.getElementById('peBtnSug'); if (b) { b.disabled = true; b.textContent = 'ATLAS analisando…'; }
-  try { await estApiPE('plano_estr_sugerir'); await peAbrir(); toast('Sugestão de ajuste pronta — aprove ou recuse', 'success'); } catch (e) { alert('Não sugeriu: ' + e.message); if (b) { b.disabled = false; b.textContent = '🧠 Pedir ajuste fino à ATLAS'; } } }
+  try { await _peSalvarSeSujo(); await estApiPE('plano_estr_sugerir'); await peAbrir(); toast('Sugestão de ajuste pronta — aprove ou recuse', 'success'); } catch (e) { alert('Não sugeriu: ' + e.message); if (b) { b.disabled = false; b.textContent = '🧠 Pedir ajuste fino à ATLAS'; } } }
 async function peAjuste(id, decisao) { if (decisao === 'aprovar' && !confirm('Aprovar o ajuste? Ele vira uma nova versão vigente do plano.')) return;
-  try { const d = await estApiPE('plano_estr_ajuste_decidir', { id, decisao }); toast(decisao === 'aprovar' ? 'Ajuste aprovado — versão ' + (d.vigente?.versao || '') : 'Ajuste recusado', 'success'); await peAbrir(); } catch (e) { alert(e.message); } }
+  try { await _peSalvarSeSujo(); const d = await estApiPE('plano_estr_ajuste_decidir', { id, decisao }); toast(decisao === 'aprovar' ? 'Ajuste aprovado — versão ' + (d.vigente?.versao || '') : 'Ajuste recusado', 'success'); await peAbrir(); } catch (e) { alert(e.message); } }
 // autocampanha: opção de seguir as trilhas
 async function acPlanoInit() { const inf = document.getElementById('acPlanoInfo'), cb = document.getElementById('ac_usarPlano'); if (!inf || !cb) return;
   try { const d = await mcApi('plano_trilhas'); cb.checked = d.usar !== false;
@@ -30806,7 +30782,7 @@ async function metasCadastroSalvar() {
   const mot = { pessoas: _mcNum(_mcV('mcMotPes')), projetos: _mcNum(_mcV('mcMotPro')), produtos: _mcNum(_mcV('mcMotPrd')) };
   const b = document.getElementById('mcBtnSalvar'); if (b) { b.disabled = true; b.textContent = 'Salvando…'; }
   try { await finApi('metas_empresa_salvar', { ano: _mcAno, faturamento: fat, margem_pct: mg, crescimento_pct: _mcNum(_mcV('mcCresc')), margem_ebitda_pct: _mcNum(_mcV('mcEb')), recorrencia_pct: _mcNum(_mcV('mcRec')), caixa_minimo: _mcNum(_mcV('mcCx')),
-      motores: Object.values(mot).some(v => v != null) ? mot : null, mensal: mm.some(v => v) ? mm : null, fonte: window._mcFonte || 'manual', observacao: _mcV('mcObs') });
+      motores: mot /* v3.294: sempre as 3 chaves — vazio limpa (antes null mantinha os valores antigos) */, mensal: mm.some(v => v) ? mm : null, fonte: window._mcFonte || 'manual', observacao: _mcV('mcObs') });
     window._mcFonte = null; toast('Metas de ' + _mcAno + ' salvas — já valem no Dashboard Financeiro e no Dashboard ao Vivo', 'success');
     try { _mtUlt = {}; } catch (_) {} try { _fv2Dados = {}; } catch (_) {} metasCadastroCarregar();
   } catch (e) { toast('Não salvou: ' + e.message, 'error'); if (b) { b.disabled = false; b.textContent = '💾 Salvar metas de ' + _mcAno; } }
@@ -32806,12 +32782,12 @@ function _mtHtml(M) {
   const F = M.faturamento || {}, G = M.margem, C = M.crm, fut = M.situacao === 'futuro';
   const cards = [];
   const fonteM = '\n\nRealizado: faturamento da DRE do QuickBooks (' + _finRegimeTxt() + ') de 01/01/' + M.ano + ' até hoje. Metas: definidas em "Definir metas".';
-  const T1 = '**Meta de faturamento** do ano e quanto já foi faturado.\n\nRealizado ' + brl(F.realizado) + ' ÷ meta ' + brl(F.meta) + ' = ' + _resFmtPct(F.pct_atingido) + ' atingido.\nEsperado até hoje = meta × fração do ano decorrida = ' + brl(F.meta) + ' × ' + _resFmtPct(M.fracao_ano) + ' = ' + brl(F.esperado_ate_hoje) + '.' + fonteM;
+  const T1 = '**Meta de faturamento** do ano e quanto já foi faturado.\n\nRealizado ' + brl(F.realizado) + ' ÷ meta ' + brl(F.meta) + ' = ' + _resFmtPct(F.pct_atingido) + ' atingido.\nEsperado até hoje = meta × ' + (F.fracao_pela_meta_mensal ? 'parte da meta mês a mês já vencida' : 'fração do ano decorrida') + ' = ' + brl(F.meta) + ' × ' + _resFmtPct(F.fracao_meta ?? M.fracao_ano) + ' = ' + brl(F.esperado_ate_hoje) + '.' + fonteM;
   const T2 = '**Falta faturar** = meta − realizado = ' + brl(F.meta) + ' − ' + brl(F.realizado) + ' = ' + brl(F.falta) + '.\nPor mês necessário = falta ÷ ' + (F.meses_restantes ?? '—') + ' mes(es) restantes = ' + brl(F.por_mes_necessario) + '.\nRitmo = realizado ÷ esperado até hoje = ' + _resFmtPct(F.ritmo_pct) + '.\nProjeção de fechamento = realizado ÷ fração do ano = ' + brl(F.projecao_fechamento) + '.\n\nSemáforo pelo ritmo: verde ≥ 100% · amarelo ≥ 85% · vermelho abaixo.' + fonteM;
   const T3 = G ? '**Meta de lucro** = margem líquida (lucro líquido ÷ faturamento) desejada para o ano.\n\nRealizado no ano: ' + brl(G.lucro_realizado) + ' ÷ ' + brl(F.realizado) + ' = ' + _resFmtPct(G.realizado_pct) + ' (meta ' + _resFmtPct(G.meta_pct) + ').\nLucro da meta = meta de faturamento × meta de margem = ' + brl(F.meta) + ' × ' + _resFmtPct(G.meta_pct) + ' = ' + brl(G.lucro_meta) + '.\n\nSemáforo: verde ≥ meta · amarelo até 5 p.p. abaixo · vermelho mais que isso.' + fonteM : '';
   const T4 = C && !C.indisponivel ? '**Pendente no CRM** = negócios ABERTOS no HubSpot (etapas entre 0% e 100% de probabilidade) com fechamento previsto em ' + M.ano + ' ou sem data.\n\nAberto: soma dos valores = ' + brl(C.total_aberto) + ' (' + C.qtd + ' negócios).\nPonderado: soma de valor × probabilidade da etapa = ' + brl(C.total_ponderado) + '.\nCobertura = ponderado ÷ falta faturar = ' + brl(C.total_ponderado) + ' ÷ ' + brl(F.falta) + ' = ' + _resFmtPct(C.cobre_pct_ponderado) + '.\n\nClique no cartão para ver a lista.' : 'Negócios abertos no HubSpot com fechamento no ano.';
   cards.push(_resCartao('Meta de faturamento ' + M.ano, brl(F.meta),
-    fut ? 'o ano ainda não começou' : `realizado <b>${brl(F.realizado)}</b> (${_resFmtPct(F.pct_atingido)}) · esperado até hoje ${brl(F.esperado_ate_hoje)} (${_resFmtPct(M.fracao_ano)} do ano)`, 'var(--blue)', T1));
+    fut ? 'o ano ainda não começou' : `realizado <b>${brl(F.realizado)}</b> (${_resFmtPct(F.pct_atingido)}) · esperado até hoje ${brl(F.esperado_ate_hoje)} (${_resFmtPct(F.fracao_meta ?? M.fracao_ano)} ${F.fracao_pela_meta_mensal ? 'da meta mês a mês' : 'do ano'})`, 'var(--blue)', T1));
   cards.push(_resCartao(luz(F.semaforo) + ' Falta faturar', brl(F.falta),
     fut ? (F.por_mes_necessario ? '≈ ' + brl(F.por_mes_necessario) + '/mês' : '') : (F.semaforo === 'verde' ? 'no ritmo ou acima da meta' : F.semaforo === 'amarelo' ? 'um pouco abaixo do ritmo' : 'abaixo do ritmo da meta') + (F.ritmo_pct != null ? ` · ritmo ${_resFmtPct(F.ritmo_pct)}` : '') + (F.por_mes_necessario ? ` · precisa de <b>${brl(F.por_mes_necessario)}/mês</b> nos ${F.meses_restantes} mes(es) restantes` : '') + (F.projecao_fechamento ? ` · no ritmo atual fecha o ano em ${brl(F.projecao_fechamento)}` : ''),
     cor(F.semaforo), T2));
@@ -35497,7 +35473,7 @@ async function salvarMetricasManuais() {
 // Assim se /api/health não existir ainda, NADA da UI é afetada.
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('%c[ATLANTYX v3.293] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
+console.log('%c[ATLANTYX v3.294] JavaScript carregado com sucesso', 'color: var(--green); font-weight: bold; font-size: 14px;');
 
 // FIX v1.4.5: handler global de erros — captura TUDO que dá errado no browser
 // e mostra no log da UI. Assim erros silenciosos ficam visíveis.
@@ -35513,7 +35489,7 @@ window.addEventListener('unhandledrejection', function(evt) {
 });
 
 // Placeholder fixo do build ID — atualizado só se o usuário clicar
-window.__ATX_BUILD_ID__ = 'ATX-v3.293';
+window.__ATX_BUILD_ID__ = 'ATX-v3.294';
 
 // Atualiza os textos da UI com o valor atual
 function atualizarBuildIdUI(id, cor) {

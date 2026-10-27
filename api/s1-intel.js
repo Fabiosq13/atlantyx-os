@@ -15,7 +15,7 @@ async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   try {
-    const { action, contexto } = req.body;
+    const { action, contexto } = req.body; _inicioReq = Date.now(); // v3.294
     // v3.90: histórico do planejamento (todas as telas S1)
     if (action === 'historico_listar') return res.status(200).json({ success: true, itens: await listarHistorico(req.body.tipos || req.body.tipo, req.body.limite) });
     if (action === 'historico_obter') { const h = await obterHistorico(req.body.id); return h ? res.status(200).json({ success: true, item: h }) : res.status(404).json({ success: false, error: 'Versão não encontrada' }); }
@@ -35,7 +35,7 @@ async function handler(req, res) {
 
     if (!acoes[action]) return res.status(400).json({ error: `Ação inválida: ${Object.keys(acoes).join(', ')}` });
 
-    const resultado = await acoes[action]();
+    const resultado = _semTags(await acoes[action]()); // v3.294: sem HTML vindo da IA
     // v3.94: resposta da IA ilegível → erro claro (antes ia {erro} para a tela, que desenhava tudo vazio)
     const corpo = Object.values(resultado || {}).find(v => v && typeof v === 'object');
     if (corpo?.erro === 'JSON inválido') return res.status(502).json({ success: false, error: 'A IA devolveu uma resposta que não deu para ler — clique de novo em gerar.' });
@@ -156,7 +156,7 @@ async function ctxReal(extra = {}) {
     vv.observacao = 'propostas = tabela local de propostas do sistema (pode estar vazia; o funil real está no HubSpot); win rate e ticket do cálculo podem ser PADRÃO quando não há histórico — veja calculo.win_fonte/ticket_fonte e diga quando for padrão.';
     real.vendas = vv; }
   else faltou.push('vendas: ' + (vendR.reason?.message || 'sem cálculo salvo'));
-  if (leadsR.status === 'fulfilled' && leadsR.value) { fontes.push('Leads (captura)'); real.leads = { ...leadsR.value, observacao: 'só leads capturados pelo próprio sistema (formulários/robôs); não inclui contatos e negócios do HubSpot nem prospecção manual — não use como "geração de leads da empresa".' }; } else faltou.push('leads: ' + (leadsR.reason?.message || ''));
+  if (leadsR.status === 'fulfilled' && leadsR.value) { fontes.push('Leads (captura)'); real.leads = { ...leadsR.value, por_origem: (leadsR.value.por_origem || []).map(x => ({ origem: String(x.origem || '?').replace(/[<>"'`]/g, '').slice(0, 60), n: x.n })), observacao: 'só leads capturados pelo próprio sistema (formulários/robôs); não inclui contatos e negócios do HubSpot nem prospecção manual — não use como "geração de leads da empresa".' }; } else faltou.push('leads: ' + (leadsR.reason?.message || ''));
   // v3.240: PLANO ESTRATÉGICO VIGENTE (cadastrado e aprovado pelo fundador) — Plano Estratégico, Plano de Ação 90d e OKRs
   // partem dele. Sem plano aprovado (ou se a leitura falhar) segue como antes, só com os dados reais.
   let planoTxt = null;
@@ -165,7 +165,12 @@ async function ctxReal(extra = {}) {
   _ultimasFontes = { fontes, faltou };
   return { ctx: ctxAtlantyx({ dados_reais: real, data_de_hoje: new Date().toISOString().slice(0, 10), ...(planoTxt ? { plano_estrategico_vigente: planoTxt, instrucao_plano: 'Parta do plano estratégico vigente: detalhe e execute as alavancas, metas e prioridades aprovadas; se os dados reais contradisserem o plano, aponte a diferença e sugira o ajuste em vez de criar outra estratégia do zero.' } : {}), ...extra }), fontes, faltou };
 }
-let _ultimasFontes = null;
+let _ultimasFontes = null, _inicioReq = 0;
+// v3.294: texto da IA vai para innerHTML nas telas do S1 (e fica no histórico) — sem "<" e ">" não vira HTML/script.
+// Usa ‹ › (parecidos) para o texto continuar legível em qualquer lugar onde for mostrado.
+function _semTags(o, n = 0) { if (n > 12 || o == null) return o; if (typeof o === 'string') return o.replace(/</g, '‹').replace(/>/g, '›');
+  if (Array.isArray(o)) return o.map(x => _semTags(x, n + 1)); if (typeof o === 'object') { for (const k of Object.keys(o)) o[k] = _semTags(o[k], n + 1); return o; } return o; }
+
 // v3.292: TODA análise do S1 (diagnóstico, riscos, financeira, planejamento, plano de ação, replanejamento, OKRs, cenários)
 // recebe os fatos verificados e as mesmas regras de coerência — antes só o Diagnóstico Completo recebia.
 async function ctxComFatos(extra) {
@@ -484,7 +489,7 @@ Retorne:
   "semanas": [
     {
       "semana": 1,
-      "periodo": "14/04 – 18/04/2026",
+      "periodo": "${_semanaQueVem()}",
       "foco": "tema central desta semana",
       "meta_receita": "R$X",
       "acoes": [
@@ -649,7 +654,7 @@ ${JSON.stringify(ctx, null, 2)}
 
 Retorne:
 {
-  "horizonte": "12 meses (Abr 2026 – Mar 2027)",
+  "horizonte": "12 meses (${_horizonte12()})",
   "cenarios": {
     "pessimista": {
       "nome": "nome do cenário",
@@ -715,7 +720,9 @@ async function analiseSwot(extra) {
 // ── HELPERS ──────────────────────────────────────────────────────────────────
 async function claude(system, user, maxTokens = 2000) {
   // v3.94: mais espaço (as respostas eram cortadas em 3.000 tokens → JSON inválido → tela vazia) e prazo explícito
-  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 150000);
+  // v3.294: o prazo da IA é o que SOBRA do limite da função (300 s) depois de juntar os dados — antes 45 s de dados + 150 s de IA passava do limite e a tela recebia um 504 sem explicação
+  const resta = Math.max(30000, 285000 - (Date.now() - (_inicioReq || Date.now()))), prazo = Math.min(240000, resta);
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), prazo);
   try {
     const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ctrl.signal,
       headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
@@ -723,7 +730,7 @@ async function claude(system, user, maxTokens = 2000) {
     const d = await r.json();
     if (!r.ok) throw new Error(d.error?.message || 'Erro Claude API');
     return (d.content || []).map(c => c.text || '').join('');
-  } catch (e) { if (e.name === 'AbortError') throw new Error('A IA não respondeu em 150s — tente de novo'); throw e; } finally { clearTimeout(t); }
+  } catch (e) { if (e.name === 'AbortError') throw new Error('A IA não respondeu em ' + Math.round(prazo / 1000) + 's — tente de novo'); throw e; } finally { clearTimeout(t); }
 }
 
 // v3.94: JSON cortado no meio é consertado (fecha strings/listas/objetos abertos) em vez de virar {erro}
@@ -761,6 +768,10 @@ async function whatsapp(phone, message) {
 
 // v3.28: guarda do QA em execução real (só age em requisições com x-qa-real: 1)
 // v3.293: trimestre corrente (antes fixo "Q2 2026") e o contexto com fatos para os agentes do S1-Strategy
+function _horizonte12() { const M = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'], h = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })), f = new Date(h.getFullYear(), h.getMonth() + 11, 1);
+  return M[h.getMonth()] + ' ' + h.getFullYear() + ' – ' + M[f.getMonth()] + ' ' + f.getFullYear(); }
+function _semanaQueVem() { const h = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })), d = new Date(h); d.setDate(h.getDate() + ((8 - h.getDay()) % 7 || 7)); const e = new Date(d); e.setDate(d.getDate() + 4);
+  const f = x => String(x.getDate()).padStart(2, '0') + '/' + String(x.getMonth() + 1).padStart(2, '0'); return f(d) + ' – ' + f(e) + '/' + e.getFullYear(); }
 function _trimestreAtual() { const h = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })), q = Math.floor(h.getMonth() / 3);
   return 'Q' + (q + 1) + ' ' + h.getFullYear() + ' (' + ['Jan-Mar', 'Abr-Jun', 'Jul-Set', 'Out-Dez'][q] + ')'; }
 export { ctxComFatos, REGRAS_FATOS, _trimestreAtual };
